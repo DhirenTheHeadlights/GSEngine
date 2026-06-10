@@ -49,27 +49,26 @@ namespace gse::renderer::sdf_grid {
 	>;
 }
 
-auto gse::renderer::sdf_grid::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
-	d.pipeline = gpu::build_graphics_program(*gpu_s.device, *gpu_s.bindless_heaps, entry::pod);
+auto gse::renderer::sdf_grid::system::init(context& ctx, const shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
+	d.pipeline = gpu::build_graphics_program(*gpu_s.device, entry::pod);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_buffer>::frames_in_flight; ++i) {
-		d.camera_ubo_buffers[i] = gpu::bindless_buffer::create(
-			gpu_s.device->allocator(),
-			*gpu_s.bindless_heaps,
+	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
+		d.camera_ubo_buffers[i] = gpu_s.device->create_buffer(
 			{
 				.size = camera_ubo_size,
-				.usage = gpu::buffer_flag::uniform
+				.usage = gpu::buffer_flag::uniform,
+				.bindless = true
 			},
 			"sdf_grid.camera_ubo"
 		);
 	}
 
-	co_return;
+	return {};
 }
 
-auto gse::renderer::sdf_grid::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state) -> async::task<> {
+auto gse::renderer::sdf_grid::system::frame(const context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state) -> async::task<> {
 	if (!d.enabled) {
 		co_return;
 	}
@@ -92,7 +91,7 @@ auto gse::renderer::sdf_grid::system::frame(const frame_context& ctx, shared_vie
 		.jitter_ndc = cam_state.jitter_ndc,
 		.prev_jitter_ndc = cam_state.prev_jitter_ndc,
 	};
-	d.camera_ubo_buffers[frame_index].buffer().host_write(camera);
+	d.camera_ubo_buffers[frame_index].host_write(camera);
 
 	const auto ext = gpu_s.render_graph->extent();
 

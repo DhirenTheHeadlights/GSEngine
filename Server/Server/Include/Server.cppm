@@ -48,10 +48,10 @@ export namespace gse {
 		auto initialize() -> void;
 
 		auto update(
-			const world_system::data& w,
+			shared_view<world_system> w,
 			registry& reg,
 			channel_writer& channels,
-			const actions::system::data& actions_s
+			shared_view<actions::system> actions_s
 		) -> void;
 
 		template <typename T>
@@ -77,7 +77,7 @@ export namespace gse {
 
 	private:
 		auto accept_connection(
-			const world_system::data& w,
+			shared_view<world_system> w,
 			registry& reg,
 			const network::address& addr
 		) -> void;
@@ -224,7 +224,7 @@ auto gse::server<Components...>::resend_reliable_messages() -> void {
 }
 
 template <typename... Components>
-auto gse::server<Components...>::update(const world_system::data& w, registry& reg, channel_writer& channels, const actions::system::data& actions_s) -> void {
+auto gse::server<Components...>::update(const shared_view<world_system> w, registry& reg, channel_writer& channels, const shared_view<actions::system> actions_s) -> void {
 	const auto* active_scene_ptr = w.active_scene.has_value()
 		? (w.scenes.contains(*w.active_scene) ? w.scenes.at(*w.active_scene).get() : nullptr)
 		: nullptr;
@@ -379,7 +379,6 @@ auto gse::server<Components...>::update(const world_system::data& w, registry& r
 				evaluation_context ctx{
 					.client_id = controlled_id,
 					.input = &cd.latest_input,
-					.actions_sys = &actions_s,
 					.registry = &reg,
 				};
 				if (condition(ctx)) {
@@ -442,7 +441,7 @@ auto gse::server<Components...>::host_address() const -> std::optional<network::
 }
 
 template <typename... Components>
-auto gse::server<Components...>::accept_connection(const world_system::data& w, registry& reg, const network::address& addr) -> void {
+auto gse::server<Components...>::accept_connection(const shared_view<world_system> w, registry& reg, const network::address& addr) -> void {
 	const bool has_active_scene = w.active_scene.has_value() && w.scenes.contains(*w.active_scene);
 
 	id controller_id{};

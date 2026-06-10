@@ -3,13 +3,14 @@ export module gse.vulkan:instance;
 import std;
 import vulkan;
 
-import :handles;
+import gse.gpu_backend;
 import :types;
 import :physical_device;
 
 import gse.core;
 import gse.assert;
 import gse.log;
+import gse.ecs;
 import gse.os;
 
 export namespace gse::vulkan {
@@ -32,7 +33,7 @@ export namespace gse::vulkan {
 		) -> instance;
 
 		auto create_surface(
-			const window::data& win
+			shared_view<window> win
 		) -> void;
 
 		[[nodiscard]] auto surface() const -> gpu::surface;
@@ -57,7 +58,7 @@ gse::vulkan::instance::instance(vk::raii::Context&& context, vk::raii::Instance&
 	: m_context(std::move(context)), m_instance(std::move(instance)), m_surface(nullptr), m_debug_messenger(std::move(debug_messenger)) {
 }
 
-auto gse::vulkan::instance::create_surface(const window::data& win) -> void {
+auto gse::vulkan::instance::create_surface(const shared_view<window> win) -> void {
 	const auto raw_surface = window::create_vulkan_surface(win, *m_instance);
 	m_surface = vk::raii::SurfaceKHR(m_instance, raw_surface);
 }

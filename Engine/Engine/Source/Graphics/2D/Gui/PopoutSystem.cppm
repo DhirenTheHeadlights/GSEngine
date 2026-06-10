@@ -31,9 +31,9 @@ export namespace gse::gui {
 		};
 
 		static auto run(
-			gse::run_context& ctx,
+			gse::context& ctx,
 			data& d,
-			const system::data& gui_d,
+			gse::shared_view<system> gui_d,
 			const gse::save::registry& save_reg
 		) -> gse::async::task<>;
 	};
@@ -95,8 +95,7 @@ auto gse::gui::activate_popout(popout_system::data& d, const gse::save::registry
 	return &it->second;
 }
 
-auto gse::gui::popout_system::run(gse::run_context& ctx, data& d, const system::data& gui_d, const gse::save::registry& save_reg) -> gse::async::task<> {
-	while (true) {
+auto gse::gui::popout_system::run(gse::context& ctx, data& d, const gse::shared_view<system> gui_d, const gse::save::registry& save_reg) -> gse::async::task<> {
 		for (const auto& req : ctx.read_channel<popout_toggle>()) {
 			auto it = d.popouts.find(req.category);
 			const bool was_active = it != d.popouts.end() && it->second.active;
@@ -154,6 +153,5 @@ auto gse::gui::popout_system::run(gse::run_context& ctx, data& d, const system::
 			});
 		}
 
-		co_await ctx.next_tick();
-	}
+	return {};
 }

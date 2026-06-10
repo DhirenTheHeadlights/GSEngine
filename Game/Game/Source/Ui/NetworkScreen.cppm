@@ -7,7 +7,7 @@ export namespace gs {
 	class network_screen : public gse::gui::screen {
 	public:
 		network_screen(
-			const gse::network::data& net,
+			gse::shared_view<gse::network::data> net,
 			gse::channel_writer channels
 		);
 
@@ -19,7 +19,7 @@ export namespace gs {
 		auto title() const -> std::string_view override;
 
 	private:
-		const gse::network::data* m_net;
+		gse::shared_view<gse::network::data> m_net;
 		gse::channel_writer m_channels;
 		int m_selected = -1;
 		std::uint32_t m_ping_seq = 0;
@@ -28,12 +28,12 @@ export namespace gs {
 	};
 }
 
-gs::network_screen::network_screen(const gse::network::data& net, gse::channel_writer channels)
-	: m_net(&net), m_channels(std::move(channels)) {
+gs::network_screen::network_screen(const gse::shared_view<gse::network::data> net, gse::channel_writer channels)
+	: m_net(net), m_channels(std::move(channels)) {
 }
 
 auto gs::network_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> void {
-	const auto& net = *m_net;
+	const auto& net = m_net;
 
 	const auto send_message = [this](auto m) {
 		m_channels.push<gse::network::send_request>({

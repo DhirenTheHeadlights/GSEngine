@@ -112,12 +112,32 @@ export namespace gs::locomotion {
 			]]
 			gse::displacement swing_capture_right_limit = gse::meters(0.24f);
 
+			[[
+				= gse::settings::describe<"Maximum time the recovery settle phase may hold support before forcing a step.">{}
+			]]
+			gse::time recovery_duration = gse::seconds(0.35f);
+
+			[[
+				= gse::settings::describe<"Forward capture magnitude at which recovery releases back to weight shift.">{}
+			]]
+			gse::displacement recovery_release_capture_forward = gse::meters(0.22f);
+
+			[[
+				= gse::settings::describe<"Lateral capture magnitude at which recovery releases back to weight shift.">{}
+			]]
+			gse::displacement recovery_release_capture_right = gse::meters(0.18f);
+
 			gse::interval_timer<float> log_timer{ gse::seconds(0.3f) };
 		};
 
 		static auto run(
-			gse::run_context& ctx,
-			data& d
+			data& d,
+			gse::read<skeleton_refs> refs,
+			gse::read<intent> intents,
+			gse::read<state> states,
+			gse::read<plan> plans,
+			gse::write<gait> gaits,
+			gse::write<gse::physics::motion_component> motions
 		) -> gse::async::task<>;
 	};
 }
@@ -143,6 +163,14 @@ namespace gs::locomotion {
 		leg which
 	) -> bool;
 	auto capture_safe_for_swing(
+		const state& s,
+		const gait_scheduler::data& d
+	) -> bool;
+	auto capture_at_drop_threshold(
+		const state& s,
+		const gait_scheduler::data& d
+	) -> bool;
+	auto recovery_release_ready(
 		const state& s,
 		const gait_scheduler::data& d
 	) -> bool;
@@ -232,6 +260,17 @@ auto gs::locomotion::capture_safe_for_swing(const state& s, const gait_scheduler
 		gse::abs(s.capture_right) <= d.swing_capture_right_limit;
 }
 
+auto gs::locomotion::capture_at_drop_threshold(const state& s, const gait_scheduler::data& d) -> bool {
+	return s.capture_forward > d.swing_drop_capture_forward ||
+		gse::abs(s.capture_right) > d.swing_drop_capture_right;
+}
+
+auto gs::locomotion::recovery_release_ready(const state& s, const gait_scheduler::data& d) -> bool {
+	return s.capture_forward <= d.recovery_release_capture_forward &&
+		s.capture_forward >= -d.swing_capture_backward_limit &&
+		gse::abs(s.capture_right) <= d.recovery_release_capture_right;
+}
+
 auto gs::locomotion::capture_demands_swing(const state& s, const gait_scheduler::data& d) -> bool {
 	const bool forward_recovery = s.capture_forward > d.swing_capture_forward_limit;
 	const bool backward_recovery = s.capture_forward < -d.swing_capture_backward_limit;
@@ -261,7 +300,9 @@ auto gs::locomotion::swing_drop_requested(const state& s, const gait& g, const g
 	const bool posture_failed = !posture_safe_for_swing(s, d);
 	const bool forward_runaway = s.capture_forward > d.swing_drop_capture_forward;
 	const bool lateral_runaway = gse::abs(s.capture_right) > d.swing_drop_capture_right;
-	return late_enough && (posture_failed || forward_runaway || lateral_runaway);
+	const bool capture_runaway = forward_runaway || lateral_runaway;
+	const bool falling = s.pelvis_velocity.y() < gse::meters_per_second(0.f);
+	return (late_enough && (posture_failed || capture_runaway)) || (lateral_runaway && falling);
 }
 
 auto gs::locomotion::foot_position(const state& s, const leg which) -> const gse::vec3<gse::position>& {
@@ -277,179 +318,199 @@ auto gs::locomotion::foot_target_reached(const state& s, const plan& p, const le
 	return horizontal_error <= d.swing_target_tolerance;
 }
 
-auto gs::locomotion::gait_scheduler::run(gse::run_context& ctx, data& d) -> gse::async::task<> {
-	while (true) {
-		{
-			auto [refs, intents, states, gaits, plans, motions] = co_await ctx.acquire_with(
-				gse::read_v<skeleton_refs>,
-				gse::read_v<intent>,
-				gse::read_v<state>,
-				gse::write_v<gait>,
-				gse::read_v<plan>,
-				gse::write_v<gse::physics::motion_component>
+auto gs::locomotion::gait_scheduler::run(data& d, gse::read<skeleton_refs> refs, gse::read<intent> intents, gse::read<state> states, gse::read<plan> plans, gse::write<gait> gaits, gse::write<gse::physics::motion_component> motions) -> gse::async::task<> {
+	const auto step_dt = gse::system_clock::fixed_dt<gse::time>();
+	const int fixed_steps = gse::system_clock::fixed_steps_this_frame();
+	const auto frame_dt = step_dt * fixed_steps;
+	const bool log_now = d.log_timer.tick();
+
+	const auto owner_ids = gaits.owner_ids();
+	for (std::size_t i = 0; i < gaits.size(); ++i) {
+		auto& g = gaits[i];
+		const auto owner = owner_ids[i];
+		const auto* it = intents.find(owner);
+		const auto* s = states.find(owner);
+		const auto* p = plans.find(owner);
+		if (!it || !s) {
+			continue;
+		}
+
+		const auto cfg = config_for(d, *it);
+
+		if (g.fallen) {
+			continue;
+		}
+
+		if (detect_fall(*s, cfg)) {
+			g.fallen = true;
+			g.current = phase::idle;
+			g.phase_elapsed = gse::seconds(0.f);
+			g.phase_duration = gse::seconds(0.f);
+			if (const auto* r = refs.find(owner)) {
+				if (auto* m = motions.find(r->pelvis_id)) {
+					if (auto* dyn = std::get_if<gse::physics::dynamic_body>(&m->body)) {
+						dyn->update_orientation = true;
+					}
+				}
+			}
+			gse::log::println(
+				"gait: owner={} ENTER FALLEN pelvis_y={:.2f} pelvis_vy={:+.2f} speed={:.2f} capture=(fwd={:+.3f},right={:+.3f})",
+				owner.number(),
+				s->pelvis_position.y(),
+				s->pelvis_velocity.y(),
+				s->horizontal_speed,
+				s->capture_forward,
+				s->capture_right
 			);
+			continue;
+		}
 
-			const auto step_dt = gse::system_clock::fixed_dt<gse::time>();
-			const int fixed_steps = gse::system_clock::fixed_steps_this_frame();
-			const auto frame_dt = step_dt * fixed_steps;
-			const bool log_now = d.log_timer.tick();
+		if (g.current != phase::idle) {
+			g.phase_elapsed += frame_dt;
+		}
 
-			const auto owner_ids = gaits.owner_ids();
-			for (std::size_t i = 0; i < gaits.size(); ++i) {
-				auto& g = gaits[i];
-				const auto owner = owner_ids[i];
-				const auto* it = intents.find(owner);
-				const auto* s = states.find(owner);
-				const auto* p = plans.find(owner);
-				if (!it || !s) {
-					continue;
+		const bool input_wants_step = it->intensity > cfg.input_intensity_threshold;
+		const bool capture_wants_step = s->valid &&
+			(s->capture_forward > cfg.capture_step_threshold ||
+			 s->capture_forward < -cfg.capture_step_threshold ||
+			 gse::abs(s->capture_right) > cfg.capture_step_threshold);
+		const bool wants_step = input_wants_step || capture_wants_step;
+
+		switch (g.current) {
+			case phase::idle:
+				if (input_wants_step) {
+					begin_phase(g, phase::weight_shift, cfg.weight_shift_duration, "input", owner);
 				}
+				break;
 
-				const auto cfg = config_for(d, *it);
-
-				if (g.fallen) {
-					continue;
-				}
-
-				if (detect_fall(*s, cfg)) {
-					g.fallen = true;
-					g.current = phase::idle;
-					g.phase_elapsed = gse::seconds(0.f);
-					g.phase_duration = gse::seconds(0.f);
-					if (const auto* r = refs.find(owner)) {
-						if (auto* m = motions.find(r->pelvis_id)) {
-							if (auto* dyn = std::get_if<gse::physics::dynamic_body>(&m->body)) {
-								dyn->update_orientation = true;
-							}
+			case phase::weight_shift:
+				if (g.phase_elapsed >= g.phase_duration && s->double_support) {
+					const bool capture_safe = capture_safe_for_swing(*s, d);
+					const bool recovery_step = capture_demands_swing(*s, d);
+					const bool normal_swing = capture_safe && posture_safe_for_swing(*s, d);
+					const bool recovery_swing = recovery_step && posture_allows_recovery_swing(*s, d);
+					if (normal_swing || recovery_swing) {
+						if (recovery_swing) {
+							g.swing_leg = capture_recovery_leg(*s, d, g.swing_leg);
 						}
+						begin_phase(
+							g,
+							phase::swing,
+							cfg.swing_duration,
+							recovery_swing ? "capture" : "shift_done",
+							owner
+						);
 					}
-					gse::log::println(
-						"gait: owner={} ENTER FALLEN pelvis_y={:.2f} pelvis_vy={:+.2f} speed={:.2f} capture=(fwd={:+.3f},right={:+.3f})",
-						owner.number(),
-						s->pelvis_position.y(),
-						s->pelvis_velocity.y(),
-						s->horizontal_speed,
-						s->capture_forward,
-						s->capture_right
-					);
-					continue;
 				}
+				break;
 
-				if (g.current != phase::idle) {
-					g.phase_elapsed += frame_dt;
+			case phase::swing: {
+				const bool swing_grounded = foot_grounded(*s, g.swing_leg);
+				const bool target_reached = !p || foot_target_reached(*s, *p, g.swing_leg, d);
+				const bool contact_allowed = phase_progress(g) >= d.swing_contact_progress;
+				const bool timed_out = g.phase_elapsed >= d.swing_timeout;
+				const bool drop_requested = swing_drop_requested(*s, g, d);
+				if (swing_grounded && contact_allowed && target_reached) {
+					begin_phase(g, phase::plant, cfg.plant_duration, "contact", owner);
 				}
+				else if (drop_requested) {
+					begin_phase(g, phase::recover, d.recovery_duration, "drop", owner);
+				}
+				else if (timed_out) {
+					if (swing_grounded) {
+						begin_phase(g, phase::plant, cfg.plant_duration, "timed", owner);
+					}
+					else {
+						begin_phase(g, phase::recover, d.recovery_duration, "timed_air", owner);
+					}
+				}
+				break;
+			}
 
-				const bool input_wants_step = it->intensity > cfg.input_intensity_threshold;
-				const bool capture_wants_step = s->valid &&
-					(s->capture_forward > cfg.capture_step_threshold ||
-					 s->capture_forward < -cfg.capture_step_threshold ||
-					 gse::abs(s->capture_right) > cfg.capture_step_threshold);
-				const bool wants_step = input_wants_step || capture_wants_step;
-
-				switch (g.current) {
-					case phase::idle:
-						if (input_wants_step) {
-							begin_phase(g, phase::weight_shift, cfg.weight_shift_duration, "input", owner);
-						}
-						break;
-
-					case phase::weight_shift:
-						if (g.phase_elapsed >= g.phase_duration && s->double_support) {
-							const bool capture_safe = capture_safe_for_swing(*s, d);
-							const bool recovery_step = capture_demands_swing(*s, d);
-							const bool normal_swing = capture_safe && posture_safe_for_swing(*s, d);
-							const bool recovery_swing = recovery_step && posture_allows_recovery_swing(*s, d);
-							if (normal_swing || recovery_swing) {
-								if (recovery_swing) {
-									g.swing_leg = capture_recovery_leg(*s, d, g.swing_leg);
-								}
-								begin_phase(
-									g,
-									phase::swing,
-									cfg.swing_duration,
-									recovery_swing ? "capture" : "shift_done",
-									owner
-								);
-							}
-						}
-						break;
-
-					case phase::swing: {
-						const bool swing_grounded = foot_grounded(*s, g.swing_leg);
-						const bool target_reached = !p || foot_target_reached(*s, *p, g.swing_leg, d);
-						const bool contact_allowed = phase_progress(g) >= d.swing_contact_progress;
-						const bool timed_out = g.phase_elapsed >= d.swing_timeout;
-						const bool drop_requested = swing_drop_requested(*s, g, d);
-						const bool plant_ready = timed_out || drop_requested || (swing_grounded && contact_allowed && target_reached);
-						if (plant_ready) {
-							const auto reason = drop_requested ? "drop" : (target_reached ? "contact" : (timed_out ? "timed" : "grounded"));
-							begin_phase(g, phase::plant, cfg.plant_duration, reason, owner);
-						}
+			case phase::plant:
+				if (g.phase_elapsed >= g.phase_duration) {
+					const bool swing_grounded = foot_grounded(*s, g.swing_leg);
+					const bool stance_grounded = foot_grounded(*s, other(g.swing_leg));
+					const bool support_transferred = swing_grounded && !stance_grounded;
+					const bool support_swing_safe = support_transferred && posture_allows_recovery_swing(*s, d);
+					const leg next_swing_leg = other(g.swing_leg);
+					if (!s->double_support && !support_swing_safe) {
 						break;
 					}
-
-					case phase::plant:
-						if (g.phase_elapsed >= g.phase_duration) {
-							const bool swing_grounded = foot_grounded(*s, g.swing_leg);
-							const bool stance_grounded = foot_grounded(*s, other(g.swing_leg));
-							const bool support_transferred = swing_grounded && !stance_grounded;
-							const bool support_swing_safe = support_transferred && posture_allows_recovery_swing(*s, d);
-							const leg next_swing_leg = other(g.swing_leg);
-							if (!s->double_support && !support_swing_safe) {
-								break;
-							}
-							if (capture_demands_swing(*s, d) && posture_allows_recovery_swing(*s, d)) {
-								const leg recovery_leg = capture_recovery_leg(*s, d, next_swing_leg);
-								g.swing_leg = recovery_leg == g.swing_leg ? next_swing_leg : recovery_leg;
-								begin_phase(g, phase::swing, cfg.swing_duration, "capture", owner);
-							}
-							else if (capture_demands_swing(*s, d)) {
-								break;
-							}
-							else if (!posture_safe_for_swing(*s, d)) {
-								break;
-							}
-							else if (wants_step) {
-								g.swing_leg = next_swing_leg;
-								begin_phase(
-									g,
-									phase::weight_shift,
-									cfg.weight_shift_duration,
-									input_wants_step ? "input" : "capture",
-									owner
-								);
-							}
-							else {
-								g.swing_leg = next_swing_leg;
-								begin_phase(g, phase::idle, gse::seconds(0.f), "rest", owner);
-							}
-						}
+					const bool capture_too_hot = capture_at_drop_threshold(*s, d);
+					if (capture_demands_swing(*s, d) && capture_too_hot && posture_allows_recovery_swing(*s, d)) {
+						begin_phase(g, phase::recover, d.recovery_duration, "capture_hot", owner);
+					}
+					else if (capture_demands_swing(*s, d) && posture_allows_recovery_swing(*s, d)) {
+						const leg recovery_leg = capture_recovery_leg(*s, d, next_swing_leg);
+						g.swing_leg = recovery_leg == g.swing_leg ? next_swing_leg : recovery_leg;
+						begin_phase(g, phase::swing, cfg.swing_duration, "capture", owner);
+					}
+					else if (capture_demands_swing(*s, d)) {
 						break;
+					}
+					else if (!posture_safe_for_swing(*s, d)) {
+						break;
+					}
+					else if (wants_step) {
+						g.swing_leg = next_swing_leg;
+						begin_phase(
+							g,
+							phase::weight_shift,
+							cfg.weight_shift_duration,
+							input_wants_step ? "input" : "capture",
+							owner
+						);
+					}
+					else {
+						g.swing_leg = next_swing_leg;
+						begin_phase(g, phase::idle, gse::seconds(0.f), "rest", owner);
+					}
 				}
+				break;
 
-				if (log_now) {
-					gse::log::println(
-						"gait: owner={} phase={} swing={} t={:.2f:s}/{:.2f:s} fallen={} "
-						"input=({:+.2f},{:+.2f},{:.2f}) capture=(fwd={:+.3f},right={:+.3f}) "
-						"pelvis=(y={:+.2f},vy={:+.2f})",
-						owner.number(),
-						g.current,
-						g.swing_leg,
-						g.phase_elapsed,
-						g.phase_duration,
-						g.fallen,
-						it->forward,
-						it->strafe,
-						it->intensity,
-						s->capture_forward,
-						s->capture_right,
-						s->pelvis_position.y(),
-						s->pelvis_velocity.y()
-					);
+			case phase::recover: {
+				const bool posture_ok = posture_allows_recovery_swing(*s, d);
+				const bool released = recovery_release_ready(*s, d) && posture_ok && s->double_support;
+				const bool timed_out = g.phase_elapsed >= g.phase_duration;
+				if (released) {
+					g.swing_leg = capture_recovery_leg(*s, d, g.swing_leg);
+					begin_phase(g, phase::weight_shift, cfg.weight_shift_duration, "recovered", owner);
 				}
+				else if (timed_out) {
+					if (wants_step && posture_ok) {
+						g.swing_leg = capture_recovery_leg(*s, d, g.swing_leg);
+						begin_phase(g, phase::weight_shift, cfg.weight_shift_duration, "settle_timeout", owner);
+					}
+					else {
+						begin_phase(g, phase::idle, gse::seconds(0.f), "settled", owner);
+					}
+				}
+				break;
 			}
 		}
 
-		co_await ctx.next_tick();
+		if (log_now) {
+			gse::log::println(
+				"gait: owner={} phase={} swing={} t={:.2f:s}/{:.2f:s} fallen={} "
+				"input=({:+.2f},{:+.2f},{:.2f}) capture=(fwd={:+.3f},right={:+.3f}) "
+				"pelvis=(y={:+.2f},vy={:+.2f})",
+				owner.number(),
+				g.current,
+				g.swing_leg,
+				g.phase_elapsed,
+				g.phase_duration,
+				g.fallen,
+				it->forward,
+				it->strafe,
+				it->intensity,
+				s->capture_forward,
+				s->capture_right,
+				s->pelvis_position.y(),
+				s->pelvis_velocity.y()
+			);
+		}
 	}
+
+	return {};
 }

@@ -55,7 +55,7 @@ namespace gse::renderer::geometry_collector {
 	) -> void;
 
 	auto read_body_index_map(
-		run_context& ctx
+		context& ctx
 	) -> std::unordered_map<id, std::uint32_t>;
 
 	auto collect_static(
@@ -76,15 +76,17 @@ namespace gse::renderer::geometry_collector {
 	) -> void;
 
 	auto initialize(
-		run_context& ctx,
-		const gpu::context::data& gpu_s,
+		context& ctx,
+		shared_view<gpu::context> gpu_s,
 		system::data& d
 	) -> async::task<>;
 
 	auto tick(
-		run_context& ctx,
+		context& ctx,
 		system::data& d,
-		const camera::system::data& cam_state
+		shared_view<camera::system> cam_state,
+		write<render_component>& render,
+		read<physics::transform_component>& transform
 	) -> async::task<>;
 }
 
@@ -142,7 +144,7 @@ auto gse::renderer::geometry_collector::build_batches(render_data& data, std::ui
 	}
 }
 
-auto gse::renderer::geometry_collector::read_body_index_map(run_context& ctx) -> std::unordered_map<id, std::uint32_t> {
+auto gse::renderer::geometry_collector::read_body_index_map(context& ctx) -> std::unordered_map<id, std::uint32_t> {
 	std::unordered_map<id, std::uint32_t> body_index_map;
 	for (const auto& [entries] : ctx.read_channel<physics::gpu_body_index_map>()) {
 		for (const auto& [eid, idx] : entries) {
@@ -296,40 +298,37 @@ auto gse::renderer::geometry_collector::build_normal_batches(render_data& data, 
 	);
 }
 
-auto gse::renderer::geometry_collector::initialize(run_context& ctx, const gpu::context::data& gpu_s, system::data& d) -> async::task<> {
+auto gse::renderer::geometry_collector::initialize(context& ctx, const shared_view<gpu::context> gpu_s, system::data& d) -> async::task<> {
 	constexpr std::size_t material_buffer_size = system::data::max_materials * sizeof(shaders::forward::material_data);
 	d.material_staging.reserve(material_buffer_size);
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_buffer>::frames_in_flight; ++i) {
+	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 		constexpr std::size_t instance_buffer_size = system::data::max_instances * sizeof(shaders::common::instance_data);
-		d.instance_buffer[i] = gpu::bindless_buffer::create(
-			gpu_s.device->allocator(),
-			*gpu_s.bindless_heaps,
+		d.instance_buffer[i] = gpu_s.device->create_buffer(
 			{
 				.size = instance_buffer_size,
-				.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_src | gpu::buffer_flag::transfer_dst
+				.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_src | gpu::buffer_flag::transfer_dst,
+				.bindless = true
 			},
 			"gc_instance_buffer"
 		);
 
 		constexpr std::size_t normal_indirect_buffer_size =
 			render_data::max_batches * sizeof(gpu::draw_mesh_tasks_indirect_command);
-		d.normal_indirect_commands_buffer[i] = gpu::bindless_buffer::create(
-			gpu_s.device->allocator(),
-			*gpu_s.bindless_heaps,
+		d.normal_indirect_commands_buffer[i] = gpu_s.device->create_buffer(
 			{
 				.size = normal_indirect_buffer_size,
-				.usage = gpu::buffer_flag::indirect | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
+				.usage = gpu::buffer_flag::indirect | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst,
+				.bindless = true
 			},
 			"gc_indirect_commands"
 		);
 
-		d.material_palette_buffers[i] = gpu::bindless_buffer::create(
-			gpu_s.device->allocator(),
-			*gpu_s.bindless_heaps,
+		d.material_palette_buffers[i] = gpu_s.device->create_buffer(
 			{
 				.size = material_buffer_size,
-				.usage = gpu::buffer_flag::storage
+				.usage = gpu::buffer_flag::storage,
+				.bindless = true
 			},
 			"gc_material_palette"
 		);
@@ -338,16 +337,11 @@ auto gse::renderer::geometry_collector::initialize(run_context& ctx, const gpu::
 	co_return;
 }
 
-auto gse::renderer::geometry_collector::tick(run_context& ctx, system::data& d, const camera::system::data& cam_state) -> async::task<> {
+auto gse::renderer::geometry_collector::tick(context& ctx, system::data& d, const shared_view<camera::system> cam_state, write<render_component>& render, read<physics::transform_component>& transform) -> async::task<> {
 	const view_matrix view_matrix = cam_state.view_matrix;
 	const projection_matrix proj_matrix = cam_state.projection_matrix;
 
 	auto body_index_map = read_body_index_map(ctx);
-
-	auto [render, transform] = co_await ctx.acquire_with(
-		write_v<render_component>,
-		read_v<physics::transform_component>
-	);
 
 	if (render.empty()) {
 		co_return;
@@ -395,26 +389,27 @@ auto gse::renderer::geometry_collector::filter_render_queue(const render_data& d
 	return result;
 }
 
-auto gse::renderer::geometry_collector::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d, const camera::system::data& cam_state, const primitive_resolver::system& resolver_state) -> async::task<> {
+auto gse::renderer::geometry_collector::system::init(context& ctx, const shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
 	co_await initialize(ctx, gpu_s, d);
-
-	while (true) {
-		co_await tick(ctx, d, cam_state);
-		co_await ctx.next_tick();
-	}
+	co_return;
 }
 
-auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
+auto gse::renderer::geometry_collector::system::run(context& ctx, const shared_view<gpu::context> gpu_s, const shared_view<asset::registry> assets_s, data& d, const shared_view<camera::system> cam_state, const shared_view<primitive_resolver::system> resolver_state, write<render_component> render, read<physics::transform_component> transform) -> async::task<> {
+	co_await tick(ctx, d, cam_state, render, transform);
+	co_return;
+}
+
+auto gse::renderer::geometry_collector::system::frame(context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
 	const auto& items = ctx.read_channel<render_data>();
 	if (items.empty()) {
-		co_return;
+		return {};
 	}
 
 	const auto& data = items[0];
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
 	if (!data.instance_staging.empty()) {
-		d.instance_buffer[frame_index].buffer().host_write(data.instance_staging);
+		d.instance_buffer[frame_index].host_write(data.instance_staging);
 	}
 
 	if (!data.normal_batches.empty()) {
@@ -432,7 +427,7 @@ auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, shared
 		}
 
 		if (!normal_indirect_commands.empty()) {
-			d.normal_indirect_commands_buffer[frame_index].buffer().host_write(normal_indirect_commands);
+			d.normal_indirect_commands_buffer[frame_index].host_write(normal_indirect_commands);
 		}
 	}
 
@@ -450,7 +445,7 @@ auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, shared
 				continue;
 			}
 			const auto& diffuse = mat_ptr->diffuse_texture;
-			const auto diffuse_slot = diffuse.valid() ? diffuse->bindless_slot() : gpu::bindless_texture_slot{};
+			const auto diffuse_slot = diffuse.valid() ? diffuse->bindless_slot() : gpu::bindless_slot{};
 			staging_materials[idx] = {
 				.base_color = mat_ptr->base_color,
 				.roughness = mat_ptr->roughness,
@@ -459,9 +454,11 @@ auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, shared
 			};
 		}
 
-		d.material_palette_buffers[frame_index].buffer().host_write(
+		d.material_palette_buffers[frame_index].host_write(
 			mat_staging.data(),
 			material_count * sizeof(shaders::forward::material_data)
 		);
 	}
+
+	return {};
 }

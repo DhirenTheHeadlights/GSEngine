@@ -20,28 +20,28 @@ import gse.log;
 export namespace gse::renderer::rt_shadow {
 	struct system {
 		struct data {
-			per_frame_resource<const gpu::tlas*> tlas_ptrs{};
+			[[= gse::shared]] per_frame_resource<const gpu::tlas*> tlas_ptrs{};
 
 			std::unordered_map<const mesh*, gpu::blas> blas_cache;
 			per_frame_resource<gpu::tlas> tlas_per_frame;
 			per_frame_resource<linear_vector<gpu::tlas_instance_desc>> instances;
 
 			gpu::shader_program tlas_update_pipeline;
-			per_frame_resource<gpu::bindless_buffer> mapping_buffers;
+			per_frame_resource<gpu::buffer> mapping_buffers;
 			std::size_t mapping_buffer_capacity = 0;
 
-			per_frame_resource<gpu::bindless_buffer_view> tlas_instance_views;
+			per_frame_resource<gpu::bindless_handle> tlas_instance_views;
 		};
 
-		static auto run(
-			run_context& ctx,
-			const gpu::context::data& gpu_s,
-			const asset::data& assets_s,
+		static auto init(
+			context& ctx,
+			shared_view<gpu::context> gpu_s,
+			shared_view<asset::registry> assets_s,
 			data& d
 		) -> async::task<>;
 
 		static auto frame(
-			frame_context& ctx,
+			context& ctx,
 			shared_view<gpu::context> gpu_s,
 			data& d,
 			shared_view<geometry_collector::system> gc_r

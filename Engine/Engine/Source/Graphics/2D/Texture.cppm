@@ -63,7 +63,7 @@ export namespace gse {
 
 		auto image_data() const -> const image::data&;
 
-		[[nodiscard]] auto bindless_slot() const -> gpu::bindless_texture_slot;
+		[[nodiscard]] auto bindless_slot() const -> gpu::bindless_slot;
 
 		auto upload_token() const -> const gpu::sync_token&;
 
@@ -74,7 +74,7 @@ export namespace gse {
 		) -> void;
 
 		gpu::image m_image;
-		gpu::bindless_texture_slot m_bindless_slot;
+		gpu::bindless_handle m_bindless_slot;
 		image::data m_image_data;
 		profile m_profile = profile::generic_repeat;
 		gpu::sync_token m_upload_token;

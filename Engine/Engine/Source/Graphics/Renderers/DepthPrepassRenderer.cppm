@@ -23,18 +23,18 @@ export namespace gse::renderer::depth_prepass {
 		struct data {
 			gpu::shader_program meshlet_pipeline;
 
-			per_frame_resource<gpu::bindless_buffer> camera_ubo_buffers;
+			per_frame_resource<gpu::buffer> camera_ubo_buffers;
 		};
 
-		static auto run(
-			run_context& ctx,
-			const gpu::context::data& gpu_s,
-			const asset::data& assets_s,
+		static auto init(
+			context& ctx,
+			shared_view<gpu::context> gpu_s,
+			shared_view<asset::registry> assets_s,
 			data& d
 		) -> async::task<>;
 
 		static auto frame(
-			frame_context& ctx,
+			context& ctx,
 			shared_view<gpu::context> gpu_s,
 			const data& d,
 			shared_view<geometry_collector::system> gc_r,

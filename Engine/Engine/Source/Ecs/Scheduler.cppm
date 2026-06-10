@@ -9,14 +9,16 @@ import gse.time;
 import gse.math;
 import gse.diag;
 
-import :phase_context;
 import :registries;
-import :run_context;
+import :context;
 import :settings;
-import :frame_context;
+import :context;
 import :system_node;
 import :system_dispatch;
 import :registry;
+import :task_graph;
+import :traits;
+import :access_token;
 
 namespace gse {
 	enum class wait_phase : std::uint8_t {
@@ -64,10 +66,6 @@ export namespace gse {
 			registry& reg
 		) -> void;
 
-		auto set_advance_hook(
-			std::function<void(id system_id, std::string_view phase)> fn
-		) -> void;
-
 		auto set_settings_register_hook(
 			std::function<void(settings::register_settings_type)> fn
 		) -> void;
@@ -107,11 +105,6 @@ export namespace gse {
 
 		template <typename S, typename... Args>
 		auto add_system(
-			Args&&... args
-		) -> system_handle<S>;
-
-		template <typename S, typename... Args>
-		auto ensure_system(
 			Args&&... args
 		) -> system_handle<S>;
 
@@ -158,17 +151,41 @@ export namespace gse {
 			system_node node
 		) -> void*;
 
+		auto wire_component_deps() -> void;
+
+		auto promote_optional_deps() -> void;
+
 		auto check_state_dep_cycles() -> void;
 
 		auto check_closed_dep_graph() -> void;
 
-		auto run_unified_update() -> void;
+		auto run_init_phase() -> void;
 
-		auto advance_run_systems_during_init() -> void;
+		auto advance_inits() -> void;
 
-		auto advance_one_run_system(
+		auto dispatch_run_systems() -> void;
+
+		auto advance_one_init_system(
 			system_node& node
 		) -> async::task<>;
+
+		auto run_node_update(
+			context& ctx,
+			system_node& node
+		) -> async::task<>;
+
+		auto run_node_frame(
+			context& ctx,
+			system_node& node
+		) -> async::task<>;
+
+		[[nodiscard]] auto dep_init_done(
+			id dep
+		) const -> bool;
+
+		[[nodiscard]] auto is_dispatchable(
+			id node_id
+		) const -> bool;
 
 		auto drain_hot_add_queue() -> void;
 
@@ -195,11 +212,10 @@ export namespace gse {
 		std::vector<system_node> m_hot_add_queue;
 		mutable std::mutex m_hot_add_mutex;
 		registry* m_registry = nullptr;
-		std::function<void(id, std::string_view)> m_advance_hook;
 		std::function<void(settings::register_settings_type)> m_settings_register_hook;
 		task_graph m_update_graph;
 		task_graph m_frame_graph;
-		async::rw_mutex_registry m_access_mutexes;
+		access_guard m_guard;
 		bool m_initialized = false;
 		bool m_dep_graph_checked = false;
 	};
@@ -207,7 +223,7 @@ export namespace gse {
 
 template <typename State>
 auto gse::scheduler::state(this auto& self) -> auto& {
-	auto* p = self.m_states.state_ptr(compute_state_dep_id<State>());
+	auto* p = self.m_states.state_ptr(id_of<State>());
 	assert(p != nullptr, "state not found");
 	using state_t = std::conditional_t<std::is_const_v<std::remove_pointer_t<decltype(p)>>, const State, State>;
 	return *static_cast<state_t*>(p);
@@ -215,14 +231,14 @@ auto gse::scheduler::state(this auto& self) -> auto& {
 
 template <typename State>
 auto gse::scheduler::try_state_of(this auto& self) -> auto* {
-	auto* p = self.m_states.state_ptr(compute_state_dep_id<State>());
+	auto* p = self.m_states.state_ptr(id_of<State>());
 	using state_t = std::conditional_t<std::is_const_v<std::remove_pointer_t<decltype(p)>>, const State, State>;
 	return static_cast<state_t*>(p);
 }
 
 template <typename State>
 auto gse::scheduler::has() const -> bool {
-	return m_states.contains(compute_state_dep_id<State>());
+	return m_states.contains(id_of<State>());
 }
 
 template <typename Resources>
@@ -254,17 +270,6 @@ template <typename T>
 requires gse::is_same_frame_channel_v<T>
 auto gse::scheduler::drain_channel() -> std::vector<T> {
 	return m_channels_store.template drain<T>();
-}
-
-template <typename S, typename... Args>
-auto gse::scheduler::ensure_system(Args&&... args) -> system_handle<S> {
-	using state_t = state_of_t<S>;
-	if (auto* existing = try_state_of<state_t>()) {
-		system_handle<S> h;
-		h.m_state = existing;
-		return h;
-	}
-	return add_system<S>(std::forward<Args>(args)...);
 }
 
 template <typename S, typename... Args>

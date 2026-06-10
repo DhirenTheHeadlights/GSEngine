@@ -26,17 +26,15 @@ namespace gse::renderer::scene_snapshot {
 		.address_w = gpu::sampler_address_mode::clamp_to_edge,
 	};
 
-	template <typename GpuS>
-	auto recreate_resources(GpuS& gpu_s, system::data& d, const vec2u extent) -> void {
+	auto recreate_resources(const shared_view<gpu::context> gpu_s, system::data& d, const vec2u extent) -> void {
 		for (std::size_t i = 0; i < per_frame_resource<gpu::image>::frames_in_flight; ++i) {
 			if (d.slots[i].valid()) {
-				gpu_s.bindless_textures->release(d.slots[i]);
 				d.slots[i] = {};
 			}
 		}
 
 		for (std::size_t i = 0; i < per_frame_resource<gpu::image>::frames_in_flight; ++i) {
-			d.snapshots[i] = gpu_s.device->allocator().create_image(
+			d.snapshots[i] = gpu_s.device->create_image(
 				{
 					.size = extent,
 					.format = gpu_s.swapchain->format(),
@@ -44,7 +42,7 @@ namespace gse::renderer::scene_snapshot {
 				}
 			);
 
-			d.slots[i] = gpu_s.bindless_textures->allocate(d.snapshots[i], snapshot_sampler_desc);
+			d.slots[i] = gpu_s.device->register_texture(d.snapshots[i], snapshot_sampler_desc);
 		}
 
 		d.current_extent = extent;
@@ -52,18 +50,19 @@ namespace gse::renderer::scene_snapshot {
 	}
 }
 
-auto gse::renderer::scene_snapshot::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
+auto gse::renderer::scene_snapshot::system::init(const shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
 	const auto initial_extent = gpu_s.render_graph->extent();
 	if (d.enabled && initial_extent.x() > 0 && initial_extent.y() > 0) {
 		recreate_resources(gpu_s, d, initial_extent);
 	}
-
-	while (true) {
-		co_await ctx.next_tick();
-	}
+	return {};
 }
 
-auto gse::renderer::scene_snapshot::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
+auto gse::renderer::scene_snapshot::system::run(context& ctx, const shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
+	return {};
+}
+
+auto gse::renderer::scene_snapshot::system::frame(const context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}

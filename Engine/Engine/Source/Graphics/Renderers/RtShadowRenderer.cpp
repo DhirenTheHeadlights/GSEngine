@@ -46,7 +46,7 @@ namespace gse::renderer::rt_shadow {
 	using entry = gpu::compute_entry<gpu::body_path<"Compute/tlas_transform_update">, gpu::bindings<shader_binding_types>, gpu::threads<64>, gpu::push_constant<push_constants>, gpu::system_values<gpu::dispatch_thread_id>>;
 }
 
-auto gse::renderer::rt_shadow::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
+auto gse::renderer::rt_shadow::system::init(context& ctx, const shared_view<gpu::context> gpu_s, const shared_view<asset::registry> assets_s, data& d) -> async::task<> {
 	log::println(log::category::render, "RT shadow: initialized");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::tlas>::frames_in_flight; ++i) {
@@ -55,12 +55,12 @@ auto gse::renderer::rt_shadow::system::run(run_context& ctx, const gpu::context:
 		d.instances[i].reserve(geometry_collector::system::data::max_instances);
 	}
 
-	d.tlas_update_pipeline = gpu::build_compute_program(*gpu_s.device, *gpu_s.bindless_heaps, entry::pod);
+	d.tlas_update_pipeline = gpu::build_compute_program(*gpu_s.device, entry::pod);
 
-	co_return;
+	return {};
 }
 
-auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<geometry_collector::system> gc_r) -> async::task<> {
+auto gse::renderer::rt_shadow::system::frame(context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<geometry_collector::system> gc_r) -> async::task<> {
 	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
 	if (render_items.empty()) {
 		co_return;
@@ -153,30 +153,26 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, shared_view<gpu
 
 	const auto mapping_bytes = instance_count * sizeof(std::uint32_t);
 	if (d.mapping_buffer_capacity < mapping_bytes) {
-		for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_buffer>::frames_in_flight; ++i) {
-			d.mapping_buffers[i] = gpu::bindless_buffer::create(
-				gpu_s.device->allocator(),
-				*gpu_s.bindless_heaps,
+		for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
+			d.mapping_buffers[i] = gpu_s.device->create_buffer(
 				{
 					.size = mapping_bytes,
-					.usage = gpu::buffer_flag::storage
+					.usage = gpu::buffer_flag::storage,
+					.bindless = true
 				}
 			);
 		}
 		d.mapping_buffer_capacity = mapping_bytes;
 	}
 
-	d.mapping_buffers[frame_index].buffer().host_write(mapping.data(), mapping_bytes);
+	d.mapping_buffers[frame_index].host_write(mapping.data(), mapping_bytes);
 
 	auto& tlas_inst_buf = d.tlas_per_frame[frame_index].instance_buffer();
 
-	d.tlas_instance_views[frame_index].rebind_storage(
-		gpu_s.device->allocator(),
-		*gpu_s.bindless_heaps,
-		tlas_inst_buf,
-		0,
-		instance_count * 64
-	);
+	if (!d.tlas_instance_views[frame_index].valid()) {
+		d.tlas_instance_views[frame_index] = gpu_s.device->allocate_buffer_slot();
+	}
+	gpu_s.device->write_storage_buffer(d.tlas_instance_views[frame_index].slot(), tlas_inst_buf.device_address(), instance_count * 64);
 
 	const std::uint32_t workgroups = (instance_count + 63) / 64;
 

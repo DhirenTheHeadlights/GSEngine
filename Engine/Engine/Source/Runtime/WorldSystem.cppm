@@ -16,7 +16,6 @@ export namespace gse {
 	struct evaluation_context {
 		std::optional<id> client_id = std::nullopt;
 		const actions::state* input = nullptr;
-		const actions::system::data* actions_sys = nullptr;
 		registry* registry = nullptr;
 	};
 
@@ -31,9 +30,9 @@ export namespace gse {
 
 	struct world_system {
 		struct data {
-			std::unordered_map<id, std::unique_ptr<scene>> scenes;
-			std::vector<trigger> triggers;
-			std::optional<id> active_scene;
+			[[= gse::shared]] std::unordered_map<id, std::unique_ptr<scene>> scenes;
+			[[= gse::shared]] std::vector<trigger> triggers;
+			[[= gse::shared]] std::optional<id> active_scene;
 			bool networked = false;
 			bool authoritative = true;
 			std::optional<id> client_id;
@@ -46,13 +45,13 @@ export namespace gse {
 		};
 
 		static auto run(
-			run_context& ctx,
+			context& ctx,
 			data& d,
-			const actions::system::data& actions_d
+			shared_view<actions::system> actions_d,
+			registry_access ra
 		) -> async::task<>;
 
 		static auto shutdown(
-			shutdown_context& phase,
 			data& d
 		) -> void;
 	};
@@ -260,58 +259,55 @@ auto gse::update_player_controllers(world_system::data& d, registry& reg) -> voi
 	}
 }
 
-auto gse::world_system::run(run_context& ctx, data& d, const actions::system::data& actions_d) -> async::task<> {
-	while (true) {
-		for (const auto& r : ctx.read_channel<set_networked_request>()) {
-			d.networked = r.value;
-		}
-		for (const auto& r : ctx.read_channel<set_authoritative_request>()) {
-			d.authoritative = r.value;
-		}
-		for (const auto& r : ctx.read_channel<set_local_controller_id_request>()) {
-			d.local_controller_id = r.controller_id;
-		}
-		if (!ctx.read_channel<deactivate_active_scene_request>().empty()) {
-			deactivate_active_scene(d);
-		}
-		for (const auto& r : ctx.read_channel<activate_scene_request>()) {
-			activate_scene(d, r.scene_id);
-		}
+auto gse::world_system::run(context& ctx, data& d, const shared_view<actions::system> actions_d, registry_access ra) -> async::task<> {
+	for (const auto& r : ctx.read_channel<set_networked_request>()) {
+		d.networked = r.value;
+	}
+	for (const auto& r : ctx.read_channel<set_authoritative_request>()) {
+		d.authoritative = r.value;
+	}
+	for (const auto& r : ctx.read_channel<set_local_controller_id_request>()) {
+		d.local_controller_id = r.controller_id;
+	}
+	if (!ctx.read_channel<deactivate_active_scene_request>().empty()) {
+		deactivate_active_scene(d);
+	}
+	for (const auto& r : ctx.read_channel<activate_scene_request>()) {
+		activate_scene(d, r.scene_id);
+	}
 
-		if (!d.networked) {
-			const auto& s = actions::system::current_state(actions_d);
+	if (!d.networked) {
+		const auto& s = actions::system::current_state(actions_d);
 
-			for (const auto& [scene_id, condition] : d.triggers) {
-				const evaluation_context ec{
-					.client_id = d.client_id,
-					.input = std::addressof(s),
-					.actions_sys = &actions_d,
-					.registry = &ctx.registry(),
-				};
+		for (const auto& [scene_id, condition] : d.triggers) {
+			const evaluation_context ec{
+				.client_id = d.client_id,
+				.input = std::addressof(s),
+				.registry = &ra.registry(),
+			};
 
-				if (condition(ec) && scene_id != d.active_scene) {
-					if (d.active_scene.has_value()) {
-						if (auto* old_scene = find_scene(d, d.active_scene.value())) {
-							old_scene->set_active(false);
-						}
+			if (condition(ec) && scene_id != d.active_scene) {
+				if (d.active_scene.has_value()) {
+					if (auto* old_scene = find_scene(d, d.active_scene.value())) {
+						old_scene->set_active(false);
 					}
+				}
 
-					if (auto* new_scene = find_scene(d, scene_id)) {
-						new_scene->set_active(true);
-						d.active_scene = new_scene->id();
-						break;
-					}
+				if (auto* new_scene = find_scene(d, scene_id)) {
+					new_scene->set_active(true);
+					d.active_scene = new_scene->id();
+					break;
 				}
 			}
 		}
-
-		update_player_controllers(d, ctx.registry());
-
-		co_await ctx.next_tick();
 	}
+
+	update_player_controllers(d, ra.registry());
+
+	return {};
 }
 
-auto gse::world_system::shutdown(shutdown_context&, data& d) -> void {
+auto gse::world_system::shutdown(data& d) -> void {
 	for (const auto& s : std::views::values(d.scenes)) {
 		if (s->active()) {
 			s->set_active(false);

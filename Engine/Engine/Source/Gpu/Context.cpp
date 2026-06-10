@@ -9,7 +9,6 @@ import :frame;
 import :transient_pool;
 import :render_graph;
 import :render_pass;
-import :bindless;
 
 import gse.vulkan;
 
@@ -19,7 +18,7 @@ import gse.concurrency;
 import gse.diag;
 import gse.log;
 
-auto gse::gpu::context::run(run_context& ctx, const window::data& window_s, data& d) -> async::task<> {
+auto gse::gpu::context::init(const shared_view<window> window_s, data& d) -> async::task<> {
 	d.device = device::create(window_s, d.validation_layers_enabled, d.device_settings);
 	d.swapchain = swap_chain::create(
 		window::viewport(window_s),
@@ -27,37 +26,42 @@ auto gse::gpu::context::run(run_context& ctx, const window::data& window_s, data
 		*d.device
 	);
 	d.frame = frame::create(*d.device, *d.swapchain);
-	d.bindless_heaps = d.device->create_bindless_heaps();
-	d.bindless_textures = std::make_unique<bindless_texture_set>(*d.bindless_heaps);
 	d.render_graph = std::make_unique<gpu::render_graph>(
 		*d.device,
 		*d.swapchain,
-		*d.frame,
-		d.bindless_textures.get(),
-		d.bindless_heaps.get()
+		*d.frame
 	);
 	d.render_graph->set_swapchain_clear(d.swapchain_clear);
 
-	while (true) {
-		for (const auto& req : ctx.read_channel<gpu_resume_request>()) {
-			if (req.handle && req.out_state) {
-				*req.out_state = &d;
-				req.handle.resume();
-			}
-		}
-		co_await ctx.next_tick();
-	}
+	return {};
 }
 
-auto gse::gpu::context::shutdown(shutdown_context&, data& d) -> void {
+auto gse::gpu::context::on_swap_chain_recreate(const shared_view<context> d, swap_chain_recreate_callback callback) -> void {
+	d.swapchain->on_recreate(std::move(callback));
+}
+
+auto gse::gpu::context::wait_idle(const data& d) -> void {
+	d.device->wait_idle();
+}
+
+auto gse::gpu::context::run(gse::context& ctx, data& d) -> async::task<> {
+	for (const auto& req : ctx.read_channel<gpu_resume_request>()) {
+		if (req.handle && req.out_state) {
+			*req.out_state = &d;
+			req.handle.resume();
+		}
+	}
+
+	return {};
+}
+
+auto gse::gpu::context::shutdown(data& d) -> void {
 	if (!d.device) {
 		return;
 	}
 
 	d.device->wait_idle();
 
-	d.bindless_textures.reset();
-	d.bindless_heaps.reset();
 	d.render_graph.reset();
 	d.frame.reset();
 	d.swapchain.reset();
@@ -65,14 +69,9 @@ auto gse::gpu::context::shutdown(shutdown_context&, data& d) -> void {
 }
 
 auto gse::gpu::context::begin_frame(data& d, window::data& window_s) -> std::expected<frame_token, frame_status> {
-	d.device->allocator().collect_garbage();
+	d.device->collect_garbage();
 
 	auto result = d.frame->begin(window_s);
-
-	if (result) {
-		d.bindless_textures->begin_frame(result->frame_index);
-		d.bindless_heaps->begin_frame();
-	}
 
 	return result;
 }
@@ -160,10 +159,3 @@ auto gse::gpu::context::execute_frame(data& d, scheduler& s) -> void {
 	});
 }
 
-auto gse::gpu::context::on_swap_chain_recreate(const data& d, swap_chain_recreate_callback callback) -> void {
-	d.swapchain->on_recreate(std::move(callback));
-}
-
-auto gse::gpu::context::wait_idle(const data& d) -> void {
-	d.device->wait_idle();
-}

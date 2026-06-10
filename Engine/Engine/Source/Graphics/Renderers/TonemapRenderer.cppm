@@ -26,20 +26,20 @@ export namespace gse::renderer::tonemap {
 			bool show_velocity = false;
 
 			gpu::shader_program pipeline;
-			gpu::bindless_sampler sampler;
-			gpu::bindless_image_view hdr_view;
-			gpu::bindless_image_view velocity_view;
+			gpu::bindless_handle sampler;
+			gpu::bindless_handle hdr_view;
+			gpu::bindless_handle velocity_view;
 		};
 
-		static auto run(
-			run_context& ctx,
-			const gpu::context::data& gpu_s,
-			const bloom::system::data& bloom_state,
+		static auto init(
+			context& ctx,
+			shared_view<gpu::context> gpu_s,
+			shared_view<bloom::system> bloom_state,
 			data& d
 		) -> async::task<>;
 
 		static auto frame(
-			const frame_context& ctx,
+			const context& ctx,
 			shared_view<gpu::context> gpu_s,
 			data& d,
 			shared_view<bloom::system> bloom_state

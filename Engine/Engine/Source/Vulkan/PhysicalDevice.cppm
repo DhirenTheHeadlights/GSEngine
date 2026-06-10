@@ -3,7 +3,7 @@ export module gse.vulkan:physical_device;
 import std;
 import vulkan;
 
-import :handles;
+import gse.gpu_backend;
 import :types;
 
 import gse.core;
@@ -27,7 +27,7 @@ export namespace gse::vulkan {
 			physical_device&&
 		) noexcept -> physical_device& = default;
 
-		[[nodiscard]] auto handle() const -> gpu::physical_device_handle;
+		[[nodiscard]] auto handle() const -> gpu::handle<gpu::physical_device>;
 
 		[[nodiscard]] auto valid() const -> bool;
 
@@ -52,8 +52,8 @@ gse::vulkan::physical_device::physical_device(vk::raii::PhysicalDevice&& device)
 	: m_physical_device(std::move(device)) {
 }
 
-auto gse::vulkan::physical_device::handle() const -> gpu::physical_device_handle {
-	return std::bit_cast<gpu::physical_device_handle>(*m_physical_device);
+auto gse::vulkan::physical_device::handle() const -> gpu::handle<gpu::physical_device> {
+	return std::bit_cast<gpu::handle<gpu::physical_device>>(*m_physical_device);
 }
 
 auto gse::vulkan::physical_device::valid() const -> bool {

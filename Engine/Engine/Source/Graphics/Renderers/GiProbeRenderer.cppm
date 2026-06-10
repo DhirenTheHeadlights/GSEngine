@@ -56,23 +56,23 @@ export namespace gse::renderer::gi_probe {
 			length trace_t_max = meters(50.0f);
 
 			gpu::shader_program update_pipeline;
-			per_frame_resource<gpu::bindless_tlas_view> tlas_views;
+			per_frame_resource<gpu::bindless_handle> tlas_views;
 			std::uint32_t frame_counter = 0;
 
-			[[= gse::shared]] gpu::bindless_image irradiance_atlas;
+			[[= gse::shared]] gpu::image irradiance_atlas;
 			[[= gse::shared]] vec3<position> origin_world{};
 		};
 
-		static auto run(
-			run_context& ctx,
-			const gpu::context::data& gpu_s,
-			const rt_shadow::system::data& rt_state,
-			const geometry_collector::system::data& gc_state,
+		static auto init(
+			context& ctx,
+			shared_view<gpu::context> gpu_s,
+			shared_view<rt_shadow::system> rt_state,
+			shared_view<geometry_collector::system> gc_state,
 			data& d
 		) -> async::task<>;
 
 		static auto frame(
-			frame_context& ctx,
+			context& ctx,
 			shared_view<gpu::context> gpu_s,
 			data& d,
 			shared_view<camera::system> cam_state,

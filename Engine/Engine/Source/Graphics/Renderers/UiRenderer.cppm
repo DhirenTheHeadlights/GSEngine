@@ -115,7 +115,7 @@ namespace gse::renderer::ui {
 
 export namespace gse::renderer::ui {
 	struct frame_resources {
-		gpu::bindless_buffer vertex_buffer;
+		gpu::buffer vertex_buffer;
 		gpu::buffer index_buffer;
 	};
 
@@ -128,15 +128,20 @@ export namespace gse::renderer::ui {
 			triple_buffer<gpu_frame_data> buffered_frames;
 		};
 
+		static auto init(
+			shared_view<gpu::context> gpu_s,
+			data& d
+		) -> async::task<>;
+
 		static auto run(
-			run_context& ctx,
-			const gpu::context::data& gpu_s,
-			const asset::data& assets_s,
+			context& ctx,
+			shared_view<gpu::context> gpu_s,
+			shared_view<asset::registry> assets_s,
 			data& d
 		) -> async::task<>;
 
 		static auto frame(
-			frame_context& ctx,
+			context& ctx,
 			shared_view<gpu::context> gpu_s,
 			data& d,
 			shared_view<scene_snapshot::system> snapshot_s

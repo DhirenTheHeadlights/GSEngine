@@ -239,6 +239,8 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 	const auto num_bodies = static_cast<std::uint32_t>(m_bodies.size());
 	const time_squared h_squared = dt * dt;
 
+	m_graph.sort_contacts_canonical();
+
 	{
 		trace::scope_guard sg{ trace_id<"vbd::coloring">() };
 		std::inplace_vector<bool, limits.max_bodies> locked;
