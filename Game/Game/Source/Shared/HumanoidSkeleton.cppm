@@ -306,7 +306,6 @@ auto gs::humanoid_rig_default() -> humanoid_rig {
 
 	const auto knee_limits = std::make_pair(gse::degrees(-150.f), gse::degrees(5.f));
 	const auto ankle_limits = std::make_pair(gse::degrees(-50.f), gse::degrees(30.f));
-	const auto shoulder_limits = std::make_pair(gse::degrees(-120.f), gse::degrees(120.f));
 	const auto elbow_limits = std::make_pair(gse::degrees(-100.f), gse::degrees(100.f));
 
 	const auto hip_rest_stiffness = gse::vec3<gse::angular_stiffness>(
@@ -327,16 +326,14 @@ auto gs::humanoid_rig_default() -> humanoid_rig {
 		gse::vec3<gse::displacement>(gse::meters(0.f), torso.size.y() * 0.5f, gse::meters(0.f)),
 		gse::vec3<gse::displacement>(gse::meters(0.f), -head_radius, gse::meters(0.f))
 	);
-	add_hinge(
+	add_ball(
 		1,
 		3,
 		gse::vec3<gse::displacement>(-torso.size.x() * 0.5f, shoulder_offset_y,
 									 gse::meters(0.f)),
 		gse::vec3<gse::displacement>(upper_arm.size.x() * 0.5f,
 									 gse::meters(0.f),
-									 gse::meters(0.f)),
-		z_axis,
-		shoulder_limits
+									 gse::meters(0.f))
 	);
 	add_hinge(
 		3,
@@ -357,15 +354,13 @@ auto gs::humanoid_rig_default() -> humanoid_rig {
 									 gse::meters(0.f)),
 		gse::vec3<gse::displacement>(hand.size.x() * 0.5f, gse::meters(0.f), gse::meters(0.f))
 	);
-	add_hinge(
+	add_ball(
 		1,
 		6,
 		gse::vec3<gse::displacement>(torso.size.x() * 0.5f, shoulder_offset_y, gse::meters(0.f)),
 		gse::vec3<gse::displacement>(-upper_arm.size.x() * 0.5f,
 									 gse::meters(0.f),
-									 gse::meters(0.f)),
-		z_axis,
-		shoulder_limits
+									 gse::meters(0.f))
 	);
 	add_hinge(
 		6,
@@ -576,13 +571,46 @@ auto gs::spawn_humanoid(gse::scene& s, const gse::vec3<gse::position>& root_posi
 
 	struct arm_hold {
 		std::size_t joint_index;
-		gse::angle target;
+		gse::vec3<gse::angle> target;
+		gse::vec3<gse::angular_stiffness> stiffness;
 	};
-	constexpr std::array arm_holds = {
-		arm_hold{ .joint_index = 2, .target = gse::radians(1.45f) },
-		arm_hold{ .joint_index = 3, .target = gse::radians(0.f) },
-		arm_hold{ .joint_index = 5, .target = gse::radians(-1.45f) },
-		arm_hold{ .joint_index = 6, .target = gse::radians(0.f) },
+	const std::array arm_holds = {
+		arm_hold{
+			.joint_index = 2,
+			.target = gse::vec3<gse::angle>(gse::radians(0.f), gse::radians(0.f), gse::radians(1.45f)),
+			.stiffness = gse::vec3<gse::angular_stiffness>(
+				gse::newton_meters_per_radian(40.f),
+				gse::newton_meters_per_radian(30.f),
+				gse::newton_meters_per_radian(60.f)
+			),
+		},
+		arm_hold{
+			.joint_index = 3,
+			.target = gse::vec3<gse::angle>(gse::radians(0.f), gse::radians(0.f), gse::radians(0.f)),
+			.stiffness = gse::vec3<gse::angular_stiffness>(
+				gse::newton_meters_per_radian(60.f),
+				gse::newton_meters_per_radian(0.f),
+				gse::newton_meters_per_radian(0.f)
+			),
+		},
+		arm_hold{
+			.joint_index = 5,
+			.target = gse::vec3<gse::angle>(gse::radians(0.f), gse::radians(0.f), gse::radians(-1.45f)),
+			.stiffness = gse::vec3<gse::angular_stiffness>(
+				gse::newton_meters_per_radian(40.f),
+				gse::newton_meters_per_radian(30.f),
+				gse::newton_meters_per_radian(60.f)
+			),
+		},
+		arm_hold{
+			.joint_index = 6,
+			.target = gse::vec3<gse::angle>(gse::radians(0.f), gse::radians(0.f), gse::radians(0.f)),
+			.stiffness = gse::vec3<gse::angular_stiffness>(
+				gse::newton_meters_per_radian(60.f),
+				gse::newton_meters_per_radian(0.f),
+				gse::newton_meters_per_radian(0.f)
+			),
+		},
 	};
 	for (const auto& hold : arm_holds) {
 		if (hold.joint_index >= handle.joint_ids.size()) {
@@ -591,12 +619,8 @@ auto gs::spawn_humanoid(gse::scene& s, const gse::vec3<gse::position>& root_posi
 		s.registry().add_component<gse::physics::joint_drive_component>(
 			handle.joint_ids[hold.joint_index],
 			{
-				.target = gse::vec3<gse::angle>(hold.target, gse::radians(0.f), gse::radians(0.f)),
-				.stiffness = gse::vec3<gse::angular_stiffness>(
-					gse::newton_meters_per_radian(60.f),
-					gse::newton_meters_per_radian(0.f),
-					gse::newton_meters_per_radian(0.f)
-				),
+				.target = hold.target,
+				.stiffness = hold.stiffness,
 				.damping = 6.f,
 				.max_torque = gse::newton_meters(50.f),
 				.enabled = true,

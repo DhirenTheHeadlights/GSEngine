@@ -17,7 +17,7 @@ export namespace gs::locomotion {
 	struct smoke_config {
 		[[= gse::at_least<0>{}]] int trials = 5;
 		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time duration = gse::seconds(20.f);
-		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time warmup = gse::seconds(1.0f);
+		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time warmup = gse::seconds(1.5f);
 		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time stop_after = gse::seconds(13.f);
 		[[= gse::within<-1.f, 1.f>{}]] float forward = 1.f;
 	};
