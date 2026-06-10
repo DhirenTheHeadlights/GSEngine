@@ -275,6 +275,18 @@ export namespace gse::gpu {
 		fifo_relaxed,
 	};
 
+	enum class present_stage_flag : std::uint32_t {
+		queue_operations_end = 1u << 0,
+		request_dequeued = 1u << 1,
+		image_first_pixel_out = 1u << 2,
+		image_first_pixel_visible = 1u << 3,
+	};
+
+	using present_stage_flags = gse::flags<present_stage_flag>;
+	constexpr auto operator|(present_stage_flag a, present_stage_flag b) -> present_stage_flags {
+		return present_stage_flags(a) | b;
+	}
+
 	enum class load_op : std::uint8_t {
 		load,
 		clear,

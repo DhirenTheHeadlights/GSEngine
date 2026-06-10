@@ -11,6 +11,7 @@ import :physical_device;
 import gse.core;
 import gse.log;
 import gse.assert;
+import gse.math;
 
 export namespace gse::vulkan {
 	struct queue_family {
@@ -113,9 +114,11 @@ namespace gse::vulkan {
 		std::vector<vk::SwapchainKHR> swapchains;
 		std::vector<vk::PresentModeKHR> present_modes;
 		std::vector<vk::Fence> release_fences;
+		std::vector<vk::PresentTimingInfoEXT> timing_infos;
 		std::optional<vk::SwapchainPresentModeInfoEXT> mode_info;
 		std::optional<vk::SwapchainPresentFenceInfoEXT> fence_info;
-		std::optional<vk::PresentIdKHR> present_id_info;
+		std::optional<vk::PresentId2KHR> present_id_info;
+		std::optional<vk::PresentTimingsInfoEXT> timing_info;
 	};
 
 	auto build_vk_present_info(
@@ -202,12 +205,33 @@ auto gse::vulkan::build_vk_present_info(const gpu::present_info& info, present_s
 		pnext_head = &*scratch.fence_info;
 	}
 	if (!info.present_ids.empty()) {
-		scratch.present_id_info = vk::PresentIdKHR{
+		scratch.present_id_info = vk::PresentId2KHR{
 			.pNext = pnext_head,
 			.swapchainCount = static_cast<std::uint32_t>(info.present_ids.size()),
 			.pPresentIds = info.present_ids.data(),
 		};
 		pnext_head = &*scratch.present_id_info;
+	}
+	if (!info.target_present_times.empty()) {
+		const auto stage_queries = to_vk(info.present_stage_queries);
+		scratch.timing_infos.reserve(info.target_present_times.size());
+		for (std::size_t i = 0; i < info.target_present_times.size(); ++i) {
+			scratch.timing_infos.push_back(
+				vk::PresentTimingInfoEXT{
+					.flags = vk::PresentTimingInfoFlagBitsEXT::ePresentAtRelativeTime,
+					.targetTime = 0,
+					.timeDomainId = info.time_domain_id,
+					.presentStageQueries = stage_queries,
+					.targetTimeDomainPresentStage = {},
+				}
+			);
+		}
+		scratch.timing_info = vk::PresentTimingsInfoEXT{
+			.pNext = pnext_head,
+			.swapchainCount = static_cast<std::uint32_t>(scratch.timing_infos.size()),
+			.pTimingInfos = scratch.timing_infos.data(),
+		};
+		pnext_head = &*scratch.timing_info;
 	}
 
 	return vk::PresentInfoKHR{
@@ -313,5 +337,9 @@ auto gse::vulkan::queue::present(const gpu::present_info& info) -> gpu::result {
 	std::lock_guard lock(*m_mutex);
 	present_scratch scratch;
 	const auto vk_info = build_vk_present_info(info, scratch);
-	return from_vk(std::bit_cast<vk::Queue>(m_present).presentKHR(vk_info));
+	const auto vk_result = std::bit_cast<vk::Queue>(m_present).presentKHR(vk_info);
+	if (vk_result != vk::Result::eSuccess && vk_result != vk::Result::eSuboptimalKHR && vk_result != vk::Result::eErrorOutOfDateKHR) {
+		log::println(log::level::error, log::category::vulkan, "vkQueuePresentKHR returned {}", vk::to_string(vk_result));
+	}
+	return from_vk(vk_result);
 }

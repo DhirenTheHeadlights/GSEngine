@@ -11,6 +11,10 @@ export namespace gse::system_clock {
 
 	auto update() -> void;
 
+	auto submit_display_interval(
+		internal_time dt
+	) -> void;
+
 	template <is_quantity Q = default_time>
 	auto dt() -> Q;
 
@@ -42,6 +46,7 @@ namespace gse::system_clock {
 	internal_time frame_rate_update_time{};
 	internal_time fixed_accumulator{};
 	std::optional<int> fixed_step_override;
+	std::optional<internal_time> external_display_interval;
 
 	constexpr internal_time fps_report_interval = seconds(1.0);
 	constexpr internal_time const_update_time = milliseconds(16.6667);
@@ -66,7 +71,14 @@ auto gse::system_clock::update() -> void {
 		return;
 	}
 
-	delta_time = gse::quantity_cast<internal_time>(dt_clock.reset<double>());
+	const auto wall_delta = gse::quantity_cast<internal_time>(dt_clock.reset<double>());
+	if (external_display_interval.has_value()) {
+		delta_time = *external_display_interval;
+		external_display_interval.reset();
+	}
+	else {
+		delta_time = wall_delta;
+	}
 	update_frame_rate(delta_time);
 
 	fixed_accumulator += std::min(delta_time, max_render_step);
@@ -118,6 +130,10 @@ auto gse::system_clock::fixed_steps_this_frame() -> int {
 
 auto gse::system_clock::set_fixed_step_override(const std::optional<int> steps) -> void {
 	fixed_step_override = steps;
+}
+
+auto gse::system_clock::submit_display_interval(const internal_time dt) -> void {
+	external_display_interval = dt;
 }
 
 auto gse::system_clock::fps() -> std::uint32_t {

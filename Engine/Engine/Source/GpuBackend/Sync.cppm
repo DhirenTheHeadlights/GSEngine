@@ -5,6 +5,8 @@ import std;
 import :core;
 import :enums;
 
+import gse.math;
+
 export namespace gse::gpu {
 	struct queue_progress {
 		queue_id queue;
@@ -46,5 +48,14 @@ export namespace gse::gpu {
 		std::span<const present_mode> present_modes;
 		std::span<const gpu::handle<gpu::fence>> release_fences;
 		std::span<const std::uint64_t> present_ids;
+		std::span<const time_t<std::uint64_t>> target_present_times;
+		present_stage_flags present_stage_queries;
+		std::uint64_t time_domain_id = 0;
+	};
+
+	struct past_present_timing {
+		std::uint64_t present_id = 0;
+		time_t<std::uint64_t> first_pixel_out{};
+		bool complete = false;
 	};
 }

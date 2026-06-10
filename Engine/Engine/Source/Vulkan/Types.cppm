@@ -163,6 +163,10 @@ export namespace gse::vulkan {
 		gpu::pipeline_statistic_flags fls
 	) -> vk::QueryPipelineStatisticFlags;
 
+	auto to_vk(
+		gpu::present_stage_flags fls
+	) -> vk::PresentStageFlagsEXT;
+
 	auto format_value(
 		gpu::image_format f
 	) -> gpu::image_format_value;
@@ -1068,6 +1072,23 @@ auto gse::vulkan::to_vk(const gpu::acceleration_structure_build_range_info& r) -
 		.firstVertex = r.first_vertex,
 		.transformOffset = r.transform_offset,
 	};
+}
+
+auto gse::vulkan::to_vk(const gpu::present_stage_flags fls) -> vk::PresentStageFlagsEXT {
+	vk::PresentStageFlagsEXT result{};
+	if (fls.test(gpu::present_stage_flag::queue_operations_end)) {
+		result |= vk::PresentStageFlagBitsEXT::eQueueOperationsEnd;
+	}
+	if (fls.test(gpu::present_stage_flag::request_dequeued)) {
+		result |= vk::PresentStageFlagBitsEXT::eRequestDequeued;
+	}
+	if (fls.test(gpu::present_stage_flag::image_first_pixel_out)) {
+		result |= vk::PresentStageFlagBitsEXT::eImageFirstPixelOut;
+	}
+	if (fls.test(gpu::present_stage_flag::image_first_pixel_visible)) {
+		result |= vk::PresentStageFlagBitsEXT::eImageFirstPixelVisible;
+	}
+	return result;
 }
 
 auto gse::vulkan::from_vk(const vk::Result r) -> gpu::result {
