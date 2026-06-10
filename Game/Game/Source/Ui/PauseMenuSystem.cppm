@@ -14,21 +14,21 @@ export namespace gs {
 		};
 
 		static auto run(
-			gse::run_context& ctx,
+			gse::context& ctx,
 			data& d,
-			const gse::input::system::data& input_d,
-			const gse::gui::system::data& gui_d,
-			const gse::world_system::data& world_d,
-			const gse::network::data& net_d,
+			gse::shared_view<gse::input::system> input_d,
+			gse::shared_view<gse::gui::system> gui_d,
+			gse::shared_view<gse::world_system> world_d,
+			gse::shared_view<gse::network::data> net_d,
 			const gse::save::registry& save_reg
 		) -> gse::async::task<>;
 	};
 }
 
-auto gs::pause_menu_system::run(gse::run_context& ctx, data& d, const gse::input::system::data& input_d, const gse::gui::system::data& gui_d, const gse::world_system::data& world_d, const gse::network::data& net_d, const gse::save::registry& save_reg) -> gse::async::task<> {
+auto gs::pause_menu_system::run(gse::context& ctx, data& d, const gse::shared_view<gse::input::system> input_d, const gse::shared_view<gse::gui::system> gui_d, const gse::shared_view<gse::world_system> world_d, const gse::shared_view<gse::network::data> net_d, const gse::save::registry& save_reg) -> gse::async::task<> {
 	const auto push_main_menu = [&] {
 		ctx.channels.push<gse::gui::push_screen_request>({
-			.factory = [&world_d, &net_d, &save_reg, channels = ctx.channels] {
+			.factory = [world_d, net_d, &save_reg, channels = ctx.channels] {
 				return std::make_unique<main_menu_screen>(world_d, net_d, save_reg, channels);
 			},
 		});

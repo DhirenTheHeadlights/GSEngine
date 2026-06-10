@@ -64,15 +64,15 @@ export namespace gse::renderer::gi_probe {
 		};
 
 		static auto init(
-			run_context& ctx,
-			const gpu::context::data& gpu_s,
-			const rt_shadow::system::data& rt_state,
-			const geometry_collector::system::data& gc_state,
+			context& ctx,
+			shared_view<gpu::context> gpu_s,
+			shared_view<rt_shadow::system> rt_state,
+			shared_view<geometry_collector::system> gc_state,
 			data& d
 		) -> async::task<>;
 
 		static auto frame(
-			frame_context& ctx,
+			context& ctx,
 			shared_view<gpu::context> gpu_s,
 			data& d,
 			shared_view<camera::system> cam_state,

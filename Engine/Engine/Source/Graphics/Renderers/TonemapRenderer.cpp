@@ -57,12 +57,12 @@ namespace gse::renderer::tonemap {
 	>;
 
 	auto rebind_views(
-		const gpu::context::data& gpu_s,
+		shared_view<gpu::context> gpu_s,
 		system::data& d
 	) -> void;
 }
 
-auto gse::renderer::tonemap::rebind_views(const gpu::context::data& gpu_s, system::data& d) -> void {
+auto gse::renderer::tonemap::rebind_views(const shared_view<gpu::context> gpu_s, system::data& d) -> void {
 	auto& hdr = gpu_s.render_graph->framebuffer_image<targets::post_taa_color>();
 	if (hdr.handle()) {
 		if (!d.hdr_view.valid()) {
@@ -79,7 +79,7 @@ auto gse::renderer::tonemap::rebind_views(const gpu::context::data& gpu_s, syste
 	}
 }
 
-auto gse::renderer::tonemap::system::init(run_context& ctx, const gpu::context::data& gpu_s, const bloom::system::data& bloom_state, data& d) -> async::task<> {
+auto gse::renderer::tonemap::system::init(context& ctx, const shared_view<gpu::context> gpu_s, const shared_view<bloom::system> bloom_state, data& d) -> async::task<> {
 	d.pipeline = gpu::build_graphics_program(*gpu_s.device, entry::pod);
 
 	d.sampler = gpu_s.device->register_sampler(
@@ -96,7 +96,7 @@ auto gse::renderer::tonemap::system::init(run_context& ctx, const gpu::context::
 
 	gpu::context::on_swap_chain_recreate(
 		gpu_s,
-		[&gpu_s, &d]() {
+		[gpu_s, &d]() {
 			rebind_views(gpu_s, d);
 		}
 	);
@@ -104,7 +104,7 @@ auto gse::renderer::tonemap::system::init(run_context& ctx, const gpu::context::
 	return {};
 }
 
-auto gse::renderer::tonemap::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<bloom::system> bloom_state) -> async::task<> {
+auto gse::renderer::tonemap::system::frame(const context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<bloom::system> bloom_state) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}

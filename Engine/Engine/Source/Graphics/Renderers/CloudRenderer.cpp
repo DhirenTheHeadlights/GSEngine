@@ -144,7 +144,7 @@ namespace gse::renderer::cloud {
 	) -> vec2u;
 
 	auto recreate_cloud_target(
-		const gpu::context::data& gpu_s,
+		shared_view<gpu::context> gpu_s,
 		system::data& d
 	) -> void;
 
@@ -159,7 +159,7 @@ auto gse::renderer::cloud::compute_cloud_target_extent(const vec2u screen_extent
 	return vec2u{ w, h };
 }
 
-auto gse::renderer::cloud::recreate_cloud_target(const gpu::context::data& gpu_s, system::data& d) -> void {
+auto gse::renderer::cloud::recreate_cloud_target(const shared_view<gpu::context> gpu_s, system::data& d) -> void {
 	d.cloud_target_extent = compute_cloud_target_extent(gpu_s.render_graph->extent());
 	d.cloud_target = gpu_s.device->create_image(
 		{
@@ -193,7 +193,7 @@ auto gse::renderer::cloud::build_cloud_data(const system::data& d) -> cloud_data
 	};
 }
 
-auto gse::renderer::cloud::system::init(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
+auto gse::renderer::cloud::system::init(context& ctx, const shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
 	d.shape_bake_pipeline = gpu::build_compute_program(*gpu_s.device, shape_bake_entry::pod);
 	d.detail_bake_pipeline = gpu::build_compute_program(*gpu_s.device, detail_bake_entry::pod);
 	d.raymarch_pipeline = gpu::build_compute_program(*gpu_s.device, raymarch_entry::pod);
@@ -242,7 +242,7 @@ auto gse::renderer::cloud::system::init(run_context& ctx, const gpu::context::da
 
 	gpu::context::on_swap_chain_recreate(
 		gpu_s,
-		[&gpu_s, &d]() {
+		[gpu_s, &d]() {
 			recreate_cloud_target(gpu_s, d);
 		}
 	);
@@ -250,7 +250,7 @@ auto gse::renderer::cloud::system::init(run_context& ctx, const gpu::context::da
 	return {};
 }
 
-auto gse::renderer::cloud::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<atmosphere::system> atm_state, shared_view<camera::system> cam_state) -> async::task<> {
+auto gse::renderer::cloud::system::frame(const context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<atmosphere::system> atm_state, shared_view<camera::system> cam_state) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}

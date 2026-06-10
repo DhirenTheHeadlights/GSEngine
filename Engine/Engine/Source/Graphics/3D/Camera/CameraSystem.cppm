@@ -9,6 +9,7 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+import gse.network;
 import gse.os;
 import gse.assets;
 import gse.gpu;
@@ -33,7 +34,7 @@ export namespace gse::camera {
 			time blend_duration{};
 			bool blending = false;
 
-			id active_controller_entity{};
+			[[= gse::shared]] id active_controller_entity{};
 			int active_priority = -1;
 
 			angle yaw = degrees(0.f);
@@ -47,7 +48,7 @@ export namespace gse::camera {
 
 			std::uint32_t jitter_index = 1;
 			vec2f viewport{ 1920.f, 1080.f };
-			bool ui_focus = false;
+			[[= gse::shared]] bool ui_focus = false;
 		};
 
 		static auto init(
@@ -55,7 +56,7 @@ export namespace gse::camera {
 		) -> async::task<>;
 
 		static auto run(
-			run_context& ctx,
+			context& ctx,
 			data& d,
 			read<follow_component> cameras
 		) -> async::task<>;

@@ -324,37 +324,19 @@ Virtual functions cannot use deducing `this` — keep those as regular const/non
 
 ## Mutation and `mutable`
 
-Do not use `mutable` to work around `const` on system state or engine objects. If something needs to be mutated, use the engine's deferred mutation mechanism (`defer`) to schedule the write at the correct point in the frame. `mutable` hides the mutation from the type system and bypasses the engine's ownership and scheduling guarantees.
+Do not use `mutable` to work around `const` on system state or engine objects. Another system's state is read-only by design (`shared_view<X>`); if something needs to be mutated, push a channel request and let the owning system apply the write in its own `run()`. `mutable` hides the mutation from the type system and bypasses the engine's ownership and scheduling guarantees.
 
 ```cpp
-// correct — schedule the write through the engine
-defer([value](my_system_state& s) {
-    s.some_field = value;
+// correct — request the write through the owning system's channel
+ctx.channels.push<set_some_field_request>({
+    .value = value,
 });
 
 // wrong — punches a hole in const to sneak in a write
-mutable int m_some_field = 0;  // in a system state accessed via const&
+mutable int m_some_field = 0;  // in a system state accessed via shared_view
 ```
 
 Enforced by `clang-tidy` (`gse-no-mutable`).
-
----
-
-## `defer` — State Deduction
-
-`defer` deduces the system state type from the lambda's first parameter. Do not pass it as an explicit template argument:
-
-```cpp
-// correct
-defer([handle](state& s) {
-    s.resume(handle);
-});
-
-// wrong
-defer<state>([handle](state& s) {
-    s.resume(handle);
-});
-```
 
 ---
 

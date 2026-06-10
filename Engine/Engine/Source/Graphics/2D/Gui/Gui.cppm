@@ -60,7 +60,8 @@ export namespace gse::gui {
 			gse::settings::choice<int> font;
 
 			[[
-				= gse::settings::describe<"Show developer overlays (Test, Profiler, Physics Debug).">{}
+				= gse::settings::describe<"Show developer overlays (Test, Profiler, Physics Debug).">{},
+				= gse::shared
 			]]
 			bool show_dev_overlays = false;
 
@@ -68,11 +69,11 @@ export namespace gse::gui {
 			bool reserve_top_bar = false;
 			std::uint32_t next_z_order = 1;
 
-			id_mapped_collection<menu> menus;
+			[[= gse::shared]] id_mapped_collection<menu> menus;
 			menu* current_menu = nullptr;
 
 			[[= gse::shared]] resource::handle<gse::font> gui_font;
-			resource::handle<texture> blank_texture;
+			[[= gse::shared]] resource::handle<texture> blank_texture;
 
 			std::optional<dock::space> active_dock_space;
 			gui::state current_state{ states::idle{} };
@@ -104,7 +105,7 @@ export namespace gse::gui {
 
 			std::unique_ptr<ids::scope> current_scope;
 
-			menu_stack_state menu_stack;
+			[[= gse::shared]] menu_stack_state menu_stack;
 			std::optional<menu> screen_surface;
 			bool manual_cursor = false;
 
@@ -114,23 +115,22 @@ export namespace gse::gui {
 		};
 
 		static auto init(
-			run_context& ctx,
-			const window::data& window_s,
-			const asset::data& assets_s,
+			context& ctx,
+			shared_view<window> window_s,
+			shared_view<asset::registry> assets_s,
 			data& d
 		) -> async::task<>;
 
 		static auto run(
-			run_context& ctx,
-			const window::data& window_s,
-			const asset::data& assets_s,
-			const gse::input::system::data& input_state,
+			context& ctx,
+			shared_view<window> window_s,
+			shared_view<asset::registry> assets_s,
+			shared_view<gse::input::system> input_state,
 			const save::registry& save_reg,
 			data& d
 		) -> async::task<>;
 
 		static auto shutdown(
-			shutdown_context& phase,
 			data& d
 		) -> void;
 
@@ -140,17 +140,17 @@ export namespace gse::gui {
 
 	private:
 		static auto init_body(
-			run_context& ctx,
-			const window::data& window_s,
-			asset::data& assets,
+			context& ctx,
+			shared_view<window> window_s,
+			shared_view<asset::registry> assets,
 			data& d
 		) -> async::task<>;
 
 		static auto update_body(
-			run_context& ctx,
-			const window::data& window_s,
-			const asset::data& assets_s,
-			const gse::input::system::data& input_state,
+			context& ctx,
+			shared_view<window> window_s,
+			shared_view<asset::registry> assets_s,
+			shared_view<gse::input::system> input_state,
 			const save::registry& save_reg,
 			data& d
 		) -> async::task<>;
@@ -166,7 +166,7 @@ export namespace gse::gui {
 		static auto handle_dragging_state(
 			data& d,
 			const states::dragging& current,
-			const window::data& window_s,
+			shared_view<window> window_s,
 			vec2f mouse_position,
 			bool mouse_held
 		) -> gui::state;
@@ -177,7 +177,7 @@ export namespace gse::gui {
 			vec2f mouse_position,
 			bool mouse_held,
 			const style& style,
-			const window::data& window_s
+			shared_view<window> window_s
 		) -> gui::state;
 
 		static auto handle_resizing_divider_state(
@@ -212,7 +212,7 @@ export namespace gse::gui {
 
 		static auto usable_screen_rect(
 			data& d,
-			const window::data& window_s
+			shared_view<window> window_s
 		) -> ui_rect;
 
 		static auto calculate_display_rect(
@@ -228,7 +228,7 @@ export namespace gse::gui {
 
 		static auto reload_font(
 			data& d,
-			const asset::data& assets
+			shared_view<asset::registry> assets
 		) -> void;
 
 		static auto begin_menu(

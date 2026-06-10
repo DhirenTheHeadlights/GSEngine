@@ -39,7 +39,7 @@ export namespace gse::gpu {
 			[[= gse::shared]] std::unique_ptr<swap_chain> swapchain;
 			[[= gse::shared]] std::unique_ptr<gpu::frame> frame;
 			[[= gse::shared]] std::unique_ptr<gpu::render_graph> render_graph;
-			[[= gse::shared]] concurrency::frame_scheduler scheduler;
+			concurrency::frame_scheduler scheduler;
 
 			gpu::color_clear swapchain_clear{};
 		};
@@ -47,17 +47,16 @@ export namespace gse::gpu {
 		using swap_chain_recreate_callback = std::function<void()>;
 
 		static auto init(
-			const window::data& window_s,
+			shared_view<window> window_s,
 			data& d
 		) -> async::task<>;
 
 		static auto run(
-			run_context& ctx,
+			gse::context& ctx,
 			data& d
 		) -> async::task<>;
 
 		static auto shutdown(
-			shutdown_context& phase,
 			data& d
 		) -> void;
 
@@ -79,7 +78,7 @@ export namespace gse::gpu {
 		) -> void;
 
 		static auto on_swap_chain_recreate(
-			const data& d,
+			shared_view<context> d,
 			swap_chain_recreate_callback callback
 		) -> void;
 

@@ -9,15 +9,15 @@ import gse.time;
 import gse.math;
 import gse.diag;
 
-import :phase_context;
 import :registries;
-import :run_context;
+import :context;
 import :settings;
-import :frame_context;
+import :context;
 import :system_node;
 import :system_dispatch;
 import :registry;
 import :task_graph;
+import :traits;
 import :access_token;
 
 namespace gse {
@@ -66,10 +66,6 @@ export namespace gse {
 			registry& reg
 		) -> void;
 
-		auto set_advance_hook(
-			std::function<void(id system_id, std::string_view phase)> fn
-		) -> void;
-
 		auto set_settings_register_hook(
 			std::function<void(settings::register_settings_type)> fn
 		) -> void;
@@ -109,11 +105,6 @@ export namespace gse {
 
 		template <typename S, typename... Args>
 		auto add_system(
-			Args&&... args
-		) -> system_handle<S>;
-
-		template <typename S, typename... Args>
-		auto ensure_system(
 			Args&&... args
 		) -> system_handle<S>;
 
@@ -162,6 +153,8 @@ export namespace gse {
 
 		auto wire_component_deps() -> void;
 
+		auto promote_optional_deps() -> void;
+
 		auto check_state_dep_cycles() -> void;
 
 		auto check_closed_dep_graph() -> void;
@@ -177,10 +170,14 @@ export namespace gse {
 		) -> async::task<>;
 
 		auto run_node_update(
-			run_context& ctx,
+			context& ctx,
 			system_node& node
 		) -> async::task<>;
 
+		auto run_node_frame(
+			context& ctx,
+			system_node& node
+		) -> async::task<>;
 
 		[[nodiscard]] auto dep_init_done(
 			id dep
@@ -215,7 +212,6 @@ export namespace gse {
 		std::vector<system_node> m_hot_add_queue;
 		mutable std::mutex m_hot_add_mutex;
 		registry* m_registry = nullptr;
-		std::function<void(id, std::string_view)> m_advance_hook;
 		std::function<void(settings::register_settings_type)> m_settings_register_hook;
 		task_graph m_update_graph;
 		task_graph m_frame_graph;
@@ -274,17 +270,6 @@ template <typename T>
 requires gse::is_same_frame_channel_v<T>
 auto gse::scheduler::drain_channel() -> std::vector<T> {
 	return m_channels_store.template drain<T>();
-}
-
-template <typename S, typename... Args>
-auto gse::scheduler::ensure_system(Args&&... args) -> system_handle<S> {
-	using state_t = state_of_t<S>;
-	if (auto* existing = try_state_of<state_t>()) {
-		system_handle<S> h;
-		h.m_state = existing;
-		return h;
-	}
-	return add_system<S>(std::forward<Args>(args)...);
 }
 
 template <typename S, typename... Args>

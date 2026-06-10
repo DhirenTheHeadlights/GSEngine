@@ -87,26 +87,29 @@ export namespace gse::renderer::forward {
 		};
 
 		static auto init(
-			run_context& ctx,
-			const gpu::context::data& gpu_s,
-			const asset::data& assets_s,
-			const rt_shadow::system::data& rt_state,
-			const light_culling::system::data& lc_r,
-			const atmosphere::system::data& atm_state,
-			const gi_probe::system::data& gi_state,
-			const geometry_collector::system::data& gc_state,
+			context& ctx,
+			shared_view<gpu::context> gpu_s,
+			shared_view<asset::registry> assets_s,
+			shared_view<rt_shadow::system> rt_state,
+			shared_view<light_culling::system> lc_r,
+			shared_view<atmosphere::system> atm_state,
+			shared_view<gi_probe::system> gi_state,
+			shared_view<geometry_collector::system> gc_state,
 			data& d
 		) -> async::task<>;
 
 		static auto frame(
-			frame_context& ctx,
+			context& ctx,
 			shared_view<gpu::context> gpu_s,
 			data& d,
 			shared_view<camera::system> cam_state,
 			shared_view<geometry_collector::system> gc_r,
 			shared_view<light_culling::system> lc_r,
 			shared_view<atmosphere::system> atm_state,
-			shared_view<gi_probe::system> gi_state
+			shared_view<gi_probe::system> gi_state,
+			read<directional_light_component> dir_lights,
+			read<spot_light_component> spot_lights,
+			read<point_light_component> point_lights
 		) -> async::task<>;
 	};
 }

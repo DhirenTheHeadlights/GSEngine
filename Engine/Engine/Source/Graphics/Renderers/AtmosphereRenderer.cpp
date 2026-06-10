@@ -161,7 +161,7 @@ namespace gse::renderer::atmosphere {
 	) -> vec3u;
 
 	auto recreate_ap_volume(
-		const gpu::context::data& gpu_s,
+		shared_view<gpu::context> gpu_s,
 		system::data& d
 	) -> void;
 
@@ -183,7 +183,7 @@ auto gse::renderer::atmosphere::compute_ap_volume_extent(const vec2u screen_exte
 	return vec3u{ x, y, base };
 }
 
-auto gse::renderer::atmosphere::recreate_ap_volume(const gpu::context::data& gpu_s, system::data& d) -> void {
+auto gse::renderer::atmosphere::recreate_ap_volume(const shared_view<gpu::context> gpu_s, system::data& d) -> void {
 	d.ap_volume_extent = compute_ap_volume_extent(gpu_s.render_graph->extent());
 	d.ap_volume = gpu_s.device->create_image(
 		{
@@ -224,7 +224,7 @@ auto gse::renderer::atmosphere::build_atmosphere_data(const system::data& d) -> 
 	};
 }
 
-auto gse::renderer::atmosphere::system::init(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
+auto gse::renderer::atmosphere::system::init(context& ctx, const shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
 	d.transmittance_pipeline = gpu::build_compute_program(*gpu_s.device,
 														  transmittance_entry::pod);
 	d.multiscatter_pipeline = gpu::build_compute_program(*gpu_s.device, multiscatter_entry::pod);
@@ -283,7 +283,7 @@ auto gse::renderer::atmosphere::system::init(run_context& ctx, const gpu::contex
 
 	gpu::context::on_swap_chain_recreate(
 		gpu_s,
-		[&gpu_s, &d]() -> void {
+		[gpu_s, &d]() -> void {
 			recreate_ap_volume(
 				gpu_s,
 				d
@@ -294,7 +294,7 @@ auto gse::renderer::atmosphere::system::init(run_context& ctx, const gpu::contex
 	return {};
 }
 
-auto gse::renderer::atmosphere::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state) -> async::task<> {
+auto gse::renderer::atmosphere::system::frame(const context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}

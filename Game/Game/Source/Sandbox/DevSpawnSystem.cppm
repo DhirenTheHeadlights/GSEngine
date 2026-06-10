@@ -18,21 +18,21 @@ export namespace gs {
 		};
 
 		static auto run(
-			gse::run_context& ctx,
+			gse::context& ctx,
 			data& d,
-			const gse::actions::system::data& actions_d,
-			const gse::world_system::data& world_d
+			gse::shared_view<gse::actions::system> actions_d,
+			gse::shared_view<gse::world_system> world_d
 		) -> gse::async::task<>;
 	};
 }
 
 namespace gs {
 	auto active_scene_ptr(
-		const gse::world_system::data& w
+		gse::shared_view<gse::world_system> w
 	) -> gse::scene*;
 }
 
-auto gs::active_scene_ptr(const gse::world_system::data& w) -> gse::scene* {
+auto gs::active_scene_ptr(const gse::shared_view<gse::world_system> w) -> gse::scene* {
 	if (!w.active_scene) {
 		return nullptr;
 	}
@@ -43,7 +43,7 @@ auto gs::active_scene_ptr(const gse::world_system::data& w) -> gse::scene* {
 	return it->second.get();
 }
 
-auto gs::dev_spawn_system::run(gse::run_context& ctx, data& d, const gse::actions::system::data& actions_d, const gse::world_system::data& world_d) -> gse::async::task<> {
+auto gs::dev_spawn_system::run(gse::context& ctx, data& d, const gse::shared_view<gse::actions::system> actions_d, const gse::shared_view<gse::world_system> world_d) -> gse::async::task<> {
 	if (!d.bound) {
 		d.spawn_stress = gse::actions::add<"Dev_Spawn_Stress">(ctx.channels, gse::key::f5);
 		d.spawn_joints = gse::actions::add<"Dev_Spawn_Joints">(ctx.channels, gse::key::f6);

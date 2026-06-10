@@ -14,7 +14,7 @@ export namespace gse {
 	};
 
 	class registry;
-	class run_context;
+	class context;
 
 	class access_token : non_copyable {
 	public:
@@ -27,7 +27,7 @@ export namespace gse {
 		) noexcept -> access_token& = default;
 
 	private:
-		friend class run_context;
+		friend class context;
 		access_token() = default;
 	};
 
@@ -175,8 +175,12 @@ export namespace gse {
 
 		auto ensure_storage() const -> void;
 
+		[[nodiscard]] auto contains(
+			id owner
+		) const -> bool;
+
 	private:
-		friend class run_context;
+		friend class context;
 
 		structural(
 			registry* reg,
@@ -189,6 +193,52 @@ export namespace gse {
 		access_guard* m_guard = nullptr;
 		std::atomic<int>* m_held_locks = nullptr;
 		std::vector<id>* m_authority = nullptr;
+	};
+
+	class registry_access {
+	public:
+		[[nodiscard]] auto registry() const -> gse::registry&;
+
+	private:
+		friend class context;
+
+		explicit registry_access(
+			gse::registry* reg
+		);
+
+		gse::registry* m_reg = nullptr;
+	};
+
+	class entities {
+	public:
+		auto ensure_exists(
+			id owner
+		) const -> void;
+
+		[[nodiscard]] auto exists(
+			id owner
+		) const -> bool;
+
+		[[nodiscard]] auto active(
+			id owner
+		) const -> bool;
+
+		auto ensure_active(
+			id owner
+		) const -> void;
+
+		auto remove(
+			id owner
+		) const -> void;
+
+	private:
+		friend class context;
+
+		explicit entities(
+			gse::registry* reg
+		);
+
+		gse::registry* m_reg = nullptr;
 	};
 }
 

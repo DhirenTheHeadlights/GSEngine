@@ -101,7 +101,8 @@ export namespace gse::physics {
 			[[= gse::settings::describe<"Step the physics world each frame.">{}]] bool update_phys = true;
 
 			[[
-				= gse::settings::describe<"Run the constraint solver on the GPU instead of the CPU.">{}
+				= gse::settings::describe<"Run the constraint solver on the GPU instead of the CPU.">{},
+				= gse::shared
 			]]
 			bool use_gpu_solver = false;
 
@@ -141,40 +142,40 @@ export namespace gse::physics {
 			bool gpu_joints_dirty = true;
 			std::uint32_t gpu_uploaded_body_count = 0;
 			std::uint32_t gpu_uploaded_joint_count = 0;
-			std::flat_map<id, std::uint32_t> id_to_body_index;
+			[[= gse::shared]] std::flat_map<id, std::uint32_t> id_to_body_index;
 			std::flat_map<id, joint_handle> joint_handles_by_entity;
 			std::vector<impulse_request> gpu_pending_impulses;
 
-			std::vector<std::uint8_t> body_airborne;
-			std::vector<std::uint8_t> body_sleeping;
+			[[= gse::shared]] std::vector<std::uint8_t> body_airborne;
+			[[= gse::shared]] std::vector<std::uint8_t> body_sleeping;
 
-			vbd::gpu_solver gpu_solver;
+			[[= gse::shared]] vbd::gpu_solver gpu_solver;
 		};
 
 		static auto init(
-			run_context& ctx,
-			const gpu::context::data* gpu_s,
+			context& ctx,
+			std::optional<shared_view<gpu::context>> gpu_s,
 			data& d
 		) -> async::task<>;
 
 		struct run {
 			static auto prepare(
-				run_context& ctx,
-				const gpu::context::data* gpu_s,
-				const asset::data& assets_s,
+				context& ctx,
+				std::optional<shared_view<gpu::context>> gpu_s,
+				shared_view<asset::registry> assets_s,
 				data& d,
 				write<joint_spec> specs,
 				read<muscle_component> muscles
 			) -> async::task<>;
 
 			static auto ensure_results(
-				run_context& ctx,
+				context& ctx,
 				data& d,
 				structural<collision_result_component> results
 			) -> async::task<>;
 
 			static auto integrate(
-				run_context& ctx,
+				context& ctx,
 				data& d,
 				write<transform_component> transform,
 				write<motion_component> motion,
@@ -185,8 +186,8 @@ export namespace gse::physics {
 		};
 
 		static auto frame(
-			frame_context& ctx,
-			const gpu::context::data* gpu_s,
+			context& ctx,
+			std::optional<shared_view<gpu::context>> gpu_s,
 			data& d
 		) -> async::task<>;
 
@@ -201,17 +202,17 @@ export namespace gse::physics {
 		) -> void;
 
 		static auto query_transform(
-			const data& d,
+			shared_view<system> d,
 			id entity_id
 		) -> std::optional<transform_snapshot>;
 
 		static auto is_airborne(
-			const data& d,
+			shared_view<system> d,
 			id entity_id
 		) -> bool;
 
 		static auto is_sleeping(
-			const data& d,
+			shared_view<system> d,
 			id entity_id
 		) -> bool;
 

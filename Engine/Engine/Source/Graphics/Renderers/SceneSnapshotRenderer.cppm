@@ -23,18 +23,18 @@ export namespace gse::renderer::scene_snapshot {
 		};
 
 		static auto init(
-			const gpu::context::data& gpu_s,
+			shared_view<gpu::context> gpu_s,
 			data& d
 		) -> async::task<>;
 
 		static auto run(
-			run_context& ctx,
-			const gpu::context::data& gpu_s,
+			context& ctx,
+			shared_view<gpu::context> gpu_s,
 			data& d
 		) -> async::task<>;
 
 		static auto frame(
-			const frame_context& ctx,
+			const context& ctx,
 			shared_view<gpu::context> gpu_s,
 			data& d
 		) -> async::task<>;

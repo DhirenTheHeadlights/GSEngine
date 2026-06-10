@@ -317,7 +317,7 @@ auto gse::renderer::physics_debug::ensure_bindless_buffer_capacity(gpu::device& 
 	);
 }
 
-auto gse::renderer::physics_debug::system::init(const gpu::context::data& gpu_s, data& d) -> async::task<> {
+auto gse::renderer::physics_debug::system::init(const shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
 	d.pipeline_instanced = gpu::build_graphics_program(*gpu_s.device, instanced_entry::pod);
 
 	d.pipeline_lines = gpu::build_graphics_program(*gpu_s.device, lines_entry::pod);
@@ -378,7 +378,7 @@ auto gse::renderer::physics_debug::system::init(const gpu::context::data& gpu_s,
 	return {};
 }
 
-auto gse::renderer::physics_debug::system::run::prepare(run_context& ctx, data& d, const physics::system::data& ps) -> async::task<> {
+auto gse::renderer::physics_debug::system::run::prepare(context& ctx, data& d, const shared_view<physics::system> ps) -> async::task<> {
 	d.box_instances.clear();
 	d.sphere_instances.clear();
 	d.capsule_instances.clear();
@@ -411,7 +411,7 @@ auto gse::renderer::physics_debug::system::run::prepare(run_context& ctx, data& 
 	return {};
 }
 
-auto gse::renderer::physics_debug::system::run::build(run_context& ctx, data& d, read<physics::transform_component> transforms, read<physics::motion_component> motions, read<physics::collision_component> collisions, read<physics::collision_result_component> results) -> async::task<> {
+auto gse::renderer::physics_debug::system::run::build(context& ctx, data& d, read<physics::transform_component> transforms, read<physics::motion_component> motions, read<physics::collision_component> collisions, read<physics::collision_result_component> results) -> async::task<> {
 	if (!d.enabled) {
 		return {};
 	}
@@ -488,7 +488,7 @@ auto gse::renderer::physics_debug::system::run::build(run_context& ctx, data& d,
 	return {};
 }
 
-auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state) -> async::task<> {
+auto gse::renderer::physics_debug::system::frame(const context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state) -> async::task<> {
 	if (!d.enabled) {
 		co_return;
 	}

@@ -27,6 +27,31 @@ export import :registry_sync;
 export import :replication;
 export import :server_info;
 
+export namespace gse {
+	struct set_networked_request {
+		bool value = false;
+	};
+
+	struct set_authoritative_request {
+		bool value = true;
+	};
+
+	struct set_local_controller_id_request {
+		id controller_id;
+	};
+
+	struct activate_scene_request {
+		id scene_id;
+	};
+
+	struct deactivate_active_scene_request {};
+
+	struct camera_yaw_request {
+		using result_type = angle;
+		channel_promise<angle> promise;
+	};
+}
+
 export namespace gse::network {
 	struct connection_options {
 		address addr;
@@ -59,14 +84,15 @@ export namespace gse::network {
 	};
 
 	struct data {
-		client::state connection_state = client::state::disconnected;
-		std::vector<discovery_result> available_servers;
-		std::uint8_t connected_players = 0;
-		std::uint8_t connected_max_players = 0;
+		[[= gse::shared]] client::state connection_state = client::state::disconnected;
+		[[= gse::shared]] std::vector<discovery_result> available_servers;
+		[[= gse::shared]] std::uint8_t connected_players = 0;
+		[[= gse::shared]] std::uint8_t connected_max_players = 0;
 		angle camera_yaw{};
+		std::optional<channel_future<angle>> camera_yaw_future;
 		std::unique_ptr<client> client_ptr;
 		std::vector<std::shared_ptr<discovery_provider>> providers;
-		std::vector<std::move_only_function<void(run_context&)>> deferred;
+		std::vector<std::move_only_function<void(context&)>> deferred;
 	};
 
 	template <typename... Components>
@@ -74,15 +100,15 @@ export namespace gse::network {
 		using data = network::data;
 
 		static auto run(
-			run_context& ctx,
-			const asset::data& assets_d,
+			context& ctx,
+			shared_view<asset::registry> assets_d,
 			data& d,
-			const actions::system::data& actions_d,
+			shared_view<actions::system> actions_d,
+			entities ents,
 			structural<Components>... auths
 		) -> async::task<>;
 
 		static auto shutdown(
-			shutdown_context& phase,
 			data& d
 		) -> void;
 	};
@@ -92,19 +118,19 @@ export namespace gse::network {
 }
 
 template <typename... Components>
-auto gse::network::system<Components...>::shutdown(shutdown_context&, data& d) -> void {
+auto gse::network::system<Components...>::shutdown(data& d) -> void {
 	d.client_ptr.reset();
 }
 
 template <typename... Components>
-auto gse::network::system<Components...>::run(run_context& ctx, const asset::data& assets_d, data& d, const actions::system::data& actions_d, structural<Components>... auths) -> async::task<> {
+auto gse::network::system<Components...>::run(context& ctx, const shared_view<asset::registry> assets_d, data& d, const shared_view<actions::system> actions_d, entities ents, structural<Components>... auths) -> async::task<> {
 	((void)auths, ...);
 	(ctx.template ensure_storage<Components>(), ...);
 
-		for (const auto& response : ctx.read_channel<camera_yaw_response>()) {
-			d.camera_yaw = response.yaw;
+		if (d.camera_yaw_future && d.camera_yaw_future->ready()) {
+			d.camera_yaw = d.camera_yaw_future->get();
 		}
-		ctx.channels.push<camera_yaw_request>({});
+		d.camera_yaw_future = ctx.channels.push<camera_yaw_request>({});
 
 		for (const auto& req : ctx.read_channel<connect_request>()) {
 			if (!d.client_ptr) {
@@ -168,15 +194,15 @@ auto gse::network::system<Components...>::run(run_context& ctx, const asset::dat
 			req.action(*d.client_ptr);
 		}
 
-		d.client_ptr->drain([&ctx, &d, &assets_d](raw_message& msg) {
+		d.client_ptr->drain([&ctx, &d, &assets_d, &ents](raw_message& msg) {
 			read_bitstream stream(msg.payload);
 
 			const bool is_component = match_and_apply_components<type_pack<Components...>>(
 				stream,
 				msg.id,
 				[&]<typename T>(const component_upsert<T>& m) {
-					d.deferred.push_back([entity = m.owner_id, payload = m.data, &assets_d](run_context& ctx) {
-						ctx.ensure_active(entity);
+					d.deferred.push_back([entity = m.owner_id, payload = m.data, assets_d, ents](context& ctx) {
+						ents.ensure_active(entity);
 						auto* c = ctx.add_component<T>(entity);
 						apply_networked(*c, payload);
 						asset::resolve_handles(*c, assets_d);
@@ -186,10 +212,10 @@ auto gse::network::system<Components...>::run(run_context& ctx, const asset::dat
 					if (!m.owner_id.exists()) {
 						return;
 					}
-					d.deferred.push_back([entity = m.owner_id](run_context& ctx) {
+					d.deferred.push_back([entity = m.owner_id, ents](context& ctx) {
 						if constexpr (std::is_same_v<T, player_controller>) {
-							if (ctx.exists(entity)) {
-								ctx.remove(entity);
+							if (ents.exists(entity)) {
+								ents.remove(entity);
 							}
 						}
 						else {

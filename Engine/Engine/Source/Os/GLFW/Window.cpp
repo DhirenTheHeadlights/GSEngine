@@ -135,7 +135,7 @@ auto gse::apply_cursor_mode(const window::data& d) -> void {
 	}
 
 	if (current_mode == glfw::cursor_disabled && target_mode == glfw::cursor_normal) {
-		const auto dims = window::viewport(d);
+		const auto dims = window_handle_viewport(d.handle);
 		glfwSetCursorPos(d.handle, dims.x() / 2.0, dims.y() / 2.0);
 	}
 
@@ -306,7 +306,7 @@ auto gse::create_window(window::data& d) -> void {
 			}
 
 			if (self->ui_focus) {
-				const auto dims = window::viewport(*self);
+				const auto dims = window_handle_viewport(self->handle);
 				const double clamped_x = std::clamp(xpos, 0.0, static_cast<double>(dims.x()));
 				const double clamped_y = std::clamp(ypos, 0.0, static_cast<double>(dims.y()));
 
@@ -429,7 +429,7 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 	apply_commands(d);
 }
 
-auto gse::window::shutdown(shutdown_context&, data& d) -> void {
+auto gse::window::shutdown(data& d) -> void {
 	if (d.handle) {
 		glfwDestroyWindow(d.handle);
 		d.handle = nullptr;
@@ -580,20 +580,64 @@ auto gse::window::install_native_frame(GLFWwindow* handle, const int* caption_he
 }
 
 auto gse::window::is_open(const data& d) -> bool {
-	return !glfwWindowShouldClose(d.handle);
+	return window_handle_open(d.handle);
+}
+
+auto gse::window::is_open(const shared_view<window> d) -> bool {
+	return window_handle_open(d.handle);
 }
 
 auto gse::window::minimized(const data& d) -> bool {
-	int width = 0;
-	int height = 0;
-	glfwGetFramebufferSize(d.handle, &width, &height);
-	return width == 0 || height == 0;
+	return window_handle_minimized(d.handle);
+}
+
+auto gse::window::minimized(const shared_view<window> d) -> bool {
+	return window_handle_minimized(d.handle);
 }
 
 auto gse::window::viewport(const data& d) -> vec2i {
+	return window_handle_viewport(d.handle);
+}
+
+auto gse::window::viewport(const shared_view<window> d) -> vec2i {
+	return window_handle_viewport(d.handle);
+}
+
+auto gse::window::create_vulkan_surface(const shared_view<window> d, const vk::Instance instance) -> vk::SurfaceKHR {
+	return window_handle_surface(d.handle, instance);
+}
+
+auto gse::window::raw_handle(const shared_view<window> d) -> GLFWwindow* {
+	return d.handle;
+}
+
+auto gse::window::show(const data& d) -> void {
+	window_handle_show(d.handle);
+}
+
+auto gse::window::show(const shared_view<window> d) -> void {
+	window_handle_show(d.handle);
+}
+
+auto gse::window::ui_focus(const shared_view<window> d) -> bool {
+	return d.ui_focus;
+}
+
+auto gse::window_handle_open(GLFWwindow* handle) -> bool {
+	return !glfwWindowShouldClose(handle);
+}
+
+auto gse::window_handle_minimized(GLFWwindow* handle) -> bool {
 	int width = 0;
 	int height = 0;
-	glfwGetFramebufferSize(d.handle, &width, &height);
+	glfwGetFramebufferSize(handle, &width, &height);
+	return width == 0 || height == 0;
+}
+
+auto gse::window_handle_viewport(GLFWwindow* handle) -> vec2i {
+	int width = 0;
+	int height = 0;
+	glfwGetFramebufferSize(handle, &width, &height);
 	return { width, height };
 }
 
@@ -605,19 +649,15 @@ auto gse::window::frame_buffer_resized(data& d) -> bool {
 	return false;
 }
 
-auto gse::window::create_vulkan_surface(const data& d, const vk::Instance instance) -> vk::SurfaceKHR {
-	const auto surface = glfw::create_window_surface(instance, d.handle);
+auto gse::window_handle_surface(GLFWwindow* handle, const vk::Instance instance) -> vk::SurfaceKHR {
+	const auto surface = glfw::create_window_surface(instance, handle);
 	assert(surface, "Failed to create window surface for Vulkan!");
 	return surface;
 }
 
-auto gse::window::raw_handle(const data& d) -> GLFWwindow* {
-	return d.handle;
-}
-
-auto gse::window::show(const data& d) -> void {
-	if (d.handle) {
-		glfwShowWindow(d.handle);
+auto gse::window_handle_show(GLFWwindow* handle) -> void {
+	if (handle) {
+		glfwShowWindow(handle);
 	}
 }
 
@@ -629,15 +669,11 @@ auto gse::window::set_ui_focus(data& d, const bool focus) -> void {
 		return;
 	}
 
-	const auto dims = viewport(d);
+	const auto dims = window_handle_viewport(d.handle);
 	const double center_x = dims.x() / 2.0;
 	const double center_y = dims.y() / 2.0;
 	glfwSetCursorPos(d.handle, center_x, center_y);
 	d.input_events.push(input::mouse_moved{ center_x, dims.y() - center_y });
-}
-
-auto gse::window::ui_focus(const data& d) -> bool {
-	return d.ui_focus;
 }
 
 auto gse::window::vulkan_instance_extensions() -> std::span<const char* const> {

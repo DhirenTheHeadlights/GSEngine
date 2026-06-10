@@ -10,7 +10,6 @@ import :directional_light;
 import :camera_system;
 import :depth_prepass_renderer;
 
-
 import gse.os;
 import gse.assets;
 import gse.gpu;
@@ -77,12 +76,12 @@ auto tile_count(const system::data& d) -> vec2u {
 	return { (d.current_width + tile_size - 1) / tile_size, (d.current_height + tile_size - 1) / tile_size };
 }
 
-auto update_depth_descriptor(const gpu::context::data& gpu_s, system::data& d) -> void {
+auto update_depth_descriptor(const shared_view<gpu::context> gpu_s, system::data& d) -> void {
 	if (!d.depth_view.valid()) { d.depth_view = gpu_s.device->allocate_image_slot(); }
 	gpu_s.device->write_sampled_image(d.depth_view.slot(), gpu_s.render_graph->depth_image());
 }
 
-auto rebuild_tile_buffers(const gpu::context::data& gpu_s, system::data& d) -> void {
+auto rebuild_tile_buffers(const shared_view<gpu::context> gpu_s, system::data& d) -> void {
 	const auto ext = gpu_s.render_graph->extent();
 	d.current_width = ext.x();
 	d.current_height = ext.y();
@@ -114,7 +113,7 @@ auto rebuild_tile_buffers(const gpu::context::data& gpu_s, system::data& d) -> v
 }
 }
 
-auto gse::renderer::light_culling::system::init(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
+auto gse::renderer::light_culling::system::init(context& ctx, const shared_view<gpu::context> gpu_s, const shared_view<asset::registry> assets_s, data& d) -> async::task<> {
 	d.pipeline = gpu::build_compute_program(*gpu_s.device, entry::pod);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
@@ -151,7 +150,7 @@ auto gse::renderer::light_culling::system::init(run_context& ctx, const gpu::con
 
 	gpu::context::on_swap_chain_recreate(
 		gpu_s,
-		[&gpu_s, &d]() {
+		[gpu_s, &d]() {
 			rebuild_tile_buffers(gpu_s, d);
 		}
 	);
@@ -159,7 +158,7 @@ auto gse::renderer::light_culling::system::init(run_context& ctx, const gpu::con
 	return {};
 }
 
-auto gse::renderer::light_culling::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, const data& d, shared_view<camera::system> cam_state, shared_view<atmosphere::system> atm_state) -> async::task<> {
+auto gse::renderer::light_culling::system::frame(context& ctx, shared_view<gpu::context> gpu_s, const data& d, shared_view<camera::system> cam_state, shared_view<atmosphere::system> atm_state, read<directional_light_component> dir_lights, read<spot_light_component> spot_lights, read<point_light_component> point_lights) -> async::task<> {
 	auto& graph = *gpu_s.render_graph;
 
 	if (!graph.frame_in_progress()) {
@@ -178,9 +177,9 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, shared_view
 	const auto inv_proj = proj.inverse();
 	const auto extent = graph.extent();
 
-	const auto dir_chunk = ctx.components<directional_light_component>();
-	const auto spot_chunk = ctx.components<spot_light_component>();
-	const auto point_chunk = ctx.components<point_light_component>();
+	auto& dir_chunk = dir_lights;
+	auto& spot_chunk = spot_lights;
+	auto& point_chunk = point_lights;
 
 	const auto& light_alloc = d.light_buffers[frame_index];
 

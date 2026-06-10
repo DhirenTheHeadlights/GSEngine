@@ -14,12 +14,12 @@ export namespace gse::primitive_resolver {
 	struct system {
 		struct run {
 			static auto ensure_renders(
-				run_context& ctx,
+				context& ctx,
 				structural<render_component> renders
 			) -> async::task<>;
 
 			static auto populate(
-				run_context& ctx,
+				context& ctx,
 				const primitives::data& prims,
 				write<primitive_box_spec> boxes,
 				write<primitive_sphere_spec> spheres,

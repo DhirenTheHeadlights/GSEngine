@@ -6,6 +6,22 @@ import :access_token;
 import :component;
 
 export namespace gse {
+	template <typename S>
+	concept names_data = requires { typename S::data; };
+
+	template <typename S, bool = names_data<S>>
+	struct state_of_helper {
+		using type = S;
+	};
+
+	template <typename S>
+	struct state_of_helper<S, true> {
+		using type = typename S::data;
+	};
+
+	template <typename S>
+	using state_of_t = typename state_of_helper<S>::type;
+
 	template <typename T>
 	struct access_traits {
 		static constexpr bool is_access = false;
@@ -46,4 +62,10 @@ export namespace gse {
 
 	template <typename T>
 	using structural_element_t = structural_traits<std::remove_cvref_t<T>>::element_type;
+
+	template <typename T>
+	constexpr bool is_registry_access_v = std::is_same_v<std::remove_cvref_t<T>, registry_access>;
+
+	template <typename T>
+	constexpr bool is_entities_v = std::is_same_v<std::remove_cvref_t<T>, entities>;
 }

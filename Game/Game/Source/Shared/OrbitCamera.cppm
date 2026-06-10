@@ -36,19 +36,19 @@ export namespace gs::orbit_camera {
 
 		struct run {
 			static auto attach(
-				gse::run_context& ctx,
+				gse::context& ctx,
 				data& d,
 				gse::read<component> orbits,
 				gse::structural<gse::camera::follow_component> follows
 			) -> gse::async::task<>;
 
 			static auto update(
-				gse::run_context& ctx,
+				gse::context& ctx,
 				data& d,
-				const gse::actions::system::data& as,
-				const gse::input::system::data& input_s,
-				const gse::camera::system::data& cam_s,
-				const gse::physics::system::data& phys_s,
+				gse::shared_view<gse::actions::system> as,
+				gse::shared_view<gse::input::system> input_s,
+				gse::shared_view<gse::camera::system> cam_s,
+				gse::shared_view<gse::physics::system> phys_s,
 				gse::write<component> orbits,
 				gse::write<gse::camera::follow_component> follows,
 				gse::read<gse::physics::transform_component> transforms,
@@ -59,7 +59,7 @@ export namespace gs::orbit_camera {
 	};
 }
 
-auto gs::orbit_camera::system::run::attach(gse::run_context& ctx, data& d, gse::read<component> orbits, gse::structural<gse::camera::follow_component> follows) -> gse::async::task<> {
+auto gs::orbit_camera::system::run::attach(gse::context& ctx, data& d, gse::read<component> orbits, gse::structural<gse::camera::follow_component> follows) -> gse::async::task<> {
 	for (const auto owner_id : ctx.drain_component_adds<component>()) {
 		const auto* o = orbits.find(owner_id);
 		if (!o) {
@@ -94,7 +94,7 @@ auto gs::orbit_camera::system::run::attach(gse::run_context& ctx, data& d, gse::
 	return {};
 }
 
-auto gs::orbit_camera::system::run::update(gse::run_context& ctx, data& d, const gse::actions::system::data& as, const gse::input::system::data& input_s, const gse::camera::system::data& cam_s, const gse::physics::system::data& phys_s, gse::write<component> orbits, gse::write<gse::camera::follow_component> follows, gse::read<gse::physics::transform_component> transforms, gse::read<gse::physics::collision_component> collisions, gse::read<gse::physics::motion_component> motions) -> gse::async::task<> {
+auto gs::orbit_camera::system::run::update(gse::context& ctx, data& d, const gse::shared_view<gse::actions::system> as, const gse::shared_view<gse::input::system> input_s, const gse::shared_view<gse::camera::system> cam_s, const gse::shared_view<gse::physics::system> phys_s, gse::write<component> orbits, gse::write<gse::camera::follow_component> follows, gse::read<gse::physics::transform_component> transforms, gse::read<gse::physics::collision_component> collisions, gse::read<gse::physics::motion_component> motions) -> gse::async::task<> {
 	const auto orbit_ids = orbits.owner_ids();
 
 	const auto& cs = gse::actions::system::current_state(as);

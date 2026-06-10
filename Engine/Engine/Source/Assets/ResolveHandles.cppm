@@ -11,13 +11,13 @@ export namespace gse::asset {
 	template <typename T>
 	auto resolve(
 		resource::handle<T>& h,
-		const data& assets
+		shared_view<registry> assets
 	) -> void;
 
 	template <typename T>
 	auto resolve_handles(
 		T& c,
-		const data& assets
+		shared_view<registry> assets
 	) -> void;
 }
 
@@ -45,14 +45,14 @@ consteval auto gse::asset::has_networked_members() -> bool {
 }
 
 template <typename T>
-auto gse::asset::resolve(resource::handle<T>& h, const data& assets) -> void {
+auto gse::asset::resolve(resource::handle<T>& h, const shared_view<registry> assets) -> void {
 	if (h.id().exists()) {
 		h = try_get<T>(assets, h.id());
 	}
 }
 
 template <typename T>
-auto gse::asset::resolve_handles(T& c, const data& assets) -> void {
+auto gse::asset::resolve_handles(T& c, const shared_view<registry> assets) -> void {
 	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 		if constexpr (has_annotation<networked_tag>(m)) {
 			using m_type = typename[:std::meta::type_of(m):];

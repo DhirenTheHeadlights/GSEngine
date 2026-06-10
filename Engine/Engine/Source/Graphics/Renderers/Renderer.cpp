@@ -33,7 +33,7 @@ import gse.audio;
 import gse.math;
 import gse.save;
 
-auto gse::renderer::system::init(run_context& ctx, data& d) -> async::task<> {
+auto gse::renderer::system::init(context& ctx, data& d) -> async::task<> {
 	const id dump_profile_id = generate_id("Dump Profile");
 	ctx.channels.push<actions::add_action_request>({
 		.name = "Dump Profile",
@@ -44,7 +44,7 @@ auto gse::renderer::system::init(run_context& ctx, data& d) -> async::task<> {
 	return {};
 }
 
-auto gse::renderer::system::run(run_context& ctx, const gpu::context::data& gpu_s, const window::data& window_s, data& d, const actions::system::data& sys) -> async::task<> {
+auto gse::renderer::system::run(context& ctx, const shared_view<gpu::context> gpu_s, const shared_view<window> window_s, data& d, const shared_view<actions::system> sys) -> async::task<> {
 	if (d.hot_reload_enabled != d.last_hot_reload_enabled) {
 		ctx.channels.push<asset::hot_reload_request>({
 			.enabled = d.hot_reload_enabled

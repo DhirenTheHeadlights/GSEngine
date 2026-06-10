@@ -63,16 +63,16 @@ export namespace gse::renderer {
 		};
 
 		static auto init(
-			run_context& ctx,
+			context& ctx,
 			data& d
 		) -> async::task<>;
 
 		static auto run(
-			run_context& ctx,
-			const gpu::context::data& gpu_s,
-			const window::data& window_s,
+			context& ctx,
+			shared_view<gpu::context> gpu_s,
+			shared_view<window> window_s,
 			data& d,
-			const actions::system::data& sys
+			shared_view<actions::system> sys
 		) -> async::task<>;
 	};
 }

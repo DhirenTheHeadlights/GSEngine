@@ -56,7 +56,7 @@ namespace ide {
 		gse::gui::builder& ui,
 		workspace::data& ws,
 		std::uint32_t document_id,
-		const config_system::data& config
+		gse::shared_view<config_system> config
 	) -> void;
 }
 
@@ -205,7 +205,7 @@ auto ide::draw_explorer_panel(gse::gui::builder& ui, workspace::data& ws) -> voi
 	}
 }
 
-auto ide::draw_document_panel(gse::gui::builder& ui, workspace::data& ws, const std::uint32_t document_id, const config_system::data& config) -> void {
+auto ide::draw_document_panel(gse::gui::builder& ui, workspace::data& ws, const std::uint32_t document_id, const gse::shared_view<config_system> config) -> void {
 	const auto& ctx = ui.ctx;
 	if (ctx.clip_stack.empty()) {
 		return;
@@ -257,14 +257,14 @@ export namespace ide {
 		};
 
 		static auto run(
-			gse::run_context& ctx,
+			gse::context& ctx,
 			data& d,
-			const config_system::data& config_d
+			gse::shared_view<config_system> config_d
 		) -> gse::async::task<>;
 	};
 }
 
-auto ide::editor_app::run(gse::run_context& ctx, data& d, const config_system::data& config_d) -> gse::async::task<> {
+auto ide::editor_app::run(gse::context& ctx, data& d, const gse::shared_view<config_system> config_d) -> gse::async::task<> {
 	if (!d.initialized) {
 		ide::discover_commands<^^ide::commands>(d.commands);
 
@@ -284,7 +284,7 @@ auto ide::editor_app::run(gse::run_context& ctx, data& d, const config_system::d
 		d.initialized = true;
 	}
 		workspace::data* ws = &d.ws;
-		const config_system::data* config = &config_d;
+		const auto config = config_d;
 
 		ctx.channels.push<gse::gui::menu_content>({
 			.menu = std::string(explorer_panel_name),
@@ -305,7 +305,7 @@ auto ide::editor_app::run(gse::run_context& ctx, data& d, const config_system::d
 				.menu = doc.tab_name,
 				.layer = gse::render_layer::content,
 				.build = [ws, id, config](gse::gui::builder& b) {
-					draw_document_panel(b, *ws, id, *config);
+					draw_document_panel(b, *ws, id, config);
 				},
 			});
 		}

@@ -57,9 +57,9 @@ export namespace gs::locomotion {
 		};
 
 		static auto run(
-			gse::run_context& ctx,
+			gse::context& ctx,
 			data& d,
-			const gse::world_system::data& world_d,
+			gse::shared_view<gse::world_system> world_d,
 			gse::read<skeleton_refs> refs,
 			gse::write<intent> intents,
 			gse::read<state> states,
@@ -72,7 +72,7 @@ export namespace gs::locomotion {
 namespace gs::locomotion {
 	auto sim_frame_dt() -> gse::time;
 	auto find_scene_id(
-		const gse::world_system::data& world_d
+		gse::shared_view<gse::world_system> world_d
 	) -> std::optional<gse::id>;
 	auto reset_metrics(
 		smoke_test::trial_metrics& metrics
@@ -99,7 +99,7 @@ namespace gs::locomotion {
 		float forward
 	) -> void;
 	auto finish_trial(
-		gse::run_context& ctx,
+		gse::context& ctx,
 		smoke_test::data& d,
 		const state& s,
 		const gait& g
@@ -113,7 +113,7 @@ auto gs::locomotion::sim_frame_dt() -> gse::time {
 	return gse::system_clock::fixed_dt<gse::time>() * gse::system_clock::fixed_steps_this_frame();
 }
 
-auto gs::locomotion::find_scene_id(const gse::world_system::data& world_d) -> std::optional<gse::id> {
+auto gs::locomotion::find_scene_id(const gse::shared_view<gse::world_system> world_d) -> std::optional<gse::id> {
 	for (const auto& [scene_id, scene_ptr] : world_d.scenes) {
 		if (scene_ptr && scene_ptr->id().tag() == std::string_view("Sandbox")) {
 			return scene_id;
@@ -211,7 +211,7 @@ auto gs::locomotion::write_smoke_intent(intent& it, const float forward) -> void
 	it.jump = false;
 }
 
-auto gs::locomotion::finish_trial(gse::run_context& ctx, smoke_test::data& d, const state&, const gait& g) -> void {
+auto gs::locomotion::finish_trial(gse::context& ctx, smoke_test::data& d, const state&, const gait& g) -> void {
 	const bool passed = !g.fallen && d.metrics.elapsed >= d.config.duration;
 	const std::string_view result = passed ? "passed" : "fallen";
 	if (passed) {
@@ -256,7 +256,7 @@ auto gs::locomotion::finish_trial(gse::run_context& ctx, smoke_test::data& d, co
 	d.reset_activation_requested = false;
 }
 
-auto gs::locomotion::smoke_test::run(gse::run_context& ctx, data& d, const gse::world_system::data& world_d, gse::read<skeleton_refs> refs, gse::write<intent> intents, gse::read<state> states, gse::read<gait> gaits, gse::read<plan> plans) -> gse::async::task<> {
+auto gs::locomotion::smoke_test::run(gse::context& ctx, data& d, const gse::shared_view<gse::world_system> world_d, gse::read<skeleton_refs> refs, gse::write<intent> intents, gse::read<state> states, gse::read<gait> gaits, gse::read<plan> plans) -> gse::async::task<> {
 	const auto dt = sim_frame_dt();
 
 	if (d.config.trials <= 0) {
