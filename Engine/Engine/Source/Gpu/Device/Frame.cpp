@@ -5,10 +5,12 @@ import std;
 import :frame;
 import :device;
 import :swap_chain;
+import :present_pacer;
 
 import gse.os;
 import gse.assert;
 import gse.diag;
+import gse.time;
 
 auto gse::gpu::frame::create(device& dev, swap_chain& sc) -> std::unique_ptr<frame> {
 	auto s = create_sync_objects(dev, sc);
@@ -83,18 +85,12 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
 		}
 	}
 
-	const auto prior_present_id = m_present_ids_in_flight[m_current_frame];
-	if (prior_present_id != 0) {
-		trace::scope_guard sg{ trace_id<"begin_frame::wait_present">() };
-		const auto present_wait_result = m_swapchain->wait_for_present(prior_present_id);
-		if (present_wait_result == result::error_device_lost) {
-			m_device->report_device_lost(std::format("waitForPresentKHR (frame {})", m_current_frame));
-			return std::unexpected(frame_status::device_lost);
+	{
+		trace::scope_guard sg{ trace_id<"begin_frame::present_feedback">() };
+		m_pacer.observe(m_swapchain->past_presentation_timing(), m_swapchain->refresh_interval());
+		if (m_pacer.has_feedback()) {
+			system_clock::submit_display_interval(m_pacer.frame_delta());
 		}
-		assert(
-			present_wait_result == result::success || present_wait_result == result::suboptimal_khr || present_wait_result == result::error_out_of_date_khr,
-			"vkWaitForPresentKHR returned unexpected status"
-		);
 	}
 
 	{
@@ -294,7 +290,7 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
 	result present_result;
 	{
 		trace::scope_guard sg{ trace_id<"end_frame::present">() };
-		present_result = m_swapchain->present(render_finished_handle, m_image_index, present_id);
+		present_result = m_swapchain->present(render_finished_handle, m_image_index, present_id, m_pacer.relative_target());
 		if (present_result == result::error_device_lost) {
 			m_device->report_device_lost(std::format("presentKHR (frame {}, image {})", m_current_frame, m_image_index));
 		}
