@@ -25,67 +25,77 @@ export namespace gs {
 			= gse::settings::category<"Crosshair">{},
 			= gse::settings::page_drawer<&crosshair_system::draw_settings_page>{}
 		]] data {
-			[[= gse::settings::describe<"Show the crosshair while in-game.">{}]] bool show = true;
+			[[= gse::settings::describe<"Show the crosshair while in-game.">{}, = gse::shared]] bool show = true;
 
 			[[
 				= gse::settings::describe<"Length of each arm in pixels.">{},
-				= gse::settings::range<0, 30>{}
+				= gse::settings::range<0, 30>{},
+				= gse::shared
 			]]
 			int arm_length = 8;
 
 			[[
 				= gse::settings::describe<"Thickness of each arm in pixels.">{},
-				= gse::settings::range<1, 8>{}
+				= gse::settings::range<1, 8>{},
+				= gse::shared
 			]]
 			int arm_thickness = 2;
 
 			[[
 				= gse::settings::describe<"Gap between center and each arm.">{},
-				= gse::settings::range<0, 20>{}
+				= gse::settings::range<0, 20>{},
+				= gse::shared
 			]]
 			int gap = 3;
 
-			[[= gse::settings::describe<"Show the center dot.">{}]] bool show_dot = true;
+			[[= gse::settings::describe<"Show the center dot.">{}, = gse::shared]] bool show_dot = true;
 
 			[[
 				= gse::settings::describe<"Center dot size in pixels.">{},
-				= gse::settings::range<1, 6>{}
+				= gse::settings::range<1, 6>{},
+				= gse::shared
 			]]
 			int dot_size = 1;
 
 			[[
 				= gse::settings::describe<"Red channel.">{},
-				= gse::settings::range<0.f, 1.f>{}
+				= gse::settings::range<0.f, 1.f>{},
+				= gse::shared
 			]]
 			float color_r = 1.f;
 
 			[[
 				= gse::settings::describe<"Green channel.">{},
-				= gse::settings::range<0.f, 1.f>{}
+				= gse::settings::range<0.f, 1.f>{},
+				= gse::shared
 			]]
 			float color_g = 1.f;
 
 			[[
 				= gse::settings::describe<"Blue channel.">{},
-				= gse::settings::range<0.f, 1.f>{}
+				= gse::settings::range<0.f, 1.f>{},
+				= gse::shared
 			]]
 			float color_b = 1.f;
 
 			[[
 				= gse::settings::describe<"Opacity.">{},
-				= gse::settings::range<0.f, 1.f>{}
+				= gse::settings::range<0.f, 1.f>{},
+				= gse::shared
 			]]
 			float opacity = 0.9f;
 
 			[[
 				= gse::settings::describe<"Outline thickness around each arm (0 = no outline).">{},
-				= gse::settings::range<0, 3>{}
+				= gse::settings::range<0, 3>{},
+				= gse::shared
 			]]
 			int outline_thickness = 0;
 
 			[[
 				= gse::settings::describe<"Outline opacity.">{},
-				= gse::settings::range<0.f, 1.f>{}
+				= gse::settings::range<0.f, 1.f>{},
+				= gse::shared
 			]]
 			float outline_opacity = 1.f;
 		};

@@ -259,6 +259,9 @@ auto gse::async::task<T>::operator=(task&& other) noexcept -> task& {
 
 template <typename T>
 auto gse::async::task<T>::start() -> void {
+	if (!m_handle) {
+		return;
+	}
 	if (m_handle.promise().m_started.exchange(true, std::memory_order_acq_rel)) {
 		return;
 	}
@@ -280,7 +283,7 @@ auto gse::async::task<T>::done() const -> bool {
 
 template <typename T>
 auto gse::async::task<T>::awaiter::await_ready() const noexcept -> bool {
-	return m_handle.done();
+	return !m_handle || m_handle.done();
 }
 
 template <typename T>
@@ -294,7 +297,14 @@ auto gse::async::task<T>::awaiter::await_suspend(std::coroutine_handle<> caller)
 
 template <typename T>
 auto gse::async::task<T>::awaiter::await_resume() -> T {
-	return m_handle.promise().result();
+	if constexpr (std::is_void_v<T>) {
+		if (m_handle) {
+			m_handle.promise().result();
+		}
+	}
+	else {
+		return m_handle.promise().result();
+	}
 }
 
 template <typename T>

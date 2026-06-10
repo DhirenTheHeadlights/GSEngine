@@ -19,7 +19,8 @@ export namespace ide {
 			[[= gse::settings::describe<"Use spaces instead of tabs when indenting.">{}]]
 			bool indent_with_spaces = false;
 
-			[[= gse::settings::describe<"Show line numbers in the gutter.">{}]]
+			[[= gse::settings::describe<"Show line numbers in the gutter.">{},
+				= gse::shared]]
 			bool show_line_numbers = true;
 
 			[[= gse::settings::describe<"Wrap lines that exceed the view width.">{}]]
@@ -32,7 +33,8 @@ export namespace ide {
 			[[= gse::settings::describe<"Highlight the current line.">{}]]
 			bool highlight_current_line = true;
 
-			[[= gse::settings::describe<"Caret blink interval (0 disables blinking).">{}]]
+			[[= gse::settings::describe<"Caret blink interval (0 disables blinking).">{},
+				= gse::shared]]
 			gse::time caret_blink = gse::milliseconds(500);
 
 			[[= gse::settings::describe<"Path to the clangd executable used for C++ intelligence.">{}]]

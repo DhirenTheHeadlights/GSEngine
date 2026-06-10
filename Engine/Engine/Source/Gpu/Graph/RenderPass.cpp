@@ -10,7 +10,7 @@ import gse.core;
 import gse.concurrency;
 import gse.diag;
 
-gse::gpu::request_pass_awaitable::request_pass_awaitable(const frame_context& ctx, render_pass_descriptor desc) noexcept
+gse::gpu::request_pass_awaitable::request_pass_awaitable(const gse::context& ctx, render_pass_descriptor desc) noexcept
 	: m_ctx(std::addressof(ctx)), m_desc(std::move(desc)) {
 	assert(
 		m_desc.pass_kind.exists(),
@@ -42,7 +42,7 @@ auto gse::gpu::request_pass_awaitable::await_resume() noexcept -> recording_cont
 	return std::move(*m_rec);
 }
 
-gse::gpu::pass_builder::pass_builder(const frame_context& ctx, const id pass_kind) noexcept
+gse::gpu::pass_builder::pass_builder(const gse::context& ctx, const id pass_kind) noexcept
 	: m_ctx(std::addressof(ctx)) {
 	m_desc.pass_kind = pass_kind;
 }
@@ -71,7 +71,7 @@ auto gse::gpu::pass_builder::operator co_await() && -> request_pass_awaitable {
 	return request_pass_awaitable{ *m_ctx, std::move(m_desc) };
 }
 
-auto gse::gpu::pass(const frame_context& ctx, const id pass_kind) -> pass_builder {
+auto gse::gpu::pass(const gse::context& ctx, const id pass_kind) -> pass_builder {
 	return pass_builder{ ctx, pass_kind };
 }
 

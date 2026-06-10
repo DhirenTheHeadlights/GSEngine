@@ -58,17 +58,17 @@ namespace gse::renderer::taa {
 	>;
 
 	auto recreate_history(
-		const gpu::context::data& gpu_s,
+		shared_view<gpu::context> gpu_s,
 		system::data& d
 	) -> void;
 
 	auto rebind_views(
-		const gpu::context::data& gpu_s,
+		shared_view<gpu::context> gpu_s,
 		system::data& d
 	) -> void;
 }
 
-auto gse::renderer::taa::recreate_history(const gpu::context::data& gpu_s, system::data& d) -> void {
+auto gse::renderer::taa::recreate_history(const shared_view<gpu::context> gpu_s, system::data& d) -> void {
 	const auto extent = gpu_s.render_graph->extent();
 	d.frames_since_history_invalid = 0;
 	if (extent.x() == 0 || extent.y() == 0) {
@@ -97,7 +97,7 @@ auto gse::renderer::taa::recreate_history(const gpu::context::data& gpu_s, syste
 	}
 }
 
-auto gse::renderer::taa::rebind_views(const gpu::context::data& gpu_s, system::data& d) -> void {
+auto gse::renderer::taa::rebind_views(const shared_view<gpu::context> gpu_s, system::data& d) -> void {
 	auto& hdr = gpu_s.render_graph->framebuffer_image<targets::hdr_color>();
 	if (hdr.handle()) {
 		if (!d.hdr_view.valid()) {
@@ -114,7 +114,7 @@ auto gse::renderer::taa::rebind_views(const gpu::context::data& gpu_s, system::d
 	}
 }
 
-auto gse::renderer::taa::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
+auto gse::renderer::taa::system::init(context& ctx, const shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
 	d.pipeline = gpu::build_graphics_program(*gpu_s.device, entry::pod);
 
 	d.sampler = gpu_s.device->register_sampler(
@@ -132,16 +132,16 @@ auto gse::renderer::taa::system::run(run_context& ctx, const gpu::context::data&
 
 	gpu::context::on_swap_chain_recreate(
 		gpu_s,
-		[&gpu_s, &d]() {
+		[gpu_s, &d]() {
 			recreate_history(gpu_s, d);
 			rebind_views(gpu_s, d);
 		}
 	);
 
-	co_return;
+	return {};
 }
 
-auto gse::renderer::taa::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
+auto gse::renderer::taa::system::frame(const context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}

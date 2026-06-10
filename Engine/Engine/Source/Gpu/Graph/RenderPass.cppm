@@ -44,7 +44,7 @@ export namespace gse::gpu {
 	class request_pass_awaitable : non_copyable {
 	public:
 		request_pass_awaitable(
-			const frame_context& ctx,
+			const gse::context& ctx,
 			render_pass_descriptor desc
 		) noexcept;
 
@@ -65,7 +65,7 @@ export namespace gse::gpu {
 		[[nodiscard]] auto await_resume() noexcept -> recording_context;
 
 	private:
-		const frame_context* m_ctx;
+		const gse::context* m_ctx;
 		render_pass_descriptor m_desc;
 		std::optional<recording_context> m_rec;
 		id m_trace_id{};
@@ -75,7 +75,7 @@ export namespace gse::gpu {
 	class pass_builder {
 	public:
 		pass_builder(
-			const frame_context& ctx,
+			const gse::context& ctx,
 			id pass_kind
 		) noexcept;
 
@@ -104,18 +104,18 @@ export namespace gse::gpu {
 		auto operator co_await() && -> request_pass_awaitable;
 
 	private:
-		const frame_context* m_ctx;
+		const gse::context* m_ctx;
 		render_pass_descriptor m_desc;
 	};
 
 	[[nodiscard]] auto pass(
-		const frame_context& ctx,
+		const gse::context& ctx,
 		id pass_kind
 	) -> pass_builder;
 
 	template <typename Owner>
 	[[nodiscard]] auto pass(
-		const frame_context& ctx
+		const gse::context& ctx
 	) -> pass_builder;
 
 	auto clear_color(
@@ -153,6 +153,6 @@ auto gse::gpu::pass_builder::in_chain() && -> pass_builder&& {
 }
 
 template <typename Owner>
-auto gse::gpu::pass(const frame_context& ctx) -> pass_builder {
+auto gse::gpu::pass(const gse::context& ctx) -> pass_builder {
 	return pass_builder{ ctx, trace_id<Owner>() };
 }

@@ -55,7 +55,7 @@ namespace gse::renderer::depth_prepass::meshlet {
 	>;
 }
 
-auto gse::renderer::depth_prepass::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
+auto gse::renderer::depth_prepass::system::init(context& ctx, const shared_view<gpu::context> gpu_s, const shared_view<asset::registry> assets_s, data& d) -> async::task<> {
 	d.meshlet_pipeline = gpu::build_graphics_program(*gpu_s.device, meshlet::entry::pod);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
@@ -71,10 +71,10 @@ auto gse::renderer::depth_prepass::system::run(run_context& ctx, const gpu::cont
 		);
 	}
 
-	co_return;
+	return {};
 }
 
-auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, const data& d, shared_view<geometry_collector::system> gc_r, shared_view<camera::system> cam_state) -> async::task<> {
+auto gse::renderer::depth_prepass::system::frame(context& ctx, shared_view<gpu::context> gpu_s, const data& d, shared_view<geometry_collector::system> gc_r, shared_view<camera::system> cam_state) -> async::task<> {
 	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
 	if (render_items.empty()) {
 		co_return;

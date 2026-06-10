@@ -56,7 +56,7 @@ namespace ide {
 		gse::gui::builder& ui,
 		workspace::data& ws,
 		std::uint32_t document_id,
-		const config_system::data& config
+		gse::shared_view<config_system> config
 	) -> void;
 }
 
@@ -205,7 +205,7 @@ auto ide::draw_explorer_panel(gse::gui::builder& ui, workspace::data& ws) -> voi
 	}
 }
 
-auto ide::draw_document_panel(gse::gui::builder& ui, workspace::data& ws, const std::uint32_t document_id, const config_system::data& config) -> void {
+auto ide::draw_document_panel(gse::gui::builder& ui, workspace::data& ws, const std::uint32_t document_id, const gse::shared_view<config_system> config) -> void {
 	const auto& ctx = ui.ctx;
 	if (ctx.clip_stack.empty()) {
 		return;
@@ -253,35 +253,38 @@ export namespace ide {
 			lsp::client::data lsp;
 			command_registry commands;
 			int boot_frames = 0;
+			bool initialized = false;
 		};
 
 		static auto run(
-			gse::run_context& ctx,
+			gse::context& ctx,
 			data& d,
-			const config_system::data& config_d
+			gse::shared_view<config_system> config_d
 		) -> gse::async::task<>;
 	};
 }
 
-auto ide::editor_app::run(gse::run_context& ctx, data& d, const config_system::data& config_d) -> gse::async::task<> {
-	ide::discover_commands<^^ide::commands>(d.commands);
+auto ide::editor_app::run(gse::context& ctx, data& d, const gse::shared_view<config_system> config_d) -> gse::async::task<> {
+	if (!d.initialized) {
+		ide::discover_commands<^^ide::commands>(d.commands);
 
-	std::error_code ec;
-	d.ws.root = workspace::find_repo_root(std::filesystem::current_path(ec));
-	d.ws.fs_root.path = d.ws.root;
-	d.ws.fs_root.name = d.ws.root.filename().string();
-	d.ws.fs_root.is_dir = true;
-	workspace::open_scratch(d.ws);
+		std::error_code ec;
+		d.ws.root = workspace::find_repo_root(std::filesystem::current_path(ec));
+		d.ws.fs_root.path = d.ws.root;
+		d.ws.fs_root.name = d.ws.root.filename().string();
+		d.ws.fs_root.is_dir = true;
+		workspace::open_scratch(d.ws);
 
-	ctx.channels.push<gse::gui::push_screen_request>({
-		.factory = [channels = ctx.channels] {
-			return std::make_unique<editor_screen>(channels);
-		},
-	});
+		ctx.channels.push<gse::gui::push_screen_request>({
+			.factory = [channels = ctx.channels] {
+				return std::make_unique<editor_screen>(channels);
+			},
+		});
 
-	while (true) {
+		d.initialized = true;
+	}
 		workspace::data* ws = &d.ws;
-		const config_system::data* config = &config_d;
+		const auto config = config_d;
 
 		ctx.channels.push<gse::gui::menu_content>({
 			.menu = std::string(explorer_panel_name),
@@ -302,7 +305,7 @@ auto ide::editor_app::run(gse::run_context& ctx, data& d, const config_system::d
 				.menu = doc.tab_name,
 				.layer = gse::render_layer::content,
 				.build = [ws, id, config](gse::gui::builder& b) {
-					draw_document_panel(b, *ws, id, *config);
+					draw_document_panel(b, *ws, id, config);
 				},
 			});
 		}
@@ -341,6 +344,5 @@ auto ide::editor_app::run(gse::run_context& ctx, data& d, const config_system::d
 			});
 		}
 
-		co_await ctx.next_tick();
-	}
+	return {};
 }

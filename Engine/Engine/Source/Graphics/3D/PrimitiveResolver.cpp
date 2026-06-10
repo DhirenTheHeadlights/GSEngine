@@ -50,58 +50,53 @@ auto gse::primitive_resolver::attach_sphere(const primitive_sphere_spec& spec, c
 	++render.model_count;
 }
 
-auto gse::primitive_resolver::system::run(run_context& ctx, const primitives::data& prims) -> async::task<> {
-	while (true) {
-		for (const auto eid : ctx.drain_component_adds<primitive_box_spec>()) {
-			if (!ctx.try_component<render_component>(eid)) {
-				ctx.add_component<render_component>(eid);
-			}
+auto gse::primitive_resolver::system::run::ensure_renders(context& ctx, structural<render_component> renders) -> async::task<> {
+	for (const auto eid : ctx.drain_component_adds<primitive_box_spec>()) {
+		if (!renders.contains(eid)) {
+			renders.add(eid);
 		}
-		for (const auto eid : ctx.drain_component_adds<primitive_sphere_spec>()) {
-			if (!ctx.try_component<render_component>(eid)) {
-				ctx.add_component<render_component>(eid);
-			}
-		}
-
-		{
-			auto [boxes, spheres, renders] = co_await ctx.acquire_with(
-				write_v<primitive_box_spec>,
-				write_v<primitive_sphere_spec>,
-				write_v<render_component>
-			);
-
-			const auto box_owners = boxes.owner_ids();
-			for (std::size_t i = 0; i < boxes.size(); ++i) {
-				auto& spec = boxes[i];
-				if (spec.resolved) {
-					continue;
-				}
-				auto* render = renders.find(box_owners[i]);
-				if (!render) {
-					continue;
-				}
-				attach_box(spec, prims.unit_box, *render);
-				spec.resolved = true;
-			}
-
-			const auto sphere_owners = spheres.owner_ids();
-			for (std::size_t i = 0; i < spheres.size(); ++i) {
-				auto& spec = spheres[i];
-				if (spec.resolved) {
-					continue;
-				}
-				auto* render = renders.find(sphere_owners[i]);
-				if (!render) {
-					continue;
-				}
-				const auto& handle = (spec.lod == sphere_lod::lo) ? prims.sphere_lo
-					: (spec.lod == sphere_lod::hi)				  ? prims.sphere_hi
-																  : prims.sphere_mid;
-				attach_sphere(spec, handle, *render);
-				spec.resolved = true;
-			}
-		}
-
-		co_await ctx.next_tick();
 	}
+	for (const auto eid : ctx.drain_component_adds<primitive_sphere_spec>()) {
+		if (!renders.contains(eid)) {
+			renders.add(eid);
+		}
+	}
+	co_return;
+}
+
+auto gse::primitive_resolver::system::run::populate(context& ctx, const primitives::data& prims, write<primitive_box_spec> boxes, write<primitive_sphere_spec> spheres, write<render_component> renders) -> async::task<> {
+	(void)ctx;
+
+	const auto box_owners = boxes.owner_ids();
+	for (std::size_t i = 0; i < boxes.size(); ++i) {
+		auto& spec = boxes[i];
+		if (spec.resolved) {
+			continue;
+		}
+		auto* render = renders.find(box_owners[i]);
+		if (!render) {
+			continue;
+		}
+		attach_box(spec, prims.unit_box, *render);
+		spec.resolved = true;
+	}
+
+	const auto sphere_owners = spheres.owner_ids();
+	for (std::size_t i = 0; i < spheres.size(); ++i) {
+		auto& spec = spheres[i];
+		if (spec.resolved) {
+			continue;
+		}
+		auto* render = renders.find(sphere_owners[i]);
+		if (!render) {
+			continue;
+		}
+		const auto& handle = (spec.lod == sphere_lod::lo) ? prims.sphere_lo
+			: (spec.lod == sphere_lod::hi)				  ? prims.sphere_hi
+														  : prims.sphere_mid;
+		attach_sphere(spec, handle, *render);
+		spec.resolved = true;
+	}
+
+	co_return;
 }

@@ -163,17 +163,25 @@ export namespace gse::renderer::geometry_collector {
 			std::unordered_map<id, std::vector<std::optional<spatial_matrix>>> prev_model_matrices;
 		};
 
+		static auto init(
+			context& ctx,
+			shared_view<gpu::context> gpu_s,
+			data& d
+		) -> async::task<>;
+
 		static auto run(
-			run_context& ctx,
-			const gpu::context::data& gpu_s,
-			const asset::data& assets_s,
+			context& ctx,
+			shared_view<gpu::context> gpu_s,
+			shared_view<asset::registry> assets_s,
 			data& d,
-			const camera::system::data& cam_state,
-			const primitive_resolver::system& resolver_state
+			shared_view<camera::system> cam_state,
+			shared_view<primitive_resolver::system> resolver_state,
+			write<render_component> render,
+			read<physics::transform_component> transform
 		) -> async::task<>;
 
 		static auto frame(
-			frame_context& ctx,
+			context& ctx,
 			shared_view<gpu::context> gpu_s,
 			data& d
 		) -> async::task<>;

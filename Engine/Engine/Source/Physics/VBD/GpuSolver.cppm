@@ -49,16 +49,16 @@ export namespace gse::vbd {
 	class gpu_solver {
 	public:
 		auto create_buffers(
-			const gpu::context::data& ctx
+			shared_view<gpu::context> ctx
 		) -> void;
 
 		auto initialize_compute(
-			run_context& ctx,
-			const gpu::context::data& gpu_s
+			context& ctx,
+			shared_view<gpu::context> gpu_s
 		) -> async::task<>;
 
 		auto dispatch_compute(
-			frame_context& ctx
+			context& ctx
 		) -> async::task<>;
 
 		auto compute_initialized() const -> bool;
