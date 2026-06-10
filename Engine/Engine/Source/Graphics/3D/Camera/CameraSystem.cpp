@@ -86,7 +86,7 @@ auto gse::camera::system::init(data& d) -> async::task<> {
 	return {};
 }
 
-auto gse::camera::system::run(run_context& ctx, data& d, read<follow_component> cameras) -> async::task<> {
+auto gse::camera::system::run(context& ctx, data& d, read<follow_component> cameras) -> async::task<> {
 	const time dt = system_clock::dt();
 
 	for (const auto& [focus] : ctx.read_channel<ui_focus_request>()) {
@@ -158,10 +158,8 @@ auto gse::camera::system::run(run_context& ctx, data& d, read<follow_component> 
 
 	const vec3f forward = rotate_vector(d.current.orientation, vec3f(0.f, 0.f, -1.f));
 	d.yaw = radians(std::atan2(-forward.x(), -forward.z()));
-	if (!ctx.read_channel<camera_yaw_request>().empty()) {
-		ctx.channels.push<camera_yaw_response>({
-			.yaw = d.yaw,
-		});
+	for (const auto& req : ctx.read_channel<camera_yaw_request>()) {
+		req.promise.fulfill(d.yaw);
 	}
 
 	d.prev_view_matrix = d.view_matrix;

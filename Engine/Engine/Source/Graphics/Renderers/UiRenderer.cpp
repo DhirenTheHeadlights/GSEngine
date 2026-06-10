@@ -154,7 +154,7 @@ auto gse::renderer::ui::add_text_quads(linear_vector<vertex>& vertices, linear_v
 	}
 }
 
-auto gse::renderer::ui::system::init(const gpu::context::data& gpu_s, data& d) -> async::task<> {
+auto gse::renderer::ui::system::init(const shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
 	d.sprite_pipeline = gpu::build_graphics_program(*gpu_s.device, sprite_entry::pod);
 	d.text_pipeline = gpu::build_graphics_program(*gpu_s.device, msdf_entry::pod);
 
@@ -181,7 +181,7 @@ auto gse::renderer::ui::system::init(const gpu::context::data& gpu_s, data& d) -
 	return {};
 }
 
-auto gse::renderer::ui::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
+auto gse::renderer::ui::system::run(context& ctx, const shared_view<gpu::context> gpu_s, const shared_view<asset::registry> assets_s, data& d) -> async::task<> {
 	const auto& sprite_commands = ctx.read_channel<sprite_command>();
 	const auto& text_commands = ctx.read_channel<text_command>();
 
@@ -333,7 +333,7 @@ auto gse::renderer::ui::system::run(run_context& ctx, const gpu::context::data& 
 	return {};
 }
 
-auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<scene_snapshot::system> snapshot_s) -> async::task<> {
+auto gse::renderer::ui::system::frame(context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<scene_snapshot::system> snapshot_s) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}

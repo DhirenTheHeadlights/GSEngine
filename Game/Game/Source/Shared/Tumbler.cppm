@@ -14,7 +14,7 @@ export namespace gs::tumbler {
 
 	struct system {
 		static auto run(
-			gse::run_context& ctx,
+			gse::context& ctx,
 			gse::write<component> tumblers,
 			gse::write<gse::physics::transform_component> transforms,
 			gse::write<gse::physics::motion_component> motions
@@ -22,7 +22,7 @@ export namespace gs::tumbler {
 	};
 }
 
-auto gs::tumbler::system::run(gse::run_context& ctx, gse::write<component> tumblers, gse::write<gse::physics::transform_component> transforms, gse::write<gse::physics::motion_component> motions) -> gse::async::task<> {
+auto gs::tumbler::system::run(gse::context& ctx, gse::write<component> tumblers, gse::write<gse::physics::transform_component> transforms, gse::write<gse::physics::motion_component> motions) -> gse::async::task<> {
 	const int steps = gse::system_clock::fixed_steps_this_frame();
 	const auto step_dt = gse::system_clock::fixed_dt<gse::time>();
 	const float frame_step_count = static_cast<float>(steps);

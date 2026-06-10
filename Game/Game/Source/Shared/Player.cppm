@@ -56,18 +56,18 @@ export namespace gs::player {
 
 		struct run {
 			static auto attach(
-				gse::run_context& ctx,
+				gse::context& ctx,
 				data& d,
 				gse::read<component> players,
 				gse::structural<gse::camera::follow_component> follows
 			) -> gse::async::task<>;
 
 			static auto update(
-				gse::run_context& ctx,
+				gse::context& ctx,
 				data& d,
-				const gse::actions::system::data& as,
-				const gse::input::system::data& input_s,
-				const gse::camera::system::data& cam_s,
+				gse::shared_view<gse::actions::system> as,
+				gse::shared_view<gse::input::system> input_s,
+				gse::shared_view<gse::camera::system> cam_s,
 				gse::write<component> players,
 				gse::write<gse::physics::transform_component> transforms,
 				gse::write<gse::camera::follow_component> follows,
@@ -89,12 +89,12 @@ namespace gs::player {
 	};
 
 	auto register_bindings(
-		gse::run_context& ctx,
+		gse::context& ctx,
 		bindings& b
 	) -> void;
 }
 
-auto gs::player::register_bindings(gse::run_context& ctx, bindings& b) -> void {
+auto gs::player::register_bindings(gse::context& ctx, bindings& b) -> void {
 	const auto w = gse::actions::add<"Player_Move_Forward">(ctx.channels, gse::key::w);
 	const auto a = gse::actions::add<"Player_Move_Left">(ctx.channels, gse::key::a);
 	const auto s_key = gse::actions::add<"Player_Move_Backward">(ctx.channels, gse::key::s);
@@ -116,7 +116,7 @@ auto gs::player::register_bindings(gse::run_context& ctx, bindings& b) -> void {
 	);
 }
 
-auto gs::player::system::run::attach(gse::run_context& ctx, data& d, gse::read<component> players, gse::structural<gse::camera::follow_component> follows) -> gse::async::task<> {
+auto gs::player::system::run::attach(gse::context& ctx, data& d, gse::read<component> players, gse::structural<gse::camera::follow_component> follows) -> gse::async::task<> {
 	for (const auto owner_id : ctx.drain_component_adds<component>()) {
 		const auto* p = players.find(owner_id);
 		if (!p) {
@@ -145,7 +145,7 @@ auto gs::player::system::run::attach(gse::run_context& ctx, data& d, gse::read<c
 	return {};
 }
 
-auto gs::player::system::run::update(gse::run_context& ctx, data& d, const gse::actions::system::data& as, const gse::input::system::data& input_s, const gse::camera::system::data& cam_s, gse::write<component> players, gse::write<gse::physics::transform_component> transforms, gse::write<gse::camera::follow_component> follows, gse::write<gs::locomotion::intent> intents, gse::read<gs::locomotion::state> states, gse::read<gs::locomotion::gait> gaits, gse::read<gse::physics::collision_component> collisions, gse::read<gse::physics::motion_component> motions) -> gse::async::task<> {
+auto gs::player::system::run::update(gse::context& ctx, data& d, const gse::shared_view<gse::actions::system> as, const gse::shared_view<gse::input::system> input_s, const gse::shared_view<gse::camera::system> cam_s, gse::write<component> players, gse::write<gse::physics::transform_component> transforms, gse::write<gse::camera::follow_component> follows, gse::write<gs::locomotion::intent> intents, gse::read<gs::locomotion::state> states, gse::read<gs::locomotion::gait> gaits, gse::read<gse::physics::collision_component> collisions, gse::read<gse::physics::motion_component> motions) -> gse::async::task<> {
 	const auto player_ids = players.owner_ids();
 
 	const auto& cs = gse::actions::system::current_state(as);

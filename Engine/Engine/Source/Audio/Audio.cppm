@@ -116,12 +116,11 @@ export namespace gse::audio {
 		) -> async::task<>;
 
 		static auto run(
-			run_context& ctx,
+			context& ctx,
 			data& d
 		) -> async::task<>;
 
 		static auto shutdown(
-			shutdown_context& phase,
 			data& d
 		) -> void;
 

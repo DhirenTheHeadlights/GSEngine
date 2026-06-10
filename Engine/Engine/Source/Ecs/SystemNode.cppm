@@ -6,16 +6,13 @@ import gse.core;
 import gse.concurrency;
 import gse.meta;
 
-import :phase_context;
 import :registries;
-import :run_context;
-import :frame_context;
+import :context;
+import :context;
 import :settings;
+import :traits;
 
 export namespace gse {
-	template <typename S>
-	concept names_data = requires { typename S::data; };
-
 	template <typename T>
 	consteval auto has_describe_fields() -> bool;
 
@@ -58,25 +55,24 @@ export namespace gse {
 		void (
 			*invoke_shutdown_fn
 		)(
-			shutdown_context&,
 			void*
 		) = nullptr;
 		auto (
 			*invoke_run_fn
 		)(
-			run_context&,
+			context&,
 			void*
 		) -> async::task<> = nullptr;
 		auto (
 			*invoke_init_fn
 		)(
-			run_context&,
+			context&,
 			void*
 		) -> async::task<> = nullptr;
 		auto (
 			*invoke_frame_fn
 		)(
-			frame_context&,
+			context&,
 			void*
 		) -> async::task<> = nullptr;
 		void (
@@ -95,6 +91,8 @@ export namespace gse {
 		std::vector<id> run_state_deps;
 		std::vector<id> init_state_deps;
 		std::vector<id> frame_state_deps;
+		std::vector<id> optional_run_state_deps;
+		std::vector<id> optional_init_state_deps;
 		std::vector<id> component_reads;
 		std::vector<id> component_writes;
 
@@ -110,7 +108,7 @@ export namespace gse {
 		std::unique_ptr<async::manual_event> resume_event;
 		std::unique_ptr<async::manual_event> paused_event;
 		std::unique_ptr<channel_writer> init_writer;
-		std::unique_ptr<run_context> init_ctx;
+		std::unique_ptr<context> init_ctx;
 		async::task<> init_task;
 
 		id state_id;

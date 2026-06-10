@@ -77,12 +77,12 @@ namespace gse::renderer::bloom {
 	) -> std::pair<std::uint32_t, std::array<vec2u, max_mip_count>>;
 
 	auto recreate_mip_chain(
-		const gpu::context::data& gpu_s,
+		shared_view<gpu::context> gpu_s,
 		system::data& d
 	) -> void;
 
 	auto rewrite_descriptors(
-		const gpu::context::data& gpu_s,
+		shared_view<gpu::context> gpu_s,
 		system::data& d
 	) -> void;
 }
@@ -121,7 +121,7 @@ auto gse::renderer::bloom::compute_mip_chain(const vec2u screen_extent, const qu
 	return { produced, extents };
 }
 
-auto gse::renderer::bloom::recreate_mip_chain(const gpu::context::data& gpu_s, system::data& d) -> void {
+auto gse::renderer::bloom::recreate_mip_chain(const shared_view<gpu::context> gpu_s, system::data& d) -> void {
 	const auto [count, extents] = compute_mip_chain(gpu_s.render_graph->extent(), d.bloom_quality);
 	d.active_mip_count = count;
 	d.mip_extents = extents;
@@ -154,7 +154,7 @@ auto gse::renderer::bloom::recreate_mip_chain(const gpu::context::data& gpu_s, s
 	}
 }
 
-auto gse::renderer::bloom::rewrite_descriptors(const gpu::context::data& gpu_s, system::data& d) -> void {
+auto gse::renderer::bloom::rewrite_descriptors(const shared_view<gpu::context> gpu_s, system::data& d) -> void {
 	d.hdr_view = {};
 
 	auto& hdr = gpu_s.render_graph->framebuffer_image<targets::post_taa_color>();
@@ -168,7 +168,7 @@ auto gse::renderer::bloom::rewrite_descriptors(const gpu::context::data& gpu_s, 
 	gpu_s.device->write_sampled_image(d.hdr_view.slot(), hdr);
 }
 
-auto gse::renderer::bloom::system::init(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
+auto gse::renderer::bloom::system::init(context& ctx, const shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
 	d.downsample_pipeline = gpu::build_compute_program(*gpu_s.device, downsample_entry::pod);
 	d.upsample_pipeline = gpu::build_compute_program(*gpu_s.device, upsample_entry::pod);
 
@@ -187,7 +187,7 @@ auto gse::renderer::bloom::system::init(run_context& ctx, const gpu::context::da
 
 	gpu::context::on_swap_chain_recreate(
 		gpu_s,
-		[&gpu_s, &d]() {
+		[gpu_s, &d]() {
 			recreate_mip_chain(gpu_s, d);
 			rewrite_descriptors(gpu_s, d);
 		}
@@ -196,7 +196,7 @@ auto gse::renderer::bloom::system::init(run_context& ctx, const gpu::context::da
 	return {};
 }
 
-auto gse::renderer::bloom::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
+auto gse::renderer::bloom::system::frame(const context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}

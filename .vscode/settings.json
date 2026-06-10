@@ -1,4 +1,5 @@
 {
+  "clangd.path": "${workspaceFolder}/dist/clang-p2996/bin/clangd.exe",
   "clangd.arguments": [
     "--background-index",
     "--header-insertion=never",

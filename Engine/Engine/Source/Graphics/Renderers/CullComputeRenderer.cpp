@@ -57,7 +57,7 @@ namespace gse::renderer::cull_compute {
 	using entry = gpu::compute_entry<gpu::body_path<"Compute/cull_instances">, gpu::types<shader_types>, gpu::bindings<shader_binding_types>, gpu::threads<1>, gpu::push_constant<push_constants>, gpu::system_values<gpu::group_id>>;
 }
 
-auto gse::renderer::cull_compute::system::init(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const geometry_collector::system::data& gc_r, data& d) -> async::task<> {
+auto gse::renderer::cull_compute::system::init(context& ctx, const shared_view<gpu::context> gpu_s, const shared_view<asset::registry> assets_s, const shared_view<geometry_collector::system> gc_r, data& d) -> async::task<> {
 	d.pipeline = gpu::build_compute_program(*gpu_s.device, entry::pod);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
@@ -83,7 +83,7 @@ auto gse::renderer::cull_compute::system::init(run_context& ctx, const gpu::cont
 	return {};
 }
 
-auto gse::renderer::cull_compute::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, shared_view<geometry_collector::system> gc_r, const data& d) -> async::task<> {
+auto gse::renderer::cull_compute::system::frame(context& ctx, shared_view<gpu::context> gpu_s, shared_view<geometry_collector::system> gc_r, const data& d) -> async::task<> {
 	if (!d.enabled) {
 		co_return;
 	}

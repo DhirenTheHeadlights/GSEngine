@@ -70,19 +70,19 @@ export namespace gse::renderer::physics_debug {
 		};
 
 		static auto init(
-			const gpu::context::data& gpu_s,
+			shared_view<gpu::context> gpu_s,
 			data& d
 		) -> async::task<>;
 
 		struct run {
 			static auto prepare(
-				run_context& ctx,
+				context& ctx,
 				data& d,
-				const physics::system::data& ps
+				shared_view<physics::system> ps
 			) -> async::task<>;
 
 			static auto build(
-				run_context& ctx,
+				context& ctx,
 				data& d,
 				read<physics::transform_component> transforms,
 				read<physics::motion_component> motions,
@@ -92,7 +92,7 @@ export namespace gse::renderer::physics_debug {
 		};
 
 		static auto frame(
-			const frame_context& ctx,
+			const context& ctx,
 			shared_view<gpu::context> gpu_s,
 			data& d,
 			shared_view<camera::system> cam_state

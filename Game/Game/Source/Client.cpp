@@ -15,7 +15,7 @@ import :pose_driver;
 import :state_estimator;
 import :tumbler;
 
-auto gs::client_system::init(gse::run_context& ctx) -> gse::async::task<> {
+auto gs::client_system::init(gse::context& ctx) -> gse::async::task<> {
 	ctx.add_system<gs::player::system>();
 	ctx.add_system<gs::orbit_camera::system>();
 	ctx.add_system<gs::tumbler::system>();

@@ -149,7 +149,7 @@ auto gse::audio::system::init(data& d) -> async::task<> {
 	return {};
 }
 
-auto gse::audio::system::run(run_context& ctx, data& d) -> async::task<> {
+auto gse::audio::system::run(context& ctx, data& d) -> async::task<> {
 	for (const auto& req : ctx.read_channel<play_request>()) {
 		if (req.clip) {
 			const auto handle = allocate_voice(d, *req.clip, req.loop);
@@ -202,7 +202,7 @@ auto gse::audio::system::run(run_context& ctx, data& d) -> async::task<> {
 	return {};
 }
 
-auto gse::audio::system::shutdown(shutdown_context&, data& d) -> void {
+auto gse::audio::system::shutdown(data& d) -> void {
 	for (std::uint32_t i = 0; i < d.voices.size(); ++i) {
 		auto& slot = *d.voices[i];
 		if (slot.active) {

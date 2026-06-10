@@ -150,7 +150,7 @@ auto gse::renderer::world_text::ensure_vertex_capacity(system::data& d, gpu::dev
 	);
 }
 
-auto gse::renderer::world_text::system::init(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
+auto gse::renderer::world_text::system::init(context& ctx, const shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
 	d.pipeline = gpu::build_graphics_program(*gpu_s.device, entry::pod);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
@@ -169,7 +169,7 @@ auto gse::renderer::world_text::system::init(run_context& ctx, const gpu::contex
 	return {};
 }
 
-auto gse::renderer::world_text::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state, shared_view<gui::system> gui_d, shared_view<sdf_grid::system> grid_d) -> async::task<> {
+auto gse::renderer::world_text::system::frame(const context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state, shared_view<gui::system> gui_d, shared_view<sdf_grid::system> grid_d) -> async::task<> {
 	if (!grid_d.enabled || !grid_d.show_labels) {
 		co_return;
 	}

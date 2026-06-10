@@ -181,13 +181,13 @@ export namespace gse::renderer::cloud {
 		};
 
 		static auto init(
-			run_context& ctx,
-			const gpu::context::data& gpu_s,
+			context& ctx,
+			shared_view<gpu::context> gpu_s,
 			data& d
 		) -> async::task<>;
 
 		static auto frame(
-			const frame_context& ctx,
+			const context& ctx,
 			shared_view<gpu::context> gpu_s,
 			data& d,
 			shared_view<atmosphere::system> atm_state,

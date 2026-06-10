@@ -50,21 +50,21 @@ auto gse::primitive_resolver::attach_sphere(const primitive_sphere_spec& spec, c
 	++render.model_count;
 }
 
-auto gse::primitive_resolver::system::run::ensure_renders(run_context& ctx, structural<render_component> renders) -> async::task<> {
+auto gse::primitive_resolver::system::run::ensure_renders(context& ctx, structural<render_component> renders) -> async::task<> {
 	for (const auto eid : ctx.drain_component_adds<primitive_box_spec>()) {
-		if (!ctx.try_component<render_component>(eid)) {
+		if (!renders.contains(eid)) {
 			renders.add(eid);
 		}
 	}
 	for (const auto eid : ctx.drain_component_adds<primitive_sphere_spec>()) {
-		if (!ctx.try_component<render_component>(eid)) {
+		if (!renders.contains(eid)) {
 			renders.add(eid);
 		}
 	}
 	co_return;
 }
 
-auto gse::primitive_resolver::system::run::populate(run_context& ctx, const primitives::data& prims, write<primitive_box_spec> boxes, write<primitive_sphere_spec> spheres, write<render_component> renders) -> async::task<> {
+auto gse::primitive_resolver::system::run::populate(context& ctx, const primitives::data& prims, write<primitive_box_spec> boxes, write<primitive_sphere_spec> spheres, write<render_component> renders) -> async::task<> {
 	(void)ctx;
 
 	const auto box_owners = boxes.owner_ids();

@@ -1,8 +1,8 @@
-module gse.ecs:run_context_impl;
+module gse.ecs:context_impl;
 
 import std;
 
-import :run_context;
+import :context;
 
 import gse.assert;
 import gse.core;
@@ -14,7 +14,7 @@ import gse.concurrency;
 // fails with "failed to read compiled module cluster N: Bad file data". This matches the
 // convention already used in Concurrency/AsyncTask.cpp.
 
-auto gse::run_context::yield_tick() -> async::task<> {
+auto gse::context::yield_tick() -> async::task<> {
 	const int held = held_lock_count();
 	assert(
 		held == 0,

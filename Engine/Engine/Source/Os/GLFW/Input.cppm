@@ -31,25 +31,25 @@ namespace gse::detail {
 export namespace gse::input {
 	struct system {
 		struct data {
-			double_buffer<input::state> states;
+			[[= gse::shared]] double_buffer<input::state> states;
 		};
 
 		static auto run(
 			data& d,
-			const window::data* win
+			std::optional<shared_view<window>> win
 		) -> async::task<>;
 
 		static auto current_state(
-			const data& d
+			shared_view<system> d
 		) -> const input::state&;
 	};
 }
 
-auto gse::input::system::current_state(const data& d) -> const input::state& {
+auto gse::input::system::current_state(const shared_view<system> d) -> const input::state& {
 	return d.states.read();
 }
 
-auto gse::input::system::run(data& d, const window::data* win) -> async::task<> {
+auto gse::input::system::run(data& d, const std::optional<shared_view<window>> win) -> async::task<> {
 	const auto& tok = detail::token();
 	auto& persistent_state = d.states.write();
 

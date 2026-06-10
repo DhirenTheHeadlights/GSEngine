@@ -26,15 +26,15 @@ export namespace gse::renderer::cull_compute {
 		};
 
 		static auto init(
-			run_context& ctx,
-			const gpu::context::data& gpu_s,
-			const asset::data& assets_s,
-			const geometry_collector::system::data& gc_r,
+			context& ctx,
+			shared_view<gpu::context> gpu_s,
+			shared_view<asset::registry> assets_s,
+			shared_view<geometry_collector::system> gc_r,
 			data& d
 		) -> async::task<>;
 
 		static auto frame(
-			frame_context& ctx,
+			context& ctx,
 			shared_view<gpu::context> gpu_s,
 			shared_view<geometry_collector::system> gc_r,
 			const data& d
