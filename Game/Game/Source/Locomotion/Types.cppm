@@ -136,6 +136,10 @@ export namespace gs::locomotion {
 	auto phase_progress(
 		const gait& g
 	) -> float;
+	auto heading_error(
+		const state& s,
+		const intent& it
+	) -> gse::angle;
 }
 
 auto gs::locomotion::other(const leg l) -> leg {
@@ -151,4 +155,15 @@ auto gs::locomotion::phase_progress(const gait& g) -> float {
 		return 1.f;
 	}
 	return std::clamp(g.phase_elapsed / g.phase_duration, 0.f, 1.f);
+}
+
+auto gs::locomotion::heading_error(const state& s, const intent& it) -> gse::angle {
+	if (!it.has_heading) {
+		return gse::radians(0.f);
+	}
+	const float current_yaw = std::atan2(-s.pelvis_forward.x(), -s.pelvis_forward.z());
+	return gse::radians(std::remainder(
+		static_cast<float>(it.desired_yaw) - current_yaw,
+		2.f * std::numbers::pi_v<float>
+	));
 }

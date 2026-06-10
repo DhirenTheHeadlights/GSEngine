@@ -200,17 +200,17 @@ auto gs::player::system::run::update(gse::context& ctx, data& d, const gse::shar
 			itn->intensity += (move_magnitude - itn->intensity) * k;
 			itn->sprint = gse::actions::held(b.shift, cs, as);
 			itn->jump = false;
+			const float camera_yaw = static_cast<float>(p.yaw);
 			if (move_magnitude > move_deadzone) {
-				const float camera_yaw = static_cast<float>(p.yaw);
 				itn->desired_yaw = gse::radians(std::atan2(
 					forward_in * std::sin(camera_yaw) - strafe_in * std::cos(camera_yaw),
 					forward_in * std::cos(camera_yaw) + strafe_in * std::sin(camera_yaw)
 				));
-				itn->has_heading = true;
 			}
 			else {
-				itn->has_heading = false;
+				itn->desired_yaw = gse::radians(std::remainder(camera_yaw, 2.f * std::numbers::pi_v<float>));
 			}
+			itn->has_heading = true;
 
 			if (log_now) {
 				gse::log::println(

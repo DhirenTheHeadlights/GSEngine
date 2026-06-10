@@ -11,12 +11,12 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Forward pelvis assist speed at full input.">{}
 			]]
-			gse::velocity forward_speed = gse::meters_per_second(0.12f);
+			gse::velocity forward_speed = gse::meters_per_second(0.25f);
 
 			[[
 				= gse::settings::describe<"Maximum forward pelvis assist speed.">{}
 			]]
-			gse::velocity max_forward_speed = gse::meters_per_second(0.70f);
+			gse::velocity max_forward_speed = gse::meters_per_second(0.85f);
 
 			[[
 				= gse::settings::describe<"Maximum lateral pelvis assist speed.">{}
@@ -36,7 +36,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Forward capture below this magnitude is treated as normal gait lean and not resisted.">{}
 			]]
-			gse::displacement forward_capture_deadzone = gse::meters(0.25f);
+			gse::displacement forward_capture_deadzone = gse::meters(0.30f);
 
 			[[
 				= gse::settings::describe<"Maximum force used by the pelvis balance motor.">{}

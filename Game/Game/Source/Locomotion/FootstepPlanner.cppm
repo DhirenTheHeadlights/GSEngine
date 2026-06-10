@@ -11,17 +11,17 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Nominal forward step length at full input.">{}
 			]]
-			gse::displacement walk_step = gse::meters(0.28f);
+			gse::displacement walk_step = gse::meters(0.33f);
 
 			[[
 				= gse::settings::describe<"Nominal forward step length when sprinting.">{}
 			]]
-			gse::displacement sprint_step = gse::meters(0.40f);
+			gse::displacement sprint_step = gse::meters(0.52f);
 
 			[[
 				= gse::settings::describe<"Maximum forward step distance.">{}
 			]]
-			gse::displacement max_forward_step = gse::meters(0.48f);
+			gse::displacement max_forward_step = gse::meters(0.55f);
 
 			[[
 				= gse::settings::describe<"Maximum backward step distance.">{}
@@ -36,7 +36,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Forward capture-step clamp.">{}
 			]]
-			gse::displacement capture_step_limit = gse::meters(0.40f);
+			gse::displacement capture_step_limit = gse::meters(0.48f);
 
 			[[
 				= gse::settings::describe<"Scale applied to capture error before footstep planning.">{}
@@ -71,7 +71,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Forward step bias per radian of forward trunk pitch (keeps support under a leaned trunk).">{}
 			]]
-			gse::displacement pitch_step_gain = gse::meters(0.40f);
+			gse::displacement pitch_step_gain = gse::meters(0.55f);
 
 			[[
 				= gse::settings::describe<"Foot center Y when planted on the ground.">{}
@@ -186,13 +186,8 @@ auto gs::locomotion::plan_foot_target(const state& s, const gait& g, const inten
 	auto forward_xz = gse::normalize(gse::vec3f(s.pelvis_forward.x(), 0.f, s.pelvis_forward.z()));
 	auto right_xz = gse::normalize(gse::vec3f(s.pelvis_right.x(), 0.f, s.pelvis_right.z()));
 	if (it.has_heading) {
-		const float current_yaw = std::atan2(-forward_xz.x(), -forward_xz.z());
-		const float yaw_error = std::remainder(
-			static_cast<float>(it.desired_yaw) - current_yaw,
-			2.f * std::numbers::pi_v<float>
-		);
 		const float turn = std::clamp(
-			yaw_error,
+			static_cast<float>(heading_error(s, it)),
 			-static_cast<float>(d.turn_step_clamp),
 			static_cast<float>(d.turn_step_clamp)
 		);
