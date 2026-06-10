@@ -137,13 +137,13 @@ namespace gse::renderer::forward {
 	>;
 
 	auto rebind_tlas_views(
-		const gpu::context::data& gpu_s,
-		const rt_shadow::system::data& rt_state,
+		shared_view<gpu::context> gpu_s,
+		shared_view<rt_shadow::system> rt_state,
 		system::data& d
 	) -> void;
 }
 
-auto gse::renderer::forward::rebind_tlas_views(const gpu::context::data& gpu_s, const rt_shadow::system::data& rt_state, system::data& d) -> void {
+auto gse::renderer::forward::rebind_tlas_views(const shared_view<gpu::context> gpu_s, const shared_view<rt_shadow::system> rt_state, system::data& d) -> void {
 	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_handle>::frames_in_flight; ++i) {
 		const auto fi = static_cast<std::uint32_t>(i);
 		if (!d.tlas_slots[i].valid()) {
@@ -153,7 +153,7 @@ auto gse::renderer::forward::rebind_tlas_views(const gpu::context::data& gpu_s, 
 	}
 }
 
-auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const rt_shadow::system::data& rt_state, const light_culling::system::data& lc_r, const atmosphere::system::data& atm_state, const gi_probe::system::data& gi_state, const geometry_collector::system::data& gc_state, data& d) -> async::task<> {
+auto gse::renderer::forward::system::init(context& ctx, const shared_view<gpu::context> gpu_s, const shared_view<asset::registry> assets_s, const shared_view<rt_shadow::system> rt_state, const shared_view<light_culling::system> lc_r, const shared_view<atmosphere::system> atm_state, const shared_view<gi_probe::system> gi_state, const shared_view<geometry_collector::system> gc_state, data& d) -> async::task<> {
 	d.pipeline = gpu::build_graphics_program(*gpu_s.device, meshlet_entry::pod);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
@@ -196,15 +196,15 @@ auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::d
 
 	gpu::context::on_swap_chain_recreate(
 		gpu_s,
-		[&gpu_s, &rt_state, &d]() {
+		[gpu_s, rt_state, &d]() {
 			rebind_tlas_views(gpu_s, rt_state, d);
 		}
 	);
 
-	co_return;
+	return {};
 }
 
-auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state, shared_view<geometry_collector::system> gc_r, shared_view<light_culling::system> lc_r, shared_view<atmosphere::system> atm_state, shared_view<gi_probe::system> gi_state) -> async::task<> {
+auto gse::renderer::forward::system::frame(context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state, shared_view<geometry_collector::system> gc_r, shared_view<light_culling::system> lc_r, shared_view<atmosphere::system> atm_state, shared_view<gi_probe::system> gi_state, read<directional_light_component> dir_lights, read<spot_light_component> spot_lights, read<point_light_component> point_lights) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -245,9 +245,9 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 	};
 	d.camera_ubo_buffers[frame_index].host_write(camera);
 
-	auto dir_chunk = ctx.components<directional_light_component>();
-	auto spot_chunk = ctx.components<spot_light_component>();
-	auto point_chunk = ctx.components<point_light_component>();
+	auto& dir_chunk = dir_lights;
+	auto& spot_chunk = spot_lights;
+	auto& point_chunk = point_lights;
 
 	const std::size_t total_lights = std::min(dir_chunk.size() + spot_chunk.size() + point_chunk.size() + 1u,
 											  max_lights);

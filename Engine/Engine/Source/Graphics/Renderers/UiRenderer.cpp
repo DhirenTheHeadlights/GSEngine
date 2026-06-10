@@ -154,7 +154,7 @@ auto gse::renderer::ui::add_text_quads(linear_vector<vertex>& vertices, linear_v
 	}
 }
 
-auto gse::renderer::ui::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
+auto gse::renderer::ui::system::init(const shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
 	d.sprite_pipeline = gpu::build_graphics_program(*gpu_s.device, sprite_entry::pod);
 	d.text_pipeline = gpu::build_graphics_program(*gpu_s.device, msdf_entry::pod);
 
@@ -178,161 +178,162 @@ auto gse::renderer::ui::system::run(run_context& ctx, const gpu::context::data& 
 		);
 	}
 
-	while (true) {
-		const auto& sprite_commands = ctx.read_channel<sprite_command>();
-		const auto& text_commands = ctx.read_channel<text_command>();
+	return {};
+}
 
-		if (sprite_commands.empty() && text_commands.empty()) {
-			co_await ctx.next_tick();
+auto gse::renderer::ui::system::run(context& ctx, const shared_view<gpu::context> gpu_s, const shared_view<asset::registry> assets_s, data& d) -> async::task<> {
+	const auto& sprite_commands = ctx.read_channel<sprite_command>();
+	const auto& text_commands = ctx.read_channel<text_command>();
+
+	if (sprite_commands.empty() && text_commands.empty()) {
+		return {};
+	}
+
+	auto& [vertices, indices, batches] = d.buffered_frames.write();
+	vertices.clear();
+	indices.clear();
+	batches.clear();
+
+	std::vector<unified_command> unified;
+	unified.reserve(sprite_commands.size() + text_commands.size());
+
+	for (const auto& cmd : sprite_commands) {
+		if (!cmd.texture.valid()) {
 			continue;
 		}
 
-		auto& [vertices, indices, batches] = d.buffered_frames.write();
-		vertices.clear();
-		indices.clear();
-		batches.clear();
-
-		std::vector<unified_command> unified;
-		unified.reserve(sprite_commands.size() + text_commands.size());
-
-		for (const auto& cmd : sprite_commands) {
-			if (!cmd.texture.valid()) {
-				continue;
-			}
-
-			unified.push_back({
-				.type = command_type::sprite,
-				.layer = cmd.layer,
-				.z_order = cmd.z_order,
-				.clip_rect = cmd.clip_rect,
-				.texture = cmd.texture,
-				.rect = cmd.rect,
-				.color = cmd.color,
-				.uv_rect = cmd.uv_rect,
-				.rotation = cmd.rotation,
-				.corner_radius = cmd.corner_radius,
-				.sample_scene_snapshot = cmd.sample_scene_snapshot,
-				.font = {},
-				.text = {},
-				.position = {},
-				.scale = 1.0f,
-			});
-		}
-
-		for (const auto& [font, text, position, scale, color, clip_rect, layer, z_order] : text_commands) {
-			if (!font.valid() || text.empty()) {
-				continue;
-			}
-
-			unified.push_back({
-				.type = command_type::text,
-				.layer = layer,
-				.z_order = z_order,
-				.clip_rect = clip_rect,
-				.texture = {},
-				.rect = {},
-				.color = color,
-				.uv_rect = {},
-				.rotation = {},
-				.font = font,
-				.text = text,
-				.position = position,
-				.scale = scale,
-			});
-		}
-
-		std::ranges::stable_sort(
-			unified,
-			[](const unified_command& a, const unified_command& b) {
-				if (a.layer != b.layer) {
-					return static_cast<std::uint8_t>(a.layer) < static_cast<std::uint8_t>(b.layer);
-				}
-
-				if (a.z_order != b.z_order) {
-					return a.z_order < b.z_order;
-				}
-
-				if (a.type != b.type) {
-					return a.type < b.type;
-				}
-
-				if (a.type == command_type::sprite) {
-					return a.texture.id().number() < b.texture.id().number();
-				}
-				return a.font.id().number() < b.font.id().number();
-			}
-		);
-
-		auto current_type = command_type::sprite;
-		resource::handle<texture> current_texture;
-		resource::handle<font> current_font;
-		std::optional<rect_t<vec2f>> current_clip;
-		bool current_sample_snapshot = false;
-		std::uint32_t batch_index_start = 0;
-
-		auto flush_batch = [&] {
-			if (indices.size() > batch_index_start) {
-				batches.push_back({
-					.type = current_type,
-					.index_offset = batch_index_start,
-					.index_count = static_cast<std::uint32_t>(indices.size() - batch_index_start),
-					.clip_rect = current_clip,
-					.texture = current_texture,
-					.font = current_font,
-					.sample_scene_snapshot = current_sample_snapshot,
-				});
-			}
-			batch_index_start = static_cast<std::uint32_t>(indices.size());
-		};
-
-		for (const auto& cmd : unified) {
-			bool needs_flush = false;
-
-			if (cmd.type != current_type) {
-				needs_flush = true;
-			}
-			else if (cmd.clip_rect.has_value() != current_clip.has_value()) {
-				needs_flush = true;
-			}
-			else if (cmd.clip_rect.has_value() && (cmd.clip_rect->min() != current_clip->min() || cmd.clip_rect->max() != current_clip->max())) {
-				needs_flush = true;
-			}
-			else if (cmd.type == command_type::sprite && cmd.texture.id() != current_texture.id()) {
-				needs_flush = true;
-			}
-			else if (cmd.type == command_type::text && cmd.font.id() != current_font.id()) {
-				needs_flush = true;
-			}
-			else if (cmd.type == command_type::sprite && cmd.sample_scene_snapshot != current_sample_snapshot) {
-				needs_flush = true;
-			}
-
-			if (needs_flush) {
-				flush_batch();
-				current_type = cmd.type;
-				current_clip = cmd.clip_rect;
-				current_texture = cmd.texture;
-				current_font = cmd.font;
-				current_sample_snapshot = cmd.sample_scene_snapshot;
-			}
-
-			if (cmd.type == command_type::sprite) {
-				add_sprite_quad(vertices, indices, cmd);
-			}
-			else {
-				add_text_quads(vertices, indices, cmd);
-			}
-		}
-
-		flush_batch();
-
-		d.buffered_frames.publish();
-
-		co_await ctx.next_tick();
+		unified.push_back({
+			.type = command_type::sprite,
+			.layer = cmd.layer,
+			.z_order = cmd.z_order,
+			.clip_rect = cmd.clip_rect,
+			.texture = cmd.texture,
+			.rect = cmd.rect,
+			.color = cmd.color,
+			.uv_rect = cmd.uv_rect,
+			.rotation = cmd.rotation,
+			.corner_radius = cmd.corner_radius,
+			.sample_scene_snapshot = cmd.sample_scene_snapshot,
+			.font = {},
+			.text = {},
+			.position = {},
+			.scale = 1.0f,
+		});
 	}
+
+	for (const auto& [font, text, position, scale, color, clip_rect, layer, z_order] : text_commands) {
+		if (!font.valid() || text.empty()) {
+			continue;
+		}
+
+		unified.push_back({
+			.type = command_type::text,
+			.layer = layer,
+			.z_order = z_order,
+			.clip_rect = clip_rect,
+			.texture = {},
+			.rect = {},
+			.color = color,
+			.uv_rect = {},
+			.rotation = {},
+			.font = font,
+			.text = text,
+			.position = position,
+			.scale = scale,
+		});
+	}
+
+	std::ranges::stable_sort(
+		unified,
+		[](const unified_command& a, const unified_command& b) {
+			if (a.layer != b.layer) {
+				return static_cast<std::uint8_t>(a.layer) < static_cast<std::uint8_t>(b.layer);
+			}
+
+			if (a.z_order != b.z_order) {
+				return a.z_order < b.z_order;
+			}
+
+			if (a.type != b.type) {
+				return a.type < b.type;
+			}
+
+			if (a.type == command_type::sprite) {
+				return a.texture.id().number() < b.texture.id().number();
+			}
+			return a.font.id().number() < b.font.id().number();
+		}
+	);
+
+	auto current_type = command_type::sprite;
+	resource::handle<texture> current_texture;
+	resource::handle<font> current_font;
+	std::optional<rect_t<vec2f>> current_clip;
+	bool current_sample_snapshot = false;
+	std::uint32_t batch_index_start = 0;
+
+	auto flush_batch = [&] {
+		if (indices.size() > batch_index_start) {
+			batches.push_back({
+				.type = current_type,
+				.index_offset = batch_index_start,
+				.index_count = static_cast<std::uint32_t>(indices.size() - batch_index_start),
+				.clip_rect = current_clip,
+				.texture = current_texture,
+				.font = current_font,
+				.sample_scene_snapshot = current_sample_snapshot,
+			});
+		}
+		batch_index_start = static_cast<std::uint32_t>(indices.size());
+	};
+
+	for (const auto& cmd : unified) {
+		bool needs_flush = false;
+
+		if (cmd.type != current_type) {
+			needs_flush = true;
+		}
+		else if (cmd.clip_rect.has_value() != current_clip.has_value()) {
+			needs_flush = true;
+		}
+		else if (cmd.clip_rect.has_value() && (cmd.clip_rect->min() != current_clip->min() || cmd.clip_rect->max() != current_clip->max())) {
+			needs_flush = true;
+		}
+		else if (cmd.type == command_type::sprite && cmd.texture.id() != current_texture.id()) {
+			needs_flush = true;
+		}
+		else if (cmd.type == command_type::text && cmd.font.id() != current_font.id()) {
+			needs_flush = true;
+		}
+		else if (cmd.type == command_type::sprite && cmd.sample_scene_snapshot != current_sample_snapshot) {
+			needs_flush = true;
+		}
+
+		if (needs_flush) {
+			flush_batch();
+			current_type = cmd.type;
+			current_clip = cmd.clip_rect;
+			current_texture = cmd.texture;
+			current_font = cmd.font;
+			current_sample_snapshot = cmd.sample_scene_snapshot;
+		}
+
+		if (cmd.type == command_type::sprite) {
+			add_sprite_quad(vertices, indices, cmd);
+		}
+		else {
+			add_text_quads(vertices, indices, cmd);
+		}
+	}
+
+	flush_batch();
+
+	d.buffered_frames.publish();
+
+	return {};
 }
 
-auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<scene_snapshot::system> snapshot_s) -> async::task<> {
+auto gse::renderer::ui::system::frame(context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<scene_snapshot::system> snapshot_s) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}

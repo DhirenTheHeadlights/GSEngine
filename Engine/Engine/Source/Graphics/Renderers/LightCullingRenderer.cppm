@@ -4,6 +4,10 @@ import std;
 
 import :camera_system;
 import :atmosphere_renderer;
+import :point_light;
+import :spot_light;
+import :directional_light;
+
 import gse.os;
 import gse.assets;
 import gse.gpu;
@@ -35,19 +39,22 @@ export namespace gse::renderer::light_culling {
 			gpu::bindless_handle depth_view;
 		};
 
-		static auto run(
-			run_context& ctx,
-			const gpu::context::data& gpu_s,
-			const asset::data& assets_s,
+		static auto init(
+			context& ctx,
+			shared_view<gpu::context> gpu_s,
+			shared_view<asset::registry> assets_s,
 			data& d
 		) -> async::task<>;
 
 		static auto frame(
-			frame_context& ctx,
+			context& ctx,
 			shared_view<gpu::context> gpu_s,
 			const data& d,
 			shared_view<camera::system> cam_state,
-			shared_view<atmosphere::system> atm_state
+			shared_view<atmosphere::system> atm_state,
+			read<directional_light_component> dir_lights,
+			read<spot_light_component> spot_lights,
+			read<point_light_component> point_lights
 		) -> async::task<>;
 	};
 }

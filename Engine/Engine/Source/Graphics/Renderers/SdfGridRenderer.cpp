@@ -49,7 +49,7 @@ namespace gse::renderer::sdf_grid {
 	>;
 }
 
-auto gse::renderer::sdf_grid::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
+auto gse::renderer::sdf_grid::system::init(context& ctx, const shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
 	d.pipeline = gpu::build_graphics_program(*gpu_s.device, entry::pod);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
@@ -65,10 +65,10 @@ auto gse::renderer::sdf_grid::system::run(run_context& ctx, const gpu::context::
 		);
 	}
 
-	co_return;
+	return {};
 }
 
-auto gse::renderer::sdf_grid::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state) -> async::task<> {
+auto gse::renderer::sdf_grid::system::frame(const context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state) -> async::task<> {
 	if (!d.enabled) {
 		co_return;
 	}

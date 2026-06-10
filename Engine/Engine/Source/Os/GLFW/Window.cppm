@@ -71,7 +71,8 @@ export namespace gse {
 			gse::settings::choice<int> display_mode;
 
 			[[
-				= gse::settings::describe<"Show the system mouse cursor over the window.">{}
+				= gse::settings::describe<"Show the system mouse cursor over the window.">{},
+				= gse::shared
 			]]
 			bool mouse_visible = false;
 
@@ -92,14 +93,14 @@ export namespace gse {
 			]]
 			gse::settings::choice<int> present_mode;
 
-			GLFWwindow* handle = nullptr;
+			[[= gse::shared]] GLFWwindow* handle = nullptr;
 			std::string title;
 
 			gse::display_mode current_display_mode = gse::display_mode::windowed;
-			int current_present_mode_index = 0;
+			[[= gse::shared]] int current_present_mode_index = 0;
 			bool focused = true;
 			bool framebuffer_resized = false;
-			bool ui_focus = false;
+			[[= gse::shared]] bool ui_focus = false;
 			bool decorated = true;
 			bool maximized = false;
 			int last_monitor_index = 0;
@@ -116,7 +117,7 @@ export namespace gse {
 				{ 1920, 1080 }
 			);
 
-			task::concurrent_queue<input::event> input_events;
+			[[= gse::shared]] task::concurrent_queue<input::event> input_events;
 		};
 
 		static auto tick(
@@ -125,7 +126,6 @@ export namespace gse {
 		) -> void;
 
 		static auto shutdown(
-			shutdown_context& phase,
 			data& d
 		) -> void;
 
@@ -145,12 +145,24 @@ export namespace gse {
 			const data& d
 		) -> bool;
 
+		[[nodiscard]] static auto is_open(
+			shared_view<window> d
+		) -> bool;
+
 		[[nodiscard]] static auto minimized(
 			const data& d
 		) -> bool;
 
+		[[nodiscard]] static auto minimized(
+			shared_view<window> d
+		) -> bool;
+
 		[[nodiscard]] static auto viewport(
 			const data& d
+		) -> vec2i;
+
+		[[nodiscard]] static auto viewport(
+			shared_view<window> d
 		) -> vec2i;
 
 		[[nodiscard]] static auto frame_buffer_resized(
@@ -159,16 +171,20 @@ export namespace gse {
 
 		[[nodiscard]]
 		static auto create_vulkan_surface(
-			const data& d,
+			shared_view<window> d,
 			vk::Instance instance
 		) -> vk::SurfaceKHR;
 
 		[[nodiscard]] static auto raw_handle(
-			const data& d
+			shared_view<window> d
 		) -> GLFWwindow*;
 
 		static auto show(
 			const data& d
+		) -> void;
+
+		static auto show(
+			shared_view<window> d
 		) -> void;
 
 		static auto set_ui_focus(
@@ -177,7 +193,7 @@ export namespace gse {
 		) -> void;
 
 		[[nodiscard]] static auto ui_focus(
-			const data& d
+			shared_view<window> d
 		) -> bool;
 
 		[[nodiscard]] static auto vulkan_instance_extensions() -> std::span<const char* const>;
@@ -189,3 +205,27 @@ export namespace gse {
 		) -> std::vector<resolution_info>;
 	};
 }
+
+namespace gse {
+	auto window_handle_open(
+		GLFWwindow* handle
+	) -> bool;
+
+	auto window_handle_minimized(
+		GLFWwindow* handle
+	) -> bool;
+
+	auto window_handle_viewport(
+		GLFWwindow* handle
+	) -> vec2i;
+
+	auto window_handle_surface(
+		GLFWwindow* handle,
+		vk::Instance instance
+	) -> vk::SurfaceKHR;
+
+	auto window_handle_show(
+		GLFWwindow* handle
+	) -> void;
+}
+

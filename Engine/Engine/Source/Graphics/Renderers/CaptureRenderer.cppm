@@ -68,25 +68,30 @@ export namespace gse::renderer::capture {
 			time applied_ring_budget = seconds(30.f);
 			bool first_ring_push_logged = false;
 
-			std::unique_ptr<recording_state> recording = std::make_unique<recording_state>();
+			[[= gse::shared]] std::unique_ptr<recording_state> recording = std::make_unique<recording_state>();
 		};
 
+		static auto init(
+			context& ctx,
+			shared_view<gpu::context> gpu_s,
+			data& d
+		) -> async::task<>;
+
 		static auto run(
-			run_context& ctx,
-			const gpu::context::data& gpu_s,
-			const asset::data& assets_s,
-			const actions::system::data& sys,
+			context& ctx,
+			shared_view<gpu::context> gpu_s,
+			shared_view<asset::registry> assets_s,
+			shared_view<actions::system> sys,
 			data& d
 		) -> async::task<>;
 
 		static auto frame(
-			const frame_context& ctx,
+			const context& ctx,
 			shared_view<gpu::context> gpu_s,
 			data& d
 		) -> async::task<>;
 
 		static auto shutdown(
-			shutdown_context& phase,
 			data& d
 		) -> void;
 	};

@@ -6,16 +6,13 @@ import gse.core;
 import gse.concurrency;
 import gse.meta;
 
-import :phase_context;
 import :registries;
-import :run_context;
-import :frame_context;
+import :context;
+import :context;
 import :settings;
+import :traits;
 
 export namespace gse {
-	template <typename S>
-	concept names_data = requires { typename S::data; };
-
 	template <typename T>
 	consteval auto has_describe_fields() -> bool;
 
@@ -23,7 +20,16 @@ export namespace gse {
 	concept has_settings = names_data<S> && has_describe_fields<typename S::data>();
 
 	template <typename S>
-	concept names_run = requires { &S::run; };
+	concept names_run_fn = requires { &S::run; };
+
+	template <typename S>
+	concept names_run_phased = requires { typename S::run; } && std::is_class_v<typename S::run>;
+
+	template <typename S>
+	concept names_run = names_run_fn<S> || names_run_phased<S>;
+
+	template <typename S>
+	concept names_init = requires { &S::init; };
 
 	template <typename S>
 	concept names_shutdown = requires { &S::shutdown; };
@@ -49,19 +55,24 @@ export namespace gse {
 		void (
 			*invoke_shutdown_fn
 		)(
-			shutdown_context&,
 			void*
 		) = nullptr;
 		auto (
 			*invoke_run_fn
 		)(
-			run_context&,
+			context&,
+			void*
+		) -> async::task<> = nullptr;
+		auto (
+			*invoke_init_fn
+		)(
+			context&,
 			void*
 		) -> async::task<> = nullptr;
 		auto (
 			*invoke_frame_fn
 		)(
-			frame_context&,
+			context&,
 			void*
 		) -> async::task<> = nullptr;
 		void (
@@ -78,22 +89,27 @@ export namespace gse {
 		) = nullptr;
 
 		std::vector<id> run_state_deps;
+		std::vector<id> init_state_deps;
 		std::vector<id> frame_state_deps;
+		std::vector<id> optional_run_state_deps;
+		std::vector<id> optional_init_state_deps;
+		std::vector<id> component_reads;
+		std::vector<id> component_writes;
 
 		void* state_ptr = nullptr;
 		const void* state_snapshot_ptr = nullptr;
 
 		bool has_frame = false;
-		bool is_in_update_loop = false;
-		bool run_launched = false;
-		bool settled = false;
-		bool advance_in_flight = false;
+		bool init_launched = false;
+		bool init_done = false;
+		bool init_in_flight = false;
+		bool ran_once = false;
 
 		std::unique_ptr<async::manual_event> resume_event;
 		std::unique_ptr<async::manual_event> paused_event;
-		std::unique_ptr<channel_writer> tick_writer;
-		std::unique_ptr<run_context> tick_ctx;
-		async::task<> run_task;
+		std::unique_ptr<channel_writer> init_writer;
+		std::unique_ptr<context> init_ctx;
+		async::task<> init_task;
 
 		id state_id;
 		id state_type_id;
@@ -103,6 +119,8 @@ export namespace gse {
 		id trace_id;
 
 		std::optional<settings::register_settings_type> settings_record;
+
+		std::string system_name;
 	};
 
 	template <typename S, typename... Args>

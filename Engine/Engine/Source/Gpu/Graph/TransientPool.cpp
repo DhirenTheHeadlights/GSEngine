@@ -54,7 +54,7 @@ auto gse::gpu::allocate_transient_key() -> std::uint64_t {
 	return counter.fetch_add(1, std::memory_order_relaxed);
 }
 
-auto gse::gpu::transient_image(const frame_context& ctx, transient_image_desc desc) -> transient_image_handle {
+auto gse::gpu::transient_image(const gse::context& ctx, transient_image_desc desc) -> transient_image_handle {
 	const transient_image_handle h{
 		.key = allocate_transient_key()
 	};
@@ -65,7 +65,7 @@ auto gse::gpu::transient_image(const frame_context& ctx, transient_image_desc de
 	return h;
 }
 
-auto gse::gpu::transient_buffer(const frame_context& ctx, transient_buffer_desc desc) -> transient_buffer_handle {
+auto gse::gpu::transient_buffer(const gse::context& ctx, transient_buffer_desc desc) -> transient_buffer_handle {
 	const transient_buffer_handle h{
 		.key = allocate_transient_key()
 	};

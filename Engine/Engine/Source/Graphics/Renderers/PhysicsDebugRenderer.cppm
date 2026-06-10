@@ -65,18 +65,34 @@ export namespace gse::renderer::physics_debug {
 			per_frame_resource<gpu::buffer> line_vertex_buffers;
 			per_frame_resource<std::size_t> line_vertex_capacity;
 			std::vector<debug_vertex> line_vertices;
+
+			std::unordered_map<id, std::uint32_t> body_index_map;
 		};
 
-		static auto run(
-			run_context& ctx,
-			const gpu::context::data& gpu_s,
-			const asset::data& assets_s,
-			data& d,
-			const physics::system::data& ps
+		static auto init(
+			shared_view<gpu::context> gpu_s,
+			data& d
 		) -> async::task<>;
 
+		struct run {
+			static auto prepare(
+				context& ctx,
+				data& d,
+				shared_view<physics::system> ps
+			) -> async::task<>;
+
+			static auto build(
+				context& ctx,
+				data& d,
+				read<physics::transform_component> transforms,
+				read<physics::motion_component> motions,
+				read<physics::collision_component> collisions,
+				read<physics::collision_result_component> results
+			) -> async::task<>;
+		};
+
 		static auto frame(
-			const frame_context& ctx,
+			const context& ctx,
 			shared_view<gpu::context> gpu_s,
 			data& d,
 			shared_view<camera::system> cam_state

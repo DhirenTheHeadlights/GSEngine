@@ -190,14 +190,14 @@ export namespace gse::renderer::atmosphere {
 			bool luts_ready = false;
 		};
 
-		static auto run(
-			run_context& ctx,
-			const gpu::context::data& gpu_s,
+		static auto init(
+			context& ctx,
+			shared_view<gpu::context> gpu_s,
 			data& d
 		) -> async::task<>;
 
 		static auto frame(
-			const frame_context& ctx,
+			const context& ctx,
 			shared_view<gpu::context> gpu_s,
 			data& d,
 			shared_view<camera::system> cam_state

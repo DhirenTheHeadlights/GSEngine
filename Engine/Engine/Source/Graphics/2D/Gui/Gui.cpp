@@ -52,7 +52,7 @@ auto gse::gui::popout_close_button_rect(const ui_rect& title_bar_rect, const sty
 	});
 }
 
-auto gse::gui::system::init_body(run_context& ctx, const window::data& window_s, asset::data& assets, data& d) -> async::task<> {
+auto gse::gui::system::init_body(context& ctx, const shared_view<window> window_s, const shared_view<asset::registry> assets, data& d) -> async::task<> {
 	d.font.options = asset::enumerate_resources<font>();
 
 	if (d.font.options.empty()) {
@@ -64,7 +64,7 @@ auto gse::gui::system::init_body(run_context& ctx, const window::data& window_s,
 	}
 
 	d.blank_texture = asset::queue<texture>(assets, "blank", vec4f(1, 1, 1, 1));
-	d.gui_font = co_await asset::load<gse::font>(ctx, "Fonts/" + d.font.options[d.font.value]);
+	d.gui_font = co_await asset::load<gse::font>(ctx, assets, "Fonts/" + d.font.options[d.font.value]);
 	while (asset::resource_state<texture>(assets, d.blank_texture.id()) != resource::state::loaded) {
 		co_await ctx.yield_tick();
 	}
@@ -150,16 +150,17 @@ auto gse::gui::system::init_body(run_context& ctx, const window::data& window_s,
 	d.previous_viewport_size = vec2f(window::viewport(window_s));
 }
 
-auto gse::gui::system::run(run_context& ctx, const window::data& window_s, const asset::data& assets_s, const gse::input::system::data& input_state, const save::registry& save_reg, data& d) -> async::task<> {
-	co_await init_body(ctx, window_s, const_cast<asset::data&>(assets_s), d);
-
-	while (true) {
-		co_await update_body(ctx, window_s, assets_s, input_state, save_reg, d);
-		co_await ctx.next_tick();
-	}
+auto gse::gui::system::init(context& ctx, const shared_view<window> window_s, const shared_view<asset::registry> assets_s, data& d) -> async::task<> {
+	co_await init_body(ctx, window_s, assets_s, d);
+	co_return;
 }
 
-auto gse::gui::system::update_body(run_context& ctx, const window::data& window_s, const asset::data& assets_s, const gse::input::system::data& input_state, const save::registry& save_reg, data& d) -> async::task<> {
+auto gse::gui::system::run(context& ctx, const shared_view<window> window_s, const shared_view<asset::registry> assets_s, const shared_view<gse::input::system> input_state, const save::registry& save_reg, data& d) -> async::task<> {
+	co_await update_body(ctx, window_s, assets_s, input_state, save_reg, d);
+	co_return;
+}
+
+auto gse::gui::system::update_body(context& ctx, const shared_view<window> window_s, const shared_view<asset::registry> assets_s, const shared_view<gse::input::system> input_state, const save::registry& save_reg, data& d) -> async::task<> {
 	const auto current_viewport_size = vec2f(window::viewport(window_s));
 
 	if (d.previous_viewport_size.x() > 0.f && d.previous_viewport_size.y() > 0.f) {
@@ -533,7 +534,7 @@ auto gse::gui::system::update_body(run_context& ctx, const window::data& window_
 	co_return;
 }
 
-auto gse::gui::system::shutdown(shutdown_context&, data& d) -> void {
+auto gse::gui::system::shutdown(data& d) -> void {
 	gui::save(d.menus, config::resource_path / d.file_path);
 }
 
@@ -763,7 +764,7 @@ auto gse::gui::system::process_screen(data& d, const gse::input::state& input_st
 	d.context = nullptr;
 }
 
-auto gse::gui::system::usable_screen_rect(data& d, const window::data& window_s) -> ui_rect {
+auto gse::gui::system::usable_screen_rect(data& d, const shared_view<window> window_s) -> ui_rect {
 	const auto viewport_size = vec2f(window::viewport(window_s));
 	const float top_inset = d.reserve_top_bar ? d.fstate.sty.title_bar_height : 0.f;
 	return ui_rect::from_position_size(
@@ -800,7 +801,7 @@ auto gse::gui::system::apply_scale(const data& d, style sty, const float viewpor
 	return sty;
 }
 
-auto gse::gui::system::reload_font(data& d, const asset::data& assets) -> void {
+auto gse::gui::system::reload_font(data& d, const shared_view<asset::registry> assets) -> void {
 	if (d.font.value >= 0 && d.font.value < static_cast<int>(d.font.options.size())) {
 		d.gui_font = asset::get<font>(assets, "Fonts/" + d.font.options[d.font.value]);
 	}
@@ -1398,7 +1399,7 @@ auto gse::gui::system::handle_idle_state(data& d, const gse::input::state& input
 	return states::idle{};
 }
 
-auto gse::gui::system::handle_dragging_state(data& d, const states::dragging& current, const window::data& window_s, const vec2f mouse_position, const bool mouse_held) -> gui::state {
+auto gse::gui::system::handle_dragging_state(data& d, const states::dragging& current, const shared_view<window> window_s, const vec2f mouse_position, const bool mouse_held) -> gui::state {
 	menu* m = d.menus.try_get(current.menu_id);
 	if (!m) {
 		set_style(cursor::style::arrow);
@@ -1523,7 +1524,7 @@ auto gse::gui::system::handle_dragging_state(data& d, const states::dragging& cu
 	return current;
 }
 
-auto gse::gui::system::handle_resizing_state(data& d, const states::resizing& current, const vec2f mouse_position, const bool mouse_held, const style& style, const window::data& window_s) -> gui::state {
+auto gse::gui::system::handle_resizing_state(data& d, const states::resizing& current, const vec2f mouse_position, const bool mouse_held, const style& style, const shared_view<window> window_s) -> gui::state {
 	if (!mouse_held) {
 		d.active_dock_space.reset();
 		set_style(cursor::style::arrow);

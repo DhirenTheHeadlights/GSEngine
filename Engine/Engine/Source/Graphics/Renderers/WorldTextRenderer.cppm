@@ -22,14 +22,14 @@ export namespace gse::renderer::world_text {
 			per_frame_resource<std::size_t> vertex_capacities;
 		};
 
-		static auto run(
-			run_context& ctx,
-			const gpu::context::data& gpu_s,
+		static auto init(
+			context& ctx,
+			shared_view<gpu::context> gpu_s,
 			data& d
 		) -> async::task<>;
 
 		static auto frame(
-			const frame_context& ctx,
+			const context& ctx,
 			shared_view<gpu::context> gpu_s,
 			data& d,
 			shared_view<camera::system> cam_state,

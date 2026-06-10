@@ -161,7 +161,7 @@ namespace gse::renderer::atmosphere {
 	) -> vec3u;
 
 	auto recreate_ap_volume(
-		const gpu::context::data& gpu_s,
+		shared_view<gpu::context> gpu_s,
 		system::data& d
 	) -> void;
 
@@ -183,7 +183,7 @@ auto gse::renderer::atmosphere::compute_ap_volume_extent(const vec2u screen_exte
 	return vec3u{ x, y, base };
 }
 
-auto gse::renderer::atmosphere::recreate_ap_volume(const gpu::context::data& gpu_s, system::data& d) -> void {
+auto gse::renderer::atmosphere::recreate_ap_volume(const shared_view<gpu::context> gpu_s, system::data& d) -> void {
 	d.ap_volume_extent = compute_ap_volume_extent(gpu_s.render_graph->extent());
 	d.ap_volume = gpu_s.device->create_image(
 		{
@@ -224,7 +224,7 @@ auto gse::renderer::atmosphere::build_atmosphere_data(const system::data& d) -> 
 	};
 }
 
-auto gse::renderer::atmosphere::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
+auto gse::renderer::atmosphere::system::init(context& ctx, const shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
 	d.transmittance_pipeline = gpu::build_compute_program(*gpu_s.device,
 														  transmittance_entry::pod);
 	d.multiscatter_pipeline = gpu::build_compute_program(*gpu_s.device, multiscatter_entry::pod);
@@ -263,7 +263,10 @@ auto gse::renderer::atmosphere::system::run(run_context& ctx, const gpu::context
 	gpu::transition_image_to(*gpu_s.device, d.multiscatter_lut);
 	gpu::transition_image_to(*gpu_s.device, d.sky_view_lut);
 
-	recreate_ap_volume(gpu_s, d);
+	recreate_ap_volume(
+		gpu_s,
+		d
+	);
 
 	d.atmosphere_ubo_buffer = gpu_s.device->create_buffer(
 		{
@@ -280,15 +283,18 @@ auto gse::renderer::atmosphere::system::run(run_context& ctx, const gpu::context
 
 	gpu::context::on_swap_chain_recreate(
 		gpu_s,
-		[&gpu_s, &d]() {
-			recreate_ap_volume(gpu_s, d);
+		[gpu_s, &d]() -> void {
+			recreate_ap_volume(
+				gpu_s,
+				d
+			);
 		}
 	);
 
-	co_return;
+	return {};
 }
 
-auto gse::renderer::atmosphere::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state) -> async::task<> {
+auto gse::renderer::atmosphere::system::frame(const context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -359,8 +365,14 @@ auto gse::renderer::atmosphere::system::frame(const frame_context& ctx, shared_v
 			.camera_altitude = d.camera_altitude,
 		},
 		{
-			.transmittance_in = { d.transmittance_lut.sampled_slot(), d.lut_sampler_bindless.slot() },
-			.multiscatter_in = { d.multiscatter_lut.sampled_slot(), d.lut_sampler_bindless.slot() },
+			.transmittance_in = {
+				.image = d.transmittance_lut.sampled_slot(),
+				.sampler = d.lut_sampler_bindless.slot()
+			},
+			.multiscatter_in = {
+				.image = d.multiscatter_lut.sampled_slot(),
+				.sampler = d.lut_sampler_bindless.slot()
+			},
 			.sky_view_out = d.sky_view_lut.storage_slot(),
 			.atmosphere_ubo = d.atmosphere_ubo_buffer.slot(),
 		},
@@ -377,8 +389,14 @@ auto gse::renderer::atmosphere::system::frame(const frame_context& ctx, shared_v
 			._pad = 0.0f,
 		},
 		{
-			.transmittance_in = { d.transmittance_lut.sampled_slot(), d.lut_sampler_bindless.slot() },
-			.multiscatter_in = { d.multiscatter_lut.sampled_slot(), d.lut_sampler_bindless.slot() },
+			.transmittance_in = {
+				.image = d.transmittance_lut.sampled_slot(),
+				.sampler = d.lut_sampler_bindless.slot()
+			},
+			.multiscatter_in = {
+				.image = d.multiscatter_lut.sampled_slot(),
+				.sampler = d.lut_sampler_bindless.slot()
+			},
 			.ap_volume_out = d.ap_volume.storage_slot(),
 			.atmosphere_ubo = d.atmosphere_ubo_buffer.slot(),
 		},
@@ -401,8 +419,14 @@ auto gse::renderer::atmosphere::system::frame(const frame_context& ctx, shared_v
 			.sun_cos_radius = sun_cos_radius,
 		},
 		{
-			.transmittance_in = { d.transmittance_lut.sampled_slot(), d.lut_sampler_bindless.slot() },
-			.sky_view_in = { d.sky_view_lut.sampled_slot(), d.sky_view_sampler_bindless.slot() },
+			.transmittance_in = {
+				.image = d.transmittance_lut.sampled_slot(),
+				.sampler = d.lut_sampler_bindless.slot()
+			},
+			.sky_view_in = {
+				.image = d.sky_view_lut.sampled_slot(),
+				.sampler = d.sky_view_sampler_bindless.slot()
+			},
 			.atmosphere_ubo = d.atmosphere_ubo_buffer.slot(),
 		}
 	);

@@ -265,7 +265,7 @@ namespace gse::vbd {
 	using vbd_bindings = gpu::binding_args<shader_binding_types>;
 }
 
-auto gse::vbd::gpu_solver::create_buffers(const gpu::context::data& ctx) -> void {
+auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context> ctx) -> void {
 	constexpr auto storage_src = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_src;
 	constexpr auto storage_dst = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst;
 	constexpr auto storage_src_dst = storage_src | gpu::buffer_flag::transfer_dst;
@@ -693,10 +693,8 @@ auto gse::vbd::gpu_solver::latest_snapshot_slot() const -> std::uint32_t {
 	return 1 - m_dispatch_slot;
 }
 
-auto gse::vbd::gpu_solver::initialize_compute(run_context& ctx, const gpu::context::data& gpu_s) -> async::task<> {
-	while (!gpu_s.device) {
-		co_await ctx.next_tick();
-	}
+auto gse::vbd::gpu_solver::initialize_compute(context& ctx, const shared_view<gpu::context> gpu_s) -> async::task<> {
+	assert(gpu_s.device != nullptr, "gpu_solver::initialize_compute requires gpu::context to be initialized first");
 
 	const auto build = [&](const auto& pod) {
 		return gpu::build_compute_program(*gpu_s.device, pod);
@@ -728,7 +726,7 @@ auto gse::vbd::gpu_solver::initialize_compute(run_context& ctx, const gpu::conte
 	co_return;
 }
 
-auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<> {
+auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 	if (!m_buffers_created || m_body_count == 0) {
 		co_return;
 	}

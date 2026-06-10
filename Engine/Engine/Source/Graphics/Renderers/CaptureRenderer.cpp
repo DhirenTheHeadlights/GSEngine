@@ -48,7 +48,7 @@ namespace gse::renderer::capture {
 	using entry = gpu::compute_entry<gpu::body_path<"Compute/rgba_to_nv12">, gpu::bindings<shader_binding_types>, gpu::threads<16, 16, 1>, gpu::push_constant<push_constants>, gpu::system_values<gpu::dispatch_thread_id>>;
 }
 
-auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const actions::system::data& sys, data& d) -> async::task<> {
+auto gse::renderer::capture::system::init(context& ctx, const shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
 	const auto register_action = [&](const std::string_view name, const key default_key) -> actions::handle {
 		const id action_id = generate_id(name);
 		ctx.channels.push<actions::add_action_request>({
@@ -126,25 +126,27 @@ auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::d
 		d.encode_active = true;
 	}
 
-	while (true) {
-		const auto& action_state = actions::system::current_state(sys);
-
-		if (actions::system::pressed(action_state, sys, d.screenshot_action)) {
-			ctx.channels.push<screenshot_request>({});
-		}
-		if (actions::system::pressed(action_state, sys, d.save_clip_action)) {
-			ctx.channels.push<save_clip_request>({});
-		}
-		if (actions::system::pressed(action_state, sys, d.toggle_recording_action)) {
-			log::println(log::category::render, "toggle_recording_action edge detected in run()");
-			ctx.channels.push<toggle_recording_request>({});
-		}
-
-		co_await ctx.next_tick();
-	}
+	return {};
 }
 
-auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
+auto gse::renderer::capture::system::run(context& ctx, const shared_view<gpu::context> gpu_s, const shared_view<asset::registry> assets_s, const shared_view<actions::system> sys, data& d) -> async::task<> {
+	const auto& action_state = actions::system::current_state(sys);
+
+	if (actions::system::pressed(action_state, sys, d.screenshot_action)) {
+		ctx.channels.push<screenshot_request>({});
+	}
+	if (actions::system::pressed(action_state, sys, d.save_clip_action)) {
+		ctx.channels.push<save_clip_request>({});
+	}
+	if (actions::system::pressed(action_state, sys, d.toggle_recording_action)) {
+		log::println(log::category::render, "toggle_recording_action edge detected in run()");
+		ctx.channels.push<toggle_recording_request>({});
+	}
+
+	return {};
+}
+
+auto gse::renderer::capture::system::frame(const context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
 	auto& [staging, width, height, pending] = d.screenshots[frame_index];
@@ -358,7 +360,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 					 extent = d.encoder.extent(),
 					 stream_header = std::move(stream_header_copy),
 					 path,
-					 flag = d.clip_save_in_progress.get()] mutable {
+					 flag = d.clip_save_in_progress.get()] mutable -> void {
 						const auto ok = mp4::mux(
 							snap,
 							{ codec, extent },
@@ -447,7 +449,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 	}
 }
 
-auto gse::renderer::capture::system::shutdown(shutdown_context&, data& d) -> void {
+auto gse::renderer::capture::system::shutdown(data& d) -> void {
 	if (!d.recording) {
 		return;
 	}

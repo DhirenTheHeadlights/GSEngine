@@ -7,6 +7,7 @@ import :sync_token;
 
 import gse.vulkan;
 import gse.assert;
+import gse.ecs;
 import gse.os;
 import gse.core;
 import gse.containers;
@@ -19,7 +20,7 @@ export namespace gse::gpu {
 	public:
 		[[nodiscard]]
 		static auto create(
-			const window::data& win,
+			shared_view<window> win,
 			bool validation_layers_enabled,
 			gpu::device_settings& device_cfg
 		) -> std::unique_ptr<device>;
