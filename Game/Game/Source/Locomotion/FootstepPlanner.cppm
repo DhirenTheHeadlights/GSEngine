@@ -26,7 +26,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Maximum backward step distance.">{}
 			]]
-			gse::displacement max_backward_step = gse::meters(0.25f);
+			gse::displacement max_backward_step = gse::meters(0.40f);
 
 			[[
 				= gse::settings::describe<"Maximum horizontal travel for one swing foot.">{}

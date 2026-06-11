@@ -102,12 +102,12 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Stance hip servo torque limit.">{}
 			]]
-			gse::torque hip_max_torque = gse::newton_meters(320.f);
+			gse::torque hip_max_torque = gse::newton_meters(380.f);
 
 			[[
 				= gse::settings::describe<"Stance knee servo torque limit.">{}
 			]]
-			gse::torque knee_max_torque = gse::newton_meters(350.f);
+			gse::torque knee_max_torque = gse::newton_meters(420.f);
 
 			[[
 				= gse::settings::describe<"Stance ankle servo torque limit.">{}
