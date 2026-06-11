@@ -1,3 +1,6 @@
-# makepkg cannot source a PKGBUILD that contains CRLF line endings. Keep the
-# vendored GCC recipe LF on every platform, regardless of core.autocrlf.
+# makepkg cannot source a PKGBUILD with CRLF, and it validates every vendored
+# source file (gdbinit + the .patch stack) against pinned sha256sums — a Windows
+# checkout (core.autocrlf) rewrites them to CRLF, changing their bytes so the
+# integrity check fails. Keep the whole vendored GCC recipe LF on every platform.
+scripts/gcc-toolchain/recipe/** text eol=lf
 scripts/gcc-toolchain/recipe/PKGBUILD text eol=lf

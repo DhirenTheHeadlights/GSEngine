@@ -35,7 +35,9 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 
 	m_scheduler.set_registry(m_registry);
 
-	m_save.set_auto_save(true, config::resource_path / "Misc/settings.ini");
+	if (m_config.persist_settings) {
+		m_save.set_auto_save(true, config::resource_path / "Misc/settings.ini");
+	}
 	m_save.set_on_restart([] {
 		app::restart();
 	});

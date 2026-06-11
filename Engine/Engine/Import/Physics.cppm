@@ -5,6 +5,7 @@ export import gse.math;
 export import :bounding_box;
 export import :collision_component;
 export import :contact_manifold;
+export import :joint_drive_component;
 export import :joint_spec;
 export import :motion_component;
 export import :motor_component;

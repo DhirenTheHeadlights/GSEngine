@@ -82,14 +82,22 @@ namespace gse {
 			detail = std::format(" ({} at 0x{:016x})", op_name, addr);
 		}
 
+		const auto pc = reinterpret_cast<std::uintptr_t>(rec->ExceptionAddress);
+		std::uintptr_t module_offset = pc;
+		HMODULE module_handle = nullptr;
+		if (GetModuleHandleExW(get_module_handle_ex_flag_from_address | get_module_handle_ex_flag_unchanged_refcount, reinterpret_cast<const wchar_t*>(pc), &module_handle) && module_handle != nullptr) {
+			module_offset = pc - reinterpret_cast<std::uintptr_t>(module_handle);
+		}
+
 		log::println(
 			log::level::error,
 			log::category::general,
-			"[SEH] code=0x{:08x} ({}){} at PC=0x{:016x} thread={:#x}\nStack:\n{}",
+			"[SEH] code=0x{:08x} ({}){} at PC=0x{:016x} (module+0x{:x}) thread={:#x}\nStack:\n{}",
 			static_cast<std::uint32_t>(code),
 			enum_to_string(static_cast<seh_code>(code)),
 			detail,
-			reinterpret_cast<std::uintptr_t>(rec->ExceptionAddress),
+			pc,
+			module_offset,
 			std::hash<std::thread::id>{}(std::this_thread::get_id()),
 			capture_stacktrace(1)
 		);
