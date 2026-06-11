@@ -9,31 +9,14 @@ import :types;
 import gse.core;
 
 export namespace gse::vulkan {
-	struct specialization_entry {
-		std::uint32_t constant_id = 0;
-		std::uint32_t offset = 0;
-		std::uint32_t size = 0;
-	};
-
-	struct shader_object_create_info {
-		gpu::stage_flag stage = gpu::stage_flag::vertex;
-		std::span<const std::uint32_t> spirv;
-		std::string_view entry_point = "main";
-		gpu::stage_flags next_stage = {};
-		std::optional<std::uint32_t> required_subgroup_size;
-		bool require_full_subgroups = false;
-		std::span<const vk::DescriptorSetAndBindingMappingEXT> bindless_mappings;
-		std::span<const specialization_entry> spec_entries;
-		std::span<const std::byte> spec_data;
-	};
-
 	struct shader_spec_scratch {
 		std::vector<vk::SpecializationMapEntry> entries;
 		std::optional<vk::SpecializationInfo> info;
 	};
 
 	auto build_vk_shader_create_info(
-		const shader_object_create_info& info,
+		const gpu::shader_object_create_info& info,
+		std::span<const vk::DescriptorSetAndBindingMappingEXT> bindless_mappings,
 		std::optional<vk::ShaderRequiredSubgroupSizeCreateInfoEXT>& subgroup_size_scratch,
 		std::optional<vk::ShaderDescriptorSetAndBindingMappingInfoEXT>& mapping_scratch,
 		shader_spec_scratch& spec_scratch,
@@ -41,7 +24,7 @@ export namespace gse::vulkan {
 	) -> vk::ShaderCreateInfoEXT;
 }
 
-auto gse::vulkan::build_vk_shader_create_info(const shader_object_create_info& info, std::optional<vk::ShaderRequiredSubgroupSizeCreateInfoEXT>& subgroup_size_scratch, std::optional<vk::ShaderDescriptorSetAndBindingMappingInfoEXT>& mapping_scratch, shader_spec_scratch& spec_scratch, const vk::ShaderCreateFlagsEXT extra_flags) -> vk::ShaderCreateInfoEXT {
+auto gse::vulkan::build_vk_shader_create_info(const gpu::shader_object_create_info& info, const std::span<const vk::DescriptorSetAndBindingMappingEXT> bindless_mappings, std::optional<vk::ShaderRequiredSubgroupSizeCreateInfoEXT>& subgroup_size_scratch, std::optional<vk::ShaderDescriptorSetAndBindingMappingInfoEXT>& mapping_scratch, shader_spec_scratch& spec_scratch, const vk::ShaderCreateFlagsEXT extra_flags) -> vk::ShaderCreateInfoEXT {
 	auto flags = extra_flags | vk::ShaderCreateFlagBitsEXT::eDescriptorHeap;
 	if (info.require_full_subgroups) {
 		flags |= vk::ShaderCreateFlagBitsEXT::eRequireFullSubgroups;
@@ -56,11 +39,11 @@ auto gse::vulkan::build_vk_shader_create_info(const shader_object_create_info& i
 		};
 		pnext_head = &*subgroup_size_scratch;
 	}
-	if (!info.bindless_mappings.empty()) {
+	if (!bindless_mappings.empty()) {
 		mapping_scratch = vk::ShaderDescriptorSetAndBindingMappingInfoEXT{
 			.pNext = pnext_head,
-			.mappingCount = static_cast<std::uint32_t>(info.bindless_mappings.size()),
-			.pMappings = info.bindless_mappings.data(),
+			.mappingCount = static_cast<std::uint32_t>(bindless_mappings.size()),
+			.pMappings = bindless_mappings.data(),
 		};
 		pnext_head = &*mapping_scratch;
 	}

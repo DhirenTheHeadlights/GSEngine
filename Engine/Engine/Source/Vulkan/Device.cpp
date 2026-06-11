@@ -12,7 +12,6 @@ import :queues;
 import :types;
 import :sync;
 import :shader_object;
-import :shader_program;
 
 import vulkan;
 
@@ -2459,7 +2458,7 @@ auto gse::vulkan::device::bindless_sampler_heap_binding() const -> gpu::bindless
 	return m_bindless->sampler_binding;
 }
 
-auto gse::vulkan::device::create_shader_program(const shader_program_create_info& info) -> gpu::shader_program {
+auto gse::vulkan::device::create_shader_program(const gpu::shader_program_create_info& info) -> gpu::shader_program {
 	std::optional<vk::PushConstantRange> vk_pc_range;
 	if (info.push_constant_range.has_value()) {
 		vk_pc_range = to_vk(*info.push_constant_range);
@@ -2473,6 +2472,8 @@ auto gse::vulkan::device::create_shader_program(const shader_program_create_info
 	assert(layout_result == vk::Result::eSuccess, "failed to create pipeline layout: {}", vk::to_string(layout_result));
 	const auto layout_handle = adopt<gpu::handle<gpu::pipeline_layout>>(std::move(layout));
 
+	const auto bindless = build_bindless_mappings(info.bindings, bindless_layout(), info.push_offset_start);
+
 	std::vector<gpu::stage_flag> stages;
 	std::vector<gpu::handle<gpu::shader_object>> shader_handles;
 	stages.reserve(info.stages.size());
@@ -2482,7 +2483,7 @@ auto gse::vulkan::device::create_shader_program(const shader_program_create_info
 		std::optional<vk::ShaderRequiredSubgroupSizeCreateInfoEXT> subgroup_size_scratch;
 		std::optional<vk::ShaderDescriptorSetAndBindingMappingInfoEXT> mapping_scratch;
 		shader_spec_scratch spec_scratch;
-		const auto vk_info = build_vk_shader_create_info(info.stages[0], subgroup_size_scratch, mapping_scratch, spec_scratch, {});
+		const auto vk_info = build_vk_shader_create_info(info.stages[0], bindless.mappings, subgroup_size_scratch, mapping_scratch, spec_scratch, {});
 		auto [result, shaders] = raii_device().createShadersEXT(vk_info);
 		assert(result == vk::Result::eSuccess, "failed to create shader: {}", vk::to_string(result));
 		stages.push_back(info.stages[0].stage);
@@ -2495,7 +2496,7 @@ auto gse::vulkan::device::create_shader_program(const shader_program_create_info
 		std::vector<vk::ShaderCreateInfoEXT> vk_infos;
 		vk_infos.reserve(info.stages.size());
 		for (std::size_t i = 0; i < info.stages.size(); ++i) {
-			vk_infos.push_back(build_vk_shader_create_info(info.stages[i], subgroup_size_scratch[i], mapping_scratch[i], spec_scratch[i], vk::ShaderCreateFlagBitsEXT::eLinkStage));
+			vk_infos.push_back(build_vk_shader_create_info(info.stages[i], bindless.mappings, subgroup_size_scratch[i], mapping_scratch[i], spec_scratch[i], vk::ShaderCreateFlagBitsEXT::eLinkStage));
 		}
 		auto [result, shaders] = raii_device().createShadersEXT(vk_infos);
 		assert(result == vk::Result::eSuccess, "failed to create linked shaders: {}", vk::to_string(result));

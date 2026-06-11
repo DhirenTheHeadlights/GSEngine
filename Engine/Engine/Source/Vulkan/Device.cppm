@@ -11,7 +11,7 @@ import :physical_device;
 import :queues;
 import :types;
 import :shader_object;
-import :shader_program;
+import :bindless_mapping;
 
 import gse.assert;
 import gse.core;
@@ -202,7 +202,7 @@ export namespace gse::vulkan {
 
 		[[nodiscard]]
 		auto create_shader_program(
-			const shader_program_create_info& info
+			const gpu::shader_program_create_info& info
 		) -> gpu::shader_program;
 
 		[[nodiscard]]
