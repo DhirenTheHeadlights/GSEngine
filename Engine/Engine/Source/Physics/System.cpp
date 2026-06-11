@@ -220,7 +220,7 @@ auto gse::physics::system::collect_collision_objects(write<transform_component>&
 	return objects;
 }
 
-auto gse::physics::system::add_scene_contacts_to_solver(vbd::solver& solver, vbd::contact_cache& contact_cache, std::vector<collision_pair>& objects, const std::flat_map<id, std::uint32_t>& id_to_body_index, const bool update_scene_state, write<transform_component>& transform, write<motion_component>& motion, write<collision_component>& collision, write<collision_result_component>* results, std::span<std::uint8_t> body_airborne) -> void {
+auto gse::physics::system::add_scene_contacts_to_solver(vbd::solver& solver, vbd::contact_cache& contact_cache, std::vector<collision_pair>& objects, const std::flat_map<id, std::uint32_t>& id_to_body_index, const std::flat_set<std::pair<std::uint64_t, std::uint64_t>>& jointed_pairs, const bool update_scene_state, write<transform_component>& transform, write<motion_component>& motion, write<collision_component>& collision, write<collision_result_component>* results, std::span<std::uint8_t> body_airborne) -> void {
 	trace::scope_guard sg{ trace_id<"vbd_cpu::broad_phase">() };
 
 	{
@@ -282,6 +282,12 @@ auto gse::physics::system::add_scene_contacts_to_solver(vbd::solver& solver, vbd
 
 					const auto owner_a = obj_a.owner;
 					const auto owner_b = obj_b.owner;
+					const auto pair_key = owner_a.number() < owner_b.number()
+						? std::pair(owner_a.number(), owner_b.number())
+						: std::pair(owner_b.number(), owner_a.number());
+					if (jointed_pairs.contains(pair_key)) {
+						continue;
+					}
 					auto* transform_a = transform.find(owner_a);
 					auto* transform_b = transform.find(owner_b);
 					auto* collision_a = collision.find(owner_a);
@@ -1066,6 +1072,18 @@ auto gse::physics::system::update_vbd(const int steps, data& d, write<transform_
 		id_to_body_index.insert(id_staging.begin(), id_staging.end());
 	}
 
+	std::flat_set<std::pair<std::uint64_t, std::uint64_t>> jointed_pairs;
+	{
+		std::vector<std::pair<std::uint64_t, std::uint64_t>> pair_staging;
+		pair_staging.reserve(d.joints.size());
+		for (const auto& jd : d.joints) {
+			const auto a = jd.entity_a.number();
+			const auto b = jd.entity_b.number();
+			pair_staging.emplace_back(std::min(a, b), std::max(a, b));
+		}
+		jointed_pairs.insert(pair_staging.begin(), pair_staging.end());
+	}
+
 	const int total_substeps = steps * substeps;
 	for (int step = 0; step < total_substeps; ++step) {
 		trace::scope_guard sg_step{ trace_id<"vbd_cpu::substep">() };
@@ -1147,6 +1165,7 @@ auto gse::physics::system::update_vbd(const int steps, data& d, write<transform_
 			d.contact_cache,
 			objects,
 			id_to_body_index,
+			jointed_pairs,
 			true,
 			transform,
 			motion,

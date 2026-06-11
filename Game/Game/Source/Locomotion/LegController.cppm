@@ -72,7 +72,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Stance hip pitch servo stiffness.">{}
 			]]
-			gse::angular_stiffness hip_drive_stiffness = gse::newton_meters_per_radian(350.f);
+			gse::angular_stiffness hip_drive_stiffness = gse::newton_meters_per_radian(600.f);
 
 			[[
 				= gse::settings::describe<"Swing hip pitch servo stiffness (kept low to limit trunk reaction).">{}
@@ -87,12 +87,12 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Knee servo stiffness.">{}
 			]]
-			gse::angular_stiffness knee_drive_stiffness = gse::newton_meters_per_radian(300.f);
+			gse::angular_stiffness knee_drive_stiffness = gse::newton_meters_per_radian(650.f);
 
 			[[
 				= gse::settings::describe<"Ankle servo stiffness.">{}
 			]]
-			gse::angular_stiffness ankle_drive_stiffness = gse::newton_meters_per_radian(300.f);
+			gse::angular_stiffness ankle_drive_stiffness = gse::newton_meters_per_radian(400.f);
 
 			[[
 				= gse::settings::describe<"Joint servo damping as a multiple of stiffness times substep dt.">{}
@@ -102,12 +102,12 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Stance hip servo torque limit.">{}
 			]]
-			gse::torque hip_max_torque = gse::newton_meters(250.f);
+			gse::torque hip_max_torque = gse::newton_meters(320.f);
 
 			[[
 				= gse::settings::describe<"Stance knee servo torque limit.">{}
 			]]
-			gse::torque knee_max_torque = gse::newton_meters(250.f);
+			gse::torque knee_max_torque = gse::newton_meters(350.f);
 
 			[[
 				= gse::settings::describe<"Stance ankle servo torque limit.">{}
@@ -132,12 +132,12 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Trailing-ankle plantarflexion added across weight shift (toe-off push).">{}
 			]]
-			gse::angle toe_off_angle = gse::radians(-0.30f);
+			gse::angle toe_off_angle = gse::radians(-0.18f);
 
 			[[
 				= gse::settings::describe<"Stance-ankle plantarflexion as the pelvis passes the planted foot (late-stance power).">{}
 			]]
-			gse::angle stance_push_angle = gse::radians(-0.40f);
+			gse::angle stance_push_angle = gse::radians(-0.18f);
 
 			[[
 				= gse::settings::describe<"Pelvis travel past the planted foot over which the stance push ramps in.">{}

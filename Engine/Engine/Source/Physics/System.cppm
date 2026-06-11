@@ -239,6 +239,7 @@ export namespace gse::physics {
 			vbd::contact_cache& contact_cache,
 			std::vector<collision_pair>& objects,
 			const std::flat_map<id, std::uint32_t>& id_to_body_index,
+			const std::flat_set<std::pair<std::uint64_t, std::uint64_t>>& jointed_pairs,
 			bool update_scene_state,
 			write<transform_component>& transform,
 			write<motion_component>& motion,
