@@ -17,7 +17,6 @@ import gse.os;
 import gse.assets;
 import gse.gpu;
 
-
 auto gse::camera::system::position(const data& d) -> vec3<gse::position> {
 	return d.current.position;
 }

@@ -2,10 +2,10 @@ export module gse.gpu:frame;
 
 import std;
 
-import :aliases;
 import :device;
 import :swap_chain;
 
+import gse.gpu_backend;
 import gse.os;
 import gse.core;
 
@@ -46,12 +46,12 @@ export namespace gse::gpu {
 		) -> void;
 
 		auto set_sync(
-			sync&& s
+			frame_sync<device>&& s
 		) -> void;
 
 	private:
 		frame(
-			sync&& s,
+			frame_sync<device>&& s,
 			std::uint32_t image_index,
 			device& dev,
 			swap_chain& sc
@@ -64,9 +64,9 @@ export namespace gse::gpu {
 		static auto create_sync_objects(
 			device& dev,
 			const swap_chain& sc
-		) -> sync;
+		) -> frame_sync<device>;
 
-		sync m_sync;
+		frame_sync<device> m_sync;
 		std::uint32_t m_image_index = 0;
 		std::array<std::uint64_t, queue_type_count> m_command_buffers{};
 		std::uint32_t m_current_frame = 0;

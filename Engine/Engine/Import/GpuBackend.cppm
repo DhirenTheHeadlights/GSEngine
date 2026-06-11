@@ -2,11 +2,17 @@ export module gse.gpu_backend;
 
 export import :core;
 export import :enums;
+export import :video;
+export import :device_settings;
 export import :pipeline;
 export import :sync;
 export import :bindless;
 export import :buffer;
 export import :image;
+export import :barriers;
+export import :frame_sync;
+export import :wait_station;
+export import :transient;
 export import :accel;
 export import :queue_timeline;
 export import :arena;

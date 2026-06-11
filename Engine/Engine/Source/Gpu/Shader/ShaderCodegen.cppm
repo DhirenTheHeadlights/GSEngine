@@ -5,8 +5,7 @@ import std;
 import gse.math;
 import gse.meta;
 import gse.containers;
-
-import :aliases;
+import gse.gpu_backend;
 
 export namespace gse::gpu {
 	struct dispatch_thread_id {

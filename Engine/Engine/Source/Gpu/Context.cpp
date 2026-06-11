@@ -22,7 +22,7 @@ auto gse::gpu::context::init(const shared_view<window> window_s, data& d) -> asy
 	d.device = device::create(window_s, d.validation_layers_enabled, d.device_settings);
 	d.swapchain = swap_chain::create(
 		window::viewport(window_s),
-		present_mode_from_setting_index(window_s.current_present_mode_index),
+		gse::enum_from_annotation<present_mode_setting>(window_s.current_present_mode_index, present_mode::fifo),
 		*d.device
 	);
 	d.frame = frame::create(*d.device, *d.swapchain);

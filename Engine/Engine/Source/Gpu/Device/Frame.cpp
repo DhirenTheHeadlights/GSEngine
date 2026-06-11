@@ -6,16 +6,18 @@ import :frame;
 import :device;
 import :swap_chain;
 
+import gse.vulkan;
 import gse.os;
 import gse.assert;
 import gse.diag;
+import gse.meta;
 
 auto gse::gpu::frame::create(device& dev, swap_chain& sc) -> std::unique_ptr<frame> {
 	auto s = create_sync_objects(dev, sc);
 	return std::unique_ptr<frame>(new frame(std::move(s), 0, dev, sc));
 }
 
-gse::gpu::frame::frame(sync&& s, const std::uint32_t image_index, device& dev, swap_chain& sc)
+gse::gpu::frame::frame(frame_sync<device>&& s, const std::uint32_t image_index, device& dev, swap_chain& sc)
 	: m_sync(std::move(s)), m_image_index(image_index), m_device(&dev), m_swapchain(&sc) {
 }
 
@@ -35,13 +37,13 @@ auto gse::gpu::frame::frame_in_progress() const -> bool {
 	return m_frame_in_progress;
 }
 
-auto gse::gpu::frame::set_sync(sync&& s) -> void {
+auto gse::gpu::frame::set_sync(frame_sync<device>&& s) -> void {
 	m_sync = std::move(s);
 }
 
 auto gse::gpu::frame::recreate_resources(const window::data& win) -> void {
 	const auto requested_size = window::viewport(win);
-	const auto requested_mode = present_mode_from_setting_index(win.current_present_mode_index);
+	const auto requested_mode = gse::enum_from_annotation<present_mode_setting>(win.current_present_mode_index, present_mode::fifo);
 	const auto current_extent = m_swapchain->extent();
 	const auto current_mode = m_swapchain->present_mode();
 
@@ -145,7 +147,7 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
 		m_command_buffers[i] = m_device->frame_command_buffer(static_cast<queue_type>(i), m_current_frame).value;
 	}
 
-	const commands cmd_main{ command_buffer_handle{ m_command_buffers[static_cast<std::size_t>(queue_type::graphics)] } };
+	const vulkan::commands cmd_main{ command_buffer_handle{ m_command_buffers[static_cast<std::size_t>(queue_type::graphics)] } };
 	cmd_main.reset();
 	cmd_main.begin();
 
@@ -202,7 +204,7 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
 	const auto graphics_cb = command_buffer_handle{ m_command_buffers[static_cast<std::size_t>(queue_type::graphics)] };
 	m_device->transient().recorder().run_post_frame(graphics_cb);
 
-	const commands cmd_tail{ graphics_cb };
+	const vulkan::commands cmd_tail{ graphics_cb };
 
 	cmd_tail.release_swapchain_image_to_present(
 		m_swapchain->image(m_image_index),
@@ -313,6 +315,6 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
 	m_frame_in_progress = false;
 }
 
-auto gse::gpu::frame::create_sync_objects(device& dev, const swap_chain& sc) -> sync {
-	return dev.create_sync(sc.image_count());
+auto gse::gpu::frame::create_sync_objects(device& dev, const swap_chain& sc) -> frame_sync<device> {
+	return frame_sync<device>::create(dev, sc.image_count());
 }

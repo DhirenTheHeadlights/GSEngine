@@ -16,7 +16,6 @@ import :system_node;
 import :shared_view;
 
 namespace gse {
-
 	template <typename S>
 	struct system_node_data {
 		template <typename... Args>

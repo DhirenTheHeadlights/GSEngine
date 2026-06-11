@@ -9,6 +9,7 @@ import :transient_pool;
 import :render_graph;
 import :render_pass;
 
+import gse.gpu_backend;
 import gse.os;
 
 import gse.log;

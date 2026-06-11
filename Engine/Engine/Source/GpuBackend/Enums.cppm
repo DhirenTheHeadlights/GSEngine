@@ -268,11 +268,18 @@ export namespace gse::gpu {
 		return memory_property_flags(a) | b;
 	}
 
+	enum class present_mode_setting : int {
+		fifo = 0,
+		fifo_relaxed = 1,
+		mailbox = 2,
+		immediate = 3,
+	};
+
 	enum class present_mode : std::uint8_t {
-		immediate,
-		mailbox,
-		fifo,
-		fifo_relaxed,
+		immediate [[= present_mode_setting::immediate]],
+		mailbox [[= present_mode_setting::mailbox]],
+		fifo [[= present_mode_setting::fifo]],
+		fifo_relaxed [[= present_mode_setting::fifo_relaxed]],
 	};
 
 	enum class load_op : std::uint8_t {

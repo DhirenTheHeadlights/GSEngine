@@ -21,25 +21,6 @@ import gse.math;
 import gse.log;
 
 export namespace gse::vulkan {
-	enum class video_codec : std::uint8_t {
-		av1,
-		h265
-	};
-
-	struct encode_capabilities {
-		bool available = false;
-		video_codec codec = video_codec::av1;
-		vec2u max_extent;
-		std::string std_header_name;
-		std::uint32_t std_header_spec_version = 0;
-	};
-
-	struct encoded_unit {
-		std::vector<std::byte> bytes;
-		time pts;
-		bool keyframe = false;
-	};
-
 	class video_encoder final : public non_copyable {
 	public:
 		video_encoder() {}
@@ -54,13 +35,13 @@ export namespace gse::vulkan {
 		static auto probe(
 			device& dev,
 			queue& q
-		) -> encode_capabilities;
+		) -> gpu::encode_capabilities;
 
 		static auto create(
 			device& dev,
 			queue& q,
 			vec2u extent,
-			const encode_capabilities& probe_caps
+			const gpu::encode_capabilities& probe_caps
 		) -> video_encoder;
 
 		auto encode_frame(
@@ -75,11 +56,11 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto read_bitstream(
 			std::uint32_t frame_slot
-		) -> std::optional<encoded_unit>;
+		) -> std::optional<gpu::encoded_unit>;
 
 		[[nodiscard]] auto stream_header() const -> std::span<const std::byte>;
 
-		[[nodiscard]] auto codec() const -> video_codec;
+		[[nodiscard]] auto codec() const -> gpu::video_codec;
 
 		[[nodiscard]] auto extent() const -> vec2u;
 
@@ -119,7 +100,7 @@ export namespace gse::vulkan {
 		per_frame_resource<dpb_slot> m_dpb{ dpb_slot{}, dpb_slot{} };
 		std::vector<std::byte> m_stream_header;
 		clock m_clock;
-		video_codec m_codec = video_codec::h265;
+		gpu::video_codec m_codec = gpu::video_codec::h265;
 		internal::vec_storage<unsigned int, 2> m_extent{};
 		std::uint64_t m_frame_number = 0;
 		std::uint32_t m_gop_size = 60;
@@ -143,7 +124,7 @@ namespace gse::vulkan {
 
 	auto build_profile(
 		profile_chain& chain,
-		video_codec codec
+		gpu::video_codec codec
 	) -> void;
 
 	constexpr vk::DeviceSize bitstream_buffer_size = 4 * 1024 * 1024;
@@ -172,19 +153,19 @@ namespace gse::vulkan {
 	) -> std::uint32_t;
 }
 
-auto gse::vulkan::video_encoder::probe(device& dev, queue& q) -> encode_capabilities {
+auto gse::vulkan::video_encoder::probe(device& dev, queue& q) -> gpu::encode_capabilities {
 	if (!q.has_video_encode()) {
 		return {};
 	}
 
 	const auto& physical = dev.physical_device();
 
-	for (const auto codec : { video_codec::av1, video_codec::h265 }) {
+	for (const auto codec : { gpu::video_codec::av1, gpu::video_codec::h265 }) {
 		profile_chain chain{};
 		build_profile(chain, codec);
 
 		vk::VideoCapabilitiesKHR caps;
-		if (codec == video_codec::av1) {
+		if (codec == gpu::video_codec::av1) {
 			auto [caps_result, caps_chain] = std::bit_cast<vk::PhysicalDevice>(physical.handle())
 				.getVideoCapabilitiesKHR<vk::VideoCapabilitiesKHR, vk::VideoEncodeCapabilitiesKHR, vk::VideoEncodeAV1CapabilitiesKHR>(chain.profile);
 			if (caps_result != vk::Result::eSuccess) {
@@ -201,7 +182,7 @@ auto gse::vulkan::video_encoder::probe(device& dev, queue& q) -> encode_capabili
 			caps = caps_chain.get<vk::VideoCapabilitiesKHR>();
 		}
 
-		const auto codec_name = codec == video_codec::av1 ? "AV1" : "H.265";
+		const auto codec_name = codec == gpu::video_codec::av1 ? "AV1" : "H.265";
 		log::println(
 			log::category::vulkan,
 			"Video encode probe: {} supported (max {}x{})",
@@ -223,7 +204,7 @@ auto gse::vulkan::video_encoder::probe(device& dev, queue& q) -> encode_capabili
 	return {};
 }
 
-auto gse::vulkan::video_encoder::create(device& dev, queue& q, const vec2u extent, const encode_capabilities& probe_caps) -> video_encoder {
+auto gse::vulkan::video_encoder::create(device& dev, queue& q, const vec2u extent, const gpu::encode_capabilities& probe_caps) -> video_encoder {
 	video_encoder enc;
 	enc.m_device = &dev;
 	enc.m_queue = &q;
@@ -288,7 +269,7 @@ auto gse::vulkan::video_encoder::create(device& dev, queue& q, const vec2u exten
 		enc.m_session_memory.push_back(mem);
 	}
 
-	if (probe_caps.codec == video_codec::h265) {
+	if (probe_caps.codec == gpu::video_codec::h265) {
 		static vk::video::H265DecPicBufMgr dpb_mgr{};
 		dpb_mgr.max_dec_pic_buffering_minus1[0] = 1;
 
@@ -375,7 +356,7 @@ auto gse::vulkan::video_encoder::create(device& dev, queue& q, const vec2u exten
 			.writeStdPPS = vk::True
 		};
 		const vk::VideoEncodeSessionParametersGetInfoKHR get_info{
-			.pNext = probe_caps.codec == video_codec::h265 ? static_cast<const void*>(&h265_get_info) : nullptr,
+			.pNext = probe_caps.codec == gpu::video_codec::h265 ? static_cast<const void*>(&h265_get_info) : nullptr,
 			.videoSessionParameters = *enc.m_params
 		};
 
@@ -463,7 +444,7 @@ auto gse::vulkan::video_encoder::create(device& dev, queue& q, const vec2u exten
 
 	enc.m_clock = {};
 
-	const auto* const codec_name = probe_caps.codec == video_codec::av1 ? "AV1" : "H.265";
+	const auto* const codec_name = probe_caps.codec == gpu::video_codec::av1 ? "AV1" : "H.265";
 	log::println(log::category::vulkan, "Video encoder created: {} {}x{}", codec_name, extent.x(), extent.y());
 
 	return enc;
@@ -665,10 +646,10 @@ auto gse::vulkan::video_encoder::encode_frame(const std::uint32_t frame_slot, co
 		.pStdReferenceInfo = ref_h265_std
 	};
 
-	const void* setup_dpb_pnext = m_codec == video_codec::av1 ? static_cast<const void*>(&setup_av1_dpb) : &setup_h265_dpb;
+	const void* setup_dpb_pnext = m_codec == gpu::video_codec::av1 ? static_cast<const void*>(&setup_av1_dpb) : &setup_h265_dpb;
 	const void* ref_dpb_pnext = !use_reference
 		? nullptr
-		: (m_codec == video_codec::av1 ? static_cast<const void*>(&ref_av1_dpb) : &ref_h265_dpb);
+		: (m_codec == gpu::video_codec::av1 ? static_cast<const void*>(&ref_av1_dpb) : &ref_h265_dpb);
 
 	vk::VideoReferenceSlotInfoKHR setup_ref{
 		.pNext = setup_dpb_pnext,
@@ -730,7 +711,7 @@ auto gse::vulkan::video_encoder::encode_frame(const std::uint32_t frame_slot, co
 		{}
 	);
 
-	if (m_codec == video_codec::h265) {
+	if (m_codec == gpu::video_codec::h265) {
 		vk::video::EncodeH265ReferenceListsInfo ref_lists{};
 		for (auto& r : ref_lists.RefPicList0) {
 			r = 0xFF;
@@ -863,7 +844,7 @@ auto gse::vulkan::video_encoder::encode_frame(const std::uint32_t frame_slot, co
 		}
 	}
 	target_dpb.active = true;
-	if (m_codec == video_codec::av1) {
+	if (m_codec == gpu::video_codec::av1) {
 		target_dpb.av1_frame_type = setup_av1_std.frame_type;
 		target_dpb.av1_order_hint = setup_av1_std.OrderHint;
 	}
@@ -875,7 +856,7 @@ auto gse::vulkan::video_encoder::encode_frame(const std::uint32_t frame_slot, co
 	m_frame_number++;
 }
 
-auto gse::vulkan::video_encoder::read_bitstream(const std::uint32_t frame_slot) -> std::optional<encoded_unit> {
+auto gse::vulkan::video_encoder::read_bitstream(const std::uint32_t frame_slot) -> std::optional<gpu::encoded_unit> {
 	auto& slot = m_slots[frame_slot];
 	if (!slot.has_output) {
 		return std::nullopt;
@@ -917,7 +898,7 @@ auto gse::vulkan::video_encoder::read_bitstream(const std::uint32_t frame_slot) 
 		return std::nullopt;
 	}
 
-	encoded_unit unit;
+	gpu::encoded_unit unit;
 	unit.bytes.resize(feedback.bytes_written);
 	unit.pts = slot.last_pts;
 	unit.keyframe = slot.last_was_keyframe;
@@ -933,7 +914,7 @@ auto gse::vulkan::video_encoder::stream_header() const -> std::span<const std::b
 	return m_stream_header;
 }
 
-auto gse::vulkan::video_encoder::codec() const -> video_codec {
+auto gse::vulkan::video_encoder::codec() const -> gpu::video_codec {
 	return m_codec;
 }
 
@@ -976,7 +957,7 @@ constexpr auto gse::vulkan::vk_enum(const From v) -> To {
 	return static_cast<To>(static_cast<std::underlying_type_t<From>>(v));
 }
 
-auto gse::vulkan::build_profile(profile_chain& chain, const video_codec codec) -> void {
+auto gse::vulkan::build_profile(profile_chain& chain, const gpu::video_codec codec) -> void {
 	chain = {};
 
 	chain.usage = {
@@ -985,7 +966,7 @@ auto gse::vulkan::build_profile(profile_chain& chain, const video_codec codec) -
 		.tuningMode = vk::VideoEncodeTuningModeKHR::eLowLatency
 	};
 
-	if (codec == video_codec::h265) {
+	if (codec == gpu::video_codec::h265) {
 		chain.h265_profile.stdProfileIdc =
 			vk_enum<decltype(chain.h265_profile.stdProfileIdc)>(vk::video::H265ProfileIdc::eMain);
 		chain.profile.pNext = &chain.h265_profile;

@@ -2,11 +2,11 @@ export module gse.gpu:buffer;
 
 import std;
 
-import :aliases;
 import :gpu_task;
 import :sync_token;
 import :device;
 
+import gse.gpu_backend;
 import gse.core;
 import gse.containers;
 import gse.time;

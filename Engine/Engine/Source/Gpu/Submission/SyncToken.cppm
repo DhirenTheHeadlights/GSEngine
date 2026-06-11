@@ -2,7 +2,7 @@ export module gse.gpu:sync_token;
 
 import std;
 
-import :aliases;
+import gse.gpu_backend;
 
 export namespace gse::gpu {
 	class sync_token {
@@ -10,7 +10,7 @@ export namespace gse::gpu {
 		sync_token() = default;
 
 		sync_token(
-			transient_queue* queue,
+			wait_station* station,
 			std::uint64_t value
 		);
 
@@ -22,7 +22,7 @@ export namespace gse::gpu {
 
 	private:
 		struct awaiter {
-			transient_queue* m_queue;
+			wait_station* m_station;
 			std::uint64_t m_value;
 
 			auto await_ready() const noexcept -> bool;
@@ -34,44 +34,44 @@ export namespace gse::gpu {
 			auto await_resume() const noexcept -> void;
 		};
 
-		transient_queue* m_queue = nullptr;
+		wait_station* m_station = nullptr;
 		std::uint64_t m_value = 0;
 	};
 }
 
-gse::gpu::sync_token::sync_token(transient_queue* queue, const std::uint64_t value) : m_queue(queue), m_value(value) {
+gse::gpu::sync_token::sync_token(wait_station* station, const std::uint64_t value) : m_station(station), m_value(value) {
 }
 
 auto gse::gpu::sync_token::valid() const -> bool {
-	return m_queue != nullptr;
+	return m_station != nullptr;
 }
 
 auto gse::gpu::sync_token::ready() const -> bool {
-	if (!m_queue) {
+	if (!m_station) {
 		return true;
 	}
-	return m_queue->reached(m_value);
+	return m_station->reached(m_value);
 }
 
 auto gse::gpu::sync_token::operator co_await() const noexcept {
-	return awaiter{ m_queue, m_value };
+	return awaiter{ m_station, m_value };
 }
 
 auto gse::gpu::sync_token::awaiter::await_ready() const noexcept -> bool {
-	if (!m_queue) {
+	if (!m_station) {
 		return true;
 	}
-	return m_queue->reached(m_value);
+	return m_station->reached(m_value);
 }
 
 auto gse::gpu::sync_token::awaiter::await_suspend(std::coroutine_handle<> caller) -> bool {
-	if (!m_queue) {
+	if (!m_station) {
 		return false;
 	}
-	if (m_queue->reached(m_value)) {
+	if (m_station->reached(m_value)) {
 		return false;
 	}
-	m_queue->park(m_value, caller);
+	m_station->park(m_value, caller);
 	return true;
 }
 

@@ -5,6 +5,7 @@ import std;
 import gse.os;
 import gse.assets;
 import gse.gpu;
+import gse.vulkan;
 import gse.core;
 import gse.concurrency;
 import gse.ecs;
@@ -63,7 +64,7 @@ export namespace gse::renderer::capture {
 			bool screenshot_requested = false;
 			std::unique_ptr<std::atomic<bool>> write_in_progress = std::make_unique<std::atomic<bool>>(false);
 			std::unique_ptr<std::atomic<bool>> clip_save_in_progress = std::make_unique<std::atomic<bool>>(false);
-			gpu::video_encoder encoder;
+			vulkan::video_encoder encoder;
 			ring clip_ring;
 			time applied_ring_budget = seconds(30.f);
 			bool first_ring_push_logged = false;

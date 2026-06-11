@@ -450,7 +450,7 @@ auto gse::vulkan::device::families_distinct() const -> bool {
 	return false;
 }
 
-auto gse::vulkan::device::create(const instance& instance_data, device::settings& cfg, aftermath& aftermath_tracker) -> device_creation_result {
+auto gse::vulkan::device::create(const instance& instance_data, gpu::device_settings& cfg, aftermath& aftermath_tracker) -> device_creation_result {
 	auto devices = instance_data.enumerate_physical_devices();
 	assert(!devices.empty(), "No Vulkan-compatible GPUs found!");
 
@@ -1278,6 +1278,11 @@ auto gse::vulkan::device::retire(const gpu::handle<gpu::semaphore> semaphore) ->
 	m_owned.retire(semaphore, m_resource_frame + gpu::max_frames_in_flight);
 }
 
+auto gse::vulkan::device::retire(const gpu::handle<gpu::fence> fence) -> void {
+	std::lock_guard lock(m_mutex);
+	m_owned.retire(fence, m_resource_frame + gpu::max_frames_in_flight);
+}
+
 auto gse::vulkan::device::collect_garbage() -> void {
 	std::vector<std::uint64_t> buffers;
 	std::vector<std::uint64_t> images;
@@ -1525,7 +1530,7 @@ auto gse::vulkan::query_descriptor_heap_props(const physical_device& pd) -> gpu:
 	};
 }
 
-gse::vulkan::device::device(class physical_device&& physical_device, vk::raii::Device&& device, device::settings& cfg, const bool device_fault_enabled, const bool device_fault_vendor_binary_enabled, const std::uint32_t graphics_family, const std::uint32_t compute_family, const gpu::surface surface)
+gse::vulkan::device::device(class physical_device&& physical_device, vk::raii::Device&& device, gpu::device_settings& cfg, const bool device_fault_enabled, const bool device_fault_vendor_binary_enabled, const std::uint32_t graphics_family, const std::uint32_t compute_family, const gpu::surface surface)
 	: m_physical_device(std::move(physical_device)), m_device(std::move(device)), m_fault_enabled(device_fault_enabled), m_vendor_binary_fault_enabled(device_fault_vendor_binary_enabled), m_settings(&cfg) {
 	m_queue_families[static_cast<std::size_t>(gpu::queue_type::graphics)] = graphics_family;
 	m_queue_families[static_cast<std::size_t>(gpu::queue_type::compute)] = compute_family;
@@ -1967,6 +1972,103 @@ auto gse::vulkan::device::create_semaphore() -> gpu::handle<gpu::semaphore> {
 	auto [semaphore_result, semaphore] = raii_device().createSemaphore(vk::SemaphoreCreateInfo{});
 	assert(semaphore_result == vk::Result::eSuccess, "failed to create semaphore: {}", vk::to_string(semaphore_result));
 	return adopt<gpu::handle<gpu::semaphore>>(std::move(semaphore));
+}
+
+auto gse::vulkan::device::create_fence(const bool signaled) -> gpu::handle<gpu::fence> {
+	const auto flags = signaled ? vk::FenceCreateFlags{ vk::FenceCreateFlagBits::eSignaled } : vk::FenceCreateFlags{};
+	auto [fence_result, fence] = raii_device().createFence(vk::FenceCreateInfo{ .flags = flags });
+	assert(fence_result == vk::Result::eSuccess, "failed to create fence: {}", vk::to_string(fence_result));
+	return adopt<gpu::handle<gpu::fence>>(std::move(fence));
+}
+
+auto gse::vulkan::device::begin_one_time_commands(const gpu::command_buffer_handle cmd) -> void {
+	constexpr vk::CommandBufferBeginInfo begin_info{
+		.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
+	};
+	const auto result = std::bit_cast<vk::CommandBuffer>(cmd).begin(begin_info);
+	assert(result == vk::Result::eSuccess, "failed to begin command buffer: {}", vk::to_string(result));
+}
+
+auto gse::vulkan::device::end_commands(const gpu::command_buffer_handle cmd) -> void {
+	const auto result = std::bit_cast<vk::CommandBuffer>(cmd).end();
+	assert(result == vk::Result::eSuccess, "failed to end command buffer: {}", vk::to_string(result));
+}
+
+auto gse::vulkan::device::create_transient_command_pool(const std::uint32_t family) -> gpu::transient_pool_handle {
+	auto pool = gpu::must(transient_command_pool::create(raii_device(), family));
+	const auto index = static_cast<std::uint32_t>(m_transient_pools.size());
+	m_transient_pools.push_back(std::move(pool));
+	return gpu::transient_pool_handle{ .index = index };
+}
+
+auto gse::vulkan::device::allocate_transient_primary(const gpu::transient_pool_handle pool) -> gpu::command_buffer_handle {
+	return m_transient_pools[pool.index].allocate_primary(raii_device());
+}
+
+auto gse::vulkan::device::transient_pool_try_reset(const gpu::transient_pool_handle pool, const std::uint64_t queue_progress) -> void {
+	m_transient_pools[pool.index].try_reset(queue_progress);
+}
+
+auto gse::vulkan::device::transient_pool_mark_in_use(const gpu::transient_pool_handle pool, const std::uint64_t value) -> void {
+	m_transient_pools[pool.index].mark_in_use_until(value);
+}
+
+auto gse::vulkan::device::transient_pool_reset_all(const gpu::transient_pool_handle pool) -> void {
+	m_transient_pools[pool.index].reset_all();
+}
+
+gse::vulkan::transient_command_pool::transient_command_pool(vk::raii::CommandPool&& pool) : m_pool(std::move(pool)) {
+}
+
+auto gse::vulkan::transient_command_pool::create(const vk::raii::Device& vk_device, const std::uint32_t family) -> gpu::expected<transient_command_pool> {
+	const vk::CommandPoolCreateInfo pool_info{
+		.flags = vk::CommandPoolCreateFlagBits::eTransient,
+		.queueFamilyIndex = family,
+	};
+	auto [result, pool] = vk_device.createCommandPool(pool_info);
+	if (result != vk::Result::eSuccess) {
+		return std::unexpected(from_vk(result));
+	}
+	return transient_command_pool(std::move(pool));
+}
+
+auto gse::vulkan::transient_command_pool::allocate_primary(const vk::raii::Device& vk_device) -> gpu::command_buffer_handle {
+	if (m_used == m_owned_cbs.size()) {
+		const vk::CommandBufferAllocateInfo alloc_info{
+			.commandPool = *m_pool,
+			.level = vk::CommandBufferLevel::ePrimary,
+			.commandBufferCount = allocation_batch_size,
+		};
+		auto [result, fresh] = vk_device.allocateCommandBuffers(alloc_info);
+		assert(result == vk::Result::eSuccess, "failed to allocate transient command buffers: {}", vk::to_string(result));
+		for (auto& cb : fresh) {
+			m_owned_cbs.push_back(std::move(cb));
+		}
+	}
+	return std::bit_cast<gpu::command_buffer_handle>(*m_owned_cbs[m_used++]);
+}
+
+auto gse::vulkan::transient_command_pool::try_reset(const std::uint64_t queue_progress) -> void {
+	if (m_used == 0) {
+		return;
+	}
+	if (queue_progress < m_high_water_mark) {
+		return;
+	}
+	m_pool.reset();
+	m_used = 0;
+}
+
+auto gse::vulkan::transient_command_pool::mark_in_use_until(const std::uint64_t value) -> void {
+	if (value > m_high_water_mark) {
+		m_high_water_mark = value;
+	}
+}
+
+auto gse::vulkan::transient_command_pool::reset_all() -> void {
+	m_pool.reset();
+	m_used = 0;
+	m_high_water_mark = 0;
 }
 
 auto gse::vulkan::device::create_timeline_semaphore(const std::uint64_t initial_value) -> gpu::handle<gpu::semaphore> {

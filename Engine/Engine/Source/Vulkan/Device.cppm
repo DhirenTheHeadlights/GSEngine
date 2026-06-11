@@ -23,6 +23,52 @@ import gse.meta;
 import gse.log;
 
 namespace gse::vulkan {
+	class transient_command_pool final : public non_copyable {
+	public:
+		transient_command_pool() {}
+		~transient_command_pool() = default;
+
+		transient_command_pool(
+			transient_command_pool&&
+		) noexcept = default;
+
+		auto operator=(
+			transient_command_pool&&
+		) noexcept -> transient_command_pool& = default;
+
+		[[nodiscard]]
+		static auto create(
+			const vk::raii::Device& vk_device,
+			std::uint32_t family
+		) -> gpu::expected<transient_command_pool>;
+
+		[[nodiscard]] auto allocate_primary(
+			const vk::raii::Device& vk_device
+		) -> gpu::command_buffer_handle;
+
+		auto try_reset(
+			std::uint64_t queue_progress
+		) -> void;
+
+		auto mark_in_use_until(
+			std::uint64_t value
+		) -> void;
+
+		auto reset_all() -> void;
+
+	private:
+		explicit transient_command_pool(
+			vk::raii::CommandPool&& pool
+		);
+
+		static constexpr std::uint32_t allocation_batch_size = 8;
+
+		vk::raii::CommandPool m_pool{ nullptr };
+		std::vector<vk::raii::CommandBuffer> m_owned_cbs;
+		std::size_t m_used = 0;
+		std::uint64_t m_high_water_mark = 0;
+	};
+
 	struct swap_chain_resources {
 		vk::raii::SwapchainKHR swapchain = nullptr;
 		std::vector<vk::raii::ImageView> image_views;
@@ -52,6 +98,7 @@ namespace gse::vulkan {
 		static consteval auto entries() -> std::vector<gpu::manifest_row> {
 			return {
 				{ ^^gpu::handle<gpu::semaphore>, ^^vk::raii::Semaphore },
+				{ ^^gpu::handle<gpu::fence>, ^^vk::raii::Fence },
 				{ ^^gpu::acceleration_structure, ^^vk::raii::AccelerationStructureKHR },
 				{ ^^gpu::swap_chain_handle, ^^swap_chain_resources },
 				{ ^^gpu::handle<gpu::query_pool>, ^^vk::raii::QueryPool },
@@ -72,19 +119,6 @@ export namespace gse::vulkan {
 
 	class device : public non_copyable {
 	public:
-		struct settings {
-			[[
-				= gse::settings::describe<"Track GPU resource lifetimes for leak detection and faulting diagnostics.">{}
-			]]
-			bool tracking_enabled = false;
-
-			[[
-				= gse::settings::describe<"Attach debug names to GPU resources so they appear by name in RenderDoc, "
-										  "NSight, and validation messages.">{}
-			]]
-			bool name_resources = false;
-		};
-
 		~device();
 
 		device(
@@ -98,7 +132,7 @@ export namespace gse::vulkan {
 		[[nodiscard]]
 		static auto create(
 			const instance& instance_data,
-			settings& cfg,
+			gpu::device_settings& cfg,
 			aftermath& aftermath_tracker
 		) -> device_creation_result;
 
@@ -279,6 +313,10 @@ export namespace gse::vulkan {
 			gpu::handle<gpu::semaphore> semaphore
 		) -> void;
 
+		auto retire(
+			gpu::handle<gpu::fence> fence
+		) -> void;
+
 		auto collect_garbage() -> void;
 
 		[[nodiscard]]
@@ -420,6 +458,40 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto create_semaphore() -> gpu::handle<gpu::semaphore>;
 
+		[[nodiscard]] auto create_fence(
+			bool signaled
+		) -> gpu::handle<gpu::fence>;
+
+		auto begin_one_time_commands(
+			gpu::command_buffer_handle cmd
+		) -> void;
+
+		auto end_commands(
+			gpu::command_buffer_handle cmd
+		) -> void;
+
+		[[nodiscard]] auto create_transient_command_pool(
+			std::uint32_t family
+		) -> gpu::transient_pool_handle;
+
+		[[nodiscard]] auto allocate_transient_primary(
+			gpu::transient_pool_handle pool
+		) -> gpu::command_buffer_handle;
+
+		auto transient_pool_try_reset(
+			gpu::transient_pool_handle pool,
+			std::uint64_t queue_progress
+		) -> void;
+
+		auto transient_pool_mark_in_use(
+			gpu::transient_pool_handle pool,
+			std::uint64_t value
+		) -> void;
+
+		auto transient_pool_reset_all(
+			gpu::transient_pool_handle pool
+		) -> void;
+
 		[[nodiscard]]
 		auto create_timeline_semaphore(
 			std::uint64_t initial_value
@@ -460,7 +532,7 @@ export namespace gse::vulkan {
 		device(
 			class physical_device&& physical_device,
 			vk::raii::Device&& device,
-			settings& cfg,
+			gpu::device_settings& cfg,
 			bool device_fault_enabled,
 			bool device_fault_vendor_binary_enabled,
 			std::uint32_t graphics_family,
@@ -567,7 +639,7 @@ export namespace gse::vulkan {
 		std::atomic<std::uint64_t> m_next_allocation_id = 1;
 		bool m_cleaned_up = false;
 
-		settings* m_settings = nullptr;
+		gpu::device_settings* m_settings = nullptr;
 		std::unordered_map<std::uint64_t, gpu::allocation_debug_info> m_live_allocations;
 
 		struct live_buffer {
@@ -587,6 +659,7 @@ export namespace gse::vulkan {
 		std::vector<gpu::retired_resource> m_retired_buffers;
 		std::vector<gpu::retired_resource> m_retired_images;
 		gpu::resource_arena<vk_resource_manifest> m_owned;
+		std::vector<transient_command_pool> m_transient_pools;
 		std::uint64_t m_resource_frame = 0;
 		gpu::descriptor_heap_properties m_descriptor_heap_props;
 		std::unique_ptr<bindless_state> m_bindless;
