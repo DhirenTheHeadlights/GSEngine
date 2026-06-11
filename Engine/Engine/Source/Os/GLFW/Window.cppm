@@ -1,19 +1,11 @@
 export module gse.os:window;
 
 import std;
-import vulkan;
-
-import gse.glfw;
 
 import :input_events;
 
-import gse.assert;
 import gse.math;
-import gse.core;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
-import gse.diag;
 import gse.ecs;
 import gse.meta;
 
@@ -48,6 +40,14 @@ export namespace gse {
 		windowed = 0,
 		borderless_fullscreen = 1,
 		exclusive_fullscreen = 2,
+	};
+
+	struct native_window_handle {
+		void* value = nullptr;
+
+		[[nodiscard]] explicit operator bool() const {
+			return value != nullptr;
+		}
 	};
 }
 
@@ -93,7 +93,7 @@ export namespace gse {
 			]]
 			gse::settings::choice<int> present_mode;
 
-			[[= gse::shared]] GLFWwindow* handle = nullptr;
+			[[= gse::shared]] native_window_handle handle;
 			std::string title;
 
 			gse::display_mode current_display_mode = gse::display_mode::windowed;
@@ -136,7 +136,7 @@ export namespace gse {
 		) -> void;
 
 		static auto install_native_frame(
-			GLFWwindow* handle,
+			native_window_handle handle,
 			const int* caption_height,
 			const int* controls_width
 		) -> void;
@@ -169,15 +169,9 @@ export namespace gse {
 			data& d
 		) -> bool;
 
-		[[nodiscard]]
-		static auto create_vulkan_surface(
-			shared_view<window> d,
-			vk::Instance instance
-		) -> vk::SurfaceKHR;
-
 		[[nodiscard]] static auto raw_handle(
 			shared_view<window> d
-		) -> GLFWwindow*;
+		) -> native_window_handle;
 
 		static auto show(
 			const data& d
@@ -196,36 +190,11 @@ export namespace gse {
 			shared_view<window> d
 		) -> bool;
 
-		[[nodiscard]] static auto vulkan_instance_extensions() -> std::span<const char* const>;
-
 		[[nodiscard]] static auto enumerate_monitors() -> std::vector<monitor_info>;
 
 		[[nodiscard]] static auto enumerate_resolutions(
 			int monitor_index
 		) -> std::vector<resolution_info>;
 	};
-}
-
-namespace gse {
-	auto window_handle_open(
-		GLFWwindow* handle
-	) -> bool;
-
-	auto window_handle_minimized(
-		GLFWwindow* handle
-	) -> bool;
-
-	auto window_handle_viewport(
-		GLFWwindow* handle
-	) -> vec2i;
-
-	auto window_handle_surface(
-		GLFWwindow* handle,
-		vk::Instance instance
-	) -> vk::SurfaceKHR;
-
-	auto window_handle_show(
-		GLFWwindow* handle
-	) -> void;
 }
 

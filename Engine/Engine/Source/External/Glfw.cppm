@@ -1,11 +1,9 @@
 module;
 
-#define GLFW_INCLUDE_VULKAN
+#define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
 export module gse.glfw;
-
-import vulkan;
 
 export {
 	using ::GLFWwindow;
@@ -131,21 +129,6 @@ export {
 	using ::glfwGetTimerValue;
 	using ::glfwGetTimerFrequency;
 
-	using ::glfwVulkanSupported;
-	using ::glfwGetRequiredInstanceExtensions;
-	using ::glfwGetInstanceProcAddress;
-	using ::glfwGetPhysicalDevicePresentationSupport;
-	using ::glfwCreateWindowSurface;
-}
-
-export namespace glfw {
-	auto create_window_surface(vk::Instance instance, GLFWwindow* window) -> vk::SurfaceKHR {
-		VkSurfaceKHR surface = nullptr;
-		if (glfwCreateWindowSurface(static_cast<VkInstance>(instance), window, nullptr, &surface) != VK_SUCCESS) {
-			return {};
-		}
-		return vk::SurfaceKHR(surface);
-	}
 }
 
 export namespace glfw {
