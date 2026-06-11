@@ -199,6 +199,7 @@ auto gs::player::system::run::update(gse::context& ctx, data& d, const gse::shar
 			itn->strafe += (0.f - itn->strafe) * k;
 			itn->intensity += (move_magnitude - itn->intensity) * k;
 			itn->sprint = gse::actions::held(b.shift, cs, as);
+			itn->sprint_blend += ((itn->sprint ? 1.f : 0.f) - itn->sprint_blend) * 0.03f;
 			itn->jump = false;
 			const float camera_yaw = static_cast<float>(p.yaw);
 			if (move_magnitude > move_deadzone) {

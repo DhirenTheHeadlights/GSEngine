@@ -52,6 +52,7 @@ export namespace gs::locomotion {
 		float forward = 0.f;
 		float strafe = 0.f;
 		float intensity = 0.f;
+		float sprint_blend = 0.f;
 		gse::angle desired_yaw;
 		bool has_heading = false;
 		bool sprint = false;
