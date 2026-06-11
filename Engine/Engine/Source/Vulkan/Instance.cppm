@@ -1,3 +1,8 @@
+module;
+
+#define GLFW_INCLUDE_VULKAN
+#include <GLFW/glfw3.h>
+
 export module gse.vulkan:instance;
 
 import std;
@@ -32,6 +37,8 @@ export namespace gse::vulkan {
 			bool enable_validation
 		) -> instance;
 
+		[[nodiscard]] static auto required_window_extensions() -> std::span<const char* const>;
+
 		auto create_surface(
 			shared_view<window> win
 		) -> void;
@@ -54,12 +61,38 @@ export namespace gse::vulkan {
 	};
 }
 
+namespace gse::vulkan {
+	auto create_window_surface(
+		vk::Instance instance,
+		shared_view<window> win
+	) -> vk::SurfaceKHR;
+}
+
 gse::vulkan::instance::instance(vk::raii::Context&& context, vk::raii::Instance&& instance, vk::raii::DebugUtilsMessengerEXT&& debug_messenger)
 	: m_context(std::move(context)), m_instance(std::move(instance)), m_surface(nullptr), m_debug_messenger(std::move(debug_messenger)) {
 }
 
+auto gse::vulkan::instance::required_window_extensions() -> std::span<const char* const> {
+	assert(glfwVulkanSupported(), "Vulkan not supported");
+
+	std::uint32_t count = 0;
+	const char** extensions = glfwGetRequiredInstanceExtensions(&count);
+	assert(extensions != nullptr, "Failed to get required Vulkan window extensions");
+	return { extensions, count };
+}
+
+auto gse::vulkan::create_window_surface(const vk::Instance instance, const shared_view<window> win) -> vk::SurfaceKHR {
+	auto* handle = static_cast<GLFWwindow*>(window::raw_handle(win).value);
+	assert(handle != nullptr, "Failed to create window surface for Vulkan: window handle is null");
+
+	VkSurfaceKHR surface = nullptr;
+	const VkResult result = glfwCreateWindowSurface(static_cast<VkInstance>(instance), handle, nullptr, &surface);
+	assert(result == VK_SUCCESS, "Failed to create window surface for Vulkan!");
+	return vk::SurfaceKHR(surface);
+}
+
 auto gse::vulkan::instance::create_surface(const shared_view<window> win) -> void {
-	const auto raw_surface = window::create_vulkan_surface(win, *m_instance);
+	const auto raw_surface = create_window_surface(*m_instance, win);
 	m_surface = vk::raii::SurfaceKHR(m_instance, raw_surface);
 }
 
