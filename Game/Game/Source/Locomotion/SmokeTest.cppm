@@ -21,6 +21,8 @@ export namespace gs::locomotion {
 		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time stop_after = gse::seconds(13.f);
 		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time turn_after = gse::seconds(11.5f);
 		gse::angle turn_by = gse::radians(1.57f);
+		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time sprint_after = gse::seconds(4.f);
+		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time sprint_until = gse::seconds(8.f);
 		[[= gse::within<-1.f, 1.f>{}]] float forward = 1.f;
 	};
 
@@ -383,6 +385,8 @@ auto gs::locomotion::smoke_test::run(gse::context& ctx, data& d, const gse::shar
 				const bool stopped =
 					d.config.stop_after > gse::seconds(0.f) && d.metrics.elapsed >= d.config.stop_after;
 				write_smoke_intent(*it, stopped ? 0.f : d.config.forward);
+				it->sprint = !stopped && d.config.sprint_until > d.config.sprint_after &&
+					d.metrics.elapsed >= d.config.sprint_after && d.metrics.elapsed < d.config.sprint_until;
 				if (!d.metrics.start_yaw_set && s->valid) {
 					d.metrics.start_yaw = gse::radians(std::atan2(-s->pelvis_forward.x(), -s->pelvis_forward.z()));
 					d.metrics.start_yaw_set = true;

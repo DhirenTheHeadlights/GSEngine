@@ -14,6 +14,11 @@ export namespace gs::locomotion {
 			gse::velocity forward_speed = gse::meters_per_second(0.22f);
 
 			[[
+				= gse::settings::describe<"Forward pelvis assist speed at full input while sprinting.">{}
+			]]
+			gse::velocity sprint_forward_speed = gse::meters_per_second(0.40f);
+
+			[[
 				= gse::settings::describe<"Maximum forward pelvis assist speed.">{}
 			]]
 			gse::velocity max_forward_speed = gse::meters_per_second(0.85f);
@@ -101,11 +106,12 @@ auto gs::locomotion::balance_velocity_target(const state& s, const intent& it, c
 	const auto capture_forward_resisted = deadzoned(s.capture_forward, d.forward_capture_deadzone);
 	const float push_fade = std::clamp((gse::meters(0.35f) - s.capture_forward) / gse::meters(0.25f), 0.f, 1.f);
 	const float launch_ramp = std::clamp(0.35f + s.horizontal_speed / gse::meters_per_second(0.25f), 0.f, 1.f);
-	auto forward_velocity = d.forward_speed * (push_fade * launch_ramp) * std::clamp(
-												  it.forward * it.intensity,
-												  -1.f,
-												  1.f
-											  ) +
+	const auto push_speed = it.sprint ? d.sprint_forward_speed : d.forward_speed;
+	auto forward_velocity = push_speed * (push_fade * launch_ramp) * std::clamp(
+											  it.forward * it.intensity,
+											  -1.f,
+											  1.f
+										  ) +
 		gse::meters_per_second(1.f) * (d.support_gain * support_forward - d.capture_gain * capture_forward_resisted);
 	forward_velocity = std::clamp(forward_velocity, -d.max_forward_speed, d.max_forward_speed);
 

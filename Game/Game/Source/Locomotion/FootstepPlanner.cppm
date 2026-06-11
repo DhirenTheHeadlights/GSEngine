@@ -16,7 +16,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Nominal forward step length when sprinting.">{}
 			]]
-			gse::displacement sprint_step = gse::meters(0.52f);
+			gse::displacement sprint_step = gse::meters(0.46f);
 
 			[[
 				= gse::settings::describe<"Maximum forward step distance.">{}
