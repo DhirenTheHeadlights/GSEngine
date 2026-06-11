@@ -16,8 +16,13 @@ export namespace gse {
 	template <typename T>
 	consteval auto has_describe_fields() -> bool;
 
+	template <typename T>
+	consteval auto has_category_annotation() -> bool;
+
 	template <typename S>
-	concept has_settings = names_data<S> && has_describe_fields<typename S::data>();
+	concept has_settings = names_data<S>
+		&& has_category_annotation<typename S::data>()
+		&& has_describe_fields<typename S::data>();
 
 	template <typename S>
 	concept names_run_fn = requires { &S::run; };
@@ -138,4 +143,9 @@ consteval auto gse::has_describe_fields() -> bool {
 		}
 	}
 	return found;
+}
+
+template <typename T>
+consteval auto gse::has_category_annotation() -> bool {
+	return meta::find_category(^^T) != std::meta::info{};
 }
