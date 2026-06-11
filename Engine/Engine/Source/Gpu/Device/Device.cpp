@@ -560,8 +560,8 @@ auto gse::gpu::device::swapchain_release_fence(const gpu::swap_chain_handle swap
 	return m_backend->device_config.swapchain_release_fence(swapchain, image_index);
 }
 
-auto gse::gpu::device::swapchain_wait_for_present(const gpu::swap_chain_handle swapchain, const std::uint64_t present_id, const std::uint64_t timeout_ns) const -> result {
-	return m_backend->device_config.swapchain_wait_for_present(swapchain, present_id, timeout_ns);
+auto gse::gpu::device::swapchain_past_presentation_timing(const gpu::swap_chain_handle swapchain) const -> std::vector<past_present_timing> {
+	return m_backend->device_config.swapchain_past_presentation_timing(swapchain);
 }
 
 auto gse::gpu::device::create_blas(const acceleration_structure_geometry& geometry, const std::uint32_t prim_count) -> blas {

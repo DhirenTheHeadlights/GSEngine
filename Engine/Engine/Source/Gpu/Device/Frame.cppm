@@ -4,6 +4,7 @@ import std;
 
 import :device;
 import :swap_chain;
+import :present_pacer;
 
 import gse.gpu_backend;
 import gse.os;
@@ -75,5 +76,6 @@ export namespace gse::gpu {
 		swap_chain* m_swapchain;
 		std::uint64_t m_next_present_id = 1;
 		std::array<std::uint64_t, max_frames_in_flight> m_present_ids_in_flight{};
+		present_pacer m_pacer;
 	};
 }

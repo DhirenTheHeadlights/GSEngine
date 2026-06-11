@@ -199,11 +199,9 @@ export namespace gse::gpu {
 		) const -> gpu::handle<gpu::fence>;
 
 		[[nodiscard]]
-		auto swapchain_wait_for_present(
-			gpu::swap_chain_handle swapchain,
-			std::uint64_t present_id,
-			std::uint64_t timeout_ns = std::numeric_limits<std::uint64_t>::max()
-		) const -> result;
+		auto swapchain_past_presentation_timing(
+			gpu::swap_chain_handle swapchain
+		) const -> std::vector<past_present_timing>;
 
 		[[nodiscard]]
 		auto create_blas(
