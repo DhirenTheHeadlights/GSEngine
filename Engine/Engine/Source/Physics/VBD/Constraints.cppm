@@ -148,6 +148,11 @@ export namespace gse::vbd {
 
 		float activation = 0.f;
 		force max_force = newtons(0.f);
+
+		vec3<angle> drive_target = {};
+		vec3<angular_stiffness> drive_stiffness = {};
+		float drive_damping = 0.f;
+		torque drive_max_torque = {};
 	};
 
 	struct [[= shaders::shader_struct]] body_state {
