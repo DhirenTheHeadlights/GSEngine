@@ -136,12 +136,15 @@ export namespace gs::locomotion {
 	auto other(
 		leg l
 	) -> leg;
+
 	auto side_of(
 		leg l
 	) -> float;
+
 	auto phase_progress(
 		const gait& g
 	) -> float;
+	
 	auto heading_error(
 		const state& s,
 		const intent& it

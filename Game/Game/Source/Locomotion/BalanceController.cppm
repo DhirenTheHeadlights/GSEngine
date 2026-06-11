@@ -66,10 +66,12 @@ namespace gs::locomotion {
 	auto horizontal_axis(
 		gse::vec3f axis
 	) -> gse::vec3f;
+
 	auto deadzoned(
 		gse::displacement value,
 		gse::displacement deadzone
 	) -> gse::displacement;
+	
 	auto balance_velocity_target(
 		const state& s,
 		const intent& it,
@@ -108,16 +110,10 @@ auto gs::locomotion::balance_velocity_target(const state& s, const intent& it, c
 	const float launch_ramp = std::clamp(0.35f + s.horizontal_speed / gse::meters_per_second(0.25f), 0.f, 1.f);
 	const float sprint_blend = std::clamp(it.sprint_blend, 0.f, 1.f);
 	const auto push_speed = d.forward_speed + (d.sprint_forward_speed - d.forward_speed) * sprint_blend;
-	auto forward_velocity = push_speed * (push_fade * launch_ramp) * std::clamp(
-											  it.forward * it.intensity,
-											  -1.f,
-											  1.f
-										  ) +
-		gse::meters_per_second(1.f) * (d.support_gain * support_forward - d.capture_gain * capture_forward_resisted);
+	auto forward_velocity = push_speed * (push_fade * launch_ramp) * std::clamp(it.forward * it.intensity, -1.f, 1.f) + gse::meters_per_second(1.f) * (d.support_gain * support_forward - d.capture_gain * capture_forward_resisted);
 	forward_velocity = std::clamp(forward_velocity, -d.max_forward_speed, d.max_forward_speed);
 
-	auto lateral_velocity =
-		gse::meters_per_second(1.f) * (d.support_gain * support_right - d.capture_gain * s.capture_right);
+	auto lateral_velocity = gse::meters_per_second(1.f) * (d.support_gain * support_right - d.capture_gain * s.capture_right);
 	lateral_velocity = std::clamp(lateral_velocity, -d.max_lateral_speed, d.max_lateral_speed);
 
 	return forward * forward_velocity + right * lateral_velocity;

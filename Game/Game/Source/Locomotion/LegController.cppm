@@ -147,7 +147,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Swing-hip roll target scale toward the planned lateral foot offset (0 disables).">{}
 			]]
-			float swing_roll_gain = 0.f;
+			float swing_roll_gain = 0.3f;
 
 			[[
 				= gse::settings::describe<"Stance-hip yaw target per radian of heading error (turns the pelvis over the planted foot).">{}
@@ -273,16 +273,19 @@ namespace gs::locomotion {
 	auto smooth_step(
 		float t
 	) -> float;
+
 	auto compute_swing_foot(
 		const gse::vec3<gse::position>& start,
 		const gse::vec3<gse::position>& target,
 		float t,
 		gse::displacement lift_height
 	) -> gse::vec3<gse::position>;
+
 	auto swing_trajectory_progress(
 		const gait& g,
 		const leg_controller::data& d
 	) -> float;
+
 	auto compute_stance(
 		leg which,
 		const state& s,
@@ -290,42 +293,51 @@ namespace gs::locomotion {
 		const leg_context& ctx,
 		const leg_controller::data& d
 	) -> leg_pose;
+
 	auto stance_foot_target(
 		leg which,
 		const leg_context& ctx,
 		const leg_controller::data& d
 	) -> gse::vec3<gse::position>;
+
 	auto current_foot_position(
 		leg which,
 		const state& s
 	) -> const gse::vec3<gse::position>&;
+
 	auto leg_target_reached(
 		leg which,
 		const state& s,
 		const plan& p,
 		const leg_controller::data& d
 	) -> bool;
+
 	auto planted_foot_position(
 		leg which,
 		leg_context& ctx
 	) -> gse::vec3<gse::position>&;
+
 	auto planted_foot_position(
 		leg which,
 		const leg_context& ctx
 	) -> const gse::vec3<gse::position>&;
+
 	auto foot_is_grounded(
 		leg which,
 		const state& s
 	) -> bool;
+
 	auto grounded_foot_position(
 		const gse::vec3<gse::position>& foot,
 		const leg_controller::data& d
 	) -> gse::vec3<gse::position>;
+
 	auto plant_contact_target(
 		const gse::vec3<gse::position>& current,
 		const gse::vec3<gse::position>& planned,
 		const leg_controller::data& d
 	) -> gse::vec3<gse::position>;
+
 	auto clamp_foot_to_leg_reach(
 		const gse::vec3<gse::position>& hip_world,
 		const gse::vec3<gse::position>& target,
@@ -333,6 +345,7 @@ namespace gs::locomotion {
 		gse::length thigh_length,
 		gse::length shin_length
 	) -> gse::vec3<gse::position>;
+
 	auto compute_swing(
 		leg which,
 		const state& s,
@@ -342,21 +355,26 @@ namespace gs::locomotion {
 		const leg_context& ctx,
 		const leg_controller::data& d
 	) -> leg_pose;
+
 	auto weight_shift_ready(
 		const state& s,
 		const leg_controller::data& d
 	) -> bool;
+
 	auto pelvis_yaw_orientation(
 		const state& s
 	) -> gse::quat;
+
 	auto pelvis_pitch_about_right(
 		const state& s
 	) -> gse::angle;
+
 	auto steering_target(
 		const state& s,
 		const intent& it,
 		const leg_controller::data& d
 	) -> gse::angle;
+
 	auto write_drives(
 		const skeleton_refs& r,
 		const leg_joint_targets& targets,
@@ -367,6 +385,7 @@ namespace gs::locomotion {
 		bool controllers_active,
 		const leg_controller::data& d
 	) -> void;
+
 	auto foot_anchor_velocity(
 		const gse::vec3<gse::position>& current,
 		const gse::vec3<gse::position>& target,
@@ -374,6 +393,7 @@ namespace gs::locomotion {
 		bool allow_upward_vertical,
 		const leg_controller::data& d
 	) -> gse::vec3<gse::velocity>;
+
 	auto write_foot_motor(
 		gse::id foot_id,
 		const gse::vec3<gse::position>& current,
@@ -448,9 +468,7 @@ auto gs::locomotion::plant_contact_target(const gse::vec3<gse::position>& curren
 	}
 
 	const float scale = d.plant_horizontal_reach / horizontal_distance;
-	return gse::vec3<gse::position>(grounded_current.x() + delta.x() * scale,
-									plant_y,
-									grounded_current.z() + delta.z() * scale);
+	return gse::vec3<gse::position>(grounded_current.x() + delta.x() * scale, plant_y, grounded_current.z() + delta.z() * scale);
 }
 
 auto gs::locomotion::clamp_foot_to_leg_reach(const gse::vec3<gse::position>& hip_world, const gse::vec3<gse::position>& target, const gse::quat& pelvis_orientation, const gse::length thigh_length, const gse::length shin_length) -> gse::vec3<gse::position> {
@@ -496,12 +514,14 @@ auto gs::locomotion::compute_stance(const leg which, const state& s, const skele
 		-d.stance_hip_clamp,
 		d.stance_hip_clamp
 	);
+
 	const auto knee_target = std::clamp(ik.knee_bend, -d.stance_knee_clamp, gse::radians(0.f));
 	const auto cop_shift = std::clamp(
 		pitch * d.pelvis_righting_gain + s.pelvis_pitch_rate * d.pelvis_righting_rate_gain,
 		-d.pelvis_righting_clamp,
 		d.pelvis_righting_clamp
 	);
+
 	const auto fwd_xz = gse::normalize(gse::vec3f(s.pelvis_forward.x(), 0.f, s.pelvis_forward.z()));
 	const auto pelvis_past_foot = gse::dot(fwd_xz, s.pelvis_position - planted_foot_position(which, ctx));
 	const float push_progress = std::clamp(pelvis_past_foot / d.stance_push_range, 0.f, 1.f);
@@ -541,17 +561,18 @@ auto gs::locomotion::compute_swing(const leg which, const state& s, const gait& 
 		};
 	}
 
-	const auto start_foot =
-		ctx.swing_initialized ? ctx.swing_start_foot : (which == leg::left ? s.foot_position_l : s.foot_position_r);
+	const auto start_foot = ctx.swing_initialized ? ctx.swing_start_foot : (which == leg::left ? s.foot_position_l : s.foot_position_r);
 	const bool target_matches = p.target_valid && p.swing_leg == which;
 	auto target_foot = target_matches ? p.foot_target_world : start_foot;
+
 	if (g.current == phase::plant) {
-		target_foot = foot_is_grounded(which, s) &&
-				target_matches
+		target_foot = foot_is_grounded(which, s) && target_matches
 			? grounded_foot_position(p.foot_target_world, d)
-			: (target_matches ? plant_contact_target(current_foot_position(which, s), p.foot_target_world, d)
-							  : grounded_foot_position(current_foot_position(which, s), d));
+			: (target_matches 
+				? plant_contact_target(current_foot_position(which, s), p.foot_target_world, d)
+				: grounded_foot_position(current_foot_position(which, s), d));
 	}
+
 	const float t = swing_trajectory_progress(g, d);
 	const float trajectory_t = g.current == phase::plant ? 1.f : t;
 	const auto lift = g.current == phase::plant ? gse::displacement{} : d.swing_lift_height;
@@ -621,7 +642,9 @@ auto gs::locomotion::write_drives(const skeleton_refs& r, const leg_joint_target
 			drv->max_torque = max_torque;
 		}
 	};
+
 	const auto hinge_lateral = gse::newton_meters_per_radian(0.f);
+
 	auto apply_leg = [&](const leg which, const leg_pose& pose, const gse::id hip_id, const gse::id knee_id, const gse::id ankle_id) {
 		const bool swinging = swing_active && which == swing_leg;
 		const bool airborne = swing_airborne && which == swing_leg;
@@ -629,16 +652,19 @@ auto gs::locomotion::write_drives(const skeleton_refs& r, const leg_joint_target
 		const auto hip_torque = swinging ? d.swing_hip_max_torque : d.hip_max_torque;
 		const auto knee_torque = swinging ? d.swing_knee_max_torque : d.knee_max_torque;
 		const auto ankle_torque = airborne ? d.swing_ankle_max_torque : d.ankle_max_torque;
+
 		apply(hip_id, gse::vec3<gse::angle>(pose.hip, pose.hip_yaw, pose.hip_roll), hip_stiffness, d.hip_lateral_stiffness, hip_torque);
 		apply(knee_id, gse::vec3<gse::angle>(pose.knee, gse::radians(0.f), gse::radians(0.f)), d.knee_drive_stiffness, hinge_lateral, knee_torque);
 		apply(ankle_id, gse::vec3<gse::angle>(pose.ankle, gse::radians(0.f), gse::radians(0.f)), d.ankle_drive_stiffness, hinge_lateral, ankle_torque);
 	};
+
 	apply_leg(leg::left, targets.left, r.hip_l_joint_id, r.knee_l_joint_id, r.ankle_l_joint_id);
 	apply_leg(leg::right, targets.right, r.hip_r_joint_id, r.knee_r_joint_id, r.ankle_r_joint_id);
 }
 
 auto gs::locomotion::foot_anchor_velocity(const gse::vec3<gse::position>& current, const gse::vec3<gse::position>& target, const bool include_vertical, const bool allow_upward_vertical, const leg_controller::data& d) -> gse::vec3<gse::velocity> {
 	const auto delta = target - current;
+	
 	auto result = gse::vec3<gse::velocity>(
 		gse::meters_per_second(1.f) * (d.foot_anchor_gain * delta.x()),
 		gse::meters_per_second(0.f),
@@ -700,37 +726,42 @@ auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs,
 			cctx.planted_initialized = true;
 		}
 
-		const bool entered_swing = g->current == phase::swing &&
-			(cctx.last_phase != phase::swing || cctx.last_swing_leg != g->swing_leg);
-		const bool entered_plant = g->current == phase::plant &&
-			(cctx.last_phase != phase::plant || cctx.last_swing_leg != g->swing_leg);
+		const bool entered_swing = g->current == phase::swing && (cctx.last_phase != phase::swing || cctx.last_swing_leg != g->swing_leg);
+		const bool entered_plant = g->current == phase::plant && (cctx.last_phase != phase::plant || cctx.last_swing_leg != g->swing_leg);
 		const bool entered_recover = g->current == phase::recover && cctx.last_phase != phase::recover;
+
 		const bool swing_foot_grounded = foot_is_grounded(g->swing_leg, *s);
 		if (entered_swing) {
 			cctx.swing_start_foot = current_foot_position(g->swing_leg, *s);
 			cctx.swing_target_at_start = p->foot_target_world;
 			cctx.swing_initialized = true;
 		}
+
 		if (entered_plant) {
 			cctx.plant_initialized = false;
 		}
+
 		if (entered_recover) {
 			cctx.planted_foot_l = grounded_foot_position(hip_world_position(*s, *r, leg::left), d);
 			cctx.planted_foot_r = grounded_foot_position(hip_world_position(*s, *r, leg::right), d);
 		}
+
 		const bool plant_target_matches = p->target_valid && p->swing_leg == g->swing_leg;
 		const bool plant_target_reached = leg_target_reached(g->swing_leg, *s, *p, d);
+
 		if (g->current == phase::plant && swing_foot_grounded && !cctx.plant_initialized) {
-			planted_foot_position(g->swing_leg, cctx) = plant_target_matches && plant_target_reached ? grounded_foot_position(p->foot_target_world, d)
-																									 : grounded_foot_position(current_foot_position(g->swing_leg, *s), d);
+			planted_foot_position(g->swing_leg, cctx) = plant_target_matches && plant_target_reached ? grounded_foot_position(p->foot_target_world, d) : grounded_foot_position(current_foot_position(g->swing_leg, *s), d);
 			cctx.plant_initialized = true;
 		}
+
 		if (g->current != phase::swing) {
 			cctx.swing_initialized = false;
 		}
+
 		if (g->current != phase::plant) {
 			cctx.plant_initialized = false;
 		}
+
 		cctx.last_phase = g->current;
 		cctx.last_swing_leg = g->swing_leg;
 
@@ -749,8 +780,10 @@ auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs,
 
 		const float arm_phase_target = !controllers_active || g->current == phase::idle || g->current == phase::recover
 			? 0.f
-			: g->current == phase::swing || g->current == phase::plant ? (g->swing_leg == leg::left ? 1.f : -1.f)
-																	   : cctx.arm_phase;
+			: g->current == phase::swing || g->current == phase::plant 
+				? (g->swing_leg == leg::left ? 1.f : -1.f)
+				: cctx.arm_phase;
+
 		const float arm_phase_step = frame_dt.as<gse::seconds>() / 0.4f;
 		cctx.arm_phase += std::clamp(arm_phase_target - cctx.arm_phase, -arm_phase_step, arm_phase_step);
 
@@ -771,18 +804,20 @@ auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs,
 				drv->max_torque = d.arm_max_torque;
 			}
 		};
+
 		write_shoulder(r->shoulder_l_joint_id, -1.f);
 		write_shoulder(r->shoulder_r_joint_id, 1.f);
 
 		leg_joint_targets targets;
 		bool swing_active = false;
+
 		if (controllers_active) {
 			const bool hold_weight_shift = g->current == phase::weight_shift && !weight_shift_ready(*s, d);
 			const bool plant_waiting_for_contact = g->current == phase::plant && !swing_foot_grounded;
-			const bool both_stance = g->current == phase::idle || g->current == phase::recover || hold_weight_shift ||
-				(g->current == phase::plant && !plant_waiting_for_contact);
+			const bool both_stance = g->current == phase::idle || g->current == phase::recover || hold_weight_shift || (g->current == phase::plant && !plant_waiting_for_contact);
 			swing_active = !both_stance;
 			const auto steer = it && s->valid ? steering_target(*s, *it, d) : gse::radians(0.f);
+
 			if (both_stance) {
 				targets.left = compute_stance(leg::left, *s, *r, cctx, d);
 				targets.right = compute_stance(leg::right, *s, *r, cctx, d);
@@ -806,24 +841,20 @@ auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs,
 		}
 
 		write_drives(*r, targets, g->swing_leg, swing_active, swing_active && g->current == phase::swing, drives, controllers_active, d);
-		const bool left_planting =
-			g->current == phase::plant && g->swing_leg == leg::left && plant_target_matches && !cctx.plant_initialized;
-		const bool right_planting =
-			g->current == phase::plant && g->swing_leg == leg::right && plant_target_matches && !cctx.plant_initialized;
-		const bool left_swinging =
-			g->current == phase::swing && g->swing_leg == leg::left && p->target_valid && p->swing_leg == leg::left;
-		const bool right_swinging =
-			g->current == phase::swing && g->swing_leg == leg::right && p->target_valid && p->swing_leg == leg::right;
+
+		const bool left_planting = g->current == phase::plant && g->swing_leg == leg::left && plant_target_matches && !cctx.plant_initialized;
+		const bool right_planting = g->current == phase::plant && g->swing_leg == leg::right && plant_target_matches && !cctx.plant_initialized;
+		const bool left_swinging = g->current == phase::swing && g->swing_leg == leg::left && p->target_valid && p->swing_leg == leg::left;
+		const bool right_swinging = g->current == phase::swing && g->swing_leg == leg::right && p->target_valid && p->swing_leg == leg::right;
 		const bool left_stance = g->current != phase::swing || g->swing_leg != leg::left;
 		const bool right_stance = g->current != phase::swing || g->swing_leg != leg::right;
 		const bool left_airborne_stance = left_stance && !s->foot_grounded_l && !left_planting;
 		const bool right_airborne_stance = right_stance && !s->foot_grounded_r && !right_planting;
 		const bool left_supporting = left_stance && g->current != phase::idle;
 		const bool right_supporting = right_stance && g->current != phase::idle;
-		const bool left_anchor_active =
-			controllers_active && ((s->foot_grounded_l && left_stance) || left_planting || left_airborne_stance || left_swinging);
-		const bool right_anchor_active =
-			controllers_active && ((s->foot_grounded_r && right_stance) || right_planting || right_airborne_stance || right_swinging);
+		const bool left_anchor_active = controllers_active && ((s->foot_grounded_l && left_stance) || left_planting || left_airborne_stance || left_swinging);
+		const bool right_anchor_active = controllers_active && ((s->foot_grounded_r && right_stance) || right_planting || right_airborne_stance || right_swinging);
+
 		const auto left_anchor_target = left_swinging
 			? compute_swing_foot(cctx.swing_start_foot, p->foot_target_world, swing_trajectory_progress(*g, d), d.swing_lift_height)
 			: left_planting ? grounded_foot_position(p->foot_target_world, d)
@@ -832,6 +863,7 @@ auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs,
 			? compute_swing_foot(cctx.swing_start_foot, p->foot_target_world, swing_trajectory_progress(*g, d), d.swing_lift_height)
 			: right_planting ? grounded_foot_position(p->foot_target_world, d)
 			: grounded_foot_position(cctx.planted_foot_r, d);
+
 		write_foot_motor(
 			r->foot_l_id,
 			s->foot_position_l,
@@ -844,6 +876,7 @@ auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs,
 			motors,
 			d
 		);
+
 		write_foot_motor(
 			r->foot_r_id,
 			s->foot_position_r,
@@ -862,7 +895,7 @@ auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs,
 				"leg_controller: owner={} phase={} swing={} fallen={} "
 				"hips=({:+.3f},{:+.3f}) knees=({:+.3f},{:+.3f}) ankles=({:+.3f},{:+.3f}) "
 				"pelvis_y={:+.2f} target_y={:+.2f} "
-				"feet_y=({:+.2f},{:+.2f}) grounded=({},{}) plants=({:+.2f},{:+.2f})/({:+.2f},{:+.2f})",
+				"feet_y=({:+.2f}) grounded=({},{}) plants=({:+.2f},{:+.2f})/({:+.2f},{:+.2f})",
 				owner.number(),
 				g->current,
 				g->swing_leg,
@@ -875,8 +908,7 @@ auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs,
 				targets.right.ankle,
 				s->pelvis_position.y(),
 				r->pelvis_target_height,
-				s->foot_position_l.y(),
-				s->foot_position_r.y(),
+				s->foot_position_l,
 				s->foot_grounded_l,
 				s->foot_grounded_r,
 				cctx.planted_foot_l.x(),
