@@ -9,7 +9,7 @@ import gse.config;
 import gse.slang;
 import gse.math;
 
-import gse.vulkan;
+import gse.gpu_backend;
 import :pipeline_builder;
 import :device;
 import :shader_codegen;
@@ -728,9 +728,7 @@ auto gse::gpu::build_compute_program(device& dev, const compute_entry_pod& pod, 
 		}
 	}
 
-	const auto bindless_mappings = vulkan::build_bindless_mappings(pack_bindings, dev.bindless_layout(), pod.push_constant_size);
-
-	std::vector<vulkan::specialization_entry> vk_spec_entries;
+	std::vector<specialization_entry> vk_spec_entries;
 	if (pod.build_spec_entries_fn && !spec_data.empty()) {
 		const auto entries = pod.build_spec_entries_fn();
 		vk_spec_entries.reserve(entries.size());
@@ -743,7 +741,7 @@ auto gse::gpu::build_compute_program(device& dev, const compute_entry_pod& pod, 
 		}
 	}
 
-	const vulkan::shader_object_create_info stage_info{
+	const shader_object_create_info stage_info{
 		.stage = stage_flag::compute,
 		.spirv = spirv,
 		.entry_point = "main",
@@ -752,13 +750,14 @@ auto gse::gpu::build_compute_program(device& dev, const compute_entry_pod& pod, 
 			? std::optional<std::uint32_t>(pod.required_subgroup_size)
 			: std::nullopt,
 		.require_full_subgroups = pod.require_full_subgroups,
-		.bindless_mappings = bindless_mappings.mappings,
 		.spec_entries = vk_spec_entries,
 		.spec_data = spec_data,
 	};
 
-	const vulkan::shader_program_create_info info{
+	const shader_program_create_info info{
 		.stages = std::span(&stage_info, 1),
+		.bindings = pack_bindings,
+		.push_offset_start = pod.push_constant_size,
 		.push_constant_range = push_range,
 		.state = {},
 		.is_compute = true,
@@ -824,9 +823,7 @@ auto gse::gpu::build_graphics_program(device& dev, const graphics_entry_pod& pod
 		}
 	}
 
-	const auto bindless_mappings = vulkan::build_bindless_mappings(pack_bindings, dev.bindless_layout(), pod.push_constant_size);
-
-	std::vector<vulkan::specialization_entry> vk_spec_entries;
+	std::vector<specialization_entry> vk_spec_entries;
 	if (pod.build_spec_entries_fn && !spec_data.empty()) {
 		const auto entries = pod.build_spec_entries_fn();
 		vk_spec_entries.reserve(entries.size());
@@ -839,7 +836,7 @@ auto gse::gpu::build_graphics_program(device& dev, const graphics_entry_pod& pod
 		}
 	}
 
-	std::vector<vulkan::shader_object_create_info> stage_infos;
+	std::vector<shader_object_create_info> stage_infos;
 	stage_infos.reserve(program.stages.size());
 	for (auto& s : program.stages) {
 		stage_infos.push_back({
@@ -847,7 +844,6 @@ auto gse::gpu::build_graphics_program(device& dev, const graphics_entry_pod& pod
 			.spirv = s.spirv,
 			.entry_point = "main",
 			.next_stage = next_stage_for(s.flag, all_stages),
-			.bindless_mappings = bindless_mappings.mappings,
 			.spec_entries = vk_spec_entries,
 			.spec_data = spec_data,
 		});
@@ -871,8 +867,10 @@ auto gse::gpu::build_graphics_program(device& dev, const graphics_entry_pod& pod
 	state.blend_equations.assign(pod.color_count, blend_eq);
 	state.color_write_masks.assign(pod.color_count, write_mask);
 
-	const vulkan::shader_program_create_info info{
+	const shader_program_create_info info{
 		.stages = stage_infos,
+		.bindings = pack_bindings,
+		.push_offset_start = pod.push_constant_size,
 		.push_constant_range = push_range,
 		.state = std::move(state),
 		.is_compute = false,

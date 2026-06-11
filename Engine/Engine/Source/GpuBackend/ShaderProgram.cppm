@@ -9,6 +9,33 @@ import :pipeline;
 import gse.core;
 
 export namespace gse::gpu {
+	struct specialization_entry {
+		std::uint32_t constant_id = 0;
+		std::uint32_t offset = 0;
+		std::uint32_t size = 0;
+	};
+
+	struct shader_object_create_info {
+		stage_flag stage = stage_flag::vertex;
+		std::span<const std::uint32_t> spirv;
+		std::string_view entry_point = "main";
+		stage_flags next_stage = {};
+		std::optional<std::uint32_t> required_subgroup_size;
+		bool require_full_subgroups = false;
+		std::span<const specialization_entry> spec_entries;
+		std::span<const std::byte> spec_data;
+	};
+
+	struct shader_program_create_info {
+		std::span<const shader_object_create_info> stages;
+		std::span<const binding_use> bindings;
+		std::uint32_t push_offset_start = 0;
+		std::optional<gpu::push_constant_range> push_constant_range;
+		dynamic_pipeline_state state;
+		bool is_compute = false;
+		bool is_mesh = false;
+	};
+
 	class shader_program final : public non_copyable {
 	public:
 		shader_program() {}

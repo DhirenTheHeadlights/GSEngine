@@ -4,7 +4,6 @@ export import gse.gpu_backend;
 export import :types;
 export import :physical_device;
 export import :shader_object;
-export import :shader_program;
 export import :instance;
 export import :aftermath;
 export import :device;
