@@ -6,6 +6,7 @@ export import :gpu_task;
 export import :device;
 export import :video_encoder;
 export import :swap_chain;
+export import :present_pacer;
 export import :frame;
 export import :transient_pool;
 export import :render_graph;
