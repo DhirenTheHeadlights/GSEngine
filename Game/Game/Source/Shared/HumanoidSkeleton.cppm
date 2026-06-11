@@ -1,4 +1,4 @@
-export module gs:humanoid_skeleton;
+﻿export module gs:humanoid_skeleton;
 
 import std;
 import gse;
@@ -200,22 +200,27 @@ auto gs::humanoid_rig_default() -> humanoid_rig {
 		},
 		.mass = hand.mass,
 	});
+	const auto thigh_capsule = capsule_shape{
+		.radius = thigh.size.x() * 0.5f,
+		.half_height = thigh.size.y() * 0.5f - thigh.size.x() * 0.5f,
+	};
+	const auto shin_capsule = capsule_shape{
+		.radius = shin.size.x() * 0.5f,
+		.half_height = shin.size.y() * 0.5f - shin.size.x() * 0.5f,
+	};
+
 	s.bones.push_back({
 		.name = "thigh_l",
 		.parent_index = 0,
 		.local_offset = gse::vec3<gse::displacement>(-hip_offset_x, hip_offset_y, gse::meters(0.f)),
-		.shape = box_shape{
-			.size = thigh.size
-		},
+		.shape = thigh_capsule,
 		.mass = thigh.mass,
 	});
 	s.bones.push_back({
 		.name = "shin_l",
 		.parent_index = 9,
 		.local_offset = gse::vec3<gse::displacement>(gse::meters(0.f), shin_offset_y, gse::meters(0.f)),
-		.shape = box_shape{
-			.size = shin.size
-		},
+		.shape = shin_capsule,
 		.mass = shin.mass,
 	});
 	s.bones.push_back({
@@ -231,18 +236,14 @@ auto gs::humanoid_rig_default() -> humanoid_rig {
 		.name = "thigh_r",
 		.parent_index = 0,
 		.local_offset = gse::vec3<gse::displacement>(hip_offset_x, hip_offset_y, gse::meters(0.f)),
-		.shape = box_shape{
-			.size = thigh.size
-		},
+		.shape = thigh_capsule,
 		.mass = thigh.mass,
 	});
 	s.bones.push_back({
 		.name = "shin_r",
 		.parent_index = 12,
 		.local_offset = gse::vec3<gse::displacement>(gse::meters(0.f), shin_offset_y, gse::meters(0.f)),
-		.shape = box_shape{
-			.size = shin.size
-		},
+		.shape = shin_capsule,
 		.mass = shin.mass,
 	});
 	s.bones.push_back({
