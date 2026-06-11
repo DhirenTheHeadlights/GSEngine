@@ -32,6 +32,10 @@ export namespace gs::locomotion {
 			gse::position max_foot_y = gse::meters(-1000.f);
 			gse::angle pitch_accum;
 			int pitch_samples = 0;
+			gse::vec3<gse::position> walk_start_position;
+			gse::vec3<gse::position> walk_stop_position;
+			bool walk_start_set = false;
+			bool walk_stop_set = false;
 			int plants = 0;
 			int missed_plants = 0;
 			int stale_targets = 0;
@@ -217,7 +221,7 @@ auto gs::locomotion::write_smoke_intent(intent& it, const float forward) -> void
 	it.jump = false;
 }
 
-auto gs::locomotion::finish_trial(gse::context& ctx, smoke_test::data& d, const state&, const gait& g) -> void {
+auto gs::locomotion::finish_trial(gse::context& ctx, smoke_test::data& d, const state& s, const gait& g) -> void {
 	const bool passed = !g.fallen && d.metrics.elapsed >= d.config.duration;
 	const std::string_view result = passed ? "passed" : "fallen";
 	if (passed) {
@@ -229,15 +233,25 @@ auto gs::locomotion::finish_trial(gse::context& ctx, smoke_test::data& d, const 
 
 	const auto mean_pitch =
 		d.metrics.pitch_samples > 0 ? d.metrics.pitch_accum / static_cast<float>(d.metrics.pitch_samples) : gse::radians(0.f);
+	const auto walk_end = d.metrics.walk_stop_set ? d.metrics.walk_stop_position : s.pelvis_position;
+	const auto walk_time = d.metrics.walk_stop_set ? d.config.stop_after : d.metrics.elapsed;
+	const auto walk_distance = d.metrics.walk_start_set
+		? gse::hypot(
+			  (walk_end - d.metrics.walk_start_position).x(),
+			  (walk_end - d.metrics.walk_start_position).z()
+		  )
+		: gse::displacement{};
+	const auto avg_speed = walk_time > gse::seconds(0.f) ? walk_distance / walk_time : gse::meters_per_second(0.f);
 	gse::log::println(
 		"locomotion_smoke: trial={} result={} time={:.2f:s} plants={} min_pelvis_y={:.2f} "
-		"max_speed={:.2f} max_capture=(fwd={:.3f},right={:.3f}) max_foot_y={:.2f} mean_pitch={:+.3f} "
+		"avg_speed={:.2f} max_speed={:.2f} max_capture=(fwd={:.3f},right={:.3f}) max_foot_y={:.2f} mean_pitch={:+.3f} "
 		"missed_plants={} stale_targets={} phase={} state_hash={:016x} swing={}",
 		d.trial,
 		result,
 		d.metrics.elapsed,
 		d.metrics.plants,
 		d.metrics.min_pelvis_y,
+		avg_speed,
 		d.metrics.max_speed,
 		d.metrics.max_capture_forward,
 		d.metrics.max_capture_right,
@@ -348,6 +362,14 @@ auto gs::locomotion::smoke_test::run(gse::context& ctx, data& d, const gse::shar
 					d.config.stop_after > gse::seconds(0.f) && d.metrics.elapsed >= d.config.stop_after;
 				write_smoke_intent(*it, stopped ? 0.f : d.config.forward);
 				update_metrics(d.metrics, *s, *g, *p, dt);
+				if (!d.metrics.walk_start_set) {
+					d.metrics.walk_start_position = s->pelvis_position;
+					d.metrics.walk_start_set = true;
+				}
+				if (stopped && !d.metrics.walk_stop_set) {
+					d.metrics.walk_stop_position = s->pelvis_position;
+					d.metrics.walk_stop_set = true;
+				}
 				if (g->fallen || d.metrics.elapsed >= d.config.duration) {
 					finish_trial(ctx, d, *s, *g);
 				}
