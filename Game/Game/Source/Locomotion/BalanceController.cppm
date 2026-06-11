@@ -11,7 +11,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Forward pelvis assist speed at full input.">{}
 			]]
-			gse::velocity forward_speed = gse::meters_per_second(0.32f);
+			gse::velocity forward_speed = gse::meters_per_second(0.22f);
 
 			[[
 				= gse::settings::describe<"Maximum forward pelvis assist speed.">{}

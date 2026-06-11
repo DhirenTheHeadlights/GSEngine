@@ -255,6 +255,27 @@ auto gs::humanoid_rig_default() -> humanoid_rig {
 		.mass = foot.mass,
 	});
 
+	const auto toe_size = gse::vec3<gse::displacement>(foot.size.x(), foot.size.y(), gse::meters(0.10f));
+	const auto toe_offset_z = -(foot.size.z() * 0.5f + toe_size.z() * 0.5f);
+	s.bones.push_back({
+		.name = "toe_l",
+		.parent_index = 11,
+		.local_offset = gse::vec3<gse::displacement>(gse::meters(0.f), gse::meters(0.f), toe_offset_z),
+		.shape = box_shape{
+			.size = toe_size
+		},
+		.mass = gse::kilograms(0.3f),
+	});
+	s.bones.push_back({
+		.name = "toe_r",
+		.parent_index = 14,
+		.local_offset = gse::vec3<gse::displacement>(gse::meters(0.f), gse::meters(0.f), toe_offset_z),
+		.shape = box_shape{
+			.size = toe_size
+		},
+		.mass = gse::kilograms(0.3f),
+	});
+
 	auto add_hinge = [&](
 		std::uint16_t a,
 		std::uint16_t b,
@@ -436,6 +457,24 @@ auto gs::humanoid_rig_default() -> humanoid_rig {
 		ankle_limits
 	);
 
+	const auto toe_limits = std::make_pair(gse::degrees(-15.f), gse::degrees(60.f));
+	add_hinge(
+		11,
+		15,
+		gse::vec3<gse::displacement>(gse::meters(0.f), gse::meters(0.f), -foot.size.z() * 0.5f),
+		gse::vec3<gse::displacement>(gse::meters(0.f), gse::meters(0.f), toe_size.z() * 0.5f),
+		x_axis,
+		toe_limits
+	);
+	add_hinge(
+		14,
+		16,
+		gse::vec3<gse::displacement>(gse::meters(0.f), gse::meters(0.f), -foot.size.z() * 0.5f),
+		gse::vec3<gse::displacement>(gse::meters(0.f), gse::meters(0.f), toe_size.z() * 0.5f),
+		x_axis,
+		toe_limits
+	);
+
 	rig.controlled.push_back({
 		.joint_index = 8,
 		.hinge_axis = x_axis
@@ -523,6 +562,24 @@ auto gs::spawn_humanoid(gse::scene& s, const gse::vec3<gse::position>& root_posi
 			.target = {},
 			.stiffness = gse::vec3<gse::angular_stiffness>(
 				gse::newton_meters_per_radian(60.f),
+				gse::newton_meters_per_radian(0.f),
+				gse::newton_meters_per_radian(0.f)
+			),
+		},
+		arm_hold{
+			.joint_index = 14,
+			.target = {},
+			.stiffness = gse::vec3<gse::angular_stiffness>(
+				gse::newton_meters_per_radian(25.f),
+				gse::newton_meters_per_radian(0.f),
+				gse::newton_meters_per_radian(0.f)
+			),
+		},
+		arm_hold{
+			.joint_index = 15,
+			.target = {},
+			.stiffness = gse::vec3<gse::angular_stiffness>(
+				gse::newton_meters_per_radian(25.f),
 				gse::newton_meters_per_radian(0.f),
 				gse::newton_meters_per_radian(0.f)
 			),
