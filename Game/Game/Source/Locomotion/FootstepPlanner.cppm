@@ -31,7 +31,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Maximum horizontal travel for one swing foot.">{}
 			]]
-			gse::displacement max_swing_reach = gse::meters(0.55f);
+			gse::displacement max_swing_reach = gse::meters(0.75f);
 
 			[[
 				= gse::settings::describe<"Forward capture-step clamp.">{}
@@ -169,7 +169,8 @@ auto gs::locomotion::step_forward_with_capture(const gse::displacement nominal_f
 }
 
 auto gs::locomotion::plan_foot_target(const state& s, const gait& g, const intent& it, const skeleton_refs& r, const footstep_planner::data& d) -> gse::vec3<gse::position> {
-	const auto step_length = it.sprint ? d.sprint_step : d.walk_step;
+	const float sprint_blend = std::clamp(it.sprint_blend, 0.f, 1.f);
+	const auto step_length = d.walk_step + (d.sprint_step - d.walk_step) * sprint_blend;
 	const auto nominal_forward = step_length * it.forward;
 
 	const auto capture_forward = std::clamp(

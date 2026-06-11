@@ -47,7 +47,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Maximum horizontal swing-foot travel while planting before contact.">{}
 			]]
-			gse::displacement plant_horizontal_reach = gse::meters(0.24f);
+			gse::displacement plant_horizontal_reach = gse::meters(0.34f);
 
 			[[
 				= gse::settings::describe<"Distance below ground used as the active plant target before contact.">{}

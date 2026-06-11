@@ -387,6 +387,7 @@ auto gs::locomotion::smoke_test::run(gse::context& ctx, data& d, const gse::shar
 				write_smoke_intent(*it, stopped ? 0.f : d.config.forward);
 				it->sprint = !stopped && d.config.sprint_until > d.config.sprint_after &&
 					d.metrics.elapsed >= d.config.sprint_after && d.metrics.elapsed < d.config.sprint_until;
+				it->sprint_blend += ((it->sprint ? 1.f : 0.f) - it->sprint_blend) * 0.03f;
 				if (!d.metrics.start_yaw_set && s->valid) {
 					d.metrics.start_yaw = gse::radians(std::atan2(-s->pelvis_forward.x(), -s->pelvis_forward.z()));
 					d.metrics.start_yaw_set = true;

@@ -106,7 +106,8 @@ auto gs::locomotion::balance_velocity_target(const state& s, const intent& it, c
 	const auto capture_forward_resisted = deadzoned(s.capture_forward, d.forward_capture_deadzone);
 	const float push_fade = std::clamp((gse::meters(0.35f) - s.capture_forward) / gse::meters(0.25f), 0.f, 1.f);
 	const float launch_ramp = std::clamp(0.35f + s.horizontal_speed / gse::meters_per_second(0.25f), 0.f, 1.f);
-	const auto push_speed = it.sprint ? d.sprint_forward_speed : d.forward_speed;
+	const float sprint_blend = std::clamp(it.sprint_blend, 0.f, 1.f);
+	const auto push_speed = d.forward_speed + (d.sprint_forward_speed - d.forward_speed) * sprint_blend;
 	auto forward_velocity = push_speed * (push_fade * launch_ramp) * std::clamp(
 											  it.forward * it.intensity,
 											  -1.f,
