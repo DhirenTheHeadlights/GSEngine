@@ -1,6 +1,6 @@
 export module gse.gpu;
 
-export import :aliases;
+export import gse.gpu_backend;
 export import :sync_token;
 export import :gpu_task;
 export import :device;

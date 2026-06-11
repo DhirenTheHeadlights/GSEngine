@@ -6,6 +6,27 @@ import :core;
 import :enums;
 
 export namespace gse::gpu {
+	struct pipeline_state_cache {
+		std::optional<gpu::topology> topology;
+		std::optional<gpu::polygon_mode> polygon_mode;
+		std::optional<gpu::cull_mode> cull_mode;
+		std::optional<gpu::front_face> front_face;
+		std::optional<bool> depth_test_enable;
+		std::optional<bool> depth_write_enable;
+		std::optional<gpu::compare_op> depth_compare_op;
+		std::optional<bool> depth_bias_enable;
+		std::optional<bool> rasterizer_discard_enable;
+		std::optional<bool> primitive_restart_enable;
+		std::optional<bool> alpha_to_coverage_enable;
+		std::optional<bool> alpha_to_one_enable;
+		std::optional<bool> logic_op_enable;
+		std::optional<bool> depth_clamp_enable;
+
+		auto invalidate() -> void {
+			*this = {};
+		}
+	};
+
 	struct resource_ref {
 		const void* ptr = nullptr;
 		resource_type type = resource_type::buffer;

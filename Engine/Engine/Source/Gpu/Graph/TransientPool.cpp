@@ -4,8 +4,8 @@ import std;
 
 import :transient_pool;
 import :device;
-import :aliases;
 
+import gse.vulkan;
 import gse.assert;
 import gse.concurrency;
 import gse.core;

@@ -2,10 +2,10 @@ export module gse.gpu:swap_chain;
 
 import std;
 
-import :aliases;
 import :device;
 import :image;
 
+import gse.gpu_backend;
 import gse.core;
 import gse.containers;
 import gse.time;

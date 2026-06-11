@@ -3,10 +3,11 @@ module gse.gpu:image_impl;
 import std;
 
 import :image;
-import :aliases;
 import :gpu_task;
 import :sync_token;
 import :device;
+
+import gse.vulkan;
 
 import gse.concurrency;
 import gse.math;
@@ -47,7 +48,7 @@ auto gse::gpu::transition_image_to(gpu::device& dev, image& img) -> sync_token {
 	const dependency_info dep{
 		.image_barriers = std::span(&barrier, 1)
 	};
-	commands(cmd.handle()).pipeline_barrier(dep);
+	vulkan::commands(cmd.handle()).pipeline_barrier(dep);
 
 	return submit(dev, std::move(cmd), queue_id::graphics).submit_sync();
 }

@@ -2,11 +2,11 @@ export module gse.gpu:acceleration_structure;
 
 import std;
 
-import :aliases;
 import :device;
 import :gpu_task;
 import :render_graph;
 
+import gse.gpu_backend;
 import gse.core;
 import gse.concurrency;
 

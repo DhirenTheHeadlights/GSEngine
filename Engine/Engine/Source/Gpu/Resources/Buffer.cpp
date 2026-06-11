@@ -3,10 +3,11 @@ module gse.gpu:buffer_impl;
 import std;
 
 import :buffer;
-import :aliases;
 import :gpu_task;
 import :sync_token;
 import :device;
+
+import gse.vulkan;
 
 auto gse::gpu::upload_to_buffers(gpu::device& dev, const std::span<const buffer_upload> uploads) -> sync_token {
 	if (uploads.empty()) {
@@ -29,7 +30,7 @@ auto gse::gpu::upload_to_buffers(gpu::device& dev, const std::span<const buffer_
 	auto cmd = cmd_awaiter.await_resume();
 
 	for (std::size_t i = 0; i < uploads.size(); ++i) {
-		commands(cmd.handle())
+		vulkan::commands(cmd.handle())
 			.copy_buffer(
 				stagings[i].handle(),
 				uploads[i].dst->handle(),

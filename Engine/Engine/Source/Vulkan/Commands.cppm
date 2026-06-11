@@ -11,58 +11,9 @@ import gse.assert;
 
 export namespace gse::vulkan {
 	struct command_buffer;
-
-	struct pipeline_state_cache {
-		std::optional<gpu::topology> topology;
-		std::optional<gpu::polygon_mode> polygon_mode;
-		std::optional<gpu::cull_mode> cull_mode;
-		std::optional<gpu::front_face> front_face;
-		std::optional<bool> depth_test_enable;
-		std::optional<bool> depth_write_enable;
-		std::optional<gpu::compare_op> depth_compare_op;
-		std::optional<bool> depth_bias_enable;
-		std::optional<bool> rasterizer_discard_enable;
-		std::optional<bool> primitive_restart_enable;
-		std::optional<bool> alpha_to_coverage_enable;
-		std::optional<bool> alpha_to_one_enable;
-		std::optional<bool> logic_op_enable;
-		std::optional<bool> depth_clamp_enable;
-
-		auto invalidate() -> void;
-	};
 }
 
 export namespace gse::gpu {
-	struct buffer_barrier {
-		pipeline_stage_flags src_stages;
-		access_flags src_access;
-		pipeline_stage_flags dst_stages;
-		access_flags dst_access;
-		gpu::handle<gpu::buffer> buffer;
-		device_size offset = 0;
-		device_size size = 0;
-	};
-
-	struct image_barrier {
-		pipeline_stage_flags src_stages;
-		access_flags src_access;
-		pipeline_stage_flags dst_stages;
-		access_flags dst_access;
-		bool discard_contents = false;
-		gpu::handle<gpu::image> image;
-		image_aspect_flags aspects;
-		std::uint32_t base_mip_level = 0;
-		std::uint32_t level_count = 1;
-		std::uint32_t base_array_layer = 0;
-		std::uint32_t layer_count = 1;
-	};
-
-	struct dependency_info {
-		std::span<const memory_barrier> memory_barriers;
-		std::span<const buffer_barrier> buffer_barriers;
-		std::span<const image_barrier> image_barriers;
-	};
-
 	struct rendering_attachment_info {
 		gpu::handle<gpu::image_view> image_view;
 		load_op load = load_op::dont_care;
@@ -910,10 +861,6 @@ auto gse::vulkan::build_vk_dependency_info(const gpu::dependency_info& dep, depe
 		.imageMemoryBarrierCount = static_cast<std::uint32_t>(scratch.image.size()),
 		.pImageMemoryBarriers = scratch.image.data(),
 	};
-}
-
-auto gse::vulkan::pipeline_state_cache::invalidate() -> void {
-	*this = {};
 }
 
 auto gse::vulkan::commands::set_topology(const gpu::topology t) const -> void {

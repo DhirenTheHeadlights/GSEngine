@@ -2,9 +2,9 @@ export module gse.gpu:transient_pool;
 
 import std;
 
-import :aliases;
 import :device;
 
+import gse.gpu_backend;
 import gse.assert;
 import gse.core;
 import gse.containers;

@@ -2,7 +2,6 @@ export module gse.gpu:device;
 
 import std;
 
-import :aliases;
 import :sync_token;
 
 import gse.vulkan;
@@ -85,14 +84,50 @@ export namespace gse::gpu {
 
 		[[nodiscard]]
 		auto create_shader_program(
-			const shader_program_create_info& info
+			const vulkan::shader_program_create_info& info
 		) -> shader_program;
 
 		[[nodiscard]]
 		auto create_sync(
 			std::uint32_t image_count,
 			std::uint32_t frames_in_flight = max_frames_in_flight
-		) -> sync;
+		) -> vulkan::sync;
+
+		[[nodiscard]] auto create_semaphore() -> gpu::handle<gpu::semaphore>;
+
+		[[nodiscard]] auto create_fence(
+			bool signaled
+		) -> gpu::handle<gpu::fence>;
+
+		auto begin_one_time_commands(
+			gpu::command_buffer_handle cmd
+		) -> void;
+
+		auto end_commands(
+			gpu::command_buffer_handle cmd
+		) -> void;
+
+		[[nodiscard]] auto create_transient_command_pool(
+			std::uint32_t family
+		) -> gpu::transient_pool_handle;
+
+		[[nodiscard]] auto allocate_transient_primary(
+			gpu::transient_pool_handle pool
+		) -> gpu::command_buffer_handle;
+
+		auto transient_pool_try_reset(
+			gpu::transient_pool_handle pool,
+			std::uint64_t queue_progress
+		) -> void;
+
+		auto transient_pool_mark_in_use(
+			gpu::transient_pool_handle pool,
+			std::uint64_t value
+		) -> void;
+
+		auto transient_pool_reset_all(
+			gpu::transient_pool_handle pool
+		) -> void;
 
 		[[nodiscard]]
 		auto create_timeline_semaphore(
@@ -101,6 +136,10 @@ export namespace gse::gpu {
 
 		auto retire(
 			gpu::handle<gpu::semaphore> semaphore
+		) -> void;
+
+		auto retire(
+			gpu::handle<gpu::fence> fence
 		) -> void;
 
 		[[nodiscard]]
@@ -308,7 +347,7 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto make_video_encoder(
 			vec2u extent
-		) -> std::optional<video_encoder>;
+		) -> std::optional<vulkan::video_encoder>;
 
 		[[nodiscard]]
 		auto create_image_unbound(
@@ -371,7 +410,7 @@ export namespace gse::gpu {
 			std::string_view tag
 		) -> std::unique_ptr<buffer>;
 
-		[[nodiscard]] auto transient() -> transient_executor&;
+		[[nodiscard]] auto transient() -> transient_executor<device>&;
 
 		[[nodiscard]] auto video_encode_enabled() const -> bool;
 
@@ -393,7 +432,7 @@ export namespace gse::gpu {
 		vulkan::queue m_queue;
 		vulkan::command m_command;
 		vulkan::worker_command_pools m_worker_pools;
-		std::unique_ptr<transient_executor> m_transient;
+		std::unique_ptr<transient_executor<device>> m_transient;
 		image_format m_surface_format;
 		std::atomic<bool> m_device_lost_reported = false;
 		bool m_video_encode_enabled = false;
@@ -411,20 +450,32 @@ export namespace gse::gpu {
 	};
 }
 
-auto gse::gpu::device::create_shader_program(const shader_program_create_info& info) -> shader_program {
+auto gse::gpu::device::create_shader_program(const vulkan::shader_program_create_info& info) -> shader_program {
 	return m_device_config.create_shader_program(info);
 }
 
-auto gse::gpu::device::create_sync(const std::uint32_t image_count, const std::uint32_t frames_in_flight) -> sync {
-	return sync::create(m_device_config, image_count, frames_in_flight);
+auto gse::gpu::device::create_sync(const std::uint32_t image_count, const std::uint32_t frames_in_flight) -> vulkan::sync {
+	return vulkan::sync::create(m_device_config, image_count, frames_in_flight);
 }
 
 auto gse::gpu::device::create_timeline_semaphore(const std::uint64_t initial_value) -> gpu::handle<gpu::semaphore> {
 	return m_device_config.create_timeline_semaphore(initial_value);
 }
 
+auto gse::gpu::device::create_semaphore() -> gpu::handle<gpu::semaphore> {
+	return m_device_config.create_semaphore();
+}
+
+auto gse::gpu::device::create_fence(const bool signaled) -> gpu::handle<gpu::fence> {
+	return m_device_config.create_fence(signaled);
+}
+
 auto gse::gpu::device::retire(const gpu::handle<gpu::semaphore> semaphore) -> void {
 	m_device_config.retire(semaphore);
+}
+
+auto gse::gpu::device::retire(const gpu::handle<gpu::fence> fence) -> void {
+	m_device_config.retire(fence);
 }
 
 auto gse::gpu::device::semaphore_counter_value(const gpu::handle<gpu::semaphore> semaphore) const -> std::uint64_t {

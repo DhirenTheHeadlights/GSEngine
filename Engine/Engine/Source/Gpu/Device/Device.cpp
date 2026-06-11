@@ -3,7 +3,6 @@ module gse.gpu:device_impl;
 import std;
 
 import :device;
-import :aliases;
 
 import gse.vulkan;
 
@@ -42,8 +41,8 @@ auto gse::gpu::device::create(const shared_view<window> win, const bool validati
 
 	dev->m_device_config.init_bindless();
 
-	dev->m_transient = transient_executor::create(
-		dev->m_device_config,
+	dev->m_transient = transient_executor<device>::create(
+		*dev,
 		dev->m_device_config.queue_family(queue_type::graphics),
 		dev->m_device_config.queue_family(queue_type::compute),
 		task::thread_count()
@@ -107,7 +106,7 @@ auto gse::gpu::device::begin_pass_marker(const gpu::command_buffer_handle cmd, c
 	if (ring.checkpoint_buffer.valid()) {
 		const auto slot = seq % pass_marker_ring_size;
 		const auto offset = slot * 4 * sizeof(std::uint32_t);
-		commands(cmd)
+		vulkan::commands(cmd)
 			.fill_buffer(
 				ring.checkpoint_buffer.handle(),
 				offset,
@@ -130,7 +129,7 @@ auto gse::gpu::device::checkpoint_pass_marker(const gpu::command_buffer_handle c
 
 	const auto slot = handle.seq % pass_marker_ring_size;
 	const auto offset = slot * 4 * sizeof(std::uint32_t) + sizeof(std::uint32_t);
-	commands(cmd)
+	vulkan::commands(cmd)
 		.fill_buffer(
 			ring.checkpoint_buffer.handle(),
 			offset,
@@ -147,7 +146,7 @@ auto gse::gpu::device::post_renderpass_pass_marker(const gpu::command_buffer_han
 
 	const auto slot = handle.seq % pass_marker_ring_size;
 	const auto offset = slot * 4 * sizeof(std::uint32_t) + 2 * sizeof(std::uint32_t);
-	commands(cmd)
+	vulkan::commands(cmd)
 		.fill_buffer(
 			ring.checkpoint_buffer.handle(),
 			offset,
@@ -164,7 +163,7 @@ auto gse::gpu::device::end_pass_marker(const gpu::command_buffer_handle cmd, con
 
 	const auto slot = handle.seq % pass_marker_ring_size;
 	const auto offset = slot * 4 * sizeof(std::uint32_t) + 3 * sizeof(std::uint32_t);
-	commands(cmd)
+	vulkan::commands(cmd)
 		.fill_buffer(
 			ring.checkpoint_buffer.handle(),
 			offset,
@@ -381,15 +380,15 @@ auto gse::gpu::device::acquire_worker_command_buffer(const queue_type queue, con
 	return m_worker_pools.acquire_secondary(queue, worker_index, frame_index);
 }
 
-auto gse::gpu::device::make_video_encoder(const vec2u extent) -> std::optional<video_encoder> {
+auto gse::gpu::device::make_video_encoder(const vec2u extent) -> std::optional<vulkan::video_encoder> {
 	if (!m_video_encode_enabled) {
 		return std::nullopt;
 	}
-	const auto caps = video_encoder::probe(m_device_config, m_queue);
+	const auto caps = vulkan::video_encoder::probe(m_device_config, m_queue);
 	if (!caps.available) {
 		return std::nullopt;
 	}
-	return video_encoder::create(m_device_config, m_queue, extent, caps);
+	return vulkan::video_encoder::create(m_device_config, m_queue, extent, caps);
 }
 
 auto gse::gpu::device::create_image_unbound(const image_create_info& info) const -> std::pair<gpu::handle<gpu::image>, memory_requirements> {
@@ -443,8 +442,36 @@ auto gse::gpu::device::make_aliased_buffer(const gpu::handle<gpu::buffer> buf_ha
 	);
 }
 
-auto gse::gpu::device::transient() -> transient_executor& {
+auto gse::gpu::device::transient() -> transient_executor<device>& {
 	return *m_transient;
+}
+
+auto gse::gpu::device::begin_one_time_commands(const gpu::command_buffer_handle cmd) -> void {
+	m_device_config.begin_one_time_commands(cmd);
+}
+
+auto gse::gpu::device::end_commands(const gpu::command_buffer_handle cmd) -> void {
+	m_device_config.end_commands(cmd);
+}
+
+auto gse::gpu::device::create_transient_command_pool(const std::uint32_t family) -> gpu::transient_pool_handle {
+	return m_device_config.create_transient_command_pool(family);
+}
+
+auto gse::gpu::device::allocate_transient_primary(const gpu::transient_pool_handle pool) -> gpu::command_buffer_handle {
+	return m_device_config.allocate_transient_primary(pool);
+}
+
+auto gse::gpu::device::transient_pool_try_reset(const gpu::transient_pool_handle pool, const std::uint64_t queue_progress) -> void {
+	m_device_config.transient_pool_try_reset(pool, queue_progress);
+}
+
+auto gse::gpu::device::transient_pool_mark_in_use(const gpu::transient_pool_handle pool, const std::uint64_t value) -> void {
+	m_device_config.transient_pool_mark_in_use(pool, value);
+}
+
+auto gse::gpu::device::transient_pool_reset_all(const gpu::transient_pool_handle pool) -> void {
+	m_device_config.transient_pool_reset_all(pool);
 }
 
 auto gse::gpu::device::video_encode_enabled() const -> bool {

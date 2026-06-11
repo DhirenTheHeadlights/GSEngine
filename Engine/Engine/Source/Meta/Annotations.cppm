@@ -38,6 +38,9 @@ export namespace gse {
 	template <typename E>
 	consteval auto any_enumerator_has_annotation() -> bool;
 
+	template <typename AnnotationType, typename MatchType, typename Enum>
+	constexpr auto enum_from_annotation(const MatchType& value, const Enum default_value) -> Enum;
+
 	template <typename Source, typename Tag>
 	struct project_holder;
 
@@ -183,3 +186,17 @@ consteval auto gse::apply_annotations() -> std::optional<Schema> {
 	}
 	return std::nullopt;
 }
+
+template <typename AnnotationType, typename MatchType, typename Enum>
+constexpr auto gse::enum_from_annotation(const MatchType& value, const Enum default_value) -> Enum {
+	template for (constexpr auto e : std::define_static_array(std::meta::enumerators_of(^^Enum))) {
+		constexpr auto ann = first_annotation_of_type(e, ^^AnnotationType);
+		if constexpr (ann != std::meta::info{}) {
+			if (static_cast<MatchType>([:std::meta::constant_of(ann):]) == value) {
+				return [:e:];
+			}
+		}
+	}
+	return default_value;
+}
+
