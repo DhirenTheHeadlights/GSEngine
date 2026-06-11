@@ -68,7 +68,7 @@ auto gse::gui::make_popout_menu_name(const std::string_view category) -> std::st
 auto gse::gui::find_hot_entry(const gse::save::registry& save_reg, const std::string_view category) -> const gse::settings::register_settings_type* {
 	const gse::settings::register_settings_type* found = nullptr;
 	save_reg.for_each_entry([&](const gse::settings::register_settings_type& entry) {
-		if (entry.category == category && entry.draw_hot_fields && entry.settings_ptr) {
+		if (entry.category == category && entry.settings_ptr && std::ranges::any_of(entry.fields, &gse::settings::settings_field::hot_reloadable)) {
 			found = &entry;
 		}
 	});
@@ -147,8 +147,8 @@ auto gse::gui::popout_system::run(gse::context& ctx, data& d, const gse::shared_
 			ctx.channels.push<menu_content>({
 				.menu = popout.menu_name,
 				.layer = render_layer::overlay,
-				.build = [thunk = popout.entry->draw_hot_fields, settings_ptr = popout.entry->settings_ptr, ps_ptr = &d.panel_state, &channels_ref = ctx.channels](builder& b) {
-					thunk(&b, ps_ptr, settings_ptr, &channels_ref);
+				.build = [entry = popout.entry, ps_ptr = &d.panel_state, &channels_ref = ctx.channels](builder& b) {
+					gse::settings::draw_fields_for_entry(b, *ps_ptr, channels_ref, *entry, true);
 				},
 			});
 		}
