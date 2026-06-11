@@ -13,6 +13,7 @@ namespace gs::startup {
 	auto run_game(
 		const gse::engine_config& engine
 	) -> void;
+	
 	auto run_locomotion_smoke(
 		gs::locomotion::smoke_config smoke
 	) -> void;

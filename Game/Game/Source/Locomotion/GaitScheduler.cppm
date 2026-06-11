@@ -152,11 +152,13 @@ namespace gs::locomotion {
 		const gait_scheduler::data& d,
 		const intent& it
 	) -> gait_config;
+
 	auto detect_fall(
 		const state& s,
 		gait& g,
 		const gait_config& cfg
 	) -> bool;
+
 	auto begin_phase(
 		gait& g,
 		phase p,
@@ -164,48 +166,59 @@ namespace gs::locomotion {
 		std::string_view reason,
 		gse::id owner
 	) -> void;
+
 	auto foot_grounded(
 		const state& s,
 		leg which
 	) -> bool;
+
 	auto capture_safe_for_swing(
 		const state& s,
 		const gait_scheduler::data& d
 	) -> bool;
+
 	auto capture_at_drop_threshold(
 		const state& s,
 		const gait_scheduler::data& d
 	) -> bool;
+
 	auto recovery_release_ready(
 		const state& s,
 		const gait_scheduler::data& d
 	) -> bool;
+
 	auto capture_demands_swing(
 		const state& s,
 		const gait_scheduler::data& d
 	) -> bool;
+
 	auto capture_recovery_leg(
 		const state& s,
 		const gait_scheduler::data& d,
 		leg fallback
 	) -> leg;
+
 	auto posture_safe_for_swing(
 		const state& s,
 		const gait_scheduler::data& d
 	) -> bool;
+
 	auto posture_allows_recovery_swing(
 		const state& s,
 		const gait_scheduler::data& d
 	) -> bool;
+
 	auto swing_drop_requested(
 		const state& s,
 		const gait& g,
 		const gait_scheduler::data& d
 	) -> bool;
+
 	auto foot_position(
 		const state& s,
 		leg which
 	) -> const gse::vec3<gse::position>&;
+
 	auto foot_target_reached(
 		const state& s,
 		const plan& p,
@@ -237,8 +250,7 @@ auto gs::locomotion::detect_fall(const state& s, gait& g, const gait_config& cfg
 	}
 	const bool low_pelvis = s.pelvis_position.y() < cfg.fall_pelvis_y_threshold;
 	const bool runaway_speed = s.horizontal_speed > cfg.fall_speed_threshold;
-	const bool runaway_capture =
-		s.capture_forward > cfg.fall_capture_threshold || s.capture_forward < -cfg.fall_capture_threshold;
+	const bool runaway_capture = s.capture_forward > cfg.fall_capture_threshold || s.capture_forward < -cfg.fall_capture_threshold;
 	g.runaway_ticks = runaway_speed || runaway_capture ? g.runaway_ticks + 1 : 0;
 	return low_pelvis || g.runaway_ticks >= 6;
 }
@@ -449,10 +461,13 @@ auto gs::locomotion::gait_scheduler::run(data& d, gse::read<skeleton_refs> refs,
 					const bool support_transferred = swing_grounded && !stance_grounded;
 					const bool support_swing_safe = support_transferred && posture_allows_recovery_swing(*s, d);
 					const leg next_swing_leg = other(g.swing_leg);
+
 					if (!s->double_support && !support_swing_safe) {
 						break;
 					}
+
 					const bool capture_too_hot = capture_at_drop_threshold(*s, d);
+
 					if (capture_demands_swing(*s, d) && capture_too_hot && posture_allows_recovery_swing(*s, d)) {
 						begin_phase(g, phase::recover, d.recovery_duration, "capture_hot", owner);
 					}
@@ -488,6 +503,7 @@ auto gs::locomotion::gait_scheduler::run(data& d, gse::read<skeleton_refs> refs,
 				const bool posture_ok = posture_allows_recovery_swing(*s, d);
 				const bool released = recovery_release_ready(*s, d) && posture_ok && s->double_support;
 				const bool timed_out = g.phase_elapsed >= g.phase_duration;
+				
 				if (released) {
 					g.swing_leg = capture_recovery_leg(*s, d, g.swing_leg);
 					begin_phase(g, phase::weight_shift, cfg.weight_shift_duration, "recovered", owner);

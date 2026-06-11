@@ -88,22 +88,28 @@ export namespace gs::locomotion {
 
 namespace gs::locomotion {
 	auto sim_frame_dt() -> gse::time;
+
 	auto find_scene_id(
 		gse::shared_view<gse::world_system> world_d
 	) -> std::optional<gse::id>;
+
 	auto reset_metrics(
 		smoke_test::trial_metrics& metrics
 	) -> void;
+
 	auto begin_trial(
 		smoke_test::data& d
 	) -> void;
+
 	auto smoke_foot_grounded(
 		const state& s,
 		leg which
 	) -> bool;
+
 	auto highest_foot_y(
 		const state& s
 	) -> gse::position;
+
 	auto update_metrics(
 		smoke_test::trial_metrics& metrics,
 		const state& s,
@@ -111,10 +117,12 @@ namespace gs::locomotion {
 		const plan& p,
 		gse::time dt
 	) -> void;
+
 	auto write_smoke_intent(
 		intent& it,
 		float forward
 	) -> void;
+
 	auto finish_trial(
 		gse::context& ctx,
 		smoke_test::data& d,
@@ -172,11 +180,13 @@ auto gs::locomotion::update_metrics(smoke_test::trial_metrics& metrics, const st
 		metrics.state_hash ^= std::bit_cast<std::uint32_t>(unit_value);
 		metrics.state_hash *= 1099511628211ull;
 	};
+
 	for (const auto& v : { s.pelvis_position, s.foot_position_l, s.foot_position_r }) {
 		fold(v.x());
 		fold(v.y());
 		fold(v.z());
 	}
+
 	fold(s.pelvis_velocity.x());
 	fold(s.pelvis_velocity.y());
 	fold(s.pelvis_velocity.z());
@@ -209,8 +219,7 @@ auto gs::locomotion::update_metrics(smoke_test::trial_metrics& metrics, const st
 		metrics.counted_stale_target = false;
 	}
 
-	const bool missed_plant =
-		g.current == phase::plant && !smoke_foot_grounded(s, g.swing_leg) && g.phase_elapsed > g.phase_duration;
+	const bool missed_plant = g.current == phase::plant && !smoke_foot_grounded(s, g.swing_leg) && g.phase_elapsed > g.phase_duration;
 	if (missed_plant && !metrics.counted_missed_plant) {
 		++metrics.missed_plants;
 		metrics.counted_missed_plant = true;
@@ -251,8 +260,7 @@ auto gs::locomotion::finish_trial(gse::context& ctx, smoke_test::data& d, const 
 		++d.failed;
 	}
 
-	const auto mean_pitch =
-		d.metrics.pitch_samples > 0 ? d.metrics.pitch_accum / static_cast<float>(d.metrics.pitch_samples) : gse::radians(0.f);
+	const auto mean_pitch = d.metrics.pitch_samples > 0 ? d.metrics.pitch_accum / static_cast<float>(d.metrics.pitch_samples) : gse::radians(0.f);
 	const auto walk_end = d.metrics.walk_stop_set ? d.metrics.walk_stop_position : s.pelvis_position;
 	const auto walk_time = d.metrics.walk_stop_set ? d.config.stop_after : d.metrics.elapsed;
 	const auto walk_distance = d.metrics.walk_start_set
@@ -382,18 +390,19 @@ auto gs::locomotion::smoke_test::run(gse::context& ctx, data& d, const gse::shar
 				}
 			}
 			else if (d.stage == smoke_stage::running) {
-				const bool stopped =
-					d.config.stop_after > gse::seconds(0.f) && d.metrics.elapsed >= d.config.stop_after;
+				const bool stopped = d.config.stop_after > gse::seconds(0.f) && d.metrics.elapsed >= d.config.stop_after;
 				write_smoke_intent(*it, stopped ? 0.f : d.config.forward);
-				it->sprint = !stopped && d.config.sprint_until > d.config.sprint_after &&
-					d.metrics.elapsed >= d.config.sprint_after && d.metrics.elapsed < d.config.sprint_until;
+
+				it->sprint = !stopped && d.config.sprint_until > d.config.sprint_after && d.metrics.elapsed >= d.config.sprint_after && d.metrics.elapsed < d.config.sprint_until;
 				it->sprint_blend += ((it->sprint ? 1.f : 0.f) - it->sprint_blend) * 0.03f;
+
 				if (!d.metrics.start_yaw_set && s->valid) {
 					d.metrics.start_yaw = gse::radians(std::atan2(-s->pelvis_forward.x(), -s->pelvis_forward.z()));
 					d.metrics.start_yaw_set = true;
 				}
-				const bool turning = d.config.turn_after > gse::seconds(0.f) &&
-					d.metrics.elapsed >= d.config.turn_after && d.metrics.start_yaw_set;
+
+				const bool turning = d.config.turn_after > gse::seconds(0.f) && d.metrics.elapsed >= d.config.turn_after && d.metrics.start_yaw_set;
+
 				if (turning) {
 					it->desired_yaw = gse::radians(std::remainder(
 						static_cast<float>(d.metrics.start_yaw + d.config.turn_by),
@@ -401,7 +410,9 @@ auto gs::locomotion::smoke_test::run(gse::context& ctx, data& d, const gse::shar
 					));
 					it->has_heading = true;
 				}
+
 				update_metrics(d.metrics, *s, *g, *p, dt);
+				
 				if (!d.metrics.walk_start_set) {
 					d.metrics.walk_start_position = s->pelvis_position;
 					d.metrics.walk_start_set = true;
