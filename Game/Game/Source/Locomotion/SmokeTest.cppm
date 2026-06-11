@@ -19,7 +19,7 @@ export namespace gs::locomotion {
 		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time duration = gse::seconds(20.f);
 		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time warmup = gse::seconds(1.5f);
 		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time stop_after = gse::seconds(13.f);
-		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time turn_after = gse::seconds(11.5f);
+		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time turn_after = gse::seconds(2.0f);
 		gse::angle turn_by = gse::radians(1.57f);
 		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time sprint_after = gse::seconds(4.f);
 		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time sprint_until = gse::seconds(8.f);
