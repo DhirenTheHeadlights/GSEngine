@@ -34,6 +34,29 @@ function(gse_copy_runtime_deps target)
                 "$<TARGET_FILE_DIR:${target}>"
         )
     endif()
+
+    # The GCC toolchain's own runtime DLLs live in the compiler's bin dir, not vcpkg's.
+    # RPATH is an ELF concept the Windows PE loader ignores, so the BUILD_RPATH set on the
+    # exe can't locate them -- without copying them next to the exe, launching it outside
+    # the preset's PATH exits 127 (STATUS_DLL_NOT_FOUND; here libmcfgthread-2.dll, the only
+    # one not linked statically). Copy the C++/threading runtime DLLs that exist; harmless
+    # when one is actually linked statically.
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        get_filename_component(_gcc_bin_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+        foreach(_runtime_dll IN ITEMS
+                libmcfgthread-2.dll
+                libstdc++-6.dll
+                libgcc_s_seh-1.dll
+                libwinpthread-1.dll)
+            if(EXISTS "${_gcc_bin_dir}/${_runtime_dll}")
+                add_custom_command(TARGET ${target} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "${_gcc_bin_dir}/${_runtime_dll}"
+                        "$<TARGET_FILE_DIR:${target}>"
+                )
+            endif()
+        endforeach()
+    endif()
 endfunction()
 
 add_subdirectory(Engine)
