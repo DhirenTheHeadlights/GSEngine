@@ -23,9 +23,11 @@ export namespace gs::locomotion {
 		gse::id thigh_l_id;
 		gse::id shin_l_id;
 		gse::id foot_l_id;
+		gse::id toe_l_id;
 		gse::id thigh_r_id;
 		gse::id shin_r_id;
 		gse::id foot_r_id;
+		gse::id toe_r_id;
 		gse::mass pelvis_mass = gse::kilograms(3.f);
 		gse::mass upper_body_mass = gse::kilograms(51.f);
 		gse::mass thigh_mass = gse::kilograms(7.5f);
