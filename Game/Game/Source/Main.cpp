@@ -13,6 +13,7 @@ namespace gs::startup {
 	auto run_game(
 		const gse::engine_config& engine
 	) -> void;
+	
 	auto run_locomotion_smoke(
 		gs::locomotion::smoke_config smoke
 	) -> void;
@@ -54,6 +55,7 @@ auto gs::startup::run_locomotion_smoke(gs::locomotion::smoke_config smoke) -> vo
 			.title = "GoonSquad Locomotion Smoke",
 			.create_window = false,
 			.render = false,
+			.persist_settings = false,
 		}
 	);
 	gse::system_clock::set_fixed_step_override(std::nullopt);

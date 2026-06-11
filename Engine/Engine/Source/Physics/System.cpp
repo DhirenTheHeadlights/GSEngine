@@ -3,6 +3,7 @@ module gse.physics:system_impl;
 import std;
 
 import :system;
+import :joint_drive_component;
 import :joint_spec;
 import :narrow_phase_collision;
 import :motion_component;
@@ -219,7 +220,7 @@ auto gse::physics::system::collect_collision_objects(write<transform_component>&
 	return objects;
 }
 
-auto gse::physics::system::add_scene_contacts_to_solver(vbd::solver& solver, vbd::contact_cache& contact_cache, std::vector<collision_pair>& objects, const std::flat_map<id, std::uint32_t>& id_to_body_index, const bool update_scene_state, write<transform_component>& transform, write<motion_component>& motion, write<collision_component>& collision, write<collision_result_component>* results, std::span<std::uint8_t> body_airborne) -> void {
+auto gse::physics::system::add_scene_contacts_to_solver(vbd::solver& solver, vbd::contact_cache& contact_cache, std::vector<collision_pair>& objects, const std::flat_map<id, std::uint32_t>& id_to_body_index, const std::flat_set<std::pair<std::uint64_t, std::uint64_t>>& jointed_pairs, const bool update_scene_state, write<transform_component>& transform, write<motion_component>& motion, write<collision_component>& collision, write<collision_result_component>* results, std::span<std::uint8_t> body_airborne) -> void {
 	trace::scope_guard sg{ trace_id<"vbd_cpu::broad_phase">() };
 
 	{
@@ -281,6 +282,12 @@ auto gse::physics::system::add_scene_contacts_to_solver(vbd::solver& solver, vbd
 
 					const auto owner_a = obj_a.owner;
 					const auto owner_b = obj_b.owner;
+					const auto pair_key = owner_a.number() < owner_b.number()
+						? std::pair(owner_a.number(), owner_b.number())
+						: std::pair(owner_b.number(), owner_a.number());
+					if (jointed_pairs.contains(pair_key)) {
+						continue;
+					}
 					auto* transform_a = transform.find(owner_a);
 					auto* transform_b = transform.find(owner_b);
 					auto* collision_a = collision.find(owner_a);
@@ -528,7 +535,7 @@ auto gse::physics::system::init(context& ctx, const std::optional<shared_view<gp
 	co_return;
 }
 
-auto gse::physics::system::run::prepare(context& ctx, const std::optional<shared_view<gpu::context>> gpu_s, const shared_view<asset::registry> assets_s, data& d, write<joint_spec> specs, read<muscle_component> muscles) -> async::task<> {
+auto gse::physics::system::run::prepare(context& ctx, const std::optional<shared_view<gpu::context>> gpu_s, const shared_view<asset::registry> assets_s, data& d, write<joint_spec> specs, read<muscle_component> muscles, read<joint_drive_component> drives) -> async::task<> {
 	(void)gpu_s;
 	(void)assets_s;
 
@@ -557,6 +564,27 @@ auto gse::physics::system::run::prepare(context& ctx, const std::optional<shared
 			continue;
 		}
 		d.joints[handle_it->second].activation = muscles[i].activation;
+	}
+
+	const auto drive_owners = drives.owner_ids();
+	for (std::size_t i = 0; i < drives.size(); ++i) {
+		const auto handle_it = d.joint_handles_by_entity.find(drive_owners[i]);
+		if (handle_it == d.joint_handles_by_entity.end()) {
+			continue;
+		}
+		if (handle_it->second >= d.joints.size()) {
+			continue;
+		}
+		auto& jd = d.joints[handle_it->second];
+		const auto& drive = drives[i];
+		if (!drive.enabled) {
+			jd.drive_stiffness = {};
+			continue;
+		}
+		jd.drive_target = drive.target;
+		jd.drive_stiffness = drive.stiffness;
+		jd.drive_damping = drive.damping;
+		jd.drive_max_torque = drive.max_torque;
 	}
 
 	if (const auto& stats_channel = ctx.read_channel<gpu_solver_stats>(); !stats_channel.empty()) {
@@ -972,6 +1000,10 @@ auto gse::physics::system::update_vbd_gpu(const int steps, data& d, write<transf
 					.soft_ang_stiffness = jd.soft_ang_stiffness,
 					.activation = jd.activation,
 					.max_force = jd.max_force,
+					.drive_target = jd.drive_target,
+					.drive_stiffness = jd.drive_stiffness,
+					.drive_damping = jd.drive_damping,
+					.drive_max_torque = jd.drive_max_torque,
 				}
 			);
 		}
@@ -1038,6 +1070,18 @@ auto gse::physics::system::update_vbd(const int steps, data& d, write<transform_
 			id_staging.emplace_back(motion_ids[i], static_cast<std::uint32_t>(i));
 		}
 		id_to_body_index.insert(id_staging.begin(), id_staging.end());
+	}
+
+	std::flat_set<std::pair<std::uint64_t, std::uint64_t>> jointed_pairs;
+	{
+		std::vector<std::pair<std::uint64_t, std::uint64_t>> pair_staging;
+		pair_staging.reserve(d.joints.size());
+		for (const auto& jd : d.joints) {
+			const auto a = jd.entity_a.number();
+			const auto b = jd.entity_b.number();
+			pair_staging.emplace_back(std::min(a, b), std::max(a, b));
+		}
+		jointed_pairs.insert(pair_staging.begin(), pair_staging.end());
 	}
 
 	const int total_substeps = steps * substeps;
@@ -1121,6 +1165,7 @@ auto gse::physics::system::update_vbd(const int steps, data& d, write<transform_
 			d.contact_cache,
 			objects,
 			id_to_body_index,
+			jointed_pairs,
 			true,
 			transform,
 			motion,
@@ -1199,6 +1244,10 @@ auto gse::physics::system::update_vbd(const int steps, data& d, write<transform_
 					.soft_ang_stiffness = jd.soft_ang_stiffness,
 					.activation = jd.activation,
 					.max_force = jd.max_force,
+					.drive_target = jd.drive_target,
+					.drive_stiffness = jd.drive_stiffness,
+					.drive_damping = jd.drive_damping,
+					.drive_max_torque = jd.drive_max_torque,
 				}
 			);
 		}

@@ -32,6 +32,7 @@ export namespace gse {
 		bool render_world = true;
 		bool custom_chrome = false;
 		bool scale_ui_with_resolution = true;
+		bool persist_settings = true;
 	};
 
 	class engine : public identifiable {
