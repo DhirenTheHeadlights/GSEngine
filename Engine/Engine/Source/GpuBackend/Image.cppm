@@ -207,6 +207,10 @@ export namespace gse::gpu {
 		gse::gpu::present_mode present_mode = gse::gpu::present_mode::fifo;
 		std::vector<gpu::handle<image>> images;
 		std::vector<gpu::handle<gpu::image_view>> image_views;
+		bool present_timing_supported = false;
+		time_t<std::uint64_t> refresh_interval{};
+		time_t<std::uint64_t> refresh_duration{};
+		std::uint64_t time_domain_id = 0;
 	};
 }
 

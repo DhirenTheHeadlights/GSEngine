@@ -19,6 +19,7 @@ import vulkan;
 import gse.assert;
 import gse.core;
 import gse.log;
+import gse.math;
 
 namespace gse::vulkan {
 	template <typename Feat>
@@ -223,7 +224,7 @@ auto gse::vulkan::device::create_swap_chain(const vec2i framebuffer_size, const 
 	);
 
 	vk::SwapchainCreateInfoKHR create_info{
-		.flags = {},
+		.flags = vk::SwapchainCreateFlagBitsKHR::ePresentTimingEXT | vk::SwapchainCreateFlagBitsKHR::ePresentId2,
 		.surface = vk_surface,
 		.minImageCount = image_count,
 		.imageFormat = surface_format.format,
@@ -318,6 +319,64 @@ auto gse::vulkan::device::create_swap_chain(const vec2i framebuffer_size, const 
 		release_fences.push_back(std::move(fence));
 	}
 
+	const auto vk_device = *raii_device();
+	const auto vk_swapchain = *vk_swap_chain;
+
+	bool present_timing_supported = false;
+	{
+		const vk::SurfacePresentModeKHR timing_present_mode{
+			.presentMode = present_mode,
+		};
+		const vk::PhysicalDeviceSurfaceInfo2KHR timing_surface_info{
+			.pNext = &timing_present_mode,
+			.surface = vk_surface,
+		};
+		vk::PresentTimingSurfaceCapabilitiesEXT timing_caps{};
+		vk::SurfaceCapabilities2KHR timing_caps_chain{
+			.pNext = &timing_caps,
+		};
+		(void)vk_phys.getSurfaceCapabilities2KHR(&timing_surface_info, &timing_caps_chain);
+		present_timing_supported = timing_caps.presentTimingSupported == vk::True;
+	}
+	assert(present_timing_supported, "VK_EXT_present_timing is not supported on this surface");
+
+	const auto timing_queue_result = vk_device.setSwapchainPresentTimingQueueSizeEXT(vk_swapchain, 32);
+	assert(
+		timing_queue_result == vk::Result::eSuccess || timing_queue_result == vk::Result::eNotReady,
+		"failed to set swapchain present timing queue size: {}",
+		vk::to_string(timing_queue_result)
+	);
+
+	time_t<std::uint64_t> refresh_interval{};
+	time_t<std::uint64_t> refresh_duration{};
+	{
+		const auto [props_result, props] = vk_device.getSwapchainTimingPropertiesEXT(vk_swapchain);
+		if (props_result == vk::Result::eSuccess) {
+			refresh_interval = time_t<std::uint64_t>(props.first.refreshInterval);
+			refresh_duration = time_t<std::uint64_t>(props.first.refreshDuration);
+		}
+	}
+
+	std::uint64_t time_domain_id = 0;
+	{
+		vk::SwapchainTimeDomainPropertiesEXT domain_props{};
+		std::uint64_t domains_counter = 0;
+		(void)vk_device.getSwapchainTimeDomainPropertiesEXT(vk_swapchain, &domain_props, &domains_counter);
+		std::vector<vk::TimeDomainKHR> domains(domain_props.timeDomainCount);
+		std::vector<std::uint64_t> domain_ids(domain_props.timeDomainCount);
+		domain_props.pTimeDomains = domains.data();
+		domain_props.pTimeDomainIds = domain_ids.data();
+		(void)vk_device.getSwapchainTimeDomainPropertiesEXT(vk_swapchain, &domain_props, &domains_counter);
+		for (std::uint32_t i = 0; i < domain_props.timeDomainCount; ++i) {
+			if (domains[i] == vk::TimeDomainKHR::eSwapchainLocalEXT) {
+				time_domain_id = domain_ids[i];
+			}
+		}
+		if (time_domain_id == 0 && !domain_ids.empty()) {
+			time_domain_id = domain_ids[0];
+		}
+	}
+
 	const auto handle = std::bit_cast<gpu::swap_chain_handle>(*vk_swap_chain);
 
 	gpu::swap_chain_info info{
@@ -325,6 +384,10 @@ auto gse::vulkan::device::create_swap_chain(const vec2i framebuffer_size, const 
 		.extent = { extent.width, extent.height },
 		.format = from_vk(format),
 		.present_mode = from_vk(present_mode),
+		.present_timing_supported = present_timing_supported,
+		.refresh_interval = refresh_interval,
+		.refresh_duration = refresh_duration,
+		.time_domain_id = time_domain_id,
 	};
 	info.images.reserve(images.size());
 	for (const auto& img : images) {
@@ -379,12 +442,56 @@ auto gse::vulkan::device::swapchain_release_fence(const gpu::swap_chain_handle s
 	return std::bit_cast<gpu::handle<gpu::fence>>(*resources->release_fences[image_index]);
 }
 
-auto gse::vulkan::device::swapchain_wait_for_present(const gpu::swap_chain_handle swapchain, const std::uint64_t present_id, const std::uint64_t timeout_ns) const -> gpu::result {
+auto gse::vulkan::device::swapchain_past_presentation_timing(const gpu::swap_chain_handle swapchain) const -> std::vector<gpu::past_present_timing> {
 	const auto* resources = m_owned.find(swapchain);
 	if (!resources) {
-		return gpu::result::error_unknown;
+		return {};
 	}
-	return from_vk(resources->swapchain.waitForPresent(present_id, timeout_ns));
+
+	const auto vk_device = *raii_device();
+	const auto vk_swapchain = *resources->swapchain;
+	const vk::PastPresentationTimingInfoEXT info{
+		.swapchain = vk_swapchain,
+	};
+
+	constexpr std::uint32_t batch = 16;
+	constexpr std::uint32_t max_stages = 4;
+
+	std::vector<gpu::past_present_timing> out;
+	for (;;) {
+		std::array<vk::PastPresentationTimingEXT, batch> timings{};
+		std::array<vk::PresentStageTimeEXT, batch * max_stages> stages{};
+		for (std::uint32_t i = 0; i < batch; ++i) {
+			timings[i].presentStageCount = max_stages;
+			timings[i].pPresentStages = stages.data() + static_cast<std::size_t>(i) * max_stages;
+		}
+		vk::PastPresentationTimingPropertiesEXT props{
+			.presentationTimingCount = batch,
+			.pPresentationTimings = timings.data(),
+		};
+		const auto result = vk_device.getPastPresentationTimingEXT(&info, &props);
+		if (result != vk::Result::eSuccess && result != vk::Result::eIncomplete) {
+			break;
+		}
+		const auto got = props.presentationTimingCount;
+		for (std::uint32_t i = 0; i < got; ++i) {
+			const auto& timing = timings[i];
+			gpu::past_present_timing sample{
+				.present_id = timing.presentId,
+				.complete = timing.reportComplete == vk::True,
+			};
+			for (std::uint32_t s = 0; s < timing.presentStageCount; ++s) {
+				if (timing.pPresentStages[s].stage & vk::PresentStageFlagBitsEXT::eImageFirstPixelOut) {
+					sample.first_pixel_out = time_t<std::uint64_t>(timing.pPresentStages[s].time);
+				}
+			}
+			out.push_back(sample);
+		}
+		if (got == 0 || result == vk::Result::eSuccess) {
+			break;
+		}
+	}
+	return out;
 }
 
 auto gse::vulkan::pick_surface_format(const physical_device& physical_device, const gpu::surface surface) -> gpu::image_format {
@@ -535,8 +642,8 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 		vk::PhysicalDeviceUnifiedImageLayoutsFeaturesKHR,
 		vk::PhysicalDeviceHostImageCopyFeaturesEXT,
 		vk::PhysicalDeviceSwapchainMaintenance1FeaturesEXT,
-		vk::PhysicalDevicePresentIdFeaturesKHR,
-		vk::PhysicalDevicePresentWaitFeaturesKHR,
+		vk::PhysicalDevicePresentTimingFeaturesEXT,
+		vk::PhysicalDevicePresentId2FeaturesKHR,
 		vk::PhysicalDeviceDescriptorHeapFeaturesEXT,
 		vk::PhysicalDeviceShaderObjectFeaturesEXT,
 		vk::PhysicalDeviceExtendedDynamicState3FeaturesEXT,
@@ -552,8 +659,8 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 	const auto& unified_layouts_query = feature_chain.get<vk::PhysicalDeviceUnifiedImageLayoutsFeaturesKHR>();
 	const auto& host_image_copy_query = feature_chain.get<vk::PhysicalDeviceHostImageCopyFeaturesEXT>();
 	const auto& swapchain_maintenance1_query = feature_chain.get<vk::PhysicalDeviceSwapchainMaintenance1FeaturesEXT>();
-	const auto& present_id_query = feature_chain.get<vk::PhysicalDevicePresentIdFeaturesKHR>();
-	const auto& present_wait_query = feature_chain.get<vk::PhysicalDevicePresentWaitFeaturesKHR>();
+	const auto& present_timing_query = feature_chain.get<vk::PhysicalDevicePresentTimingFeaturesEXT>();
+	const auto& present_id2_query = feature_chain.get<vk::PhysicalDevicePresentId2FeaturesKHR>();
 	const auto& descriptor_heap_query = feature_chain.get<vk::PhysicalDeviceDescriptorHeapFeaturesEXT>();
 	const auto& shader_object_query = feature_chain.get<vk::PhysicalDeviceShaderObjectFeaturesEXT>();
 	const auto& eds3_query = feature_chain.get<vk::PhysicalDeviceExtendedDynamicState3FeaturesEXT>();
@@ -586,12 +693,16 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 		"VK_EXT_swapchain_maintenance1 is required"
 	);
 	assert(
-		supports_extension(vk::KHRPresentIdExtensionName) && present_id_query.presentId,
-		"VK_KHR_present_id is required"
+		supports_extension(vk::EXTPresentTimingExtensionName) && present_timing_query.presentTiming && present_timing_query.presentAtRelativeTime,
+		"VK_EXT_present_timing with relative-time scheduling is required"
 	);
 	assert(
-		supports_extension(vk::KHRPresentWaitExtensionName) && present_wait_query.presentWait,
-		"VK_KHR_present_wait is required"
+		supports_extension(vk::KHRPresentId2ExtensionName) && present_id2_query.presentId2,
+		"VK_KHR_present_id2 is required"
+	);
+	assert(
+		supports_extension(vk::KHRCalibratedTimestampsExtensionName),
+		"VK_KHR_calibrated_timestamps is required"
 	);
 
 	vk::PhysicalDeviceMemoryPriorityFeaturesEXT memory_priority_features{
@@ -686,13 +797,14 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 		.pNext = &host_image_copy_features,
 		.swapchainMaintenance1 = vk::True,
 	};
-	vk::PhysicalDevicePresentIdFeaturesKHR present_id_features{
+	vk::PhysicalDevicePresentId2FeaturesKHR present_id2_features{
 		.pNext = &swapchain_maintenance1_features,
-		.presentId = vk::True,
+		.presentId2 = vk::True,
 	};
-	vk::PhysicalDevicePresentWaitFeaturesKHR present_wait_features{
-		.pNext = &present_id_features,
-		.presentWait = vk::True,
+	vk::PhysicalDevicePresentTimingFeaturesEXT present_timing_features{
+		.pNext = &present_id2_features,
+		.presentTiming = vk::True,
+		.presentAtRelativeTime = vk::True,
 	};
 
 	optional_feature<vk::PhysicalDeviceFaultFeaturesEXT> fault{
@@ -717,7 +829,7 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 		vk::KHRDynamicRenderingExtensionName,
 		vk::KHRMaintenance5ExtensionName,
 		vk::KHRMaintenance6ExtensionName,
-		vk::EXTCalibratedTimestampsExtensionName,
+		vk::KHRCalibratedTimestampsExtensionName,
 		vk::EXTPageableDeviceLocalMemoryExtensionName,
 		vk::EXTMemoryPriorityExtensionName,
 		vk::EXTMeshShaderExtensionName,
@@ -732,11 +844,11 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 		vk::KHRUnifiedImageLayoutsExtensionName,
 		vk::EXTHostImageCopyExtensionName,
 		vk::EXTSwapchainMaintenance1ExtensionName,
-		vk::KHRPresentIdExtensionName,
-		vk::KHRPresentWaitExtensionName,
+		vk::KHRPresentId2ExtensionName,
+		vk::EXTPresentTimingExtensionName,
 	};
 
-	void* chain_head = &present_wait_features;
+	void* chain_head = &present_timing_features;
 	auto process = [&](auto&... features) {
 		((chain_head = features.attach(chain_head)), ...);
 		(features.register_ext(device_extensions), ...);
