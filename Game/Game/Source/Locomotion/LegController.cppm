@@ -135,6 +135,16 @@ export namespace gs::locomotion {
 			gse::angle toe_off_angle = gse::radians(-0.30f);
 
 			[[
+				= gse::settings::describe<"Stance-ankle plantarflexion as the pelvis passes the planted foot (late-stance power).">{}
+			]]
+			gse::angle stance_push_angle = gse::radians(-0.40f);
+
+			[[
+				= gse::settings::describe<"Pelvis travel past the planted foot over which the stance push ramps in.">{}
+			]]
+			gse::displacement stance_push_range = gse::meters(0.18f);
+
+			[[
 				= gse::settings::describe<"Swing-hip roll target scale toward the planned lateral foot offset (0 disables).">{}
 			]]
 			float swing_roll_gain = 0.f;
@@ -492,7 +502,12 @@ auto gs::locomotion::compute_stance(const leg which, const state& s, const skele
 		-d.pelvis_righting_clamp,
 		d.pelvis_righting_clamp
 	);
-	const auto ankle_target = -(hip_target + knee_target) + cop_shift + ctx.cop_trim_applied;
+	const auto fwd_xz = gse::normalize(gse::vec3f(s.pelvis_forward.x(), 0.f, s.pelvis_forward.z()));
+	const auto pelvis_past_foot = gse::dot(fwd_xz, s.pelvis_position - planted_foot_position(which, ctx));
+	const float push_progress = std::clamp(pelvis_past_foot / d.stance_push_range, 0.f, 1.f);
+	const float push_fade = std::clamp((gse::meters(0.45f) - s.capture_forward) / gse::meters(0.30f), 0.f, 1.f);
+	const auto stance_push = d.stance_push_angle * (push_progress * push_fade);
+	const auto ankle_target = -(hip_target + knee_target) + cop_shift + ctx.cop_trim_applied + stance_push;
 
 	return {
 		.hip = hip_target,
