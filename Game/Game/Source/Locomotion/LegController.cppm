@@ -77,7 +77,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Swing hip pitch servo stiffness (kept low to limit trunk reaction).">{}
 			]]
-			gse::angular_stiffness swing_hip_stiffness = gse::newton_meters_per_radian(250.f);
+			gse::angular_stiffness swing_hip_stiffness = gse::newton_meters_per_radian(300.f);
 
 			[[
 				= gse::settings::describe<"Hip roll/yaw servo stiffness holding the leg in the sagittal plane.">{}
@@ -117,12 +117,12 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Swing hip servo torque limit (limits trunk reaction).">{}
 			]]
-			gse::torque swing_hip_max_torque = gse::newton_meters(90.f);
+			gse::torque swing_hip_max_torque = gse::newton_meters(130.f);
 
 			[[
 				= gse::settings::describe<"Swing knee servo torque limit.">{}
 			]]
-			gse::torque swing_knee_max_torque = gse::newton_meters(80.f);
+			gse::torque swing_knee_max_torque = gse::newton_meters(110.f);
 
 			[[
 				= gse::settings::describe<"Swing ankle servo torque limit.">{}

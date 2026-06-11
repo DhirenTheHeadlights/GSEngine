@@ -130,8 +130,22 @@ auto gs::locomotion::state_estimator::run(data& d, gse::read<skeleton_refs> refs
 		s.foot_position_l = foot_l_tc->position;
 		s.foot_position_r = foot_r_tc->position;
 
-		const auto l_aabb = gse::physics::world_aabb_of(*foot_l_tc, *foot_l_cc);
-		const auto r_aabb = gse::physics::world_aabb_of(*foot_r_tc, *foot_r_cc);
+		auto l_aabb = gse::physics::world_aabb_of(*foot_l_tc, *foot_l_cc);
+		auto r_aabb = gse::physics::world_aabb_of(*foot_r_tc, *foot_r_cc);
+		const auto* toe_l_tc = transforms.find(r->toe_l_id);
+		const auto* toe_l_cc = collisions.find(r->toe_l_id);
+		if (toe_l_tc && toe_l_cc) {
+			const auto toe_aabb = gse::physics::world_aabb_of(*toe_l_tc, *toe_l_cc);
+			l_aabb.min = gse::min(l_aabb.min, toe_aabb.min);
+			l_aabb.max = gse::max(l_aabb.max, toe_aabb.max);
+		}
+		const auto* toe_r_tc = transforms.find(r->toe_r_id);
+		const auto* toe_r_cc = collisions.find(r->toe_r_id);
+		if (toe_r_tc && toe_r_cc) {
+			const auto toe_aabb = gse::physics::world_aabb_of(*toe_r_tc, *toe_r_cc);
+			r_aabb.min = gse::min(r_aabb.min, toe_aabb.min);
+			r_aabb.max = gse::max(r_aabb.max, toe_aabb.max);
+		}
 		const auto contact_y = d.ground_y + d.ground_tolerance;
 		s.foot_grounded_l = l_aabb.min.y() <= contact_y;
 		s.foot_grounded_r = r_aabb.min.y() <= contact_y;
