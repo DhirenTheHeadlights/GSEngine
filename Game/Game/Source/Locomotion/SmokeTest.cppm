@@ -19,6 +19,8 @@ export namespace gs::locomotion {
 		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time duration = gse::seconds(20.f);
 		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time warmup = gse::seconds(1.5f);
 		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time stop_after = gse::seconds(13.f);
+		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time turn_after = gse::seconds(11.5f);
+		gse::angle turn_by = gse::radians(1.57f);
 		[[= gse::within<-1.f, 1.f>{}]] float forward = 1.f;
 	};
 
@@ -36,6 +38,12 @@ export namespace gs::locomotion {
 			gse::vec3<gse::position> walk_stop_position;
 			bool walk_start_set = false;
 			bool walk_stop_set = false;
+			gse::vec3<gse::position> last_plant_position;
+			bool last_plant_set = false;
+			gse::displacement step_accum;
+			int step_count = 0;
+			gse::angle start_yaw;
+			bool start_yaw_set = false;
 			int plants = 0;
 			int missed_plants = 0;
 			int stale_targets = 0;
@@ -182,6 +190,16 @@ auto gs::locomotion::update_metrics(smoke_test::trial_metrics& metrics, const st
 
 	if (g.current == phase::plant && metrics.last_phase == phase::swing) {
 		++metrics.plants;
+		const auto& plant_foot = g.swing_leg == leg::left ? s.foot_position_l : s.foot_position_r;
+		if (metrics.last_plant_set) {
+			metrics.step_accum += gse::hypot(
+				(plant_foot - metrics.last_plant_position).x(),
+				(plant_foot - metrics.last_plant_position).z()
+			);
+			++metrics.step_count;
+		}
+		metrics.last_plant_position = plant_foot;
+		metrics.last_plant_set = true;
 	}
 
 	if (g.current != metrics.last_phase || g.swing_leg != metrics.last_swing_leg) {
@@ -242,9 +260,12 @@ auto gs::locomotion::finish_trial(gse::context& ctx, smoke_test::data& d, const 
 		  )
 		: gse::displacement{};
 	const auto avg_speed = walk_time > gse::seconds(0.f) ? walk_distance / walk_time : gse::meters_per_second(0.f);
+	const auto mean_step = d.metrics.step_count > 0
+		? d.metrics.step_accum / static_cast<float>(d.metrics.step_count)
+		: gse::displacement{};
 	gse::log::println(
 		"locomotion_smoke: trial={} result={} time={:.2f:s} plants={} min_pelvis_y={:.2f} "
-		"avg_speed={:.2f} max_speed={:.2f} max_capture=(fwd={:.3f},right={:.3f}) max_foot_y={:.2f} mean_pitch={:+.3f} "
+		"avg_speed={:.2f} mean_step={:.2f} max_speed={:.2f} max_capture=(fwd={:.3f},right={:.3f}) max_foot_y={:.2f} mean_pitch={:+.3f} "
 		"missed_plants={} stale_targets={} phase={} state_hash={:016x} swing={}",
 		d.trial,
 		result,
@@ -252,6 +273,7 @@ auto gs::locomotion::finish_trial(gse::context& ctx, smoke_test::data& d, const 
 		d.metrics.plants,
 		d.metrics.min_pelvis_y,
 		avg_speed,
+		mean_step,
 		d.metrics.max_speed,
 		d.metrics.max_capture_forward,
 		d.metrics.max_capture_right,
@@ -361,6 +383,19 @@ auto gs::locomotion::smoke_test::run(gse::context& ctx, data& d, const gse::shar
 				const bool stopped =
 					d.config.stop_after > gse::seconds(0.f) && d.metrics.elapsed >= d.config.stop_after;
 				write_smoke_intent(*it, stopped ? 0.f : d.config.forward);
+				if (!d.metrics.start_yaw_set && s->valid) {
+					d.metrics.start_yaw = gse::radians(std::atan2(-s->pelvis_forward.x(), -s->pelvis_forward.z()));
+					d.metrics.start_yaw_set = true;
+				}
+				const bool turning = d.config.turn_after > gse::seconds(0.f) &&
+					d.metrics.elapsed >= d.config.turn_after && d.metrics.start_yaw_set;
+				if (turning) {
+					it->desired_yaw = gse::radians(std::remainder(
+						static_cast<float>(d.metrics.start_yaw + d.config.turn_by),
+						2.f * std::numbers::pi_v<float>
+					));
+					it->has_heading = true;
+				}
 				update_metrics(d.metrics, *s, *g, *p, dt);
 				if (!d.metrics.walk_start_set) {
 					d.metrics.walk_start_position = s->pelvis_position;
