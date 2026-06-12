@@ -914,8 +914,12 @@ auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs,
 		const bool left_supporting = left_stance && g->current != phase::idle;
 		const bool right_supporting = right_stance && g->current != phase::idle;
 		const float roll_authority = cctx.rollover_intent * (s->valid ? lateral_capture_fade(*s) : 0.f);
-		const bool left_rolling = controllers_active && s->foot_grounded_l && stance_rollover_progress(leg::left, *s, cctx, d) * roll_authority > 0.02f;
-		const bool right_rolling = controllers_active && s->foot_grounded_r && stance_rollover_progress(leg::right, *s, cctx, d) * roll_authority > 0.02f;
+		const bool left_roll_geometry = controllers_active && s->foot_grounded_l && pelvis_past_planted_foot(leg::left, *s, cctx) > gse::meters(0.f);
+		const bool right_roll_geometry = controllers_active && s->foot_grounded_r && pelvis_past_planted_foot(leg::right, *s, cctx) > gse::meters(0.f);
+		cctx.roll_latch_l = left_roll_geometry && (cctx.roll_latch_l || stance_rollover_progress(leg::left, *s, cctx, d) * roll_authority > 0.02f);
+		cctx.roll_latch_r = right_roll_geometry && (cctx.roll_latch_r || stance_rollover_progress(leg::right, *s, cctx, d) * roll_authority > 0.02f);
+		const bool left_rolling = cctx.roll_latch_l;
+		const bool right_rolling = cctx.roll_latch_r;
 		const bool left_anchor_active = controllers_active && ((s->foot_grounded_l && left_stance) || left_planting || left_airborne_stance || left_swinging);
 		const bool right_anchor_active = controllers_active && ((s->foot_grounded_r && right_stance) || right_planting || right_airborne_stance || right_swinging);
 
