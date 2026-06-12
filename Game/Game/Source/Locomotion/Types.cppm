@@ -124,6 +124,7 @@ export namespace gs::locomotion {
 		gse::angle cop_trim;
 		gse::angle cop_trim_applied;
 		float arm_phase = 0.f;
+		float rollover_intent = 0.f;
 		gse::vec3<gse::position> swing_start_foot;
 		gse::vec3<gse::position> swing_target_at_start;
 		gse::vec3<gse::position> planted_foot_l;

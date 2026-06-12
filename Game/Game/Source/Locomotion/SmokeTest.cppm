@@ -34,6 +34,7 @@ export namespace gs::locomotion {
 			gse::displacement max_capture_forward = gse::meters(0.f);
 			gse::displacement max_capture_right = gse::meters(0.f);
 			gse::position max_foot_y = gse::meters(-1000.f);
+			gse::position max_grounded_foot_y = gse::meters(-1000.f);
 			gse::angle pitch_accum;
 			int pitch_samples = 0;
 			gse::vec3<gse::position> walk_start_position;
@@ -200,6 +201,13 @@ auto gs::locomotion::update_metrics(smoke_test::trial_metrics& metrics, const st
 	metrics.max_capture_right = std::max(metrics.max_capture_right, gse::abs(s.capture_right));
 	metrics.max_foot_y = std::max(metrics.max_foot_y, highest_foot_y(s));
 
+	if (s.foot_grounded_l) {
+		metrics.max_grounded_foot_y = std::max(metrics.max_grounded_foot_y, s.foot_position_l.y());
+	}
+	if (s.foot_grounded_r) {
+		metrics.max_grounded_foot_y = std::max(metrics.max_grounded_foot_y, s.foot_position_r.y());
+	}
+
 	if (g.current == phase::plant && metrics.last_phase == phase::swing) {
 		++metrics.plants;
 		const auto& plant_foot = g.swing_leg == leg::left ? s.foot_position_l : s.foot_position_r;
@@ -275,7 +283,7 @@ auto gs::locomotion::finish_trial(gse::context& ctx, smoke_test::data& d, const 
 		: gse::displacement{};
 	gse::log::println(
 		"locomotion_smoke: trial={} result={} time={:.2f:s} plants={} min_pelvis_y={:.2f} "
-		"avg_speed={:.2f} mean_step={:.2f} max_speed={:.2f} max_capture=(fwd={:.3f},right={:.3f}) max_foot_y={:.2f} mean_pitch={:+.3f} "
+		"avg_speed={:.2f} mean_step={:.2f} max_speed={:.2f} max_capture=(fwd={:.3f},right={:.3f}) max_foot_y={:.2f} heel_lift_y={:.3f} mean_pitch={:+.3f} "
 		"missed_plants={} stale_targets={} phase={} state_hash={:016x} swing={}",
 		d.trial,
 		result,
@@ -288,6 +296,7 @@ auto gs::locomotion::finish_trial(gse::context& ctx, smoke_test::data& d, const 
 		d.metrics.max_capture_forward,
 		d.metrics.max_capture_right,
 		d.metrics.max_foot_y,
+		d.metrics.max_grounded_foot_y,
 		mean_pitch,
 		d.metrics.missed_plants,
 		d.metrics.stale_targets,
