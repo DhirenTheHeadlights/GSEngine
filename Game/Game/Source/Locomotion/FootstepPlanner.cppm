@@ -69,6 +69,16 @@ export namespace gs::locomotion {
 			gse::displacement step_width_bias = gse::meters(0.05f);
 
 			[[
+				= gse::settings::describe<"Lateral (strafe) step length per unit strafe input.">{}
+			]]
+			gse::displacement strafe_step = gse::meters(0.25f);
+
+			[[
+				= gse::settings::describe<"Lateral (strafe) step length per unit strafe input while sprinting.">{}
+			]]
+			gse::displacement sprint_strafe_step = gse::meters(0.35f);
+
+			[[
 				= gse::settings::describe<"Forward step bias per radian of forward trunk pitch (keeps support under a leaned trunk).">{}
 			]]
 			gse::displacement pitch_step_gain = gse::meters(0.55f);
@@ -183,7 +193,8 @@ auto gs::locomotion::plan_foot_target(const state& s, const gait& g, const inten
 
 	const auto pitch_bias = d.pitch_step_gain * static_cast<float>(-s.pelvis_pitch);
 	const auto step_forward = step_forward_with_capture(nominal_forward + pitch_bias, capture_forward, d);
-	const auto step_lateral = capture_lateral;
+	const auto strafe_step = (d.strafe_step + (d.sprint_strafe_step - d.strafe_step) * sprint_blend) * it.strafe;
+	const auto step_lateral = capture_lateral + strafe_step;
 
 	auto forward_xz = gse::normalize(gse::vec3f(s.pelvis_forward.x(), 0.f, s.pelvis_forward.z()));
 	auto right_xz = gse::normalize(gse::vec3f(s.pelvis_right.x(), 0.f, s.pelvis_right.z()));

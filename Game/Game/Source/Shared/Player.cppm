@@ -195,22 +195,33 @@ auto gs::player::system::run::update(gse::context& ctx, data& d, const gse::shar
 
 		if (auto* itn = intents.find(p.pelvis_id)) {
 			const float k = d.input_smoothing;
-			itn->forward += (move_magnitude - itn->forward) * k;
-			itn->strafe += (0.f - itn->strafe) * k;
+			const float camera_yaw = static_cast<float>(p.yaw);
+			const auto camera_yaw_quat = gse::quat(gse::vec3f(0.f, 1.f, 0.f), p.yaw);
+			const auto camera_forward = gse::rotate_vector(camera_yaw_quat, gse::vec3f(0.f, 0.f, -1.f));
+			const auto camera_right = gse::rotate_vector(camera_yaw_quat, gse::vec3f(1.f, 0.f, 0.f));
+			const auto world_move = camera_forward * forward_in + camera_right * strafe_in;
+
+			auto body_forward = camera_forward;
+			auto body_right = camera_right;
+			if (const auto* st = states.find(p.pelvis_id); st && st->valid) {
+				const auto bf = gse::vec3f(st->pelvis_forward.x(), 0.f, st->pelvis_forward.z());
+				const auto br = gse::vec3f(st->pelvis_right.x(), 0.f, st->pelvis_right.z());
+				if (gse::magnitude(bf) > 0.001f) { body_forward = gse::normalize(bf); }
+				if (gse::magnitude(br) > 0.001f) { body_right = gse::normalize(br); }
+			}
+
+			const bool moving = move_magnitude > move_deadzone;
+			const bool sprinting = gse::actions::held(b.shift, cs, as) && forward_in > 0.5f;
+			const float target_forward = moving ? gse::dot(world_move, body_forward) : 0.f;
+			const float target_strafe = moving && !sprinting ? gse::dot(world_move, body_right) : 0.f;
+
+			itn->forward += (target_forward - itn->forward) * k;
+			itn->strafe += (target_strafe - itn->strafe) * k;
 			itn->intensity += (move_magnitude - itn->intensity) * k;
-			itn->sprint = gse::actions::held(b.shift, cs, as);
+			itn->sprint = sprinting;
 			itn->sprint_blend += ((itn->sprint ? 1.f : 0.f) - itn->sprint_blend) * 0.03f;
 			itn->jump = false;
-			const float camera_yaw = static_cast<float>(p.yaw);
-			if (move_magnitude > move_deadzone) {
-				itn->desired_yaw = gse::radians(std::atan2(
-					forward_in * std::sin(camera_yaw) - strafe_in * std::cos(camera_yaw),
-					forward_in * std::cos(camera_yaw) + strafe_in * std::sin(camera_yaw)
-				));
-			}
-			else {
-				itn->desired_yaw = gse::radians(std::remainder(camera_yaw, 2.f * std::numbers::pi_v<float>));
-			}
+			itn->desired_yaw = gse::radians(std::remainder(camera_yaw, 2.f * std::numbers::pi_v<float>));
 			itn->has_heading = true;
 
 			if (log_now) {
