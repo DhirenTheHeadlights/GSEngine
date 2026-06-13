@@ -24,6 +24,11 @@ export namespace gs::locomotion {
 			gse::velocity max_forward_speed = gse::meters_per_second(0.85f);
 
 			[[
+				= gse::settings::describe<"Speed above the forward assist target the legs may add before the motor governs.">{}
+			]]
+			gse::velocity ride_headroom = gse::meters_per_second(0.04f);
+
+			[[
 				= gse::settings::describe<"Maximum lateral pelvis assist speed.">{}
 			]]
 			gse::velocity max_lateral_speed = gse::meters_per_second(0.35f);
@@ -109,8 +114,15 @@ auto gs::locomotion::balance_velocity_target(const state& s, const intent& it, c
 	const float push_fade = std::clamp((gse::meters(0.35f) - s.capture_forward) / gse::meters(0.25f), 0.f, 1.f);
 	const float launch_ramp = std::clamp(0.35f + s.horizontal_speed / gse::meters_per_second(0.25f), 0.f, 1.f);
 	const float sprint_blend = std::clamp(it.sprint_blend, 0.f, 1.f);
+	const float drive_intent = std::clamp(it.forward * it.intensity, -1.f, 1.f);
 	const auto push_speed = d.forward_speed + (d.sprint_forward_speed - d.forward_speed) * sprint_blend;
-	auto forward_velocity = push_speed * (push_fade * launch_ramp) * std::clamp(it.forward * it.intensity, -1.f, 1.f) + gse::meters_per_second(1.f) * (d.support_gain * support_forward - d.capture_gain * capture_forward_resisted);
+	auto forward_drive = push_speed * (push_fade * launch_ramp) * drive_intent;
+	if (drive_intent > 0.f) {
+		const auto measured_forward = gse::dot(forward, s.velocity_world);
+		const auto ride_ceiling = push_speed + d.ride_headroom * (1.f - sprint_blend);
+		forward_drive = std::max(forward_drive, std::min(measured_forward, ride_ceiling));
+	}
+	auto forward_velocity = forward_drive + gse::meters_per_second(1.f) * (d.support_gain * support_forward - d.capture_gain * capture_forward_resisted);
 	forward_velocity = std::clamp(forward_velocity, -d.max_forward_speed, d.max_forward_speed);
 
 	auto lateral_velocity = gse::meters_per_second(1.f) * (d.support_gain * support_right - d.capture_gain * s.capture_right);
