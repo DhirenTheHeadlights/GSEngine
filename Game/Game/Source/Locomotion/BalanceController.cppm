@@ -16,7 +16,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Forward pelvis assist speed at full input while sprinting.">{}
 			]]
-			gse::velocity sprint_forward_speed = gse::meters_per_second(0.40f);
+			gse::velocity sprint_forward_speed = gse::meters_per_second(0.60f);
 
 			[[
 				= gse::settings::describe<"Maximum forward pelvis assist speed.">{}
@@ -47,6 +47,16 @@ export namespace gs::locomotion {
 				= gse::settings::describe<"Forward capture below this magnitude is treated as normal gait lean and not resisted.">{}
 			]]
 			gse::displacement forward_capture_deadzone = gse::meters(0.30f);
+
+			[[
+				= gse::settings::describe<"Backward capture deadzone when settled/standing (a slow backward lean is never normal standing, so catch it; blends to the forward deadzone while moving so normal gait backward-capture is untouched).">{}
+			]]
+			gse::displacement settled_backward_capture_deadzone = gse::meters(0.10f);
+
+			[[
+				= gse::settings::describe<"Horizontal speed above which the backward capture deadzone is the normal (forward) value; below it blends toward the settled value.">{}
+			]]
+			gse::velocity settled_speed_threshold = gse::meters_per_second(0.40f);
 
 			[[
 				= gse::settings::describe<"Maximum force used by the pelvis balance motor.">{}
@@ -110,7 +120,11 @@ auto gs::locomotion::balance_velocity_target(const state& s, const intent& it, c
 	const auto support_forward = gse::dot(forward, support_error);
 	const auto support_right = gse::dot(right, support_error);
 
-	const auto capture_forward_resisted = deadzoned(s.capture_forward, d.forward_capture_deadzone);
+	const auto settled = std::clamp((d.settled_speed_threshold - s.horizontal_speed) / d.settled_speed_threshold, 0.f, 1.f);
+	const auto backward_deadzone = d.forward_capture_deadzone + (d.settled_backward_capture_deadzone - d.forward_capture_deadzone) * settled;
+	const auto capture_forward_resisted = s.capture_forward >= gse::meters(0.f)
+		? deadzoned(s.capture_forward, d.forward_capture_deadzone)
+		: deadzoned(s.capture_forward, backward_deadzone);
 	const float push_fade = std::clamp((gse::meters(0.35f) - s.capture_forward) / gse::meters(0.25f), 0.f, 1.f);
 	const float launch_ramp = std::clamp(0.35f + s.horizontal_speed / gse::meters_per_second(0.25f), 0.f, 1.f);
 	const float sprint_blend = std::clamp(it.sprint_blend, 0.f, 1.f);
