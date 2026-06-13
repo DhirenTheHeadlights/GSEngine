@@ -34,6 +34,16 @@ export namespace gs::locomotion {
 			gse::velocity max_lateral_speed = gse::meters_per_second(0.35f);
 
 			[[
+				= gse::settings::describe<"Lateral (strafe) pelvis assist speed at full strafe input.">{}
+			]]
+			gse::velocity strafe_speed = gse::meters_per_second(0.22f);
+
+			[[
+				= gse::settings::describe<"Lateral (strafe) pelvis assist speed at full strafe input while sprinting.">{}
+			]]
+			gse::velocity sprint_strafe_speed = gse::meters_per_second(0.40f);
+
+			[[
 				= gse::settings::describe<"Gain from support-center error to pelvis assist.">{}
 			]]
 			gse::inverse_length support_gain = gse::per_meter(0.85f);
@@ -139,8 +149,16 @@ auto gs::locomotion::balance_velocity_target(const state& s, const intent& it, c
 	auto forward_velocity = forward_drive + gse::meters_per_second(1.f) * (d.support_gain * support_forward - d.capture_gain * capture_forward_resisted);
 	forward_velocity = std::clamp(forward_velocity, -d.max_forward_speed, d.max_forward_speed);
 
-	auto lateral_velocity = gse::meters_per_second(1.f) * (d.support_gain * support_right - d.capture_gain * s.capture_right);
-	lateral_velocity = std::clamp(lateral_velocity, -d.max_lateral_speed, d.max_lateral_speed);
+	const float strafe_intent = std::clamp(it.strafe * it.intensity, -1.f, 1.f);
+	const auto strafe_push = d.strafe_speed + (d.sprint_strafe_speed - d.strafe_speed) * sprint_blend;
+	const auto strafe_drive = strafe_push * (push_fade * launch_ramp) * strafe_intent;
+	const auto balance_lateral = std::clamp(
+		gse::meters_per_second(1.f) * (d.support_gain * support_right - d.capture_gain * s.capture_right),
+		-d.max_lateral_speed,
+		d.max_lateral_speed
+	);
+	const auto strafe_cap = d.max_lateral_speed + gse::abs(strafe_drive);
+	auto lateral_velocity = std::clamp(strafe_drive + balance_lateral, -strafe_cap, strafe_cap);
 
 	return forward * forward_velocity + right * lateral_velocity;
 }
