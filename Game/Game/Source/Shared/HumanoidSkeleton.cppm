@@ -78,7 +78,7 @@ namespace gs {
 	};
 	constexpr auto foot_size = []() {
 		return gs::bone_dims{
-			.size = gse::vec3<gse::displacement>(gse::meters(0.10f), gse::meters(0.05f), gse::meters(0.25f)),
+			.size = gse::vec3<gse::displacement>(gse::meters(0.09f), gse::meters(0.05f), gse::meters(0.20f)),
 			.mass = gse::kilograms(1.f),
 		};
 	};
@@ -256,7 +256,7 @@ auto gs::humanoid_rig_default() -> humanoid_rig {
 		.mass = foot.mass,
 	});
 
-	const auto toe_size = gse::vec3<gse::displacement>(foot.size.x(), foot.size.y(), gse::meters(0.10f));
+	const auto toe_size = gse::vec3<gse::displacement>(foot.size.x(), foot.size.y(), gse::meters(0.07f));
 	const auto toe_offset_z = -(foot.size.z() * 0.5f + toe_size.z() * 0.5f);
 	s.bones.push_back({
 		.name = "toe_l",

@@ -22,7 +22,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Lift height of swing foot at midphase.">{}
 			]]
-			gse::displacement swing_lift_height = gse::meters(0.20f);
+			gse::displacement swing_lift_height = gse::meters(0.14f);
 
 			[[
 				= gse::settings::describe<"Time used for swing-foot lift and descent.">{}
@@ -227,12 +227,12 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Stance-hip yaw target per radian of heading error (turns the pelvis over the planted foot).">{}
 			]]
-			float steer_gain = 1.5f;
+			float steer_gain = 1.9f;
 
 			[[
 				= gse::settings::describe<"Clamp on the stance-hip steering yaw target.">{}
 			]]
-			gse::angle steer_clamp = gse::radians(0.55f);
+			gse::angle steer_clamp = gse::radians(0.72f);
 
 			[[
 				= gse::settings::describe<"Stance-ankle CoP shift per radian of pelvis pitch, righting the trunk.">{}

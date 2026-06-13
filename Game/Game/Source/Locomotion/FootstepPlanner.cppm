@@ -56,7 +56,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Maximum heading change applied to a single step's placement frame.">{}
 			]]
-			gse::angle turn_step_clamp = gse::radians(0.50f);
+			gse::angle turn_step_clamp = gse::radians(0.65f);
 
 			[[
 				= gse::settings::describe<"Lateral capture-step clamp.">{}
