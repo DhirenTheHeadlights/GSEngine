@@ -165,6 +165,36 @@ export namespace gs::locomotion {
 			float swing_roll_gain = 0.3f;
 
 			[[
+				= gse::settings::describe<"Stance-hip roll per meter of lateral capture beyond the deadzone, rolling the trunk back over the support (0 disables).">{}
+			]]
+			gse::inverse_length lateral_righting_gain = gse::per_meter(0.4f);
+
+			[[
+				= gse::settings::describe<"Lateral capture below this magnitude is normal gait weave and gets no righting roll.">{}
+			]]
+			gse::displacement lateral_righting_deadzone = gse::meters(0.18f);
+
+			[[
+				= gse::settings::describe<"Clamp on the stance-hip lateral righting roll.">{}
+			]]
+			gse::angle lateral_righting_clamp = gse::radians(0.20f);
+
+			[[
+				= gse::settings::describe<"Downward pelvis speed at which the stance knee starts extending to arrest the sink.">{}
+			]]
+			gse::velocity sink_arrest_onset = gse::meters_per_second(1.0f);
+
+			[[
+				= gse::settings::describe<"Downward pelvis speed range over which the sink arrest blends to full extension.">{}
+			]]
+			gse::velocity sink_arrest_range = gse::meters_per_second(0.5f);
+
+			[[
+				= gse::settings::describe<"Stance knee target at full sink arrest (near straight).">{}
+			]]
+			gse::angle sink_arrest_knee = gse::radians(-0.08f);
+
+			[[
 				= gse::settings::describe<"Stance-hip yaw target per radian of heading error (turns the pelvis over the planted foot).">{}
 			]]
 			float steer_gain = 1.5f;
@@ -571,7 +601,11 @@ auto gs::locomotion::compute_stance(const leg which, const state& s, const skele
 		d.stance_hip_clamp
 	);
 
-	const auto knee_target = std::clamp(ik.knee_bend, -d.stance_knee_clamp, gse::radians(0.f));
+	const float sink_arrest = d.sink_arrest_range > gse::meters_per_second(0.f)
+		? std::clamp((-s.pelvis_velocity.y() - d.sink_arrest_onset) / d.sink_arrest_range, 0.f, 1.f)
+		: 0.f;
+	const auto ik_knee = std::clamp(ik.knee_bend, -d.stance_knee_clamp, gse::radians(0.f));
+	const auto knee_target = ik_knee + (d.sink_arrest_knee - ik_knee) * sink_arrest;
 	const auto cop_shift = std::clamp(
 		pitch * d.pelvis_righting_gain + s.pelvis_pitch_rate * d.pelvis_righting_rate_gain,
 		-d.pelvis_righting_clamp,
@@ -585,10 +619,18 @@ auto gs::locomotion::compute_stance(const leg which, const state& s, const skele
 	const auto righting = (cop_shift + ctx.cop_trim_applied) * (1.f - roll_engage);
 	const auto ankle_target = -(hip_target + knee_target) + righting + stance_push;
 
+	const auto capture_right_excess = s.capture_right - std::clamp(s.capture_right, -d.lateral_righting_deadzone, d.lateral_righting_deadzone);
+	const auto bank = std::clamp(
+		gse::radians(1.f) * (d.lateral_righting_gain * capture_right_excess),
+		-d.lateral_righting_clamp,
+		d.lateral_righting_clamp
+	);
+
 	return {
 		.hip = hip_target,
 		.knee = knee_target,
 		.ankle = ankle_target,
+		.hip_roll = bank,
 	};
 }
 
