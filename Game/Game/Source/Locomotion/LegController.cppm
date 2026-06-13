@@ -312,7 +312,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Maximum foot anchor force for the airborne swing foot.">{}
 			]]
-			gse::force swing_foot_anchor_max_force = gse::newtons(150.f);
+			gse::force swing_foot_anchor_max_force = gse::newtons(300.f);
 
 			gse::interval_timer<float> log_timer{ gse::seconds(0.3f) };
 		};

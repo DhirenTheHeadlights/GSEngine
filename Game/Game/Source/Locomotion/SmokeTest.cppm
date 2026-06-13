@@ -41,6 +41,10 @@ export namespace gs::locomotion {
 			gse::vec3<gse::position> walk_stop_position;
 			bool walk_start_set = false;
 			bool walk_stop_set = false;
+			gse::vec3<gse::position> sprint_start_position;
+			gse::vec3<gse::position> sprint_end_position;
+			bool sprint_start_set = false;
+			bool sprint_end_set = false;
 			gse::vec3<gse::position> last_plant_position;
 			bool last_plant_set = false;
 			gse::displacement step_accum;
@@ -281,9 +285,17 @@ auto gs::locomotion::finish_trial(gse::context& ctx, smoke_test::data& d, const 
 	const auto mean_step = d.metrics.step_count > 0
 		? d.metrics.step_accum / static_cast<float>(d.metrics.step_count)
 		: gse::displacement{};
+	const auto sprint_window = d.config.sprint_until - d.config.sprint_after;
+	const auto sprint_distance = d.metrics.sprint_start_set && d.metrics.sprint_end_set
+		? gse::hypot(
+			  (d.metrics.sprint_end_position - d.metrics.sprint_start_position).x(),
+			  (d.metrics.sprint_end_position - d.metrics.sprint_start_position).z()
+		  )
+		: gse::displacement{};
+	const auto sprint_speed = sprint_window > gse::seconds(0.f) ? sprint_distance / sprint_window : gse::meters_per_second(0.f);
 	gse::log::println(
 		"locomotion_smoke: trial={} result={} time={:.2f:s} plants={} min_pelvis_y={:.2f} "
-		"avg_speed={:.2f} mean_step={:.2f} max_speed={:.2f} max_capture=(fwd={:.3f},right={:.3f}) max_foot_y={:.2f} heel_lift_y={:.3f} mean_pitch={:+.3f} "
+		"avg_speed={:.2f} sprint_speed={:.2f} mean_step={:.2f} max_speed={:.2f} max_capture=(fwd={:.3f},right={:.3f}) max_foot_y={:.2f} heel_lift_y={:.3f} mean_pitch={:+.3f} "
 		"missed_plants={} stale_targets={} phase={} state_hash={:016x} swing={}",
 		d.trial,
 		result,
@@ -291,6 +303,7 @@ auto gs::locomotion::finish_trial(gse::context& ctx, smoke_test::data& d, const 
 		d.metrics.plants,
 		d.metrics.min_pelvis_y,
 		avg_speed,
+		sprint_speed,
 		mean_step,
 		d.metrics.max_speed,
 		d.metrics.max_capture_forward,
@@ -429,6 +442,14 @@ auto gs::locomotion::smoke_test::run(gse::context& ctx, data& d, const gse::shar
 				if (stopped && !d.metrics.walk_stop_set) {
 					d.metrics.walk_stop_position = s->pelvis_position;
 					d.metrics.walk_stop_set = true;
+				}
+				if (!d.metrics.sprint_start_set && d.metrics.elapsed >= d.config.sprint_after) {
+					d.metrics.sprint_start_position = s->pelvis_position;
+					d.metrics.sprint_start_set = true;
+				}
+				if (!d.metrics.sprint_end_set && d.metrics.elapsed >= d.config.sprint_until) {
+					d.metrics.sprint_end_position = s->pelvis_position;
+					d.metrics.sprint_end_set = true;
 				}
 				if (g->fallen || d.metrics.elapsed >= d.config.duration) {
 					finish_trial(ctx, d, *s, *g);
