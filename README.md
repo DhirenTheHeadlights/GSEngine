@@ -62,7 +62,7 @@ No skeletal animation playback — the character's pose comes out of a balance c
 
 ### VBD physics solver
 
-<!-- <video src="PASTE_CLIP_URL_HERE" autoplay muted loop playsinline width="100%"></video> -->
+<video src="https://github.com/user-attachments/assets/d7adc50d-fda8-4331-afe6-690c28578277" autoplay muted loop playsinline width="100%"></video>
 
 GPU Vertex Block Descent with reflection-emitted shader constants and a custom narrow phase. Joints, contacts, and ragdolls converge in a fraction of the iterations of Gauss-Seidel.
 
