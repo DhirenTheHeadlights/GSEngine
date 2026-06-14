@@ -309,6 +309,224 @@ auto gse::settings::draw_hot_fields_thunk_impl(void* gui_builder, void* panel_st
 	draw_fields<S, true>(b, ps, live, channels);
 }
 
+namespace gse::settings {
+	template <has_settings S, auto M, typename F, typename Apply>
+	auto draw_one(
+		gui::builder& b,
+		panel_state& ps,
+		pending_state<S>& pend,
+		channel_writer& channels,
+		std::uint64_t category_hash,
+		std::uint64_t field_key,
+		std::string_view display_label,
+		F& local_value,
+		const F& live_value,
+		Apply apply
+	) -> void;
+}
+
+template <gse::has_settings S, auto M, typename F, typename Apply>
+auto gse::settings::draw_one(gui::builder& b, panel_state& ps, pending_state<S>& pend, channel_writer& channels, const std::uint64_t category_hash, const std::uint64_t field_key, const std::string_view display_label, F& local_value, const F& live_value, Apply apply) -> void {
+	using data_t = typename S::data;
+	using describe_t = [:meta::find_describe(M):];
+	constexpr std::string_view describe_text = describe_t::value;
+	constexpr bool field_needs_restart = has_annotation<settings::restart_required>(M);
+	constexpr std::uint64_t tooltip_suffix_hash = hash_combine(stable_id(meta::member_name(M)), stable_id("##tooltip"));
+
+	const float row_y_before = b.ctx.current_menu ? b.ctx.layout_cursor.y() : 0.f;
+
+	if constexpr (has_annotation<draw_with>(M)) {
+		constexpr auto dw = annotation_of<draw_with, M>();
+		dw.fn(b, ps, display_label, &local_value);
+	}
+	else if constexpr (std::same_as<F, bool>) {
+		b.draw<gui::toggle>({
+			.name = display_label,
+			.value = local_value
+		});
+	}
+	else if constexpr (settings::is_choice_v<F>) {
+		auto& dd_state = ps.dropdowns[field_key];
+		std::size_t idx = static_cast<std::size_t>(local_value.value);
+		const auto r = b.draw<gui::dropdown>({
+			.name = display_label,
+			.current_index = idx,
+			.options = local_value.options,
+			.state = dd_state,
+		});
+		if (r.changed) {
+			local_value.value = static_cast<typename F::value_type>(idx);
+		}
+	}
+	else if constexpr (std::is_enum_v<F>) {
+		draw_enum_dropdown<F>(b, ps, field_key, display_label, local_value);
+	}
+	else if constexpr (constexpr auto range_t = meta::find_range(M); range_t != std::meta::info{}) {
+		using R = [:range_t:];
+		if constexpr (gse::internal::is_quantity<F>) {
+			F min_q;
+			F max_q;
+			if constexpr (std::same_as<std::remove_cvref_t<decltype(R::min)>, F>) {
+				min_q = R::min;
+				max_q = R::max;
+			}
+			else {
+				using underlying = typename F::value_type;
+				min_q = F::template from<typename F::default_unit>(static_cast<underlying>(R::min));
+				max_q = F::template from<typename F::default_unit>(static_cast<underlying>(R::max));
+			}
+			b.draw<gui::quantity_slider<F, typename F::default_unit{}>>({
+				.name = display_label,
+				.value = local_value,
+				.min = min_q,
+				.max = max_q,
+			});
+		}
+		else {
+			b.draw<gui::slider<F>>({
+				.name = display_label,
+				.value = local_value,
+				.min = static_cast<F>(R::min),
+				.max = static_cast<F>(R::max),
+			});
+		}
+	}
+	else if constexpr (gse::internal::is_quantity<F>) {
+		auto& dim_state = ps.dimensioned_states[field_key];
+		auto& buffer = ps.input_buffers[field_key];
+		using unit_t = typename F::default_unit;
+
+		if (!dim_state.initialized) {
+			buffer = std::format("{}", gse::internal::value_in<unit_t>(local_value));
+			dim_state.initialized = true;
+		}
+
+		b.draw<gui::text_input>({
+			.name = display_label,
+			.buffer = buffer,
+			.state = dim_state.input_state,
+		});
+
+		typename F::value_type typed_value{};
+		if (gse::parse(buffer, typed_value)) {
+			local_value = F::template from<unit_t>(typed_value);
+		}
+	}
+	else if constexpr (gse::is_arithmetic<F>) {
+		auto it = ps.input_buffers.find(field_key);
+		if (it == ps.input_buffers.end()) {
+			std::string init;
+			std::format_to(std::back_inserter(init), "{}", local_value);
+			it = ps.input_buffers.emplace(field_key, std::move(init)).first;
+		}
+		auto& buffer = it->second;
+
+		auto& state = ps.input_states[field_key];
+
+		b.draw<gui::text_input>({
+			.name = display_label,
+			.buffer = buffer,
+			.state = state,
+		});
+
+		F parsed{};
+		if (gse::parse(buffer, parsed)) {
+			local_value = parsed;
+		}
+	}
+	else if constexpr (gse::is_vec<F>) {
+		using elem_t = typename F::value_type;
+		if constexpr (gse::is_arithmetic<elem_t>) {
+			b.draw<gui::vec_value<elem_t, F::extent>>({
+				.name = display_label,
+				.val = local_value,
+			});
+		}
+		else if constexpr (gse::internal::is_quantity<elem_t>) {
+			b.draw<gui::quantity_vec_value<elem_t, F::extent>>({
+				.name = display_label,
+				.val = local_value,
+			});
+		}
+	}
+
+	const bool is_modified = [&]() -> bool {
+		if constexpr (settings::is_choice_v<F>) {
+			return local_value.value != live_value.value;
+		}
+		else if constexpr (requires(F a, F b_) { a == b_; }) {
+			return local_value != live_value;
+		}
+		else {
+			return false;
+		}
+	}();
+
+	if (is_modified) {
+		if constexpr (has_annotation<settings::hot_reloadable_tag>(M)) {
+			if constexpr (std::is_copy_constructible_v<F>) {
+				channels.push<change_request<S>>({
+					.apply = [new_value = local_value, apply](data_t& d) {
+						apply(d, new_value);
+					},
+				});
+			}
+		}
+		else {
+			if constexpr (std::is_copy_constructible_v<F>) {
+				pend.apply_fns[field_key] = [new_value = local_value, apply](data_t& d) {
+					apply(d, new_value);
+				};
+			}
+			if constexpr (field_needs_restart) {
+				pend.restart_fields.insert(field_key);
+			}
+		}
+	}
+	else {
+		pend.apply_fns.erase(field_key);
+		pend.restart_fields.erase(field_key);
+	}
+
+	if constexpr (field_needs_restart) {
+		if (b.ctx.current_menu) {
+			auto& ctx = b.ctx;
+			const float subline_size = ctx.style.font_size * 0.85f;
+			const float subline_height = ctx.font->line_height(subline_size) + ctx.style.padding * 0.25f;
+			const gui::ui_rect content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
+			const gui::ui_rect subline_rect = gui::ui_rect::from_position_size(
+				{ content_rect.left() + ctx.style.padding, ctx.layout_cursor.y() },
+				{ content_rect.width() - ctx.style.padding, subline_height }
+			);
+			const vec4f badge_color = is_modified ? ctx.style.color_accent : ctx.style.color_text_secondary;
+			ctx.queue_text({
+				.font = ctx.font,
+				.text = "Requires restart to take effect",
+				.position = { subline_rect.left(), subline_rect.center().y() + ctx.font->vertical_center_offset(subline_size) },
+				.scale = subline_size,
+				.color = badge_color,
+				.clip_rect = subline_rect,
+			});
+			ctx.layout_cursor.y() -= subline_height;
+		}
+	}
+
+	if constexpr (!describe_text.empty()) {
+		if (b.ctx.current_menu) {
+			const float widget_height = b.ctx.font->line_height(b.ctx.style.font_size) + b.ctx.style.padding * 0.5f;
+			const gui::ui_rect content_rect = b.ctx.current_menu->rect.inset({ b.ctx.style.padding, b.ctx.style.padding });
+			const gui::ui_rect row_rect = gui::ui_rect::from_position_size(
+				{ content_rect.left(), row_y_before },
+				{ content_rect.width(), widget_height }
+			);
+			if (row_rect.contains(b.ctx.input.mouse_position()) && b.ctx.input_available()) {
+				const gse::id tooltip_id = gui::ids::make_from_key(hash_combine(category_hash, tooltip_suffix_hash));
+				b.ctx.set_tooltip(tooltip_id, describe_text);
+			}
+		}
+	}
+}
+
 template <gse::has_settings S, bool HotOnly>
 auto gse::settings::draw_fields(gui::builder& b, panel_state& ps, const typename S::data& live, channel_writer& channels) -> void {
 	using data_t = typename S::data;
@@ -322,224 +540,37 @@ auto gse::settings::draw_fields(gui::builder& b, panel_state& ps, const typename
 		if constexpr (meta::find_describe(m) != std::meta::info{} && (!HotOnly || has_annotation<settings::hot_reloadable_tag>(m))) {
 			using F = [:std::meta::type_of(m):];
 			constexpr std::string_view label = meta::member_name(m);
-			using describe_t = [:meta::find_describe(m):];
-			constexpr std::string_view describe_text = describe_t::value;
 			constexpr std::uint64_t label_hash = stable_id(label);
-			constexpr std::uint64_t tooltip_suffix_hash = hash_combine(label_hash, stable_id("##tooltip"));
-			constexpr bool field_needs_restart = has_annotation<settings::restart_required>(m);
 
-			static const std::string display_label = pretty_label(label);
-			const std::uint64_t field_key = hash_combine(category_hash, label_hash);
+			if constexpr (std::is_class_v<F> && !is_scalar_settings_field<F>) {
+				const std::uint64_t nested_hash = hash_combine(category_hash, label_hash);
+				template for (constexpr auto sub : std::define_static_array(std::meta::nonstatic_data_members_of(^^F, std::meta::access_context::unchecked()))) {
+					if constexpr (meta::find_describe(sub) != std::meta::info{} && (!HotOnly || has_annotation<settings::hot_reloadable_tag>(sub))) {
+						using sub_t = [:std::meta::type_of(sub):];
+						static const std::string sub_label = pretty_label(meta::member_name(sub));
+						const std::uint64_t sub_key = hash_combine(nested_hash, stable_id(meta::member_name(sub)));
 
-			if constexpr (has_annotation<settings::hot_reloadable_tag>(m)) {
-				pend.value.[:m:] = live.[:m:];
-			}
+						if constexpr (has_annotation<settings::hot_reloadable_tag>(sub)) {
+							pend.value.[:m:].[:sub:] = live.[:m:].[:sub:];
+						}
 
-			F& local_value = pend.value.[:m:];
-
-			const float row_y_before = b.ctx.current_menu ? b.ctx.layout_cursor.y() : 0.f;
-
-			if constexpr (has_annotation<draw_with>(m)) {
-				constexpr auto dw = annotation_of<draw_with, m>();
-				dw.fn(b, ps, display_label, &local_value);
-			}
-			else if constexpr (std::same_as<F, bool>) {
-				b.draw<gui::toggle>({
-					.name = display_label,
-					.value = local_value
-				});
-			}
-			else if constexpr (settings::is_choice_v<F>) {
-				auto& dd_state = ps.dropdowns[field_key];
-				std::size_t idx = static_cast<std::size_t>(local_value.value);
-				const auto r = b.draw<gui::dropdown>({
-					.name = display_label,
-					.current_index = idx,
-					.options = local_value.options,
-					.state = dd_state,
-				});
-				if (r.changed) {
-					local_value.value = static_cast<typename F::value_type>(idx);
-				}
-			}
-			else if constexpr (std::is_enum_v<F>) {
-				draw_enum_dropdown<F>(b, ps, field_key, display_label, local_value);
-			}
-			else if constexpr (constexpr auto range_t = meta::find_range(m); range_t != std::meta::info{}) {
-				using R = [:range_t:];
-				if constexpr (gse::internal::is_quantity<F>) {
-					F min_q;
-					F max_q;
-					if constexpr (std::same_as<std::remove_cvref_t<decltype(R::min)>, F>) {
-						min_q = R::min;
-						max_q = R::max;
-					}
-					else {
-						using underlying = typename F::value_type;
-						min_q = F::template from<typename F::default_unit>(static_cast<underlying>(R::min));
-						max_q = F::template from<typename F::default_unit>(static_cast<underlying>(R::max));
-					}
-					b.draw<gui::quantity_slider<F, typename F::default_unit{}>>({
-						.name = display_label,
-						.value = local_value,
-						.min = min_q,
-						.max = max_q,
-					});
-				}
-				else {
-					b.draw<gui::slider<F>>({
-						.name = display_label,
-						.value = local_value,
-						.min = static_cast<F>(R::min),
-						.max = static_cast<F>(R::max),
-					});
-				}
-			}
-			else if constexpr (gse::internal::is_quantity<F>) {
-				auto& dim_state = ps.dimensioned_states[field_key];
-				auto& buffer = ps.input_buffers[field_key];
-				using unit_t = typename F::default_unit;
-
-				if (!dim_state.initialized) {
-					buffer = std::format("{}", gse::internal::value_in<unit_t>(local_value));
-					dim_state.initialized = true;
-				}
-
-				b.draw<gui::text_input>({
-					.name = display_label,
-					.buffer = buffer,
-					.state = dim_state.input_state,
-				});
-
-				typename F::value_type typed_value{};
-				if (gse::parse(buffer, typed_value)) {
-					local_value = F::template from<unit_t>(typed_value);
-				}
-			}
-			else if constexpr (gse::is_arithmetic<F>) {
-				auto it = ps.input_buffers.find(field_key);
-				if (it == ps.input_buffers.end()) {
-					std::string init;
-					std::format_to(std::back_inserter(init), "{}", local_value);
-					it = ps.input_buffers.emplace(field_key, std::move(init)).first;
-				}
-				auto& buffer = it->second;
-
-				auto& state = ps.input_states[field_key];
-
-				b.draw<gui::text_input>({
-					.name = display_label,
-					.buffer = buffer,
-					.state = state,
-				});
-
-				F parsed{};
-				if (gse::parse(buffer, parsed)) {
-					local_value = parsed;
-				}
-			}
-			else if constexpr (gse::is_vec<F>) {
-				using elem_t = typename F::value_type;
-				if constexpr (gse::is_arithmetic<elem_t>) {
-					b.draw<gui::vec_value<elem_t, F::extent>>({
-						.name = display_label,
-						.val = local_value,
-					});
-				}
-				else if constexpr (gse::internal::is_quantity<elem_t>) {
-					b.draw<gui::quantity_vec_value<elem_t, F::extent>>({
-						.name = display_label,
-						.val = local_value,
-					});
-				}
-			}
-
-			const bool is_modified = [&]() -> bool {
-				if constexpr (settings::is_choice_v<F>) {
-					return local_value.value != live.[:m:].value;
-				}
-				else if constexpr (requires(F a, F b_) { a == b_; }) {
-					return local_value != live.[:m:];
-				}
-				else {
-					return false;
-				}
-			}();
-
-			if (is_modified) {
-				if constexpr (has_annotation<settings::hot_reloadable_tag>(m)) {
-					if constexpr (settings::is_choice_v<F>) {
-						channels.push<change_request<S>>({
-							.apply = [new_value = local_value.value](data_t& d) {
-								d.[:m:].value = new_value;
-							},
+						draw_one<S, sub, sub_t>(b, ps, pend, channels, category_hash, sub_key, sub_label, pend.value.[:m:].[:sub:], live.[:m:].[:sub:], [](data_t& d, const sub_t& v) {
+							d.[:m:].[:sub:] = v;
 						});
-					}
-					else if constexpr (std::is_copy_constructible_v<F>) {
-						channels.push<change_request<S>>({
-							.apply = [new_value = local_value](data_t& d) {
-								d.[:m:] = new_value;
-							},
-						});
-					}
-				}
-				else {
-					if constexpr (settings::is_choice_v<F>) {
-						pend.apply_fns[field_key] = [new_value = local_value.value](data_t& d) {
-							d.[:m:].value = new_value;
-						};
-					}
-					else if constexpr (std::is_copy_constructible_v<F>) {
-						pend.apply_fns[field_key] = [new_value = local_value](data_t& d) {
-							d.[:m:] = new_value;
-						};
-					}
-					if constexpr (field_needs_restart) {
-						pend.restart_fields.insert(field_key);
 					}
 				}
 			}
 			else {
-				pend.apply_fns.erase(field_key);
-				pend.restart_fields.erase(field_key);
-			}
+				static const std::string display_label = pretty_label(label);
+				const std::uint64_t field_key = hash_combine(category_hash, label_hash);
 
-			if constexpr (field_needs_restart) {
-				if (b.ctx.current_menu) {
-					auto& ctx = b.ctx;
-					const float subline_size = ctx.style.font_size * 0.85f;
-					const float subline_height = ctx.font->line_height(subline_size) + ctx.style.padding * 0.25f;
-					const gui::ui_rect content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
-					const gui::ui_rect subline_rect = gui::ui_rect::from_position_size(
-						{ content_rect.left() + ctx.style.padding, ctx.layout_cursor.y() },
-						{ content_rect.width() - ctx.style.padding, subline_height }
-					);
-					const vec4f badge_color = is_modified ? ctx.style.color_accent : ctx.style.color_text_secondary;
-					ctx.queue_text({
-						.font = ctx.font,
-						.text = "Requires restart to take effect",
-						.position = { subline_rect.left(), subline_rect.center().y() + ctx.font->vertical_center_offset(subline_size) },
-						.scale = subline_size,
-						.color = badge_color,
-						.clip_rect = subline_rect,
-					});
-					ctx.layout_cursor.y() -= subline_height;
+				if constexpr (has_annotation<settings::hot_reloadable_tag>(m)) {
+					pend.value.[:m:] = live.[:m:];
 				}
-			}
 
-			if constexpr (!describe_text.empty()) {
-				if (b.ctx.current_menu) {
-					const float widget_height = b.ctx.font->line_height(b.ctx.style.font_size) + b.ctx.style.padding * 0.5f;
-					const gui::ui_rect content_rect = b.ctx.current_menu->rect.inset({ b.ctx.style.padding, b.ctx.style.padding });
-					const gui::ui_rect row_rect = gui::ui_rect::from_position_size(
-						{ content_rect.left(), row_y_before },
-						{ content_rect.width(), widget_height }
-					);
-					if (row_rect.contains(b.ctx.input.mouse_position()) && b.ctx.input_available()) {
-						const gse::id tooltip_id = gui::ids::make_from_key(hash_combine(category_hash, tooltip_suffix_hash));
-						b.ctx.set_tooltip(tooltip_id, describe_text);
-					}
-				}
+				draw_one<S, m, F>(b, ps, pend, channels, category_hash, field_key, display_label, pend.value.[:m:], live.[:m:], [](data_t& d, const F& v) {
+					d.[:m:] = v;
+				});
 			}
 		}
 	}
