@@ -13,25 +13,6 @@ export namespace gse::vulkan {
 	struct command_buffer;
 }
 
-export namespace gse::gpu {
-	struct rendering_attachment_info {
-		gpu::handle<gpu::image_view> image_view;
-		load_op load = load_op::dont_care;
-		store_op store = store_op::dont_care;
-		color_clear color_clear_value;
-		depth_clear depth_clear_value;
-	};
-
-	struct rendering_info {
-		gse::rect_t<vec2i> render_area;
-		std::uint32_t layer_count = 1;
-		std::span<const rendering_attachment_info> color_attachments;
-		const rendering_attachment_info* depth_attachment = nullptr;
-		const rendering_attachment_info* stencil_attachment = nullptr;
-		bool secondary_command_buffers = false;
-	};
-}
-
 export namespace gse::vulkan {
 	class commands {
 	public:

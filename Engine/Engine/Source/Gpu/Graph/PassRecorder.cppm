@@ -16,7 +16,55 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto valid() const -> bool;
 
+		[[nodiscard]] auto native() const -> gpu::command_buffer_handle;
+
+		auto begin() const -> void;
+
+		auto reset() const -> void;
+
 		auto end() const -> void;
+
+		auto begin_secondary(
+			const gpu::secondary_inheritance_info& info
+		) const -> void;
+
+		auto execute_commands(
+			gpu::command_buffer_handle secondary
+		) const -> void;
+
+		auto begin_rendering(
+			const gpu::rendering_info& info
+		) const -> void;
+
+		auto end_rendering() const -> void;
+
+		auto reset_query_pool(
+			gpu::handle<gpu::query_pool> pool,
+			std::uint32_t first_query,
+			std::uint32_t query_count
+		) const -> void;
+
+		auto write_timestamp(
+			gpu::pipeline_stage_flags stage,
+			gpu::handle<gpu::query_pool> pool,
+			std::uint32_t query_index
+		) const -> void;
+
+		auto begin_query(
+			gpu::handle<gpu::query_pool> pool,
+			std::uint32_t query_index
+		) const -> void;
+
+		auto end_query(
+			gpu::handle<gpu::query_pool> pool,
+			std::uint32_t query_index
+		) const -> void;
+
+		auto release_swapchain_image_to_present(
+			gpu::handle<gpu::image> img,
+			gpu::pipeline_stage_flags src_stages,
+			gpu::access_flags src_access
+		) const -> void;
 
 		auto set_viewport(
 			const gpu::viewport& viewport
