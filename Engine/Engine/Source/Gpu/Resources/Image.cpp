@@ -6,6 +6,7 @@ import :image;
 import :gpu_task;
 import :sync_token;
 import :device;
+import :pass_recorder;
 
 import gse.vulkan;
 
@@ -48,7 +49,7 @@ auto gse::gpu::transition_image_to(gpu::device& dev, image& img) -> sync_token {
 	const dependency_info dep{
 		.image_barriers = std::span(&barrier, 1)
 	};
-	vulkan::commands(cmd.handle()).pipeline_barrier(dep);
+	pass_recorder(cmd.handle()).pipeline_barrier(dep);
 
 	return submit(dev, std::move(cmd), queue_id::graphics).submit_sync();
 }
