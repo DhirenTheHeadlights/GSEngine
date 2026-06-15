@@ -98,14 +98,6 @@ export namespace gse::settings {
 		const register_settings_type& entry,
 		bool hot_only = false
 	) -> void;
-
-	template <has_settings S, bool HotOnly = false>
-	auto draw_fields(
-		gui::builder& b,
-		panel_state& ps,
-		const typename S::data& live,
-		channel_writer& channels
-	) -> void;
 }
 
 namespace gse::settings {
@@ -331,12 +323,6 @@ auto gse::settings::draw_fields_for_entry(gui::builder& b, panel_state& ps, chan
 	}
 }
 
-template <gse::has_settings S, bool HotOnly>
-auto gse::settings::draw_fields(gui::builder& b, panel_state& ps, const typename S::data& live, channel_writer& channels) -> void {
-	auto entry = build_settings_record<S>(const_cast<typename S::data&>(live));
-	draw_fields_for_entry(b, ps, channels, entry, HotOnly);
-}
-
 auto gse::settings::panel_state::has_pending() const -> bool {
 	return pending_count() > 0;
 }
@@ -420,7 +406,7 @@ auto gse::settings::panel(gui::builder& b, panel_state& ps, channel_writer& chan
 		if (!category_filter.empty() && entry.category != category_filter) {
 			return;
 		}
-		if (entry.fields.empty()) {
+		if (entry.fields.empty() && !entry.draw_page) {
 			return;
 		}
 		if (entry.category.empty()) {
@@ -477,7 +463,10 @@ auto gse::settings::panel(gui::builder& b, panel_state& ps, channel_writer& chan
 					if (entry.category != cat) {
 						return;
 					}
-					if (!entry.fields.empty() && entry.settings_ptr) {
+					if (entry.draw_page && entry.settings_ptr) {
+						entry.draw_page(&sub, &ps, &channels, &entry);
+					}
+					else if (!entry.fields.empty() && entry.settings_ptr) {
 						draw_fields_for_entry(sub, ps, channels, entry);
 					}
 				});

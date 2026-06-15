@@ -5,61 +5,76 @@ import :server;
 import std;
 import gse;
 
+export namespace gse::server {
+	template <typename... Components>
+	struct [[= gse::system_state<"Server">{}]] data {
+		[[= gse::shared]] std::optional<server<Components...>> srv;
+	};
+
+	template <typename... Components>
+	[[= gse::system_init{}]]
+	auto init(
+		context& ctx,
+		data<Components...>& d
+	) -> async::task<>;
+
+	template <typename... Components>
+	[[= gse::system_run<>{}]]
+	auto run(
+		context& ctx,
+		data<Components...>& d,
+		shared_view<world_system::data> world_d,
+		shared_view<actions::data> actions_d,
+		registry_access ra
+	) -> async::task<>;
+}
+
+export namespace gse::server_app {
+	struct [[= gse::system_state<"ServerApp">{}]] data {
+		std::uint32_t tick_count = 0;
+		interval_timer<> timer{ seconds(5.f) };
+	};
+
+	template <typename ServerData>
+	[[= gse::system_run<>{}]]
+	auto run(
+		context& ctx,
+		data& d,
+		shared_view<input::data> input_d,
+		shared_view<ServerData> srv
+	) -> async::task<>;
+}
+
 export namespace gse {
 	template <typename... Components>
-	struct server_system {
-		struct data {
-			[[= gse::shared]] std::optional<server<Components...>> srv;
-		};
-
-		static auto run(
-			context& ctx,
-			data& d,
-			shared_view<world_system> world_d,
-			shared_view<actions::system> actions_d,
-			registry_access ra
-		) -> async::task<>;
-	};
-
-	template <typename Pack>
-	using server_system_for = typename Pack::template apply<server_system>;
-
-	template <typename ServerSystem>
-	struct server_app_system {
-		struct data {
-			std::uint32_t tick_count = 0;
-			interval_timer<> timer{ seconds(5.f) };
-		};
-
-		static auto run(
-			context& ctx,
-			data& d,
-			shared_view<input::system> input_d,
-			shared_view<ServerSystem> srv
-		) -> async::task<>;
-	};
-
-	template <typename ServerSystem>
 	auto server_app_setup(
-		engine& e
+		engine& e,
+		type_pack<Components...> components = {}
 	) -> void;
 }
 
 template <typename... Components>
-auto gse::server_system<Components...>::run(context& ctx, data& d, const shared_view<world_system> world_d, const shared_view<actions::system> actions_d, registry_access ra) -> async::task<> {
+auto gse::server::init(context& ctx, data<Components...>& d) -> async::task<> {
+	d.srv.emplace(9000);
+	d.srv->initialize();
+	return {};
+}
+
+template <typename... Components>
+auto gse::server::run(context& ctx, data<Components...>& d, const shared_view<world_system::data> world_d, const shared_view<actions::data> actions_d, registry_access ra) -> async::task<> {
 	if (d.srv) {
 		d.srv->update(world_d, ra.registry(), ctx.channels, actions_d);
 	}
 	return {};
 }
 
-template <typename ServerSystem>
-auto gse::server_app_system<ServerSystem>::run(context& ctx, data& d, const shared_view<input::system> input_d, const shared_view<ServerSystem> srv) -> async::task<> {
+template <typename ServerData>
+auto gse::server_app::run(context& ctx, data& d, const shared_view<input::data> input_d, const shared_view<ServerData> srv) -> async::task<> {
 	if (d.timer.tick()) {
 		++d.tick_count;
 	}
 
-	if (input::system::current_state(input_d).key_pressed(key::escape)) {
+	if (input::current_state(input_d).key_pressed(key::escape)) {
 		shutdown();
 	}
 
@@ -107,17 +122,22 @@ auto gse::server_app_system<ServerSystem>::run(context& ctx, data& d, const shar
 	return {};
 }
 
-template <typename ServerSystem>
-auto gse::server_app_setup(engine& e) -> void {
+template <typename... Components>
+auto gse::server_app_setup(engine& e, type_pack<Components...>) -> void {
 	auto channels = e.make_channel_writer();
 	channels.push<ui_focus_request>({
 		.focus = true
 	});
 	e.world().networked = true;
 
-	auto& srv_data = e.add_system<ServerSystem>();
-	srv_data.srv.emplace(9000);
-	srv_data.srv->initialize();
+	gse::system_manifest<
+		^^gse::server::data<Components...>,
+		^^gse::server::init<Components...>,
+		^^gse::server::run<Components...>
+	>{}.register_with(e);
 
-	e.add_system<server_app_system<ServerSystem>>();
+	gse::system_manifest<
+		^^gse::server_app::data,
+		^^gse::server_app::run<gse::server::data<Components...>>
+	>{}.register_with(e);
 }

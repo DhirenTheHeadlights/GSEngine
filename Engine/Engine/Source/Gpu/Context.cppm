@@ -21,73 +21,73 @@ import gse.diag;
 import gse.ecs;
 import gse.meta;
 
-export namespace gse::gpu {
-	struct context {
-		struct [[= gse::settings::category<"Graphics">{}]] data {
-			[[
-				= gse::settings::describe<"Enable Vulkan validation layers. Catches API misuse but adds significant "
-										  "overhead. Requires a restart.">{},
-				= gse::settings::restart_required{}
-			]]
-			bool validation_layers_enabled = false;
+export namespace gse::gpu::context {
+	struct [[= gse::system_state<"Gpu">{}, = gse::settings::category<"Graphics">{}]] data {
+		[[
+			= gse::settings::describe<"Enable Vulkan validation layers. Catches API misuse but adds significant "
+									  "overhead. Requires a restart.">{},
+			= gse::settings::restart_required{}
+		]]
+		bool validation_layers_enabled = false;
 
-			[[
-				= gse::settings::describe<"Vulkan device tracking and naming options.">{}
-			]]
-			gpu::device_settings device_settings;
+		[[
+			= gse::settings::describe<"Vulkan device tracking and naming options.">{}
+		]]
+		gpu::device_settings device_settings;
 
-			[[= gse::shared]] std::unique_ptr<gpu::device> device;
-			[[= gse::shared]] std::unique_ptr<swap_chain> swapchain;
-			[[= gse::shared]] std::unique_ptr<gpu::frame> frame;
-			[[= gse::shared]] std::unique_ptr<gpu::render_graph> render_graph;
-			concurrency::frame_scheduler scheduler;
+		[[= gse::shared]] std::unique_ptr<gpu::device> device;
+		[[= gse::shared]] std::unique_ptr<swap_chain> swapchain;
+		[[= gse::shared]] std::unique_ptr<gpu::frame> frame;
+		[[= gse::shared]] std::unique_ptr<gpu::render_graph> render_graph;
+		concurrency::frame_scheduler scheduler;
 
-			gpu::color_clear swapchain_clear{};
-		};
-
-		using swap_chain_recreate_callback = std::function<void()>;
-
-		static auto init(
-			shared_view<window> window_s,
-			data& d
-		) -> async::task<>;
-
-		static auto run(
-			gse::context& ctx,
-			data& d
-		) -> async::task<>;
-
-		static auto shutdown(
-			data& d
-		) -> void;
-
-		[[nodiscard]]
-		static auto begin_frame(
-			data& d,
-			window::data& window_s
-		) -> std::
-			expected<frame_token, frame_status>;
-
-		static auto execute_frame(
-			data& d,
-			scheduler& s
-		) -> void;
-
-		static auto end_frame(
-			data& d,
-			window::data& window_s
-		) -> void;
-
-		static auto on_swap_chain_recreate(
-			shared_view<context> d,
-			swap_chain_recreate_callback callback
-		) -> void;
-
-		static auto wait_idle(
-			const data& d
-		) -> void;
+		gpu::color_clear swapchain_clear{};
 	};
 
+	using swap_chain_recreate_callback = std::function<void()>;
+
+	[[= gse::system_init{}]] auto init(
+		shared_view<window::data> window_s,
+		data& d
+	) -> async::task<>;
+
+	[[= gse::system_run<>{}]] auto run(
+		gse::context& ctx,
+		data& d
+	) -> async::task<>;
+
+	[[= gse::system_shutdown{}]] auto shutdown(
+		data& d
+	) -> void;
+
+	[[nodiscard]]
+	auto begin_frame(
+		data& d,
+		window::data& window_s
+	) -> std::
+		expected<frame_token, frame_status>;
+
+	auto execute_frame(
+		data& d,
+		scheduler& s
+	) -> void;
+
+	auto end_frame(
+		data& d,
+		window::data& window_s
+	) -> void;
+
+	auto on_swap_chain_recreate(
+		shared_view<data> d,
+		swap_chain_recreate_callback callback
+	) -> void;
+
+	auto wait_idle(
+		const data& d
+	) -> void;
+}
+
+export namespace gse::gpu {
 	struct gpu_resume_request {
 		std::coroutine_handle<> handle;
 		context::data** out_state = nullptr;

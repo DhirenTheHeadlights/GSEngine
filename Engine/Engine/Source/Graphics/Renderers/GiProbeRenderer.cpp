@@ -65,14 +65,14 @@ namespace gse::renderer::gi_probe {
 	auto atlas_extent() -> vec2u;
 
 	auto recreate_atlas(
-		shared_view<gpu::context> gpu_s,
-		system::data& d
+		shared_view<gpu::context::data> gpu_s,
+		data& d
 	) -> void;
 
 	auto rebind_tlas_views(
-		shared_view<gpu::context> gpu_s,
-		shared_view<rt_shadow::system> rt_state,
-		system::data& d
+		shared_view<gpu::context::data> gpu_s,
+		shared_view<rt_shadow::data> rt_state,
+		data& d
 	) -> void;
 }
 
@@ -83,7 +83,7 @@ auto gse::renderer::gi_probe::atlas_extent() -> vec2u {
 	};
 }
 
-auto gse::renderer::gi_probe::recreate_atlas(const shared_view<gpu::context> gpu_s, system::data& d) -> void {
+auto gse::renderer::gi_probe::recreate_atlas(const shared_view<gpu::context::data> gpu_s, data& d) -> void {
 	const auto ext = atlas_extent();
 	d.irradiance_atlas = gpu_s.device->create_image(
 		{
@@ -97,7 +97,7 @@ auto gse::renderer::gi_probe::recreate_atlas(const shared_view<gpu::context> gpu
 	gpu::transition_image_to(*gpu_s.device, d.irradiance_atlas);
 }
 
-auto gse::renderer::gi_probe::rebind_tlas_views(const shared_view<gpu::context> gpu_s, const shared_view<rt_shadow::system> rt_state, system::data& d) -> void {
+auto gse::renderer::gi_probe::rebind_tlas_views(const shared_view<gpu::context::data> gpu_s, const shared_view<rt_shadow::data> rt_state, data& d) -> void {
 	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_handle>::frames_in_flight; ++i) {
 		const auto fi = static_cast<std::uint32_t>(i);
 		if (!d.tlas_views[i].valid()) {
@@ -107,7 +107,7 @@ auto gse::renderer::gi_probe::rebind_tlas_views(const shared_view<gpu::context> 
 	}
 }
 
-auto gse::renderer::gi_probe::system::init(context& ctx, const shared_view<gpu::context> gpu_s, const shared_view<rt_shadow::system> rt_state, const shared_view<geometry_collector::system> gc_state, data& d) -> async::task<> {
+auto gse::renderer::gi_probe::init(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<rt_shadow::data> rt_state, const shared_view<geometry_collector::data> gc_state, data& d) -> async::task<> {
 	d.update_pipeline = gpu::build_compute_program(*gpu_s.device, entry::pod);
 
 	recreate_atlas(gpu_s, d);
@@ -123,7 +123,7 @@ auto gse::renderer::gi_probe::system::init(context& ctx, const shared_view<gpu::
 	return {};
 }
 
-auto gse::renderer::gi_probe::system::frame(context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state, shared_view<atmosphere::system> atm_state, shared_view<geometry_collector::system> gc_r) -> async::task<> {
+auto gse::renderer::gi_probe::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, shared_view<camera::data> cam_state, shared_view<atmosphere::data> atm_state, shared_view<geometry_collector::data> gc_r) -> async::task<> {
 	if (d.quality == quality_level::off) {
 		co_return;
 	}
@@ -145,7 +145,7 @@ auto gse::renderer::gi_probe::system::frame(context& ctx, shared_view<gpu::conte
 
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
-	auto rec = co_await gpu::pass<system>(ctx).pipeline(d.update_pipeline).after<rt_shadow::system>();
+	auto rec = co_await gpu::pass<^^gse::renderer::gi_probe::frame>(ctx).pipeline(d.update_pipeline).after<^^rt_shadow::frame>();
 
 	rec.dispatch<entry>(
 		{

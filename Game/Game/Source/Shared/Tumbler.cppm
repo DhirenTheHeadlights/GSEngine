@@ -11,18 +11,21 @@ export namespace gs::tumbler {
 		gse::vec3<gse::length> local_offset;
 		gse::angle phase = gse::radians(0.f);
 	};
-
-	struct system {
-		static auto run(
-			gse::context& ctx,
-			gse::write<component> tumblers,
-			gse::write<gse::physics::transform_component> transforms,
-			gse::write<gse::physics::motion_component> motions
-		) -> gse::async::task<>;
-	};
 }
 
-auto gs::tumbler::system::run(gse::context& ctx, gse::write<component> tumblers, gse::write<gse::physics::transform_component> transforms, gse::write<gse::physics::motion_component> motions) -> gse::async::task<> {
+export namespace gs::tumbler {
+	struct [[= gse::system_state<"Tumbler">{}]] data {};
+
+	[[= gse::system_run<>{}]]
+	auto run(
+		gse::context& ctx,
+		gse::write<component> tumblers,
+		gse::write<gse::physics::transform_component> transforms,
+		gse::write<gse::physics::motion_component> motions
+	) -> gse::async::task<>;
+}
+
+auto gs::tumbler::run(gse::context& ctx, gse::write<component> tumblers, gse::write<gse::physics::transform_component> transforms, gse::write<gse::physics::motion_component> motions) -> gse::async::task<> {
 	const int steps = gse::system_clock::fixed_steps_this_frame();
 	const auto step_dt = gse::system_clock::fixed_dt<gse::time>();
 	const float frame_step_count = static_cast<float>(steps);

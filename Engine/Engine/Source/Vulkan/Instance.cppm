@@ -40,7 +40,7 @@ export namespace gse::vulkan {
 		[[nodiscard]] static auto required_window_extensions() -> std::span<const char* const>;
 
 		auto create_surface(
-			shared_view<window> win
+			shared_view<window::data> win
 		) -> void;
 
 		[[nodiscard]] auto surface() const -> gpu::surface;
@@ -64,7 +64,7 @@ export namespace gse::vulkan {
 namespace gse::vulkan {
 	auto create_window_surface(
 		vk::Instance instance,
-		shared_view<window> win
+		shared_view<window::data> win
 	) -> vk::SurfaceKHR;
 }
 
@@ -81,7 +81,7 @@ auto gse::vulkan::instance::required_window_extensions() -> std::span<const char
 	return { extensions, count };
 }
 
-auto gse::vulkan::create_window_surface(const vk::Instance instance, const shared_view<window> win) -> vk::SurfaceKHR {
+auto gse::vulkan::create_window_surface(const vk::Instance instance, const shared_view<window::data> win) -> vk::SurfaceKHR {
 	auto* handle = static_cast<GLFWwindow*>(window::raw_handle(win).value);
 	assert(handle != nullptr, "Failed to create window surface for Vulkan: window handle is null");
 
@@ -91,7 +91,7 @@ auto gse::vulkan::create_window_surface(const vk::Instance instance, const share
 	return vk::SurfaceKHR(surface);
 }
 
-auto gse::vulkan::instance::create_surface(const shared_view<window> win) -> void {
+auto gse::vulkan::instance::create_surface(const shared_view<window::data> win) -> void {
 	const auto raw_surface = create_window_surface(*m_instance, win);
 	m_surface = vk::raii::SurfaceKHR(m_instance, raw_surface);
 }

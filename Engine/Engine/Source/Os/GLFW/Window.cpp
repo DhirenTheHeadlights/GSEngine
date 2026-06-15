@@ -620,7 +620,7 @@ auto gse::window::is_open(const data& d) -> bool {
 	return window_handle_open(d.handle);
 }
 
-auto gse::window::is_open(const shared_view<window> d) -> bool {
+auto gse::window::is_open(const shared_view<data> d) -> bool {
 	return window_handle_open(d.handle);
 }
 
@@ -628,7 +628,7 @@ auto gse::window::minimized(const data& d) -> bool {
 	return window_handle_minimized(d.handle);
 }
 
-auto gse::window::minimized(const shared_view<window> d) -> bool {
+auto gse::window::minimized(const shared_view<data> d) -> bool {
 	return window_handle_minimized(d.handle);
 }
 
@@ -636,11 +636,11 @@ auto gse::window::viewport(const data& d) -> vec2i {
 	return window_handle_viewport(d.handle);
 }
 
-auto gse::window::viewport(const shared_view<window> d) -> vec2i {
+auto gse::window::viewport(const shared_view<data> d) -> vec2i {
 	return window_handle_viewport(d.handle);
 }
 
-auto gse::window::raw_handle(const shared_view<window> d) -> native_window_handle {
+auto gse::window::raw_handle(const shared_view<data> d) -> native_window_handle {
 	return d.handle;
 }
 
@@ -648,11 +648,11 @@ auto gse::window::show(const data& d) -> void {
 	window_handle_show(d.handle);
 }
 
-auto gse::window::show(const shared_view<window> d) -> void {
+auto gse::window::show(const shared_view<data> d) -> void {
 	window_handle_show(d.handle);
 }
 
-auto gse::window::ui_focus(const shared_view<window> d) -> bool {
+auto gse::window::ui_focus(const shared_view<data> d) -> bool {
 	return d.ui_focus;
 }
 

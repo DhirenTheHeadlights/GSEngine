@@ -27,35 +27,39 @@ export namespace gse {
 			const evaluation_context&
 		) = nullptr;
 	};
+}
 
-	struct world_system {
-		struct data {
-			[[= gse::shared]] std::unordered_map<id, std::unique_ptr<scene>> scenes;
-			[[= gse::shared]] std::vector<trigger> triggers;
-			[[= gse::shared]] std::optional<id> active_scene;
-			bool networked = false;
-			bool authoritative = true;
-			std::optional<id> client_id;
-			id local_controlled_entity{};
-			id local_controller_id{};
+export namespace gse::world_system {
+	struct [[= gse::system_state<"World">{}]] data {
+		[[= gse::shared]] std::unordered_map<id, std::unique_ptr<scene>> scenes;
+		[[= gse::shared]] std::vector<trigger> triggers;
+		[[= gse::shared]] std::optional<id> active_scene;
+		bool networked = false;
+		bool authoritative = true;
+		std::optional<id> client_id;
+		id local_controlled_entity{};
+		id local_controller_id{};
 
-			std::unordered_set<id> pc_processed;
-			std::unordered_map<id, id> pc_controller_to_local_player;
-			bool pc_local_player_created = false;
-		};
-
-		static auto run(
-			context& ctx,
-			data& d,
-			shared_view<actions::system> actions_d,
-			registry_access ra
-		) -> async::task<>;
-
-		static auto shutdown(
-			data& d
-		) -> void;
+		std::unordered_set<id> pc_processed;
+		std::unordered_map<id, id> pc_controller_to_local_player;
+		bool pc_local_player_created = false;
 	};
 
+	[[= gse::system_run<>{}]]
+	auto run(
+		context& ctx,
+		data& d,
+		shared_view<actions::data> actions_d,
+		registry_access ra
+	) -> async::task<>;
+
+	[[= gse::system_shutdown{}]]
+	auto shutdown(
+		data& d
+	) -> void;
+}
+
+export namespace gse {
 	auto add_scene(
 		world_system::data& d,
 		registry& reg,
@@ -259,7 +263,7 @@ auto gse::update_player_controllers(world_system::data& d, registry& reg) -> voi
 	}
 }
 
-auto gse::world_system::run(context& ctx, data& d, const shared_view<actions::system> actions_d, registry_access ra) -> async::task<> {
+auto gse::world_system::run(context& ctx, data& d, const shared_view<actions::data> actions_d, registry_access ra) -> async::task<> {
 	for (const auto& r : ctx.read_channel<set_networked_request>()) {
 		d.networked = r.value;
 	}
@@ -277,7 +281,7 @@ auto gse::world_system::run(context& ctx, data& d, const shared_view<actions::sy
 	}
 
 	if (!d.networked) {
-		const auto& s = actions::system::current_state(actions_d);
+		const auto& s = actions::current_state(actions_d);
 
 		for (const auto& [scene_id, condition] : d.triggers) {
 			const evaluation_context ec{

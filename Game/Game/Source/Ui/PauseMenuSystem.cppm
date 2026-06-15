@@ -5,27 +5,26 @@ import gse;
 
 import :main_menu_screen;
 
-export namespace gs {
-	struct pause_menu_system {
-		struct data {
-			bool manual_cursor = false;
-			bool initial_push_done = false;
-			bool last_scene_active = false;
-		};
-
-		static auto run(
-			gse::context& ctx,
-			data& d,
-			gse::shared_view<gse::input::system> input_d,
-			gse::shared_view<gse::gui::system> gui_d,
-			gse::shared_view<gse::world_system> world_d,
-			gse::shared_view<gse::network::data> net_d,
-			const gse::save::registry& save_reg
-		) -> gse::async::task<>;
+export namespace gs::pause_menu {
+	struct [[= gse::system_state<"PauseMenu">{}]] data {
+		bool manual_cursor = false;
+		bool initial_push_done = false;
+		bool last_scene_active = false;
 	};
+
+	[[= gse::system_run<>{}]]
+	auto run(
+		gse::context& ctx,
+		data& d,
+		gse::shared_view<gse::input::data> input_d,
+		gse::shared_view<gse::gui::data> gui_d,
+		gse::shared_view<gse::world_system::data> world_d,
+		gse::shared_view<gse::network::data> net_d,
+		const gse::save::registry& save_reg
+	) -> gse::async::task<>;
 }
 
-auto gs::pause_menu_system::run(gse::context& ctx, data& d, const gse::shared_view<gse::input::system> input_d, const gse::shared_view<gse::gui::system> gui_d, const gse::shared_view<gse::world_system> world_d, const gse::shared_view<gse::network::data> net_d, const gse::save::registry& save_reg) -> gse::async::task<> {
+auto gs::pause_menu::run(gse::context& ctx, data& d, const gse::shared_view<gse::input::data> input_d, const gse::shared_view<gse::gui::data> gui_d, const gse::shared_view<gse::world_system::data> world_d, const gse::shared_view<gse::network::data> net_d, const gse::save::registry& save_reg) -> gse::async::task<> {
 	const auto push_main_menu = [&] {
 		ctx.channels.push<gse::gui::push_screen_request>({
 			.factory = [world_d, net_d, &save_reg, channels = ctx.channels] {
@@ -34,7 +33,7 @@ auto gs::pause_menu_system::run(gse::context& ctx, data& d, const gse::shared_vi
 		});
 	};
 
-	const auto& input = gse::input::system::current_state(input_d);
+	const auto& input = gse::input::current_state(input_d);
 	const auto* top = gui_d.menu_stack.top();
 	const bool blocks = top != nullptr && !top->dismissable();
 	const bool scene_active = world_d.active_scene.has_value();

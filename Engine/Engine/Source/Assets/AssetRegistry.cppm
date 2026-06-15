@@ -25,32 +25,31 @@ export namespace gse::asset {
 		bool enabled = false;
 	};
 
-	struct registry {
-		struct data {
-			[[= gse::shared]] std::unordered_map<id, std::unique_ptr<resource::loader_base>> resource_loaders;
-			file_watcher watcher;
-			std::function<void()> enable_hot_reload_fn;
-			std::function<void()> disable_hot_reload_fn;
-			bool hot_reload_enabled = false;
-			channel_writer* channels = nullptr;
-		};
-
-		static auto init(
-			context& ctx,
-			data& d
-		) -> async::task<>;
-
-		static auto run(
-			context& ctx,
-			data& d
-		) -> async::task<>;
-
-		static auto shutdown(
-			data& d
-		) -> void;
+	struct [[= gse::system_state<"Asset">{}]] data {
+		[[= gse::shared]] std::unordered_map<id, std::unique_ptr<resource::loader_base>> resource_loaders;
+		file_watcher watcher;
+		std::function<void()> enable_hot_reload_fn;
+		std::function<void()> disable_hot_reload_fn;
+		bool hot_reload_enabled = false;
+		channel_writer* channels = nullptr;
 	};
 
-	using data = registry::data;
+	[[= gse::system_init{}]]
+	auto init(
+		context& ctx,
+		data& d
+	) -> async::task<>;
+
+	[[= gse::system_run<>{}]]
+	auto run(
+		context& ctx,
+		data& d
+	) -> async::task<>;
+
+	[[= gse::system_shutdown{}]]
+	auto shutdown(
+		data& d
+	) -> void;
 
 	template <typename T>
 	auto add_loader(
@@ -65,7 +64,7 @@ export namespace gse::asset {
 
 	template <typename T>
 	auto get(
-		shared_view<registry> d,
+		shared_view<data> d,
 		id resource_id
 	) -> resource::handle<T>;
 
@@ -77,7 +76,7 @@ export namespace gse::asset {
 
 	template <typename T>
 	auto get(
-		shared_view<registry> d,
+		shared_view<data> d,
 		const std::string& filename
 	) -> resource::handle<T>;
 
@@ -89,7 +88,7 @@ export namespace gse::asset {
 
 	template <typename T>
 	auto try_get(
-		shared_view<registry> d,
+		shared_view<data> d,
 		id resource_id
 	) -> resource::handle<T>;
 
@@ -101,7 +100,7 @@ export namespace gse::asset {
 
 	template <typename T>
 	auto try_get(
-		shared_view<registry> d,
+		shared_view<data> d,
 		const std::string& filename
 	) -> resource::handle<T>;
 
@@ -114,7 +113,7 @@ export namespace gse::asset {
 
 	template <typename T, typename... Args>
 	auto queue(
-		shared_view<registry> d,
+		shared_view<data> d,
 		const std::string& name,
 		Args&&... args
 	) -> resource::handle<T>;
@@ -135,7 +134,7 @@ export namespace gse::asset {
 	template <typename T>
 	[[nodiscard]]
 	auto resource_state(
-		shared_view<registry> d,
+		shared_view<data> d,
 		id resource_id
 	) -> resource::state;
 
@@ -148,7 +147,7 @@ export namespace gse::asset {
 	[[nodiscard]]
 	auto load(
 		context& ctx,
-		shared_view<registry> assets,
+		shared_view<data> assets,
 		std::string_view path
 	) -> async::task<resource::handle<T>>;
 }
@@ -161,7 +160,7 @@ namespace gse::asset {
 
 	template <typename T>
 	auto loader_for(
-		shared_view<registry> d
+		shared_view<data> d
 	) -> resource::loader<T>*;
 
 	auto loader_base_for(
@@ -170,7 +169,7 @@ namespace gse::asset {
 	) -> resource::loader_base*;
 
 	auto loader_base_for(
-		shared_view<registry> d,
+		shared_view<data> d,
 		id type_index
 	) -> resource::loader_base*;
 }
@@ -268,12 +267,12 @@ export namespace gse::resource {
 	};
 }
 
-auto gse::asset::registry::init(context& ctx, data& d) -> async::task<> {
+auto gse::asset::init(context& ctx, data& d) -> async::task<> {
 	d.channels = &ctx.channels;
 	return {};
 }
 
-auto gse::asset::registry::run(context& ctx, data& d) -> async::task<> {
+auto gse::asset::run(context& ctx, data& d) -> async::task<> {
 	for (const auto& l : std::views::values(d.resource_loaders)) {
 		l->flush();
 	}
@@ -302,7 +301,7 @@ auto gse::asset::registry::run(context& ctx, data& d) -> async::task<> {
 	return {};
 }
 
-auto gse::asset::registry::shutdown(data& d) -> void {
+auto gse::asset::shutdown(data& d) -> void {
 	gse::task::wait_idle();
 	for (auto& l : std::views::values(d.resource_loaders)) {
 		l.reset();
@@ -329,7 +328,7 @@ auto gse::asset::get(const data& d, const id resource_id) -> resource::handle<T>
 }
 
 template <typename T>
-auto gse::asset::get(const shared_view<registry> d, const id resource_id) -> resource::handle<T> {
+auto gse::asset::get(const shared_view<data> d, const id resource_id) -> resource::handle<T> {
 	return loader_for<T>(d)->get(resource_id);
 }
 
@@ -339,7 +338,7 @@ auto gse::asset::get(const data& d, const std::string& filename) -> resource::ha
 }
 
 template <typename T>
-auto gse::asset::get(const shared_view<registry> d, const std::string& filename) -> resource::handle<T> {
+auto gse::asset::get(const shared_view<data> d, const std::string& filename) -> resource::handle<T> {
 	return loader_for<T>(d)->get(filename);
 }
 
@@ -349,7 +348,7 @@ auto gse::asset::try_get(const data& d, const id resource_id) -> resource::handl
 }
 
 template <typename T>
-auto gse::asset::try_get(const shared_view<registry> d, const id resource_id) -> resource::handle<T> {
+auto gse::asset::try_get(const shared_view<data> d, const id resource_id) -> resource::handle<T> {
 	return loader_for<T>(d)->try_get(resource_id);
 }
 
@@ -359,7 +358,7 @@ auto gse::asset::try_get(const data& d, const std::string& filename) -> resource
 }
 
 template <typename T>
-auto gse::asset::try_get(const shared_view<registry> d, const std::string& filename) -> resource::handle<T> {
+auto gse::asset::try_get(const shared_view<data> d, const std::string& filename) -> resource::handle<T> {
 	return loader_for<T>(d)->try_get(filename);
 }
 
@@ -369,7 +368,7 @@ auto gse::asset::queue(const data& d, const std::string& name, Args&&... args) -
 }
 
 template <typename T, typename... Args>
-auto gse::asset::queue(const shared_view<registry> d, const std::string& name, Args&&... args) -> resource::handle<T> {
+auto gse::asset::queue(const shared_view<data> d, const std::string& name, Args&&... args) -> resource::handle<T> {
 	return loader_for<T>(d)->enqueue(name, std::make_unique<T>(name, std::forward<Args>(args)...));
 }
 
@@ -384,7 +383,7 @@ auto gse::asset::resource_state(const data& d, const id resource_id) -> resource
 }
 
 template <typename T>
-auto gse::asset::resource_state(const shared_view<registry> d, const id resource_id) -> resource::state {
+auto gse::asset::resource_state(const shared_view<data> d, const id resource_id) -> resource::state {
 	return loader_for<T>(d)->state_of(resource_id);
 }
 
@@ -394,7 +393,7 @@ auto gse::asset::loader_for(const data& d) -> resource::loader<T>* {
 }
 
 template <typename T>
-auto gse::asset::loader_for(const shared_view<registry> d) -> resource::loader<T>* {
+auto gse::asset::loader_for(const shared_view<data> d) -> resource::loader<T>* {
 	return static_cast<resource::loader<T>*>(loader_base_for(d, id_of<T>()));
 }
 
@@ -403,13 +402,13 @@ auto gse::asset::loader_base_for(const data& d, const id type_id) -> resource::l
 	return d.resource_loaders.at(type_id).get();
 }
 
-auto gse::asset::loader_base_for(const shared_view<registry> d, const id type_id) -> resource::loader_base* {
+auto gse::asset::loader_base_for(const shared_view<data> d, const id type_id) -> resource::loader_base* {
 	assert(d.resource_loaders.contains(type_id), "Resource loader for id {} does not exist.", type_id.number());
 	return d.resource_loaders.at(type_id).get();
 }
 
 template <typename T>
-auto gse::asset::load(context& ctx, const shared_view<registry> assets, const std::string_view path) -> async::task<resource::handle<T>> {
+auto gse::asset::load(context& ctx, const shared_view<data> assets, const std::string_view path) -> async::task<resource::handle<T>> {
 	auto handle = get<T>(assets, std::string(path));
 
 	while (resource_state<T>(assets, handle.id()) != resource::state::loaded) {
@@ -504,7 +503,7 @@ auto gse::resource::loader<R>::launch_load(const id rid) -> async::task<> {
 		m_pre_load_fn(path);
 	}
 
-	assert(m_data.channels != nullptr, "asset::registry::run must run before flush()");
+	assert(m_data.channels != nullptr, "asset::run must run before flush()");
 	asset::load_ctx ctx{
 		.assets = m_data,
 		.channels = *m_data.channels
@@ -623,7 +622,7 @@ auto gse::resource::loader<R>::launch_reload(const id rid) -> async::task<> {
 
 	auto new_resource = std::make_unique<R>(path);
 
-	assert(m_data.channels != nullptr, "asset::registry::run must run before finalize_reloads()");
+	assert(m_data.channels != nullptr, "asset::run must run before finalize_reloads()");
 	asset::load_ctx ctx{
 		.assets = m_data,
 		.channels = *m_data.channels
