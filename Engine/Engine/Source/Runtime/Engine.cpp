@@ -133,6 +133,12 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 
 			m_scheduler.register_deferred();
 
+			if (m_config.use_gpu_solver) {
+				if (auto* phys = m_scheduler.try_state_of<physics::data>()) {
+					phys->use_gpu_solver = true;
+				}
+			}
+
 			task::post([this, app_setup, asset_state_ptr] {
 				using game_assets = gse::assets::append<graphics::asset_types, audio::asset_types>;
 				gse::asset::system_for<game_assets> assets{ *asset_state_ptr };
@@ -165,6 +171,12 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	}
 	else {
 		m_scheduler.register_deferred();
+
+		if (m_config.use_gpu_solver) {
+			if (auto* phys = m_scheduler.try_state_of<physics::data>()) {
+				phys->use_gpu_solver = true;
+			}
+		}
 
 		asset::add_loader<model>(asset_state);
 
