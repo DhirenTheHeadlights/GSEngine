@@ -14,6 +14,7 @@ namespace gs::startup {
 		bool locomotion_train = false;
 		gs::locomotion::ppo_config ppo;
 		bool locomotion_selftest = false;
+		bool use_gpu_solver = false;
 	};
 
 	auto run_game(
@@ -105,6 +106,7 @@ auto gs::startup::run_locomotion_train(const config& cfg) -> void {
 			.title = "GoonSquad Locomotion Train",
 			.create_window = false,
 			.render = false,
+			.use_gpu_solver = cfg.use_gpu_solver,
 			.persist_settings = false,
 		}
 	);
