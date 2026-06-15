@@ -1,4 +1,4 @@
-﻿export module gs:leg_controller;
+export module gs:leg_controller;
 
 import std;
 import gse;
@@ -6,332 +6,331 @@ import gse;
 import :leg_ik;
 import :locomotion_types;
 
-export namespace gs::locomotion {
-	struct leg_controller {
-		struct [[= gse::settings::category<"Legs">{}]] data {
-			[[
-				= gse::settings::describe<"Resting knee bend while standing (radians, negative = bent).">{}
-			]]
-			gse::angle stance_knee_rest = gse::radians(-0.05f);
+export namespace gs::locomotion::leg_controller {
+	struct [[= gse::system_state<"Legs">{}]] data {
+		[[
+			= gse::settings::describe<"Resting knee bend while standing (radians, negative = bent).">{}
+		]]
+		gse::angle stance_knee_rest = gse::radians(-0.05f);
 
-			[[
-				= gse::settings::describe<"Peak knee bend during swing midphase (radians, negative = lift foot).">{}
-			]]
-			gse::angle swing_knee_lift = gse::radians(-1.15f);
+		[[
+			= gse::settings::describe<"Peak knee bend during swing midphase (radians, negative = lift foot).">{}
+		]]
+		gse::angle swing_knee_lift = gse::radians(-1.15f);
 
-			[[
-				= gse::settings::describe<"Lift height of swing foot at midphase.">{}
-			]]
-			gse::displacement swing_lift_height = gse::meters(0.14f);
+		[[
+			= gse::settings::describe<"Lift height of swing foot at midphase.">{}
+		]]
+		gse::displacement swing_lift_height = gse::meters(0.14f);
 
-			[[
-				= gse::settings::describe<"Time used for swing-foot lift and descent.">{}
-			]]
-			gse::time swing_trajectory_duration = gse::seconds(0.30f);
+		[[
+			= gse::settings::describe<"Time used for swing-foot lift and descent.">{}
+		]]
+		gse::time swing_trajectory_duration = gse::seconds(0.30f);
 
-			[[
-				= gse::settings::describe<"Clamp range on stance hip target.">{}
-			]]
-			gse::angle stance_hip_clamp = gse::radians(0.90f);
+		[[
+			= gse::settings::describe<"Clamp range on stance hip target.">{}
+		]]
+		gse::angle stance_hip_clamp = gse::radians(0.90f);
 
-			[[
-				= gse::settings::describe<"Clamp range on stance knee target.">{}
-			]]
-			gse::angle stance_knee_clamp = gse::radians(1.20f);
+		[[
+			= gse::settings::describe<"Clamp range on stance knee target.">{}
+		]]
+		gse::angle stance_knee_clamp = gse::radians(1.20f);
 
-			[[
-				= gse::settings::describe<"Foot center Y used by stance IK.">{}
-			]]
-			gse::position stance_foot_ground_y = gse::meters(0.025f);
+		[[
+			= gse::settings::describe<"Foot center Y used by stance IK.">{}
+		]]
+		gse::position stance_foot_ground_y = gse::meters(0.025f);
 
-			[[
-				= gse::settings::describe<"Maximum horizontal swing-foot travel while planting before contact.">{}
-			]]
-			gse::displacement plant_horizontal_reach = gse::meters(0.34f);
+		[[
+			= gse::settings::describe<"Maximum horizontal swing-foot travel while planting before contact.">{}
+		]]
+		gse::displacement plant_horizontal_reach = gse::meters(0.34f);
 
-			[[
-				= gse::settings::describe<"Distance below ground used as the active plant target before contact.">{}
-			]]
-			gse::displacement plant_foot_sink = gse::meters(0.05f);
+		[[
+			= gse::settings::describe<"Distance below ground used as the active plant target before contact.">{}
+		]]
+		gse::displacement plant_foot_sink = gse::meters(0.05f);
 
-			[[
-				= gse::settings::describe<"Forward capture limit for releasing the swing leg during weight shift.">{}
-			]]
-			gse::displacement weight_shift_capture_forward_limit = gse::meters(0.45f);
+		[[
+			= gse::settings::describe<"Forward capture limit for releasing the swing leg during weight shift.">{}
+		]]
+		gse::displacement weight_shift_capture_forward_limit = gse::meters(0.45f);
 
-			[[
-				= gse::settings::describe<"Backward capture limit for releasing the swing leg during weight shift.">{}
-			]]
-			gse::displacement weight_shift_capture_backward_limit = gse::meters(0.30f);
+		[[
+			= gse::settings::describe<"Backward capture limit for releasing the swing leg during weight shift.">{}
+		]]
+		gse::displacement weight_shift_capture_backward_limit = gse::meters(0.30f);
 
-			[[
-				= gse::settings::describe<"Lateral capture limit for releasing the swing leg during weight shift.">{}
-			]]
-			gse::displacement weight_shift_capture_right_limit = gse::meters(0.32f);
+		[[
+			= gse::settings::describe<"Lateral capture limit for releasing the swing leg during weight shift.">{}
+		]]
+		gse::displacement weight_shift_capture_right_limit = gse::meters(0.32f);
 
-			[[
-				= gse::settings::describe<"Stance hip pitch servo stiffness.">{}
-			]]
-			gse::angular_stiffness hip_drive_stiffness = gse::newton_meters_per_radian(600.f);
+		[[
+			= gse::settings::describe<"Stance hip pitch servo stiffness.">{}
+		]]
+		gse::angular_stiffness hip_drive_stiffness = gse::newton_meters_per_radian(600.f);
 
-			[[
-				= gse::settings::describe<"Swing hip pitch servo stiffness (kept low to limit trunk reaction).">{}
-			]]
-			gse::angular_stiffness swing_hip_stiffness = gse::newton_meters_per_radian(300.f);
+		[[
+			= gse::settings::describe<"Swing hip pitch servo stiffness (kept low to limit trunk reaction).">{}
+		]]
+		gse::angular_stiffness swing_hip_stiffness = gse::newton_meters_per_radian(300.f);
 
-			[[
-				= gse::settings::describe<"Hip roll/yaw servo stiffness holding the leg in the sagittal plane.">{}
-			]]
-			gse::angular_stiffness hip_lateral_stiffness = gse::newton_meters_per_radian(250.f);
+		[[
+			= gse::settings::describe<"Hip roll/yaw servo stiffness holding the leg in the sagittal plane.">{}
+		]]
+		gse::angular_stiffness hip_lateral_stiffness = gse::newton_meters_per_radian(250.f);
 
-			[[
-				= gse::settings::describe<"Knee servo stiffness.">{}
-			]]
-			gse::angular_stiffness knee_drive_stiffness = gse::newton_meters_per_radian(650.f);
+		[[
+			= gse::settings::describe<"Knee servo stiffness.">{}
+		]]
+		gse::angular_stiffness knee_drive_stiffness = gse::newton_meters_per_radian(650.f);
 
-			[[
-				= gse::settings::describe<"Ankle servo stiffness.">{}
-			]]
-			gse::angular_stiffness ankle_drive_stiffness = gse::newton_meters_per_radian(400.f);
+		[[
+			= gse::settings::describe<"Ankle servo stiffness.">{}
+		]]
+		gse::angular_stiffness ankle_drive_stiffness = gse::newton_meters_per_radian(400.f);
 
-			[[
-				= gse::settings::describe<"Joint servo damping as a multiple of stiffness times substep dt.">{}
-			]]
-			float drive_damping = 6.f;
+		[[
+			= gse::settings::describe<"Joint servo damping as a multiple of stiffness times substep dt.">{}
+		]]
+		float drive_damping = 6.f;
 
-			[[
-				= gse::settings::describe<"Stance hip servo torque limit.">{}
-			]]
-			gse::torque hip_max_torque = gse::newton_meters(380.f);
+		[[
+			= gse::settings::describe<"Stance hip servo torque limit.">{}
+		]]
+		gse::torque hip_max_torque = gse::newton_meters(380.f);
 
-			[[
-				= gse::settings::describe<"Stance knee servo torque limit.">{}
-			]]
-			gse::torque knee_max_torque = gse::newton_meters(420.f);
+		[[
+			= gse::settings::describe<"Stance knee servo torque limit.">{}
+		]]
+		gse::torque knee_max_torque = gse::newton_meters(420.f);
 
-			[[
-				= gse::settings::describe<"Stance ankle servo torque limit.">{}
-			]]
-			gse::torque ankle_max_torque = gse::newton_meters(160.f);
+		[[
+			= gse::settings::describe<"Stance ankle servo torque limit.">{}
+		]]
+		gse::torque ankle_max_torque = gse::newton_meters(160.f);
 
-			[[
-				= gse::settings::describe<"Swing hip servo torque limit (limits trunk reaction).">{}
-			]]
-			gse::torque swing_hip_max_torque = gse::newton_meters(130.f);
+		[[
+			= gse::settings::describe<"Swing hip servo torque limit (limits trunk reaction).">{}
+		]]
+		gse::torque swing_hip_max_torque = gse::newton_meters(130.f);
 
-			[[
-				= gse::settings::describe<"Swing knee servo torque limit.">{}
-			]]
-			gse::torque swing_knee_max_torque = gse::newton_meters(110.f);
+		[[
+			= gse::settings::describe<"Swing knee servo torque limit.">{}
+		]]
+		gse::torque swing_knee_max_torque = gse::newton_meters(110.f);
 
-			[[
-				= gse::settings::describe<"Swing ankle servo torque limit.">{}
-			]]
-			gse::torque swing_ankle_max_torque = gse::newton_meters(30.f);
+		[[
+			= gse::settings::describe<"Swing ankle servo torque limit.">{}
+		]]
+		gse::torque swing_ankle_max_torque = gse::newton_meters(30.f);
 
-			[[
-				= gse::settings::describe<"Trailing-ankle plantarflexion added across weight shift (toe-off push).">{}
-			]]
-			gse::angle toe_off_angle = gse::radians(-0.18f);
+		[[
+			= gse::settings::describe<"Trailing-ankle plantarflexion added across weight shift (toe-off push).">{}
+		]]
+		gse::angle toe_off_angle = gse::radians(-0.18f);
 
-			[[
-				= gse::settings::describe<"Stance-ankle plantarflexion as the pelvis passes the planted foot (late-stance power).">{}
-			]]
-			gse::angle stance_push_angle = gse::radians(-0.18f);
+		[[
+			= gse::settings::describe<"Stance-ankle plantarflexion as the pelvis passes the planted foot (late-stance power).">{}
+		]]
+		gse::angle stance_push_angle = gse::radians(-0.18f);
 
-			[[
-				= gse::settings::describe<"Pelvis travel past the planted foot over which the stance push ramps in.">{}
-			]]
-			gse::displacement stance_push_range = gse::meters(0.18f);
+		[[
+			= gse::settings::describe<"Pelvis travel past the planted foot over which the stance push ramps in.">{}
+		]]
+		gse::displacement stance_push_range = gse::meters(0.18f);
 
-			[[
-				= gse::settings::describe<"Additional late-stance plantarflexion rolling the heel up onto the toe segment (0 disables).">{}
-			]]
-			gse::angle rollover_angle = gse::radians(-0.18f);
+		[[
+			= gse::settings::describe<"Additional late-stance plantarflexion rolling the heel up onto the toe segment (0 disables).">{}
+		]]
+		gse::angle rollover_angle = gse::radians(-0.18f);
 
-			[[
-				= gse::settings::describe<"Pelvis travel past the planted foot at which heel-lift roll-over begins.">{}
-			]]
-			gse::displacement rollover_start = gse::meters(0.08f);
+		[[
+			= gse::settings::describe<"Pelvis travel past the planted foot at which heel-lift roll-over begins.">{}
+		]]
+		gse::displacement rollover_start = gse::meters(0.08f);
 
-			[[
-				= gse::settings::describe<"Pelvis travel over which roll-over ramps to full depth.">{}
-			]]
-			gse::displacement rollover_range = gse::meters(0.10f);
+		[[
+			= gse::settings::describe<"Pelvis travel over which roll-over ramps to full depth.">{}
+		]]
+		gse::displacement rollover_range = gse::meters(0.10f);
 
-			[[
-				= gse::settings::describe<"Run push-off: stance knee target at full launch (near straight) when sprinting, extending the leg to launch the body into flight.">{}
-			]]
-			gse::angle run_pushoff_knee = gse::radians(-0.02f);
+		[[
+			= gse::settings::describe<"Run push-off: stance knee target at full launch (near straight) when sprinting, extending the leg to launch the body into flight.">{}
+		]]
+		gse::angle run_pushoff_knee = gse::radians(-0.02f);
 
-			[[
-				= gse::settings::describe<"Run push-off: extra ankle plantarflexion at full launch (drives the foot down to launch the body up).">{}
-			]]
-			gse::angle run_pushoff_ankle = gse::radians(-0.55f);
+		[[
+			= gse::settings::describe<"Run push-off: extra ankle plantarflexion at full launch (drives the foot down to launch the body up).">{}
+		]]
+		gse::angle run_pushoff_ankle = gse::radians(-0.55f);
 
-			[[
-				= gse::settings::describe<"Run push-off: stance hip extension blended in at full launch (drives the body forward and up off the foot).">{}
-			]]
-			gse::angle run_pushoff_hip = gse::radians(-0.35f);
+		[[
+			= gse::settings::describe<"Run push-off: stance hip extension blended in at full launch (drives the body forward and up off the foot).">{}
+		]]
+		gse::angle run_pushoff_hip = gse::radians(-0.35f);
 
-			[[
-				= gse::settings::describe<"Run push-off: pelvis travel past the planted foot at which the launch begins.">{}
-			]]
-			gse::displacement run_pushoff_start = gse::meters(0.04f);
+		[[
+			= gse::settings::describe<"Run push-off: pelvis travel past the planted foot at which the launch begins.">{}
+		]]
+		gse::displacement run_pushoff_start = gse::meters(0.04f);
 
-			[[
-				= gse::settings::describe<"Run push-off: pelvis travel over which the launch ramps to full extension.">{}
-			]]
-			gse::displacement run_pushoff_range = gse::meters(0.14f);
+		[[
+			= gse::settings::describe<"Run push-off: pelvis travel over which the launch ramps to full extension.">{}
+		]]
+		gse::displacement run_pushoff_range = gse::meters(0.14f);
 
-			[[
-				= gse::settings::describe<"Run push-off: sprint blend above which the launch engages (below this the walking gait is unchanged).">{}
-			]]
-			float run_pushoff_sprint_threshold = 0.6f;
+		[[
+			= gse::settings::describe<"Run push-off: sprint blend above which the launch engages (below this the walking gait is unchanged).">{}
+		]]
+		float run_pushoff_sprint_threshold = 0.6f;
 
-			[[
-				= gse::settings::describe<"Swing-hip roll target scale toward the planned lateral foot offset (0 disables).">{}
-			]]
-			float swing_roll_gain = 0.3f;
+		[[
+			= gse::settings::describe<"Swing-hip roll target scale toward the planned lateral foot offset (0 disables).">{}
+		]]
+		float swing_roll_gain = 0.3f;
 
-			[[
-				= gse::settings::describe<"Stance-hip roll per meter of lateral capture beyond the deadzone, rolling the trunk back over the support (0 disables).">{}
-			]]
-			gse::inverse_length lateral_righting_gain = gse::per_meter(0.4f);
+		[[
+			= gse::settings::describe<"Stance-hip roll per meter of lateral capture beyond the deadzone, rolling the trunk back over the support (0 disables).">{}
+		]]
+		gse::inverse_length lateral_righting_gain = gse::per_meter(0.4f);
 
-			[[
-				= gse::settings::describe<"Lateral capture below this magnitude is normal gait weave and gets no righting roll.">{}
-			]]
-			gse::displacement lateral_righting_deadzone = gse::meters(0.18f);
+		[[
+			= gse::settings::describe<"Lateral capture below this magnitude is normal gait weave and gets no righting roll.">{}
+		]]
+		gse::displacement lateral_righting_deadzone = gse::meters(0.18f);
 
-			[[
-				= gse::settings::describe<"Clamp on the stance-hip lateral righting roll.">{}
-			]]
-			gse::angle lateral_righting_clamp = gse::radians(0.20f);
+		[[
+			= gse::settings::describe<"Clamp on the stance-hip lateral righting roll.">{}
+		]]
+		gse::angle lateral_righting_clamp = gse::radians(0.20f);
 
-			[[
-				= gse::settings::describe<"Downward pelvis speed at which the stance knee starts extending to arrest the sink.">{}
-			]]
-			gse::velocity sink_arrest_onset = gse::meters_per_second(1.0f);
+		[[
+			= gse::settings::describe<"Downward pelvis speed at which the stance knee starts extending to arrest the sink.">{}
+		]]
+		gse::velocity sink_arrest_onset = gse::meters_per_second(1.0f);
 
-			[[
-				= gse::settings::describe<"Downward pelvis speed range over which the sink arrest blends to full extension.">{}
-			]]
-			gse::velocity sink_arrest_range = gse::meters_per_second(0.5f);
+		[[
+			= gse::settings::describe<"Downward pelvis speed range over which the sink arrest blends to full extension.">{}
+		]]
+		gse::velocity sink_arrest_range = gse::meters_per_second(0.5f);
 
-			[[
-				= gse::settings::describe<"Stance knee target at full sink arrest (near straight).">{}
-			]]
-			gse::angle sink_arrest_knee = gse::radians(-0.08f);
+		[[
+			= gse::settings::describe<"Stance knee target at full sink arrest (near straight).">{}
+		]]
+		gse::angle sink_arrest_knee = gse::radians(-0.08f);
 
-			[[
-				= gse::settings::describe<"Stance-hip yaw target per radian of heading error (turns the pelvis over the planted foot).">{}
-			]]
-			float steer_gain = 1.9f;
+		[[
+			= gse::settings::describe<"Stance-hip yaw target per radian of heading error (turns the pelvis over the planted foot).">{}
+		]]
+		float steer_gain = 1.9f;
 
-			[[
-				= gse::settings::describe<"Clamp on the stance-hip steering yaw target.">{}
-			]]
-			gse::angle steer_clamp = gse::radians(0.72f);
+		[[
+			= gse::settings::describe<"Clamp on the stance-hip steering yaw target.">{}
+		]]
+		gse::angle steer_clamp = gse::radians(0.72f);
 
-			[[
-				= gse::settings::describe<"Stance-ankle CoP shift per radian of pelvis pitch, righting the trunk.">{}
-			]]
-			float pelvis_righting_gain = 1.0f;
+		[[
+			= gse::settings::describe<"Stance-ankle CoP shift per radian of pelvis pitch, righting the trunk.">{}
+		]]
+		float pelvis_righting_gain = 1.0f;
 
-			[[
-				= gse::settings::describe<"Pitch-rate anticipation horizon for the stance-ankle CoP shift.">{}
-			]]
-			gse::time pelvis_righting_rate_gain = gse::seconds(0.20f);
+		[[
+			= gse::settings::describe<"Pitch-rate anticipation horizon for the stance-ankle CoP shift.">{}
+		]]
+		gse::time pelvis_righting_rate_gain = gse::seconds(0.20f);
 
-			[[
-				= gse::settings::describe<"Clamp on the stance-ankle CoP shift.">{}
-			]]
-			gse::angle pelvis_righting_clamp = gse::radians(0.45f);
+		[[
+			= gse::settings::describe<"Clamp on the stance-ankle CoP shift.">{}
+		]]
+		gse::angle pelvis_righting_clamp = gse::radians(0.45f);
 
-			[[
-				= gse::settings::describe<"Adaptation rate of the standing ankle CoP trim per second of pitch error.">{}
-			]]
-			float posture_trim_rate = 0.35f;
+		[[
+			= gse::settings::describe<"Adaptation rate of the standing ankle CoP trim per second of pitch error.">{}
+		]]
+		float posture_trim_rate = 0.35f;
 
-			[[
-				= gse::settings::describe<"Clamp on the adaptive ankle CoP trim.">{}
-			]]
-			gse::angle posture_trim_clamp = gse::radians(0.40f);
+		[[
+			= gse::settings::describe<"Clamp on the adaptive ankle CoP trim.">{}
+		]]
+		gse::angle posture_trim_clamp = gse::radians(0.40f);
 
-			[[
-				= gse::settings::describe<"Fraction of the posture trim also applied as a stance-hip bias, unloading the ankle.">{}
-			]]
-			float posture_trim_hip_share = 0.5f;
+		[[
+			= gse::settings::describe<"Fraction of the posture trim also applied as a stance-hip bias, unloading the ankle.">{}
+		]]
+		float posture_trim_hip_share = 0.5f;
 
-			[[
-				= gse::settings::describe<"Counter-phase arm swing amplitude.">{}
-			]]
-			gse::angle arm_swing_amplitude = gse::radians(0.35f);
+		[[
+			= gse::settings::describe<"Counter-phase arm swing amplitude.">{}
+		]]
+		gse::angle arm_swing_amplitude = gse::radians(0.35f);
 
-			[[
-				= gse::settings::describe<"Arm hang offset from the spawn rest pose (arms spawn pre-hung).">{}
-			]]
-			gse::angle arm_hang_angle = gse::radians(0.f);
+		[[
+			= gse::settings::describe<"Arm hang offset from the spawn rest pose (arms spawn pre-hung).">{}
+		]]
+		gse::angle arm_hang_angle = gse::radians(0.f);
 
-			[[
-				= gse::settings::describe<"Shoulder fore-aft swing servo stiffness.">{}
-			]]
-			gse::angular_stiffness arm_swing_stiffness = gse::newton_meters_per_radian(40.f);
+		[[
+			= gse::settings::describe<"Shoulder fore-aft swing servo stiffness.">{}
+		]]
+		gse::angular_stiffness arm_swing_stiffness = gse::newton_meters_per_radian(40.f);
 
-			[[
-				= gse::settings::describe<"Shoulder twist servo stiffness.">{}
-			]]
-			gse::angular_stiffness arm_twist_stiffness = gse::newton_meters_per_radian(30.f);
+		[[
+			= gse::settings::describe<"Shoulder twist servo stiffness.">{}
+		]]
+		gse::angular_stiffness arm_twist_stiffness = gse::newton_meters_per_radian(30.f);
 
-			[[
-				= gse::settings::describe<"Shoulder hang servo stiffness.">{}
-			]]
-			gse::angular_stiffness arm_hang_stiffness = gse::newton_meters_per_radian(60.f);
+		[[
+			= gse::settings::describe<"Shoulder hang servo stiffness.">{}
+		]]
+		gse::angular_stiffness arm_hang_stiffness = gse::newton_meters_per_radian(60.f);
 
-			[[
-				= gse::settings::describe<"Shoulder servo torque limit.">{}
-			]]
-			gse::torque arm_max_torque = gse::newton_meters(50.f);
+		[[
+			= gse::settings::describe<"Shoulder servo torque limit.">{}
+		]]
+		gse::torque arm_max_torque = gse::newton_meters(50.f);
 
-			[[
-				= gse::settings::describe<"Grounded foot anchor velocity gain.">{}
-			]]
-			gse::inverse_length foot_anchor_gain = gse::per_meter(4.f);
+		[[
+			= gse::settings::describe<"Grounded foot anchor velocity gain.">{}
+		]]
+		gse::inverse_length foot_anchor_gain = gse::per_meter(4.f);
 
-			[[
-				= gse::settings::describe<"Maximum grounded foot anchor speed.">{}
-			]]
-			gse::velocity foot_anchor_max_speed = gse::meters_per_second(2.5f);
+		[[
+			= gse::settings::describe<"Maximum grounded foot anchor speed.">{}
+		]]
+		gse::velocity foot_anchor_max_speed = gse::meters_per_second(2.5f);
 
-			[[
-				= gse::settings::describe<"Maximum grounded foot anchor force.">{}
-			]]
-			gse::force foot_anchor_max_force = gse::newtons(700.f);
+		[[
+			= gse::settings::describe<"Maximum grounded foot anchor force.">{}
+		]]
+		gse::force foot_anchor_max_force = gse::newtons(700.f);
 
-			[[
-				= gse::settings::describe<"Maximum foot anchor force for the airborne swing foot.">{}
-			]]
-			gse::force swing_foot_anchor_max_force = gse::newtons(300.f);
+		[[
+			= gse::settings::describe<"Maximum foot anchor force for the airborne swing foot.">{}
+		]]
+		gse::force swing_foot_anchor_max_force = gse::newtons(300.f);
 
-			gse::interval_timer<float> log_timer{ gse::seconds(0.3f) };
-		};
-
-		static auto run(
-			data& d,
-			gse::read<skeleton_refs> refs,
-			gse::read<intent> intents,
-			gse::read<state> states,
-			gse::read<gait> gaits,
-			gse::read<plan> plans,
-			gse::write<leg_context> contexts,
-			gse::write<gse::physics::joint_drive_component> drives,
-			gse::write<gse::physics::motor_component> motors
-		) -> gse::async::task<>;
+		gse::interval_timer<float> log_timer{ gse::seconds(0.3f) };
 	};
+
+	[[= gse::system_run<>{}]]
+	auto run(
+		data& d,
+		gse::read<skeleton_refs> refs,
+		gse::read<intent> intents,
+		gse::read<state> states,
+		gse::read<gait> gaits,
+		gse::read<plan> plans,
+		gse::write<leg_context> contexts,
+		gse::write<gse::physics::joint_drive_component> drives,
+		gse::write<gse::physics::motor_component> motors
+	) -> gse::async::task<>;
 }
 
-namespace gs::locomotion {
+export namespace gs::locomotion {
 	struct leg_pose {
 		gse::angle hip = gse::radians(0.f);
 		gse::angle knee = gse::radians(0.f);
@@ -344,7 +343,9 @@ namespace gs::locomotion {
 		leg_pose left;
 		leg_pose right;
 	};
+}
 
+namespace gs::locomotion {
 	auto smooth_step(
 		float t
 	) -> float;
@@ -718,7 +719,7 @@ auto gs::locomotion::compute_swing(const leg which, const state& s, const gait& 
 	if (g.current == phase::plant) {
 		target_foot = foot_is_grounded(which, s) && target_matches
 			? grounded_foot_position(p.foot_target_world, d)
-			: (target_matches 
+			: (target_matches
 				? plant_contact_target(current_foot_position(which, s), p.foot_target_world, d)
 				: grounded_foot_position(current_foot_position(which, s), d));
 	}
@@ -814,7 +815,7 @@ auto gs::locomotion::write_drives(const skeleton_refs& r, const leg_joint_target
 
 auto gs::locomotion::foot_anchor_velocity(const gse::vec3<gse::position>& current, const gse::vec3<gse::position>& target, const bool include_vertical, const bool allow_upward_vertical, const leg_controller::data& d) -> gse::vec3<gse::velocity> {
 	const auto delta = target - current;
-	
+
 	auto result = gse::vec3<gse::velocity>(
 		gse::meters_per_second(1.f) * (d.foot_anchor_gain * delta.x()),
 		gse::meters_per_second(0.f),
@@ -935,7 +936,7 @@ auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs,
 
 		const float arm_phase_target = !controllers_active || g->current == phase::idle || g->current == phase::recover
 			? 0.f
-			: g->current == phase::swing || g->current == phase::plant 
+			: g->current == phase::swing || g->current == phase::plant
 				? (g->swing_leg == leg::left ? 1.f : -1.f)
 				: cctx.arm_phase;
 

@@ -36,7 +36,7 @@ namespace gse::physics {
 	) -> joint_definition;
 
 	auto clear_runtime_state(
-		system::data& d
+		data& d
 	) -> void;
 }
 
@@ -130,7 +130,7 @@ auto gse::physics::make_joint_definition(const id a, const id b, const joint_con
 	return result;
 }
 
-auto gse::physics::clear_runtime_state(system::data& d) -> void {
+auto gse::physics::clear_runtime_state(data& d) -> void {
 	d.joints.clear();
 	d.contact_cache.clear();
 	d.sleep_counters.clear();
@@ -150,21 +150,21 @@ auto gse::physics::clear_runtime_state(system::data& d) -> void {
 	d.vbd_solver.seed_previous_velocities(std::span<const vec3<velocity>>{});
 }
 
-auto gse::physics::system::create_joint(data& d, const joint_definition& def) -> joint_handle {
+auto gse::physics::create_joint(data& d, const joint_definition& def) -> joint_handle {
 	const auto handle = static_cast<joint_handle>(d.joints.size());
 	d.joints.push_back(def);
 	d.gpu_joints_dirty = true;
 	return handle;
 }
 
-auto gse::physics::system::remove_joint(data& d, const joint_handle handle) -> void {
+auto gse::physics::remove_joint(data& d, const joint_handle handle) -> void {
 	if (handle < d.joints.size()) {
 		d.joints.erase(d.joints.begin() + handle);
 		d.gpu_joints_dirty = true;
 	}
 }
 
-auto gse::physics::system::query_transform(const shared_view<system> d, const id entity_id) -> std::optional<transform_snapshot> {
+auto gse::physics::query_transform(const shared_view<data> d, const id entity_id) -> std::optional<transform_snapshot> {
 	const auto it = d.id_to_body_index.find(entity_id);
 	if (it == d.id_to_body_index.end()) {
 		return std::nullopt;
@@ -179,7 +179,7 @@ auto gse::physics::system::query_transform(const shared_view<system> d, const id
 	};
 }
 
-auto gse::physics::system::is_airborne(const shared_view<system> d, const id entity_id) -> bool {
+auto gse::physics::is_airborne(const shared_view<data> d, const id entity_id) -> bool {
 	const auto it = d.id_to_body_index.find(entity_id);
 	if (it == d.id_to_body_index.end() || it->second >= d.body_airborne.size()) {
 		return true;
@@ -187,7 +187,7 @@ auto gse::physics::system::is_airborne(const shared_view<system> d, const id ent
 	return d.body_airborne[it->second] != 0;
 }
 
-auto gse::physics::system::is_sleeping(const shared_view<system> d, const id entity_id) -> bool {
+auto gse::physics::is_sleeping(const shared_view<data> d, const id entity_id) -> bool {
 	const auto it = d.id_to_body_index.find(entity_id);
 	if (it == d.id_to_body_index.end() || it->second >= d.body_sleeping.size()) {
 		return false;
@@ -195,7 +195,7 @@ auto gse::physics::system::is_sleeping(const shared_view<system> d, const id ent
 	return d.body_sleeping[it->second] != 0;
 }
 
-auto gse::physics::system::collect_collision_objects(write<transform_component>& transform, write<collision_component>& collision) -> std::vector<collision_pair> {
+auto gse::physics::collect_collision_objects(write<transform_component>& transform, write<collision_component>& collision) -> std::vector<collision_pair> {
 	trace::scope_guard sg{ trace_id<"vbd_cpu::collect_objects">() };
 	std::vector<collision_pair> objects;
 	objects.reserve(collision.size());
@@ -220,7 +220,7 @@ auto gse::physics::system::collect_collision_objects(write<transform_component>&
 	return objects;
 }
 
-auto gse::physics::system::add_scene_contacts_to_solver(vbd::solver& solver, vbd::contact_cache& contact_cache, std::vector<collision_pair>& objects, const std::flat_map<id, std::uint32_t>& id_to_body_index, const std::flat_set<std::pair<std::uint64_t, std::uint64_t>>& jointed_pairs, const bool update_scene_state, write<transform_component>& transform, write<motion_component>& motion, write<collision_component>& collision, write<collision_result_component>* results, std::span<std::uint8_t> body_airborne) -> void {
+auto gse::physics::add_scene_contacts_to_solver(vbd::solver& solver, vbd::contact_cache& contact_cache, std::vector<collision_pair>& objects, const std::flat_map<id, std::uint32_t>& id_to_body_index, const std::flat_set<std::pair<std::uint64_t, std::uint64_t>>& jointed_pairs, const bool update_scene_state, write<transform_component>& transform, write<motion_component>& motion, write<collision_component>& collision, write<collision_result_component>* results, std::span<std::uint8_t> body_airborne) -> void {
 	trace::scope_guard sg{ trace_id<"vbd_cpu::broad_phase">() };
 
 	{
@@ -508,7 +508,7 @@ auto gse::physics::system::add_scene_contacts_to_solver(vbd::solver& solver, vbd
 	}
 }
 
-auto gse::physics::system::init(context& ctx, const std::optional<shared_view<gpu::context>> gpu_s, data& d) -> async::task<> {
+auto gse::physics::init(context& ctx, const std::optional<shared_view<gpu::context::data>> gpu_s, data& d) -> async::task<> {
 	d.vbd_solver.configure(
 		vbd::solver_config{
 			.iterations = static_cast<std::uint32_t>(d.solver_iterations),
@@ -535,7 +535,7 @@ auto gse::physics::system::init(context& ctx, const std::optional<shared_view<gp
 	co_return;
 }
 
-auto gse::physics::system::run::prepare(context& ctx, const std::optional<shared_view<gpu::context>> gpu_s, const shared_view<asset::registry> assets_s, data& d, write<joint_spec> specs, read<muscle_component> muscles, read<joint_drive_component> drives) -> async::task<> {
+auto gse::physics::prepare(context& ctx, const std::optional<shared_view<gpu::context::data>> gpu_s, const shared_view<asset::data> assets_s, data& d, write<joint_spec> specs, read<muscle_component> muscles, read<joint_drive_component> drives) -> async::task<> {
 	(void)gpu_s;
 	(void)assets_s;
 
@@ -546,7 +546,7 @@ auto gse::physics::system::run::prepare(context& ctx, const std::optional<shared
 			continue;
 		}
 		const auto handle =
-			system::create_joint(
+			create_joint(
 				d,
 				make_joint_definition(spec.entity_a, spec.entity_b, spec.config)
 			);
@@ -603,7 +603,7 @@ auto gse::physics::system::run::prepare(context& ctx, const std::optional<shared
 	co_return;
 }
 
-auto gse::physics::system::run::ensure_results(context& ctx, data& d, structural<collision_result_component> results) -> async::task<> {
+auto gse::physics::ensure_results(context& ctx, data& d, structural<collision_result_component> results) -> async::task<> {
 	(void)d;
 	for (const auto owner : ctx.drain_component_adds<collision_component>()) {
 		results.add(owner);
@@ -611,7 +611,7 @@ auto gse::physics::system::run::ensure_results(context& ctx, data& d, structural
 	co_return;
 }
 
-auto gse::physics::system::run::integrate(context& ctx, data& d, write<transform_component> transform, write<motion_component> motion, read<motor_component> motor, write<collision_component> collision, write<collision_result_component> results) -> async::task<> {
+auto gse::physics::integrate(context& ctx, data& d, write<transform_component> transform, write<motion_component> motion, read<motor_component> motor, write<collision_component> collision, write<collision_result_component> results) -> async::task<> {
 	if (!d.update_phys) {
 		co_return;
 	}
@@ -647,7 +647,7 @@ auto gse::physics::system::run::integrate(context& ctx, data& d, write<transform
 	co_return;
 }
 
-auto gse::physics::system::update_vbd_gpu(const int steps, data& d, write<transform_component>& transform, write<motion_component>& motion, read<motor_component>& motor, write<collision_component>& collision, write<collision_result_component>& results, std::span<const impulse_request> impulses, const time_t<float, seconds> dt, channel_writer& channels) -> void {
+auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_component>& transform, write<motion_component>& motion, read<motor_component>& motor, write<collision_component>& collision, write<collision_result_component>& results, std::span<const impulse_request> impulses, const time_t<float, seconds> dt, channel_writer& channels) -> void {
 	if (!d.gpu_buffers_created) {
 		return;
 	}
@@ -1038,7 +1038,7 @@ auto gse::physics::system::update_vbd_gpu(const int steps, data& d, write<transf
 	}
 }
 
-auto gse::physics::system::update_vbd(const int steps, data& d, write<transform_component>& transform, write<motion_component>& motion, read<motor_component>& motor, write<collision_component>& collision, write<collision_result_component>& results, std::span<const impulse_request> impulses) -> void {
+auto gse::physics::update_vbd(const int steps, data& d, write<transform_component>& transform, write<motion_component>& motion, read<motor_component>& motor, write<collision_component>& collision, write<collision_result_component>& results, std::span<const impulse_request> impulses) -> void {
 	trace::scope_guard sg_update{ trace_id<"vbd_cpu::update">() };
 
 	const auto const_update_time = system_clock::constant_update_time<time_t<float, seconds>>();
@@ -1322,7 +1322,7 @@ auto gse::physics::system::update_vbd(const int steps, data& d, write<transform_
 	}
 }
 
-auto gse::physics::system::frame(context& ctx, const std::optional<shared_view<gpu::context>> gpu_s, data& d) -> async::task<> {
+auto gse::physics::frame(context& ctx, const std::optional<shared_view<gpu::context::data>> gpu_s, data& d) -> async::task<> {
 	if (!gpu_s || !d.use_gpu_solver) {
 		co_return;
 	}

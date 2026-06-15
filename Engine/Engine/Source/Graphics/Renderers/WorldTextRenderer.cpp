@@ -76,7 +76,7 @@ namespace gse::renderer::world_text {
 	) -> void;
 
 	auto ensure_vertex_capacity(
-		system::data& d,
+		data& d,
 		gpu::device& device,
 		std::size_t frame_index,
 		std::size_t required
@@ -127,7 +127,7 @@ auto gse::renderer::world_text::build_labels_for_axis(std::vector<world_text_ver
 	}
 }
 
-auto gse::renderer::world_text::ensure_vertex_capacity(system::data& d, gpu::device& device, const std::size_t frame_index, const std::size_t required) -> void {
+auto gse::renderer::world_text::ensure_vertex_capacity(data& d, gpu::device& device, const std::size_t frame_index, const std::size_t required) -> void {
 	auto& cap = d.vertex_capacities[frame_index];
 	auto& buf = d.vertex_buffers[frame_index];
 	if (required <= cap && buf.valid()) {
@@ -150,7 +150,7 @@ auto gse::renderer::world_text::ensure_vertex_capacity(system::data& d, gpu::dev
 	);
 }
 
-auto gse::renderer::world_text::system::init(context& ctx, const shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
+auto gse::renderer::world_text::init(context& ctx, const shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
 	d.pipeline = gpu::build_graphics_program(*gpu_s.device, entry::pod);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
@@ -169,7 +169,7 @@ auto gse::renderer::world_text::system::init(context& ctx, const shared_view<gpu
 	return {};
 }
 
-auto gse::renderer::world_text::system::frame(const context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state, shared_view<gui::system> gui_d, shared_view<sdf_grid::system> grid_d) -> async::task<> {
+auto gse::renderer::world_text::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, shared_view<camera::data> cam_state, shared_view<gui::data> gui_d, shared_view<sdf_grid::data> grid_d) -> async::task<> {
 	if (!grid_d.enabled || !grid_d.show_labels) {
 		co_return;
 	}
@@ -225,11 +225,11 @@ auto gse::renderer::world_text::system::frame(const context& ctx, shared_view<gp
 	const auto ext = gpu_s.render_graph->extent();
 	const auto vertex_count = static_cast<std::uint32_t>(vertices.size());
 
-	auto rec = co_await gpu::pass<system>(ctx)
+	auto rec = co_await gpu::pass<^^gse::renderer::world_text::frame>(ctx)
 		.pipeline(d.pipeline)
 		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
 		.depth(gpu::load_depth())
-		.after<sdf_grid::system>();
+		.after<^^sdf_grid::frame>();
 
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);

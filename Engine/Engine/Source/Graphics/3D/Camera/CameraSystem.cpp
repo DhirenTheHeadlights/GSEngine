@@ -17,21 +17,21 @@ import gse.os;
 import gse.assets;
 import gse.gpu;
 
-auto gse::camera::system::position(const data& d) -> vec3<gse::position> {
+auto gse::camera::position(const data& d) -> vec3<gse::position> {
 	return d.current.position;
 }
 
-auto gse::camera::system::orientation(const data& d) -> quat {
+auto gse::camera::orientation(const data& d) -> quat {
 	return d.current.orientation;
 }
 
-auto gse::camera::system::direction_relative_to_origin(const data& d, const vec3f& direction) -> vec3f {
+auto gse::camera::direction_relative_to_origin(const data& d, const vec3f& direction) -> vec3f {
 	const auto u = d.current.orientation.imaginary_part();
 	const auto t = 2.f * cross(u, direction);
 	return direction + d.current.orientation.s() * t + cross(u, t);
 }
 
-auto gse::camera::system::interpolate_target(const target& from, const target& to, const float t) -> target {
+auto gse::camera::interpolate_target(const target& from, const target& to, const float t) -> target {
 	return {
 		.position = lerp(from.position, to.position, t),
 		.orientation = slerp(from.orientation, to.orientation, t),
@@ -41,13 +41,13 @@ auto gse::camera::system::interpolate_target(const target& from, const target& t
 	};
 }
 
-auto gse::camera::system::compute_view_matrix(const target& t) -> view_matrix {
+auto gse::camera::compute_view_matrix(const target& t) -> view_matrix {
 	const auto rotation = mat4f(conjugate(t.orientation));
 	const mat4f translation = translate(mat4f(1.0f), -(t.position - vec3<gse::position>{}));
 	return spatial_matrix(rotation * translation);
 }
 
-auto gse::camera::system::compute_projection_matrix(const target& t, const vec2f& viewport) -> projection_matrix {
+auto gse::camera::compute_projection_matrix(const target& t, const vec2f& viewport) -> projection_matrix {
 	if (viewport.x() <= 0.f || viewport.y() <= 0.f) {
 		return perspective(t.fov, 1.f, t.near_plane, t.far_plane);
 	}
@@ -75,7 +75,7 @@ namespace gse::camera {
 	}
 }
 
-auto gse::camera::system::init(data& d) -> async::task<> {
+auto gse::camera::init(data& d) -> async::task<> {
 	d.view_matrix = compute_view_matrix(d.current);
 	d.projection_matrix = compute_projection_matrix(d.current, d.viewport);
 	d.jitter_ndc = vec2f{ 0.f, 0.f };
@@ -85,7 +85,7 @@ auto gse::camera::system::init(data& d) -> async::task<> {
 	return {};
 }
 
-auto gse::camera::system::run(context& ctx, data& d, read<follow_component> cameras) -> async::task<> {
+auto gse::camera::run(context& ctx, data& d, read<follow_component> cameras) -> async::task<> {
 	const time dt = system_clock::dt();
 
 	for (const auto& [focus] : ctx.read_channel<ui_focus_request>()) {

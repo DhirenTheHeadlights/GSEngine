@@ -1,4 +1,4 @@
-﻿export module gs:gait_scheduler;
+export module gs:gait_scheduler;
 
 import std;
 import gse;
@@ -19,152 +19,153 @@ export namespace gs::locomotion {
 		gse::velocity fall_speed_threshold = gse::meters_per_second(3.0f);
 		gse::displacement fall_capture_threshold = gse::meters(0.9f);
 	};
+}
 
-	struct gait_scheduler {
-		struct [[= gse::settings::category<"Gait">{}]] data {
-			[[
-				= gse::settings::describe<"Walking weight-shift phase duration.">{}
-			]]
-			gse::time weight_shift_duration = gse::seconds(0.10f);
+export namespace gs::locomotion::gait_scheduler {
+	struct [[= gse::system_state<"Gait">{}]] data {
+		[[
+			= gse::settings::describe<"Walking weight-shift phase duration.">{}
+		]]
+		gse::time weight_shift_duration = gse::seconds(0.10f);
 
-			[[
-				= gse::settings::describe<"Walking swing phase duration.">{}
-			]]
-			gse::time swing_duration = gse::seconds(0.38f);
+		[[
+			= gse::settings::describe<"Walking swing phase duration.">{}
+		]]
+		gse::time swing_duration = gse::seconds(0.38f);
 
-			[[
-				= gse::settings::describe<"Walking plant phase duration.">{}
-			]]
-			gse::time plant_duration = gse::seconds(0.10f);
+		[[
+			= gse::settings::describe<"Walking plant phase duration.">{}
+		]]
+		gse::time plant_duration = gse::seconds(0.10f);
 
-			[[
-				= gse::settings::describe<"Swing progress before contact may end the swing.">{}
-			]]
-			float swing_contact_progress = 0.55f;
+		[[
+			= gse::settings::describe<"Swing progress before contact may end the swing.">{}
+		]]
+		float swing_contact_progress = 0.55f;
 
-			[[
-				= gse::settings::describe<"Maximum horizontal foot-target error for accepting swing contact.">{}
-			]]
-			gse::displacement swing_target_tolerance = gse::meters(0.10f);
+		[[
+			= gse::settings::describe<"Maximum horizontal foot-target error for accepting swing contact.">{}
+		]]
+		gse::displacement swing_target_tolerance = gse::meters(0.10f);
 
-			[[
-				= gse::settings::describe<"Maximum time a swing may wait for the foot target.">{}
-			]]
-			gse::time swing_timeout = gse::seconds(0.52f);
+		[[
+			= gse::settings::describe<"Maximum time a swing may wait for the foot target.">{}
+		]]
+		gse::time swing_timeout = gse::seconds(0.52f);
 
-			[[
-				= gse::settings::describe<"Swing progress before unstable posture may force planting.">{}
-			]]
-			float swing_drop_progress = 0.90f;
+		[[
+			= gse::settings::describe<"Swing progress before unstable posture may force planting.">{}
+		]]
+		float swing_drop_progress = 0.90f;
 
-			[[
-				= gse::settings::describe<"Forward capture limit for forcing a swing to plant.">{}
-			]]
-			gse::displacement swing_drop_capture_forward = gse::meters(0.55f);
+		[[
+			= gse::settings::describe<"Forward capture limit for forcing a swing to plant.">{}
+		]]
+		gse::displacement swing_drop_capture_forward = gse::meters(0.55f);
 
-			[[
-				= gse::settings::describe<"Lateral capture limit for forcing a swing to plant.">{}
-			]]
-			gse::displacement swing_drop_capture_right = gse::meters(0.50f);
+		[[
+			= gse::settings::describe<"Lateral capture limit for forcing a swing to plant.">{}
+		]]
+		gse::displacement swing_drop_capture_right = gse::meters(0.50f);
 
-			[[
-				= gse::settings::describe<"Capture-point magnitude that triggers a step from idle.">{}
-			]]
-			gse::displacement capture_step_threshold = gse::meters(0.06f);
+		[[
+			= gse::settings::describe<"Capture-point magnitude that triggers a step from idle.">{}
+		]]
+		gse::displacement capture_step_threshold = gse::meters(0.06f);
 
-			[[
-				= gse::settings::describe<"Heading error that triggers turn-in-place stepping.">{}
-			]]
-			gse::angle heading_step_threshold = gse::radians(0.45f);
+		[[
+			= gse::settings::describe<"Heading error that triggers turn-in-place stepping.">{}
+		]]
+		gse::angle heading_step_threshold = gse::radians(0.45f);
 
-			[[
-				= gse::settings::describe<"Pelvis Y below which the character is declared fallen.">{}
-			]]
-			gse::position fall_pelvis_y_threshold = gse::meters(0.45f);
+		[[
+			= gse::settings::describe<"Pelvis Y below which the character is declared fallen.">{}
+		]]
+		gse::position fall_pelvis_y_threshold = gse::meters(0.45f);
 
-			[[
-				= gse::settings::describe<"Minimum pelvis Y for releasing a swing from weight shift.">{}
-			]]
-			gse::position swing_pelvis_y_threshold = gse::meters(0.84f);
+		[[
+			= gse::settings::describe<"Minimum pelvis Y for releasing a swing from weight shift.">{}
+		]]
+		gse::position swing_pelvis_y_threshold = gse::meters(0.84f);
 
-			[[
-				= gse::settings::describe<"Minimum vertical pelvis velocity for releasing a swing from weight shift.">{}
-			]]
-			gse::velocity swing_vertical_velocity_limit = gse::meters_per_second(-0.35f);
+		[[
+			= gse::settings::describe<"Minimum vertical pelvis velocity for releasing a swing from weight shift.">{}
+		]]
+		gse::velocity swing_vertical_velocity_limit = gse::meters_per_second(-0.35f);
 
-			[[
-				= gse::settings::describe<"Minimum pelvis Y for releasing a capture recovery swing.">{}
-			]]
-			gse::position recovery_swing_pelvis_y_threshold = gse::meters(0.74f);
+		[[
+			= gse::settings::describe<"Minimum pelvis Y for releasing a capture recovery swing.">{}
+		]]
+		gse::position recovery_swing_pelvis_y_threshold = gse::meters(0.74f);
 
-			[[
-				= gse::settings::describe<"Minimum vertical pelvis velocity for releasing a capture recovery swing.">{}
-			]]
-			gse::velocity recovery_swing_vertical_velocity_limit = gse::meters_per_second(-0.70f);
+		[[
+			= gse::settings::describe<"Minimum vertical pelvis velocity for releasing a capture recovery swing.">{}
+		]]
+		gse::velocity recovery_swing_vertical_velocity_limit = gse::meters_per_second(-0.70f);
 
-			[[
-				= gse::settings::describe<"Sprint-blended minimum pelvis Y for releasing a swing (the running pelvis dips through flight; the walk gate jams the run).">{}
-			]]
-			gse::position sprint_swing_pelvis_y_threshold = gse::meters(0.72f);
+		[[
+			= gse::settings::describe<"Sprint-blended minimum pelvis Y for releasing a swing (the running pelvis dips through flight; the walk gate jams the run).">{}
+		]]
+		gse::position sprint_swing_pelvis_y_threshold = gse::meters(0.72f);
 
-			[[
-				= gse::settings::describe<"Sprint-blended minimum vertical pelvis velocity for releasing a swing (a run landing descends fast).">{}
-			]]
-			gse::velocity sprint_swing_vertical_velocity_limit = gse::meters_per_second(-1.60f);
+		[[
+			= gse::settings::describe<"Sprint-blended minimum vertical pelvis velocity for releasing a swing (a run landing descends fast).">{}
+		]]
+		gse::velocity sprint_swing_vertical_velocity_limit = gse::meters_per_second(-1.60f);
 
-			[[
-				= gse::settings::describe<"Sprint-blended minimum pelvis Y for releasing a capture recovery swing.">{}
-			]]
-			gse::position sprint_recovery_swing_pelvis_y_threshold = gse::meters(0.62f);
+		[[
+			= gse::settings::describe<"Sprint-blended minimum pelvis Y for releasing a capture recovery swing.">{}
+		]]
+		gse::position sprint_recovery_swing_pelvis_y_threshold = gse::meters(0.62f);
 
-			[[
-				= gse::settings::describe<"Sprint-blended minimum vertical pelvis velocity for releasing a capture recovery swing.">{}
-			]]
-			gse::velocity sprint_recovery_swing_vertical_velocity_limit = gse::meters_per_second(-1.90f);
+		[[
+			= gse::settings::describe<"Sprint-blended minimum vertical pelvis velocity for releasing a capture recovery swing.">{}
+		]]
+		gse::velocity sprint_recovery_swing_vertical_velocity_limit = gse::meters_per_second(-1.90f);
 
-			[[
-				= gse::settings::describe<"Forward capture limit for allowing a swing from weight shift.">{}
-			]]
-			gse::displacement swing_capture_forward_limit = gse::meters(0.45f);
+		[[
+			= gse::settings::describe<"Forward capture limit for allowing a swing from weight shift.">{}
+		]]
+		gse::displacement swing_capture_forward_limit = gse::meters(0.45f);
 
-			[[
-				= gse::settings::describe<"Backward capture limit for allowing a swing from weight shift.">{}
-			]]
-			gse::displacement swing_capture_backward_limit = gse::meters(0.30f);
+		[[
+			= gse::settings::describe<"Backward capture limit for allowing a swing from weight shift.">{}
+		]]
+		gse::displacement swing_capture_backward_limit = gse::meters(0.30f);
 
-			[[
-				= gse::settings::describe<"Lateral capture limit for allowing a swing from weight shift.">{}
-			]]
-			gse::displacement swing_capture_right_limit = gse::meters(0.32f);
+		[[
+			= gse::settings::describe<"Lateral capture limit for allowing a swing from weight shift.">{}
+		]]
+		gse::displacement swing_capture_right_limit = gse::meters(0.32f);
 
-			[[
-				= gse::settings::describe<"Maximum time the recovery settle phase may hold support before forcing a step.">{}
-			]]
-			gse::time recovery_duration = gse::seconds(0.25f);
+		[[
+			= gse::settings::describe<"Maximum time the recovery settle phase may hold support before forcing a step.">{}
+		]]
+		gse::time recovery_duration = gse::seconds(0.25f);
 
-			[[
-				= gse::settings::describe<"Forward capture magnitude at which recovery releases back to weight shift.">{}
-			]]
-			gse::displacement recovery_release_capture_forward = gse::meters(0.35f);
+		[[
+			= gse::settings::describe<"Forward capture magnitude at which recovery releases back to weight shift.">{}
+		]]
+		gse::displacement recovery_release_capture_forward = gse::meters(0.35f);
 
-			[[
-				= gse::settings::describe<"Lateral capture magnitude at which recovery releases back to weight shift.">{}
-			]]
-			gse::displacement recovery_release_capture_right = gse::meters(0.25f);
+		[[
+			= gse::settings::describe<"Lateral capture magnitude at which recovery releases back to weight shift.">{}
+		]]
+		gse::displacement recovery_release_capture_right = gse::meters(0.25f);
 
-			gse::interval_timer<float> log_timer{ gse::seconds(0.3f) };
-		};
-
-		static auto run(
-			data& d,
-			gse::read<skeleton_refs> refs,
-			gse::read<intent> intents,
-			gse::read<state> states,
-			gse::read<plan> plans,
-			gse::write<gait> gaits,
-			gse::write<gse::physics::motion_component> motions
-		) -> gse::async::task<>;
+		gse::interval_timer<float> log_timer{ gse::seconds(0.3f) };
 	};
+
+	[[= gse::system_run<>{}]]
+	auto run(
+		data& d,
+		gse::read<skeleton_refs> refs,
+		gse::read<intent> intents,
+		gse::read<state> states,
+		gse::read<plan> plans,
+		gse::write<gait> gaits,
+		gse::write<gse::physics::motion_component> motions
+	) -> gse::async::task<>;
 }
 
 namespace gs::locomotion {
@@ -531,7 +532,7 @@ auto gs::locomotion::gait_scheduler::run(data& d, gse::read<skeleton_refs> refs,
 				const bool posture_ok = posture_allows_recovery_swing(*s, d, sprint_blend);
 				const bool released = recovery_release_ready(*s, d) && posture_ok && s->double_support;
 				const bool timed_out = g.phase_elapsed >= g.phase_duration;
-				
+
 				if (released) {
 					g.swing_leg = capture_recovery_leg(*s, d, sprint_blend > 0.5f ? other(g.swing_leg) : g.swing_leg);
 					begin_phase(g, phase::weight_shift, cfg.weight_shift_duration, "recovered", owner);

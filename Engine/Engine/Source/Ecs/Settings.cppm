@@ -8,16 +8,25 @@ import gse.meta;
 import :registries;
 
 export namespace gse::settings {
-	template <typename S>
-	struct change_request {
-		std::function<void(typename S::data&)> apply;
+	template <typename State>
+	struct annotated_change_request {
+		std::function<void(State&)> apply;
 	};
 
-	template <typename S>
-	struct changed {
-		typename S::data old_value;
-		typename S::data new_value;
+	template <typename State>
+	struct annotated_changed {
+		State old_value;
+		State new_value;
 	};
+
+	using draw_page_thunk = void (
+			*
+	)(
+		void* builder,
+		void* panel_state,
+		void* channels,
+		const void* entry
+	);
 
 	using write_settings_thunk = void (
 			*
@@ -98,6 +107,7 @@ export namespace gse::settings {
 		write_settings_thunk write = nullptr;
 		read_settings_thunk read = nullptr;
 		reset_to_defaults_thunk reset_to_defaults = nullptr;
+		draw_page_thunk draw_page = nullptr;
 	};
 
 	template <typename T>
@@ -153,37 +163,9 @@ export namespace gse::settings {
 	template <typename F>
 	consteval auto field_widget_of() -> settings_field_widget;
 
-	template <typename S, std::meta::info M>
-	auto format_settings_field(
-		const void* settings_ptr
-	) -> std::string;
-
-	template <typename S, std::meta::info M>
-	auto settings_field_options(
-		const void* settings_ptr
-	) -> std::vector<std::string>;
-
-	template <typename S, std::meta::info M>
-	auto push_settings_field_change(
-		void* channel_writer_ptr,
-		std::string_view raw
-	) -> bool;
-
-	template <typename S, std::meta::info M>
-	auto make_settings_field() -> settings_field;
-
-	template <typename S>
-	auto collect_settings_fields() -> std::vector<settings_field>;
-
-	template <typename S>
-	auto reset_to_defaults_for(
-		void* channel_writer_ptr
-	) -> void;
-
-	template <typename S>
-	auto build_settings_record(
-		typename S::data& obj
-	) -> register_settings_type;
+	consteval auto make_range_field_from_info(
+		std::meta::info range_type
+	) -> settings_field_range;
 }
 
 template <typename T>
@@ -313,144 +295,33 @@ consteval auto gse::settings::field_widget_of() -> settings_field_widget {
 	}
 }
 
-template <typename S, std::meta::info M>
-auto gse::settings::format_settings_field(const void* settings_ptr) -> std::string {
-	using data_t = typename S::data;
-	using F = [:std::meta::type_of(M):];
-	const auto& field = static_cast<const data_t*>(settings_ptr)->[:M:];
-	if constexpr (is_choice_v<F>) {
-		return std::format("{}", field.value);
-	}
-	else {
-		return std::format("{}", field);
-	}
-}
-
-template <typename S, std::meta::info M>
-auto gse::settings::settings_field_options(const void* settings_ptr) -> std::vector<std::string> {
-	using data_t = typename S::data;
-	using F = [:std::meta::type_of(M):];
-	if constexpr (is_choice_v<F>) {
-		return static_cast<const data_t*>(settings_ptr)->[:M:].options;
-	}
-	else {
+consteval auto gse::settings::make_range_field_from_info(const std::meta::info range_type) -> settings_field_range {
+	const auto targs = std::meta::template_arguments_of(range_type);
+	if (targs.size() < 2) {
 		return {};
 	}
+	const auto value_type = std::meta::dealias(std::meta::type_of(targs[0]));
+	if (value_type == ^^int) {
+		return {
+			.enabled = true,
+			.min = static_cast<double>(std::meta::extract<int>(targs[0])),
+			.max = static_cast<double>(std::meta::extract<int>(targs[1])),
+		};
+	}
+	if (value_type == ^^float) {
+		return {
+			.enabled = true,
+			.min = static_cast<double>(std::meta::extract<float>(targs[0])),
+			.max = static_cast<double>(std::meta::extract<float>(targs[1])),
+		};
+	}
+	if (value_type == ^^double) {
+		return {
+			.enabled = true,
+			.min = std::meta::extract<double>(targs[0]),
+			.max = std::meta::extract<double>(targs[1]),
+		};
+	}
+	return {};
 }
 
-template <typename S, std::meta::info M>
-auto gse::settings::push_settings_field_change(void* channel_writer_ptr, const std::string_view raw) -> bool {
-	using data_t = typename S::data;
-	using F = [:std::meta::type_of(M):];
-	auto& channels = *static_cast<channel_writer*>(channel_writer_ptr);
-	if constexpr (is_choice_v<F>) {
-		typename F::value_type parsed{};
-		if (!gse::parse(raw, parsed)) {
-			return false;
-		}
-		channels.push<change_request<S>>({
-			.apply = [parsed](data_t& d) {
-				d.[:M:].value = parsed;
-			},
-		});
-		return true;
-	}
-	else {
-		F parsed{};
-		if (!gse::parse(raw, parsed)) {
-			return false;
-		}
-		channels.push<change_request<S>>({
-			.apply = [parsed = std::move(parsed)](data_t& d) {
-				d.[:M:] = parsed;
-			},
-		});
-		return true;
-	}
-}
-
-template <typename S, std::meta::info M>
-auto gse::settings::make_settings_field() -> settings_field {
-	using F = [:std::meta::type_of(M):];
-	using describe_t = [:meta::find_describe(M):];
-	settings_field field{
-		.key = std::string(meta::member_name(M)),
-		.description = std::string(describe_t::value),
-		.widget = field_widget_of<F>(),
-		.format = &format_settings_field<S, M>,
-		.push_change = &push_settings_field_change<S, M>,
-		.hot_reloadable = has_annotation<settings::hot_reloadable_tag>(M),
-		.restart_required = has_annotation<settings::restart_required>(M),
-	};
-	if constexpr (is_choice_v<F>) {
-		field.runtime_options = &settings_field_options<S, M>;
-	}
-	if constexpr (std::is_enum_v<F>) {
-		template for (constexpr auto e : std::define_static_array(std::meta::enumerators_of(^^F))) {
-			field.options.emplace_back(std::meta::identifier_of(e));
-		}
-	}
-	if constexpr (constexpr auto range_t = meta::find_range(M); range_t != std::meta::info{}) {
-		using R = [:range_t:];
-		if constexpr (std::is_arithmetic_v<F>) {
-			field.range = {
-				.enabled = true,
-				.min = static_cast<double>(R::min),
-				.max = static_cast<double>(R::max),
-			};
-		}
-	}
-	return field;
-}
-
-template <typename S>
-auto gse::settings::collect_settings_fields() -> std::vector<settings_field> {
-	using data_t = typename S::data;
-	std::vector<settings_field> out;
-	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^data_t, std::meta::access_context::unchecked()))) {
-		if constexpr (meta::find_describe(m) != std::meta::info{}) {
-			using F = [:std::meta::type_of(m):];
-			if constexpr (!(std::is_class_v<F> && !is_scalar_settings_field<F>) && field_widget_of<F>() != settings_field_widget::unsupported) {
-				out.push_back(make_settings_field<S, m>());
-			}
-		}
-	}
-	return out;
-}
-
-template <typename S>
-auto gse::settings::reset_to_defaults_for(void* channel_writer_ptr) -> void {
-	using data_t = typename S::data;
-	auto& channels = *static_cast<channel_writer*>(channel_writer_ptr);
-	channels.push<change_request<S>>({
-		.apply = [](data_t& d) {
-			data_t defaults{};
-			template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^data_t, std::meta::access_context::unchecked()))) {
-				if constexpr (meta::find_describe(m) != std::meta::info{}) {
-					using F = [:std::meta::type_of(m):];
-					if constexpr (is_choice_v<F>) {
-						d.[:m:].value = defaults.[:m:].value;
-					}
-					else {
-						d.[:m:] = defaults.[:m:];
-					}
-				}
-			}
-		},
-	});
-}
-
-template <typename S>
-auto gse::settings::build_settings_record(typename S::data& obj) -> register_settings_type {
-	using data_t = typename S::data;
-	return {
-		.category = std::string(category_of<data_t>()),
-		.type_id = id_of<data_t>(),
-		.settings_ptr = &obj,
-		.keys = collect_settings_keys<data_t>(),
-		.fields = collect_settings_fields<S>(),
-		.write = &write_settings_for<data_t>,
-		.read = &read_settings_for<data_t>,
-		.reset_to_defaults = &reset_to_defaults_for<S>,
-	};
-}

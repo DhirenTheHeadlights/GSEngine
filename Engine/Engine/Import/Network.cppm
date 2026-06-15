@@ -83,7 +83,7 @@ export namespace gse::network {
 		std::function<void(client&)> action;
 	};
 
-	struct data {
+	struct [[= gse::system_state<"Network">{}]] data {
 		[[= gse::shared]] client::state connection_state = client::state::disconnected;
 		[[= gse::shared]] std::vector<discovery_result> available_servers;
 		[[= gse::shared]] std::uint8_t connected_players = 0;
@@ -96,34 +96,28 @@ export namespace gse::network {
 	};
 
 	template <typename... Components>
-	struct system {
-		using data = network::data;
+	[[= gse::system_run<>{}]]
+	auto run(
+		context& ctx,
+		shared_view<asset::data> assets_d,
+		data& d,
+		shared_view<actions::data> actions_d,
+		entities ents,
+		structural<Components>... auths
+	) -> async::task<>;
 
-		static auto run(
-			context& ctx,
-			shared_view<asset::registry> assets_d,
-			data& d,
-			shared_view<actions::system> actions_d,
-			entities ents,
-			structural<Components>... auths
-		) -> async::task<>;
-
-		static auto shutdown(
-			data& d
-		) -> void;
-	};
-
-	template <typename Pack>
-	using system_for = typename Pack::template apply<system>;
+	[[= gse::system_shutdown{}]]
+	auto shutdown(
+		data& d
+	) -> void;
 }
 
-template <typename... Components>
-auto gse::network::system<Components...>::shutdown(data& d) -> void {
+auto gse::network::shutdown(data& d) -> void {
 	d.client_ptr.reset();
 }
 
 template <typename... Components>
-auto gse::network::system<Components...>::run(context& ctx, const shared_view<asset::registry> assets_d, data& d, const shared_view<actions::system> actions_d, entities ents, structural<Components>... auths) -> async::task<> {
+auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, data& d, const shared_view<actions::data> actions_d, entities ents, structural<Components>... auths) -> async::task<> {
 	((void)auths, ...);
 	(ctx.template ensure_storage<Components>(), ...);
 
@@ -290,9 +284,9 @@ auto gse::network::system<Components...>::run(context& ctx, const shared_view<as
 
 		if (d.connection_state == client::state::connected) {
 			d.client_ptr->push_input(
-				actions::system::current_state(actions_d),
-				actions::system::axis1_ids(actions_d),
-				actions::system::axis2_ids(actions_d),
+				actions::current_state(actions_d),
+				actions::axis1_ids(actions_d),
+				actions::axis2_ids(actions_d),
 				d.camera_yaw
 			);
 		}

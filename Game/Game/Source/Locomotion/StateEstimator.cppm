@@ -5,41 +5,40 @@ import gse;
 
 import :locomotion_types;
 
-export namespace gs::locomotion {
-	struct state_estimator {
-		struct [[= gse::settings::category<"State Estimator">{}]] data {
-			[[
-				= gse::settings::
-					describe<"Y height of the ground plane (foot AABB min Y below this counts as grounded).">{}
-			]]
-			gse::position ground_y = gse::meters(0.f);
+export namespace gs::locomotion::state_estimator {
+	struct [[= gse::system_state<"State Estimator">{}]] data {
+		[[
+			= gse::settings::
+				describe<"Y height of the ground plane (foot AABB min Y below this counts as grounded).">{}
+		]]
+		gse::position ground_y = gse::meters(0.f);
 
-			[[
-				= gse::settings::describe<"Vertical tolerance for foot-ground contact.">{}
-			]]
-			gse::displacement ground_tolerance = gse::meters(0.02f);
+		[[
+			= gse::settings::describe<"Vertical tolerance for foot-ground contact.">{}
+		]]
+		gse::displacement ground_tolerance = gse::meters(0.02f);
 
-			gse::interval_timer<float> log_timer{ gse::seconds(0.5f) };
+		gse::interval_timer<float> log_timer{ gse::seconds(0.5f) };
 
-			gse::angle prev_hip_l;
-			gse::angle prev_knee_l;
-			gse::angle prev_ankle_l;
-			gse::angle prev_hip_r;
-			gse::angle prev_knee_r;
-			gse::angle prev_ankle_r;
-			bool prev_angles_valid = false;
-		};
-
-		static auto run(
-			data& d,
-			gse::read<skeleton_refs> refs,
-			gse::read<gse::physics::transform_component> transforms,
-			gse::read<gse::physics::motion_component> motions,
-			gse::read<gse::physics::collision_component> collisions,
-			gse::read<gait> gaits,
-			gse::write<state> states
-		) -> gse::async::task<>;
+		gse::angle prev_hip_l;
+		gse::angle prev_knee_l;
+		gse::angle prev_ankle_l;
+		gse::angle prev_hip_r;
+		gse::angle prev_knee_r;
+		gse::angle prev_ankle_r;
+		bool prev_angles_valid = false;
 	};
+
+	[[= gse::system_run<>{}]]
+	auto run(
+		data& d,
+		gse::read<skeleton_refs> refs,
+		gse::read<gse::physics::transform_component> transforms,
+		gse::read<gse::physics::motion_component> motions,
+		gse::read<gse::physics::collision_component> collisions,
+		gse::read<gait> gaits,
+		gse::write<state> states
+	) -> gse::async::task<>;
 }
 
 namespace gs::locomotion {

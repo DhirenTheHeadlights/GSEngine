@@ -16,27 +16,26 @@ import :settings;
 import :types;
 import :gui;
 
-export namespace gse::gui {
-	struct popout_system {
-		struct popout_entry {
-			std::string menu_name;
-			id menu_id;
-			const gse::settings::register_settings_type* entry = nullptr;
-			bool active = true;
-		};
-
-		struct data {
-			std::unordered_map<std::string, popout_entry> popouts;
-			gse::settings::panel_state panel_state;
-		};
-
-		static auto run(
-			gse::context& ctx,
-			data& d,
-			gse::shared_view<system> gui_d,
-			const gse::save::registry& save_reg
-		) -> gse::async::task<>;
+export namespace gse::gui::popout_system {
+	struct popout_entry {
+		std::string menu_name;
+		id menu_id;
+		const gse::settings::register_settings_type* entry = nullptr;
+		bool active = true;
 	};
+
+	struct [[= gse::system_state<"Popouts">{}]] data {
+		std::unordered_map<std::string, popout_entry> popouts;
+		gse::settings::panel_state panel_state;
+	};
+
+	[[= gse::system_run<>{}]]
+	auto run(
+		gse::context& ctx,
+		data& d,
+		gse::shared_view<gse::gui::data> gui_d,
+		const gse::save::registry& save_reg
+	) -> gse::async::task<>;
 }
 
 namespace gse::gui {
@@ -95,7 +94,7 @@ auto gse::gui::activate_popout(popout_system::data& d, const gse::save::registry
 	return &it->second;
 }
 
-auto gse::gui::popout_system::run(gse::context& ctx, data& d, const gse::shared_view<system> gui_d, const gse::save::registry& save_reg) -> gse::async::task<> {
+auto gse::gui::popout_system::run(gse::context& ctx, data& d, const gse::shared_view<gui::data> gui_d, const gse::save::registry& save_reg) -> gse::async::task<> {
 		for (const auto& req : ctx.read_channel<popout_toggle>()) {
 			auto it = d.popouts.find(req.category);
 			const bool was_active = it != d.popouts.end() && it->second.active;
@@ -106,8 +105,8 @@ auto gse::gui::popout_system::run(gse::context& ctx, data& d, const gse::shared_
 			else {
 				activate_popout(d, save_reg, req.category);
 				if (!gui_d.show_dev_overlays) {
-					ctx.channels.push<gse::settings::change_request<system>>({
-						.apply = [](system::data& s) {
+					ctx.channels.push<gse::settings::annotated_change_request<gui::data>>({
+						.apply = [](gui::data& s) {
 							s.show_dev_overlays = true;
 						},
 					});

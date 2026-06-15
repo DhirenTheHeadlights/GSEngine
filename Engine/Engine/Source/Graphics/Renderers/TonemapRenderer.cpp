@@ -57,12 +57,12 @@ namespace gse::renderer::tonemap {
 	>;
 
 	auto rebind_views(
-		shared_view<gpu::context> gpu_s,
-		system::data& d
+		shared_view<gpu::context::data> gpu_s,
+		data& d
 	) -> void;
 }
 
-auto gse::renderer::tonemap::rebind_views(const shared_view<gpu::context> gpu_s, system::data& d) -> void {
+auto gse::renderer::tonemap::rebind_views(const shared_view<gpu::context::data> gpu_s, data& d) -> void {
 	auto& hdr = gpu_s.render_graph->framebuffer_image<targets::post_taa_color>();
 	if (hdr.handle()) {
 		if (!d.hdr_view.valid()) {
@@ -79,7 +79,7 @@ auto gse::renderer::tonemap::rebind_views(const shared_view<gpu::context> gpu_s,
 	}
 }
 
-auto gse::renderer::tonemap::system::init(context& ctx, const shared_view<gpu::context> gpu_s, const shared_view<bloom::system> bloom_state, data& d) -> async::task<> {
+auto gse::renderer::tonemap::init(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<bloom::data> bloom_state, data& d) -> async::task<> {
 	d.pipeline = gpu::build_graphics_program(*gpu_s.device, entry::pod);
 
 	d.sampler = gpu_s.device->register_sampler(
@@ -104,7 +104,7 @@ auto gse::renderer::tonemap::system::init(context& ctx, const shared_view<gpu::c
 	return {};
 }
 
-auto gse::renderer::tonemap::system::frame(const context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<bloom::system> bloom_state) -> async::task<> {
+auto gse::renderer::tonemap::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, shared_view<bloom::data> bloom_state) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -120,10 +120,10 @@ auto gse::renderer::tonemap::system::frame(const context& ctx, shared_view<gpu::
 
 	const auto bloom_slot = bloom_active ? bloom_state.mips_up[0].sampled_slot() : d.hdr_view.slot();
 
-	auto rec = co_await gpu::pass<system>(ctx)
+	auto rec = co_await gpu::pass<^^gse::renderer::tonemap::frame>(ctx)
 		.pipeline(d.pipeline)
 		.color(gpu::load_color())
-		.after<forward::system, physics_debug::system, sdf_grid::system, world_text::system, bloom::downsample_pass, bloom::upsample_pass, depth_prepass::system, taa::system>();
+		.after<^^forward::frame, ^^physics_debug::frame, ^^sdf_grid::frame, ^^world_text::frame, ^^bloom::downsample_pass, ^^bloom::upsample_pass, ^^depth_prepass::frame, ^^taa::frame>();
 
 	rec.sample_image(hdr, gpu::pipeline_stage_flag::fragment_shader);
 	if (bloom_active) {

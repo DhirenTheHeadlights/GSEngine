@@ -161,16 +161,16 @@ namespace gse::renderer::atmosphere {
 	) -> vec3u;
 
 	auto recreate_ap_volume(
-		shared_view<gpu::context> gpu_s,
-		system::data& d
+		shared_view<gpu::context::data> gpu_s,
+		data& d
 	) -> void;
 
 	auto compute_sun_direction(
-		const system::data& d
+		const data& d
 	) -> vec3f;
 
 	auto build_atmosphere_data(
-		const system::data& d
+		const data& d
 	) -> atmosphere_data;
 }
 
@@ -183,7 +183,7 @@ auto gse::renderer::atmosphere::compute_ap_volume_extent(const vec2u screen_exte
 	return vec3u{ x, y, base };
 }
 
-auto gse::renderer::atmosphere::recreate_ap_volume(const shared_view<gpu::context> gpu_s, system::data& d) -> void {
+auto gse::renderer::atmosphere::recreate_ap_volume(const shared_view<gpu::context::data> gpu_s, data& d) -> void {
 	d.ap_volume_extent = compute_ap_volume_extent(gpu_s.render_graph->extent());
 	d.ap_volume = gpu_s.device->create_image(
 		{
@@ -199,7 +199,7 @@ auto gse::renderer::atmosphere::recreate_ap_volume(const shared_view<gpu::contex
 	gpu::transition_image_to(*gpu_s.device, d.ap_volume);
 }
 
-auto gse::renderer::atmosphere::compute_sun_direction(const system::data& d) -> vec3f {
+auto gse::renderer::atmosphere::compute_sun_direction(const data& d) -> vec3f {
 	const float ce = gse::cos(d.sun_elevation);
 	const float se = gse::sin(d.sun_elevation);
 	const float ca = gse::cos(d.sun_azimuth);
@@ -207,7 +207,7 @@ auto gse::renderer::atmosphere::compute_sun_direction(const system::data& d) -> 
 	return normalize(vec3f{ ce * ca, se, ce * sa });
 }
 
-auto gse::renderer::atmosphere::build_atmosphere_data(const system::data& d) -> atmosphere_data {
+auto gse::renderer::atmosphere::build_atmosphere_data(const data& d) -> atmosphere_data {
 	return atmosphere_data{
 		.rayleigh_scattering = d.rayleigh_scattering,
 		.bottom_radius = d.bottom_radius,
@@ -224,7 +224,7 @@ auto gse::renderer::atmosphere::build_atmosphere_data(const system::data& d) -> 
 	};
 }
 
-auto gse::renderer::atmosphere::system::init(context& ctx, const shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
+auto gse::renderer::atmosphere::init(context& ctx, const shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
 	d.transmittance_pipeline = gpu::build_compute_program(*gpu_s.device,
 														  transmittance_entry::pod);
 	d.multiscatter_pipeline = gpu::build_compute_program(*gpu_s.device, multiscatter_entry::pod);
@@ -294,7 +294,7 @@ auto gse::renderer::atmosphere::system::init(context& ctx, const shared_view<gpu
 	return {};
 }
 
-auto gse::renderer::atmosphere::system::frame(const context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state) -> async::task<> {
+auto gse::renderer::atmosphere::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, shared_view<camera::data> cam_state) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -321,7 +321,7 @@ auto gse::renderer::atmosphere::system::frame(const context& ctx, shared_view<gp
 			(multiscatter_lut_size.y() + 7) / 8,
 		};
 
-		auto rec = co_await gpu::pass<transmittance_pass>(ctx).pipeline(d.transmittance_pipeline);
+		auto rec = co_await gpu::pass<^^transmittance_pass>(ctx).pipeline(d.transmittance_pipeline);
 		rec.dispatch<transmittance_entry>(
 			{
 				.transmittance_out = d.transmittance_lut.storage_slot(),
@@ -330,7 +330,7 @@ auto gse::renderer::atmosphere::system::frame(const context& ctx, shared_view<gp
 			vec3u{ transmittance_groups.x(), transmittance_groups.y(), 1 }
 		);
 
-		rec = co_await gpu::pass<multiscatter_pass>(ctx).pipeline(d.multiscatter_pipeline).after<transmittance_pass>();
+		rec = co_await gpu::pass<^^multiscatter_pass>(ctx).pipeline(d.multiscatter_pipeline).after<^^transmittance_pass>();
 		rec.dispatch<multiscatter_entry>(
 			{
 				.transmittance_in = { d.transmittance_lut.sampled_slot(), d.lut_sampler_bindless.slot() },
@@ -358,7 +358,7 @@ auto gse::renderer::atmosphere::system::frame(const context& ctx, shared_view<gp
 	};
 	const float sun_cos_radius = gse::cos(d.sun_angular_radius);
 
-	auto rec = co_await gpu::pass<sky_view_pass>(ctx).pipeline(d.sky_view_pipeline).after<multiscatter_pass>();
+	auto rec = co_await gpu::pass<^^sky_view_pass>(ctx).pipeline(d.sky_view_pipeline).after<^^multiscatter_pass>();
 	rec.dispatch<sky_view_entry>(
 		{
 			.sun_direction = d.sun_direction,
@@ -379,7 +379,7 @@ auto gse::renderer::atmosphere::system::frame(const context& ctx, shared_view<gp
 		vec3u{ sky_view_groups.x(), sky_view_groups.y(), 1 }
 	);
 
-	rec = co_await gpu::pass<ap_compute_pass>(ctx).pipeline(d.ap_pipeline).after<multiscatter_pass>();
+	rec = co_await gpu::pass<^^ap_compute_pass>(ctx).pipeline(d.ap_pipeline).after<^^multiscatter_pass>();
 	rec.dispatch<ap_entry>(
 		{
 			.inv_view_proj = inv_view_proj,
@@ -403,11 +403,11 @@ auto gse::renderer::atmosphere::system::frame(const context& ctx, shared_view<gp
 		ap_groups
 	);
 
-	rec = co_await gpu::pass<sky_raster_pass>(ctx)
+	rec = co_await gpu::pass<^^sky_raster_pass>(ctx)
 		.pipeline(d.sky_raster_pipeline)
 		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
 		.depth(gpu::load_depth())
-		.after<forward::system, sky_view_pass>();
+		.after<^^forward::frame, ^^sky_view_pass>();
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
 	rec.push_bindings<sky_raster_entry>(

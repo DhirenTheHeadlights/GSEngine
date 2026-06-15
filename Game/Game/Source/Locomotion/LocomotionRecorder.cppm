@@ -12,26 +12,25 @@ export namespace gs::locomotion {
 		std::string path;
 	};
 
-	struct recorder {
-		struct data {
-			bool enabled = false;
-			std::string path;
-			float phi = 0.f;
-			std::unique_ptr<std::ofstream> out;
+}
 
-			explicit data(recorder_config cfg = {});
-		};
-
-		static auto run(
-			data& d,
-			gse::read<skeleton_refs> refs,
-			gse::read<state> states,
-			gse::read<intent> intents,
-			gse::read<gait> gaits,
-			gse::read<gse::physics::joint_drive_component> drives,
-			gse::read<gse::physics::motor_component> motors
-		) -> gse::async::task<>;
+export namespace gs::locomotion::recorder {
+	struct [[= gse::system_state<"Locomotion Recorder">{}]] data {
+		float phi = 0.f;
+		std::unique_ptr<std::ofstream> out;
 	};
+
+	[[= gse::system_run<>{}]]
+	auto run(
+		data& d,
+		const recorder_config& config,
+		gse::read<skeleton_refs> refs,
+		gse::read<state> states,
+		gse::read<intent> intents,
+		gse::read<gait> gaits,
+		gse::read<gse::physics::joint_drive_component> drives,
+		gse::read<gse::physics::motor_component> motors
+	) -> gse::async::task<>;
 }
 
 namespace gs::locomotion {
@@ -84,7 +83,8 @@ namespace gs::locomotion {
 	) -> void;
 
 	auto open_recording(
-		recorder::data& d
+		recorder::data& d,
+		const recorder_config& config
 	) -> void;
 
 	auto capture_actuation(
@@ -106,9 +106,6 @@ namespace gs::locomotion {
 	) -> void;
 }
 
-gs::locomotion::recorder::data::data(recorder_config cfg)
-	: enabled(cfg.enabled), path(std::move(cfg.path)) {}
-
 auto gs::locomotion::update_phi(recorder::data& d, const gait& g) -> void {
 	if (g.current != phase::swing) {
 		return;
@@ -122,8 +119,8 @@ auto gs::locomotion::update_phi(recorder::data& d, const gait& g) -> void {
 	}
 }
 
-auto gs::locomotion::open_recording(recorder::data& d) -> void {
-	d.out = std::make_unique<std::ofstream>(d.path, std::ios::binary | std::ios::trunc);
+auto gs::locomotion::open_recording(recorder::data& d, const recorder_config& config) -> void {
+	d.out = std::make_unique<std::ofstream>(config.path, std::ios::binary | std::ios::trunc);
 	if (!d.out->is_open()) {
 		d.out.reset();
 		return;
@@ -193,8 +190,8 @@ auto gs::locomotion::write_pod(std::ofstream& out, const T& value) -> void {
 	out.write(reinterpret_cast<const char*>(&value), sizeof(T));
 }
 
-auto gs::locomotion::recorder::run(data& d, gse::read<skeleton_refs> refs, gse::read<state> states, gse::read<intent> intents, gse::read<gait> gaits, gse::read<gse::physics::joint_drive_component> drives, gse::read<gse::physics::motor_component> motors) -> gse::async::task<> {
-	if (!d.enabled) {
+auto gs::locomotion::recorder::run(data& d, const recorder_config& config, gse::read<skeleton_refs> refs, gse::read<state> states, gse::read<intent> intents, gse::read<gait> gaits, gse::read<gse::physics::joint_drive_component> drives, gse::read<gse::physics::motor_component> motors) -> gse::async::task<> {
+	if (!config.enabled) {
 		return {};
 	}
 
@@ -210,7 +207,7 @@ auto gs::locomotion::recorder::run(data& d, gse::read<skeleton_refs> refs, gse::
 		}
 
 		if (!d.out) {
-			open_recording(d);
+			open_recording(d, config);
 			if (!d.out) {
 				continue;
 			}

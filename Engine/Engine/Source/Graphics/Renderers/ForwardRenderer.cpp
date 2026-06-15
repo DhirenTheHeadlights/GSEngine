@@ -137,13 +137,13 @@ namespace gse::renderer::forward {
 	>;
 
 	auto rebind_tlas_views(
-		shared_view<gpu::context> gpu_s,
-		shared_view<rt_shadow::system> rt_state,
-		system::data& d
+		shared_view<gpu::context::data> gpu_s,
+		shared_view<rt_shadow::data> rt_state,
+		data& d
 	) -> void;
 }
 
-auto gse::renderer::forward::rebind_tlas_views(const shared_view<gpu::context> gpu_s, const shared_view<rt_shadow::system> rt_state, system::data& d) -> void {
+auto gse::renderer::forward::rebind_tlas_views(const shared_view<gpu::context::data> gpu_s, const shared_view<rt_shadow::data> rt_state, data& d) -> void {
 	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_handle>::frames_in_flight; ++i) {
 		const auto fi = static_cast<std::uint32_t>(i);
 		if (!d.tlas_slots[i].valid()) {
@@ -153,7 +153,7 @@ auto gse::renderer::forward::rebind_tlas_views(const shared_view<gpu::context> g
 	}
 }
 
-auto gse::renderer::forward::system::init(context& ctx, const shared_view<gpu::context> gpu_s, const shared_view<asset::registry> assets_s, const shared_view<rt_shadow::system> rt_state, const shared_view<light_culling::system> lc_r, const shared_view<atmosphere::system> atm_state, const shared_view<gi_probe::system> gi_state, const shared_view<geometry_collector::system> gc_state, data& d) -> async::task<> {
+auto gse::renderer::forward::init(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, const shared_view<rt_shadow::data> rt_state, const shared_view<light_culling::data> lc_r, const shared_view<atmosphere::data> atm_state, const shared_view<gi_probe::data> gi_state, const shared_view<geometry_collector::data> gc_state, data& d) -> async::task<> {
 	d.pipeline = gpu::build_graphics_program(*gpu_s.device, meshlet_entry::pod);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
@@ -204,7 +204,7 @@ auto gse::renderer::forward::system::init(context& ctx, const shared_view<gpu::c
 	return {};
 }
 
-auto gse::renderer::forward::system::frame(context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state, shared_view<geometry_collector::system> gc_r, shared_view<light_culling::system> lc_r, shared_view<atmosphere::system> atm_state, shared_view<gi_probe::system> gi_state, read<directional_light_component> dir_lights, read<spot_light_component> spot_lights, read<point_light_component> point_lights) -> async::task<> {
+auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, shared_view<camera::data> cam_state, shared_view<geometry_collector::data> gc_r, shared_view<light_culling::data> lc_r, shared_view<atmosphere::data> atm_state, shared_view<gi_probe::data> gi_state, read<directional_light_component> dir_lights, read<spot_light_component> spot_lights, read<point_light_component> point_lights) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -212,7 +212,7 @@ auto gse::renderer::forward::system::frame(context& ctx, shared_view<gpu::contex
 	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
 	if (render_items.empty()) {
 		const auto ext = gpu_s.render_graph->extent();
-		auto rec = co_await gpu::pass<system>(ctx)
+		auto rec = co_await gpu::pass<^^gse::renderer::forward::frame>(ctx)
 			.color(
 				gpu::clear_color(
 					gpu::color_clear{ 0.0f, 0.0f, 0.0f, 1.0f },
@@ -351,7 +351,7 @@ auto gse::renderer::forward::system::frame(context& ctx, shared_view<gpu::contex
 	};
 	const bool gi_enabled = gi_state.quality != gi_probe::quality_level::off;
 
-	auto rec = co_await gpu::pass<system>(ctx)
+	auto rec = co_await gpu::pass<^^gse::renderer::forward::frame>(ctx)
 		.pipeline(d.pipeline)
 		.color(
 			gpu::clear_color(
@@ -360,7 +360,7 @@ auto gse::renderer::forward::system::frame(context& ctx, shared_view<gpu::contex
 			)
 		)
 		.depth(gpu::load_depth())
-		.after<rt_shadow::system, light_culling::system, depth_prepass::system, atmosphere::ap_compute_pass, gi_probe::system>();
+		.after<^^rt_shadow::frame, ^^light_culling::frame, ^^depth_prepass::frame, ^^atmosphere::ap_compute_pass, ^^gi_probe::frame>();
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
 

@@ -49,7 +49,7 @@ namespace gse::renderer::sdf_grid {
 	>;
 }
 
-auto gse::renderer::sdf_grid::system::init(context& ctx, const shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
+auto gse::renderer::sdf_grid::init(context& ctx, const shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
 	d.pipeline = gpu::build_graphics_program(*gpu_s.device, entry::pod);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
@@ -68,7 +68,7 @@ auto gse::renderer::sdf_grid::system::init(context& ctx, const shared_view<gpu::
 	return {};
 }
 
-auto gse::renderer::sdf_grid::system::frame(const context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state) -> async::task<> {
+auto gse::renderer::sdf_grid::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, shared_view<camera::data> cam_state) -> async::task<> {
 	if (!d.enabled) {
 		co_return;
 	}
@@ -95,11 +95,11 @@ auto gse::renderer::sdf_grid::system::frame(const context& ctx, shared_view<gpu:
 
 	const auto ext = gpu_s.render_graph->extent();
 
-	auto rec = co_await gpu::pass<system>(ctx)
+	auto rec = co_await gpu::pass<^^gse::renderer::sdf_grid::frame>(ctx)
 		.pipeline(d.pipeline)
 		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
 		.depth(gpu::load_depth())
-		.after<forward::system, atmosphere::sky_raster_pass>();
+		.after<^^forward::frame, ^^atmosphere::sky_raster_pass>();
 
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
