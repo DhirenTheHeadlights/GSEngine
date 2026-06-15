@@ -15,6 +15,7 @@ namespace gs::startup {
 		gs::locomotion::ppo_config ppo;
 		bool locomotion_selftest = false;
 		bool use_gpu_solver = false;
+		bool physics_parity = false;
 	};
 
 	auto run_game(
@@ -26,6 +27,10 @@ namespace gs::startup {
 	) -> void;
 
 	auto run_locomotion_train(
+		const config& cfg
+	) -> void;
+
+	auto run_physics_parity(
 		const config& cfg
 	) -> void;
 
@@ -113,12 +118,36 @@ auto gs::startup::run_locomotion_train(const config& cfg) -> void {
 	gse::system_clock::set_fixed_step_override(std::nullopt);
 }
 
+auto gs::startup::run_physics_parity(const config& cfg) -> void {
+	gse::system_clock::set_fixed_step_override(1);
+	gse::start(
+		[](gse::engine& e) -> void {
+			gse::register_systems<^^gs::physics_parity>(e);
+			auto* scene = gs::physics_parity_world_setup(e);
+			if (scene) {
+				gse::activate_scene(e.world(), scene->id());
+			}
+		},
+		{
+			.title = "GoonSquad Physics Parity",
+			.create_window = false,
+			.render = false,
+			.use_gpu_solver = cfg.use_gpu_solver,
+			.persist_settings = false,
+		}
+	);
+	gse::system_clock::set_fixed_step_override(std::nullopt);
+}
+
 auto main(int argc, char** argv) -> int {
 	const auto cfg = gse::parse_args<gs::startup::config>(argc, argv);
 	if (cfg.locomotion_selftest) {
 		return gs::locomotion::locomotion_selftest() ? 0 : 1;
 	}
-	if (cfg.locomotion_train) {
+	if (cfg.physics_parity) {
+		gs::startup::run_physics_parity(cfg);
+	}
+	else if (cfg.locomotion_train) {
 		gs::startup::run_locomotion_train(cfg);
 	}
 	else if (cfg.locomotion_smoke) {
