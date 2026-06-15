@@ -25,10 +25,10 @@ namespace gse::gpu {
 	};
 }
 
-auto gse::gpu::device::create(const shared_view<window> win, const bool validation_layers_enabled, gpu::device_settings& device_cfg) -> std::unique_ptr<device> {
+auto gse::gpu::device::create(const shared_view<window::data> win, const bool validation_layers_enabled, gpu::device_settings& device_cfg) -> std::unique_ptr<device> {
 	auto aftermath_tracker = vulkan::aftermath::create({});
 
-	auto instance = vulkan::instance::create(window::vulkan_instance_extensions(), validation_layers_enabled);
+	auto instance = vulkan::instance::create(vulkan::instance::required_window_extensions(), validation_layers_enabled);
 	instance.create_surface(win);
 
 	auto creation = vulkan::device::create(instance, device_cfg, aftermath_tracker);

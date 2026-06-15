@@ -38,36 +38,37 @@ export namespace gse::free_camera {
 		id move_axis_id;
 	};
 
-	struct system {
-		struct data {
-			std::unordered_map<id, bindings> bindings_by_owner;
-		};
-
-		struct run {
-			static auto attach(
-				context& ctx,
-				data& d,
-				read<component> cameras,
-				structural<camera::follow_component> follows
-			) -> async::task<>;
-
-			static auto update(
-				context& ctx,
-				data& d,
-				shared_view<actions::system> as,
-				shared_view<input::system> input_s,
-				shared_view<camera::system> cam_s,
-				write<component> cameras,
-				write<camera::follow_component> follows,
-				read<physics::transform_component> transforms,
-				read<physics::collision_component> collisions,
-				read<physics::motion_component> motions
-			) -> async::task<>;
-		};
-	};
 }
 
-auto gse::free_camera::system::run::attach(context& ctx, data& d, read<component> cameras, structural<camera::follow_component> follows) -> async::task<> {
+export namespace gse::free_camera::system {
+	struct [[= gse::system_state<"FreeCamera">{}]] data {
+		std::unordered_map<id, bindings> bindings_by_owner;
+	};
+
+	[[= gse::system_run<>{}]]
+	auto attach(
+		context& ctx,
+		data& d,
+		read<component> cameras,
+		structural<camera::follow_component> follows
+	) -> async::task<>;
+
+	[[= gse::system_run<1>{}]]
+	auto update(
+		context& ctx,
+		data& d,
+		shared_view<actions::data> as,
+		shared_view<input::data> input_s,
+		shared_view<camera::data> cam_s,
+		write<component> cameras,
+		write<camera::follow_component> follows,
+		read<physics::transform_component> transforms,
+		read<physics::collision_component> collisions,
+		read<physics::motion_component> motions
+	) -> async::task<>;
+}
+
+auto gse::free_camera::system::attach(context& ctx, data& d, read<component> cameras, structural<camera::follow_component> follows) -> async::task<> {
 	for (const auto owner_id : ctx.drain_component_adds<component>()) {
 		const auto* c = cameras.find(owner_id);
 		if (!c) {
@@ -114,11 +115,11 @@ auto gse::free_camera::system::run::attach(context& ctx, data& d, read<component
 	return {};
 }
 
-auto gse::free_camera::system::run::update(context& ctx, data& d, const shared_view<actions::system> as, const shared_view<input::system> input_s, const shared_view<camera::system> cam_s, write<component> cameras, write<camera::follow_component> follows, read<physics::transform_component> transforms, read<physics::collision_component> collisions, read<physics::motion_component> motions) -> async::task<> {
+auto gse::free_camera::system::update(context& ctx, data& d, const shared_view<actions::data> as, const shared_view<input::data> input_s, const shared_view<camera::data> cam_s, write<component> cameras, write<camera::follow_component> follows, read<physics::transform_component> transforms, read<physics::collision_component> collisions, read<physics::motion_component> motions) -> async::task<> {
 	const auto camera_ids = cameras.owner_ids();
 
-	const auto& cs = actions::system::current_state(as);
-	const auto& in = input::system::current_state(input_s);
+	const auto& cs = actions::current_state(as);
+	const auto& in = input::current_state(input_s);
 
 	for (std::size_t i = 0; i < cameras.size(); ++i) {
 		auto& c = cameras[i];

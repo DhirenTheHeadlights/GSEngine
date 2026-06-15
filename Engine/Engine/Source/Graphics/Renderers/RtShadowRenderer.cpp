@@ -46,13 +46,13 @@ namespace gse::renderer::rt_shadow {
 	using entry = gpu::compute_entry<gpu::body_path<"Compute/tlas_transform_update">, gpu::bindings<shader_binding_types>, gpu::threads<64>, gpu::push_constant<push_constants>, gpu::system_values<gpu::dispatch_thread_id>>;
 }
 
-auto gse::renderer::rt_shadow::system::init(context& ctx, const shared_view<gpu::context> gpu_s, const shared_view<asset::registry> assets_s, data& d) -> async::task<> {
+auto gse::renderer::rt_shadow::init(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, data& d) -> async::task<> {
 	log::println(log::category::render, "RT shadow: initialized");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::tlas>::frames_in_flight; ++i) {
-		d.tlas_per_frame[i] = gpu::build_tlas(*gpu_s.device, geometry_collector::system::data::max_instances);
+		d.tlas_per_frame[i] = gpu::build_tlas(*gpu_s.device, geometry_collector::data::max_instances);
 		d.tlas_ptrs[i] = &d.tlas_per_frame[i];
-		d.instances[i].reserve(geometry_collector::system::data::max_instances);
+		d.instances[i].reserve(geometry_collector::data::max_instances);
 	}
 
 	d.tlas_update_pipeline = gpu::build_compute_program(*gpu_s.device, entry::pod);
@@ -60,7 +60,7 @@ auto gse::renderer::rt_shadow::system::init(context& ctx, const shared_view<gpu:
 	return {};
 }
 
-auto gse::renderer::rt_shadow::system::frame(context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<geometry_collector::system> gc_r) -> async::task<> {
+auto gse::renderer::rt_shadow::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, shared_view<geometry_collector::data> gc_r) -> async::task<> {
 	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
 	if (render_items.empty()) {
 		co_return;
@@ -138,7 +138,7 @@ auto gse::renderer::rt_shadow::system::frame(context& ctx, shared_view<gpu::cont
 		mapping.push_back(render_queue_idx);
 		++render_queue_idx;
 
-		if (instances.size() >= geometry_collector::system::data::max_instances) {
+		if (instances.size() >= geometry_collector::data::max_instances) {
 			break;
 		}
 	}
@@ -176,7 +176,7 @@ auto gse::renderer::rt_shadow::system::frame(context& ctx, shared_view<gpu::cont
 
 	const std::uint32_t workgroups = (instance_count + 63) / 64;
 
-	auto rec = co_await gpu::pass<system>(ctx).pipeline(d.tlas_update_pipeline).after<geometry_collector::system>();
+	auto rec = co_await gpu::pass<^^gse::renderer::rt_shadow::frame>(ctx).pipeline(d.tlas_update_pipeline).after<^^geometry_collector::frame>();
 
 	rec.barrier(gpu::barrier_scope::transfer_to_compute);
 	rec.dispatch<entry>(

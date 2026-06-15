@@ -144,12 +144,12 @@ namespace gse::renderer::cloud {
 	) -> vec2u;
 
 	auto recreate_cloud_target(
-		shared_view<gpu::context> gpu_s,
-		system::data& d
+		shared_view<gpu::context::data> gpu_s,
+		data& d
 	) -> void;
 
 	auto build_cloud_data(
-		const system::data& d
+		const data& d
 	) -> cloud_data;
 }
 
@@ -159,7 +159,7 @@ auto gse::renderer::cloud::compute_cloud_target_extent(const vec2u screen_extent
 	return vec2u{ w, h };
 }
 
-auto gse::renderer::cloud::recreate_cloud_target(const shared_view<gpu::context> gpu_s, system::data& d) -> void {
+auto gse::renderer::cloud::recreate_cloud_target(const shared_view<gpu::context::data> gpu_s, data& d) -> void {
 	d.cloud_target_extent = compute_cloud_target_extent(gpu_s.render_graph->extent());
 	d.cloud_target = gpu_s.device->create_image(
 		{
@@ -173,7 +173,7 @@ auto gse::renderer::cloud::recreate_cloud_target(const shared_view<gpu::context>
 	gpu::transition_image_to(*gpu_s.device, d.cloud_target);
 }
 
-auto gse::renderer::cloud::build_cloud_data(const system::data& d) -> cloud_data {
+auto gse::renderer::cloud::build_cloud_data(const data& d) -> cloud_data {
 	return cloud_data{
 		.cloud_bottom = d.cloud_bottom,
 		.cloud_top = d.cloud_top,
@@ -193,7 +193,7 @@ auto gse::renderer::cloud::build_cloud_data(const system::data& d) -> cloud_data
 	};
 }
 
-auto gse::renderer::cloud::system::init(context& ctx, const shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
+auto gse::renderer::cloud::init(context& ctx, const shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
 	d.shape_bake_pipeline = gpu::build_compute_program(*gpu_s.device, shape_bake_entry::pod);
 	d.detail_bake_pipeline = gpu::build_compute_program(*gpu_s.device, detail_bake_entry::pod);
 	d.raymarch_pipeline = gpu::build_compute_program(*gpu_s.device, raymarch_entry::pod);
@@ -250,7 +250,7 @@ auto gse::renderer::cloud::system::init(context& ctx, const shared_view<gpu::con
 	return {};
 }
 
-auto gse::renderer::cloud::system::frame(const context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<atmosphere::system> atm_state, shared_view<camera::system> cam_state) -> async::task<> {
+auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, shared_view<atmosphere::data> atm_state, shared_view<camera::data> cam_state) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -278,7 +278,7 @@ auto gse::renderer::cloud::system::frame(const context& ctx, shared_view<gpu::co
 			detail_noise_size.z(),
 		};
 
-		auto rec = co_await gpu::pass<shape_bake_pass>(ctx).pipeline(d.shape_bake_pipeline);
+		auto rec = co_await gpu::pass<^^shape_bake_pass>(ctx).pipeline(d.shape_bake_pipeline);
 		rec.dispatch<shape_bake_entry>(
 			{
 				.cloud_shape_out = d.shape_noise.storage_slot(),
@@ -286,7 +286,7 @@ auto gse::renderer::cloud::system::frame(const context& ctx, shared_view<gpu::co
 			shape_groups
 		);
 
-		rec = co_await gpu::pass<detail_bake_pass>(ctx).pipeline(d.detail_bake_pipeline).after<shape_bake_pass>();
+		rec = co_await gpu::pass<^^detail_bake_pass>(ctx).pipeline(d.detail_bake_pipeline).after<^^shape_bake_pass>();
 		rec.dispatch<detail_bake_entry>(
 			{
 				.cloud_detail_out = d.detail_noise.storage_slot(),
@@ -314,9 +314,9 @@ auto gse::renderer::cloud::system::frame(const context& ctx, shared_view<gpu::co
 
 	d.frame_counter += 1;
 
-	auto rec = co_await gpu::pass<cloud_raymarch_pass>(ctx)
+	auto rec = co_await gpu::pass<^^cloud_raymarch_pass>(ctx)
 		.pipeline(d.raymarch_pipeline)
-		.after<atmosphere::sky_view_pass, detail_bake_pass>();
+		.after<^^atmosphere::sky_view_pass, ^^detail_bake_pass>();
 
 	rec.dispatch<raymarch_entry>(
 		{
@@ -340,11 +340,11 @@ auto gse::renderer::cloud::system::frame(const context& ctx, shared_view<gpu::co
 	);
 
 	const auto ext = gpu_s.render_graph->extent();
-	auto composite_rec = co_await gpu::pass<cloud_composite_pass>(ctx)
+	auto composite_rec = co_await gpu::pass<^^cloud_composite_pass>(ctx)
 		.pipeline(d.composite_pipeline)
 		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
 		.depth(gpu::load_depth())
-		.after<atmosphere::sky_raster_pass, cloud_raymarch_pass>();
+		.after<^^atmosphere::sky_raster_pass, ^^cloud_raymarch_pass>();
 
 	composite_rec.sample_image(d.cloud_target, gpu::pipeline_stage_flag::fragment_shader);
 	composite_rec.set_viewport(ext);

@@ -3,106 +3,99 @@ export module gs:crosshair_system;
 import std;
 import gse;
 
-export namespace gs {
-	struct crosshair_system {
-		struct data;
+export namespace gs::crosshair {
+	struct [[= gse::system_state<"Crosshair">{}]] data {
+		[[= gse::settings::describe<"Show the crosshair while in-game.">{}, = gse::shared]] bool show = true;
 
-		static auto draw_settings_page(
-			gse::gui::builder& b,
-			gse::settings::panel_state& ps,
-			const data& live,
-			data& pending,
-			gse::channel_writer& channels
-		) -> void;
+		[[
+			= gse::settings::describe<"Length of each arm in pixels.">{},
+			= gse::settings::range<0, 30>{},
+			= gse::shared
+		]]
+		int arm_length = 8;
 
-		static auto draw_preview(
-			const gse::gui::draw_context& ctx,
-			const gse::rect_t<gse::vec2f>& rect,
-			const data& crosshair
-		) -> void;
+		[[
+			= gse::settings::describe<"Thickness of each arm in pixels.">{},
+			= gse::settings::range<1, 8>{},
+			= gse::shared
+		]]
+		int arm_thickness = 2;
 
-		struct [[
-			= gse::settings::category<"Crosshair">{},
-			= gse::settings::page_drawer<&crosshair_system::draw_settings_page>{}
-		]] data {
-			[[= gse::settings::describe<"Show the crosshair while in-game.">{}, = gse::shared]] bool show = true;
+		[[
+			= gse::settings::describe<"Gap between center and each arm.">{},
+			= gse::settings::range<0, 20>{},
+			= gse::shared
+		]]
+		int gap = 3;
 
-			[[
-				= gse::settings::describe<"Length of each arm in pixels.">{},
-				= gse::settings::range<0, 30>{},
-				= gse::shared
-			]]
-			int arm_length = 8;
+		[[= gse::settings::describe<"Show the center dot.">{}, = gse::shared]] bool show_dot = true;
 
-			[[
-				= gse::settings::describe<"Thickness of each arm in pixels.">{},
-				= gse::settings::range<1, 8>{},
-				= gse::shared
-			]]
-			int arm_thickness = 2;
+		[[
+			= gse::settings::describe<"Center dot size in pixels.">{},
+			= gse::settings::range<1, 6>{},
+			= gse::shared
+		]]
+		int dot_size = 1;
 
-			[[
-				= gse::settings::describe<"Gap between center and each arm.">{},
-				= gse::settings::range<0, 20>{},
-				= gse::shared
-			]]
-			int gap = 3;
+		[[
+			= gse::settings::describe<"Red channel.">{},
+			= gse::settings::range<0.f, 1.f>{},
+			= gse::shared
+		]]
+		float color_r = 1.f;
 
-			[[= gse::settings::describe<"Show the center dot.">{}, = gse::shared]] bool show_dot = true;
+		[[
+			= gse::settings::describe<"Green channel.">{},
+			= gse::settings::range<0.f, 1.f>{},
+			= gse::shared
+		]]
+		float color_g = 1.f;
 
-			[[
-				= gse::settings::describe<"Center dot size in pixels.">{},
-				= gse::settings::range<1, 6>{},
-				= gse::shared
-			]]
-			int dot_size = 1;
+		[[
+			= gse::settings::describe<"Blue channel.">{},
+			= gse::settings::range<0.f, 1.f>{},
+			= gse::shared
+		]]
+		float color_b = 1.f;
 
-			[[
-				= gse::settings::describe<"Red channel.">{},
-				= gse::settings::range<0.f, 1.f>{},
-				= gse::shared
-			]]
-			float color_r = 1.f;
+		[[
+			= gse::settings::describe<"Opacity.">{},
+			= gse::settings::range<0.f, 1.f>{},
+			= gse::shared
+		]]
+		float opacity = 0.9f;
 
-			[[
-				= gse::settings::describe<"Green channel.">{},
-				= gse::settings::range<0.f, 1.f>{},
-				= gse::shared
-			]]
-			float color_g = 1.f;
+		[[
+			= gse::settings::describe<"Outline thickness around each arm (0 = no outline).">{},
+			= gse::settings::range<0, 3>{},
+			= gse::shared
+		]]
+		int outline_thickness = 0;
 
-			[[
-				= gse::settings::describe<"Blue channel.">{},
-				= gse::settings::range<0.f, 1.f>{},
-				= gse::shared
-			]]
-			float color_b = 1.f;
-
-			[[
-				= gse::settings::describe<"Opacity.">{},
-				= gse::settings::range<0.f, 1.f>{},
-				= gse::shared
-			]]
-			float opacity = 0.9f;
-
-			[[
-				= gse::settings::describe<"Outline thickness around each arm (0 = no outline).">{},
-				= gse::settings::range<0, 3>{},
-				= gse::shared
-			]]
-			int outline_thickness = 0;
-
-			[[
-				= gse::settings::describe<"Outline opacity.">{},
-				= gse::settings::range<0.f, 1.f>{},
-				= gse::shared
-			]]
-			float outline_opacity = 1.f;
-		};
+		[[
+			= gse::settings::describe<"Outline opacity.">{},
+			= gse::settings::range<0.f, 1.f>{},
+			= gse::shared
+		]]
+		float outline_opacity = 1.f;
 	};
+
+	auto draw_preview(
+		const gse::gui::draw_context& ctx,
+		const gse::rect_t<gse::vec2f>& rect,
+		const data& crosshair
+	) -> void;
+
+	[[= gse::settings::page_for<^^data>{}]]
+	auto draw_settings(
+		gse::gui::builder& b,
+		gse::settings::panel_state& ps,
+		const gse::settings::register_settings_type& entry,
+		gse::channel_writer& channels
+	) -> void;
 }
 
-auto gs::crosshair_system::draw_settings_page(gse::gui::builder& b, gse::settings::panel_state& ps, const data& live, data& pending, gse::channel_writer& channels) -> void {
+auto gs::crosshair::draw_settings(gse::gui::builder& b, gse::settings::panel_state& ps, const gse::settings::register_settings_type& entry, gse::channel_writer& channels) -> void {
 	auto& ctx = b.ctx;
 	const auto& sty = ctx.style;
 	namespace lo = gse::gui::layout;
@@ -112,19 +105,21 @@ auto gs::crosshair_system::draw_settings_page(gse::gui::builder& b, gse::setting
 	});
 
 	const gse::rect_t<gse::vec2f> preview = lo::reserve_row(ctx, sty.preview_height, sty.padding);
-	draw_preview(ctx, preview, pending);
+	if (entry.settings_ptr) {
+		draw_preview(ctx, preview, *static_cast<const data*>(entry.settings_ptr));
+	}
 
 	b.scroll_region(
 		{
 			.id = "crosshair.fields"
 		},
 		[&](gse::gui::builder& sub) {
-			gse::settings::draw_fields<crosshair_system>(sub, ps, live, channels);
+			gse::settings::draw_fields_for_entry(sub, ps, channels, entry);
 		}
 	);
 }
 
-auto gs::crosshair_system::draw_preview(const gse::gui::draw_context& ctx, const gse::rect_t<gse::vec2f>& rect, const data& crosshair) -> void {
+auto gs::crosshair::draw_preview(const gse::gui::draw_context& ctx, const gse::rect_t<gse::vec2f>& rect, const data& crosshair) -> void {
 	const auto& sty = ctx.style;
 	const float border = sty.separator_thickness;
 	const gse::vec4f border_color = sty.color_border;

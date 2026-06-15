@@ -58,17 +58,17 @@ namespace gse::renderer::taa {
 	>;
 
 	auto recreate_history(
-		shared_view<gpu::context> gpu_s,
-		system::data& d
+		shared_view<gpu::context::data> gpu_s,
+		data& d
 	) -> void;
 
 	auto rebind_views(
-		shared_view<gpu::context> gpu_s,
-		system::data& d
+		shared_view<gpu::context::data> gpu_s,
+		data& d
 	) -> void;
 }
 
-auto gse::renderer::taa::recreate_history(const shared_view<gpu::context> gpu_s, system::data& d) -> void {
+auto gse::renderer::taa::recreate_history(const shared_view<gpu::context::data> gpu_s, data& d) -> void {
 	const auto extent = gpu_s.render_graph->extent();
 	d.frames_since_history_invalid = 0;
 	if (extent.x() == 0 || extent.y() == 0) {
@@ -97,7 +97,7 @@ auto gse::renderer::taa::recreate_history(const shared_view<gpu::context> gpu_s,
 	}
 }
 
-auto gse::renderer::taa::rebind_views(const shared_view<gpu::context> gpu_s, system::data& d) -> void {
+auto gse::renderer::taa::rebind_views(const shared_view<gpu::context::data> gpu_s, data& d) -> void {
 	auto& hdr = gpu_s.render_graph->framebuffer_image<targets::hdr_color>();
 	if (hdr.handle()) {
 		if (!d.hdr_view.valid()) {
@@ -114,7 +114,7 @@ auto gse::renderer::taa::rebind_views(const shared_view<gpu::context> gpu_s, sys
 	}
 }
 
-auto gse::renderer::taa::system::init(context& ctx, const shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
+auto gse::renderer::taa::init(context& ctx, const shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
 	d.pipeline = gpu::build_graphics_program(*gpu_s.device, entry::pod);
 
 	d.sampler = gpu_s.device->register_sampler(
@@ -141,7 +141,7 @@ auto gse::renderer::taa::system::init(context& ctx, const shared_view<gpu::conte
 	return {};
 }
 
-auto gse::renderer::taa::system::frame(const context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
+auto gse::renderer::taa::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -160,7 +160,7 @@ auto gse::renderer::taa::system::frame(const context& ctx, shared_view<gpu::cont
 	const bool history_ready = d.taa_enabled && d.frames_since_history_invalid >= 2;
 	++d.frames_since_history_invalid;
 
-	auto rec = co_await gpu::pass<system>(ctx)
+	auto rec = co_await gpu::pass<^^gse::renderer::taa::frame>(ctx)
 		.pipeline(d.pipeline)
 		.color(gpu::clear_color(
 			gpu::color_clear{ 0.0f, 0.0f, 0.0f, 1.0f },
@@ -170,7 +170,7 @@ auto gse::renderer::taa::system::frame(const context& ctx, shared_view<gpu::cont
 			gpu::color_clear{ 0.0f, 0.0f, 0.0f, 1.0f },
 			gpu_s.render_graph->framebuffer_image<targets::post_taa_color>()
 		))
-		.after<forward::system, atmosphere::sky_raster_pass, cloud::cloud_composite_pass, physics_debug::system, sdf_grid::system, world_text::system, depth_prepass::system>();
+		.after<^^forward::frame, ^^atmosphere::sky_raster_pass, ^^cloud::cloud_composite_pass, ^^physics_debug::frame, ^^sdf_grid::frame, ^^world_text::frame, ^^depth_prepass::frame>();
 
 	rec.sample_image(hdr, gpu::pipeline_stage_flag::fragment_shader);
 	rec.sample_image(

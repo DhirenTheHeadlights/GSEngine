@@ -24,48 +24,48 @@ export namespace gse::renderer::bloom {
 	struct downsample_pass {};
 	struct upsample_pass {};
 
-	struct system {
-		struct [[= gse::settings::category<"Graphics">{}]] data {
-			[[
-				= gse::settings::describe<"Bloom mip count: low=4, medium=6, high=7. Off disables bloom entirely.">{},
-				= gse::shared
-			]]
-			quality_level bloom_quality = quality_level::medium;
+	struct [[= gse::system_state<"Bloom">{}, = gse::settings::category<"Graphics">{}]] data {
+		[[
+			= gse::settings::describe<"Bloom mip count: low=4, medium=6, high=7. Off disables bloom entirely.">{},
+			= gse::shared
+		]]
+		quality_level bloom_quality = quality_level::medium;
 
-			[[
-				= gse::settings::
-					describe<"Bloom intensity. Additive scale applied when compositing bloom into the HDR target.">{},
-				= gse::shared
-			]]
-			float bloom_intensity = 0.04f;
+		[[
+			= gse::settings::
+				describe<"Bloom intensity. Additive scale applied when compositing bloom into the HDR target.">{},
+			= gse::shared
+		]]
+		float bloom_intensity = 0.04f;
 
-			[[
-				= gse::settings::describe<"Upsample tent filter radius in source-texel units. 1.0 is the canonical Sledgehammer value.">{}
-			]]
-			float bloom_radius = 1.0f;
+		[[
+			= gse::settings::describe<"Upsample tent filter radius in source-texel units. 1.0 is the canonical Sledgehammer value.">{}
+		]]
+		float bloom_radius = 1.0f;
 
-			gpu::shader_program downsample_pipeline;
-			gpu::shader_program upsample_pipeline;
+		gpu::shader_program downsample_pipeline;
+		gpu::shader_program upsample_pipeline;
 
-			[[= gse::shared]] std::array<gpu::image, max_mip_count> mips_down;
-			[[= gse::shared]] std::array<gpu::image, max_mip_count> mips_up;
-			std::array<vec2u, max_mip_count> mip_extents{};
-			[[= gse::shared]] std::uint32_t active_mip_count = 0;
+		[[= gse::shared]] std::array<gpu::image, max_mip_count> mips_down;
+		[[= gse::shared]] std::array<gpu::image, max_mip_count> mips_up;
+		std::array<vec2u, max_mip_count> mip_extents{};
+		[[= gse::shared]] std::uint32_t active_mip_count = 0;
 
-			gpu::bindless_handle sampler;
-			gpu::bindless_handle hdr_view;
-		};
-
-		static auto init(
-			context& ctx,
-			shared_view<gpu::context> gpu_s,
-			data& d
-		) -> async::task<>;
-
-		static auto frame(
-			const context& ctx,
-			shared_view<gpu::context> gpu_s,
-			data& d
-		) -> async::task<>;
+		gpu::bindless_handle sampler;
+		gpu::bindless_handle hdr_view;
 	};
+
+	[[= gse::system_init{}]]
+	auto init(
+		context& ctx,
+		shared_view<gpu::context::data> gpu_s,
+		data& d
+	) -> async::task<>;
+
+	[[= gse::system_frame{}]]
+	auto frame(
+		const context& ctx,
+		shared_view<gpu::context::data> gpu_s,
+		data& d
+	) -> async::task<>;
 }

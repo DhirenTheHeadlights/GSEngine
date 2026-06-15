@@ -35,29 +35,6 @@ export namespace gse {
 		shutdown
 	};
 
-	template <typename S>
-	struct system_handle {
-		auto state() const -> state_of_t<S>& {
-			return *m_state;
-		}
-
-		auto operator*() const -> state_of_t<S>& {
-			return *m_state;
-		}
-
-		auto operator->() const -> state_of_t<S>* {
-			return m_state;
-		}
-
-		explicit operator bool() const {
-			return m_state != nullptr;
-		}
-
-	private:
-		friend class scheduler;
-		state_of_t<S>* m_state = nullptr;
-	};
-
 	class scheduler {
 	public:
 		scheduler() = default;
@@ -103,15 +80,13 @@ export namespace gse {
 
 		auto clear() -> void;
 
-		template <typename S, typename... Args>
-		auto add_system(
-			Args&&... args
-		) -> system_handle<S>;
+		auto add_system_node(
+			system_node node
+		) -> void;
 
-		template <typename S, typename... Args>
-		auto queue_add_system(
-			Args&&... args
-		) -> system_handle<S>;
+		auto queue_system_node(
+			system_node node
+		) -> void;
 
 		template <typename T>
 		auto register_external_resource(
@@ -141,6 +116,14 @@ export namespace gse {
 		auto read_channel() -> channel_read_guard<T>;
 
 		auto make_channel_writer() -> channel_writer;
+
+		auto begin_staging() -> void;
+
+		auto resolve_activation(
+			const std::unordered_set<id>& disabled_roots
+		) -> void;
+
+		auto register_deferred() -> void;
 
 		template <typename T>
 		requires is_same_frame_channel_v<T>
@@ -203,6 +186,9 @@ export namespace gse {
 		) -> void;
 
 		std::deque<system_node> m_nodes;
+		std::vector<system_node> m_candidates;
+		std::vector<system_node> m_deferred_nodes;
+		bool m_staging = false;
 		scheduler_phase m_phase = scheduler_phase::boot;
 		state_registry m_states;
 		std::unordered_map<id, std::vector<id>> m_state_deps;
@@ -272,39 +258,3 @@ auto gse::scheduler::drain_channel() -> std::vector<T> {
 	return m_channels_store.template drain<T>();
 }
 
-template <typename S, typename... Args>
-auto gse::scheduler::add_system(Args&&... args) -> system_handle<S> {
-	using state_t = state_of_t<S>;
-	assert(m_registry != nullptr, "scheduler::set_registry must be called before add_system");
-	assert(m_phase != scheduler_phase::shutdown, "scheduler::add_system called during shutdown");
-
-	if (m_phase == scheduler_phase::boot) {
-		(void)trace_id<S>();
-		auto* state_ref = register_node(make_system_node<S>(std::forward<Args>(args)...));
-		system_handle<S> h;
-		h.m_state = static_cast<state_t*>(state_ref);
-		return h;
-	}
-
-	return queue_add_system<S>(std::forward<Args>(args)...);
-}
-
-template <typename S, typename... Args>
-auto gse::scheduler::queue_add_system(Args&&... args) -> system_handle<S> {
-	using state_t = state_of_t<S>;
-	(void)trace_id<S>();
-	auto node = make_system_node<S>(std::forward<Args>(args)...);
-	auto* state_ptr = static_cast<state_t*>(node.state_ptr);
-	{
-		std::lock_guard lock(m_hot_add_mutex);
-		m_hot_add_queue.push_back(std::move(node));
-	}
-	system_handle<S> h;
-	h.m_state = state_ptr;
-	return h;
-}
-
-template <typename S, typename... Args>
-auto gse::queue_add_system_helper(scheduler& sched, Args&&... args) -> void {
-	(void)sched.queue_add_system<S>(std::forward<Args>(args)...);
-}

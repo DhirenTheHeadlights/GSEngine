@@ -154,7 +154,7 @@ auto gse::renderer::ui::add_text_quads(linear_vector<vertex>& vertices, linear_v
 	}
 }
 
-auto gse::renderer::ui::system::init(const shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
+auto gse::renderer::ui::init(const shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
 	d.sprite_pipeline = gpu::build_graphics_program(*gpu_s.device, sprite_entry::pod);
 	d.text_pipeline = gpu::build_graphics_program(*gpu_s.device, msdf_entry::pod);
 
@@ -181,7 +181,7 @@ auto gse::renderer::ui::system::init(const shared_view<gpu::context> gpu_s, data
 	return {};
 }
 
-auto gse::renderer::ui::system::run(context& ctx, const shared_view<gpu::context> gpu_s, const shared_view<asset::registry> assets_s, data& d) -> async::task<> {
+auto gse::renderer::ui::run(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, data& d) -> async::task<> {
 	const auto& sprite_commands = ctx.read_channel<sprite_command>();
 	const auto& text_commands = ctx.read_channel<text_command>();
 
@@ -333,7 +333,7 @@ auto gse::renderer::ui::system::run(context& ctx, const shared_view<gpu::context
 	return {};
 }
 
-auto gse::renderer::ui::system::frame(context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<scene_snapshot::system> snapshot_s) -> async::task<> {
+auto gse::renderer::ui::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, shared_view<scene_snapshot::data> snapshot_s) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -395,9 +395,9 @@ auto gse::renderer::ui::system::frame(context& ctx, shared_view<gpu::context> gp
 
 	const vec2u ext_size{ width, height };
 
-	auto rec = co_await gpu::pass<ui::system>(ctx)
+	auto rec = co_await gpu::pass<^^gse::renderer::ui::frame>(ctx)
 		.color(gpu::load_color())
-		.after<forward::system, scene_snapshot::system, physics_debug::system, sdf_grid::system, tonemap::system, world_text::system>();
+		.after<^^forward::frame, ^^scene_snapshot::frame, ^^physics_debug::frame, ^^sdf_grid::frame, ^^tonemap::frame, ^^world_text::frame>();
 
 	if (snapshot_idx != shaders::bindless::invalid_index) {
 		rec.sample_image(snapshot_s.snapshots[frame_index], gpu::pipeline_stage_flag::fragment_shader);
