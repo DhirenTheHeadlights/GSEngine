@@ -18,11 +18,16 @@ import gse.concurrency;
 import gse.diag;
 import gse.log;
 
-auto gse::gpu::context::init(const shared_view<window::data> window_s, data& d) -> async::task<> {
+auto gse::gpu::context::init(const std::optional<shared_view<window::data>> window_s, data& d) -> async::task<> {
 	d.device = device::create(window_s, d.validation_layers_enabled, d.device_settings);
+
+	if (!window_s) {
+		return {};
+	}
+
 	d.swapchain = swap_chain::create(
-		window::viewport(window_s),
-		gse::enum_from_annotation<present_mode_setting>(window_s.current_present_mode_index, present_mode::fifo),
+		window::viewport(*window_s),
+		gse::enum_from_annotation<present_mode_setting>((*window_s).current_present_mode_index, present_mode::fifo),
 		*d.device
 	);
 	d.frame = frame::create(*d.device, *d.swapchain);

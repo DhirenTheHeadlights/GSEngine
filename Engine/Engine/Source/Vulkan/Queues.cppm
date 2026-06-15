@@ -260,10 +260,12 @@ auto gse::vulkan::find_queue_families(const physical_device& device, const gpu::
 		if (queue_families[i].queueFlags & vk::QueueFlagBits::eGraphics) {
 			indices.graphics_family = i;
 		}
-		auto [present_result, present_support] = vk_device.getSurfaceSupportKHR(i, std::bit_cast<vk::SurfaceKHR>(surface));
-		assert(present_result == vk::Result::eSuccess, "failed to query surface support: {}", vk::to_string(present_result));
-		if (present_support) {
-			indices.present_family = i;
+		if (const auto vk_surface = std::bit_cast<vk::SurfaceKHR>(surface)) {
+			auto [present_result, present_support] = vk_device.getSurfaceSupportKHR(i, vk_surface);
+			assert(present_result == vk::Result::eSuccess, "failed to query surface support: {}", vk::to_string(present_result));
+			if (present_support) {
+				indices.present_family = i;
+			}
 		}
 		if ((queue_families[i].queueFlags & vk::QueueFlagBits::eCompute) && !(queue_families[i].queueFlags & vk::QueueFlagBits::eGraphics)) {
 			indices.compute_family = i;

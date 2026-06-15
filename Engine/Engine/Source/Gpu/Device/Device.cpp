@@ -25,11 +25,13 @@ namespace gse::gpu {
 	};
 }
 
-auto gse::gpu::device::create(const shared_view<window::data> win, const bool validation_layers_enabled, gpu::device_settings& device_cfg) -> std::unique_ptr<device> {
+auto gse::gpu::device::create(const std::optional<shared_view<window::data>> win, const bool validation_layers_enabled, gpu::device_settings& device_cfg) -> std::unique_ptr<device> {
 	auto aftermath_tracker = vulkan::aftermath::create({});
 
-	auto instance = vulkan::instance::create(vulkan::instance::required_window_extensions(), validation_layers_enabled);
-	instance.create_surface(win);
+	auto instance = vulkan::instance::create(win ? vulkan::instance::required_window_extensions() : std::span<const char* const>{}, validation_layers_enabled);
+	if (win) {
+		instance.create_surface(*win);
+	}
 
 	auto creation = vulkan::device::create(instance, device_cfg, aftermath_tracker);
 	std::array<std::uint32_t, gpu::queue_type_count> queue_families{};
@@ -40,7 +42,7 @@ auto gse::gpu::device::create(const shared_view<window::data> win, const bool va
 
 	auto worker_pools = vulkan::worker_command_pools::create(creation.device, queue_families, task::thread_count());
 
-	const auto surface_format = vulkan::pick_surface_format(creation.device, instance);
+	const auto surface_format = win ? vulkan::pick_surface_format(creation.device, instance) : gpu::image_format::b8g8r8a8_srgb;
 
 	auto dev = std::unique_ptr<device>(new device(
 		std::make_unique<device_backend>(
