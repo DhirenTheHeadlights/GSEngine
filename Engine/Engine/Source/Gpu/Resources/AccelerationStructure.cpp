@@ -6,6 +6,7 @@ import :acceleration_structure;
 import :device;
 import :gpu_task;
 import :render_graph;
+import :pass_recorder;
 
 import gse.vulkan;
 import gse.concurrency;
@@ -45,11 +46,11 @@ auto gse::build_blas_async(gpu::device& dev, const gpu::acceleration_structure a
 		.dst_stages = gpu::pipeline_stage_flag::acceleration_structure_build,
 		.dst_access = gpu::access_flag::shader_read,
 	};
-	vulkan::commands(cmd_handle).pipeline_barrier(gpu::dependency_info{
+	gpu::pass_recorder(cmd_handle).pipeline_barrier(gpu::dependency_info{
 		.memory_barriers = std::span(&pre_barrier, 1)
 	});
 
-	vulkan::commands(cmd_handle).build_acceleration_structures(build_info, std::span(&range_ptr, 1));
+	gpu::pass_recorder(cmd_handle).build_acceleration_structures(build_info, std::span(&range_ptr, 1));
 
 	const gpu::memory_barrier barrier{
 		.src_stages = gpu::pipeline_stage_flag::acceleration_structure_build,
@@ -57,7 +58,7 @@ auto gse::build_blas_async(gpu::device& dev, const gpu::acceleration_structure a
 		.dst_stages = gpu::pipeline_stage_flag::acceleration_structure_build,
 		.dst_access = gpu::access_flag::acceleration_structure_read,
 	};
-	vulkan::commands(cmd_handle).pipeline_barrier(gpu::dependency_info{
+	gpu::pass_recorder(cmd_handle).pipeline_barrier(gpu::dependency_info{
 		.memory_barriers = std::span(&barrier, 1)
 	});
 
@@ -128,7 +129,7 @@ auto gse::build_tlas_initial_empty_async(gpu::device& dev, const gpu::accelerati
 	};
 	const gpu::acceleration_structure_build_range_info* range_ptr = &range;
 
-	vulkan::commands(cmd.handle()).build_acceleration_structures(build_info, std::span(&range_ptr, 1));
+	gpu::pass_recorder(cmd.handle()).build_acceleration_structures(build_info, std::span(&range_ptr, 1));
 
 	const gpu::memory_barrier post_barrier{
 		.src_stages = gpu::pipeline_stage_flag::acceleration_structure_build,
@@ -136,7 +137,7 @@ auto gse::build_tlas_initial_empty_async(gpu::device& dev, const gpu::accelerati
 		.dst_stages = gpu::pipeline_stage_flag::acceleration_structure_build | gpu::pipeline_stage_flag::fragment_shader,
 		.dst_access = gpu::access_flag::acceleration_structure_read,
 	};
-	vulkan::commands(cmd.handle()).pipeline_barrier(gpu::dependency_info{
+	gpu::pass_recorder(cmd.handle()).pipeline_barrier(gpu::dependency_info{
 		.memory_barriers = std::span(&post_barrier, 1)
 	});
 

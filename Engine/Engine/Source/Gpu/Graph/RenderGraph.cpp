@@ -877,10 +877,10 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 
 	const auto frame_idx = m_frame->current_frame();
 	std::array<gpu::command_buffer_handle, gpu::queue_type_count> primary_handles;
-	std::array<vulkan::commands, gpu::queue_type_count> primary_buffers;
+	std::array<pass_recorder, gpu::queue_type_count> primary_buffers;
 	for (std::size_t qi = 0; qi < gpu::queue_type_count; ++qi) {
 		primary_handles[qi] = m_frame->command_buffer(static_cast<gpu::queue_type>(qi));
-		primary_buffers[qi] = vulkan::commands(primary_handles[qi]);
+		primary_buffers[qi] = pass_recorder(primary_handles[qi]);
 	}
 	const auto graphics_family = m_device->queue_family(gpu::queue_type::graphics);
 	std::array<bool, gpu::queue_type_count> queue_distinct{};
@@ -998,7 +998,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 					.pipeline_statistics = maybe_issue_stats ? profile_stats_flags : gpu::pipeline_statistic_flags{},
 				};
 
-				const vulkan::commands sec_cmd(secondary);
+				const pass_recorder sec_cmd(secondary);
 				sec_cmd.begin_secondary(inherit_info);
 				recording_context rec{ pass_recorder{ sec_cmd.native() }, std::addressof(pass), std::addressof(m_transient_pool), m_device };
 				if (pass.primary_pipeline) {
@@ -1092,7 +1092,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 	}
 
 	auto open_primary = [](const gpu::command_buffer_handle handle) {
-		const vulkan::commands cmd(handle);
+		const pass_recorder cmd(handle);
 		cmd.reset();
 		cmd.begin();
 	};
@@ -1106,7 +1106,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		}
 	}
 
-	auto setup_timestamps = [&](gpu_profile_slot& s, const vulkan::commands& cb, const bool with_stats) {
+	auto setup_timestamps = [&](gpu_profile_slot& s, const pass_recorder& cb, const bool with_stats) {
 		ensure_profile_pools(s, with_stats);
 		cb.reset_query_pool(s.timestamp_pool, 0, max_profiled_passes * 2 + 1);
 		if (with_stats) {
@@ -1846,7 +1846,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 
 		const auto q = static_cast<gpu::queue_type>(qi);
 		const auto handle = m_frame->command_buffer(q);
-		vulkan::commands(handle).end();
+		pass_recorder(handle).end();
 
 		auto& state = m_queue_states[qi];
 		const std::uint64_t previous_value = state.signal_counter;

@@ -7,11 +7,9 @@ project(Engine LANGUAGES CXX)
 
 file(GLOB_RECURSE ENGINE_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/*.cppm" "${CMAKE_CURRENT_BINARY_DIR}/Engine/*.cppm")
 list(REMOVE_ITEM ENGINE_MODULES "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Import/Engine.cppm")
-list(FILTER ENGINE_MODULES EXCLUDE REGEX "/(Source/Dx12|Import/Dx12\\.cppm)")
 
 file(GLOB_RECURSE ENGINE_IMPLS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/*.cpp")
 list(REMOVE_ITEM ENGINE_IMPLS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/External/MiniaudioImpl.cpp")
-list(FILTER ENGINE_IMPLS EXCLUDE REGEX "/Source/Dx12/")
 
 # A .cpp that declares an implementation partition (module gse.x:y;) provides a
 # module and must live in a CXX_MODULES file set; a plain implementation unit
@@ -123,7 +121,7 @@ target_link_libraries(Engine PUBLIC
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_link_libraries(Engine PUBLIC stdc++exp)
     if(WIN32)
-        target_link_libraries(Engine PUBLIC ws2_32 dbghelp)
+        target_link_libraries(Engine PUBLIC ws2_32 dbghelp d3d12 dxgi dxguid)
     endif()
 endif()
 

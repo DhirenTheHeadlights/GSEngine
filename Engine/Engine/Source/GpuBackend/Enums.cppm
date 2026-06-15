@@ -5,6 +5,11 @@ import std;
 import gse.core;
 
 export namespace gse::gpu {
+	enum class gpu_backend_kind : std::uint8_t {
+		vulkan,
+		dx12,
+	};
+
 	enum class resource_type : std::uint8_t {
 		buffer,
 		image,
