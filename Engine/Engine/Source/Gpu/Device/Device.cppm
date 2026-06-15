@@ -16,7 +16,7 @@ import gse.save;
 import gse.math;
 
 export namespace gse::gpu {
-	struct device_backend;
+	struct gpu_dispatch;
 
 	class device final : public non_copyable {
 	public:
@@ -102,6 +102,30 @@ export namespace gse::gpu {
 
 		auto end_commands(
 			gpu::command_buffer_handle cmd
+		) -> void;
+
+		auto cmd_reset(
+			gpu::command_buffer_handle cmd
+		) -> void;
+
+		auto cmd_begin(
+			gpu::command_buffer_handle cmd
+		) -> void;
+
+		auto cmd_end(
+			gpu::command_buffer_handle cmd
+		) -> void;
+
+		auto cmd_pipeline_barrier(
+			gpu::command_buffer_handle cmd,
+			const dependency_info& dep
+		) -> void;
+
+		auto cmd_release_swapchain_to_present(
+			gpu::command_buffer_handle cmd,
+			gpu::handle<gpu::image> img,
+			pipeline_stage_flags src_stages,
+			access_flags src_access
 		) -> void;
 
 		[[nodiscard]] auto create_transient_command_pool(
@@ -411,12 +435,14 @@ export namespace gse::gpu {
 
 	private:
 		device(
-			std::unique_ptr<device_backend> backend,
+			std::unique_ptr<void, void (*)(void*)> backend,
+			const gpu_dispatch* dispatch,
 			image_format surface_format,
 			bool video_encode_enabled
 		);
 
-		std::unique_ptr<device_backend> m_backend;
+		std::unique_ptr<void, void (*)(void*)> m_backend;
+		const gpu_dispatch* m_vt = nullptr;
 		std::unique_ptr<transient_executor<device>> m_transient;
 		image_format m_surface_format;
 		std::atomic<bool> m_device_lost_reported = false;

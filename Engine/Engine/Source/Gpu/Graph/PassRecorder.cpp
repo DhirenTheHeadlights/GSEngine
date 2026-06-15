@@ -3,8 +3,11 @@ module gse.gpu:pass_recorder_impl;
 import std;
 
 import :pass_recorder;
+import :backend_state;
 
 import gse.vulkan;
+import gse.dx12;
+import gse.gpu_backend;
 import gse.meta;
 import gse.math;
 
@@ -19,9 +22,12 @@ namespace gse::gpu {
 		std::unreachable();
 	}
 
-	using backend_commands = std::variant<vulkan::commands>;
+	using backend_commands = std::variant<vulkan::commands, dx12::commands>;
 
 	auto select_backend(const gpu::command_buffer_handle cmd) -> backend_commands {
+		if (active_backend == gpu_backend_kind::dx12) {
+			return dx12::commands(cmd);
+		}
 		return vulkan::commands(cmd);
 	}
 
@@ -45,8 +51,56 @@ auto gse::gpu::pass_recorder::valid() const -> bool {
 	return invoke_on<"valid">(m_cmd);
 }
 
+auto gse::gpu::pass_recorder::native() const -> gpu::command_buffer_handle {
+	return m_cmd;
+}
+
+auto gse::gpu::pass_recorder::begin() const -> void {
+	invoke_on<"begin">(m_cmd);
+}
+
+auto gse::gpu::pass_recorder::reset() const -> void {
+	invoke_on<"reset">(m_cmd);
+}
+
 auto gse::gpu::pass_recorder::end() const -> void {
 	invoke_on<"end">(m_cmd);
+}
+
+auto gse::gpu::pass_recorder::begin_secondary(const gpu::secondary_inheritance_info& info) const -> void {
+	invoke_on<"begin_secondary">(m_cmd, info);
+}
+
+auto gse::gpu::pass_recorder::execute_commands(const gpu::command_buffer_handle secondary) const -> void {
+	invoke_on<"execute_commands">(m_cmd, secondary);
+}
+
+auto gse::gpu::pass_recorder::begin_rendering(const gpu::rendering_info& info) const -> void {
+	invoke_on<"begin_rendering">(m_cmd, info);
+}
+
+auto gse::gpu::pass_recorder::end_rendering() const -> void {
+	invoke_on<"end_rendering">(m_cmd);
+}
+
+auto gse::gpu::pass_recorder::reset_query_pool(const gpu::handle<gpu::query_pool> pool, const std::uint32_t first_query, const std::uint32_t query_count) const -> void {
+	invoke_on<"reset_query_pool">(m_cmd, pool, first_query, query_count);
+}
+
+auto gse::gpu::pass_recorder::write_timestamp(const gpu::pipeline_stage_flags stage, const gpu::handle<gpu::query_pool> pool, const std::uint32_t query_index) const -> void {
+	invoke_on<"write_timestamp">(m_cmd, stage, pool, query_index);
+}
+
+auto gse::gpu::pass_recorder::begin_query(const gpu::handle<gpu::query_pool> pool, const std::uint32_t query_index) const -> void {
+	invoke_on<"begin_query">(m_cmd, pool, query_index);
+}
+
+auto gse::gpu::pass_recorder::end_query(const gpu::handle<gpu::query_pool> pool, const std::uint32_t query_index) const -> void {
+	invoke_on<"end_query">(m_cmd, pool, query_index);
+}
+
+auto gse::gpu::pass_recorder::release_swapchain_image_to_present(const gpu::handle<gpu::image> img, const gpu::pipeline_stage_flags src_stages, const gpu::access_flags src_access) const -> void {
+	invoke_on<"release_swapchain_image_to_present">(m_cmd, img, src_stages, src_access);
 }
 
 auto gse::gpu::pass_recorder::set_viewport(const gpu::viewport& viewport) const -> void {

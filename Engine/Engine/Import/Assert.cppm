@@ -76,7 +76,7 @@ auto gse::assert_format_message(const std::source_location loc, const std::strin
 		loc.line(),
 		loc.function_name(),
 		comment,
-		capture_stacktrace(2)
+		capture_stacktrace(1)
 	);
 }
 

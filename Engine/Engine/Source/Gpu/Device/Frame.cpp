@@ -7,7 +7,7 @@ import :device;
 import :swap_chain;
 import :present_pacer;
 
-import gse.vulkan;
+import gse.gpu_backend;
 import gse.os;
 import gse.assert;
 import gse.diag;
@@ -143,9 +143,9 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
 		m_command_buffers[i] = m_device->frame_command_buffer(static_cast<queue_type>(i), m_current_frame).value;
 	}
 
-	const vulkan::commands cmd_main{ command_buffer_handle{ m_command_buffers[static_cast<std::size_t>(queue_type::graphics)] } };
-	cmd_main.reset();
-	cmd_main.begin();
+	const auto cmd_main = command_buffer_handle{ m_command_buffers[static_cast<std::size_t>(queue_type::graphics)] };
+	m_device->cmd_reset(cmd_main);
+	m_device->cmd_begin(cmd_main);
 
 	const image_barrier acquire_barrier{
 		.src_stages = pipeline_stage_flag::top_of_pipe,
@@ -156,7 +156,7 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
 		.image = m_swapchain->image(m_image_index),
 		.aspects = image_aspect_flag::color,
 	};
-	cmd_main.pipeline_barrier(dependency_info{
+	m_device->cmd_pipeline_barrier(cmd_main, dependency_info{
 		.image_barriers = std::span(&acquire_barrier, 1)
 	});
 
@@ -182,7 +182,7 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
 				access_flag::shader_sampled_read,
 		},
 	};
-	cmd_main.pipeline_barrier(dependency_info{
+	m_device->cmd_pipeline_barrier(cmd_main, dependency_info{
 		.memory_barriers = transient_visibility_barriers
 	});
 
@@ -200,9 +200,8 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
 	const auto graphics_cb = command_buffer_handle{ m_command_buffers[static_cast<std::size_t>(queue_type::graphics)] };
 	m_device->transient().recorder().run_post_frame(graphics_cb);
 
-	const vulkan::commands cmd_tail{ graphics_cb };
-
-	cmd_tail.release_swapchain_image_to_present(
+	m_device->cmd_release_swapchain_to_present(
+		graphics_cb,
 		m_swapchain->image(m_image_index),
 		pipeline_stage_flag::color_attachment_output,
 		access_flag::color_attachment_write
@@ -210,7 +209,7 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
 
 	{
 		trace::scope_guard sg{ trace_id<"end_frame::cmd_end">() };
-		cmd_tail.end();
+		m_device->cmd_end(graphics_cb);
 	}
 
 	std::array<std::size_t, queue_type_count> last_idx_per_queue;

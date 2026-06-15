@@ -6,6 +6,7 @@ import :buffer;
 import :gpu_task;
 import :sync_token;
 import :device;
+import :pass_recorder;
 
 import gse.vulkan;
 
@@ -30,7 +31,7 @@ auto gse::gpu::upload_to_buffers(gpu::device& dev, const std::span<const buffer_
 	auto cmd = cmd_awaiter.await_resume();
 
 	for (std::size_t i = 0; i < uploads.size(); ++i) {
-		vulkan::commands(cmd.handle())
+		pass_recorder(cmd.handle())
 			.copy_buffer(
 				stagings[i].handle(),
 				uploads[i].dst->handle(),
