@@ -25,72 +25,69 @@ export namespace gs::locomotion {
 		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time sprint_until = gse::seconds(8.f);
 		[[= gse::within<-1.f, 1.f>{}]] float forward = 1.f;
 	};
+}
 
-	struct smoke_test {
-		struct trial_metrics {
-			gse::time elapsed = gse::seconds(0.f);
-			gse::position min_pelvis_y = gse::meters(1000.f);
-			gse::velocity max_speed = gse::meters_per_second(0.f);
-			gse::displacement max_capture_forward = gse::meters(0.f);
-			gse::displacement max_capture_right = gse::meters(0.f);
-			gse::position max_foot_y = gse::meters(-1000.f);
-			gse::angle pitch_accum;
-			int pitch_samples = 0;
-			gse::vec3<gse::position> walk_start_position;
-			gse::vec3<gse::position> walk_stop_position;
-			bool walk_start_set = false;
-			bool walk_stop_set = false;
-			gse::vec3<gse::position> last_plant_position;
-			bool last_plant_set = false;
-			gse::displacement step_accum;
-			int step_count = 0;
-			gse::angle start_yaw;
-			bool start_yaw_set = false;
-			int plants = 0;
-			int missed_plants = 0;
-			int stale_targets = 0;
-			phase last_phase = phase::idle;
-			leg last_swing_leg = leg::left;
-			bool counted_missed_plant = false;
-			bool counted_stale_target = false;
-			std::uint64_t state_hash = 1469598103934665603ull;
-		};
-
-		struct data {
-			smoke_config config;
-			trial_metrics metrics;
-			smoke_stage stage = smoke_stage::locating_scene;
-			std::optional<gse::id> scene_id;
-			gse::time stage_elapsed = gse::seconds(0.f);
-			int trial = 0;
-			int passed = 0;
-			int failed = 0;
-			int reset_ticks = 0;
-			bool reset_activation_requested = false;
-
-			explicit data(
-				smoke_config cfg = {}
-			);
-		};
-
-		static auto run(
-			gse::context& ctx,
-			data& d,
-			gse::shared_view<gse::world_system> world_d,
-			gse::read<skeleton_refs> refs,
-			gse::write<intent> intents,
-			gse::read<state> states,
-			gse::read<gait> gaits,
-			gse::read<plan> plans
-		) -> gse::async::task<>;
+export namespace gs::locomotion::smoke_test {
+	struct trial_metrics {
+		gse::time elapsed = gse::seconds(0.f);
+		gse::position min_pelvis_y = gse::meters(1000.f);
+		gse::velocity max_speed = gse::meters_per_second(0.f);
+		gse::displacement max_capture_forward = gse::meters(0.f);
+		gse::displacement max_capture_right = gse::meters(0.f);
+		gse::position max_foot_y = gse::meters(-1000.f);
+		gse::angle pitch_accum;
+		int pitch_samples = 0;
+		gse::vec3<gse::position> walk_start_position;
+		gse::vec3<gse::position> walk_stop_position;
+		bool walk_start_set = false;
+		bool walk_stop_set = false;
+		gse::vec3<gse::position> last_plant_position;
+		bool last_plant_set = false;
+		gse::displacement step_accum;
+		int step_count = 0;
+		gse::angle start_yaw;
+		bool start_yaw_set = false;
+		int plants = 0;
+		int missed_plants = 0;
+		int stale_targets = 0;
+		phase last_phase = phase::idle;
+		leg last_swing_leg = leg::left;
+		bool counted_missed_plant = false;
+		bool counted_stale_target = false;
+		std::uint64_t state_hash = 1469598103934665603ull;
 	};
+
+	struct [[= gse::system_state<"Smoke">{}]] data {
+		trial_metrics metrics;
+		smoke_stage stage = smoke_stage::locating_scene;
+		std::optional<gse::id> scene_id;
+		gse::time stage_elapsed = gse::seconds(0.f);
+		int trial = 0;
+		int passed = 0;
+		int failed = 0;
+		int reset_ticks = 0;
+		bool reset_activation_requested = false;
+	};
+
+	[[= gse::system_run<>{}]]
+	auto run(
+		gse::context& ctx,
+		data& d,
+		const smoke_config& config,
+		gse::shared_view<gse::world_system::data> world_d,
+		gse::read<skeleton_refs> refs,
+		gse::write<intent> intents,
+		gse::read<state> states,
+		gse::read<gait> gaits,
+		gse::read<plan> plans
+	) -> gse::async::task<>;
 }
 
 namespace gs::locomotion {
 	auto sim_frame_dt() -> gse::time;
 
 	auto find_scene_id(
-		gse::shared_view<gse::world_system> world_d
+		gse::shared_view<gse::world_system::data> world_d
 	) -> std::optional<gse::id>;
 
 	auto reset_metrics(
@@ -98,7 +95,8 @@ namespace gs::locomotion {
 	) -> void;
 
 	auto begin_trial(
-		smoke_test::data& d
+		smoke_test::data& d,
+		const smoke_config& config
 	) -> void;
 
 	auto smoke_foot_grounded(
@@ -126,19 +124,17 @@ namespace gs::locomotion {
 	auto finish_trial(
 		gse::context& ctx,
 		smoke_test::data& d,
+		const smoke_config& config,
 		const state& s,
 		const gait& g
 	) -> void;
-}
-
-gs::locomotion::smoke_test::data::data(smoke_config cfg) : config(std::move(cfg)) {
 }
 
 auto gs::locomotion::sim_frame_dt() -> gse::time {
 	return gse::system_clock::fixed_dt<gse::time>() * gse::system_clock::fixed_steps_this_frame();
 }
 
-auto gs::locomotion::find_scene_id(const gse::shared_view<gse::world_system> world_d) -> std::optional<gse::id> {
+auto gs::locomotion::find_scene_id(const gse::shared_view<gse::world_system::data> world_d) -> std::optional<gse::id> {
 	for (const auto& [scene_id, scene_ptr] : world_d.scenes) {
 		if (scene_ptr && scene_ptr->id().tag() == std::string_view("Sandbox")) {
 			return scene_id;
@@ -151,7 +147,7 @@ auto gs::locomotion::reset_metrics(smoke_test::trial_metrics& metrics) -> void {
 	metrics = {};
 }
 
-auto gs::locomotion::begin_trial(smoke_test::data& d) -> void {
+auto gs::locomotion::begin_trial(smoke_test::data& d, const smoke_config& config) -> void {
 	reset_metrics(d.metrics);
 	d.stage = smoke_stage::warmup;
 	d.stage_elapsed = gse::seconds(0.f);
@@ -161,9 +157,9 @@ auto gs::locomotion::begin_trial(smoke_test::data& d) -> void {
 	gse::log::println(
 		"locomotion_smoke: trial={} begin duration={:.2f:s} warmup={:.2f:s} forward={:+.2f}",
 		d.trial,
-		d.config.duration,
-		d.config.warmup,
-		d.config.forward
+		config.duration,
+		config.warmup,
+		config.forward
 	);
 }
 
@@ -250,8 +246,8 @@ auto gs::locomotion::write_smoke_intent(intent& it, const float forward) -> void
 	it.jump = false;
 }
 
-auto gs::locomotion::finish_trial(gse::context& ctx, smoke_test::data& d, const state& s, const gait& g) -> void {
-	const bool passed = !g.fallen && d.metrics.elapsed >= d.config.duration;
+auto gs::locomotion::finish_trial(gse::context& ctx, smoke_test::data& d, const smoke_config& config, const state& s, const gait& g) -> void {
+	const bool passed = !g.fallen && d.metrics.elapsed >= config.duration;
 	const std::string_view result = passed ? "passed" : "fallen";
 	if (passed) {
 		++d.passed;
@@ -262,7 +258,7 @@ auto gs::locomotion::finish_trial(gse::context& ctx, smoke_test::data& d, const 
 
 	const auto mean_pitch = d.metrics.pitch_samples > 0 ? d.metrics.pitch_accum / static_cast<float>(d.metrics.pitch_samples) : gse::radians(0.f);
 	const auto walk_end = d.metrics.walk_stop_set ? d.metrics.walk_stop_position : s.pelvis_position;
-	const auto walk_time = d.metrics.walk_stop_set ? d.config.stop_after : d.metrics.elapsed;
+	const auto walk_time = d.metrics.walk_stop_set ? config.stop_after : d.metrics.elapsed;
 	const auto walk_distance = d.metrics.walk_start_set
 		? gse::hypot(
 			  (walk_end - d.metrics.walk_start_position).x(),
@@ -295,7 +291,7 @@ auto gs::locomotion::finish_trial(gse::context& ctx, smoke_test::data& d, const 
 		g.swing_leg
 	);
 
-	if (d.trial >= d.config.trials) {
+	if (d.trial >= config.trials) {
 		d.stage = smoke_stage::done;
 		gse::log::println("locomotion_smoke: complete trials={} passed={} failed={}", d.trial, d.passed, d.failed);
 		gse::shutdown();
@@ -311,10 +307,10 @@ auto gs::locomotion::finish_trial(gse::context& ctx, smoke_test::data& d, const 
 	d.reset_activation_requested = false;
 }
 
-auto gs::locomotion::smoke_test::run(gse::context& ctx, data& d, const gse::shared_view<gse::world_system> world_d, gse::read<skeleton_refs> refs, gse::write<intent> intents, gse::read<state> states, gse::read<gait> gaits, gse::read<plan> plans) -> gse::async::task<> {
+auto gs::locomotion::smoke_test::run(gse::context& ctx, data& d, const smoke_config& config, const gse::shared_view<gse::world_system::data> world_d, gse::read<skeleton_refs> refs, gse::write<intent> intents, gse::read<state> states, gse::read<gait> gaits, gse::read<plan> plans) -> gse::async::task<> {
 	const auto dt = sim_frame_dt();
 
-	if (d.config.trials <= 0) {
+	if (config.trials <= 0) {
 		gse::log::println("locomotion_smoke: complete trials=0 passed=0 failed=0");
 		gse::shutdown();
 		return {};
@@ -350,7 +346,7 @@ auto gs::locomotion::smoke_test::run(gse::context& ctx, data& d, const gse::shar
 			d.reset_activation_requested = true;
 		}
 		if (d.reset_ticks >= 6 && d.reset_activation_requested && d.scene_id.has_value() && world_d.active_scene == d.scene_id) {
-			begin_trial(d);
+			begin_trial(d, config);
 		}
 	}
 
@@ -375,7 +371,7 @@ auto gs::locomotion::smoke_test::run(gse::context& ctx, data& d, const gse::shar
 			}
 			if (d.stage == smoke_stage::warmup) {
 				d.stage_elapsed += dt;
-				if (d.stage_elapsed >= d.config.warmup && s->valid) {
+				if (d.stage_elapsed >= config.warmup && s->valid) {
 					reset_metrics(d.metrics);
 					d.stage = smoke_stage::running;
 					d.stage_elapsed = gse::seconds(0.f);
@@ -390,10 +386,10 @@ auto gs::locomotion::smoke_test::run(gse::context& ctx, data& d, const gse::shar
 				}
 			}
 			else if (d.stage == smoke_stage::running) {
-				const bool stopped = d.config.stop_after > gse::seconds(0.f) && d.metrics.elapsed >= d.config.stop_after;
-				write_smoke_intent(*it, stopped ? 0.f : d.config.forward);
+				const bool stopped = config.stop_after > gse::seconds(0.f) && d.metrics.elapsed >= config.stop_after;
+				write_smoke_intent(*it, stopped ? 0.f : config.forward);
 
-				it->sprint = !stopped && d.config.sprint_until > d.config.sprint_after && d.metrics.elapsed >= d.config.sprint_after && d.metrics.elapsed < d.config.sprint_until;
+				it->sprint = !stopped && config.sprint_until > config.sprint_after && d.metrics.elapsed >= config.sprint_after && d.metrics.elapsed < config.sprint_until;
 				it->sprint_blend += ((it->sprint ? 1.f : 0.f) - it->sprint_blend) * 0.03f;
 
 				if (!d.metrics.start_yaw_set && s->valid) {
@@ -401,11 +397,11 @@ auto gs::locomotion::smoke_test::run(gse::context& ctx, data& d, const gse::shar
 					d.metrics.start_yaw_set = true;
 				}
 
-				const bool turning = d.config.turn_after > gse::seconds(0.f) && d.metrics.elapsed >= d.config.turn_after && d.metrics.start_yaw_set;
+				const bool turning = config.turn_after > gse::seconds(0.f) && d.metrics.elapsed >= config.turn_after && d.metrics.start_yaw_set;
 
 				if (turning) {
 					it->desired_yaw = gse::radians(std::remainder(
-						static_cast<float>(d.metrics.start_yaw + d.config.turn_by),
+						static_cast<float>(d.metrics.start_yaw + config.turn_by),
 						2.f * std::numbers::pi_v<float>
 					));
 					it->has_heading = true;
@@ -421,8 +417,8 @@ auto gs::locomotion::smoke_test::run(gse::context& ctx, data& d, const gse::shar
 					d.metrics.walk_stop_position = s->pelvis_position;
 					d.metrics.walk_stop_set = true;
 				}
-				if (g->fallen || d.metrics.elapsed >= d.config.duration) {
-					finish_trial(ctx, d, *s, *g);
+				if (g->fallen || d.metrics.elapsed >= config.duration) {
+					finish_trial(ctx, d, config, *s, *g);
 				}
 			}
 		}

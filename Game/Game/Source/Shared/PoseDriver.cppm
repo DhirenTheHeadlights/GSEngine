@@ -6,25 +6,24 @@ import gse;
 import :controlled_joint;
 
 export namespace gs::pose_driver {
-	struct system {
-		struct data {
-			gse::interval_timer<float> log_timer{ gse::seconds(0.5f) };
-		};
-
-		static auto run(
-			data& d,
-			gse::read<gse::physics::joint_spec> specs,
-			gse::read<gse::physics::transform_component> transforms,
-			gse::write<controlled_joint_component> ctrls,
-			gse::write<gse::physics::muscle_component> muscles
-		) -> gse::async::task<>;
+	struct [[= gse::system_state<"PoseDriver">{}]] data {
+		gse::interval_timer<float> log_timer{ gse::seconds(0.5f) };
 	};
+
+	[[= gse::system_run<>{}]]
+	auto run(
+		data& state,
+		gse::read<gse::physics::joint_spec> specs,
+		gse::read<gse::physics::transform_component> transforms,
+		gse::write<controlled_joint_component> ctrls,
+		gse::write<gse::physics::muscle_component> muscles
+	) -> gse::async::task<>;
 }
 
-auto gs::pose_driver::system::run(data& d, gse::read<gse::physics::joint_spec> specs, gse::read<gse::physics::transform_component> transforms, gse::write<controlled_joint_component> ctrls, gse::write<gse::physics::muscle_component> muscles) -> gse::async::task<> {
+auto gs::pose_driver::run(data& state, gse::read<gse::physics::joint_spec> specs, gse::read<gse::physics::transform_component> transforms, gse::write<controlled_joint_component> ctrls, gse::write<gse::physics::muscle_component> muscles) -> gse::async::task<> {
 	const auto dt_seconds = gse::system_clock::fixed_dt<gse::time>().as<gse::seconds>();
 	const auto inv_dt = dt_seconds > 0.f ? 1.f / dt_seconds : 0.f;
-	const bool log_now = d.log_timer.tick();
+	const bool log_now = state.log_timer.tick();
 
 	const auto ctrl_owners = ctrls.owner_ids();
 	for (std::size_t i = 0; i < ctrls.size(); ++i) {

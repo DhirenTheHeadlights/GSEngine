@@ -6,42 +6,41 @@ import gse;
 import :crosshair_system;
 import :dev_spawn_system;
 
-export namespace gs {
-	struct client_ui_system {
-		struct data {
-			std::string buff;
-			gse::gui::text_input_state buff_state;
-			float slider_f = 0.f;
-		};
-
-		static auto run(
-			gse::context& ctx,
-			data& d,
-			gse::shared_view<gse::gui::system> gui_d,
-			gse::shared_view<gse::window> window_d,
-			gse::shared_view<crosshair_system> crosshair_d,
-			gse::shared_view<gse::renderer::capture::system> capture_d
-		) -> gse::async::task<>;
+export namespace gs::client_ui {
+	struct [[= gse::system_state<"ClientUI">{}]] data {
+		std::string buff;
+		gse::gui::text_input_state buff_state;
+		float slider_f = 0.f;
 	};
+
+	[[= gse::system_run<>{}]]
+	auto run(
+		gse::context& ctx,
+		data& d,
+		gse::shared_view<gse::gui::data> gui_d,
+		gse::shared_view<gse::window::data> window_d,
+		gse::shared_view<crosshair::data> crosshair_d,
+		gse::shared_view<gse::renderer::capture::data> capture_d
+	) -> gse::async::task<>;
 }
 
-namespace gs {
+namespace gs::client_ui {
 	auto push_crosshair(
 		gse::context& ctx,
-		gse::shared_view<gse::gui::system> gui_d,
-		gse::shared_view<gse::window> window_d,
-		gse::shared_view<crosshair_system> crosshair_d
+		gse::shared_view<gse::gui::data> gui_d,
+		gse::shared_view<gse::window::data> window_d,
+		gse::shared_view<crosshair::data> crosshair_d
 	) -> void;
 
 	auto push_recording_indicator(
 		gse::context& ctx,
-		gse::shared_view<gse::gui::system> gui_d,
-		gse::shared_view<gse::window> window_d,
-		gse::shared_view<gse::renderer::capture::system> capture_d
+		gse::shared_view<gse::gui::data> gui_d,
+		gse::shared_view<gse::window::data> window_d,
+		gse::shared_view<gse::renderer::capture::data> capture_d
 	) -> void;
 }
 
-auto gs::push_crosshair(gse::context& ctx, const gse::shared_view<gse::gui::system> gui_d, const gse::shared_view<gse::window> window_d, const gse::shared_view<crosshair_system> crosshair_d) -> void {
+auto gs::client_ui::push_crosshair(gse::context& ctx, const gse::shared_view<gse::gui::data> gui_d, const gse::shared_view<gse::window::data> window_d, const gse::shared_view<crosshair::data> crosshair_d) -> void {
 	if (!crosshair_d.show) {
 		return;
 	}
@@ -104,7 +103,7 @@ auto gs::push_crosshair(gse::context& ctx, const gse::shared_view<gse::gui::syst
 	}
 }
 
-auto gs::push_recording_indicator(gse::context& ctx, const gse::shared_view<gse::gui::system> gui_d, const gse::shared_view<gse::window> window_d, const gse::shared_view<gse::renderer::capture::system> capture_d) -> void {
+auto gs::client_ui::push_recording_indicator(gse::context& ctx, const gse::shared_view<gse::gui::data> gui_d, const gse::shared_view<gse::window::data> window_d, const gse::shared_view<gse::renderer::capture::data> capture_d) -> void {
 	if (!capture_d.recording || !capture_d.recording->active.load()) {
 		return;
 	}
@@ -142,7 +141,7 @@ auto gs::push_recording_indicator(gse::context& ctx, const gse::shared_view<gse:
 	});
 }
 
-auto gs::client_ui_system::run(gse::context& ctx, data& d, const gse::shared_view<gse::gui::system> gui_d, const gse::shared_view<gse::window> window_d, const gse::shared_view<crosshair_system> crosshair_d, const gse::shared_view<gse::renderer::capture::system> capture_d) -> gse::async::task<> {
+auto gs::client_ui::run(gse::context& ctx, data& d, const gse::shared_view<gse::gui::data> gui_d, const gse::shared_view<gse::window::data> window_d, const gse::shared_view<crosshair::data> crosshair_d, const gse::shared_view<gse::renderer::capture::data> capture_d) -> gse::async::task<> {
 	if (gui_d.menu_stack.empty()) {
 		push_crosshair(ctx, gui_d, window_d, crosshair_d);
 	}

@@ -2,6 +2,7 @@ module gs:client_impl;
 
 import std;
 import gse;
+import gse.system_manifest;
 
 import :client;
 import :balance_controller;
@@ -16,17 +17,21 @@ import :state_estimator;
 import :tumbler;
 
 auto gs::client_system::init(gse::context& ctx) -> gse::async::task<> {
-	ctx.add_system<gs::player::system>();
-	ctx.add_system<gs::orbit_camera::system>();
-	ctx.add_system<gs::tumbler::system>();
-	ctx.add_system<gs::piston::system>();
-	ctx.add_system<gs::locomotion::state_estimator>();
-	ctx.add_system<gs::locomotion::gait_scheduler>();
-	ctx.add_system<gs::locomotion::footstep_planner>();
-	ctx.add_system<gs::locomotion::balance_controller>();
-	ctx.add_system<gs::locomotion::leg_controller>();
-	ctx.add_system<gs::pose_driver::system>();
-	ctx.add_system<gse::free_camera::system>();
+	gse::system_manifest<
+		^^gs::player::data, ^^gs::player::attach, ^^gs::player::update,
+		^^gs::orbit_camera::data, ^^gs::orbit_camera::attach, ^^gs::orbit_camera::update,
+		^^gs::tumbler::data, ^^gs::tumbler::run,
+		^^gs::piston::data, ^^gs::piston::run
+	>{}.register_with(ctx);
+	gse::system_manifest<
+		^^gs::locomotion::state_estimator::data, ^^gs::locomotion::state_estimator::run,
+		^^gs::locomotion::gait_scheduler::data, ^^gs::locomotion::gait_scheduler::run,
+		^^gs::locomotion::footstep_planner::data, ^^gs::locomotion::footstep_planner::run,
+		^^gs::locomotion::balance_controller::data, ^^gs::locomotion::balance_controller::run,
+		^^gs::locomotion::leg_controller::data, ^^gs::locomotion::leg_controller::run
+	>{}.register_with(ctx);
+	gse::system_manifest<^^gs::pose_driver::data, ^^gs::pose_driver::run>{}.register_with(ctx);
+	gse::register_systems<^^gse::free_camera::system>(ctx);
 
 	ctx.channels.push<gse::network::clear_providers_request>({});
 	std::vector seed{

@@ -16,27 +16,26 @@ import :settings;
 import :types;
 import :gui;
 
-export namespace gse::gui {
-	struct popout_system {
-		struct popout_entry {
-			std::string menu_name;
-			id menu_id;
-			const gse::settings::register_settings_type* entry = nullptr;
-			bool active = true;
-		};
-
-		struct data {
-			std::unordered_map<std::string, popout_entry> popouts;
-			gse::settings::panel_state panel_state;
-		};
-
-		static auto run(
-			gse::context& ctx,
-			data& d,
-			gse::shared_view<system> gui_d,
-			const gse::save::registry& save_reg
-		) -> gse::async::task<>;
+export namespace gse::gui::popout_system {
+	struct popout_entry {
+		std::string menu_name;
+		id menu_id;
+		const gse::settings::register_settings_type* entry = nullptr;
+		bool active = true;
 	};
+
+	struct [[= gse::system_state<"Popouts">{}]] data {
+		std::unordered_map<std::string, popout_entry> popouts;
+		gse::settings::panel_state panel_state;
+	};
+
+	[[= gse::system_run<>{}]]
+	auto run(
+		gse::context& ctx,
+		data& d,
+		gse::shared_view<gse::gui::data> gui_d,
+		const gse::save::registry& save_reg
+	) -> gse::async::task<>;
 }
 
 namespace gse::gui {
@@ -68,7 +67,7 @@ auto gse::gui::make_popout_menu_name(const std::string_view category) -> std::st
 auto gse::gui::find_hot_entry(const gse::save::registry& save_reg, const std::string_view category) -> const gse::settings::register_settings_type* {
 	const gse::settings::register_settings_type* found = nullptr;
 	save_reg.for_each_entry([&](const gse::settings::register_settings_type& entry) {
-		if (entry.category == category && entry.draw_hot_fields && entry.settings_ptr) {
+		if (entry.category == category && entry.settings_ptr && std::ranges::any_of(entry.fields, &gse::settings::settings_field::hot_reloadable)) {
 			found = &entry;
 		}
 	});
@@ -95,7 +94,7 @@ auto gse::gui::activate_popout(popout_system::data& d, const gse::save::registry
 	return &it->second;
 }
 
-auto gse::gui::popout_system::run(gse::context& ctx, data& d, const gse::shared_view<system> gui_d, const gse::save::registry& save_reg) -> gse::async::task<> {
+auto gse::gui::popout_system::run(gse::context& ctx, data& d, const gse::shared_view<gui::data> gui_d, const gse::save::registry& save_reg) -> gse::async::task<> {
 		for (const auto& req : ctx.read_channel<popout_toggle>()) {
 			auto it = d.popouts.find(req.category);
 			const bool was_active = it != d.popouts.end() && it->second.active;
@@ -106,8 +105,8 @@ auto gse::gui::popout_system::run(gse::context& ctx, data& d, const gse::shared_
 			else {
 				activate_popout(d, save_reg, req.category);
 				if (!gui_d.show_dev_overlays) {
-					ctx.channels.push<gse::settings::change_request<system>>({
-						.apply = [](system::data& s) {
+					ctx.channels.push<gse::settings::annotated_change_request<gui::data>>({
+						.apply = [](gui::data& s) {
 							s.show_dev_overlays = true;
 						},
 					});
@@ -147,8 +146,8 @@ auto gse::gui::popout_system::run(gse::context& ctx, data& d, const gse::shared_
 			ctx.channels.push<menu_content>({
 				.menu = popout.menu_name,
 				.layer = render_layer::overlay,
-				.build = [thunk = popout.entry->draw_hot_fields, settings_ptr = popout.entry->settings_ptr, ps_ptr = &d.panel_state, &channels_ref = ctx.channels](builder& b) {
-					thunk(&b, ps_ptr, settings_ptr, &channels_ref);
+				.build = [entry = popout.entry, ps_ptr = &d.panel_state, &channels_ref = ctx.channels](builder& b) {
+					gse::settings::draw_fields_for_entry(b, *ps_ptr, channels_ref, *entry, true);
 				},
 			});
 		}

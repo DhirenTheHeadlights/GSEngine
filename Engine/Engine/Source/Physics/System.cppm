@@ -101,175 +101,174 @@ export namespace gse::physics {
 		std::uint32_t position_offset = 0;
 	};
 
-	class system {
-	public:
-		struct [[= gse::settings::category<"Physics">{}]] data {
-			[[= gse::settings::describe<"Step the physics world each frame.">{}]] bool update_phys = true;
+	struct [[= gse::system_state<"Physics">{}, = gse::settings::category<"Physics">{}, = gse::deferred_system{}]] data {
+		[[= gse::settings::describe<"Step the physics world each frame.">{}]] bool update_phys = true;
 
-			[[
-				= gse::settings::describe<"Run the constraint solver on the GPU instead of the CPU.">{},
-				= gse::shared
-			]]
-			bool use_gpu_solver = false;
+		[[
+			= gse::settings::describe<"Run the constraint solver on the GPU instead of the CPU.">{},
+			= gse::shared
+		]]
+		bool use_gpu_solver = false;
 
-			[[
-				= gse::settings::describe<"Number of constraint solver iterations per substep. Higher values reduce "
-										  "jitter at the cost of frame time.">{},
-				= gse::settings::range<1, 40>{}
-			]]
-			int solver_iterations = 15;
+		[[
+			= gse::settings::describe<"Number of constraint solver iterations per substep. Higher values reduce "
+									  "jitter at the cost of frame time.">{},
+			= gse::settings::range<1, 40>{}
+		]]
+		int solver_iterations = 15;
 
-			[[
-				= gse::settings::describe<"Use Jacobi iteration instead of Gauss-Seidel. More parallel-friendly but converges slower.">{}
-			]]
-			bool use_jacobi = false;
+		[[
+			= gse::settings::describe<"Use Jacobi iteration instead of Gauss-Seidel. More parallel-friendly but converges slower.">{}
+		]]
+		bool use_jacobi = false;
 
-			[[
-				= gse::settings::describe<"Relaxation factor for the Jacobi solver. Lower values are more stable; "
-										  "higher values converge faster.">{},
-				= gse::settings::range<0.1f, 1.0f>{}
-			]]
-			float jacobi_omega = 0.67f;
+		[[
+			= gse::settings::describe<"Relaxation factor for the Jacobi solver. Lower values are more stable; "
+									  "higher values converge faster.">{},
+			= gse::settings::range<0.1f, 1.0f>{}
+		]]
+		float jacobi_omega = 0.67f;
 
-			[[
-				= gse::settings::describe<"Number of substeps per simulation tick. More substeps improve stability for "
-										  "fast-moving bodies.">{},
-				= gse::settings::range<1, 8>{}
-			]]
-			int physics_substeps = 2;
+		[[
+			= gse::settings::describe<"Number of substeps per simulation tick. More substeps improve stability for "
+									  "fast-moving bodies.">{},
+			= gse::settings::range<1, 8>{}
+		]]
+		int physics_substeps = 2;
 
-			bool gpu_buffers_created = false;
-			gpu_solver_stats gpu_stats;
-			std::vector<joint_definition> joints;
+		bool gpu_buffers_created = false;
+		gpu_solver_stats gpu_stats;
+		std::vector<joint_definition> joints;
 
-			vbd::solver vbd_solver;
-			vbd::contact_cache contact_cache;
-			std::unordered_map<id, std::uint32_t> sleep_counters;
-			bool gpu_joints_dirty = true;
-			std::uint32_t gpu_uploaded_body_count = 0;
-			std::uint32_t gpu_uploaded_joint_count = 0;
-			[[= gse::shared]] std::flat_map<id, std::uint32_t> id_to_body_index;
-			std::flat_map<id, joint_handle> joint_handles_by_entity;
-			std::vector<impulse_request> gpu_pending_impulses;
+		vbd::solver vbd_solver;
+		vbd::contact_cache contact_cache;
+		std::unordered_map<id, std::uint32_t> sleep_counters;
+		bool gpu_joints_dirty = true;
+		std::uint32_t gpu_uploaded_body_count = 0;
+		std::uint32_t gpu_uploaded_joint_count = 0;
+		[[= gse::shared]] std::flat_map<id, std::uint32_t> id_to_body_index;
+		std::flat_map<id, joint_handle> joint_handles_by_entity;
+		std::vector<impulse_request> gpu_pending_impulses;
 
-			[[= gse::shared]] std::vector<std::uint8_t> body_airborne;
-			[[= gse::shared]] std::vector<std::uint8_t> body_sleeping;
+		[[= gse::shared]] std::vector<std::uint8_t> body_airborne;
+		[[= gse::shared]] std::vector<std::uint8_t> body_sleeping;
 
-			[[= gse::shared]] vbd::gpu_solver gpu_solver;
-		};
-
-		static auto init(
-			context& ctx,
-			std::optional<shared_view<gpu::context>> gpu_s,
-			data& d
-		) -> async::task<>;
-
-		struct run {
-			static auto prepare(
-				context& ctx,
-				std::optional<shared_view<gpu::context>> gpu_s,
-				shared_view<asset::registry> assets_s,
-				data& d,
-				write<joint_spec> specs,
-				read<muscle_component> muscles,
-				read<joint_drive_component> drives
-			) -> async::task<>;
-
-			static auto ensure_results(
-				context& ctx,
-				data& d,
-				structural<collision_result_component> results
-			) -> async::task<>;
-
-			static auto integrate(
-				context& ctx,
-				data& d,
-				write<transform_component> transform,
-				write<motion_component> motion,
-				read<motor_component> motor,
-				write<collision_component> collision,
-				write<collision_result_component> results
-			) -> async::task<>;
-		};
-
-		static auto frame(
-			context& ctx,
-			std::optional<shared_view<gpu::context>> gpu_s,
-			data& d
-		) -> async::task<>;
-
-		static auto create_joint(
-			data& d,
-			const joint_definition& def
-		) -> joint_handle;
-
-		static auto remove_joint(
-			data& d,
-			joint_handle handle
-		) -> void;
-
-		static auto query_transform(
-			shared_view<system> d,
-			id entity_id
-		) -> std::optional<transform_snapshot>;
-
-		static auto is_airborne(
-			shared_view<system> d,
-			id entity_id
-		) -> bool;
-
-		static auto is_sleeping(
-			shared_view<system> d,
-			id entity_id
-		) -> bool;
-
-	private:
-		struct collision_pair {
-			id owner;
-			aabb box;
-		};
-
-		static auto collect_collision_objects(
-			write<transform_component>& transform,
-			write<collision_component>& collision
-		) -> std::vector<collision_pair>;
-
-		static auto add_scene_contacts_to_solver(
-			vbd::solver& solver,
-			vbd::contact_cache& contact_cache,
-			std::vector<collision_pair>& objects,
-			const std::flat_map<id, std::uint32_t>& id_to_body_index,
-			const std::flat_set<std::pair<std::uint64_t, std::uint64_t>>& jointed_pairs,
-			bool update_scene_state,
-			write<transform_component>& transform,
-			write<motion_component>& motion,
-			write<collision_component>& collision,
-			write<collision_result_component>* results,
-			std::span<std::uint8_t> body_airborne
-		) -> void;
-
-		static auto update_vbd(
-			int steps,
-			data& d,
-			write<transform_component>& transform,
-			write<motion_component>& motion,
-			read<motor_component>& motor,
-			write<collision_component>& collision,
-			write<collision_result_component>& results,
-			std::span<const impulse_request> impulses
-		) -> void;
-
-		static auto update_vbd_gpu(
-			int steps,
-			data& d,
-			write<transform_component>& transform,
-			write<motion_component>& motion,
-			read<motor_component>& motor,
-			write<collision_component>& collision,
-			write<collision_result_component>& results,
-			std::span<const impulse_request> impulses,
-			time_t<float, seconds> dt,
-			channel_writer& channels
-		) -> void;
+		[[= gse::shared]] vbd::gpu_solver gpu_solver;
 	};
+
+	struct collision_pair {
+		id owner;
+		aabb box;
+	};
+
+	[[= gse::system_init{}]]
+	auto init(
+		context& ctx,
+		std::optional<shared_view<gpu::context::data>> gpu_s,
+		data& d
+	) -> async::task<>;
+
+	[[= gse::system_run<>{}]]
+	auto prepare(
+		context& ctx,
+		std::optional<shared_view<gpu::context::data>> gpu_s,
+		shared_view<asset::data> assets_s,
+		data& d,
+		write<joint_spec> specs,
+		read<muscle_component> muscles,
+		read<joint_drive_component> drives
+	) -> async::task<>;
+
+	[[= gse::system_run<1>{}]]
+	auto ensure_results(
+		context& ctx,
+		data& d,
+		structural<collision_result_component> results
+	) -> async::task<>;
+
+	[[= gse::system_run<2>{}]]
+	auto integrate(
+		context& ctx,
+		data& d,
+		write<transform_component> transform,
+		write<motion_component> motion,
+		read<motor_component> motor,
+		write<collision_component> collision,
+		write<collision_result_component> results
+	) -> async::task<>;
+
+	[[= gse::system_frame{}]]
+	auto frame(
+		context& ctx,
+		std::optional<shared_view<gpu::context::data>> gpu_s,
+		data& d
+	) -> async::task<>;
+
+	auto create_joint(
+		data& d,
+		const joint_definition& def
+	) -> joint_handle;
+
+	auto remove_joint(
+		data& d,
+		joint_handle handle
+	) -> void;
+
+	auto query_transform(
+		shared_view<data> d,
+		id entity_id
+	) -> std::optional<transform_snapshot>;
+
+	auto is_airborne(
+		shared_view<data> d,
+		id entity_id
+	) -> bool;
+
+	auto is_sleeping(
+		shared_view<data> d,
+		id entity_id
+	) -> bool;
+
+	auto collect_collision_objects(
+		write<transform_component>& transform,
+		write<collision_component>& collision
+	) -> std::vector<collision_pair>;
+
+	auto add_scene_contacts_to_solver(
+		vbd::solver& solver,
+		vbd::contact_cache& contact_cache,
+		std::vector<collision_pair>& objects,
+		const std::flat_map<id, std::uint32_t>& id_to_body_index,
+		const std::flat_set<std::pair<std::uint64_t, std::uint64_t>>& jointed_pairs,
+		bool update_scene_state,
+		write<transform_component>& transform,
+		write<motion_component>& motion,
+		write<collision_component>& collision,
+		write<collision_result_component>* results,
+		std::span<std::uint8_t> body_airborne
+	) -> void;
+
+	auto update_vbd(
+		int steps,
+		data& d,
+		write<transform_component>& transform,
+		write<motion_component>& motion,
+		read<motor_component>& motor,
+		write<collision_component>& collision,
+		write<collision_result_component>& results,
+		std::span<const impulse_request> impulses
+	) -> void;
+
+	auto update_vbd_gpu(
+		int steps,
+		data& d,
+		write<transform_component>& transform,
+		write<motion_component>& motion,
+		read<motor_component>& motor,
+		write<collision_component>& collision,
+		write<collision_result_component>& results,
+		std::span<const impulse_request> impulses,
+		time_t<float, seconds> dt,
+		channel_writer& channels
+	) -> void;
 }

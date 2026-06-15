@@ -12,37 +12,37 @@ import gse.ecs;
 import gse.meta;
 
 export namespace gse::renderer::tonemap {
-	struct system {
-		struct [[= gse::settings::category<"Graphics">{}]] data {
-			[[
-				= gse::settings::
-					describe<"HDR exposure multiplier applied before tonemapping. 1.0 is the neutral default.">{}
-			]]
-			float exposure = 1.0f;
+	struct [[= gse::system_state<"Tonemap">{}, = gse::settings::category<"Graphics">{}]] data {
+		[[
+			= gse::settings::
+				describe<"HDR exposure multiplier applied before tonemapping. 1.0 is the neutral default.">{}
+		]]
+		float exposure = 1.0f;
 
-			[[
-				= gse::settings::describe<"Replace the final image with a hue/intensity visualization of the motion-vector buffer.">{}
-			]]
-			bool show_velocity = false;
+		[[
+			= gse::settings::describe<"Replace the final image with a hue/intensity visualization of the motion-vector buffer.">{}
+		]]
+		bool show_velocity = false;
 
-			gpu::shader_program pipeline;
-			gpu::bindless_handle sampler;
-			gpu::bindless_handle hdr_view;
-			gpu::bindless_handle velocity_view;
-		};
-
-		static auto init(
-			context& ctx,
-			shared_view<gpu::context> gpu_s,
-			shared_view<bloom::system> bloom_state,
-			data& d
-		) -> async::task<>;
-
-		static auto frame(
-			const context& ctx,
-			shared_view<gpu::context> gpu_s,
-			data& d,
-			shared_view<bloom::system> bloom_state
-		) -> async::task<>;
+		gpu::shader_program pipeline;
+		gpu::bindless_handle sampler;
+		gpu::bindless_handle hdr_view;
+		gpu::bindless_handle velocity_view;
 	};
+
+	[[= gse::system_init{}]]
+	auto init(
+		context& ctx,
+		shared_view<gpu::context::data> gpu_s,
+		shared_view<bloom::data> bloom_state,
+		data& d
+	) -> async::task<>;
+
+	[[= gse::system_frame{}]]
+	auto frame(
+		const context& ctx,
+		shared_view<gpu::context::data> gpu_s,
+		data& d,
+		shared_view<bloom::data> bloom_state
+	) -> async::task<>;
 }

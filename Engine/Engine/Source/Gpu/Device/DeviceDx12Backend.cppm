@@ -344,7 +344,7 @@ export namespace gse::gpu {
 	};
 
 	[[nodiscard]] auto create_dx12_device_backend(
-		shared_view<window> win,
+		shared_view<window::data> win,
 		bool validation_layers_enabled,
 		device_settings& cfg
 	) -> dx12_backend_creation;
@@ -650,7 +650,7 @@ auto gse::gpu::dx12_device_backend::make_video_encoder_backend(vec2u) -> std::un
 	return nullptr;
 }
 
-auto gse::gpu::create_dx12_device_backend(const shared_view<window> win, bool, device_settings& cfg) -> dx12_backend_creation {
+auto gse::gpu::create_dx12_device_backend(const shared_view<window::data> win, bool, device_settings& cfg) -> dx12_backend_creation {
 	return {
 		.backend = std::make_unique<dx12_device_backend>(std::make_unique<dx12::device>(win, cfg)),
 		.surface_format = image_format::b8g8r8a8_unorm,

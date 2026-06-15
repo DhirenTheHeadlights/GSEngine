@@ -46,7 +46,7 @@ namespace gse::gpu {
 	}();
 }
 
-auto gse::gpu::device::create(const shared_view<window> win, const bool validation_layers_enabled, gpu::device_settings& device_cfg) -> std::unique_ptr<device> {
+auto gse::gpu::device::create(const shared_view<window::data> win, const bool validation_layers_enabled, gpu::device_settings& device_cfg) -> std::unique_ptr<device> {
 	active_backend = device_cfg.backend;
 
 	switch (device_cfg.backend) {

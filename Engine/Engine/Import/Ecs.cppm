@@ -1,6 +1,7 @@
 export module gse.ecs;
 
 export import :registries;
+export import :system_anno;
 export import :system_node;
 export import :shared_view;
 export import :access_token;

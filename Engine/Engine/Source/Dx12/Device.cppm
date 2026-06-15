@@ -46,7 +46,7 @@ export namespace gse::dx12 {
 	class device final : public non_copyable {
 	public:
 		device(
-			shared_view<window> win,
+			shared_view<window::data> win,
 			gpu::device_settings& cfg
 		);
 
@@ -430,7 +430,7 @@ auto gse::dx12::state_from_access(const gpu::access_flags access) -> directx::D3
 	return directx::resource_state_common;
 }
 
-gse::dx12::device::device(const shared_view<window> win, gpu::device_settings&) {
+gse::dx12::device::device(const shared_view<window::data> win, gpu::device_settings&) {
 	log::println(log::category::render, "dx12: ctor begin");
 	log::flush();
 
@@ -441,7 +441,7 @@ gse::dx12::device::device(const shared_view<window> win, gpu::device_settings&) 
 	log::flush();
 
 	m_graphics_queue = directx::create_direct_queue(m_device.get());
-	m_hwnd = win32::glfwGetWin32Window(window::raw_handle(win));
+	m_hwnd = win32::hwnd_from_glfw_window(window::raw_handle(win).value);
 	log::println(log::category::render, "dx12: queue={} hwnd={}", static_cast<void*>(m_graphics_queue.get()), m_hwnd);
 	log::flush();
 
