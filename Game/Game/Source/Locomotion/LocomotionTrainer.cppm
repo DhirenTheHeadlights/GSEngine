@@ -22,7 +22,7 @@ export namespace gs::locomotion {
 		float clip_eps = 0.2f;
 		float value_coeff = 0.5f;
 		float entropy_coeff = 0.01f;
-		int max_steps = 1000;
+		int max_steps = 400;
 		std::string checkpoint_path = "locomotion_checkpoint.bin";
 		int checkpoint_every = 50;
 		unsigned seed = 1234;
@@ -67,12 +67,15 @@ export namespace gs::locomotion {
 		gse::id owner_id = {};
 		std::size_t env_index = 0;
 		float bootstrap = 0.0f;
+		gse::velocity cmd_forward = gse::meters_per_second(0.f);
+		gse::velocity cmd_strafe = gse::meters_per_second(0.f);
 		bool drives_initialized = false;
 		bool snapshot_taken = false;
 		bool has_prev = false;
 		int episode = 0;
 		int episode_steps = 0;
 		float episode_reward = 0.0f;
+		float track_err_accum = 0.0f;
 		float prev_value = 0.0f;
 		float prev_log_prob = 0.0f;
 		std::vector<body_pose> initial_poses;
@@ -143,8 +146,15 @@ namespace gs::locomotion {
 	) -> void;
 
 	auto compute_reward(
-		const state& s
+		const state& s,
+		gse::velocity cmd_forward,
+		gse::velocity cmd_strafe
 	) -> float;
+
+	auto sample_command(
+		env_state& env,
+		std::mt19937& rng
+	) -> void;
 
 	auto episode_done(
 		const state& s,
@@ -332,24 +342,41 @@ auto gs::locomotion::initialize_drives(const skeleton_refs& r, gse::write<gse::p
 	set_drive(r.ankle_r_joint_id, ankle_s, gse::newton_meters(160.f));
 }
 
-auto gs::locomotion::compute_reward(const state& s) -> float {
-	const gse::position target_height = gse::meters(0.9f);
+auto gs::locomotion::compute_reward(const state& s, const gse::velocity cmd_forward, const gse::velocity cmd_strafe) -> float {
 	const auto pitch_limit = gse::degrees(45.f);
-	constexpr auto upright_bonus = 1.0f;
-	constexpr auto height_weight = 2.0f;
-	constexpr auto alive_bonus = 0.5f;
+	const auto ref_speed = gse::meters_per_second(1.0f);
+	const auto heading_limit = gse::radians(0.6f);
+	constexpr auto track_weight = 2.0f;
+	constexpr auto upright_weight = 0.5f;
+	constexpr auto heading_weight = 0.3f;
+	constexpr auto alive_bonus = 0.1f;
+
+	const auto forward_speed = -s.velocity_body.z();
+	const auto right_speed = s.velocity_body.x();
+	const auto err_forward = (forward_speed - cmd_forward) / ref_speed;
+	const auto err_right = (right_speed - cmd_strafe) / ref_speed;
+	const auto track = std::exp(-4.0f * (err_forward * err_forward + err_right * err_right));
 
 	const auto pitch_ratio = s.pelvis_pitch / pitch_limit;
 	const auto upright = std::max(0.0f, 1.0f - std::abs(pitch_ratio));
-	const auto height_error = gse::abs(s.pelvis_position.y() - target_height) / gse::meters(0.9f);
-	const auto height = std::max(0.0f, 1.0f - height_error);
 
-	return upright_bonus * upright + height_weight * height + alive_bonus;
+	const auto current_yaw = std::atan2(-s.pelvis_forward.x(), -s.pelvis_forward.z());
+	const auto heading_ratio = gse::radians(current_yaw) / heading_limit;
+	const auto heading = std::exp(-heading_ratio * heading_ratio);
+
+	return track_weight * track + upright_weight * upright + heading_weight * heading + alive_bonus;
 }
 
 auto gs::locomotion::episode_done(const state& s, const int steps, const int max_steps) -> bool {
 	const gse::position fall_height = gse::meters(0.4f);
 	return s.pelvis_position.y() < fall_height || steps >= max_steps;
+}
+
+auto gs::locomotion::sample_command(env_state& env, std::mt19937& rng) -> void {
+	auto forward_dist = std::uniform_real_distribution<float>(0.25f, 0.55f);
+	auto strafe_dist = std::uniform_real_distribution<float>(-0.1f, 0.1f);
+	env.cmd_forward = gse::meters_per_second(forward_dist(rng));
+	env.cmd_strafe = gse::meters_per_second(strafe_dist(rng));
 }
 
 auto gs::locomotion::make_env_state(const gse::id owner_id, const std::size_t env_index, const ppo_config& cfg) -> env_state {
@@ -393,6 +420,7 @@ auto gs::locomotion::reset_env(env_state& env, const skeleton_refs& r, gse::writ
 	env.has_prev = false;
 	env.episode_steps = 0;
 	env.episode_reward = 0.0f;
+	env.track_err_accum = 0.0f;
 }
 
 auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const gse::shared_view<gse::world_system> world_d, gse::read<skeleton_refs> refs, gse::read<state> states, gse::write<gse::physics::joint_drive_component> drives, gse::write<gse::physics::transform_component> transforms, gse::write<gse::physics::motion_component> motions) -> gse::async::task<> {
@@ -437,14 +465,20 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const gse::shared_
 
 		if (!env.drives_initialized) {
 			initialize_drives(*r, drives);
+			sample_command(env, d.rng);
 			env.drives_initialized = true;
 			continue;
 		}
 
-		pack_observation(observe(*s, intent{}, gait{}, 0.0f), env.obs_buf);
+		auto cmd = intent{};
+		cmd.forward = env.cmd_forward / gse::meters_per_second(1.0f);
+		cmd.strafe = env.cmd_strafe / gse::meters_per_second(1.0f);
+		cmd.has_heading = true;
+		cmd.desired_yaw = gse::radians(0.f);
+		pack_observation(observe(*s, cmd, gait{}, 0.0f), env.obs_buf);
 
 		if (env.has_prev) {
-			const auto reward = compute_reward(*s);
+			const auto reward = compute_reward(*s, env.cmd_forward, env.cmd_strafe);
 			const auto done = episode_done(*s, env.episode_steps, d.ppo.max_steps);
 
 			mlp_forward(d.critic, env.obs_buf, env.vh1_buf, env.vh2_buf, std::span(&env.val_buf, 1));
@@ -466,17 +500,22 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const gse::shared_
 			}
 
 			env.episode_reward += reward;
+			const auto err_fwd = (-s->velocity_body.z() - env.cmd_forward) / gse::meters_per_second(1.0f);
+			const auto err_right = (s->velocity_body.x() - env.cmd_strafe) / gse::meters_per_second(1.0f);
+			env.track_err_accum += std::sqrt(err_fwd * err_fwd + err_right * err_right);
 			++env.episode_steps;
 
 			if (done) {
 				gse::log::println(
-					"locomotion_train: ep={} steps={} reward={:.2f} total_steps={}",
+					"locomotion_train: ep={} steps={} reward={:.2f} track_err={:.3f} total_steps={}",
 					env.episode,
 					env.episode_steps,
 					env.episode_reward,
+					env.track_err_accum / static_cast<float>(env.episode_steps),
 					d.total_steps
 				);
 				reset_env(env, *r, transforms, motions, drives);
+				sample_command(env, d.rng);
 				++env.episode;
 				++d.episode;
 				continue;
