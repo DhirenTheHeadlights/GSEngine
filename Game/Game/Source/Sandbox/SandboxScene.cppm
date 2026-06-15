@@ -180,7 +180,7 @@ auto training_scene_setup(gse::scene& s) -> void {
 
 	const auto n = gs::g_training_n_envs;
 	const auto grid_side = static_cast<int>(std::ceil(std::sqrt(static_cast<float>(n))));
-	const auto spacing = 4.0f;
+	const auto spacing = 8.0f;
 
 	for (std::size_t i = 0; i < n; ++i) {
 		const auto row = static_cast<int>(i) / grid_side;
