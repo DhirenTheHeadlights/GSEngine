@@ -583,9 +583,11 @@ auto gse::vulkan::device::create(const instance& instance_data, gpu::device_sett
 	std::vector<vk::DeviceQueueCreateInfo> queue_create_infos;
 	std::set unique_queue_families = {
 		families.graphics_family.value(),
-		families.present_family.value(),
 		families.compute_family.value(),
 	};
+	if (families.present_family.has_value()) {
+		unique_queue_families.insert(families.present_family.value());
+	}
 
 	if (families.video_encode_family.has_value()) {
 		unique_queue_families.insert(families.video_encode_family.value());
@@ -902,7 +904,7 @@ auto gse::vulkan::device::create(const instance& instance_data, gpu::device_sett
 	log::println(log::category::vulkan, "Logical Device Created Successfully!");
 
 	const auto graphics_queue = std::bit_cast<gpu::handle<gpu::queue>>(*logical_device.getQueue(families.graphics_family.value(), 0));
-	const auto present_queue = std::bit_cast<gpu::handle<gpu::queue>>(*logical_device.getQueue(families.present_family.value(), 0));
+	const auto present_queue = families.present_family.has_value() ? std::bit_cast<gpu::handle<gpu::queue>>(*logical_device.getQueue(families.present_family.value(), 0)) : gpu::handle<gpu::queue>{};
 	const auto compute_queue = std::bit_cast<gpu::handle<gpu::queue>>(*logical_device.getQueue(families.compute_family.value(), 0));
 
 	gpu::handle<gpu::queue> video_encode_queue;

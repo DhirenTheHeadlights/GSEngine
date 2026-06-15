@@ -47,7 +47,7 @@ export namespace gse::gpu::context {
 	using swap_chain_recreate_callback = std::function<void()>;
 
 	[[= gse::system_init{}]] auto init(
-		shared_view<window::data> window_s,
+		std::optional<shared_view<window::data>> window_s,
 		data& d
 	) -> async::task<>;
 
