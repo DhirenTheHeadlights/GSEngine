@@ -77,14 +77,14 @@ namespace gse::renderer::geometry_collector {
 
 	auto initialize(
 		context& ctx,
-		shared_view<gpu::context> gpu_s,
-		system::data& d
+		shared_view<gpu::context::data> gpu_s,
+		data& d
 	) -> async::task<>;
 
 	auto tick(
 		context& ctx,
-		system::data& d,
-		shared_view<camera::system> cam_state,
+		data& d,
+		shared_view<camera::data> cam_state,
 		write<render_component>& render,
 		read<physics::transform_component>& transform
 	) -> async::task<>;
@@ -298,12 +298,12 @@ auto gse::renderer::geometry_collector::build_normal_batches(render_data& data, 
 	);
 }
 
-auto gse::renderer::geometry_collector::initialize(context& ctx, const shared_view<gpu::context> gpu_s, system::data& d) -> async::task<> {
-	constexpr std::size_t material_buffer_size = system::data::max_materials * sizeof(shaders::forward::material_data);
+auto gse::renderer::geometry_collector::initialize(context& ctx, const shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
+	constexpr std::size_t material_buffer_size = data::max_materials * sizeof(shaders::forward::material_data);
 	d.material_staging.reserve(material_buffer_size);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-		constexpr std::size_t instance_buffer_size = system::data::max_instances * sizeof(shaders::common::instance_data);
+		constexpr std::size_t instance_buffer_size = data::max_instances * sizeof(shaders::common::instance_data);
 		d.instance_buffer[i] = gpu_s.device->create_buffer(
 			{
 				.size = instance_buffer_size,
@@ -337,7 +337,7 @@ auto gse::renderer::geometry_collector::initialize(context& ctx, const shared_vi
 	co_return;
 }
 
-auto gse::renderer::geometry_collector::tick(context& ctx, system::data& d, const shared_view<camera::system> cam_state, write<render_component>& render, read<physics::transform_component>& transform) -> async::task<> {
+auto gse::renderer::geometry_collector::tick(context& ctx, data& d, const shared_view<camera::data> cam_state, write<render_component>& render, read<physics::transform_component>& transform) -> async::task<> {
 	const view_matrix view_matrix = cam_state.view_matrix;
 	const projection_matrix proj_matrix = cam_state.projection_matrix;
 
@@ -389,17 +389,17 @@ auto gse::renderer::geometry_collector::filter_render_queue(const render_data& d
 	return result;
 }
 
-auto gse::renderer::geometry_collector::system::init(context& ctx, const shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
+auto gse::renderer::geometry_collector::init(context& ctx, const shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
 	co_await initialize(ctx, gpu_s, d);
 	co_return;
 }
 
-auto gse::renderer::geometry_collector::system::run(context& ctx, const shared_view<gpu::context> gpu_s, const shared_view<asset::registry> assets_s, data& d, const shared_view<camera::system> cam_state, const shared_view<primitive_resolver::system> resolver_state, write<render_component> render, read<physics::transform_component> transform) -> async::task<> {
+auto gse::renderer::geometry_collector::run(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, data& d, const shared_view<camera::data> cam_state, const shared_view<primitive_resolver::data> resolver_state, write<render_component> render, read<physics::transform_component> transform) -> async::task<> {
 	co_await tick(ctx, d, cam_state, render, transform);
 	co_return;
 }
 
-auto gse::renderer::geometry_collector::system::frame(context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
+auto gse::renderer::geometry_collector::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
 	const auto& items = ctx.read_channel<render_data>();
 	if (items.empty()) {
 		return {};
@@ -431,7 +431,7 @@ auto gse::renderer::geometry_collector::system::frame(context& ctx, shared_view<
 		}
 	}
 
-	const auto material_count = std::min(data.material_palette_map.size(), system::data::max_materials);
+	const auto material_count = std::min(data.material_palette_map.size(), geometry_collector::data::max_materials);
 	if (material_count > 0) {
 		auto& mat_staging = d.material_staging;
 		mat_staging.assign(
@@ -441,7 +441,7 @@ auto gse::renderer::geometry_collector::system::frame(context& ctx, shared_view<
 		auto* staging_materials = reinterpret_cast<shaders::forward::material_data*>(mat_staging.data());
 
 		for (const auto& [mat_ptr, idx] : data.material_palette_map) {
-			if (idx >= system::data::max_materials) {
+			if (idx >= geometry_collector::data::max_materials) {
 				continue;
 			}
 			const auto& diffuse = mat_ptr->diffuse_texture;

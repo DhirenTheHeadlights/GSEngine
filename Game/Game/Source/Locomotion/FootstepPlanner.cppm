@@ -1,105 +1,104 @@
-﻿export module gs:footstep_planner;
+export module gs:footstep_planner;
 
 import std;
 import gse;
 
 import :locomotion_types;
 
-export namespace gs::locomotion {
-	struct footstep_planner {
-		struct [[= gse::settings::category<"Locomotion">{}]] data {
-			[[
-				= gse::settings::describe<"Nominal forward step length at full input.">{}
-			]]
-			gse::displacement walk_step = gse::meters(0.36f);
+export namespace gs::locomotion::footstep_planner {
+	struct [[= gse::system_state<"Locomotion">{}]] data {
+		[[
+			= gse::settings::describe<"Nominal forward step length at full input.">{}
+		]]
+		gse::displacement walk_step = gse::meters(0.36f);
 
-			[[
-				= gse::settings::describe<"Nominal forward step length when sprinting.">{}
-			]]
-			gse::displacement sprint_step = gse::meters(0.46f);
+		[[
+			= gse::settings::describe<"Nominal forward step length when sprinting.">{}
+		]]
+		gse::displacement sprint_step = gse::meters(0.46f);
 
-			[[
-				= gse::settings::describe<"Maximum forward step distance.">{}
-			]]
-			gse::displacement max_forward_step = gse::meters(0.55f);
+		[[
+			= gse::settings::describe<"Maximum forward step distance.">{}
+		]]
+		gse::displacement max_forward_step = gse::meters(0.55f);
 
-			[[
-				= gse::settings::describe<"Maximum backward step distance.">{}
-			]]
-			gse::displacement max_backward_step = gse::meters(0.40f);
+		[[
+			= gse::settings::describe<"Maximum backward step distance.">{}
+		]]
+		gse::displacement max_backward_step = gse::meters(0.40f);
 
-			[[
-				= gse::settings::describe<"Maximum horizontal travel for one swing foot.">{}
-			]]
-			gse::displacement max_swing_reach = gse::meters(0.75f);
+		[[
+			= gse::settings::describe<"Maximum horizontal travel for one swing foot.">{}
+		]]
+		gse::displacement max_swing_reach = gse::meters(0.75f);
 
-			[[
-				= gse::settings::describe<"Forward capture-step clamp.">{}
-			]]
-			gse::displacement capture_step_limit = gse::meters(0.48f);
+		[[
+			= gse::settings::describe<"Forward capture-step clamp.">{}
+		]]
+		gse::displacement capture_step_limit = gse::meters(0.48f);
 
-			[[
-				= gse::settings::describe<"Scale applied to capture error before footstep planning.">{}
-			]]
-			float capture_step_gain = 1.0f;
+		[[
+			= gse::settings::describe<"Scale applied to capture error before footstep planning.">{}
+		]]
+		float capture_step_gain = 1.0f;
 
-			[[
-				= gse::settings::describe<"Swing progress below which a committed target may still be refined once.">{}
-			]]
-			float swing_replan_progress = 0.5f;
+		[[
+			= gse::settings::describe<"Swing progress below which a committed target may still be refined once.">{}
+		]]
+		float swing_replan_progress = 0.5f;
 
-			[[
-				= gse::settings::describe<"Capture-point deviation from the committed sample that permits the one mid-swing refinement.">{}
-			]]
-			gse::displacement capture_replan_threshold = gse::meters(0.12f);
+		[[
+			= gse::settings::describe<"Capture-point deviation from the committed sample that permits the one mid-swing refinement.">{}
+		]]
+		gse::displacement capture_replan_threshold = gse::meters(0.12f);
 
-			[[
-				= gse::settings::describe<"Maximum heading change applied to a single step's placement frame.">{}
-			]]
-			gse::angle turn_step_clamp = gse::radians(0.65f);
+		[[
+			= gse::settings::describe<"Maximum heading change applied to a single step's placement frame.">{}
+		]]
+		gse::angle turn_step_clamp = gse::radians(0.65f);
 
-			[[
-				= gse::settings::describe<"Lateral capture-step clamp.">{}
-			]]
-			gse::displacement lateral_capture_limit = gse::meters(0.22f);
+		[[
+			= gse::settings::describe<"Lateral capture-step clamp.">{}
+		]]
+		gse::displacement lateral_capture_limit = gse::meters(0.22f);
 
-			[[
-				= gse::settings::describe<"Extra lateral spacing added to each foot target beyond the hip offset.">{}
-			]]
-			gse::displacement step_width_bias = gse::meters(0.05f);
+		[[
+			= gse::settings::describe<"Extra lateral spacing added to each foot target beyond the hip offset.">{}
+		]]
+		gse::displacement step_width_bias = gse::meters(0.05f);
 
-			[[
-				= gse::settings::describe<"Lateral (strafe) step length per unit strafe input.">{}
-			]]
-			gse::displacement strafe_step = gse::meters(0.25f);
+		[[
+			= gse::settings::describe<"Lateral (strafe) step length per unit strafe input.">{}
+		]]
+		gse::displacement strafe_step = gse::meters(0.25f);
 
-			[[
-				= gse::settings::describe<"Lateral (strafe) step length per unit strafe input while sprinting.">{}
-			]]
-			gse::displacement sprint_strafe_step = gse::meters(0.35f);
+		[[
+			= gse::settings::describe<"Lateral (strafe) step length per unit strafe input while sprinting.">{}
+		]]
+		gse::displacement sprint_strafe_step = gse::meters(0.35f);
 
-			[[
-				= gse::settings::describe<"Forward step bias per radian of forward trunk pitch (keeps support under a leaned trunk).">{}
-			]]
-			gse::displacement pitch_step_gain = gse::meters(0.55f);
+		[[
+			= gse::settings::describe<"Forward step bias per radian of forward trunk pitch (keeps support under a leaned trunk).">{}
+		]]
+		gse::displacement pitch_step_gain = gse::meters(0.55f);
 
-			[[
-				= gse::settings::describe<"Foot center Y when planted on the ground.">{}
-			]]
-			gse::position foot_ground_y = gse::meters(0.025f);
+		[[
+			= gse::settings::describe<"Foot center Y when planted on the ground.">{}
+		]]
+		gse::position foot_ground_y = gse::meters(0.025f);
 
-			gse::interval_timer<float> log_timer{ gse::seconds(0.3f) };
-		};
-
-		static auto run(
-			data& d,
-			gse::read<skeleton_refs> refs,
-			gse::read<intent> intents,
-			gse::read<state> states,
-			gse::read<gait> gaits,
-			gse::write<plan> plans
-		) -> gse::async::task<>;
+		gse::interval_timer<float> log_timer{ gse::seconds(0.3f) };
 	};
+
+	[[= gse::system_run<>{}]]
+	auto run(
+		data& d,
+		gse::read<skeleton_refs> refs,
+		gse::read<intent> intents,
+		gse::read<state> states,
+		gse::read<gait> gaits,
+		gse::write<plan> plans
+	) -> gse::async::task<>;
 }
 
 namespace gs::locomotion {
@@ -230,7 +229,7 @@ auto gs::locomotion::plan_foot_target(const state& s, const gait& g, const inten
 auto gs::locomotion::footstep_planner::run(data& d, gse::read<skeleton_refs> refs, gse::read<intent> intents, gse::read<state> states, gse::read<gait> gaits, gse::write<plan> plans) -> gse::async::task<> {
 	const bool log_now = d.log_timer.tick();
 	const auto owner_ids = plans.owner_ids();
-	
+
 	for (std::size_t i = 0; i < plans.size(); ++i) {
 		auto& p = plans[i];
 		const auto owner = owner_ids[i];

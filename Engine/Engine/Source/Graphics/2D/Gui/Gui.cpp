@@ -52,7 +52,7 @@ auto gse::gui::popout_close_button_rect(const ui_rect& title_bar_rect, const sty
 	});
 }
 
-auto gse::gui::system::init_body(context& ctx, const shared_view<window> window_s, const shared_view<asset::registry> assets, data& d) -> async::task<> {
+auto gse::gui::init_body(context& ctx, const shared_view<window::data> window_s, const shared_view<asset::data> assets, data& d) -> async::task<> {
 	d.font.options = asset::enumerate_resources<font>();
 
 	if (d.font.options.empty()) {
@@ -150,17 +150,17 @@ auto gse::gui::system::init_body(context& ctx, const shared_view<window> window_
 	d.previous_viewport_size = vec2f(window::viewport(window_s));
 }
 
-auto gse::gui::system::init(context& ctx, const shared_view<window> window_s, const shared_view<asset::registry> assets_s, data& d) -> async::task<> {
+auto gse::gui::init(context& ctx, const shared_view<window::data> window_s, const shared_view<asset::data> assets_s, data& d) -> async::task<> {
 	co_await init_body(ctx, window_s, assets_s, d);
 	co_return;
 }
 
-auto gse::gui::system::run(context& ctx, const shared_view<window> window_s, const shared_view<asset::registry> assets_s, const shared_view<gse::input::system> input_state, const save::registry& save_reg, data& d) -> async::task<> {
+auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const shared_view<asset::data> assets_s, const shared_view<gse::input::data> input_state, const save::registry& save_reg, data& d) -> async::task<> {
 	co_await update_body(ctx, window_s, assets_s, input_state, save_reg, d);
 	co_return;
 }
 
-auto gse::gui::system::update_body(context& ctx, const shared_view<window> window_s, const shared_view<asset::registry> assets_s, const shared_view<gse::input::system> input_state, const save::registry& save_reg, data& d) -> async::task<> {
+auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_s, const shared_view<asset::data> assets_s, const shared_view<gse::input::data> input_state, const save::registry& save_reg, data& d) -> async::task<> {
 	const auto current_viewport_size = vec2f(window::viewport(window_s));
 
 	if (d.previous_viewport_size.x() > 0.f && d.previous_viewport_size.y() > 0.f) {
@@ -259,14 +259,14 @@ auto gse::gui::system::update_body(context& ctx, const shared_view<window> windo
 		d.last_font_index = d.font.value;
 	}
 
-	const vec2f mouse_position = gse::input::system::current_state(input_state).mouse_position();
-	const bool mouse_held = gse::input::system::current_state(input_state).mouse_button_held(mouse_button::button_1);
+	const vec2f mouse_position = gse::input::current_state(input_state).mouse_position();
+	const bool mouse_held = gse::input::current_state(input_state).mouse_button_held(mouse_button::button_1);
 
 	match(d.current_state.v)
 		.if_is([&](const states::idle&) {
 			d.current_state = handle_idle_state(
 				d,
-				gse::input::system::current_state(input_state),
+				gse::input::current_state(input_state),
 				mouse_position,
 				mouse_held,
 				frame_sty
@@ -298,7 +298,7 @@ auto gse::gui::system::update_body(context& ctx, const shared_view<window> windo
 		co_return;
 	}
 
-	const gse::input::state& input_st = gse::input::system::current_state(input_state);
+	const gse::input::state& input_st = gse::input::current_state(input_state);
 	const auto viewport_size = vec2f(window::viewport(window_s));
 
 	if (d.active_dock_space) {
@@ -534,15 +534,15 @@ auto gse::gui::system::update_body(context& ctx, const shared_view<window> windo
 	co_return;
 }
 
-auto gse::gui::system::shutdown(data& d) -> void {
+auto gse::gui::shutdown(data& d) -> void {
 	gui::save(d.menus, config::resource_path / d.file_path);
 }
 
-auto gse::gui::system::save(data& d) -> void {
+auto gse::gui::save(data& d) -> void {
 	gui::save(d.menus, config::resource_path / d.file_path);
 }
 
-auto gse::gui::system::process_menu(data& d, const gse::input::state& input_state, const std::string& name, const render_layer layer, const std::function<void(builder&)>& build) -> void {
+auto gse::gui::process_menu(data& d, const gse::input::state& input_state, const std::string& name, const render_layer layer, const std::function<void(builder&)>& build) -> void {
 	if (!d.fstate.active) {
 		return;
 	}
@@ -656,7 +656,7 @@ auto gse::gui::system::process_menu(data& d, const gse::input::state& input_stat
 	end_menu(d);
 }
 
-auto gse::gui::system::begin_menu(data& d, const std::string& name) -> bool {
+auto gse::gui::begin_menu(data& d, const std::string& name) -> bool {
 	const std::uint64_t name_key = stable_id(name);
 	if (const auto it = d.name_to_menu_id.find(name_key); it != d.name_to_menu_id.end()) {
 		if (menu* m = d.menus.try_get(it->second)) {
@@ -695,12 +695,12 @@ auto gse::gui::system::begin_menu(data& d, const std::string& name) -> bool {
 	return false;
 }
 
-auto gse::gui::system::end_menu(data& d) -> void {
+auto gse::gui::end_menu(data& d) -> void {
 	d.current_scope.reset();
 	d.current_menu = nullptr;
 }
 
-auto gse::gui::system::process_screen(data& d, const gse::input::state& input_state, const vec2f viewport_size) -> void {
+auto gse::gui::process_screen(data& d, const gse::input::state& input_state, const vec2f viewport_size) -> void {
 	if (!d.fstate.active) {
 		return;
 	}
@@ -764,7 +764,7 @@ auto gse::gui::system::process_screen(data& d, const gse::input::state& input_st
 	d.context = nullptr;
 }
 
-auto gse::gui::system::usable_screen_rect(data& d, const shared_view<window> window_s) -> ui_rect {
+auto gse::gui::usable_screen_rect(data& d, const shared_view<window::data> window_s) -> ui_rect {
 	const auto viewport_size = vec2f(window::viewport(window_s));
 	const float top_inset = d.reserve_top_bar ? d.fstate.sty.title_bar_height : 0.f;
 	return ui_rect::from_position_size(
@@ -773,7 +773,7 @@ auto gse::gui::system::usable_screen_rect(data& d, const shared_view<window> win
 	);
 }
 
-auto gse::gui::system::calculate_display_rect(data& d, const menu& m) -> ui_rect {
+auto gse::gui::calculate_display_rect(data& d, const menu& m) -> ui_rect {
 	ui_rect display_rect = m.rect;
 
 	for (const menu& child : d.menus.items()) {
@@ -785,7 +785,7 @@ auto gse::gui::system::calculate_display_rect(data& d, const menu& m) -> ui_rect
 	return display_rect;
 }
 
-auto gse::gui::system::apply_scale(const data& d, style sty, const float viewport_height) -> style {
+auto gse::gui::apply_scale(const data& d, style sty, const float viewport_height) -> style {
 	constexpr float reference_height = 1080.f;
 	const float base_scale = d.scale_with_resolution ? viewport_height / reference_height : 1.f;
 	const float final_scale = base_scale * d.ui_scale;
@@ -801,13 +801,13 @@ auto gse::gui::system::apply_scale(const data& d, style sty, const float viewpor
 	return sty;
 }
 
-auto gse::gui::system::reload_font(data& d, const shared_view<asset::registry> assets) -> void {
+auto gse::gui::reload_font(data& d, const shared_view<asset::data> assets) -> void {
 	if (d.font.value >= 0 && d.font.value < static_cast<int>(d.font.options.size())) {
 		d.gui_font = asset::get<font>(assets, "Fonts/" + d.font.options[d.font.value]);
 	}
 }
 
-auto gse::gui::system::draw_menu_chrome(data& d, const gse::input::state& input_state, menu& current_menu, const render_layer layer) -> void {
+auto gse::gui::draw_menu_chrome(data& d, const gse::input::state& input_state, menu& current_menu, const render_layer layer) -> void {
 	const style& sty = d.fstate.sty;
 
 	const ui_rect display_rect = calculate_display_rect(d, current_menu);
@@ -930,7 +930,7 @@ auto gse::gui::system::draw_menu_chrome(data& d, const gse::input::state& input_
 	}
 }
 
-auto gse::gui::system::draw_tab_bar(data& d, const gse::input::state& input_state, menu& current_menu, const ui_rect& title_bar_rect, const render_layer layer) -> void {
+auto gse::gui::draw_tab_bar(data& d, const gse::input::state& input_state, menu& current_menu, const ui_rect& title_bar_rect, const render_layer layer) -> void {
 	const style& sty = d.fstate.sty;
 	const vec2f mouse_pos = input_state.mouse_position();
 	const bool mouse_clicked = input_state.mouse_button_pressed(mouse_button::button_1);
@@ -1086,7 +1086,7 @@ auto gse::gui::system::draw_tab_bar(data& d, const gse::input::state& input_stat
 	}
 }
 
-auto gse::gui::system::handle_idle_state(data& d, const gse::input::state& input_state, vec2f mouse_position, const bool mouse_held, const style& style) -> gui::state {
+auto gse::gui::handle_idle_state(data& d, const gse::input::state& input_state, vec2f mouse_position, const bool mouse_held, const style& style) -> gui::state {
 	if (!d.menu_stack.empty() || d.active_widget_id.exists()) {
 		set_style(cursor::style::arrow);
 		return states::idle{};
@@ -1399,7 +1399,7 @@ auto gse::gui::system::handle_idle_state(data& d, const gse::input::state& input
 	return states::idle{};
 }
 
-auto gse::gui::system::handle_dragging_state(data& d, const states::dragging& current, const shared_view<window> window_s, const vec2f mouse_position, const bool mouse_held) -> gui::state {
+auto gse::gui::handle_dragging_state(data& d, const states::dragging& current, const shared_view<window::data> window_s, const vec2f mouse_position, const bool mouse_held) -> gui::state {
 	menu* m = d.menus.try_get(current.menu_id);
 	if (!m) {
 		set_style(cursor::style::arrow);
@@ -1524,7 +1524,7 @@ auto gse::gui::system::handle_dragging_state(data& d, const states::dragging& cu
 	return current;
 }
 
-auto gse::gui::system::handle_resizing_state(data& d, const states::resizing& current, const vec2f mouse_position, const bool mouse_held, const style& style, const shared_view<window> window_s) -> gui::state {
+auto gse::gui::handle_resizing_state(data& d, const states::resizing& current, const vec2f mouse_position, const bool mouse_held, const style& style, const shared_view<window::data> window_s) -> gui::state {
 	if (!mouse_held) {
 		d.active_dock_space.reset();
 		set_style(cursor::style::arrow);
@@ -1761,7 +1761,7 @@ auto gse::gui::system::handle_resizing_state(data& d, const states::resizing& cu
 	return current;
 }
 
-auto gse::gui::system::handle_resizing_divider_state(data& d, const states::resizing_divider& current, const vec2f mouse_position, const bool mouse_held, const style& style) -> gui::state {
+auto gse::gui::handle_resizing_divider_state(data& d, const states::resizing_divider& current, const vec2f mouse_position, const bool mouse_held, const style& style) -> gui::state {
 	menu* parent = d.menus.try_get(current.parent_id);
 	menu* child = d.menus.try_get(current.child_id);
 
@@ -1882,7 +1882,7 @@ auto gse::gui::system::handle_resizing_divider_state(data& d, const states::resi
 	return current;
 }
 
-auto gse::gui::system::handle_pending_drag_state(data& d, const states::pending_drag& current, const vec2f mouse_position, const bool mouse_held) -> gui::state {
+auto gse::gui::handle_pending_drag_state(data& d, const states::pending_drag& current, const vec2f mouse_position, const bool mouse_held) -> gui::state {
 	if (!mouse_held) {
 		return states::idle{};
 	}

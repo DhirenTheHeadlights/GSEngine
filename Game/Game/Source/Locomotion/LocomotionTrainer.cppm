@@ -43,6 +43,7 @@ export namespace gs::locomotion {
 		std::size_t obs_dim = 0;
 		std::size_t act_dim = 0;
 
+		rollout_buffer() = default;
 		explicit rollout_buffer(
 			std::size_t cap,
 			std::size_t od,
@@ -89,43 +90,42 @@ export namespace gs::locomotion {
 		std::vector<float> vh2_buf;
 		float val_buf = 0.0f;
 	};
+}
 
-	struct trainer {
-		struct data {
-			ppo_config ppo;
-			std::mt19937 rng;
+export namespace gs::locomotion::trainer {
+	struct [[= gse::system_state<"Locomotion Trainer">{}]] data {
+		std::mt19937 rng;
 
-			actor_params actor;
-			mlp critic;
-			actor_adam actor_opt;
-			critic_adam critic_opt;
+		actor_params actor;
+		mlp critic;
+		actor_adam actor_opt;
+		critic_adam critic_opt;
 
-			rollout_buffer buffer;
+		rollout_buffer buffer;
 
-			train_stage stage = train_stage::locating_scene;
-			std::optional<gse::id> scene_id;
-			int total_steps = 0;
-			int update_count = 0;
-			int episode = 0;
+		train_stage stage = train_stage::locating_scene;
+		std::optional<gse::id> scene_id;
+		int total_steps = 0;
+		int update_count = 0;
+		int episode = 0;
 
-			std::vector<env_state> envs;
+		std::vector<env_state> envs;
 
-			explicit data(
-				ppo_config cfg = {}
-			);
-		};
-
-		static auto run(
-			gse::context& ctx,
-			data& d,
-			gse::shared_view<gse::world_system> world_d,
-			gse::read<skeleton_refs> refs,
-			gse::read<state> states,
-			gse::write<gse::physics::joint_drive_component> drives,
-			gse::write<gse::physics::transform_component> transforms,
-			gse::write<gse::physics::motion_component> motions
-		) -> gse::async::task<>;
+		bool ready = false;
 	};
+
+	[[= gse::system_run<>{}]]
+	auto run(
+		gse::context& ctx,
+		data& d,
+		const ppo_config& cfg,
+		gse::shared_view<gse::world_system::data> world_d,
+		gse::read<skeleton_refs> refs,
+		gse::read<state> states,
+		gse::write<gse::physics::joint_drive_component> drives,
+		gse::write<gse::physics::transform_component> transforms,
+		gse::write<gse::physics::motion_component> motions
+	) -> gse::async::task<>;
 }
 
 namespace gs::locomotion {
@@ -137,7 +137,8 @@ namespace gs::locomotion {
 	) -> void;
 
 	auto run_ppo_update(
-		trainer::data& d
+		trainer::data& d,
+		const ppo_config& cfg
 	) -> void;
 
 	auto initialize_drives(
@@ -205,15 +206,6 @@ auto gs::locomotion::rollout_buffer::clear() -> void {
 	size = 0;
 }
 
-gs::locomotion::trainer::data::data(ppo_config cfg)
-	: ppo(cfg)
-	, rng(cfg.seed)
-	, actor(actor_make(cfg.obs_dim, cfg.act_dim, cfg.hidden_dim, rng))
-	, critic(mlp_make(cfg.obs_dim, cfg.hidden_dim, 1, 1.0f, rng))
-	, actor_opt(actor_adam_make(actor))
-	, critic_opt(critic_adam_make(critic))
-	, buffer(cfg.rollout_steps, cfg.obs_dim, cfg.act_dim) {}
-
 auto gs::locomotion::compute_gae(rollout_buffer& buf, const std::span<const float> env_bootstrap, const float gamma, const float lam) -> void {
 	for (std::size_t e = 0; e < env_bootstrap.size(); ++e) {
 		auto idxs = std::vector<std::size_t>{};
@@ -236,8 +228,7 @@ auto gs::locomotion::compute_gae(rollout_buffer& buf, const std::span<const floa
 	}
 }
 
-auto gs::locomotion::run_ppo_update(trainer::data& d) -> void {
-	const auto& cfg = d.ppo;
+auto gs::locomotion::run_ppo_update(trainer::data& d, const ppo_config& cfg) -> void {
 	const auto n = d.buffer.size;
 	const auto obs_dim = cfg.obs_dim;
 	const auto act_dim = cfg.act_dim;
@@ -303,8 +294,8 @@ auto gs::locomotion::run_ppo_update(trainer::data& d) -> void {
 		critic_loss / static_cast<float>(batches)
 	);
 
-	if (d.update_count % d.ppo.checkpoint_every == 0) {
-		checkpoint_save(d.actor, d.critic, d.ppo.checkpoint_path);
+	if (d.update_count % cfg.checkpoint_every == 0) {
+		checkpoint_save(d.actor, d.critic, cfg.checkpoint_path);
 	}
 }
 
@@ -423,7 +414,17 @@ auto gs::locomotion::reset_env(env_state& env, const skeleton_refs& r, gse::writ
 	env.track_err_accum = 0.0f;
 }
 
-auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const gse::shared_view<gse::world_system> world_d, gse::read<skeleton_refs> refs, gse::read<state> states, gse::write<gse::physics::joint_drive_component> drives, gse::write<gse::physics::transform_component> transforms, gse::write<gse::physics::motion_component> motions) -> gse::async::task<> {
+auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& cfg, const gse::shared_view<gse::world_system::data> world_d, gse::read<skeleton_refs> refs, gse::read<state> states, gse::write<gse::physics::joint_drive_component> drives, gse::write<gse::physics::transform_component> transforms, gse::write<gse::physics::motion_component> motions) -> gse::async::task<> {
+	if (!d.ready) {
+		d.rng.seed(cfg.seed);
+		d.actor = actor_make(cfg.obs_dim, cfg.act_dim, cfg.hidden_dim, d.rng);
+		d.critic = mlp_make(cfg.obs_dim, cfg.hidden_dim, 1, 1.0f, d.rng);
+		d.actor_opt = actor_adam_make(d.actor);
+		d.critic_opt = critic_adam_make(d.critic);
+		d.buffer = rollout_buffer(cfg.rollout_steps, cfg.obs_dim, cfg.act_dim);
+		d.ready = true;
+	}
+
 	if (!d.scene_id.has_value()) {
 		for (const auto& [scene_id, scene_ptr] : world_d.scenes) {
 			if (scene_ptr && scene_ptr->id().tag() == std::string_view("Training")) {
@@ -444,7 +445,7 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const gse::shared_
 			}
 			d.envs.reserve(owner_ids.size());
 			for (std::size_t i = 0; i < owner_ids.size(); ++i) {
-				d.envs.push_back(make_env_state(owner_ids[i], i, d.ppo));
+				d.envs.push_back(make_env_state(owner_ids[i], i, cfg));
 			}
 			d.stage = train_stage::running;
 			gse::log::println("locomotion_train: {} envs discovered, begin training", d.envs.size());
@@ -479,15 +480,15 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const gse::shared_
 
 		if (env.has_prev) {
 			const auto reward = compute_reward(*s, env.cmd_forward, env.cmd_strafe);
-			const auto done = episode_done(*s, env.episode_steps, d.ppo.max_steps);
+			const auto done = episode_done(*s, env.episode_steps, cfg.max_steps);
 
 			mlp_forward(d.critic, env.obs_buf, env.vh1_buf, env.vh2_buf, std::span(&env.val_buf, 1));
 			env.bootstrap = done ? 0.0f : env.val_buf;
 
 			if (!d.buffer.full()) {
 				const auto t = d.buffer.size;
-				const auto obs_slot = std::span(d.buffer.obs).subspan(t * d.ppo.obs_dim, d.ppo.obs_dim);
-				const auto act_slot = std::span(d.buffer.actions).subspan(t * d.ppo.act_dim, d.ppo.act_dim);
+				const auto obs_slot = std::span(d.buffer.obs).subspan(t * cfg.obs_dim, cfg.obs_dim);
+				const auto act_slot = std::span(d.buffer.actions).subspan(t * cfg.act_dim, cfg.act_dim);
 				std::ranges::copy(env.prev_obs_buf, obs_slot.begin());
 				std::ranges::copy(env.action_buf, act_slot.begin());
 				d.buffer.log_probs[t] = env.prev_log_prob;
@@ -540,8 +541,8 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const gse::shared_
 		for (const auto& env : d.envs) {
 			boots.push_back(env.bootstrap);
 		}
-		compute_gae(d.buffer, boots, d.ppo.gamma, d.ppo.lam);
-		run_ppo_update(d);
+		compute_gae(d.buffer, boots, cfg.gamma, cfg.lam);
+		run_ppo_update(d, cfg);
 		d.buffer.clear();
 	}
 

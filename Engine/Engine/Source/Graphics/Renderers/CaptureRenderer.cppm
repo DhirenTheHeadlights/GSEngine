@@ -39,60 +39,62 @@ export namespace gse::renderer::capture {
 		std::chrono::steady_clock::time_point last_toggle{};
 	};
 
-	struct system {
-		struct [[= gse::settings::category<"Graphics">{}]] data {
-			[[
-				= gse::settings::describe<"Length of the rolling capture ring buffer. Saving a clip writes the most "
-										  "recent N seconds of frames.">{},
-				= gse::settings::range<seconds(5.f), seconds(120.f)>{}
-			]]
-			time ring_budget = seconds(30.f);
+	struct [[= gse::system_state<"Capture">{}, = gse::settings::category<"Graphics">{}]] data {
+		[[
+			= gse::settings::describe<"Length of the rolling capture ring buffer. Saving a clip writes the most "
+									  "recent N seconds of frames.">{},
+			= gse::settings::range<5.f, 120.f>{}
+		]]
+		time ring_budget = seconds(30.f);
 
-			actions::handle screenshot_action;
-			actions::handle save_clip_action;
-			actions::handle toggle_recording_action;
+		actions::handle screenshot_action;
+		actions::handle save_clip_action;
+		actions::handle toggle_recording_action;
 
-			gpu::shader_program convert_pipeline;
-			per_frame_resource<gpu::image> rgba_captures;
-			per_frame_resource<gpu::image> y_planes;
-			per_frame_resource<gpu::image> uv_planes;
-			std::array<gpu::bindless_handle, per_frame_resource<gpu::image>::frames_in_flight> rgba_slots;
-			bool encode_active = false;
+		gpu::shader_program convert_pipeline;
+		per_frame_resource<gpu::image> rgba_captures;
+		per_frame_resource<gpu::image> y_planes;
+		per_frame_resource<gpu::image> uv_planes;
+		std::array<gpu::bindless_handle, per_frame_resource<gpu::image>::frames_in_flight> rgba_slots;
+		bool encode_active = false;
 
-			per_frame_resource<pending_screenshot> screenshots;
-			bool screenshot_requested = false;
-			std::unique_ptr<std::atomic<bool>> write_in_progress = std::make_unique<std::atomic<bool>>(false);
-			std::unique_ptr<std::atomic<bool>> clip_save_in_progress = std::make_unique<std::atomic<bool>>(false);
-			gpu::video_encoder encoder;
-			ring clip_ring;
-			time applied_ring_budget = seconds(30.f);
-			bool first_ring_push_logged = false;
+		per_frame_resource<pending_screenshot> screenshots;
+		bool screenshot_requested = false;
+		std::unique_ptr<std::atomic<bool>> write_in_progress = std::make_unique<std::atomic<bool>>(false);
+		std::unique_ptr<std::atomic<bool>> clip_save_in_progress = std::make_unique<std::atomic<bool>>(false);
+		gpu::video_encoder encoder;
+		ring clip_ring;
+		time applied_ring_budget = seconds(30.f);
+		bool first_ring_push_logged = false;
 
-			[[= gse::shared]] std::unique_ptr<recording_state> recording = std::make_unique<recording_state>();
-		};
-
-		static auto init(
-			context& ctx,
-			shared_view<gpu::context> gpu_s,
-			data& d
-		) -> async::task<>;
-
-		static auto run(
-			context& ctx,
-			shared_view<gpu::context> gpu_s,
-			shared_view<asset::registry> assets_s,
-			shared_view<actions::system> sys,
-			data& d
-		) -> async::task<>;
-
-		static auto frame(
-			const context& ctx,
-			shared_view<gpu::context> gpu_s,
-			data& d
-		) -> async::task<>;
-
-		static auto shutdown(
-			data& d
-		) -> void;
+		[[= gse::shared]] std::unique_ptr<recording_state> recording = std::make_unique<recording_state>();
 	};
+
+	[[= gse::system_init{}]]
+	auto init(
+		context& ctx,
+		shared_view<gpu::context::data> gpu_s,
+		data& d
+	) -> async::task<>;
+
+	[[= gse::system_run<>{}]]
+	auto run(
+		context& ctx,
+		shared_view<gpu::context::data> gpu_s,
+		shared_view<asset::data> assets_s,
+		shared_view<actions::data> sys,
+		data& d
+	) -> async::task<>;
+
+	[[= gse::system_frame{}]]
+	auto frame(
+		const context& ctx,
+		shared_view<gpu::context::data> gpu_s,
+		data& d
+	) -> async::task<>;
+
+	[[= gse::system_shutdown{}]]
+	auto shutdown(
+		data& d
+	) -> void;
 }

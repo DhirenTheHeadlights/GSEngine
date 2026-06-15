@@ -19,29 +19,6 @@ export namespace gse {
 	template <typename T>
 	consteval auto has_category_annotation() -> bool;
 
-	template <typename S>
-	concept has_settings = names_data<S>
-		&& has_category_annotation<typename S::data>()
-		&& has_describe_fields<typename S::data>();
-
-	template <typename S>
-	concept names_run_fn = requires { &S::run; };
-
-	template <typename S>
-	concept names_run_phased = requires { typename S::run; } && std::is_class_v<typename S::run>;
-
-	template <typename S>
-	concept names_run = names_run_fn<S> || names_run_phased<S>;
-
-	template <typename S>
-	concept names_init = requires { &S::init; };
-
-	template <typename S>
-	concept names_shutdown = requires { &S::shutdown; };
-
-	template <typename S>
-	concept names_frame = requires { &S::frame; };
-
 	struct system_node : non_copyable {
 		~system_node() = default;
 
@@ -105,6 +82,7 @@ export namespace gse {
 		const void* state_snapshot_ptr = nullptr;
 
 		bool has_frame = false;
+		bool deferred = false;
 		bool init_launched = false;
 		bool init_done = false;
 		bool init_in_flight = false;
@@ -128,10 +106,6 @@ export namespace gse {
 		std::string system_name;
 	};
 
-	template <typename S, typename... Args>
-	auto make_system_node(
-		Args&&... args
-	) -> system_node;
 }
 
 template <typename T>

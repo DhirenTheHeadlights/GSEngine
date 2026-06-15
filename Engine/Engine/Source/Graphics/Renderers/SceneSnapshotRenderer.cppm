@@ -9,34 +9,35 @@ import gse.ecs;
 import gse.math;
 
 export namespace gse::renderer::scene_snapshot {
-	struct system {
-		struct data {
-			[[= gse::shared]] per_frame_resource<gpu::image> snapshots;
-			[[
-				= gse::shared
-			]]
-			std::array<gpu::bindless_handle, per_frame_resource<gpu::image>::frames_in_flight> slots;
-			[[= gse::shared]] bool ready = false;
+	struct [[= gse::system_state<"SceneSnapshot">{}]] data {
+		[[= gse::shared]] per_frame_resource<gpu::image> snapshots;
+		[[
+			= gse::shared
+		]]
+		std::array<gpu::bindless_handle, per_frame_resource<gpu::image>::frames_in_flight> slots;
+		[[= gse::shared]] bool ready = false;
 
-			vec2u current_extent{ 0, 0 };
-			bool enabled = true;
-		};
-
-		static auto init(
-			shared_view<gpu::context> gpu_s,
-			data& d
-		) -> async::task<>;
-
-		static auto run(
-			context& ctx,
-			shared_view<gpu::context> gpu_s,
-			data& d
-		) -> async::task<>;
-
-		static auto frame(
-			const context& ctx,
-			shared_view<gpu::context> gpu_s,
-			data& d
-		) -> async::task<>;
+		vec2u current_extent{ 0, 0 };
+		bool enabled = true;
 	};
+
+	[[= gse::system_init{}]]
+	auto init(
+		shared_view<gpu::context::data> gpu_s,
+		data& d
+	) -> async::task<>;
+
+	[[= gse::system_run<>{}]]
+	auto run(
+		context& ctx,
+		shared_view<gpu::context::data> gpu_s,
+		data& d
+	) -> async::task<>;
+
+	[[= gse::system_frame{}]]
+	auto frame(
+		const context& ctx,
+		shared_view<gpu::context::data> gpu_s,
+		data& d
+	) -> async::task<>;
 }

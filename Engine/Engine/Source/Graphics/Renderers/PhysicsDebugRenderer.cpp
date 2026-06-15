@@ -317,7 +317,7 @@ auto gse::renderer::physics_debug::ensure_bindless_buffer_capacity(gpu::device& 
 	);
 }
 
-auto gse::renderer::physics_debug::system::init(const shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
+auto gse::renderer::physics_debug::init(const shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
 	d.pipeline_instanced = gpu::build_graphics_program(*gpu_s.device, instanced_entry::pod);
 
 	d.pipeline_lines = gpu::build_graphics_program(*gpu_s.device, lines_entry::pod);
@@ -378,7 +378,7 @@ auto gse::renderer::physics_debug::system::init(const shared_view<gpu::context> 
 	return {};
 }
 
-auto gse::renderer::physics_debug::system::run::prepare(context& ctx, data& d, const shared_view<physics::system> ps) -> async::task<> {
+auto gse::renderer::physics_debug::prepare(context& ctx, data& d, const shared_view<physics::data> ps) -> async::task<> {
 	d.box_instances.clear();
 	d.sphere_instances.clear();
 	d.capsule_instances.clear();
@@ -411,7 +411,7 @@ auto gse::renderer::physics_debug::system::run::prepare(context& ctx, data& d, c
 	return {};
 }
 
-auto gse::renderer::physics_debug::system::run::build(context& ctx, data& d, read<physics::transform_component> transforms, read<physics::motion_component> motions, read<physics::collision_component> collisions, read<physics::collision_result_component> results) -> async::task<> {
+auto gse::renderer::physics_debug::build(context& ctx, data& d, read<physics::transform_component> transforms, read<physics::motion_component> motions, read<physics::collision_component> collisions, read<physics::collision_result_component> results) -> async::task<> {
 	if (!d.enabled) {
 		return {};
 	}
@@ -488,7 +488,7 @@ auto gse::renderer::physics_debug::system::run::build(context& ctx, data& d, rea
 	return {};
 }
 
-auto gse::renderer::physics_debug::system::frame(const context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state) -> async::task<> {
+auto gse::renderer::physics_debug::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, shared_view<camera::data> cam_state) -> async::task<> {
 	if (!d.enabled) {
 		co_return;
 	}
@@ -598,9 +598,9 @@ auto gse::renderer::physics_debug::system::frame(const context& ctx, shared_view
 		d.line_vertex_buffers[frame_index].host_write(d.line_vertices);
 	}
 
-	auto rec = co_await gpu::pass<system>(ctx)
+	auto rec = co_await gpu::pass<^^gse::renderer::physics_debug::frame>(ctx)
 		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
-		.after<forward::system, sdf_grid::system, world_text::system, cloud::cloud_composite_pass>();
+		.after<^^forward::frame, ^^sdf_grid::frame, ^^world_text::frame, ^^cloud::cloud_composite_pass>();
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
 
