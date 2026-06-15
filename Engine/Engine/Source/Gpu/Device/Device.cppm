@@ -22,7 +22,7 @@ export namespace gse::gpu {
 	public:
 		[[nodiscard]]
 		static auto create(
-			shared_view<window> win,
+			shared_view<window::data> win,
 			bool validation_layers_enabled,
 			gpu::device_settings& device_cfg
 		) -> std::unique_ptr<device>;

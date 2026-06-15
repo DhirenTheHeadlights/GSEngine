@@ -11,20 +11,20 @@ import gse.core;
 import gse.ecs;
 
 export namespace gse::primitive_resolver {
-	struct system {
-		struct run {
-			static auto ensure_renders(
-				context& ctx,
-				structural<render_component> renders
-			) -> async::task<>;
+	struct [[= gse::system_state<"PrimitiveResolver">{}]] data {};
 
-			static auto populate(
-				context& ctx,
-				const primitives::data& prims,
-				write<primitive_box_spec> boxes,
-				write<primitive_sphere_spec> spheres,
-				write<render_component> renders
-			) -> async::task<>;
-		};
-	};
+	[[= gse::system_run<>{}]]
+	auto ensure_renders(
+		context& ctx,
+		structural<render_component> renders
+	) -> async::task<>;
+
+	[[= gse::system_run<1>{}]]
+	auto populate(
+		context& ctx,
+		const primitives::data& prims,
+		write<primitive_box_spec> boxes,
+		write<primitive_sphere_spec> spheres,
+		write<render_component> renders
+	) -> async::task<>;
 }

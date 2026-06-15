@@ -290,89 +290,87 @@ export namespace gse::actions {
 		float scale = 1.f;
 	};
 
-	struct system {
-		struct data {
-			[[= gse::shared]] actions::state current_input_state;
-			[[= gse::shared]] id_mapped_collection<actions::description> descriptions;
-			std::vector<pending_key_binding> pending_key_bindings;
-			std::map<std::string, int> rebinds;
-			std::map<std::string, int> action_defaults;
-			std::vector<pending_axis2_req> pending_axis2_reqs;
-			bindings resolved;
-			[[= gse::shared]] std::vector<std::uint16_t> axis1_ids_cache;
-			[[= gse::shared]] std::vector<std::uint16_t> axis2_ids_cache;
-			id_mapped_collection<resolved_axis2_keys> axis2_by_id;
-		};
-
-		static auto init(
-			data& d
-		) -> async::task<>;
-
-		static auto run(
-			context& ctx,
-			data& d,
-			shared_view<input::system> input_s
-		) -> async::task<>;
-
-		static auto held(
-			const actions::state& as,
-			shared_view<system> d,
-			handle h
-		) -> bool;
-
-		static auto pressed(
-			const actions::state& as,
-			shared_view<system> d,
-			handle h
-		) -> bool;
-
-		static auto released(
-			const actions::state& as,
-			shared_view<system> d,
-			handle h
-		) -> bool;
-
-		static auto current_state(
-			shared_view<system> d
-		) -> const actions::state&;
-
-		static auto axis1_ids(
-			shared_view<system> d
-		) -> std::span<const std::uint16_t>;
-
-		static auto axis2_ids(
-			shared_view<system> d
-		) -> std::span<const std::uint16_t>;
-
-		static auto description(
-			shared_view<system> d,
-			id action_id
-		) -> const actions::description*;
-
-		static auto rebinds_map(
-			data& d
-		) -> std::map<std::string, int>&;
-
-		[[nodiscard]] static auto all_bindings(
-			const data& d
-		) -> std::vector<action_binding_info>;
-
-		static auto rebind(
-			data& d,
-			std::string_view action_name,
-			key new_key
-		) -> void;
-
-		static auto finalize_bindings(
-			data& d
-		) -> void;
-
-		static auto add_description(
-			data& d,
-			std::string_view tag,
-			id action_id
-		) -> actions::description&;
+	struct [[= gse::system_state<"Actions">{}]] data {
+		[[= gse::shared]] actions::state current_input_state;
+		[[= gse::shared]] id_mapped_collection<actions::description> descriptions;
+		std::vector<pending_key_binding> pending_key_bindings;
+		std::map<std::string, int> rebinds;
+		std::map<std::string, int> action_defaults;
+		std::vector<pending_axis2_req> pending_axis2_reqs;
+		bindings resolved;
+		[[= gse::shared]] std::vector<std::uint16_t> axis1_ids_cache;
+		[[= gse::shared]] std::vector<std::uint16_t> axis2_ids_cache;
+		id_mapped_collection<resolved_axis2_keys> axis2_by_id;
 	};
+
+	[[= gse::system_init{}]] auto init(
+		data& d
+	) -> async::task<>;
+
+	[[= gse::system_run<>{}]] auto run(
+		context& ctx,
+		data& d,
+		shared_view<input::data> input_s
+	) -> async::task<>;
+
+	auto held(
+		const actions::state& as,
+		shared_view<data> d,
+		handle h
+	) -> bool;
+
+	auto pressed(
+		const actions::state& as,
+		shared_view<data> d,
+		handle h
+	) -> bool;
+
+	auto released(
+		const actions::state& as,
+		shared_view<data> d,
+		handle h
+	) -> bool;
+
+	auto current_state(
+		shared_view<data> d
+	) -> const actions::state&;
+
+	auto axis1_ids(
+		shared_view<data> d
+	) -> std::span<const std::uint16_t>;
+
+	auto axis2_ids(
+		shared_view<data> d
+	) -> std::span<const std::uint16_t>;
+
+	auto description_of(
+		shared_view<data> d,
+		id action_id
+	) -> const actions::description*;
+
+	auto rebinds_map(
+		data& d
+	) -> std::map<std::string, int>&;
+
+	[[nodiscard]] auto all_bindings(
+		const data& d
+	) -> std::vector<action_binding_info>;
+
+	auto rebind(
+		data& d,
+		std::string_view action_name,
+		key new_key
+	) -> void;
+
+	auto finalize_bindings(
+		data& d
+	) -> void;
+
+	auto add_description(
+		data& d,
+		std::string_view tag,
+		id action_id
+	) -> actions::description&;
 
 	auto add_by_name(
 		channel_writer& channels,
@@ -395,38 +393,38 @@ export namespace gse::actions {
 	auto held(
 		const handle& h,
 		const actions::state& s,
-		shared_view<system> sys
+		shared_view<data> sys
 	) -> bool;
 
 	auto pressed(
 		const handle& h,
 		const actions::state& s,
-		shared_view<system> sys
+		shared_view<data> sys
 	) -> bool;
 
 	auto released(
 		const handle& h,
 		const actions::state& s,
-		shared_view<system> sys
+		shared_view<data> sys
 	) -> bool;
 }
 
-auto gse::actions::system::held(const actions::state& as, const shared_view<system> d, const handle h) -> bool {
-	if (const auto* desc = description(d, h.id())) {
+auto gse::actions::held(const actions::state& as, const shared_view<data> d, const handle h) -> bool {
+	if (const auto* desc = description_of(d, h.id())) {
 		return as.held(desc->bit_index());
 	}
 	return false;
 }
 
-auto gse::actions::system::pressed(const actions::state& as, const shared_view<system> d, const handle h) -> bool {
-	if (const auto* desc = description(d, h.id())) {
+auto gse::actions::pressed(const actions::state& as, const shared_view<data> d, const handle h) -> bool {
+	if (const auto* desc = description_of(d, h.id())) {
 		return as.pressed(desc->bit_index());
 	}
 	return false;
 }
 
-auto gse::actions::system::released(const actions::state& as, const shared_view<system> d, const handle h) -> bool {
-	if (const auto* desc = description(d, h.id())) {
+auto gse::actions::released(const actions::state& as, const shared_view<data> d, const handle h) -> bool {
+	if (const auto* desc = description_of(d, h.id())) {
 		return as.released(desc->bit_index());
 	}
 	return false;
@@ -638,12 +636,12 @@ auto gse::actions::state::camera_yaw() const -> angle {
 	return m_camera_yaw;
 }
 
-auto gse::actions::system::init(data& d) -> async::task<> {
+auto gse::actions::init(data& d) -> async::task<> {
 	finalize_bindings(d);
 	return {};
 }
 
-auto gse::actions::system::run(context& ctx, data& d, const shared_view<input::system> input_s) -> async::task<> {
+auto gse::actions::run(context& ctx, data& d, const shared_view<input::data> input_s) -> async::task<> {
 	bool config_changed = false;
 
 	for (const auto& [name, default_key, action_id] : ctx.read_channel<add_action_request>()) {
@@ -666,7 +664,7 @@ auto gse::actions::system::run(context& ctx, data& d, const shared_view<input::s
 		finalize_bindings(d);
 	}
 
-	const auto& in = input::system::current_state(input_s);
+	const auto& in = input::current_state(input_s);
 
 	auto& action_state = d.current_input_state;
 	action_state.begin_frame();
@@ -702,23 +700,23 @@ auto gse::actions::system::run(context& ctx, data& d, const shared_view<input::s
 	return {};
 }
 
-auto gse::actions::system::current_state(const shared_view<system> d) -> const actions::state& {
+auto gse::actions::current_state(const shared_view<data> d) -> const actions::state& {
 	return d.current_input_state;
 }
 
-auto gse::actions::system::axis1_ids(const shared_view<system> d) -> std::span<const std::uint16_t> {
+auto gse::actions::axis1_ids(const shared_view<data> d) -> std::span<const std::uint16_t> {
 	return d.axis1_ids_cache;
 }
 
-auto gse::actions::system::axis2_ids(const shared_view<system> d) -> std::span<const std::uint16_t> {
+auto gse::actions::axis2_ids(const shared_view<data> d) -> std::span<const std::uint16_t> {
 	return d.axis2_ids_cache;
 }
 
-auto gse::actions::system::description(const shared_view<system> d, const id action_id) -> const actions::description* {
+auto gse::actions::description_of(const shared_view<data> d, const id action_id) -> const actions::description* {
 	return d.descriptions.try_get(action_id);
 }
 
-auto gse::actions::system::finalize_bindings(data& d) -> void {
+auto gse::actions::finalize_bindings(data& d) -> void {
 	d.resolved = {};
 
 	for (const auto& [name, def, action_id] : d.pending_key_bindings) {
@@ -772,7 +770,7 @@ auto gse::actions::system::finalize_bindings(data& d) -> void {
 	d.axis2_ids_cache.erase(std::ranges::unique(d.axis2_ids_cache).begin(), d.axis2_ids_cache.end());
 }
 
-auto gse::actions::system::add_description(data& d, const std::string_view tag, const id action_id) -> actions::description& {
+auto gse::actions::add_description(data& d, const std::string_view tag, const id action_id) -> actions::description& {
 	if (const auto existing = d.descriptions.try_get(action_id)) {
 		return *existing;
 	}
@@ -784,11 +782,11 @@ auto gse::actions::system::add_description(data& d, const std::string_view tag, 
 	return *desc_ptr;
 }
 
-auto gse::actions::system::rebinds_map(data& d) -> std::map<std::string, int>& {
+auto gse::actions::rebinds_map(data& d) -> std::map<std::string, int>& {
 	return d.rebinds;
 }
 
-auto gse::actions::system::all_bindings(const data& d) -> std::vector<action_binding_info> {
+auto gse::actions::all_bindings(const data& d) -> std::vector<action_binding_info> {
 	std::map<std::string, action_binding_info> merged;
 
 	for (const auto& [name, default_key] : d.action_defaults) {
@@ -817,7 +815,7 @@ auto gse::actions::system::all_bindings(const data& d) -> std::vector<action_bin
 	return result;
 }
 
-auto gse::actions::system::rebind(data& d, const std::string_view action_name, const key new_key) -> void {
+auto gse::actions::rebind(data& d, const std::string_view action_name, const key new_key) -> void {
 	d.rebinds[std::string(action_name)] = static_cast<int>(new_key);
 	finalize_bindings(d);
 }
@@ -847,16 +845,16 @@ auto gse::actions::bind_axis2(channel_writer& channels, const pending_axis2_info
 	return axis_id;
 }
 
-auto gse::actions::held(const handle& h, const actions::state& s, const shared_view<system> sys) -> bool {
-	return system::held(s, sys, h);
+auto gse::actions::held(const handle& h, const actions::state& s, const shared_view<data> sys) -> bool {
+	return held(s, sys, h);
 }
 
-auto gse::actions::pressed(const handle& h, const actions::state& s, const shared_view<system> sys) -> bool {
-	return system::pressed(s, sys, h);
+auto gse::actions::pressed(const handle& h, const actions::state& s, const shared_view<data> sys) -> bool {
+	return pressed(s, sys, h);
 }
 
-auto gse::actions::released(const handle& h, const actions::state& s, const shared_view<system> sys) -> bool {
-	return system::released(s, sys, h);
+auto gse::actions::released(const handle& h, const actions::state& s, const shared_view<data> sys) -> bool {
+	return released(s, sys, h);
 }
 
 auto gse::key_to_string(const key k) -> std::string_view {

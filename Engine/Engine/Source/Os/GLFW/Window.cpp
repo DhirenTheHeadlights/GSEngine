@@ -6,10 +6,8 @@ import :window;
 import :keys;
 import :input_events;
 
-import vulkan;
 import gse.glfw;
 import gse.win32;
-
 
 import gse.assert;
 import gse.math;
@@ -18,6 +16,30 @@ import gse.concurrency;
 import gse.ecs;
 
 namespace gse {
+	auto to_glfw_handle(
+		native_window_handle handle
+	) -> GLFWwindow*;
+
+	auto to_native_handle(
+		GLFWwindow* handle
+	) -> native_window_handle;
+
+	auto window_handle_open(
+		native_window_handle handle
+	) -> bool;
+
+	auto window_handle_minimized(
+		native_window_handle handle
+	) -> bool;
+
+	auto window_handle_viewport(
+		native_window_handle handle
+	) -> vec2i;
+
+	auto window_handle_show(
+		native_window_handle handle
+	) -> void;
+
 	auto refresh_monitor_settings(
 		window::data& d
 	) -> void;
@@ -59,6 +81,16 @@ namespace gse {
 	auto create_window(
 		window::data& d
 	) -> void;
+}
+
+auto gse::to_glfw_handle(const native_window_handle handle) -> GLFWwindow* {
+	return static_cast<GLFWwindow*>(handle.value);
+}
+
+auto gse::to_native_handle(GLFWwindow* handle) -> native_window_handle {
+	return {
+		.value = handle
+	};
 }
 
 auto gse::to_input_key(const int glfw_key) -> std::optional<key> {
@@ -128,21 +160,23 @@ auto gse::refresh_present_mode_settings(window::data& d) -> void {
 }
 
 auto gse::apply_cursor_mode(const window::data& d) -> void {
+	auto* handle = to_glfw_handle(d.handle);
 	const int target_mode = d.mouse_visible ? glfw::cursor_normal : glfw::cursor_disabled;
-	const int current_mode = glfwGetInputMode(d.handle, glfw::cursor);
+	const int current_mode = glfwGetInputMode(handle, glfw::cursor);
 	if (current_mode == target_mode) {
 		return;
 	}
 
 	if (current_mode == glfw::cursor_disabled && target_mode == glfw::cursor_normal) {
 		const auto dims = window_handle_viewport(d.handle);
-		glfwSetCursorPos(d.handle, dims.x() / 2.0, dims.y() / 2.0);
+		glfwSetCursorPos(handle, dims.x() / 2.0, dims.y() / 2.0);
 	}
 
-	glfwSetInputMode(d.handle, glfw::cursor, target_mode);
+	glfwSetInputMode(handle, glfw::cursor, target_mode);
 }
 
 auto gse::move_window_to_monitor(const window::data& d, const int monitor_index) -> void {
+	auto* handle = to_glfw_handle(d.handle);
 	int monitor_count = 0;
 	GLFWmonitor** monitors = glfwGetMonitors(&monitor_count);
 	if (!monitors || monitor_index < 0 || monitor_index >= monitor_count) {
@@ -157,11 +191,11 @@ auto gse::move_window_to_monitor(const window::data& d, const int monitor_index)
 
 	int ww = 0;
 	int wh = 0;
-	glfwGetWindowSize(d.handle, &ww, &wh);
+	glfwGetWindowSize(handle, &ww, &wh);
 
 	const int new_x = mx + (mw - ww) / 2;
 	const int new_y = my + (mh - wh) / 2;
-	glfwSetWindowPos(d.handle, new_x, new_y);
+	glfwSetWindowPos(handle, new_x, new_y);
 }
 
 auto gse::apply_display_mode(window::data& d, const display_mode mode) -> void {
@@ -169,6 +203,7 @@ auto gse::apply_display_mode(window::data& d, const display_mode mode) -> void {
 		return;
 	}
 
+	auto* handle = to_glfw_handle(d.handle);
 	const bool was_windowed = d.current_display_mode == display_mode::windowed;
 	const bool will_be_windowed = mode == display_mode::windowed;
 
@@ -177,8 +212,8 @@ auto gse::apply_display_mode(window::data& d, const display_mode mode) -> void {
 		int y = 0;
 		int w = 0;
 		int h = 0;
-		glfwGetWindowPos(d.handle, &x, &y);
-		glfwGetWindowSize(d.handle, &w, &h);
+		glfwGetWindowPos(handle, &x, &y);
+		glfwGetWindowSize(handle, &w, &h);
 		d.windowed_rect = rect_t<vec2i>::from_position_size(
 			{ x, y },
 			{ w, h }
@@ -190,7 +225,7 @@ auto gse::apply_display_mode(window::data& d, const display_mode mode) -> void {
 	if (will_be_windowed) {
 		const auto pos = d.windowed_rect.top_left();
 		const auto size = d.windowed_rect.size();
-		glfwSetWindowMonitor(d.handle, nullptr, pos.x(), pos.y(), size.x(), size.y(), 0);
+		glfwSetWindowMonitor(handle, nullptr, pos.x(), pos.y(), size.x(), size.y(), 0);
 		return;
 	}
 
@@ -227,12 +262,11 @@ auto gse::apply_display_mode(window::data& d, const display_mode mode) -> void {
 		}
 	}
 
-	glfwSetWindowMonitor(d.handle, target_monitor, 0, 0, target_width, target_height, target_refresh);
+	glfwSetWindowMonitor(handle, target_monitor, 0, 0, target_width, target_height, target_refresh);
 }
 
 auto gse::create_window(window::data& d) -> void {
 	assert(glfwInit(), "Error initializing GLFW");
-	assert(glfwVulkanSupported(), "Vulkan not supported");
 
 	if (d.title.empty()) {
 		d.title = "GSEngine";
@@ -245,13 +279,14 @@ auto gse::create_window(window::data& d) -> void {
 	glfwWindowHint(glfw::decorated, d.decorated ? glfw::true_ : glfw::false_);
 
 	const auto initial_size = d.windowed_rect.size();
-	d.handle = glfwCreateWindow(initial_size.x(), initial_size.y(), d.title.c_str(), nullptr, nullptr);
-	assert(d.handle, "Failed to create GLFW window!");
+	auto* handle = glfwCreateWindow(initial_size.x(), initial_size.y(), d.title.c_str(), nullptr, nullptr);
+	assert(handle != nullptr, "Failed to create GLFW window!");
+	d.handle = to_native_handle(handle);
 
-	glfwSetWindowUserPointer(d.handle, &d);
+	glfwSetWindowUserPointer(handle, &d);
 
 	glfwSetKeyCallback(
-		d.handle,
+		handle,
 		[](GLFWwindow* w, const int key, int, const int action, int) {
 			auto* self = static_cast<window::data*>(glfwGetWindowUserPointer(w));
 			if (!self) {
@@ -275,7 +310,7 @@ auto gse::create_window(window::data& d) -> void {
 	);
 
 	glfwSetMouseButtonCallback(
-		d.handle,
+		handle,
 		[](GLFWwindow* w, const int button, const int action, int) {
 			auto* self = static_cast<window::data*>(glfwGetWindowUserPointer(w));
 			if (!self) {
@@ -298,7 +333,7 @@ auto gse::create_window(window::data& d) -> void {
 	);
 
 	glfwSetCursorPosCallback(
-		d.handle,
+		handle,
 		[](GLFWwindow* w, double xpos, double ypos) {
 			auto* self = static_cast<window::data*>(glfwGetWindowUserPointer(w));
 			if (!self) {
@@ -324,7 +359,7 @@ auto gse::create_window(window::data& d) -> void {
 	);
 
 	glfwSetScrollCallback(
-		d.handle,
+		handle,
 		[](GLFWwindow* w, const double xoffset, const double yoffset) {
 			if (auto* self = static_cast<window::data*>(glfwGetWindowUserPointer(w))) {
 				self->input_events.push(input::mouse_scrolled{ xoffset, yoffset });
@@ -333,7 +368,7 @@ auto gse::create_window(window::data& d) -> void {
 	);
 
 	glfwSetCharCallback(
-		d.handle,
+		handle,
 		[](GLFWwindow* w, const unsigned int codepoint) {
 			if (auto* self = static_cast<window::data*>(glfwGetWindowUserPointer(w))) {
 				self->input_events.push(input::text_entered{ codepoint });
@@ -342,7 +377,7 @@ auto gse::create_window(window::data& d) -> void {
 	);
 
 	glfwSetWindowFocusCallback(
-		d.handle,
+		handle,
 		[](GLFWwindow* w, const int focused) {
 			auto* self = static_cast<window::data*>(glfwGetWindowUserPointer(w));
 			if (!self) {
@@ -353,7 +388,7 @@ auto gse::create_window(window::data& d) -> void {
 	);
 
 	glfwSetFramebufferSizeCallback(
-		d.handle,
+		handle,
 		[](GLFWwindow* w, const int, const int) {
 			if (auto* self = static_cast<window::data*>(glfwGetWindowUserPointer(w))) {
 				self->framebuffer_resized = true;
@@ -362,7 +397,7 @@ auto gse::create_window(window::data& d) -> void {
 	);
 
 	const int cursor_mode = d.mouse_visible ? glfw::cursor_normal : glfw::cursor_disabled;
-	glfwSetInputMode(d.handle, glfw::cursor, cursor_mode);
+	glfwSetInputMode(handle, glfw::cursor, cursor_mode);
 
 	refresh_monitor_settings(d);
 	d.last_monitor_index = d.monitor.value;
@@ -372,7 +407,7 @@ auto gse::create_window(window::data& d) -> void {
 
 	d.current_present_mode_index = d.present_mode.value;
 
-	glfwFocusWindow(d.handle);
+	glfwFocusWindow(handle);
 
 	if (d.native_frame) {
 		window::install_native_frame(d.handle, &d.chrome_caption_height, &d.chrome_controls_width);
@@ -431,8 +466,8 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 
 auto gse::window::shutdown(data& d) -> void {
 	if (d.handle) {
-		glfwDestroyWindow(d.handle);
-		d.handle = nullptr;
+		glfwDestroyWindow(to_glfw_handle(d.handle));
+		d.handle = {};
 	}
 }
 
@@ -445,17 +480,19 @@ auto gse::window::apply_commands(data& d) -> void {
 		return;
 	}
 
+	auto* handle = to_glfw_handle(d.handle);
+
 	if (d.cmd_minimize) {
-		glfwIconifyWindow(d.handle);
+		glfwIconifyWindow(handle);
 		d.cmd_minimize = false;
 	}
 
 	if (d.cmd_toggle_maximize) {
-		if (glfwGetWindowAttrib(d.handle, glfw::maximized)) {
-			glfwRestoreWindow(d.handle);
+		if (glfwGetWindowAttrib(handle, glfw::maximized)) {
+			glfwRestoreWindow(handle);
 		}
 		else {
-			glfwMaximizeWindow(d.handle);
+			glfwMaximizeWindow(handle);
 		}
 		d.cmd_toggle_maximize = false;
 	}
@@ -464,11 +501,11 @@ auto gse::window::apply_commands(data& d) -> void {
 	int win_y = 0;
 	int win_w = 0;
 	int win_h = 0;
-	glfwGetWindowPos(d.handle, &win_x, &win_y);
-	glfwGetWindowSize(d.handle, &win_w, &win_h);
+	glfwGetWindowPos(handle, &win_x, &win_y);
+	glfwGetWindowSize(handle, &win_w, &win_h);
 	d.position = vec2i{ win_x, win_y };
 	d.size = vec2i{ win_w, win_h };
-	d.maximized = glfwGetWindowAttrib(d.handle, glfw::maximized) != 0;
+	d.maximized = glfwGetWindowAttrib(handle, glfw::maximized) != 0;
 }
 
 #ifdef _WIN32
@@ -555,11 +592,11 @@ namespace gse {
 }
 #endif
 
-auto gse::window::install_native_frame(GLFWwindow* handle, const int* caption_height, const int* controls_width) -> void {
+auto gse::window::install_native_frame(const native_window_handle handle, const int* caption_height, const int* controls_width) -> void {
 #ifdef _WIN32
 	using namespace gse::win32;
 
-	const HWND hwnd = glfwGetWin32Window(handle);
+	const HWND hwnd = glfwGetWin32Window(to_glfw_handle(handle));
 	if (hwnd == nullptr) {
 		return;
 	}
@@ -583,7 +620,7 @@ auto gse::window::is_open(const data& d) -> bool {
 	return window_handle_open(d.handle);
 }
 
-auto gse::window::is_open(const shared_view<window> d) -> bool {
+auto gse::window::is_open(const shared_view<data> d) -> bool {
 	return window_handle_open(d.handle);
 }
 
@@ -591,7 +628,7 @@ auto gse::window::minimized(const data& d) -> bool {
 	return window_handle_minimized(d.handle);
 }
 
-auto gse::window::minimized(const shared_view<window> d) -> bool {
+auto gse::window::minimized(const shared_view<data> d) -> bool {
 	return window_handle_minimized(d.handle);
 }
 
@@ -599,15 +636,11 @@ auto gse::window::viewport(const data& d) -> vec2i {
 	return window_handle_viewport(d.handle);
 }
 
-auto gse::window::viewport(const shared_view<window> d) -> vec2i {
+auto gse::window::viewport(const shared_view<data> d) -> vec2i {
 	return window_handle_viewport(d.handle);
 }
 
-auto gse::window::create_vulkan_surface(const shared_view<window> d, const vk::Instance instance) -> vk::SurfaceKHR {
-	return window_handle_surface(d.handle, instance);
-}
-
-auto gse::window::raw_handle(const shared_view<window> d) -> GLFWwindow* {
+auto gse::window::raw_handle(const shared_view<data> d) -> native_window_handle {
 	return d.handle;
 }
 
@@ -615,29 +648,31 @@ auto gse::window::show(const data& d) -> void {
 	window_handle_show(d.handle);
 }
 
-auto gse::window::show(const shared_view<window> d) -> void {
+auto gse::window::show(const shared_view<data> d) -> void {
 	window_handle_show(d.handle);
 }
 
-auto gse::window::ui_focus(const shared_view<window> d) -> bool {
+auto gse::window::ui_focus(const shared_view<data> d) -> bool {
 	return d.ui_focus;
 }
 
-auto gse::window_handle_open(GLFWwindow* handle) -> bool {
-	return !glfwWindowShouldClose(handle);
+auto gse::window_handle_open(const native_window_handle handle) -> bool {
+	return !glfwWindowShouldClose(to_glfw_handle(handle));
 }
 
-auto gse::window_handle_minimized(GLFWwindow* handle) -> bool {
+auto gse::window_handle_minimized(const native_window_handle handle) -> bool {
+	auto* glfw_handle = to_glfw_handle(handle);
 	int width = 0;
 	int height = 0;
-	glfwGetFramebufferSize(handle, &width, &height);
+	glfwGetFramebufferSize(glfw_handle, &width, &height);
 	return width == 0 || height == 0;
 }
 
-auto gse::window_handle_viewport(GLFWwindow* handle) -> vec2i {
+auto gse::window_handle_viewport(const native_window_handle handle) -> vec2i {
+	auto* glfw_handle = to_glfw_handle(handle);
 	int width = 0;
 	int height = 0;
-	glfwGetFramebufferSize(handle, &width, &height);
+	glfwGetFramebufferSize(glfw_handle, &width, &height);
 	return { width, height };
 }
 
@@ -649,15 +684,9 @@ auto gse::window::frame_buffer_resized(data& d) -> bool {
 	return false;
 }
 
-auto gse::window_handle_surface(GLFWwindow* handle, const vk::Instance instance) -> vk::SurfaceKHR {
-	const auto surface = glfw::create_window_surface(instance, handle);
-	assert(surface, "Failed to create window surface for Vulkan!");
-	return surface;
-}
-
-auto gse::window_handle_show(GLFWwindow* handle) -> void {
+auto gse::window_handle_show(const native_window_handle handle) -> void {
 	if (handle) {
-		glfwShowWindow(handle);
+		glfwShowWindow(to_glfw_handle(handle));
 	}
 }
 
@@ -672,14 +701,8 @@ auto gse::window::set_ui_focus(data& d, const bool focus) -> void {
 	const auto dims = window_handle_viewport(d.handle);
 	const double center_x = dims.x() / 2.0;
 	const double center_y = dims.y() / 2.0;
-	glfwSetCursorPos(d.handle, center_x, center_y);
+	glfwSetCursorPos(to_glfw_handle(d.handle), center_x, center_y);
 	d.input_events.push(input::mouse_moved{ center_x, dims.y() - center_y });
-}
-
-auto gse::window::vulkan_instance_extensions() -> std::span<const char* const> {
-	std::uint32_t count = 0;
-	const char** extensions = glfwGetRequiredInstanceExtensions(&count);
-	return { extensions, count };
 }
 
 auto gse::window::enumerate_monitors() -> std::vector<monitor_info> {

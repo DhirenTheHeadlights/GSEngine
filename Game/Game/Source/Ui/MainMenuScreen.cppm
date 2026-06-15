@@ -10,7 +10,7 @@ export namespace gs {
 	class main_menu_screen : public gse::gui::screen {
 	public:
 		main_menu_screen(
-			gse::shared_view<gse::world_system> world,
+			gse::shared_view<gse::world_system::data> world,
 			gse::shared_view<gse::network::data> net,
 			const gse::save::registry& save_reg,
 			gse::channel_writer channels
@@ -40,7 +40,7 @@ export namespace gs {
 	private:
 		[[nodiscard]] auto eased_progress() const -> float;
 
-		gse::shared_view<gse::world_system> m_world;
+		gse::shared_view<gse::world_system::data> m_world;
 		gse::shared_view<gse::network::data> m_net;
 		const gse::save::registry* m_save_reg;
 		gse::channel_writer m_channels;
@@ -51,7 +51,7 @@ export namespace gs {
 	};
 }
 
-gs::main_menu_screen::main_menu_screen(const gse::shared_view<gse::world_system> world, const gse::shared_view<gse::network::data> net, const gse::save::registry& save_reg, gse::channel_writer channels)
+gs::main_menu_screen::main_menu_screen(const gse::shared_view<gse::world_system::data> world, const gse::shared_view<gse::network::data> net, const gse::save::registry& save_reg, gse::channel_writer channels)
 	: m_world(world), m_net(net), m_save_reg(&save_reg), m_channels(std::move(channels)) {
 }
 

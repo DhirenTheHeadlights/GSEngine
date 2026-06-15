@@ -14,27 +14,27 @@ import :gui;
 import :sdf_grid_renderer;
 
 export namespace gse::renderer::world_text {
-	struct system {
-		struct data {
-			gpu::shader_program pipeline;
-			per_frame_resource<gpu::buffer> camera_ubo_buffers;
-			per_frame_resource<gpu::buffer> vertex_buffers;
-			per_frame_resource<std::size_t> vertex_capacities;
-		};
-
-		static auto init(
-			context& ctx,
-			shared_view<gpu::context> gpu_s,
-			data& d
-		) -> async::task<>;
-
-		static auto frame(
-			const context& ctx,
-			shared_view<gpu::context> gpu_s,
-			data& d,
-			shared_view<camera::system> cam_state,
-			shared_view<gui::system> gui_d,
-			shared_view<sdf_grid::system> grid_d
-		) -> async::task<>;
+	struct [[= gse::system_state<"WorldText">{}]] data {
+		gpu::shader_program pipeline;
+		per_frame_resource<gpu::buffer> camera_ubo_buffers;
+		per_frame_resource<gpu::buffer> vertex_buffers;
+		per_frame_resource<std::size_t> vertex_capacities;
 	};
+
+	[[= gse::system_init{}]]
+	auto init(
+		context& ctx,
+		shared_view<gpu::context::data> gpu_s,
+		data& d
+	) -> async::task<>;
+
+	[[= gse::system_frame{}]]
+	auto frame(
+		const context& ctx,
+		shared_view<gpu::context::data> gpu_s,
+		data& d,
+		shared_view<camera::data> cam_state,
+		shared_view<gui::data> gui_d,
+		shared_view<sdf_grid::data> grid_d
+	) -> async::task<>;
 }

@@ -8,16 +8,25 @@ import gse.meta;
 import :registries;
 
 export namespace gse::settings {
-	template <typename S>
-	struct change_request {
-		std::function<void(typename S::data&)> apply;
+	template <typename State>
+	struct annotated_change_request {
+		std::function<void(State&)> apply;
 	};
 
-	template <typename S>
-	struct changed {
-		typename S::data old_value;
-		typename S::data new_value;
+	template <typename State>
+	struct annotated_changed {
+		State old_value;
+		State new_value;
 	};
+
+	using draw_page_thunk = void (
+			*
+	)(
+		void* builder,
+		void* panel_state,
+		void* channels,
+		const void* entry
+	);
 
 	using write_settings_thunk = void (
 			*
@@ -35,60 +44,70 @@ export namespace gse::settings {
 		void* settings_ptr
 	);
 
-	using draw_settings_thunk = void (
-			*
-	)(
-		void* gui_builder,
-		void* panel_state,
-		std::string_view category,
-		void* settings_ptr,
-		void* channel_writer
-	);
-
-	using draw_page_thunk = void (
-			*
-	)(
-		void* gui_builder,
-		void* panel_state,
-		void* settings_ptr,
-		void* channel_writer
-	);
-
-	using draw_hot_fields_thunk = void (
-			*
-	)(
-		void* gui_builder,
-		void* panel_state,
-		void* settings_ptr,
-		void* channel_writer
-	);
-
 	using reset_to_defaults_thunk = void (
 			*
 	)(
 		void* channel_writer
 	);
 
+	using format_settings_field_thunk = std::string (
+			*
+	)(
+		const void* settings_ptr
+	);
+
+	using settings_field_options_thunk = std::vector<std::string> (
+			*
+	)(
+		const void* settings_ptr
+	);
+
+	using push_settings_field_change_thunk = bool (
+			*
+	)(
+		void* channel_writer,
+		std::string_view value
+	);
+
+	enum class settings_field_widget : std::uint8_t {
+		unsupported,
+		boolean,
+		choice,
+		enumeration,
+		integer,
+		floating,
+		text,
+	};
+
+	struct settings_field_range {
+		bool enabled = false;
+		double min = 0.0;
+		double max = 0.0;
+	};
+
+	struct settings_field {
+		std::string key;
+		std::string description;
+		settings_field_widget widget = settings_field_widget::unsupported;
+		settings_field_range range;
+		std::vector<std::string> options;
+		format_settings_field_thunk format = nullptr;
+		settings_field_options_thunk runtime_options = nullptr;
+		push_settings_field_change_thunk push_change = nullptr;
+		bool hot_reloadable = false;
+		bool restart_required = false;
+	};
+
 	struct register_settings_type {
 		std::string category;
 		id type_id;
 		void* settings_ptr = nullptr;
 		std::vector<std::string> keys;
+		std::vector<settings_field> fields;
 		write_settings_thunk write = nullptr;
 		read_settings_thunk read = nullptr;
-		draw_settings_thunk draw = nullptr;
-		draw_page_thunk draw_page = nullptr;
-		draw_hot_fields_thunk draw_hot_fields = nullptr;
 		reset_to_defaults_thunk reset_to_defaults = nullptr;
-		bool has_hot_fields = false;
-	};
-
-	template <typename S>
-	struct gui_draw_provider {
-		static constexpr draw_settings_thunk value = nullptr;
-		static constexpr draw_page_thunk page_value = nullptr;
-		static constexpr draw_hot_fields_thunk hot_value = nullptr;
-		static constexpr bool any_hot = false;
+		draw_page_thunk draw_page = nullptr;
 	};
 
 	template <typename T>
@@ -141,15 +160,12 @@ export namespace gse::settings {
 	template <typename T>
 	consteval auto category_of() -> std::string_view;
 
-	template <typename S>
-	auto reset_to_defaults_for(
-		void* channel_writer_ptr
-	) -> void;
+	template <typename F>
+	consteval auto field_widget_of() -> settings_field_widget;
 
-	template <typename S>
-	auto build_settings_record(
-		typename S::data& obj
-	) -> register_settings_type;
+	consteval auto make_range_field_from_info(
+		std::meta::info range_type
+	) -> settings_field_range;
 }
 
 template <typename T>
@@ -254,42 +270,58 @@ consteval auto gse::settings::category_of() -> std::string_view {
 	}
 }
 
-template <typename S>
-auto gse::settings::reset_to_defaults_for(void* channel_writer_ptr) -> void {
-	using data_t = typename S::data;
-	auto& channels = *static_cast<channel_writer*>(channel_writer_ptr);
-	channels.push<change_request<S>>({
-		.apply = [](data_t& d) {
-			data_t defaults{};
-			template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^data_t, std::meta::access_context::unchecked()))) {
-				if constexpr (meta::find_describe(m) != std::meta::info{}) {
-					using F = [:std::meta::type_of(m):];
-					if constexpr (is_choice_v<F>) {
-						d.[:m:].value = defaults.[:m:].value;
-					}
-					else {
-						d.[:m:] = defaults.[:m:];
-					}
-				}
-			}
-		},
-	});
+template <typename F>
+consteval auto gse::settings::field_widget_of() -> settings_field_widget {
+	if constexpr (std::same_as<F, bool>) {
+		return settings_field_widget::boolean;
+	}
+	else if constexpr (is_choice_v<F>) {
+		return settings_field_widget::choice;
+	}
+	else if constexpr (std::is_enum_v<F>) {
+		return settings_field_widget::enumeration;
+	}
+	else if constexpr (std::is_integral_v<F>) {
+		return settings_field_widget::integer;
+	}
+	else if constexpr (std::is_floating_point_v<F>) {
+		return settings_field_widget::floating;
+	}
+	else if constexpr (std::same_as<F, std::string> || has_parser_specialization<F>) {
+		return settings_field_widget::text;
+	}
+	else {
+		return settings_field_widget::unsupported;
+	}
 }
 
-template <typename S>
-auto gse::settings::build_settings_record(typename S::data& obj) -> register_settings_type {
-	using data_t = typename S::data;
-	return {
-		.category = std::string(category_of<data_t>()),
-		.type_id = id_of<data_t>(),
-		.settings_ptr = &obj,
-		.keys = collect_settings_keys<data_t>(),
-		.write = &write_settings_for<data_t>,
-		.read = &read_settings_for<data_t>,
-		.draw = gui_draw_provider<S>::value,
-		.draw_page = gui_draw_provider<S>::page_value,
-		.draw_hot_fields = gui_draw_provider<S>::hot_value,
-		.reset_to_defaults = &reset_to_defaults_for<S>,
-		.has_hot_fields = gui_draw_provider<S>::any_hot,
-	};
+consteval auto gse::settings::make_range_field_from_info(const std::meta::info range_type) -> settings_field_range {
+	const auto targs = std::meta::template_arguments_of(range_type);
+	if (targs.size() < 2) {
+		return {};
+	}
+	const auto value_type = std::meta::dealias(std::meta::type_of(targs[0]));
+	if (value_type == ^^int) {
+		return {
+			.enabled = true,
+			.min = static_cast<double>(std::meta::extract<int>(targs[0])),
+			.max = static_cast<double>(std::meta::extract<int>(targs[1])),
+		};
+	}
+	if (value_type == ^^float) {
+		return {
+			.enabled = true,
+			.min = static_cast<double>(std::meta::extract<float>(targs[0])),
+			.max = static_cast<double>(std::meta::extract<float>(targs[1])),
+		};
+	}
+	if (value_type == ^^double) {
+		return {
+			.enabled = true,
+			.min = std::meta::extract<double>(targs[0]),
+			.max = std::meta::extract<double>(targs[1]),
+		};
+	}
+	return {};
 }
+

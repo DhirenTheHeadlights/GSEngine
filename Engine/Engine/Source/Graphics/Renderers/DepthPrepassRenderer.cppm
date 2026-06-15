@@ -19,26 +19,26 @@ import gse.ecs;
 import gse.math;
 
 export namespace gse::renderer::depth_prepass {
-	struct system {
-		struct data {
-			gpu::shader_program meshlet_pipeline;
+	struct [[= gse::system_state<"DepthPrepass">{}]] data {
+		gpu::shader_program meshlet_pipeline;
 
-			per_frame_resource<gpu::buffer> camera_ubo_buffers;
-		};
-
-		static auto init(
-			context& ctx,
-			shared_view<gpu::context> gpu_s,
-			shared_view<asset::registry> assets_s,
-			data& d
-		) -> async::task<>;
-
-		static auto frame(
-			context& ctx,
-			shared_view<gpu::context> gpu_s,
-			const data& d,
-			shared_view<geometry_collector::system> gc_r,
-			shared_view<camera::system> cam_state
-		) -> async::task<>;
+		per_frame_resource<gpu::buffer> camera_ubo_buffers;
 	};
+
+	[[= gse::system_init{}]]
+	auto init(
+		context& ctx,
+		shared_view<gpu::context::data> gpu_s,
+		shared_view<asset::data> assets_s,
+		data& d
+	) -> async::task<>;
+
+	[[= gse::system_frame{}]]
+	auto frame(
+		context& ctx,
+		shared_view<gpu::context::data> gpu_s,
+		const data& d,
+		shared_view<geometry_collector::data> gc_r,
+		shared_view<camera::data> cam_state
+	) -> async::task<>;
 }

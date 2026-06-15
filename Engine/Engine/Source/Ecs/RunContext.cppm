@@ -17,6 +17,7 @@ import :traits;
 
 export namespace gse {
 	class scheduler;
+	struct system_node;
 
 	class context : public task_context {
 	public:
@@ -34,9 +35,8 @@ export namespace gse {
 			bool live_state = true
 		);
 
-		template <typename S, typename... Args>
-		auto add_system(
-			Args&&... args
+		auto add_system_node(
+			system_node node
 		) -> void;
 
 		[[nodiscard]] auto yield_tick() -> async::task<>;
@@ -100,11 +100,6 @@ namespace gse {
 		std::atomic<int>* held_locks
 	) -> Access;
 
-	template <typename S, typename... Args>
-	auto queue_add_system_helper(
-		scheduler& sched,
-		Args&&... args
-	) -> void;
 }
 
 gse::context::context(scheduler& sched, state_registry& states, resource_registry& resources_store, channel_registry& channels_store, channel_writer& channels, task_graph& graph, gse::registry& reg, access_guard& guard, async::manual_event& resume_event, async::manual_event& paused_event, bool live_state)
@@ -169,10 +164,6 @@ auto gse::context::ensure_storage() -> void {
 	m_reg.ensure_storage<T>();
 }
 
-template <typename S, typename... Args>
-auto gse::context::add_system(Args&&... args) -> void {
-	queue_add_system_helper<S>(m_sched, std::forward<Args>(args)...);
-}
 
 template <typename T>
 auto gse::context::make_structural() -> structural<T> {

@@ -6,13 +6,13 @@ import :engine;
 import :scene;
 import :world_system;
 
-
 import gse.core;
 import gse.containers;
 import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+import gse.system_manifest;
 import gse.network;
 import gse.graphics;
 import gse.audio;
@@ -26,6 +26,10 @@ import gse.config;
 
 gse::engine::engine(const engine_config& config)
 	: identifiable(config.title), m_config(config) {
+}
+
+auto gse::engine::add_system_node(system_node node) -> void {
+	m_scheduler.add_system_node(std::move(node));
 }
 
 auto gse::engine::initialize(const setup_fn& app_setup) -> void {
@@ -46,37 +50,51 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	});
 	m_scheduler.register_external_resource<save::registry>(&m_save);
 	m_scheduler.register_external_resource<primitives::data>(&m_primitives);
+	m_scheduler.register_external_resource<engine_config>(&m_config);
 
-	if (m_config.render) {
-		add_system<input::system>();
-		add_system<actions::system>();
-		add_system<world_system>();
+	m_scheduler.begin_staging();
+	register_systems<^^input>(*this);
+	register_systems<^^actions>(*this);
+	system_manifest<^^world_system::data, ^^world_system::run, ^^world_system::shutdown>{}.register_with(*this);
+	register_systems<^^asset>(*this);
+	register_systems<^^window>(*this);
+	register_systems<^^gpu::context>(*this);
+	register_systems<^^renderer>(*this);
+	register_systems<^^gui>(*this);
+	register_systems<^^physics>(*this);
+	register_systems<^^camera>(*this);
+	register_systems<^^audio>(*this);
 
-		auto win = add_system<window>();
+	std::unordered_set<gse::id> disabled;
+	if (!m_config.render) {
+		disabled.insert(id_of<window::data>());
+		disabled.insert(id_of<audio::data>());
+	}
+	m_scheduler.resolve_activation(disabled);
+
+	if (auto* win = m_scheduler.try_state_of<window::data>()) {
 		win->title = std::string(id().tag());
 		if (m_config.custom_chrome) {
 			win->native_frame = true;
 			win->mouse_visible = true;
 		}
+	}
+	if (auto* gpu_state = m_scheduler.try_state_of<gpu::context::data>()) {
+		gpu_state->swapchain_clear = m_config.render_world ? gpu::color_clear{} : gpu::color_clear{ 0.05f, 0.05f, 0.06f, 1.0f };
+	}
+	if (auto* renderer_state = m_scheduler.try_state_of<renderer::data>()) {
+		renderer_state->render_world = m_config.render_world;
+	}
+	if (auto* gui_state = m_scheduler.try_state_of<gui::data>()) {
+		gui_state->scale_with_resolution = m_config.scale_ui_with_resolution;
+		gui_state->reserve_top_bar = m_config.custom_chrome;
+	}
 
+	auto& asset_state = m_scheduler.state<asset::data>();
+
+	if (m_config.render) {
 		tick_window();
 
-		auto gpu = add_system<gpu::context>();
-		gpu->swapchain_clear = m_config.render_world ? gpu::color_clear{} : gpu::color_clear{ 0.05f, 0.05f, 0.06f, 1.0f };
-
-		add_system<asset::registry>();
-		add_system<renderer::system>();
-
-		auto snapshot = add_system<renderer::scene_snapshot::system>();
-		snapshot->enabled = m_config.render_world;
-
-		add_system<renderer::ui::system>();
-
-		auto gui = add_system<gui::system>();
-		gui->scale_with_resolution = m_config.scale_ui_with_resolution;
-		gui->reserve_top_bar = m_config.custom_chrome;
-
-		auto& asset_state = m_scheduler.state<asset::data>();
 		using game_assets = gse::assets::append<graphics::asset_types, audio::asset_types>;
 		gse::asset::system_for<game_assets> assets{ asset_state };
 		assets.register_loaders();
@@ -104,7 +122,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 		m_loading.set_phase("Initializing");
 		m_loading.set_progress(0, 0);
 
-		auto& gui_data = m_scheduler.state<gse::gui::system::data>();
+		auto& gui_data = m_scheduler.state<gse::gui::data>();
 		gui_data.menu_stack.push<gse::gui::loading_screen>(m_loading);
 		log::println(log::category::runtime, "boot: loading_screen pushed to menu stack");
 
@@ -113,31 +131,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 		m_deferred_boot = [this, app_setup, asset_state_ptr] {
 			log::println(log::category::runtime, "boot: deferred boot begin (loading screen rendered)");
 
-			add_system<physics::system>();
-			add_system<camera::system>();
-
-			if (m_config.render_world) {
-				add_system<primitive_resolver::system>();
-				add_system<renderer::geometry_collector::system>();
-				add_system<renderer::cull_compute::system>();
-				add_system<renderer::physics_transform::system>();
-				add_system<renderer::depth_prepass::system>();
-				add_system<renderer::rt_shadow::system>();
-				add_system<renderer::gi_probe::system>();
-				add_system<renderer::light_culling::system>();
-				add_system<renderer::forward::system>();
-				add_system<renderer::sdf_grid::system>();
-				add_system<renderer::world_text::system>();
-				add_system<renderer::physics_debug::system>();
-				add_system<renderer::atmosphere::system>();
-				add_system<renderer::cloud::system>();
-				add_system<renderer::taa::system>();
-				add_system<renderer::bloom::system>();
-				add_system<renderer::tonemap::system>();
-				add_system<renderer::capture::system>();
-			}
-
-			add_system<audio::system>();
+			m_scheduler.register_deferred();
 
 			task::post([this, app_setup, asset_state_ptr] {
 				using game_assets = gse::assets::append<graphics::asset_types, audio::asset_types>;
@@ -170,15 +164,9 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 		};
 	}
 	else {
-		add_system<input::system>();
-		add_system<actions::system>();
-		add_system<world_system>();
-		add_system<asset::registry>();
+		m_scheduler.register_deferred();
 
-		auto& asset_state = m_scheduler.state<asset::data>();
 		asset::add_loader<model>(asset_state);
-
-		add_system<physics::system>();
 
 		if (app_setup) {
 			app_setup(

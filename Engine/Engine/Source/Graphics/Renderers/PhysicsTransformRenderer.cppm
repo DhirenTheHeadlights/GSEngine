@@ -15,30 +15,30 @@ import gse.ecs;
 import gse.physics;
 
 export namespace gse::renderer::physics_transform {
-	struct system {
-		struct data {
-			gpu::shader_program pipeline;
-			bool initialized = false;
+	struct [[= gse::system_state<"PhysicsTransform">{}]] data {
+		gpu::shader_program pipeline;
+		bool initialized = false;
 
-			per_frame_resource<gpu::buffer> mapping_buffers;
-			std::size_t mapping_buffer_size = 0;
-			std::uint32_t cached_mapping_count = 0;
+		per_frame_resource<gpu::buffer> mapping_buffers;
+		std::size_t mapping_buffer_size = 0;
+		std::uint32_t cached_mapping_count = 0;
 
-			per_frame_resource<gpu::bindless_handle> body_views;
-		};
-
-		static auto init(
-			context& ctx,
-			shared_view<gpu::context> gpu_s,
-			shared_view<asset::registry> assets_s,
-			data& d
-		) -> async::task<>;
-
-		static auto frame(
-			context& ctx,
-			shared_view<gpu::context> gpu_s,
-			data& d,
-			shared_view<geometry_collector::system> gc_r
-		) -> async::task<>;
+		per_frame_resource<gpu::bindless_handle> body_views;
 	};
+
+	[[= gse::system_init{}]]
+	auto init(
+		context& ctx,
+		shared_view<gpu::context::data> gpu_s,
+		shared_view<asset::data> assets_s,
+		data& d
+	) -> async::task<>;
+
+	[[= gse::system_frame{}]]
+	auto frame(
+		context& ctx,
+		shared_view<gpu::context::data> gpu_s,
+		data& d,
+		shared_view<geometry_collector::data> gc_r
+	) -> async::task<>;
 }

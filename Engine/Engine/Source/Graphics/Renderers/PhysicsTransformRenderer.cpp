@@ -64,7 +64,7 @@ namespace gse::renderer::physics_transform {
 	>;
 }
 
-auto gse::renderer::physics_transform::system::init(context& ctx, const shared_view<gpu::context> gpu_s, const shared_view<asset::registry> assets_s, data& d) -> async::task<> {
+auto gse::renderer::physics_transform::init(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, data& d) -> async::task<> {
 	d.pipeline = gpu::build_compute_program(*gpu_s.device, entry::pod);
 
 	d.initialized = true;
@@ -72,7 +72,7 @@ auto gse::renderer::physics_transform::system::init(context& ctx, const shared_v
 	return {};
 }
 
-auto gse::renderer::physics_transform::system::frame(context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<geometry_collector::system> gc_r) -> async::task<> {
+auto gse::renderer::physics_transform::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, shared_view<geometry_collector::data> gc_r) -> async::task<> {
 	const auto& solver_infos = ctx.read_channel<physics::gpu_solver_frame_info>();
 
 	if (solver_infos.empty()) {
@@ -125,9 +125,9 @@ auto gse::renderer::physics_transform::system::frame(context& ctx, shared_view<g
 
 	const std::uint32_t workgroups = (d.cached_mapping_count + 63) / 64;
 
-	auto rec = co_await gpu::pass<system>(ctx)
+	auto rec = co_await gpu::pass<^^gse::renderer::physics_transform::frame>(ctx)
 		.pipeline(d.pipeline)
-		.after<geometry_collector::system, vbd::vbd_state_copy_stage>();
+		.after<^^geometry_collector::frame, ^^vbd::vbd_state_copy_stage>();
 
 	rec.dispatch<entry>(
 		{

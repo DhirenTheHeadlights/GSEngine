@@ -529,6 +529,123 @@ auto gse::scheduler::register_node(system_node node) -> void* {
 	return state_ptr;
 }
 
+auto gse::scheduler::add_system_node(system_node node) -> void {
+	assert(m_registry != nullptr, "scheduler::set_registry must be called before add_system_node");
+	assert(m_phase != scheduler_phase::shutdown, "scheduler::add_system_node called during shutdown");
+
+	if (m_staging) {
+		m_candidates.push_back(std::move(node));
+		return;
+	}
+
+	if (m_phase == scheduler_phase::boot) {
+		register_node(std::move(node));
+		return;
+	}
+
+	std::lock_guard lock(m_hot_add_mutex);
+	m_hot_add_queue.push_back(std::move(node));
+}
+
+auto gse::scheduler::begin_staging() -> void {
+	m_staging = true;
+}
+
+auto gse::scheduler::resolve_activation(const std::unordered_set<id>& disabled_roots) -> void {
+	const auto required = [](const system_node& n) {
+		std::vector<id> deps = n.run_state_deps;
+		deps.insert(deps.end(), n.init_state_deps.begin(), n.init_state_deps.end());
+		deps.insert(deps.end(), n.frame_state_deps.begin(), n.frame_state_deps.end());
+		return deps;
+	};
+
+	std::unordered_set<id> provided;
+	std::unordered_map<id, std::string> name_of;
+	for (const auto& n : m_candidates) {
+		provided.insert(n.state_id);
+		name_of[n.state_id] = n.system_name;
+	}
+
+	std::unordered_map<id, std::vector<id>> dependents;
+	std::unordered_set<id> inactive;
+	std::vector<id> work;
+
+	for (const auto& n : m_candidates) {
+		for (const id dep : required(n)) {
+			dependents[dep].push_back(n.state_id);
+			if (!provided.contains(dep)) {
+				log::println(
+					log::level::warning,
+					log::category::runtime,
+					"system '{}': required dependency not provided by any registered system — likely a missing registration",
+					n.system_name
+				);
+				if (inactive.insert(n.state_id).second) {
+					work.push_back(n.state_id);
+				}
+			}
+		}
+		if (disabled_roots.contains(n.state_id)) {
+			if (inactive.insert(n.state_id).second) {
+				work.push_back(n.state_id);
+			}
+		}
+	}
+
+	for (std::size_t i = 0; i < work.size(); ++i) {
+		for (const id dep : dependents[work[i]]) {
+			if (inactive.insert(dep).second) {
+				work.push_back(dep);
+			}
+		}
+	}
+
+	for (auto& n : m_candidates) {
+		if (!inactive.contains(n.state_id)) {
+			if (n.deferred) {
+				m_deferred_nodes.push_back(std::move(n));
+			}
+			else {
+				register_node(std::move(n));
+			}
+			continue;
+		}
+		std::string reason = disabled_roots.contains(n.state_id) ? std::string("disabled in this mode") : std::string{};
+		if (reason.empty()) {
+			for (const id dep : required(n)) {
+				if (inactive.contains(dep)) {
+					const auto it = name_of.find(dep);
+					reason = std::format("dependency '{}' is inactive", it != name_of.end() ? it->second : std::string("<unprovided>"));
+					break;
+				}
+			}
+		}
+		log::println(log::category::runtime, "system '{}' not registered: {}", n.system_name, reason);
+	}
+
+	m_candidates.clear();
+	m_staging = false;
+}
+
+auto gse::scheduler::register_deferred() -> void {
+	for (auto& n : m_deferred_nodes) {
+		add_system_node(std::move(n));
+	}
+	m_deferred_nodes.clear();
+}
+
+auto gse::scheduler::queue_system_node(system_node node) -> void {
+	assert(m_registry != nullptr, "scheduler::set_registry must be called before queue_system_node");
+	assert(m_phase != scheduler_phase::shutdown, "scheduler::queue_system_node called during shutdown");
+
+	std::lock_guard lock(m_hot_add_mutex);
+	m_hot_add_queue.push_back(std::move(node));
+}
+
+auto gse::context::add_system_node(system_node node) -> void {
+	m_sched.queue_system_node(std::move(node));
+}
+
 auto gse::scheduler::advance_one_init_system(system_node& node) -> async::task<> {
 	node.init_in_flight = true;
 	auto in_flight_guard = make_scope_exit([&node] {
