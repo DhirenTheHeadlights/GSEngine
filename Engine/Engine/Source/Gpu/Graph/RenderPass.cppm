@@ -101,6 +101,9 @@ export namespace gse::gpu {
 		template <typename... States>
 		auto after() && -> pass_builder&&;
 
+		template <std::meta::info... Hooks>
+		auto after() && -> pass_builder&&;
+
 		auto operator co_await() && -> request_pass_awaitable;
 
 	private:
@@ -114,6 +117,11 @@ export namespace gse::gpu {
 	) -> pass_builder;
 
 	template <typename Owner>
+	[[nodiscard]] auto pass(
+		const gse::context& ctx
+	) -> pass_builder;
+
+	template <std::meta::info Hook>
 	[[nodiscard]] auto pass(
 		const gse::context& ctx
 	) -> pass_builder;
@@ -155,4 +163,41 @@ auto gse::gpu::pass_builder::in_chain() && -> pass_builder&& {
 template <typename Owner>
 auto gse::gpu::pass(const gse::context& ctx) -> pass_builder {
 	return pass_builder{ ctx, trace_id<Owner>() };
+}
+
+namespace gse::gpu {
+	template <std::meta::info Hook>
+	consteval auto hook_name() -> std::string_view {
+		if constexpr (std::meta::is_type(Hook)) {
+			return type_tag<typename [:Hook:]>();
+		}
+		else {
+			auto walk = [](this auto self, std::meta::info entity) consteval -> std::string {
+				std::string own(std::meta::identifier_of(entity));
+				const auto parent = std::meta::parent_of(entity);
+				if (!std::meta::has_identifier(parent)) {
+					return own;
+				}
+				return self(parent) + "::" + own;
+			};
+			return std::define_static_string(walk(Hook));
+		}
+	}
+
+}
+
+template <std::meta::info... Hooks>
+auto gse::gpu::pass_builder::after() && -> pass_builder&& {
+	static constexpr std::array<std::string_view, sizeof...(Hooks)> names{ hook_name<Hooks>()... };
+	for (const auto pass_name : names) {
+		m_desc.after_deps.push_back(find_or_generate_id(pass_name));
+	}
+	return std::move(*this);
+}
+
+template <std::meta::info Hook>
+auto gse::gpu::pass(const gse::context& ctx) -> pass_builder {
+	static constexpr std::string_view name = hook_name<Hook>();
+	static const id cached = find_or_generate_id(name);
+	return pass_builder{ ctx, cached };
 }

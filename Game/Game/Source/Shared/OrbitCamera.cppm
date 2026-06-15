@@ -29,37 +29,38 @@ export namespace gs::orbit_camera {
 		gse::actions::handle pitch_down;
 	};
 
-	struct system {
-		struct data {
-			std::unordered_map<gse::id, bindings> bindings_by_owner;
-		};
-
-		struct run {
-			static auto attach(
-				gse::context& ctx,
-				data& d,
-				gse::read<component> orbits,
-				gse::structural<gse::camera::follow_component> follows
-			) -> gse::async::task<>;
-
-			static auto update(
-				gse::context& ctx,
-				data& d,
-				gse::shared_view<gse::actions::system> as,
-				gse::shared_view<gse::input::system> input_s,
-				gse::shared_view<gse::camera::system> cam_s,
-				gse::shared_view<gse::physics::system> phys_s,
-				gse::write<component> orbits,
-				gse::write<gse::camera::follow_component> follows,
-				gse::read<gse::physics::transform_component> transforms,
-				gse::read<gse::physics::collision_component> collisions,
-				gse::read<gse::physics::motion_component> motions
-			) -> gse::async::task<>;
-		};
-	};
 }
 
-auto gs::orbit_camera::system::run::attach(gse::context& ctx, data& d, gse::read<component> orbits, gse::structural<gse::camera::follow_component> follows) -> gse::async::task<> {
+export namespace gs::orbit_camera {
+	struct [[= gse::system_state<"OrbitCamera">{}]] data {
+		std::unordered_map<gse::id, bindings> bindings_by_owner;
+	};
+
+	[[= gse::system_run<>{}]]
+	auto attach(
+		gse::context& ctx,
+		data& d,
+		gse::read<component> orbits,
+		gse::structural<gse::camera::follow_component> follows
+	) -> gse::async::task<>;
+
+	[[= gse::system_run<1>{}]]
+	auto update(
+		gse::context& ctx,
+		data& d,
+		gse::shared_view<gse::actions::data> as,
+		gse::shared_view<gse::input::data> input_s,
+		gse::shared_view<gse::camera::data> cam_s,
+		gse::shared_view<gse::physics::data> phys_s,
+		gse::write<component> orbits,
+		gse::write<gse::camera::follow_component> follows,
+		gse::read<gse::physics::transform_component> transforms,
+		gse::read<gse::physics::collision_component> collisions,
+		gse::read<gse::physics::motion_component> motions
+	) -> gse::async::task<>;
+}
+
+auto gs::orbit_camera::attach(gse::context& ctx, data& d, gse::read<component> orbits, gse::structural<gse::camera::follow_component> follows) -> gse::async::task<> {
 	for (const auto owner_id : ctx.drain_component_adds<component>()) {
 		const auto* o = orbits.find(owner_id);
 		if (!o) {
@@ -94,11 +95,11 @@ auto gs::orbit_camera::system::run::attach(gse::context& ctx, data& d, gse::read
 	return {};
 }
 
-auto gs::orbit_camera::system::run::update(gse::context& ctx, data& d, const gse::shared_view<gse::actions::system> as, const gse::shared_view<gse::input::system> input_s, const gse::shared_view<gse::camera::system> cam_s, const gse::shared_view<gse::physics::system> phys_s, gse::write<component> orbits, gse::write<gse::camera::follow_component> follows, gse::read<gse::physics::transform_component> transforms, gse::read<gse::physics::collision_component> collisions, gse::read<gse::physics::motion_component> motions) -> gse::async::task<> {
+auto gs::orbit_camera::update(gse::context& ctx, data& d, const gse::shared_view<gse::actions::data> as, const gse::shared_view<gse::input::data> input_s, const gse::shared_view<gse::camera::data> cam_s, const gse::shared_view<gse::physics::data> phys_s, gse::write<component> orbits, gse::write<gse::camera::follow_component> follows, gse::read<gse::physics::transform_component> transforms, gse::read<gse::physics::collision_component> collisions, gse::read<gse::physics::motion_component> motions) -> gse::async::task<> {
 	const auto orbit_ids = orbits.owner_ids();
 
-	const auto& cs = gse::actions::system::current_state(as);
-	const auto& in = gse::input::system::current_state(input_s);
+	const auto& cs = gse::actions::current_state(as);
+	const auto& in = gse::input::current_state(input_s);
 	const float dt_seconds = gse::system_clock::dt() / gse::seconds(1.f);
 
 	for (std::size_t i = 0; i < orbits.size(); ++i) {
@@ -161,7 +162,7 @@ auto gs::orbit_camera::system::run::update(gse::context& ctx, data& d, const gse
 		);
 
 		gse::vec3<gse::position> target_pos;
-		if (auto snap = gse::physics::system::query_transform(phys_s, o.target)) {
+		if (auto snap = gse::physics::query_transform(phys_s, o.target)) {
 			target_pos = snap->position;
 		}
 		else if (const auto* tc = transforms.find(o.target)) {

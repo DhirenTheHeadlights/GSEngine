@@ -119,32 +119,33 @@ export namespace gse::renderer::ui {
 		gpu::buffer index_buffer;
 	};
 
-	struct system {
-		struct data {
-			gpu::shader_program sprite_pipeline;
-			gpu::shader_program text_pipeline;
-			std::array<frame_resources, frames_in_flight> gpu_frames;
+	struct [[= gse::system_state<"Ui">{}]] data {
+		gpu::shader_program sprite_pipeline;
+		gpu::shader_program text_pipeline;
+		std::array<frame_resources, frames_in_flight> gpu_frames;
 
-			triple_buffer<gpu_frame_data> buffered_frames;
-		};
-
-		static auto init(
-			shared_view<gpu::context> gpu_s,
-			data& d
-		) -> async::task<>;
-
-		static auto run(
-			context& ctx,
-			shared_view<gpu::context> gpu_s,
-			shared_view<asset::registry> assets_s,
-			data& d
-		) -> async::task<>;
-
-		static auto frame(
-			context& ctx,
-			shared_view<gpu::context> gpu_s,
-			data& d,
-			shared_view<scene_snapshot::system> snapshot_s
-		) -> async::task<>;
+		triple_buffer<gpu_frame_data> buffered_frames;
 	};
+
+	[[= gse::system_init{}]]
+	auto init(
+		shared_view<gpu::context::data> gpu_s,
+		data& d
+	) -> async::task<>;
+
+	[[= gse::system_run<>{}]]
+	auto run(
+		context& ctx,
+		shared_view<gpu::context::data> gpu_s,
+		shared_view<asset::data> assets_s,
+		data& d
+	) -> async::task<>;
+
+	[[= gse::system_frame{}]]
+	auto frame(
+		context& ctx,
+		shared_view<gpu::context::data> gpu_s,
+		data& d,
+		shared_view<scene_snapshot::data> snapshot_s
+	) -> async::task<>;
 }

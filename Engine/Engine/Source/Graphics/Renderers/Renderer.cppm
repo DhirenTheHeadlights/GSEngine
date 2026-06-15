@@ -30,49 +30,54 @@ import gse.os;
 import gse.assets;
 import gse.gpu;
 import gse.audio;
+import gse.physics;
 import gse.math;
 import gse.save;
 import gse.meta;
 
 export namespace gse::renderer {
-	struct system {
-		struct [[= gse::settings::category<"Graphics">{}]] data {
-			[[
-				= gse::settings::describe<"Watch shader sources on disk and reload pipelines when files change.">{}
-			]]
-			bool hot_reload_enabled = false;
+	struct [[= gse::system_state<"Renderer">{}, = gse::settings::category<"Graphics">{}]] data {
+		[[
+			= gse::settings::describe<"Watch shader sources on disk and reload pipelines when files change.">{}
+		]]
+		bool hot_reload_enabled = false;
 
-			[[
-				= gse::settings::describe<"Record GPU timestamp queries around each render pass for the profiler.">{}
-			]]
-			bool gpu_timestamps_enabled = true;
+		[[
+			= gse::settings::describe<"Record GPU timestamp queries around each render pass for the profiler.">{}
+		]]
+		bool gpu_timestamps_enabled = true;
 
-			[[
-				= gse::settings::describe<"Collect pipeline statistics (invocations, primitives) per pass. Has measurable overhead.">{}
-			]]
-			bool gpu_pipeline_stats_enabled = false;
+		[[
+			= gse::settings::describe<"Collect pipeline statistics (invocations, primitives) per pass. Has measurable overhead.">{}
+		]]
+		bool gpu_pipeline_stats_enabled = false;
 
-			[[
-				= gse::settings::describe<"Aggregate per-frame profiler samples into rolling averages for the HUD.">{}
-			]]
-			bool profile_aggregator_enabled = true;
+		[[
+			= gse::settings::describe<"Aggregate per-frame profiler samples into rolling averages for the HUD.">{}
+		]]
+		bool profile_aggregator_enabled = true;
 
-			actions::handle dump_profile_action;
-			vec2f last_viewport{ 1920.f, 1080.f };
-			bool last_hot_reload_enabled = false;
-		};
-
-		static auto init(
-			context& ctx,
-			data& d
-		) -> async::task<>;
-
-		static auto run(
-			context& ctx,
-			shared_view<gpu::context> gpu_s,
-			shared_view<window> window_s,
-			data& d,
-			shared_view<actions::system> sys
-		) -> async::task<>;
+		actions::handle dump_profile_action;
+		vec2f last_viewport{ 1920.f, 1080.f };
+		bool last_hot_reload_enabled = false;
+		bool render_world = true;
+		bool world_systems_registered = false;
 	};
+
+	[[= gse::system_init{}]]
+	auto init(
+		context& ctx,
+		data& d
+	) -> async::task<>;
+
+	[[= gse::system_run<>{}]]
+	auto run(
+		context& ctx,
+		shared_view<gpu::context::data> gpu_s,
+		shared_view<window::data> window_s,
+		data& d,
+		shared_view<actions::data> sys,
+		std::optional<shared_view<camera::data>> camera_s,
+		std::optional<shared_view<physics::data>> physics_s
+	) -> async::task<>;
 }

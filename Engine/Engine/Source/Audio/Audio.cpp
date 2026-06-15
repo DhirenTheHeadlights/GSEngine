@@ -90,7 +90,7 @@ auto gse::audio_clip::duration() const -> time_t<float, seconds> {
 	return m_duration;
 }
 
-auto gse::audio::system::allocate_voice(data& d, const audio_clip& clip, const bool loop) -> voice_handle {
+auto gse::audio::allocate_voice(data& d, const audio_clip& clip, const bool loop) -> voice_handle {
 	std::uint32_t index;
 	if (!d.free_list.empty()) {
 		index = d.free_list.back();
@@ -121,7 +121,7 @@ auto gse::audio::system::allocate_voice(data& d, const audio_clip& clip, const b
 	};
 }
 
-auto gse::audio::system::release_voice(data& d, const voice_handle handle) -> void {
+auto gse::audio::release_voice(data& d, const voice_handle handle) -> void {
 	if (!valid_voice(d, handle)) {
 		return;
 	}
@@ -133,12 +133,12 @@ auto gse::audio::system::release_voice(data& d, const voice_handle handle) -> vo
 	d.free_list.push_back(handle.index);
 }
 
-auto gse::audio::system::valid_voice(const data& d, const voice_handle handle) -> bool {
+auto gse::audio::valid_voice(const data& d, const voice_handle handle) -> bool {
 	return handle.index < d.voices.size() && d.voices[handle.index]->active &&
 		d.voices[handle.index]->generation == handle.generation;
 }
 
-auto gse::audio::system::init(data& d) -> async::task<> {
+auto gse::audio::init(data& d) -> async::task<> {
 	d.engine = new audio_engine();
 	const ma_engine_config cfg = ma_engine_config_init();
 	const auto result = ma_engine_init(&cfg, &d.engine->inner);
@@ -149,7 +149,7 @@ auto gse::audio::system::init(data& d) -> async::task<> {
 	return {};
 }
 
-auto gse::audio::system::run(context& ctx, data& d) -> async::task<> {
+auto gse::audio::run(context& ctx, data& d) -> async::task<> {
 	for (const auto& req : ctx.read_channel<play_request>()) {
 		if (req.clip) {
 			const auto handle = allocate_voice(d, *req.clip, req.loop);
@@ -202,7 +202,7 @@ auto gse::audio::system::run(context& ctx, data& d) -> async::task<> {
 	return {};
 }
 
-auto gse::audio::system::shutdown(data& d) -> void {
+auto gse::audio::shutdown(data& d) -> void {
 	for (std::uint32_t i = 0; i < d.voices.size(); ++i) {
 		auto& slot = *d.voices[i];
 		if (slot.active) {

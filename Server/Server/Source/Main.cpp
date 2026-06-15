@@ -6,7 +6,7 @@ import gs;
 auto main() -> int {
 	gse::start(
 		[](gse::engine& e) {
-			gse::server_app_setup<gse::server_system_for<gs::networked_components>>(e);
+			gse::server_app_setup(e, gs::networked_components{});
 			gs::world_loader_setup(e);
 		},
 		{

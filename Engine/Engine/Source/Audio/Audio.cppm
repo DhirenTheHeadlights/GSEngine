@@ -101,44 +101,43 @@ export namespace gse::audio {
 		percentage<float> vol;
 	};
 
-	class system {
-	public:
-		struct data {
-			audio_engine* engine = nullptr;
-			bool engine_initialized = false;
-			percentage<float> master_vol = percentage<float>::one();
-			std::vector<voice_slot*> voices;
-			std::vector<std::uint32_t> free_list;
-		};
-
-		static auto init(
-			data& d
-		) -> async::task<>;
-
-		static auto run(
-			context& ctx,
-			data& d
-		) -> async::task<>;
-
-		static auto shutdown(
-			data& d
-		) -> void;
-
-	private:
-		static auto allocate_voice(
-			data& d,
-			const audio_clip& clip,
-			bool loop
-		) -> voice_handle;
-
-		static auto release_voice(
-			data& d,
-			voice_handle handle
-		) -> void;
-
-		static auto valid_voice(
-			const data& d,
-			voice_handle handle
-		) -> bool;
+	struct [[= gse::system_state<"Audio">{}, = gse::deferred_system{}]] data {
+		audio_engine* engine = nullptr;
+		bool engine_initialized = false;
+		percentage<float> master_vol = percentage<float>::one();
+		std::vector<voice_slot*> voices;
+		std::vector<std::uint32_t> free_list;
 	};
+
+	[[= gse::system_init{}]]
+	auto init(
+		data& d
+	) -> async::task<>;
+
+	[[= gse::system_run<>{}]]
+	auto run(
+		context& ctx,
+		data& d
+	) -> async::task<>;
+
+	[[= gse::system_shutdown{}]]
+	auto shutdown(
+		data& d
+	) -> void;
+
+	auto allocate_voice(
+		data& d,
+		const audio_clip& clip,
+		bool looping
+	) -> voice_handle;
+
+	auto release_voice(
+		data& d,
+		voice_handle handle
+	) -> void;
+
+	auto valid_voice(
+		const data& d,
+		voice_handle handle
+	) -> bool;
 }
