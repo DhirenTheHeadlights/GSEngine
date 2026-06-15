@@ -76,6 +76,10 @@ export namespace gse::win32 {
 		return GET_Y_LPARAM(lparam);
 	}
 
+	auto hwnd_from_glfw_window(void* glfw_window) -> HWND {
+		return glfwGetWin32Window(static_cast<::GLFWwindow*>(glfw_window));
+	}
+
 	using ::HANDLE;
 	using ::HMODULE;
 	using ::LONG;

@@ -72,16 +72,16 @@ namespace gse::renderer::light_culling {
 }
 
 namespace gse::renderer::light_culling {
-auto tile_count(const system::data& d) -> vec2u {
+auto tile_count(const data& d) -> vec2u {
 	return { (d.current_width + tile_size - 1) / tile_size, (d.current_height + tile_size - 1) / tile_size };
 }
 
-auto update_depth_descriptor(const shared_view<gpu::context> gpu_s, system::data& d) -> void {
+auto update_depth_descriptor(const shared_view<gpu::context::data> gpu_s, data& d) -> void {
 	if (!d.depth_view.valid()) { d.depth_view = gpu_s.device->allocate_image_slot(); }
 	gpu_s.device->write_sampled_image(d.depth_view.slot(), gpu_s.render_graph->depth_image());
 }
 
-auto rebuild_tile_buffers(const shared_view<gpu::context> gpu_s, system::data& d) -> void {
+auto rebuild_tile_buffers(const shared_view<gpu::context::data> gpu_s, data& d) -> void {
 	const auto ext = gpu_s.render_graph->extent();
 	d.current_width = ext.x();
 	d.current_height = ext.y();
@@ -113,7 +113,7 @@ auto rebuild_tile_buffers(const shared_view<gpu::context> gpu_s, system::data& d
 }
 }
 
-auto gse::renderer::light_culling::system::init(context& ctx, const shared_view<gpu::context> gpu_s, const shared_view<asset::registry> assets_s, data& d) -> async::task<> {
+auto gse::renderer::light_culling::init(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, data& d) -> async::task<> {
 	d.pipeline = gpu::build_compute_program(*gpu_s.device, entry::pod);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
@@ -158,7 +158,7 @@ auto gse::renderer::light_culling::system::init(context& ctx, const shared_view<
 	return {};
 }
 
-auto gse::renderer::light_culling::system::frame(context& ctx, shared_view<gpu::context> gpu_s, const data& d, shared_view<camera::system> cam_state, shared_view<atmosphere::system> atm_state, read<directional_light_component> dir_lights, read<spot_light_component> spot_lights, read<point_light_component> point_lights) -> async::task<> {
+auto gse::renderer::light_culling::frame(context& ctx, shared_view<gpu::context::data> gpu_s, const data& d, shared_view<camera::data> cam_state, shared_view<atmosphere::data> atm_state, read<directional_light_component> dir_lights, read<spot_light_component> spot_lights, read<point_light_component> point_lights) -> async::task<> {
 	auto& graph = *gpu_s.render_graph;
 
 	if (!graph.frame_in_progress()) {
@@ -272,7 +272,7 @@ auto gse::renderer::light_culling::system::frame(context& ctx, shared_view<gpu::
 
 	const auto tiles = tile_count(d);
 
-	auto rec = co_await gpu::pass<system>(ctx).pipeline(d.pipeline).after<depth_prepass::system>();
+	auto rec = co_await gpu::pass<^^gse::renderer::light_culling::frame>(ctx).pipeline(d.pipeline).after<^^depth_prepass::frame>();
 
 	rec.sample_image(gpu_s.render_graph->depth_image(), gpu::pipeline_stage_flag::compute_shader);
 

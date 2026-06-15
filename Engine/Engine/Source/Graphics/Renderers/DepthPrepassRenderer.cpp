@@ -55,7 +55,7 @@ namespace gse::renderer::depth_prepass::meshlet {
 	>;
 }
 
-auto gse::renderer::depth_prepass::system::init(context& ctx, const shared_view<gpu::context> gpu_s, const shared_view<asset::registry> assets_s, data& d) -> async::task<> {
+auto gse::renderer::depth_prepass::init(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, data& d) -> async::task<> {
 	d.meshlet_pipeline = gpu::build_graphics_program(*gpu_s.device, meshlet::entry::pod);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
@@ -74,7 +74,7 @@ auto gse::renderer::depth_prepass::system::init(context& ctx, const shared_view<
 	return {};
 }
 
-auto gse::renderer::depth_prepass::system::frame(context& ctx, shared_view<gpu::context> gpu_s, const data& d, shared_view<geometry_collector::system> gc_r, shared_view<camera::system> cam_state) -> async::task<> {
+auto gse::renderer::depth_prepass::frame(context& ctx, shared_view<gpu::context::data> gpu_s, const data& d, shared_view<geometry_collector::data> gc_r, shared_view<camera::data> cam_state) -> async::task<> {
 	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
 	if (render_items.empty()) {
 		co_return;
@@ -104,7 +104,7 @@ auto gse::renderer::depth_prepass::system::frame(context& ctx, shared_view<gpu::
 
 	const auto ext = gpu_s.render_graph->extent();
 
-	auto rec = co_await gpu::pass<system>(ctx)
+	auto rec = co_await gpu::pass<^^gse::renderer::depth_prepass::frame>(ctx)
 		.pipeline(d.meshlet_pipeline)
 		.color(
 			gpu::clear_color(
@@ -113,7 +113,7 @@ auto gse::renderer::depth_prepass::system::frame(context& ctx, shared_view<gpu::
 			)
 		)
 		.depth(gpu::clear_depth(gpu::depth_clear{ 1.0f }))
-		.after<cull_compute::system, physics_transform::system>();
+		.after<^^cull_compute::frame, ^^physics_transform::frame>();
 
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);

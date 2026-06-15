@@ -26,59 +26,60 @@ export namespace gs::player {
 		gse::id move_axis_id;
 	};
 
-	struct system {
-		struct [[= gse::settings::category<"Player">{}]] data {
-			std::unordered_map<gse::id, bindings> bindings_by_owner;
+}
 
-			[[
-				= gse::settings::describe<"Camera follow distance level (0=first person, 1-3=third person).">{},
-				= gse::settings::range<0, 3>{}
-			]]
-			int camera_level = 0;
+export namespace gs::player {
+	struct [[= gse::system_state<"Player">{}]] data {
+		std::unordered_map<gse::id, bindings> bindings_by_owner;
 
-			[[
-				= gse::settings::describe<"Smoothing factor on input axes per fixed step (0..1).">{}
-			]]
-			float input_smoothing = 0.20f;
+		[[
+			= gse::settings::describe<"Camera follow distance level (0=first person, 1-3=third person).">{},
+			= gse::settings::range<0, 3>{}
+		]]
+		int camera_level = 0;
 
-			[[
-				= gse::settings::describe<"Slerp rate per frame for pelvis facing toward yaw when grounded.">{}
-			]]
-			float facing_turn_rate = 0.03f;
+		[[
+			= gse::settings::describe<"Smoothing factor on input axes per fixed step (0..1).">{}
+		]]
+		float input_smoothing = 0.20f;
 
-			[[
-				= gse::settings::describe<"Slerp rate per frame for pelvis facing toward yaw when airborne.">{}
-			]]
-			float facing_turn_rate_airborne = 0.01f;
+		[[
+			= gse::settings::describe<"Slerp rate per frame for pelvis facing toward yaw when grounded.">{}
+		]]
+		float facing_turn_rate = 0.03f;
 
-			gse::interval_timer<float> input_log_timer{ gse::seconds(0.5f) };
-		};
+		[[
+			= gse::settings::describe<"Slerp rate per frame for pelvis facing toward yaw when airborne.">{}
+		]]
+		float facing_turn_rate_airborne = 0.01f;
 
-		struct run {
-			static auto attach(
-				gse::context& ctx,
-				data& d,
-				gse::read<component> players,
-				gse::structural<gse::camera::follow_component> follows
-			) -> gse::async::task<>;
-
-			static auto update(
-				gse::context& ctx,
-				data& d,
-				gse::shared_view<gse::actions::system> as,
-				gse::shared_view<gse::input::system> input_s,
-				gse::shared_view<gse::camera::system> cam_s,
-				gse::write<component> players,
-				gse::write<gse::physics::transform_component> transforms,
-				gse::write<gse::camera::follow_component> follows,
-				gse::write<gs::locomotion::intent> intents,
-				gse::read<gs::locomotion::state> states,
-				gse::read<gs::locomotion::gait> gaits,
-				gse::read<gse::physics::collision_component> collisions,
-				gse::read<gse::physics::motion_component> motions
-			) -> gse::async::task<>;
-		};
+		gse::interval_timer<float> input_log_timer{ gse::seconds(0.5f) };
 	};
+
+	[[= gse::system_run<>{}]]
+	auto attach(
+		gse::context& ctx,
+		data& d,
+		gse::read<component> players,
+		gse::structural<gse::camera::follow_component> follows
+	) -> gse::async::task<>;
+
+	[[= gse::system_run<1>{}]]
+	auto update(
+		gse::context& ctx,
+		data& d,
+		gse::shared_view<gse::actions::data> as,
+		gse::shared_view<gse::input::data> input_s,
+		gse::shared_view<gse::camera::data> cam_s,
+		gse::write<component> players,
+		gse::write<gse::physics::transform_component> transforms,
+		gse::write<gse::camera::follow_component> follows,
+		gse::write<gs::locomotion::intent> intents,
+		gse::read<gs::locomotion::state> states,
+		gse::read<gs::locomotion::gait> gaits,
+		gse::read<gse::physics::collision_component> collisions,
+		gse::read<gse::physics::motion_component> motions
+	) -> gse::async::task<>;
 }
 
 namespace gs::player {
@@ -116,7 +117,7 @@ auto gs::player::register_bindings(gse::context& ctx, bindings& b) -> void {
 	);
 }
 
-auto gs::player::system::run::attach(gse::context& ctx, data& d, gse::read<component> players, gse::structural<gse::camera::follow_component> follows) -> gse::async::task<> {
+auto gs::player::attach(gse::context& ctx, data& d, gse::read<component> players, gse::structural<gse::camera::follow_component> follows) -> gse::async::task<> {
 	for (const auto owner_id : ctx.drain_component_adds<component>()) {
 		const auto* p = players.find(owner_id);
 		if (!p) {
@@ -145,11 +146,11 @@ auto gs::player::system::run::attach(gse::context& ctx, data& d, gse::read<compo
 	return {};
 }
 
-auto gs::player::system::run::update(gse::context& ctx, data& d, const gse::shared_view<gse::actions::system> as, const gse::shared_view<gse::input::system> input_s, const gse::shared_view<gse::camera::system> cam_s, gse::write<component> players, gse::write<gse::physics::transform_component> transforms, gse::write<gse::camera::follow_component> follows, gse::write<gs::locomotion::intent> intents, gse::read<gs::locomotion::state> states, gse::read<gs::locomotion::gait> gaits, gse::read<gse::physics::collision_component> collisions, gse::read<gse::physics::motion_component> motions) -> gse::async::task<> {
+auto gs::player::update(gse::context& ctx, data& d, const gse::shared_view<gse::actions::data> as, const gse::shared_view<gse::input::data> input_s, const gse::shared_view<gse::camera::data> cam_s, gse::write<component> players, gse::write<gse::physics::transform_component> transforms, gse::write<gse::camera::follow_component> follows, gse::write<gs::locomotion::intent> intents, gse::read<gs::locomotion::state> states, gse::read<gs::locomotion::gait> gaits, gse::read<gse::physics::collision_component> collisions, gse::read<gse::physics::motion_component> motions) -> gse::async::task<> {
 	const auto player_ids = players.owner_ids();
 
-	const auto& cs = gse::actions::system::current_state(as);
-	const auto& in = gse::input::system::current_state(input_s);
+	const auto& cs = gse::actions::current_state(as);
+	const auto& in = gse::input::current_state(input_s);
 	const bool log_now = d.input_log_timer.tick();
 
 	for (std::size_t i = 0; i < players.size(); ++i) {

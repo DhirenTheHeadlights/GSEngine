@@ -149,41 +149,42 @@ export namespace gse::renderer::geometry_collector {
 		std::span<const id> exclude_ids
 	) -> std::vector<render_queue_entry>;
 
-	struct system {
-		struct data {
-			[[= gse::shared]] per_frame_resource<gpu::buffer> instance_buffer;
+	struct [[= gse::system_state<"GeometryCollector">{}]] data {
+		[[= gse::shared]] per_frame_resource<gpu::buffer> instance_buffer;
 
-			static constexpr std::size_t max_instances = 4096;
-			static constexpr std::size_t max_materials = 1024;
+		static constexpr std::size_t max_instances = 4096;
+		static constexpr std::size_t max_materials = 1024;
 
-			[[= gse::shared]] per_frame_resource<gpu::buffer> normal_indirect_commands_buffer;
-			[[= gse::shared]] per_frame_resource<gpu::buffer> material_palette_buffers;
+		[[= gse::shared]] per_frame_resource<gpu::buffer> normal_indirect_commands_buffer;
+		[[= gse::shared]] per_frame_resource<gpu::buffer> material_palette_buffers;
 
-			linear_vector<std::byte> material_staging;
-			std::unordered_map<id, std::vector<std::optional<spatial_matrix>>> prev_model_matrices;
-		};
-
-		static auto init(
-			context& ctx,
-			shared_view<gpu::context> gpu_s,
-			data& d
-		) -> async::task<>;
-
-		static auto run(
-			context& ctx,
-			shared_view<gpu::context> gpu_s,
-			shared_view<asset::registry> assets_s,
-			data& d,
-			shared_view<camera::system> cam_state,
-			shared_view<primitive_resolver::system> resolver_state,
-			write<render_component> render,
-			read<physics::transform_component> transform
-		) -> async::task<>;
-
-		static auto frame(
-			context& ctx,
-			shared_view<gpu::context> gpu_s,
-			data& d
-		) -> async::task<>;
+		linear_vector<std::byte> material_staging;
+		std::unordered_map<id, std::vector<std::optional<spatial_matrix>>> prev_model_matrices;
 	};
+
+	[[= gse::system_init{}]]
+	auto init(
+		context& ctx,
+		shared_view<gpu::context::data> gpu_s,
+		data& d
+	) -> async::task<>;
+
+	[[= gse::system_run<>{}]]
+	auto run(
+		context& ctx,
+		shared_view<gpu::context::data> gpu_s,
+		shared_view<asset::data> assets_s,
+		data& d,
+		shared_view<camera::data> cam_state,
+		shared_view<primitive_resolver::data> resolver_state,
+		write<render_component> render,
+		read<physics::transform_component> transform
+	) -> async::task<>;
+
+	[[= gse::system_frame{}]]
+	auto frame(
+		context& ctx,
+		shared_view<gpu::context::data> gpu_s,
+		data& d
+	) -> async::task<>;
 }

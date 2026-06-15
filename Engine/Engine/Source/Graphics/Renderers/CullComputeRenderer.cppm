@@ -16,28 +16,28 @@ import gse.diag;
 import gse.ecs;
 
 export namespace gse::renderer::cull_compute {
-	struct system {
-		struct data {
-			bool enabled = true;
+	struct [[= gse::system_state<"CullCompute">{}]] data {
+		bool enabled = true;
 
-			gpu::shader_program pipeline;
-			per_frame_resource<gpu::buffer> frustum_buffer;
-			per_frame_resource<gpu::buffer> batch_info_buffer;
-		};
-
-		static auto init(
-			context& ctx,
-			shared_view<gpu::context> gpu_s,
-			shared_view<asset::registry> assets_s,
-			shared_view<geometry_collector::system> gc_r,
-			data& d
-		) -> async::task<>;
-
-		static auto frame(
-			context& ctx,
-			shared_view<gpu::context> gpu_s,
-			shared_view<geometry_collector::system> gc_r,
-			const data& d
-		) -> async::task<>;
+		gpu::shader_program pipeline;
+		per_frame_resource<gpu::buffer> frustum_buffer;
+		per_frame_resource<gpu::buffer> batch_info_buffer;
 	};
+
+	[[= gse::system_init{}]]
+	auto init(
+		context& ctx,
+		shared_view<gpu::context::data> gpu_s,
+		shared_view<asset::data> assets_s,
+		shared_view<geometry_collector::data> gc_r,
+		data& d
+	) -> async::task<>;
+
+	[[= gse::system_frame{}]]
+	auto frame(
+		context& ctx,
+		shared_view<gpu::context::data> gpu_s,
+		shared_view<geometry_collector::data> gc_r,
+		const data& d
+	) -> async::task<>;
 }

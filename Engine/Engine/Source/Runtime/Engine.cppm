@@ -63,10 +63,14 @@ export namespace gse {
 
 		auto tick_window() -> void;
 
-		template <typename S, typename... Args>
-		auto add_system(
-			Args&&... args
-		) -> system_handle<S>;
+		auto add_system_node(
+			system_node node
+		) -> void;
+
+		template <typename T>
+		auto register_external_resource(
+			T* resource
+		) -> void;
 
 	private:
 		engine_config m_config;
@@ -84,7 +88,7 @@ export namespace gse {
 	};
 }
 
-template <typename S, typename... Args>
-auto gse::engine::add_system(Args&&... args) -> system_handle<S> {
-	return m_scheduler.add_system<S>(std::forward<Args>(args)...);
+template <typename T>
+auto gse::engine::register_external_resource(T* resource) -> void {
+	m_scheduler.register_external_resource<T>(resource);
 }
