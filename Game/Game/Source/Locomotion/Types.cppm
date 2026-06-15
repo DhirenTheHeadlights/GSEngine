@@ -46,6 +46,7 @@ export namespace gs::locomotion {
 		gse::displacement hip_offset_lateral = gse::meters(0.075f);
 		gse::displacement hip_offset_below_pelvis = gse::meters(0.10f);
 		gse::position pelvis_target_height = gse::meters(0.90f);
+		std::vector<gse::id> all_bone_ids;
 	};
 
 	struct intent {
@@ -93,8 +94,16 @@ export namespace gs::locomotion {
 
 		gse::angle hip_angle_l;
 		gse::angle knee_angle_l;
+		gse::angle ankle_angle_l;
 		gse::angle hip_angle_r;
 		gse::angle knee_angle_r;
+		gse::angle ankle_angle_r;
+		gse::angular_velocity hip_rate_l;
+		gse::angular_velocity knee_rate_l;
+		gse::angular_velocity ankle_rate_l;
+		gse::angular_velocity hip_rate_r;
+		gse::angular_velocity knee_rate_r;
+		gse::angular_velocity ankle_rate_r;
 		gse::angle pelvis_pitch;
 		gse::angular_velocity pelvis_pitch_rate;
 	};

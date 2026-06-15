@@ -40,6 +40,9 @@ __pycache__/
 *.ini
 *.log
 
+# Locomotion training artifacts
+/locomotion_checkpoint.bin
+
 # Claude
 /.claude
 /claude.exe
