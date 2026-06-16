@@ -347,9 +347,8 @@ auto gs::physics_parity::run(gse::context& ctx, data& d, gse::shared_view<gse::w
 		return {};
 	}
 
-	const auto fold = [&](auto v) {
-		d.hash ^= std::bit_cast<std::uint32_t>(v);
-		d.hash *= 1099511628211ull;
+	const auto fold = [&](const auto& v) {
+		d.hash = gse::hash_combine(d.hash, v);
 	};
 
 	const auto owners = motions.owner_ids();
