@@ -9,6 +9,12 @@ export namespace gse {
 	) -> std::size_t;
 
 	template <typename T>
+	auto hash_combine(
+		std::size_t seed,
+		const T& value
+	) -> std::size_t;
+
+	template <typename T>
 	auto layout_hash() -> std::uint64_t;
 }
 
@@ -21,6 +27,11 @@ auto gse::hash_combine(const T& value) -> std::size_t {
 		h ^= sub + 0x9e3779b9u + (h << 6) + (h >> 2);
 	}
 	return h;
+}
+
+template <typename T>
+auto gse::hash_combine(const std::size_t seed, const T& value) -> std::size_t {
+	return seed ^ (std::hash<T>{}(value) + 0x9e3779b9u + (seed << 6) + (seed >> 2));
 }
 
 template <typename T>
