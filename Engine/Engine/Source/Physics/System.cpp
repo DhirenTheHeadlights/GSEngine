@@ -652,6 +652,48 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 		return;
 	}
 
+	{
+		trace::scope_guard sg{ trace_id<"vbd_gpu::readback">() };
+		const auto solved = d.gpu_solver.read_body_states();
+		if (!solved.empty()) {
+			const auto rb_motion_ids = motion.owner_ids();
+			const bool rb_transform_order_matches =
+				transform.size() == motion.size() && std::ranges::equal(rb_motion_ids, transform.owner_ids());
+			for (std::size_t i = 0; i < motion.size(); ++i) {
+				auto& mc = motion[i];
+				const auto eid = rb_motion_ids[i];
+				auto* tc = rb_transform_order_matches ? std::addressof(transform[i]) : transform.find(eid);
+				if (!tc) {
+					continue;
+				}
+				if (is_static(mc)) {
+					continue;
+				}
+				const auto it = d.id_to_body_index.find(eid);
+				if (it == d.id_to_body_index.end() || it->second >= solved.size()) {
+					continue;
+				}
+				const auto& bs = solved[it->second];
+				const auto* dyn = std::get_if<dynamic_body>(&mc.body);
+				if (!dyn) {
+					tc->position = bs.position;
+					tc->orientation = bs.orientation;
+					continue;
+				}
+				tc->position = bs.position;
+				mc.current_velocity = bs.velocity;
+				if (dyn->update_orientation) {
+					tc->orientation = bs.orientation;
+					mc.angular_velocity = bs.angular_velocity;
+				}
+				d.sleep_counters[eid] = bs.sleep_counter;
+				if (i < d.body_sleeping.size()) {
+					d.body_sleeping[i] = bs.sleeping() ? 1 : 0;
+				}
+			}
+		}
+	}
+
 	if (steps <= 0) {
 		d.gpu_pending_impulses.insert(d.gpu_pending_impulses.end(), impulses.begin(), impulses.end());
 		if (d.gpu_solver.body_count() > 0) {

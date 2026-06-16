@@ -929,7 +929,7 @@ void collision_narrow_phase(uint3 dispatch_id) {
     float3 axes_a[3] = { rot_a[0], rot_a[1], rot_a[2] };
     float3 axes_b[3] = { rot_b[0], rot_b[1], rot_b[2] };
 
-    SatResult sat = sat_speculative(center_a, he_a, axes_a, center_b, he_b, axes_b, pc.cfg.speculative_margin);
+    SatResult sat = sat_speculative(center_a, he_a, axes_a, center_b, he_b, axes_b, solver_config_data[0].speculative_margin);
 
     if (!sat.valid) return;
 
@@ -971,7 +971,7 @@ void collision_narrow_phase(uint3 dispatch_id) {
         contact_constraint cached_ws;
         bool has_cached = warm_start_lookup(body_a_idx, body_b_idx, feature_hi, feature_lo, pc.warm_start_count, cached_ws);
         float3 current_d = world_anchor_a - world_anchor_b;
-        float current_normal_gap = dot(constraint_normal, current_d) + pc.cfg.collision_margin;
+        float current_normal_gap = dot(constraint_normal, current_d) + solver_config_data[0].collision_margin;
         bool reuse_cached_normal =
             has_cached &&
             (cached_ws.lambda.x < -1e-3 || current_normal_gap < -1e-4);
@@ -983,19 +983,19 @@ void collision_narrow_phase(uint3 dispatch_id) {
             cached_ws.sticking != 0;
 
         float3 init_lambda = float3(0, 0, 0);
-        float3 init_penalty = float3(pc.cfg.penalty_min, pc.cfg.penalty_min, pc.cfg.penalty_min);
+        float3 init_penalty = float3(solver_config_data[0].penalty_min, solver_config_data[0].penalty_min, solver_config_data[0].penalty_min);
         bool sticking = has_cached && cached_ws.sticking != 0;
 
         if (reuse_cached_normal) {
-            init_penalty.x = max(cached_ws.penalty.x, pc.cfg.penalty_min);
+            init_penalty.x = max(cached_ws.penalty.x, solver_config_data[0].penalty_min);
 
             float3 cached_normal_force = cached_ws.normal.xyz * cached_ws.lambda.x;
             init_lambda.x = min(dot(cached_normal_force, constraint_normal), 0.0);
         }
 
         if (reuse_cached_tangent) {
-            init_penalty.y = max(cached_ws.penalty.y, pc.cfg.penalty_min);
-            init_penalty.z = max(cached_ws.penalty.z, pc.cfg.penalty_min);
+            init_penalty.y = max(cached_ws.penalty.y, solver_config_data[0].penalty_min);
+            init_penalty.z = max(cached_ws.penalty.z, solver_config_data[0].penalty_min);
 
             float3 cached_tangent_force =
                 cached_ws.tangent_u.xyz * cached_ws.lambda.y +
@@ -1004,7 +1004,7 @@ void collision_narrow_phase(uint3 dispatch_id) {
             init_lambda.y = dot(cached_tangent_force, tangent_u);
             init_lambda.z = dot(cached_tangent_force, tangent_v);
 
-            float friction_bound = abs(init_lambda.x) * pc.cfg.friction_coefficient;
+            float friction_bound = abs(init_lambda.x) * solver_config_data[0].friction_coefficient;
             init_lambda.y = clamp(init_lambda.y, -friction_bound, friction_bound);
             init_lambda.z = clamp(init_lambda.z, -friction_bound, friction_bound);
         }
@@ -1021,40 +1021,40 @@ void collision_narrow_phase(uint3 dispatch_id) {
         float3 d = pA - pB;
 
         float3 C0 = float3(
-            dot(constraint_normal, d) + pc.cfg.collision_margin,
+            dot(constraint_normal, d) + solver_config_data[0].collision_margin,
             dot(tangent_u, d),
             dot(tangent_v, d)
         );
 
-        float base_floor = has_cached ? max(cached_ws.penalty_floor, pc.cfg.penalty_min) : pc.cfg.penalty_min;
+        float base_floor = has_cached ? max(cached_ws.penalty_floor, solver_config_data[0].penalty_min) : solver_config_data[0].penalty_min;
         bool active_normal =
             init_lambda.x < -1e-3 ||
             C0.x < -1e-4;
         float normal_floor =
             active_normal
-                ? clamp(contact_effective_mass(ba, bb, rAW, rBW, constraint_normal) / pc.h_squared, base_floor, pc.cfg.penalty_max)
+                ? clamp(contact_effective_mass(ba, bb, rAW, rBW, constraint_normal) / pc.h_squared, base_floor, solver_config_data[0].penalty_max)
                 : base_floor;
 
         float row_floor_y =
             sticking
-                ? clamp(contact_effective_mass(ba, bb, rAW, rBW, tangent_u) / pc.h_squared, pc.cfg.penalty_min, pc.cfg.penalty_max)
-                : pc.cfg.penalty_min;
+                ? clamp(contact_effective_mass(ba, bb, rAW, rBW, tangent_u) / pc.h_squared, solver_config_data[0].penalty_min, solver_config_data[0].penalty_max)
+                : solver_config_data[0].penalty_min;
         float row_floor_z =
             sticking
-                ? clamp(contact_effective_mass(ba, bb, rAW, rBW, tangent_v) / pc.h_squared, pc.cfg.penalty_min, pc.cfg.penalty_max)
-                : pc.cfg.penalty_min;
+                ? clamp(contact_effective_mass(ba, bb, rAW, rBW, tangent_v) / pc.h_squared, solver_config_data[0].penalty_min, solver_config_data[0].penalty_max)
+                : solver_config_data[0].penalty_min;
 
         float3 penalty = init_penalty;
         float3 lambda = init_lambda;
-        if (pc.cfg.post_stabilize != 0) {
-            penalty.x = clamp(penalty.x * pc.cfg.gamma, normal_floor, pc.cfg.penalty_max);
-            penalty.y = clamp(penalty.y * pc.cfg.gamma, row_floor_y, pc.cfg.penalty_max);
-            penalty.z = clamp(penalty.z * pc.cfg.gamma, row_floor_z, pc.cfg.penalty_max);
+        if (solver_config_data[0].post_stabilize != 0) {
+            penalty.x = clamp(penalty.x * solver_config_data[0].gamma, normal_floor, solver_config_data[0].penalty_max);
+            penalty.y = clamp(penalty.y * solver_config_data[0].gamma, row_floor_y, solver_config_data[0].penalty_max);
+            penalty.z = clamp(penalty.z * solver_config_data[0].gamma, row_floor_z, solver_config_data[0].penalty_max);
         } else {
-            lambda *= (pc.cfg.alpha * pc.cfg.gamma);
-            penalty.x = clamp(penalty.x * pc.cfg.gamma, normal_floor, pc.cfg.penalty_max);
-            penalty.y = clamp(penalty.y * pc.cfg.gamma, row_floor_y, pc.cfg.penalty_max);
-            penalty.z = clamp(penalty.z * pc.cfg.gamma, row_floor_z, pc.cfg.penalty_max);
+            lambda *= (solver_config_data[0].alpha * solver_config_data[0].gamma);
+            penalty.x = clamp(penalty.x * solver_config_data[0].gamma, normal_floor, solver_config_data[0].penalty_max);
+            penalty.y = clamp(penalty.y * solver_config_data[0].gamma, row_floor_y, solver_config_data[0].penalty_max);
+            penalty.z = clamp(penalty.z * solver_config_data[0].gamma, row_floor_z, solver_config_data[0].penalty_max);
         }
 
         float3 va = ba.velocity + cross(ba.angular_velocity, rAW);
@@ -1075,9 +1075,9 @@ void collision_narrow_phase(uint3 dispatch_id) {
         c.local_anchor_a = local_r_a;
         c.local_anchor_b = local_r_b;
         c.c0 = C0;
-        c.friction_coeff = pc.cfg.friction_coefficient;
+        c.friction_coeff = solver_config_data[0].friction_coefficient;
         c.restitution = pair_restitution;
-        c.penalty_floor = pc.cfg.penalty_min;
+        c.penalty_floor = solver_config_data[0].penalty_min;
         c.approach_speed = approach;
         c.lambda = lambda;
         c.penalty = penalty;

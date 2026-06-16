@@ -306,7 +306,7 @@ export namespace gse::gpu {
 	public:
 		explicit render_graph(
 			gpu::device& device,
-			gpu::swap_chain& swapchain,
+			gpu::swap_chain* swapchain,
 			gpu::frame& frame
 		);
 

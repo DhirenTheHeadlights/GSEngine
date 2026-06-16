@@ -87,6 +87,7 @@ auto gs::startup::run_locomotion_smoke(const config& cfg) -> void {
 			.title = "GoonSquad Locomotion Smoke",
 			.create_window = false,
 			.render = false,
+			.use_gpu_solver = cfg.use_gpu_solver,
 			.persist_settings = false,
 		}
 	);

@@ -23,7 +23,7 @@ void vbd_update_lambda(uint3 dispatch_id) {
     float3 d = p_a - p_b;
 
     float3 Cn = float3(
-        dot(c.normal.xyz, d) + pc.cfg.collision_margin,
+        dot(c.normal.xyz, d) + solver_config_data[0].collision_margin,
         dot(c.tangent_u.xyz, d),
         dot(c.tangent_v.xyz, d)
     );
@@ -39,16 +39,16 @@ void vbd_update_lambda(uint3 dispatch_id) {
     lambda.z = clamp(penalty.z * C.z + lambda.z, -friction_bound, friction_bound);
 
     if (lambda.x < 0.0) {
-        penalty.x = min(penalty.x + pc.cfg.beta * abs(C.x), pc.cfg.penalty_max);
+        penalty.x = min(penalty.x + solver_config_data[0].beta * abs(C.x), solver_config_data[0].penalty_max);
         InterlockedMax(collision_state[state_convergence_max_delta_index], asuint(abs(C.x)));
     }
 
     if (friction_bound > 1e-10) {
         if (abs(lambda.y) < friction_bound) {
-            penalty.y = min(penalty.y + pc.cfg.beta * abs(C.y), pc.cfg.penalty_max);
+            penalty.y = min(penalty.y + solver_config_data[0].beta * abs(C.y), solver_config_data[0].penalty_max);
         }
         if (abs(lambda.z) < friction_bound) {
-            penalty.z = min(penalty.z + pc.cfg.beta * abs(C.z), pc.cfg.penalty_max);
+            penalty.z = min(penalty.z + solver_config_data[0].beta * abs(C.z), solver_config_data[0].penalty_max);
         }
     }
 

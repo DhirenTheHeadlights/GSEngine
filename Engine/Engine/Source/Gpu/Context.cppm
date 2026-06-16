@@ -63,7 +63,7 @@ export namespace gse::gpu::context {
 	[[nodiscard]]
 	auto begin_frame(
 		data& d,
-		window::data& window_s
+		window::data* window_s
 	) -> std::
 		expected<frame_token, frame_status>;
 
@@ -74,7 +74,7 @@ export namespace gse::gpu::context {
 
 	auto end_frame(
 		data& d,
-		window::data& window_s
+		window::data* window_s
 	) -> void;
 
 	auto on_swap_chain_recreate(

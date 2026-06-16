@@ -24,11 +24,11 @@ void vbd_update_joint_lambda(uint3 dispatch_id) {
     if (j.type == joint_type::distance) {
         float c = (length(d) - j.target_distance) - j.pos_c0.x;
         j.pos_lambda.x = j.pos_penalty.x * c + j.pos_lambda.x;
-        float penalty_cap = pc.cfg.penalty_max;
+        float penalty_cap = solver_config_data[0].penalty_max;
         if (j.compliance > 0.0) {
-            penalty_cap = min(1.0 / max(j.compliance * pc.h_squared, 1e-10), pc.cfg.penalty_max);
+            penalty_cap = min(1.0 / max(j.compliance * pc.h_squared, 1e-10), solver_config_data[0].penalty_max);
         }
-        j.pos_penalty.x = min(j.pos_penalty.x + pc.cfg.beta * abs(c), penalty_cap);
+        j.pos_penalty.x = min(j.pos_penalty.x + solver_config_data[0].beta * abs(c), penalty_cap);
         InterlockedMax(collision_state[state_convergence_max_delta_index], asuint(abs(c)));
     }
     else if (j.type == joint_type::fixed || j.type == joint_type::hinge || j.type == joint_type::ball || j.type == joint_type::universal) {
@@ -36,7 +36,7 @@ void vbd_update_joint_lambda(uint3 dispatch_id) {
         for (int k = 0; k < 3; k++) {
             float c = dot(dirs[k], d) - j.pos_c0[k];
             j.pos_lambda[k] = j.pos_penalty[k] * c + j.pos_lambda[k];
-            j.pos_penalty[k] = min(j.pos_penalty[k] + pc.cfg.beta * abs(c), pc.cfg.penalty_max);
+            j.pos_penalty[k] = min(j.pos_penalty[k] + solver_config_data[0].beta * abs(c), solver_config_data[0].penalty_max);
             InterlockedMax(collision_state[state_convergence_max_delta_index], asuint(abs(c)));
         }
 
@@ -48,7 +48,7 @@ void vbd_update_joint_lambda(uint3 dispatch_id) {
                 for (int k = 0; k < 3; k++) {
                     float c_ang = theta[k] - j.ang_c0[k];
                     j.ang_lambda[k] = j.ang_penalty[k] * c_ang + j.ang_lambda[k];
-                    j.ang_penalty[k] = min(j.ang_penalty[k] + pc.cfg.ang_beta * abs(c_ang), pc.cfg.ang_penalty_max);
+                    j.ang_penalty[k] = min(j.ang_penalty[k] + solver_config_data[0].ang_beta * abs(c_ang), solver_config_data[0].ang_penalty_max);
                     InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c_ang)));
                 }
             }
@@ -56,7 +56,7 @@ void vbd_update_joint_lambda(uint3 dispatch_id) {
                 float3 axis_a = rotate_vector(body_a.predicted_orientation, j.local_axis_a.xyz);
                 float c_twist = dot(axis_a, theta) - j.ang_c0.x;
                 j.ang_lambda.x = j.ang_penalty.x * c_twist + j.ang_lambda.x;
-                j.ang_penalty.x = min(j.ang_penalty.x + pc.cfg.ang_beta * abs(c_twist), pc.cfg.ang_penalty_max);
+                j.ang_penalty.x = min(j.ang_penalty.x + solver_config_data[0].ang_beta * abs(c_twist), solver_config_data[0].ang_penalty_max);
                 InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c_twist)));
             }
             else {
@@ -73,11 +73,11 @@ void vbd_update_joint_lambda(uint3 dispatch_id) {
                 float c_v = dot(perp_v, swing_error) - j.ang_c0.y;
 
                 j.ang_lambda.x = j.ang_penalty.x * c_u + j.ang_lambda.x;
-                j.ang_penalty.x = min(j.ang_penalty.x + pc.cfg.ang_beta * abs(c_u), pc.cfg.ang_penalty_max);
+                j.ang_penalty.x = min(j.ang_penalty.x + solver_config_data[0].ang_beta * abs(c_u), solver_config_data[0].ang_penalty_max);
                 InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c_u)));
 
                 j.ang_lambda.y = j.ang_penalty.y * c_v + j.ang_lambda.y;
-                j.ang_penalty.y = min(j.ang_penalty.y + pc.cfg.ang_beta * abs(c_v), pc.cfg.ang_penalty_max);
+                j.ang_penalty.y = min(j.ang_penalty.y + solver_config_data[0].ang_beta * abs(c_v), solver_config_data[0].ang_penalty_max);
                 InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c_v)));
 
                 if (j.limits_enabled != 0) {
@@ -86,13 +86,13 @@ void vbd_update_joint_lambda(uint3 dispatch_id) {
                     if (twist < j.limit_lower) {
                         float c_limit = (twist - j.limit_lower) - j.limit_c0;
                         j.limit_lambda = min(j.limit_penalty * c_limit + j.limit_lambda, 0.0);
-                        j.limit_penalty = min(j.limit_penalty + pc.cfg.ang_beta * abs(c_limit), pc.cfg.ang_penalty_max);
+                        j.limit_penalty = min(j.limit_penalty + solver_config_data[0].ang_beta * abs(c_limit), solver_config_data[0].ang_penalty_max);
                         InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c_limit)));
                     }
                     else if (twist > j.limit_upper) {
                         float c_limit = (twist - j.limit_upper) - j.limit_c0;
                         j.limit_lambda = max(j.limit_penalty * c_limit + j.limit_lambda, 0.0);
-                        j.limit_penalty = min(j.limit_penalty + pc.cfg.ang_beta * abs(c_limit), pc.cfg.ang_penalty_max);
+                        j.limit_penalty = min(j.limit_penalty + solver_config_data[0].ang_beta * abs(c_limit), solver_config_data[0].ang_penalty_max);
                         InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c_limit)));
                     }
                 }
@@ -110,7 +110,7 @@ void vbd_update_joint_lambda(uint3 dispatch_id) {
         for (int k = 0; k < 2; k++) {
             float c = dot(perps[k], d) - j.pos_c0[k];
             j.pos_lambda[k] = j.pos_penalty[k] * c + j.pos_lambda[k];
-            j.pos_penalty[k] = min(j.pos_penalty[k] + pc.cfg.beta * abs(c), pc.cfg.penalty_max);
+            j.pos_penalty[k] = min(j.pos_penalty[k] + solver_config_data[0].beta * abs(c), solver_config_data[0].penalty_max);
             InterlockedMax(collision_state[state_convergence_max_delta_index], asuint(abs(c)));
         }
 
@@ -120,7 +120,7 @@ void vbd_update_joint_lambda(uint3 dispatch_id) {
         for (int k = 0; k < 3; k++) {
             float c_ang = theta[k] - j.ang_c0[k];
             j.ang_lambda[k] = j.ang_penalty[k] * c_ang + j.ang_lambda[k];
-            j.ang_penalty[k] = min(j.ang_penalty[k] + pc.cfg.ang_beta * abs(c_ang), pc.cfg.ang_penalty_max);
+            j.ang_penalty[k] = min(j.ang_penalty[k] + solver_config_data[0].ang_beta * abs(c_ang), solver_config_data[0].ang_penalty_max);
             InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c_ang)));
         }
     }

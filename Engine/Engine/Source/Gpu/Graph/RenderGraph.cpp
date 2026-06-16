@@ -719,15 +719,17 @@ namespace gse::gpu {
 		gpu::pipeline_statistic_flag::fragment_shader_invocations;
 }
 
-gse::gpu::render_graph::render_graph(gpu::device& device, gpu::swap_chain& swapchain, gpu::frame& frame)
-	: m_device(std::addressof(device)), m_swapchain(std::addressof(swapchain)), m_frame(std::addressof(frame)), m_transient_pool(device) {
+gse::gpu::render_graph::render_graph(gpu::device& device, gpu::swap_chain* swapchain, gpu::frame& frame)
+	: m_device(std::addressof(device)), m_swapchain(swapchain), m_frame(std::addressof(frame)), m_transient_pool(device) {
 	m_timestamp_period_per_tick = nanoseconds(static_cast<double>(device.timestamp_period()));
 	for (auto& q : m_queue_states) {
 		q.timeline = gpu::queue_timeline<gpu::device>::create(device);
 	}
-	swapchain.on_recreate([this] {
-		recreate_framebuffer_images();
-	});
+	if (m_swapchain) {
+		m_swapchain->on_recreate([this] {
+			recreate_framebuffer_images();
+		});
+	}
 }
 
 auto gse::gpu::render_graph::create_framebuffer_image(const framebuffer_image_desc& desc, const std::string_view tag) -> image {
@@ -894,7 +896,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 	};
 
 	const auto image_index = m_frame->image_index();
-	const auto swap_extent = m_swapchain->extent();
+	const auto swap_extent = m_swapchain ? m_swapchain->extent() : vec2u{};
 
 	const bool timestamps_enabled = m_gpu_timestamps_enabled.load(std::memory_order_relaxed);
 	const bool stats_enabled = m_gpu_pipeline_stats_enabled.load(std::memory_order_relaxed);
@@ -921,7 +923,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 	}
 
 	m_device->reset_worker_command_pools(frame_idx);
-	const auto color_format_value = gpu::format_value(m_swapchain->format());
+	const auto color_format_value = m_swapchain ? gpu::format_value(m_swapchain->format()) : gpu::image_format_value{ 0 };
 
 	auto resolve_color_target = [&](const color_output_info& info) -> const image* {
 		if (info.transient_target) {

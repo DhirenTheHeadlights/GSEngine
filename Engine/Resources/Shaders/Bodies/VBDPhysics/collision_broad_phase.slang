@@ -8,6 +8,36 @@ uint hash_cell(int3 cell) {
     return (h % grid_table_size) + 1;
 }
 
+bool is_jointed(uint a, uint b) {
+    uint count = jointed_pairs_data[0];
+    if (count == 0) {
+        return false;
+    }
+
+    uint lo_key = min(a, b);
+    uint hi_key = max(a, b);
+
+    uint lo = 0;
+    uint hi = count;
+    while (lo < hi) {
+        uint mid = (lo + hi) >> 1;
+        uint mid_lo = jointed_pairs_data[1 + mid * 2];
+        uint mid_hi = jointed_pairs_data[1 + mid * 2 + 1];
+        if (mid_lo < lo_key || (mid_lo == lo_key && mid_hi < hi_key)) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+
+    if (lo < count) {
+        uint found_lo = jointed_pairs_data[1 + lo * 2];
+        uint found_hi = jointed_pairs_data[1 + lo * 2 + 1];
+        return found_lo == lo_key && found_hi == hi_key;
+    }
+    return false;
+}
+
 void collision_broad_phase(uint3 dispatch_id) {
     uint i = dispatch_id.x;
     if (i >= pc.body_count) {
@@ -18,7 +48,7 @@ void collision_broad_phase(uint3 dispatch_id) {
 
     bool i_locked = body_i.locked != 0;
 
-    float margin = pc.cfg.speculative_margin;
+    float margin = solver_config_data[0].speculative_margin;
     float3 min_a = body_i.aabb_min.xyz;
     float3 max_a = body_i.aabb_max.xyz;
 
@@ -37,7 +67,7 @@ void collision_broad_phase(uint3 dispatch_id) {
                     uint j = grid_data[entry_ptr];
                     uint next = grid_data[entry_ptr + 1];
 
-                    if (j > i && j < pc.body_count) {
+                    if (j > i && j < pc.body_count && !is_jointed(i, j)) {
                         body_state body_j = body_data[j];
                         bool j_locked = body_j.locked != 0;
                         if (!(i_locked && j_locked)) {

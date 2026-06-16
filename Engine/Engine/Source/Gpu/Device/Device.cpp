@@ -375,7 +375,11 @@ auto gse::gpu::device::frame_command_buffer(const queue_type queue, const std::u
 }
 
 auto gse::gpu::device::submit(const queue_type queue, const submit_info& info, const gpu::handle<gpu::fence> signal_fence) -> void {
-	m_backend->queue.submit(queue, info, signal_fence);
+	const auto result = m_backend->queue.submit(queue, info, signal_fence);
+	if (result == gpu::result::error_device_lost) {
+		report_device_lost(queue == queue_type::compute ? "compute queue submit" : "graphics queue submit");
+	}
+	assert(result == gpu::result::success, "failed to submit commands on queue {}: {}", static_cast<int>(queue), static_cast<int>(result));
 }
 
 auto gse::gpu::device::present(const present_info& info) -> result {

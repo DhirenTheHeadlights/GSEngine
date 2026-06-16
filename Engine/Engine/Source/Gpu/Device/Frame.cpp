@@ -14,13 +14,13 @@ import gse.diag;
 import gse.meta;
 import gse.time;
 
-auto gse::gpu::frame::create(device& dev, swap_chain& sc) -> std::unique_ptr<frame> {
-	auto s = create_sync_objects(dev, sc);
-	return std::unique_ptr<frame>(new frame(std::move(s), 0, dev, sc));
+auto gse::gpu::frame::create(device& dev, swap_chain* sc) -> std::unique_ptr<frame> {
+	auto s = sc ? create_sync_objects(dev, *sc) : frame_sync<device>::create(dev, max_frames_in_flight);
+	return std::unique_ptr<frame>(new frame(std::move(s), dev, sc));
 }
 
-gse::gpu::frame::frame(frame_sync<device>&& s, const std::uint32_t image_index, device& dev, swap_chain& sc)
-	: m_sync(std::move(s)), m_image_index(image_index), m_device(&dev), m_swapchain(&sc) {
+gse::gpu::frame::frame(frame_sync<device>&& s, device& dev, swap_chain* sc)
+	: m_sync(std::move(s)), m_image_index(0), m_device(&dev), m_swapchain(sc) {
 }
 
 auto gse::gpu::frame::current_frame() const -> std::uint32_t {
@@ -65,10 +65,10 @@ auto gse::gpu::frame::recreate_resources(const window::data& win) -> void {
 	m_device->wait_idle();
 }
 
-auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, frame_status> {
+auto gse::gpu::frame::begin(window::data* win) -> std::expected<frame_token, frame_status> {
 	m_frame_in_progress = false;
 
-	if (window::minimized(win)) {
+	if (win && window::minimized(*win)) {
 		return std::unexpected(frame_status::minimized);
 	}
 
@@ -87,7 +87,7 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
 		}
 	}
 
-	{
+	if (m_swapchain) {
 		trace::scope_guard sg{ trace_id<"begin_frame::present_feedback">() };
 		m_pacer.observe(m_swapchain->past_presentation_timing(), m_swapchain->refresh_interval());
 		if (m_pacer.has_feedback()) {
@@ -100,44 +100,46 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
 		m_device->transient().begin_frame();
 	}
 
-	if (window::frame_buffer_resized(win)) {
-		recreate_resources(win);
-		return std::unexpected(frame_status::swapchain_out_of_date);
-	}
+	if (m_swapchain) {
+		if (window::frame_buffer_resized(*win)) {
+			recreate_resources(*win);
+			return std::unexpected(frame_status::swapchain_out_of_date);
+		}
 
-	result acquire_status = result::error_unknown;
-	std::uint32_t acquired_image_index = 0;
+		result acquire_status = result::error_unknown;
+		std::uint32_t acquired_image_index = 0;
 
-	{
-		trace::scope_guard sg{ trace_id<"begin_frame::acquire">() };
-		const auto acquired = m_swapchain->acquire(m_sync.image_available(m_current_frame));
-		acquire_status = acquired.result;
-		acquired_image_index = acquired.image_index;
-	}
-	if (acquire_status == result::error_device_lost) {
-		m_device->report_device_lost(std::format("acquireNextImage2KHR (frame {})", m_current_frame));
-		return std::unexpected(frame_status::device_lost);
-	}
+		{
+			trace::scope_guard sg{ trace_id<"begin_frame::acquire">() };
+			const auto acquired = m_swapchain->acquire(m_sync.image_available(m_current_frame));
+			acquire_status = acquired.result;
+			acquired_image_index = acquired.image_index;
+		}
+		if (acquire_status == result::error_device_lost) {
+			m_device->report_device_lost(std::format("acquireNextImage2KHR (frame {})", m_current_frame));
+			return std::unexpected(frame_status::device_lost);
+		}
 
-	if (acquire_status == result::error_out_of_date_khr) {
-		recreate_resources(win);
-		return std::unexpected(frame_status::swapchain_out_of_date);
-	}
+		if (acquire_status == result::error_out_of_date_khr) {
+			recreate_resources(*win);
+			return std::unexpected(frame_status::swapchain_out_of_date);
+		}
 
-	assert(
-		acquire_status == result::success || acquire_status == result::suboptimal_khr,
-		"Failed to acquire swap chain image!"
-	);
+		assert(
+			acquire_status == result::success || acquire_status == result::suboptimal_khr,
+			"Failed to acquire swap chain image!"
+		);
+
+		m_device->reset_fence(m_sync.in_flight_fence(queue_type::graphics, m_current_frame));
+
+		m_image_index = acquired_image_index;
+
+		const auto release_fence = m_swapchain->release_fence(m_image_index);
+		const auto release_result = m_device->wait_for_fence(release_fence);
+		assert(release_result == result::success, "Failed to wait for swapchain release fence!");
+	}
 
 	trace::scope_guard sg_setup{ trace_id<"begin_frame::setup">() };
-
-	m_device->reset_fence(m_sync.in_flight_fence(queue_type::graphics, m_current_frame));
-
-	m_image_index = acquired_image_index;
-
-	const auto release_fence = m_swapchain->release_fence(m_image_index);
-	const auto release_result = m_device->wait_for_fence(release_fence);
-	assert(release_result == result::success, "Failed to wait for swapchain release fence!");
 
 	for (std::size_t i = 0; i < queue_type_count; ++i) {
 		m_command_buffers[i] = m_device->frame_command_buffer(static_cast<queue_type>(i), m_current_frame).value;
@@ -147,18 +149,20 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
 	cmd_main.reset();
 	cmd_main.begin();
 
-	const image_barrier acquire_barrier{
-		.src_stages = pipeline_stage_flag::top_of_pipe,
-		.src_access = {},
-		.dst_stages = pipeline_stage_flag::color_attachment_output,
-		.dst_access = access_flag::color_attachment_write | access_flag::color_attachment_read,
-		.discard_contents = true,
-		.image = m_swapchain->image(m_image_index),
-		.aspects = image_aspect_flag::color,
-	};
-	cmd_main.pipeline_barrier(dependency_info{
-		.image_barriers = std::span(&acquire_barrier, 1)
-	});
+	if (m_swapchain) {
+		const image_barrier acquire_barrier{
+			.src_stages = pipeline_stage_flag::top_of_pipe,
+			.src_access = {},
+			.dst_stages = pipeline_stage_flag::color_attachment_output,
+			.dst_access = access_flag::color_attachment_write | access_flag::color_attachment_read,
+			.discard_contents = true,
+			.image = m_swapchain->image(m_image_index),
+			.aspects = image_aspect_flag::color,
+		};
+		cmd_main.pipeline_barrier(dependency_info{
+			.image_barriers = std::span(&acquire_barrier, 1)
+		});
+	}
 
 	const std::array transient_visibility_barriers{
 		memory_barrier{
@@ -192,21 +196,24 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
 
 	return frame_token{
 		.frame_index = m_current_frame,
-		.image_index = acquired_image_index,
+		.image_index = m_image_index,
 	};
 }
 
-auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> aux_submissions, std::span<const semaphore_submit_info> extra_graphics_waits) -> void {
+auto gse::gpu::frame::end(window::data* win, std::span<const queue_submission> aux_submissions, std::span<const semaphore_submit_info> extra_graphics_waits) -> void {
 	const auto graphics_cb = command_buffer_handle{ m_command_buffers[static_cast<std::size_t>(queue_type::graphics)] };
+
 	m_device->transient().recorder().run_post_frame(graphics_cb);
 
 	const vulkan::commands cmd_tail{ graphics_cb };
 
-	cmd_tail.release_swapchain_image_to_present(
-		m_swapchain->image(m_image_index),
-		pipeline_stage_flag::color_attachment_output,
-		access_flag::color_attachment_write
-	);
+	if (m_swapchain) {
+		cmd_tail.release_swapchain_image_to_present(
+			m_swapchain->image(m_image_index),
+			pipeline_stage_flag::color_attachment_output,
+			access_flag::color_attachment_write
+		);
+	}
 
 	{
 		trace::scope_guard sg{ trace_id<"end_frame::cmd_end">() };
@@ -255,22 +262,31 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
 		}
 	}
 
+	if (!m_swapchain) {
+		m_device->reset_fence(m_sync.in_flight_fence(queue_type::graphics, m_current_frame));
+	}
+
 	std::vector<semaphore_submit_info> main_waits;
-	main_waits.push_back({
-		.semaphore = m_sync.image_available(m_current_frame),
-		.value = 0,
-		.stages = pipeline_stage_flag::top_of_pipe,
-	});
+	if (m_swapchain) {
+		main_waits.push_back({
+			.semaphore = m_sync.image_available(m_current_frame),
+			.value = 0,
+			.stages = pipeline_stage_flag::top_of_pipe,
+		});
+	}
 
 	for (const auto& w : extra_graphics_waits) {
 		main_waits.push_back(w);
 	}
 
-	const semaphore_submit_info render_finished_signal{
-		.semaphore = m_sync.render_finished(m_image_index),
-		.value = 0,
-		.stages = pipeline_stage_flag::bottom_of_pipe,
-	};
+	std::vector<semaphore_submit_info> graphics_signals;
+	if (m_swapchain) {
+		graphics_signals.push_back({
+			.semaphore = m_sync.render_finished(m_image_index),
+			.value = 0,
+			.stages = pipeline_stage_flag::bottom_of_pipe,
+		});
+	}
 
 	{
 		trace::scope_guard sg{ trace_id<"end_frame::submit">() };
@@ -280,10 +296,38 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
 		const submit_info submit{
 			.wait_semaphores = main_waits,
 			.command_buffers = std::span(&cmd_info, 1),
-			.signal_semaphores = std::span(&render_finished_signal, 1),
+			.signal_semaphores = graphics_signals,
 		};
 		m_device->submit(queue_type::graphics, submit,
 						 m_sync.in_flight_fence(queue_type::graphics, m_current_frame));
+	}
+
+	if (!m_swapchain) {
+		trace::scope_guard sg{ trace_id<"end_frame::wait">() };
+		const auto gfx_wait = m_device->wait_for_fence(m_sync.in_flight_fence(queue_type::graphics, m_current_frame));
+		if (gfx_wait == result::error_device_lost) {
+			m_device->report_device_lost("headless graphics fence wait");
+		}
+		assert(gfx_wait == result::success, "headless end: failed to wait for graphics fence");
+		for (std::size_t qi = 0; qi < queue_type_count; ++qi) {
+			if (qi == static_cast<std::size_t>(queue_type::graphics)) {
+				continue;
+			}
+			if (last_idx_per_queue[qi] != static_cast<std::size_t>(-1)) {
+				const auto wait_result =
+					m_device->wait_for_fence(
+						m_sync.in_flight_fence(static_cast<queue_type>(qi), m_current_frame)
+					);
+				if (wait_result == result::error_device_lost) {
+					m_device->report_device_lost("headless compute fence wait");
+				}
+				assert(wait_result == result::success, "headless end: failed to wait for submission fence");
+			}
+		}
+
+		m_current_frame = (m_current_frame + 1) % max_frames_in_flight;
+		m_frame_in_progress = false;
+		return;
 	}
 
 	const handle<gpu::semaphore> render_finished_handle = m_sync.render_finished(m_image_index);
@@ -299,7 +343,7 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
 	}
 
 	if (present_result == result::error_out_of_date_khr || present_result == result::suboptimal_khr) {
-		recreate_resources(win);
+		recreate_resources(*win);
 		m_present_ids_in_flight.fill(0);
 	}
 	else {
