@@ -20,7 +20,6 @@ import gse.gpu;
 
 namespace gse::vbd {
 	struct [[= shaders::shader_struct]] vbd_push_constants {
-		solver_config cfg;
 		std::uint32_t body_count;
 		std::uint32_t contact_count;
 		std::uint32_t motor_count;
@@ -169,6 +168,18 @@ namespace gse::vbd {
 	]] impulse_data {
 		using element = impulse_constraint;
 	};
+	struct [[
+		= shaders::binding<0, 22>{},
+		= shaders::ssbo_readonly
+	]] solver_config_data {
+		using element = solver_config;
+	};
+	struct [[
+		= shaders::binding<0, 23>{},
+		= shaders::ssbo_readonly
+	]] jointed_pairs_data {
+		using element = std::uint32_t;
+	};
 
 	using shader_binding_types = type_pack<
 		body_data,
@@ -192,7 +203,9 @@ namespace gse::vbd {
 		frozen_jacobians,
 		solve_deltas,
 		grounded_bits,
-		impulse_data
+		impulse_data,
+		solver_config_data,
+		jointed_pairs_data
 	>;
 
 	template <fixed_string BodyPath>
@@ -376,7 +389,7 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 		f.solve_state_buffer = ctx.device->create_buffer(
 			{
 				.size = limits.max_bodies * limits.solve_state_float4s_per_body * sizeof(float) * 4,
-				.usage = gpu::buffer_flag::storage,
+				.usage = storage_dst,
 				.bindless = true
 			},
 			"vbd.solve_state"
@@ -453,7 +466,7 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 		f.frozen_jacobian_buffer = ctx.device->create_buffer(
 			{
 				.size = limits.max_contacts * sizeof(frozen_jacobian),
-				.usage = gpu::buffer_flag::storage,
+				.usage = storage_dst,
 				.bindless = true
 			},
 			"vbd.frozen_jacobian"
@@ -462,7 +475,7 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 		f.solve_deltas_buffer = ctx.device->create_buffer(
 			{
 				.size = limits.max_bodies * 2 * sizeof(float) * 4,
-				.usage = gpu::buffer_flag::storage,
+				.usage = storage_dst,
 				.bindless = true
 			},
 			"vbd.solve_deltas"
@@ -496,6 +509,26 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 			},
 			"vbd.impulse"
 		);
+
+		f.solver_config_buffer = ctx.device->create_buffer(
+			{
+				.size = sizeof(solver_config),
+				.usage = gpu::buffer_flag::storage,
+				.bindless = true
+			},
+			"vbd.solver_config"
+		);
+
+		f.jointed_pairs_buffer = ctx.device->create_buffer(
+			{
+				.size = (1 + limits.max_joints * 2) * sizeof(std::uint32_t),
+				.usage = gpu::buffer_flag::storage,
+				.bindless = true
+			},
+			"vbd.jointed_pairs"
+		);
+		f.jointed_pairs_buffer.host_zero();
+		f.jointed_pairs_buffer.clear_host_dirty();
 	}
 
 	m_upload_motors.reserve(limits.max_motors);
@@ -605,6 +638,24 @@ auto gse::vbd::gpu_solver::upload(const std::span<const body_state> bodies, cons
 		}
 		m_upload_joints_dirty = true;
 		m_joint_buffers_seeded = true;
+
+		if (m_joint_count > 0) {
+			std::vector<std::pair<std::uint32_t, std::uint32_t>> jointed_pairs;
+			jointed_pairs.reserve(m_joint_count);
+			for (std::uint32_t i = 0; i < m_joint_count; ++i) {
+				const auto& g = m_upload_joints[i];
+				jointed_pairs.emplace_back(std::min(g.body_a, g.body_b), std::max(g.body_a, g.body_b));
+			}
+			std::ranges::sort(jointed_pairs);
+			const auto duplicates = std::ranges::unique(jointed_pairs);
+			jointed_pairs.erase(duplicates.begin(), duplicates.end());
+
+			m_upload_jointed_pairs.assign(1, static_cast<std::uint32_t>(jointed_pairs.size()));
+			for (const auto& [body_lo, body_hi] : jointed_pairs) {
+				m_upload_jointed_pairs.push_back(body_lo);
+				m_upload_jointed_pairs.push_back(body_hi);
+			}
+		}
 	}
 
 	m_pending_dispatch = true;
@@ -620,9 +671,14 @@ auto gse::vbd::gpu_solver::commit_upload() -> void {
 	}
 
 	auto& f = m_frames[m_dispatch_slot];
+	f.solver_config_buffer.host_write(m_solver_cfg, 0);
 	f.motor_buffer.host_write(m_upload_motors);
 	f.motor_map_buffer.host_write(m_upload_motor_map);
 	f.collision_state_buffer.host_write(m_upload_collision_state);
+
+	if (!m_upload_jointed_pairs.empty()) {
+		f.jointed_pairs_buffer.host_write(m_upload_jointed_pairs);
+	}
 
 	if (m_upload_joints_dirty && !m_upload_joints.empty()) {
 		f.joint_buffer.host_write(m_upload_joints);
@@ -645,6 +701,21 @@ auto gse::vbd::gpu_solver::read_grounded() const -> std::span<const std::uint32_
 	return std::span<const std::uint32_t>(
 		reinterpret_cast<const std::uint32_t*>(bytes.data()),
 		bytes.size() / sizeof(std::uint32_t)
+	);
+}
+
+auto gse::vbd::gpu_solver::read_body_states() const -> std::span<const body_state> {
+	if (!m_buffers_created) {
+		return {};
+	}
+	const auto& f = m_frames[m_dispatch_slot];
+	if (!f.grounded_valid) {
+		return {};
+	}
+	const auto bytes = f.physics_snapshot_buffer.host_read();
+	return std::span<const body_state>(
+		reinterpret_cast<const body_state*>(bytes.data()),
+		bytes.size() / sizeof(body_state)
 	);
 }
 
@@ -757,6 +828,8 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 		.solve_deltas = f.solve_deltas_buffer.slot(),
 		.grounded_bits = f.grounded_buffer.slot(),
 		.impulse_data = f.impulse_buffer.slot(),
+		.solver_config_data = f.solver_config_buffer.slot(),
+		.jointed_pairs_data = f.jointed_pairs_buffer.slot(),
 	};
 
 	const std::uint32_t total = total_substeps();
@@ -776,7 +849,6 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 		const std::uint32_t warm_start_count
 	) {
 		return vbd_push_constants{
-			.cfg = m_solver_cfg,
 			.body_count = m_body_count,
 			.contact_count = limits.max_contacts,
 			.motor_count = m_motor_count,
@@ -1077,6 +1149,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 	constexpr std::size_t grounded_copy_size = limits.max_grounded_uints * sizeof(std::uint32_t);
 
 	rec = co_await gpu::pass<vbd_state_copy_stage>(ctx).on(gpu::queue_type::compute).in_chain<vbd_solve_chain>();
+	rec.barrier(gpu::barrier_scope::compute_to_transfer);
 	if (joint_count > 0) {
 		rec.copy_buffer(f.joint_buffer, other.joint_buffer, joint_copy_size);
 	}

@@ -82,6 +82,8 @@ export namespace gse::vbd {
 
 		auto read_grounded() const -> std::span<const std::uint32_t>;
 
+		auto read_body_states() const -> std::span<const body_state>;
+
 		auto query_body_snapshot(
 			std::uint32_t body_index
 		) const -> std::optional<body_state>;
@@ -154,6 +156,8 @@ export namespace gse::vbd {
 			gpu::buffer grounded_buffer;
 			gpu::buffer grounded_readback_buffer;
 			gpu::buffer impulse_buffer;
+			gpu::buffer solver_config_buffer;
+			gpu::buffer jointed_pairs_buffer;
 
 			bool grounded_valid = false;
 		};
@@ -184,6 +188,7 @@ export namespace gse::vbd {
 		std::vector<impulse_constraint> m_upload_impulses;
 		std::vector<std::uint32_t> m_upload_motor_map;
 		std::vector<std::uint32_t> m_upload_collision_state;
+		std::vector<std::uint32_t> m_upload_jointed_pairs;
 		bool m_upload_joints_dirty = false;
 	};
 }

@@ -196,6 +196,21 @@ auto gse::engine::update() -> void {
 	system_clock::update();
 	m_scheduler.update();
 
+	if (!m_config.render && m_config.use_gpu_solver) {
+		if (auto* gpu_state = m_scheduler.try_state_of<gpu::context::data>()) {
+			if (gpu::context::begin_frame(*gpu_state, nullptr)) {
+				m_scheduler.render(
+					true,
+					[this, gpu_state] {
+						gpu_state->scheduler.flush();
+						gpu::context::execute_frame(*gpu_state, m_scheduler);
+					}
+				);
+				gpu::context::end_frame(*gpu_state, nullptr);
+			}
+		}
+	}
+
 	if (m_deferred_boot && m_loading.rendered_once()) {
 		auto deferred = std::move(m_deferred_boot);
 		m_deferred_boot = {};
@@ -240,7 +255,7 @@ auto gse::engine::render() -> void {
 		std::expected<gpu::frame_token, gpu::frame_status> result;
 		{
 			trace::scope_guard sg{ trace_id<"render::begin_frame">() };
-			result = gpu::context::begin_frame(*gpu_state, window_state);
+			result = gpu::context::begin_frame(*gpu_state, &window_state);
 		}
 		const auto fence_wait = fence_timer.elapsed();
 
@@ -276,7 +291,7 @@ auto gse::engine::render() -> void {
 		{
 			trace::scope_guard sg{ trace_id<"render::end_frame">() };
 			auto& window_state = m_scheduler.state<window::data>();
-			gpu::context::end_frame(*gpu_state, window_state);
+			gpu::context::end_frame(*gpu_state, &window_state);
 			if (asset_state) {
 				trace::scope_guard sg{ trace_id<"end_frame::finalize_reloads">() };
 				for (const auto& l : std::views::values(asset_state->resource_loaders)) {
