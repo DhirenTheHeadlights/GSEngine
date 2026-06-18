@@ -304,18 +304,11 @@ auto physics_parity_scene_setup(gse::scene& s) -> void {
 		)
 	);
 
-	for (int i = 0; i < 8; ++i) {
-		const auto offset = i % 2 == 0 ? 0.04f : -0.04f;
-		const auto y = 1.0f + static_cast<float>(i) * 1.05f;
-		s.spawn(
-			std::format("Box_{}", i),
-			gs::box(
-				gse::vec3<gse::position>(gse::meters(offset), gse::meters(y), gse::meters(0.f)),
-				gse::vec3<gse::length>(gse::meters(0.5f), gse::meters(0.5f), gse::meters(0.5f)),
-				gse::kilograms(10.f)
-			)
-		);
-	}
+	gs::spawn_humanoid(
+		s,
+		gse::vec3<gse::position>(gse::meters(0.f), gse::meters(1.005f), gse::meters(0.f)),
+		gse::quat(1.f, 0.f, 0.f, 0.f)
+	);
 }
 
 auto gs::physics_parity_world_setup(gse::engine& e) -> gse::scene* {
@@ -364,6 +357,14 @@ auto gs::physics_parity::run(gse::context& ctx, data& d, gse::shared_view<gse::w
 		fold(mc->current_velocity.x());
 		fold(mc->current_velocity.y());
 		fold(mc->current_velocity.z());
+	}
+
+	if (d.steps_run % 10 == 0 && owners.size() > 4) {
+		const auto* t1 = transforms.find(owners[1]);
+		const auto* t4 = transforms.find(owners[4]);
+		if (t1 && t4) {
+			gse::log::println("physics_parity: step={} body1={:.3f} body4={:.3f}", d.steps_run, t1->position, t4->position);
+		}
 	}
 
 	++d.steps_run;

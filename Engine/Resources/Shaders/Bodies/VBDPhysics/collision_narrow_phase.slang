@@ -878,25 +878,12 @@ void record_narrow_phase_debug(
 
 bool warm_start_lookup(uint ba, uint bb, uint feature_hi, uint feature_lo, uint ws_count, out contact_constraint result) {
     result = (contact_constraint)0;
-    if (ws_count == 0) return false;
 
     uint64_t feature_key = ((uint64_t)feature_hi << 32) | (uint64_t)feature_lo;
 
-    uint lo = 0;
-    uint hi = ws_count;
-    while (lo < hi) {
-        uint mid = (lo + hi) / 2;
-        contact_constraint ws = warm_starts[mid];
-        if (ws.body_a < ba || (ws.body_a == ba && ws.body_b < bb) ||
-            (ws.body_a == ba && ws.body_b == bb && ws.feature_key < feature_key)) {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-
-    if (lo < ws_count) {
-        contact_constraint ws = warm_starts[lo];
+    for (uint i = 0; i < max_contacts; i++) {
+        contact_constraint ws = warm_starts[i];
+        if (ws.body_a == ws.body_b) break;
         if (ws.body_a == ba && ws.body_b == bb && ws.feature_key == feature_key) {
             result = ws;
             return true;
@@ -969,7 +956,8 @@ void collision_narrow_phase(uint3 dispatch_id) {
         float3 local_r_b = rotate_vector(quat_conjugate(bb.orientation), world_r_b);
 
         contact_constraint cached_ws;
-        bool has_cached = warm_start_lookup(body_a_idx, body_b_idx, feature_hi, feature_lo, pc.warm_start_count, cached_ws);
+        bool has_cached = false;
+        warm_start_lookup(body_a_idx, body_b_idx, feature_hi, feature_lo, 0u, cached_ws);
         float3 current_d = world_anchor_a - world_anchor_b;
         float current_normal_gap = dot(constraint_normal, current_d) + solver_config_data[0].collision_margin;
         bool reuse_cached_normal =

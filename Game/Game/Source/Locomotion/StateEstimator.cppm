@@ -59,8 +59,7 @@ namespace gs::locomotion {
 }
 
 auto gs::locomotion::hinge_angle_about_x(const gse::quat& parent, const gse::quat& child) -> gse::angle {
-	const auto rel = child * gse::conjugate(parent);
-	const auto theta = gse::to_axis_angle(rel);
+	const auto theta = gse::difference_axis_angle(parent, child);
 	const auto axis_world = gse::rotate_vector(parent, gse::vec3f(1.f, 0.f, 0.f));
 	return gse::dot(axis_world, theta);
 }
@@ -216,7 +215,7 @@ auto gs::locomotion::state_estimator::run(data& d, gse::read<skeleton_refs> refs
 		}
 
 		const auto com_height = std::max<gse::displacement>(s.com_world.y() - d.ground_y, gse::meters(0.30f));
-		s.pendulum_time = gse::seconds(std::sqrt(static_cast<float>(com_height) / 9.81f));
+		s.pendulum_time = gse::sqrt(com_height / gse::meters_per_second_squared(9.81f));
 
 		s.lean_world = gse::vec3<gse::displacement>(
 			excess_past_edge(s.com_world.x(), s.support_min.x(), s.support_max.x()),
@@ -284,7 +283,7 @@ auto gs::locomotion::state_estimator::run(data& d, gse::read<skeleton_refs> refs
 			d.prev_angles_valid = false;
 		}
 
-		s.pelvis_pitch = gse::radians(std::asin(std::clamp(s.pelvis_forward.y(), -1.f, 1.f)));
+		s.pelvis_pitch = gse::asin(std::clamp(s.pelvis_forward.y(), -1.f, 1.f));
 		s.pelvis_pitch_rate = gse::dot(s.pelvis_right, pelvis_mc->angular_velocity);
 		s.valid = true;
 

@@ -33,6 +33,7 @@ export namespace gse::vbd {
 		std::uint32_t state_convergence_max_delta_index = 4;
 		std::uint32_t state_converged_flag_index = 5;
 		std::uint32_t state_convergence_max_angular_delta_index = 6;
+		std::uint32_t state_warm_start_count_index = 3;
 		std::uint32_t narrow_phase_debug_record_uints = 8;
 		std::uint32_t max_narrow_phase_debug_records = 32;
 		std::uint32_t feature_vertex = 0;
