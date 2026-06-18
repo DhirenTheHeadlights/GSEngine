@@ -338,7 +338,14 @@ auto gse::vulkan::queue::present(const gpu::present_info& info) -> gpu::result {
 	std::lock_guard lock(*m_mutex);
 	present_scratch scratch;
 	const auto vk_info = build_vk_present_info(info, scratch);
-	const auto vk_result = std::bit_cast<vk::Queue>(m_present).presentKHR(vk_info);
+	auto vk_result = std::bit_cast<vk::Queue>(m_present).presentKHR(vk_info);
+	if (vk_result == vk::Result::eErrorPresentTimingQueueFullEXT) {
+		present_scratch retry_scratch;
+		gpu::present_info retry_info = info;
+		retry_info.target_present_times = {};
+		const auto retry_vk_info = build_vk_present_info(retry_info, retry_scratch);
+		vk_result = std::bit_cast<vk::Queue>(m_present).presentKHR(retry_vk_info);
+	}
 	if (vk_result != vk::Result::eSuccess && vk_result != vk::Result::eSuboptimalKHR && vk_result != vk::Result::eErrorOutOfDateKHR) {
 		log::println(log::level::error, log::category::vulkan, "vkQueuePresentKHR returned {}", vk::to_string(vk_result));
 	}
