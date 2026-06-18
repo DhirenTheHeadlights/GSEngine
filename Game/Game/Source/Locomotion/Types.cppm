@@ -161,6 +161,10 @@ export namespace gs::locomotion {
 		const state& s,
 		const intent& it
 	) -> gse::angle;
+
+	auto horizontal_axis(
+		gse::vec3f v
+	) -> gse::vec3f;
 }
 
 auto gs::locomotion::other(const leg l) -> leg {
@@ -182,9 +186,18 @@ auto gs::locomotion::heading_error(const state& s, const intent& it) -> gse::ang
 	if (!it.has_heading) {
 		return gse::radians(0.f);
 	}
-	const float current_yaw = std::atan2(-s.pelvis_forward.x(), -s.pelvis_forward.z());
+	const auto current_yaw = gse::atan2(-s.pelvis_forward.x(), -s.pelvis_forward.z());
 	return gse::radians(std::remainder(
-		static_cast<float>(it.desired_yaw) - current_yaw,
+		static_cast<float>(it.desired_yaw - current_yaw),
 		2.f * std::numbers::pi_v<float>
 	));
+}
+
+auto gs::locomotion::horizontal_axis(gse::vec3f v) -> gse::vec3f {
+	v.y() = 0.f;
+	const float len = gse::magnitude(v);
+	if (len <= 0.0001f) {
+		return {};
+	}
+	return v / len;
 }

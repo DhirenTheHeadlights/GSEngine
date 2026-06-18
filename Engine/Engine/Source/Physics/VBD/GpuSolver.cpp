@@ -417,12 +417,14 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 
 		f.warm_start_buffer = ctx.device->create_buffer(
 			{
-				.size = 16,
-				.usage = gpu::buffer_flag::storage,
+				.size = limits.max_contacts * sizeof(contact_constraint),
+				.usage = storage_dst,
 				.bindless = true
 			},
 			"vbd.warm_start"
 		);
+		f.warm_start_buffer.host_zero();
+		f.warm_start_buffer.clear_host_dirty();
 
 		f.joint_buffer = ctx.device->create_buffer(
 			{
@@ -1010,6 +1012,8 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.predict_pipeline);
 
+		rec.barrier(gpu::barrier_scope::compute_to_compute);
+
 		rec.dispatch<predict_entry>(
 			make_pc(0u, 0u, sub, 0u, 0.f, warm),
 			bindings,
@@ -1021,6 +1025,8 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.freeze_jacobians_pipeline);
 
+		rec.barrier(gpu::barrier_scope::compute_to_compute);
+
 		rec.push_bindings<freeze_jacobians_entry>(make_pc(0u, 0u, sub, 0u, 0.f, warm), bindings);
 		rec.dispatch_indirect(f.indirect_dispatch_buffer, 3 * sizeof(std::uint32_t));
 
@@ -1028,6 +1034,8 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 			.on(gpu::queue_type::compute)
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.solve_color_pipeline);
+
+		rec.barrier(gpu::barrier_scope::compute_to_compute);
 
 		for (std::uint32_t it = 0; it < num_iterations; ++it) {
 			rec.bind(m_compute.solve_color_pipeline);
@@ -1041,6 +1049,12 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 				rec.bind(m_compute.apply_jacobi_pipeline);
 				rec.push_bindings<apply_jacobi_entry>(make_pc(0u, 0u, sub, it, solve_alpha, warm), bindings);
 				rec.dispatch(body_workgroups, 1, 1);
+				rec.barrier(gpu::barrier_scope::compute_to_compute);
+			}
+			else if (joint_count > 0) {
+				color_pc.color_offset = 0xFFFFFFFFu;
+				rec.push_bindings<solve_color_entry>(color_pc, bindings);
+				rec.dispatch(1u, 1u, 1u);
 				rec.barrier(gpu::barrier_scope::compute_to_compute);
 			}
 			else {
@@ -1063,6 +1077,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 				rec.push_bindings<update_joint_lambda_entry>(make_pc(0u, 0u, sub, it, solve_alpha, warm), bindings);
 				rec.dispatch(joint_workgroups, 1, 1);
 			}
+			rec.barrier(gpu::barrier_scope::compute_to_compute);
 			rec.barrier(gpu::barrier_scope::compute_to_indirect);
 		}
 
@@ -1142,6 +1157,11 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 			bindings,
 			vec3u{ body_workgroups, 1u, 1u }
 		);
+
+		rec.barrier(gpu::barrier_scope::compute_to_transfer);
+		rec.copy_buffer(f.contact_buffer, f.warm_start_buffer, limits.max_contacts * sizeof(contact_constraint));
+		rec.barrier(gpu::barrier_scope::transfer_to_compute);
+		rec.barrier(gpu::barrier_scope::compute_to_compute);
 	}
 
 	const std::size_t body_copy_size = m_body_count * sizeof(body_state);

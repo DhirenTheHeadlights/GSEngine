@@ -87,10 +87,6 @@ export namespace gs::locomotion::balance_controller {
 }
 
 namespace gs::locomotion {
-	auto horizontal_axis(
-		gse::vec3f axis
-	) -> gse::vec3f;
-
 	auto deadzoned(
 		gse::displacement value,
 		gse::displacement deadzone
@@ -111,15 +107,6 @@ auto gs::locomotion::deadzoned(const gse::displacement value, const gse::displac
 		return value + deadzone;
 	}
 	return gse::meters(0.f);
-}
-
-auto gs::locomotion::horizontal_axis(gse::vec3f axis) -> gse::vec3f {
-	axis.y() = 0.f;
-	const float len = gse::magnitude(axis);
-	if (len <= 0.0001f) {
-		return {};
-	}
-	return axis / len;
 }
 
 auto gs::locomotion::balance_velocity_target(const state& s, const intent& it, const balance_controller::data& d) -> gse::vec3<gse::velocity> {

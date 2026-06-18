@@ -75,11 +75,22 @@ void accumulate_joint_for_body(
             }
         }
 
-        if (update_orient && j.type != joint_type::ball) {
+        if (update_orient) {
             float4 q_error = quat_mul(body_b.predicted_orientation, quat_mul(quat_conjugate(body_a.predicted_orientation), quat_conjugate(j.rest_orientation)));
             float3 theta = to_axis_angle(q_error);
 
-            if (j.type == joint_type::fixed) {
+            if (j.type == joint_type::ball) {
+                for (int k = 0; k < 3; k++) {
+                    if (j.soft_ang_stiffness[k] <= 0.0) continue;
+                    float3 axis_world = rotate_vector(body_a.predicted_orientation, dirs[k]);
+                    float theta_k = dot(axis_world, theta);
+                    float f_soft = j.soft_ang_stiffness[k] * theta_k;
+                    float3 j_soft = axis_world * (-sign);
+                    ang_grad += j_soft * f_soft;
+                    ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(j_soft, j_soft), j.soft_ang_stiffness[k]));
+                }
+            }
+            else if (j.type == joint_type::fixed) {
                 for (int k = 0; k < 3; k++) {
                     float c_ang = theta[k] - j.ang_c0[k] * pc.current_alpha;
                     float f_ang = j.ang_penalty[k] * c_ang + j.ang_lambda[k];
@@ -186,7 +197,7 @@ void accumulate_joint_for_body(
     }
 }
 
-void solve_body(uint bi) {
+void solve_body(uint bi, bool live_jac) {
     body_state body = body_data[bi];
 
     bool locked = body.locked != 0;
@@ -247,8 +258,17 @@ void solve_body(uint bi) {
         body_state other = body_data[other_idx];
 
         frozen_jacobian fj = frozen_jacobians[ci];
-        float3 world_r_a = fj.world_r_a;
-        float3 world_r_b = fj.world_r_b;
+        float3 world_r_a;
+        float3 world_r_b;
+        if (live_jac) {
+            float4 q_a = is_a ? body.predicted_orientation : other.predicted_orientation;
+            float4 q_b = is_a ? other.predicted_orientation : body.predicted_orientation;
+            world_r_a = rotate_vector(q_a, c.local_anchor_a.xyz);
+            world_r_b = rotate_vector(q_b, c.local_anchor_b.xyz);
+        } else {
+            world_r_a = fj.world_r_a;
+            world_r_b = fj.world_r_b;
+        }
 
         float3 pos_a = is_a ? body.predicted_position.xyz : other.predicted_position.xyz;
         float3 pos_b = is_a ? other.predicted_position.xyz : body.predicted_position.xyz;
@@ -272,13 +292,14 @@ void solve_body(uint bi) {
         float sign = is_a ? 1.0 : -1.0;
         float3 dirs[3] = { c.normal.xyz, c.tangent_u.xyz, c.tangent_v.xyz };
         float3x3 J_ang_frozen = is_a ? fj.j_ang_a : fj.j_ang_b;
+        float3 my_r = is_a ? world_r_a : world_r_b;
 
         for (uint row = 0; row < 3; row++) {
             if (row > 0 && friction_bound <= 1e-10) continue;
             if (abs(force[row]) < 1e-12 && c.penalty[row] < 1e-6) continue;
 
             float3 J_lin = dirs[row] * sign;
-            float3 J_ang = J_ang_frozen[row] * sign;
+            float3 J_ang = (live_jac ? cross(my_r, dirs[row]) : J_ang_frozen[row]) * sign;
 
             grad += J_lin * force[row];
             hess = mat3_add(hess, mat3_scale(outer_product3(J_lin, J_lin), c.penalty[row]));
@@ -438,6 +459,22 @@ void vbd_solve_color(uint3 dispatch_id) {
 
     if (collision_state[state_converged_flag_index] != 0) return;
 
+    if (pc.color_offset == 0xFFFFFFFFu) {
+        if (idx == 0) {
+            for (uint sweep = 0; sweep < 1; sweep++) {
+                for (uint sbi = 0; sbi < pc.body_count; sbi++) {
+                    solve_body(sbi, true);
+                }
+                for (uint rbi = pc.body_count; rbi > 0; rbi--) {
+                    solve_body(rbi - 1, true);
+                }
+            }
+            collision_state[state_convergence_max_delta_index] = 0;
+            collision_state[state_convergence_max_angular_delta_index] = 0;
+        }
+        return;
+    }
+
 if (solver_config_data[0].use_jacobi != 0) {
     uint bi = idx;
     if (bi >= pc.body_count) return;
@@ -445,7 +482,7 @@ if (solver_config_data[0].use_jacobi != 0) {
     solve_deltas[bi * 2] = float4(0, 0, 0, 0);
     solve_deltas[bi * 2 + 1] = float4(0, 0, 0, 0);
 
-    solve_body(bi);
+    solve_body(bi, false);
 
     if (bi == 0 && pc.current_alpha > 0.0 && pc.iteration + 1 >= solver_config_data[0].min_iterations) {
         float max_lin = asfloat(collision_state[state_convergence_max_delta_index]);
@@ -468,14 +505,14 @@ if (idx < count) {
     uint offset = color_data[color];
     uint bi = color_data[max_colors * 2 + offset + idx];
     if (bi < pc.body_count) {
-        solve_body(bi);
+        solve_body(bi, false);
     }
 }
 
 if (color == num_colors - 1 && pc.current_alpha > 0.0 && pc.iteration + 1 >= solver_config_data[0].min_iterations && idx == 0) {
     float max_lin = asfloat(collision_state[state_convergence_max_delta_index]);
     float max_ang = asfloat(collision_state[state_convergence_max_angular_delta_index]);
-    if (max_lin < solver_config_data[0].convergence_threshold_linear && max_ang < solver_config_data[0].convergence_threshold_angular) {
+    if (false) {
         collision_state[state_converged_flag_index] = 1;
         indirect_args[1].x = 0;
         for (uint c = 0; c < max_colors; c++) {

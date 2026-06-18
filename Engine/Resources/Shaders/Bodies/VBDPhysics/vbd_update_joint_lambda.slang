@@ -85,14 +85,14 @@ void vbd_update_joint_lambda(uint3 dispatch_id) {
 
                     if (twist < j.limit_lower) {
                         float c_limit = (twist - j.limit_lower) - j.limit_c0;
-                        j.limit_lambda = min(j.limit_penalty * c_limit + j.limit_lambda, 0.0);
-                        j.limit_penalty = min(j.limit_penalty + solver_config_data[0].ang_beta * abs(c_limit), solver_config_data[0].ang_penalty_max);
+                        j.limit_lambda = clamp(j.limit_penalty * c_limit + j.limit_lambda, -50000.0, 0.0);
+                        j.limit_penalty = min(j.limit_penalty + solver_config_data[0].ang_beta * abs(c_limit), 50000.0);
                         InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c_limit)));
                     }
                     else if (twist > j.limit_upper) {
                         float c_limit = (twist - j.limit_upper) - j.limit_c0;
-                        j.limit_lambda = max(j.limit_penalty * c_limit + j.limit_lambda, 0.0);
-                        j.limit_penalty = min(j.limit_penalty + solver_config_data[0].ang_beta * abs(c_limit), solver_config_data[0].ang_penalty_max);
+                        j.limit_lambda = clamp(j.limit_penalty * c_limit + j.limit_lambda, 0.0, 50000.0);
+                        j.limit_penalty = min(j.limit_penalty + solver_config_data[0].ang_beta * abs(c_limit), 50000.0);
                         InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c_limit)));
                     }
                 }

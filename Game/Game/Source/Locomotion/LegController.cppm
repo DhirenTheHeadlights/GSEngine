@@ -251,7 +251,7 @@ export namespace gs::locomotion::leg_controller {
 		[[
 			= gse::settings::describe<"Adaptation rate of the standing ankle CoP trim per second of pitch error.">{}
 		]]
-		float posture_trim_rate = 0.35f;
+		gse::inverse_time posture_trim_rate = gse::per_second(0.35f);
 
 		[[
 			= gse::settings::describe<"Clamp on the adaptive ankle CoP trim.">{}
@@ -471,10 +471,6 @@ namespace gs::locomotion {
 		const state& s
 	) -> gse::quat;
 
-	auto pelvis_pitch_about_right(
-		const state& s
-	) -> gse::angle;
-
 	auto steering_target(
 		const state& s,
 		const intent& it,
@@ -614,7 +610,7 @@ auto gs::locomotion::lateral_capture_fade(const state& s) -> float {
 }
 
 auto gs::locomotion::pelvis_past_planted_foot(const leg which, const state& s, const leg_context& ctx) -> gse::displacement {
-	const auto fwd_xz = gse::normalize(gse::vec3f(s.pelvis_forward.x(), 0.f, s.pelvis_forward.z()));
+	const auto fwd_xz = horizontal_axis(s.pelvis_forward);
 	return gse::dot(fwd_xz, s.pelvis_position - planted_foot_position(which, ctx));
 }
 
@@ -642,7 +638,7 @@ auto gs::locomotion::compute_stance(const leg which, const state& s, const skele
 	const auto foot_target = stance_foot_target(which, ctx, d);
 	const auto ik = solve_leg_ik(hip_world, foot_target, support_state.pelvis_orientation, r.thigh_length, r.shin_length);
 
-	const auto pitch = pelvis_pitch_about_right(s);
+	const auto pitch = s.pelvis_pitch;
 	const auto hip_target = std::clamp(
 		ik.hip_pitch - ctx.cop_trim_applied * d.posture_trim_hip_share,
 		-d.stance_hip_clamp,
@@ -687,7 +683,7 @@ auto gs::locomotion::compute_stance(const leg which, const state& s, const skele
 }
 
 auto gs::locomotion::compute_swing(const leg which, const state& s, const gait& g, const plan& p, const skeleton_refs& r, const leg_context& ctx, const leg_controller::data& d) -> leg_pose {
-	const auto pitch = pelvis_pitch_about_right(s);
+	const auto pitch = s.pelvis_pitch;
 	const auto flat_ankle = [&](const gse::angle hip, const gse::angle knee) {
 		return -(pitch + hip + knee);
 	};
@@ -741,10 +737,10 @@ auto gs::locomotion::compute_swing(const leg which, const state& s, const gait& 
 	const auto ik = solve_leg_ik(hip_world, desired_foot, ik_state.pelvis_orientation, r.thigh_length, r.shin_length);
 
 	const auto rel_body = gse::inverse_rotate_vector(ik_state.pelvis_orientation, desired_foot - hip_world);
-	const auto hip_roll = gse::radians(std::atan2(
+	const auto hip_roll = gse::atan2(
 		static_cast<float>(rel_body.x()),
 		std::max(static_cast<float>(-rel_body.y()), 0.05f)
-	)) * d.swing_roll_gain;
+	) * d.swing_roll_gain;
 
 	const auto hip_target = ik.hip_pitch - pitch;
 	return {
@@ -768,12 +764,8 @@ auto gs::locomotion::pelvis_yaw_orientation(const state& s) -> gse::quat {
 	if (len <= 0.0001f) {
 		return gse::quat(1.f, 0.f, 0.f, 0.f);
 	}
-	const auto yaw = gse::radians(std::atan2(-fwd_xz.x() / len, -fwd_xz.z() / len));
+	const auto yaw = gse::atan2(-fwd_xz.x() / len, -fwd_xz.z() / len);
 	return gse::quat(gse::vec3f(0.f, 1.f, 0.f), yaw);
-}
-
-auto gs::locomotion::pelvis_pitch_about_right(const state& s) -> gse::angle {
-	return gse::radians(std::asin(std::clamp(s.pelvis_forward.y(), -1.f, 1.f)));
 }
 
 auto gs::locomotion::steering_target(const state& s, const intent& it, const leg_controller::data& d) -> gse::angle {
@@ -923,7 +915,7 @@ auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs,
 		const float walk_intensity = it ? std::clamp(it->intensity, 0.f, 1.f) : 0.f;
 		if (controllers_active && s->any_foot_grounded && walk_intensity > 0.3f) {
 			cctx.cop_trim = std::clamp(
-				cctx.cop_trim + s->pelvis_pitch * (d.posture_trim_rate * frame_dt.as<gse::seconds>()),
+				cctx.cop_trim + s->pelvis_pitch * (d.posture_trim_rate * frame_dt),
 				-d.posture_trim_clamp,
 				d.posture_trim_clamp
 			);
@@ -931,7 +923,7 @@ auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs,
 		cctx.cop_trim_applied = cctx.cop_trim * std::clamp(walk_intensity / 0.5f, 0.f, 1.f);
 
 		const float rollover_intent_target = it ? std::clamp(it->forward, 0.f, 1.f) : 0.f;
-		const float rollover_intent_step = frame_dt.as<gse::seconds>() / 0.25f;
+		const float rollover_intent_step = frame_dt / gse::seconds(0.25f);
 		cctx.rollover_intent += std::clamp(rollover_intent_target - cctx.rollover_intent, -rollover_intent_step, rollover_intent_step);
 
 		const float arm_phase_target = !controllers_active || g->current == phase::idle || g->current == phase::recover
@@ -940,7 +932,7 @@ auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs,
 				? (g->swing_leg == leg::left ? 1.f : -1.f)
 				: cctx.arm_phase;
 
-		const float arm_phase_step = frame_dt.as<gse::seconds>() / 0.4f;
+		const float arm_phase_step = frame_dt / gse::seconds(0.4f);
 		cctx.arm_phase += std::clamp(arm_phase_target - cctx.arm_phase, -arm_phase_step, arm_phase_step);
 
 		auto write_shoulder = [&](const gse::id joint_id, const float side) {
