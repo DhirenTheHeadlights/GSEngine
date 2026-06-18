@@ -3,6 +3,7 @@ module;
 #ifdef _WIN32
 #include <x86intrin.h>
 #endif
+#include <stacktrace>
 
 export module gse.stacktrace;
 
