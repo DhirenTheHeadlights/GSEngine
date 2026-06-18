@@ -460,14 +460,24 @@ void vbd_solve_color(uint3 dispatch_id) {
     if (collision_state[state_converged_flag_index] != 0) return;
 
     if (pc.color_offset == 0xFFFFFFFFu) {
+        uint seq_colors = min(collision_state[state_max_used_color_index], pc.color_count);
+        for (uint color = 0; color < seq_colors; color++) {
+            uint count = color_data[max_colors + color];
+            uint offset = color_data[color];
+            for (uint k = idx; k < count; k += workgroup_size) {
+                uint bi = color_data[max_colors * 2 + offset + k];
+                if (bi < pc.body_count && joint_counts[bi] == 0) {
+                    solve_body(bi, false);
+                }
+            }
+            AllMemoryBarrierWithGroupSync();
+        }
         if (idx == 0) {
-            for (uint sweep = 0; sweep < 1; sweep++) {
-                for (uint sbi = 0; sbi < pc.body_count; sbi++) {
-                    solve_body(sbi, true);
-                }
-                for (uint rbi = pc.body_count; rbi > 0; rbi--) {
-                    solve_body(rbi - 1, true);
-                }
+            for (uint sbi = 0; sbi < pc.body_count; sbi++) {
+                if (joint_counts[sbi] > 0) solve_body(sbi, true);
+            }
+            for (uint rbi = pc.body_count; rbi > 0; rbi--) {
+                if (joint_counts[rbi - 1] > 0) solve_body(rbi - 1, true);
             }
             collision_state[state_convergence_max_delta_index] = 0;
             collision_state[state_convergence_max_angular_delta_index] = 0;
