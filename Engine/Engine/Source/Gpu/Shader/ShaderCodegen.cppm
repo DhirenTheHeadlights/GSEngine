@@ -452,17 +452,13 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 	}
 	else if constexpr (has_annotation<byte_address_buffer_tag>(^^T)) {
 		return std::format(
-			"public [[vk::binding({}, {})]] ByteAddressBuffer {};\n",
-			binding_t::slot,
-			binding_t::set,
+			"public uniform ByteAddressBuffer.Handle {0}_h;\npublic ByteAddressBuffer {0} = {0}_h;\n",
 			name
 		);
 	}
 	else if constexpr (has_annotation<rw_byte_address_buffer_tag>(^^T)) {
 		return std::format(
-			"public [[vk::binding({}, {})]] RWByteAddressBuffer {};\n",
-			binding_t::slot,
-			binding_t::set,
+			"public uniform RWByteAddressBuffer.Handle {0}_h;\npublic RWByteAddressBuffer {0} = {0}_h;\n",
 			name
 		);
 	}
@@ -489,21 +485,17 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 	else if constexpr (has_annotation<ssbo_readonly_tag>(^^T)) {
 		using element_t = typename T::element;
 		return std::format(
-			"public [[vk::binding({}, {})]] StructuredBuffer<{}> {};\n",
-			binding_t::slot,
-			binding_t::set,
-			slang_type<element_t>::name,
-			name
+			"public uniform StructuredBuffer<{1}>.Handle {0}_h;\npublic StructuredBuffer<{1}> {0} = {0}_h;\n",
+			name,
+			slang_type<element_t>::name
 		);
 	}
 	else if constexpr (has_annotation<ssbo_readwrite_tag>(^^T)) {
 		using element_t = typename T::element;
 		return std::format(
-			"public [[vk::binding({}, {})]] RWStructuredBuffer<{}> {};\n",
-			binding_t::slot,
-			binding_t::set,
-			slang_type<element_t>::name,
-			name
+			"public uniform RWStructuredBuffer<{1}>.Handle {0}_h;\npublic RWStructuredBuffer<{1}> {0} = {0}_h;\n",
+			name,
+			slang_type<element_t>::name
 		);
 	}
 	else if constexpr (requires { typename T::element; }) {

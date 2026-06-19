@@ -441,7 +441,14 @@ auto gse::dx12::commands::set_color_write_mask(std::uint32_t, std::span<const gp
 
 auto gse::dx12::commands::set_blend_constants(std::array<float, 4>) const -> void {}
 
-auto gse::dx12::commands::copy_buffer(gpu::handle<gpu::buffer>, gpu::handle<gpu::buffer>, const gpu::buffer_copy_region&) const -> void {}
+auto gse::dx12::commands::copy_buffer(const gpu::handle<gpu::buffer> src, const gpu::handle<gpu::buffer> dst, const gpu::buffer_copy_region& region) const -> void {
+	auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(m_cmd);
+	auto* src_res = std::bit_cast<directx::ID3D12Resource*>(src);
+	auto* dst_res = std::bit_cast<directx::ID3D12Resource*>(dst);
+	if (list && src_res && dst_res) {
+		list->CopyBufferRegion(dst_res, region.dst_offset, src_res, region.src_offset, region.size);
+	}
+}
 
 auto gse::dx12::commands::fill_buffer(gpu::handle<gpu::buffer>, gpu::device_size, gpu::device_size, std::uint32_t) const -> void {}
 
