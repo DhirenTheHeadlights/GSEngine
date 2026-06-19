@@ -563,7 +563,10 @@ auto gse::physics::prepare(context& ctx, const std::optional<shared_view<gpu::co
 		if (handle_it->second >= d.joints.size()) {
 			continue;
 		}
-		d.joints[handle_it->second].activation = muscles[i].activation;
+		if (d.joints[handle_it->second].activation != muscles[i].activation) {
+			d.joints[handle_it->second].activation = muscles[i].activation;
+			d.gpu_joints_dirty = true;
+		}
 	}
 
 	const auto drive_owners = drives.owner_ids();
