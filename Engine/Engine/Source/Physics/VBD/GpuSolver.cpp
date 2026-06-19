@@ -695,7 +695,7 @@ auto gse::vbd::gpu_solver::read_grounded() const -> std::span<const std::uint32_
 	if (!m_buffers_created) {
 		return {};
 	}
-	const auto& f = m_frames[m_dispatch_slot];
+	const auto& f = m_frames[latest_snapshot_slot()];
 	if (!f.grounded_valid) {
 		return {};
 	}
@@ -710,7 +710,7 @@ auto gse::vbd::gpu_solver::read_body_states() const -> std::span<const body_stat
 	if (!m_buffers_created) {
 		return {};
 	}
-	const auto& f = m_frames[m_dispatch_slot];
+	const auto& f = m_frames[latest_snapshot_slot()];
 	if (!f.grounded_valid) {
 		return {};
 	}
@@ -725,7 +725,7 @@ auto gse::vbd::gpu_solver::query_body_snapshot(const std::uint32_t body_index) c
 	if (!m_buffers_created || body_index >= m_body_count) {
 		return std::nullopt;
 	}
-	const auto& f = m_frames[m_dispatch_slot];
+	const auto& f = m_frames[latest_snapshot_slot()];
 	if (!f.grounded_valid) {
 		return std::nullopt;
 	}
