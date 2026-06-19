@@ -31,6 +31,17 @@ void vbd_update_joint_lambda(uint3 dispatch_id) {
         j.pos_penalty.x = min(j.pos_penalty.x + solver_config_data[0].beta * abs(c), penalty_cap);
         InterlockedMax(collision_state[state_convergence_max_delta_index], asuint(abs(c)));
     }
+    else if (j.type == joint_type::muscle) {
+        float stretch = length(d) - j.target_distance;
+        float c = max(stretch, 0.0) - j.pos_c0.x;
+        j.pos_lambda.x = max(j.pos_penalty.x * c + j.pos_lambda.x, 0.0);
+        float penalty_cap = solver_config_data[0].penalty_max;
+        if (j.compliance > 0.0) {
+            penalty_cap = min(1.0 / max(j.compliance * pc.h_squared, 1e-10), solver_config_data[0].penalty_max);
+        }
+        j.pos_penalty.x = min(j.pos_penalty.x + solver_config_data[0].beta * abs(c), penalty_cap);
+        InterlockedMax(collision_state[state_convergence_max_delta_index], asuint(abs(c)));
+    }
     else if (j.type == joint_type::fixed || j.type == joint_type::hinge || j.type == joint_type::ball || j.type == joint_type::universal) {
         float3 dirs[3] = { float3(1, 0, 0), float3(0, 1, 0), float3(0, 0, 1) };
         for (int k = 0; k < 3; k++) {

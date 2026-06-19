@@ -55,6 +55,39 @@ void accumulate_joint_for_body(
             accumulate_geometric_stiffness(r, d_hat, abs(f), ang_hess);
         }
     }
+    else if (j.type == joint_type::muscle) {
+        float d_mag = length(d);
+        if (d_mag > 1e-7) {
+            float3 d_hat = d / d_mag;
+            float active_target = j.target_distance * (1.0 - 0.45 * j.activation);
+            float active_err = max(d_mag - active_target, 0.0);
+            float passive_err = max(d_mag - j.target_distance, 0.0);
+            float active_k = 200000.0 * j.activation;
+            float passive_k = j.pos_penalty.x;
+            float fi = active_k * active_err + passive_k * passive_err + j.pos_lambda.x;
+            if (j.damping > 0.0) {
+                float3 vel_a = body_a.velocity.xyz + cross(body_a.angular_velocity.xyz, r_aw);
+                float3 vel_b = body_b.velocity.xyz + cross(body_b.angular_velocity.xyz, r_bw);
+                float v_rel = dot(d_hat, vel_a - vel_b);
+                fi += (active_k + passive_k) * v_rel * pc.dt * j.damping;
+            }
+            fi = max(fi, 0.0);
+            if (j.max_force > 0.0) {
+                fi = min(fi, j.max_force);
+            }
+            float total_k = (active_err > 0.0 ? active_k : 0.0) + (passive_err > 0.0 ? passive_k : 0.0);
+            float3 j_lin = d_hat * sign;
+            float3 j_ang = cross(r, d_hat) * sign;
+            grad += j_lin * fi;
+            hess = mat3_add(hess, mat3_scale(outer_product3(j_lin, j_lin), total_k));
+            if (update_orient) {
+                ang_grad += j_ang * fi;
+                ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(j_ang, j_ang), total_k));
+                hess_xt = mat3_add(hess_xt, mat3_scale(outer_product3(j_lin, j_ang), total_k));
+                accumulate_geometric_stiffness(r, d_hat, abs(fi), ang_hess);
+            }
+        }
+    }
     else if (j.type == joint_type::fixed || j.type == joint_type::hinge || j.type == joint_type::ball || j.type == joint_type::universal) {
         float3 dirs[3] = { float3(1, 0, 0), float3(0, 1, 0), float3(0, 0, 1) };
         for (int k = 0; k < 3; k++) {
