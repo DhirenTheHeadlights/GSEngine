@@ -6,6 +6,8 @@ import gse.gpu_backend;
 import gse.math;
 import gse.directx;
 
+import :device;
+
 export namespace gse::dx12 {
 	class commands {
 	public:
@@ -367,15 +369,42 @@ auto gse::dx12::commands::begin_query(gpu::handle<gpu::query_pool>, std::uint32_
 
 auto gse::dx12::commands::end_query(gpu::handle<gpu::query_pool>, std::uint32_t) const -> void {}
 
-auto gse::dx12::commands::bind_shaders(std::span<const gpu::stage_flag>, std::span<const gpu::handle<gpu::shader_object>>) const -> void {}
+auto gse::dx12::commands::bind_shaders(std::span<const gpu::stage_flag>, const std::span<const gpu::handle<gpu::shader_object>> shaders) const -> void {
+	auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(m_cmd);
+	if (!list || shaders.empty()) {
+		return;
+	}
+	if (auto* pso = std::bit_cast<directx::ID3D12PipelineState*>(shaders[0])) {
+		list->SetPipelineState(pso);
+	}
+}
 
 auto gse::dx12::commands::unbind_shaders(std::span<const gpu::stage_flag>) const -> void {}
 
-auto gse::dx12::commands::bind_resource_heap(gpu::device_address, gpu::device_size, gpu::device_size, gpu::device_size) const -> void {}
+auto gse::dx12::commands::bind_resource_heap(gpu::device_address, gpu::device_size, gpu::device_size, gpu::device_size) const -> void {
+	auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(m_cmd);
+	if (!list || !active_device) {
+		return;
+	}
+	directx::ID3D12DescriptorHeap* heaps[]{ active_device->resource_heap(), active_device->sampler_heap() };
+	list->SetDescriptorHeaps(2, heaps);
+	auto* root = active_device->root_signature();
+	list->SetComputeRootSignature(root);
+	list->SetGraphicsRootSignature(root);
+}
 
 auto gse::dx12::commands::bind_sampler_heap(gpu::device_address, gpu::device_size, gpu::device_size, gpu::device_size) const -> void {}
 
-auto gse::dx12::commands::push_data(std::uint32_t, std::span<const std::byte>) const -> void {}
+auto gse::dx12::commands::push_data(const std::uint32_t offset, const std::span<const std::byte> data) const -> void {
+	auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(m_cmd);
+	if (!list || data.empty()) {
+		return;
+	}
+	const auto num_values = static_cast<std::uint32_t>(data.size() / 4);
+	const auto dest_offset = offset / 4;
+	list->SetComputeRoot32BitConstants(0, num_values, data.data(), dest_offset);
+	list->SetGraphicsRoot32BitConstants(0, num_values, data.data(), dest_offset);
+}
 
 auto gse::dx12::commands::push_constants(gpu::handle<gpu::pipeline_layout>, gpu::stage_flags, std::uint32_t, std::uint32_t, const void*) const -> void {}
 
@@ -385,7 +414,11 @@ auto gse::dx12::commands::draw_indexed_indirect(gpu::handle<gpu::buffer>, gpu::d
 
 auto gse::dx12::commands::draw_mesh_tasks_indirect(gpu::handle<gpu::buffer>, gpu::device_size, std::uint32_t, std::uint32_t) const -> void {}
 
-auto gse::dx12::commands::dispatch(std::uint32_t, std::uint32_t, std::uint32_t) const -> void {}
+auto gse::dx12::commands::dispatch(const std::uint32_t group_count_x, const std::uint32_t group_count_y, const std::uint32_t group_count_z) const -> void {
+	if (auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(m_cmd)) {
+		list->Dispatch(group_count_x, group_count_y, group_count_z);
+	}
+}
 
 auto gse::dx12::commands::dispatch_indirect(gpu::handle<gpu::buffer>, gpu::device_size) const -> void {}
 
