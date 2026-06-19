@@ -10,8 +10,6 @@ import :transient_pool;
 import :render_graph;
 import :render_pass;
 
-import gse.vulkan;
-
 import gse.os;
 import gse.core;
 import gse.concurrency;

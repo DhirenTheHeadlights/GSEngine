@@ -11,7 +11,6 @@ import :transient_pool;
 import :image;
 import :pass_recorder;
 
-import gse.vulkan;
 import gse.assert;
 import gse.core;
 import gse.containers;
@@ -21,6 +20,7 @@ import gse.diag;
 import gse.log;
 import gse.math;
 import gse.meta;
+import gse.vulkan;
 
 namespace gse::gpu {
 	inline thread_local recording_context* tl_active_recording_context = nullptr;
