@@ -84,6 +84,7 @@ export {
 	inline constexpr SlangResourceAccess slang_resource_access_read = SLANG_RESOURCE_ACCESS_READ;
 
 	inline constexpr SlangCompileTarget slang_spirv = SLANG_SPIRV;
+	inline constexpr SlangCompileTarget slang_dxil = SLANG_DXIL;
 	inline constexpr SlangMatrixLayoutMode slang_matrix_layout_column_major = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR;
 
 	inline constexpr SlangStage slang_stage_vertex = SLANG_STAGE_VERTEX;

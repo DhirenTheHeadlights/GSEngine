@@ -18,6 +18,8 @@ export namespace gse::directx {
 	using ::ID3D12Fence;
 	using ::ID3D12GraphicsCommandList;
 	using ::ID3D12Resource;
+	using ::ID3D12PipelineState;
+	using ::ID3D12RootSignature;
 	using ::IDXGIFactory4;
 	using ::IDXGISwapChain1;
 	using ::IDXGISwapChain3;
@@ -25,6 +27,7 @@ export namespace gse::directx {
 	using ::ID3D12CommandList;
 
 	using ::D3D12_CPU_DESCRIPTOR_HANDLE;
+	using ::D3D12_GPU_DESCRIPTOR_HANDLE;
 	using ::D3D12_RESOURCE_BARRIER;
 	using ::D3D12_RESOURCE_DIMENSION;
 	using ::D3D12_RESOURCE_FLAGS;
@@ -179,6 +182,130 @@ export namespace gse::directx {
 		std::uint32_t mip_levels,
 		D3D12_RESOURCE_FLAGS flags
 	) -> com_ptr<ID3D12Resource>;
+
+	[[nodiscard]] auto create_cbv_srv_uav_heap(
+		ID3D12Device* device,
+		std::uint32_t descriptor_count,
+		bool shader_visible
+	) -> com_ptr<ID3D12DescriptorHeap>;
+
+	[[nodiscard]] auto create_sampler_heap(
+		ID3D12Device* device,
+		std::uint32_t descriptor_count,
+		bool shader_visible
+	) -> com_ptr<ID3D12DescriptorHeap>;
+
+	[[nodiscard]] auto create_dsv_heap(
+		ID3D12Device* device,
+		std::uint32_t descriptor_count
+	) -> com_ptr<ID3D12DescriptorHeap>;
+
+	[[nodiscard]] auto cbv_srv_uav_descriptor_size(
+		ID3D12Device* device
+	) -> std::uint32_t;
+
+	[[nodiscard]] auto sampler_descriptor_size(
+		ID3D12Device* device
+	) -> std::uint32_t;
+
+	[[nodiscard]] auto dsv_descriptor_size(
+		ID3D12Device* device
+	) -> std::uint32_t;
+
+	[[nodiscard]] auto descriptor_heap_cpu_start(
+		ID3D12DescriptorHeap* heap
+	) -> D3D12_CPU_DESCRIPTOR_HANDLE;
+
+	[[nodiscard]] auto descriptor_heap_gpu_start(
+		ID3D12DescriptorHeap* heap
+	) -> D3D12_GPU_DESCRIPTOR_HANDLE;
+
+	[[nodiscard]] auto offset_cpu_handle(
+		D3D12_CPU_DESCRIPTOR_HANDLE base,
+		std::uint32_t index,
+		std::uint32_t increment
+	) -> D3D12_CPU_DESCRIPTOR_HANDLE;
+
+	[[nodiscard]] auto offset_gpu_handle(
+		D3D12_GPU_DESCRIPTOR_HANDLE base,
+		std::uint32_t index,
+		std::uint32_t increment
+	) -> D3D12_GPU_DESCRIPTOR_HANDLE;
+
+	auto create_depth_stencil_view(
+		ID3D12Device* device,
+		ID3D12Resource* resource,
+		DXGI_FORMAT format,
+		D3D12_CPU_DESCRIPTOR_HANDLE handle
+	) -> void;
+
+	auto create_texture_srv(
+		ID3D12Device* device,
+		ID3D12Resource* resource,
+		DXGI_FORMAT format,
+		D3D12_CPU_DESCRIPTOR_HANDLE handle
+	) -> void;
+
+	auto create_texture_uav(
+		ID3D12Device* device,
+		ID3D12Resource* resource,
+		DXGI_FORMAT format,
+		D3D12_CPU_DESCRIPTOR_HANDLE handle
+	) -> void;
+
+	auto create_constant_buffer_view(
+		ID3D12Device* device,
+		std::uint64_t address,
+		std::uint32_t size,
+		D3D12_CPU_DESCRIPTOR_HANDLE handle
+	) -> void;
+
+	struct sampler_params {
+		bool min_linear = true;
+		bool mag_linear = true;
+		bool mip_linear = true;
+		bool anisotropy = false;
+		bool comparison = false;
+		std::uint32_t max_anisotropy = 1;
+		std::uint32_t comparison_func = 0;
+		std::uint32_t address_u = 0;
+		std::uint32_t address_v = 0;
+		std::uint32_t address_w = 0;
+		std::uint32_t border = 0;
+		float min_lod = 0.0f;
+		float max_lod = 0.0f;
+	};
+
+	auto create_sampler_descriptor(
+		ID3D12Device* device,
+		const sampler_params& params,
+		D3D12_CPU_DESCRIPTOR_HANDLE handle
+	) -> void;
+
+	[[nodiscard]] auto create_bindless_root_signature(
+		ID3D12Device* device,
+		std::uint32_t num_root_constants
+	) -> com_ptr<ID3D12RootSignature>;
+
+	[[nodiscard]] auto create_gpu_upload_buffer(
+		ID3D12Device* device,
+		std::uint64_t size
+	) -> com_ptr<ID3D12Resource>;
+
+	auto create_raw_buffer_uav(
+		ID3D12Device* device,
+		ID3D12Resource* resource,
+		std::uint32_t first_element,
+		std::uint32_t num_elements,
+		D3D12_CPU_DESCRIPTOR_HANDLE handle
+	) -> void;
+
+	[[nodiscard]] auto create_compute_pipeline_state(
+		ID3D12Device* device,
+		ID3D12RootSignature* root_signature,
+		const void* bytecode,
+		std::size_t bytecode_size
+	) -> com_ptr<ID3D12PipelineState>;
 }
 
 template <typename T>
@@ -396,4 +523,217 @@ auto gse::directx::create_committed_texture(ID3D12Device* device, const D3D12_RE
 	com_ptr<ID3D12Resource> resource;
 	device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(resource.put()));
 	return resource;
+}
+
+auto gse::directx::create_cbv_srv_uav_heap(ID3D12Device* device, const std::uint32_t descriptor_count, const bool shader_visible) -> com_ptr<ID3D12DescriptorHeap> {
+	const D3D12_DESCRIPTOR_HEAP_DESC desc = {
+		.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
+		.NumDescriptors = descriptor_count,
+		.Flags = shader_visible ? D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE : D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
+	};
+	com_ptr<ID3D12DescriptorHeap> heap;
+	device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(heap.put()));
+	return heap;
+}
+
+auto gse::directx::create_sampler_heap(ID3D12Device* device, const std::uint32_t descriptor_count, const bool shader_visible) -> com_ptr<ID3D12DescriptorHeap> {
+	const D3D12_DESCRIPTOR_HEAP_DESC desc = {
+		.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER,
+		.NumDescriptors = descriptor_count,
+		.Flags = shader_visible ? D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE : D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
+	};
+	com_ptr<ID3D12DescriptorHeap> heap;
+	device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(heap.put()));
+	return heap;
+}
+
+auto gse::directx::create_dsv_heap(ID3D12Device* device, const std::uint32_t descriptor_count) -> com_ptr<ID3D12DescriptorHeap> {
+	const D3D12_DESCRIPTOR_HEAP_DESC desc = {
+		.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV,
+		.NumDescriptors = descriptor_count,
+	};
+	com_ptr<ID3D12DescriptorHeap> heap;
+	device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(heap.put()));
+	return heap;
+}
+
+auto gse::directx::cbv_srv_uav_descriptor_size(ID3D12Device* device) -> std::uint32_t {
+	return device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+}
+
+auto gse::directx::sampler_descriptor_size(ID3D12Device* device) -> std::uint32_t {
+	return device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+}
+
+auto gse::directx::dsv_descriptor_size(ID3D12Device* device) -> std::uint32_t {
+	return device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+}
+
+auto gse::directx::descriptor_heap_cpu_start(ID3D12DescriptorHeap* heap) -> D3D12_CPU_DESCRIPTOR_HANDLE {
+	return heap->GetCPUDescriptorHandleForHeapStart();
+}
+
+auto gse::directx::descriptor_heap_gpu_start(ID3D12DescriptorHeap* heap) -> D3D12_GPU_DESCRIPTOR_HANDLE {
+	return heap->GetGPUDescriptorHandleForHeapStart();
+}
+
+auto gse::directx::offset_cpu_handle(const D3D12_CPU_DESCRIPTOR_HANDLE base, const std::uint32_t index, const std::uint32_t increment) -> D3D12_CPU_DESCRIPTOR_HANDLE {
+	return {
+		.ptr = base.ptr + static_cast<std::size_t>(index) * increment,
+	};
+}
+
+auto gse::directx::offset_gpu_handle(const D3D12_GPU_DESCRIPTOR_HANDLE base, const std::uint32_t index, const std::uint32_t increment) -> D3D12_GPU_DESCRIPTOR_HANDLE {
+	return {
+		.ptr = base.ptr + static_cast<std::uint64_t>(index) * increment,
+	};
+}
+
+auto gse::directx::create_depth_stencil_view(ID3D12Device* device, ID3D12Resource* resource, const DXGI_FORMAT format, const D3D12_CPU_DESCRIPTOR_HANDLE handle) -> void {
+	const D3D12_DEPTH_STENCIL_VIEW_DESC desc = {
+		.Format = format,
+		.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D,
+	};
+	device->CreateDepthStencilView(resource, &desc, handle);
+}
+
+auto gse::directx::create_texture_srv(ID3D12Device* device, ID3D12Resource* resource, const DXGI_FORMAT format, const D3D12_CPU_DESCRIPTOR_HANDLE handle) -> void {
+	const D3D12_SHADER_RESOURCE_VIEW_DESC desc = {
+		.Format = format,
+		.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D,
+		.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+		.Texture2D = {
+			.MipLevels = 1,
+		},
+	};
+	device->CreateShaderResourceView(resource, &desc, handle);
+}
+
+auto gse::directx::create_texture_uav(ID3D12Device* device, ID3D12Resource* resource, const DXGI_FORMAT format, const D3D12_CPU_DESCRIPTOR_HANDLE handle) -> void {
+	const D3D12_UNORDERED_ACCESS_VIEW_DESC desc = {
+		.Format = format,
+		.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D,
+	};
+	device->CreateUnorderedAccessView(resource, nullptr, &desc, handle);
+}
+
+auto gse::directx::create_constant_buffer_view(ID3D12Device* device, const std::uint64_t address, const std::uint32_t size, const D3D12_CPU_DESCRIPTOR_HANDLE handle) -> void {
+	const D3D12_CONSTANT_BUFFER_VIEW_DESC desc = {
+		.BufferLocation = address,
+		.SizeInBytes = (size + 255u) & ~255u,
+	};
+	device->CreateConstantBufferView(&desc, handle);
+}
+
+auto gse::directx::create_sampler_descriptor(ID3D12Device* device, const sampler_params& params, const D3D12_CPU_DESCRIPTOR_HANDLE handle) -> void {
+	const auto address = [](const std::uint32_t code) -> D3D12_TEXTURE_ADDRESS_MODE {
+		switch (code) {
+			case 1: return D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+			case 2: return D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+			case 3: return D3D12_TEXTURE_ADDRESS_MODE_MIRROR;
+			default: return D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+		}
+	};
+	const auto reduction = params.comparison ? D3D12_FILTER_REDUCTION_TYPE_COMPARISON : D3D12_FILTER_REDUCTION_TYPE_STANDARD;
+	const D3D12_FILTER filter = params.anisotropy
+		? D3D12_ENCODE_ANISOTROPIC_FILTER(reduction)
+		: D3D12_ENCODE_BASIC_FILTER(
+			params.min_linear ? D3D12_FILTER_TYPE_LINEAR : D3D12_FILTER_TYPE_POINT,
+			params.mag_linear ? D3D12_FILTER_TYPE_LINEAR : D3D12_FILTER_TYPE_POINT,
+			params.mip_linear ? D3D12_FILTER_TYPE_LINEAR : D3D12_FILTER_TYPE_POINT,
+			reduction);
+
+	D3D12_SAMPLER_DESC desc = {
+		.Filter = filter,
+		.AddressU = address(params.address_u),
+		.AddressV = address(params.address_v),
+		.AddressW = address(params.address_w),
+		.MipLODBias = 0.0f,
+		.MaxAnisotropy = params.max_anisotropy,
+		.ComparisonFunc = static_cast<D3D12_COMPARISON_FUNC>(D3D12_COMPARISON_FUNC_NEVER + params.comparison_func),
+		.MinLOD = params.min_lod,
+		.MaxLOD = params.max_lod,
+	};
+	if (params.border == 0) {
+		desc.BorderColor[0] = desc.BorderColor[1] = desc.BorderColor[2] = desc.BorderColor[3] = 1.0f;
+	} else if (params.border == 1) {
+		desc.BorderColor[3] = 1.0f;
+	}
+	device->CreateSampler(&desc, handle);
+}
+
+auto gse::directx::create_bindless_root_signature(ID3D12Device* device, const std::uint32_t num_root_constants) -> com_ptr<ID3D12RootSignature> {
+	const D3D12_ROOT_PARAMETER param = {
+		.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
+		.Constants = {
+			.ShaderRegister = 0,
+			.RegisterSpace = 0,
+			.Num32BitValues = num_root_constants,
+		},
+		.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL,
+	};
+	const D3D12_ROOT_SIGNATURE_DESC desc = {
+		.NumParameters = 1,
+		.pParameters = &param,
+		.Flags = D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED | D3D12_ROOT_SIGNATURE_FLAG_SAMPLER_HEAP_DIRECTLY_INDEXED,
+	};
+	com_ptr<ID3DBlob> blob;
+	com_ptr<ID3DBlob> error;
+	D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, blob.put(), error.put());
+	com_ptr<ID3D12RootSignature> root_signature;
+	if (blob) {
+		device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(root_signature.put()));
+	}
+	return root_signature;
+}
+
+auto gse::directx::create_gpu_upload_buffer(ID3D12Device* device, const std::uint64_t size) -> com_ptr<ID3D12Resource> {
+	constexpr auto gpu_upload = static_cast<D3D12_HEAP_TYPE>(5);
+	const D3D12_HEAP_PROPERTIES heap = {
+		.Type = gpu_upload,
+	};
+
+	const D3D12_RESOURCE_DESC desc = {
+		.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
+		.Width = size == 0 ? 1 : size,
+		.Height = 1,
+		.DepthOrArraySize = 1,
+		.MipLevels = 1,
+		.Format = DXGI_FORMAT_UNKNOWN,
+		.SampleDesc = {
+			.Count = 1,
+		},
+		.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+		.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+	};
+
+	com_ptr<ID3D12Resource> resource;
+	device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(resource.put()));
+	return resource;
+}
+
+auto gse::directx::create_raw_buffer_uav(ID3D12Device* device, ID3D12Resource* resource, const std::uint32_t first_element, const std::uint32_t num_elements, const D3D12_CPU_DESCRIPTOR_HANDLE handle) -> void {
+	const D3D12_UNORDERED_ACCESS_VIEW_DESC desc = {
+		.Format = DXGI_FORMAT_R32_TYPELESS,
+		.ViewDimension = D3D12_UAV_DIMENSION_BUFFER,
+		.Buffer = {
+			.FirstElement = first_element,
+			.NumElements = num_elements,
+			.Flags = D3D12_BUFFER_UAV_FLAG_RAW,
+		},
+	};
+	device->CreateUnorderedAccessView(resource, nullptr, &desc, handle);
+}
+
+auto gse::directx::create_compute_pipeline_state(ID3D12Device* device, ID3D12RootSignature* root_signature, const void* bytecode, const std::size_t bytecode_size) -> com_ptr<ID3D12PipelineState> {
+	const D3D12_COMPUTE_PIPELINE_STATE_DESC desc = {
+		.pRootSignature = root_signature,
+		.CS = {
+			.pShaderBytecode = bytecode,
+			.BytecodeLength = bytecode_size,
+		},
+	};
+	com_ptr<ID3D12PipelineState> pso;
+	device->CreateComputePipelineState(&desc, IID_PPV_ARGS(pso.put()));
+	return pso;
 }

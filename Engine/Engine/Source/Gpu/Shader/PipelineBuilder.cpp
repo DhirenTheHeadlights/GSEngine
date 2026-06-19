@@ -13,6 +13,7 @@ import gse.gpu_backend;
 import :pipeline_builder;
 import :device;
 import :shader_codegen;
+import :backend_state;
 
 namespace gse::gpu {
 	auto to_pipeline_stage(const stage_flag s) -> pipeline_stage_flag {
@@ -169,10 +170,22 @@ auto gse::gpu::make_slang_session() -> owned_slang_session {
 		sp_c_strs.push_back(s.c_str());
 	}
 
+	const bool use_dxil = active_backend == gpu_backend_kind::dx12;
 	slang::TargetDesc target{
-		.format = slang_spirv,
-		.profile = global->findProfile("spirv_1_5"),
-		.forceGLSLScalarBufferLayout = true,
+		.format = use_dxil ? slang_dxil : slang_spirv,
+		.profile = global->findProfile(use_dxil ? "sm_6_6" : "spirv_1_5"),
+		.forceGLSLScalarBufferLayout = !use_dxil,
+	};
+
+	slang::CompilerOptionEntry dxc_options[]{
+		{
+			.name = slang::CompilerOptionName::DownstreamArgs,
+			.value = {
+				.kind = slang::CompilerOptionValueKind::String,
+				.stringValue0 = "dxc",
+				.stringValue1 = "-Vd",
+			},
+		},
 	};
 
 	slang::SessionDesc sdesc{
@@ -181,6 +194,8 @@ auto gse::gpu::make_slang_session() -> owned_slang_session {
 		.defaultMatrixLayoutMode = slang_matrix_layout_column_major,
 		.searchPaths = sp_c_strs.data(),
 		.searchPathCount = static_cast<SlangInt>(sp_c_strs.size()),
+		.compilerOptionEntries = use_dxil ? dxc_options : nullptr,
+		.compilerOptionEntryCount = use_dxil ? 1u : 0u,
 	};
 
 	if (slang_failed(global->createSession(sdesc, out.session.writeRef())) || !out.session) {
