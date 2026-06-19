@@ -372,6 +372,10 @@ export namespace gse::dx12 {
 
 		[[nodiscard]] auto root_signature() const -> directx::ID3D12RootSignature*;
 
+		[[nodiscard]] auto resource_heap() const -> directx::ID3D12DescriptorHeap*;
+
+		[[nodiscard]] auto sampler_heap() const -> directx::ID3D12DescriptorHeap*;
+
 	private:
 		auto init_bindless() -> void;
 		auto write_sampler_at(
@@ -423,6 +427,8 @@ export namespace gse::dx12 {
 		gpu::image_format m_surface_fmt = gpu::image_format::b8g8r8a8_unorm;
 		vec2u m_extent;
 	};
+
+	inline device* active_device = nullptr;
 }
 
 auto gse::dx12::dxgi_format_of(const gpu::image_format fmt) -> directx::DXGI_FORMAT {
@@ -492,6 +498,8 @@ gse::dx12::device::device(const shared_view<window::data> win, gpu::device_setti
 	m_dsv_view_heap = directx::create_dsv_heap(m_device.get(), dsv_view_capacity);
 	m_rtv_size = directx::rtv_descriptor_size(m_device.get());
 	m_dsv_size = directx::dsv_descriptor_size(m_device.get());
+
+	active_device = this;
 
 	log::println(log::category::render, "dx12: ctor end");
 	log::flush();
@@ -1278,4 +1286,12 @@ auto gse::dx12::device::collect_garbage() -> void {}
 
 auto gse::dx12::device::root_signature() const -> directx::ID3D12RootSignature* {
 	return m_pipeline_layout.root_signature();
+}
+
+auto gse::dx12::device::resource_heap() const -> directx::ID3D12DescriptorHeap* {
+	return m_resource_heap.get();
+}
+
+auto gse::dx12::device::sampler_heap() const -> directx::ID3D12DescriptorHeap* {
+	return m_sampler_heap.get();
 }
