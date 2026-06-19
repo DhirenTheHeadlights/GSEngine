@@ -175,6 +175,30 @@ for (uint sbi = tid; sbi < body_count; sbi += adjacency_workgroup_size) {
 }
 AllMemoryBarrierWithGroupSync();
 
+for (uint sbj = tid; sbj < body_count; sbj += adjacency_workgroup_size) {
+    uint joff = joint_offsets[sbj];
+    uint jcnt = min(gs_joint_counts[sbj], max_joint_adjacency - joff);
+    for (uint ja = 1u; ja < jcnt; ja++) {
+        uint ji_a = joint_adjacency[joff + ja];
+        joint_constraint jca = joint_data[ji_a];
+        uint joa = (jca.body_a == sbj) ? jca.body_b : jca.body_a;
+        float3 jka = (jca.body_a == sbj) ? jca.local_anchor_a.xyz : jca.local_anchor_b.xyz;
+        uint jb = ja;
+        while (jb > 0u) {
+            uint ji_p = joint_adjacency[joff + jb - 1u];
+            joint_constraint jcp = joint_data[ji_p];
+            uint jop = (jcp.body_a == sbj) ? jcp.body_b : jcp.body_a;
+            float3 jkp = (jcp.body_a == sbj) ? jcp.local_anchor_a.xyz : jcp.local_anchor_b.xyz;
+            bool jgt = (jop > joa) || (jop == joa && (jkp.x > jka.x || (jkp.x == jka.x && (jkp.y > jka.y || (jkp.y == jka.y && jkp.z > jka.z)))));
+            if (!jgt) break;
+            joint_adjacency[joff + jb] = ji_p;
+            jb--;
+        }
+        joint_adjacency[joff + jb] = ji_a;
+    }
+}
+AllMemoryBarrierWithGroupSync();
+
 [unroll]
 for (uint k3 = 0; k3 < ELEMS_PER_THREAD; k3++) {
     uint bi = tid + k3 * adjacency_workgroup_size;
