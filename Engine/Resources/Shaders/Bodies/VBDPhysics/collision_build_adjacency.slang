@@ -151,6 +151,30 @@ for (uint ji = tid; ji < num_joints; ji += adjacency_workgroup_size) {
 }
 AllMemoryBarrierWithGroupSync();
 
+for (uint sbi = tid; sbi < body_count; sbi += adjacency_workgroup_size) {
+    uint coff = contact_offsets[sbi];
+    uint ccnt = min(gs_contact_counts[sbi], max_contact_adjacency - coff);
+    for (uint sa = 1u; sa < ccnt; sa++) {
+        uint ci_a = contact_adjacency[coff + sa];
+        contact_constraint ca = contact_data[ci_a];
+        uint oa = (ca.body_a == sbi) ? ca.body_b : ca.body_a;
+        float3 ka = (ca.body_a == sbi) ? ca.local_anchor_a.xyz : ca.local_anchor_b.xyz;
+        uint sb = sa;
+        while (sb > 0u) {
+            uint ci_p = contact_adjacency[coff + sb - 1u];
+            contact_constraint cp = contact_data[ci_p];
+            uint op = (cp.body_a == sbi) ? cp.body_b : cp.body_a;
+            float3 kp = (cp.body_a == sbi) ? cp.local_anchor_a.xyz : cp.local_anchor_b.xyz;
+            bool gt = (op > oa) || (op == oa && (kp.x > ka.x || (kp.x == ka.x && (kp.y > ka.y || (kp.y == ka.y && kp.z > ka.z)))));
+            if (!gt) break;
+            contact_adjacency[coff + sb] = ci_p;
+            sb--;
+        }
+        contact_adjacency[coff + sb] = ci_a;
+    }
+}
+AllMemoryBarrierWithGroupSync();
+
 [unroll]
 for (uint k3 = 0; k3 < ELEMS_PER_THREAD; k3++) {
     uint bi = tid + k3 * adjacency_workgroup_size;
