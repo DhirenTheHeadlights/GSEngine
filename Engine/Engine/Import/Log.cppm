@@ -24,6 +24,98 @@ export namespace gse::log {
 		physics
 	};
 
+	enum class thread_role : std::uint8_t {
+		unknown,
+		main,
+		worker
+	};
+
+	auto set_level(
+		level min
+	) -> void;
+
+	auto set_level(
+		category cat,
+		level min
+	) -> void;
+
+	auto level_of(
+		category cat
+	) -> level;
+
+	auto enabled(
+		level lvl,
+		category cat
+	) -> bool;
+
+	class sampler {
+	public:
+		explicit sampler(
+			std::uint64_t every
+		);
+
+		explicit sampler(
+			std::chrono::steady_clock::duration min_interval
+		);
+
+		auto tick() -> bool;
+
+	private:
+		enum class mode : std::uint8_t {
+			count,
+			interval
+		};
+
+		mode m_mode;
+		std::uint64_t m_every = 1;
+		std::chrono::steady_clock::duration m_interval = {};
+		std::atomic<std::uint64_t> m_count = 0;
+		std::atomic<std::chrono::steady_clock::rep> m_last = 0;
+	};
+
+	auto name_thread(
+		thread_role role
+	) -> void;
+
+	auto name_thread(
+		thread_role role,
+		std::size_t index
+	) -> void;
+
+	struct record {
+		level lvl;
+		category cat;
+		std::string_view timestamp;
+		std::string_view thread;
+		std::string_view prefix;
+		std::string_view message;
+	};
+
+	auto format_line(
+		const record& rec
+	) -> std::string;
+
+	class sink {
+	public:
+		virtual ~sink();
+
+		virtual auto write(
+			const record& rec
+		) -> void = 0;
+
+		virtual auto write_raw(
+			std::string_view text
+		) -> void = 0;
+
+		virtual auto flush() -> void = 0;
+
+		std::atomic<level> min_level = level::debug;
+	};
+
+	auto add_sink(
+		std::unique_ptr<sink> s
+	) -> sink*;
+
 	template <typename... Args>
 	auto println(
 		std::format_string<Args...> fmt,
@@ -86,10 +178,14 @@ namespace gse::log {
 			std::format_args args
 		) -> void;
 
+		auto add_sink(
+			std::unique_ptr<sink> s
+		) -> sink*;
+
 		auto flush() -> void;
 
 	private:
-		std::ofstream m_file;
+		std::vector<std::unique_ptr<sink>> m_sinks;
 		std::mutex m_mutex;
 	};
 
@@ -118,6 +214,10 @@ auto gse::log::println(const category cat, std::format_string<Args...> fmt, cons
 
 template <typename... Args>
 auto gse::log::println(const level lvl, const category cat, std::format_string<Args...> fmt, const Args&... args) -> void {
+	if (!enabled(lvl, cat)) {
+		return;
+	}
+
 	instance().write_line(
 		lvl,
 		cat,
@@ -129,6 +229,10 @@ auto gse::log::println(const level lvl, const category cat, std::format_string<A
 
 template <typename... Args>
 auto gse::log::println(const level lvl, const category cat, const std::source_location loc, std::format_string<Args...> fmt, const Args&... args) -> void {
+	if (!enabled(lvl, cat)) {
+		return;
+	}
+
 	const auto loc_prefix = std::format("{}:{} - ", loc.file_name(), loc.line());
 	instance().write_line(lvl, cat, loc_prefix, fmt.get(), std::make_format_args(args...));
 }

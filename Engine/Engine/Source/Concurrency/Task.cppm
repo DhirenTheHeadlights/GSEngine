@@ -825,6 +825,7 @@ auto gse::task::pool_start(const std::size_t worker_count) -> void {
 
 	for (std::size_t i = 0; i < background_workers; ++i) {
 		workers.emplace_back([i](std::stop_token st) {
+			log::name_thread(log::thread_role::worker, i);
 			worker_loop(st, i);
 		});
 	}
@@ -832,6 +833,7 @@ auto gse::task::pool_start(const std::size_t worker_count) -> void {
 	t_worker_index = worker_count - 1;
 	t_is_main_thread = true;
 	trace::register_main_thread();
+	log::name_thread(log::thread_role::main);
 }
 
 auto gse::task::pool_shutdown() -> void {
