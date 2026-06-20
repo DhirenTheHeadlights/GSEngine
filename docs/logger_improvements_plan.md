@@ -67,8 +67,13 @@ Date drafted: 2026-06-19.
   records through only when backtrace is active; `write_line` / `run` funnel through a
   new `process()` (ring the `!pass` records, dispatch the `pass` ones). Uncommitted,
   unbuilt.
-- **Next ranked:** #7 rotation, then the small wins (#9 fatal, #10 color,
-  #13 static-dtor safety) and #2's auto-dedup.
+- **#9 `fatal` level + Assert** — done. `fatal` is the new top level; `write_line`
+  handles it specially: flush (drains the async queue), dump the backtrace ring,
+  force-write the fatal line to every sink, flush, `std::terminate()`. A fatal log
+  gives full recent context on the way down. `Assert` routes `assert_fail` through
+  `log::println(fatal, …)` (now `[[noreturn]]`), inheriting the ring dump for free.
+  Uncommitted.
+- **Next ranked:** #7 rotation, #10 color, #13 static-dtor safety, #2 auto-dedup.
 
 Everything below is the original plan, unchanged.
 

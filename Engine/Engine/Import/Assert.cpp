@@ -22,7 +22,6 @@ auto gse::assert_format_message(const std::source_location loc, const std::strin
 }
 
 auto gse::assert_fail(const std::string_view message) noexcept -> void {
-	log::println(log::level::error, log::category::general, "{}", message);
-	log::flush();
-	std::terminate();
+	log::println(log::level::fatal, log::category::general, "{}", message);
+	std::unreachable();
 }

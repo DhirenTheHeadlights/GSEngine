@@ -159,7 +159,7 @@ auto gse::log::current_thread_tag() -> std::uint64_t {
 }
 
 auto gse::log::should_flush(const level lvl) -> bool {
-	return lvl == level::error;
+	return lvl >= level::error;
 }
 
 auto gse::log::thread_display() -> std::string {
@@ -436,6 +436,27 @@ auto gse::log::logger::write_line(const level lvl, const category cat, const std
 	auto ts = timestamp_string();
 	auto thread = thread_display();
 	auto message = std::vformat(fmt, args);
+
+	if (lvl == level::fatal) {
+		flush();
+		std::lock_guard sink_lock(m_sink_mutex);
+		dump_backtrace_locked();
+		const record rec{
+			.lvl = lvl,
+			.cat = cat,
+			.timestamp = ts,
+			.thread = thread,
+			.prefix = extra_prefix,
+			.message = message,
+		};
+		for (auto& s : m_sinks) {
+			s->write(rec);
+		}
+		for (auto& s : m_sinks) {
+			s->flush();
+		}
+		std::terminate();
+	}
 
 	if (m_async.load(std::memory_order_acquire)) {
 		m_queue.enqueue(queued_record{

@@ -7,7 +7,8 @@ export namespace gse::log {
 		debug,
 		info,
 		warning,
-		error
+		error,
+		fatal
 	};
 
 	enum class category : std::uint8_t {

@@ -36,7 +36,7 @@ namespace gse {
 		std::string_view comment
 	) -> std::string;
 
-	auto assert_fail(
+	[[noreturn]] auto assert_fail(
 		std::string_view message
 	) noexcept -> void;
 }
