@@ -437,10 +437,11 @@ namespace gse {
 		std::unordered_map<uuid, std::string> uuid_to_tag;
 	};
 
+	inline std::shared_mutex id_registry_mutex;
+	inline id_registry_data id_registry_state;
+
 	auto id_registry() -> std::pair<std::shared_mutex&, id_registry_data&> {
-		static std::shared_mutex m;
-		static id_registry_data instance;
-		return { m, instance };
+		return { id_registry_mutex, id_registry_state };
 	}
 }
 
