@@ -19,13 +19,28 @@ namespace gse::log {
 		level lvl
 	) -> bool;
 
+	auto rotate_logs(
+		const std::filesystem::path& path,
+		std::size_t max_files
+	) -> void;
+
+	auto level_sgr(
+		level lvl
+	) -> int;
+
 	constexpr auto category_count = std::define_static_array(std::meta::enumerators_of(^^category)).size();
 
 	constexpr std::size_t no_thread_index = std::numeric_limits<std::size_t>::max();
 
+	constexpr std::size_t log_files_kept = 5;
+
 	std::array<std::atomic<level>, category_count> category_levels;
 
 	std::atomic<std::size_t> backtrace_size = 0;
+
+	std::atomic<bool> color_enabled = true;
+
+	std::atomic<bool> logger_alive = false;
 
 	thread_local thread_role t_thread_role = thread_role::unknown;
 
@@ -46,8 +61,9 @@ namespace gse::log {
 
 	class file_sink : public sink {
 	public:
-		explicit file_sink(
-			std::filesystem::path path
+		file_sink(
+			std::filesystem::path path,
+			std::size_t max_files
 		);
 
 		auto write(
@@ -121,9 +137,17 @@ namespace gse::log {
 
 		auto dump_backtrace_locked() -> void;
 
+		auto emit_repeat_summary() -> void;
+
 		std::vector<std::unique_ptr<sink>> m_sinks;
 		std::mutex m_sink_mutex;
 		std::deque<queued_record> m_backtrace;
+
+		level m_last_level = level::info;
+		category m_last_cat = category::general;
+		std::string m_last_message;
+		std::uint64_t m_repeat_count = 0;
+		bool m_has_last = false;
 
 		moodycamel::ConcurrentQueue<queued_record> m_queue;
 		std::counting_semaphore<> m_items{ 0 };
@@ -226,11 +250,28 @@ auto gse::log::format_line(const record& rec) -> std::string {
 	return std::format("[{}][{}][{}][{}] {}{}", rec.timestamp, rec.lvl, rec.cat, rec.thread, rec.prefix, rec.message);
 }
 
+auto gse::log::level_sgr(const level lvl) -> int {
+	template for (constexpr auto e : std::define_static_array(std::meta::enumerators_of(^^level))) {
+		constexpr auto ann = first_annotation_of_type(e, ^^ansi_sgr);
+		if constexpr (ann != std::meta::info{}) {
+			if ([:e:] == lvl) {
+				return [:std::meta::constant_of(ann):].code;
+			}
+		}
+	}
+	return 0;
+}
+
 gse::log::sink::~sink() = default;
 
 auto gse::log::console_sink::write(const record& rec) -> void {
 	auto& os = should_flush(rec.lvl) ? static_cast<std::ostream&>(std::cerr) : static_cast<std::ostream&>(std::cout);
-	std::print(os, "{}\n", format_line(rec));
+	const auto line = format_line(rec);
+	if (color_enabled.load(std::memory_order_relaxed)) {
+		std::print(os, "\033[{}m{}\033[0m\n", level_sgr(rec.lvl), line);
+		return;
+	}
+	std::print(os, "{}\n", line);
 }
 
 auto gse::log::console_sink::write_raw(const std::string_view text) -> void {
@@ -242,9 +283,33 @@ auto gse::log::console_sink::flush() -> void {
 	std::cerr.flush();
 }
 
-gse::log::file_sink::file_sink(const std::filesystem::path path) {
+auto gse::log::rotate_logs(const std::filesystem::path& path, const std::size_t max_files) -> void {
+	if (max_files <= 1) {
+		return;
+	}
+
+	const auto dir = path.parent_path();
+	const auto stem = path.stem().string();
+	const auto ext = path.extension().string();
+
+	auto nth = [&](const std::size_t i) -> std::filesystem::path {
+		if (i == 0) {
+			return path;
+		}
+		return dir / std::format("{}.{}{}", stem, i, ext);
+	};
+
+	std::error_code ec;
+	std::filesystem::remove(nth(max_files - 1), ec);
+	for (std::size_t i = max_files - 1; i > 0; --i) {
+		std::filesystem::rename(nth(i - 1), nth(i), ec);
+	}
+}
+
+gse::log::file_sink::file_sink(const std::filesystem::path path, const std::size_t max_files) {
 	std::error_code ec;
 	std::filesystem::create_directories(path.parent_path(), ec);
+	rotate_logs(path, max_files);
 	m_file.open(path, std::ios::out | std::ios::trunc);
 }
 
@@ -268,16 +333,19 @@ auto gse::log::file_sink::flush() -> void {
 
 gse::log::logger::logger() {
 	m_sinks.push_back(std::make_unique<console_sink>());
-	m_sinks.push_back(std::make_unique<file_sink>(log_file_path()));
+	m_sinks.push_back(std::make_unique<file_sink>(log_file_path(), log_files_kept));
 
 	const auto marker = std::format("=== Log started at {} ===", timestamp_string());
 	for (auto& s : m_sinks) {
 		s->write_raw(marker);
 		s->flush();
 	}
+
+	logger_alive.store(true, std::memory_order_relaxed);
 }
 
 gse::log::logger::~logger() {
+	logger_alive.store(false, std::memory_order_relaxed);
 	set_async(false);
 
 	std::lock_guard lock(m_sink_mutex);
@@ -296,6 +364,10 @@ gse::log::logger::~logger() {
 		}
 	}
 
+	if (m_repeat_count > 0) {
+		emit_repeat_summary();
+	}
+
 	const auto marker = std::format("=== Log ended at {} ===", timestamp_string());
 	for (auto& s : m_sinks) {
 		s->write_raw(marker);
@@ -304,11 +376,42 @@ gse::log::logger::~logger() {
 }
 
 auto gse::log::logger::dispatch(const record& rec) -> void {
+	if (m_has_last && rec.lvl == m_last_level && rec.cat == m_last_cat && rec.message == m_last_message) {
+		++m_repeat_count;
+		return;
+	}
+	if (m_repeat_count > 0) {
+		emit_repeat_summary();
+	}
 	for (auto& s : m_sinks) {
 		if (rec.lvl >= s->min_level.load(std::memory_order_relaxed)) {
 			s->write(rec);
 		}
 	}
+	m_last_level = rec.lvl;
+	m_last_cat = rec.cat;
+	m_last_message = rec.message;
+	m_has_last = true;
+}
+
+auto gse::log::logger::emit_repeat_summary() -> void {
+	const auto ts = timestamp_string();
+	const auto thread = thread_display();
+	const auto message = std::format("(previous message repeated {} times)", m_repeat_count);
+	const record rec{
+		.lvl = m_last_level,
+		.cat = m_last_cat,
+		.timestamp = ts,
+		.thread = thread,
+		.prefix = {},
+		.message = message,
+	};
+	for (auto& s : m_sinks) {
+		if (rec.lvl >= s->min_level.load(std::memory_order_relaxed)) {
+			s->write(rec);
+		}
+	}
+	m_repeat_count = 0;
 }
 
 auto gse::log::logger::process(const queued_record& qr) -> bool {
@@ -578,6 +681,12 @@ auto gse::log::logger::flush() -> void {
 }
 
 auto gse::log::write_line(const level lvl, const category cat, const std::string_view extra_prefix, const std::string_view fmt, std::format_args args) -> void {
+	if (!logger_alive.load(std::memory_order_relaxed)) {
+		const auto message = std::vformat(fmt, args);
+		std::fputs(message.c_str(), stderr);
+		std::fputc('\n', stderr);
+		return;
+	}
 	instance.write_line(lvl, cat, extra_prefix, fmt, args);
 }
 
@@ -590,6 +699,9 @@ auto gse::log::set_async(const bool enabled) -> void {
 }
 
 auto gse::log::flush() -> void {
+	if (!logger_alive.load(std::memory_order_relaxed)) {
+		return;
+	}
 	instance.flush();
 }
 
@@ -608,4 +720,8 @@ auto gse::log::dump_backtrace() -> void {
 
 auto gse::log::backtrace_active() -> bool {
 	return backtrace_size.load(std::memory_order_relaxed) > 0;
+}
+
+auto gse::log::set_color(const bool enabled) -> void {
+	color_enabled.store(enabled, std::memory_order_relaxed);
 }

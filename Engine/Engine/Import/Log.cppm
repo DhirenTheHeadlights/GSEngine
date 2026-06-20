@@ -3,12 +3,16 @@ export module gse.log;
 import std;
 
 export namespace gse::log {
+	struct ansi_sgr {
+		int code;
+	};
+
 	enum class level : std::uint8_t {
-		debug,
-		info,
-		warning,
-		error,
-		fatal
+		debug [[= ansi_sgr{ 90 }]],
+		info [[= ansi_sgr{ 0 }]],
+		warning [[= ansi_sgr{ 33 }]],
+		error [[= ansi_sgr{ 31 }]],
+		fatal [[= ansi_sgr{ 91 }]]
 	};
 
 	enum class category : std::uint8_t {
@@ -130,6 +134,10 @@ export namespace gse::log {
 	auto dump_backtrace() -> void;
 
 	auto backtrace_active() -> bool;
+
+	auto set_color(
+		bool enabled
+	) -> void;
 
 	template <typename... Args>
 	auto println(

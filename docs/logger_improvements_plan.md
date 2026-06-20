@@ -73,7 +73,26 @@ Date drafted: 2026-06-19.
   gives full recent context on the way down. `Assert` routes `assert_fail` through
   `log::println(fatal, …)` (now `[[noreturn]]`), inheriting the ring dump for free.
   Uncommitted.
-- **Next ranked:** #7 rotation, #10 color, #13 static-dtor safety, #2 auto-dedup.
+- **#7 Log rotation** — done. `file_sink` rotates on open (keeps the last N runs:
+  `log.txt` + `log.1.txt`..`log.{N-1}.txt`, default N=5 via `log_files_kept`) instead
+  of truncating each run, so prior runs survive for post-crash diagnosis. Per-run
+  rotation; size-based rolling within a single long run is a separate follow-up.
+  Uncommitted.
+- **#10 Color output** — done. `console_sink` wraps each line in an ANSI SGR color
+  by level; the color is an **annotation on the `level` enum** (`[[= ansi_sgr{N} ]]`)
+  read back via reflection (`level_sgr` → `first_annotation_of_type` + `constant_of`),
+  not a hand-written switch. `set_color(bool)` toggles it (default on). The SGR code is
+  an `int` (structural) because `std::string_view` can't be an annotation value.
+- **#13 Static-destruction safety** — done. The logger is a plain global now, so a log
+  during static teardown would hit a destroyed object. A trivially-destructed
+  `logger_alive` atomic (true at end of ctor, false at start of dtor) guards the free
+  `write_line`/`flush`; when dead, `write_line` falls back to `fputs(stderr)`. Also
+  covers use-before-construction.
+- **#2 Auto-dedup** — done. `dispatch` collapses consecutive identical records (same
+  level/category/message) into "(previous message repeated N times)", flushed when a
+  different record arrives or on shutdown. The ring dump and fatal force-write bypass it.
+- **Next ranked:** #8 compile-time stripping, #11 pattern/JSON sink, #12 scoped
+  context (task-origin labeling).
 
 Everything below is the original plan, unchanged.
 
