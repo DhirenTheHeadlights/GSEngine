@@ -86,6 +86,8 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 
 		watchdog::start();
 
+		log::set_level(log::level::warning);
+		log::enable_backtrace(256);
 		log::set_async(true);
 
 		const auto loop_id = trace_id<"frame::loop">();
