@@ -86,7 +86,7 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 
 		watchdog::start();
 
-		log::set_level(log::level::warning);
+		log::set_level(log::level::info);
 		log::enable_backtrace(256);
 		log::set_async(true);
 
