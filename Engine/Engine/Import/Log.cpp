@@ -23,7 +23,9 @@ namespace gse::log {
 
 	constexpr std::size_t no_thread_index = std::numeric_limits<std::size_t>::max();
 
-	std::array<std::atomic<level>, category_count> g_category_levels;
+	std::array<std::atomic<level>, category_count> category_levels;
+
+	std::atomic<std::size_t> backtrace_size = 0;
 
 	thread_local thread_role t_thread_role = thread_role::unknown;
 
@@ -102,6 +104,10 @@ namespace gse::log {
 
 		auto flush() -> void;
 
+		auto dump_backtrace() -> void;
+
+		auto clear_backtrace() -> void;
+
 	private:
 		auto dispatch(
 			const record& rec
@@ -109,8 +115,15 @@ namespace gse::log {
 
 		auto run() -> void;
 
+		auto process(
+			const queued_record& qr
+		) -> bool;
+
+		auto dump_backtrace_locked() -> void;
+
 		std::vector<std::unique_ptr<sink>> m_sinks;
 		std::mutex m_sink_mutex;
+		std::deque<queued_record> m_backtrace;
 
 		moodycamel::ConcurrentQueue<queued_record> m_queue;
 		std::counting_semaphore<> m_items{ 0 };
@@ -124,7 +137,7 @@ namespace gse::log {
 		std::thread m_worker;
 	};
 
-	auto instance() -> logger&;
+	logger instance;
 }
 
 auto gse::log::log_file_path() -> std::filesystem::path {
@@ -160,21 +173,21 @@ auto gse::log::thread_display() -> std::string {
 }
 
 auto gse::log::set_level(const level min) -> void {
-	for (auto& slot : g_category_levels) {
+	for (auto& slot : category_levels) {
 		slot.store(min, std::memory_order_relaxed);
 	}
 }
 
 auto gse::log::set_level(const category cat, const level min) -> void {
-	g_category_levels[static_cast<std::size_t>(cat)].store(min, std::memory_order_relaxed);
+	category_levels[static_cast<std::size_t>(cat)].store(min, std::memory_order_relaxed);
 }
 
 auto gse::log::level_of(const category cat) -> level {
-	return g_category_levels[static_cast<std::size_t>(cat)].load(std::memory_order_relaxed);
+	return category_levels[static_cast<std::size_t>(cat)].load(std::memory_order_relaxed);
 }
 
 auto gse::log::enabled(const level lvl, const category cat) -> bool {
-	return lvl >= g_category_levels[static_cast<std::size_t>(cat)].load(std::memory_order_relaxed);
+	return lvl >= category_levels[static_cast<std::size_t>(cat)].load(std::memory_order_relaxed);
 }
 
 auto gse::log::name_thread(const thread_role role) -> void {
@@ -298,6 +311,70 @@ auto gse::log::logger::dispatch(const record& rec) -> void {
 	}
 }
 
+auto gse::log::logger::process(const queued_record& qr) -> bool {
+	const bool pass = enabled(qr.lvl, qr.cat);
+	if (backtrace_size.load(std::memory_order_relaxed) > 0) {
+		if (pass && should_flush(qr.lvl)) {
+			dump_backtrace_locked();
+		}
+		if (!pass) {
+			m_backtrace.push_back(qr);
+			while (m_backtrace.size() > backtrace_size.load(std::memory_order_relaxed)) {
+				m_backtrace.pop_front();
+			}
+		}
+	}
+	if (!pass) {
+		return false;
+	}
+	const record rec{
+		.lvl = qr.lvl,
+		.cat = qr.cat,
+		.timestamp = qr.timestamp,
+		.thread = qr.thread,
+		.prefix = qr.prefix,
+		.message = qr.message,
+	};
+	dispatch(rec);
+	return should_flush(qr.lvl);
+}
+
+auto gse::log::logger::dump_backtrace_locked() -> void {
+	if (m_backtrace.empty()) {
+		return;
+	}
+	for (auto& s : m_sinks) {
+		s->write_raw(std::format("====== backtrace: {} held record(s) ======", m_backtrace.size()));
+	}
+	for (const auto& qr : m_backtrace) {
+		const record rec{
+			.lvl = qr.lvl,
+			.cat = qr.cat,
+			.timestamp = qr.timestamp,
+			.thread = qr.thread,
+			.prefix = qr.prefix,
+			.message = qr.message,
+		};
+		for (auto& s : m_sinks) {
+			s->write(rec);
+		}
+	}
+	for (auto& s : m_sinks) {
+		s->write_raw("====== end backtrace ======");
+	}
+	m_backtrace.clear();
+}
+
+auto gse::log::logger::dump_backtrace() -> void {
+	std::lock_guard sink_lock(m_sink_mutex);
+	dump_backtrace_locked();
+}
+
+auto gse::log::logger::clear_backtrace() -> void {
+	std::lock_guard sink_lock(m_sink_mutex);
+	m_backtrace.clear();
+}
+
 auto gse::log::logger::run() -> void {
 	std::vector<queued_record> batch;
 	for (;;) {
@@ -330,16 +407,7 @@ auto gse::log::logger::run() -> void {
 					flush_token = std::max(flush_token, qr.token);
 					continue;
 				}
-				const record rec{
-					.lvl = qr.lvl,
-					.cat = qr.cat,
-					.timestamp = qr.timestamp,
-					.thread = qr.thread,
-					.prefix = qr.prefix,
-					.message = qr.message,
-				};
-				dispatch(rec);
-				if (should_flush(qr.lvl)) {
+				if (process(qr)) {
 					needs_flush = true;
 				}
 			}
@@ -380,6 +448,25 @@ auto gse::log::logger::write_line(const level lvl, const category cat, const std
 			.message = std::move(message),
 		});
 		m_items.release();
+		return;
+	}
+
+	if (backtrace_size.load(std::memory_order_relaxed) > 0) {
+		queued_record qr{
+			.type = queued_record::kind::log,
+			.lvl = lvl,
+			.cat = cat,
+			.timestamp = std::move(ts),
+			.thread = std::move(thread),
+			.prefix = std::string(extra_prefix),
+			.message = std::move(message),
+		};
+		std::lock_guard sink_lock(m_sink_mutex);
+		if (process(qr)) {
+			for (auto& s : m_sinks) {
+				s->flush();
+			}
+		}
 		return;
 	}
 
@@ -469,23 +556,35 @@ auto gse::log::logger::flush() -> void {
 	});
 }
 
-auto gse::log::instance() -> logger& {
-	static logger s_logger;
-	return s_logger;
-}
-
 auto gse::log::write_line(const level lvl, const category cat, const std::string_view extra_prefix, const std::string_view fmt, std::format_args args) -> void {
-	instance().write_line(lvl, cat, extra_prefix, fmt, args);
+	instance.write_line(lvl, cat, extra_prefix, fmt, args);
 }
 
 auto gse::log::add_sink(std::unique_ptr<sink> s) -> sink* {
-	return instance().add_sink(std::move(s));
+	return instance.add_sink(std::move(s));
 }
 
 auto gse::log::set_async(const bool enabled) -> void {
-	instance().set_async(enabled);
+	instance.set_async(enabled);
 }
 
 auto gse::log::flush() -> void {
-	instance().flush();
+	instance.flush();
+}
+
+auto gse::log::enable_backtrace(const std::size_t size) -> void {
+	backtrace_size.store(size, std::memory_order_relaxed);
+}
+
+auto gse::log::disable_backtrace() -> void {
+	backtrace_size.store(0, std::memory_order_relaxed);
+	instance.clear_backtrace();
+}
+
+auto gse::log::dump_backtrace() -> void {
+	instance.dump_backtrace();
+}
+
+auto gse::log::backtrace_active() -> bool {
+	return backtrace_size.load(std::memory_order_relaxed) > 0;
 }

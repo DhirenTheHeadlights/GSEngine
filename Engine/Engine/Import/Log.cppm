@@ -120,6 +120,16 @@ export namespace gse::log {
 		bool enabled
 	) -> void;
 
+	auto enable_backtrace(
+		std::size_t size
+	) -> void;
+
+	auto disable_backtrace() -> void;
+
+	auto dump_backtrace() -> void;
+
+	auto backtrace_active() -> bool;
+
 	template <typename... Args>
 	auto println(
 		std::format_string<Args...> fmt,
@@ -200,7 +210,7 @@ auto gse::log::println(const category cat, std::format_string<Args...> fmt, cons
 
 template <typename... Args>
 auto gse::log::println(const level lvl, const category cat, std::format_string<Args...> fmt, const Args&... args) -> void {
-	if (!enabled(lvl, cat)) {
+	if (!enabled(lvl, cat) && !backtrace_active()) {
 		return;
 	}
 
@@ -215,7 +225,7 @@ auto gse::log::println(const level lvl, const category cat, std::format_string<A
 
 template <typename... Args>
 auto gse::log::println(const level lvl, const category cat, const std::source_location loc, std::format_string<Args...> fmt, const Args&... args) -> void {
-	if (!enabled(lvl, cat)) {
+	if (!enabled(lvl, cat) && !backtrace_active()) {
 		return;
 	}
 

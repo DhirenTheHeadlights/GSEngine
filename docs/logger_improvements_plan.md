@@ -59,8 +59,16 @@ Date drafted: 2026-06-19.
   moved out of the interface into `Log.cpp` behind a non-template `write_line` seam,
   so the ~68 importers no longer parse the logger's internals (build-time win) and
   moodycamel stays fully contained in the `.cpp` — no PIMPL needed.
-- **Next ranked:** #6 ring-buffer backtrace, #7 rotation, then the small wins
-  (#9 fatal, #10 color, #13 static-dtor safety) and #2's auto-dedup.
+- **#6 Ring-buffer backtrace** — done. `enable_backtrace(n)` keeps the last N
+  *sub-threshold* records (the ones the filter would normally drop) in an in-memory
+  ring; on a passing `error`, the ring is force-dumped to all sinks (bracketed,
+  bypassing per-sink levels) right before the error, then cleared. `dump_backtrace()`
+  and `disable_backtrace()` for manual control. The template gate passes sub-threshold
+  records through only when backtrace is active; `write_line` / `run` funnel through a
+  new `process()` (ring the `!pass` records, dispatch the `pass` ones). Uncommitted,
+  unbuilt.
+- **Next ranked:** #7 rotation, then the small wins (#9 fatal, #10 color,
+  #13 static-dtor safety) and #2's auto-dedup.
 
 Everything below is the original plan, unchanged.
 
