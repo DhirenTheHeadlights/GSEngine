@@ -116,6 +116,10 @@ export namespace gse::log {
 		std::unique_ptr<sink> s
 	) -> sink*;
 
+	auto set_async(
+		bool enabled
+	) -> void;
+
 	template <typename... Args>
 	auto println(
 		std::format_string<Args...> fmt,
@@ -165,31 +169,13 @@ export namespace gse::log {
 }
 
 namespace gse::log {
-	class logger {
-	public:
-		logger();
-		~logger();
-
-		auto write_line(
-			level lvl,
-			category cat,
-			std::string_view extra_prefix,
-			std::string_view fmt,
-			std::format_args args
-		) -> void;
-
-		auto add_sink(
-			std::unique_ptr<sink> s
-		) -> sink*;
-
-		auto flush() -> void;
-
-	private:
-		std::vector<std::unique_ptr<sink>> m_sinks;
-		std::mutex m_mutex;
-	};
-
-	auto instance() -> logger&;
+	auto write_line(
+		level lvl,
+		category cat,
+		std::string_view extra_prefix,
+		std::string_view fmt,
+		std::format_args args
+	) -> void;
 }
 
 template <typename... Args>
@@ -218,7 +204,7 @@ auto gse::log::println(const level lvl, const category cat, std::format_string<A
 		return;
 	}
 
-	instance().write_line(
+	write_line(
 		lvl,
 		cat,
 		{},
@@ -234,5 +220,5 @@ auto gse::log::println(const level lvl, const category cat, const std::source_lo
 	}
 
 	const auto loc_prefix = std::format("{}:{} - ", loc.file_name(), loc.line());
-	instance().write_line(lvl, cat, loc_prefix, fmt.get(), std::make_format_args(args...));
+	write_line(lvl, cat, loc_prefix, fmt.get(), std::make_format_args(args...));
 }

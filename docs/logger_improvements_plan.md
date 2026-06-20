@@ -41,8 +41,26 @@ Date drafted: 2026-06-19.
   the gcc-trunk CI; trivial `#ifdef _WIN32` add later). Formatting centralized in
   `format_line`; the message is now built once as a string — the hook #2-dedup
   and #6 ring-buffer both need.
-- **#3 Async** — next, and now cleaner: the background thread just writes to the
-  sink list instead of cout/file directly.
+- **#3 Async logging** — done, opt-in, lock-free hot path. `set_async(true)` starts
+  one background thread that drains the queue and performs all sink writes; producers
+  only enqueue a pre-formatted `queued_record` and never touch I/O. Queue is
+  `moodycamel::ConcurrentQueue` + a `std::counting_semaphore` for consumer blocking
+  (only `concurrentqueue.h` is vendored, so the blocking wait is hand-rolled). The
+  hot path is lock-free (enqueue + `release`); `m_sink_mutex` only guards the actual
+  writes (consumer-only) and `add_sink`; flush coordination uses a separate
+  `m_flush_mutex` off the hot path. `flush()` posts a flush control message and waits
+  a token barrier; a `terminate` message + drain handles stop. Default stays
+  synchronous. Trade-offs vs a locked queue: the on/off toggle isn't fully race-free
+  (no lock pairs the `m_async` flip with enqueues — toggle at quiescent points;
+  stragglers are caught by the stop/dtor drain), and `flush()` is a strong *practical*
+  barrier rather than a strict global one (moodycamel has no cross-producer FIFO).
+  Uncommitted pending a build/test.
+- **Architecture (interface slimming):** `logger` / `queued_record` / `instance()`
+  moved out of the interface into `Log.cpp` behind a non-template `write_line` seam,
+  so the ~68 importers no longer parse the logger's internals (build-time win) and
+  moodycamel stays fully contained in the `.cpp` — no PIMPL needed.
+- **Next ranked:** #6 ring-buffer backtrace, #7 rotation, then the small wins
+  (#9 fatal, #10 color, #13 static-dtor safety) and #2's auto-dedup.
 
 Everything below is the original plan, unchanged.
 
