@@ -297,6 +297,7 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 					d.recording->running = true;
 				}
 				d.recording->thread = std::thread([muxer = std::move(*live), state = d.recording.get()] mutable {
+					log::name_thread(log::thread_role::capture);
 					while (true) {
 						std::unique_lock lock(state->mutex);
 						state->cv.wait(

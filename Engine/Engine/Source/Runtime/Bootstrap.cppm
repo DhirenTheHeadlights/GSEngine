@@ -86,6 +86,8 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 
 		watchdog::start();
 
+		log::set_async(true);
+
 		const auto loop_id = trace_id<"frame::loop">();
 		const auto poll_id = trace_id<"frame::poll_events">();
 		const auto sync_begin_id = trace_id<"frame::sync_begin">();
@@ -153,5 +155,6 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 		task::wait_idle();
 	});
 
+	log::set_async(false);
 	e.shutdown();
 }

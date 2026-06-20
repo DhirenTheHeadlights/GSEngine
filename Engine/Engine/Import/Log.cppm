@@ -32,7 +32,10 @@ export namespace gse::log {
 	enum class thread_role : std::uint8_t {
 		unknown,
 		main,
-		worker
+		worker,
+		watchdog,
+		capture,
+		network
 	};
 
 	auto set_level(
