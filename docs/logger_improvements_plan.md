@@ -91,8 +91,21 @@ Date drafted: 2026-06-19.
 - **#2 Auto-dedup** — done. `dispatch` collapses consecutive identical records (same
   level/category/message) into "(previous message repeated N times)", flushed when a
   different record arrives or on shutdown. The ring dump and fatal force-write bypass it.
-- **Next ranked:** #8 compile-time stripping, #11 pattern/JSON sink, #12 scoped
-  context (task-origin labeling).
+- **#11 JSON sink** — done. `log::json_sink` (exported, opt-in via `add_sink`) writes
+  JSON-lines with escaped fields. The sink interface already supported per-sink
+  formatting; this is the concrete alternate format (no pattern-string parser — the
+  sink's `write()` is the formatting hook).
+- **#12 scoped context** — done. RAII `log::scope(label)` pushes onto a thread-local
+  context captured in `write_line` *on the producer* (so it's async-correct) and
+  prepended to each line's prefix. Task-origin labeling (source_location at `post()`)
+  deliberately not pursued — bigger scheduler change for low value.
+- **#8 compile-time stripping** — NOT done (deliberate). True stripping must skip
+  argument *evaluation* at the call site, which only a macro can do, and macros don't
+  export across module boundaries — it would need a separate non-module header. Lowest
+  value; the runtime per-category gate already covers the common case.
+
+**Backlog complete.** The only not-always-on features are opt-in tools used at call
+sites as needed — `sampler`, `json_sink`, `scope`. Everything else is wired/active.
 
 Everything below is the original plan, unchanged.
 

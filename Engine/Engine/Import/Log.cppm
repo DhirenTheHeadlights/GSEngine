@@ -120,6 +120,41 @@ export namespace gse::log {
 		std::atomic<level> min_level = level::debug;
 	};
 
+	class json_sink : public sink {
+	public:
+		explicit json_sink(
+			std::filesystem::path path
+		);
+
+		auto write(
+			const record& rec
+		) -> void override;
+
+		auto write_raw(
+			std::string_view text
+		) -> void override;
+
+		auto flush() -> void override;
+
+	private:
+		std::ofstream m_file;
+	};
+
+	class scope {
+	public:
+		explicit scope(
+			std::string_view label
+		);
+
+		~scope();
+
+		scope(const scope&) = delete;
+		auto operator=(const scope&) -> scope& = delete;
+
+	private:
+		std::size_t m_restore;
+	};
+
 	auto add_sink(
 		std::unique_ptr<sink> s
 	) -> sink*;

@@ -28,6 +28,10 @@ namespace gse::log {
 		level lvl
 	) -> int;
 
+	auto json_escape(
+		std::string_view text
+	) -> std::string;
+
 	constexpr auto category_count = std::define_static_array(std::meta::enumerators_of(^^category)).size();
 
 	constexpr std::size_t no_thread_index = std::numeric_limits<std::size_t>::max();
@@ -45,6 +49,8 @@ namespace gse::log {
 	thread_local thread_role t_thread_role = thread_role::unknown;
 
 	thread_local std::size_t t_thread_index = no_thread_index;
+
+	thread_local std::string t_context;
 
 	class console_sink : public sink {
 	public:
@@ -248,6 +254,83 @@ auto gse::log::sampler::tick() -> bool {
 
 auto gse::log::format_line(const record& rec) -> std::string {
 	return std::format("[{}][{}][{}][{}] {}{}", rec.timestamp, rec.lvl, rec.cat, rec.thread, rec.prefix, rec.message);
+}
+
+auto gse::log::json_escape(const std::string_view text) -> std::string {
+	std::string out;
+	out.reserve(text.size() + 8);
+	for (const char c : text) {
+		switch (c) {
+			case '"':
+				out += "\\\"";
+				break;
+			case '\\':
+				out += "\\\\";
+				break;
+			case '\n':
+				out += "\\n";
+				break;
+			case '\r':
+				out += "\\r";
+				break;
+			case '\t':
+				out += "\\t";
+				break;
+			default:
+				if (static_cast<unsigned char>(c) < 0x20) {
+					out += std::format("\\u{:04x}", static_cast<unsigned>(static_cast<unsigned char>(c)));
+					break;
+				}
+				out += c;
+				break;
+		}
+	}
+	return out;
+}
+
+gse::log::json_sink::json_sink(const std::filesystem::path path) {
+	std::error_code ec;
+	std::filesystem::create_directories(path.parent_path(), ec);
+	m_file.open(path, std::ios::out | std::ios::trunc);
+}
+
+auto gse::log::json_sink::write(const record& rec) -> void {
+	if (!m_file.is_open()) {
+		return;
+	}
+	std::print(
+		m_file,
+		R"({{"time":"{}","level":"{}","category":"{}","thread":"{}","message":"{}"}})"
+		"\n",
+		rec.timestamp,
+		rec.lvl,
+		rec.cat,
+		rec.thread,
+		json_escape(std::format("{}{}", rec.prefix, rec.message))
+	);
+}
+
+auto gse::log::json_sink::write_raw(const std::string_view text) -> void {
+	if (!m_file.is_open()) {
+		return;
+	}
+	std::print(m_file, R"({{"raw":"{}"}})" "\n", json_escape(text));
+}
+
+auto gse::log::json_sink::flush() -> void {
+	if (m_file.is_open()) {
+		m_file.flush();
+	}
+}
+
+gse::log::scope::scope(const std::string_view label) {
+	m_restore = t_context.size();
+	t_context += label;
+	t_context += ' ';
+}
+
+gse::log::scope::~scope() {
+	t_context.resize(m_restore);
 }
 
 auto gse::log::level_sgr(const level lvl) -> int {
@@ -540,6 +623,15 @@ auto gse::log::logger::write_line(const level lvl, const category cat, const std
 	auto thread = thread_display();
 	auto message = std::vformat(fmt, args);
 
+	std::string context_buf;
+	std::string_view prefix = extra_prefix;
+	if (!t_context.empty()) {
+		context_buf.reserve(t_context.size() + extra_prefix.size());
+		context_buf += t_context;
+		context_buf += extra_prefix;
+		prefix = context_buf;
+	}
+
 	if (lvl == level::fatal) {
 		flush();
 		std::lock_guard sink_lock(m_sink_mutex);
@@ -549,7 +641,7 @@ auto gse::log::logger::write_line(const level lvl, const category cat, const std
 			.cat = cat,
 			.timestamp = ts,
 			.thread = thread,
-			.prefix = extra_prefix,
+			.prefix = prefix,
 			.message = message,
 		};
 		for (auto& s : m_sinks) {
@@ -568,7 +660,7 @@ auto gse::log::logger::write_line(const level lvl, const category cat, const std
 			.cat = cat,
 			.timestamp = std::move(ts),
 			.thread = std::move(thread),
-			.prefix = std::string(extra_prefix),
+			.prefix = std::string(prefix),
 			.message = std::move(message),
 		});
 		m_items.release();
@@ -582,7 +674,7 @@ auto gse::log::logger::write_line(const level lvl, const category cat, const std
 			.cat = cat,
 			.timestamp = std::move(ts),
 			.thread = std::move(thread),
-			.prefix = std::string(extra_prefix),
+			.prefix = std::string(prefix),
 			.message = std::move(message),
 		};
 		std::lock_guard sink_lock(m_sink_mutex);
@@ -600,7 +692,7 @@ auto gse::log::logger::write_line(const level lvl, const category cat, const std
 		.cat = cat,
 		.timestamp = ts,
 		.thread = thread,
-		.prefix = extra_prefix,
+		.prefix = prefix,
 		.message = message,
 	};
 	dispatch(rec);
