@@ -17,7 +17,7 @@ import gse.assets;
 import gse.gpu;
 import gse.runtime;
 
-export namespace gse {
+export namespace gse::server {
 	struct client_data {
 		id controller_id;
 		actions::state latest_input;
@@ -39,9 +39,9 @@ export namespace gse {
 	};
 
 	template <typename... Components>
-	class server {
+	class host {
 	public:
-		explicit server(
+		explicit host(
 			std::uint16_t port
 		);
 
@@ -100,11 +100,11 @@ export namespace gse {
 }
 
 template <typename... Components>
-gse::server<Components...>::server(const std::uint16_t port) : m_port(port) {
+gse::server::host<Components...>::host(const std::uint16_t port) : m_port(port) {
 }
 
 template <typename... Components>
-auto gse::server<Components...>::initialize() -> void {
+auto gse::server::host<Components...>::initialize() -> void {
 	if (!m_socket.bind(network::address{
 			.ip = "0.0.0.0",
 			.port = m_port
@@ -149,13 +149,13 @@ auto gse::server<Components...>::initialize() -> void {
 
 template <typename... Components>
 template <typename T>
-auto gse::server<Components...>::send_reliable(const T& msg, const network::address& to) -> void {
+auto gse::server::host<Components...>::send_reliable(const T& msg, const network::address& to) -> void {
 	send(msg, to, true);
 }
 
 template <typename... Components>
 template <typename T>
-auto gse::server<Components...>::send(const T& msg, const network::address& to, const bool reliable) -> void {
+auto gse::server::host<Components...>::send(const T& msg, const network::address& to, const bool reliable) -> void {
 	const auto it = m_peers.find(to);
 	if (it == m_peers.end()) {
 		return;
@@ -189,7 +189,7 @@ auto gse::server<Components...>::send(const T& msg, const network::address& to, 
 }
 
 template <typename... Components>
-auto gse::server<Components...>::resend_reliable_messages() -> void {
+auto gse::server::host<Components...>::resend_reliable_messages() -> void {
 	for (auto& [addr, peer] : m_peers) {
 		auto to_resend = peer.messages_to_resend(reliable_retry_interval_ms);
 
@@ -224,14 +224,14 @@ auto gse::server<Components...>::resend_reliable_messages() -> void {
 }
 
 template <typename... Components>
-auto gse::server<Components...>::update(const shared_view<world_system::data> w, registry& reg, channel_writer& channels, const shared_view<actions::data> actions_s) -> void {
+auto gse::server::host<Components...>::update(const shared_view<world_system::data> w, registry& reg, channel_writer& channels, const shared_view<actions::data> actions_s) -> void {
 	const auto* active_scene_ptr = w.active_scene.has_value()
 		? (w.scenes.contains(*w.active_scene) ? w.scenes.at(*w.active_scene).get() : nullptr)
 		: nullptr;
 
-	if (!active_scene_ptr) {
+	if (!active_scene_ptr && !w.scenes.empty()) {
 		channels.push<activate_scene_request>({
-			.scene_id = find("Default Scene"),
+			.scene_id = w.scenes.begin()->first,
 		});
 	}
 
@@ -421,27 +421,27 @@ auto gse::server<Components...>::update(const shared_view<world_system::data> w,
 }
 
 template <typename... Components>
-auto gse::server<Components...>::peers() const -> const std::unordered_map<network::address, network::remote_peer>& {
+auto gse::server::host<Components...>::peers() const -> const std::unordered_map<network::address, network::remote_peer>& {
 	return m_peers;
 }
 
 template <typename... Components>
-auto gse::server<Components...>::clients() const -> const std::unordered_map<network::address, client_data>& {
+auto gse::server::host<Components...>::clients() const -> const std::unordered_map<network::address, client_data>& {
 	return m_clients;
 }
 
 template <typename... Components>
-auto gse::server<Components...>::host_entity() const -> std::optional<id> {
+auto gse::server::host<Components...>::host_entity() const -> std::optional<id> {
 	return m_host_entity;
 }
 
 template <typename... Components>
-auto gse::server<Components...>::host_address() const -> std::optional<network::address> {
+auto gse::server::host<Components...>::host_address() const -> std::optional<network::address> {
 	return m_host_addr;
 }
 
 template <typename... Components>
-auto gse::server<Components...>::accept_connection(const shared_view<world_system::data> w, registry& reg, const network::address& addr) -> void {
+auto gse::server::host<Components...>::accept_connection(const shared_view<world_system::data> w, registry& reg, const network::address& addr) -> void {
 	const bool has_active_scene = w.active_scene.has_value() && w.scenes.contains(*w.active_scene);
 
 	id controller_id{};
