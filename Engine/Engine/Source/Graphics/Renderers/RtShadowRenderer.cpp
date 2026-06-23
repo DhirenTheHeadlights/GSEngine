@@ -157,6 +157,7 @@ auto gse::renderer::rt_shadow::frame(context& ctx, shared_view<gpu::context::dat
 			d.mapping_buffers[i] = gpu_s.device->create_buffer(
 				{
 					.size = mapping_bytes,
+					.stride = sizeof(std::uint32_t),
 					.usage = gpu::buffer_flag::storage,
 					.bindless = true
 				}

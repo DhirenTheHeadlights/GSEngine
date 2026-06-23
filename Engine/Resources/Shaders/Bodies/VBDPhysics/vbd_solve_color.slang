@@ -257,7 +257,7 @@ void solve_body(uint bi) {
 
         float3 d = p_a - p_b;
         float3 Cn = float3(
-            dot(c.normal.xyz, d) + pc.cfg.collision_margin,
+            dot(c.normal.xyz, d) + config.collision_margin,
             dot(c.tangent_u.xyz, d),
             dot(c.tangent_v.xyz, d)
         );
@@ -296,7 +296,7 @@ void solve_body(uint bi) {
                 (other.locked != 0) ||
                 (other.mass >= body.mass);
             if (blocking_body) {
-                float normal_gap = dot(c.normal.xyz, d) + pc.cfg.collision_margin;
+                float normal_gap = dot(c.normal.xyz, d) + config.collision_margin;
                 if (normal_gap < 0.0 || c.lambda.x < -1e-3) {
                     float3 push_dir = is_a ? c.normal.xyz : -c.normal.xyz;
                     float proj = dot(motor_grad, push_dir);
@@ -338,9 +338,9 @@ void solve_body(uint bi) {
     float3 g_lin = x_diff * inertia_weight + grad;
 
     mat3 h_xx = mat3_add(mat3_identity(inertia_weight), hess);
-    h_xx[0].x += pc.cfg.linear_regularization;
-    h_xx[1].y += pc.cfg.linear_regularization;
-    h_xx[2].z += pc.cfg.linear_regularization;
+    h_xx[0].x += config.linear_regularization;
+    h_xx[1].y += config.linear_regularization;
+    h_xx[2].z += config.linear_regularization;
 
     mat3 h_xx_inv = mat3_inverse(h_xx);
 
@@ -349,10 +349,10 @@ void solve_body(uint bi) {
 
         if (!is_finite3(delta_x)) return;
         float step_size = length(delta_x);
-        if (step_size > pc.cfg.max_linear_step) delta_x *= (pc.cfg.max_linear_step / step_size);
+        if (step_size > config.max_linear_step) delta_x *= (config.max_linear_step / step_size);
 
-        if (pc.cfg.use_jacobi != 0) {
-            solve_deltas[bi * 2] = float4(delta_x * pc.cfg.jacobi_omega, 0);
+        if (config.use_jacobi != 0) {
+            solve_deltas[bi * 2] = float4(delta_x * config.jacobi_omega, 0);
         } else {
             body.predicted_position.xyz += delta_x;
             body_data[bi] = body;
@@ -380,9 +380,9 @@ void solve_body(uint bi) {
     float3 g_ang = mat3_mul_vec(i_mat, theta_diff) * ang_scale + ang_grad;
 
     mat3 h_tt = mat3_add(mat3_scale(i_mat, ang_scale), ang_hess);
-    h_tt[0].x += pc.cfg.angular_regularization;
-    h_tt[1].y += pc.cfg.angular_regularization;
-    h_tt[2].z += pc.cfg.angular_regularization;
+    h_tt[0].x += config.angular_regularization;
+    h_tt[1].y += config.angular_regularization;
+    h_tt[2].z += config.angular_regularization;
 
     float3 delta_x;
     float3 delta_theta;
@@ -404,17 +404,17 @@ void solve_body(uint bi) {
         return;
     }
     float lin_size = length(delta_x);
-    if (lin_size > pc.cfg.max_linear_step) {
-        delta_x *= (pc.cfg.max_linear_step / lin_size);
+    if (lin_size > config.max_linear_step) {
+        delta_x *= (config.max_linear_step / lin_size);
     }
     float ang_size = length(delta_theta);
-    if (ang_size > pc.cfg.max_angular_step) {
-        delta_theta *= (pc.cfg.max_angular_step / ang_size);
+    if (ang_size > config.max_angular_step) {
+        delta_theta *= (config.max_angular_step / ang_size);
     }
 
-    if (pc.cfg.use_jacobi != 0) {
-        solve_deltas[bi * 2] = float4(delta_x * pc.cfg.jacobi_omega, 0);
-        solve_deltas[bi * 2 + 1] = float4(delta_theta * pc.cfg.jacobi_omega, 0);
+    if (config.use_jacobi != 0) {
+        solve_deltas[bi * 2] = float4(delta_x * config.jacobi_omega, 0);
+        solve_deltas[bi * 2 + 1] = float4(delta_theta * config.jacobi_omega, 0);
         return;
     }
 
@@ -438,7 +438,7 @@ void vbd_solve_color(uint3 dispatch_id) {
 
     if (collision_state[state_converged_flag_index] != 0) return;
 
-if (pc.cfg.use_jacobi != 0) {
+if (config.use_jacobi != 0) {
     uint bi = idx;
     if (bi >= pc.body_count) return;
 
@@ -447,10 +447,10 @@ if (pc.cfg.use_jacobi != 0) {
 
     solve_body(bi);
 
-    if (bi == 0 && pc.current_alpha > 0.0 && pc.iteration + 1 >= pc.cfg.min_iterations) {
+    if (bi == 0 && pc.current_alpha > 0.0 && pc.iteration + 1 >= config.min_iterations) {
         float max_lin = asfloat(collision_state[state_convergence_max_delta_index]);
         float max_ang = asfloat(collision_state[state_convergence_max_angular_delta_index]);
-        if (max_lin < pc.cfg.convergence_threshold_linear && max_ang < pc.cfg.convergence_threshold_angular) {
+        if (max_lin < config.convergence_threshold_linear && max_ang < config.convergence_threshold_angular) {
             collision_state[state_converged_flag_index] = 1;
         }
         collision_state[state_convergence_max_delta_index] = 0;
@@ -472,10 +472,10 @@ if (idx < count) {
     }
 }
 
-if (color == num_colors - 1 && pc.current_alpha > 0.0 && pc.iteration + 1 >= pc.cfg.min_iterations && idx == 0) {
+if (color == num_colors - 1 && pc.current_alpha > 0.0 && pc.iteration + 1 >= config.min_iterations && idx == 0) {
     float max_lin = asfloat(collision_state[state_convergence_max_delta_index]);
     float max_ang = asfloat(collision_state[state_convergence_max_angular_delta_index]);
-    if (max_lin < pc.cfg.convergence_threshold_linear && max_ang < pc.cfg.convergence_threshold_angular) {
+    if (max_lin < config.convergence_threshold_linear && max_ang < config.convergence_threshold_angular) {
         collision_state[state_converged_flag_index] = 1;
         indirect_args[1].x = 0;
         for (uint c = 0; c < max_colors; c++) {

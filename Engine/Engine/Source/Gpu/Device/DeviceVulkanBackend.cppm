@@ -353,7 +353,7 @@ export namespace gse::gpu {
 		shared_view<window::data> win,
 		bool validation_layers_enabled,
 		device_settings& cfg
-	) -> vulkan_backend_creation;
+	) -> gpu::expected<vulkan_backend_creation>;
 }
 
 auto gse::gpu::vulkan_device_backend::handle() const -> gpu::device_handle {
@@ -441,7 +441,7 @@ auto gse::gpu::vulkan_device_backend::reset_worker_command_pools(const std::uint
 }
 
 auto gse::gpu::vulkan_device_backend::acquire_worker_command_buffer(const gpu::queue_type queue_type, const std::size_t worker_index, const std::uint32_t frame_index) -> gpu::command_buffer_handle {
-	return worker_pools.acquire_secondary(queue_type, worker_index, frame_index);
+	return worker_pools.acquire_command_buffer(queue_type, worker_index, frame_index);
 }
 
 auto gse::gpu::vulkan_device_backend::create_image_unbound(const gpu::image_create_info& info) const -> std::pair<gpu::handle<gpu::image>, gpu::memory_requirements> {
@@ -660,13 +660,17 @@ auto gse::gpu::vulkan_device_backend::make_video_encoder_backend(const vec2u ext
 	return std::make_unique<gpu::video_encoder_backend>(vulkan::video_encoder::create(device_config, queue, extent, caps));
 }
 
-auto gse::gpu::create_vulkan_device_backend(const shared_view<window::data> win, const bool validation_layers_enabled, device_settings& cfg) -> vulkan_backend_creation {
+auto gse::gpu::create_vulkan_device_backend(const shared_view<window::data> win, const bool validation_layers_enabled, device_settings& cfg) -> gpu::expected<vulkan_backend_creation> {
 	auto aftermath_tracker = vulkan::aftermath::create({});
 
 	auto instance = vulkan::instance::create(vulkan::instance::required_window_extensions(), validation_layers_enabled);
 	instance.create_surface(win);
 
-	auto creation = vulkan::device::create(instance, cfg, aftermath_tracker);
+	auto created = vulkan::device::create(instance, cfg, aftermath_tracker);
+	if (!created) {
+		return std::unexpected{ created.error() };
+	}
+	auto& creation = *created;
 	std::array<std::uint32_t, gpu::queue_type_count> queue_families{};
 	queue_families[static_cast<std::size_t>(gpu::queue_type::graphics)] = creation.families.graphics_family.value();
 	queue_families[static_cast<std::size_t>(gpu::queue_type::compute)] = creation.families.compute_family.value();
@@ -688,7 +692,7 @@ auto gse::gpu::create_vulkan_device_backend(const shared_view<window::data> win,
 
 	backend->device_config.init_bindless();
 
-	return {
+	return vulkan_backend_creation{
 		.backend = std::move(backend),
 		.surface_format = surface_format,
 		.video_encode_enabled = creation.video_encode_enabled,

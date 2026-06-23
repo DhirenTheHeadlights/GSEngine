@@ -18,7 +18,7 @@ void collision_broad_phase(uint3 dispatch_id) {
 
     bool i_locked = body_i.locked != 0;
 
-    float margin = pc.cfg.speculative_margin;
+    float margin = config.speculative_margin;
     float3 min_a = body_i.aabb_min.xyz;
     float3 max_a = body_i.aabb_max.xyz;
 

@@ -64,7 +64,8 @@ auto gse::renderer::depth_prepass::init(context& ctx, const shared_view<gpu::con
 		d.camera_ubo_buffers[i] = gpu_s.device->create_buffer(
 			{
 				.size = camera_ubo_size,
-				.usage = gpu::buffer_flag::uniform,
+				.stride = sizeof(shaders::common::camera_data),
+				.usage = gpu::buffer_flag::storage,
 				.bindless = true
 			},
 			"depth_prepass.camera_ubo"

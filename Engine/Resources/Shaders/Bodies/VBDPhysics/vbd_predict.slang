@@ -18,7 +18,7 @@ if (pc.substep == 0) {
     }
 
     if (sleeping) {
-        float wake_thresh = pc.cfg.velocity_sleep_threshold * 10.0;
+        float wake_thresh = config.velocity_sleep_threshold * 10.0;
         uint co = contact_offsets[bi];
         uint cc = contact_counts[bi];
         for (uint k = 0; k < cc; k++) {
@@ -76,20 +76,20 @@ if (locked || sleeping) {
     return;
 }
 
-body.velocity *= (1.0 - pc.cfg.linear_damping);
-body.angular_velocity *= (1.0 - pc.cfg.angular_damping);
+body.velocity *= (1.0 - config.linear_damping);
+body.angular_velocity *= (1.0 - config.angular_damping);
 
 float3 linear_velocity = body.velocity.xyz;
 float lin_speed = length(linear_velocity);
-if (lin_speed > pc.cfg.max_linear_speed) {
-    linear_velocity *= (pc.cfg.max_linear_speed / lin_speed);
+if (lin_speed > config.max_linear_speed) {
+    linear_velocity *= (config.max_linear_speed / lin_speed);
     body.velocity = linear_velocity;
 }
 
 float3 angular_velocity = body.angular_velocity.xyz;
 float ang_speed = length(angular_velocity);
-if (ang_speed > pc.cfg.max_angular_speed) {
-    angular_velocity *= (pc.cfg.max_angular_speed / ang_speed);
+if (ang_speed > config.max_angular_speed) {
+    angular_velocity *= (config.max_angular_speed / ang_speed);
     body.angular_velocity = angular_velocity;
 }
 

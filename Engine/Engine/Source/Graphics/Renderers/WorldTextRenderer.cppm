@@ -16,6 +16,7 @@ import :sdf_grid_renderer;
 export namespace gse::renderer::world_text {
 	struct [[= gse::system_state<"WorldText">{}]] data {
 		gpu::shader_program pipeline;
+		gpu::bindless_handle text_sampler;
 		per_frame_resource<gpu::buffer> camera_ubo_buffers;
 		per_frame_resource<gpu::buffer> vertex_buffers;
 		per_frame_resource<std::size_t> vertex_capacities;

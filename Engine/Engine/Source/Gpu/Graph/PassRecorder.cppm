@@ -24,14 +24,6 @@ export namespace gse::gpu {
 
 		auto end() const -> void;
 
-		auto begin_secondary(
-			const gpu::secondary_inheritance_info& info
-		) const -> void;
-
-		auto execute_commands(
-			gpu::command_buffer_handle secondary
-		) const -> void;
-
 		auto begin_rendering(
 			const gpu::rendering_info& info
 		) const -> void;

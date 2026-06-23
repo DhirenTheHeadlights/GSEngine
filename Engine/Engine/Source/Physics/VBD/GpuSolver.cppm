@@ -154,6 +154,7 @@ export namespace gse::vbd {
 			gpu::buffer grounded_buffer;
 			gpu::buffer grounded_readback_buffer;
 			gpu::buffer impulse_buffer;
+			gpu::buffer config_buffer;
 
 			bool grounded_valid = false;
 		};

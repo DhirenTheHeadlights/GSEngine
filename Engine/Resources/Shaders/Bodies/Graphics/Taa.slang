@@ -38,7 +38,7 @@ struct FS_OUT {
 
 [shader("fragment")]
 FS_OUT fs_main(VS_OUT input) {
-    float3 current_rgb = hdr_color.Sample(input.uv).rgb;
+    float3 current_rgb = hdr_color.Sample(color_sampler, input.uv).rgb;
     float3 current = rgb_to_ycocg(current_rgb);
 
     if (pc.taa_enabled == 0) {
@@ -48,7 +48,7 @@ FS_OUT fs_main(VS_OUT input) {
         return o;
     }
 
-    float2 velocity = velocity_color.Sample(input.uv).rg;
+    float2 velocity = velocity_color.Sample(color_sampler, input.uv).rg;
     float2 prev_uv = input.uv - velocity;
 
     if (any(prev_uv != saturate(prev_uv))) {
@@ -68,13 +68,13 @@ FS_OUT fs_main(VS_OUT input) {
                 continue;
             }
             float2 offset_uv = input.uv + float2(dx, dy) * pc.inv_extent;
-            float3 s = rgb_to_ycocg(hdr_color.Sample(offset_uv).rgb);
+            float3 s = rgb_to_ycocg(hdr_color.Sample(color_sampler, offset_uv).rgb);
             nbh_min = min(nbh_min, s);
             nbh_max = max(nbh_max, s);
         }
     }
 
-    float3 history = rgb_to_ycocg(history_color.Sample(prev_uv).rgb);
+    float3 history = rgb_to_ycocg(history_color.Sample(color_sampler, prev_uv).rgb);
     history = clamp(history, nbh_min, nbh_max);
 
     float3 blended = lerp(history, current, pc.blend_alpha);

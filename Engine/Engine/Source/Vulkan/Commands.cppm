@@ -28,17 +28,9 @@ export namespace gse::vulkan {
 
 		auto begin() const -> void;
 
-		auto begin_secondary(
-			const gpu::secondary_inheritance_info& info
-		) const -> void;
-
 		auto end() const -> void;
 
 		auto reset() const -> void;
-
-		auto execute_commands(
-			gpu::command_buffer_handle secondary
-		) const -> void;
 
 		auto begin_rendering(
 			const gpu::rendering_info& info
@@ -347,43 +339,6 @@ auto gse::vulkan::commands::begin() const -> void {
 	assert(result == vk::Result::eSuccess, "failed to begin command buffer: {}", vk::to_string(result));
 }
 
-auto gse::vulkan::commands::begin_secondary(const gpu::secondary_inheritance_info& info) const -> void {
-	std::vector<vk::Format> color_formats;
-	color_formats.reserve(info.color_attachment_formats.size());
-	for (const auto f : info.color_attachment_formats) {
-		color_formats.push_back(static_cast<vk::Format>(f));
-	}
-
-	const vk::CommandBufferInheritanceRenderingInfo rendering_inherit{
-		.viewMask = 0,
-		.colorAttachmentCount = static_cast<std::uint32_t>(color_formats.size()),
-		.pColorAttachmentFormats = color_formats.empty() ? nullptr : color_formats.data(),
-		.depthAttachmentFormat = static_cast<vk::Format>(info.depth_attachment_format),
-		.stencilAttachmentFormat = vk::Format::eUndefined,
-		.rasterizationSamples = vk::SampleCountFlagBits::e1,
-	};
-
-	vk::CommandBufferInheritanceInfo inherit{};
-	if (info.render_pass_continue) {
-		inherit.pNext = &rendering_inherit;
-	}
-	if (info.pipeline_statistics.bits() != 0) {
-		inherit.pipelineStatistics = to_vk(info.pipeline_statistics);
-	}
-
-	vk::CommandBufferUsageFlags flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
-	if (info.render_pass_continue) {
-		flags |= vk::CommandBufferUsageFlagBits::eRenderPassContinue;
-	}
-
-	const vk::CommandBufferBeginInfo begin_info{
-		.flags = flags,
-		.pInheritanceInfo = &inherit,
-	};
-	const auto result = raw().begin(begin_info);
-	assert(result == vk::Result::eSuccess, "failed to begin secondary command buffer: {}", vk::to_string(result));
-}
-
 auto gse::vulkan::commands::end() const -> void {
 	const auto result = raw().end();
 	assert(result == vk::Result::eSuccess, "failed to end command buffer: {}", vk::to_string(result));
@@ -392,11 +347,6 @@ auto gse::vulkan::commands::end() const -> void {
 auto gse::vulkan::commands::reset() const -> void {
 	const auto result = raw().reset();
 	assert(result == vk::Result::eSuccess, "failed to reset command buffer: {}", vk::to_string(result));
-}
-
-auto gse::vulkan::commands::execute_commands(const gpu::command_buffer_handle secondary) const -> void {
-	const vk::CommandBuffer cb = std::bit_cast<vk::CommandBuffer>(secondary);
-	raw().executeCommands(cb);
 }
 
 auto gse::vulkan::commands::reset_query_pool(const gpu::handle<gpu::query_pool> pool, const std::uint32_t first_query, const std::uint32_t query_count) const -> void {

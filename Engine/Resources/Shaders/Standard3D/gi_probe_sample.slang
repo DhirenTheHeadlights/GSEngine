@@ -17,7 +17,7 @@ public float2 gi_oct_encode(float3 n) {
     return n.xy;
 }
 
-public float3 sample_gi_irradiance(float3 world_pos, float3 world_normal, GiGridParams params, Sampler2D atlas) {
+public float3 sample_gi_irradiance(float3 world_pos, float3 world_normal, GiGridParams params, Texture2D<float4> atlas, SamplerState atlas_sampler) {
     float3 grid_uv = (world_pos - params.origin) / params.spacing;
     float3 max_index = float3(params.grid_dim) - 1.001;
     grid_uv = clamp(grid_uv, float3(0.0, 0.0, 0.0), max_index);
@@ -37,7 +37,7 @@ public float3 sample_gi_irradiance(float3 world_pos, float3 world_normal, GiGrid
 
         uint2 atlas_base = uint2(idx.x * 8u, (idx.y * params.grid_dim.z + idx.z) * 8u);
         float2 atlas_uv = (float2(atlas_base) + tile_uv * 7.0 + 0.5) / params.atlas_size;
-        sum += atlas.SampleLevel(atlas_uv, 0).rgb * w;
+        sum += atlas.SampleLevel(atlas_sampler, atlas_uv, 0).rgb * w;
         wsum += w;
     }
     return (sum / max(wsum, 1e-4)) * params.intensity;

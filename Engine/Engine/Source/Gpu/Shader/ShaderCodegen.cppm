@@ -100,6 +100,9 @@ export namespace gse::shaders {
 	struct rw_byte_address_buffer_tag {};
 	struct storage_image_tag {};
 	struct storage_image_3d_tag {};
+	struct texture2d_tag {};
+	struct texture3d_tag {};
+	struct sampler_state_tag {};
 
 	constexpr shader_struct_tag shader_struct{};
 	constexpr shader_enum_tag shader_enum{};
@@ -114,6 +117,9 @@ export namespace gse::shaders {
 	constexpr rw_byte_address_buffer_tag rw_byte_address_buffer{};
 	constexpr storage_image_tag storage_image{};
 	constexpr storage_image_3d_tag storage_image_3d{};
+	constexpr texture2d_tag texture2d{};
+	constexpr texture3d_tag texture3d{};
+	constexpr sampler_state_tag sampler_state{};
 
 	constexpr std::uint32_t bindless_texture_capacity = 2048;
 
@@ -175,10 +181,7 @@ export namespace gse::shaders {
 	auto emit_slang_binding() -> std::string;
 
 	template <typename T>
-	consteval auto slang_scalar_align() -> std::size_t;
-
-	template <typename T>
-	consteval auto slang_scalar_size() -> std::size_t;
+	consteval auto push_constant_layout_is_portable() -> bool;
 
 	struct family_binding {
 		gpu::descriptor_binding_desc desc;
@@ -208,6 +211,9 @@ export namespace gse::shaders {
 
 	template <typename Pack>
 	auto emit_pack_types() -> std::string;
+
+	template <typename Pack>
+	consteval auto sorted_pack_bindings() -> std::vector<std::meta::info>;
 
 	template <typename Pack>
 	auto emit_pack_bindings() -> std::string;
@@ -434,40 +440,47 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 	using binding_t = [:find_binding_type(^^T):];
 	constexpr auto name = std::meta::identifier_of(^^T);
 	if constexpr (has_annotation<sampler2d_array_tag>(^^T)) {
-		return std::format("public [[vk::binding({}, {})]] Sampler2D {}[];\n", binding_t::slot, binding_t::set, name);
+		return std::format("public struct {0}_table {{ public __subscript(uint i) -> Texture2D<float4> {{ get {{ return (Texture2D<float4>.Handle)i; }} }} }}\npublic {0}_table {0};\n", name);
 	}
 	else if constexpr (has_annotation<sampler2d_tag>(^^T)) {
-		return std::format("public [[vk::binding({}, {})]] Sampler2D {};\n", binding_t::slot, binding_t::set, name);
+		return std::format("public uniform Sampler2D.Handle {0};\n", name);
 	}
 	else if constexpr (has_annotation<sampler3d_tag>(^^T)) {
-		return std::format("public [[vk::binding({}, {})]] Sampler3D {};\n", binding_t::slot, binding_t::set, name);
+		return std::format("public uniform Sampler3D.Handle {0};\n", name);
+	}
+	else if constexpr (has_annotation<texture2d_tag>(^^T)) {
+		using element_t = typename T::element;
+		return std::format("public uniform uint {1}_idx;\npublic property Texture2D<{0}> {1} {{ get {{ return (Texture2D<{0}>.Handle){1}_idx; }} }}\n", slang_type<element_t>::name, name);
+	}
+	else if constexpr (has_annotation<texture3d_tag>(^^T)) {
+		using element_t = typename T::element;
+		return std::format("public uniform uint {1}_idx;\npublic property Texture3D<{0}> {1} {{ get {{ return (Texture3D<{0}>.Handle){1}_idx; }} }}\n", slang_type<element_t>::name, name);
+	}
+	else if constexpr (has_annotation<sampler_state_tag>(^^T)) {
+		return std::format("public uniform uint {0}_idx;\npublic property SamplerState {0} {{ get {{ return (SamplerState.Handle){0}_idx; }} }}\n", name);
 	}
 	else if constexpr (has_annotation<tlas_tag>(^^T)) {
 		return std::format(
-			"public [[vk::binding({}, {})]] RaytracingAccelerationStructure {};\n",
-			binding_t::slot,
-			binding_t::set,
+			"public uniform uint {0}_idx;\npublic property RaytracingAccelerationStructure {0} {{ get {{ return (RaytracingAccelerationStructure.Handle){0}_idx; }} }}\n",
 			name
 		);
 	}
 	else if constexpr (has_annotation<byte_address_buffer_tag>(^^T)) {
 		return std::format(
-			"public uniform ByteAddressBuffer.Handle {0}_h;\npublic ByteAddressBuffer {0} = {0}_h;\n",
+			"public uniform uint {0}_idx;\npublic property ByteAddressBuffer {0} {{ get {{ return (ByteAddressBuffer.Handle){0}_idx; }} }}\n",
 			name
 		);
 	}
 	else if constexpr (has_annotation<rw_byte_address_buffer_tag>(^^T)) {
 		return std::format(
-			"public uniform RWByteAddressBuffer.Handle {0}_h;\npublic RWByteAddressBuffer {0} = {0}_h;\n",
+			"public uniform uint {0}_idx;\npublic property RWByteAddressBuffer {0} {{ get {{ return (RWByteAddressBuffer.Handle){0}_idx; }} }}\n",
 			name
 		);
 	}
 	else if constexpr (has_annotation<storage_image_tag>(^^T)) {
 		using element_t = typename T::element;
 		return std::format(
-			"public [[vk::binding({}, {})]] RWTexture2D<{}> {};\n",
-			binding_t::slot,
-			binding_t::set,
+			"public uniform uint {1}_idx;\npublic property RWTexture2D<{0}> {1} {{ get {{ return (RWTexture2D<{0}>.Handle){1}_idx; }} }}\n",
 			slang_type<element_t>::name,
 			name
 		);
@@ -475,9 +488,7 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 	else if constexpr (has_annotation<storage_image_3d_tag>(^^T)) {
 		using element_t = typename T::element;
 		return std::format(
-			"public [[vk::binding({}, {})]] RWTexture3D<{}> {};\n",
-			binding_t::slot,
-			binding_t::set,
+			"public uniform uint {1}_idx;\npublic property RWTexture3D<{0}> {1} {{ get {{ return (RWTexture3D<{0}>.Handle){1}_idx; }} }}\n",
 			slang_type<element_t>::name,
 			name
 		);
@@ -485,7 +496,7 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 	else if constexpr (has_annotation<ssbo_readonly_tag>(^^T)) {
 		using element_t = typename T::element;
 		return std::format(
-			"public uniform StructuredBuffer<{1}>.Handle {0}_h;\npublic StructuredBuffer<{1}> {0} = {0}_h;\n",
+			"public uniform uint {0}_idx;\npublic property StructuredBuffer<{1}> {0} {{ get {{ return (StructuredBuffer<{1}>.Handle){0}_idx; }} }}\n",
 			name,
 			slang_type<element_t>::name
 		);
@@ -493,20 +504,14 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 	else if constexpr (has_annotation<ssbo_readwrite_tag>(^^T)) {
 		using element_t = typename T::element;
 		return std::format(
-			"public uniform RWStructuredBuffer<{1}>.Handle {0}_h;\npublic RWStructuredBuffer<{1}> {0} = {0}_h;\n",
+			"public uniform uint {0}_idx;\npublic property RWStructuredBuffer<{1}> {0} {{ get {{ return (RWStructuredBuffer<{1}>.Handle){0}_idx; }} }}\n",
 			name,
 			slang_type<element_t>::name
 		);
 	}
 	else if constexpr (requires { typename T::element; }) {
 		using element_t = typename T::element;
-		std::string out =
-			std::format(
-				"[[vk::binding({}, {})]]\npublic cbuffer {} {{\n",
-				binding_t::slot,
-				binding_t::set,
-				name
-			);
+		std::string out = std::format("public struct {}_ubo_data {{\n", name);
 		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^element_t, std::meta::access_context::unchecked()))) {
 			using member_t = [:std::meta::type_of(m):];
 			if constexpr (std::is_array_v<member_t>) {
@@ -524,16 +529,11 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 			}
 		}
 		out += "};\n";
+		out += std::format("public uniform uint {0}_idx;\npublic property {0}_ubo_data {0} {{ get {{ return ((StructuredBuffer<{0}_ubo_data>.Handle){0}_idx)[0]; }} }}\n", name);
 		return out;
 	}
 	else {
-		std::string out =
-			std::format(
-				"[[vk::binding({}, {})]]\npublic cbuffer {} {{\n",
-				binding_t::slot,
-				binding_t::set,
-				name
-			);
+		std::string out = std::format("public struct {}_ubo_data {{\n", name);
 		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 			using member_t = [:std::meta::type_of(m):];
 			if constexpr (std::is_array_v<member_t>) {
@@ -551,70 +551,40 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 			}
 		}
 		out += "};\n";
+		out += std::format("public uniform uint {0}_idx;\npublic property {0}_ubo_data {0} {{ get {{ return ((StructuredBuffer<{0}_ubo_data>.Handle){0}_idx)[0]; }} }}\n", name);
 		return out;
 	}
 }
 
 template <typename T>
-consteval auto gse::shaders::slang_scalar_align() -> std::size_t {
-	if constexpr (std::is_same_v<T, float> || std::is_same_v<T, std::int32_t> || std::is_same_v<T, std::uint32_t>) {
-		return 4;
-	}
-	else if constexpr (gse::internal::is_quantity<T>) {
-		return slang_scalar_align<typename T::value_type>();
-	}
-	else if constexpr (gse::is_vec<T>) {
-		return slang_scalar_align<typename T::value_type>();
-	}
-	else if constexpr (gse::is_mat<T>) {
-		return slang_scalar_align<typename T::element_type>();
-	}
-	else if constexpr (std::is_enum_v<T>) {
-		return slang_scalar_align<std::underlying_type_t<T>>();
-	}
-	else if constexpr (is_shader_struct<T>) {
-		std::size_t a = 1;
-		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
-			using member_t = [:std::meta::type_of(m):];
-			a = std::max(a, slang_scalar_align<member_t>());
+consteval auto gse::shaders::push_constant_layout_is_portable() -> bool {
+	std::size_t scalar_off = 0;
+	std::size_t cbuffer_off = 0;
+	bool portable = true;
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+		using member_t = [:std::meta::type_of(m):];
+		constexpr auto size = sizeof(member_t);
+		constexpr auto align = alignof(member_t);
+		scalar_off = (scalar_off + align - 1) & ~(align - 1);
+		cbuffer_off = (cbuffer_off + align - 1) & ~(align - 1);
+		if constexpr (gse::is_mat<member_t> || sizeof(member_t) > 16) {
+			cbuffer_off = (cbuffer_off + 15) & ~std::size_t{ 15 };
 		}
-		return a;
-	}
-	else {
-		static_assert(sizeof(T) == 0, "no slang scalar alignment for T");
-	}
-}
-
-template <typename T>
-consteval auto gse::shaders::slang_scalar_size() -> std::size_t {
-	if constexpr (std::is_same_v<T, float> || std::is_same_v<T, std::int32_t> || std::is_same_v<T, std::uint32_t>) {
-		return 4;
-	}
-	else if constexpr (gse::internal::is_quantity<T>) {
-		return slang_scalar_size<typename T::value_type>();
-	}
-	else if constexpr (gse::is_vec<T>) {
-		return slang_scalar_size<typename T::value_type>() * T::extent;
-	}
-	else if constexpr (gse::is_mat<T>) {
-		return slang_scalar_size<typename T::element_type>() * T::extent_cols * T::extent_rows;
-	}
-	else if constexpr (std::is_enum_v<T>) {
-		return slang_scalar_size<std::underlying_type_t<T>>();
-	}
-	else if constexpr (is_shader_struct<T>) {
-		std::size_t off = 0;
-		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
-			using member_t = [:std::meta::type_of(m):];
-			constexpr auto a = slang_scalar_align<member_t>();
-			off = (off + a - 1) & ~(a - 1);
-			off += slang_scalar_size<member_t>();
+		else if constexpr (gse::is_vec<member_t>) {
+			if constexpr (member_t::extent == 4) {
+				cbuffer_off = (cbuffer_off + 15) & ~std::size_t{ 15 };
+			}
+			else if (cbuffer_off / 16 != (cbuffer_off + size - 1) / 16) {
+				cbuffer_off = (cbuffer_off + 15) & ~std::size_t{ 15 };
+			}
 		}
-		return off;
+		if (scalar_off != cbuffer_off) {
+			portable = false;
+		}
+		scalar_off += size;
+		cbuffer_off += size;
 	}
-	else {
-		static_assert(sizeof(T) == 0, "no slang scalar size for T");
-	}
+	return portable;
 }
 
 template <gse::shaders::is_shader_binding T>
@@ -628,6 +598,15 @@ consteval auto gse::shaders::descriptor_type_of() -> gpu::descriptor_type {
 	else if constexpr (has_annotation<sampler3d_tag>(^^T)) {
 		return gpu::descriptor_type::combined_image_sampler;
 	}
+	else if constexpr (has_annotation<texture2d_tag>(^^T)) {
+		return gpu::descriptor_type::sampled_image;
+	}
+	else if constexpr (has_annotation<texture3d_tag>(^^T)) {
+		return gpu::descriptor_type::sampled_image;
+	}
+	else if constexpr (has_annotation<sampler_state_tag>(^^T)) {
+		return gpu::descriptor_type::sampler;
+	}
 	else if constexpr (has_annotation<tlas_tag>(^^T)) {
 		return gpu::descriptor_type::acceleration_structure;
 	}
@@ -638,7 +617,7 @@ consteval auto gse::shaders::descriptor_type_of() -> gpu::descriptor_type {
 		return gpu::descriptor_type::storage_image;
 	}
 	else {
-		return gpu::descriptor_type::uniform_buffer;
+		return gpu::descriptor_type::storage_buffer;
 	}
 }
 
@@ -781,10 +760,43 @@ auto gse::shaders::emit_pack_types() -> std::string {
 }
 
 template <typename Pack>
+consteval auto gse::shaders::sorted_pack_bindings() -> std::vector<std::meta::info> {
+	struct sortable {
+		std::meta::info t;
+		std::uint32_t set;
+		std::uint32_t slot;
+	};
+	std::vector<sortable> entries;
+	constexpr auto pack_types = []<typename... Ts>(type_pack<Ts...>) {
+		return std::array{ ^^Ts... };
+	}(Pack{});
+	for (const auto t : pack_types) {
+		const auto bt = find_binding_type(t);
+		const auto targs = std::meta::template_arguments_of(bt);
+		entries.push_back({ t, std::meta::extract<std::uint32_t>(targs[0]), std::meta::extract<std::uint32_t>(targs[1]) });
+	}
+	std::ranges::sort(
+		entries,
+		[](const sortable& a, const sortable& b) {
+			if (a.set != b.set) {
+				return a.set < b.set;
+			}
+			return a.slot < b.slot;
+		}
+	);
+	std::vector<std::meta::info> result;
+	for (const auto& e : entries) {
+		result.push_back(e.t);
+	}
+	return result;
+}
+
+template <typename Pack>
 auto gse::shaders::emit_pack_bindings() -> std::string {
 	std::string out;
-	[&]<typename... Ts>(type_pack<Ts...>) {
-		(emit_one_binding<Ts>(out), ...);
-	}(Pack{});
+	template for (constexpr auto t : std::define_static_array(sorted_pack_bindings<Pack>())) {
+		using binding_t = [:t:];
+		emit_one_binding<binding_t>(out);
+	}
 	return out;
 }

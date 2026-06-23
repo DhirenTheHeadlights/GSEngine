@@ -13,7 +13,7 @@ import gse.core;
 export namespace gse::gpu {
 	struct queue_submission {
 		queue_type queue = queue_type::graphics;
-		command_buffer_handle command_buffer;
+		std::vector<command_buffer_handle> command_buffers;
 		std::vector<semaphore_submit_info> waits;
 		std::vector<semaphore_submit_info> signals;
 	};
@@ -43,7 +43,8 @@ export namespace gse::gpu {
 		auto end(
 			window::data& win,
 			std::span<const queue_submission> aux_submissions = {},
-			std::span<const semaphore_submit_info> extra_graphics_waits = {}
+			std::span<const semaphore_submit_info> extra_graphics_waits = {},
+			std::span<const command_buffer_handle> graphics_buffers = {}
 		) -> void;
 
 		auto set_sync(

@@ -104,24 +104,24 @@ export namespace gse::gpu {
 			const entry_push_constants_t<Entry>& pc,
 			const binding_args<entry_bindings_pack_t<Entry>>& args,
 			vec3u groups
-		) const -> void;
+		) -> void;
 
 		template <typename Entry>
 		auto dispatch(
 			const binding_args<entry_bindings_pack_t<Entry>>& args,
 			vec3u groups
-		) const -> void;
+		) -> void;
 
 		template <typename Entry>
 		auto push_bindings(
 			const entry_push_constants_t<Entry>& pc,
 			const binding_args<entry_bindings_pack_t<Entry>>& args
-		) const -> void;
+		) -> void;
 
 		template <typename Entry>
 		auto push_bindings(
 			const binding_args<entry_bindings_pack_t<Entry>>& args
-		) const -> void;
+		) -> void;
 
 		auto dispatch_indirect(
 			const buffer& buf,
@@ -275,6 +275,21 @@ export namespace gse::gpu {
 			gpu::access_flags access
 		) -> void;
 
+		template <typename Entry>
+		auto register_bindless_usage(
+			const binding_args<entry_bindings_pack_t<Entry>>& args,
+			gpu::pipeline_stage_flags stages
+		) -> void;
+
+		template <typename T, typename Args>
+		auto register_one_bindless(
+			const Args& args,
+			gpu::pipeline_stage_flags stages
+		) -> void;
+
+		template <typename Args, typename T>
+		static consteval auto bindless_member_for() -> std::meta::info;
+
 		auto apply_dynamic_state(
 			const gpu::dynamic_pipeline_state& s
 		) -> void;
@@ -355,6 +370,8 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto take_graphics_extra_waits() -> std::vector<gpu::semaphore_submit_info>;
 
+		[[nodiscard]] auto take_graphics_buffers() -> std::vector<gpu::command_buffer_handle>;
+
 	private:
 		static constexpr std::uint32_t max_profiled_passes = 128;
 
@@ -412,34 +429,84 @@ export namespace gse::gpu {
 		std::array<queue_state, gpu::queue_type_count> m_queue_states;
 		std::vector<gpu::queue_submission> m_pending_aux_submissions;
 		std::vector<gpu::semaphore_submit_info> m_pending_graphics_extra_waits;
+		std::vector<gpu::command_buffer_handle> m_pending_graphics_buffers;
 		std::set<std::pair<id, id>> m_warned_ambiguous_pairs;
 		gpu::color_clear m_swapchain_clear{};
 		load_op m_swapchain_load = load_op::clear;
 	};
 }
 
+template <typename Args, typename T>
+consteval auto gse::gpu::recording_context::bindless_member_for() -> std::meta::info {
+	for (const auto m : std::meta::nonstatic_data_members_of(^^Args, std::meta::access_context::unchecked())) {
+		if (std::meta::identifier_of(m) == std::meta::identifier_of(^^T)) {
+			return m;
+		}
+	}
+	return std::meta::info{};
+}
+
+template <typename T, typename Args>
+auto gse::gpu::recording_context::register_one_bindless(const Args& args, const gpu::pipeline_stage_flags stages) -> void {
+	constexpr auto dtype = gpu::descriptor_type_v<T>;
+	constexpr bool is_image = dtype == gpu::descriptor_type::sampled_image
+		|| dtype == gpu::descriptor_type::storage_image
+		|| dtype == gpu::descriptor_type::combined_image_sampler;
+	constexpr bool is_buffer = dtype == gpu::descriptor_type::storage_buffer;
+	if constexpr ((is_image || is_buffer) && gpu::descriptor_count_v<T> == 1) {
+		constexpr std::meta::info member = bindless_member_for<Args, T>();
+		std::uint32_t index;
+		if constexpr (dtype == gpu::descriptor_type::combined_image_sampler) {
+			index = args.[:member:].image.index;
+		}
+		else {
+			index = args.[:member:].index;
+		}
+		const resource_ref ref = is_image
+			? m_device->image_resource_for_slot(index)
+			: m_device->buffer_resource_for_slot(index);
+		if (ref.ptr) {
+			const auto access = (gpu::descriptor_access_v<T> == gpu::descriptor_access::read_write)
+				? gpu::access_flag::shader_storage_write
+				: (is_image ? gpu::access_flag::shader_sampled_read : gpu::access_flag::shader_storage_read);
+			note_touched(ref, stages, access);
+		}
+	}
+}
+
 template <typename Entry>
-auto gse::gpu::recording_context::dispatch(const entry_push_constants_t<Entry>& pc, const binding_args<entry_bindings_pack_t<Entry>>& args, const vec3u groups) const -> void {
+auto gse::gpu::recording_context::register_bindless_usage(const binding_args<entry_bindings_pack_t<Entry>>& args, const gpu::pipeline_stage_flags stages) -> void {
+	[&]<typename... Ts>(type_pack<Ts...>) {
+		(register_one_bindless<Ts>(args, stages), ...);
+	}(entry_bindings_pack_t<Entry>{});
+}
+
+template <typename Entry>
+auto gse::gpu::recording_context::dispatch(const entry_push_constants_t<Entry>& pc, const binding_args<entry_bindings_pack_t<Entry>>& args, const vec3u groups) -> void {
 	push_data(pc, 0);
 	push_data(args, sizeof(entry_push_constants_t<Entry>));
+	register_bindless_usage<Entry>(args, gpu::pipeline_stage_flag::compute_shader);
 	dispatch(groups.x(), groups.y(), groups.z());
 }
 
 template <typename Entry>
-auto gse::gpu::recording_context::dispatch(const binding_args<entry_bindings_pack_t<Entry>>& args, const vec3u groups) const -> void {
+auto gse::gpu::recording_context::dispatch(const binding_args<entry_bindings_pack_t<Entry>>& args, const vec3u groups) -> void {
 	push_data(args, 0);
+	register_bindless_usage<Entry>(args, gpu::pipeline_stage_flag::compute_shader);
 	dispatch(groups.x(), groups.y(), groups.z());
 }
 
 template <typename Entry>
-auto gse::gpu::recording_context::push_bindings(const entry_push_constants_t<Entry>& pc, const binding_args<entry_bindings_pack_t<Entry>>& args) const -> void {
+auto gse::gpu::recording_context::push_bindings(const entry_push_constants_t<Entry>& pc, const binding_args<entry_bindings_pack_t<Entry>>& args) -> void {
 	push_data(pc, 0);
 	push_data(args, sizeof(entry_push_constants_t<Entry>));
+	register_bindless_usage<Entry>(args, gpu::pipeline_stage_flag::vertex_shader | gpu::pipeline_stage_flag::fragment_shader | gpu::pipeline_stage_flag::mesh_shader | gpu::pipeline_stage_flag::task_shader);
 }
 
 template <typename Entry>
-auto gse::gpu::recording_context::push_bindings(const binding_args<entry_bindings_pack_t<Entry>>& args) const -> void {
+auto gse::gpu::recording_context::push_bindings(const binding_args<entry_bindings_pack_t<Entry>>& args) -> void {
 	push_data(args, 0);
+	register_bindless_usage<Entry>(args, gpu::pipeline_stage_flag::vertex_shader | gpu::pipeline_stage_flag::fragment_shader | gpu::pipeline_stage_flag::mesh_shader | gpu::pipeline_stage_flag::task_shader);
 }
 
 template <typename T>

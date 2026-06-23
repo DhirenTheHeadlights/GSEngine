@@ -2,12 +2,12 @@ static const int ap_steps = 30;
 
 float3 sample_transmittance_at(float radius, float view_zenith_cos) {
     float2 uv = transmittance_r_mu_to_uv(radius, view_zenith_cos);
-    return transmittance_in.SampleLevel(uv, 0).rgb;
+    return transmittance_in.SampleLevel(lut_sampler, uv, 0).rgb;
 }
 
 float3 sample_multiscatter_at(float radius, float mu_sun) {
     float2 uv = multiscatter_r_mu_sun_to_uv(radius, mu_sun);
-    return multiscatter_in.SampleLevel(uv, 0).rgb;
+    return multiscatter_in.SampleLevel(lut_sampler, uv, 0).rgb;
 }
 
 float3 reconstruct_view_dir(float2 screen_uv) {
@@ -28,14 +28,14 @@ void atmosphere_aerial_perspective(uint3 dispatch_id) {
 
     float2 screen_uv = (float2(dispatch_id.xy) + 0.5) / float2(size.xy);
     float slice = (float(dispatch_id.z) + 0.5) / float(size.z);
-    float slice_dist_km = slice * max_view_distance;
+    float slice_dist_km = slice * atmosphere_ubo.max_view_distance;
 
     float3 view_dir = reconstruct_view_dir(screen_uv);
-    float3 atm_camera = float3(0.0, bottom_radius + pc.camera_altitude, 0.0);
+    float3 atm_camera = float3(0.0, atmosphere_ubo.bottom_radius + pc.camera_altitude, 0.0);
 
     float mu_view_sun = dot(view_dir, pc.sun_direction);
     float ph_r = rayleigh_phase(mu_view_sun);
-    float ph_m = mie_phase(mu_view_sun, mie_phase_g);
+    float ph_m = mie_phase(mu_view_sun, atmosphere_ubo.mie_phase_g);
 
     float dt = slice_dist_km / float(ap_steps);
     float3 luminance = float3(0.0, 0.0, 0.0);

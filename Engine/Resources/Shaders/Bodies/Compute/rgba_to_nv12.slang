@@ -10,7 +10,7 @@ void rgba_to_nv12(uint3 dispatch_id) {
     if (pc.rgba_index == 0xFFFFFFFFu) return;
 
     float2 uv = (float2(pixel) + 0.5) / float2(pc.extent);
-    float3 rgb_linear = textures[NonUniformResourceIndex(pc.rgba_index)].SampleLevel(uv, 0).rgb;
+    float3 rgb_linear = textures[NonUniformResourceIndex(pc.rgba_index)].SampleLevel(textures_sampler, uv, 0).rgb;
     float3 rgb = linear_to_srgb(saturate(rgb_linear));
 
     float luma = 0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b;

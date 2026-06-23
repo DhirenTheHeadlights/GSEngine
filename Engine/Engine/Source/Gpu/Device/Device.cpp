@@ -10,6 +10,7 @@ import :device_dispatch;
 import :device_vulkan_backend;
 import :device_dx12_backend;
 import :backend_state;
+import :image;
 
 import gse.gpu_backend;
 
@@ -47,22 +48,21 @@ namespace gse::gpu {
 }
 
 auto gse::gpu::device::create(const shared_view<window::data> win, const bool validation_layers_enabled, gpu::device_settings& device_cfg) -> std::unique_ptr<device> {
-	active_backend = device_cfg.backend;
-
-	switch (device_cfg.backend) {
-		case gpu_backend_kind::vulkan: {
-			auto created = create_vulkan_device_backend(win, validation_layers_enabled, device_cfg);
+	if (device_cfg.backend == gpu_backend_kind::vulkan) {
+		auto created = create_vulkan_device_backend(win, validation_layers_enabled, device_cfg);
+		if (created) {
+			active_backend = gpu_backend_kind::vulkan;
 
 			std::unique_ptr<void, void (*)(void*)> backend(
-				created.backend.release(),
+				created->backend.release(),
 				&device_backend_delete<vulkan_device_backend>
 			);
 
 			auto dev = std::unique_ptr<device>(new device(
 				std::move(backend),
 				&device_dispatch_for<vulkan_device_backend>,
-				created.surface_format,
-				created.video_encode_enabled
+				created->surface_format,
+				created->video_encode_enabled
 			));
 
 			dev->m_transient = transient_executor<device>::create(
@@ -74,33 +74,35 @@ auto gse::gpu::device::create(const shared_view<window::data> win, const bool va
 
 			return dev;
 		}
-		case gpu_backend_kind::dx12: {
-			auto created = create_dx12_device_backend(win, validation_layers_enabled, device_cfg);
 
-			std::unique_ptr<void, void (*)(void*)> backend(
-				created.backend.release(),
-				&device_backend_delete<dx12_device_backend>
-			);
-
-			auto dev = std::unique_ptr<device>(new device(
-				std::move(backend),
-				&device_dispatch_for<dx12_device_backend>,
-				created.surface_format,
-				created.video_encode_enabled
-			));
-
-			dev->m_transient = transient_executor<device>::create(
-				*dev,
-				dev->queue_family(queue_type::graphics),
-				dev->queue_family(queue_type::compute),
-				task::thread_count()
-			);
-
-			return dev;
-		}
+		log::println(log::category::render, "vulkan device unavailable; falling back to dx12 backend");
+		log::flush();
+		device_cfg.backend = gpu_backend_kind::dx12;
 	}
 
-	return nullptr;
+	active_backend = gpu_backend_kind::dx12;
+	auto created = create_dx12_device_backend(win, validation_layers_enabled, device_cfg);
+
+	std::unique_ptr<void, void (*)(void*)> backend(
+		created.backend.release(),
+		&device_backend_delete<dx12_device_backend>
+	);
+
+	auto dev = std::unique_ptr<device>(new device(
+		std::move(backend),
+		&device_dispatch_for<dx12_device_backend>,
+		created.surface_format,
+		created.video_encode_enabled
+	));
+
+	dev->m_transient = transient_executor<device>::create(
+		*dev,
+		dev->queue_family(queue_type::graphics),
+		dev->queue_family(queue_type::compute),
+		task::thread_count()
+	);
+
+	return dev;
 }
 
 gse::gpu::device::device(std::unique_ptr<void, void (*)(void*)> backend, const gpu_dispatch* dispatch, image_format surface_format, bool video_encode_enabled)
@@ -641,11 +643,43 @@ auto gse::gpu::device::host_upload_image_layers(const gpu::handle<gpu::image> im
 }
 
 auto gse::gpu::device::create_buffer(const buffer_desc& desc, const std::string_view tag, const std::source_location& loc) -> buffer {
-	return m_vt->create_buffer(m_backend.get(), desc, tag, loc);
+	auto buf = m_vt->create_buffer(m_backend.get(), desc, tag, loc);
+	if (desc.bindless) {
+		m_buffer_slot_resources[buf.slot().index] = resource_ref{
+			.ptr = std::bit_cast<const void*>(buf.handle()),
+			.type = resource_type::buffer,
+			.buffer_size = buf.size(),
+		};
+	}
+	return buf;
 }
 
 auto gse::gpu::device::create_image(const image_desc& desc, const std::string_view tag) -> image {
-	return m_vt->create_image(m_backend.get(), desc, tag);
+	auto img = m_vt->create_image(m_backend.get(), desc, tag);
+	if (desc.bindless) {
+		const resource_ref ref{
+			.ptr = std::bit_cast<const void*>(img.handle()),
+			.type = resource_type::image,
+			.aspects = image_aspect_for(img.format()),
+		};
+		m_image_slot_resources[img.storage_slot().index] = ref;
+		m_image_slot_resources[img.sampled_slot().index] = ref;
+	}
+	return img;
+}
+
+auto gse::gpu::device::image_resource_for_slot(const std::uint32_t slot_index) const -> resource_ref {
+	if (const auto it = m_image_slot_resources.find(slot_index); it != m_image_slot_resources.end()) {
+		return it->second;
+	}
+	return {};
+}
+
+auto gse::gpu::device::buffer_resource_for_slot(const std::uint32_t slot_index) const -> resource_ref {
+	if (const auto it = m_buffer_slot_resources.find(slot_index); it != m_buffer_slot_resources.end()) {
+		return it->second;
+	}
+	return {};
 }
 
 auto gse::gpu::device::allocate_buffer_slot() -> gpu::bindless_handle {

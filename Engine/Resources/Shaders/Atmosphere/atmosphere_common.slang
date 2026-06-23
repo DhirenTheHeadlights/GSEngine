@@ -12,16 +12,16 @@ public struct medium_split {
 };
 
 public medium_split sample_medium_split(float radius_km) {
-    float altitude = radius_km - bottom_radius;
+    float altitude = radius_km - atmosphere_ubo.bottom_radius;
 
-    float rayleigh_density = exp(-altitude / rayleigh_scale_height);
-    float mie_density = exp(-altitude / mie_scale_height);
-    float ozone_density = saturate(1.0 - abs(altitude - ozone_peak_height) / ozone_half_width);
+    float rayleigh_density = exp(-altitude / atmosphere_ubo.rayleigh_scale_height);
+    float mie_density = exp(-altitude / atmosphere_ubo.mie_scale_height);
+    float ozone_density = saturate(1.0 - abs(altitude - atmosphere_ubo.ozone_peak_height) / atmosphere_ubo.ozone_half_width);
 
-    float3 r_scattering = rayleigh_scattering * rayleigh_density;
-    float m_scattering = mie_scattering * mie_density;
-    float m_extinction = (mie_scattering + mie_absorption) * mie_density;
-    float3 o_extinction = ozone_absorption * ozone_density;
+    float3 r_scattering = atmosphere_ubo.rayleigh_scattering * rayleigh_density;
+    float m_scattering = atmosphere_ubo.mie_scattering * mie_density;
+    float m_extinction = (atmosphere_ubo.mie_scattering + atmosphere_ubo.mie_absorption) * mie_density;
+    float3 o_extinction = atmosphere_ubo.ozone_absorption * ozone_density;
 
     medium_split m;
     m.rayleigh_scattering = r_scattering;
@@ -50,12 +50,12 @@ public float mie_phase(float cos_theta, float g) {
 }
 
 public float ray_to_top_distance(float radius, float view_zenith_cos) {
-    float discriminant = radius * radius * (view_zenith_cos * view_zenith_cos - 1.0) + top_radius * top_radius;
+    float discriminant = radius * radius * (view_zenith_cos * view_zenith_cos - 1.0) + atmosphere_ubo.top_radius * atmosphere_ubo.top_radius;
     return max(-radius * view_zenith_cos + sqrt(max(discriminant, 0.0)), 0.0);
 }
 
 public float ray_to_ground_distance(float radius, float view_zenith_cos) {
-    float discriminant = radius * radius * (view_zenith_cos * view_zenith_cos - 1.0) + bottom_radius * bottom_radius;
+    float discriminant = radius * radius * (view_zenith_cos * view_zenith_cos - 1.0) + atmosphere_ubo.bottom_radius * atmosphere_ubo.bottom_radius;
     if (discriminant < 0.0 || view_zenith_cos >= 0.0) {
         return -1.0;
     }
@@ -63,11 +63,11 @@ public float ray_to_ground_distance(float radius, float view_zenith_cos) {
 }
 
 public void transmittance_uv_to_r_mu(float2 uv, out float radius, out float view_zenith_cos) {
-    float h = sqrt(top_radius * top_radius - bottom_radius * bottom_radius);
+    float h = sqrt(atmosphere_ubo.top_radius * atmosphere_ubo.top_radius - atmosphere_ubo.bottom_radius * atmosphere_ubo.bottom_radius);
     float rho = h * uv.y;
-    radius = sqrt(rho * rho + bottom_radius * bottom_radius);
+    radius = sqrt(rho * rho + atmosphere_ubo.bottom_radius * atmosphere_ubo.bottom_radius);
 
-    float d_min = top_radius - radius;
+    float d_min = atmosphere_ubo.top_radius - radius;
     float d_max = rho + h;
     float d = d_min + uv.x * (d_max - d_min);
 
@@ -76,13 +76,13 @@ public void transmittance_uv_to_r_mu(float2 uv, out float radius, out float view
 }
 
 public float2 transmittance_r_mu_to_uv(float radius, float view_zenith_cos) {
-    float h = sqrt(top_radius * top_radius - bottom_radius * bottom_radius);
-    float rho = sqrt(max(radius * radius - bottom_radius * bottom_radius, 0.0));
+    float h = sqrt(atmosphere_ubo.top_radius * atmosphere_ubo.top_radius - atmosphere_ubo.bottom_radius * atmosphere_ubo.bottom_radius);
+    float rho = sqrt(max(radius * radius - atmosphere_ubo.bottom_radius * atmosphere_ubo.bottom_radius, 0.0));
 
-    float discriminant = radius * radius * (view_zenith_cos * view_zenith_cos - 1.0) + top_radius * top_radius;
+    float discriminant = radius * radius * (view_zenith_cos * view_zenith_cos - 1.0) + atmosphere_ubo.top_radius * atmosphere_ubo.top_radius;
     float d = max(-radius * view_zenith_cos + sqrt(max(discriminant, 0.0)), 0.0);
 
-    float d_min = top_radius - radius;
+    float d_min = atmosphere_ubo.top_radius - radius;
     float d_max = rho + h;
 
     float u = (d_max - d_min) > 1e-6 ? (d - d_min) / (d_max - d_min) : 0.0;
@@ -92,7 +92,7 @@ public float2 transmittance_r_mu_to_uv(float radius, float view_zenith_cos) {
 
 public float2 multiscatter_r_mu_sun_to_uv(float radius, float mu_sun) {
     float u = clamp(mu_sun * 0.5 + 0.5, 0.0, 1.0);
-    float v = clamp((radius - bottom_radius) / max(top_radius - bottom_radius, 1e-6), 0.0, 1.0);
+    float v = clamp((radius - atmosphere_ubo.bottom_radius) / max(atmosphere_ubo.top_radius - atmosphere_ubo.bottom_radius, 1e-6), 0.0, 1.0);
     return float2(u, v);
 }
 

@@ -14,7 +14,7 @@ VS_OUT vs_main(uint vid : SV_VertexID) {
 
 [shader("fragment")]
 float4 fs_main(VS_OUT input) : SV_Target {
-    float4 sample = cloud_in.Sample(input.uv);
+    float4 sample = cloud_in.Sample(cloud_composite_sampler, input.uv);
     float opacity = saturate(1.0 - sample.a);
     if (opacity < 1e-6) {
         discard;

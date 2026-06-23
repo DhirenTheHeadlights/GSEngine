@@ -4,6 +4,7 @@ import std;
 
 import :core;
 import :enums;
+import :image;
 
 import gse.math;
 
@@ -32,6 +33,9 @@ export namespace gse::gpu {
 	struct resource_ref {
 		const void* ptr = nullptr;
 		resource_type type = resource_type::buffer;
+		image_aspect_flags aspects = {};
+		device_size buffer_size = 0;
+		const void* host_buffer = nullptr;
 	};
 
 	struct resource_slot {
@@ -103,13 +107,6 @@ export namespace gse::gpu {
 	struct descriptor_address_info {
 		device_address address = 0;
 		device_size range = 0;
-	};
-
-	struct secondary_inheritance_info {
-		bool render_pass_continue = false;
-		std::span<const image_format_value> color_attachment_formats;
-		image_format_value depth_attachment_format = 0;
-		pipeline_statistic_flags pipeline_statistics;
 	};
 
 	struct draw_indexed_indirect_command {

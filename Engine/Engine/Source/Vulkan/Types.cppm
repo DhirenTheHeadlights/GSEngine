@@ -704,6 +704,9 @@ auto gse::vulkan::to_vk(const gpu::buffer_usage fls) -> vk::BufferUsageFlags {
 		result |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
 			vk::BufferUsageFlagBits::eShaderDeviceAddress;
 	}
+	if (fls.test(gpu::buffer_flag::acceleration_structure_scratch)) {
+		result |= vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress;
+	}
 	if (fls.test(gpu::buffer_flag::video_encode_dst)) {
 		result |= vk::BufferUsageFlagBits::eVideoEncodeDstKHR;
 	}

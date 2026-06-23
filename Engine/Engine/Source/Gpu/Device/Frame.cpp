@@ -196,21 +196,23 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
 	};
 }
 
-auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> aux_submissions, std::span<const semaphore_submit_info> extra_graphics_waits) -> void {
-	const auto graphics_cb = command_buffer_handle{ m_command_buffers[static_cast<std::size_t>(queue_type::graphics)] };
-	m_device->transient().recorder().run_post_frame(graphics_cb);
+auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> aux_submissions, std::span<const semaphore_submit_info> extra_graphics_waits, std::span<const command_buffer_handle> graphics_buffers) -> void {
+	const auto graphics_begin = command_buffer_handle{ m_command_buffers[static_cast<std::size_t>(queue_type::graphics)] };
+	{
+		trace::scope_guard sg{ trace_id<"end_frame::cmd_end">() };
+		m_device->cmd_end(graphics_begin);
+	}
 
+	const auto graphics_end = m_device->acquire_worker_command_buffer(queue_type::graphics, 0, m_current_frame);
+	m_device->cmd_begin(graphics_end);
+	m_device->transient().recorder().run_post_frame(graphics_end);
 	m_device->cmd_release_swapchain_to_present(
-		graphics_cb,
+		graphics_end,
 		m_swapchain->image(m_image_index),
 		pipeline_stage_flag::color_attachment_output,
 		access_flag::color_attachment_write
 	);
-
-	{
-		trace::scope_guard sg{ trace_id<"end_frame::cmd_end">() };
-		m_device->cmd_end(graphics_cb);
-	}
+	m_device->cmd_end(graphics_end);
 
 	std::array<std::size_t, queue_type_count> last_idx_per_queue;
 	last_idx_per_queue.fill(static_cast<std::size_t>(-1));
@@ -236,12 +238,14 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
 			);
 			const bool last_for_queue = (last_idx_per_queue[static_cast<std::size_t>(sub.queue)] == i);
 			{
-				const command_buffer_submit_info cmd_info{
-					.command_buffer = sub.command_buffer,
-				};
+				std::vector<command_buffer_submit_info> cmd_infos;
+				cmd_infos.reserve(sub.command_buffers.size());
+				for (const auto cb : sub.command_buffers) {
+					cmd_infos.push_back({ .command_buffer = cb });
+				}
 				const submit_info submit{
 					.wait_semaphores = sub.waits,
-					.command_buffers = std::span(&cmd_info, 1),
+					.command_buffers = cmd_infos,
 					.signal_semaphores = sub.signals,
 				};
 				m_device->submit(
@@ -273,12 +277,16 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
 
 	{
 		trace::scope_guard sg{ trace_id<"end_frame::submit">() };
-		const command_buffer_submit_info cmd_info{
-			.command_buffer = graphics_cb,
-		};
+		std::vector<command_buffer_submit_info> cmd_infos;
+		cmd_infos.reserve(2 + graphics_buffers.size());
+		cmd_infos.push_back({ .command_buffer = graphics_begin });
+		for (const auto cb : graphics_buffers) {
+			cmd_infos.push_back({ .command_buffer = cb });
+		}
+		cmd_infos.push_back({ .command_buffer = graphics_end });
 		const submit_info submit{
 			.wait_semaphores = main_waits,
-			.command_buffers = std::span(&cmd_info, 1),
+			.command_buffers = cmd_infos,
 			.signal_semaphores = std::span(&render_finished_signal, 1),
 		};
 		m_device->submit(queue_type::graphics, submit,

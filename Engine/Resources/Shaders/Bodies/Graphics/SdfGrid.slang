@@ -34,8 +34,8 @@ float axis_factor(float2 p, float thickness) {
 
 [shader("fragment")]
 FS_OUT fs_main(VS_OUT input) {
-    float4 wn = mul(inv_view_proj, float4(input.ndc, 0.0, 1.0));
-    float4 wf = mul(inv_view_proj, float4(input.ndc, 1.0, 1.0));
+    float4 wn = mul(camera_ubo.inv_view_proj, float4(input.ndc, 0.0, 1.0));
+    float4 wf = mul(camera_ubo.inv_view_proj, float4(input.ndc, 1.0, 1.0));
     float3 ro = wn.xyz / wn.w;
     float3 rt = wf.xyz / wf.w;
     float3 rd = normalize(rt - ro);
@@ -72,7 +72,7 @@ FS_OUT fs_main(VS_OUT input) {
 
     float final_alpha = a * dist_fade;
 
-    float4 clip = mul(proj, mul(view, float4(hit, 1.0)));
+    float4 clip = mul(camera_ubo.proj, mul(camera_ubo.view, float4(hit, 1.0)));
     FS_OUT o;
     o.color = float4(col, final_alpha);
     o.depth = clip.z / clip.w;

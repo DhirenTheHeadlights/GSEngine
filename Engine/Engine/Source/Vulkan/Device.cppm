@@ -134,7 +134,7 @@ export namespace gse::vulkan {
 			const instance& instance_data,
 			gpu::device_settings& cfg,
 			aftermath& aftermath_tracker
-		) -> device_creation_result;
+		) -> gpu::expected<device_creation_result>;
 
 		[[nodiscard]] auto physical_device(
 			this auto&& self

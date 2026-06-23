@@ -15,7 +15,7 @@ auto gse::build_blas_async(gpu::device& dev, const gpu::acceleration_structure a
 	auto scratch = dev.create_buffer(
 		gpu::buffer_desc{
 			.size = scratch_size + scratch_alignment,
-			.usage = gpu::buffer_flag::storage,
+			.usage = gpu::buffer_flag::acceleration_structure_scratch,
 		}
 	);
 

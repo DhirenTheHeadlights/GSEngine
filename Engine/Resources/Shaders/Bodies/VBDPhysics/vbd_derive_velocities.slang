@@ -48,7 +48,7 @@ void vbd_derive_velocities(uint3 dispatch_id) {
 
     float lin_speed = length(body.velocity.xyz);
     float ang_speed = length(body.angular_velocity.xyz);
-    if (lin_speed < pc.cfg.velocity_sleep_threshold && ang_speed < pc.cfg.angular_sleep_threshold) {
+    if (lin_speed < config.velocity_sleep_threshold && ang_speed < config.angular_sleep_threshold) {
         body.sleep_counter = body.sleep_counter + 1;
     } else {
         body.sleep_counter = body.sleep_counter / 2;
