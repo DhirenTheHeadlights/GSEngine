@@ -58,7 +58,8 @@ auto gse::renderer::sdf_grid::init(context& ctx, const shared_view<gpu::context:
 		d.camera_ubo_buffers[i] = gpu_s.device->create_buffer(
 			{
 				.size = camera_ubo_size,
-				.usage = gpu::buffer_flag::uniform,
+				.stride = sizeof(shaders::common::camera_data),
+				.usage = gpu::buffer_flag::storage,
 				.bindless = true
 			},
 			"sdf_grid.camera_ubo"

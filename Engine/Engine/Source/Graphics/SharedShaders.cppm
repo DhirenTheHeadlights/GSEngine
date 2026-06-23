@@ -12,6 +12,11 @@ export namespace gse::shaders::bindless {
 		= sampler2d_array
 	]] textures {};
 
+	struct [[
+		= binding<2, 1>{},
+		= sampler_state
+	]] textures_sampler {};
+
 	constexpr std::uint32_t invalid_index = std::numeric_limits<std::uint32_t>::max();
 }
 

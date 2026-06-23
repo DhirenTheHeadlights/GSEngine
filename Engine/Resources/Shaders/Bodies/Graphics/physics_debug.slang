@@ -9,8 +9,8 @@ VS_OUTPUT vs_main(uint vid : SV_VertexID) {
     VS_OUTPUT output;
 
     float4 world_pos = float4(v.position, 1.0);
-    float4 view_pos  = mul(view, world_pos);
-    output.clip_pos  = mul(proj, view_pos);
+    float4 view_pos  = mul(camera_ubo.view, world_pos);
+    output.clip_pos  = mul(camera_ubo.proj, view_pos);
     output.color     = v.color;
 
     return output;

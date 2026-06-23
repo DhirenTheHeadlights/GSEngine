@@ -15,7 +15,7 @@ void vbd_freeze_jacobians(uint3 dispatch_id) {
 
     float3 dirs[3] = { c.normal.xyz, c.tangent_u.xyz, c.tangent_v.xyz };
 
-    frozen_jacobian fj;
+    frozen_jacobian fj = (frozen_jacobian)0;
     fj.world_r_a = r_aw;
     fj.world_r_b = r_bw;
     fj.j_ang_a = float3x3(

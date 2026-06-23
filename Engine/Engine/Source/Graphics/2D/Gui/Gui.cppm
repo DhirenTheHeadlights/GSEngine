@@ -124,6 +124,7 @@ export namespace gse::gui {
 	auto run(
 		context& ctx,
 		shared_view<window::data> window_s,
+		shared_view<gpu::context::data> gpu_s,
 		shared_view<asset::data> assets_s,
 		shared_view<gse::input::data> input_state,
 		const save::registry& save_reg,
@@ -148,6 +149,7 @@ export namespace gse::gui {
 	auto update_body(
 		context& ctx,
 		shared_view<window::data> window_s,
+		shared_view<gpu::context::data> gpu_s,
 		shared_view<asset::data> assets_s,
 		shared_view<gse::input::data> input_state,
 		const save::registry& save_reg,

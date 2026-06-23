@@ -81,6 +81,7 @@ export namespace gse::renderer::forward {
 		per_frame_resource<gpu::bindless_handle> tlas_slots;
 
 		gpu::bindless_handle gi_sampler;
+		gpu::bindless_handle material_sampler;
 
 		linear_vector<std::byte> light_staging;
 	};

@@ -24,18 +24,29 @@ import gse.meta;
 namespace gse::renderer::tonemap {
 	struct [[
 		= shaders::binding<0, 0>{},
-		= shaders::sampler2d
-	]] hdr_color {};
+		= shaders::texture2d
+	]] hdr_color {
+		using element = vec4f;
+	};
 
 	struct [[
 		= shaders::binding<0, 1>{},
-		= shaders::sampler2d
-	]] bloom_color {};
+		= shaders::texture2d
+	]] bloom_color {
+		using element = vec4f;
+	};
 
 	struct [[
 		= shaders::binding<0, 2>{},
-		= shaders::sampler2d
-	]] velocity_color {};
+		= shaders::texture2d
+	]] velocity_color {
+		using element = vec4f;
+	};
+
+	struct [[
+		= shaders::binding<0, 3>{},
+		= shaders::sampler_state
+	]] color_sampler {};
 
 	struct [[= shaders::shader_struct]] push_constants {
 		float exposure;
@@ -43,7 +54,7 @@ namespace gse::renderer::tonemap {
 		std::uint32_t show_velocity;
 	};
 
-	using shader_binding_types = type_pack<hdr_color, bloom_color, velocity_color>;
+	using shader_binding_types = type_pack<hdr_color, bloom_color, velocity_color, color_sampler>;
 
 	using entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/Tonemap">,
@@ -144,9 +155,10 @@ auto gse::renderer::tonemap::frame(const context& ctx, shared_view<gpu::context:
 			.show_velocity = d.show_velocity ? 1u : 0u,
 		},
 		{
-			.hdr_color = { d.hdr_view.slot(), d.sampler.slot() },
-			.bloom_color = { bloom_slot, d.sampler.slot() },
-			.velocity_color = { d.velocity_view.slot(), d.sampler.slot() },
+			.hdr_color = d.hdr_view.slot(),
+			.bloom_color = bloom_slot,
+			.velocity_color = d.velocity_view.slot(),
+			.color_sampler = d.sampler.slot(),
 		}
 	);
 	rec.draw(3);

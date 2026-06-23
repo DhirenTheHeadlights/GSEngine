@@ -122,6 +122,7 @@ export namespace gse::renderer::ui {
 	struct [[= gse::system_state<"Ui">{}]] data {
 		gpu::shader_program sprite_pipeline;
 		gpu::shader_program text_pipeline;
+		gpu::bindless_handle ui_sampler;
 		std::array<frame_resources, frames_in_flight> gpu_frames;
 
 		triple_buffer<gpu_frame_data> buffered_frames;

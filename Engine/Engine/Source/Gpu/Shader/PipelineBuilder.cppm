@@ -25,6 +25,9 @@ export namespace gse::gpu {
 	template <typename T>
 	constexpr auto descriptor_count_v = shaders::descriptor_count_of<T>();
 
+	template <typename T>
+	constexpr auto descriptor_access_v = shaders::descriptor_access_of<T>();
+
 	consteval auto binding_arg_type(
 		std::meta::info t
 	) -> std::meta::info;
@@ -256,6 +259,10 @@ export namespace gse::gpu {
 
 	template <typename T>
 	struct push_constant {
+		static_assert(
+			shaders::push_constant_layout_is_portable<T>(),
+			"push-constant struct straddles a 16-byte boundary: its DX12 cbuffer layout will not match the C++/Vulkan scalar layout, so fields read garbage on DX12. Reorder members so no vec/mat crosses a 16-byte boundary (e.g. place a scalar right after a vec3 to fill the block)."
+		);
 		using type = T;
 	};
 

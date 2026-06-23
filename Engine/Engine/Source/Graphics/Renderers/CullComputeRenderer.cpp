@@ -65,7 +65,8 @@ auto gse::renderer::cull_compute::init(context& ctx, const shared_view<gpu::cont
 		d.frustum_buffer[i] = gpu_s.device->create_buffer(
 			{
 				.size = frustum_size,
-				.usage = gpu::buffer_flag::uniform | gpu::buffer_flag::transfer_dst,
+				.stride = sizeof(std::array<vec4f, 6>),
+				.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst,
 				.bindless = true
 			}
 		);
@@ -74,6 +75,7 @@ auto gse::renderer::cull_compute::init(context& ctx, const shared_view<gpu::cont
 		d.batch_info_buffer[i] = gpu_s.device->create_buffer(
 			{
 				.size = batch_info_size,
+				.stride = sizeof(batch_info),
 				.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst,
 				.bindless = true
 			}

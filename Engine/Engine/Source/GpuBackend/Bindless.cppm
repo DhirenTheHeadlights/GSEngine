@@ -61,6 +61,7 @@ export namespace gse::gpu {
 	struct bindless_slot_pool {
 		device_size base_offset = 0;
 		device_size stride = 0;
+		device_size base_index = 0;
 		std::vector<std::uint32_t> free_list;
 		std::mutex mutex;
 
@@ -122,17 +123,17 @@ auto gse::gpu::bindless_slot_pool::allocate() -> bindless_slot {
 	const auto index = free_list.back();
 	free_list.pop_back();
 	return {
-		.index = index
+		.index = static_cast<std::uint32_t>(base_index) + index
 	};
 }
 
 auto gse::gpu::bindless_slot_pool::release(const bindless_slot slot) -> void {
 	std::lock_guard lock(mutex);
-	free_list.push_back(slot.index);
+	free_list.push_back(slot.index - static_cast<std::uint32_t>(base_index));
 }
 
 auto gse::gpu::bindless_slot_pool::offset(const bindless_slot slot) const -> device_size {
-	return base_offset + slot.index * stride;
+	return base_offset + (slot.index - base_index) * stride;
 }
 
 gse::gpu::bindless_handle::bindless_handle(bindless_slot_pool* pool, const bindless_slot slot)

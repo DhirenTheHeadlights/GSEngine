@@ -556,7 +556,7 @@ auto gse::vulkan::device::families_distinct() const -> bool {
 	return false;
 }
 
-auto gse::vulkan::device::create(const instance& instance_data, gpu::device_settings& cfg, aftermath& aftermath_tracker) -> device_creation_result {
+auto gse::vulkan::device::create(const instance& instance_data, gpu::device_settings& cfg, aftermath& aftermath_tracker) -> gpu::expected<device_creation_result> {
 	auto devices = instance_data.enumerate_physical_devices();
 	assert(!devices.empty(), "No Vulkan-compatible GPUs found!");
 
@@ -613,17 +613,31 @@ auto gse::vulkan::device::create(const instance& instance_data, gpu::device_sett
 		);
 	};
 
-	assert(supports_extension(vk::EXTShaderObjectExtensionName), "VK_EXT_shader_object is required");
-	assert(supports_extension(vk::EXTExtendedDynamicState3ExtensionName), "VK_EXT_extended_dynamic_state3 is required");
-	assert(
-		supports_extension(vk::EXTVertexInputDynamicStateExtensionName),
-		"VK_EXT_vertex_input_dynamic_state is required"
-	);
-	assert(supports_extension(vk::EXTDescriptorHeapExtensionName), "VK_EXT_descriptor_heap is required");
-	assert(
-		supports_extension(vk::KHRDeferredHostOperationsExtensionName) && supports_extension(vk::KHRAccelerationStructureExtensionName) && supports_extension(vk::KHRRayQueryExtensionName),
-		"Ray tracing extensions are required"
-	);
+	std::vector<std::string_view> missing_requirements;
+	const auto require = [&](const bool supported, const std::string_view requirement) {
+		if (!supported) {
+			missing_requirements.push_back(requirement);
+		}
+	};
+	const auto require_extension = [&](const char* extension) {
+		require(supports_extension(extension), extension);
+	};
+
+	require_extension(vk::EXTShaderObjectExtensionName);
+	require_extension(vk::EXTExtendedDynamicState3ExtensionName);
+	require_extension(vk::EXTVertexInputDynamicStateExtensionName);
+	require_extension(vk::EXTDescriptorHeapExtensionName);
+	require_extension(vk::EXTMeshShaderExtensionName);
+	require_extension(vk::KHRDeferredHostOperationsExtensionName);
+	require_extension(vk::KHRAccelerationStructureExtensionName);
+	require_extension(vk::KHRRayQueryExtensionName);
+	require_extension(vk::EXTRobustness2ExtensionName);
+	require_extension(vk::KHRUnifiedImageLayoutsExtensionName);
+	require_extension(vk::EXTHostImageCopyExtensionName);
+	require_extension(vk::EXTSwapchainMaintenance1ExtensionName);
+	require_extension(vk::EXTPresentTimingExtensionName);
+	require_extension(vk::KHRPresentId2ExtensionName);
+	require_extension(vk::KHRCalibratedTimestampsExtensionName);
 
 	const bool video_encode_extensions_available =
 		families.video_encode_family.has_value() &&
@@ -665,44 +679,31 @@ auto gse::vulkan::device::create(const instance& instance_data, gpu::device_sett
 	const auto& eds3_query = feature_chain.get<vk::PhysicalDeviceExtendedDynamicState3FeaturesEXT>();
 	const auto& vertex_input_dynamic_state_query = feature_chain.get<vk::PhysicalDeviceVertexInputDynamicStateFeaturesEXT>();
 
-	assert(mesh_shader_query.meshShader && mesh_shader_query.taskShader, "Mesh shaders required");
-	assert(as_query.accelerationStructure && rq_query.rayQuery, "Ray tracing features required");
-	assert(descriptor_heap_query.descriptorHeap, "VK_EXT_descriptor_heap feature required");
-	assert(shader_object_query.shaderObject, "VK_EXT_shader_object feature required");
-	assert(vertex_input_dynamic_state_query.vertexInputDynamicState, "vertexInputDynamicState required");
+	require(mesh_shader_query.meshShader && mesh_shader_query.taskShader, vk::EXTMeshShaderExtensionName);
+	require(as_query.accelerationStructure, vk::KHRAccelerationStructureExtensionName);
+	require(rq_query.rayQuery, vk::KHRRayQueryExtensionName);
+	require(descriptor_heap_query.descriptorHeap, vk::EXTDescriptorHeapExtensionName);
+	require(shader_object_query.shaderObject, vk::EXTShaderObjectExtensionName);
+	require(vertex_input_dynamic_state_query.vertexInputDynamicState, vk::EXTVertexInputDynamicStateExtensionName);
 
 	const bool device_fault_supported = supports_extension(vk::EXTDeviceFaultExtensionName) && fault_query.deviceFault;
 	const bool device_fault_vendor_binary_supported = device_fault_supported && fault_query.deviceFaultVendorBinary;
 	const bool av1_encode_supported = video_encode_extensions_available && supports_extension(vk::KHRVideoEncodeAv1ExtensionName);
 
-	assert(
-		supports_extension(vk::EXTRobustness2ExtensionName) && robustness2_query.robustBufferAccess2,
-		"VK_EXT_robustness2 is required"
-	);
-	assert(
-		supports_extension(vk::KHRUnifiedImageLayoutsExtensionName) && unified_layouts_query.unifiedImageLayouts,
-		"VK_KHR_unified_image_layouts is required"
-	);
-	assert(
-		supports_extension(vk::EXTHostImageCopyExtensionName) && host_image_copy_query.hostImageCopy,
-		"VK_EXT_host_image_copy is required"
-	);
-	assert(
-		supports_extension(vk::EXTSwapchainMaintenance1ExtensionName) && swapchain_maintenance1_query.swapchainMaintenance1,
-		"VK_EXT_swapchain_maintenance1 is required"
-	);
-	assert(
-		supports_extension(vk::EXTPresentTimingExtensionName) && present_timing_query.presentTiming && present_timing_query.presentAtRelativeTime,
-		"VK_EXT_present_timing with relative-time scheduling is required"
-	);
-	assert(
-		supports_extension(vk::KHRPresentId2ExtensionName) && present_id2_query.presentId2,
-		"VK_KHR_present_id2 is required"
-	);
-	assert(
-		supports_extension(vk::KHRCalibratedTimestampsExtensionName),
-		"VK_KHR_calibrated_timestamps is required"
-	);
+	require(robustness2_query.robustBufferAccess2, vk::EXTRobustness2ExtensionName);
+	require(unified_layouts_query.unifiedImageLayouts, vk::KHRUnifiedImageLayoutsExtensionName);
+	require(host_image_copy_query.hostImageCopy, vk::EXTHostImageCopyExtensionName);
+	require(swapchain_maintenance1_query.swapchainMaintenance1, vk::EXTSwapchainMaintenance1ExtensionName);
+	require(present_timing_query.presentTiming && present_timing_query.presentAtRelativeTime, vk::EXTPresentTimingExtensionName);
+	require(present_id2_query.presentId2, vk::KHRPresentId2ExtensionName);
+
+	if (!missing_requirements.empty()) {
+		for (const auto requirement : missing_requirements) {
+			log::println(log::category::vulkan, "vulkan: required capability not supported: {}", requirement);
+		}
+		log::flush();
+		return std::unexpected{ gpu::result::error_unknown };
+	}
 
 	vk::PhysicalDeviceMemoryPriorityFeaturesEXT memory_priority_features{
 		.memoryPriority = vk::True,

@@ -19,6 +19,7 @@ export namespace gse::free_camera {
 	struct component {
 		vec3<position> initial_position = vec3<position>(0.f, 0.f, 5.f);
 		int priority = 10;
+		int detached_priority = 100;
 		velocity speed = meters_per_second(100.f);
 		angle yaw = degrees(-90.f);
 		angle pitch = degrees(0.f);
@@ -35,7 +36,9 @@ export namespace gse::free_camera {
 		actions::handle right;
 		actions::handle up;
 		actions::handle down;
+		actions::handle toggle;
 		id move_axis_id;
+		bool detached = false;
 	};
 
 }
@@ -82,6 +85,7 @@ auto gse::free_camera::system::attach(context& ctx, data& d, read<component> cam
 		b.right = actions::add<"FreeCamera_Move_Right">(ctx.channels, key::d);
 		b.up = actions::add<"FreeCamera_Move_Up">(ctx.channels, key::space);
 		b.down = actions::add<"FreeCamera_Move_Down">(ctx.channels, key::left_control);
+		b.toggle = actions::add<"FreeCamera_Toggle">(ctx.channels, key::f1);
 
 		b.move_axis_id = actions::bind_axis2(
 			ctx.channels,
@@ -128,11 +132,29 @@ auto gse::free_camera::system::update(context& ctx, data& d, const shared_view<a
 		if (binding_it == d.bindings_by_owner.end()) {
 			continue;
 		}
-		const auto& b = binding_it->second;
+		auto& b = binding_it->second;
 
 		auto* cam_follow = follows.find(owner_id);
 		if (!cam_follow) {
 			continue;
+		}
+
+		const bool f1_pressed = actions::pressed(b.toggle, cs, as);
+		if (f1_pressed) {
+			b.detached = !b.detached;
+			if (b.detached) {
+				if (const auto* active_follow = follows.find(cam_s.active_controller_entity); active_follow && cam_s.active_controller_entity != owner_id) {
+					cam_follow->position = active_follow->position + active_follow->offset;
+					cam_follow->orientation = active_follow->orientation;
+					const auto detach_forward = rotate_vector(active_follow->orientation, vec3f(0.f, 0.f, -1.f));
+					c.yaw = radians(std::atan2(-detach_forward.x(), -detach_forward.z()));
+					c.pitch = radians(std::asin(std::clamp(detach_forward.y(), -1.f, 1.f)));
+				}
+				cam_follow->priority = c.detached_priority;
+			}
+			else {
+				cam_follow->priority = c.priority;
+			}
 		}
 
 		const bool is_active_view = cam_s.active_controller_entity == owner_id;

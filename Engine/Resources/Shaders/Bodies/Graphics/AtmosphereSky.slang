@@ -14,12 +14,12 @@ VS_OUT vs_main(uint vid : SV_VertexID) {
 
 float3 sample_transmittance_at(float radius, float view_zenith_cos) {
     float2 uv = transmittance_r_mu_to_uv(radius, view_zenith_cos);
-    return transmittance_in.SampleLevel(uv, 0).rgb;
+    return transmittance_in.SampleLevel(lut_sampler, uv, 0).rgb;
 }
 
 float3 sample_sky_view_at(float3 view_dir) {
     float2 uv = sky_view_dir_to_uv(view_dir);
-    return sky_view_in.SampleLevel(uv, 0).rgb;
+    return sky_view_in.SampleLevel(sky_view_sampler, uv, 0).rgb;
 }
 
 float3 reconstruct_world_ray(float2 ndc) {
@@ -42,17 +42,17 @@ float4 fs_main(VS_OUT input) : SV_Target {
     float3 sky_radiance = sample_sky_view_at(lookup_dir);
     float3 total_radiance = sky_radiance * pc.sun_irradiance;
 
-    float radius = bottom_radius + pc.camera_altitude;
+    float radius = atmosphere_ubo.bottom_radius + pc.camera_altitude;
     float view_zenith_cos = view_dir.y;
     float3 sun_transmittance_to_eye = sample_transmittance_at(radius, view_zenith_cos);
 
     float mu = dot(view_dir, pc.sun_direction);
 
-    float ph_m = mie_phase(mu, mie_phase_g);
+    float ph_m = mie_phase(mu, atmosphere_ubo.mie_phase_g);
     const float baseline_phase = 1.0 / (4.0 * pi);
     float ph_m_excess = max(ph_m - baseline_phase, 0.0);
     const float mie_halo_strength = 25.0;
-    float mie_inscatter_length = mie_scattering * mie_scale_height * mie_halo_strength;
+    float mie_inscatter_length = atmosphere_ubo.mie_scattering * atmosphere_ubo.mie_scale_height * mie_halo_strength;
     total_radiance += pc.sun_irradiance * sun_transmittance_to_eye * ph_m_excess * mie_inscatter_length;
 
     if (mu > pc.sun_cos_radius) {

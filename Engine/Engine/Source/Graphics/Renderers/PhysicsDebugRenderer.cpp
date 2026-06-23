@@ -328,7 +328,8 @@ auto gse::renderer::physics_debug::init(const shared_view<gpu::context::data> gp
 		d.camera_ubo_buffers[i] = gpu_s.device->create_buffer(
 			{
 				.size = camera_ubo_size,
-				.usage = gpu::buffer_flag::uniform,
+				.stride = sizeof(shaders::common::camera_data),
+				.usage = gpu::buffer_flag::storage,
 				.bindless = true
 			},
 			"physics_debug.camera_ubo"
@@ -347,6 +348,7 @@ auto gse::renderer::physics_debug::init(const shared_view<gpu::context::data> gp
 		d.unit_box_vb = gpu_s.device->create_buffer(
 			{
 				.size = box_verts.size() * sizeof(vec4f),
+				.stride = sizeof(vec4f),
 				.usage = gpu::buffer_flag::storage,
 				.data = box_verts.data(),
 				.bindless = true,
@@ -357,6 +359,7 @@ auto gse::renderer::physics_debug::init(const shared_view<gpu::context::data> gp
 		d.unit_sphere_vb = gpu_s.device->create_buffer(
 			{
 				.size = sphere_verts.size() * sizeof(vec4f),
+				.stride = sizeof(vec4f),
 				.usage = gpu::buffer_flag::storage,
 				.data = sphere_verts.data(),
 				.bindless = true,
@@ -367,6 +370,7 @@ auto gse::renderer::physics_debug::init(const shared_view<gpu::context::data> gp
 		d.unit_capsule_vb = gpu_s.device->create_buffer(
 			{
 				.size = capsule_verts.size() * sizeof(vec4f),
+				.stride = sizeof(vec4f),
 				.usage = gpu::buffer_flag::storage,
 				.data = capsule_verts.data(),
 				.bindless = true,

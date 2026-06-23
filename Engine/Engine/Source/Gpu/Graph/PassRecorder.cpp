@@ -67,14 +67,6 @@ auto gse::gpu::pass_recorder::end() const -> void {
 	invoke_on<"end">(m_cmd);
 }
 
-auto gse::gpu::pass_recorder::begin_secondary(const gpu::secondary_inheritance_info& info) const -> void {
-	invoke_on<"begin_secondary">(m_cmd, info);
-}
-
-auto gse::gpu::pass_recorder::execute_commands(const gpu::command_buffer_handle secondary) const -> void {
-	invoke_on<"execute_commands">(m_cmd, secondary);
-}
-
 auto gse::gpu::pass_recorder::begin_rendering(const gpu::rendering_info& info) const -> void {
 	invoke_on<"begin_rendering">(m_cmd, info);
 }

@@ -3,11 +3,11 @@ static const uint cullable_count_byte_offset = 4;
 bool is_aabb_in_frustum(float3 aabb_min, float3 aabb_max) {
     for (uint i = 0; i < 6; ++i) {
         float3 positive_vertex;
-        positive_vertex.x = planes[i].x >= 0.0 ? aabb_max.x : aabb_min.x;
-        positive_vertex.y = planes[i].y >= 0.0 ? aabb_max.y : aabb_min.y;
-        positive_vertex.z = planes[i].z >= 0.0 ? aabb_max.z : aabb_min.z;
+        positive_vertex.x = frustum_ubo.planes[i].x >= 0.0 ? aabb_max.x : aabb_min.x;
+        positive_vertex.y = frustum_ubo.planes[i].y >= 0.0 ? aabb_max.y : aabb_min.y;
+        positive_vertex.z = frustum_ubo.planes[i].z >= 0.0 ? aabb_max.z : aabb_min.z;
 
-        float distance = dot(planes[i].xyz, positive_vertex) + planes[i].w;
+        float distance = dot(frustum_ubo.planes[i].xyz, positive_vertex) + frustum_ubo.planes[i].w;
         if (distance < 0.0) {
             return false;
         }

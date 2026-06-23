@@ -57,17 +57,6 @@ function(gse_copy_runtime_deps target)
             endif()
         endforeach()
     endif()
-
-    # DirectX Shader Compiler (DXC) for the DX12/DXIL shader path. Slang loads
-    # dxcompiler.dll as a downstream compiler when targeting DXIL; ship it next
-    # to the exe so the DX12 backend works without a separately-installed DXC.
-    if(DEFINED ENV{VULKAN_SDK} AND EXISTS "$ENV{VULKAN_SDK}/Bin/dxcompiler.dll")
-        add_custom_command(TARGET ${target} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "$ENV{VULKAN_SDK}/Bin/dxcompiler.dll"
-                "$<TARGET_FILE_DIR:${target}>"
-        )
-    endif()
 endfunction()
 
 add_subdirectory(Engine)

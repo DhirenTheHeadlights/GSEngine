@@ -103,9 +103,11 @@ export namespace gse::task {
 
 	private:
 		friend struct job_entry;
+
 		friend auto run_job(
 			struct job_entry& entry
 		) -> void;
+		
 		friend auto submit_to_group(
 			group& gp,
 			job j,

@@ -20,7 +20,6 @@ import gse.gpu;
 
 namespace gse::vbd {
 	struct [[= shaders::shader_struct]] vbd_push_constants {
-		solver_config cfg;
 		std::uint32_t body_count;
 		std::uint32_t contact_count;
 		std::uint32_t motor_count;
@@ -170,6 +169,12 @@ namespace gse::vbd {
 		using element = impulse_constraint;
 	};
 
+	struct [[
+		= shaders::binding<0, 22>{}
+	]] config {
+		using element = solver_config;
+	};
+
 	using shader_binding_types = type_pack<
 		body_data,
 		contact_data,
@@ -192,7 +197,8 @@ namespace gse::vbd {
 		frozen_jacobians,
 		solve_deltas,
 		grounded_bits,
-		impulse_data
+		impulse_data,
+		config
 	>;
 
 	template <fixed_string BodyPath>
@@ -287,6 +293,16 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 				.bindless = true
 			},
 			"vbd.body"
+		);
+
+		f.config_buffer = ctx.device->create_buffer(
+			{
+				.size = sizeof(solver_config),
+				.stride = sizeof(solver_config),
+				.usage = gpu::buffer_flag::storage,
+				.bindless = true
+			},
+			"vbd.config"
 		);
 
 		f.contact_buffer = ctx.device->create_buffer(
@@ -543,6 +559,7 @@ auto gse::vbd::gpu_solver::upload(const std::span<const body_state> bodies, cons
 	const bool upload_joint_buffer = refresh_joints || !m_joint_buffers_seeded || m_seeded_body_count != m_body_count;
 
 	auto& frame_data = m_frames[m_dispatch_slot];
+	frame_data.config_buffer.host_write(m_solver_cfg);
 	if (upload_body_buffer) {
 		frame_data.body_buffer.host_write(bodies.first(m_body_count));
 	}
@@ -757,6 +774,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 		.solve_deltas = f.solve_deltas_buffer.slot(),
 		.grounded_bits = f.grounded_buffer.slot(),
 		.impulse_data = f.impulse_buffer.slot(),
+		.config = f.config_buffer.slot(),
 	};
 
 	const std::uint32_t total = total_substeps();
@@ -776,7 +794,6 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 		const std::uint32_t warm_start_count
 	) {
 		return vbd_push_constants{
-			.cfg = m_solver_cfg,
 			.body_count = m_body_count,
 			.contact_count = limits.max_contacts,
 			.motor_count = m_motor_count,

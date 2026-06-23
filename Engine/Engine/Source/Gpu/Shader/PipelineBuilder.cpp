@@ -131,7 +131,12 @@ namespace gse::gpu {
 
 auto gse::gpu::make_slang_session() -> owned_slang_session {
 	owned_slang_session out;
-	if (slang_failed(createGlobalSession(out.global.writeRef())) || !out.global) {
+	static Slang::ComPtr<slang::IGlobalSession> cached_global = [] {
+		Slang::ComPtr<slang::IGlobalSession> g;
+		createGlobalSession(g.writeRef());
+		return g;
+	}();
+	if (!cached_global) {
 		log::println(
 			log::level::error,
 			log::category::assets,
@@ -139,6 +144,7 @@ auto gse::gpu::make_slang_session() -> owned_slang_session {
 		);
 		return out;
 	}
+	out.global = cached_global;
 	auto* global = out.global.get();
 
 	const auto shader_root = config::resource_path / "Shaders";
@@ -177,25 +183,14 @@ auto gse::gpu::make_slang_session() -> owned_slang_session {
 		.forceGLSLScalarBufferLayout = !use_dxil,
 	};
 
-	slang::CompilerOptionEntry dxc_options[]{
-		{
-			.name = slang::CompilerOptionName::DownstreamArgs,
-			.value = {
-				.kind = slang::CompilerOptionValueKind::String,
-				.stringValue0 = "dxc",
-				.stringValue1 = "-Vd",
-			},
-		},
-	};
-
 	slang::SessionDesc sdesc{
 		.targets = &target,
 		.targetCount = 1,
 		.defaultMatrixLayoutMode = slang_matrix_layout_column_major,
 		.searchPaths = sp_c_strs.data(),
 		.searchPathCount = static_cast<SlangInt>(sp_c_strs.size()),
-		.compilerOptionEntries = use_dxil ? dxc_options : nullptr,
-		.compilerOptionEntryCount = use_dxil ? 1u : 0u,
+		.compilerOptionEntries = nullptr,
+		.compilerOptionEntryCount = 0,
 	};
 
 	if (slang_failed(global->createSession(sdesc, out.session.writeRef())) || !out.session) {
@@ -368,12 +363,17 @@ auto gse::gpu::build_compute_wrapper_source(const shader_compile_inputs& inputs,
 	return out;
 }
 
+static std::mutex g_slang_compile_mutex;
+static std::atomic<std::uint64_t> g_slang_module_counter{ 0 };
+
 auto gse::gpu::compile_compute_spirv(const shader_compile_inputs& inputs, const std::string_view wrapper_source) -> std::vector<std::uint32_t> {
+	const std::lock_guard compile_lock(g_slang_compile_mutex);
 	auto owned = make_slang_session();
 	auto* session = owned.session.get();
 	assert(session, "Slang session not available");
 
-	const std::string module_name = std::format("entry_{}", inputs.body_path);
+	log::println(log::level::info, log::category::assets, "compiling compute shader: {}", inputs.body_path);
+	const std::string module_name = std::format("entry_{}_{}", inputs.body_path, g_slang_module_counter.fetch_add(1));
 	std::string sanitized = module_name;
 	std::ranges::replace(sanitized, '/', '_');
 	std::ranges::replace(sanitized, '\\', '_');
@@ -496,11 +496,13 @@ auto gse::gpu::build_graphics_wrapper_source(const graphics_entry_pod& pod, cons
 }
 
 auto gse::gpu::compile_graphics_program(const graphics_entry_pod& pod, const std::string_view wrapper_source) -> compiled_graphics_program {
+	const std::lock_guard compile_lock(g_slang_compile_mutex);
 	auto owned = make_slang_session();
 	auto* session = owned.session.get();
 	assert(session, "Slang session not available");
 
-	const std::string module_name = std::format("gfx_{}", pod.body_path);
+	log::println(log::level::info, log::category::assets, "compiling graphics shader: {}", pod.body_path);
+	const std::string module_name = std::format("gfx_{}_{}", pod.body_path, g_slang_module_counter.fetch_add(1));
 	std::string sanitized = module_name;
 	std::ranges::replace(sanitized, '/', '_');
 	std::ranges::replace(sanitized, '\\', '_');

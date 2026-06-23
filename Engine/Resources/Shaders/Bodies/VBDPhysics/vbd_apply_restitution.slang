@@ -29,7 +29,7 @@ void vbd_apply_restitution(uint3 dispatch_id) {
         contact_constraint c = contact_data[ci];
         if (c.restitution <= 0.0) continue;
         if (c.lambda.x >= 0.0) continue;
-        if (c.approach_speed >= -pc.cfg.restitution_threshold) continue;
+        if (c.approach_speed >= -config.restitution_threshold) continue;
 
         bool is_a = (c.body_a == bi);
         uint other_idx = is_a ? c.body_b : c.body_a;
@@ -44,7 +44,7 @@ void vbd_apply_restitution(uint3 dispatch_id) {
         float v_rel_after = dot(c.normal, v_rel_vec);
 
         float speed_ratio = clamp(
-            (-c.approach_speed - pc.cfg.restitution_threshold) / pc.cfg.restitution_threshold,
+            (-c.approach_speed - config.restitution_threshold) / config.restitution_threshold,
             0.0,
             1.0
         );

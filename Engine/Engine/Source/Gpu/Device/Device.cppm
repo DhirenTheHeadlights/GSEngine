@@ -278,6 +278,16 @@ export namespace gse::gpu {
 		[[nodiscard]]
 		auto allocate_image_slot() -> gpu::bindless_handle;
 
+		[[nodiscard]]
+		auto image_resource_for_slot(
+			std::uint32_t slot_index
+		) const -> resource_ref;
+
+		[[nodiscard]]
+		auto buffer_resource_for_slot(
+			std::uint32_t slot_index
+		) const -> resource_ref;
+
 		auto write_storage_buffer(
 			gpu::bindless_slot slot,
 			gpu::device_address address,
@@ -447,6 +457,9 @@ export namespace gse::gpu {
 		image_format m_surface_format;
 		std::atomic<bool> m_device_lost_reported = false;
 		bool m_video_encode_enabled = false;
+
+		std::unordered_map<std::uint32_t, resource_ref> m_image_slot_resources;
+		std::unordered_map<std::uint32_t, resource_ref> m_buffer_slot_resources;
 
 		static constexpr std::size_t pass_marker_ring_size = 128;
 

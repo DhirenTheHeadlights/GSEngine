@@ -7,7 +7,7 @@ struct VS_OUT {
 VS_OUT vs_main(uint vid : SV_VertexID) {
     world_text_vertex v = world_text_vertex_buffer[vid];
     VS_OUT output;
-    output.clip_pos = mul(proj, mul(view, float4(v.position, 1.0)));
+    output.clip_pos = mul(camera_ubo.proj, mul(camera_ubo.view, float4(v.position, 1.0)));
     output.tex_coord = v.tex_coord;
     return output;
 }
@@ -17,13 +17,13 @@ float median(float r, float g, float b) {
 }
 
 float msd_alpha(uint tex_idx, float2 uv, float screen_px_range) {
-    float4 s = textures[NonUniformResourceIndex(tex_idx)].Sample(uv);
+    float4 s = textures[NonUniformResourceIndex(tex_idx)].Sample(textures_sampler, uv);
     float sd = median(s.r, s.g, s.b);
     return clamp(screen_px_range * (sd - 0.5) + 0.5, 0.0, 1.0);
 }
 
 float tsd_alpha(uint tex_idx, float2 uv, float screen_px_range) {
-    float sd = textures[NonUniformResourceIndex(tex_idx)].Sample(uv).a;
+    float sd = textures[NonUniformResourceIndex(tex_idx)].Sample(textures_sampler, uv).a;
     return clamp(screen_px_range * (sd - 0.5) + 0.5, 0.0, 1.0);
 }
 

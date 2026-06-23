@@ -162,9 +162,11 @@ auto gse::gpu::submission::submit_sync() -> sync_token {
 			.value = m_value,
 			.stages = pipeline_stage_flag::all_commands,
 		};
+
 		const command_buffer_submit_info cmd_info{
 			.command_buffer = m_cmd.handle(),
 		};
+		
 		const submit_info info{
 			.command_buffers = std::span(&cmd_info, 1),
 			.signal_semaphores = std::span(&signal, 1),
@@ -180,7 +182,7 @@ auto gse::gpu::submission::submit_sync() -> sync_token {
 		m_bin->retain(m_queue->id(), m_value, std::move(pending));
 	}
 	m_pending_retains.clear();
-
+	
 	return sync_token{ &m_queue->station(), m_value };
 }
 

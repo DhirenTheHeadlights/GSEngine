@@ -25,8 +25,10 @@ import gse.time;
 namespace gse::renderer::bloom {
 	struct [[
 		= shaders::binding<0, 0>{},
-		= shaders::sampler2d
-	]] bloom_in {};
+		= shaders::texture2d
+	]] bloom_in {
+		using element = vec4f;
+	};
 
 	struct [[
 		= shaders::binding<0, 1>{},
@@ -36,14 +38,23 @@ namespace gse::renderer::bloom {
 	};
 
 	struct [[
+		= shaders::binding<0, 2>{},
+		= shaders::sampler_state
+	]] bloom_sampler {};
+
+	struct [[
 		= shaders::binding<0, 0>{},
-		= shaders::sampler2d
-	]] bloom_up_in {};
+		= shaders::texture2d
+	]] bloom_up_in {
+		using element = vec4f;
+	};
 
 	struct [[
 		= shaders::binding<0, 1>{},
-		= shaders::sampler2d
-	]] bloom_up_dn {};
+		= shaders::texture2d
+	]] bloom_up_dn {
+		using element = vec4f;
+	};
 
 	struct [[
 		= shaders::binding<0, 2>{},
@@ -51,6 +62,11 @@ namespace gse::renderer::bloom {
 	]] bloom_up_out {
 		using element = vec4f;
 	};
+
+	struct [[
+		= shaders::binding<0, 3>{},
+		= shaders::sampler_state
+	]] bloom_up_sampler {};
 
 	struct [[= shaders::shader_struct]] downsample_push_constants {
 		std::uint32_t use_karis_average;
@@ -60,8 +76,8 @@ namespace gse::renderer::bloom {
 		float radius;
 	};
 
-	using downsample_bindings = type_pack<bloom_in, bloom_out>;
-	using upsample_bindings = type_pack<bloom_up_in, bloom_up_dn, bloom_up_out>;
+	using downsample_bindings = type_pack<bloom_in, bloom_out, bloom_sampler>;
+	using upsample_bindings = type_pack<bloom_up_in, bloom_up_dn, bloom_up_out, bloom_up_sampler>;
 
 	using downsample_entry = gpu::compute_entry<gpu::body_path<"Compute/bloom_downsample">, gpu::bindings<downsample_bindings>, gpu::push_constant<downsample_push_constants>, gpu::threads<8, 8, 1>, gpu::system_values<gpu::dispatch_thread_id>>;
 
@@ -231,8 +247,9 @@ auto gse::renderer::bloom::frame(const context& ctx, shared_view<gpu::context::d
 				.use_karis_average = i == 0 ? 1u : 0u
 			},
 			{
-				.bloom_in = { source_slot, d.sampler.slot() },
+				.bloom_in = source_slot,
 				.bloom_out = d.mips_down[i].storage_slot(),
+				.bloom_sampler = d.sampler.slot(),
 			},
 			vec3u{
 				(d.mip_extents[i].x() + 7u) / 8u,
@@ -262,9 +279,10 @@ auto gse::renderer::bloom::frame(const context& ctx, shared_view<gpu::context::d
 				.radius = d.bloom_radius
 			},
 			{
-				.bloom_up_in = { up_source, d.sampler.slot() },
-				.bloom_up_dn = { d.mips_down[i].sampled_slot(), d.sampler.slot() },
+				.bloom_up_in = up_source,
+				.bloom_up_dn = d.mips_down[i].sampled_slot(),
 				.bloom_up_out = d.mips_up[i].storage_slot(),
+				.bloom_up_sampler = d.sampler.slot(),
 			},
 			vec3u{
 				(d.mip_extents[i].x() + 7u) / 8u,
