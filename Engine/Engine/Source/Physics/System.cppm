@@ -78,6 +78,7 @@ export namespace gse::physics {
 		time_t<float, seconds> dt{};
 		int steps = 1;
 		bool refresh_joints = false;
+		bool force_reseed = false;
 	};
 
 	struct gpu_body_index_map {
@@ -88,6 +89,8 @@ export namespace gse::physics {
 		bool active = false;
 		std::uint32_t motor_count = 0;
 	};
+
+	struct reset_physics_request {};
 
 	struct transform_snapshot {
 		vec3<position> position;
@@ -269,6 +272,7 @@ export namespace gse::physics {
 		write<collision_result_component>& results,
 		std::span<const impulse_request> impulses,
 		time_t<float, seconds> dt,
-		channel_writer& channels
+		channel_writer& channels,
+		bool reset
 	) -> void;
 }

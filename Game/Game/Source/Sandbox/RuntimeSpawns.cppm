@@ -749,8 +749,8 @@ auto gs::spawn_physics_stress(gse::scene& s) -> void {
 	spawn_box_grid(s, gse::vec3<gse::position>(20.f, 0.f, -10.f));
 	spawn_spring_tests(s, gse::vec3<gse::position>(-25.f, 0.f, -20.f));
 
-	spawn_tumbler(s, 0, gse::vec3<gse::position>(-12.f / 2.f, 10.f / 2.f, 24.f / 2.f), gse::axis_z, gse::radians_per_second(0.6f));
-	//spawn_tumbler(s, 1, gse::vec3<gse::position>(12.f, 10.f, 24.f), gse::axis_x, gse::radians_per_second(0.5f));
+	spawn_tumbler(s, 0, gse::vec3<gse::position>(-12.f, 10.f, 24.f), gse::axis_z, gse::radians_per_second(0.6f));
+	spawn_tumbler(s, 1, gse::vec3<gse::position>(12.f, 10.f, 24.f), gse::axis_x, gse::radians_per_second(0.5f));
 
 	spawn_sphere_stack(s, gse::vec3<gse::position>(30.f, 0.f, 5.f));
 	spawn_corner_drop(s, gse::vec3<gse::position>(30.f, 0.f, 15.f));

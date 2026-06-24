@@ -269,8 +269,6 @@ void solve_body(uint bi, bool live_jac) {
         float3 diff = body.predicted_position.xyz - body.motor_target.xyz;
         if (motor_horizontal_only) diff.y = 0.0;
 
-        InterlockedMax(collision_state[state_convergence_max_delta_index], asuint(length(diff)));
-
         motor_grad = diff * motor_stiffness;
         float grad_mag = length(motor_grad);
         if (grad_mag > m.max_force) {

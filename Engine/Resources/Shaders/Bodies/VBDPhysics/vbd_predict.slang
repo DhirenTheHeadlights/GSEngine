@@ -66,7 +66,31 @@ if (pc.substep == 0) {
 body.old_position = body.position;
 body.old_orientation = body.orientation;
 
-if (locked || sleeping) {
+if (locked) {
+    body.predicted_position = body.position + body.velocity * pc.dt;
+    body.inertia_target = body.predicted_position;
+
+    float3 angular_step = body.angular_velocity.xyz;
+    float angular_speed = length(angular_step);
+    if (angular_speed > 1e-7) {
+        float angle = angular_speed * pc.dt;
+        float3 axis = angular_step / angular_speed;
+        float half_angle = angle * 0.5;
+        float sh = sin(half_angle);
+        float ch = cos(half_angle);
+        float4 delta_q = float4(ch, sh * axis.x, sh * axis.y, sh * axis.z);
+        body.predicted_orientation = quat_normalize(quat_mul(delta_q, body.orientation));
+    } else {
+        body.predicted_orientation = body.orientation;
+    }
+
+    body.angular_inertia_target = body.predicted_orientation;
+    body.motor_target = body.predicted_position;
+    body_data[bi] = body;
+    return;
+}
+
+if (sleeping) {
     body.predicted_position = body.position;
     body.inertia_target = body.position;
     body.predicted_orientation = body.orientation;

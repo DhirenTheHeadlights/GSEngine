@@ -88,6 +88,7 @@ for (uint round = 0; round < coloring_rounds; round++) {
             contact_constraint c = contact_data[ci];
             uint other = (c.body_a == bi) ? c.body_b : c.body_a;
             if (other < body_count) {
+                if (body_data[other].locked != 0) continue;
                 uint other_color = gs_body_color[other];
                 if (other_color == 0xFFFFFFFF) {
                     uint other_priority = body_priority(other);
@@ -110,6 +111,7 @@ for (uint round = 0; round < coloring_rounds; round++) {
             joint_constraint j = joint_data[ji];
             uint other = (j.body_a == bi) ? j.body_b : j.body_a;
             if (other < body_count) {
+                if (body_data[other].locked != 0) continue;
                 uint other_color = gs_body_color[other];
                 if (other_color == 0xFFFFFFFF) {
                     uint other_priority = body_priority(other);
@@ -256,6 +258,29 @@ for (uint kb = 0; kb < ELEMS_PER_THREAD; kb++) {
     uint bi = tid + kb * adjacency_workgroup_size;
     if (bi < gs_total_colored) {
         color_data[max_colors * 2 + bi] = gs_color_bodies[bi];
+    }
+}
+AllMemoryBarrierWithGroupSync();
+
+if (tid == 0) {
+    uint running = 0;
+    for (uint c = 0; c < max_colors; c++) {
+        uint count = 0;
+        uint full_offset = gs_color_offset[c];
+        uint full_count = gs_color_count[c];
+        jointless_color_data[c] = running;
+        for (uint k = 0; k < full_count; k++) {
+            uint bi = color_data[max_colors * 2 + full_offset + k];
+            if (bi < body_count && joint_counts[bi] == 0) {
+                jointless_color_data[max_colors * 2 + running + count] = bi;
+                count++;
+            }
+        }
+        jointless_color_data[max_colors + c] = count;
+        jointless_indirect_args[2 + c].x = (count + workgroup_size - 1) / workgroup_size;
+        jointless_indirect_args[2 + c].y = 1;
+        jointless_indirect_args[2 + c].z = 1;
+        running += count;
     }
 }
 }

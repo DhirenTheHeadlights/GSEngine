@@ -358,6 +358,7 @@ auto gs::locomotion::smoke_test::run(gse::context& ctx, data& d, const smoke_con
 
 	if (d.stage == smoke_stage::resetting) {
 		++d.reset_ticks;
+		ctx.channels.push<gse::physics::reset_physics_request>({});
 		if (d.scene_id.has_value() && world_d.active_scene == d.scene_id && !d.reset_activation_requested) {
 			ctx.channels.push<gse::deactivate_active_scene_request>({});
 		}
