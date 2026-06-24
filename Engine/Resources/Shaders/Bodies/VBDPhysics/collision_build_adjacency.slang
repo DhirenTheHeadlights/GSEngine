@@ -152,6 +152,7 @@ for (uint ji = tid; ji < num_joints; ji += adjacency_workgroup_size) {
 AllMemoryBarrierWithGroupSync();
 
 for (uint sbi = tid; sbi < body_count; sbi += adjacency_workgroup_size) {
+    if (body_data[sbi].locked != 0) continue;
     uint coff = contact_offsets[sbi];
     uint ccnt = min(gs_contact_counts[sbi], max_contact_adjacency - coff);
     for (uint sa = 1u; sa < ccnt; sa++) {
@@ -165,7 +166,7 @@ for (uint sbi = tid; sbi < body_count; sbi += adjacency_workgroup_size) {
             contact_constraint cp = contact_data[ci_p];
             uint op = (cp.body_a == sbi) ? cp.body_b : cp.body_a;
             float3 kp = (cp.body_a == sbi) ? cp.local_anchor_a.xyz : cp.local_anchor_b.xyz;
-            bool gt = (op > oa) || (op == oa && (kp.x > ka.x || (kp.x == ka.x && (kp.y > ka.y || (kp.y == ka.y && kp.z > ka.z)))));
+            bool gt = (op > oa) || (op == oa && (kp.x > ka.x || (kp.x == ka.x && (kp.y > ka.y || (kp.y == ka.y && (kp.z > ka.z || (kp.z == ka.z && cp.feature_key > ca.feature_key)))))));
             if (!gt) break;
             contact_adjacency[coff + sb] = ci_p;
             sb--;
@@ -176,6 +177,7 @@ for (uint sbi = tid; sbi < body_count; sbi += adjacency_workgroup_size) {
 AllMemoryBarrierWithGroupSync();
 
 for (uint sbj = tid; sbj < body_count; sbj += adjacency_workgroup_size) {
+    if (body_data[sbj].locked != 0) continue;
     uint joff = joint_offsets[sbj];
     uint jcnt = min(gs_joint_counts[sbj], max_joint_adjacency - joff);
     for (uint ja = 1u; ja < jcnt; ja++) {
@@ -189,7 +191,7 @@ for (uint sbj = tid; sbj < body_count; sbj += adjacency_workgroup_size) {
             joint_constraint jcp = joint_data[ji_p];
             uint jop = (jcp.body_a == sbj) ? jcp.body_b : jcp.body_a;
             float3 jkp = (jcp.body_a == sbj) ? jcp.local_anchor_a.xyz : jcp.local_anchor_b.xyz;
-            bool jgt = (jop > joa) || (jop == joa && (jkp.x > jka.x || (jkp.x == jka.x && (jkp.y > jka.y || (jkp.y == jka.y && jkp.z > jka.z)))));
+            bool jgt = (jop > joa) || (jop == joa && (jkp.x > jka.x || (jkp.x == jka.x && (jkp.y > jka.y || (jkp.y == jka.y && (jkp.z > jka.z || (jkp.z == jka.z && ji_p > ji_a)))))));
             if (!jgt) break;
             joint_adjacency[joff + jb] = ji_p;
             jb--;

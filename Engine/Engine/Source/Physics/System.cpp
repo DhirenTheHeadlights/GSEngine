@@ -545,12 +545,15 @@ auto gse::physics::prepare(context& ctx, const std::optional<shared_view<gpu::co
 		if (spec.resolved) {
 			continue;
 		}
-		const auto handle =
-			create_joint(
-				d,
-				make_joint_definition(spec.entity_a, spec.entity_b, spec.config)
-			);
-		d.joint_handles_by_entity[spec_owners[i]] = handle;
+		const auto def = make_joint_definition(spec.entity_a, spec.entity_b, spec.config);
+		const auto existing = d.joint_handles_by_entity.find(spec_owners[i]);
+		if (existing != d.joint_handles_by_entity.end() && existing->second < d.joints.size()) {
+			d.joints[existing->second] = def;
+			d.gpu_joints_dirty = true;
+		}
+		else {
+			d.joint_handles_by_entity[spec_owners[i]] = create_joint(d, def);
+		}
 		spec.resolved = true;
 	}
 
@@ -623,6 +626,7 @@ auto gse::physics::integrate(context& ctx, data& d, write<transform_component> t
 	const int steps = system_clock::fixed_steps_this_frame();
 
 	const auto impulses = ctx.read_channel<impulse_request>();
+	const bool reset = !ctx.read_channel<reset_physics_request>().empty();
 
 	if (motion.empty() && collision.empty() && motor.empty()) {
 		clear_runtime_state(d);
@@ -639,7 +643,8 @@ auto gse::physics::integrate(context& ctx, data& d, write<transform_component> t
 			results,
 			impulses,
 			const_update_time,
-			ctx.channels
+			ctx.channels,
+			reset
 		);
 	}
 	else {
@@ -650,12 +655,26 @@ auto gse::physics::integrate(context& ctx, data& d, write<transform_component> t
 	co_return;
 }
 
-auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_component>& transform, write<motion_component>& motion, read<motor_component>& motor, write<collision_component>& collision, write<collision_result_component>& results, std::span<const impulse_request> impulses, const time_t<float, seconds> dt, channel_writer& channels) -> void {
+auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_component>& transform, write<motion_component>& motion, read<motor_component>& motor, write<collision_component>& collision, write<collision_result_component>& results, std::span<const impulse_request> impulses, const time_t<float, seconds> dt, channel_writer& channels, const bool reset) -> void {
 	if (!d.gpu_buffers_created) {
 		return;
 	}
 
-	{
+	if (reset) {
+		d.sleep_counters.clear();
+		d.contact_cache.clear();
+	}
+
+	const auto publish_gpu_body_index_map = [&] {
+		gpu_body_index_map body_map;
+		body_map.entries.reserve(d.id_to_body_index.size());
+		for (const auto& [eid, idx] : d.id_to_body_index) {
+			body_map.entries.emplace_back(eid, idx);
+		}
+		channels.push(std::move(body_map));
+	};
+
+	if (!reset) {
 		trace::scope_guard sg{ trace_id<"vbd_gpu::readback">() };
 		const auto solved = d.gpu_solver.read_body_states();
 		if (!solved.empty()) {
@@ -669,7 +688,8 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 				if (!tc) {
 					continue;
 				}
-				if (is_static(mc)) {
+				const auto* dyn = std::get_if<dynamic_body>(&mc.body);
+				if (!dyn) {
 					continue;
 				}
 				const auto it = d.id_to_body_index.find(eid);
@@ -677,12 +697,6 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 					continue;
 				}
 				const auto& bs = solved[it->second];
-				const auto* dyn = std::get_if<dynamic_body>(&mc.body);
-				if (!dyn) {
-					tc->position = bs.position;
-					tc->orientation = bs.orientation;
-					continue;
-				}
 				tc->position = bs.position;
 				mc.current_velocity = bs.velocity;
 				if (dyn->update_orientation) {
@@ -707,6 +721,7 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 				.position_offset = static_cast<std::uint32_t>(std::meta::offset_of(^^vbd::body_state::position).bytes)
 			});
 		}
+		publish_gpu_body_index_map();
 		return;
 	}
 
@@ -1067,19 +1082,15 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 			.solver_cfg = d.vbd_solver.config(),
 			.dt = dt * static_cast<float>(steps),
 			.steps = steps * std::max(d.physics_substeps, 1),
-			.refresh_joints = refresh_joints
+			.refresh_joints = refresh_joints || reset,
+			.force_reseed = reset
 		});
 
 		d.gpu_joints_dirty = false;
 		d.gpu_uploaded_body_count = static_cast<std::uint32_t>(entity_ids.size());
 		d.gpu_uploaded_joint_count = static_cast<std::uint32_t>(gpu_joints.size());
 
-		gpu_body_index_map body_map;
-		body_map.entries.reserve(d.id_to_body_index.size());
-		for (const auto& [eid, idx] : d.id_to_body_index) {
-			body_map.entries.emplace_back(eid, idx);
-		}
-		channels.push(std::move(body_map));
+		publish_gpu_body_index_map();
 	}
 }
 
@@ -1387,7 +1398,8 @@ auto gse::physics::frame(context& ctx, const std::optional<shared_view<gpu::cont
 			upload.solver_cfg,
 			upload.dt,
 			upload.steps,
-			upload.refresh_joints
+			upload.refresh_joints,
+			upload.force_reseed
 		);
 	}
 
