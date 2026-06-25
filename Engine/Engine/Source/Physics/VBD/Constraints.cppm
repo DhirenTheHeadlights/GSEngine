@@ -188,6 +188,8 @@ export namespace gse::vbd {
 		vec3<gse::position> aabb_min;
 		vec3<gse::position> aabb_max;
 
+		std::uint32_t reset_pending = 0;
+
 		auto inverse_mass() const -> inverse_mass;
 		auto sleeping() const -> bool;
 	};

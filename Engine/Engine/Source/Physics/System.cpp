@@ -877,7 +877,9 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 					.accel_weight = 0.f,
 					.restitution = dyn ? dyn->restitution : 0.f,
 					.inv_inertia = inv_inertial_tensor(mc, tc->orientation),
+					.reset_pending = mc.reset_pending,
 				};
+				mc.reset_pending = 0;
 				entity_ids[i] = eid;
 			},
 			trace::untraced
