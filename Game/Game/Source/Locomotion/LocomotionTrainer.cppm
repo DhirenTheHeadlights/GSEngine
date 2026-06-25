@@ -404,6 +404,7 @@ auto gs::locomotion::reset_env(env_state& env, const skeleton_refs& r, gse::writ
 		if (auto* mc = motions.find(pose.id)) {
 			mc->current_velocity = {};
 			mc->angular_velocity = {};
+			mc->reset_pending = 1;
 		}
 	}
 	apply_action(action{}, r, drives);
