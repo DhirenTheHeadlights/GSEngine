@@ -199,6 +199,18 @@ namespace gse::vbd {
 	]] jointless_indirect_args {
 		using element = dispatch_args;
 	};
+	struct [[
+		= shaders::binding<0, 27>{},
+		= shaders::ssbo_readonly
+	]] island_data {
+		using element = std::uint32_t;
+	};
+	struct [[
+		= shaders::binding<0, 28>{},
+		= shaders::ssbo_readonly
+	]] body_env_data {
+		using element = std::uint32_t;
+	};
 
 	using shader_binding_types = type_pack<
 		body_data,
@@ -227,7 +239,9 @@ namespace gse::vbd {
 		jointed_pairs_data,
 		body_input_data,
 		jointless_color_data,
-		jointless_indirect_args
+		jointless_indirect_args,
+		island_data,
+		body_env_data
 	>;
 
 	template <fixed_string BodyPath>
@@ -582,6 +596,28 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 		);
 		f.jointed_pairs_buffer.host_zero();
 		f.jointed_pairs_buffer.clear_host_dirty();
+
+		f.island_buffer = ctx.device->create_buffer(
+			{
+				.size = (1 + 2 * limits.max_islands + limits.max_bodies) * sizeof(std::uint32_t),
+				.usage = gpu::buffer_flag::storage,
+				.bindless = true
+			},
+			"vbd.island"
+		);
+		f.island_buffer.host_zero();
+		f.island_buffer.clear_host_dirty();
+
+		f.body_env_buffer = ctx.device->create_buffer(
+			{
+				.size = limits.max_bodies * sizeof(std::uint32_t),
+				.usage = gpu::buffer_flag::storage,
+				.bindless = true
+			},
+			"vbd.body_env"
+		);
+		f.body_env_buffer.host_zero();
+		f.body_env_buffer.clear_host_dirty();
 	}
 
 	m_upload_motors.reserve(limits.max_motors);
@@ -668,6 +704,7 @@ auto gse::vbd::gpu_solver::upload(const std::span<const body_state> bodies, cons
 
 	if (upload_joint_buffer) {
 		m_joint_count = 0;
+		m_island_count = 0;
 		m_jointed_body_mask.assign(m_body_count, 0);
 		m_upload_joints.assign(
 			joints.size(),
@@ -709,6 +746,60 @@ auto gse::vbd::gpu_solver::upload(const std::span<const body_state> bodies, cons
 				m_upload_jointed_pairs.push_back(body_lo);
 				m_upload_jointed_pairs.push_back(body_hi);
 			}
+
+			std::vector<std::uint32_t> parent(m_body_count);
+			for (std::uint32_t i = 0; i < m_body_count; ++i) {
+				parent[i] = i;
+			}
+			auto find_root = [&parent](std::uint32_t x) -> std::uint32_t {
+				while (parent[x] != x) {
+					parent[x] = parent[parent[x]];
+					x = parent[x];
+				}
+				return x;
+			};
+			for (std::uint32_t i = 0; i < m_joint_count; ++i) {
+				const auto ra = find_root(m_upload_joints[i].body_a);
+				const auto rb = find_root(m_upload_joints[i].body_b);
+				if (ra != rb) {
+					parent[std::max(ra, rb)] = std::min(ra, rb);
+				}
+			}
+			std::vector<std::uint32_t> root_to_island(m_body_count, 0xFFFFFFFFu);
+			std::vector<std::vector<std::uint32_t>> island_bodies;
+			m_upload_body_env.assign(limits.max_bodies, 0xFFFFFFFFu);
+			for (std::uint32_t bi = 0; bi < m_body_count; ++bi) {
+				if (m_jointed_body_mask[bi] == 0) {
+					continue;
+				}
+				const auto r = find_root(bi);
+				if (root_to_island[r] == 0xFFFFFFFFu) {
+					root_to_island[r] = static_cast<std::uint32_t>(island_bodies.size());
+					island_bodies.emplace_back();
+				}
+				island_bodies[root_to_island[r]].push_back(bi);
+				m_upload_body_env[bi] = root_to_island[r];
+			}
+			m_island_count = static_cast<std::uint32_t>(island_bodies.size());
+			assert(
+				m_island_count <= limits.max_islands,
+				"island count {} exceeds max_islands {}",
+				m_island_count,
+				limits.max_islands
+			);
+
+			constexpr std::uint32_t island_base = 1 + 2 * limits.max_islands;
+			m_upload_islands.assign(island_base + limits.max_bodies, 0u);
+			m_upload_islands[0] = m_island_count;
+			std::uint32_t flat = 0;
+			for (std::uint32_t i = 0; i < m_island_count; ++i) {
+				m_upload_islands[1 + i] = flat;
+				m_upload_islands[1 + limits.max_islands + i] = static_cast<std::uint32_t>(island_bodies[i].size());
+				for (const auto b : island_bodies[i]) {
+					m_upload_islands[island_base + flat] = b;
+					++flat;
+				}
+			}
 		}
 	}
 
@@ -739,6 +830,14 @@ auto gse::vbd::gpu_solver::commit_upload() -> void {
 
 	if (!m_upload_jointed_pairs.empty()) {
 		f.jointed_pairs_buffer.host_write(m_upload_jointed_pairs);
+	}
+
+	if (!m_upload_islands.empty()) {
+		f.island_buffer.host_write(m_upload_islands);
+	}
+
+	if (!m_upload_body_env.empty()) {
+		f.body_env_buffer.host_write(m_upload_body_env);
 	}
 
 	if (m_upload_joints_dirty && !m_upload_joints.empty()) {
@@ -895,6 +994,8 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 		.body_input_data = f.body_input_buffer.slot(),
 		.jointless_color_data = f.jointless_color_buffer.slot(),
 		.jointless_indirect_args = f.jointless_indirect_dispatch_buffer.slot(),
+		.island_data = f.island_buffer.slot(),
+		.body_env_data = f.body_env_buffer.slot(),
 	};
 	auto jointless_bindings = bindings;
 	jointless_bindings.color_data = f.jointless_color_buffer.slot();
@@ -988,6 +1089,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.collision_grid_build_pipeline);
 
+		rec.barrier(gpu::barrier_scope::compute_to_compute);
 		rec.dispatch<collision_grid_build_entry>(
 			make_pc(0u, 0u, sub, 0u, 0.f, warm),
 			bindings,
@@ -999,6 +1101,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.collision_broad_phase_pipeline);
 
+		rec.barrier(gpu::barrier_scope::compute_to_compute);
 		rec.dispatch<collision_broad_phase_entry>(
 			make_pc(0u, 0u, sub, 0u, 0.f, warm),
 			bindings,
@@ -1010,6 +1113,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.prepare_indirect_pipeline);
 
+		rec.barrier(gpu::barrier_scope::compute_to_compute);
 		rec.dispatch<prepare_indirect_entry>(
 			make_pc(0u, 0u, sub, 0u, 0.f, warm),
 			bindings,
@@ -1021,6 +1125,8 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.collision_narrow_phase_pipeline);
 
+		rec.barrier(gpu::barrier_scope::compute_to_compute);
+		rec.barrier(gpu::barrier_scope::compute_to_indirect);
 		rec.push_bindings<collision_narrow_phase_entry>(make_pc(0u, 0u, sub, 0u, 0.f, warm), bindings);
 		rec.dispatch_indirect(f.indirect_dispatch_buffer, 0);
 
@@ -1029,6 +1135,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.prepare_contact_indirect_pipeline);
 
+		rec.barrier(gpu::barrier_scope::compute_to_compute);
 		rec.dispatch<prepare_contact_indirect_entry>(
 			make_pc(0u, 0u, sub, 0u, 0.f, warm),
 			bindings,
@@ -1040,6 +1147,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.collision_build_adjacency_pipeline);
 
+		rec.barrier(gpu::barrier_scope::compute_to_compute);
 		rec.dispatch<collision_build_adjacency_entry>(
 			make_pc(0u, 0u, sub, 0u, 0.f, warm),
 			bindings,
@@ -1052,6 +1160,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 				.in_chain<vbd_solve_chain>()
 				.pipeline(m_compute.collision_build_coloring_pipeline);
 
+			rec.barrier(gpu::barrier_scope::compute_to_compute);
 			rec.dispatch<collision_build_coloring_entry>(
 				make_pc(0u, 0u, sub, 0u, 0.f, warm),
 				bindings,
@@ -1064,6 +1173,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 				.in_chain<vbd_solve_chain>()
 				.pipeline(m_compute.prepare_color_indirect_pipeline);
 
+			rec.barrier(gpu::barrier_scope::compute_to_compute);
 			rec.dispatch<prepare_color_indirect_entry>(
 				make_pc(0u, 0u, sub, 0u, 0.f, warm),
 				bindings,
@@ -1142,7 +1252,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 				}
 				color_pc.color_offset = 0xFFFFFFFFu;
 				rec.push_bindings<solve_color_entry>(color_pc, bindings);
-				rec.dispatch(1u, 1u, 1u);
+				rec.dispatch(std::max(m_island_count, 1u), 1u, 1u);
 				rec.barrier(gpu::barrier_scope::compute_to_compute);
 			}
 			else {

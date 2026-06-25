@@ -13,11 +13,12 @@ export namespace gse::vbd {
 		std::uint32_t max_contacts = 16384;
 		std::uint32_t max_collision_pairs = 16384;
 		std::uint32_t max_colors = 16;
-		std::uint32_t max_joints = 128;
+		std::uint32_t max_joints = 4096;
+		std::uint32_t max_islands = 320;
 		std::uint32_t max_impulses = 64;
 		std::uint32_t max_motors = 16;
 		std::uint32_t max_contact_adjacency = 16384 * 2;
-		std::uint32_t max_joint_adjacency = 128 * 2;
+		std::uint32_t max_joint_adjacency = 4096 * 2;
 		std::uint32_t max_grounded_uints = (2048 + 31) / 32;
 		std::uint32_t grid_table_size = 4096;
 		std::uint32_t grid_max_entries = 2048 * 8;

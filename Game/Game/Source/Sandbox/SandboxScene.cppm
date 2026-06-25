@@ -20,7 +20,8 @@ export namespace gs {
 	) -> gse::scene*;
 
 	auto physics_parity_world_setup(
-		gse::engine& e
+		gse::engine& e,
+		std::size_t n_envs
 	) -> gse::scene*;
 }
 
@@ -185,6 +186,7 @@ auto gs::sandbox_scene_setup(gse::scene& s) -> void {
 
 namespace gs {
 	inline std::size_t g_training_n_envs = 32;
+	inline std::size_t g_physics_parity_n_envs = 1;
 }
 
 auto training_scene_setup(gse::scene& s) -> void {
@@ -295,7 +297,30 @@ auto gs::world_training_setup(gse::engine& e, const std::size_t n_envs) -> gse::
 }
 
 auto physics_parity_scene_setup(gse::scene& s) -> void {
-	constexpr auto floor_size = gse::vec3<gse::length>(gse::meters(50.f), gse::meters(1.f), gse::meters(50.f));
+	const auto n = gs::g_physics_parity_n_envs;
+
+	if (n <= 1) {
+		constexpr auto floor_size = gse::vec3<gse::length>(gse::meters(50.f), gse::meters(1.f), gse::meters(50.f));
+		s.spawn(
+			"Floor",
+			gs::static_box(
+				gse::vec3<gse::position>(0.f, -0.5f, 0.f),
+				floor_size
+			)
+		);
+
+		gs::spawn_humanoid(
+			s,
+			gse::vec3<gse::position>(gse::meters(0.f), gse::meters(1.005f), gse::meters(0.f)),
+			gse::quat(1.f, 0.f, 0.f, 0.f)
+		);
+		return;
+	}
+
+	const auto grid_side = static_cast<int>(std::ceil(std::sqrt(static_cast<float>(n))));
+	const auto spacing = 8.0f;
+	const auto floor_span = static_cast<float>(grid_side) * spacing + 20.f;
+	const auto floor_size = gse::vec3<gse::length>(gse::meters(floor_span), gse::meters(1.f), gse::meters(floor_span));
 	s.spawn(
 		"Floor",
 		gs::static_box(
@@ -304,14 +329,23 @@ auto physics_parity_scene_setup(gse::scene& s) -> void {
 		)
 	);
 
-	gs::spawn_humanoid(
-		s,
-		gse::vec3<gse::position>(gse::meters(0.f), gse::meters(1.005f), gse::meters(0.f)),
-		gse::quat(1.f, 0.f, 0.f, 0.f)
-	);
+	for (std::size_t i = 0; i < n; ++i) {
+		const auto row = static_cast<int>(i) / grid_side;
+		const auto col = static_cast<int>(i) % grid_side;
+		const auto x = (static_cast<float>(col) - static_cast<float>(grid_side - 1) * 0.5f) * spacing;
+		const auto z = (static_cast<float>(row) - static_cast<float>(grid_side - 1) * 0.5f) * spacing;
+
+		gs::spawn_humanoid(
+			s,
+			gse::vec3<gse::position>(gse::meters(x), gse::meters(1.005f), gse::meters(z)),
+			gse::quat(1.f, 0.f, 0.f, 0.f),
+			std::format("ragdoll_{}", i)
+		);
+	}
 }
 
-auto gs::physics_parity_world_setup(gse::engine& e) -> gse::scene* {
+auto gs::physics_parity_world_setup(gse::engine& e, const std::size_t n_envs) -> gse::scene* {
+	g_physics_parity_n_envs = n_envs;
 	auto& w = e.world();
 	auto& reg = e.registry();
 	return gse::add_scene(w, reg, "PhysicsParity", &physics_parity_scene_setup);

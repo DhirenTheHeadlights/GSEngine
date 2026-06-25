@@ -491,25 +491,40 @@ void vbd_solve_color(uint3 dispatch_id) {
     if (collision_state[state_converged_flag_index] != 0) return;
 
     if (pc.color_offset == 0xFFFFFFFFu) {
-        uint seq_colors = min(collision_state[state_max_used_color_index], pc.color_count);
-        for (uint color = 0; color < seq_colors; color++) {
-            uint count = color_data[max_colors + color];
-            uint offset = color_data[color];
-            for (uint k = idx; k < count; k += workgroup_size) {
-                uint bi = color_data[max_colors * 2 + offset + k];
-                if (bi < pc.body_count && joint_counts[bi] == 0) {
-                    solve_body(bi, false);
+        uint env = idx / workgroup_size;
+        uint lane = idx % workgroup_size;
+
+        if (env == 0) {
+            uint seq_colors = min(collision_state[state_max_used_color_index], pc.color_count);
+            for (uint color = 0; color < seq_colors; color++) {
+                uint count = color_data[max_colors + color];
+                uint offset = color_data[color];
+                for (uint k = lane; k < count; k += workgroup_size) {
+                    uint bi = color_data[max_colors * 2 + offset + k];
+                    if (bi < pc.body_count && joint_counts[bi] == 0) {
+                        solve_body(bi, false);
+                    }
                 }
+                AllMemoryBarrierWithGroupSync();
             }
-            AllMemoryBarrierWithGroupSync();
         }
+
+        uint island_count = island_data[0];
+        if (env < island_count && lane == 0) {
+            uint base = 1 + 2 * max_islands;
+            uint offset = island_data[1 + env];
+            uint count = island_data[1 + max_islands + env];
+            for (uint k = 0; k < count; k++) {
+                uint bi = island_data[base + offset + k];
+                if (bi < pc.body_count) solve_body(bi, true);
+            }
+            for (uint k = count; k > 0; k--) {
+                uint bi = island_data[base + offset + k - 1];
+                if (bi < pc.body_count) solve_body(bi, true);
+            }
+        }
+
         if (idx == 0) {
-            for (uint sbi = 0; sbi < pc.body_count; sbi++) {
-                if (joint_counts[sbi] > 0) solve_body(sbi, true);
-            }
-            for (uint rbi = pc.body_count; rbi > 0; rbi--) {
-                if (joint_counts[rbi - 1] > 0) solve_body(rbi - 1, true);
-            }
             collision_state[state_convergence_max_delta_index] = 0;
             collision_state[state_convergence_max_angular_delta_index] = 0;
         }
