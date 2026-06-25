@@ -16,6 +16,7 @@ namespace gs::startup {
 		bool locomotion_selftest = false;
 		bool use_gpu_solver = false;
 		bool physics_parity = false;
+		std::size_t physics_parity_envs = 1;
 	};
 
 	auto run_game(
@@ -122,9 +123,9 @@ auto gs::startup::run_locomotion_train(const config& cfg) -> void {
 auto gs::startup::run_physics_parity(const config& cfg) -> void {
 	gse::system_clock::set_fixed_step_override(1);
 	gse::start(
-		[](gse::engine& e) -> void {
+		[n_envs = cfg.physics_parity_envs](gse::engine& e) -> void {
 			gse::register_systems<^^gs::physics_parity>(e);
-			auto* scene = gs::physics_parity_world_setup(e);
+			auto* scene = gs::physics_parity_world_setup(e, n_envs);
 			if (scene) {
 				gse::activate_scene(e.world(), scene->id());
 			}

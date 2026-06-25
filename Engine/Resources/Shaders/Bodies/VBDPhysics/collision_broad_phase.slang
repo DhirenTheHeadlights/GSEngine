@@ -47,6 +47,7 @@ void collision_broad_phase(uint3 dispatch_id) {
     body_state body_i = body_data[i];
 
     bool i_locked = body_i.locked != 0;
+    uint env_i = body_env_data[i];
 
     float margin = solver_config_data[0].speculative_margin;
     float3 min_a = body_i.aabb_min.xyz;
@@ -67,7 +68,9 @@ void collision_broad_phase(uint3 dispatch_id) {
                     uint j = grid_data[entry_ptr];
                     uint next = grid_data[entry_ptr + 1];
 
-                    if (j > i && j < pc.body_count && !is_jointed(i, j)) {
+                    uint env_j = body_env_data[j];
+                    bool cross_env = (env_i != 0xFFFFFFFFu) && (env_j != 0xFFFFFFFFu) && (env_i != env_j);
+                    if (j > i && j < pc.body_count && !is_jointed(i, j) && !cross_env) {
                         body_state body_j = body_data[j];
                         bool j_locked = body_j.locked != 0;
                         if (!(i_locked && j_locked)) {
