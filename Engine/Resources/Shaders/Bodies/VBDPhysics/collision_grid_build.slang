@@ -16,6 +16,10 @@ void collision_grid_build(uint3 dispatch_id) {
 
     body_state body = body_data[bi];
 
+    if (body.locked != 0) {
+        return;
+    }
+
     float cell_size = pc.grid_cell_size;
     int3 min_cell = world_to_cell(body.aabb_min.xyz - solver_config_data[0].speculative_margin, cell_size);
     int3 max_cell = world_to_cell(body.aabb_max.xyz + solver_config_data[0].speculative_margin, cell_size);
