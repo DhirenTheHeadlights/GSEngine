@@ -166,6 +166,7 @@ export namespace gse::vbd {
 			gpu::buffer jointed_pairs_buffer;
 			gpu::buffer island_buffer;
 			gpu::buffer body_env_buffer;
+			gpu::buffer static_bodies_buffer;
 
 			bool grounded_valid = false;
 		};
@@ -202,6 +203,7 @@ export namespace gse::vbd {
 		std::vector<std::uint32_t> m_upload_jointed_pairs;
 		std::vector<std::uint32_t> m_upload_islands;
 		std::vector<std::uint32_t> m_upload_body_env;
+		std::vector<std::uint32_t> m_upload_static_bodies;
 		std::vector<std::uint8_t> m_jointed_body_mask;
 		bool m_upload_joints_dirty = false;
 	};

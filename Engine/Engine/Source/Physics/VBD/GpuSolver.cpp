@@ -211,6 +211,12 @@ namespace gse::vbd {
 	]] body_env_data {
 		using element = std::uint32_t;
 	};
+	struct [[
+		= shaders::binding<0, 29>{},
+		= shaders::ssbo_readonly
+	]] static_bodies_data {
+		using element = std::uint32_t;
+	};
 
 	using shader_binding_types = type_pack<
 		body_data,
@@ -241,7 +247,8 @@ namespace gse::vbd {
 		jointless_color_data,
 		jointless_indirect_args,
 		island_data,
-		body_env_data
+		body_env_data,
+		static_bodies_data
 	>;
 
 	template <fixed_string BodyPath>
@@ -618,6 +625,17 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 		);
 		f.body_env_buffer.host_zero();
 		f.body_env_buffer.clear_host_dirty();
+
+		f.static_bodies_buffer = ctx.device->create_buffer(
+			{
+				.size = (1 + limits.max_bodies) * sizeof(std::uint32_t),
+				.usage = gpu::buffer_flag::storage,
+				.bindless = true
+			},
+			"vbd.static_bodies"
+		);
+		f.static_bodies_buffer.host_zero();
+		f.static_bodies_buffer.clear_host_dirty();
 	}
 
 	m_upload_motors.reserve(limits.max_motors);
@@ -675,10 +693,18 @@ auto gse::vbd::gpu_solver::upload(const std::span<const body_state> bodies, cons
 	frame_data.body_input_buffer.host_write(bodies.first(m_body_count));
 
 	displacement max_extent = meters(0.5f);
+	m_upload_static_bodies.assign(1 + limits.max_bodies, 0u);
+	std::uint32_t static_count = 0;
 	for (std::uint32_t i = 0; i < m_body_count; ++i) {
+		if (bodies[i].locked != 0) {
+			m_upload_static_bodies[1 + static_count] = i;
+			++static_count;
+			continue;
+		}
 		const auto& he = bodies[i].half_extents;
 		max_extent = std::max({ max_extent, he.x(), he.y(), he.z() });
 	}
+	m_upload_static_bodies[0] = static_count;
 	m_grid_cell_size = max_extent * 4.0f;
 
 	m_upload_motors.assign(motors.begin(), motors.begin() + m_motor_count);
@@ -840,6 +866,10 @@ auto gse::vbd::gpu_solver::commit_upload() -> void {
 		f.body_env_buffer.host_write(m_upload_body_env);
 	}
 
+	if (!m_upload_static_bodies.empty()) {
+		f.static_bodies_buffer.host_write(m_upload_static_bodies);
+	}
+
 	if (m_upload_joints_dirty && !m_upload_joints.empty()) {
 		f.joint_buffer.host_write(m_upload_joints);
 	}
@@ -996,6 +1026,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 		.jointless_indirect_args = f.jointless_indirect_dispatch_buffer.slot(),
 		.island_data = f.island_buffer.slot(),
 		.body_env_data = f.body_env_buffer.slot(),
+		.static_bodies_data = f.static_bodies_buffer.slot(),
 	};
 	auto jointless_bindings = bindings;
 	jointless_bindings.color_data = f.jointless_color_buffer.slot();
