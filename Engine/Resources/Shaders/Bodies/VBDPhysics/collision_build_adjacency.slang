@@ -1,11 +1,6 @@
 
 static const uint ELEMS_PER_THREAD = (max_bodies + adjacency_workgroup_size - 1) / adjacency_workgroup_size;
 
-groupshared uint gs_contact_counts[max_bodies];
-groupshared uint gs_contact_offsets[max_bodies];
-groupshared uint gs_joint_counts[max_bodies];
-groupshared uint gs_joint_offsets[max_bodies];
-
 float joint_effective_mass(body_state body_a, body_state body_b, float3 rAW, float3 rBW, float3 dir) {
     float inv_mass_sum = 0.0;
     if (body_a.locked == 0 && body_a.mass > 1e-10) inv_mass_sum += 1.0 / body_a.mass;
@@ -32,8 +27,8 @@ uint num_joints = min(pc.joint_count, max_joints);
 for (uint k0 = 0; k0 < ELEMS_PER_THREAD; k0++) {
     uint bi = tid + k0 * adjacency_workgroup_size;
     if (bi < max_bodies) {
-        gs_contact_counts[bi] = 0;
-        gs_joint_counts[bi] = 0;
+        contact_counts[bi] = 0;
+        joint_counts[bi] = 0;
     }
 }
 for (uint gi = tid; gi < max_grounded_uints; gi += adjacency_workgroup_size) {
@@ -45,8 +40,8 @@ for (uint ci = tid; ci < num_contacts; ci += adjacency_workgroup_size) {
     contact_constraint c = contact_data[ci];
     if (c.body_a < body_count && c.body_b < body_count) {
         uint dummy;
-        InterlockedAdd(gs_contact_counts[c.body_a], 1u, dummy);
-        InterlockedAdd(gs_contact_counts[c.body_b], 1u, dummy);
+        InterlockedAdd(contact_counts[c.body_a], 1u, dummy);
+        InterlockedAdd(contact_counts[c.body_b], 1u, dummy);
         if (c.normal.y > 0.7) {
             InterlockedOr(grounded_bits[c.body_a / 32u], 1u << (c.body_a % 32u), dummy);
         }
@@ -60,21 +55,21 @@ for (uint ji = tid; ji < num_joints; ji += adjacency_workgroup_size) {
     joint_constraint j = joint_data[ji];
     if (j.body_a < body_count && j.body_b < body_count) {
         uint dummy;
-        InterlockedAdd(gs_joint_counts[j.body_a], 1u, dummy);
-        InterlockedAdd(gs_joint_counts[j.body_b], 1u, dummy);
+        InterlockedAdd(joint_counts[j.body_a], 1u, dummy);
+        InterlockedAdd(joint_counts[j.body_b], 1u, dummy);
     }
 }
-GroupMemoryBarrierWithGroupSync();
+AllMemoryBarrierWithGroupSync();
 
 [unroll]
 for (uint k1 = 0; k1 < ELEMS_PER_THREAD; k1++) {
     uint bi = tid + k1 * adjacency_workgroup_size;
     if (bi < max_bodies) {
-        gs_contact_offsets[bi] = gs_contact_counts[bi];
-        gs_joint_offsets[bi] = gs_joint_counts[bi];
+        contact_offsets[bi] = contact_counts[bi];
+        joint_offsets[bi] = joint_counts[bi];
     }
 }
-GroupMemoryBarrierWithGroupSync();
+AllMemoryBarrierWithGroupSync();
 
 for (uint stride = 1; stride < max_bodies; stride <<= 1) {
     uint cv[ELEMS_PER_THREAD];
@@ -83,31 +78,31 @@ for (uint stride = 1; stride < max_bodies; stride <<= 1) {
     for (uint kr = 0; kr < ELEMS_PER_THREAD; kr++) {
         uint bi = tid + kr * adjacency_workgroup_size;
         bool valid = bi < max_bodies && bi >= stride;
-        cv[kr] = valid ? gs_contact_offsets[bi - stride] : 0u;
-        jv[kr] = valid ? gs_joint_offsets[bi - stride] : 0u;
+        cv[kr] = valid ? contact_offsets[bi - stride] : 0u;
+        jv[kr] = valid ? joint_offsets[bi - stride] : 0u;
     }
-    GroupMemoryBarrierWithGroupSync();
+    AllMemoryBarrierWithGroupSync();
     [unroll]
     for (uint kw = 0; kw < ELEMS_PER_THREAD; kw++) {
         uint bi = tid + kw * adjacency_workgroup_size;
         if (bi < max_bodies) {
-            gs_contact_offsets[bi] += cv[kw];
-            gs_joint_offsets[bi] += jv[kw];
+            contact_offsets[bi] += cv[kw];
+            joint_offsets[bi] += jv[kw];
         }
     }
-    GroupMemoryBarrierWithGroupSync();
+    AllMemoryBarrierWithGroupSync();
 }
 
 [unroll]
 for (uint k2 = 0; k2 < ELEMS_PER_THREAD; k2++) {
     uint bi = tid + k2 * adjacency_workgroup_size;
     if (bi < body_count) {
-        uint cs = gs_contact_offsets[bi] - gs_contact_counts[bi];
-        uint js = gs_joint_offsets[bi] - gs_joint_counts[bi];
+        uint cs = contact_offsets[bi] - contact_counts[bi];
+        uint js = joint_offsets[bi] - joint_counts[bi];
         contact_offsets[bi] = min(cs, max_contact_adjacency);
         joint_offsets[bi] = min(js, max_joint_adjacency);
-        gs_contact_counts[bi] = 0;
-        gs_joint_counts[bi] = 0;
+        contact_counts[bi] = 0;
+        joint_counts[bi] = 0;
     }
 }
 AllMemoryBarrierWithGroupSync();
@@ -116,14 +111,14 @@ for (uint ci = tid; ci < num_contacts; ci += adjacency_workgroup_size) {
     contact_constraint c = contact_data[ci];
     if (c.body_a < body_count && c.body_b < body_count) {
         uint slot_a;
-        InterlockedAdd(gs_contact_counts[c.body_a], 1u, slot_a);
+        InterlockedAdd(contact_counts[c.body_a], 1u, slot_a);
         uint off_a = contact_offsets[c.body_a] + slot_a;
         if (off_a < max_contact_adjacency) {
             contact_adjacency[off_a] = ci;
         }
 
         uint slot_b;
-        InterlockedAdd(gs_contact_counts[c.body_b], 1u, slot_b);
+        InterlockedAdd(contact_counts[c.body_b], 1u, slot_b);
         uint off_b = contact_offsets[c.body_b] + slot_b;
         if (off_b < max_contact_adjacency) {
             contact_adjacency[off_b] = ci;
@@ -135,14 +130,14 @@ for (uint ji = tid; ji < num_joints; ji += adjacency_workgroup_size) {
     joint_constraint j = joint_data[ji];
     if (j.body_a < body_count && j.body_b < body_count) {
         uint slot_a;
-        InterlockedAdd(gs_joint_counts[j.body_a], 1u, slot_a);
+        InterlockedAdd(joint_counts[j.body_a], 1u, slot_a);
         uint off_a = joint_offsets[j.body_a] + slot_a;
         if (off_a < max_joint_adjacency) {
             joint_adjacency[off_a] = ji;
         }
 
         uint slot_b;
-        InterlockedAdd(gs_joint_counts[j.body_b], 1u, slot_b);
+        InterlockedAdd(joint_counts[j.body_b], 1u, slot_b);
         uint off_b = joint_offsets[j.body_b] + slot_b;
         if (off_b < max_joint_adjacency) {
             joint_adjacency[off_b] = ji;
@@ -154,7 +149,7 @@ AllMemoryBarrierWithGroupSync();
 for (uint sbi = tid; sbi < body_count; sbi += adjacency_workgroup_size) {
     if (body_data[sbi].locked != 0) continue;
     uint coff = contact_offsets[sbi];
-    uint ccnt = min(gs_contact_counts[sbi], max_contact_adjacency - coff);
+    uint ccnt = min(contact_counts[sbi], max_contact_adjacency - coff);
     for (uint sa = 1u; sa < ccnt; sa++) {
         uint ci_a = contact_adjacency[coff + sa];
         contact_constraint ca = contact_data[ci_a];
@@ -179,7 +174,7 @@ AllMemoryBarrierWithGroupSync();
 for (uint sbj = tid; sbj < body_count; sbj += adjacency_workgroup_size) {
     if (body_data[sbj].locked != 0) continue;
     uint joff = joint_offsets[sbj];
-    uint jcnt = min(gs_joint_counts[sbj], max_joint_adjacency - joff);
+    uint jcnt = min(joint_counts[sbj], max_joint_adjacency - joff);
     for (uint ja = 1u; ja < jcnt; ja++) {
         uint ji_a = joint_adjacency[joff + ja];
         joint_constraint jca = joint_data[ji_a];
@@ -200,15 +195,6 @@ for (uint sbj = tid; sbj < body_count; sbj += adjacency_workgroup_size) {
     }
 }
 AllMemoryBarrierWithGroupSync();
-
-[unroll]
-for (uint k3 = 0; k3 < ELEMS_PER_THREAD; k3++) {
-    uint bi = tid + k3 * adjacency_workgroup_size;
-    if (bi < body_count) {
-        contact_counts[bi] = gs_contact_counts[bi];
-        joint_counts[bi] = gs_joint_counts[bi];
-    }
-}
 
 for (uint ji = tid; ji < num_joints; ji += adjacency_workgroup_size) {
     joint_constraint j = joint_data[ji];
