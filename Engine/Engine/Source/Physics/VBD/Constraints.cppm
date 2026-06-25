@@ -16,7 +16,7 @@ export namespace gse::vbd {
 		std::uint32_t max_joints = 8192;
 		std::uint32_t max_islands = 512;
 		std::uint32_t max_impulses = 64;
-		std::uint32_t max_motors = 16;
+		std::uint32_t max_motors = 1024;
 		std::uint32_t max_contact_adjacency = 65536 * 2;
 		std::uint32_t max_joint_adjacency = 8192 * 2;
 		std::uint32_t max_grounded_uints = (5120 + 31) / 32;
