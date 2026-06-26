@@ -73,6 +73,7 @@ export namespace gs::locomotion {
 		bool drives_initialized = false;
 		bool snapshot_taken = false;
 		bool has_prev = false;
+		int reset_gate = 0;
 		int episode = 0;
 		int episode_steps = 0;
 		float episode_reward = 0.0f;
@@ -410,6 +411,7 @@ auto gs::locomotion::reset_env(env_state& env, const skeleton_refs& r, gse::writ
 	apply_action(action{}, r, drives);
 	env.drives_initialized = false;
 	env.has_prev = false;
+	env.reset_gate = 30;
 	env.episode_steps = 0;
 	env.episode_reward = 0.0f;
 	env.track_err_accum = 0.0f;
@@ -478,6 +480,22 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 		cmd.has_heading = true;
 		cmd.desired_yaw = gse::radians(0.f);
 		pack_observation(observe(*s, cmd, gait{}, 0.0f), env.obs_buf);
+
+		// The GPU solver is authoritative and the readback lags the solve by a few
+		// ticks, so a per-env reset is not observable in `state` for several ticks
+		// after reset_env runs. Hold the reference pose and suppress episode_done
+		// until the obs confirms the reset landed (pelvis back near the reset
+		// height), otherwise episode_done fires on the stale pre-reset state.
+		if (env.reset_gate > 0) {
+			apply_action(action{}, *r, drives);
+			if (s->pelvis_position.y() >= gse::meters(0.9f)) {
+				env.reset_gate = 0;
+			}
+			else {
+				--env.reset_gate;
+			}
+			continue;
+		}
 
 		if (env.has_prev) {
 			const auto reward = compute_reward(*s, env.cmd_forward, env.cmd_strafe);
