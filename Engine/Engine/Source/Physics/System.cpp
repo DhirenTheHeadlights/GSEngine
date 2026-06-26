@@ -683,6 +683,9 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 				transform.size() == motion.size() && std::ranges::equal(rb_motion_ids, transform.owner_ids());
 			for (std::size_t i = 0; i < motion.size(); ++i) {
 				auto& mc = motion[i];
+				if (mc.reset_pending != 0) {
+					continue;
+				}
 				const auto eid = rb_motion_ids[i];
 				auto* tc = rb_transform_order_matches ? std::addressof(transform[i]) : transform.find(eid);
 				if (!tc) {
