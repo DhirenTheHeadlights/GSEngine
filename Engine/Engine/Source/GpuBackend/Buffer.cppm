@@ -14,6 +14,7 @@ export namespace gse::gpu {
 		storage = 0x02,
 		indirect = 0x04,
 		transfer_dst = 0x08,
+		byte_address = 0x10,
 		index = 0x20,
 		transfer_src = 0x40,
 		acceleration_structure_storage = 0x80,

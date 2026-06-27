@@ -92,6 +92,7 @@ namespace gse::vulkan {
 		gpu::bindless_slot_pool buffer_pool;
 		gpu::bindless_slot_pool texture_pool;
 		gpu::bindless_slot_pool sampler_pool;
+		gpu::bindless_slot_pool acceleration_structure_pool;
 	};
 
 	struct vk_resource_manifest {
@@ -244,6 +245,9 @@ export namespace gse::vulkan {
 
 		[[nodiscard]]
 		auto allocate_image_slot() -> gpu::bindless_handle;
+
+		[[nodiscard]]
+		auto allocate_acceleration_structure_slot() -> gpu::bindless_handle;
 
 		auto write_storage_buffer(
 			gpu::bindless_slot slot,

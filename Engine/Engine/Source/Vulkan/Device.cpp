@@ -2398,6 +2398,11 @@ auto gse::vulkan::device::write_buffer_descriptor(const gpu::handle<gpu::descrip
 	const auto* resources = m_owned.find(heap);
 	assert(resources, "write_buffer_descriptor: unknown descriptor heap");
 
+	if (kind == gpu::buffer_descriptor_kind::acceleration_structure) {
+		std::memcpy(resources->mapped + byte_offset, &address, sizeof(address));
+		return;
+	}
+
 	const vk::DeviceAddressRangeEXT address_range{
 		.address = address,
 		.size = range,
@@ -2405,9 +2410,6 @@ auto gse::vulkan::device::write_buffer_descriptor(const gpu::handle<gpu::descrip
 	vk::DescriptorType type = vk::DescriptorType::eStorageBuffer;
 	if (kind == gpu::buffer_descriptor_kind::uniform) {
 		type = vk::DescriptorType::eUniformBuffer;
-	}
-	else if (kind == gpu::buffer_descriptor_kind::acceleration_structure) {
-		type = vk::DescriptorType::eAccelerationStructureKHR;
 	}
 	const vk::ResourceDescriptorInfoEXT info{
 		.type = type,
@@ -2469,15 +2471,18 @@ auto gse::vulkan::device::init_bindless() -> void {
 	const auto& props = m_descriptor_heap_props;
 	m_bindless = std::make_unique<bindless_state>();
 
+	const auto acceleration_structure_stride = static_cast<gpu::device_size>(sizeof(std::uint64_t));
+
 	const auto resource_reserved = align_up(props.min_resource_heap_reserved_range, props.resource_heap_alignment);
-	const auto texture_image_offset = resource_reserved;
-	const auto image_range_offset = texture_image_offset + texture_capacity * props.image_descriptor_size;
-	const auto buffer_range_offset = align_up(image_range_offset + image_capacity * props.image_descriptor_size, props.buffer_descriptor_alignment);
-	const auto resource_heap_size = align_up(buffer_range_offset + buffer_capacity * props.buffer_descriptor_size, props.resource_heap_alignment);
+	const auto texture_image_offset = align_up(resource_reserved, props.image_descriptor_size);
+	const auto image_range_offset = align_up(texture_image_offset + texture_capacity * props.image_descriptor_size, props.image_descriptor_size);
+	const auto buffer_range_offset = align_up(image_range_offset + image_capacity * props.image_descriptor_size, props.buffer_descriptor_size);
+	const auto acceleration_structure_range_offset = align_up(buffer_range_offset + buffer_capacity * props.buffer_descriptor_size, acceleration_structure_stride);
+	const auto resource_heap_size = align_up(acceleration_structure_range_offset + buffer_capacity * acceleration_structure_stride, props.resource_heap_alignment);
 
 	const auto sampler_reserved = align_up(props.min_sampler_heap_reserved_range, props.sampler_heap_alignment);
-	const auto texture_sampler_offset = sampler_reserved;
-	const auto sampler_range_offset = texture_sampler_offset + texture_capacity * props.sampler_descriptor_size;
+	const auto texture_sampler_offset = align_up(sampler_reserved, props.sampler_descriptor_size);
+	const auto sampler_range_offset = align_up(texture_sampler_offset + texture_capacity * props.sampler_descriptor_size, props.sampler_descriptor_size);
 	const auto sampler_heap_size = align_up(sampler_range_offset + sampler_capacity * props.sampler_descriptor_size, props.sampler_heap_alignment);
 
 	m_bindless->resource_heap = create_descriptor_heap(resource_heap_size);
@@ -2492,6 +2497,8 @@ auto gse::vulkan::device::init_bindless() -> void {
 		.texture_sampler_offset = texture_sampler_offset,
 		.sampler_range_offset = sampler_range_offset,
 		.sampler_stride = props.sampler_descriptor_size,
+		.acceleration_structure_range_offset = acceleration_structure_range_offset,
+		.acceleration_structure_stride = acceleration_structure_stride,
 	};
 	m_bindless->resource_binding = {
 		.address = descriptor_heap_address(m_bindless->resource_heap),
@@ -2508,17 +2515,28 @@ auto gse::vulkan::device::init_bindless() -> void {
 
 	m_bindless->image_pool.base_offset = image_range_offset;
 	m_bindless->image_pool.stride = props.image_descriptor_size;
+	m_bindless->image_pool.base_index = image_range_offset / props.image_descriptor_size;
 	m_bindless->image_pool.reset(image_capacity);
 
 	m_bindless->buffer_pool.base_offset = buffer_range_offset;
 	m_bindless->buffer_pool.stride = props.buffer_descriptor_size;
+	m_bindless->buffer_pool.base_index = buffer_range_offset / props.buffer_descriptor_size;
 	m_bindless->buffer_pool.reset(buffer_capacity);
 
+	m_bindless->texture_pool.base_offset = texture_image_offset;
+	m_bindless->texture_pool.stride = props.image_descriptor_size;
+	m_bindless->texture_pool.base_index = texture_image_offset / props.image_descriptor_size;
 	m_bindless->texture_pool.reset(texture_capacity);
 
 	m_bindless->sampler_pool.base_offset = sampler_range_offset;
 	m_bindless->sampler_pool.stride = props.sampler_descriptor_size;
+	m_bindless->sampler_pool.base_index = sampler_range_offset / props.sampler_descriptor_size;
 	m_bindless->sampler_pool.reset(sampler_capacity);
+
+	m_bindless->acceleration_structure_pool.base_offset = acceleration_structure_range_offset;
+	m_bindless->acceleration_structure_pool.stride = acceleration_structure_stride;
+	m_bindless->acceleration_structure_pool.base_index = acceleration_structure_range_offset / acceleration_structure_stride;
+	m_bindless->acceleration_structure_pool.reset(buffer_capacity);
 }
 
 auto gse::vulkan::device::allocate_buffer_slot() -> gpu::bindless_handle {
@@ -2527,6 +2545,10 @@ auto gse::vulkan::device::allocate_buffer_slot() -> gpu::bindless_handle {
 
 auto gse::vulkan::device::allocate_image_slot() -> gpu::bindless_handle {
 	return gpu::bindless_handle(&m_bindless->image_pool, m_bindless->image_pool.allocate());
+}
+
+auto gse::vulkan::device::allocate_acceleration_structure_slot() -> gpu::bindless_handle {
+	return gpu::bindless_handle(&m_bindless->acceleration_structure_pool, m_bindless->acceleration_structure_pool.allocate());
 }
 
 auto gse::vulkan::device::write_storage_buffer(const gpu::bindless_slot slot, const gpu::device_address address, const gpu::device_size size) -> void {
@@ -2538,7 +2560,7 @@ auto gse::vulkan::device::write_uniform_buffer(const gpu::bindless_slot slot, co
 }
 
 auto gse::vulkan::device::write_acceleration_structure(const gpu::bindless_slot slot, const gpu::device_address as_address) -> void {
-	write_buffer_descriptor(m_bindless->resource_heap, m_bindless->buffer_pool.offset(slot), gpu::buffer_descriptor_kind::acceleration_structure, as_address, 0);
+	write_buffer_descriptor(m_bindless->resource_heap, m_bindless->acceleration_structure_pool.offset(slot), gpu::buffer_descriptor_kind::acceleration_structure, as_address, 0);
 }
 
 auto gse::vulkan::device::write_sampled_image(const gpu::bindless_slot slot, const gpu::image& img) -> void {
@@ -2551,12 +2573,10 @@ auto gse::vulkan::device::register_sampler(const gpu::sampler_desc& desc) -> gpu
 	return gpu::bindless_handle(&m_bindless->sampler_pool, slot);
 }
 
-auto gse::vulkan::device::register_texture(const gpu::image& img, const gpu::sampler_desc& desc) -> gpu::bindless_handle {
-	const auto slot = m_bindless->texture_pool.allocate();
-	const auto& layout = m_bindless->layout;
-	write_image_descriptor(m_bindless->resource_heap, layout.texture_image_offset + slot.index * layout.image_stride, gpu::image_descriptor_kind::texture, img);
-	write_sampler_descriptor(m_bindless->sampler_heap, layout.texture_sampler_offset + slot.index * layout.sampler_stride, desc);
-	return gpu::bindless_handle(&m_bindless->texture_pool, slot);
+auto gse::vulkan::device::register_texture(const gpu::image& img, const gpu::sampler_desc&) -> gpu::bindless_handle {
+	auto handle = allocate_image_slot();
+	write_sampled_image(handle.slot(), img);
+	return handle;
 }
 
 auto gse::vulkan::device::bindless_layout() const -> gpu::bindless_layout {
@@ -2572,6 +2592,10 @@ auto gse::vulkan::device::bindless_sampler_heap_binding() const -> gpu::bindless
 }
 
 auto gse::vulkan::device::create_shader_program(const gpu::shader_program_create_info& info) -> gpu::shader_program {
+	for (const auto& stage : info.stages) {
+		aftermath::register_spirv(stage.spirv);
+	}
+
 	std::optional<vk::PushConstantRange> vk_pc_range;
 	if (info.push_constant_range.has_value()) {
 		vk_pc_range = to_vk(*info.push_constant_range);
@@ -2585,14 +2609,13 @@ auto gse::vulkan::device::create_shader_program(const gpu::shader_program_create
 	assert(layout_result == vk::Result::eSuccess, "failed to create pipeline layout: {}", vk::to_string(layout_result));
 	const auto layout_handle = adopt<gpu::handle<gpu::pipeline_layout>>(std::move(layout));
 
-	const auto bindless = build_bindless_mappings(info.bindings, bindless_layout(), info.push_offset_start);
-
 	std::vector<gpu::stage_flag> stages;
 	std::vector<gpu::handle<gpu::shader_object>> shader_handles;
 	stages.reserve(info.stages.size());
 	shader_handles.reserve(info.stages.size());
 
 	if (info.stages.size() == 1) {
+		const auto bindless = build_bindless_mappings(info.stages[0].spirv, bindless_layout(), info.push_offset_start);
 		std::optional<vk::ShaderRequiredSubgroupSizeCreateInfoEXT> subgroup_size_scratch;
 		std::optional<vk::ShaderDescriptorSetAndBindingMappingInfoEXT> mapping_scratch;
 		shader_spec_scratch spec_scratch;
@@ -2603,13 +2626,18 @@ auto gse::vulkan::device::create_shader_program(const gpu::shader_program_create
 		shader_handles.push_back(adopt<gpu::handle<gpu::shader_object>>(std::move(shaders[0])));
 	}
 	else {
+		std::vector<bindless_mapping_result> per_stage_bindless;
+		per_stage_bindless.reserve(info.stages.size());
+		for (const auto& stage : info.stages) {
+			per_stage_bindless.push_back(build_bindless_mappings(stage.spirv, bindless_layout(), info.push_offset_start));
+		}
 		std::vector<std::optional<vk::ShaderRequiredSubgroupSizeCreateInfoEXT>> subgroup_size_scratch(info.stages.size());
 		std::vector<std::optional<vk::ShaderDescriptorSetAndBindingMappingInfoEXT>> mapping_scratch(info.stages.size());
 		std::vector<shader_spec_scratch> spec_scratch(info.stages.size());
 		std::vector<vk::ShaderCreateInfoEXT> vk_infos;
 		vk_infos.reserve(info.stages.size());
 		for (std::size_t i = 0; i < info.stages.size(); ++i) {
-			vk_infos.push_back(build_vk_shader_create_info(info.stages[i], bindless.mappings, subgroup_size_scratch[i], mapping_scratch[i], spec_scratch[i], vk::ShaderCreateFlagBitsEXT::eLinkStage));
+			vk_infos.push_back(build_vk_shader_create_info(info.stages[i], per_stage_bindless[i].mappings, subgroup_size_scratch[i], mapping_scratch[i], spec_scratch[i], vk::ShaderCreateFlagBitsEXT::eLinkStage));
 		}
 		auto [result, shaders] = raii_device().createShadersEXT(vk_infos);
 		assert(result == vk::Result::eSuccess, "failed to create linked shaders: {}", vk::to_string(result));
@@ -2647,10 +2675,14 @@ auto gse::vulkan::device::create_blas(const gpu::acceleration_structure_geometry
 
 	const auto address = acceleration_structure_address(handle);
 
+	auto heap_handle = gpu::bindless_handle(&m_bindless->acceleration_structure_pool, m_bindless->acceleration_structure_pool.allocate());
+	write_acceleration_structure(heap_handle.slot(), address);
+
 	return gpu::blas{
 		std::move(storage),
 		handle,
 		address,
+		std::move(heap_handle),
 	};
 }
 

@@ -9,32 +9,7 @@ void as_main(uint gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
     bool visible = false;
 
     if (meshlet_idx < pc.meshlet_count) {
-        uint global_idx = pc.meshlet_offset + meshlet_idx;
-        meshlet_bounds bounds = meshlet_bounds_buffer[global_idx];
-        instance_data inst = instance_data_buffer[instance_index];
-
-        float3 world_center = mul(inst.model_matrix, float4(bounds.center, 1.0)).xyz;
-
-        float3 scale_sq = float3(
-            dot(inst.model_matrix[0].xyz, inst.model_matrix[0].xyz),
-            dot(inst.model_matrix[1].xyz, inst.model_matrix[1].xyz),
-            dot(inst.model_matrix[2].xyz, inst.model_matrix[2].xyz)
-        );
-        float max_scale = sqrt(max(scale_sq.x, max(scale_sq.y, scale_sq.z)));
-        float world_radius = bounds.radius * max_scale;
-
-        visible = !frustum_cull_sphere(world_center, world_radius, camera_ubo.view, camera_ubo.proj);
-
-        if (visible && bounds.cone_cutoff >= 0.0) {
-            float3 world_cone_axis = normalize(mul((float3x3)inst.model_matrix, bounds.cone_axis));
-            float3 view_center = mul(camera_ubo.view, float4(world_center, 1.0)).xyz;
-            float3 view_cone_axis = normalize(mul((float3x3)camera_ubo.view, world_cone_axis));
-            float3 view_dir = normalize(-view_center);
-            float cone_sin = sqrt(1.0 - bounds.cone_cutoff * bounds.cone_cutoff);
-            if (dot(view_cone_axis, view_dir) < -cone_sin) {
-                visible = false;
-            }
-        }
+        visible = true;
     }
 
     if (gtid == 0) {

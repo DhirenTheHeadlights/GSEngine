@@ -1,9 +1,11 @@
-module gse.gpu:render_pass_impl;
+module gse.gpu_record:render_pass_impl;
 
 import std;
 
 import :render_pass;
-import :render_graph;
+import :recording_context;
+
+import gse.gpu;
 
 import gse.assert;
 import gse.core;
@@ -26,25 +28,29 @@ auto gse::gpu::request_pass_awaitable::await_ready() const noexcept -> bool {
 auto gse::gpu::request_pass_awaitable::await_suspend(const std::coroutine_handle<> h) noexcept -> void {
 	recording_context::finalize_active_on_current_thread();
 
-	m_trace_id = find_or_generate_id(std::format("record<{}>", m_desc.pass_kind.tag()));
+	m_trace_id = m_desc.trace_kind.exists()
+		? m_desc.trace_kind
+		: find_or_generate_id(std::format("record<{}>", m_desc.pass_kind.tag()));
 	m_trace_key = trace::allocate_async_key();
 	trace::begin_async(m_trace_id, m_trace_key);
 
 	m_ctx->channels.push<render_pass_request>({
 		.desc = std::move(m_desc),
 		.record_handle = h,
-		.record_ctx_slot = std::addressof(m_rec),
+		.record_ctx_slot = std::addressof(m_init),
 	});
 }
 
 auto gse::gpu::request_pass_awaitable::await_resume() noexcept -> recording_context {
 	trace::end_async(m_trace_id, m_trace_key);
-	return std::move(*m_rec);
+	return recording_context{ std::move(m_init) };
 }
 
-gse::gpu::pass_builder::pass_builder(const gse::context& ctx, const id pass_kind) noexcept
+gse::gpu::pass_builder::pass_builder(const gse::context& ctx, const id pass_kind, const std::string_view pass_name, const id trace_kind) noexcept
 	: m_ctx(std::addressof(ctx)) {
 	m_desc.pass_kind = pass_kind;
+	m_desc.pass_name = pass_name;
+	m_desc.trace_kind = trace_kind;
 }
 
 auto gse::gpu::pass_builder::on(const queue_type queue) && -> pass_builder&& {
@@ -114,4 +120,82 @@ auto gse::gpu::load_depth() -> depth_attachment {
 	return {
 		.op = load_op::load,
 	};
+}
+
+namespace gse::gpu {
+	auto to_color_output_info(
+		const color_attachment& a
+	) -> gpu::color_output_info;
+
+	auto to_depth_output_info(
+		const depth_attachment& a
+	) -> gpu::depth_output_info;
+
+	auto to_pass_data(
+		render_pass_request req
+	) -> gpu::render_pass_data;
+}
+
+auto gse::gpu::to_color_output_info(const color_attachment& a) -> gpu::color_output_info {
+	return {
+		.is_swapchain = a.target == nullptr && !a.transient_target,
+		.custom_target = a.target,
+		.transient_target = a.transient_target,
+		.op = a.op,
+		.clear_value = a.clear,
+	};
+}
+
+auto gse::gpu::to_depth_output_info(const depth_attachment& a) -> gpu::depth_output_info {
+	return {
+		.is_swapchain = a.target == nullptr && !a.transient_target,
+		.custom_target = a.target,
+		.transient_target = a.transient_target,
+		.op = a.op,
+		.clear_value = a.clear,
+	};
+}
+
+auto gse::gpu::to_pass_data(render_pass_request req) -> gpu::render_pass_data {
+	gpu::render_pass_data p{
+		.pass_type = req.desc.pass_kind,
+		.pass_name = req.desc.pass_name,
+		.queue = req.desc.queue,
+		.primary_pipeline = req.desc.primary_pipeline,
+		.after_passes = std::move(req.desc.after_deps),
+		.chain_id = req.desc.chain_id,
+		.record_handle = req.record_handle,
+		.record_ctx_slot = req.record_ctx_slot,
+	};
+
+	p.color_outputs.reserve(req.desc.colors.size());
+	for (const auto& c : req.desc.colors) {
+		p.color_outputs.push_back(to_color_output_info(c));
+	}
+
+	if (req.desc.depth) {
+		p.depth_output = to_depth_output_info(*req.desc.depth);
+	}
+
+	return p;
+}
+
+auto gse::gpu::context::execute_frame(data& d, scheduler& s) -> void {
+	d.render_graph->execute(frame_request_drain{
+		.drain_passes = [&s] {
+			auto requests = s.drain_channel<render_pass_request>();
+			std::vector<render_pass_data> passes;
+			passes.reserve(requests.size());
+			for (auto& req : requests) {
+				passes.push_back(to_pass_data(std::move(req)));
+			}
+			return passes;
+		},
+		.drain_images = [&s] {
+			return s.drain_channel<transient_image_request>();
+		},
+		.drain_buffers = [&s] {
+			return s.drain_channel<transient_buffer_request>();
+		},
+	});
 }

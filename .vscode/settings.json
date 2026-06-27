@@ -26,7 +26,11 @@
       },
       {
         "name": "VK_LAYER_PATH",
-        "value": "${env:VULKAN_SDK}/share/vulkan/explicit_layer.d:${env:VULKAN_SDK}/etc/vulkan/explicit_layer.d"
+        "value": "${env:VULKAN_SDK}\\Bin"
+      },
+      {
+        "name": "PATH",
+        "value": "${env:VULKAN_SDK}\\Bin;${env:PATH}"
       }
     ]
   }

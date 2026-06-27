@@ -10,6 +10,7 @@ import :camera_system;
 import gse.os;
 import gse.assets;
 import gse.gpu;
+import gse.gpu_record;
 import gse.math;
 import gse.core;
 import gse.containers;

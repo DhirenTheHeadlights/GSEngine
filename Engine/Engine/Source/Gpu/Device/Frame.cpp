@@ -124,10 +124,10 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
 		return std::unexpected(frame_status::swapchain_out_of_date);
 	}
 
-	assert(
-		acquire_status == result::success || acquire_status == result::suboptimal_khr,
-		"Failed to acquire swap chain image!"
-	);
+	if (acquire_status != result::success && acquire_status != result::suboptimal_khr) {
+		recreate_resources(win);
+		return std::unexpected(frame_status::swapchain_out_of_date);
+	}
 
 	trace::scope_guard sg_setup{ trace_id<"begin_frame::setup">() };
 
@@ -300,6 +300,9 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
 	{
 		trace::scope_guard sg{ trace_id<"end_frame::present">() };
 		present_result = m_swapchain->present(render_finished_handle, m_image_index, present_id, m_pacer.relative_target());
+		if (present_result == result::error_present_timing_queue_full) {
+			present_result = m_swapchain->present(render_finished_handle, m_image_index, present_id, m_pacer.relative_target(), false);
+		}
 		if (present_result == result::error_device_lost) {
 			m_device->report_device_lost(std::format("presentKHR (frame {}, image {})", m_current_frame, m_image_index));
 		}

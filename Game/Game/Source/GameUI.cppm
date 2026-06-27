@@ -20,7 +20,7 @@ export namespace gs::client_ui {
 		gse::shared_view<gse::gui::data> gui_d,
 		gse::shared_view<gse::window::data> window_d,
 		gse::shared_view<crosshair::data> crosshair_d,
-		gse::shared_view<gse::renderer::capture::data> capture_d
+		std::optional<gse::shared_view<gse::renderer::capture::data>> capture_d
 	) -> gse::async::task<>;
 }
 
@@ -36,7 +36,7 @@ namespace gs::client_ui {
 		gse::context& ctx,
 		gse::shared_view<gse::gui::data> gui_d,
 		gse::shared_view<gse::window::data> window_d,
-		gse::shared_view<gse::renderer::capture::data> capture_d
+		std::optional<gse::shared_view<gse::renderer::capture::data>> capture_d
 	) -> void;
 }
 
@@ -103,8 +103,8 @@ auto gs::client_ui::push_crosshair(gse::context& ctx, const gse::shared_view<gse
 	}
 }
 
-auto gs::client_ui::push_recording_indicator(gse::context& ctx, const gse::shared_view<gse::gui::data> gui_d, const gse::shared_view<gse::window::data> window_d, const gse::shared_view<gse::renderer::capture::data> capture_d) -> void {
-	if (!capture_d.recording || !capture_d.recording->active.load()) {
+auto gs::client_ui::push_recording_indicator(gse::context& ctx, const gse::shared_view<gse::gui::data> gui_d, const gse::shared_view<gse::window::data> window_d, const std::optional<gse::shared_view<gse::renderer::capture::data>> capture_d) -> void {
+	if (!capture_d || !(*capture_d).recording || !(*capture_d).recording->active.load()) {
 		return;
 	}
 	if (!gui_d.blank_texture.valid()) {
@@ -141,7 +141,7 @@ auto gs::client_ui::push_recording_indicator(gse::context& ctx, const gse::share
 	});
 }
 
-auto gs::client_ui::run(gse::context& ctx, data& d, const gse::shared_view<gse::gui::data> gui_d, const gse::shared_view<gse::window::data> window_d, const gse::shared_view<crosshair::data> crosshair_d, const gse::shared_view<gse::renderer::capture::data> capture_d) -> gse::async::task<> {
+auto gs::client_ui::run(gse::context& ctx, data& d, const gse::shared_view<gse::gui::data> gui_d, const gse::shared_view<gse::window::data> window_d, const gse::shared_view<crosshair::data> crosshair_d, const std::optional<gse::shared_view<gse::renderer::capture::data>> capture_d) -> gse::async::task<> {
 	if (gui_d.menu_stack.empty()) {
 		push_crosshair(ctx, gui_d, window_d, crosshair_d);
 	}

@@ -91,8 +91,6 @@ export namespace gse::shaders {
 	struct shader_enum_tag {};
 	struct shader_constant_block_tag {};
 	struct sampler2d_array_tag {};
-	struct sampler2d_tag {};
-	struct sampler3d_tag {};
 	struct ssbo_readonly_tag {};
 	struct ssbo_readwrite_tag {};
 	struct tlas_tag {};
@@ -108,8 +106,6 @@ export namespace gse::shaders {
 	constexpr shader_enum_tag shader_enum{};
 	constexpr shader_constant_block_tag shader_constant_block{};
 	constexpr sampler2d_array_tag sampler2d_array{};
-	constexpr sampler2d_tag sampler2d{};
-	constexpr sampler3d_tag sampler3d{};
 	constexpr ssbo_readonly_tag ssbo_readonly{};
 	constexpr ssbo_readwrite_tag ssbo_readwrite{};
 	constexpr tlas_tag tlas{};
@@ -442,12 +438,6 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 	if constexpr (has_annotation<sampler2d_array_tag>(^^T)) {
 		return std::format("public struct {0}_table {{ public __subscript(uint i) -> Texture2D<float4> {{ get {{ return (Texture2D<float4>.Handle)i; }} }} }}\npublic {0}_table {0};\n", name);
 	}
-	else if constexpr (has_annotation<sampler2d_tag>(^^T)) {
-		return std::format("public uniform Sampler2D.Handle {0};\n", name);
-	}
-	else if constexpr (has_annotation<sampler3d_tag>(^^T)) {
-		return std::format("public uniform Sampler3D.Handle {0};\n", name);
-	}
 	else if constexpr (has_annotation<texture2d_tag>(^^T)) {
 		using element_t = typename T::element;
 		return std::format("public uniform uint {1}_idx;\npublic property Texture2D<{0}> {1} {{ get {{ return (Texture2D<{0}>.Handle){1}_idx; }} }}\n", slang_type<element_t>::name, name);
@@ -590,12 +580,6 @@ consteval auto gse::shaders::push_constant_layout_is_portable() -> bool {
 template <gse::shaders::is_shader_binding T>
 consteval auto gse::shaders::descriptor_type_of() -> gpu::descriptor_type {
 	if constexpr (has_annotation<sampler2d_array_tag>(^^T)) {
-		return gpu::descriptor_type::combined_image_sampler;
-	}
-	else if constexpr (has_annotation<sampler2d_tag>(^^T)) {
-		return gpu::descriptor_type::combined_image_sampler;
-	}
-	else if constexpr (has_annotation<sampler3d_tag>(^^T)) {
 		return gpu::descriptor_type::combined_image_sampler;
 	}
 	else if constexpr (has_annotation<texture2d_tag>(^^T)) {

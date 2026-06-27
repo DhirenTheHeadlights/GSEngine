@@ -29,6 +29,7 @@ import gse.ecs;
 import gse.os;
 import gse.assets;
 import gse.gpu;
+import gse.gpu_record;
 import gse.save;
 import gse.meta;
 
@@ -164,7 +165,7 @@ auto gse::renderer::forward::rebind_tlas_views(const shared_view<gpu::context::d
 	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_handle>::frames_in_flight; ++i) {
 		const auto fi = static_cast<std::uint32_t>(i);
 		if (!d.tlas_slots[i].valid()) {
-			d.tlas_slots[i] = gpu_s.device->allocate_buffer_slot();
+			d.tlas_slots[i] = gpu_s.device->allocate_acceleration_structure_slot();
 		}
 		gpu_s.device->write_acceleration_structure(d.tlas_slots[i].slot(), (*rt_state.tlas_ptrs[fi]).device_address());
 	}
@@ -401,7 +402,7 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 
 	const auto camera_ubo_slot = d.camera_ubo_buffers[frame_index].slot();
 	const auto lights_slot = d.light_buffers[frame_index].slot();
-	const auto tlas_slot = d.tlas_slots[frame_index].slot();
+	const gpu::bindless_slot tlas_slot = d.tlas_slots[frame_index].slot();
 	const auto light_index_list_slot = lc_r.light_index_list_buffers[frame_index].slot();
 	const auto tile_light_table_slot = lc_r.tile_light_table_buffers[frame_index].slot();
 	const auto material_palette_slot = gc_r.material_palette_buffers[frame_index].slot();

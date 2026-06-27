@@ -279,6 +279,12 @@ export namespace gse::vulkan {
 			gpu::access_flags src_access
 		) const -> void;
 
+		auto begin_debug_label(
+			std::string_view label
+		) const -> void;
+
+		auto end_debug_label() const -> void;
+
 		auto draw(
 			std::uint32_t vertex_count,
 			std::uint32_t instance_count,
@@ -399,7 +405,7 @@ namespace gse::vulkan {
 }
 
 auto gse::vulkan::commands::begin_rendering(const gpu::rendering_info& info) const -> void {
-	rendering_scratch scratch;
+	static thread_local rendering_scratch scratch;
 	const auto vk_info = build_vk_rendering_info(info, scratch);
 	raw().beginRendering(vk_info);
 }
@@ -409,19 +415,21 @@ auto gse::vulkan::commands::end_rendering() const -> void {
 }
 
 auto gse::vulkan::commands::pipeline_barrier(const gpu::dependency_info& dep) const -> void {
-	dependency_scratch scratch;
+	static thread_local dependency_scratch scratch;
 	const auto vk_dep = build_vk_dependency_info(dep, scratch);
 	raw().pipelineBarrier2(vk_dep);
 }
 
 auto gse::vulkan::commands::bind_shaders(const std::span<const gpu::stage_flag> stages, const std::span<const gpu::handle<gpu::shader_object>> shaders) const -> void {
-	std::vector<vk::ShaderStageFlagBits> vk_stages;
+	static thread_local std::vector<vk::ShaderStageFlagBits> vk_stages;
+	vk_stages.clear();
 	vk_stages.reserve(stages.size());
 	for (const auto s : stages) {
 		vk_stages.push_back(to_vk(s));
 	}
 
-	std::vector<vk::ShaderEXT> vk_shaders;
+	static thread_local std::vector<vk::ShaderEXT> vk_shaders;
+	vk_shaders.clear();
 	vk_shaders.reserve(shaders.size());
 	for (const auto h : shaders) {
 		vk_shaders.push_back(std::bit_cast<vk::ShaderEXT>(h));
@@ -593,6 +601,18 @@ auto gse::vulkan::commands::release_swapchain_image_to_present(const gpu::handle
 	raw().pipelineBarrier2(dep);
 }
 
+auto gse::vulkan::commands::begin_debug_label(const std::string_view label) const -> void {
+	const std::string null_terminated(label);
+	const vk::DebugUtilsLabelEXT info{
+		.pLabelName = null_terminated.c_str(),
+	};
+	raw().beginDebugUtilsLabelEXT(info);
+}
+
+auto gse::vulkan::commands::end_debug_label() const -> void {
+	raw().endDebugUtilsLabelEXT();
+}
+
 auto gse::vulkan::commands::draw(const std::uint32_t vertex_count, const std::uint32_t instance_count, const std::uint32_t first_vertex, const std::uint32_t first_instance) const -> void {
 	raw().draw(vertex_count, instance_count, first_vertex, first_instance);
 }
@@ -703,6 +723,9 @@ auto gse::vulkan::build_vk_attachment(const gpu::rendering_attachment_info& att,
 }
 
 auto gse::vulkan::build_vk_rendering_info(const gpu::rendering_info& info, rendering_scratch& scratch) -> vk::RenderingInfo {
+	scratch.color.clear();
+	scratch.depth.reset();
+	scratch.stencil.reset();
 	scratch.color.reserve(info.color_attachments.size());
 	for (const auto& a : info.color_attachments) {
 		scratch.color.push_back(build_vk_attachment(a, false));
@@ -733,6 +756,9 @@ auto gse::vulkan::build_vk_rendering_info(const gpu::rendering_info& info, rende
 }
 
 auto gse::vulkan::build_vk_dependency_info(const gpu::dependency_info& dep, dependency_scratch& scratch) -> vk::DependencyInfo {
+	scratch.memory.clear();
+	scratch.buffer.clear();
+	scratch.image.clear();
 	scratch.memory.reserve(dep.memory_barriers.size());
 	for (const auto& b : dep.memory_barriers) {
 		scratch.memory.push_back(

@@ -6,12 +6,61 @@ import gse.log;
 import gse.meta;
 import gse.win32;
 
+auto gse::clean_symbol(std::string symbol) -> std::string {
+	for (std::size_t at = symbol.find('@'); at != std::string::npos; at = symbol.find('@', at)) {
+		std::size_t end = at + 1;
+		while (end < symbol.size()) {
+			const char c = symbol[end];
+			const bool module_char = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '.';
+			if (!module_char) {
+				break;
+			}
+			++end;
+		}
+		symbol.erase(at, end - at);
+	}
+
+	const auto replace_all = [&symbol](const std::string_view from, const std::string_view to) {
+		for (std::size_t p = symbol.find(from); p != std::string::npos; p = symbol.find(from, p + to.size())) {
+			symbol.replace(p, from.size(), to);
+		}
+	};
+
+	replace_all("std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >", "std::string");
+	replace_all("std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char>>", "std::string");
+	replace_all("std::basic_string<char, std::char_traits<char>, std::allocator<char> >", "std::string");
+	replace_all("std::basic_string<char, std::char_traits<char>, std::allocator<char>>", "std::string");
+	replace_all("std::basic_string_view<char, std::char_traits<char> >", "std::string_view");
+	replace_all("std::basic_string_view<char, std::char_traits<char>>", "std::string_view");
+	replace_all("[abi:cxx11]", "");
+	replace_all("__cxx11::", "");
+	return symbol;
+}
+
 auto gse::capture_stacktrace(const std::size_t skip_frames) -> std::string {
 	const auto trace = std::stacktrace::current(skip_frames);
+
+	constexpr std::array<std::string_view, 8> noise = {
+		"gse::assert_format_message",
+		"gse::assert<",
+		"gse::assert_fail",
+		"gse::capture_stacktrace",
+		"register_frame_ctor",
+		"mainCRTStartup",
+		"BaseThreadInitThunk",
+		"RtlUserThreadStart",
+	};
+
 	std::string out;
 	out.reserve(trace.size() * 64);
-	for (std::size_t i = 0; i < trace.size(); ++i) {
-		out += std::format("  #{:>2} {}\n", i, std::to_string(trace[i]));
+	std::size_t shown = 0;
+	for (const auto& entry : trace) {
+		const std::string frame = clean_symbol(std::to_string(entry));
+		if (std::ranges::any_of(noise, [&frame](const std::string_view n) { return frame.find(n) != std::string::npos; })) {
+			continue;
+		}
+		out += std::format("  #{:>2} {}\n", shown, frame);
+		++shown;
 	}
 	return out;
 }

@@ -76,6 +76,15 @@ export namespace gse::gpu {
 			gpu::access_flags src_access
 		) -> void;
 
+		auto begin_debug_event(
+			gpu::command_buffer_handle cmd,
+			std::string_view label
+		) -> void;
+
+		auto end_debug_event(
+			gpu::command_buffer_handle cmd
+		) -> void;
+
 		[[nodiscard]] auto frame_command_buffer(
 			gpu::queue_type queue_type,
 			std::uint32_t frame_index
@@ -295,6 +304,8 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto allocate_image_slot() -> gpu::bindless_handle;
 
+		[[nodiscard]] auto allocate_acceleration_structure_slot() -> gpu::bindless_handle;
+
 		auto write_storage_buffer(
 			gpu::bindless_slot slot,
 			gpu::device_address address,
@@ -414,6 +425,14 @@ auto gse::gpu::vulkan_device_backend::cmd_pipeline_barrier(const gpu::command_bu
 
 auto gse::gpu::vulkan_device_backend::cmd_release_swapchain_to_present(const gpu::command_buffer_handle cmd, const gpu::handle<gpu::image> img, const gpu::pipeline_stage_flags src_stages, const gpu::access_flags src_access) -> void {
 	vulkan::commands(cmd).release_swapchain_image_to_present(img, src_stages, src_access);
+}
+
+auto gse::gpu::vulkan_device_backend::begin_debug_event(const gpu::command_buffer_handle cmd, const std::string_view label) -> void {
+	vulkan::commands(cmd).begin_debug_label(label);
+}
+
+auto gse::gpu::vulkan_device_backend::end_debug_event(const gpu::command_buffer_handle cmd) -> void {
+	vulkan::commands(cmd).end_debug_label();
 }
 
 auto gse::gpu::vulkan_device_backend::frame_command_buffer(const gpu::queue_type queue_type, const std::uint32_t frame_index) const -> gpu::command_buffer_handle {
@@ -606,6 +625,10 @@ auto gse::gpu::vulkan_device_backend::allocate_buffer_slot() -> gpu::bindless_ha
 
 auto gse::gpu::vulkan_device_backend::allocate_image_slot() -> gpu::bindless_handle {
 	return device_config.allocate_image_slot();
+}
+
+auto gse::gpu::vulkan_device_backend::allocate_acceleration_structure_slot() -> gpu::bindless_handle {
+	return device_config.allocate_acceleration_structure_slot();
 }
 
 auto gse::gpu::vulkan_device_backend::write_storage_buffer(const gpu::bindless_slot slot, const gpu::device_address address, const gpu::device_size size) -> void {

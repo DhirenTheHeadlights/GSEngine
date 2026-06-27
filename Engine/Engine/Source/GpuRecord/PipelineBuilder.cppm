@@ -1,4 +1,4 @@
-export module gse.gpu:pipeline_builder;
+export module gse.gpu_record:pipeline_builder;
 
 import std;
 import gse.meta;
@@ -9,9 +9,9 @@ import gse.config;
 import gse.slang;
 
 import gse.gpu_backend;
+import gse.gpu;
 import gse.math;
-import :device;
-import :shader_codegen;
+import gse.containers;
 
 export namespace gse::gpu {
 	struct combined_sampler_arg {

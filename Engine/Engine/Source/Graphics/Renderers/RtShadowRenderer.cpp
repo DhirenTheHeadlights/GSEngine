@@ -10,6 +10,7 @@ import :mesh;
 import gse.os;
 import gse.assets;
 import gse.gpu;
+import gse.gpu_record;
 import gse.core;
 import gse.containers;
 import gse.concurrency;
@@ -51,6 +52,7 @@ auto gse::renderer::rt_shadow::init(context& ctx, const shared_view<gpu::context
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::tlas>::frames_in_flight; ++i) {
 		d.tlas_per_frame[i] = gpu::build_tlas(*gpu_s.device, geometry_collector::data::max_instances);
+		log::println(log::category::render, "RT shadow: tlas[{}] device_addr=0x{:x} instance_buf_addr=0x{:x}", i, d.tlas_per_frame[i].device_address(), d.tlas_per_frame[i].instance_buffer().device_address());
 		d.tlas_ptrs[i] = &d.tlas_per_frame[i];
 		d.instances[i].reserve(geometry_collector::data::max_instances);
 	}
@@ -73,25 +75,49 @@ auto gse::renderer::rt_shadow::frame(context& ctx, shared_view<gpu::context::dat
 	const auto& data = render_items[0];
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
+	std::vector<const mesh*> new_blas_meshes;
+	gpu::device_size max_blas_scratch = 0;
+
 	for (const auto& batch : data.normal_batches) {
 		const auto& m = batch.key.model_ptr->meshes()[batch.key.mesh_index];
+		const auto* mesh_ptr = &m;
 
-		if (const auto* mesh_ptr = &m; !d.blas_cache.contains(mesh_ptr)) {
-			const auto vertex_count = static_cast<std::uint32_t>(m.vertex_gpu_buffer().size() / sizeof(vertex));
-			const auto index_count = static_cast<std::uint32_t>(m.index_gpu_buffer().size() / sizeof(std::uint32_t));
+		if (d.blas_cache.contains(mesh_ptr)) {
+			continue;
+		}
 
-			if (vertex_count == 0 || index_count == 0) {
-				continue;
-			}
+		const auto vertex_count = static_cast<std::uint32_t>(m.vertex_gpu_buffer().size() / sizeof(vertex));
+		const auto index_count = static_cast<std::uint32_t>(m.index_gpu_buffer().size() / sizeof(std::uint32_t));
 
-			d.blas_cache[mesh_ptr] = gpu::build_blas(
-				*gpu_s.device,
+		if (vertex_count == 0 || index_count == 0) {
+			continue;
+		}
+
+		const auto geometry = gpu::make_blas_geometry({
+			.vertex_buffer = &m.vertex_gpu_buffer(),
+			.vertex_count = vertex_count,
+			.vertex_stride = static_cast<std::uint32_t>(sizeof(vertex)),
+			.index_buffer = &m.index_gpu_buffer(),
+			.index_count = index_count
+		});
+		const std::uint32_t prim_count = index_count / 3;
+
+		d.blas_cache[mesh_ptr] = gpu_s.device->create_blas(geometry, prim_count);
+
+		const auto sizes = gpu_s.device->query_blas_build_sizes(geometry, prim_count);
+		max_blas_scratch = std::max(max_blas_scratch, sizes.build_scratch_size);
+
+		new_blas_meshes.push_back(mesh_ptr);
+	}
+
+	if (!new_blas_meshes.empty()) {
+		const auto scratch_alignment = gpu_s.device->acceleration_structure_scratch_alignment();
+		const auto required_scratch = max_blas_scratch + scratch_alignment;
+		if (d.blas_scratch[frame_index].size() < required_scratch) {
+			d.blas_scratch[frame_index] = gpu_s.device->create_buffer(
 				{
-					.vertex_buffer = &m.vertex_gpu_buffer(),
-					.vertex_count = vertex_count,
-					.vertex_stride = static_cast<std::uint32_t>(sizeof(vertex)),
-					.index_buffer = &m.index_gpu_buffer(),
-					.index_count = index_count
+					.size = required_scratch,
+					.usage = gpu::buffer_flag::acceleration_structure_scratch,
 				}
 			);
 		}
@@ -178,6 +204,22 @@ auto gse::renderer::rt_shadow::frame(context& ctx, shared_view<gpu::context::dat
 	const std::uint32_t workgroups = (instance_count + 63) / 64;
 
 	auto rec = co_await gpu::pass<^^gse::renderer::rt_shadow::frame>(ctx).pipeline(d.tlas_update_pipeline).after<^^geometry_collector::frame>();
+
+	for (const auto* mesh_ptr : new_blas_meshes) {
+		const auto vertex_count = static_cast<std::uint32_t>(mesh_ptr->vertex_gpu_buffer().size() / sizeof(vertex));
+		const auto index_count = static_cast<std::uint32_t>(mesh_ptr->index_gpu_buffer().size() / sizeof(std::uint32_t));
+
+		const auto geometry = gpu::make_blas_geometry({
+			.vertex_buffer = &mesh_ptr->vertex_gpu_buffer(),
+			.vertex_count = vertex_count,
+			.vertex_stride = static_cast<std::uint32_t>(sizeof(vertex)),
+			.index_buffer = &mesh_ptr->index_gpu_buffer(),
+			.index_count = index_count
+		});
+		const std::uint32_t prim_count = index_count / 3;
+
+		gpu::build_blas_in_place(*gpu_s.device, d.blas_cache.at(mesh_ptr).handle(), geometry, prim_count, d.blas_scratch[frame_index], rec);
+	}
 
 	rec.barrier(gpu::barrier_scope::transfer_to_compute);
 	rec.dispatch<entry>(

@@ -5,6 +5,7 @@ import std;
 import :core;
 import :enums;
 import :buffer;
+import :bindless;
 
 import gse.core;
 import gse.math;
@@ -138,7 +139,8 @@ export namespace gse::gpu {
 		blas(
 			gpu::buffer storage,
 			gpu::acceleration_structure acceleration_structure,
-			gpu::device_address device_address
+			gpu::device_address device_address,
+			gpu::bindless_handle heap_handle = {}
 		);
 
 		~blas() = default;
@@ -161,6 +163,7 @@ export namespace gse::gpu {
 		gpu::buffer m_storage;
 		gpu::acceleration_structure m_acceleration_structure;
 		gpu::device_address m_device_address = 0;
+		gpu::bindless_handle m_heap_handle;
 	};
 
 	class tlas final : public non_copyable {
@@ -205,8 +208,8 @@ export namespace gse::gpu {
 	};
 }
 
-gse::gpu::blas::blas(gpu::buffer storage, const gpu::acceleration_structure acceleration_structure, const gpu::device_address device_address)
-	: m_storage(std::move(storage)), m_acceleration_structure(acceleration_structure), m_device_address(device_address) {
+gse::gpu::blas::blas(gpu::buffer storage, const gpu::acceleration_structure acceleration_structure, const gpu::device_address device_address, gpu::bindless_handle heap_handle)
+	: m_storage(std::move(storage)), m_acceleration_structure(acceleration_structure), m_device_address(device_address), m_heap_handle(std::move(heap_handle)) {
 }
 
 auto gse::gpu::blas::handle() const -> gpu::acceleration_structure {

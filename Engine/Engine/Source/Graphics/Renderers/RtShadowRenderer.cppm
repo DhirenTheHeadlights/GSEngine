@@ -22,6 +22,7 @@ export namespace gse::renderer::rt_shadow {
 		[[= gse::shared]] per_frame_resource<const gpu::tlas*> tlas_ptrs{};
 
 		std::unordered_map<const mesh*, gpu::blas> blas_cache;
+		per_frame_resource<gpu::buffer> blas_scratch;
 		per_frame_resource<gpu::tlas> tlas_per_frame;
 		per_frame_resource<linear_vector<gpu::tlas_instance_desc>> instances;
 

@@ -8,4 +8,8 @@ export namespace gse {
 	) -> std::string;
 
 	auto install_crash_handlers() -> void;
+
+	auto clean_symbol(
+		std::string symbol
+	) -> std::string;
 }

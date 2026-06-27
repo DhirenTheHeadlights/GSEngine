@@ -195,7 +195,7 @@ auto gse::mesh::initialize(gpu::context::data& ctx) -> void {
 			{
 				.size = tri_size,
 				.stride = sizeof(std::uint8_t),
-				.usage = storage_dst,
+				.usage = storage_dst | gpu::buffer_flag::byte_address,
 				.bindless = true
 			},
 			"mesh.meshlet.triangles"

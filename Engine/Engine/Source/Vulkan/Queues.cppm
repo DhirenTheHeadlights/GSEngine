@@ -219,10 +219,10 @@ auto gse::vulkan::build_vk_present_info(const gpu::present_info& info, present_s
 			scratch.timing_infos.push_back(
 				vk::PresentTimingInfoEXT{
 					.flags = vk::PresentTimingInfoFlagBitsEXT::ePresentAtRelativeTime,
-					.targetTime = 0,
+					.targetTime = static_cast<std::uint64_t>(info.target_present_times[i]),
 					.timeDomainId = info.time_domain_id,
 					.presentStageQueries = stage_queries,
-					.targetTimeDomainPresentStage = {},
+					.targetTimeDomainPresentStage = vk::PresentStageFlagBitsEXT::eImageFirstPixelOut,
 				}
 			);
 		}
