@@ -14,7 +14,7 @@ import gse.os;
 import gse.assets;
 import gse.config;
 import gse.gpu;
-import gse.vulkan;
+import gse.gpu_record;
 import gse.core;
 import gse.concurrency;
 import gse.diag;

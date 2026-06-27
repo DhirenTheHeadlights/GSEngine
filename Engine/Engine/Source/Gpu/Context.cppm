@@ -7,7 +7,6 @@ import :swap_chain;
 import :frame;
 import :transient_pool;
 import :render_graph;
-import :render_pass;
 
 import gse.gpu_backend;
 import gse.os;
@@ -20,6 +19,7 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 import gse.meta;
+import gse.save;
 
 export namespace gse::gpu::context {
 	struct [[= gse::system_state<"Gpu">{}, = gse::settings::category<"Graphics">{}]] data {
@@ -29,6 +29,12 @@ export namespace gse::gpu::context {
 			= gse::settings::restart_required{}
 		]]
 		bool validation_layers_enabled = false;
+
+		[[
+			= gse::settings::describe<"GPU backend to initialize on startup. Vulkan falls back to dx12 if it is unsupported. Requires a restart.">{},
+			= gse::settings::restart_required{}
+		]]
+		gpu_backend_kind backend = gpu_backend_kind::vulkan;
 
 		[[
 			= gse::settings::describe<"Vulkan device tracking and naming options.">{}
@@ -48,6 +54,7 @@ export namespace gse::gpu::context {
 
 	[[= gse::system_init{}]] auto init(
 		shared_view<window::data> window_s,
+		const save::registry* save_reg,
 		data& d
 	) -> async::task<>;
 
@@ -66,11 +73,6 @@ export namespace gse::gpu::context {
 		window::data& window_s
 	) -> std::
 		expected<frame_token, frame_status>;
-
-	auto execute_frame(
-		data& d,
-		scheduler& s
-	) -> void;
 
 	auto end_frame(
 		data& d,

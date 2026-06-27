@@ -1,4 +1,4 @@
-module gse.gpu:pipeline_builder_impl;
+module gse.gpu_record:pipeline_builder_impl;
 
 import std;
 import gse.meta;
@@ -10,10 +10,8 @@ import gse.slang;
 import gse.math;
 
 import gse.gpu_backend;
+import gse.gpu;
 import :pipeline_builder;
-import :device;
-import :shader_codegen;
-import :backend_state;
 
 namespace gse::gpu {
 	auto to_pipeline_stage(const stage_flag s) -> pipeline_stage_flag {
@@ -183,14 +181,32 @@ auto gse::gpu::make_slang_session() -> owned_slang_session {
 		.forceGLSLScalarBufferLayout = !use_dxil,
 	};
 
+	std::vector<slang::CompilerOptionEntry> compiler_options;
+	if (!use_dxil) {
+		compiler_options.push_back(slang::CompilerOptionEntry{
+			.name = slang::CompilerOptionName::DebugInformation,
+			.value = {
+				.kind = slang::CompilerOptionValueKind::Int,
+				.intValue0 = static_cast<std::int32_t>(slang_debug_info_level_standard),
+			},
+		});
+		compiler_options.push_back(slang::CompilerOptionEntry{
+			.name = slang::CompilerOptionName::Capability,
+			.value = {
+				.kind = slang::CompilerOptionValueKind::Int,
+				.intValue0 = static_cast<std::int32_t>(global->findCapability("spvDescriptorHeapEXT")),
+			},
+		});
+	}
+
 	slang::SessionDesc sdesc{
 		.targets = &target,
 		.targetCount = 1,
 		.defaultMatrixLayoutMode = slang_matrix_layout_column_major,
 		.searchPaths = sp_c_strs.data(),
 		.searchPathCount = static_cast<SlangInt>(sp_c_strs.size()),
-		.compilerOptionEntries = nullptr,
-		.compilerOptionEntryCount = 0,
+		.compilerOptionEntries = compiler_options.data(),
+		.compilerOptionEntryCount = static_cast<std::uint32_t>(compiler_options.size()),
 	};
 
 	if (slang_failed(global->createSession(sdesc, out.session.writeRef())) || !out.session) {

@@ -1,10 +1,9 @@
-export module gse.gpu:acceleration_structure;
+export module gse.gpu_record:acceleration_structure;
 
 import std;
 
-import :device;
-import :gpu_task;
-import :render_graph;
+import gse.gpu;
+import :recording_context;
 
 import gse.gpu_backend;
 import gse.core;
@@ -19,10 +18,18 @@ export namespace gse::gpu {
 		std::uint32_t index_count = 0;
 	};
 
-	auto build_blas(
-		gpu::device& device,
+	[[nodiscard]] auto make_blas_geometry(
 		const blas_geometry_desc& desc
-	) -> blas;
+	) -> acceleration_structure_geometry;
+
+	auto build_blas_in_place(
+		gpu::device& device,
+		acceleration_structure dst,
+		const acceleration_structure_geometry& geometry,
+		std::uint32_t prim_count,
+		const buffer& scratch,
+		gpu::recording_context& rec
+	) -> void;
 
 	auto build_tlas(
 		gpu::device& device,
@@ -47,22 +54,4 @@ export namespace gse::gpu {
 		std::uint32_t instance_count,
 		gpu::recording_context& rec
 	) -> void;
-}
-
-namespace gse {
-	auto build_blas_async(
-		gpu::device& dev,
-		gpu::acceleration_structure as_handle,
-		gpu::acceleration_structure_geometry geometry,
-		std::uint32_t prim_count,
-		gpu::device_size scratch_size,
-		gpu::device_size scratch_alignment
-	) -> async::task<>;
-
-	auto build_tlas_initial_empty_async(
-		gpu::device& dev,
-		gpu::acceleration_structure as_handle,
-		gpu::device_address instance_addr,
-		gpu::device_address scratch_addr
-	) -> async::task<>;
 }

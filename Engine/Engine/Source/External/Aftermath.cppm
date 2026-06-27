@@ -3,6 +3,10 @@ module;
 #ifdef GSE_HAVE_AFTERMATH
 #include <GFSDK_Aftermath_Defines.h>
 #include <GFSDK_Aftermath_GpuCrashDump.h>
+#ifndef VULKAN_H_
+#define VULKAN_H_
+#endif
+#include <GFSDK_Aftermath_GpuCrashDumpDecoding.h>
 #endif
 
 export module gse.aftermath;
@@ -38,6 +42,10 @@ export namespace gse::aftermath {
 	auto disable() -> void;
 
 	[[nodiscard]] auto status() -> dump_status;
+
+	[[nodiscard]] auto shader_hash_spirv(
+		std::span<const std::uint32_t> spirv
+	) -> std::optional<std::uint64_t>;
 }
 
 namespace gse::aftermath {
@@ -141,5 +149,23 @@ auto gse::aftermath::status() -> dump_status {
 	}
 #else
 	return dump_status::unknown;
+#endif
+}
+
+auto gse::aftermath::shader_hash_spirv([[maybe_unused]] std::span<const std::uint32_t> spirv) -> std::optional<std::uint64_t> {
+#ifdef GSE_HAVE_AFTERMATH
+	if (spirv.empty()) {
+		return std::nullopt;
+	}
+	GFSDK_Aftermath_SpirvCode code{};
+	code.pData = spirv.data();
+	code.size = static_cast<std::uint32_t>(spirv.size_bytes());
+	GFSDK_Aftermath_ShaderBinaryHash hash{};
+	if (!GFSDK_Aftermath_SUCCEED(GFSDK_Aftermath_GetShaderHashSpirv(GFSDK_Aftermath_Version_API, &code, &hash))) {
+		return std::nullopt;
+	}
+	return hash.hash;
+#else
+	return std::nullopt;
 #endif
 }

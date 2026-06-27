@@ -68,6 +68,7 @@ export namespace gse::gpu {
 		error_device_lost,
 		error_out_of_date_khr,
 		error_surface_lost_khr,
+		error_present_timing_queue_full,
 		error_unknown,
 	};
 

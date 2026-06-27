@@ -9,6 +9,7 @@ import :geometry_collector;
 import gse.os;
 import gse.assets;
 import gse.gpu;
+import gse.gpu_record;
 import gse.core;
 import gse.containers;
 import gse.time;

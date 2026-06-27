@@ -75,6 +75,7 @@ namespace gse::vulkan {
 	};
 
 	inline dump_writer dumps;
+	inline std::mutex shader_registry_mutex;
 
 	auto default_dump_directory() -> std::filesystem::path;
 
@@ -270,10 +271,13 @@ auto gse::vulkan::aftermath::register_spirv(std::span<const std::uint32_t> spirv
 		return;
 	}
 
+	const auto aftermath_hash = gse::aftermath::shader_hash_spirv(spirv);
 	const auto bytes = std::as_bytes(spirv);
-	const std::string_view bytes_view(reinterpret_cast<const char*>(bytes.data()), bytes.size());
-	const auto hash = std::hash<std::string_view>{}(bytes_view);
-	const auto filename = std::format("{:016x}.spv", hash);
+	const auto filename = aftermath_hash.has_value()
+		? std::format("{:016X}.spv", *aftermath_hash)
+		: std::format("{:016x}.spv", std::hash<std::string_view>{}(std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size())));
+
+	const std::lock_guard lock(shader_registry_mutex);
 
 	std::error_code ec;
 	std::filesystem::create_directories(dumps.shader_directory, ec);
@@ -286,4 +290,11 @@ auto gse::vulkan::aftermath::register_spirv(std::span<const std::uint32_t> spirv
 	if (out) {
 		out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
 	}
+
+	log::println(
+		log::category::vulkan,
+		"Aftermath shader registered: {} ({} bytes)",
+		filename,
+		bytes.size()
+	);
 }

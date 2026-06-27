@@ -70,6 +70,5 @@ auto gse::gpu::present_pacer::frame_delta() const -> time {
 }
 
 auto gse::gpu::present_pacer::relative_target() const -> time_t<std::uint64_t> {
-	const auto target_ns = m_smoothed_ns > 0.0 ? static_cast<std::uint64_t>(m_smoothed_ns) : m_refresh_interval_ns;
-	return time_t<std::uint64_t>(target_ns);
+	return time_t<std::uint64_t>(m_refresh_interval_ns);
 }

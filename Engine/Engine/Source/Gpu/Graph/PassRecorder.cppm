@@ -2,6 +2,8 @@ export module gse.gpu:pass_recorder;
 
 import std;
 
+import :command_dispatch;
+
 import gse.gpu_backend;
 import gse.math;
 
@@ -11,7 +13,8 @@ export namespace gse::gpu {
 		pass_recorder() = default;
 
 		pass_recorder(
-			gpu::command_buffer_handle cmd
+			gpu::command_buffer_handle cmd,
+			const command_dispatch* dispatch
 		);
 
 		[[nodiscard]] auto valid() const -> bool;
@@ -298,5 +301,6 @@ export namespace gse::gpu {
 
 	private:
 		gpu::command_buffer_handle m_cmd{};
+		const command_dispatch* m_vt = nullptr;
 	};
 }

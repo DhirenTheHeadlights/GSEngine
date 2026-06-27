@@ -75,6 +75,7 @@ export namespace gse::directx {
 	constexpr DXGI_FORMAT format_r32_uint = DXGI_FORMAT_R32_UINT;
 
 	constexpr auto barrier_type_transition = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+	constexpr auto barrier_type_uav = D3D12_RESOURCE_BARRIER_TYPE_UAV;
 	constexpr auto resource_state_common = D3D12_RESOURCE_STATE_COMMON;
 	constexpr auto resource_state_present = D3D12_RESOURCE_STATE_PRESENT;
 	constexpr auto resource_state_render_target = D3D12_RESOURCE_STATE_RENDER_TARGET;
@@ -489,6 +490,14 @@ export namespace gse::directx {
 		D3D12_CPU_DESCRIPTOR_HANDLE handle
 	) -> void;
 
+	auto create_raw_buffer_srv(
+		ID3D12Device* device,
+		ID3D12Resource* resource,
+		std::uint32_t first_element,
+		std::uint32_t num_elements,
+		D3D12_CPU_DESCRIPTOR_HANDLE handle
+	) -> void;
+
 	[[nodiscard]] auto create_compute_pipeline_state(
 		ID3D12Device* device,
 		ID3D12RootSignature* root_signature,
@@ -569,6 +578,16 @@ export namespace gse::directx {
 		std::int32_t top,
 		std::int32_t right,
 		std::int32_t bottom
+	) -> void;
+
+	auto begin_event(
+		ID3D12GraphicsCommandList* list,
+		const char* label,
+		std::size_t label_size
+	) -> void;
+
+	auto end_event(
+		ID3D12GraphicsCommandList* list
 	) -> void;
 
 	auto set_index_buffer(
@@ -1315,6 +1334,21 @@ auto gse::directx::create_structured_buffer_srv(ID3D12Device* device, ID3D12Reso
 	device->CreateShaderResourceView(resource, &desc, handle);
 }
 
+auto gse::directx::create_raw_buffer_srv(ID3D12Device* device, ID3D12Resource* resource, const std::uint32_t first_element, const std::uint32_t num_elements, const D3D12_CPU_DESCRIPTOR_HANDLE handle) -> void {
+	const D3D12_SHADER_RESOURCE_VIEW_DESC desc = {
+		.Format = DXGI_FORMAT_R32_TYPELESS,
+		.ViewDimension = D3D12_SRV_DIMENSION_BUFFER,
+		.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+		.Buffer = {
+			.FirstElement = first_element,
+			.NumElements = num_elements,
+			.StructureByteStride = 0,
+			.Flags = D3D12_BUFFER_SRV_FLAG_RAW,
+		},
+	};
+	device->CreateShaderResourceView(resource, &desc, handle);
+}
+
 auto gse::directx::create_compute_pipeline_state(ID3D12Device* device, ID3D12RootSignature* root_signature, const void* bytecode, const std::size_t bytecode_size) -> com_ptr<ID3D12PipelineState> {
 	const D3D12_COMPUTE_PIPELINE_STATE_DESC desc = {
 		.pRootSignature = root_signature,
@@ -1480,6 +1514,34 @@ auto gse::directx::set_scissor(ID3D12GraphicsCommandList* list, const std::int32
 		.bottom = bottom,
 	};
 	list->RSSetScissorRects(1, &rect);
+}
+
+auto gse::directx::begin_event(ID3D12GraphicsCommandList* list, const char* label, const std::size_t label_size) -> void {
+	constexpr std::uint32_t pix3blob_version = 2;
+	constexpr std::uint64_t pix_event_begin_event_no_args = 0x002;
+	constexpr std::uint64_t pix_event_type_bit_shift = 10;
+	constexpr std::uint64_t pix_string_copy_chunk_size_bit_shift = 55;
+	constexpr std::uint64_t pix_string_is_ansi_bit_shift = 54;
+
+	constexpr std::size_t header_qwords = 3;
+	constexpr std::size_t max_blob_qwords = 64;
+	constexpr std::size_t max_label_size = (max_blob_qwords - header_qwords - 1) * sizeof(std::uint64_t);
+	const std::size_t clamped_size = label_size < max_label_size ? label_size : max_label_size;
+
+	std::uint64_t blob[max_blob_qwords] = {};
+	blob[0] = pix_event_begin_event_no_args << pix_event_type_bit_shift;
+	blob[1] = 0;
+	blob[2] = (static_cast<std::uint64_t>(8) << pix_string_copy_chunk_size_bit_shift) | (static_cast<std::uint64_t>(1) << pix_string_is_ansi_bit_shift);
+
+	const std::size_t string_qwords = (clamped_size + sizeof(std::uint64_t)) / sizeof(std::uint64_t);
+	std::memcpy(blob + header_qwords, label, clamped_size);
+
+	const std::size_t total_qwords = header_qwords + string_qwords;
+	list->BeginEvent(pix3blob_version, blob, static_cast<std::uint32_t>(total_qwords * sizeof(std::uint64_t)));
+}
+
+auto gse::directx::end_event(ID3D12GraphicsCommandList* list) -> void {
+	list->EndEvent();
 }
 
 auto gse::directx::set_index_buffer(ID3D12GraphicsCommandList* list, const std::uint64_t gpu_address, const std::uint32_t size_bytes, const bool format_32bit) -> void {

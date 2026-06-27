@@ -20,6 +20,7 @@ import gse.physics;
 import gse.os;
 import gse.assets;
 import gse.gpu;
+import gse.gpu_record;
 import gse.log;
 import gse.save;
 import gse.config;

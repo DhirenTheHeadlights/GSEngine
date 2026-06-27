@@ -17,6 +17,7 @@ import gse.ecs;
 import gse.os;
 import gse.assets;
 import gse.gpu;
+import gse.gpu_record;
 
 namespace gse::vbd {
 	struct [[= shaders::shader_struct]] vbd_push_constants {

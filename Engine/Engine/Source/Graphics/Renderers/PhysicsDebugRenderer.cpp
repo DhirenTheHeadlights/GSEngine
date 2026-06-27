@@ -19,6 +19,7 @@ import gse.concurrency;
 import gse.ecs;
 import gse.save;
 import gse.gpu;
+import gse.gpu_record;
 import gse.assets;
 
 
@@ -119,6 +120,7 @@ namespace gse::renderer::physics_debug {
 		gpu::buffer& buffer,
 		std::size_t& capacity,
 		std::size_t required_bytes,
+		std::size_t stride,
 		gpu::buffer_flag usage,
 		std::string_view tag
 	) -> void;
@@ -296,7 +298,7 @@ auto gse::renderer::physics_debug::ensure_vertex_capacity(gpu::device& device, g
 	);
 }
 
-auto gse::renderer::physics_debug::ensure_bindless_buffer_capacity(gpu::device& device, gpu::buffer& buffer, std::size_t& capacity, const std::size_t required_bytes, const gpu::buffer_flag usage, const std::string_view tag) -> void {
+auto gse::renderer::physics_debug::ensure_bindless_buffer_capacity(gpu::device& device, gpu::buffer& buffer, std::size_t& capacity, const std::size_t required_bytes, const std::size_t stride, const gpu::buffer_flag usage, const std::string_view tag) -> void {
 	if (required_bytes <= capacity && buffer.valid()) {
 		return;
 	}
@@ -310,6 +312,7 @@ auto gse::renderer::physics_debug::ensure_bindless_buffer_capacity(gpu::device& 
 	buffer = device.create_buffer(
 		{
 			.size = capacity,
+			.stride = stride,
 			.usage = usage,
 			.bindless = true
 		},
@@ -542,6 +545,7 @@ auto gse::renderer::physics_debug::frame(const context& ctx, shared_view<gpu::co
 			d.cpu_body_buffers[frame_index],
 			d.cpu_body_capacity[frame_index],
 			body_bytes,
+			sizeof(vbd::body_state),
 			gpu::buffer_flag::storage,
 			"physics_debug.cpu_body"
 		);
@@ -563,6 +567,7 @@ auto gse::renderer::physics_debug::frame(const context& ctx, shared_view<gpu::co
 					instance_buffer,
 					capacity,
 					bytes,
+					sizeof(shape_instance),
 					gpu::buffer_flag::storage,
 					tag
 				);
@@ -596,6 +601,7 @@ auto gse::renderer::physics_debug::frame(const context& ctx, shared_view<gpu::co
 			d.line_vertex_buffers[frame_index],
 			d.line_vertex_capacity[frame_index],
 			bytes,
+			sizeof(debug_vertex),
 			gpu::buffer_flag::storage,
 			"physics_debug.lines"
 		);

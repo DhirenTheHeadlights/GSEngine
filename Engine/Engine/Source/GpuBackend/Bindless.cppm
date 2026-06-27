@@ -49,6 +49,8 @@ export namespace gse::gpu {
 		device_size texture_sampler_offset = 0;
 		device_size sampler_range_offset = 0;
 		device_size sampler_stride = 0;
+		device_size acceleration_structure_range_offset = 0;
+		device_size acceleration_structure_stride = 0;
 	};
 
 	struct bindless_heap_binding {

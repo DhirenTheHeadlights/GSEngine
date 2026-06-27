@@ -57,7 +57,8 @@ export namespace gse::gpu {
 			handle<gpu::semaphore> wait_semaphore,
 			std::uint32_t image_index,
 			std::uint64_t present_id,
-			time_t<std::uint64_t> relative_target
+			time_t<std::uint64_t> relative_target,
+			bool request_timing = true
 		) -> result;
 
 		[[nodiscard]] auto release_fence(
@@ -158,7 +159,7 @@ auto gse::gpu::swap_chain::acquire(const handle<gpu::semaphore> wait_semaphore, 
 	return m_device->acquire_swapchain_image(m_info.handle, wait_semaphore, timeout_ns);
 }
 
-auto gse::gpu::swap_chain::present(const handle<gpu::semaphore> wait_semaphore, const std::uint32_t image_index, const std::uint64_t present_id, const time_t<std::uint64_t> relative_target) -> result {
+auto gse::gpu::swap_chain::present(const handle<gpu::semaphore> wait_semaphore, const std::uint32_t image_index, const std::uint64_t present_id, const time_t<std::uint64_t> relative_target, const bool request_timing) -> result {
 	reset_release_fence(image_index);
 
 	const auto swapchain_handle = m_info.handle;
@@ -175,7 +176,7 @@ auto gse::gpu::swap_chain::present(const handle<gpu::semaphore> wait_semaphore, 
 		.time_domain_id = m_info.time_domain_id,
 	};
 
-	if (m_info.time_domain_id != 0) {
+	if (m_info.time_domain_id != 0 && request_timing) {
 		info.target_present_times = std::span(&relative_target, 1);
 		info.present_stage_queries = present_stage_flags(present_stage_flag::image_first_pixel_out);
 	}

@@ -9,6 +9,7 @@ import :render_targets;
 
 
 import gse.gpu;
+import gse.gpu_record;
 import gse.core;
 import gse.containers;
 import gse.concurrency;

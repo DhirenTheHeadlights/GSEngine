@@ -147,7 +147,8 @@ export namespace gse::gpu {
 		transfer_to_compute,
 		compute_to_transfer,
 		transfer_to_host,
-		transfer_to_transfer
+		transfer_to_transfer,
+		acceleration_structure_to_shader
 	};
 
 	enum class frame_status : std::uint8_t {

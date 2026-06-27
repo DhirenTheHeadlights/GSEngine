@@ -11,6 +11,7 @@ import :shared_shaders;
 
 
 import gse.gpu;
+import gse.gpu_record;
 import gse.core;
 import gse.containers;
 import gse.concurrency;
@@ -101,7 +102,7 @@ auto gse::renderer::gi_probe::rebind_tlas_views(const shared_view<gpu::context::
 	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_handle>::frames_in_flight; ++i) {
 		const auto fi = static_cast<std::uint32_t>(i);
 		if (!d.tlas_views[i].valid()) {
-			d.tlas_views[i] = gpu_s.device->allocate_buffer_slot();
+			d.tlas_views[i] = gpu_s.device->allocate_acceleration_structure_slot();
 		}
 		gpu_s.device->write_acceleration_structure(d.tlas_views[i].slot(), (*rt_state.tlas_ptrs[fi]).device_address());
 	}
@@ -136,6 +137,11 @@ auto gse::renderer::gi_probe::frame(context& ctx, shared_view<gpu::context::data
 		co_return;
 	}
 
+	const auto& rt_render_items = ctx.read_channel<geometry_collector::render_data>();
+	if (rt_render_items.empty() || rt_render_items[0].normal_batches.empty()) {
+		co_return;
+	}
+
 	const auto inv_view = cam_state.view_matrix.inverse();
 	const auto cam_world = inv_view.transform_point(vec3<position>{});
 
@@ -147,6 +153,7 @@ auto gse::renderer::gi_probe::frame(context& ctx, shared_view<gpu::context::data
 
 	auto rec = co_await gpu::pass<^^gse::renderer::gi_probe::frame>(ctx).pipeline(d.update_pipeline).after<^^rt_shadow::frame>();
 
+	rec.barrier(gpu::barrier_scope::acceleration_structure_to_shader);
 	rec.dispatch<entry>(
 		{
 			.origin_world = d.origin_world,

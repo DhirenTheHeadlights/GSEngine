@@ -65,8 +65,6 @@ export namespace gse {
 
 		[[nodiscard]] auto bindless_slot() const -> gpu::bindless_slot;
 
-		auto upload_token() const -> const gpu::sync_token&;
-
 	private:
 		auto create_vulkan_resources(
 			gpu::context::data& context,
@@ -77,6 +75,5 @@ export namespace gse {
 		gpu::bindless_handle m_bindless_slot;
 		image::data m_image_data;
 		profile m_profile = profile::generic_repeat;
-		gpu::sync_token m_upload_token;
 	};
 }

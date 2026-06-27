@@ -1,4 +1,4 @@
-export module gse.gpu:render_pass;
+export module gse.gpu_record:render_pass;
 
 import std;
 
@@ -7,8 +7,8 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 
-import :transient_pool;
-import :render_graph;
+import gse.gpu;
+import :recording_context;
 
 export namespace gse::gpu {
 	struct color_attachment {
@@ -27,6 +27,8 @@ export namespace gse::gpu {
 
 	struct render_pass_descriptor {
 		id pass_kind{};
+		std::string_view pass_name{};
+		id trace_kind{};
 		queue_type queue = queue_type::graphics;
 		const shader_program* primary_pipeline = nullptr;
 		std::vector<color_attachment> colors;
@@ -38,7 +40,7 @@ export namespace gse::gpu {
 	struct [[= same_frame_channel]] render_pass_request {
 		render_pass_descriptor desc;
 		std::coroutine_handle<> record_handle;
-		std::optional<recording_context>* record_ctx_slot = nullptr;
+		recording_context_init* record_ctx_slot = nullptr;
 	};
 
 	class request_pass_awaitable : non_copyable {
@@ -67,7 +69,7 @@ export namespace gse::gpu {
 	private:
 		const gse::context* m_ctx;
 		render_pass_descriptor m_desc;
-		std::optional<recording_context> m_rec;
+		recording_context_init m_init;
 		id m_trace_id{};
 		std::uint64_t m_trace_key = 0;
 	};
@@ -76,7 +78,9 @@ export namespace gse::gpu {
 	public:
 		pass_builder(
 			const gse::context& ctx,
-			id pass_kind
+			id pass_kind,
+			std::string_view pass_name = {},
+			id trace_kind = {}
 		) noexcept;
 
 		auto on(
@@ -148,6 +152,13 @@ export namespace gse::gpu {
 	auto load_depth() -> depth_attachment;
 }
 
+export namespace gse::gpu::context {
+	auto execute_frame(
+		data& d,
+		scheduler& s
+	) -> void;
+}
+
 template <typename... States>
 auto gse::gpu::pass_builder::after() && -> pass_builder&& {
 	(m_desc.after_deps.push_back(trace_id<States>()), ...);
@@ -162,7 +173,8 @@ auto gse::gpu::pass_builder::in_chain() && -> pass_builder&& {
 
 template <typename Owner>
 auto gse::gpu::pass(const gse::context& ctx) -> pass_builder {
-	return pass_builder{ ctx, trace_id<Owner>() };
+	static const id record_cached = find_or_generate_id(std::format("record<{}>", type_tag<Owner>()));
+	return pass_builder{ ctx, trace_id<Owner>(), type_tag<Owner>(), record_cached };
 }
 
 namespace gse::gpu {
@@ -199,5 +211,6 @@ template <std::meta::info Hook>
 auto gse::gpu::pass(const gse::context& ctx) -> pass_builder {
 	static constexpr std::string_view name = hook_name<Hook>();
 	static const id cached = find_or_generate_id(name);
-	return pass_builder{ ctx, cached };
+	static const id record_cached = find_or_generate_id(std::format("record<{}>", name));
+	return pass_builder{ ctx, cached, name, record_cached };
 }

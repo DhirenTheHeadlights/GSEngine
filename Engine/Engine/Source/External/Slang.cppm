@@ -53,6 +53,7 @@ export {
 	using ::SlangResourceAccess;
 	using ::SlangCompileTarget;
 	using ::SlangMatrixLayoutMode;
+	using ::SlangDebugInfoLevel;
 	using ::SlangParameterCategory;
 	using ::ISlangBlob;
 	using ::ISlangUnknown;
@@ -86,6 +87,7 @@ export {
 	inline constexpr SlangCompileTarget slang_spirv = SLANG_SPIRV;
 	inline constexpr SlangCompileTarget slang_dxil = SLANG_DXIL;
 	inline constexpr SlangMatrixLayoutMode slang_matrix_layout_column_major = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR;
+	inline constexpr SlangDebugInfoLevel slang_debug_info_level_standard = SLANG_DEBUG_INFO_LEVEL_STANDARD;
 
 	inline constexpr SlangStage slang_stage_vertex = SLANG_STAGE_VERTEX;
 	inline constexpr SlangStage slang_stage_fragment = SLANG_STAGE_FRAGMENT;
