@@ -135,8 +135,8 @@ auto gs::locomotion::sim_frame_dt() -> gse::time {
 }
 
 auto gs::locomotion::find_scene_id(const gse::shared_view<gse::world_system::data> world_d) -> std::optional<gse::id> {
-	for (const auto& [scene_id, scene_ptr] : world_d.scenes) {
-		if (scene_ptr && scene_ptr->id().tag() == std::string_view("Sandbox")) {
+	for (const auto& scene_id : world_d.scene_ids) {
+		if (scene_id.tag() == std::string_view("Sandbox")) {
 			return scene_id;
 		}
 	}

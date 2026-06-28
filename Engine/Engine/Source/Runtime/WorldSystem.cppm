@@ -27,11 +27,20 @@ export namespace gse {
 			const evaluation_context&
 		) = nullptr;
 	};
+
+	struct scene_command {
+		void (
+			*apply
+		)(
+			scene&
+		) = nullptr;
+	};
 }
 
 export namespace gse::world_system {
 	struct [[= gse::system_state<"World">{}]] data {
-		[[= gse::shared]] std::unordered_map<id, std::unique_ptr<scene>> scenes;
+		std::unordered_map<id, std::unique_ptr<scene>> scenes;
+		[[= gse::shared]] std::vector<id> scene_ids;
 		[[= gse::shared]] std::vector<trigger> triggers;
 		[[= gse::shared]] std::optional<id> active_scene;
 		bool networked = false;
@@ -278,6 +287,19 @@ auto gse::world_system::run(context& ctx, data& d, const shared_view<actions::da
 	}
 	for (const auto& r : ctx.read_channel<activate_scene_request>()) {
 		activate_scene(d, r.scene_id);
+	}
+
+	d.scene_ids.clear();
+	for (const auto& key : std::views::keys(d.scenes)) {
+		d.scene_ids.push_back(key);
+	}
+
+	if (auto* current = current_scene(d)) {
+		for (const auto& cmd : ctx.read_channel<scene_command>()) {
+			if (cmd.apply) {
+				cmd.apply(*current);
+			}
+		}
 	}
 
 	if (!d.networked) {

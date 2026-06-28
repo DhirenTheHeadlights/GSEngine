@@ -5,7 +5,6 @@ import std;
 import :device;
 import :video_backend;
 import :video_encoder;
-import :device_dispatch;
 import :command_dispatch;
 import :device_vulkan_backend;
 import :device_dx12_backend;
@@ -24,27 +23,17 @@ import gse.core;
 import gse.assert;
 
 namespace gse::gpu {
-	consteval {
-		std::meta::define_aggregate(^^gpu_dispatch, device_dispatch_specs(^^vulkan_device_backend));
+	template <typename B>
+	auto device_backend_delete(void* self) -> void {
+		delete static_cast<B*>(self);
 	}
 
-	consteval auto dispatch_member_named(std::string_view name) -> std::meta::info {
-		for (auto member : std::meta::nonstatic_data_members_of(^^gpu_dispatch, std::meta::access_context::unchecked())) {
-			if (std::meta::identifier_of(member) == name) {
-				return member;
-			}
-		}
-		return std::meta::info{};
+	consteval {
+		std::meta::define_aggregate(^^gpu_dispatch, meta::dispatch_specs(meta::pointer_receiver<vulkan_device_backend>::self_type(), ^^vulkan_device_backend, meta::dispatch_no_exclude));
 	}
 
 	template <typename B>
-	constexpr gpu_dispatch device_dispatch_for = [] {
-		gpu_dispatch d{};
-		template for (constexpr auto m : std::define_static_array(device_op_members(^^B))) {
-			d.[: dispatch_member_named(std::meta::identifier_of(m)) :] = [: device_thunk_value_type(^^B, m) :]::value;
-		}
-		return d;
-	}();
+	constexpr gpu_dispatch device_dispatch_for = meta::build_dispatch<gpu_dispatch, vulkan_device_backend, meta::pointer_receiver<B>>();
 }
 
 auto gse::gpu::device::create(const shared_view<window::data> win, const bool validation_layers_enabled, gpu_backend_kind& backend, gpu::device_settings& device_cfg) -> std::unique_ptr<device> {
