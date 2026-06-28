@@ -22,29 +22,11 @@ export namespace gs::dev_spawn {
 	auto run(
 		gse::context& ctx,
 		data& state,
-		gse::shared_view<gse::actions::data> actions_d,
-		gse::shared_view<gse::world_system::data> world_d
+		gse::shared_view<gse::actions::data> actions_d
 	) -> gse::async::task<>;
 }
 
-namespace gs {
-	auto active_scene_ptr(
-		gse::shared_view<gse::world_system::data> w
-	) -> gse::scene*;
-}
-
-auto gs::active_scene_ptr(const gse::shared_view<gse::world_system::data> w) -> gse::scene* {
-	if (!w.active_scene) {
-		return nullptr;
-	}
-	const auto it = w.scenes.find(*w.active_scene);
-	if (it == w.scenes.end()) {
-		return nullptr;
-	}
-	return it->second.get();
-}
-
-auto gs::dev_spawn::run(gse::context& ctx, data& state, const gse::shared_view<gse::actions::data> actions_d, const gse::shared_view<gse::world_system::data> world_d) -> gse::async::task<> {
+auto gs::dev_spawn::run(gse::context& ctx, data& state, const gse::shared_view<gse::actions::data> actions_d) -> gse::async::task<> {
 	if (!state.bound) {
 		state.spawn_stress = gse::actions::add<"Dev_Spawn_Stress">(ctx.channels, gse::key::f5);
 		state.spawn_joints = gse::actions::add<"Dev_Spawn_Joints">(ctx.channels, gse::key::f6);
@@ -52,18 +34,17 @@ auto gs::dev_spawn::run(gse::context& ctx, data& state, const gse::shared_view<g
 	}
 
 	const auto& cs = gse::actions::current_state(actions_d);
-	auto* scene = active_scene_ptr(world_d);
 
 	const bool key_stress = gse::actions::pressed(state.spawn_stress, cs, actions_d);
 	const bool key_joints = gse::actions::pressed(state.spawn_joints, cs, actions_d);
 	const bool req_stress = !ctx.read_channel<spawn_stress_request>().empty();
 	const bool req_joints = !ctx.read_channel<spawn_joints_request>().empty();
 
-	if (scene != nullptr && (key_stress || req_stress)) {
-		spawn_physics_stress(*scene);
+	if (key_stress || req_stress) {
+		ctx.channels.push<gse::scene_command>({ .apply = &spawn_physics_stress });
 	}
-	if (scene != nullptr && (key_joints || req_joints)) {
-		spawn_joint_test(*scene);
+	if (key_joints || req_joints) {
+		ctx.channels.push<gse::scene_command>({ .apply = &spawn_joint_test });
 	}
 
 	return {};

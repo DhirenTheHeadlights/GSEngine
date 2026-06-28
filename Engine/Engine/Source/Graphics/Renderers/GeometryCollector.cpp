@@ -412,7 +412,24 @@ auto gse::renderer::geometry_collector::frame(context& ctx, shared_view<gpu::con
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
 	if (!data.instance_staging.empty()) {
-		d.instance_buffer[frame_index].host_write(data.instance_staging);
+		if (data.instance_staging.size() > d.instance_capacity) {
+			d.instance_capacity = data.instance_staging.size();
+			for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
+				d.instance_buffer[i] = gpu_s.device->create_buffer(
+					{
+						.size = d.instance_capacity * sizeof(shaders::common::instance_data),
+						.stride = sizeof(shaders::common::instance_data),
+						.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_src | gpu::buffer_flag::transfer_dst,
+						.data = data.instance_staging.data(),
+						.bindless = true
+					},
+					"gc_instance_buffer"
+				);
+			}
+		}
+		else {
+			d.instance_buffer[frame_index].host_write(data.instance_staging);
+		}
 	}
 
 	if (!data.normal_batches.empty()) {

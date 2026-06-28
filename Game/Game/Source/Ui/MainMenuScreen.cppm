@@ -140,8 +140,8 @@ auto gs::main_menu_screen::build(gse::gui::builder& ui, gse::gui::nav&) -> void 
 		}
 	}
 
-	for (const auto& [scene_id, scene_ptr] : world.scenes) {
-		const std::string scene_name(scene_ptr->id().tag());
+	for (const auto& scene_id : world.scene_ids) {
+		const std::string scene_name(scene_id.tag());
 		if (ui.draw<gse::gui::button>({
 				.text = scene_name
 			})) {

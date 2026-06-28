@@ -12,97 +12,14 @@ import gse.meta;
 import gse.math;
 
 namespace gse::gpu {
-	template <typename R, typename... A>
-	using command_thunk_ptr = R (*)(command_buffer_handle, A...);
-
-	template <typename B, auto M, typename R, typename... A>
-	struct command_thunk {
-		static constexpr command_thunk_ptr<R, A...> value = [](command_buffer_handle cmd, A... args) -> R {
-			return B(cmd).[:M:](static_cast<A&&>(args)...);
-		};
-	};
-
-	consteval auto command_op_members(std::meta::info facade) -> std::vector<std::meta::info> {
-		std::vector<std::meta::info> ops;
-		for (auto m : std::meta::members_of(facade, std::meta::access_context::unchecked())) {
-			if (std::meta::is_function(m)
-				&& !std::meta::is_static_member(m)
-				&& !std::meta::is_special_member_function(m)
-				&& std::meta::has_identifier(m)
-				&& std::meta::identifier_of(m) != "native"
-				&& std::meta::identifier_of(m) != "valid") {
-				ops.push_back(m);
-			}
-		}
-		return ops;
-	}
-
-	consteval auto command_member_named(std::meta::info backend, std::string_view name) -> std::meta::info {
-		for (auto m : std::meta::members_of(backend, std::meta::access_context::unchecked())) {
-			if (std::meta::is_function(m)
-				&& !std::meta::is_static_member(m)
-				&& !std::meta::is_special_member_function(m)
-				&& std::meta::has_identifier(m)
-				&& std::meta::identifier_of(m) == name) {
-				return m;
-			}
-		}
-		return std::meta::info{};
-	}
-
-	consteval auto command_thunk_ptr_type(std::meta::info facade_member) -> std::meta::info {
-		std::vector<std::meta::info> args;
-		args.push_back(std::meta::return_type_of(facade_member));
-		for (auto p : std::meta::parameters_of(facade_member)) {
-			args.push_back(std::meta::type_of(p));
-		}
-		return std::meta::substitute(^^command_thunk_ptr, args);
-	}
-
-	consteval auto command_thunk_value_type(std::meta::info backend, std::meta::info backend_member, std::meta::info facade_member) -> std::meta::info {
-		std::vector<std::meta::info> args;
-		args.push_back(backend);
-		args.push_back(std::meta::reflect_constant(backend_member));
-		args.push_back(std::meta::return_type_of(facade_member));
-		for (auto p : std::meta::parameters_of(facade_member)) {
-			args.push_back(std::meta::type_of(p));
-		}
-		return std::meta::substitute(^^command_thunk, args);
-	}
-
-	consteval auto command_dispatch_specs(std::meta::info facade) -> std::vector<std::meta::info> {
-		std::vector<std::meta::info> specs;
-		for (auto m : command_op_members(facade)) {
-			specs.push_back(std::meta::data_member_spec(
-				command_thunk_ptr_type(m),
-				{ .name = std::meta::identifier_of(m) }
-			));
-		}
-		return specs;
-	}
+	constexpr std::array<std::string_view, 2> recorder_excludes{ "native", "valid" };
 
 	consteval {
-		std::meta::define_aggregate(^^command_dispatch, command_dispatch_specs(^^pass_recorder));
-	}
-
-	consteval auto command_dispatch_member_named(std::string_view name) -> std::meta::info {
-		for (auto member : std::meta::nonstatic_data_members_of(^^command_dispatch, std::meta::access_context::unchecked())) {
-			if (std::meta::identifier_of(member) == name) {
-				return member;
-			}
-		}
-		return std::meta::info{};
+		std::meta::define_aggregate(^^command_dispatch, meta::dispatch_specs(meta::value_receiver<vulkan::commands, command_buffer_handle>::self_type(), ^^pass_recorder, recorder_excludes));
 	}
 
 	template <typename B>
-	constexpr command_dispatch command_dispatch_for = [] {
-		command_dispatch d{};
-		template for (constexpr auto fm : std::define_static_array(command_op_members(^^pass_recorder))) {
-			d.[: command_dispatch_member_named(std::meta::identifier_of(fm)) :]
-				= [: command_thunk_value_type(^^B, command_member_named(^^B, std::meta::identifier_of(fm)), fm) :]::value;
-		}
-		return d;
-	}();
+	constexpr command_dispatch command_dispatch_for = meta::build_dispatch<command_dispatch, pass_recorder, meta::value_receiver<B, command_buffer_handle>, recorder_excludes>();
 }
 
 auto gse::gpu::command_dispatch_for_backend(const gpu_backend_kind backend) -> const command_dispatch* {
