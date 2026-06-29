@@ -214,14 +214,21 @@ auto gs::startup::run_locomotion_play(const config& cfg) -> void {
 	play_cfg.reference_clip_path = cfg.reference_clip_path.empty() ? locomotion_artifact("ref_walk.bin") : cfg.reference_clip_path;
 	gse::start(
 		[&play_cfg](gse::engine& e) -> void {
-			gse::system_manifest<^^gs::locomotion::state_estimator::data, ^^gs::locomotion::state_estimator::run>{}.register_with(e);
+			gse::system_manifest<
+				^^gs::locomotion::state_estimator::data, ^^gs::locomotion::state_estimator::run,
+				^^gs::locomotion::gait_scheduler::data, ^^gs::locomotion::gait_scheduler::run,
+				^^gs::locomotion::footstep_planner::data, ^^gs::locomotion::footstep_planner::run,
+				^^gs::locomotion::balance_controller::data, ^^gs::locomotion::balance_controller::run,
+				^^gs::locomotion::leg_controller::data, ^^gs::locomotion::leg_controller::run
+			>{}.register_with(e);
 			gse::register_systems<^^gs::locomotion::pose_player>(e);
 			e.register_external_resource<gs::locomotion::ppo_config>(&play_cfg);
 			auto& w = e.world();
 			auto& reg = e.registry();
-			auto* scene = gse::add_scene(w, reg, "Locomotion Play", &gs::locomotion_play_scene_setup);
-			if (scene) {
-				gse::activate_scene(w, scene->id());
+			auto* play = gse::add_scene(w, reg, "Locomotion Play", &gs::locomotion_play_scene_setup);
+			gse::add_scene(w, reg, "Sandbox", &gs::sandbox_scene_setup);
+			if (play) {
+				gse::activate_scene(w, play->id());
 			}
 		},
 		{
