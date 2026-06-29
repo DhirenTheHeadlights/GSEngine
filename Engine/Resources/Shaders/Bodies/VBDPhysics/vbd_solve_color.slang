@@ -12,6 +12,28 @@ void accumulate_geometric_stiffness(float3 r, float3 dir, float abs_force, inout
     }
 }
 
+void accumulate_joint_drive(
+    joint_constraint j, body_state body_a, body_state body_b,
+    float3 axis_world, float theta_axis, int axis_index, float sign,
+    inout float3 ang_grad, inout mat3 ang_hess
+) {
+    float stiffness_k = j.drive_stiffness[axis_index];
+    float f_drive = stiffness_k * (theta_axis - j.drive_target[axis_index]);
+    float hessian_stiffness = stiffness_k;
+    if (j.drive_damping > 0.0) {
+        float4 q_prev = quat_mul(body_b.old_orientation, quat_mul(quat_conjugate(body_a.old_orientation), quat_conjugate(j.rest_orientation)));
+        float theta_prev = dot(axis_world, to_axis_angle(q_prev));
+        f_drive += stiffness_k * j.drive_damping * (theta_axis - theta_prev);
+        hessian_stiffness = stiffness_k * (1.0 + j.drive_damping);
+    }
+    if (j.drive_max_torque > 0.0) {
+        f_drive = clamp(f_drive, -j.drive_max_torque, j.drive_max_torque);
+    }
+    float3 jd = axis_world * (-sign);
+    ang_grad += jd * f_drive;
+    ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(jd, jd), hessian_stiffness));
+}
+
 void accumulate_joint_for_body(
     uint bi, joint_constraint j, bool update_orient,
     inout float3 grad, inout mat3 hess,
@@ -122,6 +144,11 @@ void accumulate_joint_for_body(
                     ang_grad += j_soft * f_soft;
                     ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(j_soft, j_soft), j.soft_ang_stiffness[k]));
                 }
+                for (int k = 0; k < 3; k++) {
+                    if (j.drive_stiffness[k] <= 0.0) continue;
+                    float3 axis_world = rotate_vector(body_a.predicted_orientation, dirs[k]);
+                    accumulate_joint_drive(j, body_a, body_b, axis_world, dot(axis_world, theta), k, sign, ang_grad, ang_hess);
+                }
             }
             else if (j.type == joint_type::fixed) {
                 for (int k = 0; k < 3; k++) {
@@ -184,6 +211,10 @@ void accumulate_joint_for_body(
                         ang_grad += j_limit * f_clamped;
                         ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(j_limit, j_limit), j.limit_penalty));
                     }
+                }
+
+                if (j.drive_stiffness[0] > 0.0) {
+                    accumulate_joint_drive(j, body_a, body_b, axis_a, dot(axis_a, theta), 0, sign, ang_grad, ang_hess);
                 }
             }
         }

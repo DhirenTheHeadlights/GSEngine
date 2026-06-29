@@ -591,6 +591,7 @@ auto gse::physics::prepare(context& ctx, const std::optional<shared_view<gpu::co
 		jd.drive_stiffness = drive.stiffness;
 		jd.drive_damping = drive.damping;
 		jd.drive_max_torque = drive.max_torque;
+		d.gpu_joints_dirty = true;
 	}
 
 	if (const auto& stats_channel = ctx.read_channel<gpu_solver_stats>(); !stats_channel.empty()) {

@@ -12,6 +12,43 @@ export namespace gs::locomotion {
 		std::string path;
 	};
 
+	struct bone_sample {
+		gse::vec3<gse::position> position;
+		gse::quat orientation;
+		gse::vec3<gse::velocity> velocity;
+		gse::vec3<gse::angular_velocity> angular_velocity;
+	};
+
+	struct reference_kinematics {
+		gse::vec3<gse::position> pelvis_position;
+		gse::quat pelvis_orientation;
+		gse::vec3<gse::velocity> pelvis_velocity;
+		gse::angle hip_angle_l;
+		gse::angle knee_angle_l;
+		gse::angle ankle_angle_l;
+		gse::angle hip_angle_r;
+		gse::angle knee_angle_r;
+		gse::angle ankle_angle_r;
+		float phi = 0.f;
+		bool foot_grounded_l = false;
+		bool foot_grounded_r = false;
+	};
+
+	struct reference_frame {
+		observation obs;
+		reference_kinematics kin;
+		std::vector<bone_sample> bones;
+	};
+
+	struct reference_clip {
+		std::vector<reference_frame> frames;
+		gse::time dt = gse::seconds(0.f);
+		std::uint32_t bone_count = 0;
+	};
+
+	auto load_reference_clip(
+		std::string_view path
+	) -> std::optional<reference_clip>;
 }
 
 export namespace gs::locomotion::recorder {
@@ -29,20 +66,23 @@ export namespace gs::locomotion::recorder {
 		gse::read<intent> intents,
 		gse::read<gait> gaits,
 		gse::read<gse::physics::joint_drive_component> drives,
-		gse::read<gse::physics::motor_component> motors
+		gse::read<gse::physics::motor_component> motors,
+		gse::read<gse::physics::transform_component> transforms,
+		gse::read<gse::physics::motion_component> motions
 	) -> gse::async::task<>;
 }
 
 namespace gs::locomotion {
 	struct record_header {
 		std::uint32_t magic = 0x4C4F434Fu;
-		std::uint32_t version = 0;
+		std::uint32_t version = 1;
 		std::uint32_t obs_dim = 0;
 		std::uint32_t act_dim = 0;
 		std::uint64_t obs_layout_hash = 0;
 		std::uint64_t act_layout_hash = 0;
 		gse::time fixed_dt = gse::seconds(0.f);
 		std::uint32_t controlled_joint_count = 10;
+		std::uint32_t bone_count = 0;
 	};
 
 	struct actuation_diagnostics {
@@ -62,21 +102,6 @@ namespace gs::locomotion {
 		gse::force pelvis_motor_max_force;
 	};
 
-	struct reference_kinematics {
-		gse::vec3<gse::position> pelvis_position;
-		gse::quat pelvis_orientation;
-		gse::vec3<gse::velocity> pelvis_velocity;
-		gse::angle hip_angle_l;
-		gse::angle knee_angle_l;
-		gse::angle ankle_angle_l;
-		gse::angle hip_angle_r;
-		gse::angle knee_angle_r;
-		gse::angle ankle_angle_r;
-		float phi = 0.f;
-		bool foot_grounded_l = false;
-		bool foot_grounded_r = false;
-	};
-
 	auto update_phi(
 		recorder::data& d,
 		const gait& g
@@ -84,7 +109,15 @@ namespace gs::locomotion {
 
 	auto open_recording(
 		recorder::data& d,
-		const recorder_config& config
+		const recorder_config& config,
+		std::uint32_t bone_count
+	) -> void;
+
+	auto capture_bones(
+		const skeleton_refs& r,
+		gse::read<gse::physics::transform_component>& transforms,
+		gse::read<gse::physics::motion_component>& motions,
+		std::vector<bone_sample>& out
 	) -> void;
 
 	auto capture_actuation(
@@ -119,7 +152,7 @@ auto gs::locomotion::update_phi(recorder::data& d, const gait& g) -> void {
 	}
 }
 
-auto gs::locomotion::open_recording(recorder::data& d, const recorder_config& config) -> void {
+auto gs::locomotion::open_recording(recorder::data& d, const recorder_config& config, const std::uint32_t bone_count) -> void {
 	d.out = std::make_unique<std::ofstream>(config.path, std::ios::binary | std::ios::trunc);
 	if (!d.out->is_open()) {
 		d.out.reset();
@@ -131,8 +164,25 @@ auto gs::locomotion::open_recording(recorder::data& d, const recorder_config& co
 		.obs_layout_hash = gse::layout_hash<observation>(),
 		.act_layout_hash = gse::layout_hash<action>(),
 		.fixed_dt = gse::system_clock::fixed_dt<gse::time>(),
+		.bone_count = bone_count,
 	};
 	write_pod(*d.out, header);
+}
+
+auto gs::locomotion::capture_bones(const skeleton_refs& r, gse::read<gse::physics::transform_component>& transforms, gse::read<gse::physics::motion_component>& motions, std::vector<bone_sample>& out) -> void {
+	out.clear();
+	for (const auto bone_id : r.all_bone_ids) {
+		auto sample = bone_sample{};
+		if (const auto* tc = transforms.find(bone_id)) {
+			sample.position = tc->position;
+			sample.orientation = tc->orientation;
+		}
+		if (const auto* mc = motions.find(bone_id)) {
+			sample.velocity = mc->current_velocity;
+			sample.angular_velocity = mc->angular_velocity;
+		}
+		out.push_back(sample);
+	}
 }
 
 auto gs::locomotion::capture_actuation(const skeleton_refs& r, gse::read<gse::physics::joint_drive_component>& drives, gse::read<gse::physics::motor_component>& motors, const gse::id owner) -> actuation_diagnostics {
@@ -190,11 +240,66 @@ auto gs::locomotion::write_pod(std::ofstream& out, const T& value) -> void {
 	out.write(reinterpret_cast<const char*>(&value), sizeof(T));
 }
 
-auto gs::locomotion::recorder::run(data& d, const recorder_config& config, gse::read<skeleton_refs> refs, gse::read<state> states, gse::read<intent> intents, gse::read<gait> gaits, gse::read<gse::physics::joint_drive_component> drives, gse::read<gse::physics::motor_component> motors) -> gse::async::task<> {
+auto gs::locomotion::load_reference_clip(const std::string_view path) -> std::optional<reference_clip> {
+	auto in = std::ifstream(std::string(path), std::ios::binary);
+	if (!in.is_open()) {
+		return std::nullopt;
+	}
+	auto header = record_header{};
+	if (!in.read(reinterpret_cast<char*>(&header), sizeof(header))) {
+		return std::nullopt;
+	}
+	if (header.magic != 0x4C4F434Fu || header.version != 1) {
+		return std::nullopt;
+	}
+	if (header.obs_layout_hash != gse::layout_hash<observation>() || header.act_layout_hash != gse::layout_hash<action>()) {
+		return std::nullopt;
+	}
+
+	auto clip = reference_clip{};
+	clip.dt = header.fixed_dt;
+	clip.bone_count = header.bone_count;
+
+	const auto read_pod = [&in](auto& value) -> bool {
+		return static_cast<bool>(in.read(reinterpret_cast<char*>(&value), sizeof(value)));
+	};
+
+	while (true) {
+		auto frame = reference_frame{};
+		auto act = action{};
+		auto diag = actuation_diagnostics{};
+		if (!read_pod(frame.obs)) {
+			break;
+		}
+		if (!read_pod(act) || !read_pod(diag) || !read_pod(frame.kin)) {
+			break;
+		}
+		frame.bones.resize(header.bone_count);
+		auto bones_ok = true;
+		for (std::uint32_t b = 0; b < header.bone_count; ++b) {
+			if (!read_pod(frame.bones[b])) {
+				bones_ok = false;
+				break;
+			}
+		}
+		if (!bones_ok) {
+			break;
+		}
+		clip.frames.push_back(std::move(frame));
+	}
+
+	if (clip.frames.empty()) {
+		return std::nullopt;
+	}
+	return clip;
+}
+
+auto gs::locomotion::recorder::run(data& d, const recorder_config& config, gse::read<skeleton_refs> refs, gse::read<state> states, gse::read<intent> intents, gse::read<gait> gaits, gse::read<gse::physics::joint_drive_component> drives, gse::read<gse::physics::motor_component> motors, gse::read<gse::physics::transform_component> transforms, gse::read<gse::physics::motion_component> motions) -> gse::async::task<> {
 	if (!config.enabled) {
 		return {};
 	}
 
+	auto bones = std::vector<bone_sample>{};
 	const auto owner_ids = refs.owner_ids();
 	for (std::size_t i = 0; i < owner_ids.size(); ++i) {
 		const auto owner = owner_ids[i];
@@ -207,7 +312,7 @@ auto gs::locomotion::recorder::run(data& d, const recorder_config& config, gse::
 		}
 
 		if (!d.out) {
-			open_recording(d, config);
+			open_recording(d, config, static_cast<std::uint32_t>(r->all_bone_ids.size()));
 			if (!d.out) {
 				continue;
 			}
@@ -219,11 +324,15 @@ auto gs::locomotion::recorder::run(data& d, const recorder_config& config, gse::
 		const auto act = action_from_drives(*r, drives);
 		const auto diag = capture_actuation(*r, drives, motors, owner);
 		const auto ref_kin = capture_reference_kinematics(*s, d.phi);
+		capture_bones(*r, transforms, motions, bones);
 
 		write_pod(*d.out, obs);
 		write_pod(*d.out, act);
 		write_pod(*d.out, diag);
 		write_pod(*d.out, ref_kin);
+		for (const auto& bone : bones) {
+			write_pod(*d.out, bone);
+		}
 	}
 
 	return {};

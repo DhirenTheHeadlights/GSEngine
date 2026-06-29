@@ -116,6 +116,7 @@ auto gs::sandbox_scene_setup(gse::scene& s) -> void {
 			.hip_offset_lateral = gse::meters(0.075f),
 			.hip_offset_below_pelvis = gse::meters(0.10f),
 			.pelvis_target_height = gse::meters(0.90f),
+			.all_bone_ids = humanoid_handle.bone_ids,
 		}
 	);
 
