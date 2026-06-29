@@ -184,6 +184,7 @@ export namespace gs::locomotion::pose_player {
 		mlp critic;
 		bool attempted = false;
 		bool loaded = false;
+		bool logged_owner_count = false;
 		std::optional<gse::id> scene_id;
 		std::unordered_map<std::uint64_t, owner_play_state> owners;
 		reference_clip ref_clip;
@@ -994,6 +995,12 @@ auto gs::locomotion::pose_player::run(data& d, const ppo_config& cfg, const gse:
 		return {};
 	}
 
+	const auto play_it = world_d.scenes.find(*d.scene_id);
+	if (play_it == world_d.scenes.end() || !play_it->second) {
+		return {};
+	}
+	const auto play_entities = play_it->second->entities();
+
 	const auto has_clip = !d.ref_clip.frames.empty();
 	const auto do_reset = [&](owner_play_state& os, const skeleton_refs& r) {
 		if (!d.rsi_frames.empty()) {
@@ -1021,8 +1028,21 @@ auto gs::locomotion::pose_player::run(data& d, const ppo_config& cfg, const gse:
 	};
 
 	const auto owner_ids = refs.owner_ids();
+	if (!d.logged_owner_count) {
+		auto in_scene = std::size_t{ 0 };
+		for (const auto owner : owner_ids) {
+			if (std::ranges::find(play_entities, owner) != play_entities.end()) {
+				++in_scene;
+			}
+		}
+		gse::log::println("pose_player: {} skeleton_refs owner(s) total, {} in the play scene (driving only those)", owner_ids.size(), in_scene);
+		d.logged_owner_count = true;
+	}
 	for (std::size_t i = 0; i < owner_ids.size(); ++i) {
 		const auto owner = owner_ids[i];
+		if (std::ranges::find(play_entities, owner) == play_entities.end()) {
+			continue;
+		}
 		const auto* r = refs.find(owner);
 		const auto* s = states.find(owner);
 		if (!r || !s || !s->valid) {
@@ -1052,7 +1072,7 @@ auto gs::locomotion::pose_player::run(data& d, const ppo_config& cfg, const gse:
 		}
 
 		if (s->pelvis_position.y() < gse::meters(0.4f)) {
-			gse::log::println("pose_player: fell after {} steps — RSI reset", os.steps_alive);
+			gse::log::println("pose_player: owner={} fell after {} steps (pelvis_y={:.2f}) — RSI reset", owner.number(), os.steps_alive, s->pelvis_position.y());
 			os.steps_alive = 0;
 			do_reset(os, *r);
 			apply_action(action{}, *r, drives);
