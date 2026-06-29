@@ -17,7 +17,7 @@ list(REMOVE_ITEM ENGINE_IMPLS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/Externa
 set(ENGINE_MODULE_IMPLS "")
 set(ENGINE_PLAIN_IMPLS "")
 foreach(_impl IN LISTS ENGINE_IMPLS)
-    file(STRINGS "${_impl}" _part_decl REGEX "^module gse\\.[A-Za-z_]+:[A-Za-z_0-9]+ *;" LIMIT_COUNT 1)
+    file(STRINGS "${_impl}" _part_decl REGEX "^module gse\\.[A-Za-z_0-9]+:[A-Za-z_0-9]+ *;" LIMIT_COUNT 1)
     if(_part_decl)
         list(APPEND ENGINE_MODULE_IMPLS "${_impl}")
     else()
