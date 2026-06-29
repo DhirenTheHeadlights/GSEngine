@@ -171,6 +171,7 @@ export namespace gs::locomotion::pose_player {
 		bool snapshotted = false;
 		float phi = 0.0f;
 		std::size_t ref_index = 0;
+		int steps_alive = 0;
 		std::vector<body_pose> initial_poses;
 		std::vector<float> obs_buf;
 		std::vector<float> h1_buf;
@@ -988,6 +989,11 @@ auto gs::locomotion::pose_player::run(data& d, const ppo_config& cfg, const gse:
 		return {};
 	}
 
+	const auto sim_steps = gse::system_clock::fixed_steps_this_frame();
+	if (sim_steps <= 0) {
+		return {};
+	}
+
 	const auto has_clip = !d.ref_clip.frames.empty();
 	const auto do_reset = [&](owner_play_state& os, const skeleton_refs& r) {
 		if (!d.rsi_frames.empty()) {
@@ -1046,6 +1052,8 @@ auto gs::locomotion::pose_player::run(data& d, const ppo_config& cfg, const gse:
 		}
 
 		if (s->pelvis_position.y() < gse::meters(0.4f)) {
+			gse::log::println("pose_player: fell after {} steps — RSI reset", os.steps_alive);
+			os.steps_alive = 0;
 			do_reset(os, *r);
 			apply_action(action{}, *r, drives);
 			continue;
@@ -1067,17 +1075,20 @@ auto gs::locomotion::pose_player::run(data& d, const ppo_config& cfg, const gse:
 		}
 		mlp_forward(d.actor.net, os.obs_buf, os.h1_buf, os.h2_buf, os.mean_buf);
 		apply_action(unpack_action(os.mean_buf), *r, drives);
+		os.steps_alive += sim_steps;
 		if (has_clip) {
-			if (d.cycle_loop) {
-				os.ref_index = os.ref_index >= d.cycle_end ? d.cycle_start : os.ref_index + 1;
-			}
-			else {
-				os.ref_index = os.ref_index + 1 < d.ref_clip.frames.size() ? os.ref_index + 1 : 0;
+			for (int k = 0; k < sim_steps; ++k) {
+				if (d.cycle_loop) {
+					os.ref_index = os.ref_index >= d.cycle_end ? d.cycle_start : os.ref_index + 1;
+				}
+				else {
+					os.ref_index = os.ref_index + 1 < d.ref_clip.frames.size() ? os.ref_index + 1 : 0;
+				}
 			}
 		}
 		else {
-			os.phi += 1.0f / 88.0f;
-			if (os.phi >= 1.0f) {
+			os.phi += static_cast<float>(sim_steps) / 88.0f;
+			while (os.phi >= 1.0f) {
 				os.phi -= 1.0f;
 			}
 		}
