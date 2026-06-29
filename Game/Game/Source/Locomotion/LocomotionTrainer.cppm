@@ -172,6 +172,7 @@ export namespace gs::locomotion::pose_player {
 		float phi = 0.0f;
 		std::size_t ref_index = 0;
 		int steps_alive = 0;
+		int reset_gate = 0;
 		std::vector<body_pose> initial_poses;
 		std::vector<float> obs_buf;
 		std::vector<float> h1_buf;
@@ -1009,6 +1010,12 @@ auto gs::locomotion::pose_player::run(data& d, const ppo_config& cfg, const gse:
 			os.ref_index = fi;
 			os.phi = d.ref_clip.frames[fi].kin.phi;
 			reset_to_reference(os.initial_poses, r, d.ref_clip.frames[fi], transforms, motions);
+			for (const auto& pose : os.initial_poses) {
+				if (auto* mc = motions.find(pose.id)) {
+					mc->current_velocity = {};
+					mc->angular_velocity = {};
+				}
+			}
 		}
 		else {
 			for (const auto& pose : os.initial_poses) {
@@ -1025,6 +1032,7 @@ auto gs::locomotion::pose_player::run(data& d, const ppo_config& cfg, const gse:
 			os.ref_index = 0;
 			os.phi = 0.0f;
 		}
+		os.reset_gate = 30;
 	};
 
 	const auto owner_ids = refs.owner_ids();
@@ -1068,6 +1076,34 @@ auto gs::locomotion::pose_player::run(data& d, const ppo_config& cfg, const gse:
 			initialize_drives(*r, drives);
 			os.drives_init = true;
 			do_reset(os, *r);
+			continue;
+		}
+
+		if (os.reset_gate > 0) {
+			auto hold = action{};
+			if (has_clip) {
+				const auto& rf = d.ref_clip.frames[os.ref_index];
+				reset_to_reference(os.initial_poses, *r, rf, transforms, motions);
+				for (const auto& pose : os.initial_poses) {
+					if (auto* mc = motions.find(pose.id)) {
+						mc->current_velocity = {};
+						mc->angular_velocity = {};
+					}
+				}
+				hold.hip_l_pitch = rf.kin.hip_angle_l;
+				hold.knee_l = rf.kin.knee_angle_l;
+				hold.ankle_l = rf.kin.ankle_angle_l;
+				hold.hip_r_pitch = rf.kin.hip_angle_r;
+				hold.knee_r = rf.kin.knee_angle_r;
+				hold.ankle_r = rf.kin.ankle_angle_r;
+			}
+			apply_action(hold, *r, drives);
+			if (s->pelvis_position.y() >= gse::meters(0.85f) && os.reset_gate < 27) {
+				os.reset_gate = 0;
+			}
+			else {
+				--os.reset_gate;
+			}
 			continue;
 		}
 
