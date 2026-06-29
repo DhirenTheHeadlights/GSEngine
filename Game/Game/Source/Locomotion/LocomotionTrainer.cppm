@@ -22,7 +22,7 @@ export namespace gs::locomotion {
 		float lam = 0.95f;
 		float clip_eps = 0.2f;
 		float value_coeff = 0.5f;
-		float entropy_coeff = 0.01f;
+		float entropy_coeff = 0.004f;
 		int max_steps = 400;
 		std::string checkpoint_path = "locomotion_checkpoint.bin";
 		int checkpoint_every = 50;
