@@ -1,6 +1,7 @@
 import std;
 
 import gse;
+import gse.config;
 import gse.system_manifest;
 import gs;
 
@@ -47,15 +48,24 @@ namespace gs::startup {
 		const config& cfg
 	) -> void;
 
+	auto locomotion_artifact(
+		std::string_view name
+	) -> std::string;
+
 	template <typename... Components>
 	consteval auto network_run_hook(gse::type_pack<Components...>) -> std::meta::info {
 		return ^^gse::network::run<Components...>;
 	}
 }
 
+auto gs::startup::locomotion_artifact(const std::string_view name) -> std::string {
+	return (gse::config::resource_path / "Misc" / name).string();
+}
+
 auto gs::startup::run_game(const gse::engine_config& engine) -> void {
 	auto play_cfg = gs::locomotion::ppo_config{};
-	play_cfg.reference_clip_path = "ref_walk.bin";
+	play_cfg.checkpoint_path = locomotion_artifact("locomotion_checkpoint.bin");
+	play_cfg.reference_clip_path = locomotion_artifact("ref_walk.bin");
 	gse::start(
 		[&play_cfg](gse::engine& e) -> void {
 			constexpr auto network_run = network_run_hook(gs::networked_components{});
@@ -115,7 +125,8 @@ auto gs::startup::run_locomotion_train(const config& cfg) -> void {
 	gse::system_clock::set_fixed_step_override(1);
 	auto ppo = cfg.ppo;
 	ppo.action_scale = cfg.action_scale;
-	ppo.reference_clip_path = cfg.reference_clip_path;
+	ppo.checkpoint_path = locomotion_artifact("locomotion_checkpoint.bin");
+	ppo.reference_clip_path = cfg.reference_clip_path.empty() ? locomotion_artifact("ref_walk.bin") : cfg.reference_clip_path;
 	gse::start(
 		[&ppo](gse::engine& e) -> void {
 			gse::system_manifest<^^gs::locomotion::state_estimator::data, ^^gs::locomotion::state_estimator::run>{}.register_with(e);
@@ -199,7 +210,8 @@ auto gs::startup::run_locomotion_play(const config& cfg) -> void {
 	gse::system_clock::set_fixed_step_override(1);
 	auto play_cfg = cfg.ppo;
 	play_cfg.action_scale = cfg.action_scale;
-	play_cfg.reference_clip_path = cfg.reference_clip_path.empty() ? "ref_walk.bin" : cfg.reference_clip_path;
+	play_cfg.checkpoint_path = locomotion_artifact("locomotion_checkpoint.bin");
+	play_cfg.reference_clip_path = cfg.reference_clip_path.empty() ? locomotion_artifact("ref_walk.bin") : cfg.reference_clip_path;
 	gse::start(
 		[&play_cfg](gse::engine& e) -> void {
 			gse::system_manifest<^^gs::locomotion::state_estimator::data, ^^gs::locomotion::state_estimator::run>{}.register_with(e);
