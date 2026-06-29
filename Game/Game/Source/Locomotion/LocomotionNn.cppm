@@ -593,5 +593,12 @@ auto gs::locomotion::checkpoint_load(actor_params& actor, mlp& critic, const std
 	if (!load_vec(in, critic.l3.bias)) {
 		return false;
 	}
+	const auto layer_ok = [](const nn_layer& l) {
+		return l.weight.size() == l.in_features * l.out_features && l.bias.size() == l.out_features;
+	};
+	if (!layer_ok(actor.net.l1) || !layer_ok(actor.net.l2) || !layer_ok(actor.net.l3) || actor.log_std.size() != actor.net.l3.out_features
+		|| !layer_ok(critic.l1) || !layer_ok(critic.l2) || !layer_ok(critic.l3)) {
+		return false;
+	}
 	return true;
 }

@@ -20,6 +20,7 @@ namespace gs::startup {
 		float action_scale = 1.0f;
 		bool locomotion_clip_info = false;
 		std::string reference_clip_path;
+		bool locomotion_play = false;
 	};
 
 	auto run_game(
@@ -42,6 +43,10 @@ namespace gs::startup {
 		const config& cfg
 	) -> void;
 
+	auto run_locomotion_play(
+		const config& cfg
+	) -> void;
+
 	template <typename... Components>
 	consteval auto network_run_hook(gse::type_pack<Components...>) -> std::meta::info {
 		return ^^gse::network::run<Components...>;
@@ -49,8 +54,10 @@ namespace gs::startup {
 }
 
 auto gs::startup::run_game(const gse::engine_config& engine) -> void {
+	auto play_cfg = gs::locomotion::ppo_config{};
+	play_cfg.reference_clip_path = "ref_walk.bin";
 	gse::start(
-		[](gse::engine& e) -> void {
+		[&play_cfg](gse::engine& e) -> void {
 			constexpr auto network_run = network_run_hook(gs::networked_components{});
 			static_assert(gse::meta::find_system_hook_anno(network_run) != std::meta::info{}, "network run hook annotation not visible on the templated instantiation");
 			gse::system_manifest<^^gse::network::data, network_run, ^^gse::network::shutdown>{}.register_with(e);
@@ -59,6 +66,8 @@ auto gs::startup::run_game(const gse::engine_config& engine) -> void {
 			gse::system_manifest<^^gs::client_ui::data, ^^gs::client_ui::run, ^^gs::pause_menu::data, ^^gs::pause_menu::run>{}.register_with(e);
 			gse::system_manifest<^^gs::dev_spawn::data, ^^gs::dev_spawn::run>{}.register_with(e);
 			gse::register_systems<^^gse::gui::popout_system>(e);
+			gse::register_systems<^^gs::locomotion::pose_player>(e);
+			e.register_external_resource<gs::locomotion::ppo_config>(&play_cfg);
 			gs::world_loader_setup(e);
 		},
 		engine
@@ -186,6 +195,34 @@ auto gs::startup::run_locomotion_clip_info(const config& cfg) -> void {
 	}
 }
 
+auto gs::startup::run_locomotion_play(const config& cfg) -> void {
+	gse::system_clock::set_fixed_step_override(1);
+	auto play_cfg = cfg.ppo;
+	play_cfg.action_scale = cfg.action_scale;
+	play_cfg.reference_clip_path = cfg.reference_clip_path.empty() ? "ref_walk.bin" : cfg.reference_clip_path;
+	gse::start(
+		[&play_cfg](gse::engine& e) -> void {
+			gse::system_manifest<^^gs::locomotion::state_estimator::data, ^^gs::locomotion::state_estimator::run>{}.register_with(e);
+			gse::register_systems<^^gs::locomotion::pose_player>(e);
+			e.register_external_resource<gs::locomotion::ppo_config>(&play_cfg);
+			auto& w = e.world();
+			auto& reg = e.registry();
+			auto* scene = gse::add_scene(w, reg, "Locomotion Play", &gs::locomotion_play_scene_setup);
+			if (scene) {
+				gse::activate_scene(w, scene->id());
+			}
+		},
+		{
+			.title = "GoonSquad Locomotion Play",
+			.create_window = false,
+			.render = false,
+			.use_gpu_solver = cfg.use_gpu_solver,
+			.persist_settings = false,
+		}
+	);
+	gse::system_clock::set_fixed_step_override(std::nullopt);
+}
+
 auto main(int argc, char** argv) -> int {
 	const auto cfg = gse::parse_args<gs::startup::config>(argc, argv);
 	if (cfg.locomotion_selftest) {
@@ -193,6 +230,10 @@ auto main(int argc, char** argv) -> int {
 	}
 	if (cfg.locomotion_clip_info) {
 		gs::startup::run_locomotion_clip_info(cfg);
+		return 0;
+	}
+	if (cfg.locomotion_play) {
+		gs::startup::run_locomotion_play(cfg);
 		return 0;
 	}
 	if (cfg.physics_parity) {
