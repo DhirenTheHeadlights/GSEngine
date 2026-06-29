@@ -14,5 +14,6 @@ auto gs::world_loader_setup(gse::engine& e) -> gse::scene* {
 	auto& w = e.world();
 	auto& reg = e.registry();
 
+	gse::add_scene(w, reg, "Locomotion Play", &locomotion_play_scene_setup);
 	return gse::add_scene(w, reg, "Sandbox", &sandbox_scene_setup);
 }

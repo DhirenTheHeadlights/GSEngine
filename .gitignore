@@ -42,6 +42,7 @@ __pycache__/
 
 # Locomotion training artifacts
 /locomotion_checkpoint.bin
+/ref_walk.bin
 
 # Claude
 /.claude
