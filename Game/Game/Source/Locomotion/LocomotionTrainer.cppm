@@ -6,6 +6,7 @@ import gse;
 import :locomotion_types;
 import :locomotion_mdp;
 import :locomotion_nn;
+import :locomotion_recorder;
 
 export namespace gs::locomotion {
 	struct ppo_config {
@@ -26,6 +27,27 @@ export namespace gs::locomotion {
 		std::string checkpoint_path = "locomotion_checkpoint.bin";
 		int checkpoint_every = 50;
 		unsigned seed = 1234;
+		float r_alive = 0.5f;
+		float r_upright = 1.0f;
+		float r_height = 0.5f;
+		float r_track = 1.5f;
+		float r_heading = 0.3f;
+		float r_energy = 0.05f;
+		float r_smooth = 0.1f;
+		float motor_assist_force = 0.f;
+		int motor_assist_updates = 500;
+		int obs_lag = 0;
+		float action_scale = 1.0f;
+		std::string reference_clip_path = "";
+		float rsi_min_speed = 0.15f;
+		float rsi_max_speed = 0.65f;
+		float r_imitation = 6.0f;
+		float imitation_pose_scale = 2.0f;
+		float imitation_vel_scale = 0.1f;
+		float imitation_w_pose = 0.7f;
+		float imitation_w_vel = 0.3f;
+		float imitation_term_threshold = 0.1f;
+		int imitation_term_grace = 5;
 	};
 
 	struct rollout_buffer {
@@ -76,7 +98,10 @@ export namespace gs::locomotion {
 		int reset_gate = 0;
 		int episode = 0;
 		int episode_steps = 0;
+		std::size_t ref_index = 0;
+		bool rsi_active = false;
 		float episode_reward = 0.0f;
+		float imitation_accum = 0.0f;
 		float track_err_accum = 0.0f;
 		float prev_value = 0.0f;
 		float prev_log_prob = 0.0f;
@@ -84,12 +109,14 @@ export namespace gs::locomotion {
 		std::vector<float> obs_buf;
 		std::vector<float> prev_obs_buf;
 		std::vector<float> action_buf;
+		std::vector<float> prev_action_buf;
 		std::vector<float> mean_buf;
 		std::vector<float> ah1_buf;
 		std::vector<float> ah2_buf;
 		std::vector<float> vh1_buf;
 		std::vector<float> vh2_buf;
 		float val_buf = 0.0f;
+		std::deque<state> lag_ring;
 	};
 }
 
@@ -112,6 +139,13 @@ export namespace gs::locomotion::trainer {
 
 		std::vector<env_state> envs;
 
+		reference_clip ref_clip;
+		std::vector<std::size_t> rsi_frames;
+		std::size_t cycle_start = 0;
+		std::size_t cycle_end = 0;
+		bool cycle_loop = false;
+		bool rsi_enabled = false;
+
 		bool ready = false;
 	};
 
@@ -125,7 +159,8 @@ export namespace gs::locomotion::trainer {
 		gse::read<state> states,
 		gse::write<gse::physics::joint_drive_component> drives,
 		gse::write<gse::physics::transform_component> transforms,
-		gse::write<gse::physics::motion_component> motions
+		gse::write<gse::physics::motion_component> motions,
+		gse::write<gse::physics::motor_component> motors
 	) -> gse::async::task<>;
 }
 
@@ -150,7 +185,15 @@ namespace gs::locomotion {
 	auto compute_reward(
 		const state& s,
 		gse::velocity cmd_forward,
-		gse::velocity cmd_strafe
+		gse::velocity cmd_strafe,
+		gse::position target_height,
+		const ppo_config& cfg
+	) -> float;
+
+	auto compute_imitation_reward(
+		const state& s,
+		const reference_frame& ref,
+		const ppo_config& cfg
 	) -> float;
 
 	auto sample_command(
@@ -176,12 +219,21 @@ namespace gs::locomotion {
 		gse::write<gse::physics::transform_component>& transforms
 	) -> void;
 
+	auto reset_to_reference(
+		const env_state& env,
+		const skeleton_refs& r,
+		const reference_frame& frame,
+		gse::write<gse::physics::transform_component>& transforms,
+		gse::write<gse::physics::motion_component>& motions
+	) -> void;
+
 	auto reset_env(
 		env_state& env,
 		const skeleton_refs& r,
 		gse::write<gse::physics::transform_component>& transforms,
 		gse::write<gse::physics::motion_component>& motions,
-		gse::write<gse::physics::joint_drive_component>& drives
+		gse::write<gse::physics::joint_drive_component>& drives,
+		const reference_frame* rsi
 	) -> void;
 }
 
@@ -334,14 +386,9 @@ auto gs::locomotion::initialize_drives(const skeleton_refs& r, gse::write<gse::p
 	set_drive(r.ankle_r_joint_id, ankle_s, gse::newton_meters(160.f));
 }
 
-auto gs::locomotion::compute_reward(const state& s, const gse::velocity cmd_forward, const gse::velocity cmd_strafe) -> float {
-	const auto pitch_limit = gse::degrees(45.f);
+auto gs::locomotion::compute_reward(const state& s, const gse::velocity cmd_forward, const gse::velocity cmd_strafe, const gse::position target_height, const ppo_config& cfg) -> float {
 	const auto ref_speed = gse::meters_per_second(1.0f);
 	const auto heading_limit = gse::radians(0.6f);
-	constexpr auto track_weight = 2.0f;
-	constexpr auto upright_weight = 0.5f;
-	constexpr auto heading_weight = 0.3f;
-	constexpr auto alive_bonus = 0.1f;
 
 	const auto forward_speed = -s.velocity_body.z();
 	const auto right_speed = s.velocity_body.x();
@@ -349,14 +396,54 @@ auto gs::locomotion::compute_reward(const state& s, const gse::velocity cmd_forw
 	const auto err_right = (right_speed - cmd_strafe) / ref_speed;
 	const auto track = std::exp(-4.0f * (err_forward * err_forward + err_right * err_right));
 
-	const auto pitch_ratio = s.pelvis_pitch / pitch_limit;
-	const auto upright = std::max(0.0f, 1.0f - std::abs(pitch_ratio));
+	const auto up = cross(s.pelvis_right, s.pelvis_forward);
+	const auto upright = std::clamp(up.y(), 0.0f, 1.0f);
+
+	const auto pelvis_height = s.pelvis_position.y() - s.support_center.y();
+	const auto target_above_support = target_height - s.support_center.y();
+	const auto height = std::clamp(pelvis_height / target_above_support, 0.0f, 1.0f);
 
 	const auto current_yaw = std::atan2(-s.pelvis_forward.x(), -s.pelvis_forward.z());
 	const auto heading_ratio = gse::radians(current_yaw) / heading_limit;
 	const auto heading = std::exp(-heading_ratio * heading_ratio);
 
-	return track_weight * track + upright_weight * upright + heading_weight * heading + alive_bonus;
+	const auto stability = upright * height;
+
+	return cfg.r_alive
+		+ cfg.r_upright * upright
+		+ cfg.r_height * height
+		+ stability * (cfg.r_track * track + cfg.r_heading * heading);
+}
+
+auto gs::locomotion::compute_imitation_reward(const state& s, const reference_frame& ref, const ppo_config& cfg) -> float {
+	const auto angle_err = [](const gse::angle a, const gse::angle b) {
+		const auto d = (a - b) / gse::radians(1.0f);
+		return d * d;
+	};
+	const auto rate_err = [](const gse::angular_velocity a, const gse::angular_velocity b) {
+		const auto d = (a - b) / gse::radians_per_second(1.0f);
+		return d * d;
+	};
+
+	const auto pose_err =
+		angle_err(s.hip_angle_l, ref.kin.hip_angle_l) +
+		angle_err(s.knee_angle_l, ref.kin.knee_angle_l) +
+		angle_err(s.ankle_angle_l, ref.kin.ankle_angle_l) +
+		angle_err(s.hip_angle_r, ref.kin.hip_angle_r) +
+		angle_err(s.knee_angle_r, ref.kin.knee_angle_r) +
+		angle_err(s.ankle_angle_r, ref.kin.ankle_angle_r);
+
+	const auto vel_err =
+		rate_err(s.hip_rate_l, ref.obs.hip_rate_l) +
+		rate_err(s.knee_rate_l, ref.obs.knee_rate_l) +
+		rate_err(s.ankle_rate_l, ref.obs.ankle_rate_l) +
+		rate_err(s.hip_rate_r, ref.obs.hip_rate_r) +
+		rate_err(s.knee_rate_r, ref.obs.knee_rate_r) +
+		rate_err(s.ankle_rate_r, ref.obs.ankle_rate_r);
+
+	const auto r_pose = std::exp(-cfg.imitation_pose_scale * pose_err);
+	const auto r_vel = std::exp(-cfg.imitation_vel_scale * vel_err);
+	return cfg.imitation_w_pose * r_pose + cfg.imitation_w_vel * r_vel;
 }
 
 auto gs::locomotion::episode_done(const state& s, const int steps, const int max_steps) -> bool {
@@ -378,6 +465,7 @@ auto gs::locomotion::make_env_state(const gse::id owner_id, const std::size_t en
 		.obs_buf = std::vector<float>(cfg.obs_dim, 0.0f),
 		.prev_obs_buf = std::vector<float>(cfg.obs_dim, 0.0f),
 		.action_buf = std::vector<float>(cfg.act_dim, 0.0f),
+		.prev_action_buf = std::vector<float>(cfg.act_dim, 0.0f),
 		.mean_buf = std::vector<float>(cfg.act_dim, 0.0f),
 		.ah1_buf = std::vector<float>(cfg.hidden_dim, 0.0f),
 		.ah2_buf = std::vector<float>(cfg.hidden_dim, 0.0f),
@@ -396,28 +484,72 @@ auto gs::locomotion::take_env_snapshot(env_state& env, const skeleton_refs& r, g
 	env.snapshot_taken = true;
 }
 
-auto gs::locomotion::reset_env(env_state& env, const skeleton_refs& r, gse::write<gse::physics::transform_component>& transforms, gse::write<gse::physics::motion_component>& motions, gse::write<gse::physics::joint_drive_component>& drives) -> void {
-	for (const auto& pose : env.initial_poses) {
-		if (auto* tc = transforms.find(pose.id)) {
-			tc->position = pose.position;
-			tc->orientation = pose.orientation;
+auto gs::locomotion::reset_to_reference(const env_state& env, const skeleton_refs& r, const reference_frame& frame, gse::write<gse::physics::transform_component>& transforms, gse::write<gse::physics::motion_component>& motions) -> void {
+	const auto bone_count = std::min(r.all_bone_ids.size(), frame.bones.size());
+	if (env.initial_poses.empty() || bone_count == 0) {
+		return;
+	}
+	const auto ref_pelvis = frame.bones[0].position;
+	const auto ref_forward = gse::rotate_vector(frame.kin.pelvis_orientation, gse::vec3f(0.f, 0.f, -1.f));
+	const auto ref_yaw = gse::atan2(-ref_forward.x(), -ref_forward.z());
+	const auto align = gse::quat(gse::vec3f(0.f, 1.f, 0.f), -ref_yaw);
+	const auto spawn_pelvis = env.initial_poses[0].position;
+	const auto target_pelvis = gse::vec3<gse::position>(spawn_pelvis.x(), ref_pelvis.y(), spawn_pelvis.z());
+	for (std::size_t i = 0; i < bone_count; ++i) {
+		const auto bone_id = r.all_bone_ids[i];
+		const auto& bs = frame.bones[i];
+		const auto local = bs.position - ref_pelvis;
+		if (auto* tc = transforms.find(bone_id)) {
+			tc->position = target_pelvis + gse::rotate_vector(align, local);
+			tc->orientation = align * bs.orientation;
 		}
-		if (auto* mc = motions.find(pose.id)) {
-			mc->current_velocity = {};
-			mc->angular_velocity = {};
+		if (auto* mc = motions.find(bone_id)) {
+			mc->current_velocity = gse::rotate_vector(align, bs.velocity);
+			mc->angular_velocity = gse::rotate_vector(align, bs.angular_velocity);
 			mc->reset_pending = 1;
 		}
 	}
+}
+
+auto gs::locomotion::reset_env(env_state& env, const skeleton_refs& r, gse::write<gse::physics::transform_component>& transforms, gse::write<gse::physics::motion_component>& motions, gse::write<gse::physics::joint_drive_component>& drives, const reference_frame* rsi) -> void {
+	if (rsi) {
+		reset_to_reference(env, r, *rsi, transforms, motions);
+	}
+	else {
+		for (const auto& pose : env.initial_poses) {
+			if (auto* tc = transforms.find(pose.id)) {
+				tc->position = pose.position;
+				tc->orientation = pose.orientation;
+			}
+			if (auto* mc = motions.find(pose.id)) {
+				mc->current_velocity = {};
+				mc->angular_velocity = {};
+				mc->reset_pending = 1;
+			}
+		}
+	}
 	apply_action(action{}, r, drives);
+	std::ranges::fill(env.action_buf, 0.0f);
+	std::ranges::fill(env.prev_action_buf, 0.0f);
+	env.lag_ring.clear();
 	env.drives_initialized = false;
 	env.has_prev = false;
 	env.reset_gate = 30;
 	env.episode_steps = 0;
 	env.episode_reward = 0.0f;
+	env.imitation_accum = 0.0f;
 	env.track_err_accum = 0.0f;
+
+	if (rsi && env.env_index == 0 && env.episode < 3) {
+		const auto* tc = transforms.find(r.pelvis_id);
+		const auto* mc = motions.find(r.pelvis_id);
+		if (tc && mc) {
+			gse::log::println("locomotion_train: RSI env0 ep={} phi={:.3f} pelvis={:.3f} vel={:.3f}", env.episode, rsi->kin.phi, tc->position, mc->current_velocity);
+		}
+	}
 }
 
-auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& cfg, const gse::shared_view<gse::world_system::data> world_d, gse::read<skeleton_refs> refs, gse::read<state> states, gse::write<gse::physics::joint_drive_component> drives, gse::write<gse::physics::transform_component> transforms, gse::write<gse::physics::motion_component> motions) -> gse::async::task<> {
+auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& cfg, const gse::shared_view<gse::world_system::data> world_d, gse::read<skeleton_refs> refs, gse::read<state> states, gse::write<gse::physics::joint_drive_component> drives, gse::write<gse::physics::transform_component> transforms, gse::write<gse::physics::motion_component> motions, gse::write<gse::physics::motor_component> motors) -> gse::async::task<> {
 	if (!d.ready) {
 		d.rng.seed(cfg.seed);
 		d.actor = actor_make(cfg.obs_dim, cfg.act_dim, cfg.hidden_dim, d.rng);
@@ -425,6 +557,70 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 		d.actor_opt = actor_adam_make(d.actor);
 		d.critic_opt = critic_adam_make(d.critic);
 		d.buffer = rollout_buffer(cfg.rollout_steps, cfg.obs_dim, cfg.act_dim);
+
+		if (!cfg.reference_clip_path.empty()) {
+			if (auto clip = load_reference_clip(cfg.reference_clip_path)) {
+				d.ref_clip = std::move(*clip);
+				const auto& frames = d.ref_clip.frames;
+				const auto is_walk = [&](const std::size_t i) {
+					const auto fwd = -frames[i].obs.velocity_body.z() / gse::meters_per_second(1.0f);
+					return fwd >= cfg.rsi_min_speed && fwd <= cfg.rsi_max_speed;
+				};
+				const auto continuous = [&](const std::size_t i) {
+					return gse::magnitude(frames[i].kin.pelvis_position - frames[i - 1].kin.pelvis_position) < gse::meters(0.5f);
+				};
+				auto wraps = std::vector<std::size_t>{};
+				for (std::size_t i = 1; i < frames.size(); ++i) {
+					if (frames[i].kin.phi < frames[i - 1].kin.phi - 0.5f) {
+						wraps.push_back(i);
+					}
+				}
+				for (std::size_t k = 0; k + 1 < wraps.size() && !d.cycle_loop; ++k) {
+					const auto cs = wraps[k];
+					const auto ce = wraps[k + 1] - 1;
+					if (ce < cs + 15) {
+						continue;
+					}
+					auto cont = true;
+					auto speed_sum = gse::meters_per_second(0.f);
+					for (std::size_t i = cs; i <= ce; ++i) {
+						if (i > cs && !continuous(i)) {
+							cont = false;
+							break;
+						}
+						speed_sum += -frames[i].obs.velocity_body.z();
+					}
+					if (!cont) {
+						continue;
+					}
+					const auto mean_speed = speed_sum / static_cast<float>(ce - cs + 1) / gse::meters_per_second(1.0f);
+					if (mean_speed >= cfg.rsi_min_speed && mean_speed <= cfg.rsi_max_speed) {
+						d.cycle_start = cs;
+						d.cycle_end = ce;
+						d.cycle_loop = true;
+					}
+				}
+				if (d.cycle_loop) {
+					for (std::size_t i = d.cycle_start; i <= d.cycle_end; ++i) {
+						d.rsi_frames.push_back(i);
+					}
+					gse::log::println("locomotion_train: RSI clean walk cycle [{},{}] len={} phi=[{:.3f},{:.3f}] (looping)", d.cycle_start, d.cycle_end, d.cycle_end - d.cycle_start + 1, frames[d.cycle_start].kin.phi, frames[d.cycle_end].kin.phi);
+				}
+				else {
+					for (std::size_t i = 0; i < frames.size(); ++i) {
+						if (is_walk(i)) {
+							d.rsi_frames.push_back(i);
+						}
+					}
+					gse::log::println("locomotion_train: RSI no clean cycle — using {} scattered walk frames (no loop)", d.rsi_frames.size());
+				}
+				d.rsi_enabled = !d.rsi_frames.empty();
+			}
+			else {
+				gse::log::println("locomotion_train: RSI clip '{}' FAILED to load — using neutral-spawn reset", cfg.reference_clip_path);
+			}
+		}
+
 		d.ready = true;
 	}
 
@@ -463,6 +659,16 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 			continue;
 		}
 
+		const state* os_ptr = s;
+		if (cfg.obs_lag > 0) {
+			env.lag_ring.push_back(*s);
+			while (env.lag_ring.size() > static_cast<std::size_t>(cfg.obs_lag) + 1) {
+				env.lag_ring.pop_front();
+			}
+			os_ptr = &env.lag_ring.front();
+		}
+		const state& os = *os_ptr;
+
 		if (!env.snapshot_taken) {
 			take_env_snapshot(env, *r, transforms);
 		}
@@ -479,7 +685,18 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 		cmd.strafe = env.cmd_strafe / gse::meters_per_second(1.0f);
 		cmd.has_heading = true;
 		cmd.desired_yaw = gse::radians(0.f);
-		pack_observation(observe(*s, cmd, gait{}, 0.0f), env.obs_buf);
+		const auto rsi_tracking = env.rsi_active && env.ref_index < d.ref_clip.frames.size();
+		const auto ref_phi = rsi_tracking ? d.ref_clip.frames[env.ref_index].kin.phi : 0.0f;
+		pack_observation(observe(os, cmd, gait{}, ref_phi), env.obs_buf);
+
+		if (auto* mot = motors.find(env.owner_id)) {
+			const auto denom = static_cast<float>(std::max(1, cfg.motor_assist_updates));
+			const auto progress = std::min(1.0f, static_cast<float>(d.update_count) / denom);
+			const auto forward = horizontal_axis(os.pelvis_forward);
+			const auto right = horizontal_axis(os.pelvis_right);
+			mot->velocity_drive_target = forward * env.cmd_forward + right * env.cmd_strafe;
+			mot->max_force = env.reset_gate == 0 ? gse::newtons(cfg.motor_assist_force * (1.0f - progress)) : gse::newtons(0.f);
+		}
 
 		// The GPU solver is authoritative and the readback lags the solve by a few
 		// ticks, so a per-env reset is not observable in `state` for several ticks
@@ -488,7 +705,7 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 		// height), otherwise episode_done fires on the stale pre-reset state.
 		if (env.reset_gate > 0) {
 			apply_action(action{}, *r, drives);
-			if (s->pelvis_position.y() >= gse::meters(0.9f)) {
+			if (os.pelvis_position.y() >= gse::meters(0.9f)) {
 				env.reset_gate = 0;
 			}
 			else {
@@ -498,8 +715,27 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 		}
 
 		if (env.has_prev) {
-			const auto reward = compute_reward(*s, env.cmd_forward, env.cmd_strafe);
-			const auto done = episode_done(*s, env.episode_steps, cfg.max_steps);
+			auto energy = 0.0f;
+			auto smooth = 0.0f;
+			for (std::size_t i = 0; i < cfg.act_dim; ++i) {
+				const auto a = env.action_buf[i];
+				const auto da = a - env.prev_action_buf[i];
+				energy += a * a;
+				smooth += da * da;
+			}
+			const auto inv_act = 1.0f / static_cast<float>(cfg.act_dim);
+			const auto imit_q = rsi_tracking
+				? compute_imitation_reward(os, d.ref_clip.frames[env.ref_index], cfg)
+				: 0.0f;
+			const auto imitation = cfg.r_imitation * imit_q;
+			const auto reward = compute_reward(os, env.cmd_forward, env.cmd_strafe, r->pelvis_target_height, cfg)
+				+ imitation
+				- cfg.r_energy * energy * inv_act
+				- cfg.r_smooth * smooth * inv_act;
+			auto done = episode_done(os, env.episode_steps, cfg.max_steps);
+			if (rsi_tracking && env.episode_steps >= cfg.imitation_term_grace && imit_q < cfg.imitation_term_threshold) {
+				done = true;
+			}
 
 			mlp_forward(d.critic, env.obs_buf, env.vh1_buf, env.vh2_buf, std::span(&env.val_buf, 1));
 			env.bootstrap = done ? 0.0f : env.val_buf;
@@ -520,21 +756,31 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 			}
 
 			env.episode_reward += reward;
-			const auto err_fwd = (-s->velocity_body.z() - env.cmd_forward) / gse::meters_per_second(1.0f);
-			const auto err_right = (s->velocity_body.x() - env.cmd_strafe) / gse::meters_per_second(1.0f);
+			env.imitation_accum += imitation;
+			const auto err_fwd = (-os.velocity_body.z() - env.cmd_forward) / gse::meters_per_second(1.0f);
+			const auto err_right = (os.velocity_body.x() - env.cmd_strafe) / gse::meters_per_second(1.0f);
 			env.track_err_accum += std::sqrt(err_fwd * err_fwd + err_right * err_right);
 			++env.episode_steps;
 
 			if (done) {
 				gse::log::println(
-					"locomotion_train: ep={} steps={} reward={:.2f} track_err={:.3f} total_steps={}",
+					"locomotion_train: ep={} steps={} reward={:.2f} imit={:.3f} track_err={:.3f} total_steps={}",
 					env.episode,
 					env.episode_steps,
 					env.episode_reward,
+					env.imitation_accum / static_cast<float>(env.episode_steps),
 					env.track_err_accum / static_cast<float>(env.episode_steps),
 					d.total_steps
 				);
-				reset_env(env, *r, transforms, motions, drives);
+				const reference_frame* rsi = nullptr;
+				if (d.rsi_enabled && !d.rsi_frames.empty()) {
+					auto pick = std::uniform_int_distribution<std::size_t>(0, d.rsi_frames.size() - 1);
+					const auto fi = d.rsi_frames[pick(d.rng)];
+					rsi = &d.ref_clip.frames[fi];
+					env.ref_index = fi;
+				}
+				reset_env(env, *r, transforms, motions, drives, rsi);
+				env.rsi_active = (rsi != nullptr);
 				sample_command(env, d.rng);
 				++env.episode;
 				++d.episode;
@@ -545,13 +791,32 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 		mlp_forward(d.actor.net, env.obs_buf, env.ah1_buf, env.ah2_buf, env.mean_buf);
 		mlp_forward(d.critic, env.obs_buf, env.vh1_buf, env.vh2_buf, std::span(&env.val_buf, 1));
 
+		std::ranges::copy(env.action_buf, env.prev_action_buf.begin());
 		const auto log_prob = gaussian_sample(env.mean_buf, d.actor.log_std, env.action_buf, d.rng);
-		apply_action(unpack_action(env.action_buf), *r, drives);
+		if (cfg.action_scale == 1.0f) {
+			apply_action(unpack_action(env.action_buf), *r, drives);
+		}
+		else {
+			auto scaled = env.action_buf;
+			for (auto& a : scaled) {
+				a *= cfg.action_scale;
+			}
+			apply_action(unpack_action(scaled), *r, drives);
+		}
 
 		std::ranges::copy(env.obs_buf, env.prev_obs_buf.begin());
 		env.prev_log_prob = log_prob;
 		env.prev_value = env.val_buf;
 		env.has_prev = true;
+
+		if (env.rsi_active) {
+			if (d.cycle_loop) {
+				env.ref_index = env.ref_index >= d.cycle_end ? d.cycle_start : env.ref_index + 1;
+			}
+			else if (env.ref_index + 1 < d.ref_clip.frames.size()) {
+				++env.ref_index;
+			}
+		}
 	}
 
 	if (d.buffer.full()) {

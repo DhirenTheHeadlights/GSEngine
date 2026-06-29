@@ -17,6 +17,9 @@ namespace gs::startup {
 		bool use_gpu_solver = false;
 		bool physics_parity = false;
 		std::size_t physics_parity_envs = 1;
+		float action_scale = 1.0f;
+		bool locomotion_clip_info = false;
+		std::string reference_clip_path;
 	};
 
 	auto run_game(
@@ -32,6 +35,10 @@ namespace gs::startup {
 	) -> void;
 
 	auto run_physics_parity(
+		const config& cfg
+	) -> void;
+
+	auto run_locomotion_clip_info(
 		const config& cfg
 	) -> void;
 
@@ -98,6 +105,8 @@ auto gs::startup::run_locomotion_smoke(const config& cfg) -> void {
 auto gs::startup::run_locomotion_train(const config& cfg) -> void {
 	gse::system_clock::set_fixed_step_override(1);
 	auto ppo = cfg.ppo;
+	ppo.action_scale = cfg.action_scale;
+	ppo.reference_clip_path = cfg.reference_clip_path;
 	gse::start(
 		[&ppo](gse::engine& e) -> void {
 			gse::system_manifest<^^gs::locomotion::state_estimator::data, ^^gs::locomotion::state_estimator::run>{}.register_with(e);
@@ -141,10 +150,50 @@ auto gs::startup::run_physics_parity(const config& cfg) -> void {
 	gse::system_clock::set_fixed_step_override(std::nullopt);
 }
 
+auto gs::startup::run_locomotion_clip_info(const config& cfg) -> void {
+	const auto clip = gs::locomotion::load_reference_clip(cfg.locomotion_record_path);
+	if (!clip) {
+		gse::log::println("clip_info: FAILED to load '{}' (missing, bad magic/version, or layout-hash mismatch)", cfg.locomotion_record_path);
+		return;
+	}
+	const auto& frames = clip->frames;
+	const auto n = frames.size();
+	auto phi_min = frames[0].kin.phi;
+	auto phi_max = frames[0].kin.phi;
+	auto y_min = frames[0].kin.pelvis_position.y();
+	auto y_max = frames[0].kin.pelvis_position.y();
+	auto fwd_sum = gse::meters_per_second(0.f);
+	auto fwd_max = gse::meters_per_second(0.f);
+	auto moving = 0;
+	for (const auto& f : frames) {
+		phi_min = std::min(phi_min, f.kin.phi);
+		phi_max = std::max(phi_max, f.kin.phi);
+		y_min = std::min(y_min, f.kin.pelvis_position.y());
+		y_max = std::max(y_max, f.kin.pelvis_position.y());
+		const auto fwd = -f.obs.velocity_body.z();
+		fwd_sum += fwd;
+		fwd_max = std::max(fwd_max, fwd);
+		if (fwd > gse::meters_per_second(0.15f)) {
+			++moving;
+		}
+	}
+	gse::log::println("clip_info: frames={} dt={:.4f} bone_count={}", n, clip->dt, clip->bone_count);
+	gse::log::println("clip_info: phi=[{:.3f},{:.3f}] pelvis_y=[{:.3f},{:.3f}] fwd_speed mean={:.3f} max={:.3f} moving(>0.15)={}/{}",
+		phi_min, phi_max, y_min, y_max, fwd_sum / static_cast<float>(n), fwd_max, moving, n);
+	if (!frames[0].bones.empty()) {
+		gse::log::println("clip_info: frame0 kin.pelvis={:.3f} bones[0].pos={:.3f} (should match)",
+			frames[0].kin.pelvis_position, frames[0].bones[0].position);
+	}
+}
+
 auto main(int argc, char** argv) -> int {
 	const auto cfg = gse::parse_args<gs::startup::config>(argc, argv);
 	if (cfg.locomotion_selftest) {
 		return gs::locomotion::locomotion_selftest() ? 0 : 1;
+	}
+	if (cfg.locomotion_clip_info) {
+		gs::startup::run_locomotion_clip_info(cfg);
+		return 0;
 	}
 	if (cfg.physics_parity) {
 		gs::startup::run_physics_parity(cfg);
