@@ -2,6 +2,8 @@ export module gs:locomotion_nn;
 
 import std;
 
+import gse;
+
 export namespace gs::locomotion {
 	struct nn_layer {
 		std::size_t in_features = 0;
@@ -122,6 +124,29 @@ export namespace gs::locomotion {
 		mlp& critic,
 		std::string_view path
 	) -> bool;
+
+	struct disc_metrics {
+		float loss = 0.0f;
+		float mean_real = 0.0f;
+		float mean_fake = 0.0f;
+		float r1 = 0.0f;
+	};
+
+	auto discriminator_update(
+		mlp& net,
+		critic_adam& opt,
+		std::mdspan<const float, std::dextents<std::size_t, 2>> real,
+		std::mdspan<const float, std::dextents<std::size_t, 2>> fake,
+		float lr,
+		float r1_weight
+	) -> disc_metrics;
+
+	auto discriminator_style_reward(
+		const mlp& net,
+		std::span<const float> transition
+	) -> float;
+
+	auto discriminator_selftest() -> bool;
 }
 
 namespace gs::locomotion {
@@ -183,6 +208,148 @@ namespace gs::locomotion {
 		}
 		vec.resize(sz);
 		return !!in.read(reinterpret_cast<char*>(vec.data()), static_cast<std::streamsize>(sz * sizeof(float)));
+	}
+
+	auto discriminator_input_grad_norm_sq(const mlp& net, std::span<const float> x) -> float {
+		const auto in_dim = net.l1.in_features;
+		const auto hd = net.l1.out_features;
+		auto a1 = std::vector<float>(hd);
+		auto a2 = std::vector<float>(hd);
+		linear(net.l1, x, a1);
+		for (auto& v : a1) {
+			v = std::tanh(v);
+		}
+		linear(net.l2, a1, a2);
+		for (auto& v : a2) {
+			v = std::tanh(v);
+		}
+		auto d_z2 = std::vector<float>(hd);
+		for (std::size_t j = 0; j < hd; ++j) {
+			d_z2[j] = net.l3.weight[j] * (1.0f - a2[j] * a2[j]);
+		}
+		auto d_a1 = std::vector<float>(hd, 0.0f);
+		linear_transpose(net.l2, d_z2, d_a1);
+		auto d_z1 = std::vector<float>(hd);
+		for (std::size_t h = 0; h < hd; ++h) {
+			d_z1[h] = d_a1[h] * (1.0f - a1[h] * a1[h]);
+		}
+		auto g = std::vector<float>(in_dim, 0.0f);
+		linear_transpose(net.l1, d_z1, g);
+		auto sumsq = 0.0f;
+		for (const auto v : g) {
+			sumsq += v * v;
+		}
+		return 0.5f * sumsq;
+	}
+
+	auto discriminator_r1_accumulate(const mlp& net, std::span<const float> x, std::span<float> dW1, std::span<float> db1, std::span<float> dW2, std::span<float> db2, std::span<float> dw3) -> float {
+		const auto in_dim = net.l1.in_features;
+		const auto hd = net.l1.out_features;
+		auto a1 = std::vector<float>(hd);
+		auto a2 = std::vector<float>(hd);
+		linear(net.l1, x, a1);
+		for (auto& v : a1) {
+			v = std::tanh(v);
+		}
+		linear(net.l2, a1, a2);
+		for (auto& v : a2) {
+			v = std::tanh(v);
+		}
+		auto s1 = std::vector<float>(hd);
+		auto s2 = std::vector<float>(hd);
+		for (std::size_t i = 0; i < hd; ++i) {
+			s1[i] = 1.0f - a1[i] * a1[i];
+			s2[i] = 1.0f - a2[i] * a2[i];
+		}
+		auto d_z2 = std::vector<float>(hd);
+		for (std::size_t j = 0; j < hd; ++j) {
+			d_z2[j] = net.l3.weight[j] * s2[j];
+		}
+		auto d_a1 = std::vector<float>(hd, 0.0f);
+		linear_transpose(net.l2, d_z2, d_a1);
+		auto d_z1 = std::vector<float>(hd);
+		for (std::size_t h = 0; h < hd; ++h) {
+			d_z1[h] = d_a1[h] * s1[h];
+		}
+		auto g = std::vector<float>(in_dim, 0.0f);
+		linear_transpose(net.l1, d_z1, g);
+
+		auto penalty = 0.0f;
+		for (const auto v : g) {
+			penalty += v * v;
+		}
+		penalty *= 0.5f;
+
+		for (std::size_t h = 0; h < hd; ++h) {
+			const auto dz1h = d_z1[h];
+			auto* row = dW1.data() + h * in_dim;
+			for (std::size_t d = 0; d < in_dim; ++d) {
+				row[d] += dz1h * g[d];
+			}
+		}
+		auto d_z1_bar = std::vector<float>(hd, 0.0f);
+		for (std::size_t h = 0; h < hd; ++h) {
+			const auto* row = net.l1.weight.data() + h * in_dim;
+			auto acc = 0.0f;
+			for (std::size_t d = 0; d < in_dim; ++d) {
+				acc += row[d] * g[d];
+			}
+			d_z1_bar[h] = acc;
+		}
+		auto d_a1_bar = std::vector<float>(hd);
+		auto s1_bar = std::vector<float>(hd);
+		for (std::size_t h = 0; h < hd; ++h) {
+			d_a1_bar[h] = d_z1_bar[h] * s1[h];
+			s1_bar[h] = d_z1_bar[h] * d_a1[h];
+		}
+		auto a1_bar = std::vector<float>(hd);
+		for (std::size_t h = 0; h < hd; ++h) {
+			a1_bar[h] = s1_bar[h] * (-2.0f * a1[h]);
+		}
+		for (std::size_t j = 0; j < hd; ++j) {
+			const auto dz2j = d_z2[j];
+			auto* row = dW2.data() + j * hd;
+			for (std::size_t h = 0; h < hd; ++h) {
+				row[h] += dz2j * d_a1_bar[h];
+			}
+		}
+		auto d_z2_bar = std::vector<float>(hd, 0.0f);
+		for (std::size_t j = 0; j < hd; ++j) {
+			const auto* row = net.l2.weight.data() + j * hd;
+			auto acc = 0.0f;
+			for (std::size_t h = 0; h < hd; ++h) {
+				acc += row[h] * d_a1_bar[h];
+			}
+			d_z2_bar[j] = acc;
+		}
+		for (std::size_t j = 0; j < hd; ++j) {
+			dw3[j] += d_z2_bar[j] * s2[j];
+		}
+		auto z2_bar = std::vector<float>(hd);
+		for (std::size_t j = 0; j < hd; ++j) {
+			const auto s2_bar = d_z2_bar[j] * net.l3.weight[j];
+			const auto a2_bar = s2_bar * (-2.0f * a2[j]);
+			z2_bar[j] = a2_bar * s2[j];
+		}
+		for (std::size_t j = 0; j < hd; ++j) {
+			const auto zb = z2_bar[j];
+			auto* row = dW2.data() + j * hd;
+			for (std::size_t h = 0; h < hd; ++h) {
+				row[h] += zb * a1[h];
+			}
+			db2[j] += zb;
+		}
+		auto a1_bar_fwd = std::vector<float>(hd, 0.0f);
+		linear_transpose(net.l2, z2_bar, a1_bar_fwd);
+		for (std::size_t h = 0; h < hd; ++h) {
+			const auto zb = (a1_bar[h] + a1_bar_fwd[h]) * s1[h];
+			auto* row = dW1.data() + h * in_dim;
+			for (std::size_t d = 0; d < in_dim; ++d) {
+				row[d] += zb * x[d];
+			}
+			db1[h] += zb;
+		}
+		return penalty;
 	}
 }
 
@@ -526,6 +693,255 @@ auto gs::locomotion::ppo_critic_update(mlp& critic, critic_adam& opt, const std:
 	adam_step(opt.l3.m_bias, opt.l3.v_bias, critic.l3.bias, db3, opt.step, lr);
 
 	return total_loss * inv_n;
+}
+
+auto gs::locomotion::discriminator_update(mlp& net, critic_adam& opt, const std::mdspan<const float, std::dextents<std::size_t, 2>> real, const std::mdspan<const float, std::dextents<std::size_t, 2>> fake, const float lr, const float r1_weight) -> disc_metrics {
+	const auto in_dim = net.l1.in_features;
+	const auto hd = net.l1.out_features;
+	const auto total = real.extent(0) + fake.extent(0);
+
+	auto dW1 = std::vector<float>(hd * in_dim, 0.0f);
+	auto db1 = std::vector<float>(hd, 0.0f);
+	auto dW2 = std::vector<float>(hd * hd, 0.0f);
+	auto db2 = std::vector<float>(hd, 0.0f);
+	auto dW3 = std::vector<float>(hd, 0.0f);
+	auto db3 = std::vector<float>(1, 0.0f);
+
+	auto h1 = std::vector<float>(hd);
+	auto h2 = std::vector<float>(hd);
+	auto dh2_pre = std::vector<float>(hd);
+	auto dh1 = std::vector<float>(hd);
+	auto dh1_pre = std::vector<float>(hd);
+
+	auto metrics = disc_metrics{};
+
+	const auto accumulate = [&](const std::mdspan<const float, std::dextents<std::size_t, 2>> batch, const float target) -> float {
+		const auto n = batch.extent(0);
+		auto sum_y = 0.0f;
+		for (std::size_t s = 0; s < n; ++s) {
+			const auto row = std::submdspan(batch, s, std::full_extent);
+			const auto input = std::span<const float>(row.data_handle(), in_dim);
+			auto y = 0.0f;
+			mlp_forward(net, input, h1, h2, std::span(&y, 1));
+			sum_y += y;
+			const auto dval = y - target;
+			metrics.loss += 0.5f * dval * dval;
+
+			for (std::size_t k = 0; k < hd; ++k) {
+				dW3[k] += dval * h2[k];
+			}
+			db3[0] += dval;
+
+			for (std::size_t j = 0; j < hd; ++j) {
+				const auto dh2 = net.l3.weight[j] * dval;
+				dh2_pre[j] = dh2 * (1.0f - h2[j] * h2[j]);
+			}
+			rank1_add(dh2_pre, h1, dW2);
+			std::ranges::transform(db2, dh2_pre, db2.begin(), std::plus{});
+
+			linear_transpose(net.l2, dh2_pre, dh1);
+			for (std::size_t i = 0; i < hd; ++i) {
+				dh1_pre[i] = dh1[i] * (1.0f - h1[i] * h1[i]);
+			}
+			rank1_add(dh1_pre, input, dW1);
+			std::ranges::transform(db1, dh1_pre, db1.begin(), std::plus{});
+		}
+		return n > 0 ? sum_y / static_cast<float>(n) : 0.0f;
+	};
+
+	metrics.mean_real = accumulate(real, 1.0f);
+	metrics.mean_fake = accumulate(fake, -1.0f);
+
+	const auto inv = total > 0 ? 1.0f / static_cast<float>(total) : 0.0f;
+	for (auto& v : dW1) {
+		v *= inv;
+	}
+	for (auto& v : db1) {
+		v *= inv;
+	}
+	for (auto& v : dW2) {
+		v *= inv;
+	}
+	for (auto& v : db2) {
+		v *= inv;
+	}
+	for (auto& v : dW3) {
+		v *= inv;
+	}
+	db3[0] *= inv;
+	metrics.loss *= inv;
+
+	if (r1_weight > 0.0f) {
+		const auto n_real = real.extent(0);
+		auto rW1 = std::vector<float>(hd * in_dim, 0.0f);
+		auto rb1 = std::vector<float>(hd, 0.0f);
+		auto rW2 = std::vector<float>(hd * hd, 0.0f);
+		auto rb2 = std::vector<float>(hd, 0.0f);
+		auto rw3 = std::vector<float>(hd, 0.0f);
+		auto penalty_sum = 0.0f;
+		for (std::size_t s = 0; s < n_real; ++s) {
+			const auto row = std::submdspan(real, s, std::full_extent);
+			const auto input = std::span<const float>(row.data_handle(), in_dim);
+			penalty_sum += discriminator_r1_accumulate(net, input, rW1, rb1, rW2, rb2, rw3);
+		}
+		const auto scale = n_real > 0 ? r1_weight / static_cast<float>(n_real) : 0.0f;
+		for (std::size_t i = 0; i < dW1.size(); ++i) {
+			dW1[i] += scale * rW1[i];
+		}
+		for (std::size_t i = 0; i < db1.size(); ++i) {
+			db1[i] += scale * rb1[i];
+		}
+		for (std::size_t i = 0; i < dW2.size(); ++i) {
+			dW2[i] += scale * rW2[i];
+		}
+		for (std::size_t i = 0; i < db2.size(); ++i) {
+			db2[i] += scale * rb2[i];
+		}
+		for (std::size_t i = 0; i < dW3.size(); ++i) {
+			dW3[i] += scale * rw3[i];
+		}
+		metrics.r1 = n_real > 0 ? penalty_sum / static_cast<float>(n_real) : 0.0f;
+	}
+
+	++opt.step;
+	adam_step(opt.l1.m_weight, opt.l1.v_weight, net.l1.weight, dW1, opt.step, lr);
+	adam_step(opt.l1.m_bias, opt.l1.v_bias, net.l1.bias, db1, opt.step, lr);
+	adam_step(opt.l2.m_weight, opt.l2.v_weight, net.l2.weight, dW2, opt.step, lr);
+	adam_step(opt.l2.m_bias, opt.l2.v_bias, net.l2.bias, db2, opt.step, lr);
+	adam_step(opt.l3.m_weight, opt.l3.v_weight, net.l3.weight, dW3, opt.step, lr);
+	adam_step(opt.l3.m_bias, opt.l3.v_bias, net.l3.bias, db3, opt.step, lr);
+
+	return metrics;
+}
+
+auto gs::locomotion::discriminator_style_reward(const mlp& net, const std::span<const float> transition) -> float {
+	const auto hd = net.l1.out_features;
+	auto h1 = std::vector<float>(hd);
+	auto h2 = std::vector<float>(hd);
+	auto logit = 0.0f;
+	mlp_forward(net, transition, h1, h2, std::span(&logit, 1));
+	const auto shaped = 1.0f - 0.25f * (logit - 1.0f) * (logit - 1.0f);
+	return std::max(0.0f, shaped);
+}
+
+auto gs::locomotion::discriminator_selftest() -> bool {
+	auto ok = true;
+	auto rng = std::mt19937(7777u);
+	const auto in_dim = std::size_t{ 12 };
+	const auto hidden = std::size_t{ 32 };
+	const auto batch = std::size_t{ 64 };
+
+	auto net = mlp_make(in_dim, hidden, 1, 0.1f, rng);
+	auto opt = critic_adam_make(net);
+
+	auto real_dist = std::normal_distribution<float>(1.0f, 0.3f);
+	auto fake_dist = std::normal_distribution<float>(0.0f, 1.5f);
+
+	auto real_buf = std::vector<float>(batch * in_dim);
+	auto fake_buf = std::vector<float>(batch * in_dim);
+	const auto fill = [&rng](std::vector<float>& buf, std::normal_distribution<float>& dist) {
+		for (auto& v : buf) {
+			v = dist(rng);
+		}
+	};
+
+	const auto make_span = [batch, in_dim](const std::vector<float>& buf) {
+		return std::mdspan<const float, std::dextents<std::size_t, 2>>(buf.data(), batch, in_dim);
+	};
+
+	auto first_loss = 0.0f;
+	auto last = disc_metrics{};
+	for (auto it = 0; it < 600; ++it) {
+		fill(real_buf, real_dist);
+		fill(fake_buf, fake_dist);
+		last = discriminator_update(net, opt, make_span(real_buf), make_span(fake_buf), 1e-3f, 0.0f);
+		if (it == 0) {
+			first_loss = last.loss;
+		}
+	}
+
+	const auto separation = last.mean_real - last.mean_fake;
+	const auto sep_loss = last.loss;
+	if (separation < 1.0f) {
+		gse::log::println("discriminator_selftest: FAIL separation={:.3f} (real={:.3f} fake={:.3f})", separation, last.mean_real, last.mean_fake);
+		ok = false;
+	}
+	if (sep_loss >= first_loss) {
+		gse::log::println("discriminator_selftest: FAIL loss did not decrease ({:.3f} -> {:.3f})", first_loss, sep_loss);
+		ok = false;
+	}
+
+	auto real_sample = std::vector<float>(in_dim, 1.0f);
+	auto fake_sample = std::vector<float>(in_dim, 0.0f);
+	const auto r_real = discriminator_style_reward(net, real_sample);
+	const auto r_fake = discriminator_style_reward(net, fake_sample);
+	if (r_real <= r_fake) {
+		gse::log::println("discriminator_selftest: FAIL style reward not ordered (real={:.3f} fake={:.3f})", r_real, r_fake);
+		ok = false;
+	}
+
+	auto worst = 0.0f;
+	{
+		auto grng = std::mt19937(2024u);
+		const auto gdim = std::size_t{ 8 };
+		const auto ghid = std::size_t{ 16 };
+		auto gnet = mlp_make(gdim, ghid, 1, 0.6f, grng);
+		auto coord = std::normal_distribution<float>(0.0f, 1.0f);
+		auto x = std::vector<float>(gdim);
+		for (auto& v : x) {
+			v = coord(grng);
+		}
+		auto dW1 = std::vector<float>(ghid * gdim, 0.0f);
+		auto db1 = std::vector<float>(ghid, 0.0f);
+		auto dW2 = std::vector<float>(ghid * ghid, 0.0f);
+		auto db2 = std::vector<float>(ghid, 0.0f);
+		auto dw3 = std::vector<float>(ghid, 0.0f);
+		discriminator_r1_accumulate(gnet, x, dW1, db1, dW2, db2, dw3);
+
+		const auto eps = 1e-3f;
+		const auto check = [&](std::vector<float>& param, std::span<const float> analytic) -> float {
+			auto diff_sq = 0.0f;
+			auto num_sq = 0.0f;
+			auto ana_sq = 0.0f;
+			for (std::size_t i = 0; i < param.size(); ++i) {
+				const auto orig = param[i];
+				param[i] = orig + eps;
+				const auto pp = discriminator_input_grad_norm_sq(gnet, x);
+				param[i] = orig - eps;
+				const auto pm = discriminator_input_grad_norm_sq(gnet, x);
+				param[i] = orig;
+				const auto numeric = (pp - pm) / (2.0f * eps);
+				const auto d = numeric - analytic[i];
+				diff_sq += d * d;
+				num_sq += numeric * numeric;
+				ana_sq += analytic[i] * analytic[i];
+			}
+			return std::sqrt(diff_sq) / (std::sqrt(num_sq) + std::sqrt(ana_sq) + 1e-6f);
+		};
+		const auto e_w1 = check(gnet.l1.weight, dW1);
+		const auto e_b1 = check(gnet.l1.bias, db1);
+		const auto e_w2 = check(gnet.l2.weight, dW2);
+		const auto e_b2 = check(gnet.l2.bias, db2);
+		const auto e_w3 = check(gnet.l3.weight, dw3);
+		worst = std::max({ e_w1, e_b1, e_w2, e_b2, e_w3 });
+		gse::log::println("discriminator_selftest: R1 grad check (l2-rel) W1={:.5f} b1={:.5f} W2={:.5f} b2={:.5f} w3={:.5f}", e_w1, e_b1, e_w2, e_b2, e_w3);
+		if (worst > 1e-2f) {
+			ok = false;
+		}
+	}
+
+	for (auto it = 0; it < 100; ++it) {
+		fill(real_buf, real_dist);
+		fill(fake_buf, fake_dist);
+		last = discriminator_update(net, opt, make_span(real_buf), make_span(fake_buf), 1e-3f, 1.0f);
+	}
+	if (!std::isfinite(last.mean_real) || !std::isfinite(last.mean_fake) || !std::isfinite(last.r1)) {
+		gse::log::println("discriminator_selftest: FAIL R1 update non-finite (real={} fake={} r1={})", last.mean_real, last.mean_fake, last.r1);
+		ok = false;
+	}
+
+	gse::log::println("discriminator_selftest: {} sep={:.3f} loss {:.3f}->{:.3f} style={:.3f}/{:.3f} r1_grad_l2_rel={:.5f} r1_on(real={:.3f} fake={:.3f} r1={:.4f})", ok ? "PASS" : "FAIL", separation, first_loss, sep_loss, r_real, r_fake, worst, last.mean_real, last.mean_fake, last.r1);
+	return ok;
 }
 
 auto gs::locomotion::checkpoint_save(const actor_params& actor, const mlp& critic, const std::string_view path) -> bool {

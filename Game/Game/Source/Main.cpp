@@ -245,7 +245,10 @@ auto gs::startup::run_locomotion_play(const config& cfg) -> void {
 auto main(int argc, char** argv) -> int {
 	const auto cfg = gse::parse_args<gs::startup::config>(argc, argv);
 	if (cfg.locomotion_selftest) {
-		return gs::locomotion::locomotion_selftest() ? 0 : 1;
+		const auto mdp_ok = gs::locomotion::locomotion_selftest();
+		const auto amp_ok = gs::locomotion::amp_selftest();
+		const auto disc_ok = gs::locomotion::discriminator_selftest();
+		return mdp_ok && amp_ok && disc_ok ? 0 : 1;
 	}
 	if (cfg.locomotion_clip_info) {
 		gs::startup::run_locomotion_clip_info(cfg);
