@@ -56,10 +56,10 @@ export namespace gs::locomotion {
 		int imitation_term_grace = 5;
 		float w_task = 1.0f;
 		float w_style = 2.0f;
-		float disc_lr = 1e-4f;
-		float disc_r1_weight = 5.0f;
+		float disc_lr = 2e-5f;
+		float disc_r1_weight = 8.0f;
 		std::size_t disc_batch = 256;
-		int disc_updates = 2;
+		int disc_updates = 1;
 	};
 
 	struct rollout_buffer {
@@ -793,6 +793,7 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 	if (!d.ready) {
 		gse::watchdog::stop();
 		gse::log::println("locomotion_train: watchdog disabled (the PPO+discriminator update tick exceeds the 500ms scheduler-wait budget by design)");
+		gse::log::println("locomotion_train: AMP config w_task={:.2f} w_style={:.2f} disc_lr={:.2e} disc_r1={:.1f} disc_batch={} disc_updates={} lr={:.2e} entropy={:.4f}", cfg.w_task, cfg.w_style, cfg.disc_lr, cfg.disc_r1_weight, cfg.disc_batch, cfg.disc_updates, cfg.lr, cfg.entropy_coeff);
 		d.rng.seed(cfg.seed);
 		d.actor = actor_make(cfg.obs_dim, cfg.act_dim, cfg.hidden_dim, d.rng);
 		d.critic = mlp_make(cfg.obs_dim, cfg.hidden_dim, 1, 1.0f, d.rng);
