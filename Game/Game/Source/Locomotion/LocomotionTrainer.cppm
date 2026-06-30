@@ -39,6 +39,9 @@ export namespace gs::locomotion {
 		int obs_lag = 0;
 		float action_scale = 1.0f;
 		bool resume = false;
+		float perturb_impulse = 0.0f;
+		int perturb_interval = 45;
+		int perturb_grace = 25;
 		std::string reference_clip_path = "";
 		float rsi_min_speed = 0.15f;
 		float rsi_max_speed = 0.65f;
@@ -101,6 +104,8 @@ export namespace gs::locomotion {
 		int reset_gate = 0;
 		int episode = 0;
 		int episode_steps = 0;
+		int perturb_timer = 0;
+		int recover_grace = 0;
 		std::size_t ref_index = 0;
 		bool rsi_active = false;
 		float episode_reward = 0.0f;
@@ -884,7 +889,7 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 				- cfg.r_energy * energy * inv_act
 				- cfg.r_smooth * smooth * inv_act;
 			auto done = episode_done(os, env.episode_steps, cfg.max_steps);
-			if (rsi_tracking && env.episode_steps >= cfg.imitation_term_grace && imit_q < cfg.imitation_term_threshold) {
+			if (rsi_tracking && env.episode_steps >= cfg.imitation_term_grace && imit_q < cfg.imitation_term_threshold && env.recover_grace == 0) {
 				done = true;
 			}
 
@@ -932,6 +937,8 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 				}
 				reset_env(env, *r, transforms, motions, drives, rsi);
 				env.rsi_active = (rsi != nullptr);
+				env.perturb_timer = cfg.perturb_interval;
+				env.recover_grace = 0;
 				sample_command(env, d.rng, d.cycle_loop, d.cycle_speed);
 				++env.episode;
 				++d.episode;
@@ -959,6 +966,21 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 		env.prev_log_prob = log_prob;
 		env.prev_value = env.val_buf;
 		env.has_prev = true;
+
+		if (env.recover_grace > 0) {
+			--env.recover_grace;
+		}
+		if (cfg.perturb_impulse > 0.0f && --env.perturb_timer <= 0) {
+			auto angle_dist = std::uniform_real_distribution<float>(0.0f, 2.0f * std::numbers::pi_v<float>);
+			const auto theta = angle_dist(d.rng);
+			const auto mag = gse::newton_seconds(cfg.perturb_impulse);
+			ctx.channels.push<gse::physics::impulse_request>({
+				.target = r->pelvis_id,
+				.impulse = gse::vec3<gse::impulse>(mag * std::cos(theta), gse::newton_seconds(0.0f), mag * std::sin(theta)),
+			});
+			env.perturb_timer = cfg.perturb_interval;
+			env.recover_grace = cfg.perturb_grace;
+		}
 
 		if (env.rsi_active) {
 			if (d.cycle_loop) {
