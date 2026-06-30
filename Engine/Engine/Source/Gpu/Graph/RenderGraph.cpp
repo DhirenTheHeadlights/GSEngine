@@ -10,7 +10,9 @@ import :transient_pool;
 import :image;
 import :pass_recorder;
 import :command_dispatch;
+import :backend_state;
 
+import gse.gpu_backend;
 import gse.assert;
 import gse.core;
 import gse.containers;
@@ -426,8 +428,8 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 					if (pass.depth_output->op == load_op::load) {
 						note(
 							depth_ref,
-							gpu::pipeline_stage_flag::early_fragment_tests,
-							gpu::access_flag::depth_stencil_attachment_read
+							gpu::pipeline_stage_flag::early_fragment_tests | gpu::pipeline_stage_flag::late_fragment_tests,
+							gpu::access_flag::depth_stencil_attachment_read | gpu::access_flag::depth_stencil_attachment_write
 						);
 					}
 					else {
@@ -923,6 +925,18 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 						prev.resource,
 						prev.stages,
 						prev.access,
+						cur_stage,
+						cur_access,
+						memory_out,
+						buffer_out,
+						image_out
+					);
+				}
+				else if (active_backend == gpu_backend_kind::dx12 && cur_resource.type == resource_type::image) {
+					append_barrier_for_resource(
+						cur_resource,
+						{},
+						{},
 						cur_stage,
 						cur_access,
 						memory_out,

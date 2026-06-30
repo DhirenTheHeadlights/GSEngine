@@ -44,7 +44,7 @@ gse::gpu::recording_context::recording_context(recording_context_init&& init)
 }
 
 gse::gpu::recording_context::recording_context(recording_context&& other) noexcept
-	: m_recorder(other.m_recorder), m_pass(other.m_pass), m_transient_pool(other.m_transient_pool), m_device(other.m_device), m_touched(std::move(other.m_touched)), m_origin_thread(other.m_origin_thread), m_state_cache(other.m_state_cache), m_bindless_heaps_valid(other.m_bindless_heaps_valid) {
+	: m_recorder(other.m_recorder), m_pass(other.m_pass), m_transient_pool(other.m_transient_pool), m_device(other.m_device), m_touched(std::move(other.m_touched)), m_image_states(std::move(other.m_image_states)), m_origin_thread(other.m_origin_thread), m_state_cache(other.m_state_cache), m_bindless_heaps_valid(other.m_bindless_heaps_valid) {
 	if (tl_active_recording_context == &other) {
 		tl_active_recording_context = this;
 	}
@@ -77,6 +77,7 @@ auto gse::gpu::recording_context::operator=(recording_context&& other) noexcept 
 		m_transient_pool = other.m_transient_pool;
 		m_device = other.m_device;
 		m_touched = std::move(other.m_touched);
+		m_image_states = std::move(other.m_image_states);
 		m_origin_thread = other.m_origin_thread;
 		m_state_cache = other.m_state_cache;
 		m_bindless_heaps_valid = other.m_bindless_heaps_valid;
@@ -187,15 +188,13 @@ auto gse::gpu::recording_context::ensure_descriptor_heaps() -> void {
 
 auto gse::gpu::recording_context::sample_image(const image& img, const gpu::pipeline_stage_flags stages) -> void {
 	check_active();
-	note_touched(
-		{
-			.ptr = std::bit_cast<const void*>(img.handle()),
-			.type = resource_type::image,
-			.aspects = gpu::image_aspect_for(img.format()),
-		},
-		stages,
-		gpu::access_flag::shader_sampled_read
-	);
+	const resource_ref ref{
+		.ptr = std::bit_cast<const void*>(img.handle()),
+		.type = resource_type::image,
+		.aspects = gpu::image_aspect_for(img.format()),
+	};
+	note_touched(ref, stages, gpu::access_flag::shader_sampled_read);
+	transition_image_for_binding(ref, gpu::resource_state::sampled, stages, gpu::access_flag::shader_sampled_read);
 }
 
 auto gse::gpu::recording_context::note_touched(const resource_ref ref, const gpu::pipeline_stage_flags stages, const gpu::access_flags access) -> void {
@@ -216,9 +215,49 @@ auto gse::gpu::recording_context::note_touched(const resource_ref ref, const gpu
 	});
 }
 
+auto gse::gpu::recording_context::transition_image_for_binding(const resource_ref& ref, const gpu::resource_state target, const gpu::pipeline_stage_flags stages, const gpu::access_flags access) -> void {
+	if (active_backend != gpu_backend_kind::dx12 || ref.type != resource_type::image || !ref.ptr) {
+		return;
+	}
+	const auto it = m_image_states.find(ref.ptr);
+	if (it == m_image_states.end()) {
+		m_image_states.emplace(ref.ptr, image_state_track{ .aspects = ref.aspects, .first = target, .current = target });
+		return;
+	}
+	if (it->second.current == target) {
+		return;
+	}
+	const gpu::image_barrier barrier{
+		.src_stages = stages,
+		.dst_stages = stages,
+		.dst_access = access,
+		.prev_state = it->second.current,
+		.next_state = target,
+		.image = std::bit_cast<gpu::handle<gpu::image>>(ref.ptr),
+		.aspects = it->second.aspects,
+	};
+	m_recorder.pipeline_barrier(gpu::dependency_info{ .image_barriers = std::span(&barrier, 1) });
+	it->second.current = target;
+}
+
 auto gse::gpu::recording_context::finalize_pass() -> void {
 	if (!m_pass) {
 		return;
+	}
+
+	if (active_backend == gpu_backend_kind::dx12 && m_recorder.valid()) {
+		for (const auto& [ptr, track] : m_image_states) {
+			if (track.current == track.first) {
+				continue;
+			}
+			const gpu::image_barrier barrier{
+				.prev_state = track.current,
+				.next_state = track.first,
+				.image = std::bit_cast<gpu::handle<gpu::image>>(ptr),
+				.aspects = track.aspects,
+			};
+			m_recorder.pipeline_barrier(gpu::dependency_info{ .image_barriers = std::span(&barrier, 1) });
+		}
 	}
 
 	constexpr gpu::access_flags write_mask = gpu::access_flag::shader_write | gpu::access_flag::shader_storage_write |

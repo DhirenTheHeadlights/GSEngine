@@ -7,6 +7,7 @@ module;
 #include <directx/d3dx12_pipeline_state_stream.h>
 
 __CRT_UUID_DECL(ID3D12Debug, 0x344488b7, 0x6846, 0x474b, 0xb9, 0x89, 0xf0, 0x27, 0x44, 0x82, 0x45, 0xe0)
+__CRT_UUID_DECL(ID3D12Debug1, 0xaffaa4ca, 0x63fe, 0x4d8e, 0xb8, 0xad, 0x15, 0x90, 0x00, 0xaf, 0x43, 0x04)
 __CRT_UUID_DECL(ID3D12InfoQueue, 0x0742a90b, 0xc387, 0x483f, 0xb9, 0x46, 0x30, 0xa7, 0xe4, 0xe6, 0x14, 0x58)
 __CRT_UUID_DECL(ID3D12Device, 0x189819f1, 0x1db6, 0x4b57, 0xbe, 0x54, 0x18, 0x21, 0x33, 0x9b, 0x85, 0xf7)
 __CRT_UUID_DECL(ID3D12CommandQueue, 0x0ec870a6, 0x5d7e, 0x4c22, 0x8c, 0xfc, 0x5b, 0xaa, 0xe0, 0x76, 0x16, 0xed)
@@ -31,6 +32,7 @@ export namespace gse::directx {
 	using ::ID3D12CommandAllocator;
 	using ::ID3D12CommandQueue;
 	using ::ID3D12Debug;
+	using ::ID3D12Debug1;
 	using ::ID3D12InfoQueue;
 	using ::ID3D12DescriptorHeap;
 	using ::ID3D12Device;
@@ -86,6 +88,7 @@ export namespace gse::directx {
 	constexpr auto resource_state_copy_source = D3D12_RESOURCE_STATE_COPY_SOURCE;
 	constexpr auto resource_state_shader_resource = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 	constexpr auto resource_state_raytracing_acceleration_structure = D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE;
+	constexpr auto resource_state_indirect_argument = D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT;
 	constexpr auto resource_barrier_all_subresources = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
 
 	constexpr auto dimension_texture_2d = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
@@ -190,7 +193,13 @@ export namespace gse::directx {
 		T* m_ptr = nullptr;
 	};
 
-	auto enable_debug_layer() -> void;
+	auto enable_debug_layer() -> bool;
+
+	auto set_resource_name(
+		ID3D12Resource* resource,
+		const char* name,
+		std::size_t length
+	) -> void;
 
 	auto disable_debug_break(
 		ID3D12Device* device
@@ -481,6 +490,15 @@ export namespace gse::directx {
 		D3D12_CPU_DESCRIPTOR_HANDLE handle
 	) -> void;
 
+	auto create_structured_buffer_uav(
+		ID3D12Device* device,
+		ID3D12Resource* resource,
+		std::uint32_t first_element,
+		std::uint32_t num_elements,
+		std::uint32_t stride,
+		D3D12_CPU_DESCRIPTOR_HANDLE handle
+	) -> void;
+
 	auto create_structured_buffer_srv(
 		ID3D12Device* device,
 		ID3D12Resource* resource,
@@ -672,12 +690,29 @@ auto gse::directx::com_ptr<T>::put() -> T** {
 	return &m_ptr;
 }
 
-auto gse::directx::enable_debug_layer() -> void {
+auto gse::directx::enable_debug_layer() -> bool {
 	ID3D12Debug* debug = nullptr;
-	if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debug)))) {
+	if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debug))) && debug) {
 		debug->EnableDebugLayer();
 		debug->Release();
 	}
+	ID3D12Debug1* debug1 = nullptr;
+	if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debug1))) && debug1) {
+		debug1->SetEnableGPUBasedValidation(TRUE);
+		debug1->Release();
+		return true;
+	}
+	return false;
+}
+
+auto gse::directx::set_resource_name(ID3D12Resource* resource, const char* name, const std::size_t length) -> void {
+	if (!resource || !name || length == 0) {
+		return;
+	}
+	wchar_t wide[256];
+	const int written = MultiByteToWideChar(CP_UTF8, 0, name, static_cast<int>(length), wide, 255);
+	wide[written > 0 ? written : 0] = L'\0';
+	resource->SetName(wide);
 }
 
 auto gse::directx::disable_debug_break(ID3D12Device* device) -> void {
@@ -1314,6 +1349,20 @@ auto gse::directx::create_raw_buffer_uav(ID3D12Device* device, ID3D12Resource* r
 			.FirstElement = first_element,
 			.NumElements = num_elements,
 			.Flags = D3D12_BUFFER_UAV_FLAG_RAW,
+		},
+	};
+	device->CreateUnorderedAccessView(resource, nullptr, &desc, handle);
+}
+
+auto gse::directx::create_structured_buffer_uav(ID3D12Device* device, ID3D12Resource* resource, const std::uint32_t first_element, const std::uint32_t num_elements, const std::uint32_t stride, const D3D12_CPU_DESCRIPTOR_HANDLE handle) -> void {
+	const D3D12_UNORDERED_ACCESS_VIEW_DESC desc = {
+		.Format = DXGI_FORMAT_UNKNOWN,
+		.ViewDimension = D3D12_UAV_DIMENSION_BUFFER,
+		.Buffer = {
+			.FirstElement = first_element,
+			.NumElements = num_elements,
+			.StructureByteStride = stride,
+			.Flags = D3D12_BUFFER_UAV_FLAG_NONE,
 		},
 	};
 	device->CreateUnorderedAccessView(resource, nullptr, &desc, handle);

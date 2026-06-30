@@ -134,6 +134,44 @@ else()
     message(STATUS "Nsight Aftermath SDK not found; GPU crash dumps disabled (enable with vcpkg feature 'aftermath' and NSIGHT_AFTERMATH_SDK env var)")
 endif()
 
+# DirectX 12 Agility SDK: fetch a pinned D3D12 runtime so mesh shaders / SM6.6 bindless behave
+# the same on every machine instead of depending on the OS-shipped runtime. The DX12 backend owns
+# the loader exports (Engine/Source/Dx12/AgilitySdk.cpp); they're force-linked into any exe that
+# links Engine, so application code never touches D3D12. gse_copy_runtime_deps() copies the DLLs
+# into the exe's D3D12/ subfolder. Bump GSE_AGILITY_VERSION (+ GSE_AGILITY_SDK_NUMBER) together.
+if(WIN32)
+    set(GSE_AGILITY_VERSION "1.616.0")
+    set(GSE_AGILITY_SDK_NUMBER 616)
+    set(_agility_root "${CMAKE_BINARY_DIR}/_agility/${GSE_AGILITY_VERSION}")
+    set(_agility_bin "${_agility_root}/build/native/bin/x64")
+    if(NOT EXISTS "${_agility_bin}/D3D12Core.dll")
+        set(_agility_zip "${CMAKE_BINARY_DIR}/_agility/agility-${GSE_AGILITY_VERSION}.zip")
+        message(STATUS "Fetching DirectX 12 Agility SDK ${GSE_AGILITY_VERSION} ...")
+        file(DOWNLOAD
+            "https://www.nuget.org/api/v2/package/Microsoft.Direct3D.D3D12/${GSE_AGILITY_VERSION}"
+            "${_agility_zip}"
+            STATUS _agility_status
+            TLS_VERIFY ON
+        )
+        list(GET _agility_status 0 _agility_code)
+        if(_agility_code EQUAL 0)
+            file(ARCHIVE_EXTRACT INPUT "${_agility_zip}" DESTINATION "${_agility_root}")
+        else()
+            list(GET _agility_status 1 _agility_msg)
+            message(WARNING "Agility SDK download failed (${_agility_msg}); falling back to the OS D3D12 runtime.")
+        endif()
+    endif()
+    if(EXISTS "${_agility_bin}/D3D12Core.dll")
+        set(GSE_AGILITY_BIN_DIR "${_agility_bin}" CACHE INTERNAL "DirectX 12 Agility SDK x64 runtime dir")
+        target_compile_definitions(Engine PRIVATE GSE_D3D12_AGILITY_VERSION=${GSE_AGILITY_SDK_NUMBER})
+        if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+            target_link_options(Engine INTERFACE "-Wl,--undefined=D3D12SDKVersion" "-Wl,--undefined=D3D12SDKPath")
+        else()
+            target_link_options(Engine INTERFACE "/INCLUDE:D3D12SDKVersion" "/INCLUDE:D3D12SDKPath")
+        endif()
+    endif()
+endif()
+
 set(ENGINE_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
 set(BAKED_RESOURCES_PATH "${CMAKE_CURRENT_BINARY_DIR}/Resources/")
 

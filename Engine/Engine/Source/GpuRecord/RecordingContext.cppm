@@ -212,11 +212,18 @@ export namespace gse::gpu {
 			gpu::access_flags access = {};
 		};
 
+		struct image_state_track {
+			gpu::image_aspect_flags aspects = {};
+			gpu::resource_state first = gpu::resource_state::undefined;
+			gpu::resource_state current = gpu::resource_state::undefined;
+		};
+
 		gpu::pass_recorder m_recorder;
 		render_pass_data* m_pass = nullptr;
 		const gpu::transient_pool* m_transient_pool = nullptr;
 		gpu::device* m_device = nullptr;
 		std::vector<touched_resource> m_touched;
+		std::unordered_map<const void*, image_state_track> m_image_states;
 		std::thread::id m_origin_thread;
 		gpu::pipeline_state_cache m_state_cache;
 		bool m_bindless_heaps_valid = false;
@@ -238,6 +245,13 @@ export namespace gse::gpu {
 
 		auto note_touched(
 			resource_ref ref,
+			gpu::pipeline_stage_flags stages,
+			gpu::access_flags access
+		) -> void;
+
+		auto transition_image_for_binding(
+			const resource_ref& ref,
+			gpu::resource_state target,
 			gpu::pipeline_stage_flags stages,
 			gpu::access_flags access
 		) -> void;
@@ -297,6 +311,12 @@ auto gse::gpu::recording_context::register_one_bindless(const Args& args, const 
 				? gpu::access_flag::shader_storage_write
 				: (is_image ? gpu::access_flag::shader_sampled_read : gpu::access_flag::shader_storage_read);
 			note_touched(ref, stages, access);
+			if constexpr (is_image) {
+				constexpr auto target = dtype == gpu::descriptor_type::storage_image
+					? gpu::resource_state::storage_read_write
+					: gpu::resource_state::sampled;
+				transition_image_for_binding(ref, target, stages, access);
+			}
 		}
 	}
 }

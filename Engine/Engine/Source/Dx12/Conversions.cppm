@@ -16,8 +16,8 @@ export namespace gse::dx12 {
 		gpu::image_format fmt
 	) -> directx::DXGI_FORMAT;
 
-	[[nodiscard]] auto state_from_access(
-		gpu::access_flags access
+	[[nodiscard]] auto d3d12_state_of(
+		gpu::resource_state state
 	) -> directx::D3D12_RESOURCE_STATES;
 
 	[[nodiscard]] auto primitive_topology_of(
@@ -58,26 +58,34 @@ auto gse::dx12::srv_format_of(const gpu::image_format fmt) -> directx::DXGI_FORM
 	return dxgi_format_of(fmt);
 }
 
-auto gse::dx12::state_from_access(const gpu::access_flags access) -> directx::D3D12_RESOURCE_STATES {
-	if (access.test(gpu::access_flag::depth_stencil_attachment_write) || access.test(gpu::access_flag::depth_stencil_attachment_read)) {
-		return directx::resource_state_depth_write;
+auto gse::dx12::d3d12_state_of(const gpu::resource_state state) -> directx::D3D12_RESOURCE_STATES {
+	switch (state) {
+		case gpu::resource_state::color_target:
+			return directx::resource_state_render_target;
+		case gpu::resource_state::depth_write:
+			return directx::resource_state_depth_write;
+		case gpu::resource_state::depth_read:
+			return directx::resource_state_depth_read;
+		case gpu::resource_state::sampled:
+		case gpu::resource_state::storage_read:
+			return directx::resource_state_shader_resource;
+		case gpu::resource_state::storage_write:
+		case gpu::resource_state::storage_read_write:
+			return directx::resource_state_unordered_access;
+		case gpu::resource_state::copy_src:
+			return directx::resource_state_copy_source;
+		case gpu::resource_state::copy_dst:
+			return directx::resource_state_copy_dest;
+		case gpu::resource_state::present:
+			return directx::resource_state_present;
+		case gpu::resource_state::indirect:
+			return directx::resource_state_indirect_argument;
+		case gpu::resource_state::acceleration_structure_read:
+		case gpu::resource_state::acceleration_structure_build:
+			return directx::resource_state_raytracing_acceleration_structure;
+		default:
+			return directx::resource_state_common;
 	}
-	if (access.test(gpu::access_flag::color_attachment_write)) {
-		return directx::resource_state_render_target;
-	}
-	if (access.test(gpu::access_flag::shader_storage_write) || access.test(gpu::access_flag::shader_write)) {
-		return directx::resource_state_unordered_access;
-	}
-	if (access.test(gpu::access_flag::transfer_write)) {
-		return directx::resource_state_copy_dest;
-	}
-	if (access.test(gpu::access_flag::transfer_read)) {
-		return directx::resource_state_copy_source;
-	}
-	if (access.test(gpu::access_flag::shader_read) || access.test(gpu::access_flag::shader_sampled_read) || access.test(gpu::access_flag::shader_storage_read)) {
-		return directx::resource_state_shader_resource;
-	}
-	return directx::resource_state_common;
 }
 
 auto gse::dx12::primitive_topology_of(const gpu::topology t) -> directx::D3D12_PRIMITIVE_TOPOLOGY {

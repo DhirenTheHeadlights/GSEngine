@@ -136,7 +136,8 @@ gse::dx12::device::device(const shared_view<window::data> win, const bool enable
 	log::println(log::category::dx12, "ctor begin");
 
 	if (m_validation_enabled) {
-		directx::enable_debug_layer();
+		const bool gpu_validation = directx::enable_debug_layer();
+		log::println(log::category::dx12, "debug layer enabled, gpu-based validation={}", gpu_validation);
 	}
 	m_factory = directx::create_factory();
 	m_device = directx::create_device();
@@ -372,7 +373,7 @@ auto gse::dx12::device::cmd_pipeline_barrier(const gpu::command_buffer_handle cm
 	}
 	static thread_local std::vector<directx::D3D12_RESOURCE_BARRIER> barriers;
 	barriers.clear();
-	barriers.reserve(dep.image_barriers.size() + dep.memory_barriers.size());
+	barriers.reserve(dep.image_barriers.size() + dep.buffer_barriers.size() + dep.memory_barriers.size());
 	for (const auto& mb : dep.memory_barriers) {
 		const auto src = mb.src_access;
 		const auto dst = mb.dst_access;
@@ -394,27 +395,71 @@ auto gse::dx12::device::cmd_pipeline_barrier(const gpu::command_buffer_handle cm
 			},
 		});
 	}
-	for (const auto& ib : dep.image_barriers) {
-		auto* res = std::bit_cast<directx::ID3D12Resource*>(ib.image);
-		if (!res) {
-			continue;
+	{
+		std::unique_lock<std::mutex> map_lock(m_mutex, std::defer_lock);
+		for (const auto& ib : dep.image_barriers) {
+			auto* res = std::bit_cast<directx::ID3D12Resource*>(ib.image);
+			if (!res) {
+				continue;
+			}
+			const auto after = ib.next_state != gpu::resource_state::undefined
+				? d3d12_state_of(ib.next_state)
+				: d3d12_state_of(gpu::state_of(ib.dst_access));
+			directx::D3D12_RESOURCE_STATES before;
+			if (ib.prev_state != gpu::resource_state::undefined) {
+				before = d3d12_state_of(ib.prev_state);
+			}
+			else {
+				if (!map_lock.owns_lock()) {
+					map_lock.lock();
+				}
+				const auto it = m_resource_states.find(res);
+				before = it != m_resource_states.end() ? it->second : directx::resource_state_common;
+				if (before != after) {
+					m_resource_states[res] = after;
+				}
+			}
+			if (before == after) {
+				continue;
+			}
+			barriers.push_back({
+				.Type = directx::barrier_type_transition,
+				.Transition = {
+					.pResource = res,
+					.Subresource = directx::resource_barrier_all_subresources,
+					.StateBefore = before,
+					.StateAfter = after,
+				},
+			});
 		}
-		const auto tracked = m_resource_states.find(res);
-		const auto before = tracked != m_resource_states.end() ? tracked->second : directx::resource_state_common;
-		const auto after = state_from_access(ib.dst_access);
-		if (before == after) {
-			continue;
+		for (const auto& bb : dep.buffer_barriers) {
+			if (bb.src_access.test(gpu::access_flag::host_write)) {
+				continue;
+			}
+			auto* res = std::bit_cast<directx::ID3D12Resource*>(bb.buffer);
+			if (!res) {
+				continue;
+			}
+			const auto after = d3d12_state_of(gpu::state_of(bb.dst_access));
+			if (!map_lock.owns_lock()) {
+				map_lock.lock();
+			}
+			const auto it = m_buffer_states.find(res);
+			const auto before = it != m_buffer_states.end() ? it->second : directx::resource_state_common;
+			if (before == after) {
+				continue;
+			}
+			m_buffer_states[res] = after;
+			barriers.push_back({
+				.Type = directx::barrier_type_transition,
+				.Transition = {
+					.pResource = res,
+					.Subresource = directx::resource_barrier_all_subresources,
+					.StateBefore = before,
+					.StateAfter = after,
+				},
+			});
 		}
-		barriers.push_back({
-			.Type = directx::barrier_type_transition,
-			.Transition = {
-				.pResource = res,
-				.Subresource = directx::resource_barrier_all_subresources,
-				.StateBefore = before,
-				.StateAfter = after,
-			},
-		});
-		m_resource_states[res] = after;
 	}
 	if (!barriers.empty()) {
 		list->ResourceBarrier(static_cast<std::uint32_t>(barriers.size()), barriers.data());
@@ -424,17 +469,31 @@ auto gse::dx12::device::cmd_pipeline_barrier(const gpu::command_buffer_handle cm
 auto gse::dx12::device::cmd_release_swapchain_to_present(const gpu::command_buffer_handle cmd, const gpu::handle<gpu::image> img, gpu::pipeline_stage_flags, gpu::access_flags) -> void {
 	auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(cmd);
 	auto* res = std::bit_cast<directx::ID3D12Resource*>(img);
+	if (!list || !res) {
+		return;
+	}
+	auto before = directx::resource_state_render_target;
+	{
+		const std::lock_guard lock(m_mutex);
+		if (const auto it = m_resource_states.find(res); it != m_resource_states.end()) {
+			before = it->second;
+		}
+		m_resource_states[res] = directx::resource_state_present;
+		m_buffer_states.clear();
+	}
+	if (before == directx::resource_state_present) {
+		return;
+	}
 	const directx::D3D12_RESOURCE_BARRIER b = {
 		.Type = directx::barrier_type_transition,
 		.Transition = {
 			.pResource = res,
 			.Subresource = directx::resource_barrier_all_subresources,
-			.StateBefore = directx::resource_state_render_target,
+			.StateBefore = before,
 			.StateAfter = directx::resource_state_present,
 		},
 	};
 	list->ResourceBarrier(1, &b);
-	m_resource_states[res] = directx::resource_state_present;
 }
 
 auto gse::dx12::device::begin_debug_event(const gpu::command_buffer_handle cmd, const std::string_view label) -> void {
@@ -999,7 +1058,7 @@ auto gse::dx12::device::acceleration_structure_scratch_alignment() const -> gpu:
 	return 256;
 }
 
-auto gse::dx12::device::create_buffer(const gpu::buffer_desc& desc, std::string_view, const std::source_location&) -> gpu::buffer {
+auto gse::dx12::device::create_buffer(const gpu::buffer_desc& desc, const std::string_view tag, const std::source_location&) -> gpu::buffer {
 	const std::lock_guard lock(m_mutex);
 	if (desc.usage.test(gpu::buffer_flag::acceleration_structure_storage) || desc.usage.test(gpu::buffer_flag::acceleration_structure_scratch)) {
 		const auto state = desc.usage.test(gpu::buffer_flag::acceleration_structure_storage)
@@ -1010,6 +1069,7 @@ auto gse::dx12::device::create_buffer(const gpu::buffer_desc& desc, std::string_
 			return {};
 		}
 		auto* as_raw = as_resource.get();
+		directx::set_resource_name(as_raw, tag.data(), tag.size());
 		const auto as_address = directx::gpu_address(as_raw);
 		m_buffer_by_address.emplace(as_address, std::pair{ as_raw, desc.size });
 		m_owned_buffers.push_back(std::move(as_resource));
@@ -1037,6 +1097,7 @@ auto gse::dx12::device::create_buffer(const gpu::buffer_desc& desc, std::string_
 		std::memcpy(mapped, desc.data, desc.size);
 	}
 	auto* raw = resource.get();
+	directx::set_resource_name(raw, tag.data(), tag.size());
 	m_buffer_by_address.emplace(address, std::pair{ raw, desc.size });
 	m_owned_buffers.push_back(std::move(resource));
 
@@ -1046,14 +1107,25 @@ auto gse::dx12::device::create_buffer(const gpu::buffer_desc& desc, std::string_
 		const directx::D3D12_CPU_DESCRIPTOR_HANDLE handle = {
 			.ptr = directx::descriptor_heap_cpu_start(m_resource_heap.get()).ptr + static_cast<std::size_t>(m_buffer_pool.offset(slot)),
 		};
-		if (desc.usage.test(gpu::buffer_flag::byte_address)) {
-			const auto num_elements = static_cast<std::uint32_t>((desc.size + 3) / 4);
-			directx::create_raw_buffer_srv(m_device.get(), raw, 0, num_elements, handle);
+		const bool is_byte_address = desc.usage.test(gpu::buffer_flag::byte_address);
+		const auto raw_elements = static_cast<std::uint32_t>((desc.size + 3) / 4);
+		const auto stride = desc.stride ? desc.stride : desc.size;
+		const auto element_count = static_cast<std::uint32_t>(stride ? desc.size / stride : 1);
+		if (desc.writable) {
+			if (is_byte_address) {
+				directx::create_raw_buffer_uav(m_device.get(), raw, 0, raw_elements, handle);
+			}
+			else {
+				directx::create_structured_buffer_uav(m_device.get(), raw, 0, element_count, static_cast<std::uint32_t>(stride), handle);
+			}
 		}
 		else {
-			const auto stride = desc.stride ? desc.stride : desc.size;
-			const auto element_count = stride ? desc.size / stride : 1;
-			directx::create_structured_buffer_srv(m_device.get(), raw, 0, static_cast<std::uint32_t>(element_count), static_cast<std::uint32_t>(stride), handle);
+			if (is_byte_address) {
+				directx::create_raw_buffer_srv(m_device.get(), raw, 0, raw_elements, handle);
+			}
+			else {
+				directx::create_structured_buffer_srv(m_device.get(), raw, 0, element_count, static_cast<std::uint32_t>(stride), handle);
+			}
 		}
 	}
 
@@ -1066,7 +1138,7 @@ auto gse::dx12::device::create_buffer(const gpu::buffer_desc& desc, std::string_
 	);
 }
 
-auto gse::dx12::device::create_image(const gpu::image_desc& desc, std::string_view) -> gpu::image {
+auto gse::dx12::device::create_image(const gpu::image_desc& desc, const std::string_view tag) -> gpu::image {
 	const std::lock_guard lock(m_mutex);
 	const auto dimension = desc.depth > 1 ? directx::dimension_texture_3d : directx::dimension_texture_2d;
 	const std::uint32_t depth_or_layers = desc.depth > 1 ? desc.depth : 1;
@@ -1092,6 +1164,7 @@ auto gse::dx12::device::create_image(const gpu::image_desc& desc, std::string_vi
 		return {};
 	}
 	auto* raw = resource.get();
+	directx::set_resource_name(raw, tag.data(), tag.size());
 	m_owned_images.push_back(std::move(resource));
 
 	auto view = std::bit_cast<gpu::handle<gpu::image_view>>(raw);

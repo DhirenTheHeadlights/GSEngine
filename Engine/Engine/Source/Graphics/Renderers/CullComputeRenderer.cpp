@@ -147,4 +147,6 @@ auto gse::renderer::cull_compute::frame(context& ctx, shared_view<gpu::context::
 		},
 		vec3u{ normal_count, 1u, 1u }
 	);
+
+	rec.barrier(gpu::barrier_scope::compute_to_indirect);
 }
