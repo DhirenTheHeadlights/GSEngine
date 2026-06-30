@@ -38,6 +38,7 @@ export namespace gs::locomotion {
 		int motor_assist_updates = 500;
 		int obs_lag = 0;
 		float action_scale = 1.0f;
+		bool resume = false;
 		std::string reference_clip_path = "";
 		float rsi_min_speed = 0.15f;
 		float rsi_max_speed = 0.65f;
@@ -735,6 +736,10 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 		d.actor_opt = actor_adam_make(d.actor);
 		d.critic_opt = critic_adam_make(d.critic);
 		d.buffer = rollout_buffer(cfg.rollout_steps, cfg.obs_dim, cfg.act_dim);
+
+		if (cfg.resume && checkpoint_load(d.actor, d.critic, cfg.checkpoint_path)) {
+			gse::log::println("locomotion_train: RESUMED warm-start from '{}'", cfg.checkpoint_path);
+		}
 
 		if (!cfg.reference_clip_path.empty()) {
 			if (auto clip = load_reference_clip(cfg.reference_clip_path)) {
