@@ -105,7 +105,8 @@ auto rebuild_tile_buffers(const shared_view<gpu::context::data> gpu_s, data& d) 
 				.size = index_list_size,
 				.stride = sizeof(std::uint32_t),
 				.usage = gpu::buffer_flag::storage,
-				.bindless = true
+				.bindless = true,
+				.writable = true
 			}
 		);
 
@@ -114,7 +115,8 @@ auto rebuild_tile_buffers(const shared_view<gpu::context::data> gpu_s, data& d) 
 				.size = tile_table_size,
 				.stride = sizeof(std::uint32_t),
 				.usage = gpu::buffer_flag::storage,
-				.bindless = true
+				.bindless = true,
+				.writable = true
 			}
 		);
 	}

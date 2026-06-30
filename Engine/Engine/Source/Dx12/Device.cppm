@@ -442,8 +442,9 @@ export namespace gse::dx12 {
 		std::deque<gfx_template> m_gfx_templates;
 		std::vector<graphics_pso_entry> m_graphics_psos;
 		mutable std::map<std::size_t, directx::DXGI_FORMAT> m_view_format;
-		std::unordered_map<directx::ID3D12Resource*, directx::D3D12_RESOURCE_STATES> m_resource_states;
 		std::unordered_map<directx::ID3D12PipelineState*, std::uint32_t> m_pso_push_size;
+		std::unordered_map<directx::ID3D12Resource*, directx::D3D12_RESOURCE_STATES> m_resource_states;
+		std::unordered_map<directx::ID3D12Resource*, directx::D3D12_RESOURCE_STATES> m_buffer_states;
 		directx::com_ptr<directx::ID3D12CommandSignature> m_draw_indexed_signature;
 		directx::com_ptr<directx::ID3D12CommandSignature> m_dispatch_mesh_signature;
 		gpu::bindless_slot_pool m_image_pool;

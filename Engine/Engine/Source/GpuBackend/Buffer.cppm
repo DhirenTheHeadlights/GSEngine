@@ -35,6 +35,7 @@ export namespace gse::gpu {
 		const void* data = nullptr;
 		const void* pnext = nullptr;
 		bool bindless = false;
+		bool writable = false;
 	};
 
 	struct buffer_copy_region {

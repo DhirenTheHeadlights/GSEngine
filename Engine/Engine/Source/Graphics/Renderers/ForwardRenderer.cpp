@@ -52,14 +52,14 @@ namespace gse::renderer::forward {
 
 	struct [[
 		= shaders::binding<0, 3>{},
-		= shaders::ssbo_readonly
+		= shaders::ssbo_readwrite
 	]] light_index_list {
 		using element = std::uint32_t;
 	};
 
 	struct [[
 		= shaders::binding<0, 4>{},
-		= shaders::ssbo_readonly
+		= shaders::ssbo_readwrite
 	]] tile_light_table {
 		using element = vec2u;
 	};

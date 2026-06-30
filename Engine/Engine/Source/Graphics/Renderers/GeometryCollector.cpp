@@ -320,8 +320,9 @@ auto gse::renderer::geometry_collector::initialize(context& ctx, const shared_vi
 			{
 				.size = normal_indirect_buffer_size,
 				.stride = sizeof(gpu::draw_mesh_tasks_indirect_command),
-				.usage = gpu::buffer_flag::indirect | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst,
-				.bindless = true
+				.usage = gpu::buffer_flag::indirect | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst | gpu::buffer_flag::byte_address,
+				.bindless = true,
+				.writable = true
 			},
 			"gc_indirect_commands"
 		);
