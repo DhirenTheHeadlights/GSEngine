@@ -10,7 +10,7 @@ import :locomotion_recorder;
 
 export namespace gs::locomotion {
 	struct ppo_config {
-		std::size_t obs_dim = 42;
+		std::size_t obs_dim = 30;
 		std::size_t act_dim = 10;
 		std::size_t hidden_dim = 128;
 		std::size_t n_envs = 32;
@@ -54,6 +54,12 @@ export namespace gs::locomotion {
 		float imitation_w_ee = 0.3f;
 		float imitation_term_threshold = 0.1f;
 		int imitation_term_grace = 5;
+		float w_task = 1.0f;
+		float w_style = 2.0f;
+		float disc_lr = 1e-4f;
+		float disc_r1_weight = 5.0f;
+		std::size_t disc_batch = 256;
+		int disc_updates = 2;
 	};
 
 	struct rollout_buffer {
@@ -66,6 +72,7 @@ export namespace gs::locomotion {
 		std::vector<float> advantages;
 		std::vector<float> returns;
 		std::vector<std::uint32_t> env_of;
+		std::vector<float> amp_transitions;
 		std::size_t capacity = 0;
 		std::size_t size = 0;
 		std::size_t obs_dim = 0;
@@ -118,6 +125,8 @@ export namespace gs::locomotion {
 		std::vector<float> prev_obs_buf;
 		std::vector<float> action_buf;
 		std::vector<float> prev_action_buf;
+		std::vector<float> features;
+		std::vector<float> prev_features;
 		std::vector<float> mean_buf;
 		std::vector<float> ah1_buf;
 		std::vector<float> ah2_buf;
@@ -136,6 +145,11 @@ export namespace gs::locomotion::trainer {
 		mlp critic;
 		actor_adam actor_opt;
 		critic_adam critic_opt;
+
+		mlp discriminator;
+		critic_adam disc_opt;
+		amp_dataset dataset;
+		bool dataset_built = false;
 
 		rollout_buffer buffer;
 
@@ -231,6 +245,11 @@ namespace gs::locomotion {
 		const ppo_config& cfg
 	) -> void;
 
+	auto update_amp_rewards(
+		trainer::data& d,
+		const ppo_config& cfg
+	) -> disc_metrics;
+
 	auto initialize_drives(
 		const skeleton_refs& r,
 		gse::write<gse::physics::joint_drive_component>& drives
@@ -323,6 +342,7 @@ gs::locomotion::rollout_buffer::rollout_buffer(const std::size_t cap, const std:
 	, advantages(cap, 0.0f)
 	, returns(cap, 0.0f)
 	, env_of(cap, 0u)
+	, amp_transitions(cap * 2 * amp_feature_dim, 0.0f)
 	, capacity(cap)
 	, obs_dim(od)
 	, act_dim(ad) {}
@@ -426,6 +446,40 @@ auto gs::locomotion::run_ppo_update(trainer::data& d, const ppo_config& cfg) -> 
 	if (d.update_count % cfg.checkpoint_every == 0) {
 		checkpoint_save(d.actor, d.critic, cfg.checkpoint_path);
 	}
+}
+
+auto gs::locomotion::update_amp_rewards(trainer::data& d, const ppo_config& cfg) -> disc_metrics {
+	constexpr auto pair_dim = 2 * amp_feature_dim;
+	auto metrics = disc_metrics{};
+	if (!d.dataset_built || d.dataset.transition_starts.empty() || d.buffer.size == 0) {
+		return metrics;
+	}
+	const auto batch = std::min(cfg.disc_batch, d.buffer.size);
+	auto real_buf = std::vector<float>(batch * pair_dim);
+	auto fake_buf = std::vector<float>(batch * pair_dim);
+	auto pair = std::array<float, pair_dim>{};
+	auto fake_pick = std::uniform_int_distribution<std::size_t>(0, d.buffer.size - 1);
+	for (auto u = 0; u < cfg.disc_updates; ++u) {
+		for (std::size_t b = 0; b < batch; ++b) {
+			sample_amp_transition(d.dataset, d.rng, pair);
+			std::ranges::copy(pair, real_buf.begin() + static_cast<std::ptrdiff_t>(b * pair_dim));
+			const auto* src = d.buffer.amp_transitions.data() + fake_pick(d.rng) * pair_dim;
+			std::copy(src, src + pair_dim, fake_buf.begin() + static_cast<std::ptrdiff_t>(b * pair_dim));
+		}
+		const auto real = std::mdspan<const float, std::dextents<std::size_t, 2>>(real_buf.data(), batch, pair_dim);
+		const auto fake = std::mdspan<const float, std::dextents<std::size_t, 2>>(fake_buf.data(), batch, pair_dim);
+		metrics = discriminator_update(d.discriminator, d.disc_opt, real, fake, cfg.disc_lr, cfg.disc_r1_weight);
+	}
+	auto style_sum = 0.0f;
+	for (std::size_t t = 0; t < d.buffer.size; ++t) {
+		const auto trans = std::span<const float>(d.buffer.amp_transitions).subspan(t * pair_dim, pair_dim);
+		const auto r_style = discriminator_style_reward(d.discriminator, trans);
+		style_sum += r_style;
+		d.buffer.rewards[t] = cfg.w_task * d.buffer.rewards[t] + cfg.w_style * r_style;
+	}
+	const auto mean_style = style_sum / static_cast<float>(d.buffer.size);
+	gse::log::println("locomotion_train: amp total_steps={} D_loss={:.3f} D(real)={:.3f} D(fake)={:.3f} r1={:.4f} mean_style={:.3f}", d.total_steps, metrics.loss, metrics.mean_real, metrics.mean_fake, metrics.r1, mean_style);
+	return metrics;
 }
 
 auto gs::locomotion::initialize_drives(const skeleton_refs& r, gse::write<gse::physics::joint_drive_component>& drives) -> void {
@@ -589,6 +643,8 @@ auto gs::locomotion::make_env_state(const gse::id owner_id, const std::size_t en
 		.prev_obs_buf = std::vector<float>(cfg.obs_dim, 0.0f),
 		.action_buf = std::vector<float>(cfg.act_dim, 0.0f),
 		.prev_action_buf = std::vector<float>(cfg.act_dim, 0.0f),
+		.features = std::vector<float>(amp_feature_dim, 0.0f),
+		.prev_features = std::vector<float>(amp_feature_dim, 0.0f),
 		.mean_buf = std::vector<float>(cfg.act_dim, 0.0f),
 		.ah1_buf = std::vector<float>(cfg.hidden_dim, 0.0f),
 		.ah2_buf = std::vector<float>(cfg.hidden_dim, 0.0f),
@@ -735,11 +791,15 @@ auto gs::locomotion::reset_env(env_state& env, const skeleton_refs& r, gse::writ
 
 auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& cfg, const gse::shared_view<gse::world_system::data> world_d, gse::read<skeleton_refs> refs, gse::read<state> states, gse::write<gse::physics::joint_drive_component> drives, gse::write<gse::physics::transform_component> transforms, gse::write<gse::physics::motion_component> motions, gse::write<gse::physics::motor_component> motors) -> gse::async::task<> {
 	if (!d.ready) {
+		gse::watchdog::stop();
+		gse::log::println("locomotion_train: watchdog disabled (the PPO+discriminator update tick exceeds the 500ms scheduler-wait budget by design)");
 		d.rng.seed(cfg.seed);
 		d.actor = actor_make(cfg.obs_dim, cfg.act_dim, cfg.hidden_dim, d.rng);
 		d.critic = mlp_make(cfg.obs_dim, cfg.hidden_dim, 1, 1.0f, d.rng);
 		d.actor_opt = actor_adam_make(d.actor);
 		d.critic_opt = critic_adam_make(d.critic);
+		d.discriminator = mlp_make(2 * amp_feature_dim, cfg.hidden_dim, 1, 0.1f, d.rng);
+		d.disc_opt = critic_adam_make(d.discriminator);
 		d.buffer = rollout_buffer(cfg.rollout_steps, cfg.obs_dim, cfg.act_dim);
 
 		if (cfg.resume && checkpoint_load(d.actor, d.critic, cfg.checkpoint_path)) {
@@ -794,6 +854,13 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 			for (std::size_t i = 0; i < owner_ids.size(); ++i) {
 				d.envs.push_back(make_env_state(owner_ids[i], i, cfg));
 			}
+			if (!d.dataset_built && !d.ref_clip.frames.empty()) {
+				if (const auto* r0 = refs.find(owner_ids[0])) {
+					d.dataset = build_amp_dataset(std::span(&d.ref_clip, 1), *r0);
+					d.dataset_built = !d.dataset.transition_starts.empty();
+					gse::log::println("locomotion_train: AMP dataset {} frames {} transitions", d.dataset.frame_count, d.dataset.transition_starts.size());
+				}
+			}
 			d.stage = train_stage::running;
 			gse::log::println("locomotion_train: {} envs discovered, begin training", d.envs.size());
 		}
@@ -834,16 +901,12 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 			.desired_yaw = gse::radians(0.f),
 			.has_heading = true,
 		};
-		const auto rsi_tracking = env.rsi_active && env.ref_index < d.ref_clip.frames.size();
-		const auto ref_phi = rsi_tracking ? d.ref_clip.frames[env.ref_index].kin.phi : 0.0f;
-		pack_observation(observe(os, cmd, gait{}, ref_phi), env.obs_buf);
-		const auto env_ref_tail = std::span(env.obs_buf).subspan(scalar_count<observation>());
-		if (rsi_tracking) {
-			pack_reference_pose(d.ref_clip.frames[env.ref_index], env_ref_tail);
+		pack_observation(observe(os, cmd, gait{}, 0.0f), env.obs_buf);
+		auto pelvis_av = gse::vec3<gse::angular_velocity>{};
+		if (const auto* mc = motions.find(r->pelvis_id)) {
+			pelvis_av = mc->angular_velocity;
 		}
-		else {
-			std::ranges::fill(env_ref_tail, 0.0f);
-		}
+		amp_features_state(os, pelvis_av, std::span(env.features).first<amp_feature_dim>());
 
 		if (auto* mot = motors.find(env.owner_id)) {
 			const auto denom = static_cast<float>(std::max(1, cfg.motor_assist_updates));
@@ -880,18 +943,10 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 				smooth += da * da;
 			}
 			const auto inv_act = 1.0f / static_cast<float>(cfg.act_dim);
-			const auto imit_q = rsi_tracking
-				? compute_imitation_reward(os, d.ref_clip.frames[env.ref_index], *r, cfg)
-				: 0.0f;
-			const auto imitation = cfg.r_imitation * imit_q;
 			const auto reward = compute_reward(os, env.cmd_forward, env.cmd_strafe, r->pelvis_target_height, cfg)
-				+ imitation
 				- cfg.r_energy * energy * inv_act
 				- cfg.r_smooth * smooth * inv_act;
-			auto done = episode_done(os, env.episode_steps, cfg.max_steps);
-			if (rsi_tracking && env.episode_steps >= cfg.imitation_term_grace && imit_q < cfg.imitation_term_threshold && env.recover_grace == 0) {
-				done = true;
-			}
+			const auto done = episode_done(os, env.episode_steps, cfg.max_steps);
 
 			mlp_forward(d.critic, env.obs_buf, env.vh1_buf, env.vh2_buf, std::span(&env.val_buf, 1));
 			env.bootstrap = done ? 0.0f : env.val_buf;
@@ -907,12 +962,14 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 				d.buffer.rewards[t] = reward;
 				d.buffer.dones[t] = done ? 1.0f : 0.0f;
 				d.buffer.env_of[t] = static_cast<std::uint32_t>(env.env_index);
+				const auto pair_slot = std::span(d.buffer.amp_transitions).subspan(t * 2 * amp_feature_dim, 2 * amp_feature_dim);
+				std::ranges::copy(env.prev_features, pair_slot.begin());
+				std::ranges::copy(env.features, pair_slot.begin() + amp_feature_dim);
 				++d.buffer.size;
 				++d.total_steps;
 			}
 
 			env.episode_reward += reward;
-			env.imitation_accum += imitation;
 			const auto err_fwd = (-os.velocity_body.z() - env.cmd_forward) / gse::meters_per_second(1.0f);
 			const auto err_right = (os.velocity_body.x() - env.cmd_strafe) / gse::meters_per_second(1.0f);
 			env.track_err_accum += std::sqrt(err_fwd * err_fwd + err_right * err_right);
@@ -920,11 +977,10 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 
 			if (done) {
 				gse::log::println(
-					"locomotion_train: ep={} steps={} reward={:.2f} imit={:.3f} track_err={:.3f} total_steps={}",
+					"locomotion_train: ep={} steps={} reward={:.2f} track_err={:.3f} total_steps={}",
 					env.episode,
 					env.episode_steps,
 					env.episode_reward,
-					env.imitation_accum / static_cast<float>(env.episode_steps),
 					env.track_err_accum / static_cast<float>(env.episode_steps),
 					d.total_steps
 				);
@@ -963,6 +1019,7 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 		}
 
 		std::ranges::copy(env.obs_buf, env.prev_obs_buf.begin());
+		env.prev_features = env.features;
 		env.prev_log_prob = log_prob;
 		env.prev_value = env.val_buf;
 		env.has_prev = true;
@@ -998,6 +1055,7 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 		for (const auto& env : d.envs) {
 			boots.push_back(env.bootstrap);
 		}
+		update_amp_rewards(d, cfg);
 		compute_gae(d.buffer, boots, cfg.gamma, cfg.lam);
 		run_ppo_update(d, cfg);
 		d.buffer.clear();
@@ -1178,15 +1236,7 @@ auto gs::locomotion::pose_player::run(data& d, const ppo_config& cfg, const gse:
 			.desired_yaw = gse::radians(0.f),
 			.has_heading = true,
 		};
-		const auto ref_phi = has_clip ? d.ref_clip.frames[os.ref_index].kin.phi : os.phi;
-		pack_observation(observe(*s, cmd, gait{}, ref_phi), os.obs_buf);
-		const auto play_ref_tail = std::span(os.obs_buf).subspan(scalar_count<observation>());
-		if (has_clip) {
-			pack_reference_pose(d.ref_clip.frames[os.ref_index], play_ref_tail);
-		}
-		else {
-			std::ranges::fill(play_ref_tail, 0.0f);
-		}
+		pack_observation(observe(*s, cmd, gait{}, 0.0f), os.obs_buf);
 		mlp_forward(d.actor.net, os.obs_buf, os.h1_buf, os.h2_buf, os.mean_buf);
 		apply_action(unpack_action(os.mean_buf), *r, drives);
 		os.steps_alive += sim_steps;
