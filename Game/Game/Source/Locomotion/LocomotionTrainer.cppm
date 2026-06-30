@@ -647,7 +647,7 @@ auto gs::locomotion::extract_walk_frames(const reference_clip& clip, const float
 			wraps.push_back(i);
 		}
 	}
-	for (std::size_t k = 0; k + 1 < wraps.size() && !result.cycle_loop; ++k) {
+	for (std::size_t k = 0; k + 1 < wraps.size(); ++k) {
 		const auto cs = wraps[k];
 		const auto ce = wraps[k + 1] - 1;
 		if (ce < cs + 15) {
@@ -667,7 +667,7 @@ auto gs::locomotion::extract_walk_frames(const reference_clip& clip, const float
 		}
 		const auto mean_vel = speed_sum / static_cast<float>(ce - cs + 1);
 		const auto mean_speed = mean_vel / gse::meters_per_second(1.0f);
-		if (mean_speed >= min_speed && mean_speed <= max_speed) {
+		if (mean_speed >= min_speed && mean_speed <= max_speed && (!result.cycle_loop || mean_vel > result.cycle_speed)) {
 			result.cycle_start = cs;
 			result.cycle_end = ce;
 			result.cycle_speed = mean_vel;
