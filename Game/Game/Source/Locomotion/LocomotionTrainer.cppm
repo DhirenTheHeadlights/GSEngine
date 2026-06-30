@@ -44,8 +44,10 @@ export namespace gs::locomotion {
 		float r_imitation = 6.0f;
 		float imitation_pose_scale = 2.0f;
 		float imitation_vel_scale = 0.1f;
-		float imitation_w_pose = 0.7f;
-		float imitation_w_vel = 0.3f;
+		float imitation_ee_scale = 10.0f;
+		float imitation_w_pose = 0.5f;
+		float imitation_w_vel = 0.2f;
+		float imitation_w_ee = 0.3f;
 		float imitation_term_threshold = 0.1f;
 		int imitation_term_grace = 5;
 	};
@@ -239,6 +241,7 @@ namespace gs::locomotion {
 	auto compute_imitation_reward(
 		const state& s,
 		const reference_frame& ref,
+		const skeleton_refs& r,
 		const ppo_config& cfg
 	) -> float;
 
@@ -482,7 +485,7 @@ auto gs::locomotion::compute_reward(const state& s, const gse::velocity cmd_forw
 		+ stability * (cfg.r_track * track + cfg.r_heading * heading);
 }
 
-auto gs::locomotion::compute_imitation_reward(const state& s, const reference_frame& ref, const ppo_config& cfg) -> float {
+auto gs::locomotion::compute_imitation_reward(const state& s, const reference_frame& ref, const skeleton_refs& r, const ppo_config& cfg) -> float {
 	const auto angle_err = [](const gse::angle a, const gse::angle b) {
 		const auto d = (a - b) / gse::radians(1.0f);
 		return d * d;
@@ -508,9 +511,37 @@ auto gs::locomotion::compute_imitation_reward(const state& s, const reference_fr
 		rate_err(s.knee_rate_r, ref.obs.knee_rate_r) +
 		rate_err(s.ankle_rate_r, ref.obs.ankle_rate_r);
 
+	const auto bone_index = [&r](const gse::id id) -> std::size_t {
+		for (std::size_t i = 0; i < r.all_bone_ids.size(); ++i) {
+			if (r.all_bone_ids[i] == id) {
+				return i;
+			}
+		}
+		return 0;
+	};
+	const auto foot_local = [](const gse::vec3<gse::position>& foot, const gse::vec3<gse::position>& pelvis, const gse::vec3f& fwd, const gse::vec3f& right) {
+		const auto rel = foot - pelvis;
+		return gse::vec3f(gse::dot(rel, right) / gse::meters(1.0f), rel.y() / gse::meters(1.0f), gse::dot(rel, fwd) / gse::meters(1.0f));
+	};
+	const auto sq = [](const gse::vec3f& v) {
+		return v.x() * v.x() + v.y() * v.y() + v.z() * v.z();
+	};
+	auto ee_err = 0.0f;
+	const auto fl = bone_index(r.foot_l_id);
+	const auto fr = bone_index(r.foot_r_id);
+	if (fl < ref.bones.size() && fr < ref.bones.size()) {
+		const auto ref_pelvis = ref.bones[0].position;
+		const auto ref_fwd = gse::rotate_vector(ref.kin.pelvis_orientation, gse::vec3f(0.f, 0.f, -1.f));
+		const auto ref_right = gse::rotate_vector(ref.kin.pelvis_orientation, gse::vec3f(1.f, 0.f, 0.f));
+		ee_err =
+			sq(foot_local(s.foot_position_l, s.pelvis_position, s.pelvis_forward, s.pelvis_right) - foot_local(ref.bones[fl].position, ref_pelvis, ref_fwd, ref_right)) +
+			sq(foot_local(s.foot_position_r, s.pelvis_position, s.pelvis_forward, s.pelvis_right) - foot_local(ref.bones[fr].position, ref_pelvis, ref_fwd, ref_right));
+	}
+
 	const auto r_pose = std::exp(-cfg.imitation_pose_scale * pose_err);
 	const auto r_vel = std::exp(-cfg.imitation_vel_scale * vel_err);
-	return cfg.imitation_w_pose * r_pose + cfg.imitation_w_vel * r_vel;
+	const auto r_ee = std::exp(-cfg.imitation_ee_scale * ee_err);
+	return cfg.imitation_w_pose * r_pose + cfg.imitation_w_vel * r_vel + cfg.imitation_w_ee * r_ee;
 }
 
 auto gs::locomotion::pack_reference_pose(const reference_frame& ref, const std::span<float> buf) -> void {
@@ -840,7 +871,7 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 			}
 			const auto inv_act = 1.0f / static_cast<float>(cfg.act_dim);
 			const auto imit_q = rsi_tracking
-				? compute_imitation_reward(os, d.ref_clip.frames[env.ref_index], cfg)
+				? compute_imitation_reward(os, d.ref_clip.frames[env.ref_index], *r, cfg)
 				: 0.0f;
 			const auto imitation = cfg.r_imitation * imit_q;
 			const auto reward = compute_reward(os, env.cmd_forward, env.cmd_strafe, r->pelvis_target_height, cfg)
