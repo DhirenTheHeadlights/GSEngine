@@ -60,6 +60,7 @@ export namespace gs::locomotion {
 		float disc_r1_weight = 8.0f;
 		std::size_t disc_batch = 256;
 		int disc_updates = 1;
+		float disc_target_loss = 0.45f;
 	};
 
 	struct rollout_buffer {
@@ -470,7 +471,7 @@ auto gs::locomotion::update_amp_rewards(trainer::data& d, const ppo_config& cfg)
 		}
 		const auto real = std::mdspan<const float, std::dextents<std::size_t, 2>>(real_buf.data(), batch, pair_dim);
 		const auto fake = std::mdspan<const float, std::dextents<std::size_t, 2>>(fake_buf.data(), batch, pair_dim);
-		metrics = discriminator_update(d.discriminator, d.disc_opt, real, fake, cfg.disc_lr, cfg.disc_r1_weight);
+		metrics = discriminator_update(d.discriminator, d.disc_opt, real, fake, cfg.disc_lr, cfg.disc_r1_weight, cfg.disc_target_loss);
 	}
 	auto style_sum = 0.0f;
 	for (std::size_t t = 0; t < d.buffer.size; ++t) {
