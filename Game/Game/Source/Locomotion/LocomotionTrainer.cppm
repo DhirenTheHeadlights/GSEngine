@@ -16,7 +16,7 @@ export namespace gs::locomotion {
 		std::size_t n_envs = 32;
 		std::size_t rollout_steps = 1024;
 		std::size_t mini_batch = 256;
-		int n_epochs = 10;
+		int n_epochs = 4;
 		float lr = 3e-4f;
 		float gamma = 0.99f;
 		float lam = 0.95f;
@@ -158,6 +158,8 @@ export namespace gs::locomotion::trainer {
 		int total_steps = 0;
 		int update_count = 0;
 		int episode = 0;
+		float survival_sum = 0.0f;
+		int survival_count = 0;
 
 		std::vector<env_state> envs;
 
@@ -478,7 +480,10 @@ auto gs::locomotion::update_amp_rewards(trainer::data& d, const ppo_config& cfg)
 		d.buffer.rewards[t] = cfg.w_task * d.buffer.rewards[t] + cfg.w_style * r_style;
 	}
 	const auto mean_style = style_sum / static_cast<float>(d.buffer.size);
-	gse::log::println("locomotion_train: amp total_steps={} D_loss={:.3f} D(real)={:.3f} D(fake)={:.3f} r1={:.4f} mean_style={:.3f}", d.total_steps, metrics.loss, metrics.mean_real, metrics.mean_fake, metrics.r1, mean_style);
+	const auto mean_surv = d.survival_count > 0 ? d.survival_sum / static_cast<float>(d.survival_count) : 0.0f;
+	d.survival_sum = 0.0f;
+	d.survival_count = 0;
+	gse::log::println("locomotion_train: amp total_steps={} mean_surv={:.1f} D_loss={:.3f} D(real)={:.3f} D(fake)={:.3f} r1={:.4f} mean_style={:.3f}", d.total_steps, mean_surv, metrics.loss, metrics.mean_real, metrics.mean_fake, metrics.r1, mean_style);
 	return metrics;
 }
 
@@ -977,14 +982,18 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 			++env.episode_steps;
 
 			if (done) {
-				gse::log::println(
-					"locomotion_train: ep={} steps={} reward={:.2f} track_err={:.3f} total_steps={}",
-					env.episode,
-					env.episode_steps,
-					env.episode_reward,
-					env.track_err_accum / static_cast<float>(env.episode_steps),
-					d.total_steps
-				);
+				if (d.episode % 100 == 0) {
+					gse::log::println(
+						"locomotion_train: ep={} steps={} reward={:.2f} track_err={:.3f} total_steps={}",
+						env.episode,
+						env.episode_steps,
+						env.episode_reward,
+						env.track_err_accum / static_cast<float>(env.episode_steps),
+						d.total_steps
+					);
+				}
+				d.survival_sum += static_cast<float>(env.episode_steps);
+				++d.survival_count;
 				const reference_frame* rsi = nullptr;
 				if (d.rsi_enabled && !d.rsi_frames.empty()) {
 					auto pick = std::uniform_int_distribution<std::size_t>(0, d.rsi_frames.size() - 1);
