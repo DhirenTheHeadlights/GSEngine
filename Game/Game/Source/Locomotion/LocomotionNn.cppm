@@ -138,7 +138,8 @@ export namespace gs::locomotion {
 		std::mdspan<const float, std::dextents<std::size_t, 2>> real,
 		std::mdspan<const float, std::dextents<std::size_t, 2>> fake,
 		float lr,
-		float r1_weight
+		float r1_weight,
+		float gate_loss
 	) -> disc_metrics;
 
 	auto discriminator_style_reward(
@@ -695,7 +696,7 @@ auto gs::locomotion::ppo_critic_update(mlp& critic, critic_adam& opt, const std:
 	return total_loss * inv_n;
 }
 
-auto gs::locomotion::discriminator_update(mlp& net, critic_adam& opt, const std::mdspan<const float, std::dextents<std::size_t, 2>> real, const std::mdspan<const float, std::dextents<std::size_t, 2>> fake, const float lr, const float r1_weight) -> disc_metrics {
+auto gs::locomotion::discriminator_update(mlp& net, critic_adam& opt, const std::mdspan<const float, std::dextents<std::size_t, 2>> real, const std::mdspan<const float, std::dextents<std::size_t, 2>> fake, const float lr, const float r1_weight, const float gate_loss) -> disc_metrics {
 	const auto in_dim = net.l1.in_features;
 	const auto hd = net.l1.out_features;
 	const auto total = real.extent(0) + fake.extent(0);
@@ -770,6 +771,10 @@ auto gs::locomotion::discriminator_update(mlp& net, critic_adam& opt, const std:
 	}
 	db3[0] *= inv;
 	metrics.loss *= inv;
+
+	if (metrics.loss < gate_loss) {
+		return metrics;
+	}
 
 	if (r1_weight > 0.0f) {
 		const auto n_real = real.extent(0);
@@ -854,7 +859,7 @@ auto gs::locomotion::discriminator_selftest() -> bool {
 	for (auto it = 0; it < 600; ++it) {
 		fill(real_buf, real_dist);
 		fill(fake_buf, fake_dist);
-		last = discriminator_update(net, opt, make_span(real_buf), make_span(fake_buf), 1e-3f, 0.0f);
+		last = discriminator_update(net, opt, make_span(real_buf), make_span(fake_buf), 1e-3f, 0.0f, 0.0f);
 		if (it == 0) {
 			first_loss = last.loss;
 		}
@@ -933,7 +938,7 @@ auto gs::locomotion::discriminator_selftest() -> bool {
 	for (auto it = 0; it < 100; ++it) {
 		fill(real_buf, real_dist);
 		fill(fake_buf, fake_dist);
-		last = discriminator_update(net, opt, make_span(real_buf), make_span(fake_buf), 1e-3f, 1.0f);
+		last = discriminator_update(net, opt, make_span(real_buf), make_span(fake_buf), 1e-3f, 1.0f, 0.0f);
 	}
 	if (!std::isfinite(last.mean_real) || !std::isfinite(last.mean_fake) || !std::isfinite(last.r1)) {
 		gse::log::println("discriminator_selftest: FAIL R1 update non-finite (real={} fake={} r1={})", last.mean_real, last.mean_fake, last.r1);
