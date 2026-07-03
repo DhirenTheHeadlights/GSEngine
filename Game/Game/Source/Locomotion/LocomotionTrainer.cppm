@@ -25,6 +25,7 @@ export namespace gs::locomotion {
 		float entropy_coeff = 0.004f;
 		int max_steps = 400;
 		std::string checkpoint_path = "locomotion_checkpoint.bin";
+		std::string state_path = "locomotion_train_state.bin";
 		int checkpoint_every = 50;
 		unsigned seed = 1234;
 		float r_alive = 0.5f;
@@ -161,6 +162,8 @@ export namespace gs::locomotion::trainer {
 		int episode = 0;
 		float survival_sum = 0.0f;
 		int survival_count = 0;
+		float last_mean_surv = 0.0f;
+		float best_mean_surv = 0.0f;
 
 		std::vector<env_state> envs;
 
@@ -446,8 +449,18 @@ auto gs::locomotion::run_ppo_update(trainer::data& d, const ppo_config& cfg) -> 
 		critic_loss / static_cast<float>(batches)
 	);
 
-	if (d.update_count % cfg.checkpoint_every == 0) {
+	if (d.last_mean_surv > d.best_mean_surv) {
+		d.best_mean_surv = d.last_mean_surv;
 		checkpoint_save(d.actor, d.critic, cfg.checkpoint_path);
+		gse::log::println("locomotion_train: new best mean_surv={:.1f} saved to '{}'", d.best_mean_surv, cfg.checkpoint_path);
+	}
+	if (d.update_count % cfg.checkpoint_every == 0) {
+		const auto meta = train_meta{
+			.update_count = d.update_count,
+			.total_steps = d.total_steps,
+			.best_mean_surv = d.best_mean_surv,
+		};
+		checkpoint_save_full(d.actor, d.actor_opt, d.critic, d.critic_opt, d.discriminator, d.disc_opt, meta, cfg.state_path);
 	}
 }
 
@@ -482,6 +495,7 @@ auto gs::locomotion::update_amp_rewards(trainer::data& d, const ppo_config& cfg)
 	}
 	const auto mean_style = style_sum / static_cast<float>(d.buffer.size);
 	const auto mean_surv = d.survival_count > 0 ? d.survival_sum / static_cast<float>(d.survival_count) : 0.0f;
+	d.last_mean_surv = mean_surv;
 	d.survival_sum = 0.0f;
 	d.survival_count = 0;
 	gse::log::println("locomotion_train: amp total_steps={} mean_surv={:.1f} D_loss={:.3f} D(real)={:.3f} D(fake)={:.3f} r1={:.4f} mean_style={:.3f}", d.total_steps, mean_surv, metrics.loss, metrics.mean_real, metrics.mean_fake, metrics.r1, mean_style);
@@ -809,8 +823,18 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 		d.disc_opt = critic_adam_make(d.discriminator);
 		d.buffer = rollout_buffer(cfg.rollout_steps, cfg.obs_dim, cfg.act_dim);
 
-		if (cfg.resume && checkpoint_load(d.actor, d.critic, cfg.checkpoint_path)) {
-			gse::log::println("locomotion_train: RESUMED warm-start from '{}'", cfg.checkpoint_path);
+		if (cfg.resume) {
+			auto meta = train_meta{};
+			if (checkpoint_load_full(d.actor, d.actor_opt, d.critic, d.critic_opt, d.discriminator, d.disc_opt, meta, cfg.state_path)) {
+				d.update_count = meta.update_count;
+				d.total_steps = meta.total_steps;
+				d.best_mean_surv = meta.best_mean_surv;
+				d.rng.seed(cfg.seed + static_cast<unsigned>(d.update_count));
+				gse::log::println("locomotion_train: RESUMED full state from '{}' (update={} steps={} best_surv={:.1f})", cfg.state_path, d.update_count, d.total_steps, d.best_mean_surv);
+			}
+			else if (checkpoint_load(d.actor, d.critic, cfg.checkpoint_path)) {
+				gse::log::println("locomotion_train: RESUMED policy-only warm-start from '{}'", cfg.checkpoint_path);
+			}
 		}
 
 		if (!cfg.reference_clip_path.empty()) {
@@ -874,6 +898,25 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 		return {};
 	}
 
+	const auto reset_episode = [&](env_state& e, const skeleton_refs& sr) {
+		d.survival_sum += static_cast<float>(e.episode_steps);
+		++d.survival_count;
+		const reference_frame* rsi = nullptr;
+		if (d.rsi_enabled && !d.rsi_frames.empty()) {
+			auto pick = std::uniform_int_distribution<std::size_t>(0, d.rsi_frames.size() - 1);
+			const auto fi = d.rsi_frames[pick(d.rng)];
+			rsi = &d.ref_clip.frames[fi];
+			e.ref_index = fi;
+		}
+		reset_env(e, sr, transforms, motions, drives, rsi);
+		e.rsi_active = (rsi != nullptr);
+		e.perturb_timer = cfg.perturb_interval;
+		e.recover_grace = 0;
+		sample_command(e, d.rng, d.cycle_loop, d.cycle_speed);
+		++e.episode;
+		++d.episode;
+	};
+
 	for (auto& env : d.envs) {
 		const auto* r = refs.find(env.owner_id);
 		const auto* s = states.find(env.owner_id);
@@ -899,6 +942,12 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 			initialize_drives(*r, drives);
 			sample_command(env, d.rng, d.cycle_loop, d.cycle_speed);
 			env.drives_initialized = true;
+			continue;
+		}
+
+		if (env.reset_gate == 0 && (!gse::isfinite(os.pelvis_position) || !gse::isfinite(os.velocity_body))) {
+			gse::log::println("locomotion_train: env={} non-finite state at step {}, force reset", env.env_index, env.episode_steps);
+			reset_episode(env, *r);
 			continue;
 		}
 
@@ -993,22 +1042,7 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 						d.total_steps
 					);
 				}
-				d.survival_sum += static_cast<float>(env.episode_steps);
-				++d.survival_count;
-				const reference_frame* rsi = nullptr;
-				if (d.rsi_enabled && !d.rsi_frames.empty()) {
-					auto pick = std::uniform_int_distribution<std::size_t>(0, d.rsi_frames.size() - 1);
-					const auto fi = d.rsi_frames[pick(d.rng)];
-					rsi = &d.ref_clip.frames[fi];
-					env.ref_index = fi;
-				}
-				reset_env(env, *r, transforms, motions, drives, rsi);
-				env.rsi_active = (rsi != nullptr);
-				env.perturb_timer = cfg.perturb_interval;
-				env.recover_grace = 0;
-				sample_command(env, d.rng, d.cycle_loop, d.cycle_speed);
-				++env.episode;
-				++d.episode;
+				reset_episode(env, *r);
 				continue;
 			}
 		}
