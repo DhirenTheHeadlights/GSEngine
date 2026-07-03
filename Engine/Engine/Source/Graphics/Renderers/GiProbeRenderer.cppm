@@ -56,6 +56,7 @@ export namespace gse::renderer::gi_probe {
 
 		gpu::shader_program update_pipeline;
 		per_frame_resource<gpu::bindless_handle> tlas_views;
+		per_frame_resource<gpu::device_address> tlas_addresses;
 		std::uint32_t frame_counter = 0;
 
 		[[= gse::shared]] gpu::image irradiance_atlas;

@@ -12,3 +12,4 @@ export import :scalar;
 export import :settings_anno;
 export import :args;
 export import :type_name;
+export import :reflected_dispatch;

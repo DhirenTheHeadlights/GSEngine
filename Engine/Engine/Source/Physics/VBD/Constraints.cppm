@@ -4,23 +4,25 @@ import std;
 
 import gse.math;
 import gse.gpu;
+
 import :contact_manifold;
 import :motion_component;
 
 export namespace gse::vbd {
 	struct [[= shaders::shader_constant_block]] vbd_limits {
-		std::uint32_t max_bodies = 2048;
-		std::uint32_t max_contacts = 16384;
-		std::uint32_t max_collision_pairs = 16384;
+		std::uint32_t max_bodies = 5120;
+		std::uint32_t max_contacts = 65536;
+		std::uint32_t max_collision_pairs = 65536;
 		std::uint32_t max_colors = 16;
-		std::uint32_t max_joints = 128;
+		std::uint32_t max_joints = 8192;
+		std::uint32_t max_islands = 512;
 		std::uint32_t max_impulses = 64;
-		std::uint32_t max_motors = 16;
-		std::uint32_t max_contact_adjacency = 16384 * 2;
-		std::uint32_t max_joint_adjacency = 128 * 2;
-		std::uint32_t max_grounded_uints = (2048 + 31) / 32;
+		std::uint32_t max_motors = 1024;
+		std::uint32_t max_contact_adjacency = 65536 * 2;
+		std::uint32_t max_joint_adjacency = 8192 * 2;
+		std::uint32_t max_grounded_uints = (5120 + 31) / 32;
 		std::uint32_t grid_table_size = 4096;
-		std::uint32_t grid_max_entries = 2048 * 8;
+		std::uint32_t grid_max_entries = 5120 * 8;
 		std::uint32_t workgroup_size = 64;
 		std::uint32_t adjacency_workgroup_size = 1024;
 		std::uint32_t coloring_rounds = 32;
@@ -33,6 +35,7 @@ export namespace gse::vbd {
 		std::uint32_t state_convergence_max_delta_index = 4;
 		std::uint32_t state_converged_flag_index = 5;
 		std::uint32_t state_convergence_max_angular_delta_index = 6;
+		std::uint32_t state_warm_start_count_index = 3;
 		std::uint32_t narrow_phase_debug_record_uints = 8;
 		std::uint32_t max_narrow_phase_debug_records = 32;
 		std::uint32_t feature_vertex = 0;
@@ -185,6 +188,8 @@ export namespace gse::vbd {
 		vec3<displacement> half_extents;
 		vec3<gse::position> aabb_min;
 		vec3<gse::position> aabb_max;
+
+		std::uint32_t reset_pending = 0;
 
 		auto inverse_mass() const -> inverse_mass;
 		auto sleeping() const -> bool;

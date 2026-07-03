@@ -29,6 +29,7 @@ import gse.ecs;
 import gse.os;
 import gse.assets;
 import gse.gpu;
+import gse.gpu_record;
 import gse.save;
 import gse.meta;
 
@@ -51,14 +52,14 @@ namespace gse::renderer::forward {
 
 	struct [[
 		= shaders::binding<0, 3>{},
-		= shaders::ssbo_readonly
+		= shaders::ssbo_readwrite
 	]] light_index_list {
 		using element = std::uint32_t;
 	};
 
 	struct [[
 		= shaders::binding<0, 4>{},
-		= shaders::ssbo_readonly
+		= shaders::ssbo_readwrite
 	]] tile_light_table {
 		using element = vec2u;
 	};
@@ -72,13 +73,27 @@ namespace gse::renderer::forward {
 
 	struct [[
 		= shaders::binding<0, 6>{},
-		= shaders::sampler3d
-	]] aerial_perspective_in {};
+		= shaders::texture3d
+	]] aerial_perspective_in {
+		using element = vec4f;
+	};
 
 	struct [[
 		= shaders::binding<0, 8>{},
-		= shaders::sampler2d
-	]] gi_atlas {};
+		= shaders::texture2d
+	]] gi_atlas {
+		using element = vec4f;
+	};
+
+	struct [[
+		= shaders::binding<0, 9>{},
+		= shaders::sampler_state
+	]] ap_sampler {};
+
+	struct [[
+		= shaders::binding<0, 10>{},
+		= shaders::sampler_state
+	]] gi_atlas_sampler {};
 
 	struct [[
 		= shaders::binding<1, 5>{},
@@ -97,13 +112,16 @@ namespace gse::renderer::forward {
 		aerial_perspective_in,
 		atmosphere::atmosphere_ubo,
 		gi_atlas,
+		ap_sampler,
+		gi_atlas_sampler,
 		shaders::meshlet::vertices_buffer,
 		shaders::meshlet::meshlets_buffer,
 		shaders::meshlet::meshlet_vertex_indices,
 		shaders::meshlet::meshlet_triangles,
 		shaders::meshlet::meshlet_bounds_buffer,
 		instance_data_buffer,
-		shaders::bindless::textures
+		shaders::bindless::textures,
+		shaders::bindless::textures_sampler
 	>;
 
 	struct [[= shaders::shader_struct]] meshlet_push_constants {
@@ -147,9 +165,11 @@ auto gse::renderer::forward::rebind_tlas_views(const shared_view<gpu::context::d
 	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_handle>::frames_in_flight; ++i) {
 		const auto fi = static_cast<std::uint32_t>(i);
 		if (!d.tlas_slots[i].valid()) {
-			d.tlas_slots[i] = gpu_s.device->allocate_buffer_slot();
+			d.tlas_slots[i] = gpu_s.device->allocate_acceleration_structure_slot();
 		}
-		gpu_s.device->write_acceleration_structure(d.tlas_slots[i].slot(), (*rt_state.tlas_ptrs[fi]).device_address());
+		const auto tlas_address = (*rt_state.tlas_ptrs[fi]).device_address();
+		d.tlas_addresses[i] = tlas_address;
+		gpu_s.device->write_acceleration_structure(d.tlas_slots[i].slot(), tlas_address);
 	}
 }
 
@@ -172,11 +192,22 @@ auto gse::renderer::forward::init(context& ctx, const shared_view<gpu::context::
 		}
 	);
 
+	d.material_sampler = gpu_s.device->register_sampler(
+		{
+			.min = gpu::sampler_filter::linear,
+			.mag = gpu::sampler_filter::linear,
+			.address_u = gpu::sampler_address_mode::repeat,
+			.address_v = gpu::sampler_address_mode::repeat,
+			.address_w = gpu::sampler_address_mode::repeat,
+		}
+	);
+
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 		d.camera_ubo_buffers[i] = gpu_s.device->create_buffer(
 			{
 				.size = camera_ubo_size,
-				.usage = gpu::buffer_flag::uniform,
+				.stride = sizeof(shaders::common::camera_data),
+				.usage = gpu::buffer_flag::storage,
 				.bindless = true
 			},
 			"forward.camera_ubo"
@@ -185,6 +216,7 @@ auto gse::renderer::forward::init(context& ctx, const shared_view<gpu::context::
 		d.light_buffers[i] = gpu_s.device->create_buffer(
 			{
 				.size = light_buffer_size,
+				.stride = sizeof(shaders::forward::light),
 				.usage = gpu::buffer_flag::storage,
 				.bindless = true
 			},
@@ -372,21 +404,17 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 
 	const auto camera_ubo_slot = d.camera_ubo_buffers[frame_index].slot();
 	const auto lights_slot = d.light_buffers[frame_index].slot();
-	const auto tlas_slot = d.tlas_slots[frame_index].slot();
+	const auto scene_tlas = gpu::make_acceleration_structure_arg(d.tlas_addresses[frame_index], d.tlas_slots[frame_index].slot());
 	const auto light_index_list_slot = lc_r.light_index_list_buffers[frame_index].slot();
 	const auto tile_light_table_slot = lc_r.tile_light_table_buffers[frame_index].slot();
 	const auto material_palette_slot = gc_r.material_palette_buffers[frame_index].slot();
 	const auto atmosphere_ubo_slot = atm_state.atmosphere_ubo_buffer.slot();
 	const auto instance_data_slot = gc_r.instance_buffer[frame_index].slot();
 
-	const gpu::combined_sampler_arg aerial_perspective_arg{
-		.image = atm_state.ap_volume.sampled_slot(),
-		.sampler = atm_state.lut_sampler_bindless.slot(),
-	};
-	const gpu::combined_sampler_arg gi_atlas_arg{
-		.image = gi_state.irradiance_atlas.sampled_slot(),
-		.sampler = d.gi_sampler.slot(),
-	};
+	const auto aerial_perspective_slot = atm_state.ap_volume.sampled_slot();
+	const auto ap_sampler_slot = atm_state.lut_sampler_bindless.slot();
+	const auto gi_atlas_slot = gi_state.irradiance_atlas.sampled_slot();
+	const auto gi_atlas_sampler_slot = d.gi_sampler.slot();
 
 	for (std::size_t i = 0; i < normal_batches.size(); ++i) {
 		const auto& batch = normal_batches[i];
@@ -423,19 +451,22 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 			{
 				.camera_ubo = camera_ubo_slot,
 				.lights_ssbo = lights_slot,
-				.scene_tlas = tlas_slot,
+				.scene_tlas = scene_tlas,
 				.light_index_list = light_index_list_slot,
 				.tile_light_table = tile_light_table_slot,
 				.material_palette = material_palette_slot,
-				.aerial_perspective_in = aerial_perspective_arg,
+				.aerial_perspective_in = aerial_perspective_slot,
 				.atmosphere_ubo = atmosphere_ubo_slot,
-				.gi_atlas = gi_atlas_arg,
+				.gi_atlas = gi_atlas_slot,
+				.ap_sampler = ap_sampler_slot,
+				.gi_atlas_sampler = gi_atlas_sampler_slot,
 				.vertices_buffer = ml.vertex_storage.slot(),
 				.meshlets_buffer = ml.descriptors.slot(),
 				.meshlet_vertex_indices = ml.vertices.slot(),
 				.meshlet_triangles = ml.triangles.slot(),
 				.meshlet_bounds_buffer = ml.bounds.slot(),
 				.instance_data_buffer = instance_data_slot,
+				.textures_sampler = d.material_sampler.slot(),
 			}
 		);
 

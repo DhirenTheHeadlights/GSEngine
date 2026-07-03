@@ -14,6 +14,7 @@ import :world_text_renderer;
 
 
 import gse.gpu;
+import gse.gpu_record;
 import gse.core;
 import gse.containers;
 import gse.concurrency;
@@ -24,18 +25,29 @@ import gse.meta;
 namespace gse::renderer::taa {
 	struct [[
 		= shaders::binding<0, 0>{},
-		= shaders::sampler2d
-	]] hdr_color {};
+		= shaders::texture2d
+	]] hdr_color {
+		using element = vec4f;
+	};
 
 	struct [[
 		= shaders::binding<0, 1>{},
-		= shaders::sampler2d
-	]] velocity_color {};
+		= shaders::texture2d
+	]] velocity_color {
+		using element = vec4f;
+	};
 
 	struct [[
 		= shaders::binding<0, 2>{},
-		= shaders::sampler2d
-	]] history_color {};
+		= shaders::texture2d
+	]] history_color {
+		using element = vec4f;
+	};
+
+	struct [[
+		= shaders::binding<0, 3>{},
+		= shaders::sampler_state
+	]] color_sampler {};
 
 	struct [[= shaders::shader_struct]] push_constants {
 		float blend_alpha;
@@ -43,7 +55,7 @@ namespace gse::renderer::taa {
 		vec2f inv_extent;
 	};
 
-	using shader_binding_types = type_pack<hdr_color, velocity_color, history_color>;
+	using shader_binding_types = type_pack<hdr_color, velocity_color, history_color, color_sampler>;
 
 	using entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/Taa">,
@@ -187,9 +199,10 @@ auto gse::renderer::taa::frame(const context& ctx, shared_view<gpu::context::dat
 			.inv_extent = vec2f{ 1.0f / static_cast<float>(ext.x()), 1.0f / static_cast<float>(ext.y()) },
 		},
 		{
-			.hdr_color = { d.hdr_view.slot(), d.sampler.slot() },
-			.velocity_color = { d.velocity_view.slot(), d.sampler.slot() },
-			.history_color = { d.history_views[1u - frame_index].slot(), d.sampler.slot() },
+			.hdr_color = d.hdr_view.slot(),
+			.velocity_color = d.velocity_view.slot(),
+			.history_color = d.history_views[1u - frame_index].slot(),
+			.color_sampler = d.sampler.slot(),
 		}
 	);
 	rec.draw(3);

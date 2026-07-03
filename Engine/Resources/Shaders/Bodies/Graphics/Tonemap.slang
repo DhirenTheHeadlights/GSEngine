@@ -75,12 +75,12 @@ float3 visualize_velocity(float2 v) {
 [shader("fragment")]
 float4 fs_main(VS_OUT input) : SV_Target {
     if (pc.show_velocity != 0) {
-        float2 v = velocity_color.Sample(input.uv).rg;
+        float2 v = velocity_color.Sample(color_sampler, input.uv).rg;
         return float4(visualize_velocity(v), 1.0);
     }
 
-    float3 hdr = hdr_color.Sample(input.uv).rgb;
-    float3 bloom = bloom_color.Sample(input.uv).rgb;
+    float3 hdr = hdr_color.Sample(color_sampler, input.uv).rgb;
+    float3 bloom = bloom_color.Sample(color_sampler, input.uv).rgb;
     float3 combined = hdr + bloom * pc.bloom_intensity;
     float3 exposed = combined * pc.exposure;
 

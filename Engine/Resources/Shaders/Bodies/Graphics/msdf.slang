@@ -19,13 +19,13 @@ float median(float r, float g, float b) {
 }
 
 float msd_alpha(uint tex_idx, float2 uv, float screen_px_range) {
-    float4 s = textures[NonUniformResourceIndex(tex_idx)].Sample(uv);
+    float4 s = textures[NonUniformResourceIndex(tex_idx)].Sample(textures_sampler, uv);
     float sd = median(s.r, s.g, s.b);
     return clamp(screen_px_range * (sd - 0.5) + 0.5, 0.0, 1.0);
 }
 
 float tsd_alpha(uint tex_idx, float2 uv, float screen_px_range) {
-    float sd = textures[NonUniformResourceIndex(tex_idx)].Sample(uv).a;
+    float sd = textures[NonUniformResourceIndex(tex_idx)].Sample(textures_sampler, uv).a;
     return clamp(screen_px_range * (sd - 0.5) + 0.5, 0.0, 1.0);
 }
 

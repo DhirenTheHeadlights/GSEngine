@@ -10,21 +10,8 @@ import :access_token;
 import :component;
 
 export namespace gse {
-	class component_storage_base {
-	public:
-		virtual ~component_storage_base() = default;
-
-		virtual auto activate_pending(
-			id owner
-		) -> bool = 0;
-
-		virtual auto remove_owner(
-			id owner
-		) -> void = 0;
-	};
-
 	template <typename T>
-	class component_storage final : public component_storage_base {
+	class component_storage {
 	public:
 		auto add(
 			id owner,
@@ -34,11 +21,11 @@ export namespace gse {
 
 		auto activate_pending(
 			id owner
-		) -> bool override;
+		) -> bool;
 
 		auto remove_owner(
 			id owner
-		) -> void override;
+		) -> void;
 
 		auto try_get(
 			this component_storage& self,
@@ -75,8 +62,6 @@ export namespace gse {
 
 	class registry final : public non_copyable {
 	public:
-		~registry() = default;
-
 		auto create(
 			std::string_view name
 		) -> id;
@@ -170,6 +155,12 @@ export namespace gse {
 		auto ensure_storage() -> void;
 
 	private:
+		struct storage_slot {
+			std::unique_ptr<void, void (*)(void*)> storage{ nullptr, nullptr };
+			bool (*activate_pending)(void*, id) = nullptr;
+			void (*remove_owner)(void*, id) = nullptr;
+		};
+
 		template <typename T>
 		auto storage() -> component_storage<T>&;
 
@@ -181,7 +172,7 @@ export namespace gse {
 		std::unordered_set<id> m_active;
 		std::unordered_set<id> m_inactive;
 
-		std::unordered_map<id, std::unique_ptr<component_storage_base>> m_storages;
+		std::unordered_map<id, storage_slot> m_storages;
 	};
 }
 
@@ -298,8 +289,10 @@ auto gse::registry::activate(const id owner) -> void {
 	m_inactive.erase(owner);
 	m_active.insert(owner);
 
-	for (const auto& s : std::views::values(m_storages)) {
-		s->activate_pending(owner);
+	for (auto& slot : std::views::values(m_storages)) {
+		if (slot.storage) {
+			slot.activate_pending(slot.storage.get(), owner);
+		}
 	}
 }
 
@@ -307,8 +300,10 @@ auto gse::registry::remove(const id owner) -> void {
 	m_active.erase(owner);
 	m_inactive.erase(owner);
 
-	for (const auto& s : std::views::values(m_storages)) {
-		s->remove_owner(owner);
+	for (auto& slot : std::views::values(m_storages)) {
+		if (slot.storage) {
+			slot.remove_owner(slot.storage.get(), owner);
+		}
 	}
 }
 
@@ -339,15 +334,23 @@ auto gse::registry::active(const id owner) const -> bool {
 template <typename T>
 auto gse::registry::storage() -> component_storage<T>& {
 	const auto type_idx = id_of<T>();
-	const auto it = m_storages.find(type_idx);
-	if (it != m_storages.end()) {
-		return static_cast<component_storage<T>&>(*it->second);
+	auto& slot = m_storages[type_idx];
+	if (!slot.storage) {
+		slot.storage = std::unique_ptr<void, void (*)(void*)>(
+			new component_storage<T>(),
+			+[](void* ptr) {
+				delete static_cast<component_storage<T>*>(ptr);
+			}
+		);
+		slot.activate_pending = +[](void* ptr, const id owner) {
+			return static_cast<component_storage<T>*>(ptr)->activate_pending(owner);
+		};
+		slot.remove_owner = +[](void* ptr, const id owner) {
+			static_cast<component_storage<T>*>(ptr)->remove_owner(owner);
+		};
 	}
 
-	auto fresh = std::make_unique<component_storage<T>>();
-	auto& ref = *fresh;
-	m_storages.emplace(type_idx, std::move(fresh));
-	return ref;
+	return *static_cast<component_storage<T>*>(slot.storage.get());
 }
 
 template <typename T>
@@ -362,7 +365,7 @@ auto gse::registry::try_storage(this registry& self) -> component_storage<T>* {
 	if (it == self.m_storages.end()) {
 		return nullptr;
 	}
-	return static_cast<component_storage<T>*>(it->second.get());
+	return static_cast<component_storage<T>*>(it->second.storage.get());
 }
 
 template <typename T>
@@ -375,12 +378,9 @@ auto gse::registry::add_component(const id owner, T value) -> T* {
 
 template <typename T>
 auto gse::registry::remove_component(const id owner) -> void {
-	const auto type_idx = id_of<T>();
-	const auto it = m_storages.find(type_idx);
-	if (it == m_storages.end()) {
-		return;
+	if (auto* s = try_storage<T>()) {
+		s->remove_owner(owner);
 	}
-	it->second->remove_owner(owner);
 }
 
 template <typename T>
@@ -448,40 +448,31 @@ auto gse::registry::acquire_write(access_token, access_guard* guard, std::atomic
 
 template <typename T>
 auto gse::registry::mark_component_updated(const id owner) -> void {
-	const auto type_idx = id_of<T>();
-	const auto it = m_storages.find(type_idx);
-	if (it == m_storages.end()) {
-		return;
+	if (auto* s = try_storage<T>()) {
+		s->mark_updated(owner);
 	}
-	static_cast<component_storage<T>&>(*it->second).mark_updated(owner);
 }
 
 template <typename T>
 auto gse::registry::drain_component_adds() -> std::vector<id> {
-	const auto type_idx = id_of<T>();
-	const auto it = m_storages.find(type_idx);
-	if (it == m_storages.end()) {
-		return {};
+	if (auto* s = try_storage<T>()) {
+		return s->drain_added();
 	}
-	return static_cast<component_storage<T>&>(*it->second).drain_added();
+	return {};
 }
 
 template <typename T>
 auto gse::registry::drain_component_updates() -> std::vector<id> {
-	const auto type_idx = id_of<T>();
-	const auto it = m_storages.find(type_idx);
-	if (it == m_storages.end()) {
-		return {};
+	if (auto* s = try_storage<T>()) {
+		return s->drain_updated();
 	}
-	return static_cast<component_storage<T>&>(*it->second).drain_updated();
+	return {};
 }
 
 template <typename T>
 auto gse::registry::drain_component_removes() -> std::vector<id> {
-	const auto type_idx = id_of<T>();
-	const auto it = m_storages.find(type_idx);
-	if (it == m_storages.end()) {
-		return {};
+	if (auto* s = try_storage<T>()) {
+		return s->drain_removed();
 	}
-	return static_cast<component_storage<T>&>(*it->second).drain_removed();
+	return {};
 }

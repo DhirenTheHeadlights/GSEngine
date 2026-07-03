@@ -196,22 +196,20 @@ auto gs::player::update(gse::context& ctx, data& d, const gse::shared_view<gse::
 
 		if (auto* itn = intents.find(p.pelvis_id)) {
 			const float k = d.input_smoothing;
-			itn->forward += (move_magnitude - itn->forward) * k;
-			itn->strafe += (0.f - itn->strafe) * k;
+			const float camera_yaw = static_cast<float>(p.yaw);
+
+			const bool moving = move_magnitude > move_deadzone;
+			const bool sprinting = gse::actions::held(b.shift, cs, as) && forward_in > 0.5f;
+			const float target_forward = moving ? forward_in : 0.f;
+			const float target_strafe = moving && !sprinting ? strafe_in : 0.f;
+
+			itn->forward += (target_forward - itn->forward) * k;
+			itn->strafe += (target_strafe - itn->strafe) * k;
 			itn->intensity += (move_magnitude - itn->intensity) * k;
-			itn->sprint = gse::actions::held(b.shift, cs, as);
+			itn->sprint = sprinting;
 			itn->sprint_blend += ((itn->sprint ? 1.f : 0.f) - itn->sprint_blend) * 0.03f;
 			itn->jump = false;
-			const float camera_yaw = static_cast<float>(p.yaw);
-			if (move_magnitude > move_deadzone) {
-				itn->desired_yaw = gse::radians(std::atan2(
-					forward_in * std::sin(camera_yaw) - strafe_in * std::cos(camera_yaw),
-					forward_in * std::cos(camera_yaw) + strafe_in * std::sin(camera_yaw)
-				));
-			}
-			else {
-				itn->desired_yaw = gse::radians(std::remainder(camera_yaw, 2.f * std::numbers::pi_v<float>));
-			}
+			itn->desired_yaw = gse::radians(std::remainder(camera_yaw, 2.f * std::numbers::pi_v<float>));
 			itn->has_heading = true;
 
 			if (log_now) {

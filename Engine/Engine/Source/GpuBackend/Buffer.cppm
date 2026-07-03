@@ -14,11 +14,13 @@ export namespace gse::gpu {
 		storage = 0x02,
 		indirect = 0x04,
 		transfer_dst = 0x08,
+		byte_address = 0x10,
 		index = 0x20,
 		transfer_src = 0x40,
 		acceleration_structure_storage = 0x80,
 		acceleration_structure_build_input = 0x100,
 		video_encode_dst = 0x200,
+		acceleration_structure_scratch = 0x400,
 	};
 
 	using buffer_usage = gse::flags<buffer_flag>;
@@ -28,10 +30,12 @@ export namespace gse::gpu {
 
 	struct buffer_desc {
 		device_size size = 0;
+		device_size stride = 0;
 		buffer_usage usage = buffer_flag::storage;
 		const void* data = nullptr;
 		const void* pnext = nullptr;
 		bool bindless = false;
+		bool writable = false;
 	};
 
 	struct buffer_copy_region {

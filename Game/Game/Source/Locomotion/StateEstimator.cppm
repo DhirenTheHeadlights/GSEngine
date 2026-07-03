@@ -19,6 +19,14 @@ export namespace gs::locomotion::state_estimator {
 		gse::displacement ground_tolerance = gse::meters(0.02f);
 
 		gse::interval_timer<float> log_timer{ gse::seconds(0.5f) };
+
+		gse::angle prev_hip_l;
+		gse::angle prev_knee_l;
+		gse::angle prev_ankle_l;
+		gse::angle prev_hip_r;
+		gse::angle prev_knee_r;
+		gse::angle prev_ankle_r;
+		bool prev_angles_valid = false;
 	};
 
 	[[= gse::system_run<>{}]]
@@ -51,8 +59,7 @@ namespace gs::locomotion {
 }
 
 auto gs::locomotion::hinge_angle_about_x(const gse::quat& parent, const gse::quat& child) -> gse::angle {
-	const auto rel = child * gse::conjugate(parent);
-	const auto theta = gse::to_axis_angle(rel);
+	const auto theta = gse::difference_axis_angle(parent, child);
 	const auto axis_world = gse::rotate_vector(parent, gse::vec3f(1.f, 0.f, 0.f));
 	return gse::dot(axis_world, theta);
 }
@@ -93,6 +100,7 @@ auto gs::locomotion::state_estimator::run(data& d, gse::read<skeleton_refs> refs
 		const auto* r = refs.find(owner);
 		if (!r) {
 			reset_state(s);
+			d.prev_angles_valid = false;
 			continue;
 		}
 
@@ -106,6 +114,7 @@ auto gs::locomotion::state_estimator::run(data& d, gse::read<skeleton_refs> refs
 
 		if (!pelvis_tc || !pelvis_mc || !foot_l_tc || !foot_r_tc || !foot_l_cc || !foot_r_cc) {
 			reset_state(s);
+			d.prev_angles_valid = false;
 			if (log_now) {
 				gse::log::println(
 					"state_estimator: owner={} missing: pelvis_tc={} pelvis_mc={} "
@@ -206,7 +215,7 @@ auto gs::locomotion::state_estimator::run(data& d, gse::read<skeleton_refs> refs
 		}
 
 		const auto com_height = std::max<gse::displacement>(s.com_world.y() - d.ground_y, gse::meters(0.30f));
-		s.pendulum_time = gse::seconds(std::sqrt(static_cast<float>(com_height) / 9.81f));
+		s.pendulum_time = gse::sqrt(com_height / gse::meters_per_second_squared(9.81f));
 
 		s.lean_world = gse::vec3<gse::displacement>(
 			excess_past_edge(s.com_world.x(), s.support_min.x(), s.support_max.x()),
@@ -238,11 +247,43 @@ auto gs::locomotion::state_estimator::run(data& d, gse::read<skeleton_refs> refs
 		if (thigh_l_tc && shin_l_tc && thigh_r_tc && shin_r_tc) {
 			s.hip_angle_l = hinge_angle_about_x(pelvis_tc->orientation, thigh_l_tc->orientation);
 			s.knee_angle_l = hinge_angle_about_x(thigh_l_tc->orientation, shin_l_tc->orientation);
+			s.ankle_angle_l = hinge_angle_about_x(shin_l_tc->orientation, foot_l_tc->orientation);
 			s.hip_angle_r = hinge_angle_about_x(pelvis_tc->orientation, thigh_r_tc->orientation);
 			s.knee_angle_r = hinge_angle_about_x(thigh_r_tc->orientation, shin_r_tc->orientation);
+			s.ankle_angle_r = hinge_angle_about_x(shin_r_tc->orientation, foot_r_tc->orientation);
+
+			const auto dt = gse::system_clock::fixed_dt<gse::time>();
+
+			if (d.prev_angles_valid && dt > gse::seconds(0.f)) {
+				s.hip_rate_l = (s.hip_angle_l - d.prev_hip_l) / dt;
+				s.knee_rate_l = (s.knee_angle_l - d.prev_knee_l) / dt;
+				s.ankle_rate_l = (s.ankle_angle_l - d.prev_ankle_l) / dt;
+				s.hip_rate_r = (s.hip_angle_r - d.prev_hip_r) / dt;
+				s.knee_rate_r = (s.knee_angle_r - d.prev_knee_r) / dt;
+				s.ankle_rate_r = (s.ankle_angle_r - d.prev_ankle_r) / dt;
+			}
+			else {
+				s.hip_rate_l = {};
+				s.knee_rate_l = {};
+				s.ankle_rate_l = {};
+				s.hip_rate_r = {};
+				s.knee_rate_r = {};
+				s.ankle_rate_r = {};
+			}
+
+			d.prev_hip_l = s.hip_angle_l;
+			d.prev_knee_l = s.knee_angle_l;
+			d.prev_ankle_l = s.ankle_angle_l;
+			d.prev_hip_r = s.hip_angle_r;
+			d.prev_knee_r = s.knee_angle_r;
+			d.prev_ankle_r = s.ankle_angle_r;
+			d.prev_angles_valid = true;
+		}
+		else {
+			d.prev_angles_valid = false;
 		}
 
-		s.pelvis_pitch = gse::radians(std::asin(std::clamp(s.pelvis_forward.y(), -1.f, 1.f)));
+		s.pelvis_pitch = gse::asin(std::clamp(s.pelvis_forward.y(), -1.f, 1.f));
 		s.pelvis_pitch_rate = gse::dot(s.pelvis_right, pelvis_mc->angular_velocity);
 		s.valid = true;
 

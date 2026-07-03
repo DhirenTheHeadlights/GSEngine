@@ -13,6 +13,7 @@ import :render_targets;
 import gse.os;
 import gse.assets;
 import gse.gpu;
+import gse.gpu_record;
 import gse.core;
 import gse.containers;
 import gse.time;
@@ -64,7 +65,8 @@ auto gse::renderer::depth_prepass::init(context& ctx, const shared_view<gpu::con
 		d.camera_ubo_buffers[i] = gpu_s.device->create_buffer(
 			{
 				.size = camera_ubo_size,
-				.usage = gpu::buffer_flag::uniform,
+				.stride = sizeof(shaders::common::camera_data),
+				.usage = gpu::buffer_flag::storage,
 				.bindless = true
 			},
 			"depth_prepass.camera_ubo"

@@ -11,7 +11,6 @@ import :frame_recorder;
 import :frame_resource_bin;
 
 import gse.core;
-import gse.concurrency;
 
 export namespace gse::gpu {
 	struct transient_pool_handle {
@@ -80,6 +79,8 @@ export namespace gse::gpu {
 		[[nodiscard]] auto reached(
 			std::uint64_t value
 		) const -> bool;
+
+		[[nodiscard]] auto pending_value() const -> std::uint64_t;
 
 		[[nodiscard]] auto timeline_handle() const -> gpu::handle<gpu::semaphore>;
 
@@ -153,10 +154,6 @@ export namespace gse::gpu {
 			gpu::queue_id id
 		) -> transient_queue<Device>&;
 
-		auto detach(
-			async::task<> task
-		) -> void;
-
 		auto begin_frame() -> void;
 
 		auto wait_idle() -> void;
@@ -171,8 +168,6 @@ export namespace gse::gpu {
 		gpu::frame_resource_bin m_bin;
 		transient_queue<Device> m_graphics;
 		transient_queue<Device> m_compute;
-		std::vector<async::task<>> m_detached;
-		std::unique_ptr<std::mutex> m_detached_mutex = std::make_unique<std::mutex>();
 	};
 }
 
@@ -257,6 +252,12 @@ auto gse::gpu::transient_queue<Device>::progress() const -> std::uint64_t {
 template <typename Device>
 auto gse::gpu::transient_queue<Device>::reached(const std::uint64_t value) const -> bool {
 	return m_station.reached(value);
+}
+
+template <typename Device>
+auto gse::gpu::transient_queue<Device>::pending_value() const -> std::uint64_t {
+	std::lock_guard lock(*m_mutex);
+	return m_next_value;
 }
 
 template <typename Device>
@@ -354,12 +355,6 @@ auto gse::gpu::transient_executor<Device>::queue(const gpu::queue_id id) -> tran
 }
 
 template <typename Device>
-auto gse::gpu::transient_executor<Device>::detach(async::task<> task) -> void {
-	std::lock_guard lock(*m_detached_mutex);
-	m_detached.push_back(std::move(task));
-}
-
-template <typename Device>
 auto gse::gpu::transient_executor<Device>::begin_frame() -> void {
 	const auto graphics_progress = m_graphics.poll();
 	const auto compute_progress = m_compute.poll();
@@ -376,26 +371,12 @@ auto gse::gpu::transient_executor<Device>::begin_frame() -> void {
 	};
 
 	m_bin.drain(progress);
-
-	{
-		std::lock_guard lock(*m_detached_mutex);
-		std::erase_if(
-			m_detached,
-			[](const async::task<>& t) {
-				return t.done();
-			}
-		);
-	}
 }
 
 template <typename Device>
 auto gse::gpu::transient_executor<Device>::wait_idle() -> void {
 	m_graphics.wait_idle();
 	m_compute.wait_idle();
-	{
-		std::lock_guard lock(*m_detached_mutex);
-		m_detached.clear();
-	}
 	m_bin.wait_idle_clear();
 	m_recorder.clear();
 }

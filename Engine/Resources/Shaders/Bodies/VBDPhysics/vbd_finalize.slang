@@ -8,33 +8,39 @@ void vbd_finalize(uint3 dispatch_id) {
     bool sleeping = body.sleep_counter >= sleep_threshold;
     bool update_orient = body.update_orientation != 0;
 
-    if (locked || sleeping) return;
+    if (sleeping) return;
 
-    bool bad_pp = isinf(body.predicted_position.x) || isinf(body.predicted_position.y) || isinf(body.predicted_position.z)
-               || isnan(body.predicted_position.x) || isnan(body.predicted_position.y) || isnan(body.predicted_position.z);
-    if (bad_pp) {
-        body.predicted_position = body.old_position;
-        body.predicted_orientation = body.old_orientation;
-        body.velocity = float3(0, 0, 0);
-        body.angular_velocity = float3(0, 0, 0);
-        body.position = body.old_position;
-        body.orientation = body.old_orientation;
-        body_data[bi] = body;
-        return;
-    }
-
-    float q_len_sq = body.predicted_orientation.x * body.predicted_orientation.x
-                   + body.predicted_orientation.y * body.predicted_orientation.y
-                   + body.predicted_orientation.z * body.predicted_orientation.z
-                   + body.predicted_orientation.w * body.predicted_orientation.w;
-    if (q_len_sq < 0.5 || isnan(q_len_sq)) {
-        body.predicted_orientation = body.orientation;
-        body.angular_velocity = float3(0, 0, 0);
-    }
-
-    body.position = body.predicted_position;
-    if (update_orient) {
+    if (locked) {
+        body.position = body.predicted_position;
         body.orientation = body.predicted_orientation;
+    }
+    else {
+        bool bad_pp = isinf(body.predicted_position.x) || isinf(body.predicted_position.y) || isinf(body.predicted_position.z)
+                   || isnan(body.predicted_position.x) || isnan(body.predicted_position.y) || isnan(body.predicted_position.z);
+        if (bad_pp) {
+            body.predicted_position = body.old_position;
+            body.predicted_orientation = body.old_orientation;
+            body.velocity = float3(0, 0, 0);
+            body.angular_velocity = float3(0, 0, 0);
+            body.position = body.old_position;
+            body.orientation = body.old_orientation;
+            body_data[bi] = body;
+            return;
+        }
+
+        float q_len_sq = body.predicted_orientation.x * body.predicted_orientation.x
+                       + body.predicted_orientation.y * body.predicted_orientation.y
+                       + body.predicted_orientation.z * body.predicted_orientation.z
+                       + body.predicted_orientation.w * body.predicted_orientation.w;
+        if (q_len_sq < 0.5 || isnan(q_len_sq)) {
+            body.predicted_orientation = body.orientation;
+            body.angular_velocity = float3(0, 0, 0);
+        }
+
+        body.position = body.predicted_position;
+        if (update_orient) {
+            body.orientation = body.predicted_orientation;
+        }
     }
 
     float3 he = body.half_extents.xyz;

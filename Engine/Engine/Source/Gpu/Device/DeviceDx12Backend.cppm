@@ -13,6 +13,10 @@ import gse.math;
 export namespace gse::gpu {
 	struct dx12_device_backend {
 		std::unique_ptr<dx12::device> device;
+		dx12::fault fault;
+		dx12::command_pools pools;
+		dx12::queue queue;
+		dx12::swapchain swapchain;
 
 		[[nodiscard]] auto handle() const -> gpu::device_handle;
 
@@ -68,6 +72,15 @@ export namespace gse::gpu {
 			gpu::handle<gpu::image> img,
 			gpu::pipeline_stage_flags src_stages,
 			gpu::access_flags src_access
+		) -> void;
+
+		auto begin_debug_event(
+			gpu::command_buffer_handle cmd,
+			std::string_view label
+		) -> void;
+
+		auto end_debug_event(
+			gpu::command_buffer_handle cmd
 		) -> void;
 
 		[[nodiscard]] auto frame_command_buffer(
@@ -289,6 +302,8 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto allocate_image_slot() -> gpu::bindless_handle;
 
+		[[nodiscard]] auto allocate_acceleration_structure_slot() -> gpu::bindless_handle;
+
 		auto write_storage_buffer(
 			gpu::bindless_slot slot,
 			gpu::device_address address,
@@ -320,8 +335,6 @@ export namespace gse::gpu {
 			const gpu::sampler_desc& desc
 		) -> gpu::bindless_handle;
 
-		[[nodiscard]] auto bindless_layout() const -> gpu::bindless_layout;
-
 		[[nodiscard]] auto bindless_resource_heap_binding() const -> gpu::bindless_heap_binding;
 
 		[[nodiscard]] auto bindless_sampler_heap_binding() const -> gpu::bindless_heap_binding;
@@ -344,7 +357,7 @@ export namespace gse::gpu {
 	};
 
 	[[nodiscard]] auto create_dx12_device_backend(
-		shared_view<window::data> win,
+		std::optional<shared_view<window::data>> win,
 		bool validation_layers_enabled,
 		device_settings& cfg
 	) -> dx12_backend_creation;
@@ -367,23 +380,23 @@ auto gse::gpu::dx12_device_backend::timestamp_period() const -> float {
 }
 
 auto gse::gpu::dx12_device_backend::wait_for_crash_dump() -> void {
-	device->wait_for_crash_dump();
+	fault.wait_for_crash_dump();
 }
 
 auto gse::gpu::dx12_device_backend::fault_enabled() const -> bool {
-	return device->fault_enabled();
+	return fault.enabled();
 }
 
 auto gse::gpu::dx12_device_backend::vendor_binary_fault_enabled() const -> bool {
-	return device->vendor_binary_fault_enabled();
+	return fault.vendor_binary_enabled();
 }
 
 auto gse::gpu::dx12_device_backend::query_fault_counts(gpu::device_fault_counts& counts) const -> gpu::result {
-	return device->query_fault_counts(counts);
+	return fault.query_counts(counts);
 }
 
 auto gse::gpu::dx12_device_backend::query_fault_info(gpu::device_fault_counts& counts, gpu::device_fault_info& info) const -> gpu::result {
-	return device->query_fault_info(counts, info);
+	return fault.query_info(counts, info);
 }
 
 auto gse::gpu::dx12_device_backend::record_buffer_fill_u32(const gpu::command_buffer_handle cmd, const gpu::handle<gpu::buffer> buf, const gpu::device_size offset, const std::uint32_t value) -> void {
@@ -410,32 +423,40 @@ auto gse::gpu::dx12_device_backend::cmd_release_swapchain_to_present(const gpu::
 	device->cmd_release_swapchain_to_present(cmd, img, src_stages, src_access);
 }
 
+auto gse::gpu::dx12_device_backend::begin_debug_event(const gpu::command_buffer_handle cmd, const std::string_view label) -> void {
+	device->begin_debug_event(cmd, label);
+}
+
+auto gse::gpu::dx12_device_backend::end_debug_event(const gpu::command_buffer_handle cmd) -> void {
+	device->end_debug_event(cmd);
+}
+
 auto gse::gpu::dx12_device_backend::frame_command_buffer(const gpu::queue_type queue_type, const std::uint32_t frame_index) const -> gpu::command_buffer_handle {
 	return device->frame_command_buffer(queue_type, frame_index);
 }
 
-auto gse::gpu::dx12_device_backend::submit(const gpu::queue_type queue_type, const gpu::submit_info& info, const gpu::handle<gpu::fence> signal_fence) -> void {
-	device->submit(queue_type, info, signal_fence);
+auto gse::gpu::dx12_device_backend::submit(gpu::queue_type, const gpu::submit_info& info, const gpu::handle<gpu::fence> signal_fence) -> void {
+	queue.submit(info, signal_fence);
 }
 
 auto gse::gpu::dx12_device_backend::present(const gpu::present_info& info) -> gpu::result {
-	return device->present(info);
+	return swapchain.present(info);
 }
 
-auto gse::gpu::dx12_device_backend::wait_for_fence(const gpu::handle<gpu::fence> f, const std::uint64_t timeout_ns) const -> gpu::result {
-	return device->wait_for_fence(f, timeout_ns);
+auto gse::gpu::dx12_device_backend::wait_for_fence(const gpu::handle<gpu::fence> f, std::uint64_t) const -> gpu::result {
+	return queue.wait_for_fence(f);
 }
 
 auto gse::gpu::dx12_device_backend::reset_fence(const gpu::handle<gpu::fence> f) const -> void {
-	device->reset_fence(f);
+	queue.reset_fence(f);
 }
 
 auto gse::gpu::dx12_device_backend::reset_worker_command_pools(const std::uint32_t frame_index) -> void {
-	device->reset_worker_command_pools(frame_index);
+	pools.reset_worker_command_pools(frame_index);
 }
 
-auto gse::gpu::dx12_device_backend::acquire_worker_command_buffer(const gpu::queue_type queue_type, const std::size_t worker_index, const std::uint32_t frame_index) -> gpu::command_buffer_handle {
-	return device->acquire_worker_command_buffer(queue_type, worker_index, frame_index);
+auto gse::gpu::dx12_device_backend::acquire_worker_command_buffer(gpu::queue_type, const std::size_t worker_index, const std::uint32_t frame_index) -> gpu::command_buffer_handle {
+	return pools.acquire_worker_command_buffer(worker_index, frame_index);
 }
 
 auto gse::gpu::dx12_device_backend::create_image_unbound(const gpu::image_create_info& info) const -> std::pair<gpu::handle<gpu::image>, gpu::memory_requirements> {
@@ -475,31 +496,31 @@ auto gse::gpu::dx12_device_backend::host_upload_image_layers(const gpu::handle<g
 }
 
 auto gse::gpu::dx12_device_backend::begin_one_time_commands(const gpu::command_buffer_handle cmd) -> void {
-	device->begin_one_time_commands(cmd);
+	pools.begin_one_time_commands(cmd);
 }
 
 auto gse::gpu::dx12_device_backend::end_commands(const gpu::command_buffer_handle cmd) -> void {
-	device->end_commands(cmd);
+	pools.end_commands(cmd);
 }
 
-auto gse::gpu::dx12_device_backend::create_transient_command_pool(const std::uint32_t family) -> gpu::transient_pool_handle {
-	return device->create_transient_command_pool(family);
+auto gse::gpu::dx12_device_backend::create_transient_command_pool(std::uint32_t) -> gpu::transient_pool_handle {
+	return pools.create_transient_command_pool();
 }
 
 auto gse::gpu::dx12_device_backend::allocate_transient_primary(const gpu::transient_pool_handle pool) -> gpu::command_buffer_handle {
-	return device->allocate_transient_primary(pool);
+	return pools.allocate_transient_primary(pool);
 }
 
 auto gse::gpu::dx12_device_backend::transient_pool_try_reset(const gpu::transient_pool_handle pool, const std::uint64_t queue_progress) -> void {
-	device->transient_pool_try_reset(pool, queue_progress);
+	pools.transient_pool_try_reset(pool, queue_progress);
 }
 
 auto gse::gpu::dx12_device_backend::transient_pool_mark_in_use(const gpu::transient_pool_handle pool, const std::uint64_t value) -> void {
-	device->transient_pool_mark_in_use(pool, value);
+	pools.transient_pool_mark_in_use(pool, value);
 }
 
 auto gse::gpu::dx12_device_backend::transient_pool_reset_all(const gpu::transient_pool_handle pool) -> void {
-	device->transient_pool_reset_all(pool);
+	pools.transient_pool_reset_all(pool);
 }
 
 auto gse::gpu::dx12_device_backend::create_shader_program(const gpu::shader_program_create_info& info) -> gpu::shader_program {
@@ -547,27 +568,27 @@ auto gse::gpu::dx12_device_backend::query_pool_results(const gpu::handle<gpu::qu
 }
 
 auto gse::gpu::dx12_device_backend::create_swapchain(const vec2i framebuffer_size, const gpu::present_mode mode, const gpu::swap_chain_handle old_handle) -> gpu::swap_chain_info {
-	return device->create_swapchain(framebuffer_size, mode, old_handle);
+	return swapchain.create(framebuffer_size, mode, old_handle);
 }
 
-auto gse::gpu::dx12_device_backend::acquire_swapchain_image(const gpu::swap_chain_handle swapchain, const gpu::handle<gpu::semaphore> wait_semaphore, const std::uint64_t timeout_ns) const -> gpu::acquire_next_image_result {
-	return device->acquire_swapchain_image(swapchain, wait_semaphore, timeout_ns);
+auto gse::gpu::dx12_device_backend::acquire_swapchain_image(gpu::swap_chain_handle, const gpu::handle<gpu::semaphore> wait_semaphore, std::uint64_t) const -> gpu::acquire_next_image_result {
+	return swapchain.acquire_image(wait_semaphore);
 }
 
-auto gse::gpu::dx12_device_backend::wait_swapchain_release_fences(const gpu::swap_chain_handle swapchain) const -> void {
-	device->wait_swapchain_release_fences(swapchain);
+auto gse::gpu::dx12_device_backend::wait_swapchain_release_fences(gpu::swap_chain_handle) const -> void {
+	swapchain.wait_release_fences();
 }
 
-auto gse::gpu::dx12_device_backend::reset_swapchain_release_fence(const gpu::swap_chain_handle swapchain, const std::uint32_t image_index) const -> void {
-	device->reset_swapchain_release_fence(swapchain, image_index);
+auto gse::gpu::dx12_device_backend::reset_swapchain_release_fence(gpu::swap_chain_handle, const std::uint32_t image_index) const -> void {
+	swapchain.reset_release_fence(image_index);
 }
 
-auto gse::gpu::dx12_device_backend::swapchain_release_fence(const gpu::swap_chain_handle swapchain, const std::uint32_t image_index) const -> gpu::handle<gpu::fence> {
-	return device->swapchain_release_fence(swapchain, image_index);
+auto gse::gpu::dx12_device_backend::swapchain_release_fence(gpu::swap_chain_handle, const std::uint32_t image_index) const -> gpu::handle<gpu::fence> {
+	return swapchain.release_fence(image_index);
 }
 
-auto gse::gpu::dx12_device_backend::swapchain_past_presentation_timing(const gpu::swap_chain_handle swapchain) const -> std::vector<gpu::past_present_timing> {
-	return device->swapchain_past_presentation_timing(swapchain);
+auto gse::gpu::dx12_device_backend::swapchain_past_presentation_timing(gpu::swap_chain_handle) const -> std::vector<gpu::past_present_timing> {
+	return swapchain.past_presentation_timing();
 }
 
 auto gse::gpu::dx12_device_backend::create_blas(const gpu::acceleration_structure_geometry& geometry, const std::uint32_t prim_count) -> gpu::blas {
@@ -602,6 +623,10 @@ auto gse::gpu::dx12_device_backend::allocate_image_slot() -> gpu::bindless_handl
 	return device->allocate_image_slot();
 }
 
+auto gse::gpu::dx12_device_backend::allocate_acceleration_structure_slot() -> gpu::bindless_handle {
+	return device->allocate_acceleration_structure_slot();
+}
+
 auto gse::gpu::dx12_device_backend::write_storage_buffer(const gpu::bindless_slot slot, const gpu::device_address address, const gpu::device_size size) -> void {
 	device->write_storage_buffer(slot, address, size);
 }
@@ -626,10 +651,6 @@ auto gse::gpu::dx12_device_backend::register_texture(const gpu::image& img, cons
 	return device->register_texture(img, desc);
 }
 
-auto gse::gpu::dx12_device_backend::bindless_layout() const -> gpu::bindless_layout {
-	return device->bindless_layout();
-}
-
 auto gse::gpu::dx12_device_backend::bindless_resource_heap_binding() const -> gpu::bindless_heap_binding {
 	return device->bindless_resource_heap_binding();
 }
@@ -650,9 +671,13 @@ auto gse::gpu::dx12_device_backend::make_video_encoder_backend(vec2u) -> std::un
 	return nullptr;
 }
 
-auto gse::gpu::create_dx12_device_backend(const shared_view<window::data> win, bool, device_settings& cfg) -> dx12_backend_creation {
+auto gse::gpu::create_dx12_device_backend(const std::optional<shared_view<window::data>> win, const bool validation_layers_enabled, device_settings& cfg) -> dx12_backend_creation {
+	auto backend = std::make_unique<dx12_device_backend>(std::make_unique<dx12::device>(*win, validation_layers_enabled, cfg));
+	backend->pools.bind(backend->device.get());
+	backend->queue.bind(backend->device.get());
+	backend->swapchain.bind(backend->device.get());
 	return {
-		.backend = std::make_unique<dx12_device_backend>(std::make_unique<dx12::device>(win, cfg)),
+		.backend = std::move(backend),
 		.surface_format = image_format::b8g8r8a8_unorm,
 		.video_encode_enabled = false,
 	};

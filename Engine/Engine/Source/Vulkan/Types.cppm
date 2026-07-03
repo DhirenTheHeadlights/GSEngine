@@ -578,6 +578,8 @@ auto gse::vulkan::to_vk(const gpu::result r) -> vk::Result {
 			return vk::Result::eErrorOutOfDateKHR;
 		case gpu::result::error_surface_lost_khr:
 			return vk::Result::eErrorSurfaceLostKHR;
+		case gpu::result::error_present_timing_queue_full:
+			return vk::Result::eErrorPresentTimingQueueFullEXT;
 		case gpu::result::error_unknown:
 			return vk::Result::eErrorUnknown;
 	}
@@ -703,6 +705,9 @@ auto gse::vulkan::to_vk(const gpu::buffer_usage fls) -> vk::BufferUsageFlags {
 	if (fls.test(gpu::buffer_flag::acceleration_structure_build_input)) {
 		result |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
 			vk::BufferUsageFlagBits::eShaderDeviceAddress;
+	}
+	if (fls.test(gpu::buffer_flag::acceleration_structure_scratch)) {
+		result |= vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress;
 	}
 	if (fls.test(gpu::buffer_flag::video_encode_dst)) {
 		result |= vk::BufferUsageFlagBits::eVideoEncodeDstKHR;
@@ -1117,6 +1122,8 @@ auto gse::vulkan::from_vk(const vk::Result r) -> gpu::result {
 			return gpu::result::error_out_of_date_khr;
 		case vk::Result::eErrorSurfaceLostKHR:
 			return gpu::result::error_surface_lost_khr;
+		case vk::Result::eErrorPresentTimingQueueFullEXT:
+			return gpu::result::error_present_timing_queue_full;
 		default:
 			return gpu::result::error_unknown;
 	}

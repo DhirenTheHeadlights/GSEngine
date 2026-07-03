@@ -12,6 +12,7 @@ import :render_targets;
 
 
 import gse.gpu;
+import gse.gpu_record;
 import gse.core;
 import gse.containers;
 import gse.concurrency;
@@ -34,15 +35,15 @@ namespace gse::renderer::world_text {
 
 	struct [[= shaders::shader_struct]] push_constants {
 		vec3f color;
-		vec2f unit_range;
 		std::uint32_t tex_idx;
 		vec3f shadow_color;
 		float shadow_offset_px;
+		vec2f unit_range;
 		float shadow_softness;
 		float shadow_strength;
 	};
 
-	using world_text_bindings = type_pack<shaders::standard_3d::camera_ubo, world_text_vertex_buffer, shaders::bindless::textures>;
+	using world_text_bindings = type_pack<shaders::standard_3d::camera_ubo, world_text_vertex_buffer, shaders::bindless::textures, shaders::bindless::textures_sampler>;
 	using world_text_shader_types = type_pack<world_text_vertex>;
 
 	using entry = gpu::graphics_entry<
@@ -143,6 +144,7 @@ auto gse::renderer::world_text::ensure_vertex_capacity(data& d, gpu::device& dev
 	buf = device.create_buffer(
 		{
 			.size = cap * sizeof(world_text_vertex),
+			.stride = sizeof(world_text_vertex),
 			.usage = gpu::buffer_flag::storage,
 			.bindless = true
 		},
@@ -153,13 +155,24 @@ auto gse::renderer::world_text::ensure_vertex_capacity(data& d, gpu::device& dev
 auto gse::renderer::world_text::init(context& ctx, const shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
 	d.pipeline = gpu::build_graphics_program(*gpu_s.device, entry::pod);
 
+	d.text_sampler = gpu_s.device->register_sampler(
+		{
+			.min = gpu::sampler_filter::linear,
+			.mag = gpu::sampler_filter::linear,
+			.address_u = gpu::sampler_address_mode::clamp_to_edge,
+			.address_v = gpu::sampler_address_mode::clamp_to_edge,
+			.address_w = gpu::sampler_address_mode::clamp_to_edge,
+		}
+	);
+
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 		d.camera_ubo_buffers[i] = gpu_s.device->create_buffer(
 			{
 				.size = camera_ubo_size,
-				.usage = gpu::buffer_flag::uniform,
+				.stride = sizeof(shaders::common::camera_data),
+				.usage = gpu::buffer_flag::storage,
 				.bindless = true
 			},
 			"world_text.camera_ubo"
@@ -236,16 +249,17 @@ auto gse::renderer::world_text::frame(const context& ctx, shared_view<gpu::conte
 	rec.push_bindings<entry>(
 		{
 			.color = grid_d.label_color,
-			.unit_range = unit_range,
 			.tex_idx = f.texture()->bindless_slot().index,
 			.shadow_color = vec3f{ 0.f, 0.f, 0.f },
 			.shadow_offset_px = 1.5f,
+			.unit_range = unit_range,
 			.shadow_softness = 0.6f,
 			.shadow_strength = 0.55f,
 		},
 		{
 			.camera_ubo = d.camera_ubo_buffers[frame_index].slot(),
 			.world_text_vertex_buffer = d.vertex_buffers[frame_index].slot(),
+			.textures_sampler = d.text_sampler.slot(),
 		}
 	);
 	rec.draw(vertex_count);

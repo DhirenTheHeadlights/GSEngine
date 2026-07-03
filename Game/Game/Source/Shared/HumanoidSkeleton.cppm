@@ -24,7 +24,8 @@ export namespace gs {
 	auto spawn_humanoid(
 		gse::scene& s,
 		const gse::vec3<gse::position>& root_position,
-		const gse::quat& root_orientation = gse::quat(1.f, 0.f, 0.f, 0.f)
+		const gse::quat& root_orientation = gse::quat(1.f, 0.f, 0.f, 0.f),
+		std::string_view name = "humanoid"
 	) -> skeleton_handle;
 }
 
@@ -78,7 +79,7 @@ namespace gs {
 	};
 	constexpr auto foot_size = []() {
 		return gs::bone_dims{
-			.size = gse::vec3<gse::displacement>(gse::meters(0.10f), gse::meters(0.05f), gse::meters(0.25f)),
+			.size = gse::vec3<gse::displacement>(gse::meters(0.09f), gse::meters(0.05f), gse::meters(0.20f)),
 			.mass = gse::kilograms(1.f),
 		};
 	};
@@ -256,7 +257,7 @@ auto gs::humanoid_rig_default() -> humanoid_rig {
 		.mass = foot.mass,
 	});
 
-	const auto toe_size = gse::vec3<gse::displacement>(foot.size.x(), foot.size.y(), gse::meters(0.10f));
+	const auto toe_size = gse::vec3<gse::displacement>(foot.size.x(), foot.size.y(), gse::meters(0.07f));
 	const auto toe_offset_z = -(foot.size.z() * 0.5f + toe_size.z() * 0.5f);
 	s.bones.push_back({
 		.name = "toe_l",
@@ -504,8 +505,9 @@ auto gs::humanoid_rig_default() -> humanoid_rig {
 	return rig;
 }
 
-auto gs::spawn_humanoid(gse::scene& s, const gse::vec3<gse::position>& root_position, const gse::quat& root_orientation) -> skeleton_handle {
-	const auto rig = humanoid_rig_default();
+auto gs::spawn_humanoid(gse::scene& s, const gse::vec3<gse::position>& root_position, const gse::quat& root_orientation, const std::string_view name) -> skeleton_handle {
+	auto rig = humanoid_rig_default();
+	rig.skel.name = std::string(name);
 	auto handle = spawn_skeleton(s, rig.skel, root_position, root_orientation);
 
 	for (const auto& cj : rig.controlled) {

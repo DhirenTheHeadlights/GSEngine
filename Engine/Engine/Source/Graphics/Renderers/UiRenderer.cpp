@@ -16,6 +16,7 @@ import :world_text_renderer;
 import gse.os;
 import gse.assets;
 import gse.gpu;
+import gse.gpu_record;
 import gse.core;
 import gse.containers;
 import gse.concurrency;
@@ -30,7 +31,7 @@ namespace gse::renderer::ui {
 		using element = vertex;
 	};
 
-	using shader_binding_types = type_pack<vertex_buffer, shaders::bindless::textures>;
+	using shader_binding_types = type_pack<vertex_buffer, shaders::bindless::textures, shaders::bindless::textures_sampler>;
 
 	using shader_types = type_pack<vertex>;
 
@@ -158,6 +159,16 @@ auto gse::renderer::ui::init(const shared_view<gpu::context::data> gpu_s, data& 
 	d.sprite_pipeline = gpu::build_graphics_program(*gpu_s.device, sprite_entry::pod);
 	d.text_pipeline = gpu::build_graphics_program(*gpu_s.device, msdf_entry::pod);
 
+	d.ui_sampler = gpu_s.device->register_sampler(
+		{
+			.min = gpu::sampler_filter::linear,
+			.mag = gpu::sampler_filter::linear,
+			.address_u = gpu::sampler_address_mode::clamp_to_edge,
+			.address_v = gpu::sampler_address_mode::clamp_to_edge,
+			.address_w = gpu::sampler_address_mode::clamp_to_edge,
+		}
+	);
+
 	constexpr std::size_t vertex_buffer_size = max_vertices * sizeof(vertex);
 	constexpr std::size_t index_buffer_size = max_indices * sizeof(std::uint32_t);
 
@@ -165,6 +176,7 @@ auto gse::renderer::ui::init(const shared_view<gpu::context::data> gpu_s, data& 
 		vertex_buffer = gpu_s.device->create_buffer(
 			{
 				.size = vertex_buffer_size,
+				.stride = sizeof(vertex),
 				.usage = gpu::buffer_flag::storage,
 				.bindless = true,
 			}
@@ -452,7 +464,8 @@ auto gse::renderer::ui::frame(context& ctx, shared_view<gpu::context::data> gpu_
 			rec.push_bindings<sprite_entry>(
 				sprite_pc,
 				{
-					.vertex_buffer = vertex_buffer.slot()
+					.vertex_buffer = vertex_buffer.slot(),
+					.textures_sampler = d.ui_sampler.slot(),
 				}
 			);
 		}
@@ -465,7 +478,8 @@ auto gse::renderer::ui::frame(context& ctx, shared_view<gpu::context::data> gpu_
 			rec.push_bindings<msdf_entry>(
 				text_pc,
 				{
-					.vertex_buffer = vertex_buffer.slot()
+					.vertex_buffer = vertex_buffer.slot(),
+					.textures_sampler = d.ui_sampler.slot(),
 				}
 			);
 		}

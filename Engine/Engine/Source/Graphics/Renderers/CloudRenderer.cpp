@@ -9,6 +9,7 @@ import :render_targets;
 
 
 import gse.gpu;
+import gse.gpu_record;
 import gse.core;
 import gse.containers;
 import gse.concurrency;
@@ -38,23 +39,31 @@ namespace gse::renderer::cloud {
 
 	struct [[
 		= shaders::binding<0, 0>{},
-		= shaders::sampler2d
-	]] transmittance_in {};
+		= shaders::texture2d
+	]] transmittance_in {
+		using element = vec4f;
+	};
 
 	struct [[
 		= shaders::binding<0, 1>{},
-		= shaders::sampler2d
-	]] sky_view_in {};
+		= shaders::texture2d
+	]] sky_view_in {
+		using element = vec4f;
+	};
 
 	struct [[
 		= shaders::binding<0, 2>{},
-		= shaders::sampler3d
-	]] cloud_shape_in {};
+		= shaders::texture3d
+	]] cloud_shape_in {
+		using element = vec4f;
+	};
 
 	struct [[
 		= shaders::binding<0, 3>{},
-		= shaders::sampler3d
-	]] cloud_detail_in {};
+		= shaders::texture3d
+	]] cloud_detail_in {
+		using element = vec4f;
+	};
 
 	struct [[
 		= shaders::binding<0, 4>{},
@@ -64,9 +73,31 @@ namespace gse::renderer::cloud {
 	};
 
 	struct [[
+		= shaders::binding<0, 8>{},
+		= shaders::sampler_state
+	]] transmittance_sampler {};
+
+	struct [[
+		= shaders::binding<0, 6>{},
+		= shaders::sampler_state
+	]] sky_view_sampler_binding {};
+
+	struct [[
+		= shaders::binding<0, 9>{},
+		= shaders::sampler_state
+	]] noise_sampler_binding {};
+
+	struct [[
 		= shaders::binding<0, 0>{},
-		= shaders::sampler2d
-	]] cloud_in {};
+		= shaders::texture2d
+	]] cloud_in {
+		using element = vec4f;
+	};
+
+	struct [[
+		= shaders::binding<0, 1>{},
+		= shaders::sampler_state
+	]] cloud_composite_sampler {};
 
 	struct [[= shaders::shader_struct]] cloud_push_constants {
 		mat4f inv_view_proj;
@@ -79,8 +110,8 @@ namespace gse::renderer::cloud {
 
 	using shape_bake_bindings = type_pack<cloud_shape_out>;
 	using detail_bake_bindings = type_pack<cloud_detail_out>;
-	using raymarch_bindings = type_pack<atmosphere::atmosphere_ubo, cloud_ubo, transmittance_in, sky_view_in, cloud_shape_in, cloud_detail_in, cloud_out>;
-	using composite_bindings = type_pack<cloud_in>;
+	using raymarch_bindings = type_pack<atmosphere::atmosphere_ubo, cloud_ubo, transmittance_in, sky_view_in, cloud_shape_in, cloud_detail_in, cloud_out, transmittance_sampler, sky_view_sampler_binding, noise_sampler_binding>;
+	using composite_bindings = type_pack<cloud_in, cloud_composite_sampler>;
 
 	using shape_bake_entry = gpu::compute_entry<gpu::body_path<"Compute/cloud_shape_bake">, gpu::bindings<shape_bake_bindings>, gpu::helpers<"Clouds/cloud_common">, gpu::threads<8, 8, 1>, gpu::system_values<gpu::dispatch_thread_id>>;
 
@@ -229,7 +260,8 @@ auto gse::renderer::cloud::init(context& ctx, const shared_view<gpu::context::da
 	d.cloud_ubo_buffer = gpu_s.device->create_buffer(
 		{
 			.size = sizeof(cloud_data),
-			.usage = gpu::buffer_flag::uniform,
+			.stride = sizeof(cloud_data),
+			.usage = gpu::buffer_flag::storage,
 			.bindless = true,
 		},
 		"cloud_ubo"
@@ -328,13 +360,16 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 			.wind_offset = d.wind_offset,
 		},
 		{
-			.transmittance_in = { atm_state.transmittance_lut.sampled_slot(), d.atmosphere_lut_sampler.slot() },
-			.sky_view_in = { atm_state.sky_view_lut.sampled_slot(), d.sky_view_sampler.slot() },
-			.cloud_shape_in = { d.shape_noise.sampled_slot(), d.noise_sampler.slot() },
-			.cloud_detail_in = { d.detail_noise.sampled_slot(), d.noise_sampler.slot() },
+			.transmittance_in = atm_state.transmittance_lut.sampled_slot(),
+			.sky_view_in = atm_state.sky_view_lut.sampled_slot(),
+			.cloud_shape_in = d.shape_noise.sampled_slot(),
+			.cloud_detail_in = d.detail_noise.sampled_slot(),
 			.cloud_out = d.cloud_target.storage_slot(),
 			.cloud_ubo = d.cloud_ubo_buffer.slot(),
+			.sky_view_sampler_binding = d.sky_view_sampler.slot(),
 			.atmosphere_ubo = atm_state.atmosphere_ubo_buffer.slot(),
+			.transmittance_sampler = d.atmosphere_lut_sampler.slot(),
+			.noise_sampler_binding = d.noise_sampler.slot(),
 		},
 		vec3u{ raymarch_groups.x(), raymarch_groups.y(), 1 }
 	);
@@ -350,7 +385,8 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 	composite_rec.set_viewport(ext);
 	composite_rec.set_scissor(ext);
 	composite_rec.push_bindings<composite_entry>({
-		.cloud_in = { d.cloud_target.sampled_slot(), d.composite_sampler.slot() },
+		.cloud_in = d.cloud_target.sampled_slot(),
+		.cloud_composite_sampler = d.composite_sampler.slot(),
 	});
 	composite_rec.draw(3);
 }

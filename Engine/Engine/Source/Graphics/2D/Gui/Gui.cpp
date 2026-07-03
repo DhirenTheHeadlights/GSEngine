@@ -155,13 +155,13 @@ auto gse::gui::init(context& ctx, const shared_view<window::data> window_s, cons
 	co_return;
 }
 
-auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const shared_view<asset::data> assets_s, const shared_view<gse::input::data> input_state, const save::registry& save_reg, data& d) -> async::task<> {
-	co_await update_body(ctx, window_s, assets_s, input_state, save_reg, d);
+auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, const shared_view<gse::input::data> input_state, const save::registry& save_reg, data& d) -> async::task<> {
+	co_await update_body(ctx, window_s, gpu_s, assets_s, input_state, save_reg, d);
 	co_return;
 }
 
-auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_s, const shared_view<asset::data> assets_s, const shared_view<gse::input::data> input_state, const save::registry& save_reg, data& d) -> async::task<> {
-	const auto current_viewport_size = vec2f(window::viewport(window_s));
+auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_s, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, const shared_view<gse::input::data> input_state, const save::registry& save_reg, data& d) -> async::task<> {
+	const auto current_viewport_size = vec2f(gpu_s.render_graph->extent());
 
 	if (d.previous_viewport_size.x() > 0.f && d.previous_viewport_size.y() > 0.f) {
 		if (current_viewport_size.x() > 0.f && current_viewport_size.y() > 0.f && (current_viewport_size.x() != d.previous_viewport_size.x() || current_viewport_size.y() != d.previous_viewport_size.y())) {
@@ -299,7 +299,7 @@ auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_
 	}
 
 	const gse::input::state& input_st = gse::input::current_state(input_state);
-	const auto viewport_size = vec2f(window::viewport(window_s));
+	const auto viewport_size = vec2f(gpu_s.render_graph->extent());
 
 	if (d.active_dock_space) {
 		const auto [areas] = d.active_dock_space.value();

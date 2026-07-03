@@ -14,7 +14,7 @@ import gse.os;
 import gse.assets;
 import gse.config;
 import gse.gpu;
-import gse.vulkan;
+import gse.gpu_record;
 import gse.core;
 import gse.concurrency;
 import gse.diag;
@@ -44,7 +44,7 @@ namespace gse::renderer::capture {
 		using element = vec2f;
 	};
 
-	using shader_binding_types = type_pack<output_y, output_uv, shaders::bindless::textures>;
+	using shader_binding_types = type_pack<output_y, output_uv, shaders::bindless::textures, shaders::bindless::textures_sampler>;
 
 	using entry = gpu::compute_entry<gpu::body_path<"Compute/rgba_to_nv12">, gpu::bindings<shader_binding_types>, gpu::threads<16, 16, 1>, gpu::push_constant<push_constants>, gpu::system_values<gpu::dispatch_thread_id>>;
 }
@@ -76,6 +76,14 @@ auto gse::renderer::capture::init(context& ctx, const shared_view<gpu::context::
 		const auto half_ext = vec2u{ ext.x() / 2, ext.y() / 2 };
 
 		d.convert_pipeline = gpu::build_compute_program(*gpu_s.device, entry::pod);
+
+		d.sampler = gpu_s.device->register_sampler({
+			.min = gpu::sampler_filter::linear,
+			.mag = gpu::sampler_filter::linear,
+			.address_u = gpu::sampler_address_mode::clamp_to_edge,
+			.address_v = gpu::sampler_address_mode::clamp_to_edge,
+			.address_w = gpu::sampler_address_mode::clamp_to_edge,
+		});
 
 		constexpr gpu::sampler_desc capture_sampler_desc{
 			.min = gpu::sampler_filter::nearest,
@@ -444,6 +452,7 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 			{
 				.output_y = d.y_planes[frame_index].storage_slot(),
 				.output_uv = d.uv_planes[frame_index].storage_slot(),
+				.textures_sampler = d.sampler.slot(),
 			},
 			vec3u{ (ext.x() + 15) / 16, (ext.y() + 15) / 16, 1 }
 		);

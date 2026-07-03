@@ -2,6 +2,8 @@ export module gse.gpu:pass_recorder;
 
 import std;
 
+import :command_dispatch;
+
 import gse.gpu_backend;
 import gse.math;
 
@@ -11,7 +13,8 @@ export namespace gse::gpu {
 		pass_recorder() = default;
 
 		pass_recorder(
-			gpu::command_buffer_handle cmd
+			gpu::command_buffer_handle cmd,
+			const command_dispatch* dispatch
 		);
 
 		[[nodiscard]] auto valid() const -> bool;
@@ -23,14 +26,6 @@ export namespace gse::gpu {
 		auto reset() const -> void;
 
 		auto end() const -> void;
-
-		auto begin_secondary(
-			const gpu::secondary_inheritance_info& info
-		) const -> void;
-
-		auto execute_commands(
-			gpu::command_buffer_handle secondary
-		) const -> void;
 
 		auto begin_rendering(
 			const gpu::rendering_info& info
@@ -73,6 +68,8 @@ export namespace gse::gpu {
 		auto set_scissor(
 			const gse::rect_t<vec2i>& scissor
 		) const -> void;
+
+		auto set_vertex_input_none() const -> void;
 
 		auto set_topology(
 			gpu::topology t
@@ -306,5 +303,6 @@ export namespace gse::gpu {
 
 	private:
 		gpu::command_buffer_handle m_cmd{};
+		const command_dispatch* m_vt = nullptr;
 	};
 }

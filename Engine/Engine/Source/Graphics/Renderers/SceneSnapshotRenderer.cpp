@@ -12,6 +12,7 @@ import :shared_shaders;
 
 
 import gse.gpu;
+import gse.gpu_record;
 import gse.core;
 import gse.concurrency;
 import gse.math;
