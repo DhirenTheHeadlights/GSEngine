@@ -126,6 +126,7 @@ auto gs::startup::run_locomotion_train(const config& cfg) -> void {
 	auto ppo = cfg.ppo;
 	ppo.action_scale = cfg.action_scale;
 	ppo.checkpoint_path = locomotion_artifact("locomotion_checkpoint.bin");
+	ppo.state_path = locomotion_artifact("locomotion_train_state.bin");
 	ppo.reference_clip_path = cfg.reference_clip_path.empty() ? locomotion_artifact("ref_walk.bin") : cfg.reference_clip_path;
 	gse::start(
 		[&ppo](gse::engine& e) -> void {

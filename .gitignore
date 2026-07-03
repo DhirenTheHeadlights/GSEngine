@@ -42,8 +42,10 @@ __pycache__/
 
 # Locomotion training artifacts (runtime: live under Engine/Resources/Misc/; legacy: repo root)
 /locomotion_checkpoint.bin
+/locomotion_train_state.bin
 /ref_walk.bin
 /Engine/Resources/Misc/locomotion_checkpoint.bin
+/Engine/Resources/Misc/locomotion_train_state.bin
 /Engine/Resources/Misc/ref_walk.bin
 
 # Claude
