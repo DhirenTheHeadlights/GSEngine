@@ -135,6 +135,8 @@ export namespace gse::dx12 {
 			const gse::rect_t<vec2i>& scissor
 		) const -> void;
 
+		auto set_vertex_input_none() const -> void;
+
 		auto set_topology(
 			gpu::topology topology
 		) const -> void;
@@ -456,6 +458,8 @@ auto gse::dx12::commands::set_scissor(const gse::rect_t<vec2i>& scissor) const -
 		active_device->cmd_set_scissor(m_cmd, scissor);
 	}
 }
+
+auto gse::dx12::commands::set_vertex_input_none() const -> void {}
 
 auto gse::dx12::commands::set_topology(gpu::topology) const -> void {}
 

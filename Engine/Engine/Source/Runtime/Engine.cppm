@@ -30,6 +30,7 @@ export namespace gse {
 		bool create_window = true;
 		bool render = true;
 		bool render_world = true;
+		bool use_gpu_solver = false;
 		bool custom_chrome = false;
 		bool scale_ui_with_resolution = true;
 		bool persist_settings = true;

@@ -32,25 +32,13 @@ export namespace gse::gpu {
 		device_size sampler_descriptor_size = 0;
 		device_size image_descriptor_size = 0;
 		device_size buffer_descriptor_size = 0;
+		device_size acceleration_structure_descriptor_size = 0;
 		device_size sampler_descriptor_alignment = 0;
 		device_size image_descriptor_alignment = 0;
 		device_size buffer_descriptor_alignment = 0;
 		device_size max_push_data_size = 0;
 		std::uint32_t max_embedded_samplers = 0;
 		bool sparse_descriptor_heaps = false;
-	};
-
-	struct bindless_layout {
-		device_size image_range_offset = 0;
-		device_size image_stride = 0;
-		device_size texture_image_offset = 0;
-		device_size buffer_range_offset = 0;
-		device_size buffer_stride = 0;
-		device_size texture_sampler_offset = 0;
-		device_size sampler_range_offset = 0;
-		device_size sampler_stride = 0;
-		device_size acceleration_structure_range_offset = 0;
-		device_size acceleration_structure_stride = 0;
 	};
 
 	struct bindless_heap_binding {

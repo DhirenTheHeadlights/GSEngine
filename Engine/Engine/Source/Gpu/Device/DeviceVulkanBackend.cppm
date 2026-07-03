@@ -337,8 +337,6 @@ export namespace gse::gpu {
 			const gpu::sampler_desc& desc
 		) -> gpu::bindless_handle;
 
-		[[nodiscard]] auto bindless_layout() const -> gpu::bindless_layout;
-
 		[[nodiscard]] auto bindless_resource_heap_binding() const -> gpu::bindless_heap_binding;
 
 		[[nodiscard]] auto bindless_sampler_heap_binding() const -> gpu::bindless_heap_binding;
@@ -361,7 +359,7 @@ export namespace gse::gpu {
 	};
 
 	[[nodiscard]] auto create_vulkan_device_backend(
-		shared_view<window::data> win,
+		std::optional<shared_view<window::data>> win,
 		bool validation_layers_enabled,
 		device_settings& cfg
 	) -> gpu::expected<vulkan_backend_creation>;
@@ -655,10 +653,6 @@ auto gse::gpu::vulkan_device_backend::register_texture(const gpu::image& img, co
 	return device_config.register_texture(img, desc);
 }
 
-auto gse::gpu::vulkan_device_backend::bindless_layout() const -> gpu::bindless_layout {
-	return device_config.bindless_layout();
-}
-
 auto gse::gpu::vulkan_device_backend::bindless_resource_heap_binding() const -> gpu::bindless_heap_binding {
 	return device_config.bindless_resource_heap_binding();
 }
@@ -683,11 +677,13 @@ auto gse::gpu::vulkan_device_backend::make_video_encoder_backend(const vec2u ext
 	return std::make_unique<gpu::video_encoder_backend>(vulkan::video_encoder::create(device_config, queue, extent, caps));
 }
 
-auto gse::gpu::create_vulkan_device_backend(const shared_view<window::data> win, const bool validation_layers_enabled, device_settings& cfg) -> gpu::expected<vulkan_backend_creation> {
+auto gse::gpu::create_vulkan_device_backend(const std::optional<shared_view<window::data>> win, const bool validation_layers_enabled, device_settings& cfg) -> gpu::expected<vulkan_backend_creation> {
 	auto aftermath_tracker = vulkan::aftermath::create({});
 
-	auto instance = vulkan::instance::create(vulkan::instance::required_window_extensions(), validation_layers_enabled);
-	instance.create_surface(win);
+	auto instance = vulkan::instance::create(win ? vulkan::instance::required_window_extensions() : std::span<const char* const>{}, validation_layers_enabled);
+	if (win) {
+		instance.create_surface(*win);
+	}
 
 	auto created = vulkan::device::create(instance, cfg, aftermath_tracker);
 	if (!created) {
@@ -702,7 +698,7 @@ auto gse::gpu::create_vulkan_device_backend(const shared_view<window::data> win,
 
 	auto worker_pools = vulkan::worker_command_pools::create(creation.device, queue_families, task::thread_count());
 
-	const auto surface_format = vulkan::pick_surface_format(creation.device, instance);
+	const auto surface_format = win ? vulkan::pick_surface_format(creation.device, instance) : gpu::image_format::b8g8r8a8_srgb;
 
 	auto backend = std::make_unique<vulkan_device_backend>(
 		std::move(aftermath_tracker),

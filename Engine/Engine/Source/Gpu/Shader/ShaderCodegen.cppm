@@ -2,6 +2,7 @@ export module gse.gpu:shader_codegen;
 
 import std;
 
+import :backend_state;
 import gse.math;
 import gse.meta;
 import gse.containers;
@@ -450,8 +451,20 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 		return std::format("public uniform uint {0}_idx;\npublic property SamplerState {0} {{ get {{ return (SamplerState.Handle){0}_idx; }} }}\n", name);
 	}
 	else if constexpr (has_annotation<tlas_tag>(^^T)) {
+		if (gpu::active_backend == gpu::gpu_backend_kind::vulkan) {
+			return std::format(
+				"public uniform uint {0}_address_lo;\n"
+				"public uniform uint {0}_address_hi;\n"
+				"public uniform uint {0}_idx;\n"
+				"public property RaytracingAccelerationStructure {0} {{ get {{ return (RaytracingAccelerationStructure)(((uint64_t){0}_address_hi << 32) | (uint64_t){0}_address_lo); }} }}\n",
+				name
+			);
+		}
 		return std::format(
-			"public uniform uint {0}_idx;\npublic property RaytracingAccelerationStructure {0} {{ get {{ return (RaytracingAccelerationStructure.Handle){0}_idx; }} }}\n",
+			"public uniform uint {0}_address_lo;\n"
+			"public uniform uint {0}_address_hi;\n"
+			"public uniform uint {0}_idx;\n"
+			"public property RaytracingAccelerationStructure {0} {{ get {{ return (RaytracingAccelerationStructure.Handle){0}_idx; }} }}\n",
 			name
 		);
 	}

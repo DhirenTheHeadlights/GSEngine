@@ -133,6 +133,8 @@ export namespace gse::vulkan {
 			const gse::rect_t<vec2i>& scissor
 		) const -> void;
 
+		auto set_vertex_input_none() const -> void;
+
 		auto set_topology(
 			gpu::topology t
 		) const -> void;
@@ -818,6 +820,10 @@ auto gse::vulkan::build_vk_dependency_info(const gpu::dependency_info& dep, depe
 		.imageMemoryBarrierCount = static_cast<std::uint32_t>(scratch.image.size()),
 		.pImageMemoryBarriers = scratch.image.data(),
 	};
+}
+
+auto gse::vulkan::commands::set_vertex_input_none() const -> void {
+	raw().setVertexInputEXT({}, {});
 }
 
 auto gse::vulkan::commands::set_topology(const gpu::topology t) const -> void {

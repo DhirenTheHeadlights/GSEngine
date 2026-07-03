@@ -27,11 +27,12 @@ float3 fibonacci_sphere(uint i, uint count, uint seed) {
 void gi_probe_update(uint3 dispatch_id, uint3 group_id, uint3 group_thread_id) {
     uint ray_idx = group_thread_id.x;
     uint3 probe_coord = group_id;
-    float3 probe_pos = pc.origin_world + float3(probe_coord) * pc.spacing;
 
     float3 dir = fibonacci_sphere(ray_idx, 64u, pc.frame_counter);
 
-    RayQuery<RAY_FLAG_CULL_BACK_FACING_TRIANGLES> q;
+    float3 radiance = pc.sky_color;
+    float3 probe_pos = pc.origin_world + float3(probe_coord) * pc.spacing;
+    RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_CULL_BACK_FACING_TRIANGLES> q;
     RayDesc r;
     r.Origin = probe_pos;
     r.TMin = 0.01;
@@ -40,7 +41,6 @@ void gi_probe_update(uint3 dispatch_id, uint3 group_id, uint3 group_thread_id) {
     q.TraceRayInline(scene_tlas, RAY_FLAG_NONE, 0xFF, r);
     while (q.Proceed()) {}
 
-    float3 radiance;
     if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT) {
         uint mat_idx = q.CommittedInstanceID();
         material_data m = material_palette[mat_idx];
@@ -49,9 +49,8 @@ void gi_probe_update(uint3 dispatch_id, uint3 group_id, uint3 group_thread_id) {
         float sun_scale = pc.sun_intensity * 0.001;
         radiance = m.base_color * pc.sun_color * sun_scale * ndl;
         radiance += m.base_color * pc.sky_color * 0.1;
-    } else {
-        radiance = pc.sky_color;
     }
+
     s_dirs[ray_idx] = dir;
     s_radiance[ray_idx] = radiance;
     GroupMemoryBarrierWithGroupSync();

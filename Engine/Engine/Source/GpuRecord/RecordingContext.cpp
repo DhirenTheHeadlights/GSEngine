@@ -693,6 +693,10 @@ auto gse::gpu::recording_context::bind(const gpu::shader_program& p) -> void {
 			}
 		}
 		m_recorder.bind_shaders(all_graphics_stages, bound);
+		if (bound[0] && !m_state_cache.vertex_input_set) {
+			m_recorder.set_vertex_input_none();
+			m_state_cache.vertex_input_set = true;
+		}
 		apply_dynamic_state(p.state());
 	}
 

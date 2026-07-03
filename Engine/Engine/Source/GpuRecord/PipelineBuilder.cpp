@@ -104,6 +104,10 @@ namespace gse::gpu {
 		std::string_view wrapper_source
 	) -> std::vector<std::uint32_t>;
 
+	auto strip_unused_ray_tracing_extension(
+		std::vector<std::uint32_t>& spirv
+	) -> void;
+
 	struct graphics_stage_compile_result {
 		stage_flag flag = stage_flag::vertex;
 		graphics_stage_kind kind = graphics_stage_kind::vertex;
@@ -382,6 +386,62 @@ auto gse::gpu::build_compute_wrapper_source(const shader_compile_inputs& inputs,
 static std::mutex g_slang_compile_mutex;
 static std::atomic<std::uint64_t> g_slang_module_counter{ 0 };
 
+auto gse::gpu::strip_unused_ray_tracing_extension(std::vector<std::uint32_t>& spirv) -> void {
+	if (spirv.size() < 5 || spirv[0] != 0x07230203u) {
+		return;
+	}
+
+	constexpr std::uint16_t op_extension = 10;
+	constexpr std::uint16_t op_capability = 17;
+	constexpr std::uint32_t capability_ray_tracing = 4479;
+	constexpr std::string_view ray_tracing_extension = "SPV_KHR_ray_tracing";
+
+	std::size_t extension_begin = 0;
+	std::size_t extension_count = 0;
+
+	std::size_t i = 5;
+	while (i < spirv.size()) {
+		const std::uint32_t word = spirv[i];
+		const auto count = static_cast<std::uint16_t>(word >> 16);
+		const auto opcode = static_cast<std::uint16_t>(word & 0xFFFFu);
+		if (count == 0 || i + count > spirv.size()) {
+			return;
+		}
+		if (opcode == op_capability) {
+			if (spirv[i + 1] == capability_ray_tracing) {
+				return;
+			}
+		}
+		else if (opcode == op_extension) {
+			std::string name;
+			bool done = false;
+			for (std::size_t w = i + 1; w < i + count && !done; ++w) {
+				const auto packed = spirv[w];
+				for (int b = 0; b < 4; ++b) {
+					const auto c = static_cast<char>((packed >> (b * 8)) & 0xFFu);
+					if (c == '\0') {
+						done = true;
+						break;
+					}
+					name.push_back(c);
+				}
+			}
+			if (name == ray_tracing_extension) {
+				extension_begin = i;
+				extension_count = count;
+			}
+		}
+		else {
+			break;
+		}
+		i += count;
+	}
+
+	if (extension_count != 0) {
+		spirv.erase(spirv.begin() + static_cast<std::ptrdiff_t>(extension_begin), spirv.begin() + static_cast<std::ptrdiff_t>(extension_begin + extension_count));
+	}
+}
+
 auto gse::gpu::compile_compute_spirv(const shader_compile_inputs& inputs, const std::string_view wrapper_source) -> std::vector<std::uint32_t> {
 	const std::lock_guard compile_lock(g_slang_compile_mutex);
 	auto owned = make_slang_session();
@@ -459,6 +519,7 @@ auto gse::gpu::compile_compute_spirv(const shader_compile_inputs& inputs, const 
 	const auto byte_size = blob->getBufferSize();
 	std::vector<std::uint32_t> spirv(byte_size / sizeof(std::uint32_t));
 	std::memcpy(spirv.data(), blob->getBufferPointer(), byte_size);
+	strip_unused_ray_tracing_extension(spirv);
 	return spirv;
 }
 
@@ -609,6 +670,7 @@ auto gse::gpu::compile_graphics_program(const graphics_entry_pod& pod, const std
 		const auto byte_size = blob->getBufferSize();
 		std::vector<std::uint32_t> spirv(byte_size / sizeof(std::uint32_t));
 		std::memcpy(spirv.data(), blob->getBufferPointer(), byte_size);
+		strip_unused_ray_tracing_extension(spirv);
 
 		result.stages.push_back({
 			.flag = stage_pod.stage_flag_value,

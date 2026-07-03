@@ -35,12 +35,17 @@ export namespace gs::locomotion::smoke_test {
 		gse::displacement max_capture_forward = gse::meters(0.f);
 		gse::displacement max_capture_right = gse::meters(0.f);
 		gse::position max_foot_y = gse::meters(-1000.f);
+		gse::position max_grounded_foot_y = gse::meters(-1000.f);
 		gse::angle pitch_accum;
 		int pitch_samples = 0;
 		gse::vec3<gse::position> walk_start_position;
 		gse::vec3<gse::position> walk_stop_position;
 		bool walk_start_set = false;
 		bool walk_stop_set = false;
+		gse::vec3<gse::position> sprint_start_position;
+		gse::vec3<gse::position> sprint_end_position;
+		bool sprint_start_set = false;
+		bool sprint_end_set = false;
 		gse::vec3<gse::position> last_plant_position;
 		bool last_plant_set = false;
 		gse::displacement step_accum;
@@ -196,6 +201,13 @@ auto gs::locomotion::update_metrics(smoke_test::trial_metrics& metrics, const st
 	metrics.max_capture_right = std::max(metrics.max_capture_right, gse::abs(s.capture_right));
 	metrics.max_foot_y = std::max(metrics.max_foot_y, highest_foot_y(s));
 
+	if (s.foot_grounded_l) {
+		metrics.max_grounded_foot_y = std::max(metrics.max_grounded_foot_y, s.foot_position_l.y());
+	}
+	if (s.foot_grounded_r) {
+		metrics.max_grounded_foot_y = std::max(metrics.max_grounded_foot_y, s.foot_position_r.y());
+	}
+
 	if (g.current == phase::plant && metrics.last_phase == phase::swing) {
 		++metrics.plants;
 		const auto& plant_foot = g.swing_leg == leg::left ? s.foot_position_l : s.foot_position_r;
@@ -269,9 +281,17 @@ auto gs::locomotion::finish_trial(gse::context& ctx, smoke_test::data& d, const 
 	const auto mean_step = d.metrics.step_count > 0
 		? d.metrics.step_accum / static_cast<float>(d.metrics.step_count)
 		: gse::displacement{};
+	const auto sprint_window = config.sprint_until - config.sprint_after;
+	const auto sprint_distance = d.metrics.sprint_start_set && d.metrics.sprint_end_set
+		? gse::hypot(
+			  (d.metrics.sprint_end_position - d.metrics.sprint_start_position).x(),
+			  (d.metrics.sprint_end_position - d.metrics.sprint_start_position).z()
+		  )
+		: gse::displacement{};
+	const auto sprint_speed = sprint_window > gse::seconds(0.f) ? sprint_distance / sprint_window : gse::meters_per_second(0.f);
 	gse::log::println(
 		"locomotion_smoke: trial={} result={} time={:.2f:s} plants={} min_pelvis_y={:.2f} "
-		"avg_speed={:.2f} mean_step={:.2f} max_speed={:.2f} max_capture=(fwd={:.3f},right={:.3f}) max_foot_y={:.2f} mean_pitch={:+.3f} "
+		"avg_speed={:.2f} sprint_speed={:.2f} mean_step={:.2f} max_speed={:.2f} max_capture=(fwd={:.3f},right={:.3f}) max_foot_y={:.2f} heel_lift_y={:.3f} mean_pitch={:+.3f} "
 		"missed_plants={} stale_targets={} phase={} state_hash={:016x} swing={}",
 		d.trial,
 		result,
@@ -279,11 +299,13 @@ auto gs::locomotion::finish_trial(gse::context& ctx, smoke_test::data& d, const 
 		d.metrics.plants,
 		d.metrics.min_pelvis_y,
 		avg_speed,
+		sprint_speed,
 		mean_step,
 		d.metrics.max_speed,
 		d.metrics.max_capture_forward,
 		d.metrics.max_capture_right,
 		d.metrics.max_foot_y,
+		d.metrics.max_grounded_foot_y,
 		mean_pitch,
 		d.metrics.missed_plants,
 		d.metrics.stale_targets,
@@ -336,6 +358,7 @@ auto gs::locomotion::smoke_test::run(gse::context& ctx, data& d, const smoke_con
 
 	if (d.stage == smoke_stage::resetting) {
 		++d.reset_ticks;
+		ctx.channels.push<gse::physics::reset_physics_request>({});
 		if (d.scene_id.has_value() && world_d.active_scene == d.scene_id && !d.reset_activation_requested) {
 			ctx.channels.push<gse::deactivate_active_scene_request>({});
 		}
@@ -416,6 +439,14 @@ auto gs::locomotion::smoke_test::run(gse::context& ctx, data& d, const smoke_con
 				if (stopped && !d.metrics.walk_stop_set) {
 					d.metrics.walk_stop_position = s->pelvis_position;
 					d.metrics.walk_stop_set = true;
+				}
+				if (!d.metrics.sprint_start_set && d.metrics.elapsed >= config.sprint_after) {
+					d.metrics.sprint_start_position = s->pelvis_position;
+					d.metrics.sprint_start_set = true;
+				}
+				if (!d.metrics.sprint_end_set && d.metrics.elapsed >= config.sprint_until) {
+					d.metrics.sprint_end_position = s->pelvis_position;
+					d.metrics.sprint_end_set = true;
 				}
 				if (g->fallen || d.metrics.elapsed >= config.duration) {
 					finish_trial(ctx, d, config, *s, *g);

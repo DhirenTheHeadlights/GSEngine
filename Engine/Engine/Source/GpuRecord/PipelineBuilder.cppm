@@ -19,6 +19,20 @@ export namespace gse::gpu {
 		bindless_slot sampler;
 	};
 
+	struct acceleration_structure_arg {
+		std::uint32_t address_lo = 0;
+		std::uint32_t address_hi = 0;
+		bindless_slot slot;
+	};
+
+	constexpr auto make_acceleration_structure_arg(const device_address address, const bindless_slot slot) -> acceleration_structure_arg {
+		return {
+			.address_lo = static_cast<std::uint32_t>(address),
+			.address_hi = static_cast<std::uint32_t>(address >> 32),
+			.slot = slot,
+		};
+	}
+
 	template <typename T>
 	constexpr auto descriptor_type_v = shaders::descriptor_type_of<T>();
 
@@ -32,8 +46,19 @@ export namespace gse::gpu {
 		std::meta::info t
 	) -> std::meta::info;
 
+	template <typename T>
+	consteval auto binding_arg_is_flat() -> bool;
+
+	template <typename Pack>
+	consteval auto binding_args_layout_is_flat() -> bool;
+
 	template <typename Pack>
 	struct binding_args_aggregate {
+		static_assert(
+			binding_args_layout_is_flat<Pack>(),
+			"binding arg struct has a non-4-byte field: the binding-args aggregate is memcpy'd as the push-data block and generated Slang packs its uniform fields flat, so C++ padding around a wider member (e.g. a uint64 address) shifts every later binding index. Use uint32 fields only and split 64-bit values into lo/hi halves (see acceleration_structure_arg)."
+		);
+
 		struct type;
 
 		consteval {
@@ -687,7 +712,34 @@ consteval auto gse::gpu::binding_arg_type(const std::meta::info t) -> std::meta:
 	if (dt == descriptor_type::combined_image_sampler) {
 		return ^^combined_sampler_arg;
 	}
+	if (dt == descriptor_type::acceleration_structure) {
+		return ^^acceleration_structure_arg;
+	}
 	return ^^bindless_slot;
+}
+
+template <typename T>
+consteval auto gse::gpu::binding_arg_is_flat() -> bool {
+	if constexpr (descriptor_count_v<T> > 1) {
+		return true;
+	}
+	else {
+		bool flat = true;
+		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(binding_arg_type(^^T), std::meta::access_context::unchecked()))) {
+			using member_t = [:std::meta::type_of(m):];
+			if constexpr (sizeof(member_t) != 4) {
+				flat = false;
+			}
+		}
+		return flat;
+	}
+}
+
+template <typename Pack>
+consteval auto gse::gpu::binding_args_layout_is_flat() -> bool {
+	return []<typename... Ts>(type_pack<Ts...>) {
+		return (binding_arg_is_flat<Ts>() && ...);
+	}(Pack{});
 }
 
 template <typename T>

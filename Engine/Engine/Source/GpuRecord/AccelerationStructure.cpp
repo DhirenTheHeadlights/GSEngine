@@ -83,7 +83,7 @@ auto gse::gpu::rebuild_tlas(gpu::device& device, tlas& t, const std::span<const 
 			.src_stages = pipeline_stage_flag::host,
 			.src_access = access_flag::host_write,
 			.dst_stages = pipeline_stage_flag::acceleration_structure_build,
-			.dst_access = access_flag::shader_read,
+			.dst_access = access_flag::acceleration_structure_read,
 		},
 		memory_barrier{
 			.src_stages = pipeline_stage_flag::acceleration_structure_build,
@@ -107,7 +107,7 @@ auto gse::gpu::rebuild_tlas(gpu::device& device, tlas& t, const std::span<const 
 
 	const acceleration_structure_build_geometry_info build_info{
 		.type = acceleration_structure_type::top_level,
-		.flags = build_acceleration_structure_flag::prefer_fast_build | build_acceleration_structure_flag::allow_update,
+		.flags = build_acceleration_structure_flag::prefer_fast_build,
 		.mode = build_acceleration_structure_mode::build,
 		.dst = t.handle(),
 		.geometries = std::span(&geometry, 1),
@@ -158,13 +158,13 @@ auto gse::gpu::build_tlas_in_place(gpu::device& device, tlas& t, const std::uint
 			.src_stages = pipeline_stage_flag::host,
 			.src_access = access_flag::host_write,
 			.dst_stages = pipeline_stage_flag::acceleration_structure_build,
-			.dst_access = access_flag::shader_read,
+			.dst_access = access_flag::acceleration_structure_read,
 		},
 		memory_barrier{
 			.src_stages = pipeline_stage_flag::compute_shader,
 			.src_access = access_flag::shader_write,
 			.dst_stages = pipeline_stage_flag::acceleration_structure_build,
-			.dst_access = access_flag::shader_read,
+			.dst_access = access_flag::acceleration_structure_read,
 		},
 		memory_barrier{
 			.src_stages = pipeline_stage_flag::acceleration_structure_build,
@@ -188,7 +188,7 @@ auto gse::gpu::build_tlas_in_place(gpu::device& device, tlas& t, const std::uint
 
 	const acceleration_structure_build_geometry_info build_info{
 		.type = acceleration_structure_type::top_level,
-		.flags = build_acceleration_structure_flag::prefer_fast_build | build_acceleration_structure_flag::allow_update,
+		.flags = build_acceleration_structure_flag::prefer_fast_build,
 		.mode = build_acceleration_structure_mode::build,
 		.dst = t.handle(),
 		.geometries = std::span(&geometry, 1),

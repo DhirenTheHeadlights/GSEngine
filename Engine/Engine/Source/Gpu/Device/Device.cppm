@@ -22,7 +22,7 @@ export namespace gse::gpu {
 	public:
 		[[nodiscard]]
 		static auto create(
-			shared_view<window::data> win,
+			std::optional<shared_view<window::data>> win,
 			bool validation_layers_enabled,
 			gpu_backend_kind& backend,
 			gpu::device_settings& device_cfg
@@ -328,9 +328,6 @@ export namespace gse::gpu {
 			const image& img,
 			const sampler_desc& desc
 		) -> gpu::bindless_handle;
-
-		[[nodiscard]]
-		auto bindless_layout() const -> gpu::bindless_layout;
 
 		[[nodiscard]]
 		auto bindless_resource_heap_binding() const -> gpu::bindless_heap_binding;

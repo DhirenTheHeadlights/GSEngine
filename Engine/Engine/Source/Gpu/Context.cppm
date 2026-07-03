@@ -53,7 +53,7 @@ export namespace gse::gpu::context {
 	using swap_chain_recreate_callback = std::function<void()>;
 
 	[[= gse::system_init{}]] auto init(
-		shared_view<window::data> window_s,
+		std::optional<shared_view<window::data>> window_s,
 		const save::registry* save_reg,
 		data& d
 	) -> async::task<>;
@@ -70,13 +70,13 @@ export namespace gse::gpu::context {
 	[[nodiscard]]
 	auto begin_frame(
 		data& d,
-		window::data& window_s
+		window::data* window_s
 	) -> std::
 		expected<frame_token, frame_status>;
 
 	auto end_frame(
 		data& d,
-		window::data& window_s
+		window::data* window_s
 	) -> void;
 
 	auto on_swap_chain_recreate(
