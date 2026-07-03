@@ -1,14 +1,15 @@
 export module gse.server;
 
-import :server;
+export import :server;
 
 import std;
 import gse;
+import gse.system_manifest;
 
 export namespace gse::server {
 	template <typename... Components>
 	struct [[= gse::system_state<"Server">{}]] data {
-		[[= gse::shared]] std::optional<server<Components...>> srv;
+		[[= gse::shared]] std::optional<host<Components...>> srv;
 	};
 
 	template <typename... Components>
@@ -50,6 +51,10 @@ export namespace gse {
 	auto server_app_setup(
 		engine& e,
 		type_pack<Components...> components = {}
+	) -> void;
+
+	auto server_app_setup(
+		engine& e
 	) -> void;
 }
 
@@ -140,4 +145,8 @@ auto gse::server_app_setup(engine& e, type_pack<Components...>) -> void {
 		^^gse::server_app::data,
 		^^gse::server_app::run<gse::server::data<Components...>>
 	>{}.register_with(e);
+}
+
+auto gse::server_app_setup(engine& e) -> void {
+	server_app_setup(e, engine_networked_components{});
 }
