@@ -35,17 +35,18 @@ export namespace gs::locomotion {
 		float r_heading = 0.3f;
 		float r_energy = 0.05f;
 		float r_smooth = 0.1f;
-		float motor_assist_force = 0.f;
+		gse::force motor_assist_force = gse::newtons(0.f);
 		int motor_assist_updates = 500;
 		int obs_lag = 0;
 		float action_scale = 1.0f;
 		bool resume = false;
-		float perturb_impulse = 0.0f;
+		gse::impulse perturb_impulse = gse::newton_seconds(0.f);
 		int perturb_interval = 45;
 		int perturb_grace = 25;
 		std::string reference_clip_path = "";
-		float rsi_min_speed = 0.15f;
-		float rsi_max_speed = 0.65f;
+		std::string amp_extra_clip_paths = "";
+		gse::velocity rsi_min_speed = gse::meters_per_second(0.15f);
+		gse::velocity rsi_max_speed = gse::meters_per_second(0.65f);
 		float r_imitation = 6.0f;
 		float imitation_pose_scale = 2.0f;
 		float imitation_vel_scale = 0.1f;
@@ -168,6 +169,7 @@ export namespace gs::locomotion::trainer {
 		std::vector<env_state> envs;
 
 		reference_clip ref_clip;
+		std::vector<reference_clip> style_clips;
 		std::vector<std::size_t> rsi_frames;
 		std::size_t cycle_start = 0;
 		std::size_t cycle_end = 0;
@@ -221,7 +223,7 @@ export namespace gs::locomotion::pose_player {
 		std::size_t cycle_start = 0;
 		std::size_t cycle_end = 0;
 		bool cycle_loop = false;
-		float cmd_forward = 0.3f;
+		gse::velocity cmd_forward = gse::meters_per_second(0.3f);
 		std::mt19937 rng;
 	};
 
@@ -319,8 +321,8 @@ namespace gs::locomotion {
 
 	auto extract_walk_frames(
 		const reference_clip& clip,
-		float min_speed,
-		float max_speed
+		gse::velocity min_speed,
+		gse::velocity max_speed
 	) -> walk_extract;
 
 	auto pack_reference_pose(
@@ -710,14 +712,14 @@ auto gs::locomotion::reset_to_reference(const std::span<const body_pose> initial
 	}
 }
 
-auto gs::locomotion::extract_walk_frames(const reference_clip& clip, const float min_speed, const float max_speed) -> walk_extract {
+auto gs::locomotion::extract_walk_frames(const reference_clip& clip, const gse::velocity min_speed, const gse::velocity max_speed) -> walk_extract {
 	auto result = walk_extract{};
 	const auto& frames = clip.frames;
 	if (frames.empty()) {
 		return result;
 	}
 	const auto is_walk = [&](const std::size_t i) {
-		const auto fwd = -frames[i].obs.velocity_body.z() / gse::meters_per_second(1.0f);
+		const auto fwd = -frames[i].obs.velocity_body.z();
 		return fwd >= min_speed && fwd <= max_speed;
 	};
 	const auto continuous = [&](const std::size_t i) {
@@ -748,8 +750,7 @@ auto gs::locomotion::extract_walk_frames(const reference_clip& clip, const float
 			continue;
 		}
 		const auto mean_vel = speed_sum / static_cast<float>(ce - cs + 1);
-		const auto mean_speed = mean_vel / gse::meters_per_second(1.0f);
-		if (mean_speed >= min_speed && mean_speed <= max_speed && (!result.cycle_loop || mean_vel > result.cycle_speed)) {
+		if (mean_vel >= min_speed && mean_vel <= max_speed && (!result.cycle_loop || mean_vel > result.cycle_speed)) {
 			result.cycle_start = cs;
 			result.cycle_end = ce;
 			result.cycle_speed = mean_vel;
@@ -860,6 +861,25 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 			}
 		}
 
+		auto remaining = std::string_view(cfg.amp_extra_clip_paths);
+		while (!remaining.empty()) {
+			const auto comma = remaining.find(',');
+			const auto path = remaining.substr(0, comma);
+			if (!path.empty()) {
+				if (auto extra = load_reference_clip(path)) {
+					gse::log::println("locomotion_train: AMP extra style clip '{}' loaded ({} frames)", path, extra->frames.size());
+					d.style_clips.push_back(std::move(*extra));
+				}
+				else {
+					gse::log::println("locomotion_train: AMP extra style clip '{}' FAILED to load", path);
+				}
+			}
+			if (comma == std::string_view::npos) {
+				break;
+			}
+			remaining = remaining.substr(comma + 1);
+		}
+
 		d.ready = true;
 	}
 
@@ -887,9 +907,16 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 			}
 			if (!d.dataset_built && !d.ref_clip.frames.empty()) {
 				if (const auto* r0 = refs.find(owner_ids[0])) {
-					d.dataset = build_amp_dataset(std::span(&d.ref_clip, 1), *r0);
+					auto all_clips = std::vector<reference_clip>{};
+					all_clips.reserve(1 + d.style_clips.size());
+					all_clips.push_back(d.ref_clip);
+					for (auto& sc : d.style_clips) {
+						all_clips.push_back(std::move(sc));
+					}
+					d.style_clips.clear();
+					d.dataset = build_amp_dataset(all_clips, *r0);
 					d.dataset_built = !d.dataset.transition_starts.empty();
-					gse::log::println("locomotion_train: AMP dataset {} frames {} transitions", d.dataset.frame_count, d.dataset.transition_starts.size());
+					gse::log::println("locomotion_train: AMP dataset {} frames {} transitions from {} clip(s)", d.dataset.frame_count, d.dataset.transition_starts.size(), all_clips.size());
 				}
 			}
 			d.stage = train_stage::running;
@@ -970,7 +997,7 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 			const auto forward = horizontal_axis(os.pelvis_forward);
 			const auto right = horizontal_axis(os.pelvis_right);
 			mot->velocity_drive_target = forward * env.cmd_forward + right * env.cmd_strafe;
-			mot->max_force = env.reset_gate == 0 ? gse::newtons(cfg.motor_assist_force * (1.0f - progress)) : gse::newtons(0.f);
+			mot->max_force = env.reset_gate == 0 ? cfg.motor_assist_force * (1.0f - progress) : gse::newtons(0.f);
 		}
 
 		// The GPU solver is authoritative and the readback lags the solve by a few
@@ -1072,10 +1099,10 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 		if (env.recover_grace > 0) {
 			--env.recover_grace;
 		}
-		if (cfg.perturb_impulse > 0.0f && --env.perturb_timer <= 0) {
+		if (cfg.perturb_impulse > gse::newton_seconds(0.f) && --env.perturb_timer <= 0) {
 			auto angle_dist = std::uniform_real_distribution<float>(0.0f, 2.0f * std::numbers::pi_v<float>);
 			const auto theta = angle_dist(d.rng);
-			const auto mag = gse::newton_seconds(cfg.perturb_impulse);
+			const auto mag = cfg.perturb_impulse;
 			ctx.channels.push<gse::physics::impulse_request>({
 				.target = r->pelvis_id,
 				.impulse = gse::vec3<gse::impulse>(mag * std::cos(theta), gse::newton_seconds(0.0f), mag * std::sin(theta)),
@@ -1127,7 +1154,7 @@ auto gs::locomotion::pose_player::run(data& d, const ppo_config& cfg, const gse:
 				d.cycle_end = we.cycle_end;
 				d.cycle_loop = we.cycle_loop;
 				if (we.cycle_loop) {
-					d.cmd_forward = we.cycle_speed / gse::meters_per_second(1.0f);
+					d.cmd_forward = we.cycle_speed;
 				}
 				gse::log::println("pose_player: RSI {} walk frames (cycle_loop={}) cmd_forward={:.3f}", d.rsi_frames.size(), we.cycle_loop, d.cmd_forward);
 			}
@@ -1276,7 +1303,7 @@ auto gs::locomotion::pose_player::run(data& d, const ppo_config& cfg, const gse:
 		}
 
 		const auto cmd = intent{
-			.forward = d.cmd_forward,
+			.forward = d.cmd_forward / gse::meters_per_second(1.0f),
 			.desired_yaw = gse::radians(0.f),
 			.has_heading = true,
 		};

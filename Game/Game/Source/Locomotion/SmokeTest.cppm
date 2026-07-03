@@ -24,6 +24,8 @@ export namespace gs::locomotion {
 		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time sprint_after = gse::seconds(4.f);
 		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time sprint_until = gse::seconds(8.f);
 		[[= gse::within<-1.f, 1.f>{}]] float forward = 1.f;
+		[[= gse::at_least<gse::newton_seconds(0.f)>{}]] gse::impulse perturb_impulse = gse::newton_seconds(0.f);
+		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time perturb_every = gse::seconds(1.5f);
 	};
 }
 
@@ -72,6 +74,8 @@ export namespace gs::locomotion::smoke_test {
 		int failed = 0;
 		int reset_ticks = 0;
 		bool reset_activation_requested = false;
+		gse::time perturb_elapsed = gse::seconds(0.f);
+		int perturb_count = 0;
 	};
 
 	[[= gse::system_run<>{}]]
@@ -431,6 +435,22 @@ auto gs::locomotion::smoke_test::run(gse::context& ctx, data& d, const smoke_con
 				}
 
 				update_metrics(d.metrics, *s, *g, *p, dt);
+
+				if (config.perturb_impulse > gse::newton_seconds(0.f)) {
+					d.perturb_elapsed += dt;
+					if (d.perturb_elapsed >= config.perturb_every) {
+						d.perturb_elapsed = gse::seconds(0.f);
+						if (const auto* r = refs.find(*owner)) {
+							const auto theta = gse::radians(static_cast<float>(d.perturb_count) * 2.399963f);
+							const auto mag = config.perturb_impulse;
+							ctx.channels.push<gse::physics::impulse_request>({
+								.target = r->pelvis_id,
+								.impulse = gse::vec3<gse::impulse>(mag * gse::cos(theta), gse::newton_seconds(0.f), mag * gse::sin(theta)),
+							});
+							++d.perturb_count;
+						}
+					}
+				}
 				
 				if (!d.metrics.walk_start_set) {
 					d.metrics.walk_start_position = s->pelvis_position;
