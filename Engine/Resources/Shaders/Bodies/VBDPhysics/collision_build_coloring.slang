@@ -6,11 +6,9 @@ groupshared uint gs_body_color_next[max_bodies];
 groupshared uint gs_color_count[max_colors];
 groupshared uint gs_color_offset[max_colors];
 groupshared uint gs_color_fill[max_colors];
-groupshared uint gs_color_bodies[max_bodies];
 groupshared uint gs_max_contact_color;
 groupshared uint gs_used_motor_only;
 groupshared uint gs_pending;
-groupshared uint gs_total_colored;
 groupshared uint gs_max_used_color;
 
 uint body_priority(uint bi) {
@@ -41,7 +39,6 @@ if (tid < max_colors) {
 if (tid == 0) {
     gs_max_contact_color = 0;
     gs_used_motor_only = 0;
-    gs_total_colored = 0;
     gs_max_used_color = 0;
 }
 GroupMemoryBarrierWithGroupSync();
@@ -88,6 +85,7 @@ for (uint round = 0; round < coloring_rounds; round++) {
             contact_constraint c = contact_data[ci];
             uint other = (c.body_a == bi) ? c.body_b : c.body_a;
             if (other < body_count) {
+                if (body_data[other].locked != 0) continue;
                 uint other_color = gs_body_color[other];
                 if (other_color == 0xFFFFFFFF) {
                     uint other_priority = body_priority(other);
@@ -110,6 +108,7 @@ for (uint round = 0; round < coloring_rounds; round++) {
             joint_constraint j = joint_data[ji];
             uint other = (j.body_a == bi) ? j.body_b : j.body_a;
             if (other < body_count) {
+                if (body_data[other].locked != 0) continue;
                 uint other_color = gs_body_color[other];
                 if (other_color == 0xFFFFFFFF) {
                     uint other_priority = body_priority(other);
@@ -222,7 +221,6 @@ if (tid == 0) {
         gs_color_offset[c] = running;
         running += gs_color_count[c];
     }
-    gs_total_colored = running;
     collision_state[state_max_used_color_index] = gs_max_used_color;
 }
 GroupMemoryBarrierWithGroupSync();
@@ -237,11 +235,11 @@ for (uint ks = 0; ks < ELEMS_PER_THREAD; ks++) {
         InterlockedAdd(gs_color_fill[c], 1u, slot);
         uint pos = gs_color_offset[c] + slot;
         if (pos < max_bodies) {
-            gs_color_bodies[pos] = bi;
+            color_data[max_colors * 2 + pos] = bi;
         }
     }
 }
-GroupMemoryBarrierWithGroupSync();
+AllMemoryBarrierWithGroupSync();
 
 if (tid < max_colors) {
     color_data[tid] = gs_color_offset[tid];
@@ -250,12 +248,27 @@ if (tid < max_colors) {
     indirect_args[2 + tid].y = 1;
     indirect_args[2 + tid].z = 1;
 }
+AllMemoryBarrierWithGroupSync();
 
-[unroll]
-for (uint kb = 0; kb < ELEMS_PER_THREAD; kb++) {
-    uint bi = tid + kb * adjacency_workgroup_size;
-    if (bi < gs_total_colored) {
-        color_data[max_colors * 2 + bi] = gs_color_bodies[bi];
+if (tid == 0) {
+    uint running = 0;
+    for (uint c = 0; c < max_colors; c++) {
+        uint count = 0;
+        uint full_offset = gs_color_offset[c];
+        uint full_count = gs_color_count[c];
+        jointless_color_data[c] = running;
+        for (uint k = 0; k < full_count; k++) {
+            uint bi = color_data[max_colors * 2 + full_offset + k];
+            if (bi < body_count && joint_counts[bi] == 0) {
+                jointless_color_data[max_colors * 2 + running + count] = bi;
+                count++;
+            }
+        }
+        jointless_color_data[max_colors + c] = count;
+        jointless_indirect_args[2 + c].x = (count + workgroup_size - 1) / workgroup_size;
+        jointless_indirect_args[2 + c].y = 1;
+        jointless_indirect_args[2 + c].z = 1;
+        running += count;
     }
 }
 }

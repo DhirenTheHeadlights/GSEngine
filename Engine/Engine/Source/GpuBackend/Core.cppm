@@ -107,6 +107,7 @@ export namespace gse::gpu {
 
 	struct device_fault_address_info {
 		std::uint32_t address_type = 0;
+		std::string address_type_name;
 		device_address reported_address = 0;
 		device_address address_precision = 0;
 	};

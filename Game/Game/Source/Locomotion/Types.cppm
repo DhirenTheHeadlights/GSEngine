@@ -46,6 +46,7 @@ export namespace gs::locomotion {
 		gse::displacement hip_offset_lateral = gse::meters(0.075f);
 		gse::displacement hip_offset_below_pelvis = gse::meters(0.10f);
 		gse::position pelvis_target_height = gse::meters(0.90f);
+		std::vector<gse::id> all_bone_ids;
 	};
 
 	struct intent {
@@ -93,8 +94,16 @@ export namespace gs::locomotion {
 
 		gse::angle hip_angle_l;
 		gse::angle knee_angle_l;
+		gse::angle ankle_angle_l;
 		gse::angle hip_angle_r;
 		gse::angle knee_angle_r;
+		gse::angle ankle_angle_r;
+		gse::angular_velocity hip_rate_l;
+		gse::angular_velocity knee_rate_l;
+		gse::angular_velocity ankle_rate_l;
+		gse::angular_velocity hip_rate_r;
+		gse::angular_velocity knee_rate_r;
+		gse::angular_velocity ankle_rate_r;
 		gse::angle pelvis_pitch;
 		gse::angular_velocity pelvis_pitch_rate;
 	};
@@ -124,6 +133,9 @@ export namespace gs::locomotion {
 		gse::angle cop_trim;
 		gse::angle cop_trim_applied;
 		float arm_phase = 0.f;
+		float rollover_intent = 0.f;
+		bool roll_latch_l = false;
+		bool roll_latch_r = false;
 		gse::vec3<gse::position> swing_start_foot;
 		gse::vec3<gse::position> swing_target_at_start;
 		gse::vec3<gse::position> planted_foot_l;
@@ -149,6 +161,10 @@ export namespace gs::locomotion {
 		const state& s,
 		const intent& it
 	) -> gse::angle;
+
+	auto horizontal_axis(
+		gse::vec3f v
+	) -> gse::vec3f;
 }
 
 auto gs::locomotion::other(const leg l) -> leg {
@@ -170,9 +186,18 @@ auto gs::locomotion::heading_error(const state& s, const intent& it) -> gse::ang
 	if (!it.has_heading) {
 		return gse::radians(0.f);
 	}
-	const float current_yaw = std::atan2(-s.pelvis_forward.x(), -s.pelvis_forward.z());
+	const auto current_yaw = gse::atan2(-s.pelvis_forward.x(), -s.pelvis_forward.z());
 	return gse::radians(std::remainder(
-		static_cast<float>(it.desired_yaw) - current_yaw,
+		static_cast<float>(it.desired_yaw - current_yaw),
 		2.f * std::numbers::pi_v<float>
 	));
+}
+
+auto gs::locomotion::horizontal_axis(gse::vec3f v) -> gse::vec3f {
+	v.y() = 0.f;
+	const float len = gse::magnitude(v);
+	if (len <= 0.0001f) {
+		return {};
+	}
+	return v / len;
 }

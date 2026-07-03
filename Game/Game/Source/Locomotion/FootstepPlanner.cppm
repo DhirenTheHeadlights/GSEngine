@@ -55,7 +55,7 @@ export namespace gs::locomotion::footstep_planner {
 		[[
 			= gse::settings::describe<"Maximum heading change applied to a single step's placement frame.">{}
 		]]
-		gse::angle turn_step_clamp = gse::radians(0.50f);
+		gse::angle turn_step_clamp = gse::radians(0.65f);
 
 		[[
 			= gse::settings::describe<"Lateral capture-step clamp.">{}
@@ -66,6 +66,16 @@ export namespace gs::locomotion::footstep_planner {
 			= gse::settings::describe<"Extra lateral spacing added to each foot target beyond the hip offset.">{}
 		]]
 		gse::displacement step_width_bias = gse::meters(0.05f);
+
+		[[
+			= gse::settings::describe<"Lateral (strafe) step length per unit strafe input.">{}
+		]]
+		gse::displacement strafe_step = gse::meters(0.25f);
+
+		[[
+			= gse::settings::describe<"Lateral (strafe) step length per unit strafe input while sprinting.">{}
+		]]
+		gse::displacement sprint_strafe_step = gse::meters(0.35f);
 
 		[[
 			= gse::settings::describe<"Forward step bias per radian of forward trunk pitch (keeps support under a leaned trunk).">{}
@@ -180,28 +190,18 @@ auto gs::locomotion::plan_foot_target(const state& s, const gait& g, const inten
 	);
 	const auto capture_lateral = std::clamp(s.capture_right, -d.lateral_capture_limit, d.lateral_capture_limit);
 
-	const auto pitch_bias = d.pitch_step_gain * static_cast<float>(-s.pelvis_pitch);
+	const auto pitch_bias = d.pitch_step_gain * (static_cast<float>(-s.pelvis_pitch));
 	const auto step_forward = step_forward_with_capture(nominal_forward + pitch_bias, capture_forward, d);
-	const auto step_lateral = capture_lateral;
+	const auto strafe_step = (d.strafe_step + (d.sprint_strafe_step - d.strafe_step) * sprint_blend) * it.strafe;
+	const auto step_lateral = capture_lateral + strafe_step;
 
-	auto forward_xz = gse::normalize(gse::vec3f(s.pelvis_forward.x(), 0.f, s.pelvis_forward.z()));
-	auto right_xz = gse::normalize(gse::vec3f(s.pelvis_right.x(), 0.f, s.pelvis_right.z()));
+	auto forward_xz = horizontal_axis(s.pelvis_forward);
+	auto right_xz = horizontal_axis(s.pelvis_right);
 
 	if (it.has_heading) {
-		const float turn = std::clamp(
-			static_cast<float>(heading_error(s, it)),
-			-static_cast<float>(d.turn_step_clamp),
-			static_cast<float>(d.turn_step_clamp)
-		);
-
-		const float cos_turn = std::cos(turn);
-		const float sin_turn = std::sin(turn);
-		const auto rotate_about_y = [&](const gse::vec3f& v) {
-			return gse::vec3f(v.x() * cos_turn + v.z() * sin_turn, 0.f, -v.x() * sin_turn + v.z() * cos_turn);
-		};
-
-		forward_xz = rotate_about_y(forward_xz);
-		right_xz = rotate_about_y(right_xz);
+		const auto turn = std::clamp(heading_error(s, it), -d.turn_step_clamp, d.turn_step_clamp);
+		forward_xz = gse::rotate(forward_xz, -turn, 0, 2);
+		right_xz = gse::rotate(right_xz, -turn, 0, 2);
 	}
 
 	const auto hip_lateral = (r.hip_offset_lateral + d.step_width_bias) * side_of(g.swing_leg);

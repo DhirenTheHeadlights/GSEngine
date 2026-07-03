@@ -717,6 +717,29 @@ namespace gse::internal {
 }
 
 export namespace gse {
+	struct [[= internal::quantity_root<^^internal::dimi<0, -1, 0, 0>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "1/s">]] inverse_time_tag {};
+
+	constexpr internal::unit<inverse_time_tag, std::ratio<1>, "1/s"> per_second;
+
+	template <typename T = float, auto U = ([:internal::resolve_default_unit_info(^^inverse_time_tag):])>
+	using inverse_time_t = internal::quantity_t<inverse_time_tag, T, U>;
+	using inverse_time = inverse_time_t<>;
+}
+
+namespace gse::internal {
+	template <>
+	struct dimension_to_tag<dimi<0, -1, 0, 0>> {
+		static constexpr bool found = true;
+		using tag = gse::inverse_time_tag;
+	};
+
+	template <>
+	struct quantity_units<gse::inverse_time_tag> {
+		static constexpr auto units = std::tuple{ gse::per_second };
+	};
+}
+
+export namespace gse {
 	constexpr auto asin(const float v) -> angle {
 		return radians(std::asin(v));
 	}

@@ -16,24 +16,26 @@ import gse.diag;
 import gse.log;
 import gse.save;
 
-auto gse::gpu::context::init(const shared_view<window::data> window_s, const save::registry* save_reg, data& d) -> async::task<> {
+auto gse::gpu::context::init(const std::optional<shared_view<window::data>> window_s, const save::registry* save_reg, data& d) -> async::task<> {
 	const auto requested_backend = d.backend;
 	d.device = device::create(window_s, d.validation_layers_enabled, d.backend, d.device_settings);
 	if (save_reg && d.backend != requested_backend) {
 		save_reg->save_now();
 	}
-	d.swapchain = swap_chain::create(
-		window::viewport(window_s),
-		gse::enum_from_annotation<present_mode_setting>(window_s.current_present_mode_index, present_mode::fifo),
-		*d.device
-	);
-	d.frame = frame::create(*d.device, *d.swapchain);
-	d.render_graph = std::make_unique<gpu::render_graph>(
-		*d.device,
-		*d.swapchain,
-		*d.frame
-	);
-	d.render_graph->set_swapchain_clear(d.swapchain_clear);
+
+	if (window_s) {
+		d.swapchain = swap_chain::create(
+			window::viewport(*window_s),
+			gse::enum_from_annotation<present_mode_setting>((*window_s).current_present_mode_index, present_mode::fifo),
+			*d.device
+		);
+	}
+
+	d.frame = frame::create(*d.device, d.swapchain.get());
+	d.render_graph = std::make_unique<gpu::render_graph>(*d.device, d.swapchain.get(), *d.frame);
+	if (d.swapchain) {
+		d.render_graph->set_swapchain_clear(d.swapchain_clear);
+	}
 
 	return {};
 }
@@ -70,7 +72,7 @@ auto gse::gpu::context::shutdown(data& d) -> void {
 	d.device.reset();
 }
 
-auto gse::gpu::context::begin_frame(data& d, window::data& window_s) -> std::expected<frame_token, frame_status> {
+auto gse::gpu::context::begin_frame(data& d, window::data* window_s) -> std::expected<frame_token, frame_status> {
 	d.device->collect_garbage();
 
 	auto result = d.frame->begin(window_s);
@@ -78,7 +80,7 @@ auto gse::gpu::context::begin_frame(data& d, window::data& window_s) -> std::exp
 	return result;
 }
 
-auto gse::gpu::context::end_frame(data& d, window::data& window_s) -> void {
+auto gse::gpu::context::end_frame(data& d, window::data* window_s) -> void {
 	auto aux_subs = d.render_graph->take_aux_submissions();
 	auto graphics_waits = d.render_graph->take_graphics_extra_waits();
 	auto graphics_buffers = d.render_graph->take_graphics_buffers();

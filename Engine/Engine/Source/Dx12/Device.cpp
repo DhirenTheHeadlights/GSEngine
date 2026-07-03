@@ -1184,10 +1184,9 @@ auto gse::dx12::device::create_image(const gpu::image_desc& desc, const std::str
 	gpu::bindless_slot storage_slot;
 	gpu::bindless_slot sampled_slot;
 	if (desc.bindless) {
-		storage_slot = m_image_pool.allocate();
-		sampled_slot = m_image_pool.allocate();
 		const bool is_3d = desc.depth > 1;
 		if (desc.usage.test(gpu::image_flag::sampled)) {
+			sampled_slot = m_image_pool.allocate();
 			const directx::D3D12_CPU_DESCRIPTOR_HANDLE srv = {
 				.ptr = directx::descriptor_heap_cpu_start(m_resource_heap.get()).ptr + static_cast<std::size_t>(m_image_pool.offset(sampled_slot)),
 			};
@@ -1199,6 +1198,7 @@ auto gse::dx12::device::create_image(const gpu::image_desc& desc, const std::str
 			}
 		}
 		if (desc.usage.test(gpu::image_flag::storage)) {
+			storage_slot = m_image_pool.allocate();
 			const directx::D3D12_CPU_DESCRIPTOR_HANDLE uav = {
 				.ptr = directx::descriptor_heap_cpu_start(m_resource_heap.get()).ptr + static_cast<std::size_t>(m_image_pool.offset(storage_slot)),
 			};
@@ -1297,10 +1297,6 @@ auto gse::dx12::device::register_texture(const gpu::image& img, const gpu::sampl
 	}
 	write_sampler_at(m_bindless_layout.texture_sampler_offset + slot.index * m_bindless_layout.sampler_stride, desc);
 	return gpu::bindless_handle(&m_texture_pool, slot);
-}
-
-auto gse::dx12::device::bindless_layout() const -> gpu::bindless_layout {
-	return m_bindless_layout;
 }
 
 auto gse::dx12::device::bindless_resource_heap_binding() const -> gpu::bindless_heap_binding {

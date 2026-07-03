@@ -13,7 +13,6 @@ export namespace gse::vulkan {
 	[[nodiscard]]
 	auto build_bindless_mappings(
 		std::span<const std::uint32_t> spirv,
-		const gpu::bindless_layout& layout,
 		std::uint32_t push_offset_start = 0
 	) -> bindless_mapping_result;
 }
@@ -223,7 +222,7 @@ auto gse::vulkan::reflect_descriptor_bindings(const std::span<const std::uint32_
 	return result;
 }
 
-auto gse::vulkan::build_bindless_mappings(const std::span<const std::uint32_t> spirv, const gpu::bindless_layout&, const std::uint32_t push_offset_start) -> bindless_mapping_result {
+auto gse::vulkan::build_bindless_mappings(const std::span<const std::uint32_t> spirv, const std::uint32_t push_offset_start) -> bindless_mapping_result {
 	bindless_mapping_result result;
 
 	std::vector<std::uint64_t> seen;

@@ -335,8 +335,6 @@ export namespace gse::gpu {
 			const gpu::sampler_desc& desc
 		) -> gpu::bindless_handle;
 
-		[[nodiscard]] auto bindless_layout() const -> gpu::bindless_layout;
-
 		[[nodiscard]] auto bindless_resource_heap_binding() const -> gpu::bindless_heap_binding;
 
 		[[nodiscard]] auto bindless_sampler_heap_binding() const -> gpu::bindless_heap_binding;
@@ -359,7 +357,7 @@ export namespace gse::gpu {
 	};
 
 	[[nodiscard]] auto create_dx12_device_backend(
-		shared_view<window::data> win,
+		std::optional<shared_view<window::data>> win,
 		bool validation_layers_enabled,
 		device_settings& cfg
 	) -> dx12_backend_creation;
@@ -653,10 +651,6 @@ auto gse::gpu::dx12_device_backend::register_texture(const gpu::image& img, cons
 	return device->register_texture(img, desc);
 }
 
-auto gse::gpu::dx12_device_backend::bindless_layout() const -> gpu::bindless_layout {
-	return device->bindless_layout();
-}
-
 auto gse::gpu::dx12_device_backend::bindless_resource_heap_binding() const -> gpu::bindless_heap_binding {
 	return device->bindless_resource_heap_binding();
 }
@@ -677,8 +671,8 @@ auto gse::gpu::dx12_device_backend::make_video_encoder_backend(vec2u) -> std::un
 	return nullptr;
 }
 
-auto gse::gpu::create_dx12_device_backend(const shared_view<window::data> win, const bool validation_layers_enabled, device_settings& cfg) -> dx12_backend_creation {
-	auto backend = std::make_unique<dx12_device_backend>(std::make_unique<dx12::device>(win, validation_layers_enabled, cfg));
+auto gse::gpu::create_dx12_device_backend(const std::optional<shared_view<window::data>> win, const bool validation_layers_enabled, device_settings& cfg) -> dx12_backend_creation {
+	auto backend = std::make_unique<dx12_device_backend>(std::make_unique<dx12::device>(*win, validation_layers_enabled, cfg));
 	backend->pools.bind(backend->device.get());
 	backend->queue.bind(backend->device.get());
 	backend->swapchain.bind(backend->device.get());

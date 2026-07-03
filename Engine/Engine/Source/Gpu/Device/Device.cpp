@@ -36,7 +36,7 @@ namespace gse::gpu {
 	constexpr gpu_dispatch device_dispatch_for = meta::build_dispatch<gpu_dispatch, vulkan_device_backend, meta::pointer_receiver<B>>();
 }
 
-auto gse::gpu::device::create(const shared_view<window::data> win, const bool validation_layers_enabled, gpu_backend_kind& backend, gpu::device_settings& device_cfg) -> std::unique_ptr<device> {
+auto gse::gpu::device::create(const std::optional<shared_view<window::data>> win, const bool validation_layers_enabled, gpu_backend_kind& backend, gpu::device_settings& device_cfg) -> std::unique_ptr<device> {
 	if (backend == gpu_backend_kind::vulkan) {
 		auto created = create_vulkan_device_backend(win, validation_layers_enabled, device_cfg);
 		if (created) {
@@ -250,14 +250,12 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 		log::println(
 			log::level::error,
 			log::category::vulkan,
-			"Last {} pass markers for {} (oldest first, status from GPU checkpoint):",
+			"Last {} pass markers for {} (record order, NOT GPU execution order; status from GPU checkpoint):",
 			count,
 			domain
 		);
 
-		std::uint64_t last_gpu_inflight = 0;
-		std::string_view last_gpu_inflight_phase = {};
-		bool any_gpu_inflight = false;
+		std::vector<std::uint64_t> in_flight;
 
 		for (std::uint64_t i = 0; i < count; ++i) {
 			const auto seq = first_seq + i;
@@ -267,36 +265,28 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 			std::string_view status = "queued";
 			if (ring.checkpoint_slots) {
 				const auto begin_seq = ring.checkpoint_slots[slot * 4];
-				const auto post_barrier_seq = ring.checkpoint_slots[slot * 4 + 1];
 				const auto post_renderpass_seq = ring.checkpoint_slots[slot * 4 + 2];
 				const auto end_seq = ring.checkpoint_slots[slot * 4 + 3];
 				const auto seq_low = static_cast<std::uint32_t>(seq);
 
 				const bool begin_done = begin_seq == seq_low;
-				const bool post_barrier_done = post_barrier_seq == seq_low;
 				const bool post_renderpass_done = post_renderpass_seq == seq_low;
 				const bool end_done = end_seq == seq_low;
 
-				if (begin_done && post_barrier_done && post_renderpass_done && end_done) {
+				if (end_done) {
 					status = "completed";
 				}
-				else if (begin_done && post_barrier_done && post_renderpass_done) {
-					status = "HUNG in tail (renderpass done, end marker not written)";
-					last_gpu_inflight = std::max(last_gpu_inflight, seq);
-					last_gpu_inflight_phase = "tail";
-					any_gpu_inflight = true;
-				}
-				else if (begin_done && post_barrier_done) {
-					status = "HUNG in renderpass body (begin+barrier done, renderpass did not finish)";
-					last_gpu_inflight = std::max(last_gpu_inflight, seq);
-					last_gpu_inflight_phase = "renderpass body";
-					any_gpu_inflight = true;
+				else if (begin_done && post_renderpass_done) {
+					status = "IN FLIGHT: body done, end marker not written";
+					in_flight.push_back(seq);
 				}
 				else if (begin_done) {
-					status = "HUNG in inter-pass barrier (begin reached, no post-barrier)";
-					last_gpu_inflight = std::max(last_gpu_inflight, seq);
-					last_gpu_inflight_phase = "inter-pass barrier";
-					any_gpu_inflight = true;
+					status = "IN FLIGHT: begin reached, body did not finish";
+					in_flight.push_back(seq);
+				}
+				else if (post_renderpass_done) {
+					status = "IN FLIGHT: body marker set without begin (markers unordered)";
+					in_flight.push_back(seq);
 				}
 				else {
 					status = "not started (CPU recorded, GPU never entered)";
@@ -315,19 +305,26 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 			);
 		}
 
-		if (any_gpu_inflight) {
-			const auto& m = ring.entries[last_gpu_inflight % pass_marker_ring_size];
+		if (!in_flight.empty()) {
 			log::println(
 				log::level::error,
 				log::category::vulkan,
-				"{} GPU hung in {} of: seq={} frame={} pass_index={} pass_type={}",
+				"{} had {} pass(es) in flight at device loss; the hang is one of these (record seq is NOT execution order, so any is a candidate):",
 				domain,
-				last_gpu_inflight_phase,
-				last_gpu_inflight,
-				m.frame_counter,
-				m.pass_index,
-				m.pass_type.tag()
+				in_flight.size()
 			);
+			for (const auto seq : in_flight) {
+				const auto& m = ring.entries[seq % pass_marker_ring_size];
+				log::println(
+					log::level::error,
+					log::category::vulkan,
+					"  -> seq={} frame={} pass_index={} pass_type={}",
+					seq,
+					m.frame_counter,
+					m.pass_index,
+					m.pass_type.tag()
+				);
+			}
 		}
 	}
 
@@ -370,15 +367,16 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 	);
 
 	for (std::size_t i = 0; i < fault_info.address_infos.size(); ++i) {
-		const auto& [address_type, reported_address, address_precision] = fault_info.address_infos[i];
+		const auto& address = fault_info.address_infos[i];
 		log::println(
 			log::level::error,
 			log::category::vulkan,
-			"Fault address {}: type={}, reported=0x{:x}, precision=0x{:x}",
+			"Fault address {}: type={}({}), reported=0x{:x}, precision=0x{:x}",
 			i,
-			address_type,
-			reported_address,
-			address_precision
+			address.address_type,
+			address.address_type_name.empty() ? std::string_view("unknown") : std::string_view(address.address_type_name),
+			address.reported_address,
+			address.address_precision
 		);
 	}
 
@@ -678,6 +676,9 @@ auto gse::gpu::device::create_image(const image_desc& desc, const std::string_vi
 }
 
 auto gse::gpu::device::set_slot_resource(const std::uint32_t slot_index, const resource_ref& ref) -> void {
+	if (slot_index == bindless_slot::invalid_index) {
+		return;
+	}
 	if (slot_index >= m_slot_resources.size()) {
 		m_slot_resources.resize(slot_index + 1);
 	}
@@ -722,10 +723,6 @@ auto gse::gpu::device::register_sampler(const sampler_desc& desc) -> gpu::bindle
 
 auto gse::gpu::device::register_texture(const image& img, const sampler_desc& desc) -> gpu::bindless_handle {
 	return m_vt->register_texture(m_backend.get(), img, desc);
-}
-
-auto gse::gpu::device::bindless_layout() const -> gpu::bindless_layout {
-	return m_vt->bindless_layout(m_backend.get());
 }
 
 auto gse::gpu::device::bindless_resource_heap_binding() const -> gpu::bindless_heap_binding {

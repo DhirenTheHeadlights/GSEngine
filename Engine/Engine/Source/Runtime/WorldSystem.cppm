@@ -27,14 +27,6 @@ export namespace gse {
 			const evaluation_context&
 		) = nullptr;
 	};
-
-	struct scene_command {
-		void (
-			*apply
-		)(
-			scene&
-		) = nullptr;
-	};
 }
 
 export namespace gse::world_system {
@@ -43,6 +35,7 @@ export namespace gse::world_system {
 		[[= gse::shared]] std::vector<id> scene_ids;
 		[[= gse::shared]] std::vector<trigger> triggers;
 		[[= gse::shared]] std::optional<id> active_scene;
+		[[= gse::shared]] scene* active_scene_ptr = nullptr;
 		bool networked = false;
 		bool authoritative = true;
 		std::optional<id> client_id;
@@ -294,14 +287,6 @@ auto gse::world_system::run(context& ctx, data& d, const shared_view<actions::da
 		d.scene_ids.push_back(key);
 	}
 
-	if (auto* current = current_scene(d)) {
-		for (const auto& cmd : ctx.read_channel<scene_command>()) {
-			if (cmd.apply) {
-				cmd.apply(*current);
-			}
-		}
-	}
-
 	if (!d.networked) {
 		const auto& s = actions::current_state(actions_d);
 
@@ -329,6 +314,8 @@ auto gse::world_system::run(context& ctx, data& d, const shared_view<actions::da
 	}
 
 	update_player_controllers(d, ra.registry());
+
+	d.active_scene_ptr = current_scene(d);
 
 	return {};
 }

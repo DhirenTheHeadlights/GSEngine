@@ -69,6 +69,8 @@ export namespace gse::gpu {
 			const gse::rect_t<vec2i>& scissor
 		) const -> void;
 
+		auto set_vertex_input_none() const -> void;
+
 		auto set_topology(
 			gpu::topology t
 		) const -> void;

@@ -22,7 +22,7 @@ export namespace gse::gpu {
 	public:
 		[[nodiscard]] static auto create(
 			device& dev,
-			swap_chain& sc
+			swap_chain* sc
 		) -> std::unique_ptr<frame>;
 
 		[[nodiscard]] auto current_frame() const -> std::uint32_t;
@@ -37,11 +37,11 @@ export namespace gse::gpu {
 		[[nodiscard]] auto frame_in_progress() const -> bool;
 
 		auto begin(
-			window::data& win
+			window::data* win
 		) -> std::expected<frame_token, frame_status>;
 
 		auto end(
-			window::data& win,
+			window::data* win,
 			std::span<const queue_submission> aux_submissions = {},
 			std::span<const semaphore_submit_info> extra_graphics_waits = {},
 			std::span<const command_buffer_handle> graphics_buffers = {}
@@ -54,9 +54,8 @@ export namespace gse::gpu {
 	private:
 		frame(
 			frame_sync<device>&& s,
-			std::uint32_t image_index,
 			device& dev,
-			swap_chain& sc
+			swap_chain* sc
 		);
 
 		auto recreate_resources(

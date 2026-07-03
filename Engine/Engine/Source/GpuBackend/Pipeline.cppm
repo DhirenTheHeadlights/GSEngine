@@ -10,6 +10,7 @@ import gse.math;
 
 export namespace gse::gpu {
 	struct pipeline_state_cache {
+		bool vertex_input_set = false;
 		std::optional<gpu::topology> topology;
 		std::optional<gpu::polygon_mode> polygon_mode;
 		std::optional<gpu::cull_mode> cull_mode;

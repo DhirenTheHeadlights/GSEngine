@@ -54,6 +54,17 @@ namespace gse::dx12 {
 		directx::com_ptr<directx::ID3D12PipelineState> pso;
 	};
 
+	struct bindless_layout {
+		gpu::device_size image_range_offset = 0;
+		gpu::device_size image_stride = 0;
+		gpu::device_size texture_image_offset = 0;
+		gpu::device_size buffer_range_offset = 0;
+		gpu::device_size buffer_stride = 0;
+		gpu::device_size texture_sampler_offset = 0;
+		gpu::device_size sampler_range_offset = 0;
+		gpu::device_size sampler_stride = 0;
+	};
+
 	[[nodiscard]] auto build_graphics_pipeline_desc(
 		const gfx_template& tmpl,
 		const graphics_pass_state& pass,
@@ -364,8 +375,6 @@ export namespace gse::dx12 {
 			const gpu::sampler_desc& desc
 		) -> gpu::bindless_handle;
 
-		[[nodiscard]] auto bindless_layout() const -> gpu::bindless_layout;
-
 		[[nodiscard]] auto bindless_resource_heap_binding() const -> gpu::bindless_heap_binding;
 
 		[[nodiscard]] auto bindless_sampler_heap_binding() const -> gpu::bindless_heap_binding;
@@ -453,7 +462,7 @@ export namespace gse::dx12 {
 		gpu::bindless_slot_pool m_sampler_pool;
 		directx::com_ptr<directx::ID3D12DescriptorHeap> m_resource_heap;
 		directx::com_ptr<directx::ID3D12DescriptorHeap> m_sampler_heap;
-		gpu::bindless_layout m_bindless_layout;
+		bindless_layout m_bindless_layout;
 		gpu::bindless_heap_binding m_resource_binding;
 		gpu::bindless_heap_binding m_sampler_binding;
 		std::uint32_t m_cbv_srv_uav_size = 0;

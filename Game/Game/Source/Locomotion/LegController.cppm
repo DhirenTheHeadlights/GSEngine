@@ -21,7 +21,7 @@ export namespace gs::locomotion::leg_controller {
 		[[
 			= gse::settings::describe<"Lift height of swing foot at midphase.">{}
 		]]
-		gse::displacement swing_lift_height = gse::meters(0.20f);
+		gse::displacement swing_lift_height = gse::meters(0.14f);
 
 		[[
 			= gse::settings::describe<"Time used for swing-foot lift and descent.">{}
@@ -144,19 +144,94 @@ export namespace gs::locomotion::leg_controller {
 		gse::displacement stance_push_range = gse::meters(0.18f);
 
 		[[
+			= gse::settings::describe<"Additional late-stance plantarflexion rolling the heel up onto the toe segment (0 disables).">{}
+		]]
+		gse::angle rollover_angle = gse::radians(-0.18f);
+
+		[[
+			= gse::settings::describe<"Pelvis travel past the planted foot at which heel-lift roll-over begins.">{}
+		]]
+		gse::displacement rollover_start = gse::meters(0.08f);
+
+		[[
+			= gse::settings::describe<"Pelvis travel over which roll-over ramps to full depth.">{}
+		]]
+		gse::displacement rollover_range = gse::meters(0.10f);
+
+		[[
+			= gse::settings::describe<"Run push-off: stance knee target at full launch (near straight) when sprinting, extending the leg to launch the body into flight.">{}
+		]]
+		gse::angle run_pushoff_knee = gse::radians(-0.02f);
+
+		[[
+			= gse::settings::describe<"Run push-off: extra ankle plantarflexion at full launch (drives the foot down to launch the body up).">{}
+		]]
+		gse::angle run_pushoff_ankle = gse::radians(-0.55f);
+
+		[[
+			= gse::settings::describe<"Run push-off: stance hip extension blended in at full launch (drives the body forward and up off the foot).">{}
+		]]
+		gse::angle run_pushoff_hip = gse::radians(-0.35f);
+
+		[[
+			= gse::settings::describe<"Run push-off: pelvis travel past the planted foot at which the launch begins.">{}
+		]]
+		gse::displacement run_pushoff_start = gse::meters(0.04f);
+
+		[[
+			= gse::settings::describe<"Run push-off: pelvis travel over which the launch ramps to full extension.">{}
+		]]
+		gse::displacement run_pushoff_range = gse::meters(0.14f);
+
+		[[
+			= gse::settings::describe<"Run push-off: sprint blend above which the launch engages (below this the walking gait is unchanged).">{}
+		]]
+		float run_pushoff_sprint_threshold = 0.6f;
+
+		[[
 			= gse::settings::describe<"Swing-hip roll target scale toward the planned lateral foot offset (0 disables).">{}
 		]]
 		float swing_roll_gain = 0.3f;
 
 		[[
+			= gse::settings::describe<"Stance-hip roll per meter of lateral capture beyond the deadzone, rolling the trunk back over the support (0 disables).">{}
+		]]
+		gse::inverse_length lateral_righting_gain = gse::per_meter(0.4f);
+
+		[[
+			= gse::settings::describe<"Lateral capture below this magnitude is normal gait weave and gets no righting roll.">{}
+		]]
+		gse::displacement lateral_righting_deadzone = gse::meters(0.18f);
+
+		[[
+			= gse::settings::describe<"Clamp on the stance-hip lateral righting roll.">{}
+		]]
+		gse::angle lateral_righting_clamp = gse::radians(0.20f);
+
+		[[
+			= gse::settings::describe<"Downward pelvis speed at which the stance knee starts extending to arrest the sink.">{}
+		]]
+		gse::velocity sink_arrest_onset = gse::meters_per_second(1.0f);
+
+		[[
+			= gse::settings::describe<"Downward pelvis speed range over which the sink arrest blends to full extension.">{}
+		]]
+		gse::velocity sink_arrest_range = gse::meters_per_second(0.5f);
+
+		[[
+			= gse::settings::describe<"Stance knee target at full sink arrest (near straight).">{}
+		]]
+		gse::angle sink_arrest_knee = gse::radians(-0.08f);
+
+		[[
 			= gse::settings::describe<"Stance-hip yaw target per radian of heading error (turns the pelvis over the planted foot).">{}
 		]]
-		float steer_gain = 1.5f;
+		float steer_gain = 1.9f;
 
 		[[
 			= gse::settings::describe<"Clamp on the stance-hip steering yaw target.">{}
 		]]
-		gse::angle steer_clamp = gse::radians(0.55f);
+		gse::angle steer_clamp = gse::radians(0.72f);
 
 		[[
 			= gse::settings::describe<"Stance-ankle CoP shift per radian of pelvis pitch, righting the trunk.">{}
@@ -176,7 +251,7 @@ export namespace gs::locomotion::leg_controller {
 		[[
 			= gse::settings::describe<"Adaptation rate of the standing ankle CoP trim per second of pitch error.">{}
 		]]
-		float posture_trim_rate = 0.35f;
+		gse::inverse_time posture_trim_rate = gse::per_second(0.35f);
 
 		[[
 			= gse::settings::describe<"Clamp on the adaptive ankle CoP trim.">{}
@@ -236,7 +311,7 @@ export namespace gs::locomotion::leg_controller {
 		[[
 			= gse::settings::describe<"Maximum foot anchor force for the airborne swing foot.">{}
 		]]
-		gse::force swing_foot_anchor_max_force = gse::newtons(150.f);
+		gse::force swing_foot_anchor_max_force = gse::newtons(300.f);
 
 		gse::interval_timer<float> log_timer{ gse::seconds(0.3f) };
 	};
@@ -287,12 +362,42 @@ namespace gs::locomotion {
 		const leg_controller::data& d
 	) -> float;
 
+	auto stance_push_fade(
+		const state& s
+	) -> float;
+
+	auto lateral_capture_fade(
+		const state& s
+	) -> float;
+
+	auto pelvis_past_planted_foot(
+		leg which,
+		const state& s,
+		const leg_context& ctx
+	) -> gse::displacement;
+
+	auto stance_rollover_progress(
+		leg which,
+		const state& s,
+		const leg_context& ctx,
+		const leg_controller::data& d
+	) -> float;
+
+	auto run_launch_intensity(
+		leg which,
+		const state& s,
+		const leg_context& ctx,
+		const leg_controller::data& d,
+		float sprint_factor
+	) -> float;
+
 	auto compute_stance(
 		leg which,
 		const state& s,
 		const skeleton_refs& r,
 		const leg_context& ctx,
-		const leg_controller::data& d
+		const leg_controller::data& d,
+		float sprint_factor
 	) -> leg_pose;
 
 	auto stance_foot_target(
@@ -365,10 +470,6 @@ namespace gs::locomotion {
 	auto pelvis_yaw_orientation(
 		const state& s
 	) -> gse::quat;
-
-	auto pelvis_pitch_about_right(
-		const state& s
-	) -> gse::angle;
 
 	auto steering_target(
 		const state& s,
@@ -500,7 +601,35 @@ auto gs::locomotion::stance_foot_target(const leg which, const leg_context& ctx,
 	return grounded_foot_position(planted_foot_position(which, ctx), d);
 }
 
-auto gs::locomotion::compute_stance(const leg which, const state& s, const skeleton_refs& r, const leg_context& ctx, const leg_controller::data& d) -> leg_pose {
+auto gs::locomotion::stance_push_fade(const state& s) -> float {
+	return std::clamp((gse::meters(0.45f) - s.capture_forward) / gse::meters(0.30f), 0.f, 1.f);
+}
+
+auto gs::locomotion::lateral_capture_fade(const state& s) -> float {
+	return std::clamp((gse::meters(0.35f) - gse::abs(s.capture_right)) / gse::meters(0.15f), 0.f, 1.f);
+}
+
+auto gs::locomotion::pelvis_past_planted_foot(const leg which, const state& s, const leg_context& ctx) -> gse::displacement {
+	const auto fwd_xz = horizontal_axis(s.pelvis_forward);
+	return gse::dot(fwd_xz, s.pelvis_position - planted_foot_position(which, ctx));
+}
+
+auto gs::locomotion::stance_rollover_progress(const leg which, const state& s, const leg_context& ctx, const leg_controller::data& d) -> float {
+	if (d.rollover_range <= gse::meters(0.f)) {
+		return 0.f;
+	}
+	return std::clamp((pelvis_past_planted_foot(which, s, ctx) - d.rollover_start) / d.rollover_range, 0.f, 1.f);
+}
+
+auto gs::locomotion::run_launch_intensity(const leg which, const state& s, const leg_context& ctx, const leg_controller::data& d, const float sprint_factor) -> float {
+	if (sprint_factor < d.run_pushoff_sprint_threshold || d.run_pushoff_range <= gse::meters(0.f)) {
+		return 0.f;
+	}
+	const float progress = std::clamp((pelvis_past_planted_foot(which, s, ctx) - d.run_pushoff_start) / d.run_pushoff_range, 0.f, 1.f);
+	return sprint_factor * progress;
+}
+
+auto gs::locomotion::compute_stance(const leg which, const state& s, const skeleton_refs& r, const leg_context& ctx, const leg_controller::data& d, const float sprint_factor) -> leg_pose {
 	auto support_state = s;
 	support_state.pelvis_position.y() = std::max(support_state.pelvis_position.y(), r.pelvis_target_height);
 	support_state.pelvis_orientation = pelvis_yaw_orientation(s);
@@ -509,36 +638,52 @@ auto gs::locomotion::compute_stance(const leg which, const state& s, const skele
 	const auto foot_target = stance_foot_target(which, ctx, d);
 	const auto ik = solve_leg_ik(hip_world, foot_target, support_state.pelvis_orientation, r.thigh_length, r.shin_length);
 
-	const auto pitch = pelvis_pitch_about_right(s);
+	const auto pitch = s.pelvis_pitch;
 	const auto hip_target = std::clamp(
 		ik.hip_pitch - ctx.cop_trim_applied * d.posture_trim_hip_share,
 		-d.stance_hip_clamp,
 		d.stance_hip_clamp
 	);
 
-	const auto knee_target = std::clamp(ik.knee_bend, -d.stance_knee_clamp, gse::radians(0.f));
+	const float run_launch = run_launch_intensity(which, s, ctx, d, sprint_factor);
+
+	const float sink_arrest = d.sink_arrest_range > gse::meters_per_second(0.f)
+		? std::clamp((-s.pelvis_velocity.y() - d.sink_arrest_onset) / d.sink_arrest_range, 0.f, 1.f)
+		: 0.f;
+	const auto ik_knee = std::clamp(ik.knee_bend, -d.stance_knee_clamp, gse::radians(0.f));
+	const auto knee_arrested = ik_knee + (d.sink_arrest_knee - ik_knee) * sink_arrest;
+	const auto knee_target = knee_arrested + (d.run_pushoff_knee - knee_arrested) * run_launch;
+	const auto launched_hip = hip_target + (d.run_pushoff_hip - hip_target) * run_launch;
 	const auto cop_shift = std::clamp(
 		pitch * d.pelvis_righting_gain + s.pelvis_pitch_rate * d.pelvis_righting_rate_gain,
 		-d.pelvis_righting_clamp,
 		d.pelvis_righting_clamp
 	);
 
-	const auto fwd_xz = gse::normalize(gse::vec3f(s.pelvis_forward.x(), 0.f, s.pelvis_forward.z()));
-	const auto pelvis_past_foot = gse::dot(fwd_xz, s.pelvis_position - planted_foot_position(which, ctx));
-	const float push_progress = std::clamp(pelvis_past_foot / d.stance_push_range, 0.f, 1.f);
-	const float push_fade = std::clamp((gse::meters(0.45f) - s.capture_forward) / gse::meters(0.30f), 0.f, 1.f);
-	const auto stance_push = d.stance_push_angle * (push_progress * push_fade);
-	const auto ankle_target = -(hip_target + knee_target) + cop_shift + ctx.cop_trim_applied + stance_push;
+	const float push_progress = std::clamp(pelvis_past_planted_foot(which, s, ctx) / d.stance_push_range, 0.f, 1.f);
+	const float push_fade = stance_push_fade(s);
+	const float roll_engage = stance_rollover_progress(which, s, ctx, d) * ctx.rollover_intent * lateral_capture_fade(s);
+	const auto stance_push = d.stance_push_angle * (push_progress * push_fade) + d.rollover_angle * (roll_engage * push_fade);
+	const auto righting = (cop_shift + ctx.cop_trim_applied) * (1.f - roll_engage);
+	const auto ankle_target = -(launched_hip + knee_target) + righting + stance_push + d.run_pushoff_ankle * run_launch;
+
+	const auto capture_right_excess = s.capture_right - std::clamp(s.capture_right, -d.lateral_righting_deadzone, d.lateral_righting_deadzone);
+	const auto bank = std::clamp(
+		gse::radians(1.f) * (d.lateral_righting_gain * capture_right_excess),
+		-d.lateral_righting_clamp,
+		d.lateral_righting_clamp
+	);
 
 	return {
-		.hip = hip_target,
+		.hip = launched_hip,
 		.knee = knee_target,
 		.ankle = ankle_target,
+		.hip_roll = bank,
 	};
 }
 
 auto gs::locomotion::compute_swing(const leg which, const state& s, const gait& g, const plan& p, const skeleton_refs& r, const leg_context& ctx, const leg_controller::data& d) -> leg_pose {
-	const auto pitch = pelvis_pitch_about_right(s);
+	const auto pitch = s.pelvis_pitch;
 	const auto flat_ankle = [&](const gse::angle hip, const gse::angle knee) {
 		return -(pitch + hip + knee);
 	};
@@ -554,11 +699,12 @@ auto gs::locomotion::compute_swing(const leg which, const state& s, const gait& 
 	if (g.current == phase::weight_shift) {
 		const float t = phase_progress(g);
 		const auto knee = d.stance_knee_rest + (d.swing_knee_lift * 0.15f - d.stance_knee_rest) * t;
-		const float toe_off_fade = std::clamp((gse::meters(0.45f) - s.capture_forward) / gse::meters(0.30f), 0.f, 1.f);
+		const float toe_off_fade = stance_push_fade(s);
+		const auto rollover = d.rollover_angle * (stance_rollover_progress(which, s, ctx, d) * ctx.rollover_intent * lateral_capture_fade(s) * toe_off_fade);
 		return {
 			.hip = gse::radians(0.f),
 			.knee = knee,
-			.ankle = flat_ankle(gse::radians(0.f), knee) + d.toe_off_angle * (t * toe_off_fade),
+			.ankle = flat_ankle(gse::radians(0.f), knee) + rollover + d.toe_off_angle * (t * toe_off_fade),
 		};
 	}
 
@@ -591,10 +737,10 @@ auto gs::locomotion::compute_swing(const leg which, const state& s, const gait& 
 	const auto ik = solve_leg_ik(hip_world, desired_foot, ik_state.pelvis_orientation, r.thigh_length, r.shin_length);
 
 	const auto rel_body = gse::inverse_rotate_vector(ik_state.pelvis_orientation, desired_foot - hip_world);
-	const auto hip_roll = gse::radians(std::atan2(
+	const auto hip_roll = gse::atan2(
 		static_cast<float>(rel_body.x()),
 		std::max(static_cast<float>(-rel_body.y()), 0.05f)
-	)) * d.swing_roll_gain;
+	) * d.swing_roll_gain;
 
 	const auto hip_target = ik.hip_pitch - pitch;
 	return {
@@ -618,12 +764,8 @@ auto gs::locomotion::pelvis_yaw_orientation(const state& s) -> gse::quat {
 	if (len <= 0.0001f) {
 		return gse::quat(1.f, 0.f, 0.f, 0.f);
 	}
-	const auto yaw = gse::radians(std::atan2(-fwd_xz.x() / len, -fwd_xz.z() / len));
+	const auto yaw = gse::atan2(-fwd_xz.x() / len, -fwd_xz.z() / len);
 	return gse::quat(gse::vec3f(0.f, 1.f, 0.f), yaw);
-}
-
-auto gs::locomotion::pelvis_pitch_about_right(const state& s) -> gse::angle {
-	return gse::radians(std::asin(std::clamp(s.pelvis_forward.y(), -1.f, 1.f)));
 }
 
 auto gs::locomotion::steering_target(const state& s, const intent& it, const leg_controller::data& d) -> gse::angle {
@@ -767,17 +909,22 @@ auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs,
 		cctx.last_swing_leg = g->swing_leg;
 
 		const bool controllers_active = !g->fallen && s->valid && cctx.planted_initialized;
+		const float sprint_factor = it ? std::clamp(it->sprint_blend, 0.f, 1.f) : 0.f;
 		const auto frame_dt = gse::system_clock::fixed_dt<gse::time>() * gse::system_clock::fixed_steps_this_frame();
 
 		const float walk_intensity = it ? std::clamp(it->intensity, 0.f, 1.f) : 0.f;
 		if (controllers_active && s->any_foot_grounded && walk_intensity > 0.3f) {
 			cctx.cop_trim = std::clamp(
-				cctx.cop_trim + s->pelvis_pitch * (d.posture_trim_rate * frame_dt.as<gse::seconds>()),
+				cctx.cop_trim + s->pelvis_pitch * (d.posture_trim_rate * frame_dt),
 				-d.posture_trim_clamp,
 				d.posture_trim_clamp
 			);
 		}
 		cctx.cop_trim_applied = cctx.cop_trim * std::clamp(walk_intensity / 0.5f, 0.f, 1.f);
+
+		const float rollover_intent_target = it ? std::clamp(it->forward, 0.f, 1.f) : 0.f;
+		const float rollover_intent_step = frame_dt / gse::seconds(0.25f);
+		cctx.rollover_intent += std::clamp(rollover_intent_target - cctx.rollover_intent, -rollover_intent_step, rollover_intent_step);
 
 		const float arm_phase_target = !controllers_active || g->current == phase::idle || g->current == phase::recover
 			? 0.f
@@ -785,7 +932,7 @@ auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs,
 				? (g->swing_leg == leg::left ? 1.f : -1.f)
 				: cctx.arm_phase;
 
-		const float arm_phase_step = frame_dt.as<gse::seconds>() / 0.4f;
+		const float arm_phase_step = frame_dt / gse::seconds(0.4f);
 		cctx.arm_phase += std::clamp(arm_phase_target - cctx.arm_phase, -arm_phase_step, arm_phase_step);
 
 		auto write_shoulder = [&](const gse::id joint_id, const float side) {
@@ -820,14 +967,14 @@ auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs,
 			const auto steer = it && s->valid ? steering_target(*s, *it, d) : gse::radians(0.f);
 
 			if (both_stance) {
-				targets.left = compute_stance(leg::left, *s, *r, cctx, d);
-				targets.right = compute_stance(leg::right, *s, *r, cctx, d);
+				targets.left = compute_stance(leg::left, *s, *r, cctx, d, sprint_factor);
+				targets.right = compute_stance(leg::right, *s, *r, cctx, d, sprint_factor);
 				targets.left.hip_yaw = steer;
 				targets.right.hip_yaw = steer;
 			}
 			else {
 				const leg stance_leg = other(g->swing_leg);
-				auto stance_pose = compute_stance(stance_leg, *s, *r, cctx, d);
+				auto stance_pose = compute_stance(stance_leg, *s, *r, cctx, d, sprint_factor);
 				const auto swing_pose = compute_swing(g->swing_leg, *s, *g, *p, *r, cctx, d);
 				stance_pose.hip_yaw = steer;
 				if (stance_leg == leg::left) {
@@ -853,6 +1000,15 @@ auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs,
 		const bool right_airborne_stance = right_stance && !s->foot_grounded_r && !right_planting;
 		const bool left_supporting = left_stance && g->current != phase::idle;
 		const bool right_supporting = right_stance && g->current != phase::idle;
+		const float roll_authority = cctx.rollover_intent * (s->valid ? lateral_capture_fade(*s) : 0.f);
+		const bool left_roll_geometry = controllers_active && s->foot_grounded_l && pelvis_past_planted_foot(leg::left, *s, cctx) > gse::meters(0.f);
+		const bool right_roll_geometry = controllers_active && s->foot_grounded_r && pelvis_past_planted_foot(leg::right, *s, cctx) > gse::meters(0.f);
+		cctx.roll_latch_l = left_roll_geometry && (cctx.roll_latch_l || stance_rollover_progress(leg::left, *s, cctx, d) * roll_authority > 0.02f);
+		cctx.roll_latch_r = right_roll_geometry && (cctx.roll_latch_r || stance_rollover_progress(leg::right, *s, cctx, d) * roll_authority > 0.02f);
+		const bool left_rolling = cctx.roll_latch_l;
+		const bool right_rolling = cctx.roll_latch_r;
+		const bool left_launching = controllers_active && s->foot_grounded_l && left_stance && run_launch_intensity(leg::left, *s, cctx, d, sprint_factor) > 0.2f;
+		const bool right_launching = controllers_active && s->foot_grounded_r && right_stance && run_launch_intensity(leg::right, *s, cctx, d, sprint_factor) > 0.2f;
 		const bool left_anchor_active = controllers_active && ((s->foot_grounded_l && left_stance) || left_planting || left_airborne_stance || left_swinging);
 		const bool right_anchor_active = controllers_active && ((s->foot_grounded_r && right_stance) || right_planting || right_airborne_stance || right_swinging);
 
@@ -871,7 +1027,7 @@ auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs,
 			left_anchor_target,
 			left_anchor_active,
 			!(left_planting || left_airborne_stance || left_swinging),
-			left_planting || left_airborne_stance || left_supporting || left_swinging,
+			left_planting || left_airborne_stance || (left_supporting && !left_rolling && !left_launching) || left_swinging,
 			left_swinging,
 			left_swinging ? d.swing_foot_anchor_max_force : d.foot_anchor_max_force,
 			motors,
@@ -884,7 +1040,7 @@ auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs,
 			right_anchor_target,
 			right_anchor_active,
 			!(right_planting || right_airborne_stance || right_swinging),
-			right_planting || right_airborne_stance || right_supporting || right_swinging,
+			right_planting || right_airborne_stance || (right_supporting && !right_rolling && !right_launching) || right_swinging,
 			right_swinging,
 			right_swinging ? d.swing_foot_anchor_max_force : d.foot_anchor_max_force,
 			motors,

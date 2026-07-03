@@ -89,6 +89,10 @@ auto gse::gpu::pass_recorder::set_scissor(const gse::rect_t<vec2i>& scissor) con
 	m_vt->set_scissor(m_cmd, scissor);
 }
 
+auto gse::gpu::pass_recorder::set_vertex_input_none() const -> void {
+	m_vt->set_vertex_input_none(m_cmd);
+}
+
 auto gse::gpu::pass_recorder::set_topology(const gpu::topology t) const -> void {
 	m_vt->set_topology(m_cmd, t);
 }

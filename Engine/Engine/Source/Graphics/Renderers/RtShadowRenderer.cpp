@@ -5,6 +5,7 @@ import std;
 import :rt_shadow_renderer;
 import :geometry_collector;
 import :mesh;
+import :physics_transform_renderer;
 
 
 import gse.os;
@@ -19,6 +20,8 @@ import gse.math;
 import gse.log;
 
 namespace gse::renderer::rt_shadow {
+	constexpr bool use_gpu_tlas_transform_update = true;
+
 	struct [[= shaders::shader_struct]] push_constants {
 		std::uint32_t count;
 		std::uint32_t instance_stride;
@@ -49,6 +52,7 @@ namespace gse::renderer::rt_shadow {
 
 auto gse::renderer::rt_shadow::init(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, data& d) -> async::task<> {
 	log::println(log::category::render, "RT shadow: initialized");
+	log::println(log::category::render, "RT shadow: gpu tlas transform update {}", use_gpu_tlas_transform_update ? "enabled" : "disabled");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::tlas>::frames_in_flight; ++i) {
 		d.tlas_per_frame[i] = gpu::build_tlas(*gpu_s.device, geometry_collector::data::max_instances);
@@ -57,7 +61,9 @@ auto gse::renderer::rt_shadow::init(context& ctx, const shared_view<gpu::context
 		d.instances[i].reserve(geometry_collector::data::max_instances);
 	}
 
-	d.tlas_update_pipeline = gpu::build_compute_program(*gpu_s.device, entry::pod);
+	if constexpr (use_gpu_tlas_transform_update) {
+		d.tlas_update_pipeline = gpu::build_compute_program(*gpu_s.device, entry::pod);
+	}
 
 	return {};
 }
@@ -86,10 +92,25 @@ auto gse::renderer::rt_shadow::frame(context& ctx, shared_view<gpu::context::dat
 			continue;
 		}
 
+		if (!m.upload_token().ready()) {
+			continue;
+		}
+
 		const auto vertex_count = static_cast<std::uint32_t>(m.vertex_gpu_buffer().size() / sizeof(vertex));
 		const auto index_count = static_cast<std::uint32_t>(m.index_gpu_buffer().size() / sizeof(std::uint32_t));
 
 		if (vertex_count == 0 || index_count == 0) {
+			continue;
+		}
+
+		const auto& mesh_indices = m.indices();
+		std::uint32_t max_index = 0;
+		for (const auto idx : mesh_indices) {
+			max_index = std::max(max_index, idx);
+		}
+		const bool indices_out_of_range = !mesh_indices.empty() && max_index >= vertex_count;
+		log::println(log::category::render, "rt_shadow: BLAS build verts={} gpu_indices={} cpu_indices={} max_index={} oob={}", vertex_count, index_count, mesh_indices.size(), max_index, indices_out_of_range);
+		if (indices_out_of_range) {
 			continue;
 		}
 
@@ -127,7 +148,9 @@ auto gse::renderer::rt_shadow::frame(context& ctx, shared_view<gpu::context::dat
 	instances.clear();
 
 	linear_vector<std::uint32_t> mapping;
-	mapping.reserve(data.render_queue.size());
+	if constexpr (use_gpu_tlas_transform_update) {
+		mapping.reserve(data.render_queue.size());
+	}
 
 	std::uint32_t render_queue_idx = 0;
 	for (const auto& queue_entry : data.render_queue) {
@@ -161,7 +184,9 @@ auto gse::renderer::rt_shadow::frame(context& ctx, shared_view<gpu::context::dat
 			.blas_address = it->second.device_address()
 		});
 
-		mapping.push_back(render_queue_idx);
+		if constexpr (use_gpu_tlas_transform_update) {
+			mapping.push_back(render_queue_idx);
+		}
 		++render_queue_idx;
 
 		if (instances.size() >= geometry_collector::data::max_instances) {
@@ -169,71 +194,82 @@ auto gse::renderer::rt_shadow::frame(context& ctx, shared_view<gpu::context::dat
 		}
 	}
 
-	if (instances.empty()) {
-		co_return;
-	}
-
 	const auto instance_count = static_cast<std::uint32_t>(instances.size());
 
 	gpu::write_tlas_instances(d.tlas_per_frame[frame_index], instances.span());
 
-	const auto mapping_bytes = instance_count * sizeof(std::uint32_t);
-	if (d.mapping_buffer_capacity < mapping_bytes) {
-		for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-			d.mapping_buffers[i] = gpu_s.device->create_buffer(
-				{
-					.size = mapping_bytes,
-					.stride = sizeof(std::uint32_t),
-					.usage = gpu::buffer_flag::storage,
-					.bindless = true
+	if constexpr (use_gpu_tlas_transform_update) {
+		if (instance_count != 0) {
+			const auto mapping_bytes = instance_count * sizeof(std::uint32_t);
+			if (d.mapping_buffer_capacity < mapping_bytes) {
+				for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
+					d.mapping_buffers[i] = gpu_s.device->create_buffer(
+						{
+							.size = mapping_bytes,
+							.stride = sizeof(std::uint32_t),
+							.usage = gpu::buffer_flag::storage,
+							.bindless = true
+						}
+					);
 				}
+				d.mapping_buffer_capacity = mapping_bytes;
+			}
+
+			d.mapping_buffers[frame_index].host_write(mapping.data(), mapping_bytes);
+
+			auto& tlas_inst_buf = d.tlas_per_frame[frame_index].instance_buffer();
+
+			if (!d.tlas_instance_views[frame_index].valid()) {
+				d.tlas_instance_views[frame_index] = gpu_s.device->allocate_buffer_slot();
+			}
+			gpu_s.device->write_storage_buffer(d.tlas_instance_views[frame_index].slot(), tlas_inst_buf.device_address(), instance_count * 64);
+		}
+	}
+
+	const auto build_new_blas = [&](auto& rec) {
+		for (const auto* mesh_ptr : new_blas_meshes) {
+			const auto vertex_count = static_cast<std::uint32_t>(mesh_ptr->vertex_gpu_buffer().size() / sizeof(vertex));
+			const auto index_count = static_cast<std::uint32_t>(mesh_ptr->index_gpu_buffer().size() / sizeof(std::uint32_t));
+
+			const auto geometry = gpu::make_blas_geometry({
+				.vertex_buffer = &mesh_ptr->vertex_gpu_buffer(),
+				.vertex_count = vertex_count,
+				.vertex_stride = static_cast<std::uint32_t>(sizeof(vertex)),
+				.index_buffer = &mesh_ptr->index_gpu_buffer(),
+				.index_count = index_count
+			});
+			const std::uint32_t prim_count = index_count / 3;
+
+			gpu::build_blas_in_place(*gpu_s.device, d.blas_cache.at(mesh_ptr).handle(), geometry, prim_count, d.blas_scratch[frame_index], rec);
+		}
+	};
+
+	if constexpr (use_gpu_tlas_transform_update) {
+		auto rec = co_await gpu::pass<^^gse::renderer::rt_shadow::frame>(ctx).pipeline(d.tlas_update_pipeline).after<^^geometry_collector::frame, ^^physics_transform::frame>();
+		build_new_blas(rec);
+		if (instance_count != 0) {
+			const std::uint32_t workgroups = (instance_count + 63) / 64;
+			rec.barrier(gpu::barrier_scope::host_to_compute);
+			rec.barrier(gpu::barrier_scope::compute_to_compute);
+			rec.dispatch<entry>(
+				{
+					.count = instance_count,
+					.instance_stride = static_cast<std::uint32_t>(sizeof(shaders::common::instance_data)),
+					.model_matrix_offset = 0,
+				},
+				{
+					.source_instance_data = gc_r.instance_buffer[frame_index].slot(),
+					.index_mapping = d.mapping_buffers[frame_index].slot(),
+					.tlas_instances = d.tlas_instance_views[frame_index].slot(),
+				},
+				vec3u{ workgroups, 1u, 1u }
 			);
 		}
-		d.mapping_buffer_capacity = mapping_bytes;
+		gpu::build_tlas_in_place(*gpu_s.device, d.tlas_per_frame[frame_index], instance_count, rec);
 	}
-
-	d.mapping_buffers[frame_index].host_write(mapping.data(), mapping_bytes);
-
-	auto& tlas_inst_buf = d.tlas_per_frame[frame_index].instance_buffer();
-
-	if (!d.tlas_instance_views[frame_index].valid()) {
-		d.tlas_instance_views[frame_index] = gpu_s.device->allocate_buffer_slot();
+	else {
+		auto rec = co_await gpu::pass<^^gse::renderer::rt_shadow::frame>(ctx).after<^^geometry_collector::frame>();
+		build_new_blas(rec);
+		gpu::build_tlas_in_place(*gpu_s.device, d.tlas_per_frame[frame_index], instance_count, rec);
 	}
-	gpu_s.device->write_storage_buffer(d.tlas_instance_views[frame_index].slot(), tlas_inst_buf.device_address(), instance_count * 64);
-
-	const std::uint32_t workgroups = (instance_count + 63) / 64;
-
-	auto rec = co_await gpu::pass<^^gse::renderer::rt_shadow::frame>(ctx).pipeline(d.tlas_update_pipeline).after<^^geometry_collector::frame>();
-
-	for (const auto* mesh_ptr : new_blas_meshes) {
-		const auto vertex_count = static_cast<std::uint32_t>(mesh_ptr->vertex_gpu_buffer().size() / sizeof(vertex));
-		const auto index_count = static_cast<std::uint32_t>(mesh_ptr->index_gpu_buffer().size() / sizeof(std::uint32_t));
-
-		const auto geometry = gpu::make_blas_geometry({
-			.vertex_buffer = &mesh_ptr->vertex_gpu_buffer(),
-			.vertex_count = vertex_count,
-			.vertex_stride = static_cast<std::uint32_t>(sizeof(vertex)),
-			.index_buffer = &mesh_ptr->index_gpu_buffer(),
-			.index_count = index_count
-		});
-		const std::uint32_t prim_count = index_count / 3;
-
-		gpu::build_blas_in_place(*gpu_s.device, d.blas_cache.at(mesh_ptr).handle(), geometry, prim_count, d.blas_scratch[frame_index], rec);
-	}
-
-	rec.barrier(gpu::barrier_scope::transfer_to_compute);
-	rec.dispatch<entry>(
-		{
-			.count = instance_count,
-			.instance_stride = static_cast<std::uint32_t>(sizeof(shaders::common::instance_data)),
-			.model_matrix_offset = 0,
-		},
-		{
-			.source_instance_data = gc_r.instance_buffer[frame_index].slot(),
-			.index_mapping = d.mapping_buffers[frame_index].slot(),
-			.tlas_instances = d.tlas_instance_views[frame_index].slot(),
-		},
-		vec3u{ workgroups, 1u, 1u }
-	);
-	gpu::build_tlas_in_place(*gpu_s.device, d.tlas_per_frame[frame_index], instance_count, rec);
 }
