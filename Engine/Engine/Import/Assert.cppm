@@ -74,7 +74,7 @@ auto gse::assert_format_message(const std::source_location loc, const std::strin
 		"Stack:\n{}",
 		loc.file_name(),
 		loc.line(),
-		loc.function_name(),
+		clean_symbol(loc.function_name()),
 		comment,
 		capture_stacktrace(1)
 	);

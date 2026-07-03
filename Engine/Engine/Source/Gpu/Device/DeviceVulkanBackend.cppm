@@ -76,6 +76,15 @@ export namespace gse::gpu {
 			gpu::access_flags src_access
 		) -> void;
 
+		auto begin_debug_event(
+			gpu::command_buffer_handle cmd,
+			std::string_view label
+		) -> void;
+
+		auto end_debug_event(
+			gpu::command_buffer_handle cmd
+		) -> void;
+
 		[[nodiscard]] auto frame_command_buffer(
 			gpu::queue_type queue_type,
 			std::uint32_t frame_index
@@ -295,6 +304,8 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto allocate_image_slot() -> gpu::bindless_handle;
 
+		[[nodiscard]] auto allocate_acceleration_structure_slot() -> gpu::bindless_handle;
+
 		auto write_storage_buffer(
 			gpu::bindless_slot slot,
 			gpu::device_address address,
@@ -326,8 +337,6 @@ export namespace gse::gpu {
 			const gpu::sampler_desc& desc
 		) -> gpu::bindless_handle;
 
-		[[nodiscard]] auto bindless_layout() const -> gpu::bindless_layout;
-
 		[[nodiscard]] auto bindless_resource_heap_binding() const -> gpu::bindless_heap_binding;
 
 		[[nodiscard]] auto bindless_sampler_heap_binding() const -> gpu::bindless_heap_binding;
@@ -350,10 +359,10 @@ export namespace gse::gpu {
 	};
 
 	[[nodiscard]] auto create_vulkan_device_backend(
-		shared_view<window::data> win,
+		std::optional<shared_view<window::data>> win,
 		bool validation_layers_enabled,
 		device_settings& cfg
-	) -> vulkan_backend_creation;
+	) -> gpu::expected<vulkan_backend_creation>;
 }
 
 auto gse::gpu::vulkan_device_backend::handle() const -> gpu::device_handle {
@@ -416,6 +425,14 @@ auto gse::gpu::vulkan_device_backend::cmd_release_swapchain_to_present(const gpu
 	vulkan::commands(cmd).release_swapchain_image_to_present(img, src_stages, src_access);
 }
 
+auto gse::gpu::vulkan_device_backend::begin_debug_event(const gpu::command_buffer_handle cmd, const std::string_view label) -> void {
+	vulkan::commands(cmd).begin_debug_label(label);
+}
+
+auto gse::gpu::vulkan_device_backend::end_debug_event(const gpu::command_buffer_handle cmd) -> void {
+	vulkan::commands(cmd).end_debug_label();
+}
+
 auto gse::gpu::vulkan_device_backend::frame_command_buffer(const gpu::queue_type queue_type, const std::uint32_t frame_index) const -> gpu::command_buffer_handle {
 	return command.frame_command_buffer(queue_type, frame_index);
 }
@@ -441,7 +458,7 @@ auto gse::gpu::vulkan_device_backend::reset_worker_command_pools(const std::uint
 }
 
 auto gse::gpu::vulkan_device_backend::acquire_worker_command_buffer(const gpu::queue_type queue_type, const std::size_t worker_index, const std::uint32_t frame_index) -> gpu::command_buffer_handle {
-	return worker_pools.acquire_secondary(queue_type, worker_index, frame_index);
+	return worker_pools.acquire_command_buffer(queue_type, worker_index, frame_index);
 }
 
 auto gse::gpu::vulkan_device_backend::create_image_unbound(const gpu::image_create_info& info) const -> std::pair<gpu::handle<gpu::image>, gpu::memory_requirements> {
@@ -608,6 +625,10 @@ auto gse::gpu::vulkan_device_backend::allocate_image_slot() -> gpu::bindless_han
 	return device_config.allocate_image_slot();
 }
 
+auto gse::gpu::vulkan_device_backend::allocate_acceleration_structure_slot() -> gpu::bindless_handle {
+	return device_config.allocate_acceleration_structure_slot();
+}
+
 auto gse::gpu::vulkan_device_backend::write_storage_buffer(const gpu::bindless_slot slot, const gpu::device_address address, const gpu::device_size size) -> void {
 	device_config.write_storage_buffer(slot, address, size);
 }
@@ -630,10 +651,6 @@ auto gse::gpu::vulkan_device_backend::register_sampler(const gpu::sampler_desc& 
 
 auto gse::gpu::vulkan_device_backend::register_texture(const gpu::image& img, const gpu::sampler_desc& desc) -> gpu::bindless_handle {
 	return device_config.register_texture(img, desc);
-}
-
-auto gse::gpu::vulkan_device_backend::bindless_layout() const -> gpu::bindless_layout {
-	return device_config.bindless_layout();
 }
 
 auto gse::gpu::vulkan_device_backend::bindless_resource_heap_binding() const -> gpu::bindless_heap_binding {
@@ -660,13 +677,19 @@ auto gse::gpu::vulkan_device_backend::make_video_encoder_backend(const vec2u ext
 	return std::make_unique<gpu::video_encoder_backend>(vulkan::video_encoder::create(device_config, queue, extent, caps));
 }
 
-auto gse::gpu::create_vulkan_device_backend(const shared_view<window::data> win, const bool validation_layers_enabled, device_settings& cfg) -> vulkan_backend_creation {
+auto gse::gpu::create_vulkan_device_backend(const std::optional<shared_view<window::data>> win, const bool validation_layers_enabled, device_settings& cfg) -> gpu::expected<vulkan_backend_creation> {
 	auto aftermath_tracker = vulkan::aftermath::create({});
 
-	auto instance = vulkan::instance::create(vulkan::instance::required_window_extensions(), validation_layers_enabled);
-	instance.create_surface(win);
+	auto instance = vulkan::instance::create(win ? vulkan::instance::required_window_extensions() : std::span<const char* const>{}, validation_layers_enabled);
+	if (win) {
+		instance.create_surface(*win);
+	}
 
-	auto creation = vulkan::device::create(instance, cfg, aftermath_tracker);
+	auto created = vulkan::device::create(instance, cfg, aftermath_tracker);
+	if (!created) {
+		return std::unexpected{ created.error() };
+	}
+	auto& creation = *created;
 	std::array<std::uint32_t, gpu::queue_type_count> queue_families{};
 	queue_families[static_cast<std::size_t>(gpu::queue_type::graphics)] = creation.families.graphics_family.value();
 	queue_families[static_cast<std::size_t>(gpu::queue_type::compute)] = creation.families.compute_family.value();
@@ -675,7 +698,7 @@ auto gse::gpu::create_vulkan_device_backend(const shared_view<window::data> win,
 
 	auto worker_pools = vulkan::worker_command_pools::create(creation.device, queue_families, task::thread_count());
 
-	const auto surface_format = vulkan::pick_surface_format(creation.device, instance);
+	const auto surface_format = win ? vulkan::pick_surface_format(creation.device, instance) : gpu::image_format::b8g8r8a8_srgb;
 
 	auto backend = std::make_unique<vulkan_device_backend>(
 		std::move(aftermath_tracker),
@@ -688,7 +711,7 @@ auto gse::gpu::create_vulkan_device_backend(const shared_view<window::data> win,
 
 	backend->device_config.init_bindless();
 
-	return {
+	return vulkan_backend_creation{
 		.backend = std::move(backend),
 		.surface_format = surface_format,
 		.video_encode_enabled = creation.video_encode_enabled,

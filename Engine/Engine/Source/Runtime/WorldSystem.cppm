@@ -31,9 +31,11 @@ export namespace gse {
 
 export namespace gse::world_system {
 	struct [[= gse::system_state<"World">{}]] data {
-		[[= gse::shared]] std::unordered_map<id, std::unique_ptr<scene>> scenes;
+		std::unordered_map<id, std::unique_ptr<scene>> scenes;
+		[[= gse::shared]] std::vector<id> scene_ids;
 		[[= gse::shared]] std::vector<trigger> triggers;
 		[[= gse::shared]] std::optional<id> active_scene;
+		[[= gse::shared]] scene* active_scene_ptr = nullptr;
 		bool networked = false;
 		bool authoritative = true;
 		std::optional<id> client_id;
@@ -280,6 +282,11 @@ auto gse::world_system::run(context& ctx, data& d, const shared_view<actions::da
 		activate_scene(d, r.scene_id);
 	}
 
+	d.scene_ids.clear();
+	for (const auto& key : std::views::keys(d.scenes)) {
+		d.scene_ids.push_back(key);
+	}
+
 	if (!d.networked) {
 		const auto& s = actions::current_state(actions_d);
 
@@ -307,6 +314,8 @@ auto gse::world_system::run(context& ctx, data& d, const shared_view<actions::da
 	}
 
 	update_player_controllers(d, ra.registry());
+
+	d.active_scene_ptr = current_scene(d);
 
 	return {};
 }

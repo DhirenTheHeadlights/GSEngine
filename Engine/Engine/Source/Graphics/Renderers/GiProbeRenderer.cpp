@@ -11,12 +11,14 @@ import :shared_shaders;
 
 
 import gse.gpu;
+import gse.gpu_record;
 import gse.core;
 import gse.containers;
 import gse.concurrency;
 import gse.ecs;
 import gse.math;
 import gse.meta;
+import gse.log;
 
 namespace gse::renderer::gi_probe {
 	struct [[= shaders::shader_struct]] push_constants {
@@ -101,9 +103,11 @@ auto gse::renderer::gi_probe::rebind_tlas_views(const shared_view<gpu::context::
 	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_handle>::frames_in_flight; ++i) {
 		const auto fi = static_cast<std::uint32_t>(i);
 		if (!d.tlas_views[i].valid()) {
-			d.tlas_views[i] = gpu_s.device->allocate_buffer_slot();
+			d.tlas_views[i] = gpu_s.device->allocate_acceleration_structure_slot();
 		}
-		gpu_s.device->write_acceleration_structure(d.tlas_views[i].slot(), (*rt_state.tlas_ptrs[fi]).device_address());
+		const auto tlas_address = (*rt_state.tlas_ptrs[fi]).device_address();
+		d.tlas_addresses[i] = tlas_address;
+		gpu_s.device->write_acceleration_structure(d.tlas_views[i].slot(), tlas_address);
 	}
 }
 
@@ -112,6 +116,16 @@ auto gse::renderer::gi_probe::init(context& ctx, const shared_view<gpu::context:
 
 	recreate_atlas(gpu_s, d);
 	rebind_tlas_views(gpu_s, rt_state, d);
+	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
+		log::println(
+			log::category::render,
+			"gi_probe: material frame={} slot={} address=0x{:x} bytes={}",
+			i,
+			gc_state.material_palette_buffers[i].slot().index,
+			gc_state.material_palette_buffers[i].device_address(),
+			gc_state.material_palette_buffers[i].size()
+		);
+	}
 
 	gpu::context::on_swap_chain_recreate(
 		gpu_s,
@@ -136,6 +150,11 @@ auto gse::renderer::gi_probe::frame(context& ctx, shared_view<gpu::context::data
 		co_return;
 	}
 
+	const auto& rt_render_items = ctx.read_channel<geometry_collector::render_data>();
+	if (rt_render_items.empty() || rt_render_items[0].normal_batches.empty()) {
+		co_return;
+	}
+
 	const auto inv_view = cam_state.view_matrix.inverse();
 	const auto cam_world = inv_view.transform_point(vec3<position>{});
 
@@ -143,10 +162,16 @@ auto gse::renderer::gi_probe::frame(context& ctx, shared_view<gpu::context::data
 	const length half_z = (static_cast<float>(grid_dim.z() - 1) * 0.5f) * d.spacing;
 	d.origin_world = vec3<position>(cam_world.x() - half_x, meters(1.0f), cam_world.z() - half_z);
 
+	if (!gse::isfinite(d.origin_world) || !gse::isfinite(d.spacing) || !gse::isfinite(d.trace_t_max)) {
+		log::println(log::level::warning, log::category::render, "gi_probe: non-finite ray inputs (origin/spacing/trace_max); skipping GI trace this frame");
+		co_return;
+	}
+
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
 	auto rec = co_await gpu::pass<^^gse::renderer::gi_probe::frame>(ctx).pipeline(d.update_pipeline).after<^^rt_shadow::frame>();
 
+	rec.barrier(gpu::barrier_scope::acceleration_structure_to_shader);
 	rec.dispatch<entry>(
 		{
 			.origin_world = d.origin_world,
@@ -161,7 +186,7 @@ auto gse::renderer::gi_probe::frame(context& ctx, shared_view<gpu::context::data
 			.intensity = d.intensity,
 		},
 		{
-			.scene_tlas = d.tlas_views[frame_index].slot(),
+			.scene_tlas = gpu::make_acceleration_structure_arg(d.tlas_addresses[frame_index], d.tlas_views[frame_index].slot()),
 			.irradiance_atlas_out = d.irradiance_atlas.storage_slot(),
 			.material_palette = gc_r.material_palette_buffers[frame_index].slot(),
 		},

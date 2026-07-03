@@ -70,10 +70,6 @@ auto gse::texture::bindless_slot() const -> gpu::bindless_slot {
 	return m_bindless_slot.slot();
 }
 
-auto gse::texture::upload_token() const -> const gpu::sync_token& {
-	return m_upload_token;
-}
-
 auto gse::texture::create_vulkan_resources(gpu::context::data& context, const profile texture_profile) -> void {
 	const auto width = m_image_data.size.x();
 	const auto height = m_image_data.size.y();
@@ -101,7 +97,7 @@ auto gse::texture::create_vulkan_resources(gpu::context::data& context, const pr
 		std::format("texture:{}", id())
 	);
 
-	m_upload_token = context.device->upload_image_2d(m_image, m_image_data.pixels.data());
+	context.device->upload_image_2d(m_image, m_image_data.pixels.data());
 
 	constexpr auto clamp = gpu::sampler_address_mode::clamp_to_edge;
 	constexpr auto repeat = gpu::sampler_address_mode::repeat;

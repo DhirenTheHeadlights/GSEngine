@@ -3,13 +3,13 @@ module gse.gpu:device_impl;
 import std;
 
 import :device;
-import :sync_token;
 import :video_backend;
 import :video_encoder;
-import :device_dispatch;
+import :command_dispatch;
 import :device_vulkan_backend;
 import :device_dx12_backend;
 import :backend_state;
+import :image;
 
 import gse.gpu_backend;
 
@@ -23,46 +23,35 @@ import gse.core;
 import gse.assert;
 
 namespace gse::gpu {
-	consteval {
-		std::meta::define_aggregate(^^gpu_dispatch, device_dispatch_specs(^^vulkan_device_backend));
+	template <typename B>
+	auto device_backend_delete(void* self) -> void {
+		delete static_cast<B*>(self);
 	}
 
-	consteval auto dispatch_member_named(std::string_view name) -> std::meta::info {
-		for (auto member : std::meta::nonstatic_data_members_of(^^gpu_dispatch, std::meta::access_context::unchecked())) {
-			if (std::meta::identifier_of(member) == name) {
-				return member;
-			}
-		}
-		return std::meta::info{};
+	consteval {
+		std::meta::define_aggregate(^^gpu_dispatch, meta::dispatch_specs(meta::pointer_receiver<vulkan_device_backend>::self_type(), ^^vulkan_device_backend, meta::dispatch_no_exclude));
 	}
 
 	template <typename B>
-	constexpr gpu_dispatch device_dispatch_for = [] {
-		gpu_dispatch d{};
-		template for (constexpr auto m : std::define_static_array(device_op_members(^^B))) {
-			d.[: dispatch_member_named(std::meta::identifier_of(m)) :] = [: device_thunk_value_type(^^B, m) :]::value;
-		}
-		return d;
-	}();
+	constexpr gpu_dispatch device_dispatch_for = meta::build_dispatch<gpu_dispatch, vulkan_device_backend, meta::pointer_receiver<B>>();
 }
 
-auto gse::gpu::device::create(const shared_view<window::data> win, const bool validation_layers_enabled, gpu::device_settings& device_cfg) -> std::unique_ptr<device> {
-	active_backend = device_cfg.backend;
-
-	switch (device_cfg.backend) {
-		case gpu_backend_kind::vulkan: {
-			auto created = create_vulkan_device_backend(win, validation_layers_enabled, device_cfg);
+auto gse::gpu::device::create(const std::optional<shared_view<window::data>> win, const bool validation_layers_enabled, gpu_backend_kind& backend, gpu::device_settings& device_cfg) -> std::unique_ptr<device> {
+	if (backend == gpu_backend_kind::vulkan) {
+		auto created = create_vulkan_device_backend(win, validation_layers_enabled, device_cfg);
+		if (created) {
+			active_backend = gpu_backend_kind::vulkan;
 
 			std::unique_ptr<void, void (*)(void*)> backend(
-				created.backend.release(),
+				created->backend.release(),
 				&device_backend_delete<vulkan_device_backend>
 			);
 
 			auto dev = std::unique_ptr<device>(new device(
 				std::move(backend),
 				&device_dispatch_for<vulkan_device_backend>,
-				created.surface_format,
-				created.video_encode_enabled
+				created->surface_format,
+				created->video_encode_enabled
 			));
 
 			dev->m_transient = transient_executor<device>::create(
@@ -72,35 +61,41 @@ auto gse::gpu::device::create(const shared_view<window::data> win, const bool va
 				task::thread_count()
 			);
 
-			return dev;
-		}
-		case gpu_backend_kind::dx12: {
-			auto created = create_dx12_device_backend(win, validation_layers_enabled, device_cfg);
-
-			std::unique_ptr<void, void (*)(void*)> backend(
-				created.backend.release(),
-				&device_backend_delete<dx12_device_backend>
-			);
-
-			auto dev = std::unique_ptr<device>(new device(
-				std::move(backend),
-				&device_dispatch_for<dx12_device_backend>,
-				created.surface_format,
-				created.video_encode_enabled
-			));
-
-			dev->m_transient = transient_executor<device>::create(
-				*dev,
-				dev->queue_family(queue_type::graphics),
-				dev->queue_family(queue_type::compute),
-				task::thread_count()
-			);
+			dev->m_command_dispatch = command_dispatch_for_backend(gpu_backend_kind::vulkan);
 
 			return dev;
 		}
+
+		log::println(log::category::render, "vulkan device unavailable; falling back to dx12 backend");
+		log::flush();
+		backend = gpu_backend_kind::dx12;
 	}
 
-	return nullptr;
+	active_backend = gpu_backend_kind::dx12;
+	auto created = create_dx12_device_backend(win, validation_layers_enabled, device_cfg);
+
+	std::unique_ptr<void, void (*)(void*)> backend_ptr(
+		created.backend.release(),
+		&device_backend_delete<dx12_device_backend>
+	);
+
+	auto dev = std::unique_ptr<device>(new device(
+		std::move(backend_ptr),
+		&device_dispatch_for<dx12_device_backend>,
+		created.surface_format,
+		created.video_encode_enabled
+	));
+
+	dev->m_transient = transient_executor<device>::create(
+		*dev,
+		dev->queue_family(queue_type::graphics),
+		dev->queue_family(queue_type::compute),
+		task::thread_count()
+	);
+
+	dev->m_command_dispatch = command_dispatch_for_backend(gpu_backend_kind::dx12);
+
+	return dev;
 }
 
 gse::gpu::device::device(std::unique_ptr<void, void (*)(void*)> backend, const gpu_dispatch* dispatch, image_format surface_format, bool video_encode_enabled)
@@ -152,7 +147,7 @@ auto gse::gpu::device::timestamp_period() const -> float {
 	return m_vt->timestamp_period(m_backend.get());
 }
 
-auto gse::gpu::device::begin_pass_marker(const gpu::command_buffer_handle cmd, const pass_marker_domain domain, const pass_marker marker) -> pass_marker_handle {
+auto gse::gpu::device::begin_pass_marker(const gpu::command_buffer_handle cmd, const pass_marker_domain domain, const pass_marker marker, const std::string_view name) -> pass_marker_handle {
 	auto& ring = m_pass_marker_rings[static_cast<std::size_t>(domain)];
 	const auto seq = ring.seq.fetch_add(1, std::memory_order_relaxed);
 	ring.entries[seq % pass_marker_ring_size] = marker;
@@ -168,6 +163,8 @@ auto gse::gpu::device::begin_pass_marker(const gpu::command_buffer_handle cmd, c
 			static_cast<std::uint32_t>(seq)
 		);
 	}
+
+	begin_debug_event(cmd, name);
 
 	return pass_marker_handle{
 		.seq = seq,
@@ -210,6 +207,8 @@ auto gse::gpu::device::post_renderpass_pass_marker(const gpu::command_buffer_han
 }
 
 auto gse::gpu::device::end_pass_marker(const gpu::command_buffer_handle cmd, const pass_marker_handle handle) -> void {
+	end_debug_event(cmd);
+
 	auto& ring = m_pass_marker_rings[static_cast<std::size_t>(handle.domain)];
 	if (!ring.checkpoint_buffer.valid()) {
 		return;
@@ -251,14 +250,12 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 		log::println(
 			log::level::error,
 			log::category::vulkan,
-			"Last {} pass markers for {} (oldest first, status from GPU checkpoint):",
+			"Last {} pass markers for {} (record order, NOT GPU execution order; status from GPU checkpoint):",
 			count,
 			domain
 		);
 
-		std::uint64_t last_gpu_inflight = 0;
-		std::string_view last_gpu_inflight_phase = {};
-		bool any_gpu_inflight = false;
+		std::vector<std::uint64_t> in_flight;
 
 		for (std::uint64_t i = 0; i < count; ++i) {
 			const auto seq = first_seq + i;
@@ -268,36 +265,28 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 			std::string_view status = "queued";
 			if (ring.checkpoint_slots) {
 				const auto begin_seq = ring.checkpoint_slots[slot * 4];
-				const auto post_barrier_seq = ring.checkpoint_slots[slot * 4 + 1];
 				const auto post_renderpass_seq = ring.checkpoint_slots[slot * 4 + 2];
 				const auto end_seq = ring.checkpoint_slots[slot * 4 + 3];
 				const auto seq_low = static_cast<std::uint32_t>(seq);
 
 				const bool begin_done = begin_seq == seq_low;
-				const bool post_barrier_done = post_barrier_seq == seq_low;
 				const bool post_renderpass_done = post_renderpass_seq == seq_low;
 				const bool end_done = end_seq == seq_low;
 
-				if (begin_done && post_barrier_done && post_renderpass_done && end_done) {
+				if (end_done) {
 					status = "completed";
 				}
-				else if (begin_done && post_barrier_done && post_renderpass_done) {
-					status = "HUNG in tail (renderpass done, end marker not written)";
-					last_gpu_inflight = std::max(last_gpu_inflight, seq);
-					last_gpu_inflight_phase = "tail";
-					any_gpu_inflight = true;
-				}
-				else if (begin_done && post_barrier_done) {
-					status = "HUNG in renderpass body (begin+barrier done, renderpass did not finish)";
-					last_gpu_inflight = std::max(last_gpu_inflight, seq);
-					last_gpu_inflight_phase = "renderpass body";
-					any_gpu_inflight = true;
+				else if (begin_done && post_renderpass_done) {
+					status = "IN FLIGHT: body done, end marker not written";
+					in_flight.push_back(seq);
 				}
 				else if (begin_done) {
-					status = "HUNG in inter-pass barrier (begin reached, no post-barrier)";
-					last_gpu_inflight = std::max(last_gpu_inflight, seq);
-					last_gpu_inflight_phase = "inter-pass barrier";
-					any_gpu_inflight = true;
+					status = "IN FLIGHT: begin reached, body did not finish";
+					in_flight.push_back(seq);
+				}
+				else if (post_renderpass_done) {
+					status = "IN FLIGHT: body marker set without begin (markers unordered)";
+					in_flight.push_back(seq);
 				}
 				else {
 					status = "not started (CPU recorded, GPU never entered)";
@@ -316,19 +305,26 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 			);
 		}
 
-		if (any_gpu_inflight) {
-			const auto& m = ring.entries[last_gpu_inflight % pass_marker_ring_size];
+		if (!in_flight.empty()) {
 			log::println(
 				log::level::error,
 				log::category::vulkan,
-				"{} GPU hung in {} of: seq={} frame={} pass_index={} pass_type={}",
+				"{} had {} pass(es) in flight at device loss; the hang is one of these (record seq is NOT execution order, so any is a candidate):",
 				domain,
-				last_gpu_inflight_phase,
-				last_gpu_inflight,
-				m.frame_counter,
-				m.pass_index,
-				m.pass_type.tag()
+				in_flight.size()
 			);
+			for (const auto seq : in_flight) {
+				const auto& m = ring.entries[seq % pass_marker_ring_size];
+				log::println(
+					log::level::error,
+					log::category::vulkan,
+					"  -> seq={} frame={} pass_index={} pass_type={}",
+					seq,
+					m.frame_counter,
+					m.pass_index,
+					m.pass_type.tag()
+				);
+			}
 		}
 	}
 
@@ -371,15 +367,16 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 	);
 
 	for (std::size_t i = 0; i < fault_info.address_infos.size(); ++i) {
-		const auto& [address_type, reported_address, address_precision] = fault_info.address_infos[i];
+		const auto& address = fault_info.address_infos[i];
 		log::println(
 			log::level::error,
 			log::category::vulkan,
-			"Fault address {}: type={}, reported=0x{:x}, precision=0x{:x}",
+			"Fault address {}: type={}({}), reported=0x{:x}, precision=0x{:x}",
 			i,
-			address_type,
-			reported_address,
-			address_precision
+			address.address_type,
+			address.address_type_name.empty() ? std::string_view("unknown") : std::string_view(address.address_type_name),
+			address.reported_address,
+			address.address_precision
 		);
 	}
 
@@ -477,7 +474,7 @@ auto gse::gpu::device::find_memory_type_index(const std::uint32_t type_bits, con
 	return m_vt->find_memory_type_index(m_backend.get(), type_bits, required);
 }
 
-auto gse::gpu::device::make_aliased_image(const gpu::handle<gpu::image> img_handle, const gpu::handle<gpu::image_view> view_handle, const image_format format, const vec3u extent, const image_view_create_info& view_info, const std::string_view tag) -> std::unique_ptr<image> {
+auto gse::gpu::device::make_aliased_image(const gpu::handle<gpu::image> img_handle, const gpu::handle<gpu::image_view> view_handle, const image_format format, const vec3u extent, const image_view_create_info& view_info) -> std::unique_ptr<image> {
 	return std::make_unique<image>(
 		img_handle,
 		view_handle,
@@ -487,7 +484,7 @@ auto gse::gpu::device::make_aliased_image(const gpu::handle<gpu::image> img_hand
 	);
 }
 
-auto gse::gpu::device::make_aliased_buffer(const gpu::handle<gpu::buffer> buf_handle, const device_size size, const std::string_view tag) -> std::unique_ptr<buffer> {
+auto gse::gpu::device::make_aliased_buffer(const gpu::handle<gpu::buffer> buf_handle, const device_size size) -> std::unique_ptr<buffer> {
 	return std::make_unique<buffer>(
 		buf_handle,
 		size,
@@ -498,6 +495,10 @@ auto gse::gpu::device::make_aliased_buffer(const gpu::handle<gpu::buffer> buf_ha
 
 auto gse::gpu::device::transient() -> transient_executor<device>& {
 	return *m_transient;
+}
+
+auto gse::gpu::device::command_table() const -> const gpu::command_dispatch* {
+	return m_command_dispatch;
 }
 
 auto gse::gpu::device::begin_one_time_commands(const gpu::command_buffer_handle cmd) -> void {
@@ -526,6 +527,14 @@ auto gse::gpu::device::cmd_pipeline_barrier(const gpu::command_buffer_handle cmd
 
 auto gse::gpu::device::cmd_release_swapchain_to_present(const gpu::command_buffer_handle cmd, const gpu::handle<gpu::image> img, const pipeline_stage_flags src_stages, const access_flags src_access) -> void {
 	m_vt->cmd_release_swapchain_to_present(m_backend.get(), cmd, img, src_stages, src_access);
+}
+
+auto gse::gpu::device::begin_debug_event(const gpu::command_buffer_handle cmd, const std::string_view label) -> void {
+	m_vt->begin_debug_event(m_backend.get(), cmd, label);
+}
+
+auto gse::gpu::device::end_debug_event(const gpu::command_buffer_handle cmd) -> void {
+	m_vt->end_debug_event(m_backend.get(), cmd);
 }
 
 auto gse::gpu::device::create_transient_command_pool(const std::uint32_t family) -> gpu::transient_pool_handle {
@@ -641,11 +650,43 @@ auto gse::gpu::device::host_upload_image_layers(const gpu::handle<gpu::image> im
 }
 
 auto gse::gpu::device::create_buffer(const buffer_desc& desc, const std::string_view tag, const std::source_location& loc) -> buffer {
-	return m_vt->create_buffer(m_backend.get(), desc, tag, loc);
+	auto buf = m_vt->create_buffer(m_backend.get(), desc, tag, loc);
+	if (desc.bindless) {
+		set_slot_resource(buf.slot().index, resource_ref{
+			.ptr = std::bit_cast<const void*>(buf.handle()),
+			.type = resource_type::buffer,
+			.buffer_size = buf.size(),
+		});
+	}
+	return buf;
 }
 
 auto gse::gpu::device::create_image(const image_desc& desc, const std::string_view tag) -> image {
-	return m_vt->create_image(m_backend.get(), desc, tag);
+	auto img = m_vt->create_image(m_backend.get(), desc, tag);
+	if (desc.bindless) {
+		const resource_ref ref{
+			.ptr = std::bit_cast<const void*>(img.handle()),
+			.type = resource_type::image,
+			.aspects = image_aspect_for(img.format()),
+		};
+		set_slot_resource(img.storage_slot().index, ref);
+		set_slot_resource(img.sampled_slot().index, ref);
+	}
+	return img;
+}
+
+auto gse::gpu::device::set_slot_resource(const std::uint32_t slot_index, const resource_ref& ref) -> void {
+	if (slot_index == bindless_slot::invalid_index) {
+		return;
+	}
+	if (slot_index >= m_slot_resources.size()) {
+		m_slot_resources.resize(slot_index + 1);
+	}
+	m_slot_resources[slot_index] = ref;
+}
+
+auto gse::gpu::device::resource_for_slot(const std::uint32_t slot_index) const -> resource_ref {
+	return slot_index < m_slot_resources.size() ? m_slot_resources[slot_index] : resource_ref{};
 }
 
 auto gse::gpu::device::allocate_buffer_slot() -> gpu::bindless_handle {
@@ -654,6 +695,10 @@ auto gse::gpu::device::allocate_buffer_slot() -> gpu::bindless_handle {
 
 auto gse::gpu::device::allocate_image_slot() -> gpu::bindless_handle {
 	return m_vt->allocate_image_slot(m_backend.get());
+}
+
+auto gse::gpu::device::allocate_acceleration_structure_slot() -> gpu::bindless_handle {
+	return m_vt->allocate_acceleration_structure_slot(m_backend.get());
 }
 
 auto gse::gpu::device::write_storage_buffer(const gpu::bindless_slot slot, const gpu::device_address address, const gpu::device_size size) -> void {
@@ -680,10 +725,6 @@ auto gse::gpu::device::register_texture(const image& img, const sampler_desc& de
 	return m_vt->register_texture(m_backend.get(), img, desc);
 }
 
-auto gse::gpu::device::bindless_layout() const -> gpu::bindless_layout {
-	return m_vt->bindless_layout(m_backend.get());
-}
-
 auto gse::gpu::device::bindless_resource_heap_binding() const -> gpu::bindless_heap_binding {
 	return m_vt->bindless_resource_heap_binding(m_backend.get());
 }
@@ -700,10 +741,9 @@ auto gse::gpu::device::collect_garbage() -> void {
 	m_vt->collect_garbage(m_backend.get());
 }
 
-auto gse::gpu::device::upload_image_2d(image& img, const void* pixel_data) -> sync_token {
+auto gse::gpu::device::upload_image_2d(image& img, const void* pixel_data) -> void {
 	const auto extent3 = img.extent();
 	const vec2u extent2{ extent3.x(), extent3.y() };
 	const void* ptrs[] = { pixel_data };
 	host_upload_image_layers(img.handle(), ptrs, extent2);
-	return {};
 }

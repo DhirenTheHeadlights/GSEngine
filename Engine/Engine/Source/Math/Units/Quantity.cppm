@@ -794,7 +794,9 @@ struct gse::parser<gse::internal::quantity<A, Dim, Tag, Unit>> {
 		}
 
 		if constexpr (gse::internal::has_unit_list<Tag>) {
-			gse::assert(!suffix.empty(), "Quantity value '{}' is missing a unit suffix", raw);
+			if (suffix.empty()) {
+				return false;
+			}
 
 			bool matched = false;
 			gse::internal::dispatch_named_unit(
@@ -806,7 +808,6 @@ struct gse::parser<gse::internal::quantity<A, Dim, Tag, Unit>> {
 					matched = true;
 				}
 			);
-			gse::assert(matched, "Quantity value '{}' uses unknown unit suffix '{}'", raw, suffix);
 			return matched;
 		}
 

@@ -1,4 +1,4 @@
-module gse.gpu:pipeline_builder_impl;
+module gse.gpu_record:pipeline_builder_impl;
 
 import std;
 import gse.meta;
@@ -10,9 +10,8 @@ import gse.slang;
 import gse.math;
 
 import gse.gpu_backend;
+import gse.gpu;
 import :pipeline_builder;
-import :device;
-import :shader_codegen;
 
 namespace gse::gpu {
 	auto to_pipeline_stage(const stage_flag s) -> pipeline_stage_flag {
@@ -105,6 +104,10 @@ namespace gse::gpu {
 		std::string_view wrapper_source
 	) -> std::vector<std::uint32_t>;
 
+	auto strip_unused_ray_tracing_extension(
+		std::vector<std::uint32_t>& spirv
+	) -> void;
+
 	struct graphics_stage_compile_result {
 		stage_flag flag = stage_flag::vertex;
 		graphics_stage_kind kind = graphics_stage_kind::vertex;
@@ -130,7 +133,12 @@ namespace gse::gpu {
 
 auto gse::gpu::make_slang_session() -> owned_slang_session {
 	owned_slang_session out;
-	if (slang_failed(createGlobalSession(out.global.writeRef())) || !out.global) {
+	static Slang::ComPtr<slang::IGlobalSession> cached_global = [] {
+		Slang::ComPtr<slang::IGlobalSession> g;
+		createGlobalSession(g.writeRef());
+		return g;
+	}();
+	if (!cached_global) {
 		log::println(
 			log::level::error,
 			log::category::assets,
@@ -138,6 +146,7 @@ auto gse::gpu::make_slang_session() -> owned_slang_session {
 		);
 		return out;
 	}
+	out.global = cached_global;
 	auto* global = out.global.get();
 
 	const auto shader_root = config::resource_path / "Shaders";
@@ -169,11 +178,30 @@ auto gse::gpu::make_slang_session() -> owned_slang_session {
 		sp_c_strs.push_back(s.c_str());
 	}
 
+	const bool use_dxil = active_backend == gpu_backend_kind::dx12;
 	slang::TargetDesc target{
-		.format = slang_spirv,
-		.profile = global->findProfile("spirv_1_5"),
-		.forceGLSLScalarBufferLayout = true,
+		.format = use_dxil ? slang_dxil : slang_spirv,
+		.profile = global->findProfile(use_dxil ? "sm_6_6" : "spirv_1_5"),
+		.forceGLSLScalarBufferLayout = !use_dxil,
 	};
+
+	std::vector<slang::CompilerOptionEntry> compiler_options;
+	if (!use_dxil) {
+		compiler_options.push_back(slang::CompilerOptionEntry{
+			.name = slang::CompilerOptionName::DebugInformation,
+			.value = {
+				.kind = slang::CompilerOptionValueKind::Int,
+				.intValue0 = static_cast<std::int32_t>(slang_debug_info_level_standard),
+			},
+		});
+		compiler_options.push_back(slang::CompilerOptionEntry{
+			.name = slang::CompilerOptionName::Capability,
+			.value = {
+				.kind = slang::CompilerOptionValueKind::Int,
+				.intValue0 = static_cast<std::int32_t>(global->findCapability("spvDescriptorHeapEXT")),
+			},
+		});
+	}
 
 	slang::SessionDesc sdesc{
 		.targets = &target,
@@ -181,6 +209,8 @@ auto gse::gpu::make_slang_session() -> owned_slang_session {
 		.defaultMatrixLayoutMode = slang_matrix_layout_column_major,
 		.searchPaths = sp_c_strs.data(),
 		.searchPathCount = static_cast<SlangInt>(sp_c_strs.size()),
+		.compilerOptionEntries = compiler_options.data(),
+		.compilerOptionEntryCount = static_cast<std::uint32_t>(compiler_options.size()),
 	};
 
 	if (slang_failed(global->createSession(sdesc, out.session.writeRef())) || !out.session) {
@@ -353,12 +383,73 @@ auto gse::gpu::build_compute_wrapper_source(const shader_compile_inputs& inputs,
 	return out;
 }
 
+static std::mutex g_slang_compile_mutex;
+static std::atomic<std::uint64_t> g_slang_module_counter{ 0 };
+
+auto gse::gpu::strip_unused_ray_tracing_extension(std::vector<std::uint32_t>& spirv) -> void {
+	if (spirv.size() < 5 || spirv[0] != 0x07230203u) {
+		return;
+	}
+
+	constexpr std::uint16_t op_extension = 10;
+	constexpr std::uint16_t op_capability = 17;
+	constexpr std::uint32_t capability_ray_tracing = 4479;
+	constexpr std::string_view ray_tracing_extension = "SPV_KHR_ray_tracing";
+
+	std::size_t extension_begin = 0;
+	std::size_t extension_count = 0;
+
+	std::size_t i = 5;
+	while (i < spirv.size()) {
+		const std::uint32_t word = spirv[i];
+		const auto count = static_cast<std::uint16_t>(word >> 16);
+		const auto opcode = static_cast<std::uint16_t>(word & 0xFFFFu);
+		if (count == 0 || i + count > spirv.size()) {
+			return;
+		}
+		if (opcode == op_capability) {
+			if (spirv[i + 1] == capability_ray_tracing) {
+				return;
+			}
+		}
+		else if (opcode == op_extension) {
+			std::string name;
+			bool done = false;
+			for (std::size_t w = i + 1; w < i + count && !done; ++w) {
+				const auto packed = spirv[w];
+				for (int b = 0; b < 4; ++b) {
+					const auto c = static_cast<char>((packed >> (b * 8)) & 0xFFu);
+					if (c == '\0') {
+						done = true;
+						break;
+					}
+					name.push_back(c);
+				}
+			}
+			if (name == ray_tracing_extension) {
+				extension_begin = i;
+				extension_count = count;
+			}
+		}
+		else {
+			break;
+		}
+		i += count;
+	}
+
+	if (extension_count != 0) {
+		spirv.erase(spirv.begin() + static_cast<std::ptrdiff_t>(extension_begin), spirv.begin() + static_cast<std::ptrdiff_t>(extension_begin + extension_count));
+	}
+}
+
 auto gse::gpu::compile_compute_spirv(const shader_compile_inputs& inputs, const std::string_view wrapper_source) -> std::vector<std::uint32_t> {
+	const std::lock_guard compile_lock(g_slang_compile_mutex);
 	auto owned = make_slang_session();
 	auto* session = owned.session.get();
 	assert(session, "Slang session not available");
 
-	const std::string module_name = std::format("entry_{}", inputs.body_path);
+	log::println(log::level::info, log::category::assets, "compiling compute shader: {}", inputs.body_path);
+	const std::string module_name = std::format("entry_{}_{}", inputs.body_path, g_slang_module_counter.fetch_add(1));
 	std::string sanitized = module_name;
 	std::ranges::replace(sanitized, '/', '_');
 	std::ranges::replace(sanitized, '\\', '_');
@@ -428,6 +519,7 @@ auto gse::gpu::compile_compute_spirv(const shader_compile_inputs& inputs, const 
 	const auto byte_size = blob->getBufferSize();
 	std::vector<std::uint32_t> spirv(byte_size / sizeof(std::uint32_t));
 	std::memcpy(spirv.data(), blob->getBufferPointer(), byte_size);
+	strip_unused_ray_tracing_extension(spirv);
 	return spirv;
 }
 
@@ -481,11 +573,13 @@ auto gse::gpu::build_graphics_wrapper_source(const graphics_entry_pod& pod, cons
 }
 
 auto gse::gpu::compile_graphics_program(const graphics_entry_pod& pod, const std::string_view wrapper_source) -> compiled_graphics_program {
+	const std::lock_guard compile_lock(g_slang_compile_mutex);
 	auto owned = make_slang_session();
 	auto* session = owned.session.get();
 	assert(session, "Slang session not available");
 
-	const std::string module_name = std::format("gfx_{}", pod.body_path);
+	log::println(log::level::info, log::category::assets, "compiling graphics shader: {}", pod.body_path);
+	const std::string module_name = std::format("gfx_{}_{}", pod.body_path, g_slang_module_counter.fetch_add(1));
 	std::string sanitized = module_name;
 	std::ranges::replace(sanitized, '/', '_');
 	std::ranges::replace(sanitized, '\\', '_');
@@ -576,6 +670,7 @@ auto gse::gpu::compile_graphics_program(const graphics_entry_pod& pod, const std
 		const auto byte_size = blob->getBufferSize();
 		std::vector<std::uint32_t> spirv(byte_size / sizeof(std::uint32_t));
 		std::memcpy(spirv.data(), blob->getBufferPointer(), byte_size);
+		strip_unused_ray_tracing_extension(spirv);
 
 		result.stages.push_back({
 			.flag = stage_pod.stage_flag_value,

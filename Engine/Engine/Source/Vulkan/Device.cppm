@@ -85,11 +85,11 @@ namespace gse::vulkan {
 	struct bindless_state {
 		gpu::handle<gpu::descriptor_heap> resource_heap;
 		gpu::handle<gpu::descriptor_heap> sampler_heap;
-		gpu::bindless_layout layout;
 		gpu::bindless_heap_binding resource_binding;
 		gpu::bindless_heap_binding sampler_binding;
 		gpu::bindless_slot_pool image_pool;
 		gpu::bindless_slot_pool buffer_pool;
+		gpu::bindless_slot_pool acceleration_structure_pool;
 		gpu::bindless_slot_pool texture_pool;
 		gpu::bindless_slot_pool sampler_pool;
 	};
@@ -134,7 +134,7 @@ export namespace gse::vulkan {
 			const instance& instance_data,
 			gpu::device_settings& cfg,
 			aftermath& aftermath_tracker
-		) -> device_creation_result;
+		) -> gpu::expected<device_creation_result>;
 
 		[[nodiscard]] auto physical_device(
 			this auto&& self
@@ -245,6 +245,9 @@ export namespace gse::vulkan {
 		[[nodiscard]]
 		auto allocate_image_slot() -> gpu::bindless_handle;
 
+		[[nodiscard]]
+		auto allocate_acceleration_structure_slot() -> gpu::bindless_handle;
+
 		auto write_storage_buffer(
 			gpu::bindless_slot slot,
 			gpu::device_address address,
@@ -277,9 +280,6 @@ export namespace gse::vulkan {
 			const gpu::image& img,
 			const gpu::sampler_desc& desc
 		) -> gpu::bindless_handle;
-
-		[[nodiscard]]
-		auto bindless_layout() const -> gpu::bindless_layout;
 
 		[[nodiscard]]
 		auto bindless_resource_heap_binding() const -> gpu::bindless_heap_binding;

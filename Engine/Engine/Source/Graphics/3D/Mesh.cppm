@@ -167,6 +167,7 @@ auto gse::mesh::initialize(gpu::context::data& ctx) -> void {
 		ml.vertex_storage = ctx.device->create_buffer(
 			{
 				.size = vertex_buffer_size,
+				.stride = sizeof(vertex),
 				.usage = storage_dst,
 				.bindless = true
 			},
@@ -175,6 +176,7 @@ auto gse::mesh::initialize(gpu::context::data& ctx) -> void {
 		ml.descriptors = ctx.device->create_buffer(
 			{
 				.size = sizeof(meshlet_descriptor) * m_meshlets.descriptors.size(),
+				.stride = sizeof(meshlet_descriptor),
 				.usage = storage_dst,
 				.bindless = true
 			},
@@ -183,6 +185,7 @@ auto gse::mesh::initialize(gpu::context::data& ctx) -> void {
 		ml.vertices = ctx.device->create_buffer(
 			{
 				.size = sizeof(std::uint32_t) * m_meshlets.vertex_indices.size(),
+				.stride = sizeof(std::uint32_t),
 				.usage = storage_dst,
 				.bindless = true
 			},
@@ -191,7 +194,8 @@ auto gse::mesh::initialize(gpu::context::data& ctx) -> void {
 		ml.triangles = ctx.device->create_buffer(
 			{
 				.size = tri_size,
-				.usage = storage_dst,
+				.stride = sizeof(std::uint8_t),
+				.usage = storage_dst | gpu::buffer_flag::byte_address,
 				.bindless = true
 			},
 			"mesh.meshlet.triangles"
@@ -199,6 +203,7 @@ auto gse::mesh::initialize(gpu::context::data& ctx) -> void {
 		ml.bounds = ctx.device->create_buffer(
 			{
 				.size = sizeof(meshlet_bounds) * m_meshlets.bounds.size(),
+				.stride = sizeof(meshlet_bounds),
 				.usage = storage_dst,
 				.bindless = true
 			},

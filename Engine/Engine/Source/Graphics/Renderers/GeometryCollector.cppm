@@ -155,6 +155,8 @@ export namespace gse::renderer::geometry_collector {
 		static constexpr std::size_t max_instances = 4096;
 		static constexpr std::size_t max_materials = 1024;
 
+		std::size_t instance_capacity = max_instances;
+
 		[[= gse::shared]] per_frame_resource<gpu::buffer> normal_indirect_commands_buffer;
 		[[= gse::shared]] per_frame_resource<gpu::buffer> material_palette_buffers;
 

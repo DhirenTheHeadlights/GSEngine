@@ -8,13 +8,13 @@ groupshared uint tile_depth_min;
 groupshared uint tile_depth_max;
 
 float2 screen_uv(float2 pixel) {
-    return pixel / float2(screen_size);
+    return pixel / float2(culling_params.screen_size);
 }
 
 float3 reconstruct_view_position(float2 uv, float depth) {
     float2 ndc_xy = uv * 2.0 - 1.0;
     float4 clip = float4(ndc_xy, depth, 1.0);
-    float4 view_pos_h = mul(inv_proj, clip);
+    float4 view_pos_h = mul(culling_params.inv_proj, clip);
     return view_pos_h.xyz / view_pos_h.w;
 }
 
@@ -28,7 +28,7 @@ float4 make_plane_from_rays(float3 a, float3 b) {
 
 frustum build_tile_frustum(uint2 tile_id) {
     uint2 pixel_min = tile_id * TILE_SIZE;
-    uint2 pixel_max = min(pixel_min + uint2(TILE_SIZE, TILE_SIZE), screen_size);
+    uint2 pixel_max = min(pixel_min + uint2(TILE_SIZE, TILE_SIZE), culling_params.screen_size);
 
     float3 top_left = normalize(reconstruct_view_position(screen_uv(float2(pixel_min.x, pixel_min.y)), 1.0));
     float3 top_right = normalize(reconstruct_view_position(screen_uv(float2(pixel_max.x, pixel_min.y)), 1.0));
@@ -76,7 +76,7 @@ float light_radius(light l) {
 }
 
 void light_culling(uint3 group_id, uint3 group_thread_id, uint group_index) {
-    uint2 tile_count = (screen_size + TILE_SIZE - 1) / TILE_SIZE;
+    uint2 tile_count = (culling_params.screen_size + TILE_SIZE - 1) / TILE_SIZE;
     uint tile_index = group_id.y * tile_count.x + group_id.x;
     uint2 pixel = group_id.xy * TILE_SIZE + group_thread_id.xy;
 
@@ -89,9 +89,9 @@ void light_culling(uint3 group_id, uint3 group_thread_id, uint group_index) {
     GroupMemoryBarrierWithGroupSync();
 
     float depth = 1.0;
-    if (pixel.x < screen_size.x && pixel.y < screen_size.y) {
+    if (pixel.x < culling_params.screen_size.x && pixel.y < culling_params.screen_size.y) {
         float2 uv = screen_uv(float2(pixel) + 0.5);
-        depth = depth_texture.SampleLevel(uv, 0).r;
+        depth = depth_texture.SampleLevel(depth_sampler, uv, 0).r;
     }
 
     if (depth < 1.0 - 1e-5) {
@@ -107,7 +107,7 @@ void light_culling(uint3 group_id, uint3 group_thread_id, uint group_index) {
     float z_near = tile_depth_min == 0x7F7FFFFF ? 0.0 : asfloat(tile_depth_min);
     float z_far  = tile_depth_min == 0x7F7FFFFF ? 1e30 : asfloat(tile_depth_max);
 
-    for (uint i = group_index; i < num_lights; i += TILE_SIZE * TILE_SIZE) {
+    for (uint i = group_index; i < culling_params.num_lights; i += TILE_SIZE * TILE_SIZE) {
         light l = lights[i];
         bool visible;
         if (l.light_type == light_type::directional) {

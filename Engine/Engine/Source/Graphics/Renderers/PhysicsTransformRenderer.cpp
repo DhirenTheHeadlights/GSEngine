@@ -9,6 +9,7 @@ import :geometry_collector;
 import gse.os;
 import gse.assets;
 import gse.gpu;
+import gse.gpu_record;
 import gse.core;
 import gse.containers;
 import gse.time;
@@ -101,6 +102,7 @@ auto gse::renderer::physics_transform::frame(context& ctx, shared_view<gpu::cont
 				d.mapping_buffers[i] = gpu_s.device->create_buffer(
 					{
 						.size = required,
+						.stride = sizeof(geometry_collector::physics_mapping_entry),
 						.usage = gpu::buffer_flag::storage,
 						.data = data.physics_mappings.data(),
 						.bindless = true

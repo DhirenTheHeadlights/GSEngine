@@ -2,8 +2,8 @@ export module gse.gpu:device;
 
 import std;
 
-import :sync_token;
 import :video_encoder;
+import :command_dispatch;
 
 import gse.gpu_backend;
 import gse.assert;
@@ -22,8 +22,9 @@ export namespace gse::gpu {
 	public:
 		[[nodiscard]]
 		static auto create(
-			shared_view<window::data> win,
+			std::optional<shared_view<window::data>> win,
 			bool validation_layers_enabled,
+			gpu_backend_kind& backend,
 			gpu::device_settings& device_cfg
 		) -> std::unique_ptr<device>;
 
@@ -67,7 +68,8 @@ export namespace gse::gpu {
 		auto begin_pass_marker(
 			gpu::command_buffer_handle cmd,
 			pass_marker_domain domain,
-			pass_marker marker
+			pass_marker marker,
+			std::string_view name
 		) -> pass_marker_handle;
 
 		auto checkpoint_pass_marker(
@@ -126,6 +128,15 @@ export namespace gse::gpu {
 			gpu::handle<gpu::image> img,
 			pipeline_stage_flags src_stages,
 			access_flags src_access
+		) -> void;
+
+		auto begin_debug_event(
+			gpu::command_buffer_handle cmd,
+			std::string_view label
+		) -> void;
+
+		auto end_debug_event(
+			gpu::command_buffer_handle cmd
 		) -> void;
 
 		[[nodiscard]] auto create_transient_command_pool(
@@ -253,11 +264,10 @@ export namespace gse::gpu {
 			vec2u extent
 		) const -> void;
 
-		[[nodiscard]]
 		auto upload_image_2d(
 			image& img,
 			const void* pixel_data
-		) -> sync_token;
+		) -> void;
 
 		[[nodiscard]]
 		auto create_buffer(
@@ -277,6 +287,14 @@ export namespace gse::gpu {
 
 		[[nodiscard]]
 		auto allocate_image_slot() -> gpu::bindless_handle;
+
+		[[nodiscard]]
+		auto allocate_acceleration_structure_slot() -> gpu::bindless_handle;
+
+		[[nodiscard]]
+		auto resource_for_slot(
+			std::uint32_t slot_index
+		) const -> resource_ref;
 
 		auto write_storage_buffer(
 			gpu::bindless_slot slot,
@@ -310,9 +328,6 @@ export namespace gse::gpu {
 			const image& img,
 			const sampler_desc& desc
 		) -> gpu::bindless_handle;
-
-		[[nodiscard]]
-		auto bindless_layout() const -> gpu::bindless_layout;
 
 		[[nodiscard]]
 		auto bindless_resource_heap_binding() const -> gpu::bindless_heap_binding;
@@ -418,18 +433,18 @@ export namespace gse::gpu {
 			gpu::handle<gpu::image_view> view_handle,
 			image_format format,
 			vec3u extent,
-			const image_view_create_info& view_info,
-			std::string_view tag
+			const image_view_create_info& view_info
 		) -> std::unique_ptr<image>;
 
 		[[nodiscard]]
 		auto make_aliased_buffer(
 			gpu::handle<gpu::buffer> buf_handle,
-			device_size size,
-			std::string_view tag
+			device_size size
 		) -> std::unique_ptr<buffer>;
 
 		[[nodiscard]] auto transient() -> transient_executor<device>&;
+
+		[[nodiscard]] auto command_table() const -> const gpu::command_dispatch*;
 
 		[[nodiscard]] auto video_encode_enabled() const -> bool;
 
@@ -441,12 +456,20 @@ export namespace gse::gpu {
 			bool video_encode_enabled
 		);
 
+		auto set_slot_resource(
+			std::uint32_t slot_index,
+			const resource_ref& ref
+		) -> void;
+
 		std::unique_ptr<void, void (*)(void*)> m_backend;
 		const gpu_dispatch* m_vt = nullptr;
+		const command_dispatch* m_command_dispatch = nullptr;
 		std::unique_ptr<transient_executor<device>> m_transient;
 		image_format m_surface_format;
 		std::atomic<bool> m_device_lost_reported = false;
 		bool m_video_encode_enabled = false;
+
+		std::vector<resource_ref> m_slot_resources;
 
 		static constexpr std::size_t pass_marker_ring_size = 128;
 

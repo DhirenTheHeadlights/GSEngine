@@ -7,6 +7,7 @@ import :gpu_task;
 import :sync_token;
 import :device;
 import :pass_recorder;
+import :command_dispatch;
 
 import gse.vulkan;
 
@@ -26,8 +27,7 @@ auto gse::gpu::transition_image_to(gpu::device& dev, image& img) -> sync_token {
 	const bool is_depth = aspect_flags.test(image_aspect_flag::depth);
 	const auto aspect = is_depth ? image_aspect_flag::depth : image_aspect_flag::color;
 
-	auto cmd_awaiter = begin_transient(dev, queue_id::graphics, "transient.image_transition");
-	auto cmd = cmd_awaiter.await_resume();
+	auto cmd = begin_transient(dev, queue_id::graphics, "transient.image_transition");
 
 	const auto dst_stages = is_depth
 		? (pipeline_stage_flag::early_fragment_tests | pipeline_stage_flag::late_fragment_tests)
@@ -49,7 +49,7 @@ auto gse::gpu::transition_image_to(gpu::device& dev, image& img) -> sync_token {
 	const dependency_info dep{
 		.image_barriers = std::span(&barrier, 1)
 	};
-	pass_recorder(cmd.handle()).pipeline_barrier(dep);
+	pass_recorder(cmd.handle(), dev.command_table()).pipeline_barrier(dep);
 
 	return submit(dev, std::move(cmd), queue_id::graphics).submit_sync();
 }

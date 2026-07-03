@@ -5,7 +5,6 @@ import std;
 import :transient_pool;
 import :device;
 
-import gse.vulkan;
 import gse.assert;
 import gse.concurrency;
 import gse.core;
@@ -413,8 +412,7 @@ auto gse::gpu::transient_pool::plan(const std::uint32_t frame_idx, const std::sp
 			view_handle,
 			req.desc.format,
 			vec3u{ req.desc.extent.x(), req.desc.extent.y(), 1 },
-			view_info,
-			req.desc.tag
+			view_info
 		);
 
 		slot.images.emplace(
@@ -435,7 +433,7 @@ auto gse::gpu::transient_pool::plan(const std::uint32_t frame_idx, const std::sp
 
 		m_device->bind_buffer_memory(sb.handle, slot.blocks[sb.color].memory, 0);
 
-		auto buf = m_device->make_aliased_buffer(sb.handle, req.desc.size, req.desc.tag);
+		auto buf = m_device->make_aliased_buffer(sb.handle, req.desc.size);
 
 		slot.buffers.emplace(
 			req.handle.key,

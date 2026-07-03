@@ -13,6 +13,7 @@ import :depth_prepass_renderer;
 import gse.os;
 import gse.assets;
 import gse.gpu;
+import gse.gpu_record;
 import gse.core;
 import gse.containers;
 import gse.time;
@@ -30,8 +31,10 @@ namespace gse::renderer::light_culling {
 
 	struct [[
 		= shaders::binding<0, 0>{},
-		= shaders::sampler2d
-	]] depth_texture {};
+		= shaders::texture2d
+	]] depth_texture {
+		using element = vec4f;
+	};
 
 	struct [[= shaders::binding<0, 1>{}]] culling_params {
 		using element = culling_params_data;
@@ -58,7 +61,12 @@ namespace gse::renderer::light_culling {
 		using element = vec2u;
 	};
 
-	using shader_binding_types = type_pack<depth_texture, culling_params, lights, light_index_list, tile_light_table>;
+	struct [[
+		= shaders::binding<0, 5>{},
+		= shaders::sampler_state
+	]] depth_sampler {};
+
+	using shader_binding_types = type_pack<depth_texture, culling_params, lights, light_index_list, tile_light_table, depth_sampler>;
 
 	using shader_types = type_pack<culling_params_data>;
 
@@ -95,16 +103,20 @@ auto rebuild_tile_buffers(const shared_view<gpu::context::data> gpu_s, data& d) 
 		d.light_index_list_buffers[i] = gpu_s.device->create_buffer(
 			{
 				.size = index_list_size,
+				.stride = sizeof(std::uint32_t),
 				.usage = gpu::buffer_flag::storage,
-				.bindless = true
+				.bindless = true,
+				.writable = true
 			}
 		);
 
 		d.tile_light_table_buffers[i] = gpu_s.device->create_buffer(
 			{
 				.size = tile_table_size,
+				.stride = sizeof(std::uint32_t),
 				.usage = gpu::buffer_flag::storage,
-				.bindless = true
+				.bindless = true,
+				.writable = true
 			}
 		);
 	}
@@ -120,7 +132,8 @@ auto gse::renderer::light_culling::init(context& ctx, const shared_view<gpu::con
 		d.culling_params_buffers[i] = gpu_s.device->create_buffer(
 			{
 				.size = sizeof(culling_params_data),
-				.usage = gpu::buffer_flag::uniform,
+				.stride = sizeof(culling_params_data),
+				.usage = gpu::buffer_flag::storage,
 				.bindless = true
 			}
 		);
@@ -128,6 +141,7 @@ auto gse::renderer::light_culling::init(context& ctx, const shared_view<gpu::con
 		d.light_buffers[i] = gpu_s.device->create_buffer(
 			{
 				.size = sizeof(shaders::forward::light) * max_lights,
+				.stride = sizeof(shaders::forward::light),
 				.usage = gpu::buffer_flag::storage,
 				.bindless = true
 			}
@@ -278,11 +292,12 @@ auto gse::renderer::light_culling::frame(context& ctx, shared_view<gpu::context:
 
 	rec.dispatch<entry>(
 		{
-			.depth_texture = { d.depth_view.slot(), d.depth_sampler.slot() },
+			.depth_texture = d.depth_view.slot(),
 			.culling_params = d.culling_params_buffers[frame_index].slot(),
 			.lights = d.light_buffers[frame_index].slot(),
 			.light_index_list = d.light_index_list_buffers[frame_index].slot(),
 			.tile_light_table = d.tile_light_table_buffers[frame_index].slot(),
+			.depth_sampler = d.depth_sampler.slot(),
 		},
 		vec3u{ tiles.x(), tiles.y(), 1u }
 	);

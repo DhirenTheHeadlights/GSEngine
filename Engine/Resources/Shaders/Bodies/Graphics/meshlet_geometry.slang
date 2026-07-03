@@ -9,32 +9,7 @@ void as_main(uint gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
     bool visible = false;
 
     if (meshlet_idx < pc.meshlet_count) {
-        uint global_idx = pc.meshlet_offset + meshlet_idx;
-        meshlet_bounds bounds = meshlet_bounds_buffer[global_idx];
-        instance_data inst = instance_data_buffer[instance_index];
-
-        float3 world_center = mul(inst.model_matrix, float4(bounds.center, 1.0)).xyz;
-
-        float3 scale_sq = float3(
-            dot(inst.model_matrix[0].xyz, inst.model_matrix[0].xyz),
-            dot(inst.model_matrix[1].xyz, inst.model_matrix[1].xyz),
-            dot(inst.model_matrix[2].xyz, inst.model_matrix[2].xyz)
-        );
-        float max_scale = sqrt(max(scale_sq.x, max(scale_sq.y, scale_sq.z)));
-        float world_radius = bounds.radius * max_scale;
-
-        visible = !frustum_cull_sphere(world_center, world_radius, view, proj);
-
-        if (visible && bounds.cone_cutoff >= 0.0) {
-            float3 world_cone_axis = normalize(mul((float3x3)inst.model_matrix, bounds.cone_axis));
-            float3 view_center = mul(view, float4(world_center, 1.0)).xyz;
-            float3 view_cone_axis = normalize(mul((float3x3)view, world_cone_axis));
-            float3 view_dir = normalize(-view_center);
-            float cone_sin = sqrt(1.0 - bounds.cone_cutoff * bounds.cone_cutoff);
-            if (dot(view_cone_axis, view_dir) < -cone_sin) {
-                visible = false;
-            }
-        }
+        visible = true;
     }
 
     if (gtid == 0) {
@@ -83,7 +58,7 @@ void ms_main(
         uint global_vertex_idx = meshlet_vertex_indices[desc.vertex_offset + v_idx];
         vertex v = vertices_buffer[global_vertex_idx];
 
-        MeshVertexOutput mv = compute_mesh_vertex(v, inst, view, proj);
+        MeshVertexOutput mv = compute_mesh_vertex(v, inst, camera_ubo.view, camera_ubo.proj);
 
         MeshOutput mo;
         mo.clip_pos = mv.clip_pos;
@@ -380,7 +355,7 @@ float4 fs_main(MeshOutput input) : SV_Target0 {
     material_data mat = material_palette[inst.material_index];
     float3 tex_sample = mat.diffuse_index == 0xFFFFFFFFu
         ? float3(1.0)
-        : textures[NonUniformResourceIndex(mat.diffuse_index)].Sample(input.tex_coord).rgb;
+        : textures[NonUniformResourceIndex(mat.diffuse_index)].Sample(textures_sampler, input.tex_coord).rgb;
     float3 base_color = tex_sample * mat.base_color * inst.tint;
     float3 F0 = lerp(float3(0.04), base_color, mat.metallic);
 
@@ -458,7 +433,7 @@ float4 fs_main(MeshOutput input) : SV_Target0 {
 
     reflection_config rcfg = get_reflection_config(clamp(pc.reflection_quality, 0, 3));
     if (rcfg.max_samples > 0 && mat.roughness <= rcfg.max_roughness) {
-        float3 cam_world = mul(inv_view, float4(0.0, 0.0, 0.0, 1.0)).xyz;
+        float3 cam_world = mul(camera_ubo.inv_view, float4(0.0, 0.0, 0.0, 1.0)).xyz;
         float3 world_V = normalize(cam_world - pos_world);
         float NdotV_world = max(dot(world_n, world_V), 0.0);
         float3 F_refl = fresnel_schlick(NdotV_world, F0);
@@ -472,14 +447,14 @@ float4 fs_main(MeshOutput input) : SV_Target0 {
         gi_params.grid_dim = pc.gi_grid_dim;
         gi_params.intensity = pc.gi_intensity;
         gi_params.atlas_size = pc.gi_atlas_size;
-        float3 gi_irradiance = sample_gi_irradiance(pos_world, world_n, gi_params, gi_atlas);
+        float3 gi_irradiance = sample_gi_irradiance(pos_world, world_n, gi_params, gi_atlas, gi_atlas_sampler);
         result += base_color * (1.0 - mat.metallic) * gi_irradiance / PI;
     }
 
     float2 screen_uv = pixel / float2(pc.screen_size);
     float view_dist_km = view_dist * 0.001;
-    float slice = saturate(view_dist_km / max_view_distance);
-    float4 ap = aerial_perspective_in.SampleLevel(float3(screen_uv, slice), 0);
+    float slice = saturate(view_dist_km / atmosphere_ubo.max_view_distance);
+    float4 ap = aerial_perspective_in.SampleLevel(ap_sampler, float3(screen_uv, slice), 0);
     float3 in_scatter = ap.rgb;
     float transmittance = ap.a;
     result = result * transmittance + in_scatter;

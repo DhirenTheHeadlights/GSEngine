@@ -307,6 +307,7 @@ auto gse::renderer::geometry_collector::initialize(context& ctx, const shared_vi
 		d.instance_buffer[i] = gpu_s.device->create_buffer(
 			{
 				.size = instance_buffer_size,
+				.stride = sizeof(shaders::common::instance_data),
 				.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_src | gpu::buffer_flag::transfer_dst,
 				.bindless = true
 			},
@@ -318,8 +319,10 @@ auto gse::renderer::geometry_collector::initialize(context& ctx, const shared_vi
 		d.normal_indirect_commands_buffer[i] = gpu_s.device->create_buffer(
 			{
 				.size = normal_indirect_buffer_size,
-				.usage = gpu::buffer_flag::indirect | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst,
-				.bindless = true
+				.stride = sizeof(gpu::draw_mesh_tasks_indirect_command),
+				.usage = gpu::buffer_flag::indirect | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst | gpu::buffer_flag::byte_address,
+				.bindless = true,
+				.writable = true
 			},
 			"gc_indirect_commands"
 		);
@@ -327,6 +330,7 @@ auto gse::renderer::geometry_collector::initialize(context& ctx, const shared_vi
 		d.material_palette_buffers[i] = gpu_s.device->create_buffer(
 			{
 				.size = material_buffer_size,
+				.stride = sizeof(shaders::forward::material_data),
 				.usage = gpu::buffer_flag::storage,
 				.bindless = true
 			},
@@ -409,7 +413,24 @@ auto gse::renderer::geometry_collector::frame(context& ctx, shared_view<gpu::con
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
 	if (!data.instance_staging.empty()) {
-		d.instance_buffer[frame_index].host_write(data.instance_staging);
+		if (data.instance_staging.size() > d.instance_capacity) {
+			d.instance_capacity = data.instance_staging.size();
+			for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
+				d.instance_buffer[i] = gpu_s.device->create_buffer(
+					{
+						.size = d.instance_capacity * sizeof(shaders::common::instance_data),
+						.stride = sizeof(shaders::common::instance_data),
+						.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_src | gpu::buffer_flag::transfer_dst,
+						.data = data.instance_staging.data(),
+						.bindless = true
+					},
+					"gc_instance_buffer"
+				);
+			}
+		}
+		else {
+			d.instance_buffer[frame_index].host_write(data.instance_staging);
+		}
 	}
 
 	if (!data.normal_batches.empty()) {
