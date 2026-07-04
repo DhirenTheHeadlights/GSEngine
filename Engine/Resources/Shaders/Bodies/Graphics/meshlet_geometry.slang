@@ -356,7 +356,7 @@ float4 fs_main(MeshOutput input) : SV_Target0 {
     float3 tex_sample = mat.diffuse_index == 0xFFFFFFFFu
         ? float3(1.0)
         : textures[NonUniformResourceIndex(mat.diffuse_index)].Sample(textures_sampler, input.tex_coord).rgb;
-    float3 base_color = tex_sample * mat.base_color * inst.tint;
+    float3 base_color = tex_sample * mat.base_color * inst.tint.rgb;
     float3 F0 = lerp(float3(0.04), base_color, mat.metallic);
 
     float3 V = normalize(-pos_vs);

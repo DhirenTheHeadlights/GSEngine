@@ -61,7 +61,6 @@ export namespace gse::renderer {
 		vec2f last_viewport{ 1920.f, 1080.f };
 		bool last_hot_reload_enabled = false;
 		bool render_world = true;
-		bool world_systems_registered = false;
 	};
 
 	[[= gse::system_init{}]]
@@ -76,8 +75,6 @@ export namespace gse::renderer {
 		shared_view<gpu::context::data> gpu_s,
 		shared_view<window::data> window_s,
 		data& d,
-		shared_view<actions::data> sys,
-		std::optional<shared_view<camera::data>> camera_s,
-		std::optional<shared_view<physics::data>> physics_s
+		shared_view<actions::data> sys
 	) -> async::task<>;
 }

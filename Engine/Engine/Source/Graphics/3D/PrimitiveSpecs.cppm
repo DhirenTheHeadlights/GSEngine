@@ -11,6 +11,7 @@ export namespace gse {
 		vec3f base_color = vec3f(1.0f);
 		float roughness = 0.5f;
 		float metallic = 0.0f;
+		float opacity = 1.0f;
 		std::optional<std::string> diffuse_texture_name;
 		std::optional<std::string> normal_texture_name;
 		std::optional<std::string> specular_texture_name;

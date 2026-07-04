@@ -133,6 +133,9 @@ export namespace gse::renderer::geometry_collector {
 		std::vector<owned_render_queue_entry> render_queue;
 		std::inplace_vector<normal_instance_batch, max_batches> normal_batches;
 
+		std::vector<owned_render_queue_entry> transparent_queue;
+		std::inplace_vector<normal_instance_batch, max_batches> transparent_batches;
+
 		std::vector<shaders::common::instance_data> instance_staging;
 
 		std::vector<physics_mapping_entry> physics_mappings;
@@ -158,6 +161,7 @@ export namespace gse::renderer::geometry_collector {
 		std::size_t instance_capacity = max_instances;
 
 		[[= gse::shared]] per_frame_resource<gpu::buffer> normal_indirect_commands_buffer;
+		[[= gse::shared]] per_frame_resource<gpu::buffer> transparent_indirect_commands_buffer;
 		[[= gse::shared]] per_frame_resource<gpu::buffer> material_palette_buffers;
 
 		linear_vector<std::byte> material_staging;

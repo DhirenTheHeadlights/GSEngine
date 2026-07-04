@@ -34,7 +34,7 @@ auto gse::primitive_resolver::attach_box(const primitive_box_spec& spec, const r
 	}
 	const auto idx = render.model_count;
 	render.models[idx] = handle;
-	render.tints[idx] = spec.material.base_color;
+	render.tints[idx] = vec4f(spec.material.base_color.x(), spec.material.base_color.y(), spec.material.base_color.z(), spec.material.opacity);
 	render.sizes[idx] = spec.size;
 	++render.model_count;
 }
@@ -45,7 +45,7 @@ auto gse::primitive_resolver::attach_sphere(const primitive_sphere_spec& spec, c
 	}
 	const auto idx = render.model_count;
 	render.models[idx] = handle;
-	render.tints[idx] = spec.material.base_color;
+	render.tints[idx] = vec4f(spec.material.base_color.x(), spec.material.base_color.y(), spec.material.base_color.z(), spec.material.opacity);
 	render.sizes[idx] = vec3<length>(spec.radius);
 	++render.model_count;
 }
