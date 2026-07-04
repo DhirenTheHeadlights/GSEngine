@@ -35,6 +35,16 @@ export namespace gse::gpu {
 			std::uint32_t height
 		) const -> void;
 
+		auto set_color_blend_enable(
+			std::uint32_t first_attachment,
+			std::span<const std::uint8_t> enables
+		) const -> void;
+
+		auto set_color_blend_equation(
+			std::uint32_t first_attachment,
+			std::span<const gpu::color_blend_equation> equations
+		) const -> void;
+
 		auto draw(
 			std::uint32_t vertex_count,
 			std::uint32_t instance_count = 1,

@@ -565,6 +565,16 @@ auto gse::gpu::recording_context::set_scissor(const std::int32_t x, const std::i
 	m_recorder.set_scissor(sc);
 }
 
+auto gse::gpu::recording_context::set_color_blend_enable(const std::uint32_t first_attachment, const std::span<const std::uint8_t> enables) const -> void {
+	check_active();
+	m_recorder.set_color_blend_enable(first_attachment, enables);
+}
+
+auto gse::gpu::recording_context::set_color_blend_equation(const std::uint32_t first_attachment, const std::span<const gpu::color_blend_equation> equations) const -> void {
+	check_active();
+	m_recorder.set_color_blend_equation(first_attachment, equations);
+}
+
 auto gse::gpu::recording_context::draw(const std::uint32_t vertex_count, const std::uint32_t instance_count, const std::uint32_t first_vertex, const std::uint32_t first_instance) const -> void {
 	check_active();
 	m_recorder.draw(vertex_count, instance_count, first_vertex, first_instance);

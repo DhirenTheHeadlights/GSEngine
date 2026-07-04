@@ -228,7 +228,6 @@ export namespace gse::vulkan {
 		auto write_buffer_descriptor(
 			gpu::handle<gpu::descriptor_heap> heap,
 			gpu::device_size byte_offset,
-			gpu::buffer_descriptor_kind kind,
 			gpu::device_address address,
 			gpu::device_size range
 		) const -> void;
@@ -249,12 +248,6 @@ export namespace gse::vulkan {
 		auto allocate_acceleration_structure_slot() -> gpu::bindless_handle;
 
 		auto write_storage_buffer(
-			gpu::bindless_slot slot,
-			gpu::device_address address,
-			gpu::device_size size
-		) -> void;
-
-		auto write_uniform_buffer(
 			gpu::bindless_slot slot,
 			gpu::device_address address,
 			gpu::device_size size

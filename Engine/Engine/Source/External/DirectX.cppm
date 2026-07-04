@@ -443,13 +443,6 @@ export namespace gse::directx {
 		D3D12_CPU_DESCRIPTOR_HANDLE handle
 	) -> void;
 
-	auto create_constant_buffer_view(
-		ID3D12Device* device,
-		std::uint64_t address,
-		std::uint32_t size,
-		D3D12_CPU_DESCRIPTOR_HANDLE handle
-	) -> void;
-
 	struct sampler_params {
 		bool min_linear = true;
 		bool mag_linear = true;
@@ -1230,14 +1223,6 @@ auto gse::directx::create_texture_uav_3d(ID3D12Device* device, ID3D12Resource* r
 		},
 	};
 	device->CreateUnorderedAccessView(resource, nullptr, &desc, handle);
-}
-
-auto gse::directx::create_constant_buffer_view(ID3D12Device* device, const std::uint64_t address, const std::uint32_t size, const D3D12_CPU_DESCRIPTOR_HANDLE handle) -> void {
-	const D3D12_CONSTANT_BUFFER_VIEW_DESC desc = {
-		.BufferLocation = address,
-		.SizeInBytes = (size + 255u) & ~255u,
-	};
-	device->CreateConstantBufferView(&desc, handle);
 }
 
 auto gse::directx::create_sampler_descriptor(ID3D12Device* device, const sampler_params& params, const D3D12_CPU_DESCRIPTOR_HANDLE handle) -> void {

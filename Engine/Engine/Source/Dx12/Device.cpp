@@ -1251,14 +1251,6 @@ auto gse::dx12::device::write_storage_buffer(const gpu::bindless_slot slot, cons
 	directx::create_raw_buffer_uav(m_device.get(), resource, first_element, num_elements, handle);
 }
 
-auto gse::dx12::device::write_uniform_buffer(const gpu::bindless_slot slot, const gpu::device_address address, const gpu::device_size size) -> void {
-	const std::lock_guard lock(m_mutex);
-	const directx::D3D12_CPU_DESCRIPTOR_HANDLE handle = {
-		.ptr = directx::descriptor_heap_cpu_start(m_resource_heap.get()).ptr + static_cast<std::size_t>(m_buffer_pool.offset(slot)),
-	};
-	directx::create_constant_buffer_view(m_device.get(), address, static_cast<std::uint32_t>(size), handle);
-}
-
 auto gse::dx12::device::write_acceleration_structure(const gpu::bindless_slot slot, const gpu::device_address as_address) -> void {
 	const std::lock_guard lock(m_mutex);
 	const directx::D3D12_CPU_DESCRIPTOR_HANDLE handle = {

@@ -16,12 +16,6 @@ export namespace gse::gpu {
 		texture,
 	};
 
-	enum class buffer_descriptor_kind : std::uint8_t {
-		storage,
-		uniform,
-		acceleration_structure,
-	};
-
 	struct descriptor_heap_properties {
 		device_size sampler_heap_alignment = 0;
 		device_size resource_heap_alignment = 0;

@@ -399,6 +399,7 @@ auto gs::spawn_tumbler(gse::scene& s, const int index, const gse::vec3<gse::posi
 	for (const auto& wall : walls) {
 		auto wall_arch = gs::box(center + wall.local_offset, wall.size, gse::kilograms(10000.f));
 		wall_arch.motion.body = gse::physics::kinematic_body{};
+		wall_arch.spec.material.opacity = 0.2f;
 		const auto wall_id = s.spawn(std::format("Tumbler {} Wall {}", index, wall.suffix), std::move(wall_arch));
 		s.registry().add_component<gs::tumbler::component>(
 			wall_id,

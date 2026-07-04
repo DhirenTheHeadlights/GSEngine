@@ -302,12 +302,6 @@ export namespace gse::gpu {
 			gpu::device_size size
 		) -> void;
 
-		auto write_uniform_buffer(
-			gpu::bindless_slot slot,
-			gpu::device_address address,
-			gpu::device_size size
-		) -> void;
-
 		auto write_acceleration_structure(
 			gpu::bindless_slot slot,
 			gpu::device_address as_address

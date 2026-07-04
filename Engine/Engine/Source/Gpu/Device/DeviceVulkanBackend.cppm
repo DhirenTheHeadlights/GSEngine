@@ -312,12 +312,6 @@ export namespace gse::gpu {
 			gpu::device_size size
 		) -> void;
 
-		auto write_uniform_buffer(
-			gpu::bindless_slot slot,
-			gpu::device_address address,
-			gpu::device_size size
-		) -> void;
-
 		auto write_acceleration_structure(
 			gpu::bindless_slot slot,
 			gpu::device_address as_address
@@ -631,10 +625,6 @@ auto gse::gpu::vulkan_device_backend::allocate_acceleration_structure_slot() -> 
 
 auto gse::gpu::vulkan_device_backend::write_storage_buffer(const gpu::bindless_slot slot, const gpu::device_address address, const gpu::device_size size) -> void {
 	device_config.write_storage_buffer(slot, address, size);
-}
-
-auto gse::gpu::vulkan_device_backend::write_uniform_buffer(const gpu::bindless_slot slot, const gpu::device_address address, const gpu::device_size size) -> void {
-	device_config.write_uniform_buffer(slot, address, size);
 }
 
 auto gse::gpu::vulkan_device_backend::write_acceleration_structure(const gpu::bindless_slot slot, const gpu::device_address as_address) -> void {

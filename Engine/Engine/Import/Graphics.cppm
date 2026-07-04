@@ -40,6 +40,7 @@ export import :mesh;
 export import :model;
 export import :mp4_muxer;
 export import :nav_item_widget;
+export import :oit_renderer;
 export import :physics_debug_renderer;
 export import :physics_transform_renderer;
 export import :point_light;

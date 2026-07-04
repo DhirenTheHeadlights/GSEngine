@@ -650,6 +650,11 @@ auto gse::gpu::device::host_upload_image_layers(const gpu::handle<gpu::image> im
 }
 
 auto gse::gpu::device::create_buffer(const buffer_desc& desc, const std::string_view tag, const std::source_location& loc) -> buffer {
+	assert(
+		!(desc.bindless && desc.usage.test(buffer_flag::uniform)),
+		"bindless buffers must be usage=storage, not uniform: every shader binding reads the descriptor heap as a StructuredBuffer, " 
+		"so a uniform-usage bindless buffer writes a descriptor no shader can read (garbage matrices -> NaN -> GPU hang). Drop buffer_flag::uniform."
+	);
 	auto buf = m_vt->create_buffer(m_backend.get(), desc, tag, loc);
 	if (desc.bindless) {
 		set_slot_resource(buf.slot().index, resource_ref{
@@ -703,10 +708,6 @@ auto gse::gpu::device::allocate_acceleration_structure_slot() -> gpu::bindless_h
 
 auto gse::gpu::device::write_storage_buffer(const gpu::bindless_slot slot, const gpu::device_address address, const gpu::device_size size) -> void {
 	m_vt->write_storage_buffer(m_backend.get(), slot, address, size);
-}
-
-auto gse::gpu::device::write_uniform_buffer(const gpu::bindless_slot slot, const gpu::device_address address, const gpu::device_size size) -> void {
-	m_vt->write_uniform_buffer(m_backend.get(), slot, address, size);
 }
 
 auto gse::gpu::device::write_acceleration_structure(const gpu::bindless_slot slot, const gpu::device_address as_address) -> void {
