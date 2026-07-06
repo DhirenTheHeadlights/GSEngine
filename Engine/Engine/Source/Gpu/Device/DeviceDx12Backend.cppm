@@ -429,8 +429,8 @@ auto gse::gpu::dx12_device_backend::frame_command_buffer(const gpu::queue_type q
 	return device->frame_command_buffer(queue_type, frame_index);
 }
 
-auto gse::gpu::dx12_device_backend::submit(gpu::queue_type, const gpu::submit_info& info, const gpu::handle<gpu::fence> signal_fence) -> void {
-	queue.submit(info, signal_fence);
+auto gse::gpu::dx12_device_backend::submit(const gpu::queue_type queue_type, const gpu::submit_info& info, const gpu::handle<gpu::fence> signal_fence) -> void {
+	queue.submit(queue_type, info, signal_fence);
 }
 
 auto gse::gpu::dx12_device_backend::present(const gpu::present_info& info) -> gpu::result {
@@ -449,8 +449,8 @@ auto gse::gpu::dx12_device_backend::reset_worker_command_pools(const std::uint32
 	pools.reset_worker_command_pools(frame_index);
 }
 
-auto gse::gpu::dx12_device_backend::acquire_worker_command_buffer(gpu::queue_type, const std::size_t worker_index, const std::uint32_t frame_index) -> gpu::command_buffer_handle {
-	return pools.acquire_worker_command_buffer(worker_index, frame_index);
+auto gse::gpu::dx12_device_backend::acquire_worker_command_buffer(const gpu::queue_type queue_type, const std::size_t worker_index, const std::uint32_t frame_index) -> gpu::command_buffer_handle {
+	return pools.acquire_worker_command_buffer(queue_type, worker_index, frame_index);
 }
 
 auto gse::gpu::dx12_device_backend::create_image_unbound(const gpu::image_create_info& info) const -> std::pair<gpu::handle<gpu::image>, gpu::memory_requirements> {
@@ -497,8 +497,8 @@ auto gse::gpu::dx12_device_backend::end_commands(const gpu::command_buffer_handl
 	pools.end_commands(cmd);
 }
 
-auto gse::gpu::dx12_device_backend::create_transient_command_pool(std::uint32_t) -> gpu::transient_pool_handle {
-	return pools.create_transient_command_pool();
+auto gse::gpu::dx12_device_backend::create_transient_command_pool(const std::uint32_t family) -> gpu::transient_pool_handle {
+	return pools.create_transient_command_pool(family == device->queue_family(gpu::queue_type::compute));
 }
 
 auto gse::gpu::dx12_device_backend::allocate_transient_primary(const gpu::transient_pool_handle pool) -> gpu::command_buffer_handle {

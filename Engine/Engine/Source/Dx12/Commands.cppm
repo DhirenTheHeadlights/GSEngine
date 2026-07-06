@@ -350,7 +350,11 @@ auto gse::dx12::commands::pipeline_barrier(const gpu::dependency_info& dep) cons
 
 auto gse::dx12::commands::reset_query_pool(gpu::handle<gpu::query_pool>, std::uint32_t, std::uint32_t) const -> void {}
 
-auto gse::dx12::commands::write_timestamp(gpu::pipeline_stage_flags, gpu::handle<gpu::query_pool>, std::uint32_t) const -> void {}
+auto gse::dx12::commands::write_timestamp(gpu::pipeline_stage_flags, const gpu::handle<gpu::query_pool> pool, const std::uint32_t index) const -> void {
+	if (active_device) {
+		active_device->cmd_write_timestamp(m_cmd, pool, index);
+	}
+}
 
 auto gse::dx12::commands::begin_query(gpu::handle<gpu::query_pool>, std::uint32_t) const -> void {}
 

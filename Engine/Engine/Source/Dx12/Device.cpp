@@ -10,6 +10,7 @@ import gse.meta;
 import gse.win32;
 import gse.directx;
 import gse.log;
+import gse.assert;
 
 import :conversions;
 import :pipeline;
@@ -140,23 +141,30 @@ gse::dx12::device::device(const shared_view<window::data> win, const bool enable
 		log::println(log::category::dx12, "debug layer enabled, gpu-based validation={}", gpu_validation);
 	}
 	m_factory = directx::create_factory();
-	m_device = directx::create_device();
+	long device_hr = 0;
+	long nvidia_hr = 0;
+	m_device = directx::create_device(m_factory.get(), &device_hr, &nvidia_hr);
+	assert(m_device.get(), "D3D12CreateDevice failed (hr=0x{:08x}); Agility SDK D3D12Core.dll could not be resolved", static_cast<std::uint32_t>(device_hr));
 	if (m_validation_enabled) {
 		directx::disable_debug_break(m_device.get());
 	}
-	log::println(log::category::dx12, "factory={} device={}", static_cast<void*>(m_factory.get()), static_cast<void*>(m_device.get()));
+	log::println(log::category::dx12, "factory={} device={} nvidia_create_hr=0x{:08x}", static_cast<void*>(m_factory.get()), static_cast<void*>(m_device.get()), static_cast<std::uint32_t>(nvidia_hr));
 
 	m_graphics_queue = directx::create_direct_queue(m_device.get());
+	m_compute_queue = directx::create_compute_queue(m_device.get());
 	m_hwnd = win32::hwnd_from_glfw_window(window::raw_handle(win).value);
 	log::println(log::category::dx12, "queue={} hwnd={}", static_cast<void*>(m_graphics_queue.get()), m_hwnd);
 
 	m_idle_fence = directx::create_fence(m_device.get(), 0);
 	m_idle_event = directx::create_wait_event();
 
-	m_frames.resize(3);
-	for (auto& f : m_frames) {
-		f.allocator = directx::create_command_allocator(m_device.get());
-		f.list = directx::create_command_list(m_device.get(), f.allocator.get());
+	for (std::size_t qi = 0; qi < gpu::queue_type_count; ++qi) {
+		const bool compute = qi == static_cast<std::size_t>(gpu::queue_type::compute);
+		m_frames[qi].resize(3);
+		for (auto& f : m_frames[qi]) {
+			f.allocator = directx::create_command_allocator(m_device.get(), compute);
+			f.list = directx::create_command_list(m_device.get(), f.allocator.get(), compute);
+		}
 	}
 
 	init_bindless();
@@ -174,11 +182,8 @@ gse::dx12::device::device(const shared_view<window::data> win, const bool enable
 }
 
 auto gse::dx12::device::init_bindless() -> void {
-	{
-		const auto probe = directx::create_gpu_upload_buffer(m_device.get(), 256);
-		m_gpu_upload_supported = static_cast<bool>(probe);
-	}
-	log::println(log::category::dx12, "gpu_upload_supported={}", m_gpu_upload_supported);
+	m_gpu_upload_supported = directx::gpu_upload_heap_supported(m_device.get());
+	log::println(log::category::dx12, "gpu_upload_supported={} mesh_shader_tier={} adapter_vendor=0x{:04x}", m_gpu_upload_supported, directx::mesh_shader_tier(m_device.get()), directx::adapter_vendor_id(m_factory.get(), m_device.get()));
 
 	constexpr std::uint32_t texture_capacity = 1024;
 	constexpr std::uint32_t image_capacity = 65536;
@@ -302,14 +307,22 @@ auto gse::dx12::device::resolve_graphics_pso(graphics_pass_state& pass) -> direc
 		}
 	}
 	const auto desc = build_graphics_pipeline_desc(*pass.pending, pass, m_pipeline_layout.root_signature());
+	long create_hr = 0;
 	auto pso = pass.pending->is_mesh
-		? directx::create_mesh_pipeline_state(m_device.get(), desc)
+		? directx::create_mesh_pipeline_state(m_device.get(), desc, &create_hr)
 		: directx::create_graphics_pipeline_state(m_device.get(), desc);
 	if (!pso) {
-		log::println(log::level::error, log::category::dx12, "graphics PSO creation FAILED mesh={} rtv_count={} removed=0x{:08x}", pass.pending->is_mesh, pass.rtv_count, static_cast<std::uint32_t>(m_device->GetDeviceRemovedReason()));
+		log::println(log::level::error, log::category::dx12, "graphics PSO creation FAILED mesh={} rtv_count={} hr=0x{:08x} removed=0x{:08x}", pass.pending->is_mesh, pass.rtv_count, static_cast<std::uint32_t>(create_hr), static_cast<std::uint32_t>(m_device->GetDeviceRemovedReason()));
 		directx::drain_debug_messages(m_device.get(), [](void*, const char* message) {
 			log::println(log::level::warning, log::category::dx12_validation, "{}", message);
 		}, nullptr);
+		m_graphics_psos.push_back(graphics_pso_entry{
+			.tmpl = pass.pending,
+			.rtv_count = pass.rtv_count,
+			.rtv_formats = pass.rtv_formats,
+			.dsv_format = pass.dsv_format,
+			.pso = {},
+		});
 		return nullptr;
 	}
 	auto* raw = pso.get();
@@ -333,29 +346,47 @@ auto gse::dx12::device::handle() const -> gpu::device_handle {
 	return std::bit_cast<gpu::device_handle>(m_device.get());
 }
 
-auto gse::dx12::device::queue_family(gpu::queue_type) const -> std::uint32_t {
-	return 0;
+auto gse::dx12::device::queue_family(const gpu::queue_type queue_type) const -> std::uint32_t {
+	return static_cast<std::uint32_t>(queue_type);
 }
 
 auto gse::dx12::device::wait_idle() const -> void {
-	const auto target = m_idle_fence->GetCompletedValue() + 1;
-	m_graphics_queue->Signal(m_idle_fence.get(), target);
-	directx::wait_fence(m_idle_fence.get(), target, m_idle_event);
+	const auto graphics_target = m_idle_fence->GetCompletedValue() + 1;
+	m_graphics_queue->Signal(m_idle_fence.get(), graphics_target);
+	directx::wait_fence(m_idle_fence.get(), graphics_target, m_idle_event);
+	const auto compute_target = m_idle_fence->GetCompletedValue() + 1;
+	m_compute_queue->Signal(m_idle_fence.get(), compute_target);
+	directx::wait_fence(m_idle_fence.get(), compute_target, m_idle_event);
 }
 
 auto gse::dx12::device::timestamp_period() const -> float {
-	return 1.0f;
+	const auto frequency = directx::timestamp_frequency(m_graphics_queue.get());
+	if (frequency == 0) {
+		return 1.0f;
+	}
+	return static_cast<float>(1.0e9 / static_cast<double>(frequency));
+}
+
+auto gse::dx12::device::cmd_write_timestamp(const gpu::command_buffer_handle cmd, const gpu::handle<gpu::query_pool> pool_handle, const std::uint32_t index) -> void {
+	auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(cmd);
+	auto* pool = std::bit_cast<timestamp_query_pool*>(pool_handle);
+	if (!list || !pool || !pool->heap || !pool->readback || index >= pool->capacity) {
+		return;
+	}
+	directx::resolve_timestamp_query(list, pool->heap.get(), pool->readback.get(), index);
 }
 
 auto gse::dx12::device::record_buffer_fill_u32(gpu::command_buffer_handle, gpu::handle<gpu::buffer>, gpu::device_size, std::uint32_t) -> void {}
 
 auto gse::dx12::device::cmd_reset(const gpu::command_buffer_handle cmd) -> void {
 	auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(cmd);
-	for (auto& f : m_frames) {
-		if (f.list.get() == list) {
-			f.allocator->Reset();
-			list->Reset(f.allocator.get(), nullptr);
-			return;
+	for (auto& frames : m_frames) {
+		for (auto& f : frames) {
+			if (f.list.get() == list) {
+				f.allocator->Reset();
+				list->Reset(f.allocator.get(), nullptr);
+				return;
+			}
 		}
 	}
 }
@@ -705,15 +736,20 @@ auto gse::dx12::device::cmd_draw_mesh_tasks_indirect(const gpu::command_buffer_h
 	directx::execute_indirect(list, m_dispatch_mesh_signature.get(), draw_count, resource, offset);
 }
 
-auto gse::dx12::device::frame_command_buffer(gpu::queue_type, const std::uint32_t frame_index) const -> gpu::command_buffer_handle {
-	if (m_frames.empty()) {
+auto gse::dx12::device::frame_command_buffer(const gpu::queue_type queue_type, const std::uint32_t frame_index) const -> gpu::command_buffer_handle {
+	const auto& frames = m_frames[static_cast<std::size_t>(queue_type)];
+	if (frames.empty()) {
 		return {};
 	}
-	return std::bit_cast<gpu::command_buffer_handle>(m_frames[frame_index % m_frames.size()].list.get());
+	return std::bit_cast<gpu::command_buffer_handle>(frames[frame_index % frames.size()].list.get());
 }
 
 auto gse::dx12::device::graphics_queue() const -> directx::ID3D12CommandQueue* {
 	return m_graphics_queue.get();
+}
+
+auto gse::dx12::device::command_queue(const gpu::queue_type queue_type) const -> directx::ID3D12CommandQueue* {
+	return queue_type == gpu::queue_type::compute ? m_compute_queue.get() : m_graphics_queue.get();
 }
 
 auto gse::dx12::device::validation_enabled() const -> bool {
@@ -953,16 +989,39 @@ auto gse::dx12::device::wait_semaphore(const gpu::handle<gpu::semaphore> semapho
 	}
 }
 
-auto gse::dx12::device::create_timestamp_query_pool(std::uint32_t, std::string_view) -> gpu::handle<gpu::query_pool> {
-	return {};
+auto gse::dx12::device::create_timestamp_query_pool(const std::uint32_t capacity, const std::string_view label) -> gpu::handle<gpu::query_pool> {
+	const std::lock_guard lock(m_mutex);
+	auto pool = std::make_unique<timestamp_query_pool>();
+	pool->capacity = capacity;
+	pool->heap = directx::create_timestamp_query_heap(m_device.get(), capacity);
+	pool->readback = directx::create_readback_buffer(m_device.get(), static_cast<std::uint64_t>(capacity) * sizeof(std::uint64_t));
+	if (!pool->heap || !pool->readback) {
+		return {};
+	}
+	if (!label.empty()) {
+		directx::set_resource_name(pool->readback.get(), label.data(), label.size());
+	}
+	auto* raw = pool.get();
+	m_query_pools.push_back(std::move(pool));
+	return std::bit_cast<gpu::handle<gpu::query_pool>>(raw);
 }
 
 auto gse::dx12::device::create_pipeline_stats_query_pool(std::uint32_t, gpu::pipeline_statistic_flags, std::string_view) -> gpu::handle<gpu::query_pool> {
 	return {};
 }
 
-auto gse::dx12::device::query_pool_results(gpu::handle<gpu::query_pool>, std::uint32_t, std::uint32_t, std::uint64_t) const -> std::pair<gpu::query_status, std::vector<std::uint64_t>> {
-	return { gpu::query_status::error, {} };
+auto gse::dx12::device::query_pool_results(const gpu::handle<gpu::query_pool> pool_handle, const std::uint32_t first_query, const std::uint32_t query_count, std::uint64_t) const -> std::pair<gpu::query_status, std::vector<std::uint64_t>> {
+	auto* pool = std::bit_cast<timestamp_query_pool*>(pool_handle);
+	if (!pool || !pool->readback || first_query + query_count > pool->capacity) {
+		return { gpu::query_status::error, {} };
+	}
+	const auto* mapped = static_cast<const std::uint64_t*>(directx::map_buffer(pool->readback.get()));
+	if (!mapped) {
+		return { gpu::query_status::error, {} };
+	}
+	std::vector<std::uint64_t> values(mapped + first_query, mapped + first_query + query_count);
+	pool->readback->Unmap(0, nullptr);
+	return { gpu::query_status::success, std::move(values) };
 }
 
 auto gse::dx12::device::create_blas(const gpu::acceleration_structure_geometry& geometry, const std::uint32_t prim_count) -> gpu::blas {

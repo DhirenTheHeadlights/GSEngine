@@ -732,7 +732,7 @@ ContactResult generate_contacts(
     else tangent_u = normalize(cross(normal, float3(0, 1, 0)));
     float3 tangent_v = cross(normal, tangent_u);
 
-    ContactCandidate candidates[MAX_CLIP_VERTS];
+    ContactCandidate candidates[MAX_CLIP_VERTS] = {};
     int candidate_count = 0;
 
     ClippedFaceContacts clipped = build_clipped_face_contacts(
@@ -747,6 +747,7 @@ ContactResult generate_contacts(
         result.reference_face = clipped.reference_face;
         result.incident_face = clipped.incident_face;
         result.reference_is_a = clipped.reference_is_a;
+        [loop]
         for (int i = 0; i < clipped.vertices.count && candidate_count < MAX_CLIP_VERTS; i++) {
             ClipVertexData vertex = clipped.vertices.verts[i];
 
@@ -767,9 +768,11 @@ ContactResult generate_contacts(
 
     result.raw_candidate_count = candidate_count;
 
+    [loop]
     for (int i = 1; i < candidate_count; i++) {
         ContactCandidate key = candidates[i];
         int j = i - 1;
+        [loop]
         while (j >= 0 && candidate_less(key, candidates[j], tangent_u, tangent_v, normal)) {
             candidates[j + 1] = candidates[j];
             j--;
@@ -778,6 +781,7 @@ ContactResult generate_contacts(
     }
 
     int result_count = 0;
+    [loop]
     for (int i = 0; i < candidate_count && result_count < 4; i++) {
         if (result_count > 0 &&
             feature_equal(
@@ -795,6 +799,7 @@ ContactResult generate_contacts(
     result.count = result_count;
 
     uint unique_candidate_count = 0;
+    [loop]
     for (int i = 0; i < candidate_count; i++) {
         if (i > 0 &&
             feature_equal(
@@ -1052,7 +1057,7 @@ void collision_narrow_phase(uint3 dispatch_id) {
 
         float pair_restitution = max(ba.restitution, bb.restitution);
 
-        contact_constraint c;
+        contact_constraint c = {};
         c.body_a = body_a_idx;
         c.body_b = body_b_idx;
         c.feature_key = ((uint64_t)feature_hi << 32) | (uint64_t)feature_lo;

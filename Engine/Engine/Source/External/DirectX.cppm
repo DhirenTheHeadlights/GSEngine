@@ -23,6 +23,7 @@ __CRT_UUID_DECL(ID3D12Device2, 0x30baa41e, 0xb15b, 0x475c, 0xa0, 0xbb, 0x1a, 0xf
 __CRT_UUID_DECL(ID3D12GraphicsCommandList6, 0xc3827890, 0xe548, 0x4cfa, 0x96, 0xcf, 0x56, 0x89, 0xa9, 0x37, 0x0f, 0x80)
 __CRT_UUID_DECL(ID3D12Device5, 0x8b4f173b, 0x2fea, 0x4b80, 0x8f, 0x58, 0x43, 0x07, 0x19, 0x1a, 0xb9, 0x5d)
 __CRT_UUID_DECL(ID3D12GraphicsCommandList4, 0x8754318e, 0xd3a9, 0x4541, 0x98, 0xcf, 0x64, 0x5b, 0x50, 0xdc, 0x48, 0x74)
+__CRT_UUID_DECL(ID3D12QueryHeap, 0x0d9658ae, 0xed45, 0x469e, 0xa6, 0x1d, 0x97, 0x0e, 0xc5, 0x83, 0xca, 0xb4)
 
 export module gse.directx;
 
@@ -41,6 +42,7 @@ export namespace gse::directx {
 	using ::ID3D12GraphicsCommandList;
 	using ::ID3D12GraphicsCommandList6;
 	using ::ID3D12Resource;
+	using ::ID3D12QueryHeap;
 	using ::ID3D12PipelineState;
 	using ::ID3D12RootSignature;
 	using ::ID3D12CommandSignature;
@@ -213,9 +215,17 @@ export namespace gse::directx {
 
 	[[nodiscard]] auto create_factory() -> com_ptr<IDXGIFactory4>;
 
-	[[nodiscard]] auto create_device() -> com_ptr<ID3D12Device>;
+	[[nodiscard]] auto create_device(
+		IDXGIFactory4* factory,
+		long* out_hr = nullptr,
+		long* out_nvidia_hr = nullptr
+	) -> com_ptr<ID3D12Device>;
 
 	[[nodiscard]] auto create_direct_queue(
+		ID3D12Device* device
+	) -> com_ptr<ID3D12CommandQueue>;
+
+	[[nodiscard]] auto create_compute_queue(
 		ID3D12Device* device
 	) -> com_ptr<ID3D12CommandQueue>;
 
@@ -225,12 +235,14 @@ export namespace gse::directx {
 	) -> com_ptr<ID3D12Fence>;
 
 	[[nodiscard]] auto create_command_allocator(
-		ID3D12Device* device
+		ID3D12Device* device,
+		bool compute = false
 	) -> com_ptr<ID3D12CommandAllocator>;
 
 	[[nodiscard]] auto create_command_list(
 		ID3D12Device* device,
-		ID3D12CommandAllocator* allocator
+		ID3D12CommandAllocator* allocator,
+		bool compute = false
 	) -> com_ptr<ID3D12GraphicsCommandList>;
 
 	[[nodiscard]] auto create_rtv_heap(
@@ -475,6 +487,40 @@ export namespace gse::directx {
 		std::uint64_t size
 	) -> com_ptr<ID3D12Resource>;
 
+	[[nodiscard]] auto gpu_upload_heap_supported(
+		ID3D12Device* device
+	) -> bool;
+
+	[[nodiscard]] auto mesh_shader_tier(
+		ID3D12Device* device
+	) -> std::uint32_t;
+
+	[[nodiscard]] auto adapter_vendor_id(
+		IDXGIFactory4* factory,
+		ID3D12Device* device
+	) -> std::uint32_t;
+
+	[[nodiscard]] auto create_timestamp_query_heap(
+		ID3D12Device* device,
+		std::uint32_t count
+	) -> com_ptr<ID3D12QueryHeap>;
+
+	[[nodiscard]] auto create_readback_buffer(
+		ID3D12Device* device,
+		std::uint64_t size
+	) -> com_ptr<ID3D12Resource>;
+
+	auto resolve_timestamp_query(
+		ID3D12GraphicsCommandList* list,
+		ID3D12QueryHeap* heap,
+		ID3D12Resource* readback,
+		std::uint32_t index
+	) -> void;
+
+	[[nodiscard]] auto timestamp_frequency(
+		ID3D12CommandQueue* queue
+	) -> std::uint64_t;
+
 	auto create_raw_buffer_uav(
 		ID3D12Device* device,
 		ID3D12Resource* resource,
@@ -563,7 +609,8 @@ export namespace gse::directx {
 
 	[[nodiscard]] auto create_mesh_pipeline_state(
 		ID3D12Device* device,
-		const graphics_pipeline_desc& desc
+		const graphics_pipeline_desc& desc,
+		long* out_hr = nullptr
 	) -> com_ptr<ID3D12PipelineState>;
 
 	auto dispatch_mesh(
@@ -746,9 +793,77 @@ auto gse::directx::create_factory() -> com_ptr<IDXGIFactory4> {
 	return factory;
 }
 
-auto gse::directx::create_device() -> com_ptr<ID3D12Device> {
+auto gse::directx::create_device(IDXGIFactory4* factory, long* out_hr, long* out_nvidia_hr) -> com_ptr<ID3D12Device> {
+	wchar_t exe_path[MAX_PATH] = {};
+	wchar_t saved_cwd[MAX_PATH] = {};
+	const DWORD path_len = GetModuleFileNameW(nullptr, exe_path, MAX_PATH);
+	const DWORD cwd_len = GetCurrentDirectoryW(MAX_PATH, saved_cwd);
+	bool cwd_changed = false;
+	if (path_len > 0 && path_len < MAX_PATH) {
+		DWORD i = path_len;
+		while (i > 0 && exe_path[i] != L'\\' && exe_path[i] != L'/') {
+			--i;
+		}
+		if (i > 0) {
+			exe_path[i] = L'\0';
+			cwd_changed = SetCurrentDirectoryW(exe_path) != 0;
+		}
+	}
+
 	com_ptr<ID3D12Device> device;
-	D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(device.put()));
+	HRESULT hr = DXGI_ERROR_NOT_FOUND;
+
+	if (factory) {
+		UINT best_index = 0;
+		bool have_best = false;
+		bool best_is_nvidia = false;
+		SIZE_T best_vram = 0;
+		for (UINT i = 0;; ++i) {
+			com_ptr<IDXGIAdapter1> adapter;
+			if (factory->EnumAdapters1(i, adapter.put()) == DXGI_ERROR_NOT_FOUND) {
+				break;
+			}
+			DXGI_ADAPTER_DESC1 desc = {};
+			adapter->GetDesc1(&desc);
+			if ((desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0) {
+				continue;
+			}
+			const bool is_nvidia = desc.VendorId == 0x10de;
+			const HRESULT support = D3D12CreateDevice(adapter.get(), D3D_FEATURE_LEVEL_11_0, __uuidof(ID3D12Device), nullptr);
+			if (is_nvidia && out_nvidia_hr) {
+				*out_nvidia_hr = static_cast<long>(support);
+			}
+			if (FAILED(support)) {
+				continue;
+			}
+			const bool better = !have_best || (is_nvidia && !best_is_nvidia) ||
+				(is_nvidia == best_is_nvidia && desc.DedicatedVideoMemory > best_vram);
+			if (better) {
+				best_vram = desc.DedicatedVideoMemory;
+				best_index = i;
+				best_is_nvidia = is_nvidia;
+				have_best = true;
+			}
+		}
+		if (have_best) {
+			com_ptr<IDXGIAdapter1> best;
+			if (factory->EnumAdapters1(best_index, best.put()) != DXGI_ERROR_NOT_FOUND) {
+				hr = D3D12CreateDevice(best.get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(device.put()));
+			}
+		}
+	}
+
+	if (FAILED(hr) || !device) {
+		device.reset();
+		hr = D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(device.put()));
+	}
+
+	if (cwd_changed && cwd_len > 0 && cwd_len < MAX_PATH) {
+		SetCurrentDirectoryW(saved_cwd);
+	}
+	if (out_hr) {
+		*out_hr = static_cast<long>(hr);
+	}
 	return device;
 }
 
@@ -761,21 +876,32 @@ auto gse::directx::create_direct_queue(ID3D12Device* device) -> com_ptr<ID3D12Co
 	return queue;
 }
 
+auto gse::directx::create_compute_queue(ID3D12Device* device) -> com_ptr<ID3D12CommandQueue> {
+	const D3D12_COMMAND_QUEUE_DESC desc = {
+		.Type = D3D12_COMMAND_LIST_TYPE_COMPUTE,
+	};
+	com_ptr<ID3D12CommandQueue> queue;
+	device->CreateCommandQueue(&desc, IID_PPV_ARGS(queue.put()));
+	return queue;
+}
+
 auto gse::directx::create_fence(ID3D12Device* device, const std::uint64_t initial_value) -> com_ptr<ID3D12Fence> {
 	com_ptr<ID3D12Fence> fence;
 	device->CreateFence(initial_value, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(fence.put()));
 	return fence;
 }
 
-auto gse::directx::create_command_allocator(ID3D12Device* device) -> com_ptr<ID3D12CommandAllocator> {
+auto gse::directx::create_command_allocator(ID3D12Device* device, const bool compute) -> com_ptr<ID3D12CommandAllocator> {
+	const auto type = compute ? D3D12_COMMAND_LIST_TYPE_COMPUTE : D3D12_COMMAND_LIST_TYPE_DIRECT;
 	com_ptr<ID3D12CommandAllocator> allocator;
-	device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(allocator.put()));
+	device->CreateCommandAllocator(type, IID_PPV_ARGS(allocator.put()));
 	return allocator;
 }
 
-auto gse::directx::create_command_list(ID3D12Device* device, ID3D12CommandAllocator* allocator) -> com_ptr<ID3D12GraphicsCommandList> {
+auto gse::directx::create_command_list(ID3D12Device* device, ID3D12CommandAllocator* allocator, const bool compute) -> com_ptr<ID3D12GraphicsCommandList> {
+	const auto type = compute ? D3D12_COMMAND_LIST_TYPE_COMPUTE : D3D12_COMMAND_LIST_TYPE_DIRECT;
 	com_ptr<ID3D12GraphicsCommandList> list;
-	device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, allocator, nullptr, IID_PPV_ARGS(list.put()));
+	device->CreateCommandList(0, type, allocator, nullptr, IID_PPV_ARGS(list.put()));
 	if (list) {
 		list->Close();
 	}
@@ -1003,6 +1129,49 @@ auto gse::directx::create_default_buffer(ID3D12Device* device, const std::uint64
 	com_ptr<ID3D12Resource> resource;
 	device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, initial_state, nullptr, IID_PPV_ARGS(resource.put()));
 	return resource;
+}
+
+auto gse::directx::create_timestamp_query_heap(ID3D12Device* device, const std::uint32_t count) -> com_ptr<ID3D12QueryHeap> {
+	const D3D12_QUERY_HEAP_DESC desc = {
+		.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP,
+		.Count = count,
+		.NodeMask = 0,
+	};
+	com_ptr<ID3D12QueryHeap> heap;
+	device->CreateQueryHeap(&desc, IID_PPV_ARGS(heap.put()));
+	return heap;
+}
+
+auto gse::directx::create_readback_buffer(ID3D12Device* device, const std::uint64_t size) -> com_ptr<ID3D12Resource> {
+	const D3D12_HEAP_PROPERTIES heap = {
+		.Type = D3D12_HEAP_TYPE_READBACK,
+	};
+	const D3D12_RESOURCE_DESC desc = {
+		.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
+		.Width = size == 0 ? 1 : size,
+		.Height = 1,
+		.DepthOrArraySize = 1,
+		.MipLevels = 1,
+		.Format = DXGI_FORMAT_UNKNOWN,
+		.SampleDesc = { .Count = 1 },
+		.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+	};
+	com_ptr<ID3D12Resource> resource;
+	device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(resource.put()));
+	return resource;
+}
+
+auto gse::directx::resolve_timestamp_query(ID3D12GraphicsCommandList* list, ID3D12QueryHeap* heap, ID3D12Resource* readback, const std::uint32_t index) -> void {
+	list->EndQuery(heap, D3D12_QUERY_TYPE_TIMESTAMP, index);
+	list->ResolveQueryData(heap, D3D12_QUERY_TYPE_TIMESTAMP, index, 1, readback, static_cast<std::uint64_t>(index) * sizeof(std::uint64_t));
+}
+
+auto gse::directx::timestamp_frequency(ID3D12CommandQueue* queue) -> std::uint64_t {
+	std::uint64_t frequency = 0;
+	if (FAILED(queue->GetTimestampFrequency(&frequency))) {
+		return 0;
+	}
+	return frequency;
 }
 
 auto gse::directx::blas_prebuild_info(ID3D12Device* device, const blas_triangles& triangles, std::uint64_t* out_acceleration_structure_size, std::uint64_t* out_scratch_size) -> void {
@@ -1300,11 +1469,47 @@ auto gse::directx::create_bindless_root_signature(ID3D12Device* device, const st
 	return root_signature;
 }
 
+auto gse::directx::gpu_upload_heap_supported(ID3D12Device* device) -> bool {
+	D3D12_FEATURE_DATA_D3D12_OPTIONS16 options = {};
+	if (FAILED(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS16, &options, sizeof(options)))) {
+		return false;
+	}
+	return options.GPUUploadHeapSupported;
+}
+
+auto gse::directx::mesh_shader_tier(ID3D12Device* device) -> std::uint32_t {
+	D3D12_FEATURE_DATA_D3D12_OPTIONS7 options = {};
+	if (FAILED(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS7, &options, sizeof(options)))) {
+		return 0;
+	}
+	return static_cast<std::uint32_t>(options.MeshShaderTier);
+}
+
+auto gse::directx::adapter_vendor_id(IDXGIFactory4* factory, ID3D12Device* device) -> std::uint32_t {
+	if (!factory || !device) {
+		return 0;
+	}
+	LUID luid = {};
+	device->GetAdapterLuid(&luid);
+	for (UINT i = 0;; ++i) {
+		com_ptr<IDXGIAdapter1> adapter;
+		if (factory->EnumAdapters1(i, adapter.put()) == DXGI_ERROR_NOT_FOUND) {
+			break;
+		}
+		DXGI_ADAPTER_DESC1 desc = {};
+		adapter->GetDesc1(&desc);
+		if (desc.AdapterLuid.LowPart == luid.LowPart && desc.AdapterLuid.HighPart == luid.HighPart) {
+			return desc.VendorId;
+		}
+	}
+	return 0;
+}
+
 auto gse::directx::create_gpu_upload_buffer(ID3D12Device* device, const std::uint64_t size) -> com_ptr<ID3D12Resource> {
 	const D3D12_HEAP_PROPERTIES heap = {
-		.Type = D3D12_HEAP_TYPE_CUSTOM,
-		.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_WRITE_COMBINE,
-		.MemoryPoolPreference = D3D12_MEMORY_POOL_L0,
+		.Type = D3D12_HEAP_TYPE_GPU_UPLOAD,
+		.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+		.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
 	};
 
 	const D3D12_RESOURCE_DESC desc = {
@@ -1475,10 +1680,13 @@ auto gse::directx::create_graphics_pipeline_state(ID3D12Device* device, const gr
 	return out;
 }
 
-auto gse::directx::create_mesh_pipeline_state(ID3D12Device* device, const graphics_pipeline_desc& desc) -> com_ptr<ID3D12PipelineState> {
+auto gse::directx::create_mesh_pipeline_state(ID3D12Device* device, const graphics_pipeline_desc& desc, long* out_hr) -> com_ptr<ID3D12PipelineState> {
 	com_ptr<ID3D12Device2> device2;
-	device->QueryInterface(IID_PPV_ARGS(device2.put()));
+	const HRESULT qi_hr = device->QueryInterface(IID_PPV_ARGS(device2.put()));
 	if (!device2) {
+		if (out_hr) {
+			*out_hr = qi_hr;
+		}
 		return {};
 	}
 	D3DX12_MESH_SHADER_PIPELINE_STATE_DESC mesh = {};
@@ -1516,7 +1724,10 @@ auto gse::directx::create_mesh_pipeline_state(ID3D12Device* device, const graphi
 		.pPipelineStateSubobjectStream = &stream,
 	};
 	com_ptr<ID3D12PipelineState> out;
-	device2->CreatePipelineState(&stream_desc, IID_PPV_ARGS(out.put()));
+	const HRESULT hr = device2->CreatePipelineState(&stream_desc, IID_PPV_ARGS(out.put()));
+	if (out_hr) {
+		*out_hr = hr;
+	}
 	return out;
 }
 

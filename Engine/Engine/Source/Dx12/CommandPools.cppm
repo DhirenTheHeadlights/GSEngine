@@ -18,6 +18,7 @@ export namespace gse::dx12 {
 		) -> void;
 
 		[[nodiscard]] auto acquire_worker_command_buffer(
+			gpu::queue_type queue_type,
 			std::size_t worker_index,
 			std::uint32_t frame_index
 		) -> gpu::command_buffer_handle;
@@ -30,7 +31,9 @@ export namespace gse::dx12 {
 			gpu::command_buffer_handle cmd
 		) -> void;
 
-		[[nodiscard]] auto create_transient_command_pool() -> gpu::transient_pool_handle;
+		[[nodiscard]] auto create_transient_command_pool(
+			bool compute
+		) -> gpu::transient_pool_handle;
 
 		[[nodiscard]] auto allocate_transient_primary(
 			gpu::transient_pool_handle pool
@@ -60,10 +63,11 @@ export namespace gse::dx12 {
 			std::vector<entry> entries;
 			std::size_t used = 0;
 			std::uint64_t high_water = 0;
+			bool compute = false;
 		};
 
 		device* m_owner = nullptr;
-		std::vector<list_pool> m_worker_lists;
+		std::array<std::vector<list_pool>, gpu::queue_type_count> m_worker_lists;
 		std::vector<list_pool> m_transient_pools;
 		std::mutex m_mutex;
 	};
@@ -71,20 +75,26 @@ export namespace gse::dx12 {
 
 auto gse::dx12::command_pools::bind(device* owner) -> void {
 	m_owner = owner;
-	m_worker_lists.resize(gpu::max_frames_in_flight);
+	for (auto& lists : m_worker_lists) {
+		lists.resize(gpu::max_frames_in_flight);
+	}
 }
 
 auto gse::dx12::command_pools::reset_worker_command_pools(const std::uint32_t frame_index) -> void {
 	const std::lock_guard lock(m_mutex);
-	m_worker_lists[frame_index % m_worker_lists.size()].used = 0;
+	for (auto& lists : m_worker_lists) {
+		lists[frame_index % lists.size()].used = 0;
+	}
 }
 
-auto gse::dx12::command_pools::acquire_worker_command_buffer(std::size_t, const std::uint32_t frame_index) -> gpu::command_buffer_handle {
+auto gse::dx12::command_pools::acquire_worker_command_buffer(const gpu::queue_type queue_type, std::size_t, const std::uint32_t frame_index) -> gpu::command_buffer_handle {
 	const std::lock_guard lock(m_mutex);
-	auto& p = m_worker_lists[frame_index % m_worker_lists.size()];
+	const bool compute = queue_type == gpu::queue_type::compute;
+	auto& lists = m_worker_lists[static_cast<std::size_t>(queue_type)];
+	auto& p = lists[frame_index % lists.size()];
 	if (p.used == p.entries.size()) {
-		auto allocator = directx::create_command_allocator(m_owner->raw_device());
-		auto list = directx::create_command_list(m_owner->raw_device(), allocator.get());
+		auto allocator = directx::create_command_allocator(m_owner->raw_device(), compute);
+		auto list = directx::create_command_list(m_owner->raw_device(), allocator.get(), compute);
 		p.entries.push_back(entry{
 			.allocator = std::move(allocator),
 			.list = std::move(list),
@@ -105,17 +115,18 @@ auto gse::dx12::command_pools::end_commands(const gpu::command_buffer_handle cmd
 	}
 }
 
-auto gse::dx12::command_pools::create_transient_command_pool() -> gpu::transient_pool_handle {
+auto gse::dx12::command_pools::create_transient_command_pool(const bool compute) -> gpu::transient_pool_handle {
 	const auto index = static_cast<std::uint32_t>(m_transient_pools.size());
 	m_transient_pools.emplace_back();
+	m_transient_pools.back().compute = compute;
 	return gpu::transient_pool_handle{ .index = index };
 }
 
 auto gse::dx12::command_pools::allocate_transient_primary(const gpu::transient_pool_handle pool) -> gpu::command_buffer_handle {
 	auto& p = m_transient_pools[pool.index];
 	if (p.used == p.entries.size()) {
-		auto allocator = directx::create_command_allocator(m_owner->raw_device());
-		auto list = directx::create_command_list(m_owner->raw_device(), allocator.get());
+		auto allocator = directx::create_command_allocator(m_owner->raw_device(), p.compute);
+		auto list = directx::create_command_list(m_owner->raw_device(), allocator.get(), p.compute);
 		p.entries.push_back(entry{
 			.allocator = std::move(allocator),
 			.list = std::move(list),
