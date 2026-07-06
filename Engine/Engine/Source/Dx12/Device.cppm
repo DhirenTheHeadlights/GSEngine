@@ -54,6 +54,12 @@ namespace gse::dx12 {
 		directx::com_ptr<directx::ID3D12PipelineState> pso;
 	};
 
+	struct timestamp_query_pool {
+		directx::com_ptr<directx::ID3D12QueryHeap> heap;
+		directx::com_ptr<directx::ID3D12Resource> readback;
+		std::uint32_t capacity = 0;
+	};
+
 	struct bindless_layout {
 		gpu::device_size image_range_offset = 0;
 		gpu::device_size image_stride = 0;
@@ -113,6 +119,12 @@ export namespace gse::dx12 {
 		auto cmd_pipeline_barrier(
 			gpu::command_buffer_handle cmd,
 			const gpu::dependency_info& dep
+		) -> void;
+
+		auto cmd_write_timestamp(
+			gpu::command_buffer_handle cmd,
+			gpu::handle<gpu::query_pool> pool,
+			std::uint32_t index
 		) -> void;
 
 		auto cmd_release_swapchain_to_present(
@@ -393,6 +405,10 @@ export namespace gse::dx12 {
 
 		[[nodiscard]] auto graphics_queue() const -> directx::ID3D12CommandQueue*;
 
+		[[nodiscard]] auto command_queue(
+			gpu::queue_type queue_type
+		) const -> directx::ID3D12CommandQueue*;
+
 		[[nodiscard]] auto validation_enabled() const -> bool;
 
 		[[nodiscard]] auto idle_event() const -> void*;
@@ -433,10 +449,11 @@ export namespace gse::dx12 {
 		directx::com_ptr<directx::IDXGIFactory4> m_factory;
 		directx::com_ptr<directx::ID3D12Device> m_device;
 		directx::com_ptr<directx::ID3D12CommandQueue> m_graphics_queue;
+		directx::com_ptr<directx::ID3D12CommandQueue> m_compute_queue;
 		directx::com_ptr<directx::ID3D12Fence> m_idle_fence;
 		directx::com_ptr<directx::ID3D12DescriptorHeap> m_rtv_view_heap;
 		directx::com_ptr<directx::ID3D12DescriptorHeap> m_dsv_view_heap;
-		std::vector<frame_target> m_frames;
+		std::array<std::vector<frame_target>, gpu::queue_type_count> m_frames;
 		std::deque<sync_point> m_sync_points;
 		mutable std::mutex m_mutex;
 		mutable std::vector<directx::com_ptr<directx::ID3D12Resource>> m_owned_buffers;
@@ -450,6 +467,7 @@ export namespace gse::dx12 {
 		std::unordered_map<directx::ID3D12Resource*, directx::D3D12_RESOURCE_STATES> m_buffer_states;
 		directx::com_ptr<directx::ID3D12CommandSignature> m_draw_indexed_signature;
 		directx::com_ptr<directx::ID3D12CommandSignature> m_dispatch_mesh_signature;
+		std::vector<std::unique_ptr<timestamp_query_pool>> m_query_pools;
 		gpu::bindless_slot_pool m_image_pool;
 		gpu::bindless_slot_pool m_buffer_pool;
 		gpu::bindless_slot_pool m_texture_pool;

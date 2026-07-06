@@ -527,7 +527,7 @@ auto gse::physics::init(context& ctx, const std::optional<shared_view<gpu::conte
 		}
 	);
 
-	if (gpu_s) {
+	if (gpu_s && d.use_gpu_solver) {
 		co_await d.gpu_solver.initialize_compute(ctx, *gpu_s);
 		d.gpu_buffers_created = d.gpu_solver.buffers_created();
 	}
