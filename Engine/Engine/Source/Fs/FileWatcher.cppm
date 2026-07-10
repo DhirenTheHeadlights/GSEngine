@@ -114,7 +114,7 @@ auto gse::file_watcher::unwatch(const std::filesystem::path& path) -> void {
 			m_directory_files,
 			[&](const auto& pair) {
 				auto [file_path, _] = pair;
-				return file_path.string().starts_with(path.string());
+				return file_path.native_encoded_string().starts_with(path.native_encoded_string());
 			}
 		);
 	}
@@ -172,7 +172,7 @@ auto gse::file_watcher::matches_extensions(const std::filesystem::path& path, st
 		return true;
 	}
 
-	const auto ext = path.extension().string();
+	const auto ext = path.extension().native_encoded_string();
 	return std::ranges::find(extensions, ext) != extensions.end();
 }
 

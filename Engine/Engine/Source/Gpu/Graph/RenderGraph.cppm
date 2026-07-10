@@ -118,6 +118,10 @@ export namespace gse::gpu {
 			load_op op = load_op::clear
 		) -> void;
 
+		auto set_offscreen_target(
+			const image* target
+		) -> void;
+
 		[[nodiscard]] auto current_frame() const -> std::uint32_t;
 
 		[[nodiscard]] auto extent() const -> vec2u;
@@ -141,6 +145,16 @@ export namespace gse::gpu {
 		[[nodiscard]] auto take_aux_submissions() -> std::vector<gpu::queue_submission>;
 
 		[[nodiscard]] auto take_graphics_extra_waits() -> std::vector<gpu::semaphore_submit_info>;
+
+		auto add_graphics_signal(
+			gpu::semaphore_submit_info signal
+		) -> void;
+
+		auto add_graphics_wait(
+			gpu::semaphore_submit_info wait
+		) -> void;
+
+		[[nodiscard]] auto take_graphics_extra_signals() -> std::vector<gpu::semaphore_submit_info>;
 
 		[[nodiscard]] auto take_graphics_buffers() -> std::vector<gpu::command_buffer_handle>;
 
@@ -202,11 +216,13 @@ export namespace gse::gpu {
 		std::array<queue_state, gpu::queue_type_count> m_queue_states;
 		std::vector<gpu::queue_submission> m_pending_aux_submissions;
 		std::vector<gpu::semaphore_submit_info> m_pending_graphics_extra_waits;
+		std::vector<gpu::semaphore_submit_info> m_pending_graphics_extra_signals;
 		std::vector<gpu::command_buffer_handle> m_pending_graphics_buffers;
 		std::set<std::pair<id, id>> m_warned_ambiguous_pairs;
 		std::unordered_map<id, std::array<id, stats_per_pass>> m_stat_ids;
 		gpu::color_clear m_swapchain_clear{};
 		load_op m_swapchain_load = load_op::clear;
+		const image* m_offscreen_target = nullptr;
 	};
 }
 

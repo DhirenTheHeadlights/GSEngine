@@ -1,22 +1,9 @@
 {
-  "clangd.path": "${workspaceFolder}/dist/clang-p2996/bin/clangd.exe",
-  "clangd.arguments": [
-    "--background-index",
-    "--header-insertion=never",
-    "--completion-style=detailed",
-    "--pch-storage=memory",
-    "-j=8"
-  ],
-  "clangd.checkUpdates": false,
   "C_Cpp.intelliSenseEngine": "disabled",
   "editor.inlayHints.enabled": "off",
   "files.associations": {
     "*.cppm": "cpp",
     "*.ixx": "cpp"
-  },
-  "[cpp]": {
-    "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
-    "editor.formatOnSave": true
   },
   "cmake.debugConfig": {
     "environment": [

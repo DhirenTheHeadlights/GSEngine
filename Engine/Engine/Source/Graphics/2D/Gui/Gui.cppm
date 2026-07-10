@@ -108,6 +108,8 @@ export namespace gse::gui {
 		bool manual_cursor = false;
 
 		std::vector<id> pending_popout_close_ids;
+		std::optional<std::pair<id, std::uint32_t>> pending_tab_close;
+		context_menu_state context_menu;
 
 		static constexpr time update_interval = seconds(30.f);
 	};
@@ -136,6 +138,10 @@ export namespace gse::gui {
 	) -> void;
 
 	auto save(
+		data& d
+	) -> void;
+
+	auto clear_menu_interaction(
 		data& d
 	) -> void;
 
@@ -209,6 +215,13 @@ export namespace gse::gui {
 		menu& current_menu,
 		const ui_rect& title_bar_rect,
 		render_layer layer
+	) -> void;
+
+	auto process_context_menu(
+		data& d,
+		const input::state& input_state,
+		vec2f viewport_size,
+		channel_writer& channels
 	) -> void;
 
 	auto usable_screen_rect(

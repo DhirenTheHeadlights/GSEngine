@@ -4,7 +4,6 @@ import std;
 import gse;
 
 import :network_screen;
-import :settings_screen;
 
 export namespace gs {
 	class main_menu_screen : public gse::gui::screen {
@@ -167,7 +166,7 @@ auto gs::main_menu_screen::build(gse::gui::builder& ui, gse::gui::nav&) -> void 
 		})) {
 		m_channels.push<gse::gui::push_screen_request>({
 			.factory = [save_reg = m_save_reg, channels = m_channels] {
-				return std::make_unique<settings_screen>(*save_reg, channels);
+				return std::make_unique<gse::gui::settings_screen>(*save_reg, channels, gse::gui::settings_screen_config{ .title = "Dev Settings" });
 			},
 		});
 	}

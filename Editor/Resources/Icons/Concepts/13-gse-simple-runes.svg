@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="27" y1="25" x2="229" y2="229" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#111923"/>
+      <stop offset="1" stop-color="#05070a"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="49" y1="205" x2="209" y2="205" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6ef7ff"/>
+      <stop offset="0.54" stop-color="#67ff9a"/>
+      <stop offset="1" stop-color="#ffe36e"/>
+    </linearGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#000000" flood-opacity="0.42"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="7" flood-color="#6ef7ff" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+  <rect x="18" y="18" width="220" height="220" rx="42" fill="url(#bg)"/>
+  <g fill="none" stroke="#f7fbff" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" filter="url(#soft)">
+    <path d="M98 73H58v110h48v-46H82"/>
+    <path d="M163 73h-45v55h45v55h-45"/>
+    <path d="M189 73v110M189 73h43M189 128h35M189 183h43"/>
+  </g>
+  <path d="M49 205h160" stroke="url(#accent)" stroke-width="8" stroke-linecap="round"/>
+  <path d="M49 52h52" stroke="#6ef7ff" stroke-width="7" stroke-linecap="round"/>
+  <path d="M180 52h29" stroke="#ffe36e" stroke-width="7" stroke-linecap="round"/>
+</svg>

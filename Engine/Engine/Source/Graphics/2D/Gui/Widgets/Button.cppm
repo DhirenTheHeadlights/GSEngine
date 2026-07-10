@@ -57,7 +57,7 @@ auto gse::gui::draw::button(const draw_context& ctx, const std::string& name, id
 	const bool released = ctx.input.mouse_button_released(mouse_button::button_1);
 
 	interaction::mark_hot(hot_widget_id, widget_id, hovered);
-	interaction::grab_active(active_widget_id, widget_id, ctx.mouse_pressed_for(button_rect));
+	const bool activated = interaction::activate_on_click(active_widget_id, widget_id, hovered, ctx.mouse_pressed_for(button_rect), released);
 
 	vec4f target_color = ctx.style.color_button_background;
 	if (active_widget_id == widget_id) {
@@ -89,5 +89,5 @@ auto gse::gui::draw::button(const draw_context& ctx, const std::string& name, id
 
 	ctx.layout_cursor.y() -= widget_height + ctx.style.padding;
 
-	return interaction::release_active(active_widget_id, widget_id, released) && hovered;
+	return activated;
 }

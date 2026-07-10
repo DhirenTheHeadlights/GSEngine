@@ -91,8 +91,10 @@ export namespace gse::win32 {
 	using ::EXCEPTION_RECORD;
 	using ::STARTUPINFOW;
 	using ::PROCESS_INFORMATION;
+	using ::SECURITY_ATTRIBUTES;
 
 	using ::DuplicateHandle;
+	using ::OpenProcess;
 	using ::GetCurrentProcess;
 	using ::GetCurrentThread;
 	using ::CloseHandle;
@@ -108,13 +110,43 @@ export namespace gse::win32 {
 	using ::CreateProcessW;
 	using ::GetCommandLineW;
 	using ::ExitProcess;
+	using ::CreatePipe;
+	using ::ReadFile;
+	using ::SetHandleInformation;
+	using ::WaitForSingleObject;
+	using ::GetExitCodeProcess;
+	using ::MoveFileExW;
+	using ::GetEnvironmentVariableW;
+	using ::SetEnvironmentVariableW;
+	using ::MultiByteToWideChar;
+	using ::CreateNamedPipeW;
+	using ::ConnectNamedPipe;
+	using ::DisconnectNamedPipe;
+	using ::CreateFileW;
+	using ::WriteFile;
+	using ::PeekNamedPipe;
 
 	constexpr DWORD context_full = CONTEXT_FULL;
 	constexpr DWORD unw_flag_nhandler = UNW_FLAG_NHANDLER;
 	constexpr DWORD duplicate_same_access = DUPLICATE_SAME_ACCESS;
+	constexpr DWORD process_dup_handle = PROCESS_DUP_HANDLE;
 	constexpr DWORD get_module_handle_ex_flag_from_address = GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS;
 	constexpr DWORD get_module_handle_ex_flag_unchanged_refcount = GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT;
 	constexpr int max_path = MAX_PATH;
+	constexpr DWORD startf_use_std_handles = STARTF_USESTDHANDLES;
+	constexpr DWORD create_no_window = CREATE_NO_WINDOW;
+	constexpr DWORD infinite = INFINITE;
+	constexpr DWORD handle_flag_inherit = HANDLE_FLAG_INHERIT;
+	constexpr DWORD movefile_replace_existing = MOVEFILE_REPLACE_EXISTING;
+	constexpr UINT cp_utf8 = CP_UTF8;
+	constexpr DWORD pipe_access_duplex = PIPE_ACCESS_DUPLEX;
+	constexpr DWORD pipe_type_byte = PIPE_TYPE_BYTE;
+	constexpr DWORD pipe_wait = PIPE_WAIT;
+	constexpr DWORD pipe_unlimited_instances = PIPE_UNLIMITED_INSTANCES;
+	constexpr DWORD generic_read = GENERIC_READ;
+	constexpr DWORD generic_write = GENERIC_WRITE;
+	constexpr DWORD open_existing = OPEN_EXISTING;
+	constexpr DWORD error_pipe_connected = ERROR_PIPE_CONNECTED;
 
 	constexpr LONG exception_continue_search = EXCEPTION_CONTINUE_SEARCH;
 	constexpr DWORD exception_access_violation = EXCEPTION_ACCESS_VIOLATION;

@@ -617,22 +617,25 @@ namespace details
 		}
 		
 		// Thread-local
-		static inline ThreadExitNotifier& instance()
-		{
-			static thread_local ThreadExitNotifier notifier;
-			return notifier;
-		}
+		static ThreadExitNotifier& instance();
 
-		static inline std::mutex& mutex()
-		{
-			// Must be static because the ThreadExitNotifier could be destroyed while unsubscribe is called
-			static std::mutex mutex;
-			return mutex;
-		}
+		static std::mutex& mutex();
 		
 	private:
 		ThreadExitListener* tail;
 	};
+
+	ThreadExitNotifier& ThreadExitNotifier::instance()
+	{
+		static thread_local ThreadExitNotifier notifier;
+		return notifier;
+	}
+
+	std::mutex& ThreadExitNotifier::mutex()
+	{
+		static std::mutex mutex;
+		return mutex;
+	}
 #endif
 #endif
 	

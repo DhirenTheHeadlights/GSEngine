@@ -210,7 +210,7 @@ auto gse::renderer::ui::run(context& ctx, const shared_view<gpu::context::data> 
 	unified.reserve(sprite_commands.size() + text_commands.size());
 
 	for (const auto& cmd : sprite_commands) {
-		if (!cmd.texture.valid()) {
+		if (!cmd.texture.valid() && !cmd.image_slot.valid()) {
 			continue;
 		}
 
@@ -226,6 +226,7 @@ auto gse::renderer::ui::run(context& ctx, const shared_view<gpu::context::data> 
 			.rotation = cmd.rotation,
 			.corner_radius = cmd.corner_radius,
 			.sample_scene_snapshot = cmd.sample_scene_snapshot,
+			.image_slot = cmd.image_slot,
 			.font = {},
 			.text = {},
 			.position = {},
@@ -282,6 +283,7 @@ auto gse::renderer::ui::run(context& ctx, const shared_view<gpu::context::data> 
 	resource::handle<font> current_font;
 	std::optional<rect_t<vec2f>> current_clip;
 	bool current_sample_snapshot = false;
+	gpu::bindless_slot current_image_slot = {};
 	std::uint32_t batch_index_start = 0;
 
 	auto flush_batch = [&] {
@@ -294,6 +296,7 @@ auto gse::renderer::ui::run(context& ctx, const shared_view<gpu::context::data> 
 				.texture = current_texture,
 				.font = current_font,
 				.sample_scene_snapshot = current_sample_snapshot,
+				.image_slot = current_image_slot,
 			});
 		}
 		batch_index_start = static_cast<std::uint32_t>(indices.size());
@@ -320,6 +323,9 @@ auto gse::renderer::ui::run(context& ctx, const shared_view<gpu::context::data> 
 		else if (cmd.type == command_type::sprite && cmd.sample_scene_snapshot != current_sample_snapshot) {
 			needs_flush = true;
 		}
+		else if (cmd.type == command_type::sprite && cmd.image_slot.index != current_image_slot.index) {
+			needs_flush = true;
+		}
 
 		if (needs_flush) {
 			flush_batch();
@@ -328,6 +334,7 @@ auto gse::renderer::ui::run(context& ctx, const shared_view<gpu::context::data> 
 			current_texture = cmd.texture;
 			current_font = cmd.font;
 			current_sample_snapshot = cmd.sample_scene_snapshot;
+			current_image_slot = cmd.image_slot;
 		}
 
 		if (cmd.type == command_type::sprite) {
@@ -423,7 +430,7 @@ auto gse::renderer::ui::frame(context& ctx, shared_view<gpu::context::data> gpu_
 	auto bound_type = command_type::sprite;
 	bool first_batch = true;
 
-	for (const auto& [type, index_offset, index_count, clip_rect, texture, font, sample_scene_snapshot] : batches) {
+	for (const auto& [type, index_offset, index_count, clip_rect, texture, font, sample_scene_snapshot, image_slot] : batches) {
 		if (index_count == 0) {
 			continue;
 		}
@@ -442,7 +449,11 @@ auto gse::renderer::ui::frame(context& ctx, shared_view<gpu::context::data> gpu_
 		std::uint32_t tex_idx = 0;
 		bool has_texture = false;
 		if (type == command_type::sprite) {
-			if (texture.valid() && texture->bindless_slot().valid()) {
+			if (image_slot.valid()) {
+				tex_idx = image_slot.index;
+				has_texture = true;
+			}
+			else if (texture.valid() && texture->bindless_slot().valid()) {
 				tex_idx = texture->bindless_slot().index;
 				has_texture = true;
 			}

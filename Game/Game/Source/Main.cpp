@@ -59,7 +59,7 @@ namespace gs::startup {
 }
 
 auto gs::startup::locomotion_artifact(const std::string_view name) -> std::string {
-	return (gse::config::resource_path / "Misc" / name).string();
+	return (gse::config::resource_path / "Misc" / name).native_encoded_string();
 }
 
 auto gs::startup::run_game(const gse::engine_config& engine) -> void {

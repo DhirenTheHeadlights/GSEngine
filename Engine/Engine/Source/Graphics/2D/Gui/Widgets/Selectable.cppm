@@ -59,7 +59,7 @@ auto gse::gui::draw::selectable(const draw_context& ctx, const std::string& name
 	const bool released = ctx.input.mouse_button_released(mouse_button::button_1);
 
 	interaction::mark_hot(hot_widget_id, widget_id, hovered);
-	interaction::grab_active(active_widget_id, widget_id, ctx.mouse_pressed_for(row_rect));
+	const bool activated = interaction::activate_on_click(active_widget_id, widget_id, hovered, ctx.mouse_pressed_for(row_rect), released);
 
 	vec4f target_color = ctx.style.color_widget_background;
 	if (selected) {
@@ -94,5 +94,5 @@ auto gse::gui::draw::selectable(const draw_context& ctx, const std::string& name
 
 	ctx.layout_cursor.y() -= widget_height + ctx.style.padding;
 
-	return interaction::release_active(active_widget_id, widget_id, released) && hovered;
+	return activated;
 }

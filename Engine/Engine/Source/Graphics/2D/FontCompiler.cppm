@@ -35,16 +35,17 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 	}
 
 	FT_Face ft_face;
-	if (FT_New_Face(ft_lib, src.string().c_str(), 0, &ft_face)) {
-		log::println(log::level::error, log::category::assets, "Failed to load font face from '{}'", src.string());
+	const std::string source_path = src.native_encoded_string();
+	if (FT_New_Face(ft_lib, source_path.c_str(), 0, &ft_face)) {
+		log::println(log::level::error, log::category::assets, "Failed to load font face from '{}'", src.display_string());
 		FT_Done_FreeType(ft_lib);
 		return false;
 	}
 
 	msdfgen::FreetypeHandle* ft_handle = msdfgen::initializeFreetype();
-	msdfgen::FontHandle* font_handle = loadFont(ft_handle, src.string().c_str());
+	msdfgen::FontHandle* font_handle = loadFont(ft_handle, source_path.c_str());
 	if (!font_handle) {
-		log::println(log::level::error, log::category::assets, "Failed to load font into msdfgen: {}", src.string());
+		log::println(log::level::error, log::category::assets, "Failed to load font into msdfgen: {}", src.display_string());
 		FT_Done_Face(ft_face);
 		FT_Done_FreeType(ft_lib);
 		msdfgen::deinitializeFreetype(ft_handle);
@@ -59,8 +60,6 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 	for (char32_t cp = 0x20; cp <= 0x7E; ++cp) {
 		codepoints.push_back(cp);
 	}
-	codepoints.push_back(0x25B2);
-	codepoints.push_back(0x25BC);
 
 	const int glyph_count = static_cast<int>(codepoints.size());
 	constexpr int cell = 160;
@@ -128,7 +127,7 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 					log::level::warning,
 					log::category::assets,
 					"font bake [{}]: codepoint U+{:04X} has no usable geometry (loaded={}, contours={}, w={}, h={})",
-					src.filename().string(),
+					src.filename().display_string(),
 					static_cast<unsigned>(cp),
 					loaded,
 					shape.contours.size(),
@@ -157,7 +156,7 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 				log::level::warning,
 				log::category::assets,
 				"font bake [{}]: codepoint U+{:04X} padded extent ({}x{} em) exceeds cell ({} em); clipping may occur",
-				src.filename().string(),
+				src.filename().display_string(),
 				static_cast<unsigned>(cp),
 				padded_w,
 				padded_h,
@@ -226,7 +225,7 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 		log::level::info,
 		log::category::assets,
 		"font bake [{}]: baked={}, skipped(non-space)={}, atlas={}x{} ({} bytes)",
-		src.filename().string(),
+		src.filename().display_string(),
 		baked_count,
 		skipped_count,
 		atlas_width,
@@ -234,14 +233,14 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 		atlas_data.size()
 	);
 
-	const auto debug_atlas_path = config::baked_resource_path / "Fonts" / (src.stem().string() + "_atlas_debug.png");
+	const auto debug_atlas_path = config::baked_resource_path / "Fonts" / (src.stem().native_encoded_string() + "_atlas_debug.png");
 	if (!image::write_png(debug_atlas_path, static_cast<std::uint32_t>(atlas_width), static_cast<std::uint32_t>(atlas_height), channels, atlas_data.data())) {
 		log::println(
 			log::level::warning,
 			log::category::assets,
 			"font bake [{}]: failed to write debug atlas PNG to {}",
-			src.filename().string(),
-			debug_atlas_path.string()
+			src.filename().display_string(),
+			debug_atlas_path.display_string()
 		);
 	}
 
@@ -250,7 +249,7 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 	FT_Done_Face(ft_face);
 	FT_Done_FreeType(ft_lib);
 
-	out.source_path_relative = src.lexically_relative(config::resource_path).string();
+	out.source_path_relative = src.lexically_relative(config::resource_path).native_encoded_string();
 	out.ascender = static_cast<float>(font_metrics.ascenderY);
 	out.descender = static_cast<float>(font_metrics.descenderY);
 	out.pixel_range = pixel_range;

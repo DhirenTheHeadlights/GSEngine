@@ -100,7 +100,7 @@ auto gse::model::load(asset::load_ctx& ctx) -> async::task<> {
 		}
 
 		const auto model_relative = m_baked_model_path.lexically_relative(config::baked_resource_path);
-		auto texture_dir = model_relative.parent_path().string();
+		auto texture_dir = model_relative.parent_path().native_encoded_string();
 		std::ranges::replace(texture_dir, '\\', '/');
 		if (texture_dir.starts_with("Models/")) {
 			texture_dir = "Textures/" + texture_dir.substr(7);
@@ -114,15 +114,15 @@ auto gse::model::load(asset::load_ctx& ctx) -> async::task<> {
 			mat.metallic = mb.material.metallic;
 
 			if (!mb.material.albedo_file.empty()) {
-				auto stem = std::filesystem::path(mb.material.albedo_file).stem().string();
+				auto stem = std::filesystem::path(mb.material.albedo_file).stem().native_encoded_string();
 				mat.diffuse_texture = asset::get<texture>(ctx.assets, texture_dir + "/" + stem);
 			}
 			if (!mb.material.normal_file.empty()) {
-				auto stem = std::filesystem::path(mb.material.normal_file).stem().string();
+				auto stem = std::filesystem::path(mb.material.normal_file).stem().native_encoded_string();
 				mat.normal_texture = asset::get<texture>(ctx.assets, texture_dir + "/" + stem);
 			}
 			if (!mb.material.rm_file.empty()) {
-				auto stem = std::filesystem::path(mb.material.rm_file).stem().string();
+				auto stem = std::filesystem::path(mb.material.rm_file).stem().native_encoded_string();
 				mat.specular_texture = asset::get<texture>(ctx.assets, texture_dir + "/" + stem);
 			}
 

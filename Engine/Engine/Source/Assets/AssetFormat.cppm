@@ -86,7 +86,7 @@ auto gse::load_baked(const std::filesystem::path& path, T& out) -> bool {
 	}
 
 	constexpr auto fmt = format_of<T>();
-	binary_reader ar(in, fmt.magic, fmt.version, path.string());
+	binary_reader ar(in, fmt.magic, fmt.version, path.native_encoded_string());
 	if (!ar.valid()) {
 		return false;
 	}

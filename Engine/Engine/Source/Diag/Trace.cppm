@@ -33,6 +33,9 @@ export namespace gse::trace {
 	) -> loc_tag;
 
 	template <loc_tag Tag>
+	const id loc_id_cache = find_or_generate_id(std::format("{}:{}", Tag.view(), Tag.line));
+
+	template <loc_tag Tag>
 	auto loc_id() -> id;
 
 	auto start(
@@ -416,6 +419,5 @@ consteval auto gse::trace::current_loc_tag(const std::source_location loc) -> lo
 
 template <gse::trace::loc_tag Tag>
 auto gse::trace::loc_id() -> id {
-	static const id cached = find_or_generate_id(std::format("{}:{}", Tag.view(), Tag.line));
-	return cached;
+	return loc_id_cache<Tag>;
 }

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="28" y1="24" x2="228" y2="230" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#10151d"/>
+      <stop offset="1" stop-color="#05070a"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="43" y1="64" x2="213" y2="192" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6ef7ff"/>
+      <stop offset="0.5" stop-color="#67ff9a"/>
+      <stop offset="1" stop-color="#ffe36e"/>
+    </linearGradient>
+    <filter id="shadow" x="-35%" y="-35%" width="170%" height="170%">
+      <feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+  <rect x="18" y="18" width="220" height="220" rx="44" fill="url(#bg)"/>
+  <g transform="skewX(-8) translate(18 0)" fill="none" stroke="#f7fbff" stroke-width="16" stroke-linecap="square" stroke-linejoin="round" filter="url(#shadow)">
+    <path d="M97 78H58v100h47v-42H81"/>
+    <path d="M162 78h-43v50h43v50h-43"/>
+    <path d="M187 78v100M187 78h42M187 128h34M187 178h42"/>
+  </g>
+  <path d="M43 61h72M142 61h71M43 197h71M142 197h71" stroke="url(#accent)" stroke-width="8" stroke-linecap="round"/>
+</svg>

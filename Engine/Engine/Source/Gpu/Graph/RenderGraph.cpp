@@ -85,6 +85,18 @@ auto gse::gpu::render_graph::take_graphics_extra_waits() -> std::vector<gpu::sem
 	return std::move(m_pending_graphics_extra_waits);
 }
 
+auto gse::gpu::render_graph::add_graphics_signal(gpu::semaphore_submit_info signal) -> void {
+	m_pending_graphics_extra_signals.push_back(signal);
+}
+
+auto gse::gpu::render_graph::add_graphics_wait(gpu::semaphore_submit_info wait) -> void {
+	m_pending_graphics_extra_waits.push_back(wait);
+}
+
+auto gse::gpu::render_graph::take_graphics_extra_signals() -> std::vector<gpu::semaphore_submit_info> {
+	return std::move(m_pending_graphics_extra_signals);
+}
+
 auto gse::gpu::render_graph::take_graphics_buffers() -> std::vector<gpu::command_buffer_handle> {
 	return std::move(m_pending_graphics_buffers);
 }
@@ -100,6 +112,10 @@ auto gse::gpu::render_graph::set_gpu_pipeline_stats_enabled(const bool enabled) 
 auto gse::gpu::render_graph::set_swapchain_clear(const gpu::color_clear value, const load_op op) -> void {
 	m_swapchain_clear = value;
 	m_swapchain_load = op;
+}
+
+auto gse::gpu::render_graph::set_offscreen_target(const image* target) -> void {
+	m_offscreen_target = target;
 }
 
 auto gse::gpu::render_graph::ensure_profile_pools(gpu_profile_slot& slot, const bool allow_stats) const -> void {
@@ -255,6 +271,9 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		}
 		if (info.custom_target) {
 			return info.custom_target;
+		}
+		if (m_offscreen_target) {
+			return m_offscreen_target;
 		}
 		return nullptr;
 	};
@@ -762,8 +781,8 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		}
 	}
 
+	bool swapchain_cleared = false;
 	{
-		bool swapchain_cleared = false;
 		for (const auto pi : sorted) {
 			for (auto& info : passes[pi].color_outputs) {
 				if (resolve_color_target(info) != nullptr) {
@@ -1226,6 +1245,45 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 	}
 
 	const auto graphics_qi = static_cast<std::size_t>(gpu::queue_type::graphics);
+	if (m_swapchain) {
+		const auto clear_cmd = m_device->acquire_worker_command_buffer(gpu::queue_type::graphics, 0, frame_idx);
+		const pass_recorder clear_rec(clear_cmd, m_device->command_table());
+		clear_rec.begin();
+		const std::vector<gpu::rendering_attachment_info> clear_attachments{
+			gpu::rendering_attachment_info{
+				.image_view = m_swapchain->image_view(image_index),
+				.load = load_op::clear,
+				.store = gpu::store_op::store,
+				.color_clear_value = m_swapchain_clear,
+			},
+		};
+		clear_rec.begin_rendering(gpu::rendering_info{
+			.render_area = gse::rect_t<vec2i>({
+				.min = vec2i{ 0, 0 },
+				.max = vec2i{ static_cast<int>(swap_extent.x()), static_cast<int>(swap_extent.y()) },
+			}),
+			.layer_count = 1,
+			.color_attachments = clear_attachments,
+			.depth_attachment = nullptr,
+			.secondary_command_buffers = false,
+		});
+		clear_rec.end_rendering();
+		const gpu::image_barrier clear_sync{
+			.src_stages = gpu::pipeline_stage_flag::color_attachment_output,
+			.src_access = gpu::access_flag::color_attachment_write,
+			.dst_stages = gpu::pipeline_stage_flag::color_attachment_output,
+			.dst_access = gpu::access_flag::color_attachment_write | gpu::access_flag::color_attachment_read,
+			.prev_state = gpu::resource_state::color_target,
+			.next_state = gpu::resource_state::color_target,
+			.image = m_swapchain->image(image_index),
+			.aspects = gpu::image_aspect_flag::color,
+		};
+		clear_rec.pipeline_barrier(gpu::dependency_info{
+			.image_barriers = std::span(&clear_sync, 1),
+		});
+		clear_rec.end();
+		queue_submit_order[graphics_qi].insert(queue_submit_order[graphics_qi].begin(), clear_cmd);
+	}
 	m_pending_graphics_buffers = std::move(queue_submit_order[graphics_qi]);
 	for (std::size_t producer = 0; producer < gpu::queue_type_count; ++producer) {
 		if (producer == graphics_qi) {

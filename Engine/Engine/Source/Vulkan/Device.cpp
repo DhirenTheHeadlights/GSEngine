@@ -898,6 +898,16 @@ auto gse::vulkan::device::create(const instance& instance_data, gpu::device_sett
 		}
 	}
 
+	const bool external_memory_supported = supports_extension("VK_KHR_external_memory") && supports_extension("VK_KHR_external_memory_win32");
+	if (external_memory_supported) {
+		device_extensions.push_back("VK_KHR_external_memory");
+		device_extensions.push_back("VK_KHR_external_memory_win32");
+		log::println(log::category::vulkan, "External memory (Win32) enabled: exportable surfaces available");
+	}
+	else {
+		log::println(log::level::warning, log::category::vulkan, "External memory (Win32) unsupported: exportable surfaces unavailable");
+	}
+
 	chain_head = aftermath_tracker.device_create_info_pnext(chain_head);
 
 	vk::PhysicalDeviceFeatures2 features2{
@@ -943,17 +953,23 @@ auto gse::vulkan::device::create(const instance& instance_data, gpu::device_sett
 		);
 	}
 
+	device created_device(
+		std::move(physical_device),
+		std::move(logical_device),
+		cfg,
+		device_fault_supported,
+		device_fault_vendor_binary_supported,
+		families.graphics_family.value(),
+		families.compute_family.value(),
+		instance_data.surface()
+	);
+
+	if (external_memory_supported) {
+		created_device.run_exportable_self_test();
+	}
+
 	return device_creation_result{
-		.device = device(
-			std::move(physical_device),
-			std::move(logical_device),
-			cfg,
-			device_fault_supported,
-			device_fault_vendor_binary_supported,
-			families.graphics_family.value(),
-			families.compute_family.value(),
-			instance_data.surface()
-		),
+		.device = std::move(created_device),
 		.queue = queue(
 			graphics_queue,
 			present_queue,
@@ -1105,7 +1121,7 @@ auto gse::vulkan::device::create_buffer(const vk::BufferCreateInfo& buffer_info,
 
 	if ((m_settings && m_settings->name_resources)) {
 		const auto& debug_info = alloc.debug_info();
-		const auto file = std::filesystem::path(debug_info.creation_location.file_name()).filename().string();
+		const auto file = std::filesystem::path(debug_info.creation_location.file_name()).filename().display_string();
 		const auto name = debug_info.tag.empty()
 			? std::format("Buffer ({}:{})", file,
 						  debug_info.creation_location.line())
@@ -1226,7 +1242,7 @@ auto gse::vulkan::device::create_image(const vk::ImageCreateInfo& info, const vk
 
 	if (m_settings && m_settings->name_resources) {
 		const auto& debug_info = alloc.debug_info();
-		const auto file = std::filesystem::path(debug_info.creation_location.file_name()).filename().string();
+		const auto file = std::filesystem::path(debug_info.creation_location.file_name()).filename().display_string();
 		const auto image_name = debug_info.tag.empty()
 			? std::format("Image ({}:{})", file, debug_info.creation_location.line())
 			: std::format(
@@ -1582,6 +1598,301 @@ auto gse::vulkan::device::free_aliased_memory(const gpu::device_memory mem) cons
 		return;
 	}
 	(*m_device).freeMemory(std::bit_cast<vk::DeviceMemory>(mem.value), nullptr);
+}
+
+auto gse::vulkan::device::create_exportable_image_unbound(const gpu::image_create_info& info) const -> std::pair<gpu::handle<gpu::image>, gpu::memory_requirements> {
+	const vk::ExternalMemoryImageCreateInfo external_info{
+		.handleTypes = vk::ExternalMemoryHandleTypeFlagBits::eOpaqueWin32,
+	};
+	const vk::ImageCreateInfo vk_info{
+		.pNext = &external_info,
+		.flags = to_vk(info.flags),
+		.imageType = to_vk(info.type),
+		.format = to_vk(info.format),
+		.extent = vk::Extent3D{ info.extent.x(), info.extent.y(), info.extent.z() },
+		.mipLevels = info.mip_levels,
+		.arrayLayers = info.array_layers,
+		.samples = to_vk(info.samples),
+		.tiling = vk::ImageTiling::eOptimal,
+		.usage = to_vk(info.usage),
+	};
+	auto [image_result, vk_image] = (*m_device).createImage(vk_info, nullptr);
+	assert(image_result == vk::Result::eSuccess, "failed to create exportable image: {}", vk::to_string(image_result));
+	const auto reqs = (*m_device).getImageMemoryRequirements(vk_image);
+	return {
+		std::bit_cast<gpu::handle<gpu::image>>(vk_image),
+		gpu::memory_requirements{
+			.size = reqs.size,
+			.alignment = reqs.alignment,
+			.memory_type_bits = reqs.memoryTypeBits,
+		},
+	};
+}
+
+auto gse::vulkan::device::allocate_exportable_memory(const gpu::device_size size, const std::uint32_t memory_type_index, const gpu::handle<gpu::image> img) const -> gpu::device_memory {
+	const vk::MemoryDedicatedAllocateInfo dedicated_info{
+		.image = std::bit_cast<vk::Image>(img),
+	};
+	const vk::ExportMemoryAllocateInfo export_info{
+		.pNext = &dedicated_info,
+		.handleTypes = vk::ExternalMemoryHandleTypeFlagBits::eOpaqueWin32,
+	};
+	const vk::MemoryAllocateInfo alloc_info{
+		.pNext = &export_info,
+		.allocationSize = size,
+		.memoryTypeIndex = memory_type_index,
+	};
+	auto [memory_result, vk_memory] = (*m_device).allocateMemory(alloc_info);
+	assert(memory_result == vk::Result::eSuccess, "failed to allocate exportable memory: {}", vk::to_string(memory_result));
+	return {
+		.value = std::bit_cast<std::uint64_t>(vk_memory)
+	};
+}
+
+auto gse::vulkan::device::export_memory_handle(const gpu::device_memory mem) const -> std::expected<void*, std::string> {
+	struct memory_get_win32_handle_info {
+		vk::StructureType s_type = static_cast<vk::StructureType>(1000073003);
+		const void* p_next = nullptr;
+		vk::DeviceMemory memory;
+		vk::ExternalMemoryHandleTypeFlagBits handle_type = vk::ExternalMemoryHandleTypeFlagBits::eOpaqueWin32;
+	};
+	using pfn_get_memory_win32_handle = vk::Result(*)(vk::Device, const memory_get_win32_handle_info*, void**);
+
+	const auto raw = (*m_device).getProcAddr("vkGetMemoryWin32HandleKHR");
+	if (!raw) {
+		return std::unexpected(std::string("vkGetMemoryWin32HandleKHR not available"));
+	}
+	const auto get_memory_win32_handle = reinterpret_cast<pfn_get_memory_win32_handle>(raw);
+
+	const memory_get_win32_handle_info info{
+		.memory = std::bit_cast<vk::DeviceMemory>(mem.value),
+	};
+	void* handle = nullptr;
+	const vk::Result result = get_memory_win32_handle(*m_device, &info, &handle);
+	if (result != vk::Result::eSuccess) {
+		return std::unexpected(std::format("vkGetMemoryWin32HandleKHR failed: {}", vk::to_string(result)));
+	}
+	return handle;
+}
+
+auto gse::vulkan::device::import_memory_handle(const gpu::device_size size, const std::uint32_t memory_type_index, const gpu::handle<gpu::image> img, void* handle) const -> std::expected<gpu::device_memory, std::string> {
+	struct import_memory_win32_handle_info {
+		vk::StructureType s_type = static_cast<vk::StructureType>(1000073000);
+		const void* p_next = nullptr;
+		vk::ExternalMemoryHandleTypeFlagBits handle_type = vk::ExternalMemoryHandleTypeFlagBits::eOpaqueWin32;
+		void* handle = nullptr;
+		const wchar_t* name = nullptr;
+	};
+
+	const vk::MemoryDedicatedAllocateInfo dedicated_info{
+		.image = std::bit_cast<vk::Image>(img),
+	};
+	const import_memory_win32_handle_info import_info{
+		.p_next = &dedicated_info,
+		.handle = handle,
+	};
+	const vk::MemoryAllocateInfo alloc_info{
+		.pNext = &import_info,
+		.allocationSize = size,
+		.memoryTypeIndex = memory_type_index,
+	};
+	auto [memory_result, vk_memory] = (*m_device).allocateMemory(alloc_info);
+	if (memory_result != vk::Result::eSuccess) {
+		return std::unexpected(std::format("failed to import memory: {}", vk::to_string(memory_result)));
+	}
+	return gpu::device_memory{
+		.value = std::bit_cast<std::uint64_t>(vk_memory)
+	};
+}
+
+auto gse::vulkan::device::create_exportable_semaphore() -> gpu::handle<gpu::semaphore> {
+	const vk::ExportSemaphoreCreateInfo export_info{
+		.handleTypes = vk::ExternalSemaphoreHandleTypeFlagBits::eOpaqueWin32,
+	};
+	const vk::SemaphoreTypeCreateInfo type_info{
+		.pNext = &export_info,
+		.semaphoreType = vk::SemaphoreType::eTimeline,
+		.initialValue = 0,
+	};
+	auto [result, semaphore] = raii_device().createSemaphore(vk::SemaphoreCreateInfo{ .pNext = &type_info });
+	assert(result == vk::Result::eSuccess, "failed to create exportable semaphore: {}", vk::to_string(result));
+	return adopt<gpu::handle<gpu::semaphore>>(std::move(semaphore));
+}
+
+auto gse::vulkan::device::export_semaphore_handle(const gpu::handle<gpu::semaphore> semaphore) const -> std::expected<void*, std::string> {
+	struct semaphore_get_win32_handle_info {
+		vk::StructureType s_type = static_cast<vk::StructureType>(1000078003);
+		const void* p_next = nullptr;
+		vk::Semaphore semaphore;
+		vk::ExternalSemaphoreHandleTypeFlagBits handle_type = vk::ExternalSemaphoreHandleTypeFlagBits::eOpaqueWin32;
+	};
+	using pfn_get_semaphore_win32_handle = vk::Result(*)(vk::Device, const semaphore_get_win32_handle_info*, void**);
+
+	const auto raw = (*m_device).getProcAddr("vkGetSemaphoreWin32HandleKHR");
+	if (!raw) {
+		return std::unexpected(std::string("vkGetSemaphoreWin32HandleKHR not available"));
+	}
+	const auto get_semaphore_win32_handle = reinterpret_cast<pfn_get_semaphore_win32_handle>(raw);
+
+	const semaphore_get_win32_handle_info info{
+		.semaphore = std::bit_cast<vk::Semaphore>(semaphore),
+	};
+	void* handle = nullptr;
+	const vk::Result result = get_semaphore_win32_handle(*m_device, &info, &handle);
+	if (result != vk::Result::eSuccess) {
+		return std::unexpected(std::format("vkGetSemaphoreWin32HandleKHR failed: {}", vk::to_string(result)));
+	}
+	return handle;
+}
+
+auto gse::vulkan::device::import_semaphore_handle(void* handle) -> std::expected<gpu::handle<gpu::semaphore>, std::string> {
+	const vk::SemaphoreTypeCreateInfo type_info{
+		.semaphoreType = vk::SemaphoreType::eTimeline,
+		.initialValue = 0,
+	};
+	auto [create_result, semaphore] = raii_device().createSemaphore(vk::SemaphoreCreateInfo{ .pNext = &type_info });
+	if (create_result != vk::Result::eSuccess) {
+		return std::unexpected(std::format("failed to create semaphore for import: {}", vk::to_string(create_result)));
+	}
+
+	struct import_semaphore_win32_handle_info {
+		vk::StructureType s_type = static_cast<vk::StructureType>(1000078000);
+		const void* p_next = nullptr;
+		vk::Semaphore semaphore;
+		vk::SemaphoreImportFlags flags = {};
+		vk::ExternalSemaphoreHandleTypeFlagBits handle_type = vk::ExternalSemaphoreHandleTypeFlagBits::eOpaqueWin32;
+		void* handle = nullptr;
+		const wchar_t* name = nullptr;
+	};
+	using pfn_import_semaphore_win32_handle = vk::Result(*)(vk::Device, const import_semaphore_win32_handle_info*);
+
+	const auto raw = (*m_device).getProcAddr("vkImportSemaphoreWin32HandleKHR");
+	if (!raw) {
+		return std::unexpected(std::string("vkImportSemaphoreWin32HandleKHR not available"));
+	}
+	const auto import_semaphore_win32_handle = reinterpret_cast<pfn_import_semaphore_win32_handle>(raw);
+
+	const import_semaphore_win32_handle_info import_info{
+		.semaphore = *semaphore,
+		.handle = handle,
+	};
+	const vk::Result result = import_semaphore_win32_handle(*m_device, &import_info);
+	if (result != vk::Result::eSuccess) {
+		return std::unexpected(std::format("vkImportSemaphoreWin32HandleKHR failed: {}", vk::to_string(result)));
+	}
+	return adopt<gpu::handle<gpu::semaphore>>(std::move(semaphore));
+}
+
+auto gse::vulkan::device::create_shared_surface(const gpu::shared_surface_desc& desc) const -> std::expected<gpu::shared_surface, std::string> {
+	const gpu::image_create_info info{
+		.format = desc.format,
+		.extent = { desc.extent.x(), desc.extent.y(), 1 },
+		.usage = desc.usage,
+	};
+	auto [image, reqs] = create_exportable_image_unbound(info);
+	const std::uint32_t type_index = find_memory_type_index(reqs.memory_type_bits, gpu::memory_property_flag::device_local);
+	const gpu::device_memory memory = allocate_exportable_memory(reqs.size, type_index, image);
+	bind_image_memory(image, memory, 0);
+
+	const gpu::image_view_create_info view_info{
+		.format = desc.format,
+		.view_type = gpu::image_view_type::e2d,
+		.aspects = gpu::image_aspect_flags(gpu::image_aspect_flag::color),
+		.level_count = 1,
+		.layer_count = 1,
+	};
+	const gpu::handle<gpu::image_view> view = create_image_view(image, view_info);
+
+	const auto handle = export_memory_handle(memory);
+	if (!handle) {
+		(*m_device).destroyImageView(std::bit_cast<vk::ImageView>(view), nullptr);
+		(*m_device).destroyImage(std::bit_cast<vk::Image>(image), nullptr);
+		free_aliased_memory(memory);
+		return std::unexpected(handle.error());
+	}
+
+	return gpu::shared_surface{
+		.image = image,
+		.view = view,
+		.memory = memory,
+		.extent = desc.extent,
+		.format = desc.format,
+		.size = reqs.size,
+		.handle = *handle,
+	};
+}
+
+auto gse::vulkan::device::import_shared_surface(const gpu::shared_surface_desc& desc, void* handle) const -> std::expected<gpu::shared_surface, std::string> {
+	const gpu::image_create_info info{
+		.format = desc.format,
+		.extent = { desc.extent.x(), desc.extent.y(), 1 },
+		.usage = desc.usage,
+	};
+	auto [image, reqs] = create_exportable_image_unbound(info);
+	const std::uint32_t type_index = find_memory_type_index(reqs.memory_type_bits, gpu::memory_property_flag::device_local);
+
+	const auto memory = import_memory_handle(reqs.size, type_index, image, handle);
+	if (!memory) {
+		(*m_device).destroyImage(std::bit_cast<vk::Image>(image), nullptr);
+		return std::unexpected(memory.error());
+	}
+	bind_image_memory(image, *memory, 0);
+
+	const gpu::image_view_create_info view_info{
+		.format = desc.format,
+		.view_type = gpu::image_view_type::e2d,
+		.aspects = gpu::image_aspect_flags(gpu::image_aspect_flag::color),
+		.level_count = 1,
+		.layer_count = 1,
+	};
+	const gpu::handle<gpu::image_view> view = create_image_view(image, view_info);
+
+	return gpu::shared_surface{
+		.image = image,
+		.view = view,
+		.memory = *memory,
+		.extent = desc.extent,
+		.format = desc.format,
+		.size = reqs.size,
+		.handle = nullptr,
+	};
+}
+
+auto gse::vulkan::device::destroy_shared_surface(const gpu::shared_surface& surface) const -> void {
+	if (surface.view) {
+		(*m_device).destroyImageView(std::bit_cast<vk::ImageView>(surface.view), nullptr);
+	}
+	if (surface.image) {
+		(*m_device).destroyImage(std::bit_cast<vk::Image>(surface.image), nullptr);
+	}
+	free_aliased_memory(surface.memory);
+	if (surface.handle) {
+		gse::win32::CloseHandle(surface.handle);
+	}
+}
+
+auto gse::vulkan::device::run_exportable_self_test() const -> void {
+	const gpu::shared_surface_desc desc{
+		.extent = { 256, 256 },
+	};
+
+	const auto source = create_shared_surface(desc);
+	if (!source) {
+		log::println(log::level::error, log::category::vulkan, "Exportable surface self-test: create failed: {}", source.error());
+		return;
+	}
+
+	const auto imported = import_shared_surface(desc, source->handle);
+	if (!imported) {
+		log::println(log::level::error, log::category::vulkan, "Exportable surface self-test: import failed: {}", imported.error());
+		destroy_shared_surface(*source);
+		return;
+	}
+
+	log::println(log::category::vulkan, "Exportable surface self-test OK: {}x{} r8g8b8a8, {} bytes, export->import round-trip via handle 0x{:x}", desc.extent.x(), desc.extent.y(), source->size, reinterpret_cast<std::uintptr_t>(source->handle));
+
+	destroy_shared_surface(*imported);
+	destroy_shared_surface(*source);
 }
 
 auto gse::vulkan::device::find_memory_type_index(const std::uint32_t type_bits, const gpu::memory_property_flags required) const -> std::uint32_t {

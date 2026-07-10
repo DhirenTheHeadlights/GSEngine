@@ -161,7 +161,7 @@ auto gse::gpu::make_slang_session() -> owned_slang_session {
 	};
 
 	std::vector<std::string> sp_storage;
-	sp_storage.push_back(shader_root.string());
+	sp_storage.push_back(shader_root.native_encoded_string());
 	for (const auto& e : std::filesystem::recursive_directory_iterator(shader_root)) {
 		if (!e.is_directory()) {
 			continue;
@@ -169,7 +169,7 @@ auto gse::gpu::make_slang_session() -> owned_slang_session {
 		if (contains_bodies(e.path())) {
 			continue;
 		}
-		sp_storage.push_back(e.path().string());
+		sp_storage.push_back(e.path().native_encoded_string());
 	}
 
 	std::vector<const char*> sp_c_strs;
@@ -268,7 +268,7 @@ auto gse::gpu::parse_body_file(const std::string_view body_source) -> parsed_bod
 auto gse::gpu::load_body_file(const std::string_view body_path) -> std::string {
 	const auto full_path = config::resource_path / "Shaders" / "Bodies" / (std::string(body_path) + ".slang");
 	std::ifstream in(full_path, std::ios::binary);
-	assert(in.is_open(), "Failed to open shader body: {}", full_path.string());
+	assert(in.is_open(), "Failed to open shader body: {}", full_path.display_string());
 
 	std::ostringstream ss;
 	ss << in.rdbuf();
@@ -278,7 +278,7 @@ auto gse::gpu::load_body_file(const std::string_view body_path) -> std::string {
 auto gse::gpu::load_helper_file(const std::string_view helper_path) -> std::string {
 	const auto full_path = config::resource_path / "Shaders" / (std::string(helper_path) + ".slang");
 	std::ifstream in(full_path, std::ios::binary);
-	assert(in.is_open(), "Failed to open shader helper: {}", full_path.string());
+	assert(in.is_open(), "Failed to open shader helper: {}", full_path.display_string());
 
 	std::ostringstream ss;
 	ss << in.rdbuf();

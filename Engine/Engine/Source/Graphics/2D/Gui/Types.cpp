@@ -15,6 +15,7 @@ import gse.math;
 import gse.os;
 import gse.core;
 import gse.time;
+import gse.glfw;
 
 gse::gui::menu::menu(std::string_view tag, const menu_data& data)
 	: identifiable(tag), identifiable_owned(data.parent_id), rect(data.rect), dock_split_ratio(data.dock_split_ratio), docked_to(data.docked_to) {
@@ -47,6 +48,26 @@ auto gse::gui::draw_context::queue_text(renderer::text_command cmd) const -> voi
 		cmd.clip_rect = cmd.clip_rect.has_value() ? cmd.clip_rect->intersection(clip) : clip;
 	}
 	texts.push_back(std::move(cmd));
+}
+
+auto gse::gui::draw_context::set_clipboard(const std::string& text) const -> void {
+	window::set_clipboard_text(text);
+}
+
+auto gse::gui::draw_context::clipboard() const -> std::string {
+	return window::clipboard_text();
+}
+
+auto gse::gui::draw_context::open_context_menu(context_menu_open request) const -> void {
+	if (!context_menu) {
+		return;
+	}
+	context_menu->open = true;
+	context_menu->just_opened = true;
+	context_menu->position = request.position;
+	context_menu->items = std::move(request.items);
+	context_menu->target = request.target;
+	context_menu->tag = request.tag;
 }
 
 auto gse::gui::draw_context::current_clip() const -> std::optional<ui_rect> {
@@ -225,7 +246,7 @@ auto gse::gui::draw_context::animated_color(const id& widget_id, const vec4f tar
 }
 
 gse::gui::scroll_handle::scroll_handle(draw_context& ctx, scroll_state& state, const ui_rect& visible_rect, const float saved_layout_y, const scroll_config& config) noexcept
-	: m_ctx(&ctx), m_state(&state), m_visible_rect(visible_rect), m_saved_menu_rect(ctx.current_menu ? ctx.current_menu->rect : ui_rect{}), m_saved_layout_y(saved_layout_y), m_content_start_y(visible_rect.top() + state.offset), m_config(config), m_active(true) {
+	: m_ctx(&ctx), m_state(&state), m_visible_rect(visible_rect), m_saved_menu_rect(ctx.current_menu ? ctx.current_menu->rect : ui_rect{}), m_saved_layout_y(saved_layout_y), m_content_start_y(visible_rect.top() + state.y.offset), m_config(config), m_active(true) {
 	ctx.layout_cursor.y() = m_content_start_y;
 	ctx.clip_stack.push_back(visible_rect);
 	if (ctx.current_menu) {
@@ -287,5 +308,39 @@ auto gse::gui::scroll_handle::visible_rect() const -> const ui_rect& {
 }
 
 auto gse::gui::scroll_handle::offset() const -> float {
-	return m_state ? m_state->offset : 0.f;
+	return m_state ? m_state->y.offset : 0.f;
+}
+
+auto gse::gui::draw_context::scoped_layer(const render_layer layer) const -> layer_scope {
+	return layer_scope{ *this, layer };
+}
+
+gse::gui::layer_scope::layer_scope(const draw_context& ctx, const render_layer layer) noexcept
+	: m_ctx(&ctx), m_saved(ctx.current_layer), m_active(true) {
+	ctx.current_layer = layer;
+}
+
+gse::gui::layer_scope::layer_scope(layer_scope&& other) noexcept
+	: m_ctx(other.m_ctx), m_saved(other.m_saved), m_active(other.m_active) {
+	other.m_active = false;
+}
+
+auto gse::gui::layer_scope::operator=(layer_scope&& other) noexcept -> layer_scope& {
+	if (this == &other) {
+		return *this;
+	}
+	if (m_active && m_ctx) {
+		m_ctx->current_layer = m_saved;
+	}
+	m_ctx = other.m_ctx;
+	m_saved = other.m_saved;
+	m_active = other.m_active;
+	other.m_active = false;
+	return *this;
+}
+
+gse::gui::layer_scope::~layer_scope() noexcept {
+	if (m_active && m_ctx) {
+		m_ctx->current_layer = m_saved;
+	}
 }

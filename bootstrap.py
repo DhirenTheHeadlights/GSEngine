@@ -13,6 +13,11 @@ NINJA_VERSION = "v1.13.2"
 NINJA_URL = f"https://github.com/ninja-build/ninja/releases/download/{NINJA_VERSION}/ninja-win.zip"
 NINJA_DIR = Path.home() / ".gcc-trunk" / "ninja"
 
+CPPREF_VERSION = "20250209"
+CPPREF_URL = f"https://github.com/PeterFeicht/cppreference-doc/releases/download/v{CPPREF_VERSION}/cppreference-doc-{CPPREF_VERSION}.tar.xz"
+CPPREF_INDEX = REPO_ROOT / "Editor" / "Resources" / "cppref.idx"
+CPPREF_BUILDER = REPO_ROOT / "Editor" / "Tools" / "build_cppref_index.py"
+
 
 def run(cmd, cwd=None, env=None):
     display = " ".join(str(c) for c in cmd)
@@ -52,11 +57,32 @@ def ensure_ninja(force=False):
     print(f"Installed Ninja: {ninja_exe}")
 
 
+def ensure_cppref_index(force=False):
+    if CPPREF_INDEX.exists() and not force:
+        print(f"cppreference hover index already present: {CPPREF_INDEX}")
+        return
+    print(f"Downloading cppreference package {CPPREF_VERSION} from {CPPREF_URL}")
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            tarball = Path(tmp) / "cppreference-doc.tar.xz"
+            with urllib.request.urlopen(CPPREF_URL) as response, open(tarball, "wb") as out:
+                shutil.copyfileobj(response, out)
+            result = subprocess.run([sys.executable, str(CPPREF_BUILDER), "--tarball", str(tarball), "--out", str(CPPREF_INDEX)])
+    except Exception as exc:
+        print(f"WARNING: could not build cppreference hover index ({exc}); the editor will fall back to header doc-comments")
+        return
+    if result.returncode != 0 or not CPPREF_INDEX.exists():
+        print("WARNING: cppreference hover index build failed; the editor will fall back to header doc-comments")
+        return
+    print(f"Built cppreference hover index: {CPPREF_INDEX}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Full environment bootstrap: submodules + native-Windows GCC trunk toolchain")
     parser.add_argument("--skip-submodules", action="store_true", help="Skip git submodule init/update")
     parser.add_argument("--skip-gcc", action="store_true", help="Skip GCC trunk toolchain install")
     parser.add_argument("--skip-ninja", action="store_true", help="Skip Ninja install")
+    parser.add_argument("--skip-cppref", action="store_true", help="Skip cppreference hover-index build")
     parser.add_argument("--update-vcpkg", action="store_true", help="Pull latest vcpkg master after submodule init")
     parser.add_argument("--tag", default=None, help="gcc-trunk release tag (default: latest gcc-trunk-v* release)")
     parser.add_argument("--sha256", default=None, help="Expected SHA256 of the toolchain zip")
@@ -83,6 +109,9 @@ def main():
 
     if not args.skip_ninja:
         ensure_ninja(force=args.force)
+
+    if not args.skip_cppref:
+        ensure_cppref_index(force=args.force)
 
     print("\nBootstrap complete. CMake configure will auto-install vcpkg deps from vcpkg.json.")
     print("Configure with: cmake --preset x64-mingw-gcc-Release")

@@ -21,6 +21,7 @@ import gse.concurrency;
 import gse.diag;
 import gse.meta;
 import gse.log;
+import gse.win32;
 
 namespace gse::vulkan {
 	class transient_command_pool final : public non_copyable {
@@ -373,6 +374,61 @@ export namespace gse::vulkan {
 		auto free_aliased_memory(
 			gpu::device_memory mem
 		) const -> void;
+
+		[[nodiscard]]
+		auto create_exportable_image_unbound(
+			const gpu::image_create_info& info
+		) const -> std::pair<gpu::handle<gpu::image>, gpu::memory_requirements>;
+
+		[[nodiscard]]
+		auto allocate_exportable_memory(
+			gpu::device_size size,
+			std::uint32_t memory_type_index,
+			gpu::handle<gpu::image> img
+		) const -> gpu::device_memory;
+
+		[[nodiscard]]
+		auto export_memory_handle(
+			gpu::device_memory mem
+		) const -> std::expected<void*, std::string>;
+
+		[[nodiscard]]
+		auto import_memory_handle(
+			gpu::device_size size,
+			std::uint32_t memory_type_index,
+			gpu::handle<gpu::image> img,
+			void* handle
+		) const -> std::expected<gpu::device_memory, std::string>;
+
+		[[nodiscard]]
+		auto create_exportable_semaphore() -> gpu::handle<gpu::semaphore>;
+
+		[[nodiscard]]
+		auto export_semaphore_handle(
+			gpu::handle<gpu::semaphore> semaphore
+		) const -> std::expected<void*, std::string>;
+
+		[[nodiscard]]
+		auto import_semaphore_handle(
+			void* handle
+		) -> std::expected<gpu::handle<gpu::semaphore>, std::string>;
+
+		[[nodiscard]]
+		auto create_shared_surface(
+			const gpu::shared_surface_desc& desc
+		) const -> std::expected<gpu::shared_surface, std::string>;
+
+		[[nodiscard]]
+		auto import_shared_surface(
+			const gpu::shared_surface_desc& desc,
+			void* handle
+		) const -> std::expected<gpu::shared_surface, std::string>;
+
+		auto destroy_shared_surface(
+			const gpu::shared_surface& surface
+		) const -> void;
+
+		auto run_exportable_self_test() const -> void;
 
 		[[nodiscard]]
 		auto find_memory_type_index(

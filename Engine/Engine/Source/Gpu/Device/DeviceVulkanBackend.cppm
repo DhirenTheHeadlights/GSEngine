@@ -127,6 +127,19 @@ export namespace gse::gpu {
 			const gpu::buffer_desc& info
 		) const -> std::pair<gpu::handle<gpu::buffer>, gpu::memory_requirements>;
 
+		[[nodiscard]] auto create_shared_surface(
+			const gpu::shared_surface_desc& desc
+		) const -> std::expected<gpu::shared_surface, std::string>;
+
+		[[nodiscard]] auto import_shared_surface(
+			const gpu::shared_surface_desc& desc,
+			void* handle
+		) const -> std::expected<gpu::shared_surface, std::string>;
+
+		auto destroy_shared_surface(
+			const gpu::shared_surface& surface
+		) const -> void;
+
 		auto bind_image_memory(
 			gpu::handle<gpu::image> img,
 			gpu::device_memory mem,
@@ -203,6 +216,16 @@ export namespace gse::gpu {
 		[[nodiscard]] auto create_timeline_semaphore(
 			std::uint64_t initial_value
 		) -> gpu::handle<gpu::semaphore>;
+
+		[[nodiscard]] auto create_exportable_semaphore() -> gpu::handle<gpu::semaphore>;
+
+		[[nodiscard]] auto export_semaphore_handle(
+			gpu::handle<gpu::semaphore> semaphore
+		) const -> std::expected<void*, std::string>;
+
+		[[nodiscard]] auto import_semaphore_handle(
+			void* handle
+		) -> std::expected<gpu::handle<gpu::semaphore>, std::string>;
 
 		[[nodiscard]] auto create_fence(
 			bool signaled
@@ -469,6 +492,18 @@ auto gse::gpu::vulkan_device_backend::create_buffer_unbound(const gpu::buffer_de
 	return device_config.create_buffer_unbound(info);
 }
 
+auto gse::gpu::vulkan_device_backend::create_shared_surface(const gpu::shared_surface_desc& desc) const -> std::expected<gpu::shared_surface, std::string> {
+	return device_config.create_shared_surface(desc);
+}
+
+auto gse::gpu::vulkan_device_backend::import_shared_surface(const gpu::shared_surface_desc& desc, void* handle) const -> std::expected<gpu::shared_surface, std::string> {
+	return device_config.import_shared_surface(desc, handle);
+}
+
+auto gse::gpu::vulkan_device_backend::destroy_shared_surface(const gpu::shared_surface& surface) const -> void {
+	device_config.destroy_shared_surface(surface);
+}
+
 auto gse::gpu::vulkan_device_backend::bind_image_memory(const gpu::handle<gpu::image> img, const gpu::device_memory mem, const gpu::device_size offset) const -> void {
 	device_config.bind_image_memory(img, mem, offset);
 }
@@ -535,6 +570,18 @@ auto gse::gpu::vulkan_device_backend::create_semaphore() -> gpu::handle<gpu::sem
 
 auto gse::gpu::vulkan_device_backend::create_timeline_semaphore(const std::uint64_t initial_value) -> gpu::handle<gpu::semaphore> {
 	return device_config.create_timeline_semaphore(initial_value);
+}
+
+auto gse::gpu::vulkan_device_backend::create_exportable_semaphore() -> gpu::handle<gpu::semaphore> {
+	return device_config.create_exportable_semaphore();
+}
+
+auto gse::gpu::vulkan_device_backend::export_semaphore_handle(const gpu::handle<gpu::semaphore> semaphore) const -> std::expected<void*, std::string> {
+	return device_config.export_semaphore_handle(semaphore);
+}
+
+auto gse::gpu::vulkan_device_backend::import_semaphore_handle(void* handle) -> std::expected<gpu::handle<gpu::semaphore>, std::string> {
+	return device_config.import_semaphore_handle(handle);
 }
 
 auto gse::gpu::vulkan_device_backend::create_fence(const bool signaled) -> gpu::handle<gpu::fence> {

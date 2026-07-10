@@ -125,6 +125,7 @@ gse::network::client::client(const address& listen, const address& server) : m_s
 	m_running.store(true, std::memory_order_release);
 
 	m_thread = std::jthread([this](const std::stop_token& st) {
+		log::name_thread(log::thread_role::network);
 		constexpr time_t<std::uint32_t> max_sleep = milliseconds(8);
 
 		while (m_running.load(std::memory_order_acquire) && !st.stop_requested()) {

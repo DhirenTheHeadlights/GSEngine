@@ -1,14 +1,12 @@
 # GSE Style Guide
 
-Most layout decisions in this codebase are owned by `.clang-format` (e.g. tabs, brace style, pointer alignment, how to indent continuations, where blank lines go inside namespaces, no vertical alignment, always-braces on `if`/`for`/`while`, "fully wrapped or fully inline" arg lists, designated initializers always one per line). `ColumnLimit` is `0` — there is no line-length-based wrapping, so *where* a statement breaks is author-driven; clang-format only normalizes the indentation of a break and keeps argument lists all-or-nothing (`BinPackArguments`/`BinPackParameters` are off). This document covers everything *clang-format can't decide for you* — semantic conventions, naming, API shape, and patterns specific to the engine.
+Layout conventions in this codebase: tabs, brace style, pointer alignment, how to indent continuations, where blank lines go inside namespaces, no vertical alignment, always-braces on `if`/`for`/`while`, "fully wrapped or fully inline" arg lists, designated initializers always one per line. There is no line-length-based wrapping, so *where* a statement breaks is author-driven; argument lists stay all-or-nothing (never bin-packed). Beyond layout, this document covers the semantic conventions — naming, API shape, and patterns specific to the engine.
 
 ## Naming
 - STL style (snake_case for everything).
 - snake_case includes compile-time constants, `static constexpr`, enum values, and `shader_constant_block` fields. There is no `SCREAMING_SNAKE_CASE` in this codebase — the HLSL/C habit of uppercase constants does not carry over.
 - Private member variables prefixed with `m_`.
 - Do not prefix functions with `get_`. The verb is implied — a function that returns a value is already a getter. Use the noun (`name()`, `value()`), `_of` for projections (`type_of(x)`, `annotation_of<A>(m)`), or a verb that describes the action (`fetch_`, `compute_`, `find_`) when the work is non-trivial.
-
-Enforced by `clang-tidy` (`readability-identifier-naming` + custom `gse-no-get-prefix`).
 
 ## Comments
 
@@ -18,7 +16,7 @@ Do not add comments. Code should be self-documenting.
 
 ## Bodies on Their Own Line
 
-A body goes on its own line even when it holds a single statement — never collapse it. clang-format enforces this for `if`/`for`/`while` and for non-empty lambdas, but **not for `struct`/`class`/`union` bodies** — with `ColumnLimit` at `0`, nothing forces a record body to expand, so a one-liner survives clang-format untouched. Keep it expanded:
+A body goes on its own line even when it holds a single statement — never collapse it. This holds for `if`/`for`/`while`, non-empty lambdas, and `struct`/`class`/`union` bodies alike — a one-line record body must still be expanded. Keep it expanded:
 
 ```cpp
 // correct
@@ -48,7 +46,7 @@ auto gse::foo::bar(const type& param1, type param2) -> return_type {
 }
 ```
 
-clang-format handles all wrapping based on the column limit — short signatures stay on one line, long ones wrap with one parameter per line and `)` on its own line.
+Short signatures stay on one line; long ones wrap with one parameter per line and `)` on its own line.
 
 Default argument values belong only on declarations, never on definitions.
 
@@ -124,8 +122,6 @@ namespace {
 
 This is not a module-only rule. It holds in every translation unit, including non-module `.cpp` files and single-TU executables (e.g. the codegen tools) — TU-local helpers go at file scope or in a named namespace, never an anonymous one.
 
-Enforced by `clang-tidy` (`gse-no-detail-namespace`, `gse-no-anonymous-namespace`).
-
 ---
 
 ## `inline` on Functions
@@ -168,8 +164,6 @@ constexpr std::array<std::string_view, 5> exts = { ".png", ".jpg", ".jpeg", ".tg
 inline constexpr std::array<std::string_view, 5> exts = { ".png", ".jpg", ".jpeg", ".tga", ".bmp" };
 ```
 
-Enforced by `clang-tidy` (`gse-no-inline-in-modules`).
-
 ---
 
 ## Concepts in Template Parameter Lists
@@ -204,8 +198,6 @@ auto print_one(std::integral auto v) -> void;
 auto print_one(auto v) -> void requires std::integral<decltype(v)>;
 ```
 
-Enforced by `clang-tidy` (`gse-concept-in-template-param`).
-
 ---
 
 ## Namespace Qualifiers
@@ -225,8 +217,6 @@ auto gse::foo::do_thing(const gse::foo::bar_type& x) -> gse::foo::result_type {
 ```
 
 This applies to both function signatures and bodies.
-
-Enforced by `clang-tidy` (`gse-redundant-namespace-qualifier`).
 
 ---
 
@@ -335,8 +325,6 @@ ctx.channels.push<set_some_field_request>({
 // wrong — punches a hole in const to sneak in a write
 mutable int m_some_field = 0;  // in a system state accessed via shared_view
 ```
-
-Enforced by `clang-tidy` (`gse-no-mutable`).
 
 ---
 

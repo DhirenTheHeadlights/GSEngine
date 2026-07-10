@@ -3,6 +3,7 @@ module gse.runtime:engine_impl;
 import std;
 
 import :engine;
+import :log_settings;
 import :scene;
 import :world_system;
 
@@ -56,6 +57,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	m_scheduler.begin_staging();
 	register_systems<^^input>(*this);
 	register_systems<^^actions>(*this);
+	system_manifest<^^log_settings::data, ^^log_settings::run>{}.register_with(*this);
 	system_manifest<^^world_system::data, ^^world_system::run, ^^world_system::shutdown>{}.register_with(*this);
 	register_systems<^^window>(*this);
 	register_systems<^^gpu::context>(*this);
@@ -69,6 +71,12 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	std::unordered_set<gse::id> disabled;
 	if (!m_config.render) {
 		disabled.insert(id_of<window::data>());
+		disabled.insert(id_of<audio::data>());
+	}
+	if (!m_config.simulate_world) {
+		disabled.insert(id_of<world_system::data>());
+		disabled.insert(id_of<physics::data>());
+		disabled.insert(id_of<camera::data>());
 		disabled.insert(id_of<audio::data>());
 	}
 	m_scheduler.resolve_activation(disabled);
@@ -89,6 +97,9 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	if (auto* gui_state = m_scheduler.try_state_of<gui::data>()) {
 		gui_state->scale_with_resolution = m_config.scale_ui_with_resolution;
 		gui_state->reserve_top_bar = m_config.custom_chrome;
+		if (!m_config.gui_layout_path.empty()) {
+			gui_state->file_path = m_config.gui_layout_path;
+		}
 	}
 
 	auto& asset_state = m_scheduler.state<asset::data>();
@@ -250,6 +261,68 @@ auto gse::engine::render() -> void {
 	auto* gpu_state = m_scheduler.try_state_of<gpu::context::data>();
 	auto* asset_state = m_scheduler.try_state_of<asset::data>();
 
+	if (m_config.attached && !m_attached_surface_attempted && gpu_state && gpu_state->device && gpu_state->render_graph && gpu_state->swapchain) {
+		if (const auto ext = gpu_state->render_graph->extent(); ext.x() > 0 && ext.y() > 0) {
+			m_attached_surface_attempted = true;
+			m_attached_semaphore = gpu_state->device->create_exportable_semaphore();
+			const auto sem_handle = gpu_state->device->export_semaphore_handle(m_attached_semaphore);
+			const gpu::image_format format = gpu_state->swapchain->format();
+			bool ok = sem_handle.has_value();
+			for (std::size_t i = 0; ok && i < attached_ring_size; ++i) {
+				auto surface = gpu_state->device->create_shared_surface({
+					.extent = ext,
+					.format = format,
+					.usage = gpu::image_flag::color_attachment | gpu::image_flag::sampled,
+				});
+				if (!surface) {
+					log::println(log::level::error, log::category::vulkan, "attached: create_shared_surface[{}] failed: {}", i, surface.error());
+					ok = false;
+					break;
+				}
+				m_attached_surfaces[i] = *surface;
+				const gpu::image_view_create_info view_info{
+					.format = format,
+					.view_type = gpu::image_view_type::e2d,
+					.aspects = gpu::image_aspect_flags(gpu::image_aspect_flag::color),
+					.level_count = 1,
+					.layer_count = 1,
+				};
+				m_attached_surface_images[i] = gpu::image(
+					m_attached_surfaces[i].image,
+					m_attached_surfaces[i].view,
+					gpu::format_value(format),
+					{ ext.x(), ext.y(), 1 },
+					view_info
+				);
+			}
+			if (ok) {
+				m_attached_message = attached_surface_message{
+					.magic = attached_surface_magic,
+					.extent = ext,
+					.format = format,
+					.surface_handles = { m_attached_surfaces[0].handle, m_attached_surfaces[1].handle, m_attached_surfaces[2].handle },
+					.semaphore_handle = *sem_handle,
+				};
+				m_attached_surface_ready = true;
+				log::println(log::category::vulkan, "attached: created {}-surface ring + timeline semaphore at {}x{}", attached_ring_size, ext.x(), ext.y());
+			}
+			else if (!sem_handle) {
+				log::println(log::level::error, log::category::vulkan, "attached: export_semaphore_handle failed: {}", sem_handle.error());
+			}
+		}
+	}
+
+	if (m_attached_surface_ready && gpu_state && gpu_state->render_graph) {
+		const std::uint64_t counter = ++m_attached_counter;
+		const std::size_t slot = static_cast<std::size_t>(counter % attached_ring_size);
+		gpu_state->render_graph->set_offscreen_target(&m_attached_surface_images[slot]);
+		gpu_state->render_graph->add_graphics_signal({
+			.semaphore = m_attached_semaphore,
+			.value = counter,
+			.stages = gpu::pipeline_stage_flag::all_commands,
+		});
+	}
+
 	if (gpu_state) {
 		auto& window_state = m_scheduler.state<window::data>();
 		const clock fence_timer;
@@ -316,6 +389,14 @@ auto gse::engine::render() -> void {
 			}
 		}
 	}
+}
+
+auto gse::engine::attached_surface_ready() const -> bool {
+	return m_attached_surface_ready;
+}
+
+auto gse::engine::attached_message() const -> const attached_surface_message& {
+	return m_attached_message;
 }
 
 auto gse::engine::shutdown() -> void {

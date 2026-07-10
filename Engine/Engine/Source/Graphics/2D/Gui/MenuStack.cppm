@@ -64,6 +64,10 @@ export namespace gse::gui {
 			return true;
 		}
 
+		virtual auto should_dismiss() const -> bool {
+			return false;
+		}
+
 		virtual auto title() const -> std::string_view {
 			return {};
 		}
@@ -260,6 +264,15 @@ auto gse::gui::menu_stack_state::captures_input() const -> bool {
 }
 
 auto gse::gui::menu_stack_state::tick(builder& ui) -> void {
+	for (auto it = m_stack.begin(); it != m_stack.end();) {
+		if ((*it)->should_dismiss()) {
+			(*it)->on_pop();
+			it = m_stack.erase(it);
+		}
+		else {
+			++it;
+		}
+	}
 	if (m_stack.empty()) {
 		return;
 	}

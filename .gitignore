@@ -40,6 +40,9 @@ __pycache__/
 *.ini
 *.log
 
+# Generated cppreference hover index (bootstrap.py -> Editor/Tools/build_cppref_index.py)
+/Editor/Resources/cppref.idx
+
 # Locomotion training artifacts (runtime: live under Engine/Resources/Misc/; legacy: repo root)
 /locomotion_checkpoint.bin
 /ref_walk.bin

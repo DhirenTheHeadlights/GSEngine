@@ -114,7 +114,7 @@ auto gse::concurrency::frame_scheduler::report_frame_time(const float fence_wait
 		if (m_frames_under_pressure >= m_pressure_frames_to_spread && m_spread < m_max_spread) {
 			++m_spread;
 			m_frames_under_pressure = 0;
-			log::println(log::category::render, "frame_scheduler: spread increased to {}", m_spread);
+			log::println(log::level::debug, log::category::render, "frame_scheduler: spread increased to {}", m_spread);
 		}
 	}
 	else {
@@ -123,7 +123,7 @@ auto gse::concurrency::frame_scheduler::report_frame_time(const float fence_wait
 		if (m_frames_ok >= m_ok_frames_to_pack && m_spread > 1) {
 			--m_spread;
 			m_frames_ok = 0;
-			log::println(log::category::render, "frame_scheduler: spread decreased to {}", m_spread);
+			log::println(log::level::debug, log::category::render, "frame_scheduler: spread decreased to {}", m_spread);
 		}
 	}
 }
