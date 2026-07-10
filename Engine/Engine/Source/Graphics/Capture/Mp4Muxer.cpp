@@ -882,7 +882,7 @@ auto gse::renderer::capture::mp4::mux(const std::span<const gpu::encoded_unit> u
 	std::ofstream file(out, std::ios::binary);
 	if (!file) {
 		log::println(log::level::warning, log::category::render, "mp4::mux could not open output file {}",
-					 out.string());
+					 out.display_string());
 		return false;
 	}
 
@@ -1128,7 +1128,7 @@ auto gse::renderer::capture::mp4::live_muxer::open(const std::filesystem::path& 
 		log::println(log::level::warning,
 					 log::category::render,
 					 "live_muxer::open could not open file {}",
-					 path.string());
+					 path.display_string());
 		return std::nullopt;
 	}
 	m.m_path = path;
@@ -1191,7 +1191,7 @@ auto gse::renderer::capture::mp4::live_muxer::close() -> void {
 			log::category::render,
 			"live_muxer: patched duration={}us into mvhd/tkhd/mdhd in {}",
 			m_decode_time,
-			m_path.string()
+			m_path.display_string()
 		);
 	}
 	if (m_file.is_open()) {
@@ -1203,7 +1203,7 @@ auto gse::renderer::capture::mp4::live_muxer::close() -> void {
 		log::println(
 			log::category::render,
 			"live_muxer: discarded empty file {} (no fragments written)",
-			m_path.string()
+			m_path.display_string()
 		);
 		m_path.clear();
 	}

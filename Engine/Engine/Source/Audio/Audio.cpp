@@ -28,7 +28,7 @@ namespace gse::audio {
 auto gse::bake(const std::filesystem::path& src, audio_clip::baked& out) -> bool {
 	std::ifstream file(src, std::ios::binary | std::ios::ate);
 	if (!file.is_open()) {
-		log::println(log::level::warning, log::category::assets, "Failed to open audio source: {}", src.string());
+		log::println(log::level::warning, log::category::assets, "Failed to open audio source: {}", src.display_string());
 		return false;
 	}
 	const auto size = file.tellg();

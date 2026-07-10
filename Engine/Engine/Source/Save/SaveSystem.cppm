@@ -107,7 +107,7 @@ gse::save::registry::~registry() {
 				log::level::warning,
 				log::category::save_system,
 				"Failed to save settings to {}",
-				m_auto_save_path.string()
+				m_auto_save_path.display_string()
 			);
 		}
 	}
@@ -279,7 +279,7 @@ auto gse::save::registry::emit(const doc& d) -> std::string {
 auto gse::save::registry::load_from_file(const std::filesystem::path& path) -> bool {
 	if (!std::filesystem::exists(path)) {
 		log::println(log::level::warning, log::category::save_system, "Settings file does not exist: {}",
-					 path.string());
+					 path.display_string());
 		return false;
 	}
 
@@ -289,7 +289,7 @@ auto gse::save::registry::load_from_file(const std::filesystem::path& path) -> b
 			log::level::warning,
 			log::category::save_system,
 			"Failed to read {}: {}",
-			path.string(),
+			path.display_string(),
 			content.error().message()
 		);
 		return false;

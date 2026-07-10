@@ -33,6 +33,8 @@ export namespace gse::gui {
 
 		auto captures_input() const -> bool override;
 
+		auto should_dismiss() const -> bool override;
+
 	private:
 		const loading::state* m_state;
 		bool m_logged_first_build = false;
@@ -47,12 +49,6 @@ auto gse::gui::loading_screen::build(builder& ui, nav& n) -> void {
 	if (!m_logged_first_build) {
 		m_logged_first_build = true;
 		log::println(log::category::runtime, "boot: loading_screen first build()");
-	}
-
-	if (m_state->finished()) {
-		log::println(log::category::runtime, "boot: loading_screen dismissed (state.finished)");
-		n.pop();
-		return;
 	}
 
 	const_cast<loading::state*>(m_state)->mark_rendered();
@@ -150,4 +146,8 @@ auto gse::gui::loading_screen::dismissable() const -> bool {
 
 auto gse::gui::loading_screen::captures_input() const -> bool {
 	return true;
+}
+
+auto gse::gui::loading_screen::should_dismiss() const -> bool {
+	return m_state->finished();
 }

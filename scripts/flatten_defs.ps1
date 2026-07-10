@@ -35,7 +35,7 @@ function Flatten-Defs([string[]]$lines) {
             if ($found -and $argLines.Count -gt 0) {
                 # Build flattened line
                 $argsJoined = $argLines -join ' '
-                # Trim trailing comma (clang-format reformat will re-add if needed)
+                # Trim trailing comma
                 $trailing = if ($closeLine -match '^[\t ]*\)([^{;\(]*)\{\s*$') { $matches[1] } else { '' }
                 $newLine = "$prefix($argsJoined)$trailing{"
                 # Sanity: only flatten if line is "reasonable" (< 300 chars)

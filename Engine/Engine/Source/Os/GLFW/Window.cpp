@@ -410,8 +410,59 @@ auto gse::create_window(window::data& d) -> void {
 	glfwFocusWindow(handle);
 
 	if (d.native_frame) {
-		window::install_native_frame(d.handle, &d.chrome_caption_height, &d.chrome_controls_width);
+		window::install_native_frame(d.handle, &d.chrome_caption_height, &d.chrome_controls_width, &d.chrome_interactive_x0, &d.chrome_interactive_x1);
 	}
+}
+
+namespace gse::window {
+	std::mutex clipboard_mutex;
+	std::string clipboard_cache;
+	std::optional<std::string> clipboard_pending;
+	bool clipboard_primed = false;
+	bool clipboard_was_focused = false;
+
+	auto sync_clipboard(const bool focused) -> void {
+		std::optional<std::string> to_write;
+		{
+			const std::scoped_lock lock(clipboard_mutex);
+			to_write = std::exchange(clipboard_pending, std::nullopt);
+		}
+		if (to_write) {
+			glfwSetClipboardString(nullptr, to_write->c_str());
+			const std::scoped_lock lock(clipboard_mutex);
+			clipboard_cache = std::move(*to_write);
+		}
+
+		const bool gained_focus = focused && !clipboard_was_focused;
+		clipboard_was_focused = focused;
+		if (clipboard_primed && !gained_focus) {
+			return;
+		}
+		clipboard_primed = true;
+		if (const char* contents = glfwGetClipboardString(nullptr)) {
+			const std::scoped_lock lock(clipboard_mutex);
+			clipboard_cache.assign(contents);
+		}
+	}
+}
+
+auto gse::window::clipboard_text() -> std::string {
+	const std::scoped_lock lock(clipboard_mutex);
+	if (clipboard_pending) {
+		return *clipboard_pending;
+	}
+	return clipboard_cache;
+}
+
+auto gse::window::set_clipboard_text(std::string text) -> void {
+	const std::scoped_lock lock(clipboard_mutex);
+	clipboard_pending = std::move(text);
+}
+
+namespace gse {
+	GLFWcursor* g_cursor_arrow = nullptr;
+	GLFWcursor* g_cursor_hand = nullptr;
+	cursor_shape g_cursor_shape = cursor_shape::arrow;
 }
 
 auto gse::window::tick(scheduler& sched, data& d) -> void {
@@ -420,6 +471,7 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 	}
 
 	poll_events();
+	sync_clipboard(d.focused);
 
 	for (const auto& [focus] : sched.read_channel<ui_focus_request>()) {
 		set_ui_focus(d, focus);
@@ -436,6 +488,21 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 	for (const auto& req : sched.read_channel<window_chrome_metrics_request>()) {
 		d.chrome_caption_height = req.caption_height;
 		d.chrome_controls_width = req.controls_width;
+		d.chrome_interactive_x0 = req.interactive_x0;
+		d.chrome_interactive_x1 = req.interactive_x1;
+	}
+
+	for (const auto& req : sched.read_channel<set_cursor_shape_request>()) {
+		if (req.shape != g_cursor_shape) {
+			if (!g_cursor_arrow) {
+				g_cursor_arrow = glfwCreateStandardCursor(glfw::arrow_cursor);
+			}
+			if (!g_cursor_hand) {
+				g_cursor_hand = glfwCreateStandardCursor(glfw::pointing_hand_cursor);
+			}
+			glfwSetCursor(to_glfw_handle(d.handle), req.shape == cursor_shape::hand ? g_cursor_hand : g_cursor_arrow);
+			g_cursor_shape = req.shape;
+		}
 	}
 
 	if (d.monitor.value != d.last_monitor_index) {
@@ -516,6 +583,8 @@ namespace gse {
 		WNDPROC original_proc = nullptr;
 		const int* caption_height = nullptr;
 		const int* controls_width = nullptr;
+		const int* interactive_x0 = nullptr;
+		const int* interactive_x1 = nullptr;
 	};
 
 	LRESULT native_frame_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
@@ -582,6 +651,11 @@ namespace gse {
 				if (cursor.x >= client.right - controls) {
 					return ht_client;
 				}
+				const int interactive_x0 = state->interactive_x0 ? *state->interactive_x0 : 0;
+				const int interactive_x1 = state->interactive_x1 ? *state->interactive_x1 : 0;
+				if (interactive_x1 > interactive_x0 && cursor.x >= interactive_x0 && cursor.x < interactive_x1) {
+					return ht_client;
+				}
 				return ht_caption;
 			}
 			return ht_client;
@@ -592,7 +666,7 @@ namespace gse {
 }
 #endif
 
-auto gse::window::install_native_frame(const native_window_handle handle, const int* caption_height, const int* controls_width) -> void {
+auto gse::window::install_native_frame(const native_window_handle handle, const int* caption_height, const int* controls_width, const int* interactive_x0, const int* interactive_x1) -> void {
 #ifdef _WIN32
 	using namespace gse::win32;
 
@@ -604,6 +678,8 @@ auto gse::window::install_native_frame(const native_window_handle handle, const 
 	auto* state = new native_frame_state{};
 	state->caption_height = caption_height;
 	state->controls_width = controls_width;
+	state->interactive_x0 = interactive_x0;
+	state->interactive_x1 = interactive_x1;
 	state->original_proc = reinterpret_cast<WNDPROC>(
 		SetWindowLongPtrW(hwnd, gwlp_wndproc, reinterpret_cast<LONG_PTR>(&native_frame_proc))
 	);
@@ -613,6 +689,8 @@ auto gse::window::install_native_frame(const native_window_handle handle, const 
 	(void)handle;
 	(void)caption_height;
 	(void)controls_width;
+	(void)interactive_x0;
+	(void)interactive_x1;
 #endif
 }
 

@@ -17,6 +17,7 @@ import :styles;
 import :builder;
 import :render_layer;
 import :interaction;
+import :symbols;
 
 export namespace gse::gui {
 	struct dropdown_state {
@@ -315,9 +316,8 @@ auto gse::gui::draw::dropdown_impl_in_rect(const draw_context& ctx, const id dro
 	const bool header_hovered = header_rect.contains(ctx.input.mouse_position()) && ctx.input_available();
 
 	interaction::mark_hot(hot_widget_id, dropdown_id, header_hovered);
-	interaction::grab_active(active_widget_id, dropdown_id, header_pressed_for_me);
 
-	const bool released_by_me = interaction::release_active(active_widget_id, dropdown_id, released);
+	const bool released_by_me = interaction::activate_on_click(active_widget_id, dropdown_id, header_hovered, header_pressed_for_me, released);
 	if (released_by_me && header_hovered) {
 		if (is_open) {
 			state.open_dropdown_id.reset();
@@ -347,8 +347,6 @@ auto gse::gui::draw::dropdown_impl_in_rect(const draw_context& ctx, const id dro
 
 	const std::string current_label = current_index < count ? std::string(get_option(current_index)) : "";
 
-	const std::string arrow = is_open ? "\xE2\x96\xB2" : "\xE2\x96\xBC";
-	const float arrow_advance = ctx.font->width(arrow, ctx.style.font_size);
 	const float text_x = header_rect.left() + ctx.style.padding;
 
 	ctx.queue_text({
@@ -360,17 +358,19 @@ auto gse::gui::draw::dropdown_impl_in_rect(const draw_context& ctx, const id dro
 		.clip_rect = header_rect
 	});
 
-	const float arrow_x = header_rect.right() - arrow_advance - ctx.style.padding;
-	ctx.queue_text({
-		.font = ctx.font,
-		.text = arrow,
-		.position = { arrow_x, header_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
-		.scale = ctx.style.font_size,
+	const float arrow_size = ctx.style.font_size;
+	const ui_rect arrow_rect = ui_rect::from_position_size(
+		{ header_rect.right() - arrow_size - ctx.style.padding, header_rect.top() },
+		{ arrow_size, header_rect.height() }
+	);
+	symbol::draw(ctx, is_open ? symbol::chevron_up() : symbol::chevron_down(), arrow_rect, {
 		.color = ctx.style.color_text_secondary,
-		.clip_rect = header_rect
+		.scale = ctx.style.icon_scale,
 	});
 
 	if (is_open && count > 0) {
+		const auto modal_layer = ctx.scoped_layer(render_layer::modal);
+
 		const std::size_t visible_count = std::min(count, config.max_visible_items);
 		const float visible_height = static_cast<float>(visible_count) * row_height;
 		const float total_content_height = static_cast<float>(count) * row_height;
@@ -396,40 +396,30 @@ auto gse::gui::draw::dropdown_impl_in_rect(const draw_context& ctx, const id dro
 			.rect = list_rect.inset({ -border, -border }),
 			.color = ctx.style.color_border,
 			.texture = ctx.blank_texture,
-			.layer = render_layer::modal
 		});
 
 		ctx.queue_sprite({
 			.rect = list_rect,
 			.color = ctx.style.color_panel_alt,
 			.texture = ctx.blank_texture,
-			.layer = render_layer::modal
 		});
 
-		const float max_scroll = std::max(0.f, total_content_height - visible_height);
+		const scroll_config list_scroll_cfg{
+			.scrollbar_width = config.scrollbar_width,
+			.scroll_speed = row_height * 2.f,
+			.smooth_factor = 0.2f,
+			.auto_hide_scrollbar = false,
+		};
+
+		const float voff = scroll_area(ctx, state.scroll, list_rect, { list_rect.width(), total_content_height }, list_scroll_cfg).y();
+
 		const vec2f mouse_pos = ctx.input.mouse_position();
-		const bool mouse_in_list = list_rect.contains(mouse_pos);
 
-		if (needs_scroll && list_rect.contains(ctx.input.mouse_position()) && !ctx.is_scroll_consumed()) {
-			const float scroll_delta = ctx.input.scroll_delta().y();
-			if (std::abs(scroll_delta) > 0.001f) {
-				ctx.consume_scroll();
-				state.scroll.target_offset -= scroll_delta * row_height * 2.f;
-			}
-		}
-
-		state.scroll.target_offset = std::clamp(state.scroll.target_offset, 0.f, max_scroll);
-		state.scroll.offset += (state.scroll.target_offset - state.scroll.offset) * 0.2f;
-		if (std::abs(state.scroll.offset - state.scroll.target_offset) < 0.5f) {
-			state.scroll.offset = state.scroll.target_offset;
-		}
-		state.scroll.content_height = total_content_height;
-
-		const std::size_t first_visible = static_cast<std::size_t>(state.scroll.offset / row_height);
+		const std::size_t first_visible = static_cast<std::size_t>(voff / row_height);
 		const std::size_t last_visible = std::min(count, first_visible + visible_count + 2);
 
 		for (std::size_t i = first_visible; i < last_visible; ++i) {
-			const float item_y = list_rect.top() - static_cast<float>(i) * row_height + state.scroll.offset;
+			const float item_y = list_rect.top() - static_cast<float>(i) * row_height + voff;
 
 			if (item_y < list_rect.bottom() - row_height || item_y > list_rect.top() + row_height) {
 				continue;
@@ -468,7 +458,6 @@ auto gse::gui::draw::dropdown_impl_in_rect(const draw_context& ctx, const id dro
 				.rect = clipped_option,
 				.color = option_bg,
 				.texture = ctx.blank_texture,
-				.layer = render_layer::modal
 			});
 
 			ctx.queue_text({
@@ -478,81 +467,18 @@ auto gse::gui::draw::dropdown_impl_in_rect(const draw_context& ctx, const id dro
 				.scale = ctx.style.font_size,
 				.color = ctx.style.color_text,
 				.clip_rect = content_area,
-				.layer = render_layer::modal
 			});
 
-			if (option_hovered && ctx.input.mouse_button_pressed(mouse_button::button_1) && !ctx.is_press_consumed()) {
-				ctx.consume_press();
+			if (option_hovered && ctx.mouse_pressed_for(option_rect)) {
 				result.changed = true;
 				result.new_index = i;
 				state.open_dropdown_id.reset();
 			}
 		}
 
-		if (needs_scroll) {
-			const ui_rect scrollbar_track = ui_rect::from_position_size(
-				{ list_rect.right() - config.scrollbar_width, list_rect.top() },
-				{ config.scrollbar_width, visible_height }
-			);
-
-			vec4f track_color = ctx.style.color_widget_background;
-			track_color.w() *= 0.3f;
-			ctx.queue_sprite({
-				.rect = scrollbar_track,
-				.color = track_color,
-				.texture = ctx.blank_texture,
-				.layer = render_layer::modal
-			});
-
-			const float scrollbar_height = std::max(20.f, (visible_height / total_content_height) * visible_height);
-			const float scroll_ratio = max_scroll > 0.f ? state.scroll.offset / max_scroll : 0.f;
-			const float scrollbar_travel = visible_height - scrollbar_height;
-			const float scrollbar_y = scrollbar_track.top() - scroll_ratio * scrollbar_travel;
-
-			const ui_rect scrollbar_rect = ui_rect::from_position_size(
-				{ scrollbar_track.left(), scrollbar_y },
-				{ config.scrollbar_width, scrollbar_height }
-			);
-
-			state.scroll.scrollbar_hovered = scrollbar_rect.contains(mouse_pos);
-
-			if (state.scroll.scrollbar_hovered && ctx.input.mouse_button_pressed(mouse_button::button_1) && !ctx.is_press_consumed()) {
-				ctx.consume_press();
-				state.scroll.scrollbar_held = true;
-				state.scroll.scrollbar_grab_offset = mouse_pos.y() - scrollbar_y;
-			}
-
-			if (state.scroll.scrollbar_held) {
-				if (ctx.input.mouse_button_held(mouse_button::button_1)) {
-					const float new_scrollbar_y = mouse_pos.y() - state.scroll.scrollbar_grab_offset;
-					const float new_ratio = (scrollbar_track.top() - new_scrollbar_y) / scrollbar_travel;
-					state.scroll.offset = std::clamp(new_ratio, 0.f, 1.f) * max_scroll;
-					state.scroll.target_offset = state.scroll.offset;
-				}
-				else {
-					state.scroll.scrollbar_held = false;
-				}
-			}
-
-			vec4f bar_color = ctx.style.color_widget_background;
-			if (state.scroll.scrollbar_held) {
-				bar_color = ctx.style.color_widget_active;
-			}
-			else if (state.scroll.scrollbar_hovered) {
-				bar_color = ctx.style.color_widget_hovered;
-			}
-
-			ctx.queue_sprite({
-				.rect = scrollbar_rect,
-				.color = bar_color,
-				.texture = ctx.blank_texture,
-				.layer = render_layer::modal
-			});
-		}
-
 		const bool still_open = state.open_dropdown_id == dropdown_id;
 		const bool raw_press = ctx.input.mouse_button_pressed(mouse_button::button_1);
-		if (still_open && !header_rect.contains(mouse_pos) && !list_rect.contains(mouse_pos) && !state.scroll.scrollbar_held && raw_press) {
+		if (still_open && !header_rect.contains(mouse_pos) && !list_rect.contains(mouse_pos) && !state.scroll.y.held && raw_press) {
 			state.open_dropdown_id.reset();
 		}
 	}

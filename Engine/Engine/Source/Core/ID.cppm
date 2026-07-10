@@ -211,7 +211,7 @@ auto gse::identifiable::id() const -> gse::id {
 
 auto gse::identifiable::relative_stem(const std::filesystem::path& path, const std::filesystem::path& base) -> std::string {
 	std::filesystem::path relative = path;
-	if (!base.empty() && path.generic_string().starts_with(base.generic_string())) {
+	if (!base.empty() && path.generic_native_encoded_string().starts_with(base.generic_native_encoded_string())) {
 		relative = path.lexically_relative(base);
 	}
 
@@ -417,7 +417,7 @@ auto gse::id_mapped_collection<T, PrimaryIdType>::transfer_from(id_mapped_collec
 	m_map = std::move(other.m_map);
 }
 
-namespace gse {
+export namespace gse {
 	struct transparent_hash {
 		using is_transparent = void;
 		auto operator()(const std::string_view sv) const noexcept {
@@ -430,7 +430,9 @@ namespace gse {
 			return a == b;
 		}
 	};
+}
 
+namespace gse {
 	struct id_registry_data {
 		id_mapped_collection<id, uuid> by_uuid;
 		std::unordered_map<std::string, uuid, transparent_hash, transparent_equal> tag_to_uuid;
@@ -598,16 +600,22 @@ consteval auto gse::id_of() -> id {
 	return generate_temp_id(stable_id(Tag));
 }
 
+export namespace gse {
+	template <typename T>
+	const id trace_id_type_cache = find_or_generate_id(type_tag<T>());
+
+	template <fixed_string Tag>
+	const id trace_id_tag_cache = find_or_generate_id(std::string_view(Tag));
+}
+
 template <typename T>
 auto gse::trace_id() -> id {
-	static const id cached = find_or_generate_id(type_tag<T>());
-	return cached;
+	return trace_id_type_cache<T>;
 }
 
 template <gse::fixed_string Tag>
 auto gse::trace_id() -> id {
-	static const id cached = find_or_generate_id(std::string_view(Tag));
-	return cached;
+	return trace_id_tag_cache<Tag>;
 }
 
 template <typename T>

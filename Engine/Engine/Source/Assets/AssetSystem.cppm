@@ -136,7 +136,7 @@ auto gse::asset::bake_to_disk(const std::filesystem::path& src, const std::files
 	}
 	binary_writer ar(out, fmt.magic, fmt.version);
 	ar & b;
-	log::println(log::category::assets, "Asset compiled: {}", dst.filename().string());
+	log::println(log::category::assets, "Asset compiled: {}", dst.filename().display_string());
 	return true;
 }
 
@@ -151,7 +151,7 @@ auto gse::asset::needs_recompile(const std::filesystem::path& src, const std::fi
 		return true;
 	}
 	if constexpr (fmt.meta_sidecar) {
-		const auto meta = src.parent_path() / (src.stem().string() + ".meta");
+		const auto meta = src.parent_path() / (src.stem().native_encoded_string() + ".meta");
 		if (std::filesystem::exists(meta) && std::filesystem::last_write_time(meta) > dst_time) {
 			return true;
 		}
@@ -184,7 +184,7 @@ auto gse::asset::count_compile_work() -> std::uint32_t {
 				log::category::assets,
 				"count_compile_work<{}>: 0 (source_root missing: {})",
 				std::meta::identifier_of(^^T),
-				source_root.string()
+				source_root.display_string()
 			);
 			return 0;
 		}
@@ -194,7 +194,7 @@ auto gse::asset::count_compile_work() -> std::uint32_t {
 			if (!entry.is_regular_file()) {
 				continue;
 			}
-			const auto ext = entry.path().extension().string();
+			const auto ext = entry.path().extension().native_encoded_string();
 			if (std::ranges::find(fmt.source_exts, ext) == fmt.source_exts.end()) {
 				continue;
 			}
@@ -222,10 +222,10 @@ auto gse::asset::enumerate_resources() -> std::vector<std::string> {
 			if (!entry.is_regular_file()) {
 				continue;
 			}
-			if (entry.path().extension().string() != fmt.baked_ext) {
+			if (entry.path().extension().native_encoded_string() != fmt.baked_ext) {
 				continue;
 			}
-			result.push_back(entry.path().stem().string());
+			result.push_back(entry.path().stem().native_encoded_string());
 		}
 
 		std::ranges::sort(result);
@@ -274,7 +274,7 @@ auto gse::asset::setup_hot_reload_for(data& d) -> void {
 				rel.replace_extension(std::string(fmt.baked_ext));
 				const auto dst = config::baked_resource_path / fmt.baked_dir / rel;
 				if (bake_to_disk<T>(changed_file, dst)) {
-					log::println(log::category::assets, "Hot reload recompiled: {}", changed_file.filename().string());
+					log::println(log::category::assets, "Hot reload recompiled: {}", changed_file.filename().display_string());
 					if constexpr (loadable<T>) {
 						if (auto it = d.resource_loaders.find(id_of<T>()); it != d.resource_loaders.end()) {
 							auto* loader = static_cast<resource::loader<T>*>(it->second.get());
@@ -287,7 +287,7 @@ auto gse::asset::setup_hot_reload_for(data& d) -> void {
 						log::level::warning,
 						log::category::assets,
 						"Hot reload failed to recompile: {}",
-						changed_file.filename().string()
+						changed_file.filename().display_string()
 					);
 				}
 			},
@@ -357,7 +357,7 @@ auto gse::asset::system<Ts...>::compile(compile_progress* progress) -> compile_r
 			if (!entry.is_regular_file()) {
 				continue;
 			}
-			const auto ext = entry.path().extension().string();
+			const auto ext = entry.path().extension().native_encoded_string();
 			if (std::ranges::find(fmt.source_exts, ext) == fmt.source_exts.end()) {
 				continue;
 			}

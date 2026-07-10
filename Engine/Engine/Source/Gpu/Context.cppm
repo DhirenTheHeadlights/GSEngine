@@ -71,8 +71,7 @@ export namespace gse::gpu::context {
 	auto begin_frame(
 		data& d,
 		window::data* window_s
-	) -> std::
-		expected<frame_token, frame_status>;
+	) -> std::expected<frame_token, frame_status>;
 
 	auto end_frame(
 		data& d,

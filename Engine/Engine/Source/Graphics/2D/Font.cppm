@@ -98,11 +98,24 @@ export namespace gse {
 			float scale = 1.0f
 		) const -> float;
 
+		[[nodiscard]] auto caret_offsets(
+			std::string_view text,
+			float scale = 1.0f
+		) const -> std::vector<float>;
+
 		[[nodiscard]] auto vertical_center_offset(
 			float scale
 		) const -> float;
 
 		[[nodiscard]] auto ascender_height(
+			float scale
+		) const -> float;
+
+		[[nodiscard]] auto max_glyph_top(
+			float scale
+		) const -> float;
+
+		[[nodiscard]] auto min_glyph_bottom(
 			float scale
 		) const -> float;
 
@@ -116,6 +129,8 @@ export namespace gse {
 		float m_ascender = 0.0f;
 		float m_descender = 0.0f;
 		float m_pixel_range = 0.0f;
+		float m_max_glyph_top = 0.0f;
+		float m_min_glyph_bottom = 0.0f;
 
 		FT_Face m_face = nullptr;
 		FT_Library m_ft = nullptr;

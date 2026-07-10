@@ -22,6 +22,7 @@ export namespace gse::gui {
 		dock::location docked_to = dock::location::none;
 		float dock_split_ratio = 0.5f;
 		std::uint32_t active_tab_index = 0;
+		std::uint32_t tab_visible_rows = 1;
 		std::vector<std::string> tab_tags;
 	};
 
@@ -58,6 +59,14 @@ namespace gse::gui {
 	auto trim(
 		std::string_view s
 	) -> std::string_view;
+
+	auto is_menu_section(
+		std::string_view line
+	) -> bool;
+
+	auto preserved_non_menu_sections(
+		const std::filesystem::path& file_path
+	) -> std::string;
 
 	auto parse_layout(
 		std::string_view text
@@ -132,14 +141,64 @@ auto gse::gui::split(const std::string_view text, const char sep) -> std::vector
 
 auto gse::gui::trim(const std::string_view s) -> std::string_view {
 	std::size_t start = 0;
-	while (start < s.size() && (s[start] == ' ' || s[start] == '\t' || s[start] == '\r')) {
+	while (start < s.size() && (s[start] == ' ' || s[start] == '\t' || s[start] == '\r' || s[start] == '\n')) {
 		++start;
 	}
 	std::size_t end = s.size();
-	while (end > start && (s[end - 1] == ' ' || s[end - 1] == '\t' || s[end - 1] == '\r')) {
+	while (end > start && (s[end - 1] == ' ' || s[end - 1] == '\t' || s[end - 1] == '\r' || s[end - 1] == '\n')) {
 		--end;
 	}
 	return s.substr(start, end - start);
+}
+
+auto gse::gui::is_menu_section(const std::string_view line) -> bool {
+	const std::string_view trimmed = trim(line);
+	return trimmed.starts_with("[menu ") && trimmed.ends_with("]");
+}
+
+auto gse::gui::preserved_non_menu_sections(const std::filesystem::path& file_path) -> std::string {
+	if (!std::filesystem::exists(file_path)) {
+		return {};
+	}
+
+	std::ifstream file(file_path);
+	if (!file) {
+		return {};
+	}
+
+	std::ostringstream oss;
+	oss << file.rdbuf();
+	const std::string content = oss.str();
+
+	std::string out;
+	std::string section;
+	bool keep_section = true;
+
+	auto flush = [&] {
+		if (keep_section) {
+			out.append(section);
+		}
+		section.clear();
+	};
+
+	std::size_t pos = 0;
+	while (pos < content.size()) {
+		const std::size_t line_end = content.find('\n', pos);
+		const std::size_t next = line_end == std::string::npos ? content.size() : line_end + 1;
+		const std::string_view line(content.data() + pos, next - pos);
+		const std::string_view trimmed = trim(line);
+
+		if (!trimmed.empty() && trimmed.front() == '[' && trimmed.back() == ']') {
+			flush();
+			keep_section = !is_menu_section(trimmed);
+		}
+
+		section.append(line);
+		pos = next;
+	}
+
+	flush();
+	return out;
 }
 
 auto gse::gui::parse_layout(const std::string_view text) -> std::vector<loaded_menu_data> {
@@ -170,7 +229,12 @@ auto gse::gui::parse_layout(const std::string_view text) -> std::vector<loaded_m
 
 		if (line.front() == '[' && line.back() == ']') {
 			flush();
-			current.emplace();
+			if (is_menu_section(line)) {
+				current.emplace();
+			}
+			else {
+				current.reset();
+			}
 			continue;
 		}
 
@@ -200,6 +264,9 @@ auto gse::gui::parse_layout(const std::string_view text) -> std::vector<loaded_m
 		}
 		else if (key == "active_tab") {
 			current->active_tab_index = static_cast<std::uint32_t>(std::stoul(std::string(value)));
+		}
+		else if (key == "tab_visible_rows") {
+			current->tab_visible_rows = static_cast<std::uint32_t>(std::stoul(std::string(value)));
 		}
 		else if (key == "rect") {
 			const auto parts = split(value, ',');
@@ -249,8 +316,23 @@ auto gse::gui::save(id_mapped_collection<menu>& menus, const std::filesystem::pa
 		out.append(std::format("docked_to = {}\n", dock_to_string(menu.docked_to)));
 		out.append(std::format("dock_split_ratio = {}\n", menu.dock_split_ratio));
 		out.append(std::format("active_tab = {}\n", menu.active_tab_index));
+		out.append(std::format("tab_visible_rows = {}\n", std::max(1u, menu.tab_visible_rows)));
 		out.append(std::format("tabs = {}\n", join(menu.tab_contents, ',')));
 		++i;
+	}
+
+	const std::string preserved = preserved_non_menu_sections(file_path);
+	if (!preserved.empty()) {
+		if (!out.empty() && out.back() != '\n') {
+			out.push_back('\n');
+		}
+		if (!out.empty()) {
+			out.push_back('\n');
+		}
+		out.append(preserved);
+		if (!out.empty() && out.back() != '\n') {
+			out.push_back('\n');
+		}
 	}
 
 	std::ofstream file(file_path);
@@ -281,7 +363,14 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
 
 	std::map<std::string, loaded_menu_data> loaded_map;
 	for (const auto& data : loaded_data_vec) {
+		if (data.tag.empty()) {
+			continue;
+		}
 		loaded_map[data.tag] = data;
+	}
+
+	if (loaded_map.empty()) {
+		return default_menus;
 	}
 
 	id_mapped_collection<menu> new_layout;
@@ -298,6 +387,7 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
 		new_menu.docked_to = data.docked_to;
 		new_menu.dock_split_ratio = data.dock_split_ratio;
 		new_menu.tab_contents = data.tab_tags;
+		new_menu.tab_visible_rows = std::max(1u, data.tab_visible_rows);
 
 		if (!new_menu.tab_contents.empty()) {
 			new_menu.active_tab_index =

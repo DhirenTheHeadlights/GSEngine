@@ -24,8 +24,7 @@ INSTALL_ROOT = Path.home() / ".gcc-trunk"
 
 def resolve_latest_tag() -> str:
     # Filter to gcc-trunk-v* and pick the highest N. Do NOT use /releases/latest:
-    # this repo also publishes clang-p2996-* releases, and "latest" is across all
-    # release kinds, so it could hand back a Clang tag.
+    # "latest" is across all release kinds and could hand back an unrelated tag.
     print(f"Resolving latest gcc-trunk release tag from {RELEASES_API}")
     req = urllib.request.Request(RELEASES_API, headers={"Accept": "application/vnd.github+json"})
     with urllib.request.urlopen(req) as response:

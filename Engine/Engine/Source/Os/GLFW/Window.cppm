@@ -21,6 +21,17 @@ export namespace gse {
 	struct window_chrome_metrics_request {
 		int caption_height = 0;
 		int controls_width = 0;
+		int interactive_x0 = 0;
+		int interactive_x1 = 0;
+	};
+
+	enum class cursor_shape : std::uint8_t {
+		arrow = 0,
+		hand = 1,
+	};
+
+	struct set_cursor_shape_request {
+		cursor_shape shape = cursor_shape::arrow;
 	};
 
 	struct monitor_info {
@@ -110,6 +121,8 @@ export namespace gse::window {
 		bool native_frame = false;
 		int chrome_caption_height = 0;
 		int chrome_controls_width = 0;
+		int chrome_interactive_x0 = 0;
+		int chrome_interactive_x1 = 0;
 
 		rect_t<vec2i> windowed_rect = rect_t<vec2i>::from_position_size(
 			{ 100, 100 },
@@ -131,6 +144,12 @@ export namespace gse::window {
 
 	auto poll_events() -> void;
 
+	auto clipboard_text() -> std::string;
+
+	auto set_clipboard_text(
+		std::string text
+	) -> void;
+
 	auto apply_commands(
 		data& d
 	) -> void;
@@ -138,7 +157,9 @@ export namespace gse::window {
 	auto install_native_frame(
 		native_window_handle handle,
 		const int* caption_height,
-		const int* controls_width
+		const int* controls_width,
+		const int* interactive_x0,
+		const int* interactive_x1
 	) -> void;
 
 	[[nodiscard]] auto is_open(

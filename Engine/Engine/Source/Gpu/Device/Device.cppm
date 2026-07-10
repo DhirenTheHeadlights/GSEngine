@@ -166,6 +166,19 @@ export namespace gse::gpu {
 			std::uint64_t initial_value
 		) -> gpu::handle<gpu::semaphore>;
 
+		[[nodiscard]]
+		auto create_exportable_semaphore() -> gpu::handle<gpu::semaphore>;
+
+		[[nodiscard]]
+		auto export_semaphore_handle(
+			gpu::handle<gpu::semaphore> semaphore
+		) const -> std::expected<void*, std::string>;
+
+		[[nodiscard]]
+		auto import_semaphore_handle(
+			void* handle
+		) -> std::expected<gpu::handle<gpu::semaphore>, std::string>;
+
 		auto retire(
 			gpu::handle<gpu::semaphore> semaphore
 		) -> void;
@@ -392,6 +405,21 @@ export namespace gse::gpu {
 		auto create_buffer_unbound(
 			const buffer_desc& info
 		) const -> std::pair<gpu::handle<gpu::buffer>, memory_requirements>;
+
+		[[nodiscard]]
+		auto create_shared_surface(
+			const shared_surface_desc& desc
+		) const -> std::expected<shared_surface, std::string>;
+
+		[[nodiscard]]
+		auto import_shared_surface(
+			const shared_surface_desc& desc,
+			void* handle
+		) const -> std::expected<shared_surface, std::string>;
+
+		auto destroy_shared_surface(
+			const shared_surface& surface
+		) const -> void;
 
 		auto bind_image_memory(
 			gpu::handle<gpu::image> img,

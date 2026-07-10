@@ -45,6 +45,8 @@ export template <typename E>
 requires std::is_enum_v<E>
 struct std::formatter<E> : std::formatter<std::string_view> {
 	auto format(E value, auto& ctx) const {
-		return std::formatter<std::string_view>::format(gse::enum_to_string(value), ctx);
+		std::string pretty(gse::enum_to_string(value));
+		std::ranges::replace(pretty, '_', ' ');
+		return std::formatter<std::string_view>::format(pretty, ctx);
 	}
 };

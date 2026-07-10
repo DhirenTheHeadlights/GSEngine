@@ -29,7 +29,7 @@ function(gse_copy_runtime_deps target)
     set(_vcpkg_bin "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin")
     if(EXISTS "${_vcpkg_bin}")
         add_custom_command(TARGET ${target} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_directory
+            COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
                 "${_vcpkg_bin}"
                 "$<TARGET_FILE_DIR:${target}>"
         )

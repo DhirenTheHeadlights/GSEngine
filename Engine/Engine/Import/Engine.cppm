@@ -4,6 +4,7 @@ export import gse.assert;
 export import gse.assets;
 export import gse.audio;
 export import gse.concurrency;
+export import gse.config;
 export import gse.containers;
 export import gse.core;
 export import gse.diag;

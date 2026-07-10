@@ -54,7 +54,7 @@ auto gse::gui::nav_item::draw(const draw_context& ctx, const params& p, id& hot,
 	const bool released = ctx.input.mouse_button_released(mouse_button::button_1);
 
 	interaction::mark_hot(hot, widget_id, hovered);
-	interaction::grab_active(active, widget_id, ctx.mouse_pressed_for(row_rect));
+	const bool activated = interaction::activate_on_click(active, widget_id, hovered, ctx.mouse_pressed_for(row_rect), released);
 
 	vec4f target_bg{ 0.f, 0.f, 0.f, 0.f };
 	if (p.selected) {
@@ -102,5 +102,5 @@ auto gse::gui::nav_item::draw(const draw_context& ctx, const params& p, id& hot,
 
 	ctx.layout_cursor.y() -= widget_height + ctx.style.item_spacing;
 
-	return interaction::release_active(active, widget_id, released) && hovered;
+	return activated;
 }

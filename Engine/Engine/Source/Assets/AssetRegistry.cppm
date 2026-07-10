@@ -645,7 +645,7 @@ auto gse::resource::loader<R>::launch_reload(const id rid) -> async::task<> {
 	s->version.fetch_add(1, std::memory_order_release);
 	s->current_state.store(state::loaded, std::memory_order_release);
 
-	log::println(log::category::assets, "Hot reload reloaded resource: {}", path.filename().string());
+	log::println(log::category::assets, "Hot reload reloaded resource: {}", path.filename().display_string());
 }
 
 template <typename R>

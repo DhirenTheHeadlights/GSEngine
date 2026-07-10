@@ -75,7 +75,7 @@ auto gse::glyph::x_advance() const -> float {
 
 gse::font::font(const std::filesystem::path& path)
 	: identifiable(path, config::baked_resource_path), m_baked_path(path) {
-	assert(exists(path), "Font file '{}' does not exist.", path.string());
+	assert(exists(path), "Font file '{}' does not exist.", path.display_string());
 }
 
 gse::font::~font() {
@@ -100,8 +100,19 @@ auto gse::font::load(asset::load_ctx& ctx) -> async::task<> {
 	m_pixel_range = baked.pixel_range;
 	m_glyphs = std::move(baked.glyphs);
 
+	m_max_glyph_top = 0.0f;
+	m_min_glyph_bottom = 0.0f;
+	for (const glyph& g : std::views::values(m_glyphs)) {
+		const vec4f pb = g.plane_bounds();
+		if (pb.z() <= 0.0f || pb.w() <= 0.0f) {
+			continue;
+		}
+		m_max_glyph_top = std::max(m_max_glyph_top, pb.y() + pb.w());
+		m_min_glyph_bottom = std::min(m_min_glyph_bottom, pb.y());
+	}
+
 	m_texture = std::make_unique<gse::texture>(
-		std::format("msdf_font_atlas_{}", m_baked_path.stem().string()),
+		std::format("msdf_font_atlas_{}", m_baked_path.stem().native_encoded_string()),
 		baked.rgba.storage,
 		vec2u{ baked.atlas_width, baked.atlas_height },
 		baked.channels,
@@ -112,8 +123,9 @@ auto gse::font::load(asset::load_ctx& ctx) -> async::task<> {
 
 	assert(FT_Init_FreeType(&m_ft) == 0, "Failed to initialize FreeType.");
 
+	const std::string source_path = source_font_path.native_encoded_string();
 	assert(
-		FT_New_Face(m_ft, source_font_path.string().c_str(), 0, &m_face) == 0,
+		FT_New_Face(m_ft, source_path.c_str(), 0, &m_face) == 0,
 		"Failed to load source font face for kerning."
 	);
 
@@ -257,12 +269,54 @@ auto gse::font::width(const std::string_view text, const float scale) const -> f
 	return total_width;
 }
 
+auto gse::font::caret_offsets(const std::string_view text, const float scale) const -> std::vector<float> {
+	std::vector<float> offsets(text.size() + 1, 0.0f);
+	if (m_glyphs.empty()) {
+		return offsets;
+	}
+
+	float total = 0.0f;
+	std::uint32_t previous_glyph_index = 0;
+
+	for (std::size_t pos = 0; pos < text.size();) {
+		const std::size_t start = pos;
+		const char32_t cp = decode_utf8(text, pos);
+
+		if (const auto it = m_glyphs.find(cp); it != m_glyphs.end() && it->second.ft_glyph_index() != 0) {
+			const glyph& current_glyph = it->second;
+			if (previous_glyph_index != 0) {
+				const std::uint64_t key =
+					(static_cast<std::uint64_t>(previous_glyph_index) << 32) | current_glyph.ft_glyph_index();
+				if (const auto kit = m_kerning.find(key); kit != m_kerning.end()) {
+					total += kit->second * scale;
+				}
+			}
+			total += current_glyph.x_advance() * scale;
+			previous_glyph_index = current_glyph.ft_glyph_index();
+		}
+
+		for (std::size_t b = start + 1; b <= pos; ++b) {
+			offsets[b] = total;
+		}
+	}
+
+	return offsets;
+}
+
 auto gse::font::vertical_center_offset(const float scale) const -> float {
 	return m_ascender * scale * 0.5f;
 }
 
 auto gse::font::ascender_height(const float scale) const -> float {
 	return m_ascender * scale;
+}
+
+auto gse::font::max_glyph_top(const float scale) const -> float {
+	return m_max_glyph_top * scale;
+}
+
+auto gse::font::min_glyph_bottom(const float scale) const -> float {
+	return m_min_glyph_bottom * scale;
 }
 
 auto gse::font::pixel_range() const -> float {

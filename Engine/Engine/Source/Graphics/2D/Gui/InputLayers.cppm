@@ -64,6 +64,14 @@ export namespace gse::gui {
 			key k
 		) const -> bool;
 
+		auto register_resize_block(
+			const ui_rect& rect
+		) -> void;
+
+		[[nodiscard]] auto is_resize_blocked(
+			vec2f position
+		) const -> bool;
+
 	private:
 		struct hit_region {
 			std::uint32_t z_order = 0;
@@ -83,6 +91,7 @@ export namespace gse::gui {
 		std::array<bool, k_button_count> m_release_consumed{};
 		bool m_scroll_consumed = false;
 		std::unordered_set<int> m_consumed_keys;
+		double_buffer<std::vector<ui_rect>> m_resize_blocks;
 	};
 }
 
@@ -101,6 +110,8 @@ auto gse::gui::input_layer::begin_frame() -> void {
 	for (auto& regions : m_current_regions) {
 		regions.clear();
 	}
+	m_resize_blocks.flip();
+	m_resize_blocks.write().clear();
 	m_press_consumed.fill(false);
 	m_release_consumed.fill(false);
 	m_scroll_consumed = false;
@@ -111,6 +122,19 @@ auto gse::gui::input_layer::register_hit_region(const render_layer layer, const 
 	if (const auto index = static_cast<std::size_t>(layer); index < m_current_regions.size()) {
 		m_current_regions[index].push_back({ z_order, rect });
 	}
+}
+
+auto gse::gui::input_layer::register_resize_block(const ui_rect& rect) -> void {
+	m_resize_blocks.write().push_back(rect);
+}
+
+auto gse::gui::input_layer::is_resize_blocked(const vec2f position) const -> bool {
+	for (const ui_rect& rect : m_resize_blocks.read()) {
+		if (rect.contains(position)) {
+			return true;
+		}
+	}
+	return false;
 }
 
 auto gse::gui::input_layer::topmost_at(const vec2f position) const -> std::pair<std::uint8_t, std::uint32_t> {

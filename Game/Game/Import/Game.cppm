@@ -29,7 +29,6 @@ export import :piston;
 export import :pose_driver;
 export import :runtime_spawns;
 export import :sandbox_scene;
-export import :settings_screen;
 export import :skeleton_spawn;
 export import :state_estimator;
 export import :test_skeletons;

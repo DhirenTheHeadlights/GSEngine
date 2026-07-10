@@ -1397,7 +1397,7 @@ With A3's reflected archive, each body collapses to **one line per direction**:
 ```cpp
 auto shader_layout::load(const vk::raii::Device& device) -> void {
     std::ifstream in(m_path, std::ios::binary);
-    binary_reader ar(in, magic, version, m_path.string());
+    binary_reader ar(in, magic, version, m_path.native_encoded_string());
     if (!ar.valid()) return;
     ar & *this;                   // reflected — walks all non-trivial fields
     build_vk_layouts(device);     // GPU-specific work stays explicit

@@ -200,7 +200,7 @@ auto gse::gpu::frame::begin(window::data* win) -> std::expected<frame_token, fra
 	};
 }
 
-auto gse::gpu::frame::end(window::data* win, std::span<const queue_submission> aux_submissions, std::span<const semaphore_submit_info> extra_graphics_waits, std::span<const command_buffer_handle> graphics_buffers) -> void {
+auto gse::gpu::frame::end(window::data* win, std::span<const queue_submission> aux_submissions, std::span<const semaphore_submit_info> extra_graphics_waits, std::span<const command_buffer_handle> graphics_buffers, std::span<const semaphore_submit_info> extra_graphics_signals) -> void {
 	const auto graphics_begin = command_buffer_handle{ m_command_buffers[static_cast<std::size_t>(queue_type::graphics)] };
 	{
 		trace::scope_guard sg{ trace_id<"end_frame::cmd_end">() };
@@ -281,6 +281,12 @@ auto gse::gpu::frame::end(window::data* win, std::span<const queue_submission> a
 		.stages = pipeline_stage_flag::bottom_of_pipe,
 	};
 
+	std::vector<semaphore_submit_info> main_signals;
+	main_signals.push_back(render_finished_signal);
+	for (const auto& s : extra_graphics_signals) {
+		main_signals.push_back(s);
+	}
+
 	{
 		trace::scope_guard sg{ trace_id<"end_frame::submit">() };
 		std::vector<command_buffer_submit_info> cmd_infos;
@@ -293,7 +299,7 @@ auto gse::gpu::frame::end(window::data* win, std::span<const queue_submission> a
 		const submit_info submit{
 			.wait_semaphores = main_waits,
 			.command_buffers = cmd_infos,
-			.signal_semaphores = std::span(&render_finished_signal, 1),
+			.signal_semaphores = main_signals,
 		};
 		m_device->submit(queue_type::graphics, submit,
 						 m_sync.in_flight_fence(queue_type::graphics, m_current_frame));

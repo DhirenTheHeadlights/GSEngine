@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="27" y1="24" x2="230" y2="229" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="1" stop-color="#dce6f2"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="50" y1="196" x2="206" y2="196" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0ea5e9"/>
+      <stop offset="0.5" stop-color="#10b981"/>
+      <stop offset="1" stop-color="#f59e0b"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="9" flood-color="#1f2937" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+  <rect x="18" y="18" width="220" height="220" rx="44" fill="url(#bg)"/>
+  <g fill="none" stroke="#10151f" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" filter="url(#shadow)">
+    <path d="M101 82H76C61 82 52 92 52 108v38c0 16 9 26 24 26h29v-39H82"/>
+    <path d="M165 82h-42c-11 0-18 7-18 17v10c0 11 7 18 18 18h25c11 0 18 7 18 18v9c0 11-7 18-18 18h-44"/>
+    <path d="M189 82v90M189 82h43M189 127h34M189 172h43"/>
+  </g>
+  <path d="M50 196h156" stroke="url(#accent)" stroke-width="8" stroke-linecap="round"/>
+</svg>

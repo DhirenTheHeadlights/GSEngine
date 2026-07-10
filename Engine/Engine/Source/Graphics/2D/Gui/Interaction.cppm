@@ -25,6 +25,13 @@ export namespace gse::gui::interaction {
 		std::span<const id> owned,
 		bool released
 	) -> bool;
+	auto activate_on_click(
+		id& active,
+		id widget,
+		bool hovered,
+		bool pressed_on_widget,
+		bool released
+	) -> bool;
 }
 
 auto gse::gui::interaction::mark_hot(id& hot, const id widget, const bool hovered) -> void {
@@ -58,4 +65,9 @@ auto gse::gui::interaction::release_active(id& active, const std::span<const id>
 		}
 	}
 	return false;
+}
+
+auto gse::gui::interaction::activate_on_click(id& active, const id widget, const bool hovered, const bool pressed_on_widget, const bool released) -> bool {
+	grab_active(active, widget, pressed_on_widget);
+	return release_active(active, widget, released) && hovered;
 }

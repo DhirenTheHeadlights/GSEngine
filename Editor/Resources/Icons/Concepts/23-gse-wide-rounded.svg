@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="28" y1="24" x2="228" y2="230" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#17111f"/>
+      <stop offset="1" stop-color="#05060b"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="45" y1="128" x2="211" y2="128" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff6d9e"/>
+      <stop offset="0.48" stop-color="#6ef7ff"/>
+      <stop offset="1" stop-color="#67ff9a"/>
+    </linearGradient>
+    <filter id="shadow" x="-35%" y="-35%" width="170%" height="170%">
+      <feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+  <rect x="18" y="18" width="220" height="220" rx="48" fill="url(#bg)"/>
+  <path d="M47 64h162M47 192h162" stroke="url(#accent)" stroke-width="7" stroke-linecap="round"/>
+  <g fill="none" stroke="#f8fbff" stroke-width="15" stroke-linecap="round" stroke-linejoin="round" filter="url(#shadow)">
+    <path d="M99 86H75c-14 0-24 10-24 24v36c0 14 10 24 24 24h28v-38H81"/>
+    <path d="M164 86h-40c-10 0-17 7-17 17v11c0 10 7 17 17 17h23c10 0 17 7 17 17v5c0 10-7 17-17 17h-41"/>
+    <path d="M187 86v84M187 86h41M187 128h34M187 170h41"/>
+  </g>
+</svg>

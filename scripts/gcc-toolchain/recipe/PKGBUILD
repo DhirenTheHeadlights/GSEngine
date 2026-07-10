@@ -203,7 +203,7 @@ build() {
     LDFLAGS+=" -Wl,--large-address-aware"
     local _arch=pentium4
   else
-    #_extra_config+=("--enable-plugin")
+    _extra_config+=("--enable-plugin")
     local _arch=nocona
   fi
 

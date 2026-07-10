@@ -136,6 +136,8 @@ export namespace glfw {
 	inline constexpr int cursor = GLFW_CURSOR;
 	inline constexpr int cursor_disabled = GLFW_CURSOR_DISABLED;
 	inline constexpr int cursor_normal = GLFW_CURSOR_NORMAL;
+	inline constexpr int arrow_cursor = GLFW_ARROW_CURSOR;
+	inline constexpr int pointing_hand_cursor = GLFW_POINTING_HAND_CURSOR;
 	inline constexpr int focus_on_show = GLFW_FOCUS_ON_SHOW;
 	inline constexpr int no_api = GLFW_NO_API;
 	inline constexpr int press = GLFW_PRESS;

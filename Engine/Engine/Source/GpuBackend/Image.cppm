@@ -63,6 +63,7 @@ export namespace gse::gpu {
 
 	enum class image_create_flag : std::uint8_t {
 		cube_compatible = 1 << 0,
+		exportable = 1 << 1,
 	};
 
 	using image_create_flags = gse::flags<image_create_flag>;
@@ -211,6 +212,22 @@ export namespace gse::gpu {
 		time_t<std::uint64_t> refresh_interval{};
 		time_t<std::uint64_t> refresh_duration{};
 		std::uint64_t time_domain_id = 0;
+	};
+
+	struct shared_surface_desc {
+		vec2u extent;
+		image_format format = image_format::r8g8b8a8_unorm;
+		image_usage usage = image_flag::color_attachment | image_flag::sampled;
+	};
+
+	struct shared_surface {
+		gpu::handle<gpu::image> image;
+		gpu::handle<gpu::image_view> view;
+		gpu::device_memory memory;
+		vec2u extent;
+		image_format format = image_format::r8g8b8a8_unorm;
+		device_size size = 0;
+		void* handle = nullptr;
 	};
 }
 
