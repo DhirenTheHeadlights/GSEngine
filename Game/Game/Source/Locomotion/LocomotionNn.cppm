@@ -179,35 +179,60 @@ export namespace gs::locomotion {
 }
 
 namespace gs::locomotion {
+	using simd_f8 = float __attribute__((vector_size(32)));
+
+	auto simd_dot(std::span<const float> a, std::span<const float> b) -> float {
+		auto acc = simd_f8{};
+		std::size_t i = 0;
+		for (; i + 8 <= a.size(); i += 8) {
+			auto va = simd_f8{};
+			auto vb = simd_f8{};
+			std::memcpy(&va, a.data() + i, sizeof(va));
+			std::memcpy(&vb, b.data() + i, sizeof(vb));
+			acc += va * vb;
+		}
+		auto sum = acc[0] + acc[1] + acc[2] + acc[3] + acc[4] + acc[5] + acc[6] + acc[7];
+		for (; i < a.size(); ++i) {
+			sum += a[i] * b[i];
+		}
+		return sum;
+	}
+
+	auto simd_saxpy(std::span<const float> x, float a, std::span<float> y) -> void {
+		const auto va = simd_f8{ a, a, a, a, a, a, a, a };
+		std::size_t i = 0;
+		for (; i + 8 <= x.size(); i += 8) {
+			auto vx = simd_f8{};
+			auto vy = simd_f8{};
+			std::memcpy(&vx, x.data() + i, sizeof(vx));
+			std::memcpy(&vy, y.data() + i, sizeof(vy));
+			vy += va * vx;
+			std::memcpy(y.data() + i, &vy, sizeof(vy));
+		}
+		for (; i < x.size(); ++i) {
+			y[i] += a * x[i];
+		}
+	}
+
 	auto linear(const nn_layer& l, std::span<const float> in, std::span<float> out) -> void {
 		for (std::size_t o = 0; o < l.out_features; ++o) {
-			auto acc = l.bias[o];
-			const auto* w = l.weight.data() + o * l.in_features;
-			for (std::size_t i = 0; i < l.in_features; ++i) {
-				acc += w[i] * in[i];
-			}
-			out[o] = acc;
+			const auto w = std::span<const float>(l.weight.data() + o * l.in_features, l.in_features);
+			out[o] = l.bias[o] + simd_dot(w, in);
 		}
 	}
 
 	auto linear_transpose(const nn_layer& l, std::span<const float> in, std::span<float> out) -> void {
 		std::ranges::fill(out, 0.0f);
 		for (std::size_t o = 0; o < l.out_features; ++o) {
-			const auto* w = l.weight.data() + o * l.in_features;
-			const auto vo = in[o];
-			for (std::size_t i = 0; i < l.in_features; ++i) {
-				out[i] += w[i] * vo;
-			}
+			const auto w = std::span<const float>(l.weight.data() + o * l.in_features, l.in_features);
+			simd_saxpy(w, in[o], out);
 		}
 	}
 
 	auto rank1_add(std::span<const float> a, std::span<const float> b, std::span<float> mat) -> void {
 		for (std::size_t i = 0; i < a.size(); ++i) {
-			auto* row = mat.data() + i * b.size();
-			const auto ai = a[i];
-			for (std::size_t k = 0; k < b.size(); ++k) {
-				row[k] += ai * b[k];
-			}
+			const auto row = std::span<float>(mat.data() + i * b.size(), b.size());
+			simd_saxpy(b, a[i], row);
 		}
 	}
 
