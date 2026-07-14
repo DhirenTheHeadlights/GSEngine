@@ -23,6 +23,9 @@ export namespace gs::locomotion {
 		float clip_eps = 0.2f;
 		float value_coeff = 0.5f;
 		float entropy_coeff = 0.004f;
+		float lr_final = 1e-5f;
+		float entropy_final = 0.0005f;
+		int decay_steps = 0;
 		int max_steps = 400;
 		std::string checkpoint_path = "locomotion_checkpoint.bin";
 		std::string state_path = "locomotion_train_state.bin";
@@ -390,6 +393,10 @@ auto gs::locomotion::run_ppo_update(trainer::data& d, const ppo_config& cfg) -> 
 	const auto obs_dim = cfg.obs_dim;
 	const auto act_dim = cfg.act_dim;
 
+	const auto progress = cfg.decay_steps > 0 ? std::min(1.0f, static_cast<float>(d.total_steps) / static_cast<float>(cfg.decay_steps)) : 0.0f;
+	const auto lr = cfg.lr + (cfg.lr_final - cfg.lr) * progress;
+	const auto entropy = cfg.entropy_coeff + (cfg.entropy_final - cfg.entropy_coeff) * progress;
+
 	auto mean_adv = 0.0f;
 	for (std::size_t t = 0; t < n; ++t) {
 		mean_adv += d.buffer.advantages[t];
@@ -425,16 +432,16 @@ auto gs::locomotion::run_ppo_update(trainer::data& d, const ppo_config& cfg) -> 
 				std::submdspan(acts_all, std::pair{start, end}, std::full_extent),
 				std::span(d.buffer.log_probs).subspan(start, n_batch),
 				std::span(d.buffer.advantages).subspan(start, n_batch),
-				cfg.lr,
+				lr,
 				cfg.clip_eps,
-				cfg.entropy_coeff
+				entropy
 			);
 			critic_loss += ppo_critic_update(
 				d.critic,
 				d.critic_opt,
 				std::submdspan(obs_all, std::pair{start, end}, std::full_extent),
 				std::span(d.buffer.returns).subspan(start, n_batch),
-				cfg.lr,
+				lr,
 				cfg.value_coeff
 			);
 			++batches;
@@ -444,11 +451,13 @@ auto gs::locomotion::run_ppo_update(trainer::data& d, const ppo_config& cfg) -> 
 	++d.update_count;
 
 	gse::log::println(
-		"locomotion_train: update={} steps={} actor_loss={:.4f} critic_loss={:.4f}",
+		"locomotion_train: update={} steps={} actor_loss={:.4f} critic_loss={:.4f} lr={:.2e} entropy={:.4f}",
 		d.update_count,
 		d.total_steps,
 		actor_loss / static_cast<float>(batches),
-		critic_loss / static_cast<float>(batches)
+		critic_loss / static_cast<float>(batches),
+		lr,
+		entropy
 	);
 
 	if (d.last_mean_surv > d.best_mean_surv) {
