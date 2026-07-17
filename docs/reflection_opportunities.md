@@ -1302,7 +1302,7 @@ Menu system scans all `[[= menu]]`-annotated structs at startup and assembles th
 `SettingsPanel.cppm` is ~500 lines hand-walking `save::state` through `property_base` virtuals, with a `pending_value` variant, `pending_change` list, manual `find_pending`, restart-required popup logic. With reflection + Reshape 5:
 
 ```cpp
-auto update(state& s, context& ctx, ui_rect rect, bool open) -> bool {
+auto update(state& s, context& ctx, rectf rect, bool open) -> bool {
     return draw_inspector(ctx.builder, "Settings", g_settings);
 }
 ```

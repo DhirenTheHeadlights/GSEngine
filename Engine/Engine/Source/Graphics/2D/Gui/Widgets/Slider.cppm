@@ -127,7 +127,7 @@ namespace gse::gui::draw {
 	template <typename T>
 	auto slider_box(
 		const draw_context& ctx,
-		const ui_rect& rect,
+		const rectf& rect,
 		id widget_id,
 		T& value,
 		T min,
@@ -200,7 +200,7 @@ auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, gs
 }
 
 template <typename T>
-auto gse::gui::draw::slider_box(const draw_context& ctx, const ui_rect& rect, const id widget_id, T& value, T min, T max, id& hot_widget_id, const id active_widget_id) -> void {
+auto gse::gui::draw::slider_box(const draw_context& ctx, const rectf& rect, const id widget_id, T& value, T min, T max, id& hot_widget_id, const id active_widget_id) -> void {
 	using underlying = internal::vec_storage_type_t<T>;
 	auto& value_u = *reinterpret_cast<underlying*>(&value);
 	const underlying min_u = internal::to_storage(min);
@@ -243,7 +243,7 @@ auto gse::gui::draw::slider_box(const draw_context& ctx, const ui_rect& rect, co
 		fill_ratio = static_cast<float>(value_u - min_u) / static_cast<float>(range_u);
 	}
 
-	const ui_rect fill_rect = ui_rect::from_position_size(
+	const rectf fill_rect = rectf::from_position_size(
 		rect.top_left(),
 		{ rect.width() * fill_ratio, rect.height() }
 	);
@@ -288,7 +288,7 @@ auto gse::gui::draw::slider_row(const draw_context& ctx, const std::string& name
 	using spec = lo::size_spec;
 
 	const float widget_height = ctx.font->line_height(sty.font_size) + sty.padding * 0.5f;
-	const ui_rect row_rect = lo::reserve_row(ctx, widget_height, sty.padding);
+	const rectf row_rect = lo::reserve_row(ctx, widget_height, sty.padding);
 
 	const auto [label_rect, value_area] = lo::split_horizontal<2>(
 		row_rect,

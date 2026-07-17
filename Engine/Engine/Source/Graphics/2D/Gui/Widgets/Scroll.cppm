@@ -46,7 +46,7 @@ namespace gse::gui {
 
 	auto scroll_axis_advance(
 		const draw_context& ctx,
-		const ui_rect& visible_rect,
+		const rectf& visible_rect,
 		const scroll_config& config,
 		scroll_axis& axis,
 		float visible_extent,
@@ -58,7 +58,7 @@ namespace gse::gui {
 	auto run_scroll_end(
 		draw_context& ctx,
 		scroll_state& state,
-		const ui_rect& visible_rect,
+		const rectf& visible_rect,
 		float content_start_y,
 		const scroll_config& config
 	) -> void;
@@ -89,13 +89,13 @@ auto gse::gui::draw_auto_scroll_anchor(const draw_context& ctx, const vec2f anch
 	constexpr float thickness = 2.f;
 	const vec4f color = ctx.style.color_accent;
 	ctx.queue_sprite({
-		.rect = ui_rect::from_position_size({ anchor.x() - thickness * 0.5f, anchor.y() + size * 0.5f }, { thickness, size }),
+		.rect = rectf::from_position_size({ anchor.x() - thickness * 0.5f, anchor.y() + size * 0.5f }, { thickness, size }),
 		.color = color,
 		.texture = ctx.blank_texture,
 		.layer = ctx.current_layer,
 	});
 	ctx.queue_sprite({
-		.rect = ui_rect::from_position_size({ anchor.x() - size * 0.5f, anchor.y() + thickness * 0.5f }, { size, thickness }),
+		.rect = rectf::from_position_size({ anchor.x() - size * 0.5f, anchor.y() + thickness * 0.5f }, { size, thickness }),
 		.color = color,
 		.texture = ctx.blank_texture,
 		.layer = ctx.current_layer,
@@ -123,9 +123,9 @@ auto gse::gui::update_scroll_bar(scroll_axis& axis, const scroll_bar_input& inpu
 	const float thumb_pos = input.horizontal
 		? input.track_rect.left() + ratio * travel
 		: input.track_rect.top() - ratio * travel;
-	const ui_rect thumb_rect = input.horizontal
-		? ui_rect::from_position_size({ thumb_pos, input.track_rect.top() }, { thumb_len, input.track_rect.height() })
-		: ui_rect::from_position_size({ input.track_rect.left(), thumb_pos }, { input.track_rect.width(), thumb_len });
+	const rectf thumb_rect = input.horizontal
+		? rectf::from_position_size({ thumb_pos, input.track_rect.top() }, { thumb_len, input.track_rect.height() })
+		: rectf::from_position_size({ input.track_rect.left(), thumb_pos }, { input.track_rect.width(), thumb_len });
 
 	const float mouse_axis = input.horizontal ? input.mouse.x() : input.mouse.y();
 	axis.hovered = thumb_rect.contains(input.mouse);
@@ -194,13 +194,13 @@ auto gse::gui::scroll_region(draw_context& ctx, const scroll_region_info& info) 
 		return {};
 	}
 
-	const ui_rect content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
+	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
 
 	const float available_width = info.size.x() > 0.f ? info.size.x() : content_rect.right() - ctx.layout_cursor.x();
 
 	const float available_height = info.size.y() > 0.f ? info.size.y() : ctx.layout_cursor.y() - content_rect.bottom();
 
-	const ui_rect visible_rect = ui_rect::from_position_size(
+	const rectf visible_rect = rectf::from_position_size(
 		{ ctx.layout_cursor.x(), ctx.layout_cursor.y() },
 		{ available_width, std::max(0.f, available_height) }
 	);
@@ -212,7 +212,7 @@ auto gse::gui::scroll_region(draw_context& ctx, const scroll_region_info& info) 
 	return scroll_handle{ ctx, state, visible_rect, saved_layout_y, info.config };
 }
 
-auto gse::gui::scroll_axis_advance(const draw_context& ctx, const ui_rect& visible_rect, const scroll_config& config, scroll_axis& axis, const float visible_extent, const float wheel_amount, const bool horizontal, const bool show) -> void {
+auto gse::gui::scroll_axis_advance(const draw_context& ctx, const rectf& visible_rect, const scroll_config& config, scroll_axis& axis, const float visible_extent, const float wheel_amount, const bool horizontal, const bool show) -> void {
 	const float max_scroll = std::max(0.f, axis.content - visible_extent);
 
 	if (max_scroll > 0.f && std::abs(wheel_amount) > 0.001f) {
@@ -239,9 +239,9 @@ auto gse::gui::scroll_axis_advance(const draw_context& ctx, const ui_rect& visib
 
 	const float w = config.scrollbar_width;
 	const vec2f mouse = ctx.input.mouse_position();
-	const ui_rect track_rect = horizontal
-		? ui_rect::from_position_size({ visible_rect.left(), visible_rect.bottom() + w }, { visible_extent, w })
-		: ui_rect::from_position_size({ visible_rect.right() - w, visible_rect.top() }, { w, visible_extent });
+	const rectf track_rect = horizontal
+		? rectf::from_position_size({ visible_rect.left(), visible_rect.bottom() + w }, { visible_extent, w })
+		: rectf::from_position_size({ visible_rect.right() - w, visible_rect.top() }, { w, visible_extent });
 
 	if (ctx.hit_regions) {
 		ctx.hit_regions->register_resize_block(track_rect);
@@ -263,7 +263,7 @@ auto gse::gui::scroll_axis_advance(const draw_context& ctx, const ui_rect& visib
 	draw_scroll_bar(ctx, bar, axis);
 }
 
-auto gse::gui::scroll_area(const draw_context& ctx, scroll_state& state, const ui_rect& visible_rect, const vec2f content_size, const scroll_config& config) -> vec2f {
+auto gse::gui::scroll_area(const draw_context& ctx, scroll_state& state, const rectf& visible_rect, const vec2f content_size, const scroll_config& config) -> vec2f {
 	state.y.content = content_size.y();
 	state.x.content = content_size.x();
 
@@ -310,7 +310,7 @@ auto gse::gui::scroll_area(const draw_context& ctx, scroll_state& state, const u
 	return { state.x.offset, state.y.offset };
 }
 
-auto gse::gui::run_scroll_end(draw_context& ctx, scroll_state& state, const ui_rect& visible_rect, const float content_start_y, const scroll_config& config) -> void {
+auto gse::gui::run_scroll_end(draw_context& ctx, scroll_state& state, const rectf& visible_rect, const float content_start_y, const scroll_config& config) -> void {
 	const float content_height = content_start_y - ctx.layout_cursor.y();
 	scroll_area(ctx, state, visible_rect, { visible_rect.width(), content_height }, config);
 }

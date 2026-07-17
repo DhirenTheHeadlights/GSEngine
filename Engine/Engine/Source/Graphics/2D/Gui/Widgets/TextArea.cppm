@@ -19,6 +19,7 @@ import :styles;
 import :builder;
 import :text_buffer;
 import :font;
+import :interaction;
 
 export namespace gse::gui {
 	struct text_edit_snapshot {
@@ -46,9 +47,7 @@ export namespace gse::gui {
 		std::vector<text_edit_snapshot> redo_stack;
 		int last_edit_kind = 0;
 		bool selecting = false;
-		time last_click{};
-		vec2f last_click_pos{};
-		int click_count = 0;
+		interaction::click_state click;
 		int select_granularity = 0;
 		buffer_position select_origin{};
 		float widest_line_px = 0.f;
@@ -65,7 +64,8 @@ export namespace gse::gui {
 			text_area_state& state;
 			std::span<const text_span> spans{};
 			std::span<const text_underline> underlines{};
-			std::optional<ui_rect> rect{};
+			std::span<const text_fade> fades{};
+			std::optional<rectf> rect{};
 			bool read_only = false;
 			bool show_line_numbers = false;
 			std::size_t indent_width = 4;
@@ -92,7 +92,8 @@ export namespace gse::gui::draw {
 		text_area_state& state,
 		std::span<const text_span> spans,
 		std::span<const text_underline> underlines,
-		const ui_rect& rect,
+		std::span<const text_fade> fades,
+		const rectf& rect,
 		bool read_only,
 		bool show_line_numbers,
 		std::size_t indent_width,
@@ -102,11 +103,21 @@ export namespace gse::gui::draw {
 		id& hot_widget_id,
 		id& focus_widget_id
 	) -> bool;
+
+	auto text_area_position_at(
+		const draw_context& ctx,
+		const text_buffer& buffer,
+		const text_area_state& state,
+		const rectf& rect,
+		bool show_line_numbers,
+		std::size_t indent_width,
+		vec2f mouse
+	) -> buffer_position;
 }
 
 auto gse::gui::text_area::draw(const draw_context& ctx, const params& p, id& hot, id& active, id& focus) -> void {
 	(void)active;
-	const ui_rect rect = p.rect.value_or(ctx.next_row(8.f));
+	const rectf rect = p.rect.value_or(ctx.next_row(8.f));
 	draw::text_area_in_rect(
 		ctx,
 		ids::make_from_key(stable_id("##TextArea")),
@@ -114,6 +125,7 @@ auto gse::gui::text_area::draw(const draw_context& ctx, const params& p, id& hot
 		p.state,
 		p.spans,
 		p.underlines,
+		p.fades,
 		rect,
 		p.read_only,
 		p.show_line_numbers,
@@ -126,7 +138,52 @@ auto gse::gui::text_area::draw(const draw_context& ctx, const params& p, id& hot
 	);
 }
 
-auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, text_buffer& buffer, text_area_state& state, std::span<const text_span> spans, std::span<const text_underline> underlines, const ui_rect& rect, bool read_only, bool show_line_numbers, std::size_t indent_width, bool indent_with_spaces, bool auto_indent, time blink_interval, id& hot_widget_id, id& focus_widget_id) -> bool {
+auto gse::gui::draw::text_area_position_at(const draw_context& ctx, const text_buffer& buffer, const text_area_state& state, const rectf& rect, const bool show_line_numbers, const std::size_t indent_width, const vec2f mouse) -> buffer_position {
+	const float scale = ctx.style.font_size;
+	const float pad = ctx.style.padding;
+	const float line_h = ctx.font->line_height(scale) * 1.25f;
+	const std::size_t line_digits = std::max<std::size_t>(2, std::to_string(std::max<std::size_t>(1, buffer.line_count())).size());
+	const float gutter_width = show_line_numbers ? ctx.font->width(std::string(line_digits, '0'), scale) + pad * 2.f : 0.f;
+	const float left_inset = show_line_numbers ? gutter_width : pad;
+	const float text_x = rect.left() + left_inset - state.scroll.x.offset;
+	const float top_y = rect.top() - pad + state.scroll.y.offset;
+	const std::size_t display_tab_width = std::clamp<std::size_t>(indent_width, 1, 16);
+
+	const int line_count = static_cast<int>(buffer.line_count());
+	const auto picked_line = static_cast<std::uint32_t>(std::clamp(static_cast<int>((top_y - mouse.y()) / line_h), 0, std::max(0, line_count - 1)));
+	const std::string_view line = buffer.line(picked_line);
+
+	std::string expanded;
+	std::vector<std::size_t> col_to_expanded(line.size() + 1);
+	std::size_t display_col = 0;
+	for (std::size_t i = 0; i < line.size(); ++i) {
+		col_to_expanded[i] = expanded.size();
+		if (line[i] == '\t') {
+			const std::size_t tab = display_tab_width - display_col % display_tab_width;
+			expanded.append(tab, ' ');
+			display_col += tab;
+		}
+		else {
+			expanded.push_back(line[i]);
+			++display_col;
+		}
+	}
+	col_to_expanded[line.size()] = expanded.size();
+	const std::vector<float> expanded_offsets = ctx.font->caret_offsets(expanded, scale);
+
+	int picked_col = 0;
+	float best_dx = std::numeric_limits<float>::max();
+	for (int k = 0; k <= static_cast<int>(line.size()); ++k) {
+		const float x = text_x + expanded_offsets[col_to_expanded[static_cast<std::size_t>(k)]];
+		if (const float dx = std::abs(x - mouse.x()); dx < best_dx) {
+			best_dx = dx;
+			picked_col = k;
+		}
+	}
+	return buffer.clamp({ .line = picked_line, .column = static_cast<std::uint32_t>(picked_col) });
+}
+
+auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, text_buffer& buffer, text_area_state& state, std::span<const text_span> spans, std::span<const text_underline> underlines, std::span<const text_fade> fades, const rectf& rect, bool read_only, bool show_line_numbers, std::size_t indent_width, bool indent_with_spaces, bool auto_indent, time blink_interval, id& hot_widget_id, id& focus_widget_id) -> bool {
 	(void)spans;
 
 	bool modified = false;
@@ -196,20 +253,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, te
 	};
 
 	auto pick_position = [&](const vec2f mouse) -> buffer_position {
-		const int line_count = static_cast<int>(buffer.line_count());
-		const auto picked_line = static_cast<std::uint32_t>(
-			std::clamp(static_cast<int>((top_y - mouse.y()) / line_h), 0, std::max(0, line_count - 1)));
-		const std::string_view line = buffer.line(picked_line);
-		const std::vector<float> offsets = line_column_x(line);
-		int picked_col = 0;
-		float best_dx = std::numeric_limits<float>::max();
-		for (int k = 0; k <= static_cast<int>(line.size()); ++k) {
-			if (const float dx = std::abs(offsets[static_cast<std::size_t>(k)] - mouse.x()); dx < best_dx) {
-				best_dx = dx;
-				picked_col = k;
-			}
-		}
-		return buffer.clamp({ picked_line, static_cast<std::uint32_t>(picked_col) });
+		return text_area_position_at(ctx, buffer, state, rect, show_line_numbers, indent_width, mouse);
 	};
 
 	auto classify_char = [](const char c) -> int {
@@ -289,7 +333,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, te
 	const float content_width = left_inset + state.widest_line_px + pad;
 	const bool h_scrollable = content_width > rect.width();
 	const float h_scrollbar_gutter = h_scrollable ? scroll_cfg.scrollbar_width : 0.f;
-	const ui_rect text_hit_rect = ui_rect::from_position_size(
+	const rectf text_hit_rect = rectf::from_position_size(
 		{ rect.left(), rect.top() },
 		{ std::max(0.f, rect.width() - scrollbar_gutter), std::max(0.f, rect.height() - h_scrollbar_gutter) }
 	);
@@ -299,25 +343,16 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, te
 		hot_widget_id = widget_id;
 	}
 
-	constexpr time multi_click_interval = milliseconds(400);
-	constexpr float multi_click_slop = 4.f;
-
 	if (ctx.mouse_pressed_for(text_hit_rect)) {
 		focus_widget_id = widget_id;
 
 		const vec2f mouse = ctx.input.mouse_position();
-		const time now = system_clock::now<time>();
 		const buffer_position pos = pick_position(mouse);
-		const bool near_last = now - state.last_click <= multi_click_interval &&
-			std::abs(mouse.x() - state.last_click_pos.x()) <= multi_click_slop &&
-			std::abs(mouse.y() - state.last_click_pos.y()) <= multi_click_slop;
-		state.click_count = near_last ? state.click_count % 3 + 1 : 1;
-		state.last_click = now;
-		state.last_click_pos = mouse;
+		interaction::register_click(state.click, mouse);
 		state.select_origin = pos;
 
-		if (state.click_count >= 2) {
-			state.select_granularity = state.click_count == 3 ? 2 : 1;
+		if (state.click.count >= 2) {
+			state.select_granularity = state.click.count == 3 ? 2 : 1;
 			const auto [lo, hi] = granular_range(state.select_granularity, pos);
 			state.anchor = lo;
 			state.caret = hi;
@@ -329,7 +364,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, te
 		}
 
 		state.selecting = true;
-		state.last_blink = now;
+		state.last_blink = system_clock::now<time>();
 		state.blink_on = true;
 		state.last_edit_kind = 0;
 	}
@@ -891,15 +926,15 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, te
 
 	if (gutter_width > 0.f) {
 		ctx.queue_sprite({
-			.rect = ui_rect::from_position_size({ rect.left(), rect.top() }, { gutter_width, rect.height() }),
+			.rect = rectf::from_position_size({ rect.left(), rect.top() }, { gutter_width, rect.height() }),
 			.color = ctx.style.color_panel_alt,
 			.texture = ctx.blank_texture,
 			.clip_rect = rect,
 		});
 	}
 
-	const ui_rect content_clip = gutter_width > 0.f
-		? ui_rect::from_position_size({ rect.left() + gutter_width, rect.top() }, { std::max(0.f, rect.width() - gutter_width), rect.height() })
+	const rectf content_clip = gutter_width > 0.f
+		? rectf::from_position_size({ rect.left() + gutter_width, rect.top() }, { std::max(0.f, rect.width() - gutter_width), rect.height() })
 		: rect;
 
 	const float view_height = std::max(0.f, rect.height() - pad * 2.f);
@@ -923,7 +958,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, te
 			const float extra = static_cast<std::uint32_t>(i) < sel_hi.line ? ctx.font->width(" ", scale) : 0.f;
 			const float sel_center = top_y - static_cast<float>(i) * line_h - line_h * 0.5f;
 			ctx.queue_sprite({
-				.rect = ui_rect::from_position_size({ x_a, sel_center + line_h * 0.5f }, { x_b - x_a + extra, line_h }),
+				.rect = rectf::from_position_size({ x_a, sel_center + line_h * 0.5f }, { x_b - x_a + extra, line_h }),
 				.color = ctx.style.color_selection,
 				.texture = ctx.blank_texture,
 				.clip_rect = content_clip,
@@ -959,10 +994,24 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, te
 			std::size_t col = 0;
 			std::size_t disp = 0;
 			float run_x = text_x;
-			auto draw_run = [&](std::size_t a, std::size_t b, const vec4f& color) {
-				if (b <= a) {
-					return;
+			std::array<const text_fade*, 8> line_fades{};
+			std::size_t line_fade_count = 0;
+			for (const text_fade& f : fades) {
+				if (f.line == line_no && line_fade_count < line_fades.size()) {
+					line_fades[line_fade_count++] = &f;
 				}
+			}
+			const bool line_faded = line_fade_count > 0;
+			auto fade_alpha = [&](std::size_t c) -> float {
+				float alpha = 1.f;
+				for (std::size_t k = 0; k < line_fade_count; ++k) {
+					if (c >= line_fades[k]->start_col && c < line_fades[k]->end_col) {
+						alpha = std::min(alpha, line_fades[k]->alpha);
+					}
+				}
+				return alpha;
+			};
+			auto emit_run = [&](std::size_t a, std::size_t b, const vec4f& color) {
 				const std::string seg = expand_from(line.substr(a, b - a), disp);
 				ctx.queue_text({
 					.font = ctx.font,
@@ -974,6 +1023,28 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, te
 				});
 				run_x += ctx.font->width(seg, scale);
 				disp += seg.size();
+			};
+			auto draw_run = [&](std::size_t a, std::size_t b, const vec4f& color) {
+				if (b <= a) {
+					return;
+				}
+				if (!line_faded) {
+					emit_run(a, b, color);
+				}
+				else {
+					std::size_t cursor = a;
+					while (cursor < b) {
+						const float alpha = fade_alpha(cursor);
+						std::size_t split = cursor + 1;
+						while (split < b && fade_alpha(split) == alpha) {
+							++split;
+						}
+						vec4f faded = color;
+						faded.w() *= alpha;
+						emit_run(cursor, split, faded);
+						cursor = split;
+					}
+				}
 				col = b;
 			};
 			for (std::size_t k = span_cursor; k < line_span_end; ++k) {
@@ -1003,7 +1074,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, te
 			const float x0 = (*underline_offsets)[a];
 			const float x1 = (*underline_offsets)[b];
 			ctx.queue_sprite({
-				.rect = ui_rect::from_position_size({ x0, line_center - line_h * 0.35f }, { std::max(x1 - x0, 3.f), 2.f }),
+				.rect = rectf::from_position_size({ x0, line_center - line_h * 0.35f }, { std::max(x1 - x0, 3.f), 2.f }),
 				.color = u.color,
 				.texture = ctx.blank_texture,
 				.clip_rect = content_clip,
@@ -1022,7 +1093,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, te
 		const float ink_top = ctx.font->max_glyph_top(scale);
 		const float ink_bottom = ctx.font->min_glyph_bottom(scale);
 		ctx.queue_sprite({
-			.rect = ui_rect::from_position_size({ caret_x, baseline + ink_top }, { 2.f, ink_top - ink_bottom }),
+			.rect = rectf::from_position_size({ caret_x, baseline + ink_top }, { 2.f, ink_top - ink_bottom }),
 			.color = ctx.style.color_caret,
 			.texture = ctx.blank_texture,
 			.clip_rect = content_clip,

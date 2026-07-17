@@ -28,6 +28,10 @@ export namespace gse {
 	enum class cursor_shape : std::uint8_t {
 		arrow = 0,
 		hand = 1,
+		resize_ew = 2,
+		resize_ns = 3,
+		resize_nwse = 4,
+		resize_nesw = 5,
 	};
 
 	struct set_cursor_shape_request {

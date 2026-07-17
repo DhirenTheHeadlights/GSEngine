@@ -43,9 +43,9 @@ auto gse::gui::nav_item::draw(const draw_context& ctx, const params& p, id& hot,
 	const id widget_id = ids::make(p.text);
 
 	const float widget_height = ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * 0.8f;
-	const ui_rect content_rect = ctx.current_menu->rect.inset({ ctx.style.padding * 0.5f, 0.f });
+	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding * 0.5f, 0.f });
 
-	const ui_rect row_rect = ui_rect::from_position_size(
+	const rectf row_rect = rectf::from_position_size(
 		{ content_rect.left(), ctx.layout_cursor.y() },
 		{ content_rect.width(), widget_height }
 	);
@@ -77,7 +77,7 @@ auto gse::gui::nav_item::draw(const draw_context& ctx, const params& p, id& hot,
 
 	if (p.selected) {
 		const float bar_h = widget_height * 0.55f;
-		const ui_rect bar_rect = ui_rect::from_position_size(
+		const rectf bar_rect = rectf::from_position_size(
 			{ row_rect.left(), row_rect.center().y() + bar_h * 0.5f },
 			{ ctx.style.accent_bar_width, bar_h }
 		);

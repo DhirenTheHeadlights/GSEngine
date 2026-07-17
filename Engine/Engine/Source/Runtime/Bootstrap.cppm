@@ -9,6 +9,7 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+import gse.introspection;
 import gse.os;
 import gse.gpu;
 import gse.log;
@@ -93,6 +94,7 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 
 		win32::HANDLE editor_pipe = nullptr;
 		bool surface_announced = false;
+		bool graph_dumped = false;
 		if (config.attached && !config.ipc_pipe_name.empty()) {
 			const std::wstring pipe(config.ipc_pipe_name.begin(), config.ipc_pipe_name.end());
 			editor_pipe = win32::CreateFileW(pipe.c_str(), win32::generic_write, 0, nullptr, win32::open_existing, 0, nullptr);
@@ -158,6 +160,18 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 					win32::WriteFile(editor_pipe, &msg, sizeof(msg), &written, nullptr);
 					surface_announced = true;
 					log::println(log::category::general, "announced shared surface ring to editor: {}x{}", msg.extent.x(), msg.extent.y());
+				}
+
+				if (!graph_dumped && !config.dump_system_graph_path.empty() && e.all_settled()) {
+					const introspection::system_graph graph = e.snapshot_graph();
+					std::ofstream graph_out(config.dump_system_graph_path, std::ios::binary);
+					if (graph_out) {
+						binary_writer writer(graph_out, introspection::system_graph_magic, introspection::system_graph_version);
+						writer & graph.nodes;
+						writer & graph.edges;
+					}
+					graph_dumped = true;
+					log::println(log::category::general, "wrote system graph: {} nodes to {}", graph.nodes.size(), config.dump_system_graph_path);
 				}
 
 				{

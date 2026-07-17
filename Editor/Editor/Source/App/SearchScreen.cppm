@@ -38,11 +38,10 @@ export namespace gse::ide {
 		) const -> void override;
 
 	private:
-		using ui_rect = gse::rect_t<gse::vec2f>;
 
 		auto draw_row(
 			gse::gui::draw_context& ctx,
-			const ui_rect& row,
+			const rectf& row,
 			const search::result& r,
 			bool selected
 		) const -> void;
@@ -84,7 +83,7 @@ auto gse::ide::search_screen::should_dismiss() const -> bool {
 auto gse::ide::search_screen::body_rect(const gse::gui::style&, const gse::vec2f viewport_size) const -> gse::rect_t<gse::vec2f> {
 	const float w = std::min(viewport_size.x() * 0.6f, 900.f);
 	const float h = std::min(viewport_size.y() * 0.7f, 640.f);
-	return ui_rect::from_position_size(
+	return rectf::from_position_size(
 		{ (viewport_size.x() - w) * 0.5f, (viewport_size.y() + h) * 0.5f },
 		{ w, h }
 	);
@@ -92,12 +91,12 @@ auto gse::ide::search_screen::body_rect(const gse::gui::style&, const gse::vec2f
 
 auto gse::ide::search_screen::draw_backdrop(gse::gui::draw_context& ctx, const gse::vec2f viewport_size) const -> void {
 	ctx.sprites.push_back({
-		.rect = ui_rect::from_position_size({ 0.f, viewport_size.y() }, viewport_size),
+		.rect = rectf::from_position_size({ 0.f, viewport_size.y() }, viewport_size),
 		.color = { 0.f, 0.f, 0.f, 0.55f },
 		.texture = ctx.blank_texture,
 		.layer = gse::render_layer::overlay,
 	});
-	const ui_rect card = body_rect(ctx.style, viewport_size);
+	const rectf card = body_rect(ctx.style, viewport_size);
 	ctx.sprites.push_back({
 		.rect = card,
 		.color = { ctx.style.color_menu_body.x(), ctx.style.color_menu_body.y(), ctx.style.color_menu_body.z(), 1.f },
@@ -107,7 +106,7 @@ auto gse::ide::search_screen::draw_backdrop(gse::gui::draw_context& ctx, const g
 	});
 }
 
-auto gse::ide::search_screen::draw_row(gse::gui::draw_context& ctx, const ui_rect& row, const search::result& r, const bool selected) const -> void {
+auto gse::ide::search_screen::draw_row(gse::gui::draw_context& ctx, const rectf& row, const search::result& r, const bool selected) const -> void {
 	const auto& sty = ctx.style;
 	const float pad = sty.padding;
 	const float fs = sty.font_size;
@@ -121,7 +120,7 @@ auto gse::ide::search_screen::draw_row(gse::gui::draw_context& ctx, const ui_rec
 		});
 	}
 
-	const ui_rect icon_rect = ui_rect::from_position_size(
+	const rectf icon_rect = rectf::from_position_size(
 		{ row.left() + pad, row.center().y() + fs * 0.5f },
 		{ fs, fs }
 	);
@@ -154,7 +153,7 @@ auto gse::ide::search_screen::draw_row(gse::gui::draw_context& ctx, const ui_rec
 		});
 	}
 
-	const ui_rect display_clip = ui_rect::from_position_size(
+	const rectf display_clip = rectf::from_position_size(
 		{ text_x, row.top() },
 		{ std::max(0.f, loc_x - pad - text_x), row.height() }
 	);
@@ -168,7 +167,7 @@ auto gse::ide::search_screen::draw_row(gse::gui::draw_context& ctx, const ui_rec
 				continue;
 			}
 			ctx.queue_sprite({
-				.rect = ui_rect::from_position_size(
+				.rect = rectf::from_position_size(
 					{ text_x + offsets[a], row.center().y() + fs * 0.5f },
 					{ offsets[b] - offsets[a], fs }
 				),
@@ -197,11 +196,11 @@ auto gse::ide::search_screen::build(gse::gui::builder& ui, gse::gui::nav&) -> vo
 
 	const auto scope = ctx.scoped_layer(gse::render_layer::popup);
 	const auto& sty = ctx.style;
-	const ui_rect card = ctx.current_menu->rect;
+	const rectf card = ctx.current_menu->rect;
 	const float pad = sty.padding;
 
 	const float input_h = ctx.font->line_height(sty.font_size) + pad;
-	const ui_rect input_rect = ui_rect::from_position_size(
+	const rectf input_rect = rectf::from_position_size(
 		{ card.left() + pad, card.top() - pad },
 		{ card.width() - pad * 2.f, input_h }
 	);
@@ -223,6 +222,9 @@ auto gse::ide::search_screen::build(gse::gui::builder& ui, gse::gui::nav&) -> vo
 
 	const gse::time now = gse::system_clock::now<gse::time>();
 	if (m_query != m_last_query) {
+		if (m_pending) {
+			m_pending->cancelled.store(true, std::memory_order_release);
+		}
 		m_last_query = m_query;
 		m_change_time = now;
 		m_dirty = true;
@@ -234,6 +236,9 @@ auto gse::ide::search_screen::build(gse::gui::builder& ui, gse::gui::nav&) -> vo
 			m_pending.reset();
 		}
 		else {
+			if (m_pending) {
+				m_pending->cancelled.store(true, std::memory_order_release);
+			}
 			m_pending = std::make_shared<search::query_buffer>();
 			search::engine::submit(m_pending, *m_index, m_query, search::options{});
 		}
@@ -265,7 +270,7 @@ auto gse::ide::search_screen::build(gse::gui::builder& ui, gse::gui::nav&) -> vo
 
 	const float list_top = input_rect.bottom() - pad;
 	const float list_bottom = card.bottom() + pad;
-	const ui_rect list_rect = ui_rect::from_position_size(
+	const rectf list_rect = rectf::from_position_size(
 		{ card.left() + pad, list_top },
 		{ card.width() - pad * 2.f, std::max(0.f, list_top - list_bottom) }
 	);
@@ -277,9 +282,9 @@ auto gse::ide::search_screen::build(gse::gui::builder& ui, gse::gui::nav&) -> vo
 		auto& c = b.ctx;
 		const gse::vec2f mouse = c.input.mouse_position();
 		const bool clicked = c.input.mouse_button_pressed(gse::mouse_button::button_1);
-		const ui_rect clip = c.current_clip().value_or(list_rect);
+		const rectf clip = c.current_clip().value_or(list_rect);
 		for (std::size_t i = 0; i < m_results.size(); ++i) {
-			const ui_rect row = ui_rect::from_position_size(
+			const rectf row = rectf::from_position_size(
 				{ list_rect.left(), c.layout_cursor.y() },
 				{ list_rect.width(), row_h }
 			);

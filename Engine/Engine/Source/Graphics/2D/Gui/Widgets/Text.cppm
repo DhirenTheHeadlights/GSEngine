@@ -8,6 +8,7 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+import gse.math;
 import :types;
 import :styles;
 import :builder;
@@ -38,21 +39,21 @@ auto gse::gui::draw::text(const draw_context& ctx, const std::string& name, cons
 	}
 
 	const float widget_height = ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
-	const ui_rect content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
+	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
 
-	const ui_rect row_rect = ui_rect::from_position_size(
+	const rectf row_rect = rectf::from_position_size(
 		{ content_rect.left(), ctx.layout_cursor.y() },
 		{ content_rect.width(), widget_height }
 	);
 
 	const float label_width = name.empty() ? 0.f : content_rect.width() * 0.4f;
 
-	const ui_rect label_rect = ui_rect::from_position_size(
+	const rectf label_rect = rectf::from_position_size(
 		row_rect.top_left(),
 		{ label_width, widget_height }
 	);
 
-	const ui_rect value_rect = ui_rect::from_position_size(
+	const rectf value_rect = rectf::from_position_size(
 		{ row_rect.left() + label_width, row_rect.top() },
 		{ row_rect.width() - label_width, widget_height }
 	);

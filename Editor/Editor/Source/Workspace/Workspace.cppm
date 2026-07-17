@@ -5,15 +5,10 @@ import gse;
 
 import gse.ide.highlight;
 import gse.ide.analysis;
+import gse.ide.diagnostic;
 import gse.ide.docs;
 
 export namespace gse::ide {
-	struct jump_to_request {
-		std::filesystem::path path;
-		std::uint32_t line = 0;
-		std::uint32_t column = 0;
-	};
-
 	struct document {
 		std::filesystem::path path;
 		std::string tab_name;
@@ -23,7 +18,8 @@ export namespace gse::ide {
 		syntax_producer::data syntax;
 		bool highlight_dirty = true;
 		bool highlightable = true;
-		std::vector<analysis::gcc_diagnostic> diagnostics;
+		std::vector<diagnostic> diagnostics;
+		std::vector<diagnostic> lint;
 		bool analysis_failed = false;
 		bool analysis_crashed = false;
 		gse::time analysis_duration{};
@@ -50,6 +46,7 @@ export namespace gse::ide {
 		gse::vec4f kind_color;
 		gse::vec2f anchor;
 		gse::rect_t<gse::vec2f> panel;
+		gse::rect_t<gse::vec2f> code_rect;
 	};
 
 	struct fs_node {
@@ -85,13 +82,11 @@ export namespace gse::ide {
 			std::vector<std::uint32_t> tab_order;
 			std::vector<navigation_entry> back_stack;
 			std::vector<navigation_entry> forward_stack;
-			std::uint32_t tab_visible_rows = 1;
-			gse::gui::scroll_axis tab_scroll_x;
-			std::uint32_t tab_scroll_active_id = 0;
+			gse::gui::tab_strip_state tab_strip;
 			std::uint32_t next_document_id = 1;
 			std::uint32_t active_document_id = 0;
 			std::uint32_t primary_document_id = 0;
-			std::uint32_t dragging_tab = 0;
+			bool show_game_graph = false;
 			gse::file_watcher watcher;
 
 			fs_node fs_root;
@@ -101,7 +96,7 @@ export namespace gse::ide {
 
 			std::shared_ptr<analysis::diagnostics_check> diagnostics_pending;
 
-			hover_state hover;
+			std::vector<hover_state> hover_stack;
 			docs::cppref_index cppref;
 		};
 

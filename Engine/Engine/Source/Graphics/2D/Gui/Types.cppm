@@ -15,7 +15,6 @@ import :render_layer;
 import :input_layers;
 
 export namespace gse::gui {
-	using ui_rect = rect_t<vec2f>;
 
 	namespace symbol {
 		struct stroke {
@@ -76,7 +75,7 @@ export namespace gse::gui {
 	};
 
 	struct scroll_bar_input {
-		ui_rect track_rect;
+		rectf track_rect;
 		float visible_extent = 0.f;
 		float content_extent = 0.f;
 		bool horizontal = false;
@@ -87,8 +86,8 @@ export namespace gse::gui {
 	};
 
 	struct scroll_bar_result {
-		ui_rect track_rect;
-		ui_rect thumb_rect;
+		rectf track_rect;
+		rectf thumb_rect;
 		bool visible = false;
 		bool hovered = false;
 		bool held = false;
@@ -99,6 +98,14 @@ export namespace gse::gui {
 		std::string_view id;
 		vec2f size{ 0.f, 0.f };
 		scroll_config config{};
+	};
+
+	struct tab_strip_state {
+		scroll_axis scroll{};
+		std::uint64_t scroll_active = 0;
+		std::uint64_t dragging = 0;
+		std::uint32_t visible_rows = 1;
+		float spinner_phase = 0.f;
 	};
 }
 
@@ -113,8 +120,8 @@ export namespace gse::gui::dock {
 	};
 
 	struct area {
-		ui_rect rect;
-		ui_rect target;
+		rectf rect;
+		rectf target;
 		location dock_location = location::none;
 
 		~area() noexcept = default;
@@ -129,7 +136,7 @@ export namespace gse::gui::dock {
 
 export namespace gse::gui {
 	struct menu_data {
-		ui_rect rect;
+		rectf rect;
 		id parent_id;
 		dock::location docked_to = dock::location::none;
 		float dock_split_ratio = 0.5f;
@@ -144,7 +151,7 @@ export namespace gse::gui {
 			const menu_data& data
 		);
 
-		ui_rect rect;
+		rectf rect;
 		vec2f grab_offset;
 		std::optional<vec2f> pre_docked_size;
 		bool grabbed = false;
@@ -156,9 +163,7 @@ export namespace gse::gui {
 		bool bare = false;
 		std::vector<std::string> tab_contents;
 		std::uint32_t active_tab_index = 0;
-		std::uint32_t tab_visible_rows = 1;
-		scroll_axis tab_scroll_x;
-		std::uint32_t tab_scroll_active_index = static_cast<std::uint32_t>(-1);
+		tab_strip_state tab_bar;
 		std::uint32_t z_order = 0;
 		bool was_begun_this_frame = false;
 		bool was_visible_last_frame = false;
@@ -214,7 +219,7 @@ export namespace gse::gui {
 		class input_layer* hit_regions = nullptr;
 		tooltip_state* tooltip = nullptr;
 		context_menu_state* context_menu = nullptr;
-		std::vector<ui_rect> clip_stack;
+		std::vector<rectf> clip_stack;
 
 		auto queue_sprite(
 			renderer::sprite_command cmd
@@ -236,7 +241,7 @@ export namespace gse::gui {
 
 		auto register_hit_region(
 			render_layer layer,
-			const ui_rect& rect
+			const rectf& rect
 		) const -> void;
 
 		[[nodiscard]] auto input_available() const -> bool;
@@ -247,13 +252,13 @@ export namespace gse::gui {
 
 		[[nodiscard]]
 		auto mouse_pressed_for(
-			const ui_rect& rect,
+			const rectf& rect,
 			mouse_button button = mouse_button::button_1
 		) const -> bool;
 
 		[[nodiscard]]
 		auto mouse_released_for(
-			const ui_rect& rect,
+			const rectf& rect,
 			mouse_button button = mouse_button::button_1
 		) const -> bool;
 
@@ -270,7 +275,7 @@ export namespace gse::gui {
 		) const -> bool;
 
 		[[nodiscard]] auto scroll_delta_for(
-			const ui_rect& rect
+			const rectf& rect
 		) const -> vec2f;
 
 		auto consume_scroll() const -> void;
@@ -292,7 +297,7 @@ export namespace gse::gui {
 
 		auto next_row(
 			float height_multiplier = 1.f
-		) const -> ui_rect;
+		) const -> rectf;
 
 		auto animated_color(
 			const id& widget_id,
@@ -300,7 +305,7 @@ export namespace gse::gui {
 			float speed = 10.f
 		) const -> vec4f;
 
-		[[nodiscard]] auto current_clip() const -> std::optional<ui_rect>;
+		[[nodiscard]] auto current_clip() const -> std::optional<rectf>;
 
 		[[nodiscard]] auto scoped_layer(
 			render_layer layer
@@ -337,7 +342,7 @@ export namespace gse::gui {
 		scroll_handle(
 			draw_context& ctx,
 			scroll_state& state,
-			const ui_rect& visible_rect,
+			const rectf& visible_rect,
 			float saved_layout_y,
 			const scroll_config& config
 		) noexcept;
@@ -354,15 +359,15 @@ export namespace gse::gui {
 
 		[[nodiscard]] auto valid() const -> bool;
 
-		[[nodiscard]] auto visible_rect() const -> const ui_rect&;
+		[[nodiscard]] auto visible_rect() const -> const rectf&;
 
 		[[nodiscard]] auto offset() const -> float;
 
 	private:
 		draw_context* m_ctx = nullptr;
 		scroll_state* m_state = nullptr;
-		ui_rect m_visible_rect;
-		ui_rect m_saved_menu_rect;
+		rectf m_visible_rect;
+		rectf m_saved_menu_rect;
 		float m_saved_layout_y = 0.f;
 		float m_content_start_y = 0.f;
 		scroll_config m_config{};
@@ -377,7 +382,7 @@ export namespace gse::gui {
 	auto scroll_area(
 		const draw_context& ctx,
 		scroll_state& state,
-		const ui_rect& visible_rect,
+		const rectf& visible_rect,
 		vec2f content_size,
 		const scroll_config& config = {}
 	) -> vec2f;

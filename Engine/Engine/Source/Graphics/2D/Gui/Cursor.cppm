@@ -32,6 +32,8 @@ export namespace gse::cursor {
 		style new_style
 	) -> void;
 
+	auto current() -> style;
+
 	auto render_to(
 		shared_view<asset::data> assets,
 		std::vector<renderer::sprite_command>& commands,
@@ -68,6 +70,10 @@ namespace gse::cursor {
 
 auto gse::cursor::set_style(const style new_style) -> void {
 	current_style = new_style;
+}
+
+auto gse::cursor::current() -> style {
+	return current_style;
 }
 
 auto gse::cursor::render_to(const shared_view<asset::data> assets, std::vector<renderer::sprite_command>& commands, const vec2f mouse_pos) -> void {

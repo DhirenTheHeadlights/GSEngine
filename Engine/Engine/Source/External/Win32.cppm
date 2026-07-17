@@ -108,6 +108,9 @@ export namespace gse::win32 {
 	using ::AddVectoredExceptionHandler;
 	using ::GetLastError;
 	using ::CreateProcessW;
+	using ::CreateJobObjectW;
+	using ::AssignProcessToJobObject;
+	using ::TerminateJobObject;
 	using ::GetCommandLineW;
 	using ::ExitProcess;
 	using ::CreatePipe;

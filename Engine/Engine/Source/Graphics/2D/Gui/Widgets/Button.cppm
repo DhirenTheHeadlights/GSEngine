@@ -11,6 +11,7 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+import gse.math;
 import :types;
 import :ids;
 import :styles;
@@ -46,9 +47,9 @@ auto gse::gui::draw::button(const draw_context& ctx, const std::string& name, id
 	const id widget_id = ids::make(name);
 
 	const float widget_height = ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
-	const ui_rect content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
+	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
 
-	const ui_rect button_rect = ui_rect::from_position_size(
+	const rectf button_rect = rectf::from_position_size(
 		{ content_rect.left(), ctx.layout_cursor.y() },
 		{ content_rect.width(), widget_height }
 	);

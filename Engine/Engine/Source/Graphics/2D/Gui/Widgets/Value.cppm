@@ -109,7 +109,7 @@ namespace gse::gui::draw {
 	auto value_box(
 		const draw_context& ctx,
 		const std::string& value,
-		const ui_rect& rect
+		const rectf& rect
 	) -> void;
 
 	template <std::size_t N>
@@ -170,7 +170,7 @@ auto gse::gui::draw::vec(const draw_context& ctx, const std::string& name, gse::
 	value_row<N>(ctx, name, values);
 }
 
-auto gse::gui::draw::value_box(const draw_context& ctx, const std::string& value, const ui_rect& rect) -> void {
+auto gse::gui::draw::value_box(const draw_context& ctx, const std::string& value, const rectf& rect) -> void {
 	ctx.queue_sprite({
 		.rect = rect,
 		.color = ctx.style.color_widget_background,
@@ -199,16 +199,16 @@ auto gse::gui::draw::value_row(const draw_context& ctx, const std::string& name,
 	}
 
 	const float widget_height = ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
-	const ui_rect content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
+	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
 
-	const ui_rect row_rect = ui_rect::from_position_size(
+	const rectf row_rect = rectf::from_position_size(
 		{ content_rect.left(), ctx.layout_cursor.y() },
 		{ content_rect.width(), widget_height }
 	);
 
 	const float label_width = content_rect.width() * 0.4f;
 
-	const ui_rect label_rect = ui_rect::from_position_size(
+	const rectf label_rect = rectf::from_position_size(
 		row_rect.top_left(),
 		{ label_width, widget_height }
 	);
@@ -229,7 +229,7 @@ auto gse::gui::draw::value_row(const draw_context& ctx, const std::string& name,
 	vec2f current_box_pos = { row_rect.left() + label_width, row_rect.top() };
 
 	for (const std::string& value_str : values) {
-		const ui_rect box_rect = ui_rect::from_position_size(
+		const rectf box_rect = rectf::from_position_size(
 			current_box_pos,
 			{ value_box_width, widget_height }
 		);
