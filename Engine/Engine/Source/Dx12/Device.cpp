@@ -132,13 +132,15 @@ auto gse::dx12::build_graphics_pipeline_desc(const gfx_template& tmpl, const gra
 	return desc;
 }
 
-gse::dx12::device::device(const shared_view<window::data> win, const bool enable_validation, gpu::device_settings&) {
+gse::dx12::device::device(const shared_view<window::data> win, const bool enable_validation, gpu::device_settings& cfg) {
 	m_validation_enabled = enable_validation;
 	log::println(log::category::dx12, "ctor begin");
 
 	if (m_validation_enabled) {
-		const bool gpu_validation = directx::enable_debug_layer();
+		const bool gpu_validation = directx::enable_debug_layer(cfg.gpu_based_validation);
 		log::println(log::category::dx12, "debug layer enabled, gpu-based validation={}", gpu_validation);
+		const bool dred = directx::enable_dred();
+		log::println(log::category::dx12, "dred device-removed extended data enabled={}", dred);
 	}
 	m_factory = directx::create_factory();
 	long device_hr = 0;
@@ -152,6 +154,10 @@ gse::dx12::device::device(const shared_view<window::data> win, const bool enable
 
 	m_graphics_queue = directx::create_direct_queue(m_device.get());
 	m_compute_queue = directx::create_compute_queue(m_device.get());
+	constexpr std::string_view graphics_queue_name = "gse.graphics_queue";
+	constexpr std::string_view compute_queue_name = "gse.compute_queue";
+	directx::set_object_name(m_graphics_queue.get(), graphics_queue_name.data(), graphics_queue_name.size());
+	directx::set_object_name(m_compute_queue.get(), compute_queue_name.data(), compute_queue_name.size());
 	m_hwnd = win32::hwnd_from_glfw_window(window::raw_handle(win).value);
 	log::println(log::category::dx12, "queue={} hwnd={}", static_cast<void*>(m_graphics_queue.get()), m_hwnd);
 
@@ -161,9 +167,12 @@ gse::dx12::device::device(const shared_view<window::data> win, const bool enable
 	for (std::size_t qi = 0; qi < gpu::queue_type_count; ++qi) {
 		const bool compute = qi == static_cast<std::size_t>(gpu::queue_type::compute);
 		m_frames[qi].resize(3);
-		for (auto& f : m_frames[qi]) {
+		for (std::size_t fi = 0; fi < m_frames[qi].size(); ++fi) {
+			auto& f = m_frames[qi][fi];
 			f.allocator = directx::create_command_allocator(m_device.get(), compute);
 			f.list = directx::create_command_list(m_device.get(), f.allocator.get(), compute);
+			const auto name = std::format("gse.frame_primary {} f{}", compute ? "compute" : "graphics", fi);
+			directx::set_object_name(f.list.get(), name.c_str(), name.size());
 		}
 	}
 
@@ -300,6 +309,10 @@ auto gse::dx12::device::resolve_graphics_pso(graphics_pass_state& pass) -> direc
 		return nullptr;
 	}
 	const std::lock_guard lock(m_mutex);
+	return resolve_graphics_pso_locked(pass);
+}
+
+auto gse::dx12::device::resolve_graphics_pso_locked(graphics_pass_state& pass) -> directx::ID3D12PipelineState* {
 	for (const auto& entry : m_graphics_psos) {
 		if (entry.tmpl == pass.pending && entry.rtv_count == pass.rtv_count && entry.dsv_format == pass.dsv_format && entry.rtv_formats == pass.rtv_formats) {
 			pass.resolved_pso = entry.pso.get();
@@ -337,6 +350,25 @@ auto gse::dx12::device::resolve_graphics_pso(graphics_pass_state& pass) -> direc
 	return raw;
 }
 
+auto gse::dx12::device::prewarm_graphics_pso(const gpu::shader_program_create_info& info, const gfx_template* tmpl) -> void {
+	if (info.color_target_count == 0) {
+		return;
+	}
+	graphics_pass_state warm;
+	warm.pending = tmpl;
+	warm.rtv_count = info.color_target_count;
+	for (std::uint32_t i = 0; i < info.color_target_count && i < warm.rtv_formats.size(); ++i) {
+		if (info.color_targets[i] != gpu::color_format::hdr) {
+			return;
+		}
+		warm.rtv_formats[i] = dxgi_format_of(gpu::image_format::r16g16b16a16_sfloat);
+	}
+	warm.dsv_format = info.depth_target == gpu::depth_format::d32_sfloat
+		? dxgi_format_of(gpu::image_format::d32_sfloat)
+		: directx::format_unknown;
+	resolve_graphics_pso_locked(warm);
+}
+
 auto gse::dx12::device::view_format(const std::size_t descriptor_ptr) const -> directx::DXGI_FORMAT {
 	const auto it = m_view_format.find(descriptor_ptr);
 	return it == m_view_format.end() ? directx::format_unknown : it->second;
@@ -352,10 +384,14 @@ auto gse::dx12::device::queue_family(const gpu::queue_type queue_type) const -> 
 
 auto gse::dx12::device::wait_idle() const -> void {
 	const auto graphics_target = m_idle_fence->GetCompletedValue() + 1;
+	record_queue_op(queue_op_kind::signal, gpu::queue_type::graphics, m_idle_fence.get(), graphics_target, 0);
 	m_graphics_queue->Signal(m_idle_fence.get(), graphics_target);
+	record_queue_op(queue_op_kind::cpu_wait, gpu::queue_type::graphics, m_idle_fence.get(), graphics_target, 0);
 	directx::wait_fence(m_idle_fence.get(), graphics_target, m_idle_event);
 	const auto compute_target = m_idle_fence->GetCompletedValue() + 1;
+	record_queue_op(queue_op_kind::signal, gpu::queue_type::compute, m_idle_fence.get(), compute_target, 0);
 	m_compute_queue->Signal(m_idle_fence.get(), compute_target);
+	record_queue_op(queue_op_kind::cpu_wait, gpu::queue_type::compute, m_idle_fence.get(), compute_target, 0);
 	directx::wait_fence(m_idle_fence.get(), compute_target, m_idle_event);
 }
 
@@ -402,6 +438,7 @@ auto gse::dx12::device::cmd_pipeline_barrier(const gpu::command_buffer_handle cm
 	if (!list) {
 		return;
 	}
+	const bool compute_list = directx::is_compute_command_list(list);
 	static thread_local std::vector<directx::D3D12_RESOURCE_BARRIER> barriers;
 	barriers.clear();
 	barriers.reserve(dep.image_barriers.size() + dep.buffer_barriers.size() + dep.memory_barriers.size());
@@ -433,12 +470,18 @@ auto gse::dx12::device::cmd_pipeline_barrier(const gpu::command_buffer_handle cm
 			if (!res) {
 				continue;
 			}
-			const auto after = ib.next_state != gpu::resource_state::undefined
+			auto after = ib.next_state != gpu::resource_state::undefined
 				? d3d12_state_of(ib.next_state)
 				: d3d12_state_of(gpu::state_of(ib.dst_access));
+			if (compute_list) {
+				after = directx::strip_graphics_only_states(after);
+			}
 			directx::D3D12_RESOURCE_STATES before;
 			if (ib.prev_state != gpu::resource_state::undefined) {
 				before = d3d12_state_of(ib.prev_state);
+				if (compute_list) {
+					before = directx::strip_graphics_only_states(before);
+				}
 			}
 			else {
 				if (!map_lock.owns_lock()) {
@@ -446,6 +489,9 @@ auto gse::dx12::device::cmd_pipeline_barrier(const gpu::command_buffer_handle cm
 				}
 				const auto it = m_resource_states.find(res);
 				before = it != m_resource_states.end() ? it->second : directx::resource_state_common;
+				if (compute_list) {
+					before = directx::strip_graphics_only_states(before);
+				}
 				if (before != after) {
 					m_resource_states[res] = after;
 				}
@@ -471,12 +517,18 @@ auto gse::dx12::device::cmd_pipeline_barrier(const gpu::command_buffer_handle cm
 			if (!res) {
 				continue;
 			}
-			const auto after = d3d12_state_of(gpu::state_of(bb.dst_access));
+			auto after = d3d12_state_of(gpu::state_of(bb.dst_access));
+			if (compute_list) {
+				after = directx::strip_graphics_only_states(after);
+			}
 			if (!map_lock.owns_lock()) {
 				map_lock.lock();
 			}
 			const auto it = m_buffer_states.find(res);
-			const auto before = it != m_buffer_states.end() ? it->second : directx::resource_state_common;
+			auto before = it != m_buffer_states.end() ? it->second : directx::resource_state_common;
+			if (compute_list) {
+				before = directx::strip_graphics_only_states(before);
+			}
 			if (before == after) {
 				continue;
 			}
@@ -595,6 +647,64 @@ auto gse::dx12::device::cmd_bind_graphics_shaders(const gpu::command_buffer_hand
 	state.pending = tmpl;
 	state.push_size = tmpl ? tmpl->push_size : 0;
 	state.resolved_pso = nullptr;
+}
+
+auto gse::dx12::device::dump_dred_once() -> void {
+	if (m_dred_dumped.exchange(true)) {
+		return;
+	}
+	directx::dump_dred(
+		m_device.get(),
+		[](void*, const char* message) {
+			log::println(log::level::error, log::category::dx12, "{}", message);
+		},
+		[](void*, const unsigned int index, const unsigned int completed, const directx::D3D12_AUTO_BREADCRUMB_OP op) {
+			const auto tag = index < completed ? "done" : (index == completed ? ">> HUNG" : "pending");
+			log::println(log::level::error, log::category::dx12, "    op[{}] {} {}", index, tag, gse::enum_to_string(op));
+		},
+		nullptr
+	);
+	dump_queue_ops();
+}
+
+auto gse::dx12::device::record_queue_op(const queue_op_kind kind, const gpu::queue_type queue, const void* fence, const std::uint64_t value, const std::uint32_t list_count) const -> void {
+	const std::lock_guard lock(m_queue_op_mutex);
+	m_queue_op_ring[m_queue_op_seq % queue_op_ring_size] = {
+		.seq = m_queue_op_seq,
+		.kind = kind,
+		.queue = queue,
+		.fence = fence,
+		.value = value,
+		.list_count = list_count,
+	};
+	++m_queue_op_seq;
+}
+
+auto gse::dx12::device::register_sync_point(const sync_point* sp) -> void {
+	const std::lock_guard lock(m_queue_op_mutex);
+	m_sync_point_registry.push_back(sp);
+}
+
+auto gse::dx12::device::dump_queue_ops() -> void {
+	const std::lock_guard lock(m_queue_op_mutex);
+	const auto count = std::min<std::uint64_t>(m_queue_op_seq, queue_op_ring_size);
+	log::println(log::level::error, log::category::dx12, "queue-op ring: {} ops total, dumping last {} (newest last)", m_queue_op_seq, count);
+	for (std::uint64_t s = m_queue_op_seq - count; s < m_queue_op_seq; ++s) {
+		const auto& op = m_queue_op_ring[s % queue_op_ring_size];
+		log::println(log::level::error, log::category::dx12, "  [{}] {} {} fence={} value={} lists={}", op.seq, gse::enum_to_string(op.queue), gse::enum_to_string(op.kind), op.fence, op.value, op.list_count);
+	}
+	log::println(log::level::error, log::category::dx12, "sync points: {}", m_sync_point_registry.size());
+	for (std::size_t i = 0; i < m_sync_point_registry.size(); ++i) {
+		const auto* sp = m_sync_point_registry[i];
+		if (!sp || !sp->fence) {
+			continue;
+		}
+		const auto completed = sp->fence->GetCompletedValue();
+		log::println(log::level::error, log::category::dx12, "  sync[{}] {} fence={} cpu_value={} completed={}{}", i, sp->is_timeline ? "timeline" : "binary", static_cast<const void*>(sp->fence.get()), sp->value, completed, completed < sp->value ? "  << LAGGING" : "");
+	}
+	if (m_idle_fence) {
+		log::println(log::level::error, log::category::dx12, "  idle fence={} completed={}", static_cast<const void*>(m_idle_fence.get()), m_idle_fence->GetCompletedValue());
+	}
 }
 
 auto gse::dx12::device::note_compute_push_size(const gpu::command_buffer_handle cmd, const gpu::handle<gpu::shader_object> shader) -> void {
@@ -918,11 +1028,13 @@ auto gse::dx12::device::create_shader_program(const gpu::shader_program_create_i
 			}
 		}
 		m_gfx_templates.push_back(std::move(tmpl));
-		const auto handle = std::bit_cast<gpu::handle<gpu::shader_object>>(&m_gfx_templates.back());
+		auto* tmpl_ptr = &m_gfx_templates.back();
+		const auto handle = std::bit_cast<gpu::handle<gpu::shader_object>>(tmpl_ptr);
 		for (const auto& stage : info.stages) {
 			stages.push_back(stage.stage);
 			shader_handles.push_back(handle);
 		}
+		prewarm_graphics_pso(info, tmpl_ptr);
 	}
 	return gpu::shader_program(
 		std::bit_cast<gpu::handle<gpu::pipeline_layout>>(root_signature()),
@@ -940,6 +1052,7 @@ auto gse::dx12::device::create_semaphore() -> gpu::handle<gpu::semaphore> {
 		.fence = directx::create_fence(m_device.get(), 0),
 		.value = 0,
 	});
+	register_sync_point(&m_sync_points.back());
 	return std::bit_cast<gpu::handle<gpu::semaphore>>(&m_sync_points.back());
 }
 
@@ -948,7 +1061,9 @@ auto gse::dx12::device::create_timeline_semaphore(const std::uint64_t initial_va
 	m_sync_points.push_back({
 		.fence = directx::create_fence(m_device.get(), initial_value),
 		.value = initial_value,
+		.is_timeline = true,
 	});
+	register_sync_point(&m_sync_points.back());
 	return std::bit_cast<gpu::handle<gpu::semaphore>>(&m_sync_points.back());
 }
 
@@ -963,6 +1078,7 @@ auto gse::dx12::device::create_fence(const bool signaled) -> gpu::handle<gpu::fe
 		sp.value = 1;
 		sp.fence->Signal(1);
 	}
+	register_sync_point(&sp);
 	return std::bit_cast<gpu::handle<gpu::fence>>(&sp);
 }
 
@@ -1148,6 +1264,7 @@ auto gse::dx12::device::create_buffer(const gpu::buffer_desc& desc, const std::s
 		directx::drain_debug_messages(m_device.get(), [](void*, const char* message) {
 			log::println(log::level::warning, log::category::dx12_validation, "{}", message);
 		}, nullptr);
+		dump_dred_once();
 		return {};
 	}
 	auto* mapped = static_cast<std::byte*>(directx::map_buffer(resource.get()));
@@ -1220,6 +1337,7 @@ auto gse::dx12::device::create_image(const gpu::image_desc& desc, const std::str
 		directx::drain_debug_messages(m_device.get(), [](void*, const char* message) {
 			log::println(log::level::warning, log::category::dx12_validation, "{}", message);
 		}, nullptr);
+		dump_dred_once();
 		return {};
 	}
 	auto* raw = resource.get();

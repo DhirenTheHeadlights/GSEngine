@@ -222,7 +222,7 @@ auto gse::renderer::rt_shadow::frame(context& ctx, shared_view<gpu::context::dat
 			if (!d.tlas_instance_views[frame_index].valid()) {
 				d.tlas_instance_views[frame_index] = gpu_s.device->allocate_buffer_slot();
 			}
-			gpu_s.device->write_storage_buffer(d.tlas_instance_views[frame_index].slot(), tlas_inst_buf.device_address(), instance_count * 64);
+			gpu_s.device->write_storage_buffer(d.tlas_instance_views[frame_index].slot(), tlas_inst_buf, instance_count * 64);
 		}
 	}
 

@@ -19,7 +19,27 @@ namespace gse::dx12 {
 	struct sync_point {
 		directx::com_ptr<directx::ID3D12Fence> fence;
 		std::uint64_t value = 0;
+		bool is_timeline = false;
 	};
+
+	enum class queue_op_kind : std::uint8_t {
+		wait,
+		signal,
+		execute,
+		cpu_signal,
+		cpu_wait,
+	};
+
+	struct queue_op_record {
+		std::uint64_t seq = 0;
+		queue_op_kind kind = queue_op_kind::wait;
+		gpu::queue_type queue = gpu::queue_type::graphics;
+		const void* fence = nullptr;
+		std::uint64_t value = 0;
+		std::uint32_t list_count = 0;
+	};
+
+	inline constexpr std::size_t queue_op_ring_size = 256;
 
 	struct frame_target {
 		directx::com_ptr<directx::ID3D12CommandAllocator> allocator;
@@ -411,6 +431,16 @@ export namespace gse::dx12 {
 
 		[[nodiscard]] auto validation_enabled() const -> bool;
 
+		auto dump_dred_once() -> void;
+
+		auto record_queue_op(
+			queue_op_kind kind,
+			gpu::queue_type queue,
+			const void* fence,
+			std::uint64_t value,
+			std::uint32_t list_count
+		) const -> void;
+
 		[[nodiscard]] auto idle_event() const -> void*;
 
 		[[nodiscard]] auto factory() const -> directx::IDXGIFactory4*;
@@ -424,6 +454,12 @@ export namespace gse::dx12 {
 
 	private:
 		auto init_bindless() -> void;
+
+		auto register_sync_point(
+			const sync_point* sp
+		) -> void;
+
+		auto dump_queue_ops() -> void;
 
 		auto write_sampler_at(
 			gpu::device_size byte_offset,
@@ -441,6 +477,15 @@ export namespace gse::dx12 {
 		auto resolve_graphics_pso(
 			graphics_pass_state& pass
 		) -> directx::ID3D12PipelineState*;
+
+		auto resolve_graphics_pso_locked(
+			graphics_pass_state& pass
+		) -> directx::ID3D12PipelineState*;
+
+		auto prewarm_graphics_pso(
+			const gpu::shader_program_create_info& info,
+			const gfx_template* tmpl
+		) -> void;
 		
 		[[nodiscard]] auto view_format(
 			std::size_t descriptor_ptr
@@ -482,6 +527,11 @@ export namespace gse::dx12 {
 		pipeline_layout m_pipeline_layout;
 		bool m_gpu_upload_supported = false;
 		bool m_validation_enabled = false;
+		std::atomic<bool> m_dred_dumped{ false };
+		mutable std::array<queue_op_record, queue_op_ring_size> m_queue_op_ring{};
+		mutable std::uint64_t m_queue_op_seq = 0;
+		mutable std::vector<const sync_point*> m_sync_point_registry;
+		mutable std::mutex m_queue_op_mutex;
 		mutable std::map<gpu::device_address, std::pair<directx::ID3D12Resource*, gpu::device_size>> m_buffer_by_address;
 		mutable std::uint64_t m_aliased_counter = 0;
 		void* m_hwnd = nullptr;

@@ -167,6 +167,7 @@ export namespace gse::vbd {
 			gpu::buffer island_buffer;
 			gpu::buffer body_env_buffer;
 			gpu::buffer static_bodies_buffer;
+			gpu::buffer coloring_scratch_buffer;
 
 			bool grounded_valid = false;
 		};

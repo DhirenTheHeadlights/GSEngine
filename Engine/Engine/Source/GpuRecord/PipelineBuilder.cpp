@@ -68,6 +68,8 @@ namespace gse::gpu {
 
 	auto make_slang_session() -> owned_slang_session;
 
+	auto shader_search_paths() -> const std::vector<std::string>&;
+
 	auto log_slang_diagnostics(
 		slang::IBlob* diagnostics
 	) -> void;
@@ -149,32 +151,10 @@ auto gse::gpu::make_slang_session() -> owned_slang_session {
 	out.global = cached_global;
 	auto* global = out.global.get();
 
-	const auto shader_root = config::resource_path / "Shaders";
-
-	auto contains_bodies = [](const std::filesystem::path& p) -> bool {
-		for (const auto& part : p) {
-			if (part == "Bodies") {
-				return true;
-			}
-		}
-		return false;
-	};
-
-	std::vector<std::string> sp_storage;
-	sp_storage.push_back(shader_root.string());
-	for (const auto& e : std::filesystem::recursive_directory_iterator(shader_root)) {
-		if (!e.is_directory()) {
-			continue;
-		}
-		if (contains_bodies(e.path())) {
-			continue;
-		}
-		sp_storage.push_back(e.path().string());
-	}
-
+	const auto& sp_storage = shader_search_paths();
 	std::vector<const char*> sp_c_strs;
 	sp_c_strs.reserve(sp_storage.size());
-	for (auto& s : sp_storage) {
+	for (const auto& s : sp_storage) {
 		sp_c_strs.push_back(s.c_str());
 	}
 
@@ -218,6 +198,32 @@ auto gse::gpu::make_slang_session() -> owned_slang_session {
 		return owned_slang_session{};
 	}
 	return out;
+}
+
+auto gse::gpu::shader_search_paths() -> const std::vector<std::string>& {
+	static const std::vector<std::string> paths = [] {
+		const auto shader_root = config::resource_path / "Shaders";
+		std::vector<std::string> result;
+		result.push_back(shader_root.string());
+		for (const auto& e : std::filesystem::recursive_directory_iterator(shader_root)) {
+			if (!e.is_directory()) {
+				continue;
+			}
+			bool in_bodies = false;
+			for (const auto& part : e.path()) {
+				if (part == "Bodies") {
+					in_bodies = true;
+					break;
+				}
+			}
+			if (in_bodies) {
+				continue;
+			}
+			result.push_back(e.path().string());
+		}
+		return result;
+	}();
+	return paths;
 }
 
 auto gse::gpu::log_slang_diagnostics(slang::IBlob* diagnostics) -> void {
@@ -962,12 +968,22 @@ auto gse::gpu::build_graphics_program(device& dev, const graphics_entry_pod& pod
 	state.blend_equations.assign(pod.color_count, blend_eq);
 	state.color_write_masks.assign(pod.color_count, write_mask);
 
+	std::array<color_format, 8> color_targets{};
+	std::uint32_t color_target_count = 0;
+	for (std::size_t i = 0; i < pod.color_count && i < color_targets.size(); ++i) {
+		color_targets[color_target_count++] = pod.colors[i];
+	}
+	const depth_format depth_target = (pod.depth.test || pod.depth.write) ? pod.depth_fmt : depth_format::none;
+
 	const shader_program_create_info info{
 		.stages = stage_infos,
 		.bindings = pack_bindings,
 		.push_offset_start = pod.push_constant_size,
 		.push_constant_range = push_range,
 		.state = std::move(state),
+		.color_targets = color_targets,
+		.color_target_count = color_target_count,
+		.depth_target = depth_target,
 		.is_compute = false,
 		.is_mesh = is_mesh,
 	};

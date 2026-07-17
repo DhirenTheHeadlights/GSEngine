@@ -32,6 +32,9 @@ export namespace gse::gpu {
 		std::uint32_t push_offset_start = 0;
 		std::optional<gpu::push_constant_range> push_constant_range;
 		dynamic_pipeline_state state;
+		std::array<color_format, 8> color_targets{};
+		std::uint32_t color_target_count = 0;
+		depth_format depth_target = depth_format::none;
 		bool is_compute = false;
 		bool is_mesh = false;
 	};

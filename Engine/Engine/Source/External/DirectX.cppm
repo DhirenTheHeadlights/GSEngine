@@ -24,6 +24,8 @@ __CRT_UUID_DECL(ID3D12GraphicsCommandList6, 0xc3827890, 0xe548, 0x4cfa, 0x96, 0x
 __CRT_UUID_DECL(ID3D12Device5, 0x8b4f173b, 0x2fea, 0x4b80, 0x8f, 0x58, 0x43, 0x07, 0x19, 0x1a, 0xb9, 0x5d)
 __CRT_UUID_DECL(ID3D12GraphicsCommandList4, 0x8754318e, 0xd3a9, 0x4541, 0x98, 0xcf, 0x64, 0x5b, 0x50, 0xdc, 0x48, 0x74)
 __CRT_UUID_DECL(ID3D12QueryHeap, 0x0d9658ae, 0xed45, 0x469e, 0xa6, 0x1d, 0x97, 0x0e, 0xc5, 0x83, 0xca, 0xb4)
+__CRT_UUID_DECL(ID3D12DeviceRemovedExtendedDataSettings, 0x82bc481c, 0x6b9b, 0x4030, 0xae, 0xdb, 0x7e, 0xe3, 0xd1, 0xdf, 0x1e, 0x63)
+__CRT_UUID_DECL(ID3D12DeviceRemovedExtendedData, 0x98931d33, 0x5ae8, 0x4791, 0xaa, 0x3c, 0x1a, 0x73, 0xa2, 0x93, 0x4e, 0x71)
 
 export module gse.directx;
 
@@ -58,6 +60,7 @@ export namespace gse::directx {
 	using ::D3D12_RESOURCE_DIMENSION;
 	using ::D3D12_RESOURCE_FLAGS;
 	using ::D3D12_RESOURCE_STATES;
+	using ::D3D12_AUTO_BREADCRUMB_OP;
 	using ::DXGI_FORMAT;
 
 	constexpr DXGI_FORMAT format_r8g8b8a8_unorm = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -195,10 +198,16 @@ export namespace gse::directx {
 		T* m_ptr = nullptr;
 	};
 
-	auto enable_debug_layer() -> bool;
+	auto enable_debug_layer(bool gpu_based_validation) -> bool;
 
 	auto set_resource_name(
 		ID3D12Resource* resource,
+		const char* name,
+		std::size_t length
+	) -> void;
+
+	auto set_object_name(
+		ID3D12Object* object,
 		const char* name,
 		std::size_t length
 	) -> void;
@@ -210,6 +219,15 @@ export namespace gse::directx {
 	auto drain_debug_messages(
 		ID3D12Device* device,
 		void (*sink)(void* context, const char* message),
+		void* context
+	) -> void;
+
+	auto enable_dred() -> bool;
+
+	auto dump_dred(
+		ID3D12Device* device,
+		void (*sink)(void* context, const char* message),
+		void (*op_sink)(void* context, unsigned int index, unsigned int completed, D3D12_AUTO_BREADCRUMB_OP op),
 		void* context
 	) -> void;
 
@@ -244,6 +262,14 @@ export namespace gse::directx {
 		ID3D12CommandAllocator* allocator,
 		bool compute = false
 	) -> com_ptr<ID3D12GraphicsCommandList>;
+
+	[[nodiscard]] auto is_compute_command_list(
+		ID3D12GraphicsCommandList* list
+	) -> bool;
+
+	[[nodiscard]] auto strip_graphics_only_states(
+		D3D12_RESOURCE_STATES state
+	) -> D3D12_RESOURCE_STATES;
 
 	[[nodiscard]] auto create_rtv_heap(
 		ID3D12Device* device,
@@ -730,11 +756,14 @@ auto gse::directx::com_ptr<T>::put() -> T** {
 	return &m_ptr;
 }
 
-auto gse::directx::enable_debug_layer() -> bool {
+auto gse::directx::enable_debug_layer(const bool gpu_based_validation) -> bool {
 	ID3D12Debug* debug = nullptr;
 	if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debug))) && debug) {
 		debug->EnableDebugLayer();
 		debug->Release();
+	}
+	if (!gpu_based_validation) {
+		return false;
 	}
 	ID3D12Debug1* debug1 = nullptr;
 	if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debug1))) && debug1) {
@@ -746,13 +775,17 @@ auto gse::directx::enable_debug_layer() -> bool {
 }
 
 auto gse::directx::set_resource_name(ID3D12Resource* resource, const char* name, const std::size_t length) -> void {
-	if (!resource || !name || length == 0) {
+	set_object_name(resource, name, length);
+}
+
+auto gse::directx::set_object_name(ID3D12Object* object, const char* name, const std::size_t length) -> void {
+	if (!object || !name || length == 0) {
 		return;
 	}
 	wchar_t wide[256];
 	const int written = MultiByteToWideChar(CP_UTF8, 0, name, static_cast<int>(length), wide, 255);
 	wide[written > 0 ? written : 0] = L'\0';
-	resource->SetName(wide);
+	object->SetName(wide);
 }
 
 auto gse::directx::disable_debug_break(ID3D12Device* device) -> void {
@@ -785,6 +818,76 @@ auto gse::directx::drain_debug_messages(ID3D12Device* device, void (*sink)(void*
 	}
 	queue->ClearStoredMessages();
 	queue->Release();
+}
+
+auto gse::directx::enable_dred() -> bool {
+	ID3D12DeviceRemovedExtendedDataSettings* settings = nullptr;
+	if (FAILED(D3D12GetDebugInterface(IID_PPV_ARGS(&settings))) || !settings) {
+		return false;
+	}
+	settings->SetAutoBreadcrumbsEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
+	settings->SetPageFaultEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
+	settings->Release();
+	return true;
+}
+
+auto gse::directx::dump_dred(ID3D12Device* device, void (*sink)(void* context, const char* message), void (*op_sink)(void* context, unsigned int index, unsigned int completed, D3D12_AUTO_BREADCRUMB_OP op), void* context) -> void {
+	if (!device || !sink || !op_sink) {
+		return;
+	}
+	ID3D12DeviceRemovedExtendedData* dred = nullptr;
+	if (FAILED(device->QueryInterface(IID_PPV_ARGS(&dred))) || !dred) {
+		sink(context, "DRED: extended data interface unavailable (not enabled before device creation)");
+		return;
+	}
+
+	char line[1024];
+
+	D3D12_DRED_AUTO_BREADCRUMBS_OUTPUT breadcrumbs = {};
+	if (SUCCEEDED(dred->GetAutoBreadcrumbsOutput(&breadcrumbs))) {
+		const D3D12_AUTO_BREADCRUMB_NODE* node = breadcrumbs.pHeadAutoBreadcrumbNode;
+		int node_index = 0;
+		int incomplete_count = 0;
+		while (node && node_index < 65536) {
+			const UINT32 count = node->BreadcrumbCount;
+			const UINT32 completed = node->pLastBreadcrumbValue ? *node->pLastBreadcrumbValue : 0;
+			if (count != 0 && completed < count) {
+				++incomplete_count;
+				const char* queue_name = node->pCommandQueueDebugNameA ? node->pCommandQueueDebugNameA : "?";
+				const char* list_name = node->pCommandListDebugNameA ? node->pCommandListDebugNameA : "?";
+				std::snprintf(line, sizeof(line), "DRED node[%d] queue='%s' list='%s' completed %u/%u ops -- GPU hung in this list", node_index, queue_name, list_name, completed, count);
+				sink(context, line);
+				const UINT32 first = completed > 4u ? completed - 4u : 0u;
+				const UINT32 last = completed + 4u < count ? completed + 4u : count;
+				for (UINT32 i = first; i < last; ++i) {
+					op_sink(context, i, completed, node->pCommandHistory[i]);
+				}
+			}
+			node = node->pNext;
+			++node_index;
+		}
+		std::snprintf(line, sizeof(line), "DRED: %d breadcrumb nodes walked, %d incomplete", node_index, incomplete_count);
+		sink(context, line);
+	}
+	else {
+		sink(context, "DRED: no auto-breadcrumb output available");
+	}
+
+	D3D12_DRED_PAGE_FAULT_OUTPUT page_fault = {};
+	if (SUCCEEDED(dred->GetPageFaultAllocationOutput(&page_fault)) && page_fault.PageFaultVA != 0) {
+		std::snprintf(line, sizeof(line), "DRED page fault at GPU VA 0x%llx", static_cast<unsigned long long>(page_fault.PageFaultVA));
+		sink(context, line);
+		for (const D3D12_DRED_ALLOCATION_NODE* a = page_fault.pHeadExistingAllocationNode; a; a = a->pNext) {
+			std::snprintf(line, sizeof(line), "    existing allocation '%s' type=%d", a->ObjectNameA ? a->ObjectNameA : "?", static_cast<int>(a->AllocationType));
+			sink(context, line);
+		}
+		for (const D3D12_DRED_ALLOCATION_NODE* a = page_fault.pHeadRecentFreedAllocationNode; a; a = a->pNext) {
+			std::snprintf(line, sizeof(line), "    recently freed allocation '%s' type=%d", a->ObjectNameA ? a->ObjectNameA : "?", static_cast<int>(a->AllocationType));
+			sink(context, line);
+		}
+	}
+
+	dred->Release();
 }
 
 auto gse::directx::create_factory() -> com_ptr<IDXGIFactory4> {
@@ -906,6 +1009,15 @@ auto gse::directx::create_command_list(ID3D12Device* device, ID3D12CommandAlloca
 		list->Close();
 	}
 	return list;
+}
+
+auto gse::directx::is_compute_command_list(ID3D12GraphicsCommandList* list) -> bool {
+	return list && list->GetType() == D3D12_COMMAND_LIST_TYPE_COMPUTE;
+}
+
+auto gse::directx::strip_graphics_only_states(const D3D12_RESOURCE_STATES state) -> D3D12_RESOURCE_STATES {
+	constexpr int graphics_only = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+	return static_cast<D3D12_RESOURCE_STATES>(static_cast<int>(state) & ~graphics_only);
 }
 
 auto gse::directx::create_rtv_heap(ID3D12Device* device, const std::uint32_t descriptor_count) -> com_ptr<ID3D12DescriptorHeap> {

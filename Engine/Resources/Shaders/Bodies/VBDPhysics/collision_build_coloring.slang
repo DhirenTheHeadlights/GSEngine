@@ -1,8 +1,6 @@
 
 static const uint ELEMS_PER_THREAD = (max_bodies + adjacency_workgroup_size - 1) / adjacency_workgroup_size;
 
-groupshared uint gs_body_color[max_bodies];
-groupshared uint gs_body_color_next[max_bodies];
 groupshared uint gs_color_count[max_colors];
 groupshared uint gs_color_offset[max_colors];
 groupshared uint gs_color_fill[max_colors];
@@ -27,8 +25,8 @@ uint num_joints = min(pc.joint_count, max_joints);
 for (uint k0 = 0; k0 < ELEMS_PER_THREAD; k0++) {
     uint bi = tid + k0 * adjacency_workgroup_size;
     if (bi < max_bodies) {
-        gs_body_color[bi] = 0xFFFFFFFF;
-        gs_body_color_next[bi] = 0xFFFFFFFF;
+        coloring_scratch[bi] = 0xFFFFFFFF;
+        coloring_scratch[max_bodies + bi] = 0xFFFFFFFF;
     }
 }
 if (tid < max_colors) {
@@ -41,34 +39,34 @@ if (tid == 0) {
     gs_used_motor_only = 0;
     gs_max_used_color = 0;
 }
-GroupMemoryBarrierWithGroupSync();
+AllMemoryBarrierWithGroupSync();
 
 for (uint round = 0; round < coloring_rounds; round++) {
     if (tid == 0) {
         gs_pending = 0;
     }
-    GroupMemoryBarrierWithGroupSync();
+    AllMemoryBarrierWithGroupSync();
 
     [unroll]
     for (uint kr = 0; kr < ELEMS_PER_THREAD; kr++) {
         uint bi = tid + kr * adjacency_workgroup_size;
         if (bi >= body_count) continue;
 
-        uint current = gs_body_color[bi];
+        uint current = coloring_scratch[bi];
         if (current != 0xFFFFFFFF) {
-            gs_body_color_next[bi] = current;
+            coloring_scratch[max_bodies + bi] = current;
             continue;
         }
 
         if (body_data[bi].locked != 0) {
-            gs_body_color_next[bi] = 0xFFFFFFFF;
+            coloring_scratch[max_bodies + bi] = 0xFFFFFFFF;
             continue;
         }
 
         uint cc = contact_counts[bi];
         uint jc = joint_counts[bi];
         if (cc == 0 && jc == 0) {
-            gs_body_color_next[bi] = 0xFFFFFFFF;
+            coloring_scratch[max_bodies + bi] = 0xFFFFFFFF;
             continue;
         }
 
@@ -86,7 +84,7 @@ for (uint round = 0; round < coloring_rounds; round++) {
             uint other = (c.body_a == bi) ? c.body_b : c.body_a;
             if (other < body_count) {
                 if (body_data[other].locked != 0) continue;
-                uint other_color = gs_body_color[other];
+                uint other_color = coloring_scratch[other];
                 if (other_color == 0xFFFFFFFF) {
                     uint other_priority = body_priority(other);
                     if (other_priority > my_priority ||
@@ -109,7 +107,7 @@ for (uint round = 0; round < coloring_rounds; round++) {
             uint other = (j.body_a == bi) ? j.body_b : j.body_a;
             if (other < body_count) {
                 if (body_data[other].locked != 0) continue;
-                uint other_color = gs_body_color[other];
+                uint other_color = coloring_scratch[other];
                 if (other_color == 0xFFFFFFFF) {
                     uint other_priority = body_priority(other);
                     if (other_priority > my_priority ||
@@ -125,7 +123,7 @@ for (uint round = 0; round < coloring_rounds; round++) {
         if (blocked) {
             uint dummy;
             InterlockedAdd(gs_pending, 1u, dummy);
-            gs_body_color_next[bi] = 0xFFFFFFFF;
+            coloring_scratch[max_bodies + bi] = 0xFFFFFFFF;
             continue;
         }
 
@@ -134,20 +132,20 @@ for (uint round = 0; round < coloring_rounds; round++) {
             chosen++;
         }
 
-        gs_body_color_next[bi] = (chosen < max_colors) ? chosen : 0xFFFFFFFF;
+        coloring_scratch[max_bodies + bi] = (chosen < max_colors) ? chosen : 0xFFFFFFFF;
     }
 
-    GroupMemoryBarrierWithGroupSync();
+    AllMemoryBarrierWithGroupSync();
 
     [unroll]
     for (uint kw = 0; kw < ELEMS_PER_THREAD; kw++) {
         uint bi = tid + kw * adjacency_workgroup_size;
         if (bi < max_bodies) {
-            gs_body_color[bi] = gs_body_color_next[bi];
+            coloring_scratch[bi] = coloring_scratch[max_bodies + bi];
         }
     }
 
-    GroupMemoryBarrierWithGroupSync();
+    AllMemoryBarrierWithGroupSync();
 
     if (gs_pending == 0) break;
 }
@@ -156,12 +154,12 @@ for (uint round = 0; round < coloring_rounds; round++) {
 for (uint km = 0; km < ELEMS_PER_THREAD; km++) {
     uint bi = tid + km * adjacency_workgroup_size;
     if (bi >= body_count) continue;
-    uint c = gs_body_color[bi];
+    uint c = coloring_scratch[bi];
     if (c < max_colors) {
         InterlockedMax(gs_max_contact_color, c + 1);
     }
 }
-GroupMemoryBarrierWithGroupSync();
+AllMemoryBarrierWithGroupSync();
 
 [unroll]
 for (uint kp1 = 0; kp1 < ELEMS_PER_THREAD; kp1++) {
@@ -172,14 +170,14 @@ for (uint kp1 = 0; kp1 < ELEMS_PER_THREAD; kp1++) {
     uint jc = joint_counts[bi];
     bool has_motor = motor_map[bi] != 0xFFFFFFFF;
     if (cc == 0 && !has_motor && jc == 0) continue;
-    if (gs_body_color[bi] == 0xFFFFFFFF) {
+    if (coloring_scratch[bi] == 0xFFFFFFFF) {
         uint motor_only = (gs_max_contact_color < max_colors) ? gs_max_contact_color : 0u;
-        gs_body_color[bi] = motor_only;
+        coloring_scratch[bi] = motor_only;
         uint dummy;
         InterlockedOr(gs_used_motor_only, 1u, dummy);
     }
 }
-GroupMemoryBarrierWithGroupSync();
+AllMemoryBarrierWithGroupSync();
 
 uint motor_only_color = (gs_max_contact_color < max_colors) ? gs_max_contact_color : 0u;
 uint free_body_color =
@@ -196,24 +194,24 @@ for (uint kp2 = 0; kp2 < ELEMS_PER_THREAD; kp2++) {
     uint jc = joint_counts[bi];
     bool has_motor = motor_map[bi] != 0xFFFFFFFF;
     if (cc != 0 || has_motor || jc != 0) continue;
-    if (gs_body_color[bi] == 0xFFFFFFFF) {
-        gs_body_color[bi] = free_body_color;
+    if (coloring_scratch[bi] == 0xFFFFFFFF) {
+        coloring_scratch[bi] = free_body_color;
     }
 }
-GroupMemoryBarrierWithGroupSync();
+AllMemoryBarrierWithGroupSync();
 
 [unroll]
 for (uint kc = 0; kc < ELEMS_PER_THREAD; kc++) {
     uint bi = tid + kc * adjacency_workgroup_size;
     if (bi >= body_count) continue;
-    uint c = gs_body_color[bi];
+    uint c = coloring_scratch[bi];
     if (c < max_colors) {
         uint dummy;
         InterlockedAdd(gs_color_count[c], 1u, dummy);
         InterlockedMax(gs_max_used_color, c + 1);
     }
 }
-GroupMemoryBarrierWithGroupSync();
+AllMemoryBarrierWithGroupSync();
 
 if (tid == 0) {
     uint running = 0;
@@ -223,13 +221,13 @@ if (tid == 0) {
     }
     collision_state[state_max_used_color_index] = gs_max_used_color;
 }
-GroupMemoryBarrierWithGroupSync();
+AllMemoryBarrierWithGroupSync();
 
 [unroll]
 for (uint ks = 0; ks < ELEMS_PER_THREAD; ks++) {
     uint bi = tid + ks * adjacency_workgroup_size;
     if (bi >= body_count) continue;
-    uint c = gs_body_color[bi];
+    uint c = coloring_scratch[bi];
     if (c < max_colors) {
         uint slot;
         InterlockedAdd(gs_color_fill[c], 1u, slot);
