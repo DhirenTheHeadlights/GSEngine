@@ -31,6 +31,7 @@ __pycache__/
 /Engine/External/*
 !/Engine/External/moodycamel/
 !/Engine/External/moodycamel/concurrentqueue.h
+!/Engine/External/pinned-ports/
 
 # Generated resources / configs
 /resources
