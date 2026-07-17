@@ -95,6 +95,8 @@ auto gse::dx12::command_pools::acquire_worker_command_buffer(const gpu::queue_ty
 	if (p.used == p.entries.size()) {
 		auto allocator = directx::create_command_allocator(m_owner->raw_device(), compute);
 		auto list = directx::create_command_list(m_owner->raw_device(), allocator.get(), compute);
+		const auto name = std::format("gse.worker {} f{} #{}", compute ? "compute" : "graphics", frame_index % lists.size(), p.entries.size());
+		directx::set_object_name(list.get(), name.c_str(), name.size());
 		p.entries.push_back(entry{
 			.allocator = std::move(allocator),
 			.list = std::move(list),
@@ -127,6 +129,8 @@ auto gse::dx12::command_pools::allocate_transient_primary(const gpu::transient_p
 	if (p.used == p.entries.size()) {
 		auto allocator = directx::create_command_allocator(m_owner->raw_device(), p.compute);
 		auto list = directx::create_command_list(m_owner->raw_device(), allocator.get(), p.compute);
+		const auto name = std::format("gse.transient {} p{} #{}", p.compute ? "compute" : "graphics", pool.index, p.entries.size());
+		directx::set_object_name(list.get(), name.c_str(), name.size());
 		p.entries.push_back(entry{
 			.allocator = std::move(allocator),
 			.list = std::move(list),

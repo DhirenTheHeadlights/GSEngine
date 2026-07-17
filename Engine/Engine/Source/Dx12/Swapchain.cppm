@@ -111,7 +111,9 @@ auto gse::dx12::swapchain::create(const vec2i framebuffer_size, gpu::present_mod
 auto gse::dx12::swapchain::acquire_image(const gpu::handle<gpu::semaphore> wait_semaphore) const -> gpu::acquire_next_image_result {
 	const auto index = m_swapchain ? m_swapchain->GetCurrentBackBufferIndex() : 0u;
 	if (auto* sp = std::bit_cast<sync_point*>(wait_semaphore); sp && sp->fence) {
-		sp->fence->Signal(++sp->value);
+		const auto value = ++sp->value;
+		m_owner->record_queue_op(queue_op_kind::cpu_signal, gpu::queue_type::graphics, sp->fence.get(), value, 0);
+		sp->fence->Signal(value);
 	}
 	return {
 		.result = gpu::result::success,
@@ -134,6 +136,7 @@ auto gse::dx12::swapchain::past_presentation_timing() const -> std::vector<gpu::
 auto gse::dx12::swapchain::present(const gpu::present_info& info) -> gpu::result {
 	for (const auto& w : info.wait_semaphores) {
 		if (auto* sp = std::bit_cast<sync_point*>(w); sp && sp->fence) {
+			m_owner->record_queue_op(queue_op_kind::cpu_wait, gpu::queue_type::graphics, sp->fence.get(), sp->value, 0);
 			directx::wait_fence(sp->fence.get(), sp->value, m_owner->idle_event());
 		}
 	}

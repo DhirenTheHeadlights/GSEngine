@@ -218,6 +218,12 @@ namespace gse::vbd {
 	]] static_bodies_data {
 		using element = std::uint32_t;
 	};
+	struct [[
+		= shaders::binding<0, 30>{},
+		= shaders::ssbo_readwrite
+	]] coloring_scratch {
+		using element = std::uint32_t;
+	};
 
 	using shader_binding_types = type_pack<
 		body_data,
@@ -249,7 +255,8 @@ namespace gse::vbd {
 		jointless_indirect_args,
 		island_data,
 		body_env_data,
-		static_bodies_data
+		static_bodies_data,
+		coloring_scratch
 	>;
 
 	template <fixed_string BodyPath>
@@ -637,6 +644,15 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 		);
 		f.static_bodies_buffer.host_zero();
 		f.static_bodies_buffer.clear_host_dirty();
+
+		f.coloring_scratch_buffer = ctx.device->create_buffer(
+			{
+				.size = limits.max_bodies * 2 * sizeof(std::uint32_t),
+				.usage = gpu::buffer_flag::storage,
+				.bindless = true
+			},
+			"vbd.coloring_scratch"
+		);
 	}
 
 	m_upload_motors.reserve(limits.max_motors);
@@ -1028,6 +1044,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 		.island_data = f.island_buffer.slot(),
 		.body_env_data = f.body_env_buffer.slot(),
 		.static_bodies_data = f.static_bodies_buffer.slot(),
+		.coloring_scratch = f.coloring_scratch_buffer.slot(),
 	};
 	auto jointless_bindings = bindings;
 	jointless_bindings.color_data = f.jointless_color_buffer.slot();

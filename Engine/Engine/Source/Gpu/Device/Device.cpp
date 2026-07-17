@@ -706,8 +706,13 @@ auto gse::gpu::device::allocate_acceleration_structure_slot() -> gpu::bindless_h
 	return m_vt->allocate_acceleration_structure_slot(m_backend.get());
 }
 
-auto gse::gpu::device::write_storage_buffer(const gpu::bindless_slot slot, const gpu::device_address address, const gpu::device_size size) -> void {
-	m_vt->write_storage_buffer(m_backend.get(), slot, address, size);
+auto gse::gpu::device::write_storage_buffer(const gpu::bindless_slot slot, const buffer& buf, const gpu::device_size size) -> void {
+	set_slot_resource(slot.index, resource_ref{
+		.ptr = std::bit_cast<const void*>(buf.handle()),
+		.type = resource_type::buffer,
+		.buffer_size = size,
+	});
+	m_vt->write_storage_buffer(m_backend.get(), slot, buf.device_address(), size);
 }
 
 auto gse::gpu::device::write_acceleration_structure(const gpu::bindless_slot slot, const gpu::device_address as_address) -> void {
@@ -715,6 +720,11 @@ auto gse::gpu::device::write_acceleration_structure(const gpu::bindless_slot slo
 }
 
 auto gse::gpu::device::write_sampled_image(const gpu::bindless_slot slot, const image& img) -> void {
+	set_slot_resource(slot.index, resource_ref{
+		.ptr = std::bit_cast<const void*>(img.handle()),
+		.type = resource_type::image,
+		.aspects = image_aspect_for(img.format()),
+	});
 	m_vt->write_sampled_image(m_backend.get(), slot, img);
 }
 

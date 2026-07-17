@@ -123,7 +123,7 @@ auto gse::renderer::physics_transform::frame(context& ctx, shared_view<gpu::cont
 	if (!d.body_views[frame_index].valid()) {
 		d.body_views[frame_index] = gpu_s.device->allocate_buffer_slot();
 	}
-	gpu_s.device->write_storage_buffer(d.body_views[frame_index].slot(), snapshot.device_address(), info.body_count * info.body_stride);
+	gpu_s.device->write_storage_buffer(d.body_views[frame_index].slot(), snapshot, info.body_count * info.body_stride);
 
 	const std::uint32_t workgroups = (d.cached_mapping_count + 63) / 64;
 

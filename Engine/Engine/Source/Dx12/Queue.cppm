@@ -41,7 +41,9 @@ auto gse::dx12::queue::submit(const gpu::queue_type queue_type, const gpu::submi
 	auto* target_queue = m_owner->command_queue(queue_type);
 	for (const auto& w : info.wait_semaphores) {
 		if (auto* sp = std::bit_cast<sync_point*>(w.semaphore); sp && sp->fence) {
-			target_queue->Wait(sp->fence.get(), sp->value);
+			const auto value = sp->is_timeline ? w.value : sp->value;
+			m_owner->record_queue_op(queue_op_kind::wait, queue_type, sp->fence.get(), value, 0);
+			target_queue->Wait(sp->fence.get(), value);
 		}
 	}
 	std::vector<directx::ID3D12CommandList*> lists;
@@ -51,6 +53,7 @@ auto gse::dx12::queue::submit(const gpu::queue_type queue_type, const gpu::submi
 		}
 	}
 	if (!lists.empty()) {
+		m_owner->record_queue_op(queue_op_kind::execute, queue_type, nullptr, 0, static_cast<std::uint32_t>(lists.size()));
 		target_queue->ExecuteCommandLists(static_cast<std::uint32_t>(lists.size()), lists.data());
 		if (m_owner->validation_enabled()) {
 			directx::drain_debug_messages(m_owner->raw_device(), [](void*, const char* message) {
@@ -59,20 +62,33 @@ auto gse::dx12::queue::submit(const gpu::queue_type queue_type, const gpu::submi
 		}
 		if (const auto r = m_owner->raw_device()->GetDeviceRemovedReason(); r != 0) {
 			log::println(log::level::error, log::category::dx12, "post-ExecuteCommandLists removed=0x{:08x} lists={}", static_cast<std::uint32_t>(r), lists.size());
+			m_owner->dump_dred_once();
 		}
 	}
 	for (const auto& s : info.signal_semaphores) {
 		if (auto* sp = std::bit_cast<sync_point*>(s.semaphore); sp && sp->fence) {
-			target_queue->Signal(sp->fence.get(), ++sp->value);
+			if (sp->is_timeline) {
+				m_owner->record_queue_op(queue_op_kind::signal, queue_type, sp->fence.get(), s.value, 0);
+				target_queue->Signal(sp->fence.get(), s.value);
+				sp->value = s.value;
+			}
+			else {
+				const auto value = ++sp->value;
+				m_owner->record_queue_op(queue_op_kind::signal, queue_type, sp->fence.get(), value, 0);
+				target_queue->Signal(sp->fence.get(), value);
+			}
 		}
 	}
 	if (auto* sp = std::bit_cast<sync_point*>(signal_fence); sp && sp->fence) {
-		target_queue->Signal(sp->fence.get(), ++sp->value);
+		const auto value = ++sp->value;
+		m_owner->record_queue_op(queue_op_kind::signal, queue_type, sp->fence.get(), value, 0);
+		target_queue->Signal(sp->fence.get(), value);
 	}
 }
 
 auto gse::dx12::queue::wait_for_fence(const gpu::handle<gpu::fence> f) const -> gpu::result {
 	if (auto* sp = std::bit_cast<sync_point*>(f); sp && sp->fence && sp->value != 0) {
+		m_owner->record_queue_op(queue_op_kind::cpu_wait, gpu::queue_type::graphics, sp->fence.get(), sp->value, 0);
 		directx::wait_fence(sp->fence.get(), sp->value, m_owner->idle_event());
 	}
 	return gpu::result::success;
