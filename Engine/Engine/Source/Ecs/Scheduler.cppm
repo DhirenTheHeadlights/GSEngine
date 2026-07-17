@@ -8,6 +8,7 @@ import gse.concurrency;
 import gse.time;
 import gse.math;
 import gse.diag;
+import gse.introspection;
 
 import :registries;
 import :context;
@@ -64,6 +65,8 @@ export namespace gse {
 
 		[[nodiscard]] auto settle_progress() const -> settle_stats;
 
+		[[nodiscard]] auto snapshot_graph() const -> introspection::system_graph;
+
 		auto update() -> void;
 
 		auto tick(
@@ -95,13 +98,23 @@ export namespace gse {
 
 		template <typename State>
 		auto state(
-			this auto& self
-		) -> auto&;
+			this scheduler& self
+		) -> State&;
+
+		template <typename State>
+		auto state(
+			this const scheduler& self
+		) -> const State&;
 
 		template <typename State>
 		auto try_state_of(
-			this auto& self
-		) -> auto*;
+			this scheduler& self
+		) -> State*;
+
+		template <typename State>
+		auto try_state_of(
+			this const scheduler& self
+		) -> const State*;
 
 		template <typename State>
 		auto has() const -> bool;
@@ -208,18 +221,29 @@ export namespace gse {
 }
 
 template <typename State>
-auto gse::scheduler::state(this auto& self) -> auto& {
+auto gse::scheduler::state(this scheduler& self) -> State& {
 	auto* p = self.m_states.state_ptr(id_of<State>());
 	assert(p != nullptr, "state not found");
-	using state_t = std::conditional_t<std::is_const_v<std::remove_pointer_t<decltype(p)>>, const State, State>;
-	return *static_cast<state_t*>(p);
+	return *static_cast<State*>(p);
 }
 
 template <typename State>
-auto gse::scheduler::try_state_of(this auto& self) -> auto* {
+auto gse::scheduler::state(this const scheduler& self) -> const State& {
+	const auto* p = self.m_states.state_ptr(id_of<State>());
+	assert(p != nullptr, "state not found");
+	return *static_cast<const State*>(p);
+}
+
+template <typename State>
+auto gse::scheduler::try_state_of(this scheduler& self) -> State* {
 	auto* p = self.m_states.state_ptr(id_of<State>());
-	using state_t = std::conditional_t<std::is_const_v<std::remove_pointer_t<decltype(p)>>, const State, State>;
-	return static_cast<state_t*>(p);
+	return static_cast<State*>(p);
+}
+
+template <typename State>
+auto gse::scheduler::try_state_of(this const scheduler& self) -> const State* {
+	const auto* p = self.m_states.state_ptr(id_of<State>());
+	return static_cast<const State*>(p);
 }
 
 template <typename State>

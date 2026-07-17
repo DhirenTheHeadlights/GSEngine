@@ -77,6 +77,7 @@ export namespace gse {
 		std::vector<id> optional_init_state_deps;
 		std::vector<id> component_reads;
 		std::vector<id> component_writes;
+		std::vector<id> shared_view_reads;
 
 		void* state_ptr = nullptr;
 		const void* state_snapshot_ptr = nullptr;
@@ -104,6 +105,10 @@ export namespace gse {
 		std::optional<settings::register_settings_type> settings_record;
 
 		std::string system_name;
+		std::string display_name;
+		std::string def_file;
+		std::uint32_t def_line = 0;
+		std::uint32_t def_column = 0;
 	};
 
 }

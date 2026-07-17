@@ -1,5 +1,6 @@
 export module gse.ide.analysis;
 
+export import :compilation_database;
 export import :diagnostics_runner;
 export import :gcc_diagnostics;
 export import :json;

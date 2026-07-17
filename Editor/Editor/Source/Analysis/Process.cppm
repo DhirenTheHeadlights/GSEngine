@@ -7,11 +7,17 @@ module;
 export module gse.ide.analysis:process;
 
 export namespace gse::ide::analysis::process {
+	struct run_result {
+		int exit_code = -1;
+		bool launched = false;
+		bool timed_out = false;
+	};
+
 	auto run_capture_stderr(
 		const char* command_line,
 		const char* working_dir,
 		const char* out_path
-	) -> int;
+	) -> run_result;
 
 	auto open_url(const char* url) -> void;
 }
@@ -39,7 +45,7 @@ auto gse::ide::analysis::process::open_url(const char* url) -> void {
 	}
 }
 
-auto gse::ide::analysis::process::run_capture_stderr(const char* command_line, const char* working_dir, const char* out_path) -> int {
+auto gse::ide::analysis::process::run_capture_stderr(const char* command_line, const char* working_dir, const char* out_path) -> run_result {
 	wchar_t w_cwd[1024] = {};
 	wchar_t w_out[1024] = {};
 	MultiByteToWideChar(CP_UTF8, 0, working_dir, -1, w_cwd, 1024);
@@ -47,7 +53,7 @@ auto gse::ide::analysis::process::run_capture_stderr(const char* command_line, c
 
 	const int cmd_len = MultiByteToWideChar(CP_UTF8, 0, command_line, -1, nullptr, 0);
 	if (cmd_len <= 0) {
-		return -1;
+		return {};
 	}
 	wchar_t* w_cmd = new wchar_t[cmd_len];
 	MultiByteToWideChar(CP_UTF8, 0, command_line, -1, w_cmd, cmd_len);
@@ -98,7 +104,7 @@ auto gse::ide::analysis::process::run_capture_stderr(const char* command_line, c
 		if (h_nul != INVALID_HANDLE_VALUE) {
 			CloseHandle(h_nul);
 		}
-		return -1;
+		return {};
 	}
 
 	HANDLE inherit_list[2] = { h_out, h_nul };
@@ -126,15 +132,17 @@ auto gse::ide::analysis::process::run_capture_stderr(const char* command_line, c
 	DeleteProcThreadAttributeList(attr_list);
 	delete[] attr_mem;
 
-	int result = -1;
+	run_result result;
 	if (ok) {
+		result.launched = true;
 		if (WaitForSingleObject(pi.hProcess, 60000) == WAIT_TIMEOUT) {
+			result.timed_out = true;
 			TerminateProcess(pi.hProcess, 1);
 			WaitForSingleObject(pi.hProcess, 5000);
 		}
 		DWORD code = 0;
 		GetExitCodeProcess(pi.hProcess, &code);
-		result = static_cast<int>(code);
+		result.exit_code = static_cast<int>(code);
 		CloseHandle(pi.hProcess);
 		CloseHandle(pi.hThread);
 	}

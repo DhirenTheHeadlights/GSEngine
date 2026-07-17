@@ -11,10 +11,12 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+import gse.math;
 import :types;
 import :ids;
 import :styles;
 import :builder;
+import :interaction;
 
 export namespace gse::gui {
 	struct text_input_state {
@@ -25,9 +27,7 @@ export namespace gse::gui {
 		bool blink_on = true;
 		bool rpt_active = false;
 		time rpt_next{};
-		time last_click{};
-		float last_click_x = 0.f;
-		int click_count = 0;
+		interaction::click_state click;
 		int select_granularity = 0;
 		int select_origin = 0;
 	};
@@ -39,7 +39,7 @@ export namespace gse::gui::draw {
 		id widget_id,
 		std::string& buffer,
 		text_input_state& state,
-		const ui_rect& box_rect,
+		const rectf& box_rect,
 		id& hot_widget_id,
 		id& focus_widget_id
 	) -> void;
@@ -77,21 +77,21 @@ auto gse::gui::draw::text_input(const draw_context& ctx, const std::string& name
 	const id widget_id = ids::make_from_key(hash_combine(stable_id(name), input_suffix_hash));
 
 	const float widget_height = ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
-	const ui_rect content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
+	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
 
-	const ui_rect row_rect = ui_rect::from_position_size(
+	const rectf row_rect = rectf::from_position_size(
 		{ content_rect.left(), ctx.layout_cursor.y() },
 		{ content_rect.width(), widget_height }
 	);
 
 	const float label_width = content_rect.width() * 0.4f;
 
-	const ui_rect label_rect = ui_rect::from_position_size(
+	const rectf label_rect = rectf::from_position_size(
 		row_rect.top_left(),
 		{ label_width, widget_height }
 	);
 
-	const ui_rect box_rect = ui_rect::from_position_size(
+	const rectf box_rect = rectf::from_position_size(
 		{ row_rect.left() + label_width, row_rect.top() },
 		{ content_rect.width() - label_width, widget_height }
 	);
@@ -110,7 +110,7 @@ auto gse::gui::draw::text_input(const draw_context& ctx, const std::string& name
 	ctx.layout_cursor.y() -= widget_height + ctx.style.padding;
 }
 
-auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget_id, std::string& buffer, text_input_state& state, const ui_rect& box_rect, id& hot_widget_id, id& focus_widget_id) -> void {
+auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget_id, std::string& buffer, text_input_state& state, const rectf& box_rect, id& hot_widget_id, id& focus_widget_id) -> void {
 	state.caret = std::clamp(state.caret, 0, static_cast<int>(buffer.size()));
 	state.anchor = std::clamp(state.anchor, 0, static_cast<int>(buffer.size()));
 
@@ -175,30 +175,23 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 		return { lo, hi + 1 };
 	};
 
-	constexpr time multi_click_interval = milliseconds(400);
-	constexpr float multi_click_slop = 4.f;
-
 	if (ctx.mouse_pressed_for(box_rect)) {
 		const bool shift = ctx.input.key_held(key::left_shift) || ctx.input.key_held(key::right_shift);
 		const float x_local = ctx.input.mouse_position().x() - box_rect.left();
 		const int i = std::clamp(pick_index_from_x(x_local), 0, static_cast<int>(buffer.size()));
-		const time now = system_clock::now<time>();
-		const bool near_last = now - state.last_click <= multi_click_interval && std::abs(x_local - state.last_click_x) <= multi_click_slop;
-		state.click_count = near_last ? state.click_count % 3 + 1 : 1;
-		state.last_click = now;
-		state.last_click_x = x_local;
+		interaction::register_click(state.click, { x_local, 0.f });
 		state.select_origin = i;
 
 		if (shift) {
 			state.caret = i;
 			state.select_granularity = 0;
 		}
-		else if (state.click_count == 3) {
+		else if (state.click.count == 3) {
 			state.anchor = 0;
 			state.caret = static_cast<int>(buffer.size());
 			state.select_granularity = 2;
 		}
-		else if (state.click_count == 2) {
+		else if (state.click.count == 2) {
 			const auto [lo, hi] = word_bounds(buffer, i);
 			state.anchor = lo;
 			state.caret = hi;
@@ -209,7 +202,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			state.select_granularity = 0;
 		}
 
-		state.last_blink = now;
+		state.last_blink = system_clock::now<time>();
 		state.blink_on = true;
 	}
 
@@ -446,7 +439,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 	});
 
 	constexpr float text_padding = 5.f;
-	const ui_rect clip_rect = box_rect.inset({ text_padding, 0.f });
+	const rectf clip_rect = box_rect.inset({ text_padding, 0.f });
 	const vec2f text_pos = { box_rect.left() + text_padding,
 							 box_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) };
 
@@ -455,7 +448,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 		const float ax = ctx.font->width(buffer.substr(0, a), ctx.style.font_size) - state.scroll_x;
 		const float bx = ctx.font->width(buffer.substr(0, b), ctx.style.font_size) - state.scroll_x;
 
-		const ui_rect sel_rect = ui_rect::from_position_size(
+		const rectf sel_rect = rectf::from_position_size(
 			{ text_pos.x() + ax, box_rect.top() - (box_rect.height() - ctx.style.font_size) / 2.f },
 			{ std::max(1.f, bx - ax),
 			  ctx.style.font_size }
@@ -479,7 +472,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 
 	if (focused && state.blink_on) {
 		const float cx = ctx.font->width(buffer.substr(0, state.caret), ctx.style.font_size) - state.scroll_x;
-		const ui_rect cursor_rect = ui_rect::from_position_size(
+		const rectf cursor_rect = rectf::from_position_size(
 			{ text_pos.x() + cx, box_rect.top() - (box_rect.height() - ctx.style.font_size) / 2.f },
 			{ 2.f, ctx.style.font_size }
 		);

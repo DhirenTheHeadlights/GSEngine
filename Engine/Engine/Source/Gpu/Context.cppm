@@ -24,46 +24,46 @@ import gse.save;
 export namespace gse::gpu::context {
 	struct [[= gse::system_state<"Gpu">{}, = gse::settings::category<"Graphics">{}]] data {
 		[[
-			= gse::settings::describe<"Enable Vulkan validation layers. Catches API misuse but adds significant "
+			= settings::describe<"Enable Vulkan validation layers. Catches API misuse but adds significant "
 									  "overhead. Requires a restart.">{},
-			= gse::settings::restart_required{}
+			= settings::restart_required{}
 		]]
 		bool validation_layers_enabled = false;
 
 		[[
-			= gse::settings::describe<"GPU backend to initialize on startup. Vulkan falls back to dx12 if it is unsupported. Requires a restart.">{},
-			= gse::settings::restart_required{}
+			= settings::describe<"GPU backend to initialize on startup. Vulkan falls back to dx12 if it is unsupported. Requires a restart.">{},
+			= settings::restart_required{}
 		]]
 		gpu_backend_kind backend = gpu_backend_kind::vulkan;
 
 		[[
-			= gse::settings::describe<"Vulkan device tracking and naming options.">{}
+			= settings::describe<"Vulkan device tracking and naming options.">{}
 		]]
 		gpu::device_settings device_settings;
 
-		[[= gse::shared]] std::unique_ptr<gpu::device> device;
-		[[= gse::shared]] std::unique_ptr<swap_chain> swapchain;
-		[[= gse::shared]] std::unique_ptr<gpu::frame> frame;
-		[[= gse::shared]] std::unique_ptr<gpu::render_graph> render_graph;
+		[[= shared]] std::unique_ptr<gpu::device> device;
+		[[= shared]] std::unique_ptr<swap_chain> swapchain;
+		[[= shared]] std::unique_ptr<gpu::frame> frame;
+		[[= shared]] std::unique_ptr<gpu::render_graph> render_graph;
 		concurrency::frame_scheduler scheduler;
 
-		gpu::color_clear swapchain_clear{};
+		color_clear swapchain_clear{};
 	};
 
 	using swap_chain_recreate_callback = std::function<void()>;
 
-	[[= gse::system_init{}]] auto init(
+	[[= system_init{}]] auto init(
 		std::optional<shared_view<window::data>> window_s,
 		const save::registry* save_reg,
 		data& d
 	) -> async::task<>;
 
-	[[= gse::system_run<>{}]] auto run(
+	[[= system_run<>{}]] auto run(
 		gse::context& ctx,
 		data& d
 	) -> async::task<>;
 
-	[[= gse::system_shutdown{}]] auto shutdown(
+	[[= system_shutdown{}]] auto shutdown(
 		data& d
 	) -> void;
 

@@ -60,7 +60,7 @@ auto gse::gui::loading_screen::build(builder& ui, nav& n) -> void {
 
 	const float pad = ctx.style.padding;
 	const float font_sz = ctx.style.font_size;
-	const ui_rect body = ctx.current_menu->rect.inset({ pad, pad });
+	const rectf body = ctx.current_menu->rect.inset({ pad, pad });
 
 	const float row_h = ctx.font->line_height(font_sz);
 	const vec2f center = body.center();
@@ -92,7 +92,7 @@ auto gse::gui::loading_screen::build(builder& ui, nav& n) -> void {
 
 	const float bar_width = std::min(ctx.style.progress_bar_max_width, body.width() * 0.6f);
 	const float bar_height = ctx.style.progress_bar_height;
-	const ui_rect bar_outline = layout::centered(
+	const rectf bar_outline = layout::centered(
 		body,
 		{ bar_width, bar_height }
 	);
@@ -111,7 +111,7 @@ auto gse::gui::loading_screen::build(builder& ui, nav& n) -> void {
 	const float fill_width = (bar_width - inset * 2.f) * fill_ratio;
 
 	if (fill_width > 0.f) {
-		const ui_rect fill_rect = ui_rect::from_position_size(
+		const rectf fill_rect = rectf::from_position_size(
 			{ bar_outline.left() + inset, bar_outline.top() - inset },
 			{ fill_width, bar_height - inset * 2.f }
 		);

@@ -16,7 +16,6 @@ import gse.ecs;
 import :render_layer;
 
 namespace gse::gui {
-	using ui_rect = rect_t<vec2f>;
 }
 
 export namespace gse::gui {
@@ -27,7 +26,7 @@ export namespace gse::gui {
 		auto register_hit_region(
 			render_layer layer,
 			std::uint32_t z_order,
-			const ui_rect& rect
+			const rectf& rect
 		) -> void;
 
 		[[nodiscard]] auto input_available_at(
@@ -65,7 +64,7 @@ export namespace gse::gui {
 		) const -> bool;
 
 		auto register_resize_block(
-			const ui_rect& rect
+			const rectf& rect
 		) -> void;
 
 		[[nodiscard]] auto is_resize_blocked(
@@ -75,7 +74,7 @@ export namespace gse::gui {
 	private:
 		struct hit_region {
 			std::uint32_t z_order = 0;
-			ui_rect rect;
+			rectf rect;
 		};
 
 		[[nodiscard]] auto topmost_at(
@@ -91,7 +90,7 @@ export namespace gse::gui {
 		std::array<bool, k_button_count> m_release_consumed{};
 		bool m_scroll_consumed = false;
 		std::unordered_set<int> m_consumed_keys;
-		double_buffer<std::vector<ui_rect>> m_resize_blocks;
+		double_buffer<std::vector<rectf>> m_resize_blocks;
 	};
 }
 
@@ -118,18 +117,18 @@ auto gse::gui::input_layer::begin_frame() -> void {
 	m_consumed_keys.clear();
 }
 
-auto gse::gui::input_layer::register_hit_region(const render_layer layer, const std::uint32_t z_order, const ui_rect& rect) -> void {
+auto gse::gui::input_layer::register_hit_region(const render_layer layer, const std::uint32_t z_order, const rectf& rect) -> void {
 	if (const auto index = static_cast<std::size_t>(layer); index < m_current_regions.size()) {
 		m_current_regions[index].push_back({ z_order, rect });
 	}
 }
 
-auto gse::gui::input_layer::register_resize_block(const ui_rect& rect) -> void {
+auto gse::gui::input_layer::register_resize_block(const rectf& rect) -> void {
 	m_resize_blocks.write().push_back(rect);
 }
 
 auto gse::gui::input_layer::is_resize_blocked(const vec2f position) const -> bool {
-	for (const ui_rect& rect : m_resize_blocks.read()) {
+	for (const rectf& rect : m_resize_blocks.read()) {
 		if (rect.contains(position)) {
 			return true;
 		}

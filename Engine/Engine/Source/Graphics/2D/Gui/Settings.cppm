@@ -251,8 +251,8 @@ auto gse::settings::draw_restart_marker(gui::builder& b, const bool modified) ->
 	auto& ctx = b.ctx;
 	const float subline_size = ctx.style.font_size * 0.85f;
 	const float subline_height = ctx.font->line_height(subline_size) + ctx.style.padding * 0.25f;
-	const gui::ui_rect content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
-	const gui::ui_rect subline_rect = gui::ui_rect::from_position_size(
+	const gse::rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
+	const gse::rectf subline_rect = gse::rectf::from_position_size(
 		{ content_rect.left() + ctx.style.padding, ctx.layout_cursor.y() },
 		{ content_rect.width() - ctx.style.padding, subline_height }
 	);
@@ -273,8 +273,8 @@ auto gse::settings::draw_field_tooltip(gui::builder& b, const settings_field& fi
 		return;
 	}
 	const float widget_height = b.ctx.font->line_height(b.ctx.style.font_size) + b.ctx.style.padding * 0.5f;
-	const gui::ui_rect content_rect = b.ctx.current_menu->rect.inset({ b.ctx.style.padding, b.ctx.style.padding });
-	const gui::ui_rect row_rect = gui::ui_rect::from_position_size(
+	const gse::rectf content_rect = b.ctx.current_menu->rect.inset({ b.ctx.style.padding, b.ctx.style.padding });
+	const gse::rectf row_rect = gse::rectf::from_position_size(
 		{ content_rect.left(), row_y_before },
 		{ content_rect.width(), widget_height }
 	);

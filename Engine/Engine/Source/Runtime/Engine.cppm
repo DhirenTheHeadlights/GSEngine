@@ -9,6 +9,7 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+import gse.introspection;
 import gse.network;
 import gse.graphics;
 import gse.audio;
@@ -40,6 +41,7 @@ export namespace gse {
 		bool attached = false;
 		std::string ipc_pipe_name;
 		std::uint32_t parent_pid = 0;
+		std::string dump_system_graph_path;
 	};
 
 	constexpr std::uint32_t attached_surface_magic = 0x47535331;
@@ -85,6 +87,10 @@ export namespace gse {
 		auto attached_surface_ready() const -> bool;
 
 		auto attached_message() const -> const attached_surface_message&;
+
+		[[nodiscard]] auto snapshot_graph() const -> introspection::system_graph;
+
+		[[nodiscard]] auto all_settled() const -> bool;
 
 		auto add_system_node(
 			system_node node

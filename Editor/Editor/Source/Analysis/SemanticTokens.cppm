@@ -12,7 +12,8 @@ export namespace gse::ide::analysis {
 		type,
 		enum_member,
 		name_space,
-		global
+		global,
+		attribute
 	};
 
 	struct semantic_token {
@@ -22,15 +23,9 @@ export namespace gse::ide::analysis {
 		semantic_kind kind = semantic_kind::variable;
 	};
 
-	struct token_set {
-		std::vector<semantic_token> tokens;
-		std::vector<std::string> type_names;
-		std::vector<std::string> template_params;
-	};
-
 	struct semantic_tokens {
 		static auto kind_from(std::string_view name) -> std::optional<semantic_kind>;
-		static auto parse(std::string_view text) -> token_set;
+		static auto parse(std::string_view text) -> std::vector<semantic_token>;
 	};
 }
 
@@ -42,8 +37,8 @@ auto gse::ide::analysis::semantic_tokens::kind_from(std::string_view name) -> st
 	return std::nullopt;
 }
 
-auto gse::ide::analysis::semantic_tokens::parse(std::string_view text) -> token_set {
-	token_set out;
+auto gse::ide::analysis::semantic_tokens::parse(std::string_view text) -> std::vector<semantic_token> {
+	std::vector<semantic_token> out;
 
 	auto to_u32 = [](std::string_view s) -> std::optional<std::uint32_t> {
 		std::uint32_t value = 0;
@@ -64,20 +59,6 @@ auto gse::ide::analysis::semantic_tokens::parse(std::string_view text) -> token_
 			line.remove_suffix(1);
 		}
 
-		if (line.starts_with("GSETYPE\t")) {
-			const std::string_view name = line.substr(8);
-			if (!name.empty()) {
-				out.type_names.emplace_back(name);
-			}
-			continue;
-		}
-		if (line.starts_with("GSETPARAM\t")) {
-			const std::string_view name = line.substr(10);
-			if (!name.empty()) {
-				out.template_params.emplace_back(name);
-			}
-			continue;
-		}
 		if (!line.starts_with("GSETOK\t")) {
 			continue;
 		}
@@ -100,7 +81,7 @@ auto gse::ide::analysis::semantic_tokens::parse(std::string_view text) -> token_
 		const std::optional<std::uint32_t> len = to_u32(fields[3]);
 		const std::optional<semantic_kind> kind = kind_from(fields[4]);
 		if (ln && col && len && kind) {
-			out.tokens.push_back({ *ln, *col, *len, *kind });
+			out.push_back({ *ln, *col, *len, *kind });
 		}
 	}
 	return out;

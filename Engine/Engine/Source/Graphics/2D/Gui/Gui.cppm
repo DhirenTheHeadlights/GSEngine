@@ -213,7 +213,7 @@ export namespace gse::gui {
 		data& d,
 		const input::state& input_state,
 		menu& current_menu,
-		const ui_rect& title_bar_rect,
+		const rectf& title_bar_rect,
 		render_layer layer
 	) -> void;
 
@@ -227,12 +227,12 @@ export namespace gse::gui {
 	auto usable_screen_rect(
 		data& d,
 		shared_view<window::data> window_s
-	) -> ui_rect;
+	) -> rectf;
 
 	auto calculate_display_rect(
 		data& d,
 		const menu& m
-	) -> ui_rect;
+	) -> rectf;
 
 	auto apply_scale(
 		const data& d,

@@ -43,7 +43,7 @@ export namespace gse::gui::draw {
 
 		std::function<bool(const T&)> is_leaf;
 
-		std::function<void(const T&, const draw_context&, const ui_rect&, bool, bool, int)> custom_draw = nullptr;
+		std::function<void(const T&, const draw_context&, const rectf&, bool, bool, int)> custom_draw = nullptr;
 
 		std::function<void(const T&, const draw_context&, vec2f)> on_context = nullptr;
 
@@ -153,12 +153,12 @@ template <typename T>
 auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_ops<T>& ops, const tree_options& opt, tree_selection* sel, std::uint64_t tree_scope, int level, id& active_widget_id) -> bool {
 	const float row_height = ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
 	const float gap = row_height * opt.row_gap;
-	const ui_rect context_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
+	const rectf context_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
 	const float indent = std::max(0.f, opt.indent_per_level) * std::max(0, level);
 	const float row_x = std::min(context_rect.left() + indent, context_rect.right());
 	const float row_width = std::max(0.f, context_rect.right() - row_x);
 
-	const ui_rect row_rect = ui_rect::from_position_size(
+	const rectf row_rect = rectf::from_position_size(
 		{ row_x, ctx.layout_cursor.y() },
 		{ row_width, row_height }
 	);
@@ -168,7 +168,7 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 	const bool leaf = tree_node_is_leaf(t, ops);
 	bool is_open = open_set.contains(key);
 
-	const ui_rect effective_clip = ctx.current_clip().value_or(context_rect);
+	const rectf effective_clip = ctx.current_clip().value_or(context_rect);
 	const bool row_visible = row_rect.top() >= effective_clip.bottom() - row_height &&
 		row_rect.bottom() <= effective_clip.top() + row_height;
 
@@ -217,7 +217,7 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 		});
 
 		const float arrow_w = ctx.style.font_size;
-		const ui_rect arrow_rect = ui_rect::from_position_size(
+		const rectf arrow_rect = rectf::from_position_size(
 			row_rect.top_left(),
 			{ arrow_w, row_height }
 		);
@@ -231,7 +231,7 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 
 		const float icon_w = ops.icon ? ctx.style.font_size : 0.f;
 		if (ops.icon) {
-			const ui_rect icon_rect = ui_rect::from_position_size(
+			const rectf icon_rect = rectf::from_position_size(
 				{ row_rect.left() + arrow_w, row_rect.top() },
 				{ icon_w, row_height }
 			);
@@ -249,7 +249,7 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 				row_rect.width() - arrow_w - icon_w - ctx.style.padding * 0.5f - opt.extra_right_padding
 			);
 
-		const ui_rect label_rect = ui_rect::from_position_size(
+		const rectf label_rect = rectf::from_position_size(
 			{ row_rect.left() + arrow_w + icon_w + ctx.style.padding * 0.5f, row_rect.top() },
 			{ label_available_width, row_height }
 		);
@@ -269,7 +269,7 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 	}
 
 	if (released_by_me && hovered) {
-		const ui_rect arrow_rect = ui_rect::from_position_size(
+		const rectf arrow_rect = rectf::from_position_size(
 			row_rect.top_left(),
 			{ ctx.style.font_size, row_height }
 		);

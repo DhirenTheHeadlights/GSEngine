@@ -25,6 +25,10 @@ export namespace gse::ide::config_system {
 			= gse::shared]]
 		bool show_line_numbers = true;
 
+		[[= gse::settings::describe<"Reformat the file before every save.">{},
+			= gse::shared]]
+		bool format_on_save = true;
+
 		[[= gse::settings::describe<"Wrap lines that exceed the view width.">{}]]
 		bool soft_wrap = false;
 

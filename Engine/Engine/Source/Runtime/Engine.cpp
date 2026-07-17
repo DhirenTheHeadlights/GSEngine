@@ -13,6 +13,7 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+import gse.introspection;
 import gse.system_manifest;
 import gse.network;
 import gse.graphics;
@@ -25,6 +26,7 @@ import gse.gpu_record;
 import gse.log;
 import gse.save;
 import gse.config;
+import gse.fs;
 
 gse::engine::engine(const engine_config& config)
 	: identifiable(config.title), m_config(config) {
@@ -32,6 +34,14 @@ gse::engine::engine(const engine_config& config)
 
 auto gse::engine::add_system_node(system_node node) -> void {
 	m_scheduler.add_system_node(std::move(node));
+}
+
+auto gse::engine::snapshot_graph() const -> introspection::system_graph {
+	return m_scheduler.snapshot_graph();
+}
+
+auto gse::engine::all_settled() const -> bool {
+	return m_scheduler.all_settled();
 }
 
 auto gse::engine::initialize(const setup_fn& app_setup) -> void {
@@ -53,6 +63,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	m_scheduler.register_external_resource<save::registry>(&m_save);
 	m_scheduler.register_external_resource<primitives::data>(&m_primitives);
 	m_scheduler.register_external_resource<engine_config>(&m_config);
+	m_scheduler.register_external_resource<scheduler>(&m_scheduler);
 
 	m_scheduler.begin_staging();
 	register_systems<^^input>(*this);
@@ -412,6 +423,8 @@ auto gse::engine::shutdown() -> void {
 
 	m_scheduler.enter_shutdown();
 	m_scheduler.shutdown();
+
+	layout_store::flush();
 
 	m_scheduler.clear();
 }

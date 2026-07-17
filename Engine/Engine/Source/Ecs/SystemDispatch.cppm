@@ -95,6 +95,11 @@ export namespace gse {
 		std::vector<id>& optional_out
 	) -> void;
 
+	template <typename Arg>
+	auto append_arg_shared_view(
+		std::vector<id>& shared_out
+	) -> void;
+
 	template <typename Arg, typename S>
 	auto append_arg_run_metadata(
 		run_signature_metadata& out
@@ -243,6 +248,17 @@ auto gse::append_arg_view_deps(std::vector<id>& required_out, std::vector<id>& o
 	}
 }
 
+template <typename Arg>
+auto gse::append_arg_shared_view(std::vector<id>& shared_out) -> void {
+	using U = std::remove_cvref_t<Arg>;
+	if constexpr (is_shared_view_v<U>) {
+		shared_out.push_back(id_of<shared_view_target_t<U>>());
+	}
+	else if constexpr (is_optional_shared_view_v<U>) {
+		shared_out.push_back(id_of<optional_shared_view_target_t<U>>());
+	}
+}
+
 template <typename Arg, typename S>
 auto gse::append_arg_run_metadata(run_signature_metadata& out) -> void {
 	append_arg_state_dep<Arg, S>(out.state_deps);
@@ -250,13 +266,16 @@ auto gse::append_arg_run_metadata(run_signature_metadata& out) -> void {
 
 	using ArgT = std::remove_cvref_t<Arg>;
 	if constexpr (is_access_v<ArgT> && is_read_access_v<ArgT>) {
+		(void)trace_id<access_element_t<ArgT>>();
 		out.component_reads.push_back(id_of<access_element_t<ArgT>>());
 	}
 
 	if constexpr (is_access_v<ArgT> && !is_read_access_v<ArgT>) {
+		(void)trace_id<access_element_t<ArgT>>();
 		out.component_writes.push_back(id_of<access_element_t<ArgT>>());
 	}
 	else if constexpr (is_structural_v<ArgT>) {
+		(void)trace_id<structural_element_t<ArgT>>();
 		out.component_writes.push_back(id_of<structural_element_t<ArgT>>());
 	}
 }

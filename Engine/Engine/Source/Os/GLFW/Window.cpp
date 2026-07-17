@@ -462,7 +462,47 @@ auto gse::window::set_clipboard_text(std::string text) -> void {
 namespace gse {
 	GLFWcursor* g_cursor_arrow = nullptr;
 	GLFWcursor* g_cursor_hand = nullptr;
+	GLFWcursor* g_cursor_resize_ew = nullptr;
+	GLFWcursor* g_cursor_resize_ns = nullptr;
+	GLFWcursor* g_cursor_resize_nwse = nullptr;
+	GLFWcursor* g_cursor_resize_nesw = nullptr;
 	cursor_shape g_cursor_shape = cursor_shape::arrow;
+
+	auto glfw_cursor_slot(const cursor_shape shape) -> GLFWcursor*& {
+		switch (shape) {
+			case cursor_shape::hand:
+				return g_cursor_hand;
+			case cursor_shape::resize_ew:
+				return g_cursor_resize_ew;
+			case cursor_shape::resize_ns:
+				return g_cursor_resize_ns;
+			case cursor_shape::resize_nwse:
+				return g_cursor_resize_nwse;
+			case cursor_shape::resize_nesw:
+				return g_cursor_resize_nesw;
+			case cursor_shape::arrow:
+			default:
+				return g_cursor_arrow;
+		}
+	}
+
+	auto glfw_standard_cursor(const cursor_shape shape) -> int {
+		switch (shape) {
+			case cursor_shape::hand:
+				return glfw::pointing_hand_cursor;
+			case cursor_shape::resize_ew:
+				return glfw::resize_ew_cursor;
+			case cursor_shape::resize_ns:
+				return glfw::resize_ns_cursor;
+			case cursor_shape::resize_nwse:
+				return glfw::resize_nwse_cursor;
+			case cursor_shape::resize_nesw:
+				return glfw::resize_nesw_cursor;
+			case cursor_shape::arrow:
+			default:
+				return glfw::arrow_cursor;
+		}
+	}
 }
 
 auto gse::window::tick(scheduler& sched, data& d) -> void {
@@ -492,17 +532,19 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 		d.chrome_interactive_x1 = req.interactive_x1;
 	}
 
+	cursor_shape desired_cursor = cursor_shape::arrow;
 	for (const auto& req : sched.read_channel<set_cursor_shape_request>()) {
-		if (req.shape != g_cursor_shape) {
-			if (!g_cursor_arrow) {
-				g_cursor_arrow = glfwCreateStandardCursor(glfw::arrow_cursor);
-			}
-			if (!g_cursor_hand) {
-				g_cursor_hand = glfwCreateStandardCursor(glfw::pointing_hand_cursor);
-			}
-			glfwSetCursor(to_glfw_handle(d.handle), req.shape == cursor_shape::hand ? g_cursor_hand : g_cursor_arrow);
-			g_cursor_shape = req.shape;
+		if (req.shape != cursor_shape::arrow) {
+			desired_cursor = req.shape;
 		}
+	}
+	if (desired_cursor != g_cursor_shape) {
+		GLFWcursor*& slot = glfw_cursor_slot(desired_cursor);
+		if (!slot) {
+			slot = glfwCreateStandardCursor(glfw_standard_cursor(desired_cursor));
+		}
+		glfwSetCursor(to_glfw_handle(d.handle), slot);
+		g_cursor_shape = desired_cursor;
 	}
 
 	if (d.monitor.value != d.last_monitor_index) {

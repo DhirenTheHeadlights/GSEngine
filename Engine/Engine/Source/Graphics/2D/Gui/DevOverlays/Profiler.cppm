@@ -57,7 +57,7 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 	const float pad = ctx.style.padding;
 	const float font_sz = ctx.style.font_size;
 	const float row_h = ctx.font->line_height(font_sz) + pad * 0.5f;
-	const ui_rect menu_content = ctx.current_menu->rect.inset({ pad, pad });
+	const rectf menu_content = ctx.current_menu->rect.inset({ pad, pad });
 
 	const bool mouse_held = ctx.input.mouse_button_held(mouse_button::button_1);
 	const vec2f mouse_pos = ctx.input.mouse_position();
@@ -85,7 +85,7 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 	constexpr float hit_w = 6.0f;
 
 	auto handle_resize = [&](float& width, const float right_anchor_x, const float split_x, const int idx) {
-		const ui_rect hit_rect = ui_rect::from_position_size(
+		const rectf hit_rect = rectf::from_position_size(
 			{ split_x - hit_w * 0.5f, header_y },
 			{ hit_w, row_h }
 		);
@@ -118,7 +118,7 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 	const float total_cols_w = w_dur + w_self + w_avg + w_peak + w_frame + (pad * 5);
 
 	auto draw_header_item = [&](const std::string& txt, float x, float w) {
-		const ui_rect r = ui_rect::from_position_size(
+		const rectf r = rectf::from_position_size(
 			{ x, header_y },
 			{ w, row_h }
 		);
@@ -255,7 +255,7 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 			[=](
 		const trace::node& n,
 		const draw_context& draw_ctx,
-		const ui_rect& row,
+		const rectf& row,
 		bool,
 		bool,
 		int
@@ -273,7 +273,7 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 				char buf[32];
 
 				auto draw_col = [&](const std::string_view val, float x, float w) {
-					const ui_rect box = ui_rect::from_position_size(
+					const rectf box = rectf::from_position_size(
 						{ x, row.top() },
 						{ w, row.height() }
 					);

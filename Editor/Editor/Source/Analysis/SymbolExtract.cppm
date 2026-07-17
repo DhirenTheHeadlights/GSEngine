@@ -4,18 +4,29 @@ import std;
 import gse;
 
 export namespace gse::ide::analysis {
+	struct definition_symbol_kind {};
+	struct type_symbol_kind {};
+
 	enum class symbol_kind {
 		variable,
 		parameter,
-		function,
+		function [[= definition_symbol_kind{}]],
 		member,
-		type,
+		type [[= definition_symbol_kind{}, = type_symbol_kind{}]],
 		enum_member,
 		name_space,
-		enumeration,
+		enumeration [[= definition_symbol_kind{}, = type_symbol_kind{}]],
 		alias,
-		concept_decl
+		concept_decl [[= definition_symbol_kind{}, = type_symbol_kind{}]]
 	};
+
+	[[nodiscard]] constexpr auto is_definition_kind(
+		symbol_kind kind
+	) -> bool;
+
+	[[nodiscard]] constexpr auto is_type_kind(
+		symbol_kind kind
+	) -> bool;
 
 	struct symbol_token {
 		std::string name;
@@ -41,9 +52,26 @@ export namespace gse::ide::analysis {
 		std::string identity;
 	};
 
+	struct qualified_use {
+		std::string file;
+		std::uint32_t line = 0;
+		std::uint32_t column = 0;
+		std::uint32_t end_line = 0;
+		std::uint32_t end_column = 0;
+	};
+
+	struct channel_use {
+		bool produce = false;
+		std::string system;
+		std::string message;
+	};
+
 	struct symbol_set {
 		std::vector<symbol_token> symbols;
 		std::vector<symbol_ref> refs;
+		std::vector<qualified_use> quals;
+		std::vector<qualified_use> template_args;
+		std::vector<channel_use> channels;
 		bool complete = false;
 	};
 
@@ -51,6 +79,26 @@ export namespace gse::ide::analysis {
 		static auto kind_from(std::string_view name) -> std::optional<symbol_kind>;
 		static auto parse(std::string_view text) -> symbol_set;
 	};
+}
+
+constexpr auto gse::ide::analysis::is_definition_kind(const symbol_kind kind) -> bool {
+	template for (constexpr auto e : std::define_static_array(std::meta::enumerators_of(^^symbol_kind))) {
+		constexpr bool is_definition = first_annotation_of_type(e, ^^definition_symbol_kind) != std::meta::info{};
+		if (kind == [:e:]) {
+			return is_definition;
+		}
+	}
+	return false;
+}
+
+constexpr auto gse::ide::analysis::is_type_kind(const symbol_kind kind) -> bool {
+	template for (constexpr auto e : std::define_static_array(std::meta::enumerators_of(^^symbol_kind))) {
+		constexpr bool is_type = first_annotation_of_type(e, ^^type_symbol_kind) != std::meta::info{};
+		if (kind == [:e:]) {
+			return is_type;
+		}
+	}
+	return false;
 }
 
 auto gse::ide::analysis::symbol_tokens::kind_from(std::string_view name) -> std::optional<symbol_kind> {
@@ -124,6 +172,49 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text) -> symbol_s
 			continue;
 		}
 
+		if (line.starts_with("GSEQUAL\t")) {
+			std::array<std::string_view, 5> fields;
+			const std::size_t count = split(line, fields);
+			if (count < 5) {
+				continue;
+			}
+			const std::optional<std::uint32_t> ln = to_u32(fields[2]);
+			const std::optional<std::uint32_t> col = to_u32(fields[3]);
+			const std::optional<std::uint32_t> len = to_u32(fields[4]);
+			if (ln && col && len) {
+				out.quals.push_back({
+					.file = std::string(fields[1]),
+					.line = *ln,
+					.column = *col,
+					.end_line = *ln,
+					.end_column = *col + *len,
+				});
+			}
+			continue;
+		}
+
+		if (line.starts_with("GSETARG\t")) {
+			std::array<std::string_view, 6> fields;
+			const std::size_t count = split(line, fields);
+			if (count < 6) {
+				continue;
+			}
+			const std::optional<std::uint32_t> ln = to_u32(fields[2]);
+			const std::optional<std::uint32_t> col = to_u32(fields[3]);
+			const std::optional<std::uint32_t> end_ln = to_u32(fields[4]);
+			const std::optional<std::uint32_t> end_col = to_u32(fields[5]);
+			if (ln && col && end_ln && end_col) {
+				out.template_args.push_back({
+					.file = std::string(fields[1]),
+					.line = *ln,
+					.column = *col,
+					.end_line = *end_ln,
+					.end_column = *end_col,
+				});
+			}
+			continue;
+		}
+
 		if (line.starts_with("GSEREF\t")) {
 			std::array<std::string_view, 11> fields;
 			const std::size_t count = split(line, fields);
@@ -147,6 +238,19 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text) -> symbol_s
 					.def_column = *dcol,
 					.qualified = count >= 10 ? std::string(fields[9]) : std::string{},
 					.identity = count >= 11 ? std::string(fields[10]) : std::string{},
+				});
+			}
+			continue;
+		}
+
+		if (line.starts_with("GSECHAN\t")) {
+			std::array<std::string_view, 4> fields;
+			const std::size_t count = split(line, fields);
+			if (count >= 4 && !fields[2].empty() && !fields[3].empty()) {
+				out.channels.push_back({
+					.produce = fields[1] == "produce",
+					.system = std::string(fields[2]),
+					.message = std::string(fields[3]),
 				});
 			}
 			continue;

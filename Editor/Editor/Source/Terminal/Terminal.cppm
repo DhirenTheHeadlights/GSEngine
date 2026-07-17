@@ -3,6 +3,7 @@ export module gse.ide.terminal:terminal_panel;
 import std;
 import gse;
 import gse.ide.build;
+import gse.ide.navigation;
 import gse.win32;
 
 export namespace gse::ide::terminal {
@@ -55,8 +56,10 @@ export namespace gse::ide::terminal {
 		std::vector<instance> instances;
 		std::size_t active = 0;
 		std::uint32_t next_number = 1;
-		float tab_scroll_y = 0.f;
-		std::size_t tab_scroll_active = static_cast<std::size_t>(-1);
+		gse::gui::tab_strip_state tab_strip;
+		float strip_width = 140.f;
+		bool resizing_strip = false;
+		std::optional<std::size_t> pending_close;
 	};
 
 	[[= gse::system_init{}]]
@@ -67,26 +70,38 @@ export namespace gse::ide::terminal {
 
 	auto register_sink(data& d) -> void;
 
-	auto draw_panel(gse::gui::builder& ui, data& d) -> void;
+	auto draw_panel(gse::gui::builder& ui, data& d, gse::channel_writer channels) -> void;
 }
 
 namespace gse::ide::terminal {
-	using ui_rect = gse::rect_t<gse::vec2f>;
 
 	constexpr std::size_t max_lines = 8192;
-	constexpr float tab_strip_width = 140.f;
+
+	struct link_hit {
+		std::filesystem::path path;
+		std::uint32_t line = 0;
+		std::uint32_t column = 0;
+		std::uint32_t start_col = 0;
+		std::uint32_t end_col = 0;
+	};
+
+	auto path_link_at(std::string_view row, std::uint32_t column) -> std::optional<link_hit>;
 
 	auto level_color(const gse::gui::style& sty, gse::log::level lvl) -> gse::vec4f;
 
 	auto ellipsize_path(std::string_view path) -> std::string;
 
-	auto header_button(gse::gui::builder& ui, const ui_rect& rect, std::span<const gse::gui::symbol::stroke> glyph, std::string_view label, bool enabled) -> bool;
+	auto header_button(gse::gui::builder& ui, const rectf& rect, std::span<const gse::gui::symbol::stroke> glyph, std::string_view label, bool enabled) -> bool;
+
+	auto confirm_button(gse::gui::builder& ui, const rectf& rect, std::string_view label, bool danger) -> bool;
+
+	auto draw_close_confirm(gse::gui::builder& ui, data& d, const rectf& body) -> void;
 
 	auto widen(const std::string& s) -> std::wstring;
 
 	auto run_command(command_runner& runner, const std::string& command, const std::wstring& cwd) -> void;
 
-	auto draw_instance(gse::gui::builder& ui, data& d, instance& inst, const ui_rect& area) -> void;
+	auto draw_instance(gse::gui::builder& ui, data& d, instance& inst, const rectf& area, gse::channel_writer channels) -> void;
 }
 
 auto gse::ide::terminal::level_color(const gse::gui::style& sty, const gse::log::level lvl) -> gse::vec4f {
@@ -120,6 +135,75 @@ auto gse::ide::terminal::ellipsize_path(const std::string_view path) -> std::str
 		return std::string(path);
 	}
 	return std::format("{}\\...\\{}\\{}", parts.front(), parts[parts.size() - 2], parts.back());
+}
+
+auto gse::ide::terminal::path_link_at(const std::string_view row, const std::uint32_t column) -> std::optional<link_hit> {
+	auto is_link_char = [](const char c) -> bool {
+		return std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '.' || c == '-' || c == '/' || c == '\\' || c == ':' || c == '~' || c == '+';
+	};
+
+	if (row.empty()) {
+		return std::nullopt;
+	}
+	std::size_t a = std::min<std::size_t>(column, row.size());
+	if (a == row.size() || !is_link_char(row[a])) {
+		if (a == 0 || !is_link_char(row[a - 1])) {
+			return std::nullopt;
+		}
+		--a;
+	}
+	std::size_t b = a;
+	while (a > 0 && is_link_char(row[a - 1])) {
+		--a;
+	}
+	while (b < row.size() && is_link_char(row[b])) {
+		++b;
+	}
+
+	const std::string token(row.substr(a, b - a));
+
+	std::uint32_t peeled[2] = { 0, 0 };
+	std::size_t peeled_count = 0;
+	std::size_t end = token.size();
+	while (end > 0 && token[end - 1] == ':') {
+		--end;
+	}
+	while (peeled_count < 2) {
+		std::size_t digits = end;
+		while (digits > 0 && std::isdigit(static_cast<unsigned char>(token[digits - 1]))) {
+			--digits;
+		}
+		if (digits == end || digits == 0 || token[digits - 1] != ':') {
+			break;
+		}
+		std::uint32_t value = 0;
+		std::from_chars(token.data() + digits, token.data() + end, value);
+		peeled[peeled_count++] = value;
+		end = digits - 1;
+	}
+
+	const std::string_view path_str = std::string_view(token).substr(0, end);
+	if (path_str.empty()) {
+		return std::nullopt;
+	}
+
+	const std::uint32_t line = peeled_count == 2 ? peeled[1] : (peeled_count == 1 ? peeled[0] : 0);
+	const std::uint32_t col = peeled_count == 2 ? peeled[0] : 0;
+
+	const std::filesystem::path candidate(path_str);
+	std::filesystem::path resolved = candidate.is_absolute() ? candidate : gse::config::root_dir / candidate;
+	std::error_code ec;
+	if (!std::filesystem::is_regular_file(resolved, ec)) {
+		return std::nullopt;
+	}
+
+	return link_hit{
+		.path = std::move(resolved),
+		.line = line > 0 ? line - 1 : 0,
+		.column = col > 0 ? col - 1 : 0,
+		.start_col = static_cast<std::uint32_t>(a),
+		.end_col = static_cast<std::uint32_t>(b),
+	};
 }
 
 auto gse::ide::terminal::ring_sink::push(const gse::log::level lvl, std::string text) -> void {
@@ -174,8 +258,8 @@ auto gse::ide::terminal::run(gse::context& ctx, data& d) -> gse::async::task<> {
 	ctx.channels.push<gse::gui::menu_content>({
 		.menu = std::string(panel_name),
 		.layer = gse::render_layer::content,
-		.build = [d = &d](gse::gui::builder& b) {
-			draw_panel(b, *d);
+		.build = [d = &d, channels = ctx.channels](gse::gui::builder& b) {
+			draw_panel(b, *d, channels);
 		},
 	});
 	return {};
@@ -234,6 +318,8 @@ auto gse::ide::terminal::run_command(command_runner& runner, const std::string& 
 		return;
 	}
 
+	build_runner::attach_process(runner, process.hProcess);
+
 	std::string pending;
 	std::array<char, 4096> chunk{};
 	gse::win32::DWORD received = 0;
@@ -256,10 +342,11 @@ auto gse::ide::terminal::run_command(command_runner& runner, const std::string& 
 	gse::win32::CloseHandle(read_end);
 	gse::win32::WaitForSingleObject(process.hProcess, gse::win32::infinite);
 	gse::win32::CloseHandle(process.hProcess);
+	build_runner::close_process(runner);
 	gse::win32::CloseHandle(process.hThread);
 }
 
-auto gse::ide::terminal::header_button(gse::gui::builder& ui, const ui_rect& rect, const std::span<const gse::gui::symbol::stroke> glyph, const std::string_view label, const bool enabled) -> bool {
+auto gse::ide::terminal::header_button(gse::gui::builder& ui, const rectf& rect, const std::span<const gse::gui::symbol::stroke> glyph, const std::string_view label, const bool enabled) -> bool {
 	const gse::gui::draw_context& ctx = ui.ctx;
 	const gse::gui::style& sty = ctx.style;
 	const float pad = sty.padding;
@@ -277,7 +364,7 @@ auto gse::ide::terminal::header_button(gse::gui::builder& ui, const ui_rect& rec
 	const gse::vec4f fg = enabled ? sty.color_text : sty.color_text_secondary;
 	const float glyph_size = rect.height();
 	const float glyph_left = label.empty() ? rect.center().x() - glyph_size * 0.5f : rect.left() + pad * 0.5f;
-	const ui_rect glyph_rect = ui_rect::from_position_size(
+	const rectf glyph_rect = rectf::from_position_size(
 		{ glyph_left, rect.top() },
 		{ glyph_size, glyph_size }
 	);
@@ -300,7 +387,7 @@ auto gse::ide::terminal::header_button(gse::gui::builder& ui, const ui_rect& rec
 	return clicked;
 }
 
-auto gse::ide::terminal::draw_instance(gse::gui::builder& ui, data& d, instance& inst, const ui_rect& area) -> void {
+auto gse::ide::terminal::draw_instance(gse::gui::builder& ui, data& d, instance& inst, const rectf& area, gse::channel_writer channels) -> void {
 	const gse::gui::draw_context& ctx = ui.ctx;
 	const gse::id input_id = gse::gui::ids::make("##term_input_" + inst.name);
 	const std::string prompt = ellipsize_path(gse::config::root_dir.display_string()) + "> ";
@@ -374,10 +461,26 @@ auto gse::ide::terminal::draw_instance(gse::gui::builder& ui, data& d, instance&
 	const float pad = ctx.style.padding;
 	const float input_h = inst.interactive ? ctx.font->line_height(ctx.style.font_size) + pad : 0.f;
 
-	const ui_rect log_rect = ui_rect::from_position_size(
+	const rectf log_rect = rectf::from_position_size(
 		{ area.left(), area.top() },
 		{ area.width(), std::max(0.f, area.height() - input_h) }
 	);
+
+	std::vector<gse::gui::text_underline> underlines;
+	std::optional<link_hit> link;
+	const gse::vec2f mouse = ctx.input.mouse_position();
+	const bool goto_ctrl = ctx.input.key_held(gse::key::left_control) || ctx.input.key_held(gse::key::right_control);
+	if (goto_ctrl && log_rect.contains(mouse) && ctx.input_available() && !inst.buffer.lines.empty()) {
+		const gse::gui::buffer_position hover = gse::gui::draw::text_area_position_at(ctx, inst.buffer, inst.view, log_rect, false, 4, mouse);
+		if (const std::optional<link_hit> hit = path_link_at(inst.buffer.line(hover.line), hover.column)) {
+			link = hit;
+			underlines.push_back({ .line = hover.line, .start_col = hit->start_col, .end_col = hit->end_col, .color = ctx.style.color_text_secondary });
+		}
+	}
+	if (link) {
+		channels.push<gse::set_cursor_shape_request>({ .shape = gse::cursor_shape::hand });
+	}
+	const bool goto_click = link.has_value() && ctx.mouse_pressed_for(log_rect);
 
 	gse::gui::draw::text_area_in_rect(
 		ctx,
@@ -385,6 +488,7 @@ auto gse::ide::terminal::draw_instance(gse::gui::builder& ui, data& d, instance&
 		inst.buffer,
 		inst.view,
 		std::span<const gse::gui::text_span>(inst.spans),
+		underlines,
 		{},
 		log_rect,
 		true,
@@ -397,11 +501,15 @@ auto gse::ide::terminal::draw_instance(gse::gui::builder& ui, data& d, instance&
 		ui.focus_widget_id
 	);
 
+	if (goto_click && link) {
+		channels.push<gse::ide::jump_to_request>({ .path = link->path, .line = link->line, .column = link->column });
+	}
+
 	if (!inst.interactive) {
 		return;
 	}
 
-	const ui_rect input_rect = ui_rect::from_position_size(
+	const rectf input_rect = rectf::from_position_size(
 		{ area.left(), area.bottom() + input_h },
 		{ area.width(), input_h }
 	);
@@ -424,7 +532,7 @@ auto gse::ide::terminal::draw_instance(gse::gui::builder& ui, data& d, instance&
 
 	const bool building = build_runner::in_progress();
 
-	const ui_rect run_btn = ui_rect::from_position_size(
+	const rectf run_btn = rectf::from_position_size(
 		{ input_rect.right() - input_h - pad, input_rect.top() },
 		{ input_h, input_h }
 	);
@@ -434,7 +542,7 @@ auto gse::ide::terminal::draw_instance(gse::gui::builder& ui, data& d, instance&
 
 	const std::string build_label = building ? "Building..." : "Build Game";
 	const float build_w = ctx.font->width(build_label, ctx.style.font_size) + input_h + pad * 1.5f;
-	const ui_rect build_btn = ui_rect::from_position_size(
+	const rectf build_btn = rectf::from_position_size(
 		{ run_btn.left() - build_w, input_rect.top() },
 		{ build_w, input_h }
 	);
@@ -442,7 +550,7 @@ auto gse::ide::terminal::draw_instance(gse::gui::builder& ui, data& d, instance&
 		build_runner::start_build_game();
 	}
 
-	const ui_rect input_box = ui_rect::from_position_size(
+	const rectf input_box = rectf::from_position_size(
 		{ input_rect.left() + prompt_width, input_rect.top() },
 		{ std::max(0.f, build_btn.left() - pad - input_rect.left() - prompt_width), input_h }
 	);
@@ -458,7 +566,7 @@ auto gse::ide::terminal::draw_instance(gse::gui::builder& ui, data& d, instance&
 	);
 
 	ctx.queue_sprite({
-		.rect = ui_rect::from_position_size({ input_rect.left(), input_rect.top() }, { input_rect.width(), ctx.style.accent_bar_width }),
+		.rect = rectf::from_position_size({ input_rect.left(), input_rect.top() }, { input_rect.width(), ctx.style.accent_bar_width }),
 		.color = ctx.style.color_accent,
 		.texture = ctx.blank_texture,
 	});
@@ -468,7 +576,123 @@ auto gse::ide::terminal::draw_instance(gse::gui::builder& ui, data& d, instance&
 	}
 }
 
-auto gse::ide::terminal::draw_panel(gse::gui::builder& ui, data& d) -> void {
+auto gse::ide::terminal::confirm_button(gse::gui::builder& ui, const rectf& rect, const std::string_view label, const bool danger) -> bool {
+	const gse::gui::draw_context& ctx = ui.ctx;
+	const gse::gui::style& sty = ctx.style;
+	const gse::vec2f mouse = ctx.input.mouse_position();
+	const bool hovered = rect.contains(mouse) && ctx.input_available();
+	const bool clicked = hovered && ctx.input.mouse_button_pressed(gse::mouse_button::button_1);
+
+	const gse::vec4f base = danger ? gse::vec4f{ 0.62f, 0.22f, 0.22f, 1.f } : sty.color_input_background;
+	const gse::vec4f hot = danger ? gse::vec4f{ 0.78f, 0.28f, 0.28f, 1.f } : sty.color_widget_hovered;
+	ctx.queue_sprite({
+		.rect = rect,
+		.color = hovered ? hot : base,
+		.texture = ctx.blank_texture,
+		.corner_radius = sty.corner_radius,
+	});
+	ctx.queue_text({
+		.font = ctx.font,
+		.text = std::string(label),
+		.position = { rect.center().x() - ctx.font->width(label, sty.font_size) * 0.5f, rect.center().y() + ctx.font->vertical_center_offset(sty.font_size) },
+		.scale = sty.font_size,
+		.color = sty.color_text,
+		.clip_rect = rect,
+	});
+	return clicked;
+}
+
+auto gse::ide::terminal::draw_close_confirm(gse::gui::builder& ui, data& d, const rectf& body) -> void {
+	if (!d.pending_close || *d.pending_close >= d.instances.size()) {
+		d.pending_close.reset();
+		return;
+	}
+
+	const gse::gui::draw_context& ctx = ui.ctx;
+	const gse::gui::style& sty = ctx.style;
+	const float pad = sty.padding;
+	const float fs = sty.font_size;
+	const float line_h = ctx.font->line_height(fs) * 1.25f;
+	const float btn_h = ctx.font->line_height(fs) + pad;
+
+	const std::string title = "Kill running process?";
+	const std::string message = std::format("\"{}\" is still running.", d.instances[*d.pending_close].name);
+
+	const auto scope = ctx.scoped_layer(gse::render_layer::modal);
+	ctx.register_hit_region(gse::render_layer::modal, body);
+	ctx.queue_sprite({
+		.rect = body,
+		.color = { 0.f, 0.f, 0.f, 0.45f },
+		.texture = ctx.blank_texture,
+	});
+
+	const float content_w = std::max({ ctx.font->width(title, fs), ctx.font->width(message, fs), 220.f });
+	const float dialog_w = content_w + pad * 4.f;
+	const float dialog_h = line_h * 2.f + btn_h + pad * 4.f;
+	const gse::vec2f center = body.center();
+	const rectf dialog = rectf::from_position_size(
+		{ center.x() - dialog_w * 0.5f, center.y() + dialog_h * 0.5f },
+		{ dialog_w, dialog_h }
+	);
+
+	ctx.queue_sprite({
+		.rect = rectf::from_position_size({ dialog.left() + 4.f, dialog.top() - 4.f }, { dialog_w, dialog_h }),
+		.color = sty.color_shadow,
+		.texture = ctx.blank_texture,
+		.corner_radius = sty.corner_radius_menu,
+	});
+	ctx.queue_sprite({
+		.rect = dialog,
+		.color = { sty.color_menu_body.x(), sty.color_menu_body.y(), sty.color_menu_body.z(), 1.f },
+		.texture = ctx.blank_texture,
+		.corner_radius = sty.corner_radius_menu,
+	});
+
+	ctx.queue_text({
+		.font = ctx.font,
+		.text = title,
+		.position = { dialog.left() + pad * 2.f, dialog.top() - pad * 2.f - line_h * 0.5f + ctx.font->vertical_center_offset(fs) },
+		.scale = fs,
+		.color = sty.color_text,
+		.clip_rect = dialog,
+	});
+	ctx.queue_text({
+		.font = ctx.font,
+		.text = message,
+		.position = { dialog.left() + pad * 2.f, dialog.top() - pad * 2.f - line_h * 1.5f + ctx.font->vertical_center_offset(fs) },
+		.scale = fs,
+		.color = sty.color_text_secondary,
+		.clip_rect = dialog,
+	});
+
+	const float btn_w = (dialog_w - pad * 3.f) * 0.5f;
+	const rectf cancel_btn = rectf::from_position_size({ dialog.left() + pad, dialog.bottom() + pad + btn_h }, { btn_w, btn_h });
+	const rectf kill_btn = rectf::from_position_size({ cancel_btn.right() + pad, dialog.bottom() + pad + btn_h }, { btn_w, btn_h });
+
+	bool cancel = confirm_button(ui, cancel_btn, "Cancel", false);
+	const bool kill = confirm_button(ui, kill_btn, "Kill", true);
+	if (ctx.key_pressed_for(gse::key::escape)) {
+		ctx.consume_key_press(gse::key::escape);
+		cancel = true;
+	}
+
+	if (kill) {
+		instance& inst = d.instances[*d.pending_close];
+		if (inst.runner) {
+			build_runner::terminate_process(*inst.runner);
+		}
+		d.instances.erase(d.instances.begin() + static_cast<std::ptrdiff_t>(*d.pending_close));
+		d.pending_close.reset();
+		if (d.active >= d.instances.size()) {
+			d.active = d.instances.empty() ? 0 : d.instances.size() - 1;
+		}
+	}
+	else if (cancel) {
+		d.pending_close.reset();
+	}
+}
+
+auto gse::ide::terminal::draw_panel(gse::gui::builder& ui, data& d, gse::channel_writer channels) -> void {
 	const gse::gui::draw_context& ctx = ui.ctx;
 	if (!d.sink || ctx.clip_stack.empty()) {
 		return;
@@ -479,121 +703,67 @@ auto gse::ide::terminal::draw_panel(gse::gui::builder& ui, data& d) -> void {
 	}
 
 	const gse::gui::style& sty = ctx.style;
-	const ui_rect body = ctx.clip_stack.back();
-	const float pad = sty.padding;
-	const float tab_h = ctx.font->line_height(sty.font_size) + pad;
-
-	const ui_rect strip = ui_rect::from_position_size(
-		{ body.right() - tab_strip_width, body.top() },
-		{ tab_strip_width, body.height() }
-	);
-	const ui_rect content = ui_rect::from_position_size(
-		{ body.left(), body.top() },
-		{ std::max(0.f, body.width() - tab_strip_width), body.height() }
-	);
-
-	ctx.queue_sprite({
-		.rect = strip,
-		.color = sty.color_panel_alt,
-		.texture = ctx.blank_texture,
-	});
+	const rectf body = ctx.clip_stack.back();
 
 	const gse::vec2f mouse = ctx.input.mouse_position();
-	const bool clicked = ctx.input.mouse_button_pressed(gse::mouse_button::button_1) && ctx.input_available();
-	std::size_t close_requested = std::numeric_limits<std::size_t>::max();
+	const bool pressed = ctx.input.mouse_button_pressed(gse::mouse_button::button_1) && ctx.input_available();
+	const bool held = ctx.input.mouse_button_held(gse::mouse_button::button_1);
 
-	const float tab_content_height = tab_h * static_cast<float>(d.instances.size() + 1);
-	const float max_tab_scroll = std::max(0.f, tab_content_height - strip.height());
-	if (strip.contains(mouse) && !ctx.is_scroll_consumed()) {
-		const gse::vec2f wheel = ctx.input.scroll_delta();
-		if (std::abs(wheel.y()) > 0.001f) {
-			d.tab_scroll_y = std::clamp(d.tab_scroll_y - wheel.y() * tab_h, 0.f, max_tab_scroll);
-			ctx.consume_scroll();
-		}
+	const float divider_thickness = std::max(6.f, sty.resize_border_thickness) * 2.f;
+	const gse::gui::layout::split_params split{
+		.container = body,
+		.axis = gse::gui::layout::split_axis::columns,
+		.ratio = body.width() > 0.f ? std::clamp((body.width() - d.strip_width) / body.width(), 0.f, 1.f) : 0.8f,
+		.min_first = 200.f,
+		.min_second = 100.f,
+		.divider_thickness = divider_thickness,
+	};
+	const gse::gui::layout::split_result panels = gse::gui::layout::update_split(
+		split,
+		{ .mouse = mouse, .pressed = pressed, .held = held },
+		d.resizing_strip
+	);
+	const rectf content = panels.first;
+	const rectf strip = panels.second;
+	d.strip_width = strip.width();
+
+	if (panels.divider.contains(mouse) || d.resizing_strip) {
+		channels.push<gse::set_cursor_shape_request>({ .shape = gse::cursor_shape::resize_ew });
 	}
-	d.tab_scroll_y = std::clamp(d.tab_scroll_y, 0.f, max_tab_scroll);
 
-	if (d.tab_scroll_active != d.active) {
-		const float active_top_target = static_cast<float>(d.active) * tab_h;
-		if (active_top_target < d.tab_scroll_y) {
-			d.tab_scroll_y = active_top_target;
-		}
-		else if (active_top_target + tab_h > d.tab_scroll_y + strip.height()) {
-			d.tab_scroll_y = active_top_target + tab_h - strip.height();
-		}
-		d.tab_scroll_active = d.active;
-	}
-	d.tab_scroll_y = std::clamp(d.tab_scroll_y, 0.f, max_tab_scroll);
+	gse::gui::draw::panel_backdrop(ctx, {
+		.rect = strip,
+		.background = sty.color_panel_alt,
+	});
 
-	float active_top = strip.top();
-	float y = strip.top() + d.tab_scroll_y;
+	std::vector<gse::gui::tab_desc> tab_descs;
+	tab_descs.reserve(d.instances.size());
 	for (std::size_t i = 0; i < d.instances.size(); ++i) {
-		const ui_rect tab = ui_rect::from_position_size({ strip.left(), y }, { tab_strip_width, tab_h });
-		const ui_rect visible_tab = tab.intersection(strip);
-		if (visible_tab.height() <= 0.f) {
-			y -= tab_h;
-			continue;
-		}
-		const bool is_active = i == d.active;
-		const bool hovered = visible_tab.contains(mouse) && ctx.input_available();
-		const bool closable = d.instances.size() > 1;
-		const ui_rect close_rect = ui_rect::from_position_size({ tab.right() - tab_h, tab.top() }, { tab_h, tab_h });
-
-		ctx.queue_sprite({
-			.rect = visible_tab,
-			.color = is_active ? sty.color_widget_background : (hovered ? sty.color_widget_hovered : sty.color_input_background),
-			.texture = ctx.blank_texture,
+		const instance& inst = d.instances[i];
+		tab_descs.push_back({
+			.id = i + 1,
+			.caption = inst.name,
+			.busy = inst.runner && inst.runner->running.load(std::memory_order_acquire),
+			.closeable = d.instances.size() > 1,
 		});
-		if (is_active) {
-			active_top = tab.top();
-		}
-		ctx.queue_text({
-			.font = ctx.font,
-			.text = d.instances[i].name,
-			.position = { tab.left() + pad, tab.center().y() + ctx.font->vertical_center_offset(sty.font_size) },
-			.scale = sty.font_size,
-			.color = is_active ? sty.color_text : sty.color_text_secondary,
-			.clip_rect = visible_tab,
-		});
-		if (closable) {
-			const bool close_hovered = close_rect.contains(mouse) && strip.contains(mouse) && ctx.input_available();
-			gse::gui::symbol::draw(ctx, gse::gui::symbol::close(), close_rect, {
-				.color = close_hovered ? sty.color_text : sty.color_text_secondary,
-				.scale = 0.4f,
-				.clip_rect = visible_tab,
-			});
-		}
-
-		if (clicked && visible_tab.contains(mouse)) {
-			if (closable && close_rect.contains(mouse)) {
-				close_requested = i;
-			}
-			else {
-				d.active = i;
-			}
-		}
-
-		y -= tab_h;
 	}
 
-	const ui_rect plus = ui_rect::from_position_size({ strip.left(), y }, { tab_strip_width, tab_h });
-	const ui_rect visible_plus = plus.intersection(strip);
-	const bool plus_hovered = visible_plus.contains(mouse) && ctx.input_available();
-	ctx.queue_sprite({
-		.rect = visible_plus,
-		.color = plus_hovered ? sty.color_widget_hovered : sty.color_input_background,
-		.texture = ctx.blank_texture,
-	});
-	const std::string plus_label = "+";
-	ctx.queue_text({
-		.font = ctx.font,
-		.text = plus_label,
-		.position = { plus.center().x() - ctx.font->width(plus_label, sty.font_size) * 0.5f, plus.center().y() + ctx.font->vertical_center_offset(sty.font_size) },
-		.scale = sty.font_size,
-		.color = plus_hovered ? sty.color_text : sty.color_text_secondary,
-		.clip_rect = visible_plus,
-	});
-	if (clicked && visible_plus.contains(mouse)) {
+	const gse::gui::tab_strip_result tabs = gse::gui::tab_strip(ctx, {
+		.area = strip,
+		.tabs = tab_descs,
+		.active = d.active + 1,
+		.orientation = gse::gui::tab_orientation::vertical,
+		.show_add = true,
+	}, d.tab_strip);
+
+	std::size_t close_requested = std::numeric_limits<std::size_t>::max();
+	if (tabs.activated != 0) {
+		d.active = tabs.activated - 1;
+	}
+	if (tabs.close_requested != 0) {
+		close_requested = tabs.close_requested - 1;
+	}
+	if (tabs.add_requested) {
 		d.instances.push_back({
 			.name = std::format("Terminal {}", d.next_number++),
 			.cursor = d.sink->sequence(),
@@ -601,19 +771,21 @@ auto gse::ide::terminal::draw_panel(gse::gui::builder& ui, data& d) -> void {
 		d.active = d.instances.size() - 1;
 	}
 
-	ctx.queue_sprite({
-		.rect = ui_rect::from_position_size({ strip.left(), active_top }, { sty.accent_bar_width, std::max(0.f, active_top - strip.bottom()) }),
-		.color = sty.color_accent,
-		.texture = ctx.blank_texture,
-	});
-
-	if (close_requested != std::numeric_limits<std::size_t>::max()) {
-		d.instances.erase(d.instances.begin() + static_cast<std::ptrdiff_t>(close_requested));
+	if (close_requested != std::numeric_limits<std::size_t>::max() && !d.pending_close) {
+		instance& closing = d.instances[close_requested];
+		if (closing.runner && closing.runner->running.load(std::memory_order_acquire)) {
+			d.pending_close = close_requested;
+		}
+		else {
+			d.instances.erase(d.instances.begin() + static_cast<std::ptrdiff_t>(close_requested));
+		}
 	}
 
 	if (d.active >= d.instances.size()) {
 		d.active = d.instances.empty() ? 0 : d.instances.size() - 1;
 	}
 
-	draw_instance(ui, d, d.instances[d.active], content);
+	draw_instance(ui, d, d.instances[d.active], content, channels);
+
+	draw_close_confirm(ui, d, body);
 }

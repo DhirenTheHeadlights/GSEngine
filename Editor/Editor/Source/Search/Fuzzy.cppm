@@ -92,4 +92,26 @@ export namespace gse::ide::search {
 		out.ranges = std::move(ranges);
 		return out;
 	}
+
+	auto fuzzy_match_path(std::string_view query_lower, std::string_view rel, std::string_view rel_lower) -> score_result {
+		const std::size_t sep = rel_lower.find_last_of("/\\");
+		const std::size_t base = sep == std::string_view::npos ? 0 : sep + 1;
+
+		if (base < rel_lower.size()) {
+			score_result name = fuzzy_match(query_lower, rel.substr(base), rel_lower.substr(base));
+			if (name.matched) {
+				for (match_range& r : name.ranges) {
+					r.start += static_cast<std::uint32_t>(base);
+				}
+				name.score = 0.5f + 0.5f * name.score;
+				return name;
+			}
+		}
+
+		score_result full = fuzzy_match(query_lower, rel, rel_lower);
+		if (full.matched) {
+			full.score *= 0.5f;
+		}
+		return full;
+	}
 }
