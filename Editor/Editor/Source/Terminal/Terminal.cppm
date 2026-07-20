@@ -375,9 +375,9 @@ auto gse::ide::terminal::header_button(gse::gui::builder& ui, const rectf& rect,
 	});
 	if (!label.empty()) {
 		ctx.queue_text({
-			.font = ctx.font,
+			.font = ctx.fonts.text,
 			.text = std::string(label),
-			.position = { glyph_rect.right(), rect.center().y() + ctx.font->vertical_center_offset(sty.font_size) },
+			.position = { glyph_rect.right(), rect.center().y() + ctx.fonts.text->vertical_center_offset(sty.font_size) },
 			.scale = sty.font_size,
 			.color = fg,
 			.clip_rect = rect,
@@ -459,7 +459,7 @@ auto gse::ide::terminal::draw_instance(gse::gui::builder& ui, data& d, instance&
 	}
 
 	const float pad = ctx.style.padding;
-	const float input_h = inst.interactive ? ctx.font->line_height(ctx.style.font_size) + pad : 0.f;
+	const float input_h = inst.interactive ? ctx.fonts.code->line_height(ctx.style.font_size) + pad : 0.f;
 
 	const rectf log_rect = rectf::from_position_size(
 		{ area.left(), area.top() },
@@ -520,11 +520,11 @@ auto gse::ide::terminal::draw_instance(gse::gui::builder& ui, data& d, instance&
 		.texture = ctx.blank_texture,
 	});
 
-	const float prompt_width = ctx.font->width(prompt, ctx.style.font_size) + pad;
+	const float prompt_width = ctx.fonts.code->width(prompt, ctx.style.font_size) + pad;
 	ctx.queue_text({
-		.font = ctx.font,
+		.font = ctx.fonts.code,
 		.text = prompt,
-		.position = { input_rect.left() + pad, input_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
+		.position = { input_rect.left() + pad, input_rect.center().y() + ctx.fonts.code->vertical_center_offset(ctx.style.font_size) },
 		.scale = ctx.style.font_size,
 		.color = ctx.style.color_accent,
 		.clip_rect = input_rect,
@@ -541,7 +541,7 @@ auto gse::ide::terminal::draw_instance(gse::gui::builder& ui, data& d, instance&
 	}
 
 	const std::string build_label = building ? "Building..." : "Build Game";
-	const float build_w = ctx.font->width(build_label, ctx.style.font_size) + input_h + pad * 1.5f;
+	const float build_w = ctx.fonts.text->width(build_label, ctx.style.font_size) + input_h + pad * 1.5f;
 	const rectf build_btn = rectf::from_position_size(
 		{ run_btn.left() - build_w, input_rect.top() },
 		{ build_w, input_h }
@@ -562,7 +562,8 @@ auto gse::ide::terminal::draw_instance(gse::gui::builder& ui, data& d, instance&
 		inst.input_state,
 		input_box,
 		ui.hot_widget_id,
-		ui.focus_widget_id
+		ui.focus_widget_id,
+		ctx.fonts.code
 	);
 
 	ctx.queue_sprite({
@@ -592,9 +593,9 @@ auto gse::ide::terminal::confirm_button(gse::gui::builder& ui, const rectf& rect
 		.corner_radius = sty.corner_radius,
 	});
 	ctx.queue_text({
-		.font = ctx.font,
+		.font = ctx.fonts.text,
 		.text = std::string(label),
-		.position = { rect.center().x() - ctx.font->width(label, sty.font_size) * 0.5f, rect.center().y() + ctx.font->vertical_center_offset(sty.font_size) },
+		.position = { rect.center().x() - ctx.fonts.text->width(label, sty.font_size) * 0.5f, rect.center().y() + ctx.fonts.text->vertical_center_offset(sty.font_size) },
 		.scale = sty.font_size,
 		.color = sty.color_text,
 		.clip_rect = rect,
@@ -612,8 +613,8 @@ auto gse::ide::terminal::draw_close_confirm(gse::gui::builder& ui, data& d, cons
 	const gse::gui::style& sty = ctx.style;
 	const float pad = sty.padding;
 	const float fs = sty.font_size;
-	const float line_h = ctx.font->line_height(fs) * 1.25f;
-	const float btn_h = ctx.font->line_height(fs) + pad;
+	const float line_h = ctx.fonts.text->line_height(fs) * 1.25f;
+	const float btn_h = ctx.fonts.text->line_height(fs) + pad;
 
 	const std::string title = "Kill running process?";
 	const std::string message = std::format("\"{}\" is still running.", d.instances[*d.pending_close].name);
@@ -626,7 +627,7 @@ auto gse::ide::terminal::draw_close_confirm(gse::gui::builder& ui, data& d, cons
 		.texture = ctx.blank_texture,
 	});
 
-	const float content_w = std::max({ ctx.font->width(title, fs), ctx.font->width(message, fs), 220.f });
+	const float content_w = std::max({ ctx.fonts.text->width(title, fs), ctx.fonts.text->width(message, fs), 220.f });
 	const float dialog_w = content_w + pad * 4.f;
 	const float dialog_h = line_h * 2.f + btn_h + pad * 4.f;
 	const gse::vec2f center = body.center();
@@ -649,17 +650,17 @@ auto gse::ide::terminal::draw_close_confirm(gse::gui::builder& ui, data& d, cons
 	});
 
 	ctx.queue_text({
-		.font = ctx.font,
+		.font = ctx.fonts.text,
 		.text = title,
-		.position = { dialog.left() + pad * 2.f, dialog.top() - pad * 2.f - line_h * 0.5f + ctx.font->vertical_center_offset(fs) },
+		.position = { dialog.left() + pad * 2.f, dialog.top() - pad * 2.f - line_h * 0.5f + ctx.fonts.text->vertical_center_offset(fs) },
 		.scale = fs,
 		.color = sty.color_text,
 		.clip_rect = dialog,
 	});
 	ctx.queue_text({
-		.font = ctx.font,
+		.font = ctx.fonts.text,
 		.text = message,
-		.position = { dialog.left() + pad * 2.f, dialog.top() - pad * 2.f - line_h * 1.5f + ctx.font->vertical_center_offset(fs) },
+		.position = { dialog.left() + pad * 2.f, dialog.top() - pad * 2.f - line_h * 1.5f + ctx.fonts.text->vertical_center_offset(fs) },
 		.scale = fs,
 		.color = sty.color_text_secondary,
 		.clip_rect = dialog,

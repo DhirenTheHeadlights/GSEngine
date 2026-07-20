@@ -5,6 +5,7 @@ import gse;
 import gse.gpu;
 
 import gse.ide.workspace;
+import gse.ide.git;
 import gse.ide.highlight;
 import gse.ide.format;
 import gse.ide.terminal;
@@ -25,8 +26,14 @@ namespace gse::ide {
 	constexpr std::string_view code_panel_name = "Code";
 	constexpr std::uint32_t viewport_tab_id = std::numeric_limits<std::uint32_t>::max();
 	constexpr gse::time editor_layout_save_interval = gse::seconds(30.f);
+	constexpr gse::angular_velocity spinner_angular_velocity = gse::radians_per_second(9.6f);
+	constexpr gse::angle full_rotation = gse::degrees(360.f);
 
 	auto rebuild_glyph() -> std::span<const gse::gui::symbol::stroke>;
+
+	auto git_status_color(
+		git::file_status status
+	) -> gse::vec4f;
 
 	struct toggle_settings_request {};
 
@@ -131,7 +138,8 @@ namespace gse::ide {
 		workspace::data& ws,
 		quick_search_state& search,
 		const search::index_state* index,
-		gse::channel_writer channels
+		gse::channel_writer channels,
+		const git::status_map* git_status
 	) -> void;
 
 	auto draw_code_panel(
@@ -154,6 +162,8 @@ namespace gse::ide {
 		std::size_t display_tab_width,
 		gse::vec2f mouse
 	) -> gse::gui::buffer_position;
+
+	auto spinner_rotation() -> gse::angle;
 
 	auto draw_spinner(
 		const gse::gui::draw_context& ctx,
@@ -234,7 +244,20 @@ namespace gse::ide {
 		std::uint32_t document_id,
 		const format::options& opts,
 		bool format_enabled,
-		bool force_save
+		bool force_save,
+		gse::channel_writer channels
+	) -> void;
+
+	auto apply_diagnostics(
+		workspace::data& ws,
+		const std::shared_ptr<analysis::diagnostics_check>& check,
+		gse::channel_writer channels
+	) -> void;
+
+	auto update_diagnostics(
+		gse::context& ctx,
+		workspace::data& ws,
+		gse::shared_view<config_system::data> config
 	) -> void;
 
 	auto point_in_triangle(
@@ -505,9 +528,9 @@ auto gse::ide::editor_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> 
 	});
 
 	ctx.queue_text({
-		.font = ctx.font,
+		.font = ctx.fonts.text,
 		.text = std::string(title()),
-		.position = { bar_rect.left() + ctx.style.padding, bar_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
+		.position = { bar_rect.left() + ctx.style.padding, bar_rect.center().y() + ctx.fonts.text->vertical_center_offset(ctx.style.font_size) },
 		.scale = ctx.style.font_size,
 		.color = ctx.style.color_text,
 		.clip_rect = bar_rect,
@@ -518,10 +541,10 @@ auto gse::ide::editor_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> 
 			if (!m_loc_label) {
 				m_loc_label = std::format("{}k LOC", (loc + 500) / 1000);
 			}
-			const float title_w = ctx.font->width(title(), ctx.style.font_size);
+			const float title_w = ctx.fonts.text->width(title(), ctx.style.font_size);
 			const float badge_pad = ctx.style.padding * 0.5f;
 			const float badge_height = ctx.style.font_size + ctx.style.padding * 0.5f;
-			const float badge_width = ctx.font->width(*m_loc_label, ctx.style.font_size) + badge_pad * 2.f;
+			const float badge_width = ctx.fonts.text->width(*m_loc_label, ctx.style.font_size) + badge_pad * 2.f;
 			const gse::rectf badge_rect = gse::rectf::from_position_size(
 				{ bar_rect.left() + ctx.style.padding + title_w + ctx.style.padding, bar_rect.center().y() + badge_height * 0.5f },
 				{ badge_width, badge_height }
@@ -533,9 +556,9 @@ auto gse::ide::editor_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> 
 				.corner_radius = badge_height * 0.5f,
 			});
 			ctx.queue_text({
-				.font = ctx.font,
+				.font = ctx.fonts.text,
 				.text = *m_loc_label,
-				.position = { badge_rect.left() + badge_pad, badge_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
+				.position = { badge_rect.left() + badge_pad, badge_rect.center().y() + ctx.fonts.text->vertical_center_offset(ctx.style.font_size) },
 				.scale = ctx.style.font_size,
 				.color = ctx.style.color_accent,
 				.clip_rect = badge_rect,
@@ -591,12 +614,10 @@ auto gse::ide::editor_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> 
 			status = syms >= 1000 ? std::format("{}k symbols", (syms + 500) / 1000) : std::format("{} symbols", syms);
 		}
 		if (!status.empty()) {
-			static std::uint64_t index_spin = 0;
-			++index_spin;
 			const float badge_h = ctx.style.font_size + ctx.style.padding * 0.5f;
 			const float pad = ctx.style.padding * 0.6f;
 			const float spin_w = spinning ? ctx.style.font_size : 0.f;
-			const float badge_w = pad + spin_w + ctx.font->width(status, ctx.style.font_size) + pad;
+			const float badge_w = pad + spin_w + ctx.fonts.text->width(status, ctx.style.font_size) + pad;
 			const float right_edge = bar_rect.right() - button_w * 5.f - ctx.style.padding;
 			const gse::rectf status_rect = gse::rectf::from_position_size(
 				{ right_edge - badge_w, bar_rect.center().y() + badge_h * 0.5f },
@@ -610,13 +631,13 @@ auto gse::ide::editor_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> 
 			});
 			float sx = status_rect.left() + pad;
 			if (spinning) {
-				draw_spinner(ctx, gse::rectf::from_position_size({ sx, status_rect.center().y() + spin_w * 0.5f }, { spin_w, spin_w }), pill_fg, gse::radians(static_cast<float>(index_spin) * 0.16f));
+				draw_spinner(ctx, gse::rectf::from_position_size({ sx, status_rect.center().y() + spin_w * 0.5f }, { spin_w, spin_w }), pill_fg, spinner_rotation());
 				sx += spin_w;
 			}
 			ctx.queue_text({
-				.font = ctx.font,
+				.font = ctx.fonts.text,
 				.text = status,
-				.position = { sx, status_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
+				.position = { sx, status_rect.center().y() + ctx.fonts.text->vertical_center_offset(ctx.style.font_size) },
 				.scale = ctx.style.font_size,
 				.color = pill_fg,
 				.clip_rect = status_rect,
@@ -636,14 +657,15 @@ auto gse::ide::draw_search_bar(gse::gui::builder& ui, quick_search_state& state,
 	const auto& ctx = ui.ctx;
 	const auto& sty = ctx.style;
 	const float pad = sty.padding;
+	const float outline = 1.5f * sty.scale_factor;
 
 	const gse::id search_id = gse::gui::ids::make(id_key);
 	const bool was_focused = ui.focus_widget_id == search_id;
 
 	ctx.queue_sprite({
 		.rect = gse::rectf::from_position_size(
-			{ search_rect.left() - 1.5f, search_rect.top() + 1.5f },
-			{ search_rect.width() + 3.f, search_rect.height() + 3.f }
+			{ search_rect.left() - outline, search_rect.top() + outline },
+			{ search_rect.width() + outline * 2.f, search_rect.height() + outline * 2.f }
 		),
 		.color = was_focused ? sty.color_accent : sty.color_accent_dim,
 		.texture = ctx.blank_texture,
@@ -654,9 +676,9 @@ auto gse::ide::draw_search_bar(gse::gui::builder& ui, quick_search_state& state,
 
 	if (state.query.empty() && !focused) {
 		ctx.queue_text({
-			.font = ctx.font,
+			.font = ctx.fonts.text,
 			.text = "Search...",
-			.position = { search_rect.left() + pad, search_rect.center().y() + ctx.font->vertical_center_offset(sty.font_size) },
+			.position = { search_rect.left() + pad, search_rect.center().y() + ctx.fonts.text->vertical_center_offset(sty.font_size) },
 			.scale = sty.font_size,
 			.color = sty.color_text_secondary,
 			.clip_rect = search_rect,
@@ -719,9 +741,9 @@ auto gse::ide::draw_search_bar(gse::gui::builder& ui, quick_search_state& state,
 	}
 
 	const auto layer = ctx.scoped_layer(gse::render_layer::popup);
-	const float row_h = ctx.font->line_height(sty.font_size) + pad * 0.5f;
+	const float row_h = ctx.fonts.text->line_height(sty.font_size) + pad * 0.5f;
 	const gse::rectf list_rect = gse::rectf::from_position_size(
-		{ search_rect.left(), search_rect.bottom() - 2.f },
+		{ search_rect.left(), search_rect.bottom() - 2.f * sty.scale_factor },
 		{ search_rect.width(), row_h * static_cast<float>(state.results.size()) }
 	);
 	ctx.queue_sprite({
@@ -750,9 +772,9 @@ auto gse::ide::draw_search_bar(gse::gui::builder& ui, quick_search_state& state,
 		}
 		const search::result& r = state.results[i];
 		ctx.queue_text({
-			.font = ctx.font,
+			.font = ctx.fonts.text,
 			.text = r.display,
-			.position = { row.left() + pad, row.center().y() + ctx.font->vertical_center_offset(sty.font_size) },
+			.position = { row.left() + pad, row.center().y() + ctx.fonts.text->vertical_center_offset(sty.font_size) },
 			.scale = sty.font_size,
 			.color = sty.color_text,
 			.clip_rect = row,
@@ -881,7 +903,26 @@ namespace gse::ide {
 	}
 }
 
-auto gse::ide::draw_explorer_panel(gse::gui::builder& ui, workspace::data& ws, quick_search_state& search, const search::index_state* index, gse::channel_writer channels) -> void {
+auto gse::ide::git_status_color(const git::file_status status) -> gse::vec4f {
+	switch (status) {
+		case git::file_status::modified:
+			return { 0.86f, 0.66f, 0.32f, 1.0f };
+		case git::file_status::added:
+			return { 0.46f, 0.80f, 0.48f, 1.0f };
+		case git::file_status::untracked:
+			return { 0.40f, 0.72f, 0.55f, 1.0f };
+		case git::file_status::deleted:
+			return { 0.86f, 0.40f, 0.40f, 1.0f };
+		case git::file_status::renamed:
+			return { 0.46f, 0.68f, 0.90f, 1.0f };
+		case git::file_status::conflicted:
+			return { 0.92f, 0.48f, 0.30f, 1.0f };
+		default:
+			return { 0.96f, 0.97f, 0.99f, 1.0f };
+	}
+}
+
+auto gse::ide::draw_explorer_panel(gse::gui::builder& ui, workspace::data& ws, quick_search_state& search, const search::index_state* index, gse::channel_writer channels, const git::status_map* git_status) -> void {
 	const auto& ctx = ui.ctx;
 	if (ctx.clip_stack.empty()) {
 		return;
@@ -889,7 +930,7 @@ auto gse::ide::draw_explorer_panel(gse::gui::builder& ui, workspace::data& ws, q
 
 	const gse::rectf body = ctx.clip_stack.back();
 	const float pad = ctx.style.padding;
-	const float search_height = ctx.font->line_height(ctx.style.font_size) + pad * 0.8f;
+	const float search_height = ctx.fonts.text->line_height(ctx.style.font_size) + pad * 0.8f;
 	const float accent_width = std::max(2.f, ctx.style.accent_bar_width);
 	const gse::vec4f explorer_bg{ 0.045f, 0.06f, 0.095f, 0.98f };
 	const gse::vec4f explorer_accent{ 0.62f, 0.34f, 1.0f, 1.0f };
@@ -920,9 +961,9 @@ auto gse::ide::draw_explorer_panel(gse::gui::builder& ui, workspace::data& ws, q
 
 	if (ws.fs_root.children.empty()) {
 		ctx.queue_text({
-			.font = ctx.font,
+			.font = ctx.fonts.text,
 			.text = "(empty) " + ws.fs_root.path.display_string(),
-			.position = { content.left(), ctx.layout_cursor.y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
+			.position = { content.left(), ctx.layout_cursor.y() + ctx.fonts.text->vertical_center_offset(ctx.style.font_size) },
 			.scale = ctx.style.font_size,
 			.color = ctx.style.color_text_secondary,
 			.clip_rect = body,
@@ -998,6 +1039,18 @@ auto gse::ide::draw_explorer_panel(gse::gui::builder& ui, workspace::data& ws, q
 		.icon = [](const fs_node& n) -> std::span<const gse::gui::symbol::stroke> {
 			return n.is_dir ? gse::gui::symbol::folder() : gse::gui::symbol::file();
 		},
+		.label_color = [git_status, base = ctx.style.color_text](const fs_node& n) -> gse::vec4f {
+			if (!git_status) {
+				return base;
+			}
+			if (n.is_dir) {
+				return git_status->dir_has_changes(n.path) ? gse::lerp(git_status_color(git::file_status::modified), base, 0.5f) : base;
+			}
+			if (const git::file_status status = git_status->status_of(n.path); status != git::file_status::none) {
+				return git_status_color(status);
+			}
+			return base;
+		},
 	};
 
 	ui.scroll_region({ .id = "explorer_tree" }, [&](gse::gui::builder& b) {
@@ -1027,6 +1080,10 @@ auto gse::ide::draw_explorer_panel(gse::gui::builder& ui, workspace::data& ws, q
 			}
 		}
 	}
+}
+
+auto gse::ide::spinner_rotation() -> gse::angle {
+	return gse::fmod(spinner_angular_velocity * gse::system_clock::now(), full_rotation);
 }
 
 auto gse::ide::draw_spinner(const gse::gui::draw_context& ctx, const rectf& rect, const gse::vec4f color, const gse::angle rotation) -> void {
@@ -1071,7 +1128,7 @@ auto gse::ide::hover_wrap_lines(const gse::gui::draw_context& ctx, const std::st
 				continue;
 			}
 			std::string candidate = current.empty() ? std::string(word) : current + " " + std::string(word);
-			if (!current.empty() && ctx.font->width(candidate, scale) > max_width) {
+			if (!current.empty() && ctx.fonts.text->width(candidate, scale) > max_width) {
 				out.push_back(std::move(current));
 				current = std::string(word);
 			}
@@ -1095,8 +1152,8 @@ auto gse::ide::hover_wrap_lines(const gse::gui::draw_context& ctx, const std::st
 }
 
 auto gse::ide::draw_code_line(const gse::gui::draw_context& ctx, const std::string_view text, const std::span<const gse::gui::text_span> spans, const std::uint32_t line, const gse::vec2f origin, const float scale, const gse::vec4f fallback, const rectf& clip, const std::uint32_t z) -> void {
-	const std::vector<float> offsets = ctx.font->caret_offsets(text, scale);
-	const float baseline = origin.y() + ctx.font->vertical_center_offset(scale);
+	const std::vector<float> offsets = ctx.fonts.code->caret_offsets(text, scale);
+	const float baseline = origin.y() + ctx.fonts.code->vertical_center_offset(scale);
 	const std::uint32_t len = static_cast<std::uint32_t>(text.size());
 	std::uint32_t pos = 0;
 	for (const gse::gui::text_span& sp : spans) {
@@ -1106,17 +1163,17 @@ auto gse::ide::draw_code_line(const gse::gui::draw_context& ctx, const std::stri
 		const std::uint32_t a = std::min<std::uint32_t>(sp.start_col, len);
 		const std::uint32_t b = std::min<std::uint32_t>(sp.end_col, len);
 		if (a > pos) {
-			ctx.queue_text({ .font = ctx.font, .text = std::string(text.substr(pos, a - pos)), .position = { origin.x() + offsets[pos], baseline }, .scale = scale, .color = fallback, .clip_rect = clip, .z_order = z });
+			ctx.queue_text({ .font = ctx.fonts.code, .text = std::string(text.substr(pos, a - pos)), .position = { origin.x() + offsets[pos], baseline }, .scale = scale, .color = fallback, .clip_rect = clip, .z_order = z });
 		}
 		if (b > a) {
-			ctx.queue_text({ .font = ctx.font, .text = std::string(text.substr(a, b - a)), .position = { origin.x() + offsets[a], baseline }, .scale = scale, .color = sp.color, .clip_rect = clip, .z_order = z });
+			ctx.queue_text({ .font = ctx.fonts.code, .text = std::string(text.substr(a, b - a)), .position = { origin.x() + offsets[a], baseline }, .scale = scale, .color = sp.color, .clip_rect = clip, .z_order = z });
 		}
 		if (b > pos) {
 			pos = b;
 		}
 	}
 	if (pos < len) {
-		ctx.queue_text({ .font = ctx.font, .text = std::string(text.substr(pos)), .position = { origin.x() + offsets[pos], baseline }, .scale = scale, .color = fallback, .clip_rect = clip, .z_order = z });
+		ctx.queue_text({ .font = ctx.fonts.code, .text = std::string(text.substr(pos)), .position = { origin.x() + offsets[pos], baseline }, .scale = scale, .color = fallback, .clip_rect = clip, .z_order = z });
 	}
 }
 
@@ -1174,7 +1231,7 @@ auto gse::ide::hover_panel_code_hit(const gse::gui::draw_context& ctx, const hov
 		return std::nullopt;
 	}
 	const float fs = ctx.style.font_size;
-	const float line_h = ctx.font->line_height(fs) * 1.25f;
+	const float line_h = ctx.fonts.code->line_height(fs) * 1.25f;
 	const float rel = (h.code_rect.top() + h.scroll - mouse.y()) / line_h;
 	if (rel < 0.f) {
 		return std::nullopt;
@@ -1200,7 +1257,7 @@ auto gse::ide::hover_panel_code_hit(const gse::gui::draw_context& ctx, const hov
 	if (!found) {
 		return std::nullopt;
 	}
-	const std::vector<float> offsets = ctx.font->caret_offsets(row, fs);
+	const std::vector<float> offsets = ctx.fonts.code->caret_offsets(row, fs);
 	const float x = mouse.x() - (h.panel.left() + ctx.style.padding);
 	std::size_t col = row.size();
 	for (std::size_t j = 0; j + 1 < offsets.size(); ++j) {
@@ -1379,7 +1436,7 @@ auto gse::ide::draw_hover_panel(const gse::gui::draw_context& ctx, const rectf& 
 	const auto& sty = ctx.style;
 	const float pad = sty.padding;
 	const float fs = sty.font_size;
-	const float line_h = ctx.font->line_height(fs) * 1.25f;
+	const float line_h = ctx.fonts.text->line_height(fs) * 1.25f;
 
 	if (h.body_is_code) {
 		constexpr std::size_t max_visible = 18;
@@ -1405,10 +1462,10 @@ auto gse::ide::draw_hover_panel(const gse::gui::draw_context& ctx, const rectf& 
 
 		float content_w = 0.f;
 		for (const std::string& l : header) {
-			content_w = std::max(content_w, ctx.font->width(l, fs));
+			content_w = std::max(content_w, ctx.fonts.code->width(l, fs));
 		}
 		for (const std::string_view l : code) {
-			content_w = std::max(content_w, ctx.font->width(l, fs));
+			content_w = std::max(content_w, ctx.fonts.code->width(l, fs));
 		}
 		const float header_rows = static_cast<float>(header.size());
 		const float pw = std::min(max_w, content_w) + pad * 2.f;
@@ -1459,9 +1516,9 @@ auto gse::ide::draw_hover_panel(const gse::gui::draw_context& ctx, const rectf& 
 		for (std::size_t i = 0; i < header.size(); ++i) {
 			const float center_y = top_y - pad - line_h * (static_cast<float>(i) + 0.5f);
 			ctx.queue_text({
-				.font = ctx.font,
+				.font = ctx.fonts.code,
 				.text = header[i],
-				.position = { px + pad, center_y + ctx.font->vertical_center_offset(fs) },
+				.position = { px + pad, center_y + ctx.fonts.code->vertical_center_offset(fs) },
 				.scale = fs,
 				.color = i == 0 ? sty.color_text : h.kind_color,
 				.clip_rect = panel,
@@ -1518,7 +1575,7 @@ auto gse::ide::draw_hover_panel(const gse::gui::draw_context& ctx, const rectf& 
 
 	float content_w = 0.f;
 	for (const std::string& l : lines) {
-		content_w = std::max(content_w, ctx.font->width(l, fs));
+		content_w = std::max(content_w, ctx.fonts.text->width(l, fs));
 	}
 	const float pw = std::min(max_w, content_w) + pad * 2.f;
 	const float ph = line_h * static_cast<float>(lines.size()) + pad * 2.f;
@@ -1570,7 +1627,7 @@ auto gse::ide::draw_hover_panel(const gse::gui::draw_context& ctx, const rectf& 
 			col = h.kind_color;
 		}
 		else if (roles[i] == 3) {
-			const rectf link_rect = rectf::from_position_size({ px + pad, center_y + line_h * 0.5f }, { ctx.font->width(lines[i], fs), line_h });
+			const rectf link_rect = rectf::from_position_size({ px + pad, center_y + line_h * 0.5f }, { ctx.fonts.text->width(lines[i], fs), line_h });
 			const bool over = link_rect.contains(mouse) && ctx.input_available();
 			col = over ? sty.color_text : sty.color_accent;
 			if (over && ctx.input.mouse_button_pressed(gse::mouse_button::button_1)) {
@@ -1578,9 +1635,9 @@ auto gse::ide::draw_hover_panel(const gse::gui::draw_context& ctx, const rectf& 
 			}
 		}
 		ctx.queue_text({
-			.font = ctx.font,
+			.font = ctx.fonts.text,
 			.text = lines[i],
-			.position = { px + pad, center_y + ctx.font->vertical_center_offset(fs) },
+			.position = { px + pad, center_y + ctx.fonts.text->vertical_center_offset(fs) },
 			.scale = fs,
 			.color = col,
 			.clip_rect = panel,
@@ -1594,7 +1651,7 @@ auto gse::ide::draw_diagnostic_tooltip(const gse::gui::draw_context& ctx, const 
 	const auto& sty = ctx.style;
 	const float pad = sty.padding;
 	const float fs = sty.font_size;
-	const float line_h = ctx.font->line_height(fs) * 1.25f;
+	const float line_h = ctx.fonts.text->line_height(fs) * 1.25f;
 	const float max_w = 460.f;
 
 	std::vector<std::string> lines;
@@ -1605,7 +1662,7 @@ auto gse::ide::draw_diagnostic_tooltip(const gse::gui::draw_context& ctx, const 
 
 	float content_w = 0.f;
 	for (const std::string& l : lines) {
-		content_w = std::max(content_w, ctx.font->width(l, fs));
+		content_w = std::max(content_w, ctx.fonts.text->width(l, fs));
 	}
 	const float pw = std::min(max_w, content_w) + pad * 2.f;
 	const float ph = line_h * static_cast<float>(lines.size()) + pad * 2.f;
@@ -1644,9 +1701,9 @@ auto gse::ide::draw_diagnostic_tooltip(const gse::gui::draw_context& ctx, const 
 	for (std::size_t i = 0; i < lines.size(); ++i) {
 		const float center_y = top_y - pad - line_h * (static_cast<float>(i) + 0.5f);
 		ctx.queue_text({
-			.font = ctx.font,
+			.font = ctx.fonts.text,
 			.text = lines[i],
-			.position = { px + pad, center_y + ctx.font->vertical_center_offset(fs) },
+			.position = { px + pad, center_y + ctx.fonts.text->vertical_center_offset(fs) },
 			.scale = fs,
 			.color = i == 0 ? label_color : sty.color_text,
 			.clip_rect = panel,
@@ -1707,7 +1764,7 @@ auto gse::ide::apply_format(document& doc, const format::options& opts) -> void 
 	doc.last_edit = gse::system_clock::now<gse::time>();
 }
 
-auto gse::ide::format_and_save(workspace::data& ws, const std::uint32_t document_id, const format::options& opts, const bool format_enabled, const bool force_save) -> void {
+auto gse::ide::format_and_save(workspace::data& ws, const std::uint32_t document_id, const format::options& opts, const bool format_enabled, const bool force_save, gse::channel_writer channels) -> void {
 	const auto it = ws.documents.find(document_id);
 	if (it == ws.documents.end()) {
 		return;
@@ -1718,14 +1775,120 @@ auto gse::ide::format_and_save(workspace::data& ws, const std::uint32_t document
 	}
 	if (force_save || doc.dirty) {
 		workspace::save_document(ws, document_id);
+		channels.push<git_system::refresh_request>({});
 	}
+}
+
+auto gse::ide::apply_diagnostics(workspace::data& ws, const std::shared_ptr<analysis::diagnostics_check>& check, gse::channel_writer channels) -> void {
+	const auto pending = ws.documents.find(check->document_id);
+	if (pending == ws.documents.end()) {
+		return;
+	}
+
+	document& doc = pending->second;
+	doc.analysis_failed = check->failed;
+	doc.analysis_crashed = check->crashed;
+	doc.analysis_duration = check->duration;
+	if (check->crashed) {
+		return;
+	}
+
+	doc.diagnostics = std::move(check->result);
+	doc.lint = std::move(check->lint);
+	syntax_producer::set_semantic(doc.syntax, check->tokens, doc.buffer);
+	doc.highlight_dirty = true;
+
+	if (check->symbols_complete) {
+		channels.push<search::index_merge_request>({
+			.path = doc.path,
+			.check = check,
+		});
+	}
+
+	for (const diagnostic& diag : doc.diagnostics) {
+		const gse::log::level level = diag.level == severity::error
+			? gse::log::level::error
+			: (diag.level == severity::warning ? gse::log::level::warning : gse::log::level::info);
+		const std::filesystem::path diagnostic_path = diag.file.empty()
+			? doc.path
+			: diag.file;
+		std::error_code relative_ec;
+		const std::filesystem::path relative_path = std::filesystem::relative(diagnostic_path, ws.root, relative_ec);
+		const std::string where = relative_ec ? diagnostic_path.generic_display_string() : relative_path.generic_display_string();
+		gse::log::println(level, gse::log::category::task, "analysis: {}:{}:{}: {}", where, diag.line + 1, diag.start_col + 1, diag.message);
+	}
+}
+
+auto gse::ide::update_diagnostics(gse::context& ctx, workspace::data& ws, const gse::shared_view<config_system::data> config) -> void {
+	for (const analysis::diagnostics_completed& completed : ctx.read_channel<analysis::diagnostics_completed>()) {
+		if (!completed.check) {
+			continue;
+		}
+		apply_diagnostics(ws, completed.check, ctx.channels);
+		if (ws.diagnostics_pending == completed.check->document_id) {
+			ws.diagnostics_pending.reset();
+		}
+	}
+
+	if (ws.diagnostics_pending) {
+		return;
+	}
+
+	const gse::time now = gse::system_clock::now<gse::time>();
+	auto ready = [now](const document& doc) {
+		return doc.highlightable
+			&& !doc.path.empty()
+			&& doc.diag_dirty
+			&& now - doc.last_edit > gse::milliseconds(500);
+	};
+
+	auto candidate = ws.documents.end();
+	if (const auto active = ws.documents.find(ws.active_document_id); active != ws.documents.end() && ready(active->second)) {
+		candidate = active;
+	}
+	else {
+		for (const std::uint32_t document_id : ws.tab_order) {
+			const auto document = ws.documents.find(document_id);
+			if (document != ws.documents.end() && ready(document->second)) {
+				candidate = document;
+				break;
+			}
+		}
+	}
+	if (candidate == ws.documents.end()) {
+		return;
+	}
+
+	document& doc = candidate->second;
+	if (doc.dirty) {
+		format_and_save(ws, candidate->first, {
+			.indent_width = config.indent_width,
+			.indent_with_spaces = config.indent_with_spaces,
+		}, config.format_on_save, false, ctx.channels);
+	}
+
+	if (const std::optional<std::filesystem::path> compile_commands = analysis::diagnostics_runner::find_compile_commands(ws.root)) {
+		std::error_code plugin_ec;
+		const std::filesystem::path plugin = std::filesystem::exists(config::token_plugin, plugin_ec)
+			? config::token_plugin
+			: std::filesystem::path{};
+		ctx.channels.push<analysis::diagnostics_request>({
+			.document_id = candidate->first,
+			.compile_commands = *compile_commands,
+			.file = doc.path,
+			.plugin = plugin,
+			.lint_hook = &lint::analyze_check,
+		});
+		ws.diagnostics_pending = candidate->first;
+	}
+	doc.diag_dirty = false;
 }
 
 auto gse::ide::draw_quickfix_tooltip(const gse::gui::draw_context& ctx, const rectf& text_rect, const std::string_view label, const gse::vec4f label_color, const std::string_view message, const std::string_view fix_title, const int fixall_count, const gse::vec2f anchor, const gse::vec2f mouse) -> quickfix_layout {
 	const auto& sty = ctx.style;
 	const float pad = sty.padding;
 	const float fs = sty.font_size;
-	const float line_h = ctx.font->line_height(fs) * 1.25f;
+	const float line_h = ctx.fonts.text->line_height(fs) * 1.25f;
 	const float max_w = 460.f;
 
 	std::vector<std::string> info;
@@ -1738,12 +1901,12 @@ auto gse::ide::draw_quickfix_tooltip(const gse::gui::draw_context& ctx, const re
 	const bool has_fixall = fixall_count > 1;
 	const std::string fixall_line = has_fixall ? "Fix all in file  (" + std::to_string(fixall_count) + ")" : std::string{};
 
-	float content_w = ctx.font->width(fix_line, fs);
+	float content_w = ctx.fonts.text->width(fix_line, fs);
 	for (const std::string& l : info) {
-		content_w = std::max(content_w, ctx.font->width(l, fs));
+		content_w = std::max(content_w, ctx.fonts.text->width(l, fs));
 	}
 	if (has_fixall) {
-		content_w = std::max(content_w, ctx.font->width(fixall_line, fs));
+		content_w = std::max(content_w, ctx.fonts.text->width(fixall_line, fs));
 	}
 
 	const std::size_t action_rows = has_fixall ? 2u : 1u;
@@ -1788,9 +1951,9 @@ auto gse::ide::draw_quickfix_tooltip(const gse::gui::draw_context& ctx, const re
 	for (std::size_t i = 0; i < info.size(); ++i) {
 		const float center_y = top_y - pad - line_h * (static_cast<float>(i) + 0.5f);
 		ctx.queue_text({
-			.font = ctx.font,
+			.font = ctx.fonts.text,
 			.text = info[i],
-			.position = { px + pad, center_y + ctx.font->vertical_center_offset(fs) },
+			.position = { px + pad, center_y + ctx.fonts.text->vertical_center_offset(fs) },
 			.scale = fs,
 			.color = i == 0 ? label_color : sty.color_text,
 			.clip_rect = panel,
@@ -1811,9 +1974,9 @@ auto gse::ide::draw_quickfix_tooltip(const gse::gui::draw_context& ctx, const re
 			});
 		}
 		ctx.queue_text({
-			.font = ctx.font,
+			.font = ctx.fonts.text,
 			.text = text,
-			.position = { px + pad, row.top() - line_h * 0.5f + ctx.font->vertical_center_offset(fs) },
+			.position = { px + pad, row.top() - line_h * 0.5f + ctx.fonts.text->vertical_center_offset(fs) },
 			.scale = fs,
 			.color = color,
 			.clip_rect = panel,
@@ -1840,11 +2003,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 	const float pad = ctx.style.padding;
 	const float font_sz = ctx.style.font_size;
 
-	static std::uint64_t spin_frame = 0;
-	++spin_frame;
-	const gse::angle spin_rotation = gse::radians(static_cast<float>(spin_frame) * 0.16f);
-	const bool analyzing = ws.diagnostics_pending && !ws.diagnostics_pending->done.load(std::memory_order_acquire);
-	const std::uint32_t analyzing_id = analyzing ? ws.diagnostics_pending->document_id : 0;
+	const std::uint32_t analyzing_id = ws.diagnostics_pending.value_or(0);
 
 	std::erase_if(ws.tab_order, [&](const std::uint32_t id) {
 		return !ws.documents.contains(id);
@@ -1865,11 +2024,11 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 		ws.active_document_id = viewport_tab_id;
 	}
 
-	const float row_h = std::min(ctx.font->line_height(font_sz) + pad, body.height());
-	const float tab_gap = 2.f;
+	const float row_h = std::min(ctx.fonts.text->line_height(font_sz) + pad, body.height());
+	const float tab_gap = 2.f * ctx.style.scale_factor;
 
 	const std::string game_caption = "Game";
-	const float game_width = std::clamp(ctx.font->width(game_caption, font_sz) + pad * 3.f, 64.f, 220.f);
+	const float game_width = std::clamp(ctx.fonts.text->width(game_caption, font_sz) + pad * 3.f, 64.f * ctx.style.scale_factor, 220.f * ctx.style.scale_factor);
 	const float game_divider_width = ctx.style.accent_bar_width;
 	const float document_area_width = std::max(0.f, body.width() - game_width - game_divider_width - tab_gap);
 
@@ -1885,11 +2044,11 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 		});
 	}
 
-	const gse::gui::tab_strip_metrics metrics = gse::gui::tab_strip_measure(ctx.font, ctx.style, tab_descs, document_area_width);
+	const gse::gui::tab_strip_metrics metrics = gse::gui::tab_strip_measure(ctx.fonts.text, ctx.style, tab_descs, document_area_width);
 	ws.tab_strip.visible_rows = std::clamp(ws.tab_strip.visible_rows, 1u, std::max(1u, metrics.required_rows));
 
 	const bool overflow = metrics.content_extent > document_area_width;
-	constexpr float tab_scrollbar_h = 6.f;
+	const float tab_scrollbar_h = 6.f * ctx.style.scale_factor;
 	const float tab_bar_h = std::min(
 		body.height(),
 		ws.tab_strip.visible_rows * row_h + static_cast<float>(ws.tab_strip.visible_rows - 1) * tab_gap + (ws.tab_strip.visible_rows == 1 && overflow ? tab_scrollbar_h + tab_gap : 0.f)
@@ -1969,9 +2128,9 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 		.texture = ctx.blank_texture,
 	});
 	ctx.queue_text({
-		.font = ctx.font,
+		.font = ctx.fonts.text,
 		.text = game_caption,
-		.position = { game_tab.left() + pad, game_tab.center().y() + ctx.font->vertical_center_offset(font_sz) },
+		.position = { game_tab.left() + pad, game_tab.center().y() + ctx.fonts.text->vertical_center_offset(font_sz) },
 		.scale = font_sz,
 		.color = game_active ? ctx.style.color_text : ctx.style.color_text_secondary,
 		.clip_rect = game_tab,
@@ -1989,7 +2148,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 		workspace::close_document(ws, close_requested);
 	}
 
-	const float requested_status_h = ctx.font->line_height(font_sz) + pad * 0.5f;
+	const float requested_status_h = ctx.fonts.text->line_height(font_sz) + pad * 0.5f;
 	const float content_h = std::max(0.f, body.height() - tab_bar_h);
 	const float status_h = std::min(requested_status_h, content_h);
 	const float text_h = content_h - status_h;
@@ -2021,7 +2180,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 
 		const bool building = build_runner::in_progress();
 		const float button_w = 150.f;
-		const float button_h = ctx.font->line_height(font_sz) + pad;
+		const float button_h = ctx.fonts.text->line_height(font_sz) + pad;
 		const gse::rectf button_rect = gse::rectf::from_position_size(
 			{ view_rect.right() - button_w - pad, view_rect.top() - pad },
 			{ button_w, button_h }
@@ -2044,11 +2203,11 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 			.texture = ctx.blank_texture,
 			.corner_radius = ctx.style.corner_radius,
 		});
-		const float button_text_w = ctx.font->width(button_label, font_sz);
+		const float button_text_w = ctx.fonts.text->width(button_label, font_sz);
 		ctx.queue_text({
-			.font = ctx.font,
+			.font = ctx.fonts.text,
 			.text = button_label,
-			.position = { button_rect.center().x() - button_text_w * 0.5f, button_rect.center().y() + ctx.font->vertical_center_offset(font_sz) },
+			.position = { button_rect.center().x() - button_text_w * 0.5f, button_rect.center().y() + ctx.fonts.text->vertical_center_offset(font_sz) },
 			.scale = font_sz,
 			.color = building ? ctx.style.color_text_secondary : ctx.style.color_text,
 			.clip_rect = button_rect,
@@ -2062,11 +2221,11 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 			return;
 		}
 		const std::string label = "Open a file from the explorer";
-		const float w = ctx.font->width(label, font_sz);
+		const float w = ctx.fonts.text->width(label, font_sz);
 		ctx.queue_text({
-			.font = ctx.font,
+			.font = ctx.fonts.text,
 			.text = label,
-			.position = { text_rect.center().x() - w * 0.5f, text_rect.center().y() + ctx.font->vertical_center_offset(font_sz) },
+			.position = { text_rect.center().x() - w * 0.5f, text_rect.center().y() + ctx.fonts.text->vertical_center_offset(font_sz) },
 			.scale = font_sz,
 			.color = ctx.style.color_text_secondary,
 			.clip_rect = text_rect,
@@ -2075,44 +2234,12 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 	}
 	document& doc = it->second;
 
-	if (ws.diagnostics_pending && ws.diagnostics_pending->done.load(std::memory_order_acquire)) {
-		if (const auto pending = ws.documents.find(ws.diagnostics_pending->document_id); pending != ws.documents.end()) {
-			pending->second.analysis_failed = ws.diagnostics_pending->failed;
-			pending->second.analysis_crashed = ws.diagnostics_pending->crashed;
-			pending->second.analysis_duration = ws.diagnostics_pending->duration;
-			if (!ws.diagnostics_pending->crashed) {
-				pending->second.diagnostics = std::move(ws.diagnostics_pending->result);
-					pending->second.lint = std::move(ws.diagnostics_pending->lint);
-				syntax_producer::set_semantic(pending->second.syntax, ws.diagnostics_pending->tokens, pending->second.buffer);
-				pending->second.highlight_dirty = true;
-
-				if (ws.diagnostics_pending->symbols_complete) {
-					channels.push<search::index_merge_request>({ .path = pending->second.path, .check = ws.diagnostics_pending });
-				}
-
-				for (const diagnostic& diag : pending->second.diagnostics) {
-				const gse::log::level lvl = diag.level == severity::error
-					? gse::log::level::error
-					: (diag.level == severity::warning ? gse::log::level::warning : gse::log::level::info);
-				const std::filesystem::path diagnostic_path = diag.file.empty() || std::filesystem::path(diag.file).filename() == pending->second.path.filename()
-					? pending->second.path
-					: std::filesystem::path(diag.file);
-				std::error_code relative_ec;
-				const std::filesystem::path relative_path = std::filesystem::relative(diagnostic_path, ws.root, relative_ec);
-				const std::string where = relative_ec ? diagnostic_path.generic_display_string() : relative_path.generic_display_string();
-				gse::log::println(lvl, gse::log::category::task, "analysis: {}:{}:{}: {}", where, diag.line + 1, diag.start_col + 1, diag.message);
-			}
-		}
-		}
-		ws.diagnostics_pending.reset();
-	}
-
 	{
+		const bool analyzing = ws.diagnostics_pending == ws.active_document_id;
 		int errors = 0;
 		int warnings = 0;
-		const std::string current_file = doc.path.filename().display_string();
 		for (const auto& diagnostic : doc.diagnostics) {
-			if (!diagnostic.file.empty() && std::filesystem::path(diagnostic.file).filename().display_string() != current_file) {
+			if (!diagnostic.file.empty() && diagnostic.file != doc.path) {
 				continue;
 			}
 			if (diagnostic.level == severity::error) {
@@ -2139,7 +2266,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 				{ status_rect.left() + pad, status_rect.center().y() + glyph_size * 0.5f },
 				{ glyph_size, glyph_size }
 			);
-			draw_spinner(ctx, spin_rect, ctx.style.color_text_secondary, spin_rotation);
+			draw_spinner(ctx, spin_rect, ctx.style.color_text_secondary, spinner_rotation());
 			text_left = spin_rect.right() + pad * 0.5f;
 			status_text = "analyzing...";
 		}
@@ -2170,9 +2297,9 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 
 		if (!status_text.empty()) {
 			ctx.queue_text({
-				.font = ctx.font,
+				.font = ctx.fonts.text,
 				.text = status_text,
-				.position = { text_left, status_rect.center().y() + ctx.font->vertical_center_offset(font_sz) },
+				.position = { text_left, status_rect.center().y() + ctx.fonts.text->vertical_center_offset(font_sz) },
 				.scale = font_sz,
 				.color = status_color,
 				.clip_rect = status_rect,
@@ -2205,7 +2332,6 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 	std::vector<gse::gui::text_fade> fades;
 	std::vector<diag_region> diag_regions;
 	if ((!doc.diagnostics.empty() || !doc.lint.empty()) && !doc.analysis_failed) {
-		const std::string doc_name = doc.path.filename().display_string();
 		const std::size_t line_count = doc.buffer.line_count();
 		auto display_to_byte = [](const std::string_view row, const std::uint32_t display_col) -> std::uint32_t {
 			constexpr std::size_t gcc_tab_width = 8;
@@ -2223,7 +2349,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 		const std::array<std::span<const diagnostic>, 2> diag_sources{ doc.diagnostics, doc.lint };
 		for (const std::span<const diagnostic> diag_group : diag_sources)
 		for (const auto& diagnostic : diag_group) {
-			if (!diagnostic.file.empty() && std::filesystem::path(diagnostic.file).filename().display_string() != doc_name) {
+			if (!diagnostic.file.empty() && diagnostic.file != doc.path) {
 				continue;
 			}
 			if (diagnostic.line >= line_count) {
@@ -2256,7 +2382,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 	}
 
 	if (doc.pending_center_line) {
-		const float line_h = ctx.font->line_height(font_sz) * 1.25f;
+		const float line_h = ctx.fonts.code->line_height(font_sz) * 1.25f;
 		const float view_h = std::max(0.f, text_rect.height() - pad * 2.f);
 		const float content_h = static_cast<float>(doc.buffer.line_count()) * line_h;
 		const float caret_y = static_cast<float>(*doc.pending_center_line) * line_h;
@@ -2324,7 +2450,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 	}
 	std::optional<std::size_t> hovered_diag;
 	if (!goto_ctrl && !diag_regions.empty() && text_rect.contains(mouse) && ctx.input_available() && !doc.buffer.lines.empty()) {
-		const float diag_line_h = ctx.font->line_height(font_sz) * 1.25f;
+		const float diag_line_h = ctx.fonts.code->line_height(font_sz) * 1.25f;
 		const float content_top = text_rect.top() - pad + doc.view.scroll.y.offset;
 		const float row_rel = (content_top - mouse.y()) / diag_line_h;
 		if (row_rel >= 0.f && row_rel < static_cast<float>(doc.buffer.line_count())) {
@@ -2549,6 +2675,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 
 	if (goto_click && link_target) {
 		workspace::jump_to(ws, link_target->path, link_target->line, link_target->column);
+		return;
 	}
 
 	const format::options format_opts = {
@@ -2556,26 +2683,9 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 		.indent_with_spaces = config.indent_with_spaces,
 	};
 
-	if (doc.highlightable && !doc.path.empty() && doc.diag_dirty
-		&& gse::system_clock::now<gse::time>() - doc.last_edit > gse::milliseconds(500)
-		&& (!ws.diagnostics_pending || ws.diagnostics_pending->done.load(std::memory_order_acquire))) {
-		if (doc.dirty) {
-			format_and_save(ws, ws.active_document_id, format_opts, config.format_on_save, false);
-		}
-		if (const std::optional<std::filesystem::path> compile_commands = analysis::diagnostics_runner::find_compile_commands(ws.root)) {
-			const std::shared_ptr<analysis::diagnostics_check> check = std::make_shared<analysis::diagnostics_check>();
-			check->document_id = ws.active_document_id;
-			std::error_code plugin_ec;
-			const std::filesystem::path plugin = std::filesystem::exists(config::token_plugin, plugin_ec) ? config::token_plugin : std::filesystem::path{};
-			analysis::diagnostics_runner::start(check, *compile_commands, doc.path, plugin, &lint::analyze_check);
-			ws.diagnostics_pending = check;
-		}
-		doc.diag_dirty = false;
-	}
-
 	const bool ctrl = ctx.input.key_held(gse::key::left_control) || ctx.input.key_held(gse::key::right_control);
 	if (ui.focus_widget_id == text_id && ctrl && ctx.input.key_pressed(gse::key::s)) {
-		format_and_save(ws, ws.active_document_id, format_opts, config.format_on_save, true);
+		format_and_save(ws, ws.active_document_id, format_opts, config.format_on_save, true, channels);
 		doc.diag_dirty = true;
 		doc.last_edit = {};
 	}
@@ -2621,6 +2731,7 @@ export namespace gse::ide::workspace_system {
 		bool graph_from_game = false;
 		std::uint32_t graph_game_gen = 0;
 		quick_search_state search;
+		git::status_snapshot git_status;
 		bool initialized = false;
 		gse::clock save_clock;
 	};
@@ -2857,17 +2968,21 @@ auto gse::ide::editor_app::run(
 				return;
 			}
 
-			const float inset = s.reserve_top_bar ? s.fstate.sty.title_bar_height : 0.f;
+			const gse::gui::style sty = gse::gui::apply_scale(s, gse::gui::style::from_theme(s.current_theme), vp.y());
+			const float inset = s.reserve_top_bar ? sty.title_bar_height : 0.f;
 			const float top = vp.y() - inset;
 			if (top <= 0.f) {
 				return;
 			}
 
-			const float min_explorer_width = 180.f;
-			const float min_code_width = 320.f;
-			const float min_terminal_height = 120.f;
-			const float min_main_height = 180.f;
-			const float hit_width = std::max(6.f, s.fstate.sty.resize_border_thickness);
+			const float min_explorer_width = 180.f * sty.scale_factor;
+			const float min_code_width = 320.f * sty.scale_factor;
+			const float min_terminal_height = 120.f * sty.scale_factor;
+			const float min_main_height = 180.f * sty.scale_factor;
+			if (vp.x() < min_explorer_width + min_code_width || top < min_main_height + min_terminal_height) {
+				return;
+			}
+			const float hit_width = std::max(6.f * sty.scale_factor, sty.resize_border_thickness);
 			const bool blocked = s.menu_stack.captures_input() || s.context_menu.open;
 
 			const float divider_thickness = hit_width * 2.f;
@@ -2970,7 +3085,15 @@ auto gse::ide::editor_app::run(
 	return {};
 }
 
-auto gse::ide::workspace_system::run(gse::context& ctx, data& d, const gse::scheduler& sched, const gse::shared_view<config_system::data> config_d, const gse::shared_view<search_system::data> search_d, const gse::shared_view<gse::input::data> input_d, const gse::shared_view<viewport::data> viewport_d) -> gse::async::task<> {
+auto gse::ide::workspace_system::run(
+	gse::context& ctx,
+	data& d,
+	const gse::scheduler& sched,
+	const gse::shared_view<config_system::data> config_d,
+	const gse::shared_view<search_system::data> search_d,
+	const gse::shared_view<gse::input::data> input_d,
+	const gse::shared_view<viewport::data> viewport_d
+) -> gse::async::task<> {
 	if (!d.initialized) {
 		d.ws.root = gse::config::root_dir;
 		d.ws.fs_root.path = d.ws.root;
@@ -2998,6 +3121,10 @@ auto gse::ide::workspace_system::run(gse::context& ctx, data& d, const gse::sche
 	workspace::data* ws = &d.ws;
 	const auto config = config_d;
 	const gse::input::state& input = gse::input::current_state(input_d);
+	for (const git::status_updated& update : ctx.read_channel<git::status_updated>()) {
+		d.git_status = update.status;
+	}
+	update_diagnostics(ctx, d.ws, config_d);
 	d.ws.watcher.poll();
 	if (input.mouse_button_pressed(gse::mouse_button::button_4)) {
 		workspace::go_back(d.ws);
@@ -3009,8 +3136,8 @@ auto gse::ide::workspace_system::run(gse::context& ctx, data& d, const gse::sche
 	ctx.channels.push<gse::gui::menu_content>({
 		.menu = std::string(explorer_panel_name),
 		.layer = gse::render_layer::content,
-		.build = [ws, search = &d.search, index = search_d.index, channels = ctx.channels](gse::gui::builder& b) {
-			draw_explorer_panel(b, *ws, *search, index, channels);
+		.build = [ws, search = &d.search, index = search_d.index, channels = ctx.channels, git_status = d.git_status](gse::gui::builder& b) {
+			draw_explorer_panel(b, *ws, *search, index, channels, git_status.get());
 		},
 	});
 

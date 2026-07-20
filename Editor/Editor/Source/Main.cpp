@@ -9,11 +9,13 @@ auto main() -> int {
 		[](gse::engine& e) -> void {
 			gse::register_systems<
 				^^gse::ide::config_system,
+				^^gse::ide::diagnostics_system,
 				^^gse::ide::editor_app,
 				^^gse::ide::workspace_system,
 				^^gse::ide::terminal,
 				^^gse::ide::viewport,
-				^^gse::ide::search_system
+				^^gse::ide::search_system,
+				^^gse::ide::git_system
 			>(e);
 		},
 		{

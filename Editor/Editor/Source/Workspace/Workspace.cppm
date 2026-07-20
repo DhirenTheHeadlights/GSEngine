@@ -4,7 +4,6 @@ import std;
 import gse;
 
 import gse.ide.highlight;
-import gse.ide.analysis;
 import gse.ide.diagnostic;
 import gse.ide.docs;
 
@@ -94,15 +93,11 @@ export namespace gse::ide {
 			std::uint64_t last_opened_key = 0;
 			std::optional<pending_explorer_name> pending_name;
 
-			std::shared_ptr<analysis::diagnostics_check> diagnostics_pending;
+			std::optional<std::uint32_t> diagnostics_pending;
 
 			std::vector<hover_state> hover_stack;
 			docs::cppref_index cppref;
 		};
-
-		static auto find_repo_root(
-			const std::filesystem::path& start
-		) -> std::filesystem::path;
 
 		static auto unique_tab_name(
 			const data& d,
@@ -297,28 +292,6 @@ namespace gse::ide {
 		d.active_document_id = id;
 		return true;
 	}
-}
-
-auto gse::ide::workspace::find_repo_root(const std::filesystem::path& start) -> std::filesystem::path {
-	std::error_code ec;
-	std::filesystem::path dir = std::filesystem::weakly_canonical(start, ec);
-	if (ec) {
-		dir = start;
-	}
-
-	for (std::filesystem::path p = dir; !p.empty();) {
-		std::error_code exists_ec;
-		if (std::filesystem::exists(p / ".git", exists_ec)) {
-			return p;
-		}
-		const std::filesystem::path parent = p.parent_path();
-		if (parent == p) {
-			break;
-		}
-		p = parent;
-	}
-
-	return dir;
 }
 
 auto gse::ide::workspace::unique_tab_name(const data& d, const std::filesystem::path& path) -> std::string {

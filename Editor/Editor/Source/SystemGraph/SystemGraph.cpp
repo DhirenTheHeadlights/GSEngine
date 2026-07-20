@@ -199,27 +199,26 @@ auto gse::ide::draw_graph(gse::gui::builder& ui, const gse::rectf& area, graph_d
 	const bool over_panel = panel_area && panel_area->contains(mouse) && ctx.input_available();
 	const bool over_divider = panel_divider && panel_divider->contains(mouse) && ctx.input_available();
 	const bool over_legend = legend_bounds(ctx, canvas).contains(mouse) && ctx.input_available();
-	const float reset_h = ctx.font->line_height(ctx.style.font_size) + 8.f;
-	const float reset_w = ctx.font->width(std::string_view("reset view"), ctx.style.font_size) + 24.f;
+	const float reset_h = ctx.fonts.text->line_height(ctx.style.font_size) + 8.f;
+	const float reset_w = ctx.fonts.text->width(std::string_view("reset view"), ctx.style.font_size) + 24.f;
 	const gse::rectf reset_rect = gse::rectf::from_position_size({ canvas.left() + 10.f, canvas.bottom() + 10.f + reset_h }, { reset_w, reset_h });
 	const bool over_reset = reset_rect.contains(mouse) && ctx.input_available();
 	const bool over_area = canvas.contains(mouse) && ctx.input_available() && !over_panel && !over_divider && !over_legend && !over_reset;
 
-	if (over_area) {
-		const gse::vec2f scroll = ctx.scroll_delta_for(canvas);
-		if (scroll.y() != 0.f) {
-			const float old_zoom = gd.zoom;
-			gd.zoom = std::clamp(gd.zoom * (scroll.y() > 0.f ? 1.12f : 1.f / 1.12f), 0.2f, 6.f);
-			const float ratio = gd.zoom / old_zoom;
-			gd.pan = gd.pan * ratio + (mouse - canvas.center()) * (1.f - ratio);
-		}
-	}
-	if (over_area && ctx.input.mouse_button_held(gse::mouse_button::button_3)) {
-		if (gd.panning) {
-			gd.pan += mouse - gd.pan_last;
-		}
-		gd.pan_last = mouse;
+	if (over_area && ctx.input.mouse_button_pressed(gse::mouse_button::button_1)) {
 		gd.panning = true;
+		gd.dragged = false;
+		gd.pan_press = mouse;
+		gd.pan_last = mouse;
+	}
+	if (gd.panning && ctx.input.mouse_button_held(gse::mouse_button::button_1)) {
+		gd.pan += mouse - gd.pan_last;
+		gd.pan_last = mouse;
+		const gse::vec2f moved = mouse - gd.pan_press;
+		const float drag_slop = 4.f;
+		if (moved.x() * moved.x() + moved.y() * moved.y() > drag_slop * drag_slop) {
+			gd.dragged = true;
+		}
 	}
 	else {
 		gd.panning = false;
@@ -265,7 +264,7 @@ auto gse::ide::draw_graph(gse::gui::builder& ui, const gse::rectf& area, graph_d
 	for (std::uint32_t i = 0; i < n; ++i) {
 		const gse::introspection::graph_node& gn = gd.snapshot.nodes[i];
 		labels[i] = gn.display.empty() ? short_label(gn.name) : std::string_view(gn.display);
-		widths[i] = std::max(72.f, ctx.font->width(labels[i], base_font) + pill_pad_x * 2.f);
+		widths[i] = std::max(72.f, ctx.fonts.text->width(labels[i], base_font) + pill_pad_x * 2.f);
 	}
 
 	std::vector<std::vector<std::uint32_t>> by_layer(gd.layout.layer_count);
@@ -304,8 +303,20 @@ auto gse::ide::draw_graph(gse::gui::builder& ui, const gse::rectf& area, graph_d
 	const gse::vec2f world_center = (world_min + world_max) * 0.5f;
 	const float world_w = std::max(1.f, world_max.x() - world_min.x());
 	const float world_h = std::max(1.f, world_max.y() - world_min.y());
-	const float fit = std::min((canvas.width() - 60.f) / world_w, (canvas.height() - 60.f) / world_h);
-	const float scale = std::clamp(fit * gd.zoom, 0.15f, 3.f);
+	const float fit = std::max(1e-4f, std::min((canvas.width() - 60.f) / world_w, (canvas.height() - 60.f) / world_h));
+	const float min_scale = 0.15f;
+	const float max_scale = 3.f;
+	if (over_area) {
+		const gse::vec2f scroll = ctx.scroll_delta_for(canvas);
+		if (scroll.y() != 0.f) {
+			const float old_scale = std::clamp(fit * gd.zoom, min_scale, max_scale);
+			const float new_scale = std::clamp(old_scale * (scroll.y() > 0.f ? 1.12f : 1.f / 1.12f), min_scale, max_scale);
+			const float ratio = new_scale / old_scale;
+			gd.zoom = new_scale / fit;
+			gd.pan = gd.pan * ratio + (mouse - canvas.center()) * (1.f - ratio);
+		}
+	}
+	const float scale = std::clamp(fit * gd.zoom, min_scale, max_scale);
 
 	std::vector<gse::vec2f> centers(n);
 	std::vector<gse::gui::graph_canvas::node> nodes;
@@ -412,9 +423,9 @@ auto gse::ide::draw_graph(gse::gui::builder& ui, const gse::rectf& area, graph_d
 		.layer = gse::render_layer::overlay,
 	});
 	ctx.queue_text({
-		.font = ctx.font,
+		.font = ctx.fonts.text,
 		.text = "reset view",
-		.position = { reset_rect.left() + 12.f, reset_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
+		.position = { reset_rect.left() + 12.f, reset_rect.center().y() + ctx.fonts.text->vertical_center_offset(ctx.style.font_size) },
 		.scale = ctx.style.font_size,
 		.color = ctx.style.color_text,
 		.layer = gse::render_layer::overlay,
@@ -438,7 +449,7 @@ auto gse::ide::draw_graph(gse::gui::builder& ui, const gse::rectf& area, graph_d
 		channels.push<gse::set_cursor_shape_request>({ .shape = gse::cursor_shape::resize_ew });
 	}
 
-	if (over_legend || over_reset || gd.resizing_panel) {
+	if (over_legend || over_reset || gd.resizing_panel || gd.dragged) {
 		return;
 	}
 	if (picked.background_clicked) {
@@ -493,7 +504,7 @@ auto gse::ide::legend_bounds(const gse::gui::draw_context& ctx, const gse::rectf
 	const float sw = 12.f;
 	float max_text = 0.f;
 	for (const auto& [kind, label] : legend_rows) {
-		max_text = std::max(max_text, ctx.font->width(label, ctx.style.font_size));
+		max_text = std::max(max_text, ctx.fonts.text->width(label, ctx.style.font_size));
 	}
 	const float w = pad + sw + 8.f + max_text + pad + 4.f;
 	const float h = row_h * static_cast<float>(std::size(legend_rows)) + pad * 2.f;
@@ -542,9 +553,9 @@ auto gse::ide::draw_legend(const gse::gui::draw_context& ctx, const gse::rectf& 
 			.corner_radius = 2.f,
 		});
 		ctx.queue_text({
-			.font = ctx.font,
+			.font = ctx.fonts.text,
 			.text = std::string(legend_rows[i].second),
-			.position = { panel.left() + pad + sw + 8.f, ry - row_h * 0.5f + ctx.font->vertical_center_offset(ctx.style.font_size) },
+			.position = { panel.left() + pad + sw + 8.f, ry - row_h * 0.5f + ctx.fonts.text->vertical_center_offset(ctx.style.font_size) },
 			.scale = ctx.style.font_size,
 			.color = on ? ctx.style.color_text : ctx.style.color_text_secondary,
 			.layer = gse::render_layer::overlay,
@@ -595,9 +606,9 @@ auto gse::ide::draw_detail_panel(gse::gui::builder& ui, const gse::rectf& panel,
 	const auto text_line = [&](const std::string& text, const gse::vec4f color, const float indent) {
 		const gse::rectf row = gse::gui::layout::reserve_row(ctx, line_h);
 		ctx.queue_text({
-			.font = ctx.font,
+			.font = ctx.fonts.text,
 			.text = text,
-			.position = { x + indent, row.center().y() + ctx.font->vertical_center_offset(fs) },
+			.position = { x + indent, row.center().y() + ctx.fonts.text->vertical_center_offset(fs) },
 			.scale = fs,
 			.color = color,
 		});
@@ -620,7 +631,7 @@ auto gse::ide::draw_detail_panel(gse::gui::builder& ui, const gse::rectf& panel,
 		if (!on) {
 			continue;
 		}
-		const float cw = ctx.font->width(label, fs) + 12.f;
+		const float cw = ctx.fonts.text->width(label, fs) + 12.f;
 		const gse::rectf chip = gse::rectf::from_position_size({ cx, chip_row.top() }, { cw, line_h });
 		ctx.queue_sprite({
 			.rect = chip,
@@ -629,9 +640,9 @@ auto gse::ide::draw_detail_panel(gse::gui::builder& ui, const gse::rectf& panel,
 			.corner_radius = line_h * 0.3f,
 		});
 		ctx.queue_text({
-			.font = ctx.font,
+			.font = ctx.fonts.text,
 			.text = std::string(label),
-			.position = { cx + 6.f, chip.center().y() + ctx.font->vertical_center_offset(fs) },
+			.position = { cx + 6.f, chip.center().y() + ctx.fonts.text->vertical_center_offset(fs) },
 			.scale = fs,
 			.color = ctx.style.color_text,
 		});
@@ -743,7 +754,7 @@ auto gse::ide::draw_node_tooltip(const gse::gui::draw_context& ctx, const gse::r
 	const float line_h = ctx.style.font_size + 4.f;
 	float max_w = 0.f;
 	for (const auto& line : lines) {
-		max_w = std::max(max_w, ctx.font->width(line, ctx.style.font_size));
+		max_w = std::max(max_w, ctx.fonts.text->width(line, ctx.style.font_size));
 	}
 
 	const gse::vec2f mouse = ctx.input.mouse_position();
@@ -781,9 +792,9 @@ auto gse::ide::draw_node_tooltip(const gse::gui::draw_context& ctx, const gse::r
 	for (std::size_t i = 0; i < lines.size(); ++i) {
 		const float ly = panel.top() - pad - static_cast<float>(i) * line_h - line_h * 0.5f;
 		ctx.queue_text({
-			.font = ctx.font,
+			.font = ctx.fonts.text,
 			.text = lines[i],
-			.position = { panel.left() + pad, ly + ctx.font->vertical_center_offset(ctx.style.font_size) },
+			.position = { panel.left() + pad, ly + ctx.fonts.text->vertical_center_offset(ctx.style.font_size) },
 			.scale = ctx.style.font_size,
 			.color = i == 0 ? ctx.style.color_text : ctx.style.color_text_secondary,
 			.layer = gse::render_layer::popup,
