@@ -323,6 +323,42 @@ export namespace gse::gpu {
 			std::string_view tag
 		) -> gpu::image;
 
+		[[nodiscard]] auto buffer_slot(
+			gpu::handle<gpu::buffer> buffer
+		) const -> gpu::bindless_slot;
+
+		[[nodiscard]] auto buffer_address(
+			gpu::handle<gpu::buffer> buffer
+		) const -> gpu::device_address;
+
+		[[nodiscard]] auto buffer_size(
+			gpu::handle<gpu::buffer> buffer
+		) const -> gpu::device_size;
+
+		[[nodiscard]] auto buffer_mapped(
+			gpu::handle<gpu::buffer> buffer
+		) const -> std::byte*;
+
+		[[nodiscard]] auto image_sampled_slot(
+			gpu::handle<gpu::image> image
+		) const -> gpu::bindless_slot;
+
+		[[nodiscard]] auto image_storage_slot(
+			gpu::handle<gpu::image> image
+		) const -> gpu::bindless_slot;
+
+		[[nodiscard]] auto image_format_of(
+			gpu::handle<gpu::image> image
+		) const -> gpu::image_format_value;
+
+		[[nodiscard]] auto image_extent(
+			gpu::handle<gpu::image> image
+		) const -> vec3u;
+
+		[[nodiscard]] auto image_view_of(
+			gpu::handle<gpu::image> image
+		) const -> gpu::handle<gpu::image_view>;
+
 		[[nodiscard]] auto allocate_buffer_slot() -> gpu::bindless_handle;
 
 		[[nodiscard]] auto allocate_image_slot() -> gpu::bindless_handle;
@@ -662,6 +698,42 @@ auto gse::gpu::vulkan_device_backend::create_buffer(const gpu::buffer_desc& desc
 
 auto gse::gpu::vulkan_device_backend::create_image(const gpu::image_desc& desc, const std::string_view tag) -> gpu::image {
 	return device_config.create_image(desc, tag);
+}
+
+auto gse::gpu::vulkan_device_backend::buffer_slot(const gpu::handle<gpu::buffer> buffer) const -> gpu::bindless_slot {
+	return device_config.buffer_slot(buffer);
+}
+
+auto gse::gpu::vulkan_device_backend::buffer_address(const gpu::handle<gpu::buffer> buffer) const -> gpu::device_address {
+	return device_config.buffer_address(buffer);
+}
+
+auto gse::gpu::vulkan_device_backend::buffer_size(const gpu::handle<gpu::buffer> buffer) const -> gpu::device_size {
+	return device_config.buffer_size(buffer);
+}
+
+auto gse::gpu::vulkan_device_backend::buffer_mapped(const gpu::handle<gpu::buffer> buffer) const -> std::byte* {
+	return device_config.buffer_mapped(buffer);
+}
+
+auto gse::gpu::vulkan_device_backend::image_sampled_slot(const gpu::handle<gpu::image> image) const -> gpu::bindless_slot {
+	return device_config.image_sampled_slot(image);
+}
+
+auto gse::gpu::vulkan_device_backend::image_storage_slot(const gpu::handle<gpu::image> image) const -> gpu::bindless_slot {
+	return device_config.image_storage_slot(image);
+}
+
+auto gse::gpu::vulkan_device_backend::image_format_of(const gpu::handle<gpu::image> image) const -> gpu::image_format_value {
+	return device_config.image_format_of(image);
+}
+
+auto gse::gpu::vulkan_device_backend::image_extent(const gpu::handle<gpu::image> image) const -> vec3u {
+	return device_config.image_extent(image);
+}
+
+auto gse::gpu::vulkan_device_backend::image_view_of(const gpu::handle<gpu::image> image) const -> gpu::handle<gpu::image_view> {
+	return device_config.image_view(image);
 }
 
 auto gse::gpu::vulkan_device_backend::allocate_buffer_slot() -> gpu::bindless_handle {

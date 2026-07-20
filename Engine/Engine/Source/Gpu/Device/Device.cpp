@@ -470,6 +470,42 @@ auto gse::gpu::device::bind_buffer_memory(const gpu::handle<gpu::buffer> buf, co
 	m_vt->bind_buffer_memory(m_backend.get(), buf, mem, offset);
 }
 
+auto gse::gpu::device::buffer_slot(const gpu::handle<gpu::buffer> buffer) const -> gpu::bindless_slot {
+	return m_vt->buffer_slot(m_backend.get(), buffer);
+}
+
+auto gse::gpu::device::buffer_address(const gpu::handle<gpu::buffer> buffer) const -> gpu::device_address {
+	return m_vt->buffer_address(m_backend.get(), buffer);
+}
+
+auto gse::gpu::device::buffer_size(const gpu::handle<gpu::buffer> buffer) const -> gpu::device_size {
+	return m_vt->buffer_size(m_backend.get(), buffer);
+}
+
+auto gse::gpu::device::buffer_mapped(const gpu::handle<gpu::buffer> buffer) const -> std::byte* {
+	return m_vt->buffer_mapped(m_backend.get(), buffer);
+}
+
+auto gse::gpu::device::image_sampled_slot(const gpu::handle<gpu::image> image) const -> gpu::bindless_slot {
+	return m_vt->image_sampled_slot(m_backend.get(), image);
+}
+
+auto gse::gpu::device::image_storage_slot(const gpu::handle<gpu::image> image) const -> gpu::bindless_slot {
+	return m_vt->image_storage_slot(m_backend.get(), image);
+}
+
+auto gse::gpu::device::image_format_of(const gpu::handle<gpu::image> image) const -> gpu::image_format_value {
+	return m_vt->image_format_of(m_backend.get(), image);
+}
+
+auto gse::gpu::device::image_extent(const gpu::handle<gpu::image> image) const -> vec3u {
+	return m_vt->image_extent(m_backend.get(), image);
+}
+
+auto gse::gpu::device::image_view_of(const gpu::handle<gpu::image> image) const -> gpu::handle<gpu::image_view> {
+	return m_vt->image_view_of(m_backend.get(), image);
+}
+
 auto gse::gpu::device::create_image_view(const gpu::handle<gpu::image> img, const image_view_create_info& info) const -> gpu::handle<gpu::image_view> {
 	return m_vt->create_image_view(m_backend.get(), img, info);
 }

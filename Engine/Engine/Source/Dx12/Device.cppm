@@ -338,6 +338,42 @@ export namespace gse::dx12 {
 			std::string_view tag
 		) -> gpu::image;
 
+		[[nodiscard]] auto buffer_slot(
+			gpu::handle<gpu::buffer> buffer
+		) const -> gpu::bindless_slot;
+
+		[[nodiscard]] auto buffer_address(
+			gpu::handle<gpu::buffer> buffer
+		) const -> gpu::device_address;
+
+		[[nodiscard]] auto buffer_size(
+			gpu::handle<gpu::buffer> buffer
+		) const -> gpu::device_size;
+
+		[[nodiscard]] auto buffer_mapped(
+			gpu::handle<gpu::buffer> buffer
+		) const -> std::byte*;
+
+		[[nodiscard]] auto image_sampled_slot(
+			gpu::handle<gpu::image> image
+		) const -> gpu::bindless_slot;
+
+		[[nodiscard]] auto image_storage_slot(
+			gpu::handle<gpu::image> image
+		) const -> gpu::bindless_slot;
+
+		[[nodiscard]] auto image_format_of(
+			gpu::handle<gpu::image> image
+		) const -> gpu::image_format_value;
+
+		[[nodiscard]] auto image_extent(
+			gpu::handle<gpu::image> image
+		) const -> vec3u;
+
+		[[nodiscard]] auto image_view(
+			gpu::handle<gpu::image> image
+		) const -> gpu::handle<gpu::image_view>;
+
 		[[nodiscard]] auto allocate_buffer_slot() -> gpu::bindless_handle;
 
 		[[nodiscard]] auto allocate_image_slot() -> gpu::bindless_handle;
@@ -454,6 +490,25 @@ export namespace gse::dx12 {
 		std::unordered_map<directx::ID3D12PipelineState*, std::uint32_t> m_pso_push_size;
 		std::unordered_map<directx::ID3D12Resource*, directx::D3D12_RESOURCE_STATES> m_resource_states;
 		std::unordered_map<directx::ID3D12Resource*, directx::D3D12_RESOURCE_STATES> m_buffer_states;
+
+		struct live_buffer {
+			gpu::bindless_slot slot;
+			gpu::device_size size = 0;
+			gpu::device_address address = 0;
+			std::byte* mapped = nullptr;
+		};
+
+		struct live_image {
+			gpu::handle<gpu::image_view> view;
+			gpu::bindless_slot storage_slot;
+			gpu::bindless_slot sampled_slot;
+			gpu::image_format_value format = 0;
+			vec3u extent;
+			gpu::image_view_create_info view_info;
+		};
+
+		std::unordered_map<std::uint64_t, live_buffer> m_live_buffers;
+		std::unordered_map<std::uint64_t, live_image> m_live_images;
 		directx::com_ptr<directx::ID3D12CommandSignature> m_draw_indexed_signature;
 		directx::com_ptr<directx::ID3D12CommandSignature> m_dispatch_mesh_signature;
 		gpu::bindless_slot_pool m_image_pool;

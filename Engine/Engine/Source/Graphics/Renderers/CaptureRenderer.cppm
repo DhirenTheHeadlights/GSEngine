@@ -68,7 +68,7 @@ export namespace gse::renderer::capture {
 		time applied_ring_budget = seconds(30.f);
 		bool first_ring_push_logged = false;
 
-		[[= gse::shared]] std::unique_ptr<recording_state> recording = std::make_unique<recording_state>();
+		[[= gse::stable_shared]] std::unique_ptr<recording_state> recording = std::make_unique<recording_state>();
 	};
 
 	[[= gse::system_init{}]]

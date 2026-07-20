@@ -2,41 +2,64 @@ export module gse.ecs:shared_view;
 
 import std;
 import gse.meta;
+import gse.assert;
 
 import :traits;
 
 export namespace gse {
 	struct shared_tag {};
 	constexpr shared_tag shared{};
+	struct stable_shared_tag {};
+	constexpr stable_shared_tag stable_shared{};
 }
 
 namespace gse {
 	enum class publish_kind : std::uint8_t {
 		value,
-		decay,
+		stable_pointer,
+		owned_snapshot,
 		live
 	};
 
 	template <typename T>
-	struct unique_ptr_traits {
-		static constexpr bool is_unique_ptr = false;
+	struct pointer_like_traits {
+		static constexpr bool is_unique = false;
+		static constexpr bool is_shared = false;
 	};
 
 	template <typename T, typename D>
-	struct unique_ptr_traits<std::unique_ptr<T, D>> {
-		static constexpr bool is_unique_ptr = true;
+	struct pointer_like_traits<std::unique_ptr<T, D>> {
+		static constexpr bool is_unique = true;
+		static constexpr bool is_shared = false;
 		using pointee = T;
 	};
 
 	template <typename T>
+	struct pointer_like_traits<std::shared_ptr<T>> {
+		static constexpr bool is_unique = false;
+		static constexpr bool is_shared = true;
+		using pointee = T;
+	};
+
+	template <typename T, std::meta::info Member>
 	consteval auto publish_kind_of() -> publish_kind {
-		if constexpr (unique_ptr_traits<T>::is_unique_ptr) {
-			return publish_kind::decay;
+		if constexpr (pointer_like_traits<T>::is_unique) {
+			static_assert(has_annotation<stable_shared_tag>(Member), "shared unique_ptr fields must use the stable_shared annotation");
+			static_assert(!has_annotation<shared_tag>(Member), "stable shared unique_ptr fields must not also use the shared annotation");
+			return publish_kind::stable_pointer;
+		}
+		else if constexpr (pointer_like_traits<T>::is_shared) {
+			using pointee = typename pointer_like_traits<T>::pointee;
+			static_assert(std::is_const_v<pointee>, "shared_ptr fields published through shared_view must point to const data");
+			static_assert(!has_annotation<stable_shared_tag>(Member), "stable_shared is only for unique_ptr fields");
+			return publish_kind::owned_snapshot;
 		}
 		else if constexpr (std::is_trivially_copyable_v<T> && std::is_copy_assignable_v<T>) {
+			static_assert(!has_annotation<stable_shared_tag>(Member), "stable_shared is only for unique_ptr fields");
 			return publish_kind::value;
 		}
 		else {
+			static_assert(!has_annotation<stable_shared_tag>(Member), "stable_shared is only for unique_ptr fields");
 			return publish_kind::live;
 		}
 	}
@@ -45,7 +68,7 @@ namespace gse {
 	consteval auto shared_member_infos() {
 		std::vector<std::meta::info> members;
 		for (auto m : std::meta::nonstatic_data_members_of(^^Data, std::meta::access_context::unchecked())) {
-			if (has_annotation<shared_tag>(m)) {
+			if (has_annotation<shared_tag>(m) || has_annotation<stable_shared_tag>(m)) {
 				members.push_back(m);
 			}
 		}
@@ -61,9 +84,18 @@ namespace gse {
 		template for (constexpr auto m : shared_members_v<Data>) {
 			constexpr auto field_type = std::meta::dealias(std::meta::type_of(m));
 			using field_t = typename[:field_type:];
-			if constexpr (publish_kind_of<field_t>() == publish_kind::decay) {
+			constexpr auto kind = publish_kind_of<field_t, m>();
+			if constexpr (kind == publish_kind::stable_pointer) {
 				specs.push_back(std::meta::data_member_spec(
-					std::meta::add_pointer(std::meta::dealias(^^typename unique_ptr_traits<field_t>::pointee)),
+					std::meta::add_pointer(std::meta::dealias(^^typename pointer_like_traits<field_t>::pointee)),
+					{
+						.name = std::meta::identifier_of(m)
+					}
+				));
+			}
+			else if constexpr (kind == publish_kind::owned_snapshot || kind == publish_kind::value) {
+				specs.push_back(std::meta::data_member_spec(
+					field_type,
 					{
 						.name = std::meta::identifier_of(m)
 					}
@@ -87,16 +119,16 @@ namespace gse {
 		template for (constexpr auto m : shared_members_v<Data>) {
 			constexpr auto field_type = std::meta::dealias(std::meta::type_of(m));
 			using field_t = typename[:field_type:];
-			constexpr auto kind = publish_kind_of<field_t>();
-			if constexpr (kind == publish_kind::decay) {
+			constexpr auto kind = publish_kind_of<field_t, m>();
+			if constexpr (kind == publish_kind::stable_pointer) {
 				specs.push_back(std::meta::data_member_spec(
-					std::meta::add_pointer(std::meta::dealias(^^typename unique_ptr_traits<field_t>::pointee)),
+					std::meta::add_pointer(std::meta::dealias(^^typename pointer_like_traits<field_t>::pointee)),
 					{
 						.name = std::meta::identifier_of(m)
 					}
 				));
 			}
-			else if constexpr (kind == publish_kind::value) {
+			else if constexpr (kind == publish_kind::owned_snapshot || kind == publish_kind::value) {
 				specs.push_back(std::meta::data_member_spec(
 					field_type,
 					{
@@ -223,7 +255,8 @@ template <typename Data, std::size_t I>
 auto gse::live_shared_field(const Data& d) -> decltype(auto) {
 	constexpr auto m = shared_members_v<Data>[I];
 	using field_t = typename[:std::meta::dealias(std::meta::type_of(m)):];
-	if constexpr (publish_kind_of<field_t>() == publish_kind::decay) {
+	constexpr auto kind = publish_kind_of<field_t, m>();
+	if constexpr (kind == publish_kind::stable_pointer) {
 		return d.[:m:].get();
 	}
 	else {
@@ -236,12 +269,9 @@ auto gse::snapshot_shared_field(const shared_snapshot<Data>& s) -> decltype(auto
 	constexpr auto m = shared_members_v<Data>[I];
 	constexpr auto sm = snapshot_members_v<Data>[I];
 	using field_t = typename[:std::meta::dealias(std::meta::type_of(m)):];
-	constexpr auto kind = publish_kind_of<field_t>();
+	constexpr auto kind = publish_kind_of<field_t, m>();
 	if constexpr (kind == publish_kind::live) {
 		return (*s.[:sm:]);
-	}
-	else if constexpr (kind == publish_kind::decay) {
-		return s.[:sm:];
 	}
 	else {
 		return (s.[:sm:]);
@@ -253,11 +283,12 @@ auto gse::copy_shared_field(const Data& d, shared_snapshot<Data>& out) -> void {
 	constexpr auto m = shared_members_v<Data>[I];
 	constexpr auto sm = snapshot_members_v<Data>[I];
 	using field_t = typename[:std::meta::dealias(std::meta::type_of(m)):];
-	constexpr auto kind = publish_kind_of<field_t>();
-	if constexpr (kind == publish_kind::decay) {
+	constexpr auto kind = publish_kind_of<field_t, m>();
+	if constexpr (kind == publish_kind::stable_pointer) {
+		assert(out.[:sm:] == nullptr || out.[:sm:] == d.[:m:].get(), "stable shared field '{}' was reseated", std::meta::identifier_of(m));
 		out.[:sm:] = d.[:m:].get();
 	}
-	else if constexpr (kind == publish_kind::value) {
+	else if constexpr (kind == publish_kind::owned_snapshot || kind == publish_kind::value) {
 		out.[:sm:] = d.[:m:];
 	}
 	else {

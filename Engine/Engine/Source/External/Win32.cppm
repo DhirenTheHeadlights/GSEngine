@@ -19,6 +19,8 @@ module;
 
 export module gse.win32;
 
+import std;
+
 #ifdef _WIN32
 export namespace gse::win32 {
 	using ::HWND;
@@ -83,6 +85,9 @@ export namespace gse::win32 {
 	using ::HANDLE;
 	using ::HMODULE;
 	using ::LONG;
+	using ::BOOL;
+	using ::SIZE_T;
+	using ::DWORD_PTR;
 	using ::PVOID;
 	using ::DWORD64;
 	using ::CONTEXT;
@@ -90,8 +95,10 @@ export namespace gse::win32 {
 	using ::EXCEPTION_POINTERS;
 	using ::EXCEPTION_RECORD;
 	using ::STARTUPINFOW;
+	using ::STARTUPINFOEXW;
 	using ::PROCESS_INFORMATION;
 	using ::SECURITY_ATTRIBUTES;
+	using ::LPPROC_THREAD_ATTRIBUTE_LIST;
 
 	using ::DuplicateHandle;
 	using ::OpenProcess;
@@ -108,6 +115,10 @@ export namespace gse::win32 {
 	using ::AddVectoredExceptionHandler;
 	using ::GetLastError;
 	using ::CreateProcessW;
+	using ::TerminateProcess;
+	using ::InitializeProcThreadAttributeList;
+	using ::UpdateProcThreadAttribute;
+	using ::DeleteProcThreadAttributeList;
 	using ::CreateJobObjectW;
 	using ::AssignProcessToJobObject;
 	using ::TerminateJobObject;
@@ -119,8 +130,8 @@ export namespace gse::win32 {
 	using ::WaitForSingleObject;
 	using ::GetExitCodeProcess;
 	using ::MoveFileExW;
-	using ::GetEnvironmentVariableW;
-	using ::SetEnvironmentVariableW;
+	using ::GetEnvironmentStringsW;
+	using ::FreeEnvironmentStringsW;
 	using ::MultiByteToWideChar;
 	using ::CreateNamedPipeW;
 	using ::ConnectNamedPipe;
@@ -138,18 +149,31 @@ export namespace gse::win32 {
 	constexpr int max_path = MAX_PATH;
 	constexpr DWORD startf_use_std_handles = STARTF_USESTDHANDLES;
 	constexpr DWORD create_no_window = CREATE_NO_WINDOW;
+	constexpr DWORD create_unicode_environment = CREATE_UNICODE_ENVIRONMENT;
+	constexpr DWORD extended_startupinfo_present = EXTENDED_STARTUPINFO_PRESENT;
+	constexpr DWORD_PTR proc_thread_attribute_handle_list = PROC_THREAD_ATTRIBUTE_HANDLE_LIST;
 	constexpr DWORD infinite = INFINITE;
+	constexpr DWORD wait_timeout = WAIT_TIMEOUT;
 	constexpr DWORD handle_flag_inherit = HANDLE_FLAG_INHERIT;
 	constexpr DWORD movefile_replace_existing = MOVEFILE_REPLACE_EXISTING;
 	constexpr UINT cp_utf8 = CP_UTF8;
 	constexpr DWORD pipe_access_duplex = PIPE_ACCESS_DUPLEX;
+	constexpr DWORD pipe_access_inbound = PIPE_ACCESS_INBOUND;
 	constexpr DWORD pipe_type_byte = PIPE_TYPE_BYTE;
 	constexpr DWORD pipe_wait = PIPE_WAIT;
 	constexpr DWORD pipe_unlimited_instances = PIPE_UNLIMITED_INSTANCES;
 	constexpr DWORD generic_read = GENERIC_READ;
 	constexpr DWORD generic_write = GENERIC_WRITE;
 	constexpr DWORD open_existing = OPEN_EXISTING;
+	constexpr DWORD create_always = CREATE_ALWAYS;
+	constexpr DWORD file_share_read = FILE_SHARE_READ;
+	constexpr DWORD file_share_write = FILE_SHARE_WRITE;
+	constexpr DWORD file_attribute_normal = FILE_ATTRIBUTE_NORMAL;
 	constexpr DWORD error_pipe_connected = ERROR_PIPE_CONNECTED;
+
+	auto environment_with_path_prefix(
+		std::wstring_view path
+	) -> std::vector<wchar_t>;
 
 	constexpr LONG exception_continue_search = EXCEPTION_CONTINUE_SEARCH;
 	constexpr DWORD exception_access_violation = EXCEPTION_ACCESS_VIOLATION;
@@ -202,5 +226,107 @@ export namespace gse::win32 {
 	auto valid_handle(HANDLE handle) -> bool {
 		return handle != nullptr && handle != INVALID_HANDLE_VALUE;
 	}
+}
+
+namespace gse::win32 {
+	auto environment_character(const wchar_t value) -> wchar_t;
+
+	auto environment_less(
+		std::wstring_view lhs,
+		std::wstring_view rhs
+	) -> bool;
+
+	auto environment_name_is_path(
+		std::wstring_view entry
+	) -> bool;
+
+	auto same_environment_path(
+		std::wstring_view lhs,
+		std::wstring_view rhs
+	) -> bool;
+}
+
+auto gse::win32::environment_character(const wchar_t value) -> wchar_t {
+	return static_cast<wchar_t>(std::towlower(value));
+}
+
+auto gse::win32::environment_less(const std::wstring_view lhs, const std::wstring_view rhs) -> bool {
+	return std::ranges::lexicographical_compare(
+		lhs,
+		rhs,
+		std::ranges::less{},
+		environment_character,
+		environment_character
+	);
+}
+
+auto gse::win32::environment_name_is_path(const std::wstring_view entry) -> bool {
+	constexpr std::wstring_view name = L"PATH=";
+	return entry.size() >= name.size() && std::ranges::equal(
+		entry.substr(0, name.size()),
+		name,
+		std::ranges::equal_to{},
+		environment_character,
+		environment_character
+	);
+}
+
+auto gse::win32::same_environment_path(std::wstring_view lhs, std::wstring_view rhs) -> bool {
+	while (!lhs.empty() && (lhs.back() == L'\\' || lhs.back() == L'/')) {
+		lhs.remove_suffix(1);
+	}
+	while (!rhs.empty() && (rhs.back() == L'\\' || rhs.back() == L'/')) {
+		rhs.remove_suffix(1);
+	}
+	return std::ranges::equal(
+		lhs,
+		rhs,
+		std::ranges::equal_to{},
+		environment_character,
+		environment_character
+	);
+}
+
+auto gse::win32::environment_with_path_prefix(const std::wstring_view path) -> std::vector<wchar_t> {
+	wchar_t* current = GetEnvironmentStringsW();
+	if (!current) {
+		return {};
+	}
+
+	std::vector<std::wstring> entries;
+	for (const wchar_t* entry = current; *entry; entry += std::wcslen(entry) + 1) {
+		entries.emplace_back(entry);
+	}
+	FreeEnvironmentStringsW(current);
+
+	if (!path.empty()) {
+		const auto existing = std::ranges::find_if(entries, environment_name_is_path);
+		if (existing == entries.end()) {
+			entries.emplace_back(L"PATH=" + std::wstring(path));
+		}
+		else {
+			constexpr std::size_t value_offset = 5;
+			const std::wstring_view value(*existing);
+			const std::size_t separator = value.find(L';', value_offset);
+			const std::wstring_view first = value.substr(value_offset, separator == std::wstring_view::npos ? separator : separator - value_offset);
+			if (!same_environment_path(first, path)) {
+				*existing = L"PATH=" + std::wstring(path) + L';' + existing->substr(value_offset);
+			}
+		}
+	}
+
+	std::ranges::sort(entries, environment_less);
+	std::size_t size = 1;
+	for (const std::wstring& entry : entries) {
+		size += entry.size() + 1;
+	}
+	std::vector<wchar_t> result;
+	result.reserve(size);
+	for (const std::wstring& entry : entries) {
+		result.insert(result.end(), entry.begin(), entry.end());
+		result.push_back(L'\0');
+	}
+	result.push_back(L'\0');
+	return result;
 }
 #endif

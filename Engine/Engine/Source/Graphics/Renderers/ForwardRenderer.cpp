@@ -405,8 +405,8 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 	const auto camera_ubo_slot = d.camera_ubo_buffers[frame_index].slot();
 	const auto lights_slot = d.light_buffers[frame_index].slot();
 	const auto scene_tlas = gpu::make_acceleration_structure_arg(d.tlas_addresses[frame_index], d.tlas_slots[frame_index].slot());
-	const auto light_index_list_slot = lc_r.light_index_list_buffers[frame_index].slot();
-	const auto tile_light_table_slot = lc_r.tile_light_table_buffers[frame_index].slot();
+	const auto light_index_list_slot = gpu_s.device->buffer_slot(lc_r.light_index_list_buffers[frame_index]);
+	const auto tile_light_table_slot = gpu_s.device->buffer_slot(lc_r.tile_light_table_buffers[frame_index]);
 	const auto material_palette_slot = gc_r.material_palette_buffers[frame_index].slot();
 	const auto atmosphere_ubo_slot = atm_state.atmosphere_ubo_buffer.slot();
 	const auto instance_data_slot = gc_r.instance_buffer[frame_index].slot();
