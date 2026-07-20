@@ -18,8 +18,7 @@ export namespace gse::ide::analysis {
 	};
 
 	struct compilation_database {
-		std::vector<compilation_entry> entries;
-		std::unordered_map<std::string, std::size_t> entry_ids;
+		gse::id_mapped_collection<compilation_entry> entries;
 		std::uint64_t content_hash = 0;
 
 		auto find(const std::filesystem::path& file) const -> const compilation_entry*;
@@ -38,20 +37,7 @@ namespace gse::ide::analysis {
 	};
 
 	inline std::mutex compilation_database_cache_mutex;
-	inline std::unordered_map<std::string, compilation_database_cache_entry> compilation_database_cache;
-
-	auto normalized_path_key(const std::filesystem::path& path) -> std::string {
-		std::string key = path.lexically_normal().generic_native_encoded_string();
-		for (char& c : key) {
-			if (c == '\\') {
-				c = '/';
-			}
-			else {
-				c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-			}
-		}
-		return key;
-	}
+	inline std::unordered_map<gse::id, compilation_database_cache_entry> compilation_database_cache;
 
 	auto tokenize_command(std::string_view command) -> std::vector<std::string> {
 		std::vector<std::string> tokens;
@@ -152,11 +138,10 @@ namespace gse::ide::analysis {
 			return {};
 		}
 
-		auto database = std::make_shared<compilation_database>();
-		database->content_hash = stable_id(text);
-		database->entries.reserve(root->children.size());
-		database->entry_ids.reserve(root->children.size());
-		for (const json::value& value : root->children) {
+	auto database = std::make_shared<compilation_database>();
+	database->content_hash = stable_id(text);
+	database->entries.reserve(root->children.size());
+	for (const json::value& value : root->children) {
 			const json::value* file_value = value.find("file");
 			if (!file_value || file_value->as_string().empty()) {
 				continue;
@@ -182,32 +167,29 @@ namespace gse::ide::analysis {
 			}
 			compilation_entry entry{
 				.file = file,
-				.command = make_check_command(std::move(tokens), directory),
-			};
-			const std::string key = normalized_path_key(file);
-			if (const auto it = database->entry_ids.find(key); it != database->entry_ids.end()) {
-				database->entries[it->second] = std::move(entry);
-			}
-			else {
-				const std::size_t id = database->entries.size();
-				database->entries.push_back(std::move(entry));
-				database->entry_ids.emplace(key, id);
-			}
+			.command = make_check_command(std::move(tokens), directory),
+		};
+		const gse::id file_id = gse::generate_temp_id(file);
+		if (compilation_entry* existing = database->entries.try_get(file_id)) {
+			*existing = std::move(entry);
+		}
+		else {
+			database->entries.add(file_id, std::move(entry));
+		}
 		}
 		return database;
 	}
 }
 
 auto gse::ide::analysis::compilation_database::find(const std::filesystem::path& file) const -> const compilation_entry* {
-	const auto it = entry_ids.find(normalized_path_key(file));
-	return it == entry_ids.end() ? nullptr : &entries[it->second];
+	return entries.try_get(gse::generate_temp_id(file));
 }
 
 auto gse::ide::analysis::load_compilation_database(const std::filesystem::path& path) -> std::shared_ptr<const compilation_database> {
 	std::error_code canonical_ec;
 	const std::filesystem::path canonical = std::filesystem::weakly_canonical(path, canonical_ec);
 	const std::filesystem::path resolved = canonical_ec ? path.lexically_normal() : canonical;
-	const std::string key = normalized_path_key(resolved);
+	const gse::id database_id = gse::generate_temp_id(resolved);
 
 	std::error_code time_ec;
 	const std::filesystem::file_time_type modified = std::filesystem::last_write_time(resolved, time_ec);
@@ -219,7 +201,7 @@ auto gse::ide::analysis::load_compilation_database(const std::filesystem::path& 
 
 	{
 		std::lock_guard lock(compilation_database_cache_mutex);
-		if (const auto it = compilation_database_cache.find(key); it != compilation_database_cache.end() && it->second.modified == modified && it->second.size == size) {
+		if (const auto it = compilation_database_cache.find(database_id); it != compilation_database_cache.end() && it->second.modified == modified && it->second.size == size) {
 			return it->second.database;
 		}
 	}
@@ -237,7 +219,7 @@ auto gse::ide::analysis::load_compilation_database(const std::filesystem::path& 
 
 	{
 		std::lock_guard lock(compilation_database_cache_mutex);
-		compilation_database_cache[key] = {
+		compilation_database_cache[database_id] = {
 			.modified = modified,
 			.size = size,
 			.database = database,

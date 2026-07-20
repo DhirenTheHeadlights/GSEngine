@@ -38,7 +38,7 @@ export namespace gse::ide {
 		diagnostic_source source = diagnostic_source::compiler;
 		std::string rule;
 		std::string message;
-		std::string file;
+		std::filesystem::path file;
 		std::optional<fix_it> fix;
 	};
 
