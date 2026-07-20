@@ -67,14 +67,14 @@ auto gse::gui::popout_close_button_rect(const rectf& title_bar_rect, const style
 }
 
 auto gse::gui::tab_chrome_height(const data& d, const menu& m, const float width) -> float {
-	if (m.tab_contents.size() <= 1 || !d.gui_font.valid()) {
+	if (m.tab_contents.size() <= 1 || !d.fonts.text.valid()) {
 		return d.fstate.sty.title_bar_height;
 	}
 
 	const style& sty = d.fstate.sty;
-	const float row_h = d.gui_font->line_height(sty.font_size) + sty.padding;
-	constexpr float tab_gap = 2.f;
-	constexpr float scrollbar_h = 6.f;
+	const float row_h = d.fonts.text->line_height(sty.font_size) + sty.padding;
+	const float tab_gap = 2.f * sty.scale_factor;
+	const float scrollbar_h = 6.f * sty.scale_factor;
 	const float available_width = std::max(0.f, width - sty.padding * 2.f);
 
 	std::vector<tab_desc> descs;
@@ -83,10 +83,10 @@ auto gse::gui::tab_chrome_height(const data& d, const menu& m, const float width
 		descs.push_back({ .caption = tag });
 	}
 
-	const tab_strip_metrics metrics = tab_strip_measure(d.gui_font, sty, descs, available_width, 60.f, 200.f);
+	const tab_strip_metrics metrics = tab_strip_measure(d.fonts.text, sty, descs, available_width, 60.f, 200.f);
 	const std::uint32_t rows = std::max(1u, std::min(metrics.required_rows, std::max(1u, m.tab_bar.visible_rows)));
 	const float scrollbar_extra = rows == 1 && metrics.content_extent > available_width ? scrollbar_h + tab_gap : 0.f;
-	return static_cast<float>(rows) * row_h + static_cast<float>(rows - 1) * tab_gap + scrollbar_extra + 4.f;
+	return static_cast<float>(rows) * row_h + static_cast<float>(rows - 1) * tab_gap + scrollbar_extra + 4.f * sty.scale_factor;
 }
 
 auto gse::gui::remove_tab_from_host(data& d, const std::string_view menu_name) -> void {
@@ -128,24 +128,49 @@ auto gse::gui::remove_tab_from_host(data& d, const std::string_view menu_name) -
 }
 
 auto gse::gui::init_body(context& ctx, const shared_view<window::data> window_s, const shared_view<asset::data> assets, data& d) -> async::task<> {
-	d.font.options = asset::enumerate_resources<font>();
-
-	if (d.font.options.empty()) {
-		d.font.options.push_back("default");
+	std::vector<std::string> font_names;
+	for (const std::string& name : asset::enumerate_resources<font>()) {
+		if (gse::exists("Fonts/" + name)) {
+			font_names.push_back(name);
+		}
 	}
 
-	if (d.font.value < 0 || d.font.value >= static_cast<int>(d.font.options.size())) {
-		d.font.value = 0;
+	d.ui_font.options = font_names;
+	d.code_font.options = font_names;
+
+	const auto index_of = [&](const std::string& name) -> int {
+		const auto it = std::ranges::find(d.ui_font.options, name);
+		if (it == d.ui_font.options.end()) {
+			return 0;
+		}
+		return static_cast<int>(std::ranges::distance(d.ui_font.options.begin(), it));
+	};
+
+	if (d.ui_font.value < 0 || d.ui_font.value >= static_cast<int>(d.ui_font.options.size())) {
+		d.ui_font.value = index_of("Inter-Regular");
+	}
+	if (d.code_font.value < 0 || d.code_font.value >= static_cast<int>(d.code_font.options.size())) {
+		d.code_font.value = index_of("MonaspaceNeon-Regular");
 	}
 
 	d.blank_texture = asset::queue<texture>(assets, "blank", vec4f(1, 1, 1, 1));
-	d.gui_font = co_await asset::load<gse::font>(ctx, assets, "Fonts/" + d.font.options[d.font.value]);
+
+	if (!d.ui_font.options.empty()) {
+		const std::string& ui_name = d.ui_font.options[d.ui_font.value];
+		const std::string& code_name = d.code_font.options[d.code_font.value];
+		d.fonts.text = co_await asset::load<gse::font>(ctx, assets, "Fonts/" + ui_name);
+		d.fonts.code = co_await asset::load<gse::font>(ctx, assets, "Fonts/" + code_name);
+		d.fonts.registry[ui_name] = d.fonts.text;
+		d.fonts.registry[code_name] = d.fonts.code;
+	}
+
 	while (asset::resource_state<texture>(assets, d.blank_texture.id()) != resource::state::loaded) {
 		co_await ctx.yield_tick();
 	}
 	d.menus = load(config::resource_path / d.file_path, d.menus);
 
-	d.last_font_index = d.font.value;
+	d.last_ui_font_index = d.ui_font.value;
+	d.last_code_font_index = d.code_font.value;
 
 	auto calculate_group_bounds = [&d](const id root_id) -> rectf {
 		const menu* root = d.menus.try_get(root_id);
@@ -318,7 +343,7 @@ auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_
 
 	d.fstate = {
 		.sty = frame_sty,
-		.active = d.gui_font.valid()
+		.active = d.fonts.text.valid()
 	};
 
 	d.hot_widget_id = {};
@@ -335,9 +360,10 @@ auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_
 		d.name_to_menu_id.emplace(stable_id(m.id().tag()), m.id());
 	}
 
-	if (d.font.value != d.last_font_index) {
+	if (d.ui_font.value != d.last_ui_font_index || d.code_font.value != d.last_code_font_index) {
 		reload_font(d, assets_s);
-		d.last_font_index = d.font.value;
+		d.last_ui_font_index = d.ui_font.value;
+		d.last_code_font_index = d.code_font.value;
 	}
 
 	const vec2f mouse_position = gse::input::current_state(input_state).mouse_position();
@@ -482,11 +508,11 @@ auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_
 		d.tooltip.text.clear();
 	}
 
-	if (d.tooltip.widget_id.exists() && d.tooltip.hover_time >= tooltip_state::show_delay && !d.tooltip.text.empty() && d.gui_font.valid()) {
+	if (d.tooltip.widget_id.exists() && d.tooltip.hover_time >= tooltip_state::show_delay && !d.tooltip.text.empty() && d.fonts.text.valid()) {
 		const float padding = d.fstate.sty.padding;
 		const float font_size = d.fstate.sty.font_size;
-		const float text_width = d.gui_font->width(d.tooltip.text, font_size);
-		const float text_height = d.gui_font->line_height(font_size);
+		const float text_width = d.fonts.text->width(d.tooltip.text, font_size);
+		const float text_height = d.fonts.text->line_height(font_size);
 
 		const float tooltip_width = text_width + padding * 2.f;
 		const float tooltip_height = text_height + padding;
@@ -528,9 +554,9 @@ auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_
 		});
 
 		d.text_commands.push_back({
-			.font = d.gui_font,
+			.font = d.fonts.text,
 			.text = d.tooltip.text,
-			.position = { tooltip_rect.left() + padding, tooltip_rect.center().y() + d.gui_font->vertical_center_offset(font_size) },
+			.position = { tooltip_rect.left() + padding, tooltip_rect.center().y() + d.fonts.text->vertical_center_offset(font_size) },
 			.scale = font_size,
 			.color = d.fstate.sty.color_text,
 			.layer = render_layer::modal,
@@ -737,7 +763,7 @@ auto gse::gui::process_menu(data& d, const gse::input::state& input_state, const
 		.current_menu = &current_menu,
 		.style = sty,
 		.input = input_state,
-		.font = d.gui_font,
+		.fonts = d.fonts,
 		.blank_texture = d.blank_texture,
 		.layout_cursor = layout_cursor,
 		.sprites = d.sprite_commands,
@@ -847,7 +873,7 @@ auto gse::gui::process_screen(data& d, const gse::input::state& input_state, con
 		.current_menu = &*d.screen_surface,
 		.style = sty,
 		.input = input_state,
-		.font = d.gui_font,
+		.fonts = d.fonts,
 		.blank_texture = d.blank_texture,
 		.layout_cursor = layout_cursor,
 		.sprites = d.sprite_commands,
@@ -918,8 +944,17 @@ auto gse::gui::apply_scale(const data& d, style sty, const float viewport_height
 }
 
 auto gse::gui::reload_font(data& d, const shared_view<asset::data> assets) -> void {
-	if (d.font.value >= 0 && d.font.value < static_cast<int>(d.font.options.size())) {
-		d.gui_font = asset::get<font>(assets, "Fonts/" + d.font.options[d.font.value]);
+	if (d.ui_font.value >= 0 && d.ui_font.value < static_cast<int>(d.ui_font.options.size())) {
+		if (const std::string& name = d.ui_font.options[d.ui_font.value]; gse::exists("Fonts/" + name)) {
+			d.fonts.text = asset::get<font>(assets, "Fonts/" + name);
+			d.fonts.registry[name] = d.fonts.text;
+		}
+	}
+	if (d.code_font.value >= 0 && d.code_font.value < static_cast<int>(d.code_font.options.size())) {
+		if (const std::string& name = d.code_font.options[d.code_font.value]; gse::exists("Fonts/" + name)) {
+			d.fonts.code = asset::get<font>(assets, "Fonts/" + name);
+			d.fonts.registry[name] = d.fonts.code;
+		}
 	}
 }
 
@@ -1008,11 +1043,11 @@ auto gse::gui::draw_menu_chrome(data& d, const gse::input::state& input_state, m
 			.corner_radius = menu_radius
 		});
 
-		if (d.gui_font.valid() && !current_menu.tab_contents.empty()) {
+		if (d.fonts.text.valid() && !current_menu.tab_contents.empty()) {
 			d.text_commands.push_back({
-				.font = d.gui_font,
+				.font = d.fonts.text,
 				.text = current_menu.tab_contents[0],
-				.position = { title_bar_rect.left() + sty.padding, title_bar_rect.center().y() + d.gui_font->vertical_center_offset(sty.font_size) },
+				.position = { title_bar_rect.left() + sty.padding, title_bar_rect.center().y() + d.fonts.text->vertical_center_offset(sty.font_size) },
 				.scale = sty.font_size,
 				.clip_rect = title_bar_rect,
 				.layer = layer
@@ -1067,7 +1102,7 @@ auto gse::gui::draw_tab_bar(data& d, const gse::input::state& input_state, menu&
 		.layer = layer
 	});
 
-	if (current_menu.tab_contents.empty() || !d.gui_font.valid()) {
+	if (current_menu.tab_contents.empty() || !d.fonts.text.valid()) {
 		return;
 	}
 
@@ -1085,7 +1120,7 @@ auto gse::gui::draw_tab_bar(data& d, const gse::input::state& input_state, menu&
 		.current_menu = &current_menu,
 		.style = sty,
 		.input = input_state,
-		.font = d.gui_font,
+		.fonts = d.fonts,
 		.blank_texture = d.blank_texture,
 		.layout_cursor = dummy_cursor,
 		.sprites = d.sprite_commands,
@@ -1124,7 +1159,7 @@ auto gse::gui::process_context_menu(data& d, const gse::input::state& input_stat
 	if (!cm.open) {
 		return;
 	}
-	if (!d.gui_font.valid() || cm.items.empty()) {
+	if (!d.fonts.text.valid() || cm.items.empty()) {
 		cm.open = false;
 		return;
 	}
@@ -1134,12 +1169,12 @@ auto gse::gui::process_context_menu(data& d, const gse::input::state& input_stat
 	constexpr render_layer layer = render_layer::popup;
 	constexpr std::uint32_t base_z = 4000;
 
-	const float row_h = d.gui_font->line_height(sty.font_size) + sty.padding * 0.5f;
+	const float row_h = d.fonts.text->line_height(sty.font_size) + sty.padding * 0.5f;
 	const float sep_h = sty.padding * 0.5f;
 
 	float max_label = 0.f;
 	for (const menu_item& it : cm.items) {
-		max_label = std::max(max_label, d.gui_font->width(it.label, sty.font_size));
+		max_label = std::max(max_label, d.fonts.text->width(it.label, sty.font_size));
 	}
 	const bool any_icon = std::ranges::any_of(cm.items, [](const menu_item& it) { return it.icon != nullptr; });
 	const float icon_col = any_icon ? sty.font_size : 0.f;
@@ -1221,9 +1256,9 @@ auto gse::gui::process_context_menu(data& d, const gse::input::state& input_stat
 			});
 		}
 		d.text_commands.push_back({
-			.font = d.gui_font,
+			.font = d.fonts.text,
 			.text = it.label,
-			.position = { row.left() + sty.padding * 1.5f + icon_col, row.center().y() + d.gui_font->vertical_center_offset(sty.font_size) },
+			.position = { row.left() + sty.padding * 1.5f + icon_col, row.center().y() + d.fonts.text->vertical_center_offset(sty.font_size) },
 			.scale = sty.font_size,
 			.color = text_color,
 			.clip_rect = row,
@@ -1509,13 +1544,13 @@ auto gse::gui::handle_idle_state(data& d, const gse::input::state& input_state, 
 
 				std::optional<std::uint32_t> clicked_tab;
 
-				if (current_menu.tab_contents.size() > 1 && d.gui_font.valid()) {
+				if (current_menu.tab_contents.size() > 1 && d.fonts.text.valid()) {
 					std::vector<tab_desc> descs;
 					descs.reserve(current_menu.tab_contents.size());
 					for (std::size_t i = 0; i < current_menu.tab_contents.size(); ++i) {
 						descs.push_back({ .id = i + 1, .caption = current_menu.tab_contents[i] });
 					}
-					const std::vector<tab_strip_placement> placements = tab_strip_layout(d.gui_font, d.fstate.sty, title_bar_rect, descs, current_menu.tab_bar, tab_overflow::wrap, 60.f, 200.f);
+					const std::vector<tab_strip_placement> placements = tab_strip_layout(d.fonts.text, d.fstate.sty, title_bar_rect, descs, current_menu.tab_bar, tab_overflow::wrap, 60.f, 200.f);
 					for (const tab_strip_placement& p : placements) {
 						if (p.rect.intersection(title_bar_rect).contains(mouse_position)) {
 							clicked_tab = static_cast<std::uint32_t>(p.index);

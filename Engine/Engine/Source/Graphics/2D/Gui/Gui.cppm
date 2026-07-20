@@ -53,9 +53,14 @@ export namespace gse::gui {
 		float ui_scale = 1.0f;
 
 		[[
-			= gse::settings::describe<"Font used to render text in the UI.">{}
+			= gse::settings::describe<"Font used for UI text: labels, menus, and controls.">{}
 		]]
-		gse::settings::choice<int> font;
+		gse::settings::choice<int> ui_font{ .value = -1 };
+
+		[[
+			= gse::settings::describe<"Font used for code, terminals, and numeric readouts.">{}
+		]]
+		gse::settings::choice<int> code_font{ .value = -1 };
 
 		[[
 			= gse::settings::describe<"Show developer overlays (Test, Profiler, Physics Debug).">{},
@@ -70,7 +75,7 @@ export namespace gse::gui {
 		[[= gse::shared]] id_mapped_collection<menu> menus;
 		menu* current_menu = nullptr;
 
-		[[= gse::shared]] resource::handle<gse::font> gui_font;
+		[[= gse::shared]] font_set fonts;
 		[[= gse::shared]] resource::handle<texture> blank_texture;
 
 		std::optional<dock::space> active_dock_space;
@@ -86,7 +91,8 @@ export namespace gse::gui {
 		frame_state fstate{};
 		draw_context* context = nullptr;
 
-		int last_font_index = 0;
+		int last_ui_font_index = 0;
+		int last_code_font_index = 0;
 
 		std::vector<renderer::sprite_command> sprite_commands;
 		std::vector<renderer::text_command> text_commands;

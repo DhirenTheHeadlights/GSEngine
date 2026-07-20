@@ -13,6 +13,7 @@ import gse.diag;
 import gse.ecs;
 import gse.math;
 import :types;
+import :font;
 import :ids;
 import :styles;
 import :builder;
@@ -24,6 +25,7 @@ export namespace gse::gui {
 		struct params {
 			std::string_view text;
 			bool selected = false;
+			resource::handle<font> font{};
 		};
 		static auto draw(
 			const draw_context& ctx,
@@ -36,13 +38,14 @@ export namespace gse::gui {
 }
 
 auto gse::gui::nav_item::draw(const draw_context& ctx, const params& p, id& hot, id& active, id&) -> bool {
+	const auto fnt = p.font.valid() ? p.font : ctx.fonts.text;
 	if (!ctx.current_menu) {
 		return false;
 	}
 
 	const id widget_id = ids::make(p.text);
 
-	const float widget_height = ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * 0.8f;
+	const float widget_height = fnt->line_height(ctx.style.font_size) + ctx.style.padding * 0.8f;
 	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding * 0.5f, 0.f });
 
 	const rectf row_rect = rectf::from_position_size(
@@ -92,9 +95,9 @@ auto gse::gui::nav_item::draw(const draw_context& ctx, const params& p, id& hot,
 	const vec4f text_color = p.selected ? ctx.style.color_text : ctx.style.color_text_secondary;
 	const float text_x = row_rect.left() + ctx.style.padding;
 	ctx.queue_text({
-		.font = ctx.font,
+		.font = fnt,
 		.text = std::string(p.text),
-		.position = { text_x, row_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
+		.position = { text_x, row_rect.center().y() + fnt->vertical_center_offset(ctx.style.font_size) },
 		.scale = ctx.style.font_size,
 		.color = text_color,
 		.clip_rect = row_rect,

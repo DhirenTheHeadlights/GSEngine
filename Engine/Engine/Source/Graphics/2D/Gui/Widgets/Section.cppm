@@ -2,6 +2,7 @@ export module gse.graphics:section_widget;
 
 import std;
 
+import gse.assets;
 import gse.core;
 import gse.containers;
 import gse.time;
@@ -10,6 +11,7 @@ import gse.diag;
 import gse.ecs;
 import gse.math;
 import :types;
+import :font;
 import :styles;
 import :layout_ops;
 import :builder;
@@ -24,6 +26,7 @@ export namespace gse::gui {
 			std::function<void()> on_action = {};
 			std::string_view secondary_action_icon = {};
 			std::function<void()> on_secondary_action = {};
+			resource::handle<font> font{};
 		};
 		static auto draw(
 			const draw_context& ctx,
@@ -36,6 +39,7 @@ export namespace gse::gui {
 }
 
 auto gse::gui::section::draw(const draw_context& ctx, params p, id&, id&, id&) -> void {
+	const auto fnt = p.font.valid() ? p.font : ctx.fonts.text;
 	if (!ctx.current_menu) {
 		return;
 	}
@@ -48,9 +52,9 @@ auto gse::gui::section::draw(const draw_context& ctx, params p, id&, id&, id&) -
 	lo::skip(ctx, sty.section_spacing_above);
 
 	const float header_size = sty.font_size * sty.section_header_size_mult;
-	const rectf header_row = lo::reserve_row(ctx, ctx.font->line_height(header_size));
+	const rectf header_row = lo::reserve_row(ctx, fnt->line_height(header_size));
 	const float title_top = header_row.top();
-	const float bar_height = ctx.font->line_height(header_size);
+	const float bar_height = fnt->line_height(header_size);
 
 	const rectf bar_rect = rectf::from_position_size(
 		{ content_rect.left(), title_top },
@@ -67,7 +71,7 @@ auto gse::gui::section::draw(const draw_context& ctx, params p, id&, id&, id&) -
 	const float text_left = content_rect.left() + sty.accent_bar_width + sty.padding * 0.6f;
 
 	ctx.queue_text({
-		.font = ctx.font,
+		.font = fnt,
 		.text = std::string(p.title),
 		.position = { text_left, title_top },
 		.scale = header_size,
@@ -82,7 +86,7 @@ auto gse::gui::section::draw(const draw_context& ctx, params p, id&, id&, id&) -
 		if (!on_click || icon.empty()) {
 			return;
 		}
-		const float icon_w = ctx.font->width(icon, sty.font_size) + sty.padding;
+		const float icon_w = fnt->width(icon, sty.font_size) + sty.padding;
 		const rectf action_rect = rectf::from_position_size(
 			{ action_cursor_x - icon_w, title_top },
 			{ icon_w, action_height }
@@ -98,11 +102,11 @@ auto gse::gui::section::draw(const draw_context& ctx, params p, id&, id&, id&) -
 			.corner_radius = sty.corner_radius,
 		});
 
-		const float icon_text_w = ctx.font->width(icon, sty.font_size);
+		const float icon_text_w = fnt->width(icon, sty.font_size);
 		ctx.queue_text({
-			.font = ctx.font,
+			.font = fnt,
 			.text = std::string(icon),
-			.position = { action_rect.center().x() - icon_text_w * 0.5f, action_rect.center().y() + ctx.font->vertical_center_offset(sty.font_size) },
+			.position = { action_rect.center().x() - icon_text_w * 0.5f, action_rect.center().y() + fnt->vertical_center_offset(sty.font_size) },
 			.scale = sty.font_size,
 			.color = hovered ? sty.color_text : sty.color_text_secondary,
 			.clip_rect = action_rect,
@@ -120,9 +124,9 @@ auto gse::gui::section::draw(const draw_context& ctx, params p, id&, id&, id&) -
 
 	if (!p.subtitle.empty()) {
 		lo::skip(ctx, sty.item_spacing);
-		const rectf subtitle_row = lo::reserve_row(ctx, ctx.font->line_height(sty.font_size));
+		const rectf subtitle_row = lo::reserve_row(ctx, fnt->line_height(sty.font_size));
 		ctx.queue_text({
-			.font = ctx.font,
+			.font = fnt,
 			.text = std::string(p.subtitle),
 			.position = { text_left, subtitle_row.top() },
 			.scale = sty.font_size,

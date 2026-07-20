@@ -3,6 +3,7 @@ export module gse.graphics:graph_canvas_widget;
 import std;
 
 import gse.os;
+import gse.assets;
 import gse.core;
 import gse.math;
 
@@ -40,6 +41,7 @@ export namespace gse::gui {
 			std::span<const edge> edges;
 			vec4f background = { 0.09f, 0.10f, 0.13f, 1.f };
 			float label_scale = 1.f;
+			resource::handle<font> font{};
 		};
 
 		static auto draw(const draw_context& ctx, params p, id& hot, id& active, id& focus) -> result;
@@ -47,6 +49,7 @@ export namespace gse::gui {
 }
 
 auto gse::gui::graph_canvas::draw(const draw_context& ctx, params p, id& hot, id& active, id&) -> result {
+	const auto fnt = p.font.valid() ? p.font : ctx.fonts.text;
 	const rectf clip = p.area;
 
 	ctx.queue_sprite({
@@ -123,9 +126,9 @@ auto gse::gui::graph_canvas::draw(const draw_context& ctx, params p, id& hot, id
 			.max = { std::min(n.rect.right(), clip.right()), std::min(n.rect.top(), clip.top()) },
 		});
 		ctx.queue_text({
-			.font = ctx.font,
+			.font = fnt,
 			.text = std::string(n.label),
-			.position = { n.rect.left() + 6.f * p.label_scale, n.rect.center().y() + ctx.font->vertical_center_offset(label_font) },
+			.position = { n.rect.left() + 6.f * p.label_scale, n.rect.center().y() + fnt->vertical_center_offset(label_font) },
 			.scale = label_font,
 			.color = ctx.style.color_text,
 			.clip_rect = label_clip,

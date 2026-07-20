@@ -171,9 +171,9 @@ auto gse::gui::settings_screen::draw_header(draw_context& ctx, const gse::rect_t
 
 	const float title_size = sty.font_size * 1.6f;
 	ctx.queue_text({
-		.font = ctx.font,
+		.font = ctx.fonts.text,
 		.text = m_title,
-		.position = { rect.left() + sty.padding * 1.5f, rect.center().y() + ctx.font->vertical_center_offset(title_size) },
+		.position = { rect.left() + sty.padding * 1.5f, rect.center().y() + ctx.fonts.text->vertical_center_offset(title_size) },
 		.scale = title_size,
 		.color = sty.color_text,
 		.clip_rect = rect,
@@ -305,12 +305,12 @@ auto gse::gui::settings_screen::draw_footer_button(draw_context& ctx, const gse:
 		.corner_radius = sty.corner_radius,
 	});
 
-	const float text_width = ctx.font->width(label, sty.font_size);
+	const float text_width = ctx.fonts.text->width(label, sty.font_size);
 	const gse::vec4f text_color = enabled ? sty.color_text : sty.color_text_disabled;
 	ctx.queue_text({
-		.font = ctx.font,
+		.font = ctx.fonts.text,
 		.text = std::string(label),
-		.position = { rect.center().x() - text_width / 2.f, rect.center().y() + ctx.font->vertical_center_offset(sty.font_size) },
+		.position = { rect.center().x() - text_width / 2.f, rect.center().y() + ctx.fonts.text->vertical_center_offset(sty.font_size) },
 		.scale = sty.font_size,
 		.color = text_color,
 		.clip_rect = rect,
@@ -362,9 +362,9 @@ auto gse::gui::settings_screen::draw_footer(draw_context& ctx, const gse::rect_t
 
 	const gse::vec4f status_color = (can_apply || needs_restart) ? sty.color_accent : sty.color_text_secondary;
 	ctx.queue_text({
-		.font = ctx.font,
+		.font = ctx.fonts.text,
 		.text = m_footer_status.text,
-		.position = { rect.left() + sty.padding * 1.5f, rect.center().y() + ctx.font->vertical_center_offset(sty.font_size) },
+		.position = { rect.left() + sty.padding * 1.5f, rect.center().y() + ctx.fonts.text->vertical_center_offset(sty.font_size) },
 		.scale = sty.font_size,
 		.color = status_color,
 		.clip_rect = rect,

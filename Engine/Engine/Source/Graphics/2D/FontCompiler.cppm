@@ -62,7 +62,7 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 	}
 
 	const int glyph_count = static_cast<int>(codepoints.size());
-	constexpr int cell = 160;
+	constexpr int cell = 192;
 	constexpr int atlas_cols = 16;
 	const int atlas_rows = (glyph_count + atlas_cols - 1) / atlas_cols;
 	const int atlas_width = atlas_cols * cell;
@@ -167,7 +167,7 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 		const double translate_x = cell_em * 0.5 - (bounds.l + shape_w * 0.5);
 		const double translate_y = cell_em * 0.5 - (bounds.b + shape_h * 0.5);
 
-		msdfgen::edgeColoringByDistance(shape, 3.0);
+		msdfgen::edgeColoringInkTrap(shape, 3.0);
 		msdfgen::Bitmap<float, 4> mtsdf(cell, cell);
 		msdfgen::generateMTSDF(
 			mtsdf,

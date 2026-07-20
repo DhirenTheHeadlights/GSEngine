@@ -13,6 +13,7 @@ import gse.diag;
 import gse.ecs;
 import gse.math;
 import :types;
+import :font;
 import :ids;
 import :styles;
 import :builder;
@@ -41,7 +42,8 @@ export namespace gse::gui::draw {
 		text_input_state& state,
 		const rectf& box_rect,
 		id& hot_widget_id,
-		id& focus_widget_id
+		id& focus_widget_id,
+		resource::handle<font> font = {}
 	) -> void;
 
 	auto text_input(
@@ -50,7 +52,8 @@ export namespace gse::gui::draw {
 		std::string& buffer,
 		text_input_state& state,
 		id& hot_widget_id,
-		id& focus_widget_id
+		id& focus_widget_id,
+		resource::handle<font> font = {}
 	) -> void;
 }
 
@@ -61,14 +64,15 @@ export namespace gse::gui {
 			std::string_view name;
 			std::string& buffer;
 			text_input_state& state;
+			resource::handle<font> font{};
 		};
 		static auto draw(const draw_context& ctx, const params& p, id& hot, id&, id& focus) -> void {
-			draw::text_input(ctx, std::string(p.name), p.buffer, p.state, hot, focus);
+			draw::text_input(ctx, std::string(p.name), p.buffer, p.state, hot, focus, p.font);
 		}
 	};
 }
 
-auto gse::gui::draw::text_input(const draw_context& ctx, const std::string& name, std::string& buffer, text_input_state& state, id& hot_widget_id, id& focus_widget_id) -> void {
+auto gse::gui::draw::text_input(const draw_context& ctx, const std::string& name, std::string& buffer, text_input_state& state, id& hot_widget_id, id& focus_widget_id, const resource::handle<font> font) -> void {
 	if (!ctx.current_menu) {
 		return;
 	}
@@ -76,7 +80,7 @@ auto gse::gui::draw::text_input(const draw_context& ctx, const std::string& name
 	constexpr std::uint64_t input_suffix_hash = stable_id("##Input");
 	const id widget_id = ids::make_from_key(hash_combine(stable_id(name), input_suffix_hash));
 
-	const float widget_height = ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
+	const float widget_height = ctx.fonts.text->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
 	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
 
 	const rectf row_rect = rectf::from_position_size(
@@ -97,20 +101,21 @@ auto gse::gui::draw::text_input(const draw_context& ctx, const std::string& name
 	);
 
 	ctx.queue_text({
-		.font = ctx.font,
+		.font = ctx.fonts.text,
 		.text = name,
-		.position = { label_rect.left(), label_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
+		.position = { label_rect.left(), label_rect.center().y() + ctx.fonts.text->vertical_center_offset(ctx.style.font_size) },
 		.scale = ctx.style.font_size,
 		.color = ctx.style.color_text,
 		.clip_rect = label_rect
 	});
 
-	text_input_in_rect(ctx, widget_id, buffer, state, box_rect, hot_widget_id, focus_widget_id);
+	text_input_in_rect(ctx, widget_id, buffer, state, box_rect, hot_widget_id, focus_widget_id, font);
 
 	ctx.layout_cursor.y() -= widget_height + ctx.style.padding;
 }
 
-auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget_id, std::string& buffer, text_input_state& state, const rectf& box_rect, id& hot_widget_id, id& focus_widget_id) -> void {
+auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget_id, std::string& buffer, text_input_state& state, const rectf& box_rect, id& hot_widget_id, id& focus_widget_id, const resource::handle<font> font) -> void {
+	const auto fnt = font.valid() ? font : ctx.fonts.text;
 	state.caret = std::clamp(state.caret, 0, static_cast<int>(buffer.size()));
 	state.anchor = std::clamp(state.anchor, 0, static_cast<int>(buffer.size()));
 
@@ -133,7 +138,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 
 	auto pick_index_from_x = [&](const float x_local) -> int {
 		const int n = static_cast<int>(buffer.size());
-		const std::vector<float> offsets = ctx.font->caret_offsets(buffer, ctx.style.font_size);
+		const std::vector<float> offsets = fnt->caret_offsets(buffer, ctx.style.font_size);
 		float best_dx = std::numeric_limits<float>::max();
 		int best_k = 0;
 
@@ -407,7 +412,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			}
 		}
 
-		const float caret_x = ctx.font->width(buffer.substr(0, state.caret), ctx.style.font_size);
+		const float caret_x = fnt->width(buffer.substr(0, state.caret), ctx.style.font_size);
 
 		if (const float inner_r = box_rect.width() - 5.f; caret_x - state.scroll_x > inner_r) {
 			state.scroll_x = caret_x - inner_r;
@@ -441,12 +446,12 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 	constexpr float text_padding = 5.f;
 	const rectf clip_rect = box_rect.inset({ text_padding, 0.f });
 	const vec2f text_pos = { box_rect.left() + text_padding,
-							 box_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) };
+							 box_rect.center().y() + fnt->vertical_center_offset(ctx.style.font_size) };
 
 	if (focused && has_sel(state)) {
 		auto [a, b] = sel_range(state);
-		const float ax = ctx.font->width(buffer.substr(0, a), ctx.style.font_size) - state.scroll_x;
-		const float bx = ctx.font->width(buffer.substr(0, b), ctx.style.font_size) - state.scroll_x;
+		const float ax = fnt->width(buffer.substr(0, a), ctx.style.font_size) - state.scroll_x;
+		const float bx = fnt->width(buffer.substr(0, b), ctx.style.font_size) - state.scroll_x;
 
 		const rectf sel_rect = rectf::from_position_size(
 			{ text_pos.x() + ax, box_rect.top() - (box_rect.height() - ctx.style.font_size) / 2.f },
@@ -462,7 +467,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 	}
 
 	ctx.queue_text({
-		.font = ctx.font,
+		.font = fnt,
 		.text = buffer,
 		.position = { text_pos.x() - state.scroll_x, text_pos.y() },
 		.scale = ctx.style.font_size,
@@ -471,7 +476,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 	});
 
 	if (focused && state.blink_on) {
-		const float cx = ctx.font->width(buffer.substr(0, state.caret), ctx.style.font_size) - state.scroll_x;
+		const float cx = fnt->width(buffer.substr(0, state.caret), ctx.style.font_size) - state.scroll_x;
 		const rectf cursor_rect = rectf::from_position_size(
 			{ text_pos.x() + cx, box_rect.top() - (box_rect.height() - ctx.style.font_size) / 2.f },
 			{ 2.f, ctx.style.font_size }

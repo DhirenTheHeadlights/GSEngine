@@ -14,6 +14,7 @@ import gse.assets;
 import gse.gpu;
 
 import :types;
+import :font;
 import :ids;
 import :styles;
 import :builder;
@@ -48,6 +49,8 @@ export namespace gse::gui::draw {
 		std::function<void(const T&, const draw_context&, vec2f)> on_context = nullptr;
 
 		std::function<std::span<const symbol::stroke>(const T&)> icon = nullptr;
+
+		std::function<vec4f(const T&)> label_color = nullptr;
 	};
 
 	template <typename T>
@@ -57,7 +60,8 @@ export namespace gse::gui::draw {
 		const tree_ops<T>& fns,
 		tree_options opt,
 		tree_selection* sel,
-		id& active_widget_id
+		id& active_widget_id,
+		resource::handle<font> font = {}
 	) -> bool;
 }
 
@@ -70,9 +74,10 @@ export namespace gse::gui {
 			const draw::tree_ops<T>& ops;
 			draw::tree_options options = {};
 			draw::tree_selection* selection = nullptr;
+			resource::handle<font> font{};
 		};
 		static auto draw(draw_context& ctx, params p, id&, id& active, id&) -> bool {
-			return draw::tree(ctx, p.roots, p.ops, p.options, p.selection, active);
+			return draw::tree(ctx, p.roots, p.ops, p.options, p.selection, active, p.font);
 		}
 	};
 }
@@ -106,13 +111,15 @@ namespace gse::gui::draw {
 		tree_selection* sel,
 		std::uint64_t tree_scope,
 		int level,
-		id& active_widget_id
+		id& active_widget_id,
+		const resource::handle<font>& fnt
 	) -> bool;
 }
 
 template <typename T>
-auto gse::gui::draw::tree(const draw_context& ctx, std::span<const T> roots, const tree_ops<T>& fns, tree_options opt, tree_selection* sel, id& active_widget_id) -> bool {
-	if (!ctx.current_menu || !ctx.font.valid()) {
+auto gse::gui::draw::tree(const draw_context& ctx, std::span<const T> roots, const tree_ops<T>& fns, tree_options opt, tree_selection* sel, id& active_widget_id, const resource::handle<font> font) -> bool {
+	const auto fnt = font.valid() ? font : ctx.fonts.text;
+	if (!ctx.current_menu || !fnt.valid()) {
 		return false;
 	}
 
@@ -120,7 +127,7 @@ auto gse::gui::draw::tree(const draw_context& ctx, std::span<const T> roots, con
 	bool is_active = false;
 
 	for (const T& r : roots) {
-		is_active |= tree_node(ctx, r, fns, opt, sel, tree_scope, 0, active_widget_id);
+		is_active |= tree_node(ctx, r, fns, opt, sel, tree_scope, 0, active_widget_id, fnt);
 	}
 
 	return is_active;
@@ -150,8 +157,8 @@ auto gse::gui::draw::tree_node_is_leaf(const T& t, const tree_ops<T>& ops) -> bo
 }
 
 template <typename T>
-auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_ops<T>& ops, const tree_options& opt, tree_selection* sel, std::uint64_t tree_scope, int level, id& active_widget_id) -> bool {
-	const float row_height = ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
+auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_ops<T>& ops, const tree_options& opt, tree_selection* sel, std::uint64_t tree_scope, int level, id& active_widget_id, const resource::handle<font>& fnt) -> bool {
+	const float row_height = fnt->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
 	const float gap = row_height * opt.row_gap;
 	const rectf context_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
 	const float indent = std::max(0.f, opt.indent_per_level) * std::max(0, level);
@@ -255,11 +262,11 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 		);
 
 		ctx.queue_text({
-			.font = ctx.font,
+			.font = fnt,
 			.text = std::string(lbl),
-			.position = { label_rect.left(), label_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
+			.position = { label_rect.left(), label_rect.center().y() + fnt->vertical_center_offset(ctx.style.font_size) },
 			.scale = ctx.style.font_size,
-			.color = ctx.style.color_text,
+			.color = ops.label_color ? ops.label_color(t) : ctx.style.color_text,
 			.clip_rect = label_rect
 		});
 
@@ -306,7 +313,7 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 
 	if (is_open && !leaf && ops.children) {
 		for (const std::span<const T> kids = ops.children(t); const T& ch : kids) {
-			children_are_active |= tree_node(ctx, ch, ops, opt, sel, tree_scope, level + 1, active_widget_id);
+			children_are_active |= tree_node(ctx, ch, ops, opt, sel, tree_scope, level + 1, active_widget_id, fnt);
 		}
 	}
 

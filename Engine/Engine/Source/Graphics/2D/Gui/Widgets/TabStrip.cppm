@@ -51,6 +51,7 @@ export namespace gse::gui {
 		bool show_add = false;
 		float min_tab_extent = 64.f;
 		float max_tab_extent = 220.f;
+		resource::handle<font> font{};
 	};
 
 	struct tab_strip_result {
@@ -103,7 +104,7 @@ export namespace gse::gui {
 }
 
 namespace gse::gui {
-	constexpr float tab_gap = 2.f;
+	constexpr float base_tab_gap = 2.f;
 
 	auto draw_tab_spinner(const draw_context& ctx, const rectf& rect, vec4f color, angle rotation) -> void {
 		constexpr int segments = 9;
@@ -131,13 +132,14 @@ namespace gse::gui {
 		const float fs = sty.font_size;
 		const float caption_w = fnt->width(tab.caption, fs);
 		const float dirty_w = tab.dirty ? fnt->width("*", fs) + pad * 0.5f : 0.f;
-		return std::clamp(caption_w + dirty_w + pad * 3.f + close_extent, min_extent, max_extent);
+		return std::clamp(caption_w + dirty_w + pad * 3.f + close_extent, min_extent * sty.scale_factor, max_extent * sty.scale_factor);
 	}
 }
 
 auto gse::gui::tab_strip_measure(const resource::handle<font>& fnt, const style& sty, const std::span<const tab_desc> tabs, const float available_width, const float min_tab_extent, const float max_tab_extent) -> tab_strip_metrics {
 	const float pad = sty.padding;
 	const float close_extent = fnt->width("x", sty.font_size);
+	const float tab_gap = base_tab_gap * sty.scale_factor;
 
 	tab_strip_metrics metrics{};
 	float row_width = 0.f;
@@ -160,6 +162,7 @@ auto gse::gui::tab_strip_layout(const resource::handle<font>& fnt, const style& 
 	const float fs = sty.font_size;
 	const float close_extent = fnt->width("x", fs);
 	const float row_h = std::min(fnt->line_height(fs) + pad, area.height());
+	const float tab_gap = base_tab_gap * sty.scale_factor;
 
 	std::vector<float> widths;
 	widths.reserve(tabs.size());
@@ -213,7 +216,7 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 		return result;
 	}
 
-	const resource::handle<font>& fnt = ctx.font;
+	const resource::handle<font>& fnt = params.font.valid() ? params.font : ctx.fonts.text;
 	if (!fnt.valid()) {
 		return result;
 	}
@@ -251,7 +254,7 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 		));
 
 		ctx.queue_text({
-			.font = ctx.font,
+			.font = fnt,
 			.text = std::string(tab.caption),
 			.position = { rect.left() + pad, rect.center().y() + fnt->vertical_center_offset(fs) },
 			.scale = fs,
@@ -260,7 +263,7 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 		});
 		if (tab.dirty) {
 			ctx.queue_text({
-				.font = ctx.font,
+				.font = fnt,
 				.text = "*",
 				.position = { caption_right + pad * 0.25f, rect.center().y() + fnt->vertical_center_offset(fs) },
 				.scale = fs,
@@ -311,7 +314,8 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 		}
 		state.scroll.offset = std::clamp(state.scroll.offset, 0.f, max_scroll);
 
-		float active_top = area.top();
+		rectf active_bar{};
+		bool has_active = false;
 		float y = area.top() + state.scroll.offset;
 		for (std::size_t i = 0; i < params.tabs.size(); ++i) {
 			const tab_desc& tab = params.tabs[i];
@@ -326,7 +330,8 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 			const rectf close_rect = rectf::from_position_size({ cell.right() - cell_h, cell.top() }, { cell_h, cell_h });
 
 			if (is_active) {
-				active_top = cell.top();
+				active_bar = rectf::from_position_size({ area.left(), visible.top() }, { sty.accent_bar_width, visible.height() });
+				has_active = true;
 			}
 			draw_cell(cell, visible, close_rect, tab, is_active, hovered);
 
@@ -355,7 +360,7 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 					.texture = ctx.blank_texture,
 				});
 				ctx.queue_text({
-					.font = ctx.font,
+					.font = fnt,
 					.text = "+",
 					.position = { add_cell.center().x() - fnt->width("+", fs) * 0.5f, add_cell.center().y() + fnt->vertical_center_offset(fs) },
 					.scale = fs,
@@ -368,14 +373,17 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 			}
 		}
 
-		ctx.queue_sprite({
-			.rect = rectf::from_position_size({ area.left(), active_top }, { sty.accent_bar_width, std::max(0.f, active_top - area.bottom()) }),
-			.color = sty.color_accent,
-			.texture = ctx.blank_texture,
-		});
+		if (has_active) {
+			ctx.queue_sprite({
+				.rect = active_bar,
+				.color = sty.color_accent,
+				.texture = ctx.blank_texture,
+			});
+		}
 		return result;
 	}
 
+	const float tab_gap = base_tab_gap * sty.scale_factor;
 	const float total = tab_strip_measure(fnt, sty, params.tabs, area.width(), params.min_tab_extent, params.max_tab_extent).content_extent;
 	const bool overflow = total > area.width();
 
@@ -392,7 +400,7 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 			ctx.consume_scroll();
 		}
 		else if (std::abs(wheel.x()) > 0.001f || (shift && std::abs(wheel.y()) > 0.001f)) {
-			state.scroll.offset -= (wheel.x() + wheel.y()) * 80.f;
+			state.scroll.offset -= (wheel.x() + wheel.y()) * 80.f * sty.scale_factor;
 			state.scroll.target = state.scroll.offset;
 			ctx.consume_scroll();
 		}
@@ -495,7 +503,7 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 	}
 
 	if (single_row && overflow) {
-		constexpr float scrollbar_h = 6.f;
+		const float scrollbar_h = 6.f * sty.scale_factor;
 		const rectf track_rect = rectf::from_position_size({ area.left(), area.bottom() + scrollbar_h + 1.f }, { area.width(), scrollbar_h });
 		const scroll_bar_result bar = update_scroll_bar(state.scroll, {
 			.track_rect = track_rect,
@@ -505,7 +513,7 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 			.mouse = mouse,
 			.mouse_pressed = pressed,
 			.mouse_held = held,
-			.min_thumb = 24.f,
+			.min_thumb = 24.f * sty.scale_factor,
 		});
 		if (bar.used_press) {
 			ctx.consume_press(mouse_button::button_1);
