@@ -5,6 +5,8 @@ import std;
 export import :config_system;
 
 export namespace gse::ide::config {
+	const std::filesystem::path source_dir = "@EDITOR_SOURCE_DIR@";
+	const std::filesystem::path game_source_dir = "@GAME_SOURCE_DIR@";
 	const std::filesystem::path resource_path = "@EDITOR_RESOURCES_PATH@";
 	const std::filesystem::path token_plugin = "@EDITOR_TOKEN_PLUGIN@";
 	const std::filesystem::path cppref_index = "@EDITOR_CPPREF_INDEX@";

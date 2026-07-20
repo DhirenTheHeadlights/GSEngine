@@ -131,7 +131,7 @@ auto gse::ide::search_screen::draw_row(gse::gui::draw_context& ctx, const rectf&
 	});
 
 	const float text_x = icon_rect.right() + pad;
-	const float baseline = row.center().y() + ctx.font->vertical_center_offset(fs);
+	const float baseline = row.center().y() + ctx.fonts.text->vertical_center_offset(fs);
 
 	std::string location;
 	if (r.source != search::domain::file) {
@@ -140,13 +140,13 @@ auto gse::ide::search_screen::draw_row(gse::gui::draw_context& ctx, const rectf&
 			location = r.detail + "  " + location;
 		}
 	}
-	const float loc_w = location.empty() ? 0.f : ctx.font->width(location, fs);
+	const float loc_w = location.empty() ? 0.f : ctx.fonts.code->width(location, fs);
 	const float loc_x = row.right() - pad - loc_w;
 	if (!location.empty()) {
 		ctx.queue_text({
-			.font = ctx.font,
+			.font = ctx.fonts.code,
 			.text = location,
-			.position = { loc_x, baseline },
+			.position = { loc_x, row.center().y() + ctx.fonts.code->vertical_center_offset(fs) },
 			.scale = fs,
 			.color = sty.color_text_secondary,
 			.clip_rect = row,
@@ -159,7 +159,7 @@ auto gse::ide::search_screen::draw_row(gse::gui::draw_context& ctx, const rectf&
 	);
 
 	if (!r.highlight.empty()) {
-		const std::vector<float> offsets = ctx.font->caret_offsets(r.display, fs);
+		const std::vector<float> offsets = ctx.fonts.text->caret_offsets(r.display, fs);
 		for (const search::match_range& mr : r.highlight) {
 			const std::size_t a = std::min<std::size_t>(mr.start, r.display.size());
 			const std::size_t b = std::min<std::size_t>(mr.start + mr.length, r.display.size());
@@ -179,7 +179,7 @@ auto gse::ide::search_screen::draw_row(gse::gui::draw_context& ctx, const rectf&
 	}
 
 	ctx.queue_text({
-		.font = ctx.font,
+		.font = ctx.fonts.text,
 		.text = r.display,
 		.position = { text_x, baseline },
 		.scale = fs,
@@ -199,7 +199,7 @@ auto gse::ide::search_screen::build(gse::gui::builder& ui, gse::gui::nav&) -> vo
 	const rectf card = ctx.current_menu->rect;
 	const float pad = sty.padding;
 
-	const float input_h = ctx.font->line_height(sty.font_size) + pad;
+	const float input_h = ctx.fonts.text->line_height(sty.font_size) + pad;
 	const rectf input_rect = rectf::from_position_size(
 		{ card.left() + pad, card.top() - pad },
 		{ card.width() - pad * 2.f, input_h }
@@ -211,9 +211,9 @@ auto gse::ide::search_screen::build(gse::gui::builder& ui, gse::gui::nav&) -> vo
 
 	if (m_query.empty()) {
 		ctx.queue_text({
-			.font = ctx.font,
+			.font = ctx.fonts.text,
 			.text = "Search files, symbols, contents...",
-			.position = { input_rect.left() + pad, input_rect.center().y() + ctx.font->vertical_center_offset(sty.font_size) },
+			.position = { input_rect.left() + pad, input_rect.center().y() + ctx.fonts.text->vertical_center_offset(sty.font_size) },
 			.scale = sty.font_size,
 			.color = sty.color_text_secondary,
 			.clip_rect = input_rect,
@@ -274,7 +274,7 @@ auto gse::ide::search_screen::build(gse::gui::builder& ui, gse::gui::nav&) -> vo
 		{ card.left() + pad, list_top },
 		{ card.width() - pad * 2.f, std::max(0.f, list_top - list_bottom) }
 	);
-	const float row_h = ctx.font->line_height(sty.font_size) + pad;
+	const float row_h = ctx.fonts.text->line_height(sty.font_size) + pad;
 
 	ctx.layout_cursor = { list_rect.left(), list_rect.top() };
 

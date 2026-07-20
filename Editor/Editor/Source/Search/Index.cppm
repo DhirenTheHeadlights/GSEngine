@@ -8,16 +8,18 @@ import :types;
 
 export namespace gse::ide::search {
 	struct file_index {
-		std::vector<file_entry> entries;
-		std::unordered_map<std::string, std::size_t> positions;
+		gse::id_mapped_collection<file_entry> entries;
 		std::atomic<bool> loaded = false;
 	};
 
+	struct content_entry {
+		std::filesystem::path path;
+		std::string blob;
+		std::vector<std::uint32_t> line_starts;
+	};
+
 	struct content_index {
-		std::vector<std::filesystem::path> paths;
-		std::vector<std::string> blobs;
-		std::vector<std::vector<std::uint32_t>> line_starts;
-		std::unordered_map<std::string, std::size_t> positions;
+		gse::id_mapped_collection<content_entry> entries;
 		std::atomic<bool> loaded = false;
 	};
 
@@ -29,21 +31,34 @@ export namespace gse::ide::search {
 	};
 
 	struct module_index {
+		module_index() = default;
+		module_index(const module_index&) = delete;
+		auto operator=(const module_index&) -> module_index& = delete;
+		module_index(module_index&& other) noexcept;
+		auto operator=(module_index&& other) noexcept -> module_index&;
+
 		std::vector<module_entry> modules;
 		std::vector<std::filesystem::path> files;
-		std::unordered_map<std::string, file_id> file_ids;
+		std::unordered_map<gse::id, file_id> file_ids;
 		std::unordered_map<std::string, std::vector<std::uint32_t>, gse::transparent_hash, gse::transparent_equal> modules_by_name;
 		std::unordered_map<file_id, std::vector<std::uint32_t>> modules_by_file;
 
 		auto file_for(const std::filesystem::path& path) -> file_id;
 		auto path_for(file_id id) const -> std::filesystem::path;
+		auto transfer_from(module_index& other) -> void;
 	};
 
 	struct symbol_index {
+		symbol_index() = default;
+		symbol_index(const symbol_index&) = delete;
+		auto operator=(const symbol_index&) -> symbol_index& = delete;
+		symbol_index(symbol_index&& other) noexcept;
+		auto operator=(symbol_index&& other) noexcept -> symbol_index&;
+
 		std::vector<symbol_entry> symbols;
 		std::unordered_map<file_id, std::vector<xref_entry>> xrefs;
 		std::vector<std::filesystem::path> files;
-		std::unordered_map<std::string, file_id> file_ids;
+		std::unordered_map<gse::id, file_id> file_ids;
 		std::vector<analysis::channel_use> channels;
 		std::unordered_map<file_id, std::vector<std::uint32_t>> symbols_by_file;
 		std::unordered_map<std::string, std::vector<std::uint32_t>, gse::transparent_hash, gse::transparent_equal> symbols_by_name;
@@ -52,6 +67,7 @@ export namespace gse::ide::search {
 
 		auto file_for(const std::filesystem::path& path) -> file_id;
 		auto path_for(file_id id) const -> std::filesystem::path;
+		auto transfer_from(symbol_index& other) -> void;
 	};
 
 	struct hover_hit {
@@ -161,26 +177,13 @@ namespace gse::ide::search {
 		return starts;
 	}
 
-	auto path_key(const std::filesystem::path& path) -> std::string {
-		std::string key = path.lexically_normal().generic_native_encoded_string();
-		for (char& c : key) {
-			if (c == '\\') {
-				c = '/';
-			}
-			else {
-				c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-			}
-		}
-		return key;
-	}
-
-	auto canonical_path_key(const std::filesystem::path& path) -> std::pair<std::filesystem::path, std::string> {
+	auto canonical_path_id(const std::filesystem::path& path) -> std::pair<std::filesystem::path, gse::id> {
 		std::error_code ec;
 		std::filesystem::path canon = std::filesystem::weakly_canonical(path, ec);
 		if (ec) {
 			canon = path;
 		}
-		return { canon, path_key(canon) };
+		return { canon, gse::generate_temp_id(canon) };
 	}
 
 	auto module_ident_start(const char ch) -> bool {
@@ -446,14 +449,70 @@ auto gse::ide::search::is_indexed_path(const std::filesystem::path& root, const 
 	return true;
 }
 
+gse::ide::search::module_index::module_index(module_index&& other) noexcept {
+	transfer_from(other);
+}
+
+auto gse::ide::search::module_index::operator=(module_index&& other) noexcept -> module_index& {
+	if (this != &other) {
+		transfer_from(other);
+	}
+	return *this;
+}
+
+auto gse::ide::search::module_index::transfer_from(module_index& other) -> void {
+	modules.clear();
+	files.clear();
+	file_ids.clear();
+	modules_by_name.clear();
+	modules_by_file.clear();
+	modules.swap(other.modules);
+	files.swap(other.files);
+	file_ids.swap(other.file_ids);
+	modules_by_name.swap(other.modules_by_name);
+	modules_by_file.swap(other.modules_by_file);
+}
+
+gse::ide::search::symbol_index::symbol_index(symbol_index&& other) noexcept {
+	transfer_from(other);
+}
+
+auto gse::ide::search::symbol_index::operator=(symbol_index&& other) noexcept -> symbol_index& {
+	if (this != &other) {
+		transfer_from(other);
+	}
+	return *this;
+}
+
+auto gse::ide::search::symbol_index::transfer_from(symbol_index& other) -> void {
+	symbols.clear();
+	xrefs.clear();
+	files.clear();
+	file_ids.clear();
+	channels.clear();
+	symbols_by_file.clear();
+	symbols_by_name.clear();
+	definitions_by_identity.clear();
+	definitions_by_qualified.clear();
+	symbols.swap(other.symbols);
+	xrefs.swap(other.xrefs);
+	files.swap(other.files);
+	file_ids.swap(other.file_ids);
+	channels.swap(other.channels);
+	symbols_by_file.swap(other.symbols_by_file);
+	symbols_by_name.swap(other.symbols_by_name);
+	definitions_by_identity.swap(other.definitions_by_identity);
+	definitions_by_qualified.swap(other.definitions_by_qualified);
+}
+
 auto gse::ide::search::module_index::file_for(const std::filesystem::path& path) -> file_id {
-	auto [canon, key] = canonical_path_key(path);
-	if (const auto it = file_ids.find(key); it != file_ids.end()) {
+	auto [canon, canonical_id] = canonical_path_id(path);
+	if (const auto it = file_ids.find(canonical_id); it != file_ids.end()) {
 		return it->second;
 	}
 	const file_id id = static_cast<file_id>(files.size());
 	files.push_back(std::move(canon));
-	file_ids.emplace(std::move(key), id);
+	file_ids.emplace(canonical_id, id);
 	return id;
 }
 
@@ -465,13 +524,13 @@ auto gse::ide::search::module_index::path_for(file_id id) const -> std::filesyst
 }
 
 auto gse::ide::search::symbol_index::file_for(const std::filesystem::path& path) -> file_id {
-	auto [canon, key] = canonical_path_key(path);
-	if (const auto it = file_ids.find(key); it != file_ids.end()) {
+	auto [canon, canonical_id] = canonical_path_id(path);
+	if (const auto it = file_ids.find(canonical_id); it != file_ids.end()) {
 		return it->second;
 	}
 	const file_id id = static_cast<file_id>(files.size());
 	files.push_back(std::move(canon));
-	file_ids.emplace(std::move(key), id);
+	file_ids.emplace(canonical_id, id);
 	return id;
 }
 
@@ -484,7 +543,7 @@ auto gse::ide::search::symbol_index::path_for(file_id id) const -> std::filesyst
 
 auto gse::ide::search::index_state::definition_at(const std::filesystem::path& file, std::uint32_t line, std::uint32_t column) const -> std::optional<location> {
 	std::shared_lock lock(mutex);
-	const auto id_it = symbols.file_ids.find(path_key(file));
+	const auto id_it = symbols.file_ids.find(gse::generate_temp_id(file));
 	if (id_it == symbols.file_ids.end()) {
 		return std::nullopt;
 	}
@@ -502,7 +561,7 @@ auto gse::ide::search::index_state::definition_at(const std::filesystem::path& f
 
 auto gse::ide::search::index_state::symbol_at(const std::filesystem::path& file, std::uint32_t line, std::uint32_t column) const -> std::optional<hover_hit> {
 	std::shared_lock lock(mutex);
-	const auto id_it = symbols.file_ids.find(path_key(file));
+	const auto id_it = symbols.file_ids.find(gse::generate_temp_id(file));
 	if (id_it == symbols.file_ids.end()) {
 		return std::nullopt;
 	}
@@ -530,7 +589,7 @@ auto gse::ide::search::index_state::symbol_definition(std::string_view name, std
 	suffix.append(needle);
 	std::shared_lock lock(mutex);
 	file_id click_fid = static_cast<file_id>(-1);
-	if (const auto it = symbols.file_ids.find(path_key(click_file)); it != symbols.file_ids.end()) {
+	if (const auto it = symbols.file_ids.find(gse::generate_temp_id(click_file)); it != symbols.file_ids.end()) {
 		click_fid = it->second;
 	}
 	const auto candidates = symbols.symbols_by_name.find(name);
@@ -582,10 +641,10 @@ auto gse::ide::search::index_state::module_definition(std::string_view name, con
 		return std::nullopt;
 	}
 	std::string target(name);
-	const std::string key = path_key(click_file);
+	const gse::id file_identity = gse::generate_temp_id(click_file);
 	std::shared_lock lock(mutex);
 	if (target.starts_with(':')) {
-		const auto file_it = modules.file_ids.find(key);
+		const auto file_it = modules.file_ids.find(file_identity);
 		if (file_it == modules.file_ids.end()) {
 			return std::nullopt;
 		}
@@ -706,10 +765,8 @@ auto gse::ide::search::index_state::channel_links() const -> std::vector<analysi
 }
 
 auto gse::ide::search::build_files_and_content(index_state& idx, const std::filesystem::path& root) -> void {
-	std::vector<file_entry> files;
-	std::unordered_map<std::string, std::size_t> file_positions;
-	std::vector<std::filesystem::path> text_paths;
-	std::unordered_map<std::string, std::size_t> content_positions;
+	gse::id_mapped_collection<file_entry> files;
+	gse::id_mapped_collection<content_entry> content;
 
 	std::error_code ec;
 	const auto opts = std::filesystem::directory_options::skip_permission_denied;
@@ -734,46 +791,50 @@ auto gse::ide::search::build_files_and_content(index_state& idx, const std::file
 		if (rel.empty()) {
 			rel = path.filename().display_string();
 		}
-		file_positions.emplace(path_key(path), files.size());
-		files.push_back({ .path = path, .rel = rel, .rel_lower = to_lower(rel) });
+		const gse::id file_identity = gse::generate_temp_id(path);
+		files.add(file_identity, {
+			.path = path,
+			.rel = rel,
+			.rel_lower = to_lower(rel),
+		});
 
 		const std::string ext = to_lower(path.extension().native_encoded_string());
 		if (!is_binary_ext(ext)) {
 			const auto size = entry.file_size(type_ec);
 			if (!type_ec && size <= 2u * 1024u * 1024u) {
-				content_positions.emplace(path_key(path), text_paths.size());
-				text_paths.push_back(path);
+				content.add(file_identity, {
+					.path = path,
+				});
 			}
 		}
 	}
 
-	const std::size_t n = text_paths.size();
-	std::vector<std::string> blobs(n);
-	std::vector<std::vector<std::uint32_t>> line_starts(n);
+	const std::span<content_entry> content_entries = content.items();
 
-	gse::task::coarse_parallel(n, 8, [&](std::size_t i) {
-		std::ifstream in(text_paths[i], std::ios::binary);
+	gse::task::coarse_parallel(content_entries.size(), 8, [&](std::size_t i) {
+		content_entry& entry = content_entries[i];
+		std::ifstream in(entry.path, std::ios::binary);
 		if (!in) {
 			return;
 		}
 		std::string data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-		line_starts[i] = compute_line_starts(data);
-		blobs[i] = std::move(data);
+		entry.line_starts = compute_line_starts(data);
+		entry.blob = std::move(data);
 	});
 
 	std::uint64_t loc = 0;
 	module_index module_defs;
-	for (std::size_t i = 0; i < n; ++i) {
-		if (line_starts[i].empty() || !is_cpp_ext(to_lower(text_paths[i].extension().native_encoded_string()))) {
+	for (const content_entry& entry : content_entries) {
+		if (entry.line_starts.empty() || !is_cpp_ext(to_lower(entry.path.extension().native_encoded_string()))) {
 			continue;
 		}
-		scan_modules(text_paths[i], blobs[i], line_starts[i], module_defs);
+		scan_modules(entry.path, entry.blob, entry.line_starts, module_defs);
 		std::error_code rel_ec;
-		const std::filesystem::path rel = std::filesystem::relative(text_paths[i], root, rel_ec);
+		const std::filesystem::path rel = std::filesystem::relative(entry.path, root, rel_ec);
 		if (rel_ec || rel.empty() || !is_counted_source_dir(rel.begin()->display_string())) {
 			continue;
 		}
-		loc += line_starts[i].size() - 1;
+		loc += entry.line_starts.size() - 1;
 	}
 	rebuild_module_lookups(module_defs);
 	idx.cpp_loc.store(loc, std::memory_order_release);
@@ -782,11 +843,7 @@ auto gse::ide::search::build_files_and_content(index_state& idx, const std::file
 		std::unique_lock lock(idx.mutex);
 		idx.modules = std::move(module_defs);
 		idx.files.entries = std::move(files);
-		idx.files.positions = std::move(file_positions);
-		idx.content.paths = std::move(text_paths);
-		idx.content.blobs = std::move(blobs);
-		idx.content.line_starts = std::move(line_starts);
-		idx.content.positions = std::move(content_positions);
+		idx.content.entries = std::move(content);
 	}
 	idx.files.loaded.store(true, std::memory_order_release);
 	idx.content.loaded.store(true, std::memory_order_release);
@@ -807,11 +864,12 @@ auto gse::ide::search::update_file(index_state& idx, const std::filesystem::path
 			resolved = canonical;
 		}
 	}
-	const std::string key = path_key(resolved);
+	const gse::id file_identity = gse::generate_temp_id(resolved);
 
 	file_entry new_file;
-	std::string blob;
-	std::vector<std::uint32_t> starts;
+	content_entry new_content{
+		.path = resolved,
+	};
 	bool has_content = false;
 	if (regular) {
 		std::filesystem::path relative = resolved.lexically_relative(idx.workspace_root);
@@ -827,82 +885,45 @@ auto gse::ide::search::update_file(index_state& idx, const std::filesystem::path
 		if (!is_binary_ext(extension) && !size_ec && size <= 2u * 1024u * 1024u) {
 			std::ifstream in(resolved, std::ios::binary);
 			if (in) {
-				blob.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
-				starts = compute_line_starts(blob);
+				new_content.blob.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+				new_content.line_starts = compute_line_starts(new_content.blob);
 				has_content = true;
 			}
 		}
 	}
 
 	std::unique_lock lock(idx.mutex);
-	auto remove_file_entry = [&] {
-		const auto position = idx.files.positions.find(key);
-		if (position == idx.files.positions.end()) {
-			return;
-		}
-		const std::size_t index = position->second;
-		const std::size_t last = idx.files.entries.size() - 1;
-		idx.files.positions.erase(position);
-		if (index != last) {
-			idx.files.entries[index] = std::move(idx.files.entries[last]);
-			idx.files.positions[path_key(idx.files.entries[index].path)] = index;
-		}
-		idx.files.entries.pop_back();
-	};
-	auto remove_content_entry = [&] {
-		const auto position = idx.content.positions.find(key);
-		if (position == idx.content.positions.end()) {
-			return;
-		}
-		const std::size_t index = position->second;
-		const std::size_t last = idx.content.paths.size() - 1;
-		idx.content.positions.erase(position);
-		if (index != last) {
-			idx.content.paths[index] = std::move(idx.content.paths[last]);
-			idx.content.blobs[index] = std::move(idx.content.blobs[last]);
-			idx.content.line_starts[index] = std::move(idx.content.line_starts[last]);
-			idx.content.positions[path_key(idx.content.paths[index])] = index;
-		}
-		idx.content.paths.pop_back();
-		idx.content.blobs.pop_back();
-		idx.content.line_starts.pop_back();
-	};
-
 	if (regular) {
-		if (const auto position = idx.files.positions.find(key); position != idx.files.positions.end()) {
-			idx.files.entries[position->second] = std::move(new_file);
+		if (file_entry* indexed_file = idx.files.entries.try_get(file_identity)) {
+			*indexed_file = std::move(new_file);
 		}
 		else {
-			idx.files.positions.emplace(key, idx.files.entries.size());
-			idx.files.entries.push_back(std::move(new_file));
+			idx.files.entries.add(file_identity, std::move(new_file));
 		}
 	}
 	else {
-		remove_file_entry();
+		idx.files.entries.remove(file_identity);
 	}
 
-	remove_content_entry();
+	idx.content.entries.remove(file_identity);
+	content_entry* indexed_content = nullptr;
 	if (has_content) {
-		idx.content.positions.emplace(key, idx.content.paths.size());
-		idx.content.paths.push_back(resolved);
-		idx.content.blobs.push_back(std::move(blob));
-		idx.content.line_starts.push_back(std::move(starts));
+		indexed_content = idx.content.entries.add(file_identity, std::move(new_content));
 	}
 
-	if (const auto file = idx.modules.file_ids.find(key); file != idx.modules.file_ids.end()) {
+	if (const auto file = idx.modules.file_ids.find(file_identity); file != idx.modules.file_ids.end()) {
 		const file_id id = file->second;
 		std::erase_if(idx.modules.modules, [id](const module_entry& module) {
 			return module.file == id;
 		});
 	}
-	if (regular && has_content && is_cpp_ext(to_lower(resolved.extension().native_encoded_string()))) {
-		const std::size_t position = idx.content.positions[key];
-		scan_modules(resolved, idx.content.blobs[position], idx.content.line_starts[position], idx.modules);
+	if (regular && indexed_content && is_cpp_ext(to_lower(resolved.extension().native_encoded_string()))) {
+		scan_modules(resolved, indexed_content->blob, indexed_content->line_starts, idx.modules);
 	}
 	rebuild_module_lookups(idx.modules);
 
 	if (!regular) {
-		if (const auto file = idx.symbols.file_ids.find(key); file != idx.symbols.file_ids.end()) {
+		if (const auto file = idx.symbols.file_ids.find(file_identity); file != idx.symbols.file_ids.end()) {
 			const file_id id = file->second;
 			std::erase_if(idx.symbols.symbols, [id](const symbol_entry& symbol) {
 				return symbol.file == id;
@@ -919,13 +940,13 @@ auto gse::ide::search::update_file(index_state& idx, const std::filesystem::path
 	}
 
 	std::uint64_t loc = 0;
-	for (std::size_t i = 0; i < idx.content.paths.size(); ++i) {
-		if (!is_cpp_ext(to_lower(idx.content.paths[i].extension().native_encoded_string()))) {
+	for (const content_entry& entry : idx.content.entries.items()) {
+		if (!is_cpp_ext(to_lower(entry.path.extension().native_encoded_string()))) {
 			continue;
 		}
-		const std::filesystem::path relative = idx.content.paths[i].lexically_relative(idx.workspace_root);
-		if (!relative.empty() && is_counted_source_dir(relative.begin()->display_string()) && !idx.content.line_starts[i].empty()) {
-			loc += idx.content.line_starts[i].size() - 1;
+		const std::filesystem::path relative = entry.path.lexically_relative(idx.workspace_root);
+		if (!relative.empty() && is_counted_source_dir(relative.begin()->display_string()) && !entry.line_starts.empty()) {
+			loc += entry.line_starts.size() - 1;
 		}
 	}
 	idx.cpp_loc.store(loc, std::memory_order_release);
@@ -935,32 +956,33 @@ namespace gse::ide::search {
 	constexpr std::uint32_t tu_cache_magic = 0x47535455;
 	constexpr std::uint32_t tu_cache_version = 2;
 
-	auto intern_cached(symbol_index& symbols, std::unordered_map<std::string, file_id>& cache, const std::string& raw) -> file_id {
-		if (const auto it = cache.find(raw); it != cache.end()) {
+	auto intern_cached(symbol_index& symbols, std::unordered_map<gse::id, file_id>& cache, const std::string& raw) -> file_id {
+		const gse::id path_identity = gse::generate_temp_id(raw);
+		if (const auto it = cache.find(path_identity); it != cache.end()) {
 			return it->second;
 		}
-		const file_id id = symbols.file_for(raw);
-		cache.emplace(raw, id);
-		return id;
+		const file_id file = symbols.file_for(raw);
+		cache.emplace(path_identity, file);
+		return file;
 	}
 
-	auto file_fingerprint(const std::filesystem::path& file, std::unordered_map<std::string, std::uint64_t>& cache) -> std::uint64_t {
-		const std::string key = path_key(file);
-		if (const auto it = cache.find(key); it != cache.end()) {
+	auto file_fingerprint(const std::filesystem::path& file, std::unordered_map<gse::id, std::uint64_t>& cache) -> std::uint64_t {
+		const gse::id file_identity = gse::generate_temp_id(file);
+		if (const auto it = cache.find(file_identity); it != cache.end()) {
 			return it->second;
 		}
-		std::uint64_t fingerprint = stable_id(key);
+		std::uint64_t fingerprint = file_identity.number();
 		std::error_code time_ec;
 		const std::filesystem::file_time_type modified = std::filesystem::last_write_time(file, time_ec);
 		fingerprint = hash_combine(fingerprint, time_ec ? 0ull : static_cast<std::uint64_t>(modified.time_since_epoch().count()));
 		std::error_code size_ec;
 		const std::uintmax_t size = std::filesystem::file_size(file, size_ec);
 		fingerprint = hash_combine(fingerprint, size_ec ? 0ull : static_cast<std::uint64_t>(size));
-		cache.emplace(key, fingerprint);
+		cache.emplace(file_identity, fingerprint);
 		return fingerprint;
 	}
 
-	auto tu_fingerprint(const analysis::compilation_entry& entry, const std::filesystem::path& plugin, std::span<const std::filesystem::path> dependencies, std::unordered_map<std::string, std::uint64_t>& file_fingerprints) -> std::uint64_t {
+	auto tu_fingerprint(const analysis::compilation_entry& entry, const std::filesystem::path& plugin, std::span<const std::filesystem::path> dependencies, std::unordered_map<gse::id, std::uint64_t>& file_fingerprints) -> std::uint64_t {
 		std::uint64_t fingerprint = stable_id("tu_symbol_cache");
 		fingerprint = hash_combine(fingerprint, tu_cache_version);
 		fingerprint = hash_combine(fingerprint, entry.command.fingerprint);
@@ -973,11 +995,11 @@ namespace gse::ide::search {
 	}
 
 	auto tu_cache_path(const index_state& index, const analysis::compilation_entry& entry) -> std::filesystem::path {
-		const std::uint64_t id = hash_combine(stable_id(path_key(entry.file)), entry.command.fingerprint);
+		const std::uint64_t id = hash_combine(gse::generate_temp_id(entry.file).number(), entry.command.fingerprint);
 		return index.compile_commands.parent_path() / "gseditor_symbols" / std::format("{:016x}.bin", id);
 	}
 
-	auto save_tu_cache(const std::filesystem::path& path, const analysis::compilation_entry& entry, const std::filesystem::path& plugin, const analysis::tu_symbols& symbols, std::unordered_map<std::string, std::uint64_t>& file_fingerprints, bool failed) -> void {
+	auto save_tu_cache(const std::filesystem::path& path, const analysis::compilation_entry& entry, const std::filesystem::path& plugin, const analysis::tu_symbols& symbols, std::unordered_map<gse::id, std::uint64_t>& file_fingerprints, bool failed) -> void {
 		std::vector<std::string> dependencies;
 		dependencies.reserve(symbols.dependencies.size());
 		for (const std::filesystem::path& dependency : symbols.dependencies) {
@@ -1000,7 +1022,7 @@ namespace gse::ide::search {
 		std::filesystem::rename(temporary, path, ec);
 	}
 
-	auto load_tu_cache(const std::filesystem::path& path, const analysis::compilation_entry& entry, const std::filesystem::path& plugin, analysis::tu_symbols& out, std::unordered_map<std::string, std::uint64_t>& file_fingerprints, bool& failed) -> bool {
+	auto load_tu_cache(const std::filesystem::path& path, const analysis::compilation_entry& entry, const std::filesystem::path& plugin, analysis::tu_symbols& out, std::unordered_map<gse::id, std::uint64_t>& file_fingerprints, bool& failed) -> bool {
 		std::ifstream in(path, std::ios::binary);
 		if (!in) {
 			return false;
@@ -1091,13 +1113,13 @@ auto gse::ide::search::build_symbols(index_state& idx) -> void {
 
 	std::vector<const analysis::compilation_entry*> tus;
 	tus.reserve(database->entries.size());
-	for (const analysis::compilation_entry& entry : database->entries) {
+	for (const analysis::compilation_entry& entry : database->entries.items()) {
 		if (is_indexed_path(idx.workspace_root, entry.file)) {
 			tus.push_back(&entry);
 		}
 	}
 
-	std::unordered_map<std::string, std::uint64_t> file_fingerprints;
+	std::unordered_map<gse::id, std::uint64_t> file_fingerprints;
 	std::vector<analysis::tu_symbols> collected;
 	collected.reserve(tus.size());
 	std::vector<const analysis::compilation_entry*> pending;
@@ -1164,7 +1186,7 @@ auto gse::ide::search::build_symbols(index_state& idx) -> void {
 		symbol_capacity += tu.set.symbols.size();
 	}
 	local.symbols.reserve(symbol_capacity);
-	std::unordered_map<std::string, file_id> raw_file_ids;
+	std::unordered_map<gse::id, file_id> raw_file_ids;
 	raw_file_ids.reserve(1024);
 	std::unordered_set<std::string> seen_channels;
 	for (analysis::tu_symbols& tu : collected) {
@@ -1228,7 +1250,7 @@ auto gse::ide::search::index_state::merge_file_symbols(const std::filesystem::pa
 	std::unique_lock lock(mutex);
 	const file_id fid = symbols.file_for(file);
 
-	std::unordered_map<std::string, file_id> local_fid;
+	std::unordered_map<gse::id, file_id> local_fid;
 
 	std::erase_if(symbols.symbols, [fid](const symbol_entry& e) {
 		return e.file == fid;

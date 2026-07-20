@@ -149,12 +149,13 @@ namespace gse::ide::search {
 		if (!idx.content.loaded.load(std::memory_order_acquire) || is_cancelled(cancelled)) {
 			return;
 		}
-		const std::size_t n = idx.content.blobs.size();
-		std::vector<std::vector<result>> per_file(n);
+		const std::span<const content_entry> entries = idx.content.entries.items();
+		std::vector<std::vector<result>> per_file(entries.size());
 
-		gse::task::coarse_parallel(n, 4, [&](std::size_t i) {
+		gse::task::coarse_parallel(entries.size(), 4, [&](std::size_t i) {
 			if (!is_cancelled(cancelled)) {
-				scan_blob(idx.content.blobs[i], idx.content.line_starts[i], q_lower, idx.content.paths[i], per_file[i], cancelled);
+				const content_entry& entry = entries[i];
+				scan_blob(entry.blob, entry.line_starts, q_lower, entry.path, per_file[i], cancelled);
 			}
 		});
 
@@ -201,7 +202,7 @@ auto gse::ide::search::engine::rank(const index_state& idx, std::string_view que
 	}
 
 	if (opts.include_files) {
-		for (const file_entry& f : idx.files.entries) {
+		for (const file_entry& f : idx.files.entries.items()) {
 			if (is_cancelled(cancelled)) {
 				return;
 			}

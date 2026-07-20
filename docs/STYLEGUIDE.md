@@ -328,6 +328,16 @@ mutable int m_some_field = 0;  // in a system state accessed via shared_view
 
 ---
 
+## Published Ownership
+
+Use `[[= stable_shared]]` for a shared `unique_ptr` only when the pointee is initialized once and its address remains stable until system shutdown. The shared-view infrastructure rejects a `unique_ptr` annotated with ordinary `shared` and asserts if a stable shared pointer is reseated after publication.
+
+Represent replaceable published generations with `shared_ptr<const T>`. The `const` makes each generation immutable and the shared ownership keeps an older generation alive while consumers finish using it. For independently scheduled producer and consumer systems, publish the owning snapshot through a channel and let each consumer retain the latest generation.
+
+Never capture a raw pointer or reference from a shared view in a deferred callback or task unless it comes from a stable shared owner. Capture an owning immutable snapshot instead.
+
+---
+
 ## Channel Pushes
 
 Pass the message type to `channels.push` as an explicit template argument; do not let it deduce from the argument. The type is the identity of the event — keep it visible at the call site:

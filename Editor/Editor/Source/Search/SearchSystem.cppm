@@ -11,7 +11,7 @@ import :index;
 
 export namespace gse::ide::search_system {
 	struct [[= gse::system_state<"Search">{}]] data {
-		[[= gse::shared]] std::unique_ptr<search::index_state> index;
+		[[= gse::stable_shared]] std::unique_ptr<search::index_state> index;
 		gse::file_watcher watcher;
 		gse::time last_index_change{};
 		std::atomic<std::uint64_t> symbol_change_generation = 0;

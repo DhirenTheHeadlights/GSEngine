@@ -35,7 +35,9 @@ export namespace gse::ide {
 		gse::vec2f pan{ 0.f, 0.f };
 		float zoom = 1.f;
 		gse::vec2f pan_last{ 0.f, 0.f };
+		gse::vec2f pan_press{ 0.f, 0.f };
 		bool panning = false;
+		bool dragged = false;
 		std::optional<std::uint64_t> selected;
 		std::optional<std::uint64_t> hovered;
 		std::optional<std::uint64_t> isolated;

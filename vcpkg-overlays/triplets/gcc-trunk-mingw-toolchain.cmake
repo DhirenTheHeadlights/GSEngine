@@ -7,7 +7,7 @@
 #
 # Mirrors how the top-level CMakePresets locate the compiler:
 # $env{USERPROFILE}/.gcc-trunk/current (a junction maintained by the installer).
-# USERPROFILE must be in the triplet's VCPKG_ENV_PASSTHROUGH to be visible here.
+# USERPROFILE must be passed through by the triplet to be visible here.
 
 set(_gcc_trunk_bin "$ENV{USERPROFILE}/.gcc-trunk/current/bin")
 
