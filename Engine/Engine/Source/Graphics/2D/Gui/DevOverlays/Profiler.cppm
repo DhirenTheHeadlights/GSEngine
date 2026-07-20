@@ -56,7 +56,7 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 
 	const float pad = ctx.style.padding;
 	const float font_sz = ctx.style.font_size;
-	const float row_h = ctx.font->line_height(font_sz) + pad * 0.5f;
+	const float row_h = ctx.fonts.code->line_height(font_sz) + pad * 0.5f;
 	const rectf menu_content = ctx.current_menu->rect.inset({ pad, pad });
 
 	const bool mouse_held = ctx.input.mouse_button_held(mouse_button::button_1);
@@ -128,9 +128,9 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 			.texture = ctx.blank_texture
 		});
 		ctx.queue_text({
-			.font = ctx.font,
+			.font = ctx.fonts.code,
 			.text = txt,
-			.position = { r.left() + pad * 0.5f, r.center().y() + ctx.font->vertical_center_offset(font_sz) },
+			.position = { r.left() + pad * 0.5f, r.center().y() + ctx.fonts.code->vertical_center_offset(font_sz) },
 			.scale = font_sz,
 			.clip_rect = r
 		});
@@ -285,9 +285,9 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 					});
 
 					draw_ctx.queue_text({
-						.font = draw_ctx.font,
+						.font = draw_ctx.fonts.code,
 						.text = std::string(val),
-						.position = { box.left() + pad * 0.5f, box.center().y() + ctx.font->vertical_center_offset(font_sz) },
+						.position = { box.left() + pad * 0.5f, box.center().y() + ctx.fonts.code->vertical_center_offset(font_sz) },
 						.scale = font_sz,
 						.clip_rect = box
 					});

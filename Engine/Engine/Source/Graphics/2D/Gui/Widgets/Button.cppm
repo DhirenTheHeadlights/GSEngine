@@ -13,6 +13,7 @@ import gse.diag;
 import gse.ecs;
 import gse.math;
 import :types;
+import :font;
 import :ids;
 import :styles;
 import :builder;
@@ -23,7 +24,8 @@ export namespace gse::gui::draw {
 		const draw_context& ctx,
 		const std::string& name,
 		id& hot_widget_id,
-		id& active_widget_id
+		id& active_widget_id,
+		resource::handle<font> font = {}
 	) -> bool;
 }
 
@@ -32,21 +34,23 @@ export namespace gse::gui {
 		using result = bool;
 		struct params {
 			std::string_view text;
+			resource::handle<font> font{};
 		};
 		static auto draw(const draw_context& ctx, const params p, id& hot, id& active, id&) -> bool {
-			return draw::button(ctx, std::string(p.text), hot, active);
+			return draw::button(ctx, std::string(p.text), hot, active, p.font);
 		}
 	};
 }
 
-auto gse::gui::draw::button(const draw_context& ctx, const std::string& name, id& hot_widget_id, id& active_widget_id) -> bool {
+auto gse::gui::draw::button(const draw_context& ctx, const std::string& name, id& hot_widget_id, id& active_widget_id, const resource::handle<font> font) -> bool {
+	const auto fnt = font.valid() ? font : ctx.fonts.text;
 	if (!ctx.current_menu) {
 		return false;
 	}
 
 	const id widget_id = ids::make(name);
 
-	const float widget_height = ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
+	const float widget_height = fnt->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
 	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
 
 	const rectf button_rect = rectf::from_position_size(
@@ -75,12 +79,12 @@ auto gse::gui::draw::button(const draw_context& ctx, const std::string& name, id
 		.corner_radius = ctx.style.corner_radius
 	});
 
-	const float text_width = ctx.font->width(name, ctx.style.font_size);
+	const float text_width = fnt->width(name, ctx.style.font_size);
 	const vec2f text_pos = { button_rect.center().x() - text_width / 2.f,
-							 button_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) };
+							 button_rect.center().y() + fnt->vertical_center_offset(ctx.style.font_size) };
 
 	ctx.queue_text({
-		.font = ctx.font,
+		.font = fnt,
 		.text = name,
 		.position = text_pos,
 		.scale = ctx.style.font_size,

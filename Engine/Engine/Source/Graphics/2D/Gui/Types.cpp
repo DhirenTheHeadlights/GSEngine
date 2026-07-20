@@ -22,6 +22,14 @@ gse::gui::menu::menu(std::string_view tag, const menu_data& data)
 	tab_contents.emplace_back(tag);
 }
 
+auto gse::gui::font_set::named(const std::string_view name) const -> resource::handle<font> {
+	const auto it = registry.find(std::string(name));
+	if (it == registry.end()) {
+		return {};
+	}
+	return it->second;
+}
+
 auto gse::gui::draw_context::queue_sprite(renderer::sprite_command cmd) const -> void {
 	if (static_cast<std::uint8_t>(cmd.layer) < static_cast<std::uint8_t>(current_layer)) {
 		cmd.layer = current_layer;
@@ -212,7 +220,7 @@ auto gse::gui::draw_context::set_tooltip(const id& widget_id, const std::string_
 	tooltip->position = input.mouse_position();
 }
 
-auto gse::gui::draw_context::next_row(const float height_multiplier) const -> rectf {
+auto gse::gui::draw_context::next_row(const resource::handle<font>& font, const float height_multiplier) const -> rectf {
 	if (!current_menu) {
 		return {};
 	}

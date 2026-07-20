@@ -145,6 +145,16 @@ export namespace gse::gui {
 	struct draw_context;
 	struct layer_scope;
 
+	struct font_set {
+		resource::handle<font> text;
+		resource::handle<font> code;
+		std::unordered_map<std::string, resource::handle<font>> registry;
+
+		[[nodiscard]] auto named(
+			std::string_view name
+		) const -> resource::handle<font>;
+	};
+
 	struct menu : identifiable, identifiable_owned {
 		explicit menu(
 			std::string_view tag,
@@ -204,7 +214,7 @@ export namespace gse::gui {
 		menu* current_menu;
 		const style& style;
 		const input::state& input;
-		resource::handle<font> font;
+		const font_set& fonts;
 		resource::handle<texture> blank_texture;
 		vec2f& layout_cursor;
 		std::vector<renderer::sprite_command>& sprites;
@@ -296,6 +306,7 @@ export namespace gse::gui {
 		) const -> void;
 
 		auto next_row(
+			const resource::handle<font>& font,
 			float height_multiplier = 1.f
 		) const -> rectf;
 

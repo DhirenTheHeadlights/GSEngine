@@ -13,6 +13,7 @@ import gse.diag;
 import gse.ecs;
 import gse.math;
 import :types;
+import :font;
 import :ids;
 import :styles;
 import :builder;
@@ -57,7 +58,8 @@ export namespace gse::gui::draw {
 		dropdown_state& state,
 		id& hot_widget_id,
 		id& active_widget_id,
-		const dropdown_config& config = {}
+		const dropdown_config& config = {},
+		resource::handle<font> font = {}
 	) -> dropdown_result;
 
 	auto dropdown_in_rect(
@@ -106,11 +108,12 @@ export namespace gse::gui {
 			std::span<const std::string> options;
 			dropdown_state& state;
 			dropdown_config config = {};
+			resource::handle<font> font{};
 		};
 		static auto draw(const draw_context& ctx, const params& p, id& hot, id& active, id&) -> dropdown_result {
 			auto r = draw::dropdown(ctx, std::string(p.name), p.current_index, p.options, p.state, hot,
 									active,
-									p.config);
+									p.config, p.font);
 			if (r.changed) {
 				p.current_index = r.new_index;
 			}
@@ -129,7 +132,8 @@ namespace gse::gui::draw {
 		dropdown_state& state,
 		id& hot_widget_id,
 		id& active_widget_id,
-		const dropdown_config& config
+		const dropdown_config& config,
+		resource::handle<font> font = {}
 	) -> dropdown_result;
 
 	auto dropdown_impl_in_rect(
@@ -142,7 +146,8 @@ namespace gse::gui::draw {
 		const rectf& header_rect,
 		id& hot_widget_id,
 		id& active_widget_id,
-		const dropdown_config& config
+		const dropdown_config& config,
+		resource::handle<font> font = {}
 	) -> dropdown_result;
 }
 
@@ -164,7 +169,7 @@ auto gse::gui::draw::dropdown(const draw_context& ctx, const std::string& name, 
 	);
 }
 
-auto gse::gui::draw::dropdown(const draw_context& ctx, const std::string& name, const std::size_t current_index, const std::span<const std::string> options, dropdown_state& state, id& hot_widget_id, id& active_widget_id, const dropdown_config& config) -> dropdown_result {
+auto gse::gui::draw::dropdown(const draw_context& ctx, const std::string& name, const std::size_t current_index, const std::span<const std::string> options, dropdown_state& state, id& hot_widget_id, id& active_widget_id, const dropdown_config& config, const resource::handle<font> font) -> dropdown_result {
 	return dropdown_impl(
 		ctx,
 		name,
@@ -178,7 +183,8 @@ auto gse::gui::draw::dropdown(const draw_context& ctx, const std::string& name, 
 		state,
 		hot_widget_id,
 		active_widget_id,
-		config
+		config,
+		font
 	);
 }
 
@@ -239,12 +245,12 @@ auto gse::gui::draw::dropdown_in_rect_keyed(const draw_context& ctx, const std::
 	);
 }
 
-auto gse::gui::draw::dropdown_impl(const draw_context& ctx, const std::string& name, const std::size_t current_index, const std::function<std::size_t()>& option_count, const std::function<std::string_view(std::size_t)>& get_option, dropdown_state& state, id& hot_widget_id, id& active_widget_id, const dropdown_config& config) -> dropdown_result {
+auto gse::gui::draw::dropdown_impl(const draw_context& ctx, const std::string& name, const std::size_t current_index, const std::function<std::size_t()>& option_count, const std::function<std::string_view(std::size_t)>& get_option, dropdown_state& state, id& hot_widget_id, id& active_widget_id, const dropdown_config& config, const resource::handle<font> font) -> dropdown_result {
 	if (!ctx.current_menu) {
 		return {};
 	}
 
-	const float row_height = ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
+	const float row_height = ctx.fonts.text->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
 	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
 
 	const float label_width = content_rect.width() * 0.4f;
@@ -256,9 +262,9 @@ auto gse::gui::draw::dropdown_impl(const draw_context& ctx, const std::string& n
 		);
 
 	ctx.queue_text({
-		.font = ctx.font,
+		.font = ctx.fonts.text,
 		.text = name,
-		.position = { label_rect.left(), label_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
+		.position = { label_rect.left(), label_rect.center().y() + ctx.fonts.text->vertical_center_offset(ctx.style.font_size) },
 		.scale = ctx.style.font_size,
 		.color = ctx.style.color_text,
 		.clip_rect = label_rect,
@@ -279,7 +285,8 @@ auto gse::gui::draw::dropdown_impl(const draw_context& ctx, const std::string& n
 		header_rect,
 		hot_widget_id,
 		active_widget_id,
-		config
+		config,
+		font
 	);
 
 	ctx.layout_cursor.y() -= row_height + ctx.style.padding;
@@ -287,7 +294,8 @@ auto gse::gui::draw::dropdown_impl(const draw_context& ctx, const std::string& n
 	return result;
 }
 
-auto gse::gui::draw::dropdown_impl_in_rect(const draw_context& ctx, const id dropdown_id, const std::size_t current_index, const std::function<std::size_t()>& option_count, const std::function<std::string_view(std::size_t)>& get_option, dropdown_state& state, const rectf& header_rect, id& hot_widget_id, id& active_widget_id, const dropdown_config& config) -> dropdown_result {
+auto gse::gui::draw::dropdown_impl_in_rect(const draw_context& ctx, const id dropdown_id, const std::size_t current_index, const std::function<std::size_t()>& option_count, const std::function<std::string_view(std::size_t)>& get_option, dropdown_state& state, const rectf& header_rect, id& hot_widget_id, id& active_widget_id, const dropdown_config& config, const resource::handle<font> font) -> dropdown_result {
+	const auto fnt = font.valid() ? font : ctx.fonts.text;
 	if (!ctx.current_menu) {
 		return {};
 	}
@@ -351,9 +359,9 @@ auto gse::gui::draw::dropdown_impl_in_rect(const draw_context& ctx, const id dro
 	const float text_x = header_rect.left() + ctx.style.padding;
 
 	ctx.queue_text({
-		.font = ctx.font,
+		.font = fnt,
 		.text = current_label,
-		.position = { text_x, header_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
+		.position = { text_x, header_rect.center().y() + fnt->vertical_center_offset(ctx.style.font_size) },
 		.scale = ctx.style.font_size,
 		.color = ctx.style.color_text,
 		.clip_rect = header_rect
@@ -462,9 +470,9 @@ auto gse::gui::draw::dropdown_impl_in_rect(const draw_context& ctx, const id dro
 			});
 
 			ctx.queue_text({
-				.font = ctx.font,
+				.font = fnt,
 				.text = std::string(get_option(i)),
-				.position = { option_rect.left() + ctx.style.padding, option_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
+				.position = { option_rect.left() + ctx.style.padding, option_rect.center().y() + fnt->vertical_center_offset(ctx.style.font_size) },
 				.scale = ctx.style.font_size,
 				.color = ctx.style.color_text,
 				.clip_rect = content_area,

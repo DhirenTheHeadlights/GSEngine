@@ -2,6 +2,7 @@ export module gse.graphics:text_widget;
 
 import std;
 
+import gse.assets;
 import gse.core;
 import gse.containers;
 import gse.time;
@@ -10,6 +11,7 @@ import gse.diag;
 import gse.ecs;
 import gse.math;
 import :types;
+import :font;
 import :styles;
 import :builder;
 
@@ -17,7 +19,8 @@ export namespace gse::gui::draw {
 	auto text(
 		const draw_context& ctx,
 		const std::string& name,
-		const std::string& text
+		const std::string& text,
+		resource::handle<font> font = {}
 	) -> void;
 }
 
@@ -26,19 +29,21 @@ export namespace gse::gui {
 		using result = void;
 		struct params {
 			std::string_view content;
+			resource::handle<font> font{};
 		};
 		static auto draw(const draw_context& ctx, const params p, id&, id&, id&) -> void {
-			draw::text(ctx, "", std::string(p.content));
+			draw::text(ctx, "", std::string(p.content), p.font);
 		}
 	};
 }
 
-auto gse::gui::draw::text(const draw_context& ctx, const std::string& name, const std::string& text) -> void {
+auto gse::gui::draw::text(const draw_context& ctx, const std::string& name, const std::string& text, const resource::handle<font> font) -> void {
+	const auto fnt = font.valid() ? font : ctx.fonts.text;
 	if (!ctx.current_menu) {
 		return;
 	}
 
-	const float widget_height = ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
+	const float widget_height = fnt->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
 	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
 
 	const rectf row_rect = rectf::from_position_size(
@@ -60,9 +65,9 @@ auto gse::gui::draw::text(const draw_context& ctx, const std::string& name, cons
 
 	if (!name.empty()) {
 		ctx.queue_text({
-			.font = ctx.font,
+			.font = fnt,
 			.text = name,
-			.position = { label_rect.left(), label_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
+			.position = { label_rect.left(), label_rect.center().y() + fnt->vertical_center_offset(ctx.style.font_size) },
 			.scale = ctx.style.font_size,
 			.color = ctx.style.color_text,
 			.clip_rect = label_rect
@@ -70,9 +75,9 @@ auto gse::gui::draw::text(const draw_context& ctx, const std::string& name, cons
 	}
 
 	ctx.queue_text({
-		.font = ctx.font,
+		.font = fnt,
 		.text = text,
-		.position = { value_rect.left(), value_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
+		.position = { value_rect.left(), value_rect.center().y() + fnt->vertical_center_offset(ctx.style.font_size) },
 		.scale = ctx.style.font_size,
 		.color = ctx.style.color_text,
 		.clip_rect = value_rect

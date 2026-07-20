@@ -55,7 +55,7 @@ export namespace gse {
 			= asset_format::source_dir<"Fonts">{},
 			= asset_format::source_exts<".ttf", ".otf">{},
 			= asset_format::magic<0x47464E54>{},
-			= asset_format::version<6>{}
+			= asset_format::version<7>{}
 		]] baked {
 			std::string source_path_relative;
 			float ascender = 0.0f;
