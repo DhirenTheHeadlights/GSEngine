@@ -43,6 +43,27 @@ export namespace gse::ide::analysis {
 	};
 }
 
+namespace gse::ide::analysis {
+	auto normalize_diagnostic_files(
+		std::span<diagnostic> diagnostics,
+		const std::filesystem::path& directory
+	) -> void;
+}
+
+auto gse::ide::analysis::normalize_diagnostic_files(const std::span<diagnostic> diagnostics, const std::filesystem::path& directory) -> void {
+	for (diagnostic& diagnostic : diagnostics) {
+		if (diagnostic.file.empty()) {
+			continue;
+		}
+		if (diagnostic.file.is_relative()) {
+			diagnostic.file = directory / diagnostic.file;
+		}
+		std::error_code ec;
+		const std::filesystem::path canonical = std::filesystem::weakly_canonical(diagnostic.file, ec);
+		diagnostic.file = ec ? diagnostic.file.lexically_normal() : canonical;
+	}
+}
+
 auto gse::ide::analysis::diagnostics_runner::find_compile_commands(const std::filesystem::path& root) -> std::optional<std::filesystem::path> {
 	const std::filesystem::path build = root / "out" / "build";
 	std::error_code ec;
@@ -140,6 +161,10 @@ auto gse::ide::analysis::diagnostics_runner::start(const std::shared_ptr<diagnos
 
 		if (lint_hook) {
 			lint_hook(*check);
+		}
+		if (entry) {
+			normalize_diagnostic_files(check->result, entry->command.directory);
+			normalize_diagnostic_files(check->lint, entry->command.directory);
 		}
 
 		check->duration = gse::system_clock::now<gse::time>() - started;

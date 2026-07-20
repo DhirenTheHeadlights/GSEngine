@@ -1,6 +1,7 @@
 export module gse.ide.analysis:symbol_index_builder;
 
 import std;
+import gse;
 
 import :process;
 import :compilation_database;
@@ -51,7 +52,7 @@ namespace gse::ide::analysis {
 		}
 
 		std::vector<std::filesystem::path> paths;
-		std::unordered_set<std::string> seen;
+		std::unordered_set<gse::id> seen;
 		auto append = [&](std::filesystem::path path) {
 			if (path.is_relative()) {
 				path = directory / path;
@@ -61,11 +62,7 @@ namespace gse::ide::analysis {
 			if (!ec) {
 				path = canonical;
 			}
-			std::string key = path.lexically_normal().generic_native_encoded_string();
-			for (char& c : key) {
-				c = c == '\\' ? '/' : static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-			}
-			if (seen.insert(std::move(key)).second) {
+			if (seen.insert(gse::generate_temp_id(path)).second) {
 				paths.push_back(std::move(path));
 			}
 		};
