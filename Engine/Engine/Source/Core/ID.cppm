@@ -50,6 +50,10 @@ export namespace gse {
 		uuid number
 	) -> id;
 
+	auto generate_temp_id(
+		const std::filesystem::path& path
+	) -> id;
+
 	auto find(
 		uuid number
 	) -> id;
@@ -280,6 +284,12 @@ export namespace gse {
 	template <typename T, typename PrimaryIdType = id>
 	class id_mapped_collection {
 	public:
+		id_mapped_collection() = default;
+		id_mapped_collection(const id_mapped_collection&) = default;
+		auto operator=(const id_mapped_collection&) -> id_mapped_collection& = default;
+		id_mapped_collection(id_mapped_collection&& other) noexcept;
+		auto operator=(id_mapped_collection&& other) noexcept -> id_mapped_collection&;
+
 		auto add(
 			const PrimaryIdType& id,
 			T object
@@ -311,6 +321,10 @@ export namespace gse {
 
 		[[nodiscard]] auto size() const -> std::size_t;
 
+		auto reserve(
+			std::size_t capacity
+		) -> void;
+
 		auto clear() noexcept -> void;
 
 		auto transfer_from(
@@ -322,6 +336,19 @@ export namespace gse {
 		std::vector<PrimaryIdType> m_ids;
 		std::unordered_map<PrimaryIdType, std::size_t> m_map;
 	};
+}
+
+template <typename T, typename PrimaryIdType>
+gse::id_mapped_collection<T, PrimaryIdType>::id_mapped_collection(id_mapped_collection&& other) noexcept {
+	transfer_from(other);
+}
+
+template <typename T, typename PrimaryIdType>
+auto gse::id_mapped_collection<T, PrimaryIdType>::operator=(id_mapped_collection&& other) noexcept -> id_mapped_collection& {
+	if (this != &other) {
+		transfer_from(other);
+	}
+	return *this;
 }
 
 template <typename T, typename PrimaryIdType>
@@ -346,10 +373,10 @@ auto gse::id_mapped_collection<T, PrimaryIdType>::remove(const PrimaryIdType& id
 	const std::size_t index_to_remove = it->second;
 
 	if (const std::size_t last_index = m_items.size() - 1; index_to_remove != last_index) {
-		const PrimaryIdType& last_id = m_ids.back();
+		PrimaryIdType last_id = std::move(m_ids.back());
 		m_items[index_to_remove] = std::move(m_items.back());
-		m_ids[index_to_remove] = std::move(m_ids.back());
-		m_map[last_id] = index_to_remove;
+		m_ids[index_to_remove] = std::move(last_id);
+		m_map[m_ids[index_to_remove]] = index_to_remove;
 	}
 
 	m_map.erase(id);
@@ -404,6 +431,13 @@ auto gse::id_mapped_collection<T, PrimaryIdType>::size() const -> std::size_t {
 }
 
 template <typename T, typename PrimaryIdType>
+auto gse::id_mapped_collection<T, PrimaryIdType>::reserve(const std::size_t capacity) -> void {
+	m_items.reserve(capacity);
+	m_ids.reserve(capacity);
+	m_map.reserve(capacity);
+}
+
+template <typename T, typename PrimaryIdType>
 auto gse::id_mapped_collection<T, PrimaryIdType>::clear() noexcept -> void {
 	m_items.clear();
 	m_ids.clear();
@@ -412,9 +446,13 @@ auto gse::id_mapped_collection<T, PrimaryIdType>::clear() noexcept -> void {
 
 template <typename T, typename PrimaryIdType>
 auto gse::id_mapped_collection<T, PrimaryIdType>::transfer_from(id_mapped_collection& other) -> void {
-	m_items = std::move(other.m_items);
-	m_ids = std::move(other.m_ids);
-	m_map = std::move(other.m_map);
+	if (this == &other) {
+		return;
+	}
+	clear();
+	m_items.swap(other.m_items);
+	m_ids.swap(other.m_ids);
+	m_map.swap(other.m_map);
 }
 
 export namespace gse {
@@ -491,6 +529,16 @@ auto gse::generate_id(const std::uint64_t number) -> id {
 
 constexpr auto gse::generate_temp_id(const uuid number) -> id {
 	return id(number);
+}
+
+auto gse::generate_temp_id(const std::filesystem::path& path) -> id {
+	std::string key = path.lexically_normal().generic_native_encoded_string();
+#ifdef _WIN32
+	std::ranges::transform(key, key.begin(), [](const unsigned char c) {
+		return static_cast<char>(std::tolower(c));
+	});
+#endif
+	return generate_temp_id(stable_id(key));
 }
 
 auto gse::find(const uuid number) -> id {

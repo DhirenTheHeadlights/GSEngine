@@ -41,10 +41,10 @@ export namespace gse::gpu::context {
 		]]
 		gpu::device_settings device_settings;
 
-		[[= shared]] std::unique_ptr<gpu::device> device;
-		[[= shared]] std::unique_ptr<swap_chain> swapchain;
-		[[= shared]] std::unique_ptr<gpu::frame> frame;
-		[[= shared]] std::unique_ptr<gpu::render_graph> render_graph;
+		[[= stable_shared]] std::unique_ptr<gpu::device> device;
+		[[= stable_shared]] std::unique_ptr<swap_chain> swapchain;
+		[[= stable_shared]] std::unique_ptr<gpu::frame> frame;
+		[[= stable_shared]] std::unique_ptr<gpu::render_graph> render_graph;
 		concurrency::frame_scheduler scheduler;
 
 		color_clear swapchain_clear{};

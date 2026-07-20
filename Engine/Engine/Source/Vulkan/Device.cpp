@@ -1154,7 +1154,7 @@ auto gse::vulkan::device::create_buffer(const vk::BufferCreateInfo& buffer_info,
 	auto* const mapped = alloc.mapped();
 	{
 		std::lock_guard lock(m_mutex);
-		m_live_buffers.emplace(handle.value, live_buffer{ std::move(alloc), {} });
+		m_live_buffers.emplace(handle.value, live_buffer{ std::move(alloc), {}, actual_buffer_info.size, address, mapped });
 	}
 	return gpu::buffer(handle, actual_buffer_info.size, address, mapped);
 }
@@ -1282,7 +1282,7 @@ auto gse::vulkan::device::create_image(const vk::ImageCreateInfo& info, const vk
 	const auto view_handle = std::bit_cast<gpu::handle<gpu::image_view>>(view);
 	{
 		std::lock_guard lock(m_mutex);
-		m_live_images.emplace(img_handle.value, live_image{ std::move(alloc), view_handle });
+		m_live_images.emplace(img_handle.value, live_image{ std::move(alloc), view_handle, {}, {}, static_cast<gpu::image_format_value>(info.format), vec3u{ info.extent.width, info.extent.height, info.extent.depth }, engine_view_info });
 	}
 	return gpu::image(
 		img_handle,
@@ -1392,6 +1392,60 @@ auto gse::vulkan::device::create_image(const gpu::image_desc& desc, const std::s
 		li.sampled_slot = sampled_slot;
 	}
 	return gpu::image(img.handle(), img.view(), img.format(), img.extent(), img.view_create_info(), storage_slot, sampled_slot);
+}
+
+auto gse::vulkan::device::buffer_slot(const gpu::handle<gpu::buffer> buffer) const -> gpu::bindless_slot {
+	std::lock_guard lock(m_mutex);
+	const auto it = m_live_buffers.find(buffer.value);
+	return it == m_live_buffers.end() ? gpu::bindless_slot{} : it->second.slot;
+}
+
+auto gse::vulkan::device::buffer_address(const gpu::handle<gpu::buffer> buffer) const -> gpu::device_address {
+	std::lock_guard lock(m_mutex);
+	const auto it = m_live_buffers.find(buffer.value);
+	return it == m_live_buffers.end() ? 0 : it->second.address;
+}
+
+auto gse::vulkan::device::buffer_size(const gpu::handle<gpu::buffer> buffer) const -> gpu::device_size {
+	std::lock_guard lock(m_mutex);
+	const auto it = m_live_buffers.find(buffer.value);
+	return it == m_live_buffers.end() ? 0 : it->second.size;
+}
+
+auto gse::vulkan::device::buffer_mapped(const gpu::handle<gpu::buffer> buffer) const -> std::byte* {
+	std::lock_guard lock(m_mutex);
+	const auto it = m_live_buffers.find(buffer.value);
+	return it == m_live_buffers.end() ? nullptr : it->second.mapped;
+}
+
+auto gse::vulkan::device::image_sampled_slot(const gpu::handle<gpu::image> image) const -> gpu::bindless_slot {
+	std::lock_guard lock(m_mutex);
+	const auto it = m_live_images.find(image.value);
+	return it == m_live_images.end() ? gpu::bindless_slot{} : it->second.sampled_slot;
+}
+
+auto gse::vulkan::device::image_storage_slot(const gpu::handle<gpu::image> image) const -> gpu::bindless_slot {
+	std::lock_guard lock(m_mutex);
+	const auto it = m_live_images.find(image.value);
+	return it == m_live_images.end() ? gpu::bindless_slot{} : it->second.storage_slot;
+}
+
+auto gse::vulkan::device::image_format_of(const gpu::handle<gpu::image> image) const -> gpu::image_format_value {
+	std::lock_guard lock(m_mutex);
+	const auto it = m_live_images.find(image.value);
+	return it == m_live_images.end() ? 0 : it->second.format;
+}
+
+auto gse::vulkan::device::image_extent(const gpu::handle<gpu::image> image) const -> vec3u {
+	std::lock_guard lock(m_mutex);
+	const auto it = m_live_images.find(image.value);
+	return it == m_live_images.end() ? vec3u{} : it->second.extent;
+}
+
+auto gse::vulkan::device::image_view(const gpu::handle<gpu::image> image) const -> gpu::handle<gpu::image_view> {
+	std::lock_guard lock(m_mutex);
+	const auto it = m_live_images.find(image.value);
+	return it == m_live_images.end() ? gpu::handle<gpu::image_view>{} : it->second.view;
 }
 
 auto gse::vulkan::device::live_allocation_count() const -> std::uint32_t {

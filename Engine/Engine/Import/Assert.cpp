@@ -5,23 +5,21 @@ import std;
 import gse.log;
 import gse.stacktrace;
 
-auto gse::assert_format_message(const std::source_location loc, const std::string_view comment) -> std::string {
-	return std::format(
+auto gse::assert_fail(const std::source_location loc, const std::string_view comment) noexcept -> void {
+	log::println(
+		log::level::fatal,
+		log::category::general,
 		"[Assertion Failure]\n"
 		"File: {}\n"
 		"Line: {}\n"
 		"Function: {}\n"
-		"Comment: {}\n"
-		"Stack:\n{}",
+		"Comment: {}",
 		loc.file_name(),
 		loc.line(),
 		clean_symbol(loc.function_name()),
-		comment,
-		capture_stacktrace(2)
+		comment
 	);
-}
-
-auto gse::assert_fail(const std::string_view message) noexcept -> void {
-	log::println(log::level::fatal, log::category::general, "{}", message);
+	log::flush();
+	log::println(log::level::fatal, log::category::general, "Stack:\n{}", capture_stacktrace(2));
 	std::unreachable();
 }

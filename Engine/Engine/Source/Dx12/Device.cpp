@@ -1058,6 +1058,60 @@ auto gse::dx12::device::acceleration_structure_scratch_alignment() const -> gpu:
 	return 256;
 }
 
+auto gse::dx12::device::buffer_slot(const gpu::handle<gpu::buffer> buffer) const -> gpu::bindless_slot {
+	const std::lock_guard lock(m_mutex);
+	const auto it = m_live_buffers.find(buffer.value);
+	return it == m_live_buffers.end() ? gpu::bindless_slot{} : it->second.slot;
+}
+
+auto gse::dx12::device::buffer_address(const gpu::handle<gpu::buffer> buffer) const -> gpu::device_address {
+	const std::lock_guard lock(m_mutex);
+	const auto it = m_live_buffers.find(buffer.value);
+	return it == m_live_buffers.end() ? 0 : it->second.address;
+}
+
+auto gse::dx12::device::buffer_size(const gpu::handle<gpu::buffer> buffer) const -> gpu::device_size {
+	const std::lock_guard lock(m_mutex);
+	const auto it = m_live_buffers.find(buffer.value);
+	return it == m_live_buffers.end() ? 0 : it->second.size;
+}
+
+auto gse::dx12::device::buffer_mapped(const gpu::handle<gpu::buffer> buffer) const -> std::byte* {
+	const std::lock_guard lock(m_mutex);
+	const auto it = m_live_buffers.find(buffer.value);
+	return it == m_live_buffers.end() ? nullptr : it->second.mapped;
+}
+
+auto gse::dx12::device::image_sampled_slot(const gpu::handle<gpu::image> image) const -> gpu::bindless_slot {
+	const std::lock_guard lock(m_mutex);
+	const auto it = m_live_images.find(image.value);
+	return it == m_live_images.end() ? gpu::bindless_slot{} : it->second.sampled_slot;
+}
+
+auto gse::dx12::device::image_storage_slot(const gpu::handle<gpu::image> image) const -> gpu::bindless_slot {
+	const std::lock_guard lock(m_mutex);
+	const auto it = m_live_images.find(image.value);
+	return it == m_live_images.end() ? gpu::bindless_slot{} : it->second.storage_slot;
+}
+
+auto gse::dx12::device::image_format_of(const gpu::handle<gpu::image> image) const -> gpu::image_format_value {
+	const std::lock_guard lock(m_mutex);
+	const auto it = m_live_images.find(image.value);
+	return it == m_live_images.end() ? 0 : it->second.format;
+}
+
+auto gse::dx12::device::image_extent(const gpu::handle<gpu::image> image) const -> vec3u {
+	const std::lock_guard lock(m_mutex);
+	const auto it = m_live_images.find(image.value);
+	return it == m_live_images.end() ? vec3u{} : it->second.extent;
+}
+
+auto gse::dx12::device::image_view(const gpu::handle<gpu::image> image) const -> gpu::handle<gpu::image_view> {
+	const std::lock_guard lock(m_mutex);
+	const auto it = m_live_images.find(image.value);
+	return it == m_live_images.end() ? gpu::handle<gpu::image_view>{} : it->second.view;
+}
+
 auto gse::dx12::device::create_buffer(const gpu::buffer_desc& desc, const std::string_view tag, const std::source_location&) -> gpu::buffer {
 	const std::lock_guard lock(m_mutex);
 	if (desc.usage.test(gpu::buffer_flag::acceleration_structure_storage) || desc.usage.test(gpu::buffer_flag::acceleration_structure_scratch)) {
@@ -1073,8 +1127,10 @@ auto gse::dx12::device::create_buffer(const gpu::buffer_desc& desc, const std::s
 		const auto as_address = directx::gpu_address(as_raw);
 		m_buffer_by_address.emplace(as_address, std::pair{ as_raw, desc.size });
 		m_owned_buffers.push_back(std::move(as_resource));
+		const auto as_handle = std::bit_cast<gpu::handle<gpu::buffer>>(as_raw);
+		m_live_buffers[as_handle.value] = live_buffer{ {}, desc.size, as_address, nullptr };
 		return gpu::buffer(
-			std::bit_cast<gpu::handle<gpu::buffer>>(as_raw),
+			as_handle,
 			desc.size,
 			as_address,
 			nullptr,
@@ -1129,8 +1185,10 @@ auto gse::dx12::device::create_buffer(const gpu::buffer_desc& desc, const std::s
 		}
 	}
 
+	const auto buffer_handle = std::bit_cast<gpu::handle<gpu::buffer>>(raw);
+	m_live_buffers[buffer_handle.value] = live_buffer{ slot, desc.size, address, mapped };
 	return gpu::buffer(
-		std::bit_cast<gpu::handle<gpu::buffer>>(raw),
+		buffer_handle,
 		desc.size,
 		address,
 		mapped,
@@ -1211,8 +1269,10 @@ auto gse::dx12::device::create_image(const gpu::image_desc& desc, const std::str
 		}
 	}
 
+	const auto image_handle = std::bit_cast<gpu::handle<gpu::image>>(raw);
+	m_live_images[image_handle.value] = live_image{ view, storage_slot, sampled_slot, static_cast<gpu::image_format_value>(desc.format), vec3u{ desc.size.x(), desc.size.y(), desc.depth }, {} };
 	return gpu::image(
-		std::bit_cast<gpu::handle<gpu::image>>(raw),
+		image_handle,
 		view,
 		static_cast<gpu::image_format_value>(desc.format),
 		vec3u{ desc.size.x(), desc.size.y(), desc.depth },

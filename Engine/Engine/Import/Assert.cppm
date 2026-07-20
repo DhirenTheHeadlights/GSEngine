@@ -31,13 +31,9 @@ export namespace gse {
 }
 
 namespace gse {
-	auto assert_format_message(
+	[[noreturn]] auto assert_fail(
 		std::source_location loc,
 		std::string_view comment
-	) -> std::string;
-
-	[[noreturn]] auto assert_fail(
-		std::string_view message
 	) noexcept -> void;
 }
 
@@ -48,7 +44,7 @@ auto gse::assert(const bool condition, fmt_loc<std::type_identity_t<Args>...> f,
 	}
 
 	const std::string comment = std::format(f.fmt, std::forward<Args>(args)...);
-	assert_fail(assert_format_message(f.loc, comment));
+	assert_fail(f.loc, comment);
 }
 
 template <class... Args>
@@ -58,5 +54,5 @@ auto gse::assert(const bool condition, const std::source_location loc, std::form
 	}
 
 	const std::string comment = std::format(fmt, std::forward<Args>(args)...);
-	assert_fail(assert_format_message(loc, comment));
+	assert_fail(loc, comment);
 }

@@ -295,6 +295,42 @@ export namespace gse::gpu {
 			std::string_view tag = ""
 		) -> image;
 
+		[[nodiscard]] auto buffer_slot(
+			gpu::handle<gpu::buffer> buffer
+		) const -> gpu::bindless_slot;
+
+		[[nodiscard]] auto buffer_address(
+			gpu::handle<gpu::buffer> buffer
+		) const -> gpu::device_address;
+
+		[[nodiscard]] auto buffer_size(
+			gpu::handle<gpu::buffer> buffer
+		) const -> gpu::device_size;
+
+		[[nodiscard]] auto buffer_mapped(
+			gpu::handle<gpu::buffer> buffer
+		) const -> std::byte*;
+
+		[[nodiscard]] auto image_sampled_slot(
+			gpu::handle<gpu::image> image
+		) const -> gpu::bindless_slot;
+
+		[[nodiscard]] auto image_storage_slot(
+			gpu::handle<gpu::image> image
+		) const -> gpu::bindless_slot;
+
+		[[nodiscard]] auto image_format_of(
+			gpu::handle<gpu::image> image
+		) const -> gpu::image_format_value;
+
+		[[nodiscard]] auto image_extent(
+			gpu::handle<gpu::image> image
+		) const -> vec3u;
+
+		[[nodiscard]] auto image_view_of(
+			gpu::handle<gpu::image> image
+		) const -> gpu::handle<gpu::image_view>;
+
 		[[nodiscard]]
 		auto allocate_buffer_slot() -> gpu::bindless_handle;
 

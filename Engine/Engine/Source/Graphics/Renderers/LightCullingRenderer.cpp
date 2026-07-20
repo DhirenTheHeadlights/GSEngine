@@ -108,7 +108,7 @@ auto rebuild_tile_buffers(const shared_view<gpu::context::data> gpu_s, data& d) 
 				.bindless = true,
 				.writable = true
 			}
-		);
+		).handle();
 
 		d.tile_light_table_buffers[i] = gpu_s.device->create_buffer(
 			{
@@ -118,7 +118,7 @@ auto rebuild_tile_buffers(const shared_view<gpu::context::data> gpu_s, data& d) 
 				.bindless = true,
 				.writable = true
 			}
-		);
+		).handle();
 	}
 
 	update_depth_descriptor(gpu_s, d);
@@ -295,8 +295,8 @@ auto gse::renderer::light_culling::frame(context& ctx, shared_view<gpu::context:
 			.depth_texture = d.depth_view.slot(),
 			.culling_params = d.culling_params_buffers[frame_index].slot(),
 			.lights = d.light_buffers[frame_index].slot(),
-			.light_index_list = d.light_index_list_buffers[frame_index].slot(),
-			.tile_light_table = d.tile_light_table_buffers[frame_index].slot(),
+			.light_index_list = gpu_s.device->buffer_slot(d.light_index_list_buffers[frame_index]),
+			.tile_light_table = gpu_s.device->buffer_slot(d.tile_light_table_buffers[frame_index]),
 			.depth_sampler = d.depth_sampler.slot(),
 		},
 		vec3u{ tiles.x(), tiles.y(), 1u }
