@@ -46,6 +46,8 @@ export namespace gs::locomotion {
 		gse::impulse perturb_impulse = gse::newton_seconds(0.f);
 		int perturb_interval = 45;
 		int perturb_grace = 25;
+		float curriculum_target_surv = 0.0f;
+		float curriculum_rate = 0.02f;
 		std::string reference_clip_path = "";
 		std::string amp_extra_clip_paths = "";
 		gse::velocity rsi_min_speed = gse::meters_per_second(0.15f);
@@ -168,6 +170,7 @@ export namespace gs::locomotion::trainer {
 		int survival_count = 0;
 		float last_mean_surv = 0.0f;
 		float best_mean_surv = 0.0f;
+		float curriculum_level = 0.0f;
 
 		std::vector<env_state> envs;
 
@@ -397,6 +400,12 @@ auto gs::locomotion::run_ppo_update(trainer::data& d, const ppo_config& cfg) -> 
 	const auto lr = cfg.lr + (cfg.lr_final - cfg.lr) * progress;
 	const auto entropy = cfg.entropy_coeff + (cfg.entropy_final - cfg.entropy_coeff) * progress;
 
+	if (cfg.curriculum_target_surv > 0.0f) {
+		const auto level_target = std::clamp(d.last_mean_surv / cfg.curriculum_target_surv, 0.0f, 1.0f);
+		const auto delta = std::clamp(level_target - d.curriculum_level, -cfg.curriculum_rate, cfg.curriculum_rate);
+		d.curriculum_level = std::clamp(d.curriculum_level + delta, 0.0f, 1.0f);
+	}
+
 	auto mean_adv = 0.0f;
 	for (std::size_t t = 0; t < n; ++t) {
 		mean_adv += d.buffer.advantages[t];
@@ -470,6 +479,7 @@ auto gs::locomotion::run_ppo_update(trainer::data& d, const ppo_config& cfg) -> 
 			.update_count = d.update_count,
 			.total_steps = d.total_steps,
 			.best_mean_surv = d.best_mean_surv,
+			.curriculum_level = d.curriculum_level,
 		};
 		checkpoint_save_full(d.actor, d.actor_opt, d.critic, d.critic_opt, d.discriminator, d.disc_opt, meta, cfg.state_path);
 	}
@@ -509,7 +519,7 @@ auto gs::locomotion::update_amp_rewards(trainer::data& d, const ppo_config& cfg)
 	d.last_mean_surv = mean_surv;
 	d.survival_sum = 0.0f;
 	d.survival_count = 0;
-	gse::log::println("locomotion_train: amp total_steps={} mean_surv={:.1f} D_loss={:.3f} D(real)={:.3f} D(fake)={:.3f} r1={:.4f} mean_style={:.3f}", d.total_steps, mean_surv, metrics.loss, metrics.mean_real, metrics.mean_fake, metrics.r1, mean_style);
+	gse::log::println("locomotion_train: amp total_steps={} mean_surv={:.1f} curr={:.2f} D_loss={:.3f} D(real)={:.3f} D(fake)={:.3f} r1={:.4f} mean_style={:.3f}", d.total_steps, mean_surv, d.curriculum_level, metrics.loss, metrics.mean_real, metrics.mean_fake, metrics.r1, mean_style);
 	return metrics;
 }
 
@@ -823,7 +833,7 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 	if (!d.ready) {
 		gse::watchdog::stop();
 		gse::log::println("locomotion_train: watchdog disabled (the PPO+discriminator update tick exceeds the 500ms scheduler-wait budget by design)");
-		gse::log::println("locomotion_train: AMP config w_task={:.2f} w_style={:.2f} disc_lr={:.2e} disc_r1={:.1f} disc_batch={} disc_updates={} lr={:.2e} entropy={:.4f}", cfg.w_task, cfg.w_style, cfg.disc_lr, cfg.disc_r1_weight, cfg.disc_batch, cfg.disc_updates, cfg.lr, cfg.entropy_coeff);
+		gse::log::println("locomotion_train: AMP config w_task={:.2f} w_style={:.2f} disc_lr={:.2e} disc_r1={:.1f} disc_batch={} disc_updates={} lr={:.2e} entropy={:.4f} curr_target={:.1f} curr_rate={:.3f}", cfg.w_task, cfg.w_style, cfg.disc_lr, cfg.disc_r1_weight, cfg.disc_batch, cfg.disc_updates, cfg.lr, cfg.entropy_coeff, cfg.curriculum_target_surv, cfg.curriculum_rate);
 		d.rng.seed(cfg.seed);
 		d.actor = actor_make(cfg.obs_dim, cfg.act_dim, cfg.hidden_dim, d.rng);
 		d.critic = mlp_make(cfg.obs_dim, cfg.hidden_dim, 1, 1.0f, d.rng);
@@ -839,6 +849,7 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 				d.update_count = meta.update_count;
 				d.total_steps = meta.total_steps;
 				d.best_mean_surv = meta.best_mean_surv;
+				d.curriculum_level = meta.curriculum_level;
 				d.rng.seed(cfg.seed + static_cast<unsigned>(d.update_count));
 				gse::log::println("locomotion_train: RESUMED full state from '{}' (update={} steps={} best_surv={:.1f})", cfg.state_path, d.update_count, d.total_steps, d.best_mean_surv);
 			}
@@ -1111,7 +1122,7 @@ auto gs::locomotion::trainer::run(gse::context& ctx, data& d, const ppo_config& 
 		if (cfg.perturb_impulse > gse::newton_seconds(0.f) && --env.perturb_timer <= 0) {
 			auto angle_dist = std::uniform_real_distribution<float>(0.0f, 2.0f * std::numbers::pi_v<float>);
 			const auto theta = angle_dist(d.rng);
-			const auto mag = cfg.perturb_impulse;
+			const auto mag = cfg.curriculum_target_surv > 0.0f ? cfg.perturb_impulse * d.curriculum_level : cfg.perturb_impulse;
 			ctx.channels.push<gse::physics::impulse_request>({
 				.target = r->pelvis_id,
 				.impulse = gse::vec3<gse::impulse>(mag * std::cos(theta), gse::newton_seconds(0.0f), mag * std::sin(theta)),

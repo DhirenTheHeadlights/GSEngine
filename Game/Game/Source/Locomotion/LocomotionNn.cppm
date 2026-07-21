@@ -129,6 +129,7 @@ export namespace gs::locomotion {
 		int update_count = 0;
 		int total_steps = 0;
 		float best_mean_surv = 0.0f;
+		float curriculum_level = 0.0f;
 	};
 
 	auto checkpoint_save_full(
@@ -251,6 +252,7 @@ namespace gs::locomotion {
 
 	constexpr std::uint32_t checkpoint_magic = 0x43484b50;
 	constexpr std::uint32_t checkpoint_version = 1;
+	constexpr std::uint32_t checkpoint_full_version = 2;
 
 	auto discriminator_input_grad_norm_sq(const mlp& net, std::span<const float> x) -> float {
 		const auto in_dim = net.l1.in_features;
@@ -1030,7 +1032,7 @@ auto gs::locomotion::checkpoint_save_full(const actor_params& actor, const actor
 	if (!out.is_open()) {
 		return false;
 	}
-	auto ar = gse::binary_writer(out, checkpoint_magic, checkpoint_version);
+	auto ar = gse::binary_writer(out, checkpoint_magic, checkpoint_full_version);
 	const auto obs = static_cast<std::uint32_t>(actor.net.l1.in_features);
 	const auto act = static_cast<std::uint32_t>(actor.net.l3.out_features);
 	const auto hidden = static_cast<std::uint32_t>(actor.net.l1.out_features);
@@ -1050,7 +1052,7 @@ auto gs::locomotion::checkpoint_load_full(actor_params& actor, actor_adam& actor
 	auto act = std::uint32_t{};
 	auto hidden = std::uint32_t{};
 	ar & magic & version & obs & act & hidden;
-	if (magic != checkpoint_magic || version != checkpoint_version) {
+	if (magic != checkpoint_magic || version != checkpoint_full_version) {
 		return false;
 	}
 	if (obs != actor.net.l1.in_features || act != actor.net.l3.out_features || hidden != actor.net.l1.out_features) {
