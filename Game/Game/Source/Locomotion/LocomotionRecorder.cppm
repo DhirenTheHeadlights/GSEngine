@@ -50,6 +50,29 @@ export namespace gs::locomotion {
 		std::string_view path
 	) -> std::optional<reference_clip>;
 
+	enum class bvh_channel : std::uint8_t { x_pos, y_pos, z_pos, x_rot, y_rot, z_rot };
+
+	struct bvh_joint {
+		std::string name;
+		int parent = -1;
+		gse::vec3f offset;
+		std::vector<bvh_channel> channels;
+		int channel_base = 0;
+		bool end_site = false;
+	};
+
+	struct bvh_clip {
+		std::vector<bvh_joint> joints;
+		int channels_per_frame = 0;
+		float frame_time = 0.f;
+		int frame_count = 0;
+		std::vector<float> motion;
+	};
+
+	auto parse_bvh(std::string_view path) -> std::optional<bvh_clip>;
+	auto find_bvh_joint(const bvh_clip& clip, std::string_view name) -> int;
+	auto bvh_clip_info(std::string_view path) -> bool;
+
 	struct amp_feature_layout {
 		gse::angle hip_l;
 		gse::angle knee_l;
@@ -358,6 +381,198 @@ auto gs::locomotion::load_reference_clip(const std::string_view path) -> std::op
 		return std::nullopt;
 	}
 	return clip;
+}
+
+static auto bvh_channel_from(const std::string_view t) -> gs::locomotion::bvh_channel {
+	using c = gs::locomotion::bvh_channel;
+	if (t == "Xposition") return c::x_pos;
+	if (t == "Yposition") return c::y_pos;
+	if (t == "Zposition") return c::z_pos;
+	if (t == "Xrotation") return c::x_rot;
+	if (t == "Yrotation") return c::y_rot;
+	return c::z_rot;
+}
+
+static auto bvh_is_space(const char ch) -> bool {
+	return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r';
+}
+
+auto gs::locomotion::parse_bvh(const std::string_view path) -> std::optional<bvh_clip> {
+	auto in = std::ifstream(std::string(path), std::ios::binary);
+	if (!in.is_open()) {
+		return std::nullopt;
+	}
+	const auto content = std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+
+	auto tokens = std::vector<std::string>{};
+	for (std::size_t i = 0; i < content.size();) {
+		while (i < content.size() && bvh_is_space(content[i])) {
+			++i;
+		}
+		auto j = i;
+		while (j < content.size() && !bvh_is_space(content[j])) {
+			++j;
+		}
+		if (j > i) {
+			tokens.push_back(content.substr(i, j - i));
+		}
+		i = j;
+	}
+
+	auto clip = bvh_clip{};
+	std::size_t t = 0;
+	if (t >= tokens.size() || tokens[t] != "HIERARCHY") {
+		return std::nullopt;
+	}
+	++t;
+
+	auto parent_stack = std::vector<int>{};
+	int current = -1;
+	while (t < tokens.size() && tokens[t] != "MOTION") {
+		const auto& tok = tokens[t];
+		if (tok == "ROOT" || tok == "JOINT") {
+			if (t + 1 >= tokens.size()) return std::nullopt;
+			auto j = bvh_joint{};
+			j.name = tokens[t + 1];
+			j.parent = current;
+			clip.joints.push_back(std::move(j));
+			parent_stack.push_back(current);
+			current = static_cast<int>(clip.joints.size()) - 1;
+			t += 2;
+			if (t >= tokens.size() || tokens[t] != "{") return std::nullopt;
+			++t;
+		}
+		else if (tok == "End") {
+			auto j = bvh_joint{};
+			j.name = "End Site";
+			j.parent = current;
+			j.end_site = true;
+			clip.joints.push_back(std::move(j));
+			parent_stack.push_back(current);
+			current = static_cast<int>(clip.joints.size()) - 1;
+			t += 2;
+			if (t >= tokens.size() || tokens[t] != "{") return std::nullopt;
+			++t;
+		}
+		else if (tok == "OFFSET") {
+			if (current < 0 || t + 3 >= tokens.size()) return std::nullopt;
+			clip.joints[static_cast<std::size_t>(current)].offset = gse::vec3f(
+				std::stof(tokens[t + 1]), std::stof(tokens[t + 2]), std::stof(tokens[t + 3]));
+			t += 4;
+		}
+		else if (tok == "CHANNELS") {
+			if (current < 0 || t + 1 >= tokens.size()) return std::nullopt;
+			const int n = std::stoi(tokens[t + 1]);
+			t += 2;
+			auto& j = clip.joints[static_cast<std::size_t>(current)];
+			j.channel_base = clip.channels_per_frame;
+			for (int k = 0; k < n && t < tokens.size(); ++k) {
+				j.channels.push_back(bvh_channel_from(tokens[t]));
+				++t;
+			}
+			clip.channels_per_frame += n;
+		}
+		else if (tok == "}") {
+			current = parent_stack.empty() ? -1 : parent_stack.back();
+			if (!parent_stack.empty()) {
+				parent_stack.pop_back();
+			}
+			++t;
+		}
+		else {
+			++t;
+		}
+	}
+
+	if (t >= tokens.size() || tokens[t] != "MOTION") {
+		return std::nullopt;
+	}
+	++t;
+	while (t < tokens.size()) {
+		if (tokens[t] == "Frames:") {
+			clip.frame_count = std::stoi(tokens[t + 1]);
+			t += 2;
+		}
+		else if (tokens[t] == "Time:") {
+			clip.frame_time = std::stof(tokens[t + 1]);
+			t += 2;
+		}
+		else if (tokens[t] == "Frame") {
+			++t;
+		}
+		else {
+			break;
+		}
+	}
+
+	const auto expected = static_cast<std::size_t>(clip.frame_count) * static_cast<std::size_t>(clip.channels_per_frame);
+	clip.motion.reserve(expected);
+	while (t < tokens.size() && clip.motion.size() < expected) {
+		clip.motion.push_back(std::stof(tokens[t]));
+		++t;
+	}
+	if (clip.joints.empty() || clip.channels_per_frame == 0 || clip.motion.size() != expected) {
+		return std::nullopt;
+	}
+	return clip;
+}
+
+auto gs::locomotion::find_bvh_joint(const bvh_clip& clip, const std::string_view name) -> int {
+	for (std::size_t i = 0; i < clip.joints.size(); ++i) {
+		if (clip.joints[i].name == name) {
+			return static_cast<int>(i);
+		}
+	}
+	return -1;
+}
+
+auto gs::locomotion::bvh_clip_info(const std::string_view path) -> bool {
+	const auto parsed = parse_bvh(path);
+	if (!parsed) {
+		gse::log::println("bvh_clip_info: FAILED to parse '{}'", path);
+		return false;
+	}
+	const auto& c = *parsed;
+	auto names = std::string{};
+	int root = -1;
+	int named = 0;
+	for (std::size_t i = 0; i < c.joints.size(); ++i) {
+		if (c.joints[i].parent == -1) {
+			root = static_cast<int>(i);
+		}
+		if (!c.joints[i].end_site) {
+			if (named > 0) {
+				names += ", ";
+			}
+			names += c.joints[i].name;
+			++named;
+		}
+	}
+	const auto fps = c.frame_time > 0.f ? 1.0f / c.frame_time : 0.f;
+	auto ymin = std::numeric_limits<float>::max();
+	auto ymax = std::numeric_limits<float>::lowest();
+	if (root >= 0) {
+		int ych = -1;
+		const auto& rj = c.joints[static_cast<std::size_t>(root)];
+		for (std::size_t k = 0; k < rj.channels.size(); ++k) {
+			if (rj.channels[k] == bvh_channel::y_pos) {
+				ych = rj.channel_base + static_cast<int>(k);
+			}
+		}
+		if (ych >= 0) {
+			for (int f = 0; f < c.frame_count; ++f) {
+				const auto v = c.motion[static_cast<std::size_t>(f) * static_cast<std::size_t>(c.channels_per_frame) + static_cast<std::size_t>(ych)];
+				ymin = std::min(ymin, v);
+				ymax = std::max(ymax, v);
+			}
+		}
+	}
+	gse::log::println("bvh_clip_info: '{}' joints={} (named={}) channels/frame={} frames={} frame_time={:.6f} fps={:.1f} dur={:.2f}s",
+		path, c.joints.size(), named, c.channels_per_frame, c.frame_count, c.frame_time, fps, static_cast<float>(c.frame_count) * c.frame_time);
+	gse::log::println("bvh_clip_info: root='{}' rootY=[{:.2f}, {:.2f}] (scale hint: ~15-40 = inches, ~1-2 = metres)",
+		root >= 0 ? c.joints[static_cast<std::size_t>(root)].name : std::string("?"), ymin, ymax);
+	gse::log::println("bvh_clip_info: joints = {}", names);
+	return true;
 }
 
 auto gs::locomotion::recorder::run(data& d, const recorder_config& config, gse::read<skeleton_refs> refs, gse::read<state> states, gse::read<intent> intents, gse::read<gait> gaits, gse::read<gse::physics::joint_drive_component> drives, gse::read<gse::physics::motor_component> motors, gse::read<gse::physics::transform_component> transforms, gse::read<gse::physics::motion_component> motions) -> gse::async::task<> {
