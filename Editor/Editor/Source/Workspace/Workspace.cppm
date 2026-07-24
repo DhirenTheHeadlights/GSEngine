@@ -12,6 +12,7 @@ export namespace gse::ide {
 		std::filesystem::path path;
 		std::string tab_name;
 		gse::gui::text_buffer buffer;
+		document_revision revision;
 		gse::gui::text_area_state view;
 		bool dirty = false;
 		syntax_producer::data syntax;
@@ -34,18 +35,31 @@ export namespace gse::ide {
 		gse::time since{};
 		bool resolved = false;
 		bool has_card = false;
+		bool pending = false;
 		std::string title;
 		std::string kind;
 		std::string body;
+		std::vector<std::string> issues;
 		std::string url;
 		bool from_cppref = false;
 		bool body_is_code = false;
 		float scroll = 0.f;
+		float scroll_x = 0.f;
+		gse::gui::scroll_axis x_axis;
+		gse::gui::scroll_axis y_axis;
 		std::vector<gse::gui::text_span> code_spans;
 		gse::vec4f kind_color;
 		gse::vec2f anchor;
 		gse::rect_t<gse::vec2f> panel;
 		gse::rect_t<gse::vec2f> code_rect;
+	};
+
+	struct quickfix_popup {
+		std::uint32_t document_id = 0;
+		std::uint32_t line = 0;
+		std::uint32_t start_col = 0;
+		gse::vec2f anchor;
+		gse::rect_t<gse::vec2f> panel;
 	};
 
 	struct fs_node {
@@ -74,6 +88,8 @@ export namespace gse::ide {
 		gse::gui::text_input_state input;
 	};
 
+	constexpr std::uint32_t viewport_tab_id = std::numeric_limits<std::uint32_t>::max();
+
 	struct workspace {
 		struct data {
 			std::filesystem::path root;
@@ -90,12 +106,13 @@ export namespace gse::ide {
 
 			fs_node fs_root;
 			gse::gui::draw::tree_selection explorer_selection;
-			std::uint64_t last_opened_key = 0;
+			std::unordered_set<std::uint64_t> explorer_selection_seen;
 			std::optional<pending_explorer_name> pending_name;
 
 			std::optional<std::uint32_t> diagnostics_pending;
 
 			std::vector<hover_state> hover_stack;
+			std::optional<quickfix_popup> quickfix;
 			docs::cppref_index cppref;
 		};
 
@@ -328,6 +345,7 @@ auto gse::ide::workspace::open_scratch(data& d) -> std::uint32_t {
 	doc.tab_name = unique_tab_name(d, {});
 	doc.buffer.lines = { "" };
 	d.documents.emplace(id, std::move(doc));
+	d.tab_order.push_back(id);
 
 	if (d.primary_document_id == 0) {
 		d.primary_document_id = id;
@@ -362,6 +380,7 @@ auto gse::ide::workspace::open_file(data& d, const std::filesystem::path& path) 
 		ext == ".hh" || ext == ".hxx" || ext == ".inl";
 
 	d.documents.emplace(id, std::move(doc));
+	d.tab_order.push_back(id);
 	d.watcher.watch(key, [&d](const std::filesystem::path& changed_path) {
 		workspace::reload_document_from_disk(d, changed_path);
 	});
@@ -450,6 +469,7 @@ auto gse::ide::workspace::reload_document_from_disk(data& d, const std::filesyst
 		const gse::gui::buffer_position caret = doc.view.caret;
 		const gse::gui::buffer_position anchor = doc.view.anchor;
 		doc.buffer = gse::gui::text_buffer::from_file(doc.path);
+		++doc.revision.value;
 		doc.view.caret = doc.buffer.clamp(caret);
 		doc.view.anchor = doc.buffer.clamp(anchor);
 		doc.syntax = {};
@@ -465,8 +485,19 @@ auto gse::ide::workspace::close_document(data& d, const std::uint32_t document_i
 		d.watcher.unwatch(it->second.path);
 	}
 	d.documents.erase(document_id);
-	if (d.active_document_id == document_id) {
-		d.active_document_id = d.documents.empty() ? 0 : d.documents.begin()->first;
+	if (const auto order_it = std::ranges::find(d.tab_order, document_id); order_it != d.tab_order.end()) {
+		if (d.active_document_id == document_id) {
+			if (const auto next = std::next(order_it); next != d.tab_order.end()) {
+				d.active_document_id = *next;
+			}
+			else if (order_it != d.tab_order.begin()) {
+				d.active_document_id = *std::prev(order_it);
+			}
+			else {
+				d.active_document_id = 0;
+			}
+		}
+		d.tab_order.erase(order_it);
 	}
 	if (d.primary_document_id == document_id) {
 		d.primary_document_id = 0;
@@ -571,7 +602,7 @@ auto gse::ide::workspace::create_entry(data& d, const fs_node& target, const boo
 	d.pending_name->input.anchor = 0;
 	d.explorer_selection.keys.clear();
 	d.explorer_selection.keys.insert(d.pending_name->key);
-	d.last_opened_key = d.pending_name->key;
+	d.explorer_selection_seen.insert(d.pending_name->key);
 }
 
 auto gse::ide::workspace::rename_entry(data& d, const fs_node& target) -> void {
@@ -589,7 +620,7 @@ auto gse::ide::workspace::rename_entry(data& d, const fs_node& target) -> void {
 	d.pending_name->input.anchor = 0;
 	d.explorer_selection.keys.clear();
 	d.explorer_selection.keys.insert(target.key);
-	d.last_opened_key = target.key;
+	d.explorer_selection_seen.insert(target.key);
 }
 
 auto gse::ide::workspace::commit_pending_name(data& d) -> void {
@@ -668,9 +699,10 @@ auto gse::ide::workspace::commit_pending_name(data& d) -> void {
 	}
 
 	refresh_directory(d, pending.parent);
+	const std::uint64_t target_key = fs_node_key(target);
 	d.explorer_selection.keys.clear();
-	d.explorer_selection.keys.insert(fs_node_key(target));
-	d.last_opened_key = 0;
+	d.explorer_selection.keys.insert(target_key);
+	d.explorer_selection_seen.erase(target_key);
 	d.pending_name.reset();
 }
 
@@ -693,9 +725,7 @@ auto gse::ide::workspace::cancel_pending_name(data& d) -> void {
 		d.explorer_selection.keys.clear();
 		d.explorer_selection.keys.insert(pending.key);
 	}
-	if (d.last_opened_key == pending.key) {
-		d.last_opened_key = 0;
-	}
+	d.explorer_selection_seen.erase(pending.key);
 	d.pending_name.reset();
 }
 
