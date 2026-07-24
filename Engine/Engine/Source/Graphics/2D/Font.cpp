@@ -304,7 +304,7 @@ auto gse::font::caret_offsets(const std::string_view text, const float scale) co
 }
 
 auto gse::font::vertical_center_offset(const float scale) const -> float {
-	return m_ascender * scale * 0.5f;
+	return (m_ascender - (m_max_glyph_top + m_min_glyph_bottom) * 0.5f) * scale;
 }
 
 auto gse::font::ascender_height(const float scale) const -> float {
