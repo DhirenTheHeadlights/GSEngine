@@ -48,6 +48,20 @@ auto gse::foo::bar(const type& param1, type param2) -> return_type {
 
 Short signatures stay on one line; long ones wrap with one parameter per line and `)` on its own line.
 
+When an inline member definition is moved out of an exported type, put the declaration's arguments on their own lines, even when there is only one. Keep the out-of-class definition on one line when it is otherwise short:
+
+```cpp
+struct value {
+    auto find(
+        std::string_view key
+    ) const -> const value*;
+};
+
+auto value::find(const std::string_view key) const -> const value* {
+    ...
+}
+```
+
 Default argument values belong only on declarations, never on definitions.
 
 When a constructor has an initializer list, keep it on the same line as the signature with `{` following immediately. If the body is empty, collapse to `{}`:
