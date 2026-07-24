@@ -11,15 +11,15 @@ import gse.core;
 import gse.ecs;
 
 export namespace gse::primitive_resolver {
-	struct [[= gse::system_state<"PrimitiveResolver">{}]] data {};
+	struct [[= system_state<"PrimitiveResolver">{}]] data {};
 
-	[[= gse::system_run<>{}]]
+	[[= system_run<>{}]]
 	auto ensure_renders(
 		context& ctx,
 		structural<render_component> renders
 	) -> async::task<>;
 
-	[[= gse::system_run<1>{}]]
+	[[= system_run<1>{}]]
 	auto populate(
 		context& ctx,
 		const primitives::data& prims,

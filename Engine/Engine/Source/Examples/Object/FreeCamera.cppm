@@ -44,11 +44,11 @@ export namespace gse::free_camera {
 }
 
 export namespace gse::free_camera::system {
-	struct [[= gse::system_state<"FreeCamera">{}]] data {
+	struct [[= system_state<"FreeCamera">{}]] data {
 		std::unordered_map<id, bindings> bindings_by_owner;
 	};
 
-	[[= gse::system_run<>{}]]
+	[[= system_run<>{}]]
 	auto attach(
 		context& ctx,
 		data& d,
@@ -56,7 +56,7 @@ export namespace gse::free_camera::system {
 		structural<camera::follow_component> follows
 	) -> async::task<>;
 
-	[[= gse::system_run<1>{}]]
+	[[= system_run<1>{}]]
 	auto update(
 		context& ctx,
 		data& d,
