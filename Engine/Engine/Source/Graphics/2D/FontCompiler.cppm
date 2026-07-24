@@ -113,7 +113,6 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 		bool has_geometry = loaded && !shape.contours.empty();
 		if (has_geometry) {
 			shape.normalize();
-			shape.orientContours();
 		}
 
 		const auto bounds = shape.getBounds();
@@ -167,7 +166,7 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 		const double translate_x = cell_em * 0.5 - (bounds.l + shape_w * 0.5);
 		const double translate_y = cell_em * 0.5 - (bounds.b + shape_h * 0.5);
 
-		msdfgen::edgeColoringInkTrap(shape, 3.0);
+		msdfgen::edgeColoringByDistance(shape, 3.0);
 		msdfgen::Bitmap<float, 4> mtsdf(cell, cell);
 		msdfgen::generateMTSDF(
 			mtsdf,
@@ -178,16 +177,30 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 			error_correction
 		);
 
+		double exterior_sum = 0.0;
+		int exterior_samples = 0;
+		for (int x = 0; x < cell; ++x) {
+			exterior_sum += mtsdf(x, 0)[3];
+			exterior_sum += mtsdf(x, cell - 1)[3];
+			exterior_samples += 2;
+		}
+		for (int y = 1; y < cell - 1; ++y) {
+			exterior_sum += mtsdf(0, y)[3];
+			exterior_sum += mtsdf(cell - 1, y)[3];
+			exterior_samples += 2;
+		}
+		const bool invert_distance = exterior_sum > static_cast<double>(exterior_samples) * 0.5;
+
 		for (int y = 0; y < cell; ++y) {
 			for (int x = 0; x < cell; ++x) {
 				const int atlas_x = cell_x + x;
 				const int atlas_y = cell_y + (cell - 1 - y);
 				const std::size_t idx = (static_cast<std::size_t>(atlas_y) * atlas_width + atlas_x) * channels;
 				const auto* px = mtsdf(x, y);
-				atlas_data[idx + 0] = static_cast<std::byte>(std::clamp(px[0], 0.f, 1.f) * 255.f);
-				atlas_data[idx + 1] = static_cast<std::byte>(std::clamp(px[1], 0.f, 1.f) * 255.f);
-				atlas_data[idx + 2] = static_cast<std::byte>(std::clamp(px[2], 0.f, 1.f) * 255.f);
-				atlas_data[idx + 3] = static_cast<std::byte>(std::clamp(px[3], 0.f, 1.f) * 255.f);
+				for (std::uint32_t channel = 0; channel < channels; ++channel) {
+					const float distance = invert_distance ? 1.0f - px[channel] : px[channel];
+					atlas_data[idx + channel] = static_cast<std::byte>(std::clamp(distance, 0.f, 1.f) * 255.f);
+				}
 			}
 		}
 
