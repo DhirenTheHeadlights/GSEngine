@@ -24,6 +24,14 @@ export namespace gse::layout_store {
 	) -> std::string;
 
 	auto flush() -> void;
+
+	auto trimmed(
+		std::string_view s
+	) -> std::string_view;
+
+	auto section_name(
+		std::string_view line
+	) -> std::string_view;
 }
 
 namespace gse::layout_store {
@@ -79,14 +87,6 @@ namespace gse::layout_store {
 	};
 
 	auto instance() -> store&;
-
-	auto trimmed(
-		std::string_view s
-	) -> std::string_view;
-
-	auto section_name(
-		std::string_view line
-	) -> std::string_view;
 
 	auto owned(
 		const owner& sections,
