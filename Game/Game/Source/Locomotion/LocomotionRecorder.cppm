@@ -580,7 +580,7 @@ auto gs::locomotion::bvh_clip_info(const std::string_view path) -> bool {
 static auto import_hinge_x(const gse::quat& parent, const gse::quat& child) -> gse::angle {
 	const auto theta = gse::difference_axis_angle(parent, child);
 	const auto axis_world = gse::rotate_vector(parent, gse::vec3f(1.f, 0.f, 0.f));
-	return gse::dot(axis_world, theta);
+	return -gse::dot(axis_world, theta);
 }
 
 auto gs::locomotion::import_mocap(const std::string_view bvh_path, const std::string_view out_path) -> bool {
