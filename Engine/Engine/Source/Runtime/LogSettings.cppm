@@ -8,98 +8,98 @@ import gse.meta;
 import gse.concurrency;
 
 export namespace gse::log_settings {
-	struct [[= gse::system_state<"LogSettings">{}, = gse::settings::category<"Dev">{}]] data {
+	struct [[= system_state<"LogSettings">{}, = settings::category<"Dev">{}]] data {
 		[[
-			= gse::settings::describe<"Minimum level applied to every log category. Individual category settings can diverge afterward.">{},
-			= gse::settings::hot_reloadable
+			= settings::describe<"Minimum level applied to every log category. Individual category settings can diverge afterward.">{},
+			= settings::hot_reloadable
 		]]
 		log::level global_level = log::level::info;
 
 		[[
-			= gse::settings::describe<"Minimum level for general engine messages.">{},
-			= gse::settings::hot_reloadable
+			= settings::describe<"Minimum level for general engine messages.">{},
+			= settings::hot_reloadable
 		]]
 		log::level general_level = log::level::info;
 
 		[[
-			= gse::settings::describe<"Minimum level for runtime and boot messages.">{},
-			= gse::settings::hot_reloadable
+			= settings::describe<"Minimum level for runtime and boot messages.">{},
+			= settings::hot_reloadable
 		]]
 		log::level runtime_level = log::level::info;
 
 		[[
-			= gse::settings::describe<"Minimum level for renderer and frame scheduling messages.">{},
-			= gse::settings::hot_reloadable
+			= settings::describe<"Minimum level for renderer and frame scheduling messages.">{},
+			= settings::hot_reloadable
 		]]
 		log::level render_level = log::level::info;
 
 		[[
-			= gse::settings::describe<"Minimum level for network messages.">{},
-			= gse::settings::hot_reloadable
+			= settings::describe<"Minimum level for network messages.">{},
+			= settings::hot_reloadable
 		]]
 		log::level network_level = log::level::info;
 
 		[[
-			= gse::settings::describe<"Minimum level for Vulkan messages.">{},
-			= gse::settings::hot_reloadable
+			= settings::describe<"Minimum level for Vulkan messages.">{},
+			= settings::hot_reloadable
 		]]
 		log::level vulkan_level = log::level::info;
 
 		[[
-			= gse::settings::describe<"Minimum level for Vulkan validation messages.">{},
-			= gse::settings::hot_reloadable
+			= settings::describe<"Minimum level for Vulkan validation messages.">{},
+			= settings::hot_reloadable
 		]]
 		log::level vulkan_validation_level = log::level::info;
 
 		[[
-			= gse::settings::describe<"Minimum level for Vulkan memory messages.">{},
-			= gse::settings::hot_reloadable
+			= settings::describe<"Minimum level for Vulkan memory messages.">{},
+			= settings::hot_reloadable
 		]]
 		log::level vulkan_memory_level = log::level::info;
 
 		[[
-			= gse::settings::describe<"Minimum level for Direct3D 12 messages.">{},
-			= gse::settings::hot_reloadable
+			= settings::describe<"Minimum level for Direct3D 12 messages.">{},
+			= settings::hot_reloadable
 		]]
 		log::level dx12_level = log::level::info;
 
 		[[
-			= gse::settings::describe<"Minimum level for Direct3D 12 validation messages.">{},
-			= gse::settings::hot_reloadable
+			= settings::describe<"Minimum level for Direct3D 12 validation messages.">{},
+			= settings::hot_reloadable
 		]]
 		log::level dx12_validation_level = log::level::info;
 
 		[[
-			= gse::settings::describe<"Minimum level for asset pipeline messages.">{},
-			= gse::settings::hot_reloadable
+			= settings::describe<"Minimum level for asset pipeline messages.">{},
+			= settings::hot_reloadable
 		]]
 		log::level assets_level = log::level::info;
 
 		[[
-			= gse::settings::describe<"Minimum level for task scheduler messages.">{},
-			= gse::settings::hot_reloadable
+			= settings::describe<"Minimum level for task scheduler messages.">{},
+			= settings::hot_reloadable
 		]]
 		log::level task_level = log::level::info;
 
 		[[
-			= gse::settings::describe<"Minimum level for save-system messages.">{},
-			= gse::settings::hot_reloadable
+			= settings::describe<"Minimum level for save-system messages.">{},
+			= settings::hot_reloadable
 		]]
 		log::level save_system_level = log::level::info;
 
 		[[
-			= gse::settings::describe<"Minimum level for physics messages.">{},
-			= gse::settings::hot_reloadable
+			= settings::describe<"Minimum level for physics messages.">{},
+			= settings::hot_reloadable
 		]]
 		log::level physics_level = log::level::info;
 
 		log::level m_last_global_level = log::level::debug;
 	};
 
-	[[= gse::system_run<>{}]]
+	[[= system_run<>{}]]
 	auto run(
 		data& d
-	) -> gse::async::task<>;
+	) -> async::task<>;
 }
 
 namespace gse::log_settings {
@@ -145,7 +145,7 @@ auto gse::log_settings::apply_categories(data& d) -> void {
 	}
 }
 
-auto gse::log_settings::run(data& d) -> gse::async::task<> {
+auto gse::log_settings::run(data& d) -> async::task<> {
 	if (d.global_level != d.m_last_global_level) {
 		log::set_level(d.global_level);
 		set_category_fields(d, d.global_level);

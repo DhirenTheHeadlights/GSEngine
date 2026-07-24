@@ -338,15 +338,7 @@ gse::log::scope::~scope() {
 }
 
 auto gse::log::level_sgr(const level lvl) -> int {
-	template for (constexpr auto e : std::define_static_array(std::meta::enumerators_of(^^level))) {
-		constexpr auto ann = first_annotation_of_type(e, ^^ansi_sgr);
-		if constexpr (ann != std::meta::info{}) {
-			if ([:e:] == lvl) {
-				return [:std::meta::constant_of(ann):].code;
-			}
-		}
-	}
-	return 0;
+	return gse::annotation_from_enum<ansi_sgr>(lvl, ansi_sgr{ 0 }).code;
 }
 
 gse::log::sink::~sink() = default;
