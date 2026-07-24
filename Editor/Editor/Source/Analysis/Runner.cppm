@@ -11,9 +11,23 @@ import :semantic_tokens;
 import :symbol_extract;
 
 export namespace gse::ide::analysis {
+	enum class diagnostics_status {
+		success,
+		module_unavailable,
+		database_unavailable,
+		entry_unavailable,
+		launch_failed,
+		timed_out,
+		compiler_failed
+	};
+
+	constexpr auto analysis_failed(diagnostics_status status) -> bool;
+	constexpr auto analysis_crashed(diagnostics_status status) -> bool;
+
 	struct diagnostics_check {
 		std::atomic<bool> done = false;
 		std::uint32_t document_id = 0;
+		document_revision revision;
 		std::vector<diagnostic> result;
 		std::vector<diagnostic> lint;
 		std::vector<qualified_use> quals;
@@ -21,23 +35,20 @@ export namespace gse::ide::analysis {
 		std::vector<semantic_token> tokens;
 		std::vector<symbol_token> symbols;
 		std::vector<symbol_ref> refs;
+		std::vector<param_token> params;
 		bool symbols_complete = false;
-		bool failed = false;
-		bool crashed = false;
-		std::string crash_output;
+		diagnostics_status status = diagnostics_status::success;
+		std::string failure_output;
 		gse::time duration;
 	};
 
 	struct diagnostics_runner {
-		static auto find_compile_commands(
-			const std::filesystem::path& root
-		) -> std::optional<std::filesystem::path>;
-
 		static auto start(
 			const std::shared_ptr<diagnostics_check>& check,
 			const std::filesystem::path& compile_commands,
 			const std::filesystem::path& file,
 			const std::filesystem::path& plugin_dll,
+			const std::filesystem::path& workspace_root,
 			void (*lint_hook)(diagnostics_check&)
 		) -> void;
 	};
@@ -48,6 +59,14 @@ namespace gse::ide::analysis {
 		std::span<diagnostic> diagnostics,
 		const std::filesystem::path& directory
 	) -> void;
+}
+
+constexpr auto gse::ide::analysis::analysis_failed(const diagnostics_status status) -> bool {
+	return status == diagnostics_status::module_unavailable;
+}
+
+constexpr auto gse::ide::analysis::analysis_crashed(const diagnostics_status status) -> bool {
+	return status != diagnostics_status::success && !analysis_failed(status);
 }
 
 auto gse::ide::analysis::normalize_diagnostic_files(const std::span<diagnostic> diagnostics, const std::filesystem::path& directory) -> void {
@@ -64,35 +83,8 @@ auto gse::ide::analysis::normalize_diagnostic_files(const std::span<diagnostic> 
 	}
 }
 
-auto gse::ide::analysis::diagnostics_runner::find_compile_commands(const std::filesystem::path& root) -> std::optional<std::filesystem::path> {
-	const std::filesystem::path build = root / "out" / "build";
-	std::error_code ec;
-	if (!std::filesystem::is_directory(build, ec)) {
-		return std::nullopt;
-	}
-
-	std::optional<std::filesystem::path> best;
-	std::filesystem::file_time_type best_time{};
-	for (const auto& entry : std::filesystem::directory_iterator(build, ec)) {
-		std::error_code entry_ec;
-		if (!entry.is_directory(entry_ec)) {
-			continue;
-		}
-		const std::filesystem::path candidate = entry.path() / "compile_commands.json";
-		std::error_code exists_ec;
-		if (std::filesystem::exists(candidate, exists_ec)) {
-			const std::filesystem::file_time_type time = std::filesystem::last_write_time(candidate, exists_ec);
-			if (!best || time > best_time) {
-				best = candidate;
-				best_time = time;
-			}
-		}
-	}
-	return best;
-}
-
-auto gse::ide::analysis::diagnostics_runner::start(const std::shared_ptr<diagnostics_check>& check, const std::filesystem::path& compile_commands, const std::filesystem::path& file, const std::filesystem::path& plugin_dll, void (*lint_hook)(diagnostics_check&)) -> void {
-	std::thread([check, compile_commands, file, plugin_dll, lint_hook] {
+auto gse::ide::analysis::diagnostics_runner::start(const std::shared_ptr<diagnostics_check>& check, const std::filesystem::path& compile_commands, const std::filesystem::path& file, const std::filesystem::path& plugin_dll, const std::filesystem::path& workspace_root, void (*lint_hook)(diagnostics_check&)) -> void {
+	std::thread([check, compile_commands, file, plugin_dll, workspace_root, lint_hook] {
 		const gse::time started = gse::system_clock::now<gse::time>();
 		auto read_file = [](const std::filesystem::path& path) -> std::string {
 			std::ifstream in(path, std::ios::binary);
@@ -106,38 +98,66 @@ auto gse::ide::analysis::diagnostics_runner::start(const std::shared_ptr<diagnos
 
 		const std::shared_ptr<const compilation_database> database = load_compilation_database(compile_commands);
 		const compilation_entry* entry = database ? database->find(file) : nullptr;
-		if (entry) {
-			const std::filesystem::path sarif_temp = std::filesystem::temp_directory_path() / ("gseditor_diag_" + std::to_string(check->document_id) + ".sarif");
+		if (!database) {
+			check->status = diagnostics_status::database_unavailable;
+			check->failure_output = std::format("compilation database unavailable: {}", compile_commands.display_string());
+			gse::log::println(gse::log::level::error, gse::log::category::task, "analysis: {}", check->failure_output);
+		}
+		else if (!entry) {
+			check->status = diagnostics_status::entry_unavailable;
+			check->failure_output = std::format("no compilation database entry for {}", file.display_string());
+			gse::log::println(gse::log::level::error, gse::log::category::task, "analysis: {}", check->failure_output);
+		}
+		else if (const std::expected<void, std::string> module_graph = validate_module_graph(*entry); !module_graph) {
+			check->status = diagnostics_status::module_unavailable;
+			check->failure_output = module_graph.error();
+		}
+		else {
+			const std::filesystem::path sarif_temp = process::temporary_path("diagnostics", "sarif");
+			const auto remove_sarif = gse::make_scope_exit([&sarif_temp] {
+				std::error_code ec;
+				std::filesystem::remove(sarif_temp, ec);
+			});
 
 			std::string command_line = entry->command.command_line;
 			std::filesystem::path token_temp;
+			const auto remove_tokens = gse::make_scope_exit([&token_temp] {
+				if (!token_temp.empty()) {
+					std::error_code ec;
+					std::filesystem::remove(token_temp, ec);
+				}
+			});
 			if (!plugin_dll.empty()) {
-				token_temp = std::filesystem::temp_directory_path() / ("gseditor_tok_" + std::to_string(check->document_id) + ".txt");
+				token_temp = process::temporary_path("tokens", "txt");
 				command_line += " -fplugin=\"" + plugin_dll.generic_native_encoded_string() + "\"";
 				command_line += " -fplugin-arg-gse_tokens-out=\"" + token_temp.generic_native_encoded_string() + "\"";
+				command_line += " -fplugin-arg-gse_tokens-root=\"" + workspace_root.generic_native_encoded_string() + "\"";
 			}
 
 			const std::string directory = entry->command.directory.native_encoded_string();
 			const std::string sarif_path = sarif_temp.native_encoded_string();
 			const process::run_result run = process::run_capture_stderr(command_line.c_str(), directory.c_str(), sarif_path.c_str());
 
-			std::error_code ec;
 			const std::string sarif = read_file(sarif_temp);
-			std::filesystem::remove(sarif_temp, ec);
 			check->result = gcc_diagnostics::parse_sarif(sarif);
 
-			for (const diagnostic& d : check->result) {
-				if (d.message.contains("must be built")
-					|| d.message.contains("failed to read compiled module")
-					|| d.message.contains("returning to the gate")) {
-					check->failed = true;
-					break;
-				}
+			if (gcc_diagnostics::is_module_unavailable(check->result)) {
+				check->status = diagnostics_status::module_unavailable;
 			}
 
-			check->crashed = (!run.launched || run.timed_out || run.exit_code != 0) && check->result.empty();
-			if (check->crashed) {
-				check->crash_output = sarif;
+			if (check->status == diagnostics_status::success && check->result.empty()) {
+				if (!run.launched) {
+					check->status = diagnostics_status::launch_failed;
+				}
+				else if (run.timed_out) {
+					check->status = diagnostics_status::timed_out;
+				}
+				else if (run.exit_code != 0) {
+					check->status = diagnostics_status::compiler_failed;
+				}
+			}
+			if (analysis_crashed(check->status)) {
+				check->failure_output = sarif;
 				std::string reason = sarif.substr(0, std::min<std::size_t>(sarif.size(), 4000));
 				if (reason.empty()) {
 					reason = "(no compiler output captured before exit — likely a plugin segfault)";
@@ -147,12 +167,12 @@ auto gse::ide::analysis::diagnostics_runner::start(const std::shared_ptr<diagnos
 
 			if (!token_temp.empty()) {
 				const std::string token_text = read_file(token_temp);
-				std::filesystem::remove(token_temp, ec);
 				check->tokens = semantic_tokens::parse(token_text);
 
-				symbol_set symbols = symbol_tokens::parse(token_text);
+				symbol_set symbols = symbol_tokens::parse(token_text, file.generic_native_encoded_string());
 				check->symbols = std::move(symbols.symbols);
 				check->refs = std::move(symbols.refs);
+				check->params = std::move(symbols.params);
 				check->quals = std::move(symbols.quals);
 				check->template_args = std::move(symbols.template_args);
 				check->symbols_complete = symbols.complete;

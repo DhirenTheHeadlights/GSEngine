@@ -81,7 +81,12 @@ auto gse::ide::analysis::semantic_tokens::parse(std::string_view text) -> std::v
 		const std::optional<std::uint32_t> len = to_u32(fields[3]);
 		const std::optional<semantic_kind> kind = kind_from(fields[4]);
 		if (ln && col && len && kind) {
-			out.push_back({ *ln, *col, *len, *kind });
+			out.push_back({
+				.line = *ln,
+				.column = *col,
+				.length = *len,
+				.kind = *kind,
+			});
 		}
 	}
 	return out;

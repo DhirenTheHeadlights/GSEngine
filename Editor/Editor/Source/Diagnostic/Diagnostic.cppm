@@ -15,6 +15,10 @@ export namespace gse::ide {
 		hint
 	};
 
+	struct document_revision {
+		std::uint64_t value = 0;
+	};
+
 	struct text_edit {
 		std::uint32_t line = 0;
 		std::uint32_t end_line = 0;

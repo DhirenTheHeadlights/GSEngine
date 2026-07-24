@@ -12,8 +12,15 @@ set(MAIN_CPP "${EDITOR_SRC}/Main.cpp")
 set(EDITOR_SOURCE_DIR "${EDITOR_DIR}/")
 set(GAME_SOURCE_DIR "${CMAKE_SOURCE_DIR}/Game/Game/")
 set(EDITOR_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
+set(EDITOR_BUILD_DIR "${CMAKE_BINARY_DIR}/")
+set(EDITOR_COMPILE_COMMANDS "${CMAKE_BINARY_DIR}/compile_commands.json")
 set(EDITOR_TOKEN_PLUGIN "${CMAKE_CURRENT_BINARY_DIR}/gse_tokens.dll")
+set(EDITOR_SEMANTIC_CONTRACT "${CMAKE_CURRENT_SOURCE_DIR}/Tests/SemanticContract.cpp")
 set(EDITOR_CPPREF_INDEX "${CMAKE_CURRENT_SOURCE_DIR}/Resources/cppref.idx")
+set(EDITOR_GAME_TARGET "GoonSquad")
+set(EDITOR_GAME_EXECUTABLE "${CMAKE_BINARY_DIR}/Game/${EDITOR_GAME_TARGET}.exe")
+set(EDITOR_TARGET_NAME "Editor")
+set(EDITOR_EXECUTABLE "${CMAKE_CURRENT_BINARY_DIR}/${EDITOR_TARGET_NAME}.exe")
 configure_file(
     ${EDITOR_DIR}/Import/Config.cppm.in
     ${CMAKE_CURRENT_BINARY_DIR}/Editor/Import/Config.cppm
@@ -29,6 +36,7 @@ list(REMOVE_ITEM EDITOR_MODULES "${EDITOR_DIR}/Import/Ide.cppm")
 file(GLOB_RECURSE EDITOR_IMPLS CONFIGURE_DEPENDS "${EDITOR_DIR}/*.cpp")
 list(REMOVE_ITEM EDITOR_IMPLS "${MAIN_CPP}")
 list(REMOVE_ITEM EDITOR_IMPLS "${EDITOR_SRC}/Analysis/Plugin/gse_tokens_plugin.cpp")
+list(REMOVE_ITEM EDITOR_IMPLS "${EDITOR_SEMANTIC_CONTRACT}")
 
 # A .cpp that declares an implementation partition (module gse.x:y;) provides a
 # module and must live in a CXX_MODULES file set; a plain implementation unit
@@ -121,7 +129,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
             OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/gse_tokens.dll"
             COMMAND "${CMAKE_CXX_COMPILER}"
                 "-I${_gse_plugin_dir}/include"
-                -fno-rtti -shared
+                -O2 -fno-rtti -shared
                 "${GSE_TOKENS_PLUGIN_SRC}"
                 "${_gse_plugin_dir}/cc1plus.exe.a"
                 -o "${CMAKE_CURRENT_BINARY_DIR}/gse_tokens.dll"
@@ -129,7 +137,29 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
             COMMENT "Building gse_tokens GCC plugin"
             VERBATIM
         )
-        add_custom_target(gse_tokens_plugin ALL DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/gse_tokens.dll")
+        set(_gse_contract_output "${CMAKE_CURRENT_BINARY_DIR}/gse_tokens_contract.tsv")
+        set(_gse_contract_stamp "${CMAKE_CURRENT_BINARY_DIR}/gse_tokens_contract.stamp")
+        add_custom_command(
+            OUTPUT "${_gse_contract_stamp}"
+            BYPRODUCTS "${_gse_contract_output}"
+            COMMAND "${CMAKE_CXX_COMPILER}"
+                -std=c++26 -fsyntax-only
+                "-fplugin=${CMAKE_CURRENT_BINARY_DIR}/gse_tokens.dll"
+                "-fplugin-arg-gse_tokens-out=${_gse_contract_output}"
+                "-fplugin-arg-gse_tokens-root=${CMAKE_SOURCE_DIR}"
+                "${EDITOR_SEMANTIC_CONTRACT}"
+            COMMAND "${CMAKE_COMMAND}"
+                "-DCONTRACT_OUTPUT=${_gse_contract_output}"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/Tests/CheckSemanticContract.cmake"
+            COMMAND "${CMAKE_COMMAND}" -E touch "${_gse_contract_stamp}"
+            DEPENDS
+                "${CMAKE_CURRENT_BINARY_DIR}/gse_tokens.dll"
+                "${EDITOR_SEMANTIC_CONTRACT}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/Tests/CheckSemanticContract.cmake"
+            VERBATIM
+        )
+        add_custom_target(gse_tokens_plugin ALL DEPENDS "${_gse_contract_stamp}")
+        add_custom_target(gse_tokens_contract DEPENDS "${_gse_contract_stamp}")
         add_dependencies(Editor gse_tokens_plugin)
     else()
         message(STATUS "gse_tokens plugin: cc1plus.exe.a not found (toolchain built without --enable-plugin); editor semantic tokens disabled")

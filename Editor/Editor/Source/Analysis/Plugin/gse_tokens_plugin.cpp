@@ -8,6 +8,7 @@
 #include "cp/name-lookup.h"
 #include "hash-set.h"
 #include "hash-map.h"
+#include <stdarg.h>
 
 int plugin_is_GPL_compatible;
 
@@ -25,7 +26,83 @@ static auto_vec<tree, 32> *g_local_decls = nullptr;
 static location_t g_use_anchor = UNKNOWN_LOCATION;
 static char *g_src = nullptr;
 static long g_src_len = 0;
+static auto_vec<long> *g_src_lines = nullptr;
 static hash_map<tree, tree> *g_lexical_ns = nullptr;
+
+/* Per-line fprintf was half the plugin's index-mode cost (stream lock +
+   format parse per call).  All token output goes through this buffer instead;
+   only %d and %s exist in the emission formats.  */
+static char g_out_buffer[1 << 14];
+static int g_out_length = 0;
+
+static void out_flush() {
+	if (g_out_length > 0) {
+		fwrite(g_out_buffer, 1, (size_t)g_out_length, g_out ? g_out : stderr);
+		g_out_length = 0;
+	}
+}
+
+static void out_reserve(int needed) {
+	if (g_out_length + needed > (int)sizeof(g_out_buffer)) {
+		out_flush();
+	}
+}
+
+static void out_char(char c) {
+	out_reserve(1);
+	g_out_buffer[g_out_length++] = c;
+}
+
+static void out_str(const char *s) {
+	const size_t n = strlen(s);
+	if (n >= sizeof(g_out_buffer)) {
+		out_flush();
+		fwrite(s, 1, n, g_out ? g_out : stderr);
+		return;
+	}
+	out_reserve((int)n);
+	memcpy(g_out_buffer + g_out_length, s, n);
+	g_out_length += (int)n;
+}
+
+static void out_int(int v) {
+	char digits[16];
+	int count = 0;
+	unsigned magnitude = v < 0 ? 0u - (unsigned)v : (unsigned)v;
+	do {
+		digits[count++] = (char)('0' + magnitude % 10u);
+		magnitude /= 10u;
+	} while (magnitude);
+	out_reserve(count + 1);
+	if (v < 0) {
+		g_out_buffer[g_out_length++] = '-';
+	}
+	while (count > 0) {
+		g_out_buffer[g_out_length++] = digits[--count];
+	}
+}
+
+static void out_printf(const char *fmt, ...) {
+	va_list args;
+	va_start(args, fmt);
+	for (const char *p = fmt; *p; ++p) {
+		if (*p != '%') {
+			out_char(*p);
+			continue;
+		}
+		++p;
+		if (*p == 'd') {
+			out_int(va_arg(args, int));
+		}
+		else if (*p == 's') {
+			out_str(va_arg(args, const char *));
+		}
+		else {
+			gcc_unreachable();
+		}
+	}
+	va_end(args);
+}
 
 static void record_lexical_namespace(tree decl) {
 	if (!decl || !DECL_P(decl) || !scope_chain || !current_namespace) {
@@ -83,20 +160,46 @@ struct source_token {
 	int byte_column = 0;
 	int pair = -1;
 	bool binding_scope = false;
+	tree ident = NULL_TREE;
 };
 
-struct emitted_qualifier {
-	int line = 0;
-	int column = 0;
-	int length = 0;
+/* Dedupe keys pack (line, column, length) injectively: line maps far past any
+   real file and the line table caps columns well below 16 bits.  */
+struct token_span_hash : int_hash<uint64_t, 0> {
+	static hashval_t hash(uint64_t v) { return (hashval_t)((v ^ (v >> 32)) * 0x9E3779B9u); }
 };
+
+static uint64_t token_span_key(int line, int column, int length) {
+	return ((uint64_t)(uint32_t)line << 32) | ((uint64_t)(uint16_t)column << 16) | (uint16_t)length;
+}
 
 static auto_vec<source_token, 256> *g_source_tokens = nullptr;
-static auto_vec<emitted_qualifier, 32> *g_emitted_qualifiers = nullptr;
+static hash_set<uint64_t, false, token_span_hash> *g_emitted_qualifiers = nullptr;
 
 static tree walk_cb(tree *tp, int *walk_subtrees, void *);
 static void walk_fn_body(tree fndecl);
 static void process_type_decl(tree d);
+
+/* walk_tree_without_duplicates allocates a fresh visited-set per call, and
+   walk_cb re-roots a walk at every located expression node.  Pool the sets by
+   recursion depth instead: each call still gets its own empty dedup domain,
+   so traversal (and output) is unchanged, only the allocation churn goes.  */
+static auto_vec<hash_set<tree> *, 8> *g_walk_psets = nullptr;
+static unsigned g_walk_depth = 0;
+
+static void walk_expr_tree(tree *tp) {
+	if (!g_walk_psets) {
+		g_walk_psets = new auto_vec<hash_set<tree> *, 8>();
+	}
+	if (g_walk_psets->length() <= g_walk_depth) {
+		g_walk_psets->safe_push(new hash_set<tree>());
+	}
+	hash_set<tree> *pset = (*g_walk_psets)[g_walk_depth];
+	pset->empty();
+	++g_walk_depth;
+	walk_tree(tp, walk_cb, nullptr, pset);
+	--g_walk_depth;
+}
 
 static char ascii_lower(char c) {
 	return (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c;
@@ -110,6 +213,24 @@ static bool same_file(const char *a, const char *b) {
 		if (ca != cb) return false;
 		if (!ca) return true;
 	}
+}
+
+/* expand_location file names are interned in the line table, so a small
+   pointer-keyed memo skips the char-by-char path comparison on the hot
+   emission gates without changing any result.  */
+static bool same_file_as_main(const char *file) {
+	if (!file || !main_input_filename) return false;
+	static const char *keys[4] = {};
+	static bool vals[4] = {};
+	static unsigned next = 0;
+	for (unsigned i = 0; i < 4; ++i) {
+		if (keys[i] == file) return vals[i];
+	}
+	const bool result = same_file(file, main_input_filename);
+	keys[next] = file;
+	vals[next] = result;
+	next = (next + 1) & 3;
+	return result;
 }
 
 static bool skipped_path_segment(const char *segment, size_t length) {
@@ -130,6 +251,28 @@ static bool skipped_path_segment(const char *segment, size_t length) {
 		if (equal) return true;
 	}
 	return false;
+}
+
+static bool under_root(const char *file);
+
+static bool under_root_cached(const char *file) {
+	if (!file || !g_root) return false;
+	static const char *keys[256] = {};
+	static bool vals[256] = {};
+	const unsigned slot = (unsigned)(((uintptr_t)file * 2654435761u) >> 20) & 255;
+	if (keys[slot] == file) return vals[slot];
+	const bool result = under_root(file);
+	keys[slot] = file;
+	vals[slot] = result;
+	return result;
+}
+
+static bool main_file_under_root() {
+	static int cached = -1;
+	if (cached < 0) {
+		cached = under_root(main_input_filename) ? 1 : 0;
+	}
+	return cached == 1;
 }
 
 static bool under_root(const char *file) {
@@ -158,11 +301,20 @@ static bool under_root(const char *file) {
 
 static cached_file *get_cached_file(const char *path) {
 	if (!path) return nullptr;
+	static const char *keys[256] = {};
+	static int vals[256] = {};
 	if (!g_files) g_files = new auto_vec<cached_file, 16>();
-	for (cached_file &cf : *g_files)
-		if (same_file(cf.path, path)) return &cf;
+	const unsigned slot = (unsigned)(((uintptr_t)path * 2654435761u) >> 20) & 255;
+	if (keys[slot] == path) return &(*g_files)[vals[slot]];
+	for (unsigned i = 0; i < g_files->length(); ++i) {
+		if (same_file((*g_files)[i].path, path)) {
+			keys[slot] = path;
+			vals[slot] = (int)i;
+			return &(*g_files)[i];
+		}
+	}
 	cached_file entry{ xstrdup(path), nullptr, 0, nullptr };
-	if (main_input_filename && same_file(path, main_input_filename) && ensure_source()) {
+	if (same_file_as_main(path) && ensure_source()) {
 		entry.data = g_src;
 		entry.len = g_src_len;
 	}
@@ -178,6 +330,8 @@ static cached_file *get_cached_file(const char *path) {
 		fclose(f);
 	}
 	g_files->safe_push(entry);
+	keys[slot] = path;
+	vals[slot] = (int)g_files->length() - 1;
 	return &g_files->last();
 }
 
@@ -242,21 +396,49 @@ static int ident_len(tree decl) {
 	return 0;
 }
 
+/* Locations are append-only in the line table, so an expansion never changes
+   once computed; a direct-mapped memo is exact.  Key 0 is the empty-slot
+   marker, which is why UNKNOWN_LOCATION bypasses the cache.  */
+static location_t g_expand_keys[2048];
+static expanded_location g_expand_vals[2048];
+
+static expanded_location expand_cached(location_t loc) {
+	if (loc == UNKNOWN_LOCATION) {
+		return expand_location(loc);
+	}
+	const unsigned slot = ((unsigned)loc * 2654435761u) >> 21;
+	if (g_expand_keys[slot] == loc) {
+		return g_expand_vals[slot];
+	}
+	const expanded_location xl = expand_location(loc);
+	g_expand_keys[slot] = loc;
+	g_expand_vals[slot] = xl;
+	return xl;
+}
+
 static bool in_main_file(location_t loc) {
 	if (loc == UNKNOWN_LOCATION || !main_input_filename) return false;
-	expanded_location xl = expand_location(loc);
-	return xl.file && same_file(xl.file, main_input_filename);
+	expanded_location xl = expand_cached(loc);
+	return xl.file && same_file_as_main(xl.file);
+}
+
+static bool expand_main(location_t loc, expanded_location *out) {
+	if (loc == UNKNOWN_LOCATION || !main_input_filename) return false;
+	*out = expand_cached(loc);
+	return out->file && same_file_as_main(out->file);
 }
 
 static void emit(location_t loc, const char *kind, int len) {
 	if (g_index_only) return;
-	if (!kind || len <= 0 || !in_main_file(loc)) return;
-	expanded_location xl = expand_location(loc);
+	if (!kind || len <= 0) return;
+	expanded_location xl;
+	if (!expand_main(loc, &xl)) return;
 	if (xl.line <= 0 || xl.column <= 0) return;
-	fprintf(g_out ? g_out : stderr, "GSETOK\t%d\t%d\t%d\t%s\n", xl.line, xl.column, len, kind);
+	out_printf("GSETOK\t%d\t%d\t%d\t%s\n", xl.line, xl.column, len, kind);
 }
 
 static void emit_at_name(location_t loc, const char *kind, tree id);
+static void emit_ref(location_t use_loc, tree decl, int len);
 
 static void emit_decl(tree d, location_t loc) {
 	if (!d || !DECL_P(d) || DECL_ARTIFICIAL(d)) return;
@@ -267,6 +449,7 @@ static void emit_decl(tree d, location_t loc) {
 		return;
 	}
 	emit_at_name(loc, kind_of(d), DECL_NAME(d));
+	emit_ref(loc, d, ident_len(d));
 }
 
 static void emit_type(tree d) {
@@ -281,7 +464,7 @@ static void walk_fn_default_args(tree decl) {
 	if (!fntype || (TREE_CODE(fntype) != FUNCTION_TYPE && TREE_CODE(fntype) != METHOD_TYPE)) return;
 	for (tree a = TYPE_ARG_TYPES(fntype); a && a != void_list_node; a = TREE_CHAIN(a)) {
 		tree def = TREE_PURPOSE(a);
-		if (def && !DECL_P(def) && TREE_CODE(def) != DEFERRED_PARSE) walk_tree_without_duplicates(&def, walk_cb, nullptr);
+		if (def && !DECL_P(def) && TREE_CODE(def) != DEFERRED_PARSE) walk_expr_tree(&def);
 	}
 }
 
@@ -306,7 +489,7 @@ static void emit_template_params(tree tmpl) {
 	}
 }
 
-static void print_qualified_prefix(FILE *out, tree decl);
+static void print_qualified_prefix(tree decl);
 
 static bool function_definition_p(tree decl) {
 	return decl && TREE_CODE(decl) == FUNCTION_DECL && DECL_INITIAL(decl);
@@ -319,13 +502,13 @@ static void emit_concept(tree cdecl) {
 	emit(DECL_SOURCE_LOCATION(cdecl), "type", IDENTIFIER_LENGTH(id));
 	const char *s = IDENTIFIER_POINTER(id);
 	if (s[0] == '_' || s[0] == '.' || strchr(s, ' ')) return;
-	expanded_location xl = expand_location(DECL_SOURCE_LOCATION(cdecl));
-	if (xl.file && xl.line > 0 && xl.column > 0 && in_main_file(DECL_SOURCE_LOCATION(cdecl))) {
+	expanded_location xl;
+	if (expand_main(DECL_SOURCE_LOCATION(cdecl), &xl) && xl.line > 0 && xl.column > 0) {
 		FILE *out = g_out ? g_out : stderr;
-		fprintf(out, "GSESYM\t%s\tconcept_decl\t%s\t%d\t%d\t", s, xl.file, xl.line, xl.column);
-		print_qualified_prefix(out, cdecl);
-		fputs(s, out);
-		fputs("\t\tdefinition\n", out);
+		out_printf("GSESYM\t%s\tconcept_decl\t%s\t%d\t%d\t", s, xl.file, xl.line, xl.column);
+		print_qualified_prefix(cdecl);
+		out_str(s);
+		out_str("\t\tdefinition\n");
 	}
 }
 
@@ -366,20 +549,19 @@ static void emit_sym(tree decl) {
 	const char *name = IDENTIFIER_POINTER(id);
 	if (name[0] == '_' || name[0] == '.' || strchr(name, ' ')) return;
 	location_t loc = DECL_SOURCE_LOCATION(decl);
-	if (loc == UNKNOWN_LOCATION) return;
-	expanded_location xl = expand_location(loc);
-	if (!xl.file || xl.line <= 0 || xl.column <= 0 || !in_main_file(loc)) return;
+	expanded_location xl;
+	if (!expand_main(loc, &xl)) return;
+	if (xl.line <= 0 || xl.column <= 0) return;
 	const int def_col = name_byte_column(xl.file, xl.line, xl.column, name, (int)IDENTIFIER_LENGTH(id));
-	FILE *out = g_out ? g_out : stderr;
-	fprintf(out, "GSESYM\t%s\t%s\t%s\t%d\t%d\t", name, kind, xl.file, xl.line, def_col);
-	print_qualified_prefix(out, decl);
-	fputs(name, out);
-	fputs("\t\t", out);
-	fputs(is_definition ? "definition" : "declaration", out);
-	fputc('\n', out);
+	out_printf("GSESYM\t%s\t%s\t%s\t%d\t%d\t", name, kind, xl.file, xl.line, def_col);
+	print_qualified_prefix(decl);
+	out_str(name);
+	out_str("\t\t");
+	out_str(is_definition ? "definition" : "declaration");
+	out_char('\n');
 }
 
-static void print_qualified_prefix(FILE *out, tree decl) {
+static void print_qualified_prefix(tree decl) {
 	const char *stack[32];
 	int n = 0;
 	tree ctx = DECL_CONTEXT(decl);
@@ -408,36 +590,80 @@ static void print_qualified_prefix(FILE *out, tree decl) {
 		}
 	}
 	for (int i = n - 1; i >= 0; --i) {
-		fputs(stack[i], out);
-		fputs("::", out);
+		out_str(stack[i]);
+		out_str("::");
 	}
 }
 
-static void emit_ref(location_t use_loc, tree decl, int len) {
+static void out_str_sanitized(const char *s) {
+	for (const char *p = s; *p; ++p) {
+		if (*p == '@') {
+			const char *q = p + 1;
+			while (*q == '.' || *q == '_' || (*q >= 'a' && *q <= 'z') || (*q >= 'A' && *q <= 'Z') || (*q >= '0' && *q <= '9')) {
+				++q;
+			}
+			p = q - 1;
+			continue;
+		}
+		const char c = *p;
+		out_char(c == '\t' || c == '\n' || c == '\r' ? ' ' : c);
+	}
+}
+
+static void emit_decl_type(tree decl) {
+	const enum tree_code code = TREE_CODE(decl);
+	if (code != VAR_DECL && code != FIELD_DECL && code != PARM_DECL) return;
+	tree type = TREE_TYPE(decl);
+	if (!type || !TYPE_P(type)) return;
+	const char *s = type_as_string(type, TFF_SCOPE);
+	if (s) out_str_sanitized(s);
+}
+
+static void emit_ref_at(const char *use_file, int use_line, int use_column, tree decl, int len) {
 	if (!decl || !DECL_P(decl) || len <= 0) return;
 	tree id = DECL_NAME(decl);
 	if (!id || TREE_CODE(id) != IDENTIFIER_NODE) return;
 	const char *name = IDENTIFIER_POINTER(id);
 	if (name[0] == '_' || name[0] == '.' || strchr(name, ' ')) return;
-	if (use_loc == UNKNOWN_LOCATION) return;
-	expanded_location ux = expand_location(use_loc);
-	if (!ux.file || ux.line <= 0 || ux.column <= 0 || !under_root(ux.file)) return;
-	expanded_location dx = expand_location(DECL_SOURCE_LOCATION(decl));
-	const char *def_file = (dx.file && dx.line > 0 && dx.column > 0) ? dx.file : "";
-	const int def_col = *def_file ? name_byte_column(dx.file, dx.line, dx.column, name, (int)IDENTIFIER_LENGTH(id)) : dx.column;
-	FILE *out = g_out ? g_out : stderr;
-	fprintf(out, "GSEREF\t%s\t%d\t%d\t%d\t%s\t%s\t%d\t%d\t", ux.file, ux.line, ux.column, len, name, def_file, dx.line, def_col);
-	print_qualified_prefix(out, decl);
-	fputs(name, out);
-	fputc('\n', out);
+	if (!use_file || use_line <= 0 || use_column <= 0 || !under_root_cached(use_file)) return;
+	expanded_location dx = expand_cached(DECL_SOURCE_LOCATION(decl));
+	if (!dx.file || dx.line <= 0 || dx.column <= 0) return;
+	const int def_col = name_byte_column(dx.file, dx.line, dx.column, name, (int)IDENTIFIER_LENGTH(id));
+	out_printf("GSEREF\t%s\t%d\t%d\t%d\t%s\t%s\t%d\t%d\t", use_file, use_line, use_column, len, name, dx.file, dx.line, def_col);
+	print_qualified_prefix(decl);
+	out_str(name);
+	out_str("\t\t");
+	emit_decl_type(decl);
+	out_char('\n');
 }
 
+static void emit_ref(location_t use_loc, tree decl, int len) {
+	if (!decl || !DECL_P(decl) || len <= 0 || use_loc == UNKNOWN_LOCATION) return;
+	tree id = DECL_NAME(decl);
+	if (!id || TREE_CODE(id) != IDENTIFIER_NODE) return;
+	const char *name = IDENTIFIER_POINTER(id);
+	expanded_location ux = expand_cached(use_loc);
+	if (!ux.file || ux.line <= 0 || ux.column <= 0) return;
+	const int use_column = name_byte_column(ux.file, ux.line, ux.column, name, len);
+	emit_ref_at(ux.file, ux.line, use_column, decl, len);
+}
+
+static bool locate_name(location_t loc, const char *name, int len, int *out_line, int *out_col);
+
 static void emit_call_ref(location_t caret, tree decl, int fallback_len) {
-	const location_t startloc = get_start(caret);
-	const expanded_location cx = expand_location(caret);
-	const expanded_location sx = expand_location(startloc);
-	if (sx.file && cx.file && strcmp(sx.file, cx.file) == 0 && sx.line == cx.line && cx.column > sx.column) {
-		emit_ref(startloc, decl, cx.column - sx.column + fallback_len);
+	if (!decl || !DECL_P(decl)) {
+		return;
+	}
+	tree id = DECL_NAME(decl);
+	if (!id || TREE_CODE(id) != IDENTIFIER_NODE || IDENTIFIER_LENGTH(id) <= 0) {
+		return;
+	}
+	const char *name = IDENTIFIER_POINTER(id);
+	const int len = (int)IDENTIFIER_LENGTH(id);
+	int line = 0;
+	int column = 0;
+	if (locate_name(caret, name, len, &line, &column)) {
+		emit_ref_at(main_input_filename, line, column, decl, len);
 	}
 	else {
 		emit_ref(caret, decl, fallback_len);
@@ -778,40 +1004,37 @@ static bool ensure_source_tokens() {
 
 static bool source_line(int line, const char **out_ptr, int *out_len) {
 	if (!ensure_source()) return false;
-	const char *p = g_src;
-	for (int cur = 1; cur < line; ++cur) {
-		p = strchr(p, '\n');
-		if (!p) return false;
-		++p;
+	if (!g_src_lines) {
+		g_src_lines = new auto_vec<long>();
+		g_src_lines->safe_push(0);
+		for (long i = 0; i < g_src_len; ++i) {
+			if (g_src[i] == '\n') g_src_lines->safe_push(i + 1);
+		}
 	}
-	const char *e = strchr(p, '\n');
-	int n = e ? (int)(e - p) : (int)(g_src + g_src_len - p);
+	if (line <= 0 || line - 1 >= (int)g_src_lines->length()) return false;
+	const long start = (*g_src_lines)[line - 1];
+	const long stop = line < (int)g_src_lines->length() ? (*g_src_lines)[line] : g_src_len;
+	const char *p = g_src + start;
+	int n = (int)(stop - start);
+	if (n > 0 && p[n - 1] == '\n') --n;
 	if (n > 0 && p[n - 1] == '\r') --n;
 	*out_ptr = p;
 	*out_len = n;
 	return true;
 }
 
-static void emit_at_name(location_t loc, const char *kind, tree id) {
-	if (g_index_only || !kind) {
-		return;
+static bool locate_name(location_t loc, const char *name, int len, int *out_line, int *out_col) {
+	expanded_location xl;
+	if (!expand_main(loc, &xl)) {
+		return false;
 	}
-	if (!id || TREE_CODE(id) != IDENTIFIER_NODE || IDENTIFIER_LENGTH(id) <= 0) {
-		return;
-	}
-	if (!in_main_file(loc)) {
-		return;
-	}
-	const expanded_location xl = expand_location(loc);
 	if (xl.line <= 0 || xl.column <= 0) {
-		return;
+		return false;
 	}
-	const int len = (int)IDENTIFIER_LENGTH(id);
-	const char *name = IDENTIFIER_POINTER(id);
 	const char *line = nullptr;
 	int n = 0;
 	if (!source_line(xl.line, &line, &n)) {
-		return;
+		return false;
 	}
 	int col = xl.column - 1;
 	if (col > n) {
@@ -835,9 +1058,59 @@ static void emit_at_name(location_t loc, const char *kind, tree id) {
 			best_distance = distance;
 		}
 	}
-	if (best >= 0) {
-		fprintf(g_out ? g_out : stderr, "GSETOK\t%d\t%d\t%d\t%s\n", xl.line, best + 1, len, kind);
+	if (best < 0) {
+		return false;
 	}
+	*out_line = xl.line;
+	*out_col = best + 1;
+	return true;
+}
+
+static void emit_at_name(location_t loc, const char *kind, tree id) {
+	if (g_index_only || !kind) {
+		return;
+	}
+	if (!id || TREE_CODE(id) != IDENTIFIER_NODE || IDENTIFIER_LENGTH(id) <= 0) {
+		return;
+	}
+	const int len = (int)IDENTIFIER_LENGTH(id);
+	int line = 0;
+	int col = 0;
+	if (locate_name(loc, IDENTIFIER_POINTER(id), len, &line, &col)) {
+		out_printf("GSETOK\t%d\t%d\t%d\t%s\n", line, col, len, kind);
+	}
+}
+
+static void emit_member_ref(location_t loc, tree field) {
+	if (!field || TREE_CODE(field) != FIELD_DECL) {
+		return;
+	}
+	tree id = DECL_NAME(field);
+	if (!id || TREE_CODE(id) != IDENTIFIER_NODE || IDENTIFIER_LENGTH(id) <= 0) {
+		return;
+	}
+	const char *name = IDENTIFIER_POINTER(id);
+	if (name[0] == '_' || name[0] == '.' || strchr(name, ' ')) {
+		return;
+	}
+	if (!main_file_under_root()) {
+		return;
+	}
+	const int len = (int)IDENTIFIER_LENGTH(id);
+	int line = 0;
+	int col = 0;
+	if (!locate_name(loc, name, len, &line, &col)) {
+		return;
+	}
+	const expanded_location dx = expand_cached(DECL_SOURCE_LOCATION(field));
+	const char *def_file = (dx.file && dx.line > 0 && dx.column > 0) ? dx.file : "";
+	const int def_col = *def_file ? name_byte_column(dx.file, dx.line, dx.column, name, len) : dx.column;
+	out_printf("GSEREF\t%s\t%d\t%d\t%d\t%s\t%s\t%d\t%d\t", main_input_filename, line, col, len, name, def_file, dx.line, def_col);
+	print_qualified_prefix(field);
+	out_str(name);
+	out_str("\t\t");
+	emit_decl_type(field);
+	out_char('\n');
 }
 
 static bool source_token_equals(int index, const char *text) {
@@ -853,11 +1126,14 @@ static tree source_token_identifier(int index) {
 	if (!g_source_tokens || index < 0 || index >= (int)g_source_tokens->length()) {
 		return NULL_TREE;
 	}
-	const source_token& token = (*g_source_tokens)[index];
+	source_token& token = (*g_source_tokens)[index];
 	if (token.kind != source_token_kind::identifier || token.finish <= token.start) {
 		return NULL_TREE;
 	}
-	return get_identifier_with_length(g_src + token.start, token.finish - token.start);
+	if (!token.ident) {
+		token.ident = get_identifier_with_length(g_src + token.start, token.finish - token.start);
+	}
+	return token.ident;
 }
 
 static bool declaration_visible_at_token(tree decl, const source_token& use) {
@@ -868,8 +1144,8 @@ static bool declaration_visible_at_token(tree decl, const source_token& use) {
 	if (decl_loc == UNKNOWN_LOCATION) {
 		return true;
 	}
-	const expanded_location value = expand_location(decl_loc);
-	if (!value.file || !main_input_filename || !same_file(value.file, main_input_filename)) {
+	const expanded_location value = expand_cached(decl_loc);
+	if (!value.file || !same_file_as_main(value.file)) {
 		return true;
 	}
 	if (value.line != use.line) {
@@ -1071,10 +1347,13 @@ static bool using_declaration_chain_p(int first) {
 }
 
 static int source_token_at(location_t location, source_token_kind kind) {
-	if (!ensure_source_tokens() || location == UNKNOWN_LOCATION || !in_main_file(location)) {
+	if (!ensure_source_tokens() || location == UNKNOWN_LOCATION) {
 		return -1;
 	}
-	const expanded_location value = expand_location(location);
+	expanded_location value;
+	if (!expand_main(location, &value)) {
+		return -1;
+	}
 	int low = 0;
 	int high = (int)g_source_tokens->length();
 	while (low < high) {
@@ -1101,15 +1380,9 @@ static int source_token_at(location_t location, source_token_kind kind) {
 
 static bool qualifier_already_emitted(int line, int column, int length) {
 	if (!g_emitted_qualifiers) {
-		g_emitted_qualifiers = new auto_vec<emitted_qualifier, 32>();
+		g_emitted_qualifiers = new hash_set<uint64_t, false, token_span_hash>();
 	}
-	for (const emitted_qualifier& qualifier : *g_emitted_qualifiers) {
-		if (qualifier.line == line && qualifier.column == column && qualifier.length == length) {
-			return true;
-		}
-	}
-	g_emitted_qualifiers->safe_push({ .line = line, .column = column, .length = length });
-	return false;
+	return g_emitted_qualifiers->add(token_span_key(line, column, length));
 }
 
 static void emit_source_qualifier(const source_token& first, const source_token& final_scope) {
@@ -1120,22 +1393,16 @@ static void emit_source_qualifier(const source_token& first, const source_token&
 	if (qualifier_already_emitted(first.line, first.column, length)) {
 		return;
 	}
-	fprintf(g_out ? g_out : stderr, "GSEQUAL\t%s\t%d\t%d\t%d\n", main_input_filename, first.line, first.column, length);
+	out_printf("GSEQUAL\t%s\t%d\t%d\t%d\n", main_input_filename, first.line, first.column, length);
 }
 
-static auto_vec<emitted_qualifier, 32> *g_emitted_type_refs = nullptr;
+static hash_set<uint64_t, false, token_span_hash> *g_emitted_type_refs = nullptr;
 
 static bool type_ref_already_emitted(int line, int column, int length) {
 	if (!g_emitted_type_refs) {
-		g_emitted_type_refs = new auto_vec<emitted_qualifier, 32>();
+		g_emitted_type_refs = new hash_set<uint64_t, false, token_span_hash>();
 	}
-	for (const emitted_qualifier &r : *g_emitted_type_refs) {
-		if (r.line == line && r.column == column && r.length == length) {
-			return true;
-		}
-	}
-	g_emitted_type_refs->safe_push({ .line = line, .column = column, .length = length });
-	return false;
+	return g_emitted_type_refs->add(token_span_key(line, column, length));
 }
 
 static tree type_decl_from_binding(tree binding) {
@@ -1184,22 +1451,21 @@ static void emit_type_use_ref(const source_token &use, tree decl) {
 	if (type_ref_already_emitted(use.line, use.byte_column, use_len)) {
 		return;
 	}
-	FILE *out = g_out ? g_out : stderr;
 	if (!g_index_only) {
-		fprintf(out, "GSETOK\t%d\t%d\t%d\ttype\n", use.line, use.byte_column, use_len);
+		out_printf("GSETOK\t%d\t%d\t%d\ttype\n", use.line, use.byte_column, use_len);
 	}
-	if (!under_root(main_input_filename)) {
+	if (!main_file_under_root()) {
 		return;
 	}
-	const expanded_location dx = expand_location(DECL_SOURCE_LOCATION(decl));
+	const expanded_location dx = expand_cached(DECL_SOURCE_LOCATION(decl));
 	if (!dx.file || dx.line <= 0 || dx.column <= 0) {
 		return;
 	}
 	const int def_col = name_byte_column(dx.file, dx.line, dx.column, name, (int)IDENTIFIER_LENGTH(id));
-	fprintf(out, "GSEREF\t%s\t%d\t%d\t%d\t%s\t%s\t%d\t%d\t", main_input_filename, use.line, use.byte_column, use_len, name, dx.file, dx.line, def_col);
-	print_qualified_prefix(out, decl);
-	fputs(name, out);
-	fputc('\n', out);
+	out_printf("GSEREF\t%s\t%d\t%d\t%d\t%s\t%s\t%d\t%d\t", main_input_filename, use.line, use.byte_column, use_len, name, dx.file, dx.line, def_col);
+	print_qualified_prefix(decl);
+	out_str(name);
+	out_char('\n');
 }
 
 static bool source_token_is_char(int index, char c) {
@@ -1208,7 +1474,7 @@ static bool source_token_is_char(int index, char c) {
 }
 
 static int source_token_lower_bound(location_t location) {
-	const expanded_location value = expand_location(location);
+	const expanded_location value = expand_cached(location);
 	int low = 0;
 	int high = (int)g_source_tokens->length();
 	while (low < high) {
@@ -1286,7 +1552,7 @@ static void scan_designators(int open_index, tree type) {
 			continue;
 		}
 		const source_token &name = (*g_source_tokens)[index + 1];
-		fprintf(g_out ? g_out : stderr, "GSETOK\t%d\t%d\t%d\tmember\n", name.line, name.byte_column, (int)(name.finish - name.start));
+		out_printf("GSETOK\t%d\t%d\t%d\tmember\n", name.line, name.byte_column, (int)(name.finish - name.start));
 		++index;
 		if (index + 2 < open.pair && source_token_is_char(index + 1, '=') && (*g_source_tokens)[index + 2].kind == source_token_kind::left_brace) {
 			tree field_type = TREE_TYPE(field);
@@ -1365,7 +1631,7 @@ static void emit_directive_names() {
 			if (source_token_equals(cursor, "inline") || source_token_equals(cursor, "private")) {
 				continue;
 			}
-			fprintf(g_out ? g_out : stderr, "GSETOK\t%d\t%d\t%d\tname_space\n", part.line, part.byte_column, (int)(part.finish - part.start));
+			out_printf("GSETOK\t%d\t%d\t%d\tname_space\n", part.line, part.byte_column, (int)(part.finish - part.start));
 		}
 		i = cursor;
 	}
@@ -1398,7 +1664,7 @@ static void emit_attribute_names() {
 				break;
 			}
 			if (part.kind == source_token_kind::identifier) {
-				fprintf(g_out ? g_out : stderr, "GSETOK\t%d\t%d\t%d\tattribute\n", part.line, part.byte_column, (int)(part.finish - part.start));
+				out_printf("GSETOK\t%d\t%d\t%d\tattribute\n", part.line, part.byte_column, (int)(part.finish - part.start));
 			}
 		}
 		i = cursor;
@@ -1476,9 +1742,6 @@ static const char *highlight_kind_of(tree decl) {
 }
 
 static void emit_component_token(const source_token &use, tree binding) {
-	if (g_index_only) {
-		return;
-	}
 	tree decl = decl_for_highlight(binding);
 	if (!decl) {
 		return;
@@ -1494,7 +1757,12 @@ static void emit_component_token(const source_token &use, tree binding) {
 	if (type_ref_already_emitted(use.line, use.byte_column, use_len)) {
 		return;
 	}
-	fprintf(g_out ? g_out : stderr, "GSETOK\t%d\t%d\t%d\t%s\n", use.line, use.byte_column, use_len, kind);
+	if (!g_index_only) {
+		out_printf("GSETOK\t%d\t%d\t%d\t%s\n", use.line, use.byte_column, use_len, kind);
+	}
+	if (main_file_under_root()) {
+		emit_ref_at(main_input_filename, use.line, use.byte_column, decl, use_len);
+	}
 }
 
 static void emit_redundant_prefix(const int *components, int count, tree *resolved, const source_token& use) {
@@ -1576,7 +1844,7 @@ static void emit_dependent_member(int index) {
 			}
 		}
 	}
-	fprintf(g_out ? g_out : stderr, "GSETOK\t%d\t%d\t%d\t%s\n", token.line, token.byte_column, (int)(token.finish - token.start), kind);
+	out_printf("GSETOK\t%d\t%d\t%d\t%s\n", token.line, token.byte_column, (int)(token.finish - token.start), kind);
 }
 
 static bool standard_integer_type_chain(const int *components, int count) {
@@ -1672,7 +1940,7 @@ static void scan_qualified_type_chain(int first, int limit, int exclude_final = 
 				const source_token &part = (*g_source_tokens)[components[index]];
 				const char *dependent_kind = components[0] > 0 && source_token_equals(components[0] - 1, "typename") ? "type" : "member";
 				if (!g_index_only) {
-					fprintf(g_out ? g_out : stderr, "GSETOK\t%d\t%d\t%d\t%s\n", part.line, part.byte_column, (int)(part.finish - part.start), dependent_kind);
+					out_printf("GSETOK\t%d\t%d\t%d\t%s\n", part.line, part.byte_column, (int)(part.finish - part.start), dependent_kind);
 				}
 			}
 			chain_ok = false;
@@ -1766,7 +2034,7 @@ static void scan_parameter_names(int anchor, int finish) {
 		if (prev.kind == source_token_kind::scope || source_token_is_char(index - 1, '.')) {
 			continue;
 		}
-		fprintf(g_out ? g_out : stderr, "GSETOK\t%d\t%d\t%d\tparameter\n", token.line, token.byte_column, (int)(token.finish - token.start));
+		out_printf("GSETOK\t%d\t%d\t%d\tparameter\n", token.line, token.byte_column, (int)(token.finish - token.start));
 	}
 }
 
@@ -1798,7 +2066,7 @@ static void scan_template_body(int open, int close) {
 						lambda_kinds[lambda_count] = "type";
 						lambda_parms[lambda_count] = cursor;
 						const source_token &parm = (*g_source_tokens)[cursor];
-						fprintf(g_out ? g_out : stderr, "GSETOK\t%d\t%d\t%d\t%s\n", parm.line, parm.byte_column, (int)(parm.finish - parm.start), lambda_kinds[lambda_count]);
+						out_printf("GSETOK\t%d\t%d\t%d\t%s\n", parm.line, parm.byte_column, (int)(parm.finish - parm.start), lambda_kinds[lambda_count]);
 						++lambda_count;
 					}
 				}
@@ -1817,7 +2085,7 @@ static void scan_template_body(int open, int close) {
 				for (++cursor; cursor < close && !source_token_is_char(cursor, ']'); ++cursor) {
 					const source_token &bind = (*g_source_tokens)[cursor];
 					if (bind.kind == source_token_kind::identifier) {
-						fprintf(g_out ? g_out : stderr, "GSETOK\t%d\t%d\t%d\tvariable\n", bind.line, bind.byte_column, (int)(bind.finish - bind.start));
+						out_printf("GSETOK\t%d\t%d\t%d\tvariable\n", bind.line, bind.byte_column, (int)(bind.finish - bind.start));
 					}
 				}
 				index = cursor;
@@ -1839,7 +2107,7 @@ static void scan_template_body(int open, int close) {
 			}
 			const bool call = index + 1 < close
 				&& ((*g_source_tokens)[index + 1].kind == source_token_kind::left_paren || (*g_source_tokens)[index + 1].kind == source_token_kind::less);
-			fprintf(g_out ? g_out : stderr, "GSETOK\t%d\t%d\t%d\t%s\n", token.line, token.byte_column, (int)(token.finish - token.start), call ? "function" : "member");
+			out_printf("GSETOK\t%d\t%d\t%d\t%s\n", token.line, token.byte_column, (int)(token.finish - token.start), call ? "function" : "member");
 			continue;
 		}
 		if (prev.kind == source_token_kind::scope) {
@@ -1866,14 +2134,14 @@ static void scan_template_body(int open, int close) {
 				|| source_token_equals(index - 1, "operator") || source_token_equals(index - 1, "else");
 			if (decl_end && decl_prev && !keyword_prev) {
 				local_vars[local_var_count++] = index;
-				fprintf(g_out ? g_out : stderr, "GSETOK\t%d\t%d\t%d\tvariable\n", token.line, token.byte_column, (int)(token.finish - token.start));
+				out_printf("GSETOK\t%d\t%d\t%d\tvariable\n", token.line, token.byte_column, (int)(token.finish - token.start));
 				continue;
 			}
 		}
 		bool lambda_parm = false;
 		for (int p = 0; p < lambda_count; ++p) {
 			if (source_token_identifier(lambda_parms[p]) == id) {
-				fprintf(g_out ? g_out : stderr, "GSETOK\t%d\t%d\t%d\t%s\n", token.line, token.byte_column, (int)(token.finish - token.start), lambda_kinds[p]);
+				out_printf("GSETOK\t%d\t%d\t%d\t%s\n", token.line, token.byte_column, (int)(token.finish - token.start), lambda_kinds[p]);
 				lambda_parm = true;
 				break;
 			}
@@ -1884,7 +2152,7 @@ static void scan_template_body(int open, int close) {
 		bool local_use = false;
 		for (int p = 0; p < local_var_count; ++p) {
 			if (source_token_identifier(local_vars[p]) == id) {
-				fprintf(g_out ? g_out : stderr, "GSETOK\t%d\t%d\t%d\tvariable\n", token.line, token.byte_column, (int)(token.finish - token.start));
+				out_printf("GSETOK\t%d\t%d\t%d\tvariable\n", token.line, token.byte_column, (int)(token.finish - token.start));
 				local_use = true;
 				break;
 			}
@@ -1934,7 +2202,7 @@ static void scan_template_prototypes() {
 			&& (*g_source_tokens)[i + 1].kind == source_token_kind::identifier
 			&& (*g_source_tokens)[i + 2].kind == source_token_kind::semicolon) {
 			const source_token &fwd = (*g_source_tokens)[i + 1];
-			fprintf(g_out ? g_out : stderr, "GSETOK\t%d\t%d\t%d\ttype\n", fwd.line, fwd.byte_column, (int)(fwd.finish - fwd.start));
+			out_printf("GSETOK\t%d\t%d\t%d\ttype\n", fwd.line, fwd.byte_column, (int)(fwd.finish - fwd.start));
 			i += 2;
 			continue;
 		}
@@ -2023,7 +2291,7 @@ static void scan_template_prototypes() {
 		for (int p = 0; p < parm_count; ++p) {
 			const source_token &parm = (*g_source_tokens)[parm_names[p]];
 			parm_kinds[p] = "type";
-			fprintf(g_out ? g_out : stderr, "GSETOK\t%d\t%d\t%d\t%s\n", parm.line, parm.byte_column, (int)(parm.finish - parm.start), parm_kinds[p]);
+			out_printf("GSETOK\t%d\t%d\t%d\t%s\n", parm.line, parm.byte_column, (int)(parm.finish - parm.start), parm_kinds[p]);
 		}
 		tree previous_scope = g_scope;
 		auto_vec<tree, 32> *previous_locals = g_local_decls;
@@ -2053,7 +2321,7 @@ static void scan_template_prototypes() {
 			bool is_parm = false;
 			for (int p = 0; p < parm_count; ++p) {
 				if (source_token_identifier(parm_names[p]) == source_token_identifier(k)) {
-					fprintf(g_out ? g_out : stderr, "GSETOK\t%d\t%d\t%d\t%s\n", part.line, part.byte_column, (int)(part.finish - part.start), parm_kinds[p]);
+					out_printf("GSETOK\t%d\t%d\t%d\t%s\n", part.line, part.byte_column, (int)(part.finish - part.start), parm_kinds[p]);
 					is_parm = true;
 					break;
 				}
@@ -2124,7 +2392,7 @@ static int find_decl_anchor(tree decl) {
 	if (!id || TREE_CODE(id) != IDENTIFIER_NODE || !ensure_source_tokens()) {
 		return exact;
 	}
-	const expanded_location xl = expand_location(loc);
+	const expanded_location xl = expand_cached(loc);
 	if (!xl.file || xl.line <= 0) {
 		return exact;
 	}
@@ -2147,14 +2415,23 @@ static void scan_preceding_annotations(int start) {
 	if (!g_src || start <= 0 || start >= (int)g_source_tokens->length()) {
 		return;
 	}
-	// declaration_scan_start lands just past a preceding attribute's inner `}`, so the
-	// declaration's first token is the `]` of the `]]` closer when an annotation is present.
-	const source_token &first = (*g_source_tokens)[start];
-	if (first.start >= g_src_len || g_src[first.start] != ']') {
+	// declaration_scan_start halts just past the first `}`/`{`/`;` it meets walking back from
+	// the declarator. A preceding `[[= ... {} ...]]` annotation carries a braced-init `{}`, so
+	// when one is present the region is cut right after that `}` and `start - 1` is a
+	// right_brace -- whether `start` then lands on the `]]` closer (last entry braced) or on a
+	// `,` before a later unbraced entry. Either way, recover the whole block from its `[[`.
+	if ((*g_source_tokens)[start - 1].kind != source_token_kind::right_brace) {
 		return;
 	}
 	for (int k = start - 1, guard = 0; k >= 0 && guard < 160; --k, ++guard) {
 		const source_token &tk = (*g_source_tokens)[k];
+		if (tk.kind == source_token_kind::semicolon) {
+			return;
+		}
+		if (tk.kind == source_token_kind::right_brace && tk.pair >= 0 && tk.pair < k) {
+			k = tk.pair;
+			continue;
+		}
 		for (long p = tk.start; p + 1 < g_src_len && p < tk.finish; ++p) {
 			if (g_src[p] == '[' && g_src[p + 1] == '[') {
 				scan_binding_type_qualifiers(k, start, false);
@@ -2211,6 +2488,16 @@ static tree enclosing_template(tree decl) {
 		return primary;
 	}
 	return NULL_TREE;
+}
+
+static bool body_has_template_for(int open, int close) {
+	for (int i = open + 1; i + 1 < close; ++i) {
+		if ((*g_source_tokens)[i].kind == source_token_kind::identifier && source_token_equals(i, "template")
+			&& (*g_source_tokens)[i + 1].kind == source_token_kind::identifier && source_token_equals(i + 1, "for")) {
+			return true;
+		}
+	}
+	return false;
 }
 
 static void scan_declaration_type_qualifiers(tree decl, tree tmpl_override = NULL_TREE) {
@@ -2280,8 +2567,9 @@ static void scan_declaration_type_qualifiers(tree decl, tree tmpl_override = NUL
 	g_scope = declaration_scope;
 	g_class_context = declaration_class;
 	g_function = declaration_function;
-	if (tmpl && TREE_CODE(decl) == FUNCTION_DECL && finish < (int)g_source_tokens->length()
-		&& (*g_source_tokens)[finish].kind == source_token_kind::left_brace && (*g_source_tokens)[finish].pair > finish) {
+	if (TREE_CODE(decl) == FUNCTION_DECL && finish < (int)g_source_tokens->length()
+		&& (*g_source_tokens)[finish].kind == source_token_kind::left_brace && (*g_source_tokens)[finish].pair > finish
+		&& (tmpl || body_has_template_for(finish, (*g_source_tokens)[finish].pair))) {
 		scan_template_body(finish, (*g_source_tokens)[finish].pair);
 	}
 	if (TREE_CODE(decl) == FUNCTION_DECL
@@ -2365,7 +2653,7 @@ static void emit_targ_range(const source_token& lt, const source_token& gt) {
 		if (r.line == lt.line && r.column == lt.column && r.end_line == gt.line && r.end_column == end_column) return;
 	}
 	g_emitted_targ_lists->safe_push({ .line = lt.line, .column = lt.column, .end_line = gt.line, .end_column = end_column });
-	fprintf(g_out ? g_out : stderr, "GSETARG\t%s\t%d\t%d\t%d\t%d\n", main_input_filename, lt.line, lt.column, gt.line, end_column);
+	out_printf("GSETARG\t%s\t%d\t%d\t%d\t%d\n", main_input_filename, lt.line, lt.column, gt.line, end_column);
 }
 
 struct targ_list_span {
@@ -2603,7 +2891,7 @@ static tree callee_decl(tree fn) {
 	return NULL_TREE;
 }
 
-static void print_ns_qualified(FILE *out, tree ns) {
+static void print_ns_qualified(tree ns) {
 	const char *stack[32];
 	int n = 0;
 	for (tree c = ns; c && TREE_CODE(c) == NAMESPACE_DECL && c != global_namespace && n < 32; c = DECL_CONTEXT(c)) {
@@ -2615,8 +2903,8 @@ static void print_ns_qualified(FILE *out, tree ns) {
 		}
 	}
 	for (int i = n - 1; i >= 0; --i) {
-		fputs(stack[i], out);
-		if (i) fputs("::", out);
+		out_str(stack[i]);
+		if (i) out_str("::");
 	}
 }
 
@@ -2640,15 +2928,14 @@ static void emit_channel(const char *dir, tree msg_type) {
 	if (!tid || TREE_CODE(tid) != IDENTIFIER_NODE || IDENTIFIER_LENGTH(tid) <= 0) return;
 	const char *tname = IDENTIFIER_POINTER(tid);
 	if (tname[0] == '_' || tname[0] == '.' || strchr(tname, ' ')) return;
-	FILE *out = g_out ? g_out : stderr;
-	fputs("GSECHAN\t", out);
-	fputs(dir, out);
-	fputc('\t', out);
-	print_ns_qualified(out, ns);
-	fputc('\t', out);
-	print_qualified_prefix(out, tn);
-	fputs(tname, out);
-	fputc('\n', out);
+	out_str("GSECHAN\t");
+	out_str(dir);
+	out_char('\t');
+	print_ns_qualified(ns);
+	out_char('\t');
+	print_qualified_prefix(tn);
+	out_str(tname);
+	out_char('\n');
 }
 
 static void maybe_emit_channel(tree fn) {
@@ -2708,7 +2995,7 @@ static void walk_bind_expr(tree bind) {
 	}
 	tree body = BIND_EXPR_BODY(bind);
 	if (body) {
-		walk_tree_without_duplicates(&body, walk_cb, nullptr);
+		walk_expr_tree(&body);
 	}
 	if (opening >= 0) {
 		scan_binding_type_qualifiers(opening, closing);
@@ -2767,7 +3054,7 @@ static void walk_function_body(tree fndecl, tree body) {
 			g_local_decls->safe_push(param);
 		}
 	}
-	walk_tree_without_duplicates(&body, walk_cb, nullptr);
+	walk_expr_tree(&body);
 	scan_function_body_tokens(fndecl);
 	g_local_decls->truncate(start);
 	g_function = previous_function;
@@ -2777,7 +3064,7 @@ static void walk_function_body(tree fndecl, tree body) {
 static void walk_with_anchor(tree node, location_t anchor) {
 	location_t previous_anchor = g_use_anchor;
 	g_use_anchor = anchor;
-	walk_tree_without_duplicates(&node, walk_cb, nullptr);
+	walk_expr_tree(&node);
 	g_use_anchor = previous_anchor;
 }
 
@@ -2823,7 +3110,7 @@ static tree walk_cb(tree *tp, int *walk_subtrees, void *) {
 				tree aliased = TREE_TYPE(decl);
 				if (aliased && TREE_CODE(aliased) == DECLTYPE_TYPE) {
 					tree expr = DECLTYPE_TYPE_EXPR(aliased);
-					if (expr) walk_tree_without_duplicates(&expr, walk_cb, nullptr);
+					if (expr) walk_expr_tree(&expr);
 				}
 				if (aliased && TREE_CODE(aliased) == TYPENAME_TYPE) {
 					emit_type_name_at(DECL_SOURCE_LOCATION(decl), aliased);
@@ -2843,7 +3130,7 @@ static tree walk_cb(tree *tp, int *walk_subtrees, void *) {
 			if (highlight == UNKNOWN_LOCATION) highlight = g_use_anchor;
 			if (field && TREE_CODE(field) == FIELD_DECL && !DECL_ARTIFICIAL(field)) {
 				emit_at_name(highlight, "member", DECL_NAME(field));
-				emit_ref(EXPR_LOCATION(t), field, ident_len(field));
+				emit_member_ref(highlight, field);
 			}
 			else if (field && TREE_CODE(field) == IDENTIFIER_NODE && IDENTIFIER_LENGTH(field) > 0) {
 				emit_at_name(highlight, "member", field);
@@ -2909,8 +3196,8 @@ static tree walk_cb(tree *tp, int *walk_subtrees, void *) {
 			if (k && id && TREE_CODE(id) == IDENTIFIER_NODE && IDENTIFIER_LENGTH(id) > 0) {
 				emit_at_name(EXPR_LOCATION(t), k, id);
 				if (tree td = template_id_decl(t)) {
-					expanded_location dx = expand_location(DECL_SOURCE_LOCATION(td));
-					if (dx.file && dx.line > 0 && under_root(dx.file))
+					expanded_location dx = expand_cached(DECL_SOURCE_LOCATION(td));
+					if (dx.file && dx.line > 0 && under_root_cached(dx.file))
 						emit_call_ref(EXPR_LOCATION(t), td, (int)IDENTIFIER_LENGTH(id));
 					emit_qual(EXPR_LOCATION(t), td);
 				}
@@ -3117,7 +3404,7 @@ static void walk_attr_annotations(tree attrs) {
 		if (!value) {
 			continue;
 		}
-		walk_tree_without_duplicates(&value, walk_cb, nullptr);
+		walk_expr_tree(&value);
 	}
 }
 
@@ -3221,8 +3508,8 @@ static void walk_template_bodies(tree decl) {
 			if (tree ci = get_constraints(r ? r : decl)) {
 				tree treqs = CI_TEMPLATE_REQS(ci);
 				tree dreqs = CI_DECLARATOR_REQS(ci);
-				if (treqs) walk_tree_without_duplicates(&treqs, walk_cb, nullptr);
-				if (dreqs) walk_tree_without_duplicates(&dreqs, walk_cb, nullptr);
+				if (treqs) walk_expr_tree(&treqs);
+				if (dreqs) walk_expr_tree(&dreqs);
 			}
 			if (r) walk_template_bodies(r);
 			break;
@@ -3232,7 +3519,7 @@ static void walk_template_bodies(tree decl) {
 			break;
 		case CONCEPT_DECL: {
 			tree init = DECL_INITIAL(decl);
-			if (init) walk_tree_without_duplicates(&init, walk_cb, nullptr);
+			if (init) walk_expr_tree(&init);
 			break;
 		}
 		case TYPE_DECL: {
@@ -3353,7 +3640,10 @@ static void on_finish(void *, void *) {
 	scan_template_prototypes();
 	walk_ns(global_namespace);
 	if (g_out) {
-		fputs("GSEDONE\n", g_out);
+		out_str("GSEDONE\n");
+	}
+	out_flush();
+	if (g_out) {
 		fflush(g_out);
 	}
 }
@@ -3377,6 +3667,7 @@ int plugin_init(struct plugin_name_args *info, struct plugin_gcc_version *versio
 			g_index_only = true;
 		}
 	}
+	atexit(out_flush);
 	register_callback(info->base_name, PLUGIN_PRE_GENERICIZE, on_pre_genericize, nullptr);
 	register_callback(info->base_name, PLUGIN_FINISH_PARSE_FUNCTION, on_finish_parse_function, nullptr);
 	register_callback(info->base_name, PLUGIN_FINISH_DECL, on_finish_decl, nullptr);

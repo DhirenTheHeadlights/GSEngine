@@ -13,33 +13,41 @@ export namespace gse::ide::analysis::json {
 		std::vector<std::string> keys;
 		std::vector<value> children;
 
-		auto find(std::string_view key) const -> const value* {
-			for (std::size_t i = 0; i < keys.size(); ++i) {
-				if (keys[i] == key) {
-					return &children[i];
-				}
-			}
-			return nullptr;
-		}
-
-		auto is_array() const -> bool {
-			return type == kind::array;
-		}
-
-		auto is_object() const -> bool {
-			return type == kind::object;
-		}
-
-		auto as_string() const -> std::string_view {
-			return type == kind::string ? std::string_view(text) : std::string_view{};
-		}
-
-		auto as_int() const -> std::int64_t {
-			return type == kind::number ? static_cast<std::int64_t>(number) : 0;
-		}
+		auto find(
+			std::string_view key
+		) const -> const value*;
+		auto is_array() const -> bool;
+		auto is_object() const -> bool;
+		auto as_string() const -> std::string_view;
+		auto as_int() const -> std::int64_t;
 	};
 
 	auto parse(std::string_view text) -> std::optional<value>;
+}
+
+auto gse::ide::analysis::json::value::find(const std::string_view key) const -> const value* {
+	for (std::size_t i = 0; i < keys.size(); ++i) {
+		if (keys[i] == key) {
+			return &children[i];
+		}
+	}
+	return nullptr;
+}
+
+auto gse::ide::analysis::json::value::is_array() const -> bool {
+	return type == kind::array;
+}
+
+auto gse::ide::analysis::json::value::is_object() const -> bool {
+	return type == kind::object;
+}
+
+auto gse::ide::analysis::json::value::as_string() const -> std::string_view {
+	return type == kind::string ? std::string_view(text) : std::string_view{};
+}
+
+auto gse::ide::analysis::json::value::as_int() const -> std::int64_t {
+	return type == kind::number ? static_cast<std::int64_t>(number) : 0;
 }
 
 namespace gse::ide::analysis::json {

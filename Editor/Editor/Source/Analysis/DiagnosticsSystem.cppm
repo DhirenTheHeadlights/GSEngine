@@ -9,9 +9,11 @@ export namespace gse::ide {
 	namespace analysis {
 		struct diagnostics_request {
 			std::uint32_t document_id = 0;
+			document_revision revision;
 			std::filesystem::path compile_commands;
 			std::filesystem::path file;
 			std::filesystem::path plugin;
+			std::filesystem::path workspace_root;
 			void (*lint_hook)(diagnostics_check&) = nullptr;
 		};
 
@@ -54,11 +56,13 @@ auto gse::ide::diagnostics_system::run(gse::context& ctx, data& d) -> gse::async
 
 	d.pending = std::make_shared<analysis::diagnostics_check>();
 	d.pending->document_id = request->document_id;
+	d.pending->revision = request->revision;
 	analysis::diagnostics_runner::start(
 		d.pending,
 		request->compile_commands,
 		request->file,
 		request->plugin,
+		request->workspace_root,
 		request->lint_hook
 	);
 	return {};

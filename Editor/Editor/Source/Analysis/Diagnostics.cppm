@@ -11,6 +11,12 @@ export namespace gse::ide::analysis {
 		static auto parse_sarif(
 			std::string_view sarif
 		) -> std::vector<diagnostic>;
+		static auto is_module_unavailable(
+			std::string_view message
+		) -> bool;
+		static auto is_module_unavailable(
+			std::span<const diagnostic> diagnostics
+		) -> bool;
 	};
 }
 
@@ -135,4 +141,25 @@ auto gse::ide::analysis::gcc_diagnostics::parse_sarif(std::string_view sarif) ->
 	}
 
 	return out;
+}
+
+auto gse::ide::analysis::gcc_diagnostics::is_module_unavailable(const std::string_view message) -> bool {
+	static constexpr std::string_view fragments[] = {
+		"must be built",
+		"failed to read compiled module",
+		"returning to the gate",
+		"failed to load binding",
+		"failed to load pendings",
+		"should have been declared inside",
+		"compiled module file is",
+	};
+	return std::ranges::any_of(fragments, [message](const std::string_view fragment) {
+		return message.contains(fragment);
+	});
+}
+
+auto gse::ide::analysis::gcc_diagnostics::is_module_unavailable(const std::span<const diagnostic> diagnostics) -> bool {
+	return std::ranges::any_of(diagnostics, [](const diagnostic& diagnostic) {
+		return is_module_unavailable(diagnostic.message);
+	});
 }
