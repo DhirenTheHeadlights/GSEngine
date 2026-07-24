@@ -23,6 +23,8 @@ export namespace gse {
 		int controls_width = 0;
 		int interactive_x0 = 0;
 		int interactive_x1 = 0;
+		int resize_exclude_y0 = 0;
+		int resize_exclude_y1 = 0;
 	};
 
 	enum class cursor_shape : std::uint8_t {
@@ -127,6 +129,8 @@ export namespace gse::window {
 		int chrome_controls_width = 0;
 		int chrome_interactive_x0 = 0;
 		int chrome_interactive_x1 = 0;
+		int chrome_resize_exclude_y0 = 0;
+		int chrome_resize_exclude_y1 = 0;
 
 		rect_t<vec2i> windowed_rect = rect_t<vec2i>::from_position_size(
 			{ 100, 100 },
@@ -163,7 +167,9 @@ export namespace gse::window {
 		const int* caption_height,
 		const int* controls_width,
 		const int* interactive_x0,
-		const int* interactive_x1
+		const int* interactive_x1,
+		const int* resize_exclude_y0,
+		const int* resize_exclude_y1
 	) -> void;
 
 	[[nodiscard]] auto is_open(

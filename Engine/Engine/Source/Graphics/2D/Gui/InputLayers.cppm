@@ -71,6 +71,11 @@ export namespace gse::gui {
 			vec2f position
 		) const -> bool;
 
+		[[nodiscard]] auto right_edge_block_span(
+			float right_x,
+			float tolerance
+		) const -> std::optional<std::pair<float, float>>;
+
 	private:
 		struct hit_region {
 			std::uint32_t z_order = 0;
@@ -134,6 +139,24 @@ auto gse::gui::input_layer::is_resize_blocked(const vec2f position) const -> boo
 		}
 	}
 	return false;
+}
+
+auto gse::gui::input_layer::right_edge_block_span(const float right_x, const float tolerance) const -> std::optional<std::pair<float, float>> {
+	bool found = false;
+	float min_bottom = 0.f;
+	float max_top = 0.f;
+	for (const rectf& rect : m_resize_blocks.read()) {
+		if (rect.right() < right_x - tolerance || rect.height() <= rect.width()) {
+			continue;
+		}
+		min_bottom = found ? std::min(min_bottom, rect.bottom()) : rect.bottom();
+		max_top = found ? std::max(max_top, rect.top()) : rect.top();
+		found = true;
+	}
+	if (!found) {
+		return std::nullopt;
+	}
+	return std::pair{ min_bottom, max_top };
 }
 
 auto gse::gui::input_layer::topmost_at(const vec2f position) const -> std::pair<std::uint8_t, std::uint32_t> {

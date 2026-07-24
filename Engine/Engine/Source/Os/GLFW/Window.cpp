@@ -410,7 +410,7 @@ auto gse::create_window(window::data& d) -> void {
 	glfwFocusWindow(handle);
 
 	if (d.native_frame) {
-		window::install_native_frame(d.handle, &d.chrome_caption_height, &d.chrome_controls_width, &d.chrome_interactive_x0, &d.chrome_interactive_x1);
+		window::install_native_frame(d.handle, &d.chrome_caption_height, &d.chrome_controls_width, &d.chrome_interactive_x0, &d.chrome_interactive_x1, &d.chrome_resize_exclude_y0, &d.chrome_resize_exclude_y1);
 	}
 }
 
@@ -530,6 +530,8 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 		d.chrome_controls_width = req.controls_width;
 		d.chrome_interactive_x0 = req.interactive_x0;
 		d.chrome_interactive_x1 = req.interactive_x1;
+		d.chrome_resize_exclude_y0 = req.resize_exclude_y0;
+		d.chrome_resize_exclude_y1 = req.resize_exclude_y1;
 	}
 
 	cursor_shape desired_cursor = cursor_shape::arrow;
@@ -627,6 +629,8 @@ namespace gse {
 		const int* controls_width = nullptr;
 		const int* interactive_x0 = nullptr;
 		const int* interactive_x1 = nullptr;
+		const int* resize_exclude_y0 = nullptr;
+		const int* resize_exclude_y1 = nullptr;
 	};
 
 	LRESULT native_frame_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
@@ -677,6 +681,11 @@ namespace gse {
 					return ht_left;
 				}
 				if (right) {
+					const int exclude_y0 = state->resize_exclude_y0 ? *state->resize_exclude_y0 : 0;
+					const int exclude_y1 = state->resize_exclude_y1 ? *state->resize_exclude_y1 : 0;
+					if (exclude_y1 > exclude_y0 && cursor.y >= exclude_y0 && cursor.y < exclude_y1) {
+						return ht_client;
+					}
 					return ht_right;
 				}
 				if (top) {
@@ -708,7 +717,7 @@ namespace gse {
 }
 #endif
 
-auto gse::window::install_native_frame(const native_window_handle handle, const int* caption_height, const int* controls_width, const int* interactive_x0, const int* interactive_x1) -> void {
+auto gse::window::install_native_frame(const native_window_handle handle, const int* caption_height, const int* controls_width, const int* interactive_x0, const int* interactive_x1, const int* resize_exclude_y0, const int* resize_exclude_y1) -> void {
 #ifdef _WIN32
 	using namespace gse::win32;
 
@@ -722,6 +731,8 @@ auto gse::window::install_native_frame(const native_window_handle handle, const 
 	state->controls_width = controls_width;
 	state->interactive_x0 = interactive_x0;
 	state->interactive_x1 = interactive_x1;
+	state->resize_exclude_y0 = resize_exclude_y0;
+	state->resize_exclude_y1 = resize_exclude_y1;
 	state->original_proc = reinterpret_cast<WNDPROC>(
 		SetWindowLongPtrW(hwnd, gwlp_wndproc, reinterpret_cast<LONG_PTR>(&native_frame_proc))
 	);
@@ -733,6 +744,8 @@ auto gse::window::install_native_frame(const native_window_handle handle, const 
 	(void)controls_width;
 	(void)interactive_x0;
 	(void)interactive_x1;
+	(void)resize_exclude_y0;
+	(void)resize_exclude_y1;
 #endif
 }
 

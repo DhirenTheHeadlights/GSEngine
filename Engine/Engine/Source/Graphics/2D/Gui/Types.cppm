@@ -15,7 +15,6 @@ import :render_layer;
 import :input_layers;
 
 export namespace gse::gui {
-
 	namespace symbol {
 		struct stroke {
 			vec2f from;
@@ -433,7 +432,7 @@ namespace gse::gui::states {
 namespace gse::gui {
 	struct state {
 		using value_type = std::
-			variant<states::idle, states::dragging, states::resizing, states::resizing_divider, states::pending_drag>;
+		variant<states::idle, states::dragging, states::resizing, states::resizing_divider, states::pending_drag>;
 
 		value_type v;
 
