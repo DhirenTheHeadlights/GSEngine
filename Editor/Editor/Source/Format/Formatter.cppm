@@ -15,12 +15,26 @@ export namespace gse::ide::format {
 		std::string replacement;
 	};
 
-	auto compute(std::span<const std::string> lines, const options& opts) -> std::vector<line_edit>;
+	auto compute(
+		std::span<const std::string> lines,
+		const options& opts
+	) -> std::vector<line_edit>;
 
-	auto apply(std::vector<std::string>& lines, std::span<const line_edit> edits) -> std::size_t;
+	auto apply(
+		std::vector<std::string>& lines,
+		std::span<const line_edit> edits
+	) -> std::size_t;
 }
 
 namespace gse::ide::format {
+	enum class directive_kind {
+		none,
+		conditional_begin,
+		conditional_alternative,
+		conditional_else,
+		conditional_end,
+	};
+
 	struct bracket {
 		char kind = '{';
 		int open_indent = 0;
@@ -29,20 +43,62 @@ namespace gse::ide::format {
 		std::uint32_t open_line = 0;
 	};
 
+	struct formatter_state {
+		std::vector<bracket> stack;
+		int paren_depth = 0;
+		bool switch_pending = false;
+		int switch_paren_base = 0;
+		char last_code = ';';
+		bool continuation = false;
+		int statement_indent = 0;
+		int angle_depth = 0;
+	};
+
+	struct conditional_state {
+		formatter_state entry;
+		std::optional<formatter_state> completed_branch;
+		bool has_else = false;
+	};
+
 	auto is_opener(char c) -> bool;
 	auto is_closer(char c) -> bool;
+	auto matching_opener(char c) -> char;
 	auto starts_statement(char c) -> bool;
 	auto ends_statement(char c) -> bool;
 	auto clears_continuation(char c) -> bool;
-	auto punct_starts_statement(std::string_view text, char last_code) -> bool;
-	auto is_conditional_directive(std::string_view text) -> bool;
+	auto punct_starts_statement(
+		std::string_view text,
+		char last_code
+	) -> bool;
+	auto directive_of(std::string_view text) -> directive_kind;
+	auto continues_directive(std::string_view text) -> bool;
+	auto structurally_equivalent(
+		const formatter_state& left,
+		const formatter_state& right
+	) -> bool;
+	auto merge_branch(
+		conditional_state& conditional,
+		const formatter_state& branch
+	) -> bool;
+	auto has_matching_angle(
+		std::span<const syntax::token> tokens,
+		std::size_t token_index
+	) -> bool;
 	auto is_comment(syntax::token_type type) -> bool;
 	auto is_label_keyword(std::string_view w) -> bool;
 	auto leading_whitespace(std::string_view s) -> std::string_view;
 	auto indent_of(std::string_view ws, int width) -> int;
-	auto make_indent(int level, int width, const options& opts) -> std::string;
-	auto leading_closer_count(std::span<const syntax::token> line_tokens) -> int;
-	auto is_access_specifier(std::span<const syntax::token> line_tokens) -> bool;
+	auto make_indent(
+		int level,
+		int width,
+		const options& opts
+	) -> std::string;
+	auto leading_closer_count(
+		std::span<const syntax::token> line_tokens
+	) -> int;
+	auto is_access_specifier(
+		std::span<const syntax::token> line_tokens
+	) -> bool;
 }
 
 auto gse::ide::format::is_opener(const char c) -> bool {
@@ -51,6 +107,19 @@ auto gse::ide::format::is_opener(const char c) -> bool {
 
 auto gse::ide::format::is_closer(const char c) -> bool {
 	return c == ')' || c == ']' || c == '}';
+}
+
+auto gse::ide::format::matching_opener(const char c) -> char {
+	switch (c) {
+		case ')':
+			return '(';
+		case ']':
+			return '[';
+		case '}':
+			return '{';
+		default:
+			return '\0';
+	}
 }
 
 auto gse::ide::format::starts_statement(const char c) -> bool {
@@ -79,13 +148,80 @@ auto gse::ide::format::punct_starts_statement(const std::string_view text, const
 	return false;
 }
 
-auto gse::ide::format::is_conditional_directive(const std::string_view text) -> bool {
+auto gse::ide::format::directive_of(const std::string_view text) -> directive_kind {
 	std::size_t i = 1;
 	while (i < text.size() && (text[i] == ' ' || text[i] == '\t')) {
 		++i;
 	}
 	const std::string_view directive = text.substr(i);
-	return directive.starts_with("if") || directive.starts_with("el");
+	if (directive == "if" || directive == "ifdef" || directive == "ifndef") {
+		return directive_kind::conditional_begin;
+	}
+	if (directive == "elif" || directive == "elifdef" || directive == "elifndef") {
+		return directive_kind::conditional_alternative;
+	}
+	if (directive == "else") {
+		return directive_kind::conditional_else;
+	}
+	if (directive == "endif") {
+		return directive_kind::conditional_end;
+	}
+	return directive_kind::none;
+}
+
+auto gse::ide::format::continues_directive(const std::string_view text) -> bool {
+	const std::size_t last = text.find_last_not_of(" \t\r");
+	return last != std::string_view::npos && text[last] == '\\';
+}
+
+auto gse::ide::format::structurally_equivalent(const formatter_state& left, const formatter_state& right) -> bool {
+	if (left.paren_depth != right.paren_depth || left.switch_pending != right.switch_pending || left.switch_paren_base != right.switch_paren_base || left.angle_depth != right.angle_depth || left.stack.size() != right.stack.size()) {
+		return false;
+	}
+	for (std::size_t i = 0; i < left.stack.size(); ++i) {
+		const bracket& a = left.stack[i];
+		const bracket& b = right.stack[i];
+		if (a.kind != b.kind || a.open_indent != b.open_indent || a.content_indent != b.content_indent || a.switch_body != b.switch_body) {
+			return false;
+		}
+	}
+	return true;
+}
+
+auto gse::ide::format::merge_branch(conditional_state& conditional, const formatter_state& branch) -> bool {
+	if (!conditional.completed_branch) {
+		conditional.completed_branch = branch;
+		return true;
+	}
+	return structurally_equivalent(*conditional.completed_branch, branch);
+}
+
+auto gse::ide::format::has_matching_angle(const std::span<const syntax::token> tokens, const std::size_t token_index) -> bool {
+	int depth = 1;
+	for (std::size_t i = token_index + 1; i < tokens.size(); ++i) {
+		const syntax::token& token = tokens[i];
+		if (token.type != syntax::token_type::punctuation) {
+			continue;
+		}
+		if (token.text.contains("&&") || token.text.contains("||") || token.text.contains("==") || token.text.contains("!=") || token.text.contains("<=") || token.text.contains(">=") || token.text.contains('?')) {
+			return false;
+		}
+		for (const char c : token.text) {
+			if (c == '<') {
+				++depth;
+			}
+			else if (c == '>') {
+				--depth;
+				if (depth == 0) {
+					return true;
+				}
+			}
+			else if (c == ';' || c == '{' || c == '}') {
+				return false;
+			}
+		}
+	}
+	return false;
 }
 
 auto gse::ide::format::is_comment(const syntax::token_type type) -> bool {
@@ -162,15 +298,9 @@ auto gse::ide::format::compute(const std::span<const std::string> lines, const o
 	const syntax::lex_result lex = syntax::tokenize(views);
 	const int width = std::max(1, opts.indent_width);
 
-	std::vector<bracket> stack;
-	int paren_depth = 0;
-	bool switch_pending = false;
-	int switch_paren_base = 0;
-	char last_code = ';';
-	bool continuation = false;
-	bool guard_next = false;
-	int statement_indent = 0;
-	int angle_depth = 0;
+	formatter_state state;
+	std::vector<conditional_state> conditionals;
+	bool directive_continuation = false;
 	std::size_t token_index = 0;
 
 	for (std::size_t li = 0; li < views.size(); ++li) {
@@ -185,6 +315,10 @@ auto gse::ide::format::compute(const std::span<const std::string> lines, const o
 
 		const std::string_view ws = leading_whitespace(s);
 		const bool normal_start = lex.line_start_modes[li] == syntax::lex_mode::normal;
+		if (directive_continuation) {
+			directive_continuation = continues_directive(s);
+			continue;
+		}
 
 		if (line_tokens.empty()) {
 			if (normal_start && !ws.empty() && ws.size() == s.size()) {
@@ -211,34 +345,54 @@ auto gse::ide::format::compute(const std::span<const std::string> lines, const o
 					.replacement = "",
 				});
 			}
-			if (is_conditional_directive(first.text)) {
-				guard_next = true;
+			const directive_kind directive = directive_of(first.text);
+			if (directive == directive_kind::conditional_begin) {
+				conditionals.push_back({ .entry = state });
+			}
+			else if (directive == directive_kind::conditional_alternative || directive == directive_kind::conditional_else) {
+				if (conditionals.empty() || conditionals.back().has_else || !merge_branch(conditionals.back(), state)) {
+					return {};
+				}
+				conditional_state& conditional = conditionals.back();
+				conditional.has_else = directive == directive_kind::conditional_else;
+				state = conditional.entry;
+			}
+			else if (directive == directive_kind::conditional_end) {
+				if (conditionals.empty()) {
+					return {};
+				}
+				conditional_state conditional = std::move(conditionals.back());
+				conditionals.pop_back();
+				if (!merge_branch(conditional, state) || (!conditional.has_else && !merge_branch(conditional, conditional.entry))) {
+					return {};
+				}
+				state = std::move(*conditional.completed_branch);
+				state.last_code = ';';
+				state.continuation = false;
 			}
 			else {
-				last_code = ';';
-				continuation = false;
+				state.last_code = ';';
+				state.continuation = false;
 			}
+			directive_continuation = continues_directive(s);
 			continue;
 		}
 
-		const bool guarded = guard_next;
-		guard_next = false;
-
-		const char trigger = last_code;
+		const char trigger = state.last_code;
 		const bool operator_start = first.type == syntax::token_type::punctuation && !punct_starts_statement(first.text, trigger);
 		const bool chain_start = first.type == syntax::token_type::punctuation
 			&& (first.text.front() == '.' || (first.text.size() > 1 && first.text[0] == '-' && first.text[1] == '>'));
-		const bool eligible = normal_start && !continuation && !guarded && angle_depth == 0
+		const bool eligible = normal_start && !state.continuation && state.angle_depth == 0
 			&& starts_statement(trigger) && !is_comment(first.type) && !operator_start;
 
 		int effective = indent_of(ws, width);
 		if (eligible) {
 			int level = 0;
 			if (const int closers = leading_closer_count(line_tokens); closers > 0) {
-				level = stack.empty() ? 0 : stack.back().open_indent;
+				level = state.stack.empty() ? 0 : state.stack.back().open_indent;
 			}
-			else if (!stack.empty()) {
-				const bracket& top = stack.back();
+			else if (!state.stack.empty()) {
+				const bracket& top = state.stack.back();
 				if (is_access_specifier(line_tokens)) {
 					level = top.open_indent;
 				}
@@ -252,7 +406,7 @@ auto gse::ide::format::compute(const std::span<const std::string> lines, const o
 			level = std::max(level, 0);
 			effective = level;
 			if (ends_statement(trigger) || trigger == ':') {
-				statement_indent = level;
+				state.statement_indent = level;
 			}
 
 			if (std::string replacement = make_indent(level, width, opts); replacement != ws) {
@@ -271,10 +425,10 @@ auto gse::ide::format::compute(const std::span<const std::string> lines, const o
 				continue;
 			}
 			if (t.type != syntax::token_type::punctuation) {
-				last_code = t.text.back();
+				state.last_code = t.text.back();
 				if (t.type == syntax::token_type::identifier && t.text == "switch") {
-					switch_pending = true;
-					switch_paren_base = paren_depth;
+					state.switch_pending = true;
+					state.switch_paren_base = state.paren_depth;
 				}
 				prev_token = &t;
 				continue;
@@ -283,22 +437,22 @@ auto gse::ide::format::compute(const std::span<const std::string> lines, const o
 			prev_token = &t;
 			for (std::size_t ci = 0; ci < t.text.size(); ++ci) {
 				const char c = t.text[ci];
-				if (c == '<' && ci == 0 && after_ident) {
-					++angle_depth;
+				if (c == '<' && ci == 0 && t.text == "<" && after_ident && has_matching_angle(lex.tokens, static_cast<std::size_t>(&t - lex.tokens.data()))) {
+					++state.angle_depth;
 				}
-				else if (c == '>' && angle_depth > 0 && !(ci > 0 && t.text[ci - 1] == '-')) {
-					--angle_depth;
+				else if (c == '>' && state.angle_depth > 0 && !(ci > 0 && t.text[ci - 1] == '-')) {
+					--state.angle_depth;
 				}
 				else if (c == ';' || c == '{' || c == '}') {
-					angle_depth = 0;
+					state.angle_depth = 0;
 				}
 				if (is_opener(c)) {
-					const bool body = c == '{' && switch_pending && paren_depth == switch_paren_base;
+					const bool body = c == '{' && state.switch_pending && state.paren_depth == state.switch_paren_base;
 					if (body) {
-						switch_pending = false;
+						state.switch_pending = false;
 					}
 					if (c == '(') {
-						++paren_depth;
+						++state.paren_depth;
 					}
 					int anchor = effective;
 					if (c == '{') {
@@ -306,10 +460,10 @@ auto gse::ide::format::compute(const std::span<const std::string> lines, const o
 							anchor = cross_line_pop;
 						}
 						else if (!eligible && operator_start && !chain_start) {
-							anchor = statement_indent;
+							anchor = state.statement_indent;
 						}
 					}
-					stack.push_back({
+					state.stack.push_back({
 						.kind = c,
 						.open_indent = anchor,
 						.content_indent = anchor + 1,
@@ -318,24 +472,28 @@ auto gse::ide::format::compute(const std::span<const std::string> lines, const o
 					});
 				}
 				else if (is_closer(c)) {
-					if (!stack.empty()) {
-						if (stack.back().kind == '(') {
-							--paren_depth;
-						}
-						if (stack.back().open_line != line) {
-							cross_line_pop = stack.back().open_indent;
-						}
-						stack.pop_back();
+					if (state.stack.empty() || state.stack.back().kind != matching_opener(c)) {
+						return {};
 					}
+					if (state.stack.back().kind == '(') {
+						--state.paren_depth;
+					}
+					if (state.stack.back().open_line != line) {
+						cross_line_pop = state.stack.back().open_indent;
+					}
+					state.stack.pop_back();
 				}
 				else if (c == ';') {
-					switch_pending = false;
+					state.switch_pending = false;
 				}
-				last_code = c;
+				state.last_code = c;
 			}
 		}
 
-		continuation = !eligible && !clears_continuation(last_code);
+		state.continuation = !eligible && !clears_continuation(state.last_code);
+	}
+	if (!conditionals.empty() || directive_continuation || !state.stack.empty()) {
+		return {};
 	}
 
 	return edits;
