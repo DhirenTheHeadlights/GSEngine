@@ -197,4 +197,6 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 
 	log::set_async(false);
 	e.shutdown();
+
+	app::run_pending_relaunch();
 }
