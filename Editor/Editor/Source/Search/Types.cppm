@@ -2,6 +2,8 @@ export module gse.ide.search:types;
 
 import std;
 
+import gse;
+
 import gse.ide.analysis;
 
 export namespace gse::ide::search {
@@ -11,7 +13,7 @@ export namespace gse::ide::search {
 		file
 	};
 
-	using file_id = std::uint32_t;
+	using file_id = id;
 
 	struct location {
 		std::filesystem::path path;
@@ -45,7 +47,7 @@ export namespace gse::ide::search {
 		std::string name;
 		std::string name_lower;
 		analysis::symbol_kind kind = analysis::symbol_kind::type;
-		file_id file = 0;
+		file_id file{};
 		std::uint32_t line = 0;
 		std::uint32_t column = 0;
 		std::string qualified;
@@ -57,11 +59,12 @@ export namespace gse::ide::search {
 		std::uint32_t line = 0;
 		std::uint32_t column = 0;
 		std::uint32_t length = 0;
-		file_id def_file = 0;
+		file_id def_file{};
 		std::uint32_t def_line = 0;
 		std::uint32_t def_column = 0;
 		std::string qualified;
 		std::string identity;
+		std::string type;
 	};
 
 	struct options {
@@ -69,15 +72,16 @@ export namespace gse::ide::search {
 		bool include_content = true;
 		bool include_symbols = true;
 		bool include_files = true;
-		bool content_is_regex = false;
 	};
 
-	auto to_lower(std::string_view text) -> std::string {
-		std::string out;
-		out.reserve(text.size());
-		for (const char c : text) {
-			out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-		}
-		return out;
+	auto to_lower(std::string_view text) -> std::string;
+}
+
+auto gse::ide::search::to_lower(const std::string_view text) -> std::string {
+	std::string out;
+	out.reserve(text.size());
+	for (const char c : text) {
+		out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
 	}
+	return out;
 }

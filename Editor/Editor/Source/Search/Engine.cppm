@@ -12,14 +12,25 @@ export namespace gse::ide::search {
 	struct query_buffer {
 		std::atomic<bool> done = false;
 		std::atomic<bool> cancelled = false;
-		std::uint64_t generation = 0;
-		std::string query;
+		std::uint64_t request_id = 0;
+		std::uint64_t index_generation = 0;
 		std::vector<result> results;
 	};
 
 	struct engine {
-		static auto rank(const index_state& idx, std::string_view query, const options& opts, std::vector<result>& out, const std::atomic<bool>* cancelled = nullptr) -> void;
-		static auto submit(const std::shared_ptr<query_buffer>& out, const index_state& idx, std::string query, options opts) -> void;
+		static auto rank(
+			const search_snapshot& snapshot,
+			std::string_view query,
+			const options& opts,
+			std::vector<result>& out,
+			const std::atomic<bool>* cancelled = nullptr
+		) -> void;
+		static auto submit(
+			const std::shared_ptr<query_buffer>& out,
+			std::shared_ptr<const search_snapshot> snapshot,
+			std::string query,
+			options opts
+		) -> void;
 	};
 }
 
@@ -65,21 +76,27 @@ namespace gse::ide::search {
 		std::size_t limit = 0;
 		std::vector<result> values;
 
-		auto add(result value) -> void {
-			if (limit == 0) {
-				return;
-			}
-			if (values.size() < limit) {
-				values.push_back(std::move(value));
-				return;
-			}
-			const auto worst = std::ranges::max_element(values, result_better);
-			if (result_better(value, *worst)) {
-				*worst = std::move(value);
-			}
-		}
+		auto add(
+			result value
+		) -> void;
 	};
+}
 
+auto gse::ide::search::bounded_results::add(result value) -> void {
+	if (limit == 0) {
+		return;
+	}
+	if (values.size() < limit) {
+		values.push_back(std::move(value));
+		return;
+	}
+	const auto worst = std::ranges::max_element(values, result_better);
+	if (result_better(value, *worst)) {
+		*worst = std::move(value);
+	}
+}
+
+namespace gse::ide::search {
 	auto find_ci(std::string_view haystack, std::string_view needle_lower, std::size_t from, const std::atomic<bool>* cancelled) -> std::size_t {
 		if (needle_lower.empty() || haystack.size() < needle_lower.size()) {
 			return std::string_view::npos;
@@ -102,7 +119,7 @@ namespace gse::ide::search {
 		return std::string_view::npos;
 	}
 
-	auto scan_blob(std::string_view blob, const std::vector<std::uint32_t>& starts, std::string_view q_lower, const std::filesystem::path& path, std::vector<result>& sink, const std::atomic<bool>* cancelled) -> void {
+	auto scan_blob(std::string_view blob, std::span<const std::uint32_t> starts, std::string_view q_lower, const std::filesystem::path& path, std::vector<result>& sink, const std::atomic<bool>* cancelled) -> void {
 		std::uint32_t hits = 0;
 		std::size_t pos = 0;
 		while (hits < max_hits_per_file && !is_cancelled(cancelled)) {
@@ -135,7 +152,10 @@ namespace gse::ide::search {
 				const std::uint32_t disp_col = col - static_cast<std::uint32_t>(trim);
 				if (disp_col < r.display.size()) {
 					const auto len = static_cast<std::uint32_t>(std::min<std::size_t>(q_lower.size(), r.display.size() - disp_col));
-					r.highlight.push_back({ .start = disp_col, .length = len });
+					r.highlight.push_back({
+						.start = disp_col,
+						.length = len,
+					});
 				}
 			}
 			sink.push_back(std::move(r));
@@ -145,42 +165,40 @@ namespace gse::ide::search {
 		}
 	}
 
-	auto scan_content(const index_state& idx, std::string_view q_lower, bounded_results& out, const std::atomic<bool>* cancelled) -> void {
-		if (!idx.content.loaded.load(std::memory_order_acquire) || is_cancelled(cancelled)) {
+	auto scan_content(const search_snapshot& snapshot, std::string_view q_lower, bounded_results& out, const std::atomic<bool>* cancelled) -> void {
+		if (is_cancelled(cancelled)) {
 			return;
 		}
-		const std::span<const content_entry> entries = idx.content.entries.items();
-		std::vector<std::vector<result>> per_file(entries.size());
+		const std::span<const std::shared_ptr<const content_entry>> entries = *snapshot.content;
+		std::mutex result_mutex;
 
-		gse::task::coarse_parallel(entries.size(), 4, [&](std::size_t i) {
+		task::coarse_parallel(entries.size(), 4, [&](std::size_t i) {
 			if (!is_cancelled(cancelled)) {
-				const content_entry& entry = entries[i];
-				scan_blob(entry.blob, entry.line_starts, q_lower, entry.path, per_file[i], cancelled);
+				const content_entry& entry = *entries[i];
+				std::vector<result> local;
+				local.reserve(max_hits_per_file);
+				scan_blob(entry.blob, entry.line_starts, q_lower, entry.path, local, cancelled);
+				std::lock_guard lock(result_mutex);
+				for (result& match : local) {
+					out.add(std::move(match));
+				}
 			}
 		});
-
-		for (std::vector<result>& v : per_file) {
-			if (is_cancelled(cancelled)) {
-				return;
-			}
-			for (result& r : v) {
-				out.add(std::move(r));
-			}
-		}
 	}
 }
 
-auto gse::ide::search::engine::rank(const index_state& idx, std::string_view query, const options& opts, std::vector<result>& out, const std::atomic<bool>* cancelled) -> void {
+auto gse::ide::search::engine::rank(const search_snapshot& snapshot, std::string_view query, const options& opts, std::vector<result>& out, const std::atomic<bool>* cancelled) -> void {
 	if (query.empty() || is_cancelled(cancelled)) {
 		return;
 	}
 	const std::string q_lower = to_lower(query);
-	bounded_results matches{ .limit = opts.max_results };
+	bounded_results matches{
+		.limit = opts.max_results,
+	};
 	matches.values.reserve(opts.max_results);
-	std::shared_lock lock(idx.mutex);
 
 	if (opts.include_symbols) {
-		for (const symbol_entry& s : idx.symbols.symbols) {
+		for (const searchable_symbol& s : *snapshot.symbols) {
 			if (is_cancelled(cancelled)) {
 				return;
 			}
@@ -191,18 +209,18 @@ auto gse::ide::search::engine::rank(const index_state& idx, std::string_view que
 			matches.add({
 				.source = domain::symbol,
 				.score = score_symbol_base + score_symbol_fuzzy * sc.score,
-				.path = idx.symbols.path_for(s.file),
+				.path = s.path,
 				.line = s.line,
 				.column = s.column,
 				.display = s.name,
-				.detail = std::string(gse::enum_to_string(s.kind)),
+				.detail = std::format("{}", s.kind),
 				.highlight = sc.ranges,
 			});
 		}
 	}
 
 	if (opts.include_files) {
-		for (const file_entry& f : idx.files.entries.items()) {
+		for (const file_entry& f : *snapshot.files) {
 			if (is_cancelled(cancelled)) {
 				return;
 			}
@@ -220,8 +238,8 @@ auto gse::ide::search::engine::rank(const index_state& idx, std::string_view que
 		}
 	}
 
-	if (opts.include_content && !opts.content_is_regex) {
-		scan_content(idx, q_lower, matches, cancelled);
+	if (opts.include_content) {
+		scan_content(snapshot, q_lower, matches, cancelled);
 	}
 
 	if (is_cancelled(cancelled)) {
@@ -231,10 +249,10 @@ auto gse::ide::search::engine::rank(const index_state& idx, std::string_view que
 	out = std::move(matches.values);
 }
 
-auto gse::ide::search::engine::submit(const std::shared_ptr<query_buffer>& out, const index_state& idx, std::string query, options opts) -> void {
-	gse::task::post([out, &idx, query = std::move(query), opts] {
+auto gse::ide::search::engine::submit(const std::shared_ptr<query_buffer>& out, std::shared_ptr<const search_snapshot> snapshot, std::string query, options opts) -> void {
+	task::post([out, snapshot = std::move(snapshot), query = std::move(query), opts] {
 		std::vector<result> results;
-		engine::rank(idx, query, opts, results, &out->cancelled);
+		engine::rank(*snapshot, query, opts, results, &out->cancelled);
 		if (!out->cancelled.load(std::memory_order_acquire)) {
 			out->results = std::move(results);
 		}

@@ -2,13 +2,14 @@ export module gse.ide.search:index;
 
 import std;
 import gse;
+import gse.win32;
 import gse.ide.analysis;
 
 import :types;
 
 export namespace gse::ide::search {
 	struct file_index {
-		gse::id_mapped_collection<file_entry> entries;
+		id_mapped_collection<file_entry> entries;
 		std::atomic<bool> loaded = false;
 	};
 
@@ -19,72 +20,161 @@ export namespace gse::ide::search {
 	};
 
 	struct content_index {
-		gse::id_mapped_collection<content_entry> entries;
+		id_mapped_collection<std::shared_ptr<content_entry>> entries;
 		std::atomic<bool> loaded = false;
 	};
 
 	struct module_entry {
 		std::string name;
-		file_id file = 0;
+		file_id file{};
 		std::uint32_t line = 0;
 		std::uint32_t column = 0;
 	};
 
-	struct module_index {
+	struct module_index : non_copyable {
 		module_index() = default;
-		module_index(const module_index&) = delete;
-		auto operator=(const module_index&) -> module_index& = delete;
-		module_index(module_index&& other) noexcept;
-		auto operator=(module_index&& other) noexcept -> module_index&;
+		~module_index();
+		module_index(module_index&&) noexcept = default;
+		auto operator=(module_index&&) noexcept -> module_index& = default;
 
 		std::vector<module_entry> modules;
-		std::vector<std::filesystem::path> files;
-		std::unordered_map<gse::id, file_id> file_ids;
-		std::unordered_map<std::string, std::vector<std::uint32_t>, gse::transparent_hash, gse::transparent_equal> modules_by_name;
+		std::unordered_map<file_id, std::filesystem::path> files;
+		std::unordered_map<std::string, std::vector<std::uint32_t>, transparent_hash, transparent_equal> modules_by_name;
 		std::unordered_map<file_id, std::vector<std::uint32_t>> modules_by_file;
 
-		auto file_for(const std::filesystem::path& path) -> file_id;
-		auto path_for(file_id id) const -> std::filesystem::path;
-		auto transfer_from(module_index& other) -> void;
+		auto file_for(
+			const std::filesystem::path& path
+		) -> file_id;
+		auto path_for(
+			file_id id
+		) const -> std::filesystem::path;
 	};
 
-	struct symbol_index {
+	struct positioned_kind {
+		std::uint32_t line = 0;
+		std::uint32_t column = 0;
+		std::uint32_t length = 0;
+		analysis::semantic_kind kind = analysis::semantic_kind::variable;
+	};
+
+	struct symbol_index : non_copyable {
 		symbol_index() = default;
-		symbol_index(const symbol_index&) = delete;
-		auto operator=(const symbol_index&) -> symbol_index& = delete;
-		symbol_index(symbol_index&& other) noexcept;
-		auto operator=(symbol_index&& other) noexcept -> symbol_index&;
+		~symbol_index();
+		symbol_index(symbol_index&&) noexcept = default;
+		auto operator=(symbol_index&&) noexcept -> symbol_index& = default;
 
 		std::vector<symbol_entry> symbols;
 		std::unordered_map<file_id, std::vector<xref_entry>> xrefs;
-		std::vector<std::filesystem::path> files;
-		std::unordered_map<gse::id, file_id> file_ids;
+		std::unordered_map<file_id, std::vector<positioned_kind>> params;
+		std::unordered_map<file_id, std::filesystem::path> files;
 		std::vector<analysis::channel_use> channels;
 		std::unordered_map<file_id, std::vector<std::uint32_t>> symbols_by_file;
-		std::unordered_map<std::string, std::vector<std::uint32_t>, gse::transparent_hash, gse::transparent_equal> symbols_by_name;
-		std::unordered_map<std::string, std::vector<std::uint32_t>, gse::transparent_hash, gse::transparent_equal> definitions_by_identity;
-		std::unordered_map<std::string, std::vector<std::uint32_t>, gse::transparent_hash, gse::transparent_equal> definitions_by_qualified;
+		std::unordered_map<std::string, std::vector<std::uint32_t>, transparent_hash, transparent_equal> symbols_by_name;
+		std::unordered_map<std::string, std::vector<std::uint32_t>, transparent_hash, transparent_equal> definitions_by_identity;
+		std::unordered_map<std::string, std::vector<std::uint32_t>, transparent_hash, transparent_equal> definitions_by_qualified;
+		std::unordered_map<file_id, std::string> failures;
 
-		auto file_for(const std::filesystem::path& path) -> file_id;
-		auto path_for(file_id id) const -> std::filesystem::path;
-		auto transfer_from(symbol_index& other) -> void;
+		auto file_for(
+			const std::filesystem::path& path
+		) -> file_id;
+		auto path_for(
+			file_id id
+		) const -> std::filesystem::path;
+	};
+
+	struct searchable_symbol {
+		std::filesystem::path path;
+		std::string name;
+		std::string name_lower;
+		analysis::symbol_kind kind = analysis::symbol_kind::type;
+		std::uint32_t line = 0;
+		std::uint32_t column = 0;
+	};
+
+	struct search_snapshot {
+		std::uint64_t generation = 0;
+		std::shared_ptr<const std::vector<file_entry>> files;
+		std::shared_ptr<const std::vector<std::shared_ptr<const content_entry>>> content;
+		std::shared_ptr<const std::vector<searchable_symbol>> symbols;
+	};
+
+	struct symbol_overlay {
+		std::filesystem::path path;
+		std::vector<analysis::symbol_token> symbols;
+		std::vector<analysis::symbol_ref> refs;
+		std::vector<analysis::param_token> params;
+	};
+
+	struct file_build_result : non_copyable {
+		file_build_result() = default;
+		~file_build_result();
+		file_build_result(file_build_result&&) noexcept = default;
+		auto operator=(file_build_result&&) noexcept -> file_build_result& = default;
+
+		module_index modules;
+		id_mapped_collection<file_entry> files;
+		id_mapped_collection<std::shared_ptr<content_entry>> content;
+		std::uint64_t cpp_loc = 0;
+	};
+
+	enum class lookup_failure {
+		index_unavailable,
+		file_not_indexed,
+		reference_not_found,
+		symbol_not_found,
+		definition_not_found,
+		qualified_symbol_not_found,
+		ambiguous_symbol,
+		module_name_empty,
+		module_context_not_found,
+		module_not_found,
+		index_building,
+		build_required,
+		translation_unit_failed,
+		kind_not_recorded,
+		type_not_recorded,
+	};
+
+	struct lookup_error {
+		lookup_failure reason = lookup_failure::reference_not_found;
+		std::string subject;
+		std::string detail;
 	};
 
 	struct hover_hit {
 		location def;
 		std::string qualified;
 		std::string kind;
+		std::string type;
+		std::vector<lookup_error> issues;
+	};
+
+	auto describe(const lookup_error& error) -> std::string;
+	auto is_pending(const lookup_error& error) -> bool;
+
+	struct index_phase_info {
+		char label[48];
+		char detail[192];
 	};
 
 	enum class index_phase : std::uint8_t {
-		idle,
-		scanning,
-		compiling,
-		retrying,
-		aggregating,
+		idle [[= index_phase_info{ "Ready", "The semantic index is available." }]],
+		loading_database [[= index_phase_info{ "Loading compile commands", "Reading and parsing compile_commands.json." }]],
+		discovering_translation_units [[= index_phase_info{ "Discovering translation units", "Filtering compiler entries to source files inside the workspace." }]],
+		validating_cache [[= index_phase_info{ "Validating semantic cache", "Checking cached semantic data against source dependencies, compiler commands, and the token plugin." }]],
+		checking_modules [[= index_phase_info{ "Checking compiled modules", "Comparing generated compiled modules against the structured CMake dependency graph." }]],
+		compiling [[= index_phase_info{ "Extracting semantic data", "Running the compiler and semantic token plugin for translation units that were not cached." }]],
+		retrying [[= index_phase_info{ "Retrying semantic extraction", "Retrying failed semantic compiler runs serially." }]],
+		saving_results [[= index_phase_info{ "Saving semantic results", "Validating compiler output, recording failures, and updating translation-unit caches." }]],
+		merging_records [[= index_phase_info{ "Merging semantic records", "Combining symbols, references, resolved types, parameters, and channel uses from every translation unit." }]],
+		building_lookups [[= index_phase_info{ "Building symbol lookups", "Building file, name, identity, and qualified-name lookup tables." }]],
+		sorting_locations [[= index_phase_info{ "Sorting source locations", "Sorting symbols and references by source location for hover, highlighting, and navigation." }]],
+		publishing [[= index_phase_info{ "Publishing semantic index", "Applying live-file overlays and replacing the visible immutable semantic index." }]],
 	};
 
 	struct index_state {
+		index_state();
+
 		symbol_index symbols;
 		module_index modules;
 		file_index files;
@@ -94,46 +184,100 @@ export namespace gse::ide::search {
 		std::filesystem::path workspace_root;
 		std::atomic<bool> symbols_ready = false;
 		std::atomic<bool> building = false;
+		std::atomic<bool> build_required = false;
 		std::atomic<std::uint64_t> cpp_loc = 0;
-		std::atomic<std::size_t> tus_total = 0;
-		std::atomic<std::size_t> tus_done = 0;
+		std::atomic<std::size_t> progress_total = 0;
+		std::atomic<std::size_t> progress_done = 0;
+		std::atomic<std::int64_t> phase_started_ns = 0;
 		std::atomic<std::size_t> symbol_count = 0;
 		std::atomic<index_phase> phase = index_phase::idle;
 		std::atomic<bool> cancel = false;
+		std::atomic<std::uint64_t> generation = 0;
 		mutable std::shared_mutex mutex;
 		std::mutex build_mutex;
 		std::condition_variable build_cv;
 		bool build_requested = false;
 		bool build_stop = false;
+		std::optional<file_build_result> completed_files;
+		std::optional<symbol_index> completed_symbols;
+		std::optional<std::string> completed_build_required;
+		std::unordered_map<file_id, symbol_overlay> symbol_overlays;
+		std::unordered_set<file_id> pending_symbol_files;
+		std::string build_required_detail;
+		std::shared_ptr<const search_snapshot> current_search_snapshot;
 		std::jthread build_worker;
 
 		~index_state();
 
-		auto definition_at(const std::filesystem::path& file, std::uint32_t line, std::uint32_t column) const -> std::optional<location>;
-		auto symbol_at(const std::filesystem::path& file, std::uint32_t line, std::uint32_t column) const -> std::optional<hover_hit>;
-		auto symbol_definition(std::string_view name, std::string_view qualifier, const std::filesystem::path& click_file) const -> std::optional<location>;
-		auto module_definition(std::string_view name, const std::filesystem::path& click_file) const -> std::optional<location>;
-		auto declaration_of(std::string_view name, std::string_view qualifier) const -> std::optional<hover_hit>;
-		auto semantic_kind_of(std::string_view name) const -> std::optional<analysis::semantic_kind>;
+		auto definition_at(
+			const std::filesystem::path& file,
+			std::uint32_t line,
+			std::uint32_t column
+		) const -> std::expected<location, lookup_error>;
+		auto symbol_at(
+			const std::filesystem::path& file,
+			std::uint32_t line,
+			std::uint32_t column
+		) const -> std::expected<hover_hit, lookup_error>;
+		auto symbol_definition(
+			std::string_view name,
+			std::string_view qualifier,
+			const std::filesystem::path& click_file
+		) const -> std::expected<location, lookup_error>;
+		auto module_definition(
+			std::string_view name,
+			const std::filesystem::path& click_file
+		) const -> std::expected<location, lookup_error>;
+		auto declaration_of(
+			std::string_view name,
+			std::string_view qualifier
+		) const -> std::expected<hover_hit, lookup_error>;
+		auto semantic_kind_of(
+			std::string_view name
+		) const -> std::expected<analysis::semantic_kind, lookup_error>;
+		auto semantic_tokens_in(
+			const std::filesystem::path& file,
+			std::uint32_t line_begin,
+			std::uint32_t line_end
+		) const -> std::vector<positioned_kind>;
 		auto channel_links() const -> std::vector<analysis::channel_use>;
-		auto merge_file_symbols(const std::filesystem::path& file, std::span<const analysis::symbol_token> syms, std::span<const analysis::symbol_ref> refs) -> void;
+		auto merge_file_symbols(
+			const std::filesystem::path& file,
+			std::span<const analysis::symbol_token> syms,
+			std::span<const analysis::symbol_ref> refs,
+			std::span<const analysis::param_token> params
+		) -> void;
+		auto query_snapshot() const -> std::shared_ptr<const search_snapshot>;
 	};
 
 	struct index_merge_request {
 		std::filesystem::path path;
-		std::shared_ptr<analysis::diagnostics_check> check;
+		std::vector<analysis::symbol_token> symbols;
+		std::vector<analysis::symbol_ref> refs;
+		std::vector<analysis::param_token> params;
 	};
 
 	struct index_file_update_request {
 		std::filesystem::path path;
 	};
 
-	auto build_files_and_content(index_state& idx, const std::filesystem::path& root) -> void;
+	auto build_files_and_content(
+		index_state& idx,
+		const std::filesystem::path& root
+	) -> void;
 	auto build_symbols(index_state& idx) -> void;
 	auto start_symbol_worker(index_state& idx) -> void;
 	auto request_symbol_build(index_state& idx) -> void;
-	auto update_file(index_state& idx, const std::filesystem::path& path) -> void;
-	auto is_indexed_path(const std::filesystem::path& root, const std::filesystem::path& path) -> bool;
+	auto publish_file_build(index_state& idx) -> void;
+	auto publish_symbol_build(index_state& idx) -> void;
+	auto update_file(
+		index_state& idx,
+		const std::filesystem::path& path
+	) -> void;
+	auto is_indexed_path(
+		const std::filesystem::path& root,
+		const std::filesystem::path& path
+	) -> bool;
 }
 
 namespace gse::ide::search {
@@ -177,13 +321,13 @@ namespace gse::ide::search {
 		return starts;
 	}
 
-	auto canonical_path_id(const std::filesystem::path& path) -> std::pair<std::filesystem::path, gse::id> {
+	auto canonical_path_id(const std::filesystem::path& path) -> std::pair<std::filesystem::path, id> {
 		std::error_code ec;
 		std::filesystem::path canon = std::filesystem::weakly_canonical(path, ec);
 		if (ec) {
 			canon = path;
 		}
-		return { canon, gse::generate_temp_id(canon) };
+		return { canon, generate_temp_id(canon) };
 	}
 
 	auto module_ident_start(const char ch) -> bool {
@@ -246,7 +390,7 @@ namespace gse::ide::search {
 		return std::pair{ std::string(text.substr(start, pos - start)), static_cast<std::uint32_t>(start) };
 	}
 
-	auto line_at(std::string_view blob, const std::vector<std::uint32_t>& starts, std::size_t line) -> std::string_view {
+	auto line_at(std::string_view blob, std::span<const std::uint32_t> starts, std::size_t line) -> std::string_view {
 		const std::size_t start = starts[line];
 		std::size_t end = line + 1 < starts.size() ? starts[line + 1] : blob.size();
 		while (end > start && (blob[end - 1] == '\n' || blob[end - 1] == '\r')) {
@@ -277,7 +421,7 @@ namespace gse::ide::search {
 		return name;
 	}
 
-	auto scan_modules(const std::filesystem::path& path, std::string_view blob, const std::vector<std::uint32_t>& starts, module_index& modules) -> void {
+	auto scan_modules(const std::filesystem::path& path, std::string_view blob, std::span<const std::uint32_t> starts, module_index& modules) -> void {
 		if (starts.empty()) {
 			return;
 		}
@@ -295,7 +439,11 @@ namespace gse::ide::search {
 	}
 
 	auto symbol_location(const symbol_index& index, const symbol_entry& s) -> location {
-		return location{ .path = index.path_for(s.file), .line = s.line, .column = s.column };
+		return location{
+			.path = index.path_for(s.file),
+			.line = s.line,
+			.column = s.column,
+		};
 	}
 
 	auto rebuild_module_lookups(module_index& index) -> void {
@@ -307,7 +455,7 @@ namespace gse::ide::search {
 		}
 	}
 
-	auto rebuild_symbol_lookups(symbol_index& index) -> void {
+	auto build_symbol_lookups(symbol_index& index, std::atomic<std::size_t>* progress) -> void {
 		index.symbols_by_file.clear();
 		index.symbols_by_name.clear();
 		index.definitions_by_identity.clear();
@@ -324,19 +472,83 @@ namespace gse::ide::search {
 					index.definitions_by_qualified[symbol.qualified].push_back(i);
 				}
 			}
+			if (progress) {
+				progress->store(static_cast<std::size_t>(i) + 1, std::memory_order_release);
+			}
 		}
+	}
+
+	auto sort_symbol_ids(const symbol_index& index, std::vector<std::uint32_t>& ids) -> void {
+		std::ranges::sort(ids, [&](const std::uint32_t lhs, const std::uint32_t rhs) {
+			const symbol_entry& a = index.symbols[lhs];
+			const symbol_entry& b = index.symbols[rhs];
+			return std::tie(a.line, a.column) < std::tie(b.line, b.column);
+		});
+	}
+
+	auto sort_xrefs(std::vector<xref_entry>& refs) -> void {
+		std::ranges::sort(refs, [](const xref_entry& a, const xref_entry& b) {
+			return std::tie(a.line, a.column, a.length) < std::tie(b.line, b.column, b.length);
+		});
+	}
+
+	auto sort_symbol_locations(symbol_index& index, std::atomic<std::size_t>* progress) -> void {
+		std::size_t completed = 0;
 		for (auto& ids : index.symbols_by_file | std::views::values) {
-			std::ranges::sort(ids, [&](const std::uint32_t lhs, const std::uint32_t rhs) {
-				const symbol_entry& a = index.symbols[lhs];
-				const symbol_entry& b = index.symbols[rhs];
-				return std::tie(a.line, a.column) < std::tie(b.line, b.column);
-			});
+			sort_symbol_ids(index, ids);
+			if (progress) {
+				progress->store(++completed, std::memory_order_release);
+			}
 		}
 		for (auto& refs : index.xrefs | std::views::values) {
-			std::ranges::sort(refs, [](const xref_entry& a, const xref_entry& b) {
-				return std::tie(a.line, a.column, a.length) < std::tie(b.line, b.column, b.length);
+			sort_xrefs(refs);
+			if (progress) {
+				progress->store(++completed, std::memory_order_release);
+			}
+		}
+	}
+
+	auto rebuild_symbol_lookups(symbol_index& index) -> void {
+		build_symbol_lookups(index, nullptr);
+		sort_symbol_locations(index, nullptr);
+	}
+
+	auto next_search_snapshot(index_state& index) -> std::shared_ptr<search_snapshot> {
+		auto next = std::make_shared<search_snapshot>(*index.current_search_snapshot);
+		next->generation = index.generation.fetch_add(1, std::memory_order_acq_rel) + 1;
+		return next;
+	}
+
+	auto publish_file_search_snapshot(index_state& index) -> void {
+		auto next = next_search_snapshot(index);
+		const std::span<const file_entry> file_entries = index.files.entries.items();
+		next->files = std::make_shared<const std::vector<file_entry>>(file_entries.begin(), file_entries.end());
+
+		auto content_entries = std::make_shared<std::vector<std::shared_ptr<const content_entry>>>();
+		content_entries->reserve(index.content.entries.size());
+		for (const std::shared_ptr<content_entry>& entry : index.content.entries.items()) {
+			content_entries->push_back(entry);
+		}
+		next->content = std::move(content_entries);
+		index.current_search_snapshot = std::move(next);
+	}
+
+	auto publish_symbol_search_snapshot(index_state& index) -> void {
+		auto next = next_search_snapshot(index);
+		auto searchable = std::make_shared<std::vector<searchable_symbol>>();
+		searchable->reserve(index.symbols.symbols.size());
+		for (const symbol_entry& symbol : index.symbols.symbols) {
+			searchable->push_back({
+				.path = index.symbols.path_for(symbol.file),
+				.name = symbol.name,
+				.name_lower = symbol.name_lower,
+				.kind = symbol.kind,
+				.line = symbol.line,
+				.column = symbol.column,
 			});
 		}
+		next->symbols = std::move(searchable);
+		index.current_search_snapshot = std::move(next);
 	}
 
 	auto xref_at(const symbol_index& index, const file_id file, const std::uint32_t line, const std::uint32_t column) -> const xref_entry* {
@@ -344,7 +556,7 @@ namespace gse::ide::search {
 		if (file_it == index.xrefs.end()) {
 			return nullptr;
 		}
-		const std::vector<xref_entry>& refs = file_it->second;
+		const std::span<const xref_entry> refs = file_it->second;
 		auto it = std::ranges::lower_bound(refs, line, {}, &xref_entry::line);
 		for (; it != refs.end() && it->line == line; ++it) {
 			if (column >= it->column && column < it->column + it->length) {
@@ -359,7 +571,7 @@ namespace gse::ide::search {
 		if (file_it == index.symbols_by_file.end()) {
 			return nullptr;
 		}
-		const std::vector<std::uint32_t>& ids = file_it->second;
+		const std::span<const std::uint32_t> ids = file_it->second;
 		auto it = std::ranges::lower_bound(ids, line, {}, [&](const std::uint32_t id) {
 			return index.symbols[id].line;
 		});
@@ -372,7 +584,17 @@ namespace gse::ide::search {
 		return nullptr;
 	}
 
-	auto matching_function_definition(const symbol_index& index, std::string_view identity, std::string_view qualified, const file_id from_file, const std::uint32_t from_line, const std::uint32_t from_column) -> std::optional<location> {
+	auto is_lookup_declaration(const symbol_entry& symbol) -> bool {
+		return analysis::is_definition_kind(symbol.kind)
+			|| symbol.kind == analysis::symbol_kind::variable
+			|| symbol.kind == analysis::symbol_kind::parameter
+			|| symbol.kind == analysis::symbol_kind::member
+			|| symbol.kind == analysis::symbol_kind::enum_member
+			|| symbol.kind == analysis::symbol_kind::name_space
+			|| symbol.kind == analysis::symbol_kind::alias;
+	}
+
+	auto matching_definition(const symbol_index& index, std::string_view identity, std::string_view qualified, const file_id from_file, const std::uint32_t from_line, const std::uint32_t from_column) -> std::optional<location> {
 		const std::vector<std::uint32_t>* candidates = nullptr;
 		if (!identity.empty()) {
 			if (const auto it = index.definitions_by_identity.find(identity); it != index.definitions_by_identity.end()) {
@@ -389,7 +611,7 @@ namespace gse::ide::search {
 		}
 		for (const std::uint32_t id : *candidates) {
 			const symbol_entry& symbol = index.symbols[id];
-			if (symbol.kind == analysis::symbol_kind::function && symbol.is_definition && (symbol.file != from_file || symbol.line != from_line || symbol.column != from_column)) {
+			if (symbol.is_definition && (symbol.file != from_file || symbol.line != from_line || symbol.column != from_column)) {
 				return symbol_location(index, symbol);
 			}
 		}
@@ -397,41 +619,122 @@ namespace gse::ide::search {
 	}
 
 	auto promoted_definition(const symbol_index& index, const file_id file, const std::uint32_t line, const std::uint32_t column, std::string_view identity, std::string_view qualified) -> location {
-		const location target{ .path = index.path_for(file), .line = line, .column = column };
+		const location target{
+			.path = index.path_for(file),
+			.line = line,
+			.column = column,
+		};
 		if (const symbol_entry* symbol = symbol_at_location(index, file, line, column, false)) {
-			if (symbol->kind == analysis::symbol_kind::function && !symbol->is_definition) {
-				return matching_function_definition(index, symbol->identity.empty() ? identity : std::string_view(symbol->identity), symbol->qualified.empty() ? qualified : std::string_view(symbol->qualified), file, line, column).value_or(target);
+			if (!symbol->is_definition) {
+				return matching_definition(index, symbol->identity.empty() ? identity : std::string_view(symbol->identity), symbol->qualified.empty() ? qualified : std::string_view(symbol->qualified), file, line, column).value_or(target);
 			}
 			return target;
 		}
-		return matching_function_definition(index, identity, qualified, file, line, column).value_or(target);
+		return matching_definition(index, identity, qualified, file, line, column).value_or(target);
 	}
 
-	auto run_symbol_batch(std::span<const analysis::compilation_entry* const> list, const std::filesystem::path& plugin_dll, const std::filesystem::path& root, std::size_t workers, std::atomic<std::size_t>* progress, const std::atomic<bool>* cancel) -> std::vector<analysis::tu_symbols> {
+	auto steady_nanoseconds() -> std::int64_t {
+		return std::chrono::duration_cast<std::chrono::nanoseconds>(
+			std::chrono::steady_clock::now().time_since_epoch()
+		).count();
+	}
+
+	auto log_index_phase_completion(const index_state& idx) -> void {
+		const std::int64_t started = idx.phase_started_ns.load(std::memory_order_relaxed);
+		if (started == 0) {
+			return;
+		}
+		const index_phase phase = idx.phase.load(std::memory_order_acquire);
+		const index_phase_info info = annotation_from_enum<index_phase_info>(phase, {});
+		const double elapsed_ms = static_cast<double>(steady_nanoseconds() - started) / 1'000'000.0;
+		const std::size_t done = idx.progress_done.load(std::memory_order_relaxed);
+		const std::size_t total = idx.progress_total.load(std::memory_order_relaxed);
+		log::println(
+			log::level::info,
+			log::category::general,
+			"[symidx] Finished {} in {:.1f} ms{}",
+			info.label,
+			elapsed_ms,
+			total == 0 ? "" : std::format(" ({}/{} items)", done, total)
+		);
+	}
+
+	auto begin_index_phase(index_state& idx, const index_phase phase, const std::size_t total) -> void {
+		log_index_phase_completion(idx);
+		idx.progress_total.store(total, std::memory_order_relaxed);
+		idx.progress_done.store(0, std::memory_order_relaxed);
+		idx.phase_started_ns.store(steady_nanoseconds(), std::memory_order_relaxed);
+		idx.phase.store(phase, std::memory_order_release);
+		const index_phase_info info = annotation_from_enum<index_phase_info>(phase, {});
+		log::println(
+			log::level::info,
+			log::category::general,
+			"[symidx] {}{}",
+			info.label,
+			total == 0 ? "" : std::format(" ({} items)", total)
+		);
+	}
+
+	auto end_index_progress(index_state& idx) -> void {
+		log_index_phase_completion(idx);
+		idx.progress_total.store(0, std::memory_order_relaxed);
+		idx.progress_done.store(0, std::memory_order_relaxed);
+		idx.phase_started_ns.store(0, std::memory_order_relaxed);
+		idx.phase.store(index_phase::idle, std::memory_order_release);
+	}
+
+	auto run_symbol_batch(
+		std::span<const analysis::compilation_entry* const> list,
+		const std::filesystem::path& plugin_dll,
+		const std::filesystem::path& root,
+		std::size_t workers,
+		index_phase compile_phase,
+		index_state& idx,
+		const std::atomic<bool>* cancel
+	) -> std::vector<analysis::tu_symbols> {
 		std::vector<analysis::tu_symbols> out(list.size());
-		std::atomic<std::size_t> next = 0;
-		std::vector<std::thread> pool;
 		const std::size_t n = std::min(workers, list.size());
-		for (std::size_t w = 0; w < n; ++w) {
-			pool.emplace_back([&out, &next, list, &plugin_dll, &root, w, progress, cancel] {
-				while (true) {
-					if (cancel && cancel->load(std::memory_order_acquire)) {
-						break;
+		auto run_parallel = [&](auto&& fn) {
+			std::atomic<std::size_t> next = 0;
+			std::vector<std::thread> pool;
+			for (std::size_t worker = 0; worker < n; ++worker) {
+				pool.emplace_back([&] {
+					while (true) {
+						if (cancel && cancel->load(std::memory_order_acquire)) {
+							break;
+						}
+						const std::size_t i = next.fetch_add(1, std::memory_order_relaxed);
+						if (i >= list.size()) {
+							break;
+						}
+						fn(i);
+						idx.progress_done.fetch_add(1, std::memory_order_relaxed);
 					}
-					const std::size_t i = next.fetch_add(1, std::memory_order_relaxed);
-					if (i >= list.size()) {
-						break;
-					}
-					out[i] = analysis::symbol_index_builder::run_one(*list[i], plugin_dll, root, static_cast<std::uint32_t>(w));
-					if (progress) {
-						progress->fetch_add(1, std::memory_order_relaxed);
-					}
-				}
-			});
+				});
+			}
+			for (std::thread& thread : pool) {
+				thread.join();
+			}
+		};
+
+		begin_index_phase(idx, index_phase::checking_modules, list.size());
+		run_parallel([&](const std::size_t i) {
+			out[i].tu = list[i]->file;
+			if (const std::expected<void, std::string> module_graph = analysis::validate_module_graph(*list[i]); !module_graph) {
+				out[i].failure = analysis::symbol_index_failure::module_unavailable;
+				out[i].failure_detail = module_graph.error();
+			}
+		});
+		if (cancel && cancel->load(std::memory_order_acquire)) {
+			return out;
 		}
-		for (std::thread& t : pool) {
-			t.join();
-		}
+
+		begin_index_phase(idx, compile_phase, list.size());
+		run_parallel([&](const std::size_t i) {
+			if (out[i].failure == analysis::symbol_index_failure::none) {
+				out[i] = analysis::symbol_index_builder::run_one(*list[i], plugin_dll, root, true);
+			}
+		});
 		return out;
 	}
 }
@@ -449,138 +752,179 @@ auto gse::ide::search::is_indexed_path(const std::filesystem::path& root, const 
 	return true;
 }
 
-gse::ide::search::module_index::module_index(module_index&& other) noexcept {
-	transfer_from(other);
-}
-
-auto gse::ide::search::module_index::operator=(module_index&& other) noexcept -> module_index& {
-	if (this != &other) {
-		transfer_from(other);
-	}
-	return *this;
-}
-
-auto gse::ide::search::module_index::transfer_from(module_index& other) -> void {
-	modules.clear();
-	files.clear();
-	file_ids.clear();
-	modules_by_name.clear();
-	modules_by_file.clear();
-	modules.swap(other.modules);
-	files.swap(other.files);
-	file_ids.swap(other.file_ids);
-	modules_by_name.swap(other.modules_by_name);
-	modules_by_file.swap(other.modules_by_file);
-}
-
-gse::ide::search::symbol_index::symbol_index(symbol_index&& other) noexcept {
-	transfer_from(other);
-}
-
-auto gse::ide::search::symbol_index::operator=(symbol_index&& other) noexcept -> symbol_index& {
-	if (this != &other) {
-		transfer_from(other);
-	}
-	return *this;
-}
-
-auto gse::ide::search::symbol_index::transfer_from(symbol_index& other) -> void {
-	symbols.clear();
-	xrefs.clear();
-	files.clear();
-	file_ids.clear();
-	channels.clear();
-	symbols_by_file.clear();
-	symbols_by_name.clear();
-	definitions_by_identity.clear();
-	definitions_by_qualified.clear();
-	symbols.swap(other.symbols);
-	xrefs.swap(other.xrefs);
-	files.swap(other.files);
-	file_ids.swap(other.file_ids);
-	channels.swap(other.channels);
-	symbols_by_file.swap(other.symbols_by_file);
-	symbols_by_name.swap(other.symbols_by_name);
-	definitions_by_identity.swap(other.definitions_by_identity);
-	definitions_by_qualified.swap(other.definitions_by_qualified);
-}
-
 auto gse::ide::search::module_index::file_for(const std::filesystem::path& path) -> file_id {
 	auto [canon, canonical_id] = canonical_path_id(path);
-	if (const auto it = file_ids.find(canonical_id); it != file_ids.end()) {
-		return it->second;
-	}
-	const file_id id = static_cast<file_id>(files.size());
-	files.push_back(std::move(canon));
-	file_ids.emplace(canonical_id, id);
-	return id;
+	files.try_emplace(canonical_id, std::move(canon));
+	return canonical_id;
 }
 
-auto gse::ide::search::module_index::path_for(file_id id) const -> std::filesystem::path {
-	if (id < files.size()) {
-		return files[id];
+gse::ide::search::module_index::~module_index() = default;
+
+auto gse::ide::search::module_index::path_for(const file_id id) const -> std::filesystem::path {
+	if (const auto it = files.find(id); it != files.end()) {
+		return it->second;
 	}
 	return {};
 }
 
 auto gse::ide::search::symbol_index::file_for(const std::filesystem::path& path) -> file_id {
 	auto [canon, canonical_id] = canonical_path_id(path);
-	if (const auto it = file_ids.find(canonical_id); it != file_ids.end()) {
-		return it->second;
-	}
-	const file_id id = static_cast<file_id>(files.size());
-	files.push_back(std::move(canon));
-	file_ids.emplace(canonical_id, id);
-	return id;
+	files.try_emplace(canonical_id, std::move(canon));
+	return canonical_id;
 }
 
-auto gse::ide::search::symbol_index::path_for(file_id id) const -> std::filesystem::path {
-	if (id < files.size()) {
-		return files[id];
+gse::ide::search::symbol_index::~symbol_index() = default;
+
+auto gse::ide::search::symbol_index::path_for(const file_id id) const -> std::filesystem::path {
+	if (const auto it = files.find(id); it != files.end()) {
+		return it->second;
 	}
 	return {};
 }
 
-auto gse::ide::search::index_state::definition_at(const std::filesystem::path& file, std::uint32_t line, std::uint32_t column) const -> std::optional<location> {
-	std::shared_lock lock(mutex);
-	const auto id_it = symbols.file_ids.find(gse::generate_temp_id(file));
-	if (id_it == symbols.file_ids.end()) {
-		return std::nullopt;
+auto gse::ide::search::describe(const lookup_error& error) -> std::string {
+	switch (error.reason) {
+	case lookup_failure::index_unavailable:
+		return "the symbol index is unavailable";
+	case lookup_failure::file_not_indexed:
+		return std::format("'{}' is not in the symbol index", error.subject);
+	case lookup_failure::reference_not_found:
+		return std::format("no compiler reference covers {}", error.subject);
+	case lookup_failure::symbol_not_found:
+		return std::format("symbol '{}' is absent from the index", error.subject);
+	case lookup_failure::definition_not_found:
+		return std::format("no definition was recorded for '{}'", error.subject);
+	case lookup_failure::qualified_symbol_not_found:
+		return std::format("no definition matched qualified symbol '{}'", error.subject);
+	case lookup_failure::ambiguous_symbol:
+		return std::format("unqualified symbol '{}' is ambiguous", error.subject);
+	case lookup_failure::module_name_empty:
+		return "the module name is empty";
+	case lookup_failure::module_context_not_found:
+		return std::format("relative module '{}' has no indexed owning module", error.subject);
+	case lookup_failure::module_not_found:
+		return std::format("module '{}' is absent from the module index", error.subject);
+	case lookup_failure::index_building:
+		return error.subject.empty()
+			? "semantic information is still indexing"
+			: std::format("semantic information for '{}' is still indexing", error.subject);
+	case lookup_failure::build_required:
+		return error.detail.empty()
+			? "semantic information is waiting for rebuilt module artifacts"
+			: std::format("semantic information is waiting for rebuilt module artifacts: {}", error.detail);
+	case lookup_failure::translation_unit_failed:
+		return error.detail.empty()
+			? std::format("semantic compilation failed for '{}'", error.subject)
+			: std::format("semantic compilation failed for '{}': {}", error.subject, error.detail);
+	case lookup_failure::kind_not_recorded:
+		return std::format("the compiler did not record a symbol kind for '{}'", error.subject);
+	case lookup_failure::type_not_recorded:
+		return std::format("the compiler did not record a resolved type for '{}'", error.subject);
 	}
-	const file_id file_id = id_it->second;
-	if (const xref_entry* xref = xref_at(symbols, file_id, line, column)) {
-		return promoted_definition(symbols, xref->def_file, xref->def_line, xref->def_column, xref->identity, xref->qualified);
-	}
-	if (const symbol_entry* symbol = symbol_at_location(symbols, file_id, line, column, true)) {
-		if (symbol->kind == analysis::symbol_kind::function && !symbol->is_definition) {
-			return matching_function_definition(symbols, symbol->identity, symbol->qualified, file_id, symbol->line, symbol->column);
-		}
-	}
-	return std::nullopt;
+	return "the semantic lookup failed for an unknown reason";
 }
 
-auto gse::ide::search::index_state::symbol_at(const std::filesystem::path& file, std::uint32_t line, std::uint32_t column) const -> std::optional<hover_hit> {
+auto gse::ide::search::is_pending(const lookup_error& error) -> bool {
+	return error.reason == lookup_failure::index_building || error.reason == lookup_failure::build_required;
+}
+
+auto gse::ide::search::index_state::definition_at(const std::filesystem::path& file, std::uint32_t line, std::uint32_t column) const -> std::expected<location, lookup_error> {
 	std::shared_lock lock(mutex);
-	const auto id_it = symbols.file_ids.find(gse::generate_temp_id(file));
-	if (id_it == symbols.file_ids.end()) {
-		return std::nullopt;
+	const file_id fid = canonical_path_id(file).second;
+	if (build_required.load(std::memory_order_acquire)) {
+		return std::unexpected(lookup_error{ .reason = lookup_failure::build_required, .subject = file.generic_display_string(), .detail = build_required_detail });
 	}
-	const xref_entry* xref = xref_at(symbols, id_it->second, line, column);
+	if (!symbols_ready.load(std::memory_order_acquire) || pending_symbol_files.contains(fid)) {
+		return std::unexpected(lookup_error{ .reason = lookup_failure::index_building, .subject = file.generic_display_string() });
+	}
+	if (!symbols.files.contains(fid)) {
+		return std::unexpected(lookup_error{ .reason = lookup_failure::file_not_indexed, .subject = file.generic_display_string() });
+	}
+	if (const auto failure = symbols.failures.find(fid); failure != symbols.failures.end()) {
+		return std::unexpected(lookup_error{
+			.reason = lookup_failure::translation_unit_failed,
+			.subject = file.generic_display_string(),
+			.detail = failure->second,
+		});
+	}
+	if (const xref_entry* xref = xref_at(symbols, fid, line, column)) {
+		location definition = promoted_definition(symbols, xref->def_file, xref->def_line, xref->def_column, xref->identity, xref->qualified);
+		if (definition.path.empty()) {
+			return std::unexpected(lookup_error{ .reason = lookup_failure::definition_not_found, .subject = xref->qualified });
+		}
+		return definition;
+	}
+	if (const symbol_entry* symbol = symbol_at_location(symbols, fid, line, column, true)) {
+		if (symbol->is_definition) {
+			return symbol_location(symbols, *symbol);
+		}
+		if (const std::optional<location> definition = matching_definition(symbols, symbol->identity, symbol->qualified, fid, symbol->line, symbol->column)) {
+			return *definition;
+		}
+		return std::unexpected(lookup_error{ .reason = lookup_failure::definition_not_found, .subject = symbol->qualified });
+	}
+	return std::unexpected(lookup_error{
+		.reason = lookup_failure::reference_not_found,
+		.subject = std::format("{}:{}:{}", file.generic_display_string(), line + 1, column + 1),
+	});
+}
+
+auto gse::ide::search::index_state::symbol_at(const std::filesystem::path& file, std::uint32_t line, std::uint32_t column) const -> std::expected<hover_hit, lookup_error> {
+	std::shared_lock lock(mutex);
+	const file_id fid = canonical_path_id(file).second;
+	if (build_required.load(std::memory_order_acquire)) {
+		return std::unexpected(lookup_error{ .reason = lookup_failure::build_required, .subject = file.generic_display_string(), .detail = build_required_detail });
+	}
+	if (!symbols_ready.load(std::memory_order_acquire) || pending_symbol_files.contains(fid)) {
+		return std::unexpected(lookup_error{ .reason = lookup_failure::index_building, .subject = file.generic_display_string() });
+	}
+	if (!symbols.files.contains(fid)) {
+		return std::unexpected(lookup_error{ .reason = lookup_failure::file_not_indexed, .subject = file.generic_display_string() });
+	}
+	if (const auto failure = symbols.failures.find(fid); failure != symbols.failures.end()) {
+		return std::unexpected(lookup_error{
+			.reason = lookup_failure::translation_unit_failed,
+			.subject = file.generic_display_string(),
+			.detail = failure->second,
+		});
+	}
+	const xref_entry* xref = xref_at(symbols, fid, line, column);
 	if (!xref) {
-		return std::nullopt;
+		return std::unexpected(lookup_error{
+			.reason = lookup_failure::reference_not_found,
+			.subject = std::format("{}:{}:{}", file.generic_display_string(), line + 1, column + 1),
+		});
+	}
+	const location definition = promoted_definition(symbols, xref->def_file, xref->def_line, xref->def_column, xref->identity, xref->qualified);
+	if (definition.path.empty()) {
+		return std::unexpected(lookup_error{ .reason = lookup_failure::definition_not_found, .subject = xref->qualified });
 	}
 	std::string kind;
-	if (const symbol_entry* symbol = symbol_at_location(symbols, xref->def_file, xref->def_line, xref->def_column, false)) {
+	std::vector<lookup_error> issues;
+	const file_id definition_file = canonical_path_id(definition.path).second;
+	if (const symbol_entry* symbol = symbol_at_location(symbols, definition_file, definition.line, definition.column, false)) {
 		kind = std::format("{}", symbol->kind);
+		const bool needs_type = symbol->kind == analysis::symbol_kind::variable || symbol->kind == analysis::symbol_kind::parameter || symbol->kind == analysis::symbol_kind::member;
+		if (needs_type && xref->type.empty()) {
+			issues.push_back({ .reason = lookup_failure::type_not_recorded, .subject = xref->qualified });
+		}
+	}
+	else {
+		issues.push_back({ .reason = lookup_failure::kind_not_recorded, .subject = xref->qualified });
+		if (xref->type.empty()) {
+			issues.push_back({ .reason = lookup_failure::type_not_recorded, .subject = xref->qualified });
+		}
 	}
 	return hover_hit{
-		.def = promoted_definition(symbols, xref->def_file, xref->def_line, xref->def_column, xref->identity, xref->qualified),
+		.def = definition,
 		.qualified = xref->qualified,
 		.kind = kind,
+		.type = xref->type,
+		.issues = std::move(issues),
 	};
 }
 
-auto gse::ide::search::index_state::symbol_definition(std::string_view name, std::string_view qualifier, const std::filesystem::path& click_file) const -> std::optional<location> {
+auto gse::ide::search::index_state::symbol_definition(std::string_view name, std::string_view qualifier, const std::filesystem::path& click_file) const -> std::expected<location, lookup_error> {
 	std::string needle;
 	needle.reserve(qualifier.size() + name.size());
 	needle.append(qualifier);
@@ -588,19 +932,22 @@ auto gse::ide::search::index_state::symbol_definition(std::string_view name, std
 	std::string suffix = "::";
 	suffix.append(needle);
 	std::shared_lock lock(mutex);
-	file_id click_fid = static_cast<file_id>(-1);
-	if (const auto it = symbols.file_ids.find(gse::generate_temp_id(click_file)); it != symbols.file_ids.end()) {
-		click_fid = it->second;
+	if (build_required.load(std::memory_order_acquire)) {
+		return std::unexpected(lookup_error{ .reason = lookup_failure::build_required, .subject = std::string(name), .detail = build_required_detail });
 	}
+	if (!symbols_ready.load(std::memory_order_acquire)) {
+		return std::unexpected(lookup_error{ .reason = lookup_failure::index_building, .subject = std::string(name) });
+	}
+	const file_id click_fid = canonical_path_id(click_file).second;
 	const auto candidates = symbols.symbols_by_name.find(name);
 	if (candidates == symbols.symbols_by_name.end()) {
-		return std::nullopt;
+		return std::unexpected(lookup_error{ .reason = lookup_failure::symbol_not_found, .subject = std::string(name) });
 	}
 	const symbol_entry* best = nullptr;
 	int best_score = 0;
 	for (const std::uint32_t id : candidates->second) {
 		const symbol_entry& s = symbols.symbols[id];
-		if (!analysis::is_definition_kind(s.kind)) {
+		if (!is_lookup_declaration(s)) {
 			continue;
 		}
 		int score = 1;
@@ -610,7 +957,7 @@ auto gse::ide::search::index_state::symbol_definition(std::string_view name, std
 		else if (!qualifier.empty() && s.qualified.ends_with(suffix)) {
 			score = 4;
 		}
-		else if (s.file == click_fid) {
+		else if (symbols.files.contains(click_fid) && s.file == click_fid) {
 			score = 3;
 		}
 		else if (analysis::is_type_kind(s.kind)) {
@@ -625,31 +972,37 @@ auto gse::ide::search::index_state::symbol_definition(std::string_view name, std
 		}
 	}
 	if (!best) {
-		return std::nullopt;
+		return std::unexpected(lookup_error{ .reason = lookup_failure::definition_not_found, .subject = needle });
 	}
 	if (!qualifier.empty() && best_score < 4) {
-		return std::nullopt;
+		return std::unexpected(lookup_error{ .reason = lookup_failure::qualified_symbol_not_found, .subject = needle });
 	}
 	if (qualifier.empty() && best_score <= 1) {
-		return std::nullopt;
+		return std::unexpected(lookup_error{ .reason = lookup_failure::ambiguous_symbol, .subject = std::string(name) });
 	}
-	return location{ .path = symbols.path_for(best->file), .line = best->line, .column = best->column };
+	return location{
+		.path = symbols.path_for(best->file),
+		.line = best->line,
+		.column = best->column,
+	};
 }
 
-auto gse::ide::search::index_state::module_definition(std::string_view name, const std::filesystem::path& click_file) const -> std::optional<location> {
+auto gse::ide::search::index_state::module_definition(std::string_view name, const std::filesystem::path& click_file) const -> std::expected<location, lookup_error> {
 	if (name.empty()) {
-		return std::nullopt;
+		return std::unexpected(lookup_error{ .reason = lookup_failure::module_name_empty });
 	}
 	std::string target(name);
-	const gse::id file_identity = gse::generate_temp_id(click_file);
+	const file_id file_identity = canonical_path_id(click_file).second;
 	std::shared_lock lock(mutex);
+	if (!files.loaded.load(std::memory_order_acquire)) {
+		return std::unexpected(lookup_error{ .reason = lookup_failure::index_building, .subject = target });
+	}
 	if (target.starts_with(':')) {
-		const auto file_it = modules.file_ids.find(file_identity);
-		if (file_it == modules.file_ids.end()) {
-			return std::nullopt;
+		if (!modules.files.contains(file_identity)) {
+			return std::unexpected(lookup_error{ .reason = lookup_failure::module_context_not_found, .subject = target });
 		}
 		std::string current;
-		if (const auto ids = modules.modules_by_file.find(file_it->second); ids != modules.modules_by_file.end()) {
+		if (const auto ids = modules.modules_by_file.find(file_identity); ids != modules.modules_by_file.end()) {
 			for (const std::uint32_t id : ids->second) {
 				current = modules.modules[id].name;
 				if (!current.empty()) {
@@ -658,7 +1011,7 @@ auto gse::ide::search::index_state::module_definition(std::string_view name, con
 			}
 		}
 		if (current.empty()) {
-			return std::nullopt;
+			return std::unexpected(lookup_error{ .reason = lookup_failure::module_context_not_found, .subject = target });
 		}
 		if (const std::size_t colon = current.find(':'); colon != std::string::npos) {
 			current.erase(colon);
@@ -668,7 +1021,7 @@ auto gse::ide::search::index_state::module_definition(std::string_view name, con
 
 	const auto candidates = modules.modules_by_name.find(target);
 	if (candidates == modules.modules_by_name.end()) {
-		return std::nullopt;
+		return std::unexpected(lookup_error{ .reason = lookup_failure::module_not_found, .subject = target });
 	}
 	const module_entry* best = nullptr;
 	for (const std::uint32_t id : candidates->second) {
@@ -678,28 +1031,38 @@ auto gse::ide::search::index_state::module_definition(std::string_view name, con
 		}
 	}
 	if (!best) {
-		return std::nullopt;
+		return std::unexpected(lookup_error{ .reason = lookup_failure::module_not_found, .subject = target });
 	}
-	return location{ .path = modules.path_for(best->file), .line = best->line, .column = best->column };
+	return location{
+		.path = modules.path_for(best->file),
+		.line = best->line,
+		.column = best->column,
+	};
 }
 
-auto gse::ide::search::index_state::declaration_of(std::string_view name, std::string_view qualifier) const -> std::optional<hover_hit> {
+auto gse::ide::search::index_state::declaration_of(std::string_view name, std::string_view qualifier) const -> std::expected<hover_hit, lookup_error> {
 	std::string needle;
 	needle.append(qualifier);
 	needle.append(name);
 	std::string suffix = "::";
 	suffix.append(needle);
 	std::shared_lock lock(mutex);
+	if (build_required.load(std::memory_order_acquire)) {
+		return std::unexpected(lookup_error{ .reason = lookup_failure::build_required, .subject = std::string(name), .detail = build_required_detail });
+	}
+	if (!symbols_ready.load(std::memory_order_acquire)) {
+		return std::unexpected(lookup_error{ .reason = lookup_failure::index_building, .subject = std::string(name) });
+	}
 	const auto candidates = symbols.symbols_by_name.find(name);
 	if (candidates == symbols.symbols_by_name.end()) {
-		return std::nullopt;
+		return std::unexpected(lookup_error{ .reason = lookup_failure::symbol_not_found, .subject = std::string(name) });
 	}
 	const symbol_entry* best = nullptr;
 	const symbol_entry* fallback = nullptr;
 	int best_score = 0;
 	for (const std::uint32_t id : candidates->second) {
 		const symbol_entry& s = symbols.symbols[id];
-		if (!analysis::is_definition_kind(s.kind)) {
+		if (!is_lookup_declaration(s)) {
 			continue;
 		}
 		if (!fallback || s.qualified.size() < fallback->qualified.size()) {
@@ -719,16 +1082,41 @@ auto gse::ide::search::index_state::declaration_of(std::string_view name, std::s
 	}
 	const symbol_entry* pick = best ? best : fallback;
 	if (!pick) {
-		return std::nullopt;
+		return std::unexpected(lookup_error{ .reason = lookup_failure::definition_not_found, .subject = needle });
 	}
-	return hover_hit{ .def = location{ .path = symbols.path_for(pick->file), .line = pick->line, .column = pick->column }, .qualified = pick->qualified, .kind = std::string(gse::enum_to_string(pick->kind)) };
+	std::string type;
+	std::vector<lookup_error> issues;
+	if (const xref_entry* reference = xref_at(symbols, pick->file, pick->line, pick->column)) {
+		type = reference->type;
+	}
+	const bool needs_type = pick->kind == analysis::symbol_kind::variable || pick->kind == analysis::symbol_kind::parameter || pick->kind == analysis::symbol_kind::member;
+	if (needs_type && type.empty()) {
+		issues.push_back({ .reason = lookup_failure::type_not_recorded, .subject = pick->qualified });
+	}
+	return hover_hit{
+		.def = {
+			.path = symbols.path_for(pick->file),
+			.line = pick->line,
+			.column = pick->column,
+		},
+		.qualified = pick->qualified,
+		.kind = std::format("{}", pick->kind),
+		.type = std::move(type),
+		.issues = std::move(issues),
+	};
 }
 
-auto gse::ide::search::index_state::semantic_kind_of(const std::string_view name) const -> std::optional<analysis::semantic_kind> {
+auto gse::ide::search::index_state::semantic_kind_of(const std::string_view name) const -> std::expected<analysis::semantic_kind, lookup_error> {
 	std::shared_lock lock(mutex);
+	if (build_required.load(std::memory_order_acquire)) {
+		return std::unexpected(lookup_error{ .reason = lookup_failure::build_required, .subject = std::string(name), .detail = build_required_detail });
+	}
+	if (!symbols_ready.load(std::memory_order_acquire)) {
+		return std::unexpected(lookup_error{ .reason = lookup_failure::index_building, .subject = std::string(name) });
+	}
 	const auto candidates = symbols.symbols_by_name.find(name);
 	if (candidates == symbols.symbols_by_name.end()) {
-		return std::nullopt;
+		return std::unexpected(lookup_error{ .reason = lookup_failure::symbol_not_found, .subject = std::string(name) });
 	}
 	const symbol_entry* pick = nullptr;
 	for (const std::uint32_t id : candidates->second) {
@@ -742,21 +1130,73 @@ auto gse::ide::search::index_state::semantic_kind_of(const std::string_view name
 		}
 	}
 	if (!pick) {
-		return std::nullopt;
+		return std::unexpected(lookup_error{ .reason = lookup_failure::kind_not_recorded, .subject = std::string(name) });
 	}
-	switch (pick->kind) {
-		case analysis::symbol_kind::variable: return analysis::semantic_kind::variable;
-		case analysis::symbol_kind::parameter: return analysis::semantic_kind::parameter;
-		case analysis::symbol_kind::function: return analysis::semantic_kind::function;
-		case analysis::symbol_kind::member: return analysis::semantic_kind::member;
-		case analysis::symbol_kind::type: return analysis::semantic_kind::type;
-		case analysis::symbol_kind::enum_member: return analysis::semantic_kind::enum_member;
-		case analysis::symbol_kind::name_space: return analysis::semantic_kind::name_space;
-		case analysis::symbol_kind::enumeration: return analysis::semantic_kind::type;
-		case analysis::symbol_kind::alias: return analysis::semantic_kind::type;
-		case analysis::symbol_kind::concept_decl: return analysis::semantic_kind::type;
+	return analysis::to_semantic_kind(pick->kind);
+}
+
+auto gse::ide::search::index_state::semantic_tokens_in(const std::filesystem::path& file, const std::uint32_t line_begin, const std::uint32_t line_end) const -> std::vector<positioned_kind> {
+	std::shared_lock lock(mutex);
+	std::vector<positioned_kind> out;
+	const file_id fid = canonical_path_id(file).second;
+	if (!symbols.files.contains(fid)) {
+		return out;
 	}
-	return std::nullopt;
+
+	if (const auto pit = symbols.params.find(fid); pit != symbols.params.end() && !pit->second.empty()) {
+		for (const positioned_kind& p : pit->second) {
+			if (p.line < line_begin || p.line >= line_end) {
+				continue;
+			}
+			out.push_back(p);
+		}
+		return out;
+	}
+
+	if (const auto sit = symbols.symbols_by_file.find(fid); sit != symbols.symbols_by_file.end()) {
+		for (const std::uint32_t id : sit->second) {
+			const symbol_entry& s = symbols.symbols[id];
+			if (s.line < line_begin || s.line >= line_end || s.name.empty()) {
+				continue;
+			}
+			out.push_back({
+				.line = s.line,
+				.column = s.column,
+				.length = static_cast<std::uint32_t>(s.name.size()),
+				.kind = analysis::to_semantic_kind(s.kind),
+			});
+		}
+	}
+
+	if (const auto xit = symbols.xrefs.find(fid); xit != symbols.xrefs.end()) {
+		for (const xref_entry& x : xit->second) {
+			if (x.line < line_begin || x.line >= line_end || x.length == 0) {
+				continue;
+			}
+			const symbol_entry* target = symbol_at_location(symbols, x.def_file, x.def_line, x.def_column, false);
+			if (!target && !x.identity.empty()) {
+				if (const auto it = symbols.definitions_by_identity.find(x.identity); it != symbols.definitions_by_identity.end() && !it->second.empty()) {
+					target = &symbols.symbols[it->second.front()];
+				}
+			}
+			if (!target && !x.qualified.empty()) {
+				if (const auto it = symbols.definitions_by_qualified.find(x.qualified); it != symbols.definitions_by_qualified.end() && !it->second.empty()) {
+					target = &symbols.symbols[it->second.front()];
+				}
+			}
+			if (!target) {
+				continue;
+			}
+			out.push_back({
+				.line = x.line,
+				.column = x.column,
+				.length = x.length,
+				.kind = analysis::to_semantic_kind(target->kind),
+			});
+		}
+	}
+
+	return out;
 }
 
 auto gse::ide::search::index_state::channel_links() const -> std::vector<analysis::channel_use> {
@@ -765,8 +1205,8 @@ auto gse::ide::search::index_state::channel_links() const -> std::vector<analysi
 }
 
 auto gse::ide::search::build_files_and_content(index_state& idx, const std::filesystem::path& root) -> void {
-	gse::id_mapped_collection<file_entry> files;
-	gse::id_mapped_collection<content_entry> content;
+	id_mapped_collection<file_entry> files;
+	id_mapped_collection<std::shared_ptr<content_entry>> content;
 
 	std::error_code ec;
 	const auto opts = std::filesystem::directory_options::skip_permission_denied;
@@ -791,9 +1231,9 @@ auto gse::ide::search::build_files_and_content(index_state& idx, const std::file
 		if (rel.empty()) {
 			rel = path.filename().display_string();
 		}
-		const gse::id file_identity = gse::generate_temp_id(path);
+		const auto [resolved, file_identity] = canonical_path_id(path);
 		files.add(file_identity, {
-			.path = path,
+			.path = resolved,
 			.rel = rel,
 			.rel_lower = to_lower(rel),
 		});
@@ -802,17 +1242,17 @@ auto gse::ide::search::build_files_and_content(index_state& idx, const std::file
 		if (!is_binary_ext(ext)) {
 			const auto size = entry.file_size(type_ec);
 			if (!type_ec && size <= 2u * 1024u * 1024u) {
-				content.add(file_identity, {
-					.path = path,
-				});
+				content.add(file_identity, std::make_shared<content_entry>(content_entry{
+					.path = resolved,
+				}));
 			}
 		}
 	}
 
-	const std::span<content_entry> content_entries = content.items();
+	const std::span<std::shared_ptr<content_entry>> content_entries = content.items();
 
-	gse::task::coarse_parallel(content_entries.size(), 8, [&](std::size_t i) {
-		content_entry& entry = content_entries[i];
+	task::coarse_parallel(content_entries.size(), 8, [&](std::size_t i) {
+		content_entry& entry = *content_entries[i];
 		std::ifstream in(entry.path, std::ios::binary);
 		if (!in) {
 			return;
@@ -824,7 +1264,8 @@ auto gse::ide::search::build_files_and_content(index_state& idx, const std::file
 
 	std::uint64_t loc = 0;
 	module_index module_defs;
-	for (const content_entry& entry : content_entries) {
+	for (const std::shared_ptr<content_entry>& entry_ptr : content_entries) {
+		const content_entry& entry = *entry_ptr;
 		if (entry.line_starts.empty() || !is_cpp_ext(to_lower(entry.path.extension().native_encoded_string()))) {
 			continue;
 		}
@@ -837,16 +1278,14 @@ auto gse::ide::search::build_files_and_content(index_state& idx, const std::file
 		loc += entry.line_starts.size() - 1;
 	}
 	rebuild_module_lookups(module_defs);
-	idx.cpp_loc.store(loc, std::memory_order_release);
-
 	{
-		std::unique_lock lock(idx.mutex);
-		idx.modules = std::move(module_defs);
-		idx.files.entries = std::move(files);
-		idx.content.entries = std::move(content);
+		std::lock_guard lock(idx.build_mutex);
+		idx.completed_files.emplace();
+		idx.completed_files->modules = std::move(module_defs);
+		idx.completed_files->files = std::move(files);
+		idx.completed_files->content = std::move(content);
+		idx.completed_files->cpp_loc = loc;
 	}
-	idx.files.loaded.store(true, std::memory_order_release);
-	idx.content.loaded.store(true, std::memory_order_release);
 }
 
 auto gse::ide::search::update_file(index_state& idx, const std::filesystem::path& path) -> void {
@@ -856,20 +1295,12 @@ auto gse::ide::search::update_file(index_state& idx, const std::filesystem::path
 
 	std::error_code type_ec;
 	const bool regular = std::filesystem::is_regular_file(path, type_ec);
-	std::filesystem::path resolved = path.lexically_normal();
-	if (regular) {
-		std::error_code canonical_ec;
-		const std::filesystem::path canonical = std::filesystem::weakly_canonical(path, canonical_ec);
-		if (!canonical_ec) {
-			resolved = canonical;
-		}
-	}
-	const gse::id file_identity = gse::generate_temp_id(resolved);
+	const auto [resolved, file_identity] = canonical_path_id(path);
 
 	file_entry new_file;
-	content_entry new_content{
+	auto new_content = std::make_shared<content_entry>(content_entry{
 		.path = resolved,
-	};
+	});
 	bool has_content = false;
 	if (regular) {
 		std::filesystem::path relative = resolved.lexically_relative(idx.workspace_root);
@@ -885,14 +1316,20 @@ auto gse::ide::search::update_file(index_state& idx, const std::filesystem::path
 		if (!is_binary_ext(extension) && !size_ec && size <= 2u * 1024u * 1024u) {
 			std::ifstream in(resolved, std::ios::binary);
 			if (in) {
-				new_content.blob.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
-				new_content.line_starts = compute_line_starts(new_content.blob);
+				new_content->blob.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+				new_content->line_starts = compute_line_starts(new_content->blob);
 				has_content = true;
 			}
 		}
 	}
 
 	std::unique_lock lock(idx.mutex);
+	if (regular && is_cpp_ext(to_lower(resolved.extension().native_encoded_string()))) {
+		idx.pending_symbol_files.insert(file_identity);
+	}
+	else {
+		idx.pending_symbol_files.erase(file_identity);
+	}
 	if (regular) {
 		if (file_entry* indexed_file = idx.files.entries.try_get(file_identity)) {
 			*indexed_file = std::move(new_file);
@@ -906,41 +1343,48 @@ auto gse::ide::search::update_file(index_state& idx, const std::filesystem::path
 	}
 
 	idx.content.entries.remove(file_identity);
-	content_entry* indexed_content = nullptr;
+	std::shared_ptr<content_entry> indexed_content;
 	if (has_content) {
-		indexed_content = idx.content.entries.add(file_identity, std::move(new_content));
+		indexed_content = std::move(new_content);
+		idx.content.entries.add(file_identity, indexed_content);
 	}
 
-	if (const auto file = idx.modules.file_ids.find(file_identity); file != idx.modules.file_ids.end()) {
-		const file_id id = file->second;
-		std::erase_if(idx.modules.modules, [id](const module_entry& module) {
-			return module.file == id;
+	if (idx.modules.files.contains(file_identity)) {
+		std::erase_if(idx.modules.modules, [file_identity](const module_entry& module) {
+			return module.file == file_identity;
 		});
+		if (!regular) {
+			idx.modules.files.erase(file_identity);
+		}
 	}
 	if (regular && indexed_content && is_cpp_ext(to_lower(resolved.extension().native_encoded_string()))) {
 		scan_modules(resolved, indexed_content->blob, indexed_content->line_starts, idx.modules);
 	}
 	rebuild_module_lookups(idx.modules);
 
+	bool symbols_changed = false;
+	idx.symbol_overlays.erase(file_identity);
 	if (!regular) {
-		if (const auto file = idx.symbols.file_ids.find(file_identity); file != idx.symbols.file_ids.end()) {
-			const file_id id = file->second;
-			std::erase_if(idx.symbols.symbols, [id](const symbol_entry& symbol) {
-				return symbol.file == id;
+		if (idx.symbols.files.contains(file_identity)) {
+			std::erase_if(idx.symbols.symbols, [file_identity](const symbol_entry& symbol) {
+				return symbol.file == file_identity;
 			});
-			idx.symbols.xrefs.erase(id);
+			idx.symbols.xrefs.erase(file_identity);
 			for (auto& refs : idx.symbols.xrefs | std::views::values) {
-				std::erase_if(refs, [id](const xref_entry& ref) {
-					return ref.def_file == id;
+				std::erase_if(refs, [file_identity](const xref_entry& ref) {
+					return ref.def_file == file_identity;
 				});
 			}
 			rebuild_symbol_lookups(idx.symbols);
+			idx.symbols.files.erase(file_identity);
 			idx.symbol_count.store(idx.symbols.symbols.size(), std::memory_order_release);
+			symbols_changed = true;
 		}
 	}
 
 	std::uint64_t loc = 0;
-	for (const content_entry& entry : idx.content.entries.items()) {
+	for (const std::shared_ptr<content_entry>& entry_ptr : idx.content.entries.items()) {
+		const content_entry& entry = *entry_ptr;
 		if (!is_cpp_ext(to_lower(entry.path.extension().native_encoded_string()))) {
 			continue;
 		}
@@ -950,39 +1394,65 @@ auto gse::ide::search::update_file(index_state& idx, const std::filesystem::path
 		}
 	}
 	idx.cpp_loc.store(loc, std::memory_order_release);
+	publish_file_search_snapshot(idx);
+	if (symbols_changed) {
+		publish_symbol_search_snapshot(idx);
+	}
 }
 
 namespace gse::ide::search {
 	constexpr std::uint32_t tu_cache_magic = 0x47535455;
-	constexpr std::uint32_t tu_cache_version = 2;
+	constexpr std::uint32_t tu_cache_version = 7;
 
-	auto intern_cached(symbol_index& symbols, std::unordered_map<gse::id, file_id>& cache, const std::string& raw) -> file_id {
-		const gse::id path_identity = gse::generate_temp_id(raw);
-		if (const auto it = cache.find(path_identity); it != cache.end()) {
+	using interned_file_cache = std::unordered_map<std::string, file_id, transparent_hash, transparent_equal>;
+	using indexed_path_cache = std::unordered_map<std::string, bool, transparent_hash, transparent_equal>;
+	using file_fingerprint_cache = std::unordered_map<std::string, std::uint64_t, transparent_hash, transparent_equal>;
+
+	auto intern_cached(symbol_index& symbols, interned_file_cache& cache, const std::string& raw) -> file_id {
+		if (const auto it = cache.find(raw); it != cache.end()) {
 			return it->second;
 		}
-		const file_id file = symbols.file_for(raw);
-		cache.emplace(path_identity, file);
-		return file;
+		auto [canonical, path_identity] = canonical_path_id(raw);
+		symbols.files.try_emplace(path_identity, canonical);
+		cache.emplace(raw, path_identity);
+		cache.try_emplace(canonical.generic_native_encoded_string(), path_identity);
+		return path_identity;
 	}
 
-	auto file_fingerprint(const std::filesystem::path& file, std::unordered_map<gse::id, std::uint64_t>& cache) -> std::uint64_t {
-		const gse::id file_identity = gse::generate_temp_id(file);
-		if (const auto it = cache.find(file_identity); it != cache.end()) {
+	auto indexed_cached(const std::filesystem::path& root, const std::string& raw, indexed_path_cache& cache) -> bool {
+		if (const auto it = cache.find(raw); it != cache.end()) {
 			return it->second;
+		}
+		const bool indexed = is_indexed_path(root, raw);
+		cache.emplace(raw, indexed);
+		return indexed;
+	}
+
+	auto file_fingerprint(const std::filesystem::path& file, file_fingerprint_cache& cache) -> std::uint64_t {
+		const std::string raw = file.generic_native_encoded_string();
+		if (const auto it = cache.find(raw); it != cache.end()) {
+			return it->second;
+		}
+		auto [canonical, file_identity] = canonical_path_id(file);
+		const std::string canonical_key = canonical.generic_native_encoded_string();
+		if (const auto it = cache.find(canonical_key); it != cache.end()) {
+			const std::uint64_t fingerprint = it->second;
+			cache.emplace(raw, fingerprint);
+			return fingerprint;
 		}
 		std::uint64_t fingerprint = file_identity.number();
 		std::error_code time_ec;
-		const std::filesystem::file_time_type modified = std::filesystem::last_write_time(file, time_ec);
+		const std::filesystem::file_time_type modified = std::filesystem::last_write_time(canonical, time_ec);
 		fingerprint = hash_combine(fingerprint, time_ec ? 0ull : static_cast<std::uint64_t>(modified.time_since_epoch().count()));
 		std::error_code size_ec;
-		const std::uintmax_t size = std::filesystem::file_size(file, size_ec);
+		const std::uintmax_t size = std::filesystem::file_size(canonical, size_ec);
 		fingerprint = hash_combine(fingerprint, size_ec ? 0ull : static_cast<std::uint64_t>(size));
-		cache.emplace(file_identity, fingerprint);
+		cache.emplace(raw, fingerprint);
+		cache.try_emplace(canonical_key, fingerprint);
 		return fingerprint;
 	}
 
-	auto tu_fingerprint(const analysis::compilation_entry& entry, const std::filesystem::path& plugin, std::span<const std::filesystem::path> dependencies, std::unordered_map<gse::id, std::uint64_t>& file_fingerprints) -> std::uint64_t {
+	auto tu_fingerprint(const analysis::compilation_entry& entry, const std::filesystem::path& plugin, std::span<const std::filesystem::path> dependencies, file_fingerprint_cache& file_fingerprints) -> std::uint64_t {
 		std::uint64_t fingerprint = stable_id("tu_symbol_cache");
 		fingerprint = hash_combine(fingerprint, tu_cache_version);
 		fingerprint = hash_combine(fingerprint, entry.command.fingerprint);
@@ -995,11 +1465,11 @@ namespace gse::ide::search {
 	}
 
 	auto tu_cache_path(const index_state& index, const analysis::compilation_entry& entry) -> std::filesystem::path {
-		const std::uint64_t id = hash_combine(gse::generate_temp_id(entry.file).number(), entry.command.fingerprint);
+		const std::uint64_t id = hash_combine(canonical_path_id(entry.file).second.number(), entry.command.fingerprint);
 		return index.compile_commands.parent_path() / "gseditor_symbols" / std::format("{:016x}.bin", id);
 	}
 
-	auto save_tu_cache(const std::filesystem::path& path, const analysis::compilation_entry& entry, const std::filesystem::path& plugin, const analysis::tu_symbols& symbols, std::unordered_map<gse::id, std::uint64_t>& file_fingerprints, bool failed) -> void {
+	auto save_tu_cache(const std::filesystem::path& path, const analysis::compilation_entry& entry, const std::filesystem::path& plugin, const analysis::tu_symbols& symbols, file_fingerprint_cache& file_fingerprints) -> std::expected<void, std::string> {
 		std::vector<std::string> dependencies;
 		dependencies.reserve(symbols.dependencies.size());
 		for (const std::filesystem::path& dependency : symbols.dependencies) {
@@ -1009,25 +1479,37 @@ namespace gse::ide::search {
 
 		std::error_code ec;
 		std::filesystem::create_directories(path.parent_path(), ec);
+		if (ec) {
+			return std::unexpected(std::format("could not create '{}': {}", path.parent_path().generic_display_string(), ec.message()));
+		}
 		std::filesystem::path temporary = path;
-		temporary += ".tmp";
+		temporary += std::format(".{}.tmp", win32::GetCurrentProcessId());
+		const auto remove_temporary = make_scope_exit([&] {
+			std::error_code remove_ec;
+			std::filesystem::remove(temporary, remove_ec);
+		});
 		std::ofstream out(temporary, std::ios::binary);
 		if (!out) {
-			return;
+			return std::unexpected(std::format("could not open temporary cache '{}'", temporary.generic_display_string()));
 		}
-		gse::binary_writer writer(out, tu_cache_magic, tu_cache_version);
-		writer & fingerprint & dependencies & failed & symbols.set;
+		binary_writer writer(out, tu_cache_magic, tu_cache_version);
+		writer & fingerprint & dependencies & symbols.set;
 		out.close();
-		std::filesystem::remove(path, ec);
-		std::filesystem::rename(temporary, path, ec);
+		if (!out) {
+			return std::unexpected(std::format("could not finish writing temporary cache '{}'", temporary.generic_display_string()));
+		}
+		if (!win32::MoveFileExW(temporary.c_str(), path.c_str(), win32::movefile_replace_existing)) {
+			return std::unexpected(std::format("could not replace cache '{}' (Windows error {})", path.generic_display_string(), win32::GetLastError()));
+		}
+		return {};
 	}
 
-	auto load_tu_cache(const std::filesystem::path& path, const analysis::compilation_entry& entry, const std::filesystem::path& plugin, analysis::tu_symbols& out, std::unordered_map<gse::id, std::uint64_t>& file_fingerprints, bool& failed) -> bool {
+	auto load_tu_cache(const std::filesystem::path& path, const analysis::compilation_entry& entry, const std::filesystem::path& plugin, analysis::tu_symbols& out, file_fingerprint_cache& file_fingerprints) -> bool {
 		std::ifstream in(path, std::ios::binary);
 		if (!in) {
 			return false;
 		}
-		gse::binary_reader reader(in);
+		binary_reader reader(in);
 		std::uint32_t magic = 0;
 		std::uint32_t version = 0;
 		reader & magic & version;
@@ -1045,13 +1527,14 @@ namespace gse::ide::search {
 		for (const std::string& dependency : dependency_strings) {
 			dependencies.emplace_back(dependency);
 		}
-		if (tu_fingerprint(entry, plugin, dependencies, file_fingerprints) != fingerprint) {
+		const std::uint64_t expected = tu_fingerprint(entry, plugin, dependencies, file_fingerprints);
+		if (expected != fingerprint) {
 			return false;
 		}
 		out.tu = entry.file;
 		out.dependencies = std::move(dependencies);
-		reader & failed & out.set;
-		return static_cast<bool>(in) && (failed || out.set.complete);
+		reader & out.set;
+		return static_cast<bool>(in) && out.set.complete;
 	}
 
 	auto symbol_worker_loop(index_state* idx) -> void {
@@ -1071,6 +1554,14 @@ namespace gse::ide::search {
 	}
 }
 
+gse::ide::search::file_build_result::~file_build_result() = default;
+
+gse::ide::search::index_state::index_state() : current_search_snapshot(std::make_shared<search_snapshot>(search_snapshot{
+		.files = std::make_shared<const std::vector<file_entry>>(),
+		.content = std::make_shared<const std::vector<std::shared_ptr<const content_entry>>>(),
+		.symbols = std::make_shared<const std::vector<searchable_symbol>>(),
+	})) {}
+
 gse::ide::search::index_state::~index_state() {
 	cancel.store(true, std::memory_order_release);
 	{
@@ -1078,6 +1569,11 @@ gse::ide::search::index_state::~index_state() {
 		build_stop = true;
 	}
 	build_cv.notify_all();
+}
+
+auto gse::ide::search::index_state::query_snapshot() const -> std::shared_ptr<const search_snapshot> {
+	std::shared_lock lock(mutex);
+	return current_search_snapshot;
 }
 
 auto gse::ide::search::start_symbol_worker(index_state& idx) -> void {
@@ -1101,67 +1597,75 @@ auto gse::ide::search::build_symbols(index_state& idx) -> void {
 	if (!idx.building.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
 		return;
 	}
-	idx.phase.store(index_phase::scanning, std::memory_order_release);
+	begin_index_phase(idx, index_phase::loading_database, 1);
 
 	const std::shared_ptr<const analysis::compilation_database> database = analysis::load_compilation_database(idx.compile_commands);
 	if (!database) {
+		log::println(log::level::warning, log::category::general, "[symidx] failed to load '{}'", idx.compile_commands.generic_display_string());
 		idx.symbols_ready.store(true, std::memory_order_release);
-		idx.phase.store(index_phase::idle, std::memory_order_release);
+		end_index_progress(idx);
 		idx.building.store(false, std::memory_order_release);
 		return;
 	}
+	idx.progress_done.store(1, std::memory_order_release);
 
 	std::vector<const analysis::compilation_entry*> tus;
 	tus.reserve(database->entries.size());
+	begin_index_phase(idx, index_phase::discovering_translation_units, database->entries.size());
 	for (const analysis::compilation_entry& entry : database->entries.items()) {
 		if (is_indexed_path(idx.workspace_root, entry.file)) {
 			tus.push_back(&entry);
 		}
+		idx.progress_done.fetch_add(1, std::memory_order_relaxed);
 	}
 
-	std::unordered_map<gse::id, std::uint64_t> file_fingerprints;
+	file_fingerprint_cache file_fingerprints;
+	file_fingerprints.reserve(1024);
 	std::vector<analysis::tu_symbols> collected;
 	collected.reserve(tus.size());
 	std::vector<const analysis::compilation_entry*> pending;
 	pending.reserve(tus.size());
 	std::size_t cached = 0;
 	std::size_t failed = 0;
-	std::size_t failed_cached = 0;
+	begin_index_phase(idx, index_phase::validating_cache, tus.size());
 	for (const analysis::compilation_entry* entry : tus) {
 		analysis::tu_symbols symbols;
-		bool cache_failed = false;
-		if (load_tu_cache(tu_cache_path(idx, *entry), *entry, idx.plugin_dll, symbols, file_fingerprints, cache_failed)) {
-			if (cache_failed) {
-				++failed;
-				++failed_cached;
-			}
-			else {
-				collected.push_back(std::move(symbols));
-				++cached;
-			}
+		if (load_tu_cache(tu_cache_path(idx, *entry), *entry, idx.plugin_dll, symbols, file_fingerprints)) {
+			collected.push_back(std::move(symbols));
+			++cached;
 		}
 		else {
 			pending.push_back(entry);
 		}
+		idx.progress_done.fetch_add(1, std::memory_order_relaxed);
 	}
 
-	const std::size_t round0 = std::max<std::size_t>(2, gse::task::thread_count() / 2);
+	const std::size_t round0 = std::max<std::size_t>(2, task::thread_count() / 2);
 	std::size_t compiled = 0;
+	std::vector<std::tuple<std::filesystem::path, analysis::symbol_index_failure, std::string>> build_failures;
 	for (int round = 0; round < 2 && !pending.empty(); ++round) {
-		idx.phase.store(round == 0 ? index_phase::compiling : index_phase::retrying, std::memory_order_release);
-		idx.tus_total.store(pending.size(), std::memory_order_release);
-		idx.tus_done.store(0, std::memory_order_release);
-		std::vector<analysis::tu_symbols> results = run_symbol_batch(pending, idx.plugin_dll, idx.workspace_root, round == 0 ? round0 : 1, &idx.tus_done, &idx.cancel);
+		std::vector<analysis::tu_symbols> results = run_symbol_batch(
+			pending,
+			idx.plugin_dll,
+			idx.workspace_root,
+			round == 0 ? round0 : 1,
+			round == 0 ? index_phase::compiling : index_phase::retrying,
+			idx,
+			&idx.cancel
+		);
 		if (idx.cancel.load(std::memory_order_acquire)) {
-			idx.phase.store(index_phase::idle, std::memory_order_release);
+			end_index_progress(idx);
 			idx.building.store(false, std::memory_order_release);
 			return;
 		}
+		begin_index_phase(idx, index_phase::saving_results, results.size());
 		std::vector<const analysis::compilation_entry*> next_round;
 		for (std::size_t i = 0; i < results.size(); ++i) {
 			analysis::tu_symbols& result = results[i];
 			if (result.failure == analysis::symbol_index_failure::none && result.set.complete) {
-				save_tu_cache(tu_cache_path(idx, *pending[i]), *pending[i], idx.plugin_dll, result, file_fingerprints, false);
+				if (const std::expected<void, std::string> saved = save_tu_cache(tu_cache_path(idx, *pending[i]), *pending[i], idx.plugin_dll, result, file_fingerprints); !saved) {
+					log::println(log::level::warning, log::category::general, "[symidx] cache write failed for '{}': {}", pending[i]->file.generic_display_string(), saved.error());
+				}
 				collected.push_back(std::move(result));
 				++compiled;
 			}
@@ -1169,29 +1673,61 @@ auto gse::ide::search::build_symbols(index_state& idx) -> void {
 				next_round.push_back(pending[i]);
 			}
 			else {
-				if (result.dependencies.empty()) {
-					result.dependencies.push_back(pending[i]->file);
+				const std::string reason = result.failure_detail.empty()
+					? std::string(analysis::describe(result.failure))
+					: result.failure_detail;
+				build_failures.emplace_back(pending[i]->file, result.failure, reason);
+				if (result.failure != analysis::symbol_index_failure::module_unavailable) {
+					log::println(log::level::warning, log::category::general, "[symidx] semantic compile failed for '{}': {}", pending[i]->file.generic_display_string(), reason);
 				}
-				save_tu_cache(tu_cache_path(idx, *pending[i]), *pending[i], idx.plugin_dll, result, file_fingerprints, true);
 				++failed;
 			}
+			idx.progress_done.fetch_add(1, std::memory_order_relaxed);
 		}
 		pending = std::move(next_round);
 	}
 
-	idx.phase.store(index_phase::aggregating, std::memory_order_release);
+	const auto module_failure = std::ranges::find_if(build_failures, [](const auto& failure) {
+		return std::get<1>(failure) == analysis::symbol_index_failure::module_unavailable;
+	});
+	if (module_failure != build_failures.end()) {
+		const std::size_t count = static_cast<std::size_t>(std::ranges::count_if(build_failures, [](const auto& failure) {
+			return std::get<1>(failure) == analysis::symbol_index_failure::module_unavailable;
+		}));
+		const std::string detail = std::format(
+			"{} translation unit{} could not load the current compiled-module graph; first failure: {}",
+			count,
+			count == 1 ? "" : "s",
+			std::get<2>(*module_failure)
+		);
+		log::println(log::level::info, log::category::general, "[symidx] build required: {}", detail);
+		{
+			std::lock_guard lock(idx.build_mutex);
+			idx.completed_build_required = detail;
+		}
+		begin_index_phase(idx, index_phase::publishing, 1);
+		return;
+	}
+
 	symbol_index local;
 	std::size_t symbol_capacity = 0;
 	for (const analysis::tu_symbols& tu : collected) {
 		symbol_capacity += tu.set.symbols.size();
 	}
 	local.symbols.reserve(symbol_capacity);
-	std::unordered_map<gse::id, file_id> raw_file_ids;
+	interned_file_cache raw_file_ids;
 	raw_file_ids.reserve(1024);
+	indexed_path_cache indexed_paths;
+	indexed_paths.reserve(1024);
+	local.xrefs.reserve(1024);
+	local.params.reserve(1024);
+	std::size_t reference_count = 0;
+	std::size_t semantic_token_count = 0;
 	std::unordered_set<std::string> seen_channels;
+	begin_index_phase(idx, index_phase::merging_records, collected.size());
 	for (analysis::tu_symbols& tu : collected) {
 		for (analysis::symbol_token& symbol : tu.set.symbols) {
-			if (!is_indexed_path(idx.workspace_root, symbol.file)) {
+			if (!indexed_cached(idx.workspace_root, symbol.file, indexed_paths)) {
 				continue;
 			}
 			const file_id file = intern_cached(local, raw_file_ids, symbol.file);
@@ -1209,7 +1745,7 @@ auto gse::ide::search::build_symbols(index_state& idx) -> void {
 			});
 		}
 		for (analysis::symbol_ref& ref : tu.set.refs) {
-			if (!is_indexed_path(idx.workspace_root, ref.file)) {
+			if (!indexed_cached(idx.workspace_root, ref.file, indexed_paths)) {
 				continue;
 			}
 			const file_id file = intern_cached(local, raw_file_ids, ref.file);
@@ -1223,7 +1759,9 @@ auto gse::ide::search::build_symbols(index_state& idx) -> void {
 				.def_column = ref.def_column > 0 ? ref.def_column - 1 : 0,
 				.qualified = std::move(ref.qualified),
 				.identity = std::move(ref.identity),
+				.type = std::move(ref.type),
 			});
+			++reference_count;
 		}
 		for (analysis::channel_use& channel : tu.set.channels) {
 			std::string key = (channel.produce ? "1|" : "0|") + channel.system + "|" + channel.message;
@@ -1231,47 +1769,206 @@ auto gse::ide::search::build_symbols(index_state& idx) -> void {
 				local.channels.push_back(std::move(channel));
 			}
 		}
+		for (const analysis::param_token& param : tu.set.params) {
+			if (!indexed_cached(idx.workspace_root, param.file, indexed_paths)) {
+				continue;
+			}
+			const file_id file = intern_cached(local, raw_file_ids, param.file);
+			local.params[file].push_back({
+				.line = param.line > 0 ? param.line - 1 : 0,
+				.column = param.column > 0 ? param.column - 1 : 0,
+				.length = param.length,
+				.kind = param.kind,
+			});
+			++semantic_token_count;
+		}
+		idx.progress_done.fetch_add(1, std::memory_order_relaxed);
 	}
-	rebuild_symbol_lookups(local);
+	begin_index_phase(idx, index_phase::building_lookups, local.symbols.size());
+	build_symbol_lookups(local, &idx.progress_done);
+	begin_index_phase(idx, index_phase::sorting_locations, local.symbols_by_file.size() + local.xrefs.size());
+	sort_symbol_locations(local, &idx.progress_done);
+	for (auto& [path, failure, reason] : build_failures) {
+		const file_id file = local.file_for(path);
+		local.failures.emplace(file, std::move(reason));
+	}
 
-	gse::log::println(gse::log::level::info, gse::log::category::general, "[symidx] {} TUs, {} cached, {} compiled, {} failed ({} cached), {} symbols, {} files", tus.size(), cached, compiled, failed, failed_cached, local.symbols.size(), local.files.size());
+	log::println(
+		log::level::info,
+		log::category::general,
+		"[symidx] {} TUs, {} cached, {} compiled, {} failed, {} symbols, {} references, {} semantic tokens, {} files, {} indexed paths",
+		tus.size(),
+		cached,
+		compiled,
+		failed,
+		local.symbols.size(),
+		reference_count,
+		semantic_token_count,
+		local.files.size(),
+		indexed_paths.size()
+	);
 
-	idx.symbol_count.store(local.symbols.size(), std::memory_order_release);
 	{
-		std::unique_lock lock(idx.mutex);
-		idx.symbols = std::move(local);
+		std::lock_guard lock(idx.build_mutex);
+		idx.completed_symbols.emplace(std::move(local));
 	}
-	idx.symbols_ready.store(true, std::memory_order_release);
-	idx.phase.store(index_phase::idle, std::memory_order_release);
-	idx.building.store(false, std::memory_order_release);
+	begin_index_phase(idx, index_phase::publishing, 1);
 }
 
-auto gse::ide::search::index_state::merge_file_symbols(const std::filesystem::path& file, std::span<const analysis::symbol_token> syms, std::span<const analysis::symbol_ref> refs) -> void {
+namespace gse::ide::search {
+	auto apply_symbol_overlay(symbol_index& index, const symbol_overlay& overlay, const bool rebuild_lookups) -> void {
+		const file_id fid = index.file_for(overlay.path);
+		interned_file_cache local_fid;
+		local_fid.reserve(64);
+		index.failures.erase(fid);
+
+		std::erase_if(index.symbols, [fid](const symbol_entry& entry) {
+			return entry.file == fid;
+		});
+		for (const analysis::symbol_token& symbol : overlay.symbols) {
+			if (intern_cached(index, local_fid, symbol.file) != fid) {
+				continue;
+			}
+			index.symbols.push_back({
+				.name = symbol.name,
+				.name_lower = to_lower(symbol.name),
+				.kind = symbol.kind,
+				.file = fid,
+				.line = symbol.line > 0 ? symbol.line - 1 : 0,
+				.column = symbol.column > 0 ? symbol.column - 1 : 0,
+				.qualified = symbol.qualified,
+				.identity = symbol.identity,
+				.is_definition = symbol.is_definition,
+			});
+		}
+
+		std::vector<xref_entry>& file_xrefs = index.xrefs[fid];
+		file_xrefs.clear();
+		for (const analysis::symbol_ref& ref : overlay.refs) {
+			if (intern_cached(index, local_fid, ref.file) != fid) {
+				continue;
+			}
+			file_xrefs.push_back({
+				.line = ref.line > 0 ? ref.line - 1 : 0,
+				.column = ref.column > 0 ? ref.column - 1 : 0,
+				.length = ref.length,
+				.def_file = intern_cached(index, local_fid, ref.def_file),
+				.def_line = ref.def_line > 0 ? ref.def_line - 1 : 0,
+				.def_column = ref.def_column > 0 ? ref.def_column - 1 : 0,
+				.qualified = ref.qualified,
+				.identity = ref.identity,
+				.type = ref.type,
+			});
+		}
+
+		std::vector<positioned_kind>& file_params = index.params[fid];
+		file_params.clear();
+		for (const analysis::param_token& param : overlay.params) {
+			if (intern_cached(index, local_fid, param.file) != fid) {
+				continue;
+			}
+			file_params.push_back({
+				.line = param.line > 0 ? param.line - 1 : 0,
+				.column = param.column > 0 ? param.column - 1 : 0,
+				.length = param.length,
+				.kind = param.kind,
+			});
+		}
+		if (rebuild_lookups) {
+			build_symbol_lookups(index, nullptr);
+			for (auto& ids : index.symbols_by_file | std::views::values) {
+				sort_symbol_ids(index, ids);
+			}
+			sort_xrefs(file_xrefs);
+		}
+	}
+}
+
+auto gse::ide::search::index_state::merge_file_symbols(const std::filesystem::path& file, std::span<const analysis::symbol_token> syms, std::span<const analysis::symbol_ref> refs, std::span<const analysis::param_token> params) -> void {
 	std::unique_lock lock(mutex);
-	const file_id fid = symbols.file_for(file);
-
-	std::unordered_map<gse::id, file_id> local_fid;
-
-	std::erase_if(symbols.symbols, [fid](const symbol_entry& e) {
-		return e.file == fid;
-	});
-	for (const analysis::symbol_token& s : syms) {
-		if (intern_cached(symbols, local_fid, s.file) != fid) {
-			continue;
-		}
-		symbols.symbols.push_back({ .name = s.name, .name_lower = to_lower(s.name), .kind = s.kind, .file = fid, .line = s.line > 0 ? s.line - 1 : 0, .column = s.column > 0 ? s.column - 1 : 0, .qualified = s.qualified, .identity = s.identity, .is_definition = s.is_definition });
-	}
-
-	std::vector<xref_entry>& file_xrefs = symbols.xrefs[fid];
-	file_xrefs.clear();
-	for (const analysis::symbol_ref& r : refs) {
-		if (intern_cached(symbols, local_fid, r.file) != fid) {
-			continue;
-		}
-		const file_id dfid = intern_cached(symbols, local_fid, r.def_file);
-		file_xrefs.push_back({ .line = r.line > 0 ? r.line - 1 : 0, .column = r.column > 0 ? r.column - 1 : 0, .length = r.length, .def_file = dfid, .def_line = r.def_line > 0 ? r.def_line - 1 : 0, .def_column = r.def_column > 0 ? r.def_column - 1 : 0, .qualified = r.qualified, .identity = r.identity });
-	}
-
-	rebuild_symbol_lookups(symbols);
+	const auto [canonical, fid] = canonical_path_id(file);
+	symbol_overlay& overlay = symbol_overlays[fid];
+	overlay.path = canonical;
+	overlay.symbols.assign(syms.begin(), syms.end());
+	overlay.refs.assign(refs.begin(), refs.end());
+	overlay.params.assign(params.begin(), params.end());
+	apply_symbol_overlay(symbols, overlay, true);
+	pending_symbol_files.erase(fid);
 	symbol_count.store(symbols.symbols.size(), std::memory_order_release);
+	publish_symbol_search_snapshot(*this);
+}
+
+auto gse::ide::search::publish_file_build(index_state& idx) -> void {
+	std::optional<file_build_result> completed;
+	{
+		std::lock_guard lock(idx.build_mutex);
+		if (!idx.completed_files) {
+			return;
+		}
+		completed.emplace(std::move(*idx.completed_files));
+		idx.completed_files.reset();
+	}
+
+	{
+		std::unique_lock lock(idx.mutex);
+		idx.modules = std::move(completed->modules);
+		idx.files.entries = std::move(completed->files);
+		idx.content.entries = std::move(completed->content);
+		idx.cpp_loc.store(completed->cpp_loc, std::memory_order_release);
+		publish_file_search_snapshot(idx);
+	}
+	idx.files.loaded.store(true, std::memory_order_release);
+	idx.content.loaded.store(true, std::memory_order_release);
+}
+
+auto gse::ide::search::publish_symbol_build(index_state& idx) -> void {
+	std::optional<symbol_index> completed;
+	std::optional<std::string> build_required;
+	{
+		std::lock_guard lock(idx.build_mutex);
+		if (idx.completed_build_required) {
+			build_required.emplace(std::move(*idx.completed_build_required));
+			idx.completed_build_required.reset();
+		}
+		else if (idx.completed_symbols) {
+			completed.emplace(std::move(*idx.completed_symbols));
+			idx.completed_symbols.reset();
+		}
+		else {
+			return;
+		}
+	}
+
+	if (build_required) {
+		{
+			std::unique_lock lock(idx.mutex);
+			idx.build_required_detail = std::move(*build_required);
+		}
+		idx.build_required.store(true, std::memory_order_release);
+		idx.symbols_ready.store(true, std::memory_order_release);
+		idx.progress_done.store(1, std::memory_order_release);
+		end_index_progress(idx);
+		idx.building.store(false, std::memory_order_release);
+		return;
+	}
+
+	{
+		std::unique_lock lock(idx.mutex);
+		if (!idx.symbol_overlays.empty()) {
+			for (const symbol_overlay& overlay : idx.symbol_overlays | std::views::values) {
+				apply_symbol_overlay(*completed, overlay, false);
+			}
+			rebuild_symbol_lookups(*completed);
+		}
+		idx.symbols = std::move(*completed);
+		idx.pending_symbol_files.clear();
+		idx.build_required_detail.clear();
+		idx.symbol_count.store(idx.symbols.symbols.size(), std::memory_order_release);
+		publish_symbol_search_snapshot(idx);
+	}
+	idx.build_required.store(false, std::memory_order_release);
+	idx.symbols_ready.store(true, std::memory_order_release);
+	idx.progress_done.store(1, std::memory_order_release);
+	end_index_progress(idx);
+	idx.building.store(false, std::memory_order_release);
 }
