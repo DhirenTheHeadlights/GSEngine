@@ -22,6 +22,8 @@ namespace gs::startup {
 		bool locomotion_clip_info = false;
 		std::string reference_clip_path;
 		bool locomotion_play = false;
+		bool locomotion_bvh_info = false;
+		std::string bvh_path;
 	};
 
 	auto run_game(
@@ -254,6 +256,9 @@ auto main(int argc, char** argv) -> int {
 	if (cfg.locomotion_clip_info) {
 		gs::startup::run_locomotion_clip_info(cfg);
 		return 0;
+	}
+	if (cfg.locomotion_bvh_info) {
+		return gs::locomotion::bvh_clip_info(cfg.bvh_path) ? 0 : 1;
 	}
 	if (cfg.locomotion_play) {
 		gs::startup::run_locomotion_play(cfg);
