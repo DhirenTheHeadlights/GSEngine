@@ -6,6 +6,7 @@ import gse;
 import :process;
 import :compilation_database;
 import :symbol_extract;
+import :gcc_diagnostics;
 
 export namespace gse::ide::analysis {
 	enum class symbol_index_failure {
@@ -13,6 +14,7 @@ export namespace gse::ide::analysis {
 		launch,
 		timeout,
 		compiler,
+		module_unavailable,
 		incomplete,
 	};
 
@@ -21,16 +23,19 @@ export namespace gse::ide::analysis {
 		symbol_set set;
 		std::vector<std::filesystem::path> dependencies;
 		symbol_index_failure failure = symbol_index_failure::none;
+		std::string failure_detail;
 
 		auto retryable() const -> bool;
 	};
+
+	auto describe(symbol_index_failure failure) -> std::string_view;
 
 	struct symbol_index_builder {
 		static auto run_one(
 			const compilation_entry& entry,
 			const std::filesystem::path& plugin_dll,
 			const std::filesystem::path& workspace_root,
-			std::uint32_t slot
+			bool module_graph_validated = false
 		) -> tu_symbols;
 	};
 }
@@ -93,43 +98,70 @@ namespace gse::ide::analysis {
 }
 
 auto gse::ide::analysis::tu_symbols::retryable() const -> bool {
-	return failure == symbol_index_failure::launch || failure == symbol_index_failure::timeout || failure == symbol_index_failure::incomplete;
+	return failure == symbol_index_failure::launch
+		|| failure == symbol_index_failure::timeout
+		|| failure == symbol_index_failure::compiler
+		|| failure == symbol_index_failure::incomplete;
 }
 
-auto gse::ide::analysis::symbol_index_builder::run_one(const compilation_entry& entry, const std::filesystem::path& plugin_dll, const std::filesystem::path& workspace_root, const std::uint32_t slot) -> tu_symbols {
+auto gse::ide::analysis::describe(const symbol_index_failure failure) -> std::string_view {
+	switch (failure) {
+	case symbol_index_failure::none:
+		return "none";
+	case symbol_index_failure::launch:
+		return "compiler launch failed";
+	case symbol_index_failure::timeout:
+		return "compiler timed out";
+	case symbol_index_failure::compiler:
+		return "compiler exited with an error";
+	case symbol_index_failure::module_unavailable:
+		return "compiled module artifacts are unavailable";
+	case symbol_index_failure::incomplete:
+		return "compiler plugin output was incomplete";
+	}
+	return "unknown compiler failure";
+}
+
+auto gse::ide::analysis::symbol_index_builder::run_one(const compilation_entry& entry, const std::filesystem::path& plugin_dll, const std::filesystem::path& workspace_root, const bool module_graph_validated) -> tu_symbols {
 	tu_symbols out;
 	out.tu = entry.file;
 	if (plugin_dll.empty()) {
 		return out;
 	}
+	if (!module_graph_validated) {
+		const std::expected<void, std::string> module_graph = validate_module_graph(entry);
+		if (!module_graph) {
+			out.failure = symbol_index_failure::module_unavailable;
+			out.failure_detail = module_graph.error();
+			return out;
+		}
+	}
 
-	const std::filesystem::path token_temp = std::filesystem::temp_directory_path() / ("gseditor_sym_" + std::to_string(slot) + ".txt");
-	const std::filesystem::path sarif_temp = std::filesystem::temp_directory_path() / ("gseditor_sym_" + std::to_string(slot) + ".sarif");
-	const std::filesystem::path dependency_temp = std::filesystem::temp_directory_path() / ("gseditor_sym_" + std::to_string(slot) + ".d");
+	const std::filesystem::path token_temp = process::temporary_path("symbols", "txt");
+	const std::filesystem::path sarif_temp = process::temporary_path("symbols", "sarif");
+	const std::filesystem::path dependency_temp = process::temporary_path("symbols", "d");
+	const auto remove_temporary_files = gse::make_scope_exit([&] {
+		std::error_code ec;
+		std::filesystem::remove(token_temp, ec);
+		std::filesystem::remove(sarif_temp, ec);
+		std::filesystem::remove(dependency_temp, ec);
+	});
 
 	std::string command_line = entry.command.command_line;
 	command_line += " -fplugin=\"" + plugin_dll.generic_native_encoded_string() + "\"";
 	command_line += " -fplugin-arg-gse_tokens-out=\"" + token_temp.generic_native_encoded_string() + "\"";
 	command_line += " -fplugin-arg-gse_tokens-root=\"" + workspace_root.generic_native_encoded_string() + "\"";
-	command_line += " -fplugin-arg-gse_tokens-index";
 	command_line += " -MMD -MF \"" + dependency_temp.generic_native_encoded_string() + "\" -MT gseditor_index";
-
-	std::error_code ec;
-	std::filesystem::remove(token_temp, ec);
-	std::filesystem::remove(sarif_temp, ec);
-	std::filesystem::remove(dependency_temp, ec);
 
 	const std::string directory = entry.command.directory.native_encoded_string();
 	const std::string sarif_path = sarif_temp.native_encoded_string();
 	const process::run_result run = process::run_capture_stderr(command_line.c_str(), directory.c_str(), sarif_path.c_str());
 
-	std::filesystem::remove(sarif_temp, ec);
-
 	std::ifstream in(token_temp, std::ios::binary);
 	if (in) {
 		std::ostringstream stream;
 		stream << in.rdbuf();
-		out.set = symbol_tokens::parse(stream.str());
+		out.set = symbol_tokens::parse(stream.str(), out.tu.generic_native_encoded_string());
 	}
 	std::ifstream dependency_in(dependency_temp, std::ios::binary);
 	if (dependency_in) {
@@ -153,7 +185,32 @@ auto gse::ide::analysis::symbol_index_builder::run_one(const compilation_entry& 
 	else if (!out.set.complete) {
 		out.failure = symbol_index_failure::incomplete;
 	}
-	std::filesystem::remove(token_temp, ec);
-	std::filesystem::remove(dependency_temp, ec);
+	if (out.failure != symbol_index_failure::none) {
+		std::ifstream sarif_in(sarif_temp, std::ios::binary);
+		std::ostringstream sarif_stream;
+		if (sarif_in) {
+			sarif_stream << sarif_in.rdbuf();
+		}
+		const std::vector<diagnostic> diagnostics = gcc_diagnostics::parse_sarif(sarif_stream.str());
+		if (!diagnostics.empty()) {
+			if (gcc_diagnostics::is_module_unavailable(diagnostics)) {
+				out.failure = symbol_index_failure::module_unavailable;
+			}
+			const diagnostic& first = diagnostics.front();
+			out.failure_detail = std::format(
+				"{}:{}:{}: {}",
+				first.file.empty() ? entry.file.generic_display_string() : first.file.generic_display_string(),
+				first.line + 1,
+				first.start_col + 1,
+				first.message
+			);
+		}
+		else if (out.failure == symbol_index_failure::compiler) {
+			out.failure_detail = std::format("compiler exit code {}", run.exit_code);
+		}
+		else {
+			out.failure_detail = std::string(describe(out.failure));
+		}
+	}
 	return out;
 }
