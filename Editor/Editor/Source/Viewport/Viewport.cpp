@@ -17,6 +17,19 @@ namespace gse::ide::viewport {
 	};
 
 	constexpr gse::vec2u viewport_extent{ 1280, 720 };
+
+	auto discard_surface_message(const gse::attached_surface_message& message) -> void;
+}
+
+auto gse::ide::viewport::discard_surface_message(const gse::attached_surface_message& message) -> void {
+	for (std::size_t i = 0; i < gse::attached_ring_size; ++i) {
+		if (gse::win32::valid_handle(message.surface_handles[i])) {
+			gse::win32::CloseHandle(message.surface_handles[i]);
+		}
+	}
+	if (gse::win32::valid_handle(message.semaphore_handle)) {
+		gse::win32::CloseHandle(message.semaphore_handle);
+	}
 }
 
 auto gse::ide::viewport::init(const gse::shared_view<gse::gpu::context::data> gpu_s, data& d) -> gse::async::task<> {
@@ -39,56 +52,68 @@ auto gse::ide::viewport::init(const gse::shared_view<gse::gpu::context::data> gp
 }
 
 auto gse::ide::viewport::frame(const gse::context& ctx, const gse::shared_view<gse::gpu::context::data> gpu_s, data& d) -> gse::async::task<> {
+	for (const build_runner::attached_surface_ready& ready : ctx.read_channel<build_runner::attached_surface_ready>()) {
+		if (d.pending_import || d.imported_ready) {
+			discard_surface_message(ready.message);
+		}
+		else {
+			d.pending_import = ready.message;
+		}
+	}
+
 	if (!d.ready || !gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
 
-	if (!d.imported_ready) {
-		if (const auto pending = gse::ide::build_runner::take_imported_surface()) {
-			const gse::gpu::shared_surface_desc desc{
-				.extent = pending->extent,
-				.format = pending->format,
-			};
-			bool ok = true;
-			for (std::size_t i = 0; i < gse::attached_ring_size; ++i) {
-				auto imported = gpu_s.device->import_shared_surface(desc, pending->surface_handles[i]);
-				if (!imported) {
-					gse::log::println(gse::log::level::error, gse::log::category::render, "Editor viewport: import_shared_surface[{}] failed: {}", i, imported.error());
-					ok = false;
-					break;
-				}
-				d.imported[i] = *imported;
-				const gse::gpu::image_view_create_info view_info{
-					.format = d.imported[i].format,
-					.view_type = gse::gpu::image_view_type::e2d,
-					.aspects = gse::gpu::image_aspect_flags(gse::gpu::image_aspect_flag::color),
-					.level_count = 1,
-					.layer_count = 1,
-				};
-				gse::gpu::image wrapped(
-					d.imported[i].image,
-					d.imported[i].view,
-					gse::gpu::format_value(d.imported[i].format),
-					{ d.imported[i].extent.x(), d.imported[i].extent.y(), 1 },
-					view_info
-				);
-				gse::gpu::transition_image_to(*gpu_s.device, wrapped);
-				d.imported_slot_handles[i] = gpu_s.device->register_texture(wrapped, viewport_sampler);
-				gse::win32::CloseHandle(pending->surface_handles[i]);
-			}
+	if (!d.imported_ready && d.pending_import) {
+		const gse::attached_surface_message& pending = *d.pending_import;
+		const gse::gpu::shared_surface_desc desc{
+			.extent = pending.extent,
+			.format = pending.format,
+		};
+		bool ok = true;
+		for (std::size_t i = 0; i < gse::attached_ring_size; ++i) {
 			if (ok) {
-				auto sem = gpu_s.device->import_semaphore_handle(pending->semaphore_handle);
-				if (sem) {
-					d.imported_semaphore = *sem;
-					d.imported_ready = true;
-					gse::log::println(gse::log::category::render, "Editor viewport: imported game surface ring {}x{}", pending->extent.x(), pending->extent.y());
+				const auto imported = gpu_s.device->import_shared_surface(desc, pending.surface_handles[i]);
+				if (imported) {
+					d.imported[i] = *imported;
+					const gse::gpu::image_view_create_info view_info{
+						.format = d.imported[i].format,
+						.view_type = gse::gpu::image_view_type::e2d,
+						.aspects = gse::gpu::image_aspect_flags(gse::gpu::image_aspect_flag::color),
+						.level_count = 1,
+						.layer_count = 1,
+					};
+					gse::gpu::image wrapped(
+						d.imported[i].image,
+						d.imported[i].view,
+						gse::gpu::format_value(d.imported[i].format),
+						{ d.imported[i].extent.x(), d.imported[i].extent.y(), 1 },
+						view_info
+					);
+					gse::gpu::transition_image_to(*gpu_s.device, wrapped);
+					d.imported_slot_handles[i] = gpu_s.device->register_texture(wrapped, viewport_sampler);
 				}
 				else {
-					gse::log::println(gse::log::level::error, gse::log::category::render, "Editor viewport: import_semaphore_handle failed: {}", sem.error());
+					gse::log::println(gse::log::level::error, gse::log::category::render, "Editor viewport: import_shared_surface[{}] failed: {}", i, imported.error());
+					ok = false;
 				}
 			}
-			gse::win32::CloseHandle(pending->semaphore_handle);
+			gse::win32::CloseHandle(pending.surface_handles[i]);
 		}
+		if (ok) {
+			const auto sem = gpu_s.device->import_semaphore_handle(pending.semaphore_handle);
+			if (sem) {
+				d.imported_semaphore = *sem;
+				d.imported_ready = true;
+				gse::log::println(gse::log::category::render, "Editor viewport: imported game surface ring {}x{}", pending.extent.x(), pending.extent.y());
+			}
+			else {
+				gse::log::println(gse::log::level::error, gse::log::category::render, "Editor viewport: import_semaphore_handle failed: {}", sem.error());
+			}
+		}
+		gse::win32::CloseHandle(pending.semaphore_handle);
+		d.pending_import.reset();
 	}
 
 	if (d.imported_ready) {

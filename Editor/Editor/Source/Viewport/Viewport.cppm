@@ -15,6 +15,7 @@ export namespace gse::ide::viewport {
 		std::array<gse::gpu::shared_surface, gse::attached_ring_size> imported{};
 		std::array<gse::gpu::bindless_handle, gse::attached_ring_size> imported_slot_handles{};
 		gse::gpu::handle<gse::gpu::semaphore> imported_semaphore{};
+		std::optional<gse::attached_surface_message> pending_import;
 	};
 
 	[[= gse::system_init{}]]
