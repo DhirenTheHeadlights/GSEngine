@@ -32,6 +32,15 @@ export namespace gse::layout_store {
 	auto section_name(
 		std::string_view line
 	) -> std::string_view;
+
+	struct section {
+		std::string name;
+		std::map<std::string, std::string> values;
+	};
+
+	auto parse_sections(
+		std::string_view text
+	) -> std::vector<section>;
 }
 
 namespace gse::layout_store {
@@ -269,6 +278,37 @@ auto gse::layout_store::section_name(const std::string_view line) -> std::string
 		return {};
 	}
 	return t.substr(1, t.size() - 2);
+}
+
+auto gse::layout_store::parse_sections(const std::string_view text) -> std::vector<section> {
+	std::vector<section> sections;
+	section* current = nullptr;
+
+	for (const auto& raw : std::views::split(text, '\n')) {
+		const std::string_view line = trimmed(std::string_view(raw));
+		if (line.empty() || line.front() == '#') {
+			continue;
+		}
+
+		if (const std::string_view name = section_name(line); !name.empty()) {
+			sections.push_back({ .name = std::string(name) });
+			current = &sections.back();
+			continue;
+		}
+
+		if (!current) {
+			continue;
+		}
+
+		const std::size_t separator = line.find('=');
+		if (separator == std::string_view::npos) {
+			continue;
+		}
+
+		current->values[std::string(trimmed(line.substr(0, separator)))] = std::string(trimmed(line.substr(separator + 1)));
+	}
+
+	return sections;
 }
 
 auto gse::layout_store::owned(const owner& sections, const std::string_view name) -> bool {

@@ -30,6 +30,7 @@ export namespace gse::gui::symbol {
 	auto gear() -> std::span<const stroke>;
 	auto file() -> std::span<const stroke>;
 	auto folder() -> std::span<const stroke>;
+	auto project() -> std::span<const stroke>;
 	auto trash() -> std::span<const stroke>;
 	auto hammer() -> std::span<const stroke>;
 	auto play() -> std::span<const stroke>;
@@ -164,6 +165,18 @@ auto gse::gui::symbol::folder() -> std::span<const stroke> {
 		stroke{ { 0.50f, 0.62f }, { 0.82f, 0.62f } },
 		stroke{ { 0.82f, 0.62f }, { 0.82f, 0.30f } },
 		stroke{ { 0.82f, 0.30f }, { 0.18f, 0.30f } },
+	};
+	return data;
+}
+
+auto gse::gui::symbol::project() -> std::span<const stroke> {
+	static constexpr std::array<stroke, 6> data{
+		stroke{ { 0.20f, 0.24f }, { 0.80f, 0.24f } },
+		stroke{ { 0.80f, 0.24f }, { 0.80f, 0.68f } },
+		stroke{ { 0.80f, 0.68f }, { 0.20f, 0.68f } },
+		stroke{ { 0.20f, 0.68f }, { 0.20f, 0.24f } },
+		stroke{ { 0.20f, 0.55f }, { 0.80f, 0.55f } },
+		stroke{ { 0.50f, 0.68f }, { 0.50f, 0.55f } },
 	};
 	return data;
 }

@@ -49,6 +49,10 @@ export namespace gse::ide {
 		static auto identifier_names(
 			std::string_view source
 		) -> std::vector<std::string_view>;
+
+		static auto is_language_word(
+			std::string_view word
+		) -> bool;
 	};
 }
 
@@ -102,7 +106,28 @@ namespace gse::ide::syntax {
 		return rgb(0xc2cce0);
 	}
 
-	auto semantic_precedence(analysis::semantic_kind k) -> int {
+	auto follows_member_access(const std::string_view source, const std::uint32_t column) -> bool {
+		std::size_t pos = std::min<std::size_t>(column, source.size());
+		while (pos > 0 && std::isspace(static_cast<unsigned char>(source[pos - 1]))) {
+			--pos;
+		}
+		if (pos > 0 && source[pos - 1] == '.') {
+			return true;
+		}
+		if (pos == 0 || source[pos - 1] != '>') {
+			return false;
+		}
+		--pos;
+		while (pos > 0 && std::isspace(static_cast<unsigned char>(source[pos - 1]))) {
+			--pos;
+		}
+		return pos > 0 && source[pos - 1] == '-';
+	}
+
+	auto semantic_precedence(const analysis::semantic_kind k, const bool member_access) -> int {
+		if (member_access && (k == analysis::semantic_kind::member || k == analysis::semantic_kind::function)) {
+			return 5;
+		}
 		switch (k) {
 			case analysis::semantic_kind::type:
 			case analysis::semantic_kind::name_space:
@@ -140,7 +165,7 @@ namespace gse::ide::syntax {
 			"static_assert", "concept", "requires", "module", "import",
 			"export", "typeid", "and", "or", "not", "xor", "bitand", "bitor",
 			"compl", "and_eq", "or_eq", "xor_eq", "not_eq",
-			"override", "final", "typedef", "asm"
+			"override", "final", "typedef", "asm", "contract_assert", "pre", "post"
 		};
 		static const std::unordered_set<std::string_view> literals = {
 			"true", "false", "nullptr"
@@ -273,6 +298,10 @@ auto gse::ide::syntax_producer::identifier_names(const std::string_view source) 
 	return names;
 }
 
+auto gse::ide::syntax_producer::is_language_word(const std::string_view word) -> bool {
+	return syntax::classify_word(word).has_value();
+}
+
 auto gse::ide::syntax_producer::set_semantic(data& d, std::span<const analysis::semantic_token> tokens, const gse::gui::text_buffer& buffer) -> void {
 	auto sem = std::make_shared<semantic_data>();
 
@@ -299,7 +328,9 @@ auto gse::ide::syntax_producer::set_semantic(data& d, std::span<const analysis::
 		}
 
 		const std::uint64_t key = (static_cast<std::uint64_t>(line) << 32) | col;
-		if (const auto it = sem->at.find(key); it == sem->at.end() || syntax::semantic_precedence(t.kind) >= syntax::semantic_precedence(it->second)) {
+		const bool member_access = syntax::follows_member_access(source, col);
+		if (const auto it = sem->at.find(key); it == sem->at.end()
+			|| syntax::semantic_precedence(t.kind, member_access) >= syntax::semantic_precedence(it->second, member_access)) {
 			sem->at[key] = t.kind;
 		}
 	}

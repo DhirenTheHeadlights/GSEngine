@@ -911,9 +911,6 @@ auto gse::ide::search::index_state::symbol_at(const std::filesystem::path& file,
 	}
 	else {
 		issues.push_back({ .reason = lookup_failure::kind_not_recorded, .subject = xref->qualified });
-		if (xref->type.empty()) {
-			issues.push_back({ .reason = lookup_failure::type_not_recorded, .subject = xref->qualified });
-		}
 	}
 	return hover_hit{
 		.def = definition,
@@ -1700,13 +1697,7 @@ auto gse::ide::search::build_symbols(index_state& idx) -> void {
 			count == 1 ? "" : "s",
 			std::get<2>(*module_failure)
 		);
-		log::println(log::level::info, log::category::general, "[symidx] build required: {}", detail);
-		{
-			std::lock_guard lock(idx.build_mutex);
-			idx.completed_build_required = detail;
-		}
-		begin_index_phase(idx, index_phase::publishing, 1);
-		return;
+		log::println(log::level::info, log::category::general, "[symidx] publishing partial index: {}", detail);
 	}
 
 	symbol_index local;

@@ -20,12 +20,15 @@ auto main() -> int {
 			>(e);
 		},
 		{
-			.title = "GSEditor",
+			.title = gse::ide::project::current().valid
+				? std::format("{} - GSEditor", gse::ide::project::current().name)
+				: std::string("GSEditor"),
 			.render_world = false,
 			.simulate_world = false,
 			.custom_chrome = true,
 			.scale_ui_with_resolution = false,
-			.gui_layout_path = gse::ide::config::resource_path / "editor_layout.ini",
+			.gui_layout_path = gse::ide::config::editor_layout(),
+			.project_settings_path = gse::ide::config::project_settings(),
 		}
 	);
 	return 0;

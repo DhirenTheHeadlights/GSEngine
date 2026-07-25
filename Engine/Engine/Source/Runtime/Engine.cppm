@@ -38,6 +38,7 @@ export namespace gse {
 		bool scale_ui_with_resolution = true;
 		bool persist_settings = true;
 		std::filesystem::path gui_layout_path;
+		std::filesystem::path project_settings_path;
 		bool attached = false;
 		std::string ipc_pipe_name;
 		std::uint32_t parent_pid = 0;

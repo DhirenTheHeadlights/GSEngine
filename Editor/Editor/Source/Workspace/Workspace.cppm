@@ -67,6 +67,7 @@ export namespace gse::ide {
 		std::string name;
 		std::uint64_t key = 0;
 		bool is_dir = false;
+		gse::gui::symbol_glyph glyph = nullptr;
 		mutable bool loaded = false;
 		mutable std::vector<fs_node> children;
 	};
@@ -86,6 +87,11 @@ export namespace gse::ide {
 		bool created = false;
 		bool focus_requested = false;
 		gse::gui::text_input_state input;
+	};
+
+	struct explorer_reveal {
+		std::vector<std::uint64_t> expand;
+		std::uint64_t key = 0;
 	};
 
 	constexpr std::uint32_t viewport_tab_id = std::numeric_limits<std::uint32_t>::max();
@@ -108,6 +114,7 @@ export namespace gse::ide {
 			gse::gui::draw::tree_selection explorer_selection;
 			std::unordered_set<std::uint64_t> explorer_selection_seen;
 			std::optional<pending_explorer_name> pending_name;
+			std::optional<std::filesystem::path> reveal_path;
 
 			std::optional<std::uint32_t> diagnostics_pending;
 
@@ -159,10 +166,21 @@ export namespace gse::ide {
 			const fs_node& node
 		) -> void;
 
+		static auto make_root(
+			const std::filesystem::path& path,
+			std::string name,
+			gse::gui::symbol_glyph glyph
+		) -> fs_node;
+
 		static auto find_node(
 			const fs_node& root,
 			std::uint64_t key
 		) -> const fs_node*;
+
+		static auto reveal_nodes(
+			const data& d,
+			const std::filesystem::path& path
+		) -> explorer_reveal;
 
 		static auto find_parent(
 			const fs_node& root,
@@ -252,6 +270,20 @@ namespace gse::ide {
 		const std::filesystem::path lhs_key = (lhs_ec ? lhs : lhs_canonical).lexically_normal();
 		const std::filesystem::path rhs_key = (rhs_ec ? rhs : rhs_canonical).lexically_normal();
 		return lhs_key == rhs_key;
+	}
+
+	auto path_within(
+		const std::filesystem::path& base,
+		const std::filesystem::path& path
+	) -> bool {
+		std::error_code base_ec;
+		std::error_code path_ec;
+		const std::filesystem::path base_canonical = std::filesystem::weakly_canonical(base, base_ec);
+		const std::filesystem::path path_canonical = std::filesystem::weakly_canonical(path, path_ec);
+		const std::filesystem::path base_key = (base_ec ? base : base_canonical).lexically_normal();
+		const std::filesystem::path path_key = (path_ec ? path : path_canonical).lexically_normal();
+		const std::filesystem::path rel = path_key.lexically_relative(base_key);
+		return !rel.empty() && *rel.begin() != "..";
 	}
 
 	auto same_navigation_entry(
@@ -358,6 +390,8 @@ auto gse::ide::workspace::open_file(data& d, const std::filesystem::path& path) 
 	std::error_code ec;
 	const std::filesystem::path canonical = std::filesystem::weakly_canonical(path, ec);
 	const std::filesystem::path key = ec ? path : canonical;
+
+	d.reveal_path = key;
 
 	for (const auto& [id, doc] : d.documents) {
 		if (doc.path == key) {
@@ -504,12 +538,24 @@ auto gse::ide::workspace::close_document(data& d, const std::uint32_t document_i
 	}
 }
 
+auto gse::ide::workspace::make_root(const std::filesystem::path& path, std::string name, const gse::gui::symbol_glyph glyph) -> fs_node {
+	return {
+		.path = path,
+		.name = std::move(name),
+		.key = fs_node_key(path),
+		.is_dir = true,
+		.glyph = glyph
+	};
+}
+
 auto gse::ide::workspace::load_children(const fs_node& node) -> void {
-	node.loaded = true;
-	node.children.clear();
-	if (!node.is_dir) {
+	if (!node.is_dir || node.path.empty()) {
+		node.loaded = true;
 		return;
 	}
+
+	node.loaded = true;
+	node.children.clear();
 
 	std::error_code ec;
 	std::vector<std::pair<std::filesystem::path, bool>> entries;
@@ -545,6 +591,35 @@ auto gse::ide::workspace::find_node(const fs_node& root, const std::uint64_t key
 		}
 	}
 	return nullptr;
+}
+
+auto gse::ide::workspace::reveal_nodes(const data& d, const std::filesystem::path& path) -> explorer_reveal {
+	for (const fs_node& root : d.fs_root.children) {
+		if (!path_within(root.path, path)) {
+			continue;
+		}
+
+		explorer_reveal reveal;
+		const fs_node* current = &root;
+		while (current) {
+			if (same_navigation_path(current->path, path)) {
+				reveal.key = current->key;
+				return reveal;
+			}
+
+			reveal.expand.push_back(current->key);
+			if (!current->loaded) {
+				load_children(*current);
+			}
+
+			const auto child = std::ranges::find_if(current->children, [&path](const fs_node& n) {
+				return path_within(n.path, path);
+			});
+			current = child == current->children.end() ? nullptr : &*child;
+		}
+	}
+
+	return {};
 }
 
 auto gse::ide::workspace::find_parent(const fs_node& root, const std::uint64_t key) -> const fs_node* {

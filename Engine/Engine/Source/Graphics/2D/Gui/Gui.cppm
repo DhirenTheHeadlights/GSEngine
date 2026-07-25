@@ -81,7 +81,7 @@ export namespace gse::gui {
 		std::optional<dock::space> active_dock_space;
 		gui::state current_state{ states::idle{} };
 
-		std::filesystem::path file_path = "Misc/gui_layout.ini";
+		std::filesystem::path file_path = config::user_config_dir() / "gui_layout.ini";
 		clock save_clock;
 
 		id hot_widget_id;

@@ -105,11 +105,11 @@ namespace gse::vulkan {
 }
 
 auto gse::vulkan::default_dump_directory() -> std::filesystem::path {
-	return config::resource_path / "Misc" / "crash_dumps";
+	return config::crash_dir();
 }
 
 auto gse::vulkan::default_shader_directory() -> std::filesystem::path {
-	return config::resource_path / "Misc" / "aftermath_shaders";
+	return config::crash_dir() / "shaders";
 }
 
 auto gse::vulkan::write_dump_to_disk(const std::filesystem::path& directory, const std::string& stem, std::string_view extension, const void* data, std::size_t size) -> std::filesystem::path {

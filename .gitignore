@@ -33,12 +33,14 @@ __pycache__/
 !/Engine/External/moodycamel/concurrentqueue.h
 
 # Generated resources / configs
+# Runtime writes (settings, layouts, logs, crash dumps, profiles, captures) live
+# under %APPDATA%\GSE and %LOCALAPPDATA%\GSE, so nothing lands in the tree.
+# Misc survives only for the locomotion training artifacts listed below.
 /resources
 /Engine/Resources/Misc
-/Engine/Resources/Recordings
-/Engine/Resources/Screenshots
-*.ini
-*.log
+
+# Per-project editor state (layout, captures, symbol cache, build outputs)
+.gse/
 
 # Generated cppreference hover index (bootstrap.py -> Editor/Tools/build_cppref_index.py)
 /Editor/Resources/cppref.idx

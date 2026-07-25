@@ -1,6 +1,6 @@
 # Phase 1 — Relocatable paths + artifact hygiene
 
-Parent: [editor-first-restructure.md](editor-first-restructure.md). Status: planned 2026-07-20, re-verified against the worktree 2026-07-24, not started.
+Parent: [editor-first-restructure.md](editor-first-restructure.md). Status: **DONE — built and running 2026-07-24.** Steps 1-6 and 8-10 implemented; step 7 dropped. One build failure along the way (`executable_stem()` called unqualified from `gse::log` scope in Log.cpp), fixed. See [Execution log](#execution-log) for what changed against the plan as written.
 
 Goal: `gse.config` / `gse.ide.config` stop being configure_file-baked absolute-path constants and become runtime-resolved functions driven by a `gse.manifest` marker file; every runtime writer moves out of the source tree (user config → `%APPDATA%\GSE`, machine state → `%LOCALAPPDATA%\GSE`). Binaries become relocatable; the repo is never dirtied at runtime.
 
@@ -164,17 +164,9 @@ Note on gui_layout: any engine app using the default shares this file until phas
 
 **Ordering decision:** `logger instance;` is a namespace-scope static, so its ctor resolves `gse.config` during static init, before `main` — `warm_up()` in `Engine::initialize` will never actually be first. Accept this: `GetModuleFileNameW`, `SHGetFolderPathW` and filesystem reads are all valid during static init (kernel32/shell32 come in via the import table), and a missing-manifest fatal still reaches stderr pre-main. `warm_up()` stays as the first line of `Engine::initialize` ([Engine.cpp:47](../Engine/Engine/Source/Runtime/Engine.cpp), above `trace::start`) as a net for any future non-logging entry point. The alternative — deferring the file sink to `Engine::initialize` — was rejected because it drops log capture for everything before that point.
 
-### Step 7 — legacy migration helper
+### Step 7 — dropped
 
-One ~10-line function, dev mode only, called from `Engine::initialize` after `warm_up()` and before `set_auto_save`. If the user file is absent and the legacy file exists → copy:
-
-| New | Legacy |
-|---|---|
-| `user_config_dir()/settings.ini` | `Engine/Resources/Misc/settings.ini` |
-| `user_config_dir()/gui_layout.ini` | `Engine/Resources/Misc/gui_layout.ini` |
-| `user_config_dir()/editor_layout.ini` | `Editor/Resources/editor_layout.ini` (editor only) |
-
-Preserves the hand-tuned settings the locomotion workflow depends on, and current panel layouts.
+No legacy migration. Cut on Dhiren's call 2026-07-24: settings, gui layout and editor layout all regenerate from defaults on first run in the new locations. Any hand-tuned `settings.ini` is re-created by hand at `%APPDATA%\GSE\settings.ini`.
 
 ### Step 8 — editor `gse.ide.config` + CMake
 
@@ -201,17 +193,17 @@ New `Editor/Editor/Import/Config.cppm` per the editor table; delete `Config.cppm
 ### Step 10 — hygiene
 
 - `.gitignore`: drop `*.ini`, `*.log`, `/Engine/Resources/Screenshots`, `/Engine/Resources/Recordings`. KEEP `/Engine/Resources/Misc` until locomotion artifacts move (phase 2/6) — add a comment saying it survives only for those.
-- One-time dev cleanup: delete stale `Editor/Resources/editor_layout.ini`, and `Engine/Resources/{Misc (non-locomotion files), Screenshots, Recordings, Clips}` leftovers — **after** the migration copy has run once and been verified, not before.
+- One-time dev cleanup: delete stale `Editor/Resources/editor_layout.ini`, and `Engine/Resources/{Misc (non-locomotion files), Screenshots, Recordings, Clips}` leftovers.
 - AGENTS.md: update the log-path note (currently `Engine/Resources/Misc/log.txt`), document the new locations and the `GSE_USER_DIR`/`GSE_STATE_DIR` overrides. Call out loudly: **settings.ini now lives at `%APPDATA%\GSE\settings.ini`** — hand-edit workflows (locomotion overrides) go there.
 
 **Gate B** — full reconfigure + build (needs go-ahead), then the validation checklist.
 
-Commit boundaries if wanted: 1-3 (config module + CMake), 4-7 (engine migration), 8-9 (editor migration), 10 (hygiene).
+Commit boundaries if wanted: 1-3 (config module + CMake), 4-6 (engine retarget), 8-9 (editor retarget), 10 (hygiene).
 
 ## Validation checklist
 
 1. Reconfigure an EXISTING build dir: stale-guard removes the old generated Config.cppm; no duplicate-module error; `gse.manifest` appears at build root. No build-dir wipe.
-2. Clear `%APPDATA%\GSE` + `%LOCALAPPDATA%\GSE`; run editor from build tree → legacy settings/layouts copied over, panels and settings survive a restart, files update in AppData on quit.
+2. Clear `%APPDATA%\GSE` + `%LOCALAPPDATA%\GSE`; run editor from build tree → files are created fresh from defaults, panels and settings survive a restart, files update in AppData on quit.
 3. `git status` + untracked scan clean after a full session (editor + F5 game run + screenshot + profiler dump).
 4. Log file appears under `%LOCALAPPDATA%\GSE\logs` named per exe stem; existing 5-file rotation still trims.
 5. `GSE_USER_DIR` override redirects; renaming `gse.manifest` away → clean fatal message (expect it pre-main, from the logger's static ctor).
@@ -225,4 +217,24 @@ Commit boundaries if wanted: 1-3 (config module + CMake), 4-7 (engine migration)
 - CSIDL macro re-export as constexpr — closed at Gate A.
 - Path resolution during static init (logger ctor) — accepted deliberately, see step 6.
 - Editor layout file split across two paths if step 9's coupled retarget is done piecemeal — checklist item 8.
-- Settings location change breaks muscle memory — mitigated by legacy copy + AGENTS.md + telling Dhiren.
+- Settings and layouts reset to defaults on first run in the new locations (no migration, by choice) — AGENTS.md documents where they moved to.
+
+---
+
+## Execution log
+
+Implemented 2026-07-24, unbuilt. Deviations and refinements against the plan text above:
+
+1. **`gse.config` split interface/impl** (`Config.cppm` declarations + `Config.cpp` bodies), following the `Log.cppm`/`Log.cpp` precedent. The plan said `gse.config` gains `import gse.win32` — it does not: the interface imports only `std`, and `gse.win32` is imported by the impl unit. Its ~20 importers therefore never transitively load win32's CMI. Same split for `gse.ide.config`.
+2. **Separator normalization.** The old CMake-baked values were all forward-slash; composing with `operator/` produces backslashes, which would have changed every path string compared against `compile_commands.json`/ninja output. `gse::config::generic()` round-trips through `generic_wstring()` and is applied to every resolved path. It is exported (not module-private) so `gse.ide.config` uses the one implementation rather than a second copy.
+3. **`executable_stem()`** added to `gse.config` — the log file is now per-executable (`Editor.log`, `GoonSquad.log`), so editor and game no longer overwrite each other's log.
+4. **`ide::config::editor_layout()`** added as a single accessor. This dissolves delta 4 rather than working around it: `Layout.cppm` and `Main.cpp` now both call it, so the two paths cannot drift apart.
+5. **Step 6 was path-only.** `file_sink`'s ctor already does `create_directories(path.parent_path())` and `rotate_logs(path, log_files_kept)`, so no directory-creation or retention work was needed.
+6. **Step 7 dropped** — no migration, on Dhiren's call.
+7. **Trailing slashes are irrelevant on this toolchain.** Measured: `lexically_relative`, `fs::relative` and `operator/` return identical results with and without a trailing separator, so dropping the `.../Resources/` trailing slash is behavior-preserving at the three `lexically_relative` sites.
+8. `Engine/Resources/Misc/` still holds the pre-change `settings.ini`, `gui_layout.ini`, logs and profiles. Left in place (gitignored, harmless) rather than deleted — `settings.ini` is hand-tuned and there is no migration. Only the newly-unignored `Editor/Resources/editor_layout.ini` was removed.
+
+### Gate A results
+
+- `shlobj.h` coexists with the existing Win32 GMF; `CSIDL_APPDATA`/`CSIDL_LOCAL_APPDATA`/`SHGFP_TYPE_CURRENT` convert to `constexpr int` (static_asserted); shell32 links; both known folders resolve.
+- `gse.config` scratch-compiled as real modules against a stub `gse.win32` and exercised end to end: dev mode, installed mode, `GSE_USER_DIR`/`GSE_STATE_DIR` overrides, CRLF + extra-whitespace + unknown-key parsing, missing trailing newline, and the missing-manifest fatal (clean stderr message, exit 3).

@@ -7,16 +7,7 @@ import gse.ide.workspace;
 import gse.ide.config;
 
 namespace gse::ide {
-	struct layout_section {
-		std::string name;
-		std::map<std::string, std::string> values;
-	};
-
 	auto editor_layout_path() -> std::filesystem::path;
-
-	auto parse_layout_sections(
-		std::string_view text
-	) -> std::vector<layout_section>;
 
 	auto replace_layout_sections(
 		layout_store::owner sections,
@@ -47,48 +38,7 @@ namespace gse::ide {
 }
 
 auto gse::ide::editor_layout_path() -> std::filesystem::path {
-	return config::resource_path / "editor_layout.ini";
-}
-
-auto gse::ide::parse_layout_sections(const std::string_view text) -> std::vector<layout_section> {
-	std::vector<layout_section> sections;
-	layout_section* current = nullptr;
-
-	std::size_t pos = 0;
-	while (pos < text.size()) {
-		const std::size_t line_end = text.find('\n', pos);
-		const std::string_view line = text.substr(
-			pos,
-			line_end == std::string_view::npos ? text.size() - pos : line_end - pos
-		);
-		pos = line_end == std::string_view::npos ? text.size() : line_end + 1;
-
-		const std::string_view trimmed = layout_store::trimmed(line);
-		if (trimmed.empty() || trimmed.front() == '#') {
-			continue;
-		}
-
-		if (const std::string_view name = layout_store::section_name(trimmed); !name.empty()) {
-			sections.push_back({ .name = std::string(name) });
-			current = &sections.back();
-			continue;
-		}
-
-		if (!current) {
-			continue;
-		}
-
-		const std::size_t eq = trimmed.find('=');
-		if (eq == std::string_view::npos) {
-			continue;
-		}
-
-		const std::string key(layout_store::trimmed(trimmed.substr(0, eq)));
-		const std::string value(layout_store::trimmed(trimmed.substr(eq + 1)));
-		current->values[key] = value;
-	}
-
-	return sections;
+	return config::editor_layout();
 }
 
 auto gse::ide::replace_layout_sections(layout_store::owner sections, const std::string_view block) -> void {
@@ -125,12 +75,12 @@ auto gse::ide::workspace_layout_owner() -> layout_store::owner {
 }
 
 auto gse::ide::load_workspace_layout(workspace::data& ws) -> void {
-	const std::vector<layout_section> sections = parse_layout_sections(layout_store::read(editor_layout_path()));
+	const std::vector<layout_store::section> sections = layout_store::parse_sections(layout_store::read(editor_layout_path()));
 	std::string active;
 	std::filesystem::path active_path;
 	std::unordered_map<std::string, std::uint32_t> id_by_path;
 
-	for (const layout_section& section : sections) {
+	for (const layout_store::section& section : sections) {
 		if (section.name != "workspace") {
 			continue;
 		}
@@ -143,7 +93,7 @@ auto gse::ide::load_workspace_layout(workspace::data& ws) -> void {
 		break;
 	}
 
-	for (const layout_section& section : sections) {
+	for (const layout_store::section& section : sections) {
 		if (!section.name.starts_with("document ")) {
 			continue;
 		}

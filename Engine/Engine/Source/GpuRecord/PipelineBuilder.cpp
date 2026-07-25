@@ -149,7 +149,7 @@ auto gse::gpu::make_slang_session() -> owned_slang_session {
 	out.global = cached_global;
 	auto* global = out.global.get();
 
-	const auto shader_root = config::resource_path / "Shaders";
+	const auto shader_root = config::resource_path() / "Shaders";
 
 	auto contains_bodies = [](const std::filesystem::path& p) -> bool {
 		for (const auto& part : p) {
@@ -266,7 +266,7 @@ auto gse::gpu::parse_body_file(const std::string_view body_source) -> parsed_bod
 
 
 auto gse::gpu::load_body_file(const std::string_view body_path) -> std::string {
-	const auto full_path = config::resource_path / "Shaders" / "Bodies" / (std::string(body_path) + ".slang");
+	const auto full_path = config::resource_path() / "Shaders" / "Bodies" / (std::string(body_path) + ".slang");
 	std::ifstream in(full_path, std::ios::binary);
 	assert(in.is_open(), "Failed to open shader body: {}", full_path.display_string());
 
@@ -276,7 +276,7 @@ auto gse::gpu::load_body_file(const std::string_view body_path) -> std::string {
 }
 
 auto gse::gpu::load_helper_file(const std::string_view helper_path) -> std::string {
-	const auto full_path = config::resource_path / "Shaders" / (std::string(helper_path) + ".slang");
+	const auto full_path = config::resource_path() / "Shaders" / (std::string(helper_path) + ".slang");
 	std::ifstream in(full_path, std::ios::binary);
 	assert(in.is_open(), "Failed to open shader helper: {}", full_path.display_string());
 

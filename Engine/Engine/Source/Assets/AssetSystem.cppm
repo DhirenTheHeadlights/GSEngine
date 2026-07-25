@@ -178,7 +178,7 @@ auto gse::asset::count_compile_work() -> std::uint32_t {
 	}
 	else {
 		constexpr auto fmt = format_of<typename T::baked>();
-		const auto source_root = config::resource_path / fmt.source_dir;
+		const auto source_root = config::resource_path() / fmt.source_dir;
 		if (!std::filesystem::exists(source_root)) {
 			log::println(
 				log::category::assets,
@@ -213,7 +213,7 @@ auto gse::asset::enumerate_resources() -> std::vector<std::string> {
 	}
 	else {
 		constexpr auto fmt = format_of<typename T::baked>();
-		const auto dir_path = config::baked_resource_path / fmt.baked_dir;
+		const auto dir_path = config::baked_resource_path() / fmt.baked_dir;
 		if (!std::filesystem::exists(dir_path)) {
 			return result;
 		}
@@ -240,10 +240,10 @@ auto gse::asset::recompile_if_stale(const std::filesystem::path& baked_path) -> 
 	}
 	else {
 		constexpr auto fmt = format_of<typename T::baked>();
-		auto rel = baked_path.lexically_relative(config::baked_resource_path / fmt.baked_dir);
+		auto rel = baked_path.lexically_relative(config::baked_resource_path() / fmt.baked_dir);
 		auto src_rel = rel;
 		src_rel.replace_extension(fmt.source_exts.empty() ? "" : std::string(fmt.source_exts.front()));
-		const auto src = config::resource_path / fmt.source_dir / src_rel;
+		const auto src = config::resource_path() / fmt.source_dir / src_rel;
 		if (!std::filesystem::exists(src)) {
 			return false;
 		}
@@ -261,7 +261,7 @@ auto gse::asset::setup_hot_reload_for(data& d) -> void {
 	}
 	else {
 		constexpr auto fmt = format_of<typename T::baked>();
-		const auto source_root = config::resource_path / fmt.source_dir;
+		const auto source_root = config::resource_path() / fmt.source_dir;
 		if (!std::filesystem::exists(source_root)) {
 			return;
 		}
@@ -270,9 +270,9 @@ auto gse::asset::setup_hot_reload_for(data& d) -> void {
 			source_root,
 			[&d](const std::filesystem::path& changed_file) {
 				constexpr auto fmt = format_of<typename T::baked>();
-				auto rel = std::filesystem::relative(changed_file, config::resource_path / fmt.source_dir);
+				auto rel = std::filesystem::relative(changed_file, config::resource_path() / fmt.source_dir);
 				rel.replace_extension(std::string(fmt.baked_ext));
-				const auto dst = config::baked_resource_path / fmt.baked_dir / rel;
+				const auto dst = config::baked_resource_path() / fmt.baked_dir / rel;
 				if (bake_to_disk<T>(changed_file, dst)) {
 					log::println(log::category::assets, "Hot reload recompiled: {}", changed_file.filename().display_string());
 					if constexpr (loadable<T>) {
@@ -335,8 +335,8 @@ auto gse::asset::system<Ts...>::compile(compile_progress* progress) -> compile_r
 	}
 	else {
 		constexpr auto fmt = format_of<typename T::baked>();
-		const auto source_root = config::resource_path / fmt.source_dir;
-		const auto baked_root = config::baked_resource_path / fmt.baked_dir;
+		const auto source_root = config::resource_path() / fmt.source_dir;
+		const auto baked_root = config::baked_resource_path() / fmt.baked_dir;
 
 		if (!std::filesystem::exists(source_root)) {
 			return result;
