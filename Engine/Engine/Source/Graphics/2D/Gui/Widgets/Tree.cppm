@@ -28,6 +28,9 @@ export namespace gse::gui::draw {
 		float extra_right_padding = 0.0f;
 		bool toggle_on_row_click = true;
 		bool multi_select = false;
+		std::span<const std::uint64_t> open_keys;
+		std::uint64_t reveal_key = 0;
+		float* reveal_offset = nullptr;
 	};
 
 	struct tree_selection {
@@ -124,10 +127,25 @@ auto gse::gui::draw::tree(const draw_context& ctx, std::span<const T> roots, con
 	}
 
 	const std::uint64_t tree_scope = ids::current_seed();
+	std::unordered_set<std::uint64_t>& open_set = global_expand_state.open[tree_scope];
+	for (const std::uint64_t key : opt.open_keys) {
+		open_set.insert(key);
+	}
+
+	constexpr float missing_row = std::numeric_limits<float>::lowest();
+	float reveal_row_top = missing_row;
+	tree_options node_opt = opt;
+	node_opt.reveal_offset = opt.reveal_offset && opt.reveal_key != 0 ? &reveal_row_top : nullptr;
+
+	const float content_start = ctx.layout_cursor.y();
 	bool is_active = false;
 
 	for (const T& r : roots) {
-		is_active |= tree_node(ctx, r, fns, opt, sel, tree_scope, 0, active_widget_id, fnt);
+		is_active |= tree_node(ctx, r, fns, node_opt, sel, tree_scope, 0, active_widget_id, fnt);
+	}
+
+	if (opt.reveal_offset && reveal_row_top != missing_row) {
+		*opt.reveal_offset = content_start - reveal_row_top;
 	}
 
 	return is_active;
@@ -171,6 +189,9 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 	);
 
 	const std::uint64_t key = tree_node_key(t, ops, tree_scope);
+	if (opt.reveal_offset && opt.reveal_key == key) {
+		*opt.reveal_offset = row_rect.top();
+	}
 	std::unordered_set<std::uint64_t>& open_set = global_expand_state.open[tree_scope];
 	const bool leaf = tree_node_is_leaf(t, ops);
 	bool is_open = open_set.contains(key);

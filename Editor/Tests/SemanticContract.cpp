@@ -26,3 +26,15 @@ struct callable {
 auto call_member(callable& value) -> int {
 	return value.method(1);
 }
+
+namespace member_type_collision {
+	struct id {};
+
+	struct record {
+		member_type_collision::id id;
+	};
+
+	auto select(record& value) -> member_type_collision::id& {
+		return value.id;
+	}
+}

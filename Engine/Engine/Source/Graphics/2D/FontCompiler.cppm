@@ -246,7 +246,7 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 		atlas_data.size()
 	);
 
-	const auto debug_atlas_path = config::baked_resource_path / "Fonts" / (src.stem().native_encoded_string() + "_atlas_debug.png");
+	const auto debug_atlas_path = config::baked_resource_path() / "Fonts" / (src.stem().native_encoded_string() + "_atlas_debug.png");
 	if (!image::write_png(debug_atlas_path, static_cast<std::uint32_t>(atlas_width), static_cast<std::uint32_t>(atlas_height), channels, atlas_data.data())) {
 		log::println(
 			log::level::warning,
@@ -262,7 +262,7 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 	FT_Done_Face(ft_face);
 	FT_Done_FreeType(ft_lib);
 
-	out.source_path_relative = src.lexically_relative(config::resource_path).native_encoded_string();
+	out.source_path_relative = src.lexically_relative(config::resource_path()).native_encoded_string();
 	out.ascender = static_cast<float>(font_metrics.ascenderY);
 	out.descender = static_cast<float>(font_metrics.descenderY);
 	out.pixel_range = pixel_range;

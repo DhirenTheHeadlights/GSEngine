@@ -33,7 +33,8 @@ export namespace gse::settings {
 	)(
 		std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
 		std::string_view category,
-		const void* settings_ptr
+		const void* settings_ptr,
+		scope_kind filter
 	);
 
 	using read_settings_thunk = void (
@@ -41,7 +42,8 @@ export namespace gse::settings {
 	)(
 		const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
 		std::string_view category,
-		void* settings_ptr
+		void* settings_ptr,
+		scope_kind filter
 	);
 
 	using reset_to_defaults_thunk = void (
@@ -118,35 +120,42 @@ export namespace gse::settings {
 	concept is_scalar_settings_field = std::is_arithmetic_v<T> || std::is_enum_v<T> || std::same_as<T, bool> ||
 		std::same_as<T, std::string> || has_parser_specialization<T>;
 
-	template <typename T>
+	template <typename T, scope_kind Inherited = scope_kind::user>
 	auto write_settings_with_prefix(
 		std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
 		std::string_view category,
 		std::string_view prefix,
-		const T& value
+		const T& value,
+		scope_kind filter
 	) -> void;
 
-	template <typename T>
+	template <typename T, scope_kind Inherited = scope_kind::user>
 	auto read_settings_with_prefix(
 		const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
 		std::string_view category,
 		std::string_view prefix,
-		T& value
+		T& value,
+		scope_kind filter
 	) -> void;
 
 	template <typename T>
 	auto write_settings_for(
 		std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
 		std::string_view category,
-		const void* settings_ptr
+		const void* settings_ptr,
+		scope_kind filter
 	) -> void;
 
 	template <typename T>
 	auto read_settings_for(
 		const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
 		std::string_view category,
-		void* settings_ptr
+		void* settings_ptr,
+		scope_kind filter
 	) -> void;
+
+	template <std::meta::info M, scope_kind Fallback>
+	consteval auto field_scope_of() -> scope_kind;
 
 	template <typename T>
 	auto collect_settings_keys_with_prefix(
@@ -160,6 +169,9 @@ export namespace gse::settings {
 	template <typename T>
 	consteval auto category_of() -> std::string_view;
 
+	template <typename T>
+	consteval auto scope_of() -> scope_kind;
+
 	template <typename F>
 	consteval auto field_widget_of() -> settings_field_widget;
 
@@ -168,18 +180,19 @@ export namespace gse::settings {
 	) -> settings_field_range;
 }
 
-template <typename T>
-auto gse::settings::write_settings_with_prefix(std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc, const std::string_view category, const std::string_view prefix, const T& value) -> void {
+template <typename T, gse::settings::scope_kind Inherited>
+auto gse::settings::write_settings_with_prefix(std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc, const std::string_view category, const std::string_view prefix, const T& value, const scope_kind filter) -> void {
 	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 		if constexpr (meta::find_describe(m) != std::meta::info{}) {
 			using F = [:std::meta::type_of(m):];
 			constexpr std::string_view name = meta::member_name(m);
+			constexpr scope_kind effective = field_scope_of<m, Inherited>();
 			const std::string key = prefix.empty() ? std::string(name) : std::format("{}.{}", prefix, name);
 
 			if constexpr (std::is_class_v<F> && !is_scalar_settings_field<F>) {
-				write_settings_with_prefix<F>(doc, category, key, value.[:m:]);
+				write_settings_with_prefix<F, effective>(doc, category, key, value.[:m:], filter);
 			}
-			else {
+			else if (effective == filter) {
 				std::string formatted;
 				std::format_to(std::back_inserter(formatted), "{}", value.[:m:]);
 				doc[std::string(category)][key] = std::move(formatted);
@@ -188,8 +201,20 @@ auto gse::settings::write_settings_with_prefix(std::unordered_map<std::string, s
 	}
 }
 
-template <typename T>
-auto gse::settings::read_settings_with_prefix(const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc, const std::string_view category, const std::string_view prefix, T& value) -> void {
+template <std::meta::info M, gse::settings::scope_kind Fallback>
+consteval auto gse::settings::field_scope_of() -> gse::settings::scope_kind {
+	constexpr auto found = meta::find_scope(M);
+	if constexpr (found != std::meta::info{}) {
+		using S = [:found:];
+		return S::value;
+	}
+	else {
+		return Fallback;
+	}
+}
+
+template <typename T, gse::settings::scope_kind Inherited>
+auto gse::settings::read_settings_with_prefix(const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc, const std::string_view category, const std::string_view prefix, T& value, const scope_kind filter) -> void {
 	const auto cat_it = doc.find(std::string(category));
 	if (cat_it == doc.end()) {
 		return;
@@ -198,35 +223,40 @@ auto gse::settings::read_settings_with_prefix(const std::unordered_map<std::stri
 		if constexpr (meta::find_describe(m) != std::meta::info{}) {
 			using F = [:std::meta::type_of(m):];
 			constexpr std::string_view name = meta::member_name(m);
+			constexpr scope_kind effective = field_scope_of<m, Inherited>();
 			const std::string key = prefix.empty() ? std::string(name) : std::format("{}.{}", prefix, name);
 
 			if constexpr (std::is_class_v<F> && !is_scalar_settings_field<F>) {
-				read_settings_with_prefix<F>(doc, category, key, value.[:m:]);
+				read_settings_with_prefix<F, effective>(doc, category, key, value.[:m:], filter);
 			}
-			else if (const auto it = cat_it->second.find(key); it != cat_it->second.end()) {
-				gse::parse(it->second, value.[:m:]);
+			else if (effective == filter) {
+				if (const auto it = cat_it->second.find(key); it != cat_it->second.end()) {
+					gse::parse(it->second, value.[:m:]);
+				}
 			}
 		}
 	}
 }
 
 template <typename T>
-auto gse::settings::write_settings_for(std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc, const std::string_view category, const void* settings_ptr) -> void {
-	write_settings_with_prefix<T>(
+auto gse::settings::write_settings_for(std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc, const std::string_view category, const void* settings_ptr, const scope_kind filter) -> void {
+	write_settings_with_prefix<T, scope_of<T>()>(
 		doc,
 		category,
 		{},
-		*static_cast<const T*>(settings_ptr)
+		*static_cast<const T*>(settings_ptr),
+		filter
 	);
 }
 
 template <typename T>
-auto gse::settings::read_settings_for(const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc, const std::string_view category, void* settings_ptr) -> void {
-	read_settings_with_prefix<T>(
+auto gse::settings::read_settings_for(const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc, const std::string_view category, void* settings_ptr, const scope_kind filter) -> void {
+	read_settings_with_prefix<T, scope_of<T>()>(
 		doc,
 		category,
 		{},
-		*static_cast<T*>(settings_ptr)
+		*static_cast<T*>(settings_ptr),
+		filter
 	);
 }
 
@@ -267,6 +297,18 @@ consteval auto gse::settings::category_of() -> std::string_view {
 	}
 	else {
 		return std::string_view{};
+	}
+}
+
+template <typename T>
+consteval auto gse::settings::scope_of() -> gse::settings::scope_kind {
+	constexpr auto found = meta::find_scope(^^T);
+	if constexpr (found != std::meta::info{}) {
+		using S = [:found:];
+		return S::value;
+	}
+	else {
+		return scope_kind::user;
 	}
 }
 

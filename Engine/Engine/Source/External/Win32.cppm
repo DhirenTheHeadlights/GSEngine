@@ -7,6 +7,8 @@ module;
 #include <windowsx.h>
 #include <dbghelp.h>
 #include <tlhelp32.h>
+#include <shlobj.h>
+#include <shellapi.h>
 #endif
 
 #define GLFW_INCLUDE_NONE
@@ -112,6 +114,7 @@ export namespace gse::win32 {
 	using ::RtlVirtualUnwind;
 	using ::GetModuleHandleExW;
 	using ::GetModuleFileNameW;
+	using ::SHGetFolderPathW;
 	using ::AddVectoredExceptionHandler;
 	using ::GetLastError;
 	using ::CreateProcessW;
@@ -124,6 +127,8 @@ export namespace gse::win32 {
 	using ::TerminateJobObject;
 	using ::SetInformationJobObject;
 	using ::GetCommandLineW;
+	using ::CommandLineToArgvW;
+	using ::LocalFree;
 	using ::ExitProcess;
 	using ::CreatePipe;
 	using ::ReadFile;
@@ -148,6 +153,9 @@ export namespace gse::win32 {
 	constexpr DWORD get_module_handle_ex_flag_from_address = GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS;
 	constexpr DWORD get_module_handle_ex_flag_unchanged_refcount = GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT;
 	constexpr int max_path = MAX_PATH;
+	constexpr int csidl_appdata = CSIDL_APPDATA;
+	constexpr int csidl_local_appdata = CSIDL_LOCAL_APPDATA;
+	constexpr int shgfp_type_current = SHGFP_TYPE_CURRENT;
 	constexpr DWORD startf_use_std_handles = STARTF_USESTDHANDLES;
 	constexpr DWORD create_no_window = CREATE_NO_WINDOW;
 	constexpr DWORD create_unicode_environment = CREATE_UNICODE_ENVIRONMENT;

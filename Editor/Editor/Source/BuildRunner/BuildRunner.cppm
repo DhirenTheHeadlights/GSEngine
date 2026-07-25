@@ -51,10 +51,10 @@ export namespace gse::ide::build_runner {
 		attached_surface_message message{};
 	};
 
-	struct [[= gse::system_state<"Build Runner">{}]] data {
-		[[= gse::shared]] bool building = false;
-		[[= gse::shared]] std::uint32_t game_generation = 0;
-		[[= gse::shared]] std::filesystem::path game_graph_path;
+	struct [[= system_state<"Build Runner">{}]] data {
+		[[= shared]] bool building = false;
+		[[= shared]] std::uint32_t game_generation = 0;
+		[[= shared]] std::filesystem::path game_graph_path;
 		build_completion completion;
 		std::shared_ptr<spawn::output_stream> active_stream;
 		std::jthread worker;
@@ -62,13 +62,13 @@ export namespace gse::ide::build_runner {
 		surface_pipe pipe;
 	};
 
-	[[= gse::system_init{}]]
+	[[= system_init{}]]
 	auto init(data& d) -> async::task<>;
 
-	[[= gse::system_run<>{}]]
+	[[= system_run<>{}]]
 	auto run(context& ctx, data& d) -> async::task<>;
 
-	[[= gse::system_shutdown{}]]
+	[[= system_shutdown{}]]
 	auto shutdown(data& d) -> void;
 }
 
@@ -100,7 +100,7 @@ namespace gse::ide::build_runner {
 		auto operator==(const source_fingerprint& other) const -> bool = default;
 	};
 
-	auto find_build_dir() -> std::filesystem::path;
+	auto find_build_dir(const std::filesystem::path& candidate) -> std::filesystem::path;
 
 	auto project_source_roots(std::string_view target) -> std::vector<std::filesystem::path>;
 
@@ -171,24 +171,24 @@ namespace gse::ide::build_runner {
 	auto poll_surface_pipe(context& ctx, data& d) -> void;
 }
 
-auto gse::ide::build_runner::find_build_dir() -> std::filesystem::path {
+auto gse::ide::build_runner::find_build_dir(const std::filesystem::path& candidate) -> std::filesystem::path {
 	std::error_code ec;
-	if (!std::filesystem::exists(config::build_dir / "build.ninja", ec)) {
+	if (!std::filesystem::exists(candidate / "build.ninja", ec)) {
 		return {};
 	}
-	return config::build_dir;
+	return candidate;
 }
 
 auto gse::ide::build_runner::project_source_roots(const std::string_view target) -> std::vector<std::filesystem::path> {
 	if (target == config::editor_target) {
 		return {
-			gse::config::source_dir,
-			config::source_dir,
+			gse::config::source_dir(),
+			config::source_dir(),
 		};
 	}
 	return {
-		gse::config::source_dir,
-		config::game_source_dir,
+		config::engine_source_dir(),
+		config::project_source_dir(),
 	};
 }
 
@@ -444,7 +444,7 @@ auto gse::ide::build_runner::run_build_with_module_recovery(
 			start_line = stream.lines.size();
 		}
 
-		const int code = spawn::run_capture(stream, command, gse::config::root_dir.wstring(), compiler_bin);
+		const int code = spawn::run_capture(stream, command, gse::config::root_dir().wstring(), compiler_bin);
 		if (code == 0 || attempt >= max_attempts || st.stop_requested() || stream.terminated.load(std::memory_order_acquire)) {
 			return code;
 		}
@@ -476,7 +476,7 @@ auto gse::ide::build_runner::run_build_with_module_recovery(
 }
 
 auto gse::ide::build_runner::launch_game_attached(build_completion& completion, spawn::output_stream& stream, const std::uint32_t generation) -> void {
-	const std::filesystem::path& game_exe = config::game_executable;
+	const std::filesystem::path& game_exe = config::game_executable();
 	std::error_code ec;
 	if (!std::filesystem::exists(game_exe, ec)) {
 		spawn::emit(stream, "game executable not found: " + game_exe.display_string());
@@ -503,7 +503,7 @@ auto gse::ide::build_runner::launch_game_attached(build_completion& completion, 
 	std::vector<wchar_t> command_buffer(command.begin(), command.end());
 	command_buffer.push_back(0);
 
-	const std::wstring working_dir = gse::config::root_dir.wstring();
+	const std::wstring working_dir = gse::config::root_dir().wstring();
 	win32::STARTUPINFOW startup{
 		.cb = sizeof(win32::STARTUPINFOW),
 	};
@@ -532,16 +532,16 @@ auto gse::ide::build_runner::build_game(
 	const bool run_after,
 	const std::uint32_t next_generation
 ) -> void {
-	const std::filesystem::path build_dir = find_build_dir();
+	const std::filesystem::path build_dir = find_build_dir(config::project_build_dir());
 	if (build_dir.empty()) {
 		spawn::emit(stream, "configured build directory is unavailable");
 		return;
 	}
 
-	refresh_changed_sources(stream, build_dir, config::game_target);
+	refresh_changed_sources(stream, build_dir, config::game_target());
 	const std::filesystem::path compiler_bin = compiler_bin_dir(build_dir);
 
-	const std::filesystem::path& game_exe = config::game_executable;
+	const std::filesystem::path& game_exe = config::game_executable();
 	const std::filesystem::path backup = backup_path(game_exe);
 	std::error_code ec;
 	if (std::filesystem::exists(game_exe, ec)) {
@@ -553,8 +553,8 @@ auto gse::ide::build_runner::build_game(
 		}
 	}
 
-	spawn::emit(stream, "building " + std::string(config::game_target) + "...");
-	const int code = run_build_with_module_recovery(st, stream, build_command(build_dir, config::game_target), build_dir, compiler_bin);
+	spawn::emit(stream, "building " + std::string(config::game_target()) + "...");
+	const int code = run_build_with_module_recovery(st, stream, build_command(build_dir, config::game_target()), build_dir, compiler_bin);
 	if (code != 0) {
 		spawn::emit(stream, "build failed (exit " + std::to_string(code) + ")");
 		if (std::filesystem::exists(backup, ec)) {
@@ -577,7 +577,7 @@ auto gse::ide::build_runner::build_game(
 }
 
 auto gse::ide::build_runner::rebuild_editor(const std::stop_token& st, spawn::output_stream& stream) -> void {
-	const std::filesystem::path build_dir = find_build_dir();
+	const std::filesystem::path build_dir = find_build_dir(config::build_dir());
 	if (build_dir.empty()) {
 		spawn::emit(stream, "configured build directory is unavailable");
 		return;
@@ -615,7 +615,7 @@ auto gse::ide::build_runner::rebuild_editor(const std::stop_token& st, spawn::ou
 	}
 
 	spawn::emit(stream, "rebuild succeeded; relaunching editor");
-	gse::app::relaunch_on_exit(editor_exe, gse::config::root_dir);
+	app::relaunch_on_exit(editor_exe, gse::config::root_dir());
 	gse::shutdown();
 }
 
@@ -648,8 +648,8 @@ auto gse::ide::build_runner::build_worker(
 
 auto gse::ide::build_runner::cleanup_backups() -> void {
 	std::error_code ec;
-	std::filesystem::remove(backup_path(config::game_executable), ec);
-	std::filesystem::remove(backup_path(config::editor_executable), ec);
+	std::filesystem::remove(backup_path(config::game_executable()), ec);
+	std::filesystem::remove(backup_path(config::editor_executable()), ec);
 	const std::filesystem::path editor_exe = current_executable();
 	if (!editor_exe.empty()) {
 		std::filesystem::remove(backup_path(editor_exe), ec);

@@ -175,7 +175,7 @@ namespace gse::log {
 }
 
 auto gse::log::log_file_path() -> std::filesystem::path {
-	return config::resource_path / "Misc" / "log.txt";
+	return config::logs_dir() / std::format("{}.log", config::executable_stem());
 }
 
 auto gse::log::timestamp_string() -> std::string {

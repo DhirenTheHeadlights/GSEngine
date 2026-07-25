@@ -14,10 +14,12 @@ export namespace gse::ide::config_system {
 
 		[[= gse::settings::describe<"Spaces per indentation level.">{},
 			= gse::settings::range<1, 8>{},
+			= gse::settings::project_scope{},
 			= gse::shared]]
 		int indent_width = 4;
 
 		[[= gse::settings::describe<"Use spaces instead of tabs when indenting.">{},
+			= gse::settings::project_scope{},
 			= gse::shared]]
 		bool indent_with_spaces = false;
 
@@ -33,7 +35,8 @@ export namespace gse::ide::config_system {
 		bool soft_wrap = false;
 
 		[[= gse::settings::describe<"Show a vertical ruler at this column (0 disables).">{},
-			= gse::settings::range<0, 200>{}]]
+			= gse::settings::range<0, 200>{},
+			= gse::settings::project_scope{}]]
 		int ruler_column = 100;
 
 		[[= gse::settings::describe<"Highlight the current line.">{}]]

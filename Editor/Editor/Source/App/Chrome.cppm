@@ -7,6 +7,7 @@ import gse.ide.workspace;
 import gse.ide.git;
 import gse.ide.build;
 import gse.ide.search;
+import gse.ide.project;
 
 import :search_screen;
 
@@ -95,7 +96,10 @@ gse::ide::editor_screen::editor_screen(gse::channel_writer channels, const searc
 }
 
 auto gse::ide::editor_screen::title() const -> std::string_view {
-	return "GSEditor";
+	static const std::string value = project::current().valid
+		? std::format("{} \xC2\xB7 GSEditor", project::current().name)
+		: std::string("GSEditor");
+	return value;
 }
 
 auto gse::ide::editor_screen::dismissable() const -> bool {
@@ -188,10 +192,23 @@ auto gse::ide::editor_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> 
 		.texture = ctx.blank_texture,
 	});
 
+	const float swatch_width = ctx.style.accent_bar_width;
+	const float swatch_height = ctx.style.font_size;
+	ctx.queue_sprite({
+		.rect = gse::rectf::from_position_size(
+			{ bar_rect.left() + ctx.style.padding, bar_rect.center().y() + swatch_height * 0.5f },
+			{ swatch_width, swatch_height }
+		),
+		.color = project::accent(),
+		.texture = ctx.blank_texture,
+	});
+
+	const float title_x = bar_rect.left() + ctx.style.padding + swatch_width + ctx.style.padding * 0.5f;
+
 	ctx.queue_text({
 		.font = ctx.fonts.text,
 		.text = std::string(title()),
-		.position = { bar_rect.left() + ctx.style.padding, bar_rect.center().y() + ctx.fonts.text->vertical_center_offset(ctx.style.font_size) },
+		.position = { title_x, bar_rect.center().y() + ctx.fonts.text->vertical_center_offset(ctx.style.font_size) },
 		.scale = ctx.style.font_size,
 		.color = ctx.style.color_text,
 		.clip_rect = bar_rect,
@@ -208,7 +225,7 @@ auto gse::ide::editor_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> 
 			const float badge_height = ctx.style.font_size + ctx.style.padding * 0.5f;
 			const float badge_width = ctx.fonts.text->width(*m_loc_label, ctx.style.font_size) + badge_pad * 2.f;
 			const gse::rectf badge_rect = gse::rectf::from_position_size(
-				{ bar_rect.left() + ctx.style.padding + title_w + ctx.style.padding, bar_rect.center().y() + badge_height * 0.5f },
+				{ title_x + title_w + ctx.style.padding, bar_rect.center().y() + badge_height * 0.5f },
 				{ badge_width, badge_height }
 			);
 			ctx.queue_sprite({
@@ -606,16 +623,13 @@ auto gse::ide::draw_explorer_panel(gse::gui::builder& ui, workspace::data& ws, q
 	const float pad = ctx.style.padding;
 	const float search_height = ctx.fonts.text->line_height(ctx.style.font_size) + pad * 0.8f;
 	const float accent_width = std::max(2.f, ctx.style.accent_bar_width);
-	const gse::vec4f explorer_bg{ 0.045f, 0.06f, 0.095f, 0.98f };
-	const gse::vec4f explorer_accent{ 0.62f, 0.34f, 1.0f, 1.0f };
-
 	const gse::rectf panel = gse::gui::draw::panel_backdrop(ctx, {
 		.rect = body,
-		.background = explorer_bg,
+		.background = ctx.style.color_input_background,
 		.accent = gse::gui::panel_accent{
 			.edge = gse::gui::panel_edge::right,
 			.width = accent_width,
-			.color = explorer_accent,
+			.color = ctx.style.color_accent,
 		},
 	});
 
@@ -651,6 +665,19 @@ auto gse::ide::draw_explorer_panel(gse::gui::builder& ui, workspace::data& ws, q
 		cancel,
 	};
 	explorer_name_action name_action = explorer_name_action::none;
+
+	std::unordered_set<std::string> open_paths;
+	std::string active_path;
+	for (const auto& [id, doc] : ws.documents) {
+		if (doc.path.empty()) {
+			continue;
+		}
+		std::string key = doc.path.lexically_normal().native_encoded_string();
+		if (id == ws.active_document_id) {
+			active_path = key;
+		}
+		open_paths.insert(std::move(key));
+	}
 
 	const gse::gui::draw::tree_ops<fs_node> ops{
 		.children = [](const fs_node& n) -> std::span<const fs_node> {
@@ -711,9 +738,21 @@ auto gse::ide::draw_explorer_panel(gse::gui::builder& ui, workspace::data& ws, q
 			});
 		},
 		.icon = [](const fs_node& n) -> std::span<const gse::gui::symbol::stroke> {
+			if (n.glyph) {
+				return n.glyph();
+			}
 			return n.is_dir ? gse::gui::symbol::folder() : gse::gui::symbol::file();
 		},
-		.label_color = [git_status, base = ctx.style.color_text](const fs_node& n) -> gse::vec4f {
+		.label_color = [git_status, &open_paths, &active_path, base = ctx.style.color_text, accent = ctx.style.color_accent](const fs_node& n) -> gse::vec4f {
+			if (!n.is_dir && !open_paths.empty()) {
+				const std::string key = n.path.lexically_normal().native_encoded_string();
+				if (key == active_path) {
+					return accent;
+				}
+				if (open_paths.contains(key)) {
+					return gse::lerp(accent, base, 0.45f);
+				}
+			}
 			if (!git_status) {
 				return base;
 			}
@@ -727,15 +766,48 @@ auto gse::ide::draw_explorer_panel(gse::gui::builder& ui, workspace::data& ws, q
 		},
 	};
 
+	std::vector<std::uint64_t> reveal_expand;
+	std::uint64_t reveal_key = 0;
+	float reveal_offset = -1.f;
+	if (ws.reveal_path) {
+		workspace::explorer_reveal reveal = workspace::reveal_nodes(ws, *ws.reveal_path);
+		ws.reveal_path.reset();
+		if (reveal.key != 0) {
+			reveal_expand = std::move(reveal.expand);
+			reveal_key = reveal.key;
+			if (!ws.explorer_selection.keys.contains(reveal_key)) {
+				ws.explorer_selection.keys.clear();
+				ws.explorer_selection.keys.insert(reveal_key);
+				ws.explorer_selection_seen.insert(reveal_key);
+			}
+		}
+	}
+
+	const float tree_top = ctx.layout_cursor.y();
+
 	ui.scroll_region({
 		.id = "explorer_tree",
 	}, [&](gse::gui::builder& b) {
 		b.draw<gse::gui::tree<fs_node>>({
 			.roots = ws.fs_root.children,
 			.ops = ops,
+			.options = {
+				.open_keys = reveal_expand,
+				.reveal_key = reveal_key,
+				.reveal_offset = reveal_key != 0 ? &reveal_offset : nullptr,
+			},
 			.selection = &ws.explorer_selection,
 		});
 	});
+
+	if (reveal_offset >= 0.f) {
+		const float row_height = ctx.fonts.text->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
+		const float view_height = std::max(0.f, tree_top - content.bottom());
+		gse::gui::scroll_state& scroll = ctx.widget_scrolls[gse::hash_combine(gse::gui::ids::current_seed(), gse::stable_id("explorer_tree"))];
+		if (reveal_offset < scroll.y.offset || reveal_offset + row_height > scroll.y.offset + view_height) {
+			scroll.y.target = std::max(0.f, reveal_offset - view_height * 0.5f + row_height * 0.5f);
+		}
+	}
 
 	if (name_action == explorer_name_action::cancel) {
 		workspace::cancel_pending_name(ws);

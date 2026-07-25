@@ -49,29 +49,25 @@ auto gse::ide::search_system::is_symbol_source(const std::filesystem::path& path
 
 auto gse::ide::search_system::init(data& d) -> async::task<> {
 	d.index = std::make_unique<search::index_state>();
-	d.index->workspace_root = gse::config::root_dir;
+	d.index->workspace_root = gse::config::root_dir();
 
 	std::error_code compile_commands_ec;
-	if (std::filesystem::exists(config::compile_commands, compile_commands_ec)) {
-		d.index->compile_commands = config::compile_commands;
+	if (std::filesystem::exists(config::project_compile_commands(), compile_commands_ec)) {
+		d.index->compile_commands = config::project_compile_commands();
 	}
 	std::error_code plugin_ec;
-	if (std::filesystem::exists(config::token_plugin, plugin_ec)) {
-		d.index->plugin_dll = config::token_plugin;
+	if (std::filesystem::exists(config::token_plugin(), plugin_ec)) {
+		d.index->plugin_dll = config::token_plugin();
 	}
 
 	search::start_symbol_worker(*d.index);
 	search::request_symbol_build(*d.index);
 
-	task::post([index = d.index.get(), root = gse::config::root_dir] {
+	task::post([index = d.index.get(), root = gse::config::root_dir()] {
 		search::build_files_and_content(*index, root);
 	});
-	const std::filesystem::path root = gse::config::root_dir;
-	const std::filesystem::path log_path = (root / "Engine" / "Resources" / "Misc" / "log.txt").lexically_normal();
-	auto on_change = [&d, log_path](const std::filesystem::path& path) {
-		if (path.lexically_normal() == log_path) {
-			return;
-		}
+	const std::filesystem::path root = gse::config::root_dir();
+	auto on_change = [&d](const std::filesystem::path& path) {
 		d.watcher_changes.push_back(path);
 	};
 	d.watcher.watch_directory(

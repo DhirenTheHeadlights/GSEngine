@@ -10,7 +10,7 @@ Unit types (e.g., `gap`, `displacement`, `velocity`, `force`, etc.) have the **s
 
 ## Logging System
 
-A logging system writes to `Engine/Resources/Misc/log.txt`, cleared on each run. Assertions automatically log failures.
+A logging system writes to `%LOCALAPPDATA%\GSE\logs\<exe>.log` (e.g. `Editor.log`, `GoonSquad.log`), cleared on each run, keeping the last 5. Assertions automatically log failures.
 
 **To debug issues:** Read the log file instead of asking the user to paste console output.
 
@@ -18,5 +18,16 @@ A logging system writes to `Engine/Resources/Misc/log.txt`, cleared on each run.
 
 ## Config Module
 
-`gse.config` (in `Engine/Engine/Import/Config.cppm.in`) provides CMake-configured paths like `resource_path`. Re-exported by `gse.utility`.
+`gse.config` (in `Engine/Engine/Import/Config.cppm`) provides every engine path as a **function**, resolved at runtime — `resource_path()`, `root_dir()`, `user_config_dir()`, etc. Re-exported by `gse.utility`. Nothing is baked into the binary: paths come from a `gse.manifest` marker file found by walking up from the executable's directory (CMake writes one to the build root at configure time with `mode = dev` and `root = <source tree>`).
+
+Where runtime files go — **none of them land in the repo**:
+
+| What | Where |
+|---|---|
+| `settings.ini`, `gui_layout.ini`, `editor_layout.ini` | `%APPDATA%\GSE` (`user_config_dir()`) |
+| logs, crash dumps, profiles, screenshots/recordings/clips | `%LOCALAPPDATA%\GSE` (`logs_dir()`, `crash_dir()`, `profile_dir()`, `captures_dir()`) |
+
+**`settings.ini` now lives at `%APPDATA%\GSE\settings.ini`** — that is the file to hand-edit; the old `Engine/Resources/Misc/settings.ini` is no longer read. There is no automatic migration from the old locations.
+
+Override the roots with the `GSE_USER_DIR` and `GSE_STATE_DIR` environment variables. Running an executable with no `gse.manifest` above it aborts with a message on stderr.
 

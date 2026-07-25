@@ -40,7 +40,7 @@ auto gse::ide::git_system::run(gse::context& ctx, data& d) -> gse::async::task<>
 
 	if (refresh && !d.pending) {
 		if (d.repo_root.empty()) {
-			d.repo_root = git::find_repo_root(gse::config::root_dir);
+			d.repo_root = git::find_repo_root(gse::config::root_dir());
 		}
 		d.pending = std::make_shared<git::status_check>();
 		git::status_runner::start(d.pending, d.repo_root);

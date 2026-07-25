@@ -1473,6 +1473,26 @@ static bool source_token_is_char(int index, char c) {
 	return token.finish - token.start == 1 && g_src[token.start] == c;
 }
 
+static bool source_token_follows_member_access(int index) {
+	if (index <= 0) {
+		return false;
+	}
+	int previous = index - 1;
+	if (source_token_equals(previous, "template")) {
+		--previous;
+	}
+	if (previous < 0) {
+		return false;
+	}
+	if (source_token_is_char(previous, '.')) {
+		return true;
+	}
+	return (*g_source_tokens)[previous].kind == source_token_kind::greater
+		&& previous > 0
+		&& source_token_is_char(previous - 1, '-')
+		&& (*g_source_tokens)[previous - 1].finish == (*g_source_tokens)[previous].start;
+}
+
 static int source_token_lower_bound(location_t location) {
 	const expanded_location value = expand_cached(location);
 	int low = 0;
@@ -1892,7 +1912,7 @@ static bool standard_integer_type_chain(const int *components, int count) {
 }
 
 static void scan_qualified_type_chain(int first, int limit, int exclude_final = -1) {
-	if (using_declaration_chain_p(first)) {
+	if (first == exclude_final || using_declaration_chain_p(first) || source_token_follows_member_access(first)) {
 		return;
 	}
 	int components[32];

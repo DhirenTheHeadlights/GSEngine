@@ -149,6 +149,11 @@ namespace gse::ide {
 		bool member_access = false;
 	};
 
+	auto hover_code_line_height(
+		const gse::gui::draw_context& ctx,
+		float scale
+	) -> float;
+
 	auto hover_panel_code_hit(
 		const gse::gui::draw_context& ctx,
 		const hover_state& h,
@@ -322,12 +327,16 @@ auto gse::ide::hover_kept_alive(const hover_state& h, const gse::vec2f mouse) ->
 	return point_in_triangle(mouse, h.anchor, c0, c1);
 }
 
+auto gse::ide::hover_code_line_height(const gse::gui::draw_context& ctx, const float scale) -> float {
+	return ctx.fonts.code->line_height(scale) * 1.25f;
+}
+
 auto gse::ide::hover_panel_code_hit(const gse::gui::draw_context& ctx, const hover_state& h, const gse::vec2f mouse) -> std::optional<panel_code_hit> {
 	if (!h.body_is_code || h.code_rect.width() <= 0.f || !h.code_rect.contains(mouse)) {
 		return std::nullopt;
 	}
 	const float fs = ctx.style.font_size;
-	const float line_h = ctx.fonts.code->line_height(fs) * 1.25f;
+	const float line_h = hover_code_line_height(ctx, fs);
 	const float rel = (h.code_rect.top() + h.scroll - mouse.y()) / line_h;
 	if (rel < 0.f) {
 		return std::nullopt;
@@ -441,7 +450,8 @@ auto gse::ide::resolve_hover_card(hover_state& h, const std::string_view ident, 
 	if (qualified.empty()) {
 		qualified = docs::expand_qualified(row, ident_start);
 	}
-	if (!def && index && declaration_fallback) {
+	const bool language_word = syntax_producer::is_language_word(qualified);
+	if (!language_word && !def && index && declaration_fallback) {
 		std::string qualifier;
 		if (const std::size_t sep = qualified.rfind("::"); sep != std::string::npos) {
 			qualifier = qualified.substr(0, sep + 2);
@@ -473,6 +483,17 @@ auto gse::ide::resolve_hover_card(hover_state& h, const std::string_view ident, 
 			append_issue(std::format("cppreference supplied no summary for '{}'", qualified));
 		}
 		h.url = docs::cppref_url(cref->page);
+		h.from_cppref = true;
+		h.has_card = true;
+	}
+	else if (language_word) {
+		h.title = qualified;
+		h.kind = qualified == "true" || qualified == "false" || qualified == "nullptr" ? "C++ literal" : "C++ keyword";
+		h.body = "Reserved C++ language token. Open cppreference for its syntax, language-defined uses, and examples.";
+		const std::string page = qualified == "override" || qualified == "final"
+			? "cpp/language/" + qualified
+			: "cpp/keyword/" + qualified;
+		h.url = docs::cppref_url(page);
 		h.from_cppref = true;
 		h.has_card = true;
 	}
@@ -664,6 +685,7 @@ auto gse::ide::draw_hover_panel(const gse::gui::draw_context& ctx, const rectf& 
 	const float line_h = ctx.fonts.text->line_height(fs) * 1.25f;
 
 	if (h.body_is_code) {
+		const float code_line_h = hover_code_line_height(ctx, fs);
 		constexpr std::size_t max_visible = 18;
 		const float max_w = 640.f * sty.scale_factor;
 
@@ -697,7 +719,7 @@ auto gse::ide::draw_hover_panel(const gse::gui::draw_context& ctx, const rectf& 
 		}
 		const float header_rows = static_cast<float>(header.size());
 		const float pw = std::min(max_w, content_w) + pad * 2.f;
-		const float ph = (header_rows + static_cast<float>(visible)) * line_h + pad * 2.f;
+		const float ph = (header_rows + static_cast<float>(visible)) * code_line_h + pad * 2.f;
 
 		const float area_top = text_rect.top();
 		const float area_bottom = text_rect.top() - text_rect.height();
@@ -719,8 +741,8 @@ auto gse::ide::draw_hover_panel(const gse::gui::draw_context& ctx, const rectf& 
 		const rectf panel = rectf::from_position_size({ px, top_y }, { pw, ph });
 		h.panel = panel;
 
-		const float view_h = static_cast<float>(visible) * line_h;
-		const float content_h = static_cast<float>(code.size()) * line_h;
+		const float view_h = static_cast<float>(visible) * code_line_h;
+		const float content_h = static_cast<float>(code.size()) * code_line_h;
 		const float max_scroll = std::max(0.f, content_h - view_h);
 		const float view_w = pw - pad * 2.f;
 		const float max_scroll_x = std::max(0.f, content_w - view_w);
@@ -729,7 +751,7 @@ auto gse::ide::draw_hover_panel(const gse::gui::draw_context& ctx, const rectf& 
 		const bool shift = ctx.input.key_held(gse::key::left_shift) || ctx.input.key_held(gse::key::right_shift);
 		const float wheel_y = shift ? 0.f : wheel.y();
 		const float wheel_x = wheel.x() + (shift ? wheel.y() : 0.f);
-		h.scroll = std::clamp(h.scroll - wheel_y * line_h * 2.f, 0.f, max_scroll);
+		h.scroll = std::clamp(h.scroll - wheel_y * code_line_h * 2.f, 0.f, max_scroll);
 		h.scroll_x = std::clamp(h.scroll_x - wheel_x * char_w * 4.f, 0.f, max_scroll_x);
 
 		const auto scope = ctx.scoped_layer(gse::render_layer::popup);
@@ -749,7 +771,7 @@ auto gse::ide::draw_hover_panel(const gse::gui::draw_context& ctx, const rectf& 
 		});
 
 		for (std::size_t i = 0; i < header.size(); ++i) {
-			const float center_y = top_y - pad - line_h * (static_cast<float>(i) + 0.5f);
+			const float center_y = top_y - pad - code_line_h * (static_cast<float>(i) + 0.5f);
 			ctx.queue_text({
 				.font = ctx.fonts.code,
 				.text = header[i],
@@ -761,7 +783,7 @@ auto gse::ide::draw_hover_panel(const gse::gui::draw_context& ctx, const rectf& 
 			});
 		}
 
-		const float code_top = top_y - pad - header_rows * line_h;
+		const float code_top = top_y - pad - header_rows * code_line_h;
 		const rectf code_rect = rectf::from_position_size({ px, code_top }, { pw, view_h });
 		h.code_rect = code_rect;
 
@@ -801,8 +823,8 @@ auto gse::ide::draw_hover_panel(const gse::gui::draw_context& ctx, const rectf& 
 		}
 
 		for (std::size_t li = 0; li < code.size(); ++li) {
-			const float center_y = code_top - line_h * (static_cast<float>(li) + 0.5f) + h.scroll;
-			if (center_y > code_top + line_h || center_y < code_top - view_h - line_h) {
+			const float center_y = code_top - code_line_h * (static_cast<float>(li) + 0.5f) + h.scroll;
+			if (center_y > code_top + code_line_h || center_y < code_top - view_h - code_line_h) {
 				continue;
 			}
 			draw_code_line(ctx, code[li], h.code_spans, static_cast<std::uint32_t>(li), { px + pad - h.scroll_x, center_y }, fs, sty.color_text, code_rect, z);
@@ -1169,13 +1191,13 @@ auto gse::ide::update_diagnostics(gse::context& ctx, workspace::data& ws, const 
 	}
 
 	std::error_code plugin_ec;
-	const std::filesystem::path plugin = std::filesystem::exists(config::token_plugin, plugin_ec)
-		? config::token_plugin
+	const std::filesystem::path plugin = std::filesystem::exists(config::token_plugin(), plugin_ec)
+		? config::token_plugin()
 		: std::filesystem::path{};
 	ctx.channels.push<analysis::diagnostics_request>({
 		.document_id = candidate->first,
 		.revision = doc.revision,
-		.compile_commands = gse::ide::config::compile_commands,
+		.compile_commands = gse::ide::config::project_compile_commands(),
 		.file = doc.path,
 		.plugin = plugin,
 		.workspace_root = ws.root,
@@ -1723,9 +1745,11 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 			}
 			const bool member_access = a > 0 && (row[a - 1] == '.' || (a >= 2 && row[a - 1] == '>' && row[a - 2] == '-'));
 			if (b > a && !std::isdigit(static_cast<unsigned char>(row[a]))) {
-				link_attempted = true;
 				link_subject = row.substr(a, b - a);
-				if (index) {
+				if (!syntax_producer::is_language_word(link_subject)) {
+					link_attempted = true;
+				}
+				if (link_attempted && index) {
 					accept_link(index->definition_at(doc.path, hover.line, hover.column));
 					if (!link_target && !member_access) {
 						std::string qualifier;
@@ -1744,7 +1768,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 						accept_link(index->symbol_definition(row.substr(a, b - a), qualifier, doc.path));
 					}
 				}
-				else {
+				else if (link_attempted) {
 					link_issues.push_back({ .reason = search::lookup_failure::index_unavailable });
 				}
 				if (link_target) {
@@ -1784,7 +1808,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 	}
 
 	if (!ws.cppref.loaded) {
-		ws.cppref.load(config::cppref_index);
+		ws.cppref.load(config::cppref_index());
 	}
 	std::optional<std::size_t> hovered_diag;
 	if (!goto_ctrl && !diag_regions.empty() && text_rect.contains(mouse) && ctx.input_available() && !doc.buffer.lines.empty()) {
@@ -1872,7 +1896,12 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 				std::optional<search::location> def;
 				std::vector<search::lookup_error> lookup_issues;
 				bool declaration_fallback = !member_access;
-				if (module) {
+				const bool language_word = syntax_producer::is_language_word(ident);
+				if (language_word) {
+					qualified = ident;
+					declaration_fallback = false;
+				}
+				else if (module) {
 					qualified = module->name;
 					sym_kind = "module";
 					declaration_fallback = false;
@@ -1911,14 +1940,14 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 				else {
 					lookup_issues.push_back({ .reason = search::lookup_failure::index_unavailable });
 				}
-				resolve_hover_card(hv, ident, row, a, declaration_fallback, index, ws.cppref, lookup_issues, std::move(qualified), std::move(sym_kind), def, std::move(type));
-				if (hv.kind.empty() && doc.syntax.semantic) {
+				if (sym_kind.empty() && doc.syntax.semantic) {
 					const syntax_producer::semantic_data& sem = *doc.syntax.semantic;
 					const std::uint64_t key = (static_cast<std::uint64_t>(hp.line) << 32) | static_cast<std::uint32_t>(a);
 					if (const auto it = sem.at.find(key); it != sem.at.end()) {
-						hv.kind = std::format("{}", it->second);
+						sym_kind = std::format("{}", it->second);
 					}
 				}
+				resolve_hover_card(hv, ident, row, a, declaration_fallback, index, ws.cppref, lookup_issues, std::move(qualified), std::move(sym_kind), def, std::move(type));
 				hv.kind_color = ctx.style.color_text_secondary;
 				for (const gse::gui::text_span& sp : doc.syntax.spans) {
 					if (sp.line == hp.line && static_cast<std::uint32_t>(a) >= sp.start_col && static_cast<std::uint32_t>(a) < sp.end_col) {

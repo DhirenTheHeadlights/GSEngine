@@ -123,7 +123,7 @@ auto gse::ide::terminal::path_link_at(const std::string_view row, const std::uin
 	const std::uint32_t col = peeled_count == 2 ? peeled[0] : 0;
 
 	const std::filesystem::path candidate(path_str);
-	std::filesystem::path resolved = candidate.is_absolute() ? candidate : gse::config::root_dir / candidate;
+	std::filesystem::path resolved = candidate.is_absolute() ? candidate : gse::config::root_dir() / candidate;
 	std::error_code ec;
 	if (!std::filesystem::is_regular_file(resolved, ec)) {
 		return std::nullopt;
@@ -264,7 +264,7 @@ auto gse::ide::terminal::header_button(gui::builder& ui, const rectf& rect, cons
 auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst, const rectf& area, channel_writer channels, const bool building) -> void {
 	const gui::draw_context& ctx = ui.ctx;
 	const id input_id = gui::ids::make("##term_input_" + inst.name);
-	const std::string prompt = ellipsize_path(gse::config::root_dir.display_string()) + "> ";
+	const std::string prompt = ellipsize_path(gse::config::root_dir().display_string()) + "> ";
 
 	std::vector<line> fresh;
 	if (inst.follows_log) {
@@ -285,7 +285,7 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst
 			inst.runner = std::make_shared<command_runner>();
 		}
 		inst.runner->running.store(true, std::memory_order_release);
-		std::thread([r = inst.runner, cmd = inst.input, cwd = gse::config::root_dir.wstring()] {
+		std::thread([r = inst.runner, cmd = inst.input, cwd = gse::config::root_dir().wstring()] {
 			run_command(*r, cmd, cwd);
 		}).detach();
 		inst.input.clear();

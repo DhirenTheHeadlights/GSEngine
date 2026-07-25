@@ -9,23 +9,13 @@ set(EDITOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Editor")
 set(EDITOR_SRC "${EDITOR_DIR}/Source")
 set(MAIN_CPP "${EDITOR_SRC}/Main.cpp")
 
-set(EDITOR_SOURCE_DIR "${EDITOR_DIR}/")
-set(GAME_SOURCE_DIR "${CMAKE_SOURCE_DIR}/Game/Game/")
-set(EDITOR_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
-set(EDITOR_BUILD_DIR "${CMAKE_BINARY_DIR}/")
-set(EDITOR_COMPILE_COMMANDS "${CMAKE_BINARY_DIR}/compile_commands.json")
-set(EDITOR_TOKEN_PLUGIN "${CMAKE_CURRENT_BINARY_DIR}/gse_tokens.dll")
 set(EDITOR_SEMANTIC_CONTRACT "${CMAKE_CURRENT_SOURCE_DIR}/Tests/SemanticContract.cpp")
-set(EDITOR_CPPREF_INDEX "${CMAKE_CURRENT_SOURCE_DIR}/Resources/cppref.idx")
-set(EDITOR_GAME_TARGET "GoonSquad")
-set(EDITOR_GAME_EXECUTABLE "${CMAKE_BINARY_DIR}/Game/${EDITOR_GAME_TARGET}.exe")
-set(EDITOR_TARGET_NAME "Editor")
-set(EDITOR_EXECUTABLE "${CMAKE_CURRENT_BINARY_DIR}/${EDITOR_TARGET_NAME}.exe")
-configure_file(
-    ${EDITOR_DIR}/Import/Config.cppm.in
-    ${CMAKE_CURRENT_BINARY_DIR}/Editor/Import/Config.cppm
-    @ONLY
-)
+
+# gse.ide.config used to be generated here by configure_file; it is a real source
+# now. Existing build trees still hold the generated copy, which the binary-dir
+# glob below would collect alongside the source one - a duplicate module
+# definition. This must stay above the glob to have any effect.
+file(REMOVE "${CMAKE_CURRENT_BINARY_DIR}/Editor/Import/Config.cppm")
 
 file(GLOB_RECURSE EDITOR_MODULES CONFIGURE_DEPENDS "${EDITOR_DIR}/*.cppm" "${CMAKE_CURRENT_BINARY_DIR}/Editor/*.cppm")
 list(REMOVE_ITEM EDITOR_MODULES "${EDITOR_DIR}/Import/Ide.cppm")

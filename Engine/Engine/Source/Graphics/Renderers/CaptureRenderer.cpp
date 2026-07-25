@@ -187,7 +187,7 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 					pixels[i + 3] = std::byte{ 0xFF };
 				}
 
-				const auto path = config::resource_path / "Screenshots" / std::format("screenshot_{}.png", timestamp);
+				const auto path = config::captures_dir() / "screenshots" / std::format("screenshot_{}.png", timestamp);
 				std::filesystem::create_directories(path.parent_path());
 
 				image::write_png(path, w, h, 4, pixels.data());
@@ -280,7 +280,7 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 		}
 		else {
 			d.recording->last_toggle = now;
-			const auto path = config::resource_path / "Recordings" / std::format("recording_{}.mp4", system_clock::timestamp_filename());
+			const auto path = config::captures_dir() / "recordings" / std::format("recording_{}.mp4", system_clock::timestamp_filename());
 			std::filesystem::create_directories(path.parent_path());
 
 			auto live = mp4::live_muxer::open(
@@ -356,7 +356,7 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 				d.clip_save_in_progress->store(true);
 
 				const auto path =
-					config::resource_path / "Clips" / std::format("clip_{}.mp4", system_clock::timestamp_filename());
+					config::captures_dir() / "clips" / std::format("clip_{}.mp4", system_clock::timestamp_filename());
 				std::filesystem::create_directories(path.parent_path());
 
 				std::vector<std::byte> stream_header_copy(

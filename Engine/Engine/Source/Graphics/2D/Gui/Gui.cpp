@@ -167,7 +167,7 @@ auto gse::gui::init_body(context& ctx, const shared_view<window::data> window_s,
 	while (asset::resource_state<texture>(assets, d.blank_texture.id()) != resource::state::loaded) {
 		co_await ctx.yield_tick();
 	}
-	d.menus = load(config::resource_path / d.file_path, d.menus);
+	d.menus = load(d.file_path, d.menus);
 
 	d.last_ui_font_index = d.ui_font.value;
 	d.last_code_font_index = d.code_font.value;
@@ -396,7 +396,7 @@ auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_
 		});
 
 	if (d.save_clock.elapsed() > data::update_interval) {
-		gui::save(d.menus, config::resource_path / d.file_path);
+		gui::save(d.menus, d.file_path);
 		d.save_clock.reset();
 	}
 
@@ -672,11 +672,11 @@ auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_
 }
 
 auto gse::gui::shutdown(data& d) -> void {
-	gui::save(d.menus, config::resource_path / d.file_path);
+	gui::save(d.menus, d.file_path);
 }
 
 auto gse::gui::save(data& d) -> void {
-	gui::save(d.menus, config::resource_path / d.file_path);
+	gui::save(d.menus, d.file_path);
 }
 
 auto gse::gui::process_menu(data& d, const gse::input::state& input_state, const std::string& name, const render_layer layer, const std::function<void(builder&)>& build) -> void {
