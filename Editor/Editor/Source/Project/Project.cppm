@@ -27,6 +27,10 @@ export namespace gse::ide::project {
 
 	auto recent() -> std::vector<std::filesystem::path>;
 
+	auto discover() -> std::vector<std::filesystem::path>;
+
+	auto known() -> std::vector<std::filesystem::path>;
+
 	auto load(
 		const std::filesystem::path& file
 	) -> manifest;

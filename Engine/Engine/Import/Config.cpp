@@ -16,6 +16,7 @@ namespace gse::config {
 	struct resolved {
 		run_mode mode;
 		std::string exe_stem;
+		std::filesystem::path exe_file;
 		std::filesystem::path root;
 		std::filesystem::path build_root;
 		std::filesystem::path source;
@@ -190,6 +191,7 @@ auto gse::config::resolve() -> resolved {
 	return {
 		.mode = active,
 		.exe_stem = executable.stem().native_encoded_string(),
+		.exe_file = generic(executable),
 		.root = generic(root),
 		.build_root = generic(build),
 		.source = generic(active == run_mode::installed ? root / "Engine" / "Source" : root / "Engine" / "Engine"),
@@ -220,6 +222,10 @@ auto gse::config::mode() -> run_mode {
 
 auto gse::config::executable_stem() -> std::string_view {
 	return table().exe_stem;
+}
+
+auto gse::config::executable_file() -> const std::filesystem::path& {
+	return table().exe_file;
 }
 
 auto gse::config::root_dir() -> const std::filesystem::path& {

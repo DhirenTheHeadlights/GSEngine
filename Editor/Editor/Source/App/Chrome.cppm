@@ -10,6 +10,7 @@ import gse.ide.search;
 import gse.ide.project;
 
 import :search_screen;
+import :project_screen;
 
 namespace gse::ide {
 	auto rebuild_glyph() -> std::span<const gse::gui::symbol::stroke>;
@@ -19,6 +20,8 @@ namespace gse::ide {
 	) -> gse::vec4f;
 
 	struct toggle_settings_request {};
+
+	struct toggle_project_switcher_request {};
 
 	struct quick_search_state {
 		search::query_driver driver;
@@ -178,6 +181,12 @@ auto gse::ide::editor_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> 
 		n.push<search_screen>(m_channels, m_index);
 	}
 
+	if ((ctx.input.key_held(gse::key::left_control) || ctx.input.key_held(gse::key::right_control))
+		&& (ctx.input.key_held(gse::key::left_shift) || ctx.input.key_held(gse::key::right_shift))
+		&& ctx.input.key_pressed(gse::key::p)) {
+		n.push<project_screen>();
+	}
+
 	const gse::rectf screen_rect = ctx.current_menu->rect;
 	const float bar_height = ctx.style.title_bar_height;
 
@@ -264,6 +273,9 @@ auto gse::ide::editor_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> 
 	}
 	if (chrome_button(ui, button_slot(3), "##chrome_settings", gse::gui::symbol::gear(), ctx.style.color_widget_hovered)) {
 		m_channels.push<toggle_settings_request>({});
+	}
+	if (chrome_button(ui, button_slot(5), "##chrome_project", gse::gui::symbol::project(), ctx.style.color_widget_hovered)) {
+		m_channels.push<toggle_project_switcher_request>({});
 	}
 	if (chrome_button(ui, button_slot(4), "##chrome_rebuild", rebuild_glyph(), ctx.style.color_widget_hovered)) {
 		m_channels.push<build_runner::build_request>({
