@@ -17,7 +17,8 @@ export namespace gse::app {
 
 	auto relaunch_on_exit(
 		std::filesystem::path executable,
-		std::filesystem::path working_dir = {}
+		std::filesystem::path working_dir = {},
+		std::vector<std::filesystem::path> arguments = {}
 	) -> void;
 
 	auto run_pending_relaunch() -> void;
@@ -28,6 +29,7 @@ namespace gse::app {
 	bool relaunch_pending = false;
 	std::filesystem::path relaunch_executable;
 	std::filesystem::path relaunch_working_dir;
+	std::vector<std::filesystem::path> relaunch_arguments;
 }
 
 auto gse::app::restart() -> void {
@@ -57,16 +59,18 @@ auto gse::app::restart() -> void {
 #endif
 }
 
-auto gse::app::relaunch_on_exit(std::filesystem::path executable, std::filesystem::path working_dir) -> void {
+auto gse::app::relaunch_on_exit(std::filesystem::path executable, std::filesystem::path working_dir, std::vector<std::filesystem::path> arguments) -> void {
 	std::lock_guard lock(relaunch_mutex);
 	relaunch_executable = std::move(executable);
 	relaunch_working_dir = std::move(working_dir);
+	relaunch_arguments = std::move(arguments);
 	relaunch_pending = true;
 }
 
 auto gse::app::run_pending_relaunch() -> void {
 	std::filesystem::path executable;
 	std::filesystem::path working_dir;
+	std::vector<std::filesystem::path> arguments;
 	{
 		std::lock_guard lock(relaunch_mutex);
 		if (!relaunch_pending) {
@@ -75,12 +79,16 @@ auto gse::app::run_pending_relaunch() -> void {
 		relaunch_pending = false;
 		executable = std::move(relaunch_executable);
 		working_dir = std::move(relaunch_working_dir);
+		arguments = std::move(relaunch_arguments);
 	}
 
 #ifdef _WIN32
 	using namespace gse::win32;
 
 	std::wstring command = L"\"" + executable.wstring() + L"\"";
+	for (const std::filesystem::path& argument : arguments) {
+		command += L" \"" + argument.wstring() + L"\"";
+	}
 	std::vector<wchar_t> command_buffer(command.begin(), command.end());
 	command_buffer.push_back(0);
 
@@ -95,8 +103,19 @@ auto gse::app::run_pending_relaunch() -> void {
 		CloseHandle(process.hThread);
 	}
 #else
-	const std::string path = executable.string();
-	char* args[] = { const_cast<char*>(path.c_str()), nullptr };
-	execv(path.c_str(), args);
+	std::vector<std::string> storage;
+	storage.push_back(executable.string());
+	for (const std::filesystem::path& argument : arguments) {
+		storage.push_back(argument.string());
+	}
+
+	std::vector<char*> argv;
+	argv.reserve(storage.size() + 1);
+	for (std::string& entry : storage) {
+		argv.push_back(entry.data());
+	}
+	argv.push_back(nullptr);
+
+	execv(storage.front().c_str(), argv.data());
 #endif
 }

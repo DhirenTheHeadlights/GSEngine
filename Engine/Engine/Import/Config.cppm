@@ -14,6 +14,8 @@ export namespace gse::config {
 
 	auto executable_stem() -> std::string_view;
 
+	auto executable_file() -> const std::filesystem::path&;
+
 	auto generic(
 		const std::filesystem::path& value
 	) -> std::filesystem::path;

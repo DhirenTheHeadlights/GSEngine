@@ -156,11 +156,7 @@ auto gse::ide::project::record_recent() -> void {
 	layout_store::submit(recent_path(), { .names = { "recent" } }, std::move(block));
 }
 
-auto gse::ide::project::dev_default_manifest() -> std::filesystem::path {
-	if (config::mode() != config::run_mode::dev) {
-		return {};
-	}
-
+auto gse::ide::project::discover() -> std::vector<std::filesystem::path> {
 	std::error_code ec;
 	std::vector<std::filesystem::path> found;
 	for (const auto& entry : std::filesystem::directory_iterator(config::root_dir(), std::filesystem::directory_options::skip_permission_denied, ec)) {
@@ -170,12 +166,36 @@ auto gse::ide::project::dev_default_manifest() -> std::filesystem::path {
 		std::error_code child_ec;
 		for (const auto& child : std::filesystem::directory_iterator(entry.path(), std::filesystem::directory_options::skip_permission_denied, child_ec)) {
 			if (child.path().extension() == manifest_extension) {
-				found.push_back(child.path());
+				found.push_back(config::generic(child.path()));
 			}
 		}
 	}
 
 	std::ranges::sort(found);
+	return found;
+}
+
+auto gse::ide::project::known() -> std::vector<std::filesystem::path> {
+	std::vector<std::filesystem::path> entries = recent();
+	for (const std::filesystem::path& candidate : discover()) {
+		if (!std::ranges::contains(entries, candidate)) {
+			entries.push_back(candidate);
+		}
+	}
+
+	std::error_code ec;
+	std::erase_if(entries, [&ec](const std::filesystem::path& entry) {
+		return !std::filesystem::exists(entry, ec);
+	});
+	return entries;
+}
+
+auto gse::ide::project::dev_default_manifest() -> std::filesystem::path {
+	if (config::mode() != config::run_mode::dev) {
+		return {};
+	}
+
+	const std::vector<std::filesystem::path> found = discover();
 	return found.empty() ? std::filesystem::path{} : found.front();
 }
 
