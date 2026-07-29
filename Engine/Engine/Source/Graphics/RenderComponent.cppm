@@ -18,9 +18,9 @@ export namespace gse {
 		[[
 			= networked
 		]]
-		std::array<vec3f, max_models> tints = [] -> std::array<vec3f, max_models> {
-			std::array<vec3f, max_models> result;
-			result.fill(vec3f(1.0f));
+		std::array<vec4f, max_models> tints = [] -> std::array<vec4f, max_models> {
+			std::array<vec4f, max_models> result;
+			result.fill(vec4f(1.0f));
 			return result;
 		}();
 		[[

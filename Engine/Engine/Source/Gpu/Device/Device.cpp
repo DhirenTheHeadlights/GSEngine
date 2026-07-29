@@ -650,6 +650,11 @@ auto gse::gpu::device::host_upload_image_layers(const gpu::handle<gpu::image> im
 }
 
 auto gse::gpu::device::create_buffer(const buffer_desc& desc, const std::string_view tag, const std::source_location& loc) -> buffer {
+	assert(
+		!(desc.bindless && desc.usage.test(buffer_flag::uniform)),
+		"bindless buffers must be usage=storage, not uniform: every shader binding reads the descriptor heap as a StructuredBuffer, " 
+		"so a uniform-usage bindless buffer writes a descriptor no shader can read (garbage matrices -> NaN -> GPU hang). Drop buffer_flag::uniform."
+	);
 	auto buf = m_vt->create_buffer(m_backend.get(), desc, tag, loc);
 	if (desc.bindless) {
 		set_slot_resource(buf.slot().index, resource_ref{
@@ -701,12 +706,13 @@ auto gse::gpu::device::allocate_acceleration_structure_slot() -> gpu::bindless_h
 	return m_vt->allocate_acceleration_structure_slot(m_backend.get());
 }
 
-auto gse::gpu::device::write_storage_buffer(const gpu::bindless_slot slot, const gpu::device_address address, const gpu::device_size size) -> void {
-	m_vt->write_storage_buffer(m_backend.get(), slot, address, size);
-}
-
-auto gse::gpu::device::write_uniform_buffer(const gpu::bindless_slot slot, const gpu::device_address address, const gpu::device_size size) -> void {
-	m_vt->write_uniform_buffer(m_backend.get(), slot, address, size);
+auto gse::gpu::device::write_storage_buffer(const gpu::bindless_slot slot, const buffer& buf, const gpu::device_size size) -> void {
+	set_slot_resource(slot.index, resource_ref{
+		.ptr = std::bit_cast<const void*>(buf.handle()),
+		.type = resource_type::buffer,
+		.buffer_size = size,
+	});
+	m_vt->write_storage_buffer(m_backend.get(), slot, buf.device_address(), size);
 }
 
 auto gse::gpu::device::write_acceleration_structure(const gpu::bindless_slot slot, const gpu::device_address as_address) -> void {
@@ -714,6 +720,11 @@ auto gse::gpu::device::write_acceleration_structure(const gpu::bindless_slot slo
 }
 
 auto gse::gpu::device::write_sampled_image(const gpu::bindless_slot slot, const image& img) -> void {
+	set_slot_resource(slot.index, resource_ref{
+		.ptr = std::bit_cast<const void*>(img.handle()),
+		.type = resource_type::image,
+		.aspects = image_aspect_for(img.format()),
+	});
 	m_vt->write_sampled_image(m_backend.get(), slot, img);
 }
 

@@ -19,7 +19,27 @@ namespace gse::dx12 {
 	struct sync_point {
 		directx::com_ptr<directx::ID3D12Fence> fence;
 		std::uint64_t value = 0;
+		bool is_timeline = false;
 	};
+
+	enum class queue_op_kind : std::uint8_t {
+		wait,
+		signal,
+		execute,
+		cpu_signal,
+		cpu_wait,
+	};
+
+	struct queue_op_record {
+		std::uint64_t seq = 0;
+		queue_op_kind kind = queue_op_kind::wait;
+		gpu::queue_type queue = gpu::queue_type::graphics;
+		const void* fence = nullptr;
+		std::uint64_t value = 0;
+		std::uint32_t list_count = 0;
+	};
+
+	inline constexpr std::size_t queue_op_ring_size = 256;
 
 	struct frame_target {
 		directx::com_ptr<directx::ID3D12CommandAllocator> allocator;
@@ -52,6 +72,12 @@ namespace gse::dx12 {
 		std::array<directx::DXGI_FORMAT, 8> rtv_formats{};
 		directx::DXGI_FORMAT dsv_format = directx::format_unknown;
 		directx::com_ptr<directx::ID3D12PipelineState> pso;
+	};
+
+	struct timestamp_query_pool {
+		directx::com_ptr<directx::ID3D12QueryHeap> heap;
+		directx::com_ptr<directx::ID3D12Resource> readback;
+		std::uint32_t capacity = 0;
 	};
 
 	struct bindless_layout {
@@ -113,6 +139,12 @@ export namespace gse::dx12 {
 		auto cmd_pipeline_barrier(
 			gpu::command_buffer_handle cmd,
 			const gpu::dependency_info& dep
+		) -> void;
+
+		auto cmd_write_timestamp(
+			gpu::command_buffer_handle cmd,
+			gpu::handle<gpu::query_pool> pool,
+			std::uint32_t index
 		) -> void;
 
 		auto cmd_release_swapchain_to_present(
@@ -350,12 +382,6 @@ export namespace gse::dx12 {
 			gpu::device_size size
 		) -> void;
 
-		auto write_uniform_buffer(
-			gpu::bindless_slot slot,
-			gpu::device_address address,
-			gpu::device_size size
-		) -> void;
-
 		auto write_acceleration_structure(
 			gpu::bindless_slot slot,
 			gpu::device_address as_address
@@ -399,7 +425,21 @@ export namespace gse::dx12 {
 
 		[[nodiscard]] auto graphics_queue() const -> directx::ID3D12CommandQueue*;
 
+		[[nodiscard]] auto command_queue(
+			gpu::queue_type queue_type
+		) const -> directx::ID3D12CommandQueue*;
+
 		[[nodiscard]] auto validation_enabled() const -> bool;
+
+		auto dump_dred_once() -> void;
+
+		auto record_queue_op(
+			queue_op_kind kind,
+			gpu::queue_type queue,
+			const void* fence,
+			std::uint64_t value,
+			std::uint32_t list_count
+		) const -> void;
 
 		[[nodiscard]] auto idle_event() const -> void*;
 
@@ -414,6 +454,12 @@ export namespace gse::dx12 {
 
 	private:
 		auto init_bindless() -> void;
+
+		auto register_sync_point(
+			const sync_point* sp
+		) -> void;
+
+		auto dump_queue_ops() -> void;
 
 		auto write_sampler_at(
 			gpu::device_size byte_offset,
@@ -431,6 +477,15 @@ export namespace gse::dx12 {
 		auto resolve_graphics_pso(
 			graphics_pass_state& pass
 		) -> directx::ID3D12PipelineState*;
+
+		auto resolve_graphics_pso_locked(
+			graphics_pass_state& pass
+		) -> directx::ID3D12PipelineState*;
+
+		auto prewarm_graphics_pso(
+			const gpu::shader_program_create_info& info,
+			const gfx_template* tmpl
+		) -> void;
 		
 		[[nodiscard]] auto view_format(
 			std::size_t descriptor_ptr
@@ -439,10 +494,11 @@ export namespace gse::dx12 {
 		directx::com_ptr<directx::IDXGIFactory4> m_factory;
 		directx::com_ptr<directx::ID3D12Device> m_device;
 		directx::com_ptr<directx::ID3D12CommandQueue> m_graphics_queue;
+		directx::com_ptr<directx::ID3D12CommandQueue> m_compute_queue;
 		directx::com_ptr<directx::ID3D12Fence> m_idle_fence;
 		directx::com_ptr<directx::ID3D12DescriptorHeap> m_rtv_view_heap;
 		directx::com_ptr<directx::ID3D12DescriptorHeap> m_dsv_view_heap;
-		std::vector<frame_target> m_frames;
+		std::array<std::vector<frame_target>, gpu::queue_type_count> m_frames;
 		std::deque<sync_point> m_sync_points;
 		mutable std::mutex m_mutex;
 		mutable std::vector<directx::com_ptr<directx::ID3D12Resource>> m_owned_buffers;
@@ -456,6 +512,7 @@ export namespace gse::dx12 {
 		std::unordered_map<directx::ID3D12Resource*, directx::D3D12_RESOURCE_STATES> m_buffer_states;
 		directx::com_ptr<directx::ID3D12CommandSignature> m_draw_indexed_signature;
 		directx::com_ptr<directx::ID3D12CommandSignature> m_dispatch_mesh_signature;
+		std::vector<std::unique_ptr<timestamp_query_pool>> m_query_pools;
 		gpu::bindless_slot_pool m_image_pool;
 		gpu::bindless_slot_pool m_buffer_pool;
 		gpu::bindless_slot_pool m_texture_pool;
@@ -470,6 +527,11 @@ export namespace gse::dx12 {
 		pipeline_layout m_pipeline_layout;
 		bool m_gpu_upload_supported = false;
 		bool m_validation_enabled = false;
+		std::atomic<bool> m_dred_dumped{ false };
+		mutable std::array<queue_op_record, queue_op_ring_size> m_queue_op_ring{};
+		mutable std::uint64_t m_queue_op_seq = 0;
+		mutable std::vector<const sync_point*> m_sync_point_registry;
+		mutable std::mutex m_queue_op_mutex;
 		mutable std::map<gpu::device_address, std::pair<directx::ID3D12Resource*, gpu::device_size>> m_buffer_by_address;
 		mutable std::uint64_t m_aliased_counter = 0;
 		void* m_hwnd = nullptr;

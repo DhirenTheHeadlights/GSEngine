@@ -781,6 +781,10 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		}
 	}
 
+	auto queue_label = [](const std::size_t qi) -> const char* {
+		return qi == static_cast<std::size_t>(gpu::queue_type::graphics) ? "graphics" : "compute";
+	};
+
 	std::array<std::array<bool, gpu::queue_type_count>, gpu::queue_type_count> queue_waits_on{};
 	for (std::size_t i = 0; i < passes.size(); ++i) {
 		for (std::size_t j = 0; j < passes.size(); ++j) {
@@ -823,14 +827,16 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 	}
 
 	for (std::size_t a = 0; a < gpu::queue_type_count; ++a) {
-		for (std::size_t b = 0; b < gpu::queue_type_count; ++b) {
-			if (a == b) {
-				continue;
+		for (std::size_t b = a + 1; b < gpu::queue_type_count; ++b) {
+			if (queue_waits_on[a][b] && queue_waits_on[b][a] && m_warned_queue_cycles.insert({ a, b }).second) {
+				log::println(
+					log::level::error,
+					log::category::render,
+					"render_graph: cyclic cross-queue dependency between '{}' and '{}'; frame-granular sync cannot express this -- one direction is dropped (races) and the device may hang. See docs/render_graph_cross_queue_batching_plan.md",
+					queue_label(a),
+					queue_label(b)
+				);
 			}
-			assert(
-				!(queue_waits_on[a][b] && queue_waits_on[b][a]),
-				"render_graph: cyclic cross-queue dependency between two queues; split a submission or move the pass"
-			);
 		}
 	}
 
@@ -1216,6 +1222,15 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 					.stages = gpu::pipeline_stage_flag::all_commands,
 				});
 			}
+			else if (queue_waits_on[qi][producer] && queue_has_work[producer] && m_warned_dropped_waits.insert({ qi, producer }).second) {
+				log::println(
+					log::level::error,
+					log::category::render,
+					"render_graph: cross-queue wait '{}' -> '{}' dropped (producer emits no timeline signal this frame); consumer reads producer output unsynchronized",
+					queue_label(qi),
+					queue_label(producer)
+				);
+			}
 		}
 		sub.signals.push_back({
 			.semaphore = state.timeline.handle(),
@@ -1237,6 +1252,15 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 				.value = this_frame_signal_values[producer],
 				.stages = gpu::pipeline_stage_flag::all_commands,
 			});
+		}
+		else if (queue_waits_on[graphics_qi][producer] && queue_has_work[producer] && m_warned_dropped_waits.insert({ graphics_qi, producer }).second) {
+			log::println(
+				log::level::error,
+				log::category::render,
+				"render_graph: cross-queue wait '{}' -> '{}' dropped (producer emits no timeline signal this frame); consumer reads producer output unsynchronized",
+				queue_label(graphics_qi),
+				queue_label(producer)
+			);
 		}
 	}
 }

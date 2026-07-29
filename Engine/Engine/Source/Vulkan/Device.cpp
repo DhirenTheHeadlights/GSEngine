@@ -1153,9 +1153,8 @@ auto gse::vulkan::device::create_buffer(const gpu::buffer_desc& desc, const std:
 	if (!desc.bindless) {
 		return buf;
 	}
-	const auto kind = desc.usage.test(gpu::buffer_flag::uniform) ? gpu::buffer_descriptor_kind::uniform : gpu::buffer_descriptor_kind::storage;
 	const auto slot = m_bindless->buffer_pool.allocate();
-	write_buffer_descriptor(m_bindless->resource_heap, m_bindless->buffer_pool.offset(slot), kind, buf.device_address(), buf.size_bytes());
+	write_buffer_descriptor(m_bindless->resource_heap, m_bindless->buffer_pool.offset(slot), buf.device_address(), buf.size_bytes());
 	{
 		std::lock_guard lock(m_mutex);
 		m_live_buffers.at(buf.handle().value).slot = slot;
@@ -2428,19 +2427,15 @@ auto gse::vulkan::device::write_image_descriptor(const gpu::handle<gpu::descript
 	assert(result == vk::Result::eSuccess, "writeResourceDescriptorsEXT (image) failed: {}", static_cast<std::int32_t>(result));
 }
 
-auto gse::vulkan::device::write_buffer_descriptor(const gpu::handle<gpu::descriptor_heap> heap, const gpu::device_size byte_offset, const gpu::buffer_descriptor_kind kind, const gpu::device_address address, const gpu::device_size range) const -> void {
+auto gse::vulkan::device::write_buffer_descriptor(const gpu::handle<gpu::descriptor_heap> heap, const gpu::device_size byte_offset, const gpu::device_address address, const gpu::device_size range) const -> void {
 	const auto* resources = m_owned.find(heap);
 	assert(resources, "write_buffer_descriptor: unknown descriptor heap");
-	assert(kind != gpu::buffer_descriptor_kind::acceleration_structure, "write_buffer_descriptor: acceleration structure handles are not buffer descriptors");
 
 	const vk::DeviceAddressRangeEXT address_range{
 		.address = address,
 		.size = range,
 	};
-	vk::DescriptorType type = vk::DescriptorType::eStorageBuffer;
-	if (kind == gpu::buffer_descriptor_kind::uniform) {
-		type = vk::DescriptorType::eUniformBuffer;
-	}
+	const vk::DescriptorType type = vk::DescriptorType::eStorageBuffer;
 	const vk::ResourceDescriptorInfoEXT info{
 		.type = type,
 		.data = {
@@ -2603,11 +2598,7 @@ auto gse::vulkan::device::allocate_acceleration_structure_slot() -> gpu::bindles
 }
 
 auto gse::vulkan::device::write_storage_buffer(const gpu::bindless_slot slot, const gpu::device_address address, const gpu::device_size size) -> void {
-	write_buffer_descriptor(m_bindless->resource_heap, m_bindless->buffer_pool.offset(slot), gpu::buffer_descriptor_kind::storage, address, size);
-}
-
-auto gse::vulkan::device::write_uniform_buffer(const gpu::bindless_slot slot, const gpu::device_address address, const gpu::device_size size) -> void {
-	write_buffer_descriptor(m_bindless->resource_heap, m_bindless->buffer_pool.offset(slot), gpu::buffer_descriptor_kind::uniform, address, size);
+	write_buffer_descriptor(m_bindless->resource_heap, m_bindless->buffer_pool.offset(slot), address, size);
 }
 
 auto gse::vulkan::device::write_acceleration_structure(const gpu::bindless_slot slot, const gpu::device_address as_address) -> void {

@@ -27,7 +27,7 @@ export namespace gse {
 		spatial_matrix model_matrix;
 		spatial_matrix normal_matrix;
 		spatial_matrix prev_model_matrix;
-		vec3f color;
+		vec4f color;
 	};
 
 	class model : public identifiable {

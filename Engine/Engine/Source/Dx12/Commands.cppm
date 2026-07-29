@@ -350,7 +350,11 @@ auto gse::dx12::commands::pipeline_barrier(const gpu::dependency_info& dep) cons
 
 auto gse::dx12::commands::reset_query_pool(gpu::handle<gpu::query_pool>, std::uint32_t, std::uint32_t) const -> void {}
 
-auto gse::dx12::commands::write_timestamp(gpu::pipeline_stage_flags, gpu::handle<gpu::query_pool>, std::uint32_t) const -> void {}
+auto gse::dx12::commands::write_timestamp(gpu::pipeline_stage_flags, const gpu::handle<gpu::query_pool> pool, const std::uint32_t index) const -> void {
+	if (active_device) {
+		active_device->cmd_write_timestamp(m_cmd, pool, index);
+	}
+}
 
 auto gse::dx12::commands::begin_query(gpu::handle<gpu::query_pool>, std::uint32_t) const -> void {}
 
@@ -390,7 +394,9 @@ auto gse::dx12::commands::bind_resource_heap(gpu::device_address, gpu::device_si
 	list->SetDescriptorHeaps(2, heaps);
 	auto* root = active_device->root_signature();
 	list->SetComputeRootSignature(root);
-	list->SetGraphicsRootSignature(root);
+	if (!directx::is_compute_command_list(list)) {
+		list->SetGraphicsRootSignature(root);
+	}
 }
 
 auto gse::dx12::commands::bind_sampler_heap(gpu::device_address, gpu::device_size, gpu::device_size, gpu::device_size) const -> void {}
@@ -402,15 +408,20 @@ auto gse::dx12::commands::push_data(const std::uint32_t offset, const std::span<
 	}
 	const auto num_values = static_cast<std::uint32_t>(data.size() / 4);
 	const auto push_size = active_device ? active_device->list_push_size(m_cmd) : 0;
+	const bool compute_list = directx::is_compute_command_list(list);
 	if (offset < push_size) {
 		const auto dest_offset = offset / 4;
 		list->SetComputeRoot32BitConstants(1, num_values, data.data(), dest_offset);
-		list->SetGraphicsRoot32BitConstants(1, num_values, data.data(), dest_offset);
+		if (!compute_list) {
+			list->SetGraphicsRoot32BitConstants(1, num_values, data.data(), dest_offset);
+		}
 	}
 	else {
 		const auto dest_offset = (offset - push_size) / 4;
 		list->SetComputeRoot32BitConstants(0, num_values, data.data(), dest_offset);
-		list->SetGraphicsRoot32BitConstants(0, num_values, data.data(), dest_offset);
+		if (!compute_list) {
+			list->SetGraphicsRoot32BitConstants(0, num_values, data.data(), dest_offset);
+		}
 	}
 }
 
