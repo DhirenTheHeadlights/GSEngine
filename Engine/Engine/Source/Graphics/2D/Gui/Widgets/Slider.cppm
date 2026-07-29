@@ -127,7 +127,7 @@ namespace gse::gui::draw {
 	template <typename T>
 	auto slider_box(
 		const draw_context& ctx,
-		const ui_rect& rect,
+		const rectf& rect,
 		id widget_id,
 		T& value,
 		T min,
@@ -200,7 +200,7 @@ auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, gs
 }
 
 template <typename T>
-auto gse::gui::draw::slider_box(const draw_context& ctx, const ui_rect& rect, const id widget_id, T& value, T min, T max, id& hot_widget_id, const id active_widget_id) -> void {
+auto gse::gui::draw::slider_box(const draw_context& ctx, const rectf& rect, const id widget_id, T& value, T min, T max, id& hot_widget_id, const id active_widget_id) -> void {
 	using underlying = internal::vec_storage_type_t<T>;
 	auto& value_u = *reinterpret_cast<underlying*>(&value);
 	const underlying min_u = internal::to_storage(min);
@@ -243,7 +243,7 @@ auto gse::gui::draw::slider_box(const draw_context& ctx, const ui_rect& rect, co
 		fill_ratio = static_cast<float>(value_u - min_u) / static_cast<float>(range_u);
 	}
 
-	const ui_rect fill_rect = ui_rect::from_position_size(
+	const rectf fill_rect = rectf::from_position_size(
 		rect.top_left(),
 		{ rect.width() * fill_ratio, rect.height() }
 	);
@@ -263,12 +263,12 @@ auto gse::gui::draw::slider_box(const draw_context& ctx, const ui_rect& rect, co
 	else {
 		std::format_to(std::back_inserter(value_str), "{}", value_u);
 	}
-	const float text_width = ctx.font->width(value_str, ctx.style.font_size);
+	const float text_width = ctx.fonts.code->width(value_str, ctx.style.font_size);
 	const vec2f value_text_pos = { rect.center().x() - text_width / 2.f,
-								   rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) };
+								   rect.center().y() + ctx.fonts.code->vertical_center_offset(ctx.style.font_size) };
 
 	ctx.queue_text({
-		.font = ctx.font,
+		.font = ctx.fonts.code,
 		.text = value_str,
 		.position = value_text_pos,
 		.scale = ctx.style.font_size,
@@ -287,8 +287,8 @@ auto gse::gui::draw::slider_row(const draw_context& ctx, const std::string& name
 	namespace lo = layout;
 	using spec = lo::size_spec;
 
-	const float widget_height = ctx.font->line_height(sty.font_size) + sty.padding * 0.5f;
-	const ui_rect row_rect = lo::reserve_row(ctx, widget_height, sty.padding);
+	const float widget_height = ctx.fonts.text->line_height(sty.font_size) + sty.padding * 0.5f;
+	const rectf row_rect = lo::reserve_row(ctx, widget_height, sty.padding);
 
 	const auto [label_rect, value_area] = lo::split_horizontal<2>(
 		row_rect,
@@ -299,9 +299,9 @@ auto gse::gui::draw::slider_row(const draw_context& ctx, const std::string& name
 	);
 
 	ctx.queue_text({
-		.font = ctx.font,
+		.font = ctx.fonts.text,
 		.text = name,
-		.position = { label_rect.left(), label_rect.center().y() + ctx.font->vertical_center_offset(sty.font_size) },
+		.position = { label_rect.left(), label_rect.center().y() + ctx.fonts.text->vertical_center_offset(sty.font_size) },
 		.scale = sty.font_size,
 		.color = sty.color_text,
 		.clip_rect = label_rect

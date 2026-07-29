@@ -5,6 +5,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 project(Engine LANGUAGES CXX)
 
+# gse.config used to be generated here by configure_file; it is a real source now.
+# Existing build trees still hold the generated copy, which the binary-dir glob
+# below would collect alongside the source one - a duplicate module definition.
+# This must stay above the glob to have any effect.
+file(REMOVE "${CMAKE_CURRENT_BINARY_DIR}/Engine/Import/Config.cppm")
+
 file(GLOB_RECURSE ENGINE_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/*.cppm" "${CMAKE_CURRENT_BINARY_DIR}/Engine/*.cppm")
 list(REMOVE_ITEM ENGINE_MODULES "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Import/Engine.cppm")
 
@@ -122,7 +128,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_link_libraries(Engine PUBLIC stdc++exp)
     if(WIN32)
         find_package(directx-headers CONFIG REQUIRED)
-        target_link_libraries(Engine PUBLIC ws2_32 dbghelp d3d12 dxgi dxguid Microsoft::DirectX-Headers)
+        target_link_libraries(Engine PUBLIC ws2_32 dbghelp shell32 d3d12 dxgi dxguid Microsoft::DirectX-Headers)
     endif()
 endif()
 
@@ -172,12 +178,18 @@ if(WIN32)
     endif()
 endif()
 
-set(ENGINE_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
-set(BAKED_RESOURCES_PATH "${CMAKE_CURRENT_BINARY_DIR}/Resources/")
 
-configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/Engine/Import/Config.cppm.in
-    ${CMAKE_CURRENT_BINARY_DIR}/Engine/Import/Config.cppm
-    @ONLY
+# Dedicated-server session loop. Engine-owned and game-agnostic, but optional, so it
+# is a separate target rather than part of Engine: it imports the gse umbrella, and
+# nothing inside the Engine target does that. A project that wants a server links this
+# and supplies its own entry point registering the game's networked components.
+add_library(EngineServer STATIC)
+target_sources(EngineServer
+    PUBLIC
+        FILE_SET CXX_MODULES
+        BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Server"
+        FILES
+            "${CMAKE_CURRENT_SOURCE_DIR}/Server/Application.cppm"
+            "${CMAKE_CURRENT_SOURCE_DIR}/Server/Server.cppm"
 )
-
+target_link_libraries(EngineServer PUBLIC Engine)

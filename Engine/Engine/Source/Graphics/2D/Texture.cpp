@@ -16,7 +16,7 @@ import gse.assets;
 import gse.log;
 
 gse::texture::texture(const std::filesystem::path& filepath)
-	: identifiable(filepath, config::baked_resource_path), m_image_data{
+	: identifiable(filepath, config::baked_resource_path()), m_image_data{
 		  .path = filepath
 	  } {
 }

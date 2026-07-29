@@ -16,7 +16,6 @@ import gse.ecs;
 import :render_layer;
 
 namespace gse::gui {
-	using ui_rect = rect_t<vec2f>;
 }
 
 export namespace gse::gui {
@@ -27,7 +26,7 @@ export namespace gse::gui {
 		auto register_hit_region(
 			render_layer layer,
 			std::uint32_t z_order,
-			const ui_rect& rect
+			const rectf& rect
 		) -> void;
 
 		[[nodiscard]] auto input_available_at(
@@ -64,10 +63,23 @@ export namespace gse::gui {
 			key k
 		) const -> bool;
 
+		auto register_resize_block(
+			const rectf& rect
+		) -> void;
+
+		[[nodiscard]] auto is_resize_blocked(
+			vec2f position
+		) const -> bool;
+
+		[[nodiscard]] auto right_edge_block_span(
+			float right_x,
+			float tolerance
+		) const -> std::optional<std::pair<float, float>>;
+
 	private:
 		struct hit_region {
 			std::uint32_t z_order = 0;
-			ui_rect rect;
+			rectf rect;
 		};
 
 		[[nodiscard]] auto topmost_at(
@@ -83,6 +95,7 @@ export namespace gse::gui {
 		std::array<bool, k_button_count> m_release_consumed{};
 		bool m_scroll_consumed = false;
 		std::unordered_set<int> m_consumed_keys;
+		double_buffer<std::vector<rectf>> m_resize_blocks;
 	};
 }
 
@@ -101,16 +114,49 @@ auto gse::gui::input_layer::begin_frame() -> void {
 	for (auto& regions : m_current_regions) {
 		regions.clear();
 	}
+	m_resize_blocks.flip();
+	m_resize_blocks.write().clear();
 	m_press_consumed.fill(false);
 	m_release_consumed.fill(false);
 	m_scroll_consumed = false;
 	m_consumed_keys.clear();
 }
 
-auto gse::gui::input_layer::register_hit_region(const render_layer layer, const std::uint32_t z_order, const ui_rect& rect) -> void {
+auto gse::gui::input_layer::register_hit_region(const render_layer layer, const std::uint32_t z_order, const rectf& rect) -> void {
 	if (const auto index = static_cast<std::size_t>(layer); index < m_current_regions.size()) {
 		m_current_regions[index].push_back({ z_order, rect });
 	}
+}
+
+auto gse::gui::input_layer::register_resize_block(const rectf& rect) -> void {
+	m_resize_blocks.write().push_back(rect);
+}
+
+auto gse::gui::input_layer::is_resize_blocked(const vec2f position) const -> bool {
+	for (const rectf& rect : m_resize_blocks.read()) {
+		if (rect.contains(position)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+auto gse::gui::input_layer::right_edge_block_span(const float right_x, const float tolerance) const -> std::optional<std::pair<float, float>> {
+	bool found = false;
+	float min_bottom = 0.f;
+	float max_top = 0.f;
+	for (const rectf& rect : m_resize_blocks.read()) {
+		if (rect.right() < right_x - tolerance || rect.height() <= rect.width()) {
+			continue;
+		}
+		min_bottom = found ? std::min(min_bottom, rect.bottom()) : rect.bottom();
+		max_top = found ? std::max(max_top, rect.top()) : rect.top();
+		found = true;
+	}
+	if (!found) {
+		return std::nullopt;
+	}
+	return std::pair{ min_bottom, max_top };
 }
 
 auto gse::gui::input_layer::topmost_at(const vec2f position) const -> std::pair<std::uint8_t, std::uint32_t> {

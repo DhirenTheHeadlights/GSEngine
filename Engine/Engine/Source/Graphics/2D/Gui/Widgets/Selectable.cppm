@@ -11,7 +11,9 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+import gse.math;
 import :types;
+import :font;
 import :ids;
 import :styles;
 import :builder;
@@ -23,7 +25,8 @@ export namespace gse::gui::draw {
 		const std::string& name,
 		bool selected,
 		id& hot_widget_id,
-		id& active_widget_id
+		id& active_widget_id,
+		resource::handle<font> font = {}
 	) -> bool;
 }
 
@@ -33,24 +36,26 @@ export namespace gse::gui {
 		struct params {
 			std::string_view text;
 			bool selected = false;
+			resource::handle<font> font{};
 		};
 		static auto draw(const draw_context& ctx, const params& p, id& hot, id& active, id&) -> bool {
-			return draw::selectable(ctx, std::string(p.text), p.selected, hot, active);
+			return draw::selectable(ctx, std::string(p.text), p.selected, hot, active, p.font);
 		}
 	};
 }
 
-auto gse::gui::draw::selectable(const draw_context& ctx, const std::string& name, const bool selected, id& hot_widget_id, id& active_widget_id) -> bool {
+auto gse::gui::draw::selectable(const draw_context& ctx, const std::string& name, const bool selected, id& hot_widget_id, id& active_widget_id, const resource::handle<font> font) -> bool {
+	const auto fnt = font.valid() ? font : ctx.fonts.text;
 	if (!ctx.current_menu) {
 		return false;
 	}
 
 	const id widget_id = ids::make(name);
 
-	const float widget_height = ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
-	const ui_rect content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
+	const float widget_height = fnt->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
+	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
 
-	const ui_rect row_rect = ui_rect::from_position_size(
+	const rectf row_rect = rectf::from_position_size(
 		{ content_rect.left(), ctx.layout_cursor.y() },
 		{ content_rect.width(), widget_height }
 	);
@@ -59,7 +64,7 @@ auto gse::gui::draw::selectable(const draw_context& ctx, const std::string& name
 	const bool released = ctx.input.mouse_button_released(mouse_button::button_1);
 
 	interaction::mark_hot(hot_widget_id, widget_id, hovered);
-	interaction::grab_active(active_widget_id, widget_id, ctx.mouse_pressed_for(row_rect));
+	const bool activated = interaction::activate_on_click(active_widget_id, widget_id, hovered, ctx.mouse_pressed_for(row_rect), released);
 
 	vec4f target_color = ctx.style.color_widget_background;
 	if (selected) {
@@ -79,12 +84,12 @@ auto gse::gui::draw::selectable(const draw_context& ctx, const std::string& name
 		.corner_radius = ctx.style.corner_radius
 	});
 
-	const float text_w = ctx.font->width(name, ctx.style.font_size);
+	const float text_w = fnt->width(name, ctx.style.font_size);
 	const vec2f text_pos = { row_rect.center().x() - text_w / 2.f,
-							 row_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) };
+							 row_rect.center().y() + fnt->vertical_center_offset(ctx.style.font_size) };
 
 	ctx.queue_text({
-		.font = ctx.font,
+		.font = fnt,
 		.text = name,
 		.position = text_pos,
 		.scale = ctx.style.font_size,
@@ -94,5 +99,5 @@ auto gse::gui::draw::selectable(const draw_context& ctx, const std::string& name
 
 	ctx.layout_cursor.y() -= widget_height + ctx.style.padding;
 
-	return interaction::release_active(active_widget_id, widget_id, released) && hovered;
+	return activated;
 }

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="30" y1="24" x2="226" y2="229" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#15120e"/>
+      <stop offset="1" stop-color="#06080b"/>
+    </linearGradient>
+    <linearGradient id="core" x1="78" y1="58" x2="182" y2="197" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffe889"/>
+      <stop offset="0.55" stop-color="#ff9f43"/>
+      <stop offset="1" stop-color="#ff4f70"/>
+    </linearGradient>
+    <filter id="shadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="16" stdDeviation="14" flood-color="#000000" flood-opacity="0.48"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="10" flood-color="#ff9f43" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <rect x="18" y="18" width="220" height="220" rx="50" fill="url(#bg)"/>
+  <path d="M128 42 200 84v88l-72 42-72-42V84Z" fill="#121a21" stroke="#ffd36a" stroke-width="7" filter="url(#shadow)"/>
+  <path d="M128 66 179 96v64l-51 30-51-30V96Z" fill="url(#core)"/>
+  <path d="M128 66v124M77 96l102 64M179 96 77 160" stroke="#fff4c9" stroke-width="5" stroke-opacity="0.55"/>
+  <text x="63" y="149" fill="#071013" font-family="Segoe UI, Arial, sans-serif" font-size="54" font-weight="900" letter-spacing="-3">GSE</text>
+  <circle cx="128" cy="42" r="8" fill="#71f2ff"/>
+  <circle cx="200" cy="84" r="8" fill="#67ff9a"/>
+  <circle cx="200" cy="172" r="8" fill="#ff6d9e"/>
+  <circle cx="128" cy="214" r="8" fill="#71f2ff"/>
+  <circle cx="56" cy="172" r="8" fill="#67ff9a"/>
+  <circle cx="56" cy="84" r="8" fill="#ff6d9e"/>
+</svg>

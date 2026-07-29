@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="27" y1="24" x2="230" y2="230" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#081416"/>
+      <stop offset="1" stop-color="#030608"/>
+    </linearGradient>
+    <linearGradient id="rails" x1="43" y1="128" x2="213" y2="128" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#67ff9a"/>
+      <stop offset="0.5" stop-color="#6ef7ff"/>
+      <stop offset="1" stop-color="#ffe36e"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#000000" flood-opacity="0.45"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="8" flood-color="#6ef7ff" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+  <rect x="18" y="18" width="220" height="220" rx="46" fill="url(#bg)"/>
+  <path d="M43 58h170M43 198h170" stroke="#183331" stroke-width="14" stroke-linecap="round"/>
+  <path d="M43 58h72M141 198h72" stroke="url(#rails)" stroke-width="14" stroke-linecap="round"/>
+  <g fill="none" stroke="#f8fbff" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)">
+    <path d="M100 80H75c-15 0-24 10-24 25v46c0 15 9 25 24 25h30v-42H82"/>
+    <path d="M165 80h-42c-12 0-19 7-19 18v11c0 12 7 19 19 19h24c12 0 19 7 19 19v10c0 11-7 19-19 19h-44"/>
+    <path d="M189 80v96M189 80h43M189 128h35M189 176h43"/>
+  </g>
+</svg>

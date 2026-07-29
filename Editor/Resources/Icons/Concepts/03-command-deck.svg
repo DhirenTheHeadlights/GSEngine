@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="24" y1="32" x2="229" y2="220" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0f172a"/>
+      <stop offset="1" stop-color="#091012"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="50" y1="54" x2="207" y2="201" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#20304a"/>
+      <stop offset="1" stop-color="#0c141f"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="12" stdDeviation="13" flood-color="#000000" flood-opacity="0.45"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="9" flood-color="#f5d547" flood-opacity="0.26"/>
+    </filter>
+  </defs>
+  <rect x="18" y="18" width="220" height="220" rx="46" fill="url(#bg)"/>
+  <rect x="42" y="54" width="172" height="148" rx="23" fill="url(#panel)" filter="url(#glow)"/>
+  <rect x="42" y="54" width="172" height="38" rx="23" fill="#2d3e5f"/>
+  <path d="M42 78c0 8 6 14 14 14h144c8 0 14-6 14-14v14H42Z" fill="#2d3e5f"/>
+  <circle cx="66" cy="73" r="6" fill="#ff635c"/>
+  <circle cx="86" cy="73" r="6" fill="#ffd166"/>
+  <circle cx="106" cy="73" r="6" fill="#6cf29b"/>
+  <path d="M70 124 96 147 70 170" fill="none" stroke="#dff7ff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M111 171h44" stroke="#3fffd2" stroke-width="12" stroke-linecap="round"/>
+  <path d="M151 112v52l43-26Z" fill="#f7df5d"/>
+  <path d="M58 101h140" stroke="#405574" stroke-width="4" stroke-linecap="round"/>
+</svg>

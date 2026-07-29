@@ -187,11 +187,11 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 					pixels[i + 3] = std::byte{ 0xFF };
 				}
 
-				const auto path = config::resource_path / "Screenshots" / std::format("screenshot_{}.png", timestamp);
+				const auto path = config::captures_dir() / "screenshots" / std::format("screenshot_{}.png", timestamp);
 				std::filesystem::create_directories(path.parent_path());
 
 				image::write_png(path, w, h, 4, pixels.data());
-				log::println(log::category::render, "Screenshot saved: {}", path.string());
+				log::println(log::category::render, "Screenshot saved: {}", path.display_string());
 
 				write_flag->store(false);
 			},
@@ -269,7 +269,7 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 			if (d.recording->thread.joinable()) {
 				d.recording->thread.join();
 			}
-			log::println(log::category::render, "Recording stopped: {}", d.recording->path.string());
+			log::println(log::category::render, "Recording stopped: {}", d.recording->path.display_string());
 		}
 		else if (d.encoder.stream_header().empty()) {
 			log::println(
@@ -280,7 +280,7 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 		}
 		else {
 			d.recording->last_toggle = now;
-			const auto path = config::resource_path / "Recordings" / std::format("recording_{}.mp4", system_clock::timestamp_filename());
+			const auto path = config::captures_dir() / "recordings" / std::format("recording_{}.mp4", system_clock::timestamp_filename());
 			std::filesystem::create_directories(path.parent_path());
 
 			auto live = mp4::live_muxer::open(
@@ -293,7 +293,7 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 					log::level::warning,
 					log::category::render,
 					"Failed to open recording file at {}",
-					path.string()
+					path.display_string()
 				);
 			}
 			else {
@@ -305,6 +305,7 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 					d.recording->running = true;
 				}
 				d.recording->thread = std::thread([muxer = std::move(*live), state = d.recording.get()] mutable {
+					log::name_thread(log::thread_role::capture);
 					while (true) {
 						std::unique_lock lock(state->mutex);
 						state->cv.wait(
@@ -327,7 +328,7 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 					muxer.close();
 				});
 				d.recording->active.store(true);
-				log::println(log::category::render, "Recording started: {}", path.string());
+				log::println(log::category::render, "Recording started: {}", path.display_string());
 			}
 		}
 	}
@@ -355,7 +356,7 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 				d.clip_save_in_progress->store(true);
 
 				const auto path =
-					config::resource_path / "Clips" / std::format("clip_{}.mp4", system_clock::timestamp_filename());
+					config::captures_dir() / "clips" / std::format("clip_{}.mp4", system_clock::timestamp_filename());
 				std::filesystem::create_directories(path.parent_path());
 
 				std::vector<std::byte> stream_header_copy(
@@ -377,14 +378,14 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 							path
 						);
 						if (ok) {
-							log::println(log::category::render, "Clip saved: {}", path.string());
+							log::println(log::category::render, "Clip saved: {}", path.display_string());
 						}
 						else {
 							log::println(
 								log::level::warning,
 								log::category::render,
 								"Failed to mux clip to {}",
-								path.string()
+								path.display_string()
 							);
 						}
 						flag->store(false);
@@ -475,5 +476,5 @@ auto gse::renderer::capture::shutdown(data& d) -> void {
 	if (d.recording->thread.joinable()) {
 		d.recording->thread.join();
 	}
-	log::println(log::category::render, "Recording stopped on shutdown: {}", d.recording->path.string());
+	log::println(log::category::render, "Recording stopped on shutdown: {}", d.recording->path.display_string());
 }

@@ -25,6 +25,7 @@ export namespace msdfgen {
 	using ::msdfgen::destroyFont;
 	using ::msdfgen::getFontMetrics;
 	using ::msdfgen::edgeColoringByDistance;
+	using ::msdfgen::edgeColoringInkTrap;
 	using ::msdfgen::generateMSDF;
 	using ::msdfgen::generateMTSDF;
 }

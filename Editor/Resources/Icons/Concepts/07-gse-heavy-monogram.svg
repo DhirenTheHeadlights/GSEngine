@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="28" y1="24" x2="226" y2="229" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#101820"/>
+      <stop offset="1" stop-color="#030507"/>
+    </linearGradient>
+    <linearGradient id="type" x1="48" y1="72" x2="210" y2="181" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f6fbff"/>
+      <stop offset="0.48" stop-color="#71f2ff"/>
+      <stop offset="1" stop-color="#67ff9a"/>
+    </linearGradient>
+    <filter id="glow" x="-35%" y="-35%" width="170%" height="170%">
+      <feDropShadow dx="0" dy="14" stdDeviation="13" flood-color="#000000" flood-opacity="0.48"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="9" flood-color="#71f2ff" flood-opacity="0.24"/>
+    </filter>
+  </defs>
+  <rect x="18" y="18" width="220" height="220" rx="44" fill="url(#bg)"/>
+  <path d="M48 62h160M48 194h160" stroke="#263648" stroke-width="8" stroke-linecap="round"/>
+  <text x="31" y="158" fill="url(#type)" font-family="Segoe UI, Arial, sans-serif" font-size="82" font-weight="900" letter-spacing="-4" filter="url(#glow)">GSE</text>
+  <path d="M48 177h160" stroke="#f8dc5e" stroke-width="7" stroke-linecap="round"/>
+  <path d="M52 80h62" stroke="#ff6d9e" stroke-width="7" stroke-linecap="round"/>
+  <path d="M145 80h59" stroke="#67ff9a" stroke-width="7" stroke-linecap="round"/>
+</svg>

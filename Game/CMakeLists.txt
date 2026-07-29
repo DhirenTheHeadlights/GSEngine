@@ -8,11 +8,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(GAME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Game")
 set(GAME_SRC "${GAME_DIR}/Source")
 set(MAIN_CPP "${GAME_SRC}/Main.cpp")
+set(SERVER_MAIN_CPP "${GAME_SRC}/ServerMain.cpp")
 
 file(GLOB_RECURSE GAME_MODULES CONFIGURE_DEPENDS "${GAME_DIR}/*.cppm")
 
 file(GLOB_RECURSE GAME_IMPLS CONFIGURE_DEPENDS "${GAME_DIR}/*.cpp")
 list(REMOVE_ITEM GAME_IMPLS "${MAIN_CPP}")
+list(REMOVE_ITEM GAME_IMPLS "${SERVER_MAIN_CPP}")
 
 # A .cpp that declares an implementation partition (module gs:y;) provides a
 # module and must live in a CXX_MODULES file set; a plain implementation unit
@@ -81,4 +83,16 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 endif()
 
 gse_copy_runtime_deps(GoonSquad)
+
+# Dedicated server for this game: the engine-owned session loop (EngineServer) plus
+# this game's networked components. Every project that wants a server declares its own
+# such target and names it in its .gseproj [targets] server key.
+add_executable(GoonSquadServer "${SERVER_MAIN_CPP}")
+target_link_libraries(GoonSquadServer PRIVATE GoonSquadLib Engine EngineServer)
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND WIN32)
+    target_link_options(GoonSquadServer PRIVATE "-Wl,--allow-multiple-definition")
+endif()
+
+gse_copy_runtime_deps(GoonSquadServer)
 

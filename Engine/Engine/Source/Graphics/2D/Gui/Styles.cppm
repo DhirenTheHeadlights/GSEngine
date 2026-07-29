@@ -55,6 +55,9 @@ export namespace gse::gui {
 		// Icons
 		vec4f color_icon = { 0.70f, 0.74f, 0.84f, 1.0f };
 		vec4f color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f };
+		vec4f color_folder = { 0.86f, 0.74f, 0.45f, 1.0f };
+		vec4f color_file = { 0.55f, 0.66f, 0.82f, 1.0f };
+		float icon_scale = 1.05f;
 
 		// Interactive widget states
 		vec4f color_widget_background = { 0.10f, 0.16f, 0.22f, 1.0f };
@@ -367,6 +370,8 @@ constexpr auto gse::gui::style::frost() -> style {
 		.color_section_header = { 0.08f, 0.12f, 0.20f, 1.0f },
 		.color_icon = { 0.35f, 0.40f, 0.50f, 1.0f },
 		.color_icon_hovered = { 0.05f, 0.08f, 0.15f, 1.0f },
+		.color_folder = { 0.72f, 0.55f, 0.20f, 1.0f },
+		.color_file = { 0.30f, 0.44f, 0.66f, 1.0f },
 		.color_widget_background = { 0.84f, 0.91f, 0.99f, 1.0f },
 		.color_widget_hovered = { 0.72f, 0.84f, 0.96f, 1.0f },
 		.color_widget_active = accent,
@@ -419,6 +424,8 @@ constexpr auto gse::gui::style::high_contrast() -> style {
 		.color_section_header = accent,
 		.color_icon = { 1.0f, 1.0f, 1.0f, 1.0f },
 		.color_icon_hovered = accent,
+		.color_folder = accent,
+		.color_file = { 1.0f, 1.0f, 1.0f, 1.0f },
 		.color_widget_background = { 0.0f, 0.0f, 0.0f, 1.0f },
 		.color_widget_hovered = { 0.25f, 0.25f, 0.0f, 1.0f },
 		.color_widget_active = accent,

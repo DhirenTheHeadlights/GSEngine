@@ -17,6 +17,19 @@ export namespace gse::settings {
 		static constexpr std::string_view value = V;
 	};
 
+	enum class scope_kind : std::uint8_t {
+		user,
+		project
+	};
+
+	template <scope_kind V>
+	struct scope {
+		static constexpr scope_kind value = V;
+	};
+
+	using user_scope = scope<scope_kind::user>;
+	using project_scope = scope<scope_kind::project>;
+
 	struct restart_required {};
 	struct skip {};
 	struct hot_reloadable_tag {};
@@ -90,6 +103,10 @@ export namespace gse::meta {
 	consteval auto find_category(
 		std::meta::info m
 	) -> std::meta::info;
+
+	consteval auto find_scope(
+		std::meta::info m
+	) -> std::meta::info;
 }
 
 template <typename Anno>
@@ -139,4 +156,8 @@ consteval auto gse::meta::find_describe(const std::meta::info m) -> std::meta::i
 
 consteval auto gse::meta::find_category(const std::meta::info m) -> std::meta::info {
 	return find_class_template_annotation(m, ^^settings::category);
+}
+
+consteval auto gse::meta::find_scope(const std::meta::info m) -> std::meta::info {
+	return find_class_template_annotation(m, ^^settings::scope);
 }

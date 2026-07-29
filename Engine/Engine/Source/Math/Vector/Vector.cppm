@@ -521,8 +521,7 @@ constexpr auto gse::vec<T, N>::end(this auto&& self) {
 
 template <gse::internal::is_vec_element T, std::size_t N>
 auto gse::vec<T, N>::as_storage_span(this auto&& self) {
-	using qualified_storage =
-		std::conditional_t<std::is_const_v<std::remove_reference_t<decltype(self)>>, const storage_type, storage_type>;
+	using qualified_storage = std::conditional_t<std::is_const_v<std::remove_reference_t<decltype(self)>>, const storage_type, storage_type>;
 	return std::span<qualified_storage, N>(reinterpret_cast<qualified_storage*>(self.data.data()), N);
 }
 

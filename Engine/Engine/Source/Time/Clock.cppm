@@ -33,5 +33,5 @@ template <typename T>
 auto gse::clock::elapsed() const -> time_t<T> {
 	const auto now = std::chrono::steady_clock::now();
 	const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now - m_start_time).count();
-	return nanoseconds(static_cast<T>(ns));
+	return nanoseconds(static_cast<T>(ns < 0 ? 0 : ns));
 }

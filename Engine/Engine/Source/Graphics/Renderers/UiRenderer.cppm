@@ -28,6 +28,7 @@ export namespace gse::renderer {
 		std::uint32_t z_order = 0;
 		float corner_radius = 0.f;
 		bool sample_scene_snapshot = false;
+		gpu::bindless_slot image_slot = {};
 	};
 
 	struct text_command {
@@ -65,6 +66,7 @@ namespace gse::renderer::ui {
 		resource::handle<texture> texture;
 		resource::handle<font> font;
 		bool sample_scene_snapshot = false;
+		gpu::bindless_slot image_slot = {};
 	};
 
 	export constexpr std::size_t max_quads_per_frame = 32768;
@@ -93,6 +95,7 @@ namespace gse::renderer::ui {
 		angle rotation;
 		float corner_radius = 0.f;
 		bool sample_scene_snapshot = false;
+		gpu::bindless_slot image_slot = {};
 
 		resource::handle<font> font;
 		std::string text;

@@ -166,6 +166,19 @@ export namespace gse::gpu {
 			std::uint64_t initial_value
 		) -> gpu::handle<gpu::semaphore>;
 
+		[[nodiscard]]
+		auto create_exportable_semaphore() -> gpu::handle<gpu::semaphore>;
+
+		[[nodiscard]]
+		auto export_semaphore_handle(
+			gpu::handle<gpu::semaphore> semaphore
+		) const -> std::expected<void*, std::string>;
+
+		[[nodiscard]]
+		auto import_semaphore_handle(
+			void* handle
+		) -> std::expected<gpu::handle<gpu::semaphore>, std::string>;
+
 		auto retire(
 			gpu::handle<gpu::semaphore> semaphore
 		) -> void;
@@ -282,6 +295,42 @@ export namespace gse::gpu {
 			std::string_view tag = ""
 		) -> image;
 
+		[[nodiscard]] auto buffer_slot(
+			gpu::handle<gpu::buffer> buffer
+		) const -> gpu::bindless_slot;
+
+		[[nodiscard]] auto buffer_address(
+			gpu::handle<gpu::buffer> buffer
+		) const -> gpu::device_address;
+
+		[[nodiscard]] auto buffer_size(
+			gpu::handle<gpu::buffer> buffer
+		) const -> gpu::device_size;
+
+		[[nodiscard]] auto buffer_mapped(
+			gpu::handle<gpu::buffer> buffer
+		) const -> std::byte*;
+
+		[[nodiscard]] auto image_sampled_slot(
+			gpu::handle<gpu::image> image
+		) const -> gpu::bindless_slot;
+
+		[[nodiscard]] auto image_storage_slot(
+			gpu::handle<gpu::image> image
+		) const -> gpu::bindless_slot;
+
+		[[nodiscard]] auto image_format_of(
+			gpu::handle<gpu::image> image
+		) const -> gpu::image_format_value;
+
+		[[nodiscard]] auto image_extent(
+			gpu::handle<gpu::image> image
+		) const -> vec3u;
+
+		[[nodiscard]] auto image_view_of(
+			gpu::handle<gpu::image> image
+		) const -> gpu::handle<gpu::image_view>;
+
 		[[nodiscard]]
 		auto allocate_buffer_slot() -> gpu::bindless_handle;
 
@@ -386,6 +435,21 @@ export namespace gse::gpu {
 		auto create_buffer_unbound(
 			const buffer_desc& info
 		) const -> std::pair<gpu::handle<gpu::buffer>, memory_requirements>;
+
+		[[nodiscard]]
+		auto create_shared_surface(
+			const shared_surface_desc& desc
+		) const -> std::expected<shared_surface, std::string>;
+
+		[[nodiscard]]
+		auto import_shared_surface(
+			const shared_surface_desc& desc,
+			void* handle
+		) const -> std::expected<shared_surface, std::string>;
+
+		auto destroy_shared_surface(
+			const shared_surface& surface
+		) const -> void;
 
 		auto bind_image_memory(
 			gpu::handle<gpu::image> img,

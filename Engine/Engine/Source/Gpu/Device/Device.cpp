@@ -450,12 +450,60 @@ auto gse::gpu::device::create_buffer_unbound(const buffer_desc& info) const -> s
 	return m_vt->create_buffer_unbound(m_backend.get(), info);
 }
 
+auto gse::gpu::device::create_shared_surface(const shared_surface_desc& desc) const -> std::expected<shared_surface, std::string> {
+	return m_vt->create_shared_surface(m_backend.get(), desc);
+}
+
+auto gse::gpu::device::import_shared_surface(const shared_surface_desc& desc, void* handle) const -> std::expected<shared_surface, std::string> {
+	return m_vt->import_shared_surface(m_backend.get(), desc, handle);
+}
+
+auto gse::gpu::device::destroy_shared_surface(const shared_surface& surface) const -> void {
+	m_vt->destroy_shared_surface(m_backend.get(), surface);
+}
+
 auto gse::gpu::device::bind_image_memory(const gpu::handle<gpu::image> img, const device_memory mem, const device_size offset) const -> void {
 	m_vt->bind_image_memory(m_backend.get(), img, mem, offset);
 }
 
 auto gse::gpu::device::bind_buffer_memory(const gpu::handle<gpu::buffer> buf, const device_memory mem, const device_size offset) const -> void {
 	m_vt->bind_buffer_memory(m_backend.get(), buf, mem, offset);
+}
+
+auto gse::gpu::device::buffer_slot(const gpu::handle<gpu::buffer> buffer) const -> gpu::bindless_slot {
+	return m_vt->buffer_slot(m_backend.get(), buffer);
+}
+
+auto gse::gpu::device::buffer_address(const gpu::handle<gpu::buffer> buffer) const -> gpu::device_address {
+	return m_vt->buffer_address(m_backend.get(), buffer);
+}
+
+auto gse::gpu::device::buffer_size(const gpu::handle<gpu::buffer> buffer) const -> gpu::device_size {
+	return m_vt->buffer_size(m_backend.get(), buffer);
+}
+
+auto gse::gpu::device::buffer_mapped(const gpu::handle<gpu::buffer> buffer) const -> std::byte* {
+	return m_vt->buffer_mapped(m_backend.get(), buffer);
+}
+
+auto gse::gpu::device::image_sampled_slot(const gpu::handle<gpu::image> image) const -> gpu::bindless_slot {
+	return m_vt->image_sampled_slot(m_backend.get(), image);
+}
+
+auto gse::gpu::device::image_storage_slot(const gpu::handle<gpu::image> image) const -> gpu::bindless_slot {
+	return m_vt->image_storage_slot(m_backend.get(), image);
+}
+
+auto gse::gpu::device::image_format_of(const gpu::handle<gpu::image> image) const -> gpu::image_format_value {
+	return m_vt->image_format_of(m_backend.get(), image);
+}
+
+auto gse::gpu::device::image_extent(const gpu::handle<gpu::image> image) const -> vec3u {
+	return m_vt->image_extent(m_backend.get(), image);
+}
+
+auto gse::gpu::device::image_view_of(const gpu::handle<gpu::image> image) const -> gpu::handle<gpu::image_view> {
+	return m_vt->image_view_of(m_backend.get(), image);
 }
 
 auto gse::gpu::device::create_image_view(const gpu::handle<gpu::image> img, const image_view_create_info& info) const -> gpu::handle<gpu::image_view> {
@@ -567,6 +615,18 @@ auto gse::gpu::device::create_shader_program(const shader_program_create_info& i
 
 auto gse::gpu::device::create_timeline_semaphore(const std::uint64_t initial_value) -> gpu::handle<gpu::semaphore> {
 	return m_vt->create_timeline_semaphore(m_backend.get(), initial_value);
+}
+
+auto gse::gpu::device::create_exportable_semaphore() -> gpu::handle<gpu::semaphore> {
+	return m_vt->create_exportable_semaphore(m_backend.get());
+}
+
+auto gse::gpu::device::export_semaphore_handle(const gpu::handle<gpu::semaphore> semaphore) const -> std::expected<void*, std::string> {
+	return m_vt->export_semaphore_handle(m_backend.get(), semaphore);
+}
+
+auto gse::gpu::device::import_semaphore_handle(void* handle) -> std::expected<gpu::handle<gpu::semaphore>, std::string> {
+	return m_vt->import_semaphore_handle(m_backend.get(), handle);
 }
 
 auto gse::gpu::device::create_semaphore() -> gpu::handle<gpu::semaphore> {

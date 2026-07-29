@@ -40,7 +40,6 @@ Targets Windows (Vulkan).
 - Async render graph with automatic barrier insertion
 - Backend-agnostic RHI (Vulkan today, DX12 in progress)
 - Built entirely from C++ modules
-- Custom in-tree clang-tidy checks
 
 ### Atmosphere & volumetric clouds
 
@@ -134,10 +133,6 @@ Listed in `vcpkg.json` and auto-installed at configure time:
 - [freetype](https://github.com/freetype/freetype) — font rasterization
 - [msdfgen](https://github.com/Chlumsky/msdfgen) — multi-channel SDF font generation
 - [nsight-aftermath](https://developer.nvidia.com/nsight-aftermath) — GPU crash dumps (NVIDIA)
-
-## In-tree clang-tidy Checks
-
-`scripts/gse_tidy_checks/` ships custom checks — no-anonymous-namespace, no-get-prefix, redundant-namespace-qualifier stripping, concept-in-template-param, etc. — built against clang's libtooling and stitched into `clang-tidy`.
 
 ## Code Style
 

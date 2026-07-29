@@ -19,6 +19,20 @@ export namespace gse::gui {
 		vec4f color{ 1.f, 1.f, 1.f, 1.f };
 	};
 
+	struct text_underline {
+		std::uint32_t line = 0;
+		std::uint32_t start_col = 0;
+		std::uint32_t end_col = 0;
+		vec4f color{ 1.f, 0.f, 0.f, 1.f };
+	};
+
+	struct text_fade {
+		std::uint32_t line = 0;
+		std::uint32_t start_col = 0;
+		std::uint32_t end_col = 0;
+		float alpha = 1.f;
+	};
+
 	struct text_buffer {
 		std::vector<std::string> lines;
 

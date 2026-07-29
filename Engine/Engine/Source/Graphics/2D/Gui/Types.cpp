@@ -15,10 +15,19 @@ import gse.math;
 import gse.os;
 import gse.core;
 import gse.time;
+import gse.glfw;
 
 gse::gui::menu::menu(std::string_view tag, const menu_data& data)
 	: identifiable(tag), identifiable_owned(data.parent_id), rect(data.rect), dock_split_ratio(data.dock_split_ratio), docked_to(data.docked_to) {
 	tab_contents.emplace_back(tag);
+}
+
+auto gse::gui::font_set::named(const std::string_view name) const -> resource::handle<font> {
+	const auto it = registry.find(std::string(name));
+	if (it == registry.end()) {
+		return {};
+	}
+	return it->second;
 }
 
 auto gse::gui::draw_context::queue_sprite(renderer::sprite_command cmd) const -> void {
@@ -29,7 +38,7 @@ auto gse::gui::draw_context::queue_sprite(renderer::sprite_command cmd) const ->
 		cmd.z_order = current_z_order;
 	}
 	if (!clip_stack.empty() && static_cast<std::uint8_t>(cmd.layer) <= static_cast<std::uint8_t>(render_layer::popup)) {
-		const ui_rect& clip = clip_stack.back();
+		const rectf& clip = clip_stack.back();
 		cmd.clip_rect = cmd.clip_rect.has_value() ? cmd.clip_rect->intersection(clip) : clip;
 	}
 	sprites.push_back(std::move(cmd));
@@ -43,20 +52,40 @@ auto gse::gui::draw_context::queue_text(renderer::text_command cmd) const -> voi
 		cmd.z_order = current_z_order;
 	}
 	if (!clip_stack.empty() && static_cast<std::uint8_t>(cmd.layer) <= static_cast<std::uint8_t>(render_layer::popup)) {
-		const ui_rect& clip = clip_stack.back();
+		const rectf& clip = clip_stack.back();
 		cmd.clip_rect = cmd.clip_rect.has_value() ? cmd.clip_rect->intersection(clip) : clip;
 	}
 	texts.push_back(std::move(cmd));
 }
 
-auto gse::gui::draw_context::current_clip() const -> std::optional<ui_rect> {
+auto gse::gui::draw_context::set_clipboard(const std::string& text) const -> void {
+	window::set_clipboard_text(text);
+}
+
+auto gse::gui::draw_context::clipboard() const -> std::string {
+	return window::clipboard_text();
+}
+
+auto gse::gui::draw_context::open_context_menu(context_menu_open request) const -> void {
+	if (!context_menu) {
+		return;
+	}
+	context_menu->open = true;
+	context_menu->just_opened = true;
+	context_menu->position = request.position;
+	context_menu->items = std::move(request.items);
+	context_menu->target = request.target;
+	context_menu->tag = request.tag;
+}
+
+auto gse::gui::draw_context::current_clip() const -> std::optional<rectf> {
 	if (clip_stack.empty()) {
 		return std::nullopt;
 	}
 	return clip_stack.back();
 }
 
-auto gse::gui::draw_context::register_hit_region(const render_layer layer, const ui_rect& rect) const -> void {
+auto gse::gui::draw_context::register_hit_region(const render_layer layer, const rectf& rect) const -> void {
 	if (hit_regions) {
 		hit_regions->register_hit_region(layer, current_z_order, rect);
 	}
@@ -76,7 +105,7 @@ auto gse::gui::draw_context::input_available_at(const vec2f position) const -> b
 	return hit_regions->input_available_at(current_layer, current_z_order, position);
 }
 
-auto gse::gui::draw_context::mouse_pressed_for(const ui_rect& rect, const mouse_button button) const -> bool {
+auto gse::gui::draw_context::mouse_pressed_for(const rectf& rect, const mouse_button button) const -> bool {
 	if (!input.mouse_button_pressed(button)) {
 		return false;
 	}
@@ -95,7 +124,7 @@ auto gse::gui::draw_context::mouse_pressed_for(const ui_rect& rect, const mouse_
 	return true;
 }
 
-auto gse::gui::draw_context::mouse_released_for(const ui_rect& rect, const mouse_button button) const -> bool {
+auto gse::gui::draw_context::mouse_released_for(const rectf& rect, const mouse_button button) const -> bool {
 	if (!input.mouse_button_released(button)) {
 		return false;
 	}
@@ -130,7 +159,7 @@ auto gse::gui::draw_context::is_press_consumed(const mouse_button button) const 
 	return hit_regions && hit_regions->is_press_consumed(button);
 }
 
-auto gse::gui::draw_context::scroll_delta_for(const ui_rect& rect) const -> vec2f {
+auto gse::gui::draw_context::scroll_delta_for(const rectf& rect) const -> vec2f {
 	if (!rect.contains(input.mouse_position())) {
 		return {};
 	}
@@ -191,17 +220,17 @@ auto gse::gui::draw_context::set_tooltip(const id& widget_id, const std::string_
 	tooltip->position = input.mouse_position();
 }
 
-auto gse::gui::draw_context::next_row(const float height_multiplier) const -> ui_rect {
+auto gse::gui::draw_context::next_row(const resource::handle<font>& font, const float height_multiplier) const -> rectf {
 	if (!current_menu) {
 		return {};
 	}
 
 	const float row_height =
 		(font->line_height(style.font_size) + style.padding * style.widget_height_padding) * height_multiplier;
-	const ui_rect content_rect = current_menu->rect.inset({ style.padding, style.padding });
+	const rectf content_rect = current_menu->rect.inset({ style.padding, style.padding });
 
-	const ui_rect row =
-		ui_rect::from_position_size(
+	const rectf row =
+		rectf::from_position_size(
 			{ content_rect.left(), layout_cursor.y() },
 			{ content_rect.width(), row_height }
 		);
@@ -224,12 +253,12 @@ auto gse::gui::draw_context::animated_color(const id& widget_id, const vec4f tar
 	return it->second;
 }
 
-gse::gui::scroll_handle::scroll_handle(draw_context& ctx, scroll_state& state, const ui_rect& visible_rect, const float saved_layout_y, const scroll_config& config) noexcept
-	: m_ctx(&ctx), m_state(&state), m_visible_rect(visible_rect), m_saved_menu_rect(ctx.current_menu ? ctx.current_menu->rect : ui_rect{}), m_saved_layout_y(saved_layout_y), m_content_start_y(visible_rect.top() + state.offset), m_config(config), m_active(true) {
+gse::gui::scroll_handle::scroll_handle(draw_context& ctx, scroll_state& state, const rectf& visible_rect, const float saved_layout_y, const scroll_config& config) noexcept
+	: m_ctx(&ctx), m_state(&state), m_visible_rect(visible_rect), m_saved_menu_rect(ctx.current_menu ? ctx.current_menu->rect : rectf{}), m_saved_layout_y(saved_layout_y), m_content_start_y(visible_rect.top() + state.y.offset), m_config(config), m_active(true) {
 	ctx.layout_cursor.y() = m_content_start_y;
 	ctx.clip_stack.push_back(visible_rect);
 	if (ctx.current_menu) {
-		const ui_rect shrunk = ui_rect({
+		const rectf shrunk = rectf({
 			.min = ctx.current_menu->rect.min(),
 			.max = { ctx.current_menu->rect.max().x() - config.scrollbar_width, ctx.current_menu->rect.max().y() }
 		});
@@ -282,10 +311,44 @@ auto gse::gui::scroll_handle::valid() const -> bool {
 	return m_active;
 }
 
-auto gse::gui::scroll_handle::visible_rect() const -> const ui_rect& {
+auto gse::gui::scroll_handle::visible_rect() const -> const rectf& {
 	return m_visible_rect;
 }
 
 auto gse::gui::scroll_handle::offset() const -> float {
-	return m_state ? m_state->offset : 0.f;
+	return m_state ? m_state->y.offset : 0.f;
+}
+
+auto gse::gui::draw_context::scoped_layer(const render_layer layer) const -> layer_scope {
+	return layer_scope{ *this, layer };
+}
+
+gse::gui::layer_scope::layer_scope(const draw_context& ctx, const render_layer layer) noexcept
+	: m_ctx(&ctx), m_saved(ctx.current_layer), m_active(true) {
+	ctx.current_layer = layer;
+}
+
+gse::gui::layer_scope::layer_scope(layer_scope&& other) noexcept
+	: m_ctx(other.m_ctx), m_saved(other.m_saved), m_active(other.m_active) {
+	other.m_active = false;
+}
+
+auto gse::gui::layer_scope::operator=(layer_scope&& other) noexcept -> layer_scope& {
+	if (this == &other) {
+		return *this;
+	}
+	if (m_active && m_ctx) {
+		m_ctx->current_layer = m_saved;
+	}
+	m_ctx = other.m_ctx;
+	m_saved = other.m_saved;
+	m_active = other.m_active;
+	other.m_active = false;
+	return *this;
+}
+
+gse::gui::layer_scope::~layer_scope() noexcept {
+	if (m_active && m_ctx) {
+		m_ctx->current_layer = m_saved;
+	}
 }

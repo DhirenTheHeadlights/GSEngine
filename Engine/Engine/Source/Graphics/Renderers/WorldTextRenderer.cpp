@@ -191,11 +191,11 @@ auto gse::renderer::world_text::frame(const context& ctx, shared_view<gpu::conte
 		co_return;
 	}
 
-	if (!gui_d.gui_font.valid()) {
+	if (!gui_d.fonts.text.valid()) {
 		co_return;
 	}
 
-	const auto& f = gui_d.gui_font.resolve();
+	const auto& f = gui_d.fonts.text.resolve();
 	if (!f.texture() || !f.texture()->bindless_slot().valid()) {
 		co_return;
 	}

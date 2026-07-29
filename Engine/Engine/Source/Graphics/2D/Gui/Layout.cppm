@@ -8,6 +8,7 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+import gse.math;
 import :types;
 import :styles;
 
@@ -30,22 +31,22 @@ export namespace gse::gui::layout {
 	) -> void;
 
 	auto dock_space(
-		const ui_rect& target_area
+		const rectf& target_area
 	) -> dock::space;
 }
 
 namespace gse::gui::layout {
 	auto dock_target_rect(
-		const ui_rect& parent,
+		const rectf& parent,
 		dock::location location,
 		float ratio
-	) -> ui_rect;
+	) -> rectf;
 
 	auto remaining_rect_for_parent(
-		const ui_rect& parent,
+		const rectf& parent,
 		dock::location child_location,
 		float ratio
-	) -> ui_rect;
+	) -> rectf;
 }
 
 auto gse::gui::layout::dock(id_mapped_collection<menu>& menus, const id child_id, const id parent_id, const dock::location location) -> void {
@@ -56,7 +57,7 @@ auto gse::gui::layout::dock(id_mapped_collection<menu>& menus, const id child_id
 		return;
 	}
 
-	const ui_rect parent_original_rect = parent->rect;
+	const rectf parent_original_rect = parent->rect;
 
 	parent->rect = remaining_rect_for_parent(parent_original_rect, location, 0.5f);
 	child->rect = dock_target_rect(parent_original_rect, location, 0.5f);
@@ -74,10 +75,10 @@ auto gse::gui::layout::undock(id_mapped_collection<menu>& menus, const id child_
 	}
 
 	const id parent_id = child->owner_id();
-	std::optional<ui_rect> combined_rect;
+	std::optional<rectf> combined_rect;
 	if (parent_id.exists()) {
 		if (const menu* parent = menus.try_get(parent_id)) {
-			combined_rect = ui_rect::bounding_box(parent->rect, child->rect);
+			combined_rect = rectf::bounding_box(parent->rect, child->rect);
 		}
 	}
 
@@ -91,18 +92,18 @@ auto gse::gui::layout::undock(id_mapped_collection<menu>& menus, const id child_
 		}
 	}
 
-	auto calculate_group_bounds = [](id_mapped_collection<menu>& input_menus, const id root_id) -> ui_rect {
+	auto calculate_group_bounds = [](id_mapped_collection<menu>& input_menus, const id root_id) -> rectf {
 		const menu* root = input_menus.try_get(root_id);
 
 		if (!root) {
 			return {};
 		}
-		ui_rect bounds = root->rect;
+		rectf bounds = root->rect;
 
 		std::function<void(id)> expand = [&](const id parent) {
 			for (const auto& item : input_menus.items()) {
 				if (item.owner_id() == parent) {
-					bounds = ui_rect::bounding_box(bounds, item.rect);
+					bounds = rectf::bounding_box(bounds, item.rect);
 					expand(item.id());
 				}
 			}
@@ -112,7 +113,7 @@ auto gse::gui::layout::undock(id_mapped_collection<menu>& menus, const id child_
 		return bounds;
 	};
 
-	const ui_rect group_bounds = calculate_group_bounds(menus, child_id);
+	const rectf group_bounds = calculate_group_bounds(menus, child_id);
 	if (group_bounds.width() <= 0.f || group_bounds.height() <= 0.f) {
 		return;
 	}
@@ -133,7 +134,7 @@ auto gse::gui::layout::undock(id_mapped_collection<menu>& menus, const id child_
 			new_size.x() *= scale_x;
 			new_size.y() *= scale_y;
 
-			item->rect = ui_rect::from_position_size(group_bounds.top_left() + offset, new_size);
+			item->rect = rectf::from_position_size(group_bounds.top_left() + offset, new_size);
 
 			for (auto& potential_child : menus.items()) {
 				if (potential_child.owner_id() == current_id) {
@@ -167,7 +168,7 @@ auto gse::gui::layout::update(id_mapped_collection<menu>& menus, const id root_i
 	}
 
 	const float ratio = std::clamp(child->dock_split_ratio, 0.05f, 0.95f);
-	const ui_rect total_area = root->rect;
+	const rectf total_area = root->rect;
 
 	child->rect = dock_target_rect(total_area, child->docked_to, ratio);
 	root->rect = remaining_rect_for_parent(total_area, child->docked_to, ratio);
@@ -175,7 +176,7 @@ auto gse::gui::layout::update(id_mapped_collection<menu>& menus, const id root_i
 	update(menus, child->id());
 }
 
-auto gse::gui::layout::dock_space(const ui_rect& target_area) -> dock::space {
+auto gse::gui::layout::dock_space(const rectf& target_area) -> dock::space {
 	dock::space space;
 
 	const auto center = target_area.center();
@@ -192,35 +193,35 @@ auto gse::gui::layout::dock_space(const ui_rect& target_area) -> dock::space {
 
 	// Center
 	space.areas[0] = {
-		.rect = ui_rect::from_position_size(center_pos, widget_size),
+		.rect = rectf::from_position_size(center_pos, widget_size),
 		.target = target_area,
 		.dock_location = dock::location::center
 	};
 
 	// Left
 	space.areas[1] = {
-		.rect = ui_rect::from_position_size(left_pos, widget_size),
+		.rect = rectf::from_position_size(left_pos, widget_size),
 		.target = dock_target_rect(target_area, dock::location::left, 0.5f),
 		.dock_location = dock::location::left
 	};
 
 	// Right
 	space.areas[2] = {
-		.rect = ui_rect::from_position_size(right_pos, widget_size),
+		.rect = rectf::from_position_size(right_pos, widget_size),
 		.target = dock_target_rect(target_area, dock::location::right, 0.5f),
 		.dock_location = dock::location::right
 	};
 
 	// Top
 	space.areas[3] = {
-		.rect = ui_rect::from_position_size(top_pos, widget_size),
+		.rect = rectf::from_position_size(top_pos, widget_size),
 		.target = dock_target_rect(target_area, dock::location::top, 0.5f),
 		.dock_location = dock::location::top
 	};
 
 	// Bottom
 	space.areas[4] = {
-		.rect = ui_rect::from_position_size(bottom_pos, widget_size),
+		.rect = rectf::from_position_size(bottom_pos, widget_size),
 		.target = dock_target_rect(target_area, dock::location::bottom, 0.5f),
 		.dock_location = dock::location::bottom
 	};
@@ -228,7 +229,7 @@ auto gse::gui::layout::dock_space(const ui_rect& target_area) -> dock::space {
 	return space;
 }
 
-auto gse::gui::layout::dock_target_rect(const ui_rect& parent, const dock::location location, const float ratio) -> ui_rect {
+auto gse::gui::layout::dock_target_rect(const rectf& parent, const dock::location location, const float ratio) -> rectf {
 	const float split_width = parent.width() * ratio;
 	const float split_height = parent.height() * ratio;
 	const float remaining_width = parent.width() - split_width;
@@ -236,22 +237,22 @@ auto gse::gui::layout::dock_target_rect(const ui_rect& parent, const dock::locat
 
 	switch (location) {
 		case dock::location::left:
-			return ui_rect::from_position_size(
+			return rectf::from_position_size(
 				parent.top_left(),
 				{ split_width, parent.height() }
 			);
 		case dock::location::right:
-			return ui_rect::from_position_size(
+			return rectf::from_position_size(
 				{ parent.left() + remaining_width, parent.top() },
 				{ split_width, parent.height() }
 			);
 		case dock::location::top:
-			return ui_rect::from_position_size(
+			return rectf::from_position_size(
 				{ parent.left(), parent.top() },
 				{ parent.width(), split_height }
 			);
 		case dock::location::bottom:
-			return ui_rect::from_position_size(
+			return rectf::from_position_size(
 				{ parent.left(), parent.top() - remaining_height },
 				{ parent.width(), split_height }
 			);
@@ -261,7 +262,7 @@ auto gse::gui::layout::dock_target_rect(const ui_rect& parent, const dock::locat
 	}
 }
 
-auto gse::gui::layout::remaining_rect_for_parent(const ui_rect& parent, const dock::location child_location, const float ratio) -> ui_rect {
+auto gse::gui::layout::remaining_rect_for_parent(const rectf& parent, const dock::location child_location, const float ratio) -> rectf {
 	const float split_width = parent.width() * ratio;
 	const float split_height = parent.height() * ratio;
 	const float remaining_width = parent.width() - split_width;
@@ -269,28 +270,28 @@ auto gse::gui::layout::remaining_rect_for_parent(const ui_rect& parent, const do
 
 	switch (child_location) {
 		case dock::location::left:
-			return ui_rect::from_position_size(
+			return rectf::from_position_size(
 				{ parent.left() + split_width, parent.top() },
 				{ remaining_width, parent.height() }
 			);
 		case dock::location::right:
-			return ui_rect::from_position_size(
+			return rectf::from_position_size(
 				parent.top_left(),
 				{ remaining_width, parent.height() }
 			);
 		case dock::location::top:
-			return ui_rect::from_position_size(
+			return rectf::from_position_size(
 				{ parent.left(), parent.top() - split_height },
 				{ parent.width(), remaining_height }
 			);
 		case dock::location::bottom:
-			return ui_rect::from_position_size(
+			return rectf::from_position_size(
 				parent.top_left(),
 				{ parent.width(), remaining_height }
 			);
 		case dock::location::center:
 		default:
-			return ui_rect::from_position_size(
+			return rectf::from_position_size(
 				parent.top_left(),
 				{ 0.f, 0.f }
 			);
