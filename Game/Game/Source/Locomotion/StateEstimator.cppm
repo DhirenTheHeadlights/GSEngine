@@ -92,6 +92,7 @@ auto gs::locomotion::reset_state(state& s) -> void {
 }
 
 auto gs::locomotion::state_estimator::run(data& d, gse::read<skeleton_refs> refs, gse::read<gse::physics::transform_component> transforms, gse::read<gse::physics::motion_component> motions, gse::read<gse::physics::collision_component> collisions, gse::read<gait> gaits, gse::write<state> states) -> gse::async::task<> {
+	constexpr bool log_estimator_state = false;
 	const bool log_now = d.log_timer.tick();
 	const auto owner_ids = states.owner_ids();
 	for (std::size_t i = 0; i < states.size(); ++i) {
@@ -287,7 +288,7 @@ auto gs::locomotion::state_estimator::run(data& d, gse::read<skeleton_refs> refs
 		s.pelvis_pitch_rate = gse::dot(s.pelvis_right, pelvis_mc->angular_velocity);
 		s.valid = true;
 
-		if (log_now) {
+		if (log_estimator_state && log_now) {
 			gse::log::println(
 				"state_estimator: owner={} pelvis={:+.2f} "
 				"v={:+.2f} feet_grounded=({},{}) double={} "

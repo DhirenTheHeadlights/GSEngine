@@ -122,6 +122,24 @@ namespace {
 }
 ```
 
+The same holds for `static` on a namespace-scope function. It is the C spelling of an anonymous namespace and it is redundant for the same reason — a non-exported function already has module linkage. Module-private *functions* are declared in the same non-exported namespace block as the module-private types, and defined out-of-namespace, exactly like exported ones:
+
+```cpp
+// correct — declared with the other module-private entities, defined below
+namespace gse {
+    auto my_impl_helper(
+        int value
+    ) -> void;
+}
+
+auto gse::my_impl_helper(const int value) -> void { ... }
+
+// wrong — C-style file-scope hiding
+static auto my_impl_helper(const int value) -> void { ... }
+```
+
+Besides matching the exported style, this frees a definition from having to sit above its callers — a `static` helper is load-bearing on definition order, a declared one is not. The `static` spelling is also the one with no automated check behind it, so it is how the habit gets back in; catch it in review.
+
 This is not a module-only rule. It holds in every translation unit, including non-module `.cpp` files and single-TU executables (e.g. the codegen tools) — TU-local helpers go at file scope or in a named namespace, never an anonymous one.
 
 Enforced by `clang-tidy` (`gse-no-detail-namespace`, `gse-no-anonymous-namespace`).

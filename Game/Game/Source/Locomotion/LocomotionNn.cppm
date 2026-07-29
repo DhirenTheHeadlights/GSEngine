@@ -125,6 +125,35 @@ export namespace gs::locomotion {
 		std::string_view path
 	) -> bool;
 
+	struct train_meta {
+		int update_count = 0;
+		int total_steps = 0;
+		float best_mean_surv = 0.0f;
+		float curriculum_level = 0.0f;
+	};
+
+	auto checkpoint_save_full(
+		const actor_params& actor,
+		const actor_adam& actor_opt,
+		const mlp& critic,
+		const critic_adam& critic_opt,
+		const mlp& discriminator,
+		const critic_adam& disc_opt,
+		const train_meta& meta,
+		std::string_view path
+	) -> bool;
+
+	auto checkpoint_load_full(
+		actor_params& actor,
+		actor_adam& actor_opt,
+		mlp& critic,
+		critic_adam& critic_opt,
+		mlp& discriminator,
+		critic_adam& disc_opt,
+		train_meta& meta,
+		std::string_view path
+	) -> bool;
+
 	struct disc_metrics {
 		float loss = 0.0f;
 		float mean_real = 0.0f;
@@ -151,35 +180,60 @@ export namespace gs::locomotion {
 }
 
 namespace gs::locomotion {
+	using simd_f8 = float __attribute__((vector_size(32)));
+
+	auto simd_dot(std::span<const float> a, std::span<const float> b) -> float {
+		auto acc = simd_f8{};
+		std::size_t i = 0;
+		for (; i + 8 <= a.size(); i += 8) {
+			auto va = simd_f8{};
+			auto vb = simd_f8{};
+			std::memcpy(&va, a.data() + i, sizeof(va));
+			std::memcpy(&vb, b.data() + i, sizeof(vb));
+			acc += va * vb;
+		}
+		auto sum = acc[0] + acc[1] + acc[2] + acc[3] + acc[4] + acc[5] + acc[6] + acc[7];
+		for (; i < a.size(); ++i) {
+			sum += a[i] * b[i];
+		}
+		return sum;
+	}
+
+	auto simd_saxpy(std::span<const float> x, float a, std::span<float> y) -> void {
+		const auto va = simd_f8{ a, a, a, a, a, a, a, a };
+		std::size_t i = 0;
+		for (; i + 8 <= x.size(); i += 8) {
+			auto vx = simd_f8{};
+			auto vy = simd_f8{};
+			std::memcpy(&vx, x.data() + i, sizeof(vx));
+			std::memcpy(&vy, y.data() + i, sizeof(vy));
+			vy += va * vx;
+			std::memcpy(y.data() + i, &vy, sizeof(vy));
+		}
+		for (; i < x.size(); ++i) {
+			y[i] += a * x[i];
+		}
+	}
+
 	auto linear(const nn_layer& l, std::span<const float> in, std::span<float> out) -> void {
 		for (std::size_t o = 0; o < l.out_features; ++o) {
-			auto acc = l.bias[o];
-			const auto* w = l.weight.data() + o * l.in_features;
-			for (std::size_t i = 0; i < l.in_features; ++i) {
-				acc += w[i] * in[i];
-			}
-			out[o] = acc;
+			const auto w = std::span<const float>(l.weight.data() + o * l.in_features, l.in_features);
+			out[o] = l.bias[o] + simd_dot(w, in);
 		}
 	}
 
 	auto linear_transpose(const nn_layer& l, std::span<const float> in, std::span<float> out) -> void {
 		std::ranges::fill(out, 0.0f);
 		for (std::size_t o = 0; o < l.out_features; ++o) {
-			const auto* w = l.weight.data() + o * l.in_features;
-			const auto vo = in[o];
-			for (std::size_t i = 0; i < l.in_features; ++i) {
-				out[i] += w[i] * vo;
-			}
+			const auto w = std::span<const float>(l.weight.data() + o * l.in_features, l.in_features);
+			simd_saxpy(w, in[o], out);
 		}
 	}
 
 	auto rank1_add(std::span<const float> a, std::span<const float> b, std::span<float> mat) -> void {
 		for (std::size_t i = 0; i < a.size(); ++i) {
-			auto* row = mat.data() + i * b.size();
-			const auto ai = a[i];
-			for (std::size_t k = 0; k < b.size(); ++k) {
-				row[k] += ai * b[k];
-			}
+			const auto row = std::span<float>(mat.data() + i * b.size(), b.size());
+			simd_saxpy(b, a[i], row);
 		}
 	}
 
@@ -196,20 +250,9 @@ namespace gs::locomotion {
 		}
 	}
 
-	auto save_span(std::ofstream& out, std::span<const float> data) -> void {
-		const auto sz = data.size();
-		out.write(reinterpret_cast<const char*>(&sz), sizeof(sz));
-		out.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(sz * sizeof(float)));
-	}
-
-	auto load_vec(std::ifstream& in, std::vector<float>& vec) -> bool {
-		std::size_t sz = 0;
-		if (!in.read(reinterpret_cast<char*>(&sz), sizeof(sz))) {
-			return false;
-		}
-		vec.resize(sz);
-		return !!in.read(reinterpret_cast<char*>(vec.data()), static_cast<std::streamsize>(sz * sizeof(float)));
-	}
+	constexpr std::uint32_t checkpoint_magic = 0x43484b50;
+	constexpr std::uint32_t checkpoint_version = 1;
+	constexpr std::uint32_t checkpoint_full_version = 2;
 
 	auto discriminator_input_grad_norm_sq(const mlp& net, std::span<const float> x) -> float {
 		const auto in_dim = net.l1.in_features;
@@ -954,20 +997,12 @@ auto gs::locomotion::checkpoint_save(const actor_params& actor, const mlp& criti
 	if (!out.is_open()) {
 		return false;
 	}
-	save_span(out, actor.net.l1.weight);
-	save_span(out, actor.net.l1.bias);
-	save_span(out, actor.net.l2.weight);
-	save_span(out, actor.net.l2.bias);
-	save_span(out, actor.net.l3.weight);
-	save_span(out, actor.net.l3.bias);
-	save_span(out, actor.log_std);
-	save_span(out, critic.l1.weight);
-	save_span(out, critic.l1.bias);
-	save_span(out, critic.l2.weight);
-	save_span(out, critic.l2.bias);
-	save_span(out, critic.l3.weight);
-	save_span(out, critic.l3.bias);
-	return true;
+	auto ar = gse::binary_writer(out, checkpoint_magic, checkpoint_version);
+	const auto obs = static_cast<std::uint32_t>(actor.net.l1.in_features);
+	const auto act = static_cast<std::uint32_t>(actor.net.l3.out_features);
+	const auto hidden = static_cast<std::uint32_t>(actor.net.l1.out_features);
+	ar & obs & act & hidden & actor & critic;
+	return static_cast<bool>(out);
 }
 
 auto gs::locomotion::checkpoint_load(actor_params& actor, mlp& critic, const std::string_view path) -> bool {
@@ -975,51 +1010,54 @@ auto gs::locomotion::checkpoint_load(actor_params& actor, mlp& critic, const std
 	if (!in.is_open()) {
 		return false;
 	}
-	if (!load_vec(in, actor.net.l1.weight)) {
+	auto ar = gse::binary_reader(in);
+	auto magic = std::uint32_t{};
+	auto version = std::uint32_t{};
+	auto obs = std::uint32_t{};
+	auto act = std::uint32_t{};
+	auto hidden = std::uint32_t{};
+	ar & magic & version & obs & act & hidden;
+	if (magic != checkpoint_magic || version != checkpoint_version) {
 		return false;
 	}
-	if (!load_vec(in, actor.net.l1.bias)) {
+	if (obs != actor.net.l1.in_features || act != actor.net.l3.out_features || hidden != actor.net.l1.out_features) {
 		return false;
 	}
-	if (!load_vec(in, actor.net.l2.weight)) {
+	ar & actor & critic;
+	return !in.fail();
+}
+
+auto gs::locomotion::checkpoint_save_full(const actor_params& actor, const actor_adam& actor_opt, const mlp& critic, const critic_adam& critic_opt, const mlp& discriminator, const critic_adam& disc_opt, const train_meta& meta, const std::string_view path) -> bool {
+	auto out = std::ofstream(std::string(path), std::ios::binary);
+	if (!out.is_open()) {
 		return false;
 	}
-	if (!load_vec(in, actor.net.l2.bias)) {
+	auto ar = gse::binary_writer(out, checkpoint_magic, checkpoint_full_version);
+	const auto obs = static_cast<std::uint32_t>(actor.net.l1.in_features);
+	const auto act = static_cast<std::uint32_t>(actor.net.l3.out_features);
+	const auto hidden = static_cast<std::uint32_t>(actor.net.l1.out_features);
+	ar & obs & act & hidden & actor & actor_opt & critic & critic_opt & discriminator & disc_opt & meta;
+	return static_cast<bool>(out);
+}
+
+auto gs::locomotion::checkpoint_load_full(actor_params& actor, actor_adam& actor_opt, mlp& critic, critic_adam& critic_opt, mlp& discriminator, critic_adam& disc_opt, train_meta& meta, const std::string_view path) -> bool {
+	auto in = std::ifstream(std::string(path), std::ios::binary);
+	if (!in.is_open()) {
 		return false;
 	}
-	if (!load_vec(in, actor.net.l3.weight)) {
+	auto ar = gse::binary_reader(in);
+	auto magic = std::uint32_t{};
+	auto version = std::uint32_t{};
+	auto obs = std::uint32_t{};
+	auto act = std::uint32_t{};
+	auto hidden = std::uint32_t{};
+	ar & magic & version & obs & act & hidden;
+	if (magic != checkpoint_magic || version != checkpoint_full_version) {
 		return false;
 	}
-	if (!load_vec(in, actor.net.l3.bias)) {
+	if (obs != actor.net.l1.in_features || act != actor.net.l3.out_features || hidden != actor.net.l1.out_features) {
 		return false;
 	}
-	if (!load_vec(in, actor.log_std)) {
-		return false;
-	}
-	if (!load_vec(in, critic.l1.weight)) {
-		return false;
-	}
-	if (!load_vec(in, critic.l1.bias)) {
-		return false;
-	}
-	if (!load_vec(in, critic.l2.weight)) {
-		return false;
-	}
-	if (!load_vec(in, critic.l2.bias)) {
-		return false;
-	}
-	if (!load_vec(in, critic.l3.weight)) {
-		return false;
-	}
-	if (!load_vec(in, critic.l3.bias)) {
-		return false;
-	}
-	const auto layer_ok = [](const nn_layer& l) {
-		return l.weight.size() == l.in_features * l.out_features && l.bias.size() == l.out_features;
-	};
-	if (!layer_ok(actor.net.l1) || !layer_ok(actor.net.l2) || !layer_ok(actor.net.l3) || actor.log_std.size() != actor.net.l3.out_features
-		|| !layer_ok(critic.l1) || !layer_ok(critic.l2) || !layer_ok(critic.l3)) {
-		return false;
-	}
-	return true;
+	ar & actor & actor_opt & critic & critic_opt & discriminator & disc_opt & meta;
+	return !in.fail();
 }
