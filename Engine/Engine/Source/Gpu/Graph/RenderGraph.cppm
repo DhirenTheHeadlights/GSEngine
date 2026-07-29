@@ -204,6 +204,8 @@ export namespace gse::gpu {
 		std::vector<gpu::semaphore_submit_info> m_pending_graphics_extra_waits;
 		std::vector<gpu::command_buffer_handle> m_pending_graphics_buffers;
 		std::set<std::pair<id, id>> m_warned_ambiguous_pairs;
+		std::set<std::pair<std::size_t, std::size_t>> m_warned_queue_cycles;
+		std::set<std::pair<std::size_t, std::size_t>> m_warned_dropped_waits;
 		std::unordered_map<id, std::array<id, stats_per_pass>> m_stat_ids;
 		gpu::color_clear m_swapchain_clear{};
 		load_op m_swapchain_load = load_op::clear;

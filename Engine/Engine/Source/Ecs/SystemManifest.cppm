@@ -261,8 +261,13 @@ auto gse::extract_fn_init_deps() -> phase_state_deps {
 template <std::meta::info FnInfo, typename State>
 auto gse::extract_fn_frame_deps() -> std::vector<id> {
 	std::vector<id> out;
+	std::vector<id> optional_discard;
 	[&]<std::size_t... Is>(std::index_sequence<Is...>) {
-		((append_arg_state_dep<arg_type_of<FnInfo, Is>, State>(out)), ...);
+		(([&] {
+			using arg_t = arg_type_of<FnInfo, Is>;
+			append_arg_state_dep<arg_t, State>(out);
+			append_arg_view_deps<arg_t>(out, optional_discard);
+		}()), ...);
 	}(std::make_index_sequence<arity_of<FnInfo>>{});
 	return out;
 }
@@ -592,12 +597,21 @@ auto gse::page_thunk_for(void* builder, void* panel_state, void* channels, const
 
 consteval auto gse::collect_namespace_systems(const std::meta::info ns) -> std::vector<std::meta::info> {
 	std::vector<std::meta::info> out;
-	for (const auto m : std::meta::members_of(ns, std::meta::access_context::unchecked())) {
-		if (std::meta::is_type(m) && meta::find_system_state_anno(m) != std::meta::info{}) {
-			out.push_back(m);
-		}
-		else if (std::meta::is_function(m) && meta::find_system_hook_anno(m) != std::meta::info{}) {
-			out.push_back(m);
+	std::vector<std::meta::info> pending;
+	pending.push_back(ns);
+	while (!pending.empty()) {
+		const auto current = pending.back();
+		pending.pop_back();
+		for (const auto m : std::meta::members_of(current, std::meta::access_context::unchecked())) {
+			if (std::meta::is_type(m) && meta::find_system_state_anno(m) != std::meta::info{}) {
+				out.push_back(m);
+			}
+			else if (std::meta::is_function(m) && meta::find_system_hook_anno(m) != std::meta::info{}) {
+				out.push_back(m);
+			}
+			else if (std::meta::is_namespace(m)) {
+				pending.push_back(m);
+			}
 		}
 	}
 	return out;

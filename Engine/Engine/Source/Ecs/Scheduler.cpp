@@ -600,9 +600,24 @@ auto gse::scheduler::resolve_activation(const std::unordered_set<id>& disabled_r
 		}
 	}
 
+	std::unordered_set<id> deferred;
+	std::vector<id> deferred_work;
+	for (const auto& n : m_candidates) {
+		if (n.deferred && deferred.insert(n.state_id).second) {
+			deferred_work.push_back(n.state_id);
+		}
+	}
+	for (std::size_t i = 0; i < deferred_work.size(); ++i) {
+		for (const id dep : dependents[deferred_work[i]]) {
+			if (deferred.insert(dep).second) {
+				deferred_work.push_back(dep);
+			}
+		}
+	}
+
 	for (auto& n : m_candidates) {
 		if (!inactive.contains(n.state_id)) {
-			if (n.deferred) {
+			if (deferred.contains(n.state_id)) {
 				m_deferred_nodes.push_back(std::move(n));
 			}
 			else {

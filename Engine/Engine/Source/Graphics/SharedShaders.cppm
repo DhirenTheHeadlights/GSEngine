@@ -37,7 +37,7 @@ export namespace gse::shaders::common {
 		spatial_matrix normal_matrix;
 		spatial_matrix prev_model_matrix;
 		std::uint32_t material_index;
-		vec3f tint;
+		vec4f tint;
 	};
 
 	using shader_types = type_pack<camera_data, instance_data>;

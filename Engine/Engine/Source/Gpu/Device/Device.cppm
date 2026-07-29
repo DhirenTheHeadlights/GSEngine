@@ -298,13 +298,7 @@ export namespace gse::gpu {
 
 		auto write_storage_buffer(
 			gpu::bindless_slot slot,
-			gpu::device_address address,
-			gpu::device_size size
-		) -> void;
-
-		auto write_uniform_buffer(
-			gpu::bindless_slot slot,
-			gpu::device_address address,
+			const buffer& buf,
 			gpu::device_size size
 		) -> void;
 
