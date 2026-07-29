@@ -451,7 +451,7 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 		return std::format("public uniform uint {0}_idx;\npublic property SamplerState {0} {{ get {{ return (SamplerState.Handle){0}_idx; }} }}\n", name);
 	}
 	else if constexpr (has_annotation<tlas_tag>(^^T)) {
-		if (gpu::active_backend == gpu::gpu_backend_kind::vulkan) {
+		if (gpu::active_backend == gpu::backend_kind::vulkan) {
 			return std::format(
 				"public uniform uint {0}_address_lo;\n"
 				"public uniform uint {0}_address_hi;\n"

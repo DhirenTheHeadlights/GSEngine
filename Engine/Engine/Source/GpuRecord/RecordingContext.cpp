@@ -44,7 +44,7 @@ gse::gpu::recording_context::recording_context(recording_context_init&& init)
 }
 
 gse::gpu::recording_context::recording_context(recording_context&& other) noexcept
-	: m_recorder(other.m_recorder), m_pass(other.m_pass), m_transient_pool(other.m_transient_pool), m_device(other.m_device), m_touched(std::move(other.m_touched)), m_image_states(std::move(other.m_image_states)), m_origin_thread(other.m_origin_thread), m_state_cache(other.m_state_cache), m_bindless_heaps_valid(other.m_bindless_heaps_valid) {
+	: m_recorder(other.m_recorder), m_pass(other.m_pass), m_transient_pool(other.m_transient_pool), m_device(other.m_device), m_touched(std::move(other.m_touched)), m_last_access(std::move(other.m_last_access)), m_image_states(std::move(other.m_image_states)), m_origin_thread(other.m_origin_thread), m_state_cache(other.m_state_cache), m_bindless_heaps_valid(other.m_bindless_heaps_valid), m_bound_is_compute(other.m_bound_is_compute) {
 	if (tl_active_recording_context == &other) {
 		tl_active_recording_context = this;
 	}
@@ -54,6 +54,7 @@ gse::gpu::recording_context::recording_context(recording_context&& other) noexce
 	other.m_transient_pool = nullptr;
 	other.m_device = nullptr;
 	other.m_bindless_heaps_valid = false;
+	other.m_bound_is_compute = false;
 }
 
 auto gse::gpu::recording_context::operator=(recording_context&& other) noexcept -> recording_context& {
@@ -77,10 +78,12 @@ auto gse::gpu::recording_context::operator=(recording_context&& other) noexcept 
 		m_transient_pool = other.m_transient_pool;
 		m_device = other.m_device;
 		m_touched = std::move(other.m_touched);
+		m_last_access = std::move(other.m_last_access);
 		m_image_states = std::move(other.m_image_states);
 		m_origin_thread = other.m_origin_thread;
 		m_state_cache = other.m_state_cache;
 		m_bindless_heaps_valid = other.m_bindless_heaps_valid;
+		m_bound_is_compute = other.m_bound_is_compute;
 		if (tl_active_recording_context == &other) {
 			tl_active_recording_context = this;
 		}
@@ -90,6 +93,7 @@ auto gse::gpu::recording_context::operator=(recording_context&& other) noexcept 
 		other.m_transient_pool = nullptr;
 		other.m_device = nullptr;
 		other.m_bindless_heaps_valid = false;
+		other.m_bound_is_compute = false;
 	}
 	return *this;
 }
@@ -201,6 +205,7 @@ auto gse::gpu::recording_context::note_touched(const resource_ref ref, const gpu
 	if (!ref.ptr) {
 		return;
 	}
+	emit_intra_pass_barrier(ref, stages, access);
 	for (auto& existing : m_touched) {
 		if (existing.ref.ptr == ref.ptr) {
 			existing.stages |= stages;
@@ -215,8 +220,89 @@ auto gse::gpu::recording_context::note_touched(const resource_ref ref, const gpu
 	});
 }
 
+auto gse::gpu::recording_context::bound_shader_stages() const -> gpu::pipeline_stage_flags {
+	if (m_bound_is_compute) {
+		return gpu::pipeline_stage_flag::compute_shader;
+	}
+	return gpu::pipeline_stage_flag::vertex_shader | gpu::pipeline_stage_flag::fragment_shader | gpu::pipeline_stage_flag::mesh_shader | gpu::pipeline_stage_flag::task_shader;
+}
+
+auto gse::gpu::recording_context::emit_intra_pass_barrier(const resource_ref& ref, const gpu::pipeline_stage_flags stages, const gpu::access_flags access) -> void {
+	if (!m_recorder.valid()) {
+		return;
+	}
+
+	constexpr gpu::access_flags write_mask = gpu::access_flag::shader_write | gpu::access_flag::shader_storage_write |
+		gpu::access_flag::color_attachment_write | gpu::access_flag::depth_stencil_attachment_write |
+		gpu::access_flag::transfer_write | gpu::access_flag::host_write | gpu::access_flag::memory_write |
+		gpu::access_flag::acceleration_structure_write;
+
+	constexpr gpu::pipeline_stage_flags graphics_mask = gpu::pipeline_stage_flag::vertex_input |
+		gpu::pipeline_stage_flag::vertex_shader | gpu::pipeline_stage_flag::tessellation_control |
+		gpu::pipeline_stage_flag::tessellation_evaluation | gpu::pipeline_stage_flag::geometry_shader |
+		gpu::pipeline_stage_flag::fragment_shader | gpu::pipeline_stage_flag::early_fragment_tests |
+		gpu::pipeline_stage_flag::late_fragment_tests | gpu::pipeline_stage_flag::color_attachment_output |
+		gpu::pipeline_stage_flag::all_graphics | gpu::pipeline_stage_flag::index_input |
+		gpu::pipeline_stage_flag::vertex_attribute_input | gpu::pipeline_stage_flag::pre_rasterization_shaders |
+		gpu::pipeline_stage_flag::mesh_shader | gpu::pipeline_stage_flag::task_shader;
+
+	const auto it = m_last_access.find(ref.ptr);
+	if (it == m_last_access.end()) {
+		m_last_access.emplace(ref.ptr, access_track{ .stages = stages, .access = access });
+		return;
+	}
+
+	auto& prev = it->second;
+	const bool hazard = (prev.access & write_mask).bits() != 0 || (access & write_mask).bits() != 0;
+	if (!hazard || (stages & graphics_mask).bits() != 0) {
+		prev.stages |= stages;
+		prev.access |= access;
+		return;
+	}
+
+	if (ref.type == resource_type::buffer) {
+		const gpu::buffer_barrier bb{
+			.src_stages = prev.stages,
+			.src_access = prev.access,
+			.dst_stages = stages,
+			.dst_access = access,
+			.buffer = std::bit_cast<gpu::handle<gpu::buffer>>(ref.ptr),
+			.offset = 0,
+			.size = ref.buffer_size,
+		};
+		m_recorder.pipeline_barrier(gpu::dependency_info{ .buffer_barriers = std::span(&bb, 1) });
+	}
+	else if (ref.type == resource_type::image) {
+		const auto tracked = m_image_states.find(ref.ptr);
+		const auto state = tracked != m_image_states.end() ? tracked->second.current : gpu::resource_state::undefined;
+		const gpu::image_barrier ib{
+			.src_stages = prev.stages,
+			.src_access = prev.access,
+			.dst_stages = stages,
+			.dst_access = access,
+			.prev_state = state,
+			.next_state = state,
+			.image = std::bit_cast<gpu::handle<gpu::image>>(ref.ptr),
+			.aspects = ref.aspects,
+		};
+		m_recorder.pipeline_barrier(gpu::dependency_info{ .image_barriers = std::span(&ib, 1) });
+	}
+	else {
+		const gpu::memory_barrier mb{
+			.src_stages = prev.stages,
+			.src_access = prev.access,
+			.dst_stages = stages,
+			.dst_access = access,
+		};
+		m_recorder.pipeline_barrier(gpu::dependency_info{ .memory_barriers = std::span(&mb, 1) });
+	}
+
+	prev.stages = stages;
+	prev.access = access;
+}
+
 auto gse::gpu::recording_context::transition_image_for_binding(const resource_ref& ref, const gpu::resource_state target, const gpu::pipeline_stage_flags stages, const gpu::access_flags access) -> void {
-	if (active_backend != gpu_backend_kind::dx12 || ref.type != resource_type::image || !ref.ptr) {
+	if (ref.type != resource_type::image || !ref.ptr) {
 		return;
 	}
 	const auto it = m_image_states.find(ref.ptr);
@@ -236,7 +322,7 @@ auto gse::gpu::recording_context::transition_image_for_binding(const resource_re
 		.image = std::bit_cast<gpu::handle<gpu::image>>(ref.ptr),
 		.aspects = it->second.aspects,
 	};
-	m_recorder.pipeline_barrier(gpu::dependency_info{ .image_barriers = std::span(&barrier, 1) });
+	m_recorder.transition_image_state(barrier);
 	it->second.current = target;
 }
 
@@ -245,7 +331,7 @@ auto gse::gpu::recording_context::finalize_pass() -> void {
 		return;
 	}
 
-	if (active_backend == gpu_backend_kind::dx12 && m_recorder.valid()) {
+	if (m_recorder.valid()) {
 		for (const auto& [ptr, track] : m_image_states) {
 			if (track.current == track.first) {
 				continue;
@@ -256,7 +342,7 @@ auto gse::gpu::recording_context::finalize_pass() -> void {
 				.image = std::bit_cast<gpu::handle<gpu::image>>(ptr),
 				.aspects = track.aspects,
 			};
-			m_recorder.pipeline_barrier(gpu::dependency_info{ .image_barriers = std::span(&barrier, 1) });
+			m_recorder.transition_image_state(barrier);
 		}
 	}
 
@@ -322,83 +408,6 @@ auto gse::gpu::recording_context::fill_buffer(const buffer& dst, const std::size
 		gpu::access_flag::transfer_write
 	);
 	m_recorder.fill_buffer(dst.handle(), offset, size, data);
-}
-
-auto gse::gpu::recording_context::barrier(const gpu::barrier_scope scope) const -> void {
-	check_active();
-	using ps = gpu::pipeline_stage_flag;
-	using ac = gpu::access_flag;
-	gpu::memory_barrier mb;
-	switch (scope) {
-		case gpu::barrier_scope::compute_to_compute:
-			mb = {
-				.src_stages = ps::compute_shader,
-				.src_access = ac::shader_storage_write,
-				.dst_stages = ps::compute_shader,
-				.dst_access = ac::shader_storage_read | ac::shader_storage_write | ac::shader_sampled_read,
-			};
-			break;
-		case gpu::barrier_scope::compute_to_indirect:
-			mb = {
-				.src_stages = ps::compute_shader,
-				.src_access = ac::shader_storage_write,
-				.dst_stages = ps::draw_indirect | ps::compute_shader,
-				.dst_access = ac::indirect_command_read | ac::shader_storage_read | ac::shader_storage_write,
-			};
-			break;
-		case gpu::barrier_scope::host_to_compute:
-			mb = {
-				.src_stages = ps::host,
-				.src_access = ac::host_write,
-				.dst_stages = ps::compute_shader,
-				.dst_access = ac::shader_storage_read | ac::shader_storage_write,
-			};
-			break;
-		case gpu::barrier_scope::transfer_to_compute:
-			mb = {
-				.src_stages = ps::copy,
-				.src_access = ac::transfer_write,
-				.dst_stages = ps::compute_shader,
-				.dst_access = ac::shader_storage_read | ac::shader_storage_write,
-			};
-			break;
-		case gpu::barrier_scope::compute_to_transfer:
-			mb = {
-				.src_stages = ps::compute_shader,
-				.src_access = ac::shader_storage_write,
-				.dst_stages = ps::copy,
-				.dst_access = ac::transfer_read,
-			};
-			break;
-		case gpu::barrier_scope::transfer_to_host:
-			mb = {
-				.src_stages = ps::transfer,
-				.src_access = ac::transfer_write,
-				.dst_stages = ps::host,
-				.dst_access = ac::host_read,
-			};
-			break;
-		case gpu::barrier_scope::transfer_to_transfer:
-			mb = {
-				.src_stages = ps::copy,
-				.src_access = ac::transfer_write,
-				.dst_stages = ps::copy,
-				.dst_access = ac::transfer_write,
-			};
-			break;
-		case gpu::barrier_scope::acceleration_structure_to_shader:
-			mb = {
-				.src_stages = ps::acceleration_structure_build,
-				.src_access = ac::acceleration_structure_write,
-				.dst_stages = ps::compute_shader | ps::fragment_shader | ps::mesh_shader | ps::task_shader,
-				.dst_access = ac::acceleration_structure_read | ac::shader_read,
-			};
-			break;
-	}
-	const gpu::dependency_info dep{
-		.memory_barriers = std::span(&mb, 1)
-	};
-	m_recorder.pipeline_barrier(dep);
 }
 
 auto gse::gpu::recording_context::build_acceleration_structure(const gpu::acceleration_structure_build_geometry_info& build_info, const std::span<const gpu::acceleration_structure_build_range_info* const> range_infos) -> void {
@@ -680,6 +689,8 @@ auto gse::gpu::recording_context::set_scissor(const vec2u extent) const -> void 
 
 auto gse::gpu::recording_context::bind(const gpu::shader_program& p) -> void {
 	check_active();
+
+	m_bound_is_compute = p.is_compute();
 
 	if (p.is_compute()) {
 		m_recorder.bind_shaders(p.stages(), p.shader_handles());

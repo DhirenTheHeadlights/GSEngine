@@ -16,4 +16,3 @@ export import :buffer;
 export import :image;
 export import :pass_recorder;
 export import :backend_state;
-export import :command_dispatch;

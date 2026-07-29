@@ -3,6 +3,7 @@ export module gse.gpu:device_dx12_backend;
 import std;
 
 import :video_backend;
+import :command_dispatch;
 
 import gse.gpu_backend;
 import gse.dx12;
@@ -346,6 +347,7 @@ export namespace gse::gpu {
 
 	struct dx12_backend_creation {
 		std::unique_ptr<dx12_device_backend> backend;
+		const command_dispatch* commands = nullptr;
 		image_format surface_format = image_format::b8g8r8a8_unorm;
 		bool video_encode_enabled = false;
 	};
@@ -621,6 +623,7 @@ auto gse::gpu::dx12_device_backend::allocate_acceleration_structure_slot() -> gp
 	return device->allocate_acceleration_structure_slot();
 }
 
+
 auto gse::gpu::dx12_device_backend::write_storage_buffer(const gpu::bindless_slot slot, const gpu::device_address address, const gpu::device_size size) -> void {
 	device->write_storage_buffer(slot, address, size);
 }
@@ -668,6 +671,7 @@ auto gse::gpu::create_dx12_device_backend(const std::optional<shared_view<window
 	backend->swapchain.bind(backend->device.get());
 	return {
 		.backend = std::move(backend),
+		.commands = command_dispatch_for<dx12::commands>(),
 		.surface_format = image_format::b8g8r8a8_unorm,
 		.video_encode_enabled = false,
 	};

@@ -239,9 +239,6 @@ auto gse::renderer::bloom::frame(const context& ctx, shared_view<gpu::context::d
 	rec.sample_image(hdr, gpu::pipeline_stage_flag::compute_shader);
 
 	for (std::uint32_t i = 0; i < count; ++i) {
-		if (i > 0) {
-			rec.barrier(gpu::barrier_scope::compute_to_compute);
-		}
 		const auto source_slot = (i == 0) ? d.hdr_view.slot() : d.mips_down[i - 1].sampled_slot();
 		rec.dispatch<downsample_entry>(
 			{
@@ -271,9 +268,6 @@ auto gse::renderer::bloom::frame(const context& ctx, shared_view<gpu::context::d
 	}
 
 	for (std::uint32_t i = count - 1; i-- > 0;) {
-		if (i + 1 < count - 1) {
-			up_rec.barrier(gpu::barrier_scope::compute_to_compute);
-		}
 		const auto up_source = (i + 1 == count - 1) ? d.mips_down[count - 1].sampled_slot() : d.mips_up[i + 1].sampled_slot();
 		up_rec.dispatch<upsample_entry>(
 			{

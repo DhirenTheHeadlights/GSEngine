@@ -171,7 +171,6 @@ auto gse::renderer::gi_probe::frame(context& ctx, shared_view<gpu::context::data
 
 	auto rec = co_await gpu::pass<^^gse::renderer::gi_probe::frame>(ctx).pipeline(d.update_pipeline).after<^^rt_shadow::frame>();
 
-	rec.barrier(gpu::barrier_scope::acceleration_structure_to_shader);
 	rec.dispatch<entry>(
 		{
 			.origin_world = d.origin_world,

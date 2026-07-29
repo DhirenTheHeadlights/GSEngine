@@ -7,7 +7,6 @@ import :gpu_task;
 import :sync_token;
 import :device;
 import :pass_recorder;
-import :command_dispatch;
 
 auto gse::gpu::upload_to_buffers(gpu::device& dev, const std::span<const buffer_upload> uploads) -> sync_token {
 	if (uploads.empty()) {
@@ -29,7 +28,7 @@ auto gse::gpu::upload_to_buffers(gpu::device& dev, const std::span<const buffer_
 	auto cmd = begin_transient(dev, queue_id::graphics, "transient.buffer_upload");
 
 	for (std::size_t i = 0; i < uploads.size(); ++i) {
-		pass_recorder(cmd.handle(), dev.command_table())
+		dev.recorder(cmd.handle())
 			.copy_buffer(
 				stagings[i].handle(),
 				uploads[i].dst->handle(),
