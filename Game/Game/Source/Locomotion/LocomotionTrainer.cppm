@@ -52,7 +52,7 @@ export namespace gs::locomotion {
 		std::string reference_clip_path = "";
 		std::string amp_extra_clip_paths = "";
 		gse::velocity rsi_min_speed = gse::meters_per_second(0.15f);
-		gse::velocity rsi_max_speed = gse::meters_per_second(0.65f);
+		gse::velocity rsi_max_speed = gse::meters_per_second(1.60f);
 		float r_imitation = 6.0f;
 		float imitation_pose_scale = 2.0f;
 		float imitation_vel_scale = 0.1f;

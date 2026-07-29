@@ -228,6 +228,27 @@ namespace gs::locomotion {
 		gse::displacement pelvis_height,
 		std::span<float, amp_feature_dim> out
 	) -> void;
+
+	auto bvh_channel_from(
+		std::string_view t
+	) -> bvh_channel;
+
+	auto bvh_is_space(
+		char ch
+	) -> bool;
+
+	auto import_hinge_x(
+		const gse::quat& parent,
+		const gse::quat& child
+	) -> gse::angle;
+
+	auto mocap_to_rig_basis() -> gse::quat;
+
+	auto label_contacts_and_phase(
+		std::vector<observation>& obs,
+		std::vector<reference_kinematics>& kin,
+		const std::vector<std::array<bone_sample, 17>>& bones
+	) -> void;
 }
 
 auto gs::locomotion::update_phi(recorder::data& d, const gait& g) -> void {
@@ -385,8 +406,8 @@ auto gs::locomotion::load_reference_clip(const std::string_view path) -> std::op
 	return clip;
 }
 
-static auto bvh_channel_from(const std::string_view t) -> gs::locomotion::bvh_channel {
-	using c = gs::locomotion::bvh_channel;
+auto gs::locomotion::bvh_channel_from(const std::string_view t) -> bvh_channel {
+	using c = bvh_channel;
 	if (t == "Xposition") return c::x_pos;
 	if (t == "Yposition") return c::y_pos;
 	if (t == "Zposition") return c::z_pos;
@@ -395,7 +416,7 @@ static auto bvh_channel_from(const std::string_view t) -> gs::locomotion::bvh_ch
 	return c::z_rot;
 }
 
-static auto bvh_is_space(const char ch) -> bool {
+auto gs::locomotion::bvh_is_space(const char ch) -> bool {
 	return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r';
 }
 
@@ -577,10 +598,84 @@ auto gs::locomotion::bvh_clip_info(const std::string_view path) -> bool {
 	return true;
 }
 
-static auto import_hinge_x(const gse::quat& parent, const gse::quat& child) -> gse::angle {
+auto gs::locomotion::import_hinge_x(const gse::quat& parent, const gse::quat& child) -> gse::angle {
 	const auto theta = gse::difference_axis_angle(parent, child);
 	const auto axis_world = gse::rotate_vector(parent, gse::vec3f(1.f, 0.f, 0.f));
-	return -gse::dot(axis_world, theta);
+	return gse::dot(axis_world, theta);
+}
+
+auto gs::locomotion::mocap_to_rig_basis() -> gse::quat {
+	return gse::quat(gse::vec3f(0.f, 1.f, 0.f), gse::degrees(180.f));
+}
+
+auto gs::locomotion::label_contacts_and_phase(std::vector<observation>& obs, std::vector<reference_kinematics>& kin, const std::vector<std::array<bone_sample, 17>>& bones) -> void {
+	if (kin.empty()) {
+		return;
+	}
+	auto ground = bones[0][11].position.y();
+	auto peak = ground;
+	for (const auto& b : bones) {
+		ground = std::min(ground, std::min(b[11].position.y(), b[14].position.y()));
+		peak = std::max(peak, std::max(b[11].position.y(), b[14].position.y()));
+	}
+	const auto contact_band = (peak - ground) * 0.35f;
+	const auto contact_speed = gse::meters_per_second(0.5f);
+	auto grounded = std::vector<std::array<bool, 2>>(kin.size());
+	const auto foot_bone = std::array<std::size_t, 2>{ 11, 14 };
+	for (std::size_t i = 0; i < kin.size(); ++i) {
+		for (std::size_t s = 0; s < 2; ++s) {
+			const auto& b = bones[i][foot_bone[s]];
+			const auto planar = gse::magnitude(gse::vec3<gse::velocity>(b.velocity.x(), gse::meters_per_second(0.f), b.velocity.z()));
+			grounded[i][s] = b.position.y() - ground < contact_band && planar < contact_speed;
+		}
+		kin[i].foot_grounded_l = grounded[i][0];
+		kin[i].foot_grounded_r = grounded[i][1];
+		obs[i].foot_grounded_l = grounded[i][0] ? 1.f : 0.f;
+		obs[i].foot_grounded_r = grounded[i][1] ? 1.f : 0.f;
+	}
+
+	auto events = std::vector<std::pair<std::size_t, float>>{};
+	for (std::size_t i = 1; i < kin.size(); ++i) {
+		if (grounded[i - 1][0] && !grounded[i][0]) {
+			events.emplace_back(i, 0.f);
+		}
+		else if (grounded[i - 1][1] && !grounded[i][1]) {
+			events.emplace_back(i, 0.5f);
+		}
+	}
+	if (events.size() < 2) {
+		gse::log::println("import_mocap: WARNING only {} lift-off events detected — phi falls back to a fixed 60-frame ramp", events.size());
+		for (std::size_t i = 0; i < kin.size(); ++i) {
+			kin[i].phi = static_cast<float>(i % 60) / 60.f;
+		}
+	}
+	else {
+		for (std::size_t i = 0; i < events.front().first; ++i) {
+			kin[i].phi = events.front().second;
+		}
+		for (std::size_t k = 0; k + 1 < events.size(); ++k) {
+			const auto span = static_cast<float>(events[k + 1].first - events[k].first);
+			auto delta = events[k + 1].second - events[k].second;
+			if (delta <= 0.f) {
+				delta += 1.f;
+			}
+			for (auto i = events[k].first; i < events[k + 1].first; ++i) {
+				auto p = events[k].second + delta * (static_cast<float>(i - events[k].first) / span);
+				while (p >= 1.f) {
+					p -= 1.f;
+				}
+				kin[i].phi = p;
+			}
+		}
+		for (auto i = events.back().first; i < kin.size(); ++i) {
+			kin[i].phi = events.back().second;
+		}
+		gse::log::println("import_mocap: {} lift-off events -> {} gait cycles (ground y={:.3f})", events.size(), events.size() - 1, ground / gse::meters(1.f));
+	}
+	for (std::size_t i = 0; i < kin.size(); ++i) {
+		obs[i].phase_sin = std::sin(kin[i].phi * 2.f * std::numbers::pi_v<float>);
+		obs[i].phase_cos = std::cos(kin[i].phi * 2.f * std::numbers::pi_v<float>);
+	}
 }
 
 auto gs::locomotion::import_mocap(const std::string_view bvh_path, const std::string_view out_path) -> bool {
@@ -638,6 +733,11 @@ auto gs::locomotion::import_mocap(const std::string_view bvh_path, const std::st
 	auto prev_q = std::array<gse::quat, 17>{};
 	auto prev_angles = std::array<gse::angle, 6>{};
 	int frames_written = 0;
+	const auto basis = mocap_to_rig_basis();
+	const auto basis_inverse = gse::conjugate(basis);
+	auto out_obs = std::vector<observation>{};
+	auto out_kin = std::vector<reference_kinematics>{};
+	auto out_bones = std::vector<std::array<bone_sample, 17>>{};
 
 	for (int f = 0; f < bvh.frame_count; f += stride) {
 		const auto row = static_cast<std::size_t>(f) * static_cast<std::size_t>(bvh.channels_per_frame);
@@ -672,8 +772,8 @@ auto gs::locomotion::import_mocap(const std::string_view bvh_path, const std::st
 		auto cur_q = std::array<gse::quat, 17>{};
 		for (std::size_t i = 0; i < 17; ++i) {
 			const auto mj = static_cast<std::size_t>(mocap_idx[i]);
-			const auto q = world_orient[mj];
-			const auto raw = world_pos[mj];
+			const auto q = basis * world_orient[mj] * basis_inverse;
+			const auto raw = gse::rotate_vector(basis, world_pos[mj]);
 			const auto pm = gse::vec3f(raw.x() * scale, raw.y() * scale, raw.z() * scale);
 			cur_pos[i] = pm;
 			cur_q[i] = q;
@@ -698,9 +798,6 @@ auto gs::locomotion::import_mocap(const std::string_view bvh_path, const std::st
 		kin.hip_angle_r = import_hinge_x(bones[0].orientation, bones[12].orientation);
 		kin.knee_angle_r = import_hinge_x(bones[12].orientation, bones[13].orientation);
 		kin.ankle_angle_r = import_hinge_x(bones[13].orientation, bones[14].orientation);
-		kin.phi = static_cast<float>(frames_written % 60) / 60.f;
-		kin.foot_grounded_l = bones[11].position.y() < gse::meters(0.06f);
-		kin.foot_grounded_r = bones[14].position.y() < gse::meters(0.06f);
 
 		auto obs = observation{};
 		obs.pelvis_height = bones[0].position.y() - std::min(bones[11].position.y(), bones[14].position.y());
@@ -720,20 +817,28 @@ auto gs::locomotion::import_mocap(const std::string_view bvh_path, const std::st
 			obs.ankle_rate_r = (kin.ankle_angle_r - prev_angles[5]) / dt;
 		}
 		prev_angles = { kin.hip_angle_l, kin.knee_angle_l, kin.ankle_angle_l, kin.hip_angle_r, kin.knee_angle_r, kin.ankle_angle_r };
-		const auto act = action{};
-		const auto diag = actuation_diagnostics{};
-		write_pod(out, obs);
-		write_pod(out, act);
-		write_pod(out, diag);
-		write_pod(out, kin);
-		for (const auto& b : bones) {
-			write_pod(out, b);
-		}
+		out_obs.push_back(obs);
+		out_kin.push_back(kin);
+		out_bones.push_back(bones);
 
 		prev_pos = cur_pos;
 		prev_q = cur_q;
 		have_prev = true;
 		++frames_written;
+	}
+
+	label_contacts_and_phase(out_obs, out_kin, out_bones);
+
+	for (std::size_t i = 0; i < out_kin.size(); ++i) {
+		const auto act = action{};
+		const auto diag = actuation_diagnostics{};
+		write_pod(out, out_obs[i]);
+		write_pod(out, act);
+		write_pod(out, diag);
+		write_pod(out, out_kin[i]);
+		for (const auto& b : out_bones[i]) {
+			write_pod(out, b);
+		}
 	}
 
 	gse::log::println("import_mocap: wrote {} frames (stride={}, scale={:.5f}) -> '{}'", frames_written, stride, scale, out_path);
@@ -762,9 +867,19 @@ auto gs::locomotion::clip_kinematics_stats(const std::string_view path) -> bool 
 		}
 	};
 	auto hip_l = acc{}, hip_r = acc{}, knee_l = acc{}, knee_r = acc{}, ankle_l = acc{}, ankle_r = acc{};
-	auto knee_rate = acc{}, pelvis_h = acc{}, foot_sep = acc{}, foot_fwd = acc{};
+	auto knee_rate = acc{}, pelvis_h = acc{}, foot_sep = acc{}, foot_fwd = acc{}, fwd_speed = acc{};
+	auto foot_y_l = acc{}, foot_y_r = acc{}, foot_planar_l = acc{}, foot_planar_r = acc{};
+	auto grounded_l = 0, grounded_r = 0, phi_wraps = 0;
+	auto prev_phi = 0.f;
 	const auto to_rad = [](const gse::angle a) { return a / gse::radians(1.f); };
 	for (const auto& fr : clip->frames) {
+		fwd_speed.add(-fr.obs.velocity_body.z() / gse::meters_per_second(1.f));
+		grounded_l += fr.kin.foot_grounded_l ? 1 : 0;
+		grounded_r += fr.kin.foot_grounded_r ? 1 : 0;
+		if (fr.kin.phi < prev_phi - 0.5f) {
+			++phi_wraps;
+		}
+		prev_phi = fr.kin.phi;
 		hip_l.add(to_rad(fr.kin.hip_angle_l));
 		hip_r.add(to_rad(fr.kin.hip_angle_r));
 		knee_l.add(to_rad(fr.kin.knee_angle_l));
@@ -779,6 +894,12 @@ auto gs::locomotion::clip_kinematics_stats(const std::string_view path) -> bool 
 			const auto fr_r = fr.bones[14].position;
 			foot_sep.add(gse::abs(fl.x() - fr_r.x()) / gse::meters(1.f));
 			foot_fwd.add((fl.z() - pelvis.z()) / gse::meters(1.f));
+			foot_y_l.add(fl.y() / gse::meters(1.f));
+			foot_y_r.add(fr_r.y() / gse::meters(1.f));
+			const auto& bl = fr.bones[11];
+			const auto& br = fr.bones[14];
+			foot_planar_l.add(gse::magnitude(gse::vec3<gse::velocity>(bl.velocity.x(), gse::meters_per_second(0.f), bl.velocity.z())) / gse::meters_per_second(1.f));
+			foot_planar_r.add(gse::magnitude(gse::vec3<gse::velocity>(br.velocity.x(), gse::meters_per_second(0.f), br.velocity.z())) / gse::meters_per_second(1.f));
 		}
 	}
 	const auto line = [](const std::string_view name, const acc& a) {
@@ -795,6 +916,15 @@ auto gs::locomotion::clip_kinematics_stats(const std::string_view path) -> bool 
 	line("pelvis_h m", pelvis_h);
 	line("foot_sep m", foot_sep);
 	line("foot_fwd m", foot_fwd);
+	line("fwd_speed m/s", fwd_speed);
+	line("foot_y_l m", foot_y_l);
+	line("foot_y_r m", foot_y_r);
+	line("foot_planar_l", foot_planar_l);
+	line("foot_planar_r", foot_planar_r);
+	gse::log::println("clip_stats:   grounded_l={:.0f}% grounded_r={:.0f}% phi_cycles={}",
+		100.f * static_cast<float>(grounded_l) / static_cast<float>(clip->frames.size()),
+		100.f * static_cast<float>(grounded_r) / static_cast<float>(clip->frames.size()),
+		phi_wraps);
 	return true;
 }
 
