@@ -141,6 +141,11 @@ export namespace gse::dx12 {
 			const gpu::dependency_info& dep
 		) -> void;
 
+		auto cmd_transition_acceleration_structure_inputs(
+			gpu::command_buffer_handle cmd,
+			std::span<const gpu::device_address> addresses
+		) -> void;
+
 		auto cmd_write_timestamp(
 			gpu::command_buffer_handle cmd,
 			gpu::handle<gpu::query_pool> pool,

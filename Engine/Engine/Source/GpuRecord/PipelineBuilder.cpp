@@ -158,7 +158,7 @@ auto gse::gpu::make_slang_session() -> owned_slang_session {
 		sp_c_strs.push_back(s.c_str());
 	}
 
-	const bool use_dxil = active_backend == gpu_backend_kind::dx12;
+	const bool use_dxil = active_backend == backend_kind::dx12;
 	slang::TargetDesc target{
 		.format = use_dxil ? slang_dxil : slang_spirv,
 		.profile = global->findProfile(use_dxil ? "sm_6_6" : "spirv_1_5"),

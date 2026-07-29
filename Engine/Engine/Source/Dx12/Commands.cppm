@@ -37,6 +37,10 @@ export namespace gse::dx12 {
 			const gpu::dependency_info& dep
 		) const -> void;
 
+		auto transition_image_state(
+			const gpu::image_barrier& barrier
+		) const -> void;
+
 		auto reset_query_pool(
 			gpu::handle<gpu::query_pool> pool,
 			std::uint32_t first_query,
@@ -348,6 +352,10 @@ auto gse::dx12::commands::pipeline_barrier(const gpu::dependency_info& dep) cons
 	}
 }
 
+auto gse::dx12::commands::transition_image_state(const gpu::image_barrier& barrier) const -> void {
+	pipeline_barrier(gpu::dependency_info{ .image_barriers = std::span(&barrier, 1) });
+}
+
 auto gse::dx12::commands::reset_query_pool(gpu::handle<gpu::query_pool>, std::uint32_t, std::uint32_t) const -> void {}
 
 auto gse::dx12::commands::write_timestamp(gpu::pipeline_stage_flags, const gpu::handle<gpu::query_pool> pool, const std::uint32_t index) const -> void {
@@ -568,6 +576,10 @@ auto gse::dx12::commands::build_acceleration_structures(const gpu::acceleration_
 	const auto dst = geometry_info.dst.value;
 	const auto scratch = geometry_info.scratch_address;
 	if (geometry_info.type == gpu::acceleration_structure_type::bottom_level) {
+		if (active_device) {
+			const std::array inputs{ geometry.triangles.vertex_data, geometry.triangles.index_data };
+			active_device->cmd_transition_acceleration_structure_inputs(m_cmd, inputs);
+		}
 		const directx::blas_triangles triangles{
 			.vertex_format = directx::format_r32g32b32_float,
 			.vertex_address = geometry.triangles.vertex_data,
@@ -580,6 +592,10 @@ auto gse::dx12::commands::build_acceleration_structures(const gpu::acceleration_
 		directx::build_blas(list, dst, scratch, triangles);
 	}
 	else {
+		if (active_device) {
+			const std::array inputs{ geometry.instances.data };
+			active_device->cmd_transition_acceleration_structure_inputs(m_cmd, inputs);
+		}
 		const bool allow_update = geometry_info.flags.test(gpu::build_acceleration_structure_flag::allow_update);
 		directx::build_tlas(list, dst, scratch, geometry.instances.data, range_infos[0]->primitive_count, allow_update);
 	}

@@ -1,12 +1,15 @@
 # Render-graph bindless auto-barriers — plan
 
-Status: **cross-pass MVP landed; tracking the path to zero manual barriers.** Spun out of
-the Phase-3 headless GPU VBD bring-up (2026-06-16), where a missing barrier on a
-bindlessly-written buffer caused a multi-day TDR hang. The original "proposed" design has
-since been implemented (the slot registry + consteval access walk, wired into both compute
-`dispatch` and graphics `push_bindings`). This doc now records what exists, how good the
-automatic path can realistically get, and the ranked work remaining to retire the manual
-`rec.barrier` calls as a *correctness* requirement.
+Status: **zero manual barriers — `rec.barrier` and `gpu::barrier_scope` are deleted (2026-07-28).**
+Spun out of the Phase-3 headless GPU VBD bring-up (2026-06-16), where a missing barrier on a
+bindlessly-written buffer caused a multi-day TDR hang. Both the cross-pass path (slot registry +
+consteval access walk) and the intra-pass path (per-pass last-accessor diff at `note_touched`)
+are implemented, so barrier correctness is now automatic with no author-facing escape hatch.
+`recording_context::pipeline_barrier` survives as the internal primitive both paths emit through,
+and as the explicit sync inside `build_blas_in_place` / `build_tlas_in_place` / `transition_image_to`.
+
+An earlier revision of this doc claimed P1 v1 had landed. It had not — no intra-pass tracker
+existed in any ref until 2026-07-28. Treat the statuses below as describing the current tree.
 
 ## Problem
 
@@ -90,26 +93,26 @@ The only thing beyond the automatic bar needs *semantic knowledge the type syste
 derive* — "these two writes are disjoint," or "already synced two sub-steps ago." A human
 occasionally knows those; the compiler cannot prove them.
 
-**Opt-out philosophy.** `rec.barrier` (and a future per-dispatch range/skip annotation) stays
-in the API — not as correctness you can forget, but as a **performance knob** for the rare
-hot pass where the author has knowledge the tracker lacks. This mirrors every production
-render graph (Frostbite FrameGraph, RGL): full automation with a manual override. Success =
-every *functional* barrier is automatic; every surviving `rec.barrier` is a deliberate,
-measured optimization.
+**No opt-out.** An earlier revision argued for keeping `rec.barrier` as a performance knob.
+That was rejected: a blanket `compute_to_compute` is strictly *coarser* than what the tracker
+emits, so it was never an optimization — only a way to forget a barrier and get a silent TDR.
+The knob, if one is ever needed, should be a per-dispatch range/disjointness annotation that
+makes the tracker emit *less*, not a hand-placed barrier that makes it emit more.
 
-## The two classes of remaining manual barriers
+## Coverage: cross-pass and intra-pass
 
-`note_touched` accumulates per pass and flushes at the pass boundary (`finalize_pass`), so
-the automatic path is **cross-pass only**. The `co_await gpu::pass<Stage>(ctx)` idiom makes
-each stage a separate pass — often one dispatch each — so the split is:
+`note_touched` accumulates per pass and flushes at the pass boundary (`finalize_pass`) for the
+cross-pass path, and additionally diffs each access against a per-pass last-accessor map
+(`m_last_access`) for the intra-pass path. Both feed off the same `{resource, stage, access}`
+tuple, so every access route — bindless `dispatch`/`push_bindings`, `copy_buffer`,
+`fill_buffer`, `dispatch_indirect`, `sample_image`, `build_acceleration_structure` — is covered
+by construction.
 
-- **Cross-pass** (one dispatch per `co_await pass`; the `rec.barrier` is the first op of the
-  new pass, guarding against the previous pass): the VBD collision stages
-  (`GpuSolver.cpp:1124,1136,1148,…`) and the `finalize → state_copy` transfer barrier.
-  **Covered today** by `append_prev_pass_barriers` — redundant, deletable after verification.
-- **Intra-pass** (multiple dispatches on one `rec`): the VBD solve-iteration loop
-  (`GpuSolver.cpp:1261-1312`) and Bloom's down/up mip loops (`BloomRenderer.cpp:243,275`).
-  `append_prev_pass_barriers` runs at pass boundaries only, so these are **not covered**.
+- **Cross-pass** (`append_prev_pass_barriers`, `RenderGraph.cpp`): per-queue `latest_writes` +
+  `reads_since_write`, emitting targeted buffer/image/memory barriers at pass boundaries.
+- **Intra-pass** (`recording_context::emit_intra_pass_barrier`): on a re-access of a resource
+  where either side writes (RAW/WAW/WAR), emits one targeted barrier before the command and
+  replaces the entry; read-after-read accumulates stages/access instead.
 
 ## Ranked plan to reach zero
 
@@ -135,65 +138,57 @@ harder to spot.
   serialized by the ECS schedule (all take `shared_view<gpu::context::data>`); a freed slot is
   never bound by any shader, so free-time clearing stays unnecessary.
 
-**P0 — Reap the cross-pass win already paid for.** Verify, then delete the cross-pass manual
-barriers **for passes whose resources are all registry-tracked**. Passes that bind through
-the manual slot path (TAA, Bloom) keep their barriers until P-reg lands. No new code; gated on
-the validation harness below.
+**P0 — Reap the cross-pass win already paid for. DONE 2026-07-28.** All 35 `rec.barrier` call
+sites are deleted, along with `recording_context::barrier` and `gpu::barrier_scope`. The
+cross-pass ones (first op of a fresh `co_await gpu::pass`) are covered by
+`append_prev_pass_barriers`; the intra-pass ones by P1. `compute_to_indirect` is covered —
+`dispatch_indirect` / `draw_indirect` / `draw_mesh_tasks_indirect` all `note_touched` the
+indirect buffer with `draw_indirect` + `indirect_command_read`, so it participates in both
+paths. The AS→shader barrier (GiProbe) duplicated the post-barrier that
+`build_tlas_in_place` already emits.
 
-  *Status (VBD cross-pass done — 11 barriers removed).* First tranche (8, **verified** via
-  `--physics-parity --use-gpu-solver` determinism): the cross-pass `compute_to_compute`
-  barriers that were each the first op of a fresh `co_await gpu::pass` guarding a single
-  `dispatch<Entry>` (grid_build, broad_phase, prepare_indirect, prepare_contact_indirect,
-  build_adjacency, build_coloring, prepare_color_indirect, predict). Second tranche (3, deleted
-  after that verify — re-verify pending): narrow_phase's `compute_to_compute`, freeze_jacobians'
-  `compute_to_compute`, and the `compute_to_transfer` at `vbd_state_copy_stage` — the original
-  footgun (finalize writes `body_buffer` bindlessly → state_copy reads it via `copy_buffer`; now
-  auto-covered because `body_buffer` is registered). All buffers involved are
-  `create_buffer(.bindless)`-registered, so `append_prev_pass_barriers` emits the equivalent
-  targeted barrier at each pass boundary. **Kept** (all intra-pass or unconfirmed): the
-  solve-iteration loop, restitution, post-stabilize, the finalize dispatch→copy sequence, and
-  the 3 `compute_to_indirect` barriers (indirect-buffer tracking not yet confirmed). The
-  remaining survivors are essentially all **intra-pass → P1 territory**.
+**P1 — Intra-pass hazard tracking (the one real feature). LANDED 2026-07-28.** Implemented at
+the `note_touched` chokepoint (`RecordingContext.cpp`) rather than per-dispatch, so it covers
+every access path uniformly. A per-pass `m_last_access` map (`const void*` → `{stages, access}`,
+moved with the context like `m_touched`, fresh per pass) records the last access of each
+resource; on a re-access where either side writes, it emits one targeted `buffer_barrier` /
+`image_barrier` / `memory_barrier` (by `resource_ref::type`) before the command. Image barriers
+carry `prev_state = next_state = m_image_states[ptr].current`, which is the pre-transition state
+because `note_touched` runs before `transition_image_for_binding` — so the tracker emits pure
+sync and layout management stays with the existing transition path. Lookup is by pointer and at
+most one barrier is emitted per access, so emission order is command order, not hash-map order.
 
-**P1 — Intra-pass hazard tracking (the one real feature).** `register_one_bindless` already
-computes the exact `{resource, stage, access}` tuple per dispatch; today it only forwards it
-to the pass-level accumulator. Add a per-pass "last accessor" map; before recording each
-dispatch's accesses, diff against it and emit a **targeted** buffer/image barrier on a
-RAW/WAW/WAR, then update the map. It is a diff-and-emit step on data already in hand, not new
-analysis. Targeted per-resource barriers can *beat* the blanket `compute_to_compute` (e.g.
-Bloom's true mip ping-pong RAW) when per-`Entry` packs carry accurate read/read_write
-qualifiers. Emit in stable pack order — never hash-map order — to preserve GPU determinism.
+  Two supporting fixes were required and are part of this change:
 
-  *Status (v1 landed — buffers only, additive, unverified).* Implemented at the `note_touched`
-  chokepoint (`RecordingContext.cpp`) rather than per-dispatch, so it covers every access path
-  uniformly — bindless dispatch, `copy_buffer`, `fill_buffer`, `dispatch_indirect`. A per-pass
-  `m_intra_access` map (`const void*` → `{stages, access}`, moved with the context like
-  `m_touched`, fresh per pass) records the last access of each buffer; on a re-access where
-  either side writes (RAW/WAW/WAR), it emits one targeted `buffer_barrier` before the command
-  and replaces the entry; read-after-read accumulates. **Scoped to `resource_type::buffer`**
-  (retires the VBD solve-iteration loop, the bulk); images need `prev/next_state` layout
-  handling and stay on manual barriers (Bloom) for a v2. The change is **purely additive** — it
-  adds barriers, removes none — so it cannot cause a *missing*-barrier hang. v1 verified working
-  (full game run, additive phase).
+  - **`push_bindings` stage attribution.** It hardcoded `vertex|fragment|mesh|task`, but the VBD
+    solver uses it for *compute* dispatches (`push_bindings<E>` + `dispatch_indirect`). Every
+    compute access in that loop was therefore recorded under graphics stages — wrong for the
+    cross-pass path too, since `srcStage = fragment_shader` does not order a compute write.
+    `bind()` now records `shader_program::is_compute()` and `bound_shader_stages()` returns
+    `compute_shader` accordingly.
+  - **DX12 dropped same-state write hazards.** `cmd_pipeline_barrier` skipped any buffer/image
+    barrier whose `before == after`, so a UAV→UAV hazard — the common compute RAW/WAW — produced
+    *no* barrier at all, while the manual `rec.barrier` path (a `memory_barrier`) correctly
+    became a global UAV barrier. Same-state write hazards on an `UNORDERED_ACCESS` resource now
+    emit a per-resource `D3D12_RESOURCE_BARRIER_TYPE_UAV`. This is a standalone DX12 correctness
+    fix; it applies to the cross-pass path as well.
 
-  *Follow-up (redundant-barrier cleanup — pending re-verify).* With v1 proven, deleted all 14
-  now-redundant `compute_to_compute` barriers in the VBD solver (`GpuSolver.cpp`: the
-  solve-iteration, restitution, and post-stabilize loops, plus the solve pass's cross-pass
-  first-op guard). The intra-pass ones are covered by the v1 tracker; the one cross-pass guard
-  is covered by the already-verified cross-pass path. **This is the real test of v1's
-  sufficiency** — v1 only proved the auto barriers don't *break* anything (they were additive);
-  removing the manual ones proves they *suffice*. **Kept**: the 3 `compute_to_indirect` (indirect
-  dimension, unconfirmed) and the finalize `compute_to_transfer`/`transfer_to_compute` sequence
-  (buffer hazards the tracker likely covers, but held for a separate round). A missed hazard now
-  surfaces as non-determinism or a TDR → `git checkout GpuSolver.cpp` restores the barriers.
+  **Intentional scope limit:** the intra-pass tracker skips hazards whose *destination* is a
+  graphics stage, so repeated `push_bindings` across draws in one render pass do not emit a
+  barrier per draw. Graphics-after-graphics intra-pass hazards on bindless storage resources
+  (e.g. the meshlet OIT accumulation path) are therefore still the shader's responsibility.
+  Compute-after-graphics is covered, as is everything at a pass boundary.
 
 **P2 — Close descriptor-type coverage in `register_one_bindless`.** Acceleration structures
-are unhandled (only image/buffer), *and* AS resources are never `set_slot_resource`'d (only
-buffers + storage/sampled images are). Covering the GiProbe AS→shader barrier needs both a
-registry hook at AS registration and an `acceleration_structure` branch here (access =
-shader read). Note: **descriptor arrays are correctly skipped, not a gap** — the only
-`count > 1` binding is `sampler2d_array` = the global bindless texture table
-(`bindless_texture_capacity`); per-texture barriers on the global table would be nonsense.
+are still unhandled (only image/buffer), *and* AS resources are never `set_slot_resource`'d.
+This is **no longer a correctness gap**: `build_tlas_in_place` / `build_blas_in_place` end with
+an explicit `rec.pipeline_barrier` post-barrier (AS build write → `acceleration_structure_read`
+in compute|fragment), which is what the deleted GiProbe `acceleration_structure_to_shader`
+barrier was duplicating. Closing P2 would let the tracker derive that instead of the builders
+hardcoding it, and would make an AS bound-but-never-built detectable. Note: **descriptor arrays
+are correctly skipped, not a gap** — the only `count > 1` binding is `sampler2d_array` = the
+global bindless texture table (`bindless_texture_capacity`); per-texture barriers on the global
+table would be nonsense.
 
 **P3 — Kill the silent-failure tail (strictly after P-reg).** `register_one_bindless` silently
 no-ops when `resource_for_slot` returns null (`if (ref.ptr)`) — the *same* silent-hang class
@@ -210,16 +205,21 @@ registry ⇔ live). **This is the dominant correctness risk.**
   `0xc0000005` AV *instead of* the assertion message, swallowing the diagnostic. Worth
   hardening independently, since it masks every worker-thread assert, not just this one.
 
-**P4 — host→compute (`RtShadowRenderer.cpp:252`).** Host writes are not GPU ops the graph
-sees. Either a `note_host_write` on the map/unmap path or leave it as the one sanctioned
-manual barrier. Tiny.
+**P4 — host→compute (`RtShadowRenderer.cpp`). RESOLVED — the barrier was never needed.** Host
+writes are not GPU ops the graph sees, but neither backend requires an explicit dependency for
+them: Vulkan's queue-submit performs an implicit host→device memory-domain operation for writes
+made before the submit (which is when every `buffer::host_write` here runs), and the DX12
+backend already discards `host_write` buffer barriers outright
+(`cmd_pipeline_barrier`, `Dx12/Device.cpp`). The `memory_barrier` form of the deleted
+`host_to_compute` only ever reached DX12 as a *global UAV barrier* — which the intra-pass
+tracker now emits per-resource, and only where a real hazard exists.
 
-## Phase 2 note — why intra-pass was deferred originally
-
-Higher complexity (mid-pass barrier insertion, per-dispatch bookkeeping) for barriers that
-are local and visible. With the cross-pass foundation now proven, P1 is the natural next
-lever and the bulk of the remaining `rec.barrier` calls. It reuses the existing per-binding
-derivation, so the marginal cost is the intra-pass diff + a targeted-barrier builder.
+  Note the gap this leaves for `append_host_dirty_barriers`, which is the belt-and-braces path
+  for the typed API: it keys off `resource_ref::host_buffer`, and the bindless slot registry
+  never populates that field — `create_buffer` cannot (its local `buffer` is about to be moved
+  out, so its address would dangle) and `write_storage_buffer` currently does not. So a
+  host-written *bindless* buffer is invisible to that pass. Correct today for the reason above;
+  worth closing if a backend ever needs a real host barrier.
 
 ## Risks
 
@@ -227,30 +227,41 @@ derivation, so the marginal cost is the intra-pass diff + a targeted-barrier bui
   address entry produces a wrong or missing barrier (the same silent failure, harder to
   spot). Needs tight invalidation and the P3 debug assert (slot in registry ⇔ live).
 - **Over-barriering** — a `read_write` pack member is marked written every dispatch, so a
-  shared rw buffer barriers on every boundary. Safe, possibly slower than a hand-tuned scope.
-  Mitigation: per-`Entry` access precision + keep the `rec.barrier` opt-out. Measure hot
-  passes before assuming the auto path is free.
-- **Determinism** — barrier placement must not depend on hash-map iteration order; keep
-  emission deterministic (stable per-binding order from the pack).
+  shared rw buffer barriers on every access. Safe, possibly slower than a hand-tuned scope, and
+  there is no longer an opt-out. Mitigation is per-`Entry` access precision (a member the shader
+  only reads should be `read`, not `read_write`), not a hand-placed barrier. Measure hot passes
+  before assuming the auto path is free.
+- **Determinism** — barrier placement must not depend on hash-map iteration order. The
+  intra-pass tracker is a keyed lookup emitting at most one barrier per access, so its order is
+  command order; the cross-pass path must keep the stable per-binding pack order.
 
 ## Acceptance / validation
 
+Nothing below has been run yet — this change is unverified.
+
 - `--physics-parity --use-gpu-solver` stays green (boxes fall, run-to-run deterministic,
-  CPU↔GPU within tolerance) **with the cross-pass manual barriers deleted** (P0).
+  CPU↔GPU within tolerance) with the manual barriers deleted. **This is the real test:** the
+  tracker is not additive, it *replaces* the manual barriers, so a missed hazard surfaces as
+  non-determinism or a TDR rather than as a slowdown.
 - Locomotion smoke trials 2–5 bit-identical (`state_hash` unchanged).
-- A focused test: a two-pass graph (compute writes a bindless buffer → second pass reads it)
-  hangs/validation-errors **without** the feature and passes **with** it.
-- Bloom / RT-shadow render paths unchanged visually.
+- Bloom / RT-shadow / GI-probe render paths unchanged visually — Bloom's mip ping-pong is the
+  one image-resource intra-pass hazard in the tree and the only exercise of the image branch.
+- DX12: physics no longer freezes/falls-through (the UAV-barrier fix is the first time a
+  compute UAV→UAV hazard produces any barrier at all on that backend).
 - P3: the debug assert fires on a deliberately-unregistered bound slot and never on a
   legitimately-unbound (`invalid_index`) one.
 
 ## References
 
-- `Engine/Engine/Source/GpuRecord/RecordingContext.cppm:302` — `register_one_bindless`;
-  `:334` — `register_bindless_usage`; `:342,350` — compute `dispatch`; `:357,364` —
-  graphics `push_bindings`.
-- `Engine/Engine/Source/Gpu/Graph/RenderGraph.cpp` — `note_touched`,
-  `append_prev_pass_barriers`, `append_barrier_for_resource`.
+- `Engine/Engine/Source/GpuRecord/RecordingContext.cppm` — `register_one_bindless`,
+  `register_bindless_usage`, compute `dispatch`, graphics `push_bindings`, `access_track` /
+  `m_last_access`.
+- `Engine/Engine/Source/GpuRecord/RecordingContext.cpp` — `note_touched`,
+  `emit_intra_pass_barrier`, `bound_shader_stages`, `transition_image_for_binding`.
+- `Engine/Engine/Source/Gpu/Graph/RenderGraph.cpp` —
+  `append_prev_pass_barriers`, `append_barrier_for_resource`, `append_host_dirty_barriers`.
+- `Engine/Engine/Source/Dx12/Device.cpp` — `cmd_pipeline_barrier`
+  (`unordered_hazard_between`, the same-state UAV-barrier path).
 - `Engine/Engine/Source/Gpu/Device/Device.cpp:660,683,693` — `set_slot_resource` /
   `resource_for_slot`; `:466` — `m_slot_resources`.
 - `Engine/Engine/Source/Gpu/Graph/TransientPool.cpp:221` — `free_slot_resources`.
@@ -258,8 +269,10 @@ derivation, so the marginal cost is the intra-pass diff + a targeted-barrier bui
   `descriptor_type`; `Core.cppm:49` — `bindless_slot::invalid_index`.
 - `Engine/Engine/Source/Gpu/Shader/ShaderCodegen.cppm:594,622,632` — `descriptor_type_of`,
   `descriptor_count_of`, `descriptor_access_of`.
-- `Engine/Engine/Source/Physics/VBD/GpuSolver.cpp:1124…` — cross-pass barriers (P0 retires);
-  `:1261-1312` — the intra-pass solve loop (P1 retires).
-- `Engine/Engine/Source/Graphics/Renderers/BloomRenderer.cpp:243,275`,
-  `RtShadowRenderer.cpp:252`, `GiProbeRenderer.cpp:174` — the same idiom in renderers.
+- `Engine/Engine/Source/Physics/VBD/GpuSolver.cpp` — the solve loop that carried 30 of the 35
+  deleted barriers.
+- `Engine/Engine/Source/Graphics/Renderers/BloomRenderer.cpp`, `RtShadowRenderer.cpp`,
+  `GiProbeRenderer.cpp`, `CullComputeRenderer.cpp` — the same idiom in renderers.
+- `Engine/Engine/Source/GpuRecord/AccelerationStructure.cpp` — `build_blas_in_place` /
+  `build_tlas_in_place`, which keep explicit `rec.pipeline_barrier` pre/post sync.
 - Memory: `gpu-bindless-render-graph-gotchas` (the bring-up that surfaced this).

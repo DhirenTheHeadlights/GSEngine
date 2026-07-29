@@ -3,6 +3,7 @@ export module gse.gpu:device_vulkan_backend;
 import std;
 
 import :video_backend;
+import :command_dispatch;
 
 import gse.gpu_backend;
 import gse.vulkan;
@@ -407,6 +408,7 @@ export namespace gse::gpu {
 
 	struct vulkan_backend_creation {
 		std::unique_ptr<vulkan_device_backend> backend;
+		const command_dispatch* commands = nullptr;
 		image_format surface_format = image_format::b8g8r8a8_unorm;
 		bool video_encode_enabled = false;
 	};
@@ -822,6 +824,7 @@ auto gse::gpu::create_vulkan_device_backend(const std::optional<shared_view<wind
 
 	return vulkan_backend_creation{
 		.backend = std::move(backend),
+		.commands = command_dispatch_for<vulkan::commands>(),
 		.surface_format = surface_format,
 		.video_encode_enabled = creation.video_encode_enabled,
 	};

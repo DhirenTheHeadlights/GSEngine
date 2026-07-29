@@ -8,6 +8,8 @@ import :camera_system;
 import :atmosphere_renderer;
 import :cloud_renderer;
 import :forward_renderer;
+import :sdf_grid_renderer;
+import :world_text_renderer;
 import :render_targets;
 import :shared_shaders;
 import :mesh;
@@ -234,7 +236,7 @@ auto gse::renderer::oit::frame(context& ctx, shared_view<gpu::context::data> gpu
 			)
 		)
 		.depth(gpu::load_depth())
-		.after<^^forward::frame>();
+		.after<^^forward::frame, ^^sdf_grid::frame, ^^world_text::frame, ^^cloud::cloud_composite_pass>();
 
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
