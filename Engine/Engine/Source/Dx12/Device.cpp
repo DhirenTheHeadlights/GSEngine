@@ -95,7 +95,7 @@ auto gse::dx12::build_graphics_pipeline_desc(const gfx_template& tmpl, const gra
 		.ms_size = tmpl.mesh.size(),
 		.fill_mode = fill_of(s.polygon),
 		.cull_mode = cull_of(s.cull),
-		.front_counter_clockwise = s.front == gpu::front_face::counter_clockwise,
+		.front_counter_clockwise = s.front != gpu::front_face::counter_clockwise,
 		.depth_clip_enable = !s.depth_clamp_enable,
 		.depth_bias = static_cast<std::int32_t>(s.depth_bias_constant),
 		.depth_bias_clamp = s.depth_bias_clamp,
@@ -442,18 +442,19 @@ auto gse::dx12::device::cmd_pipeline_barrier(const gpu::command_buffer_handle cm
 	static thread_local std::vector<directx::D3D12_RESOURCE_BARRIER> barriers;
 	barriers.clear();
 	barriers.reserve(dep.image_barriers.size() + dep.buffer_barriers.size() + dep.memory_barriers.size());
-	for (const auto& mb : dep.memory_barriers) {
-		const auto src = mb.src_access;
-		const auto dst = mb.dst_access;
-		const bool unordered_hazard =
-			src.test(gpu::access_flag::acceleration_structure_write) ||
+
+	const auto unordered_hazard_between = [](const gpu::access_flags src, const gpu::access_flags dst) {
+		return src.test(gpu::access_flag::acceleration_structure_write) ||
 			src.test(gpu::access_flag::shader_storage_write) ||
 			src.test(gpu::access_flag::shader_write) ||
 			dst.test(gpu::access_flag::acceleration_structure_read) ||
 			dst.test(gpu::access_flag::shader_storage_read) ||
 			dst.test(gpu::access_flag::shader_storage_write) ||
 			dst.test(gpu::access_flag::shader_write);
-		if (!unordered_hazard) {
+	};
+
+	for (const auto& mb : dep.memory_barriers) {
+		if (!unordered_hazard_between(mb.src_access, mb.dst_access)) {
 			continue;
 		}
 		barriers.push_back({
@@ -497,6 +498,14 @@ auto gse::dx12::device::cmd_pipeline_barrier(const gpu::command_buffer_handle cm
 				}
 			}
 			if (before == after) {
+				if (after == directx::resource_state_unordered_access && unordered_hazard_between(ib.src_access, ib.dst_access)) {
+					barriers.push_back({
+						.Type = directx::barrier_type_uav,
+						.UAV = {
+							.pResource = res,
+						},
+					});
+				}
 				continue;
 			}
 			barriers.push_back({
@@ -525,11 +534,21 @@ auto gse::dx12::device::cmd_pipeline_barrier(const gpu::command_buffer_handle cm
 				map_lock.lock();
 			}
 			const auto it = m_buffer_states.find(res);
-			auto before = it != m_buffer_states.end() ? it->second : directx::resource_state_common;
+			auto before = it != m_buffer_states.end()
+				? it->second
+				: d3d12_state_of(gpu::state_of(bb.src_access));
 			if (compute_list) {
 				before = directx::strip_graphics_only_states(before);
 			}
 			if (before == after) {
+				if (after == directx::resource_state_unordered_access && unordered_hazard_between(bb.src_access, bb.dst_access)) {
+					barriers.push_back({
+						.Type = directx::barrier_type_uav,
+						.UAV = {
+							.pResource = res,
+						},
+					});
+				}
 				continue;
 			}
 			m_buffer_states[res] = after;
@@ -540,6 +559,52 @@ auto gse::dx12::device::cmd_pipeline_barrier(const gpu::command_buffer_handle cm
 					.Subresource = directx::resource_barrier_all_subresources,
 					.StateBefore = before,
 					.StateAfter = after,
+				},
+			});
+		}
+	}
+	if (!barriers.empty()) {
+		list->ResourceBarrier(static_cast<std::uint32_t>(barriers.size()), barriers.data());
+	}
+}
+
+auto gse::dx12::device::cmd_transition_acceleration_structure_inputs(const gpu::command_buffer_handle cmd, const std::span<const gpu::device_address> addresses) -> void {
+	auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(cmd);
+	if (!list) {
+		return;
+	}
+	const bool compute_list = directx::is_compute_command_list(list);
+	static thread_local std::vector<directx::D3D12_RESOURCE_BARRIER> barriers;
+	barriers.clear();
+	{
+		const std::lock_guard lock(m_mutex);
+		for (const auto address : addresses) {
+			if (!address) {
+				continue;
+			}
+			const auto resource = find_buffer(address).first;
+			if (!resource) {
+				continue;
+			}
+			const auto it = m_buffer_states.find(resource);
+			auto before = it != m_buffer_states.end() ? it->second : directx::resource_state_common;
+			if (compute_list) {
+				before = directx::strip_graphics_only_states(before);
+			}
+			if (before == directx::resource_state_common) {
+				continue;
+			}
+			if (static_cast<int>(before) & static_cast<int>(directx::resource_state_non_pixel_shader_resource)) {
+				continue;
+			}
+			m_buffer_states[resource] = directx::resource_state_non_pixel_shader_resource;
+			barriers.push_back({
+				.Type = directx::barrier_type_transition,
+				.Transition = {
+					.pResource = resource,
+					.Subresource = directx::resource_barrier_all_subresources,
+					.StateBefore = before,
+					.StateAfter = directx::resource_state_non_pixel_shader_resource,
 				},
 			});
 		}
@@ -582,6 +647,9 @@ auto gse::dx12::device::cmd_release_swapchain_to_present(const gpu::command_buff
 auto gse::dx12::device::begin_debug_event(const gpu::command_buffer_handle cmd, const std::string_view label) -> void {
 	if (auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(cmd)) {
 		directx::begin_event(list, label.data(), label.size());
+		if (m_validation_enabled) {
+			directx::set_object_name(list, label.data(), label.size());
+		}
 	}
 }
 
@@ -1148,7 +1216,7 @@ auto gse::dx12::device::create_blas(const gpu::acceleration_structure_geometry& 
 			.size = sizes.acceleration_structure_size,
 			.usage = gpu::buffer_flag::acceleration_structure_storage,
 		},
-		{},
+		"blas.storage",
 		std::source_location::current()
 	);
 
@@ -1174,7 +1242,7 @@ auto gse::dx12::device::create_tlas(const std::uint32_t max_instances) -> gpu::t
 			.size = as_size,
 			.usage = gpu::buffer_flag::acceleration_structure_storage,
 		},
-		{},
+		"tlas.storage",
 		std::source_location::current()
 	);
 
@@ -1183,7 +1251,7 @@ auto gse::dx12::device::create_tlas(const std::uint32_t max_instances) -> gpu::t
 			.size = std::max(build_scratch, update_scratch) + alignment,
 			.usage = gpu::buffer_flag::acceleration_structure_scratch,
 		},
-		{},
+		"tlas.scratch",
 		std::source_location::current()
 	);
 
@@ -1192,7 +1260,7 @@ auto gse::dx12::device::create_tlas(const std::uint32_t max_instances) -> gpu::t
 			.size = static_cast<gpu::device_size>(max_instances) * sizeof(gpu::acceleration_structure_instance),
 			.usage = gpu::buffer_flag::acceleration_structure_build_input | gpu::buffer_flag::storage,
 		},
-		{},
+		"tlas.instances",
 		std::source_location::current()
 	);
 

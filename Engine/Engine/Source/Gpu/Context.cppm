@@ -34,7 +34,7 @@ export namespace gse::gpu::context {
 			= settings::describe<"GPU backend to initialize on startup. Vulkan falls back to dx12 if it is unsupported. Requires a restart.">{},
 			= settings::restart_required{}
 		]]
-		gpu_backend_kind backend = gpu_backend_kind::vulkan;
+		backend_kind backend = backend_kind::vulkan;
 
 		[[
 			= settings::describe<"Vulkan device tracking and naming options.">{}

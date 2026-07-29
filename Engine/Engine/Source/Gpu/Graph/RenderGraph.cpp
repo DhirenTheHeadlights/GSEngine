@@ -9,8 +9,6 @@ import :frame;
 import :transient_pool;
 import :image;
 import :pass_recorder;
-import :command_dispatch;
-import :backend_state;
 
 import gse.gpu_backend;
 import gse.assert;
@@ -22,7 +20,6 @@ import gse.diag;
 import gse.log;
 import gse.math;
 import gse.meta;
-import gse.vulkan;
 
 namespace gse::gpu {
 	constexpr auto profile_stats_flags = gpu::pipeline_statistic_flag::input_assembly_vertices |
@@ -379,7 +376,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 					};
 				}
 
-				const pass_recorder body_cmd(body, m_device->command_table());
+				const auto body_cmd = m_device->recorder(body);
 				body_cmd.begin();
 
 				const auto marker_domain = (queue == gpu::queue_type::graphics)
@@ -431,7 +428,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 				}
 
 				auto& rec_init = *static_cast<recording_context_init*>(pass.record_ctx_slot);
-				rec_init.recorder = pass_recorder{ body, m_device->command_table() };
+				rec_init.recorder = m_device->recorder(body);
 				rec_init.pass = std::addressof(pass);
 				rec_init.transient_pool = std::addressof(m_transient_pool);
 				rec_init.device = m_device;
@@ -563,7 +560,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			const auto q = static_cast<gpu::queue_type>(qi);
 			const bool with_stats = qi == static_cast<std::size_t>(gpu::queue_type::graphics) && stats_enabled;
 			const auto profile_begin = m_device->acquire_worker_command_buffer(q, 0, frame_idx);
-			const pass_recorder pcmd(profile_begin, m_device->command_table());
+			const auto pcmd = m_device->recorder(profile_begin);
 			pcmd.begin();
 			pcmd.reset_query_pool(slot.timestamp_pool, 0, max_profiled_passes * 2 + 1);
 			if (with_stats) {
@@ -980,7 +977,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 						image_out
 					);
 				}
-				else if (active_backend == gpu_backend_kind::dx12 && cur_resource.type == resource_type::image) {
+				else if (cur_resource.type == resource_type::image) {
 					append_barrier_for_resource(
 						cur_resource,
 						{},
@@ -1177,7 +1174,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			const auto queue_index = static_cast<std::size_t>(queue);
 			if (!memory_barriers.empty() || !buffer_barriers.empty() || !image_barriers.empty()) {
 				const auto transition = m_device->acquire_worker_command_buffer(queue, 0, frame_idx);
-				const pass_recorder tcmd(transition, m_device->command_table());
+				const auto tcmd = m_device->recorder(transition);
 				tcmd.begin();
 				tcmd.pipeline_barrier(
 					gpu::dependency_info{

@@ -36,11 +36,11 @@ namespace gse::gpu {
 	constexpr gpu_dispatch device_dispatch_for = meta::build_dispatch<gpu_dispatch, vulkan_device_backend, meta::pointer_receiver<B>>();
 }
 
-auto gse::gpu::device::create(const std::optional<shared_view<window::data>> win, const bool validation_layers_enabled, gpu_backend_kind& backend, gpu::device_settings& device_cfg) -> std::unique_ptr<device> {
-	if (backend == gpu_backend_kind::vulkan) {
+auto gse::gpu::device::create(const std::optional<shared_view<window::data>> win, const bool validation_layers_enabled, backend_kind& backend, gpu::device_settings& device_cfg) -> std::unique_ptr<device> {
+	if (backend == backend_kind::vulkan) {
 		auto created = create_vulkan_device_backend(win, validation_layers_enabled, device_cfg);
 		if (created) {
-			active_backend = gpu_backend_kind::vulkan;
+			active_backend = backend_kind::vulkan;
 
 			std::unique_ptr<void, void (*)(void*)> backend(
 				created->backend.release(),
@@ -50,6 +50,7 @@ auto gse::gpu::device::create(const std::optional<shared_view<window::data>> win
 			auto dev = std::unique_ptr<device>(new device(
 				std::move(backend),
 				&device_dispatch_for<vulkan_device_backend>,
+				created->commands,
 				created->surface_format,
 				created->video_encode_enabled
 			));
@@ -61,17 +62,15 @@ auto gse::gpu::device::create(const std::optional<shared_view<window::data>> win
 				task::thread_count()
 			);
 
-			dev->m_command_dispatch = command_dispatch_for_backend(gpu_backend_kind::vulkan);
-
 			return dev;
 		}
 
 		log::println(log::category::render, "vulkan device unavailable; falling back to dx12 backend");
 		log::flush();
-		backend = gpu_backend_kind::dx12;
+		backend = backend_kind::dx12;
 	}
 
-	active_backend = gpu_backend_kind::dx12;
+	active_backend = backend_kind::dx12;
 	auto created = create_dx12_device_backend(win, validation_layers_enabled, device_cfg);
 
 	std::unique_ptr<void, void (*)(void*)> backend_ptr(
@@ -82,6 +81,7 @@ auto gse::gpu::device::create(const std::optional<shared_view<window::data>> win
 	auto dev = std::unique_ptr<device>(new device(
 		std::move(backend_ptr),
 		&device_dispatch_for<dx12_device_backend>,
+		created.commands,
 		created.surface_format,
 		created.video_encode_enabled
 	));
@@ -93,13 +93,11 @@ auto gse::gpu::device::create(const std::optional<shared_view<window::data>> win
 		task::thread_count()
 	);
 
-	dev->m_command_dispatch = command_dispatch_for_backend(gpu_backend_kind::dx12);
-
 	return dev;
 }
 
-gse::gpu::device::device(std::unique_ptr<void, void (*)(void*)> backend, const gpu_dispatch* dispatch, image_format surface_format, bool video_encode_enabled)
-	: m_backend(std::move(backend)), m_vt(dispatch), m_surface_format(surface_format), m_video_encode_enabled(video_encode_enabled) {
+gse::gpu::device::device(std::unique_ptr<void, void (*)(void*)> backend, const gpu_dispatch* dispatch, const command_dispatch* commands, image_format surface_format, bool video_encode_enabled)
+	: m_backend(std::move(backend)), m_vt(dispatch), m_command_dispatch(commands), m_surface_format(surface_format), m_video_encode_enabled(video_encode_enabled) {
 	constexpr std::size_t slot_count = pass_marker_ring_size * 4;
 	constexpr std::size_t buffer_size = slot_count * sizeof(std::uint32_t);
 	const std::array<std::uint32_t, slot_count> zeros{};
@@ -545,8 +543,8 @@ auto gse::gpu::device::transient() -> transient_executor<device>& {
 	return *m_transient;
 }
 
-auto gse::gpu::device::command_table() const -> const gpu::command_dispatch* {
-	return m_command_dispatch;
+auto gse::gpu::device::recorder(const gpu::command_buffer_handle cmd) const -> pass_recorder {
+	return pass_recorder(cmd, m_command_dispatch);
 }
 
 auto gse::gpu::device::begin_one_time_commands(const gpu::command_buffer_handle cmd) -> void {

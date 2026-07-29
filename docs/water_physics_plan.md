@@ -60,7 +60,7 @@ entirely new.
 |---|---|---|
 | Compute pass recording | `gpu::pass<Stage>(ctx).on(compute).in_chain<>()`, `RenderGraph.cppm` | Mirror VBD solver shape directly. |
 | Typed dispatch | `rec.dispatch<Entry>(pc, bindings, groups)`, `rec.dispatch_indirect(...)` | `GpuSolver.cpp` |
-| Explicit barriers | `rec.barrier(gpu::barrier_scope::compute_to_compute)`, `GpuBackend/Enums.cppm:138` | 7 scopes; see Landmines. |
+| Automatic barriers | `recording_context::emit_intra_pass_barrier` + `append_prev_pass_barriers` | There is no manual barrier API — `rec.barrier`/`gpu::barrier_scope` were deleted 2026-07-28. Barriers are derived from bindless access; see `render_graph_bindless_barriers_plan.md`. |
 | Bindless buffers + readback | `create_buffer({.bindless=true})`, `.slot()`, double-buffered `host_read()` | Same pattern VBD uses. |
 | **Headless compute submit** | `physics::frame()` gates on `use_gpu_solver`, awaits `dispatch_compute()`, `System.cpp:1325` | Landed in Stage 3.0d (2026-06-16). The PBF prove-out rides this exact path. |
 | Spatial-hash grid build | VBD broad phase `collision_grid_build_pipeline` | Neighbor-grid concept already lives in the codebase. |
@@ -152,10 +152,14 @@ gameplay or rendering investment.
 
 ## Landmines (VBD scar tissue confirms these)
 
-- **The barrier dance** — ~15 RAW-dependent compute passes per step, each needs an explicit
-  `rec.barrier(compute_to_compute)` or a TDR hang results, exactly like the `state_copy`
-  `compute_to_transfer` bug. The render-graph auto-barrier is **blind to bindless writes**.
-  Highest correctness risk.
+- **The barrier dance** — ~15 RAW-dependent compute passes per step. This is now automatic in
+  both directions (cross-pass and intra-pass) and there is no manual escape hatch, but it is
+  only as good as the `Entry` binding declarations: a member the shader writes must be
+  `read_write`, and a bindless resource must be reachable via `device::resource_for_slot`
+  (i.e. created through `create_buffer`/`create_image` `.bindless` or bound via
+  `write_storage_buffer`/`write_sampled_image`). A resource that fails either condition gets
+  **no barrier and no diagnostic** — that is now the highest correctness risk, in place of the
+  old forgot-to-write-it risk.
 - **Push-constant budget** — 256 B. PBF config goes in an SSBO, not push data (same lesson
   as `solver_config`).
 - **Determinism** — atomic-scatter neighbor grids are non-deterministic. For a VBD-style

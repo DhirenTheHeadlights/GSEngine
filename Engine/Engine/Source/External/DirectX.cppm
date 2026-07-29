@@ -92,6 +92,7 @@ export namespace gse::directx {
 	constexpr auto resource_state_copy_dest = D3D12_RESOURCE_STATE_COPY_DEST;
 	constexpr auto resource_state_copy_source = D3D12_RESOURCE_STATE_COPY_SOURCE;
 	constexpr auto resource_state_shader_resource = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+	constexpr auto resource_state_non_pixel_shader_resource = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 	constexpr auto resource_state_raytracing_acceleration_structure = D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE;
 	constexpr auto resource_state_indirect_argument = D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT;
 	constexpr auto resource_barrier_all_subresources = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
@@ -223,6 +224,12 @@ export namespace gse::directx {
 	) -> void;
 
 	auto enable_dred() -> bool;
+
+	auto narrow_debug_name(
+		const wchar_t* wide,
+		char* out,
+		int cap
+	) -> const char*;
 
 	auto dump_dred(
 		ID3D12Device* device,
@@ -831,6 +838,18 @@ auto gse::directx::enable_dred() -> bool {
 	return true;
 }
 
+auto gse::directx::narrow_debug_name(const wchar_t* wide, char* out, const int cap) -> const char* {
+	if (!wide || cap <= 1) {
+		return nullptr;
+	}
+	const int written = WideCharToMultiByte(CP_UTF8, 0, wide, -1, out, cap - 1, nullptr, nullptr);
+	if (written <= 0) {
+		return nullptr;
+	}
+	out[cap - 1] = '\0';
+	return out;
+}
+
 auto gse::directx::dump_dred(ID3D12Device* device, void (*sink)(void* context, const char* message), void (*op_sink)(void* context, unsigned int index, unsigned int completed, D3D12_AUTO_BREADCRUMB_OP op), void* context) -> void {
 	if (!device || !sink || !op_sink) {
 		return;
@@ -853,8 +872,22 @@ auto gse::directx::dump_dred(ID3D12Device* device, void (*sink)(void* context, c
 			const UINT32 completed = node->pLastBreadcrumbValue ? *node->pLastBreadcrumbValue : 0;
 			if (count != 0 && completed < count) {
 				++incomplete_count;
-				const char* queue_name = node->pCommandQueueDebugNameA ? node->pCommandQueueDebugNameA : "?";
-				const char* list_name = node->pCommandListDebugNameA ? node->pCommandListDebugNameA : "?";
+				char queue_buf[256];
+				char list_buf[256];
+				const char* queue_name = node->pCommandQueueDebugNameA;
+				if (!queue_name) {
+					queue_name = narrow_debug_name(node->pCommandQueueDebugNameW, queue_buf, static_cast<int>(sizeof(queue_buf)));
+				}
+				if (!queue_name) {
+					queue_name = "?";
+				}
+				const char* list_name = node->pCommandListDebugNameA;
+				if (!list_name) {
+					list_name = narrow_debug_name(node->pCommandListDebugNameW, list_buf, static_cast<int>(sizeof(list_buf)));
+				}
+				if (!list_name) {
+					list_name = "?";
+				}
 				std::snprintf(line, sizeof(line), "DRED node[%d] queue='%s' list='%s' completed %u/%u ops -- GPU hung in this list", node_index, queue_name, list_name, completed, count);
 				sink(context, line);
 				const UINT32 first = completed > 4u ? completed - 4u : 0u;
@@ -878,11 +911,27 @@ auto gse::directx::dump_dred(ID3D12Device* device, void (*sink)(void* context, c
 		std::snprintf(line, sizeof(line), "DRED page fault at GPU VA 0x%llx", static_cast<unsigned long long>(page_fault.PageFaultVA));
 		sink(context, line);
 		for (const D3D12_DRED_ALLOCATION_NODE* a = page_fault.pHeadExistingAllocationNode; a; a = a->pNext) {
-			std::snprintf(line, sizeof(line), "    existing allocation '%s' type=%d", a->ObjectNameA ? a->ObjectNameA : "?", static_cast<int>(a->AllocationType));
+			char alloc_buf[256];
+			const char* alloc_name = a->ObjectNameA;
+			if (!alloc_name) {
+				alloc_name = narrow_debug_name(a->ObjectNameW, alloc_buf, static_cast<int>(sizeof(alloc_buf)));
+			}
+			if (!alloc_name) {
+				alloc_name = "?";
+			}
+			std::snprintf(line, sizeof(line), "    existing allocation '%s' type=%d", alloc_name, static_cast<int>(a->AllocationType));
 			sink(context, line);
 		}
 		for (const D3D12_DRED_ALLOCATION_NODE* a = page_fault.pHeadRecentFreedAllocationNode; a; a = a->pNext) {
-			std::snprintf(line, sizeof(line), "    recently freed allocation '%s' type=%d", a->ObjectNameA ? a->ObjectNameA : "?", static_cast<int>(a->AllocationType));
+			char alloc_buf[256];
+			const char* alloc_name = a->ObjectNameA;
+			if (!alloc_name) {
+				alloc_name = narrow_debug_name(a->ObjectNameW, alloc_buf, static_cast<int>(sizeof(alloc_buf)));
+			}
+			if (!alloc_name) {
+				alloc_name = "?";
+			}
+			std::snprintf(line, sizeof(line), "    recently freed allocation '%s' type=%d", alloc_name, static_cast<int>(a->AllocationType));
 			sink(context, line);
 		}
 	}

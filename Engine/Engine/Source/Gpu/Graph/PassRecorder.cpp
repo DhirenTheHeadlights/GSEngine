@@ -2,32 +2,10 @@ module gse.gpu:pass_recorder_impl;
 
 import std;
 
-import :pass_recorder;
 import :command_dispatch;
 
-import gse.vulkan;
-import gse.dx12;
 import gse.gpu_backend;
-import gse.meta;
 import gse.math;
-
-namespace gse::gpu {
-	constexpr std::array<std::string_view, 2> recorder_excludes{ "native", "valid" };
-
-	consteval {
-		std::meta::define_aggregate(^^command_dispatch, meta::dispatch_specs(meta::value_receiver<vulkan::commands, command_buffer_handle>::self_type(), ^^pass_recorder, recorder_excludes));
-	}
-
-	template <typename B>
-	constexpr command_dispatch command_dispatch_for = meta::build_dispatch<command_dispatch, pass_recorder, meta::value_receiver<B, command_buffer_handle>, recorder_excludes>();
-}
-
-auto gse::gpu::command_dispatch_for_backend(const gpu_backend_kind backend) -> const command_dispatch* {
-	if (backend == gpu_backend_kind::dx12) {
-		return &command_dispatch_for<dx12::commands>;
-	}
-	return &command_dispatch_for<vulkan::commands>;
-}
 
 gse::gpu::pass_recorder::pass_recorder(const gpu::command_buffer_handle cmd, const command_dispatch* dispatch)
 	: m_cmd(cmd), m_vt(dispatch) {
@@ -267,6 +245,10 @@ auto gse::gpu::pass_recorder::copy_image(const gpu::handle<gpu::image> src, cons
 
 auto gse::gpu::pass_recorder::pipeline_barrier(const gpu::dependency_info& dep) const -> void {
 	m_vt->pipeline_barrier(m_cmd, dep);
+}
+
+auto gse::gpu::pass_recorder::transition_image_state(const gpu::image_barrier& barrier) const -> void {
+	m_vt->transition_image_state(m_cmd, barrier);
 }
 
 auto gse::gpu::pass_recorder::build_acceleration_structures(const gpu::acceleration_structure_build_geometry_info& build_info, const std::span<const gpu::acceleration_structure_build_range_info* const> range_infos) const -> void {

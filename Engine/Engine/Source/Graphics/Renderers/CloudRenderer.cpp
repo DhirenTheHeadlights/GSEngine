@@ -5,6 +5,8 @@ import std;
 import :cloud_renderer;
 import :atmosphere_renderer;
 import :camera_system;
+import :sdf_grid_renderer;
+import :world_text_renderer;
 import :render_targets;
 
 
@@ -379,7 +381,7 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 		.pipeline(d.composite_pipeline)
 		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
 		.depth(gpu::load_depth())
-		.after<^^atmosphere::sky_raster_pass, ^^cloud_raymarch_pass>();
+		.after<^^atmosphere::sky_raster_pass, ^^cloud_raymarch_pass, ^^sdf_grid::frame, ^^world_text::frame>();
 
 	composite_rec.sample_image(d.cloud_target, gpu::pipeline_stage_flag::fragment_shader);
 	composite_rec.set_viewport(ext);
