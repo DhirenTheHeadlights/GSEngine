@@ -22,6 +22,10 @@ namespace gs::startup {
 		bool locomotion_clip_info = false;
 		std::string reference_clip_path;
 		bool locomotion_play = false;
+		bool locomotion_bvh_info = false;
+		std::string bvh_path;
+		bool locomotion_import_mocap = false;
+		bool locomotion_clip_stats = false;
 	};
 
 	auto run_game(
@@ -126,6 +130,7 @@ auto gs::startup::run_locomotion_train(const config& cfg) -> void {
 	auto ppo = cfg.ppo;
 	ppo.action_scale = cfg.action_scale;
 	ppo.checkpoint_path = locomotion_artifact("locomotion_checkpoint.bin");
+	ppo.state_path = locomotion_artifact("locomotion_train_state.bin");
 	ppo.reference_clip_path = cfg.reference_clip_path.empty() ? locomotion_artifact("ref_walk.bin") : cfg.reference_clip_path;
 	gse::start(
 		[&ppo](gse::engine& e) -> void {
@@ -253,6 +258,15 @@ auto main(int argc, char** argv) -> int {
 	if (cfg.locomotion_clip_info) {
 		gs::startup::run_locomotion_clip_info(cfg);
 		return 0;
+	}
+	if (cfg.locomotion_bvh_info) {
+		return gs::locomotion::bvh_clip_info(cfg.bvh_path) ? 0 : 1;
+	}
+	if (cfg.locomotion_import_mocap) {
+		return gs::locomotion::import_mocap(cfg.bvh_path, cfg.locomotion_record_path) ? 0 : 1;
+	}
+	if (cfg.locomotion_clip_stats) {
+		return gs::locomotion::clip_kinematics_stats(cfg.locomotion_record_path) ? 0 : 1;
 	}
 	if (cfg.locomotion_play) {
 		gs::startup::run_locomotion_play(cfg);
