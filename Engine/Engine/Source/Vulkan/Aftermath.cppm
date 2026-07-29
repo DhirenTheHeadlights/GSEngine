@@ -105,11 +105,11 @@ namespace gse::vulkan {
 }
 
 auto gse::vulkan::default_dump_directory() -> std::filesystem::path {
-	return config::resource_path / "Misc" / "crash_dumps";
+	return config::crash_dir();
 }
 
 auto gse::vulkan::default_shader_directory() -> std::filesystem::path {
-	return config::resource_path / "Misc" / "aftermath_shaders";
+	return config::crash_dir() / "shaders";
 }
 
 auto gse::vulkan::write_dump_to_disk(const std::filesystem::path& directory, const std::string& stem, std::string_view extension, const void* data, std::size_t size) -> std::filesystem::path {
@@ -150,7 +150,7 @@ auto gse::vulkan::on_gpu_crash_dump(const void* data, std::uint32_t size) -> voi
 		log::level::error,
 		log::category::vulkan,
 		"Aftermath crash dump written: {}",
-		path.string()
+		path.display_string()
 	);
 
 	const auto analysis = gse::aftermath::analyze_crash_dump(data, size);
@@ -296,8 +296,8 @@ auto gse::vulkan::aftermath::create(settings cfg) -> aftermath {
 		log::println(
 			log::category::vulkan,
 			"Nsight Aftermath crash dumps enabled (dumps -> {}, shaders -> {})",
-			dumps.dump_directory.string(),
-			dumps.shader_directory.string()
+			dumps.dump_directory.display_string(),
+			dumps.shader_directory.display_string()
 		);
 	}
 	else if (gse::aftermath::compiled_in) {

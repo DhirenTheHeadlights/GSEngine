@@ -60,11 +60,11 @@ export namespace gse::profile {
 	auto reset() -> void;
 
 	auto dump(
-		const std::filesystem::path& path = config::resource_path / "Misc" / "profile.txt"
+		const std::filesystem::path& path = config::profile_dir() / "profile.txt"
 	) -> void;
 
 	auto dump_chrome_trace(
-		const std::filesystem::path& path = config::resource_path / "Misc" / "profile.json"
+		const std::filesystem::path& path = config::profile_dir() / "profile.json"
 	) -> void;
 }
 
@@ -372,7 +372,7 @@ auto gse::profile::write_thread_breakdown(std::ofstream& out, const std::vector<
 	}
 
 	out << std::format("{:<{}}  {:>10}  {:>10}  {:>40}\n", "tag", tag_width, "main/f", "worker/f",
-					   "per-tid /f (top 6)");
+		"per-tid /f (top 6)");
 	out << std::string(tag_width + 2 + 10 + 2 + 10 + 2 + 40, '-') << '\n';
 
 	const std::size_t max_to_show = std::min<std::size_t>(20, sorted.size());

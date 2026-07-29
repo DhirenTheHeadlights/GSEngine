@@ -77,10 +77,13 @@ export namespace gse {
 
 		[[nodiscard]] auto empty() const -> bool;
 
-		template <typename Self>
 		[[nodiscard]] auto data(
-			this Self& self
-		) -> decltype(auto);
+			this linear_vector& self
+		) -> T*;
+
+		[[nodiscard]] auto data(
+			this const linear_vector& self
+		) -> const T*;
 
 		[[nodiscard]] auto begin(
 			this auto& self
@@ -278,10 +281,13 @@ auto gse::linear_vector<T>::empty() const -> bool {
 }
 
 template <typename T>
-template <typename Self>
-auto gse::linear_vector<T>::data(this Self& self) -> decltype(auto) {
-	using ptr_t = std::conditional_t<std::is_const_v<Self>, const T*, T*>;
-	return static_cast<ptr_t>(self.m_data);
+auto gse::linear_vector<T>::data(this linear_vector& self) -> T* {
+	return self.m_data;
+}
+
+template <typename T>
+auto gse::linear_vector<T>::data(this const linear_vector& self) -> const T* {
+	return self.m_data;
 }
 
 template <typename T>

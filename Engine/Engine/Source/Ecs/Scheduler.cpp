@@ -20,6 +20,7 @@ import gse.time;
 import gse.math;
 import gse.diag;
 import gse.log;
+import gse.introspection;
 
 auto gse::scheduler::set_registry(registry& reg) -> void {
 	m_registry = &reg;
@@ -31,6 +32,163 @@ auto gse::scheduler::set_settings_register_hook(std::function<void(settings::reg
 
 auto gse::scheduler::current_phase() const -> scheduler_phase {
 	return m_phase;
+}
+
+auto gse::scheduler::snapshot_graph() const -> introspection::system_graph {
+	introspection::system_graph graph;
+	graph.nodes.reserve(m_nodes.size());
+
+	const auto resolve_name = [](const id value) -> std::string {
+		if (value.exists() && gse::exists(value.number())) {
+			std::string tag(value.tag());
+			if (const auto suffix = tag.find('#'); suffix != std::string::npos) {
+				tag.erase(suffix);
+			}
+			return tag;
+		}
+		return std::format("#{}", value.number());
+	};
+
+	const auto derive_category = [](const std::string& name) -> std::string {
+		const auto first = name.find("::");
+		if (first == std::string::npos) {
+			return name;
+		}
+		const auto second = name.find("::", first + 2);
+		if (second == std::string::npos) {
+			return name.substr(0, first);
+		}
+		return name.substr(first + 2, second - (first + 2));
+	};
+
+	for (const auto& node : m_nodes) {
+		introspection::graph_node gn{
+			.id = node.state_id.number(),
+			.name = node.system_name,
+			.display = node.display_name,
+			.category = derive_category(node.system_name),
+			.file = node.def_file,
+			.line = node.def_line,
+			.column = node.def_column,
+			.has_init = node.invoke_init_fn != nullptr,
+			.has_run = node.invoke_run_fn != nullptr,
+			.has_frame = node.has_frame,
+			.deferred = node.deferred
+		};
+		gn.reads.reserve(node.component_reads.size());
+		for (const id r : node.component_reads) {
+			gn.reads.push_back(resolve_name(r));
+		}
+		gn.writes.reserve(node.component_writes.size());
+		for (const id w : node.component_writes) {
+			gn.writes.push_back(resolve_name(w));
+		}
+		graph.nodes.push_back(std::move(gn));
+	}
+
+	std::unordered_map<id, std::vector<std::size_t>> writers;
+	std::unordered_map<id, std::vector<std::size_t>> readers;
+	{
+		std::size_t idx = 0;
+		for (const auto& node : m_nodes) {
+			for (const id w : node.component_writes) {
+				writers[w].push_back(idx);
+			}
+			for (const id r : node.component_reads) {
+				readers[r].push_back(idx);
+			}
+			++idx;
+		}
+	}
+
+	std::map<std::tuple<std::size_t, std::size_t, std::uint8_t>, std::vector<std::string>> edge_via;
+
+	const auto add_component = [&](const std::size_t from_idx, const std::size_t to_idx, const introspection::edge_kind kind, const id component) {
+		if (from_idx == to_idx) {
+			return;
+		}
+		auto& via = edge_via[std::tuple{ from_idx, to_idx, static_cast<std::uint8_t>(kind) }];
+		auto name = resolve_name(component);
+		if (std::ranges::find(via, name) == via.end()) {
+			via.push_back(std::move(name));
+		}
+	};
+
+	{
+		std::size_t bi = 0;
+		for (const auto& node : m_nodes) {
+			for (const id r : node.component_reads) {
+				if (const auto it = writers.find(r); it != writers.end()) {
+					for (const std::size_t ai : it->second) {
+						if (ai < bi) {
+							add_component(ai, bi, introspection::edge_kind::data_raw, r);
+						}
+					}
+				}
+			}
+			for (const id w : node.component_writes) {
+				if (const auto wit = writers.find(w); wit != writers.end()) {
+					for (const std::size_t ai : wit->second) {
+						if (ai < bi) {
+							add_component(ai, bi, introspection::edge_kind::data_waw, w);
+						}
+					}
+				}
+				if (const auto rit = readers.find(w); rit != readers.end()) {
+					for (const std::size_t ai : rit->second) {
+						if (ai < bi) {
+							add_component(ai, bi, introspection::edge_kind::data_war, w);
+						}
+					}
+				}
+			}
+			++bi;
+		}
+	}
+
+	for (auto& [key, via] : edge_via) {
+		const auto [from_idx, to_idx, kind] = key;
+		graph.edges.push_back(introspection::graph_edge{
+			.from = m_nodes[from_idx].state_id.number(),
+			.to = m_nodes[to_idx].state_id.number(),
+			.kind = static_cast<introspection::edge_kind>(kind),
+			.via = std::move(via)
+		});
+	}
+
+	for (const auto& node : m_nodes) {
+		const auto to_id = node.state_id.number();
+		const auto add_lifecycle = [&](const std::vector<id>& deps) {
+			for (const id dep : deps) {
+				if (dep.number() == to_id) {
+					continue;
+				}
+				graph.edges.push_back(introspection::graph_edge{
+					.from = dep.number(),
+					.to = to_id,
+					.kind = introspection::edge_kind::lifecycle
+				});
+			}
+		};
+		add_lifecycle(node.init_state_deps);
+		add_lifecycle(node.frame_state_deps);
+	}
+
+	for (const auto& node : m_nodes) {
+		const auto viewer_id = node.state_id.number();
+		for (const id target : node.shared_view_reads) {
+			if (target.number() == viewer_id) {
+				continue;
+			}
+			graph.edges.push_back(introspection::graph_edge{
+				.from = target.number(),
+				.to = viewer_id,
+				.kind = introspection::edge_kind::shared_view
+			});
+		}
+	}
+
+	return graph;
 }
 
 auto gse::scheduler::enter_running() -> void {

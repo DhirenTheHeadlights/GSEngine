@@ -102,6 +102,7 @@ auto gse::watchdog::start() -> void {
 #endif
 
 	monitor = std::jthread([](std::stop_token st) {
+		log::name_thread(log::thread_role::watchdog);
 		monitor_loop(st);
 	});
 }

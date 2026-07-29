@@ -41,6 +41,12 @@ export namespace gse {
 	template <typename AnnotationType, typename MatchType, typename Enum>
 	constexpr auto enum_from_annotation(const MatchType& value, const Enum default_value) -> Enum;
 
+	template <typename AnnotationType, typename Enum>
+	constexpr auto annotation_from_enum(const Enum value, const AnnotationType default_value) -> AnnotationType;
+
+	template <typename AnnotationType, typename Enum>
+	constexpr auto enum_has_annotation(const Enum value) -> bool;
+
 	template <typename Source, typename Tag>
 	struct project_holder;
 
@@ -111,8 +117,10 @@ consteval auto gse::has_annotation(const std::meta::info member) -> bool {
 }
 
 consteval auto gse::first_annotation_of_type(const std::meta::info enumerator, const std::meta::info annotation_type) -> std::meta::info {
+	const std::meta::info requested_type = std::meta::remove_cvref(std::meta::dealias(annotation_type));
 	for (std::meta::info ann : std::meta::annotations_of(enumerator)) {
-		if (std::meta::type_of(ann) == annotation_type) {
+		const std::meta::info ann_type = std::meta::remove_cvref(std::meta::dealias(std::meta::type_of(ann)));
+		if (std::meta::is_same_type(ann_type, requested_type)) {
 			return ann;
 		}
 	}
@@ -198,5 +206,29 @@ constexpr auto gse::enum_from_annotation(const MatchType& value, const Enum defa
 		}
 	}
 	return default_value;
+}
+
+template <typename AnnotationType, typename Enum>
+constexpr auto gse::annotation_from_enum(const Enum value, const AnnotationType default_value) -> AnnotationType {
+	template for (constexpr auto e : std::define_static_array(std::meta::enumerators_of(^^Enum))) {
+		constexpr auto ann = first_annotation_of_type(e, ^^AnnotationType);
+		if constexpr (ann != std::meta::info{}) {
+			if ([:e:] == value) {
+				return [:std::meta::constant_of(ann):];
+			}
+		}
+	}
+	return default_value;
+}
+
+template <typename AnnotationType, typename Enum>
+constexpr auto gse::enum_has_annotation(const Enum value) -> bool {
+	template for (constexpr auto e : std::define_static_array(std::meta::enumerators_of(^^Enum))) {
+		constexpr bool present = first_annotation_of_type(e, ^^AnnotationType) != std::meta::info{};
+		if ([:e:] == value) {
+			return present;
+		}
+	}
+	return false;
 }
 

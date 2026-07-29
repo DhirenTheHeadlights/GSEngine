@@ -11,7 +11,9 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+import gse.math;
 import :types;
+import :font;
 import :ids;
 import :styles;
 import :builder;
@@ -22,6 +24,7 @@ export namespace gse::gui {
 		struct params {
 			std::string_view name;
 			bool& value;
+			resource::handle<font> font{};
 		};
 		static auto draw(
 			const draw_context& ctx,
@@ -34,6 +37,7 @@ export namespace gse::gui {
 }
 
 auto gse::gui::toggle::draw(const draw_context& ctx, const params& p, id& hot, id& active, id&) -> bool {
+	const auto fnt = p.font.valid() ? p.font : ctx.fonts.text;
 	if (!ctx.current_menu) {
 		return false;
 	}
@@ -42,10 +46,10 @@ auto gse::gui::toggle::draw(const draw_context& ctx, const params& p, id& hot, i
 	const id widget_id = ids::make_from_key(name_key);
 
 	const float widget_height =
-		ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * ctx.style.widget_height_padding;
-	const ui_rect content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
+		fnt->line_height(ctx.style.font_size) + ctx.style.padding * ctx.style.widget_height_padding;
+	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
 
-	const ui_rect row_rect = ui_rect::from_position_size(
+	const rectf row_rect = rectf::from_position_size(
 		{ content_rect.left(), ctx.layout_cursor.y() },
 		{ content_rect.width(), widget_height }
 	);
@@ -64,15 +68,15 @@ auto gse::gui::toggle::draw(const draw_context& ctx, const params& p, id& hot, i
 
 	const float label_width = content_rect.width() * 0.4f;
 
-	const ui_rect label_rect = ui_rect::from_position_size(
+	const rectf label_rect = rectf::from_position_size(
 		row_rect.top_left(),
 		{ label_width, widget_height }
 	);
 
 	ctx.queue_text({
-		.font = ctx.font,
+		.font = fnt,
 		.text = std::string(p.name),
-		.position = { label_rect.left(), label_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
+		.position = { label_rect.left(), label_rect.center().y() + fnt->vertical_center_offset(ctx.style.font_size) },
 		.scale = ctx.style.font_size,
 		.color = ctx.style.color_text,
 		.clip_rect = label_rect
@@ -85,7 +89,7 @@ auto gse::gui::toggle::draw(const draw_context& ctx, const params& p, id& hot, i
 	const float track_x = row_rect.left() + label_width;
 	const float track_y = row_rect.center().y() + track_height / 2.f;
 
-	const ui_rect track_rect = ui_rect::from_position_size(
+	const rectf track_rect = rectf::from_position_size(
 		{ track_x, track_y },
 		{ track_width, track_height }
 	);
@@ -105,7 +109,7 @@ auto gse::gui::toggle::draw(const draw_context& ctx, const params& p, id& hot, i
 	const float knob_x = p.value ? track_x + track_width - knob_size - knob_padding : track_x + knob_padding;
 	const float knob_y = track_y - knob_padding;
 
-	const ui_rect knob_rect = ui_rect::from_position_size(
+	const rectf knob_rect = rectf::from_position_size(
 		{ knob_x, knob_y },
 		{ knob_size, knob_size }
 	);

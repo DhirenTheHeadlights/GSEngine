@@ -758,6 +758,18 @@ export namespace gse {
 		return radians(std::acos(internal::value_in<typename Q::default_unit>(q)));
 	}
 
+	constexpr auto sin(const angle a) -> float {
+		return std::sin(internal::value_in<angle::default_unit>(a));
+	}
+
+	constexpr auto cos(const angle a) -> float {
+		return std::cos(internal::value_in<angle::default_unit>(a));
+	}
+
+	constexpr auto tan(const angle a) -> float {
+		return std::tan(internal::value_in<angle::default_unit>(a));
+	}
+
 	constexpr auto atan2(const float y, const float x) -> angle {
 		return radians(std::atan2(y, x));
 	}

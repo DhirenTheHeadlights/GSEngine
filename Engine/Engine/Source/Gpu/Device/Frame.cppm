@@ -44,7 +44,8 @@ export namespace gse::gpu {
 			window::data* win,
 			std::span<const queue_submission> aux_submissions = {},
 			std::span<const semaphore_submit_info> extra_graphics_waits = {},
-			std::span<const command_buffer_handle> graphics_buffers = {}
+			std::span<const command_buffer_handle> graphics_buffers = {},
+			std::span<const semaphore_submit_info> extra_graphics_signals = {}
 		) -> void;
 
 		auto set_sync(

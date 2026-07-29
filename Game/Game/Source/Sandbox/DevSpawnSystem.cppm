@@ -36,7 +36,7 @@ export namespace gs::dev_spawn {
 		gse::structural<gse::physics::joint_drive_component>,
 		gse::structural<gs::tumbler::component>,
 		gse::structural<gs::piston::component>
-	) -> gse::async::task<>;
+	) -> gse::async::task<>; 
 }
 
 namespace gs {

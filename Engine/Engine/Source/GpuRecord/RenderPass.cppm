@@ -171,10 +171,14 @@ auto gse::gpu::pass_builder::in_chain() && -> pass_builder&& {
 	return std::move(*this);
 }
 
+export namespace gse::gpu {
+	template <typename Owner>
+	const id pass_owner_record_cache = find_or_generate_id(std::format("record<{}>", type_tag<Owner>()));
+}
+
 template <typename Owner>
 auto gse::gpu::pass(const gse::context& ctx) -> pass_builder {
-	static const id record_cached = find_or_generate_id(std::format("record<{}>", type_tag<Owner>()));
-	return pass_builder{ ctx, trace_id<Owner>(), type_tag<Owner>(), record_cached };
+	return pass_builder{ ctx, trace_id<Owner>(), type_tag<Owner>(), pass_owner_record_cache<Owner> };
 }
 
 namespace gse::gpu {
@@ -209,8 +213,8 @@ auto gse::gpu::pass_builder::after() && -> pass_builder&& {
 
 template <std::meta::info Hook>
 auto gse::gpu::pass(const gse::context& ctx) -> pass_builder {
-	static constexpr std::string_view name = hook_name<Hook>();
-	static const id cached = find_or_generate_id(name);
-	static const id record_cached = find_or_generate_id(std::format("record<{}>", name));
-	return pass_builder{ ctx, cached, name, record_cached };
+	constexpr auto name = hook_name<Hook>();
+	static const id hook_id = find_or_generate_id(name);
+	static const id record_id = find_or_generate_id(std::format("record<{}>", name));
+	return pass_builder{ ctx, hook_id, name, record_id };
 }

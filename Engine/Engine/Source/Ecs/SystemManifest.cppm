@@ -103,6 +103,11 @@ namespace gse {
 		State& state
 	) -> async::task<>;
 
+	template <std::meta::info FnInfo>
+	auto collect_fn_shared_views(
+		std::vector<id>& out
+	) -> void;
+
 	template <std::meta::info StateInfo, std::meta::info... FnInfos>
 	auto make_annotated_system_node(
 		settings::draw_page_thunk page_thunk = nullptr
@@ -316,6 +321,13 @@ auto gse::invoke_run_phases(context& ctx, void* data_ptr) -> async::task<> {
 	co_await run_phase_chain<State, RunInfos...>(ctx, d.state);
 }
 
+template <std::meta::info FnInfo>
+auto gse::collect_fn_shared_views(std::vector<id>& out) -> void {
+	[&]<std::size_t... Is>(std::index_sequence<Is...>) {
+		((append_arg_shared_view<arg_type_of<FnInfo, Is>>(out)), ...);
+	}(std::make_index_sequence<arity_of<FnInfo>>{});
+}
+
 template <std::meta::info StateInfo, std::meta::info... FnInfos>
 auto gse::make_annotated_system_node(settings::draw_page_thunk page_thunk) -> system_node {
 	using state_t = [:StateInfo:];
@@ -364,6 +376,15 @@ auto gse::make_annotated_system_node(settings::draw_page_thunk page_thunk) -> sy
 	node.optional_init_state_deps = std::move(init_deps.optional);
 	node.frame_state_deps = std::move(frame_deps);
 
+	std::vector<id> shared_views;
+	(collect_fn_shared_views<FnInfos>(shared_views), ...);
+	std::ranges::sort(shared_views, [](const id a, const id b) {
+		return a.number() < b.number();
+	});
+	const auto shared_dup = std::ranges::unique(shared_views);
+	shared_views.erase(shared_dup.begin(), shared_dup.end());
+	node.shared_view_reads = std::move(shared_views);
+
 	if (!node.invoke_shutdown_fn) {
 		node.invoke_shutdown_fn = &noop_shutdown;
 	}
@@ -382,7 +403,12 @@ auto gse::make_annotated_system_node(settings::draw_page_thunk page_thunk) -> sy
 	node.frame_wall_id = find_or_generate_id(std::format("frame_wall:{}", type_tag<state_t>()));
 	node.frame_start_id = find_or_generate_id(std::format("frame_start:{}", type_tag<state_t>()));
 	node.trace_id = trace_id<state_t>();
-	node.system_name = std::string(type_tag<state_t>());
+	node.system_name = std::string(meta::system_qualified_name<state_t>());
+	node.display_name = std::string(meta::system_state_name<state_t>());
+	constexpr auto state_loc = std::meta::source_location_of(StateInfo);
+	node.def_file = state_loc.file_name();
+	node.def_line = state_loc.line();
+	node.def_column = state_loc.column();
 	node.deferred = meta::is_deferred_system(StateInfo);
 
 	constexpr std::string_view settings_category = settings::category_of<state_t>().empty()

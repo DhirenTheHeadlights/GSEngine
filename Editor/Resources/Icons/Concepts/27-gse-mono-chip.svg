@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="27" y1="24" x2="230" y2="229" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#111827"/>
+      <stop offset="1" stop-color="#05070b"/>
+    </linearGradient>
+    <linearGradient id="chip" x1="45" y1="57" x2="211" y2="199" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#172233"/>
+      <stop offset="1" stop-color="#0a1018"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="14" stdDeviation="13" flood-color="#000000" flood-opacity="0.42"/>
+    </filter>
+  </defs>
+  <rect x="18" y="18" width="220" height="220" rx="44" fill="url(#bg)"/>
+  <rect x="41" y="57" width="174" height="142" rx="25" fill="url(#chip)" stroke="#2d3c52" stroke-width="5" filter="url(#shadow)"/>
+  <path d="M58 82h140M58 174h140" stroke="#28394d" stroke-width="6" stroke-linecap="round"/>
+  <g fill="none" stroke="#f7fbff" stroke-width="14" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M101 92H77C65 92 58 100 58 112v32c0 12 7 20 19 20h28v-34H83"/>
+    <path d="M163 92h-39c-9 0-15 6-15 15v9c0 9 6 15 15 15h24c9 0 15 6 15 15v3c0 9-6 15-15 15h-40"/>
+    <path d="M187 92v72M187 92h39M187 128h31M187 164h39"/>
+  </g>
+  <circle cx="58" cy="58" r="6" fill="#6ef7ff"/>
+  <circle cx="215" cy="199" r="6" fill="#ffe36e"/>
+</svg>

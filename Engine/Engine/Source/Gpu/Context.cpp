@@ -84,6 +84,7 @@ auto gse::gpu::context::end_frame(data& d, window::data* window_s) -> void {
 	auto aux_subs = d.render_graph->take_aux_submissions();
 	auto graphics_waits = d.render_graph->take_graphics_extra_waits();
 	auto graphics_buffers = d.render_graph->take_graphics_buffers();
+	auto graphics_signals = d.render_graph->take_graphics_extra_signals();
 
 	auto& transient_graphics = d.device->transient().queue(queue_id::graphics);
 	if (const auto transient_value = transient_graphics.pending_value(); transient_value > 0) {
@@ -94,6 +95,6 @@ auto gse::gpu::context::end_frame(data& d, window::data* window_s) -> void {
 		});
 	}
 
-	d.frame->end(window_s, aux_subs, graphics_waits, graphics_buffers);
+	d.frame->end(window_s, aux_subs, graphics_waits, graphics_buffers, graphics_signals);
 }
 

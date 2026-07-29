@@ -26,7 +26,7 @@ export namespace gse {
 
 		explicit audio_clip(
 			const std::filesystem::path& filepath
-		) : identifiable(filepath, config::baked_resource_path), m_path(filepath.string()) {
+		) : identifiable(filepath, config::baked_resource_path()), m_path(filepath.native_encoded_string()) {
 		}
 
 		auto load(

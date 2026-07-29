@@ -2,12 +2,12 @@
 # compiler. vcpkg's stock scripts/toolchains/mingw.cmake (a) finds the compiler
 # via find_program on PATH and (b) sets CMAKE_<LANG>_COMPILER_TARGET. Neither
 # works for this native gcc: the bin isn't on PATH during a build-triggered
-# reconfigure, and native GCC rejects Clang's --target= flag. This toolchain
+# reconfigure, and native GCC rejects the --target= cross-compile flag. This toolchain
 # fixes both, then defers to mingw.cmake for the remaining MinGW setup.
 #
 # Mirrors how the top-level CMakePresets locate the compiler:
 # $env{USERPROFILE}/.gcc-trunk/current (a junction maintained by the installer).
-# USERPROFILE must be in the triplet's VCPKG_ENV_PASSTHROUGH to be visible here.
+# USERPROFILE must be passed through by the triplet to be visible here.
 
 set(_gcc_trunk_bin "$ENV{USERPROFILE}/.gcc-trunk/current/bin")
 
@@ -26,7 +26,7 @@ set(CMAKE_RC_COMPILER  "${_gcc_trunk_bin}/windres.exe"               CACHE FILEP
 # _VCPKG_ROOT_DIR, which isn't propagated into try_compile sub-builds.
 include("${CMAKE_CURRENT_LIST_DIR}/../../Engine/External/vcpkg/scripts/toolchains/mingw.cmake")
 
-# Native GCC has no --target= flag (that is Clang's). mingw.cmake sets a cross
+# Native GCC has no --target= flag. mingw.cmake sets a cross
 # target triple; clear it so CMake can identify the compiler as GNU.
 unset(CMAKE_C_COMPILER_TARGET CACHE)
 unset(CMAKE_CXX_COMPILER_TARGET CACHE)

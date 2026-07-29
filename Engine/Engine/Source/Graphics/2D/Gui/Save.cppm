@@ -6,11 +6,13 @@ import gse.assert;
 import gse.log;
 import gse.core;
 import gse.containers;
+import gse.fs;
 import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 
+import gse.math;
 import :types;
 import :styles;
 
@@ -18,10 +20,11 @@ export namespace gse::gui {
 	struct loaded_menu_data {
 		std::string tag;
 		std::string owner_tag;
-		ui_rect rect;
+		rectf rect;
 		dock::location docked_to = dock::location::none;
 		float dock_split_ratio = 0.5f;
 		std::uint32_t active_tab_index = 0;
+		std::uint32_t tab_visible_rows = 1;
 		std::vector<std::string> tab_tags;
 	};
 
@@ -58,6 +61,10 @@ namespace gse::gui {
 	auto trim(
 		std::string_view s
 	) -> std::string_view;
+
+	auto is_menu_section(
+		std::string_view line
+	) -> bool;
 
 	auto parse_layout(
 		std::string_view text
@@ -132,14 +139,19 @@ auto gse::gui::split(const std::string_view text, const char sep) -> std::vector
 
 auto gse::gui::trim(const std::string_view s) -> std::string_view {
 	std::size_t start = 0;
-	while (start < s.size() && (s[start] == ' ' || s[start] == '\t' || s[start] == '\r')) {
+	while (start < s.size() && (s[start] == ' ' || s[start] == '\t' || s[start] == '\r' || s[start] == '\n')) {
 		++start;
 	}
 	std::size_t end = s.size();
-	while (end > start && (s[end - 1] == ' ' || s[end - 1] == '\t' || s[end - 1] == '\r')) {
+	while (end > start && (s[end - 1] == ' ' || s[end - 1] == '\t' || s[end - 1] == '\r' || s[end - 1] == '\n')) {
 		--end;
 	}
 	return s.substr(start, end - start);
+}
+
+auto gse::gui::is_menu_section(const std::string_view line) -> bool {
+	const std::string_view trimmed = trim(line);
+	return trimmed.starts_with("[menu ") && trimmed.ends_with("]");
 }
 
 auto gse::gui::parse_layout(const std::string_view text) -> std::vector<loaded_menu_data> {
@@ -170,7 +182,12 @@ auto gse::gui::parse_layout(const std::string_view text) -> std::vector<loaded_m
 
 		if (line.front() == '[' && line.back() == ']') {
 			flush();
-			current.emplace();
+			if (is_menu_section(line)) {
+				current.emplace();
+			}
+			else {
+				current.reset();
+			}
 			continue;
 		}
 
@@ -201,12 +218,15 @@ auto gse::gui::parse_layout(const std::string_view text) -> std::vector<loaded_m
 		else if (key == "active_tab") {
 			current->active_tab_index = static_cast<std::uint32_t>(std::stoul(std::string(value)));
 		}
+		else if (key == "tab_visible_rows") {
+			current->tab_visible_rows = static_cast<std::uint32_t>(std::stoul(std::string(value)));
+		}
 		else if (key == "rect") {
 			const auto parts = split(value, ',');
 			if (parts.size() == 4) {
 				const vec2f p{ std::stof(parts[0]), std::stof(parts[1]) };
 				const vec2f sz{ std::stof(parts[2]), std::stof(parts[3]) };
-				current->rect = ui_rect::from_position_size(p, sz);
+				current->rect = rectf::from_position_size(p, sz);
 			}
 		}
 		else if (key == "tabs") {
@@ -219,10 +239,6 @@ auto gse::gui::parse_layout(const std::string_view text) -> std::vector<loaded_m
 }
 
 auto gse::gui::save(id_mapped_collection<menu>& menus, const std::filesystem::path& file_path) -> void {
-	if (const auto parent_dir = file_path.parent_path(); !parent_dir.empty() && !std::filesystem::exists(parent_dir)) {
-		std::filesystem::create_directories(parent_dir);
-	}
-
 	std::string out;
 	std::size_t i = 0;
 	for (const auto& menu : menus.items()) {
@@ -249,29 +265,27 @@ auto gse::gui::save(id_mapped_collection<menu>& menus, const std::filesystem::pa
 		out.append(std::format("docked_to = {}\n", dock_to_string(menu.docked_to)));
 		out.append(std::format("dock_split_ratio = {}\n", menu.dock_split_ratio));
 		out.append(std::format("active_tab = {}\n", menu.active_tab_index));
+		out.append(std::format("tab_visible_rows = {}\n", std::max(1u, menu.tab_bar.visible_rows)));
 		out.append(std::format("tabs = {}\n", join(menu.tab_contents, ',')));
 		++i;
 	}
 
-	std::ofstream file(file_path);
-	file << out;
+	layout_store::submit(
+		file_path,
+		{
+			.prefixes = { "menu " },
+		},
+		std::move(out)
+	);
 }
 
 auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection<menu>& default_menus) -> id_mapped_collection<menu> {
-	if (!std::filesystem::exists(file_path)) {
+	const std::string content = layout_store::read(file_path);
+	if (content.empty()) {
 		id_mapped_collection<menu> menus_to_save = default_menus;
 		save(menus_to_save, file_path);
 		return default_menus;
 	}
-
-	std::ifstream file(file_path);
-	if (!file) {
-		return default_menus;
-	}
-
-	std::ostringstream oss;
-	oss << file.rdbuf();
-	const std::string content = oss.str();
 
 	auto loaded_data_vec = parse_layout(content);
 
@@ -281,7 +295,14 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
 
 	std::map<std::string, loaded_menu_data> loaded_map;
 	for (const auto& data : loaded_data_vec) {
+		if (data.tag.empty()) {
+			continue;
+		}
 		loaded_map[data.tag] = data;
+	}
+
+	if (loaded_map.empty()) {
+		return default_menus;
 	}
 
 	id_mapped_collection<menu> new_layout;
@@ -298,6 +319,7 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
 		new_menu.docked_to = data.docked_to;
 		new_menu.dock_split_ratio = data.dock_split_ratio;
 		new_menu.tab_contents = data.tab_tags;
+		new_menu.tab_bar.visible_rows = std::max(1u, data.tab_visible_rows);
 
 		if (!new_menu.tab_contents.empty()) {
 			new_menu.active_tab_index =

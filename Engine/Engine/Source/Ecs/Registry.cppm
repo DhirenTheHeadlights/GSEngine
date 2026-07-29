@@ -464,7 +464,7 @@ auto gse::registry::drain_component_adds() -> std::vector<id> {
 template <typename T>
 auto gse::registry::drain_component_updates() -> std::vector<id> {
 	if (auto* s = try_storage<T>()) {
-		return s->drain_updated();
+		return s->drain_updated(); 
 	}
 	return {};
 }

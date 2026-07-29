@@ -1,8 +1,8 @@
 # GCC trunk toolchain
 
 The engine is built with a **native-Windows GCC trunk** toolchain (for `-freflection`
-+ `import std`). It is distributed as a prebuilt release, exactly like the old
-clang-p2996 toolchain — you download it, you don't build it.
++ `import std`). It is distributed as a prebuilt release — you download it, you
+don't build it.
 
 ## Teammates: install + build
 
@@ -18,8 +18,7 @@ cmake --build --preset x64-mingw-gcc-Release
 
 `install_gcc_trunk.py`:
 
-1. Resolves the latest `gcc-trunk-v*` GitHub release (filters to GCC releases, so a
-   coexisting `clang-p2996-*` release is never picked by mistake).
+1. Resolves the latest `gcc-trunk-v*` GitHub release.
 2. Downloads `gcc-trunk-windows-x64.zip` and extracts it to `~/.gcc-trunk/<tag>`.
 3. With `--persist`, sets the `MINGW_ROOT` user env var (which the CMake presets read
    as `$env{MINGW_ROOT}/bin/g++.exe`).

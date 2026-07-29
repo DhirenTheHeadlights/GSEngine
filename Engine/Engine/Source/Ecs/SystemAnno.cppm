@@ -72,6 +72,9 @@ export namespace gse::meta {
 
 	template <typename State>
 	consteval auto system_state_name() -> std::string_view;
+
+	template <typename State>
+	consteval auto system_qualified_name() -> std::string_view;
 }
 
 consteval auto gse::meta::find_system_hook_anno(const std::meta::info fn) -> std::meta::info {
@@ -138,4 +141,23 @@ consteval auto gse::meta::system_state_name() -> std::string_view {
 	else {
 		return std::string_view{};
 	}
+}
+
+template <typename State>
+consteval auto gse::meta::system_qualified_name() -> std::string_view {
+	const auto entity = std::meta::dealias(^^State);
+	std::string self = std::meta::has_identifier(entity)
+		? std::string(std::meta::identifier_of(entity))
+		: std::string("data");
+	std::string prefix;
+	auto parent = std::meta::parent_of(entity);
+	while (std::meta::has_identifier(parent)) {
+		const std::string_view ident = std::meta::identifier_of(parent);
+		if (ident == "std" || ident.starts_with("__")) {
+			break;
+		}
+		prefix = std::string(ident) + "::" + prefix;
+		parent = std::meta::parent_of(parent);
+	}
+	return std::define_static_string(prefix + self);
 }

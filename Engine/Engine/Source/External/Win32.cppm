@@ -7,6 +7,8 @@ module;
 #include <windowsx.h>
 #include <dbghelp.h>
 #include <tlhelp32.h>
+#include <shlobj.h>
+#include <shellapi.h>
 #endif
 
 #define GLFW_INCLUDE_NONE
@@ -83,6 +85,9 @@ export namespace gse::win32 {
 	using ::HANDLE;
 	using ::HMODULE;
 	using ::LONG;
+	using ::BOOL;
+	using ::SIZE_T;
+	using ::DWORD_PTR;
 	using ::PVOID;
 	using ::DWORD64;
 	using ::CONTEXT;
@@ -90,9 +95,15 @@ export namespace gse::win32 {
 	using ::EXCEPTION_POINTERS;
 	using ::EXCEPTION_RECORD;
 	using ::STARTUPINFOW;
+	using ::STARTUPINFOEXW;
 	using ::PROCESS_INFORMATION;
+	using ::SECURITY_ATTRIBUTES;
+	using ::LPPROC_THREAD_ATTRIBUTE_LIST;
+	using ::JOBOBJECTINFOCLASS;
+	using ::JOBOBJECT_EXTENDED_LIMIT_INFORMATION;
 
 	using ::DuplicateHandle;
+	using ::OpenProcess;
 	using ::GetCurrentProcess;
 	using ::GetCurrentThread;
 	using ::CloseHandle;
@@ -103,18 +114,79 @@ export namespace gse::win32 {
 	using ::RtlVirtualUnwind;
 	using ::GetModuleHandleExW;
 	using ::GetModuleFileNameW;
+	using ::SHGetFolderPathW;
 	using ::AddVectoredExceptionHandler;
 	using ::GetLastError;
 	using ::CreateProcessW;
+	using ::TerminateProcess;
+	using ::InitializeProcThreadAttributeList;
+	using ::UpdateProcThreadAttribute;
+	using ::DeleteProcThreadAttributeList;
+	using ::CreateJobObjectW;
+	using ::AssignProcessToJobObject;
+	using ::TerminateJobObject;
+	using ::SetInformationJobObject;
 	using ::GetCommandLineW;
+	using ::CommandLineToArgvW;
+	using ::LocalFree;
 	using ::ExitProcess;
+	using ::CreatePipe;
+	using ::ReadFile;
+	using ::SetHandleInformation;
+	using ::WaitForSingleObject;
+	using ::GetExitCodeProcess;
+	using ::MoveFileExW;
+	using ::GetEnvironmentStringsW;
+	using ::FreeEnvironmentStringsW;
+	using ::MultiByteToWideChar;
+	using ::CreateNamedPipeW;
+	using ::ConnectNamedPipe;
+	using ::DisconnectNamedPipe;
+	using ::CreateFileW;
+	using ::WriteFile;
+	using ::PeekNamedPipe;
 
 	constexpr DWORD context_full = CONTEXT_FULL;
 	constexpr DWORD unw_flag_nhandler = UNW_FLAG_NHANDLER;
 	constexpr DWORD duplicate_same_access = DUPLICATE_SAME_ACCESS;
+	constexpr DWORD process_dup_handle = PROCESS_DUP_HANDLE;
 	constexpr DWORD get_module_handle_ex_flag_from_address = GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS;
 	constexpr DWORD get_module_handle_ex_flag_unchanged_refcount = GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT;
 	constexpr int max_path = MAX_PATH;
+	constexpr int csidl_appdata = CSIDL_APPDATA;
+	constexpr int csidl_local_appdata = CSIDL_LOCAL_APPDATA;
+	constexpr int shgfp_type_current = SHGFP_TYPE_CURRENT;
+	constexpr DWORD startf_use_std_handles = STARTF_USESTDHANDLES;
+	constexpr DWORD create_no_window = CREATE_NO_WINDOW;
+	constexpr DWORD create_unicode_environment = CREATE_UNICODE_ENVIRONMENT;
+	constexpr DWORD create_suspended = CREATE_SUSPENDED;
+	constexpr DWORD extended_startupinfo_present = EXTENDED_STARTUPINFO_PRESENT;
+	constexpr DWORD_PTR proc_thread_attribute_handle_list = PROC_THREAD_ATTRIBUTE_HANDLE_LIST;
+	constexpr JOBOBJECTINFOCLASS job_object_extended_limit_information = JobObjectExtendedLimitInformation;
+	constexpr DWORD job_object_limit_kill_on_job_close = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+	constexpr DWORD infinite = INFINITE;
+	constexpr DWORD wait_timeout = WAIT_TIMEOUT;
+	constexpr DWORD wait_object_0 = WAIT_OBJECT_0;
+	constexpr DWORD handle_flag_inherit = HANDLE_FLAG_INHERIT;
+	constexpr DWORD movefile_replace_existing = MOVEFILE_REPLACE_EXISTING;
+	constexpr UINT cp_utf8 = CP_UTF8;
+	constexpr DWORD pipe_access_duplex = PIPE_ACCESS_DUPLEX;
+	constexpr DWORD pipe_access_inbound = PIPE_ACCESS_INBOUND;
+	constexpr DWORD pipe_type_byte = PIPE_TYPE_BYTE;
+	constexpr DWORD pipe_wait = PIPE_WAIT;
+	constexpr DWORD pipe_nowait = PIPE_NOWAIT;
+	constexpr DWORD pipe_unlimited_instances = PIPE_UNLIMITED_INSTANCES;
+	constexpr DWORD generic_read = GENERIC_READ;
+	constexpr DWORD generic_write = GENERIC_WRITE;
+	constexpr DWORD open_existing = OPEN_EXISTING;
+	constexpr DWORD create_always = CREATE_ALWAYS;
+	constexpr DWORD file_share_read = FILE_SHARE_READ;
+	constexpr DWORD file_share_write = FILE_SHARE_WRITE;
+	constexpr DWORD file_attribute_normal = FILE_ATTRIBUTE_NORMAL;
+	constexpr DWORD error_pipe_connected = ERROR_PIPE_CONNECTED;
+	constexpr DWORD error_pipe_listening = ERROR_PIPE_LISTENING;
+	constexpr DWORD error_no_data = ERROR_NO_DATA;
+	constexpr DWORD error_broken_pipe = ERROR_BROKEN_PIPE;
 
 	constexpr LONG exception_continue_search = EXCEPTION_CONTINUE_SEARCH;
 	constexpr DWORD exception_access_violation = EXCEPTION_ACCESS_VIOLATION;

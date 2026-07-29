@@ -53,9 +53,14 @@ export namespace gse::gui {
 		float ui_scale = 1.0f;
 
 		[[
-			= gse::settings::describe<"Font used to render text in the UI.">{}
+			= gse::settings::describe<"Font used for UI text: labels, menus, and controls.">{}
 		]]
-		gse::settings::choice<int> font;
+		gse::settings::choice<int> ui_font{ .value = -1 };
+
+		[[
+			= gse::settings::describe<"Font used for code, terminals, and numeric readouts.">{}
+		]]
+		gse::settings::choice<int> code_font{ .value = -1 };
 
 		[[
 			= gse::settings::describe<"Show developer overlays (Test, Profiler, Physics Debug).">{},
@@ -70,13 +75,13 @@ export namespace gse::gui {
 		[[= gse::shared]] id_mapped_collection<menu> menus;
 		menu* current_menu = nullptr;
 
-		[[= gse::shared]] resource::handle<gse::font> gui_font;
+		[[= gse::shared]] font_set fonts;
 		[[= gse::shared]] resource::handle<texture> blank_texture;
 
 		std::optional<dock::space> active_dock_space;
 		gui::state current_state{ states::idle{} };
 
-		std::filesystem::path file_path = "Misc/gui_layout.ini";
+		std::filesystem::path file_path = config::user_config_dir() / "gui_layout.ini";
 		clock save_clock;
 
 		id hot_widget_id;
@@ -86,7 +91,8 @@ export namespace gse::gui {
 		frame_state fstate{};
 		draw_context* context = nullptr;
 
-		int last_font_index = 0;
+		int last_ui_font_index = 0;
+		int last_code_font_index = 0;
 
 		std::vector<renderer::sprite_command> sprite_commands;
 		std::vector<renderer::text_command> text_commands;
@@ -108,6 +114,8 @@ export namespace gse::gui {
 		bool manual_cursor = false;
 
 		std::vector<id> pending_popout_close_ids;
+		std::optional<std::pair<id, std::uint32_t>> pending_tab_close;
+		context_menu_state context_menu;
 
 		static constexpr time update_interval = seconds(30.f);
 	};
@@ -136,6 +144,10 @@ export namespace gse::gui {
 	) -> void;
 
 	auto save(
+		data& d
+	) -> void;
+
+	auto clear_menu_interaction(
 		data& d
 	) -> void;
 
@@ -207,19 +219,26 @@ export namespace gse::gui {
 		data& d,
 		const input::state& input_state,
 		menu& current_menu,
-		const ui_rect& title_bar_rect,
+		const rectf& title_bar_rect,
 		render_layer layer
+	) -> void;
+
+	auto process_context_menu(
+		data& d,
+		const input::state& input_state,
+		vec2f viewport_size,
+		channel_writer& channels
 	) -> void;
 
 	auto usable_screen_rect(
 		data& d,
 		shared_view<window::data> window_s
-	) -> ui_rect;
+	) -> rectf;
 
 	auto calculate_display_rect(
 		data& d,
 		const menu& m
-	) -> ui_rect;
+	) -> rectf;
 
 	auto apply_scale(
 		const data& d,

@@ -24,6 +24,10 @@ export namespace gse::save {
 			std::filesystem::path path = {}
 		) -> void;
 
+		auto set_project_path(
+			std::filesystem::path path
+		) -> void;
+
 		auto set_on_restart(
 			std::function<void()> fn
 		) -> void;
@@ -71,19 +75,25 @@ export namespace gse::save {
 		) -> std::string;
 
 		auto load_from_file(
-			const std::filesystem::path& path
+			const std::filesystem::path& path,
+			settings::scope_kind scope
 		) -> bool;
 
 		auto save_to_file(
-			const std::filesystem::path& path
+			const std::filesystem::path& path,
+			settings::scope_kind scope
 		) const -> bool;
+
+		auto save_all() const -> bool;
 
 		std::vector<settings::register_settings_type> m_entries;
 		mutable std::mutex m_entries_mutex;
 		std::filesystem::path m_auto_save_path;
+		std::filesystem::path m_project_path;
 		bool m_auto_save = false;
 		std::function<void()> m_on_restart;
 		doc m_loaded;
+		doc m_loaded_project;
 	};
 }
 
@@ -96,20 +106,13 @@ auto gse::save::registry::for_each_entry(auto&& fn) const -> void {
 
 gse::save::registry::registry(std::filesystem::path auto_save_path) : m_auto_save_path(std::move(auto_save_path)) {
 	if (!m_auto_save_path.empty()) {
-		load_from_file(m_auto_save_path);
+		load_from_file(m_auto_save_path, settings::scope_kind::user);
 	}
 }
 
 gse::save::registry::~registry() {
-	if (m_auto_save && !m_auto_save_path.empty()) {
-		if (!save_to_file(m_auto_save_path)) {
-			log::println(
-				log::level::warning,
-				log::category::save_system,
-				"Failed to save settings to {}",
-				m_auto_save_path.string()
-			);
-		}
+	if (m_auto_save) {
+		save_all();
 	}
 }
 
@@ -117,8 +120,16 @@ auto gse::save::registry::set_auto_save(const bool enabled, std::filesystem::pat
 	m_auto_save = enabled;
 	if (!path.empty() && path != m_auto_save_path) {
 		m_auto_save_path = std::move(path);
-		load_from_file(m_auto_save_path);
+		load_from_file(m_auto_save_path, settings::scope_kind::user);
 	}
+}
+
+auto gse::save::registry::set_project_path(std::filesystem::path path) -> void {
+	if (path.empty() || path == m_project_path) {
+		return;
+	}
+	m_project_path = std::move(path);
+	load_from_file(m_project_path, settings::scope_kind::project);
 }
 
 auto gse::save::registry::set_on_restart(std::function<void()> fn) -> void {
@@ -129,7 +140,8 @@ auto gse::save::registry::add(settings::register_settings_type entry) -> void {
 	std::lock_guard lock(m_entries_mutex);
 
 	if (entry.read && entry.settings_ptr) {
-		entry.read(m_loaded, entry.category, entry.settings_ptr);
+		entry.read(m_loaded, entry.category, entry.settings_ptr, settings::scope_kind::user);
+		entry.read(m_loaded_project, entry.category, entry.settings_ptr, settings::scope_kind::project);
 	}
 
 	const auto match = std::ranges::find_if(
@@ -169,10 +181,25 @@ auto gse::save::registry::entry_count() const -> std::size_t {
 }
 
 auto gse::save::registry::save_now() const -> bool {
-	if (m_auto_save_path.empty()) {
-		return false;
+	return save_all();
+}
+
+auto gse::save::registry::save_all() const -> bool {
+	bool ok = false;
+	if (!m_auto_save_path.empty()) {
+		ok = save_to_file(m_auto_save_path, settings::scope_kind::user);
+		if (!ok) {
+			log::println(log::level::warning, log::category::save_system, "Failed to save settings to {}", m_auto_save_path.display_string());
+		}
 	}
-	return save_to_file(m_auto_save_path);
+	if (!m_project_path.empty()) {
+		if (!save_to_file(m_project_path, settings::scope_kind::project)) {
+			log::println(log::level::warning, log::category::save_system, "Failed to save project settings to {}", m_project_path.display_string());
+			return false;
+		}
+		ok = true;
+	}
+	return ok;
 }
 
 auto gse::save::registry::trigger_restart() const -> void {
@@ -276,10 +303,10 @@ auto gse::save::registry::emit(const doc& d) -> std::string {
 	return out;
 }
 
-auto gse::save::registry::load_from_file(const std::filesystem::path& path) -> bool {
+auto gse::save::registry::load_from_file(const std::filesystem::path& path, const settings::scope_kind scope) -> bool {
 	if (!std::filesystem::exists(path)) {
 		log::println(log::level::warning, log::category::save_system, "Settings file does not exist: {}",
-					 path.string());
+					 path.display_string());
 		return false;
 	}
 
@@ -289,33 +316,37 @@ auto gse::save::registry::load_from_file(const std::filesystem::path& path) -> b
 			log::level::warning,
 			log::category::save_system,
 			"Failed to read {}: {}",
-			path.string(),
+			path.display_string(),
 			content.error().message()
 		);
 		return false;
 	}
 
-	m_loaded = parse(*content);
+	doc& target = scope == settings::scope_kind::project ? m_loaded_project : m_loaded;
+	target = parse(*content);
 
 	std::lock_guard lock(m_entries_mutex);
 	for (const auto& entry : m_entries) {
 		if (entry.read && entry.settings_ptr) {
-			entry.read(m_loaded, entry.category, entry.settings_ptr);
+			entry.read(target, entry.category, entry.settings_ptr, scope);
 		}
 	}
 	return true;
 }
 
-auto gse::save::registry::save_to_file(const std::filesystem::path& path) const -> bool {
+auto gse::save::registry::save_to_file(const std::filesystem::path& path, const settings::scope_kind scope) const -> bool {
 	doc d;
 	{
 		std::lock_guard lock(m_entries_mutex);
 		for (const auto& entry : m_entries) {
 			if (entry.write && entry.settings_ptr) {
-				entry.write(d, entry.category, entry.settings_ptr);
+				entry.write(d, entry.category, entry.settings_ptr, scope);
 			}
 		}
 	}
+
+	std::error_code ec;
+	std::filesystem::create_directories(path.parent_path(), ec);
 
 	std::ofstream file(path);
 	if (!file) {

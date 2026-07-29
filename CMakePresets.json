@@ -51,7 +51,9 @@
       "binaryDir": "${sourceDir}/out/build/x64-mingw-gcc-RelWithDebInfo",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "VCPKG_TARGET_TRIPLET": "x64-mingw-static-release"
+        "VCPKG_TARGET_TRIPLET": "x64-mingw-static-release",
+        "CMAKE_CXX_FLAGS_RELWITHDEBINFO": "-O2 -g1 -DNDEBUG",
+        "CMAKE_C_FLAGS_RELWITHDEBINFO": "-O2 -g1 -DNDEBUG"
       }
     },
     {

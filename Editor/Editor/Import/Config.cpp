@@ -1,0 +1,207 @@
+module gse.ide.config;
+
+import std;
+
+import gse.config;
+import gse.ide.project;
+
+namespace gse::ide::config {
+	struct resolved {
+		std::string game_target;
+		std::filesystem::path source;
+		std::filesystem::path engine_root;
+		std::filesystem::path engine_source;
+		std::filesystem::path project_root;
+		std::filesystem::path project_source;
+		std::filesystem::path project_assets;
+		std::filesystem::path project_state;
+		std::filesystem::path project_settings;
+		std::filesystem::path project_build;
+		std::filesystem::path project_output;
+		std::filesystem::path project_compile_commands;
+		std::filesystem::path resources;
+		std::filesystem::path build;
+		std::filesystem::path token_plugin;
+		std::filesystem::path cppref_index;
+		std::filesystem::path game_executable;
+		std::filesystem::path editor_executable;
+		std::filesystem::path editor_layout;
+	};
+
+	auto is_inside(
+		const std::filesystem::path& child,
+		const std::filesystem::path& parent
+	) -> bool;
+
+	auto resolve() -> resolved;
+
+	auto table() -> const resolved&;
+
+	auto resolve_browse_roots() -> std::vector<browse_root>;
+}
+
+auto gse::ide::config::is_inside(const std::filesystem::path& child, const std::filesystem::path& parent) -> bool {
+	const std::filesystem::path relative = child.lexically_relative(parent);
+	return !relative.empty() && *relative.begin() != "..";
+}
+
+auto gse::ide::config::resolve() -> resolved {
+	const std::filesystem::path& root = gse::config::root_dir();
+	const std::filesystem::path& build = gse::config::build_root();
+	const std::filesystem::path resources = root / "Editor" / "Resources";
+
+	const project::manifest& active = project::current();
+	const std::filesystem::path engine_root = active.valid && !active.engine.empty() ? active.engine : root;
+	const std::filesystem::path project_root = active.valid ? active.root : root;
+	const std::filesystem::path project_source = active.valid ? active.source : root / "Game" / "Game";
+	const std::filesystem::path project_assets = active.valid ? active.assets : gse::config::resource_path();
+	const std::filesystem::path project_state = active.valid ? active.state : gse::config::user_config_dir();
+
+	// A project inside the engine tree is built by the engine's own build; CMake
+	// mirrors the source layout, so its outputs land under the matching subdirectory.
+	// A project outside it owns a build tree under .gse and outputs at its root.
+	const bool nested = is_inside(project_root, engine_root);
+	const std::filesystem::path project_build = nested ? build : project_state / "build" / build.filename();
+	const std::filesystem::path project_output = nested ? build / project_root.lexically_relative(engine_root) : project_build;
+
+	const std::string game = project::target("game", active.name);
+
+	return {
+		.game_target = game,
+		.source = gse::config::generic(root / "Editor" / "Editor"),
+		.engine_root = gse::config::generic(engine_root),
+		.engine_source = gse::config::generic(engine_root / "Engine" / "Engine"),
+		.project_root = gse::config::generic(project_root),
+		.project_source = gse::config::generic(project_source),
+		.project_assets = gse::config::generic(project_assets),
+		.project_state = gse::config::generic(project_state),
+		.project_settings = active.valid ? gse::config::generic(project_root / "Config" / "settings.ini") : std::filesystem::path{},
+		.project_build = gse::config::generic(project_build),
+		.project_output = gse::config::generic(project_output),
+		.project_compile_commands = gse::config::generic(project_build / "compile_commands.json"),
+		.resources = gse::config::generic(resources),
+		.build = build,
+		.token_plugin = gse::config::generic(build / "Editor" / "gse_tokens.dll"),
+		.cppref_index = gse::config::generic(resources / "cppref.idx"),
+		.game_executable = gse::config::generic(project_output / (game + ".exe")),
+		.editor_executable = gse::config::generic(build / "Editor" / (std::string(editor_target) + ".exe")),
+		.editor_layout = gse::config::generic(project_state / "editor_layout.ini")
+	};
+}
+
+auto gse::ide::config::table() -> const resolved& {
+	static const resolved value = resolve();
+	return value;
+}
+
+auto gse::ide::config::resolve_browse_roots() -> std::vector<browse_root> {
+	const project::manifest& active = project::current();
+	if (!active.valid) {
+		return {
+			{
+				.path = gse::config::root_dir(),
+				.name = gse::config::root_dir().filename().native_encoded_string(),
+				.is_project = false
+			}
+		};
+	}
+
+	return {
+		{
+			.path = project_root(),
+			.name = active.name,
+			.is_project = true
+		},
+		{
+			.path = gse::config::generic(engine_root() / "Engine"),
+			.name = "Engine",
+			.is_project = false
+		},
+		{
+			.path = gse::config::generic(gse::config::root_dir() / "Editor"),
+			.name = "Editor",
+			.is_project = false
+		}
+	};
+}
+
+auto gse::ide::config::browse_roots() -> std::span<const browse_root> {
+	static const std::vector<browse_root> value = resolve_browse_roots();
+	return value;
+}
+
+auto gse::ide::config::source_dir() -> const std::filesystem::path& {
+	return table().source;
+}
+
+auto gse::ide::config::engine_root() -> const std::filesystem::path& {
+	return table().engine_root;
+}
+
+auto gse::ide::config::engine_source_dir() -> const std::filesystem::path& {
+	return table().engine_source;
+}
+
+auto gse::ide::config::project_root() -> const std::filesystem::path& {
+	return table().project_root;
+}
+
+auto gse::ide::config::project_source_dir() -> const std::filesystem::path& {
+	return table().project_source;
+}
+
+auto gse::ide::config::project_assets_dir() -> const std::filesystem::path& {
+	return table().project_assets;
+}
+
+auto gse::ide::config::project_state_dir() -> const std::filesystem::path& {
+	return table().project_state;
+}
+
+auto gse::ide::config::project_settings() -> const std::filesystem::path& {
+	return table().project_settings;
+}
+
+auto gse::ide::config::resource_path() -> const std::filesystem::path& {
+	return table().resources;
+}
+
+auto gse::ide::config::game_target() -> std::string_view {
+	return table().game_target;
+}
+
+auto gse::ide::config::project_build_dir() -> const std::filesystem::path& {
+	return table().project_build;
+}
+
+auto gse::ide::config::project_output_dir() -> const std::filesystem::path& {
+	return table().project_output;
+}
+
+auto gse::ide::config::project_compile_commands() -> const std::filesystem::path& {
+	return table().project_compile_commands;
+}
+
+auto gse::ide::config::build_dir() -> const std::filesystem::path& {
+	return table().build;
+}
+
+auto gse::ide::config::token_plugin() -> const std::filesystem::path& {
+	return table().token_plugin;
+}
+
+auto gse::ide::config::cppref_index() -> const std::filesystem::path& {
+	return table().cppref_index;
+}
+
+auto gse::ide::config::game_executable() -> const std::filesystem::path& {
+	return table().game_executable;
+}
+
+auto gse::ide::config::editor_executable() -> const std::filesystem::path& {
+	return table().editor_executable;
+}
+
+auto gse::ide::config::editor_layout() -> const std::filesystem::path& {
+	return table().editor_layout;
+}
