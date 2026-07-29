@@ -5,7 +5,7 @@ import std;
 import gse.core;
 
 export namespace gse::gpu {
-	enum class gpu_backend_kind : std::uint8_t {
+	enum class backend_kind : std::uint8_t {
 		vulkan,
 		dx12,
 	};
@@ -139,17 +139,6 @@ export namespace gse::gpu {
 	constexpr std::size_t queue_id_count = 2;
 
 	constexpr std::uint32_t max_frames_in_flight = 2;
-
-	enum class barrier_scope : std::uint8_t {
-		compute_to_compute,
-		compute_to_indirect,
-		host_to_compute,
-		transfer_to_compute,
-		compute_to_transfer,
-		transfer_to_host,
-		transfer_to_transfer,
-		acceleration_structure_to_shader
-	};
 
 	enum class frame_status : std::uint8_t {
 		minimized,

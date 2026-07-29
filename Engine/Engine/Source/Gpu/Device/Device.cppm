@@ -3,7 +3,7 @@ export module gse.gpu:device;
 import std;
 
 import :video_encoder;
-import :command_dispatch;
+import :pass_recorder;
 
 import gse.gpu_backend;
 import gse.assert;
@@ -24,7 +24,7 @@ export namespace gse::gpu {
 		static auto create(
 			std::optional<shared_view<window::data>> win,
 			bool validation_layers_enabled,
-			gpu_backend_kind& backend,
+			backend_kind& backend,
 			gpu::device_settings& device_cfg
 		) -> std::unique_ptr<device>;
 
@@ -438,7 +438,9 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto transient() -> transient_executor<device>&;
 
-		[[nodiscard]] auto command_table() const -> const gpu::command_dispatch*;
+		[[nodiscard]] auto recorder(
+			gpu::command_buffer_handle cmd
+		) const -> pass_recorder;
 
 		[[nodiscard]] auto video_encode_enabled() const -> bool;
 
@@ -446,6 +448,7 @@ export namespace gse::gpu {
 		device(
 			std::unique_ptr<void, void (*)(void*)> backend,
 			const gpu_dispatch* dispatch,
+			const command_dispatch* commands,
 			image_format surface_format,
 			bool video_encode_enabled
 		);

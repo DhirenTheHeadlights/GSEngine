@@ -249,8 +249,6 @@ auto gse::renderer::rt_shadow::frame(context& ctx, shared_view<gpu::context::dat
 		build_new_blas(rec);
 		if (instance_count != 0) {
 			const std::uint32_t workgroups = (instance_count + 63) / 64;
-			rec.barrier(gpu::barrier_scope::host_to_compute);
-			rec.barrier(gpu::barrier_scope::compute_to_compute);
 			rec.dispatch<entry>(
 				{
 					.count = instance_count,

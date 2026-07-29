@@ -42,6 +42,10 @@ export namespace gse::vulkan {
 			const gpu::dependency_info& dep
 		) const -> void;
 
+		auto transition_image_state(
+			const gpu::image_barrier& barrier
+		) const -> void;
+
 		auto reset_query_pool(
 			gpu::handle<gpu::query_pool> pool,
 			std::uint32_t first_query,
@@ -421,6 +425,8 @@ auto gse::vulkan::commands::pipeline_barrier(const gpu::dependency_info& dep) co
 	const auto vk_dep = build_vk_dependency_info(dep, scratch);
 	raw().pipelineBarrier2(vk_dep);
 }
+
+auto gse::vulkan::commands::transition_image_state(const gpu::image_barrier&) const -> void {}
 
 auto gse::vulkan::commands::bind_shaders(const std::span<const gpu::stage_flag> stages, const std::span<const gpu::handle<gpu::shader_object>> shaders) const -> void {
 	static thread_local std::vector<vk::ShaderStageFlagBits> vk_stages;

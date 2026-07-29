@@ -154,10 +154,6 @@ export namespace gse::gpu {
 			std::uint32_t data = 0
 		) -> void;
 
-		auto barrier(
-			gpu::barrier_scope scope
-		) const -> void;
-
 		auto sample_image(
 			const image& img,
 			gpu::pipeline_stage_flags stages
@@ -228,15 +224,22 @@ export namespace gse::gpu {
 			gpu::resource_state current = gpu::resource_state::undefined;
 		};
 
+		struct access_track {
+			gpu::pipeline_stage_flags stages = {};
+			gpu::access_flags access = {};
+		};
+
 		gpu::pass_recorder m_recorder;
 		render_pass_data* m_pass = nullptr;
 		const gpu::transient_pool* m_transient_pool = nullptr;
 		gpu::device* m_device = nullptr;
 		std::vector<touched_resource> m_touched;
+		std::unordered_map<const void*, access_track> m_last_access;
 		std::unordered_map<const void*, image_state_track> m_image_states;
 		std::thread::id m_origin_thread;
 		gpu::pipeline_state_cache m_state_cache;
 		bool m_bindless_heaps_valid = false;
+		bool m_bound_is_compute = false;
 
 		recording_context(
 			pass_recorder rec,
@@ -258,6 +261,14 @@ export namespace gse::gpu {
 			gpu::pipeline_stage_flags stages,
 			gpu::access_flags access
 		) -> void;
+
+		auto emit_intra_pass_barrier(
+			const resource_ref& ref,
+			gpu::pipeline_stage_flags stages,
+			gpu::access_flags access
+		) -> void;
+
+		[[nodiscard]] auto bound_shader_stages() const -> gpu::pipeline_stage_flags;
 
 		auto transition_image_for_binding(
 			const resource_ref& ref,
@@ -357,13 +368,13 @@ template <typename Entry>
 auto gse::gpu::recording_context::push_bindings(const entry_push_constants_t<Entry>& pc, const binding_args<entry_bindings_pack_t<Entry>>& args) -> void {
 	push_data(pc, 0);
 	push_data(args, sizeof(entry_push_constants_t<Entry>));
-	register_bindless_usage<Entry>(args, gpu::pipeline_stage_flag::vertex_shader | gpu::pipeline_stage_flag::fragment_shader | gpu::pipeline_stage_flag::mesh_shader | gpu::pipeline_stage_flag::task_shader);
+	register_bindless_usage<Entry>(args, bound_shader_stages());
 }
 
 template <typename Entry>
 auto gse::gpu::recording_context::push_bindings(const binding_args<entry_bindings_pack_t<Entry>>& args) -> void {
 	push_data(args, 0);
-	register_bindless_usage<Entry>(args, gpu::pipeline_stage_flag::vertex_shader | gpu::pipeline_stage_flag::fragment_shader | gpu::pipeline_stage_flag::mesh_shader | gpu::pipeline_stage_flag::task_shader);
+	register_bindless_usage<Entry>(args, bound_shader_stages());
 }
 
 template <typename T>
