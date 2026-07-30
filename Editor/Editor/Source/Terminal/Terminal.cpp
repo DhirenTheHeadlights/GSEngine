@@ -3,6 +3,7 @@ module gse.ide.terminal;
 import std;
 import gse;
 import gse.ide.build;
+import gse.ide.config;
 import gse.ide.navigation;
 import gse.win32;
 
@@ -123,7 +124,7 @@ auto gse::ide::terminal::path_link_at(const std::string_view row, const std::uin
 	const std::uint32_t col = peeled_count == 2 ? peeled[0] : 0;
 
 	const std::filesystem::path candidate(path_str);
-	std::filesystem::path resolved = candidate.is_absolute() ? candidate : gse::config::root_dir() / candidate;
+	std::filesystem::path resolved = candidate.is_absolute() ? candidate : ide::config::project_root() / candidate;
 	std::error_code ec;
 	if (!std::filesystem::is_regular_file(resolved, ec)) {
 		return std::nullopt;
@@ -244,13 +245,13 @@ auto gse::ide::terminal::header_button(gui::builder& ui, const rectf& rect, cons
 	);
 	gui::symbol::draw(ctx, glyph, glyph_rect, {
 		.color = fg,
-		.scale = 0.55f,
+		.extent = sty.icon_extent,
 		.clip_rect = rect,
 	});
 	if (!label.empty()) {
 		ctx.queue_text({
 			.font = ctx.fonts.text,
-			.text = std::string(label),
+			.text = label,
 			.position = { glyph_rect.right(), rect.center().y() + ctx.fonts.text->vertical_center_offset(sty.font_size) },
 			.scale = sty.font_size,
 			.color = fg,
@@ -264,7 +265,7 @@ auto gse::ide::terminal::header_button(gui::builder& ui, const rectf& rect, cons
 auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst, const rectf& area, channel_writer channels, const bool building) -> void {
 	const gui::draw_context& ctx = ui.ctx;
 	const id input_id = gui::ids::make("##term_input_" + inst.name);
-	const std::string prompt = ellipsize_path(gse::config::root_dir().display_string()) + "> ";
+	const std::string prompt = ellipsize_path(ide::config::project_root().display_string()) + "> ";
 
 	std::vector<line> fresh;
 	if (inst.follows_log) {
@@ -285,7 +286,7 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst
 			inst.runner = std::make_shared<command_runner>();
 		}
 		inst.runner->running.store(true, std::memory_order_release);
-		std::thread([r = inst.runner, cmd = inst.input, cwd = gse::config::root_dir().wstring()] {
+		std::thread([r = inst.runner, cmd = inst.input, cwd = ide::config::project_root().wstring()] {
 			run_command(*r, cmd, cwd);
 		}).detach();
 		inst.input.clear();
@@ -470,7 +471,7 @@ auto gse::ide::terminal::confirm_button(gui::builder& ui, const rectf& rect, con
 	});
 	ctx.queue_text({
 		.font = ctx.fonts.text,
-		.text = std::string(label),
+		.text = label,
 		.position = { rect.center().x() - ctx.fonts.text->width(label, sty.font_size) * 0.5f, rect.center().y() + ctx.fonts.text->vertical_center_offset(sty.font_size) },
 		.scale = sty.font_size,
 		.color = sty.color_text,
@@ -622,7 +623,7 @@ auto gse::ide::terminal::draw_panel(gui::builder& ui, data& d, channel_writer ch
 			.id = i + 1,
 			.caption = inst.name,
 			.busy = inst.runner && inst.runner->running.load(std::memory_order_acquire),
-			.closeable = d.instances.size() > 1,
+			.closeable = !inst.follows_log,
 		});
 	}
 

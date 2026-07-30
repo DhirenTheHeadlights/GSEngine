@@ -16,6 +16,12 @@ namespace gse::ide::project {
 	) -> std::string;
 
 	constexpr std::size_t recent_limit = 10;
+	constexpr std::size_t max_project_path = 120;
+
+	auto write_file(
+		const std::filesystem::path& path,
+		std::string_view text
+	) -> bool;
 
 	auto command_line_manifest() -> std::filesystem::path;
 
@@ -104,6 +110,159 @@ auto gse::ide::project::command_line_manifest() -> std::filesystem::path {
 
 	win32::LocalFree(arguments);
 	return found;
+}
+
+auto gse::ide::project::write_file(const std::filesystem::path& path, const std::string_view text) -> bool {
+	std::error_code ec;
+	std::filesystem::create_directories(path.parent_path(), ec);
+	std::ofstream stream(path, std::ios::binary | std::ios::trunc);
+	if (!stream) {
+		return false;
+	}
+	stream.write(text.data(), static_cast<std::streamsize>(text.size()));
+	return stream.good();
+}
+
+auto gse::ide::project::validate_new(const std::string_view name, const std::filesystem::path& parent) -> std::string {
+	if (name.empty()) {
+		return "Enter a project name.";
+	}
+	if (name.find_first_of("\\/:*?\"<>|") != std::string_view::npos) {
+		return "Name cannot contain \\ / : * ? \" < > |";
+	}
+	if (name.front() == ' ' || name.back() == ' ' || name.back() == '.') {
+		return "Name cannot start or end with a space, or end with a period.";
+	}
+
+	const std::filesystem::path destination = parent / name;
+
+	if (destination.generic_display_string().size() > max_project_path) {
+		return std::format("Path is too long ({} chars); keep it under {}.", destination.generic_display_string().size(), max_project_path);
+	}
+
+	std::error_code ec;
+	if (std::filesystem::exists(destination, ec)) {
+		return "A folder with that name already exists.";
+	}
+	return {};
+}
+
+auto gse::ide::project::create(const std::string_view name, const std::filesystem::path& parent) -> std::expected<std::filesystem::path, std::string> {
+	if (const std::string problem = validate_new(name, parent); !problem.empty()) {
+		return std::unexpected(problem);
+	}
+
+	const std::filesystem::path destination = parent / name;
+	const std::string project(name);
+
+	std::error_code ec;
+	std::filesystem::create_directories(destination / "Source", ec);
+	std::filesystem::create_directories(destination / "Assets", ec);
+	if (ec) {
+		return std::unexpected(std::format("Could not create {}", destination.generic_display_string()));
+	}
+
+	const std::string cmake = std::format(R"(cmake_minimum_required(VERSION 4.2)
+
+set(CMAKE_CXX_STANDARD 26)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# Set by the editor when it configures this project, from the .gseproj [engine] source key.
+if(NOT DEFINED GSE_ENGINE_DIR)
+    set(GSE_ENGINE_DIR "$ENV{{GSE_ENGINE_DIR}}")
+endif()
+if(NOT GSE_ENGINE_DIR)
+    message(FATAL_ERROR "GSE_ENGINE_DIR is not set. Pass -DGSE_ENGINE_DIR=<path to the engine tree>.")
+endif()
+
+include("${{GSE_ENGINE_DIR}}/Engine/cmake/GSEEngine.cmake")
+
+project({0})
+
+gse_configure_compiler()
+
+add_subdirectory("${{GSE_ENGINE_ROOT}}/Engine" "${{CMAKE_BINARY_DIR}}/Engine")
+
+gse_write_manifest()
+
+file(GLOB_RECURSE {0}_MODULES CONFIGURE_DEPENDS "${{CMAKE_CURRENT_SOURCE_DIR}}/Source/*.cppm")
+file(GLOB_RECURSE {0}_IMPLS CONFIGURE_DEPENDS "${{CMAKE_CURRENT_SOURCE_DIR}}/Source/*.cpp")
+
+# A .cpp declaring an implementation partition (module x:y;) provides a module and
+# must live in a CXX_MODULES file set; plain implementation units stay ordinary sources.
+set({0}_MODULE_IMPLS "")
+set({0}_PLAIN_IMPLS "")
+foreach(_impl IN LISTS {0}_IMPLS)
+    file(STRINGS "${{_impl}}" _part_decl REGEX "^module [A-Za-z_0-9.]+:[A-Za-z_0-9]+ *;" LIMIT_COUNT 1)
+    if(_part_decl)
+        list(APPEND {0}_MODULE_IMPLS "${{_impl}}")
+    else()
+        list(APPEND {0}_PLAIN_IMPLS "${{_impl}}")
+    endif()
+endforeach()
+
+add_executable({0} ${{{0}_PLAIN_IMPLS}})
+
+if({0}_MODULES OR {0}_MODULE_IMPLS)
+    target_sources({0}
+        PRIVATE
+            FILE_SET gse_project_modules TYPE CXX_MODULES
+            BASE_DIRS "${{CMAKE_CURRENT_SOURCE_DIR}}/Source"
+            FILES ${{{0}_MODULES}} ${{{0}_MODULE_IMPLS}}
+    )
+endif()
+
+target_link_libraries({0} PRIVATE Engine)
+
+# GCC-trunk's C++ modules codegen on MinGW emits vague-linkage function-local statics as
+# strong symbols in every importing TU, so the final link sees duplicate definitions.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND WIN32)
+    target_link_options({0} PRIVATE "-Wl,--allow-multiple-definition")
+endif()
+
+gse_copy_runtime_deps({0})
+)", project);
+
+	const std::string manifest_text = std::format(R"([project]
+name = {0}
+engine_version = 0.1.0
+source = Source
+assets = Assets
+
+[engine]
+source = {1}
+
+[targets]
+game = {0}
+)", project, config::root_dir().generic_display_string());
+
+	const std::string main_text = std::format(R"(import std;
+
+import gse;
+
+auto main() -> int {{
+	gse::start(
+		[](gse::engine& e) -> void {{
+		}},
+		{{
+			.title = "{0}",
+		}}
+	);
+	return 0;
+}}
+)", project);
+
+	const std::filesystem::path manifest = destination / (project + std::string(manifest_extension));
+
+	if (!write_file(destination / "CMakeLists.txt", cmake)
+		|| !write_file(manifest, manifest_text)
+		|| !write_file(destination / "Source" / "Main.cpp", main_text)
+		|| !write_file(destination / ".gitignore", ".gse/\n")) {
+		return std::unexpected(std::format("Could not write project files under {}", destination.generic_display_string()));
+	}
+
+	return config::generic(manifest);
 }
 
 auto gse::ide::project::recent_path() -> std::filesystem::path {

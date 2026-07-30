@@ -122,7 +122,7 @@ auto gse::ide::search_screen::draw_row(gui::draw_context& ctx, const rectf& row,
 	);
 	gui::symbol::draw(ctx, gui::symbol::file(), icon_rect, {
 		.color = sty.color_icon,
-		.scale = sty.icon_scale,
+		.extent = sty.icon_extent,
 		.clip_rect = row,
 	});
 
