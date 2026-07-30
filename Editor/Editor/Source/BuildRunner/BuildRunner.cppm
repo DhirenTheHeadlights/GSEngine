@@ -34,6 +34,7 @@ export namespace gse::ide::build_runner {
 		bool game_launched = false;
 		std::uint32_t generation = 0;
 		void* game_process = nullptr;
+		void* game_job = nullptr;
 		void* game_output = nullptr;
 		std::uint32_t game_pid = 0;
 		void* surface_pipe = nullptr;
@@ -576,6 +577,7 @@ auto gse::ide::build_runner::launch_game_attached(build_completion& completion, 
 	std::lock_guard lock(completion.mutex);
 	completion.game_launched = true;
 	completion.game_process = game.process;
+	completion.game_job = game.job;
 	completion.game_output = game.output;
 	completion.game_pid = game.pid;
 	completion.surface_pipe = pipe;
@@ -733,6 +735,7 @@ auto gse::ide::build_runner::start_build(context& ctx, data& d, const build_requ
 		d.completion.game_launched = false;
 		d.completion.generation = 0;
 		d.completion.game_process = nullptr;
+		d.completion.game_job = nullptr;
 		d.completion.game_output = nullptr;
 		d.completion.game_pid = 0;
 		d.completion.surface_pipe = nullptr;
@@ -772,7 +775,7 @@ auto gse::ide::build_runner::drain_completion(context& ctx, data& d) -> void {
 
 		auto stream = std::make_shared<spawn::output_stream>();
 		stream->running.store(true, std::memory_order_release);
-		spawn::attach_process(*stream, d.completion.game_process, nullptr);
+		spawn::attach_process(*stream, d.completion.game_process, d.completion.game_job);
 		ctx.channels.push<stream_opened>({
 			.name = std::format("Game {}", d.completion.game_pid),
 			.stream = stream,
@@ -955,13 +958,5 @@ auto gse::ide::build_runner::shutdown(data& d) -> void {
 	if (d.worker.joinable()) {
 		d.worker.join();
 	}
-	close_surface_pipe(d);
-	for (const attached_game& game : d.games) {
-		spawn::close_process(*game.stream);
-		if (game.output) {
-			win32::CloseHandle(game.output);
-		}
-		win32::CloseHandle(game.process);
-	}
-	d.games.clear();
+	stop_games(d);
 }

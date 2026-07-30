@@ -20,6 +20,7 @@ export namespace gse::ide::spawn {
 	struct launched {
 		void* process = nullptr;
 		void* output = nullptr;
+		void* job = nullptr;
 		std::uint32_t pid = 0;
 	};
 
@@ -314,6 +315,21 @@ auto gse::ide::spawn::launch_streamed(const std::wstring& command_line, const st
 		return {};
 	}
 
+	// The child is tied to a job that kills on close, so it cannot outlive the editor
+	// even if the editor crashes and never runs its shutdown path.
+	void* job = win32::CreateJobObjectW(nullptr, nullptr);
+	if (!win32::valid_handle(job)) {
+		win32::CloseHandle(read_end);
+		win32::CloseHandle(write_end);
+		return {};
+	}
+	win32::JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{
+		.BasicLimitInformation = {
+			.LimitFlags = win32::job_object_limit_kill_on_job_close,
+		},
+	};
+	win32::SetInformationJobObject(job, win32::job_object_extended_limit_information, &limits, sizeof(limits));
+
 	std::vector<wchar_t> command_buffer(command_line.begin(), command_line.end());
 	command_buffer.push_back(0);
 
@@ -334,7 +350,7 @@ auto gse::ide::spawn::launch_streamed(const std::wstring& command_line, const st
 		nullptr,
 		nullptr,
 		1,
-		win32::extended_startupinfo_present | win32::create_no_window,
+		win32::extended_startupinfo_present | win32::create_no_window | win32::create_suspended,
 		nullptr,
 		working_dir.empty() ? nullptr : working_dir.c_str(),
 		&startup.StartupInfo,
@@ -345,6 +361,25 @@ auto gse::ide::spawn::launch_streamed(const std::wstring& command_line, const st
 
 	if (!spawned) {
 		win32::CloseHandle(read_end);
+		win32::CloseHandle(job);
+		return {};
+	}
+
+	if (!win32::AssignProcessToJobObject(job, process.hProcess)) {
+		win32::TerminateProcess(process.hProcess, 1);
+		win32::CloseHandle(process.hThread);
+		win32::CloseHandle(process.hProcess);
+		win32::CloseHandle(read_end);
+		win32::CloseHandle(job);
+		return {};
+	}
+
+	if (win32::ResumeThread(process.hThread) == std::numeric_limits<win32::DWORD>::max()) {
+		win32::TerminateJobObject(job, 1);
+		win32::CloseHandle(process.hThread);
+		win32::CloseHandle(process.hProcess);
+		win32::CloseHandle(read_end);
+		win32::CloseHandle(job);
 		return {};
 	}
 
@@ -353,6 +388,7 @@ auto gse::ide::spawn::launch_streamed(const std::wstring& command_line, const st
 	return {
 		.process = process.hProcess,
 		.output = read_end,
+		.job = job,
 		.pid = static_cast<std::uint32_t>(process.dwProcessId),
 	};
 }
