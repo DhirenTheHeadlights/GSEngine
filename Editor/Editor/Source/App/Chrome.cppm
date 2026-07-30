@@ -782,7 +782,7 @@ auto gse::ide::draw_explorer_panel(gse::gui::builder& ui, workspace::data& ws, q
 	std::uint64_t reveal_key = 0;
 	float reveal_offset = -1.f;
 	if (ws.reveal_path) {
-		workspace::explorer_reveal reveal = workspace::reveal_nodes(ws, *ws.reveal_path);
+		const auto reveal = workspace::reveal_nodes(ws, *ws.reveal_path);
 		ws.reveal_path.reset();
 		if (reveal.key != 0) {
 			reveal_expand = std::move(reveal.expand);
