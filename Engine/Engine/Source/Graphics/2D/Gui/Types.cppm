@@ -218,6 +218,8 @@ export namespace gse::gui {
 		vec2f& layout_cursor;
 		std::vector<renderer::sprite_command>& sprites;
 		std::vector<renderer::text_command>& texts;
+		std::deque<std::string>& text_pool;
+		std::size_t& text_pool_used;
 		std::unordered_map<std::uint64_t, vec4f>& widget_anim_colors;
 		std::unordered_map<std::uint64_t, scroll_state>& widget_scrolls;
 
@@ -237,6 +239,10 @@ export namespace gse::gui {
 		auto queue_text(
 			renderer::text_command cmd
 		) const -> void;
+
+		auto intern(
+			std::string_view text
+		) const -> std::string_view;
 
 		auto open_context_menu(
 			context_menu_open request

@@ -57,7 +57,7 @@ export namespace gse::gui {
 		vec4f color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f };
 		vec4f color_folder = { 0.86f, 0.74f, 0.45f, 1.0f };
 		vec4f color_file = { 0.55f, 0.66f, 0.82f, 1.0f };
-		float icon_scale = 1.05f;
+		[[= gse::scaled]] float icon_extent = 14.f;
 
 		// Interactive widget states
 		vec4f color_widget_background = { 0.10f, 0.16f, 0.22f, 1.0f };

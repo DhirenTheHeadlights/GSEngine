@@ -63,6 +63,7 @@ export import :cloud_renderer;
 export import :world_text_renderer;
 export import :graph_canvas_widget;
 export import :panel_backdrop;
+export import :marquee_widget;
 export import :scroll_widget;
 export import :section_widget;
 export import :selectable_widget;

@@ -96,6 +96,9 @@ export namespace gse::gui {
 
 		std::vector<renderer::sprite_command> sprite_commands;
 		std::vector<renderer::text_command> text_commands;
+		per_frame_resource<std::deque<std::string>> text_pools;
+		std::size_t text_pool_slot = 0;
+		std::size_t text_pool_used = 0;
 
 		std::vector<id> visible_menu_ids_last_frame;
 		std::unordered_map<std::uint64_t, id> name_to_menu_id;

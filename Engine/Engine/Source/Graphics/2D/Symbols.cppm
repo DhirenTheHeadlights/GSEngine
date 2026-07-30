@@ -14,7 +14,7 @@ export namespace gse::gui::symbol {
 	struct paint {
 		vec4f color = { 1.f, 1.f, 1.f, 1.f };
 		float thickness = 0.f;
-		float scale = 0.55f;
+		float extent = 0.f;
 		render_layer layer = render_layer::content;
 		std::uint32_t z_order = 0;
 		std::optional<rect_t<vec2f>> clip_rect = std::nullopt;
@@ -53,6 +53,7 @@ export namespace gse::gui::symbol {
 
 namespace gse::gui::symbol {
 	constexpr float default_weight = 0.13f;
+	constexpr float min_half_thickness = 0.75f;
 
 	auto to_command(
 		const stroke& st,
@@ -61,6 +62,15 @@ namespace gse::gui::symbol {
 		float half_thickness,
 		const paint& p
 	) -> renderer::sprite_command;
+
+	auto snap_to_pixel_center(
+		vec2f point
+	) -> vec2f;
+
+	auto glyph_extent(
+		const rect_t<vec2f>& box,
+		const paint& p
+	) -> float;
 }
 
 auto gse::gui::symbol::close() -> std::span<const stroke> {
@@ -234,13 +244,21 @@ auto gse::gui::symbol::to_command(const stroke& st, const vec2f center, const fl
 	};
 }
 
+auto gse::gui::symbol::snap_to_pixel_center(const vec2f point) -> vec2f {
+	return { std::floor(point.x()) + 0.5f, std::floor(point.y()) + 0.5f };
+}
+
+auto gse::gui::symbol::glyph_extent(const rect_t<vec2f>& box, const paint& p) -> float {
+	return p.extent > 0.f ? p.extent : std::min(box.width(), box.height());
+}
+
 auto gse::gui::symbol::draw(const draw_context& ctx, std::span<const stroke> strokes, const rect_t<vec2f>& box, const paint& p) -> void {
-	const float extent = std::min(box.width(), box.height()) * p.scale;
+	const float extent = glyph_extent(box, p);
 	if (extent <= 0.f) {
 		return;
 	}
-	const vec2f center = box.center();
-	const float half_thickness = std::max(0.5f, (p.thickness > 0.f ? p.thickness : extent * default_weight) * 0.5f);
+	const vec2f center = snap_to_pixel_center(box.center());
+	const float half_thickness = std::max(min_half_thickness, (p.thickness > 0.f ? p.thickness : extent * default_weight) * 0.5f);
 	for (const stroke& st : strokes) {
 		renderer::sprite_command cmd = to_command(st, center, extent, half_thickness, p);
 		cmd.texture = ctx.blank_texture;
@@ -249,12 +267,12 @@ auto gse::gui::symbol::draw(const draw_context& ctx, std::span<const stroke> str
 }
 
 auto gse::gui::symbol::draw(std::vector<renderer::sprite_command>& out, resource::handle<texture> blank, std::span<const stroke> strokes, const rect_t<vec2f>& box, const paint& p) -> void {
-	const float extent = std::min(box.width(), box.height()) * p.scale;
+	const float extent = glyph_extent(box, p);
 	if (extent <= 0.f) {
 		return;
 	}
-	const vec2f center = box.center();
-	const float half_thickness = std::max(0.5f, (p.thickness > 0.f ? p.thickness : extent * default_weight) * 0.5f);
+	const vec2f center = snap_to_pixel_center(box.center());
+	const float half_thickness = std::max(min_half_thickness, (p.thickness > 0.f ? p.thickness : extent * default_weight) * 0.5f);
 	for (const stroke& st : strokes) {
 		renderer::sprite_command cmd = to_command(st, center, extent, half_thickness, p);
 		cmd.texture = blank;
