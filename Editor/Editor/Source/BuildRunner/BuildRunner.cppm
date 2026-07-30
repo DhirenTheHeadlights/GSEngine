@@ -34,6 +34,8 @@ export namespace gse::ide::build_runner {
 		bool game_launched = false;
 		std::uint32_t generation = 0;
 		void* game_process = nullptr;
+		void* game_output = nullptr;
+		std::uint32_t game_pid = 0;
 		void* surface_pipe = nullptr;
 		std::filesystem::path graph_path;
 	};
@@ -41,7 +43,9 @@ export namespace gse::ide::build_runner {
 	struct attached_game {
 		void* process = nullptr;
 		std::shared_ptr<spawn::output_stream> stream;
+		void* output = nullptr;
 		bool owns_pipe = false;
+		std::string pending;
 	};
 
 	struct surface_pipe {
@@ -74,7 +78,7 @@ export namespace gse::ide::build_runner {
 
 namespace gse::ide::build_runner {
 	constexpr std::uint32_t source_state_magic = 0x47534253;
-	constexpr std::uint32_t source_state_version = 1;
+	constexpr std::uint32_t source_state_version = 2;
 
 	constexpr std::array<std::string_view, 10> build_source_extensions = {
 		".cppm",
@@ -106,15 +110,21 @@ namespace gse::ide::build_runner {
 
 	auto is_build_source(const std::filesystem::path& path) -> bool;
 
-	auto source_state_path(const std::filesystem::path& build_dir, std::string_view target) -> std::filesystem::path;
+	auto source_state_path() -> std::filesystem::path;
 
 	auto load_source_state(const std::filesystem::path& path) -> std::unordered_map<std::string, source_fingerprint>;
 
 	auto save_source_state(const std::filesystem::path& path, const std::unordered_map<std::string, source_fingerprint>& state) -> void;
 
-	auto refresh_changed_sources(spawn::output_stream& stream, const std::filesystem::path& build_dir, std::string_view target) -> void;
+	auto refresh_changed_sources(spawn::output_stream& stream, std::string_view target) -> void;
+
+	auto cache_value(const std::filesystem::path& build_dir, std::string_view key) -> std::string;
 
 	auto compiler_bin_dir(const std::filesystem::path& build_dir) -> std::filesystem::path;
+
+	auto configure_command(const std::filesystem::path& project_dir, const std::filesystem::path& build_dir) -> std::wstring;
+
+	auto ensure_configured(spawn::output_stream& stream) -> std::filesystem::path;
 
 	auto build_command(const std::filesystem::path& build_dir, std::string_view target) -> std::wstring;
 
@@ -123,8 +133,7 @@ namespace gse::ide::build_runner {
 	auto current_executable() -> std::filesystem::path;
 
 	auto collect_module_write_conflicts(
-		spawn::output_stream& stream,
-		std::size_t from_line,
+		std::span<const std::string> lines,
 		const std::filesystem::path& build_dir
 	) -> std::vector<std::filesystem::path>;
 
@@ -160,9 +169,14 @@ namespace gse::ide::build_runner {
 
 	auto start_build(context& ctx, data& d, const build_request& request) -> void;
 
-	auto drain_completion(data& d) -> void;
+	auto drain_completion(
+		context& ctx,
+		data& d
+	) -> void;
 
 	auto poll_games(data& d) -> void;
+
+	auto stop_games(data& d) -> void;
 
 	auto close_surface_pipe(data& d) -> void;
 
@@ -200,8 +214,8 @@ auto gse::ide::build_runner::is_build_source(const std::filesystem::path& path) 
 	return std::ranges::contains(build_source_extensions, extension);
 }
 
-auto gse::ide::build_runner::source_state_path(const std::filesystem::path& build_dir, const std::string_view target) -> std::filesystem::path {
-	return build_dir / (".gse_source_state_" + std::string(target) + ".bin");
+auto gse::ide::build_runner::source_state_path() -> std::filesystem::path {
+	return gse::config::cache_dir() / "source_state.bin";
 }
 
 auto gse::ide::build_runner::load_source_state(const std::filesystem::path& path) -> std::unordered_map<std::string, source_fingerprint> {
@@ -212,8 +226,9 @@ auto gse::ide::build_runner::load_source_state(const std::filesystem::path& path
 	binary_reader reader(in);
 	std::uint32_t magic = 0;
 	std::uint32_t version = 0;
-	reader & magic & version;
-	if (!in || magic != source_state_magic || version != source_state_version) {
+	std::uint32_t epoch = 0;
+	reader & magic & version & epoch;
+	if (!in || magic != source_state_magic || version != source_state_version || epoch != archive_format_epoch) {
 		return {};
 	}
 	std::unordered_map<std::string, source_fingerprint> state;
@@ -239,13 +254,13 @@ auto gse::ide::build_runner::save_source_state(const std::filesystem::path& path
 	std::filesystem::rename(temp, path, ec);
 }
 
-auto gse::ide::build_runner::refresh_changed_sources(spawn::output_stream& stream, const std::filesystem::path& build_dir, const std::string_view target) -> void {
-	const std::filesystem::path state_path = source_state_path(build_dir, target);
+auto gse::ide::build_runner::refresh_changed_sources(spawn::output_stream& stream, const std::string_view target) -> void {
+	const std::filesystem::path state_path = source_state_path();
 	std::error_code exists_ec;
 	const bool seeding = !std::filesystem::exists(state_path, exists_ec);
 	const std::unordered_map<std::string, source_fingerprint> previous = load_source_state(state_path);
 
-	std::unordered_map<std::string, source_fingerprint> current;
+	std::unordered_map<std::string, source_fingerprint> current = previous;
 	std::size_t refreshed = 0;
 
 	for (const std::filesystem::path& source_root : project_source_roots(target)) {
@@ -303,27 +318,89 @@ auto gse::ide::build_runner::refresh_changed_sources(spawn::output_stream& strea
 	}
 }
 
-auto gse::ide::build_runner::compiler_bin_dir(const std::filesystem::path& build_dir) -> std::filesystem::path {
+auto gse::ide::build_runner::cache_value(const std::filesystem::path& build_dir, const std::string_view key) -> std::string {
 	std::ifstream cache(build_dir / "CMakeCache.txt");
 	if (!cache) {
 		return {};
 	}
 
-	constexpr std::string_view key = "CMAKE_CXX_COMPILER:";
+	const std::string prefix = std::string(key) + ":";
 	std::string line;
 	while (std::getline(cache, line)) {
-		if (!line.starts_with(key)) {
+		if (!line.starts_with(prefix)) {
 			continue;
 		}
 		const std::size_t equals = line.find('=');
 		if (equals == std::string::npos) {
 			break;
 		}
-		std::filesystem::path bin = std::filesystem::path(line.substr(equals + 1)).parent_path();
-		bin.make_preferred();
-		return bin;
+		return line.substr(equals + 1);
 	}
 	return {};
+}
+
+auto gse::ide::build_runner::compiler_bin_dir(const std::filesystem::path& build_dir) -> std::filesystem::path {
+	const std::string compiler = cache_value(build_dir, "CMAKE_CXX_COMPILER");
+	if (compiler.empty()) {
+		return {};
+	}
+	std::filesystem::path bin = std::filesystem::path(compiler).parent_path();
+	bin.make_preferred();
+	return bin;
+}
+
+auto gse::ide::build_runner::configure_command(const std::filesystem::path& project_dir, const std::filesystem::path& build_dir) -> std::wstring {
+	const std::filesystem::path& editor_build = gse::ide::config::build_dir();
+
+	std::wstring command = L"cmd.exe /c cmake -G Ninja -S \"" + project_dir.wstring() + L"\" -B \"" + build_dir.wstring() + L"\"";
+	command += L" -DGSE_ENGINE_DIR=\"" + gse::ide::config::engine_root().wstring() + L"\"";
+	command += L" -DVCPKG_MANIFEST_MODE=OFF";
+	command += L" -DVCPKG_INSTALLED_DIR=\"" + (editor_build / "vcpkg_installed").wstring() + L"\"";
+
+	constexpr std::array<std::string_view, 7> inherited = {
+		"CMAKE_TOOLCHAIN_FILE",
+		"VCPKG_TARGET_TRIPLET",
+		"VCPKG_OVERLAY_PORTS",
+		"VCPKG_OVERLAY_TRIPLETS",
+		"CMAKE_C_COMPILER",
+		"CMAKE_CXX_COMPILER",
+		"CMAKE_BUILD_TYPE",
+	};
+
+	for (const std::string_view key : inherited) {
+		const std::string value = cache_value(editor_build, key);
+		if (value.empty()) {
+			continue;
+		}
+		const std::wstring wide_key(key.begin(), key.end());
+		command += L" -D" + wide_key + L"=\"" + std::filesystem::path(value).wstring() + L"\"";
+	}
+
+	return command;
+}
+
+auto gse::ide::build_runner::ensure_configured(spawn::output_stream& stream) -> std::filesystem::path {
+	const std::filesystem::path& build_dir = config::project_build_dir();
+	if (!find_build_dir(build_dir).empty()) {
+		return build_dir;
+	}
+
+	std::error_code ec;
+	const std::filesystem::path& project_dir = config::project_root();
+	if (!std::filesystem::exists(project_dir / "CMakeLists.txt", ec)) {
+		return {};
+	}
+
+	spawn::emit(stream, "configuring " + project_dir.display_string() + "...");
+	std::filesystem::create_directories(build_dir, ec);
+
+	const std::filesystem::path compiler_bin = compiler_bin_dir(config::build_dir());
+	if (spawn::run_capture(stream, configure_command(project_dir, build_dir), project_dir.wstring(), compiler_bin) != 0) {
+		spawn::emit(stream, "configure failed");
+		return {};
+	}
+
+	return find_build_dir(build_dir);
 }
 
 auto gse::ide::build_runner::build_command(const std::filesystem::path& build_dir, const std::string_view target) -> std::wstring {
@@ -354,18 +431,9 @@ auto gse::ide::build_runner::current_executable() -> std::filesystem::path {
 }
 
 auto gse::ide::build_runner::collect_module_write_conflicts(
-	spawn::output_stream& stream,
-	const std::size_t from_line,
+	const std::span<const std::string> lines,
 	const std::filesystem::path& build_dir
 ) -> std::vector<std::filesystem::path> {
-	std::vector<std::string> lines;
-	{
-		std::lock_guard lock(stream.mutex);
-		if (from_line < stream.lines.size()) {
-			lines.assign(stream.lines.begin() + static_cast<std::ptrdiff_t>(from_line), stream.lines.end());
-		}
-	}
-
 	const bool write_failed = std::ranges::any_of(lines, [](const std::string& line) {
 		return line.find(module_write_signature) != std::string::npos;
 	});
@@ -438,18 +506,14 @@ auto gse::ide::build_runner::run_build_with_module_recovery(
 	constexpr int max_attempts = 16;
 	std::unordered_set<std::string> recovered;
 	for (int attempt = 1; ; ++attempt) {
-		std::size_t start_line = 0;
-		{
-			std::lock_guard lock(stream.mutex);
-			start_line = stream.lines.size();
-		}
-
+		spawn::begin_transcript(stream);
 		const int code = spawn::run_capture(stream, command, gse::config::root_dir().wstring(), compiler_bin);
+		const std::vector<std::string> transcript = spawn::take_transcript(stream);
 		if (code == 0 || attempt >= max_attempts || st.stop_requested() || stream.terminated.load(std::memory_order_acquire)) {
 			return code;
 		}
 
-		const std::vector<std::filesystem::path> conflicts = collect_module_write_conflicts(stream, start_line, build_dir);
+		const std::vector<std::filesystem::path> conflicts = collect_module_write_conflicts(transcript, build_dir);
 		if (conflicts.empty()) {
 			return code;
 		}
@@ -500,27 +564,20 @@ auto gse::ide::build_runner::launch_game_attached(build_completion& completion, 
 	command += L" --engine-parent-pid " + std::to_wstring(editor_pid);
 	command += L" --engine-dump-system-graph-path \"" + graph_file.wstring() + L"\"";
 
-	std::vector<wchar_t> command_buffer(command.begin(), command.end());
-	command_buffer.push_back(0);
-
-	const std::wstring working_dir = gse::config::root_dir().wstring();
-	win32::STARTUPINFOW startup{
-		.cb = sizeof(win32::STARTUPINFOW),
-	};
-	win32::PROCESS_INFORMATION process{};
-	if (!win32::CreateProcessW(nullptr, command_buffer.data(), nullptr, nullptr, 0, 0, nullptr, working_dir.c_str(), &startup, &process)) {
+	const spawn::launched game = spawn::launch_streamed(command, gse::config::root_dir().wstring());
+	if (!win32::valid_handle(game.process)) {
 		win32::CloseHandle(pipe);
 		spawn::emit(stream, "failed to launch game");
 		return;
 	}
 
-	spawn::emit(stream, "launched game (pid " + std::to_string(process.dwProcessId) + ")");
-	spawn::attach_process(stream, process.hProcess, nullptr);
-	win32::CloseHandle(process.hThread);
+	spawn::emit(stream, "launched game (pid " + std::to_string(game.pid) + ")");
 
 	std::lock_guard lock(completion.mutex);
 	completion.game_launched = true;
-	completion.game_process = process.hProcess;
+	completion.game_process = game.process;
+	completion.game_output = game.output;
+	completion.game_pid = game.pid;
 	completion.surface_pipe = pipe;
 	completion.graph_path = graph_file;
 }
@@ -532,13 +589,13 @@ auto gse::ide::build_runner::build_game(
 	const bool run_after,
 	const std::uint32_t next_generation
 ) -> void {
-	const std::filesystem::path build_dir = find_build_dir(config::project_build_dir());
+	const std::filesystem::path build_dir = ensure_configured(stream);
 	if (build_dir.empty()) {
 		spawn::emit(stream, "configured build directory is unavailable");
 		return;
 	}
 
-	refresh_changed_sources(stream, build_dir, config::game_target());
+	refresh_changed_sources(stream, config::game_target());
 	const std::filesystem::path compiler_bin = compiler_bin_dir(build_dir);
 
 	const std::filesystem::path& game_exe = config::game_executable();
@@ -583,7 +640,7 @@ auto gse::ide::build_runner::rebuild_editor(const std::stop_token& st, spawn::ou
 		return;
 	}
 
-	refresh_changed_sources(stream, build_dir, config::editor_target);
+	refresh_changed_sources(stream, config::editor_target);
 	const std::filesystem::path compiler_bin = compiler_bin_dir(build_dir);
 
 	const std::filesystem::path editor_exe = current_executable();
@@ -633,14 +690,7 @@ auto gse::ide::build_runner::build_worker(
 		build_game(st, *completion, *stream, request.run_after, next_generation);
 	}
 
-	bool launched = false;
-	{
-		std::lock_guard lock(completion->mutex);
-		launched = completion->game_launched;
-	}
-	if (!launched) {
-		spawn::close_process(*stream);
-	}
+	spawn::close_process(*stream);
 
 	std::lock_guard lock(completion->mutex);
 	completion->done = true;
@@ -661,6 +711,12 @@ auto gse::ide::build_runner::start_build(context& ctx, data& d, const build_requ
 		return;
 	}
 
+	// Windows keeps the image mapped while the process lives, so the linker cannot
+	// overwrite the game exe until every running instance has actually exited.
+	if (request.target == build_target::game) {
+		stop_games(d);
+	}
+
 	const std::string_view name = request.target == build_target::editor
 		? "Rebuild Editor"
 		: request.run_after ? "Build & Run" : "Build Game";
@@ -677,6 +733,8 @@ auto gse::ide::build_runner::start_build(context& ctx, data& d, const build_requ
 		d.completion.game_launched = false;
 		d.completion.generation = 0;
 		d.completion.game_process = nullptr;
+		d.completion.game_output = nullptr;
+		d.completion.game_pid = 0;
 		d.completion.surface_pipe = nullptr;
 		d.completion.graph_path.clear();
 	}
@@ -686,7 +744,7 @@ auto gse::ide::build_runner::start_build(context& ctx, data& d, const build_requ
 	d.worker = std::jthread(build_worker, &d.completion, std::move(stream), request, d.game_generation + 1);
 }
 
-auto gse::ide::build_runner::drain_completion(data& d) -> void {
+auto gse::ide::build_runner::drain_completion(context& ctx, data& d) -> void {
 	if (!d.building) {
 		return;
 	}
@@ -711,9 +769,19 @@ auto gse::ide::build_runner::drain_completion(data& d) -> void {
 		for (attached_game& game : d.games) {
 			game.owns_pipe = false;
 		}
+
+		auto stream = std::make_shared<spawn::output_stream>();
+		stream->running.store(true, std::memory_order_release);
+		spawn::attach_process(*stream, d.completion.game_process, nullptr);
+		ctx.channels.push<stream_opened>({
+			.name = std::format("Game {}", d.completion.game_pid),
+			.stream = stream,
+		});
+
 		d.games.push_back({
 			.process = d.completion.game_process,
-			.stream = d.active_stream,
+			.stream = std::move(stream),
+			.output = d.completion.game_output,
 			.owns_pipe = true,
 		});
 	}
@@ -723,9 +791,18 @@ auto gse::ide::build_runner::drain_completion(data& d) -> void {
 auto gse::ide::build_runner::poll_games(data& d) -> void {
 	for (std::size_t i = 0; i < d.games.size();) {
 		attached_game& game = d.games[i];
+		if (game.output && !spawn::pump_output(*game.stream, game.output, game.pending)) {
+			win32::CloseHandle(game.output);
+			game.output = nullptr;
+		}
 		if (win32::WaitForSingleObject(game.process, 0) != win32::wait_object_0) {
 			++i;
 			continue;
+		}
+		if (game.output) {
+			spawn::pump_output(*game.stream, game.output, game.pending);
+			win32::CloseHandle(game.output);
+			game.output = nullptr;
 		}
 		spawn::close_process(*game.stream);
 		win32::CloseHandle(game.process);
@@ -734,6 +811,22 @@ auto gse::ide::build_runner::poll_games(data& d) -> void {
 		}
 		d.games.erase(d.games.begin() + static_cast<std::ptrdiff_t>(i));
 	}
+}
+
+auto gse::ide::build_runner::stop_games(data& d) -> void {
+	for (attached_game& game : d.games) {
+		spawn::terminate_process(*game.stream);
+		win32::WaitForSingleObject(game.process, 5000);
+		if (game.output) {
+			spawn::pump_output(*game.stream, game.output, game.pending);
+			win32::CloseHandle(game.output);
+			game.output = nullptr;
+		}
+		spawn::close_process(*game.stream);
+		win32::CloseHandle(game.process);
+	}
+	d.games.clear();
+	close_surface_pipe(d);
 }
 
 auto gse::ide::build_runner::close_surface_pipe(data& d) -> void {
@@ -848,7 +941,7 @@ auto gse::ide::build_runner::run(context& ctx, data& d) -> async::task<> {
 	for (const build_request& request : ctx.read_channel<build_request>()) {
 		start_build(ctx, d, request);
 	}
-	drain_completion(d);
+	drain_completion(ctx, d);
 	poll_games(d);
 	poll_surface_pipe(ctx, d);
 	return {};
@@ -865,6 +958,9 @@ auto gse::ide::build_runner::shutdown(data& d) -> void {
 	close_surface_pipe(d);
 	for (const attached_game& game : d.games) {
 		spawn::close_process(*game.stream);
+		if (game.output) {
+			win32::CloseHandle(game.output);
+		}
 		win32::CloseHandle(game.process);
 	}
 	d.games.clear();
