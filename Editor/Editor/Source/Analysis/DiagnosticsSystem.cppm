@@ -13,7 +13,7 @@ export namespace gse::ide {
 			std::filesystem::path compile_commands;
 			std::filesystem::path file;
 			std::filesystem::path plugin;
-			std::filesystem::path workspace_root;
+			std::vector<std::filesystem::path> workspace_roots;
 			void (*lint_hook)(diagnostics_check&) = nullptr;
 		};
 
@@ -25,6 +25,7 @@ export namespace gse::ide {
 	namespace diagnostics_system {
 		struct [[= gse::system_state<"Diagnostics">{}]] data {
 			std::shared_ptr<analysis::diagnostics_check> pending;
+			std::jthread worker;
 		};
 
 		[[= gse::system_run<>{}]]
@@ -57,12 +58,12 @@ auto gse::ide::diagnostics_system::run(gse::context& ctx, data& d) -> gse::async
 	d.pending = std::make_shared<analysis::diagnostics_check>();
 	d.pending->document_id = request->document_id;
 	d.pending->revision = request->revision;
-	analysis::diagnostics_runner::start(
+	d.worker = analysis::diagnostics_runner::start(
 		d.pending,
 		request->compile_commands,
 		request->file,
 		request->plugin,
-		request->workspace_root,
+		request->workspace_roots,
 		request->lint_hook
 	);
 	return {};

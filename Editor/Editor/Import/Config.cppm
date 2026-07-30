@@ -12,10 +12,17 @@ export namespace gse::ide::config {
 	struct browse_root {
 		std::filesystem::path path;
 		std::string name;
+		std::filesystem::path compile_commands;
 		bool is_project = false;
 	};
 
 	auto browse_roots() -> std::span<const browse_root>;
+
+	auto analysis_roots() -> std::vector<std::filesystem::path>;
+
+	auto compile_commands_for(
+		const std::filesystem::path& file
+	) -> const std::filesystem::path&;
 
 	auto source_dir() -> const std::filesystem::path&;
 

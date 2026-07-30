@@ -65,6 +65,7 @@ export namespace gse::ide::search {
 		std::string qualified;
 		std::string identity;
 		std::string type;
+		std::string value;
 	};
 
 	struct options {
