@@ -197,7 +197,7 @@ auto gse::gpu::render_graph::current_frame() const -> std::uint32_t {
 }
 
 auto gse::gpu::render_graph::extent() const -> vec2u {
-	return m_swapchain->extent();
+	return m_swapchain ? m_swapchain->extent() : vec2u{};
 }
 
 auto gse::gpu::render_graph::frame_in_progress() const -> bool {
@@ -1259,7 +1259,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 	const auto graphics_qi = static_cast<std::size_t>(gpu::queue_type::graphics);
 	if (m_swapchain) {
 		const auto clear_cmd = m_device->acquire_worker_command_buffer(gpu::queue_type::graphics, 0, frame_idx);
-		const pass_recorder clear_rec(clear_cmd, m_device->command_table());
+		const auto clear_rec = m_device->recorder(clear_cmd);
 		clear_rec.begin();
 		const std::vector<gpu::rendering_attachment_info> clear_attachments{
 			gpu::rendering_attachment_info{

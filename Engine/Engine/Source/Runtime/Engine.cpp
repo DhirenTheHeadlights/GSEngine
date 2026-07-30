@@ -79,9 +79,11 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	register_systems<^^physics>(*this);
 	register_systems<^^camera>(*this);
 	register_systems<^^audio>(*this);
-	register_systems<^^renderer>(*this);
-	register_systems<^^primitive_resolver>(*this);
-	register_systems<^^gui>(*this);
+	if (m_config.render) {
+		register_systems<^^renderer>(*this);
+		register_systems<^^primitive_resolver>(*this);
+		register_systems<^^gui>(*this);
+	}
 
 	std::unordered_set<gse::id> disabled;
 	if (!m_config.render) {
