@@ -3,12 +3,15 @@ export module gse.ide.app:project_screen;
 import std;
 import gse;
 
+import gse.ide.git;
 import gse.ide.project;
 
 export namespace gse::ide {
 	class project_screen : public gui::screen {
 	public:
-		project_screen();
+		explicit project_screen(
+			bool hub = false
+		);
 
 		auto build(
 			gui::builder& ui,
@@ -36,16 +39,43 @@ export namespace gse::ide {
 	private:
 		struct entry {
 			std::filesystem::path manifest;
-			std::string label;
+			std::string key;
+			std::string name;
+			std::string location;
+			vec4f accent;
 			bool current = false;
 		};
 
+		auto activate(
+			const entry& item
+		) -> void;
+
+		auto open(
+			const std::filesystem::path& manifest
+		) -> void;
+
+		auto build_list(
+			gui::builder& ui
+		) -> void;
+
+		auto build_create(
+			gui::builder& ui
+		) -> void;
+
 		std::vector<entry> m_entries;
+		int m_selected = 0;
+		bool m_creating = false;
+		bool m_init_git = true;
+		std::string m_new_name;
+		std::string m_error;
+		std::string m_error_name;
+		gui::text_input_state m_input;
 		bool m_dismiss = false;
+		bool m_hub = false;
 	};
 }
 
-gse::ide::project_screen::project_screen() {
+gse::ide::project_screen::project_screen(const bool hub) : m_hub(hub) {
 	const project::manifest& active = project::current();
 
 	for (const std::filesystem::path& path : project::known()) {
@@ -53,16 +83,23 @@ gse::ide::project_screen::project_screen() {
 		if (!found.valid) {
 			continue;
 		}
+		const bool current = active.valid && path == active.file;
+		if (current) {
+			m_selected = static_cast<int>(m_entries.size());
+		}
 		m_entries.push_back({
 			.manifest = path,
-			.label = std::format("{}   {}", found.name, found.root.generic_display_string()),
-			.current = active.valid && path == active.file
+			.key = path.generic_display_string(),
+			.name = found.name,
+			.location = found.root.generic_display_string(),
+			.accent = found.accent,
+			.current = current
 		});
 	}
 }
 
 auto gse::ide::project_screen::title() const -> std::string_view {
-	return "Switch Project";
+	return "Projects";
 }
 
 auto gse::ide::project_screen::captures_input() const -> bool {
@@ -70,7 +107,7 @@ auto gse::ide::project_screen::captures_input() const -> bool {
 }
 
 auto gse::ide::project_screen::dismissable() const -> bool {
-	return true;
+	return !m_hub;
 }
 
 auto gse::ide::project_screen::should_dismiss() const -> bool {
@@ -103,31 +140,217 @@ auto gse::ide::project_screen::draw_backdrop(gui::draw_context& ctx, const vec2f
 	});
 }
 
+auto gse::ide::project_screen::open(const std::filesystem::path& manifest) -> void {
+	gse::app::relaunch_on_exit(
+		gse::config::executable_file(),
+		manifest.parent_path(),
+		{ manifest }
+	);
+	gse::shutdown();
+}
+
+auto gse::ide::project_screen::activate(const entry& item) -> void {
+	m_dismiss = true;
+	if (item.current) {
+		return;
+	}
+	open(item.manifest);
+}
+
 auto gse::ide::project_screen::build(gui::builder& ui, gui::nav&) -> void {
-	if (m_entries.empty()) {
-		ui.draw<gui::text>({
-			.content = "No projects found.",
-		});
+	auto& ctx = ui.ctx;
+	if (!ctx.current_menu) {
 		return;
 	}
 
-	for (const entry& current : m_entries) {
-		if (!ui.draw<gui::selectable>({ .text = current.label, .selected = current.current })) {
-			continue;
-		}
+	const auto scope = ctx.scoped_layer(render_layer::popup);
+	const gui::style& sty = ctx.style;
+	const rectf card = ctx.current_menu->rect;
+	const float pad = sty.padding;
 
+	const rectf header = rectf::from_position_size(
+		{ card.left() + pad, card.top() - pad },
+		{ card.width() - pad * 2.f, ctx.fonts.text->line_height(sty.font_size) + pad }
+	);
+
+	const float action_w = ctx.fonts.text->width("New Project", sty.font_size) + pad * 2.f;
+	const float action_h = ctx.fonts.text->line_height(sty.font_size) + pad * 0.5f;
+	const rectf action_rect = rectf::from_position_size(
+		{ header.right() - action_w, (card.top() + header.bottom()) * 0.5f + action_h * 0.5f },
+		{ action_w, action_h }
+	);
+
+	ctx.queue_text({
+		.font = ctx.fonts.text,
+		.text = m_creating ? std::string("New Project") : std::string(title()),
+		.position = { header.left(), header.center().y() + ctx.fonts.text->vertical_center_offset(sty.font_size) },
+		.scale = sty.font_size,
+		.color = sty.color_text_secondary,
+		.clip_rect = rectf::from_position_size(
+			{ header.left(), header.top() },
+			{ std::max(0.f, action_rect.left() - pad - header.left()), header.height() }
+		),
+	});
+
+	if (!m_creating && gui::draw::button_in_rect(ctx, "New Project", "##project_new", action_rect, ui.hot_widget_id, ui.active_widget_id)) {
+		m_creating = true;
+		m_new_name.clear();
+		m_error.clear();
+	}
+
+	ctx.queue_sprite({
+		.rect = rectf::from_position_size(
+			{ header.left(), header.bottom() },
+			{ header.width(), std::max(1.f, sty.scale_factor) }
+		),
+		.color = sty.color_accent_dim,
+		.texture = ctx.blank_texture,
+	});
+
+	ctx.layout_cursor = { card.left() + pad, header.bottom() - pad };
+
+	if (m_creating) {
+		build_create(ui);
+		return;
+	}
+	build_list(ui);
+}
+
+auto gse::ide::project_screen::build_list(gui::builder& ui) -> void {
+	auto& ctx = ui.ctx;
+
+	if (!m_hub && ctx.input.key_pressed(key::escape)) {
 		m_dismiss = true;
-		if (current.current) {
-			continue;
+		return;
+	}
+	if (!m_entries.empty()) {
+		if (ctx.input.key_pressed(key::down)) {
+			m_selected = std::min(m_selected + 1, static_cast<int>(m_entries.size()) - 1);
 		}
+		if (ctx.input.key_pressed(key::up)) {
+			m_selected = std::max(m_selected - 1, 0);
+		}
+		if (ctx.input.key_pressed(key::enter) || ctx.input.key_pressed(key::kp_enter)) {
+			activate(m_entries[static_cast<std::size_t>(m_selected)]);
+			return;
+		}
+	}
 
-		// The config table is immutable for the process lifetime, so switching
-		// projects means starting over with the new manifest on the command line.
-		gse::app::relaunch_on_exit(
-			gse::config::executable_file(),
-			current.manifest.parent_path(),
-			{ current.manifest }
-		);
-		gse::shutdown();
+	float widest_name = 0.f;
+	for (const entry& item : m_entries) {
+		widest_name = std::max(widest_name, ctx.fonts.text->width(item.name, ctx.style.font_size));
+	}
+	const float detail_column = ctx.style.padding * 3.f + ctx.style.accent_bar_width + widest_name;
+
+	for (const auto& [index, item] : std::views::enumerate(m_entries)) {
+		if (ui.draw<gui::selectable>({
+			.text = item.name,
+			.detail = item.location,
+			.key = item.key,
+			.selected = m_selected == static_cast<int>(index),
+			.align = gui::selectable_align::left,
+			.accent = item.accent,
+			.detail_column = detail_column,
+		})) {
+			activate(item);
+			return;
+		}
+	}
+
+}
+
+auto gse::ide::project_screen::build_create(gui::builder& ui) -> void {
+	auto& ctx = ui.ctx;
+	const gui::style& sty = ctx.style;
+	const rectf card = ctx.current_menu->rect;
+	const float pad = sty.padding;
+
+	if (ctx.input.key_pressed(key::escape)) {
+		m_creating = false;
+		return;
+	}
+
+	if (m_new_name != m_error_name) {
+		m_error.clear();
+	}
+
+	const rectf input_rect = rectf::from_position_size(
+		{ card.left() + pad, ctx.layout_cursor.y() },
+		{ card.width() - pad * 2.f, ctx.fonts.text->line_height(sty.font_size) + pad }
+	);
+
+	const id input_id = gui::ids::make("##project_new_name");
+	ui.focus_widget_id = input_id;
+	gui::draw::text_input_in_rect(ctx, input_id, m_new_name, m_input, input_rect, ui.hot_widget_id, ui.focus_widget_id);
+
+	if (m_new_name.empty()) {
+		ctx.queue_text({
+			.font = ctx.fonts.text,
+			.text = "Project name",
+			.position = { input_rect.left() + pad, input_rect.center().y() + ctx.fonts.text->vertical_center_offset(sty.font_size) },
+			.scale = sty.font_size,
+			.color = sty.color_text_secondary,
+			.clip_rect = input_rect,
+		});
+	}
+
+	const std::filesystem::path destination = gse::config::projects_root() / m_new_name;
+	const std::string problem = project::validate_new(m_new_name, gse::config::projects_root());
+
+	const std::string hint = !m_error.empty() ? m_error : problem.empty() ? destination.generic_display_string() : problem;
+
+	ctx.queue_text({
+		.font = ctx.fonts.text,
+		.text = hint,
+		.position = { input_rect.left(), input_rect.bottom() - pad - ctx.fonts.text->line_height(sty.font_size) * 0.5f },
+		.scale = sty.font_size,
+		.color = m_error.empty() && problem.empty() ? sty.color_text_secondary : vec4f{ 0.86f, 0.36f, 0.32f, 1.f },
+		.clip_rect = rectf::from_position_size(
+			{ input_rect.left(), input_rect.bottom() - pad },
+			{ input_rect.width(), ctx.fonts.text->line_height(sty.font_size) + pad }
+		),
+	});
+
+	ctx.layout_cursor = { card.left() + pad, input_rect.bottom() - pad * 2.f - ctx.fonts.text->line_height(sty.font_size) };
+
+	ui.draw<gui::toggle>({
+		.name = "Initialize Git Repository",
+		.value = m_init_git,
+	});
+
+	const bool submit = ctx.input.key_pressed(key::enter) || ctx.input.key_pressed(key::kp_enter);
+
+	const float action_h = ctx.fonts.text->line_height(sty.font_size) + pad;
+	const float action_w = (card.width() - pad * 3.f) * 0.5f;
+	const rectf create_rect = rectf::from_position_size(
+		{ card.left() + pad, card.bottom() + pad + action_h },
+		{ action_w, action_h }
+	);
+	const rectf cancel_rect = rectf::from_position_size(
+		{ create_rect.right() + pad, create_rect.top() },
+		{ action_w, action_h }
+	);
+
+	const bool valid = problem.empty();
+
+	if ((gui::draw::button_in_rect(ctx, "Create", "##project_create_confirm", create_rect, ui.hot_widget_id, ui.active_widget_id, valid) || submit) && valid) {
+		const std::expected<std::filesystem::path, std::string> created = project::create(m_new_name, gse::config::projects_root());
+		if (!created) {
+			m_error = created.error();
+			m_error_name = m_new_name;
+			return;
+		}
+		if (m_init_git) {
+			if (const std::expected<void, std::string> repo = git::initialize(created->parent_path()); !repo) {
+				log::println(log::level::error, log::category::general, "git init failed: {}", repo.error());
+			}
+		}
+		m_dismiss = true;
+		open(*created);
+		return;
+	}
+
+	if (gui::draw::button_in_rect(ctx, "Cancel", "##project_create_cancel", cancel_rect, ui.hot_widget_id, ui.active_widget_id)) {
+		m_creating = false;
 	}
 }
