@@ -157,7 +157,7 @@ auto gse::gui::settings_screen::draw_close_button(draw_context& ctx, const gse::
 
 	symbol::draw(ctx, symbol::close(), rect, {
 		.color = hovered ? sty.color_icon_hovered : sty.color_icon,
-		.scale = sty.icon_scale,
+		.extent = sty.icon_extent,
 	});
 
 	if (ctx.mouse_pressed_for(rect)) {
@@ -309,7 +309,7 @@ auto gse::gui::settings_screen::draw_footer_button(draw_context& ctx, const gse:
 	const gse::vec4f text_color = enabled ? sty.color_text : sty.color_text_disabled;
 	ctx.queue_text({
 		.font = ctx.fonts.text,
-		.text = std::string(label),
+		.text = label,
 		.position = { rect.center().x() - text_width / 2.f, rect.center().y() + ctx.fonts.text->vertical_center_offset(sty.font_size) },
 		.scale = sty.font_size,
 		.color = text_color,

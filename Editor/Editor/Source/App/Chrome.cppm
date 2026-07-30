@@ -81,7 +81,8 @@ namespace gse::ide {
 		quick_search_state& search,
 		const search::index_state* index,
 		gse::channel_writer channels,
-		const git::status_map* git_status
+		const git::status_map* git_status,
+		std::span<const std::filesystem::path> git_rootless
 	) -> void;
 
 	auto spinner_rotation() -> gse::angle;
@@ -136,7 +137,7 @@ auto gse::ide::editor_screen::chrome_button(gse::gui::builder& ui, const gse::re
 
 	gse::gui::symbol::draw(ctx, glyph, rect, {
 		.color = ctx.style.color_text,
-		.scale = ctx.style.font_size / rect.height() * 1.2f,
+		.extent = ctx.style.icon_extent,
 	});
 
 	return activated;
@@ -177,13 +178,14 @@ auto gse::ide::editor_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> 
 		return;
 	}
 
-	if ((ctx.input.key_held(gse::key::left_control) || ctx.input.key_held(gse::key::right_control)) && ctx.input.key_pressed(gse::key::f)) {
+	const bool control_held = ctx.input.key_held(gse::key::left_control) || ctx.input.key_held(gse::key::right_control);
+	const bool shift_held = ctx.input.key_held(gse::key::left_shift) || ctx.input.key_held(gse::key::right_shift);
+
+	if (control_held && !shift_held && ctx.input.key_pressed(gse::key::f)) {
 		n.push<search_screen>(m_channels, m_index);
 	}
 
-	if ((ctx.input.key_held(gse::key::left_control) || ctx.input.key_held(gse::key::right_control))
-		&& (ctx.input.key_held(gse::key::left_shift) || ctx.input.key_held(gse::key::right_shift))
-		&& ctx.input.key_pressed(gse::key::p)) {
+	if (control_held && shift_held && ctx.input.key_pressed(gse::key::p)) {
 		n.push<project_screen>();
 	}
 
@@ -216,7 +218,7 @@ auto gse::ide::editor_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> 
 
 	ctx.queue_text({
 		.font = ctx.fonts.text,
-		.text = std::string(title()),
+		.text = title(),
 		.position = { title_x, bar_rect.center().y() + ctx.fonts.text->vertical_center_offset(ctx.style.font_size) },
 		.scale = ctx.style.font_size,
 		.color = ctx.style.color_text,
@@ -254,7 +256,9 @@ auto gse::ide::editor_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> 
 		}
 	}
 
+	constexpr int chrome_button_count = 6;
 	const float button_w = bar_height * 1.5f;
+	const float controls_width = button_w * static_cast<float>(chrome_button_count);
 	auto button_slot = [&](const int from_right) -> gse::rectf {
 		return gse::rectf::from_position_size(
 			{ bar_rect.right() - button_w * static_cast<float>(from_right + 1), bar_rect.top() },
@@ -330,7 +334,7 @@ auto gse::ide::editor_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> 
 			const float pad = ctx.style.padding * 0.6f;
 			const float spin_w = spinning ? ctx.style.font_size : 0.f;
 			const float badge_w = pad + spin_w + ctx.fonts.text->width(status, ctx.style.font_size) + pad;
-			const float right_edge = bar_rect.right() - button_w * 5.f - ctx.style.padding;
+			const float right_edge = bar_rect.right() - controls_width - ctx.style.padding;
 			const gse::rectf status_rect = gse::rectf::from_position_size(
 				{ right_edge - badge_w, bar_rect.center().y() + badge_h * 0.5f },
 				{ badge_w, badge_h }
@@ -371,7 +375,7 @@ auto gse::ide::editor_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> 
 
 	m_channels.push<gse::window_chrome_metrics_request>({
 		.caption_height = static_cast<int>(bar_height),
-		.controls_width = static_cast<int>(button_w * 5.f),
+		.controls_width = static_cast<int>(controls_width),
 		.interactive_x0 = 0,
 		.interactive_x1 = 0,
 		.resize_exclude_y0 = resize_exclude_y0,
@@ -625,7 +629,7 @@ auto gse::ide::git_status_color(const git::file_status status) -> gse::vec4f {
 	}
 }
 
-auto gse::ide::draw_explorer_panel(gse::gui::builder& ui, workspace::data& ws, quick_search_state& search, const search::index_state* index, gse::channel_writer channels, const git::status_map* git_status) -> void {
+auto gse::ide::draw_explorer_panel(gse::gui::builder& ui, workspace::data& ws, quick_search_state& search, const search::index_state* index, gse::channel_writer channels, const git::status_map* git_status, const std::span<const std::filesystem::path> git_rootless) -> void {
 	const auto& ctx = ui.ctx;
 	if (ctx.clip_stack.empty()) {
 		return;
@@ -654,6 +658,21 @@ auto gse::ide::draw_explorer_panel(gse::gui::builder& ui, workspace::data& ws, q
 	draw_search_bar(ui, search, index, channels, search_rect, "##explorer_search");
 	ctx.layout_cursor.x() = content.left();
 	ctx.layout_cursor.y() = search_rect.bottom() - pad;
+
+	for (const std::filesystem::path& rootless : git_rootless) {
+		const float row_height = ctx.fonts.text->line_height(ctx.style.font_size) + pad * 0.5f;
+		const gse::rectf init_rect = gse::rectf::from_position_size(
+			{ content.left(), ctx.layout_cursor.y() },
+			{ std::max(0.f, content.width()), row_height }
+		);
+		const std::string label = git_rootless.size() > 1
+			? std::format("Initialize Git in {}", rootless.filename().display_string())
+			: std::string("Initialize Git Repository");
+		if (gse::gui::draw::button_in_rect(ui.ctx, label, "##git_init_" + rootless.generic_display_string(), init_rect, ui.hot_widget_id, ui.active_widget_id)) {
+			channels.push<git_system::init_request>({ .root = rootless });
+		}
+		ctx.layout_cursor.y() -= row_height + pad;
+	}
 
 	if (!ws.fs_root.loaded) {
 		workspace::load_children(ws.fs_root);
@@ -782,7 +801,7 @@ auto gse::ide::draw_explorer_panel(gse::gui::builder& ui, workspace::data& ws, q
 	std::uint64_t reveal_key = 0;
 	float reveal_offset = -1.f;
 	if (ws.reveal_path) {
-		const auto reveal = workspace::reveal_nodes(ws, *ws.reveal_path);
+		auto reveal = workspace::reveal_nodes(ws, *ws.reveal_path);
 		ws.reveal_path.reset();
 		if (reveal.key != 0) {
 			reveal_expand = std::move(reveal.expand);
@@ -867,7 +886,7 @@ auto gse::ide::draw_spinner(const gse::gui::draw_context& ctx, const rectf& rect
 	}
 	gse::gui::symbol::draw(ctx, strokes, rect, {
 		.color = color,
-		.scale = ctx.style.icon_scale,
+		.extent = ctx.style.icon_extent,
 		.clip_rect = rect,
 	});
 }

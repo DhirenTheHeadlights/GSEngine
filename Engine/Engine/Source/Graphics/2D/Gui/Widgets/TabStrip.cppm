@@ -123,7 +123,7 @@ namespace gse::gui {
 		}
 		symbol::draw(ctx, strokes, rect, {
 			.color = color,
-			.scale = ctx.style.icon_scale,
+			.extent = ctx.style.icon_extent,
 			.clip_rect = rect,
 		});
 	}
@@ -138,7 +138,7 @@ namespace gse::gui {
 
 auto gse::gui::tab_strip_measure(const resource::handle<font>& fnt, const style& sty, const std::span<const tab_desc> tabs, const float available_width, const float min_tab_extent, const float max_tab_extent) -> tab_strip_metrics {
 	const float pad = sty.padding;
-	const float close_extent = fnt->width("x", sty.font_size);
+	const float close_extent = sty.icon_extent;
 	const float tab_gap = base_tab_gap * sty.scale_factor;
 
 	tab_strip_metrics metrics{};
@@ -160,7 +160,7 @@ auto gse::gui::tab_strip_measure(const resource::handle<font>& fnt, const style&
 auto gse::gui::tab_strip_layout(const resource::handle<font>& fnt, const style& sty, const rectf& area, const std::span<const tab_desc> tabs, const tab_strip_state& state, const tab_overflow overflow, const float min_tab_extent, const float max_tab_extent) -> std::vector<tab_strip_placement> {
 	const float pad = sty.padding;
 	const float fs = sty.font_size;
-	const float close_extent = fnt->width("x", fs);
+	const float close_extent = sty.icon_extent;
 	const float row_h = std::min(fnt->line_height(fs) + pad, area.height());
 	const float tab_gap = base_tab_gap * sty.scale_factor;
 
@@ -171,7 +171,7 @@ auto gse::gui::tab_strip_layout(const resource::handle<font>& fnt, const style& 
 	}
 
 	const auto make_close = [&](const tab_desc& tab, const rectf& rect) -> rectf {
-		if (!tab.closeable) {
+		if (!tab.closeable && !tab.busy) {
 			return {};
 		}
 		return rectf::from_position_size({ rect.right() - close_extent - pad, rect.center().y() + close_extent * 0.5f }, { close_extent, close_extent });
@@ -232,7 +232,7 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 
 	state.spinner_phase += 0.16f;
 	const angle spin = radians(state.spinner_phase);
-	const float close_extent = fnt->width("x", fs);
+	const float close_extent = sty.icon_extent;
 	const float dirty_extent = fnt->width("*", fs);
 
 	const auto draw_cell = [&](const rectf& rect, const rectf& visible, const rectf& close_rect, const tab_desc& tab, const bool is_active, const bool hovered) {
@@ -255,7 +255,7 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 
 		ctx.queue_text({
 			.font = fnt,
-			.text = std::string(tab.caption),
+			.text = tab.caption,
 			.position = { rect.left() + pad, rect.center().y() + fnt->vertical_center_offset(fs) },
 			.scale = fs,
 			.color = is_active ? sty.color_text : sty.color_text_secondary,
@@ -271,14 +271,14 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 				.clip_rect = visible,
 			});
 		}
-		if (tab.busy) {
+		const bool close_hovered = close_rect.contains(mouse) && area.contains(mouse) && available;
+		if (tab.busy && !(tab.closeable && close_hovered)) {
 			draw_tab_spinner(ctx, close_rect, sty.color_text_secondary, spin);
 		}
 		else if (tab.closeable) {
-			const bool close_hovered = close_rect.contains(mouse) && area.contains(mouse) && available;
 			symbol::draw(ctx, symbol::close(), close_rect, {
 				.color = close_hovered ? sty.color_text : sty.color_text_secondary,
-				.scale = sty.icon_scale,
+				.extent = sty.icon_extent,
 				.clip_rect = visible,
 			});
 		}
@@ -327,7 +327,7 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 			}
 			const bool is_active = tab.id == params.active;
 			const bool hovered = visible.contains(mouse) && available;
-			const rectf close_rect = rectf::from_position_size({ cell.right() - cell_h, cell.top() }, { cell_h, cell_h });
+			const rectf close_rect = rectf::from_position_size({ cell.right() - close_extent - pad, cell.center().y() + close_extent * 0.5f }, { close_extent, close_extent });
 
 			if (is_active) {
 				active_bar = rectf::from_position_size({ area.left(), visible.top() }, { sty.accent_bar_width, visible.height() });
@@ -336,7 +336,7 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 			draw_cell(cell, visible, close_rect, tab, is_active, hovered);
 
 			if (pressed && visible.contains(mouse)) {
-				if (tab.closeable && !tab.busy && close_rect.contains(mouse)) {
+				if (tab.closeable && close_rect.contains(mouse)) {
 					result.close_requested = tab.id;
 				}
 				else {
@@ -445,7 +445,7 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 				continue;
 			}
 			const tab_desc& tab = params.tabs[p.index];
-			if (tab.closeable && !tab.busy && p.close_rect.contains(mouse) && area.contains(mouse)) {
+			if (tab.closeable && p.close_rect.contains(mouse) && area.contains(mouse)) {
 				result.close_requested = tab.id;
 				break;
 			}

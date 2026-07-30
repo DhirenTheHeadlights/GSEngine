@@ -75,7 +75,7 @@ auto gse::gui::toggle::draw(const draw_context& ctx, const params& p, id& hot, i
 
 	ctx.queue_text({
 		.font = fnt,
-		.text = std::string(p.name),
+		.text = p.name,
 		.position = { label_rect.left(), label_rect.center().y() + fnt->vertical_center_offset(ctx.style.font_size) },
 		.scale = ctx.style.font_size,
 		.color = ctx.style.color_text,

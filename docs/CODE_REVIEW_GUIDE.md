@@ -34,6 +34,7 @@ The aggregate must describe one cohesive operation rather than become a catch-al
 - Does contiguous storage maintain a parallel ID-to-index map or hand-roll swap removal? Use `id_mapped_collection` unless the dense indices are themselves stable identities stored outside the collection.
 - Are aggregates initialized with designated initializers whenever the language permits? Positional aggregate initialization requires a concrete reason.
 - Can reflection derive this table, mapping, label, dispatch, or serialization behavior? If so, use annotations for exceptional metadata and existing reflection helpers before adding new machinery.
+- Does a switch or parallel table map every enumerator to fixed metadata such as a color, label, priority, capability, or policy? Put that metadata on the enumerators as annotations and derive the lookup with the existing reflection helpers.
 - Does each mutation happen through the owning system, with other systems acting as producers through channels?
 - Does any deferred callback, task, or channel payload retain a raw pointer or reference obtained from a shared view? Retain an immutable owning snapshot instead.
 - Is a shared owning pointer stable for the entire published lifetime? Use `stable_shared` only for write-once `unique_ptr` resources; publish replaceable generations as `shared_ptr<const T>` snapshots or through a producer-consumer channel.

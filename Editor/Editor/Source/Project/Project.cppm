@@ -25,6 +25,16 @@ export namespace gse::ide::project {
 
 	auto record_recent() -> void;
 
+	auto validate_new(
+		std::string_view name,
+		const std::filesystem::path& parent
+	) -> std::string;
+
+	auto create(
+		std::string_view name,
+		const std::filesystem::path& parent
+	) -> std::expected<std::filesystem::path, std::string>;
+
 	auto recent() -> std::vector<std::filesystem::path>;
 
 	auto discover() -> std::vector<std::filesystem::path>;

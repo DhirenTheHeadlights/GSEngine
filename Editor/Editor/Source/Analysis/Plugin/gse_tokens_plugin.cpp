@@ -13,8 +13,9 @@
 int plugin_is_GPL_compatible;
 
 static FILE *g_out = nullptr;
-static const char *g_root = nullptr;
-static size_t g_root_len = 0;
+static const char *g_roots[8] = {};
+static size_t g_root_lens[8] = {};
+static size_t g_root_count = 0;
 static hash_set<tree> *g_walked = nullptr;
 static hash_set<tree> *g_visited_ns = nullptr;
 static hash_set<tree> *g_emitted = nullptr;
@@ -179,6 +180,7 @@ static hash_set<uint64_t, false, token_span_hash> *g_emitted_qualifiers = nullpt
 static tree walk_cb(tree *tp, int *walk_subtrees, void *);
 static void walk_fn_body(tree fndecl);
 static void process_type_decl(tree d);
+static bool is_coroutine_actor(tree fndecl);
 
 /* walk_tree_without_duplicates allocates a fresh visited-set per call, and
    walk_cb re-roots a walk at every located expression node.  Pool the sets by
@@ -256,7 +258,7 @@ static bool skipped_path_segment(const char *segment, size_t length) {
 static bool under_root(const char *file);
 
 static bool under_root_cached(const char *file) {
-	if (!file || !g_root) return false;
+	if (!file || !g_root_count) return false;
 	static const char *keys[256] = {};
 	static bool vals[256] = {};
 	const unsigned slot = (unsigned)(((uintptr_t)file * 2654435761u) >> 20) & 255;
@@ -275,20 +277,19 @@ static bool main_file_under_root() {
 	return cached == 1;
 }
 
-static bool under_root(const char *file) {
-	if (!file || !g_root) return false;
-	for (size_t i = 0; i < g_root_len; ++i) {
+static bool under_one_root(const char *file, const char *root, size_t root_len) {
+	for (size_t i = 0; i < root_len; ++i) {
 		char a = file[i];
 		if (!a) return false;
 		if (a == '\\') a = '/';
-		char b = g_root[i];
+		char b = root[i];
 		if (b == '\\') b = '/';
 		if (ascii_lower(a) != ascii_lower(b)) return false;
 	}
-	if (g_root_len > 0 && g_root[g_root_len - 1] != '/' && g_root[g_root_len - 1] != '\\' && file[g_root_len] != '/' && file[g_root_len] != '\\' && file[g_root_len] != 0) {
+	if (root_len > 0 && root[root_len - 1] != '/' && root[root_len - 1] != '\\' && file[root_len] != '/' && file[root_len] != '\\' && file[root_len] != 0) {
 		return false;
 	}
-	const char *segment = file + g_root_len;
+	const char *segment = file + root_len;
 	while (*segment) {
 		while (*segment == '/' || *segment == '\\') ++segment;
 		const char *end = segment;
@@ -297,6 +298,14 @@ static bool under_root(const char *file) {
 		segment = end;
 	}
 	return true;
+}
+
+static bool under_root(const char *file) {
+	if (!file) return false;
+	for (size_t i = 0; i < g_root_count; ++i) {
+		if (under_one_root(file, g_roots[i], g_root_lens[i])) return true;
+	}
+	return false;
 }
 
 static cached_file *get_cached_file(const char *path) {
@@ -619,6 +628,35 @@ static void emit_decl_type(tree decl) {
 	if (s) out_str_sanitized(s);
 }
 
+static tree collapsed_constant(tree value) {
+	for (int guard = 0; value && TREE_CODE(value) == CONSTRUCTOR && CONSTRUCTOR_NELTS(value) == 1 && guard < 8; ++guard) {
+		value = CONSTRUCTOR_ELT(value, 0)->value;
+	}
+	return value;
+}
+
+static void emit_decl_value(tree decl) {
+	if (!decl || TREE_CODE(decl) != VAR_DECL || !decl_constant_var_p(decl)) return;
+	tree value = collapsed_constant(DECL_INITIAL(decl));
+	if (!value || !TREE_CONSTANT(value)) return;
+	const char *s = expr_as_string(value, TFF_SCOPE);
+	if (!s || !*s) return;
+	char text[160];
+	int length = 0;
+	while (s[length] && length < (int)sizeof(text) - 4) {
+		text[length] = s[length];
+		++length;
+	}
+	if (s[length]) {
+		text[length++] = '.';
+		text[length++] = '.';
+		text[length++] = '.';
+	}
+	text[length] = '\0';
+	out_char('\t');
+	out_str_sanitized(text);
+}
+
 static void emit_ref_at(const char *use_file, int use_line, int use_column, tree decl, int len) {
 	if (!decl || !DECL_P(decl) || len <= 0) return;
 	tree id = DECL_NAME(decl);
@@ -634,6 +672,7 @@ static void emit_ref_at(const char *use_file, int use_line, int use_column, tree
 	out_str(name);
 	out_str("\t\t");
 	emit_decl_type(decl);
+	emit_decl_value(decl);
 	out_char('\n');
 }
 
@@ -1089,28 +1128,39 @@ static void emit_member_ref(location_t loc, tree field) {
 	if (!id || TREE_CODE(id) != IDENTIFIER_NODE || IDENTIFIER_LENGTH(id) <= 0) {
 		return;
 	}
-	const char *name = IDENTIFIER_POINTER(id);
-	if (name[0] == '_' || name[0] == '.' || strchr(name, ' ')) {
-		return;
-	}
-	if (!main_file_under_root()) {
-		return;
-	}
 	const int len = (int)IDENTIFIER_LENGTH(id);
 	int line = 0;
 	int col = 0;
-	if (!locate_name(loc, name, len, &line, &col)) {
+	if (!locate_name(loc, IDENTIFIER_POINTER(id), len, &line, &col)) {
 		return;
 	}
+	emit_ref_at(main_input_filename, line, col, field, len);
+}
+
+/* Inside a coroutine's actor function every parameter has been rewritten into a
+   field of the generated frame, and those fields carry no source location.  The
+   original parameter is still on the ramp function, so recover it by name;
+   without this, every parameter use in a coroutine body resolves to nothing and
+   colours as a member.  */
+static tree coroutine_frame_source_decl(tree field) {
+	if (!field || TREE_CODE(field) != FIELD_DECL || !g_function || !is_coroutine_actor(g_function)) {
+		return NULL_TREE;
+	}
 	const expanded_location dx = expand_cached(DECL_SOURCE_LOCATION(field));
-	const char *def_file = (dx.file && dx.line > 0 && dx.column > 0) ? dx.file : "";
-	const int def_col = *def_file ? name_byte_column(dx.file, dx.line, dx.column, name, len) : dx.column;
-	out_printf("GSEREF\t%s\t%d\t%d\t%d\t%s\t%s\t%d\t%d\t", main_input_filename, line, col, len, name, def_file, dx.line, def_col);
-	print_qualified_prefix(field);
-	out_str(name);
-	out_str("\t\t");
-	emit_decl_type(field);
-	out_char('\n');
+	if (dx.file && dx.line > 0 && dx.column > 0) {
+		return NULL_TREE;
+	}
+	tree ramp = DECL_RAMP_FN(g_function);
+	tree name = DECL_NAME(field);
+	if (!ramp || !name) {
+		return NULL_TREE;
+	}
+	for (tree parm = DECL_ARGUMENTS(ramp); parm; parm = DECL_CHAIN(parm)) {
+		if (DECL_P(parm) && DECL_NAME(parm) == name) {
+			return parm;
+		}
+	}
+	return NULL_TREE;
 }
 
 static bool source_token_equals(int index, const char *text) {
@@ -1538,6 +1588,15 @@ static tree record_field_named(tree type, int index) {
 	return NULL_TREE;
 }
 
+static bool designator_list_p(int open_index, tree type) {
+	const source_token &open = (*g_source_tokens)[open_index];
+	return open.pair > open_index + 2
+		&& (*g_source_tokens)[open_index + 1].kind == source_token_kind::other
+		&& source_token_is_char(open_index + 1, '.')
+		&& (*g_source_tokens)[open_index + 2].kind == source_token_kind::identifier
+		&& record_field_named(type, open_index + 2) != NULL_TREE;
+}
+
 static void scan_designators(int open_index, tree type) {
 	if (g_index_only || !type || !RECORD_OR_UNION_TYPE_P(type)) {
 		return;
@@ -1573,6 +1632,7 @@ static void scan_designators(int open_index, tree type) {
 		}
 		const source_token &name = (*g_source_tokens)[index + 1];
 		out_printf("GSETOK\t%d\t%d\t%d\tmember\n", name.line, name.byte_column, (int)(name.finish - name.start));
+		emit_ref_at(main_input_filename, name.line, name.byte_column, field, (int)(name.finish - name.start));
 		++index;
 		if (index + 2 < open.pair && source_token_is_char(index + 1, '=') && (*g_source_tokens)[index + 2].kind == source_token_kind::left_brace) {
 			tree field_type = TREE_TYPE(field);
@@ -1911,8 +1971,9 @@ static bool standard_integer_type_chain(const int *components, int count) {
 	return false;
 }
 
-static void scan_qualified_type_chain(int first, int limit, int exclude_final = -1) {
-	if (first == exclude_final || using_declaration_chain_p(first) || source_token_follows_member_access(first)) {
+static void scan_qualified_type_chain(int first, int limit, int exclude_final = -1, bool trailing_return_head = false) {
+	if (first == exclude_final || using_declaration_chain_p(first)
+		|| (!trailing_return_head && source_token_follows_member_access(first))) {
 		return;
 	}
 	int components[32];
@@ -2361,6 +2422,140 @@ static void scan_template_prototypes() {
 	}
 }
 
+static void emit_static_assert_names() {
+	if (g_index_only || !ensure_source_tokens()) {
+		return;
+	}
+	const int count = (int)g_source_tokens->length();
+	struct scope_frame { int close; tree ns; tree cls; };
+	scope_frame stack[32];
+	int depth = 0;
+	tree previous_scope = g_scope;
+	tree previous_class = g_class_context;
+	tree previous_function = g_function;
+	auto_vec<tree, 32> *previous_locals = g_local_decls;
+	g_local_decls = nullptr;
+	g_function = NULL_TREE;
+	for (int i = 0; i < count; ++i) {
+		while (depth > 0 && i > stack[depth - 1].close) {
+			--depth;
+		}
+		const source_token &token = (*g_source_tokens)[i];
+		if (token.kind == source_token_kind::left_brace) {
+			if (token.pair > i) {
+				i = token.pair;
+			}
+			continue;
+		}
+		if (token.kind != source_token_kind::identifier) {
+			continue;
+		}
+		tree scope = depth > 0 ? stack[depth - 1].ns : global_namespace;
+		tree enclosing_class = depth > 0 ? stack[depth - 1].cls : NULL_TREE;
+		if (source_token_equals(i, "namespace")) {
+			int cursor = i + 1;
+			tree ns = scope;
+			for (int guard = 0; cursor < count && guard < 24; ++cursor, ++guard) {
+				const source_token_kind kind = (*g_source_tokens)[cursor].kind;
+				if (kind == source_token_kind::left_brace || kind == source_token_kind::semicolon) {
+					break;
+				}
+				if (source_token_is_char(cursor, '=')) {
+					ns = NULL_TREE;
+					break;
+				}
+				if (kind == source_token_kind::identifier && ns) {
+					tree next_ns = resolve_scope_component(ns, source_token_identifier(cursor), LOOK_want::NAMESPACE);
+					next_ns = next_ns ? preferred_type_binding(next_ns) : NULL_TREE;
+					ns = next_ns && TREE_CODE(next_ns) == NAMESPACE_DECL ? next_ns : NULL_TREE;
+				}
+			}
+			if (cursor < count && (*g_source_tokens)[cursor].kind == source_token_kind::left_brace
+				&& (*g_source_tokens)[cursor].pair > cursor && ns && depth < 32) {
+				stack[depth++] = { (*g_source_tokens)[cursor].pair, ns, NULL_TREE };
+				i = cursor;
+			}
+			continue;
+		}
+		if ((source_token_equals(i, "class") || source_token_equals(i, "struct") || source_token_equals(i, "union"))
+			&& !(i > 0 && source_token_equals(i - 1, "enum"))) {
+			int name = -1;
+			int open = -1;
+			bool bases = false;
+			int cursor = i + 1;
+			for (int guard = 0; cursor < count && guard < 96; ++cursor, ++guard) {
+				const source_token &part = (*g_source_tokens)[cursor];
+				if (part.kind == source_token_kind::semicolon) {
+					break;
+				}
+				if (part.kind == source_token_kind::left_brace) {
+					open = cursor;
+					break;
+				}
+				if (source_token_is_char(cursor, '[')) {
+					int brackets = 0;
+					for (; cursor < count; ++cursor) {
+						if (source_token_is_char(cursor, '[')) {
+							++brackets;
+						}
+						else if (source_token_is_char(cursor, ']') && --brackets == 0) {
+							break;
+						}
+					}
+					continue;
+				}
+				if (source_token_is_char(cursor, ':')) {
+					bases = true;
+					continue;
+				}
+				if (!bases && part.kind == source_token_kind::identifier && !source_token_equals(cursor, "final")) {
+					name = cursor;
+				}
+			}
+			if (open < 0 || name < 0 || (*g_source_tokens)[open].pair <= open || depth >= 32) {
+				continue;
+			}
+			tree binding = resolve_scope_component(enclosing_class ? enclosing_class : scope, source_token_identifier(name));
+			tree cls = binding_scope_type(binding);
+			if (!cls || !CLASS_TYPE_P(cls)) {
+				continue;
+			}
+			stack[depth++] = { (*g_source_tokens)[open].pair, scope, cls };
+			i = open;
+			continue;
+		}
+		if (!source_token_equals(i, "static_assert") || i + 1 >= count
+			|| (*g_source_tokens)[i + 1].kind != source_token_kind::left_paren) {
+			continue;
+		}
+		int parentheses = 0;
+		int close = -1;
+		for (int cursor = i + 1; cursor < count; ++cursor) {
+			const source_token_kind kind = (*g_source_tokens)[cursor].kind;
+			if (kind == source_token_kind::left_paren) {
+				++parentheses;
+			}
+			else if (kind == source_token_kind::right_paren && --parentheses == 0) {
+				close = cursor;
+				break;
+			}
+		}
+		if (close < 0) {
+			continue;
+		}
+		g_scope = scope;
+		g_class_context = enclosing_class;
+		scan_binding_type_qualifiers(i + 1, close, false);
+		g_scope = previous_scope;
+		g_class_context = previous_class;
+		i = close;
+	}
+	g_local_decls = previous_locals;
+	g_function = previous_function;
+	g_class_context = previous_class;
+	g_scope = previous_scope;
+}
+
 static int declaration_scan_start(tree decl, int anchor) {
 	if (TREE_CODE(decl) == FUNCTION_DECL && !source_token_matches_identifier(anchor, DECL_NAME(decl))
 		&& !DECL_CONSTRUCTOR_P(decl) && !DECL_DESTRUCTOR_P(decl) && !DECL_OVERLOADED_OPERATOR_P(decl)) {
@@ -2400,6 +2595,25 @@ static int declaration_scan_finish(tree decl, int anchor) {
 		}
 	}
 	return (int)g_source_tokens->length();
+}
+
+static int trailing_return_arrow(int anchor, int finish) {
+	int parentheses = 0;
+	for (int index = anchor + 1; index < finish; ++index) {
+		const source_token_kind kind = (*g_source_tokens)[index].kind;
+		if (kind == source_token_kind::left_paren) {
+			++parentheses;
+		}
+		else if (kind == source_token_kind::right_paren && parentheses > 0) {
+			--parentheses;
+		}
+		else if (parentheses == 0 && kind == source_token_kind::greater
+			&& source_token_is_char(index - 1, '-')
+			&& (*g_source_tokens)[index - 1].finish == (*g_source_tokens)[index].start) {
+			return index;
+		}
+	}
+	return -1;
 }
 
 static int find_decl_anchor(tree decl) {
@@ -2544,6 +2758,9 @@ static void scan_declaration_type_qualifiers(tree decl, tree tmpl_override = NUL
 	}
 	const int start = declaration_scan_start(decl, anchor);
 	const int finish = declaration_scan_finish(decl, anchor);
+	const bool function_declarator = TREE_CODE(decl) == FUNCTION_DECL
+		|| (TREE_CODE(decl) == TEMPLATE_DECL && DECL_TEMPLATE_RESULT(decl) && TREE_CODE(DECL_TEMPLATE_RESULT(decl)) == FUNCTION_DECL);
+	const int trailing_return = function_declarator ? trailing_return_arrow(anchor, finish) : -1;
 	tree previous_scope = g_scope;
 	tree previous_function = g_function;
 	tree previous_class = g_class_context;
@@ -2581,7 +2798,7 @@ static void scan_declaration_type_qualifiers(tree decl, tree tmpl_override = NUL
 			g_function = declaration_function;
 		}
 		if ((*g_source_tokens)[index].kind == source_token_kind::identifier) {
-			scan_qualified_type_chain(index, finish, anchor);
+			scan_qualified_type_chain(index, finish, anchor, trailing_return >= 0 && index == trailing_return + 1);
 		}
 	}
 	g_scope = declaration_scope;
@@ -3149,8 +3366,14 @@ static tree walk_cb(tree *tp, int *walk_subtrees, void *) {
 			location_t highlight = EXPR_LOCATION(t);
 			if (highlight == UNKNOWN_LOCATION) highlight = g_use_anchor;
 			if (field && TREE_CODE(field) == FIELD_DECL && !DECL_ARTIFICIAL(field)) {
-				emit_at_name(highlight, "member", DECL_NAME(field));
-				emit_member_ref(highlight, field);
+				if (tree source = coroutine_frame_source_decl(field)) {
+					emit_at_name(highlight, kind_of(source), DECL_NAME(source));
+					emit_ref(highlight, source, ident_len(source));
+				}
+				else {
+					emit_at_name(highlight, "member", DECL_NAME(field));
+					emit_member_ref(highlight, field);
+				}
 			}
 			else if (field && TREE_CODE(field) == IDENTIFIER_NODE && IDENTIFIER_LENGTH(field) > 0) {
 				emit_at_name(highlight, "member", field);
@@ -3286,14 +3509,33 @@ static tree walk_cb(tree *tp, int *walk_subtrees, void *) {
 				location_t inner = UNKNOWN_LOCATION;
 				tree probe = t;
 				walk_tree_without_duplicates(&probe, first_loc_cb, &inner);
-				if (inner != UNKNOWN_LOCATION) {
-					const int at = source_token_lower_bound(inner);
+				/* The nearest located subexpression can sit inside a nested
+				   lambda body, whose own brace would otherwise be mistaken for
+				   the initializer list; an all-constant list has no located
+				   subexpression at all, so fall back to the anchor of the
+				   expression that owns it and search forward instead.  */
+				const location_t anchor = inner != UNKNOWN_LOCATION ? inner : g_use_anchor;
+				if (anchor != UNKNOWN_LOCATION) {
+					const int at = source_token_lower_bound(anchor);
+					int open = -1;
 					for (int index = at, guard = 0; index >= 0 && guard < 256; --index, ++guard) {
 						const source_token &candidate = (*g_source_tokens)[index];
-						if (candidate.kind == source_token_kind::left_brace && candidate.pair > at) {
-							scan_designators(index, type);
+						if (candidate.kind == source_token_kind::left_brace && candidate.pair > at && designator_list_p(index, type)) {
+							open = index;
 							break;
 						}
+					}
+					for (int index = at, guard = 0; open < 0 && index < (int)g_source_tokens->length() && guard < 32; ++index, ++guard) {
+						const source_token &candidate = (*g_source_tokens)[index];
+						if (candidate.kind == source_token_kind::semicolon) {
+							break;
+						}
+						if (candidate.kind == source_token_kind::left_brace && candidate.pair > index && designator_list_p(index, type)) {
+							open = index;
+						}
+					}
+					if (open >= 0) {
+						scan_designators(open, type);
 					}
 				}
 			}
@@ -3352,10 +3594,64 @@ static bool is_lambda_op(tree fndecl) {
 	return ctx && TYPE_P(ctx) && LAMBDA_TYPE_P(ctx);
 }
 
+/* A capture with an initializer introduces a name that survives only as a
+   closure field: the lowered body refers to the field, never to the source
+   position that declared it.  Left alone the name is uncoloured and the
+   qualified-name scanner is free to resolve it against an unrelated namespace,
+   so claim the span here — closures are genericized before the body that owns
+   them, which is before that scanner runs.  */
+static void emit_lambda_captures(tree closure_type) {
+	if (!closure_type || !TYPE_P(closure_type) || !LAMBDA_TYPE_P(closure_type)) {
+		return;
+	}
+	tree lambda = CLASSTYPE_LAMBDA_EXPR(closure_type);
+	if (!lambda) {
+		return;
+	}
+	for (tree capture = LAMBDA_EXPR_CAPTURE_LIST(lambda); capture; capture = TREE_CHAIN(capture)) {
+		tree field = TREE_PURPOSE(capture);
+		if (!field || TREE_CODE(field) != FIELD_DECL) {
+			continue;
+		}
+		tree id = DECL_NAME(field);
+		if (!id || TREE_CODE(id) != IDENTIFIER_NODE || IDENTIFIER_LENGTH(id) <= 0) {
+			continue;
+		}
+		tree init = TREE_VALUE(capture);
+		if (init) {
+			init = tree_strip_any_location_wrapper(init);
+			if (init && (TREE_CODE(init) == ADDR_EXPR || TREE_CODE(init) == INDIRECT_REF)) {
+				init = tree_strip_any_location_wrapper(TREE_OPERAND(init, 0));
+			}
+		}
+		if (init && DECL_P(init) && DECL_NAME(init) == id) {
+			continue;
+		}
+		const int len = (int)IDENTIFIER_LENGTH(id);
+		int line = 0;
+		int col = 0;
+		if (!locate_name(DECL_SOURCE_LOCATION(field), IDENTIFIER_POINTER(id), len, &line, &col)) {
+			continue;
+		}
+		if (type_ref_already_emitted(line, col, len)) {
+			continue;
+		}
+		if (!g_index_only) {
+			out_printf("GSETOK\t%d\t%d\t%d\tvariable\n", line, col, len);
+		}
+		if (main_file_under_root()) {
+			emit_ref_at(main_input_filename, line, col, field, len);
+		}
+	}
+}
+
 static void on_pre_genericize(void *gcc_data, void *) {
 	tree fndecl = (tree)gcc_data;
 	if (!fndecl || TREE_CODE(fndecl) != FUNCTION_DECL) return;
 	if (is_synthesized_special(fndecl) && !is_coroutine_actor(fndecl) && !is_lambda_op(fndecl)) return;
+	if (is_lambda_op(fndecl)) {
+		emit_lambda_captures(DECL_CONTEXT(fndecl));
+	}
 	for (tree p = DECL_ARGUMENTS(fndecl); p; p = DECL_CHAIN(p)) {
 		emit_decl(p, DECL_SOURCE_LOCATION(p));
 	}
@@ -3646,7 +3942,7 @@ static void on_finish_parse_function(void *gcc_data, void *) {
 
 static void on_finish_type(void *gcc_data, void *) {
 	tree type = (tree)gcc_data;
-	if (!type || !TYPE_P(type)) return;
+	if (!type || !TYPE_P(type) || LAMBDA_TYPE_P(type)) return;
 	tree name = TYPE_NAME(type);
 	if (!name || TREE_CODE(name) != TYPE_DECL || !in_main_file(DECL_SOURCE_LOCATION(name))) return;
 	emit_sym(name);
@@ -3658,6 +3954,7 @@ static void on_finish(void *, void *) {
 	emit_directive_names();
 	emit_attribute_names();
 	scan_template_prototypes();
+	emit_static_assert_names();
 	walk_ns(global_namespace);
 	if (g_out) {
 		out_str("GSEDONE\n");
@@ -3679,9 +3976,10 @@ int plugin_init(struct plugin_name_args *info, struct plugin_gcc_version *versio
 		if (info->argv[i].key && strcmp(info->argv[i].key, "out") == 0 && info->argv[i].value) {
 			g_out = fopen(info->argv[i].value, "w");
 		}
-		if (info->argv[i].key && strcmp(info->argv[i].key, "root") == 0 && info->argv[i].value) {
-			g_root = xstrdup(info->argv[i].value);
-			g_root_len = strlen(g_root);
+		if (info->argv[i].key && strcmp(info->argv[i].key, "root") == 0 && info->argv[i].value && g_root_count < 8) {
+			g_roots[g_root_count] = xstrdup(info->argv[i].value);
+			g_root_lens[g_root_count] = strlen(g_roots[g_root_count]);
+			++g_root_count;
 		}
 		if (info->argv[i].key && strcmp(info->argv[i].key, "index") == 0) {
 			g_index_only = true;

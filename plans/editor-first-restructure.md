@@ -110,7 +110,9 @@ Detailed implementation plan: [editor-first-restructure-phase1.md](editor-first-
 - Migrate every writer per the table; wire json_sink to logs dir.
 - The uncommitted `gse.win32.environment` work (PATH-prefix env blocks for children) composes here: it is how the editor spawns the private shipped toolchain without touching user PATH.
 
-### Phase 2 — Project model (editor becomes project-shaped, still mono-build)
+### Phase 2 — Project model (editor becomes project-shaped, still mono-build) — **DONE, built**
+
+Notes against the plan as written: **argv needed no `Main.cpp` change** — `project::current()` is a magic static that reads `GetCommandLineW()` itself, so there is no ordering dependency on `gse::start` and the immutable-table invariant is preserved structurally rather than by discipline. Settings scope ended up **per-field** (`gse::settings::project_scope{}` on any member, inheriting from the struct) rather than per-struct; entry-level scope was removed as a second source of truth. Workspace went **multi-root** here rather than in phase 3, so the editor never regressed to losing engine browsing.
 
 - `.gseproj` ini manifest (reuse sectioned-ini machinery; no new parser). argv in Main.cpp (`Editor.exe <path>.gseproj`) — also the file-association hook.
 - Project context set at open; repoint: workspace root (EditorApp.cppm:3098), search/index root (SearchSystem.cppm:59), diagnostics compile_commands discovery (EditorApp.cppm:1870), git, build runner roots/targets, layout paths.
@@ -150,23 +152,53 @@ Reordered 2026-07-24. This is what makes projects independent, shrinks every eng
 
 #### Sites still resolving to the editor's own tree — each needs a which-root decision
 
-These are all `gse::config::root_dir()` today. That is currently correct *only because project, engine and editor trees are the same path*. They silently become wrong the moment a project binds a different engine worktree, and nothing will fail loudly. Audited 2026-07-24 after `engine_root()` landed:
+These are all `gse::config::root_dir()` today. That is currently correct *only because project, engine and editor trees are the same path*. They silently become wrong the moment a project binds a different engine worktree, and nothing will fail loudly. Audited 2026-07-24 after `engine_root()` landed.
+
+**No longer hypothetical, 2026-07-27.** `BasePlanningTool` at `%USERPROFILE%\GSEProjects` builds and runs from the editor, so project root and engine root are now different paths in normal use and these sites are live-wrong. What already adapted: `browse_roots()` returns project → Engine → Editor and the file tree follows it, and `search_system::init` binds `compile_commands` to the **project**. What did not: `index->workspace_root`, `build_files_and_content`, and the file watcher are all still rooted at the editor's own tree ([SearchSystem.cppm:52,66,69](../Editor/Editor/Source/Search/SearchSystem.cppm)) — so for an external project, file search and content search cannot see the project's own sources and edits to them invalidate nothing. The symbol index is fine; it keys off the compilation database.
+
+**Resolved 2026-07-27 — the index, the analyzer and the plugin are all multi-root now.** `config::analysis_roots()` is the single derivation (from `browse_roots()`), so the tree, the file/content index, the file watcher, the symbol index and the live analyzer all see the same set. Shape of the change:
+
+- `index_state::workspace_root` (one path) → `std::vector<index_root>` (`path`, `name`, `is_project`); `owning_root(roots, path)` replaces `is_indexed_path(workspace_root, path)` at every membership check. `build_files_and_content` walks each root, first-root-wins so overlapping roots can't double-index a file, and search results are prefixed with the root name.
+- **The GCC plugin had to change** — it filtered emission through a single `g_root` prefix (`under_root`, `main_file_under_root`), so any root but the first would have produced *zero* tokens for its TUs. Now `g_roots[8]`, `-fplugin-arg-gse_tokens-root=` accepted repeatedly, `under_root` loops. Cost is nil: `under_root_cached`'s 256-slot direct-mapped memo and `main_file_under_root`'s one-shot cache both sit in front of it, so the loop only runs on a miss. `gse_tokens.dll` rebuilds automatically (`DEPENDS` on the plugin source), and the contract test still passes one root, which remains valid.
+- LOC counting now credits any root marked `is_project`, since `is_counted_source_dir`'s hardcoded `Editor/Engine/Game/Server` allowlist can't know a new project's layout.
+- `ws.root` survives only as the display anchor for diagnostic paths and now points at the project, so a project-file diagnostic no longer renders as `../../../../GSEProjects/…`.
+
+**Multi-root was only half of it — analysis is also multi-database, 2026-07-28.** Browse roots let you open files from three trees, but every analysis request went to `project_compile_commands()`, which structurally cannot contain Editor TUs: a project does not build the editor. Opening `EditorApp.cppm` from inside `BasePlanningTool` therefore reported `entry_unavailable` forever. Fix: `browse_root` carries the database that analyzes its files (project and Engine → the project's; Editor → the editor's own `build_dir()`), `config::compile_commands_for(file)` resolves by owning root, and `index_state::compile_commands` became a deduped list. Notes:
+
+- **Engine TUs live in both databases**, so TU discovery dedups on `canonical_path_id`, first database wins. Without that the index would compile ~400 engine TUs twice.
+- The **in-tree project is unaffected**: for a nested project `project_compile_commands()` and `build_dir()` resolve to the same file, so the list dedups to one entry and behaves exactly as before.
+- The symbol cache still derives from `compile_commands.front().parent_path()`, keeping sharp-edge-#140's invariant (cache tied to the database whose fingerprints key it). Entries from the editor's database land in the project's cache dir, which is safe because the cache key includes `entry.command.fingerprint`.
+- Cost: the index now compiles the Editor's ~90 TUs on top of the project's, so a cold symbol build is meaningfully longer.
+- `analysis_unavailable` (no database — build the project) and `analysis_outside_build` (database exists, file absent from it) are now distinct statuses. They were both reported as `analysis_crashed`, which rendered "analyzer exited abnormally" for a project that simply had not been built.
 
 | Site | Should probably become |
 |---|---|
-| [SearchSystem.cppm:52,66,69](../Editor/Editor/Source/Search/SearchSystem.cppm) index/workspace root | the analysis root — needs the multi-root index rework |
-| [EditorApp.cppm:295](../Editor/Editor/Source/App/EditorApp.cppm) `ws.root` | same as above; deliberately left single |
-| [GitSystem.cppm:43](../Editor/Editor/Source/Git/GitSystem.cppm) repo root | `project_root()` — you want the project's git, not the editor's |
-| [Terminal.cpp:126,267,288](../Editor/Editor/Source/Terminal/Terminal.cpp) cwd and prompt | `project_root()` |
+| ~~[SearchSystem.cppm](../Editor/Editor/Source/Search/SearchSystem.cppm) index/workspace root~~ | **DONE** — `index_state::roots` from `browse_roots()`, one watcher per root |
+| ~~[EditorApp.cppm](../Editor/Editor/Source/App/EditorApp.cppm) `ws.root`~~ | **DONE** — `project_root()`; display anchor only, tree uses `fs_root.children` |
+| ~~[GitSystem.cppm](../Editor/Editor/Source/Git/GitSystem.cppm) repo root~~ | **DONE** — `project_root()` |
+| ~~[Terminal.cpp](../Editor/Editor/Source/Terminal/Terminal.cpp) cwd and prompt~~ | **DONE** — `project_root()` for all three |
 | [BuildRunner.cppm:447,506](../Editor/Editor/Source/BuildRunner/BuildRunner.cppm) build cwd | the tree being built — engine for editor builds, project for game builds |
 | [BuildRunner.cppm:618](../Editor/Editor/Source/BuildRunner/BuildRunner.cppm) relaunch cwd | editor's own tree — correct as-is |
 | [Config.cpp:96](../Editor/Editor/Import/Config.cpp) Editor browse root | editor's own tree — correct as-is |
 
-### Phase 4 — Product UX
+### Phase 4 — Product UX — **switcher + New Project done (unbuilt); hub pending**
 
-- Project switcher: picker over the recent list, relaunch into the chosen project (`app::relaunch_on_exit`). Distinct window identity already landed in phase 2.
-- Hub/launcher on projectless launch: recent list, New Project (template copy + name substitution + configure), Open.
-- Templates (Blank first). Engine symbol index layering → instant engine-wide search/xref.
+- ~~Project switcher~~ **DONE.** `project_screen`, Ctrl+Shift+P or the project glyph in the title bar. Lists recent ∪ discovered, dedup, missing entries filtered. Selecting relaunches with the chosen manifest on the command line.
+- ~~New Project~~ **DONE.** Header button → name field with live validation → generates the project, records it, relaunches into it. The generated `CMakeLists.txt` **is the spike's**, i.e. the one configuration proven to build and run out of tree.
+  - **The capability that was actually missing was `cmake` configure** — the build runner could only `--build`. `ensure_configured()` now configures a project that has a `CMakeLists.txt` but no `build.ninja`, with every setting lifted from the editor's own `CMakeCache.txt` (toolchain file, triplet, overlays, both compilers, build type) so a new project matches the editor that made it instead of a hardcoded guess. Reuses the engine build's `vcpkg_installed` in non-manifest mode — correct because the project compiles the engine from source and needs exactly its dependency set.
+  - Validation rejects deep paths up front; the 250-char object-path limit otherwise fails late as a misleading `ar` error.
+- Hub/launcher on projectless launch: recent list, New Project, Open. **Still pending** — currently a projectless launch falls back to repo roots rather than showing a hub.
+- Templates (Blank first). Engine symbol index layering → instant engine-wide search/xref. **Pending.**
+
+#### GUI work that came out of this phase
+
+Generic, not project-specific — all in the engine widget layer:
+
+- **Click-outside dismisses any dismissable screen**, engine-wide (one check in `process_screen`, before `tick()` since that can pop and dangle the captured screen).
+- **`selectable`** gained `detail` (second column + divider), `align`, `accent` swatch, and an explicit `key` so same-named rows don't collide on widget id. It had zero callers before, so the API was free to fix.
+- **`draw::button_in_rect`** following the existing `*_in_rect` convention, and `enabled` on both button forms — disabled uses the already-existing `color_text_disabled` / `color_widget_background`, so it themes correctly across all six presets.
+- **`marquee_text`** primitive (`:marquee_widget`), stateless — phase from absolute time, no per-widget state. Wired into `selectable`'s detail column, scrolling only the hovered row.
+- **UI text rendering is allocation-free.** `text_command::text` and `unified_command::text` are `std::string_view`; `queue_text` interns into a `per_frame_resource<std::deque<std::string>>`. Previously every text command allocated **twice per frame** (caller temporary + the renderer's `unified` copy). See the gotcha below.
 
 ### Phase 5 — Engine SDK + packaging (was phases 3 and 5; now distribution-only)
 
@@ -180,6 +212,8 @@ Everything here serves *shipping to someone else*, not daily work. The BMI-expor
 
 ## Sharp edges
 
+0. **UI text commands are views into a per-frame pool.** The renderer consumes them off an ECS channel backed by `double_buffer<std::vector<T>>` — i.e. **one frame of latency**. The pool must therefore rotate (`per_frame_resource`, N=2), never be reset in place. Getting this wrong corrupts text every other frame, and because `assign` reuses the buffer it manifests as fragments of one string welded to another ("Libpng.cp", "#includecppm") rather than a crash. Anything that builds a `text_command` outside `queue_text` must intern first — there are three such sites in Gui.cpp (tooltip, tab title, context-menu label). If the channel ever gains depth, N must follow.
+
 1. ~~SDK export of GCC C++-module BMIs is the critical-path risk~~ — **downgraded 2026-07-24.** With engine-source-by-default this is confined to phase 5 (distribution) and no longer gates daily work or any earlier phase. Hand-rolled SDK remains the proven-viable fallback.
 2. Toolchain↔SDK lockstep enforced by stamp, never assumed.
 3. Ship both Debug and RelWithDebInfo SDK variants; installed footprint likely 1-2 GB incl. toolchain.
@@ -189,6 +223,8 @@ Everything here serves *shipping to someone else*, not daily work. The BMI-expor
 7. Spaces in user-chosen paths: quoting discipline in build runner, plugin args, module mapper; phase-3 test matrix item.
    - **Path LENGTH is a harder limit than spaces — measured 2026-07-24.** The spike initially failed with `ar: error reading .../std.cc.obj: No such file or directory`, because CMake's per-target hashed object directories (e.g. `CMakeFiles/__cmake_cxx_std_26.dir/7af8aa8ecf477d1b29e070821960b954/`) pushed object paths past Windows' 250-char `CMAKE_OBJECT_PATH_MAX`. Configure warns about this but the build fails much later and the message names `ar`, not the real cause. Re-running from a 44-char root built cleanly. So the `%USERPROFILE%\GSEProjects` default is short **and** space-free on purpose, and `New Project` should reject or warn on deep destinations. `import std` makes this worse — `__cmake_cxx_std_26` is one of the longest generated target names.
 8. Game code needs a sanctioned project-data write API (checkpoint files etc.).
+9. **A setting that lives only in `CMakePresets.json` does not ship with the engine.** Found 2026-07-27 building the first out-of-tree project: `CMAKE_CXX_MODULE_STD`, `-mavx2` and `CMAKE_EXPORT_COMPILE_COMMANDS` were preset-only, so external configure produced a build with no `std` module target (fatal at the first `export import std;`, in `vulkan.cppm`), no AVX2 (`SIMD.cppm` → `inlining failed in call to always_inline '_xgetbv': target specific option mismatch`, preceded by a `-Wpsabi` "AVX vector return without AVX enabled" warning), and no `compile_commands.json` (silent — the editor's index and analysis for that project just come up empty). Anything the engine *requires* to compile belongs in `GSEEngine.cmake`; the lifted-cache list in `build_runner::configure_command` is only for reproducing *this machine* (toolchain, triplet, compilers, build type). The in-tree build cannot catch this class of bug — the preset masks it.
+   - **Fix it with `add_compile_options` or a `FORCE`d cache entry — never `CMAKE_<LANG>_FLAGS_INIT`, and never a bare `set(... CACHE ...)`.** Both failed here, the same way, and neither failed loudly. `_INIT` is consumed once, when `CMAKE_CXX_FLAGS` is first written to the cache, and is silently ignored on every later configure of that build dir. A non-`FORCE` `set(... CACHE ...)` loses to *any* existing entry — including one CMake declared itself, which is what happens with `CMAKE_EXPORT_COMPILE_COMMANDS` (pre-declared, empty). Since `ensure_configured()` skips configure entirely when `build.ninja` exists, a fix that only applies to virgin build dirs reaches almost nothing. Assume every consumer's build dir already exists.
 
 ## Parked
 

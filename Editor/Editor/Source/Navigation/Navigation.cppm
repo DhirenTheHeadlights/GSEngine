@@ -1,4 +1,4 @@
-export module gse.ide.navigation;
+export module gse.ide.navigation:navigation;
 
 import std;
 

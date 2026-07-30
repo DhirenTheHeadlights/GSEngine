@@ -145,6 +145,8 @@ export namespace gse::win32 {
 	using ::CreateFileW;
 	using ::WriteFile;
 	using ::PeekNamedPipe;
+	using ::GetStdHandle;
+	using ::GetFileType;
 
 	constexpr DWORD context_full = CONTEXT_FULL;
 	constexpr DWORD unw_flag_nhandler = UNW_FLAG_NHANDLER;
@@ -154,6 +156,7 @@ export namespace gse::win32 {
 	constexpr DWORD get_module_handle_ex_flag_unchanged_refcount = GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT;
 	constexpr int max_path = MAX_PATH;
 	constexpr int csidl_appdata = CSIDL_APPDATA;
+	constexpr int csidl_profile = CSIDL_PROFILE;
 	constexpr int csidl_local_appdata = CSIDL_LOCAL_APPDATA;
 	constexpr int shgfp_type_current = SHGFP_TYPE_CURRENT;
 	constexpr DWORD startf_use_std_handles = STARTF_USESTDHANDLES;
@@ -183,6 +186,8 @@ export namespace gse::win32 {
 	constexpr DWORD file_share_read = FILE_SHARE_READ;
 	constexpr DWORD file_share_write = FILE_SHARE_WRITE;
 	constexpr DWORD file_attribute_normal = FILE_ATTRIBUTE_NORMAL;
+	constexpr DWORD std_output_handle = STD_OUTPUT_HANDLE;
+	constexpr DWORD file_type_char = FILE_TYPE_CHAR;
 	constexpr DWORD error_pipe_connected = ERROR_PIPE_CONNECTED;
 	constexpr DWORD error_pipe_listening = ERROR_PIPE_LISTENING;
 	constexpr DWORD error_no_data = ERROR_NO_DATA;

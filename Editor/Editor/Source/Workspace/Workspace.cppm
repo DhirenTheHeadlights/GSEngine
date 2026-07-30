@@ -21,10 +21,12 @@ export namespace gse::ide {
 		std::vector<diagnostic> diagnostics;
 		std::vector<diagnostic> lint;
 		bool analysis_failed = false;
+		bool analysis_unavailable = false;
+		bool analysis_outside_build = false;
 		bool analysis_crashed = false;
 		gse::time analysis_duration{};
 		bool diag_dirty = true;
-		gse::time last_edit{};
+		std::optional<gse::clock> edit_clock;
 		std::optional<std::uint32_t> pending_center_line;
 	};
 
@@ -509,7 +511,7 @@ auto gse::ide::workspace::reload_document_from_disk(data& d, const std::filesyst
 		doc.syntax = {};
 		doc.highlight_dirty = true;
 		doc.diag_dirty = true;
-		doc.last_edit = {};
+		doc.edit_clock.reset();
 		return;
 	}
 }

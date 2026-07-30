@@ -55,11 +55,23 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 	msdfgen::FontMetrics font_metrics{};
 	getFontMetrics(font_metrics, font_handle, msdfgen_consts::em_normalized);
 
-	std::vector<char32_t> codepoints;
-	codepoints.reserve(128);
+	std::vector<char32_t> requested;
+	requested.reserve(256);
 	for (char32_t cp = 0x20; cp <= 0x7E; ++cp) {
-		codepoints.push_back(cp);
+		requested.push_back(cp);
 	}
+	for (char32_t cp = 0xA0; cp <= 0xFF; ++cp) {
+		requested.push_back(cp);
+	}
+	for (const char32_t cp : { U'\u2013', U'\u2014', U'\u2018', U'\u2019', U'\u201C', U'\u201D', U'\u2026', U'\u2192' }) {
+		requested.push_back(cp);
+	}
+
+	std::vector<char32_t> codepoints;
+	codepoints.reserve(requested.size());
+	std::ranges::copy_if(requested, std::back_inserter(codepoints), [ft_face](const char32_t cp) {
+		return FT_Get_Char_Index(ft_face, static_cast<FT_UInt>(cp)) != 0;
+	});
 
 	const int glyph_count = static_cast<int>(codepoints.size());
 	constexpr int cell = 192;
@@ -121,7 +133,7 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 		const bool valid_bounds = has_geometry && shape_w > 0.0 && shape_h > 0.0;
 
 		if (!valid_bounds) {
-			if (cp != U' ') {
+			if (cp != U' ' && cp != U'\u00A0') {
 				log::println(
 					log::level::warning,
 					log::category::assets,

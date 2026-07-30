@@ -4,7 +4,7 @@ import std;
 
 export namespace gse::introspection {
 	constexpr std::uint32_t system_graph_magic = 0x47535347;
-	constexpr std::uint32_t system_graph_version = 2;
+	constexpr std::uint32_t system_graph_version = 3;
 
 	enum class edge_kind : std::uint8_t {
 		data_raw,

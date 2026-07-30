@@ -51,7 +51,7 @@ export namespace gse {
 			= asset_format::baked_ext<".gmdl">{},
 			= asset_format::baked_dir<"Models">{},
 			= asset_format::magic<0x474D444C>{},
-			= asset_format::version<4>{}
+			= asset_format::version<5>{}
 		]] baked {
 			std::vector<mesh_baked> meshes;
 		};

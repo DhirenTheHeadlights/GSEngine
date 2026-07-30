@@ -34,6 +34,8 @@ export namespace gse::config {
 
 	auto user_state_dir() -> const std::filesystem::path&;
 
+	auto projects_root() -> const std::filesystem::path&;
+
 	auto logs_dir() -> const std::filesystem::path&;
 
 	auto cache_dir() -> const std::filesystem::path&;

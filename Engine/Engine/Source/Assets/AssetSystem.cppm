@@ -160,9 +160,9 @@ auto gse::asset::needs_recompile(const std::filesystem::path& src, const std::fi
 	if (!in.is_open()) {
 		return true;
 	}
-	std::uint32_t header[2]{};
+	std::uint32_t header[3]{};
 	in.read(reinterpret_cast<char*>(header), sizeof(header));
-	if (!in.good() || header[0] != fmt.magic || header[1] != fmt.version) {
+	if (!in.good() || header[0] != fmt.magic || header[1] != fmt.version || header[2] != archive_format_epoch) {
 		return true;
 	}
 	return false;

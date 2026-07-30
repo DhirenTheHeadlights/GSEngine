@@ -72,7 +72,7 @@ auto gse::gui::section::draw(const draw_context& ctx, params p, id&, id&, id&) -
 
 	ctx.queue_text({
 		.font = fnt,
-		.text = std::string(p.title),
+		.text = p.title,
 		.position = { text_left, title_top },
 		.scale = header_size,
 		.color = sty.color_section_header,
@@ -105,7 +105,7 @@ auto gse::gui::section::draw(const draw_context& ctx, params p, id&, id&, id&) -
 		const float icon_text_w = fnt->width(icon, sty.font_size);
 		ctx.queue_text({
 			.font = fnt,
-			.text = std::string(icon),
+			.text = icon,
 			.position = { action_rect.center().x() - icon_text_w * 0.5f, action_rect.center().y() + fnt->vertical_center_offset(sty.font_size) },
 			.scale = sty.font_size,
 			.color = hovered ? sty.color_text : sty.color_text_secondary,
@@ -127,7 +127,7 @@ auto gse::gui::section::draw(const draw_context& ctx, params p, id&, id&, id&) -
 		const rectf subtitle_row = lo::reserve_row(ctx, fnt->line_height(sty.font_size));
 		ctx.queue_text({
 			.font = fnt,
-			.text = std::string(p.subtitle),
+			.text = p.subtitle,
 			.position = { text_left, subtitle_row.top() },
 			.scale = sty.font_size,
 			.color = sty.color_text_secondary,

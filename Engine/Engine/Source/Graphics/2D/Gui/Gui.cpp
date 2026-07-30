@@ -37,6 +37,11 @@ import gse.meta;
 import gse.save;
 
 namespace gse::gui {
+	[[nodiscard]] auto intern_text(
+		data& d,
+		std::string_view text
+	) -> std::string_view;
+
 	[[nodiscard]] auto popout_close_button_rect(
 		const rectf& title_bar_rect,
 		const style& sty
@@ -52,6 +57,16 @@ namespace gse::gui {
 		const menu& m,
 		float width
 	) -> float;
+}
+
+auto gse::gui::intern_text(data& d, const std::string_view text) -> std::string_view {
+	std::deque<std::string>& pool = d.text_pools[d.text_pool_slot];
+	if (d.text_pool_used == pool.size()) {
+		pool.emplace_back();
+	}
+	std::string& slot = pool[d.text_pool_used++];
+	slot.assign(text);
+	return slot;
 }
 
 auto gse::gui::popout_close_button_rect(const rectf& title_bar_rect, const style& sty) -> rectf {
@@ -337,6 +352,9 @@ auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_
 	d.fstate = {};
 	d.sprite_commands.clear();
 	d.text_commands.clear();
+	d.text_pool_slot ^= 1;
+	d.text_pool_used = 0;
+
 	d.input_layers_data.begin_frame();
 
 	const style frame_sty = apply_scale(d, style::from_theme(d.current_theme), current_viewport_size.y());
@@ -555,7 +573,7 @@ auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_
 
 		d.text_commands.push_back({
 			.font = d.fonts.text,
-			.text = d.tooltip.text,
+			.text = intern_text(d, d.tooltip.text),
 			.position = { tooltip_rect.left() + padding, tooltip_rect.center().y() + d.fonts.text->vertical_center_offset(font_size) },
 			.scale = font_size,
 			.color = d.fstate.sty.color_text,
@@ -768,6 +786,8 @@ auto gse::gui::process_menu(data& d, const gse::input::state& input_state, const
 		.layout_cursor = layout_cursor,
 		.sprites = d.sprite_commands,
 		.texts = d.text_commands,
+		.text_pool = d.text_pools[d.text_pool_slot],
+		.text_pool_used = d.text_pool_used,
 		.widget_anim_colors = d.widget_anim_colors,
 		.widget_scrolls = d.widget_scrolls,
 		.current_layer = layer,
@@ -878,6 +898,8 @@ auto gse::gui::process_screen(data& d, const gse::input::state& input_state, con
 		.layout_cursor = layout_cursor,
 		.sprites = d.sprite_commands,
 		.texts = d.text_commands,
+		.text_pool = d.text_pools[d.text_pool_slot],
+		.text_pool_used = d.text_pool_used,
 		.widget_anim_colors = d.widget_anim_colors,
 		.widget_scrolls = d.widget_scrolls,
 		.current_layer = render_layer::popup,
@@ -899,6 +921,15 @@ auto gse::gui::process_screen(data& d, const gse::input::state& input_state, con
 		.active_widget_id = d.active_widget_id,
 		.focus_widget_id = d.focus_widget_id,
 	};
+
+	if (top->dismissable()
+		&& input_state.mouse_button_pressed(mouse_button::button_1)
+		&& !body_rect.contains(input_state.mouse_position())) {
+		ctx.consume_press(mouse_button::button_1);
+		d.menu_stack.pop();
+		d.context = nullptr;
+		return;
+	}
 
 	d.menu_stack.tick(b);
 
@@ -1046,7 +1077,7 @@ auto gse::gui::draw_menu_chrome(data& d, const gse::input::state& input_state, m
 		if (d.fonts.text.valid() && !current_menu.tab_contents.empty()) {
 			d.text_commands.push_back({
 				.font = d.fonts.text,
-				.text = current_menu.tab_contents[0],
+				.text = intern_text(d, current_menu.tab_contents[0]),
 				.position = { title_bar_rect.left() + sty.padding, title_bar_rect.center().y() + d.fonts.text->vertical_center_offset(sty.font_size) },
 				.scale = sty.font_size,
 				.clip_rect = title_bar_rect,
@@ -1080,7 +1111,7 @@ auto gse::gui::draw_menu_chrome(data& d, const gse::input::state& input_state, m
 
 		symbol::draw(d.sprite_commands, d.blank_texture, symbol::close(), close_rect, {
 			.color = hovered ? sty.color_icon_hovered : sty.color_icon,
-			.scale = sty.icon_scale,
+			.extent = sty.icon_extent,
 			.layer = layer,
 			.z_order = 2,
 			.clip_rect = close_rect,
@@ -1125,6 +1156,8 @@ auto gse::gui::draw_tab_bar(data& d, const gse::input::state& input_state, menu&
 		.layout_cursor = dummy_cursor,
 		.sprites = d.sprite_commands,
 		.texts = d.text_commands,
+		.text_pool = d.text_pools[d.text_pool_slot],
+		.text_pool_used = d.text_pool_used,
 		.widget_anim_colors = d.widget_anim_colors,
 		.widget_scrolls = d.widget_scrolls,
 		.current_layer = layer,
@@ -1250,14 +1283,14 @@ auto gse::gui::process_context_menu(data& d, const gse::input::state& input_stat
 		if (it.icon) {
 			symbol::draw(d.sprite_commands, d.blank_texture, it.icon(), rectf::from_position_size({ row.left() + sty.padding, y }, { sty.font_size, row_h }), {
 				.color = text_color,
-				.scale = sty.icon_scale,
+				.extent = sty.icon_extent,
 				.layer = layer,
 				.z_order = base_z + 3,
 			});
 		}
 		d.text_commands.push_back({
 			.font = d.fonts.text,
-			.text = it.label,
+			.text = intern_text(d, it.label),
 			.position = { row.left() + sty.padding * 1.5f + icon_col, row.center().y() + d.fonts.text->vertical_center_offset(sty.font_size) },
 			.scale = sty.font_size,
 			.color = text_color,

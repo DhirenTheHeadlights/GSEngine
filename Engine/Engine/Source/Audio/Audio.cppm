@@ -19,7 +19,7 @@ export namespace gse {
 			= asset_format::source_dir<"Audio">{},
 			= asset_format::source_exts<".wav", ".mp3", ".ogg", ".flac">{},
 			= asset_format::magic<0x47415544>{},
-			= asset_format::version<1>{}
+			= asset_format::version<2>{}
 		]] baked {
 			raw_blob_owned<std::byte> bytes;
 		};

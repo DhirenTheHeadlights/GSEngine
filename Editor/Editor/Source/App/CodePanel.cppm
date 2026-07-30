@@ -128,6 +128,11 @@ namespace gse::ide {
 		bool building
 	) -> void;
 
+	auto audit_semantic_coverage(
+		const document& doc,
+		const search::index_state* index
+	) -> void;
+
 	auto point_in_triangle(
 		gse::vec2f p,
 		gse::vec2f a,
@@ -165,6 +170,14 @@ namespace gse::ide {
 		const search::index_state* index
 	) -> std::vector<gse::gui::text_span>;
 
+	struct resolved_symbol {
+		std::string qualified;
+		std::string kind;
+		std::string type;
+		std::string value;
+		std::optional<search::location> def;
+	};
+
 	auto resolve_hover_card(
 		hover_state& h,
 		std::string_view ident,
@@ -174,10 +187,7 @@ namespace gse::ide {
 		const search::index_state* index,
 		docs::cppref_index& cppref,
 		std::span<const search::lookup_error> issues,
-		std::string qualified,
-		std::string sym_kind,
-		std::optional<search::location> def,
-		std::string type
+		resolved_symbol resolved
 	) -> void;
 
 	struct module_link {
@@ -259,17 +269,17 @@ auto gse::ide::draw_code_line(const gse::gui::draw_context& ctx, const std::stri
 		const std::uint32_t a = std::min<std::uint32_t>(sp.start_col, len);
 		const std::uint32_t b = std::min<std::uint32_t>(sp.end_col, len);
 		if (a > pos) {
-			ctx.queue_text({ .font = ctx.fonts.code, .text = std::string(text.substr(pos, a - pos)), .position = { origin.x() + offsets[pos], baseline }, .scale = scale, .color = fallback, .clip_rect = clip, .z_order = z });
+			ctx.queue_text({ .font = ctx.fonts.code, .text = text.substr(pos, a - pos), .position = { origin.x() + offsets[pos], baseline }, .scale = scale, .color = fallback, .clip_rect = clip, .z_order = z });
 		}
 		if (b > a) {
-			ctx.queue_text({ .font = ctx.fonts.code, .text = std::string(text.substr(a, b - a)), .position = { origin.x() + offsets[a], baseline }, .scale = scale, .color = sp.color, .clip_rect = clip, .z_order = z });
+			ctx.queue_text({ .font = ctx.fonts.code, .text = text.substr(a, b - a), .position = { origin.x() + offsets[a], baseline }, .scale = scale, .color = sp.color, .clip_rect = clip, .z_order = z });
 		}
 		if (b > pos) {
 			pos = b;
 		}
 	}
 	if (pos < len) {
-		ctx.queue_text({ .font = ctx.fonts.code, .text = std::string(text.substr(pos)), .position = { origin.x() + offsets[pos], baseline }, .scale = scale, .color = fallback, .clip_rect = clip, .z_order = z });
+		ctx.queue_text({ .font = ctx.fonts.code, .text = text.substr(pos), .position = { origin.x() + offsets[pos], baseline }, .scale = scale, .color = fallback, .clip_rect = clip, .z_order = z });
 	}
 }
 
@@ -432,7 +442,10 @@ auto gse::ide::highlight_code_body(const docs::doc_card& card, const search::ind
 					for (std::size_t c = card.indent; c < t->column; ++c) {
 						body_col += render[c] == '\t' ? 4u : 1u;
 					}
-					sem.at[(static_cast<std::uint64_t>(k) << 32) | body_col] = t->kind;
+					sem.at[{
+						.line = static_cast<std::uint32_t>(k),
+						.column = body_col,
+					}] = t->kind;
 				}
 			}
 		}
@@ -440,7 +453,8 @@ auto gse::ide::highlight_code_body(const docs::doc_card& card, const search::ind
 	return syntax_producer::highlight(card.body, sem.at.empty() ? nullptr : &sem, nullptr);
 }
 
-auto gse::ide::resolve_hover_card(hover_state& h, const std::string_view ident, const std::string_view row, const std::size_t ident_start, const bool declaration_fallback, const search::index_state* index, docs::cppref_index& cppref, const std::span<const search::lookup_error> issues, std::string qualified, std::string sym_kind, std::optional<search::location> def, std::string type) -> void {
+auto gse::ide::resolve_hover_card(hover_state& h, const std::string_view ident, const std::string_view row, const std::size_t ident_start, const bool declaration_fallback, const search::index_state* index, docs::cppref_index& cppref, const std::span<const search::lookup_error> issues, resolved_symbol resolved) -> void {
+	auto& [qualified, sym_kind, type, value, def] = resolved;
 	auto append_issue = [&](std::string issue) {
 		if (std::ranges::find(h.issues, issue) == h.issues.end()) {
 			h.issues.push_back(std::move(issue));
@@ -466,6 +480,9 @@ auto gse::ide::resolve_hover_card(hover_state& h, const std::string_view ident, 
 			}
 			if (type.empty()) {
 				type = decl->type;
+			}
+			if (value.empty()) {
+				value = decl->value;
 			}
 			for (const search::lookup_error& issue : decl->issues) {
 				lookup_issues.push_back(issue);
@@ -552,6 +569,21 @@ auto gse::ide::resolve_hover_card(hover_state& h, const std::string_view ident, 
 	}
 	else if (sym_kind == "variable" || sym_kind == "parameter" || sym_kind == "member") {
 		append_issue(search::describe({ .reason = search::lookup_failure::type_not_recorded, .subject = qualified.empty() ? std::string(ident) : qualified }));
+	}
+	if (!value.empty() && (h.body_is_code || h.body.empty())) {
+		const std::string line = "= " + value;
+		std::vector<gse::gui::text_span> spans = syntax_producer::highlight(line, nullptr, nullptr);
+		std::uint32_t base = 0;
+		if (!h.body.empty()) {
+			base = static_cast<std::uint32_t>(std::ranges::count(h.body, '\n')) + 1;
+			h.body.push_back('\n');
+		}
+		for (gse::gui::text_span& sp : spans) {
+			sp.line += base;
+		}
+		h.body += line;
+		h.code_spans.insert(h.code_spans.end(), spans.begin(), spans.end());
+		h.body_is_code = true;
 	}
 	if (!h.from_cppref) {
 		h.pending = !lookup_issues.empty() && std::ranges::all_of(lookup_issues, search::is_pending);
@@ -1039,7 +1071,7 @@ auto gse::ide::apply_quickfix(document& doc, const std::span<const text_edit> ed
 	doc.dirty = true;
 	doc.diag_dirty = true;
 	doc.highlight_dirty = true;
-	doc.last_edit = gse::system_clock::now<gse::time>();
+	doc.edit_clock.emplace();
 }
 
 auto gse::ide::adjust_after_format(gse::gui::buffer_position& p, const std::span<const format::line_edit> edits) -> void {
@@ -1074,7 +1106,7 @@ auto gse::ide::apply_format(document& doc, const format::options& opts) -> void 
 	doc.dirty = true;
 	doc.diag_dirty = true;
 	doc.highlight_dirty = true;
-	doc.last_edit = gse::system_clock::now<gse::time>();
+	doc.edit_clock.emplace();
 }
 
 auto gse::ide::format_and_save(workspace::data& ws, const format_save_request& request, gse::channel_writer channels) -> void {
@@ -1099,19 +1131,29 @@ auto gse::ide::apply_diagnostics(workspace::data& ws, const std::shared_ptr<anal
 	}
 
 	document& doc = pending->second;
-	if (doc.revision.value != check->revision.value) {
+	if (doc.revision != check->revision) {
 		return;
 	}
 	doc.analysis_failed = analysis::analysis_failed(check->status);
+	doc.analysis_unavailable = analysis::analysis_unavailable(check->status);
+	doc.analysis_outside_build = analysis::analysis_outside_build(check->status);
 	doc.analysis_crashed = analysis::analysis_crashed(check->status);
 	doc.analysis_duration = check->duration;
-	if (doc.analysis_failed || doc.analysis_crashed) {
+	if (doc.analysis_failed || doc.analysis_unavailable || doc.analysis_outside_build || doc.analysis_crashed) {
 		return;
 	}
 
 	doc.diagnostics = std::move(check->result);
 	doc.lint = std::move(check->lint);
-	syntax_producer::set_semantic(doc.syntax, check->tokens, doc.buffer);
+	syntax_producer::set_semantic(
+		doc.syntax,
+		{
+			.tokens = check->tokens,
+			.buffer = doc.buffer,
+			.revision = doc.revision,
+			.source_path = doc.path.generic_display_string(),
+		}
+	);
 	doc.highlight_dirty = true;
 
 	if (check->symbols_complete) {
@@ -1137,6 +1179,98 @@ auto gse::ide::apply_diagnostics(workspace::data& ws, const std::shared_ptr<anal
 	}
 }
 
+auto gse::ide::audit_semantic_coverage(const document& doc, const search::index_state* index) -> void {
+	const std::string path = doc.path.generic_display_string();
+	if (!index) {
+		log::println(log::level::warning, log::category::general, "[semantic] audit of {} skipped: the symbol index is unavailable", path);
+		return;
+	}
+	if (!index->symbols_ready.load(std::memory_order_acquire)) {
+		log::println(log::level::warning, log::category::general, "[semantic] audit of {} skipped: the symbol index is still building", path);
+		return;
+	}
+
+	std::unordered_map<std::uint32_t, std::vector<const gui::text_span*>> spans_by_line;
+	for (const gui::text_span& span : doc.syntax.current_spans(doc.revision)) {
+		spans_by_line[span.line].push_back(&span);
+	}
+
+	constexpr std::size_t report_limit = 200;
+	std::size_t misses = 0;
+	std::size_t identifiers = 0;
+
+	log::println(log::level::info, log::category::general, "[semantic] auditing highlight coverage of {} ({} lines)", path, doc.buffer.line_count());
+
+	for (std::size_t li = 0; li < doc.buffer.line_count(); ++li) {
+		const std::uint32_t line = static_cast<std::uint32_t>(li);
+		const std::string_view row = doc.buffer.line(li);
+		const auto spans = spans_by_line.find(line);
+		for (std::size_t a = 0; a < row.size(); ++a) {
+			if (row[a] != '_' && !std::isalpha(static_cast<unsigned char>(row[a]))) {
+				continue;
+			}
+			std::size_t b = a;
+			while (b < row.size() && (row[b] == '_' || std::isalnum(static_cast<unsigned char>(row[b])))) {
+				++b;
+			}
+			++identifiers;
+
+			bool covered = false;
+			if (spans != spans_by_line.end()) {
+				for (const gui::text_span* span : spans->second) {
+					if (a < span->end_col && b > span->start_col) {
+						covered = true;
+						break;
+					}
+				}
+			}
+			if (covered) {
+				a = b - 1;
+				continue;
+			}
+
+			++misses;
+			if (misses > report_limit) {
+				a = b - 1;
+				continue;
+			}
+
+			const std::string_view ident = row.substr(a, b - a);
+			std::vector<std::string> causes;
+			if (const std::expected<search::hover_hit, search::lookup_error> hit = index->symbol_at(doc.path, line, static_cast<std::uint32_t>(a))) {
+				causes.push_back(std::format("the index resolved '{}' here, so the reference exists but the highlight pass produced no span", hit->qualified));
+			}
+			else {
+				causes.push_back(search::describe(hit.error()));
+			}
+			search::report_lookup_failure(
+				*index,
+				{
+					.file = doc.path,
+					.line = line,
+					.column = static_cast<std::uint32_t>(a),
+					.length = static_cast<std::uint32_t>(b - a),
+					.ident = std::string(ident),
+					.row = std::string(row),
+					.context = "highlight",
+				},
+				causes
+			);
+			a = b - 1;
+		}
+	}
+
+	log::println(
+		log::level::info,
+		log::category::general,
+		"[semantic] audit of {} found {} unhighlighted of {} identifiers{}",
+		path,
+		misses,
+		identifiers,
+		misses > report_limit ? std::format(", {} listed above", report_limit) : std::string{}
+	);
+}
+
 auto gse::ide::update_diagnostics(gse::context& ctx, workspace::data& ws, const gse::shared_view<config_system::data> config, const bool building) -> void {
 	for (const analysis::diagnostics_completed& completed : ctx.read_channel<analysis::diagnostics_completed>()) {
 		if (!completed.check) {
@@ -1152,12 +1286,11 @@ auto gse::ide::update_diagnostics(gse::context& ctx, workspace::data& ws, const 
 		return;
 	}
 
-	const gse::time now = gse::system_clock::now<gse::time>();
-	auto ready = [now](const document& doc) {
+	auto ready = [](const document& doc) {
 		return doc.highlightable
 			&& !doc.path.empty()
 			&& doc.diag_dirty
-			&& now - doc.last_edit > gse::milliseconds(500);
+			&& (!doc.edit_clock || doc.edit_clock->elapsed() > gse::milliseconds(500));
 	};
 
 	auto candidate = ws.documents.end();
@@ -1197,10 +1330,10 @@ auto gse::ide::update_diagnostics(gse::context& ctx, workspace::data& ws, const 
 	ctx.channels.push<analysis::diagnostics_request>({
 		.document_id = candidate->first,
 		.revision = doc.revision,
-		.compile_commands = gse::ide::config::project_compile_commands(),
+		.compile_commands = gse::ide::config::compile_commands_for(doc.path),
 		.file = doc.path,
 		.plugin = plugin,
-		.workspace_root = ws.root,
+		.workspace_roots = gse::ide::config::analysis_roots(),
 		.lint_hook = &lint::analyze_check,
 	});
 	ws.diagnostics_pending = candidate->first;
@@ -1494,19 +1627,43 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 		);
 		const bool button_hovered = button_rect.contains(mouse) && ctx.input_available() && !building;
 		if (button_hovered && ctx.mouse_pressed_for(button_rect)) {
-			if (game_running) {
+			channels.push<build_runner::build_request>({
+				.target = build_runner::build_target::game,
+				.run_after = true,
+			});
+		}
+		const std::string button_label = building
+			? "Building..."
+			: (game_running ? "Rebuild & Run" : "Build & Run");
+
+		if (game_running) {
+			const gse::rectf graph_rect = gse::rectf::from_position_size(
+				{ button_rect.left() - button_w - pad, button_rect.top() },
+				{ button_w, button_h }
+			);
+			const bool graph_hovered = graph_rect.contains(mouse) && ctx.input_available();
+			if (graph_hovered && ctx.mouse_pressed_for(graph_rect)) {
 				ws.show_game_graph = !ws.show_game_graph;
 			}
-			else {
-				channels.push<build_runner::build_request>({
-					.target = build_runner::build_target::game,
-					.run_after = true,
-				});
-			}
+			const std::string graph_label = ws.show_game_graph ? "View Game" : "View Graph";
+			ctx.queue_sprite({
+				.rect = graph_rect,
+				.color = graph_hovered ? ctx.style.color_button_hovered : ctx.style.color_button_background,
+				.texture = ctx.blank_texture,
+				.corner_radius = ctx.style.corner_radius,
+			});
+			ctx.queue_text({
+				.font = ctx.fonts.text,
+				.text = ctx.intern(graph_label),
+				.position = {
+					graph_rect.center().x() - ctx.fonts.text->width(graph_label, font_sz) * 0.5f,
+					graph_rect.center().y() + ctx.fonts.text->vertical_center_offset(font_sz),
+				},
+				.scale = font_sz,
+				.color = ctx.style.color_text,
+				.clip_rect = graph_rect,
+			});
 		}
-		const std::string button_label = game_running
-			? (ws.show_game_graph ? "View Game" : "View Graph")
-			: (building ? "Building..." : "Build & Run");
 		ctx.queue_sprite({
 			.rect = button_rect,
 			.color = building ? ctx.style.color_input_background : (button_hovered ? ctx.style.color_button_hovered : ctx.style.color_button_background),
@@ -1584,6 +1741,14 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 			status_text = "analysis pending - build artifacts are out of date";
 			status_color = gse::vec4f{ 0.76f, 0.46f, 0.73f, 1.f };
 		}
+		else if (doc.analysis_unavailable) {
+			status_text = "analysis unavailable - build the project";
+			status_color = ctx.style.color_text_secondary;
+		}
+		else if (doc.analysis_outside_build) {
+			status_text = "analysis unavailable - file is not part of this project's build";
+			status_color = ctx.style.color_text_secondary;
+		}
 		else if (doc.analysis_crashed) {
 			status_text = "analysis error - analyzer exited abnormally";
 			status_color = gse::vec4f{ 0.855f, 0.451f, 0.424f, 1.f };
@@ -1621,10 +1786,11 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 		return;
 	}
 
-	syntax_producer::poll(doc.syntax);
+	syntax_producer::poll(doc.syntax, doc.revision);
 
-	if (doc.highlightable && doc.highlight_dirty && !doc.syntax.pending && gse::system_clock::now<gse::time>() - doc.last_edit > gse::milliseconds(120)) {
-		syntax_producer::rebuild(doc.syntax, doc.buffer);
+	if (doc.highlightable && doc.highlight_dirty && !doc.syntax.pending
+		&& (!doc.edit_clock || doc.edit_clock->elapsed() > gse::milliseconds(120))) {
+		syntax_producer::rebuild(doc.syntax, doc.buffer, doc.revision);
 		doc.highlight_dirty = false;
 	}
 
@@ -1893,11 +2059,18 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 				std::string qualified;
 				std::string sym_kind;
 				std::string type;
+				std::string value;
 				std::optional<search::location> def;
 				std::vector<search::lookup_error> lookup_issues;
 				bool declaration_fallback = !member_access;
+				const syntax_producer::semantic_data* semantic = doc.syntax.current_semantic(doc.revision);
+				const analysis::semantic_kind* token_kind = semantic ? semantic->kind_at({
+					.line = hp.line,
+					.column = static_cast<std::uint32_t>(a),
+				}) : nullptr;
+				const bool attribute_word = token_kind && *token_kind == analysis::semantic_kind::attribute;
 				const bool language_word = syntax_producer::is_language_word(ident);
-				if (language_word) {
+				if (language_word || attribute_word) {
 					qualified = ident;
 					declaration_fallback = false;
 				}
@@ -1926,6 +2099,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 							qualified = hit->qualified;
 							sym_kind = hit->kind;
 							type = hit->type;
+							value = hit->value;
 							def = hit->def;
 							lookup_issues = hit->issues;
 						}
@@ -1940,26 +2114,48 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 				else {
 					lookup_issues.push_back({ .reason = search::lookup_failure::index_unavailable });
 				}
-				if (sym_kind.empty() && doc.syntax.semantic) {
-					const syntax_producer::semantic_data& sem = *doc.syntax.semantic;
-					const std::uint64_t key = (static_cast<std::uint64_t>(hp.line) << 32) | static_cast<std::uint32_t>(a);
-					if (const auto it = sem.at.find(key); it != sem.at.end()) {
-						sym_kind = std::format("{}", it->second);
-					}
+				if (sym_kind.empty() && token_kind) {
+					sym_kind = std::format("{}", *token_kind);
 				}
-				resolve_hover_card(hv, ident, row, a, declaration_fallback, index, ws.cppref, lookup_issues, std::move(qualified), std::move(sym_kind), def, std::move(type));
+				resolve_hover_card(
+					hv,
+					ident,
+					row,
+					a,
+					declaration_fallback,
+					index,
+					ws.cppref,
+					lookup_issues,
+					{
+						.qualified = std::move(qualified),
+						.kind = std::move(sym_kind),
+						.type = std::move(type),
+						.value = std::move(value),
+						.def = def,
+					}
+				);
 				hv.kind_color = ctx.style.color_text_secondary;
-				for (const gse::gui::text_span& sp : doc.syntax.spans) {
+				for (const gui::text_span& sp : doc.syntax.current_spans(doc.revision)) {
 					if (sp.line == hp.line && static_cast<std::uint32_t>(a) >= sp.start_col && static_cast<std::uint32_t>(a) < sp.end_col) {
 						hv.kind_color = sp.color;
 						break;
 					}
 				}
 				hv.anchor = mouse;
-				if (!hv.pending) {
-					for (const std::string& issue : hv.issues) {
-						gse::log::println(gse::log::level::warning, gse::log::category::task, "semantic hover '{}': {}", ident, issue);
-					}
+				if (!hv.pending && !hv.issues.empty() && index) {
+					search::report_lookup_failure(
+						*index,
+						{
+							.file = doc.path,
+							.line = hp.line,
+							.column = static_cast<std::uint32_t>(a),
+							.length = static_cast<std::uint32_t>(b - a),
+							.ident = std::string(ident),
+							.row = std::string(row),
+							.context = "hover",
+						},
+						hv.issues
+					);
 				}
 			}
 		}
@@ -1994,7 +2190,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 			}
 			else if (!child.resolved && gse::system_clock::now<gse::time>() - child.since > gse::milliseconds(350)) {
 				child.resolved = true;
-				resolve_hover_card(child, ident, row_text, hit->start_col, !hit->member_access, index, ws.cppref, {}, {}, {}, std::nullopt, {});
+				resolve_hover_card(child, ident, row_text, hit->start_col, !hit->member_access, index, ws.cppref, {}, {});
 				child.kind_color = ctx.style.color_text_secondary;
 				for (const gse::gui::text_span& sp : ws.hover_stack[k].code_spans) {
 					if (sp.line == hit->line && hit->start_col >= sp.start_col && hit->start_col < sp.end_col) {
@@ -2005,7 +2201,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 				child.anchor = mouse;
 				if (!child.pending) {
 					for (const std::string& issue : child.issues) {
-						gse::log::println(gse::log::level::warning, gse::log::category::task, "semantic nested hover '{}': {}", ident, issue);
+						log::println(log::level::warning, log::category::general, "[semantic] preview hover miss '{}' inside '{}': {}", ident, ws.hover_stack[k].title, issue);
 					}
 				}
 			}
@@ -2085,7 +2281,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 				continue;
 			}
 			if (draw_hover_panel(ctx, text_rect, hv, ctx.current_z_order + 1 + static_cast<std::uint32_t>(i), static_cast<int>(i) == scroll_owner) && !hv.url.empty()) {
-				analysis::process::open_url(hv.url.c_str());
+				analysis::process::open_url(hv.url);
 			}
 		}
 	}
@@ -2097,7 +2293,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 		text_id,
 		doc.buffer,
 		doc.view,
-		doc.highlightable ? std::span<const gse::gui::text_span>(doc.syntax.spans) : std::span<const gse::gui::text_span>{},
+		doc.highlightable ? doc.syntax.current_spans(doc.revision) : std::span<const gui::text_span>{},
 		underlines,
 		fades,
 		text_rect,
@@ -2115,7 +2311,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 		doc.dirty = true;
 		doc.highlight_dirty = true;
 		doc.diag_dirty = true;
-		doc.last_edit = gse::system_clock::now<gse::time>();
+		doc.edit_clock.emplace();
 	}
 
 	if (goto_click && link_target) {
@@ -2137,12 +2333,16 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 			.force_save = true,
 		}, channels);
 		doc.diag_dirty = true;
-		doc.last_edit = {};
+		doc.edit_clock.reset();
 	}
 
 	const bool shift = ctx.input.key_held(gse::key::left_shift) || ctx.input.key_held(gse::key::right_shift);
 	const bool alt = ctx.input.key_held(gse::key::left_alt) || ctx.input.key_held(gse::key::right_alt);
 	if (ui.focus_widget_id == text_id && shift && alt && ctx.input.key_pressed(gse::key::f) && doc.highlightable) {
 		apply_format(doc, format_opts);
+	}
+
+	if (ui.focus_widget_id == text_id && ctrl && shift && ctx.input.key_pressed(key::h) && doc.highlightable) {
+		audit_semantic_coverage(doc, index);
 	}
 }
