@@ -34,8 +34,9 @@ export namespace gse::ide::analysis {
 		static auto run_one(
 			const compilation_entry& entry,
 			const std::filesystem::path& plugin_dll,
-			const std::filesystem::path& workspace_root,
-			bool module_graph_validated = false
+			std::span<const std::filesystem::path> workspace_roots,
+			bool module_graph_validated = false,
+			std::stop_token cancel = {}
 		) -> tu_symbols;
 	};
 }
@@ -122,7 +123,7 @@ auto gse::ide::analysis::describe(const symbol_index_failure failure) -> std::st
 	return "unknown compiler failure";
 }
 
-auto gse::ide::analysis::symbol_index_builder::run_one(const compilation_entry& entry, const std::filesystem::path& plugin_dll, const std::filesystem::path& workspace_root, const bool module_graph_validated) -> tu_symbols {
+auto gse::ide::analysis::symbol_index_builder::run_one(const compilation_entry& entry, const std::filesystem::path& plugin_dll, const std::span<const std::filesystem::path> workspace_roots, const bool module_graph_validated, std::stop_token cancel) -> tu_symbols {
 	tu_symbols out;
 	out.tu = entry.file;
 	if (plugin_dll.empty()) {
@@ -150,12 +151,12 @@ auto gse::ide::analysis::symbol_index_builder::run_one(const compilation_entry& 
 	std::string command_line = entry.command.command_line;
 	command_line += " -fplugin=\"" + plugin_dll.generic_native_encoded_string() + "\"";
 	command_line += " -fplugin-arg-gse_tokens-out=\"" + token_temp.generic_native_encoded_string() + "\"";
-	command_line += " -fplugin-arg-gse_tokens-root=\"" + workspace_root.generic_native_encoded_string() + "\"";
+	for (const std::filesystem::path& root : workspace_roots) {
+		command_line += " -fplugin-arg-gse_tokens-root=\"" + root.generic_native_encoded_string() + "\"";
+	}
 	command_line += " -MMD -MF \"" + dependency_temp.generic_native_encoded_string() + "\" -MT gseditor_index";
 
-	const std::string directory = entry.command.directory.native_encoded_string();
-	const std::string sarif_path = sarif_temp.native_encoded_string();
-	const process::run_result run = process::run_capture_stderr(command_line.c_str(), directory.c_str(), sarif_path.c_str());
+	const process::run_outcome run = process::run_capture_stderr(command_line, entry.command.directory, sarif_temp, std::move(cancel));
 
 	std::ifstream in(token_temp, std::ios::binary);
 	if (in) {
@@ -173,13 +174,10 @@ auto gse::ide::analysis::symbol_index_builder::run_one(const compilation_entry& 
 		out.dependencies.push_back(entry.file);
 	}
 
-	if (!run.launched) {
-		out.failure = symbol_index_failure::launch;
+	if (!run) {
+		out.failure = run.error() == process::run_error::timed_out ? symbol_index_failure::timeout : symbol_index_failure::launch;
 	}
-	else if (run.timed_out) {
-		out.failure = symbol_index_failure::timeout;
-	}
-	else if (run.exit_code != 0) {
+	else if (*run != 0) {
 		out.failure = symbol_index_failure::compiler;
 	}
 	else if (!out.set.complete) {
@@ -206,7 +204,7 @@ auto gse::ide::analysis::symbol_index_builder::run_one(const compilation_entry& 
 			);
 		}
 		else if (out.failure == symbol_index_failure::compiler) {
-			out.failure_detail = std::format("compiler exit code {}", run.exit_code);
+			out.failure_detail = std::format("compiler exit code {}", run.value_or(-1));
 		}
 		else {
 			out.failure_detail = std::string(describe(out.failure));

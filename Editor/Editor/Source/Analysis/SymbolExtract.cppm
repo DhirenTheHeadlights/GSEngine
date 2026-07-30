@@ -57,6 +57,7 @@ export namespace gse::ide::analysis {
 		std::string qualified;
 		std::string identity;
 		std::string type;
+		std::string value;
 	};
 
 	struct qualified_use {
@@ -109,6 +110,15 @@ constexpr auto gse::ide::analysis::to_semantic_kind(const symbol_kind kind) -> s
 	return gse::annotation_from_enum<semantic_kind>(kind, semantic_kind::variable);
 }
 
+namespace gse::ide::analysis {
+	auto report_discarded_record(const std::string_view main_file, const std::string_view line, const std::string_view reason, const std::size_t discarded) -> void {
+		if (discarded > 8) {
+			return;
+		}
+		log::println(log::level::warning, log::category::general, "[semantic] {}: {}: |{}|", main_file, reason, line);
+	}
+}
+
 auto gse::ide::analysis::symbol_tokens::kind_from(std::string_view name) -> std::optional<symbol_kind> {
 	symbol_kind kind;
 	if (gse::enum_from_string(name, kind)) {
@@ -141,6 +151,8 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 		return count;
 	};
 
+	std::size_t discarded = 0;
+
 	std::size_t pos = 0;
 	while (pos < text.size()) {
 		const std::size_t eol = text.find('\n', pos);
@@ -160,6 +172,8 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 			std::array<std::string_view, 5> fields;
 			const std::size_t count = split(line, fields);
 			if (count < 5) {
+				++discarded;
+				report_discarded_record(main_file, line, "a GSETOK record carries fewer than the 5 required fields", discarded);
 				continue;
 			}
 			const std::optional<std::uint32_t> ln = to_u32(fields[1]);
@@ -174,7 +188,10 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 					.length = *len,
 					.kind = *kind,
 				});
+				continue;
 			}
+			++discarded;
+			report_discarded_record(main_file, line, "a GSETOK record has a non-numeric position or an unknown kind, so the token will not be coloured", discarded);
 			continue;
 		}
 
@@ -182,6 +199,8 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 			std::array<std::string_view, 9> fields;
 			const std::size_t count = split(line, fields);
 			if (count < 6) {
+				++discarded;
+				report_discarded_record(main_file, line, "a GSESYM record carries fewer than the 6 required fields", discarded);
 				continue;
 			}
 			const std::optional<symbol_kind> kind = kind_from(fields[2]);
@@ -198,7 +217,10 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 					.identity = count >= 8 ? std::string(fields[7]) : std::string{},
 					.is_definition = count >= 9 ? fields[8] == "definition" : true,
 				});
+				continue;
 			}
+			++discarded;
+			report_discarded_record(main_file, line, "a GSESYM record has an empty name, an unknown kind, or a non-numeric position, so the symbol will be missing from the index", discarded);
 			continue;
 		}
 
@@ -206,6 +228,8 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 			std::array<std::string_view, 5> fields;
 			const std::size_t count = split(line, fields);
 			if (count < 5) {
+				++discarded;
+				report_discarded_record(main_file, line, "a GSEQUAL record carries fewer than the 5 required fields", discarded);
 				continue;
 			}
 			const std::optional<std::uint32_t> ln = to_u32(fields[2]);
@@ -219,7 +243,10 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 					.end_line = *ln,
 					.end_column = *col + *len,
 				});
+				continue;
 			}
+			++discarded;
+			report_discarded_record(main_file, line, "a GSEQUAL record has a non-numeric position", discarded);
 			continue;
 		}
 
@@ -227,6 +254,8 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 			std::array<std::string_view, 6> fields;
 			const std::size_t count = split(line, fields);
 			if (count < 6) {
+				++discarded;
+				report_discarded_record(main_file, line, "a GSETARG record carries fewer than the 6 required fields", discarded);
 				continue;
 			}
 			const std::optional<std::uint32_t> ln = to_u32(fields[2]);
@@ -241,14 +270,19 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 					.end_line = *end_ln,
 					.end_column = *end_col,
 				});
+				continue;
 			}
+			++discarded;
+			report_discarded_record(main_file, line, "a GSETARG record has a non-numeric position", discarded);
 			continue;
 		}
 
 		if (line.starts_with("GSEREF\t")) {
-			std::array<std::string_view, 12> fields;
+			std::array<std::string_view, 13> fields;
 			const std::size_t count = split(line, fields);
 			if (count < 9) {
+				++discarded;
+				report_discarded_record(main_file, line, "a GSEREF record carries fewer than the 9 required fields, so this reference will not resolve", discarded);
 				continue;
 			}
 			const std::optional<std::uint32_t> ln = to_u32(fields[2]);
@@ -269,8 +303,12 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 					.qualified = count >= 10 ? std::string(fields[9]) : std::string{},
 					.identity = count >= 11 ? std::string(fields[10]) : std::string{},
 					.type = count >= 12 ? std::string(fields[11]) : std::string{},
+					.value = count >= 13 ? std::string(fields[12]) : std::string{},
 				});
+				continue;
 			}
+			++discarded;
+			report_discarded_record(main_file, line, "a GSEREF record has a non-numeric position or an empty definition file, so this reference will not resolve", discarded);
 			continue;
 		}
 
@@ -283,9 +321,17 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 					.system = std::string(fields[2]),
 					.message = std::string(fields[3]),
 				});
+				continue;
 			}
+			++discarded;
+			report_discarded_record(main_file, line, "a GSECHAN record is missing its system or message name", discarded);
 			continue;
 		}
 	}
+
+	if (discarded > 8) {
+		log::println(log::level::warning, log::category::general, "[semantic] {}: {} plugin records discarded, 8 listed above", main_file, discarded);
+	}
+
 	return out;
 }
