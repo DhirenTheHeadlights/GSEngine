@@ -33,7 +33,7 @@ export namespace gse::renderer {
 
 	struct text_command {
 		resource::handle<font> font;
-		std::string text;
+		std::string_view text;
 		vec2f position;
 		float scale = 1.0f;
 		vec4f color = { 1.0f, 1.0f, 1.0f, 1.0f };
@@ -98,7 +98,7 @@ namespace gse::renderer::ui {
 		gpu::bindless_slot image_slot = {};
 
 		resource::handle<font> font;
-		std::string text;
+		std::string_view text;
 		vec2f position;
 		float scale;
 	};

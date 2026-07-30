@@ -286,7 +286,7 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 
 					draw_ctx.queue_text({
 						.font = draw_ctx.fonts.code,
-						.text = std::string(val),
+						.text = val,
 						.position = { box.left() + pad * 0.5f, box.center().y() + ctx.fonts.code->vertical_center_offset(font_sz) },
 						.scale = font_sz,
 						.clip_rect = box
