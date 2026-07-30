@@ -17,6 +17,11 @@ export namespace gse::ide {
 
 	struct document_revision {
 		std::uint64_t value = 0;
+
+		friend auto operator<=>(
+			const document_revision&,
+			const document_revision&
+		) = default;
 	};
 
 	struct text_edit {
@@ -47,9 +52,20 @@ export namespace gse::ide {
 	};
 
 	struct fix_engine {
-		static auto display_to_byte(std::string_view row, std::uint32_t display_col) -> std::uint32_t;
-		static auto rule_edits(std::span<const diagnostic> diagnostics, std::string_view rule) -> std::vector<text_edit>;
-		static auto apply(std::vector<std::string>& lines, std::span<const text_edit> edits) -> std::size_t;
+		static auto display_to_byte(
+			std::string_view row,
+			std::uint32_t display_col
+		) -> std::uint32_t;
+
+		static auto rule_edits(
+			std::span<const diagnostic> diagnostics,
+			std::string_view rule
+		) -> std::vector<text_edit>;
+
+		static auto apply(
+			std::vector<std::string>& lines,
+			std::span<const text_edit> edits
+		) -> std::size_t;
 	};
 }
 
