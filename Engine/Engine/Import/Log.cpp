@@ -9,9 +9,12 @@ import std;
 import gse.config;
 import gse.meta;
 import gse.moodycamel;
+import gse.win32;
 
 namespace gse::log {
 	auto log_file_path() -> std::filesystem::path;
+
+	auto console_output() -> bool;
 
 	auto timestamp_string() -> std::string;
 
@@ -343,18 +346,30 @@ auto gse::log::level_sgr(const level lvl) -> int {
 
 gse::log::sink::~sink() = default;
 
+auto gse::log::console_output() -> bool {
+	static const bool console = win32::GetFileType(win32::GetStdHandle(win32::std_output_handle)) == win32::file_type_char;
+	return console;
+}
+
 auto gse::log::console_sink::write(const record& rec) -> void {
 	auto& os = should_flush(rec.lvl) ? static_cast<std::ostream&>(std::cerr) : static_cast<std::ostream&>(std::cout);
 	const auto line = format_line(rec);
 	if (color_enabled.load(std::memory_order_relaxed)) {
 		std::print(os, "\033[{}m{}\033[0m\n", level_sgr(rec.lvl), line);
-		return;
 	}
-	std::print(os, "{}\n", line);
+	else {
+		std::print(os, "{}\n", line);
+	}
+	if (!console_output()) {
+		os.flush();
+	}
 }
 
 auto gse::log::console_sink::write_raw(const std::string_view text) -> void {
 	std::print(std::cout, "{}\n", text);
+	if (!console_output()) {
+		std::cout.flush();
+	}
 }
 
 auto gse::log::console_sink::flush() -> void {

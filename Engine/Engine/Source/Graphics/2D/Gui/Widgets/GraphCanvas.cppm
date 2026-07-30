@@ -127,7 +127,7 @@ auto gse::gui::graph_canvas::draw(const draw_context& ctx, params p, id& hot, id
 		});
 		ctx.queue_text({
 			.font = fnt,
-			.text = std::string(n.label),
+			.text = n.label,
 			.position = { n.rect.left() + 6.f * p.label_scale, n.rect.center().y() + fnt->vertical_center_offset(label_font) },
 			.scale = label_font,
 			.color = ctx.style.color_text,

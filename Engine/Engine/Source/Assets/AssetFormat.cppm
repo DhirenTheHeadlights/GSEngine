@@ -86,11 +86,11 @@ auto gse::load_baked(const std::filesystem::path& path, T& out) -> bool {
 	}
 
 	constexpr auto fmt = format_of<T>();
-	binary_reader ar(in, fmt.magic, fmt.version, path.native_encoded_string());
-	if (!ar.valid()) {
+	std::expected<binary_reader, archive_mismatch> opened = binary_reader::open(in, fmt.magic, fmt.version);
+	if (!opened) {
 		return false;
 	}
 
-	ar & out;
+	*opened & out;
 	return true;
 }

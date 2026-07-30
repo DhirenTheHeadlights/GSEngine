@@ -18,6 +18,7 @@ import gse.ide.viewport;
 import :chrome;
 import :code_panel;
 import :layout;
+import :project_screen;
 
 namespace gse::ide {
 	constexpr std::string_view explorer_panel_name = "Explorer";
@@ -44,7 +45,7 @@ export namespace gse::ide::editor_app {
 		shared_view<search_system::data> search_d,
 		shared_view<input::data> input_d,
 		const save::registry& save_reg
-	) -> gse::async::task<>;
+	) -> async::task<>;
 
 	[[= system_shutdown{}]]
 	auto shutdown(
@@ -60,6 +61,7 @@ export namespace gse::ide::workspace_system {
 		std::uint32_t graph_game_gen = 0;
 		quick_search_state search;
 		git::status_snapshot git_status;
+		std::vector<std::filesystem::path> git_rootless;
 		bool initialized = false;
 		clock save_clock;
 	};
@@ -74,7 +76,7 @@ export namespace gse::ide::workspace_system {
 		shared_view<input::data> input_d,
 		shared_view<viewport::data> viewport_d,
 		shared_view<build_runner::data> build_d
-	) -> gse::async::task<>;
+	) -> async::task<>;
 
 	[[= system_shutdown{}]]
 	auto shutdown(
@@ -122,7 +124,7 @@ auto gse::ide::editor_app::run(
 	const shared_view<search_system::data> search_d,
 	const shared_view<input::data> input_d,
 	const save::registry& save_reg
-) -> gse::async::task<> {
+) -> async::task<> {
 	if (!d.initialized) {
 		load_editor_layout(d);
 		d.save_clock.reset();
@@ -135,7 +137,21 @@ auto gse::ide::editor_app::run(
 				return std::make_unique<editor_screen>(channels, index);
 			},
 		});
+		if (!project::current().valid) {
+			ctx.channels.push<gui::push_screen_request>({
+				.factory = [] {
+					return std::make_unique<project_screen>(true);
+				},
+			});
+		}
 		d.screen_pushed = true;
+	}
+	for ([[maybe_unused]] const auto& req : ctx.read_channel<toggle_project_switcher_request>()) {
+		ctx.channels.push<gui::push_screen_request>({
+			.factory = [] {
+				return std::make_unique<project_screen>();
+			},
+		});
 	}
 	for ([[maybe_unused]] const auto& req : ctx.read_channel<toggle_settings_request>()) {
 		ctx.channels.push<gui::push_screen_request>({
@@ -290,9 +306,9 @@ auto gse::ide::workspace_system::run(
 	const shared_view<input::data> input_d,
 	const shared_view<viewport::data> viewport_d,
 	const shared_view<build_runner::data> build_d
-) -> gse::async::task<> {
+) -> async::task<> {
 	if (!d.initialized) {
-		d.ws.root = gse::config::root_dir();
+		d.ws.root = config::project_root();
 		d.ws.fs_root.is_dir = true;
 		d.ws.fs_root.children.clear();
 		for (const config::browse_root& browse : config::browse_roots()) {
@@ -329,6 +345,7 @@ auto gse::ide::workspace_system::run(
 	const input::state& input = input::current_state(input_d);
 	for (const git::status_updated& update : ctx.read_channel<git::status_updated>()) {
 		d.git_status = update.status;
+		d.git_rootless = update.rootless;
 	}
 	update_diagnostics(ctx, d.ws, config_d, build_d.building);
 	d.ws.watcher.poll();
@@ -342,8 +359,8 @@ auto gse::ide::workspace_system::run(
 	ctx.channels.push<gui::menu_content>({
 		.menu = std::string(explorer_panel_name),
 		.layer = render_layer::content,
-		.build = [ws, search = &d.search, index = search_d.index, channels = ctx.channels, git_status = d.git_status](gui::builder& b) {
-			draw_explorer_panel(b, *ws, *search, index, channels, git_status.get());
+		.build = [ws, search = &d.search, index = search_d.index, channels = ctx.channels, git_status = d.git_status, git_rootless = &d.git_rootless](gui::builder& b) {
+			draw_explorer_panel(b, *ws, *search, index, channels, git_status.get(), *git_rootless);
 		},
 	});
 

@@ -253,7 +253,7 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 		if (!leaf) {
 			symbol::draw(ctx, is_open ? symbol::chevron_down() : symbol::chevron_right(), arrow_rect, {
 				.color = ctx.style.color_text,
-				.scale = ctx.style.icon_scale,
+				.extent = ctx.style.icon_extent,
 			});
 		}
 
@@ -265,7 +265,7 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 			);
 			symbol::draw(ctx, ops.icon(t), icon_rect, {
 				.color = leaf ? ctx.style.color_file : ctx.style.color_folder,
-				.scale = ctx.style.icon_scale,
+				.extent = ctx.style.icon_extent,
 			});
 		}
 
@@ -284,7 +284,7 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 
 		ctx.queue_text({
 			.font = fnt,
-			.text = std::string(lbl),
+			.text = lbl,
 			.position = { label_rect.left(), label_rect.center().y() + fnt->vertical_center_offset(ctx.style.font_size) },
 			.scale = ctx.style.font_size,
 			.color = ops.label_color ? ops.label_color(t) : ctx.style.color_text,

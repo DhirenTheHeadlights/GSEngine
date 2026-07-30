@@ -57,9 +57,6 @@ auto gse::ide::config::resolve() -> resolved {
 	const std::filesystem::path project_assets = active.valid ? active.assets : gse::config::resource_path();
 	const std::filesystem::path project_state = active.valid ? active.state : gse::config::user_config_dir();
 
-	// A project inside the engine tree is built by the engine's own build; CMake
-	// mirrors the source layout, so its outputs land under the matching subdirectory.
-	// A project outside it owns a build tree under .gse and outputs at its root.
 	const bool nested = is_inside(project_root, engine_root);
 	const std::filesystem::path project_build = nested ? build : project_state / "build" / build.filename();
 	const std::filesystem::path project_output = nested ? build / project_root.lexically_relative(engine_root) : project_build;
@@ -96,11 +93,13 @@ auto gse::ide::config::table() -> const resolved& {
 
 auto gse::ide::config::resolve_browse_roots() -> std::vector<browse_root> {
 	const project::manifest& active = project::current();
+	const std::filesystem::path editor_compile_commands = gse::config::generic(build_dir() / "compile_commands.json");
 	if (!active.valid) {
 		return {
 			{
 				.path = gse::config::root_dir(),
 				.name = gse::config::root_dir().filename().native_encoded_string(),
+				.compile_commands = editor_compile_commands,
 				.is_project = false
 			}
 		};
@@ -110,16 +109,19 @@ auto gse::ide::config::resolve_browse_roots() -> std::vector<browse_root> {
 		{
 			.path = project_root(),
 			.name = active.name,
+			.compile_commands = project_compile_commands(),
 			.is_project = true
 		},
 		{
 			.path = gse::config::generic(engine_root() / "Engine"),
 			.name = "Engine",
+			.compile_commands = editor_compile_commands,
 			.is_project = false
 		},
 		{
 			.path = gse::config::generic(gse::config::root_dir() / "Editor"),
 			.name = "Editor",
+			.compile_commands = editor_compile_commands,
 			.is_project = false
 		}
 	};
@@ -128,6 +130,14 @@ auto gse::ide::config::resolve_browse_roots() -> std::vector<browse_root> {
 auto gse::ide::config::browse_roots() -> std::span<const browse_root> {
 	static const std::vector<browse_root> value = resolve_browse_roots();
 	return value;
+}
+
+auto gse::ide::config::analysis_roots() -> std::vector<std::filesystem::path> {
+	const std::span<const browse_root> roots = browse_roots();
+	std::vector<std::filesystem::path> out;
+	out.reserve(roots.size());
+	std::ranges::copy(roots | std::views::transform(&browse_root::path), std::back_inserter(out));
+	return out;
 }
 
 auto gse::ide::config::source_dir() -> const std::filesystem::path& {
@@ -188,6 +198,14 @@ auto gse::ide::config::build_dir() -> const std::filesystem::path& {
 
 auto gse::ide::config::token_plugin() -> const std::filesystem::path& {
 	return table().token_plugin;
+}
+
+auto gse::ide::config::compile_commands_for(const std::filesystem::path& file) -> const std::filesystem::path& {
+	const std::span<const browse_root> roots = browse_roots();
+	const auto owner = std::ranges::find_if(roots, [&file](const browse_root& root) {
+		return is_inside(file, root.path);
+	});
+	return owner != roots.end() ? owner->compile_commands : project_compile_commands();
 }
 
 auto gse::ide::config::cppref_index() -> const std::filesystem::path& {

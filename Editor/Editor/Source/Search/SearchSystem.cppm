@@ -10,8 +10,8 @@ import gse.ide.build;
 import :index;
 
 export namespace gse::ide::search_system {
-	struct [[= gse::system_state<"Search">{}]] data {
-		[[= gse::stable_shared]] std::unique_ptr<search::index_state> index;
+	struct [[= system_state<"Search">{}]] data {
+		[[= stable_shared]] std::unique_ptr<search::index_state> index;
 		file_watcher watcher;
 		time last_index_change{};
 		std::uint32_t last_build_gen = 0;
@@ -20,10 +20,10 @@ export namespace gse::ide::search_system {
 		std::vector<std::filesystem::path> watcher_changes;
 	};
 
-	[[= gse::system_init{}]]
+	[[= system_init{}]]
 	auto init(data& d) -> async::task<>;
 
-	[[= gse::system_frame{}]]
+	[[= system_frame{}]]
 	auto frame(
 		const context& ctx,
 		data& d,
@@ -49,11 +49,21 @@ auto gse::ide::search_system::is_symbol_source(const std::filesystem::path& path
 
 auto gse::ide::search_system::init(data& d) -> async::task<> {
 	d.index = std::make_unique<search::index_state>();
-	d.index->workspace_root = gse::config::root_dir();
+	for (const config::browse_root& browse : config::browse_roots()) {
+		d.index->roots.push_back({
+			.path = browse.path,
+			.name = browse.name,
+			.compile_commands = browse.compile_commands,
+			.is_project = browse.is_project
+		});
 
-	std::error_code compile_commands_ec;
-	if (std::filesystem::exists(config::project_compile_commands(), compile_commands_ec)) {
-		d.index->compile_commands = config::project_compile_commands();
+		std::error_code compile_commands_ec;
+		if (browse.compile_commands.empty() || !std::filesystem::exists(browse.compile_commands, compile_commands_ec)) {
+			continue;
+		}
+		if (std::ranges::find(d.index->compile_commands, browse.compile_commands) == d.index->compile_commands.end()) {
+			d.index->compile_commands.push_back(browse.compile_commands);
+		}
 	}
 	std::error_code plugin_ec;
 	if (std::filesystem::exists(config::token_plugin(), plugin_ec)) {
@@ -63,22 +73,23 @@ auto gse::ide::search_system::init(data& d) -> async::task<> {
 	search::start_symbol_worker(*d.index);
 	search::request_symbol_build(*d.index);
 
-	task::post([index = d.index.get(), root = gse::config::root_dir()] {
-		search::build_files_and_content(*index, root);
+	task::post([index = d.index.get()] {
+		search::build_files_and_content(*index, index->roots);
 	});
-	const std::filesystem::path root = gse::config::root_dir();
-	auto on_change = [&d](const std::filesystem::path& path) {
-		d.watcher_changes.push_back(path);
-	};
-	d.watcher.watch_directory(
-		root,
-		std::move(on_change),
-		{},
-		true,
-		[root](const std::filesystem::path& path) {
-			return search::is_indexed_path(root, path);
-		}
-	);
+	for (const search::index_root& root : d.index->roots) {
+		const std::filesystem::path path = root.path;
+		d.watcher.watch_directory(
+			path,
+			[&d](const std::filesystem::path& changed) {
+				d.watcher_changes.push_back(changed);
+			},
+			{},
+			true,
+			[path](const std::filesystem::path& candidate) {
+				return search::is_indexed_path(path, candidate);
+			}
+		);
+	}
 	return {};
 }
 

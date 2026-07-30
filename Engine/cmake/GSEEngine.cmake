@@ -15,6 +15,8 @@
 # of these rather than a copy per consumer.
 
 set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "451f2fe2-a8a2-47c3-bc32-94786d8fc91b" CACHE STRING "" FORCE)
+set(CMAKE_CXX_MODULE_STD ON CACHE BOOL "" FORCE)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "" FORCE)
 
 get_filename_component(_gse_engine_root "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
 set(GSE_ENGINE_ROOT "${_gse_engine_root}" CACHE INTERNAL "Root of the GSE engine tree")
@@ -31,7 +33,7 @@ endif()
 
 function(gse_configure_compiler)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        add_compile_options(-freflection -Wno-changes-meaning -Wno-error=changes-meaning)
+        add_compile_options(-freflection -mavx2 -Wno-changes-meaning -Wno-error=changes-meaning)
     endif()
 endfunction()
 

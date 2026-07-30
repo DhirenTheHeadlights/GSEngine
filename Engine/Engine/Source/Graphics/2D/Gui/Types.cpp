@@ -44,7 +44,18 @@ auto gse::gui::draw_context::queue_sprite(renderer::sprite_command cmd) const ->
 	sprites.push_back(std::move(cmd));
 }
 
+auto gse::gui::draw_context::intern(const std::string_view text) const -> std::string_view {
+	if (text_pool_used == text_pool.size()) {
+		text_pool.emplace_back();
+	}
+	std::string& slot = text_pool[text_pool_used++];
+	slot.assign(text);
+	return slot;
+}
+
 auto gse::gui::draw_context::queue_text(renderer::text_command cmd) const -> void {
+	cmd.text = intern(cmd.text);
+
 	if (static_cast<std::uint8_t>(cmd.layer) < static_cast<std::uint8_t>(current_layer)) {
 		cmd.layer = current_layer;
 	}

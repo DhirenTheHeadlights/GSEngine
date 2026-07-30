@@ -96,7 +96,7 @@ auto gse::gui::nav_item::draw(const draw_context& ctx, const params& p, id& hot,
 	const float text_x = row_rect.left() + ctx.style.padding;
 	ctx.queue_text({
 		.font = fnt,
-		.text = std::string(p.text),
+		.text = p.text,
 		.position = { text_x, row_rect.center().y() + fnt->vertical_center_offset(ctx.style.font_size) },
 		.scale = ctx.style.font_size,
 		.color = text_color,

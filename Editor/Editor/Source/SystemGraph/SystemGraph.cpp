@@ -70,8 +70,9 @@ auto gse::ide::build_graph_from_file(const std::filesystem::path& path) -> graph
 	gse::binary_reader reader(in);
 	std::uint32_t magic = 0;
 	std::uint32_t version = 0;
-	reader & magic & version;
-	if (magic != gse::introspection::system_graph_magic || version != gse::introspection::system_graph_version) {
+	std::uint32_t epoch = 0;
+	reader & magic & version & epoch;
+	if (magic != gse::introspection::system_graph_magic || version != gse::introspection::system_graph_version || epoch != gse::archive_format_epoch) {
 		return graph_data{};
 	}
 	gse::introspection::system_graph snapshot;
@@ -554,7 +555,7 @@ auto gse::ide::draw_legend(const gse::gui::draw_context& ctx, const gse::rectf& 
 		});
 		ctx.queue_text({
 			.font = ctx.fonts.text,
-			.text = std::string(legend_rows[i].second),
+			.text = legend_rows[i].second,
 			.position = { panel.left() + pad + sw + 8.f, ry - row_h * 0.5f + ctx.fonts.text->vertical_center_offset(ctx.style.font_size) },
 			.scale = ctx.style.font_size,
 			.color = on ? ctx.style.color_text : ctx.style.color_text_secondary,
@@ -641,7 +642,7 @@ auto gse::ide::draw_detail_panel(gse::gui::builder& ui, const gse::rectf& panel,
 		});
 		ctx.queue_text({
 			.font = ctx.fonts.text,
-			.text = std::string(label),
+			.text = label,
 			.position = { cx + 6.f, chip.center().y() + ctx.fonts.text->vertical_center_offset(fs) },
 			.scale = fs,
 			.color = ctx.style.color_text,

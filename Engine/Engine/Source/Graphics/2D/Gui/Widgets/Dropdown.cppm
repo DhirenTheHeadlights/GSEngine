@@ -374,7 +374,7 @@ auto gse::gui::draw::dropdown_impl_in_rect(const draw_context& ctx, const id dro
 	);
 	symbol::draw(ctx, is_open ? symbol::chevron_up() : symbol::chevron_down(), arrow_rect, {
 		.color = ctx.style.color_text_secondary,
-		.scale = ctx.style.icon_scale,
+		.extent = ctx.style.icon_extent,
 	});
 
 	if (is_open && count > 0) {
@@ -471,7 +471,7 @@ auto gse::gui::draw::dropdown_impl_in_rect(const draw_context& ctx, const id dro
 
 			ctx.queue_text({
 				.font = fnt,
-				.text = std::string(get_option(i)),
+				.text = get_option(i),
 				.position = { option_rect.left() + ctx.style.padding, option_rect.center().y() + fnt->vertical_center_offset(ctx.style.font_size) },
 				.scale = ctx.style.font_size,
 				.color = ctx.style.color_text,
