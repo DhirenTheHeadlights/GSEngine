@@ -25,7 +25,7 @@ export namespace gse {
 			= asset_format::baked_dir<"Textures">{},
 			= asset_format::source_exts<".png", ".jpg", ".jpeg", ".tga", ".bmp">{},
 			= asset_format::magic<0x47544558>{},
-			= asset_format::version<1>{},
+			= asset_format::version<2>{},
 			= asset_format::meta_sidecar<>{}
 		]] baked {
 			std::uint32_t width = 0;
