@@ -109,6 +109,7 @@ jobs:
             mingw-w64-x86_64-libiconv mingw-w64-x86_64-mpc mingw-w64-x86_64-mpfr
             mingw-w64-x86_64-python mingw-w64-x86_64-windows-default-manifest
             mingw-w64-x86_64-winpthreads mingw-w64-x86_64-zlib mingw-w64-x86_64-zstd
+            mingw-w64-x86_64-tools-git
 
       - name: Build + package GCC ${{ needs.resolve.outputs.snapshot }}
         shell: pwsh
@@ -117,6 +118,22 @@ jobs:
             --snapshot ${{ needs.resolve.outputs.snapshot }} `
             --msys-root "${{ steps.msys2.outputs.msys2-location }}" `
             --jobs 4
+
+      - name: Verify plugin support
+        shell: pwsh
+        run: |
+          # A toolchain without this import library cannot host GCC plugins, which the editor's
+          # semantic index depends on. The failure is invisible at build time and surfaces later
+          # as every analyzed translation unit failing identically, so refuse to publish instead.
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path dist/gcc-trunk-windows-x64.zip))
+          $implib = $archive.Entries | Where-Object { $_.FullName -like '*/plugin/cc1plus.exe.a' }
+          $archive.Dispose()
+          if (-not $implib) {
+            Write-Error "cc1plus.exe.a is missing from the package: this toolchain cannot host GCC plugins. Refusing to publish."
+            exit 1
+          }
+          Write-Output "plugin import library present: $($implib.FullName)"
 
       - name: Compute artifact SHA256
         id: hash

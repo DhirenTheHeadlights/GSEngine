@@ -203,7 +203,12 @@ build() {
     LDFLAGS+=" -Wl,--large-address-aware"
     local _arch=pentium4
   else
+    # A GCC plugin on Windows is linked against an import library for the compiler proper, which
+    # can only be produced if cc1plus exports its symbols. --enable-plugin alone does not arrange
+    # that for this host: the shipped 20260727 toolchain had zero exports, so gse_tokens could not
+    # be built and every plugin-driven analysis failed at load time. Ask the linker explicitly.
     _extra_config+=("--enable-plugin")
+    LDFLAGS+=" -Wl,--export-all-symbols"
     local _arch=nocona
   fi
 
@@ -394,6 +399,14 @@ package_gcc() {
   install -m755 -t "${pkgdir}"${MINGW_PREFIX}/bin/ gcc/gcov{,-tool}.exe
   install -m755 -t "${pkgdir}"${MINGW_PREFIX}/${_libdir}/ \
     gcc/{cc1,cc1plus,collect2}.exe
+
+  # Import library that out-of-tree GCC plugins link against. install-plugin ships the plugin
+  # headers and gengtype but not this, and the exes above are hand-installed, so it has to be
+  # produced here from the export table that --export-all-symbols put into cc1plus.
+  install -dm755 "${pkgdir}"${MINGW_PREFIX}/${_libdir}/plugin/
+  gendef - gcc/cc1plus.exe > cc1plus.def
+  dlltool --input-def cc1plus.def --dllname cc1plus.exe \
+    --output-lib "${pkgdir}"${MINGW_PREFIX}/${_libdir}/plugin/cc1plus.exe.a
 
   make -C $CHOST/libgcc DESTDIR="${pkgdir}" install
   rm "${pkgdir}"/libgcc_*.dll
