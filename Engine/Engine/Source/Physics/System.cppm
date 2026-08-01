@@ -11,7 +11,6 @@ import gse.diag;
 import gse.save;
 import gse.log;
 import gse.gpu;
-import gse.assets;
 
 import gse.math;
 import gse.meta;
@@ -20,6 +19,7 @@ import gse.gpu;
 import :narrow_phase_collision;
 import :joint_drive_component;
 import :joint_spec;
+import :kinematic_target_component;
 import :motion_component;
 import :motor_component;
 import :muscle_component;
@@ -151,6 +151,7 @@ export namespace gse::physics {
 		std::uint32_t gpu_uploaded_joint_count = 0;
 		[[= gse::shared]] std::flat_map<id, std::uint32_t> id_to_body_index;
 		std::flat_map<id, joint_handle> joint_handles_by_entity;
+		std::flat_map<id, transform_component> kinematic_step_start;
 		std::vector<impulse_request> gpu_pending_impulses;
 
 		[[= gse::shared]] std::vector<std::uint8_t> body_airborne;
@@ -171,15 +172,16 @@ export namespace gse::physics {
 		data& d
 	) -> async::task<>;
 
-	[[= gse::system_run<>{}]]
+	[[= gse::system_run<>{}, = gse::runs_after_optional<^^gpu::context::data>{}]]
 	auto prepare(
 		context& ctx,
-		std::optional<shared_view<gpu::context::data>> gpu_s,
-		shared_view<asset::data> assets_s,
 		data& d,
 		write<joint_spec> specs,
 		read<muscle_component> muscles,
-		read<joint_drive_component> drives
+		read<joint_drive_component> drives,
+		read<kinematic_target_component> targets,
+		write<transform_component> transform,
+		write<motion_component> motion
 	) -> async::task<>;
 
 	[[= gse::system_run<1>{}]]
@@ -231,6 +233,14 @@ export namespace gse::physics {
 		shared_view<data> d,
 		id entity_id
 	) -> bool;
+
+	auto apply_kinematic_targets(
+		read<kinematic_target_component>& targets,
+		write<transform_component>& transform,
+		write<motion_component>& motion,
+		std::flat_map<id, transform_component>& step_start,
+		time_t<float, seconds> dt
+	) -> void;
 
 	auto collect_collision_objects(
 		write<transform_component>& transform,
