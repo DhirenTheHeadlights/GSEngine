@@ -468,14 +468,18 @@ auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_
 	}
 
 	if (!d.menu_stack.empty()) {
-		process_screen(d, input_st, viewport_size);
+		process_screen(d, input_st, viewport_size, ctx.channels);
 	}
 
 	ctx.channels.push<ui_focus_request>({
 		.focus = !d.menu_stack.empty() || d.manual_cursor,
 	});
 
+	const bool occluded = d.menu_stack.occludes();
 	for (const auto& content : ctx.read_channel<menu_content>()) {
+		if (occluded) {
+			continue;
+		}
 		process_menu(d, input_st, content.menu, content.layer, content.build);
 	}
 
@@ -860,7 +864,79 @@ auto gse::gui::end_menu(data& d) -> void {
 	d.current_menu = nullptr;
 }
 
-auto gse::gui::process_screen(data& d, const gse::input::state& input_state, const vec2f viewport_size) -> void {
+auto gse::gui::caption_button(builder& b, const rectf& rect, const std::string& key, const std::span<const symbol::stroke> glyph, const vec4f hover_color) -> bool {
+	const draw_context& ctx = b.ctx;
+	const id widget_id = ids::make(key);
+
+	const bool hovered = ctx.hovers(rect);
+	const bool released = ctx.input.mouse_button_released(mouse_button::button_1);
+
+	interaction::mark_hot(b.hot_widget_id, widget_id, hovered);
+	const bool activated = interaction::activate_on_click(b.active_widget_id, widget_id, hovered, ctx.mouse_pressed_for(rect), released);
+
+	const bool engaged = b.active_widget_id == widget_id || b.hot_widget_id == widget_id;
+
+	ctx.queue_sprite({
+		.rect = rect,
+		.color = engaged ? hover_color : ctx.style.color_input_background,
+		.texture = ctx.blank_texture,
+	});
+
+	symbol::draw(ctx, glyph, rect, {
+		.color = ctx.style.color_text,
+		.extent = ctx.style.icon_extent,
+	});
+
+	return activated;
+}
+
+auto gse::gui::draw_screen_caption(builder& b, screen& top, const rectf& bar_rect, const rectf& full_rect, channel_writer channels) -> void {
+	draw_context& ctx = b.ctx;
+	const style& sty = ctx.style;
+
+	ctx.clip_stack.push_back(bar_rect);
+
+	ctx.queue_sprite({
+		.rect = bar_rect,
+		.color = sty.color_input_background,
+		.texture = ctx.blank_texture,
+	});
+
+	const float button_w = bar_rect.height() * 1.5f;
+	const rectf close_rect = rectf::from_position_size({ bar_rect.right() - button_w, bar_rect.top() }, { button_w, bar_rect.height() });
+	const rectf max_rect = rectf::from_position_size({ bar_rect.right() - button_w * 2.f, bar_rect.top() }, { button_w, bar_rect.height() });
+	const rectf min_rect = rectf::from_position_size({ bar_rect.right() - button_w * 3.f, bar_rect.top() }, { button_w, bar_rect.height() });
+
+	const rectf content_rect = rectf::from_position_size(
+		{ bar_rect.left(), bar_rect.top() },
+		{ std::max(0.f, min_rect.left() - bar_rect.left()), bar_rect.height() }
+	);
+
+	const float screen_controls_width = top.draw_caption(b, content_rect);
+
+	if (caption_button(b, close_rect, "##screen_caption_close", symbol::close(), vec4f{ 0.78f, 0.22f, 0.22f, 1.f })) {
+		channels.push<window_close_request>({});
+	}
+	if (caption_button(b, max_rect, "##screen_caption_max", symbol::maximize(), sty.color_widget_hovered)) {
+		channels.push<window_toggle_maximize_request>({});
+	}
+	if (caption_button(b, min_rect, "##screen_caption_min", symbol::minimize(), sty.color_widget_hovered)) {
+		channels.push<window_minimize_request>({});
+	}
+
+	const caption_exclusion exclusion = top.caption_exclusion_range(ctx, full_rect);
+
+	channels.push<window_chrome_metrics_request>({
+		.caption_height = static_cast<int>(bar_rect.height()),
+		.controls_width = static_cast<int>(button_w * 3.f + screen_controls_width),
+		.resize_exclude_y0 = exclusion.y0,
+		.resize_exclude_y1 = exclusion.y1,
+	});
+
+	ctx.clip_stack.pop_back();
+}
+
+auto gse::gui::process_screen(data& d, const gse::input::state& input_state, const vec2f viewport_size, channel_writer channels) -> void {
 	if (!d.fstate.active) {
 		return;
 	}
@@ -871,7 +947,19 @@ auto gse::gui::process_screen(data& d, const gse::input::state& input_state, con
 	}
 
 	const style& sty = d.fstate.sty;
-	const rectf body_rect = top->body_rect(sty, viewport_size);
+	const rectf full_rect = top->body_rect(sty, viewport_size);
+	const bool wants_caption = top->wants_chrome();
+	const float caption_height = wants_caption ? sty.title_bar_height : 0.f;
+	const rectf caption_rect = rectf::from_position_size(
+		{ full_rect.left(), full_rect.top() },
+		{ full_rect.width(), caption_height }
+	);
+	const rectf body_rect = wants_caption
+		? rectf::from_position_size(
+			{ full_rect.left(), full_rect.top() - caption_height },
+			{ full_rect.width(), std::max(0.f, full_rect.height() - caption_height) }
+		)
+		: full_rect;
 
 	if (!d.screen_surface) {
 		d.screen_surface.emplace(
@@ -929,6 +1017,10 @@ auto gse::gui::process_screen(data& d, const gse::input::state& input_state, con
 		d.menu_stack.pop();
 		d.context = nullptr;
 		return;
+	}
+
+	if (wants_caption) {
+		draw_screen_caption(b, *top, caption_rect, full_rect, channels);
 	}
 
 	d.menu_stack.tick(b);
@@ -1234,7 +1326,7 @@ auto gse::gui::process_context_menu(data& d, const gse::input::state& input_stat
 	});
 	d.sprite_commands.push_back({
 		.rect = panel,
-		.color = { sty.color_menu_body.x(), sty.color_menu_body.y(), sty.color_menu_body.z(), 1.0f },
+		.color = { vec3f(sty.color_menu_body), 1.0f },
 		.texture = d.blank_texture,
 		.layer = layer,
 		.z_order = base_z + 1,

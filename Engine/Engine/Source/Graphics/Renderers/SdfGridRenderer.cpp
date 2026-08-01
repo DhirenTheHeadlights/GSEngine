@@ -4,6 +4,7 @@ import std;
 
 import :sdf_grid_renderer;
 import :atmosphere_renderer;
+import :depth_prepass_renderer;
 import :forward_renderer;
 import :camera_system;
 import :render_targets;
@@ -44,7 +45,7 @@ namespace gse::renderer::sdf_grid {
 		gpu::fragment_stage<"fs_main">,
 		gpu::push_constant<push_constants>,
 		gpu::rasterization<gpu::polygon_mode::fill, gpu::cull_mode::none>,
-		gpu::color_targets<gpu::color_format::hdr>,
+		gpu::color_targets<gpu::color_format::hdr, gpu::color_format::hdr>,
 		gpu::depth<true, true, gpu::compare_op::less_or_equal>,
 		gpu::blend<gpu::blend_preset::alpha>
 	>;
@@ -100,8 +101,9 @@ auto gse::renderer::sdf_grid::frame(const context& ctx, shared_view<gpu::context
 	auto rec = co_await gpu::pass<^^gse::renderer::sdf_grid::frame>(ctx)
 		.pipeline(d.pipeline)
 		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
+		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::velocity>()))
 		.depth(gpu::load_depth())
-		.after<^^forward::frame, ^^atmosphere::sky_raster_pass>();
+		.after<^^forward::frame, ^^atmosphere::sky_raster_pass, ^^depth_prepass::frame>();
 
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);

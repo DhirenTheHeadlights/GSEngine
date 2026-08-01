@@ -1,4 +1,4 @@
-export module gs:dev_spawn_system;
+export module sandbox:dev_spawn_system;
 
 import std;
 import gse;
@@ -7,16 +7,17 @@ import :piston;
 import :runtime_spawns;
 import :tumbler;
 
-export namespace gs {
+export namespace sandbox {
 	struct spawn_stress_request {};
 
 	struct spawn_joints_request {};
 }
 
-export namespace gs::dev_spawn {
+export namespace sandbox::dev_spawn {
 	struct [[= gse::system_state<"DevSpawn">{}]] data {
 		gse::actions::handle spawn_stress;
 		gse::actions::handle spawn_joints;
+		gse::actions::handle spawn_character;
 		bool bound = false;
 	};
 
@@ -26,6 +27,7 @@ export namespace gs::dev_spawn {
 		data& state,
 		gse::shared_view<gse::actions::data> actions_d,
 		gse::shared_view<gse::world_system::data> world_d,
+		gse::shared_view<gse::asset::data> assets_d,
 		gse::structural<gse::physics::transform_component>,
 		gse::structural<gse::physics::motion_component>,
 		gse::structural<gse::physics::collision_component>,
@@ -34,26 +36,30 @@ export namespace gs::dev_spawn {
 		gse::structural<gse::physics::joint_spec>,
 		gse::structural<gse::physics::muscle_component>,
 		gse::structural<gse::physics::joint_drive_component>,
-		gse::structural<gs::tumbler::component>,
-		gse::structural<gs::piston::component>
-	) -> gse::async::task<>; 
+		gse::structural<sandbox::tumbler::component>,
+		gse::structural<sandbox::piston::component>,
+		gse::structural<gse::physics::kinematic_target_component>,
+		gse::structural<gse::skeleton_instance_component>,
+		gse::structural<gse::clip_player_component>
+	) -> gse::async::task<>;
 }
 
-namespace gs {
+namespace sandbox {
 	auto active_scene_ptr(
 		gse::shared_view<gse::world_system::data> w
 	) -> gse::scene*;
 }
 
-auto gs::active_scene_ptr(const gse::shared_view<gse::world_system::data> w) -> gse::scene* {
+auto sandbox::active_scene_ptr(const gse::shared_view<gse::world_system::data> w) -> gse::scene* {
 	return w.active_scene_ptr;
 }
 
-auto gs::dev_spawn::run(
+auto sandbox::dev_spawn::run(
 	gse::context& ctx,
 	data& state,
 	const gse::shared_view<gse::actions::data> actions_d,
 	const gse::shared_view<gse::world_system::data> world_d,
+	const gse::shared_view<gse::asset::data> assets_d,
 	gse::structural<gse::physics::transform_component>,
 	gse::structural<gse::physics::motion_component>,
 	gse::structural<gse::physics::collision_component>,
@@ -62,12 +68,16 @@ auto gs::dev_spawn::run(
 	gse::structural<gse::physics::joint_spec>,
 	gse::structural<gse::physics::muscle_component>,
 	gse::structural<gse::physics::joint_drive_component>,
-	gse::structural<gs::tumbler::component>,
-	gse::structural<gs::piston::component>
+	gse::structural<sandbox::tumbler::component>,
+	gse::structural<sandbox::piston::component>,
+	gse::structural<gse::physics::kinematic_target_component>,
+	gse::structural<gse::skeleton_instance_component>,
+	gse::structural<gse::clip_player_component>
 ) -> gse::async::task<> {
 	if (!state.bound) {
 		state.spawn_stress = gse::actions::add<"Dev_Spawn_Stress">(ctx.channels, gse::key::f5);
 		state.spawn_joints = gse::actions::add<"Dev_Spawn_Joints">(ctx.channels, gse::key::f6);
+		state.spawn_character = gse::actions::add<"Dev_Spawn_Character">(ctx.channels, gse::key::f7);
 		state.bound = true;
 	}
 
@@ -84,6 +94,14 @@ auto gs::dev_spawn::run(
 	}
 	if (scene != nullptr && (key_joints || req_joints)) {
 		spawn_joint_test(*scene);
+	}
+	if (scene != nullptr && gse::actions::pressed(state.spawn_character, cs, actions_d)) {
+		sandbox::spawn_character(
+			*scene,
+			gse::asset::get<gse::skinned_model>(assets_d, "SkinnedModels/character.v3"),
+			gse::asset::get<gse::clip_asset>(assets_d, "Clips/mixamo.com"),
+			gse::vec3<gse::position>(0.f, 0.f, 0.f)
+		);
 	}
 
 	return {};

@@ -25,6 +25,8 @@ namespace gse::config {
 		std::filesystem::path user_config;
 		std::filesystem::path user_state;
 		std::filesystem::path projects;
+		std::filesystem::path project;
+		std::filesystem::path project_data;
 		std::filesystem::path logs;
 		std::filesystem::path cache;
 		std::filesystem::path crash;
@@ -189,6 +191,12 @@ auto gse::config::resolve() -> resolved {
 		projects = profile / "GSEProjects";
 	}
 
+	std::filesystem::path project = env_path("GSE_PROJECT_DIR");
+	if (project.empty()) {
+		const std::string project_text = manifest_value(text, "project");
+		project = project_text.empty() ? root : std::filesystem::path(project_text);
+	}
+
 	std::filesystem::path state_root = env_path("GSE_STATE_DIR");
 	if (state_root.empty()) {
 		const std::filesystem::path local = known_folder(win32::csidl_local_appdata);
@@ -210,6 +218,8 @@ auto gse::config::resolve() -> resolved {
 		.user_config = generic(config_root),
 		.user_state = generic(state_root),
 		.projects = generic(projects),
+		.project = generic(project),
+		.project_data = generic(project / ".gse" / "data"),
 		.logs = generic(state_root / "logs"),
 		.cache = generic(state_root / "cache"),
 		.crash = generic(state_root / "crash"),
@@ -265,6 +275,21 @@ auto gse::config::user_config_dir() -> const std::filesystem::path& {
 
 auto gse::config::projects_root() -> const std::filesystem::path& {
 	return table().projects;
+}
+
+auto gse::config::project_root() -> const std::filesystem::path& {
+	return table().project;
+}
+
+auto gse::config::project_data_dir() -> const std::filesystem::path& {
+	return table().project_data;
+}
+
+auto gse::config::project_data_path(const std::filesystem::path& relative) -> std::filesystem::path {
+	if (relative.is_absolute()) {
+		return generic(relative);
+	}
+	return generic(project_data_dir() / relative);
 }
 
 auto gse::config::user_state_dir() -> const std::filesystem::path& {

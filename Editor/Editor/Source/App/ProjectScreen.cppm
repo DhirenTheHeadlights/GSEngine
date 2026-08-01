@@ -10,6 +10,7 @@ export namespace gse::ide {
 	class project_screen : public gui::screen {
 	public:
 		explicit project_screen(
+			gse::channel_writer channels,
 			bool hub = false
 		);
 
@@ -21,6 +22,12 @@ export namespace gse::ide {
 		auto title() const -> std::string_view override;
 
 		auto captures_input() const -> bool override;
+
+		auto occludes() const -> bool override;
+
+		auto wants_chrome() const -> bool override;
+
+		auto on_pop() -> void override;
 
 		auto dismissable() const -> bool override;
 
@@ -62,20 +69,40 @@ export namespace gse::ide {
 			gui::builder& ui
 		) -> void;
 
+		struct engine_choice {
+			project::engine_entry entry;
+			std::string location;
+			bool current = false;
+		};
+
+		auto build_rebind(
+			gui::builder& ui
+		) -> void;
+
+
 		std::vector<entry> m_entries;
 		int m_selected = 0;
 		bool m_creating = false;
 		bool m_init_git = true;
+		int m_template = 0;
 		std::string m_new_name;
 		std::string m_error;
 		std::string m_error_name;
 		gui::text_input_state m_input;
 		bool m_dismiss = false;
 		bool m_hub = false;
+		gse::channel_writer m_channels;
+		bool m_launcher_sent = false;
+		float m_content_height = 0.f;
+		std::vector<engine_choice> m_engines;
+		int m_engine_selected = 0;
+		bool m_rebinding = false;
+		bool m_forced = false;
+		std::string m_engine_problem;
 	};
 }
 
-gse::ide::project_screen::project_screen(const bool hub) : m_hub(hub) {
+gse::ide::project_screen::project_screen(gse::channel_writer channels, const bool hub) : m_hub(hub), m_channels(std::move(channels)) {
 	const project::manifest& active = project::current();
 
 	for (const std::filesystem::path& path : project::known()) {
@@ -96,18 +123,51 @@ gse::ide::project_screen::project_screen(const bool hub) : m_hub(hub) {
 			.current = current
 		});
 	}
+
+	for (project::engine_entry& candidate : project::engines()) {
+		const bool current = active.valid && candidate.path == active.engine;
+		if (current) {
+			m_engine_selected = static_cast<int>(m_engines.size());
+		}
+		std::string location = candidate.path.generic_display_string();
+		m_engines.push_back({
+			.entry = std::move(candidate),
+			.location = std::move(location),
+			.current = current
+		});
+	}
+
+	if (active.valid && !active.engine_problem.empty()) {
+		m_engine_problem = active.engine_problem;
+		m_rebinding = true;
+		m_forced = true;
+	}
 }
 
 auto gse::ide::project_screen::title() const -> std::string_view {
-	return "Projects";
+	return m_hub ? "GSEditor" : "Projects";
 }
 
 auto gse::ide::project_screen::captures_input() const -> bool {
 	return true;
 }
 
+auto gse::ide::project_screen::occludes() const -> bool {
+	return m_hub;
+}
+
+auto gse::ide::project_screen::wants_chrome() const -> bool {
+	return m_hub;
+}
+
+auto gse::ide::project_screen::on_pop() -> void {
+	if (m_launcher_sent) {
+		m_channels.push<window_launcher_mode_request>({ .active = false });
+	}
+}
+
 auto gse::ide::project_screen::dismissable() const -> bool {
-	return !m_hub;
+	return !m_hub && !m_forced;
 }
 
 auto gse::ide::project_screen::should_dismiss() const -> bool {
@@ -115,8 +175,13 @@ auto gse::ide::project_screen::should_dismiss() const -> bool {
 }
 
 auto gse::ide::project_screen::body_rect(const gui::style& sty, const vec2f viewport_size) const -> rect_t<vec2f> {
-	const float w = std::min(viewport_size.x() * 0.5f, 720.f * sty.scale_factor);
-	const float h = std::min(viewport_size.y() * 0.5f, 420.f * sty.scale_factor);
+	if (m_hub) {
+		return rectf::from_position_size({ 0.f, viewport_size.y() }, viewport_size);
+	}
+
+	const float w = std::min(viewport_size.x(), 720.f * sty.scale_factor);
+	const float desired = m_content_height > 0.f ? m_content_height : 420.f * sty.scale_factor;
+	const float h = std::min(viewport_size.y(), desired);
 	return rectf::from_position_size(
 		{ (viewport_size.x() - w) * 0.5f, (viewport_size.y() + h) * 0.5f },
 		{ w, h }
@@ -126,14 +191,18 @@ auto gse::ide::project_screen::body_rect(const gui::style& sty, const vec2f view
 auto gse::ide::project_screen::draw_backdrop(gui::draw_context& ctx, const vec2f viewport_size) const -> void {
 	ctx.sprites.push_back({
 		.rect = rectf::from_position_size({ 0.f, viewport_size.y() }, viewport_size),
-		.color = { 0.f, 0.f, 0.f, 0.55f },
+		.color = m_hub ? vec4f{ vec3f(ctx.style.color_menu_body), 1.f } : vec4f{ 0.f, 0.f, 0.f, 0.55f },
 		.texture = ctx.blank_texture,
 		.layer = render_layer::overlay,
 	});
+
+	if (m_hub) {
+		return;
+	}
 	const rectf card = body_rect(ctx.style, viewport_size);
 	ctx.sprites.push_back({
 		.rect = card,
-		.color = { ctx.style.color_menu_body.x(), ctx.style.color_menu_body.y(), ctx.style.color_menu_body.z(), 1.f },
+		.color = { vec3f(ctx.style.color_menu_body), 1.f },
 		.texture = ctx.blank_texture,
 		.layer = render_layer::overlay,
 		.corner_radius = ctx.style.corner_radius_menu,
@@ -180,19 +249,46 @@ auto gse::ide::project_screen::build(gui::builder& ui, gui::nav&) -> void {
 		{ action_w, action_h }
 	);
 
+	const bool listing = !m_creating && !m_rebinding;
+	const float engine_w = ctx.fonts.text->width("Engine", sty.font_size) + pad * 2.f;
+	const rectf engine_rect = rectf::from_position_size(
+		{ action_rect.left() - pad - engine_w, action_rect.top() },
+		{ engine_w, action_h }
+	);
+
+	const float open_w = ctx.fonts.text->width("Open", sty.font_size) + pad * 2.f;
+	const rectf open_rect = rectf::from_position_size(
+		{ engine_rect.left() - pad - open_w, engine_rect.top() },
+		{ open_w, action_h }
+	);
+
+	const float title_limit = listing ? open_rect.left() : action_rect.left();
+
 	ctx.queue_text({
 		.font = ctx.fonts.text,
-		.text = m_creating ? std::string("New Project") : std::string(title()),
+		.text = m_creating ? std::string_view("New Project") : m_rebinding ? std::string_view("Engine") : std::string_view("Projects"),
 		.position = { header.left(), header.center().y() + ctx.fonts.text->vertical_center_offset(sty.font_size) },
 		.scale = sty.font_size,
 		.color = sty.color_text_secondary,
 		.clip_rect = rectf::from_position_size(
 			{ header.left(), header.top() },
-			{ std::max(0.f, action_rect.left() - pad - header.left()), header.height() }
+			{ std::max(0.f, title_limit - pad - header.left()), header.height() }
 		),
 	});
 
-	if (!m_creating && gui::draw::button_in_rect(ctx, "New Project", "##project_new", action_rect, ui.hot_widget_id, ui.active_widget_id)) {
+	if (listing && gui::draw::button_in_rect(ctx, "Open", "##project_open", open_rect, ui.hot_widget_id, ui.active_widget_id)) {
+		m_channels.push<window_open_file_request>({
+			.title = "Open Project",
+			.filter_name = "GSE Project",
+			.filter_pattern = "*.gseproj",
+		});
+	}
+
+	if (listing && project::current().valid && gui::draw::button_in_rect(ctx, "Engine", "##project_engine", engine_rect, ui.hot_widget_id, ui.active_widget_id)) {
+		m_rebinding = true;
+	}
+
+	if (!m_creating && !m_rebinding && gui::draw::button_in_rect(ctx, "New Project", "##project_new", action_rect, ui.hot_widget_id, ui.active_widget_id)) {
 		m_creating = true;
 		m_new_name.clear();
 		m_error.clear();
@@ -209,11 +305,112 @@ auto gse::ide::project_screen::build(gui::builder& ui, gui::nav&) -> void {
 
 	ctx.layout_cursor = { card.left() + pad, header.bottom() - pad };
 
+	const float row_stride = ctx.fonts.text->line_height(sty.font_size) + pad * 1.5f;
+	const std::size_t rows = m_creating
+		? 4u + project::templates().size()
+		: m_rebinding
+			? m_engines.size() + 1u
+			: m_entries.size();
+	m_content_height = (m_hub ? sty.title_bar_height : 0.f) + header.height() + pad * 3.f + row_stride * static_cast<float>(std::max<std::size_t>(rows, 1u));
+
+	if (m_hub && !m_launcher_sent) {
+		m_channels.push<window_launcher_mode_request>({
+			.active = true,
+			.width = static_cast<int>(720.f * sty.scale_factor + pad * 4.f),
+			.height = static_cast<int>(m_content_height + pad * 4.f),
+		});
+		m_launcher_sent = true;
+	}
+
 	if (m_creating) {
 		build_create(ui);
 		return;
 	}
+	if (m_rebinding) {
+		build_rebind(ui);
+		return;
+	}
 	build_list(ui);
+}
+
+auto gse::ide::project_screen::build_rebind(gui::builder& ui) -> void {
+	auto& ctx = ui.ctx;
+	const gui::style& sty = ctx.style;
+	const rectf card = ctx.current_menu->rect;
+	const float pad = sty.padding;
+
+	const project::manifest& active = project::current();
+
+	if (ctx.input.key_pressed(key::escape)) {
+		m_rebinding = false;
+		m_forced = false;
+		return;
+	}
+
+	std::string formatted;
+	std::string_view hint;
+	if (!m_engine_problem.empty()) {
+		hint = m_engine_problem;
+	}
+	else if (m_engines.empty()) {
+		hint = "No engines registered yet.";
+	}
+	else {
+		formatted = std::format("{} builds against this engine.", active.name);
+		hint = formatted;
+	}
+
+	ctx.queue_text({
+		.font = ctx.fonts.text,
+		.text = hint,
+		.position = { card.left() + pad, ctx.layout_cursor.y() - ctx.fonts.text->line_height(sty.font_size) * 0.5f },
+		.scale = sty.font_size,
+		.color = m_engine_problem.empty() ? sty.color_text_secondary : vec4f{ 0.86f, 0.36f, 0.32f, 1.f },
+		.clip_rect = rectf::from_position_size(
+			{ card.left() + pad, ctx.layout_cursor.y() },
+			{ card.width() - pad * 2.f, ctx.fonts.text->line_height(sty.font_size) + pad }
+		),
+	});
+
+	ctx.layout_cursor = { card.left() + pad, ctx.layout_cursor.y() - ctx.fonts.text->line_height(sty.font_size) - pad };
+
+	if (!m_engines.empty()) {
+		if (ctx.input.key_pressed(key::down)) {
+			m_engine_selected = std::min(m_engine_selected + 1, static_cast<int>(m_engines.size()) - 1);
+		}
+		if (ctx.input.key_pressed(key::up)) {
+			m_engine_selected = std::max(m_engine_selected - 1, 0);
+		}
+	}
+
+	float widest_name = 0.f;
+	for (const engine_choice& item : m_engines) {
+		widest_name = std::max(widest_name, ctx.fonts.text->width(item.entry.name, sty.font_size));
+	}
+	const float detail_column = pad * 3.f + sty.accent_bar_width + widest_name;
+
+	const bool submit = ctx.input.key_pressed(key::enter) || ctx.input.key_pressed(key::kp_enter);
+
+	for (const auto& [index, item] : std::views::enumerate(m_engines)) {
+		const bool chosen = ui.draw<gui::selectable>({
+			.text = item.entry.name,
+			.detail = item.location,
+			.key = item.entry.name,
+			.selected = m_engine_selected == static_cast<int>(index),
+			.align = gui::selectable_align::left,
+			.detail_column = detail_column,
+		});
+		if (chosen || (submit && m_engine_selected == static_cast<int>(index))) {
+			if (!active.valid || item.current) {
+				m_rebinding = false;
+				return;
+			}
+			project::bind_engine(active.file, item.entry);
+			m_dismiss = true;
+			open(active.file);
+			return;
+		}
+	}
 }
 
 auto gse::ide::project_screen::build_list(gui::builder& ui) -> void {
@@ -313,6 +510,19 @@ auto gse::ide::project_screen::build_create(gui::builder& ui) -> void {
 
 	ctx.layout_cursor = { card.left() + pad, input_rect.bottom() - pad * 2.f - ctx.fonts.text->line_height(sty.font_size) };
 
+	for (const auto& [index, entry] : std::views::enumerate(project::templates())) {
+		if (ui.draw<gui::selectable>({
+			.text = entry.label,
+			.detail = entry.detail,
+			.key = entry.id,
+			.selected = m_template == static_cast<int>(index),
+			.align = gui::selectable_align::left,
+			.detail_column = pad * 3.f + sty.accent_bar_width + ctx.fonts.text->width("Blank", sty.font_size),
+		})) {
+			m_template = static_cast<int>(index);
+		}
+	}
+
 	ui.draw<gui::toggle>({
 		.name = "Initialize Git Repository",
 		.value = m_init_git,
@@ -334,7 +544,11 @@ auto gse::ide::project_screen::build_create(gui::builder& ui) -> void {
 	const bool valid = problem.empty();
 
 	if ((gui::draw::button_in_rect(ctx, "Create", "##project_create_confirm", create_rect, ui.hot_widget_id, ui.active_widget_id, valid) || submit) && valid) {
-		const std::expected<std::filesystem::path, std::string> created = project::create(m_new_name, gse::config::projects_root());
+		const std::expected<std::filesystem::path, std::string> created = project::create(
+			m_new_name,
+			gse::config::projects_root(),
+			project::templates()[static_cast<std::size_t>(m_template)].id
+		);
 		if (!created) {
 			m_error = created.error();
 			m_error_name = m_new_name;

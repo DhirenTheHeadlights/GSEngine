@@ -204,7 +204,7 @@ auto gse::gpu::shader_search_paths() -> const std::vector<std::string>& {
 	static const std::vector<std::string> paths = [] {
 		const auto shader_root = config::resource_path() / "Shaders";
 		std::vector<std::string> result;
-		result.push_back(shader_root.string());
+		result.push_back(shader_root.native_encoded_string());
 		for (const auto& e : std::filesystem::recursive_directory_iterator(shader_root)) {
 			if (!e.is_directory()) {
 				continue;
@@ -219,7 +219,7 @@ auto gse::gpu::shader_search_paths() -> const std::vector<std::string>& {
 			if (in_bodies) {
 				continue;
 			}
-			result.push_back(e.path().string());
+			result.push_back(e.path().native_encoded_string());
 		}
 		return result;
 	}();

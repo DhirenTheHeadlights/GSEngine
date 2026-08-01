@@ -9,6 +9,7 @@ module;
 #include <tlhelp32.h>
 #include <shlobj.h>
 #include <shellapi.h>
+#include <commdlg.h>
 #endif
 
 #define GLFW_INCLUDE_NONE
@@ -243,6 +244,31 @@ export namespace gse::win32 {
 
 	auto valid_handle(HANDLE handle) -> bool {
 		return handle != nullptr && handle != INVALID_HANDLE_VALUE;
+	}
+
+	auto open_file_dialog(
+		HWND owner,
+		const wchar_t* title,
+		const wchar_t* filter,
+		wchar_t* out_path,
+		DWORD out_capacity
+	) -> bool {
+		if (out_path == nullptr || out_capacity == 0) {
+			return false;
+		}
+		out_path[0] = L'\0';
+
+		OPENFILENAMEW ofn{
+			.lStructSize = sizeof(OPENFILENAMEW),
+			.hwndOwner = owner,
+			.lpstrFilter = filter,
+			.lpstrFile = out_path,
+			.nMaxFile = out_capacity,
+			.lpstrTitle = title,
+			.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_EXPLORER,
+		};
+
+		return GetOpenFileNameW(&ofn) != 0;
 	}
 }
 #endif

@@ -1,9 +1,9 @@
-export module gs:tumbler;
+export module sandbox:tumbler;
 
 import std;
 import gse;
 
-export namespace gs::tumbler {
+export namespace sandbox::tumbler {
 	struct component {
 		gse::vec3<gse::position> center;
 		gse::vec3f axis = gse::axis_z;
@@ -13,19 +13,18 @@ export namespace gs::tumbler {
 	};
 }
 
-export namespace gs::tumbler {
+export namespace sandbox::tumbler {
 	struct [[= gse::system_state<"Tumbler">{}]] data {};
 
 	[[= gse::system_run<>{}]]
 	auto run(
 		gse::context& ctx,
 		gse::write<component> tumblers,
-		gse::write<gse::physics::transform_component> transforms,
-		gse::write<gse::physics::motion_component> motions
+		gse::write<gse::physics::kinematic_target_component> targets
 	) -> gse::async::task<>;
 }
 
-auto gs::tumbler::run(gse::context& ctx, gse::write<component> tumblers, gse::write<gse::physics::transform_component> transforms, gse::write<gse::physics::motion_component> motions) -> gse::async::task<> {
+auto sandbox::tumbler::run(gse::context& ctx, gse::write<component> tumblers, gse::write<gse::physics::kinematic_target_component> targets) -> gse::async::task<> {
 	const int steps = gse::system_clock::fixed_steps_this_frame();
 	const auto step_dt = gse::system_clock::fixed_dt<gse::time>();
 	const float frame_step_count = static_cast<float>(steps);
@@ -33,26 +32,15 @@ auto gs::tumbler::run(gse::context& ctx, gse::write<component> tumblers, gse::wr
 	const auto tumbler_ids = tumblers.owner_ids();
 	for (std::size_t i = 0; i < tumblers.size(); ++i) {
 		auto& t = tumblers[i];
-		const auto eid = tumbler_ids[i];
-		auto* motion = motions.find(eid);
-		auto* transform = transforms.find(eid);
-		if (!motion || !transform) {
+		auto* target = targets.find(tumbler_ids[i]);
+		if (!target) {
 			continue;
 		}
 
 		const gse::quat world_rot(t.axis, t.phase);
-		const auto world_offset = gse::rotate_vector(world_rot, t.local_offset);
-		const gse::vec3<gse::angular_velocity> ang_vel(
-			t.axis.x() * t.angular_speed,
-			t.axis.y() * t.angular_speed,
-			t.axis.z() * t.angular_speed
-		);
-		const auto lin_vel = cross(ang_vel, world_offset) / gse::rad;
 
-		transform->position = t.center + world_offset;
-		transform->orientation = world_rot;
-		motion->current_velocity = lin_vel;
-		motion->angular_velocity = ang_vel;
+		target->position = t.center + gse::rotate_vector(world_rot, t.local_offset);
+		target->orientation = world_rot;
 
 		t.phase += t.angular_speed * step_dt * frame_step_count;
 	}

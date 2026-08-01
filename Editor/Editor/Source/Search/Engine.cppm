@@ -25,6 +25,7 @@ export namespace gse::ide::search {
 			std::vector<result>& out,
 			const std::atomic<bool>* cancelled = nullptr
 		) -> void;
+
 		static auto submit(
 			const std::shared_ptr<query_buffer>& out,
 			std::shared_ptr<const search_snapshot> snapshot,

@@ -584,14 +584,6 @@ auto gse::vulkan::video_encoder::encode_frame(const std::uint32_t frame_slot, co
 	});
 
 	const bool is_keyframe = (m_frame_number % m_gop_size) == 0;
-	if (is_keyframe) {
-		log::println(
-			log::category::vulkan,
-			"encode_frame: scheduling keyframe at m_frame_number={} slot={}",
-			m_frame_number,
-			frame_slot
-		);
-	}
 	const auto dpb_index = static_cast<std::uint32_t>(m_frame_number % 2);
 	const auto ref_index = dpb_index ^ 1u;
 	auto& target_dpb = m_dpb[dpb_index];

@@ -1,11 +1,11 @@
-export module gs:main_menu_screen;
+export module sandbox:main_menu_screen;
 
 import std;
 import gse;
 
 import :network_screen;
 
-export namespace gs {
+export namespace sandbox {
 	class main_menu_screen : public gse::gui::screen {
 	public:
 		main_menu_screen(
@@ -50,23 +50,23 @@ export namespace gs {
 	};
 }
 
-gs::main_menu_screen::main_menu_screen(const gse::shared_view<gse::world_system::data> world, const gse::shared_view<gse::network::data> net, const gse::save::registry& save_reg, gse::channel_writer channels)
+sandbox::main_menu_screen::main_menu_screen(const gse::shared_view<gse::world_system::data> world, const gse::shared_view<gse::network::data> net, const gse::save::registry& save_reg, gse::channel_writer channels)
 	: m_world(world), m_net(net), m_save_reg(&save_reg), m_channels(std::move(channels)) {
 }
 
-auto gs::main_menu_screen::on_push() -> void {
+auto sandbox::main_menu_screen::on_push() -> void {
 	m_opened_at.reset();
 }
 
-auto gs::main_menu_screen::title() const -> std::string_view {
+auto sandbox::main_menu_screen::title() const -> std::string_view {
 	return "Menu";
 }
 
-auto gs::main_menu_screen::dismissable() const -> bool {
+auto sandbox::main_menu_screen::dismissable() const -> bool {
 	return m_world.active_scene.has_value();
 }
 
-auto gs::main_menu_screen::eased_progress() const -> float {
+auto sandbox::main_menu_screen::eased_progress() const -> float {
 	const float elapsed_s = m_opened_at.elapsed<float>().as<gse::seconds>();
 	const float duration_s = slide_duration.as<gse::seconds>();
 	const float t = std::clamp(elapsed_s / duration_s, 0.f, 1.f);
@@ -74,7 +74,7 @@ auto gs::main_menu_screen::eased_progress() const -> float {
 	return 1.0f - inv * inv * inv;
 }
 
-auto gs::main_menu_screen::body_rect(const gse::gui::style& sty, const gse::vec2f viewport_size) const -> gse::rect_t<gse::vec2f> {
+auto sandbox::main_menu_screen::body_rect(const gse::gui::style& sty, const gse::vec2f viewport_size) const -> gse::rect_t<gse::vec2f> {
 	const float width = std::min(sty.side_panel_max_width, viewport_size.x() * 0.35f);
 	const float eased = eased_progress();
 	const float left = -width * (1.0f - eased);
@@ -84,7 +84,7 @@ auto gs::main_menu_screen::body_rect(const gse::gui::style& sty, const gse::vec2
 	);
 }
 
-auto gs::main_menu_screen::draw_backdrop(gse::gui::draw_context& ctx, const gse::vec2f viewport_size) const -> void {
+auto sandbox::main_menu_screen::draw_backdrop(gse::gui::draw_context& ctx, const gse::vec2f viewport_size) const -> void {
 	const gse::rect_t<gse::vec2f> full =
 		gse::rect_t<gse::vec2f>::from_position_size(
 			{ 0.f, viewport_size.y() },
@@ -127,7 +127,7 @@ auto gs::main_menu_screen::draw_backdrop(gse::gui::draw_context& ctx, const gse:
 	});
 }
 
-auto gs::main_menu_screen::build(gse::gui::builder& ui, gse::gui::nav&) -> void {
+auto sandbox::main_menu_screen::build(gse::gui::builder& ui, gse::gui::nav&) -> void {
 	const auto& world = m_world;
 	const bool scene_active = world.active_scene.has_value();
 

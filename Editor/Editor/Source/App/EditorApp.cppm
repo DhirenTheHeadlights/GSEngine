@@ -137,19 +137,28 @@ auto gse::ide::editor_app::run(
 				return std::make_unique<editor_screen>(channels, index);
 			},
 		});
-		if (!project::current().valid) {
+		const project::manifest& active = project::current();
+		if (!active.valid || !active.requested || !active.engine_problem.empty()) {
 			ctx.channels.push<gui::push_screen_request>({
-				.factory = [] {
-					return std::make_unique<project_screen>(true);
+				.factory = [channels = ctx.channels] {
+					return std::make_unique<project_screen>(channels, true);
 				},
 			});
 		}
 		d.screen_pushed = true;
 	}
+	for (const auto& res : ctx.read_channel<window_open_file_result>()) {
+		if (res.path.empty() || res.path.extension() != ".gseproj") {
+			continue;
+		}
+		gse::app::relaunch_on_exit(gse::config::executable_file(), res.path.parent_path(), { res.path });
+		gse::shutdown();
+	}
+
 	for ([[maybe_unused]] const auto& req : ctx.read_channel<toggle_project_switcher_request>()) {
 		ctx.channels.push<gui::push_screen_request>({
-			.factory = [] {
-				return std::make_unique<project_screen>();
+			.factory = [channels = ctx.channels] {
+				return std::make_unique<project_screen>(channels);
 			},
 		});
 	}

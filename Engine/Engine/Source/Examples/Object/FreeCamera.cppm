@@ -158,8 +158,7 @@ auto gse::free_camera::system::update(context& ctx, data& d, const shared_view<a
 		}
 
 		const bool is_active_view = cam_s.active_controller_entity == owner_id;
-		const bool left_held = in.mouse_button_held(mouse_button::button_1);
-		if (is_active_view && !cam_s.ui_focus && left_held) {
+		if (is_active_view && !cam_s.ui_focus) {
 			const auto delta = in.mouse_delta();
 			c.yaw -= degrees(delta.x() * c.mouse_sensitivity);
 			c.pitch -= degrees(delta.y() * c.mouse_sensitivity);

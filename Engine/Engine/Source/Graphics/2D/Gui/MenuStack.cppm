@@ -7,9 +7,15 @@ import gse.meta;
 
 import :builder;
 import :types;
+import :font;
 
 export namespace gse::gui {
 	struct screen;
+
+	struct caption_exclusion {
+		int y0 = 0;
+		int y1 = 0;
+	};
 
 	struct nav {
 		template <typename T, typename... Args>
@@ -56,8 +62,24 @@ export namespace gse::gui {
 			return true;
 		}
 
+		virtual auto occludes() const -> bool {
+			return false;
+		}
+
 		virtual auto wants_chrome() const -> bool {
 			return false;
+		}
+
+		virtual auto draw_caption(
+			builder& b,
+			const rectf& area
+		) -> float;
+
+		virtual auto caption_exclusion_range(
+			const draw_context& ctx,
+			const rectf& full_rect
+		) const -> caption_exclusion {
+			return {};
 		}
 
 		virtual auto dismissable() const -> bool {
@@ -111,6 +133,8 @@ export namespace gse::gui {
 
 		[[nodiscard]] auto captures_input() const -> bool;
 
+		[[nodiscard]] auto occludes() const -> bool;
+
 		auto tick(
 			builder& ui
 		) -> void;
@@ -163,6 +187,28 @@ auto gse::gui::popout_category_from_tag(const std::string_view tag) -> std::stri
 		return {};
 	}
 	return tag.substr(popout_menu_prefix.size());
+}
+
+auto gse::gui::screen::draw_caption(builder& b, const rectf& area) -> float {
+	const draw_context& ctx = b.ctx;
+	const std::string_view label = title();
+	if (label.empty()) {
+		return 0.f;
+	}
+
+	ctx.queue_text({
+		.font = ctx.fonts.text,
+		.text = label,
+		.position = {
+			area.left() + ctx.style.padding,
+			area.center().y() + ctx.fonts.text->vertical_center_offset(ctx.style.font_size)
+		},
+		.scale = ctx.style.font_size,
+		.color = ctx.style.color_text_secondary,
+		.clip_rect = area,
+	});
+
+	return 0.f;
 }
 
 auto gse::gui::screen::body_rect(const style& sty, const vec2f viewport_size) const -> rectf {
@@ -265,6 +311,10 @@ auto gse::gui::menu_stack_state::empty() const -> bool {
 
 auto gse::gui::menu_stack_state::size() const -> std::size_t {
 	return m_stack.size();
+}
+
+auto gse::gui::menu_stack_state::occludes() const -> bool {
+	return !m_stack.empty() && m_stack.back()->occludes();
 }
 
 auto gse::gui::menu_stack_state::captures_input() const -> bool {

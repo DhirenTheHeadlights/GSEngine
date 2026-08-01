@@ -92,7 +92,7 @@ auto gse::gui::section::draw(const draw_context& ctx, params p, id&, id&, id&) -
 			{ icon_w, action_height }
 		);
 
-		const bool hovered = action_rect.contains(ctx.input.mouse_position()) && ctx.input_available();
+		const bool hovered = ctx.hovers(action_rect);
 		const vec4f bg = hovered ? sty.color_widget_hovered : sty.color_widget_background;
 
 		ctx.queue_sprite({

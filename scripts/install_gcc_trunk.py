@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import tempfile
 import urllib.request
@@ -66,12 +67,53 @@ def verify_sha256(path: Path, expected: str) -> None:
         raise SystemExit(f"SHA256 mismatch: got {actual}, expected {expected}")
 
 
+def _clear_readonly(func, path, _exc) -> None:
+    # Windows refuses to unlink a read-only file, and the toolchain ships plenty of them
+    # (share/zoneinfo). Plain rmtree therefore dies partway through a delete.
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
+def force_remove_tree(path: Path) -> None:
+    if path.exists():
+        shutil.rmtree(path, onexc=_clear_readonly)
+
+
 def extract(zip_path: Path, dest: Path) -> None:
+    # Never delete the installed toolchain before its replacement is on disk. Deleting first
+    # means any failure mid-delete leaves the machine with no compiler at all, and --force made
+    # that the normal path: one read-only file aborted rmtree and took the whole toolchain with
+    # it. Unpack alongside, then swap, so a failure before the swap changes nothing.
+    staging = dest.with_name(dest.name + ".incoming")
+    previous = dest.with_name(dest.name + ".previous")
+
+    force_remove_tree(staging)
+    force_remove_tree(previous)
+
+    staging.mkdir(parents=True, exist_ok=True)
+    try:
+        with zipfile.ZipFile(zip_path) as z:
+            z.extractall(staging)
+    except BaseException:
+        force_remove_tree(staging)
+        raise
+
     if dest.exists():
-        shutil.rmtree(dest)
-    dest.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(zip_path) as z:
-        z.extractall(dest)
+        dest.rename(previous)
+    try:
+        staging.rename(dest)
+    except BaseException:
+        # Put the old tree back rather than leaving the install path empty.
+        if previous.exists() and not dest.exists():
+            previous.rename(dest)
+        raise
+
+    try:
+        force_remove_tree(previous)
+    except OSError as exc:
+        # The new toolchain is already in place, so this is cosmetic: say so and carry on
+        # rather than failing an install that actually succeeded.
+        print(f"Warning: installed, but could not remove {previous}: {exc}")
 
 
 def link_current(tag: str) -> Path:
@@ -85,6 +127,12 @@ def link_current(tag: str) -> Path:
         # rmdir removes a junction (or empty dir) without touching the target.
         if link.exists() or os.path.islink(link):
             subprocess.run(["cmd", "/c", "rmdir", str(link)], check=False)
+        # rmdir leaves a real directory in place ("The directory is not empty"), which is what
+        # `current` becomes if anything ever copied a toolchain there instead of linking it.
+        # mklink would then fail with a confusing "already exists", so clear it explicitly.
+        if link.exists():
+            print(f"{link} is a real directory, not a junction; replacing it")
+            force_remove_tree(link)
         subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], check=True)
     else:
         if link.is_symlink() or link.exists():

@@ -1,66 +1,66 @@
 cmake_minimum_required(VERSION 4.2)
 
-project(GoonSquadProject)
+project(SandboxProject)
 
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(GAME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Game")
-set(GAME_SRC "${GAME_DIR}/Source")
-set(MAIN_CPP "${GAME_SRC}/Main.cpp")
-set(SERVER_MAIN_CPP "${GAME_SRC}/ServerMain.cpp")
+set(SANDBOX_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Sandbox")
+set(SANDBOX_SRC "${SANDBOX_DIR}/Source")
+set(MAIN_CPP "${SANDBOX_SRC}/Main.cpp")
+set(SERVER_MAIN_CPP "${SANDBOX_SRC}/ServerMain.cpp")
 
-file(GLOB_RECURSE GAME_MODULES CONFIGURE_DEPENDS "${GAME_DIR}/*.cppm")
+file(GLOB_RECURSE SANDBOX_MODULES CONFIGURE_DEPENDS "${SANDBOX_DIR}/*.cppm")
 
-file(GLOB_RECURSE GAME_IMPLS CONFIGURE_DEPENDS "${GAME_DIR}/*.cpp")
-list(REMOVE_ITEM GAME_IMPLS "${MAIN_CPP}")
-list(REMOVE_ITEM GAME_IMPLS "${SERVER_MAIN_CPP}")
+file(GLOB_RECURSE SANDBOX_IMPLS CONFIGURE_DEPENDS "${SANDBOX_DIR}/*.cpp")
+list(REMOVE_ITEM SANDBOX_IMPLS "${MAIN_CPP}")
+list(REMOVE_ITEM SANDBOX_IMPLS "${SERVER_MAIN_CPP}")
 
-# A .cpp that declares an implementation partition (module gs:y;) provides a
+# A .cpp that declares an implementation partition (module sandbox:y;) provides a
 # module and must live in a CXX_MODULES file set; a plain implementation unit
-# (module gs;) or global-module .cpp stays an ordinary source.
-set(GAME_MODULE_IMPLS "")
-set(GAME_PLAIN_IMPLS "")
-foreach(_impl IN LISTS GAME_IMPLS)
-    file(STRINGS "${_impl}" _part_decl REGEX "^module gs:[A-Za-z_0-9]+ *;" LIMIT_COUNT 1)
+# (module sandbox;) or global-module .cpp stays an ordinary source.
+set(SANDBOX_MODULE_IMPLS "")
+set(SANDBOX_PLAIN_IMPLS "")
+foreach(_impl IN LISTS SANDBOX_IMPLS)
+    file(STRINGS "${_impl}" _part_decl REGEX "^module sandbox:[A-Za-z_0-9]+ *;" LIMIT_COUNT 1)
     if(_part_decl)
-        list(APPEND GAME_MODULE_IMPLS "${_impl}")
+        list(APPEND SANDBOX_MODULE_IMPLS "${_impl}")
     else()
-        list(APPEND GAME_PLAIN_IMPLS "${_impl}")
+        list(APPEND SANDBOX_PLAIN_IMPLS "${_impl}")
     endif()
 endforeach()
 
-add_library(GoonSquadLib)
+add_library(SandboxLib)
 
-target_sources(GoonSquadLib
+target_sources(SandboxLib
     PUBLIC
         FILE_SET cxx_modules TYPE CXX_MODULES
-        BASE_DIRS "${GAME_DIR}"
-        FILES ${GAME_MODULES}
+        BASE_DIRS "${SANDBOX_DIR}"
+        FILES ${SANDBOX_MODULES}
 )
 
-if(GAME_MODULE_IMPLS)
-    target_sources(GoonSquadLib
+if(SANDBOX_MODULE_IMPLS)
+    target_sources(SandboxLib
         PRIVATE
             FILE_SET cxx_module_impls TYPE CXX_MODULES
-            BASE_DIRS "${GAME_DIR}"
-            FILES ${GAME_MODULE_IMPLS}
+            BASE_DIRS "${SANDBOX_DIR}"
+            FILES ${SANDBOX_MODULE_IMPLS}
     )
 endif()
 
-if(GAME_PLAIN_IMPLS)
-    target_sources(GoonSquadLib PRIVATE ${GAME_PLAIN_IMPLS})
+if(SANDBOX_PLAIN_IMPLS)
+    target_sources(SandboxLib PRIVATE ${SANDBOX_PLAIN_IMPLS})
 endif()
 
-target_include_directories(GoonSquadLib PUBLIC
+target_include_directories(SandboxLib PUBLIC
     "${INCLUDE_DIR}"
-    "${CMAKE_CURRENT_BINARY_DIR}/Game"
+    "${CMAKE_CURRENT_BINARY_DIR}/Sandbox"
 )
 
-target_link_libraries(GoonSquadLib PRIVATE Engine)
+target_link_libraries(SandboxLib PRIVATE Engine)
 
-add_executable(GoonSquad "${MAIN_CPP}")
-target_link_libraries(GoonSquad PRIVATE GoonSquadLib Engine)
+add_executable(Sandbox "${MAIN_CPP}")
+target_link_libraries(Sandbox PRIVATE SandboxLib Engine)
 
 # GCC-trunk's C++ modules codegen on MinGW (PE/COFF) emits vague-linkage function-local statics
 # as STRONG symbols in every importing TU instead of COMDAT-folding them, so the final link sees
@@ -70,29 +70,29 @@ target_link_libraries(GoonSquad PRIVATE GoonSquadLib Engine)
 # makes ld keep the first (identical) copy, i.e. it performs the COMDAT fold GCC failed to emit.
 # Safe here; remove only once the GCC modules vague-linkage bug is fixed.
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND WIN32)
-    target_link_options(GoonSquad PRIVATE "-Wl,--allow-multiple-definition")
+    target_link_options(Sandbox PRIVATE "-Wl,--allow-multiple-definition")
 endif()
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     get_filename_component(_gcc_bin_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
     get_filename_component(_gcc_root "${_gcc_bin_dir}" DIRECTORY)
-    set_target_properties(GoonSquad PROPERTIES
+    set_target_properties(Sandbox PROPERTIES
         BUILD_RPATH "${_gcc_root}/lib64"
         INSTALL_RPATH "${_gcc_root}/lib64"
     )
 endif()
 
-gse_copy_runtime_deps(GoonSquad)
+gse_copy_runtime_deps(Sandbox)
 
 # Dedicated server for this game: the engine-owned session loop (EngineServer) plus
 # this game's networked components. Every project that wants a server declares its own
 # such target and names it in its .gseproj [targets] server key.
-add_executable(GoonSquadServer "${SERVER_MAIN_CPP}")
-target_link_libraries(GoonSquadServer PRIVATE GoonSquadLib Engine EngineServer)
+add_executable(SandboxServer "${SERVER_MAIN_CPP}")
+target_link_libraries(SandboxServer PRIVATE SandboxLib Engine EngineServer)
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND WIN32)
-    target_link_options(GoonSquadServer PRIVATE "-Wl,--allow-multiple-definition")
+    target_link_options(SandboxServer PRIVATE "-Wl,--allow-multiple-definition")
 endif()
 
-gse_copy_runtime_deps(GoonSquadServer)
+gse_copy_runtime_deps(SandboxServer)
 

@@ -1,9 +1,9 @@
-export module gs:orbit_camera;
+export module sandbox:orbit_camera;
 
 import std;
 import gse;
 
-export namespace gs::orbit_camera {
+export namespace sandbox::orbit_camera {
 	struct component {
 		gse::id target;
 		gse::angle yaw = gse::degrees(0.f);
@@ -31,7 +31,7 @@ export namespace gs::orbit_camera {
 
 }
 
-export namespace gs::orbit_camera {
+export namespace sandbox::orbit_camera {
 	struct [[= gse::system_state<"OrbitCamera">{}]] data {
 		std::unordered_map<gse::id, bindings> bindings_by_owner;
 	};
@@ -60,7 +60,7 @@ export namespace gs::orbit_camera {
 	) -> gse::async::task<>;
 }
 
-auto gs::orbit_camera::attach(gse::context& ctx, data& d, gse::read<component> orbits, gse::structural<gse::camera::follow_component> follows) -> gse::async::task<> {
+auto sandbox::orbit_camera::attach(gse::context& ctx, data& d, gse::read<component> orbits, gse::structural<gse::camera::follow_component> follows) -> gse::async::task<> {
 	for (const auto owner_id : ctx.drain_component_adds<component>()) {
 		const auto* o = orbits.find(owner_id);
 		if (!o) {
@@ -95,7 +95,7 @@ auto gs::orbit_camera::attach(gse::context& ctx, data& d, gse::read<component> o
 	return {};
 }
 
-auto gs::orbit_camera::update(gse::context& ctx, data& d, const gse::shared_view<gse::actions::data> as, const gse::shared_view<gse::input::data> input_s, const gse::shared_view<gse::camera::data> cam_s, const gse::shared_view<gse::physics::data> phys_s, gse::write<component> orbits, gse::write<gse::camera::follow_component> follows, gse::read<gse::physics::transform_component> transforms, gse::read<gse::physics::collision_component> collisions, gse::read<gse::physics::motion_component> motions) -> gse::async::task<> {
+auto sandbox::orbit_camera::update(gse::context& ctx, data& d, const gse::shared_view<gse::actions::data> as, const gse::shared_view<gse::input::data> input_s, const gse::shared_view<gse::camera::data> cam_s, const gse::shared_view<gse::physics::data> phys_s, gse::write<component> orbits, gse::write<gse::camera::follow_component> follows, gse::read<gse::physics::transform_component> transforms, gse::read<gse::physics::collision_component> collisions, gse::read<gse::physics::motion_component> motions) -> gse::async::task<> {
 	const auto orbit_ids = orbits.owner_ids();
 
 	const auto& cs = gse::actions::current_state(as);

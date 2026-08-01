@@ -1,9 +1,9 @@
-export module gs:crosshair_system;
+export module sandbox:crosshair_system;
 
 import std;
 import gse;
 
-export namespace gs::crosshair {
+export namespace sandbox::crosshair {
 	struct [[= gse::system_state<"Crosshair">{}]] data {
 		[[= gse::settings::describe<"Show the crosshair while in-game.">{}, = gse::shared]] bool show = true;
 
@@ -95,7 +95,7 @@ export namespace gs::crosshair {
 	) -> void;
 }
 
-auto gs::crosshair::draw_settings(gse::gui::builder& b, gse::settings::panel_state& ps, const gse::settings::register_settings_type& entry, gse::channel_writer& channels) -> void {
+auto sandbox::crosshair::draw_settings(gse::gui::builder& b, gse::settings::panel_state& ps, const gse::settings::register_settings_type& entry, gse::channel_writer& channels) -> void {
 	auto& ctx = b.ctx;
 	const auto& sty = ctx.style;
 	namespace lo = gse::gui::layout;
@@ -119,7 +119,7 @@ auto gs::crosshair::draw_settings(gse::gui::builder& b, gse::settings::panel_sta
 	);
 }
 
-auto gs::crosshair::draw_preview(const gse::gui::draw_context& ctx, const gse::rect_t<gse::vec2f>& rect, const data& crosshair) -> void {
+auto sandbox::crosshair::draw_preview(const gse::gui::draw_context& ctx, const gse::rect_t<gse::vec2f>& rect, const data& crosshair) -> void {
 	const auto& sty = ctx.style;
 	const float border = sty.separator_thickness;
 	const gse::vec4f border_color = sty.color_border;

@@ -116,11 +116,24 @@ auto gse::gui::draw_context::input_available_at(const vec2f position) const -> b
 	return hit_regions->input_available_at(current_layer, current_z_order, position);
 }
 
+auto gse::gui::draw_context::hovers(const rectf& rect) const -> bool {
+	if (!rect.contains(input.mouse_position())) {
+		return false;
+	}
+	if (const std::optional<rectf> clip = current_clip(); clip && !clip->contains(input.mouse_position())) {
+		return false;
+	}
+	return input_available();
+}
+
 auto gse::gui::draw_context::mouse_pressed_for(const rectf& rect, const mouse_button button) const -> bool {
 	if (!input.mouse_button_pressed(button)) {
 		return false;
 	}
 	if (!rect.contains(input.mouse_position())) {
+		return false;
+	}
+	if (const std::optional<rectf> clip = current_clip(); clip && !clip->contains(input.mouse_position())) {
 		return false;
 	}
 	if (!input_available()) {
@@ -140,6 +153,9 @@ auto gse::gui::draw_context::mouse_released_for(const rectf& rect, const mouse_b
 		return false;
 	}
 	if (!rect.contains(input.mouse_position())) {
+		return false;
+	}
+	if (const std::optional<rectf> clip = current_clip(); clip && !clip->contains(input.mouse_position())) {
 		return false;
 	}
 	if (!input_available()) {

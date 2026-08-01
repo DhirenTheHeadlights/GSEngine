@@ -23,6 +23,24 @@ export namespace gse::ide {
 		std::uint32_t node = 0;
 		bool produce = false;
 		std::string message;
+		std::string qualified;
+	};
+
+	struct list_item {
+		std::string display;
+		std::string qualified;
+		std::vector<std::string> via;
+		std::optional<search::location> target;
+		bool linkable = false;
+	};
+
+	struct node_relations {
+		std::vector<list_item> reads;
+		std::vector<list_item> writes;
+		std::vector<list_item> depends;
+		std::vector<list_item> feeds;
+		std::vector<list_item> publishes;
+		std::vector<list_item> consumes;
 	};
 
 	struct graph_data {
@@ -46,6 +64,9 @@ export namespace gse::ide {
 		float panel_ratio = 0.3f;
 		bool resizing_panel = false;
 		bool built = false;
+		node_relations detail;
+		std::optional<std::uint64_t> detail_for;
+		bool detail_linked = false;
 	};
 
 	auto build_graph(const gse::scheduler& sched) -> graph_data;

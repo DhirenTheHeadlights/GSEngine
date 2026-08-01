@@ -162,7 +162,12 @@ auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, T&
 	const std::array min_values = { min };
 	const std::array max_values = { max };
 	constexpr std::string_view unit_name = Unit.unit_name;
-	const std::string name_with_unit = name + " (" + std::string(unit_name) + ")";
+	std::string name_with_unit;
+	name_with_unit.reserve(name.size() + unit_name.size() + 3);
+	name_with_unit += name;
+	name_with_unit += " (";
+	name_with_unit += unit_name;
+	name_with_unit += ")";
 	slider_row<T, 1>(ctx, name_with_unit, value_ptrs, min_values, max_values, hot_widget_id, active_widget_id);
 }
 
@@ -195,7 +200,12 @@ auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, gs
 	}
 
 	constexpr std::string_view unit_name = Unit.unit_name;
-	const std::string name_with_unit = name + " (" + std::string(unit_name) + ")";
+	std::string name_with_unit;
+	name_with_unit.reserve(name.size() + unit_name.size() + 3);
+	name_with_unit += name;
+	name_with_unit += " (";
+	name_with_unit += unit_name;
+	name_with_unit += ")";
 	slider_row<T, N>(ctx, name_with_unit, value_ptrs, min_values, max_values, hot_widget_id, active_widget_id);
 }
 
@@ -206,7 +216,7 @@ auto gse::gui::draw::slider_box(const draw_context& ctx, const rectf& rect, cons
 	const underlying min_u = internal::to_storage(min);
 	const underlying max_u = internal::to_storage(max);
 
-	if (rect.contains(ctx.input.mouse_position()) && ctx.input_available()) {
+	if (ctx.hovers(rect)) {
 		hot_widget_id = widget_id;
 	}
 

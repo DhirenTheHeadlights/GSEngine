@@ -22,7 +22,7 @@ import :interaction;
 export namespace gse::gui::draw {
 	auto button(
 		const draw_context& ctx,
-		const std::string& name,
+		std::string_view name,
 		id& hot_widget_id,
 		id& active_widget_id,
 		resource::handle<font> font = {}
@@ -52,7 +52,7 @@ export namespace gse::gui {
 	};
 }
 
-auto gse::gui::draw::button(const draw_context& ctx, const std::string& name, id& hot_widget_id, id& active_widget_id, const resource::handle<font> font) -> bool {
+auto gse::gui::draw::button(const draw_context& ctx, const std::string_view name, id& hot_widget_id, id& active_widget_id, const resource::handle<font> font) -> bool {
 	const auto fnt = font.valid() ? font : ctx.fonts.text;
 	if (!ctx.current_menu) {
 		return false;
@@ -75,9 +75,9 @@ auto gse::gui::draw::button(const draw_context& ctx, const std::string& name, id
 
 auto gse::gui::draw::button_in_rect(const draw_context& ctx, const std::string_view label, const std::string_view key, const rectf& button_rect, id& hot_widget_id, id& active_widget_id, const bool enabled, const resource::handle<font> font) -> bool {
 	const auto fnt = font.valid() ? font : ctx.fonts.text;
-	const id widget_id = ids::make(std::string(key.empty() ? label : key));
+	const id widget_id = ids::make(key.empty() ? label : key);
 
-	const bool hovered = enabled && button_rect.contains(ctx.input.mouse_position()) && ctx.input_available();
+	const bool hovered = enabled && ctx.hovers(button_rect);
 	const bool released = ctx.input.mouse_button_released(mouse_button::button_1);
 
 	interaction::mark_hot(hot_widget_id, widget_id, hovered);
@@ -98,14 +98,13 @@ auto gse::gui::draw::button_in_rect(const draw_context& ctx, const std::string_v
 		.corner_radius = ctx.style.corner_radius
 	});
 
-	const std::string text(label);
-	const float text_width = fnt->width(text, ctx.style.font_size);
+	const float text_width = fnt->width(label, ctx.style.font_size);
 	const vec2f text_pos = { button_rect.center().x() - text_width / 2.f,
 							 button_rect.center().y() + fnt->vertical_center_offset(ctx.style.font_size) };
 
 	ctx.queue_text({
 		.font = fnt,
-		.text = text,
+		.text = label,
 		.position = text_pos,
 		.scale = ctx.style.font_size,
 		.color = enabled ? ctx.style.color_text : ctx.style.color_text_disabled,

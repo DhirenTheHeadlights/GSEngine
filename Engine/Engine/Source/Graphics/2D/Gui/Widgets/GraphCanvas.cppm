@@ -95,7 +95,7 @@ auto gse::gui::graph_canvas::draw(const draw_context& ctx, params p, id& hot, id
 
 	for (const node& n : p.nodes) {
 		const id nid = ids::make(std::format("graph_node##{}", n.key));
-		const bool hovered = n.rect.contains(ctx.input.mouse_position()) && ctx.input_available();
+		const bool hovered = ctx.hovers(n.rect);
 		interaction::mark_hot(hot, nid, hovered);
 		if (hovered) {
 			out.hovered = n.key;
@@ -125,17 +125,25 @@ auto gse::gui::graph_canvas::draw(const draw_context& ctx, params p, id& hot, id
 			.min = { std::max(n.rect.left(), clip.left()), std::max(n.rect.bottom(), clip.bottom()) },
 			.max = { std::min(n.rect.right(), clip.right()), std::min(n.rect.top(), clip.top()) },
 		});
+		const float fill_alpha = std::clamp(fill.w(), 0.f, 1.f);
+		const float behind = 1.f - fill_alpha;
+		const float luminance = 0.2126f * (fill.x() * fill_alpha + p.background.x() * behind)
+			+ 0.7152f * (fill.y() * fill_alpha + p.background.y() * behind)
+			+ 0.0722f * (fill.z() * fill_alpha + p.background.z() * behind);
+		const vec4f label_color = luminance > 0.30f
+			? vec4f{ 0.05f, 0.06f, 0.09f, 1.f }
+			: vec4f{ 0.94f, 0.95f, 0.98f, 1.f };
 		ctx.queue_text({
 			.font = fnt,
 			.text = n.label,
-			.position = { n.rect.left() + 6.f * p.label_scale, n.rect.center().y() + fnt->vertical_center_offset(label_font) },
+			.position = { n.rect.center().x() - fnt->width(n.label, label_font) * 0.5f, n.rect.center().y() + fnt->vertical_center_offset(label_font) },
 			.scale = label_font,
-			.color = ctx.style.color_text,
+			.color = label_color,
 			.clip_rect = label_clip,
 		});
 	}
 
-	if (released && p.area.contains(ctx.input.mouse_position()) && ctx.input_available() && !out.clicked) {
+	if (released && ctx.hovers(p.area) && !out.clicked) {
 		out.background_clicked = true;
 	}
 

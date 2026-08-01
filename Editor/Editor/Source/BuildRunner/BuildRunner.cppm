@@ -97,6 +97,8 @@ namespace gse::ide::build_runner {
 	constexpr std::string_view module_write_signature = "failed to write compiled module";
 	constexpr std::string_view module_read_signature = "failed to read compiled module";
 	constexpr std::string_view file_exists_signature = "File exists";
+	constexpr std::string_view copy_error_signature = "Error copying file";
+	constexpr std::string_view permission_denied_signature = "Permission denied";
 
 	struct source_fingerprint {
 		std::uintmax_t size = 0;
@@ -138,10 +140,16 @@ namespace gse::ide::build_runner {
 		const std::filesystem::path& build_dir
 	) -> std::vector<std::filesystem::path>;
 
+	auto collect_locked_output_copies(
+		std::span<const std::string> lines,
+		const std::filesystem::path& build_dir
+	) -> std::vector<std::filesystem::path>;
+
 	auto run_build_with_module_recovery(
 		const std::stop_token& st,
 		spawn::output_stream& stream,
 		const std::wstring& command,
+		const std::filesystem::path& source_dir,
 		const std::filesystem::path& build_dir,
 		const std::filesystem::path& compiler_bin
 	) -> int;
@@ -382,11 +390,25 @@ auto gse::ide::build_runner::configure_command(const std::filesystem::path& proj
 
 auto gse::ide::build_runner::ensure_configured(spawn::output_stream& stream) -> std::filesystem::path {
 	const std::filesystem::path& build_dir = config::project_build_dir();
+	std::error_code ec;
+
 	if (!find_build_dir(build_dir).empty()) {
-		return build_dir;
+		const std::string bound = cache_value(build_dir, "GSE_ENGINE_DIR");
+		const std::string expected = config::engine_root().generic_native_encoded_string();
+		if (bound.empty() || bound == expected) {
+			return build_dir;
+		}
+
+		spawn::emit(stream, "build tree was configured against " + bound);
+		spawn::emit(stream, "project now binds " + expected + "; removing the stale build tree...");
+		std::filesystem::remove_all(build_dir, ec);
+		if (ec) {
+			spawn::emit(stream, "could not remove " + build_dir.display_string() + "; delete it and build again");
+			return {};
+		}
+		ec.clear();
 	}
 
-	std::error_code ec;
 	const std::filesystem::path& project_dir = config::project_root();
 	if (!std::filesystem::exists(project_dir / "CMakeLists.txt", ec)) {
 		return {};
@@ -497,10 +519,58 @@ auto gse::ide::build_runner::collect_module_write_conflicts(
 	return conflicts;
 }
 
+auto gse::ide::build_runner::collect_locked_output_copies(const std::span<const std::string> lines, const std::filesystem::path& build_dir) -> std::vector<std::filesystem::path> {
+	std::vector<std::filesystem::path> locked;
+	std::unordered_set<std::string> seen;
+	const std::filesystem::path normalized_build_dir = std::filesystem::absolute(build_dir).lexically_normal();
+
+	for (const std::string& line : lines) {
+		if (line.find(copy_error_signature) == std::string::npos || line.find(permission_denied_signature) == std::string::npos) {
+			continue;
+		}
+
+		std::vector<std::string> quoted;
+		for (std::size_t pos = 0;;) {
+			const std::size_t open = line.find('"', pos);
+			if (open == std::string::npos) {
+				break;
+			}
+			const std::size_t close = line.find('"', open + 1);
+			if (close == std::string::npos) {
+				break;
+			}
+			quoted.push_back(line.substr(open + 1, close - open - 1));
+			pos = close + 1;
+		}
+		if (quoted.size() < 2) {
+			continue;
+		}
+
+		const std::filesystem::path source(quoted[0]);
+		std::filesystem::path target(quoted[1]);
+
+		std::error_code ec;
+		if (std::filesystem::is_directory(target, ec)) {
+			target /= source.filename();
+		}
+		target = std::filesystem::absolute(target).lexically_normal();
+
+		const std::filesystem::path relative = target.lexically_relative(normalized_build_dir);
+		if (relative.empty() || relative.is_absolute() || *relative.begin() == "..") {
+			continue;
+		}
+		if (seen.insert(target.generic_native_encoded_string()).second) {
+			locked.push_back(std::move(target));
+		}
+	}
+	return locked;
+}
+
 auto gse::ide::build_runner::run_build_with_module_recovery(
 	const std::stop_token& st,
 	spawn::output_stream& stream,
 	const std::wstring& command,
+	const std::filesystem::path& source_dir,
 	const std::filesystem::path& build_dir,
 	const std::filesystem::path& compiler_bin
 ) -> int {
@@ -508,14 +578,15 @@ auto gse::ide::build_runner::run_build_with_module_recovery(
 	std::unordered_set<std::string> recovered;
 	for (int attempt = 1; ; ++attempt) {
 		spawn::begin_transcript(stream);
-		const int code = spawn::run_capture(stream, command, gse::config::root_dir().wstring(), compiler_bin);
+		const int code = spawn::run_capture(stream, command, source_dir.wstring(), compiler_bin);
 		const std::vector<std::string> transcript = spawn::take_transcript(stream);
 		if (code == 0 || attempt >= max_attempts || st.stop_requested() || stream.terminated.load(std::memory_order_acquire)) {
 			return code;
 		}
 
 		const std::vector<std::filesystem::path> conflicts = collect_module_write_conflicts(transcript, build_dir);
-		if (conflicts.empty()) {
+		const std::vector<std::filesystem::path> locked = collect_locked_output_copies(transcript, build_dir);
+		if (conflicts.empty() && locked.empty()) {
 			return code;
 		}
 
@@ -532,11 +603,40 @@ auto gse::ide::build_runner::run_build_with_module_recovery(
 				spawn::emit(stream, "could not clear stale module cache file " + gcm.generic_display_string() + ": " + ec.message());
 			}
 		}
-		if (cleared == 0) {
+
+		// A runtime dependency the running editor has loaded cannot be overwritten, but Windows
+		// does allow renaming it, which is the same trick the self-rebuild uses on Editor.exe.
+		// Moving it aside frees the path so the copy lands; the .bak is reclaimed on a later build.
+		std::size_t displaced = 0;
+		for (const std::filesystem::path& file : locked) {
+			if (!recovered.insert(file.generic_native_encoded_string()).second) {
+				continue;
+			}
+			std::filesystem::path backup = file;
+			backup += ".bak";
+
+			std::error_code ec;
+			std::filesystem::remove(backup, ec);
+			ec.clear();
+			std::filesystem::rename(file, backup, ec);
+			if (!ec) {
+				++displaced;
+			}
+			else {
+				spawn::emit(stream, "could not displace locked file " + file.generic_display_string() + ": " + ec.message());
+			}
+		}
+
+		if (cleared == 0 && displaced == 0) {
 			return code;
 		}
 
-		spawn::emit(stream, "cleared " + std::to_string(cleared) + " stale module cache file(s); retrying build");
+		if (cleared > 0) {
+			spawn::emit(stream, "cleared " + std::to_string(cleared) + " stale module cache file(s); retrying build");
+		}
+		if (displaced > 0) {
+			spawn::emit(stream, "displaced " + std::to_string(displaced) + " locked runtime file(s); retrying build");
+		}
 	}
 }
 
@@ -565,7 +665,7 @@ auto gse::ide::build_runner::launch_game_attached(build_completion& completion, 
 	command += L" --engine-parent-pid " + std::to_wstring(editor_pid);
 	command += L" --engine-dump-system-graph-path \"" + graph_file.wstring() + L"\"";
 
-	const spawn::launched game = spawn::launch_streamed(command, gse::config::root_dir().wstring());
+	const spawn::launched game = spawn::launch_streamed(command, config::project_root().wstring());
 	if (!win32::valid_handle(game.process)) {
 		win32::CloseHandle(pipe);
 		spawn::emit(stream, "failed to launch game");
@@ -613,7 +713,7 @@ auto gse::ide::build_runner::build_game(
 	}
 
 	spawn::emit(stream, "building " + std::string(config::game_target()) + "...");
-	const int code = run_build_with_module_recovery(st, stream, build_command(build_dir, config::game_target()), build_dir, compiler_bin);
+	const int code = run_build_with_module_recovery(st, stream, build_command(build_dir, config::game_target()), config::project_root(), build_dir, compiler_bin);
 	if (code != 0) {
 		spawn::emit(stream, "build failed (exit " + std::to_string(code) + ")");
 		if (std::filesystem::exists(backup, ec)) {
@@ -661,7 +761,7 @@ auto gse::ide::build_runner::rebuild_editor(const std::stop_token& st, spawn::ou
 	}
 
 	spawn::emit(stream, "rebuilding editor...");
-	const int code = run_build_with_module_recovery(st, stream, build_command(build_dir, config::editor_target), build_dir, compiler_bin);
+	const int code = run_build_with_module_recovery(st, stream, build_command(build_dir, config::editor_target), gse::config::root_dir(), build_dir, compiler_bin);
 	if (code != 0) {
 		spawn::emit(stream, "rebuild failed (exit " + std::to_string(code) + "); restoring previous editor");
 		std::filesystem::remove(editor_exe, ec);

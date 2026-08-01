@@ -1,9 +1,9 @@
-export module gs:network_screen;
+export module sandbox:network_screen;
 
 import std;
 import gse;
 
-export namespace gs {
+export namespace sandbox {
 	class network_screen : public gse::gui::screen {
 	public:
 		network_screen(
@@ -28,11 +28,11 @@ export namespace gs {
 	};
 }
 
-gs::network_screen::network_screen(const gse::shared_view<gse::network::data> net, gse::channel_writer channels)
+sandbox::network_screen::network_screen(const gse::shared_view<gse::network::data> net, gse::channel_writer channels)
 	: m_net(net), m_channels(std::move(channels)) {
 }
 
-auto gs::network_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> void {
+auto sandbox::network_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> void {
 	const auto& net = m_net;
 
 	const auto send_message = [this](auto m) {
@@ -128,6 +128,6 @@ auto gs::network_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> void 
 	}
 }
 
-auto gs::network_screen::title() const -> std::string_view {
+auto sandbox::network_screen::title() const -> std::string_view {
 	return "Network";
 }

@@ -196,7 +196,7 @@ export namespace gse::ide::search {
 		std::atomic<std::uint64_t> cpp_loc = 0;
 		std::atomic<std::size_t> progress_total = 0;
 		std::atomic<std::size_t> progress_done = 0;
-		std::atomic<std::int64_t> phase_started_ns = 0;
+		std::atomic<gse::time_t<double>> phase_started{};
 		std::atomic<std::size_t> symbol_count = 0;
 		std::atomic<index_phase> phase = index_phase::idle;
 		std::atomic<bool> cancel = false;
@@ -661,20 +661,14 @@ namespace gse::ide::search {
 		return matching_definition(index, identity, qualified, file, line, column).value_or(target);
 	}
 
-	auto steady_nanoseconds() -> std::int64_t {
-		return std::chrono::duration_cast<std::chrono::nanoseconds>(
-			std::chrono::steady_clock::now().time_since_epoch()
-		).count();
-	}
-
 	auto log_index_phase_completion(const index_state& idx) -> void {
-		const std::int64_t started = idx.phase_started_ns.load(std::memory_order_relaxed);
-		if (started == 0) {
+		const gse::time_t<double> started = idx.phase_started.load(std::memory_order_relaxed);
+		if (started == gse::time_t<double>{}) {
 			return;
 		}
 		const index_phase phase = idx.phase.load(std::memory_order_acquire);
 		const index_phase_info info = annotation_from_enum<index_phase_info>(phase, {});
-		const double elapsed_ms = static_cast<double>(steady_nanoseconds() - started) / 1'000'000.0;
+		const double elapsed_ms = (gse::system_clock::now<gse::time_t<double>>() - started).as<gse::milliseconds>();
 		const std::size_t done = idx.progress_done.load(std::memory_order_relaxed);
 		const std::size_t total = idx.progress_total.load(std::memory_order_relaxed);
 		log::println(
@@ -763,7 +757,7 @@ namespace gse::ide::search {
 		log_index_phase_completion(idx);
 		idx.progress_total.store(total, std::memory_order_relaxed);
 		idx.progress_done.store(0, std::memory_order_relaxed);
-		idx.phase_started_ns.store(steady_nanoseconds(), std::memory_order_relaxed);
+		idx.phase_started.store(gse::system_clock::now<gse::time_t<double>>(), std::memory_order_relaxed);
 		idx.phase.store(phase, std::memory_order_release);
 		const index_phase_info info = annotation_from_enum<index_phase_info>(phase, {});
 		log::println(
@@ -779,7 +773,7 @@ namespace gse::ide::search {
 		log_index_phase_completion(idx);
 		idx.progress_total.store(0, std::memory_order_relaxed);
 		idx.progress_done.store(0, std::memory_order_relaxed);
-		idx.phase_started_ns.store(0, std::memory_order_relaxed);
+		idx.phase_started.store(gse::time_t<double>{}, std::memory_order_relaxed);
 		idx.phase.store(index_phase::idle, std::memory_order_release);
 	}
 
@@ -1571,7 +1565,7 @@ auto gse::ide::search::update_file(index_state& idx, const std::filesystem::path
 
 namespace gse::ide::search {
 	constexpr std::uint32_t tu_cache_magic = 0x47535455;
-	constexpr std::uint32_t tu_cache_version = 9;
+	constexpr std::uint32_t tu_cache_version = 10;
 
 	using interned_file_cache = std::unordered_map<std::string, file_id, transparent_hash, transparent_equal>;
 	using indexed_path_cache = std::unordered_map<std::string, bool, transparent_hash, transparent_equal>;
@@ -1624,7 +1618,7 @@ namespace gse::ide::search {
 	auto tu_fingerprint(const analysis::compilation_entry& entry, const std::filesystem::path& plugin, std::span<const std::filesystem::path> dependencies, file_fingerprint_cache& file_fingerprints) -> std::uint64_t {
 		std::uint64_t fingerprint = stable_id("tu_symbol_cache");
 		fingerprint = hash_combine(fingerprint, tu_cache_version);
-		fingerprint = hash_combine(fingerprint, entry.command.fingerprint);
+		fingerprint = hash_combine(fingerprint, entry.command.semantic_fingerprint);
 		fingerprint = hash_combine(fingerprint, file_fingerprint(plugin, file_fingerprints));
 		fingerprint = hash_combine(fingerprint, dependencies.size());
 		for (const std::filesystem::path& dependency : dependencies) {
@@ -1634,9 +1628,13 @@ namespace gse::ide::search {
 	}
 
 	auto tu_cache_path(const index_state& index, const analysis::compilation_entry& entry) -> std::filesystem::path {
-		const std::uint64_t id = hash_combine(canonical_path_id(entry.file).second.number(), entry.command.fingerprint);
-		// Shared across projects on purpose: the key already folds in the full command
-		// line and build directory, so entries from different configs cannot collide.
+		const std::uint64_t id = hash_combine(canonical_path_id(entry.file).second.number(), entry.command.semantic_fingerprint);
+		// Shared across projects on purpose, and reused between them: the key folds in only
+		// the arguments that can change emitted symbols, so the same engine TU compiled from
+		// two project build trees resolves to one entry. Output paths, dependency-file flags
+		// and the build directory are excluded because they cannot affect symbols; repeated
+		// flags are folded once so a build that passes -std twice matches one that passes it
+		// once. tu_fingerprint still validates content, so a stale hit cannot be served.
 		return gse::config::cache_dir() / "symbols" / std::format("{:016x}.bin", id);
 	}
 

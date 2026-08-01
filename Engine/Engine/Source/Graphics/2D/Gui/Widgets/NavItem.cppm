@@ -53,7 +53,7 @@ auto gse::gui::nav_item::draw(const draw_context& ctx, const params& p, id& hot,
 		{ content_rect.width(), widget_height }
 	);
 
-	const bool hovered = row_rect.contains(ctx.input.mouse_position()) && ctx.input_available();
+	const bool hovered = ctx.hovers(row_rect);
 	const bool released = ctx.input.mouse_button_released(mouse_button::button_1);
 
 	interaction::mark_hot(hot, widget_id, hovered);

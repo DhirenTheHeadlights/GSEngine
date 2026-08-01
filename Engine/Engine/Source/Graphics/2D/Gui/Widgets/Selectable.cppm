@@ -70,7 +70,7 @@ auto gse::gui::draw::selectable(const draw_context& ctx, const selectable_info& 
 		return false;
 	}
 
-	const id widget_id = ids::make(std::string(info.key.empty() ? info.text : info.key));
+	const id widget_id = ids::make(info.key.empty() ? info.text : info.key);
 
 	const float widget_height = fnt->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
 	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
@@ -80,7 +80,7 @@ auto gse::gui::draw::selectable(const draw_context& ctx, const selectable_info& 
 		{ content_rect.width(), widget_height }
 	);
 
-	const bool hovered = row_rect.contains(ctx.input.mouse_position()) && ctx.input_available();
+	const bool hovered = ctx.hovers(row_rect);
 	const bool released = ctx.input.mouse_button_released(mouse_button::button_1);
 
 	interaction::mark_hot(hot_widget_id, widget_id, hovered);
@@ -125,14 +125,13 @@ auto gse::gui::draw::selectable(const draw_context& ctx, const selectable_info& 
 		? row_rect.right() - pad
 		: row_rect.left() + (info.detail_column > 0.f ? info.detail_column : row_rect.width() * 0.5f);
 
-	const std::string text(info.text);
 	const vec2f text_position = info.align == selectable_align::center
-		? vec2f{ row_rect.center().x() - fnt->width(text, ctx.style.font_size) * 0.5f, baseline }
+		? vec2f{ row_rect.center().x() - fnt->width(info.text, ctx.style.font_size) * 0.5f, baseline }
 		: vec2f{ text_left, baseline };
 
 	ctx.queue_text({
 		.font = fnt,
-		.text = text,
+		.text = info.text,
 		.position = text_position,
 		.scale = ctx.style.font_size,
 		.color = ctx.style.color_text,

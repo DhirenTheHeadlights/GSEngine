@@ -40,10 +40,17 @@ endfunction()
 # Marker consumed by gse.config at runtime: the first directory containing it,
 # walking up from the executable, is the build root. `root` must name the ENGINE
 # tree, not the consuming project -- it is where engine resources and shaders are
-# read from. An install image ships its own with mode = installed. Nothing is
+# read from. `project` is the other half: the tree a running game writes its own
+# data into, defaulting to this build's source dir. A build tree that holds the
+# engine plus a game beside it must name the game, since the source dir is then
+# the engine. An install image ships its own with mode = installed. Nothing is
 # baked into the binaries themselves.
 function(gse_write_manifest)
-    file(WRITE "${CMAKE_BINARY_DIR}/gse.manifest" "mode = dev\nroot = ${GSE_ENGINE_ROOT}\n")
+    set(_project "${CMAKE_SOURCE_DIR}")
+    if(ARGC GREATER 0)
+        set(_project "${ARGV0}")
+    endif()
+    file(WRITE "${CMAKE_BINARY_DIR}/gse.manifest" "mode = dev\nroot = ${GSE_ENGINE_ROOT}\nproject = ${_project}\n")
 endfunction()
 
 function(gse_copy_runtime_deps target)

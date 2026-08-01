@@ -104,9 +104,9 @@ auto gse::app::run_pending_relaunch() -> void {
 	}
 #else
 	std::vector<std::string> storage;
-	storage.push_back(executable.string());
+	storage.push_back(executable.native_encoded_string());
 	for (const std::filesystem::path& argument : arguments) {
-		storage.push_back(argument.string());
+		storage.push_back(argument.native_encoded_string());
 	}
 
 	std::vector<char*> argv;

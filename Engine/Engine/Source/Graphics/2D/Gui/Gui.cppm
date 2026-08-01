@@ -30,12 +30,21 @@ import :styles;
 import :builder;
 import :menu_stack;
 import :render_layer;
+import :symbols;
 
 namespace gse::gui {
 	struct frame_state {
 		style sty{};
 		bool active = false;
 	};
+
+	auto draw_screen_caption(
+		builder& b,
+		screen& top,
+		const rectf& bar_rect,
+		const rectf& full_rect,
+		channel_writer channels
+	) -> void;
 }
 
 export namespace gse::gui {
@@ -271,9 +280,18 @@ export namespace gse::gui {
 		const std::function<void(builder&)>& build
 	) -> void;
 
+	auto caption_button(
+		builder& b,
+		const rectf& rect,
+		const std::string& key,
+		std::span<const symbol::stroke> glyph,
+		vec4f hover_color
+	) -> bool;
+
 	auto process_screen(
 		data& d,
 		const input::state& input_state,
-		vec2f viewport_size
+		vec2f viewport_size,
+		channel_writer channels
 	) -> void;
 }
