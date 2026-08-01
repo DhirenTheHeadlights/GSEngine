@@ -270,14 +270,41 @@ a separate asset.
 crate with the right momentum. That second half is the part worth actually testing — it proves
 the derived velocity, which is what the ragdoll handoff later depends on.
 
-### Phase 1 — Rig derivation (offline; nothing renders)
-A standalone tool: `.gskel` + `.gsmdl` v1 → `.gsmdl` v2. Shape fitting from skin weights,
-leaf-subtree pruning, weight merge, proxy capsule fit, joint_spec emission, validation dump.
+### Phase 1 — Rig derivation (offline; nothing renders) — **DONE**
+`Tools/RigDerive/rig_derive.py`: `.gskel` + `.gsmdl` v1 → `.gsmdl` **v3**. Shape fitting from
+skin weights, leaf-subtree pruning, weight merge, proxy capsule fit, validation dump, and a
+read-back verify pass.
 
-**Not** a Blender exporter change — see §9.6. There is no source `.blend`/`.fbx` in the repo, and
-every input this phase needs is already in the two baked files.
+```
+python Tools/RigDerive/rig_derive.py --target-mass 78
+```
 
-*Exit:* fitted rig inspectable as numbers before any GPU work exists.
+Result: **65 authored joints → 22 bones** (4 box, 15 capsule, 3 sphere), 43 dropped — every
+finger joint folds into its hand, which absorbs their vertices (1435 → 6276). Zero weight-sum
+errors, zero influence overflow, worst FK round-trip error 1.6e-07 m.
+
+Four things that were not obvious going in:
+
+- **The format is v3, not v2.** `Tools/BlenderExporter/exporter.py` already defines
+  `GSMDL_VERSION = 2` for the PBR material block. Our baked asset is v1, whose material is a
+  single string — the PBR block only exists at v2.
+- **Mixamo bone-local space runs the bone along Z**, and the engine's `capsule_shape` is
+  Y-aligned with no axis field. Fitting naively produced *zero* capsules — every limb came out
+  a box. Fixed by baking an axis-permuting rotation into the body's bind frame, which is free
+  because `skin[j] = B_world(body) · inverse(body_bind_world)` holds for *any* rigid body frame.
+  The same mechanism centres the shape on its fitted centroid rather than the joint origin.
+- **Prune by fitted size, not vertex count.** The mesh is dense at the hands: a finger joint
+  dominates 194–506 vertices, more than Spine2 (288). A vertex-count threshold keeps all 30
+  finger bones. `--min-extent 0.08` (metres) drops them cleanly while keeping neck and toes.
+- **Summed shape volume overshoots by ~1.6×** because adjacent capsules overlap at joints —
+  1000 kg/m³ gives a 124 kg character. `--target-mass` solves density backwards from a target;
+  at 78 kg the distribution lands close to anthropometric tables (thigh 10.1 kg, shin 4.9,
+  foot 1.1, upper arm 2.0, forearm 1.6).
+
+The derived `.v3.gsmdl` is a build artifact, reproducible from the command above, and is not
+committed.
+
+*Exit met:* fitted rig inspectable as numbers before any GPU work exists.
 
 ### Phase 2 — Bodies, no mesh
 Spawn the proxy capsule (dynamic + `motor_component`) and one kinematic, collision-disabled
