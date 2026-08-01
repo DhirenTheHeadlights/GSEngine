@@ -105,6 +105,11 @@ export namespace gse {
 		run_signature_metadata& out
 	) -> void;
 
+	template <auto Fn>
+	auto append_fn_order_deps(
+		run_signature_metadata& out
+	) -> void;
+
 	template <auto Fn, typename S>
 	auto append_signature_run_metadata(
 		run_signature_metadata& out
@@ -280,10 +285,20 @@ auto gse::append_arg_run_metadata(run_signature_metadata& out) -> void {
 	}
 }
 
+template <auto Fn>
+auto gse::append_fn_order_deps(run_signature_metadata& out) -> void {
+	template for (constexpr auto s : std::define_static_array(meta::required_order_deps_of(Fn))) {
+		out.state_deps.push_back(id_of<typename [:s:]>());
+	}
+	template for (constexpr auto s : std::define_static_array(meta::optional_order_deps_of(Fn))) {
+		out.optional_state_deps.push_back(id_of<typename [:s:]>());
+	}
+}
+
 template <auto Fn, typename S>
 auto gse::append_signature_run_metadata(run_signature_metadata& out) -> void {
 	[&]<std::size_t... Is>(std::index_sequence<Is...>) {
 		((append_arg_run_metadata<arg_type_of<Fn, Is>, S>(out)), ...);
 	}(std::make_index_sequence<arity_of<Fn>>{});
+	append_fn_order_deps<Fn>(out);
 }
-

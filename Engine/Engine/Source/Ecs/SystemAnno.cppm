@@ -24,6 +24,16 @@ export namespace gse {
 		static constexpr int order = Order;
 	};
 
+	template <std::meta::info State>
+	struct runs_after {
+		static constexpr std::meta::info state_type = State;
+	};
+
+	template <std::meta::info State>
+	struct runs_after_optional {
+		static constexpr std::meta::info state_type = State;
+	};
+
 	struct system_frame {};
 
 	struct system_shutdown {};
@@ -66,6 +76,19 @@ export namespace gse::meta {
 	consteval auto run_order_of(
 		std::meta::info hook_anno_type
 	) -> int;
+
+	consteval auto order_deps_of(
+		std::meta::info fn,
+		std::meta::info anno_template
+	) -> std::vector<std::meta::info>;
+
+	consteval auto required_order_deps_of(
+		std::meta::info fn
+	) -> std::vector<std::meta::info>;
+
+	consteval auto optional_order_deps_of(
+		std::meta::info fn
+	) -> std::vector<std::meta::info>;
 
 	template <typename State>
 	consteval auto has_system_state() -> bool;
@@ -124,6 +147,26 @@ consteval auto gse::meta::run_order_of(const std::meta::info hook_anno_type) -> 
 		return std::meta::extract<int>(std::meta::template_arguments_of(hook_anno_type)[0]);
 	}
 	return 0;
+}
+
+consteval auto gse::meta::order_deps_of(const std::meta::info fn, const std::meta::info anno_template) -> std::vector<std::meta::info> {
+	std::vector<std::meta::info> out;
+	for (const auto ann : std::meta::annotations_of(fn)) {
+		const auto t = std::meta::remove_cvref(std::meta::dealias(std::meta::type_of(ann)));
+		if (!std::meta::has_template_arguments(t) || std::meta::template_of(t) != anno_template) {
+			continue;
+		}
+		out.push_back(std::meta::extract<std::meta::info>(std::meta::template_arguments_of(t)[0]));
+	}
+	return out;
+}
+
+consteval auto gse::meta::required_order_deps_of(const std::meta::info fn) -> std::vector<std::meta::info> {
+	return order_deps_of(fn, ^^runs_after);
+}
+
+consteval auto gse::meta::optional_order_deps_of(const std::meta::info fn) -> std::vector<std::meta::info> {
+	return order_deps_of(fn, ^^runs_after_optional);
 }
 
 template <typename State>
