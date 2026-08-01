@@ -731,7 +731,7 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 					continue;
 				}
 				const auto* dyn = std::get_if<dynamic_body>(&mc.body);
-				if (!dyn) {
+				if (is_static(mc)) {
 					continue;
 				}
 				const auto it = d.id_to_body_index.find(eid);
@@ -739,6 +739,11 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 					continue;
 				}
 				const auto& bs = solved[it->second];
+				if (!dyn) {
+					tc->position = bs.position;
+					tc->orientation = bs.orientation;
+					continue;
+				}
 				tc->position = bs.position;
 				mc.current_velocity = bs.velocity;
 				if (dyn->update_orientation) {
