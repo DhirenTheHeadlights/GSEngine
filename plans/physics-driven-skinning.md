@@ -306,7 +306,37 @@ committed.
 
 *Exit met:* fitted rig inspectable as numbers before any GPU work exists.
 
-### Phase 2 — Bodies, no mesh
+### Phase 2 — Bodies, no mesh — **BUILT, BLOCKED ON BAKING**
+
+Implemented and compiling: `clip_asset` (`.gclip` v2), `skinned_model` (`.gsmdl` v3 rig), the
+`skeleton_instance_component` / `clip_player_component` pair, `animation::clip_player` (sample →
+FK → kinematic targets), F7 spawn in the sandbox, and `runs_after`-free registration ordered
+before physics in `Engine.cpp`.
+
+**Open blocker.** `asset::get<clip_asset>(… "Clips/mixamo.com")` asserts `ID not found` because
+neither asset is ever baked. Established by inspection:
+
+- `out/build/…/Engine/Resources/` contains only `Fonts/` and `Textures/`, both dated before the
+  change. `compile<T>()` calls `create_directories(baked_root)` unconditionally once past its
+  two early returns, so the absent directory proves it returned early.
+- The runtime manifest gives `mode = dev`, `root = <repo>`, so `resource_path()` is the repo's
+  `Engine/Resources`, which does contain `Clips/mixamo.com.gclip`. The `!exists(source_root)`
+  return is therefore not the one taken.
+- That leaves `has_compile_path<T>` false — despite `font` carrying an identical annotation set
+  (`source_dir` + `source_exts` + magic + version), `bake` overloads sitting in
+  `export namespace gse`, and `:clip` being exported from `Graphics.cppm` exactly as
+  `:font_compiler` is.
+
+`static_assert(asset::has_compile_path<…>)` for both types now sits beside the pack in
+`AssetTypes.cppm` — it converts this from a runtime missing-ID assert far from the cause into a
+compile-time failure naming the type, and answers which of the concept's three clauses fails.
+
+Note for whoever picks this up: `Engine/Resources/SkinnedModels/` holds both `character.gsmdl`
+(v1) and `character.v3.gsmdl`. Once baking works the v1 file is scanned too and its `bake()`
+correctly returns false on the version check, counting as a failure. Harmless, but it will show
+up until the v1 source is retired — it is still the rig-derive input.
+
+### Phase 2 exit criteria (unchanged)
 Spawn the proxy capsule (dynamic + `motor_component`) and one kinematic, collision-disabled
 entity per kept bone. Clip sampling + CPU FK rooted at the proxy, writing `transform_component`.
 Render with the existing physics debug renderer.

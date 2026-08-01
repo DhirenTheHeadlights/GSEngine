@@ -110,6 +110,11 @@ export namespace gse {
 			const std::optional<T>& opt
 		) -> binary_writer&;
 
+		template <typename... Ts>
+		auto operator&(
+			const std::variant<Ts...>& var
+		) -> binary_writer&;
+
 		template <typename K, typename V>
 		auto operator&(
 			const std::unordered_map<K, V>& map
@@ -185,6 +190,11 @@ export namespace gse {
 		template <typename T>
 		auto operator&(
 			std::optional<T>& opt
+		) -> binary_reader&;
+
+		template <typename... Ts>
+		auto operator&(
+			std::variant<Ts...>& var
 		) -> binary_reader&;
 
 		template <typename K, typename V>
@@ -390,6 +400,20 @@ auto gse::binary_writer::operator&(const std::inplace_vector<T, N>& vec) -> bina
 	return *this;
 }
 
+template <typename... Ts>
+auto gse::binary_writer::operator&(const std::variant<Ts...>& var) -> binary_writer& {
+	assert(!var.valueless_by_exception(), "cannot serialize a valueless variant");
+	auto index = static_cast<std::uint32_t>(var.index());
+	*this& index;
+	std::visit(
+		[this](const auto& value) {
+			*this& value;
+		},
+		var
+	);
+	return *this;
+}
+
 template <typename T>
 auto gse::binary_writer::operator&(const std::optional<T>& opt) -> binary_writer& {
 	const bool has = opt.has_value();
@@ -574,6 +598,28 @@ auto gse::binary_reader::operator&(std::inplace_vector<T, N>& vec) -> binary_rea
 		*this& val;
 		vec.push_back(std::move(val));
 	}
+	return *this;
+}
+
+template <typename... Ts>
+auto gse::binary_reader::operator&(std::variant<Ts...>& var) -> binary_reader& {
+	std::uint32_t index = 0;
+	*this& index;
+
+	[&]<std::size_t... Is>(std::index_sequence<Is...>) {
+		(
+			[&] {
+				if (Is != index) {
+					return;
+				}
+				std::variant_alternative_t<Is, std::variant<Ts...>> value{};
+				*this& value;
+				var = std::move(value);
+			}(),
+			...
+		);
+	}(std::index_sequence_for<Ts...>{});
+
 	return *this;
 }
 

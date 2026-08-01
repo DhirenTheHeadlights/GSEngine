@@ -54,7 +54,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	m_scheduler.set_registry(m_registry);
 
 	if (m_config.persist_settings) {
-		m_save.set_auto_save(true, config::user_config_dir() / "settings.ini");
+		m_save.set_auto_save(true, config::user_config_dir() / std::format("{}.ini", config::executable_stem()));
 		m_save.set_project_path(m_config.project_settings_path);
 	}
 	m_save.set_on_restart([] {
@@ -76,6 +76,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	register_systems<^^window>(*this);
 	register_systems<^^gpu::context>(*this);
 	register_systems<^^asset>(*this);
+	register_systems<^^animation>(*this);
 	register_systems<^^physics>(*this);
 	register_systems<^^camera>(*this);
 	register_systems<^^audio>(*this);

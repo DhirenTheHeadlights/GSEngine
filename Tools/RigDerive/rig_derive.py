@@ -396,8 +396,9 @@ def derive(joints, meshes, args):
 
         kind, params, center, basis = fit_shape(pts, args.capsule_ratio, args.sphere_ratio)
 
-        bind_world = mat4_affine_inverse(inv_bind)
-        body_bind_world = mat4_mul(bind_world, mat4_from_basis(basis, center))
+        joint_bind_world = mat4_affine_inverse(inv_bind)
+        body_offset = mat4_from_basis(basis, center)
+        body_bind_world = mat4_mul(joint_bind_world, body_offset)
 
         volume = shape_volume(kind, params)
         bones.append({
@@ -405,6 +406,8 @@ def derive(joints, meshes, args):
             'source_index': j,
             'parent_slot': slot_of.get(remap.get(joint['parent'], NO_BONE), NO_BONE)
                            if joint['parent'] != NO_BONE else NO_BONE,
+            'joint_bind_world': joint_bind_world,
+            'body_offset': body_offset,
             'body_bind_world': body_bind_world,
             'inverse_bind': mat4_affine_inverse(body_bind_world),
             'kind': kind,
@@ -419,14 +422,30 @@ def derive(joints, meshes, args):
     for b in bones:
         b['mass'] = b['volume'] * density
 
+    # Clips are authored in joint space against the source skeleton, so the rig
+    # stores the joint hierarchy plus a joint->body offset rather than a
+    # body-space hierarchy. Runtime FK is then:
+    #
+    #     joint_world[j] = joint_world[parent] * clip_local[j]
+    #     body_world[j]  = joint_world[j] * body_offset[j]
+    #
+    # Baking clips into body space instead would make runtime FK marginally
+    # simpler but would tie every clip to a particular rig derivation, so a new
+    # animation could not be dropped in without re-deriving.
+    #
+    # Pruning removes leaf subtrees only, so a kept bone's parent is always kept
+    # and parent_slot mirrors the joint hierarchy exactly.
     for b in bones:
         if b['parent_slot'] == NO_BONE:
-            b['local'] = b['body_bind_world']
+            joint_local = b['joint_bind_world']
         else:
-            parent_inv = mat4_affine_inverse(bones[b['parent_slot']]['body_bind_world'])
-            b['local'] = mat4_mul(parent_inv, b['body_bind_world'])
-        b['local_offset'] = (b['local'][3], b['local'][7], b['local'][11])
-        b['local_rotation'] = mat4_to_quat(b['local'])
+            parent_inv = mat4_affine_inverse(bones[b['parent_slot']]['joint_bind_world'])
+            joint_local = mat4_mul(parent_inv, b['joint_bind_world'])
+        b['joint_local_offset'] = (joint_local[3], joint_local[7], joint_local[11])
+        b['joint_local_rotation'] = mat4_to_quat(joint_local)
+        off = b['body_offset']
+        b['body_offset_translation'] = (off[3], off[7], off[11])
+        b['body_offset_rotation'] = mat4_to_quat(off)
 
     return {
         'bones': bones,
@@ -487,9 +506,12 @@ def write_gsmdl_v3(path, meshes, rig):
     u32(len(bones))
     for b in bones:
         blob(b['name'].encode('utf-8'))
+        u16(b['source_index'])
         u16(b['parent_slot'] if b['parent_slot'] != NO_BONE else 0xFFFF)
-        f32(*b['local_offset'])
-        f32(*b['local_rotation'])
+        f32(*b['joint_local_offset'])
+        f32(*b['joint_local_rotation'])
+        f32(*b['body_offset_translation'])
+        f32(*b['body_offset_rotation'])
         f32(*b['inverse_bind'])
         u32(b['kind'])
         f32(*b['params'])
@@ -538,9 +560,12 @@ def verify_gsmdl_v3(path):
     bones = []
     for i in range(bone_count):
         name = r.string().decode('utf-8', 'replace')
+        source_index = r.u16()
         parent = r.u16()
-        offset = r.f32(3)
-        rotation = r.f32(4)
+        joint_offset = r.f32(3)
+        joint_rotation = r.f32(4)
+        body_translation = r.f32(3)
+        body_rotation = r.f32(4)
         inv_bind = list(r.f32(16))
         kind = r.u32()
         params = r.f32(3)
@@ -551,8 +576,10 @@ def verify_gsmdl_v3(path):
             problems.append(f'{name}: bad shape kind {kind}')
         if not mass > 0.0:
             problems.append(f'{name}: non-positive mass {mass}')
-        bones.append({'name': name, 'parent': parent, 'offset': offset,
-                      'rotation': rotation, 'inv_bind': inv_bind})
+        bones.append({'name': name, 'source_index': source_index, 'parent': parent,
+                      'joint_offset': joint_offset, 'joint_rotation': joint_rotation,
+                      'body_translation': body_translation, 'body_rotation': body_rotation,
+                      'inv_bind': inv_bind})
 
     proxy_radius, proxy_half = r.f32(2)
     r.f32(3)
@@ -561,12 +588,15 @@ def verify_gsmdl_v3(path):
 
     worst_fk = 0.0
     worst_name = ''
-    for i, b in enumerate(bones):
-        local = quat_to_mat4(b['rotation'], b['offset'])
-        world = local if b['parent'] == 0xFFFF else mat4_mul(bones[b['parent']]['world'], local)
-        b['world'] = world
+    for b in bones:
+        joint_local = quat_to_mat4(b['joint_rotation'], b['joint_offset'])
+        joint_world = (joint_local if b['parent'] == 0xFFFF
+                       else mat4_mul(bones[b['parent']]['joint_world'], joint_local))
+        b['joint_world'] = joint_world
+        body_world = mat4_mul(joint_world,
+                              quat_to_mat4(b['body_rotation'], b['body_translation']))
         expected = mat4_affine_inverse(b['inv_bind'])
-        err = max(abs(world[k] - expected[k]) for k in range(16))
+        err = max(abs(body_world[k] - expected[k]) for k in range(16))
         if err > worst_fk:
             worst_fk, worst_name = err, b['name']
     if worst_fk > 1e-3:

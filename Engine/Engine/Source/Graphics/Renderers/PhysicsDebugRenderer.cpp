@@ -85,6 +85,7 @@ namespace gse::renderer::physics_debug {
 	>;
 
 	constexpr vec3f shape_color{ 0.0f, 1.0f, 0.0f };
+	constexpr vec3f non_resolving_shape_color{ 0.35f, 0.35f, 0.7f };
 	constexpr vec3f normal_color{ 0.0f, 0.7f, 1.0f };
 	constexpr int sphere_segments = 32;
 	constexpr int capsule_segments = 24;
@@ -444,9 +445,7 @@ auto gse::renderer::physics_debug::build(context& ctx, data& d, read<physics::tr
 	const auto collision_ids = collisions.owner_ids();
 	for (std::size_t i = 0; i < collisions.size(); ++i) {
 		const auto& coll = collisions[i];
-		if (!coll.resolve_collisions) {
-			continue;
-		}
+		const auto shape_tint = coll.resolve_collisions ? shape_color : non_resolving_shape_color;
 
 		const auto eid = collision_ids[i];
 
@@ -462,7 +461,7 @@ auto gse::renderer::physics_debug::build(context& ctx, data& d, read<physics::tr
 					shape_instance{
 						.body_index = body_index,
 						.shape_scale = vec3<length>{ s.size.x() * 0.5f, s.size.y() * 0.5f, s.size.z() * 0.5f },
-						.color = shape_color,
+						.color = shape_tint,
 					}
 				);
 			})
@@ -471,7 +470,7 @@ auto gse::renderer::physics_debug::build(context& ctx, data& d, read<physics::tr
 					shape_instance{
 						.body_index = body_index,
 						.shape_scale = vec3<length>{ s.radius, s.radius, s.radius },
-						.color = shape_color,
+						.color = shape_tint,
 					}
 				);
 			})
@@ -480,7 +479,7 @@ auto gse::renderer::physics_debug::build(context& ctx, data& d, read<physics::tr
 					shape_instance{
 						.body_index = body_index,
 						.shape_scale = vec3<length>{ s.radius, s.half_height, s.radius },
-						.color = shape_color,
+						.color = shape_tint,
 					}
 				);
 			});
