@@ -26,7 +26,6 @@ import gse.log;
 import gse.math;
 import gse.meta;
 import gse.gpu;
-import gse.assets;
 
 namespace gse::physics {
 	auto make_joint_definition(
@@ -139,6 +138,7 @@ auto gse::physics::clear_runtime_state(data& d) -> void {
 	d.gpu_uploaded_joint_count = 0;
 	d.id_to_body_index.clear();
 	d.joint_handles_by_entity.clear();
+	d.kinematic_step_start.clear();
 	d.gpu_pending_impulses.clear();
 	d.body_airborne.clear();
 	d.body_sleeping.clear();
@@ -535,9 +535,46 @@ auto gse::physics::init(context& ctx, const std::optional<shared_view<gpu::conte
 	co_return;
 }
 
-auto gse::physics::prepare(context& ctx, const std::optional<shared_view<gpu::context::data>> gpu_s, const shared_view<asset::data> assets_s, data& d, write<joint_spec> specs, read<muscle_component> muscles, read<joint_drive_component> drives) -> async::task<> {
-	(void)gpu_s;
-	(void)assets_s;
+auto gse::physics::apply_kinematic_targets(read<kinematic_target_component>& targets, write<transform_component>& transform, write<motion_component>& motion, std::flat_map<id, transform_component>& step_start, const time_t<float, seconds> dt) -> void {
+	trace::scope_guard sg{ trace_id<"physics::kinematic_targets">() };
+
+	const auto target_owners = targets.owner_ids();
+	for (std::size_t i = 0; i < targets.size(); ++i) {
+		const auto eid = target_owners[i];
+		auto* mc = motion.find(eid);
+		if (!mc || !is_kinematic(*mc)) {
+			continue;
+		}
+		auto* tc = transform.find(eid);
+		if (!tc) {
+			continue;
+		}
+
+		const auto& target = targets[i];
+		const auto start = step_start.try_emplace(eid, *tc).first;
+
+		*tc = start->second;
+
+		mc->current_velocity = (target.position - tc->position) / dt;
+		mc->angular_velocity = difference_axis_angle(tc->orientation, target.orientation) / dt;
+
+		start->second = transform_component{
+			.position = target.position,
+			.orientation = target.orientation,
+		};
+	}
+}
+
+auto gse::physics::prepare(context& ctx, data& d, write<joint_spec> specs, read<muscle_component> muscles, read<joint_drive_component> drives, read<kinematic_target_component> targets, write<transform_component> transform, write<motion_component> motion) -> async::task<> {
+	if (const int steps = system_clock::fixed_steps_this_frame(); steps > 0 && d.update_phys) {
+		apply_kinematic_targets(
+			targets,
+			transform,
+			motion,
+			d.kinematic_step_start,
+			system_clock::fixed_dt<time_t<float, seconds>>() * static_cast<float>(steps)
+		);
+	}
 
 	const auto spec_owners = specs.owner_ids();
 	for (std::size_t i = 0; i < specs.size(); ++i) {
@@ -664,6 +701,7 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 	if (reset) {
 		d.sleep_counters.clear();
 		d.contact_cache.clear();
+		d.kinematic_step_start.clear();
 	}
 
 	const auto publish_gpu_body_index_map = [&] {
