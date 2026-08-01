@@ -238,10 +238,9 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 	const auto draw_cell = [&](const rectf& rect, const rectf& visible, const rectf& close_rect, const tab_desc& tab, const bool is_active, const bool hovered) {
 		ctx.queue_sprite({
 			.rect = rect,
-			.color = is_active ? sty.color_widget_background : (hovered ? sty.color_widget_hovered : sty.color_input_background),
+			.color = is_active ? sty.color_tab_active : (hovered ? sty.color_tab_hovered : sty.color_tab_background),
 			.texture = ctx.blank_texture,
 			.clip_rect = visible,
-			.corner_radius = sty.corner_radius,
 		});
 
 		const bool show_close = tab.busy || tab.closeable;
@@ -356,7 +355,7 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 				const bool hovered = visible.contains(mouse) && available;
 				ctx.queue_sprite({
 					.rect = visible,
-					.color = hovered ? sty.color_widget_hovered : sty.color_input_background,
+					.color = hovered ? sty.color_tab_hovered : sty.color_tab_background,
 					.texture = ctx.blank_texture,
 				});
 				ctx.queue_text({

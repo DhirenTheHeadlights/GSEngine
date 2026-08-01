@@ -144,7 +144,7 @@ template <typename ColSpec, typename RowSpec, typename T>
 constexpr auto gse::mixed_mat<ColSpec, RowSpec, T>::transform_direction(const vec3f& d) const -> vec3f
 requires(N == 4)
 {
-	const auto v4 = static_cast<const base&>(*this) * vec4f{ d.x(), d.y(), d.z(), T(0) };
+	const auto v4 = static_cast<const base&>(*this) * vec4f{ d, T(0) };
 	return { v4[0], v4[1], v4[2] };
 }
 

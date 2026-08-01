@@ -10,6 +10,7 @@ import gse.win32;
 
 namespace gse::ide::project {
 	constexpr std::string_view manifest_extension = ".gseproj";
+	constexpr std::string_view engine_marker = "Engine/cmake/GSEEngine.cmake";
 
 	auto read_file(
 		const std::filesystem::path& path
@@ -26,6 +27,24 @@ namespace gse::ide::project {
 	auto command_line_manifest() -> std::filesystem::path;
 
 	auto recent_path() -> std::filesystem::path;
+
+	auto module_namespace(
+		std::string_view name
+	) -> std::string;
+
+	auto engines_path() -> std::filesystem::path;
+
+	auto is_engine_tree(
+		const std::filesystem::path& path
+	) -> bool;
+
+	auto engine_for_name(
+		std::string_view name
+	) -> std::filesystem::path;
+
+	auto write_engines(
+		const std::vector<engine_entry>& entries
+	) -> void;
 
 	auto recent_manifest() -> std::filesystem::path;
 
@@ -123,6 +142,35 @@ auto gse::ide::project::write_file(const std::filesystem::path& path, const std:
 	return stream.good();
 }
 
+auto gse::ide::project::templates() -> std::span<const project_template> {
+	static constexpr std::array<project_template, 2> entries{
+		project_template{
+			.id = "blank",
+			.label = "Blank",
+			.detail = "Empty game loop with the 3D world running.",
+		},
+		project_template{
+			.id = "tool",
+			.label = "Tool",
+			.detail = "2D tool: world simulation and rendering off, one starter system.",
+		},
+	};
+	return entries;
+}
+
+auto gse::ide::project::module_namespace(const std::string_view name) -> std::string {
+	std::string out;
+	for (const char c : name) {
+		if (std::isalnum(static_cast<unsigned char>(c))) {
+			out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+		}
+	}
+	if (out.empty() || std::isdigit(static_cast<unsigned char>(out.front()))) {
+		out.insert(out.begin(), 'p');
+	}
+	return out;
+}
+
 auto gse::ide::project::validate_new(const std::string_view name, const std::filesystem::path& parent) -> std::string {
 	if (name.empty()) {
 		return "Enter a project name.";
@@ -147,7 +195,7 @@ auto gse::ide::project::validate_new(const std::string_view name, const std::fil
 	return {};
 }
 
-auto gse::ide::project::create(const std::string_view name, const std::filesystem::path& parent) -> std::expected<std::filesystem::path, std::string> {
+auto gse::ide::project::create(const std::string_view name, const std::filesystem::path& parent, const std::string_view template_id) -> std::expected<std::filesystem::path, std::string> {
 	if (const std::string problem = validate_new(name, parent); !problem.empty()) {
 		return std::unexpected(problem);
 	}
@@ -168,12 +216,15 @@ set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Set by the editor when it configures this project, from the .gseproj [engine] source key.
+# Set by the editor when it configures this project, from the .gseproj [engine] section.
 if(NOT DEFINED GSE_ENGINE_DIR)
     set(GSE_ENGINE_DIR "$ENV{{GSE_ENGINE_DIR}}")
 endif()
 if(NOT GSE_ENGINE_DIR)
     message(FATAL_ERROR "GSE_ENGINE_DIR is not set. Pass -DGSE_ENGINE_DIR=<path to the engine tree>.")
+endif()
+if(NOT EXISTS "${{GSE_ENGINE_DIR}}/Engine/cmake/GSEEngine.cmake")
+    message(FATAL_ERROR "GSE_ENGINE_DIR does not point at an engine tree:\n  ${{GSE_ENGINE_DIR}}\nThe engine it names has moved or been deleted. Fix the [engine] section of this project's .gseproj.")
 endif()
 
 include("${{GSE_ENGINE_DIR}}/Engine/cmake/GSEEngine.cmake")
@@ -224,6 +275,11 @@ endif()
 gse_copy_runtime_deps({0})
 )", project);
 
+	const std::string engine_name = ensure_engine_registered(config::root_dir());
+	const std::string engine_block = engine_name.empty()
+		? std::format("source = {}\n", config::root_dir().generic_display_string())
+		: std::format("name = {}\nsource = {}\n", engine_name, config::root_dir().generic_display_string());
+
 	const std::string manifest_text = std::format(R"([project]
 name = {0}
 engine_version = 0.1.0
@@ -231,13 +287,37 @@ source = Source
 assets = Assets
 
 [engine]
-source = {1}
-
+{1}
 [targets]
 game = {0}
-)", project, config::root_dir().generic_display_string());
+)", project, engine_block);
 
-	const std::string main_text = std::format(R"(import std;
+	const bool tool = template_id == "tool";
+	const std::string ns = module_namespace(project);
+
+	const std::string main_text = tool
+		? std::format(R"(import std;
+
+import gse;
+import gse.system_manifest;
+
+import {1}.app;
+
+auto main() -> int {{
+	gse::start(
+		[](gse::engine& e) -> void {{
+			gse::register_systems<^^{1}::app>(e);
+		}},
+		{{
+			.title = "{0}",
+			.render_world = false,
+			.simulate_world = false,
+		}}
+	);
+	return 0;
+}}
+)", project, ns)
+		: std::format(R"(import std;
 
 import gse;
 
@@ -253,6 +333,31 @@ auto main() -> int {{
 }}
 )", project);
 
+	const std::string app_module = tool
+		? std::format(R"(export module {1}.app;
+
+import std;
+import gse;
+
+export namespace {1}::app {{
+	struct [[= gse::system_state<"{0}">{{}}]] data {{
+		bool ready = false;
+	}};
+
+	[[= gse::system_run<>{{}}]]
+	auto run(
+		gse::context& ctx,
+		data& d
+	) -> gse::async::task<>;
+}}
+
+auto {1}::app::run(gse::context&, data& d) -> gse::async::task<> {{
+	d.ready = true;
+	co_return;
+}}
+)", project, ns)
+		: std::string{};
+
 	const std::filesystem::path manifest = destination / (project + std::string(manifest_extension));
 
 	if (!write_file(destination / "CMakeLists.txt", cmake)
@@ -262,11 +367,96 @@ auto main() -> int {{
 		return std::unexpected(std::format("Could not write project files under {}", destination.generic_display_string()));
 	}
 
+	if (!app_module.empty() && !write_file(destination / "Source" / "App.cppm", app_module)) {
+		return std::unexpected(std::format("Could not write project files under {}", destination.generic_display_string()));
+	}
+
 	return config::generic(manifest);
 }
 
 auto gse::ide::project::recent_path() -> std::filesystem::path {
 	return config::user_config_dir() / "recent_projects.ini";
+}
+
+auto gse::ide::project::engines_path() -> std::filesystem::path {
+	return config::user_config_dir() / "engines.ini";
+}
+
+auto gse::ide::project::is_engine_tree(const std::filesystem::path& path) -> bool {
+	if (path.empty()) {
+		return false;
+	}
+	std::error_code ec;
+	return std::filesystem::exists(path / engine_marker, ec);
+}
+
+auto gse::ide::project::engines() -> std::vector<engine_entry> {
+	std::vector<engine_entry> entries;
+	for (const layout_store::section& section : layout_store::parse_sections(layout_store::read(engines_path()))) {
+		if (section.name != "engines") {
+			continue;
+		}
+		for (const auto& [name, value] : section.values) {
+			if (!name.empty() && !value.empty()) {
+				entries.push_back({ .name = name, .path = config::generic(value) });
+			}
+		}
+	}
+	return entries;
+}
+
+auto gse::ide::project::write_engines(const std::vector<engine_entry>& entries) -> void {
+	std::string block = "[engines]\n";
+	for (const engine_entry& entry : entries) {
+		block += std::format("{} = {}\n", entry.name, entry.path.generic_native_encoded_string());
+	}
+	layout_store::submit(engines_path(), { .names = { "engines" } }, std::move(block));
+}
+
+auto gse::ide::project::engine_for_name(const std::string_view name) -> std::filesystem::path {
+	for (const engine_entry& entry : engines()) {
+		if (entry.name == name) {
+			return entry.path;
+		}
+	}
+	return {};
+}
+
+auto gse::ide::project::ensure_engine_registered(const std::filesystem::path& path) -> std::string {
+	if (!is_engine_tree(path)) {
+		return {};
+	}
+
+	const std::filesystem::path canonical = config::generic(path);
+	std::vector<engine_entry> entries = engines();
+	for (const engine_entry& entry : entries) {
+		if (entry.path == canonical) {
+			return entry.name;
+		}
+	}
+
+	std::string base = canonical.filename().native_encoded_string();
+	if (base.empty()) {
+		base = "engine";
+	}
+
+	std::string name = base;
+	for (int suffix = 2; std::ranges::any_of(entries, [&name](const engine_entry& entry) { return entry.name == name; }); ++suffix) {
+		name = std::format("{}-{}", base, suffix);
+	}
+
+	entries.push_back({ .name = name, .path = canonical });
+	write_engines(entries);
+	return name;
+}
+
+auto gse::ide::project::bind_engine(const std::filesystem::path& manifest_file, const engine_entry& engine) -> void {
+	layout_store::submit(
+		manifest_file,
+		{ .names = { "engine" } },
+		std::format("[engine]\nname = {}\nsource = {}\n", engine.name, engine.path.generic_native_encoded_string())
+	);
+	layout_store::flush();
 }
 
 auto gse::ide::project::recent() -> std::vector<std::filesystem::path> {
@@ -393,6 +583,9 @@ auto gse::ide::project::load(const std::filesystem::path& file) -> manifest {
 			}
 		}
 		else if (section.name == "engine") {
+			if (const auto entry = section.values.find("name"); entry != section.values.end()) {
+				out.engine_name = entry->second;
+			}
 			if (const auto entry = section.values.find("source"); entry != section.values.end()) {
 				const std::filesystem::path declared(entry->second);
 				out.engine = declared.is_absolute() ? declared : out.root / declared;
@@ -403,9 +596,32 @@ auto gse::ide::project::load(const std::filesystem::path& file) -> manifest {
 		}
 	}
 
+	std::vector<std::filesystem::path> candidates;
+	if (!out.engine_name.empty()) {
+		if (std::filesystem::path bound = engine_for_name(out.engine_name); !bound.empty()) {
+			candidates.push_back(std::move(bound));
+		}
+	}
 	if (!out.engine.empty()) {
 		std::error_code engine_ec;
-		out.engine = config::generic(std::filesystem::weakly_canonical(out.engine, engine_ec));
+		candidates.push_back(config::generic(std::filesystem::weakly_canonical(out.engine, engine_ec)));
+	}
+
+	out.engine.clear();
+	for (const std::filesystem::path& candidate : candidates) {
+		if (is_engine_tree(candidate)) {
+			out.engine = candidate;
+			break;
+		}
+	}
+
+	if (out.engine.empty()) {
+		if (!candidates.empty()) {
+			out.engine_problem = std::format("no engine tree at {} ({} missing)", candidates.front().generic_display_string(), engine_marker);
+		}
+		else if (!out.engine_name.empty()) {
+			out.engine_problem = std::format("engine '{}' is not registered on this machine", out.engine_name);
+		}
 	}
 
 	out.source = config::generic(out.root / source_leaf);
@@ -425,9 +641,17 @@ auto gse::ide::project::accent() -> vec4f {
 }
 
 auto gse::ide::project::resolve() -> manifest {
-	for (const std::filesystem::path& candidate : { command_line_manifest(), recent_manifest(), dev_default_manifest() }) {
+	ensure_engine_registered(config::root_dir());
+
+	const std::array<std::filesystem::path, 3> candidates{ command_line_manifest(), recent_manifest(), dev_default_manifest() };
+
+	for (const auto& [index, candidate] : std::views::enumerate(candidates)) {
 		if (manifest found = load(candidate); found.valid) {
+			found.requested = index == 0;
 			log::println(log::level::info, log::category::general, "[project] opened '{}' at {}", found.name, found.root.generic_display_string());
+			if (!found.engine_problem.empty()) {
+				log::println(log::level::error, log::category::general, "[project] engine binding failed: {} - falling back to the editor's own engine; fix the [engine] section of {}", found.engine_problem, found.file.generic_display_string());
+			}
 			return found;
 		}
 	}

@@ -95,7 +95,7 @@ auto gse::ide::search_screen::draw_backdrop(gui::draw_context& ctx, const vec2f 
 	const rectf card = body_rect(ctx.style, viewport_size);
 	ctx.sprites.push_back({
 		.rect = card,
-		.color = { ctx.style.color_menu_body.x(), ctx.style.color_menu_body.y(), ctx.style.color_menu_body.z(), 1.f },
+		.color = { vec3f(ctx.style.color_menu_body), 1.f },
 		.texture = ctx.blank_texture,
 		.layer = render_layer::overlay,
 		.corner_radius = ctx.style.corner_radius_menu,

@@ -796,7 +796,7 @@ auto gse::ide::draw_hover_panel(const gse::gui::draw_context& ctx, const rectf& 
 		});
 		ctx.queue_sprite({
 			.rect = panel,
-			.color = { sty.color_menu_body.x(), sty.color_menu_body.y(), sty.color_menu_body.z(), 1.f },
+			.color = { vec3f(sty.color_menu_body), 1.f },
 			.texture = ctx.blank_texture,
 			.z_order = z,
 			.corner_radius = sty.corner_radius_menu,
@@ -955,7 +955,7 @@ auto gse::ide::draw_hover_panel(const gse::gui::draw_context& ctx, const rectf& 
 	});
 	ctx.queue_sprite({
 		.rect = panel,
-		.color = { sty.color_menu_body.x(), sty.color_menu_body.y(), sty.color_menu_body.z(), 1.f },
+		.color = { vec3f(sty.color_menu_body), 1.f },
 		.texture = ctx.blank_texture,
 		.z_order = z,
 		.corner_radius = sty.corner_radius_menu,
@@ -1037,7 +1037,7 @@ auto gse::ide::draw_diagnostic_tooltip(const gse::gui::draw_context& ctx, const 
 	});
 	ctx.queue_sprite({
 		.rect = panel,
-		.color = { sty.color_menu_body.x(), sty.color_menu_body.y(), sty.color_menu_body.z(), 1.f },
+		.color = { vec3f(sty.color_menu_body), 1.f },
 		.texture = ctx.blank_texture,
 		.corner_radius = sty.corner_radius_menu,
 	});
@@ -1399,7 +1399,7 @@ auto gse::ide::draw_quickfix_tooltip(const gse::gui::draw_context& ctx, const re
 	});
 	ctx.queue_sprite({
 		.rect = panel,
-		.color = { sty.color_menu_body.x(), sty.color_menu_body.y(), sty.color_menu_body.z(), 1.f },
+		.color = { vec3f(sty.color_menu_body), 1.f },
 		.texture = ctx.blank_texture,
 		.corner_radius = sty.corner_radius_menu,
 	});
@@ -1468,7 +1468,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 	const float row_h = std::min(ctx.fonts.text->line_height(font_sz) + pad, body.height());
 	const float tab_gap = 2.f * ctx.style.scale_factor;
 
-	const std::string game_caption = "Game";
+	constexpr std::string_view game_caption = "Game";
 	const float game_width = std::clamp(ctx.fonts.text->width(game_caption, font_sz) + pad * 3.f, 64.f * ctx.style.scale_factor, 220.f * ctx.style.scale_factor);
 	const float game_divider_width = ctx.style.accent_bar_width;
 	const float document_area_width = std::max(0.f, body.width() - game_width - game_divider_width - tab_gap);
@@ -1504,7 +1504,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 	);
 	ctx.queue_sprite({
 		.rect = tab_bar,
-		.color = ctx.style.color_input_background,
+		.color = ctx.style.color_tab_background,
 		.texture = ctx.blank_texture,
 	});
 
@@ -1565,7 +1565,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 	});
 	ctx.queue_sprite({
 		.rect = game_tab,
-		.color = game_active ? ctx.style.color_widget_background : (game_hovered ? ctx.style.color_widget_hovered : ctx.style.color_input_background),
+		.color = game_active ? ctx.style.color_tab_active : (game_hovered ? ctx.style.color_tab_hovered : ctx.style.color_tab_background),
 		.texture = ctx.blank_texture,
 	});
 	ctx.queue_text({
@@ -1632,7 +1632,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 				.run_after = true,
 			});
 		}
-		const std::string button_label = building
+		const std::string_view button_label = building
 			? "Building..."
 			: (game_running ? "Rebuild & Run" : "Build & Run");
 
@@ -1645,7 +1645,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 			if (graph_hovered && ctx.mouse_pressed_for(graph_rect)) {
 				ws.show_game_graph = !ws.show_game_graph;
 			}
-			const std::string graph_label = ws.show_game_graph ? "View Game" : "View Graph";
+			const std::string_view graph_label = ws.show_game_graph ? "View Game" : "View Graph";
 			ctx.queue_sprite({
 				.rect = graph_rect,
 				.color = graph_hovered ? ctx.style.color_button_hovered : ctx.style.color_button_background,
@@ -1654,7 +1654,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 			});
 			ctx.queue_text({
 				.font = ctx.fonts.text,
-				.text = ctx.intern(graph_label),
+				.text = graph_label,
 				.position = {
 					graph_rect.center().x() - ctx.fonts.text->width(graph_label, font_sz) * 0.5f,
 					graph_rect.center().y() + ctx.fonts.text->vertical_center_offset(font_sz),
@@ -1687,7 +1687,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::
 		if (text_rect.width() <= 0.f || text_rect.height() <= 0.f) {
 			return;
 		}
-		const std::string label = "Open a file from the explorer";
+		constexpr std::string_view label = "Open a file from the explorer";
 		const float w = ctx.fonts.text->width(label, font_sz);
 		ctx.queue_text({
 			.font = ctx.fonts.text,

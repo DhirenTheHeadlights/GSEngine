@@ -11,6 +11,7 @@ export namespace gse::ide::analysis {
 		std::filesystem::path directory;
 		std::filesystem::path output;
 		std::uint64_t fingerprint = 0;
+		std::uint64_t semantic_fingerprint = 0;
 	};
 
 	struct compilation_entry {
@@ -149,11 +150,43 @@ namespace gse::ide::analysis {
 
 		std::uint64_t fingerprint = stable_id(command_line);
 		fingerprint = hash_combine(fingerprint, stable_id(directory.generic_native_encoded_string()));
+
+		std::vector<std::string> search_paths;
+		std::vector<std::string> flags;
+		std::unordered_set<std::string> seen;
+		for (std::size_t i = 0; i < kept.size(); ++i) {
+			std::string unit = kept[i];
+			if (i + 1 < kept.size() && (unit == "-I" || unit == "-isystem" || unit == "-iquote" || unit == "-D" || unit == "-U" || unit == "-include" || unit == "-x")) {
+				unit.push_back(' ');
+				unit += kept[i + 1];
+				++i;
+			}
+			if (!seen.insert(unit).second) {
+				continue;
+			}
+			if (unit.starts_with("-I") || unit.starts_with("-isystem") || unit.starts_with("-iquote") || unit.starts_with("-include")) {
+				search_paths.push_back(std::move(unit));
+			}
+			else {
+				flags.push_back(std::move(unit));
+			}
+		}
+		std::ranges::sort(flags);
+
+		std::uint64_t semantic_fingerprint = stable_id("semantic_command");
+		for (const std::string& unit : search_paths) {
+			semantic_fingerprint = hash_combine(semantic_fingerprint, stable_id(unit));
+		}
+		for (const std::string& unit : flags) {
+			semantic_fingerprint = hash_combine(semantic_fingerprint, stable_id(unit));
+		}
+
 		return {
 			.command_line = std::move(command_line),
 			.directory = directory,
 			.output = std::move(output),
 			.fingerprint = fingerprint,
+			.semantic_fingerprint = semantic_fingerprint,
 		};
 	}
 

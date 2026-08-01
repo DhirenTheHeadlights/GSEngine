@@ -215,21 +215,24 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, te
 	const std::size_t display_tab_width = std::clamp<std::size_t>(indent_width, 1, 16);
 	const std::string indent_text = indent_with_spaces ? std::string(display_tab_width, ' ') : std::string(1, '\t');
 
-	auto expand_from = [display_tab_width](std::string_view s, std::size_t start_col) -> std::string {
-		std::string out;
+	auto expand_from = [display_tab_width](std::string_view s, std::size_t start_col, std::string& scratch) -> std::string_view {
+		if (s.find('\t') == std::string_view::npos) {
+			return s;
+		}
+		scratch.clear();
 		std::size_t col = start_col;
 		for (const char c : s) {
 			if (c == '\t') {
 				const std::size_t pad = display_tab_width - col % display_tab_width;
-				out.append(pad, ' ');
+				scratch.append(pad, ' ');
 				col += pad;
 			}
 			else {
-				out.push_back(c);
+				scratch.push_back(c);
 				++col;
 			}
 		}
-		return out;
+		return scratch;
 	};
 
 	auto line_column_x = [&](const std::string_view line) -> std::vector<float> {
@@ -332,7 +335,8 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, te
 				widest_line = row;
 			}
 		}
-		state.widest_line_px = fnt->width(expand_from(widest_line, 0), scale);
+		std::string widest_scratch;
+		state.widest_line_px = fnt->width(expand_from(widest_line, 0, widest_scratch), scale);
 		state.width_sig = sig;
 	}
 
@@ -344,7 +348,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, te
 		{ std::max(0.f, rect.width() - scrollbar_gutter), std::max(0.f, rect.height() - h_scrollbar_gutter) }
 	);
 
-	const bool hovered = rect.contains(ctx.input.mouse_position()) && ctx.input_available();
+	const bool hovered = ctx.hovers(rect);
 	if (hovered) {
 		hot_widget_id = widget_id;
 	}
@@ -973,6 +977,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, te
 	}
 
 	std::size_t span_cursor = 0;
+	std::string run_scratch;
 	for (int i = first_line; i < last_line; ++i) {
 		const std::string_view line = buffer.line(static_cast<std::uint32_t>(i));
 		const float line_center = top_y - static_cast<float>(i) * line_h - line_h * 0.5f;
@@ -1018,7 +1023,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, te
 				return alpha;
 			};
 			auto emit_run = [&](std::size_t a, std::size_t b, const vec4f& color) {
-				const std::string seg = expand_from(line.substr(a, b - a), disp);
+				const std::string_view seg = expand_from(line.substr(a, b - a), disp, run_scratch);
 				ctx.queue_text({
 					.font = fnt,
 					.text = seg,

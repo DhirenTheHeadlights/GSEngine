@@ -70,6 +70,25 @@ namespace gse {
 		int monitor_index
 	) -> void;
 
+	auto monitor_index_for_window(
+		vec2i position,
+		vec2i size
+	) -> int;
+
+	auto set_window_frame_rect(
+		const window::data& d,
+		vec2i position,
+		vec2i size
+	) -> void;
+
+	auto restore_window_geometry(
+		window::data& d
+	) -> void;
+
+	auto record_window_geometry(
+		window::data& d
+	) -> void;
+
 	auto to_input_key(
 		int glfw_key
 	) -> std::optional<key>;
@@ -195,7 +214,118 @@ auto gse::move_window_to_monitor(const window::data& d, const int monitor_index)
 
 	const int new_x = mx + (mw - ww) / 2;
 	const int new_y = my + (mh - wh) / 2;
-	glfwSetWindowPos(handle, new_x, new_y);
+	set_window_frame_rect(d, { new_x, new_y }, { ww, wh });
+}
+
+auto gse::monitor_index_for_window(const vec2i position, const vec2i size) -> int {
+	int monitor_count = 0;
+	GLFWmonitor** monitors = glfwGetMonitors(&monitor_count);
+	if (!monitors || monitor_count == 0) {
+		return -1;
+	}
+
+	int best_index = -1;
+	int best_overlap = 0;
+
+	for (int i = 0; i < monitor_count; ++i) {
+		int mx = 0;
+		int my = 0;
+		int mw = 0;
+		int mh = 0;
+		glfwGetMonitorWorkarea(monitors[i], &mx, &my, &mw, &mh);
+
+		const int overlap_x = std::min(position.x() + size.x(), mx + mw) - std::max(position.x(), mx);
+		const int overlap_y = std::min(position.y() + size.y(), my + mh) - std::max(position.y(), my);
+		if (overlap_x <= 0 || overlap_y <= 0) {
+			continue;
+		}
+
+		if (const int overlap = overlap_x * overlap_y; overlap > best_overlap) {
+			best_overlap = overlap;
+			best_index = i;
+		}
+	}
+
+	return best_index;
+}
+
+auto gse::set_window_frame_rect(const window::data& d, const vec2i position, const vec2i size) -> void {
+	auto* handle = to_glfw_handle(d.handle);
+
+#ifdef _WIN32
+	if (d.native_frame) {
+		win32::SetWindowPos(
+			win32::hwnd_from_glfw_window(handle),
+			nullptr,
+			position.x(),
+			position.y(),
+			size.x(),
+			size.y(),
+			win32::swp_no_zorder | win32::swp_no_activate
+		);
+		return;
+	}
+#endif
+
+	glfwSetWindowSize(handle, size.x(), size.y());
+	glfwSetWindowPos(handle, position.x(), position.y());
+}
+
+auto gse::restore_window_geometry(window::data& d) -> void {
+	const auto& saved = d.saved_geometry;
+	if (saved.width <= 0 || saved.height <= 0) {
+		return;
+	}
+
+	const int monitor_index = monitor_index_for_window({ saved.x, saved.y }, { saved.width, saved.height });
+	if (monitor_index < 0) {
+		return;
+	}
+
+	int monitor_count = 0;
+	GLFWmonitor** monitors = glfwGetMonitors(&monitor_count);
+
+	int mx = 0;
+	int my = 0;
+	int mw = 0;
+	int mh = 0;
+	glfwGetMonitorWorkarea(monitors[monitor_index], &mx, &my, &mw, &mh);
+
+	const int width = std::min(saved.width, mw);
+	const int height = std::min(saved.height, mh);
+	const int x = std::clamp(saved.x, mx, mx + mw - width);
+	const int y = std::clamp(saved.y, my, my + mh - height);
+
+	set_window_frame_rect(d, { x, y }, { width, height });
+
+	d.windowed_rect = rect_t<vec2i>::from_position_size(
+		{ x, y },
+		{ width, height }
+	);
+
+	if (saved.maximized) {
+		glfwMaximizeWindow(to_glfw_handle(d.handle));
+	}
+}
+
+auto gse::record_window_geometry(window::data& d) -> void {
+	if (d.current_display_mode != display_mode::windowed || window_handle_minimized(d.handle)) {
+		return;
+	}
+
+	d.saved_geometry.maximized = d.maximized;
+
+	if (!d.maximized) {
+		d.saved_geometry.x = d.position.x();
+		d.saved_geometry.y = d.position.y();
+		d.saved_geometry.width = d.size.x();
+		d.saved_geometry.height = d.size.y();
+	}
+
+	if (const int monitor_index = monitor_index_for_window(d.position, d.size); monitor_index >= 0 && monitor_index != d.monitor.value) {
+		d.monitor.value = monitor_index;
+		d.last_monitor_index = monitor_index;
+	}
 }
 
 auto gse::apply_display_mode(window::data& d, const display_mode mode) -> void {
@@ -226,6 +356,7 @@ auto gse::apply_display_mode(window::data& d, const display_mode mode) -> void {
 		const auto pos = d.windowed_rect.top_left();
 		const auto size = d.windowed_rect.size();
 		glfwSetWindowMonitor(handle, nullptr, pos.x(), pos.y(), size.x(), size.y(), 0);
+		set_window_frame_rect(d, pos, size);
 		return;
 	}
 
@@ -412,6 +543,8 @@ auto gse::create_window(window::data& d) -> void {
 	if (d.native_frame) {
 		window::install_native_frame(d.handle, &d.chrome_caption_height, &d.chrome_controls_width, &d.chrome_interactive_x0, &d.chrome_interactive_x1, &d.chrome_resize_exclude_y0, &d.chrome_resize_exclude_y1);
 	}
+
+	restore_window_geometry(d);
 }
 
 namespace gse::window {
@@ -525,6 +658,23 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 		d.cmd_toggle_maximize = true;
 	}
 
+	for ([[maybe_unused]] const auto& req : sched.read_channel<window_close_request>()) {
+		d.cmd_close = true;
+	}
+
+	for (const auto& req : sched.read_channel<window_open_file_request>()) {
+		d.cmd_open_file = true;
+		d.cmd_open_file_title = req.title;
+		d.cmd_open_file_filter_name = req.filter_name;
+		d.cmd_open_file_filter_pattern = req.filter_pattern;
+	}
+
+	for (const auto& req : sched.read_channel<window_launcher_mode_request>()) {
+		d.cmd_launcher_pending = true;
+		d.cmd_launcher_active = req.active;
+		d.cmd_launcher_size = { req.width, req.height };
+	}
+
 	for (const auto& req : sched.read_channel<window_chrome_metrics_request>()) {
 		d.chrome_caption_height = req.caption_height;
 		d.chrome_controls_width = req.controls_width;
@@ -573,6 +723,45 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 	}
 
 	apply_commands(d);
+
+	if (d.cmd_open_file) {
+		d.cmd_open_file = false;
+		sched.make_channel_writer().push<window_open_file_result>({
+			.path = prompt_for_file(d),
+		});
+	}
+}
+
+auto gse::window::prompt_for_file(data& d) -> std::filesystem::path {
+#ifdef _WIN32
+	if (!d.handle) {
+		return {};
+	}
+
+	std::wstring filter = std::filesystem::path(d.cmd_open_file_filter_name).wstring();
+	filter.push_back(L'\0');
+	filter.append(std::filesystem::path(d.cmd_open_file_filter_pattern).wstring());
+	filter.push_back(L'\0');
+	filter.push_back(L'\0');
+
+	const std::wstring title = std::filesystem::path(d.cmd_open_file_title).wstring();
+
+	std::wstring buffer(win32::max_path, L'\0');
+	if (!win32::open_file_dialog(
+		win32::hwnd_from_glfw_window(to_glfw_handle(d.handle)),
+		title.c_str(),
+		filter.c_str(),
+		buffer.data(),
+		static_cast<win32::DWORD>(buffer.size())
+	)) {
+		return {};
+	}
+
+	buffer.resize(std::wcslen(buffer.c_str()));
+	return buffer;
+#else
+	return {};
+#endif
 }
 
 auto gse::window::shutdown(data& d) -> void {
@@ -593,6 +782,11 @@ auto gse::window::apply_commands(data& d) -> void {
 
 	auto* handle = to_glfw_handle(d.handle);
 
+	if (d.cmd_close) {
+		glfwSetWindowShouldClose(handle, glfw::true_);
+		d.cmd_close = false;
+	}
+
 	if (d.cmd_minimize) {
 		glfwIconifyWindow(handle);
 		d.cmd_minimize = false;
@@ -608,15 +802,61 @@ auto gse::window::apply_commands(data& d) -> void {
 		d.cmd_toggle_maximize = false;
 	}
 
+	if (d.cmd_launcher_pending) {
+		if (d.cmd_launcher_active) {
+			const bool was_maximized = glfwGetWindowAttrib(handle, glfw::maximized) != 0;
+			if (was_maximized) {
+				glfwRestoreWindow(handle);
+			}
+
+			int cur_x = 0;
+			int cur_y = 0;
+			int cur_w = 0;
+			int cur_h = 0;
+			glfwGetWindowPos(handle, &cur_x, &cur_y);
+			glfwGetWindowSize(handle, &cur_w, &cur_h);
+
+			if (d.launcher_saved_size.x() <= 0) {
+				d.launcher_saved_position = { cur_x, cur_y };
+				d.launcher_saved_size = { cur_w, cur_h };
+				d.launcher_saved_maximized = was_maximized;
+			}
+
+			const int width = std::max(1, d.cmd_launcher_size.x());
+			const int height = std::max(1, d.cmd_launcher_size.y());
+			set_window_frame_rect(
+				d,
+				{ cur_x + (cur_w - width) / 2, cur_y + (cur_h - height) / 2 },
+				{ width, height }
+			);
+		}
+		else if (d.launcher_saved_size.x() > 0) {
+			set_window_frame_rect(d, d.launcher_saved_position, d.launcher_saved_size);
+			if (d.launcher_saved_maximized) {
+				glfwMaximizeWindow(handle);
+			}
+			d.launcher_saved_size = { 0, 0 };
+			d.launcher_saved_maximized = false;
+		}
+		d.cmd_launcher_pending = false;
+	}
+
 	int win_x = 0;
 	int win_y = 0;
 	int win_w = 0;
 	int win_h = 0;
 	glfwGetWindowPos(handle, &win_x, &win_y);
 	glfwGetWindowSize(handle, &win_w, &win_h);
+
+	const bool changed = win_x != d.position.x() || win_y != d.position.y() || win_w != d.size.x() || win_h != d.size.y();
+
 	d.position = vec2i{ win_x, win_y };
 	d.size = vec2i{ win_w, win_h };
 	d.maximized = glfwGetWindowAttrib(handle, glfw::maximized) != 0;
+
+	if (changed && d.launcher_saved_size.x() <= 0) {
+		record_window_geometry(d);
+	}
 }
 
 #ifdef _WIN32

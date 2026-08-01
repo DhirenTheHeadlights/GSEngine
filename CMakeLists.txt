@@ -10,8 +10,8 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/Engine/cmake/GSEEngine.cmake")
 project(GSEngine)
 
 gse_configure_compiler()
-gse_write_manifest()
+gse_write_manifest("${CMAKE_CURRENT_SOURCE_DIR}/Sandbox")
 
 add_subdirectory(Engine)
-add_subdirectory(Game)
+add_subdirectory(Sandbox)
 add_subdirectory(Editor)

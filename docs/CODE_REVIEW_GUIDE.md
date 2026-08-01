@@ -22,6 +22,12 @@ Treat repeated state transitions and interaction rules as duplicated knowledge e
 
 Prefer small composable behavior helpers over manager hierarchies, visual base classes, or wrappers that merely shorten code. A useful helper centralizes an invariant, gives callers the result needed for custom presentation, and makes invalid transitions difficult to express. Similar-looking rendering without shared behavioral rules is not by itself a reason to abstract.
 
+## Paired Derivations
+
+When two paths derive behavior from the same underlying fact — what is drawn and what is interactive, what is validated and what is executed, what is written and what is read back — they must obtain that fact from one authority. A pair that computes it independently diverges silently: nothing fails, and the system enters a state its own design treats as impossible, so the symptom points away from the cause. Interactivity outliving presentation is the canonical case: an element is drawn through a clip, ownership, visibility, or enablement path that the hit test never consults, so it becomes invisible yet live and reads as a rendering fault rather than an input one.
+
+Route both halves through the type that owns the fact instead of repeating the check at each call site, so the invalid pairing cannot be written. Where a shared path is genuinely impossible, prefer the failure that is conspicuous over the one that is merely consistent. Duplicated derivation is the defect even when both copies are currently correct, because only one of them will be updated.
+
 ## Parameter Objects
 
 When a function signature is long and the meaning of each argument is not obvious at the call site, group the cohesive operation inputs into a named aggregate and pass it with designated initialization. This is especially important for adjacent booleans, numeric values, IDs, or parameters of the same type, where positional calls conceal intent and permit valid-looking argument swaps. Field names should make the call self-documenting and defaults should represent safe, unsurprising behavior.
@@ -43,6 +49,8 @@ The aggregate must describe one cohesive operation rather than become a catch-al
 - Does a per-frame path allocate strings, rebuild stable data, scan an unchanged collection, or create transient ownership?
 - Does a subprocess require a different environment? Construct that environment for the child without mutating process-wide state, and keep launch-only variables out of tracked build ABI inputs.
 - Is state duplicated such that two fields can disagree? Can one be derived or replaced by a stronger representation?
+- Does the change decide visibility, enablement, reachability, or extent on one path and act on it from another? Both must resolve through the owner of that fact, or the system permits states it treats as impossible, most often input that survives after presentation is clipped, hidden, or disabled.
+- Does new code sit at a lower layer than the call it inherited from its previous home? Express the intent in the receiving layer's own vocabulary rather than reaching upward for the original entry point.
 - Is the change reimplementing a state transition or interaction rule that already appears elsewhere? If it recurs, can the invariant move into a shared behavior helper while presentation remains feature-owned?
 - Is a long positional call difficult to understand or easy to misorder? Can cohesive inputs become a named aggregate passed with designated initialization?
 - Does the solution reuse the codebase's established helper and idiom, or create a second way to express the same operation?

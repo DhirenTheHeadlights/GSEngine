@@ -265,6 +265,10 @@ export namespace gse::gui {
 			vec2f position
 		) const -> bool;
 
+		[[nodiscard]] auto hovers(
+			const rectf& rect
+		) const -> bool;
+
 		[[nodiscard]]
 		auto mouse_pressed_for(
 			const rectf& rect,

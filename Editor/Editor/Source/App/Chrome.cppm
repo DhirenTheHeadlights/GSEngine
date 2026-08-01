@@ -51,15 +51,19 @@ namespace gse::ide {
 			gse::vec2f viewport_size
 		) const -> void override;
 
-	private:
-		auto chrome_button(
-			gse::gui::builder& ui,
-			const gse::rectf& rect,
-			const std::string& key,
-			std::span<const gse::gui::symbol::stroke> glyph,
-			gse::vec4f hover_color
-		) -> bool;
+		auto wants_chrome() const -> bool override;
 
+		auto draw_caption(
+			gse::gui::builder& ui,
+			const gse::rectf& area
+		) -> float override;
+
+		auto caption_exclusion_range(
+			const gse::gui::draw_context& ctx,
+			const gse::rectf& full_rect
+		) const -> gse::gui::caption_exclusion override;
+
+	private:
 		gse::channel_writer m_channels;
 		const search::index_state* m_index = nullptr;
 		std::optional<std::string> m_loc_label;
@@ -117,30 +121,24 @@ auto gse::ide::editor_screen::captures_input() const -> bool {
 auto gse::ide::editor_screen::draw_backdrop(gse::gui::draw_context&, gse::vec2f) const -> void {
 }
 
-auto gse::ide::editor_screen::chrome_button(gse::gui::builder& ui, const gse::rectf& rect, const std::string& key, const std::span<const gse::gui::symbol::stroke> glyph, const gse::vec4f hover_color) -> bool {
-	const auto& ctx = ui.ctx;
-	const gse::id widget_id = gse::gui::ids::make(key);
+auto gse::ide::editor_screen::wants_chrome() const -> bool {
+	return true;
+}
 
-	const bool hovered = rect.contains(ctx.input.mouse_position()) && ctx.input_available();
-	const bool released = ctx.input.mouse_button_released(gse::mouse_button::button_1);
+auto gse::ide::editor_screen::caption_exclusion_range(const gse::gui::draw_context& ctx, const gse::rectf& full_rect) const -> gse::gui::caption_exclusion {
+	if (!ctx.hit_regions) {
+		return {};
+	}
 
-	gse::gui::interaction::mark_hot(ui.hot_widget_id, widget_id, hovered);
-	const bool activated = gse::gui::interaction::activate_on_click(ui.active_widget_id, widget_id, hovered, ctx.mouse_pressed_for(rect), released);
+	const auto span = ctx.hit_regions->right_edge_block_span(full_rect.right(), 2.f * ctx.style.scale_factor);
+	if (!span) {
+		return {};
+	}
 
-	const bool engaged = ui.active_widget_id == widget_id || ui.hot_widget_id == widget_id;
-
-	ctx.queue_sprite({
-		.rect = rect,
-		.color = engaged ? hover_color : ctx.style.color_input_background,
-		.texture = ctx.blank_texture,
-	});
-
-	gse::gui::symbol::draw(ctx, glyph, rect, {
-		.color = ctx.style.color_text,
-		.extent = ctx.style.icon_extent,
-	});
-
-	return activated;
+	return {
+		.y0 = static_cast<int>(std::floor(full_rect.top() - span->second)),
+		.y1 = static_cast<int>(std::ceil(full_rect.top() - span->first)),
+	};
 }
 
 auto gse::ide::rebuild_glyph() -> std::span<const gse::gui::symbol::stroke> {
@@ -186,201 +184,166 @@ auto gse::ide::editor_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> 
 	}
 
 	if (control_held && shift_held && ctx.input.key_pressed(gse::key::p)) {
-		n.push<project_screen>();
+		n.push<project_screen>(m_channels);
 	}
+}
 
-	const gse::rectf screen_rect = ctx.current_menu->rect;
-	const float bar_height = ctx.style.title_bar_height;
+auto gse::ide::editor_screen::draw_caption(gse::gui::builder& ui, const gse::rectf& area) -> float {
+	const auto& ctx = ui.ctx;
+	const auto& sty = ctx.style;
 
-	const gse::rectf bar_rect = gse::rectf::from_position_size(
-		{ screen_rect.left(), screen_rect.top() },
-		{ screen_rect.width(), bar_height }
-	);
-
-	ctx.queue_sprite({
-		.rect = bar_rect,
-		.color = ctx.style.color_input_background,
-		.texture = ctx.blank_texture,
-	});
-
-	const float swatch_width = ctx.style.accent_bar_width;
-	const float swatch_height = ctx.style.font_size;
+	const float swatch_width = sty.accent_bar_width;
+	const float swatch_height = sty.font_size;
 	ctx.queue_sprite({
 		.rect = gse::rectf::from_position_size(
-			{ bar_rect.left() + ctx.style.padding, bar_rect.center().y() + swatch_height * 0.5f },
+			{ area.left() + sty.padding, area.center().y() + swatch_height * 0.5f },
 			{ swatch_width, swatch_height }
 		),
 		.color = project::accent(),
 		.texture = ctx.blank_texture,
 	});
 
-	const float title_x = bar_rect.left() + ctx.style.padding + swatch_width + ctx.style.padding * 0.5f;
+	const float title_x = area.left() + sty.padding + swatch_width + sty.padding * 0.5f;
 
 	ctx.queue_text({
 		.font = ctx.fonts.text,
 		.text = title(),
-		.position = { title_x, bar_rect.center().y() + ctx.fonts.text->vertical_center_offset(ctx.style.font_size) },
-		.scale = ctx.style.font_size,
-		.color = ctx.style.color_text,
-		.clip_rect = bar_rect,
+		.position = { title_x, area.center().y() + ctx.fonts.text->vertical_center_offset(sty.font_size) },
+		.scale = sty.font_size,
+		.color = sty.color_text,
+		.clip_rect = area,
 	});
 
-	if (m_index) {
-		if (const std::uint64_t loc = m_index->cpp_loc.load(std::memory_order_acquire)) {
-			if (m_loc_value != loc) {
-				m_loc_value = loc;
-				m_loc_label = std::format("{}k LOC", (loc + 500) / 1000);
-			}
-			const float title_w = ctx.fonts.text->width(title(), ctx.style.font_size);
-			const float badge_pad = ctx.style.padding * 0.5f;
-			const float badge_height = ctx.style.font_size + ctx.style.padding * 0.5f;
-			const float badge_width = ctx.fonts.text->width(*m_loc_label, ctx.style.font_size) + badge_pad * 2.f;
-			const gse::rectf badge_rect = gse::rectf::from_position_size(
-				{ title_x + title_w + ctx.style.padding, bar_rect.center().y() + badge_height * 0.5f },
-				{ badge_width, badge_height }
-			);
-			ctx.queue_sprite({
-				.rect = badge_rect,
-				.color = ctx.style.color_accent_dim,
-				.texture = ctx.blank_texture,
-				.corner_radius = badge_height * 0.5f,
-			});
-			ctx.queue_text({
-				.font = ctx.fonts.text,
-				.text = *m_loc_label,
-				.position = { badge_rect.left() + badge_pad, badge_rect.center().y() + ctx.fonts.text->vertical_center_offset(ctx.style.font_size) },
-				.scale = ctx.style.font_size,
-				.color = ctx.style.color_accent,
-				.clip_rect = badge_rect,
-			});
-		}
-	}
+	const float button_w = area.height() * 1.5f;
+	const float controls_width = button_w * 3.f;
 
-	constexpr int chrome_button_count = 6;
-	const float button_w = bar_height * 1.5f;
-	const float controls_width = button_w * static_cast<float>(chrome_button_count);
-	auto button_slot = [&](const int from_right) -> gse::rectf {
-		return gse::rectf::from_position_size(
-			{ bar_rect.right() - button_w * static_cast<float>(from_right + 1), bar_rect.top() },
-			{ button_w, bar_height }
-		);
-	};
+	const gse::rectf settings_rect = gse::rectf::from_position_size({ area.right() - button_w, area.top() }, { button_w, area.height() });
+	const gse::rectf rebuild_rect = gse::rectf::from_position_size({ area.right() - button_w * 2.f, area.top() }, { button_w, area.height() });
+	const gse::rectf project_rect = gse::rectf::from_position_size({ area.right() - button_w * 3.f, area.top() }, { button_w, area.height() });
 
-	if (chrome_button(ui, button_slot(0), "##chrome_close", gse::gui::symbol::close(), gse::vec4f{ 0.78f, 0.22f, 0.22f, 1.f })) {
-		gse::shutdown();
-	}
-	if (chrome_button(ui, button_slot(1), "##chrome_max", gse::gui::symbol::maximize(), ctx.style.color_widget_hovered)) {
-		m_channels.push<gse::window_toggle_maximize_request>({});
-	}
-	if (chrome_button(ui, button_slot(2), "##chrome_min", gse::gui::symbol::minimize(), ctx.style.color_widget_hovered)) {
-		m_channels.push<gse::window_minimize_request>({});
-	}
-	if (chrome_button(ui, button_slot(3), "##chrome_settings", gse::gui::symbol::gear(), ctx.style.color_widget_hovered)) {
+	if (gse::gui::caption_button(ui, settings_rect, "##chrome_settings", gse::gui::symbol::gear(), sty.color_widget_hovered)) {
 		m_channels.push<toggle_settings_request>({});
 	}
-	if (chrome_button(ui, button_slot(5), "##chrome_project", gse::gui::symbol::project(), ctx.style.color_widget_hovered)) {
-		m_channels.push<toggle_project_switcher_request>({});
-	}
-	if (chrome_button(ui, button_slot(4), "##chrome_rebuild", rebuild_glyph(), ctx.style.color_widget_hovered)) {
+	if (gse::gui::caption_button(ui, rebuild_rect, "##chrome_rebuild", rebuild_glyph(), sty.color_widget_hovered)) {
 		m_channels.push<build_runner::build_request>({
 			.target = build_runner::build_target::editor,
 		});
 	}
-
-	if (m_index) {
-		std::string status;
-		std::string status_tooltip;
-		bool spinning = false;
-		gse::vec4f pill_color = ctx.style.color_input_background;
-		gse::vec4f pill_fg = ctx.style.color_text_secondary;
-		const search::index_phase phase = m_index->phase.load(std::memory_order_acquire);
-		if (phase != search::index_phase::idle) {
-			const search::index_phase_info info = gse::annotation_from_enum<search::index_phase_info>(phase, {
-				.label = "Unknown indexing stage",
-				.detail = "No explanation was recorded for this indexing stage.",
-			});
-			const std::size_t total = m_index->progress_total.load(std::memory_order_acquire);
-			const std::size_t done = std::min(m_index->progress_done.load(std::memory_order_acquire), total);
-			const std::int64_t started_ns = m_index->phase_started_ns.load(std::memory_order_acquire);
-			const std::int64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-				std::chrono::steady_clock::now().time_since_epoch()
-			).count();
-			const float elapsed_seconds = started_ns == 0 ? 0.f : static_cast<float>(now_ns - started_ns) / 1'000'000'000.f;
-			status = std::string(info.label);
-			if (total > 0) {
-				status += std::format(" {}/{}", done, total);
-			}
-			status += elapsed_seconds < 10.f
-				? std::format(" · {:.1f}s", elapsed_seconds)
-				: std::format(" · {:.0f}s", elapsed_seconds);
-			status_tooltip = std::format(
-				"{} — {} Progress: {} of {} items. Time in this stage: {:.1f} seconds.",
-				info.label,
-				info.detail,
-				done,
-				total,
-				elapsed_seconds
-			);
-			spinning = true;
-			pill_color = ctx.style.color_accent_dim;
-			pill_fg = ctx.style.color_accent;
-		}
-		else if (const std::size_t syms = m_index->symbol_count.load(std::memory_order_acquire); syms > 0) {
-			status = syms >= 1000 ? std::format("{}k symbols", (syms + 500) / 1000) : std::format("{} symbols", syms);
-			status_tooltip = std::format("Semantic index ready. {} symbols are available for highlighting, hover, and navigation.", syms);
-		}
-		if (!status.empty()) {
-			const float badge_h = ctx.style.font_size + ctx.style.padding * 0.5f;
-			const float pad = ctx.style.padding * 0.6f;
-			const float spin_w = spinning ? ctx.style.font_size : 0.f;
-			const float badge_w = pad + spin_w + ctx.fonts.text->width(status, ctx.style.font_size) + pad;
-			const float right_edge = bar_rect.right() - controls_width - ctx.style.padding;
-			const gse::rectf status_rect = gse::rectf::from_position_size(
-				{ right_edge - badge_w, bar_rect.center().y() + badge_h * 0.5f },
-				{ badge_w, badge_h }
-			);
-			ctx.queue_sprite({
-				.rect = status_rect,
-				.color = pill_color,
-				.texture = ctx.blank_texture,
-				.corner_radius = badge_h * 0.5f,
-			});
-			float sx = status_rect.left() + pad;
-			if (spinning) {
-				draw_spinner(ctx, gse::rectf::from_position_size({ sx, status_rect.center().y() + spin_w * 0.5f }, { spin_w, spin_w }), pill_fg, spinner_rotation());
-				sx += spin_w;
-			}
-			ctx.queue_text({
-				.font = ctx.fonts.text,
-				.text = status,
-				.position = { sx, status_rect.center().y() + ctx.fonts.text->vertical_center_offset(ctx.style.font_size) },
-				.scale = ctx.style.font_size,
-				.color = pill_fg,
-				.clip_rect = status_rect,
-			});
-			if (status_rect.contains(ctx.input.mouse_position()) && ctx.input_available()) {
-				ctx.set_tooltip(gse::gui::ids::make("##semantic_index_status"), status_tooltip);
-			}
-		}
+	if (gse::gui::caption_button(ui, project_rect, "##chrome_project", gse::gui::symbol::project(), sty.color_widget_hovered)) {
+		m_channels.push<toggle_project_switcher_request>({});
 	}
 
-	int resize_exclude_y0 = 0;
-	int resize_exclude_y1 = 0;
-	if (ctx.hit_regions) {
-		if (const auto span = ctx.hit_regions->right_edge_block_span(screen_rect.right(), 2.f * ctx.style.scale_factor)) {
-			resize_exclude_y0 = static_cast<int>(std::floor(screen_rect.top() - span->second));
-			resize_exclude_y1 = static_cast<int>(std::ceil(screen_rect.top() - span->first));
-		}
+	if (!m_index) {
+		return controls_width;
 	}
 
-	m_channels.push<gse::window_chrome_metrics_request>({
-		.caption_height = static_cast<int>(bar_height),
-		.controls_width = static_cast<int>(controls_width),
-		.interactive_x0 = 0,
-		.interactive_x1 = 0,
-		.resize_exclude_y0 = resize_exclude_y0,
-		.resize_exclude_y1 = resize_exclude_y1,
+	if (const std::uint64_t loc = m_index->cpp_loc.load(std::memory_order_acquire)) {
+		if (m_loc_value != loc) {
+			m_loc_value = loc;
+			m_loc_label = std::format("{}k LOC", (loc + 500) / 1000);
+		}
+		const float title_w = ctx.fonts.text->width(title(), sty.font_size);
+		const float badge_pad = sty.padding * 0.5f;
+		const float badge_height = sty.font_size + sty.padding * 0.5f;
+		const float badge_width = ctx.fonts.text->width(*m_loc_label, sty.font_size) + badge_pad * 2.f;
+		const gse::rectf badge_rect = gse::rectf::from_position_size(
+			{ title_x + title_w + sty.padding, area.center().y() + badge_height * 0.5f },
+			{ badge_width, badge_height }
+		);
+		ctx.queue_sprite({
+			.rect = badge_rect,
+			.color = sty.color_accent_dim,
+			.texture = ctx.blank_texture,
+			.corner_radius = badge_height * 0.5f,
+		});
+		ctx.queue_text({
+			.font = ctx.fonts.text,
+			.text = *m_loc_label,
+			.position = { badge_rect.left() + badge_pad, badge_rect.center().y() + ctx.fonts.text->vertical_center_offset(sty.font_size) },
+			.scale = sty.font_size,
+			.color = sty.color_accent,
+			.clip_rect = badge_rect,
+		});
+	}
+
+	std::string status;
+	std::string status_tooltip;
+	bool spinning = false;
+	gse::vec4f pill_color = sty.color_input_background;
+	gse::vec4f pill_fg = sty.color_text_secondary;
+	const search::index_phase phase = m_index->phase.load(std::memory_order_acquire);
+	if (phase != search::index_phase::idle) {
+		const search::index_phase_info info = gse::annotation_from_enum<search::index_phase_info>(phase, {
+			.label = "Unknown indexing stage",
+			.detail = "No explanation was recorded for this indexing stage.",
+		});
+		const std::size_t total = m_index->progress_total.load(std::memory_order_acquire);
+		const std::size_t done = std::min(m_index->progress_done.load(std::memory_order_acquire), total);
+		const gse::time_t<double> started = m_index->phase_started.load(std::memory_order_acquire);
+		const double elapsed_seconds = started == gse::time_t<double>{}
+			? 0.0
+			: (gse::system_clock::now<gse::time_t<double>>() - started).as<gse::seconds>();
+		status = std::string(info.label);
+		if (total > 0) {
+			status += std::format(" {}/{}", done, total);
+		}
+		status += elapsed_seconds < 10.f
+			? std::format(" \xC2\xB7 {:.1f}s", elapsed_seconds)
+			: std::format(" \xC2\xB7 {:.0f}s", elapsed_seconds);
+		status_tooltip = std::format(
+			"{} — {} Progress: {} of {} items. Time in this stage: {:.1f} seconds.",
+			info.label,
+			info.detail,
+			done,
+			total,
+			elapsed_seconds
+		);
+		spinning = true;
+		pill_color = sty.color_accent_dim;
+		pill_fg = sty.color_accent;
+	}
+	else if (const std::size_t syms = m_index->symbol_count.load(std::memory_order_acquire); syms > 0) {
+		status = syms >= 1000 ? std::format("{}k symbols", (syms + 500) / 1000) : std::format("{} symbols", syms);
+		status_tooltip = std::format("Semantic index ready. {} symbols are available for highlighting, hover, and navigation.", syms);
+	}
+
+	if (status.empty()) {
+		return controls_width;
+	}
+
+	const float badge_h = sty.font_size + sty.padding * 0.5f;
+	const float pad = sty.padding * 0.6f;
+	const float spin_w = spinning ? sty.font_size : 0.f;
+	const float badge_w = pad + spin_w + ctx.fonts.text->width(status, sty.font_size) + pad;
+	const float right_edge = project_rect.left() - sty.padding;
+	const gse::rectf status_rect = gse::rectf::from_position_size(
+		{ right_edge - badge_w, area.center().y() + badge_h * 0.5f },
+		{ badge_w, badge_h }
+	);
+	ctx.queue_sprite({
+		.rect = status_rect,
+		.color = pill_color,
+		.texture = ctx.blank_texture,
+		.corner_radius = badge_h * 0.5f,
 	});
+	float sx = status_rect.left() + pad;
+	if (spinning) {
+		draw_spinner(ctx, gse::rectf::from_position_size({ sx, status_rect.center().y() + spin_w * 0.5f }, { spin_w, spin_w }), pill_fg, spinner_rotation());
+		sx += spin_w;
+	}
+	ctx.queue_text({
+		.font = ctx.fonts.text,
+		.text = status,
+		.position = { sx, status_rect.center().y() + ctx.fonts.text->vertical_center_offset(sty.font_size) },
+		.scale = sty.font_size,
+		.color = pill_fg,
+		.clip_rect = status_rect,
+	});
+	if (ctx.hovers(status_rect)) {
+		ctx.set_tooltip(gse::gui::ids::make("##semantic_index_status"), status_tooltip);
+	}
+
+	return controls_width;
 }
 
 auto gse::ide::draw_search_bar(gse::gui::builder& ui, quick_search_state& state, const search::index_state* index, gse::channel_writer channels, const gse::rectf& search_rect, const std::string_view id_key) -> void {
@@ -453,7 +416,7 @@ auto gse::ide::draw_search_bar(gse::gui::builder& ui, quick_search_state& state,
 	);
 	ctx.queue_sprite({
 		.rect = list_rect,
-		.color = { sty.color_menu_body.x(), sty.color_menu_body.y(), sty.color_menu_body.z(), 1.f },
+		.color = { vec3f(sty.color_menu_body), 1.f },
 		.texture = ctx.blank_texture,
 		.corner_radius = sty.corner_radius,
 	});
@@ -665,9 +628,13 @@ auto gse::ide::draw_explorer_panel(gse::gui::builder& ui, workspace::data& ws, q
 			{ content.left(), ctx.layout_cursor.y() },
 			{ std::max(0.f, content.width()), row_height }
 		);
-		const std::string label = git_rootless.size() > 1
-			? std::format("Initialize Git in {}", rootless.filename().display_string())
-			: std::string("Initialize Git Repository");
+		std::string scoped_label;
+		if (git_rootless.size() > 1) {
+			scoped_label = std::format("Initialize Git in {}", rootless.filename().display_string());
+		}
+		const std::string_view label = scoped_label.empty()
+			? std::string_view("Initialize Git Repository")
+			: std::string_view(scoped_label);
 		if (gse::gui::draw::button_in_rect(ui.ctx, label, "##git_init_" + rootless.generic_display_string(), init_rect, ui.hot_widget_id, ui.active_widget_id)) {
 			channels.push<git_system::init_request>({ .root = rootless });
 		}

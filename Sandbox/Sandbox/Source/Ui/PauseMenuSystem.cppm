@@ -1,11 +1,11 @@
-export module gs:pause_menu_system;
+export module sandbox:pause_menu_system;
 
 import std;
 import gse;
 
 import :main_menu_screen;
 
-export namespace gs::pause_menu {
+export namespace sandbox::pause_menu {
 	struct [[= gse::system_state<"PauseMenu">{}]] data {
 		bool manual_cursor = false;
 		bool initial_push_done = false;
@@ -24,7 +24,7 @@ export namespace gs::pause_menu {
 	) -> gse::async::task<>;
 }
 
-auto gs::pause_menu::run(gse::context& ctx, data& d, const gse::shared_view<gse::input::data> input_d, const gse::shared_view<gse::gui::data> gui_d, const gse::shared_view<gse::world_system::data> world_d, const gse::shared_view<gse::network::data> net_d, const gse::save::registry& save_reg) -> gse::async::task<> {
+auto sandbox::pause_menu::run(gse::context& ctx, data& d, const gse::shared_view<gse::input::data> input_d, const gse::shared_view<gse::gui::data> gui_d, const gse::shared_view<gse::world_system::data> world_d, const gse::shared_view<gse::network::data> net_d, const gse::save::registry& save_reg) -> gse::async::task<> {
 	const auto push_main_menu = [&] {
 		ctx.channels.push<gse::gui::push_screen_request>({
 			.factory = [world_d, net_d, &save_reg, channels = ctx.channels] {

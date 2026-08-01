@@ -24,10 +24,10 @@ Where runtime files go — **none of them land in the repo**:
 
 | What | Where |
 |---|---|
-| `settings.ini`, `gui_layout.ini`, `editor_layout.ini` | `%APPDATA%\GSE` (`user_config_dir()`) |
+| `<executable>.ini`, `gui_layout.ini`, `editor_layout.ini` | `%APPDATA%\GSE` (`user_config_dir()`) |
 | logs, crash dumps, profiles, screenshots/recordings/clips | `%LOCALAPPDATA%\GSE` (`logs_dir()`, `crash_dir()`, `profile_dir()`, `captures_dir()`) |
 
-**`settings.ini` now lives at `%APPDATA%\GSE\settings.ini`** — that is the file to hand-edit; the old `Engine/Resources/Misc/settings.ini` is no longer read. There is no automatic migration from the old locations.
+**User-scope settings live at `%APPDATA%\GSE\<executable_stem>.ini`** — one file per executable, so the editor and the games it launches no longer share a `[Window]` section. That is the file to hand-edit; the old `%APPDATA%\GSE\settings.ini` and `Engine/Resources/Misc/settings.ini` are no longer read. There is no automatic migration from the old locations.
 
 Override the roots with the `GSE_USER_DIR` and `GSE_STATE_DIR` environment variables. Running an executable with no `gse.manifest` above it aborts with a message on stderr.
 

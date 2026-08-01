@@ -18,8 +18,8 @@ import :builder;
 export namespace gse::gui::draw {
 	auto text(
 		const draw_context& ctx,
-		const std::string& name,
-		const std::string& text,
+		std::string_view name,
+		std::string_view text,
 		resource::handle<font> font = {}
 	) -> void;
 }
@@ -32,12 +32,12 @@ export namespace gse::gui {
 			resource::handle<font> font{};
 		};
 		static auto draw(const draw_context& ctx, const params p, id&, id&, id&) -> void {
-			draw::text(ctx, "", std::string(p.content), p.font);
+			draw::text(ctx, "", p.content, p.font);
 		}
 	};
 }
 
-auto gse::gui::draw::text(const draw_context& ctx, const std::string& name, const std::string& text, const resource::handle<font> font) -> void {
+auto gse::gui::draw::text(const draw_context& ctx, const std::string_view name, const std::string_view text, const resource::handle<font> font) -> void {
 	const auto fnt = font.valid() ? font : ctx.fonts.text;
 	if (!ctx.current_menu) {
 		return;

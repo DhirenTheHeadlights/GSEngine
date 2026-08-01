@@ -83,6 +83,14 @@ target_link_libraries(EditorLib PRIVATE Engine)
 add_executable(Editor "${MAIN_CPP}")
 target_link_libraries(Editor PRIVATE EditorLib Engine)
 
+# MinGW links the console subsystem by default, so Windows allocates a console host
+# (Windows Terminal on 11) alongside the editor's own window. The GUI subsystem drops it.
+# main() still links: mingw-w64's crt2.o exports WinMainCRTStartup next to mainCRTStartup
+# and both route to __tmainCRTStartup, which calls main.
+if(WIN32)
+    set_target_properties(Editor PROPERTIES WIN32_EXECUTABLE TRUE)
+endif()
+
 # GCC-trunk's C++ modules codegen on MinGW (PE/COFF) emits vague-linkage function-local statics
 # as STRONG symbols in every importing TU instead of COMDAT-folding them, so the final link sees
 # duplicate definitions. The offenders are overwhelmingly in external code we can't touch:
@@ -123,7 +131,15 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
                 "${GSE_TOKENS_PLUGIN_SRC}"
                 "${_gse_plugin_dir}/cc1plus.exe.a"
                 -o "${CMAKE_CURRENT_BINARY_DIR}/gse_tokens.dll"
-            DEPENDS "${GSE_TOKENS_PLUGIN_SRC}"
+            # A GCC plugin is ABI-locked to the compiler that built it: cc1plus refuses to load
+            # one from a different build and exits 1 before compiling anything, which surfaces as
+            # every analyzed TU failing identically rather than as a stale-artifact error. The
+            # toolchain must therefore be a declared input, or a compiler swap leaves the plugin
+            # silently mismatched because its source did not change.
+            DEPENDS
+                "${GSE_TOKENS_PLUGIN_SRC}"
+                "${CMAKE_CXX_COMPILER}"
+                "${_gse_plugin_dir}/cc1plus.exe.a"
             COMMENT "Building gse_tokens GCC plugin"
             VERBATIM
         )

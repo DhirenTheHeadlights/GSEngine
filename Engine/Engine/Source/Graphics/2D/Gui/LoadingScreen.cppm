@@ -79,7 +79,7 @@ auto gse::gui::loading_screen::build(builder& ui, nav& n) -> void {
 		);
 	}
 
-	const std::string label = phase.empty() ? std::string("Loading...") : phase;
+	const std::string_view label = phase.empty() ? std::string_view("Loading...") : std::string_view(phase);
 	const float label_w = ctx.fonts.text->width(label, font_sz);
 
 	ctx.queue_text({

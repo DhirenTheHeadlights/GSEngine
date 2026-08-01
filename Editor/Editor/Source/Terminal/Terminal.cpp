@@ -415,7 +415,7 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst
 		});
 	}
 
-	const std::string build_label = building ? "Building..." : "Build Game";
+	const std::string_view build_label = building ? "Building..." : "Build Game";
 	const float build_w = ctx.fonts.text->width(build_label, ctx.style.font_size) + input_h + pad * 1.5f;
 	const rectf build_btn = rectf::from_position_size(
 		{ run_btn.left() - build_w, input_rect.top() },
@@ -449,7 +449,7 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst
 		.texture = ctx.blank_texture,
 	});
 
-	if (ctx.input.mouse_button_pressed(mouse_button::button_1) && ctx.input_available() && input_rect.contains(ctx.input.mouse_position())) {
+	if (ctx.input.mouse_button_pressed(mouse_button::button_1) && ctx.hovers(input_rect)) {
 		ui.focus_widget_id = input_id;
 	}
 }
@@ -493,7 +493,7 @@ auto gse::ide::terminal::draw_close_confirm(gui::builder& ui, data& d, const rec
 	const float line_h = ctx.fonts.text->line_height(fs) * 1.25f;
 	const float btn_h = ctx.fonts.text->line_height(fs) + pad;
 
-	const std::string title = "Kill running process?";
+	constexpr std::string_view title = "Kill running process?";
 	const std::string message = std::format("\"{}\" is still running.", d.instances[*d.pending_close].name);
 
 	const auto scope = ctx.scoped_layer(render_layer::modal);
@@ -521,7 +521,7 @@ auto gse::ide::terminal::draw_close_confirm(gui::builder& ui, data& d, const rec
 	});
 	ctx.queue_sprite({
 		.rect = dialog,
-		.color = { sty.color_menu_body.x(), sty.color_menu_body.y(), sty.color_menu_body.z(), 1.f },
+		.color = { vec3f(sty.color_menu_body), 1.f },
 		.texture = ctx.blank_texture,
 		.corner_radius = sty.corner_radius_menu,
 	});

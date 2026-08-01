@@ -18,6 +18,24 @@ export namespace gse {
 
 	struct window_toggle_maximize_request {};
 
+	struct window_close_request {};
+
+	struct window_open_file_request {
+		std::string title;
+		std::string filter_name;
+		std::string filter_pattern;
+	};
+
+	struct window_open_file_result {
+		std::filesystem::path path;
+	};
+
+	struct window_launcher_mode_request {
+		bool active = false;
+		int width = 0;
+		int height = 0;
+	};
+
 	struct window_chrome_metrics_request {
 		int caption_height = 0;
 		int controls_width = 0;
@@ -79,6 +97,23 @@ struct std::formatter<gse::resolution_info> : std::formatter<std::string> {
 };
 
 export namespace gse::window {
+	struct geometry {
+		[[= gse::settings::describe<"Left edge of the restored window, in virtual desktop coordinates.">{}]]
+		int x = 0;
+
+		[[= gse::settings::describe<"Top edge of the restored window, in virtual desktop coordinates.">{}]]
+		int y = 0;
+
+		[[= gse::settings::describe<"Width of the restored window.">{}]]
+		int width = 0;
+
+		[[= gse::settings::describe<"Height of the restored window.">{}]]
+		int height = 0;
+
+		[[= gse::settings::describe<"Whether the window was maximized when it was last closed.">{}]]
+		bool maximized = false;
+	};
+
 	struct [[= gse::settings::category<"Window">{}, = gse::system_state<"Window">{}]] data {
 		[[
 			= gse::settings::
@@ -109,6 +144,11 @@ export namespace gse::window {
 		]]
 		gse::settings::choice<int> present_mode;
 
+		[[
+			= gse::settings::describe<"Position and size the window is restored to on launch.">{}
+		]]
+		geometry saved_geometry;
+
 		[[= gse::shared]] native_window_handle handle;
 		std::string title;
 
@@ -124,6 +164,17 @@ export namespace gse::window {
 		vec2i size{ 0, 0 };
 		bool cmd_minimize = false;
 		bool cmd_toggle_maximize = false;
+		bool cmd_close = false;
+		bool cmd_open_file = false;
+		std::string cmd_open_file_title;
+		std::string cmd_open_file_filter_name;
+		std::string cmd_open_file_filter_pattern;
+		bool cmd_launcher_pending = false;
+		bool cmd_launcher_active = false;
+		vec2i cmd_launcher_size{ 0, 0 };
+		vec2i launcher_saved_position{ 0, 0 };
+		vec2i launcher_saved_size{ 0, 0 };
+		bool launcher_saved_maximized = false;
 		bool native_frame = false;
 		int chrome_caption_height = 0;
 		int chrome_controls_width = 0;
@@ -157,6 +208,10 @@ export namespace gse::window {
 	auto set_clipboard_text(
 		std::string text
 	) -> void;
+
+	auto prompt_for_file(
+		data& d
+	) -> std::filesystem::path;
 
 	auto apply_commands(
 		data& d

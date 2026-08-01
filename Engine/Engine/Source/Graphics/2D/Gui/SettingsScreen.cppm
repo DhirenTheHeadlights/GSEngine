@@ -131,7 +131,7 @@ auto gse::gui::settings_screen::draw_backdrop(draw_context& ctx, const gse::vec2
 	const gse::rect_t<gse::vec2f> card = body_rect(ctx.style, viewport_size);
 
 	const gse::vec4f card_color = m_opaque
-		? gse::vec4f{ ctx.style.color_menu_body.x(), ctx.style.color_menu_body.y(), ctx.style.color_menu_body.z(), 1.0f }
+		? gse::vec4f{ gse::vec3f(ctx.style.color_menu_body), 1.0f }
 		: ctx.style.color_menu_body;
 	ctx.sprites.push_back({
 		.rect = card,
@@ -145,7 +145,7 @@ auto gse::gui::settings_screen::draw_backdrop(draw_context& ctx, const gse::vec2
 auto gse::gui::settings_screen::draw_close_button(draw_context& ctx, const gse::rect_t<gse::vec2f>& rect, nav& n) const -> void {
 	const auto& sty = ctx.style;
 	const gse::id close_id = gse::gui::ids::make("settings.close");
-	const bool hovered = rect.contains(ctx.input.mouse_position()) && ctx.input_available();
+	const bool hovered = ctx.hovers(rect);
 	const gse::vec4f bg = hovered ? sty.color_widget_hovered : gse::vec4f{ 0.f, 0.f, 0.f, 0.f };
 
 	ctx.queue_sprite({
@@ -286,7 +286,7 @@ auto gse::gui::settings_screen::build(builder& ui, nav& n) -> void {
 
 auto gse::gui::settings_screen::draw_footer_button(draw_context& ctx, const gse::rect_t<gse::vec2f>& rect, const std::string_view label, const bool enabled, const bool primary, const gse::id key) -> bool {
 	const auto& sty = ctx.style;
-	const bool hovered = enabled && rect.contains(ctx.input.mouse_position()) && ctx.input_available();
+	const bool hovered = enabled && ctx.hovers(rect);
 
 	gse::vec4f base_color = primary ? sty.color_widget_active : sty.color_button_background;
 	if (!enabled) {

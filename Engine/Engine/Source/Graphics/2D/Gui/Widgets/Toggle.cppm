@@ -54,7 +54,7 @@ auto gse::gui::toggle::draw(const draw_context& ctx, const params& p, id& hot, i
 		{ content_rect.width(), widget_height }
 	);
 
-	const bool hovered = row_rect.contains(ctx.input.mouse_position()) && ctx.input_available();
+	const bool hovered = ctx.hovers(row_rect);
 
 	if (hovered) {
 		hot = widget_id;

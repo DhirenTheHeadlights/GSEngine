@@ -25,6 +25,23 @@ export namespace gse::async {
 		static auto await_resume() noexcept -> void;
 	};
 
+	struct checked_handle {
+		std::coroutine_handle<> handle;
+		std::uint64_t generation = 0;
+	};
+
+	auto track_frame(
+		std::coroutine_handle<> h
+	) -> checked_handle;
+
+	auto untrack_frame(
+		void* frame
+	) -> void;
+
+	auto resume_checked(
+		const checked_handle& tracked
+	) -> bool;
+
 	struct promise_base {
 		std::coroutine_handle<> m_continuation{ std::noop_coroutine() };
 		std::exception_ptr m_exception;
@@ -181,6 +198,16 @@ export namespace gse::async {
 	};
 
 	[[nodiscard]] auto yield_to_worker() noexcept -> yield_to_worker_t;
+}
+
+namespace gse::async {
+	inline constexpr std::size_t tracked_frame_warn_threshold = 4096;
+
+	inline std::mutex tracked_frames_mutex;
+	inline std::unordered_map<void*, std::uint64_t> tracked_frames;
+	inline std::atomic<std::uint64_t> tracked_generation{ 0 };
+	inline std::atomic<std::size_t> tracked_frame_count{ 0 };
+	inline bool tracked_frame_warned = false;
 }
 
 template <typename P>

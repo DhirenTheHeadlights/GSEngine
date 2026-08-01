@@ -1,12 +1,13 @@
 [project]
-name = GoonSquad
+name = Sandbox
 engine_version = 0.1.0
-source = Game
+source = Sandbox
 assets = Resources
 
 [engine]
+name = GSEngine
 source = ..
 
 [targets]
-game = GoonSquad
-server = GoonSquadServer
+game = Sandbox
+server = SandboxServer

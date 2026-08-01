@@ -119,7 +119,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 	state.caret = std::clamp(state.caret, 0, static_cast<int>(buffer.size()));
 	state.anchor = std::clamp(state.anchor, 0, static_cast<int>(buffer.size()));
 
-	const bool hovered = box_rect.contains(ctx.input.mouse_position()) && ctx.input_available();
+	const bool hovered = ctx.hovers(box_rect);
 
 	if (hovered) {
 		hot_widget_id = widget_id;

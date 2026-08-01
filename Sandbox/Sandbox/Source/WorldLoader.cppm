@@ -1,19 +1,18 @@
-export module gs:world_loader;
+export module sandbox:world_loader;
 
 import gse;
 
 import :sandbox_scene;
 
-export namespace gs {
+export namespace sandbox {
 	auto world_loader_setup(
 		gse::engine& e
 	) -> gse::scene*;
 }
 
-auto gs::world_loader_setup(gse::engine& e) -> gse::scene* {
+auto sandbox::world_loader_setup(gse::engine& e) -> gse::scene* {
 	auto& w = e.world();
 	auto& reg = e.registry();
 
-	gse::add_scene(w, reg, "Locomotion Play", &locomotion_play_scene_setup);
 	return gse::add_scene(w, reg, "Sandbox", &sandbox_scene_setup);
 }
