@@ -1,5 +1,10 @@
 export module gse.graphics;
 
+export import :animation_components;
+export import :clip;
+export import :clip_player;
+export import :skinned_model;
+export import :source_reader;
 export import :asset_types;
 export import :atmosphere_renderer;
 export import :bloom_renderer;
