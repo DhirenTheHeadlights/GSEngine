@@ -1178,7 +1178,7 @@ auto gse::vulkan::device::create_buffer(const gpu::buffer_desc& desc, const std:
 	return gpu::buffer(buf.handle(), buf.size_bytes(), buf.device_address(), buf.mapped<std::byte>(), slot);
 }
 
-auto gse::vulkan::device::create_image(const vk::ImageCreateInfo& info, const vk::MemoryPropertyFlags properties, const vk::ImageViewCreateInfo& view_info, const void* data, const std::string_view tag, const std::source_location loc, gpu::image_view_create_info engine_view_info) -> gpu::image {
+auto gse::vulkan::device::create_image(const vk::ImageCreateInfo& info, const gpu::image_format format, const vk::MemoryPropertyFlags properties, const vk::ImageViewCreateInfo& view_info, const void* data, const std::string_view tag, const std::source_location loc, gpu::image_view_create_info engine_view_info) -> gpu::image {
 	auto [image_result, vk_image] = (*m_device).createImage(info, nullptr);
 	assert(image_result == vk::Result::eSuccess, "failed to create image: {}", vk::to_string(image_result));
 	auto image_guard = make_scope_exit([this, vk_image] {
@@ -1281,12 +1281,12 @@ auto gse::vulkan::device::create_image(const vk::ImageCreateInfo& info, const vk
 	const auto view_handle = std::bit_cast<gpu::handle<gpu::image_view>>(view);
 	{
 		std::lock_guard lock(m_mutex);
-		m_live_images.emplace(img_handle.value, live_image{ std::move(alloc), view_handle, {}, {}, static_cast<gpu::image_format_value>(info.format), vec3u{ info.extent.width, info.extent.height, info.extent.depth }, engine_view_info });
+		m_live_images.emplace(img_handle.value, live_image{ std::move(alloc), view_handle, {}, {}, format, vec3u{ info.extent.width, info.extent.height, info.extent.depth }, engine_view_info });
 	}
 	return gpu::image(
 		img_handle,
 		view_handle,
-		static_cast<gpu::image_format_value>(info.format),
+		format,
 		vec3u{ info.extent.width, info.extent.height, info.extent.depth },
 		engine_view_info
 	);
@@ -1332,7 +1332,7 @@ auto gse::vulkan::device::create_image(const gpu::image_create_info& info, const
 	if (view_info.format == gpu::image_format::r8g8b8a8_unorm) {
 		resolved_view_info.format = info.format;
 	}
-	return create_image(vk_info, to_vk(properties), vk_view_info, data, tag, loc, resolved_view_info);
+	return create_image(vk_info, info.format, to_vk(properties), vk_view_info, data, tag, loc, resolved_view_info);
 }
 
 auto gse::vulkan::device::create_image(const gpu::image_desc& desc, const std::string_view tag, const std::source_location& loc) -> gpu::image {
@@ -1429,10 +1429,10 @@ auto gse::vulkan::device::image_storage_slot(const gpu::handle<gpu::image> image
 	return it == m_live_images.end() ? gpu::bindless_slot{} : it->second.storage_slot;
 }
 
-auto gse::vulkan::device::image_format_of(const gpu::handle<gpu::image> image) const -> gpu::image_format_value {
+auto gse::vulkan::device::image_format_of(const gpu::handle<gpu::image> image) const -> gpu::image_format {
 	std::lock_guard lock(m_mutex);
 	const auto it = m_live_images.find(image.value);
-	return it == m_live_images.end() ? 0 : it->second.format;
+	return it == m_live_images.end() ? gpu::image_format::undefined : it->second.format;
 }
 
 auto gse::vulkan::device::image_extent(const gpu::handle<gpu::image> image) const -> vec3u {
@@ -2760,11 +2760,11 @@ auto gse::vulkan::device::write_image_descriptor(const gpu::handle<gpu::descript
 	assert(resources, "write_image_descriptor: unknown descriptor heap");
 
 	const auto& view = img.view_create_info();
-	const auto aspects = view.aspects ? view.aspects : image_aspect_for(img.format());
+	const auto aspects = view.aspects ? view.aspects : gpu::image_aspect_for(img.format());
 	const vk::ImageViewCreateInfo view_info{
 		.image = std::bit_cast<vk::Image>(img.handle()),
 		.viewType = to_vk(view.view_type),
-		.format = static_cast<vk::Format>(img.format()),
+		.format = to_vk(img.format()),
 		.components = {},
 		.subresourceRange = {
 			.aspectMask = to_vk(aspects),

@@ -36,6 +36,14 @@ namespace gse {
 		native_window_handle handle
 	) -> vec2i;
 
+	auto window_handle_content_scale(
+		native_window_handle handle
+	) -> float;
+
+	auto monitor_key_for_index(
+		int index
+	) -> std::string;
+
 	auto window_handle_show(
 		native_window_handle handle
 	) -> void;
@@ -646,6 +654,8 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 	poll_events();
 	sync_clipboard(d.focused);
 
+	d.content_scale = window_handle_content_scale(d.handle);
+
 	for (const auto& [focus] : sched.read_channel<ui_focus_request>()) {
 		set_ui_focus(d, focus);
 	}
@@ -723,6 +733,11 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 	}
 
 	apply_commands(d);
+
+	if (const int monitor_index = monitor_index_for_window(d.position, d.size); monitor_index != d.current_monitor_index) {
+		d.current_monitor_index = monitor_index;
+		d.monitor_key = monitor_key_for_index(monitor_index);
+	}
 
 	if (d.cmd_open_file) {
 		d.cmd_open_file = false;
@@ -1055,6 +1070,31 @@ auto gse::window::frame_buffer_resized(data& d) -> bool {
 		return true;
 	}
 	return false;
+}
+
+auto gse::monitor_key_for_index(const int index) -> std::string {
+	if (index < 0) {
+		return {};
+	}
+
+	const auto monitors = window::enumerate_monitors();
+	if (index >= static_cast<int>(monitors.size())) {
+		return {};
+	}
+
+	const auto& info = monitors[index];
+	return std::format("{} {}x{}", info.name, info.width, info.height);
+}
+
+auto gse::window_handle_content_scale(const native_window_handle handle) -> float {
+	if (!handle) {
+		return 1.f;
+	}
+
+	float x_scale = 1.f;
+	float y_scale = 1.f;
+	glfwGetWindowContentScale(to_glfw_handle(handle), &x_scale, &y_scale);
+	return x_scale > 0.f ? x_scale : 1.f;
 }
 
 auto gse::window_handle_show(const native_window_handle handle) -> void {

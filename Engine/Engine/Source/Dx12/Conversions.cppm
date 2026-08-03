@@ -40,6 +40,7 @@ auto gse::dx12::dxgi_format_of(const gpu::image_format fmt) -> directx::DXGI_FOR
 		case gpu::image_format::r16g16b16a16_sfloat: return directx::format_r16g16b16a16_float;
 		case gpu::image_format::r16g16_sfloat: return directx::format_r16g16_float;
 		case gpu::image_format::d32_sfloat: return directx::format_d32_float;
+		case gpu::image_format::undefined: return directx::format_unknown;
 		default: return directx::format_b8g8r8a8_unorm;
 	}
 }

@@ -229,7 +229,7 @@ export namespace gse::vulkan {
 		[[nodiscard]]
 		auto image_format_of(
 			gpu::handle<gpu::image> image
-		) const -> gpu::image_format_value;
+		) const -> gpu::image_format;
 
 		[[nodiscard]]
 		auto image_extent(
@@ -641,6 +641,7 @@ export namespace gse::vulkan {
 
 		auto create_image(
 			const vk::ImageCreateInfo& info,
+			gpu::image_format format,
 			vk::MemoryPropertyFlags properties,
 			const vk::ImageViewCreateInfo& view_info,
 			const void* data,
@@ -747,7 +748,7 @@ export namespace gse::vulkan {
 			gpu::handle<gpu::image_view> view;
 			gpu::bindless_slot storage_slot;
 			gpu::bindless_slot sampled_slot;
-			gpu::image_format_value format = 0;
+			gpu::image_format format = gpu::image_format::undefined;
 			vec3u extent;
 			gpu::image_view_create_info view_info;
 		};

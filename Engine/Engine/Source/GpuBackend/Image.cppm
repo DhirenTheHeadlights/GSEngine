@@ -27,6 +27,7 @@ export namespace gse::gpu {
 		r8g8_unorm,
 		r16g16b16a16_sfloat,
 		r16g16_sfloat,
+		undefined,
 	};
 
 	enum class image_view_type : std::uint8_t {
@@ -160,7 +161,7 @@ export namespace gse::gpu {
 		image(
 			gpu::handle<image> image,
 			gpu::handle<gpu::image_view> view,
-			gpu::image_format_value format,
+			gpu::image_format format,
 			vec3u extent,
 			gpu::image_view_create_info view_info,
 			gpu::bindless_slot storage_slot = {},
@@ -179,7 +180,7 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto view() const -> gpu::handle<gpu::image_view>;
 
-		[[nodiscard]] auto format() const -> gpu::image_format_value;
+		[[nodiscard]] auto format() const -> gpu::image_format;
 
 		[[nodiscard]] auto extent() const -> vec3u;
 
@@ -194,7 +195,7 @@ export namespace gse::gpu {
 	private:
 		gpu::handle<image> m_image;
 		gpu::handle<gpu::image_view> m_view;
-		gpu::image_format_value m_format = 0;
+		gpu::image_format m_format = gpu::image_format::undefined;
 		vec3u m_extent;
 		gpu::image_view_create_info m_view_info;
 		gpu::bindless_slot m_storage_slot;
@@ -229,9 +230,21 @@ export namespace gse::gpu {
 		device_size size = 0;
 		void* handle = nullptr;
 	};
+
+	[[nodiscard]]
+	auto image_aspect_for(
+		image_format f
+	) -> image_aspect_flags;
 }
 
-gse::gpu::image::image(const gpu::handle<image> image, const gpu::handle<gpu::image_view> view, const gpu::image_format_value format, const vec3u extent, gpu::image_view_create_info view_info, const gpu::bindless_slot storage_slot, const gpu::bindless_slot sampled_slot)
+auto gse::gpu::image_aspect_for(const image_format f) -> image_aspect_flags {
+	if (f == image_format::d32_sfloat) {
+		return image_aspect_flag::depth;
+	}
+	return image_aspect_flag::color;
+}
+
+gse::gpu::image::image(const gpu::handle<image> image, const gpu::handle<gpu::image_view> view, const gpu::image_format format, const vec3u extent, gpu::image_view_create_info view_info, const gpu::bindless_slot storage_slot, const gpu::bindless_slot sampled_slot)
 	: m_image(image), m_view(view), m_format(format), m_extent(extent), m_view_info(view_info), m_storage_slot(storage_slot), m_sampled_slot(sampled_slot) {
 }
 
@@ -243,7 +256,7 @@ auto gse::gpu::image::view() const -> gpu::handle<gpu::image_view> {
 	return m_view;
 }
 
-auto gse::gpu::image::format() const -> gpu::image_format_value {
+auto gse::gpu::image::format() const -> gpu::image_format {
 	return m_format;
 }
 

@@ -167,14 +167,6 @@ export namespace gse::vulkan {
 		gpu::present_stage_flags fls
 	) -> vk::PresentStageFlagsEXT;
 
-	auto format_value(
-		gpu::image_format f
-	) -> gpu::image_format_value;
-
-	auto image_aspect_for(
-		gpu::image_format_value f
-	) -> gpu::image_aspect_flags;
-
 	auto to_vk(
 		gpu::memory_property_flags fls
 	) -> vk::MemoryPropertyFlags;
@@ -446,6 +438,8 @@ auto gse::vulkan::to_vk(const gpu::image_format f) -> vk::Format {
 			return vk::Format::eR16G16B16A16Sfloat;
 		case gpu::image_format::r16g16_sfloat:
 			return vk::Format::eR16G16Sfloat;
+		case gpu::image_format::undefined:
+			return vk::Format::eUndefined;
 	}
 	std::unreachable();
 }
@@ -1179,6 +1173,10 @@ auto gse::vulkan::from_vk(const vk::Format f) -> gpu::image_format {
 			return gpu::image_format::r8g8_unorm;
 		case vk::Format::eR16G16B16A16Sfloat:
 			return gpu::image_format::r16g16b16a16_sfloat;
+		case vk::Format::eR16G16Sfloat:
+			return gpu::image_format::r16g16_sfloat;
+		case vk::Format::eUndefined:
+			return gpu::image_format::undefined;
 		default:
 			return gpu::image_format::r8g8b8a8_unorm;
 	}
@@ -1217,15 +1215,4 @@ auto gse::vulkan::to_vk(const gpu::pipeline_statistic_flags fls) -> vk::QueryPip
 		out |= vk::QueryPipelineStatisticFlagBits::eFragmentShaderInvocations;
 	}
 	return out;
-}
-
-auto gse::vulkan::format_value(const gpu::image_format f) -> gpu::image_format_value {
-	return static_cast<gpu::image_format_value>(to_vk(f));
-}
-
-auto gse::vulkan::image_aspect_for(const gpu::image_format_value f) -> gpu::image_aspect_flags {
-	if (f == static_cast<gpu::image_format_value>(vk::Format::eD32Sfloat)) {
-		return gpu::image_aspect_flag::depth;
-	}
-	return gpu::image_aspect_flag::color;
 }

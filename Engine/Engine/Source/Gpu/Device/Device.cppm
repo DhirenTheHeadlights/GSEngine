@@ -321,7 +321,7 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto image_format_of(
 			gpu::handle<gpu::image> image
-		) const -> gpu::image_format_value;
+		) const -> gpu::image_format;
 
 		[[nodiscard]] auto image_extent(
 			gpu::handle<gpu::image> image

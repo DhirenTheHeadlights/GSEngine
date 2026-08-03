@@ -87,7 +87,7 @@ auto gse::ide::viewport::frame(const gse::context& ctx, const gse::shared_view<g
 					gse::gpu::image wrapped(
 						d.imported[i].image,
 						d.imported[i].view,
-						gse::gpu::format_value(d.imported[i].format),
+						d.imported[i].format,
 						{ d.imported[i].extent.x(), d.imported[i].extent.y(), 1 },
 						view_info
 					);

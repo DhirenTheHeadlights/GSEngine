@@ -29,7 +29,7 @@ export namespace gse::gpu {
 		const image* custom_target = nullptr;
 		transient_image_handle transient_target;
 		load_op op = load_op::clear;
-		gpu::color_clear clear_value;
+		color_clear clear_value;
 	};
 
 	struct depth_output_info {
@@ -37,13 +37,13 @@ export namespace gse::gpu {
 		const image* custom_target = nullptr;
 		transient_image_handle transient_target;
 		load_op op = load_op::clear;
-		gpu::depth_clear clear_value;
+		depth_clear clear_value;
 	};
 
 	struct resource_usage {
 		resource_ref resource;
-		gpu::pipeline_stage_flags stage;
-		gpu::access_flags access;
+		pipeline_stage_flags stage;
+		access_flags access;
 	};
 
 	struct framebuffer_image_desc {
@@ -56,8 +56,8 @@ export namespace gse::gpu {
 	struct render_pass_data {
 		id pass_type{};
 		std::string_view pass_name{};
-		gpu::queue_type queue = gpu::queue_type::graphics;
-		const gpu::shader_program* primary_pipeline = nullptr;
+		queue_type queue = queue_type::graphics;
+		const shader_program* primary_pipeline = nullptr;
 		std::vector<resource_usage> reads;
 		std::vector<resource_usage> writes;
 		std::vector<id> after_passes;
@@ -70,8 +70,8 @@ export namespace gse::gpu {
 
 	struct rec_touch {
 		resource_ref ref;
-		gpu::pipeline_stage_flags stages;
-		gpu::access_flags access;
+		pipeline_stage_flags stages;
+		access_flags access;
 	};
 
 	struct recording_context_init {
@@ -79,7 +79,7 @@ export namespace gse::gpu {
 		render_pass_data* pass = nullptr;
 		const gpu::transient_pool* transient_pool = nullptr;
 		gpu::device* device = nullptr;
-		const gpu::shader_program* primary = nullptr;
+		const shader_program* primary = nullptr;
 		std::vector<rec_touch> touches;
 	};
 
@@ -92,9 +92,9 @@ export namespace gse::gpu {
 	class render_graph {
 	public:
 		explicit render_graph(
-			gpu::device& device,
-			gpu::swap_chain* swapchain,
-			gpu::frame& frame
+			device& device,
+			swap_chain* swapchain,
+			frame& frame
 		);
 
 		auto execute(
@@ -114,7 +114,7 @@ export namespace gse::gpu {
 		) -> void;
 
 		auto set_swapchain_clear(
-			gpu::color_clear value,
+			color_clear value,
 			load_op op = load_op::clear
 		) -> void;
 
@@ -142,31 +142,31 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto frame_in_progress() const -> bool;
 
-		[[nodiscard]] auto take_aux_submissions() -> std::vector<gpu::queue_submission>;
+		[[nodiscard]] auto take_aux_submissions() -> std::vector<queue_submission>;
 
-		[[nodiscard]] auto take_graphics_extra_waits() -> std::vector<gpu::semaphore_submit_info>;
+		[[nodiscard]] auto take_graphics_extra_waits() -> std::vector<semaphore_submit_info>;
 
 		auto add_graphics_signal(
-			gpu::semaphore_submit_info signal
+			semaphore_submit_info signal
 		) -> void;
 
 		auto add_graphics_wait(
-			gpu::semaphore_submit_info wait
+			semaphore_submit_info wait
 		) -> void;
 
-		[[nodiscard]] auto take_graphics_extra_signals() -> std::vector<gpu::semaphore_submit_info>;
+		[[nodiscard]] auto take_graphics_extra_signals() -> std::vector<semaphore_submit_info>;
 
-		[[nodiscard]] auto take_graphics_buffers() -> std::vector<gpu::command_buffer_handle>;
+		[[nodiscard]] auto take_graphics_buffers() -> std::vector<command_buffer_handle>;
 
 	private:
 		static constexpr std::uint32_t max_profiled_passes = 128;
 		static constexpr std::uint32_t stats_per_pass = 4;
 
 		struct gpu_profile_slot {
-			gpu::handle<gpu::query_pool> timestamp_pool;
-			gpu::handle<gpu::query_pool> stats_pool;
+			handle<query_pool> timestamp_pool;
+			handle<query_pool> stats_pool;
 			std::vector<id> pass_types;
-			std::vector<gpu::queue_type> pass_queues;
+			std::vector<queue_type> pass_queues;
 			std::uint32_t pass_count = 0;
 			bool stats_issued = false;
 			time_t<std::uint64_t> cpu_ref{};
@@ -196,16 +196,16 @@ export namespace gse::gpu {
 		};
 
 		struct queue_state {
-			gpu::queue_timeline<gpu::device> timeline;
+			queue_timeline<device> timeline;
 			std::uint64_t signal_counter = 0;
 		};
 
-		gpu::device* m_device;
-		gpu::swap_chain* m_swapchain;
-		gpu::frame* m_frame;
+		device* m_device;
+		swap_chain* m_swapchain;
+		frame* m_frame;
 		gpu::transient_pool m_transient_pool;
 		std::unordered_map<id, std::unique_ptr<registered_image>> m_framebuffer_images;
-		std::array<per_frame_resource<gpu_profile_slot>, gpu::queue_type_count> m_profile_slots{
+		std::array<per_frame_resource<gpu_profile_slot>, queue_type_count> m_profile_slots{
 			per_frame_resource<gpu_profile_slot>{ gpu_profile_slot{}, gpu_profile_slot{} },
 			per_frame_resource<gpu_profile_slot>{ gpu_profile_slot{}, gpu_profile_slot{} },
 		};
@@ -213,16 +213,16 @@ export namespace gse::gpu {
 		std::atomic<bool> m_gpu_pipeline_stats_enabled{ false };
 		time_t<double> m_timestamp_period_per_tick = nanoseconds(1.0);
 		std::uint64_t m_frames_submitted = 0;
-		std::array<queue_state, gpu::queue_type_count> m_queue_states;
-		std::vector<gpu::queue_submission> m_pending_aux_submissions;
-		std::vector<gpu::semaphore_submit_info> m_pending_graphics_extra_waits;
-		std::vector<gpu::semaphore_submit_info> m_pending_graphics_extra_signals;
-		std::vector<gpu::command_buffer_handle> m_pending_graphics_buffers;
+		std::array<queue_state, queue_type_count> m_queue_states;
+		std::vector<queue_submission> m_pending_aux_submissions;
+		std::vector<semaphore_submit_info> m_pending_graphics_extra_waits;
+		std::vector<semaphore_submit_info> m_pending_graphics_extra_signals;
+		std::vector<command_buffer_handle> m_pending_graphics_buffers;
 		std::set<std::pair<id, id>> m_warned_ambiguous_pairs;
 		std::set<std::pair<std::size_t, std::size_t>> m_warned_queue_cycles;
 		std::set<std::pair<std::size_t, std::size_t>> m_warned_dropped_waits;
 		std::unordered_map<id, std::array<id, stats_per_pass>> m_stat_ids;
-		gpu::color_clear m_swapchain_clear{};
+		color_clear m_swapchain_clear{};
 		load_op m_swapchain_load = load_op::clear;
 		const image* m_offscreen_target = nullptr;
 	};
@@ -241,4 +241,3 @@ auto gse::gpu::render_graph::depth_image(this auto& self) -> auto& {
 auto gse::gpu::render_graph::transient_pool(this auto& self) -> auto& {
 	return self.m_transient_pool;
 }
-

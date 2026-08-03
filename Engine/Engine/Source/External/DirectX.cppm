@@ -34,6 +34,7 @@ import std;
 export namespace gse::directx {
 	using ::ID3D12CommandAllocator;
 	using ::ID3D12CommandQueue;
+	using ::ID3D12DeviceChild;
 	using ::ID3D12Debug;
 	using ::ID3D12Debug1;
 	using ::ID3D12InfoQueue;
@@ -339,6 +340,39 @@ export namespace gse::directx {
 		std::uint32_t mip_levels,
 		D3D12_RESOURCE_FLAGS flags
 	) -> com_ptr<ID3D12Resource>;
+
+	[[nodiscard]] auto create_shared_texture(
+		ID3D12Device* device,
+		DXGI_FORMAT format,
+		std::uint32_t width,
+		std::uint32_t height,
+		D3D12_RESOURCE_FLAGS flags
+	) -> com_ptr<ID3D12Resource>;
+
+	[[nodiscard]] auto open_shared_texture(
+		ID3D12Device* device,
+		void* handle
+	) -> com_ptr<ID3D12Resource>;
+
+	[[nodiscard]] auto create_shared_fence(
+		ID3D12Device* device,
+		std::uint64_t initial_value
+	) -> com_ptr<ID3D12Fence>;
+
+	[[nodiscard]] auto open_shared_fence(
+		ID3D12Device* device,
+		void* handle
+	) -> com_ptr<ID3D12Fence>;
+
+	[[nodiscard]] auto share_object(
+		ID3D12Device* device,
+		ID3D12DeviceChild* object
+	) -> void*;
+
+	[[nodiscard]] auto texture_byte_size(
+		ID3D12Device* device,
+		ID3D12Resource* resource
+	) -> std::uint64_t;
 
 	auto upload_texture(
 		ID3D12Device* device,
@@ -1182,6 +1216,65 @@ auto gse::directx::create_committed_texture(ID3D12Device* device, const D3D12_RE
 	com_ptr<ID3D12Resource> resource;
 	device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(resource.put()));
 	return resource;
+}
+
+auto gse::directx::create_shared_texture(ID3D12Device* device, const DXGI_FORMAT format, const std::uint32_t width, const std::uint32_t height, const D3D12_RESOURCE_FLAGS flags) -> com_ptr<ID3D12Resource> {
+	const D3D12_HEAP_PROPERTIES heap = {
+		.Type = D3D12_HEAP_TYPE_DEFAULT,
+	};
+
+	const auto shared_flags = static_cast<D3D12_RESOURCE_FLAGS>(static_cast<int>(flags) | static_cast<int>(D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS));
+
+	const D3D12_RESOURCE_DESC desc = {
+		.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+		.Width = width,
+		.Height = height,
+		.DepthOrArraySize = 1,
+		.MipLevels = 1,
+		.Format = format,
+		.SampleDesc = {
+			.Count = 1,
+		},
+		.Flags = shared_flags,
+	};
+
+	com_ptr<ID3D12Resource> resource;
+	device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_SHARED, &desc, D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(resource.put()));
+	return resource;
+}
+
+auto gse::directx::open_shared_texture(ID3D12Device* device, void* handle) -> com_ptr<ID3D12Resource> {
+	com_ptr<ID3D12Resource> resource;
+	device->OpenSharedHandle(handle, IID_PPV_ARGS(resource.put()));
+	return resource;
+}
+
+auto gse::directx::create_shared_fence(ID3D12Device* device, const std::uint64_t initial_value) -> com_ptr<ID3D12Fence> {
+	com_ptr<ID3D12Fence> fence;
+	device->CreateFence(initial_value, D3D12_FENCE_FLAG_SHARED, IID_PPV_ARGS(fence.put()));
+	return fence;
+}
+
+auto gse::directx::open_shared_fence(ID3D12Device* device, void* handle) -> com_ptr<ID3D12Fence> {
+	com_ptr<ID3D12Fence> fence;
+	device->OpenSharedHandle(handle, IID_PPV_ARGS(fence.put()));
+	return fence;
+}
+
+auto gse::directx::share_object(ID3D12Device* device, ID3D12DeviceChild* object) -> void* {
+	HANDLE handle = nullptr;
+	if (FAILED(device->CreateSharedHandle(object, nullptr, GENERIC_ALL, nullptr, &handle))) {
+		return nullptr;
+	}
+	return handle;
+}
+
+auto gse::directx::texture_byte_size(ID3D12Device* device, ID3D12Resource* resource) -> std::uint64_t {
+	D3D12_RESOURCE_DESC desc;
+	resource->GetDesc(&desc);
+	std::uint64_t total_bytes = 0;
+	device->GetCopyableFootprints(&desc, 0, 1, 0, nullptr, nullptr, nullptr, &total_bytes);
+	return total_bytes;
 }
 
 auto gse::directx::upload_texture(ID3D12Device* device, ID3D12CommandQueue* queue, ID3D12Fence* fence, void* wait_event, ID3D12Resource* texture, const void* const* layer_pointers, const std::uint32_t layer_count) -> void {

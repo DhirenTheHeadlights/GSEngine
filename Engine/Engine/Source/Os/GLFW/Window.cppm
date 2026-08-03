@@ -160,8 +160,11 @@ export namespace gse::window {
 		bool decorated = true;
 		bool maximized = false;
 		int last_monitor_index = 0;
+		int current_monitor_index = -1;
 		vec2i position{ 0, 0 };
 		vec2i size{ 0, 0 };
+		[[= gse::shared]] float content_scale = 1.f;
+		[[= gse::shared]] std::string monitor_key;
 		bool cmd_minimize = false;
 		bool cmd_toggle_maximize = false;
 		bool cmd_close = false;

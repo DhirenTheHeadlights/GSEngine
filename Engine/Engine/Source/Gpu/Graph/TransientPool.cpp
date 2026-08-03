@@ -14,10 +14,6 @@ import gse.log;
 namespace gse::gpu {
 	auto allocate_transient_key() -> std::uint64_t;
 
-	auto aspect_for_format(
-		image_format fmt
-	) -> image_aspect_flags;
-
 	auto depth_for_format(
 		image_format fmt
 	) -> bool;
@@ -75,13 +71,6 @@ auto gse::gpu::transient_buffer(const gse::context& ctx, transient_buffer_desc d
 	return h;
 }
 
-auto gse::gpu::aspect_for_format(const image_format fmt) -> image_aspect_flags {
-	if (fmt == image_format::d32_sfloat) {
-		return image_aspect_flag::depth;
-	}
-	return image_aspect_flag::color;
-}
-
 auto gse::gpu::depth_for_format(const image_format fmt) -> bool {
 	return fmt == image_format::d32_sfloat;
 }
@@ -102,7 +91,7 @@ auto gse::gpu::image_view_create_info_from(const transient_image_desc& desc) -> 
 	return {
 		.format = desc.format,
 		.view_type = desc.view,
-		.aspects = aspect_for_format(desc.format),
+		.aspects = image_aspect_for(desc.format),
 		.base_mip_level = 0,
 		.level_count = 1,
 		.base_array_layer = 0,
@@ -419,7 +408,7 @@ auto gse::gpu::transient_pool::plan(const std::uint32_t frame_idx, const std::sp
 			req.handle.key,
 			transient_image_allocation{
 				.resource = std::move(img),
-				.aspects = aspect_for_format(req.desc.format),
+				.aspects = image_aspect_for(req.desc.format),
 				.format = req.desc.format,
 				.color = si.color,
 				.first_pass = intervals[si.entry_index].first_pass,
