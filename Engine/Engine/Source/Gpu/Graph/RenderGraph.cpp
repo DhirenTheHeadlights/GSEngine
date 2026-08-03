@@ -260,7 +260,6 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 	}
 
 	m_device->reset_worker_command_pools(frame_idx);
-	const auto color_format_value = m_swapchain ? gpu::format_value(m_swapchain->format()) : gpu::image_format_value{ 0 };
 
 	auto resolve_color_target = [&](const color_output_info& info) -> const image* {
 		if (info.transient_target) {

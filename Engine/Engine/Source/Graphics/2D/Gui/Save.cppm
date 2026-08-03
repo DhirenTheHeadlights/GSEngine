@@ -21,6 +21,8 @@ export namespace gse::gui {
 		std::string tag;
 		std::string owner_tag;
 		rectf rect;
+		std::optional<vec2f> position_ratio;
+		std::optional<vec2f> design_size;
 		dock::location docked_to = dock::location::none;
 		float dock_split_ratio = 0.5f;
 		std::uint32_t active_tab_index = 0;
@@ -30,13 +32,26 @@ export namespace gse::gui {
 
 	auto save(
 		id_mapped_collection<menu>& menus,
-		const std::filesystem::path& file_path
+		const std::filesystem::path& file_path,
+		vec2f viewport_size,
+		float scale_factor
 	) -> void;
 
 	auto load(
 		const std::filesystem::path& file_path,
-		id_mapped_collection<menu>& default_menus
+		id_mapped_collection<menu>& default_menus,
+		vec2f viewport_size,
+		float scale_factor
 	) -> id_mapped_collection<menu>;
+
+	auto save_ui_scales(
+		const std::unordered_map<std::string, float>& scales,
+		const std::filesystem::path& file_path
+	) -> void;
+
+	auto load_ui_scales(
+		const std::filesystem::path& file_path
+	) -> std::unordered_map<std::string, float>;
 }
 
 namespace gse::gui {
@@ -69,6 +84,12 @@ namespace gse::gui {
 	auto parse_layout(
 		std::string_view text
 	) -> std::vector<loaded_menu_data>;
+
+	auto resolve_rect(
+		const loaded_menu_data& data,
+		vec2f viewport_size,
+		float scale_factor
+	) -> rectf;
 }
 
 auto gse::gui::dock_to_string(const dock::location location) -> std::string_view {
@@ -229,6 +250,16 @@ auto gse::gui::parse_layout(const std::string_view text) -> std::vector<loaded_m
 				current->rect = rectf::from_position_size(p, sz);
 			}
 		}
+		else if (key == "position_ratio") {
+			if (const auto parts = split(value, ','); parts.size() == 2) {
+				current->position_ratio = vec2f{ std::stof(parts[0]), std::stof(parts[1]) };
+			}
+		}
+		else if (key == "design_size") {
+			if (const auto parts = split(value, ','); parts.size() == 2) {
+				current->design_size = vec2f{ std::stof(parts[0]), std::stof(parts[1]) };
+			}
+		}
 		else if (key == "tabs") {
 			current->tab_tags = split(value, ',');
 		}
@@ -238,7 +269,25 @@ auto gse::gui::parse_layout(const std::string_view text) -> std::vector<loaded_m
 	return result;
 }
 
-auto gse::gui::save(id_mapped_collection<menu>& menus, const std::filesystem::path& file_path) -> void {
+auto gse::gui::resolve_rect(const loaded_menu_data& data, const vec2f viewport_size, const float scale_factor) -> rectf {
+	if (!data.position_ratio || !data.design_size) {
+		return data.rect;
+	}
+
+	const vec2f size{ data.design_size->x() * scale_factor, data.design_size->y() * scale_factor };
+	const vec2f position{
+		data.position_ratio->x() * viewport_size.x(),
+		viewport_size.y() - data.position_ratio->y() * viewport_size.y()
+	};
+
+	return rectf::from_position_size(position, size);
+}
+
+auto gse::gui::save(id_mapped_collection<menu>& menus, const std::filesystem::path& file_path, const vec2f viewport_size, const float scale_factor) -> void {
+	if (viewport_size.x() <= 0.f || viewport_size.y() <= 0.f || scale_factor <= 0.f) {
+		return;
+	}
+
 	std::string out;
 	std::size_t i = 0;
 	for (const auto& menu : menus.items()) {
@@ -255,11 +304,16 @@ auto gse::gui::save(id_mapped_collection<menu>& menus, const std::filesystem::pa
 		);
 		out.append(
 			std::format(
-				"rect = {},{},{},{}\n",
-				menu.rect.left(),
-				menu.rect.top(),
-				menu.rect.width(),
-				menu.rect.height()
+				"position_ratio = {},{}\n",
+				menu.rect.left() / viewport_size.x(),
+				(viewport_size.y() - menu.rect.top()) / viewport_size.y()
+			)
+		);
+		out.append(
+			std::format(
+				"design_size = {},{}\n",
+				menu.rect.width() / scale_factor,
+				menu.rect.height() / scale_factor
 			)
 		);
 		out.append(std::format("docked_to = {}\n", dock_to_string(menu.docked_to)));
@@ -279,11 +333,11 @@ auto gse::gui::save(id_mapped_collection<menu>& menus, const std::filesystem::pa
 	);
 }
 
-auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection<menu>& default_menus) -> id_mapped_collection<menu> {
+auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection<menu>& default_menus, const vec2f viewport_size, const float scale_factor) -> id_mapped_collection<menu> {
 	const std::string content = layout_store::read(file_path);
 	if (content.empty()) {
 		id_mapped_collection<menu> menus_to_save = default_menus;
-		save(menus_to_save, file_path);
+		save(menus_to_save, file_path, viewport_size, scale_factor);
 		return default_menus;
 	}
 
@@ -311,7 +365,7 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
 
 	for (const auto& [tag, data] : loaded_map) {
 		menu_data md = {
-			.rect = data.rect,
+			.rect = resolve_rect(data, viewport_size, scale_factor),
 			.parent_id = id()
 		};
 		menu new_menu(tag, md);
@@ -348,4 +402,41 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
 	}
 
 	return new_layout;
+}
+
+auto gse::gui::save_ui_scales(const std::unordered_map<std::string, float>& scales, const std::filesystem::path& file_path) -> void {
+	std::string out;
+
+	if (!scales.empty()) {
+		const std::map<std::string, float> sorted(scales.begin(), scales.end());
+
+		out.append("[ui_scale]\n");
+		for (const auto& [key, scale] : sorted) {
+			out.append(std::format("{} = {}\n", key, scale));
+		}
+	}
+
+	layout_store::submit(
+		file_path,
+		{
+			.names = { "ui_scale" },
+		},
+		std::move(out)
+	);
+}
+
+auto gse::gui::load_ui_scales(const std::filesystem::path& file_path) -> std::unordered_map<std::string, float> {
+	std::unordered_map<std::string, float> scales;
+
+	for (const auto& section : layout_store::parse_sections(layout_store::read(file_path))) {
+		if (section.name != "ui_scale") {
+			continue;
+		}
+
+		for (const auto& [key, value] : section.values) {
+			scales[key] = std::stof(value);
+		}
+	}
+
+	return scales;
 }

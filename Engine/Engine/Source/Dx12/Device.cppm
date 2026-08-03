@@ -279,6 +279,19 @@ export namespace gse::dx12 {
 			const gpu::image_view_create_info& info
 		) const -> gpu::handle<gpu::image_view>;
 
+		[[nodiscard]] auto create_shared_surface(
+			const gpu::shared_surface_desc& desc
+		) const -> std::expected<gpu::shared_surface, std::string>;
+
+		[[nodiscard]] auto import_shared_surface(
+			const gpu::shared_surface_desc& desc,
+			void* handle
+		) const -> std::expected<gpu::shared_surface, std::string>;
+
+		auto destroy_shared_surface(
+			const gpu::shared_surface& surface
+		) const -> void;
+
 		[[nodiscard]] auto allocate_aliased_memory(
 			gpu::device_size size,
 			std::uint32_t memory_type_index
@@ -308,6 +321,16 @@ export namespace gse::dx12 {
 		[[nodiscard]] auto create_timeline_semaphore(
 			std::uint64_t initial_value
 		) -> gpu::handle<gpu::semaphore>;
+
+		[[nodiscard]] auto create_exportable_semaphore() -> gpu::handle<gpu::semaphore>;
+
+		[[nodiscard]] auto export_semaphore_handle(
+			gpu::handle<gpu::semaphore> semaphore
+		) const -> std::expected<void*, std::string>;
+
+		[[nodiscard]] auto import_semaphore_handle(
+			void* handle
+		) -> std::expected<gpu::handle<gpu::semaphore>, std::string>;
 
 		[[nodiscard]] auto create_fence(
 			bool signaled
@@ -401,7 +424,7 @@ export namespace gse::dx12 {
 
 		[[nodiscard]] auto image_format_of(
 			gpu::handle<gpu::image> image
-		) const -> gpu::image_format_value;
+		) const -> gpu::image_format;
 
 		[[nodiscard]] auto image_extent(
 			gpu::handle<gpu::image> image
@@ -563,7 +586,7 @@ export namespace gse::dx12 {
 			gpu::handle<gpu::image_view> view;
 			gpu::bindless_slot storage_slot;
 			gpu::bindless_slot sampled_slot;
-			gpu::image_format_value format = 0;
+			gpu::image_format format = gpu::image_format::undefined;
 			vec3u extent;
 			gpu::image_view_create_info view_info;
 		};

@@ -14,13 +14,13 @@ export namespace gse::gpu {
 		pass_recorder() = default;
 
 		pass_recorder(
-			gpu::command_buffer_handle cmd,
+			command_buffer_handle cmd,
 			const command_dispatch* dispatch
 		);
 
 		[[nodiscard]] auto valid() const -> bool;
 
-		[[nodiscard]] auto native() const -> gpu::command_buffer_handle;
+		[[nodiscard]] auto native() const -> command_buffer_handle;
 
 		auto begin() const -> void;
 
@@ -29,63 +29,63 @@ export namespace gse::gpu {
 		auto end() const -> void;
 
 		auto begin_rendering(
-			const gpu::rendering_info& info
+			const rendering_info& info
 		) const -> void;
 
 		auto end_rendering() const -> void;
 
 		auto reset_query_pool(
-			gpu::handle<gpu::query_pool> pool,
+			handle<query_pool> pool,
 			std::uint32_t first_query,
 			std::uint32_t query_count
 		) const -> void;
 
 		auto write_timestamp(
-			gpu::pipeline_stage_flags stage,
-			gpu::handle<gpu::query_pool> pool,
+			pipeline_stage_flags stage,
+			handle<query_pool> pool,
 			std::uint32_t query_index
 		) const -> void;
 
 		auto begin_query(
-			gpu::handle<gpu::query_pool> pool,
+			handle<query_pool> pool,
 			std::uint32_t query_index
 		) const -> void;
 
 		auto end_query(
-			gpu::handle<gpu::query_pool> pool,
+			handle<query_pool> pool,
 			std::uint32_t query_index
 		) const -> void;
 
 		auto release_swapchain_image_to_present(
-			gpu::handle<gpu::image> img,
-			gpu::pipeline_stage_flags src_stages,
-			gpu::access_flags src_access
+			handle<image> img,
+			pipeline_stage_flags src_stages,
+			access_flags src_access
 		) const -> void;
 
 		auto set_viewport(
-			const gpu::viewport& viewport
+			const viewport& viewport
 		) const -> void;
 
 		auto set_scissor(
-			const gse::rect_t<vec2i>& scissor
+			const rect_t<vec2i>& scissor
 		) const -> void;
 
 		auto set_vertex_input_none() const -> void;
 
 		auto set_topology(
-			gpu::topology t
+			topology t
 		) const -> void;
 
 		auto set_polygon_mode(
-			gpu::polygon_mode m
+			polygon_mode m
 		) const -> void;
 
 		auto set_cull_mode(
-			gpu::cull_mode m
+			cull_mode m
 		) const -> void;
 
 		auto set_front_face(
-			gpu::front_face f
+			front_face f
 		) const -> void;
 
 		auto set_depth_test_enable(
@@ -97,7 +97,7 @@ export namespace gse::gpu {
 		) const -> void;
 
 		auto set_depth_compare_op(
-			gpu::compare_op op
+			compare_op op
 		) const -> void;
 
 		auto set_depth_bias_enable(
@@ -135,11 +135,11 @@ export namespace gse::gpu {
 		) const -> void;
 
 		auto set_rasterization_samples(
-			gpu::sample_count samples
+			sample_count samples
 		) const -> void;
 
 		auto set_sample_mask(
-			gpu::sample_count samples,
+			sample_count samples,
 			std::uint32_t mask
 		) const -> void;
 
@@ -162,12 +162,12 @@ export namespace gse::gpu {
 
 		auto set_color_blend_equation(
 			std::uint32_t first_attachment,
-			std::span<const gpu::color_blend_equation> equations
+			std::span<const color_blend_equation> equations
 		) const -> void;
 
 		auto set_color_write_mask(
 			std::uint32_t first_attachment,
-			std::span<const gpu::color_component_flags> masks
+			std::span<const color_component_flags> masks
 		) const -> void;
 
 		auto set_blend_constants(
@@ -175,33 +175,33 @@ export namespace gse::gpu {
 		) const -> void;
 
 		auto bind_shaders(
-			std::span<const gpu::stage_flag> stages,
-			std::span<const gpu::handle<gpu::shader_object>> shaders
+			std::span<const stage_flag> stages,
+			std::span<const handle<shader_object>> shaders
 		) const -> void;
 
 		auto unbind_shaders(
-			std::span<const gpu::stage_flag> stages
+			std::span<const stage_flag> stages
 		) const -> void;
 
 		auto bind_index_buffer_2(
-			gpu::handle<gpu::buffer> buffer,
-			gpu::device_size offset,
-			gpu::device_size size,
-			gpu::index_type type
+			handle<buffer> buffer,
+			device_size offset,
+			device_size size,
+			index_type type
 		) const -> void;
 
 		auto bind_resource_heap(
-			gpu::device_address heap_address,
-			gpu::device_size heap_size,
-			gpu::device_size reserved_offset,
-			gpu::device_size reserved_size
+			device_address heap_address,
+			device_size heap_size,
+			device_size reserved_offset,
+			device_size reserved_size
 		) const -> void;
 
 		auto bind_sampler_heap(
-			gpu::device_address heap_address,
-			gpu::device_size heap_size,
-			gpu::device_size reserved_offset,
-			gpu::device_size reserved_size
+			device_address heap_address,
+			device_size heap_size,
+			device_size reserved_offset,
+			device_size reserved_size
 		) const -> void;
 
 		auto push_data(
@@ -231,15 +231,15 @@ export namespace gse::gpu {
 		) const -> void;
 
 		auto draw_indexed_indirect(
-			gpu::handle<gpu::buffer> buffer,
-			gpu::device_size offset,
+			handle<buffer> buffer,
+			device_size offset,
 			std::uint32_t draw_count,
 			std::uint32_t stride
 		) const -> void;
 
 		auto draw_mesh_tasks_indirect(
-			gpu::handle<gpu::buffer> buffer,
-			gpu::device_size offset,
+			handle<buffer> buffer,
+			device_size offset,
 			std::uint32_t draw_count,
 			std::uint32_t stride
 		) const -> void;
@@ -251,63 +251,63 @@ export namespace gse::gpu {
 		) const -> void;
 
 		auto dispatch_indirect(
-			gpu::handle<gpu::buffer> buffer,
-			gpu::device_size offset
+			handle<buffer> buffer,
+			device_size offset
 		) const -> void;
 
 		auto copy_buffer(
-			gpu::handle<gpu::buffer> src,
-			gpu::handle<gpu::buffer> dst,
-			const gpu::buffer_copy_region& region
+			handle<buffer> src,
+			handle<buffer> dst,
+			const buffer_copy_region& region
 		) const -> void;
 
 		auto fill_buffer(
-			gpu::handle<gpu::buffer> dst,
-			gpu::device_size offset,
-			gpu::device_size size,
+			handle<buffer> dst,
+			device_size offset,
+			device_size size,
 			std::uint32_t data
 		) const -> void;
 
 		auto copy_buffer_to_image(
-			gpu::handle<gpu::buffer> src,
-			gpu::handle<gpu::image> dst,
-			std::span<const gpu::buffer_image_copy_region> regions
+			handle<buffer> src,
+			handle<image> dst,
+			std::span<const buffer_image_copy_region> regions
 		) const -> void;
 
 		auto copy_image_to_buffer(
-			gpu::handle<gpu::image> src,
-			gpu::handle<gpu::buffer> dst,
-			std::span<const gpu::buffer_image_copy_region> regions
+			handle<image> src,
+			handle<buffer> dst,
+			std::span<const buffer_image_copy_region> regions
 		) const -> void;
 
 		auto blit_image(
-			gpu::handle<gpu::image> src,
-			gpu::handle<gpu::image> dst,
-			const gpu::image_blit_region& region,
-			gpu::sampler_filter filter
+			handle<image> src,
+			handle<image> dst,
+			const image_blit_region& region,
+			sampler_filter filter
 		) const -> void;
 
 		auto copy_image(
-			gpu::handle<gpu::image> src,
-			gpu::handle<gpu::image> dst,
-			const gpu::image_copy_region& region
+			handle<image> src,
+			handle<image> dst,
+			const image_copy_region& region
 		) const -> void;
 
 		auto pipeline_barrier(
-			const gpu::dependency_info& dep
+			const dependency_info& dep
 		) const -> void;
 
 		auto transition_image_state(
-			const gpu::image_barrier& barrier
+			const image_barrier& barrier
 		) const -> void;
 
 		auto build_acceleration_structures(
-			const gpu::acceleration_structure_build_geometry_info& build_info,
-			std::span<const gpu::acceleration_structure_build_range_info* const> range_infos
+			const acceleration_structure_build_geometry_info& build_info,
+			std::span<const acceleration_structure_build_range_info* const> range_infos
 		) const -> void;
 
 	private:
-		gpu::command_buffer_handle m_cmd{};
+		command_buffer_handle m_cmd{};
 		const command_dispatch* m_vt = nullptr;
 	};
 }

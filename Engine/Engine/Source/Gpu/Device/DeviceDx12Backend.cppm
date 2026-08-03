@@ -348,7 +348,7 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto image_format_of(
 			gpu::handle<gpu::image> image
-		) const -> gpu::image_format_value;
+		) const -> gpu::image_format;
 
 		[[nodiscard]] auto image_extent(
 			gpu::handle<gpu::image> image
@@ -522,15 +522,16 @@ auto gse::gpu::dx12_device_backend::create_buffer_unbound(const gpu::buffer_desc
 	return device->create_buffer_unbound(info);
 }
 
-auto gse::gpu::dx12_device_backend::create_shared_surface(const gpu::shared_surface_desc&) const -> std::expected<gpu::shared_surface, std::string> {
-	return std::unexpected(std::string("shared surfaces are not yet implemented on the dx12 backend"));
+auto gse::gpu::dx12_device_backend::create_shared_surface(const gpu::shared_surface_desc& desc) const -> std::expected<gpu::shared_surface, std::string> {
+	return device->create_shared_surface(desc);
 }
 
-auto gse::gpu::dx12_device_backend::import_shared_surface(const gpu::shared_surface_desc&, void*) const -> std::expected<gpu::shared_surface, std::string> {
-	return std::unexpected(std::string("shared surfaces are not yet implemented on the dx12 backend"));
+auto gse::gpu::dx12_device_backend::import_shared_surface(const gpu::shared_surface_desc& desc, void* handle) const -> std::expected<gpu::shared_surface, std::string> {
+	return device->import_shared_surface(desc, handle);
 }
 
-auto gse::gpu::dx12_device_backend::destroy_shared_surface(const gpu::shared_surface&) const -> void {
+auto gse::gpu::dx12_device_backend::destroy_shared_surface(const gpu::shared_surface& surface) const -> void {
+	device->destroy_shared_surface(surface);
 }
 
 auto gse::gpu::dx12_device_backend::bind_image_memory(const gpu::handle<gpu::image> img, const gpu::device_memory mem, const gpu::device_size offset) const -> void {
@@ -602,15 +603,15 @@ auto gse::gpu::dx12_device_backend::create_timeline_semaphore(const std::uint64_
 }
 
 auto gse::gpu::dx12_device_backend::create_exportable_semaphore() -> gpu::handle<gpu::semaphore> {
-	return device->create_timeline_semaphore(0);
+	return device->create_exportable_semaphore();
 }
 
-auto gse::gpu::dx12_device_backend::export_semaphore_handle(const gpu::handle<gpu::semaphore>) const -> std::expected<void*, std::string> {
-	return std::unexpected(std::string("export_semaphore_handle is not yet implemented on the dx12 backend"));
+auto gse::gpu::dx12_device_backend::export_semaphore_handle(const gpu::handle<gpu::semaphore> semaphore) const -> std::expected<void*, std::string> {
+	return device->export_semaphore_handle(semaphore);
 }
 
-auto gse::gpu::dx12_device_backend::import_semaphore_handle(void*) -> std::expected<gpu::handle<gpu::semaphore>, std::string> {
-	return std::unexpected(std::string("import_semaphore_handle is not yet implemented on the dx12 backend"));
+auto gse::gpu::dx12_device_backend::import_semaphore_handle(void* handle) -> std::expected<gpu::handle<gpu::semaphore>, std::string> {
+	return device->import_semaphore_handle(handle);
 }
 
 auto gse::gpu::dx12_device_backend::create_fence(const bool signaled) -> gpu::handle<gpu::fence> {
@@ -717,7 +718,7 @@ auto gse::gpu::dx12_device_backend::image_storage_slot(const gpu::handle<gpu::im
 	return device->image_storage_slot(image);
 }
 
-auto gse::gpu::dx12_device_backend::image_format_of(const gpu::handle<gpu::image> image) const -> gpu::image_format_value {
+auto gse::gpu::dx12_device_backend::image_format_of(const gpu::handle<gpu::image> image) const -> gpu::image_format {
 	return device->image_format_of(image);
 }
 

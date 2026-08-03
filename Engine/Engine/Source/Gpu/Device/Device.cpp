@@ -492,7 +492,7 @@ auto gse::gpu::device::image_storage_slot(const gpu::handle<gpu::image> image) c
 	return m_vt->image_storage_slot(m_backend.get(), image);
 }
 
-auto gse::gpu::device::image_format_of(const gpu::handle<gpu::image> image) const -> gpu::image_format_value {
+auto gse::gpu::device::image_format_of(const gpu::handle<gpu::image> image) const -> gpu::image_format {
 	return m_vt->image_format_of(m_backend.get(), image);
 }
 
@@ -524,7 +524,7 @@ auto gse::gpu::device::make_aliased_image(const gpu::handle<gpu::image> img_hand
 	return std::make_unique<image>(
 		img_handle,
 		view_handle,
-		static_cast<image_format_value>(format),
+		format,
 		extent,
 		view_info
 	);

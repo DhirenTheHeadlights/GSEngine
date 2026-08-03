@@ -16,16 +16,6 @@ import gse.diag;
 import gse.math;
 
 export namespace gse::gpu {
-	[[nodiscard]]
-	auto image_aspect_for(
-		image_format_value f
-	) -> image_aspect_flags;
-
-	[[nodiscard]]
-	auto format_value(
-		image_format f
-	) -> image_format_value;
-
 	auto transition_image_to(
 		gpu::device& dev,
 		image& img

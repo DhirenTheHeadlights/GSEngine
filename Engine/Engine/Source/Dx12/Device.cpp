@@ -1031,6 +1031,105 @@ auto gse::dx12::device::create_image_view(const gpu::handle<gpu::image> img, con
 	return std::bit_cast<gpu::handle<gpu::image_view>>(handle.ptr);
 }
 
+auto gse::dx12::device::create_shared_surface(const gpu::shared_surface_desc& desc) const -> std::expected<gpu::shared_surface, std::string> {
+	int flag_bits = static_cast<int>(directx::resource_flag_none);
+	if (desc.usage.test(gpu::image_flag::color_attachment)) {
+		flag_bits |= static_cast<int>(directx::resource_flag_allow_render_target);
+	}
+	if (desc.usage.test(gpu::image_flag::storage)) {
+		flag_bits |= static_cast<int>(directx::resource_flag_allow_unordered_access);
+	}
+
+	auto resource = directx::create_shared_texture(m_device.get(), resource_format_of(desc.format), desc.extent.x(), desc.extent.y(), static_cast<directx::D3D12_RESOURCE_FLAGS>(flag_bits));
+	if (!resource) {
+		return std::unexpected(std::format("shared surface {} creation failed (removed=0x{:08x})", desc.extent, static_cast<std::uint32_t>(m_device->GetDeviceRemovedReason())));
+	}
+	auto* raw = resource.get();
+
+	void* shared = directx::share_object(m_device.get(), raw);
+	if (!shared) {
+		return std::unexpected(std::string("CreateSharedHandle failed for shared surface"));
+	}
+
+	constexpr std::string_view surface_name = "gse.shared_surface";
+	directx::set_resource_name(raw, surface_name.data(), surface_name.size());
+	const auto byte_size = directx::texture_byte_size(m_device.get(), raw);
+	{
+		const std::lock_guard lock(m_mutex);
+		m_owned_images.push_back(std::move(resource));
+	}
+
+	const gpu::image_view_create_info view_info{
+		.format = desc.format,
+		.view_type = gpu::image_view_type::e2d,
+		.aspects = gpu::image_aspect_flags(gpu::image_aspect_flag::color),
+		.level_count = 1,
+		.layer_count = 1,
+	};
+	const auto image_handle = std::bit_cast<gpu::handle<gpu::image>>(raw);
+
+	return gpu::shared_surface{
+		.image = image_handle,
+		.view = create_image_view(image_handle, view_info),
+		.memory = {},
+		.extent = desc.extent,
+		.format = desc.format,
+		.size = byte_size,
+		.handle = shared,
+	};
+}
+
+auto gse::dx12::device::import_shared_surface(const gpu::shared_surface_desc& desc, void* handle) const -> std::expected<gpu::shared_surface, std::string> {
+	auto resource = directx::open_shared_texture(m_device.get(), handle);
+	if (!resource) {
+		return std::unexpected(std::string("OpenSharedHandle failed for shared surface"));
+	}
+	auto* raw = resource.get();
+
+	constexpr std::string_view surface_name = "gse.imported_surface";
+	directx::set_resource_name(raw, surface_name.data(), surface_name.size());
+	const auto byte_size = directx::texture_byte_size(m_device.get(), raw);
+	{
+		const std::lock_guard lock(m_mutex);
+		m_owned_images.push_back(std::move(resource));
+	}
+
+	const gpu::image_view_create_info view_info{
+		.format = desc.format,
+		.view_type = gpu::image_view_type::e2d,
+		.aspects = gpu::image_aspect_flags(gpu::image_aspect_flag::color),
+		.level_count = 1,
+		.layer_count = 1,
+	};
+	const auto image_handle = std::bit_cast<gpu::handle<gpu::image>>(raw);
+
+	return gpu::shared_surface{
+		.image = image_handle,
+		.view = create_image_view(image_handle, view_info),
+		.memory = {},
+		.extent = desc.extent,
+		.format = desc.format,
+		.size = byte_size,
+		.handle = nullptr,
+	};
+}
+
+auto gse::dx12::device::destroy_shared_surface(const gpu::shared_surface& surface) const -> void {
+	auto* resource = std::bit_cast<directx::ID3D12Resource*>(surface.image);
+	{
+		const std::lock_guard lock(m_mutex);
+		const auto it = std::ranges::find_if(m_owned_images, [resource](const directx::com_ptr<directx::ID3D12Resource>& owned) {
+			return owned.get() == resource;
+		});
+		if (it != m_owned_images.end()) {
+			m_owned_images.erase(it);
+		}
+	}
+	if (surface.handle) {
+		win32::CloseHandle(surface.handle);
+	}
+}
+
 auto gse::dx12::device::allocate_aliased_memory(gpu::device_size, std::uint32_t) const -> gpu::device_memory {
 	const std::lock_guard lock(m_mutex);
 	return gpu::device_memory{ .value = ++m_aliased_counter };
@@ -1129,6 +1228,44 @@ auto gse::dx12::device::create_timeline_semaphore(const std::uint64_t initial_va
 	m_sync_points.push_back({
 		.fence = directx::create_fence(m_device.get(), initial_value),
 		.value = initial_value,
+		.is_timeline = true,
+	});
+	register_sync_point(&m_sync_points.back());
+	return std::bit_cast<gpu::handle<gpu::semaphore>>(&m_sync_points.back());
+}
+
+auto gse::dx12::device::create_exportable_semaphore() -> gpu::handle<gpu::semaphore> {
+	const std::lock_guard lock(m_mutex);
+	m_sync_points.push_back({
+		.fence = directx::create_shared_fence(m_device.get(), 0),
+		.value = 0,
+		.is_timeline = true,
+	});
+	register_sync_point(&m_sync_points.back());
+	return std::bit_cast<gpu::handle<gpu::semaphore>>(&m_sync_points.back());
+}
+
+auto gse::dx12::device::export_semaphore_handle(const gpu::handle<gpu::semaphore> semaphore) const -> std::expected<void*, std::string> {
+	auto* sp = std::bit_cast<sync_point*>(semaphore);
+	if (!sp || !sp->fence) {
+		return std::unexpected(std::string("export_semaphore_handle: semaphore has no fence"));
+	}
+	void* shared = directx::share_object(m_device.get(), sp->fence.get());
+	if (!shared) {
+		return std::unexpected(std::string("CreateSharedHandle failed for fence; it must come from create_exportable_semaphore"));
+	}
+	return shared;
+}
+
+auto gse::dx12::device::import_semaphore_handle(void* handle) -> std::expected<gpu::handle<gpu::semaphore>, std::string> {
+	auto fence = directx::open_shared_fence(m_device.get(), handle);
+	if (!fence) {
+		return std::unexpected(std::string("OpenSharedHandle failed for fence"));
+	}
+	const std::lock_guard lock(m_mutex);
+	m_sync_points.push_back({
+		.fence = std::move(fence),
+		.value = 0,
 		.is_timeline = true,
 	});
 	register_sync_point(&m_sync_points.back());
@@ -1337,10 +1474,10 @@ auto gse::dx12::device::image_storage_slot(const gpu::handle<gpu::image> image) 
 	return it == m_live_images.end() ? gpu::bindless_slot{} : it->second.storage_slot;
 }
 
-auto gse::dx12::device::image_format_of(const gpu::handle<gpu::image> image) const -> gpu::image_format_value {
+auto gse::dx12::device::image_format_of(const gpu::handle<gpu::image> image) const -> gpu::image_format {
 	const std::lock_guard lock(m_mutex);
 	const auto it = m_live_images.find(image.value);
-	return it == m_live_images.end() ? 0 : it->second.format;
+	return it == m_live_images.end() ? gpu::image_format::undefined : it->second.format;
 }
 
 auto gse::dx12::device::image_extent(const gpu::handle<gpu::image> image) const -> vec3u {
@@ -1515,11 +1652,11 @@ auto gse::dx12::device::create_image(const gpu::image_desc& desc, const std::str
 	}
 
 	const auto image_handle = std::bit_cast<gpu::handle<gpu::image>>(raw);
-	m_live_images[image_handle.value] = live_image{ view, storage_slot, sampled_slot, static_cast<gpu::image_format_value>(desc.format), vec3u{ desc.size.x(), desc.size.y(), desc.depth }, {} };
+	m_live_images[image_handle.value] = live_image{ view, storage_slot, sampled_slot, desc.format, vec3u{ desc.size.x(), desc.size.y(), desc.depth }, {} };
 	return gpu::image(
 		image_handle,
 		view,
-		static_cast<gpu::image_format_value>(desc.format),
+		desc.format,
 		vec3u{ desc.size.x(), desc.size.y(), desc.depth },
 		{},
 		storage_slot,
@@ -1573,7 +1710,7 @@ auto gse::dx12::device::write_sampled_image(const gpu::bindless_slot slot, const
 	const directx::D3D12_CPU_DESCRIPTOR_HANDLE handle = {
 		.ptr = directx::descriptor_heap_cpu_start(m_resource_heap.get()).ptr + static_cast<std::size_t>(m_image_pool.offset(slot)),
 	};
-	directx::create_texture_srv(m_device.get(), resource, srv_format_of(static_cast<gpu::image_format>(img.format())), handle);
+	directx::create_texture_srv(m_device.get(), resource, srv_format_of(img.format()), handle);
 }
 
 auto gse::dx12::device::register_sampler(const gpu::sampler_desc& desc) -> gpu::bindless_handle {
@@ -1590,7 +1727,7 @@ auto gse::dx12::device::register_texture(const gpu::image& img, const gpu::sampl
 		const directx::D3D12_CPU_DESCRIPTOR_HANDLE srv = {
 			.ptr = directx::descriptor_heap_cpu_start(m_resource_heap.get()).ptr + static_cast<std::size_t>(m_bindless_layout.texture_image_offset + slot.index * m_bindless_layout.image_stride),
 		};
-		directx::create_texture_srv(m_device.get(), resource, srv_format_of(static_cast<gpu::image_format>(img.format())), srv);
+		directx::create_texture_srv(m_device.get(), resource, srv_format_of(img.format()), srv);
 	}
 	write_sampler_at(m_bindless_layout.texture_sampler_offset + slot.index * m_bindless_layout.sampler_stride, desc);
 	return gpu::bindless_handle(&m_texture_pool, slot);

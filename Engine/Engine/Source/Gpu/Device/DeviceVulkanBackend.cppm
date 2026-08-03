@@ -350,7 +350,7 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto image_format_of(
 			gpu::handle<gpu::image> image
-		) const -> gpu::image_format_value;
+		) const -> gpu::image_format;
 
 		[[nodiscard]] auto image_extent(
 			gpu::handle<gpu::image> image
@@ -720,7 +720,7 @@ auto gse::gpu::vulkan_device_backend::image_storage_slot(const gpu::handle<gpu::
 	return device_config.image_storage_slot(image);
 }
 
-auto gse::gpu::vulkan_device_backend::image_format_of(const gpu::handle<gpu::image> image) const -> gpu::image_format_value {
+auto gse::gpu::vulkan_device_backend::image_format_of(const gpu::handle<gpu::image> image) const -> gpu::image_format {
 	return device_config.image_format_of(image);
 }
 
