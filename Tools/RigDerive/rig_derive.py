@@ -692,9 +692,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--skeleton', type=Path,
-                    default=Path('Engine/Resources/Skeletons/character.gskel'))
+                    default=Path('Sandbox/Assets/Skeletons/character.gskel'))
     ap.add_argument('--model', type=Path,
-                    default=Path('Engine/Resources/SkinnedModels/character.gsmdl'))
+                    default=Path('Sandbox/Assets/SkinnedModels/character.gsmdl'))
     ap.add_argument('--out', type=Path, default=None,
                     help='defaults to <model>.v3.gsmdl so the v1 source is never clobbered')
     ap.add_argument('--min-extent', type=float, default=0.08,

@@ -173,12 +173,25 @@ consteval auto gse::find_field_by_name(const std::string_view name) -> std::meta
 	return std::meta::info{};
 }
 
+namespace gse {
+	template <typename T>
+	consteval auto annotations_array() {
+		constexpr auto count = std::meta::annotations_of(^^T).size();
+		std::array<std::meta::info, count> out{};
+		const auto annotations = std::meta::annotations_of(^^T);
+		for (std::size_t i = 0; i < count; ++i) {
+			out[i] = annotations[i];
+		}
+		return out;
+	}
+}
+
 template <typename Schema, typename T>
 consteval auto gse::apply_annotations() -> std::optional<Schema> {
 	Schema out{};
 	bool any = false;
 
-	template for (constexpr auto ann : std::define_static_array(std::meta::annotations_of(^^T))) {
+	template for (constexpr auto ann : annotations_array<T>()) {
 		constexpr auto ann_type = std::meta::dealias(std::meta::type_of(ann));
 		constexpr auto key = std::meta::has_template_arguments(ann_type) ? std::meta::template_of(ann_type) : ann_type;
 		constexpr auto matched_field = find_field_by_name<Schema>(std::meta::identifier_of(key));
