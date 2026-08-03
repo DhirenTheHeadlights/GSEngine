@@ -56,6 +56,38 @@ export namespace gse::settings {
 
 	template <typename T>
 	constexpr bool is_choice_v = is_choice<T>::value;
+
+	template <typename T>
+	auto choice_index(
+		const choice<T>& c
+	) -> std::size_t;
+
+	template <typename T>
+	auto set_choice_index(
+		choice<T>& c,
+		std::size_t index
+	) -> void;
+}
+
+template <typename T>
+auto gse::settings::choice_index(const choice<T>& c) -> std::size_t {
+	if constexpr (std::same_as<T, std::string>) {
+		const auto it = std::ranges::find(c.options, c.value);
+		return it == c.options.end() ? 0 : static_cast<std::size_t>(std::ranges::distance(c.options.begin(), it));
+	}
+	else {
+		return static_cast<std::size_t>(c.value);
+	}
+}
+
+template <typename T>
+auto gse::settings::set_choice_index(choice<T>& c, const std::size_t index) -> void {
+	if constexpr (std::same_as<T, std::string>) {
+		c.value = index < c.options.size() ? c.options[index] : std::string{};
+	}
+	else {
+		c.value = static_cast<T>(index);
+	}
 }
 
 export template <typename T>

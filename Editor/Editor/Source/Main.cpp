@@ -5,6 +5,8 @@ import gse.system_manifest;
 import gse.ide;
 
 auto main() -> int {
+	gse::ide::config::seed_editor_layout();
+
 	gse::start(
 		[](gse::engine& e) -> void {
 			gse::register_systems<

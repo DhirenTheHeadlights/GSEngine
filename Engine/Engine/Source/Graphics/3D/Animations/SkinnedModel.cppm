@@ -68,7 +68,7 @@ export namespace gse {
 		};
 
 		explicit skinned_model(const std::filesystem::path& path)
-			: identifiable(path, config::baked_resource_path()), m_baked_path(path) {
+			: identifiable(config::asset_tag(path)), m_baked_path(path) {
 		}
 
 		auto load(

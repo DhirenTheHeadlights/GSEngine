@@ -494,6 +494,7 @@ auto gse::settings::make_annotated_field() -> settings_field {
 	};
 	if constexpr (is_choice_v<F>) {
 		field.runtime_options = &annotated_field_options<State, M>;
+		field.choice_stores_option = std::same_as<typename F::value_type, std::string>;
 	}
 	if constexpr (std::is_enum_v<F>) {
 		template for (constexpr auto e : std::define_static_array(std::meta::enumerators_of(^^F))) {

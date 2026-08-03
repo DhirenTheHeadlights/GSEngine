@@ -144,37 +144,37 @@ auto gse::gui::remove_tab_from_host(data& d, const std::string_view menu_name) -
 
 auto gse::gui::init_body(context& ctx, const shared_view<window::data> window_s, const shared_view<asset::data> assets, data& d) -> async::task<> {
 	std::vector<std::string> font_names;
-	for (const std::string& name : asset::enumerate_resources<font>()) {
-		if (gse::exists("Fonts/" + name)) {
-			font_names.push_back(name);
+	for (const std::string& tag : asset::enumerate_resources<font>()) {
+		if (gse::exists(tag)) {
+			font_names.push_back(tag);
 		}
 	}
 
 	d.ui_font.options = font_names;
 	d.code_font.options = font_names;
 
-	const auto index_of = [&](const std::string& name) -> int {
-		const auto it = std::ranges::find(d.ui_font.options, name);
-		if (it == d.ui_font.options.end()) {
-			return 0;
+	const std::string built_in_fonts(config::engine_asset_prefix);
+
+	const auto resolve = [&font_names](const std::string& current, const std::string& fallback) -> std::string {
+		if (std::ranges::find(font_names, current) != font_names.end()) {
+			return current;
 		}
-		return static_cast<int>(std::ranges::distance(d.ui_font.options.begin(), it));
+		if (std::ranges::find(font_names, fallback) != font_names.end()) {
+			return fallback;
+		}
+		return font_names.empty() ? std::string{} : font_names.front();
 	};
 
-	if (d.ui_font.value < 0 || d.ui_font.value >= static_cast<int>(d.ui_font.options.size())) {
-		d.ui_font.value = index_of("Inter-Regular");
-	}
-	if (d.code_font.value < 0 || d.code_font.value >= static_cast<int>(d.code_font.options.size())) {
-		d.code_font.value = index_of("MonaspaceNeon-Regular");
-	}
+	d.ui_font.value = resolve(d.ui_font.value, built_in_fonts + "Fonts/Inter-Regular");
+	d.code_font.value = resolve(d.code_font.value, built_in_fonts + "Fonts/MonaspaceNeon-Regular");
 
 	d.blank_texture = asset::queue<texture>(assets, "blank", vec4f(1, 1, 1, 1));
 
-	if (!d.ui_font.options.empty()) {
-		const std::string& ui_name = d.ui_font.options[d.ui_font.value];
-		const std::string& code_name = d.code_font.options[d.code_font.value];
-		d.fonts.text = co_await asset::load<gse::font>(ctx, assets, "Fonts/" + ui_name);
-		d.fonts.code = co_await asset::load<gse::font>(ctx, assets, "Fonts/" + code_name);
+	if (!d.ui_font.value.empty() && !d.code_font.value.empty()) {
+		const std::string& ui_name = d.ui_font.value;
+		const std::string& code_name = d.code_font.value;
+		d.fonts.text = co_await asset::load<gse::font>(ctx, assets, ui_name);
+		d.fonts.code = co_await asset::load<gse::font>(ctx, assets, code_name);
 		d.fonts.registry[ui_name] = d.fonts.text;
 		d.fonts.registry[code_name] = d.fonts.code;
 	}
@@ -182,10 +182,15 @@ auto gse::gui::init_body(context& ctx, const shared_view<window::data> window_s,
 	while (asset::resource_state<texture>(assets, d.blank_texture.id()) != resource::state::loaded) {
 		co_await ctx.yield_tick();
 	}
-	d.menus = load(d.file_path, d.menus);
+	d.display_scale = window_s.content_scale;
+	d.ui_scale_by_monitor = load_ui_scales(d.file_path);
+	sync_monitor_scale(d, window_s.monitor_key);
 
-	d.last_ui_font_index = d.ui_font.value;
-	d.last_code_font_index = d.code_font.value;
+	const auto viewport_size = vec2f(window::viewport(window_s));
+	d.menus = load(d.file_path, d.menus, viewport_size, scale_factor_for(d, viewport_size.y()));
+
+	d.last_ui_font = d.ui_font.value;
+	d.last_code_font = d.code_font.value;
 
 	auto calculate_group_bounds = [&d](const id root_id) -> rectf {
 		const menu* root = d.menus.try_get(root_id);
@@ -263,6 +268,7 @@ auto gse::gui::init_body(context& ctx, const shared_view<window::data> window_s,
 	}
 
 	d.previous_viewport_size = vec2f(window::viewport(window_s));
+	d.previous_scale_factor = scale_factor_for(d, d.previous_viewport_size.y());
 }
 
 auto gse::gui::init(context& ctx, const shared_view<window::data> window_s, const shared_view<asset::data> assets_s, data& d) -> async::task<> {
@@ -283,16 +289,20 @@ auto gse::gui::clear_menu_interaction(data& d) -> void {
 auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_s, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, const shared_view<gse::input::data> input_state, const save::registry& save_reg, data& d) -> async::task<> {
 	const auto current_viewport_size = vec2f(gpu_s.render_graph->extent());
 
-	if (d.previous_viewport_size.x() > 0.f && d.previous_viewport_size.y() > 0.f) {
-		if (current_viewport_size.x() > 0.f && current_viewport_size.y() > 0.f && (current_viewport_size.x() != d.previous_viewport_size.x() || current_viewport_size.y() != d.previous_viewport_size.y())) {
-			const style old_sty = apply_scale(d, style::from_theme(d.current_theme), d.previous_viewport_size.y());
-			const style new_sty = apply_scale(d, style::from_theme(d.current_theme), current_viewport_size.y());
+	d.display_scale = window_s.content_scale;
+	sync_monitor_scale(d, window_s.monitor_key);
 
+	const float current_scale_factor = scale_factor_for(d, current_viewport_size.y());
+
+	if (d.previous_viewport_size.x() > 0.f && d.previous_viewport_size.y() > 0.f && d.previous_scale_factor > 0.f) {
+		const bool viewport_changed = current_viewport_size.x() != d.previous_viewport_size.x() || current_viewport_size.y() != d.previous_viewport_size.y();
+		const bool scale_changed = current_scale_factor != d.previous_scale_factor;
+
+		if (current_viewport_size.x() > 0.f && current_viewport_size.y() > 0.f && (viewport_changed || scale_changed)) {
 			const float old_usable_height = d.previous_viewport_size.y();
 			const float new_usable_height = current_viewport_size.y();
 
-			const float scale_x = current_viewport_size.x() / d.previous_viewport_size.x();
-			const float scale_y = new_usable_height / old_usable_height;
+			const float size_scale = current_scale_factor / d.previous_scale_factor;
 
 			const float top_inset = d.reserve_top_bar ? d.fstate.sty.title_bar_height : 0.f;
 			const float new_content_height = std::max(0.f, new_usable_height - top_inset);
@@ -318,8 +328,8 @@ auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_
 						const float new_left = ratio_x * current_viewport_size.x();
 						const float new_top = current_viewport_size.y() - (ratio_y * new_usable_height);
 
-						const float new_width = m.rect.width() * scale_x;
-						const float new_height = m.rect.height() * scale_y;
+						const float new_width = m.rect.width() * size_scale;
+						const float new_height = m.rect.height() * size_scale;
 
 						const float actual_width = std::min(new_width, current_viewport_size.x());
 						const float actual_height = std::min(new_height, new_usable_height);
@@ -343,10 +353,12 @@ auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_
 			}
 
 			d.previous_viewport_size = current_viewport_size;
+			d.previous_scale_factor = current_scale_factor;
 		}
 	}
 	else {
 		d.previous_viewport_size = current_viewport_size;
+		d.previous_scale_factor = current_scale_factor;
 	}
 
 	d.fstate = {};
@@ -378,10 +390,10 @@ auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_
 		d.name_to_menu_id.emplace(stable_id(m.id().tag()), m.id());
 	}
 
-	if (d.ui_font.value != d.last_ui_font_index || d.code_font.value != d.last_code_font_index) {
+	if (d.ui_font.value != d.last_ui_font || d.code_font.value != d.last_code_font) {
 		reload_font(d, assets_s);
-		d.last_ui_font_index = d.ui_font.value;
-		d.last_code_font_index = d.code_font.value;
+		d.last_ui_font = d.ui_font.value;
+		d.last_code_font = d.code_font.value;
 	}
 
 	const vec2f mouse_position = gse::input::current_state(input_state).mouse_position();
@@ -414,7 +426,7 @@ auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_
 		});
 
 	if (d.save_clock.elapsed() > data::update_interval) {
-		gui::save(d.menus, d.file_path);
+		gui::save(d);
 		d.save_clock.reset();
 	}
 
@@ -694,11 +706,12 @@ auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_
 }
 
 auto gse::gui::shutdown(data& d) -> void {
-	gui::save(d.menus, d.file_path);
+	gui::save(d);
 }
 
 auto gse::gui::save(data& d) -> void {
-	gui::save(d.menus, d.file_path);
+	gui::save(d.menus, d.file_path, d.previous_viewport_size, scale_factor_for(d, d.previous_viewport_size.y()));
+	save_ui_scales(d.ui_scale_by_monitor, d.file_path);
 }
 
 auto gse::gui::process_menu(data& d, const gse::input::state& input_state, const std::string& name, const render_layer layer, const std::function<void(builder&)>& build) -> void {
@@ -1050,10 +1063,34 @@ auto gse::gui::calculate_display_rect(data& d, const menu& m) -> rectf {
 	return display_rect;
 }
 
-auto gse::gui::apply_scale(const data& d, style sty, const float viewport_height) -> style {
+auto gse::gui::sync_monitor_scale(data& d, const std::string& monitor_key) -> void {
+	if (monitor_key.empty()) {
+		return;
+	}
+
+	if (monitor_key != d.active_monitor_key) {
+		if (!d.active_monitor_key.empty()) {
+			d.ui_scale_by_monitor[d.active_monitor_key] = d.ui_scale;
+		}
+
+		if (const auto it = d.ui_scale_by_monitor.find(monitor_key); it != d.ui_scale_by_monitor.end()) {
+			d.ui_scale = it->second;
+		}
+
+		d.active_monitor_key = monitor_key;
+	}
+
+	d.ui_scale_by_monitor[d.active_monitor_key] = d.ui_scale;
+}
+
+auto gse::gui::scale_factor_for(const data& d, const float viewport_height) -> float {
 	constexpr float reference_height = 1080.f;
-	const float base_scale = d.scale_with_resolution ? viewport_height / reference_height : 1.f;
-	const float final_scale = base_scale * d.ui_scale;
+	const float base_scale = d.scale_with_resolution ? viewport_height / reference_height : d.display_scale;
+	return base_scale * d.ui_scale;
+}
+
+auto gse::gui::apply_scale(const data& d, style sty, const float viewport_height) -> style {
+	const float final_scale = scale_factor_for(d, viewport_height);
 
 	sty.scale_factor = final_scale;
 
@@ -1067,17 +1104,13 @@ auto gse::gui::apply_scale(const data& d, style sty, const float viewport_height
 }
 
 auto gse::gui::reload_font(data& d, const shared_view<asset::data> assets) -> void {
-	if (d.ui_font.value >= 0 && d.ui_font.value < static_cast<int>(d.ui_font.options.size())) {
-		if (const std::string& name = d.ui_font.options[d.ui_font.value]; gse::exists("Fonts/" + name)) {
-			d.fonts.text = asset::get<font>(assets, "Fonts/" + name);
-			d.fonts.registry[name] = d.fonts.text;
-		}
+	if (const std::string& name = d.ui_font.value; !name.empty() && gse::exists(name)) {
+		d.fonts.text = asset::get<font>(assets, name);
+		d.fonts.registry[name] = d.fonts.text;
 	}
-	if (d.code_font.value >= 0 && d.code_font.value < static_cast<int>(d.code_font.options.size())) {
-		if (const std::string& name = d.code_font.options[d.code_font.value]; gse::exists("Fonts/" + name)) {
-			d.fonts.code = asset::get<font>(assets, "Fonts/" + name);
-			d.fonts.registry[name] = d.fonts.code;
-		}
+	if (const std::string& name = d.code_font.value; !name.empty() && gse::exists(name)) {
+		d.fonts.code = asset::get<font>(assets, name);
+		d.fonts.registry[name] = d.fonts.code;
 	}
 }
 

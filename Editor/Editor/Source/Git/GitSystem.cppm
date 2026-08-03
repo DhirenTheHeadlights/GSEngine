@@ -48,6 +48,9 @@ auto gse::ide::git_system::discover_repositories() -> discovery {
 	discovery found;
 	std::unordered_set<id> seen;
 	for (const config::browse_root& browse : config::browse_roots()) {
+		if (!browse.analyzable) {
+			continue;
+		}
 		const git::repo_discovery repo_root = git::find_repo_root(browse.path);
 		if (!repo_root) {
 			log::println(

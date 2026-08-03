@@ -25,6 +25,11 @@ export namespace gse::asset_format {
 		static constexpr std::array<std::string_view, sizeof...(V)> value{ std::string_view(V)... };
 	};
 
+	template <fixed_string... V>
+	struct built_ins {
+		static constexpr std::array<std::string_view, sizeof...(V)> value{ std::string_view(V)... };
+	};
+
 	template <std::uint32_t V>
 	struct magic {
 		static constexpr std::uint32_t value = V;
@@ -44,6 +49,7 @@ export namespace gse::asset_format {
 export namespace gse {
 	struct asset_format_data {
 		std::span<const std::string_view> source_exts;
+		std::span<const std::string_view> built_ins;
 		std::string_view source_dir;
 		std::string_view baked_ext;
 		std::string_view baked_dir;

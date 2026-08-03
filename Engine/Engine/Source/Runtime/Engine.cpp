@@ -131,6 +131,8 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 		primitives::initialize(m_primitives, asset_state);
 		assets.install_hot_reload_fns();
 
+		assets.verify_built_ins();
+
 		log::println(log::category::runtime, "boot: compile_boot_critical begin");
 		if (const auto result = assets.compile_boot_critical(); result.success_count > 0 || result.failure_count > 0) {
 			log::println(
@@ -308,7 +310,7 @@ auto gse::engine::render() -> void {
 				m_attached_surface_images[i] = gpu::image(
 					m_attached_surfaces[i].image,
 					m_attached_surfaces[i].view,
-					gpu::format_value(format),
+					format,
 					{ ext.x(), ext.y(), 1 },
 					view_info
 				);

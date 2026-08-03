@@ -321,7 +321,8 @@ auto gse::ide::workspace_system::run(
 		d.ws.fs_root.is_dir = true;
 		d.ws.fs_root.children.clear();
 		for (const config::browse_root& browse : config::browse_roots()) {
-			d.ws.fs_root.children.push_back(workspace::make_root(browse.path, browse.name, browse.is_project ? gui::symbol::project : nullptr));
+			const gui::symbol_glyph glyph = browse.is_project ? gui::symbol::project : (browse.analyzable ? nullptr : gui::symbol::gear);
+			d.ws.fs_root.children.push_back(workspace::make_root(browse.path, browse.name, glyph));
 		}
 		d.ws.fs_root.loaded = true;
 		project::record_recent();

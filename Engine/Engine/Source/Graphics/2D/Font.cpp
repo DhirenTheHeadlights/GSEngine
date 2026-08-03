@@ -74,7 +74,7 @@ auto gse::glyph::x_advance() const -> float {
 }
 
 gse::font::font(const std::filesystem::path& path)
-	: identifiable(path, config::baked_resource_path()), m_baked_path(path) {
+	: identifiable(config::asset_tag(path)), m_baked_path(path) {
 	assert(exists(path), "Font file '{}' does not exist.", path.display_string());
 }
 
@@ -93,7 +93,7 @@ auto gse::font::load(asset::load_ctx& ctx) -> async::task<> {
 		co_return;
 	}
 
-	const auto source_font_path = config::resource_path() / baked.source_path_relative;
+	const auto source_font_path = config::source_root_of(m_baked_path) / baked.source_path_relative;
 
 	m_ascender = baked.ascender;
 	m_descender = baked.descender;
@@ -112,7 +112,7 @@ auto gse::font::load(asset::load_ctx& ctx) -> async::task<> {
 	}
 
 	m_texture = std::make_unique<gse::texture>(
-		std::format("msdf_font_atlas_{}", m_baked_path.stem().native_encoded_string()),
+		std::format("msdf_font_atlas_{}", config::asset_tag(m_baked_path)),
 		baked.rgba.storage,
 		vec2u{ baked.atlas_width, baked.atlas_height },
 		baked.channels,

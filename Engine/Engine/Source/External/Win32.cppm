@@ -148,6 +148,7 @@ export namespace gse::win32 {
 	using ::PeekNamedPipe;
 	using ::GetStdHandle;
 	using ::GetFileType;
+	using ::ShellExecuteW;
 
 	constexpr DWORD context_full = CONTEXT_FULL;
 	constexpr DWORD unw_flag_nhandler = UNW_FLAG_NHANDLER;
@@ -193,6 +194,7 @@ export namespace gse::win32 {
 	constexpr DWORD error_pipe_listening = ERROR_PIPE_LISTENING;
 	constexpr DWORD error_no_data = ERROR_NO_DATA;
 	constexpr DWORD error_broken_pipe = ERROR_BROKEN_PIPE;
+	constexpr int sw_show_normal = SW_SHOWNORMAL;
 
 	constexpr LONG exception_continue_search = EXCEPTION_CONTINUE_SEARCH;
 	constexpr DWORD exception_access_violation = EXCEPTION_ACCESS_VIOLATION;

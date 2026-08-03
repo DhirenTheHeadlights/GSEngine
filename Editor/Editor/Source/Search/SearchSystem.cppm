@@ -50,6 +50,9 @@ auto gse::ide::search_system::is_symbol_source(const std::filesystem::path& path
 auto gse::ide::search_system::init(data& d) -> async::task<> {
 	d.index = std::make_unique<search::index_state>();
 	for (const config::browse_root& browse : config::browse_roots()) {
+		if (!browse.analyzable) {
+			continue;
+		}
 		d.index->roots.push_back({
 			.path = browse.path,
 			.name = browse.name,

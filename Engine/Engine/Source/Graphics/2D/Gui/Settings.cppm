@@ -150,9 +150,16 @@ auto gse::settings::draw_field_control(gui::builder& b, panel_state& ps, const v
 			if (options.empty()) {
 				break;
 			}
-			int parsed = 0;
-			gse::parse(pending.value, parsed);
-			std::size_t idx = parsed < 0 ? 0 : static_cast<std::size_t>(parsed);
+			std::size_t idx = 0;
+			if (field.choice_stores_option) {
+				const auto it = std::ranges::find(options, pending.value);
+				idx = it == options.end() ? 0 : static_cast<std::size_t>(std::ranges::distance(options.begin(), it));
+			}
+			else {
+				int parsed = 0;
+				gse::parse(pending.value, parsed);
+				idx = parsed < 0 ? 0 : static_cast<std::size_t>(parsed);
+			}
 			if (idx >= options.size()) {
 				idx = 0;
 			}
@@ -163,8 +170,8 @@ auto gse::settings::draw_field_control(gui::builder& b, panel_state& ps, const v
 				.options = options,
 				.state = state,
 			});
-			if (r.changed) {
-				pending.value = std::format("{}", idx);
+			if (r.changed && idx < options.size()) {
+				pending.value = field.choice_stores_option ? options[idx] : std::format("{}", idx);
 			}
 			break;
 		}

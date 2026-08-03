@@ -57,7 +57,7 @@ export namespace gse {
 		};
 
 		explicit model(const std::filesystem::path& path)
-			: identifiable(path, config::baked_resource_path()), m_baked_model_path(path) {
+			: identifiable(config::asset_tag(path)), m_baked_model_path(path) {
 		}
 		
 		explicit model(
@@ -99,12 +99,13 @@ auto gse::model::load(asset::load_ctx& ctx) -> async::task<> {
 			co_return;
 		}
 
-		const auto model_relative = m_baked_model_path.lexically_relative(config::baked_resource_path());
+		const auto model_relative = m_baked_model_path.lexically_relative(config::baked_root_of(m_baked_model_path));
 		auto texture_dir = model_relative.parent_path().native_encoded_string();
 		std::ranges::replace(texture_dir, '\\', '/');
 		if (texture_dir.starts_with("Models/")) {
 			texture_dir = "Textures/" + texture_dir.substr(7);
 		}
+		texture_dir = std::string(config::asset_prefix_of(m_baked_model_path)) + texture_dir;
 
 		m_meshes.reserve(baked.meshes.size());
 		for (auto& mb : baked.meshes) {
