@@ -431,6 +431,16 @@ auto gse::asset::system<Ts...>::compile(compile_progress* progress) -> compile_r
 			const auto baked_root = root.baked / fmt.baked_dir;
 
 			if (!std::filesystem::exists(source_root)) {
+				log::println(
+					log::category::assets,
+					"compile<{}>: skipped (source_dir '{}' baked_dir '{}' baked_ext '{}' magic {:#x}, missing: {})",
+					std::meta::identifier_of(^^T),
+					fmt.source_dir,
+					fmt.baked_dir,
+					fmt.baked_ext,
+					fmt.magic,
+					source_root.display_string()
+				);
 				continue;
 			}
 
