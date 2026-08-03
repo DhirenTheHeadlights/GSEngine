@@ -23,6 +23,7 @@ export namespace gse {
 		struct [[
 			= asset_format::baked_ext<".gtx">{},
 			= asset_format::baked_dir<"Textures">{},
+			= asset_format::source_dir<"Textures">{},
 			= asset_format::source_exts<".png", ".jpg", ".jpeg", ".tga", ".bmp">{},
 			= asset_format::magic<0x47544558>{},
 			= asset_format::version<2>{},

@@ -476,6 +476,16 @@ namespace gse::ide::explorer_menu {
 		workspace::rename_entry(w, n);
 	}
 
+	[[= gse::gui::context_action<"Reveal in File Explorer", "path", gse::gui::symbol::folder>{}]]
+	auto reveal(workspace::data&, const fs_node& n) -> void {
+		gse::shell::reveal(n.path);
+	}
+
+	[[= gse::gui::context_action<"Copy Path", "path">{}]]
+	auto copy_path(workspace::data&, const fs_node& n) -> void {
+		gse::window::set_clipboard_text(n.path.display_string());
+	}
+
 	[[= gse::gui::context_action<"Delete", "danger", gse::gui::symbol::trash>{}]]
 	[[= gse::gui::destructive]]
 	auto remove(workspace::data& w, const fs_node& n) -> void {
@@ -502,6 +512,20 @@ namespace gse::ide::tab_menu {
 		}
 	}
 
+	[[= gse::gui::context_action<"Reveal in File Explorer", "path", gse::gui::symbol::folder>{}]]
+	auto reveal(workspace::data& w, std::uint32_t doc_id) -> void {
+		if (const auto it = w.documents.find(doc_id); it != w.documents.end()) {
+			gse::shell::reveal(it->second.path);
+		}
+	}
+
+	[[= gse::gui::context_action<"Copy Path", "path">{}]]
+	auto copy_path(workspace::data& w, std::uint32_t doc_id) -> void {
+		if (const auto it = w.documents.find(doc_id); it != w.documents.end()) {
+			gse::window::set_clipboard_text(it->second.path.display_string());
+		}
+	}
+
 	[[= gse::gui::context_action<"Close All", "bulk">{}]]
 	auto close_all(workspace::data& w, std::uint32_t) -> void {
 		std::vector<std::uint32_t> ids;
@@ -522,6 +546,8 @@ namespace gse::ide {
 			^^explorer_menu::new_file,
 			^^explorer_menu::new_folder,
 			^^explorer_menu::rename,
+			^^explorer_menu::reveal,
+			^^explorer_menu::copy_path,
 			^^explorer_menu::remove
 		>();
 		return table;
@@ -537,7 +563,9 @@ namespace gse::ide {
 		static const auto table = gse::gui::build_context_actions<tab_sig,
 			^^tab_menu::close,
 			^^tab_menu::close_others,
-			^^tab_menu::close_all
+			^^tab_menu::close_all,
+			^^tab_menu::reveal,
+			^^tab_menu::copy_path
 		>();
 		return table;
 	}

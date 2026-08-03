@@ -27,6 +27,9 @@ namespace gse::config {
 		std::filesystem::path projects;
 		std::filesystem::path project;
 		std::filesystem::path project_data;
+		std::filesystem::path project_assets;
+		std::filesystem::path project_baked;
+		bool project_explicit;
 		std::filesystem::path logs;
 		std::filesystem::path cache;
 		std::filesystem::path crash;
@@ -68,6 +71,17 @@ namespace gse::config {
 	auto resolve() -> resolved;
 
 	auto table() -> const resolved&;
+
+	auto resolve_content_roots() -> std::vector<content_root>;
+
+	auto relative_tag(
+		const std::filesystem::path& baked_path,
+		const std::filesystem::path& base
+	) -> std::string;
+
+	auto root_of(
+		const std::filesystem::path& baked_path
+	) -> const content_root*;
 }
 
 auto gse::config::fatal(const std::string_view detail) -> void {
@@ -192,8 +206,10 @@ auto gse::config::resolve() -> resolved {
 	}
 
 	std::filesystem::path project = env_path("GSE_PROJECT_DIR");
+	bool project_explicit = !project.empty();
 	if (project.empty()) {
 		const std::string project_text = manifest_value(text, "project");
+		project_explicit = !project_text.empty();
 		project = project_text.empty() ? root : std::filesystem::path(project_text);
 	}
 
@@ -220,6 +236,9 @@ auto gse::config::resolve() -> resolved {
 		.projects = generic(projects),
 		.project = generic(project),
 		.project_data = generic(project / ".gse" / "data"),
+		.project_assets = generic(project / "Assets"),
+		.project_baked = generic(project / ".gse" / "baked"),
+		.project_explicit = project_explicit,
 		.logs = generic(state_root / "logs"),
 		.cache = generic(state_root / "cache"),
 		.crash = generic(state_root / "crash"),
@@ -267,6 +286,111 @@ auto gse::config::resource_path() -> const std::filesystem::path& {
 
 auto gse::config::baked_resource_path() -> const std::filesystem::path& {
 	return table().baked_resources;
+}
+
+auto gse::config::project_assets_path() -> const std::filesystem::path& {
+	return table().project_assets;
+}
+
+auto gse::config::project_baked_path() -> const std::filesystem::path& {
+	return table().project_baked;
+}
+
+auto gse::config::has_project() -> bool {
+	return table().project_explicit;
+}
+
+auto gse::config::resolve_content_roots() -> std::vector<content_root> {
+	std::vector<content_root> roots;
+	roots.push_back({
+		.source = resource_path(),
+		.baked = baked_resource_path(),
+		.prefix = engine_asset_prefix,
+		.built_in = true
+	});
+
+	if (has_project()) {
+		roots.push_back({
+			.source = project_assets_path(),
+			.baked = project_baked_path(),
+			.prefix = {},
+			.built_in = false
+		});
+	}
+
+	return roots;
+}
+
+auto gse::config::content_roots() -> std::span<const content_root> {
+	static const std::vector<content_root> value = resolve_content_roots();
+	return value;
+}
+
+auto gse::config::relative_tag(const std::filesystem::path& baked_path, const std::filesystem::path& base) -> std::string {
+	std::string result = baked_path.lexically_relative(base).generic_native_encoded_string();
+	if (const std::size_t dot = result.find_last_of('.'); dot != std::string::npos) {
+		result = result.substr(0, dot);
+	}
+	return result;
+}
+
+auto gse::config::root_of(const std::filesystem::path& baked_path) -> const content_root* {
+	for (const content_root& root : content_roots()) {
+		if (root.baked.empty()) {
+			continue;
+		}
+		const std::string relative = baked_path.lexically_relative(root.baked).generic_native_encoded_string();
+		if (relative.empty() || relative.starts_with("..")) {
+			continue;
+		}
+		return &root;
+	}
+	return nullptr;
+}
+
+auto gse::config::asset_tag(const std::filesystem::path& baked_path) -> std::string {
+	if (const content_root* root = root_of(baked_path)) {
+		return std::string(root->prefix) + relative_tag(baked_path, root->baked);
+	}
+	return relative_tag(baked_path, baked_path.parent_path());
+}
+
+auto gse::config::asset_prefix_of(const std::filesystem::path& baked_path) -> std::string_view {
+	const content_root* root = root_of(baked_path);
+	return root ? root->prefix : std::string_view{};
+}
+
+auto gse::config::baked_root_of(const std::filesystem::path& baked_path) -> const std::filesystem::path& {
+	const content_root* root = root_of(baked_path);
+	return root ? root->baked : baked_resource_path();
+}
+
+auto gse::config::source_root_of(const std::filesystem::path& baked_path) -> const std::filesystem::path& {
+	const content_root* root = root_of(baked_path);
+	return root ? root->source : resource_path();
+}
+
+auto gse::config::source_root_containing(const std::filesystem::path& source_path) -> const std::filesystem::path& {
+	for (const content_root& root : content_roots()) {
+		if (root.source.empty()) {
+			continue;
+		}
+		const std::string relative = source_path.lexically_relative(root.source).generic_native_encoded_string();
+		if (relative.empty() || relative.starts_with("..")) {
+			continue;
+		}
+		return root.source;
+	}
+	return resource_path();
+}
+
+auto gse::config::baked_root_for_source(const std::filesystem::path& source_root) -> const std::filesystem::path& {
+	for (const content_root& root : content_roots()) {
+		if (root.source == source_root) {
+			return root.baked;
+		}
+	}
+	return baked_resource_path();
 }
 
 auto gse::config::user_config_dir() -> const std::filesystem::path& {

@@ -56,7 +56,7 @@ export namespace gse::gui {
 
 		[[
 			= gse::settings::
-				describe<"Multiplier on UI element sizes and font metrics. Useful for high-DPI displays.">{},
+				describe<"Multiplier on UI element sizes and font metrics, on top of the display scale. Remembered per monitor.">{},
 			= gse::settings::range<0.5f, 2.0f>{}
 		]]
 		float ui_scale = 1.0f;
@@ -64,12 +64,12 @@ export namespace gse::gui {
 		[[
 			= gse::settings::describe<"Font used for UI text: labels, menus, and controls.">{}
 		]]
-		gse::settings::choice<int> ui_font{ .value = -1 };
+		gse::settings::choice<std::string> ui_font;
 
 		[[
 			= gse::settings::describe<"Font used for code, terminals, and numeric readouts.">{}
 		]]
-		gse::settings::choice<int> code_font{ .value = -1 };
+		gse::settings::choice<std::string> code_font;
 
 		[[
 			= gse::settings::describe<"Show developer overlays (Test, Profiler, Physics Debug).">{},
@@ -78,6 +78,9 @@ export namespace gse::gui {
 		bool show_dev_overlays = false;
 
 		bool scale_with_resolution = true;
+		float display_scale = 1.f;
+		std::unordered_map<std::string, float> ui_scale_by_monitor;
+		std::string active_monitor_key;
 		bool reserve_top_bar = false;
 		std::uint32_t next_z_order = 1;
 
@@ -100,8 +103,8 @@ export namespace gse::gui {
 		frame_state fstate{};
 		draw_context* context = nullptr;
 
-		int last_ui_font_index = 0;
-		int last_code_font_index = 0;
+		std::string last_ui_font;
+		std::string last_code_font;
 
 		std::vector<renderer::sprite_command> sprite_commands;
 		std::vector<renderer::text_command> text_commands;
@@ -112,6 +115,7 @@ export namespace gse::gui {
 		std::vector<id> visible_menu_ids_last_frame;
 		std::unordered_map<std::uint64_t, id> name_to_menu_id;
 		vec2f previous_viewport_size;
+		float previous_scale_factor = 0.f;
 
 		tooltip_state tooltip;
 		render_layer input_layer_render = render_layer::content;
@@ -251,6 +255,16 @@ export namespace gse::gui {
 		data& d,
 		const menu& m
 	) -> rectf;
+
+	auto sync_monitor_scale(
+		data& d,
+		const std::string& monitor_key
+	) -> void;
+
+	auto scale_factor_for(
+		const data& d,
+		float viewport_height
+	) -> float;
 
 	auto apply_scale(
 		const data& d,

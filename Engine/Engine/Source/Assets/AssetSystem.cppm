@@ -8,6 +8,7 @@ import gse.containers;
 import gse.concurrency;
 import gse.fs;
 import gse.meta;
+import gse.assert;
 
 import :asset_format;
 import :boot_critical;
@@ -69,6 +70,16 @@ export namespace gse::asset {
 	template <typename T>
 	auto count_compile_work() -> std::uint32_t;
 
+	struct missing_built_in {
+		std::string tag;
+		std::filesystem::path resolved;
+	};
+
+	template <typename T>
+	auto collect_missing_built_ins(
+		std::vector<missing_built_in>& out
+	) -> void;
+
 	template <typename... Ts>
 	class system : public non_copyable {
 	public:
@@ -106,6 +117,8 @@ export namespace gse::asset {
 		auto register_loaders() -> void;
 
 		auto install_hot_reload_fns() -> void;
+
+		auto verify_built_ins() -> void;
 
 	private:
 		data* m_data;
@@ -178,31 +191,87 @@ auto gse::asset::count_compile_work() -> std::uint32_t {
 	}
 	else {
 		constexpr auto fmt = format_of<typename T::baked>();
-		const auto source_root = config::resource_path() / fmt.source_dir;
-		if (!std::filesystem::exists(source_root)) {
-			log::println(
-				log::category::assets,
-				"count_compile_work<{}>: 0 (source_root missing: {})",
-				std::meta::identifier_of(^^T),
-				source_root.display_string()
-			);
-			return 0;
+		std::uint32_t count = 0;
+
+		for (const config::content_root& root : config::content_roots()) {
+			const auto source_root = root.source / fmt.source_dir;
+			if (!std::filesystem::exists(source_root)) {
+				log::println(
+					log::category::assets,
+					"count_compile_work<{}>: 0 (source_root missing: {})",
+					std::meta::identifier_of(^^T),
+					source_root.display_string()
+				);
+				continue;
+			}
+
+			for (const auto& entry : std::filesystem::recursive_directory_iterator(source_root)) {
+				if (!entry.is_regular_file()) {
+					continue;
+				}
+				const auto ext = entry.path().extension().native_encoded_string();
+				if (std::ranges::find(fmt.source_exts, ext) == fmt.source_exts.end()) {
+					continue;
+				}
+				++count;
+			}
 		}
 
-		std::uint32_t count = 0;
-		for (const auto& entry : std::filesystem::recursive_directory_iterator(source_root)) {
-			if (!entry.is_regular_file()) {
-				continue;
-			}
-			const auto ext = entry.path().extension().native_encoded_string();
-			if (std::ranges::find(fmt.source_exts, ext) == fmt.source_exts.end()) {
-				continue;
-			}
-			++count;
-		}
 		log::println(log::category::assets, "count_compile_work<{}>: {}", std::meta::identifier_of(^^T), count);
 		return count;
 	}
+}
+
+template <typename T>
+auto gse::asset::collect_missing_built_ins(std::vector<missing_built_in>& out) -> void {
+	if constexpr (requires { typename T::baked; }) {
+		constexpr auto fmt = format_of<typename T::baked>();
+		if (fmt.built_ins.empty()) {
+			return;
+		}
+
+		const bool installed = config::mode() == config::run_mode::installed;
+
+		for (const std::string_view file : fmt.built_ins) {
+			const std::filesystem::path source_file(file);
+			const auto stem = source_file.stem().native_encoded_string();
+			const auto baked = config::baked_resource_path() / fmt.baked_dir / (stem + std::string(fmt.baked_ext));
+			const auto source = config::resource_path() / fmt.source_dir / source_file;
+			const auto& resolved = installed ? baked : source;
+
+			if (std::filesystem::exists(resolved)) {
+				continue;
+			}
+
+			out.push_back({
+				.tag = std::string(config::engine_asset_prefix) + std::string(fmt.baked_dir) + "/" + stem,
+				.resolved = resolved
+			});
+		}
+	}
+}
+
+template <typename... Ts>
+auto gse::asset::system<Ts...>::verify_built_ins() -> void {
+	std::vector<missing_built_in> missing;
+	(collect_missing_built_ins<Ts>(missing), ...);
+
+	if (missing.empty()) {
+		log::println(log::category::assets, "Built-in assets verified");
+		return;
+	}
+
+	std::string detail;
+	for (const missing_built_in& entry : missing) {
+		detail += std::format("\n  {} -> {}", entry.tag, entry.resolved.display_string());
+	}
+
+	assert(
+		false,
+		"{} required engine built-in asset(s) missing from this install:{}",
+		missing.size(),
+		detail
+	);
 }
 
 template <typename T>
@@ -213,19 +282,22 @@ auto gse::asset::enumerate_resources() -> std::vector<std::string> {
 	}
 	else {
 		constexpr auto fmt = format_of<typename T::baked>();
-		const auto dir_path = config::baked_resource_path() / fmt.baked_dir;
-		if (!std::filesystem::exists(dir_path)) {
-			return result;
-		}
 
-		for (const auto& entry : std::filesystem::directory_iterator(dir_path)) {
-			if (!entry.is_regular_file()) {
+		for (const config::content_root& root : config::content_roots()) {
+			const auto dir_path = root.baked / fmt.baked_dir;
+			if (!std::filesystem::exists(dir_path)) {
 				continue;
 			}
-			if (entry.path().extension().native_encoded_string() != fmt.baked_ext) {
-				continue;
+
+			for (const auto& entry : std::filesystem::directory_iterator(dir_path)) {
+				if (!entry.is_regular_file()) {
+					continue;
+				}
+				if (entry.path().extension().native_encoded_string() != fmt.baked_ext) {
+					continue;
+				}
+				result.push_back(config::asset_tag(entry.path()));
 			}
-			result.push_back(entry.path().stem().native_encoded_string());
 		}
 
 		std::ranges::sort(result);
@@ -240,17 +312,24 @@ auto gse::asset::recompile_if_stale(const std::filesystem::path& baked_path) -> 
 	}
 	else {
 		constexpr auto fmt = format_of<typename T::baked>();
-		auto rel = baked_path.lexically_relative(config::baked_resource_path() / fmt.baked_dir);
-		auto src_rel = rel;
-		src_rel.replace_extension(fmt.source_exts.empty() ? "" : std::string(fmt.source_exts.front()));
-		const auto src = config::resource_path() / fmt.source_dir / src_rel;
-		if (!std::filesystem::exists(src)) {
-			return false;
+
+		for (const config::content_root& root : config::content_roots()) {
+			auto src_rel = baked_path.lexically_relative(root.baked / fmt.baked_dir);
+			if (src_rel.empty() || *src_rel.begin() == "..") {
+				continue;
+			}
+			src_rel.replace_extension(fmt.source_exts.empty() ? "" : std::string(fmt.source_exts.front()));
+			const auto src = root.source / fmt.source_dir / src_rel;
+			if (!std::filesystem::exists(src)) {
+				return false;
+			}
+			if (!needs_recompile<T>(src, baked_path)) {
+				return true;
+			}
+			return bake_to_disk<T>(src, baked_path);
 		}
-		if (!needs_recompile<T>(src, baked_path)) {
-			return true;
-		}
-		return bake_to_disk<T>(src, baked_path);
+
+		return false;
 	}
 }
 
@@ -261,39 +340,41 @@ auto gse::asset::setup_hot_reload_for(data& d) -> void {
 	}
 	else {
 		constexpr auto fmt = format_of<typename T::baked>();
-		const auto source_root = config::resource_path() / fmt.source_dir;
-		if (!std::filesystem::exists(source_root)) {
-			return;
-		}
-		std::vector<std::string> exts(fmt.source_exts.begin(), fmt.source_exts.end());
-		d.watcher.watch_directory(
-			source_root,
-			[&d](const std::filesystem::path& changed_file) {
-				constexpr auto fmt = format_of<typename T::baked>();
-				auto rel = std::filesystem::relative(changed_file, config::resource_path() / fmt.source_dir);
-				rel.replace_extension(std::string(fmt.baked_ext));
-				const auto dst = config::baked_resource_path() / fmt.baked_dir / rel;
-				if (bake_to_disk<T>(changed_file, dst)) {
-					log::println(log::category::assets, "Hot reload recompiled: {}", changed_file.filename().display_string());
-					if constexpr (loadable<T>) {
-						if (auto it = d.resource_loaders.find(id_of<T>()); it != d.resource_loaders.end()) {
-							auto* loader = static_cast<resource::loader<T>*>(it->second.get());
-							loader->queue_reload_by_path(dst);
+		for (const config::content_root& root : config::content_roots()) {
+			const auto source_root = root.source / fmt.source_dir;
+			if (!std::filesystem::exists(source_root)) {
+				continue;
+			}
+			std::vector<std::string> exts(fmt.source_exts.begin(), fmt.source_exts.end());
+			d.watcher.watch_directory(
+				source_root,
+				[&d, source_base = root.source, baked_base = root.baked](const std::filesystem::path& changed_file) {
+					constexpr auto fmt = format_of<typename T::baked>();
+					auto rel = std::filesystem::relative(changed_file, source_base / fmt.source_dir);
+					rel.replace_extension(std::string(fmt.baked_ext));
+					const auto dst = baked_base / fmt.baked_dir / rel;
+					if (bake_to_disk<T>(changed_file, dst)) {
+						log::println(log::category::assets, "Hot reload recompiled: {}", changed_file.filename().display_string());
+						if constexpr (loadable<T>) {
+							if (auto it = d.resource_loaders.find(id_of<T>()); it != d.resource_loaders.end()) {
+								auto* loader = static_cast<resource::loader<T>*>(it->second.get());
+								loader->queue_reload_by_path(dst);
+							}
 						}
 					}
-				}
-				else {
-					log::println(
-						log::level::warning,
-						log::category::assets,
-						"Hot reload failed to recompile: {}",
-						changed_file.filename().display_string()
-					);
-				}
-			},
-			exts,
-			true
-		);
+					else {
+						log::println(
+							log::level::warning,
+							log::category::assets,
+							"Hot reload failed to recompile: {}",
+							changed_file.filename().display_string()
+						);
+					}
+				},
+				exts,
+				true
+			);
+		}
 	}
 }
 
@@ -335,14 +416,6 @@ auto gse::asset::system<Ts...>::compile(compile_progress* progress) -> compile_r
 	}
 	else {
 		constexpr auto fmt = format_of<typename T::baked>();
-		const auto source_root = config::resource_path() / fmt.source_dir;
-		const auto baked_root = config::baked_resource_path() / fmt.baked_dir;
-
-		if (!std::filesystem::exists(source_root)) {
-			return result;
-		}
-
-		std::filesystem::create_directories(baked_root);
 
 		auto tick = [progress] {
 			if (progress) {
@@ -353,39 +426,50 @@ auto gse::asset::system<Ts...>::compile(compile_progress* progress) -> compile_r
 			}
 		};
 
-		for (const auto& entry : std::filesystem::recursive_directory_iterator(source_root)) {
-			if (!entry.is_regular_file()) {
-				continue;
-			}
-			const auto ext = entry.path().extension().native_encoded_string();
-			if (std::ranges::find(fmt.source_exts, ext) == fmt.source_exts.end()) {
-				continue;
-			}
+		for (const config::content_root& root : config::content_roots()) {
+			const auto source_root = root.source / fmt.source_dir;
+			const auto baked_root = root.baked / fmt.baked_dir;
 
-			auto rel = std::filesystem::relative(entry.path(), source_root);
-			rel.replace_extension(std::string(fmt.baked_ext));
-			const auto dst = baked_root / rel;
-
-			if (!needs_recompile<T>(entry.path(), dst)) {
-				++result.skipped_count;
-			}
-			else if (bake_to_disk<T>(entry.path(), dst)) {
-				++result.success_count;
-			}
-			else {
-				++result.failure_count;
-				tick();
+			if (!std::filesystem::exists(source_root)) {
 				continue;
 			}
 
-			tick();
+			std::filesystem::create_directories(baked_root);
 
-			if constexpr (loadable<T>) {
-				if (!std::filesystem::exists(dst)) {
+			for (const auto& entry : std::filesystem::recursive_directory_iterator(source_root)) {
+				if (!entry.is_regular_file()) {
 					continue;
 				}
-				if (auto it = m_data->resource_loaders.find(id_of<T>()); it != m_data->resource_loaders.end()) {
-					static_cast<resource::loader<T>*>(it->second.get())->queue_by_path(dst);
+				const auto ext = entry.path().extension().native_encoded_string();
+				if (std::ranges::find(fmt.source_exts, ext) == fmt.source_exts.end()) {
+					continue;
+				}
+
+				auto rel = std::filesystem::relative(entry.path(), source_root);
+				rel.replace_extension(std::string(fmt.baked_ext));
+				const auto dst = baked_root / rel;
+
+				if (!needs_recompile<T>(entry.path(), dst)) {
+					++result.skipped_count;
+				}
+				else if (bake_to_disk<T>(entry.path(), dst)) {
+					++result.success_count;
+				}
+				else {
+					++result.failure_count;
+					tick();
+					continue;
+				}
+
+				tick();
+
+				if constexpr (loadable<T>) {
+					if (!std::filesystem::exists(dst)) {
+						continue;
+					}
+					if (auto it = m_data->resource_loaders.find(id_of<T>()); it != m_data->resource_loaders.end()) {
+						static_cast<resource::loader<T>*>(it->second.get())->queue_by_path(dst);
+					}
 				}
 			}
 		}

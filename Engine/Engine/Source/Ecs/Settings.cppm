@@ -98,6 +98,7 @@ export namespace gse::settings {
 		push_settings_field_change_thunk push_change = nullptr;
 		bool hot_reloadable = false;
 		bool restart_required = false;
+		bool choice_stores_option = false;
 	};
 
 	struct register_settings_type {

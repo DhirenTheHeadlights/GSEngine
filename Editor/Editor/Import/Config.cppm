@@ -14,6 +14,7 @@ export namespace gse::ide::config {
 		std::string name;
 		std::filesystem::path compile_commands;
 		bool is_project = false;
+		bool analyzable = true;
 	};
 
 	auto browse_roots() -> std::span<const browse_root>;
@@ -59,4 +60,8 @@ export namespace gse::ide::config {
 	auto editor_executable() -> const std::filesystem::path&;
 
 	auto editor_layout() -> const std::filesystem::path&;
+
+	auto editor_layout_default() -> const std::filesystem::path&;
+
+	auto seed_editor_layout() -> void;
 }

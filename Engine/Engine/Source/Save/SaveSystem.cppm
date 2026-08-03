@@ -42,6 +42,10 @@ export namespace gse::save {
 
 		auto entry_count() const -> std::size_t;
 
+		auto user_path() const -> const std::filesystem::path&;
+
+		auto project_path() const -> const std::filesystem::path&;
+
 		auto save_now() const -> bool;
 
 		auto trigger_restart() const -> void;
@@ -178,6 +182,14 @@ auto gse::save::registry::add(settings::register_settings_type entry) -> void {
 auto gse::save::registry::entry_count() const -> std::size_t {
 	std::lock_guard lock(m_entries_mutex);
 	return m_entries.size();
+}
+
+auto gse::save::registry::user_path() const -> const std::filesystem::path& {
+	return m_auto_save_path;
+}
+
+auto gse::save::registry::project_path() const -> const std::filesystem::path& {
+	return m_project_path;
 }
 
 auto gse::save::registry::save_now() const -> bool {
