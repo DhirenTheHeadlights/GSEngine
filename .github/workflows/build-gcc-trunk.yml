@@ -13,6 +13,10 @@ on:
         description: "Create release as draft"
         required: false
         default: "true"
+      force:
+        description: "Rebuild even if this snapshot was already published (use when the recipe changed)"
+        required: false
+        default: "false"
   schedule:
     # Weekly, Monday 07:00 UTC (GCC publishes trunk snapshots over the weekend).
     - cron: '0 7 * * 1'
@@ -34,6 +38,7 @@ jobs:
           INPUT_TAG: ${{ inputs.tag }}
           INPUT_SNAPSHOT: ${{ inputs.snapshot }}
           INPUT_DRAFT: ${{ inputs.draft }}
+          INPUT_FORCE: ${{ inputs.force }}
         run: |
           set -euo pipefail
 
@@ -45,9 +50,14 @@ jobs:
           fi
           [[ -n "$snapshot" ]] || { echo "could not resolve a snapshot date"; exit 1; }
 
-          # Skip if any existing gcc-trunk release already published this snapshot.
+          # Skip if any existing gcc-trunk release already published this snapshot. That check
+          # assumes the snapshot identifies the build, which stops being true the moment the
+          # recipe changes: a toolchain fix against an already-released snapshot would silently
+          # no-op with a green tick. force= exists for exactly that case.
           skip=false
-          if gh api "repos/${{ github.repository }}/releases" --paginate \
+          if [[ "${INPUT_FORCE:-false}" == "true" ]]; then
+            echo "force requested; building $snapshot even though it may already be published"
+          elif gh api "repos/${{ github.repository }}/releases" --paginate \
                --jq '.[] | select(.tag_name|test("^gcc-trunk-")) | .body' \
              | grep -q "$snapshot"; then
             echo "snapshot $snapshot already published; skipping"
@@ -109,6 +119,7 @@ jobs:
             mingw-w64-x86_64-libiconv mingw-w64-x86_64-mpc mingw-w64-x86_64-mpfr
             mingw-w64-x86_64-python mingw-w64-x86_64-windows-default-manifest
             mingw-w64-x86_64-winpthreads mingw-w64-x86_64-zlib mingw-w64-x86_64-zstd
+            mingw-w64-x86_64-tools-git
 
       - name: Build + package GCC ${{ needs.resolve.outputs.snapshot }}
         shell: pwsh
@@ -117,6 +128,22 @@ jobs:
             --snapshot ${{ needs.resolve.outputs.snapshot }} `
             --msys-root "${{ steps.msys2.outputs.msys2-location }}" `
             --jobs 4
+
+      - name: Verify plugin support
+        shell: pwsh
+        run: |
+          # A toolchain without this import library cannot host GCC plugins, which the editor's
+          # semantic index depends on. The failure is invisible at build time and surfaces later
+          # as every analyzed translation unit failing identically, so refuse to publish instead.
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path dist/gcc-trunk-windows-x64.zip))
+          $implib = $archive.Entries | Where-Object { $_.FullName -like '*/plugin/cc1plus.exe.a' }
+          $archive.Dispose()
+          if (-not $implib) {
+            Write-Error "cc1plus.exe.a is missing from the package: this toolchain cannot host GCC plugins. Refusing to publish."
+            exit 1
+          }
+          Write-Output "plugin import library present: $($implib.FullName)"
 
       - name: Compute artifact SHA256
         id: hash
