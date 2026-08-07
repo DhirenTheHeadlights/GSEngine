@@ -682,6 +682,7 @@ template <typename A, typename Dim, typename Tag, typename Unit, typename CharT>
 struct std::formatter<gse::internal::quantity<A, Dim, Tag, Unit>, CharT> {
 	std::formatter<A, CharT> value_fmt;
 	std::basic_string_view<CharT> unit_override;
+	bool hide_unit = false;
 
 	template <class ParseContext>
 	constexpr auto parse(ParseContext& ctx) -> ParseContext::iterator {
@@ -709,6 +710,10 @@ struct std::formatter<gse::internal::quantity<A, Dim, Tag, Unit>, CharT> {
 				++unit_end;
 			}
 			unit_override = std::basic_string_view<CharT>(unit_start, unit_end);
+			if (unit_end != end && *unit_end == '!') {
+				hide_unit = true;
+				++unit_end;
+			}
 			return unit_end;
 		}
 		return value_spec_end;
@@ -720,6 +725,9 @@ struct std::formatter<gse::internal::quantity<A, Dim, Tag, Unit>, CharT> {
 
 		auto format_default = [&] {
 			it = value_fmt.format(gse::internal::value_in<Unit>(q), ctx);
+			if (hide_unit) {
+				return;
+			}
 			if constexpr (!std::same_as<Unit, gse::internal::no_default_unit>) {
 				it = std::ranges::copy(
 						 std::string_view{ " " },
@@ -747,6 +755,9 @@ struct std::formatter<gse::internal::quantity<A, Dim, Tag, Unit>, CharT> {
 				[&](auto unit_const) {
 					using U = std::remove_cvref_t<decltype(unit_const)>;
 					it = value_fmt.format(gse::internal::value_in<U>(q), ctx);
+					if (hide_unit) {
+						return;
+					}
 					it = std::ranges::copy(
 							 std::string_view{ " " },
 							 it

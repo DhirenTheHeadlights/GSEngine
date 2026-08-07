@@ -394,14 +394,21 @@ auto gse::layout_store::write_disk(const std::filesystem::path& path, const std:
 	{
 		std::ofstream file(temp, std::ios::trunc);
 		if (!file) {
-			log::println(log::level::error, "layout_store: failed to open {} for write", temp.display_string());
+			log::println(log::level::error, "layout_store: failed to open {} for write", temp.generic_display_string());
 			return;
 		}
 		file << content;
 	}
 
-	std::filesystem::rename(temp, path, ec);
-	if (ec) {
-		log::println(log::level::error, "layout_store: failed to replace {}: {}", path.display_string(), ec.message());
+	constexpr int rename_attempts = 5;
+	for (int attempt = 0; attempt < rename_attempts; ++attempt) {
+		std::filesystem::rename(temp, path, ec);
+		if (!ec) {
+			return;
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(20));
 	}
+
+	log::println(log::level::error, "layout_store: failed to replace {} after {} attempts: {}", path.generic_display_string(), rename_attempts, ec.message());
+	std::filesystem::remove(temp, ec);
 }

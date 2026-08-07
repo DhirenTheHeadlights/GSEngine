@@ -35,6 +35,7 @@ export namespace gse::log {
 		unknown,
 		main,
 		worker,
+		io,
 		watchdog,
 		capture,
 		network

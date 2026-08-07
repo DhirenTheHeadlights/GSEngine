@@ -71,14 +71,16 @@ export namespace gse {
 		static constexpr bool is_writing = true;
 
 		explicit binary_writer(
-			std::ofstream& stream
+			std::ostream& stream
 		);
 
 		binary_writer(
-			std::ofstream& stream,
+			std::ostream& stream,
 			std::uint32_t magic,
 			std::uint32_t version
 		);
+
+		[[nodiscard]] auto valid() const -> bool;
 
 		template <typename T>
 		requires(std::is_trivially_copyable_v<T> && !archive_schema_type<T>)
@@ -135,7 +137,7 @@ export namespace gse {
 		template <typename T>
 		auto emit_schema() -> void;
 
-		std::ofstream& m_stream;
+		std::ostream& m_stream;
 		std::unordered_set<std::uint64_t> m_emitted;
 	};
 
@@ -214,6 +216,15 @@ export namespace gse {
 		) -> binary_reader&;
 
 	private:
+		auto read_bytes(
+			void* data,
+			std::uint64_t size
+		) -> bool;
+
+		auto skip_bytes(
+			std::uint64_t size
+		) -> bool;
+
 		template <typename T>
 		auto read_schema() -> const std::vector<archive_field>&;
 
@@ -223,6 +234,7 @@ export namespace gse {
 
 		std::ifstream& m_stream;
 		std::unordered_map<std::uint64_t, std::vector<archive_field>> m_schemas;
+		std::uint64_t m_remaining = 0;
 		bool m_valid = true;
 	};
 
@@ -243,12 +255,7 @@ export namespace gse {
 }
 
 consteval auto gse::is_archive_raw(const std::meta::info type) -> bool {
-	return std::ranges::any_of(
-		std::define_static_array(std::meta::annotations_of(type)),
-		[](std::meta::info ann) {
-			return std::meta::type_of(ann) == ^^archive_raw;
-		}
-	);
+	return has_annotation<archive_raw>(type);
 }
 
 template <typename T>
@@ -294,26 +301,31 @@ auto gse::archive_type_id() -> std::uint64_t {
 }
 
 consteval auto gse::is_archive_skipped(const std::meta::info member) -> bool {
-	return std::ranges::any_of(
-		std::define_static_array(std::meta::annotations_of(member)),
-		[](std::meta::info ann) {
-			return std::meta::type_of(ann) == ^^archive_skip;
-		}
-	);
+	return has_annotation<archive_skip>(member);
 }
 
-gse::binary_writer::binary_writer(std::ofstream& stream) : m_stream(stream) {
+gse::binary_writer::binary_writer(std::ostream& stream) : m_stream(stream) {
 }
 
-gse::binary_writer::binary_writer(std::ofstream& stream, const std::uint32_t magic, const std::uint32_t version)
+gse::binary_writer::binary_writer(std::ostream& stream, const std::uint32_t magic, const std::uint32_t version)
 	: m_stream(stream) {
 	*this & magic & version & archive_format_epoch;
+}
+
+auto gse::binary_writer::valid() const -> bool {
+	return m_stream.good();
 }
 
 template <typename T>
 requires(std::is_trivially_copyable_v<T> && !gse::archive_schema_type<T>)
 auto gse::binary_writer::operator&(const T& value) -> binary_writer& {
-	m_stream.write(reinterpret_cast<const char*>(&value), sizeof(T));
+	if constexpr (std::same_as<T, bool>) {
+		const std::uint8_t encoded = value ? 1 : 0;
+		m_stream.write(reinterpret_cast<const char*>(&encoded), sizeof(encoded));
+	}
+	else {
+		m_stream.write(reinterpret_cast<const char*>(&value), sizeof(T));
+	}
 	return *this;
 }
 
@@ -461,15 +473,24 @@ auto gse::binary_writer::operator&(const T& value) -> binary_writer& {
 }
 
 gse::binary_reader::binary_reader(std::ifstream& stream) : m_stream(stream) {
+	const auto current = m_stream.tellg();
+	m_stream.seekg(0, std::ios::end);
+	const auto end = m_stream.tellg();
+	m_stream.seekg(current);
+	if (current < 0 || end < current) {
+		m_valid = false;
+		return;
+	}
+	m_remaining = static_cast<std::uint64_t>(end - current);
 }
 
 gse::binary_reader::binary_reader(std::ifstream& stream, const std::uint32_t expected_magic, const std::uint32_t expected_version, std::string_view path, const std::source_location& loc)
-	: m_stream(stream) {
+	: binary_reader(stream) {
 	std::uint32_t magic = 0;
 	std::uint32_t version = 0;
 	std::uint32_t epoch = 0;
 	*this & magic & version & epoch;
-	m_valid = (magic == expected_magic && version == expected_version && epoch == archive_format_epoch);
+	m_valid = m_valid && magic == expected_magic && version == expected_version && epoch == archive_format_epoch;
 	gse::assert(m_valid, loc, "Invalid or outdated baked file: {}", path);
 }
 
@@ -480,7 +501,7 @@ auto gse::binary_reader::open(std::ifstream& stream, const std::uint32_t expecte
 	std::uint32_t epoch = 0;
 	reader & magic & version & epoch;
 
-	if (!stream.good()) {
+	if (!reader.valid()) {
 		return std::unexpected(archive_mismatch{});
 	}
 	if (magic != expected_magic || version != expected_version || epoch != archive_format_epoch) {
@@ -498,21 +519,64 @@ auto gse::binary_reader::valid() const -> bool {
 	return m_valid;
 }
 
+auto gse::binary_reader::read_bytes(void* const data, const std::uint64_t size) -> bool {
+	if (!m_valid || size > m_remaining || size > static_cast<std::uint64_t>(std::numeric_limits<std::streamsize>::max())) {
+		m_valid = false;
+		return false;
+	}
+	if (size != 0) {
+		m_stream.read(static_cast<char*>(data), static_cast<std::streamsize>(size));
+	}
+	if (!m_stream.good()) {
+		m_valid = false;
+		return false;
+	}
+	m_remaining -= size;
+	return true;
+}
+
+auto gse::binary_reader::skip_bytes(const std::uint64_t size) -> bool {
+	if (!m_valid || size > m_remaining || size > static_cast<std::uint64_t>(std::numeric_limits<std::streamoff>::max())) {
+		m_valid = false;
+		return false;
+	}
+	m_stream.seekg(static_cast<std::streamoff>(size), std::ios::cur);
+	if (!m_stream.good()) {
+		m_valid = false;
+		return false;
+	}
+	m_remaining -= size;
+	return true;
+}
+
 template <typename T>
 requires(std::is_trivially_copyable_v<T> && !gse::archive_schema_type<T>)
 auto gse::binary_reader::operator&(T& value) -> binary_reader& {
-	m_stream.read(reinterpret_cast<char*>(&value), sizeof(T));
+	if constexpr (std::same_as<T, bool>) {
+		std::uint8_t encoded = 0;
+		read_bytes(&encoded, sizeof(encoded));
+		if (encoded > 1) {
+			m_valid = false;
+			value = false;
+		}
+		else {
+			value = encoded != 0;
+		}
+	}
+	else {
+		read_bytes(&value, sizeof(T));
+	}
 	return *this;
 }
 
 auto gse::binary_reader::skip_field(const archive_field& field) -> void {
 	if (field.size != 0) {
-		m_stream.seekg(field.size, std::ios::cur);
+		skip_bytes(field.size);
 		return;
 	}
 	std::uint32_t length = 0;
-	m_stream.read(reinterpret_cast<char*>(&length), sizeof(length));
-	m_stream.seekg(length, std::ios::cur);
+	read_bytes(&length, sizeof(length));
+	skip_bytes(length);
 }
 
 template <typename T>
@@ -523,7 +587,11 @@ auto gse::binary_reader::read_schema() -> const std::vector<archive_field>& {
 	}
 
 	std::uint32_t count = 0;
-	m_stream.read(reinterpret_cast<char*>(&count), sizeof(count));
+	read_bytes(&count, sizeof(count));
+	if (!m_valid || count > m_remaining) {
+		m_valid = false;
+		count = 0;
+	}
 
 	std::vector<archive_field> fields(count);
 	for (archive_field& field : fields) {
@@ -552,7 +620,7 @@ auto gse::binary_reader::operator&(T& value) -> binary_reader& {
 						matched = true;
 						if constexpr (archive_field_size<typename [:std::meta::type_of(m):]>() == 0) {
 							std::uint32_t length = 0;
-							m_stream.read(reinterpret_cast<char*>(&length), sizeof(length));
+							read_bytes(&length, sizeof(length));
 						}
 						*this & value.[:m:];
 					}
@@ -568,11 +636,14 @@ auto gse::binary_reader::operator&(T& value) -> binary_reader& {
 
 auto gse::binary_reader::operator&(std::string& str) -> binary_reader& {
 	std::uint32_t size = 0;
-	m_stream.read(reinterpret_cast<char*>(&size), sizeof(size));
-	str.resize(size);
-	if (size > 0) {
-		m_stream.read(str.data(), size);
+	read_bytes(&size, sizeof(size));
+	if (!m_valid || size > m_remaining) {
+		m_valid = false;
+		str.clear();
+		return *this;
 	}
+	str.resize(size);
+	read_bytes(str.data(), size);
 	return *this;
 }
 
@@ -580,6 +651,11 @@ template <typename T>
 auto gse::binary_reader::operator&(std::vector<T>& vec) -> binary_reader& {
 	std::uint32_t count = 0;
 	*this& count;
+	if (!m_valid || count > m_remaining + 1) {
+		m_valid = false;
+		vec.clear();
+		return *this;
+	}
 	vec.resize(count);
 	for (auto& item : vec) {
 		*this& item;
@@ -591,7 +667,11 @@ template <typename T, std::size_t N>
 auto gse::binary_reader::operator&(std::inplace_vector<T, N>& vec) -> binary_reader& {
 	std::uint32_t count = 0;
 	*this& count;
-	gse::assert(count <= N, "inplace_vector deserialization: count {} exceeds capacity {}", count, N);
+	if (!m_valid || count > N || count > m_remaining + 1) {
+		m_valid = false;
+		vec.clear();
+		return *this;
+	}
 	vec.clear();
 	for (std::uint32_t i = 0; i < count; ++i) {
 		T val{};
@@ -605,6 +685,10 @@ template <typename... Ts>
 auto gse::binary_reader::operator&(std::variant<Ts...>& var) -> binary_reader& {
 	std::uint32_t index = 0;
 	*this& index;
+	if (!m_valid || index >= sizeof...(Ts)) {
+		m_valid = false;
+		return *this;
+	}
 
 	[&]<std::size_t... Is>(std::index_sequence<Is...>) {
 		(
@@ -642,6 +726,12 @@ template <typename K, typename V>
 auto gse::binary_reader::operator&(std::unordered_map<K, V>& map) -> binary_reader& {
 	std::uint32_t count = 0;
 	*this& count;
+	if (!m_valid || count > m_remaining + 1) {
+		m_valid = false;
+		map.clear();
+		return *this;
+	}
+	map.clear();
 	for (std::uint32_t i = 0; i < count; ++i) {
 		K k{};
 		V v{};
@@ -654,11 +744,14 @@ auto gse::binary_reader::operator&(std::unordered_map<K, V>& map) -> binary_read
 template <typename T>
 auto gse::binary_reader::operator&(const raw_blob<T>& blob) -> binary_reader& {
 	std::uint64_t byte_size = 0;
-	m_stream.read(reinterpret_cast<char*>(&byte_size), sizeof(byte_size));
-	blob.data.resize(byte_size / sizeof(T));
-	if (byte_size > 0) {
-		m_stream.read(reinterpret_cast<char*>(blob.data.data()), static_cast<std::streamsize>(byte_size));
+	read_bytes(&byte_size, sizeof(byte_size));
+	if (!m_valid || byte_size > m_remaining || byte_size % sizeof(T) != 0) {
+		m_valid = false;
+		blob.data.clear();
+		return *this;
 	}
+	blob.data.resize(byte_size / sizeof(T));
+	read_bytes(blob.data.data(), byte_size);
 	return *this;
 }
 
