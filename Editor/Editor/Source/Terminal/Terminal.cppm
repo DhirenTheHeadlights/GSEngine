@@ -65,6 +65,7 @@ export namespace gse::ide::terminal {
 		std::shared_ptr<command_runner> runner;
 		std::jthread worker;
 		bool interactive = true;
+		build_runner::stream_slot slot = build_runner::stream_slot::none;
 	};
 
 	struct [[= system_state<"Terminal">{}]] data {

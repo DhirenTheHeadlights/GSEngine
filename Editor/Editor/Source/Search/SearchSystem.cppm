@@ -108,6 +108,9 @@ auto gse::ide::search_system::init(data& d) -> async::task<> {
 
 auto gse::ide::search_system::frame(const context& ctx, data& d, const shared_view<build_runner::data> build_d) -> async::task<> {
 	if (d.index) {
+		d.index->cancel.store(build_runner::analysis_pause_requested(), std::memory_order_release);
+		build_runner::report_analysis_busy(d.index->building.load(std::memory_order_acquire));
+
 		search::publish_file_build(*d.index);
 		search::publish_symbol_build(*d.index);
 		const time now = system_clock::now<time>();
@@ -147,6 +150,9 @@ auto gse::ide::search_system::frame(const context& ctx, data& d, const shared_vi
 			d.symbols_dirty = false;
 			search::request_symbol_build(*d.index);
 		}
+	}
+	else {
+		build_runner::report_analysis_busy(false);
 	}
 	return {};
 }
