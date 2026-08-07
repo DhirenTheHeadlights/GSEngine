@@ -42,7 +42,6 @@ namespace gse::ide::terminal {
 
 	auto header_button(
 		gui::builder& ui,
-		const input::state& input,
 		const header_button_params& params
 	) -> bool;
 
@@ -51,17 +50,16 @@ namespace gse::ide::terminal {
 		std::string_view label;
 		std::string_view key;
 		bool danger = false;
+		bool enabled = true;
 	};
 
 	auto confirm_button(
 		gui::builder& ui,
-		const input::state& input,
 		const confirm_button_params& params
 	) -> bool;
 
 	auto draw_close_confirm(
 		gui::builder& ui,
-		const input::state& input,
 		data& d,
 		const rectf& body
 	) -> void;
@@ -89,6 +87,11 @@ namespace gse::ide::terminal {
 	auto erase_instance(
 		data& d,
 		id instance_id
+	) -> void;
+
+	auto close_slot(
+		data& d,
+		build_runner::stream_slot slot
 	) -> void;
 
 	auto append_lines(
@@ -170,6 +173,20 @@ auto gse::ide::terminal::erase_instance(data& d, const id instance_id) -> void {
 	else if (was_active) {
 		d.active = d.instances[std::min(index, d.instances.size() - 1)].instance_id;
 	}
+}
+
+auto gse::ide::terminal::close_slot(data& d, const build_runner::stream_slot slot) -> void {
+	if (slot == build_runner::stream_slot::none) {
+		return;
+	}
+	const auto found = std::ranges::find(d.instances, slot, &instance::slot);
+	if (found == d.instances.end()) {
+		return;
+	}
+	if (found->runner && found->runner->running.load(std::memory_order_acquire)) {
+		spawn::terminate_process(*found->runner);
+	}
+	erase_instance(d, found->instance_id);
 }
 
 auto gse::ide::terminal::append_lines(instance& inst, const std::span<const line> lines, const gui::style& style) -> void {
@@ -323,10 +340,12 @@ auto gse::ide::terminal::init(data& d) -> async::task<> {
 
 auto gse::ide::terminal::run(context& ctx, data& d, const shared_view<input::data> input_d, const shared_view<build_runner::data> build_d) -> async::task<> {
 	for (const build_runner::stream_opened& opened : ctx.read_channel<build_runner::stream_opened>()) {
+		close_slot(d, opened.slot);
 		instance inst = make_instance(d, opened.name);
 		inst.cursor = d.sink ? d.sink->sequence() : 0;
 		inst.runner = opened.stream;
 		inst.interactive = false;
+		inst.slot = opened.slot;
 		d.active = inst.instance_id;
 		d.instances.push_back(std::move(inst));
 	}
@@ -376,21 +395,23 @@ auto gse::ide::terminal::run_command(command_runner& runner, const std::string& 
 	spawn::close_process(runner);
 }
 
-auto gse::ide::terminal::header_button(gui::builder& ui, const input::state& input, const header_button_params& params) -> bool {
+auto gse::ide::terminal::header_button(gui::builder& ui, const header_button_params& params) -> bool {
 	const gui::draw_context& ctx = ui.ctx;
 	const gui::style& sty = ctx.style;
 	const auto text_view = ctx.fonts.text.resolve();
 	const float pad = sty.padding;
 
-	const bool hovered = params.enabled && ctx.hovers(params.rect);
 	const id widget_id = gui::ids::make(params.key);
-	const bool released = input.mouse_button_released(mouse_button::button_1);
-	gui::interaction::mark_hot(ui.hot_widget_id, widget_id, hovered);
-	const bool clicked = params.enabled && gui::interaction::activate_on_click(ui.active_widget_id, widget_id, hovered, ctx.mouse_pressed_for(params.rect), released);
+	const auto btn = gui::interaction::press_in_rect(ctx, ui.hot_widget_id, ui.active_widget_id, widget_id, params.rect, params.enabled);
 
 	ctx.queue_sprite({
 		.rect = params.rect,
-		.color = ui.active_widget_id == widget_id ? sty.color_widget_active : (hovered ? sty.color_widget_hovered : sty.color_input_background),
+		.color = btn.color({
+			.idle = sty.color_input_background,
+			.hot = sty.color_widget_hovered,
+			.active = sty.color_widget_active,
+			.disabled = sty.color_input_background,
+		}),
 		.texture = ctx.blank_texture,
 	});
 
@@ -417,7 +438,7 @@ auto gse::ide::terminal::header_button(gui::builder& ui, const input::state& inp
 		});
 	}
 
-	return clicked;
+	return btn.activated;
 }
 
 auto gse::ide::terminal::draw_instance(gui::builder& ui, const input::state& input, data& d, instance& inst, const rectf& area, channel_writer channels, const bool building) -> void {
@@ -553,7 +574,7 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, const input::state& inp
 		{ input_rect.right() - input_h - pad, input_rect.top() },
 		{ input_h, input_h }
 	);
-	if (header_button(ui, input, {
+	if (header_button(ui, {
 		.rect = run_btn,
 		.glyph = gui::symbol::play(),
 		.key = "##terminal_run",
@@ -571,7 +592,7 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, const input::state& inp
 		{ run_btn.left() - build_w, input_rect.top() },
 		{ build_w, input_h }
 	);
-	if (header_button(ui, input, {
+	if (header_button(ui, {
 		.rect = build_btn,
 		.glyph = gui::symbol::hammer(),
 		.label = build_label,
@@ -610,21 +631,21 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, const input::state& inp
 	}
 }
 
-auto gse::ide::terminal::confirm_button(gui::builder& ui, const input::state& input, const confirm_button_params& params) -> bool {
+auto gse::ide::terminal::confirm_button(gui::builder& ui, const confirm_button_params& params) -> bool {
 	const gui::draw_context& ctx = ui.ctx;
 	const gui::style& sty = ctx.style;
 	const auto text_view = ctx.fonts.text.resolve();
-	const bool hovered = ctx.hovers(params.rect);
 	const id widget_id = gui::ids::make(params.key);
-	const bool released = input.mouse_button_released(mouse_button::button_1);
-	gui::interaction::mark_hot(ui.hot_widget_id, widget_id, hovered);
-	const bool clicked = gui::interaction::activate_on_click(ui.active_widget_id, widget_id, hovered, ctx.mouse_pressed_for(params.rect), released);
+	const auto btn = gui::interaction::press_in_rect(ctx, ui.hot_widget_id, ui.active_widget_id, widget_id, params.rect, params.enabled);
 
-	const vec4f base = params.danger ? vec4f{ 0.62f, 0.22f, 0.22f, 1.f } : sty.color_input_background;
-	const vec4f hot = params.danger ? vec4f{ 0.78f, 0.28f, 0.28f, 1.f } : sty.color_widget_hovered;
 	ctx.queue_sprite({
 		.rect = params.rect,
-		.color = ui.active_widget_id == widget_id ? sty.color_widget_active : (hovered ? hot : base),
+		.color = btn.color({
+			.idle = params.danger ? vec4f{ 0.62f, 0.22f, 0.22f, 1.f } : sty.color_input_background,
+			.hot = params.danger ? vec4f{ 0.78f, 0.28f, 0.28f, 1.f } : sty.color_widget_hovered,
+			.active = sty.color_widget_active,
+			.disabled = sty.color_widget_background,
+		}),
 		.texture = ctx.blank_texture,
 		.corner_radius = sty.corner_radius,
 	});
@@ -633,13 +654,13 @@ auto gse::ide::terminal::confirm_button(gui::builder& ui, const input::state& in
 		.text = params.label,
 		.position = { params.rect.center().x() - text_view->width(params.label, sty.font_size) * 0.5f, params.rect.center().y() + text_view->vertical_center_offset(sty.font_size) },
 		.scale = sty.font_size,
-		.color = sty.color_text,
+		.color = params.enabled ? sty.color_text : sty.color_text_disabled,
 		.clip_rect = params.rect,
 	});
-	return clicked;
+	return btn.activated;
 }
 
-auto gse::ide::terminal::draw_close_confirm(gui::builder& ui, const input::state& input, data& d, const rectf& body) -> void {
+auto gse::ide::terminal::draw_close_confirm(gui::builder& ui, data& d, const rectf& body) -> void {
 	instance* closing = d.pending_close ? find_instance(d, *d.pending_close) : nullptr;
 	if (!closing) {
 		d.pending_close.reset();
@@ -708,12 +729,12 @@ auto gse::ide::terminal::draw_close_confirm(gui::builder& ui, const input::state
 	const rectf cancel_btn = rectf::from_position_size({ dialog.left() + pad, dialog.bottom() + pad + btn_h }, { btn_w, btn_h });
 	const rectf kill_btn = rectf::from_position_size({ cancel_btn.right() + pad, dialog.bottom() + pad + btn_h }, { btn_w, btn_h });
 
-	bool cancel = confirm_button(ui, input, {
+	bool cancel = confirm_button(ui, {
 		.rect = cancel_btn,
 		.label = "Cancel",
 		.key = "##terminal_close_cancel",
 	});
-	const bool kill = confirm_button(ui, input, {
+	const bool kill = confirm_button(ui, {
 		.rect = kill_btn,
 		.label = "Kill",
 		.key = "##terminal_close_kill",
@@ -838,5 +859,5 @@ auto gse::ide::terminal::draw_panel(gui::builder& ui, const input::state& input,
 
 	draw_instance(ui, input, d, *active, content, channels, building);
 
-	draw_close_confirm(ui, input, d, body);
+	draw_close_confirm(ui, d, body);
 }

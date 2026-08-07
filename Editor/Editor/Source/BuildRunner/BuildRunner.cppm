@@ -22,8 +22,16 @@ export namespace gse::ide::build_runner {
 
 	struct build_finished {};
 
+	enum class stream_slot : std::uint8_t {
+		none,
+		build_game,
+		build_editor,
+		game,
+	};
+
 	struct stream_opened {
 		std::string name;
+		stream_slot slot = stream_slot::none;
 		std::shared_ptr<spawn::output_stream> stream;
 	};
 
@@ -119,9 +127,23 @@ export namespace gse::ide::build_runner {
 	auto shutdown(
 		data& d
 	) -> void;
+
+	auto request_analysis_pause(
+		bool paused
+	) -> void;
+
+	auto analysis_pause_requested() -> bool;
+
+	auto report_analysis_busy(
+		bool busy
+	) -> void;
 }
 
 namespace gse::ide::build_runner {
+	auto analysis_pause_state() -> std::atomic<bool>&;
+
+	auto analysis_busy_state() -> std::atomic<bool>&;
+
 	constexpr std::uint32_t source_state_magic = 0x47534253;
 	constexpr std::uint32_t source_state_version = 2;
 
@@ -693,9 +715,31 @@ auto gse::ide::build_runner::collect_locked_output_copies(const std::span<const 
 	return locked;
 }
 
+auto gse::ide::build_runner::analysis_pause_state() -> std::atomic<bool>& {
+	static std::atomic<bool> paused = false;
+	return paused;
+}
+
+auto gse::ide::build_runner::analysis_busy_state() -> std::atomic<bool>& {
+	static std::atomic<bool> busy = false;
+	return busy;
+}
+
+auto gse::ide::build_runner::request_analysis_pause(const bool paused) -> void {
+	analysis_pause_state().store(paused, std::memory_order_release);
+}
+
+auto gse::ide::build_runner::analysis_pause_requested() -> bool {
+	return analysis_pause_state().load(std::memory_order_acquire);
+}
+
+auto gse::ide::build_runner::report_analysis_busy(const bool busy) -> void {
+	analysis_busy_state().store(busy, std::memory_order_release);
+}
+
 auto gse::ide::build_runner::clear_stale_module_file(spawn::output_stream& stream, const std::filesystem::path& file) -> bool {
-	constexpr int clear_attempts = 12;
-	constexpr std::chrono::milliseconds clear_retry_delay(50);
+	constexpr int clear_attempts = 40;
+	constexpr std::chrono::milliseconds clear_retry_delay(250);
 
 	std::error_code ec;
 	for (int attempt = 0; attempt < clear_attempts; ++attempt) {
@@ -707,18 +751,6 @@ auto gse::ide::build_runner::clear_stale_module_file(spawn::output_stream& strea
 			return false;
 		}
 		std::this_thread::sleep_for(clear_retry_delay);
-	}
-
-	std::filesystem::path aside = file;
-	aside += ".stale";
-
-	std::error_code drop;
-	std::filesystem::remove(aside, drop);
-
-	std::error_code moved;
-	std::filesystem::rename(file, aside, moved);
-	if (!moved) {
-		return true;
 	}
 
 	spawn::emit(stream, "could not clear stale module cache file " + file.generic_display_string() + " after " + std::to_string(clear_attempts) + " attempts: " + ec.message());
@@ -734,6 +766,19 @@ auto gse::ide::build_runner::run_build_with_module_recovery(
 	const std::filesystem::path& compiler_bin
 ) -> int {
 	constexpr int max_attempts = 16;
+	constexpr int analysis_wait_polls = 400;
+	constexpr std::chrono::milliseconds analysis_poll_delay(50);
+
+	for (int waited = 0; waited < analysis_wait_polls; ++waited) {
+		if (!analysis_busy_state().load(std::memory_order_acquire) || st.stop_requested() || stream.terminated.load(std::memory_order_acquire)) {
+			break;
+		}
+		if (waited == 0) {
+			spawn::emit(stream, "waiting for semantic analysis to release compiled modules...");
+		}
+		std::this_thread::sleep_for(analysis_poll_delay);
+	}
+
 	std::unordered_set<std::string> recovered;
 	for (int attempt = 1; ; ++attempt) {
 		spawn::begin_transcript(stream);
@@ -989,6 +1034,7 @@ auto gse::ide::build_runner::start_build(context& ctx, data& d, const build_requ
 	stream->running.store(true, std::memory_order_release);
 	ctx.channels.push<stream_opened>({
 		.name = std::string(name),
+		.slot = request.target == build_target::editor ? stream_slot::build_editor : stream_slot::build_game,
 		.stream = stream,
 	});
 
@@ -1004,6 +1050,8 @@ auto gse::ide::build_runner::start_build(context& ctx, data& d, const build_requ
 		d.completion.surface_pipe = nullptr;
 		d.completion.graph_path.clear();
 	}
+
+	request_analysis_pause(true);
 
 	d.building = true;
 	d.active_stream = stream;
@@ -1024,6 +1072,7 @@ auto gse::ide::build_runner::drain_completion(context& ctx, data& d) -> void {
 		d.worker.join();
 	}
 	d.building = false;
+	request_analysis_pause(false);
 
 	if (d.completion.generation != 0) {
 		d.game_generation = d.completion.generation;
@@ -1046,6 +1095,7 @@ auto gse::ide::build_runner::drain_completion(context& ctx, data& d) -> void {
 		spawn::attach_process(*stream, d.completion.game_process, d.completion.game_job);
 		ctx.channels.push<stream_opened>({
 			.name = std::format("Game {}", d.completion.game_pid),
+			.slot = stream_slot::game,
 			.stream = stream,
 		});
 
