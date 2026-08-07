@@ -7,10 +7,20 @@ import gse;
 import gse.ide.analysis;
 
 export namespace gse::ide::search {
+	struct domain_info {
+		int priority = 0;
+	};
+
 	enum class domain {
-		content,
-		symbol,
-		file
+		content [[= domain_info{
+			.priority = 2,
+		}]],
+		symbol [[= domain_info{
+			.priority = 0,
+		}]],
+		file [[= domain_info{
+			.priority = 1,
+		}]]
 	};
 
 	using file_id = id;
@@ -75,7 +85,9 @@ export namespace gse::ide::search {
 		bool include_files = true;
 	};
 
-	auto to_lower(std::string_view text) -> std::string;
+	auto to_lower(
+		std::string_view text
+	) -> std::string;
 }
 
 auto gse::ide::search::to_lower(const std::string_view text) -> std::string {
