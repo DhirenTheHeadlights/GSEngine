@@ -15,11 +15,6 @@ export namespace gse {
 		std::string_view tag
 	) -> uuid;
 
-	constexpr auto hash_combine(
-		uuid h,
-		uuid v
-	) -> uuid;
-
 	template <typename T>
 	consteval auto id_of() -> id;
 
@@ -420,14 +415,6 @@ constexpr auto gse::stable_id(const std::string_view tag) -> uuid {
 		h *= 1099511628211ull;
 	}
 	return h;
-}
-
-constexpr auto gse::hash_combine(uuid h, const uuid v) -> uuid {
-	h ^= v;
-	h += 0x9E3779B97F4A7C15ull;
-	h = (h ^ h >> 30) * 0xBF58476D1CE4E5B9ull;
-	h = (h ^ h >> 27) * 0x94D049BB133111EBull;
-	return h ^ h >> 31;
 }
 
 template <typename T>

@@ -3,35 +3,47 @@ export module gse.meta:hash;
 import std;
 
 export namespace gse {
-	template <typename T>
-	auto hash_combine(
-		const T& value
-	) -> std::size_t;
+	constexpr auto hash_combine(
+		std::uint64_t seed,
+		std::uint64_t value
+	) -> std::uint64_t;
 
 	template <typename T>
 	auto hash_combine(
-		std::size_t seed,
+		std::uint64_t seed,
 		const T& value
-	) -> std::size_t;
+	) -> std::uint64_t;
+
+	template <typename T>
+	auto hash_of(
+		const T& value
+	) -> std::uint64_t;
 
 	template <typename T>
 	auto layout_hash() -> std::uint64_t;
 }
 
-template <typename T>
-auto gse::hash_combine(const T& value) -> std::size_t {
-	std::size_t h = 0;
-	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
-		using member_type = std::remove_cvref_t<decltype(value.[:m:])>;
-		const std::size_t sub = std::hash<member_type>{}(value.[:m:]);
-		h ^= sub + 0x9e3779b9u + (h << 6) + (h >> 2);
-	}
-	return h;
+constexpr auto gse::hash_combine(std::uint64_t seed, const std::uint64_t value) -> std::uint64_t {
+	seed ^= value;
+	seed += 0x9E3779B97F4A7C15ull;
+	seed = (seed ^ seed >> 30) * 0xBF58476D1CE4E5B9ull;
+	seed = (seed ^ seed >> 27) * 0x94D049BB133111EBull;
+	return seed ^ seed >> 31;
 }
 
 template <typename T>
-auto gse::hash_combine(const std::size_t seed, const T& value) -> std::size_t {
-	return seed ^ (std::hash<T>{}(value) + 0x9e3779b9u + (seed << 6) + (seed >> 2));
+auto gse::hash_combine(const std::uint64_t seed, const T& value) -> std::uint64_t {
+	return hash_combine(seed, static_cast<std::uint64_t>(std::hash<T>{}(value)));
+}
+
+template <typename T>
+auto gse::hash_of(const T& value) -> std::uint64_t {
+	std::uint64_t h = 0;
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+		using member_type = std::remove_cvref_t<decltype(value.[:m:])>;
+		h = hash_combine(h, static_cast<std::uint64_t>(std::hash<member_type>{}(value.[:m:])));
+	}
+	return h;
 }
 
 template <typename T>
@@ -50,6 +62,6 @@ export template <typename T>
 requires(std::is_class_v<T> && !std::is_polymorphic_v<T>)
 struct std::hash<T> {
 	auto operator()(const T& value) const noexcept -> std::size_t {
-		return gse::hash_combine(value);
+		return static_cast<std::size_t>(gse::hash_of(value));
 	}
 };
