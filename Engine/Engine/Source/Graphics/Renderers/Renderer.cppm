@@ -66,6 +66,8 @@ export namespace gse::renderer {
 		actions::handle dump_profile_action;
 		vec2f last_viewport{ 1920.f, 1080.f };
 		bool last_hot_reload_enabled = false;
+		bool last_profile_aggregator_enabled = true;
+		bool last_profile_frame_recording = false;
 		bool render_world = true;
 	};
 
