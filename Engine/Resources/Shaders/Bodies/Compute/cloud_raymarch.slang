@@ -1,5 +1,7 @@
 static const int max_view_steps = 64;
 static const int light_steps = 6;
+static const float light_march_min_transmittance = 0.1;
+static const float light_march_opaque_density = 4.6;
 
 float3 reconstruct_world_ray(float2 ndc) {
     float4 wn = mul(pc.inv_view_proj, float4(ndc, 0.0, 1.0));
@@ -49,6 +51,9 @@ float sample_light_transmittance(float3 world_pos_km, float3 sun_dir, float laye
     float step_km = layer_thickness_km * 0.05;
 
     for (int i = 0; i < light_steps; ++i) {
+        if (total_density * cloud_ubo.light_extinction > light_march_opaque_density) {
+            break;
+        }
         float t = step_km * (float(i) + 0.5);
         float3 sample_pos = world_pos_km + sun_dir * t;
         float sample_altitude_km = length(sample_pos) - atmosphere_ubo.bottom_radius;
@@ -116,6 +121,7 @@ void cloud_raymarch(uint3 dispatch_id) {
 
     float jitter = hash13(float3(dispatch_id.xy, pc.frame_index)) - 0.5;
     float t = t_enter + dt * jitter;
+    float light_trans = 1.0;
 
     for (int i = 0; i < max_view_steps; ++i) {
         if (transmittance < 0.01) {
@@ -129,7 +135,9 @@ void cloud_raymarch(uint3 dispatch_id) {
         float density = sample_cloud_density(sample_pos, h);
 
         if (density > 0.0) {
-            float light_trans = sample_light_transmittance(sample_pos, pc.sun_direction, layer_thickness);
+            if (transmittance > light_march_min_transmittance) {
+                light_trans = sample_light_transmittance(sample_pos, pc.sun_direction, layer_thickness);
+            }
 
             float3 sun_contribution = pc.sun_irradiance * sun_transmittance_atm * phase * light_trans;
             float3 ambient_contribution = ambient_sky * cloud_ubo.ambient_strength * (0.3 + 0.7 * h);
