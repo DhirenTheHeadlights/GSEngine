@@ -104,11 +104,17 @@ export namespace gse::physics {
 		std::uint32_t position_offset = 0;
 	};
 
+	struct interpolation_state {
+		bool advancing = true;
+	};
+
 	struct [[= gse::system_state<"Physics">{}, = gse::settings::category<"Physics">{}, = gse::deferred_system{}]] data {
 		[[= gse::settings::describe<"Step the physics world each frame.">{}]] bool update_phys = true;
 
 		[[
-			= gse::settings::describe<"Run the constraint solver on the GPU instead of the CPU.">{},
+			= gse::settings::describe<"Run the constraint solver on the GPU instead of the CPU. The GPU pipelines and "
+									  "buffers are built once during startup, so this requires a restart.">{},
+			= gse::settings::restart_required{},
 			= gse::shared
 		]]
 		bool use_gpu_solver = false;
@@ -138,6 +144,21 @@ export namespace gse::physics {
 			= gse::settings::range<1, 8>{}
 		]]
 		int physics_substeps = 2;
+
+		[[
+			= gse::settings::describe<"Bodies per parallel chunk in the constraint solver colour sweep. Lower values "
+									  "spread the sweep across more threads at the cost of scheduling overhead.">{},
+			= gse::settings::range<1, 256>{}
+		]]
+		int color_chunk_grain = 8;
+
+		[[
+			= gse::settings::describe<"Parallel chunks per worker in the broad phase. The pair test does more work for "
+									  "early objects than late ones, so higher values balance the load at the cost of "
+									  "scheduling overhead.">{},
+			= gse::settings::range<1, 32>{}
+		]]
+		int broad_phase_chunks_per_worker = 8;
 
 		bool gpu_buffers_created = false;
 		gpu_solver_stats gpu_stats;
@@ -258,7 +279,8 @@ export namespace gse::physics {
 		write<motion_component>& motion,
 		write<collision_component>& collision,
 		write<collision_result_component>* results,
-		std::span<std::uint8_t> body_airborne
+		std::span<std::uint8_t> body_airborne,
+		std::size_t chunks_per_worker
 	) -> void;
 
 	auto update_vbd(

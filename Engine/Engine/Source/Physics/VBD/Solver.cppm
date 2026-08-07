@@ -64,6 +64,10 @@ export namespace gse::vbd {
 
 		auto config() const -> const solver_config&;
 
+		auto set_color_grain(
+			std::size_t grain
+		) -> void;
+
 		auto begin_frame(
 			std::span<const body_state> bodies,
 			contact_cache& cache
@@ -116,6 +120,13 @@ export namespace gse::vbd {
 			time_squared h_squared
 		) -> void;
 
+		auto step_colored_body(
+			std::uint32_t body_idx,
+			time_squared h_squared,
+			time_step dt,
+			float alpha
+		) -> void;
+
 		auto perform_newton_step(
 			std::uint32_t body_idx,
 			time_squared h_squared
@@ -147,6 +158,7 @@ export namespace gse::vbd {
 		) -> step_delta;
 
 		solver_config m_config;
+		std::size_t m_color_grain = 8;
 		constraint_graph m_graph;
 		std::vector<body_state> m_bodies;
 		std::vector<body_solve_state> m_solve_state;
@@ -213,6 +225,10 @@ auto gse::vbd::solver::configure(const solver_config& cfg) -> void {
 	m_config = cfg;
 }
 
+auto gse::vbd::solver::set_color_grain(const std::size_t grain) -> void {
+	m_color_grain = std::max<std::size_t>(grain, 1);
+}
+
 auto gse::vbd::solver::config() const -> const solver_config& {
 	return m_config;
 }
@@ -252,11 +268,11 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 
 	{
 		trace::scope_guard sg{ trace_id<"vbd::coloring">() };
-		std::inplace_vector<bool, limits.max_bodies> locked;
+		std::inplace_vector<bool, limits.max_bodies> inactive;
 		for (std::uint32_t i = 0; i < num_bodies; ++i) {
-			locked.push_back(m_bodies[i].locked);
+			inactive.push_back(m_bodies[i].locked || m_bodies[i].sleeping());
 		}
-		m_graph.compute_coloring(num_bodies, locked);
+		m_graph.compute_coloring(num_bodies, inactive);
 	}
 
 	m_body_motor_index.assign(num_bodies, no_motor);
@@ -269,6 +285,9 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		for (const auto bi : bc) {
 			m_body_in_color_group[bi] = true;
 		}
+	}
+	for (const auto bi : m_graph.overflow_bodies()) {
+		m_body_in_color_group[bi] = true;
 	}
 
 	{
@@ -568,29 +587,39 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 	}
 
 	auto solve_iteration_gauss_seidel = [&](const float alpha) {
+		const std::size_t color_grain = m_color_grain;
+		const std::size_t parallel_threshold = color_grain * 2;
+
 		for (const auto& body_color : m_graph.body_colors()) {
+			if (body_color.size() < parallel_threshold) {
+				trace::scope_guard sg{ trace_id<"vbd::gs_color_serial">() };
+				for (const auto bi : body_color) {
+					step_colored_body(bi, h_squared, dt, alpha);
+				}
+				continue;
+			}
+
 			task::coarse_parallel(
 				body_color.size(),
-				8,
+				color_grain,
 				[&, this](std::size_t k) {
-					const auto bi = body_color[k];
-					m_solve_state[bi] = {};
-					for (const auto ci : m_graph.body_contact_indices(bi)) {
-						accumulate_contact(contacts[ci], m_frozen_jacobians[ci], bi, h_squared, alpha);
-					}
-					for (const auto ji : m_graph.body_joint_indices(bi)) {
-						accumulate_joint(joints[ji], bi, h_squared, dt, alpha);
-					}
-					if (const auto mi = m_body_motor_index[bi]; mi != no_motor) {
-						accumulate_motor(motors[mi], h_squared);
-					}
-					perform_newton_step(bi, h_squared);
+					step_colored_body(body_color[k], h_squared, dt, alpha);
 				},
 				trace_id<"vbd::gs_color_iter">()
 			);
 		}
 
+		if (!m_graph.overflow_bodies().empty()) {
+			trace::scope_guard sg{ trace_id<"vbd::gs_overflow_serial">() };
+			for (const auto bi : m_graph.overflow_bodies()) {
+				step_colored_body(bi, h_squared, dt, alpha);
+			}
+		}
+
 		for (const auto& motor : motors) {
+			if (m_bodies[motor.body_index].locked || m_bodies[motor.body_index].sleeping()) {
+				continue;
+			}
 			if (!m_body_in_color_group[motor.body_index]) {
 				m_solve_state[motor.body_index] = {};
 				accumulate_motor(motor, h_squared);
@@ -943,6 +972,28 @@ auto gse::vbd::solver::accumulate_motor(const velocity_motor_constraint& m, cons
 	}
 
 	m_solve_state[m.body_index].hessian += motor_hessian;
+}
+
+auto gse::vbd::solver::step_colored_body(const std::uint32_t body_idx, const time_squared h_squared, const time_step dt, const float alpha) -> void {
+	if (m_bodies[body_idx].locked || m_bodies[body_idx].sleeping()) {
+		return;
+	}
+
+	const auto& contacts = m_graph.contact_constraints();
+	const auto& joints = m_graph.joint_constraints();
+	const auto& motors = m_graph.motor_constraints();
+
+	m_solve_state[body_idx] = {};
+	for (const auto ci : m_graph.body_contact_indices(body_idx)) {
+		accumulate_contact(contacts[ci], m_frozen_jacobians[ci], body_idx, h_squared, alpha);
+	}
+	for (const auto ji : m_graph.body_joint_indices(body_idx)) {
+		accumulate_joint(joints[ji], body_idx, h_squared, dt, alpha);
+	}
+	if (const auto mi = m_body_motor_index[body_idx]; mi != no_motor) {
+		accumulate_motor(motors[mi], h_squared);
+	}
+	perform_newton_step(body_idx, h_squared);
 }
 
 auto gse::vbd::solver::perform_newton_step(const std::uint32_t body_idx, const time_squared h_squared) -> step_delta {

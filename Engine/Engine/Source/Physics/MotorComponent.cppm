@@ -12,5 +12,6 @@ export namespace gse::physics {
 		[[= networked]] bool horizontal_only = true;
 		[[= networked]] bool requires_ground_contact = true;
 		[[= networked]] force max_force = newtons(1000.f);
+		[[= networked]] float compliance = 0.5f;
 	};
 }

@@ -331,8 +331,8 @@ namespace gse::vbd {
 }
 
 auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> ctx) -> void {
-	constexpr auto storage_src = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_src;
-	constexpr auto storage_dst = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst;
+	constexpr gpu::buffer_usage storage_src{ gpu::buffer_flag::storage, gpu::buffer_flag::transfer_src };
+	constexpr gpu::buffer_usage storage_dst{ gpu::buffer_flag::storage, gpu::buffer_flag::transfer_dst };
 	constexpr auto storage_src_dst = storage_src | gpu::buffer_flag::transfer_dst;
 	constexpr std::size_t color_buffer_size =
 		limits.max_colors * sizeof(std::uint32_t) * 2 + limits.max_bodies * sizeof(std::uint32_t);
@@ -564,7 +564,7 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 			{
 				.size = (2 + limits.max_colors) * 3 * sizeof(std::uint32_t),
 				.stride = sizeof(dispatch_args),
-				.usage = gpu::buffer_flag::storage | gpu::buffer_flag::indirect,
+				.usage = { gpu::buffer_flag::storage, gpu::buffer_flag::indirect },
 				.bindless = true,
 				.writable = true
 			},
@@ -577,7 +577,7 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 			{
 				.size = (2 + limits.max_colors) * 3 * sizeof(std::uint32_t),
 				.stride = sizeof(dispatch_args),
-				.usage = gpu::buffer_flag::storage | gpu::buffer_flag::indirect,
+				.usage = { gpu::buffer_flag::storage, gpu::buffer_flag::indirect },
 				.bindless = true,
 				.writable = true
 			},

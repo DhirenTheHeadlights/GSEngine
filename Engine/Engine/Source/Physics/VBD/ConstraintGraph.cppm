@@ -27,7 +27,7 @@ export namespace gse::vbd {
 
 		auto compute_coloring(
 			std::uint32_t num_bodies,
-			std::span<const bool> locked
+			std::span<const bool> inactive
 		) -> void;
 
 		auto clear() -> void;
@@ -48,6 +48,8 @@ export namespace gse::vbd {
 
 		auto body_colors() const -> std::span<const std::vector<std::uint32_t>>;
 
+		auto overflow_bodies() const -> std::span<const std::uint32_t>;
+
 		auto body_contact_indices(
 			std::uint32_t body_idx
 		) const -> std::span<const std::uint32_t>;
@@ -61,6 +63,7 @@ export namespace gse::vbd {
 		std::vector<velocity_motor_constraint> m_motors;
 		std::vector<joint_constraint> m_joints;
 		std::inplace_vector<std::vector<std::uint32_t>, 64> m_body_colors;
+		std::vector<std::uint32_t> m_overflow_bodies;
 		std::vector<std::vector<std::uint32_t>> m_body_contacts;
 		std::vector<std::vector<std::uint32_t>> m_body_joints;
 		std::vector<std::vector<std::uint32_t>> m_adjacency;
@@ -104,11 +107,12 @@ auto gse::vbd::constraint_graph::sort_contacts_canonical() -> void {
 	});
 }
 
-auto gse::vbd::constraint_graph::compute_coloring(const std::uint32_t num_bodies, const std::span<const bool> locked) -> void {
+auto gse::vbd::constraint_graph::compute_coloring(const std::uint32_t num_bodies, const std::span<const bool> inactive) -> void {
 	for (auto& v : m_body_colors) {
 		v.clear();
 	}
 	m_body_colors.clear();
+	m_overflow_bodies.clear();
 
 	m_body_contacts.resize(num_bodies);
 	m_body_joints.resize(num_bodies);
@@ -134,14 +138,14 @@ auto gse::vbd::constraint_graph::compute_coloring(const std::uint32_t num_bodies
 	}
 
 	for (const auto& c : m_contacts) {
-		if (locked[c.body_a] || locked[c.body_b]) {
+		if (inactive[c.body_a] || inactive[c.body_b]) {
 			continue;
 		}
 		m_adjacency[c.body_a].push_back(c.body_b);
 		m_adjacency[c.body_b].push_back(c.body_a);
 	}
 	for (const auto& j : m_joints) {
-		if (locked[j.body_a] || locked[j.body_b]) {
+		if (inactive[j.body_a] || inactive[j.body_b]) {
 			continue;
 		}
 		m_adjacency[j.body_a].push_back(j.body_b);
@@ -154,21 +158,28 @@ auto gse::vbd::constraint_graph::compute_coloring(const std::uint32_t num_bodies
 
 	m_body_color_scratch.assign(num_bodies, -1);
 
+	const auto max_colors = static_cast<int>(m_body_colors.max_size());
+
 	for (std::uint32_t bi = 0; bi < num_bodies; ++bi) {
-		if (locked[bi] || (m_body_contacts[bi].empty() && m_body_joints[bi].empty())) {
+		if (inactive[bi] || (m_body_contacts[bi].empty() && m_body_joints[bi].empty())) {
 			continue;
 		}
 
 		std::uint64_t used_colors = 0;
 		for (const auto neighbor : m_adjacency[bi]) {
-			if (m_body_color_scratch[neighbor] >= 0 && m_body_color_scratch[neighbor] < 64) {
+			if (m_body_color_scratch[neighbor] >= 0) {
 				used_colors |= (1ull << m_body_color_scratch[neighbor]);
 			}
 		}
 
 		int color = 0;
-		while (color < 64 && (used_colors & (1ull << color))) {
+		while (color < max_colors && (used_colors & (1ull << color))) {
 			++color;
+		}
+
+		if (color >= max_colors) {
+			m_overflow_bodies.push_back(bi);
+			continue;
 		}
 
 		m_body_color_scratch[bi] = color;
@@ -188,6 +199,7 @@ auto gse::vbd::constraint_graph::clear() -> void {
 		v.clear();
 	}
 	m_body_colors.clear();
+	m_overflow_bodies.clear();
 }
 
 auto gse::vbd::constraint_graph::clear_joints() -> void {
@@ -220,6 +232,10 @@ auto gse::vbd::constraint_graph::joint_constraints() const -> std::span<const jo
 
 auto gse::vbd::constraint_graph::body_colors() const -> std::span<const std::vector<std::uint32_t>> {
 	return m_body_colors;
+}
+
+auto gse::vbd::constraint_graph::overflow_bodies() const -> std::span<const std::uint32_t> {
+	return m_overflow_bodies;
 }
 
 auto gse::vbd::constraint_graph::body_contact_indices(const std::uint32_t body_idx) const -> std::span<const std::uint32_t> {

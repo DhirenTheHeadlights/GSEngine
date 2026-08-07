@@ -28,6 +28,8 @@ namespace gse::renderer::physics_transform {
 	struct [[= shaders::shader_struct]] push_constants {
 		std::uint32_t mapping_count;
 		std::uint32_t body_count;
+		time_t<float, seconds> interpolation_lag;
+		time_t<float, seconds> frame_delta;
 	};
 
 	struct [[
@@ -120,6 +122,11 @@ auto gse::renderer::physics_transform::frame(context& ctx, shared_view<gpu::cont
 		co_return;
 	}
 
+	auto interpolation_lag = system_clock::fixed_lag<time_t<float, seconds>>();
+	if (const auto& interpolation = ctx.read_channel<physics::interpolation_state>(); !interpolation.empty() && !interpolation[0].advancing) {
+		interpolation_lag = time_t<float, seconds>{};
+	}
+
 	if (!d.body_views[frame_index].valid()) {
 		d.body_views[frame_index] = gpu_s.device->allocate_buffer_slot();
 	}
@@ -135,6 +142,8 @@ auto gse::renderer::physics_transform::frame(context& ctx, shared_view<gpu::cont
 		{
 			.mapping_count = d.cached_mapping_count,
 			.body_count = info.body_count,
+			.interpolation_lag = interpolation_lag,
+			.frame_delta = system_clock::dt<time_t<float, seconds>>(),
 		},
 		{
 			.body_data = d.body_views[frame_index].slot(),
