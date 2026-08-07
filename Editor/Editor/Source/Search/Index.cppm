@@ -130,6 +130,60 @@ export namespace gse::ide::search {
 		std::vector<analysis::param_token> params;
 	};
 
+	enum class loc_origin : std::uint8_t {
+		engine,
+		editor,
+		project,
+	};
+
+	enum class loc_language : std::uint8_t {
+		cpp,
+		slang,
+	};
+
+	struct loc_bucket {
+		loc_origin origin = loc_origin::engine;
+		loc_language language = loc_language::cpp;
+	};
+
+	struct loc_group {
+		std::uint64_t cpp = 0;
+		std::uint64_t slang = 0;
+
+		auto operator==(
+			const loc_group&
+		) const -> bool = default;
+	};
+
+	struct loc_counts {
+		loc_group engine;
+		loc_group editor;
+		loc_group project;
+
+		auto operator==(
+			const loc_counts&
+		) const -> bool = default;
+	};
+
+	struct loc_index {
+		std::atomic<std::uint64_t> engine_cpp = 0;
+		std::atomic<std::uint64_t> engine_slang = 0;
+		std::atomic<std::uint64_t> editor_cpp = 0;
+		std::atomic<std::uint64_t> editor_slang = 0;
+		std::atomic<std::uint64_t> project_cpp = 0;
+		std::atomic<std::uint64_t> project_slang = 0;
+
+		auto store(
+			const loc_counts& counts
+		) -> void;
+
+		auto load() const -> loc_counts;
+	};
+
+	auto loc_total(
+		const loc_counts& counts
+	) -> std::uint64_t;
+
 	struct file_build_result : non_copyable {
 		file_build_result() = default;
 
@@ -146,7 +200,7 @@ export namespace gse::ide::search {
 		module_index modules;
 		id_mapped_collection<file_entry> files;
 		id_mapped_collection<std::shared_ptr<content_entry>> content;
-		std::uint64_t cpp_loc = 0;
+		loc_counts loc;
 	};
 
 	enum class lookup_failure {
@@ -264,7 +318,7 @@ export namespace gse::ide::search {
 		std::vector<index_root> roots;
 		std::atomic<bool> symbols_ready = false;
 		std::atomic<bool> building = false;
-		std::atomic<std::uint64_t> cpp_loc = 0;
+		loc_index loc;
 		std::atomic<std::size_t> progress_total = 0;
 		std::atomic<std::size_t> progress_done = 0;
 		std::atomic<gse::time_t<double>> phase_started{};
@@ -454,9 +508,24 @@ namespace gse::ide::search {
 		std::string_view ext
 	) -> bool;
 
-	auto is_counted_source_dir(
+	auto source_dir_origin(
 		std::string_view name
-	) -> bool;
+	) -> std::optional<loc_origin>;
+
+	auto loc_language_of(
+		std::string_view ext
+	) -> std::optional<loc_language>;
+
+	auto classify_loc(
+		const index_root& owner,
+		const std::filesystem::path& path
+	) -> std::optional<loc_bucket>;
+
+	auto add_loc(
+		loc_counts& counts,
+		loc_bucket bucket,
+		std::uint64_t lines
+	) -> void;
 
 	auto compute_line_starts(
 		std::string_view blob
@@ -751,8 +820,108 @@ auto gse::ide::search::is_cpp_ext(const std::string_view ext) -> bool {
 	return std::ranges::find(list, ext) != std::ranges::end(list);
 }
 
-auto gse::ide::search::is_counted_source_dir(const std::string_view name) -> bool {
-	return name == "Editor" || name == "Engine" || name == "Game" || name == "Server";
+auto gse::ide::search::source_dir_origin(const std::string_view name) -> std::optional<loc_origin> {
+	if (name == "Engine") {
+		return loc_origin::engine;
+	}
+	if (name == "Editor") {
+		return loc_origin::editor;
+	}
+	if (name == "Game" || name == "Server") {
+		return loc_origin::project;
+	}
+	return std::nullopt;
+}
+
+auto gse::ide::search::loc_language_of(const std::string_view ext) -> std::optional<loc_language> {
+	if (is_cpp_ext(ext)) {
+		return loc_language::cpp;
+	}
+	if (ext == ".slang") {
+		return loc_language::slang;
+	}
+	return std::nullopt;
+}
+
+auto gse::ide::search::classify_loc(const index_root& owner, const std::filesystem::path& path) -> std::optional<loc_bucket> {
+	const std::optional<loc_language> language = loc_language_of(to_lower(path.extension().native_encoded_string()));
+	if (!language) {
+		return std::nullopt;
+	}
+	const std::filesystem::path relative = path.lexically_normal().lexically_relative(owner.path.lexically_normal());
+	if (relative.empty()) {
+		return std::nullopt;
+	}
+	if (owner.is_project) {
+		return loc_bucket{
+			.origin = loc_origin::project,
+			.language = *language,
+		};
+	}
+	const std::string first = relative.begin()->display_string();
+	if (const std::optional<loc_origin> origin = source_dir_origin(first)) {
+		return loc_bucket{
+			.origin = *origin,
+			.language = *language,
+		};
+	}
+	if (*language != loc_language::slang || first != "Resources") {
+		return std::nullopt;
+	}
+	const std::optional<loc_origin> shader_origin = source_dir_origin(owner.name);
+	if (!shader_origin) {
+		return std::nullopt;
+	}
+	return loc_bucket{
+		.origin = *shader_origin,
+		.language = *language,
+	};
+}
+
+auto gse::ide::search::add_loc(loc_counts& counts, const loc_bucket bucket, const std::uint64_t lines) -> void {
+	loc_group* group = &counts.project;
+	if (bucket.origin == loc_origin::engine) {
+		group = &counts.engine;
+	}
+	else if (bucket.origin == loc_origin::editor) {
+		group = &counts.editor;
+	}
+	if (bucket.language == loc_language::cpp) {
+		group->cpp += lines;
+	}
+	else {
+		group->slang += lines;
+	}
+}
+
+auto gse::ide::search::loc_total(const loc_counts& counts) -> std::uint64_t {
+	return counts.engine.cpp + counts.engine.slang + counts.editor.cpp + counts.editor.slang + counts.project.cpp + counts.project.slang;
+}
+
+auto gse::ide::search::loc_index::store(const loc_counts& counts) -> void {
+	engine_cpp.store(counts.engine.cpp, std::memory_order_release);
+	engine_slang.store(counts.engine.slang, std::memory_order_release);
+	editor_cpp.store(counts.editor.cpp, std::memory_order_release);
+	editor_slang.store(counts.editor.slang, std::memory_order_release);
+	project_cpp.store(counts.project.cpp, std::memory_order_release);
+	project_slang.store(counts.project.slang, std::memory_order_release);
+}
+
+auto gse::ide::search::loc_index::load() const -> loc_counts {
+	return {
+		.engine = {
+			.cpp = engine_cpp.load(std::memory_order_acquire),
+			.slang = engine_slang.load(std::memory_order_acquire),
+		},
+		.editor = {
+			.cpp = editor_cpp.load(std::memory_order_acquire),
+			.slang = editor_slang.load(std::memory_order_acquire),
+		},
+		.project = {
+			.cpp = project_cpp.load(std::memory_order_acquire),
+			.slang = project_slang.load(std::memory_order_acquire),
+		},
+	};
 }
 
 auto gse::ide::search::compute_line_starts(const std::string_view blob) -> std::vector<std::uint32_t> {
@@ -1837,24 +2006,23 @@ auto gse::ide::search::build_files_and_content(index_state& idx, const std::span
 		entry.blob = std::move(data);
 	});
 
-	std::uint64_t loc = 0;
+	loc_counts loc;
 	module_index module_defs;
 	for (const std::shared_ptr<content_entry>& entry_ptr : content_entries) {
 		const content_entry& entry = *entry_ptr;
-		if (entry.line_starts.empty() || !is_symbol_source(entry.path)) {
+		if (entry.line_starts.empty()) {
 			continue;
 		}
-		scan_modules(entry.path, entry.blob, entry.line_starts, module_defs);
+		if (is_symbol_source(entry.path)) {
+			scan_modules(entry.path, entry.blob, entry.line_starts, module_defs);
+		}
 		const index_root* owner = owning_root(roots, entry.path);
 		if (!owner) {
 			continue;
 		}
-		std::error_code rel_ec;
-		const std::filesystem::path rel = std::filesystem::relative(entry.path, owner->path, rel_ec);
-		if (rel_ec || rel.empty() || !(owner->is_project || is_counted_source_dir(rel.begin()->display_string()))) {
-			continue;
+		if (const std::optional<loc_bucket> bucket = classify_loc(*owner, entry.path)) {
+			add_loc(loc, *bucket, entry.line_starts.size() - 1);
 		}
-		loc += entry.line_starts.size() - 1;
 	}
 	rebuild_module_lookups(module_defs);
 	{
@@ -1863,7 +2031,7 @@ auto gse::ide::search::build_files_and_content(index_state& idx, const std::span
 		idx.completed_files->modules = std::move(module_defs);
 		idx.completed_files->files = std::move(files);
 		idx.completed_files->content = std::move(content);
-		idx.completed_files->cpp_loc = loc;
+		idx.completed_files->loc = loc;
 	}
 }
 
@@ -1962,22 +2130,21 @@ auto gse::ide::search::update_file(index_state& idx, const std::filesystem::path
 		}
 	}
 
-	std::uint64_t loc = 0;
+	loc_counts loc;
 	for (const std::shared_ptr<content_entry>& entry_ptr : idx.content.entries.items()) {
 		const content_entry& entry = *entry_ptr;
-		if (!is_symbol_source(entry.path)) {
+		if (entry.line_starts.empty()) {
 			continue;
 		}
 		const index_root* owner = owning_root(idx.roots, entry.path);
 		if (!owner) {
 			continue;
 		}
-		const std::filesystem::path relative = entry.path.lexically_relative(owner->path);
-		if (!relative.empty() && (owner->is_project || is_counted_source_dir(relative.begin()->display_string())) && !entry.line_starts.empty()) {
-			loc += entry.line_starts.size() - 1;
+		if (const std::optional<loc_bucket> bucket = classify_loc(*owner, entry.path)) {
+			add_loc(loc, *bucket, entry.line_starts.size() - 1);
 		}
 	}
-	idx.cpp_loc.store(loc, std::memory_order_release);
+	idx.loc.store(loc);
 	publish_file_search_snapshot(idx);
 	if (symbols_changed) {
 		publish_symbol_search_snapshot(idx);
@@ -2505,7 +2672,7 @@ auto gse::ide::search::publish_file_build(index_state& idx) -> void {
 		idx.modules = std::move(completed->modules);
 		idx.files.entries = std::move(completed->files);
 		idx.content.entries = std::move(completed->content);
-		idx.cpp_loc.store(completed->cpp_loc, std::memory_order_release);
+		idx.loc.store(completed->loc);
 		publish_file_search_snapshot(idx);
 	}
 	idx.files.loaded.store(true, std::memory_order_release);
