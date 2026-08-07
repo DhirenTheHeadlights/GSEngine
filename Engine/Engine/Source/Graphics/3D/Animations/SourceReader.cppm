@@ -24,7 +24,10 @@ export namespace gse::animation {
 		auto u32() -> std::uint32_t;
 		auto f32() -> float;
 		auto string() -> std::string;
-		auto translation() -> vec3<displacement>;
+		auto vec2() -> vec2f;
+		auto vec3() -> vec3f;
+		auto vec4() -> vec4f;
+		auto translation() -> gse::vec3<displacement>;
 		auto rotation() -> quat;
 		auto matrix() -> mat4f;
 		auto shape() -> physics::collision_shape;
@@ -34,8 +37,8 @@ export namespace gse::animation {
 			std::size_t count
 		) -> void;
 
-		auto exhausted() const -> bool;
 		auto overran() const -> bool;
+		auto remaining() const -> std::size_t;
 
 	private:
 		std::vector<std::byte> m_data;
@@ -66,7 +69,7 @@ auto gse::animation::source_reader::open(const std::filesystem::path& path, cons
 }
 
 auto gse::animation::source_reader::bytes(void* destination, const std::size_t count) -> void {
-	if (m_cursor + count > m_data.size()) {
+	if (m_overran || count > m_data.size() - m_cursor) {
 		m_overran = true;
 		std::memset(destination, 0, count);
 		return;
@@ -100,12 +103,38 @@ auto gse::animation::source_reader::f32() -> float {
 }
 
 auto gse::animation::source_reader::string() -> std::string {
-	std::string value(u32(), '\0');
+	const auto length = u32();
+	if (length > remaining()) {
+		m_overran = true;
+		return {};
+	}
+	std::string value(length, '\0');
 	bytes(value.data(), value.size());
 	return value;
 }
 
-auto gse::animation::source_reader::translation() -> vec3<displacement> {
+auto gse::animation::source_reader::vec2() -> vec2f {
+	const auto x = f32();
+	const auto y = f32();
+	return { x, y };
+}
+
+auto gse::animation::source_reader::vec3() -> vec3f {
+	const auto x = f32();
+	const auto y = f32();
+	const auto z = f32();
+	return { x, y, z };
+}
+
+auto gse::animation::source_reader::vec4() -> vec4f {
+	const auto x = f32();
+	const auto y = f32();
+	const auto z = f32();
+	const auto w = f32();
+	return { x, y, z, w };
+}
+
+auto gse::animation::source_reader::translation() -> gse::vec3<displacement> {
 	const auto x = f32();
 	const auto y = f32();
 	const auto z = f32();
@@ -152,14 +181,14 @@ auto gse::animation::source_reader::shape() -> physics::collision_shape {
 		};
 	}
 	return physics::box_shape{
-		.size = vec3<length>(x, y, z) * 2.f,
+		.size = gse::vec3<length>(x, y, z) * 2.f,
 	};
-}
-
-auto gse::animation::source_reader::exhausted() const -> bool {
-	return m_cursor >= m_data.size();
 }
 
 auto gse::animation::source_reader::overran() const -> bool {
 	return m_overran;
+}
+
+auto gse::animation::source_reader::remaining() const -> std::size_t {
+	return m_overran ? 0 : m_data.size() - m_cursor;
 }

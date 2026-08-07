@@ -81,14 +81,20 @@ auto gse::renderer::rt_shadow::frame(context& ctx, shared_view<gpu::context::dat
 	const auto& data = render_items[0];
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
-	std::vector<const mesh*> new_blas_meshes;
+	std::vector<blas_key> new_blas_keys;
 	gpu::device_size max_blas_scratch = 0;
 
 	for (const auto& batch : data.normal_batches) {
-		const auto& m = batch.key.model_ptr->meshes()[batch.key.mesh_index];
-		const auto* mesh_ptr = &m;
+		if (batch.key.skinned.valid()) {
+			continue;
+		}
 
-		if (d.blas_cache.contains(mesh_ptr)) {
+		const auto& owner = batch.key.model_snapshot;
+		const auto& m = owner->meshes()[batch.key.mesh_index];
+		const auto* mesh_ptr = &m;
+		const blas_key cache_key{ batch.key.model.id(), static_cast<std::uint32_t>(batch.key.mesh_index) };
+
+		if (const auto cached = d.blas_cache.find(cache_key); cached != d.blas_cache.end() && cached->second.source == mesh_ptr) {
 			continue;
 		}
 
@@ -123,15 +129,21 @@ auto gse::renderer::rt_shadow::frame(context& ctx, shared_view<gpu::context::dat
 		});
 		const std::uint32_t prim_count = index_count / 3;
 
-		d.blas_cache[mesh_ptr] = gpu_s.device->create_blas(geometry, prim_count);
+		d.blas_cache.insert_or_assign(
+			cache_key,
+			blas_entry{
+				.source = mesh_ptr,
+				.blas = gpu_s.device->create_blas(geometry, prim_count)
+			}
+		);
 
 		const auto sizes = gpu_s.device->query_blas_build_sizes(geometry, prim_count);
 		max_blas_scratch = std::max(max_blas_scratch, sizes.build_scratch_size);
 
-		new_blas_meshes.push_back(mesh_ptr);
+		new_blas_keys.push_back(cache_key);
 	}
 
-	if (!new_blas_meshes.empty()) {
+	if (!new_blas_keys.empty()) {
 		const auto scratch_alignment = gpu_s.device->acceleration_structure_scratch_alignment();
 		const auto required_scratch = max_blas_scratch + scratch_alignment;
 		if (d.blas_scratch[frame_index].size() < required_scratch) {
@@ -159,15 +171,15 @@ auto gse::renderer::rt_shadow::frame(context& ctx, shared_view<gpu::context::dat
 			++render_queue_idx;
 			continue;
 		}
-		const auto& mdl = entry.model.resolve();
-		if (entry.index >= mdl.meshes().size()) {
+		const auto& mdl = queue_entry.model_snapshot;
+		if (entry.index >= mdl->meshes().size()) {
 			++render_queue_idx;
 			continue;
 		}
 
-		const auto* mesh_ptr = &mdl.meshes()[entry.index];
-		const auto it = d.blas_cache.find(mesh_ptr);
-		if (it == d.blas_cache.end()) {
+		const auto* mesh_ptr = &mdl->meshes()[entry.index];
+		const auto it = d.blas_cache.find({ entry.model.id(), static_cast<std::uint32_t>(entry.index) });
+		if (it == d.blas_cache.end() || it->second.source != mesh_ptr) {
 			++render_queue_idx;
 			continue;
 		}
@@ -181,7 +193,7 @@ auto gse::renderer::rt_shadow::frame(context& ctx, shared_view<gpu::context::dat
 			.transform = entry.model_matrix,
 			.custom_index = palette_idx,
 			.cull_disable = true,
-			.blas_address = it->second.device_address()
+			.blas_address = it->second.blas.device_address()
 		});
 
 		if constexpr (use_gpu_tlas_transform_update) {
@@ -227,7 +239,9 @@ auto gse::renderer::rt_shadow::frame(context& ctx, shared_view<gpu::context::dat
 	}
 
 	const auto build_new_blas = [&](auto& rec) {
-		for (const auto* mesh_ptr : new_blas_meshes) {
+		for (const auto& cache_key : new_blas_keys) {
+			auto& cached = d.blas_cache.at(cache_key);
+			const auto* mesh_ptr = cached.source;
 			const auto vertex_count = static_cast<std::uint32_t>(mesh_ptr->vertex_gpu_buffer().size() / sizeof(vertex));
 			const auto index_count = static_cast<std::uint32_t>(mesh_ptr->index_gpu_buffer().size() / sizeof(std::uint32_t));
 
@@ -240,7 +254,7 @@ auto gse::renderer::rt_shadow::frame(context& ctx, shared_view<gpu::context::dat
 			});
 			const std::uint32_t prim_count = index_count / 3;
 
-			gpu::build_blas_in_place(*gpu_s.device, d.blas_cache.at(mesh_ptr).handle(), geometry, prim_count, d.blas_scratch[frame_index], rec);
+			gpu::build_blas_in_place(*gpu_s.device, cached.blas.handle(), geometry, prim_count, d.blas_scratch[frame_index], rec);
 		}
 	};
 

@@ -18,10 +18,17 @@ import gse.math;
 import gse.log;
 
 export namespace gse::renderer::rt_shadow {
+	using blas_key = std::pair<id, std::uint32_t>;
+
+	struct blas_entry {
+		const mesh* source = nullptr;
+		gpu::blas blas;
+	};
+
 	struct [[= gse::system_state<"RtShadow">{}]] data {
 		[[= gse::shared]] per_frame_resource<const gpu::tlas*> tlas_ptrs{};
 
-		std::unordered_map<const mesh*, gpu::blas> blas_cache;
+		std::flat_map<blas_key, blas_entry> blas_cache;
 		per_frame_resource<gpu::buffer> blas_scratch;
 		per_frame_resource<gpu::tlas> tlas_per_frame;
 		per_frame_resource<linear_vector<gpu::tlas_instance_desc>> instances;

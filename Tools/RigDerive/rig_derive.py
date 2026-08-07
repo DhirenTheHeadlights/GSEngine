@@ -196,18 +196,37 @@ def parse_gskel(path):
     return joints
 
 
-def parse_gsmdl_v1(path):
+def parse_gsmdl_source(path):
+    """Read an exporter-written .gsmdl. v1 stores a bare material string; the
+    PBR block only appears at v2."""
     r = Reader(path.read_bytes())
     if r.raw(4) != GSMDL_MAGIC:
         raise ValueError(f'{path}: not a .gsmdl')
     version = r.u32()
-    if version != 1:
-        raise ValueError(f'{path}: expected v1, got v{version}')
+    if version not in (1, 2):
+        raise ValueError(f'{path}: expected exporter v1 or v2, got v{version}')
     mesh_count = r.u32()
 
     meshes = []
     for _ in range(mesh_count):
-        material = r.string()
+        if version >= 2:
+            material = {
+                'base_color': r.f32(3),
+                'roughness': r.f32(1)[0],
+                'metallic': r.f32(1)[0],
+                'albedo': r.string(),
+                'normal': r.string(),
+                'rm': r.string(),
+            }
+        else:
+            material = {
+                'base_color': (1.0, 1.0, 1.0),
+                'roughness': 0.5,
+                'metallic': 0.0,
+                'albedo': r.string(),
+                'normal': b'',
+                'rm': b'',
+            }
         vertex_count = r.u32()
         verts = []
         for _ in range(vertex_count):
@@ -523,7 +542,13 @@ def write_gsmdl_v3(path, meshes, rig):
 
     u32(len(meshes))
     for m in meshes:
-        blob(m['material'])
+        mat = m['material']
+        f32(*mat['base_color'])
+        f32(mat['roughness'])
+        f32(mat['metallic'])
+        blob(mat['albedo'])
+        blob(mat['normal'])
+        blob(mat['rm'])
         u32(len(m['verts']))
         for v in m['verts']:
             f32(*v['pos'])
@@ -605,6 +630,11 @@ def verify_gsmdl_v3(path):
     mesh_count = r.u32()
     total_verts = 0
     for _ in range(mesh_count):
+        r.f32(3)
+        r.f32(1)
+        r.f32(1)
+        r.string()
+        r.string()
         r.string()
         vertex_count = r.u32()
         total_verts += vertex_count
@@ -688,15 +718,38 @@ def report(rig, meshes, args, out_path, out_size):
     return '\n'.join(lines)
 
 
+def project_dirs(project_root):
+    """Resolve a project's art and assets directories from its .gseproj.
+
+    The leaf names are declared per project, so tools must not assume them.
+    """
+    leaves = {'art': 'Art', 'assets': 'Assets'}
+    manifests = sorted(project_root.glob('*.gseproj'))
+    if manifests:
+        section = None
+        for raw in manifests[0].read_text(encoding='utf-8', errors='replace').splitlines():
+            line = raw.strip()
+            if line.startswith('['):
+                section = line.strip('[]').strip()
+            elif section == 'project' and '=' in line:
+                key, _, value = line.partition('=')
+                key = key.strip()
+                if key in leaves:
+                    leaves[key] = value.strip()
+    return project_root / leaves['art'], project_root / leaves['assets']
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--skeleton', type=Path,
-                    default=Path('Sandbox/Assets/Skeletons/character.gskel'))
-    ap.add_argument('--model', type=Path,
-                    default=Path('Sandbox/Assets/SkinnedModels/character.gsmdl'))
+    ap.add_argument('--project', type=Path, default=Path('Sandbox'),
+                    help='project root; art and asset directories come from its .gseproj')
+    ap.add_argument('--name', type=str, default='x_bot',
+                    help='stem of the .gskel / .gsmdl pair inside the art directory')
+    ap.add_argument('--skeleton', type=Path, default=None)
+    ap.add_argument('--model', type=Path, default=None)
     ap.add_argument('--out', type=Path, default=None,
-                    help='defaults to <model>.v3.gsmdl so the v1 source is never clobbered')
+                    help='engine-consumable output directory or file')
     ap.add_argument('--min-extent', type=float, default=0.08,
                     help='prune a leaf bone whose fitted longest dimension is below this (m)')
     ap.add_argument('--min-fit-points', type=int, default=8,
@@ -711,11 +764,16 @@ def main():
     ap.add_argument('--dry-run', action='store_true', help='report only, write nothing')
     args = ap.parse_args()
 
+    art_dir, assets_dir = project_dirs(args.project)
+    args.skeleton = args.skeleton or art_dir / f'{args.name}.gskel'
+    args.model = args.model or art_dir / f'{args.name}.gsmdl'
+    args.out = args.out or assets_dir / 'SkinnedModels'
+
     joints = parse_gskel(args.skeleton)
-    meshes = parse_gsmdl_v1(args.model)
+    meshes = parse_gsmdl_source(args.model)
     rig = derive(joints, meshes, args)
 
-    out_path = args.out or args.model.with_suffix('.v3.gsmdl')
+    out_path = args.out / (args.model.stem + '.v3.gsmdl') if args.out.is_dir() else args.out
     size = 0 if args.dry_run else write_gsmdl_v3(out_path, meshes, rig)
     print(report(rig, meshes, args, 'nothing (dry run)' if args.dry_run else out_path, size))
 

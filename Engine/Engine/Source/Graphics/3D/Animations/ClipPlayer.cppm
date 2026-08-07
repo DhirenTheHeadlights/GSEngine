@@ -3,6 +3,7 @@ export module gse.graphics:clip_player;
 import std;
 
 import :animation_components;
+import :blend_space;
 import :clip;
 import :skinned_model;
 
@@ -23,8 +24,28 @@ export namespace gse::animation {
 		quat orientation = quat(1.f, 0.f, 0.f, 0.f);
 	};
 
+	struct clip_binding {
+		static constexpr std::uint16_t no_track = std::numeric_limits<std::uint16_t>::max();
+
+		std::array<std::uint16_t, skeleton_instance_component::max_bones> track_by_slot{};
+		velocity ground_speed;
+	};
+
+	struct clip_binding_key {
+		id model;
+		std::uint32_t model_version = 0;
+		id clip;
+		std::uint32_t clip_version = 0;
+
+		auto operator<=>(
+			const clip_binding_key&
+		) const = default;
+	};
+
 	struct [[= gse::system_state<"ClipPlayer">{}, = gse::settings::category<"Animation">{}]] data {
 		[[= gse::settings::describe<"Advance clip playback each frame.">{}]] bool play = true;
+
+		std::flat_map<clip_binding_key, clip_binding> bindings;
 	};
 
 	auto compose(
@@ -33,11 +54,12 @@ export namespace gse::animation {
 		const quat& rotation
 	) -> joint_transform;
 
-	auto advance(
-		clip_player_component& player,
+	auto binding_for(
+		data& d,
+		const skinned_model& model,
 		const clip_asset& clip,
-		time dt
-	) -> void;
+		clip_binding_key key
+	) -> const clip_binding&;
 
 	[[= gse::system_run<>{}]]
 	auto run(

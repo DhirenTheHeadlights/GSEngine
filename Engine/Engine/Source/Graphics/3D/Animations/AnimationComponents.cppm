@@ -19,12 +19,22 @@ export namespace gse {
 		[[= networked]] id proxy;
 		[[= networked]] std::array<id, max_bones> bones{};
 		[[= networked]] std::uint32_t bone_count = 0;
+		[[= networked]] bool ragdolling = false;
+	};
+
+	struct clip_layer {
+		resource::handle<clip_asset> clip{};
+		float weight = 0.f;
 	};
 
 	struct clip_player_component {
-		[[= networked]] resource::handle<clip_asset> clip{};
-		[[= networked]] time elapsed;
-		[[= networked]] float speed = 1.f;
+		static constexpr std::size_t max_layers = 6;
+
+		[[= networked]] std::array<clip_layer, max_layers> layers{};
+		[[= networked]] std::uint32_t layer_count = 0;
+		[[= networked]] float phase = 0.f;
+		[[= networked]] velocity desired_speed;
 		[[= networked]] bool playing = true;
+		[[= networked]] bool apply_root_motion = false;
 	};
 }
