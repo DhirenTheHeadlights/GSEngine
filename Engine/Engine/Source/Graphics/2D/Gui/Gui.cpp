@@ -21,6 +21,7 @@ import :render_layer;
 import :interaction;
 import :symbols;
 import :tab_strip;
+import :widget_context;
 
 
 import gse.os;
@@ -87,7 +88,7 @@ auto gse::gui::tab_chrome_height(const data& d, const menu& m, const float width
 	}
 
 	const style& sty = d.fstate.sty;
-	const float row_h = d.fonts.text->line_height(sty.font_size) + sty.padding;
+	const float row_h = d.fonts.text.resolve()->line_height(sty.font_size) + sty.padding;
 	const float tab_gap = 2.f * sty.scale_factor;
 	const float scrollbar_h = 6.f * sty.scale_factor;
 	const float available_width = std::max(0.f, width - sty.padding * 2.f);
@@ -170,17 +171,38 @@ auto gse::gui::init_body(context& ctx, const shared_view<window::data> window_s,
 
 	d.blank_texture = asset::queue<texture>(assets, "blank", vec4f(1, 1, 1, 1));
 
-	if (!d.ui_font.value.empty() && !d.code_font.value.empty()) {
-		const std::string& ui_name = d.ui_font.value;
-		const std::string& code_name = d.code_font.value;
-		d.fonts.text = co_await asset::load<gse::font>(ctx, assets, ui_name);
-		d.fonts.code = co_await asset::load<gse::font>(ctx, assets, code_name);
-		d.fonts.registry[ui_name] = d.fonts.text;
-		d.fonts.registry[code_name] = d.fonts.code;
+	const bool fonts_requested = !d.ui_font.value.empty() && !d.code_font.value.empty();
+	const std::string& ui_name = d.ui_font.value;
+	const std::string& code_name = d.code_font.value;
+
+	auto text_font = fonts_requested ? asset::get<gse::font>(assets, ui_name) : resource::handle<gse::font>{};
+	auto code_font = fonts_requested ? asset::get<gse::font>(assets, code_name) : resource::handle<gse::font>{};
+
+	auto settled = [](const auto& handle) {
+		return handle.valid() || handle.state() == resource::state::failed;
+	};
+	auto failed = [](const auto& handle, const std::string_view what) {
+		if (handle.state() != resource::state::failed) {
+			return false;
+		}
+		const auto error = handle.error();
+		assert(false, "Unable to load {}: {}", what, error ? error->detail : "Unknown asset error");
+		return true;
+	};
+
+	while (!settled(d.blank_texture) || (fonts_requested && (!settled(text_font) || !settled(code_font)))) {
+		co_await ctx.yield_tick();
 	}
 
-	while (asset::resource_state<texture>(assets, d.blank_texture.id()) != resource::state::loaded) {
-		co_await ctx.yield_tick();
+	if (failed(d.blank_texture, "blank texture") || (fonts_requested && (failed(text_font, "UI font") || failed(code_font, "code font")))) {
+		co_return;
+	}
+
+	if (fonts_requested) {
+		d.fonts.text = std::move(text_font);
+		d.fonts.code = std::move(code_font);
+		d.fonts.registry[ui_name] = d.fonts.text;
+		d.fonts.registry[code_name] = d.fonts.code;
 	}
 	d.display_scale = window_s.content_scale;
 	d.ui_scale_by_monitor = load_ui_scales(d.file_path);
@@ -379,6 +401,7 @@ auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_
 	d.hot_widget_id = {};
 
 	d.input_layer_render = (d.menu_stack.captures_input() || d.context_menu.open) ? render_layer::popup : render_layer::content;
+	d.input_suppressed = window_s.cursor_captured;
 
 	d.name_to_menu_id.clear();
 	for (menu& m : d.menus.items()) {
@@ -545,8 +568,9 @@ auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_
 	if (d.tooltip.widget_id.exists() && d.tooltip.hover_time >= tooltip_state::show_delay && !d.tooltip.text.empty() && d.fonts.text.valid()) {
 		const float padding = d.fstate.sty.padding;
 		const float font_size = d.fstate.sty.font_size;
-		const float text_width = d.fonts.text->width(d.tooltip.text, font_size);
-		const float text_height = d.fonts.text->line_height(font_size);
+		const auto text_view = d.fonts.text.resolve();
+		const float text_width = text_view->width(d.tooltip.text, font_size);
+		const float text_height = text_view->line_height(font_size);
 
 		const float tooltip_width = text_width + padding * 2.f;
 		const float tooltip_height = text_height + padding;
@@ -590,7 +614,7 @@ auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_
 		d.text_commands.push_back({
 			.font = d.fonts.text,
 			.text = intern_text(d, d.tooltip.text),
-			.position = { tooltip_rect.left() + padding, tooltip_rect.center().y() + d.fonts.text->vertical_center_offset(font_size) },
+			.position = { tooltip_rect.left() + padding, tooltip_rect.center().y() + text_view->vertical_center_offset(font_size) },
 			.scale = font_size,
 			.color = d.fstate.sty.color_text,
 			.layer = render_layer::modal,
@@ -794,10 +818,9 @@ auto gse::gui::process_menu(data& d, const gse::input::state& input_state, const
 
 	ids::scope menu_scope(current_menu.id().number());
 
-	draw_context ctx{
+	widget_context ctx{ {
 		.current_menu = &current_menu,
 		.style = sty,
-		.input = input_state,
 		.fonts = d.fonts,
 		.blank_texture = d.blank_texture,
 		.layout_cursor = layout_cursor,
@@ -810,11 +833,12 @@ auto gse::gui::process_menu(data& d, const gse::input::state& input_state, const
 		.current_layer = layer,
 		.current_z_order = menu_z,
 		.input_layer = d.input_layer_render,
+		.input_suppressed = d.input_suppressed,
 		.hit_regions = &d.input_layers_data,
 		.tooltip = &d.tooltip,
 		.context_menu = &d.context_menu,
 		.clip_stack = { body_rect },
-	};
+	}, input_state };
 
 	d.hot_widget_id = {};
 	d.context = &ctx;
@@ -882,7 +906,7 @@ auto gse::gui::caption_button(builder& b, const rectf& rect, const std::string& 
 	const id widget_id = ids::make(key);
 
 	const bool hovered = ctx.hovers(rect);
-	const bool released = ctx.input.mouse_button_released(mouse_button::button_1);
+	const bool released = ctx.mouse_released();
 
 	interaction::mark_hot(b.hot_widget_id, widget_id, hovered);
 	const bool activated = interaction::activate_on_click(b.active_widget_id, widget_id, hovered, ctx.mouse_pressed_for(rect), released);
@@ -990,10 +1014,9 @@ auto gse::gui::process_screen(data& d, const gse::input::state& input_state, con
 
 	ids::scope screen_scope(d.screen_surface->id().number());
 
-	draw_context ctx{
+	widget_context ctx{ {
 		.current_menu = &*d.screen_surface,
 		.style = sty,
-		.input = input_state,
 		.fonts = d.fonts,
 		.blank_texture = d.blank_texture,
 		.layout_cursor = layout_cursor,
@@ -1005,11 +1028,12 @@ auto gse::gui::process_screen(data& d, const gse::input::state& input_state, con
 		.widget_scrolls = d.widget_scrolls,
 		.current_layer = render_layer::popup,
 		.input_layer = d.input_layer_render,
+		.input_suppressed = d.input_suppressed,
 		.hit_regions = &d.input_layers_data,
 		.tooltip = &d.tooltip,
 		.context_menu = &d.context_menu,
 		.clip_stack = { body_rect },
-	};
+	}, input_state };
 
 	d.hot_widget_id = {};
 	d.context = &ctx;
@@ -1203,7 +1227,7 @@ auto gse::gui::draw_menu_chrome(data& d, const gse::input::state& input_state, m
 			d.text_commands.push_back({
 				.font = d.fonts.text,
 				.text = intern_text(d, current_menu.tab_contents[0]),
-				.position = { title_bar_rect.left() + sty.padding, title_bar_rect.center().y() + d.fonts.text->vertical_center_offset(sty.font_size) },
+				.position = { title_bar_rect.left() + sty.padding, title_bar_rect.center().y() + d.fonts.text.resolve()->vertical_center_offset(sty.font_size) },
 				.scale = sty.font_size,
 				.clip_rect = title_bar_rect,
 				.layer = layer
@@ -1266,16 +1290,15 @@ auto gse::gui::draw_tab_bar(data& d, const gse::input::state& input_state, menu&
 	descs.reserve(current_menu.tab_contents.size());
 	for (std::size_t i = 0; i < current_menu.tab_contents.size(); ++i) {
 		descs.push_back({
-			.id = i + 1,
+			.tab_id = generate_temp_id(i + 1),
 			.caption = current_menu.tab_contents[i],
 		});
 	}
 
 	vec2f dummy_cursor{};
-	draw_context ctx{
+	widget_context ctx{ {
 		.current_menu = &current_menu,
 		.style = sty,
-		.input = input_state,
 		.fonts = d.fonts,
 		.blank_texture = d.blank_texture,
 		.layout_cursor = dummy_cursor,
@@ -1288,27 +1311,28 @@ auto gse::gui::draw_tab_bar(data& d, const gse::input::state& input_state, menu&
 		.current_layer = layer,
 		.current_z_order = 0,
 		.input_layer = d.input_layer_render,
+		.input_suppressed = d.input_suppressed,
 		.hit_regions = &d.input_layers_data,
 		.tooltip = &d.tooltip,
 		.context_menu = &d.context_menu,
 		.clip_stack = { title_bar_rect },
-	};
+	}, input_state };
 
 	const tab_strip_result tabs = tab_strip(ctx, {
 		.area = title_bar_rect,
 		.tabs = descs,
-		.active = current_menu.active_tab_index + 1,
+		.active = generate_temp_id(current_menu.active_tab_index + 1),
 		.orientation = tab_orientation::horizontal,
 		.overflow = tab_overflow::wrap,
 		.min_tab_extent = 60.f,
 		.max_tab_extent = 200.f,
 	}, current_menu.tab_bar);
 
-	if (tabs.activated != 0) {
-		current_menu.active_tab_index = static_cast<std::uint32_t>(tabs.activated - 1);
+	if (tabs.activated.exists()) {
+		current_menu.active_tab_index = static_cast<std::uint32_t>(tabs.activated.number() - 1);
 	}
-	if (tabs.close_requested != 0) {
-		d.pending_tab_close = std::pair{ current_menu.id(), static_cast<std::uint32_t>(tabs.close_requested - 1) };
+	if (tabs.close_requested.exists()) {
+		d.pending_tab_close = std::pair{ current_menu.id(), static_cast<std::uint32_t>(tabs.close_requested.number() - 1) };
 	}
 }
 
@@ -1327,12 +1351,13 @@ auto gse::gui::process_context_menu(data& d, const gse::input::state& input_stat
 	constexpr render_layer layer = render_layer::popup;
 	constexpr std::uint32_t base_z = 4000;
 
-	const float row_h = d.fonts.text->line_height(sty.font_size) + sty.padding * 0.5f;
+	const auto text_view = d.fonts.text.resolve();
+	const float row_h = text_view->line_height(sty.font_size) + sty.padding * 0.5f;
 	const float sep_h = sty.padding * 0.5f;
 
 	float max_label = 0.f;
 	for (const menu_item& it : cm.items) {
-		max_label = std::max(max_label, d.fonts.text->width(it.label, sty.font_size));
+		max_label = std::max(max_label, text_view->width(it.label, sty.font_size));
 	}
 	const bool any_icon = std::ranges::any_of(cm.items, [](const menu_item& it) { return it.icon != nullptr; });
 	const float icon_col = any_icon ? sty.font_size : 0.f;
@@ -1370,6 +1395,18 @@ auto gse::gui::process_context_menu(data& d, const gse::input::state& input_stat
 	bool selected = false;
 	const bool left_pressed = input_state.mouse_button_pressed(mouse_button::button_1);
 	const bool left_released = input_state.mouse_button_released(mouse_button::button_1);
+	const std::uint64_t target_key = std::visit([](const auto& target) -> std::uint64_t {
+		using target_type = std::remove_cvref_t<decltype(target)>;
+		if constexpr (std::same_as<target_type, std::monostate>) {
+			return stable_id("context_menu_no_target");
+		}
+		else if constexpr (std::same_as<target_type, id>) {
+			return hash_combine(stable_id("context_menu_id_target"), target.number());
+		}
+		else {
+			return hash_combine(stable_id("context_menu_numeric_target"), target);
+		}
+	}, cm.target);
 	for (std::size_t i = 0; i < cm.items.size(); ++i) {
 		const menu_item& it = cm.items[i];
 		if (it.separator_before) {
@@ -1386,7 +1423,7 @@ auto gse::gui::process_context_menu(data& d, const gse::input::state& input_stat
 		const rectf row = rectf::from_position_size({ panel.left(), y }, { width, row_h });
 		const bool hovered = row.contains(mouse) && it.enabled;
 		const id row_id = ids::make_from_key(hash_combine(
-			hash_combine(cm.tag.number(), cm.target),
+			hash_combine(cm.tag.number(), target_key),
 			hash_combine(stable_id("context_menu_row"), static_cast<std::uint64_t>(i))
 		));
 		const bool activated = interaction::activate_on_click(d.active_widget_id, row_id, hovered, hovered && left_pressed, left_released);
@@ -1416,7 +1453,7 @@ auto gse::gui::process_context_menu(data& d, const gse::input::state& input_stat
 		d.text_commands.push_back({
 			.font = d.fonts.text,
 			.text = intern_text(d, it.label),
-			.position = { row.left() + sty.padding * 1.5f + icon_col, row.center().y() + d.fonts.text->vertical_center_offset(sty.font_size) },
+			.position = { row.left() + sty.padding * 1.5f + icon_col, row.center().y() + text_view->vertical_center_offset(sty.font_size) },
 			.scale = sty.font_size,
 			.color = text_color,
 			.clip_rect = row,
@@ -1706,7 +1743,10 @@ auto gse::gui::handle_idle_state(data& d, const gse::input::state& input_state, 
 					std::vector<tab_desc> descs;
 					descs.reserve(current_menu.tab_contents.size());
 					for (std::size_t i = 0; i < current_menu.tab_contents.size(); ++i) {
-						descs.push_back({ .id = i + 1, .caption = current_menu.tab_contents[i] });
+						descs.push_back({
+							.tab_id = generate_temp_id(i + 1),
+							.caption = current_menu.tab_contents[i],
+						});
 					}
 					const std::vector<tab_strip_placement> placements = tab_strip_layout(d.fonts.text, d.fstate.sty, title_bar_rect, descs, current_menu.tab_bar, tab_overflow::wrap, 60.f, 200.f);
 					for (const tab_strip_placement& p : placements) {

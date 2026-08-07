@@ -38,7 +38,7 @@ export namespace gse::gui {
 
 		static auto from_file(
 			const std::filesystem::path& path
-		) -> text_buffer;
+		) -> std::expected<text_buffer, std::string>;
 
 		auto line_count() const -> std::size_t {
 			return lines.size();
@@ -48,18 +48,35 @@ export namespace gse::gui {
 			return index < lines.size() ? std::string_view(lines[index]) : std::string_view{};
 		}
 
-		auto insert(buffer_position at, std::string_view text) -> buffer_position;
-		auto erase(buffer_position from, buffer_position to) -> void;
-		auto clamp(buffer_position pos) const -> buffer_position;
+		auto insert(
+			buffer_position at,
+			std::string_view text
+		) -> buffer_position;
+
+		auto erase(
+			buffer_position from,
+			buffer_position to
+		) -> void;
+
+		auto clamp(
+			buffer_position pos
+		) const -> buffer_position;
 	};
 }
 
-auto gse::gui::text_buffer::from_file(const std::filesystem::path& path) -> text_buffer {
+auto gse::gui::text_buffer::from_file(const std::filesystem::path& path) -> std::expected<text_buffer, std::string> {
 	text_buffer buf;
 	std::ifstream in(path);
+	if (!in) {
+		return std::unexpected(std::format("could not open '{}'", path.generic_display_string()));
+	}
+
 	std::string line;
 	while (std::getline(in, line)) {
 		buf.lines.push_back(std::move(line));
+	}
+	if (!in.eof()) {
+		return std::unexpected(std::format("could not read '{}'", path.generic_display_string()));
 	}
 	if (buf.lines.empty()) {
 		buf.lines.emplace_back();

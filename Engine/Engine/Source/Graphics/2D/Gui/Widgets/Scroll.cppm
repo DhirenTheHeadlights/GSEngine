@@ -6,6 +6,7 @@ import gse.os;
 import gse.assets;
 import gse.gpu;
 import gse.core;
+import gse.meta;
 import gse.containers;
 import gse.time;
 import gse.concurrency;
@@ -238,7 +239,7 @@ auto gse::gui::scroll_axis_advance(const draw_context& ctx, const rectf& visible
 	}
 
 	const float w = config.scrollbar_width;
-	const vec2f mouse = ctx.input.mouse_position();
+	const vec2f mouse = ctx.mouse_position();
 	const rectf track_rect = horizontal
 		? rectf::from_position_size({ visible_rect.left(), visible_rect.bottom() + w }, { visible_extent, w })
 		: rectf::from_position_size({ visible_rect.right() - w, visible_rect.top() }, { w, visible_extent });
@@ -253,8 +254,8 @@ auto gse::gui::scroll_axis_advance(const draw_context& ctx, const rectf& visible
 		.content_extent = axis.content,
 		.horizontal = horizontal,
 		.mouse = mouse,
-		.mouse_pressed = ctx.input.mouse_button_pressed(mouse_button::button_1) && ctx.input_available(),
-		.mouse_held = ctx.input.mouse_button_held(mouse_button::button_1),
+		.mouse_pressed = ctx.mouse_pressed() && ctx.input_available(),
+		.mouse_held = ctx.mouse_held(),
 		.min_thumb = config.scrollbar_min_height,
 	});
 	if (bar.used_press) {
@@ -273,24 +274,24 @@ auto gse::gui::scroll_area(const draw_context& ctx, scroll_state& state, const r
 	const float max_x = std::max(0.f, content_size.x() - visible_w);
 
 	const vec2f wheel = ctx.scroll_delta_for(visible_rect);
-	const bool shift = ctx.input.key_held(key::left_shift) || ctx.input.key_held(key::right_shift);
+	const bool shift = ctx.key_held(key::left_shift) || ctx.key_held(key::right_shift);
 	const bool redirect = shift && max_x > 0.f;
 
-	const bool in_region = visible_rect.contains(ctx.input.mouse_position());
+	const bool in_region = visible_rect.contains(ctx.mouse_position());
 	const bool can_scroll = max_x > 0.f || max_y > 0.f;
 	if (can_scroll && ctx.mouse_pressed_for(visible_rect, mouse_button::button_3)) {
 		state.auto_scroll_active = !state.auto_scroll_active;
-		state.auto_scroll_anchor = ctx.input.mouse_position();
+		state.auto_scroll_anchor = ctx.mouse_position();
 	}
-	else if (state.auto_scroll_active && ctx.input.mouse_button_pressed(mouse_button::button_3)) {
+	else if (state.auto_scroll_active && ctx.mouse_pressed(mouse_button::button_3)) {
 		state.auto_scroll_active = false;
 		ctx.consume_press(mouse_button::button_3);
 	}
-	if (state.auto_scroll_active && (!can_scroll || ctx.input.mouse_button_pressed(mouse_button::button_1) || ctx.input.mouse_button_pressed(mouse_button::button_2) || ctx.input.key_pressed(key::escape))) {
+	if (state.auto_scroll_active && (!can_scroll || ctx.mouse_pressed() || ctx.mouse_pressed(mouse_button::button_2) || ctx.key_pressed(key::escape))) {
 		state.auto_scroll_active = false;
 	}
 	if (state.auto_scroll_active) {
-		const vec2f mouse = ctx.input.mouse_position();
+		const vec2f mouse = ctx.mouse_position();
 		if (max_y > 0.f) {
 			apply_auto_scroll(state.y, auto_scroll_delta(state.auto_scroll_anchor.y() - mouse.y()), config.smooth_scrolling);
 		}

@@ -39,13 +39,14 @@ export namespace gse::gui {
 
 auto gse::gui::nav_item::draw(const draw_context& ctx, const params& p, id& hot, id& active, id&) -> bool {
 	const auto fnt = p.font.valid() ? p.font : ctx.fonts.text;
+	const auto fnt_view = fnt.resolve();
 	if (!ctx.current_menu) {
 		return false;
 	}
 
 	const id widget_id = ids::make(p.text);
 
-	const float widget_height = fnt->line_height(ctx.style.font_size) + ctx.style.padding * 0.8f;
+	const float widget_height = fnt_view->line_height(ctx.style.font_size) + ctx.style.padding * 0.8f;
 	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding * 0.5f, 0.f });
 
 	const rectf row_rect = rectf::from_position_size(
@@ -54,7 +55,7 @@ auto gse::gui::nav_item::draw(const draw_context& ctx, const params& p, id& hot,
 	);
 
 	const bool hovered = ctx.hovers(row_rect);
-	const bool released = ctx.input.mouse_button_released(mouse_button::button_1);
+	const bool released = ctx.mouse_released();
 
 	interaction::mark_hot(hot, widget_id, hovered);
 	const bool activated = interaction::activate_on_click(active, widget_id, hovered, ctx.mouse_pressed_for(row_rect), released);
@@ -97,7 +98,7 @@ auto gse::gui::nav_item::draw(const draw_context& ctx, const params& p, id& hot,
 	ctx.queue_text({
 		.font = fnt,
 		.text = p.text,
-		.position = { text_x, row_rect.center().y() + fnt->vertical_center_offset(ctx.style.font_size) },
+		.position = { text_x, row_rect.center().y() + fnt_view->vertical_center_offset(ctx.style.font_size) },
 		.scale = ctx.style.font_size,
 		.color = text_color,
 		.clip_rect = row_rect,

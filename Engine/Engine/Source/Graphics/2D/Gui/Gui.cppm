@@ -119,6 +119,7 @@ export namespace gse::gui {
 
 		tooltip_state tooltip;
 		render_layer input_layer_render = render_layer::content;
+		bool input_suppressed = false;
 		input_layer input_layers_data;
 		std::unordered_map<std::uint64_t, scroll_state> widget_scrolls;
 		std::unordered_map<std::uint64_t, vec4f> widget_anim_colors;

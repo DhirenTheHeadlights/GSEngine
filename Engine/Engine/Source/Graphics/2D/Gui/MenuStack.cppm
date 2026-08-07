@@ -201,7 +201,7 @@ auto gse::gui::screen::draw_caption(builder& b, const rectf& area) -> float {
 		.text = label,
 		.position = {
 			area.left() + ctx.style.padding,
-			area.center().y() + ctx.fonts.text->vertical_center_offset(ctx.style.font_size)
+			area.center().y() + ctx.fonts.text.resolve()->vertical_center_offset(ctx.style.font_size)
 		},
 		.scale = ctx.style.font_size,
 		.color = ctx.style.color_text_secondary,

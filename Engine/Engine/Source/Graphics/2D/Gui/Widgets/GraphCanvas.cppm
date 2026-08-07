@@ -21,6 +21,7 @@ export namespace gse::gui {
 			std::string_view label;
 			rectf rect;
 			vec4f color = { 0.20f, 0.22f, 0.26f, 1.f };
+			bool interactive = true;
 		};
 
 		struct edge {
@@ -44,12 +45,19 @@ export namespace gse::gui {
 			resource::handle<font> font{};
 		};
 
-		static auto draw(const draw_context& ctx, params p, id& hot, id& active, id& focus) -> result;
+		static auto draw(
+			const draw_context& ctx,
+			params p,
+			id& hot,
+			id& active,
+			id& focus
+		) -> result;
 	};
 }
 
 auto gse::gui::graph_canvas::draw(const draw_context& ctx, params p, id& hot, id& active, id&) -> result {
 	const auto fnt = p.font.valid() ? p.font : ctx.fonts.text;
+	const auto fnt_view = fnt.resolve();
 	const rectf clip = p.area;
 
 	ctx.queue_sprite({
@@ -60,7 +68,10 @@ auto gse::gui::graph_canvas::draw(const draw_context& ctx, params p, id& hot, id
 	});
 
 	const auto draw_seg = [&](const vec2f a, const vec2f b, const vec4f color, const float thick) {
-		const segment_t<vec2f> s{ a, b };
+		const segment_t<vec2f> s{
+			.start = a,
+			.end = b,
+		};
 		const vec2f mid = s.midpoint();
 		const vec2f hs{ s.length() * 0.5f + thick, thick };
 		ctx.queue_sprite({
@@ -79,7 +90,11 @@ auto gse::gui::graph_canvas::draw(const draw_context& ctx, params p, id& hot, id
 	for (const edge& e : p.edges) {
 		draw_seg(e.from, e.to, e.color, 1.0f);
 		const vec2f delta = e.to - e.from;
-		const float len = segment_t<vec2f>{ e.from, e.to }.length();
+		const segment_t<vec2f> segment{
+			.start = e.from,
+			.end = e.to,
+		};
+		const float len = segment.length();
 		if (len > 3.f) {
 			const vec2f u = delta * (1.f / len);
 			const vec2f perp{ -u.y(), u.x() };
@@ -91,16 +106,18 @@ auto gse::gui::graph_canvas::draw(const draw_context& ctx, params p, id& hot, id
 	}
 
 	result out;
-	const bool released = ctx.input.mouse_button_released(mouse_button::button_1);
+	const bool released = ctx.mouse_released();
+	const vec2f mouse = ctx.mouse_position();
 
 	for (const node& n : p.nodes) {
-		const id nid = ids::make(std::format("graph_node##{}", n.key));
-		const bool hovered = ctx.hovers(n.rect);
+		const id nid = ids::make_from_key(n.key);
+		const bool hovered = n.interactive && p.area.contains(mouse) && ctx.hovers(n.rect);
+		const bool pressed = hovered && ctx.mouse_pressed_for(n.rect);
 		interaction::mark_hot(hot, nid, hovered);
 		if (hovered) {
 			out.hovered = n.key;
 		}
-		if (interaction::activate_on_click(active, nid, hovered, ctx.mouse_pressed_for(n.rect), released)) {
+		if (interaction::activate_on_click(active, nid, hovered, pressed, released)) {
 			out.clicked = n.key;
 		}
 
@@ -136,7 +153,7 @@ auto gse::gui::graph_canvas::draw(const draw_context& ctx, params p, id& hot, id
 		ctx.queue_text({
 			.font = fnt,
 			.text = n.label,
-			.position = { n.rect.center().x() - fnt->width(n.label, label_font) * 0.5f, n.rect.center().y() + fnt->vertical_center_offset(label_font) },
+			.position = { n.rect.center().x() - fnt_view->width(n.label, label_font) * 0.5f, n.rect.center().y() + fnt_view->vertical_center_offset(label_font) },
 			.scale = label_font,
 			.color = label_color,
 			.clip_rect = label_clip,
