@@ -5,6 +5,7 @@ import gse;
 
 import gse.ide.workspace;
 import gse.ide.config;
+import gse.ide.profile;
 
 namespace gse::ide {
 	auto editor_layout_path() -> std::filesystem::path;
@@ -78,7 +79,7 @@ auto gse::ide::load_workspace_layout(workspace::data& ws) -> void {
 	const std::vector<layout_store::section> sections = layout_store::parse_sections(layout_store::read(editor_layout_path()));
 	std::string active;
 	std::filesystem::path active_path;
-	std::unordered_map<std::string, std::uint32_t> id_by_path;
+	std::unordered_map<std::string, gse::id> id_by_path;
 
 	for (const layout_store::section& section : sections) {
 		if (section.name != "workspace") {
@@ -89,6 +90,9 @@ auto gse::ide::load_workspace_layout(workspace::data& ws) -> void {
 		}
 		if (const auto it = section.values.find("active_path"); it != section.values.end()) {
 			active_path = it->second;
+		}
+		if (const auto it = section.values.find("game_view"); it != section.values.end()) {
+			enum_from_string(it->second, ws.game_view);
 		}
 		break;
 	}
@@ -109,7 +113,10 @@ auto gse::ide::load_workspace_layout(workspace::data& ws) -> void {
 			continue;
 		}
 
-		const std::uint32_t id = workspace::open_file(ws, path);
+		const gse::id id = workspace::open_file(ws, path);
+		if (!id.exists()) {
+			continue;
+		}
 		document& doc = ws.documents.at(id);
 		const std::uint32_t line = section.values.contains("line") ? parse_layout_uint(section.values.at("line"), 0) : 0;
 		const std::uint32_t column = section.values.contains("column") ? parse_layout_uint(section.values.at("column"), 0) : 0;
@@ -128,34 +135,57 @@ auto gse::ide::load_workspace_layout(workspace::data& ws) -> void {
 		id_by_path.emplace(doc.path.generic_native_encoded_string(), id);
 	}
 
+	for (const layout_store::section& section : sections) {
+		if (section.name != "workspace") {
+			continue;
+		}
+		if (const auto it = section.values.find("profile_enabled"); it != section.values.end()) {
+			ws.profile.enabled = it->second == "1";
+		}
+		if (const auto it = section.values.find("profile_source"); it != section.values.end()) {
+			gse::enum_from_string(it->second, ws.profile.source);
+		}
+		break;
+	}
+
 	if (active == "game") {
-		ws.active_document_id = viewport_tab_id;
+		workspace::activate_game(ws);
 	}
 	else if (!active_path.empty()) {
 		std::error_code ec;
 		const std::filesystem::path canonical = std::filesystem::weakly_canonical(active_path, ec);
 		const std::string key = (ec ? active_path : canonical).generic_native_encoded_string();
 		if (const auto it = id_by_path.find(key); it != id_by_path.end()) {
-			ws.active_document_id = it->second;
+			workspace::activate_document(ws, it->second);
 		}
 	}
-	else if (!ws.tab_order.empty()) {
-		ws.active_document_id = ws.tab_order.front();
+	else if (!ws.documents.order().empty()) {
+		workspace::activate_document(ws, ws.documents.order().front());
 	}
 
-	ws.tab_strip.dragging = 0;
+	ws.tab_strip.dragging.reset();
 }
 
 auto gse::ide::save_workspace_layout(const workspace::data& ws) -> void {
 	std::string out;
 	out.append("[workspace]\n");
-	if (ws.active_document_id == viewport_tab_id) {
+	out.append(std::format("profile_enabled = {}\n", ws.profile.enabled ? 1 : 0));
+	out.append(std::format("profile_source = {}\n", gse::enum_to_string(ws.profile.source)));
+	out.append(std::format("game_view = {}\n", enum_to_string(ws.game_view)));
+	if (workspace::game_active(ws)) {
 		out.append("active = game\n");
 		out.append("active_path = \n");
 	}
-	else if (const auto it = ws.documents.find(ws.active_document_id); it != ws.documents.end() && !it->second.path.empty()) {
+	else if (const std::optional<gse::id> active_document_id = workspace::active_document_id(ws); active_document_id) {
+		const auto it = ws.documents.find(*active_document_id);
+		if (it == ws.documents.end() || it->second.path.empty()) {
+			out.append("active = none\n");
+			out.append("active_path = \n");
+		}
+		else {
 		out.append("active = document\n");
 		out.append(std::format("active_path = {}\n", it->second.path.generic_native_encoded_string()));
+		}
 	}
 	else {
 		out.append("active = none\n");
@@ -163,7 +193,7 @@ auto gse::ide::save_workspace_layout(const workspace::data& ws) -> void {
 	}
 
 	std::size_t index = 0;
-	for (const std::uint32_t id : ws.tab_order) {
+	for (const gse::id id : ws.documents.order()) {
 		const document& doc = ws.documents.at(id);
 		if (doc.path.empty()) {
 			continue;
