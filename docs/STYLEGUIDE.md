@@ -38,7 +38,10 @@ Empty bodies stay collapsed (`{}`, `= default`).
 
 ```cpp
 export namespace gse::foo {
-    auto bar(const type& param1, type param2) -> return_type;
+    auto bar(
+        const type& param1,
+        type param2
+    ) -> return_type;
 }
 
 auto gse::foo::bar(const type& param1, type param2) -> return_type {
@@ -46,9 +49,13 @@ auto gse::foo::bar(const type& param1, type param2) -> return_type {
 }
 ```
 
-Short signatures stay on one line; long ones wrap with one parameter per line and `)` on its own line.
+- Declarations with parameters always wrap: one parameter per line and `)` on its own line.
+- Definitions never wrap their parameter list.
+- Zero-parameter declarations remain inline as `()`.
+- Put one blank line between adjacent function declarations.
+- This applies to constructors, operators, static functions, and templates.
 
-When an inline member definition is moved out of an exported type, put the declaration's arguments on their own lines, even when there is only one. Keep the out-of-class definition on one line when it is otherwise short:
+When an inline member definition is moved out of an exported type, keep the out-of-class definition's parameter list on one line:
 
 ```cpp
 struct value {
@@ -82,8 +89,13 @@ class my_type : public non_copyable {
 public:
     ~my_type();
 
-    my_type(my_type&&) noexcept = default;
-    auto operator=(my_type&&) noexcept -> my_type& = default;
+    my_type(
+        my_type&&
+    ) noexcept = default;
+
+    auto operator=(
+        my_type&&
+    ) noexcept -> my_type& = default;
 };
 
 // wrong — user-declared destructor kills the implicit move ops; instances
@@ -96,8 +108,13 @@ public:
 // wrong — re-implementing what non_copyable already provides
 class my_type {
 public:
-    my_type(const my_type&) = delete;
-    auto operator=(const my_type&) -> my_type& = delete;
+    my_type(
+        const my_type&
+    ) = delete;
+
+    auto operator=(
+        const my_type&
+    ) -> my_type& = delete;
 };
 ```
 
@@ -205,11 +222,17 @@ When constraining a template parameter on a single concept, put the concept in p
 ```cpp
 // correct — concept is the parameter introducer
 template <has_asset_format T>
-auto load_baked(const std::filesystem::path& path, T& out) -> bool;
+auto load_baked(
+    const std::filesystem::path& path,
+    T& out
+) -> bool;
 
 // wrong — extra requires clause for what is just a single concept
 template <typename T> requires has_asset_format<T>
-auto load_baked(const std::filesystem::path& path, T& out) -> bool;
+auto load_baked(
+    const std::filesystem::path& path,
+    T& out
+) -> bool;
 ```
 
 Reserve `requires` clauses for constraints that genuinely don't fit the parameter slot — multi-parameter relationships, ad-hoc `requires { ... }` expressions, or boolean compositions of concepts.
@@ -217,17 +240,23 @@ Reserve `requires` clauses for constraints that genuinely don't fit the paramete
 ```cpp
 // correct — relationship between two parameters needs a requires clause
 template <typename T, typename U> requires std::convertible_to<T, U>
-auto coerce(T&& v) -> U;
+auto coerce(
+    T&& v
+) -> U;
 ```
 
 Apply the same rule to abbreviated function templates (`auto` parameters) — use the concept directly:
 
 ```cpp
 // correct
-auto print_one(std::integral auto v) -> void;
+auto print_one(
+    std::integral auto v
+) -> void;
 
 // wrong
-auto print_one(auto v) -> void requires std::integral<decltype(v)>;
+auto print_one(
+    auto v
+) -> void requires std::integral<decltype(v)>;
 ```
 
 ---
@@ -324,19 +353,49 @@ Numeric type can be specified via `time_t<T>`, `length_t<T>`, etc. when `float` 
 
 Unit types are layout-compatible with their underlying arithmetic type and pass through math and GPU push constants directly. `.as<Unit>()` is for converting between units (e.g. `time.as<milliseconds>()` from ns-stored time); identity strip via `.as<DefaultUnit>()` is a compile error. When you genuinely need the raw scalar at a foreign-API boundary, write `static_cast<value_type>(q)`.
 
+### Stay in the Unit Type
+
+`.as<Unit>()` is an exit from the type system, not a way to "get a number to do maths with". Naming a unit does not make an expression dimensionally careful — converting early and then doing `double` arithmetic is exactly the weakly-typed math the unit system exists to prevent. It has **one** legitimate purpose: an external contract that mandates a specific unit (a wire/file format, an OS or driver API, a shader constant). Everything else stays in the quantity.
+
+The three cases that tempt a conversion, and what to write instead:
+
+```cpp
+// wrong — converts, then divides two raw doubles
+const double ratio = span.as<milliseconds>() / peak.as<milliseconds>();
+// correct — same-dimension division is ALREADY dimensionless
+const double ratio = span / peak;
+
+// wrong — converts to compare against a bare number
+if (duration.as<microseconds>() < 5.0) { ... }
+// correct — quantities are ordered; the threshold carries its own unit
+const time min_span = microseconds(5.0);
+if (duration < min_span) { ... }
+
+// wrong — converts to scale by a count
+const double per_column = total.as<microseconds>() / columns;
+// correct — quantity / scalar is a quantity
+const time per_column = total / static_cast<double>(columns);
+```
+
+`std::max`, `std::clamp`, and every comparison work on quantities directly. A ratio of two same-dimension quantities is a plain `double` by construction, so the units cancel whether or not you convert first — converting only throws away the checking. If a `.as<>()` result flows into arithmetic with anything else derived from a quantity, it is wrong.
+
+Function-local `const` is the right home for a unit-typed threshold. Do not introduce one as a `constexpr` at module namespace scope — that serialises a reflection-derived NTTP into the BMI and corrupts it.
+
 ---
 
 ## Deducing `this`
 
-Use explicit object parameters (deducing `this`) to collapse const/non-const overload pairs into a single function:
+Use abbreviated explicit object parameters (deducing `this`) to collapse const/non-const overload pairs into a single function. Do not introduce a named `Self` template parameter when `this auto& self` expresses the constraint:
 
 ```cpp
 // correct — one function handles both const and non-const
-template <typename Self>
-auto networked_data(this Self& self) -> decltype(auto);
+auto networked_data(
+	this auto& self
+) -> decltype(auto);
 
 // wrong — two identical functions differing only in constness
 auto networked_data() -> network_data_t&;
+
 auto networked_data() const -> const network_data_t&;
 ```
 
@@ -403,6 +462,22 @@ gse::log::println("pos=({:.2f}, {:.2f}, {:.2f})", drum_local.x(), drum_local.y()
 ```
 
 Inline per-component labels (`x`/`y`/`z`) are the only reason to decompose — the exception, not the default.
+
+For quantities the format spec is `{[value-spec]:[unit]}` — everything before the inner `:` goes to the underlying arithmetic formatter, and the trailing token picks the unit. It **converts and appends the unit name**, so it replaces the conversion, the precision, and the unit label in one spec:
+
+```cpp
+// correct
+std::format("{:.2f:us}", per_frame);   // 1234.56 us
+
+// wrong — hand-rolled conversion and precision
+format_fixed(per_frame.as<microseconds>(), buffer);
+
+// wrong — unit baked into the surrounding text instead of the value
+std::format("{:.2f} us per column", total.as<microseconds>() / columns);
+draw_stat(ctx, rect, y, "peak us", value);
+```
+
+A unit that appears in a format literal, a column heading, or a label string is the tell that the value was converted by hand. Column widths must account for the appended unit — the profile dump pairs a `{:>10.2f:us}` value with a `{:>13}` heading for exactly that reason.
 
 ---
 
@@ -478,7 +553,9 @@ Template function definitions go outside the namespace, same as non-templates:
 ```cpp
 // declaration (inside namespace)
 template <fixed_string Tag>
-auto add(key default_key) -> handle;
+auto add(
+    key default_key
+) -> handle;
 
 // definition (outside namespace)
 template <gse::foo::fixed_string Tag>

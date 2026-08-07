@@ -59,7 +59,7 @@ Without a denoiser, ReSTIR DI looks like grainy hard shadows; with one, it looks
 A reservoir is roughly 32–48 bytes. At 1920×1080 that's ~75–100 MB at the high end if we keep multiple variants. Need:
 
 - `per_frame_resource<gpu::image>` of `r32g32b32a32_uint` (or a custom packed format) at swap-chain extent, for ping-pong.
-- Compute write + sampled read both required → `image_flag::storage | image_flag::sampled`.
+- Compute write + sampled read both required → `{ image_flag::storage, image_flag::sampled }`.
 - Optionally: an SSBO laid out the same way, since reservoir math is integer-heavy and not natural for texture sampling. Choice depends on cost of integer texture loads vs SSBO addressing on the target hardware.
 
 This pattern mirrors what TAA does for history color.
