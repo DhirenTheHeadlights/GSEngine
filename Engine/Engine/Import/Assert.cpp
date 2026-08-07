@@ -21,5 +21,6 @@ auto gse::assert_fail(const std::source_location loc, const std::string_view com
 	);
 	log::flush();
 	log::println(log::level::fatal, log::category::general, "Stack:\n{}", capture_stacktrace(2));
-	std::unreachable();
+	log::flush();
+	std::abort();
 }

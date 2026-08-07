@@ -9,20 +9,17 @@ import gse.math;
 import gse.meta;
 
 export namespace gse::trace {
+	using tick_step = time_t<std::uint64_t>;
+
 	struct config {
-		std::size_t per_thread_event_cap = 262144;
 		bool enable_browser_dump = false;
 	};
 
 	constexpr id untraced{};
 
-	struct loc_tag {
-		char data[192]{};
-		std::uint32_t size = 0;
-		std::uint32_t line = 0;
+	constexpr std::uint64_t first_span_eid = 1024;
 
-		[[nodiscard]] consteval auto view() const -> std::string_view;
-	};
+	constexpr std::size_t max_loc_tag_length = 192;
 
 	consteval auto strip_function_signature(
 		std::string_view fn
@@ -30,42 +27,45 @@ export namespace gse::trace {
 
 	consteval auto current_loc_tag(
 		std::source_location loc = std::source_location::current()
-	) -> loc_tag;
-
-	template <loc_tag Tag>
-	const id loc_id_cache = find_or_generate_id(std::format("{}:{}", Tag.view(), Tag.line));
-
-	template <loc_tag Tag>
-	auto loc_id() -> id;
+	) -> fixed_string<max_loc_tag_length>;
 
 	auto start(
 		const config& cfg = {}
 	) -> void;
 
-	auto begin_block(
-		id id,
-		std::uint64_t parent
-	) -> std::uint64_t;
+	auto current_eid() -> std::uint64_t;
 
-	auto end_block(
-		id id,
-		std::uint64_t eid,
-		std::uint64_t parent
-	) -> void;
+	class open_span : non_copyable {
+	public:
+		open_span() = default;
 
-	auto begin_async(
-		id id,
-		std::uint64_t key
-	) -> void;
+		open_span(
+			id id,
+			std::uint64_t parent
+		);
 
-	auto end_async(
-		id id,
-		std::uint64_t key
-	) -> void;
+		~open_span();
 
-	auto allocate_async_key() -> std::uint64_t;
+		open_span(
+			open_span&& other
+		) noexcept;
 
-	class scope_guard {
+		auto operator=(
+			open_span&& other
+		) noexcept -> open_span&;
+
+		auto close() -> void;
+
+		[[nodiscard]] auto eid() const -> std::uint64_t;
+
+	private:
+		id m_id;
+		std::uint64_t m_eid = 0;
+		std::uint64_t m_parent = 0;
+		std::uint32_t m_tid = 0;
+	};
+
+	class scope_guard : non_copyable, non_movable {
 	public:
 		explicit scope_guard(
 			id id
@@ -78,33 +78,29 @@ export namespace gse::trace {
 
 		~scope_guard();
 
-		scope_guard(
-			const scope_guard&
-		) = delete;
-
-		scope_guard(
-			scope_guard&&
-		) = delete;
-
-		auto operator=(
-			const scope_guard&
-		) -> scope_guard& = delete;
-
-		auto operator=(
-			scope_guard&&
-		) -> scope_guard& = delete;
-
 	private:
 		auto enter(
 			std::uint64_t parent
 		) -> void;
 
 		id m_id;
-		std::uint32_t m_tid = 0;
 		std::uint64_t m_parent = 0;
 		std::uint64_t m_eid = 0;
-		bool m_pushed_parent = false;
+		std::size_t m_depth = 0;
+		std::uint32_t m_tid = 0;
 	};
+
+	auto begin_async(
+		id id,
+		std::uint64_t key
+	) -> void;
+
+	auto end_async(
+		id id,
+		std::uint64_t key
+	) -> void;
+
+	auto allocate_async_key() -> std::uint64_t;
 
 	auto mark(
 		id id
@@ -163,28 +159,35 @@ export namespace gse::trace {
 		id id
 	) -> bool;
 
-	auto current_eid() -> std::uint64_t;
-
 	struct node {
 		id id;
-		std::uint32_t trace_id;
+		std::uint32_t trace_id = 0;
 		time_t<std::uint64_t> start;
 		time_t<std::uint64_t> stop;
 		time_t<std::uint64_t> self;
-		const node* children_first = nullptr;
-		std::size_t children_count = 0;
+		std::uint32_t children_first = 0;
+		std::uint32_t children_count = 0;
+		bool open = false;
 	};
 
-	using node_view = std::span<const node>;
-
 	struct frame_view {
-		std::span<const node> roots;
-		const std::byte* storage;
+		std::span<const node> nodes;
+		std::span<const std::uint32_t> children;
+		std::span<const std::uint32_t> roots;
+		std::uint64_t generation = 0;
+
+		[[nodiscard]] auto child_indices(
+			const node& n
+		) const -> std::span<const std::uint32_t>;
 	};
 
 	auto finalize_frame() -> void;
 
 	auto view() -> frame_view;
+
+	auto dropped_events() -> std::uint64_t;
+
+	auto abandoned_spans() -> std::uint64_t;
 
 	struct thread_pause {
 		thread_pause();
@@ -198,17 +201,9 @@ export namespace gse::trace {
 	) -> void;
 
 	auto enabled() -> bool;
-
-	auto set_finalize_paused(
-		bool pause
-	) -> void;
-
-	auto finalize_paused() -> bool;
 }
 
 namespace gse::trace {
-	export using tick_step = time_t<std::uint64_t>;
-
 	enum struct event_type : std::uint8_t {
 		begin,
 		end,
@@ -219,14 +214,14 @@ namespace gse::trace {
 	};
 
 	struct event {
-		event_type type;
+		event_type type = event_type::instant;
 		id id;
 		std::uint64_t eid = 0;
 		std::uint64_t parent_eid = 0;
 		std::uint64_t tid = 0;
 		time_t<std::uint64_t> ts;
-		double value;
-		std::uint64_t key;
+		double value = 0.0;
+		std::uint64_t key = 0;
 	};
 
 	class scsp_events {
@@ -240,99 +235,102 @@ namespace gse::trace {
 			Out& out
 		) noexcept -> void;
 
-		auto clear() noexcept -> void;
-
-		auto size() const noexcept -> std::size_t;
-
 		auto ensure_storage() -> void;
 
-	private:
-		static constexpr std::uint32_t capacity_pow_2 = 1u << 18;
-		static constexpr std::uint32_t capacity = capacity_pow_2;
-		static constexpr std::uint32_t capacity_mask = capacity_pow_2 - 1;
+		[[nodiscard]] auto dropped() const noexcept -> std::uint64_t;
 
-		alignas(
-			64
-		) std::atomic<std::uint32_t> m_w{ 0 };
-		alignas(
-			64
-		) std::uint32_t m_r{ 0 };
+	private:
+		static constexpr std::uint32_t capacity = 1u << 18;
+		static constexpr std::uint32_t capacity_mask = capacity - 1;
+
+		alignas(64) std::atomic<std::uint32_t> m_w{ 0 };
+		alignas(64) std::atomic<std::uint32_t> m_r{ 0 };
+		alignas(64) std::atomic<std::uint64_t> m_dropped{ 0 };
 
 		std::unique_ptr<event[]> m_events;
 	};
 
 	struct thread_buffer {
+		~thread_buffer();
+
 		scsp_events events;
 		std::vector<std::uint64_t> stack;
 		std::uint32_t tid = 0;
 		bool registered = false;
 	};
 
-	inline thread_local int tls_pause_depth = 0;
-
-	std::atomic trace_enabled = true;
-	std::atomic finalize_paused_flag = false;
-
-	std::atomic<std::uint64_t> next_eid{ 1024 };
-	std::atomic<std::uint64_t> next_async_key{ 1 };
-	std::atomic<std::uint32_t> next_tid{ 0 };
-	std::atomic<std::uint32_t> main_tid_value{ 0 };
-
-	config global_config;
-
-	inline thread_local thread_buffer tls;
-
-	std::mutex tls_registry_mutex;
-	std::vector<thread_buffer*> tls_registry;
+	struct thread_registry {
+		std::mutex mutex;
+		std::vector<thread_buffer*> buffers;
+	};
 
 	struct span_info {
 		id id;
-		std::uint32_t tid;
+		std::uint32_t tid = 0;
 		time_t<std::uint64_t> t0;
 		time_t<std::uint64_t> t1;
-		std::uint64_t parent;
+		std::uint64_t parent = 0;
+		std::uint64_t opened_frame = 0;
+	};
+
+	struct frame_span {
+		std::uint64_t eid = 0;
+		span_info info;
+		bool open = false;
+	};
+
+	struct seg {
+		time_t<std::uint64_t> a;
+		time_t<std::uint64_t> b;
+	};
+
+	struct build_scratch {
+		std::vector<event> merged;
+		std::vector<frame_span> spans;
+		std::vector<std::uint32_t> parent_idx;
+		std::vector<std::uint32_t> child_counts;
+		std::vector<seg> segs;
 	};
 
 	struct frame_storage {
-		std::vector<event> merged;
-
-		struct flat_node {
-			id id;
-			std::uint32_t tid;
-			time_t<std::uint64_t> start;
-			time_t<std::uint64_t> end;
-			time_t<std::uint64_t> self;
-			std::uint32_t children_first = 0;
-			std::uint32_t children_count = 0;
-		};
-
-		std::vector<flat_node> flat;
-		std::vector<node> node_pool;
-		std::vector<node> roots;
-
-		std::vector<std::pair<std::uint64_t, span_info>> spans_scratch;
-		std::vector<std::uint32_t> parent_idx_scratch;
-		std::vector<std::uint32_t> child_counts_scratch;
-		std::vector<std::uint32_t> children_arena;
-		std::vector<std::uint8_t> has_parent_scratch;
-		std::vector<std::size_t> roots_idx_scratch;
-
-		struct seg {
-			time_t<std::uint64_t> a;
-			time_t<std::uint64_t> b;
-		};
-
-		std::vector<seg> segs_scratch;
+		std::vector<node> nodes;
+		std::vector<std::uint32_t> children;
+		std::vector<std::uint32_t> roots;
+		std::uint64_t generation = 0;
 	};
 
-	double_buffer<frame_storage> frames;
-	std::vector<std::pair<std::uint64_t, span_info>> global_open_spans;
+	constexpr std::uint64_t max_open_span_frames = 240;
 
-	std::shared_mutex hidden_ids_mutex;
-	std::unordered_set<id> hidden_ids;
+	constexpr std::uint32_t no_parent = std::numeric_limits<std::uint32_t>::max();
 
-	std::shared_mutex virtual_thread_mutex;
-	std::unordered_map<std::uint32_t, std::string> virtual_thread_names;
+	inline thread_local int tls_pause_depth = 0;
+
+	inline thread_local thread_buffer tls;
+
+	inline std::atomic trace_enabled = true;
+
+	inline std::atomic<std::uint64_t> next_eid{ first_span_eid };
+	inline std::atomic<std::uint64_t> next_async_key{ 1 };
+	inline std::atomic<std::uint32_t> next_tid{ 0 };
+	inline std::atomic<std::uint32_t> main_tid_value{ 0 };
+	inline std::atomic<std::uint64_t> abandoned_span_count{ 0 };
+
+	inline config global_config;
+
+	inline triple_buffer<frame_storage> frames;
+	inline build_scratch scratch;
+	inline std::unordered_map<std::uint64_t, span_info> open_spans;
+	inline std::vector<frame_span> closed_spans;
+	inline std::uint64_t build_frame_index = 0;
+	inline std::uint64_t published_generation = 0;
+
+	inline std::shared_mutex hidden_ids_mutex;
+	inline std::unordered_set<id> hidden_ids;
+
+	inline std::shared_mutex virtual_thread_mutex;
+	inline std::unordered_map<std::uint32_t, std::string> virtual_thread_names;
+
+	auto registry() -> thread_registry&;
 
 	auto ensure_tls_registered() -> void;
 
@@ -342,33 +340,42 @@ namespace gse::trace {
 		const event& e
 	) -> void;
 
-	auto current_parent_eid() -> std::uint64_t;
+	auto allocate_span_eid() -> std::uint64_t;
 
-	auto build_tree(
+	auto close_span(
+		id id,
+		std::uint64_t eid,
+		std::uint64_t parent,
+		std::uint32_t tid
+	) -> void;
+
+	auto drain_events(
+		std::vector<event>& out
+	) -> void;
+
+	auto absorb_events(
+		std::span<const event> events
+	) -> void;
+
+	auto evict_stale_open_spans() -> void;
+
+	auto collect_frame_spans(
+		std::vector<frame_span>& out
+	) -> void;
+
+	auto link_parents(
+		std::span<const frame_span> spans,
+		std::vector<std::uint32_t>& parent_idx
+	) -> void;
+
+	auto build_frame(
 		frame_storage& fs
 	) -> void;
 
-	auto compute_self_time(
+	auto compute_self_times(
 		frame_storage& fs,
-		std::size_t i
+		std::vector<seg>& segs
 	) -> void;
-
-	auto emplace_shallow_node(
-		frame_storage& fs,
-		std::size_t flat_i
-	) -> std::size_t;
-
-	auto build_subtree(
-		frame_storage& fs,
-		std::size_t node_idx,
-		std::size_t flat_i
-	) -> void;
-
-	auto allocate_span_eid() -> std::uint64_t;
-}
-
-consteval auto gse::trace::loc_tag::view() const -> std::string_view {
-	return { data, size };
 }
 
 consteval auto gse::trace::strip_function_signature(const std::string_view fn) -> std::string_view {
@@ -405,19 +412,37 @@ consteval auto gse::trace::strip_function_signature(const std::string_view fn) -
 	return name;
 }
 
-consteval auto gse::trace::current_loc_tag(const std::source_location loc) -> loc_tag {
-	loc_tag out{};
-	const auto stripped = strip_function_signature(loc.function_name());
-	const auto copy_size = std::min<std::size_t>(stripped.size(), sizeof(out.data) - 1);
-	for (std::size_t i = 0; i < copy_size; ++i) {
-		out.data[i] = stripped[i];
+consteval auto gse::trace::current_loc_tag(const std::source_location loc) -> fixed_string<max_loc_tag_length> {
+	fixed_string<max_loc_tag_length> out{};
+	std::size_t at = 0;
+
+	for (const char c : strip_function_signature(loc.function_name())) {
+		if (at + 1 >= max_loc_tag_length) {
+			break;
+		}
+		out.data[at++] = c;
 	}
-	out.size = static_cast<std::uint32_t>(copy_size);
-	out.line = loc.line();
+
+	if (at + 1 < max_loc_tag_length) {
+		out.data[at++] = ':';
+	}
+
+	char digits[16]{};
+	std::size_t digit_count = 0;
+	auto line = loc.line();
+
+	do {
+		digits[digit_count++] = static_cast<char>('0' + line % 10);
+		line /= 10;
+	} while (line != 0 && digit_count < sizeof(digits));
+
+	while (digit_count > 0 && at + 1 < max_loc_tag_length) {
+		out.data[at++] = digits[--digit_count];
+	}
+
 	return out;
 }
 
-template <gse::trace::loc_tag Tag>
-auto gse::trace::loc_id() -> id {
-	return loc_id_cache<Tag>;
+auto gse::trace::frame_view::child_indices(const node& n) const -> std::span<const std::uint32_t> {
+	return children.subspan(n.children_first, n.children_count);
 }

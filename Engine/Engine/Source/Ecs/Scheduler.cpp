@@ -228,10 +228,7 @@ namespace gse {
 }
 
 auto gse::scheduler::run_node_frame(context& ctx, system_node& node) -> async::task<> {
-	const auto eid = trace::begin_block(node.frame_wall_id, 0);
-	auto guard = make_scope_exit([fwid = node.frame_wall_id, eid] {
-		trace::end_block(fwid, eid, 0);
-	});
+	trace::open_span span(node.frame_wall_id, 0);
 
 	for (const id& dep : node.frame_state_deps) {
 		co_await ctx.after_id(dep);
@@ -860,10 +857,7 @@ auto gse::scheduler::advance_one_init_system(system_node& node) -> async::task<>
 }
 
 auto gse::scheduler::run_node_update(context& ctx, system_node& node) -> async::task<> {
-	const auto eid = trace::begin_block(node.update_wall_id, 0);
-	auto guard = make_scope_exit([wid = node.update_wall_id, eid] {
-		trace::end_block(wid, eid, 0);
-	});
+	trace::open_span span(node.update_wall_id, 0);
 
 	for (const id& dep : node.run_state_deps) {
 		co_await m_update_graph.wait_state_ready(dep);
@@ -1097,6 +1091,8 @@ auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in
 }
 
 auto gse::scheduler::shutdown() -> void {
+	m_channels_store.clear();
+
 	while (!m_nodes.empty()) {
 		auto& node = m_nodes.back();
 		node.invoke_shutdown_fn(node.data.get());
