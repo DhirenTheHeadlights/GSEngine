@@ -2,12 +2,15 @@ export module gse.graphics:geometry_collector;
 
 import std;
 
+import :animation_components;
 import :camera_system;
 import :mesh;
 import :model;
 import :render_component;
 import :material;
 import :primitive_resolver;
+import :skin_renderer;
+import :skinned_model;
 import :texture;
 
 import gse.math;
@@ -35,6 +38,7 @@ export namespace gse::renderer {
 		const mat4f model_matrix = trans_mat * rot_mat * scale_mat * pivot_correction_mat;
 		return { spatial_matrix(model_matrix), spatial_matrix(rot_mat) };
 	}
+
 
 	auto transform_aabb(const vec3<length>& local_min, const vec3<length>& local_max, const mat4f& model_matrix) -> std::pair<vec3<length>, vec3<length>> {
 		const std::array corners = { vec4<length>(local_min.x(), local_min.y(), local_min.z(), meters(1.0f)),
@@ -95,12 +99,29 @@ export namespace gse::renderer {
 	}
 
 	struct normal_batch_key {
-		const model* model_ptr;
+		resource::handle<model> model;
+		resource::handle<skinned_model> skinned;
+		std::shared_ptr<const gse::model> model_snapshot;
+		std::shared_ptr<const skinned_model> skinned_snapshot;
+		id skinned_owner;
 		std::size_t mesh_index;
 
 		auto operator==(
-			const normal_batch_key&
-		) const -> bool = default;
+			const normal_batch_key& other
+		) const -> bool {
+			return model.id() == other.model.id()
+				&& skinned.id() == other.skinned.id()
+				&& model_snapshot == other.model_snapshot
+				&& skinned_snapshot == other.skinned_snapshot
+				&& skinned_owner == other.skinned_owner
+				&& mesh_index == other.mesh_index;
+		}
+
+		auto resolve_mesh() const -> const mesh& {
+			return skinned_snapshot
+				? skinned_snapshot->meshes()[mesh_index]
+				: model_snapshot->meshes()[mesh_index];
+		}
 	};
 
 	struct normal_instance_batch {
@@ -109,6 +130,8 @@ export namespace gse::renderer {
 		std::uint32_t instance_count;
 		vec3<length> world_aabb_min;
 		vec3<length> world_aabb_max;
+		gpu::bindless_slot deformed_vertices;
+		gpu::bindless_slot prev_deformed_vertices;
 	};
 }
 
@@ -125,6 +148,10 @@ export namespace gse::renderer::geometry_collector {
 		render_queue_entry entry;
 		id owner;
 		std::uint32_t body_index = invalid_body_index;
+		resource::handle<skinned_model> skinned;
+		std::shared_ptr<const model> model_snapshot;
+		std::shared_ptr<const skinned_model> skinned_snapshot;
+		aabb skinned_bounds;
 	};
 
 	struct render_data {
@@ -183,8 +210,11 @@ export namespace gse::renderer::geometry_collector {
 		data& d,
 		shared_view<camera::data> cam_state,
 		shared_view<primitive_resolver::data> resolver_state,
+		shared_view<skin::data> skin_s,
 		write<render_component> render,
-		read<physics::transform_component> transform
+		read<physics::transform_component> transform,
+		read<physics::motion_component> motion,
+		read<skeleton_instance_component> skeletons
 	) -> async::task<>;
 
 	[[= gse::system_frame{}]]

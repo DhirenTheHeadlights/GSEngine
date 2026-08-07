@@ -361,6 +361,8 @@ TAA prev-buffer + motion vectors; depth prepass / OIT / shadow reuse; BLAS refit
 Then the demonstration this design exists for: **flip bones to `dynamic_body` and watch the
 ragdoll take over with no render-path change.**
 
+Scoped in detail in `plans/skinning-phase4.md`.
+
 ---
 
 ## 9. Infrastructure

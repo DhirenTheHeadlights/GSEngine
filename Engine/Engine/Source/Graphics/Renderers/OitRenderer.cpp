@@ -269,7 +269,7 @@ auto gse::renderer::oit::frame(context& ctx, shared_view<gpu::context::data> gpu
 
 	for (std::size_t i = 0; i < data.transparent_batches.size(); ++i) {
 		const auto& batch = data.transparent_batches[i];
-		const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
+		const auto& mesh = batch.key.resolve_mesh();
 		if (!mesh.has_meshlets() || !mesh.upload_token().ready()) {
 			continue;
 		}
@@ -290,7 +290,7 @@ auto gse::renderer::oit::frame(context& ctx, shared_view<gpu::context::data> gpu
 			{
 				.camera_ubo = camera_slot,
 				.material_palette = material_palette_slot,
-				.vertices_buffer = ml.vertex_storage.slot(),
+				.vertices_buffer = batch.deformed_vertices.valid() ? batch.deformed_vertices : ml.vertex_storage.slot(),
 				.meshlets_buffer = ml.descriptors.slot(),
 				.meshlet_vertex_indices = ml.vertices.slot(),
 				.meshlet_triangles = ml.triangles.slot(),

@@ -8,7 +8,10 @@ void as_main(uint gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
     uint instance_index = pc.first_instance + gid.y;
     bool visible = false;
 
-    if (meshlet_idx < pc.meshlet_count) {
+    if (meshlet_idx < pc.meshlet_count && pc.skip_meshlet_cull != 0) {
+        visible = true;
+    }
+    else if (meshlet_idx < pc.meshlet_count) {
         uint global_idx = pc.meshlet_offset + meshlet_idx;
         meshlet_bounds bounds = meshlet_bounds_buffer[global_idx];
         instance_data inst = instance_data_buffer[instance_index];
@@ -81,7 +84,9 @@ void ms_main(
 
         MeshVertexOutput mv = compute_mesh_vertex(v, inst, camera_ubo.view, camera_ubo.proj);
 
-        precise float4 prev_world = mul(inst.prev_model_matrix, float4(v.position, 1.0));
+        precise float4 prev_world = pc.use_prev_vertices != 0
+            ? float4(prev_vertices_buffer[global_vertex_idx].position, 1.0)
+            : mul(inst.prev_model_matrix, float4(v.position, 1.0));
         precise float4 prev_view_pos = mul(camera_ubo.prev_view, prev_world);
         precise float4 prev_clip = mul(camera_ubo.prev_proj, prev_view_pos);
 

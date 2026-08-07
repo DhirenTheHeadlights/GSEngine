@@ -77,6 +77,10 @@ export namespace gse {
 		auto indices() const -> const std::vector<std::uint32_t>&;
 		auto aabb() const -> std::pair<vec3<displacement>, vec3<displacement>>;
 
+		auto vertex_count() const -> std::uint32_t {
+			return static_cast<std::uint32_t>(m_vertices.size());
+		}
+
 		auto vertex_gpu_buffer(this const mesh& self) -> const gpu::buffer& {
 			return self.m_vertex_buffer;
 		}
@@ -135,13 +139,13 @@ auto gse::mesh::initialize(gpu::context::data& ctx) -> void {
 	const std::size_t vertex_buffer_size = sizeof(vertex) * m_vertices.size();
 	const std::size_t index_buffer_size = sizeof(std::uint32_t) * m_indices.size();
 
-	constexpr auto storage_dst = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst;
+	constexpr gpu::buffer_usage storage_dst{ gpu::buffer_flag::storage, gpu::buffer_flag::transfer_dst };
 
 	m_vertex_buffer = ctx.device->create_buffer(
 		{
 			.size = vertex_buffer_size,
-			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst |
-				gpu::buffer_flag::acceleration_structure_build_input
+			.usage = { gpu::buffer_flag::storage, gpu::buffer_flag::transfer_dst,
+				gpu::buffer_flag::acceleration_structure_build_input }
 		},
 		"mesh.vertex"
 	);
@@ -149,8 +153,8 @@ auto gse::mesh::initialize(gpu::context::data& ctx) -> void {
 	m_index_buffer = ctx.device->create_buffer(
 		{
 			.size = index_buffer_size,
-			.usage = gpu::buffer_flag::index | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst |
-				gpu::buffer_flag::acceleration_structure_build_input
+			.usage = { gpu::buffer_flag::index, gpu::buffer_flag::storage, gpu::buffer_flag::transfer_dst,
+				gpu::buffer_flag::acceleration_structure_build_input }
 		},
 		"mesh.index"
 	);

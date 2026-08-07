@@ -10,6 +10,7 @@ import :gi_probe_renderer;
 import :rt_shadow_renderer;
 import :light_culling_renderer;
 import :cull_compute_renderer;
+import :skin_renderer;
 import :camera_system;
 import :render_targets;
 import :texture;
@@ -392,7 +393,7 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 			)
 		)
 		.depth(gpu::load_depth())
-		.after<^^rt_shadow::frame, ^^light_culling::frame, ^^depth_prepass::frame, ^^atmosphere::ap_compute_pass, ^^gi_probe::frame>();
+		.after<^^rt_shadow::frame, ^^light_culling::frame, ^^depth_prepass::frame, ^^atmosphere::ap_compute_pass, ^^gi_probe::frame, ^^skin::deform_pass>();
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
 
@@ -418,7 +419,7 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 
 	for (std::size_t i = 0; i < normal_batches.size(); ++i) {
 		const auto& batch = normal_batches[i];
-		const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
+		const auto& mesh = batch.key.resolve_mesh();
 
 		if (!mesh.has_meshlets()) {
 			continue;
@@ -460,7 +461,7 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 				.gi_atlas = gi_atlas_slot,
 				.ap_sampler = ap_sampler_slot,
 				.gi_atlas_sampler = gi_atlas_sampler_slot,
-				.vertices_buffer = ml.vertex_storage.slot(),
+				.vertices_buffer = batch.deformed_vertices.valid() ? batch.deformed_vertices : ml.vertex_storage.slot(),
 				.meshlets_buffer = ml.descriptors.slot(),
 				.meshlet_vertex_indices = ml.vertices.slot(),
 				.meshlet_triangles = ml.triangles.slot(),
