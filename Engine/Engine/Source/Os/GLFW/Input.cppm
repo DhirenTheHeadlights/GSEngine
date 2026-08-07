@@ -35,6 +35,7 @@ export namespace gse::input {
 
 	[[= gse::system_run<>{}]]
 	auto run(
+		gse::context& ctx,
 		data& d,
 		std::optional<shared_view<window::data>> win
 	) -> async::task<>;
@@ -48,7 +49,7 @@ auto gse::input::current_state(const shared_view<data> d) -> const input::state&
 	return d.states.read();
 }
 
-auto gse::input::run(data& d, const std::optional<shared_view<window::data>> win) -> async::task<> {
+auto gse::input::run(gse::context& ctx, data& d, const std::optional<shared_view<window::data>> win) -> async::task<> {
 	const auto& tok = detail::token();
 	auto& persistent_state = d.states.write();
 
@@ -58,6 +59,10 @@ auto gse::input::run(data& d, const std::optional<shared_view<window::data>> win
 	std::vector<event> drained;
 	if (win) {
 		drained = win->input_events.drain();
+	}
+
+	for (const auto& request : ctx.read_channel<synthetic_input_request>()) {
+		drained.push_back(request.value);
 	}
 
 	for (const auto& evt : drained) {
