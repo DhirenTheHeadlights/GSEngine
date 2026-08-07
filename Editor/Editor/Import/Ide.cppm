@@ -13,3 +13,4 @@ export import gse.ide.analysis;
 export import gse.ide.search;
 export import gse.ide.git;
 export import gse.ide.graph;
+export import gse.ide.profile;
