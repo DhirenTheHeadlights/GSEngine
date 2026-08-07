@@ -2,18 +2,56 @@ export module gse.introspection;
 
 import std;
 
+import gse.meta;
+
 export namespace gse::introspection {
 	constexpr std::uint32_t system_graph_magic = 0x47535347;
 	constexpr std::uint32_t system_graph_version = 3;
 
-	enum class edge_kind : std::uint8_t {
-		data_raw,
-		data_waw,
-		data_war,
-		shared_view,
-		lifecycle,
-		channel
+	struct edge_kind_info {
+		char label[48];
+		std::uint32_t color = 0;
+		float alpha = 1.f;
 	};
+
+	enum class edge_kind : std::uint8_t {
+		data_raw [[= edge_kind_info{
+			.label = "read after write",
+			.color = 0xd98c47,
+			.alpha = 0.85f,
+		}]],
+		data_waw [[= edge_kind_info{
+			.label = "write after write",
+			.color = 0xd15959,
+			.alpha = 0.85f,
+		}]],
+		data_war [[= edge_kind_info{
+			.label = "write after read",
+			.color = 0xccb85a,
+			.alpha = 0.85f,
+		}]],
+		shared_view [[= edge_kind_info{
+			.label = "shared view",
+			.color = 0x5c99d9,
+			.alpha = 0.90f,
+		}]],
+		lifecycle [[= edge_kind_info{
+			.label = "init / frame order",
+			.color = 0x737885,
+			.alpha = 0.70f,
+		}]],
+		channel [[= edge_kind_info{
+			.label = "channel (on select)",
+			.color = 0x66b87a,
+			.alpha = 0.85f,
+		}]]
+	};
+
+	constexpr std::size_t edge_kind_count = std::define_static_array(std::meta::enumerators_of(^^edge_kind)).size();
+
+	constexpr auto edge_info(
+		edge_kind kind
+	) -> edge_kind_info;
 
 	struct graph_edge {
 		std::uint64_t from = 0;
@@ -42,4 +80,12 @@ export namespace gse::introspection {
 		std::vector<graph_node> nodes;
 		std::vector<graph_edge> edges;
 	};
+}
+
+constexpr auto gse::introspection::edge_info(const edge_kind kind) -> edge_kind_info {
+	return gse::annotation_from_enum<edge_kind_info>(kind, {
+		.label = "unknown",
+		.color = 0x808080,
+		.alpha = 0.8f,
+	});
 }
