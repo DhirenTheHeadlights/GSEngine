@@ -1072,15 +1072,14 @@ auto gse::ide::draw_detail_panel(gui::builder& ui, const rectf& panel, graph_dat
 		gd.detail_wrap_font_size = detail_size;
 	}
 
-	const bool released = ctx.mouse_released();
 	const auto link_row = [&](const std::string_view header, const list_item& item) {
 		const rectf row = gui::layout::reserve_row(ctx, line_h);
 		std::uint64_t row_key = hash_combine(*gd.selected, stable_id(header));
 		row_key = hash_combine(row_key, item.node_id.value_or(stable_id(item.qualified)));
 		const id row_id = gui::ids::make_from_key(row_key);
-		const bool hovered = item.linkable && ctx.hovers(row);
-		gui::interaction::mark_hot(ui.hot_widget_id, row_id, hovered);
-		const bool clicked = gui::interaction::activate_on_click(ui.active_widget_id, row_id, hovered, ctx.mouse_pressed_for(row), released);
+		const auto hit = gui::interaction::press_in_rect(ctx, ui.hot_widget_id, ui.active_widget_id, row_id, row, item.linkable);
+		const bool hovered = hit.hovered;
+		const bool clicked = hit.activated;
 
 		const float text_x = x + 12.f;
 		if (hovered) {

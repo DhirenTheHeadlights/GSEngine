@@ -569,11 +569,18 @@ auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_
 		const float padding = d.fstate.sty.padding;
 		const float font_size = d.fstate.sty.font_size;
 		const auto text_view = d.fonts.text.resolve();
-		const float text_width = text_view->width(d.tooltip.text, font_size);
-		const float text_height = text_view->line_height(font_size);
+		const float line_height = text_view->line_height(font_size);
+
+		auto lines = std::views::split(std::string_view(d.tooltip.text), '\n');
+		float text_width = 0.f;
+		std::size_t line_count = 0;
+		for (const auto line : lines) {
+			text_width = std::max(text_width, text_view->width(std::string_view(line), font_size));
+			++line_count;
+		}
 
 		const float tooltip_width = text_width + padding * 2.f;
-		const float tooltip_height = text_height + padding;
+		const float tooltip_height = line_height * static_cast<float>(line_count) + padding;
 
 		vec2f tooltip_pos = d.tooltip.position + vec2f(15.f, -15.f);
 
@@ -611,15 +618,19 @@ auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_
 			.z_order = 99
 		});
 
-		d.text_commands.push_back({
-			.font = d.fonts.text,
-			.text = intern_text(d, d.tooltip.text),
-			.position = { tooltip_rect.left() + padding, tooltip_rect.center().y() + text_view->vertical_center_offset(font_size) },
-			.scale = font_size,
-			.color = d.fstate.sty.color_text,
-			.layer = render_layer::modal,
-			.z_order = 100
-		});
+		float line_center_y = tooltip_rect.top() - padding * 0.5f - line_height * 0.5f;
+		for (const auto line : lines) {
+			d.text_commands.push_back({
+				.font = d.fonts.text,
+				.text = intern_text(d, std::string_view(line)),
+				.position = { tooltip_rect.left() + padding, line_center_y + text_view->vertical_center_offset(font_size) },
+				.scale = font_size,
+				.color = d.fstate.sty.color_text,
+				.layer = render_layer::modal,
+				.z_order = 100
+			});
+			line_center_y -= line_height;
+		}
 	}
 
 	d.tooltip.pending_widget_id.reset();
@@ -901,30 +912,29 @@ auto gse::gui::end_menu(data& d) -> void {
 	d.current_menu = nullptr;
 }
 
-auto gse::gui::caption_button(builder& b, const rectf& rect, const std::string& key, const std::span<const symbol::stroke> glyph, const vec4f hover_color) -> bool {
+auto gse::gui::caption_button(builder& b, const rectf& rect, const std::string& key, const std::span<const symbol::stroke> glyph, const vec4f hover_color, const bool enabled) -> bool {
 	const draw_context& ctx = b.ctx;
 	const id widget_id = ids::make(key);
 
-	const bool hovered = ctx.hovers(rect);
-	const bool released = ctx.mouse_released();
-
-	interaction::mark_hot(b.hot_widget_id, widget_id, hovered);
-	const bool activated = interaction::activate_on_click(b.active_widget_id, widget_id, hovered, ctx.mouse_pressed_for(rect), released);
-
-	const bool engaged = b.active_widget_id == widget_id || b.hot_widget_id == widget_id;
+	const auto btn = interaction::press_in_rect(ctx, b.hot_widget_id, b.active_widget_id, widget_id, rect, enabled);
 
 	ctx.queue_sprite({
 		.rect = rect,
-		.color = engaged ? hover_color : ctx.style.color_input_background,
+		.color = btn.color({
+			.idle = ctx.style.color_input_background,
+			.hot = hover_color,
+			.active = hover_color,
+			.disabled = ctx.style.color_input_background,
+		}),
 		.texture = ctx.blank_texture,
 	});
 
 	symbol::draw(ctx, glyph, rect, {
-		.color = ctx.style.color_text,
+		.color = enabled ? ctx.style.color_text : ctx.style.color_text_disabled,
 		.extent = ctx.style.icon_extent,
 	});
 
-	return activated;
+	return btn.activated;
 }
 
 auto gse::gui::draw_screen_caption(builder& b, screen& top, const rectf& bar_rect, const rectf& full_rect, channel_writer channels) -> void {
@@ -1245,10 +1255,15 @@ auto gse::gui::draw_menu_chrome(data& d, const gse::input::state& input_state, m
 		const id close_id = ids::make_from_key(
 			hash_combine(current_menu.id().number(), stable_id("popout_close"))
 		);
-		interaction::mark_hot(d.hot_widget_id, close_id, hovered);
-		const bool click = interaction::activate_on_click(d.active_widget_id, close_id, hovered, hovered && pressed, released);
+		const auto btn = interaction::press_from(d.hot_widget_id, d.active_widget_id, close_id, hovered, hovered && pressed, released, true);
 
-		const vec4f bg_color = hovered ? sty.color_widget_hovered : vec4f{ 0.f, 0.f, 0.f, 0.f };
+		const vec4f transparent{ 0.f, 0.f, 0.f, 0.f };
+		const vec4f bg_color = btn.color({
+			.idle = transparent,
+			.hot = sty.color_widget_hovered,
+			.active = sty.color_widget_hovered,
+			.disabled = transparent,
+		});
 		d.sprite_commands.push_back({
 			.rect = close_rect,
 			.color = bg_color,
@@ -1266,7 +1281,7 @@ auto gse::gui::draw_menu_chrome(data& d, const gse::input::state& input_state, m
 			.clip_rect = close_rect,
 		});
 
-		if (click) {
+		if (btn.activated) {
 			d.pending_popout_close_ids.push_back(current_menu.id());
 		}
 	}
