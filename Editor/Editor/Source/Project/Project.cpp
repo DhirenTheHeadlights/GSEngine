@@ -206,6 +206,7 @@ auto gse::ide::project::create(const std::string_view name, const std::filesyste
 	std::error_code ec;
 	std::filesystem::create_directories(destination / "Source", ec);
 	std::filesystem::create_directories(destination / "Assets", ec);
+	std::filesystem::create_directories(destination / "Art", ec);
 	if (ec) {
 		return std::unexpected(std::format("Could not create {}", destination.generic_display_string()));
 	}
@@ -285,6 +286,7 @@ name = {0}
 engine_version = 0.1.0
 source = Source
 assets = Assets
+art = Art
 
 [engine]
 {1}
@@ -360,9 +362,22 @@ auto {1}::app::run(gse::context&, data& d) -> gse::async::task<> {{
 
 	const std::filesystem::path manifest = destination / (project + std::string(manifest_extension));
 
+	const std::string art_readme = R"(# Art
+
+Authoring output that engine tools consume: skinned meshes and skeletons
+exported from a DCC tool, before they are turned into engine assets.
+
+Nothing here is loaded at runtime. This directory sits outside Assets/ on
+purpose -- the asset compiler scans Assets/ recursively, so an intermediate
+file left in there is scanned, fails its version check, and reports nothing.
+
+    Art/  ->  Tools/RigDerive  ->  Assets/
+)";
+
 	if (!write_file(destination / "CMakeLists.txt", cmake)
 		|| !write_file(manifest, manifest_text)
 		|| !write_file(destination / "Source" / "Main.cpp", main_text)
+		|| !write_file(destination / "Art" / "README.md", art_readme)
 		|| !write_file(destination / ".gitignore", ".gse/\n")) {
 		return std::unexpected(std::format("Could not write project files under {}", destination.generic_display_string()));
 	}
@@ -562,6 +577,7 @@ auto gse::ide::project::load(const std::filesystem::path& file) -> manifest {
 
 	std::string source_leaf = "Source";
 	std::string assets_leaf = "Assets";
+	std::string art_leaf = "Art";
 	std::string accent_text;
 
 	for (const layout_store::section& section : layout_store::parse_sections(read_file(file))) {
@@ -574,6 +590,9 @@ auto gse::ide::project::load(const std::filesystem::path& file) -> manifest {
 			}
 			if (const auto entry = section.values.find("source"); entry != section.values.end()) {
 				source_leaf = entry->second;
+			}
+			if (const auto entry = section.values.find("art"); entry != section.values.end()) {
+				art_leaf = entry->second;
 			}
 			if (const auto entry = section.values.find("assets"); entry != section.values.end()) {
 				assets_leaf = entry->second;
@@ -626,6 +645,7 @@ auto gse::ide::project::load(const std::filesystem::path& file) -> manifest {
 
 	out.source = config::generic(out.root / source_leaf);
 	out.assets = config::generic(out.root / assets_leaf);
+	out.art = config::generic(out.root / art_leaf);
 	out.state = config::generic(out.root / ".gse");
 
 	if (out.name.empty()) {

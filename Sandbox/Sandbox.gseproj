@@ -2,7 +2,8 @@
 name = Sandbox
 engine_version = 0.1.0
 source = Sandbox
-assets = Resources
+assets = Assets
+art = Art
 
 [engine]
 name = GSEngine
