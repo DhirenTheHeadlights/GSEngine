@@ -44,9 +44,6 @@ export namespace gse {
 		else if constexpr (is_structural_v<U>) {
 			return false;
 		}
-		else if constexpr (is_registry_access_v<U>) {
-			return false;
-		}
 		else if constexpr (is_entities_v<U>) {
 			return false;
 		}
@@ -77,6 +74,8 @@ export namespace gse {
 		std::vector<id> optional_state_deps;
 		std::vector<id> component_reads;
 		std::vector<id> component_writes;
+		std::vector<id> component_structural;
+		bool entity_structural = false;
 	};
 
 	struct phase_state_deps {
@@ -164,9 +163,6 @@ auto gse::resolve_run_arg(context& ctx, state_of_t<S>& state) -> decltype(auto) 
 	}
 	else if constexpr (is_structural_v<U>) {
 		return ctx.template make_structural<structural_element_t<U>>();
-	}
-	else if constexpr (is_registry_access_v<U>) {
-		return ctx.make_registry_access();
 	}
 	else if constexpr (is_entities_v<U>) {
 		return ctx.make_entities();
@@ -281,7 +277,11 @@ auto gse::append_arg_run_metadata(run_signature_metadata& out) -> void {
 	}
 	else if constexpr (is_structural_v<ArgT>) {
 		(void)trace_id<structural_element_t<ArgT>>();
-		out.component_writes.push_back(id_of<structural_element_t<ArgT>>());
+		out.component_structural.push_back(id_of<structural_element_t<ArgT>>());
+	}
+
+	if constexpr (is_entities_v<ArgT>) {
+		out.entity_structural = true;
 	}
 }
 

@@ -417,6 +417,8 @@ auto gse::registry::acquire_read(access_token, access_guard* guard, std::atomic<
 			{},
 			nullptr,
 			nullptr,
+			nullptr,
+			nullptr,
 			guard,
 			held_locks
 		);
@@ -424,7 +426,22 @@ auto gse::registry::acquire_read(access_token, access_guard* guard, std::atomic<
 	constexpr auto lookup = +[](void* ctx, const id owner) -> const T* {
 		return static_cast<component_storage<T>*>(ctx)->try_get(owner);
 	};
-	return read<T>(s->items(), s->owners(), lookup, s, guard, held_locks);
+	constexpr auto mark = +[](void* ctx, const id owner) -> void {
+		static_cast<component_storage<T>*>(ctx)->mark_updated(owner);
+	};
+	constexpr auto drain = +[](void* ctx, const component_event event) -> std::vector<id> {
+		auto* s = static_cast<component_storage<T>*>(ctx);
+		switch (event) {
+			case component_event::added:
+				return s->drain_added();
+			case component_event::updated:
+				return s->drain_updated();
+			case component_event::removed:
+				return s->drain_removed();
+		}
+		return {};
+	};
+	return read<T>(s->items(), s->owners(), lookup, mark, drain, s, guard, held_locks);
 }
 
 template <typename T>
@@ -436,6 +453,8 @@ auto gse::registry::acquire_write(access_token, access_guard* guard, std::atomic
 			{},
 			nullptr,
 			nullptr,
+			nullptr,
+			nullptr,
 			guard,
 			held_locks
 		);
@@ -443,7 +462,22 @@ auto gse::registry::acquire_write(access_token, access_guard* guard, std::atomic
 	constexpr auto lookup = +[](void* ctx, const id owner) -> T* {
 		return static_cast<component_storage<T>*>(ctx)->try_get(owner);
 	};
-	return write<T>(s->items(), s->owners(), lookup, s, guard, held_locks);
+	constexpr auto mark = +[](void* ctx, const id owner) -> void {
+		static_cast<component_storage<T>*>(ctx)->mark_updated(owner);
+	};
+	constexpr auto drain = +[](void* ctx, const component_event event) -> std::vector<id> {
+		auto* s = static_cast<component_storage<T>*>(ctx);
+		switch (event) {
+			case component_event::added:
+				return s->drain_added();
+			case component_event::updated:
+				return s->drain_updated();
+			case component_event::removed:
+				return s->drain_removed();
+		}
+		return {};
+	};
+	return write<T>(s->items(), s->owners(), lookup, mark, drain, s, guard, held_locks);
 }
 
 template <typename T>

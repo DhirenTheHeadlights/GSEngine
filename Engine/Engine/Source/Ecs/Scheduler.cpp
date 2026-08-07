@@ -87,15 +87,19 @@ auto gse::scheduler::snapshot_graph() const -> introspection::system_graph {
 	}
 
 	std::unordered_map<id, std::vector<std::size_t>> writers;
-	std::unordered_map<id, std::vector<std::size_t>> readers;
+	std::unordered_map<id, std::vector<std::size_t>> structural_writers;
+	std::vector<std::size_t> entity_structural_nodes;
 	{
 		std::size_t idx = 0;
 		for (const auto& node : m_nodes) {
 			for (const id w : node.component_writes) {
 				writers[w].push_back(idx);
 			}
-			for (const id r : node.component_reads) {
-				readers[r].push_back(idx);
+			for (const id s : node.component_structural) {
+				structural_writers[s].push_back(idx);
+			}
+			if (node.entity_structural) {
+				entity_structural_nodes.push_back(idx);
 			}
 			++idx;
 		}
@@ -117,14 +121,23 @@ auto gse::scheduler::snapshot_graph() const -> introspection::system_graph {
 	{
 		std::size_t bi = 0;
 		for (const auto& node : m_nodes) {
+			const auto add_structural = [&](const id comp) {
+				const auto it = structural_writers.find(comp);
+				if (it == structural_writers.end()) {
+					return;
+				}
+				for (const std::size_t ai : it->second) {
+					add_component(ai, bi, introspection::edge_kind::structural, comp);
+				}
+			};
+
 			for (const id r : node.component_reads) {
 				if (const auto it = writers.find(r); it != writers.end()) {
 					for (const std::size_t ai : it->second) {
-						if (ai < bi) {
-							add_component(ai, bi, introspection::edge_kind::data_raw, r);
-						}
+						add_component(ai, bi, introspection::edge_kind::data_raw, r);
 					}
 				}
+				add_structural(r);
 			}
 			for (const id w : node.component_writes) {
 				if (const auto wit = writers.find(w); wit != writers.end()) {
@@ -134,13 +147,32 @@ auto gse::scheduler::snapshot_graph() const -> introspection::system_graph {
 						}
 					}
 				}
-				if (const auto rit = readers.find(w); rit != readers.end()) {
-					for (const std::size_t ai : rit->second) {
+				add_structural(w);
+			}
+			for (const id s : node.component_structural) {
+				if (const auto it = structural_writers.find(s); it != structural_writers.end()) {
+					for (const std::size_t ai : it->second) {
 						if (ai < bi) {
-							add_component(ai, bi, introspection::edge_kind::data_war, w);
+							add_component(ai, bi, introspection::edge_kind::data_waw, s);
 						}
 					}
 				}
+			}
+			++bi;
+		}
+	}
+
+	for (const std::size_t ai : entity_structural_nodes) {
+		std::size_t bi = 0;
+		for (const auto& node : m_nodes) {
+			const bool touches_components =
+				!node.component_reads.empty() || !node.component_writes.empty() || !node.component_structural.empty();
+			if (ai != bi && touches_components) {
+				graph.edges.push_back(introspection::graph_edge{
+					.from = m_nodes[ai].state_id.number(),
+					.to = node.state_id.number(),
+					.kind = introspection::edge_kind::structural
+				});
 			}
 			++bi;
 		}
@@ -211,6 +243,24 @@ auto gse::scheduler::snapshot_all_states() -> void {
 }
 
 namespace gse {
+	enum class dep_kind : std::uint8_t {
+		pinned,
+		structural,
+		reordered_read,
+		output
+	};
+
+	struct component_dep {
+		id state;
+		id via;
+		dep_kind kind;
+	};
+
+	auto find_dep_cycle(
+		const std::vector<std::vector<component_dep>>& deps,
+		const std::unordered_map<id, std::size_t>& state_to_index
+	) -> std::vector<std::size_t>;
+
 	struct wait_section_info {
 		id section_id;
 		time budget;
@@ -237,46 +287,230 @@ auto gse::scheduler::run_node_frame(context& ctx, system_node& node) -> async::t
 	ctx.notify_ready_by_id(node.state_id);
 }
 
+auto gse::find_dep_cycle(const std::vector<std::vector<component_dep>>& deps, const std::unordered_map<id, std::size_t>& state_to_index) -> std::vector<std::size_t> {
+	enum class color : std::uint8_t {
+		white,
+		gray,
+		black
+	};
+
+	std::vector<color> colors(deps.size(), color::white);
+	std::vector<std::size_t> stack;
+	std::vector<std::size_t> cycle;
+
+	auto visit = [&](const std::size_t node, auto& self) -> bool {
+		colors[node] = color::gray;
+		stack.push_back(node);
+
+		for (const auto& dep : deps[node]) {
+			const auto it = state_to_index.find(dep.state);
+			if (it == state_to_index.end()) {
+				continue;
+			}
+			const auto next = it->second;
+			if (colors[next] == color::gray) {
+				const auto start = std::ranges::find(stack, next);
+				cycle.assign(start, stack.end());
+				return true;
+			}
+			if (colors[next] == color::white && self(next, self)) {
+				return true;
+			}
+		}
+
+		stack.pop_back();
+		colors[node] = color::black;
+		return false;
+	};
+
+	for (std::size_t i = 0; i < deps.size(); ++i) {
+		if (colors[i] == color::white && visit(i, visit)) {
+			break;
+		}
+	}
+
+	return cycle;
+}
+
 auto gse::scheduler::wire_component_deps() -> void {
 	std::unordered_map<id, std::vector<std::pair<std::size_t, id>>> writers;
-	std::unordered_map<id, std::vector<std::pair<std::size_t, id>>> readers;
+	std::unordered_map<id, std::vector<std::pair<std::size_t, id>>> structural_writers;
+	std::vector<std::pair<std::size_t, id>> entity_structural_nodes;
+	std::unordered_map<id, std::size_t> state_to_index;
 	{
 		std::size_t idx = 0;
 		for (const auto& node : m_nodes) {
 			for (const id w : node.component_writes) {
 				writers[w].emplace_back(idx, node.state_id);
 			}
-			for (const id r : node.component_reads) {
-				readers[r].emplace_back(idx, node.state_id);
+			for (const id s : node.component_structural) {
+				structural_writers[s].emplace_back(idx, node.state_id);
+			}
+			if (node.entity_structural) {
+				entity_structural_nodes.emplace_back(idx, node.state_id);
+			}
+			state_to_index.emplace(node.state_id, idx);
+			++idx;
+		}
+	}
+
+	std::vector<std::vector<component_dep>> deps(m_nodes.size());
+	{
+		std::size_t idx = 0;
+		for (const auto& node : m_nodes) {
+			for (const id dep : node.run_state_deps) {
+				deps[idx].push_back({
+					.state = dep,
+					.via = {},
+					.kind = dep_kind::pinned,
+				});
 			}
 			++idx;
 		}
 	}
 
 	std::size_t idx = 0;
-	for (auto& node : m_nodes) {
-		auto depend_on_earlier = [&](const auto& accessors, const id comp) {
-			const auto it = accessors.find(comp);
-			if (it == accessors.end()) {
+	for (const auto& node : m_nodes) {
+		auto add_dep = [&](const id other_state, const id via, const dep_kind kind) {
+			if (other_state == node.state_id) {
 				return;
 			}
-			for (const auto& [other_idx, other_state] : it->second) {
-				if (other_idx >= idx || other_state == node.state_id) {
-					continue;
-				}
-				if (std::ranges::find(node.run_state_deps, other_state) == node.run_state_deps.end()) {
-					node.run_state_deps.push_back(other_state);
-				}
+			auto& list = deps[idx];
+			if (const auto existing = std::ranges::find(list, other_state, &component_dep::state); existing != list.end()) {
+				existing->kind = std::min(existing->kind, kind);
+				return;
+			}
+			list.push_back({
+				.state = other_state,
+				.via = via,
+				.kind = kind,
+			});
+		};
+
+		auto depend_on_structural = [&](const id comp) {
+			const auto it = structural_writers.find(comp);
+			if (it == structural_writers.end()) {
+				return;
+			}
+			for (const auto& other_state : std::views::values(it->second)) {
+				add_dep(other_state, comp, dep_kind::structural);
 			}
 		};
+
 		for (const id r : node.component_reads) {
-			depend_on_earlier(writers, r);
+			if (const auto it = writers.find(r); it != writers.end()) {
+				for (const auto& [other_idx, other_state] : it->second) {
+					add_dep(other_state, r, other_idx > idx ? dep_kind::reordered_read : dep_kind::pinned);
+				}
+			}
+			depend_on_structural(r);
 		}
 		for (const id w : node.component_writes) {
-			depend_on_earlier(writers, w);
-			depend_on_earlier(readers, w);
+			if (const auto it = writers.find(w); it != writers.end()) {
+				for (const auto& [other_idx, other_state] : it->second) {
+					if (other_idx >= idx) {
+						continue;
+					}
+					add_dep(other_state, w, dep_kind::output);
+				}
+			}
+			depend_on_structural(w);
 		}
+		for (const id s : node.component_structural) {
+			if (const auto it = structural_writers.find(s); it != structural_writers.end()) {
+				for (const auto& [other_idx, other_state] : it->second) {
+					if (other_idx >= idx) {
+						continue;
+					}
+					add_dep(other_state, s, dep_kind::output);
+				}
+			}
+		}
+
+		const bool touches_components =
+			!node.component_reads.empty() || !node.component_writes.empty() || !node.component_structural.empty();
+
+		if (touches_components || node.entity_structural) {
+			for (const auto& [other_idx, other_state] : entity_structural_nodes) {
+				if (node.entity_structural && other_idx >= idx) {
+					continue;
+				}
+				add_dep(other_state, {}, node.entity_structural ? dep_kind::output : dep_kind::structural);
+			}
+		}
+
 		++idx;
+	}
+
+	while (true) {
+		const auto cycle = find_dep_cycle(deps, state_to_index);
+		if (cycle.empty()) {
+			break;
+		}
+
+		bool demoted = false;
+		for (const auto target : { dep_kind::output, dep_kind::reordered_read, dep_kind::structural }) {
+			for (std::size_t i = 0; i < cycle.size(); ++i) {
+				const auto from = cycle[i];
+				const auto to = cycle[(i + 1) % cycle.size()];
+				auto& list = deps[from];
+				const auto edge = std::ranges::find(list, m_nodes[to].state_id, &component_dep::state);
+				if (edge == list.end() || edge->kind != target) {
+					continue;
+				}
+				if (target == dep_kind::output) {
+					log::println(
+						log::level::warning,
+						log::category::runtime,
+						"scheduler: {} and {} both write {} and ordering them closes a cycle. dropping the write ordering — if both actually mutate it, one needs an explicit ordering annotation",
+						m_nodes[from].state_id,
+						m_nodes[to].state_id,
+						edge->via
+					);
+				}
+				else if (target == dep_kind::structural) {
+					log::println(
+						log::level::error,
+						log::category::runtime,
+						"scheduler: {} accesses {} while {} adds or removes it, but ordering them closes a cycle. the access is no longer protected from storage reallocation — break the cycle with an explicit ordering annotation",
+						m_nodes[from].state_id,
+						edge->via,
+						m_nodes[to].state_id
+					);
+				}
+				else {
+					log::println(
+						log::level::warning,
+						log::category::runtime,
+						"scheduler: cyclic data dependency; {} reads {} written by {}, but that ordering closes a cycle. falling back to registration order — add an explicit ordering annotation to make this deterministic",
+						m_nodes[from].state_id,
+						edge->via,
+						m_nodes[to].state_id
+					);
+				}
+				list.erase(edge);
+				demoted = true;
+				break;
+			}
+			if (demoted) {
+				break;
+			}
+		}
+
+		if (!demoted) {
+			break;
+		}
+	}
+
+	{
+		std::size_t write_idx = 0;
+		for (auto& node : m_nodes) {
+			node.run_state_deps.clear();
+			for (const auto& dep : deps[write_idx]) {
+				node.run_state_deps.push_back(dep.state);
+			}
+			++write_idx;
+		}
 	}
 
 	m_state_deps.clear();

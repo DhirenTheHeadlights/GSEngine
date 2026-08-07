@@ -5,6 +5,17 @@ import gse;
 
 import :entity_builders;
 
+export namespace sandbox::player {
+	struct [[= gse::system_state<"Player">{}]] data {};
+
+	[[= gse::system_run<>{}]]
+	auto run(
+		gse::context& ctx,
+		data& d,
+		gse::structural<gse::free_camera::component> cameras
+	) -> gse::async::task<>;
+}
+
 export namespace sandbox {
 	auto sandbox_scene_setup(
 		gse::scene& s
@@ -35,27 +46,20 @@ export namespace sandbox::physics_parity {
 	) -> gse::async::task<>;
 }
 
-auto sandbox::sandbox_scene_setup(gse::scene& s) -> void {
-	s.set_player_factory([next_id = 0u](gse::scene& sc, std::optional<gse::id> server_id) mutable -> gse::id {
-		gse::id player_id;
-		if (server_id) {
-			player_id = gse::find_or_generate_id(server_id->number());
-			auto& reg = sc.registry();
-			reg.ensure_exists(player_id);
-			reg.ensure_active(player_id);
-		}
-		else {
-			player_id = sc.add_entity(std::format("Player_{}", next_id++));
-		}
-		sc.registry().add_component<gse::free_camera::component>(
-			player_id,
+auto sandbox::player::run(gse::context& ctx, data& d, gse::structural<gse::free_camera::component> cameras) -> gse::async::task<> {
+	for (const auto& request : ctx.read_channel<gse::world_system::possess_player_request>()) {
+		cameras.add(
+			request.entity,
 			{
 				.initial_position = gse::vec3<gse::position>(0.f, 2.f, 0.f),
 			}
 		);
-		return player_id;
-	});
+	}
 
+	return {};
+}
+
+auto sandbox::sandbox_scene_setup(gse::scene& s) -> void {
 	constexpr auto floor_size = gse::vec3<gse::length>(gse::meters(1000.f), gse::meters(1.f), gse::meters(1000.f));
 	s.spawn(
 		"Floor",

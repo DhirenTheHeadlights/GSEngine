@@ -77,12 +77,14 @@ export namespace gse {
 		std::vector<id> optional_init_state_deps;
 		std::vector<id> component_reads;
 		std::vector<id> component_writes;
+		std::vector<id> component_structural;
 		std::vector<id> shared_view_reads;
 
 		void* state_ptr = nullptr;
 		const void* state_snapshot_ptr = nullptr;
 
 		bool has_frame = false;
+		bool entity_structural = false;
 		bool deferred = false;
 		bool init_launched = false;
 		bool init_done = false;

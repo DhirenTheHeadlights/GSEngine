@@ -16,7 +16,6 @@ export namespace gse {
 	struct evaluation_context {
 		std::optional<id> client_id = std::nullopt;
 		const actions::state* input = nullptr;
-		registry* registry = nullptr;
 	};
 
 	struct trigger {
@@ -30,6 +29,14 @@ export namespace gse {
 }
 
 export namespace gse::world_system {
+	struct spawn_player_request {
+		id entity;
+	};
+
+	struct possess_player_request {
+		id entity;
+	};
+
 	struct [[= gse::system_state<"World">{}]] data {
 		std::unordered_map<id, std::unique_ptr<scene>> scenes;
 		[[= gse::shared]] std::vector<id> scene_ids;
@@ -42,9 +49,8 @@ export namespace gse::world_system {
 		id local_controlled_entity{};
 		id local_controller_id{};
 
-		std::unordered_set<id> pc_processed;
-		std::unordered_map<id, id> pc_controller_to_local_player;
-		bool pc_local_player_created = false;
+		std::uint32_t next_player = 0;
+		bool local_player_spawned = false;
 	};
 
 	[[= gse::system_run<>{}]]
@@ -52,7 +58,8 @@ export namespace gse::world_system {
 		context& ctx,
 		data& d,
 		shared_view<actions::data> actions_d,
-		registry_access ra
+		write<player_controller> controllers,
+		entities ents
 	) -> async::task<>;
 
 	[[= gse::system_shutdown{}]]
@@ -105,7 +112,9 @@ export namespace gse {
 namespace gse {
 	auto update_player_controllers(
 		world_system::data& d,
-		registry& reg
+		write<player_controller>& controllers,
+		const entities& ents,
+		context& ctx
 	) -> void;
 }
 
@@ -162,110 +171,57 @@ auto gse::deactivate_active_scene(world_system::data& d) -> void {
 	d.active_scene = std::nullopt;
 }
 
-auto gse::update_player_controllers(world_system::data& d, registry& reg) -> void {
-	auto* current = current_scene(d);
-	if (!current) {
-		return;
-	}
-
-	const auto& factory = current->player_factory();
-	if (!factory) {
-		return;
-	}
+auto gse::update_player_controllers(world_system::data& d, write<player_controller>& controllers, const entities& ents, context& ctx) -> void {
+	const auto spawn = [&] {
+		const auto player_id = generate_id(std::format("Player_{}", d.next_player++));
+		ents.ensure_active(player_id);
+		ctx.channels.push<world_system::spawn_player_request>({
+			.entity = player_id,
+		});
+		return player_id;
+	};
 
 	if (!d.networked) {
-		if (!d.pc_local_player_created) {
-			const auto player_id = factory(*current, std::nullopt);
-			d.local_controlled_entity = player_id;
-			d.pc_local_player_created = true;
+		if (!d.local_player_spawned) {
+			d.local_controlled_entity = spawn();
+			d.local_player_spawned = true;
+			ctx.channels.push<world_system::possess_player_request>({
+				.entity = d.local_controlled_entity,
+			});
 		}
 		return;
 	}
 
-	const bool is_server = d.authoritative;
-
-	if (!is_server) {
-		const auto current_local = d.local_controlled_entity;
-		if (current_local.exists()) {
-			id our_controller{};
-			for (const auto& [ctrl_id, local_id] : d.pc_controller_to_local_player) {
-				if (local_id == current_local) {
-					our_controller = ctrl_id;
-					break;
-				}
-			}
-
-			if (our_controller.exists() && !reg.try_component<player_controller>(our_controller)) {
-				if (reg.exists(current_local)) {
-					reg.remove(current_local);
-				}
-				d.local_controlled_entity = {};
-				d.pc_processed.erase(our_controller);
-				d.pc_controller_to_local_player.erase(our_controller);
+	if (d.authoritative) {
+		const auto owners = controllers.owner_ids();
+		for (std::size_t i = 0; i < controllers.size(); ++i) {
+			if (auto& pc = controllers[i]; !pc.controlled_entity_id.exists()) {
+				pc.controlled_entity_id = spawn();
+				controllers.mark_updated(owners[i]);
 			}
 		}
+		return;
 	}
 
-	const auto pc_components = reg.components<player_controller>();
-	const auto pc_ids = reg.owner_ids<player_controller>();
-	for (std::size_t i = 0; i < pc_components.size(); ++i) {
-		auto& pc = pc_components[i];
-		const auto controller_id = pc_ids[i];
+	const auto* mine = d.local_controller_id.exists() ? controllers.find(d.local_controller_id) : nullptr;
+	const auto target = mine ? mine->controlled_entity_id : id{};
 
-		if (is_server) {
-			if (pc.controlled_entity_id.exists()) {
-				continue;
-			}
-
-			const auto player_id = factory(*current, std::nullopt);
-			pc.controlled_entity_id = player_id;
-			reg.mark_component_updated<player_controller>(controller_id);
+	if (d.local_controlled_entity.exists() && d.local_controlled_entity != target) {
+		if (ents.exists(d.local_controlled_entity)) {
+			ents.remove(d.local_controlled_entity);
 		}
-		else {
-			if (!pc.controlled_entity_id.exists()) {
-				continue;
-			}
+		d.local_controlled_entity = {};
+	}
 
-			if (d.pc_processed.contains(controller_id)) {
-				continue;
-			}
-
-			const auto our_controller = d.local_controller_id;
-			if (!our_controller.exists() || controller_id != our_controller) {
-				d.pc_processed.insert(controller_id);
-				continue;
-			}
-
-			const auto current_local = d.local_controlled_entity;
-			if (current_local.exists() && reg.exists(current_local)) {
-				d.pc_processed.insert(controller_id);
-				continue;
-			}
-
-			if (current_local.exists()) {
-				for (auto it = d.pc_controller_to_local_player.begin(); it != d.pc_controller_to_local_player.end();) {
-					if (it->second == current_local) {
-						d.pc_processed.erase(it->first);
-						it = d.pc_controller_to_local_player.erase(it);
-					}
-					else {
-						++it;
-					}
-				}
-				if (reg.exists(current_local)) {
-					reg.remove(current_local);
-				}
-			}
-
-			const auto local_player_id = factory(*current, pc.controlled_entity_id);
-			d.local_controlled_entity = local_player_id;
-			d.pc_processed.insert(controller_id);
-			d.pc_controller_to_local_player[controller_id] = local_player_id;
-		}
+	if (target.exists() && !d.local_controlled_entity.exists() && ents.exists(target)) {
+		d.local_controlled_entity = target;
+		ctx.channels.push<world_system::possess_player_request>({
+			.entity = target,
+		});
 	}
 }
 
-auto gse::world_system::run(context& ctx, data& d, const shared_view<actions::data> actions_d, registry_access ra) -> async::task<> {
+auto gse::world_system::run(context& ctx, data& d, const shared_view<actions::data> actions_d, write<player_controller> controllers, entities ents) -> async::task<> {
 	for (const auto& r : ctx.read_channel<set_networked_request>()) {
 		d.networked = r.value;
 	}
@@ -294,7 +250,6 @@ auto gse::world_system::run(context& ctx, data& d, const shared_view<actions::da
 			const evaluation_context ec{
 				.client_id = d.client_id,
 				.input = std::addressof(s),
-				.registry = &ra.registry(),
 			};
 
 			if (condition(ec) && scene_id != d.active_scene) {
@@ -313,7 +268,7 @@ auto gse::world_system::run(context& ctx, data& d, const shared_view<actions::da
 		}
 	}
 
-	update_player_controllers(d, ra.registry());
+	update_player_controllers(d, controllers, ents, ctx);
 
 	d.active_scene_ptr = current_scene(d);
 

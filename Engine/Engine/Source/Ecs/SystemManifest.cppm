@@ -372,6 +372,8 @@ auto gse::make_annotated_system_node(settings::draw_page_thunk page_thunk) -> sy
 	node.optional_run_state_deps = std::move(run_meta.optional_state_deps);
 	node.component_reads = std::move(run_meta.component_reads);
 	node.component_writes = std::move(run_meta.component_writes);
+	node.component_structural = std::move(run_meta.component_structural);
+	node.entity_structural = run_meta.entity_structural;
 	node.init_state_deps = std::move(init_deps.required);
 	node.optional_init_state_deps = std::move(init_deps.optional);
 	node.frame_state_deps = std::move(frame_deps);
