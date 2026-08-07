@@ -76,8 +76,6 @@ export namespace gse {
 		template <typename T>
 		auto make_structural() -> structural<T>;
 
-		auto make_registry_access() -> registry_access;
-
 		auto make_entities() -> entities;
 
 	private:
@@ -168,17 +166,6 @@ auto gse::context::ensure_storage() -> void {
 template <typename T>
 auto gse::context::make_structural() -> structural<T> {
 	return structural<T>(&m_reg, &m_guard, &m_held_locks, &m_structural_authority);
-}
-
-auto gse::context::make_registry_access() -> registry_access {
-	return registry_access(&m_reg);
-}
-
-gse::registry_access::registry_access(gse::registry* reg) : m_reg(reg) {
-}
-
-auto gse::registry_access::registry() const -> gse::registry& {
-	return *m_reg;
 }
 
 auto gse::context::make_entities() -> entities {

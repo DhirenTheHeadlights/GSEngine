@@ -26,7 +26,9 @@ export namespace gse::server {
 		data<Components...>& d,
 		shared_view<world_system::data> world_d,
 		shared_view<actions::data> actions_d,
-		registry_access ra
+		structural<player_controller> controller_auth,
+		entities ents,
+		write<Components>... comps
 	) -> async::task<>;
 }
 
@@ -66,9 +68,9 @@ auto gse::server::init(context& ctx, data<Components...>& d) -> async::task<> {
 }
 
 template <typename... Components>
-auto gse::server::run(context& ctx, data<Components...>& d, const shared_view<world_system::data> world_d, const shared_view<actions::data> actions_d, registry_access ra) -> async::task<> {
+auto gse::server::run(context& ctx, data<Components...>& d, const shared_view<world_system::data> world_d, const shared_view<actions::data> actions_d, structural<player_controller> controller_auth, entities ents, write<Components>... comps) -> async::task<> {
 	if (d.srv) {
-		d.srv->update(world_d, ra.registry(), ctx.channels, actions_d);
+		d.srv->update(world_d, controller_auth, ents, ctx.channels, actions_d, comps...);
 	}
 	return {};
 }

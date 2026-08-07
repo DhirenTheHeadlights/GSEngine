@@ -63,6 +63,12 @@ export namespace gse {
 		std::shared_mutex m_map_mutex;
 	};
 
+	enum class component_event : std::uint8_t {
+		added,
+		updated,
+		removed
+	};
+
 	template <typename T, access_mode M = access_mode::read>
 	class access : non_copyable {
 	public:
@@ -75,6 +81,18 @@ export namespace gse {
 		)(
 			void* ctx,
 			id
+		);
+		using mark_fn = void (
+				*
+		)(
+			void* ctx,
+			id
+		);
+		using drain_fn = std::vector<id> (
+				*
+		)(
+			void* ctx,
+			component_event
 		);
 
 		~access();
@@ -123,6 +141,14 @@ export namespace gse {
 			std::size_t i
 		) const -> id;
 
+		auto mark_updated(
+			id owner
+		) const -> void;
+
+		auto drain(
+			component_event event
+		) const -> std::vector<id>;
+
 	private:
 		friend class registry;
 
@@ -130,6 +156,8 @@ export namespace gse {
 			span_type span,
 			std::span<const id> owners,
 			lookup_fn fn = nullptr,
+			mark_fn mark = nullptr,
+			drain_fn drain = nullptr,
 			void* ctx = nullptr,
 			access_guard* guard = nullptr,
 			std::atomic<int>* held_locks = nullptr
@@ -138,6 +166,8 @@ export namespace gse {
 		span_type m_span;
 		std::span<const id> m_owners;
 		lookup_fn m_lookup = nullptr;
+		mark_fn m_mark = nullptr;
+		drain_fn m_drain = nullptr;
 		void* m_lookup_ctx = nullptr;
 		access_guard* m_guard = nullptr;
 		std::atomic<int>* m_held_locks = nullptr;
@@ -193,20 +223,6 @@ export namespace gse {
 		access_guard* m_guard = nullptr;
 		std::atomic<int>* m_held_locks = nullptr;
 		std::vector<id>* m_authority = nullptr;
-	};
-
-	class registry_access {
-	public:
-		[[nodiscard]] auto registry() const -> gse::registry&;
-
-	private:
-		friend class context;
-
-		explicit registry_access(
-			gse::registry* reg
-		);
-
-		gse::registry* m_reg = nullptr;
 	};
 
 	class entities {
@@ -281,8 +297,8 @@ auto gse::access_guard::end_write(const id type) -> void {
 }
 
 template <typename T, gse::access_mode M>
-gse::access<T, M>::access(const span_type span, const std::span<const id> owners, const lookup_fn fn, void* ctx, access_guard* guard, std::atomic<int>* held_locks)
-	: m_span(span), m_owners(owners), m_lookup(fn), m_lookup_ctx(ctx), m_guard(guard), m_held_locks(held_locks) {
+gse::access<T, M>::access(const span_type span, const std::span<const id> owners, const lookup_fn fn, const mark_fn mark, const drain_fn drain, void* ctx, access_guard* guard, std::atomic<int>* held_locks)
+	: m_span(span), m_owners(owners), m_lookup(fn), m_mark(mark), m_drain(drain), m_lookup_ctx(ctx), m_guard(guard), m_held_locks(held_locks) {
 	if (m_guard) {
 		if constexpr (M == access_mode::read) {
 			m_guard->begin_read(id_of<T>());
@@ -396,6 +412,22 @@ auto gse::access<T, M>::owner_ids() const -> std::span<const id> {
 template <typename T, gse::access_mode M>
 auto gse::access<T, M>::owner_id_at(const std::size_t i) const -> id {
 	return m_owners[i];
+}
+
+template <typename T, gse::access_mode M>
+auto gse::access<T, M>::mark_updated(const id owner) const -> void {
+	if (!m_mark) {
+		return;
+	}
+	m_mark(m_lookup_ctx, owner);
+}
+
+template <typename T, gse::access_mode M>
+auto gse::access<T, M>::drain(const component_event event) const -> std::vector<id> {
+	if (!m_drain) {
+		return {};
+	}
+	return m_drain(m_lookup_ctx, event);
 }
 
 template <typename T>

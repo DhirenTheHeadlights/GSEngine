@@ -49,9 +49,11 @@ export namespace gse::server {
 
 		auto update(
 			shared_view<world_system::data> w,
-			registry& reg,
+			const structural<player_controller>& controller_auth,
+			const entities& ents,
 			channel_writer& channels,
-			shared_view<actions::data> actions_s
+			shared_view<actions::data> actions_s,
+			write<Components>&... comps
 		) -> void;
 
 		template <typename T>
@@ -78,7 +80,8 @@ export namespace gse::server {
 	private:
 		auto accept_connection(
 			shared_view<world_system::data> w,
-			registry& reg,
+			const structural<player_controller>& controller_auth,
+			const entities& ents,
 			const network::address& addr
 		) -> void;
 
@@ -224,7 +227,8 @@ auto gse::server::host<Components...>::resend_reliable_messages() -> void {
 }
 
 template <typename... Components>
-auto gse::server::host<Components...>::update(const shared_view<world_system::data> w, registry& reg, channel_writer& channels, const shared_view<actions::data> actions_s) -> void {
+auto gse::server::host<Components...>::update(const shared_view<world_system::data> w, const structural<player_controller>& controller_auth, const entities& ents, channel_writer& channels, const shared_view<actions::data> actions_s, write<Components>&... comps) -> void {
+	auto& controllers = std::get<write<player_controller>&>(std::tie(comps...));
 	const bool has_active_scene = w.active_scene.has_value() && std::ranges::find(w.scene_ids, *w.active_scene) != w.scene_ids.end();
 
 	if (!has_active_scene && !w.scene_ids.empty()) {
@@ -289,7 +293,7 @@ auto gse::server::host<Components...>::update(const shared_view<world_system::da
 					}
 
 					m_peers.emplace(pkt.from, network::remote_peer(pkt.from));
-					accept_connection(w, reg, pkt.from);
+					accept_connection(w, controller_auth, ents, pkt.from);
 					std::println("Client [{}:{}] connected ({}/{})",
 								 pkt.from.ip,
 								 pkt.from.port,
@@ -305,17 +309,17 @@ auto gse::server::host<Components...>::update(const shared_view<world_system::da
 				if (auto client_it = m_clients.find(pkt.from); client_it != m_clients.end()) {
 					std::println("Client [{}:{}] reconnecting", pkt.from.ip, pkt.from.port);
 					if (has_active_scene) {
-						if (auto* pc = reg.try_component<player_controller>(client_it->second.controller_id)) {
+						if (const auto* pc = controllers.find(client_it->second.controller_id)) {
 							if (pc->controlled_entity_id.exists()) {
-								reg.remove(pc->controlled_entity_id);
+								ents.remove(pc->controlled_entity_id);
 							}
 						}
-						reg.remove(client_it->second.controller_id);
+						ents.remove(client_it->second.controller_id);
 					}
 					m_clients.erase(client_it);
 				}
 
-				accept_connection(w, reg, pkt.from);
+				accept_connection(w, controller_auth, ents, pkt.from);
 			})) {
 			continue;
 		}
@@ -371,13 +375,12 @@ auto gse::server::host<Components...>::update(const shared_view<world_system::da
 	if (has_active_scene) {
 		for (const auto& [scene_id, condition] : w.triggers) {
 			for (const auto& cd : m_clients | std::views::values) {
-				auto* pc = reg.try_component<player_controller>(cd.controller_id);
+				const auto* pc = controllers.find(cd.controller_id);
 				const auto controlled_id = pc ? pc->controlled_entity_id : id{};
 
 				evaluation_context ctx{
 					.client_id = controlled_id,
 					.input = &cd.latest_input,
-					.registry = &reg,
 				};
 				if (condition(ctx)) {
 					scene_requested_id = scene_id;
@@ -409,12 +412,12 @@ auto gse::server::host<Components...>::update(const shared_view<world_system::da
 
 		if (!m_pending_snapshots.empty()) {
 			for (const auto& addr : m_pending_snapshots) {
-				network::replicate_snapshot_to<type_pack<Components...>>(send_all, reg, addr);
+				network::replicate_snapshot_to(send_all, addr, comps...);
 			}
 			m_pending_snapshots.clear();
 		}
 
-		network::replicate_deltas<type_pack<Components...>>(send_all, reg, m_peers);
+		network::replicate_deltas(send_all, m_peers, comps...);
 	}
 }
 
@@ -439,15 +442,15 @@ auto gse::server::host<Components...>::host_address() const -> std::optional<net
 }
 
 template <typename... Components>
-auto gse::server::host<Components...>::accept_connection(const shared_view<world_system::data> w, registry& reg, const network::address& addr) -> void {
+auto gse::server::host<Components...>::accept_connection(const shared_view<world_system::data> w, const structural<player_controller>& controller_auth, const entities& ents, const network::address& addr) -> void {
 	const bool has_active_scene = w.active_scene.has_value() && std::ranges::find(w.scene_ids, *w.active_scene) != w.scene_ids.end();
 
 	id controller_id{};
 	if (has_active_scene) {
 		const auto controller_name = std::format("PlayerController_{}:{}", addr.ip, addr.port);
-		controller_id = reg.create(controller_name);
-		reg.add_component<player_controller>(controller_id);
-		reg.activate(controller_id);
+		controller_id = generate_id(controller_name);
+		ents.ensure_active(controller_id);
+		controller_auth.add(controller_id);
 		m_clients.emplace(
 			addr,
 			client_data{

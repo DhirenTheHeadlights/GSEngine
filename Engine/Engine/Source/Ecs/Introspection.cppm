@@ -30,6 +30,11 @@ export namespace gse::introspection {
 			.color = 0xccb85a,
 			.alpha = 0.85f,
 		}]],
+		structural [[= edge_kind_info{
+			.label = "adds / removes",
+			.color = 0xa678d1,
+			.alpha = 0.90f,
+		}]],
 		shared_view [[= edge_kind_info{
 			.label = "shared view",
 			.color = 0x5c99d9,
