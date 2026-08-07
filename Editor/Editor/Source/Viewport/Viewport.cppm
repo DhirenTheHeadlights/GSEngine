@@ -3,31 +3,50 @@ export module gse.ide.viewport;
 import std;
 import gse;
 import gse.gpu;
+import gse.ide.build;
 
 export namespace gse::ide::viewport {
-	struct [[= gse::system_state<"Viewport">{}]] data {
-		[[= gse::shared]] gse::per_frame_resource<gse::gpu::image> targets;
-		[[= gse::shared]] std::array<gse::gpu::bindless_handle, gse::per_frame_resource<gse::gpu::image>::frames_in_flight> slots;
-		[[= gse::shared]] gse::gpu::bindless_slot display_slot = {};
-		[[= gse::shared]] gse::vec2u extent{ 0, 0 };
-		[[= gse::shared]] bool ready = false;
-		[[= gse::shared]] bool imported_ready = false;
-		std::array<gse::gpu::shared_surface, gse::attached_ring_size> imported{};
-		std::array<gse::gpu::bindless_handle, gse::attached_ring_size> imported_slot_handles{};
-		gse::gpu::handle<gse::gpu::semaphore> imported_semaphore{};
-		std::optional<gse::attached_surface_message> pending_import;
+	struct pending_session {
+		std::uint32_t generation = 0;
+		std::shared_ptr<const attached_surface_message> message;
 	};
 
-	[[= gse::system_init{}]]
-	auto init(
-		gse::shared_view<gse::gpu::context::data> gpu_s,
-		data& d
-	) -> gse::async::task<>;
+	struct imported_session {
+		std::uint32_t generation = 0;
+		std::array<gpu::shared_surface, attached_ring_size> surfaces{};
+		std::array<gpu::bindless_handle, attached_ring_size> slots{};
+		gpu::handle<gpu::semaphore> produced_semaphore{};
+		gpu::handle<gpu::semaphore> consumed_semaphore{};
+		std::uint64_t released_value = 0;
+	};
 
-	[[= gse::system_frame{}]]
-	auto frame(
-		const gse::context& ctx,
-		gse::shared_view<gse::gpu::context::data> gpu_s,
+	struct retiring_session {
+		imported_session session;
+		std::uint32_t frames_remaining = gpu::max_frames_in_flight + 1;
+	};
+
+	struct [[= system_state<"Viewport">{}]] data {
+		[[= shared]] per_frame_resource<gpu::image> targets;
+		[[= shared]] std::array<gpu::bindless_handle, per_frame_resource<gpu::image>::frames_in_flight> slots;
+		[[= shared]] gpu::bindless_slot display_slot = {};
+		[[= shared]] vec2u extent{ 0, 0 };
+		[[= shared]] bool ready = false;
+		std::optional<pending_session> pending;
+		std::optional<imported_session> imported;
+		std::vector<retiring_session> retiring;
+	};
+
+	[[= system_init{}]]
+	auto init(
+		shared_view<gpu::context::data> gpu_s,
 		data& d
-	) -> gse::async::task<>;
+	) -> async::task<>;
+
+	[[= system_frame{}]]
+	auto frame(
+		const context& ctx,
+		shared_view<gpu::context::data> gpu_s,
+		data& d,
+		shared_view<build_runner::data> build_d
+	) -> async::task<>;
 }
