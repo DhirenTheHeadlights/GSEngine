@@ -24,6 +24,10 @@ namespace gse {
 		std::string_view name
 	) -> std::string;
 
+	auto warn_unrecognized_arg(
+		std::string_view arg
+	) -> void;
+
 	template <std::meta::info Member, typename T>
 	auto apply_arg_clamps(
 		T& value
@@ -50,6 +54,10 @@ auto gse::build_arg_flag(const std::string_view prefix, const std::string_view n
 		result.push_back(c == '_' ? '-' : c);
 	}
 	return result;
+}
+
+auto gse::warn_unrecognized_arg(const std::string_view arg) -> void {
+	std::cerr << std::format("warning: unrecognized command-line argument '{}' was ignored\n", arg);
 }
 
 template <std::meta::info Member, typename T>
@@ -145,6 +153,7 @@ auto gse::parse_args(const int argc, char** argv) -> Config {
 			i
 		);
 		if (i == prev) {
+			warn_unrecognized_arg(argv[i]);
 			++i;
 		}
 	}
