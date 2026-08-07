@@ -12,16 +12,19 @@ import gse.assert;
 
 import :asset_format;
 import :boot_critical;
+import :catalog;
 import :resource_handle;
 import :resource_loader;
 import :registry;
 
 export namespace gse::asset {
 	template <typename T>
-	concept loadable = requires(T t, load_ctx& ctx) { t.load(ctx); };
+	concept loadable = requires(T t, load_ctx& ctx) {
+		{ t.load(ctx) } -> std::same_as<async::task<asset_result>>;
+	};
 
 	template <typename T>
-	concept has_compile_path = requires { typename T::baked; } && has_asset_format<typename T::baked> &&
+	concept has_compile_path = has_baked_asset<T> &&
 		requires(const std::filesystem::path& src, typename T::baked& b) {
 			{ bake(src, b) } -> std::convertible_to<bool>;
 		};
@@ -30,13 +33,13 @@ export namespace gse::asset {
 	auto bake_to_disk(
 		const std::filesystem::path& src,
 		const std::filesystem::path& dst
-	) -> bool;
+	) -> asset_result;
 
 	template <has_compile_path T>
 	auto needs_recompile(
 		const std::filesystem::path& src,
 		const std::filesystem::path& dst
-	) -> bool;
+	) -> std::expected<bool, asset_error>;
 
 	template <typename T>
 	auto enumerate_resources() -> std::vector<std::string>;
@@ -44,12 +47,17 @@ export namespace gse::asset {
 	template <typename T>
 	auto recompile_if_stale(
 		const std::filesystem::path& baked_path
-	) -> bool;
+	) -> asset_result;
 
 	template <typename T>
 	auto setup_hot_reload_for(
 		data& d
 	) -> void;
+
+	template <typename T>
+	auto discover_baked(
+		data& d
+	) -> asset_result;
 
 	struct compile_result {
 		std::size_t success_count = 0;
@@ -60,15 +68,6 @@ export namespace gse::asset {
 			const compile_result& other
 		) -> compile_result&;
 	};
-
-	struct compile_progress {
-		std::function<void(std::uint32_t done, std::uint32_t total)> on_tick;
-		std::uint32_t done = 0;
-		std::uint32_t total = 0;
-	};
-
-	template <typename T>
-	auto count_compile_work() -> std::uint32_t;
 
 	struct missing_built_in {
 		std::string tag;
@@ -98,23 +97,13 @@ export namespace gse::asset {
 		) noexcept -> system& = default;
 
 		template <typename T>
-		auto compile(
-			compile_progress* progress = nullptr
-		) -> compile_result;
+		auto compile() -> compile_result;
 
-		auto compile_all(
-			compile_progress* progress = nullptr
-		) -> compile_result;
-
-		auto compile_boot_critical(
-			compile_progress* progress = nullptr
-		) -> compile_result;
-
-		auto compile_non_boot_critical(
-			compile_progress* progress = nullptr
-		) -> compile_result;
+		auto compile_boot_critical() -> compile_result;
 
 		auto register_loaders() -> void;
+
+		auto discover_baked() -> asset_result;
 
 		auto install_hot_reload_fns() -> void;
 
@@ -136,89 +125,73 @@ auto gse::asset::compile_result::operator+=(const compile_result& other) -> comp
 }
 
 template <gse::asset::has_compile_path T>
-auto gse::asset::bake_to_disk(const std::filesystem::path& src, const std::filesystem::path& dst) -> bool {
-	constexpr auto fmt = format_of<typename T::baked>();
+auto gse::asset::bake_to_disk(const std::filesystem::path& src, const std::filesystem::path& dst) -> asset_result {
 	typename T::baked b{};
-	if (!bake(src, b)) {
-		return false;
+	try {
+		if (!bake(src, b)) {
+			return std::unexpected(asset_error{
+				.code = asset_error_code::load_failure,
+				.path = src,
+				.detail = "Asset compiler rejected the source file"
+			});
+		}
 	}
-	std::filesystem::create_directories(dst.parent_path());
-	std::ofstream out(dst, std::ios::binary);
-	if (!out.is_open()) {
-		return false;
+	catch (const std::exception& error) {
+		return std::unexpected(asset_error{
+			.code = asset_error_code::load_failure,
+			.path = src,
+			.detail = error.what()
+		});
 	}
-	binary_writer ar(out, fmt.magic, fmt.version);
-	ar & b;
-	log::println(log::category::assets, "Asset compiled: {}", dst.filename().display_string());
-	return true;
+	catch (...) {
+		return std::unexpected(asset_error{
+			.code = asset_error_code::load_failure,
+			.path = src,
+			.detail = "Asset compiler failed"
+		});
+	}
+	auto written = write_baked(dst, b);
+	if (!written) {
+		return written;
+	}
+	log::println(log::category::assets, "Asset compiled: {}", dst.filename().generic_display_string());
+	return {};
 }
 
 template <gse::asset::has_compile_path T>
-auto gse::asset::needs_recompile(const std::filesystem::path& src, const std::filesystem::path& dst) -> bool {
-	if (!std::filesystem::exists(dst)) {
-		return true;
-	}
-	constexpr auto fmt = format_of<typename T::baked>();
-	const auto dst_time = std::filesystem::last_write_time(dst);
-	if (std::filesystem::last_write_time(src) > dst_time) {
-		return true;
-	}
-	if constexpr (fmt.meta_sidecar) {
-		const auto meta = src.parent_path() / (src.stem().native_encoded_string() + ".meta");
-		if (std::filesystem::exists(meta) && std::filesystem::last_write_time(meta) > dst_time) {
+auto gse::asset::needs_recompile(const std::filesystem::path& src, const std::filesystem::path& dst) -> std::expected<bool, asset_error> {
+	try {
+		if (!std::filesystem::exists(dst)) {
 			return true;
 		}
-	}
-	std::ifstream in(dst, std::ios::binary);
-	if (!in.is_open()) {
-		return true;
-	}
-	std::uint32_t header[3]{};
-	in.read(reinterpret_cast<char*>(header), sizeof(header));
-	if (!in.good() || header[0] != fmt.magic || header[1] != fmt.version || header[2] != archive_format_epoch) {
-		return true;
-	}
-	return false;
-}
-
-template <typename T>
-auto gse::asset::count_compile_work() -> std::uint32_t {
-	if constexpr (!has_compile_path<T>) {
-		log::println(log::category::assets,
-					 "count_compile_work<{}>: 0 (no compile path)",
-					 std::meta::identifier_of(^^T));
-		return 0;
-	}
-	else {
 		constexpr auto fmt = format_of<typename T::baked>();
-		std::uint32_t count = 0;
-
-		for (const config::content_root& root : config::content_roots()) {
-			const auto source_root = root.source / fmt.source_dir;
-			if (!std::filesystem::exists(source_root)) {
-				log::println(
-					log::category::assets,
-					"count_compile_work<{}>: 0 (source_root missing: {})",
-					std::meta::identifier_of(^^T),
-					source_root.display_string()
-				);
-				continue;
-			}
-
-			for (const auto& entry : std::filesystem::recursive_directory_iterator(source_root)) {
-				if (!entry.is_regular_file()) {
-					continue;
-				}
-				const auto ext = entry.path().extension().native_encoded_string();
-				if (std::ranges::find(fmt.source_exts, ext) == fmt.source_exts.end()) {
-					continue;
-				}
-				++count;
+		const auto dst_time = std::filesystem::last_write_time(dst);
+		if (std::filesystem::last_write_time(src) > dst_time) {
+			return true;
+		}
+		if constexpr (fmt.meta_sidecar) {
+			const auto meta = src.parent_path() / (src.stem().native_encoded_string() + ".meta");
+			if (std::filesystem::exists(meta) && std::filesystem::last_write_time(meta) > dst_time) {
+				return true;
 			}
 		}
-
-		log::println(log::category::assets, "count_compile_work<{}>: {}", std::meta::identifier_of(^^T), count);
-		return count;
+		std::ifstream in(dst, std::ios::binary);
+		if (!in.is_open()) {
+			return true;
+		}
+		std::uint32_t header[3]{};
+		in.read(reinterpret_cast<char*>(header), sizeof(header));
+		if (!in.good() || header[0] != fmt.magic || header[1] != fmt.version || header[2] != archive_format_epoch) {
+			return true;
+		}
+		return false;
+	}
+	catch (const std::filesystem::filesystem_error& error) {
+		return std::unexpected(asset_error{
+			.code = asset_error_code::io_failure,
+			.path = error.path1(),
+			.detail = error.what()
+		});
 	}
 }
 
@@ -263,7 +236,7 @@ auto gse::asset::system<Ts...>::verify_built_ins() -> void {
 
 	std::string detail;
 	for (const missing_built_in& entry : missing) {
-		detail += std::format("\n  {} -> {}", entry.tag, entry.resolved.display_string());
+		detail += std::format("\n  {} -> {}", entry.tag, entry.resolved.generic_display_string());
 	}
 
 	assert(
@@ -281,55 +254,58 @@ auto gse::asset::enumerate_resources() -> std::vector<std::string> {
 		return result;
 	}
 	else {
-		constexpr auto fmt = format_of<typename T::baked>();
-
-		for (const config::content_root& root : config::content_roots()) {
-			const auto dir_path = root.baked / fmt.baked_dir;
-			if (!std::filesystem::exists(dir_path)) {
-				continue;
-			}
-
-			for (const auto& entry : std::filesystem::directory_iterator(dir_path)) {
-				if (!entry.is_regular_file()) {
-					continue;
-				}
-				if (entry.path().extension().native_encoded_string() != fmt.baked_ext) {
-					continue;
-				}
-				result.push_back(config::asset_tag(entry.path()));
+		auto catalog = catalog_for<T>();
+		if (!catalog) {
+			return result;
+		}
+		for (const catalog_record& record : *catalog) {
+			if (record.baked_exists) {
+				result.push_back(record.tag);
 			}
 		}
-
 		std::ranges::sort(result);
 		return result;
 	}
 }
 
 template <typename T>
-auto gse::asset::recompile_if_stale(const std::filesystem::path& baked_path) -> bool {
+auto gse::asset::recompile_if_stale(const std::filesystem::path& baked_path) -> asset_result {
 	if constexpr (!has_compile_path<T>) {
-		return false;
+		return {};
 	}
 	else {
-		constexpr auto fmt = format_of<typename T::baked>();
-
-		for (const config::content_root& root : config::content_roots()) {
-			auto src_rel = baked_path.lexically_relative(root.baked / fmt.baked_dir);
-			if (src_rel.empty() || *src_rel.begin() == "..") {
-				continue;
-			}
-			src_rel.replace_extension(fmt.source_exts.empty() ? "" : std::string(fmt.source_exts.front()));
-			const auto src = root.source / fmt.source_dir / src_rel;
-			if (!std::filesystem::exists(src)) {
-				return false;
-			}
-			if (!needs_recompile<T>(src, baked_path)) {
-				return true;
-			}
-			return bake_to_disk<T>(src, baked_path);
+		auto found = record_for<T>(baked_path);
+		if (!found) {
+			return std::unexpected(std::move(found.error()));
 		}
+		if (!*found || !(*found)->source_path) {
+			return {};
+		}
+		const auto& source = *(*found)->source_path;
+		auto stale = needs_recompile<T>(source, baked_path);
+		if (!stale) {
+			return std::unexpected(std::move(stale.error()));
+		}
+		return *stale ? bake_to_disk<T>(source, baked_path) : asset_result{};
+	}
+}
 
-		return false;
+template <typename T>
+auto gse::asset::discover_baked(data& d) -> asset_result {
+	if constexpr (!loadable<T> || !has_baked_asset<T>) {
+		return {};
+	}
+	else {
+		auto catalog = catalog_for<T>();
+		if (!catalog) {
+			return std::unexpected(std::move(catalog.error()));
+		}
+		for (const catalog_record& record : *catalog) {
+			if (auto queued = queue_by_path<T>(d, record.baked_path); !queued) {
+				return queued;
+			}
+		}
+		return {};
 	}
 }
 
@@ -353,12 +329,29 @@ auto gse::asset::setup_hot_reload_for(data& d) -> void {
 					auto rel = std::filesystem::relative(changed_file, source_base / fmt.source_dir);
 					rel.replace_extension(std::string(fmt.baked_ext));
 					const auto dst = baked_base / fmt.baked_dir / rel;
-					if (bake_to_disk<T>(changed_file, dst)) {
-						log::println(log::category::assets, "Hot reload recompiled: {}", changed_file.filename().display_string());
+					auto record = record_for<T>(dst);
+					if (!record) {
+						log::println(
+							log::level::error,
+							log::category::assets,
+							"Hot reload rejected source: {}",
+							record.error().detail
+						);
+						return;
+					}
+					auto baked = bake_to_disk<T>(changed_file, dst);
+					if (baked) {
+						log::println(log::category::assets, "Hot reload recompiled: {}", changed_file.filename().generic_display_string());
 						if constexpr (loadable<T>) {
 							if (auto it = d.resource_loaders.find(id_of<T>()); it != d.resource_loaders.end()) {
-								auto* loader = static_cast<resource::loader<T>*>(it->second.get());
-								loader->queue_reload_by_path(dst);
+								if (auto queued = queue_by_path<T>(d, dst); !queued) {
+									log::println(
+										log::level::warning,
+										log::category::assets,
+										"Hot reload failed to queue resource: {}",
+										queued.error().detail
+									);
+								}
 							}
 						}
 					}
@@ -367,7 +360,7 @@ auto gse::asset::setup_hot_reload_for(data& d) -> void {
 							log::level::warning,
 							log::category::assets,
 							"Hot reload failed to recompile: {}",
-							changed_file.filename().display_string()
+							baked.error().detail
 						);
 					}
 				},
@@ -379,20 +372,32 @@ auto gse::asset::setup_hot_reload_for(data& d) -> void {
 }
 
 template <typename... Ts>
-gse::asset::system<Ts...>::system(data& d) : m_data(&d) {
-}
+gse::asset::system<Ts...>::system(data& d) : m_data(&d) {}
 
 template <typename... Ts>
 auto gse::asset::system<Ts...>::register_loaders() -> void {
 	auto try_register = [this]<typename T>() {
 		if constexpr (loadable<T>) {
-			auto* loader = add_loader<T>(*m_data);
-			loader->set_pre_load_fn([](const std::filesystem::path& baked_path) {
-				recompile_if_stale<T>(baked_path);
+			add_loader<T>(*m_data);
+			set_pre_load_fn<T>(*m_data, [](const std::filesystem::path& baked_path) -> asset_result {
+				return recompile_if_stale<T>(baked_path);
 			});
 		}
 	};
 	(try_register.template operator()<Ts>(), ...);
+}
+
+template <typename... Ts>
+auto gse::asset::system<Ts...>::discover_baked() -> asset_result {
+	asset_result result{};
+	auto discover_one = [this, &result]<typename T>() {
+		if (!result) {
+			return;
+		}
+		result = asset::discover_baked<T>(*m_data);
+	};
+	(discover_one.template operator()<Ts>(), ...);
+	return result;
 }
 
 template <typename... Ts>
@@ -408,77 +413,72 @@ auto gse::asset::system<Ts...>::install_hot_reload_fns() -> void {
 
 template <typename... Ts>
 template <typename T>
-auto gse::asset::system<Ts...>::compile(compile_progress* progress) -> compile_result {
+auto gse::asset::system<Ts...>::compile() -> compile_result {
 	compile_result result{};
 
 	if constexpr (!has_compile_path<T>) {
 		return result;
 	}
 	else {
-		constexpr auto fmt = format_of<typename T::baked>();
+		auto catalog = catalog_for<T>();
+		if (!catalog) {
+			log::println(
+				log::level::error,
+				log::category::assets,
+				"Unable to catalog {} assets: {}",
+				std::meta::identifier_of(^^T),
+				catalog.error().detail
+			);
+			++result.failure_count;
+			return result;
+		}
 
-		auto tick = [progress] {
-			if (progress) {
-				++progress->done;
-				if (progress->on_tick) {
-					progress->on_tick(progress->done, progress->total);
-				}
-			}
-		};
-
-		for (const config::content_root& root : config::content_roots()) {
-			const auto source_root = root.source / fmt.source_dir;
-			const auto baked_root = root.baked / fmt.baked_dir;
-
-			if (!std::filesystem::exists(source_root)) {
-				log::println(
-					log::category::assets,
-					"compile<{}>: skipped (source_dir '{}' baked_dir '{}' baked_ext '{}' magic {:#x}, missing: {})",
-					std::meta::identifier_of(^^T),
-					fmt.source_dir,
-					fmt.baked_dir,
-					fmt.baked_ext,
-					fmt.magic,
-					source_root.display_string()
-				);
+		for (const catalog_record& record : *catalog) {
+			if (!record.source_path) {
 				continue;
 			}
 
-			std::filesystem::create_directories(baked_root);
+			bool compiled = false;
+			auto stale = needs_recompile<T>(*record.source_path, record.baked_path);
+			if (!stale) {
+				log::println(
+					log::level::error,
+					log::category::assets,
+					"Unable to inspect {}: {}",
+					record.source_path->generic_display_string(),
+					stale.error().detail
+				);
+				++result.failure_count;
+				continue;
+			}
+			if (!*stale) {
+				++result.skipped_count;
+			}
+			else if (auto baked = bake_to_disk<T>(*record.source_path, record.baked_path); baked) {
+				++result.success_count;
+				compiled = true;
+			}
+			else {
+				log::println(
+					log::level::error,
+					log::category::assets,
+					"Unable to compile {}: {}",
+					record.source_path->generic_display_string(),
+					baked.error().detail
+				);
+				++result.failure_count;
+				continue;
+			}
 
-			for (const auto& entry : std::filesystem::recursive_directory_iterator(source_root)) {
-				if (!entry.is_regular_file()) {
-					continue;
-				}
-				const auto ext = entry.path().extension().native_encoded_string();
-				if (std::ranges::find(fmt.source_exts, ext) == fmt.source_exts.end()) {
-					continue;
-				}
-
-				auto rel = std::filesystem::relative(entry.path(), source_root);
-				rel.replace_extension(std::string(fmt.baked_ext));
-				const auto dst = baked_root / rel;
-
-				if (!needs_recompile<T>(entry.path(), dst)) {
-					++result.skipped_count;
-				}
-				else if (bake_to_disk<T>(entry.path(), dst)) {
-					++result.success_count;
-				}
-				else {
-					++result.failure_count;
-					tick();
-					continue;
-				}
-
-				tick();
-
-				if constexpr (loadable<T>) {
-					if (!std::filesystem::exists(dst)) {
-						continue;
-					}
-					if (auto it = m_data->resource_loaders.find(id_of<T>()); it != m_data->resource_loaders.end()) {
-						static_cast<resource::loader<T>*>(it->second.get())->queue_by_path(dst);
+			if constexpr (loadable<T>) {
+				if (compiled) {
+					if (auto queued = queue_by_path<T>(*m_data, record.baked_path); !queued) {
+						log::println(
+							log::level::warning,
+							log::category::assets,
+							"Compiled asset could not be queued: {}",
+							queued.error().detail
+						);
 					}
 				}
 			}
@@ -489,79 +489,11 @@ auto gse::asset::system<Ts...>::compile(compile_progress* progress) -> compile_r
 }
 
 template <typename... Ts>
-auto gse::asset::system<Ts...>::compile_all(compile_progress* progress) -> compile_result {
-	if (progress) {
-		progress->done = 0;
-		progress->total = 0;
-		((progress->total += count_compile_work<Ts>()), ...);
-		if (progress->on_tick) {
-			progress->on_tick(0, progress->total);
-		}
-	}
-
-	compile_result total{};
-	((total += compile<Ts>(progress)), ...);
-	return total;
-}
-
-template <typename... Ts>
-auto gse::asset::system<Ts...>::compile_boot_critical(compile_progress* progress) -> compile_result {
-	if (progress) {
-		progress->done = 0;
-		progress->total = 0;
-		auto count_one = [&]<typename T>() {
-			if constexpr (has_annotation<boot_critical>(^^T)) {
-				progress->total += count_compile_work<T>();
-			}
-		};
-		(count_one.template operator()<Ts>(), ...);
-		log::println(
-			log::category::assets,
-			"compile_boot_critical: pre-count total={} on_tick_set={}",
-			progress->total,
-			static_cast<bool>(progress->on_tick)
-		);
-		if (progress->on_tick) {
-			progress->on_tick(0, progress->total);
-		}
-	}
-
+auto gse::asset::system<Ts...>::compile_boot_critical() -> compile_result {
 	compile_result total{};
 	auto try_one = [&]<typename T>() {
 		if constexpr (has_annotation<boot_critical>(^^T)) {
-			total += compile<T>(progress);
-		}
-	};
-	(try_one.template operator()<Ts>(), ...);
-	return total;
-}
-
-template <typename... Ts>
-auto gse::asset::system<Ts...>::compile_non_boot_critical(compile_progress* progress) -> compile_result {
-	if (progress) {
-		progress->done = 0;
-		progress->total = 0;
-		auto count_one = [&]<typename T>() {
-			if constexpr (!has_annotation<boot_critical>(^^T)) {
-				progress->total += count_compile_work<T>();
-			}
-		};
-		(count_one.template operator()<Ts>(), ...);
-		log::println(
-			log::category::assets,
-			"compile_non_boot_critical: pre-count total={} on_tick_set={}",
-			progress->total,
-			static_cast<bool>(progress->on_tick)
-		);
-		if (progress->on_tick) {
-			progress->on_tick(0, progress->total);
-		}
-	}
-
-	compile_result total{};
-	auto try_one = [&]<typename T>() {
-		if constexpr (!has_annotation<boot_critical>(^^T)) {
-			total += compile<T>(progress);
+			total += compile<T>();
 		}
 	};
 	(try_one.template operator()<Ts>(), ...);

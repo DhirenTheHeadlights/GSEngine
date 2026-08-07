@@ -53,9 +53,7 @@ auto gse::decode_utf8(std::string_view text, std::size_t& pos) -> char32_t {
 	return 0xFFFD;
 }
 
-gse::glyph::glyph(const info& i)
-	: m_ft_glyph_index(i.ft_glyph_index), m_atlas_uv(i.atlas_uv), m_plane_bounds(i.plane_bounds), m_x_advance(i.x_advance) {
-}
+gse::glyph::glyph(const info& i) : m_ft_glyph_index(i.ft_glyph_index), m_atlas_uv(i.atlas_uv), m_plane_bounds(i.plane_bounds), m_x_advance(i.x_advance) {}
 
 auto gse::glyph::ft_glyph_index() const -> std::uint32_t {
 	return m_ft_glyph_index;
@@ -75,30 +73,22 @@ auto gse::glyph::x_advance() const -> float {
 
 gse::font::font(const std::filesystem::path& path)
 	: identifiable(config::asset_tag(path)), m_baked_path(path) {
-	assert(exists(path), "Font file '{}' does not exist.", path.display_string());
+	assert(exists(path), "Font file '{}' does not exist.", path.generic_display_string());
 }
 
-gse::font::~font() {
-	if (m_face) {
-		FT_Done_Face(m_face);
-	}
-	if (m_ft) {
-		FT_Done_FreeType(m_ft);
-	}
-}
+gse::font::~font() = default;
 
-auto gse::font::load(asset::load_ctx& ctx) -> async::task<> {
-	font::baked baked{};
-	if (!load_baked(m_baked_path, baked)) {
-		co_return;
+auto gse::font::load(asset::load_ctx& ctx) -> async::task<asset_result> {
+	auto baked = load_baked<font::baked>(m_baked_path);
+	if (!baked) {
+		co_return std::unexpected(std::move(baked.error()));
 	}
 
-	const auto source_font_path = config::source_root_of(m_baked_path) / baked.source_path_relative;
-
-	m_ascender = baked.ascender;
-	m_descender = baked.descender;
-	m_pixel_range = baked.pixel_range;
-	m_glyphs = std::move(baked.glyphs);
+	m_ascender = baked->ascender;
+	m_descender = baked->descender;
+	m_pixel_range = baked->pixel_range;
+	m_glyphs = std::move(baked->glyphs);
+	m_kerning = std::move(baked->kerning);
 
 	m_max_glyph_top = 0.0f;
 	m_min_glyph_bottom = 0.0f;
@@ -113,57 +103,17 @@ auto gse::font::load(asset::load_ctx& ctx) -> async::task<> {
 
 	m_texture = std::make_unique<gse::texture>(
 		std::format("msdf_font_atlas_{}", config::asset_tag(m_baked_path)),
-		baked.rgba.storage,
-		vec2u{ baked.atlas_width, baked.atlas_height },
-		baked.channels,
+		baked->rgba.storage,
+		vec2u{ baked->atlas_width, baked->atlas_height },
+		baked->channels,
 		texture::profile::msdf
 	);
 
-	co_await m_texture->load(ctx);
-
-	assert(FT_Init_FreeType(&m_ft) == 0, "Failed to initialize FreeType.");
-
-	const std::string source_path = source_font_path.native_encoded_string();
-	assert(
-		FT_New_Face(m_ft, source_path.c_str(), 0, &m_face) == 0,
-		"Failed to load source font face for kerning."
-	);
-
-	const double units_per_em = std::max<double>(m_face->units_per_EM, 1);
-
-	m_kerning.clear();
-	auto valid_glyphs = std::views::values(m_glyphs) | std::views::filter([](const glyph& g) {
-							return g.ft_glyph_index() != 0;
-						});
-	for (const glyph& ga : valid_glyphs) {
-		const auto prev = ga.ft_glyph_index();
-		for (const glyph& gb : valid_glyphs) {
-			const auto next = gb.ft_glyph_index();
-
-			FT_Vector kv{};
-			FT_Get_Kerning(m_face, prev, next, freetype_kerning_unscaled, &kv);
-			const float k = static_cast<float>(kv.x) / static_cast<float>(units_per_em);
-			if (k != 0.0f) {
-				const std::uint64_t key = (static_cast<std::uint64_t>(prev) << 32) | next;
-				m_kerning.emplace(key, k);
-			}
-		}
+	if (auto texture_loaded = co_await m_texture->load(ctx); !texture_loaded) {
+		co_return std::unexpected(std::move(texture_loaded.error()));
 	}
-}
 
-auto gse::font::unload() -> void {
-	m_baked_path = std::filesystem::path();
-	m_glyphs.clear();
-	m_kerning.clear();
-	m_texture.reset();
-	if (m_face) {
-		FT_Done_Face(m_face);
-		m_face = nullptr;
-	}
-	if (m_ft) {
-		FT_Done_FreeType(m_ft);
-		m_ft = nullptr;
-	}
+	co_return asset_result{};
 }
 
 auto gse::font::texture() const -> const gse::texture* {

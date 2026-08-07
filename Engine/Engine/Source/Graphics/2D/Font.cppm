@@ -9,7 +9,6 @@ import gse.gpu;
 import gse.core;
 import gse.assets;
 import gse.containers;
-import gse.freetype;
 
 export namespace gse {
 	class glyph {
@@ -56,9 +55,8 @@ export namespace gse {
 			= asset_format::source_exts<".ttf", ".otf">{},
 			= asset_format::built_ins<"Inter-Regular.ttf", "MonaspaceNeon-Regular.otf">{},
 			= asset_format::magic<0x47464E54>{},
-			= asset_format::version<11>{}
+			= asset_format::version<13>{}
 		]] baked {
-			std::string source_path_relative;
 			float ascender = 0.0f;
 			float descender = 0.0f;
 			float pixel_range = 0.0f;
@@ -67,6 +65,7 @@ export namespace gse {
 			std::uint32_t channels = 0;
 			raw_blob_owned<std::byte> rgba;
 			std::unordered_map<char32_t, glyph> glyphs;
+			std::unordered_map<std::uint64_t, float> kerning;
 		};
 
 		explicit font(
@@ -77,9 +76,7 @@ export namespace gse {
 
 		auto load(
 			asset::load_ctx& ctx
-		) -> async::task<>;
-
-		auto unload() -> void;
+		) -> async::task<asset_result>;
 
 		[[nodiscard]] auto texture() const -> const gse::texture*;
 
@@ -132,9 +129,6 @@ export namespace gse {
 		float m_pixel_range = 0.0f;
 		float m_max_glyph_top = 0.0f;
 		float m_min_glyph_bottom = 0.0f;
-
-		FT_Face m_face = nullptr;
-		FT_Library m_ft = nullptr;
 
 		std::filesystem::path m_baked_path;
 	};

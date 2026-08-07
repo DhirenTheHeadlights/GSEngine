@@ -24,6 +24,7 @@ export namespace msdfgen {
 	using ::msdfgen::loadGlyph;
 	using ::msdfgen::destroyFont;
 	using ::msdfgen::getFontMetrics;
+	using ::msdfgen::distanceSignCorrection;
 	using ::msdfgen::edgeColoringByDistance;
 	using ::msdfgen::edgeColoringInkTrap;
 	using ::msdfgen::generateMSDF;
@@ -36,4 +37,5 @@ export namespace msdfgen_consts {
 		::msdfgen::ErrorCorrectionConfig::EDGE_PRIORITY;
 	inline constexpr ::msdfgen::ErrorCorrectionConfig::DistanceCheckMode always_check_distance =
 		::msdfgen::ErrorCorrectionConfig::ALWAYS_CHECK_DISTANCE;
+	inline constexpr ::msdfgen::FillRule fill_nonzero = ::msdfgen::FILL_NONZERO;
 }

@@ -56,9 +56,7 @@ export namespace gse {
 
 		auto load(
 			asset::load_ctx& ctx
-		) -> async::task<>;
-
-		auto unload() -> void;
+		) -> async::task<asset_result>;
 
 		auto gpu_image() const -> const gpu::image&;
 

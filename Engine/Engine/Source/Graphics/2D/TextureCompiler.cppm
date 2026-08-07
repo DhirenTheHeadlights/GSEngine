@@ -34,7 +34,7 @@ namespace gse {
 auto gse::bake(const std::filesystem::path& src, texture::baked& out) -> bool {
 	auto image_data = image::load(src);
 	if (image_data.pixels.empty()) {
-		log::println(log::level::warning, log::category::assets, "Failed to load texture '{}', skipping", src.display_string());
+		log::println(log::level::warning, log::category::assets, "Failed to load texture '{}', skipping", src.generic_display_string());
 		return false;
 	}
 

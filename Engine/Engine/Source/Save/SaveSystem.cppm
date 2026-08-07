@@ -115,9 +115,7 @@ gse::save::registry::registry(std::filesystem::path auto_save_path) : m_auto_sav
 }
 
 gse::save::registry::~registry() {
-	if (m_auto_save) {
-		save_all();
-	}
+	save_all();
 }
 
 auto gse::save::registry::set_auto_save(const bool enabled, std::filesystem::path path) -> void {
@@ -197,16 +195,20 @@ auto gse::save::registry::save_now() const -> bool {
 }
 
 auto gse::save::registry::save_all() const -> bool {
+	if (!m_auto_save) {
+		return false;
+	}
+
 	bool ok = false;
 	if (!m_auto_save_path.empty()) {
 		ok = save_to_file(m_auto_save_path, settings::scope_kind::user);
 		if (!ok) {
-			log::println(log::level::warning, log::category::save_system, "Failed to save settings to {}", m_auto_save_path.display_string());
+			log::println(log::level::warning, log::category::save_system, "Failed to save settings to {}", m_auto_save_path.generic_display_string());
 		}
 	}
 	if (!m_project_path.empty()) {
 		if (!save_to_file(m_project_path, settings::scope_kind::project)) {
-			log::println(log::level::warning, log::category::save_system, "Failed to save project settings to {}", m_project_path.display_string());
+			log::println(log::level::warning, log::category::save_system, "Failed to save project settings to {}", m_project_path.generic_display_string());
 			return false;
 		}
 		ok = true;
@@ -318,7 +320,7 @@ auto gse::save::registry::emit(const doc& d) -> std::string {
 auto gse::save::registry::load_from_file(const std::filesystem::path& path, const settings::scope_kind scope) -> bool {
 	if (!std::filesystem::exists(path)) {
 		log::println(log::level::warning, log::category::save_system, "Settings file does not exist: {}",
-					 path.display_string());
+					 path.generic_display_string());
 		return false;
 	}
 
@@ -328,7 +330,7 @@ auto gse::save::registry::load_from_file(const std::filesystem::path& path, cons
 			log::level::warning,
 			log::category::save_system,
 			"Failed to read {}: {}",
-			path.display_string(),
+			path.generic_display_string(),
 			content.error().message()
 		);
 		return false;

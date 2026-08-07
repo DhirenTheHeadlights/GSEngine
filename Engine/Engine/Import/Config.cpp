@@ -29,6 +29,7 @@ namespace gse::config {
 		std::filesystem::path project_data;
 		std::filesystem::path project_assets;
 		std::filesystem::path project_baked;
+		std::filesystem::path project_settings;
 		bool project_explicit;
 		std::filesystem::path logs;
 		std::filesystem::path cache;
@@ -238,6 +239,7 @@ auto gse::config::resolve() -> resolved {
 		.project_data = generic(project / ".gse" / "data"),
 		.project_assets = generic(project / "Assets"),
 		.project_baked = generic(project / ".gse" / "baked"),
+		.project_settings = project_explicit ? project_settings_path_for(project) : std::filesystem::path{},
 		.project_explicit = project_explicit,
 		.logs = generic(state_root / "logs"),
 		.cache = generic(state_root / "cache"),
@@ -407,6 +409,14 @@ auto gse::config::project_root() -> const std::filesystem::path& {
 
 auto gse::config::project_data_dir() -> const std::filesystem::path& {
 	return table().project_data;
+}
+
+auto gse::config::project_settings_path() -> const std::filesystem::path& {
+	return table().project_settings;
+}
+
+auto gse::config::project_settings_path_for(const std::filesystem::path& root) -> std::filesystem::path {
+	return generic(root / "Config" / "settings.ini");
 }
 
 auto gse::config::project_data_path(const std::filesystem::path& relative) -> std::filesystem::path {
