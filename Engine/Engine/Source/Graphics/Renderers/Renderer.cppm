@@ -57,6 +57,12 @@ export namespace gse::renderer {
 		]]
 		bool profile_aggregator_enabled = true;
 
+		[[
+			= gse::settings::describe<"Retain a rolling ring of recent frame traces so a profile dump can emit the "
+									  "worst frames instead of the current one. Costs a per-frame copy of the trace.">{}
+		]]
+		bool profile_frame_recording = false;
+
 		actions::handle dump_profile_action;
 		vec2f last_viewport{ 1920.f, 1080.f };
 		bool last_hot_reload_enabled = false;

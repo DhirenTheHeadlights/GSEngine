@@ -8,7 +8,6 @@ import gse.core;
 import gse.containers;
 import gse.time;
 import gse.math;
-import gse.assert;
 
 auto gse::trace::start(const config& cfg) -> void {
 	global_config = cfg;
@@ -17,57 +16,18 @@ auto gse::trace::start(const config& cfg) -> void {
 	make_tid();
 
 	frames = frame_storage{};
-	global_open_spans.clear();
-
-	mark_hidden(trace_id<"task.start.reentrant">());
-	mark_hidden(trace_id<"task.start.body">());
+	open_spans.clear();
+	closed_spans.clear();
+	build_frame_index = 0;
+	published_generation = 0;
 
 	register_virtual_thread(gpu_virtual_tid, "GPU");
 	register_virtual_thread(gpu_stats_virtual_tid, "GPU Stats");
 	register_virtual_thread(gpu_compute_virtual_tid, "GPU Compute");
 }
 
-auto gse::trace::begin_block(const id id, std::uint64_t parent) -> std::uint64_t {
-	if (paused() || !id.exists()) {
-		return 0;
-	}
-
-	ensure_tls_registered();
-
-	if (parent != 0 && parent < 1024) {
-		parent = 0;
-	}
-
-	const auto tid = make_tid();
-	const auto eid = allocate_span_eid();
-
-	emit({
-		.type = event_type::begin,
-		.id = id,
-		.eid = eid,
-		.parent_eid = parent,
-		.tid = tid,
-		.ts = system_clock::now<tick_step>()
-	});
-
-	return eid;
-}
-
-auto gse::trace::end_block(const id id, const std::uint64_t eid, const std::uint64_t parent) -> void {
-	if (paused() || eid == 0 || !id.exists()) {
-		return;
-	}
-
-	ensure_tls_registered();
-
-	emit({
-		.type = event_type::end,
-		.id = id,
-		.eid = eid,
-		.parent_eid = parent,
-		.tid = make_tid(),
-		.ts = system_clock::now<tick_step>()
-	});
+auto gse::trace::current_eid() -> std::uint64_t {
+	return tls.stack.empty() ? 0 : tls.stack.back();
 }
 
 auto gse::trace::begin_async(const id id, const std::uint64_t key) -> void {
@@ -75,16 +35,12 @@ auto gse::trace::begin_async(const id id, const std::uint64_t key) -> void {
 		return;
 	}
 
-	ensure_tls_registered();
-
 	emit({
 		.type = event_type::async_begin,
 		.id = id,
-		.eid = 0,
-		.parent_eid = current_parent_eid(),
+		.parent_eid = current_eid(),
 		.tid = make_tid(),
 		.ts = system_clock::now<tick_step>(),
-		.value = 0.0,
 		.key = key
 	});
 }
@@ -94,18 +50,17 @@ auto gse::trace::end_async(const id id, const std::uint64_t key) -> void {
 		return;
 	}
 
-	ensure_tls_registered();
-
 	emit({
 		.type = event_type::async_end,
 		.id = id,
-		.eid = 0,
-		.parent_eid = 0,
 		.tid = make_tid(),
 		.ts = system_clock::now<tick_step>(),
-		.value = 0.0,
 		.key = key
 	});
+}
+
+auto gse::trace::allocate_async_key() -> std::uint64_t {
+	return next_async_key.fetch_add(1, std::memory_order_relaxed);
 }
 
 auto gse::trace::mark(const id id) -> void {
@@ -113,17 +68,12 @@ auto gse::trace::mark(const id id) -> void {
 		return;
 	}
 
-	ensure_tls_registered();
-
 	emit({
 		.type = event_type::instant,
 		.id = id,
-		.eid = 0,
-		.parent_eid = current_parent_eid(),
+		.parent_eid = current_eid(),
 		.tid = make_tid(),
-		.ts = system_clock::now<tick_step>(),
-		.value = 0.0,
-		.key = 0
+		.ts = system_clock::now<tick_step>()
 	});
 }
 
@@ -132,17 +82,12 @@ auto gse::trace::counter(const id id, const double value) -> void {
 		return;
 	}
 
-	ensure_tls_registered();
-
 	emit({
 		.type = event_type::counter,
 		.id = id,
-		.eid = 0,
-		.parent_eid = 0,
 		.tid = make_tid(),
 		.ts = system_clock::now<tick_step>(),
-		.value = value,
-		.key = 0,
+		.value = value
 	});
 }
 
@@ -151,16 +96,11 @@ auto gse::trace::begin_async_at(const id id, const std::uint64_t key, const std:
 		return;
 	}
 
-	ensure_tls_registered();
-
 	emit({
 		.type = event_type::async_begin,
 		.id = id,
-		.eid = 0,
-		.parent_eid = 0,
 		.tid = tid,
 		.ts = ts,
-		.value = 0.0,
 		.key = key
 	});
 }
@@ -170,16 +110,11 @@ auto gse::trace::end_async_at(const id id, const std::uint64_t key, const std::u
 		return;
 	}
 
-	ensure_tls_registered();
-
 	emit({
 		.type = event_type::async_end,
 		.id = id,
-		.eid = 0,
-		.parent_eid = 0,
 		.tid = tid,
 		.ts = ts,
-		.value = 0.0,
 		.key = key
 	});
 }
@@ -189,17 +124,12 @@ auto gse::trace::counter_at(const id id, const double value, const std::uint32_t
 		return;
 	}
 
-	ensure_tls_registered();
-
 	emit({
 		.type = event_type::counter,
 		.id = id,
-		.eid = 0,
-		.parent_eid = 0,
 		.tid = tid,
 		.ts = ts,
-		.value = value,
-		.key = 0,
+		.value = value
 	});
 }
 
@@ -240,26 +170,40 @@ auto gse::trace::hidden_ids_snapshot() -> std::unordered_set<id> {
 	return hidden_ids;
 }
 
-auto gse::trace::current_eid() -> std::uint64_t {
-	return current_parent_eid();
-}
-
 auto gse::trace::finalize_frame() -> void {
-	static interval_timer timer(milliseconds(100.f));
+	++build_frame_index;
 
-	build_tree(frames.write());
+	drain_events(scratch.merged);
+	absorb_events(scratch.merged);
+	evict_stale_open_spans();
 
-	if (timer.tick() && !finalize_paused()) {
-		frames.flip();
-	}
+	build_frame(frames.write());
+	frames.flip();
 }
 
 auto gse::trace::view() -> frame_view {
 	const auto& fs = frames.read();
 	return {
+		.nodes = std::span(fs.nodes),
+		.children = std::span(fs.children),
 		.roots = std::span(fs.roots),
-		.storage = reinterpret_cast<const std::byte*>(fs.flat.data()),
+		.generation = fs.generation
 	};
+}
+
+auto gse::trace::dropped_events() -> std::uint64_t {
+	auto& reg = registry();
+	std::lock_guard lock(reg.mutex);
+
+	std::uint64_t total = 0;
+	for (const auto* tb : reg.buffers) {
+		total += tb->events.dropped();
+	}
+	return total;
+}
+
+auto gse::trace::abandoned_spans() -> std::uint64_t {
+	return abandoned_span_count.load(std::memory_order_relaxed);
 }
 
 gse::trace::thread_pause::thread_pause() {
@@ -282,25 +226,12 @@ auto gse::trace::enabled() -> bool {
 	return trace_enabled.load(std::memory_order_relaxed);
 }
 
-auto gse::trace::set_finalize_paused(const bool pause) -> void {
-	finalize_paused_flag.store(pause, std::memory_order_relaxed);
-}
-
-auto gse::trace::finalize_paused() -> bool {
-	return finalize_paused_flag.load(std::memory_order_relaxed);
-}
-
 auto gse::trace::scsp_events::push(const event& e) noexcept -> void {
-	gse::assert(
-		m_events != nullptr,
-		"trace push: m_events is null, tid_hash={}",
-		std::hash<std::thread::id>{}(std::this_thread::get_id())
-	);
-
-	const std::uint32_t w = m_w.load(std::memory_order_acquire);
+	const std::uint32_t w = m_w.load(std::memory_order_relaxed);
 	const std::uint32_t next = (w + 1) & capacity_mask;
 
-	if (next == m_r) {
+	if (next == m_r.load(std::memory_order_acquire)) {
+		m_dropped.fetch_add(1, std::memory_order_relaxed);
 		return;
 	}
 
@@ -310,25 +241,40 @@ auto gse::trace::scsp_events::push(const event& e) noexcept -> void {
 
 template <typename Out>
 auto gse::trace::scsp_events::drain_to(Out& out) noexcept -> void {
-	const std::uint32_t w_snapshot = m_w.load(std::memory_order_acquire);
-	while (m_r != w_snapshot) {
-		out.push_back(std::move(m_events[m_r]));
-		m_r = (m_r + 1) & capacity_mask;
+	const std::uint32_t w = m_w.load(std::memory_order_acquire);
+	std::uint32_t r = m_r.load(std::memory_order_relaxed);
+
+	while (r != w) {
+		out.push_back(m_events[r]);
+		r = (r + 1) & capacity_mask;
 	}
-}
 
-auto gse::trace::scsp_events::clear() noexcept -> void {
-	m_r = m_w.load(std::memory_order_acquire);
-}
-
-auto gse::trace::scsp_events::size() const noexcept -> std::size_t {
-	return (m_w.load(std::memory_order_acquire) - m_r) & capacity_mask;
+	m_r.store(r, std::memory_order_release);
 }
 
 auto gse::trace::scsp_events::ensure_storage() -> void {
 	if (!m_events) {
 		m_events = std::make_unique<event[]>(capacity);
 	}
+}
+
+auto gse::trace::scsp_events::dropped() const noexcept -> std::uint64_t {
+	return m_dropped.load(std::memory_order_relaxed);
+}
+
+auto gse::trace::registry() -> thread_registry& {
+	static auto* instance = new thread_registry();
+	return *instance;
+}
+
+gse::trace::thread_buffer::~thread_buffer() {
+	if (!registered) {
+		return;
+	}
+
+	auto& reg = registry();
+	std::lock_guard lock(reg.mutex);
+	std::erase(reg.buffers, this);
 }
 
 auto gse::trace::ensure_tls_registered() -> void {
@@ -338,8 +284,9 @@ auto gse::trace::ensure_tls_registered() -> void {
 
 	tls.events.ensure_storage();
 
-	std::lock_guard lock(tls_registry_mutex);
-	tls_registry.push_back(&tls);
+	auto& reg = registry();
+	std::lock_guard lock(reg.mutex);
+	reg.buffers.push_back(&tls);
 	tls.registered = true;
 }
 
@@ -347,149 +294,43 @@ auto gse::trace::make_tid() -> std::uint32_t {
 	if (tls.tid != 0) {
 		return tls.tid;
 	}
-	tls.tid = next_tid.fetch_add(1, std::memory_order::relaxed) + 1;
+	tls.tid = next_tid.fetch_add(1, std::memory_order_relaxed) + 1;
 	return tls.tid;
 }
 
 auto gse::trace::emit(const event& e) -> void {
-	if (tls.events.size() >= global_config.per_thread_event_cap) {
-		return;
-	}
-
+	ensure_tls_registered();
 	tls.events.push(e);
 }
 
-auto gse::trace::current_parent_eid() -> std::uint64_t {
-	return tls.stack.empty() ? 0 : tls.stack.back();
+auto gse::trace::allocate_span_eid() -> std::uint64_t {
+	return next_eid.fetch_add(1, std::memory_order_relaxed);
 }
 
-auto gse::trace::compute_self_time(frame_storage& fs, std::size_t i) -> void {
-	auto& n = fs.flat[i];
-
-	const std::uint32_t child_first = n.children_first;
-	const std::uint32_t child_count = n.children_count;
-
-	for (std::uint32_t k = 0; k < child_count; ++k) {
-		compute_self_time(fs, fs.children_arena[child_first + k]);
-	}
-
-	const auto parent_begin = n.start;
-	const auto parent_end = n.end;
-	const auto parent_tot = parent_end - parent_begin;
-
-	if (child_count == 0 || parent_tot <= decltype(parent_tot){}) {
-		n.self = parent_tot;
-		return;
-	}
-
-	const std::size_t segs_base = fs.segs_scratch.size();
-
-	for (std::uint32_t k = 0; k < child_count; ++k) {
-		const auto& ch = fs.flat[fs.children_arena[child_first + k]];
-
-		auto a = std::max(ch.start, parent_begin);
-		auto b = std::min(ch.end, parent_end);
-
-		if (b > a) {
-			fs.segs_scratch.push_back({ a, b });
-		}
-	}
-
-	const std::size_t segs_count = fs.segs_scratch.size() - segs_base;
-
-	if (segs_count == 0) {
-		n.self = parent_tot;
-		return;
-	}
-
-	const auto segs_first = fs.segs_scratch.begin() + segs_base;
-	const auto segs_last = fs.segs_scratch.end();
-
-	std::ranges::sort(
-		segs_first,
-		segs_last,
-		[](const frame_storage::seg& x, const frame_storage::seg& y) {
-			return x.a < y.a;
-		}
-	);
-
-	time_t<std::uint64_t> covered{};
-	frame_storage::seg cur = *segs_first;
-
-	for (auto it = segs_first + 1; it != segs_last; ++it) {
-		if (it->a <= cur.b) {
-			if (it->b > cur.b) {
-				cur.b = it->b;
-			}
-		}
-		else {
-			covered += (cur.b - cur.a);
-			cur = *it;
-		}
-	}
-	covered += (cur.b - cur.a);
-
-	fs.segs_scratch.resize(segs_base);
-
-	n.self = (covered < parent_tot) ? (parent_tot - covered) : decltype(parent_tot){};
+auto gse::trace::close_span(const id id, const std::uint64_t eid, const std::uint64_t parent, const std::uint32_t tid) -> void {
+	emit({
+		.type = event_type::end,
+		.id = id,
+		.eid = eid,
+		.parent_eid = parent,
+		.tid = tid,
+		.ts = system_clock::now<tick_step>()
+	});
 }
 
-auto gse::trace::emplace_shallow_node(frame_storage& fs, std::size_t flat_i) -> std::size_t {
-	const auto& fn = fs.flat[flat_i];
-	fs.node_pool.push_back(
-		node{
-			.id = fn.id,
-			.trace_id = fn.tid,
-			.start = fn.start,
-			.stop = fn.end,
-			.self = fn.self,
-			.children_first = nullptr,
-			.children_count = 0
-		}
-	);
-	return fs.node_pool.size() - 1;
-}
-
-auto gse::trace::build_subtree(frame_storage& fs, std::size_t node_idx, std::size_t flat_i) -> void {
-	const auto& fn = fs.flat[flat_i];
-
-	if (fn.children_count == 0) {
-		fs.node_pool[node_idx].children_first = nullptr;
-		fs.node_pool[node_idx].children_count = 0;
-		return;
-	}
-
-	const std::uint32_t arena_first = fn.children_first;
-	const std::uint32_t arena_count = fn.children_count;
-	const std::size_t pool_start = fs.node_pool.size();
-
-	for (std::uint32_t k = 0; k < arena_count; ++k) {
-		emplace_shallow_node(fs, fs.children_arena[arena_first + k]);
-	}
-
-	fs.node_pool[node_idx].children_first = fs.node_pool.data() + pool_start;
-	fs.node_pool[node_idx].children_count = arena_count;
-
-	for (std::uint32_t k = 0; k < arena_count; ++k) {
-		build_subtree(fs, pool_start + k, fs.children_arena[arena_first + k]);
-	}
-}
-
-auto gse::trace::build_tree(frame_storage& fs) -> void {
-	fs.merged.clear();
+auto gse::trace::drain_events(std::vector<event>& out) -> void {
+	out.clear();
 
 	{
-		std::lock_guard lk(tls_registry_mutex);
-		for (auto* tb : tls_registry) {
-			if (!tb) {
-				continue;
-			}
-			tb->events.drain_to(fs.merged);
+		auto& reg = registry();
+		std::lock_guard lock(reg.mutex);
+		for (auto* tb : reg.buffers) {
+			tb->events.drain_to(out);
 		}
 	}
 
 	std::ranges::sort(
-		fs.merged,
+		out,
 		[](const event& a, const event& b) {
 			if (a.ts != b.ts) {
 				return a.ts < b.ts;
@@ -497,165 +338,255 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 			return static_cast<int>(a.type) < static_cast<int>(b.type);
 		}
 	);
+}
 
-	auto& spans = fs.spans_scratch;
-	spans.clear();
-	spans.reserve(global_open_spans.size() + fs.merged.size() / 2);
+auto gse::trace::absorb_events(const std::span<const event> events) -> void {
+	closed_spans.clear();
 
-	for (const auto& [eid, sp] : global_open_spans) {
-		spans.emplace_back(eid, sp);
-	}
-
-	for (const auto& e : fs.merged) {
+	for (const auto& e : events) {
 		if (e.type == event_type::begin) {
-			spans.emplace_back(
+			open_spans.insert_or_assign(
 				e.eid,
 				span_info{
 					.id = e.id,
 					.tid = static_cast<std::uint32_t>(e.tid),
 					.t0 = e.ts,
 					.t1 = {},
-					.parent = e.parent_eid
+					.parent = e.parent_eid,
+					.opened_frame = build_frame_index
 				}
 			);
+			continue;
 		}
-	}
 
-	std::ranges::sort(
-		spans,
-		{},
-		&std::pair<std::uint64_t, span_info>::first
-	);
-
-	for (const auto& e : fs.merged) {
 		if (e.type != event_type::end) {
 			continue;
 		}
-		const auto it = std::ranges::lower_bound(
-			spans,
-			e.eid,
-			{},
-			&std::pair<std::uint64_t, span_info>::first
-		);
-		if (it != spans.end() && it->first == e.eid) {
-			it->second.t1 = e.ts;
-		}
-	}
 
-	global_open_spans.clear();
-	for (const auto& [eid, sp] : spans) {
-		if (sp.t1 == decltype(sp.t1){}) {
-			global_open_spans.emplace_back(eid, sp);
-		}
-	}
-
-	fs.flat.clear();
-	fs.flat.reserve(spans.size());
-
-	for (auto& [eid, sp] : spans) {
-		if (sp.t1 < sp.t0) {
-			sp.t1 = sp.t0;
+		const auto it = open_spans.find(e.eid);
+		if (it == open_spans.end()) {
+			continue;
 		}
 
-		fs.flat.push_back(
-			frame_storage::flat_node{
-				.id = sp.id,
-				.tid = sp.tid,
-				.start = sp.t0,
-				.end = sp.t1,
-				.self = {},
-				.children_first = 0,
-				.children_count = 0
-			}
-		);
+		auto info = it->second;
+		info.t1 = std::max(e.ts, info.t0);
+
+		closed_spans.push_back({
+			.eid = e.eid,
+			.info = info,
+			.open = false
+		});
+
+		open_spans.erase(it);
+	}
+}
+
+auto gse::trace::evict_stale_open_spans() -> void {
+	const auto erased = std::erase_if(
+		open_spans,
+		[](const auto& entry) {
+			return build_frame_index - entry.second.opened_frame > max_open_span_frames;
+		}
+	);
+
+	abandoned_span_count.fetch_add(erased, std::memory_order_relaxed);
+}
+
+auto gse::trace::collect_frame_spans(std::vector<frame_span>& out) -> void {
+	out.clear();
+	out.reserve(closed_spans.size() + open_spans.size());
+	out.insert(out.end(), closed_spans.begin(), closed_spans.end());
+
+	for (const auto& [eid, info] : open_spans) {
+		out.push_back({
+			.eid = eid,
+			.info = info,
+			.open = true
+		});
 	}
 
-	constexpr auto no_parent = std::numeric_limits<std::uint32_t>::max();
+	std::ranges::sort(out, {}, &frame_span::eid);
+}
 
-	auto& parent_idx = fs.parent_idx_scratch;
+auto gse::trace::link_parents(const std::span<const frame_span> spans, std::vector<std::uint32_t>& parent_idx) -> void {
 	parent_idx.assign(spans.size(), no_parent);
 
 	for (std::size_t i = 0; i < spans.size(); ++i) {
-		const auto& sp = spans[i].second;
-		if (sp.parent == 0) {
+		const auto parent = spans[i].info.parent;
+		if (parent == 0 || parent >= spans[i].eid) {
 			continue;
 		}
-		const auto it = std::ranges::lower_bound(
-			spans,
-			sp.parent,
-			{},
-			&std::pair<std::uint64_t, span_info>::first
-		);
-		if (it != spans.end() && it->first == sp.parent) {
+
+		const auto it = std::ranges::lower_bound(spans, parent, {}, &frame_span::eid);
+		if (it != spans.end() && it->eid == parent) {
 			parent_idx[i] = static_cast<std::uint32_t>(it - spans.begin());
 		}
 	}
+}
 
-	auto& child_counts = fs.child_counts_scratch;
-	child_counts.assign(fs.flat.size(), 0);
+auto gse::trace::build_frame(frame_storage& fs) -> void {
+	auto& spans = scratch.spans;
+	collect_frame_spans(spans);
 
-	for (std::size_t i = 0; i < parent_idx.size(); ++i) {
-		if (parent_idx[i] != no_parent) {
-			++child_counts[parent_idx[i]];
+	fs.nodes.clear();
+	fs.nodes.reserve(spans.size());
+
+	for (const auto& sp : spans) {
+		fs.nodes.push_back({
+			.id = sp.info.id,
+			.trace_id = sp.info.tid,
+			.start = sp.info.t0,
+			.stop = sp.open ? sp.info.t0 : sp.info.t1,
+			.self = {},
+			.children_first = 0,
+			.children_count = 0,
+			.open = sp.open
+		});
+	}
+
+	auto& parent_idx = scratch.parent_idx;
+	link_parents(spans, parent_idx);
+
+	auto& child_counts = scratch.child_counts;
+	child_counts.assign(fs.nodes.size(), 0);
+
+	for (const auto p : parent_idx) {
+		if (p != no_parent) {
+			++child_counts[p];
 		}
 	}
 
-	std::uint32_t arena_offset = 0;
-	for (std::size_t i = 0; i < fs.flat.size(); ++i) {
-		fs.flat[i].children_first = arena_offset;
-		fs.flat[i].children_count = 0;
-		arena_offset += child_counts[i];
+	std::uint32_t offset = 0;
+	for (std::size_t i = 0; i < fs.nodes.size(); ++i) {
+		fs.nodes[i].children_first = offset;
+		offset += child_counts[i];
 	}
 
-	fs.children_arena.assign(arena_offset, 0);
-
-	for (std::size_t i = 0; i < parent_idx.size(); ++i) {
-		const std::uint32_t p = parent_idx[i];
-		if (p == no_parent) {
-			continue;
-		}
-		auto& parent_node = fs.flat[p];
-		fs.children_arena[parent_node.children_first + parent_node.children_count] = static_cast<std::uint32_t>(i);
-		++parent_node.children_count;
-	}
-
-	auto& roots_idx = fs.roots_idx_scratch;
-	roots_idx.clear();
-	roots_idx.reserve(fs.flat.size());
+	fs.children.assign(offset, 0);
+	fs.roots.clear();
 
 	for (std::size_t i = 0; i < parent_idx.size(); ++i) {
 		if (parent_idx[i] == no_parent) {
-			roots_idx.push_back(i);
+			fs.roots.push_back(static_cast<std::uint32_t>(i));
+			continue;
 		}
+
+		auto& parent = fs.nodes[parent_idx[i]];
+		fs.children[parent.children_first + parent.children_count] = static_cast<std::uint32_t>(i);
+		++parent.children_count;
 	}
 
-	fs.segs_scratch.clear();
-	for (const auto r : roots_idx) {
-		compute_self_time(fs, r);
-	}
+	compute_self_times(fs, scratch.segs);
 
-	fs.node_pool.clear();
-	fs.roots.clear();
-	fs.node_pool.reserve(fs.flat.size());
-	fs.roots.reserve(roots_idx.size());
+	fs.generation = ++published_generation;
+}
 
-	for (const auto r : roots_idx) {
-		const std::size_t root_idx = emplace_shallow_node(fs, r);
-		build_subtree(fs, root_idx, r);
-		fs.roots.push_back(fs.node_pool[root_idx]);
+auto gse::trace::compute_self_times(frame_storage& fs, std::vector<seg>& segs) -> void {
+	for (auto& n : fs.nodes) {
+		const auto total = n.stop - n.start;
+
+		if (n.children_count == 0 || total <= tick_step{}) {
+			n.self = total;
+			continue;
+		}
+
+		segs.clear();
+		for (const auto ci : std::span(fs.children).subspan(n.children_first, n.children_count)) {
+			const auto& child = fs.nodes[ci];
+			const auto a = std::max(child.start, n.start);
+			const auto b = std::min(child.stop, n.stop);
+			if (b > a) {
+				segs.push_back({
+					.a = a,
+					.b = b
+				});
+			}
+		}
+
+		if (segs.empty()) {
+			n.self = total;
+			continue;
+		}
+
+		std::ranges::sort(segs, {}, &seg::a);
+
+		tick_step covered{};
+		seg cur = segs.front();
+
+		for (const auto& s : std::span(segs).subspan(1)) {
+			if (s.a <= cur.b) {
+				if (s.b > cur.b) {
+					cur.b = s.b;
+				}
+			}
+			else {
+				covered += cur.b - cur.a;
+				cur = s;
+			}
+		}
+		covered += cur.b - cur.a;
+
+		n.self = covered < total ? total - covered : tick_step{};
 	}
 }
 
-auto gse::trace::allocate_span_eid() -> std::uint64_t {
-	return next_eid.fetch_add(1, std::memory_order_relaxed);
+gse::trace::open_span::open_span(const id id, const std::uint64_t parent) : m_id(id), m_parent(parent < first_span_eid ? 0 : parent) {
+	if (paused() || !m_id.exists()) {
+		return;
+	}
+
+	m_tid = make_tid();
+	m_eid = allocate_span_eid();
+
+	emit({
+		.type = event_type::begin,
+		.id = m_id,
+		.eid = m_eid,
+		.parent_eid = m_parent,
+		.tid = m_tid,
+		.ts = system_clock::now<tick_step>()
+	});
 }
 
-auto gse::trace::allocate_async_key() -> std::uint64_t {
-	return next_async_key.fetch_add(1, std::memory_order_relaxed);
+gse::trace::open_span::~open_span() {
+	close();
+}
+
+gse::trace::open_span::open_span(open_span&& other) noexcept : m_id(other.m_id), m_eid(other.m_eid), m_parent(other.m_parent), m_tid(other.m_tid) {
+	other.m_eid = 0;
+}
+
+auto gse::trace::open_span::operator=(open_span&& other) noexcept -> open_span& {
+	if (this == &other) {
+		return *this;
+	}
+
+	close();
+
+	m_id = other.m_id;
+	m_eid = other.m_eid;
+	m_parent = other.m_parent;
+	m_tid = other.m_tid;
+	other.m_eid = 0;
+
+	return *this;
+}
+
+auto gse::trace::open_span::close() -> void {
+	if (m_eid == 0) {
+		return;
+	}
+
+	close_span(m_id, m_eid, m_parent, m_tid);
+	m_eid = 0;
+}
+
+auto gse::trace::open_span::eid() const -> std::uint64_t {
+	return m_eid;
 }
 
 gse::trace::scope_guard::scope_guard(const id id) : m_id(id) {
-	enter(current_parent_eid());
+	enter(current_eid());
 }
 
 gse::trace::scope_guard::scope_guard(const id id, const std::uint64_t parent) : m_id(id) {
@@ -667,20 +598,18 @@ auto gse::trace::scope_guard::enter(std::uint64_t parent) -> void {
 		return;
 	}
 
-	ensure_tls_registered();
-
-	if (parent != 0 && parent < 1024) {
+	if (parent < first_span_eid) {
 		parent = 0;
 	}
 
 	m_tid = make_tid();
-	m_pushed_parent = parent != 0 && (tls.stack.empty() || tls.stack.back() != parent);
-	if (m_pushed_parent) {
-		tls.stack.push_back(parent);
-	}
-
+	m_depth = tls.stack.size();
 	m_parent = parent;
 	m_eid = allocate_span_eid();
+
+	if (parent != 0 && (tls.stack.empty() || tls.stack.back() != parent)) {
+		tls.stack.push_back(parent);
+	}
 
 	emit({
 		.type = event_type::begin,
@@ -699,21 +628,9 @@ gse::trace::scope_guard::~scope_guard() {
 		return;
 	}
 
-	if (tls.stack.empty() || tls.stack.back() != m_eid) {
-		return;
-	}
+	close_span(m_id, m_eid, m_parent, m_tid);
 
-	emit({
-		.type = event_type::end,
-		.id = m_id,
-		.eid = m_eid,
-		.parent_eid = m_parent,
-		.tid = m_tid,
-		.ts = system_clock::now<tick_step>()
-	});
-
-	tls.stack.pop_back();
-	if (m_pushed_parent && !tls.stack.empty() && tls.stack.back() == m_parent) {
-		tls.stack.pop_back();
+	if (tls.tid == m_tid && tls.stack.size() > m_depth) {
+		tls.stack.resize(m_depth);
 	}
 }

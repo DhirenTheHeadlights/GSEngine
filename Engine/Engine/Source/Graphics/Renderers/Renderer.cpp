@@ -28,7 +28,7 @@ auto gse::renderer::init(context& ctx, data& d) -> async::task<> {
 	const id dump_profile_id = generate_id("Dump Profile");
 	ctx.channels.push<actions::add_action_request>({
 		.name = "Dump Profile",
-		.default_key = key::f11,
+		.default_combo = { .k = key::f11 },
 		.action_id = dump_profile_id
 	});
 	d.dump_profile_action = actions::handle(dump_profile_id);
@@ -46,6 +46,7 @@ auto gse::renderer::run(context& ctx, const shared_view<gpu::context::data> gpu_
 	gpu_s.render_graph->set_gpu_timestamps_enabled(d.gpu_timestamps_enabled);
 	gpu_s.render_graph->set_gpu_pipeline_stats_enabled(d.gpu_pipeline_stats_enabled);
 	profile::set_enabled(d.profile_aggregator_enabled);
+	profile::set_frame_recording(d.profile_frame_recording);
 
 	if (actions::pressed(actions::current_state(sys), sys, d.dump_profile_action)) {
 		profile::dump();

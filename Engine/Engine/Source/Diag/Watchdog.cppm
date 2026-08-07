@@ -12,7 +12,7 @@ export namespace gse::watchdog {
 
 	[[nodiscard]] auto dump_pulse() -> std::uint64_t;
 
-	class section {
+	class section : non_copyable, non_movable {
 	public:
 		section(
 			id section_id,
@@ -21,24 +21,9 @@ export namespace gse::watchdog {
 
 		~section();
 
-		section(
-			const section&
-		) = delete;
-
-		section(
-			section&&
-		) = delete;
-
-		auto operator=(
-			const section&
-		) -> section& = delete;
-
-		auto operator=(
-			section&&
-		) -> section& = delete;
-
 	private:
 		id m_prev_section;
 		time m_prev_budget;
+		bool m_owned = false;
 	};
 }

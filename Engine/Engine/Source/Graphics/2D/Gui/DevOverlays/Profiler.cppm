@@ -33,11 +33,129 @@ export namespace gse::gui {
 	};
 }
 
+namespace gse::gui {
+	struct profile_row {
+		id id;
+		time_t<std::uint64_t> start;
+		time_t<std::uint64_t> stop;
+		time_t<std::uint64_t> self;
+		std::vector<profile_row> children;
+	};
+
+	struct profile_tree {
+		std::vector<profile_row> roots;
+		double frame_ns = 0.0;
+		std::uint64_t generation = 0;
+	};
+
+	auto collect_visible_rows(
+		const trace::frame_view& fv,
+		std::span<const std::uint32_t> indices,
+		const std::unordered_set<id>& hidden,
+		std::vector<profile_row>& out
+	) -> void;
+
+	auto rebuild_profile_tree(
+		profile_tree& tree
+	) -> void;
+}
+
+auto gse::gui::collect_visible_rows(const trace::frame_view& fv, const std::span<const std::uint32_t> indices, const std::unordered_set<id>& hidden, std::vector<profile_row>& out) -> void {
+	for (const auto index : indices) {
+		const auto& n = fv.nodes[index];
+
+		if (hidden.contains(n.id)) {
+			collect_visible_rows(fv, fv.child_indices(n), hidden, out);
+			continue;
+		}
+
+		profile_row row{
+			.id = n.id,
+			.start = n.start,
+			.stop = n.stop,
+			.self = n.self
+		};
+
+		collect_visible_rows(fv, fv.child_indices(n), hidden, row.children);
+
+		std::ranges::sort(
+			row.children,
+			[](const profile_row& a, const profile_row& b) {
+				return (a.stop - a.start) > (b.stop - b.start);
+			}
+		);
+
+		out.push_back(std::move(row));
+	}
+}
+
+auto gse::gui::rebuild_profile_tree(profile_tree& tree) -> void {
+	const auto fv = trace::view();
+	const auto hidden = trace::hidden_ids_snapshot();
+
+	tree.roots.clear();
+	tree.generation = fv.generation;
+	tree.frame_ns = 0.0;
+
+	collect_visible_rows(fv, fv.roots, hidden, tree.roots);
+
+	std::ranges::sort(
+		tree.roots,
+		[](const profile_row& a, const profile_row& b) {
+			return (a.stop - a.start) > (b.stop - b.start);
+		}
+	);
+
+	if (!fv.roots.empty()) {
+		auto frame_start = fv.nodes[fv.roots.front()].start;
+		auto frame_end = fv.nodes[fv.roots.front()].stop;
+
+		for (const auto index : fv.roots) {
+			const auto& n = fv.nodes[index];
+			if (n.start < frame_start) {
+				frame_start = n.start;
+			}
+			if (n.stop > frame_end) {
+				frame_end = n.stop;
+			}
+		}
+
+		tree.frame_ns = static_cast<double>(static_cast<std::uint64_t>(frame_end - frame_start));
+	}
+
+	static const id gpu_root_id = trace_id<"GPU">();
+
+	std::vector<profile::row> gpu_rows;
+	profile::top_n(32, profile::domain::gpu, gpu_rows);
+
+	if (gpu_rows.empty()) {
+		return;
+	}
+
+	profile_row gpu_root{ .id = gpu_root_id };
+	gpu_root.children.reserve(gpu_rows.size());
+
+	for (const auto& r : gpu_rows) {
+		gpu_root.children.push_back({ .id = r.id });
+	}
+
+	tree.roots.push_back(std::move(gpu_root));
+}
+
 auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 	trace::thread_pause pause;
 
-	const std::span<const trace::node> roots = trace::view().roots;
-	if (roots.empty()) {
+	static profile_tree tree;
+	static interval_timer refresh(milliseconds(100.f));
+	static bool interacting = false;
+
+	const bool refresh_due = refresh.tick();
+	if (!interacting && (tree.generation == 0 || refresh_due)) {
+		rebuild_profile_tree(tree);
+	}
+
+	if (tree.roots.empty()) {
+		interacting = false;
 		draw::text(ctx, "", "No trace data");
 		return;
 	}
@@ -56,11 +174,12 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 
 	const float pad = ctx.style.padding;
 	const float font_sz = ctx.style.font_size;
-	const float row_h = ctx.fonts.code->line_height(font_sz) + pad * 0.5f;
+	const auto code_view = ctx.fonts.code.resolve();
+	const float row_h = code_view->line_height(font_sz) + pad * 0.5f;
 	const rectf menu_content = ctx.current_menu->rect.inset({ pad, pad });
 
-	const bool mouse_held = ctx.input.mouse_button_held(mouse_button::button_1);
-	const vec2f mouse_pos = ctx.input.mouse_position();
+	const bool mouse_held = ctx.mouse_held();
+	const vec2f mouse_pos = ctx.mouse_position();
 
 	if (!mouse_held) {
 		resizing_col_idx = -1;
@@ -90,7 +209,7 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 			{ hit_w, row_h }
 		);
 
-		const bool hovered = hit_rect.contains(mouse_pos);
+		const bool hovered = ctx.hovers(hit_rect);
 
 		if (resizing_col_idx == idx) {
 			width = std::max(20.f, right_anchor_x - mouse_pos.x());
@@ -130,7 +249,7 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 		ctx.queue_text({
 			.font = ctx.fonts.code,
 			.text = txt,
-			.position = { r.left() + pad * 0.5f, r.center().y() + ctx.fonts.code->vertical_center_offset(font_sz) },
+			.position = { r.left() + pad * 0.5f, r.center().y() + code_view->vertical_center_offset(font_sz) },
 			.scale = font_sz,
 			.clip_rect = r
 		});
@@ -156,104 +275,24 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 	};
 	options.extra_right_padding = total_cols_w;
 
-	time_t<std::uint64_t> frame_start = roots[0].start;
-	time_t<std::uint64_t> frame_end = roots[0].stop;
+	const double frame_ns = tree.frame_ns;
 
-	for (const trace::node& r : roots) {
-		if (r.start < frame_start) {
-			frame_start = r.start;
-		}
-		if (r.stop > frame_end) {
-			frame_end = r.stop;
-		}
-	}
-
-	const double frame_ns = static_cast<double>(static_cast<std::uint64_t>(frame_end - frame_start));
-
-	static std::unordered_map<const trace::node*, std::vector<trace::node>> children_sort_cache;
-	static std::vector<trace::node> sorted_roots_buf;
-
-	children_sort_cache.clear();
-
-	const auto sort_by_duration = [](const trace::node& a, const trace::node& b) {
-		return (a.stop - a.start) > (b.stop - b.start);
-	};
-
-	const auto flatten_hidden = [](auto& self, std::span<const trace::node> input,
-								   std::vector<trace::node>& out) -> void {
-		for (const auto& n : input) {
-			if (trace::is_hidden(n.id)) {
-				self(
-					self,
-					{ n.children_first, n.children_count },
-					out
-				);
-			}
-			else {
-				out.push_back(n);
-			}
-		}
-	};
-
-	sorted_roots_buf.clear();
-	flatten_hidden(flatten_hidden, roots, sorted_roots_buf);
-	std::ranges::sort(sorted_roots_buf, sort_by_duration);
-
-	static const id gpu_root_id = trace_id<"GPU">();
-
-	static std::vector<trace::node> gpu_children_buf;
-	gpu_children_buf.clear();
-	for (const auto& e : profile::top_n(32, true)) {
-		gpu_children_buf.push_back(trace::node{
-			.id = e.id
-		});
-	}
-
-	if (!gpu_children_buf.empty()) {
-		sorted_roots_buf.push_back(
-			trace::node{
-				.id = gpu_root_id,
-				.children_first = gpu_children_buf.data(),
-				.children_count = gpu_children_buf.size()
-			}
-		);
-	}
-
-	const draw::tree_ops<trace::node> ops{
-		.children = [&flatten_hidden](const trace::node& n) -> std::span<const trace::node> {
-			if (n.children_count == 0) {
-				return {};
-			}
-			auto& vec = children_sort_cache[&n];
-			if (vec.empty()) {
-				flatten_hidden(
-					flatten_hidden,
-					{ n.children_first, n.children_count },
-					vec
-				);
-				if (n.id != gpu_root_id) {
-					std::ranges::sort(
-						vec,
-						[](const trace::node& a, const trace::node& b) {
-							return (a.stop - a.start) > (b.stop - b.start);
-						}
-					);
-				}
-			}
-			return vec;
+	const draw::tree_ops<profile_row> ops{
+		.children = [](const profile_row& n) -> std::span<const profile_row> {
+			return n.children;
 		},
-		.label = [](const trace::node& n) -> std::string_view {
+		.label = [](const profile_row& n) -> std::string_view {
 			return n.id.tag();
 		},
-		.key = [](const trace::node& n) -> std::uint64_t {
+		.key = [](const profile_row& n) -> std::uint64_t {
 			return n.id.number();
 		},
-		.is_leaf = [](const trace::node& n) -> bool {
-			return n.children_count == 0;
+		.is_leaf = [](const profile_row& n) -> bool {
+			return n.children.empty();
 		},
 		.custom_draw =
 			[=](
-		const trace::node& n,
+		const profile_row& n,
 		const draw_context& draw_ctx,
 		const rectf& row,
 		bool,
@@ -287,7 +326,7 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 					draw_ctx.queue_text({
 						.font = draw_ctx.fonts.code,
 						.text = val,
-						.position = { box.left() + pad * 0.5f, box.center().y() + ctx.fonts.code->vertical_center_offset(font_sz) },
+						.position = { box.left() + pad * 0.5f, box.center().y() + draw_ctx.fonts.code.resolve()->vertical_center_offset(font_sz) },
 						.scale = font_sz,
 						.clip_rect = box
 					});
@@ -305,8 +344,8 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 				}
 
 				const auto node_id = n.id;
-				const auto gpu_agg = profile::lookup_gpu(node_id);
-				const auto cpu_agg = gpu_agg ? std::nullopt : profile::lookup_cpu(node_id);
+				const auto gpu_agg = profile::lookup(node_id, profile::domain::gpu);
+				const auto cpu_agg = gpu_agg ? std::nullopt : profile::lookup(node_id, profile::domain::cpu);
 				if (const auto& agg = gpu_agg ? gpu_agg : cpu_agg) {
 					draw_col(to_fixed(agg->ema.as<microseconds>(), buf, 32, 1), draw_x_avg, w_avg);
 					draw_col(to_fixed(agg->peak.as<microseconds>(), buf, 32, 1), draw_x_peak, w_peak);
@@ -335,15 +374,13 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 
 	{
 		auto region = scroll_region(ctx, body_info);
-		trace::set_finalize_paused(
-			draw::tree(
-				ctx,
-				std::span<const trace::node>(sorted_roots_buf),
-				ops,
-				options,
-				&selection,
-				active
-			)
+		interacting = draw::tree(
+			ctx,
+			std::span<const profile_row>(tree.roots),
+			ops,
+			options,
+			&selection,
+			active
 		);
 	}
 }

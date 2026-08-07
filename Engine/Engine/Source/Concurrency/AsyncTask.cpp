@@ -230,7 +230,7 @@ auto gse::async::yield_to_worker_t::await_suspend(std::coroutine_handle<> h) con
 		return;
 	}
 	const checked_handle tracked = track_frame(h);
-	gse::task::post(
+	gse::task::post_io(
 		[tracked] {
 			if (!resume_checked(tracked)) {
 				log::println(
