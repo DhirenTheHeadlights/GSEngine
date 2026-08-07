@@ -39,11 +39,12 @@ export namespace gse::gui {
 
 auto gse::gui::draw::text(const draw_context& ctx, const std::string_view name, const std::string_view text, const resource::handle<font> font) -> void {
 	const auto fnt = font.valid() ? font : ctx.fonts.text;
+	const auto fnt_view = fnt.resolve();
 	if (!ctx.current_menu) {
 		return;
 	}
 
-	const float widget_height = fnt->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
+	const float widget_height = fnt_view->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
 	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
 
 	const rectf row_rect = rectf::from_position_size(
@@ -67,7 +68,7 @@ auto gse::gui::draw::text(const draw_context& ctx, const std::string_view name, 
 		ctx.queue_text({
 			.font = fnt,
 			.text = name,
-			.position = { label_rect.left(), label_rect.center().y() + fnt->vertical_center_offset(ctx.style.font_size) },
+			.position = { label_rect.left(), label_rect.center().y() + fnt_view->vertical_center_offset(ctx.style.font_size) },
 			.scale = ctx.style.font_size,
 			.color = ctx.style.color_text,
 			.clip_rect = label_rect
@@ -77,7 +78,7 @@ auto gse::gui::draw::text(const draw_context& ctx, const std::string_view name, 
 	ctx.queue_text({
 		.font = fnt,
 		.text = text,
-		.position = { value_rect.left(), value_rect.center().y() + fnt->vertical_center_offset(ctx.style.font_size) },
+		.position = { value_rect.left(), value_rect.center().y() + fnt_view->vertical_center_offset(ctx.style.font_size) },
 		.scale = ctx.style.font_size,
 		.color = ctx.style.color_text,
 		.clip_rect = value_rect

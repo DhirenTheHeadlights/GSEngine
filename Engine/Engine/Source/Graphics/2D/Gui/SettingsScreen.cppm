@@ -186,7 +186,7 @@ auto gse::gui::settings_screen::draw_header(draw_context& ctx, const gse::rect_t
 	ctx.queue_text({
 		.font = ctx.fonts.text,
 		.text = m_title,
-		.position = { rect.left() + sty.padding * 1.5f, rect.center().y() + ctx.fonts.text->vertical_center_offset(title_size) },
+		.position = { rect.left() + sty.padding * 1.5f, rect.center().y() + ctx.fonts.text.resolve()->vertical_center_offset(title_size) },
 		.scale = title_size,
 		.color = sty.color_text,
 		.clip_rect = rect,
@@ -313,8 +313,8 @@ auto gse::gui::settings_screen::draw_scope_entry(draw_context& ctx, const gse::r
 
 	ctx.queue_text({
 		.font = ctx.fonts.text,
-		.text = std::format("{}  {}", label, path.filename().display_string()),
-		.position = { name_row.left(), name_row.center().y() + ctx.fonts.text->vertical_center_offset(line_size) },
+		.text = std::format("{}  {}", label, path.filename().generic_display_string()),
+		.position = { name_row.left(), name_row.center().y() + ctx.fonts.text.resolve()->vertical_center_offset(line_size) },
 		.scale = line_size,
 		.color = sty.color_text_secondary,
 		.clip_rect = name_row,
@@ -323,7 +323,7 @@ auto gse::gui::settings_screen::draw_scope_entry(draw_context& ctx, const gse::r
 	ctx.queue_text({
 		.font = ctx.fonts.code,
 		.text = path.parent_path().generic_display_string(),
-		.position = { dir_row.left(), dir_row.center().y() + ctx.fonts.code->vertical_center_offset(line_size * 0.9f) },
+		.position = { dir_row.left(), dir_row.center().y() + ctx.fonts.code.resolve()->vertical_center_offset(line_size * 0.9f) },
 		.scale = line_size * 0.9f,
 		.color = sty.color_text_disabled,
 		.clip_rect = dir_row,
@@ -374,7 +374,7 @@ auto gse::gui::settings_screen::draw_scope_paths(draw_context& ctx, const gse::r
 	ctx.queue_text({
 		.font = ctx.fonts.text,
 		.text = "Saved to",
-		.position = { cursor.left(), cursor.center().y() + ctx.fonts.text->vertical_center_offset(sty.font_size * 0.85f) },
+		.position = { cursor.left(), cursor.center().y() + ctx.fonts.text.resolve()->vertical_center_offset(sty.font_size * 0.85f) },
 		.scale = sty.font_size * 0.85f,
 		.color = sty.color_text_disabled,
 		.clip_rect = cursor,
@@ -415,12 +415,13 @@ auto gse::gui::settings_screen::draw_footer_button(draw_context& ctx, const gse:
 		.corner_radius = sty.corner_radius,
 	});
 
-	const float text_width = ctx.fonts.text->width(label, sty.font_size);
+	const auto text_view = ctx.fonts.text.resolve();
+	const float text_width = text_view->width(label, sty.font_size);
 	const gse::vec4f text_color = enabled ? sty.color_text : sty.color_text_disabled;
 	ctx.queue_text({
 		.font = ctx.fonts.text,
 		.text = label,
-		.position = { rect.center().x() - text_width / 2.f, rect.center().y() + ctx.fonts.text->vertical_center_offset(sty.font_size) },
+		.position = { rect.center().x() - text_width / 2.f, rect.center().y() + text_view->vertical_center_offset(sty.font_size) },
 		.scale = sty.font_size,
 		.color = text_color,
 		.clip_rect = rect,
@@ -474,7 +475,7 @@ auto gse::gui::settings_screen::draw_footer(draw_context& ctx, const gse::rect_t
 	ctx.queue_text({
 		.font = ctx.fonts.text,
 		.text = m_footer_status.text,
-		.position = { rect.left() + sty.padding * 1.5f, rect.center().y() + ctx.fonts.text->vertical_center_offset(sty.font_size) },
+		.position = { rect.left() + sty.padding * 1.5f, rect.center().y() + ctx.fonts.text.resolve()->vertical_center_offset(sty.font_size) },
 		.scale = sty.font_size,
 		.color = status_color,
 		.clip_rect = rect,

@@ -35,6 +35,7 @@ export namespace gse::gui::draw {
 
 	struct tree_selection {
 		std::unordered_set<std::uint64_t> keys;
+		std::uint64_t activated = 0;
 	};
 
 	template <typename T>
@@ -176,7 +177,8 @@ auto gse::gui::draw::tree_node_is_leaf(const T& t, const tree_ops<T>& ops) -> bo
 
 template <typename T>
 auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_ops<T>& ops, const tree_options& opt, tree_selection* sel, std::uint64_t tree_scope, int level, id& active_widget_id, const resource::handle<font>& fnt) -> bool {
-	const float row_height = fnt->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
+	const auto fnt_view = fnt.resolve();
+	const float row_height = fnt_view->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
 	const float gap = row_height * opt.row_gap;
 	const rectf context_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
 	const float indent = std::max(0.f, opt.indent_per_level) * std::max(0, level);
@@ -200,9 +202,9 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 	const bool row_visible = row_rect.top() >= effective_clip.bottom() - row_height &&
 		row_rect.bottom() <= effective_clip.top() + row_height;
 
-	const vec2f mouse_pos = ctx.input.mouse_position();
+	const vec2f mouse_pos = ctx.mouse_position();
 	const bool mouse_in_clip = effective_clip.contains(mouse_pos);
-	const bool hovered = row_rect.contains(mouse_pos) && mouse_in_clip && ctx.input_available();
+	const bool hovered = mouse_in_clip && ctx.hovers(row_rect);
 	const id row_widget_id = ids::make(std::format("tree_row##{}", key));
 
 	bool self_is_active = hovered;
@@ -212,9 +214,9 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 		selected = true;
 	}
 
-	const bool released = ctx.input.mouse_button_released(mouse_button::button_1);
+	const bool released = ctx.mouse_released();
 
-	if (hovered && ops.on_context && ctx.input.mouse_button_pressed(mouse_button::button_2)) {
+	if (hovered && ops.on_context && ctx.mouse_pressed_for(row_rect, mouse_button::button_2)) {
 		ops.on_context(t, ctx, mouse_pos);
 	}
 
@@ -285,7 +287,7 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 		ctx.queue_text({
 			.font = fnt,
 			.text = lbl,
-			.position = { label_rect.left(), label_rect.center().y() + fnt->vertical_center_offset(ctx.style.font_size) },
+			.position = { label_rect.left(), label_rect.center().y() + fnt_view->vertical_center_offset(ctx.style.font_size) },
 			.scale = ctx.style.font_size,
 			.color = ops.label_color ? ops.label_color(t) : ctx.style.color_text,
 			.clip_rect = label_rect
@@ -313,7 +315,9 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 		}
 
 		if (sel) {
-			if (const bool ctrl = ctx.input.key_held(key::left_control) || ctx.input.key_held(key::right_control); opt.multi_select || ctrl) {
+			sel->activated = key;
+
+			if (const bool ctrl = ctx.key_held(key::left_control) || ctx.key_held(key::right_control); opt.multi_select || ctrl) {
 				if (const auto it = sel->keys.find(key); it != sel->keys.end()) {
 					sel->keys.erase(it);
 				}

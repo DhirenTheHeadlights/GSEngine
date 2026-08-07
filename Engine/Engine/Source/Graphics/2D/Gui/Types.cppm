@@ -101,8 +101,8 @@ export namespace gse::gui {
 
 	struct tab_strip_state {
 		scroll_axis scroll{};
-		std::uint64_t scroll_active = 0;
-		std::uint64_t dragging = 0;
+		id scroll_active;
+		id dragging;
 		std::uint32_t visible_rows = 1;
 		float spinner_phase = 0.f;
 	};
@@ -187,10 +187,12 @@ export namespace gse::gui {
 		bool separator_before = false;
 	};
 
+	using context_menu_target = std::variant<std::monostate, std::uint64_t, id>;
+
 	struct context_menu_open {
 		vec2f position;
 		std::vector<menu_item> items;
-		std::uint64_t target = 0;
+		context_menu_target target;
 		id tag;
 	};
 
@@ -199,20 +201,43 @@ export namespace gse::gui {
 		bool just_opened = false;
 		vec2f position;
 		std::vector<menu_item> items;
-		std::uint64_t target = 0;
+		context_menu_target target;
 		id tag;
 	};
 
 	struct context_menu_result {
 		id tag;
 		std::uint32_t action_id = 0;
-		std::uint64_t target = 0;
+		context_menu_target target;
 	};
 
-	struct draw_context {
+	struct draw_context_init {
 		menu* current_menu;
 		const style& style;
-		const input::state& input;
+		const font_set& fonts;
+		resource::handle<texture> blank_texture;
+		vec2f& layout_cursor;
+		std::vector<renderer::sprite_command>& sprites;
+		std::vector<renderer::text_command>& texts;
+		std::deque<std::string>& text_pool;
+		std::size_t& text_pool_used;
+		std::unordered_map<std::uint64_t, vec4f>& widget_anim_colors;
+		std::unordered_map<std::uint64_t, scroll_state>& widget_scrolls;
+		render_layer current_layer = render_layer::content;
+		std::uint32_t current_z_order = 0;
+		render_layer input_layer = render_layer::content;
+		bool input_suppressed = false;
+		class input_layer* hit_regions = nullptr;
+		tooltip_state* tooltip = nullptr;
+		context_menu_state* context_menu = nullptr;
+		std::vector<rectf> clip_stack;
+	};
+
+	struct draw_context : non_copyable, non_movable {
+		~draw_context() = default;
+
+		menu* current_menu;
+		const style& style;
 		const font_set& fonts;
 		resource::handle<texture> blank_texture;
 		vec2f& layout_cursor;
@@ -227,6 +252,7 @@ export namespace gse::gui {
 		std::uint32_t current_z_order = 0;
 
 		render_layer input_layer = render_layer::content;
+		bool input_suppressed = false;
 		class input_layer* hit_regions = nullptr;
 		tooltip_state* tooltip = nullptr;
 		context_menu_state* context_menu = nullptr;
@@ -281,6 +307,35 @@ export namespace gse::gui {
 			mouse_button button = mouse_button::button_1
 		) const -> bool;
 
+		[[nodiscard]]
+		auto mouse_released(
+			mouse_button button = mouse_button::button_1
+		) const -> bool;
+
+		[[nodiscard]]
+		auto mouse_pressed(
+			mouse_button button = mouse_button::button_1
+		) const -> bool;
+
+		[[nodiscard]]
+		auto mouse_held(
+			mouse_button button = mouse_button::button_1
+		) const -> bool;
+
+		[[nodiscard]] auto mouse_position() const -> vec2f;
+
+		[[nodiscard]] auto scroll_delta() const -> vec2f;
+
+		[[nodiscard]] auto key_pressed(
+			key k
+		) const -> bool;
+
+		[[nodiscard]] auto key_held(
+			key k
+		) const -> bool;
+
+		[[nodiscard]] auto text_entered() const -> const std::string&;
+
 		auto consume_press(
 			mouse_button button = mouse_button::button_1
 		) const -> void;
@@ -330,6 +385,15 @@ export namespace gse::gui {
 		[[nodiscard]] auto scoped_layer(
 			render_layer layer
 		) const -> layer_scope;
+
+	protected:
+		draw_context(
+			draw_context_init init,
+			const input::state& input
+		);
+
+	private:
+		const input::state& m_input;
 	};
 
 	struct layer_scope : non_copyable {

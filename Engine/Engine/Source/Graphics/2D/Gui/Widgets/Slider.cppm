@@ -7,6 +7,7 @@ import gse.assets;
 import gse.gpu;
 import gse.math;
 import gse.core;
+import gse.meta;
 import gse.containers;
 import gse.time;
 import gse.concurrency;
@@ -220,8 +221,8 @@ auto gse::gui::draw::slider_box(const draw_context& ctx, const rectf& rect, cons
 		hot_widget_id = widget_id;
 	}
 
-	if (active_widget_id == widget_id && ctx.input.mouse_button_held(mouse_button::button_1)) {
-		const float mouse_x = ctx.input.mouse_position().x();
+	if (active_widget_id == widget_id && ctx.mouse_held()) {
+		const float mouse_x = ctx.mouse_position().x();
 		const float relative_x = mouse_x - rect.left();
 		const float ratio = std::clamp(relative_x / rect.width(), 0.0f, 1.0f);
 		const float raw = static_cast<float>(min_u) + ratio * static_cast<float>(max_u - min_u);
@@ -273,9 +274,10 @@ auto gse::gui::draw::slider_box(const draw_context& ctx, const rectf& rect, cons
 	else {
 		std::format_to(std::back_inserter(value_str), "{}", value_u);
 	}
-	const float text_width = ctx.fonts.code->width(value_str, ctx.style.font_size);
+	const auto code_view = ctx.fonts.code.resolve();
+	const float text_width = code_view->width(value_str, ctx.style.font_size);
 	const vec2f value_text_pos = { rect.center().x() - text_width / 2.f,
-								   rect.center().y() + ctx.fonts.code->vertical_center_offset(ctx.style.font_size) };
+								   rect.center().y() + code_view->vertical_center_offset(ctx.style.font_size) };
 
 	ctx.queue_text({
 		.font = ctx.fonts.code,
@@ -297,7 +299,8 @@ auto gse::gui::draw::slider_row(const draw_context& ctx, const std::string& name
 	namespace lo = layout;
 	using spec = lo::size_spec;
 
-	const float widget_height = ctx.fonts.text->line_height(sty.font_size) + sty.padding * 0.5f;
+	const auto text_view = ctx.fonts.text.resolve();
+	const float widget_height = text_view->line_height(sty.font_size) + sty.padding * 0.5f;
 	const rectf row_rect = lo::reserve_row(ctx, widget_height, sty.padding);
 
 	const auto [label_rect, value_area] = lo::split_horizontal<2>(
@@ -311,7 +314,7 @@ auto gse::gui::draw::slider_row(const draw_context& ctx, const std::string& name
 	ctx.queue_text({
 		.font = ctx.fonts.text,
 		.text = name,
-		.position = { label_rect.left(), label_rect.center().y() + ctx.fonts.text->vertical_center_offset(sty.font_size) },
+		.position = { label_rect.left(), label_rect.center().y() + text_view->vertical_center_offset(sty.font_size) },
 		.scale = sty.font_size,
 		.color = sty.color_text,
 		.clip_rect = label_rect
@@ -352,6 +355,6 @@ auto gse::gui::draw::slider_row(const draw_context& ctx, const std::string& name
 	interaction::release_active(
 		active_widget_id,
 		std::span<const id>(box_ids),
-		ctx.input.mouse_button_released(mouse_button::button_1)
+		ctx.mouse_released()
 	);
 }

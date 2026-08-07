@@ -250,7 +250,8 @@ auto gse::gui::draw::dropdown_impl(const draw_context& ctx, const std::string_vi
 		return {};
 	}
 
-	const float row_height = ctx.fonts.text->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
+	const auto text_view = ctx.fonts.text.resolve();
+	const float row_height = text_view->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
 	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
 
 	const float label_width = content_rect.width() * 0.4f;
@@ -264,7 +265,7 @@ auto gse::gui::draw::dropdown_impl(const draw_context& ctx, const std::string_vi
 	ctx.queue_text({
 		.font = ctx.fonts.text,
 		.text = name,
-		.position = { label_rect.left(), label_rect.center().y() + ctx.fonts.text->vertical_center_offset(ctx.style.font_size) },
+		.position = { label_rect.left(), label_rect.center().y() + text_view->vertical_center_offset(ctx.style.font_size) },
 		.scale = ctx.style.font_size,
 		.color = ctx.style.color_text,
 		.clip_rect = label_rect,
@@ -296,6 +297,7 @@ auto gse::gui::draw::dropdown_impl(const draw_context& ctx, const std::string_vi
 
 auto gse::gui::draw::dropdown_impl_in_rect(const draw_context& ctx, const id dropdown_id, const std::size_t current_index, const std::function<std::size_t()>& option_count, const std::function<std::string_view(std::size_t)>& get_option, dropdown_state& state, const rectf& header_rect, id& hot_widget_id, id& active_widget_id, const dropdown_config& config, const resource::handle<font> font) -> dropdown_result {
 	const auto fnt = font.valid() ? font : ctx.fonts.text;
+	const auto fnt_view = fnt.resolve();
 	if (!ctx.current_menu) {
 		return {};
 	}
@@ -320,7 +322,7 @@ auto gse::gui::draw::dropdown_impl_in_rect(const draw_context& ctx, const id dro
 		ctx.register_hit_region(render_layer::modal, list_rect_early);
 	}
 
-	const bool released = ctx.input.mouse_button_released(mouse_button::button_1);
+	const bool released = ctx.mouse_released();
 	const bool header_pressed_for_me = ctx.mouse_pressed_for(header_rect);
 	const bool header_hovered = ctx.hovers(header_rect);
 
@@ -361,7 +363,7 @@ auto gse::gui::draw::dropdown_impl_in_rect(const draw_context& ctx, const id dro
 	ctx.queue_text({
 		.font = fnt,
 		.text = current_label,
-		.position = { text_x, header_rect.center().y() + fnt->vertical_center_offset(ctx.style.font_size) },
+		.position = { text_x, header_rect.center().y() + fnt_view->vertical_center_offset(ctx.style.font_size) },
 		.scale = ctx.style.font_size,
 		.color = ctx.style.color_text,
 		.clip_rect = header_rect
@@ -422,7 +424,7 @@ auto gse::gui::draw::dropdown_impl_in_rect(const draw_context& ctx, const id dro
 
 		const float voff = scroll_area(ctx, state.scroll, list_rect, { list_rect.width(), total_content_height }, list_scroll_cfg).y();
 
-		const vec2f mouse_pos = ctx.input.mouse_position();
+		const vec2f mouse_pos = ctx.mouse_position();
 
 		const std::size_t first_visible = static_cast<std::size_t>(voff / row_height);
 		const std::size_t last_visible = std::min(count, first_visible + visible_count + 2);
@@ -453,7 +455,7 @@ auto gse::gui::draw::dropdown_impl_in_rect(const draw_context& ctx, const id dro
 				{ content_area.width(), clipped_height }
 			);
 
-			const bool option_hovered = option_rect.contains(mouse_pos) && content_area.contains(mouse_pos);
+			const bool option_hovered = content_area.contains(mouse_pos) && ctx.hovers(option_rect);
 
 			vec4f option_bg{ 0.f, 0.f, 0.f, 0.f };
 			if (i == current_index) {
@@ -472,7 +474,7 @@ auto gse::gui::draw::dropdown_impl_in_rect(const draw_context& ctx, const id dro
 			ctx.queue_text({
 				.font = fnt,
 				.text = get_option(i),
-				.position = { option_rect.left() + ctx.style.padding, option_rect.center().y() + fnt->vertical_center_offset(ctx.style.font_size) },
+				.position = { option_rect.left() + ctx.style.padding, option_rect.center().y() + fnt_view->vertical_center_offset(ctx.style.font_size) },
 				.scale = ctx.style.font_size,
 				.color = ctx.style.color_text,
 				.clip_rect = content_area,
@@ -486,7 +488,7 @@ auto gse::gui::draw::dropdown_impl_in_rect(const draw_context& ctx, const id dro
 		}
 
 		const bool still_open = state.open_dropdown_id == dropdown_id;
-		const bool raw_press = ctx.input.mouse_button_pressed(mouse_button::button_1);
+		const bool raw_press = ctx.mouse_pressed();
 		if (still_open && !header_rect.contains(mouse_pos) && !list_rect.contains(mouse_pos) && !state.scroll.y.held && raw_press) {
 			state.open_dropdown_id.reset();
 		}

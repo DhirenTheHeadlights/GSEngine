@@ -12,6 +12,7 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 import gse.math;
+import gse.assert;
 
 import :types;
 import :ids;
@@ -89,21 +90,9 @@ export namespace gse::gui::draw {
 	auto text_area_in_rect(
 		const draw_context& ctx,
 		id widget_id,
-		text_buffer& buffer,
-		text_area_state& state,
-		std::span<const text_span> spans,
-		std::span<const text_underline> underlines,
-		std::span<const text_fade> fades,
-		const rectf& rect,
-		bool read_only,
-		bool show_line_numbers,
-		std::size_t indent_width,
-		bool indent_with_spaces,
-		bool auto_indent,
-		time blink_interval,
+		const text_area::params& params,
 		id& hot_widget_id,
-		id& focus_widget_id,
-		resource::handle<font> font = {}
+		id& focus_widget_id
 	) -> bool;
 
 	auto text_area_position_at(
@@ -124,31 +113,34 @@ auto gse::gui::text_area::draw(const draw_context& ctx, const params& p, id& hot
 	draw::text_area_in_rect(
 		ctx,
 		ids::make_from_key(stable_id("##TextArea")),
-		p.buffer,
-		p.state,
-		p.spans,
-		p.underlines,
-		p.fades,
-		rect,
-		p.read_only,
-		p.show_line_numbers,
-		p.indent_width,
-		p.indent_with_spaces,
-		p.auto_indent,
-		p.blink_interval,
+		{
+			.buffer = p.buffer,
+			.state = p.state,
+			.spans = p.spans,
+			.underlines = p.underlines,
+			.fades = p.fades,
+			.rect = rect,
+			.read_only = p.read_only,
+			.show_line_numbers = p.show_line_numbers,
+			.indent_width = p.indent_width,
+			.indent_with_spaces = p.indent_with_spaces,
+			.auto_indent = p.auto_indent,
+			.blink_interval = p.blink_interval,
+			.font = p.font,
+		},
 		hot,
-		focus,
-		p.font
+		focus
 	);
 }
 
 auto gse::gui::draw::text_area_position_at(const draw_context& ctx, const text_buffer& buffer, const text_area_state& state, const rectf& rect, const bool show_line_numbers, const std::size_t indent_width, const vec2f mouse, const resource::handle<font> font) -> buffer_position {
 	const auto fnt = font.valid() ? font : ctx.fonts.code;
+	const auto fnt_view = fnt.resolve();
 	const float scale = ctx.style.font_size;
 	const float pad = ctx.style.padding;
-	const float line_h = fnt->line_height(scale) * 1.25f;
+	const float line_h = fnt_view->line_height(scale) * 1.25f;
 	const std::size_t line_digits = std::max<std::size_t>(2, std::to_string(std::max<std::size_t>(1, buffer.line_count())).size());
-	const float gutter_width = show_line_numbers ? fnt->width(std::string(line_digits, '0'), scale) + pad * 2.f : 0.f;
+	const float gutter_width = show_line_numbers ? fnt_view->width(std::string(line_digits, '0'), scale) + pad * 2.f : 0.f;
 	const float left_inset = show_line_numbers ? gutter_width : pad;
 	const float text_x = rect.left() + left_inset - state.scroll.x.offset;
 	const float top_y = rect.top() - pad + state.scroll.y.offset;
@@ -174,7 +166,7 @@ auto gse::gui::draw::text_area_position_at(const draw_context& ctx, const text_b
 		}
 	}
 	col_to_expanded[line.size()] = expanded.size();
-	const std::vector<float> expanded_offsets = fnt->caret_offsets(expanded, scale);
+	const std::vector<float> expanded_offsets = fnt_view->caret_offsets(expanded, scale);
 
 	int picked_col = 0;
 	float best_dx = std::numeric_limits<float>::max();
@@ -185,11 +177,29 @@ auto gse::gui::draw::text_area_position_at(const draw_context& ctx, const text_b
 			picked_col = k;
 		}
 	}
-	return buffer.clamp({ .line = picked_line, .column = static_cast<std::uint32_t>(picked_col) });
+	return buffer.clamp({
+		.line = picked_line,
+		.column = static_cast<std::uint32_t>(picked_col),
+	});
 }
 
-auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, text_buffer& buffer, text_area_state& state, std::span<const text_span> spans, std::span<const text_underline> underlines, std::span<const text_fade> fades, const rectf& rect, bool read_only, bool show_line_numbers, std::size_t indent_width, bool indent_with_spaces, bool auto_indent, time blink_interval, id& hot_widget_id, id& focus_widget_id, const resource::handle<font> font) -> bool {
+auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_id, const text_area::params& params, id& hot_widget_id, id& focus_widget_id) -> bool {
+	assert(params.rect.has_value(), "text_area_in_rect requires a rect");
+	text_buffer& buffer = params.buffer;
+	text_area_state& state = params.state;
+	const std::span<const text_span> spans = params.spans;
+	const std::span<const text_underline> underlines = params.underlines;
+	const std::span<const text_fade> fades = params.fades;
+	const rectf& rect = *params.rect;
+	const bool read_only = params.read_only;
+	const bool show_line_numbers = params.show_line_numbers;
+	const std::size_t indent_width = params.indent_width;
+	const bool indent_with_spaces = params.indent_with_spaces;
+	const bool auto_indent = params.auto_indent;
+	const time blink_interval = params.blink_interval;
+	const resource::handle<font> font = params.font;
 	const auto fnt = font.valid() ? font : ctx.fonts.code;
+	const auto fnt_view = fnt.resolve();
 	(void)spans;
 
 	bool modified = false;
@@ -200,13 +210,13 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, te
 
 	const float scale = ctx.style.font_size;
 	const float pad = ctx.style.padding;
-	const float line_h = fnt->line_height(scale) * 1.25f;
+	const float line_h = fnt_view->line_height(scale) * 1.25f;
 	const scroll_config scroll_cfg{};
 	const bool scrollable = static_cast<float>(buffer.line_count()) * line_h + pad * 2.f > rect.height();
 	const float scrollbar_gutter = scrollable ? scroll_cfg.scrollbar_width : 0.f;
 
 	const std::size_t line_digits = std::max<std::size_t>(2, std::to_string(std::max<std::size_t>(1, buffer.line_count())).size());
-	const float gutter_width = show_line_numbers ? fnt->width(std::string(line_digits, '0'), scale) + pad * 2.f : 0.f;
+	const float gutter_width = show_line_numbers ? fnt_view->width(std::string(line_digits, '0'), scale) + pad * 2.f : 0.f;
 
 	const float left_inset = show_line_numbers ? gutter_width : pad;
 	const float text_x = rect.left() + left_inset - state.scroll.x.offset;
@@ -253,7 +263,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, te
 		}
 		col_to_expanded[line.size()] = expanded.size();
 
-		const std::vector<float> expanded_offsets = fnt->caret_offsets(expanded, scale);
+		const std::vector<float> expanded_offsets = fnt_view->caret_offsets(expanded, scale);
 		std::vector<float> offsets(line.size() + 1);
 		for (std::size_t k = 0; k <= line.size(); ++k) {
 			offsets[k] = text_x + expanded_offsets[col_to_expanded[k]];
@@ -336,7 +346,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, te
 			}
 		}
 		std::string widest_scratch;
-		state.widest_line_px = fnt->width(expand_from(widest_line, 0, widest_scratch), scale);
+		state.widest_line_px = fnt_view->width(expand_from(widest_line, 0, widest_scratch), scale);
 		state.width_sig = sig;
 	}
 
@@ -356,7 +366,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, te
 	if (ctx.mouse_pressed_for(text_hit_rect)) {
 		focus_widget_id = widget_id;
 
-		const vec2f mouse = ctx.input.mouse_position();
+		const vec2f mouse = ctx.mouse_position();
 		const buffer_position pos = pick_position(mouse);
 		interaction::register_click(state.click, mouse);
 		state.select_origin = pos;
@@ -380,8 +390,8 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, te
 	}
 
 	if (state.selecting) {
-		if (ctx.input.mouse_button_held(mouse_button::button_1)) {
-			const buffer_position current = pick_position(ctx.input.mouse_position());
+		if (ctx.mouse_held()) {
+			const buffer_position current = pick_position(ctx.mouse_position());
 			if (state.select_granularity == 0) {
 				state.caret = current;
 			}
@@ -407,7 +417,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, te
 
 	if (state.context_menu_tag.exists() && ctx.mouse_pressed_for(text_hit_rect, mouse_button::button_2)) {
 		focus_widget_id = widget_id;
-		const vec2f menu_pos = ctx.input.mouse_position();
+		const vec2f menu_pos = ctx.mouse_position();
 		const buffer_position click_pos = pick_position(menu_pos);
 		buffer_position sel_lo = state.anchor;
 		buffer_position sel_hi = state.caret;
@@ -425,9 +435,21 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, te
 		}
 		const bool selection_now = state.anchor != state.caret;
 		std::vector<menu_item> items{
-			{ .label = "Copy", .action_id = static_cast<std::uint32_t>(text_edit_action::copy), .enabled = selection_now },
-			{ .label = "Cut", .action_id = static_cast<std::uint32_t>(text_edit_action::cut), .enabled = selection_now && !read_only },
-			{ .label = "Paste", .action_id = static_cast<std::uint32_t>(text_edit_action::paste), .enabled = !read_only && !ctx.clipboard().empty() },
+			{
+				.label = "Copy",
+				.action_id = static_cast<std::uint32_t>(text_edit_action::copy),
+				.enabled = selection_now,
+			},
+			{
+				.label = "Cut",
+				.action_id = static_cast<std::uint32_t>(text_edit_action::cut),
+				.enabled = selection_now && !read_only,
+			},
+			{
+				.label = "Paste",
+				.action_id = static_cast<std::uint32_t>(text_edit_action::paste),
+				.enabled = !read_only && !ctx.clipboard().empty(),
+			},
 		};
 		ctx.open_context_menu({
 			.position = menu_pos,
@@ -732,7 +754,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, te
 			return { p.line, c };
 		};
 
-		const bool ctrl = ctx.input.key_held(key::left_control) || ctx.input.key_held(key::right_control);
+		const bool ctrl = ctx.key_held(key::left_control) || ctx.key_held(key::right_control);
 
 		bool changed = false;
 		auto move_to = [&](const buffer_position p) {
@@ -820,7 +842,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, te
 				}
 			}
 
-			const bool shift = ctx.input.key_held(key::left_shift) || ctx.input.key_held(key::right_shift);
+			const bool shift = ctx.key_held(key::left_shift) || ctx.key_held(key::right_shift);
 			bool handled_tab = false;
 
 			if (!ctrl && ctx.key_pressed_for(key::tab)) {
@@ -854,7 +876,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, te
 				}
 			}
 
-			if (const std::string_view entered = ctx.input.text_entered(); !ctrl && !handled_tab && !entered.empty()) {
+			if (const std::string_view entered = ctx.text_entered(); !ctrl && !handled_tab && !entered.empty()) {
 				begin_edit(1);
 				if (has_selection()) {
 					delete_selection();
@@ -965,7 +987,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, te
 			const std::vector<float> offsets = line_column_x(sline);
 			const float x_a = offsets[col_a];
 			const float x_b = offsets[col_b];
-			const float extra = static_cast<std::uint32_t>(i) < sel_hi.line ? fnt->width(" ", scale) : 0.f;
+			const float extra = static_cast<std::uint32_t>(i) < sel_hi.line ? fnt_view->width(" ", scale) : 0.f;
 			const float sel_center = top_y - static_cast<float>(i) * line_h - line_h * 0.5f;
 			ctx.queue_sprite({
 				.rect = rectf::from_position_size({ x_a, sel_center + line_h * 0.5f }, { x_b - x_a + extra, line_h }),
@@ -986,7 +1008,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, te
 			ctx.queue_text({
 				.font = fnt,
 				.text = num,
-				.position = { rect.left() + gutter_width - pad - fnt->width(num, scale), line_center + fnt->vertical_center_offset(scale) },
+				.position = { rect.left() + gutter_width - pad - fnt_view->width(num, scale), line_center + fnt_view->vertical_center_offset(scale) },
 				.scale = scale,
 				.color = ctx.style.color_text_disabled,
 				.clip_rect = rect,
@@ -1027,12 +1049,12 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, te
 				ctx.queue_text({
 					.font = fnt,
 					.text = seg,
-					.position = { run_x, line_center + fnt->vertical_center_offset(scale) },
+					.position = { run_x, line_center + fnt_view->vertical_center_offset(scale) },
 					.scale = scale,
 					.color = color,
 					.clip_rect = content_clip,
 				});
-				run_x += fnt->width(seg, scale);
+				run_x += fnt_view->width(seg, scale);
 				disp += seg.size();
 			};
 			auto draw_run = [&](std::size_t a, std::size_t b, const vec4f& color) {
@@ -1099,10 +1121,10 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, id widget_id, te
 		const std::string_view caret_line = buffer.line(state.caret.line);
 		const std::vector<float> caret_col_x = line_column_x(caret_line);
 		const float caret_x = caret_col_x[std::min<std::size_t>(state.caret.column, caret_line.size())];
-		const float caret_top = top_y - static_cast<float>(state.caret.line) * line_h - line_h * 0.5f + fnt->vertical_center_offset(scale);
-		const float baseline = caret_top - fnt->ascender_height(scale);
-		const float ink_top = fnt->max_glyph_top(scale);
-		const float ink_bottom = fnt->min_glyph_bottom(scale);
+		const float caret_top = top_y - static_cast<float>(state.caret.line) * line_h - line_h * 0.5f + fnt_view->vertical_center_offset(scale);
+		const float baseline = caret_top - fnt_view->ascender_height(scale);
+		const float ink_top = fnt_view->max_glyph_top(scale);
+		const float ink_bottom = fnt_view->min_glyph_bottom(scale);
 		ctx.queue_sprite({
 			.rect = rectf::from_position_size({ caret_x, baseline + ink_top }, { 2.f, ink_top - ink_bottom }),
 			.color = ctx.style.color_caret,

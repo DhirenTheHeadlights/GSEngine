@@ -66,13 +66,14 @@ auto gse::gui::selectable::draw(const draw_context& ctx, const params& p, id& ho
 
 auto gse::gui::draw::selectable(const draw_context& ctx, const selectable_info& info, id& hot_widget_id, id& active_widget_id) -> bool {
 	const auto fnt = info.font.valid() ? info.font : ctx.fonts.text;
+	const auto fnt_view = fnt.resolve();
 	if (!ctx.current_menu) {
 		return false;
 	}
 
 	const id widget_id = ids::make(info.key.empty() ? info.text : info.key);
 
-	const float widget_height = fnt->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
+	const float widget_height = fnt_view->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
 	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
 
 	const rectf row_rect = rectf::from_position_size(
@@ -81,7 +82,7 @@ auto gse::gui::draw::selectable(const draw_context& ctx, const selectable_info& 
 	);
 
 	const bool hovered = ctx.hovers(row_rect);
-	const bool released = ctx.input.mouse_button_released(mouse_button::button_1);
+	const bool released = ctx.mouse_released();
 
 	interaction::mark_hot(hot_widget_id, widget_id, hovered);
 	const bool activated = interaction::activate_on_click(active_widget_id, widget_id, hovered, ctx.mouse_pressed_for(row_rect), released);
@@ -105,7 +106,7 @@ auto gse::gui::draw::selectable(const draw_context& ctx, const selectable_info& 
 	});
 
 	const float pad = ctx.style.padding;
-	const float baseline = row_rect.center().y() + fnt->vertical_center_offset(ctx.style.font_size);
+	const float baseline = row_rect.center().y() + fnt_view->vertical_center_offset(ctx.style.font_size);
 	float text_left = row_rect.left() + pad;
 
 	if (info.accent) {
@@ -126,7 +127,7 @@ auto gse::gui::draw::selectable(const draw_context& ctx, const selectable_info& 
 		: row_rect.left() + (info.detail_column > 0.f ? info.detail_column : row_rect.width() * 0.5f);
 
 	const vec2f text_position = info.align == selectable_align::center
-		? vec2f{ row_rect.center().x() - fnt->width(info.text, ctx.style.font_size) * 0.5f, baseline }
+		? vec2f{ row_rect.center().x() - fnt_view->width(info.text, ctx.style.font_size) * 0.5f, baseline }
 		: vec2f{ text_left, baseline };
 
 	ctx.queue_text({

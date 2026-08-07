@@ -54,13 +54,14 @@ export namespace gse::gui {
 
 auto gse::gui::draw::button(const draw_context& ctx, const std::string_view name, id& hot_widget_id, id& active_widget_id, const resource::handle<font> font) -> bool {
 	const auto fnt = font.valid() ? font : ctx.fonts.text;
+	const auto fnt_view = fnt.resolve();
 	if (!ctx.current_menu) {
 		return false;
 	}
 
 	const id widget_id = ids::make(name);
 
-	const float widget_height = fnt->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
+	const float widget_height = fnt_view->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
 	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
 
 	const rectf button_rect = rectf::from_position_size(
@@ -75,10 +76,11 @@ auto gse::gui::draw::button(const draw_context& ctx, const std::string_view name
 
 auto gse::gui::draw::button_in_rect(const draw_context& ctx, const std::string_view label, const std::string_view key, const rectf& button_rect, id& hot_widget_id, id& active_widget_id, const bool enabled, const resource::handle<font> font) -> bool {
 	const auto fnt = font.valid() ? font : ctx.fonts.text;
+	const auto fnt_view = fnt.resolve();
 	const id widget_id = ids::make(key.empty() ? label : key);
 
 	const bool hovered = enabled && ctx.hovers(button_rect);
-	const bool released = ctx.input.mouse_button_released(mouse_button::button_1);
+	const bool released = ctx.mouse_released();
 
 	interaction::mark_hot(hot_widget_id, widget_id, hovered);
 	const bool activated = enabled && interaction::activate_on_click(active_widget_id, widget_id, hovered, ctx.mouse_pressed_for(button_rect), released);
@@ -98,9 +100,9 @@ auto gse::gui::draw::button_in_rect(const draw_context& ctx, const std::string_v
 		.corner_radius = ctx.style.corner_radius
 	});
 
-	const float text_width = fnt->width(label, ctx.style.font_size);
+	const float text_width = fnt_view->width(label, ctx.style.font_size);
 	const vec2f text_pos = { button_rect.center().x() - text_width / 2.f,
-							 button_rect.center().y() + fnt->vertical_center_offset(ctx.style.font_size) };
+							 button_rect.center().y() + fnt_view->vertical_center_offset(ctx.style.font_size) };
 
 	ctx.queue_text({
 		.font = fnt,
@@ -116,11 +118,12 @@ auto gse::gui::draw::button_in_rect(const draw_context& ctx, const std::string_v
 
 auto gse::gui::button::draw(const draw_context& ctx, const params p, id& hot, id& active, id&) -> bool {
 	const auto fnt = p.font.valid() ? p.font : ctx.fonts.text;
+	const auto fnt_view = fnt.resolve();
 	if (!ctx.current_menu) {
 		return false;
 	}
 
-	const float widget_height = fnt->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
+	const float widget_height = fnt_view->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
 	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
 	const rectf button_rect = rectf::from_position_size(
 		{ content_rect.left(), ctx.layout_cursor.y() },

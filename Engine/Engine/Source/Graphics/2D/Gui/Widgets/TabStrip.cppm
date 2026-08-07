@@ -12,6 +12,7 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 import gse.math;
+import gse.assert;
 
 import :types;
 import :styles;
@@ -33,7 +34,7 @@ export namespace gse::gui {
 	};
 
 	struct tab_desc {
-		std::uint64_t id = 0;
+		id tab_id;
 		std::string_view caption;
 		bool dirty = false;
 		bool busy = false;
@@ -44,7 +45,7 @@ export namespace gse::gui {
 	struct tab_strip_params {
 		rectf area;
 		std::span<const tab_desc> tabs;
-		std::uint64_t active = 0;
+		id active;
 		tab_orientation orientation = tab_orientation::horizontal;
 		tab_overflow overflow = tab_overflow::scroll;
 		bool allow_reorder = false;
@@ -55,11 +56,11 @@ export namespace gse::gui {
 	};
 
 	struct tab_strip_result {
-		std::uint64_t activated = 0;
-		std::uint64_t close_requested = 0;
-		std::uint64_t context_requested = 0;
+		id activated;
+		id close_requested;
+		id context_requested;
 		vec2f context_position{};
-		std::uint64_t reorder_id = 0;
+		id reorder_id;
 		std::size_t reorder_to = 0;
 		bool add_requested = false;
 	};
@@ -71,7 +72,6 @@ export namespace gse::gui {
 
 	struct tab_strip_placement {
 		std::size_t index = 0;
-		std::uint64_t id = 0;
 		rectf rect;
 		rectf close_rect;
 	};
@@ -106,34 +106,52 @@ export namespace gse::gui {
 namespace gse::gui {
 	constexpr float base_tab_gap = 2.f;
 
-	auto draw_tab_spinner(const draw_context& ctx, const rectf& rect, vec4f color, angle rotation) -> void {
-		constexpr int segments = 9;
-		constexpr float radius = 0.34f;
-		std::array<symbol::stroke, segments> strokes{};
-		const angle sweep = degrees(270.f);
-		vec2f previous{};
-		for (int i = 0; i <= segments; ++i) {
-			const float t = static_cast<float>(i) / static_cast<float>(segments);
-			const angle a = rotation + sweep * t;
-			const vec2f point{ 0.5f + cos(a) * radius, 0.5f + sin(a) * radius };
-			if (i > 0) {
-				strokes[static_cast<std::size_t>(i - 1)] = { previous, point };
-			}
-			previous = point;
-		}
-		symbol::draw(ctx, strokes, rect, {
-			.color = color,
-			.extent = ctx.style.icon_extent,
-			.clip_rect = rect,
-		});
-	}
+	auto draw_tab_spinner(
+		const draw_context& ctx,
+		const rectf& rect,
+		vec4f color,
+		angle rotation
+	) -> void;
 
-	auto tab_extent(const resource::handle<font>& fnt, const style& sty, const tab_desc& tab, const float min_extent, const float max_extent, const float close_extent, const float pad) -> float {
-		const float fs = sty.font_size;
-		const float caption_w = fnt->width(tab.caption, fs);
-		const float dirty_w = tab.dirty ? fnt->width("*", fs) + pad * 0.5f : 0.f;
-		return std::clamp(caption_w + dirty_w + pad * 3.f + close_extent, min_extent * sty.scale_factor, max_extent * sty.scale_factor);
+	auto tab_extent(
+		const resource::handle<font>& fnt,
+		const style& sty,
+		const tab_desc& tab,
+		float min_extent,
+		float max_extent,
+		float close_extent,
+		float pad
+	) -> float;
+}
+
+auto gse::gui::draw_tab_spinner(const draw_context& ctx, const rectf& rect, const vec4f color, const angle rotation) -> void {
+	constexpr int segments = 9;
+	constexpr float radius = 0.34f;
+	std::array<symbol::stroke, segments> strokes{};
+	const angle sweep = degrees(270.f);
+	vec2f previous{};
+	for (int i = 0; i <= segments; ++i) {
+		const float t = static_cast<float>(i) / static_cast<float>(segments);
+		const angle a = rotation + sweep * t;
+		const vec2f point{ 0.5f + cos(a) * radius, 0.5f + sin(a) * radius };
+		if (i > 0) {
+			strokes[static_cast<std::size_t>(i - 1)] = { previous, point };
+		}
+		previous = point;
 	}
+	symbol::draw(ctx, strokes, rect, {
+		.color = color,
+		.extent = ctx.style.icon_extent,
+		.clip_rect = rect,
+	});
+}
+
+auto gse::gui::tab_extent(const resource::handle<font>& fnt, const style& sty, const tab_desc& tab, const float min_extent, const float max_extent, const float close_extent, const float pad) -> float {
+	const auto fnt_view = fnt.resolve();
+	const float fs = sty.font_size;
+	const float caption_w = fnt_view->width(tab.caption, fs);
+	const float dirty_w = tab.dirty ? fnt_view->width("*", fs) + pad * 0.5f : 0.f;
+	return std::clamp(caption_w + dirty_w + pad * 3.f + close_extent, min_extent * sty.scale_factor, max_extent * sty.scale_factor);
 }
 
 auto gse::gui::tab_strip_measure(const resource::handle<font>& fnt, const style& sty, const std::span<const tab_desc> tabs, const float available_width, const float min_tab_extent, const float max_tab_extent) -> tab_strip_metrics {
@@ -161,7 +179,8 @@ auto gse::gui::tab_strip_layout(const resource::handle<font>& fnt, const style& 
 	const float pad = sty.padding;
 	const float fs = sty.font_size;
 	const float close_extent = sty.icon_extent;
-	const float row_h = std::min(fnt->line_height(fs) + pad, area.height());
+	const auto fnt_view = fnt.resolve();
+	const float row_h = std::min(fnt_view->line_height(fs) + pad, area.height());
 	const float tab_gap = base_tab_gap * sty.scale_factor;
 
 	std::vector<float> widths;
@@ -185,7 +204,11 @@ auto gse::gui::tab_strip_layout(const resource::handle<font>& fnt, const style& 
 		float x = area.left() - state.scroll.offset;
 		for (std::size_t i = 0; i < tabs.size(); ++i) {
 			const rectf rect = rectf::from_position_size({ x, area.top() }, { widths[i], row_h });
-			out.push_back({ .index = i, .id = tabs[i].id, .rect = rect, .close_rect = make_close(tabs[i], rect) });
+			out.push_back({
+				.index = i,
+				.rect = rect,
+				.close_rect = make_close(tabs[i], rect),
+			});
 			x += widths[i] + tab_gap;
 		}
 	}
@@ -203,7 +226,11 @@ auto gse::gui::tab_strip_layout(const resource::handle<font>& fnt, const style& 
 				break;
 			}
 			const rectf rect = rectf::from_position_size({ x, y }, { widths[i], row_h });
-			out.push_back({ .index = i, .id = tabs[i].id, .rect = rect, .close_rect = make_close(tabs[i], rect) });
+			out.push_back({
+				.index = i,
+				.rect = rect,
+				.close_rect = make_close(tabs[i], rect),
+			});
 			x += widths[i] + tab_gap;
 		}
 	}
@@ -215,8 +242,15 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 	if (params.tabs.empty() && !params.show_add) {
 		return result;
 	}
+	assert(
+		std::ranges::all_of(params.tabs, [](const tab_desc& tab) {
+			return tab.tab_id.exists();
+		}),
+		"tab strip requires a valid ID for every tab"
+	);
 
 	const resource::handle<font>& fnt = params.font.valid() ? params.font : ctx.fonts.text;
+	const auto fnt_view = fnt.resolve();
 	if (!fnt.valid()) {
 		return result;
 	}
@@ -224,16 +258,15 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 	const float pad = sty.padding;
 	const float fs = sty.font_size;
 	const rectf area = params.area;
-	const vec2f mouse = ctx.input.mouse_position();
+	const vec2f mouse = ctx.mouse_position();
 	const bool available = ctx.input_available();
-	const bool pressed = ctx.input.mouse_button_pressed(mouse_button::button_1) && available;
-	const bool held = ctx.input.mouse_button_held(mouse_button::button_1);
-	const bool right_pressed = ctx.input.mouse_button_pressed(mouse_button::button_2) && available;
+	const bool pressed = ctx.mouse_pressed() && available;
+	const bool held = ctx.mouse_held();
 
 	state.spinner_phase += 0.16f;
 	const angle spin = radians(state.spinner_phase);
 	const float close_extent = sty.icon_extent;
-	const float dirty_extent = fnt->width("*", fs);
+	const float dirty_extent = fnt_view->width("*", fs);
 
 	const auto draw_cell = [&](const rectf& rect, const rectf& visible, const rectf& close_rect, const tab_desc& tab, const bool is_active, const bool hovered) {
 		ctx.queue_sprite({
@@ -255,7 +288,7 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 		ctx.queue_text({
 			.font = fnt,
 			.text = tab.caption,
-			.position = { rect.left() + pad, rect.center().y() + fnt->vertical_center_offset(fs) },
+			.position = { rect.left() + pad, rect.center().y() + fnt_view->vertical_center_offset(fs) },
 			.scale = fs,
 			.color = is_active ? sty.color_text : sty.color_text_secondary,
 			.clip_rect = caption_clip,
@@ -264,13 +297,13 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 			ctx.queue_text({
 				.font = fnt,
 				.text = "*",
-				.position = { caption_right + pad * 0.25f, rect.center().y() + fnt->vertical_center_offset(fs) },
+				.position = { caption_right + pad * 0.25f, rect.center().y() + fnt_view->vertical_center_offset(fs) },
 				.scale = fs,
 				.color = is_active ? sty.color_text : sty.color_text_secondary,
 				.clip_rect = visible,
 			});
 		}
-		const bool close_hovered = close_rect.contains(mouse) && area.contains(mouse) && available;
+		const bool close_hovered = area.contains(mouse) && ctx.hovers(close_rect);
 		if (tab.busy && !(tab.closeable && close_hovered)) {
 			draw_tab_spinner(ctx, close_rect, sty.color_text_secondary, spin);
 		}
@@ -284,13 +317,13 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 	};
 
 	if (params.orientation == tab_orientation::vertical) {
-		const float cell_h = fnt->line_height(fs) + pad;
+		const float cell_h = fnt_view->line_height(fs) + pad;
 		const std::size_t add_cells = params.show_add ? 1 : 0;
 		const float content_h = cell_h * static_cast<float>(params.tabs.size() + add_cells);
 		const float max_scroll = std::max(0.f, content_h - area.height());
 
-		if (area.contains(mouse) && !ctx.is_scroll_consumed()) {
-			const vec2f wheel = ctx.input.scroll_delta();
+		if (ctx.hovers(area) && !ctx.is_scroll_consumed()) {
+			const vec2f wheel = ctx.scroll_delta();
 			if (std::abs(wheel.y()) > 0.001f) {
 				state.scroll.offset = std::clamp(state.scroll.offset - wheel.y() * cell_h, 0.f, max_scroll);
 				ctx.consume_scroll();
@@ -299,7 +332,7 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 		state.scroll.offset = std::clamp(state.scroll.offset, 0.f, max_scroll);
 
 		if (state.scroll_active != params.active) {
-			const auto active_it = std::ranges::find(params.tabs, params.active, &tab_desc::id);
+			const auto active_it = std::ranges::find(params.tabs, params.active, &tab_desc::tab_id);
 			if (active_it != params.tabs.end()) {
 				const float active_top = static_cast<float>(std::distance(params.tabs.begin(), active_it)) * cell_h;
 				if (active_top < state.scroll.offset) {
@@ -324,8 +357,8 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 			if (visible.height() <= 0.f) {
 				continue;
 			}
-			const bool is_active = tab.id == params.active;
-			const bool hovered = visible.contains(mouse) && available;
+			const bool is_active = tab.tab_id == params.active;
+			const bool hovered = ctx.hovers(visible);
 			const rectf close_rect = rectf::from_position_size({ cell.right() - close_extent - pad, cell.center().y() + close_extent * 0.5f }, { close_extent, close_extent });
 
 			if (is_active) {
@@ -334,16 +367,16 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 			}
 			draw_cell(cell, visible, close_rect, tab, is_active, hovered);
 
-			if (pressed && visible.contains(mouse)) {
+			if (hovered && ctx.mouse_pressed_for(visible)) {
 				if (tab.closeable && close_rect.contains(mouse)) {
-					result.close_requested = tab.id;
+					result.close_requested = tab.tab_id;
 				}
 				else {
-					result.activated = tab.id;
+					result.activated = tab.tab_id;
 				}
 			}
-			if (right_pressed && visible.contains(mouse)) {
-				result.context_requested = tab.id;
+			if (hovered && ctx.mouse_pressed_for(visible, mouse_button::button_2)) {
+				result.context_requested = tab.tab_id;
 				result.context_position = mouse;
 			}
 		}
@@ -352,7 +385,7 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 			const rectf add_cell = rectf::from_position_size({ area.left(), y }, { area.width(), cell_h });
 			const rectf visible = add_cell.intersection(area);
 			if (visible.height() > 0.f) {
-				const bool hovered = visible.contains(mouse) && available;
+				const bool hovered = ctx.hovers(visible);
 				ctx.queue_sprite({
 					.rect = visible,
 					.color = hovered ? sty.color_tab_hovered : sty.color_tab_background,
@@ -361,12 +394,12 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 				ctx.queue_text({
 					.font = fnt,
 					.text = "+",
-					.position = { add_cell.center().x() - fnt->width("+", fs) * 0.5f, add_cell.center().y() + fnt->vertical_center_offset(fs) },
+					.position = { add_cell.center().x() - fnt_view->width("+", fs) * 0.5f, add_cell.center().y() + fnt_view->vertical_center_offset(fs) },
 					.scale = fs,
 					.color = hovered ? sty.color_text : sty.color_text_secondary,
 					.clip_rect = visible,
 				});
-				if (pressed && visible.contains(mouse)) {
+				if (hovered && ctx.mouse_pressed_for(visible)) {
 					result.add_requested = true;
 				}
 			}
@@ -386,9 +419,9 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 	const float total = tab_strip_measure(fnt, sty, params.tabs, area.width(), params.min_tab_extent, params.max_tab_extent).content_extent;
 	const bool overflow = total > area.width();
 
-	if (overflow && area.contains(mouse) && !ctx.is_scroll_consumed()) {
-		const vec2f wheel = ctx.input.scroll_delta();
-		const bool shift = ctx.input.key_held(key::left_shift) || ctx.input.key_held(key::right_shift);
+	if (overflow && ctx.hovers(area) && !ctx.is_scroll_consumed()) {
+		const vec2f wheel = ctx.scroll_delta();
+		const bool shift = ctx.key_held(key::left_shift) || ctx.key_held(key::right_shift);
 		if (params.overflow == tab_overflow::wrap && std::abs(wheel.y()) > 0.001f && !shift) {
 			if (wheel.y() > 0.f) {
 				state.visible_rows = state.visible_rows > 1 ? state.visible_rows - 1 : 1;
@@ -414,7 +447,7 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 			float acc = 0.f;
 			for (const tab_desc& tab : params.tabs) {
 				const float w = tab_extent(fnt, sty, tab, params.min_tab_extent, params.max_tab_extent, close_extent, pad);
-				if (tab.id == params.active) {
+				if (tab.tab_id == params.active) {
 					if (acc < state.scroll.offset) {
 						state.scroll.offset = acc;
 					}
@@ -437,45 +470,38 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 
 	const std::vector<tab_strip_placement> placements = tab_strip_layout(fnt, sty, area, params.tabs, state, params.overflow, params.min_tab_extent, params.max_tab_extent);
 
-	if (pressed) {
-		for (const tab_strip_placement& p : placements) {
-			const rectf visible = p.rect.intersection(area);
-			if (visible.width() <= 0.f) {
-				continue;
+	for (const tab_strip_placement& p : placements) {
+		const rectf visible = p.rect.intersection(area);
+		if (visible.width() <= 0.f || !ctx.hovers(visible)) {
+			continue;
+		}
+		const tab_desc& tab = params.tabs[p.index];
+		if (ctx.mouse_pressed_for(visible)) {
+			if (tab.closeable && p.close_rect.contains(mouse)) {
+				result.close_requested = tab.tab_id;
 			}
-			const tab_desc& tab = params.tabs[p.index];
-			if (tab.closeable && p.close_rect.contains(mouse) && area.contains(mouse)) {
-				result.close_requested = tab.id;
-				break;
-			}
-			if (visible.contains(mouse)) {
-				result.activated = tab.id;
+			else {
+				result.activated = tab.tab_id;
 				if (params.allow_reorder && !tab.pinned) {
-					state.dragging = tab.id;
+					state.dragging = tab.tab_id;
 				}
-				break;
 			}
+			break;
+		}
+		if (ctx.mouse_pressed_for(visible, mouse_button::button_2)) {
+			result.context_requested = tab.tab_id;
+			result.context_position = mouse;
+			break;
 		}
 	}
 
-	if (right_pressed) {
-		for (const tab_strip_placement& p : placements) {
-			const rectf visible = p.rect.intersection(area);
-			if (visible.contains(mouse)) {
-				result.context_requested = params.tabs[p.index].id;
-				result.context_position = mouse;
-				break;
-			}
-		}
-	}
-
-	if (params.allow_reorder && state.dragging != 0 && held) {
-		const auto cur = std::ranges::find(params.tabs, state.dragging, &tab_desc::id);
+	if (params.allow_reorder && state.dragging.exists() && held) {
+		const auto cur = std::ranges::find(params.tabs, state.dragging, &tab_desc::tab_id);
 		if (cur != params.tabs.end()) {
 			const auto cur_idx = static_cast<std::size_t>(std::distance(params.tabs.begin(), cur));
 			std::size_t target = 0;
 			for (const tab_strip_placement& p : placements) {
-				if (params.tabs[p.index].id != state.dragging && mouse.x() > p.rect.center().x()) {
+				if (params.tabs[p.index].tab_id != state.dragging && mouse.x() > p.rect.center().x()) {
 					++target;
 				}
 			}
@@ -487,7 +513,7 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 		}
 	}
 	else {
-		state.dragging = 0;
+		state.dragging.reset();
 	}
 
 	for (const tab_strip_placement& p : placements) {
@@ -496,8 +522,8 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 			continue;
 		}
 		const tab_desc& tab = params.tabs[p.index];
-		const bool is_active = tab.id == params.active;
-		const bool hovered = visible.contains(mouse) && available;
+		const bool is_active = tab.tab_id == params.active;
+		const bool hovered = ctx.hovers(visible);
 		draw_cell(p.rect, visible, p.close_rect, tab, is_active, hovered);
 	}
 
@@ -510,7 +536,7 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 			.content_extent = total,
 			.horizontal = true,
 			.mouse = mouse,
-			.mouse_pressed = pressed,
+			.mouse_pressed = pressed && !ctx.is_press_consumed(mouse_button::button_1),
 			.mouse_held = held,
 			.min_thumb = 24.f * sty.scale_factor,
 		});

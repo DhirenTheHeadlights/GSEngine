@@ -6,6 +6,7 @@ import gse.os;
 import gse.assets;
 import gse.gpu;
 import gse.core;
+import gse.meta;
 import gse.containers;
 import gse.time;
 import gse.concurrency;
@@ -38,6 +39,7 @@ export namespace gse::gui {
 
 auto gse::gui::toggle::draw(const draw_context& ctx, const params& p, id& hot, id& active, id&) -> bool {
 	const auto fnt = p.font.valid() ? p.font : ctx.fonts.text;
+	const auto fnt_view = fnt.resolve();
 	if (!ctx.current_menu) {
 		return false;
 	}
@@ -46,7 +48,7 @@ auto gse::gui::toggle::draw(const draw_context& ctx, const params& p, id& hot, i
 	const id widget_id = ids::make_from_key(name_key);
 
 	const float widget_height =
-		fnt->line_height(ctx.style.font_size) + ctx.style.padding * ctx.style.widget_height_padding;
+		fnt_view->line_height(ctx.style.font_size) + ctx.style.padding * ctx.style.widget_height_padding;
 	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
 
 	const rectf row_rect = rectf::from_position_size(
@@ -76,7 +78,7 @@ auto gse::gui::toggle::draw(const draw_context& ctx, const params& p, id& hot, i
 	ctx.queue_text({
 		.font = fnt,
 		.text = p.name,
-		.position = { label_rect.left(), label_rect.center().y() + fnt->vertical_center_offset(ctx.style.font_size) },
+		.position = { label_rect.left(), label_rect.center().y() + fnt_view->vertical_center_offset(ctx.style.font_size) },
 		.scale = ctx.style.font_size,
 		.color = ctx.style.color_text,
 		.clip_rect = label_rect

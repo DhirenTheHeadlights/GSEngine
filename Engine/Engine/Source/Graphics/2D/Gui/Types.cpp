@@ -22,6 +22,8 @@ gse::gui::menu::menu(std::string_view tag, const menu_data& data)
 	tab_contents.emplace_back(tag);
 }
 
+gse::gui::draw_context::draw_context(draw_context_init init, const input::state& input) : current_menu(init.current_menu), style(init.style), fonts(init.fonts), blank_texture(init.blank_texture), layout_cursor(init.layout_cursor), sprites(init.sprites), texts(init.texts), text_pool(init.text_pool), text_pool_used(init.text_pool_used), widget_anim_colors(init.widget_anim_colors), widget_scrolls(init.widget_scrolls), current_layer(init.current_layer), current_z_order(init.current_z_order), input_layer(init.input_layer), input_suppressed(init.input_suppressed), hit_regions(init.hit_regions), tooltip(init.tooltip), context_menu(init.context_menu), clip_stack(std::move(init.clip_stack)), m_input(input) {}
+
 auto gse::gui::font_set::named(const std::string_view name) const -> resource::handle<font> {
 	const auto it = registry.find(std::string(name));
 	if (it == registry.end()) {
@@ -103,10 +105,13 @@ auto gse::gui::draw_context::register_hit_region(const render_layer layer, const
 }
 
 auto gse::gui::draw_context::input_available() const -> bool {
-	return input_available_at(input.mouse_position());
+	return input_available_at(m_input.mouse_position());
 }
 
 auto gse::gui::draw_context::input_available_at(const vec2f position) const -> bool {
+	if (input_suppressed) {
+		return false;
+	}
 	if (static_cast<std::uint8_t>(current_layer) < static_cast<std::uint8_t>(input_layer)) {
 		return false;
 	}
@@ -117,6 +122,7 @@ auto gse::gui::draw_context::input_available_at(const vec2f position) const -> b
 }
 
 auto gse::gui::draw_context::hovers(const rectf& rect) const -> bool {
+	const input::state& input = m_input;
 	if (!rect.contains(input.mouse_position())) {
 		return false;
 	}
@@ -127,6 +133,7 @@ auto gse::gui::draw_context::hovers(const rectf& rect) const -> bool {
 }
 
 auto gse::gui::draw_context::mouse_pressed_for(const rectf& rect, const mouse_button button) const -> bool {
+	const input::state& input = m_input;
 	if (!input.mouse_button_pressed(button)) {
 		return false;
 	}
@@ -149,6 +156,7 @@ auto gse::gui::draw_context::mouse_pressed_for(const rectf& rect, const mouse_bu
 }
 
 auto gse::gui::draw_context::mouse_released_for(const rectf& rect, const mouse_button button) const -> bool {
+	const input::state& input = m_input;
 	if (!input.mouse_button_released(button)) {
 		return false;
 	}
@@ -170,6 +178,38 @@ auto gse::gui::draw_context::mouse_released_for(const rectf& rect, const mouse_b
 	return true;
 }
 
+auto gse::gui::draw_context::mouse_released(const mouse_button button) const -> bool {
+	return m_input.mouse_button_released(button);
+}
+
+auto gse::gui::draw_context::mouse_pressed(const mouse_button button) const -> bool {
+	return m_input.mouse_button_pressed(button);
+}
+
+auto gse::gui::draw_context::mouse_held(const mouse_button button) const -> bool {
+	return m_input.mouse_button_held(button);
+}
+
+auto gse::gui::draw_context::mouse_position() const -> vec2f {
+	return m_input.mouse_position();
+}
+
+auto gse::gui::draw_context::scroll_delta() const -> vec2f {
+	return m_input.scroll_delta();
+}
+
+auto gse::gui::draw_context::key_pressed(const key k) const -> bool {
+	return m_input.key_pressed(k);
+}
+
+auto gse::gui::draw_context::key_held(const key k) const -> bool {
+	return m_input.key_held(k);
+}
+
+auto gse::gui::draw_context::text_entered() const -> const std::string& {
+	return m_input.text_entered();
+}
+
 auto gse::gui::draw_context::consume_press(const mouse_button button) const -> void {
 	if (hit_regions) {
 		hit_regions->consume_press(button);
@@ -187,6 +227,7 @@ auto gse::gui::draw_context::is_press_consumed(const mouse_button button) const 
 }
 
 auto gse::gui::draw_context::scroll_delta_for(const rectf& rect) const -> vec2f {
+	const input::state& input = m_input;
 	if (!rect.contains(input.mouse_position())) {
 		return {};
 	}
@@ -217,6 +258,7 @@ auto gse::gui::draw_context::is_scroll_consumed() const -> bool {
 }
 
 auto gse::gui::draw_context::key_pressed_for(const key k) const -> bool {
+	const input::state& input = m_input;
 	if (!input.key_pressed(k)) {
 		return false;
 	}
@@ -244,7 +286,7 @@ auto gse::gui::draw_context::set_tooltip(const id& widget_id, const std::string_
 	if (tooltip->text != text) {
 		tooltip->text.assign(text);
 	}
-	tooltip->position = input.mouse_position();
+	tooltip->position = m_input.mouse_position();
 }
 
 auto gse::gui::draw_context::next_row(const resource::handle<font>& font, const float height_multiplier) const -> rectf {
@@ -253,7 +295,7 @@ auto gse::gui::draw_context::next_row(const resource::handle<font>& font, const 
 	}
 
 	const float row_height =
-		(font->line_height(style.font_size) + style.padding * style.widget_height_padding) * height_multiplier;
+		(font.resolve()->line_height(style.font_size) + style.padding * style.widget_height_padding) * height_multiplier;
 	const rectf content_rect = current_menu->rect.inset({ style.padding, style.padding });
 
 	const rectf row =

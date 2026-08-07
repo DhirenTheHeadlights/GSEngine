@@ -62,7 +62,8 @@ auto gse::gui::loading_screen::build(builder& ui, nav& n) -> void {
 	const float font_sz = ctx.style.font_size;
 	const rectf body = ctx.current_menu->rect.inset({ pad, pad });
 
-	const float row_h = ctx.fonts.text->line_height(font_sz);
+	const auto text_view = ctx.fonts.text.resolve();
+	const float row_h = text_view->line_height(font_sz);
 	const vec2f center = body.center();
 
 	const std::string phase = m_state->phase();
@@ -80,12 +81,12 @@ auto gse::gui::loading_screen::build(builder& ui, nav& n) -> void {
 	}
 
 	const std::string_view label = phase.empty() ? std::string_view("Loading...") : std::string_view(phase);
-	const float label_w = ctx.fonts.text->width(label, font_sz);
+	const float label_w = text_view->width(label, font_sz);
 
 	ctx.queue_text({
 		.font = ctx.fonts.text,
 		.text = label,
-		.position = { center.x() - label_w * 0.5f, center.y() + ctx.fonts.text->vertical_center_offset(font_sz) + row_h * 1.5f },
+		.position = { center.x() - label_w * 0.5f, center.y() + text_view->vertical_center_offset(font_sz) + row_h * 1.5f },
 		.scale = font_sz,
 		.color = ctx.style.color_text,
 	});
@@ -125,7 +126,7 @@ auto gse::gui::loading_screen::build(builder& ui, nav& n) -> void {
 
 	if (total > 0) {
 		const std::string detail = std::format("{} / {}", done, total);
-		const float detail_w = ctx.fonts.text->width(detail, font_sz);
+		const float detail_w = text_view->width(detail, font_sz);
 		ctx.queue_text({
 			.font = ctx.fonts.text,
 			.text = detail,
