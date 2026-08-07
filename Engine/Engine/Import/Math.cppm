@@ -15,6 +15,7 @@ export import :segment;
 export import :simd;
 export import :units;
 export import :vector;
+export import :vector_parse;
 export import :vector_math;
 export import :mixed_vec;
 export import :mixed_mat;

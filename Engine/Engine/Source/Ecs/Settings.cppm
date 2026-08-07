@@ -119,7 +119,8 @@ export namespace gse::settings {
 
 	template <typename T>
 	concept is_scalar_settings_field = std::is_arithmetic_v<T> || std::is_enum_v<T> || std::same_as<T, bool> ||
-		std::same_as<T, std::string> || has_parser_specialization<T>;
+		std::same_as<T, std::string> || has_parser_specialization<T> || meta::is_optional_field<T> ||
+		meta::is_list_field<T>;
 
 	template <typename T, scope_kind Inherited = scope_kind::user>
 	auto write_settings_with_prefix(
@@ -194,9 +195,7 @@ auto gse::settings::write_settings_with_prefix(std::unordered_map<std::string, s
 				write_settings_with_prefix<F, effective>(doc, category, key, value.[:m:], filter);
 			}
 			else if (effective == filter) {
-				std::string formatted;
-				std::format_to(std::back_inserter(formatted), "{}", value.[:m:]);
-				doc[std::string(category)][key] = std::move(formatted);
+				doc[std::string(category)][key] = meta::write_field(value.[:m:]);
 			}
 		}
 	}
@@ -232,7 +231,7 @@ auto gse::settings::read_settings_with_prefix(const std::unordered_map<std::stri
 			}
 			else if (effective == filter) {
 				if (const auto it = cat_it->second.find(key); it != cat_it->second.end()) {
-					gse::parse(it->second, value.[:m:]);
+					meta::read_field(it->second, value.[:m:]);
 				}
 			}
 		}
