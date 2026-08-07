@@ -593,7 +593,7 @@ auto gse::physics::init(context& ctx, const std::optional<shared_view<gpu::conte
 	co_return;
 }
 
-auto gse::physics::apply_kinematic_targets(read<kinematic_target_component>& targets, write<transform_component>& transform, write<motion_component>& motion, std::flat_map<id, transform_component>& step_start, const time_t<float, seconds> dt) -> void {
+auto gse::physics::apply_kinematic_targets(read<kinematic_target_component>& targets, write<transform_component>& transform, write<motion_component>& motion, std::flat_map<id, transform_component>& step_start, const time_t<float, seconds> dt, const bool trace) -> void {
 	trace::scope_guard sg{ trace_id<"physics::kinematic_targets">() };
 
 	const auto target_owners = targets.owner_ids();
@@ -601,20 +601,47 @@ auto gse::physics::apply_kinematic_targets(read<kinematic_target_component>& tar
 		const auto eid = target_owners[i];
 		auto* mc = motion.find(eid);
 		if (!mc || !is_kinematic(*mc)) {
+			if (trace) {
+				log::println(
+					log::category::physics,
+					"[kinematic-trace] {} skipped: motion={} kinematic={}",
+					eid,
+					mc != nullptr,
+					mc != nullptr && is_kinematic(*mc)
+				);
+			}
 			continue;
 		}
 		auto* tc = transform.find(eid);
 		if (!tc) {
+			if (trace) {
+				log::println(log::category::physics, "[kinematic-trace] {} skipped: no transform_component", eid);
+			}
 			continue;
 		}
 
 		const auto& target = targets[i];
-		const auto start = step_start.try_emplace(eid, *tc).first;
+		const auto incoming = *tc;
+		const auto [start, seeded] = step_start.try_emplace(eid, *tc);
 
 		*tc = start->second;
 
 		mc->current_velocity = (target.position - tc->position) / dt;
 		mc->angular_velocity = difference_axis_angle(tc->orientation, target.orientation) / dt;
+
+		if (trace) {
+			log::println(
+				log::category::physics,
+				"[kinematic-trace] {} incoming_tc={:.2f} seeded={} step_start={:.2f} target={:.2f} dt={:.4f:s} -> vel={:.2f}",
+				eid,
+				incoming.position,
+				seeded,
+				start->second.position,
+				target.position,
+				dt,
+				mc->current_velocity
+			);
+		}
 
 		start->second = transform_component{
 			.position = target.position,
@@ -625,12 +652,16 @@ auto gse::physics::apply_kinematic_targets(read<kinematic_target_component>& tar
 
 auto gse::physics::prepare(context& ctx, data& d, write<joint_spec> specs, read<muscle_component> muscles, read<joint_drive_component> drives, read<kinematic_target_component> targets, write<transform_component> transform, write<motion_component> motion) -> async::task<> {
 	if (const int steps = system_clock::fixed_steps_this_frame(); steps > 0 && d.update_phys) {
+		const bool trace = !d.kinematic_traced && !targets.empty();
+		d.kinematic_traced = d.kinematic_traced || !targets.empty();
+
 		apply_kinematic_targets(
 			targets,
 			transform,
 			motion,
 			d.kinematic_step_start,
-			system_clock::fixed_dt<time_t<float, seconds>>() * static_cast<float>(steps)
+			system_clock::fixed_dt<time_t<float, seconds>>() * static_cast<float>(steps),
+			trace
 		);
 	}
 
@@ -779,6 +810,9 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 	if (!reset) {
 		trace::scope_guard sg{ trace_id<"vbd_gpu::readback">() };
 		const auto solved = d.gpu_solver.read_body_states();
+		const bool trace_snapshot = !d.snapshot_traced && d.id_to_body_index.size() > 64 && solved.size() > 64;
+		bool traced_kinematic = false;
+
 		if (!solved.empty()) {
 			const auto rb_motion_ids = motion.owner_ids();
 			const bool rb_transform_order_matches =
@@ -803,8 +837,19 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 				}
 				const auto& bs = solved[it->second];
 				if (!dyn) {
-					tc->position = bs.position;
-					tc->orientation = bs.orientation;
+					if (trace_snapshot) {
+						log::println(
+							log::category::physics,
+							"[snapshot-trace] {} slot={}/{} locked={} tc={:.2f} snapshot={:.2f}",
+							eid,
+							it->second,
+							solved.size(),
+							bs.locked,
+							tc->position,
+							bs.position
+						);
+						traced_kinematic = true;
+					}
 					continue;
 				}
 				tc->position = bs.position;
@@ -818,6 +863,20 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 					d.body_sleeping[i] = bs.sleeping() ? 1 : 0;
 				}
 			}
+		}
+
+		if (trace_snapshot) {
+			log::println(
+				log::category::physics,
+				"[snapshot-trace] solved={} motion={} index_map={} gpu_bodies={} slot={} kinematic_seen={}",
+				solved.size(),
+				motion.size(),
+				d.id_to_body_index.size(),
+				d.gpu_solver.body_count(),
+				d.gpu_solver.latest_snapshot_slot(),
+				traced_kinematic
+			);
+			d.snapshot_traced = true;
 		}
 	}
 
@@ -997,6 +1056,28 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 
 		d.id_to_body_index.clear();
 		d.id_to_body_index.insert(id_to_body_index_staging.begin(), id_to_body_index_staging.end());
+
+		if (!d.upload_traced && body_count > 64) {
+			d.upload_traced = true;
+			for (std::size_t i = 0; i < body_count; ++i) {
+				if (!is_kinematic(motion[i])) {
+					continue;
+				}
+				log::println(
+					log::category::physics,
+					"[upload-trace] {} slot={}/{} locked={} mass={:.1f} pos={:.2f} vel={:.2f} dispatch_slot={} seeded_count={}",
+					entity_ids[i],
+					i,
+					body_count,
+					bodies[i].locked,
+					bodies[i].mass,
+					bodies[i].position,
+					bodies[i].velocity,
+					1u - d.gpu_solver.latest_snapshot_slot(),
+					d.gpu_solver.body_count()
+				);
+			}
+		}
 	}
 
 	{

@@ -961,8 +961,7 @@ void collision_narrow_phase(uint3 dispatch_id) {
         float3 local_r_b = rotate_vector(quat_conjugate(bb.orientation), world_r_b);
 
         contact_constraint cached_ws;
-        bool has_cached = false;
-        warm_start_lookup(body_a_idx, body_b_idx, feature_hi, feature_lo, 0u, cached_ws);
+        bool has_cached = warm_start_lookup(body_a_idx, body_b_idx, feature_hi, feature_lo, pc.warm_start_count, cached_ws);
         float3 current_d = world_anchor_a - world_anchor_b;
         float current_normal_gap = dot(constraint_normal, current_d) + solver_config_data[0].collision_margin;
         bool reuse_cached_normal =

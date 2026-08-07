@@ -36,9 +36,9 @@ auto sandbox::piston::run(gse::context& ctx, gse::write<component> pistons, gse:
 			continue;
 		}
 
-		target->position = p.center + p.amplitude * gse::sin(p.phase);
-
 		p.phase += p.omega * step_dt * frame_step_count;
+
+		target->position = p.center + p.amplitude * gse::sin(p.phase);
 	}
 
 	return {};
