@@ -185,10 +185,11 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 
 	auto& asset_state = m_scheduler.state<asset::data>();
 
+	using game_assets = gse::assets::append<graphics::asset_types, audio::asset_types>;
+
 	if (m_config.render) {
 		tick_window();
 
-		using game_assets = gse::assets::append<graphics::asset_types, audio::asset_types>;
 		gse::asset::system_for<game_assets> assets{ asset_state };
 		assets.register_loaders();
 		if (auto discovered = assets.discover_baked(); !discovered) {
@@ -258,8 +259,9 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 			}
 		}
 
-		asset::add_loader<model>(asset_state);
-		if (auto discovered = asset::discover_baked<model>(asset_state); !discovered) {
+		gse::asset::system_for<graphics::simulation_asset_types> assets{ asset_state };
+		assets.register_loaders();
+		if (auto discovered = assets.discover_baked(); !discovered) {
 			assert(false, "Asset discovery failed: {}", discovered.error().detail);
 		}
 

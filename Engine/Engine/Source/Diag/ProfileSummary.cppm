@@ -183,7 +183,10 @@ auto gse::profile::write_summary(const run_summary& summary, const std::filesyst
 		summary.frame_peak
 	);
 
-	if (summary.truncated) {
+	if (summary.frames == 0) {
+		out << "WARNING: no frames were recorded, so every percentile above is zero by absence rather than by measurement.\n";
+	}
+	else if (summary.truncated) {
 		out << "WARNING: the recorded frame ring evicted frames during this run; percentiles cover only the tail.\n";
 	}
 

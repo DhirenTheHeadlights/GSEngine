@@ -12,6 +12,8 @@ export namespace sandbox {
 	struct spawn_stress_request {};
 
 	struct spawn_joints_request {};
+
+	struct spawn_character_request {};
 }
 
 export namespace sandbox::dev_spawn {
@@ -103,8 +105,10 @@ auto sandbox::dev_spawn::run(
 
 	const bool key_stress = gse::actions::pressed(state.spawn_stress, cs, actions_d);
 	const bool key_joints = gse::actions::pressed(state.spawn_joints, cs, actions_d);
+	const bool key_character = gse::actions::pressed(state.spawn_character, cs, actions_d);
 	const bool req_stress = !ctx.read_channel<spawn_stress_request>().empty();
 	const bool req_joints = !ctx.read_channel<spawn_joints_request>().empty();
+	const bool req_character = !ctx.read_channel<spawn_character_request>().empty();
 
 	if (scene != nullptr && (key_stress || req_stress)) {
 		spawn_physics_stress(*scene, state.stress);
@@ -112,7 +116,7 @@ auto sandbox::dev_spawn::run(
 	if (scene != nullptr && (key_joints || req_joints)) {
 		spawn_joint_test(*scene);
 	}
-	if (scene != nullptr && gse::actions::pressed(state.spawn_character, cs, actions_d)) {
+	if (scene != nullptr && (key_character || req_character)) {
 		state.last_character = sandbox::spawn_character(
 			*scene,
 			gse::asset::get<gse::skinned_model>(assets_d, "SkinnedModels/x_bot.v3"),

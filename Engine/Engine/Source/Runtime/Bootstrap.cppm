@@ -276,6 +276,15 @@ auto gse::finish_bench(const bench_config& config, const bench_state& state, eng
 	profile::write_summary(summary, summary_path);
 	profile::dump_report(profile_path);
 
+	if (summary.frames == 0) {
+		log::println(
+			log::level::error,
+			log::category::general,
+			"bench: {} frames were recorded, so every percentile below is zero by absence rather than by measurement; the world-state hash is still valid but no timing from this run is",
+			summary.frames
+		);
+	}
+
 	log::println(
 		log::category::general,
 		"bench: {} frames measured, p50 {:.3f:ms} p95 {:.3f:ms} p99 {:.3f:ms}, world-state hash {:#018x}",
