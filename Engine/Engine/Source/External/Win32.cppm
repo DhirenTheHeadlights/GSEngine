@@ -140,6 +140,10 @@ export namespace gse::win32 {
 	using ::GetEnvironmentStringsW;
 	using ::FreeEnvironmentStringsW;
 	using ::MultiByteToWideChar;
+	using ::LARGE_INTEGER;
+	using ::LONGLONG;
+	using ::CreateWaitableTimerExW;
+	using ::SetWaitableTimer;
 	using ::CreateNamedPipeW;
 	using ::ConnectNamedPipe;
 	using ::DisconnectNamedPipe;
@@ -172,8 +176,11 @@ export namespace gse::win32 {
 	constexpr DWORD infinite = INFINITE;
 	constexpr DWORD wait_timeout = WAIT_TIMEOUT;
 	constexpr DWORD wait_object_0 = WAIT_OBJECT_0;
+	constexpr DWORD create_waitable_timer_high_resolution = CREATE_WAITABLE_TIMER_HIGH_RESOLUTION;
+	constexpr DWORD timer_all_access = TIMER_ALL_ACCESS;
 	constexpr DWORD handle_flag_inherit = HANDLE_FLAG_INHERIT;
 	constexpr DWORD movefile_replace_existing = MOVEFILE_REPLACE_EXISTING;
+	constexpr DWORD movefile_write_through = MOVEFILE_WRITE_THROUGH;
 	constexpr UINT cp_utf8 = CP_UTF8;
 	constexpr DWORD pipe_access_duplex = PIPE_ACCESS_DUPLEX;
 	constexpr DWORD pipe_access_inbound = PIPE_ACCESS_INBOUND;

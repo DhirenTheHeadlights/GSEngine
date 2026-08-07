@@ -481,7 +481,7 @@ auto gse::vulkan::device::swapchain_past_presentation_timing(const gpu::swap_cha
 			};
 			for (std::uint32_t s = 0; s < timing.presentStageCount; ++s) {
 				if (timing.pPresentStages[s].stage & vk::PresentStageFlagBitsEXT::eImageFirstPixelOut) {
-					sample.first_pixel_out = time_t<std::uint64_t>(timing.pPresentStages[s].time);
+					sample.first_pixel_out = nanoseconds(timing.pPresentStages[s].time);
 				}
 			}
 			out.push_back(sample);
@@ -908,6 +908,16 @@ auto gse::vulkan::device::create(const instance& instance_data, gpu::device_sett
 		log::println(log::level::warning, log::category::vulkan, "External memory (Win32) unsupported: exportable surfaces unavailable");
 	}
 
+	const bool external_semaphore_supported = supports_extension("VK_KHR_external_semaphore") && supports_extension("VK_KHR_external_semaphore_win32");
+	if (external_semaphore_supported) {
+		device_extensions.push_back("VK_KHR_external_semaphore");
+		device_extensions.push_back("VK_KHR_external_semaphore_win32");
+		log::println(log::category::vulkan, "External semaphore (Win32) enabled: shared timeline sync available");
+	}
+	else {
+		log::println(log::level::warning, log::category::vulkan, "External semaphore (Win32) unsupported: attached surface sync unavailable");
+	}
+
 	chain_head = aftermath_tracker.device_create_info_pnext(chain_head);
 
 	vk::PhysicalDeviceFeatures2 features2{
@@ -1121,7 +1131,7 @@ auto gse::vulkan::device::create_buffer(const vk::BufferCreateInfo& buffer_info,
 
 	if ((m_settings && m_settings->name_resources)) {
 		const auto& debug_info = alloc.debug_info();
-		const auto file = std::filesystem::path(debug_info.creation_location.file_name()).filename().display_string();
+		const auto file = std::filesystem::path(debug_info.creation_location.file_name()).filename().generic_display_string();
 		const auto name = debug_info.tag.empty()
 			? std::format("Buffer ({}:{})", file,
 						  debug_info.creation_location.line())
@@ -1241,7 +1251,7 @@ auto gse::vulkan::device::create_image(const vk::ImageCreateInfo& info, const gp
 
 	if (m_settings && m_settings->name_resources) {
 		const auto& debug_info = alloc.debug_info();
-		const auto file = std::filesystem::path(debug_info.creation_location.file_name()).filename().display_string();
+		const auto file = std::filesystem::path(debug_info.creation_location.file_name()).filename().generic_display_string();
 		const auto image_name = debug_info.tag.empty()
 			? std::format("Image ({}:{})", file, debug_info.creation_location.line())
 			: std::format(
@@ -3118,7 +3128,7 @@ auto gse::vulkan::device::create_tlas(const std::uint32_t max_instances) -> gpu:
 	auto instance_buf = create_buffer(
 		gpu::buffer_desc{
 			.size = instance_buf_size,
-			.usage = gpu::buffer_flag::acceleration_structure_build_input | gpu::buffer_flag::storage,
+			.usage = { gpu::buffer_flag::acceleration_structure_build_input, gpu::buffer_flag::storage },
 		}
 	);
 

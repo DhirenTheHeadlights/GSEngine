@@ -11,8 +11,17 @@ import gse.gpu_backend;
 import gse.os;
 import gse.assert;
 import gse.diag;
+import gse.log;
 import gse.meta;
 import gse.time;
+
+namespace gse::gpu {
+	constexpr std::uint32_t pacing_health_check_frame = 600;
+
+	std::uint32_t present_total = 0;
+	std::uint32_t present_queue_full = 0;
+	bool pacing_health_reported = false;
+}
 
 auto gse::gpu::frame::create(device& dev, swap_chain* sc) -> std::unique_ptr<frame> {
 	auto s = sc ? create_sync_objects(dev, *sc) : frame_sync<device>::create(dev, max_frames_in_flight);
@@ -87,11 +96,32 @@ auto gse::gpu::frame::begin(window::data* win) -> std::expected<frame_token, fra
 		}
 	}
 
-	if (m_swapchain) {
+	if (m_swapchain && !(win && win->attached)) {
 		trace::scope_guard sg{ trace_id<"begin_frame::present_feedback">() };
-		m_pacer.observe(m_swapchain->past_presentation_timing(), m_swapchain->refresh_interval());
+		const auto refresh = m_swapchain->refresh_interval();
+		m_pacer.observe(m_swapchain->past_presentation_timing(), refresh);
+		system_clock::submit_refresh_interval(quantity_cast<system_clock::internal_time>(refresh));
 		if (m_pacer.has_feedback()) {
 			system_clock::submit_display_interval(m_pacer.frame_delta());
+		}
+
+		if (!pacing_health_reported && present_total >= pacing_health_check_frame) {
+			pacing_health_reported = true;
+			const auto seen = m_pacer.samples_seen();
+			const auto used = m_pacer.samples_used();
+			if (!m_pacer.has_feedback() || seen == 0 || used * 4 < seen) {
+				log::println(
+					log::level::warning,
+					log::category::render,
+					"present pacing degraded after {} presents: feedback={} samples_seen={} samples_used={} queue_full_retries={}. "
+					"dt will fall back to CPU loop timing, which does not match display cadence and shows up as motion judder",
+					present_total,
+					m_pacer.has_feedback(),
+					seen,
+					used,
+					present_queue_full
+				);
+			}
 		}
 	}
 
@@ -154,7 +184,7 @@ auto gse::gpu::frame::begin(window::data* win) -> std::expected<frame_token, fra
 			.src_stages = pipeline_stage_flag::top_of_pipe,
 			.src_access = {},
 			.dst_stages = pipeline_stage_flag::color_attachment_output,
-			.dst_access = access_flag::color_attachment_write | access_flag::color_attachment_read,
+			.dst_access = { access_flag::color_attachment_write, access_flag::color_attachment_read },
 			.discard_contents = true,
 			.image = m_swapchain->image(m_image_index),
 			.aspects = image_aspect_flag::color,
@@ -168,22 +198,22 @@ auto gse::gpu::frame::begin(window::data* win) -> std::expected<frame_token, fra
 		memory_barrier{
 			.src_stages = pipeline_stage_flag::acceleration_structure_build,
 			.src_access = access_flag::acceleration_structure_write,
-			.dst_stages = pipeline_stage_flag::acceleration_structure_build | pipeline_stage_flag::vertex_shader |
-				pipeline_stage_flag::fragment_shader | pipeline_stage_flag::mesh_shader |
-				pipeline_stage_flag::task_shader | pipeline_stage_flag::compute_shader,
-			.dst_access = access_flag::acceleration_structure_read | access_flag::shader_read,
+			.dst_stages = { pipeline_stage_flag::acceleration_structure_build, pipeline_stage_flag::vertex_shader,
+				pipeline_stage_flag::fragment_shader, pipeline_stage_flag::mesh_shader,
+				pipeline_stage_flag::task_shader, pipeline_stage_flag::compute_shader },
+			.dst_access = { access_flag::acceleration_structure_read, access_flag::shader_read },
 		},
 		memory_barrier{
-			.src_stages = pipeline_stage_flag::copy | pipeline_stage_flag::transfer,
+			.src_stages = { pipeline_stage_flag::copy, pipeline_stage_flag::transfer },
 			.src_access = access_flag::transfer_write,
-			.dst_stages = pipeline_stage_flag::vertex_input | pipeline_stage_flag::index_input |
-				pipeline_stage_flag::vertex_attribute_input | pipeline_stage_flag::draw_indirect |
-				pipeline_stage_flag::vertex_shader | pipeline_stage_flag::fragment_shader |
-				pipeline_stage_flag::mesh_shader | pipeline_stage_flag::task_shader |
-				pipeline_stage_flag::compute_shader | pipeline_stage_flag::acceleration_structure_build,
-			.dst_access = access_flag::vertex_attribute_read | access_flag::index_read | access_flag::shader_read |
-				access_flag::shader_storage_read | access_flag::uniform_read | access_flag::indirect_command_read |
-				access_flag::shader_sampled_read,
+			.dst_stages = { pipeline_stage_flag::vertex_input, pipeline_stage_flag::index_input,
+				pipeline_stage_flag::vertex_attribute_input, pipeline_stage_flag::draw_indirect,
+				pipeline_stage_flag::vertex_shader, pipeline_stage_flag::fragment_shader,
+				pipeline_stage_flag::mesh_shader, pipeline_stage_flag::task_shader,
+				pipeline_stage_flag::compute_shader, pipeline_stage_flag::acceleration_structure_build },
+			.dst_access = { access_flag::vertex_attribute_read, access_flag::index_read, access_flag::shader_read,
+				access_flag::shader_storage_read, access_flag::uniform_read, access_flag::indirect_command_read,
+				access_flag::shader_sampled_read },
 		},
 	};
 	m_device->cmd_pipeline_barrier(cmd_main, dependency_info{
@@ -308,13 +338,20 @@ auto gse::gpu::frame::end(window::data* win, std::span<const queue_submission> a
 	if (m_swapchain) {
 		const handle<gpu::semaphore> render_finished_handle = m_sync.render_finished(m_image_index);
 		const std::uint64_t present_id = m_next_present_id++;
+		const bool request_timing = !(win && win->attached);
 
 		result present_result;
 		{
 			trace::scope_guard sg{ trace_id<"end_frame::present">() };
-			present_result = m_swapchain->present(render_finished_handle, m_image_index, present_id, m_pacer.relative_target());
+			{
+				trace::scope_guard sg_timed{ trace_id<"present::timed">() };
+				present_result = m_swapchain->present(render_finished_handle, m_image_index, present_id, request_timing);
+			}
+			++present_total;
 			if (present_result == result::error_present_timing_queue_full) {
-				present_result = m_swapchain->present(render_finished_handle, m_image_index, present_id, m_pacer.relative_target(), false);
+				++present_queue_full;
+				trace::scope_guard sg_retry{ trace_id<"present::retry_untimed">() };
+				present_result = m_swapchain->present(render_finished_handle, m_image_index, present_id, false);
 			}
 			if (present_result == result::error_device_lost) {
 				m_device->report_device_lost(std::format("presentKHR (frame {}, image {})", m_current_frame, m_image_index));

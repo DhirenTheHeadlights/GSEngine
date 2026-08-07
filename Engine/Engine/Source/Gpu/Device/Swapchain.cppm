@@ -57,7 +57,6 @@ export namespace gse::gpu {
 			handle<gpu::semaphore> wait_semaphore,
 			std::uint32_t image_index,
 			std::uint64_t present_id,
-			time_t<std::uint64_t> relative_target,
 			bool request_timing = true
 		) -> result;
 
@@ -159,12 +158,13 @@ auto gse::gpu::swap_chain::acquire(const handle<gpu::semaphore> wait_semaphore, 
 	return m_device->acquire_swapchain_image(m_info.handle, wait_semaphore, timeout_ns);
 }
 
-auto gse::gpu::swap_chain::present(const handle<gpu::semaphore> wait_semaphore, const std::uint32_t image_index, const std::uint64_t present_id, const time_t<std::uint64_t> relative_target, const bool request_timing) -> result {
+auto gse::gpu::swap_chain::present(const handle<gpu::semaphore> wait_semaphore, const std::uint32_t image_index, const std::uint64_t present_id, const bool request_timing) -> result {
 	reset_release_fence(image_index);
 
 	const auto swapchain_handle = m_info.handle;
 	const auto current_present_mode = m_info.present_mode;
 	const auto release_fence_handle = m_device->swapchain_release_fence(m_info.handle, image_index);
+	const time_t<std::uint64_t> feedback_only_target{};
 
 	present_info info{
 		.wait_semaphores = std::span(&wait_semaphore, 1),
@@ -177,7 +177,7 @@ auto gse::gpu::swap_chain::present(const handle<gpu::semaphore> wait_semaphore, 
 	};
 
 	if (m_info.time_domain_id != 0 && request_timing) {
-		info.target_present_times = std::span(&relative_target, 1);
+		info.target_present_times = std::span(&feedback_only_target, 1);
 		info.present_stage_queries = present_stage_flags(present_stage_flag::image_first_pixel_out);
 	}
 
@@ -233,7 +233,7 @@ auto gse::gpu::create_swapchain_depth(device& dev, const vec2u extent) -> image 
 		image_desc{
 			.size = extent,
 			.format = image_format::d32_sfloat,
-			.usage = image_flag::depth_attachment | image_flag::sampled,
+			.usage = { image_flag::depth_attachment, image_flag::sampled },
 		},
 		"swapchain.depth"
 	);
