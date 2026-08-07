@@ -130,7 +130,18 @@ auto gse::dx12::swapchain::release_fence(std::uint32_t) const -> gpu::handle<gpu
 }
 
 auto gse::dx12::swapchain::past_presentation_timing() const -> std::vector<gpu::past_present_timing> {
-	return {};
+	const auto stats = directx::frame_statistics(m_swapchain.get());
+	if (!stats.valid || stats.sync_time_ns == 0) {
+		return {};
+	}
+
+	return {
+		gpu::past_present_timing{
+			.present_id = stats.present_count,
+			.first_pixel_out = nanoseconds(stats.sync_time_ns),
+			.complete = true,
+		}
+	};
 }
 
 auto gse::dx12::swapchain::present(const gpu::present_info& info) -> gpu::result {

@@ -150,7 +150,7 @@ auto gse::vulkan::on_gpu_crash_dump(const void* data, std::uint32_t size) -> voi
 		log::level::error,
 		log::category::vulkan,
 		"Aftermath crash dump written: {}",
-		path.display_string()
+		path.generic_display_string()
 	);
 
 	const auto analysis = gse::aftermath::analyze_crash_dump(data, size);
@@ -296,8 +296,8 @@ auto gse::vulkan::aftermath::create(settings cfg) -> aftermath {
 		log::println(
 			log::category::vulkan,
 			"Nsight Aftermath crash dumps enabled (dumps -> {}, shaders -> {})",
-			dumps.dump_directory.display_string(),
-			dumps.shader_directory.display_string()
+			dumps.dump_directory.generic_display_string(),
+			dumps.shader_directory.generic_display_string()
 		);
 	}
 	else if (gse::aftermath::compiled_in) {

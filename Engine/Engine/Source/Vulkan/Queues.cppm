@@ -222,7 +222,7 @@ auto gse::vulkan::build_vk_present_info(const gpu::present_info& info, present_s
 					.targetTime = static_cast<std::uint64_t>(info.target_present_times[i]),
 					.timeDomainId = info.time_domain_id,
 					.presentStageQueries = stage_queries,
-					.targetTimeDomainPresentStage = vk::PresentStageFlagBitsEXT::eImageFirstPixelOut,
+					.targetTimeDomainPresentStage = {},
 				}
 			);
 		}

@@ -303,6 +303,16 @@ export namespace gse::directx {
 		std::uint32_t index
 	) -> com_ptr<ID3D12Resource>;
 
+	struct present_statistics {
+		std::uint64_t present_count = 0;
+		std::uint64_t sync_time_ns = 0;
+		bool valid = false;
+	};
+
+	[[nodiscard]] auto frame_statistics(
+		IDXGISwapChain3* swapchain
+	) -> present_statistics;
+
 	auto create_render_target_view(
 		ID3D12Device* device,
 		ID3D12Resource* resource,
@@ -1145,6 +1155,32 @@ auto gse::directx::swapchain_buffer(IDXGISwapChain3* swapchain, const std::uint3
 	com_ptr<ID3D12Resource> buffer;
 	swapchain->GetBuffer(index, IID_PPV_ARGS(buffer.put()));
 	return buffer;
+}
+
+auto gse::directx::frame_statistics(IDXGISwapChain3* swapchain) -> present_statistics {
+	if (!swapchain) {
+		return {};
+	}
+
+	DXGI_FRAME_STATISTICS stats{};
+	if (FAILED(swapchain->GetFrameStatistics(&stats))) {
+		return {};
+	}
+
+	LARGE_INTEGER frequency{};
+	if (!QueryPerformanceFrequency(&frequency) || frequency.QuadPart <= 0) {
+		return {};
+	}
+
+	const auto ticks = static_cast<std::uint64_t>(stats.SyncQPCTime.QuadPart);
+	const auto per_second = static_cast<std::uint64_t>(frequency.QuadPart);
+	constexpr std::uint64_t nanos_per_second = 1'000'000'000;
+
+	return {
+		.present_count = stats.PresentCount,
+		.sync_time_ns = ticks / per_second * nanos_per_second + ticks % per_second * nanos_per_second / per_second,
+		.valid = true,
+	};
 }
 
 auto gse::directx::create_render_target_view(ID3D12Device* device, ID3D12Resource* resource, const D3D12_CPU_DESCRIPTOR_HANDLE handle) -> void {
