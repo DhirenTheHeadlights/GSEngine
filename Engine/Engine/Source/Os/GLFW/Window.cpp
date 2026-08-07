@@ -64,6 +64,10 @@ namespace gse {
 		window::data& d
 	) -> void;
 
+	auto desired_present_mode_index(
+		const window::data& d
+	) -> int;
+
 	auto apply_cursor_mode(
 		const window::data& d
 	) -> void;
@@ -186,9 +190,15 @@ auto gse::refresh_present_mode_settings(window::data& d) -> void {
 	}
 }
 
+auto gse::desired_present_mode_index(const window::data& d) -> int {
+	constexpr int mailbox_index = 2;
+	return d.attached ? mailbox_index : d.present_mode.value;
+}
+
 auto gse::apply_cursor_mode(const window::data& d) -> void {
 	auto* handle = to_glfw_handle(d.handle);
-	const int target_mode = d.mouse_visible ? glfw::cursor_normal : glfw::cursor_disabled;
+	const bool want_normal = d.cursor_suppressed || (d.mouse_visible && !d.cursor_captured);
+	const int target_mode = want_normal ? glfw::cursor_normal : glfw::cursor_disabled;
 	const int current_mode = glfwGetInputMode(handle, glfw::cursor);
 	if (current_mode == target_mode) {
 		return;
@@ -481,6 +491,11 @@ auto gse::create_window(window::data& d) -> void {
 
 			if (self->ui_focus) {
 				const auto dims = window_handle_viewport(self->handle);
+				if (self->cursor_captured) {
+					self->input_events.push(input::mouse_moved{ .x_pos = xpos, .y_pos = static_cast<double>(dims.y()) - ypos });
+					return;
+				}
+
 				const double clamped_x = std::clamp(xpos, 0.0, static_cast<double>(dims.x()));
 				const double clamped_y = std::clamp(ypos, 0.0, static_cast<double>(dims.y()));
 
@@ -535,7 +550,7 @@ auto gse::create_window(window::data& d) -> void {
 		}
 	);
 
-	const int cursor_mode = d.mouse_visible ? glfw::cursor_normal : glfw::cursor_disabled;
+	const int cursor_mode = d.cursor_suppressed || d.mouse_visible ? glfw::cursor_normal : glfw::cursor_disabled;
 	glfwSetInputMode(handle, glfw::cursor, cursor_mode);
 
 	refresh_monitor_settings(d);
@@ -544,9 +559,7 @@ auto gse::create_window(window::data& d) -> void {
 	refresh_display_mode_settings(d);
 	refresh_present_mode_settings(d);
 
-	d.current_present_mode_index = d.present_mode.value;
-
-	glfwFocusWindow(handle);
+	d.current_present_mode_index = desired_present_mode_index(d);
 
 	if (d.native_frame) {
 		window::install_native_frame(d.handle, &d.chrome_caption_height, &d.chrome_controls_width, &d.chrome_interactive_x0, &d.chrome_interactive_x1, &d.chrome_resize_exclude_y0, &d.chrome_resize_exclude_y1);
@@ -660,6 +673,10 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 		set_ui_focus(d, focus);
 	}
 
+	for (const auto& [capture] : sched.read_channel<cursor_capture_request>()) {
+		d.cursor_captured = capture;
+	}
+
 	for ([[maybe_unused]] const auto& req : sched.read_channel<window_minimize_request>()) {
 		d.cmd_minimize = true;
 	}
@@ -726,8 +743,8 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 			apply_display_mode(d, desired_display_mode);
 		}
 
-		if (d.current_present_mode_index != d.present_mode.value) {
-			d.current_present_mode_index = d.present_mode.value;
+		if (const int desired_present_mode = desired_present_mode_index(d); d.current_present_mode_index != desired_present_mode) {
+			d.current_present_mode_index = desired_present_mode;
 			d.framebuffer_resized = true;
 		}
 	}

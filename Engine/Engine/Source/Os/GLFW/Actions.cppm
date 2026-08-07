@@ -17,9 +17,28 @@ import :keys;
 import :input_state;
 
 export namespace gse {
+	enum struct key_modifier : std::uint8_t {
+		none = 0,
+		ctrl = 1 << 0,
+		shift = 1 << 1,
+		alt = 1 << 2,
+		super = 1 << 3
+	};
+
+	using key_modifiers = flags<key_modifier>;
+
+	struct key_combo {
+		key k = key::unknown;
+		key_modifiers mods;
+	};
+
 	auto key_to_string(
 		key k
 	) -> std::string_view;
+
+	auto combo_to_string(
+		key_combo combo
+	) -> std::string;
 }
 
 export namespace gse::actions {
@@ -39,7 +58,7 @@ export namespace gse::actions {
 
 	struct add_action_request {
 		std::string name;
-		key default_key;
+		key_combo default_combo;
 		id action_id;
 	};
 
@@ -58,7 +77,7 @@ export namespace gse::actions {
 
 	struct rebind_request {
 		std::string action_name;
-		key new_key;
+		key_combo new_combo;
 	};
 
 	class description : public identifiable {
@@ -246,13 +265,13 @@ export namespace gse::actions {
 
 	struct action_binding_info {
 		std::string name;
-		key current_key;
-		key default_key;
+		key_combo current_combo;
+		key_combo default_combo;
 	};
 
 	struct pending_key_binding {
 		std::string name;
-		key def;
+		key_combo def;
 		id action_id;
 	};
 
@@ -262,12 +281,16 @@ export namespace gse::actions {
 	};
 
 	struct bindings {
-		std::vector<std::pair<key, std::uint16_t>> key_to_action;
+		struct key_binding {
+			key_combo combo;
+			std::uint16_t action = 0;
+		};
+		std::vector<key_binding> key_to_action;
 		std::vector<std::pair<mouse_button, std::uint16_t>> mouse_to_action;
 
 		struct key_axis1 {
-			key neg;
-			key pos;
+			key_combo neg;
+			key_combo pos;
 			std::uint16_t axis;
 			float scale = 1.f;
 		};
@@ -283,10 +306,10 @@ export namespace gse::actions {
 
 	struct resolved_axis2_keys {
 		id id;
-		key left;
-		key right;
-		key back;
-		key fwd;
+		key_combo left;
+		key_combo right;
+		key_combo back;
+		key_combo fwd;
 		float scale = 1.f;
 	};
 
@@ -294,8 +317,8 @@ export namespace gse::actions {
 		[[= gse::shared]] actions::state current_input_state;
 		[[= gse::shared]] id_mapped_collection<actions::description> descriptions;
 		std::vector<pending_key_binding> pending_key_bindings;
-		std::map<std::string, int> rebinds;
-		std::map<std::string, int> action_defaults;
+		std::map<std::string, key_combo> rebinds;
+		std::map<std::string, key_combo> action_defaults;
 		std::vector<pending_axis2_req> pending_axis2_reqs;
 		bindings resolved;
 		[[= gse::shared]] std::vector<std::uint16_t> axis1_ids_cache;
@@ -350,7 +373,7 @@ export namespace gse::actions {
 
 	auto rebinds_map(
 		data& d
-	) -> std::map<std::string, int>&;
+	) -> std::map<std::string, key_combo>&;
 
 	[[nodiscard]] auto all_bindings(
 		const data& d
@@ -359,8 +382,17 @@ export namespace gse::actions {
 	auto rebind(
 		data& d,
 		std::string_view action_name,
-		key new_key
+		key_combo new_combo
 	) -> void;
+
+	auto held_modifiers(
+		const input::state& in
+	) -> key_modifiers;
+
+	auto combo_held(
+		const input::state& in,
+		key_combo combo
+	) -> bool;
 
 	auto finalize_bindings(
 		data& d
@@ -375,13 +407,15 @@ export namespace gse::actions {
 	auto add_by_name(
 		channel_writer& channels,
 		std::string_view tag,
-		key default_key
+		key default_key,
+		key_modifiers default_modifiers = {}
 	) -> handle;
 
 	template <fixed_string Tag>
 	auto add(
 		channel_writer& channels,
-		key default_key
+		key default_key,
+		key_modifiers default_modifiers = {}
 	) -> handle;
 
 	auto bind_axis2(
@@ -644,10 +678,10 @@ auto gse::actions::init(data& d) -> async::task<> {
 auto gse::actions::run(context& ctx, data& d, const shared_view<input::data> input_s) -> async::task<> {
 	bool config_changed = false;
 
-	for (const auto& [name, default_key, action_id] : ctx.read_channel<add_action_request>()) {
+	for (const auto& [name, default_combo, action_id] : ctx.read_channel<add_action_request>()) {
 		add_description(d, name, action_id);
-		d.pending_key_bindings.emplace_back(name, default_key, action_id);
-		d.action_defaults[name] = static_cast<int>(default_key);
+		d.pending_key_bindings.emplace_back(name, default_combo, action_id);
+		d.action_defaults[name] = default_combo;
 		config_changed = true;
 	}
 
@@ -656,8 +690,8 @@ auto gse::actions::run(context& ctx, data& d, const shared_view<input::data> inp
 		config_changed = true;
 	}
 
-	for (const auto& [action_name, new_key] : ctx.read_channel<rebind_request>()) {
-		rebind(d, action_name, new_key);
+	for (const auto& [action_name, new_combo] : ctx.read_channel<rebind_request>()) {
+		rebind(d, action_name, new_combo);
 	}
 
 	if (config_changed) {
@@ -673,8 +707,8 @@ auto gse::actions::run(context& ctx, data& d, const shared_view<input::data> inp
 	action_state.ensure_capacity(count);
 	action_state.reset_axes(d.axis1_ids_cache, d.axis2_ids_cache);
 
-	for (auto& [k, bit_index] : d.resolved.key_to_action) {
-		action_state.set_held(bit_index, in.key_held(k), count);
+	for (const auto& [combo, bit_index] : d.resolved.key_to_action) {
+		action_state.set_held(bit_index, combo_held(in, combo), count);
 	}
 
 	for (auto& [mb, bit_index] : d.resolved.mouse_to_action) {
@@ -684,13 +718,13 @@ auto gse::actions::run(context& ctx, data& d, const shared_view<input::data> inp
 	action_state.finalize_frame();
 
 	for (const auto& [neg, pos, axis, scale] : d.resolved.axes1_from_keys) {
-		const int v = (in.key_held(pos) ? 1 : 0) - (in.key_held(neg) ? 1 : 0);
+		const int v = (combo_held(in, pos) ? 1 : 0) - (combo_held(in, neg) ? 1 : 0);
 		action_state.set_axis1(axis, static_cast<float>(v) * scale);
 	}
 
 	for (const auto& [id, left, right, back, fwd, scale] : d.axis2_by_id.items()) {
-		const int x = (in.key_held(right) ? 1 : 0) - (in.key_held(left) ? 1 : 0);
-		const int y = (in.key_held(back) ? 1 : 0) - (in.key_held(fwd) ? 1 : 0);
+		const int x = (combo_held(in, right) ? 1 : 0) - (combo_held(in, left) ? 1 : 0);
+		const int y = (combo_held(in, back) ? 1 : 0) - (combo_held(in, fwd) ? 1 : 0);
 		action_state.set_axis2(
 			static_cast<std::uint16_t>(id.number()),
 			{ static_cast<float>(x) * scale, static_cast<float>(y) * scale }
@@ -720,27 +754,27 @@ auto gse::actions::finalize_bindings(data& d) -> void {
 	d.resolved = {};
 
 	for (const auto& [name, def, action_id] : d.pending_key_bindings) {
-		const key k = (d.rebinds.contains(name) ? static_cast<key>(d.rebinds.at(name)) : def);
+		const key_combo combo = (d.rebinds.contains(name) ? d.rebinds.at(name) : def);
 		const auto* desc = d.descriptions.try_get(action_id);
 		if (!desc) {
 			continue;
 		}
-		d.resolved.key_to_action.emplace_back(k, desc->bit_index());
+		d.resolved.key_to_action.push_back({ .combo = combo, .action = desc->bit_index() });
 	}
 
 	d.axis2_by_id.clear();
-	auto key_for_action = [&](const id action_id) -> key {
+	auto key_for_action = [&](const id action_id) -> key_combo {
 		const auto* desc = d.descriptions.try_get(action_id);
 		if (!desc) {
-			return key{};
+			return key_combo{};
 		}
 		const auto bit_index = desc->bit_index();
-		for (const auto& [k, idx] : d.resolved.key_to_action) {
+		for (const auto& [combo, idx] : d.resolved.key_to_action) {
 			if (idx == bit_index) {
-				return k;
+				return combo;
 			}
 		}
-		return key{};
+		return key_combo{};
 	};
 
 	for (const auto& [info, id] : d.pending_axis2_reqs) {
@@ -782,26 +816,25 @@ auto gse::actions::add_description(data& d, const std::string_view tag, const id
 	return *desc_ptr;
 }
 
-auto gse::actions::rebinds_map(data& d) -> std::map<std::string, int>& {
+auto gse::actions::rebinds_map(data& d) -> std::map<std::string, key_combo>& {
 	return d.rebinds;
 }
 
 auto gse::actions::all_bindings(const data& d) -> std::vector<action_binding_info> {
 	std::map<std::string, action_binding_info> merged;
 
-	for (const auto& [name, default_key] : d.action_defaults) {
-		const auto def = static_cast<key>(default_key);
-		key current = def;
+	for (const auto& [name, def] : d.action_defaults) {
+		key_combo current = def;
 		if (const auto it = d.rebinds.find(name); it != d.rebinds.end()) {
-			current = static_cast<key>(it->second);
+			current = it->second;
 		}
 		merged[name] = { name, current, def };
 	}
 
 	for (const auto& [name, def, action_id] : d.pending_key_bindings) {
-		key current = def;
+		key_combo current = def;
 		if (const auto it = d.rebinds.find(name); it != d.rebinds.end()) {
-			current = static_cast<key>(it->second);
+			current = it->second;
 		}
 		merged[name] = { name, current, def };
 	}
@@ -815,17 +848,44 @@ auto gse::actions::all_bindings(const data& d) -> std::vector<action_binding_inf
 	return result;
 }
 
-auto gse::actions::rebind(data& d, const std::string_view action_name, const key new_key) -> void {
-	d.rebinds[std::string(action_name)] = static_cast<int>(new_key);
+auto gse::actions::rebind(data& d, const std::string_view action_name, const key_combo new_combo) -> void {
+	d.rebinds[std::string(action_name)] = new_combo;
 	finalize_bindings(d);
 }
 
-auto gse::actions::add_by_name(channel_writer& channels, const std::string_view tag, const key default_key) -> handle {
+auto gse::actions::held_modifiers(const input::state& in) -> key_modifiers {
+	key_modifiers mods;
+	if (in.key_held(key::left_control) || in.key_held(key::right_control)) {
+		mods.set(key_modifier::ctrl);
+	}
+	if (in.key_held(key::left_shift) || in.key_held(key::right_shift)) {
+		mods.set(key_modifier::shift);
+	}
+	if (in.key_held(key::left_alt) || in.key_held(key::right_alt)) {
+		mods.set(key_modifier::alt);
+	}
+	if (in.key_held(key::left_super) || in.key_held(key::right_super)) {
+		mods.set(key_modifier::super);
+	}
+	return mods;
+}
+
+auto gse::actions::combo_held(const input::state& in, const key_combo combo) -> bool {
+	if (combo.k == key::unknown || !in.key_held(combo.k)) {
+		return false;
+	}
+	if (!combo.mods) {
+		return true;
+	}
+	return held_modifiers(in).bits() == combo.mods.bits();
+}
+
+auto gse::actions::add_by_name(channel_writer& channels, const std::string_view tag, const key default_key, const key_modifiers default_modifiers) -> handle {
 	const id action_id = generate_id(tag);
 
 	channels.push<add_action_request>({
 		.name = std::string(tag),
-		.default_key = default_key,
+		.default_combo = { .k = default_key, .mods = default_modifiers },
 		.action_id = action_id,
 	});
 
@@ -833,8 +893,8 @@ auto gse::actions::add_by_name(channel_writer& channels, const std::string_view 
 }
 
 template <gse::fixed_string Tag>
-auto gse::actions::add(channel_writer& channels, const key default_key) -> handle {
-	return add_by_name(channels, Tag, default_key);
+auto gse::actions::add(channel_writer& channels, const key default_key, const key_modifiers default_modifiers) -> handle {
+	return add_by_name(channels, Tag, default_key, default_modifiers);
 }
 
 auto gse::actions::bind_axis2(channel_writer& channels, const pending_axis2_info& info, const id axis_id) -> id {
@@ -1070,4 +1130,22 @@ auto gse::key_to_string(const key k) -> std::string_view {
 		default:
 			return "Unknown";
 	}
+}
+
+auto gse::combo_to_string(const key_combo combo) -> std::string {
+	std::string text;
+	if (combo.mods.test(key_modifier::ctrl)) {
+		text += "Ctrl + ";
+	}
+	if (combo.mods.test(key_modifier::shift)) {
+		text += "Shift + ";
+	}
+	if (combo.mods.test(key_modifier::alt)) {
+		text += "Alt + ";
+	}
+	if (combo.mods.test(key_modifier::super)) {
+		text += "Super + ";
+	}
+	text += key_to_string(combo.k);
+	return text;
 }

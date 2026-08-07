@@ -14,6 +14,10 @@ export namespace gse {
 		bool focus = false;
 	};
 
+	struct cursor_capture_request {
+		bool capture = false;
+	};
+
 	struct window_minimize_request {};
 
 	struct window_toggle_maximize_request {};
@@ -154,9 +158,12 @@ export namespace gse::window {
 
 		gse::display_mode current_display_mode = gse::display_mode::windowed;
 		[[= gse::shared]] int current_present_mode_index = 0;
-		bool focused = true;
+		[[= gse::shared]] bool focused = true;
 		bool framebuffer_resized = false;
 		[[= gse::shared]] bool ui_focus = false;
+		[[= gse::shared]] bool cursor_captured = false;
+		bool cursor_suppressed = false;
+		bool attached = false;
 		bool decorated = true;
 		bool maximized = false;
 		int last_monitor_index = 0;
