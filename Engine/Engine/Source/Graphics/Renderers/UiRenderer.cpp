@@ -51,7 +51,7 @@ namespace gse::renderer::ui {
 		gpu::push_constant<sprite_push_constants>,
 		gpu::rasterization<gpu::polygon_mode::fill, gpu::cull_mode::none>,
 		gpu::depth<false, false>,
-		gpu::blend<gpu::blend_preset::alpha_premultiplied>,
+		gpu::blend<gpu::blend_preset::alpha>,
 		gpu::depth_target<gpu::depth_format::none>
 	>;
 
@@ -75,7 +75,7 @@ namespace gse::renderer::ui {
 		gpu::push_constant<msdf_push_constants>,
 		gpu::rasterization<gpu::polygon_mode::fill, gpu::cull_mode::none>,
 		gpu::depth<false, false>,
-		gpu::blend<gpu::blend_preset::alpha_premultiplied>,
+		gpu::blend<gpu::blend_preset::alpha>,
 		gpu::depth_target<gpu::depth_format::none>
 	>;
 }
@@ -121,7 +121,12 @@ auto gse::renderer::ui::add_sprite_quad(linear_vector<vertex>& vertices, linear_
 }
 
 auto gse::renderer::ui::add_text_quads(linear_vector<vertex>& vertices, linear_vector<std::uint32_t>& indices, const unified_command& cmd) -> void {
-	for (const auto& [screen_rect, uv_rect] : cmd.font->text_layout(cmd.text, cmd.position, cmd.scale)) {
+	if (!cmd.font.valid()) {
+		return;
+	}
+
+	const auto font_view = cmd.font.resolve();
+	for (const auto& [screen_rect, uv_rect] : font_view->text_layout(cmd.text, cmd.position, cmd.scale)) {
 		if (vertices.size() + 4 > max_vertices || indices.size() + 6 > max_indices) {
 			break;
 		}
@@ -448,19 +453,21 @@ auto gse::renderer::ui::frame(context& ctx, shared_view<gpu::context::data> gpu_
 
 		std::uint32_t tex_idx = 0;
 		bool has_texture = false;
+		const auto texture_view = texture.valid() ? texture.resolve() : nullptr;
+		const auto font_view = font.valid() ? font.resolve() : nullptr;
 		if (type == command_type::sprite) {
 			if (image_slot.valid()) {
 				tex_idx = image_slot.index;
 				has_texture = true;
 			}
-			else if (texture.valid() && texture->bindless_slot().valid()) {
-				tex_idx = texture->bindless_slot().index;
+			else if (texture_view && texture_view->bindless_slot().valid()) {
+				tex_idx = texture_view->bindless_slot().index;
 				has_texture = true;
 			}
 		}
 		else {
-			if (font.valid() && font->texture()->bindless_slot().valid()) {
-				tex_idx = font->texture()->bindless_slot().index;
+			if (font_view && font_view->texture()->bindless_slot().valid()) {
+				tex_idx = font_view->texture()->bindless_slot().index;
 				has_texture = true;
 			}
 		}
@@ -481,10 +488,10 @@ auto gse::renderer::ui::frame(context& ctx, shared_view<gpu::context::data> gpu_
 			);
 		}
 		else {
-			const auto atlas_size = font->texture()->image_data().size;
+			const auto atlas_size = font_view->texture()->image_data().size;
 			const float atlas_w = std::max(static_cast<float>(atlas_size.x()), 1.f);
 			const float atlas_h = std::max(static_cast<float>(atlas_size.y()), 1.f);
-			text_pc.unit_range = { font->pixel_range() / atlas_w, font->pixel_range() / atlas_h };
+			text_pc.unit_range = { font_view->pixel_range() / atlas_w, font_view->pixel_range() / atlas_h };
 			text_pc.tex_idx = tex_idx;
 			rec.push_bindings<msdf_entry>(
 				text_pc,

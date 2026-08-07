@@ -27,7 +27,7 @@ export namespace gse {
 	};
 
 	struct joint_track {
-		std::uint16_t joint_index = 0;
+		std::string joint_name;
 		raw_blob_owned<joint_keyframe> keys;
 	};
 
@@ -39,7 +39,7 @@ export namespace gse {
 			= asset_format::source_dir<"Clips">{},
 			= asset_format::source_exts<".gclip">{},
 			= asset_format::magic<0x47434C50>{},
-			= asset_format::version<2>{}
+			= asset_format::version<3>{}
 		]] baked {
 			time length;
 			bool loops = true;
@@ -52,21 +52,19 @@ export namespace gse {
 
 		auto load(
 			asset::load_ctx& ctx
-		) -> async::task<>;
-
-		auto unload() -> void;
+		) -> async::task<asset_result>;
 
 		auto length() const -> time;
 		auto loops() const -> bool;
 		auto tracks() const -> std::span<const joint_track>;
 
 		auto track_for(
-			std::uint16_t joint_index
+			std::string_view joint_name
 		) const -> const joint_track*;
 
 	private:
 		std::vector<joint_track> m_tracks;
-		std::flat_map<std::uint16_t, std::uint32_t> m_track_by_joint;
+		std::flat_map<std::string, std::uint32_t, std::less<>> m_track_by_joint;
 		std::filesystem::path m_baked_path;
 		time m_length;
 		bool m_loops = true;
@@ -76,6 +74,11 @@ export namespace gse {
 		const joint_track& track,
 		time at
 	) -> joint_pose;
+
+	auto ground_speed_of(
+		const joint_track& root_track,
+		time length
+	) -> velocity;
 
 	auto bake(
 		const std::filesystem::path& src,
@@ -89,7 +92,10 @@ auto gse::bake(const std::filesystem::path& src, clip_asset::baked& out) -> bool
 		return false;
 	}
 
-	reader->u32();
+	if (reader->u32() < 2) {
+		return false;
+	}
+
 	reader->string();
 	out.length = seconds(reader->f32());
 	out.loops = reader->u8() != 0;
@@ -98,7 +104,7 @@ auto gse::bake(const std::filesystem::path& src, clip_asset::baked& out) -> bool
 	out.tracks.resize(track_count);
 
 	for (auto& track : out.tracks) {
-		track.joint_index = reader->u16();
+		track.joint_name = reader->string();
 		track.keys.storage.resize(reader->u32());
 		for (auto& key : track.keys.storage) {
 			key.stamp = seconds(reader->f32());
@@ -113,31 +119,27 @@ auto gse::bake(const std::filesystem::path& src, clip_asset::baked& out) -> bool
 	return !reader->overran();
 }
 
-auto gse::clip_asset::load(asset::load_ctx& ctx) -> async::task<> {
+auto gse::clip_asset::load(asset::load_ctx& ctx) -> async::task<asset_result> {
 	(void)ctx;
 
 	if (m_baked_path.empty()) {
-		co_return;
+		co_return asset_result{};
 	}
 
-	baked b{};
-	if (!load_baked(m_baked_path, b)) {
-		co_return;
+	auto loaded = load_baked<baked>(m_baked_path);
+	if (!loaded) {
+		co_return std::unexpected(std::move(loaded.error()));
 	}
 
-	m_length = b.length;
-	m_loops = b.loops;
-	m_tracks = std::move(b.tracks);
+	m_length = loaded->length;
+	m_loops = loaded->loops;
+	m_tracks = std::move(loaded->tracks);
 
 	m_track_by_joint.clear();
 	for (std::size_t i = 0; i < m_tracks.size(); ++i) {
-		m_track_by_joint.insert_or_assign(m_tracks[i].joint_index, static_cast<std::uint32_t>(i));
+		m_track_by_joint.insert_or_assign(m_tracks[i].joint_name, static_cast<std::uint32_t>(i));
 	}
-}
-
-auto gse::clip_asset::unload() -> void {
-	m_tracks.clear();
-	m_track_by_joint.clear();
+	co_return asset_result{};
 }
 
 auto gse::clip_asset::length() const -> time {
@@ -152,12 +154,22 @@ auto gse::clip_asset::tracks() const -> std::span<const joint_track> {
 	return m_tracks;
 }
 
-auto gse::clip_asset::track_for(const std::uint16_t joint_index) const -> const joint_track* {
-	const auto it = m_track_by_joint.find(joint_index);
+auto gse::clip_asset::track_for(const std::string_view joint_name) const -> const joint_track* {
+	const auto it = m_track_by_joint.find(joint_name);
 	if (it == m_track_by_joint.end()) {
 		return nullptr;
 	}
 	return &m_tracks[it->second];
+}
+
+auto gse::ground_speed_of(const joint_track& root_track, const time length) -> velocity {
+	const auto keys = std::span(root_track.keys.storage);
+	if (keys.size() < 2 || length <= time{}) {
+		return {};
+	}
+
+	const auto travel = keys.back().pose.translation - keys.front().pose.translation;
+	return magnitude(vec3<displacement>(travel.x(), meters(0.f), travel.z())) / length;
 }
 
 auto gse::sample(const joint_track& track, const time at) -> joint_pose {

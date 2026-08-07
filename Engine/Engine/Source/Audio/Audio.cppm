@@ -31,9 +31,7 @@ export namespace gse {
 
 		auto load(
 			asset::load_ctx& ctx
-		) -> async::task<>;
-
-		auto unload() -> void;
+		) -> async::task<asset_result>;
 
 		auto data() const -> const std::vector<std::byte>&;
 
@@ -75,7 +73,7 @@ export namespace gse::audio {
 
 	struct play_request {
 		using result_type = voice_handle;
-		const audio_clip* clip = nullptr;
+		std::shared_ptr<const audio_clip> clip;
 		bool loop = false;
 		channel_promise<voice_handle> promise;
 	};

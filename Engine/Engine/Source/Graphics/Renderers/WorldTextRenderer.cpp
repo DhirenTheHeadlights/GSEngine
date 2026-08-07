@@ -195,8 +195,8 @@ auto gse::renderer::world_text::frame(const context& ctx, shared_view<gpu::conte
 		co_return;
 	}
 
-	const auto& f = gui_d.fonts.text.resolve();
-	if (!f.texture() || !f.texture()->bindless_slot().valid()) {
+	const auto font = gui_d.fonts.text.resolve();
+	if (!font->texture() || !font->texture()->bindless_slot().valid()) {
 		co_return;
 	}
 
@@ -205,8 +205,8 @@ auto gse::renderer::world_text::frame(const context& ctx, shared_view<gpu::conte
 
 	std::vector<world_text_vertex> vertices;
 	vertices.reserve(static_cast<std::size_t>(max_ticks) * 32);
-	build_labels_for_axis(vertices, f, world_scale, grid_d.major_spacing, max_ticks, true);
-	build_labels_for_axis(vertices, f, world_scale, grid_d.major_spacing, max_ticks, false);
+	build_labels_for_axis(vertices, *font, world_scale, grid_d.major_spacing, max_ticks, true);
+	build_labels_for_axis(vertices, *font, world_scale, grid_d.major_spacing, max_ticks, false);
 
 	if (vertices.empty()) {
 		co_return;
@@ -230,10 +230,10 @@ auto gse::renderer::world_text::frame(const context& ctx, shared_view<gpu::conte
 	};
 	d.camera_ubo_buffers[frame_index].host_write(camera);
 
-	const auto atlas_size = f.texture()->image_data().size;
+	const auto atlas_size = font->texture()->image_data().size;
 	const float atlas_w = std::max(static_cast<float>(atlas_size.x()), 1.f);
 	const float atlas_h = std::max(static_cast<float>(atlas_size.y()), 1.f);
-	const vec2f unit_range{ f.pixel_range() / atlas_w, f.pixel_range() / atlas_h };
+	const vec2f unit_range{ font->pixel_range() / atlas_w, font->pixel_range() / atlas_h };
 
 	const auto ext = gpu_s.render_graph->extent();
 	const auto vertex_count = static_cast<std::uint32_t>(vertices.size());
@@ -249,7 +249,7 @@ auto gse::renderer::world_text::frame(const context& ctx, shared_view<gpu::conte
 	rec.push_bindings<entry>(
 		{
 			.color = grid_d.label_color,
-			.tex_idx = f.texture()->bindless_slot().index,
+			.tex_idx = font->texture()->bindless_slot().index,
 			.shadow_color = vec3f{ 0.f, 0.f, 0.f },
 			.shadow_offset_px = 1.5f,
 			.unit_range = unit_range,

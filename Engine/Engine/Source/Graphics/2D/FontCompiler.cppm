@@ -37,7 +37,7 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 	FT_Face ft_face;
 	const std::string source_path = src.native_encoded_string();
 	if (FT_New_Face(ft_lib, source_path.c_str(), 0, &ft_face)) {
-		log::println(log::level::error, log::category::assets, "Failed to load font face from '{}'", src.display_string());
+		log::println(log::level::error, log::category::assets, "Failed to load font face from '{}'", src.generic_display_string());
 		FT_Done_FreeType(ft_lib);
 		return false;
 	}
@@ -45,7 +45,7 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 	msdfgen::FreetypeHandle* ft_handle = msdfgen::initializeFreetype();
 	msdfgen::FontHandle* font_handle = loadFont(ft_handle, source_path.c_str());
 	if (!font_handle) {
-		log::println(log::level::error, log::category::assets, "Failed to load font into msdfgen: {}", src.display_string());
+		log::println(log::level::error, log::category::assets, "Failed to load font into msdfgen: {}", src.generic_display_string());
 		FT_Done_Face(ft_face);
 		FT_Done_FreeType(ft_lib);
 		msdfgen::deinitializeFreetype(ft_handle);
@@ -138,7 +138,7 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 					log::level::warning,
 					log::category::assets,
 					"font bake [{}]: codepoint U+{:04X} has no usable geometry (loaded={}, contours={}, w={}, h={})",
-					src.filename().display_string(),
+					src.filename().generic_display_string(),
 					static_cast<unsigned>(cp),
 					loaded,
 					shape.contours.size(),
@@ -167,7 +167,7 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 				log::level::warning,
 				log::category::assets,
 				"font bake [{}]: codepoint U+{:04X} padded extent ({}x{} em) exceeds cell ({} em); clipping may occur",
-				src.filename().display_string(),
+				src.filename().generic_display_string(),
 				static_cast<unsigned>(cp),
 				padded_w,
 				padded_h,
@@ -189,19 +189,13 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 			error_correction
 		);
 
-		double exterior_sum = 0.0;
-		int exterior_samples = 0;
-		for (int x = 0; x < cell; ++x) {
-			exterior_sum += mtsdf(x, 0)[3];
-			exterior_sum += mtsdf(x, cell - 1)[3];
-			exterior_samples += 2;
-		}
-		for (int y = 1; y < cell - 1; ++y) {
-			exterior_sum += mtsdf(0, y)[3];
-			exterior_sum += mtsdf(cell - 1, y)[3];
-			exterior_samples += 2;
-		}
-		const bool invert_distance = exterior_sum > static_cast<double>(exterior_samples) * 0.5;
+		msdfgen::distanceSignCorrection(
+			mtsdf,
+			shape,
+			msdfgen::Vector2{ scale, scale },
+			msdfgen::Vector2{ translate_x, translate_y },
+			msdfgen_consts::fill_nonzero
+		);
 
 		for (int y = 0; y < cell; ++y) {
 			for (int x = 0; x < cell; ++x) {
@@ -210,8 +204,7 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 				const std::size_t idx = (static_cast<std::size_t>(atlas_y) * atlas_width + atlas_x) * channels;
 				const auto* px = mtsdf(x, y);
 				for (std::uint32_t channel = 0; channel < channels; ++channel) {
-					const float distance = invert_distance ? 1.0f - px[channel] : px[channel];
-					atlas_data[idx + channel] = static_cast<std::byte>(std::clamp(distance, 0.f, 1.f) * 255.f);
+					atlas_data[idx + channel] = static_cast<std::byte>(std::clamp(px[channel], 0.f, 1.f) * 255.f);
 				}
 			}
 		}
@@ -250,13 +243,32 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 		log::level::info,
 		log::category::assets,
 		"font bake [{}]: baked={}, skipped(non-space)={}, atlas={}x{} ({} bytes)",
-		src.filename().display_string(),
+		src.filename().generic_display_string(),
 		baked_count,
 		skipped_count,
 		atlas_width,
 		atlas_height,
 		atlas_data.size()
 	);
+
+	std::unordered_map<std::uint64_t, float> kerning;
+	for (const glyph& previous : std::views::values(glyphs)) {
+		if (previous.ft_glyph_index() == 0) {
+			continue;
+		}
+		for (const glyph& next : std::views::values(glyphs)) {
+			if (next.ft_glyph_index() == 0) {
+				continue;
+			}
+			FT_Vector value{};
+			FT_Get_Kerning(ft_face, previous.ft_glyph_index(), next.ft_glyph_index(), freetype_kerning_unscaled, &value);
+			const float normalized = static_cast<float>(value.x) / static_cast<float>(units_per_em);
+			if (normalized != 0.0f) {
+				const std::uint64_t key = (static_cast<std::uint64_t>(previous.ft_glyph_index()) << 32) | next.ft_glyph_index();
+				kerning.emplace(key, normalized);
+			}
+		}
+	}
 
 	const std::filesystem::path& source_root = config::source_root_containing(src);
 	const auto debug_atlas_path = config::baked_root_for_source(source_root) / "Fonts" / (src.stem().native_encoded_string() + "_atlas_debug.png");
@@ -265,8 +277,8 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 			log::level::warning,
 			log::category::assets,
 			"font bake [{}]: failed to write debug atlas PNG to {}",
-			src.filename().display_string(),
-			debug_atlas_path.display_string()
+			src.filename().generic_display_string(),
+			debug_atlas_path.generic_display_string()
 		);
 	}
 
@@ -275,7 +287,6 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 	FT_Done_Face(ft_face);
 	FT_Done_FreeType(ft_lib);
 
-	out.source_path_relative = src.lexically_relative(config::source_root_containing(src)).native_encoded_string();
 	out.ascender = static_cast<float>(font_metrics.ascenderY);
 	out.descender = static_cast<float>(font_metrics.descenderY);
 	out.pixel_range = pixel_range;
@@ -284,5 +295,6 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 	out.channels = channels;
 	out.rgba.storage = std::move(atlas_data);
 	out.glyphs = std::move(glyphs);
+	out.kerning = std::move(kerning);
 	return true;
 }
