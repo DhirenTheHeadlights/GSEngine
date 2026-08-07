@@ -220,7 +220,7 @@ auto gse::physics::collect_collision_objects(write<transform_component>& transfo
 	return objects;
 }
 
-auto gse::physics::add_scene_contacts_to_solver(vbd::solver& solver, vbd::contact_cache& contact_cache, std::vector<collision_pair>& objects, const std::flat_map<id, std::uint32_t>& id_to_body_index, const std::flat_set<std::pair<std::uint64_t, std::uint64_t>>& jointed_pairs, const bool update_scene_state, write<transform_component>& transform, write<motion_component>& motion, write<collision_component>& collision, write<collision_result_component>* results, std::span<std::uint8_t> body_airborne) -> void {
+auto gse::physics::add_scene_contacts_to_solver(vbd::solver& solver, vbd::contact_cache& contact_cache, std::vector<collision_pair>& objects, const std::flat_map<id, std::uint32_t>& id_to_body_index, const std::flat_set<std::pair<std::uint64_t, std::uint64_t>>& jointed_pairs, const bool update_scene_state, write<transform_component>& transform, write<motion_component>& motion, write<collision_component>& collision, write<collision_result_component>* results, std::span<std::uint8_t> body_airborne, const std::size_t chunks_per_worker) -> void {
 	trace::scope_guard sg{ trace_id<"vbd_cpu::broad_phase">() };
 
 	{
@@ -429,25 +429,83 @@ auto gse::physics::add_scene_contacts_to_solver(vbd::solver& solver, vbd::contac
 					}
 				}
 			},
-			trace_id<"vbd_cpu::broad_phase::pair_loop">()
+			trace_id<"vbd_cpu::broad_phase::pair_loop">(),
+			chunks_per_worker
 		);
 	}
 
 	trace::scope_guard sg_merge{ trace_id<"vbd_cpu::broad_phase::merge">() };
 
-	std::vector<pending_point> merged_points;
-	for (auto& bucket : per_worker_points) {
-		merged_points.insert(merged_points.end(), bucket.begin(), bucket.end());
+	std::size_t merged_count = 0;
+	for (const auto& bucket : per_worker_points) {
+		merged_count += bucket.size();
 	}
-	std::ranges::sort(merged_points, [](const pending_point& a, const pending_point& b) {
-		if (a.constraint.body_a != b.constraint.body_a) {
-			return a.constraint.body_a < b.constraint.body_a;
+
+	task::coarse_parallel(
+		per_worker_points.size(),
+		1,
+		[&per_worker_points](const std::size_t w) {
+			std::ranges::sort(per_worker_points[w], [](const pending_point& a, const pending_point& b) {
+				if (a.constraint.body_a != b.constraint.body_a) {
+					return a.constraint.body_a < b.constraint.body_a;
+				}
+				if (a.constraint.body_b != b.constraint.body_b) {
+					return a.constraint.body_b < b.constraint.body_b;
+				}
+				return a.constraint.feature_key < b.constraint.feature_key;
+			});
+		},
+		trace_id<"vbd_cpu::broad_phase::bucket_sort">()
+	);
+
+	struct cursor_entry {
+		std::uint64_t pair_key;
+		std::uint64_t feature_key;
+		std::uint32_t bucket;
+		std::uint32_t index;
+	};
+
+	const auto entry_greater = [](const cursor_entry& a, const cursor_entry& b) {
+		if (a.pair_key != b.pair_key) {
+			return a.pair_key > b.pair_key;
 		}
-		if (a.constraint.body_b != b.constraint.body_b) {
-			return a.constraint.body_b < b.constraint.body_b;
+		return a.feature_key > b.feature_key;
+	};
+
+	const auto make_entry = [&per_worker_points](const std::uint32_t bucket, const std::uint32_t index) {
+		const auto& c = per_worker_points[bucket][index].constraint;
+		return cursor_entry{
+			.pair_key = (static_cast<std::uint64_t>(c.body_a) << 32) | c.body_b,
+			.feature_key = c.feature_key,
+			.bucket = bucket,
+			.index = index,
+		};
+	};
+
+	std::vector<cursor_entry> heap;
+	heap.reserve(per_worker_points.size());
+	for (std::uint32_t w = 0; w < per_worker_points.size(); ++w) {
+		if (!per_worker_points[w].empty()) {
+			heap.push_back(make_entry(w, 0));
 		}
-		return a.constraint.feature_key < b.constraint.feature_key;
-	});
+	}
+	std::ranges::make_heap(heap, entry_greater);
+
+	std::vector<pending_point> merged_points;
+	merged_points.reserve(merged_count);
+
+	while (!heap.empty()) {
+		std::ranges::pop_heap(heap, entry_greater);
+		const auto top = heap.back();
+		heap.pop_back();
+
+		merged_points.push_back(std::move(per_worker_points[top.bucket][top.index]));
+
+		if (const std::uint32_t next = top.index + 1; next < per_worker_points[top.bucket].size()) {
+			heap.push_back(make_entry(top.bucket, next));
+			std::ranges::push_heap(heap, entry_greater);
+		}
+	}
 
 	if (update_scene_state) {
 		auto* motion_base = motion.data();
@@ -635,7 +693,12 @@ auto gse::physics::prepare(context& ctx, data& d, write<joint_spec> specs, read<
 		d.gpu_stats = stats_channel[0];
 	}
 
+	ctx.channels.push<interpolation_state>({
+		.advancing = d.update_phys
+	});
+
 	if (d.update_phys) {
+		d.vbd_solver.set_color_grain(static_cast<std::size_t>(std::max(d.color_chunk_grain, 1)));
 		if (auto solver_cfg = d.vbd_solver.config(); solver_cfg.iterations != static_cast<std::uint32_t>(d.solver_iterations) || solver_cfg.use_jacobi != d.use_jacobi || solver_cfg.jacobi_omega != d.jacobi_omega) {
 			solver_cfg.iterations = static_cast<std::uint32_t>(d.solver_iterations);
 			solver_cfg.use_jacobi = d.use_jacobi;
@@ -1055,7 +1118,7 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 					.body_index = idx,
 					.horizontal_only = mt.horizontal_only ? 1u : 0u,
 					.target_velocity = mt.velocity_drive_target,
-					.compliance = 0.5f,
+					.compliance = mt.compliance,
 					.max_force = mt.max_force,
 				}
 			);
@@ -1276,7 +1339,8 @@ auto gse::physics::update_vbd(const int steps, data& d, write<transform_componen
 			motion,
 			collision,
 			&results,
-			d.body_airborne
+			d.body_airborne,
+			static_cast<std::size_t>(std::max(d.broad_phase_chunks_per_worker, 1))
 		);
 
 		const auto motor_step_ids = motor.owner_ids();
@@ -1306,7 +1370,7 @@ auto gse::physics::update_vbd(const int steps, data& d, write<transform_componen
 					.body_index = it->second,
 					.horizontal_only = mt.horizontal_only ? 1u : 0u,
 					.target_velocity = mt.velocity_drive_target,
-					.compliance = 0.5f,
+					.compliance = mt.compliance,
 					.max_force = mt.max_force,
 				}
 			);

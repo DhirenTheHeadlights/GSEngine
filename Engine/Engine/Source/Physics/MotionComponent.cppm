@@ -2,6 +2,8 @@ export module gse.physics:motion_component;
 
 import std;
 
+import :transform_component;
+
 import gse.core;
 import gse.containers;
 import gse.time;
@@ -55,6 +57,27 @@ export namespace gse::physics {
 		const motion_component& mc,
 		const quat& orientation
 	) -> mat3<inverse_inertia>;
+
+	auto interpolated_transform(
+		const transform_component& tc,
+		const motion_component* mc,
+		time_t<float, seconds> lag
+	) -> transform_component {
+		if (!mc || lag <= time_t<float, seconds>{}) {
+			return tc;
+		}
+
+		transform_component result{
+			.position = tc.position - mc->current_velocity * lag,
+			.orientation = tc.orientation
+		};
+
+		if (const auto step = mc->angular_velocity * lag; magnitude(step) > radians(1e-6f)) {
+			result.orientation = normalize(from_axis_angle_vector(-step) * tc.orientation);
+		}
+
+		return result;
+	}
 }
 
 auto gse::physics::is_dynamic(const motion_component& mc) -> bool {

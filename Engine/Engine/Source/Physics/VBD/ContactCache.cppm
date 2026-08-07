@@ -66,7 +66,8 @@ export namespace gse::vbd {
 }
 
 auto gse::vbd::contact_cache::cache_key_hash::operator()(const cache_key& k) const noexcept -> std::size_t {
-	return gse::hash_combine(k);
+	const std::uint64_t pair = (static_cast<std::uint64_t>(k.body_a) << 32) | k.body_b;
+	return static_cast<std::size_t>(hash_combine(hash_combine(pair, pack_feature(k.feature)), 0));
 }
 
 auto gse::vbd::contact_cache::lookup(const std::uint32_t body_a, const std::uint32_t body_b, const feature_id& fid) const -> std::optional<cached_lambda> {
@@ -113,8 +114,7 @@ auto gse::vbd::contact_cache::store(const std::uint32_t body_a, const std::uint3
 		.body_b = body_b,
 		.feature = fid
 	};
-	m_cache[key] = data;
-	m_cache[key].age = 0;
+	m_cache.insert_or_assign(key, data);
 }
 
 auto gse::vbd::contact_cache::age_and_prune() -> void {
