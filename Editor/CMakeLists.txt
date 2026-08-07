@@ -168,7 +168,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         add_custom_target(gse_tokens_contract DEPENDS "${_gse_contract_stamp}")
         add_dependencies(Editor gse_tokens_plugin)
     else()
-        message(STATUS "gse_tokens plugin: cc1plus.exe.a not found (toolchain built without --enable-plugin); editor semantic tokens disabled")
+        message(WARNING "gse_tokens plugin: ${_gse_plugin_dir}/cc1plus.exe.a not found, so the plugin will not be built. The editor still compiles and runs, but syntax highlighting, hover, go-to-definition and the symbol index are all plugin-authoritative and will be silently empty. Install a GCC configured with --enable-plugin and reconfigure.")
     endif()
 endif()
 

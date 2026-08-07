@@ -8,7 +8,7 @@ import :diagnostics_runner;
 export namespace gse::ide {
 	namespace analysis {
 		struct diagnostics_request {
-			std::uint32_t document_id = 0;
+			gse::id document_id;
 			document_revision revision;
 			std::filesystem::path compile_commands;
 			std::filesystem::path file;
