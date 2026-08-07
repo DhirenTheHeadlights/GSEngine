@@ -32,7 +32,8 @@ namespace gse::ide {
 	public:
 		editor_screen(
 			gse::channel_writer channels,
-			const search::index_state* index
+			const search::index_state* index,
+			gse::shared_view<gse::input::data> input
 		);
 
 		auto build(
@@ -66,12 +67,14 @@ namespace gse::ide {
 	private:
 		gse::channel_writer m_channels;
 		const search::index_state* m_index = nullptr;
+		gse::shared_view<gse::input::data> m_input;
 		std::optional<std::string> m_loc_label;
 		std::uint64_t m_loc_value = 0;
 	};
 
 	auto draw_search_bar(
 		gse::gui::builder& ui,
+		const gse::input::state& input,
 		quick_search_state& state,
 		const search::index_state* index,
 		gse::channel_writer channels,
@@ -81,6 +84,7 @@ namespace gse::ide {
 
 	auto draw_explorer_panel(
 		gse::gui::builder& ui,
+		const gse::input::state& input,
 		workspace::data& ws,
 		quick_search_state& search,
 		const search::index_state* index,
@@ -88,6 +92,11 @@ namespace gse::ide {
 		const git::status_map* git_status,
 		std::span<const std::filesystem::path> git_rootless
 	) -> void;
+
+	auto explorer_menu_items(
+		const workspace::data& w,
+		const fs_node& n
+	) -> std::vector<gse::gui::menu_item>;
 
 	auto spinner_rotation() -> gse::angle;
 
@@ -99,8 +108,8 @@ namespace gse::ide {
 	) -> void;
 }
 
-gse::ide::editor_screen::editor_screen(gse::channel_writer channels, const search::index_state* index)
-	: m_channels(std::move(channels)), m_index(index) {
+gse::ide::editor_screen::editor_screen(gse::channel_writer channels, const search::index_state* index, const gse::shared_view<gse::input::data> input)
+	: m_channels(std::move(channels)), m_index(index), m_input(input) {
 }
 
 auto gse::ide::editor_screen::title() const -> std::string_view {
@@ -172,25 +181,27 @@ auto gse::ide::rebuild_glyph() -> std::span<const gse::gui::symbol::stroke> {
 
 auto gse::ide::editor_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> void {
 	const auto& ctx = ui.ctx;
+	const gse::input::state& input = gse::input::current_state(m_input);
 	if (!ctx.current_menu) {
 		return;
 	}
 
-	const bool control_held = ctx.input.key_held(gse::key::left_control) || ctx.input.key_held(gse::key::right_control);
-	const bool shift_held = ctx.input.key_held(gse::key::left_shift) || ctx.input.key_held(gse::key::right_shift);
+	const bool control_held = input.key_held(gse::key::left_control) || input.key_held(gse::key::right_control);
+	const bool shift_held = input.key_held(gse::key::left_shift) || input.key_held(gse::key::right_shift);
 
-	if (control_held && !shift_held && ctx.input.key_pressed(gse::key::f)) {
-		n.push<search_screen>(m_channels, m_index);
+	if (control_held && !shift_held && input.key_pressed(gse::key::f)) {
+		n.push<search_screen>(m_channels, m_index, m_input);
 	}
 
-	if (control_held && shift_held && ctx.input.key_pressed(gse::key::p)) {
-		n.push<project_screen>(m_channels);
+	if (control_held && shift_held && input.key_pressed(gse::key::p)) {
+		n.push<project_screen>(m_channels, m_input);
 	}
 }
 
 auto gse::ide::editor_screen::draw_caption(gse::gui::builder& ui, const gse::rectf& area) -> float {
 	const auto& ctx = ui.ctx;
 	const auto& sty = ctx.style;
+	const auto text_view = ctx.fonts.text.resolve();
 
 	const float swatch_width = sty.accent_bar_width;
 	const float swatch_height = sty.font_size;
@@ -208,7 +219,7 @@ auto gse::ide::editor_screen::draw_caption(gse::gui::builder& ui, const gse::rec
 	ctx.queue_text({
 		.font = ctx.fonts.text,
 		.text = title(),
-		.position = { title_x, area.center().y() + ctx.fonts.text->vertical_center_offset(sty.font_size) },
+		.position = { title_x, area.center().y() + text_view->vertical_center_offset(sty.font_size) },
 		.scale = sty.font_size,
 		.color = sty.color_text,
 		.clip_rect = area,
@@ -242,10 +253,10 @@ auto gse::ide::editor_screen::draw_caption(gse::gui::builder& ui, const gse::rec
 			m_loc_value = loc;
 			m_loc_label = std::format("{}k LOC", (loc + 500) / 1000);
 		}
-		const float title_w = ctx.fonts.text->width(title(), sty.font_size);
+		const float title_w = text_view->width(title(), sty.font_size);
 		const float badge_pad = sty.padding * 0.5f;
 		const float badge_height = sty.font_size + sty.padding * 0.5f;
-		const float badge_width = ctx.fonts.text->width(*m_loc_label, sty.font_size) + badge_pad * 2.f;
+		const float badge_width = text_view->width(*m_loc_label, sty.font_size) + badge_pad * 2.f;
 		const gse::rectf badge_rect = gse::rectf::from_position_size(
 			{ title_x + title_w + sty.padding, area.center().y() + badge_height * 0.5f },
 			{ badge_width, badge_height }
@@ -259,7 +270,7 @@ auto gse::ide::editor_screen::draw_caption(gse::gui::builder& ui, const gse::rec
 		ctx.queue_text({
 			.font = ctx.fonts.text,
 			.text = *m_loc_label,
-			.position = { badge_rect.left() + badge_pad, badge_rect.center().y() + ctx.fonts.text->vertical_center_offset(sty.font_size) },
+			.position = { badge_rect.left() + badge_pad, badge_rect.center().y() + text_view->vertical_center_offset(sty.font_size) },
 			.scale = sty.font_size,
 			.color = sty.color_accent,
 			.clip_rect = badge_rect,
@@ -314,7 +325,7 @@ auto gse::ide::editor_screen::draw_caption(gse::gui::builder& ui, const gse::rec
 	const float badge_h = sty.font_size + sty.padding * 0.5f;
 	const float pad = sty.padding * 0.6f;
 	const float spin_w = spinning ? sty.font_size : 0.f;
-	const float badge_w = pad + spin_w + ctx.fonts.text->width(status, sty.font_size) + pad;
+	const float badge_w = pad + spin_w + text_view->width(status, sty.font_size) + pad;
 	const float right_edge = project_rect.left() - sty.padding;
 	const gse::rectf status_rect = gse::rectf::from_position_size(
 		{ right_edge - badge_w, area.center().y() + badge_h * 0.5f },
@@ -334,7 +345,7 @@ auto gse::ide::editor_screen::draw_caption(gse::gui::builder& ui, const gse::rec
 	ctx.queue_text({
 		.font = ctx.fonts.text,
 		.text = status,
-		.position = { sx, status_rect.center().y() + ctx.fonts.text->vertical_center_offset(sty.font_size) },
+		.position = { sx, status_rect.center().y() + text_view->vertical_center_offset(sty.font_size) },
 		.scale = sty.font_size,
 		.color = pill_fg,
 		.clip_rect = status_rect,
@@ -346,9 +357,10 @@ auto gse::ide::editor_screen::draw_caption(gse::gui::builder& ui, const gse::rec
 	return controls_width;
 }
 
-auto gse::ide::draw_search_bar(gse::gui::builder& ui, quick_search_state& state, const search::index_state* index, gse::channel_writer channels, const gse::rectf& search_rect, const std::string_view id_key) -> void {
+auto gse::ide::draw_search_bar(gse::gui::builder& ui, const gse::input::state& input, quick_search_state& state, const search::index_state* index, gse::channel_writer channels, const gse::rectf& search_rect, const std::string_view id_key) -> void {
 	const auto& ctx = ui.ctx;
 	const auto& sty = ctx.style;
+	const auto text_view = ctx.fonts.text.resolve();
 	const float pad = sty.padding;
 	const float outline = 1.5f * sty.scale_factor;
 
@@ -371,7 +383,7 @@ auto gse::ide::draw_search_bar(gse::gui::builder& ui, quick_search_state& state,
 		ctx.queue_text({
 			.font = ctx.fonts.text,
 			.text = "Search...",
-			.position = { search_rect.left() + pad, search_rect.center().y() + ctx.fonts.text->vertical_center_offset(sty.font_size) },
+			.position = { search_rect.left() + pad, search_rect.center().y() + text_view->vertical_center_offset(sty.font_size) },
 			.scale = sty.font_size,
 			.color = sty.color_text_secondary,
 			.clip_rect = search_rect,
@@ -388,13 +400,13 @@ auto gse::ide::draw_search_bar(gse::gui::builder& ui, quick_search_state& state,
 	}
 
 	if (was_focused && !state.driver.query.empty()) {
-		if (ctx.input.key_pressed(gse::key::down)) {
+		if (input.key_pressed(gse::key::down)) {
 			state.driver.selected = std::min<int>(state.driver.selected + 1, static_cast<int>(state.driver.results.size()) - 1);
 		}
-		if (ctx.input.key_pressed(gse::key::up)) {
+		if (input.key_pressed(gse::key::up)) {
 			state.driver.selected = std::max(state.driver.selected - 1, 0);
 		}
-		if (ctx.input.key_pressed(gse::key::enter)) {
+		if (input.key_pressed(gse::key::enter)) {
 			const int idx = state.driver.selected >= 0 ? state.driver.selected : 0;
 			const search::result& r = state.driver.results[static_cast<std::size_t>(idx)];
 			channels.push<jump_to_request>({
@@ -409,7 +421,7 @@ auto gse::ide::draw_search_bar(gse::gui::builder& ui, quick_search_state& state,
 	}
 
 	const auto layer = ctx.scoped_layer(gse::render_layer::popup);
-	const float row_h = ctx.fonts.text->line_height(sty.font_size) + pad * 0.5f;
+	const float row_h = text_view->line_height(sty.font_size) + pad * 0.5f;
 	const gse::rectf list_rect = gse::rectf::from_position_size(
 		{ search_rect.left(), search_rect.bottom() - 2.f * sty.scale_factor },
 		{ search_rect.width(), row_h * static_cast<float>(state.driver.results.size()) }
@@ -420,14 +432,12 @@ auto gse::ide::draw_search_bar(gse::gui::builder& ui, quick_search_state& state,
 		.texture = ctx.blank_texture,
 		.corner_radius = sty.corner_radius,
 	});
-	const gse::vec2f mouse = ctx.input.mouse_position();
-	const bool clicked = ctx.input.mouse_button_pressed(gse::mouse_button::button_1);
 	for (std::size_t i = 0; i < state.driver.results.size(); ++i) {
 		const gse::rectf row = gse::rectf::from_position_size(
 			{ list_rect.left(), list_rect.top() - row_h * static_cast<float>(i) },
 			{ list_rect.width(), row_h }
 		);
-		const bool over = row.contains(mouse);
+		const bool over = ctx.hovers(row);
 		if (over) {
 			state.driver.selected = static_cast<int>(i);
 		}
@@ -442,13 +452,12 @@ auto gse::ide::draw_search_bar(gse::gui::builder& ui, quick_search_state& state,
 		ctx.queue_text({
 			.font = ctx.fonts.text,
 			.text = r.display,
-			.position = { row.left() + pad, row.center().y() + ctx.fonts.text->vertical_center_offset(sty.font_size) },
+			.position = { row.left() + pad, row.center().y() + text_view->vertical_center_offset(sty.font_size) },
 			.scale = sty.font_size,
 			.color = sty.color_text,
 			.clip_rect = row,
 		});
-		if (over && clicked && !ctx.is_press_consumed(gse::mouse_button::button_1)) {
-			ctx.consume_press(gse::mouse_button::button_1);
+		if (over && ctx.mouse_pressed_for(row)) {
 			channels.push<jump_to_request>({
 				.path = r.path,
 				.line = r.line,
@@ -463,17 +472,17 @@ auto gse::ide::draw_search_bar(gse::gui::builder& ui, quick_search_state& state,
 namespace gse::ide::explorer_menu {
 	[[= gse::gui::context_action<"New File", "create", gse::gui::symbol::file>{}]]
 	auto new_file(workspace::data& w, const fs_node& n) -> void {
-		workspace::create_entry(w, n, false);
+		workspace::create_entry(w, workspace::target(n), false);
 	}
 
 	[[= gse::gui::context_action<"New Folder", "create", gse::gui::symbol::folder>{}]]
 	auto new_folder(workspace::data& w, const fs_node& n) -> void {
-		workspace::create_entry(w, n, true);
+		workspace::create_entry(w, workspace::target(n), true);
 	}
 
 	[[= gse::gui::context_action<"Rename", "edit">{}]]
 	auto rename(workspace::data& w, const fs_node& n) -> void {
-		workspace::rename_entry(w, n);
+		workspace::rename_entry(w, workspace::target(n));
 	}
 
 	[[= gse::gui::context_action<"Reveal in File Explorer", "path", gse::gui::symbol::folder>{}]]
@@ -483,57 +492,61 @@ namespace gse::ide::explorer_menu {
 
 	[[= gse::gui::context_action<"Copy Path", "path">{}]]
 	auto copy_path(workspace::data&, const fs_node& n) -> void {
-		gse::window::set_clipboard_text(n.path.display_string());
+		gse::window::set_clipboard_text(n.path.generic_display_string());
 	}
 
 	[[= gse::gui::context_action<"Delete", "danger", gse::gui::symbol::trash>{}]]
 	[[= gse::gui::destructive]]
 	auto remove(workspace::data& w, const fs_node& n) -> void {
-		workspace::delete_entry(w, n);
+		workspace::delete_entry(w, workspace::target(n));
 	}
 }
 
 namespace gse::ide::tab_menu {
 	[[= gse::gui::context_action<"Close", "close", gse::gui::symbol::close>{}]]
-	auto close(workspace::data& w, std::uint32_t doc_id) -> void {
+	auto close(workspace::data& w, gse::id doc_id) -> void {
 		workspace::close_document(w, doc_id);
 	}
 
 	[[= gse::gui::context_action<"Close Others", "close">{}]]
-	auto close_others(workspace::data& w, std::uint32_t doc_id) -> void {
-		std::vector<std::uint32_t> ids;
+	auto close_others(workspace::data& w, gse::id doc_id) -> void {
+		std::vector<gse::id> ids;
 		for (const auto& [id, doc] : w.documents) {
 			if (id != doc_id) {
 				ids.push_back(id);
 			}
 		}
-		for (const std::uint32_t id : ids) {
-			workspace::close_document(w, id);
+		for (const gse::id id : ids) {
+			if (!workspace::close_document(w, id)) {
+				break;
+			}
 		}
 	}
 
 	[[= gse::gui::context_action<"Reveal in File Explorer", "path", gse::gui::symbol::folder>{}]]
-	auto reveal(workspace::data& w, std::uint32_t doc_id) -> void {
+	auto reveal(workspace::data& w, gse::id doc_id) -> void {
 		if (const auto it = w.documents.find(doc_id); it != w.documents.end()) {
 			gse::shell::reveal(it->second.path);
 		}
 	}
 
 	[[= gse::gui::context_action<"Copy Path", "path">{}]]
-	auto copy_path(workspace::data& w, std::uint32_t doc_id) -> void {
+	auto copy_path(workspace::data& w, gse::id doc_id) -> void {
 		if (const auto it = w.documents.find(doc_id); it != w.documents.end()) {
-			gse::window::set_clipboard_text(it->second.path.display_string());
+			gse::window::set_clipboard_text(it->second.path.generic_display_string());
 		}
 	}
 
 	[[= gse::gui::context_action<"Close All", "bulk">{}]]
-	auto close_all(workspace::data& w, std::uint32_t) -> void {
-		std::vector<std::uint32_t> ids;
+	auto close_all(workspace::data& w, gse::id) -> void {
+		std::vector<gse::id> ids;
 		for (const auto& [id, doc] : w.documents) {
 			ids.push_back(id);
 		}
-		for (const std::uint32_t id : ids) {
-			workspace::close_document(w, id);
+		for (const gse::id id : ids) {
+			if (!workspace::close_document(w, id)) {
+				break;
+			}
 		}
 	}
 }
@@ -557,7 +570,7 @@ namespace gse::ide {
 		return gse::find_or_generate_id("explorer_context");
 	}
 
-	using tab_sig = void(workspace::data&, std::uint32_t);
+	using tab_sig = void(workspace::data&, gse::id);
 
 	auto tab_actions() -> const std::vector<gse::gui::context_action_entry<tab_sig>>& {
 		static const auto table = gse::gui::build_context_actions<tab_sig,
@@ -601,6 +614,21 @@ namespace gse::ide {
 	}
 }
 
+auto gse::ide::explorer_menu_items(const workspace::data& w, const fs_node& n) -> std::vector<gse::gui::menu_item> {
+	const auto& actions = explorer_actions();
+	std::vector<gse::gui::menu_item> items = gse::gui::to_menu_items(actions);
+	const explorer_target target = workspace::target(n);
+	for (std::size_t i = 0; i < actions.size(); ++i) {
+		if (actions[i].run == &explorer_menu::new_file || actions[i].run == &explorer_menu::new_folder) {
+			items[i].enabled = workspace::can_create_entry(w, target);
+		}
+		else if (actions[i].run == &explorer_menu::rename || actions[i].run == &explorer_menu::remove) {
+			items[i].enabled = workspace::can_mutate_entry(w, target);
+		}
+	}
+	return items;
+}
+
 auto gse::ide::git_status_color(const git::file_status status) -> gse::vec4f {
 	switch (status) {
 		case git::file_status::modified:
@@ -620,15 +648,16 @@ auto gse::ide::git_status_color(const git::file_status status) -> gse::vec4f {
 	}
 }
 
-auto gse::ide::draw_explorer_panel(gse::gui::builder& ui, workspace::data& ws, quick_search_state& search, const search::index_state* index, gse::channel_writer channels, const git::status_map* git_status, const std::span<const std::filesystem::path> git_rootless) -> void {
+auto gse::ide::draw_explorer_panel(gse::gui::builder& ui, const gse::input::state& input, workspace::data& ws, quick_search_state& search, const search::index_state* index, gse::channel_writer channels, const git::status_map* git_status, const std::span<const std::filesystem::path> git_rootless) -> void {
 	const auto& ctx = ui.ctx;
 	if (ctx.clip_stack.empty()) {
 		return;
 	}
+	const auto text_view = ctx.fonts.text.resolve();
 
 	const gse::rectf body = ctx.clip_stack.back();
 	const float pad = ctx.style.padding;
-	const float search_height = ctx.fonts.text->line_height(ctx.style.font_size) + pad * 0.8f;
+	const float search_height = text_view->line_height(ctx.style.font_size) + pad * 0.8f;
 	const float accent_width = std::max(2.f, ctx.style.accent_bar_width);
 	const gse::rectf panel = gse::gui::draw::panel_backdrop(ctx, {
 		.rect = body,
@@ -646,19 +675,31 @@ auto gse::ide::draw_explorer_panel(gse::gui::builder& ui, workspace::data& ws, q
 		{ std::max(0.f, content.width()), search_height }
 	);
 
-	draw_search_bar(ui, search, index, channels, search_rect, "##explorer_search");
+	draw_search_bar(ui, input, search, index, channels, search_rect, "##explorer_search");
 	ctx.layout_cursor.x() = content.left();
 	ctx.layout_cursor.y() = search_rect.bottom() - pad;
+	if (!ws.explorer_error.empty()) {
+		const float error_height = text_view->line_height(ctx.style.font_size);
+		ctx.queue_text({
+			.font = ctx.fonts.text,
+			.text = ws.explorer_error,
+			.position = { content.left(), ctx.layout_cursor.y() + text_view->vertical_center_offset(ctx.style.font_size) },
+			.scale = ctx.style.font_size,
+			.color = gse::vec4f{ 0.855f, 0.451f, 0.424f, 1.f },
+			.clip_rect = body,
+		});
+		ctx.layout_cursor.y() -= error_height + pad;
+	}
 
 	for (const std::filesystem::path& rootless : git_rootless) {
-		const float row_height = ctx.fonts.text->line_height(ctx.style.font_size) + pad * 0.5f;
+		const float row_height = text_view->line_height(ctx.style.font_size) + pad * 0.5f;
 		const gse::rectf init_rect = gse::rectf::from_position_size(
 			{ content.left(), ctx.layout_cursor.y() },
 			{ std::max(0.f, content.width()), row_height }
 		);
 		std::string scoped_label;
 		if (git_rootless.size() > 1) {
-			scoped_label = std::format("Initialize Git in {}", rootless.filename().display_string());
+			scoped_label = std::format("Initialize Git in {}", rootless.filename().generic_display_string());
 		}
 		const std::string_view label = scoped_label.empty()
 			? std::string_view("Initialize Git Repository")
@@ -669,15 +710,11 @@ auto gse::ide::draw_explorer_panel(gse::gui::builder& ui, workspace::data& ws, q
 		ctx.layout_cursor.y() -= row_height + pad;
 	}
 
-	if (!ws.fs_root.loaded) {
-		workspace::load_children(ws.fs_root);
-	}
-
 	if (ws.fs_root.children.empty()) {
 		ctx.queue_text({
 			.font = ctx.fonts.text,
-			.text = "(empty) " + ws.fs_root.path.display_string(),
-			.position = { content.left(), ctx.layout_cursor.y() + ctx.fonts.text->vertical_center_offset(ctx.style.font_size) },
+			.text = "(empty) " + ws.fs_root.path.generic_display_string(),
+			.position = { content.left(), ctx.layout_cursor.y() + text_view->vertical_center_offset(ctx.style.font_size) },
 			.scale = ctx.style.font_size,
 			.color = ctx.style.color_text_secondary,
 			.clip_rect = body,
@@ -699,16 +736,16 @@ auto gse::ide::draw_explorer_panel(gse::gui::builder& ui, workspace::data& ws, q
 			continue;
 		}
 		std::string key = doc.path.lexically_normal().native_encoded_string();
-		if (id == ws.active_document_id) {
+		if (workspace::active_document_id(ws) == id) {
 			active_path = key;
 		}
 		open_paths.insert(std::move(key));
 	}
 
 	const gse::gui::draw::tree_ops<fs_node> ops{
-		.children = [](const fs_node& n) -> std::span<const fs_node> {
+		.children = [&ws](const fs_node& n) -> std::span<const fs_node> {
 			if (n.is_dir && !n.loaded) {
-				workspace::load_children(n);
+				workspace::request_children(ws, n.key);
 			}
 			return n.children;
 		},
@@ -724,7 +761,7 @@ auto gse::ide::draw_explorer_panel(gse::gui::builder& ui, workspace::data& ws, q
 		.is_leaf = [](const fs_node& n) -> bool {
 			return !n.is_dir;
 		},
-		.custom_draw = [&ui, &ws, &name_action](const fs_node& n, const gse::gui::draw_context& c, const gse::rect_t<gse::vec2f>& row_rect, bool, bool, int) {
+		.custom_draw = [&ui, &ws, &name_action, &input](const fs_node& n, const gse::gui::draw_context& c, const gse::rect_t<gse::vec2f>& row_rect, bool, bool, int) {
 			if (!ws.pending_name || ws.pending_name->key != n.key) {
 				return;
 			}
@@ -745,20 +782,20 @@ auto gse::ide::draw_explorer_panel(gse::gui::builder& ui, workspace::data& ws, q
 				pending.focus_requested = false;
 			}
 			gse::gui::draw::text_input_in_rect(c, input_id, pending.name, pending.input, input_rect, ui.hot_widget_id, ui.focus_widget_id);
-			if (c.input.key_pressed(gse::key::escape)) {
+			if (input.key_pressed(gse::key::escape)) {
 				name_action = explorer_name_action::cancel;
 			}
-			else if (c.input.key_pressed(gse::key::enter) || c.input.key_pressed(gse::key::kp_enter)) {
+			else if (input.key_pressed(gse::key::enter) || input.key_pressed(gse::key::kp_enter)) {
 				name_action = explorer_name_action::commit;
 			}
 			else if (ui.focus_widget_id != input_id) {
 				name_action = explorer_name_action::commit;
 			}
 		},
-		.on_context = [](const fs_node& n, const gse::gui::draw_context& c, gse::vec2f pos) {
+		.on_context = [&ws](const fs_node& n, const gse::gui::draw_context& c, gse::vec2f pos) {
 			c.open_context_menu({
 				.position = pos,
-				.items = gse::gui::to_menu_items(explorer_actions()),
+				.items = explorer_menu_items(ws, n),
 				.target = n.key,
 				.tag = explorer_context_tag(),
 			});
@@ -795,9 +832,9 @@ auto gse::ide::draw_explorer_panel(gse::gui::builder& ui, workspace::data& ws, q
 	std::vector<std::uint64_t> reveal_expand;
 	std::uint64_t reveal_key = 0;
 	float reveal_offset = -1.f;
-	if (ws.reveal_path) {
-		auto reveal = workspace::reveal_nodes(ws, *ws.reveal_path);
-		ws.reveal_path.reset();
+	if (ws.pending_reveal) {
+		auto reveal = std::move(*ws.pending_reveal);
+		ws.pending_reveal.reset();
 		if (reveal.key != 0) {
 			reveal_expand = std::move(reveal.expand);
 			reveal_key = reveal.key;
@@ -827,7 +864,7 @@ auto gse::ide::draw_explorer_panel(gse::gui::builder& ui, workspace::data& ws, q
 	});
 
 	if (reveal_offset >= 0.f) {
-		const float row_height = ctx.fonts.text->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
+		const float row_height = text_view->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
 		const float view_height = std::max(0.f, tree_top - content.bottom());
 		gse::gui::scroll_state& scroll = ctx.widget_scrolls[gse::hash_combine(gse::gui::ids::current_seed(), gse::stable_id("explorer_tree"))];
 		if (reveal_offset < scroll.y.offset || reveal_offset + row_height > scroll.y.offset + view_height) {
@@ -836,22 +873,30 @@ auto gse::ide::draw_explorer_panel(gse::gui::builder& ui, workspace::data& ws, q
 	}
 
 	if (name_action == explorer_name_action::cancel) {
-		workspace::cancel_pending_name(ws);
+		ws.cancel_name_requested = true;
 	}
 	else if (name_action == explorer_name_action::commit) {
-		workspace::commit_pending_name(ws);
+		ws.commit_name_requested = true;
 	}
 
-	for (const std::uint64_t key : ws.explorer_selection.keys) {
+	const auto open_if_file = [&](const std::uint64_t key) {
 		if (ws.pending_name && key == ws.pending_name->key) {
-			continue;
-		}
-		if (ws.explorer_selection_seen.contains(key)) {
-			continue;
+			return;
 		}
 		if (const fs_node* node = workspace::find_node(ws.fs_root, key); node && !node->is_dir) {
 			workspace::open_file(ws, node->path);
 		}
+	};
+
+	if (const std::uint64_t activated = std::exchange(ws.explorer_selection.activated, 0); activated != 0) {
+		open_if_file(activated);
+	}
+
+	for (const std::uint64_t key : ws.explorer_selection.keys) {
+		if (ws.explorer_selection_seen.contains(key)) {
+			continue;
+		}
+		open_if_file(key);
 	}
 	if (ws.explorer_selection_seen != ws.explorer_selection.keys) {
 		ws.explorer_selection_seen = ws.explorer_selection.keys;

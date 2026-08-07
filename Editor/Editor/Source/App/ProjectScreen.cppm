@@ -11,6 +11,7 @@ export namespace gse::ide {
 	public:
 		explicit project_screen(
 			gse::channel_writer channels,
+			gse::shared_view<gse::input::data> input,
 			bool hub = false
 		);
 
@@ -92,6 +93,7 @@ export namespace gse::ide {
 		bool m_dismiss = false;
 		bool m_hub = false;
 		gse::channel_writer m_channels;
+		gse::shared_view<gse::input::data> m_input_data;
 		bool m_launcher_sent = false;
 		float m_content_height = 0.f;
 		std::vector<engine_choice> m_engines;
@@ -102,7 +104,7 @@ export namespace gse::ide {
 	};
 }
 
-gse::ide::project_screen::project_screen(gse::channel_writer channels, const bool hub) : m_hub(hub), m_channels(std::move(channels)) {
+gse::ide::project_screen::project_screen(gse::channel_writer channels, const gse::shared_view<gse::input::data> input, const bool hub) : m_hub(hub), m_channels(std::move(channels)), m_input_data(input) {
 	const project::manifest& active = project::current();
 
 	for (const std::filesystem::path& path : project::known()) {
@@ -228,6 +230,7 @@ auto gse::ide::project_screen::activate(const entry& item) -> void {
 
 auto gse::ide::project_screen::build(gui::builder& ui, gui::nav&) -> void {
 	auto& ctx = ui.ctx;
+	const auto text_view = ctx.fonts.text.resolve();
 	if (!ctx.current_menu) {
 		return;
 	}
@@ -239,24 +242,24 @@ auto gse::ide::project_screen::build(gui::builder& ui, gui::nav&) -> void {
 
 	const rectf header = rectf::from_position_size(
 		{ card.left() + pad, card.top() - pad },
-		{ card.width() - pad * 2.f, ctx.fonts.text->line_height(sty.font_size) + pad }
+		{ card.width() - pad * 2.f, text_view->line_height(sty.font_size) + pad }
 	);
 
-	const float action_w = ctx.fonts.text->width("New Project", sty.font_size) + pad * 2.f;
-	const float action_h = ctx.fonts.text->line_height(sty.font_size) + pad * 0.5f;
+	const float action_w = text_view->width("New Project", sty.font_size) + pad * 2.f;
+	const float action_h = text_view->line_height(sty.font_size) + pad * 0.5f;
 	const rectf action_rect = rectf::from_position_size(
 		{ header.right() - action_w, (card.top() + header.bottom()) * 0.5f + action_h * 0.5f },
 		{ action_w, action_h }
 	);
 
 	const bool listing = !m_creating && !m_rebinding;
-	const float engine_w = ctx.fonts.text->width("Engine", sty.font_size) + pad * 2.f;
+	const float engine_w = text_view->width("Engine", sty.font_size) + pad * 2.f;
 	const rectf engine_rect = rectf::from_position_size(
 		{ action_rect.left() - pad - engine_w, action_rect.top() },
 		{ engine_w, action_h }
 	);
 
-	const float open_w = ctx.fonts.text->width("Open", sty.font_size) + pad * 2.f;
+	const float open_w = text_view->width("Open", sty.font_size) + pad * 2.f;
 	const rectf open_rect = rectf::from_position_size(
 		{ engine_rect.left() - pad - open_w, engine_rect.top() },
 		{ open_w, action_h }
@@ -267,7 +270,7 @@ auto gse::ide::project_screen::build(gui::builder& ui, gui::nav&) -> void {
 	ctx.queue_text({
 		.font = ctx.fonts.text,
 		.text = m_creating ? std::string_view("New Project") : m_rebinding ? std::string_view("Engine") : std::string_view("Projects"),
-		.position = { header.left(), header.center().y() + ctx.fonts.text->vertical_center_offset(sty.font_size) },
+		.position = { header.left(), header.center().y() + text_view->vertical_center_offset(sty.font_size) },
 		.scale = sty.font_size,
 		.color = sty.color_text_secondary,
 		.clip_rect = rectf::from_position_size(
@@ -305,7 +308,7 @@ auto gse::ide::project_screen::build(gui::builder& ui, gui::nav&) -> void {
 
 	ctx.layout_cursor = { card.left() + pad, header.bottom() - pad };
 
-	const float row_stride = ctx.fonts.text->line_height(sty.font_size) + pad * 1.5f;
+	const float row_stride = text_view->line_height(sty.font_size) + pad * 1.5f;
 	const std::size_t rows = m_creating
 		? 4u + project::templates().size()
 		: m_rebinding
@@ -335,13 +338,15 @@ auto gse::ide::project_screen::build(gui::builder& ui, gui::nav&) -> void {
 
 auto gse::ide::project_screen::build_rebind(gui::builder& ui) -> void {
 	auto& ctx = ui.ctx;
+	const auto text_view = ctx.fonts.text.resolve();
+	const input::state& input = input::current_state(m_input_data);
 	const gui::style& sty = ctx.style;
 	const rectf card = ctx.current_menu->rect;
 	const float pad = sty.padding;
 
 	const project::manifest& active = project::current();
 
-	if (ctx.input.key_pressed(key::escape)) {
+	if (input.key_pressed(key::escape)) {
 		m_rebinding = false;
 		m_forced = false;
 		return;
@@ -363,33 +368,33 @@ auto gse::ide::project_screen::build_rebind(gui::builder& ui) -> void {
 	ctx.queue_text({
 		.font = ctx.fonts.text,
 		.text = hint,
-		.position = { card.left() + pad, ctx.layout_cursor.y() - ctx.fonts.text->line_height(sty.font_size) * 0.5f },
+		.position = { card.left() + pad, ctx.layout_cursor.y() - text_view->line_height(sty.font_size) * 0.5f },
 		.scale = sty.font_size,
 		.color = m_engine_problem.empty() ? sty.color_text_secondary : vec4f{ 0.86f, 0.36f, 0.32f, 1.f },
 		.clip_rect = rectf::from_position_size(
 			{ card.left() + pad, ctx.layout_cursor.y() },
-			{ card.width() - pad * 2.f, ctx.fonts.text->line_height(sty.font_size) + pad }
+			{ card.width() - pad * 2.f, text_view->line_height(sty.font_size) + pad }
 		),
 	});
 
-	ctx.layout_cursor = { card.left() + pad, ctx.layout_cursor.y() - ctx.fonts.text->line_height(sty.font_size) - pad };
+	ctx.layout_cursor = { card.left() + pad, ctx.layout_cursor.y() - text_view->line_height(sty.font_size) - pad };
 
 	if (!m_engines.empty()) {
-		if (ctx.input.key_pressed(key::down)) {
+		if (input.key_pressed(key::down)) {
 			m_engine_selected = std::min(m_engine_selected + 1, static_cast<int>(m_engines.size()) - 1);
 		}
-		if (ctx.input.key_pressed(key::up)) {
+		if (input.key_pressed(key::up)) {
 			m_engine_selected = std::max(m_engine_selected - 1, 0);
 		}
 	}
 
 	float widest_name = 0.f;
 	for (const engine_choice& item : m_engines) {
-		widest_name = std::max(widest_name, ctx.fonts.text->width(item.entry.name, sty.font_size));
+		widest_name = std::max(widest_name, text_view->width(item.entry.name, sty.font_size));
 	}
 	const float detail_column = pad * 3.f + sty.accent_bar_width + widest_name;
 
-	const bool submit = ctx.input.key_pressed(key::enter) || ctx.input.key_pressed(key::kp_enter);
+	const bool submit = input.key_pressed(key::enter) || input.key_pressed(key::kp_enter);
 
 	for (const auto& [index, item] : std::views::enumerate(m_engines)) {
 		const bool chosen = ui.draw<gui::selectable>({
@@ -415,19 +420,21 @@ auto gse::ide::project_screen::build_rebind(gui::builder& ui) -> void {
 
 auto gse::ide::project_screen::build_list(gui::builder& ui) -> void {
 	auto& ctx = ui.ctx;
+	const auto text_view = ctx.fonts.text.resolve();
+	const input::state& input = input::current_state(m_input_data);
 
-	if (!m_hub && ctx.input.key_pressed(key::escape)) {
+	if (!m_hub && input.key_pressed(key::escape)) {
 		m_dismiss = true;
 		return;
 	}
 	if (!m_entries.empty()) {
-		if (ctx.input.key_pressed(key::down)) {
+		if (input.key_pressed(key::down)) {
 			m_selected = std::min(m_selected + 1, static_cast<int>(m_entries.size()) - 1);
 		}
-		if (ctx.input.key_pressed(key::up)) {
+		if (input.key_pressed(key::up)) {
 			m_selected = std::max(m_selected - 1, 0);
 		}
-		if (ctx.input.key_pressed(key::enter) || ctx.input.key_pressed(key::kp_enter)) {
+		if (input.key_pressed(key::enter) || input.key_pressed(key::kp_enter)) {
 			activate(m_entries[static_cast<std::size_t>(m_selected)]);
 			return;
 		}
@@ -435,7 +442,7 @@ auto gse::ide::project_screen::build_list(gui::builder& ui) -> void {
 
 	float widest_name = 0.f;
 	for (const entry& item : m_entries) {
-		widest_name = std::max(widest_name, ctx.fonts.text->width(item.name, ctx.style.font_size));
+		widest_name = std::max(widest_name, text_view->width(item.name, ctx.style.font_size));
 	}
 	const float detail_column = ctx.style.padding * 3.f + ctx.style.accent_bar_width + widest_name;
 
@@ -458,11 +465,13 @@ auto gse::ide::project_screen::build_list(gui::builder& ui) -> void {
 
 auto gse::ide::project_screen::build_create(gui::builder& ui) -> void {
 	auto& ctx = ui.ctx;
+	const auto text_view = ctx.fonts.text.resolve();
+	const input::state& input = input::current_state(m_input_data);
 	const gui::style& sty = ctx.style;
 	const rectf card = ctx.current_menu->rect;
 	const float pad = sty.padding;
 
-	if (ctx.input.key_pressed(key::escape)) {
+	if (input.key_pressed(key::escape)) {
 		m_creating = false;
 		return;
 	}
@@ -473,7 +482,7 @@ auto gse::ide::project_screen::build_create(gui::builder& ui) -> void {
 
 	const rectf input_rect = rectf::from_position_size(
 		{ card.left() + pad, ctx.layout_cursor.y() },
-		{ card.width() - pad * 2.f, ctx.fonts.text->line_height(sty.font_size) + pad }
+		{ card.width() - pad * 2.f, text_view->line_height(sty.font_size) + pad }
 	);
 
 	const id input_id = gui::ids::make("##project_new_name");
@@ -484,7 +493,7 @@ auto gse::ide::project_screen::build_create(gui::builder& ui) -> void {
 		ctx.queue_text({
 			.font = ctx.fonts.text,
 			.text = "Project name",
-			.position = { input_rect.left() + pad, input_rect.center().y() + ctx.fonts.text->vertical_center_offset(sty.font_size) },
+			.position = { input_rect.left() + pad, input_rect.center().y() + text_view->vertical_center_offset(sty.font_size) },
 			.scale = sty.font_size,
 			.color = sty.color_text_secondary,
 			.clip_rect = input_rect,
@@ -499,16 +508,16 @@ auto gse::ide::project_screen::build_create(gui::builder& ui) -> void {
 	ctx.queue_text({
 		.font = ctx.fonts.text,
 		.text = hint,
-		.position = { input_rect.left(), input_rect.bottom() - pad - ctx.fonts.text->line_height(sty.font_size) * 0.5f },
+		.position = { input_rect.left(), input_rect.bottom() - pad - text_view->line_height(sty.font_size) * 0.5f },
 		.scale = sty.font_size,
 		.color = m_error.empty() && problem.empty() ? sty.color_text_secondary : vec4f{ 0.86f, 0.36f, 0.32f, 1.f },
 		.clip_rect = rectf::from_position_size(
 			{ input_rect.left(), input_rect.bottom() - pad },
-			{ input_rect.width(), ctx.fonts.text->line_height(sty.font_size) + pad }
+			{ input_rect.width(), text_view->line_height(sty.font_size) + pad }
 		),
 	});
 
-	ctx.layout_cursor = { card.left() + pad, input_rect.bottom() - pad * 2.f - ctx.fonts.text->line_height(sty.font_size) };
+	ctx.layout_cursor = { card.left() + pad, input_rect.bottom() - pad * 2.f - text_view->line_height(sty.font_size) };
 
 	for (const auto& [index, entry] : std::views::enumerate(project::templates())) {
 		if (ui.draw<gui::selectable>({
@@ -517,7 +526,7 @@ auto gse::ide::project_screen::build_create(gui::builder& ui) -> void {
 			.key = entry.id,
 			.selected = m_template == static_cast<int>(index),
 			.align = gui::selectable_align::left,
-			.detail_column = pad * 3.f + sty.accent_bar_width + ctx.fonts.text->width("Blank", sty.font_size),
+			.detail_column = pad * 3.f + sty.accent_bar_width + text_view->width("Blank", sty.font_size),
 		})) {
 			m_template = static_cast<int>(index);
 		}
@@ -528,9 +537,9 @@ auto gse::ide::project_screen::build_create(gui::builder& ui) -> void {
 		.value = m_init_git,
 	});
 
-	const bool submit = ctx.input.key_pressed(key::enter) || ctx.input.key_pressed(key::kp_enter);
+	const bool submit = input.key_pressed(key::enter) || input.key_pressed(key::kp_enter);
 
-	const float action_h = ctx.fonts.text->line_height(sty.font_size) + pad;
+	const float action_h = text_view->line_height(sty.font_size) + pad;
 	const float action_w = (card.width() - pad * 3.f) * 0.5f;
 	const rectf create_rect = rectf::from_position_size(
 		{ card.left() + pad, card.bottom() + pad + action_h },

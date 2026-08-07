@@ -75,7 +75,7 @@ auto gse::ide::config::resolve() -> resolved {
 		.project_source = gse::config::generic(project_source),
 		.project_assets = gse::config::generic(project_assets),
 		.project_state = gse::config::generic(project_state),
-		.project_settings = active.valid ? gse::config::generic(project_root / "Config" / "settings.ini") : std::filesystem::path{},
+		.project_settings = active.valid ? gse::config::project_settings_path_for(project_root) : std::filesystem::path{},
 		.project_build = gse::config::generic(project_build),
 		.project_output = gse::config::generic(project_output),
 		.project_compile_commands = gse::config::generic(project_build / "compile_commands.json"),

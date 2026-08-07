@@ -14,83 +14,102 @@ import gse.ide.search;
 import gse.ide.graph;
 import gse.ide.docs;
 import gse.ide.viewport;
+import gse.ide.profile;
 
 import :chrome;
 import :code_panel;
 import :layout;
 import :project_screen;
 
+export namespace gse::ide {
+	namespace editor_app {
+		struct [[= system_state<"Editor">{}]] data {
+			bool initialized = false;
+			bool screen_pushed = false;
+			float explorer_ratio = 0.22f;
+			float terminal_ratio = 0.22f;
+			bool resizing_explorer = false;
+			bool resizing_terminal = false;
+			cursor_shape frame_cursor = cursor_shape::arrow;
+			clock save_clock;
+		};
+
+		[[= system_run<>{}]]
+		auto run(
+			context& ctx,
+			data& d,
+			shared_view<search_system::data> search_d,
+			shared_view<input::data> input_d,
+			const save::registry& save_reg
+		) -> async::task<>;
+
+		[[= system_shutdown{}]]
+		auto shutdown(
+			data& d
+		) -> void;
+	}
+
+	namespace workspace_system {
+		struct [[= system_state<"Workspace">{}]] data {
+			workspace::data ws;
+			graph_data graph;
+			std::uint32_t graph_game_gen = 0;
+			std::uint32_t graph_pending_gen = 0;
+			std::uint32_t graph_load_attempts = 0;
+			clock graph_load_clock;
+			quick_search_state search;
+			git::status_snapshot git_status;
+			std::vector<std::filesystem::path> git_rootless;
+			bool initialized = false;
+			bool cursor_capture_sent = false;
+			bool profile_capture_sent = false;
+			bool game_was_running = false;
+			profile_source profile_source_sent = profile_source::editor;
+			bool game_input_forwarding = false;
+			clock save_clock;
+		};
+
+		[[= system_run<>{}]]
+		auto run(
+			context& ctx,
+			data& d,
+			const scheduler& sched,
+			shared_view<config_system::data> config_d,
+			shared_view<search_system::data> search_d,
+			shared_view<input::data> input_d,
+			shared_view<viewport::data> viewport_d,
+			shared_view<build_runner::data> build_d,
+			shared_view<window::data> window_d,
+			shared_view<profile_system::data> profile_d
+		) -> async::task<>;
+
+		[[= system_shutdown{}]]
+		auto shutdown(
+			data& d
+		) -> void;
+	}
+}
+
 namespace gse::ide {
 	constexpr std::string_view explorer_panel_name = "Explorer";
 	constexpr std::string_view code_panel_name = "Code";
 	constexpr time editor_layout_save_interval = seconds(30.f);
-}
+	constexpr time system_graph_retry_interval = milliseconds(100.f);
+	constexpr std::uint32_t system_graph_max_attempts = 100;
 
-export namespace gse::ide::editor_app {
-	struct [[= system_state<"Editor">{}]] data {
-		bool initialized = false;
-		bool screen_pushed = false;
-		float explorer_ratio = 0.22f;
-		float terminal_ratio = 0.22f;
-		bool resizing_explorer = false;
-		bool resizing_terminal = false;
-		cursor_shape frame_cursor = cursor_shape::arrow;
-		clock save_clock;
-	};
-
-	[[= system_run<>{}]]
-	auto run(
-		context& ctx,
-		data& d,
-		shared_view<search_system::data> search_d,
-		shared_view<input::data> input_d,
-		const save::registry& save_reg
-	) -> async::task<>;
-
-	[[= system_shutdown{}]]
-	auto shutdown(
-		data& d
-	) -> void;
-}
-
-export namespace gse::ide::workspace_system {
-	struct [[= system_state<"Workspace">{}]] data {
-		workspace::data ws;
-		graph_data graph;
-		bool graph_from_game = false;
-		std::uint32_t graph_game_gen = 0;
-		quick_search_state search;
-		git::status_snapshot git_status;
-		std::vector<std::filesystem::path> git_rootless;
-		bool initialized = false;
-		clock save_clock;
-	};
-
-	[[= system_run<>{}]]
-	auto run(
-		context& ctx,
-		data& d,
-		const scheduler& sched,
-		shared_view<config_system::data> config_d,
-		shared_view<search_system::data> search_d,
-		shared_view<input::data> input_d,
-		shared_view<viewport::data> viewport_d,
-		shared_view<build_runner::data> build_d
-	) -> async::task<>;
-
-	[[= system_shutdown{}]]
-	auto shutdown(
-		data& d
-	) -> void;
-}
-
-namespace gse::ide {
 	auto load_editor_layout(
 		editor_app::data& d
 	) -> void;
 
 	auto save_editor_layout(
 		const editor_app::data& d
+	) -> void;
+
+	auto forward_game_input(
+		const input::state& input,
+		channel_writer channels,
+		vec2f game_cursor,
+		bool release_held
 	) -> void;
 }
 
@@ -118,13 +137,56 @@ auto gse::ide::save_editor_layout(const editor_app::data& d) -> void {
 	replace_layout_sections(editor_layout_owner(), out);
 }
 
-auto gse::ide::editor_app::run(
-	context& ctx,
-	data& d,
-	const shared_view<search_system::data> search_d,
-	const shared_view<input::data> input_d,
-	const save::registry& save_reg
-) -> async::task<> {
+auto gse::ide::forward_game_input(const input::state& input, channel_writer channels, const vec2f game_cursor, const bool release_held) -> void {
+	const auto game_x = static_cast<double>(game_cursor.x());
+	const auto game_y = static_cast<double>(game_cursor.y());
+
+	if (release_held) {
+		for (const key held : input.keys_held()) {
+			if (held != key::escape) {
+				channels.push<build_runner::attached_input>({ .event = gse::input::key_released{ .key_code = held } });
+			}
+		}
+		for (const mouse_button held : input.mouse_buttons_held()) {
+			channels.push<build_runner::attached_input>({ .event = gse::input::mouse_button_released{ .button = held, .x_pos = game_x, .y_pos = game_y } });
+		}
+		return;
+	}
+
+	channels.push<build_runner::attached_input>({ .event = gse::input::mouse_moved{ .x_pos = game_x, .y_pos = game_y } });
+	for (const key pressed : input.keys_pressed()) {
+		channels.push<build_runner::attached_input>({ .event = gse::input::key_pressed{ .key_code = pressed } });
+	}
+	for (const key released : input.keys_released()) {
+		channels.push<build_runner::attached_input>({ .event = gse::input::key_released{ .key_code = released } });
+	}
+	for (const mouse_button pressed : input.mouse_buttons_pressed()) {
+		channels.push<build_runner::attached_input>({ .event = gse::input::mouse_button_pressed{ .button = pressed, .x_pos = game_x, .y_pos = game_y } });
+	}
+	for (const mouse_button released : input.mouse_buttons_released()) {
+		channels.push<build_runner::attached_input>({ .event = gse::input::mouse_button_released{ .button = released, .x_pos = game_x, .y_pos = game_y } });
+	}
+	if (const vec2f scroll = input.scroll_delta(); scroll.x() != 0.f || scroll.y() != 0.f) {
+		channels.push<build_runner::attached_input>({ .event = gse::input::mouse_scrolled{ .x_offset = scroll.x(), .y_offset = scroll.y() } });
+	}
+
+	const std::string_view typed = input.text_entered();
+	for (std::size_t i = 0; i < typed.size();) {
+		const auto lead = static_cast<unsigned char>(typed[i]);
+		const std::size_t length = lead < 0x80 ? 1 : (lead < 0xE0 ? 2 : (lead < 0xF0 ? 3 : 4));
+		if (i + length > typed.size()) {
+			break;
+		}
+		auto codepoint = static_cast<std::uint32_t>(length == 1 ? lead : (lead & (0xFF >> (length + 1))));
+		for (std::size_t byte = 1; byte < length; ++byte) {
+			codepoint = codepoint << 6 | static_cast<unsigned char>(typed[i + byte]) & 0x3F;
+		}
+		channels.push<build_runner::attached_input>({ .event = gse::input::text_entered{ .codepoint = codepoint } });
+		i += length;
+	}
+}
+
+auto gse::ide::editor_app::run(context& ctx, data& d, const shared_view<search_system::data> search_d, const shared_view<input::data> input_d, const save::registry& save_reg) -> async::task<> {
 	if (!d.initialized) {
 		load_editor_layout(d);
 		d.save_clock.reset();
@@ -133,15 +195,15 @@ auto gse::ide::editor_app::run(
 
 	if (!d.screen_pushed && search_d.index) {
 		ctx.channels.push<gui::push_screen_request>({
-			.factory = [channels = ctx.channels, index = search_d.index] {
-				return std::make_unique<editor_screen>(channels, index);
+			.factory = [channels = ctx.channels, index = search_d.index, input_d] {
+				return std::make_unique<editor_screen>(channels, index, input_d);
 			},
 		});
 		const project::manifest& active = project::current();
 		if (!active.valid || !active.requested || !active.engine_problem.empty()) {
 			ctx.channels.push<gui::push_screen_request>({
-				.factory = [channels = ctx.channels] {
-					return std::make_unique<project_screen>(channels, true);
+				.factory = [channels = ctx.channels, input_d] {
+					return std::make_unique<project_screen>(channels, input_d, true);
 				},
 			});
 		}
@@ -151,14 +213,14 @@ auto gse::ide::editor_app::run(
 		if (res.path.empty() || res.path.extension() != ".gseproj") {
 			continue;
 		}
-		gse::app::relaunch_on_exit(gse::config::executable_file(), res.path.parent_path(), { res.path });
+		app::relaunch_on_exit(gse::config::executable_file(), res.path.parent_path(), { res.path });
 		gse::shutdown();
 	}
 
 	for ([[maybe_unused]] const auto& req : ctx.read_channel<toggle_project_switcher_request>()) {
 		ctx.channels.push<gui::push_screen_request>({
-			.factory = [channels = ctx.channels] {
-				return std::make_unique<project_screen>(channels);
+			.factory = [channels = ctx.channels, input_d] {
+				return std::make_unique<project_screen>(channels, input_d);
 			},
 		});
 	}
@@ -230,14 +292,24 @@ auto gse::ide::editor_app::run(
 
 			const gui::layout::split_result columns = gui::layout::update_split(
 				horizontal_split,
-				{ .mouse = mouse, .pressed = pressed, .held = held, .blocked = blocked },
+				{
+					.mouse = mouse,
+					.pressed = pressed,
+					.held = held,
+					.blocked = blocked,
+				},
 				d.resizing_explorer
 			);
 			d.explorer_ratio = columns.ratio;
 
 			const gui::layout::split_result rows = gui::layout::update_split(
 				vertical_split,
-				{ .mouse = mouse, .pressed = pressed, .held = held, .blocked = blocked || d.resizing_explorer },
+				{
+					.mouse = mouse,
+					.pressed = pressed,
+					.held = held,
+					.blocked = blocked || d.resizing_explorer,
+				},
 				d.resizing_terminal
 			);
 			d.terminal_ratio = 1.f - rows.ratio;
@@ -306,18 +378,8 @@ auto gse::ide::editor_app::run(
 	return {};
 }
 
-auto gse::ide::workspace_system::run(
-	context& ctx,
-	data& d,
-	const scheduler& sched,
-	const shared_view<config_system::data> config_d,
-	const shared_view<search_system::data> search_d,
-	const shared_view<input::data> input_d,
-	const shared_view<viewport::data> viewport_d,
-	const shared_view<build_runner::data> build_d
-) -> async::task<> {
+auto gse::ide::workspace_system::run(context& ctx, data& d, const scheduler& sched, const shared_view<config_system::data> config_d, const shared_view<search_system::data> search_d, const shared_view<input::data> input_d, const shared_view<viewport::data> viewport_d, const shared_view<build_runner::data> build_d, const shared_view<window::data> window_d, const shared_view<profile_system::data> profile_d) -> async::task<> {
 	if (!d.initialized) {
-		d.ws.root = config::project_root();
 		d.ws.fs_root.is_dir = true;
 		d.ws.fs_root.children.clear();
 		for (const config::browse_root& browse : config::browse_roots()) {
@@ -338,11 +400,26 @@ auto gse::ide::workspace_system::run(
 	if (d.graph_game_gen != game_gen) {
 		const std::filesystem::path game_graph_file = build_d.game_graph_path;
 		if (!game_graph_file.empty()) {
-			graph_data loaded = build_graph_from_file(game_graph_file);
-			if (loaded.built) {
-				d.graph = std::move(loaded);
-				d.graph_from_game = true;
-				d.graph_game_gen = game_gen;
+			if (d.graph_pending_gen != game_gen) {
+				d.graph_pending_gen = game_gen;
+				d.graph_load_attempts = 0;
+				d.graph_load_clock.reset();
+			}
+			const bool load_due = d.graph_load_attempts == 0 || d.graph_load_clock.elapsed() >= system_graph_retry_interval;
+			if (load_due) {
+				++d.graph_load_attempts;
+				d.graph_load_clock.reset();
+				std::expected<graph_data, graph_load_error> loaded = build_graph_from_file(game_graph_file);
+				if (loaded) {
+					d.graph = std::move(*loaded);
+					d.graph_game_gen = game_gen;
+					d.graph_load_attempts = 0;
+				}
+				else if (loaded.error() == graph_load_error::incompatible || d.graph_load_attempts >= system_graph_max_attempts) {
+					log::println(log::level::warning, log::category::general, "failed to load system graph '{}': {}", game_graph_file, loaded.error());
+					d.graph_game_gen = game_gen;
+					d.graph_load_attempts = 0;
+				}
 			}
 		}
 	}
@@ -353,6 +430,31 @@ auto gse::ide::workspace_system::run(
 	workspace::data* ws = &d.ws;
 	const auto config = config_d;
 	const input::state& input = input::current_state(input_d);
+	const input::state input_snapshot = input;
+	const bool game_running = build_d.session && build_d.session->status == build_runner::attached_session_status::active;
+	if (!workspace::game_active(d.ws) || !game_running || d.ws.game_view != game_view_kind::game || !window_d.focused) {
+		d.ws.game_captured = false;
+	}
+	if (d.ws.game_captured) {
+		if (d.ws.game_capture_settle_frames > 0) {
+			--d.ws.game_capture_settle_frames;
+		}
+		else {
+			const vec2f delta = input.mouse_delta();
+			d.ws.game_cursor += vec2f{ delta.x() * d.ws.game_input_scale.x(), -delta.y() * d.ws.game_input_scale.y() };
+		}
+		const bool release_chord = input.key_held(key::left_shift) || input.key_held(key::right_shift);
+		const bool releasing = release_chord && input.key_pressed(key::escape);
+		forward_game_input(input, ctx.channels, d.ws.game_cursor, releasing);
+		if (releasing) {
+			d.ws.game_captured = false;
+		}
+	}
+	else if (d.game_input_forwarding) {
+		forward_game_input(input, ctx.channels, d.ws.game_cursor, true);
+	}
+	d.game_input_forwarding = d.ws.game_captured;
+	workspace::update_explorer(d.ws);
 	for (const git::status_updated& update : ctx.read_channel<git::status_updated>()) {
 		d.git_status = update.status;
 		d.git_rootless = update.rootless;
@@ -369,20 +471,51 @@ auto gse::ide::workspace_system::run(
 	ctx.channels.push<gui::menu_content>({
 		.menu = std::string(explorer_panel_name),
 		.layer = render_layer::content,
-		.build = [ws, search = &d.search, index = search_d.index, channels = ctx.channels, git_status = d.git_status, git_rootless = &d.git_rootless](gui::builder& b) {
-			draw_explorer_panel(b, *ws, *search, index, channels, git_status.get(), *git_rootless);
+		.build = [ws, search = &d.search, index = search_d.index, channels = ctx.channels, input_snapshot, git_status = d.git_status, git_rootless = &d.git_rootless](gui::builder& b) {
+			draw_explorer_panel(b, input_snapshot, *ws, *search, index, channels, git_status.get(), *git_rootless);
 		},
 	});
 
 	const gpu::bindless_slot viewport_slot = viewport_d.ready ? viewport_d.display_slot : gpu::bindless_slot{};
-	const bool game_running = viewport_d.imported_ready;
 	const bool building = build_d.building;
+	const vec2u game_extent = viewport_d.extent;
+
+	if (d.cursor_capture_sent != d.ws.game_captured) {
+		d.cursor_capture_sent = d.ws.game_captured;
+		ctx.channels.push<cursor_capture_request>({ .capture = d.ws.game_captured });
+	}
+
+	const bool profile_enabled = d.ws.profile.enabled;
+	if (d.profile_capture_sent != profile_enabled || d.profile_source_sent != d.ws.profile.source) {
+		d.profile_capture_sent = profile_enabled;
+		d.profile_source_sent = d.ws.profile.source;
+		ctx.channels.push<profile_capture_request>({
+			.enabled = profile_enabled,
+			.source = d.ws.profile.source,
+		});
+	}
+
+	if (d.game_was_running && !game_running && d.ws.profile.source == profile_source::game) {
+		const std::filesystem::path game_exe = config::game_executable();
+		ctx.channels.push<profile_report_request>({
+			.path = gse::config::profile_dir() / std::format("{}.gsprof", game_exe.stem().generic_display_string()),
+		});
+	}
+	d.game_was_running = game_running;
 
 	ctx.channels.push<gui::menu_content>({
 		.menu = std::string(code_panel_name),
 		.layer = render_layer::content,
-		.build = [ws, graph = &d.graph, index = search_d.index, config, channels = ctx.channels, viewport_slot, game_running, building](gui::builder& b) {
-			draw_code_panel(b, *ws, *graph, index, config, channels, viewport_slot, game_running, building);
+		.build = [ws, graph = &d.graph, index = search_d.index, config, channels = ctx.channels, input_snapshot, viewport_slot, game_running, building, game_extent, profile_d](gui::builder& b) {
+			draw_code_panel(b, input_snapshot, *ws, *graph, channels, {
+				.config = config,
+				.profile = profile_d,
+				.index = index,
+				.viewport_slot = viewport_slot,
+				.game_extent = game_extent,
+				.game_running = game_running,
+				.building = building,
+			});
 		},
 	});
 
@@ -392,7 +525,8 @@ auto gse::ide::workspace_system::run(
 
 	for (const auto& res : ctx.read_channel<gui::context_menu_result>()) {
 		if (res.tag == explorer_context_tag()) {
-			const fs_node* node = workspace::find_node(d.ws.fs_root, res.target);
+			const std::uint64_t* target = std::get_if<std::uint64_t>(&res.target);
+			fs_node* node = target ? workspace::find_node(d.ws.fs_root, *target) : nullptr;
 			const auto& table = explorer_actions();
 			if (node && res.action_id < table.size() && table[res.action_id].run) {
 				table[res.action_id].run(d.ws, *node);
@@ -400,12 +534,14 @@ auto gse::ide::workspace_system::run(
 		}
 		else if (res.tag == tab_context_tag()) {
 			const auto& table = tab_actions();
-			if (res.action_id < table.size() && table[res.action_id].run) {
-				table[res.action_id].run(d.ws, static_cast<std::uint32_t>(res.target));
+			const gse::id* target = std::get_if<gse::id>(&res.target);
+			if (target && res.action_id < table.size() && table[res.action_id].run) {
+				table[res.action_id].run(d.ws, *target);
 			}
 		}
 		else if (res.tag == editor_text_context_tag()) {
-			if (const auto doc = d.ws.documents.find(d.ws.active_document_id); doc != d.ws.documents.end()) {
+			const std::optional<gse::id> active_document_id = workspace::active_document_id(d.ws);
+			if (const auto doc = active_document_id ? d.ws.documents.find(*active_document_id) : d.ws.documents.end(); doc != d.ws.documents.end()) {
 				doc->second.view.pending_action = static_cast<gui::text_edit_action>(res.action_id);
 			}
 		}
@@ -424,5 +560,6 @@ auto gse::ide::editor_app::shutdown(data& d) -> void {
 }
 
 auto gse::ide::workspace_system::shutdown(data& d) -> void {
+	workspace::save_dirty_documents(d.ws);
 	save_workspace_layout(d.ws);
 }

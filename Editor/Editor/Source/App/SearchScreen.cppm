@@ -11,7 +11,8 @@ export namespace gse::ide {
 	public:
 		search_screen(
 			channel_writer channels,
-			const search::index_state* index
+			const search::index_state* index,
+			shared_view<input::data> input
 		);
 
 		auto build(
@@ -49,6 +50,7 @@ export namespace gse::ide {
 
 		channel_writer m_channels;
 		const search::index_state* m_index;
+		shared_view<input::data> m_input_data;
 		search::query_driver m_driver;
 		std::vector<std::string> m_locations;
 		gui::text_input_state m_input;
@@ -56,8 +58,8 @@ export namespace gse::ide {
 	};
 }
 
-gse::ide::search_screen::search_screen(channel_writer channels, const search::index_state* index)
-	: m_channels(std::move(channels)), m_index(index) {
+gse::ide::search_screen::search_screen(channel_writer channels, const search::index_state* index, const shared_view<input::data> input)
+	: m_channels(std::move(channels)), m_index(index), m_input_data(input) {
 }
 
 auto gse::ide::search_screen::title() const -> std::string_view {
@@ -104,6 +106,8 @@ auto gse::ide::search_screen::draw_backdrop(gui::draw_context& ctx, const vec2f 
 
 auto gse::ide::search_screen::draw_row(gui::draw_context& ctx, const rectf& row, const search::result& r, const std::string& location, const bool selected) const -> void {
 	const auto& sty = ctx.style;
+	const auto text_view = ctx.fonts.text.resolve();
+	const auto code_view = ctx.fonts.code.resolve();
 	const float pad = sty.padding;
 	const float fs = sty.font_size;
 
@@ -127,15 +131,15 @@ auto gse::ide::search_screen::draw_row(gui::draw_context& ctx, const rectf& row,
 	});
 
 	const float text_x = icon_rect.right() + pad;
-	const float baseline = row.center().y() + ctx.fonts.text->vertical_center_offset(fs);
+	const float baseline = row.center().y() + text_view->vertical_center_offset(fs);
 
-	const float loc_w = location.empty() ? 0.f : ctx.fonts.code->width(location, fs);
+	const float loc_w = location.empty() ? 0.f : code_view->width(location, fs);
 	const float loc_x = row.right() - pad - loc_w;
 	if (!location.empty()) {
 		ctx.queue_text({
 			.font = ctx.fonts.code,
 			.text = location,
-			.position = { loc_x, row.center().y() + ctx.fonts.code->vertical_center_offset(fs) },
+			.position = { loc_x, row.center().y() + code_view->vertical_center_offset(fs) },
 			.scale = fs,
 			.color = sty.color_text_secondary,
 			.clip_rect = row,
@@ -148,7 +152,7 @@ auto gse::ide::search_screen::draw_row(gui::draw_context& ctx, const rectf& row,
 	);
 
 	if (!r.highlight.empty()) {
-		const std::vector<float> offsets = ctx.fonts.text->caret_offsets(r.display, fs);
+		const std::vector<float> offsets = text_view->caret_offsets(r.display, fs);
 		for (const search::match_range& mr : r.highlight) {
 			const std::size_t a = std::min<std::size_t>(mr.start, r.display.size());
 			const std::size_t b = std::min<std::size_t>(mr.start + mr.length, r.display.size());
@@ -179,6 +183,8 @@ auto gse::ide::search_screen::draw_row(gui::draw_context& ctx, const rectf& row,
 
 auto gse::ide::search_screen::build(gui::builder& ui, gui::nav&) -> void {
 	auto& ctx = ui.ctx;
+	const auto text_view = ctx.fonts.text.resolve();
+	const input::state& input = input::current_state(m_input_data);
 	if (!ctx.current_menu) {
 		return;
 	}
@@ -188,7 +194,7 @@ auto gse::ide::search_screen::build(gui::builder& ui, gui::nav&) -> void {
 	const rectf card = ctx.current_menu->rect;
 	const float pad = sty.padding;
 
-	const float input_h = ctx.fonts.text->line_height(sty.font_size) + pad;
+	const float input_h = text_view->line_height(sty.font_size) + pad;
 	const rectf input_rect = rectf::from_position_size(
 		{ card.left() + pad, card.top() - pad },
 		{ card.width() - pad * 2.f, input_h }
@@ -202,7 +208,7 @@ auto gse::ide::search_screen::build(gui::builder& ui, gui::nav&) -> void {
 		ctx.queue_text({
 			.font = ctx.fonts.text,
 			.text = "Search files, symbols, contents...",
-			.position = { input_rect.left() + pad, input_rect.center().y() + ctx.fonts.text->vertical_center_offset(sty.font_size) },
+			.position = { input_rect.left() + pad, input_rect.center().y() + text_view->vertical_center_offset(sty.font_size) },
 			.scale = sty.font_size,
 			.color = sty.color_text_secondary,
 			.clip_rect = input_rect,
@@ -226,19 +232,19 @@ auto gse::ide::search_screen::build(gui::builder& ui, gui::nav&) -> void {
 		}
 	}
 
-	if (ctx.input.key_pressed(key::escape)) {
+	if (input.key_pressed(key::escape)) {
 		m_driver.accept();
 		m_dismiss = true;
 		return;
 	}
 	if (!m_driver.results.empty()) {
-		if (ctx.input.key_pressed(key::down)) {
+		if (input.key_pressed(key::down)) {
 			m_driver.selected = std::min<int>(m_driver.selected + 1, static_cast<int>(m_driver.results.size()) - 1);
 		}
-		if (ctx.input.key_pressed(key::up)) {
+		if (input.key_pressed(key::up)) {
 			m_driver.selected = std::max(m_driver.selected - 1, 0);
 		}
-		if (ctx.input.key_pressed(key::enter)) {
+		if (input.key_pressed(key::enter)) {
 			const int idx = m_driver.selected >= 0 ? m_driver.selected : 0;
 			const search::result& r = m_driver.results[static_cast<std::size_t>(idx)];
 			m_channels.push<jump_to_request>({
@@ -258,7 +264,7 @@ auto gse::ide::search_screen::build(gui::builder& ui, gui::nav&) -> void {
 		{ card.left() + pad, list_top },
 		{ card.width() - pad * 2.f, std::max(0.f, list_top - list_bottom) }
 	);
-	const float row_h = ctx.fonts.text->line_height(sty.font_size) + pad;
+	const float row_h = text_view->line_height(sty.font_size) + pad;
 
 	ctx.layout_cursor = { list_rect.left(), list_rect.top() };
 
@@ -267,21 +273,19 @@ auto gse::ide::search_screen::build(gui::builder& ui, gui::nav&) -> void {
 		.size = list_rect.size(),
 	}, [&](gui::builder& b) {
 		auto& c = b.ctx;
-		const vec2f mouse = c.input.mouse_position();
-		const bool clicked = c.input.mouse_button_pressed(mouse_button::button_1);
+		const vec2f mouse = input.mouse_position();
 		const rectf clip = c.current_clip().value_or(list_rect);
 		for (std::size_t i = 0; i < m_driver.results.size(); ++i) {
 			const rectf row = rectf::from_position_size(
 				{ list_rect.left(), c.layout_cursor.y() },
 				{ list_rect.width(), row_h }
 			);
-			const bool over = row.contains(mouse) && clip.contains(mouse);
+			const bool over = clip.contains(mouse) && c.hovers(row);
 			if (over) {
 				m_driver.selected = static_cast<int>(i);
 			}
 			draw_row(c, row, m_driver.results[i], m_locations[i], m_driver.selected == static_cast<int>(i));
-			if (over && clicked && !c.is_press_consumed(mouse_button::button_1)) {
-				c.consume_press(mouse_button::button_1);
+			if (over && c.mouse_pressed_for(row)) {
 				m_channels.push<jump_to_request>({
 					.path = m_driver.results[i].path,
 					.line = m_driver.results[i].line,

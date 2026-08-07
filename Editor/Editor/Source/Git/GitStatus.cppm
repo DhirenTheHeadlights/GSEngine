@@ -212,12 +212,12 @@ auto gse::ide::git::parse_status(const std::string_view text, const std::filesys
 auto gse::ide::git::read_file_text(const std::filesystem::path& path) -> std::expected<std::string, std::string> {
 	std::ifstream in(path, std::ios::binary);
 	if (!in) {
-		return std::unexpected(std::format("could not read {}", path.display_string()));
+		return std::unexpected(std::format("could not read {}", path.generic_display_string()));
 	}
 	std::ostringstream stream;
 	stream << in.rdbuf();
 	if (in.bad()) {
-		return std::unexpected(std::format("could not finish reading {}", path.display_string()));
+		return std::unexpected(std::format("could not finish reading {}", path.generic_display_string()));
 	}
 	return stream.str();
 }
@@ -366,7 +366,7 @@ auto gse::ide::git::find_repo_root(const std::filesystem::path& start) -> repo_d
 		std::error_code exists_ec;
 		const bool marker_exists = std::filesystem::exists(path / ".git", exists_ec);
 		if (exists_ec) {
-			return std::unexpected(std::format("could not inspect {}: {}", path.display_string(), exists_ec.message()));
+			return std::unexpected(std::format("could not inspect {}: {}", path.generic_display_string(), exists_ec.message()));
 		}
 		if (marker_exists) {
 			return std::optional<std::filesystem::path>(path);
