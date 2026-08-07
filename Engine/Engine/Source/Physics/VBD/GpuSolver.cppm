@@ -94,6 +94,10 @@ export namespace gse::vbd {
 
 		auto body_count() const -> std::uint32_t;
 
+		auto snapshot_body_count(
+			std::uint32_t slot
+		) const -> std::uint32_t;
+
 		auto motor_count() const -> std::uint32_t;
 
 		auto joint_count() const -> std::uint32_t;
@@ -170,6 +174,7 @@ export namespace gse::vbd {
 			gpu::buffer coloring_scratch_buffer;
 
 			bool grounded_valid = false;
+			std::uint32_t snapshot_body_count = 0;
 		};
 
 		per_frame_resource<per_frame_data> m_frames{ per_frame_data{}, per_frame_data{} };

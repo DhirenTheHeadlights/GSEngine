@@ -554,7 +554,8 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 		f.physics_snapshot_buffer = ctx.device->create_buffer(
 			{
 				.size = limits.max_bodies * sizeof(body_state),
-				.usage = storage_dst
+				.usage = storage_dst,
+				.readback = true
 			}
 		);
 		f.physics_snapshot_buffer.host_zero();
@@ -624,7 +625,8 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 		f.grounded_readback_buffer = ctx.device->create_buffer(
 			{
 				.size = limits.max_grounded_uints * sizeof(std::uint32_t),
-				.usage = storage_dst
+				.usage = storage_dst,
+				.readback = true
 			}
 		);
 		f.grounded_readback_buffer.host_zero();
@@ -977,7 +979,7 @@ auto gse::vbd::gpu_solver::read_body_states() const -> std::span<const body_stat
 	const auto bytes = f.physics_snapshot_buffer.host_read();
 	return std::span<const body_state>(
 		reinterpret_cast<const body_state*>(bytes.data()),
-		bytes.size() / sizeof(body_state)
+		std::min<std::size_t>(f.snapshot_body_count, bytes.size() / sizeof(body_state))
 	);
 }
 
@@ -986,7 +988,7 @@ auto gse::vbd::gpu_solver::query_body_snapshot(const std::uint32_t body_index) c
 		return std::nullopt;
 	}
 	const auto& f = m_frames[latest_snapshot_slot()];
-	if (!f.grounded_valid) {
+	if (!f.grounded_valid || body_index >= f.snapshot_body_count) {
 		return std::nullopt;
 	}
 	const auto bytes = f.physics_snapshot_buffer.host_read();
@@ -1000,6 +1002,13 @@ auto gse::vbd::gpu_solver::pending_dispatch() const -> bool {
 
 auto gse::vbd::gpu_solver::body_count() const -> std::uint32_t {
 	return m_body_count;
+}
+
+auto gse::vbd::gpu_solver::snapshot_body_count(const std::uint32_t slot) const -> std::uint32_t {
+	if (!m_buffers_created) {
+		return 0;
+	}
+	return m_frames[slot].snapshot_body_count;
 }
 
 auto gse::vbd::gpu_solver::motor_count() const -> std::uint32_t {
@@ -1443,6 +1452,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 	rec.copy_buffer(f.grounded_buffer, f.grounded_readback_buffer, grounded_copy_size);
 
 	f.grounded_valid = true;
+	f.snapshot_body_count = m_body_count;
 	m_pending_dispatch = false;
 	m_body_buffers_seeded = true;
 	m_seeded_body_count = m_body_count;

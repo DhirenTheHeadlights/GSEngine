@@ -1517,9 +1517,17 @@ auto gse::dx12::device::create_buffer(const gpu::buffer_desc& desc, const std::s
 			{}
 		);
 	}
-	auto resource = m_gpu_upload_supported
-		? directx::create_gpu_upload_buffer(m_device.get(), desc.size)
-		: directx::create_upload_buffer(m_device.get(), desc.size);
+	assert(!desc.readback || !desc.bindless, "a readback buffer lives on a readback heap and cannot carry a descriptor");
+
+	auto resource = [&] {
+		if (desc.readback) {
+			return directx::create_readback_buffer(m_device.get(), desc.size);
+		}
+		if (m_gpu_upload_supported) {
+			return directx::create_gpu_upload_buffer(m_device.get(), desc.size);
+		}
+		return directx::create_upload_buffer(m_device.get(), desc.size);
+	}();
 	if (!resource) {
 		log::println(log::level::error, log::category::dx12, "create_buffer FAILED size={} removed=0x{:08x}", desc.size, static_cast<std::uint32_t>(m_device->GetDeviceRemovedReason()));
 		directx::drain_debug_messages(m_device.get(), [](void*, const char* message) {
