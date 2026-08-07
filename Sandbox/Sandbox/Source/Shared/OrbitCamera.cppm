@@ -6,13 +6,23 @@ import gse;
 export namespace sandbox::orbit_camera {
 	struct component {
 		gse::id target;
+		gse::length pivot_height = gse::meters(0.5f);
 		gse::angle yaw = gse::degrees(0.f);
 		gse::angle pitch = gse::degrees(-15.f);
 		gse::length distance = gse::meters(8.f);
+		std::array<gse::length, 4> view_steps = {
+			gse::meters(0.f),
+			gse::meters(2.f),
+			gse::meters(4.f),
+			gse::meters(7.f),
+		};
+		int view_step = 2;
+		bool stepped_views = false;
 		gse::length min_distance = gse::meters(1.5f);
 		gse::length max_distance = gse::meters(50.f);
 		int priority = 60;
 		bool active = false;
+		bool free_look = false;
 		float mouse_sensitivity = 0.25f;
 		float arrow_speed = 90.f;
 		float scroll_zoom_step = 0.5f;
@@ -125,8 +135,8 @@ auto sandbox::orbit_camera::update(gse::context& ctx, data& d, const gse::shared
 			continue;
 		}
 
-		const bool middle_held = !cam_s.ui_focus && in.mouse_button_held(gse::mouse_button::button_3);
-		if (middle_held) {
+		const bool looking = !cam_s.ui_focus && (o.free_look || in.mouse_button_held(gse::mouse_button::button_3));
+		if (looking) {
 			const auto delta = in.mouse_delta();
 			o.yaw -= gse::degrees(delta.x() * o.mouse_sensitivity);
 			o.pitch -= gse::degrees(delta.y() * o.mouse_sensitivity);
@@ -152,9 +162,25 @@ auto sandbox::orbit_camera::update(gse::context& ctx, data& d, const gse::shared
 
 		if (!cam_s.ui_focus) {
 			const auto scroll = in.scroll_delta();
-			o.distance -= gse::meters(scroll.y() * o.scroll_zoom_step);
+			if (o.stepped_views) {
+				if (scroll.y() > 0.f) {
+					o.view_step = std::max(o.view_step - 1, 0);
+				}
+				else if (scroll.y() < 0.f) {
+					o.view_step = std::min(o.view_step + 1, static_cast<int>(o.view_steps.size()) - 1);
+				}
+			}
+			else {
+				o.distance -= gse::meters(scroll.y() * o.scroll_zoom_step);
+			}
 		}
-		o.distance = std::clamp(o.distance, o.min_distance, o.max_distance);
+
+		if (o.stepped_views) {
+			o.distance = o.view_steps[static_cast<std::size_t>(o.view_step)];
+		}
+		else {
+			o.distance = std::clamp(o.distance, o.min_distance, o.max_distance);
+		}
 
 		const gse::quat orientation = gse::normalize(
 			gse::quat(gse::vec3f(0.f, 1.f, 0.f), o.yaw) *
@@ -171,6 +197,8 @@ auto sandbox::orbit_camera::update(gse::context& ctx, data& d, const gse::shared
 		else {
 			continue;
 		}
+
+		target_pos += gse::vec3<gse::displacement>(gse::meters(0.f), o.pivot_height, gse::meters(0.f));
 
 		const gse::vec3f forward = gse::rotate_vector(orientation, gse::vec3f(0.f, 0.f, -1.f));
 		const auto inflation = o.collision_radius * 2.f;

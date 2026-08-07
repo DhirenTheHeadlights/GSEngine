@@ -3,13 +3,43 @@ export module sandbox:runtime_spawns;
 import std;
 import gse;
 
+import :character_controller;
 import :entity_builders;
+import :orbit_camera;
 import :piston;
 import :tumbler;
 
 export namespace sandbox {
+	struct stress_scene_params {
+		[[
+			= gse::settings::describe<"Cubes along each radial axis of a tumbler drum. The two drums hold the bulk of "
+									  "the stress scene's bodies, so this is the scene's main size dial.">{},
+			= gse::settings::range<1, 12>{}
+		]]
+		int tumbler_radial_cubes = 6;
+
+		[[
+			= gse::settings::describe<"Cubes along the axial length of a tumbler drum.">{},
+			= gse::settings::range<1, 24>{}
+		]]
+		int tumbler_axial_cubes = 12;
+
+		[[
+			= gse::settings::describe<"Boxes per side of the stacked box grid.">{},
+			= gse::settings::range<1, 16>{}
+		]]
+		int box_grid_side = 6;
+
+		[[
+			= gse::settings::describe<"Layers in the stacked box grid.">{},
+			= gse::settings::range<1, 8>{}
+		]]
+		int box_grid_layers = 3;
+	};
+
 	auto spawn_physics_stress(
-		gse::scene& s
+		gse::scene& s,
+		const stress_scene_params& params = {}
 	) -> void;
 
 	auto spawn_joint_test(
@@ -19,7 +49,7 @@ export namespace sandbox {
 	auto spawn_character(
 		gse::scene& s,
 		const gse::resource::handle<gse::skinned_model>& model,
-		const gse::resource::handle<gse::clip_asset>& clip,
+		const gse::animation::locomotion_blend& clips,
 		const gse::vec3<gse::position>& origin
 	) -> gse::id;
 }
@@ -60,12 +90,14 @@ namespace sandbox {
 		int index,
 		const gse::vec3<gse::position>& center,
 		const gse::vec3f& rotation_axis,
-		gse::angular_velocity angular_speed
+		gse::angular_velocity angular_speed,
+		const stress_scene_params& params
 	) -> void;
 
 	auto spawn_box_grid(
 		gse::scene& s,
-		const gse::vec3<gse::position>& origin
+		const gse::vec3<gse::position>& origin,
+		const stress_scene_params& params
 	) -> void;
 
 	auto spawn_fixed_joint(
@@ -343,7 +375,7 @@ auto sandbox::spawn_spring_tests(gse::scene& s, const gse::vec3<gse::position>& 
 	}
 }
 
-auto sandbox::spawn_tumbler(gse::scene& s, const int index, const gse::vec3<gse::position>& center, const gse::vec3f& rotation_axis, const gse::angular_velocity angular_speed) -> void {
+auto sandbox::spawn_tumbler(gse::scene& s, const int index, const gse::vec3<gse::position>& center, const gse::vec3f& rotation_axis, const gse::angular_velocity angular_speed, const stress_scene_params& params) -> void {
 	constexpr float interior_half = 3.5f;
 	constexpr float length_half = 6.0f;
 	constexpr float thickness = 0.3f;
@@ -412,9 +444,9 @@ auto sandbox::spawn_tumbler(gse::scene& s, const int index, const gse::vec3<gse:
 		);
 	}
 
-	constexpr int nx = 6;
-	constexpr int ny = 6;
-	constexpr int nz = 12;
+	const int nx = params.tumbler_radial_cubes;
+	const int ny = params.tumbler_radial_cubes;
+	const int nz = params.tumbler_axial_cubes;
 	constexpr float content_size = 0.5f;
 	constexpr float radial_span = interior_half - content_size;
 	constexpr float axial_span = length_half - content_size;
@@ -423,9 +455,9 @@ auto sandbox::spawn_tumbler(gse::scene& s, const int index, const gse::vec3<gse:
 	for (int ix = 0; ix < nx; ++ix) {
 		for (int iy = 0; iy < ny; ++iy) {
 			for (int iz = 0; iz < nz; ++iz) {
-				const float fx = -radial_span + (static_cast<float>(ix) + 0.5f) * (radial_span * 2.f / nx);
-				const float fy = -radial_span + (static_cast<float>(iy) + 0.5f) * (radial_span * 2.f / ny);
-				const float fz = -axial_span + (static_cast<float>(iz) + 0.5f) * (axial_span * 2.f / nz);
+				const float fx = -radial_span + (static_cast<float>(ix) + 0.5f) * (radial_span * 2.f / static_cast<float>(nx));
+				const float fy = -radial_span + (static_cast<float>(iy) + 0.5f) * (radial_span * 2.f / static_cast<float>(ny));
+				const float fz = -axial_span + (static_cast<float>(iz) + 0.5f) * (axial_span * 2.f / static_cast<float>(nz));
 				s.spawn(
 					std::format("Tumbler {} Cube {}", index, content_id++),
 					sandbox::box(
@@ -439,10 +471,10 @@ auto sandbox::spawn_tumbler(gse::scene& s, const int index, const gse::vec3<gse:
 	}
 }
 
-auto sandbox::spawn_box_grid(gse::scene& s, const gse::vec3<gse::position>& origin) -> void {
-	constexpr int grid_x = 6;
-	constexpr int grid_z = 6;
-	constexpr int layers = 3;
+auto sandbox::spawn_box_grid(gse::scene& s, const gse::vec3<gse::position>& origin, const stress_scene_params& params) -> void {
+	const int grid_x = params.box_grid_side;
+	const int grid_z = params.box_grid_side;
+	const int layers = params.box_grid_layers;
 	constexpr float spacing = 1.1f;
 
 	for (int layer = 0; layer < layers; ++layer) {
@@ -753,17 +785,17 @@ auto sandbox::spawn_vise(gse::scene& s, const gse::vec3<gse::position>& origin) 
 	);
 }
 
-auto sandbox::spawn_physics_stress(gse::scene& s) -> void {
+auto sandbox::spawn_physics_stress(gse::scene& s, const stress_scene_params& params) -> void {
 	spawn_inverted_mass_pyramid(s, gse::vec3<gse::position>(-15.f, 0.f, 0.f));
 	spawn_domino_chain(s, gse::vec3<gse::position>(-8.f, 0.f, -10.f));
 	spawn_funnel(s, gse::vec3<gse::position>(15.f, 0.f, 0.f));
 	spawn_slope_friction_test(s, gse::vec3<gse::position>(0.f, 0.f, 15.f));
 	spawn_high_speed_impact_target(s, gse::vec3<gse::position>(0.f, 0.f, -20.f));
-	spawn_box_grid(s, gse::vec3<gse::position>(20.f, 0.f, -10.f));
+	spawn_box_grid(s, gse::vec3<gse::position>(20.f, 0.f, -10.f), params);
 	spawn_spring_tests(s, gse::vec3<gse::position>(-25.f, 0.f, -20.f));
 
-	spawn_tumbler(s, 0, gse::vec3<gse::position>(-12.f, 10.f, 24.f), gse::axis_z, gse::radians_per_second(0.6f));
-	spawn_tumbler(s, 1, gse::vec3<gse::position>(12.f, 10.f, 24.f), gse::axis_x, gse::radians_per_second(0.5f));
+	spawn_tumbler(s, 0, gse::vec3<gse::position>(-12.f, 10.f, 24.f), gse::axis_z, gse::radians_per_second(0.6f), params);
+	spawn_tumbler(s, 1, gse::vec3<gse::position>(12.f, 10.f, 24.f), gse::axis_x, gse::radians_per_second(0.5f), params);
 
 	spawn_sphere_stack(s, gse::vec3<gse::position>(30.f, 0.f, 5.f));
 	spawn_corner_drop(s, gse::vec3<gse::position>(30.f, 0.f, 15.f));
@@ -784,18 +816,18 @@ auto sandbox::spawn_joint_test(gse::scene& s) -> void {
 	s.spawn("Joint Test Sphere", sandbox::sphere(gse::vec3<gse::position>(0.f, 6.f, -8.f), gse::meters(1.f)));
 }
 
-auto sandbox::spawn_character(gse::scene& s, const gse::resource::handle<gse::skinned_model>& model, const gse::resource::handle<gse::clip_asset>& clip, const gse::vec3<gse::position>& origin) -> gse::id {
+auto sandbox::spawn_character(gse::scene& s, const gse::resource::handle<gse::skinned_model>& model, const gse::animation::locomotion_blend& clips, const gse::vec3<gse::position>& origin) -> gse::id {
 	if (!model.valid()) {
 		return {};
 	}
 
-	const auto& rig = model.resolve();
-	const auto bones = rig.bones();
+	const auto rig = model.resolve();
+	const auto bones = rig->bones();
 	if (bones.empty()) {
 		return {};
 	}
 
-	const auto& proxy = rig.proxy();
+	const auto& proxy = rig->proxy();
 	const auto proxy_center = origin + proxy.center;
 	const auto proxy_mass = gse::kilograms(78.f);
 	const auto proxy_extent = gse::vec3<gse::length>(
@@ -821,7 +853,10 @@ auto sandbox::spawn_character(gse::scene& s, const gse::resource::handle<gse::sk
 				.half_height = proxy.half_height,
 			},
 		})
-		.with<gse::physics::motor_component>({})
+		.with<gse::physics::motor_component>({
+			.max_force = gse::newtons(12000.f),
+			.compliance = 0.02f,
+		})
 		.identify();
 
 	gse::skeleton_instance_component instance{
@@ -834,6 +869,7 @@ auto sandbox::spawn_character(gse::scene& s, const gse::resource::handle<gse::sk
 	};
 
 	std::array<gse::animation::joint_transform, gse::skeleton_instance_component::max_bones> joints{};
+	std::array<gse::animation::joint_transform, gse::skeleton_instance_component::max_bones> bodies{};
 	const auto bone_count = std::min(bones.size(), joints.size());
 
 	for (std::size_t i = 0; i < bone_count; ++i) {
@@ -845,7 +881,8 @@ auto sandbox::spawn_character(gse::scene& s, const gse::resource::handle<gse::sk
 
 		joints[i] = gse::animation::compose(parent, bone.joint_local_offset, bone.joint_local_rotation);
 
-		const auto body = gse::animation::compose(joints[i], bone.body_offset, bone.body_rotation);
+		bodies[i] = gse::animation::compose(joints[i], bone.body_offset, bone.body_rotation);
+		const auto& body = bodies[i];
 
 		instance.bones[i] = s.build(std::format("Character.{}", bone.name))
 			.with<gse::physics::transform_component>({
@@ -867,10 +904,42 @@ auto sandbox::spawn_character(gse::scene& s, const gse::resource::handle<gse::sk
 	}
 	instance.bone_count = static_cast<std::uint32_t>(bone_count);
 
+	for (std::size_t i = 0; i < bone_count; ++i) {
+		const auto& bone = bones[i];
+		if (bone.parent == gse::skinned_model::no_parent) {
+			continue;
+		}
+
+		const auto& parent_body = bodies[bone.parent];
+		const auto& body = bodies[i];
+		const auto pivot = joints[i].position;
+
+		s.build(std::format("Character.{}.Joint", bone.name))
+			.with<gse::physics::joint_spec>({
+				.entity_a = instance.bones[bone.parent],
+				.entity_b = instance.bones[i],
+				.config = gse::physics::ball_joint{
+					.anchor_a = gse::inverse_rotate_vector(parent_body.orientation, pivot - parent_body.position),
+					.anchor_b = gse::inverse_rotate_vector(body.orientation, pivot - body.position),
+				},
+			});
+	}
+
 	return s.build("Character")
 		.with<gse::skeleton_instance_component>(instance)
 		.with<gse::clip_player_component>({
-			.clip = clip,
+			.layers = { gse::clip_layer{ .clip = clips.idle, .weight = 1.f } },
+			.layer_count = 1,
+		})
+		.with<sandbox::character_controller::component>({
+			.proxy = proxy_id,
+			.clips = clips,
+		})
+		.with<sandbox::orbit_camera::component>({
+			.target = proxy_id,
+			.stepped_views = true,
+			.active = true,
+			.free_look = true,
 		})
 		.identify();
 }

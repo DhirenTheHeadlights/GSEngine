@@ -5,6 +5,7 @@ import gse;
 import gse.system_manifest;
 
 import :client;
+import :character_controller;
 import :orbit_camera;
 import :piston;
 import :tumbler;
@@ -13,7 +14,8 @@ auto sandbox::client_system::init(gse::context& ctx) -> gse::async::task<> {
 	gse::system_manifest<
 		^^sandbox::orbit_camera::data, ^^sandbox::orbit_camera::attach, ^^sandbox::orbit_camera::update,
 		^^sandbox::tumbler::data, ^^sandbox::tumbler::run,
-		^^sandbox::piston::data, ^^sandbox::piston::run
+		^^sandbox::piston::data, ^^sandbox::piston::run,
+		^^sandbox::character_controller::data, ^^sandbox::character_controller::run
 	>{}.register_with(ctx);
 	gse::register_systems<^^gse::free_camera::system>(ctx);
 
