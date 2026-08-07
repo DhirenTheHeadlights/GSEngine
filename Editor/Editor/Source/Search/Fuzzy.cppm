@@ -4,27 +4,33 @@ import std;
 
 import :types;
 
-export namespace gse::ide::search {
+namespace gse::ide::search {
 	struct score_result {
 		bool matched = false;
 		float score = 0.f;
 		std::vector<match_range> ranges;
 	};
 
+	auto fuzzy_match(
+		std::string_view query_lower,
+		std::string_view candidate,
+		std::string_view candidate_lower,
+		bool capture_ranges = true
+	) -> score_result;
+
+	auto fuzzy_match_path(
+		std::string_view query_lower,
+		std::string_view rel,
+		std::string_view rel_lower,
+		bool capture_ranges = true
+	) -> score_result;
+}
+
+namespace gse::ide::search {
 	auto is_word_boundary(
 		std::string_view candidate,
 		std::size_t index
 	) -> bool;
-	auto fuzzy_match(
-		std::string_view query_lower,
-		std::string_view candidate,
-		std::string_view candidate_lower
-	) -> score_result;
-	auto fuzzy_match_path(
-		std::string_view query_lower,
-		std::string_view rel,
-		std::string_view rel_lower
-	) -> score_result;
 }
 
 auto gse::ide::search::is_word_boundary(const std::string_view candidate, const std::size_t index) -> bool {
@@ -49,7 +55,7 @@ auto gse::ide::search::is_word_boundary(const std::string_view candidate, const 
 	return false;
 }
 
-auto gse::ide::search::fuzzy_match(const std::string_view query_lower, const std::string_view candidate, const std::string_view candidate_lower) -> score_result {
+auto gse::ide::search::fuzzy_match(const std::string_view query_lower, const std::string_view candidate, const std::string_view candidate_lower, const bool capture_ranges) -> score_result {
 	score_result out;
 	if (query_lower.empty()) {
 		out.matched = true;
@@ -86,14 +92,16 @@ auto gse::ide::search::fuzzy_match(const std::string_view query_lower, const std
 		}
 		score += std::max(bonus, 0.1f);
 
-		if (!ranges.empty() && ranges.back().start + ranges.back().length == static_cast<std::uint32_t>(ci)) {
-			ranges.back().length += 1;
-		}
-		else {
-			ranges.push_back({
-				.start = static_cast<std::uint32_t>(ci),
-				.length = 1,
-			});
+		if (capture_ranges) {
+			if (!ranges.empty() && ranges.back().start + ranges.back().length == static_cast<std::uint32_t>(ci)) {
+				ranges.back().length += 1;
+			}
+			else {
+				ranges.push_back({
+					.start = static_cast<std::uint32_t>(ci),
+					.length = 1,
+				});
+			}
 		}
 
 		prev_match = ci;
@@ -112,12 +120,12 @@ auto gse::ide::search::fuzzy_match(const std::string_view query_lower, const std
 	return out;
 }
 
-auto gse::ide::search::fuzzy_match_path(const std::string_view query_lower, const std::string_view rel, const std::string_view rel_lower) -> score_result {
+auto gse::ide::search::fuzzy_match_path(const std::string_view query_lower, const std::string_view rel, const std::string_view rel_lower, const bool capture_ranges) -> score_result {
 	const std::size_t sep = rel_lower.find_last_of("/\\");
 	const std::size_t base = sep == std::string_view::npos ? 0 : sep + 1;
 
 	if (base < rel_lower.size()) {
-		score_result name = fuzzy_match(query_lower, rel.substr(base), rel_lower.substr(base));
+		score_result name = fuzzy_match(query_lower, rel.substr(base), rel_lower.substr(base), capture_ranges);
 		if (name.matched) {
 			for (match_range& range : name.ranges) {
 				range.start += static_cast<std::uint32_t>(base);
@@ -127,7 +135,7 @@ auto gse::ide::search::fuzzy_match_path(const std::string_view query_lower, cons
 		}
 	}
 
-	score_result full = fuzzy_match(query_lower, rel, rel_lower);
+	score_result full = fuzzy_match(query_lower, rel, rel_lower, capture_ranges);
 	if (full.matched) {
 		full.score *= 0.5f;
 	}

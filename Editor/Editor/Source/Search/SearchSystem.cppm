@@ -14,14 +14,17 @@ export namespace gse::ide::search_system {
 		[[= stable_shared]] std::unique_ptr<search::index_state> index;
 		file_watcher watcher;
 		time last_index_change{};
-		std::uint32_t last_build_gen = 0;
 		bool symbols_dirty = false;
-		bool build_was_running = false;
+		std::atomic<bool> watcher_polling = false;
+		std::atomic<time> next_watcher_poll{};
+		std::mutex watcher_changes_mutex;
 		std::vector<std::filesystem::path> watcher_changes;
 	};
 
 	[[= system_init{}]]
-	auto init(data& d) -> async::task<>;
+	auto init(
+		data& d
+	) -> async::task<>;
 
 	[[= system_frame{}]]
 	auto frame(
@@ -32,19 +35,17 @@ export namespace gse::ide::search_system {
 }
 
 namespace gse::ide::search_system {
-	auto is_symbol_source(const std::filesystem::path& path) -> bool;
+	auto poll_watcher(
+		data& d
+	) -> void;
 }
 
-auto gse::ide::search_system::is_symbol_source(const std::filesystem::path& path) -> bool {
-	static constexpr std::string_view extensions[] = {
-		".cpp", ".cppm", ".cc", ".cxx", ".ixx", ".c",
-		".h", ".hpp", ".hh", ".hxx", ".inl"
-	};
-	std::string extension = path.extension().native_encoded_string();
-	std::ranges::transform(extension, extension.begin(), [](const unsigned char c) {
-		return static_cast<char>(std::tolower(c));
+auto gse::ide::search_system::poll_watcher(data& d) -> void {
+	const auto finish = make_scope_exit([&] {
+		d.next_watcher_poll.store(system_clock::now<time>() + milliseconds(500.f), std::memory_order_release);
+		d.watcher_polling.store(false, std::memory_order_release);
 	});
-	return std::ranges::find(extensions, extension) != std::ranges::end(extensions);
+	d.watcher.poll_now();
 }
 
 auto gse::ide::search_system::init(data& d) -> async::task<> {
@@ -72,18 +73,21 @@ auto gse::ide::search_system::init(data& d) -> async::task<> {
 	if (std::filesystem::exists(config::token_plugin(), plugin_ec)) {
 		d.index->plugin_dll = config::token_plugin();
 	}
+	else {
+		log::println(
+			log::level::error,
+			log::category::general,
+			"search: token plugin '{}' is missing - the symbol index, hover, go-to-definition and semantic highlighting will all be empty. CMake only builds it when the toolchain provides cc1plus.exe.a, which needs a GCC configured with --enable-plugin.",
+			config::token_plugin().generic_display_string()
+		);
+	}
 
-	search::start_symbol_worker(*d.index);
-	search::request_symbol_build(*d.index);
-
-	task::post([index = d.index.get()] {
-		search::build_files_and_content(*index, index->roots);
-	});
 	for (const search::index_root& root : d.index->roots) {
 		const std::filesystem::path path = root.path;
 		d.watcher.watch_directory(
 			path,
 			[&d](const std::filesystem::path& changed) {
+				std::lock_guard lock(d.watcher_changes_mutex);
 				d.watcher_changes.push_back(changed);
 			},
 			{},
@@ -93,6 +97,12 @@ auto gse::ide::search_system::init(data& d) -> async::task<> {
 			}
 		);
 	}
+
+	search::start_symbol_worker(*d.index);
+	search::request_symbol_build(*d.index);
+	task::post([index = d.index.get()] {
+		search::build_files_and_content(*index, index->roots);
+	});
 	return {};
 }
 
@@ -101,21 +111,26 @@ auto gse::ide::search_system::frame(const context& ctx, data& d, const shared_vi
 		search::publish_file_build(*d.index);
 		search::publish_symbol_build(*d.index);
 		const time now = system_clock::now<time>();
-		if (d.index->files.loaded.load(std::memory_order_acquire)) {
-			d.watcher.poll();
+		if (d.index->files.loaded.load(std::memory_order_acquire) && now >= d.next_watcher_poll.load(std::memory_order_acquire) && !d.watcher_polling.exchange(true, std::memory_order_acq_rel)) {
+			task::post([&d] {
+				poll_watcher(d);
+			});
 		}
 		std::vector<std::filesystem::path> watcher_changes;
-		watcher_changes.swap(d.watcher_changes);
+		{
+			std::lock_guard lock(d.watcher_changes_mutex);
+			watcher_changes.swap(d.watcher_changes);
+		}
 		for (const std::filesystem::path& path : watcher_changes) {
 			search::update_file(*d.index, path);
-			if (is_symbol_source(path)) {
+			if (search::is_symbol_source(path)) {
 				d.symbols_dirty = true;
 				d.last_index_change = now;
 			}
 		}
 		for (const auto& req : ctx.read_channel<search::index_file_update_request>()) {
 			search::update_file(*d.index, req.path);
-			if (is_symbol_source(req.path)) {
+			if (search::is_symbol_source(req.path)) {
 				d.symbols_dirty = true;
 				d.last_index_change = system_clock::now<time>();
 			}
@@ -124,17 +139,7 @@ auto gse::ide::search_system::frame(const context& ctx, data& d, const shared_vi
 			d.index->merge_file_symbols(req.path, req.symbols, req.refs, req.params);
 		}
 
-		const std::uint32_t gen = build_d.game_generation;
-		if (gen != d.last_build_gen) {
-			d.last_build_gen = gen;
-			d.symbols_dirty = true;
-			d.last_index_change = {};
-		}
-		if (build_d.building) {
-			d.build_was_running = true;
-		}
-		else if (d.build_was_running) {
-			d.build_was_running = false;
+		if (!ctx.read_channel<build_runner::build_finished>().empty()) {
 			d.symbols_dirty = true;
 			d.last_index_change = {};
 		}
