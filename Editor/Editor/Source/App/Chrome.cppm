@@ -69,8 +69,23 @@ namespace gse::ide {
 		const search::index_state* m_index = nullptr;
 		gse::shared_view<gse::input::data> m_input;
 		std::optional<std::string> m_loc_label;
-		std::uint64_t m_loc_value = 0;
+		std::string m_loc_tooltip;
+		search::loc_counts m_loc_counts;
 	};
+
+	auto format_loc(
+		std::uint64_t lines
+	) -> std::string;
+
+	auto append_loc_row(
+		std::string& text,
+		std::string_view label,
+		const search::loc_group& group
+	) -> void;
+
+	auto describe_loc(
+		const search::loc_counts& counts
+	) -> std::string;
 
 	auto draw_search_bar(
 		gse::gui::builder& ui,
@@ -148,6 +163,44 @@ auto gse::ide::editor_screen::caption_exclusion_range(const gse::gui::draw_conte
 		.y0 = static_cast<int>(std::floor(full_rect.top() - span->second)),
 		.y1 = static_cast<int>(std::ceil(full_rect.top() - span->first)),
 	};
+}
+
+auto gse::ide::format_loc(const std::uint64_t lines) -> std::string {
+	std::string digits = std::to_string(lines);
+	std::string grouped;
+	grouped.reserve(digits.size() + digits.size() / 3);
+	for (const auto [index, digit] : std::views::enumerate(digits)) {
+		if (index > 0 && (digits.size() - static_cast<std::size_t>(index)) % 3 == 0) {
+			grouped.push_back(',');
+		}
+		grouped.push_back(digit);
+	}
+	return grouped;
+}
+
+auto gse::ide::append_loc_row(std::string& text, const std::string_view label, const search::loc_group& group) -> void {
+	if (group.cpp == 0 && group.slang == 0) {
+		return;
+	}
+	text += std::format("\n{}", label);
+	if (group.cpp > 0) {
+		text += std::format(" \xC2\xB7 {} C++", format_loc(group.cpp));
+	}
+	if (group.slang > 0) {
+		text += std::format(" \xC2\xB7 {} Slang", format_loc(group.slang));
+	}
+}
+
+auto gse::ide::describe_loc(const search::loc_counts& counts) -> std::string {
+	std::string text = std::format("{} indexed source lines", format_loc(search::loc_total(counts)));
+	append_loc_row(text, "Engine", counts.engine);
+	append_loc_row(text, "Editor", counts.editor);
+	append_loc_row(text, project::current().valid ? std::string_view(project::current().name) : std::string_view("Game"), counts.project);
+	append_loc_row(text, "Total", {
+		.cpp = counts.engine.cpp + counts.editor.cpp + counts.project.cpp,
+		.slang = counts.engine.slang + counts.editor.slang + counts.project.slang,
+	});
+	return text;
 }
 
 auto gse::ide::rebuild_glyph() -> std::span<const gse::gui::symbol::stroke> {
@@ -248,10 +301,12 @@ auto gse::ide::editor_screen::draw_caption(gse::gui::builder& ui, const gse::rec
 		return controls_width;
 	}
 
-	if (const std::uint64_t loc = m_index->cpp_loc.load(std::memory_order_acquire)) {
-		if (m_loc_value != loc) {
-			m_loc_value = loc;
+	const search::loc_counts counts = m_index->loc.load();
+	if (const std::uint64_t loc = search::loc_total(counts)) {
+		if (m_loc_counts != counts) {
+			m_loc_counts = counts;
 			m_loc_label = std::format("{}k LOC", (loc + 500) / 1000);
+			m_loc_tooltip = describe_loc(counts);
 		}
 		const float title_w = text_view->width(title(), sty.font_size);
 		const float badge_pad = sty.padding * 0.5f;
@@ -275,6 +330,9 @@ auto gse::ide::editor_screen::draw_caption(gse::gui::builder& ui, const gse::rec
 			.color = sty.color_accent,
 			.clip_rect = badge_rect,
 		});
+		if (ctx.hovers(badge_rect)) {
+			ctx.set_tooltip(gse::gui::ids::make("##chrome_loc"), m_loc_tooltip);
+		}
 	}
 
 	std::string status;
