@@ -2,7 +2,15 @@ The style for this codebase is the STL style. We do, however, prefix private var
 
 Do NOT put comments in your code. The code should be self documenting.
 
-See `.Codex/STYLEGUIDE.md` for the full style guide.
+See `docs/STYLEGUIDE.md` for the full style guide.
+
+## Function Signature Layout
+
+- Declarations with parameters always wrap: one parameter per line and `)` on its own line.
+- Definitions never wrap their parameter list.
+- Zero-parameter declarations remain inline as `()`.
+- Put one blank line between adjacent function declarations.
+- This applies to constructors, operators, static functions, and templates.
 
 ## Unit Types
 
