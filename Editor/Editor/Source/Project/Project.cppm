@@ -22,6 +22,7 @@ export namespace gse::ide::project {
 		std::filesystem::path root;
 		std::filesystem::path source;
 		std::filesystem::path assets;
+		std::filesystem::path art;
 		std::filesystem::path state;
 		std::filesystem::path engine;
 		vec4f accent{ 0.f, 0.f, 0.f, 0.f };
