@@ -156,8 +156,6 @@ auto gse::ide::spawn::run_capture(
 	const std::wstring& working_dir,
 	const std::filesystem::path& path_prefix
 ) -> int {
-	stream.terminated.store(false, std::memory_order_release);
-
 	win32::SECURITY_ATTRIBUTES attributes{
 		.nLength = sizeof(win32::SECURITY_ATTRIBUTES),
 		.bInheritHandle = 1,
