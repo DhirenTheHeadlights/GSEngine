@@ -25,6 +25,7 @@ export namespace gse::gui::draw {
 		std::string_view name,
 		id& hot_widget_id,
 		id& active_widget_id,
+		bool enabled = true,
 		resource::handle<font> font = {}
 	) -> bool;
 
@@ -52,7 +53,7 @@ export namespace gse::gui {
 	};
 }
 
-auto gse::gui::draw::button(const draw_context& ctx, const std::string_view name, id& hot_widget_id, id& active_widget_id, const resource::handle<font> font) -> bool {
+auto gse::gui::draw::button(const draw_context& ctx, const std::string_view name, id& hot_widget_id, id& active_widget_id, const bool enabled, const resource::handle<font> font) -> bool {
 	const auto fnt = font.valid() ? font : ctx.fonts.text;
 	const auto fnt_view = fnt.resolve();
 	if (!ctx.current_menu) {
@@ -69,7 +70,7 @@ auto gse::gui::draw::button(const draw_context& ctx, const std::string_view name
 		{ content_rect.width(), widget_height }
 	);
 
-	const bool activated_in_rect = button_in_rect(ctx, name, name, button_rect, hot_widget_id, active_widget_id, true, fnt);
+	const bool activated_in_rect = button_in_rect(ctx, name, name, button_rect, hot_widget_id, active_widget_id, enabled, fnt);
 	ctx.layout_cursor.y() -= widget_height + ctx.style.padding;
 	return activated_in_rect;
 }
@@ -79,23 +80,18 @@ auto gse::gui::draw::button_in_rect(const draw_context& ctx, const std::string_v
 	const auto fnt_view = fnt.resolve();
 	const id widget_id = ids::make(key.empty() ? label : key);
 
-	const bool hovered = enabled && ctx.hovers(button_rect);
-	const bool released = ctx.mouse_released();
+	const auto btn = interaction::press_in_rect(ctx, hot_widget_id, active_widget_id, widget_id, button_rect, enabled);
 
-	interaction::mark_hot(hot_widget_id, widget_id, hovered);
-	const bool activated = enabled && interaction::activate_on_click(active_widget_id, widget_id, hovered, ctx.mouse_pressed_for(button_rect), released);
-
-	vec4f target_color = enabled ? ctx.style.color_button_background : ctx.style.color_widget_background;
-	if (enabled && active_widget_id == widget_id) {
-		target_color = ctx.style.color_widget_active;
-	}
-	else if (enabled && hot_widget_id == widget_id) {
-		target_color = ctx.style.color_button_hovered;
-	}
+	const vec4f target_color = btn.color({
+		.idle = ctx.style.color_button_background,
+		.hot = ctx.style.color_button_hovered,
+		.active = ctx.style.color_widget_active,
+		.disabled = ctx.style.color_widget_background,
+	});
 
 	ctx.queue_sprite({
 		.rect = button_rect,
-		.color = ctx.animated_color(widget_id, target_color),
+		.color = ctx.animated_color(btn.widget, target_color),
 		.texture = ctx.blank_texture,
 		.corner_radius = ctx.style.corner_radius
 	});
@@ -113,7 +109,7 @@ auto gse::gui::draw::button_in_rect(const draw_context& ctx, const std::string_v
 		.clip_rect = button_rect
 	});
 
-	return activated;
+	return btn.activated;
 }
 
 auto gse::gui::button::draw(const draw_context& ctx, const params p, id& hot, id& active, id&) -> bool {

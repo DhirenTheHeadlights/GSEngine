@@ -16,6 +16,7 @@ import gse.shell;
 import :types;
 import :ids;
 import :builder;
+import :interaction;
 import :menu_stack;
 import :styles;
 import :layout_ops;
@@ -71,7 +72,7 @@ export namespace gse::gui {
 		) const -> void;
 
 		auto draw_footer(
-			draw_context& ctx,
+			builder& ui,
 			const gse::rect_t<gse::vec2f>& rect
 		) -> void;
 
@@ -88,7 +89,7 @@ export namespace gse::gui {
 		) -> void;
 
 		static auto draw_footer_button(
-			draw_context& ctx,
+			builder& ui,
 			const gse::rect_t<gse::vec2f>& rect,
 			std::string_view label,
 			bool enabled,
@@ -295,7 +296,7 @@ auto gse::gui::settings_screen::build(builder& ui, nav& n) -> void {
 		gse::settings::panel(ui, m_panel_state, m_channels, *m_save_reg, m_selected_category);
 	}
 
-	draw_footer(ctx, footer);
+	draw_footer(ui, footer);
 }
 
 auto gse::gui::settings_screen::draw_scope_entry(draw_context& ctx, const gse::rect_t<gse::vec2f>& rect, const std::string_view label, const std::filesystem::path& path) -> void {
@@ -394,19 +395,20 @@ auto gse::gui::settings_screen::draw_scope_paths(draw_context& ctx, const gse::r
 	}
 }
 
-auto gse::gui::settings_screen::draw_footer_button(draw_context& ctx, const gse::rect_t<gse::vec2f>& rect, const std::string_view label, const bool enabled, const bool primary, const gse::id key) -> bool {
+auto gse::gui::settings_screen::draw_footer_button(builder& ui, const gse::rect_t<gse::vec2f>& rect, const std::string_view label, const bool enabled, const bool primary, const gse::id key) -> bool {
+	draw_context& ctx = ui.ctx;
 	const auto& sty = ctx.style;
-	const bool hovered = enabled && ctx.hovers(rect);
+	const auto btn = interaction::press_in_rect(ctx, ui.hot_widget_id, ui.active_widget_id, key, rect, enabled);
 
-	gse::vec4f base_color = primary ? sty.color_widget_active : sty.color_button_background;
-	if (!enabled) {
-		base_color = sty.color_button_background;
-		base_color.w() = base_color.w() * 0.4f;
-	}
-	gse::vec4f target_color = base_color;
-	if (hovered) {
-		target_color = primary ? sty.color_accent : sty.color_button_hovered;
-	}
+	gse::vec4f disabled_color = sty.color_button_background;
+	disabled_color.w() = disabled_color.w() * 0.4f;
+
+	const gse::vec4f target_color = btn.color({
+		.idle = primary ? sty.color_widget_active : sty.color_button_background,
+		.hot = primary ? sty.color_accent : sty.color_button_hovered,
+		.active = primary ? sty.color_accent : sty.color_button_hovered,
+		.disabled = disabled_color,
+	});
 
 	ctx.queue_sprite({
 		.rect = rect,
@@ -427,10 +429,11 @@ auto gse::gui::settings_screen::draw_footer_button(draw_context& ctx, const gse:
 		.clip_rect = rect,
 	});
 
-	return enabled && ctx.mouse_pressed_for(rect);
+	return btn.activated;
 }
 
-auto gse::gui::settings_screen::draw_footer(draw_context& ctx, const gse::rect_t<gse::vec2f>& rect) -> void {
+auto gse::gui::settings_screen::draw_footer(builder& ui, const gse::rect_t<gse::vec2f>& rect) -> void {
+	draw_context& ctx = ui.ctx;
 	const auto& sty = ctx.style;
 	namespace lo = gse::gui::layout;
 
@@ -495,7 +498,7 @@ auto gse::gui::settings_screen::draw_footer(draw_context& ctx, const gse::rect_t
 			{ cursor_x, button_band.top() },
 			{ sty.accent_button_min_width, sty.button_height }
 		);
-		if (draw_footer_button(ctx, restart_rect, "Restart Now", true, true, gse::gui::ids::make("settings.footer.restart"))) {
+		if (draw_footer_button(ui, restart_rect, "Restart Now", true, true, gse::gui::ids::make("settings.footer.restart"))) {
 			m_save_reg->trigger_restart();
 		}
 		cursor_x -= sty.button_spacing;
@@ -506,7 +509,7 @@ auto gse::gui::settings_screen::draw_footer(draw_context& ctx, const gse::rect_t
 		{ cursor_x, button_band.top() },
 		{ sty.button_min_width, sty.button_height }
 	);
-	if (draw_footer_button(ctx, apply_rect, "Apply", can_apply, true, gse::gui::ids::make("settings.footer.apply"))) {
+	if (draw_footer_button(ui, apply_rect, "Apply", can_apply, true, gse::gui::ids::make("settings.footer.apply"))) {
 		m_panel_state.apply_all(m_channels);
 	}
 	cursor_x -= sty.button_spacing;
@@ -516,7 +519,7 @@ auto gse::gui::settings_screen::draw_footer(draw_context& ctx, const gse::rect_t
 		{ cursor_x, button_band.top() },
 		{ sty.button_min_width, sty.button_height }
 	);
-	if (draw_footer_button(ctx, discard_rect, "Discard", can_apply, false, gse::gui::ids::make("settings.footer.discard"))) {
+	if (draw_footer_button(ui, discard_rect, "Discard", can_apply, false, gse::gui::ids::make("settings.footer.discard"))) {
 		m_panel_state.discard_all();
 	}
 }

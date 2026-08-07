@@ -139,17 +139,16 @@ namespace gse::ide {
 		std::string_view label;
 		std::string_view key;
 		bool danger = false;
+		bool enabled = true;
 	};
 
 	auto document_prompt_button(
 		gse::gui::builder& ui,
-		const gse::input::state& input,
 		const document_prompt_button_params& params
 	) -> bool;
 
 	auto draw_document_prompt(
 		gse::gui::builder& ui,
-		const gse::input::state& input,
 		workspace::data& ws,
 		const rectf& body,
 		gse::channel_writer channels
@@ -1553,20 +1552,21 @@ auto gse::ide::draw_quickfix_tooltip(const gse::gui::draw_context& ctx, const re
 	return layout;
 }
 
-auto gse::ide::document_prompt_button(gse::gui::builder& ui, const gse::input::state& input, const document_prompt_button_params& params) -> bool {
+auto gse::ide::document_prompt_button(gse::gui::builder& ui, const document_prompt_button_params& params) -> bool {
 	const gse::gui::draw_context& ctx = ui.ctx;
 	const gse::gui::style& style = ctx.style;
 	const auto text_view = ctx.fonts.text.resolve();
-	const bool hovered = ctx.hovers(params.rect);
 	const gse::id widget_id = gse::gui::ids::make(params.key);
-	const bool released = input.mouse_button_released(gse::mouse_button::button_1);
-	gse::gui::interaction::mark_hot(ui.hot_widget_id, widget_id, hovered);
-	const bool clicked = gse::gui::interaction::activate_on_click(ui.active_widget_id, widget_id, hovered, ctx.mouse_pressed_for(params.rect), released);
-	const gse::vec4f base = params.danger ? gse::vec4f{ 0.62f, 0.22f, 0.22f, 1.f } : style.color_input_background;
-	const gse::vec4f hot = params.danger ? gse::vec4f{ 0.78f, 0.28f, 0.28f, 1.f } : style.color_widget_hovered;
+	const auto btn = gse::gui::interaction::press_in_rect(ctx, ui.hot_widget_id, ui.active_widget_id, widget_id, params.rect, params.enabled);
+
 	ctx.queue_sprite({
 		.rect = params.rect,
-		.color = ui.active_widget_id == widget_id ? style.color_widget_active : (hovered ? hot : base),
+		.color = btn.color({
+			.idle = params.danger ? gse::vec4f{ 0.62f, 0.22f, 0.22f, 1.f } : style.color_input_background,
+			.hot = params.danger ? gse::vec4f{ 0.78f, 0.28f, 0.28f, 1.f } : style.color_widget_hovered,
+			.active = style.color_widget_active,
+			.disabled = style.color_widget_background,
+		}),
 		.texture = ctx.blank_texture,
 		.corner_radius = style.corner_radius,
 	});
@@ -1575,13 +1575,13 @@ auto gse::ide::document_prompt_button(gse::gui::builder& ui, const gse::input::s
 		.text = params.label,
 		.position = { params.rect.center().x() - text_view->width(params.label, style.font_size) * 0.5f, params.rect.center().y() + text_view->vertical_center_offset(style.font_size) },
 		.scale = style.font_size,
-		.color = style.color_text,
+		.color = params.enabled ? style.color_text : style.color_text_disabled,
 		.clip_rect = params.rect,
 	});
-	return clicked;
+	return btn.activated;
 }
 
-auto gse::ide::draw_document_prompt(gse::gui::builder& ui, const gse::input::state& input, workspace::data& ws, const rectf& body, gse::channel_writer channels) -> void {
+auto gse::ide::draw_document_prompt(gse::gui::builder& ui, workspace::data& ws, const rectf& body, gse::channel_writer channels) -> void {
 	if (!ws.pending_document_prompt) {
 		return;
 	}
@@ -1654,18 +1654,18 @@ auto gse::ide::draw_document_prompt(gse::gui::builder& ui, const gse::input::sta
 	const rectf cancel_button = rectf::from_position_size({ dialog.left() + pad, dialog.bottom() + pad + button_height }, { button_width, button_height });
 	const rectf secondary_button = rectf::from_position_size({ cancel_button.right() + pad, cancel_button.top() }, { button_width, button_height });
 	const rectf primary_button = rectf::from_position_size({ secondary_button.right() + pad, cancel_button.top() }, { button_width, button_height });
-	bool cancel = document_prompt_button(ui, input, {
+	bool cancel = document_prompt_button(ui, {
 		.rect = cancel_button,
 		.label = "Cancel",
 		.key = "##document_prompt_cancel",
 	});
-	const bool secondary = document_prompt_button(ui, input, {
+	const bool secondary = document_prompt_button(ui, {
 		.rect = secondary_button,
 		.label = conflict ? "Reload Disk" : "Discard",
 		.key = "##document_prompt_secondary",
 		.danger = !conflict,
 	});
-	const bool primary = document_prompt_button(ui, input, {
+	const bool primary = document_prompt_button(ui, {
 		.rect = primary_button,
 		.label = conflict ? "Overwrite Disk" : "Save",
 		.key = "##document_prompt_primary",
@@ -1865,7 +1865,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& i
 	if (close_requested.exists()) {
 		workspace::close_document(ws, close_requested);
 	}
-	draw_document_prompt(ui, input, ws, body, channels);
+	draw_document_prompt(ui, ws, body, channels);
 
 	const float requested_status_h = text_view->line_height(font_sz) + pad * 0.5f;
 	const float content_h = std::max(0.f, body.height() - tab_bar_h);

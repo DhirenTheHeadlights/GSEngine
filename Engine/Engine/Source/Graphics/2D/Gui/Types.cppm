@@ -166,7 +166,6 @@ export namespace gse::gui {
 		bool grabbed = false;
 		bool chrome_drawn_this_frame = false;
 		float dock_split_ratio = 0.5f;
-		resize_handle active_resize_handle = resize_handle::none;
 		dock::location docked_to = dock::location::none;
 		bool fixed = false;
 		bool bare = false;

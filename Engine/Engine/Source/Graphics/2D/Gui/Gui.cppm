@@ -300,7 +300,8 @@ export namespace gse::gui {
 		const rectf& rect,
 		const std::string& key,
 		std::span<const symbol::stroke> glyph,
-		vec4f hover_color
+		vec4f hover_color,
+		bool enabled = true
 	) -> bool;
 
 	auto process_screen(
