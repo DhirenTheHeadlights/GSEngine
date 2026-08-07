@@ -635,6 +635,7 @@ export namespace gse::vulkan {
 		auto create_buffer(
 			const vk::BufferCreateInfo& buffer_info,
 			const void* data,
+			bool readback,
 			std::string_view tag,
 			const std::source_location& loc
 		) -> gpu::buffer;
@@ -661,7 +662,8 @@ export namespace gse::vulkan {
 		auto clean_up() -> void;
 
 		static auto memory_flag_preferences(
-			vk::BufferUsageFlags usage
+			vk::BufferUsageFlags usage,
+			bool readback
 		) -> std::vector<vk::MemoryPropertyFlags>;
 
 		auto host_transition_image_to_general(

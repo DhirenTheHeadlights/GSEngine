@@ -1079,7 +1079,7 @@ auto gse::vulkan::device::query_fault_info(gpu::device_fault_counts& counts, gpu
 	return from_vk(vk_result);
 }
 
-auto gse::vulkan::device::create_buffer(const vk::BufferCreateInfo& buffer_info, const void* data, const std::string_view tag, const std::source_location& loc) -> gpu::buffer {
+auto gse::vulkan::device::create_buffer(const vk::BufferCreateInfo& buffer_info, const void* data, const bool readback, const std::string_view tag, const std::source_location& loc) -> gpu::buffer {
 	auto actual_buffer_info = buffer_info;
 	constexpr auto device_addressable_usage = vk::BufferUsageFlagBits::eUniformBuffer |
 		vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eIndirectBuffer |
@@ -1115,7 +1115,7 @@ auto gse::vulkan::device::create_buffer(const vk::BufferCreateInfo& buffer_info,
 		}
 	}
 	else {
-		for (const auto property_preferences = memory_flag_preferences(actual_buffer_info.usage); const auto& props : property_preferences) {
+		for (const auto property_preferences = memory_flag_preferences(actual_buffer_info.usage, readback); const auto& props : property_preferences) {
 			if (auto expected_alloc = allocate(requirements, props, tag, loc, needs_device_address)) {
 				alloc = std::move(*expected_alloc);
 				success = true;
@@ -1175,7 +1175,7 @@ auto gse::vulkan::device::create_buffer(const gpu::buffer_desc& desc, const std:
 		.size = desc.size,
 		.usage = to_vk(desc.usage),
 	};
-	auto buf = create_buffer(vk_info, desc.data, tag, loc);
+	auto buf = create_buffer(vk_info, desc.data, desc.readback, tag, loc);
 	if (!desc.bindless) {
 		return buf;
 	}
@@ -2325,8 +2325,15 @@ auto gse::vulkan::device::clean_up() -> void {
 	m_pools.clear();
 }
 
-auto gse::vulkan::device::memory_flag_preferences(const vk::BufferUsageFlags usage) -> std::vector<vk::MemoryPropertyFlags> {
+auto gse::vulkan::device::memory_flag_preferences(const vk::BufferUsageFlags usage, const bool readback) -> std::vector<vk::MemoryPropertyFlags> {
 	using mpf = vk::MemoryPropertyFlagBits;
+
+	if (readback) {
+		return {
+			mpf::eHostVisible | mpf::eHostCoherent | mpf::eHostCached,
+			mpf::eHostVisible | mpf::eHostCoherent,
+		};
+	}
 
 	if (usage & vk::BufferUsageFlagBits::eVertexBuffer || usage & vk::BufferUsageFlagBits::eIndexBuffer) {
 		return {
