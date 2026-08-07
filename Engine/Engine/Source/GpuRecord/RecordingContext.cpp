@@ -224,7 +224,7 @@ auto gse::gpu::recording_context::bound_shader_stages() const -> gpu::pipeline_s
 	if (m_bound_is_compute) {
 		return gpu::pipeline_stage_flag::compute_shader;
 	}
-	return gpu::pipeline_stage_flag::vertex_shader | gpu::pipeline_stage_flag::fragment_shader | gpu::pipeline_stage_flag::mesh_shader | gpu::pipeline_stage_flag::task_shader;
+	return { gpu::pipeline_stage_flag::vertex_shader, gpu::pipeline_stage_flag::fragment_shader, gpu::pipeline_stage_flag::mesh_shader, gpu::pipeline_stage_flag::task_shader };
 }
 
 auto gse::gpu::recording_context::emit_intra_pass_barrier(const resource_ref& ref, const gpu::pipeline_stage_flags stages, const gpu::access_flags access) -> void {
@@ -232,19 +232,19 @@ auto gse::gpu::recording_context::emit_intra_pass_barrier(const resource_ref& re
 		return;
 	}
 
-	constexpr gpu::access_flags write_mask = gpu::access_flag::shader_write | gpu::access_flag::shader_storage_write |
-		gpu::access_flag::color_attachment_write | gpu::access_flag::depth_stencil_attachment_write |
-		gpu::access_flag::transfer_write | gpu::access_flag::host_write | gpu::access_flag::memory_write |
-		gpu::access_flag::acceleration_structure_write;
+	constexpr gpu::access_flags write_mask{ gpu::access_flag::shader_write, gpu::access_flag::shader_storage_write,
+		gpu::access_flag::color_attachment_write, gpu::access_flag::depth_stencil_attachment_write,
+		gpu::access_flag::transfer_write, gpu::access_flag::host_write, gpu::access_flag::memory_write,
+		gpu::access_flag::acceleration_structure_write };
 
-	constexpr gpu::pipeline_stage_flags graphics_mask = gpu::pipeline_stage_flag::vertex_input |
-		gpu::pipeline_stage_flag::vertex_shader | gpu::pipeline_stage_flag::tessellation_control |
-		gpu::pipeline_stage_flag::tessellation_evaluation | gpu::pipeline_stage_flag::geometry_shader |
-		gpu::pipeline_stage_flag::fragment_shader | gpu::pipeline_stage_flag::early_fragment_tests |
-		gpu::pipeline_stage_flag::late_fragment_tests | gpu::pipeline_stage_flag::color_attachment_output |
-		gpu::pipeline_stage_flag::all_graphics | gpu::pipeline_stage_flag::index_input |
-		gpu::pipeline_stage_flag::vertex_attribute_input | gpu::pipeline_stage_flag::pre_rasterization_shaders |
-		gpu::pipeline_stage_flag::mesh_shader | gpu::pipeline_stage_flag::task_shader;
+	constexpr gpu::pipeline_stage_flags graphics_mask{ gpu::pipeline_stage_flag::vertex_input,
+		gpu::pipeline_stage_flag::vertex_shader, gpu::pipeline_stage_flag::tessellation_control,
+		gpu::pipeline_stage_flag::tessellation_evaluation, gpu::pipeline_stage_flag::geometry_shader,
+		gpu::pipeline_stage_flag::fragment_shader, gpu::pipeline_stage_flag::early_fragment_tests,
+		gpu::pipeline_stage_flag::late_fragment_tests, gpu::pipeline_stage_flag::color_attachment_output,
+		gpu::pipeline_stage_flag::all_graphics, gpu::pipeline_stage_flag::index_input,
+		gpu::pipeline_stage_flag::vertex_attribute_input, gpu::pipeline_stage_flag::pre_rasterization_shaders,
+		gpu::pipeline_stage_flag::mesh_shader, gpu::pipeline_stage_flag::task_shader };
 
 	const auto it = m_last_access.find(ref.ptr);
 	if (it == m_last_access.end()) {
@@ -346,10 +346,10 @@ auto gse::gpu::recording_context::finalize_pass() -> void {
 		}
 	}
 
-	constexpr gpu::access_flags write_mask = gpu::access_flag::shader_write | gpu::access_flag::shader_storage_write |
-		gpu::access_flag::color_attachment_write | gpu::access_flag::depth_stencil_attachment_write |
-		gpu::access_flag::transfer_write | gpu::access_flag::host_write | gpu::access_flag::memory_write |
-		gpu::access_flag::acceleration_structure_write;
+	constexpr gpu::access_flags write_mask{ gpu::access_flag::shader_write, gpu::access_flag::shader_storage_write,
+		gpu::access_flag::color_attachment_write, gpu::access_flag::depth_stencil_attachment_write,
+		gpu::access_flag::transfer_write, gpu::access_flag::host_write, gpu::access_flag::memory_write,
+		gpu::access_flag::acceleration_structure_write };
 
 	for (const auto& [ref, stages, access] : m_touched) {
 		const bool has_writes = (access & write_mask).bits() != 0;
@@ -418,7 +418,7 @@ auto gse::gpu::recording_context::build_acceleration_structure(const gpu::accele
 			.type = resource_type::acceleration_structure,
 		},
 		gpu::pipeline_stage_flag::acceleration_structure_build,
-		gpu::access_flag::acceleration_structure_read | gpu::access_flag::acceleration_structure_write
+		{ gpu::access_flag::acceleration_structure_read, gpu::access_flag::acceleration_structure_write }
 	);
 	m_recorder.build_acceleration_structures(build_info, range_infos);
 }
@@ -465,7 +465,7 @@ auto gse::gpu::recording_context::capture_swapchain(const gpu::swap_chain& swapc
 		.src_stages = gpu::pipeline_stage_flag::transfer,
 		.src_access = gpu::access_flag::transfer_read,
 		.dst_stages = gpu::pipeline_stage_flag::color_attachment_output,
-		.dst_access = gpu::access_flag::color_attachment_write | gpu::access_flag::color_attachment_read,
+		.dst_access = { gpu::access_flag::color_attachment_write, gpu::access_flag::color_attachment_read },
 		.image = gpu_image,
 		.aspects = gpu::image_aspect_flag::color,
 	};
@@ -531,7 +531,7 @@ auto gse::gpu::recording_context::blit_swapchain_to_image(const gpu::swap_chain&
 		.src_stages = gpu::pipeline_stage_flag::transfer,
 		.src_access = gpu::access_flag::transfer_read,
 		.dst_stages = gpu::pipeline_stage_flag::color_attachment_output,
-		.dst_access = gpu::access_flag::color_attachment_write | gpu::access_flag::color_attachment_read,
+		.dst_access = { gpu::access_flag::color_attachment_write, gpu::access_flag::color_attachment_read },
 		.image = src_image,
 		.aspects = gpu::image_aspect_flag::color,
 	};
@@ -539,7 +539,7 @@ auto gse::gpu::recording_context::blit_swapchain_to_image(const gpu::swap_chain&
 	const gpu::image_barrier dst_to_read{
 		.src_stages = gpu::pipeline_stage_flag::transfer,
 		.src_access = gpu::access_flag::transfer_write,
-		.dst_stages = gpu::pipeline_stage_flag::compute_shader | gpu::pipeline_stage_flag::fragment_shader,
+		.dst_stages = { gpu::pipeline_stage_flag::compute_shader, gpu::pipeline_stage_flag::fragment_shader },
 		.dst_access = gpu::access_flag::shader_sampled_read,
 		.image = dst.handle(),
 		.aspects = gpu::image_aspect_flag::color,

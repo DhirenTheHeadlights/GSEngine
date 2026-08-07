@@ -51,7 +51,7 @@ auto gse::gpu::build_blas_in_place(gpu::device& device, const acceleration_struc
 		.src_stages = pipeline_stage_flag::acceleration_structure_build,
 		.src_access = access_flag::acceleration_structure_write,
 		.dst_stages = pipeline_stage_flag::acceleration_structure_build,
-		.dst_access = access_flag::acceleration_structure_read | access_flag::acceleration_structure_write,
+		.dst_access = { access_flag::acceleration_structure_read, access_flag::acceleration_structure_write },
 	};
 	rec.pipeline_barrier(dependency_info{
 		.memory_barriers = std::span(&post_barrier, 1)
@@ -127,8 +127,8 @@ auto gse::gpu::rebuild_tlas(gpu::device& device, tlas& t, const std::span<const 
 	const memory_barrier barrier{
 		.src_stages = pipeline_stage_flag::acceleration_structure_build,
 		.src_access = access_flag::acceleration_structure_write,
-		.dst_stages = pipeline_stage_flag::acceleration_structure_build | pipeline_stage_flag::fragment_shader | pipeline_stage_flag::compute_shader,
-		.dst_access = access_flag::acceleration_structure_read | access_flag::acceleration_structure_write,
+		.dst_stages = { pipeline_stage_flag::acceleration_structure_build, pipeline_stage_flag::fragment_shader, pipeline_stage_flag::compute_shader },
+		.dst_access = { access_flag::acceleration_structure_read, access_flag::acceleration_structure_write },
 	};
 	rec.pipeline_barrier(dependency_info{
 		.memory_barriers = std::span(&barrier, 1)
@@ -208,8 +208,8 @@ auto gse::gpu::build_tlas_in_place(gpu::device& device, tlas& t, const std::uint
 	const memory_barrier post_barrier{
 		.src_stages = pipeline_stage_flag::acceleration_structure_build,
 		.src_access = access_flag::acceleration_structure_write,
-		.dst_stages = pipeline_stage_flag::acceleration_structure_build | pipeline_stage_flag::fragment_shader | pipeline_stage_flag::compute_shader,
-		.dst_access = access_flag::acceleration_structure_read | access_flag::acceleration_structure_write,
+		.dst_stages = { pipeline_stage_flag::acceleration_structure_build, pipeline_stage_flag::fragment_shader, pipeline_stage_flag::compute_shader },
+		.dst_access = { access_flag::acceleration_structure_read, access_flag::acceleration_structure_write },
 	};
 	rec.pipeline_barrier(dependency_info{
 		.memory_barriers = std::span(&post_barrier, 1)

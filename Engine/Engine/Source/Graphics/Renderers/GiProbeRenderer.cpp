@@ -91,7 +91,7 @@ auto gse::renderer::gi_probe::recreate_atlas(const shared_view<gpu::context::dat
 		{
 			.size = ext,
 			.format = gpu::image_format::r16g16b16a16_sfloat,
-			.usage = gpu::image_flag::storage | gpu::image_flag::sampled,
+			.usage = { gpu::image_flag::storage, gpu::image_flag::sampled },
 			.bindless = true,
 		},
 		"gi_irradiance_atlas"

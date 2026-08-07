@@ -151,7 +151,7 @@ auto gse::renderer::bloom::recreate_mip_chain(const shared_view<gpu::context::da
 				{
 					.size = extents[i],
 					.format = gpu::image_format::r16g16b16a16_sfloat,
-					.usage = gpu::image_flag::storage | gpu::image_flag::sampled,
+					.usage = { gpu::image_flag::storage, gpu::image_flag::sampled },
 					.bindless = true
 				},
 				std::format("bloom_down_{}", i)
@@ -161,7 +161,7 @@ auto gse::renderer::bloom::recreate_mip_chain(const shared_view<gpu::context::da
 				{
 					.size = extents[i],
 					.format = gpu::image_format::r16g16b16a16_sfloat,
-					.usage = gpu::image_flag::storage | gpu::image_flag::sampled,
+					.usage = { gpu::image_flag::storage, gpu::image_flag::sampled },
 					.bindless = true
 				},
 				std::format("bloom_up_{}", i)

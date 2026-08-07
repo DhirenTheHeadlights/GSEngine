@@ -38,9 +38,6 @@ export namespace gse::gpu {
 	};
 
 	using build_acceleration_structure_flags = gse::flags<build_acceleration_structure_flag>;
-	constexpr auto operator|(build_acceleration_structure_flag a, build_acceleration_structure_flag b) -> build_acceleration_structure_flags {
-		return build_acceleration_structure_flags(a) | b;
-	}
 
 	enum class geometry_flag : std::uint8_t {
 		opaque = 1 << 0,
@@ -48,9 +45,6 @@ export namespace gse::gpu {
 	};
 
 	using geometry_flags = gse::flags<geometry_flag>;
-	constexpr auto operator|(geometry_flag a, geometry_flag b) -> geometry_flags {
-		return geometry_flags(a) | b;
-	}
 
 	struct acceleration_structure_geometry_triangles_data {
 		vertex_format vertex_format = vertex_format::r32g32b32_sfloat;

@@ -39,7 +39,7 @@ namespace gse::renderer::scene_snapshot {
 				{
 					.size = extent,
 					.format = gpu_s.swapchain->format(),
-					.usage = gpu::image_flag::sampled | gpu::image_flag::transfer_dst,
+					.usage = { gpu::image_flag::sampled, gpu::image_flag::transfer_dst },
 				}
 			);
 

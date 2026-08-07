@@ -19,10 +19,10 @@ auto gse::gpu::transition_image_to(gpu::device& dev, image& img) -> sync_token {
 	auto cmd = begin_transient(dev, queue_id::graphics, "transient.image_transition");
 
 	const auto dst_stages = is_depth
-		? (pipeline_stage_flag::early_fragment_tests | pipeline_stage_flag::late_fragment_tests)
+		? pipeline_stage_flags{ pipeline_stage_flag::early_fragment_tests, pipeline_stage_flag::late_fragment_tests }
 		: pipeline_stage_flags{ pipeline_stage_flag::all_commands };
 	const auto dst_access = is_depth
-		? (access_flag::depth_stencil_attachment_write | access_flag::depth_stencil_attachment_read)
+		? access_flags{ access_flag::depth_stencil_attachment_write, access_flag::depth_stencil_attachment_read }
 		: access_flags{ access_flag::shader_read };
 
 	const image_barrier barrier{

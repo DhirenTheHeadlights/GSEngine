@@ -100,9 +100,6 @@ export namespace gse::gpu {
 	};
 
 	using color_component_flags = gse::flags<color_component_flag>;
-	constexpr auto operator|(color_component_flag a, color_component_flag b) -> color_component_flags {
-		return color_component_flags(a) | b;
-	}
 
 	enum class color_format : std::uint8_t {
 		swapchain,
@@ -163,9 +160,6 @@ export namespace gse::gpu {
 	};
 
 	using stage_flags = gse::flags<stage_flag>;
-	constexpr auto operator|(stage_flag a, stage_flag b) -> stage_flags {
-		return stage_flags(a) | b;
-	}
 
 	enum class vertex_format : std::uint8_t {
 		r32_sfloat,
@@ -209,9 +203,6 @@ export namespace gse::gpu {
 	};
 
 	using access_flags = gse::flags<access_flag>;
-	constexpr auto operator|(access_flag a, access_flag b) -> access_flags {
-		return access_flags(a) | b;
-	}
 
 	enum class pipeline_stage_flag : std::uint64_t {
 		none = 0,
@@ -246,9 +237,6 @@ export namespace gse::gpu {
 	};
 
 	using pipeline_stage_flags = gse::flags<pipeline_stage_flag>;
-	constexpr auto operator|(pipeline_stage_flag a, pipeline_stage_flag b) -> pipeline_stage_flags {
-		return pipeline_stage_flags(a) | b;
-	}
 
 	enum class memory_property_flag : std::uint32_t {
 		device_local = 1u << 0,
@@ -259,9 +247,6 @@ export namespace gse::gpu {
 	};
 
 	using memory_property_flags = gse::flags<memory_property_flag>;
-	constexpr auto operator|(memory_property_flag a, memory_property_flag b) -> memory_property_flags {
-		return memory_property_flags(a) | b;
-	}
 
 	enum class present_mode_setting : int {
 		fifo = 0,
@@ -285,9 +270,6 @@ export namespace gse::gpu {
 	};
 
 	using present_stage_flags = gse::flags<present_stage_flag>;
-	constexpr auto operator|(present_stage_flag a, present_stage_flag b) -> present_stage_flags {
-		return present_stage_flags(a) | b;
-	}
 
 	enum class load_op : std::uint8_t {
 		load,
@@ -308,9 +290,6 @@ export namespace gse::gpu {
 	};
 
 	using pipeline_statistic_flags = gse::flags<pipeline_statistic_flag>;
-	constexpr auto operator|(pipeline_statistic_flag a, pipeline_statistic_flag b) -> pipeline_statistic_flags {
-		return pipeline_statistic_flags(a) | b;
-	}
 
 	enum class query_status : std::uint8_t {
 		success,

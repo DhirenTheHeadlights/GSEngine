@@ -15,6 +15,11 @@ export namespace gse {
 			E e
 		);
 
+		template <std::same_as<E>... Es>
+		constexpr flags(
+			Es... es
+		);
+
 		constexpr auto set(
 			E e
 		) -> flags&;
@@ -72,6 +77,12 @@ export namespace gse {
 template <typename E>
 requires std::is_enum_v<E>
 constexpr gse::flags<E>::flags(E e) : m_bits(static_cast<underlying_type>(e)) {
+}
+
+template <typename E>
+requires std::is_enum_v<E>
+template <std::same_as<E>... Es>
+constexpr gse::flags<E>::flags(Es... es) : m_bits(static_cast<underlying_type>((underlying_type{} | ... | static_cast<underlying_type>(es)))) {
 }
 
 template <typename E>

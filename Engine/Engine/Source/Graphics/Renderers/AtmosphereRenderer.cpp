@@ -208,7 +208,7 @@ auto gse::renderer::atmosphere::recreate_ap_volume(const shared_view<gpu::contex
 			.depth = d.ap_volume_extent.z(),
 			.format = gpu::image_format::r16g16b16a16_sfloat,
 			.view = gpu::image_view_type::e3d,
-			.usage = gpu::image_flag::storage | gpu::image_flag::sampled,
+			.usage = { gpu::image_flag::storage, gpu::image_flag::sampled },
 			.bindless = true,
 		},
 		"atmosphere_ap_volume"
@@ -253,7 +253,7 @@ auto gse::renderer::atmosphere::init(context& ctx, const shared_view<gpu::contex
 		{
 			.size = transmittance_lut_size,
 			.format = gpu::image_format::r16g16b16a16_sfloat,
-			.usage = gpu::image_flag::storage | gpu::image_flag::sampled,
+			.usage = { gpu::image_flag::storage, gpu::image_flag::sampled },
 			.bindless = true,
 		},
 		"atmosphere_transmittance_lut"
@@ -262,7 +262,7 @@ auto gse::renderer::atmosphere::init(context& ctx, const shared_view<gpu::contex
 		{
 			.size = multiscatter_lut_size,
 			.format = gpu::image_format::r16g16b16a16_sfloat,
-			.usage = gpu::image_flag::storage | gpu::image_flag::sampled,
+			.usage = { gpu::image_flag::storage, gpu::image_flag::sampled },
 			.bindless = true,
 		},
 		"atmosphere_multiscatter_lut"
@@ -271,7 +271,7 @@ auto gse::renderer::atmosphere::init(context& ctx, const shared_view<gpu::contex
 		{
 			.size = sky_view_lut_size,
 			.format = gpu::image_format::r16g16b16a16_sfloat,
-			.usage = gpu::image_flag::storage | gpu::image_flag::sampled,
+			.usage = { gpu::image_flag::storage, gpu::image_flag::sampled },
 			.bindless = true,
 		},
 		"atmosphere_sky_view_lut"
