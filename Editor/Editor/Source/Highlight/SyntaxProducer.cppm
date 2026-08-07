@@ -59,6 +59,10 @@ export namespace gse::ide {
 			const semantic_input& input
 		) -> void;
 
+		static auto clear_semantic(
+			data& d
+		) -> void;
+
 		static auto poll(
 			data& d,
 			document_revision revision
@@ -449,4 +453,8 @@ auto gse::ide::syntax_producer::set_semantic(data& d, const semantic_input& inpu
 	}
 
 	d.semantic = std::move(sem);
+}
+
+auto gse::ide::syntax_producer::clear_semantic(data& d) -> void {
+	d.semantic.reset();
 }

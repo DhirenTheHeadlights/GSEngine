@@ -11,12 +11,23 @@ export namespace gse::ide::analysis {
 		static auto parse_sarif(
 			std::string_view sarif
 		) -> std::vector<diagnostic>;
+
 		static auto is_module_unavailable(
 			std::string_view message
 		) -> bool;
+
 		static auto is_module_unavailable(
 			std::span<const diagnostic> diagnostics
 		) -> bool;
+
+		static auto has_error(
+			std::span<const diagnostic> diagnostics
+		) -> bool;
+
+		static auto summarize(
+			std::span<const diagnostic> diagnostics,
+			std::size_t limit
+		) -> std::string;
 	};
 }
 
@@ -24,6 +35,11 @@ namespace gse::ide::analysis {
 	auto uri_path(
 		std::string_view uri
 	) -> std::filesystem::path;
+
+	auto contains_insensitive(
+		std::string_view haystack,
+		std::string_view needle
+	) -> bool;
 }
 
 auto gse::ide::analysis::uri_path(const std::string_view uri) -> std::filesystem::path {
@@ -143,10 +159,18 @@ auto gse::ide::analysis::gcc_diagnostics::parse_sarif(std::string_view sarif) ->
 	return out;
 }
 
+auto gse::ide::analysis::contains_insensitive(const std::string_view haystack, const std::string_view needle) -> bool {
+	return !std::ranges::search(haystack, needle, [](const char lhs, const char rhs) {
+		return std::tolower(static_cast<unsigned char>(lhs)) == std::tolower(static_cast<unsigned char>(rhs));
+	}).empty();
+}
+
 auto gse::ide::analysis::gcc_diagnostics::is_module_unavailable(const std::string_view message) -> bool {
 	static constexpr std::string_view fragments[] = {
 		"must be built",
 		"failed to read compiled module",
+		"unknown compiled module interface",
+		"no such module",
 		"returning to the gate",
 		"failed to load binding",
 		"failed to load pendings",
@@ -154,7 +178,7 @@ auto gse::ide::analysis::gcc_diagnostics::is_module_unavailable(const std::strin
 		"compiled module file is",
 	};
 	return std::ranges::any_of(fragments, [message](const std::string_view fragment) {
-		return message.contains(fragment);
+		return contains_insensitive(message, fragment);
 	});
 }
 
@@ -162,4 +186,29 @@ auto gse::ide::analysis::gcc_diagnostics::is_module_unavailable(const std::span<
 	return std::ranges::any_of(diagnostics, [](const diagnostic& diagnostic) {
 		return is_module_unavailable(diagnostic.message);
 	});
+}
+
+auto gse::ide::analysis::gcc_diagnostics::has_error(const std::span<const diagnostic> diagnostics) -> bool {
+	return std::ranges::any_of(diagnostics, [](const diagnostic& diagnostic) {
+		return diagnostic.level == severity::error;
+	});
+}
+
+auto gse::ide::analysis::gcc_diagnostics::summarize(const std::span<const diagnostic> diagnostics, const std::size_t limit) -> std::string {
+	std::string out;
+	std::size_t written = 0;
+	for (const diagnostic& diagnostic : diagnostics) {
+		if (written == limit) {
+			out += std::format("\n... and more diagnostics beyond the first {}", limit);
+			break;
+		}
+		if (written != 0) {
+			out += '\n';
+		}
+		out += diagnostic.file.empty()
+			? diagnostic.message
+			: std::format("{}:{}:{}: {}", diagnostic.file.filename().generic_display_string(), diagnostic.line + 1, diagnostic.start_col + 1, diagnostic.message);
+		++written;
+	}
+	return out;
 }
