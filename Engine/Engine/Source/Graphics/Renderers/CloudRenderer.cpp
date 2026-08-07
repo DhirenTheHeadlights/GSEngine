@@ -198,7 +198,7 @@ auto gse::renderer::cloud::recreate_cloud_target(const shared_view<gpu::context:
 		{
 			.size = d.cloud_target_extent,
 			.format = gpu::image_format::r16g16b16a16_sfloat,
-			.usage = gpu::image_flag::storage | gpu::image_flag::sampled,
+			.usage = { gpu::image_flag::storage, gpu::image_flag::sampled },
 			.bindless = true,
 		},
 		"cloud_target"
@@ -238,7 +238,7 @@ auto gse::renderer::cloud::init(context& ctx, const shared_view<gpu::context::da
 			.depth = shape_noise_size.z(),
 			.format = gpu::image_format::r16g16b16a16_sfloat,
 			.view = gpu::image_view_type::e3d,
-			.usage = gpu::image_flag::storage | gpu::image_flag::sampled,
+			.usage = { gpu::image_flag::storage, gpu::image_flag::sampled },
 			.bindless = true,
 		},
 		"cloud_shape_noise"
@@ -249,7 +249,7 @@ auto gse::renderer::cloud::init(context& ctx, const shared_view<gpu::context::da
 			.depth = detail_noise_size.z(),
 			.format = gpu::image_format::r16g16b16a16_sfloat,
 			.view = gpu::image_view_type::e3d,
-			.usage = gpu::image_flag::storage | gpu::image_flag::sampled,
+			.usage = { gpu::image_flag::storage, gpu::image_flag::sampled },
 			.bindless = true,
 		},
 		"cloud_detail_noise"

@@ -647,8 +647,8 @@ namespace gse::shaders {
 		constexpr auto desc_type = descriptor_type_of<T>();
 		constexpr auto count = descriptor_count_of<T>();
 		constexpr auto access = descriptor_access_of<T>();
-		constexpr gpu::stage_flags all_stages = gpu::stage_flag::vertex | gpu::stage_flag::fragment |
-			gpu::stage_flag::compute | gpu::stage_flag::task | gpu::stage_flag::mesh;
+		constexpr gpu::stage_flags all_stages{ gpu::stage_flag::vertex, gpu::stage_flag::fragment,
+			gpu::stage_flag::compute, gpu::stage_flag::task, gpu::stage_flag::mesh };
 
 		auto it = std::ranges::find_if(
 			sets,

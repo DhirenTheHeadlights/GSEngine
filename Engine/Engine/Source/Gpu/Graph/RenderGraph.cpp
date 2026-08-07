@@ -22,9 +22,9 @@ import gse.math;
 import gse.meta;
 
 namespace gse::gpu {
-	constexpr auto profile_stats_flags = gpu::pipeline_statistic_flag::input_assembly_vertices |
-		gpu::pipeline_statistic_flag::input_assembly_primitives | gpu::pipeline_statistic_flag::clipping_invocations |
-		gpu::pipeline_statistic_flag::fragment_shader_invocations;
+	constexpr gpu::pipeline_statistic_flags profile_stats_flags{ gpu::pipeline_statistic_flag::input_assembly_vertices,
+		gpu::pipeline_statistic_flag::input_assembly_primitives, gpu::pipeline_statistic_flag::clipping_invocations,
+		gpu::pipeline_statistic_flag::fragment_shader_invocations };
 }
 
 gse::gpu::render_graph::render_graph(gpu::device& device, gpu::swap_chain* swapchain, gpu::frame& frame)
@@ -446,8 +446,8 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 					if (pass.depth_output->op == load_op::load) {
 						note(
 							depth_ref,
-							gpu::pipeline_stage_flag::early_fragment_tests | gpu::pipeline_stage_flag::late_fragment_tests,
-							gpu::access_flag::depth_stencil_attachment_read | gpu::access_flag::depth_stencil_attachment_write
+							{ gpu::pipeline_stage_flag::early_fragment_tests, gpu::pipeline_stage_flag::late_fragment_tests },
+							{ gpu::access_flag::depth_stencil_attachment_read, gpu::access_flag::depth_stencil_attachment_write }
 						);
 					}
 					else {
@@ -472,7 +472,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 						note(
 							color_ref,
 							gpu::pipeline_stage_flag::color_attachment_output,
-							gpu::access_flag::color_attachment_read | gpu::access_flag::color_attachment_write
+							{ gpu::access_flag::color_attachment_read, gpu::access_flag::color_attachment_write }
 						);
 					}
 					else {
@@ -860,9 +860,9 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 
 		auto access_has_write = [](const gpu::access_flags a) -> bool {
 			using ac = gpu::access_flag;
-			constexpr auto write_mask = ac::shader_storage_write | ac::shader_write | ac::color_attachment_write |
-				ac::depth_stencil_attachment_write | ac::transfer_write | ac::host_write | ac::memory_write |
-				ac::acceleration_structure_write;
+			constexpr gpu::access_flags write_mask{ ac::shader_storage_write, ac::shader_write, ac::color_attachment_write,
+				ac::depth_stencil_attachment_write, ac::transfer_write, ac::host_write, ac::memory_write,
+				ac::acceleration_structure_write };
 			return static_cast<bool>(a & write_mask);
 		};
 
@@ -1283,7 +1283,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			.src_stages = gpu::pipeline_stage_flag::color_attachment_output,
 			.src_access = gpu::access_flag::color_attachment_write,
 			.dst_stages = gpu::pipeline_stage_flag::color_attachment_output,
-			.dst_access = gpu::access_flag::color_attachment_write | gpu::access_flag::color_attachment_read,
+			.dst_access = { gpu::access_flag::color_attachment_write, gpu::access_flag::color_attachment_read },
 			.prev_state = gpu::resource_state::color_target,
 			.next_state = gpu::resource_state::color_target,
 			.image = m_swapchain->image(image_index),

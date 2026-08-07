@@ -47,9 +47,6 @@ export namespace gse::gpu {
 	};
 
 	using image_usage = gse::flags<image_flag>;
-	constexpr auto operator|(image_flag a, image_flag b) -> image_usage {
-		return image_usage(a) | b;
-	}
 
 	enum class image_aspect_flag : std::uint32_t {
 		color = 1u << 0,
@@ -58,9 +55,6 @@ export namespace gse::gpu {
 	};
 
 	using image_aspect_flags = gse::flags<image_aspect_flag>;
-	constexpr auto operator|(image_aspect_flag a, image_aspect_flag b) -> image_aspect_flags {
-		return image_aspect_flags(a) | b;
-	}
 
 	enum class image_create_flag : std::uint8_t {
 		cube_compatible = 1 << 0,
@@ -68,9 +62,6 @@ export namespace gse::gpu {
 	};
 
 	using image_create_flags = gse::flags<image_create_flag>;
-	constexpr auto operator|(image_create_flag a, image_create_flag b) -> image_create_flags {
-		return image_create_flags(a) | b;
-	}
 
 	enum class image_type : std::uint8_t {
 		e1d,
@@ -97,7 +88,7 @@ export namespace gse::gpu {
 		std::uint32_t depth = 1;
 		image_format format = image_format::d32_sfloat;
 		image_view_type view = image_view_type::e2d;
-		image_usage usage = image_flag::sampled | image_flag::depth_attachment;
+		image_usage usage{ image_flag::sampled, image_flag::depth_attachment };
 		bool bindless = false;
 	};
 
@@ -218,7 +209,7 @@ export namespace gse::gpu {
 	struct shared_surface_desc {
 		vec2u extent;
 		image_format format = image_format::r8g8b8a8_unorm;
-		image_usage usage = image_flag::color_attachment | image_flag::sampled;
+		image_usage usage{ image_flag::color_attachment, image_flag::sampled };
 	};
 
 	struct shared_surface {

@@ -97,7 +97,7 @@ auto gse::renderer::taa::recreate_history(const shared_view<gpu::context::data> 
 			{
 				.size = extent,
 				.format = gpu::image_format::r16g16b16a16_sfloat,
-				.usage = gpu::image_flag::color_attachment | gpu::image_flag::sampled,
+				.usage = { gpu::image_flag::color_attachment, gpu::image_flag::sampled },
 			},
 			std::format("taa_history_{}", i)
 		);

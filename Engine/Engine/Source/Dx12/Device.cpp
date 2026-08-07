@@ -1395,7 +1395,7 @@ auto gse::dx12::device::create_tlas(const std::uint32_t max_instances) -> gpu::t
 	auto instance_buffer = create_buffer(
 		gpu::buffer_desc{
 			.size = static_cast<gpu::device_size>(max_instances) * sizeof(gpu::acceleration_structure_instance),
-			.usage = gpu::buffer_flag::acceleration_structure_build_input | gpu::buffer_flag::storage,
+			.usage = { gpu::buffer_flag::acceleration_structure_build_input, gpu::buffer_flag::storage },
 		},
 		"tlas.instances",
 		std::source_location::current()

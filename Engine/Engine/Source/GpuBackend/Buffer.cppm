@@ -24,9 +24,6 @@ export namespace gse::gpu {
 	};
 
 	using buffer_usage = gse::flags<buffer_flag>;
-	constexpr auto operator|(buffer_flag a, buffer_flag b) -> buffer_usage {
-		return buffer_usage(a) | b;
-	}
 
 	struct buffer_desc {
 		device_size size = 0;

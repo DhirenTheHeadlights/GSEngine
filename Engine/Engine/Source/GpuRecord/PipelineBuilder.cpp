@@ -274,7 +274,7 @@ auto gse::gpu::parse_body_file(const std::string_view body_source) -> parsed_bod
 auto gse::gpu::load_body_file(const std::string_view body_path) -> std::string {
 	const auto full_path = config::resource_path() / "Shaders" / "Bodies" / (std::string(body_path) + ".slang");
 	std::ifstream in(full_path, std::ios::binary);
-	assert(in.is_open(), "Failed to open shader body: {}", full_path.display_string());
+	assert(in.is_open(), "Failed to open shader body: {}", full_path.generic_display_string());
 
 	std::ostringstream ss;
 	ss << in.rdbuf();
@@ -284,7 +284,7 @@ auto gse::gpu::load_body_file(const std::string_view body_path) -> std::string {
 auto gse::gpu::load_helper_file(const std::string_view helper_path) -> std::string {
 	const auto full_path = config::resource_path() / "Shaders" / (std::string(helper_path) + ".slang");
 	std::ifstream in(full_path, std::ios::binary);
-	assert(in.is_open(), "Failed to open shader helper: {}", full_path.display_string());
+	assert(in.is_open(), "Failed to open shader helper: {}", full_path.generic_display_string());
 
 	std::ostringstream ss;
 	ss << in.rdbuf();
@@ -701,7 +701,7 @@ namespace gse::gpu {
 }
 
 auto gse::gpu::blend_preset_to_attachment_state(const blend_preset preset) -> std::tuple<bool, color_blend_equation, color_component_flags> {
-	constexpr auto all_components = color_component_flag::r | color_component_flag::g | color_component_flag::b | color_component_flag::a;
+	constexpr color_component_flags all_components{ color_component_flag::r, color_component_flag::g, color_component_flag::b, color_component_flag::a };
 	switch (preset) {
 		case blend_preset::none:
 			return { false, color_blend_equation{}, all_components };
