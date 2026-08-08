@@ -46,6 +46,7 @@ export namespace gse::async {
 		std::coroutine_handle<> m_continuation{ std::noop_coroutine() };
 		std::exception_ptr m_exception;
 		std::atomic<bool> m_started{ false };
+		std::atomic<bool> m_detached{ false };
 
 		static auto initial_suspend() noexcept -> std::suspend_always;
 
@@ -212,7 +213,11 @@ namespace gse::async {
 
 template <typename P>
 auto gse::async::final_awaiter::await_suspend(std::coroutine_handle<P> h) noexcept -> std::coroutine_handle<> {
-	return h.promise().m_continuation;
+	const std::coroutine_handle<> continuation = h.promise().m_continuation;
+	if (h.promise().m_detached.load(std::memory_order_acquire)) {
+		h.destroy();
+	}
+	return continuation ? continuation : std::noop_coroutine();
 }
 
 template <typename Awaitable>
@@ -298,9 +303,12 @@ auto gse::async::task<T>::start() -> void {
 template <typename T>
 auto gse::async::task<T>::consume_start_handle() -> std::coroutine_handle<> {
 	if (!m_handle || m_handle.promise().m_started.exchange(true, std::memory_order_acq_rel)) {
-		return std::noop_coroutine();
+		return {};
 	}
-	return m_handle;
+	const handle_type consumed = m_handle;
+	consumed.promise().m_detached.store(true, std::memory_order_release);
+	m_handle = {};
+	return consumed;
 }
 
 template <typename T>

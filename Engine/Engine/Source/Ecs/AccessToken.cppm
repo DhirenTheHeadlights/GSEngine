@@ -69,6 +69,38 @@ export namespace gse {
 		removed
 	};
 
+	class component_lock : non_copyable {
+	public:
+		struct config {
+			access_guard* guard = nullptr;
+			std::atomic<int>* held_locks = nullptr;
+			std::vector<id>* authority = nullptr;
+			id type;
+			access_mode mode = access_mode::read;
+		};
+
+		~component_lock();
+
+		component_lock() = default;
+
+		explicit component_lock(
+			config cfg
+		);
+
+		component_lock(
+			component_lock&& other
+		) noexcept;
+
+		auto operator=(
+			component_lock&& other
+		) noexcept -> component_lock&;
+
+	private:
+		auto release() -> void;
+
+		config m_config;
+	};
+
 	template <typename T, access_mode M = access_mode::read>
 	class access : non_copyable {
 	public:
@@ -95,37 +127,36 @@ export namespace gse {
 			component_event
 		);
 
-		~access();
+		struct wiring {
+			lookup_fn lookup = nullptr;
+			mark_fn mark = nullptr;
+			drain_fn drain = nullptr;
+			void* ctx = nullptr;
+			access_guard* guard = nullptr;
+			std::atomic<int>* held_locks = nullptr;
+		};
+
+		~access() = default;
 
 		access() = delete;
 
 		access(
 			access&& other
-		) noexcept;
+		) noexcept = default;
 
 		auto operator=(
 			access&& other
-		) noexcept -> access&;
+		) noexcept -> access& = default;
 
-		auto begin(
-			this access& self
-		) -> decltype(auto);
+		[[nodiscard]] auto begin() const -> pointer;
 
-		auto end(
-			this access& self
-		) -> decltype(auto);
+		[[nodiscard]] auto end() const -> pointer;
 
 		[[nodiscard]] auto size() const -> std::size_t;
 
 		[[nodiscard]] auto empty() const -> bool;
 
-		auto data() -> pointer;
-
-		auto data() const -> pointer;
-
-		auto operator[](
-			std::size_t i
-		) -> reference;
+		[[nodiscard]] auto data() const -> pointer;
 
 		auto operator[](
 			std::size_t i
@@ -155,12 +186,7 @@ export namespace gse {
 		explicit access(
 			span_type span,
 			std::span<const id> owners,
-			lookup_fn fn = nullptr,
-			mark_fn mark = nullptr,
-			drain_fn drain = nullptr,
-			void* ctx = nullptr,
-			access_guard* guard = nullptr,
-			std::atomic<int>* held_locks = nullptr
+			wiring w = {}
 		);
 
 		span_type m_span;
@@ -169,8 +195,7 @@ export namespace gse {
 		mark_fn m_mark = nullptr;
 		drain_fn m_drain = nullptr;
 		void* m_lookup_ctx = nullptr;
-		access_guard* m_guard = nullptr;
-		std::atomic<int>* m_held_locks = nullptr;
+		component_lock m_lock;
 	};
 
 	template <typename T>
@@ -182,17 +207,17 @@ export namespace gse {
 	template <typename T>
 	class structural : non_copyable {
 	public:
-		~structural();
+		~structural() = default;
 
 		structural() = delete;
 
 		structural(
 			structural&& other
-		) noexcept;
+		) noexcept = default;
 
 		auto operator=(
 			structural&& other
-		) noexcept -> structural&;
+		) noexcept -> structural& = default;
 
 		auto add(
 			id owner,
@@ -220,9 +245,7 @@ export namespace gse {
 		);
 
 		registry* m_reg = nullptr;
-		access_guard* m_guard = nullptr;
-		std::atomic<int>* m_held_locks = nullptr;
-		std::vector<id>* m_authority = nullptr;
+		component_lock m_lock;
 	};
 
 	class entities {
@@ -296,74 +319,75 @@ auto gse::access_guard::end_write(const id type) -> void {
 	slot_for(type).writers.fetch_sub(1, std::memory_order_acq_rel);
 }
 
-template <typename T, gse::access_mode M>
-gse::access<T, M>::access(const span_type span, const std::span<const id> owners, const lookup_fn fn, const mark_fn mark, const drain_fn drain, void* ctx, access_guard* guard, std::atomic<int>* held_locks)
-	: m_span(span), m_owners(owners), m_lookup(fn), m_mark(mark), m_drain(drain), m_lookup_ctx(ctx), m_guard(guard), m_held_locks(held_locks) {
-	if (m_guard) {
-		if constexpr (M == access_mode::read) {
-			m_guard->begin_read(id_of<T>());
+gse::component_lock::component_lock(const config cfg) : m_config(cfg) {
+	if (m_config.guard) {
+		if (m_config.mode == access_mode::read) {
+			m_config.guard->begin_read(m_config.type);
 		}
 		else {
-			m_guard->begin_write(id_of<T>());
+			m_config.guard->begin_write(m_config.type);
 		}
 	}
-	if (m_held_locks) {
-		m_held_locks->fetch_add(1, std::memory_order_acq_rel);
+	if (m_config.held_locks) {
+		m_config.held_locks->fetch_add(1, std::memory_order_acq_rel);
+	}
+	if (m_config.guard && m_config.authority) {
+		m_config.authority->push_back(m_config.type);
 	}
 }
 
-template <typename T, gse::access_mode M>
-gse::access<T, M>::access(access&& other) noexcept
-	: m_span(other.m_span), m_owners(other.m_owners), m_lookup(other.m_lookup), m_lookup_ctx(other.m_lookup_ctx), m_guard(std::exchange(other.m_guard, nullptr)), m_held_locks(std::exchange(other.m_held_locks, nullptr)) {
-}
+gse::component_lock::component_lock(component_lock&& other) noexcept : m_config(std::exchange(other.m_config, config{})) {}
 
-template <typename T, gse::access_mode M>
-auto gse::access<T, M>::operator=(access&& other) noexcept -> access& {
+auto gse::component_lock::operator=(component_lock&& other) noexcept -> component_lock& {
 	if (this != &other) {
-		if (m_guard) {
-			if constexpr (M == access_mode::read) {
-				m_guard->end_read(id_of<T>());
-			}
-			else {
-				m_guard->end_write(id_of<T>());
-			}
-		}
-		if (m_held_locks) {
-			m_held_locks->fetch_sub(1, std::memory_order_acq_rel);
-		}
-		m_span = other.m_span;
-		m_owners = other.m_owners;
-		m_lookup = other.m_lookup;
-		m_lookup_ctx = other.m_lookup_ctx;
-		m_guard = std::exchange(other.m_guard, nullptr);
-		m_held_locks = std::exchange(other.m_held_locks, nullptr);
+		release();
+		m_config = std::exchange(other.m_config, config{});
 	}
 	return *this;
 }
 
-template <typename T, gse::access_mode M>
-gse::access<T, M>::~access() {
-	if (m_guard) {
-		if constexpr (M == access_mode::read) {
-			m_guard->end_read(id_of<T>());
+gse::component_lock::~component_lock() {
+	release();
+}
+
+auto gse::component_lock::release() -> void {
+	if (m_config.guard) {
+		if (m_config.mode == access_mode::read) {
+			m_config.guard->end_read(m_config.type);
 		}
 		else {
-			m_guard->end_write(id_of<T>());
+			m_config.guard->end_write(m_config.type);
 		}
 	}
-	if (m_held_locks) {
-		m_held_locks->fetch_sub(1, std::memory_order_acq_rel);
+	if (m_config.held_locks) {
+		m_config.held_locks->fetch_sub(1, std::memory_order_acq_rel);
+	}
+	if (m_config.guard && m_config.authority) {
+		if (const auto it = std::ranges::find(*m_config.authority, m_config.type); it != m_config.authority->end()) {
+			m_config.authority->erase(it);
+		}
 	}
 }
 
 template <typename T, gse::access_mode M>
-auto gse::access<T, M>::begin(this access& self) -> decltype(auto) {
-	return self.m_span.data();
+gse::access<T, M>::access(const span_type span, const std::span<const id> owners, const wiring w)
+	: m_span(span), m_owners(owners), m_lookup(w.lookup), m_mark(w.mark), m_drain(w.drain), m_lookup_ctx(w.ctx) {
+	m_lock = component_lock({
+		.guard = w.guard,
+		.held_locks = w.held_locks,
+		.type = id_of<T>(),
+		.mode = M,
+	});
 }
 
 template <typename T, gse::access_mode M>
-auto gse::access<T, M>::end(this access& self) -> decltype(auto) {
-	return self.m_span.data() + self.m_span.size();
+auto gse::access<T, M>::begin() const -> pointer {
+	return m_span.data();
+}
+
+template <typename T, gse::access_mode M>
+auto gse::access<T, M>::end() const -> pointer {
+	return m_span.data() + m_span.size();
 }
 
 template <typename T, gse::access_mode M>
@@ -377,18 +401,8 @@ auto gse::access<T, M>::empty() const -> bool {
 }
 
 template <typename T, gse::access_mode M>
-auto gse::access<T, M>::data() -> pointer {
-	return m_span.data();
-}
-
-template <typename T, gse::access_mode M>
 auto gse::access<T, M>::data() const -> pointer {
 	return m_span.data();
-}
-
-template <typename T, gse::access_mode M>
-auto gse::access<T, M>::operator[](const std::size_t i) -> reference {
-	return m_span[i];
 }
 
 template <typename T, gse::access_mode M>
@@ -424,6 +438,10 @@ auto gse::access<T, M>::mark_updated(const id owner) const -> void {
 
 template <typename T, gse::access_mode M>
 auto gse::access<T, M>::drain(const component_event event) const -> std::vector<id> {
+	static_assert(
+		M == access_mode::write,
+		"drain() consumes the component event queue, so it requires write<T>; systems holding read<T> are not ordered against each other and would each receive an arbitrary subset of the events"
+	);
 	if (!m_drain) {
 		return {};
 	}
@@ -431,57 +449,12 @@ auto gse::access<T, M>::drain(const component_event event) const -> std::vector<
 }
 
 template <typename T>
-gse::structural<T>::structural(registry* reg, access_guard* guard, std::atomic<int>* held_locks, std::vector<id>* authority)
-	: m_reg(reg), m_guard(guard), m_held_locks(held_locks), m_authority(authority) {
-	if (m_guard) {
-		m_guard->begin_write(id_of<T>());
-	}
-	if (m_held_locks) {
-		m_held_locks->fetch_add(1, std::memory_order_acq_rel);
-	}
-	if (m_guard && m_authority) {
-		m_authority->push_back(id_of<T>());
-	}
-}
-
-template <typename T>
-gse::structural<T>::structural(structural&& other) noexcept
-	: m_reg(other.m_reg), m_guard(std::exchange(other.m_guard, nullptr)), m_held_locks(std::exchange(other.m_held_locks, nullptr)), m_authority(std::exchange(other.m_authority, nullptr)) {
-}
-
-template <typename T>
-auto gse::structural<T>::operator=(structural&& other) noexcept -> structural& {
-	if (this != &other) {
-		if (m_guard) {
-			m_guard->end_write(id_of<T>());
-		}
-		if (m_held_locks) {
-			m_held_locks->fetch_sub(1, std::memory_order_acq_rel);
-		}
-		if (m_guard && m_authority) {
-			if (const auto it = std::ranges::find(*m_authority, id_of<T>()); it != m_authority->end()) {
-				m_authority->erase(it);
-			}
-		}
-		m_reg = other.m_reg;
-		m_guard = std::exchange(other.m_guard, nullptr);
-		m_held_locks = std::exchange(other.m_held_locks, nullptr);
-		m_authority = std::exchange(other.m_authority, nullptr);
-	}
-	return *this;
-}
-
-template <typename T>
-gse::structural<T>::~structural() {
-	if (m_guard) {
-		m_guard->end_write(id_of<T>());
-	}
-	if (m_held_locks) {
-		m_held_locks->fetch_sub(1, std::memory_order_acq_rel);
-	}
-	if (m_guard && m_authority) {
-		if (const auto it = std::ranges::find(*m_authority, id_of<T>()); it != m_authority->end()) {
-			m_authority->erase(it);
-		}
-	}
+gse::structural<T>::structural(registry* reg, access_guard* guard, std::atomic<int>* held_locks, std::vector<id>* authority) : m_reg(reg) {
+	m_lock = component_lock({
+		.guard = guard,
+		.held_locks = held_locks,
+		.authority = authority,
+		.type = id_of<T>(),
+		.mode = access_mode::write,
+	});
 }

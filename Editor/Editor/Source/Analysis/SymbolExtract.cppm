@@ -130,38 +130,11 @@ auto gse::ide::analysis::symbol_tokens::kind_from(std::string_view name) -> std:
 auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string_view main_file) -> symbol_set {
 	symbol_set out;
 
-	auto to_u32 = [](std::string_view s) -> std::optional<std::uint32_t> {
-		std::uint32_t value = 0;
-		const auto result = std::from_chars(s.data(), s.data() + s.size(), value);
-		if (result.ec != std::errc{}) {
-			return std::nullopt;
-		}
-		return value;
-	};
-
-	auto split = [](std::string_view line, std::span<std::string_view> fields) -> std::size_t {
-		std::size_t count = 0;
-		std::size_t start = 0;
-		for (std::size_t i = 0; i <= line.size() && count < fields.size(); ++i) {
-			if (i == line.size() || line[i] == '\t') {
-				fields[count++] = line.substr(start, i - start);
-				start = i + 1;
-			}
-		}
-		return count;
-	};
-
 	std::size_t discarded = 0;
 
 	std::size_t pos = 0;
-	while (pos < text.size()) {
-		const std::size_t eol = text.find('\n', pos);
-		std::string_view line = text.substr(pos, (eol == std::string_view::npos ? text.size() : eol) - pos);
-		pos = eol == std::string_view::npos ? text.size() : eol + 1;
-
-		if (!line.empty() && line.back() == '\r') {
-			line.remove_suffix(1);
-		}
+	while (const std::optional<std::string_view> record = gse::next_line(text, pos)) {
+		const std::string_view line = *record;
 
 		if (line == "GSEDONE") {
 			out.complete = true;
@@ -170,22 +143,22 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 
 		if (line.starts_with("GSETOK")) {
 			std::array<std::string_view, 5> fields;
-			const std::size_t count = split(line, fields);
+			const std::size_t count = gse::split_fields(line, '\t', fields);
 			if (count < 5) {
 				++discarded;
 				report_discarded_record(main_file, line, "a GSETOK record carries fewer than the 5 required fields", discarded);
 				continue;
 			}
-			const std::optional<std::uint32_t> ln = to_u32(fields[1]);
-			const std::optional<std::uint32_t> col = to_u32(fields[2]);
-			const std::optional<std::uint32_t> len = to_u32(fields[3]);
+			std::uint32_t ln = 0;
+			std::uint32_t col = 0;
+			std::uint32_t len = 0;
 			const std::optional<semantic_kind> kind = semantic_tokens::kind_from(fields[4]);
-			if (ln && col && len && kind) {
+			if (gse::parse(fields[1], ln) && gse::parse(fields[2], col) && gse::parse(fields[3], len) && kind) {
 				out.params.push_back({
 					.file = std::string(main_file),
-					.line = *ln,
-					.column = *col,
-					.length = *len,
+					.line = ln,
+					.column = col,
+					.length = len,
 					.kind = *kind,
 				});
 				continue;
@@ -197,22 +170,22 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 
 		if (line.starts_with("GSESYM\t")) {
 			std::array<std::string_view, 9> fields;
-			const std::size_t count = split(line, fields);
+			const std::size_t count = gse::split_fields(line, '\t', fields);
 			if (count < 6) {
 				++discarded;
 				report_discarded_record(main_file, line, "a GSESYM record carries fewer than the 6 required fields", discarded);
 				continue;
 			}
 			const std::optional<symbol_kind> kind = kind_from(fields[2]);
-			const std::optional<std::uint32_t> ln = to_u32(fields[4]);
-			const std::optional<std::uint32_t> col = to_u32(fields[5]);
-			if (!fields[1].empty() && kind && ln && col) {
+			std::uint32_t ln = 0;
+			std::uint32_t col = 0;
+			if (!fields[1].empty() && kind && gse::parse(fields[4], ln) && gse::parse(fields[5], col)) {
 				out.symbols.push_back({
 					.name = std::string(fields[1]),
 					.kind = *kind,
 					.file = std::string(fields[3]),
-					.line = *ln,
-					.column = *col,
+					.line = ln,
+					.column = col,
 					.qualified = count >= 7 ? std::string(fields[6]) : std::string{},
 					.identity = count >= 8 ? std::string(fields[7]) : std::string{},
 					.is_definition = count >= 9 ? fields[8] == "definition" : true,
@@ -226,22 +199,22 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 
 		if (line.starts_with("GSEQUAL\t")) {
 			std::array<std::string_view, 5> fields;
-			const std::size_t count = split(line, fields);
+			const std::size_t count = gse::split_fields(line, '\t', fields);
 			if (count < 5) {
 				++discarded;
 				report_discarded_record(main_file, line, "a GSEQUAL record carries fewer than the 5 required fields", discarded);
 				continue;
 			}
-			const std::optional<std::uint32_t> ln = to_u32(fields[2]);
-			const std::optional<std::uint32_t> col = to_u32(fields[3]);
-			const std::optional<std::uint32_t> len = to_u32(fields[4]);
-			if (ln && col && len) {
+			std::uint32_t ln = 0;
+			std::uint32_t col = 0;
+			std::uint32_t len = 0;
+			if (gse::parse(fields[2], ln) && gse::parse(fields[3], col) && gse::parse(fields[4], len)) {
 				out.quals.push_back({
 					.file = std::string(fields[1]),
-					.line = *ln,
-					.column = *col,
-					.end_line = *ln,
-					.end_column = *col + *len,
+					.line = ln,
+					.column = col,
+					.end_line = ln,
+					.end_column = col + len,
 				});
 				continue;
 			}
@@ -252,23 +225,23 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 
 		if (line.starts_with("GSETARG\t")) {
 			std::array<std::string_view, 6> fields;
-			const std::size_t count = split(line, fields);
+			const std::size_t count = gse::split_fields(line, '\t', fields);
 			if (count < 6) {
 				++discarded;
 				report_discarded_record(main_file, line, "a GSETARG record carries fewer than the 6 required fields", discarded);
 				continue;
 			}
-			const std::optional<std::uint32_t> ln = to_u32(fields[2]);
-			const std::optional<std::uint32_t> col = to_u32(fields[3]);
-			const std::optional<std::uint32_t> end_ln = to_u32(fields[4]);
-			const std::optional<std::uint32_t> end_col = to_u32(fields[5]);
-			if (ln && col && end_ln && end_col) {
+			std::uint32_t ln = 0;
+			std::uint32_t col = 0;
+			std::uint32_t end_ln = 0;
+			std::uint32_t end_col = 0;
+			if (gse::parse(fields[2], ln) && gse::parse(fields[3], col) && gse::parse(fields[4], end_ln) && gse::parse(fields[5], end_col)) {
 				out.template_args.push_back({
 					.file = std::string(fields[1]),
-					.line = *ln,
-					.column = *col,
-					.end_line = *end_ln,
-					.end_column = *end_col,
+					.line = ln,
+					.column = col,
+					.end_line = end_ln,
+					.end_column = end_col,
 				});
 				continue;
 			}
@@ -279,27 +252,27 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 
 		if (line.starts_with("GSEREF\t")) {
 			std::array<std::string_view, 13> fields;
-			const std::size_t count = split(line, fields);
+			const std::size_t count = gse::split_fields(line, '\t', fields);
 			if (count < 9) {
 				++discarded;
 				report_discarded_record(main_file, line, "a GSEREF record carries fewer than the 9 required fields, so this reference will not resolve", discarded);
 				continue;
 			}
-			const std::optional<std::uint32_t> ln = to_u32(fields[2]);
-			const std::optional<std::uint32_t> col = to_u32(fields[3]);
-			const std::optional<std::uint32_t> len = to_u32(fields[4]);
-			const std::optional<std::uint32_t> dln = to_u32(fields[7]);
-			const std::optional<std::uint32_t> dcol = to_u32(fields[8]);
-			if (ln && col && len && dln && dcol && !fields[6].empty()) {
+			std::uint32_t ln = 0;
+			std::uint32_t col = 0;
+			std::uint32_t len = 0;
+			std::uint32_t dln = 0;
+			std::uint32_t dcol = 0;
+			if (!fields[6].empty() && gse::parse(fields[2], ln) && gse::parse(fields[3], col) && gse::parse(fields[4], len) && gse::parse(fields[7], dln) && gse::parse(fields[8], dcol)) {
 				out.refs.push_back({
 					.file = std::string(fields[1]),
-					.line = *ln,
-					.column = *col,
-					.length = *len,
+					.line = ln,
+					.column = col,
+					.length = len,
 					.name = std::string(fields[5]),
 					.def_file = std::string(fields[6]),
-					.def_line = *dln,
-					.def_column = *dcol,
+					.def_line = dln,
+					.def_column = dcol,
 					.qualified = count >= 10 ? std::string(fields[9]) : std::string{},
 					.identity = count >= 11 ? std::string(fields[10]) : std::string{},
 					.type = count >= 12 ? std::string(fields[11]) : std::string{},
@@ -314,7 +287,7 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 
 		if (line.starts_with("GSECHAN\t")) {
 			std::array<std::string_view, 4> fields;
-			const std::size_t count = split(line, fields);
+			const std::size_t count = gse::split_fields(line, '\t', fields);
 			if (count >= 4 && !fields[2].empty() && !fields[3].empty()) {
 				out.channels.push_back({
 					.produce = fields[1] == "produce",

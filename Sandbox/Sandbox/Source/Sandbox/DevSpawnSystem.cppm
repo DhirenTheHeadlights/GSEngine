@@ -25,6 +25,12 @@ export namespace sandbox::dev_spawn {
 		]]
 		sandbox::stress_scene_params stress;
 
+		[[
+			= gse::settings::describe<"How many characters a spawn request builds.">{},
+			= gse::settings::scope<gse::settings::scope_kind::project>{}
+		]]
+		sandbox::character_spawn_params characters;
+
 		gse::actions::handle spawn_stress;
 		gse::actions::handle spawn_joints;
 		gse::actions::handle spawn_character;
@@ -117,26 +123,40 @@ auto sandbox::dev_spawn::run(
 		spawn_joint_test(*scene);
 	}
 	if (scene != nullptr && (key_character || req_character)) {
-		state.last_character = sandbox::spawn_character(
-			*scene,
-			gse::asset::get<gse::skinned_model>(assets_d, "SkinnedModels/x_bot.v3"),
-			gse::animation::locomotion_blend{
-				.idle = gse::asset::get<gse::clip_asset>(assets_d, "Clips/idle"),
-				.walk = {
-					gse::asset::get<gse::clip_asset>(assets_d, "Clips/walking"),
-					gse::asset::get<gse::clip_asset>(assets_d, "Clips/walking_backwards"),
-					gse::asset::get<gse::clip_asset>(assets_d, "Clips/left_strafe_walking"),
-					gse::asset::get<gse::clip_asset>(assets_d, "Clips/right_strafe_walking"),
-				},
-				.run = {
-					gse::asset::get<gse::clip_asset>(assets_d, "Clips/running"),
-					gse::asset::get<gse::clip_asset>(assets_d, "Clips/walking_backwards"),
-					gse::asset::get<gse::clip_asset>(assets_d, "Clips/left_strafe"),
-					gse::asset::get<gse::clip_asset>(assets_d, "Clips/right_strafe"),
-				},
+		constexpr float character_spacing = 2.f;
+		const auto rig = gse::asset::get<gse::skinned_model>(assets_d, "SkinnedModels/x_bot.v3");
+		const gse::animation::locomotion_blend clips{
+			.idle = gse::asset::get<gse::clip_asset>(assets_d, "Clips/idle"),
+			.walk = {
+				gse::asset::get<gse::clip_asset>(assets_d, "Clips/walking"),
+				gse::asset::get<gse::clip_asset>(assets_d, "Clips/walking_backwards"),
+				gse::asset::get<gse::clip_asset>(assets_d, "Clips/left_strafe_walking"),
+				gse::asset::get<gse::clip_asset>(assets_d, "Clips/right_strafe_walking"),
 			},
-			gse::vec3<gse::position>(0.f, 0.f, 0.f)
-		);
+			.run = {
+				gse::asset::get<gse::clip_asset>(assets_d, "Clips/running"),
+				gse::asset::get<gse::clip_asset>(assets_d, "Clips/walking_backwards"),
+				gse::asset::get<gse::clip_asset>(assets_d, "Clips/left_strafe"),
+				gse::asset::get<gse::clip_asset>(assets_d, "Clips/right_strafe"),
+			},
+		};
+
+		for (int i = 0; i < state.characters.count; ++i) {
+			state.last_character = sandbox::spawn_character(
+				*scene,
+				i,
+				rig,
+				clips,
+				gse::vec3<gse::position>(static_cast<float>(i) * character_spacing, 0.f, 0.f)
+			);
+		}
+
+		if (!state.last_character.exists()) {
+			gse::log::println(
+				gse::log::level::warning,
+				"dev_spawn: character spawn produced nothing, so its skinned model or clips were not resolved when the request arrived"
+			);
+		}
 	}
 	if (state.last_character.exists() && gse::actions::pressed(state.ragdoll, cs, actions_d)) {
 		ctx.channels.push<gse::animation::ragdoll_request>({

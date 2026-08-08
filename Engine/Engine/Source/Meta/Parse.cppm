@@ -84,13 +84,13 @@ auto gse::parser<T>::parse(const std::string_view raw, T& out) -> bool {
 		}
 	}
 	else {
-		std::int64_t tmp{};
+		T value{};
 		const auto* first = raw.data();
 		const auto* last = first + raw.size();
-		if (std::from_chars(first, last, tmp).ec != std::errc{}) {
+		if (std::from_chars(first, last, value).ec != std::errc{}) {
 			return false;
 		}
-		out = static_cast<T>(tmp);
+		out = value;
 		return true;
 	}
 }

@@ -46,39 +46,6 @@ auto gse::engine::all_settled() const -> bool {
 	return m_scheduler.all_settled();
 }
 
-auto gse::engine::world_populated() -> bool {
-	return !m_registry.owner_ids<physics::transform_component>().empty();
-}
-
-auto gse::engine::world_state_hash() -> std::uint64_t {
-	const auto owners = m_registry.owner_ids<physics::transform_component>();
-	const auto transforms = m_registry.components<physics::transform_component>();
-
-	std::vector<std::size_t> order(owners.size());
-	std::ranges::iota(order, std::size_t{ 0 });
-	std::ranges::sort(
-		order,
-		[owners](const std::size_t a, const std::size_t b) {
-			return owners[a].number() < owners[b].number();
-		}
-	);
-
-	std::ostringstream buffer;
-	binary_writer writer(buffer);
-
-	for (const std::size_t index : order) {
-		const gse::id owner = owners[index];
-		const std::uint64_t number = owner.number();
-		writer & number;
-		writer & transforms[index];
-		if (const auto* motion = m_registry.try_component<physics::motion_component>(owner)) {
-			writer & *motion;
-		}
-	}
-
-	return stable_id(buffer.view());
-}
-
 auto gse::engine::destroy_attached_surface(gpu::device& device) -> void {
 	for (std::size_t i = 0; i < attached_ring_size; ++i) {
 		m_attached_surface_images[i] = {};
@@ -192,6 +159,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 
 		gse::asset::system_for<game_assets> assets{ asset_state };
 		assets.register_loaders();
+		assets.install_recompile_fns();
 		if (auto discovered = assets.discover_baked(); !discovered) {
 			assert(false, "Asset discovery failed: {}", discovered.error().detail);
 		}
@@ -259,8 +227,9 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 			}
 		}
 
-		gse::asset::system_for<graphics::simulation_asset_types> assets{ asset_state };
+		gse::asset::system_for<game_assets> assets{ asset_state };
 		assets.register_loaders();
+		assets.install_stale_checks();
 		if (auto discovered = assets.discover_baked(); !discovered) {
 			assert(false, "Asset discovery failed: {}", discovered.error().detail);
 		}

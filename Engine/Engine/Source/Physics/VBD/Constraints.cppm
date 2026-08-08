@@ -10,24 +10,24 @@ import :motion_component;
 
 export namespace gse::vbd {
 	struct [[= shaders::shader_constant_block]] vbd_limits {
-		std::uint32_t max_bodies = 5120;
-		std::uint32_t max_contacts = 65536;
-		std::uint32_t max_collision_pairs = 65536;
+		std::uint32_t max_bodies = 20480;
+		std::uint32_t max_contacts = 262144;
+		std::uint32_t max_collision_pairs = 262144;
 		std::uint32_t max_colors = 16;
 		std::uint32_t max_joints = 8192;
 		std::uint32_t max_islands = 512;
 		std::uint32_t max_impulses = 64;
 		std::uint32_t max_motors = 1024;
-		std::uint32_t max_contact_adjacency = 65536 * 2;
-		std::uint32_t max_joint_adjacency = 8192 * 2;
-		std::uint32_t max_grounded_uints = (5120 + 31) / 32;
+		std::uint32_t max_contact_adjacency = max_contacts * 2;
+		std::uint32_t max_joint_adjacency = max_joints * 2;
+		std::uint32_t max_grounded_uints = (max_bodies + 31) / 32;
 		std::uint32_t grid_table_size = 4096;
-		std::uint32_t grid_max_entries = 5120 * 8;
+		std::uint32_t grid_max_entries = max_bodies * 8;
 		std::uint32_t workgroup_size = 64;
 		std::uint32_t adjacency_workgroup_size = 1024;
 		std::uint32_t coloring_rounds = 32;
 		std::uint32_t sleep_threshold = 60;
-		std::uint32_t collision_state_header_uints = 8;
+		std::uint32_t collision_state_header_uints = 16;
 		std::uint32_t solve_state_float4s_per_body = 11;
 		std::uint32_t state_contact_count_index = 0;
 		std::uint32_t state_max_used_color_index = 1;
@@ -36,6 +36,14 @@ export namespace gse::vbd {
 		std::uint32_t state_converged_flag_index = 5;
 		std::uint32_t state_convergence_max_angular_delta_index = 6;
 		std::uint32_t state_warm_start_count_index = 3;
+		std::uint32_t state_coloring_fallback_index = 7;
+		std::uint32_t state_coloring_conflict_index = 8;
+		std::uint32_t state_contact_duplicate_index = 9;
+		std::uint32_t state_warm_start_hit_index = 10;
+		std::uint32_t state_joint_lambda_index = 11;
+		std::uint32_t state_joint_c0_index = 12;
+		std::uint32_t state_joint_penalty_index = 13;
+		std::uint32_t state_joint_c_index = 14;
 		std::uint32_t narrow_phase_debug_record_uints = 8;
 		std::uint32_t max_narrow_phase_debug_records = 32;
 		std::uint32_t feature_vertex = 0;

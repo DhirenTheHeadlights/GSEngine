@@ -400,8 +400,7 @@ auto gse::renderer::physics_debug::prepare(context& ctx, data& d, const shared_v
 
 	const bool use_snapshot = ps.use_gpu_solver && ps.gpu_solver.buffers_created() && ps.gpu_solver.body_count() > 0;
 	if (use_snapshot) {
-		const auto safe_slot = 1u - ps.gpu_solver.latest_snapshot_slot();
-		const auto bytes = ps.gpu_solver.snapshot_buffer(safe_slot).host_read();
+		const auto bytes = ps.gpu_solver.snapshot_buffer(ps.gpu_solver.retired_snapshot_slot()).host_read();
 		if (!bytes.empty()) {
 			const auto* snapshot_states = reinterpret_cast<const vbd::body_state*>(bytes.data());
 			const std::uint32_t snapshot_body_count = ps.gpu_solver.body_count();

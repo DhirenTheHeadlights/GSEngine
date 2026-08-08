@@ -14,6 +14,7 @@ export namespace gse::scenario {
 		char name[64];
 		char scene[64] = "";
 		bool headless = false;
+		bool gpu_solver = false;
 		int warmup_frames = 120;
 		int frames = 600;
 	};

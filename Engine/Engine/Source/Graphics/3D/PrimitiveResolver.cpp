@@ -50,13 +50,13 @@ auto gse::primitive_resolver::attach_sphere(const primitive_sphere_spec& spec, c
 	++render.model_count;
 }
 
-auto gse::primitive_resolver::ensure_renders(context& ctx, structural<render_component> renders) -> async::task<> {
-	for (const auto eid : ctx.drain_component_adds<primitive_box_spec>()) {
+auto gse::primitive_resolver::ensure_renders(write<primitive_box_spec> boxes, write<primitive_sphere_spec> spheres, structural<render_component> renders) -> async::task<> {
+	for (const auto eid : boxes.drain(component_event::added)) {
 		if (!renders.contains(eid)) {
 			renders.add(eid);
 		}
 	}
-	for (const auto eid : ctx.drain_component_adds<primitive_sphere_spec>()) {
+	for (const auto eid : spheres.drain(component_event::added)) {
 		if (!renders.contains(eid)) {
 			renders.add(eid);
 		}

@@ -14,9 +14,7 @@ export namespace sandbox::tumbler {
 }
 
 export namespace sandbox::tumbler {
-	struct [[= gse::system_state<"Tumbler">{}]] data {
-		bool traced = false;
-	};
+	struct [[= gse::system_state<"Tumbler">{}]] data {};
 
 	[[= gse::system_run<>{}]]
 	auto run(
@@ -32,23 +30,11 @@ auto sandbox::tumbler::run(gse::context& ctx, data& d, gse::write<component> tum
 	const auto step_dt = gse::system_clock::fixed_dt<gse::time>();
 	const float frame_step_count = static_cast<float>(steps);
 
-	const bool trace = !d.traced && !tumblers.empty();
-	d.traced = d.traced || !tumblers.empty();
-
 	const auto tumbler_ids = tumblers.owner_ids();
 	for (std::size_t i = 0; i < tumblers.size(); ++i) {
 		auto& t = tumblers[i];
 		auto* target = targets.find(tumbler_ids[i]);
 		if (!target) {
-			if (trace) {
-				gse::log::println(
-					gse::log::category::physics,
-					"[tumbler-trace] {} has no kinematic_target_component; center={:.2f} local_offset={:.2f}",
-					tumbler_ids[i],
-					t.center,
-					t.local_offset
-				);
-			}
 			continue;
 		}
 
@@ -58,20 +44,6 @@ auto sandbox::tumbler::run(gse::context& ctx, data& d, gse::write<component> tum
 
 		target->position = t.center + gse::rotate_vector(world_rot, t.local_offset);
 		target->orientation = world_rot;
-
-		if (trace) {
-			gse::log::println(
-				gse::log::category::physics,
-				"[tumbler-trace] {} center={:.2f} local_offset={:.2f} axis={:.2f} phase={:.3f:rad} steps={} -> target={:.2f}",
-				tumbler_ids[i],
-				t.center,
-				t.local_offset,
-				t.axis,
-				t.phase,
-				steps,
-				target->position
-			);
-		}
 	}
 
 	return {};

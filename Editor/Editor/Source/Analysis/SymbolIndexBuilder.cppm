@@ -5,6 +5,7 @@ import gse;
 
 import :process;
 import :compilation_database;
+import :semantic_tokens;
 import :symbol_extract;
 import :gcc_diagnostics;
 
@@ -28,16 +29,34 @@ export namespace gse::ide::analysis {
 		auto retryable() const -> bool;
 	};
 
-	auto describe(symbol_index_failure failure) -> std::string_view;
+	struct tu_audit {
+		tu_symbols symbols;
+		std::vector<semantic_token> highlights;
+		std::vector<identifier_use> identifiers;
+	};
+
+	struct symbol_request {
+		std::filesystem::path plugin_dll;
+		std::span<const std::filesystem::path> workspace_roots;
+		bool module_graph_validated = false;
+	};
+
+	auto describe(
+		symbol_index_failure failure
+	) -> std::string_view;
 
 	struct symbol_index_builder {
 		static auto run_one(
 			const compilation_entry& entry,
-			const std::filesystem::path& plugin_dll,
-			std::span<const std::filesystem::path> workspace_roots,
-			bool module_graph_validated = false,
+			const symbol_request& request,
 			std::stop_token cancel = {}
 		) -> tu_symbols;
+
+		static auto audit_one(
+			const compilation_entry& entry,
+			const symbol_request& request,
+			std::stop_token cancel = {}
+		) -> tu_audit;
 	};
 }
 
@@ -123,18 +142,38 @@ auto gse::ide::analysis::describe(const symbol_index_failure failure) -> std::st
 	return "unknown compiler failure";
 }
 
-auto gse::ide::analysis::symbol_index_builder::run_one(const compilation_entry& entry, const std::filesystem::path& plugin_dll, const std::span<const std::filesystem::path> workspace_roots, const bool module_graph_validated, std::stop_token cancel) -> tu_symbols {
-	tu_symbols out;
+namespace gse::ide::analysis {
+	enum class plugin_records {
+		symbols,
+		symbols_and_audit
+	};
+
+	struct plugin_run {
+		tu_symbols symbols;
+		std::string text;
+	};
+
+	auto run_plugin(
+		const compilation_entry& entry,
+		const symbol_request& request,
+		plugin_records records,
+		std::stop_token cancel
+	) -> plugin_run;
+}
+
+auto gse::ide::analysis::run_plugin(const compilation_entry& entry, const symbol_request& request, const plugin_records records, std::stop_token cancel) -> plugin_run {
+	plugin_run result;
+	tu_symbols& out = result.symbols;
 	out.tu = entry.file;
-	if (plugin_dll.empty()) {
-		return out;
+	if (request.plugin_dll.empty()) {
+		return result;
 	}
-	if (!module_graph_validated) {
+	if (!request.module_graph_validated) {
 		const std::expected<void, std::string> module_graph = validate_module_graph(entry);
 		if (!module_graph) {
 			out.failure = symbol_index_failure::module_unavailable;
 			out.failure_detail = module_graph.error();
-			return out;
+			return result;
 		}
 	}
 
@@ -149,10 +188,13 @@ auto gse::ide::analysis::symbol_index_builder::run_one(const compilation_entry& 
 	});
 
 	std::string command_line = entry.command.command_line;
-	command_line += " -fplugin=\"" + plugin_dll.generic_native_encoded_string() + "\"";
+	command_line += " -fplugin=\"" + request.plugin_dll.generic_native_encoded_string() + "\"";
 	command_line += " -fplugin-arg-gse_tokens-out=\"" + token_temp.generic_native_encoded_string() + "\"";
-	for (const std::filesystem::path& root : workspace_roots) {
+	for (const std::filesystem::path& root : request.workspace_roots) {
 		command_line += " -fplugin-arg-gse_tokens-root=\"" + root.generic_native_encoded_string() + "\"";
+	}
+	if (records == plugin_records::symbols_and_audit) {
+		command_line += " -fplugin-arg-gse_tokens-audit";
 	}
 	command_line += " -MMD -MF \"" + dependency_temp.generic_native_encoded_string() + "\" -MT gseditor_index";
 
@@ -162,7 +204,8 @@ auto gse::ide::analysis::symbol_index_builder::run_one(const compilation_entry& 
 	if (in) {
 		std::ostringstream stream;
 		stream << in.rdbuf();
-		out.set = symbol_tokens::parse(stream.str(), out.tu.generic_native_encoded_string());
+		result.text = stream.str();
+		out.set = symbol_tokens::parse(result.text, out.tu.generic_native_encoded_string());
 	}
 	std::ifstream dependency_in(dependency_temp, std::ios::binary);
 	if (dependency_in) {
@@ -204,11 +247,35 @@ auto gse::ide::analysis::symbol_index_builder::run_one(const compilation_entry& 
 			);
 		}
 		else if (out.failure == symbol_index_failure::compiler) {
-			out.failure_detail = std::format("compiler exit code {}", run.value_or(-1));
+			std::string raw = sarif_stream.str();
+			std::erase(raw, '\r');
+			std::ranges::replace(raw, '\n', ' ');
+			if (const std::size_t message = raw.find("\"text\":"); message != std::string::npos) {
+				raw.erase(0, message);
+			}
+			if (raw.size() > 400) {
+				raw.resize(400);
+			}
+			out.failure_detail = raw.empty()
+				? std::format("compiler exit code {}", run.value_or(-1))
+				: std::format("compiler exit code {}: {}", run.value_or(-1), raw);
 		}
 		else {
 			out.failure_detail = std::string(describe(out.failure));
 		}
 	}
-	return out;
+	return result;
+}
+
+auto gse::ide::analysis::symbol_index_builder::run_one(const compilation_entry& entry, const symbol_request& request, std::stop_token cancel) -> tu_symbols {
+	return run_plugin(entry, request, plugin_records::symbols, std::move(cancel)).symbols;
+}
+
+auto gse::ide::analysis::symbol_index_builder::audit_one(const compilation_entry& entry, const symbol_request& request, std::stop_token cancel) -> tu_audit {
+	plugin_run run = run_plugin(entry, request, plugin_records::symbols_and_audit, std::move(cancel));
+	return {
+		.symbols = std::move(run.symbols),
+		.highlights = semantic_tokens::parse(run.text),
+		.identifiers = semantic_tokens::parse_identifiers(run.text),
+	};
 }

@@ -56,8 +56,6 @@ export namespace gse::vbd {
 
 	class solver {
 	public:
-		solver();
-
 		auto configure(
 			const solver_config& cfg
 		) -> void;
@@ -166,6 +164,7 @@ export namespace gse::vbd {
 		static constexpr std::uint32_t no_motor = std::numeric_limits<std::uint32_t>::max();
 		std::vector<std::uint32_t> m_body_motor_index;
 		std::vector<bool> m_body_in_color_group;
+		std::vector<std::uint8_t> m_body_inactive;
 
 		std::vector<vec3<velocity>> m_prev_velocity;
 		std::vector<float> m_accel_weight;
@@ -209,16 +208,6 @@ namespace gse::vbd {
 		const vec3f& dir,
 		force abs_force
 	) -> void;
-}
-
-gse::vbd::solver::solver() {
-	m_bodies.reserve(limits.max_bodies);
-	m_solve_state.reserve(limits.max_bodies);
-	m_body_motor_index.reserve(limits.max_bodies);
-	m_body_in_color_group.reserve(limits.max_bodies);
-	m_prev_velocity.reserve(limits.max_bodies);
-	m_accel_weight.reserve(limits.max_bodies);
-	m_frozen_jacobians.reserve(limits.max_contacts);
 }
 
 auto gse::vbd::solver::configure(const solver_config& cfg) -> void {
@@ -268,11 +257,11 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 
 	{
 		trace::scope_guard sg{ trace_id<"vbd::coloring">() };
-		std::inplace_vector<bool, limits.max_bodies> inactive;
+		m_body_inactive.resize(num_bodies);
 		for (std::uint32_t i = 0; i < num_bodies; ++i) {
-			inactive.push_back(m_bodies[i].locked || m_bodies[i].sleeping());
+			m_body_inactive[i] = static_cast<std::uint8_t>(m_bodies[i].locked || m_bodies[i].sleeping());
 		}
-		m_graph.compute_coloring(num_bodies, inactive);
+		m_graph.compute_coloring(num_bodies, m_body_inactive);
 	}
 
 	m_body_motor_index.assign(num_bodies, no_motor);

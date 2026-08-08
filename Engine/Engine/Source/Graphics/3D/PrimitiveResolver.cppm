@@ -15,7 +15,8 @@ export namespace gse::primitive_resolver {
 
 	[[= system_run<>{}]]
 	auto ensure_renders(
-		context& ctx,
+		write<primitive_box_spec> boxes,
+		write<primitive_sphere_spec> spheres,
 		structural<render_component> renders
 	) -> async::task<>;
 

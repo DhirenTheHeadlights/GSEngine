@@ -593,7 +593,7 @@ auto gse::physics::init(context& ctx, const std::optional<shared_view<gpu::conte
 	co_return;
 }
 
-auto gse::physics::apply_kinematic_targets(read<kinematic_target_component>& targets, write<transform_component>& transform, write<motion_component>& motion, std::flat_map<id, transform_component>& step_start, const time_t<float, seconds> dt, const bool trace) -> void {
+auto gse::physics::apply_kinematic_targets(read<kinematic_target_component>& targets, write<transform_component>& transform, write<motion_component>& motion, std::flat_map<id, transform_component>& step_start, const time_t<float, seconds> dt) -> void {
 	trace::scope_guard sg{ trace_id<"physics::kinematic_targets">() };
 
 	const auto target_owners = targets.owner_ids();
@@ -601,47 +601,20 @@ auto gse::physics::apply_kinematic_targets(read<kinematic_target_component>& tar
 		const auto eid = target_owners[i];
 		auto* mc = motion.find(eid);
 		if (!mc || !is_kinematic(*mc)) {
-			if (trace) {
-				log::println(
-					log::category::physics,
-					"[kinematic-trace] {} skipped: motion={} kinematic={}",
-					eid,
-					mc != nullptr,
-					mc != nullptr && is_kinematic(*mc)
-				);
-			}
 			continue;
 		}
 		auto* tc = transform.find(eid);
 		if (!tc) {
-			if (trace) {
-				log::println(log::category::physics, "[kinematic-trace] {} skipped: no transform_component", eid);
-			}
 			continue;
 		}
 
 		const auto& target = targets[i];
-		const auto incoming = *tc;
-		const auto [start, seeded] = step_start.try_emplace(eid, *tc);
+		const auto start = step_start.try_emplace(eid, *tc).first;
 
 		*tc = start->second;
 
 		mc->current_velocity = (target.position - tc->position) / dt;
 		mc->angular_velocity = difference_axis_angle(tc->orientation, target.orientation) / dt;
-
-		if (trace) {
-			log::println(
-				log::category::physics,
-				"[kinematic-trace] {} incoming_tc={:.2f} seeded={} step_start={:.2f} target={:.2f} dt={:.4f:s} -> vel={:.2f}",
-				eid,
-				incoming.position,
-				seeded,
-				start->second.position,
-				target.position,
-				dt,
-				mc->current_velocity
-			);
-		}
 
 		start->second = transform_component{
 			.position = target.position,
@@ -652,16 +625,12 @@ auto gse::physics::apply_kinematic_targets(read<kinematic_target_component>& tar
 
 auto gse::physics::prepare(context& ctx, data& d, write<joint_spec> specs, read<muscle_component> muscles, read<joint_drive_component> drives, read<kinematic_target_component> targets, write<transform_component> transform, write<motion_component> motion) -> async::task<> {
 	if (const int steps = system_clock::fixed_steps_this_frame(); steps > 0 && d.update_phys) {
-		const bool trace = !d.kinematic_traced && !targets.empty();
-		d.kinematic_traced = d.kinematic_traced || !targets.empty();
-
 		apply_kinematic_targets(
 			targets,
 			transform,
 			motion,
 			d.kinematic_step_start,
-			system_clock::fixed_dt<time_t<float, seconds>>() * static_cast<float>(steps),
-			trace
+			system_clock::fixed_dt<time_t<float, seconds>>() * static_cast<float>(steps)
 		);
 	}
 
@@ -741,9 +710,8 @@ auto gse::physics::prepare(context& ctx, data& d, write<joint_spec> specs, read<
 	co_return;
 }
 
-auto gse::physics::ensure_results(context& ctx, data& d, structural<collision_result_component> results) -> async::task<> {
-	(void)d;
-	for (const auto owner : ctx.drain_component_adds<collision_component>()) {
+auto gse::physics::ensure_results(write<collision_component> collision, structural<collision_result_component> results) -> async::task<> {
+	for (const auto owner : collision.drain(component_event::added)) {
 		results.add(owner);
 	}
 	co_return;
@@ -810,8 +778,6 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 	if (!reset) {
 		trace::scope_guard sg{ trace_id<"vbd_gpu::readback">() };
 		const auto solved = d.gpu_solver.read_body_states();
-		const bool trace_snapshot = !d.snapshot_traced && d.id_to_body_index.size() > 64 && solved.size() > 64;
-		bool traced_kinematic = false;
 
 		if (!solved.empty()) {
 			const auto rb_motion_ids = motion.owner_ids();
@@ -837,19 +803,6 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 				}
 				const auto& bs = solved[it->second];
 				if (!dyn) {
-					if (trace_snapshot) {
-						log::println(
-							log::category::physics,
-							"[snapshot-trace] {} slot={}/{} locked={} tc={:.2f} snapshot={:.2f}",
-							eid,
-							it->second,
-							solved.size(),
-							bs.locked,
-							tc->position,
-							bs.position
-						);
-						traced_kinematic = true;
-					}
 					continue;
 				}
 				tc->position = bs.position;
@@ -865,18 +818,50 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 			}
 		}
 
-		if (trace_snapshot) {
+		const auto diag = d.gpu_solver.diagnostics();
+		++d.gpu_diag_frames;
+		d.gpu_conflict_total += diag.coloring_conflicts;
+
+		if (d.gpu_solver.reseeding()) {
 			log::println(
 				log::category::physics,
-				"[snapshot-trace] solved={} motion={} index_map={} gpu_bodies={} slot={} kinematic_seen={}",
-				solved.size(),
-				motion.size(),
-				d.id_to_body_index.size(),
-				d.gpu_solver.body_count(),
-				d.gpu_solver.latest_snapshot_slot(),
-				traced_kinematic
+				"vbd gpu reseed at frame {}: body_count {}",
+				d.gpu_diag_frames,
+				d.gpu_solver.body_count()
 			);
-			d.snapshot_traced = true;
+		}
+		const vbd::solver_diagnostics peak{
+			.attempted_contacts = std::max(diag.attempted_contacts, d.gpu_diag_peak.attempted_contacts),
+			.max_used_color = std::max(diag.max_used_color, d.gpu_diag_peak.max_used_color),
+			.coloring_fallbacks = std::max(diag.coloring_fallbacks, d.gpu_diag_peak.coloring_fallbacks),
+			.coloring_conflicts = std::max(diag.coloring_conflicts, d.gpu_diag_peak.coloring_conflicts),
+			.contact_duplicates = std::max(diag.contact_duplicates, d.gpu_diag_peak.contact_duplicates),
+			.warm_start_hits = std::max(diag.warm_start_hits, d.gpu_diag_peak.warm_start_hits),
+			.joint_lambda_max = std::max(diag.joint_lambda_max, d.gpu_diag_peak.joint_lambda_max),
+			.joint_penalty_max = std::max(diag.joint_penalty_max, d.gpu_diag_peak.joint_penalty_max),
+			.joint_c_max = std::max(diag.joint_c_max, d.gpu_diag_peak.joint_c_max),
+			.joint_c0_max = std::max(diag.joint_c0_max, d.gpu_diag_peak.joint_c0_max),
+		};
+		if (peak != d.gpu_diag_peak || d.gpu_diag_frames % 60 == 0) {
+			d.gpu_diag_peak = peak;
+			log::println(
+				log::category::physics,
+				"vbd gpu peak: contacts {}/{} dropped {} dup {} | colors {}/{} fallback {} conflicts {} total {} over {} frames | joint lambda {:.3f} penalty {:.3f} c {:.6f} c0 {:.6f}",
+				peak.attempted_contacts,
+				vbd::limits.max_contacts,
+				peak.attempted_contacts > vbd::limits.max_contacts ? peak.attempted_contacts - vbd::limits.max_contacts : 0u,
+				peak.contact_duplicates,
+				peak.max_used_color,
+				vbd::limits.max_colors,
+				peak.coloring_fallbacks,
+				peak.coloring_conflicts,
+				d.gpu_conflict_total,
+				d.gpu_diag_frames,
+				peak.joint_lambda_max,
+				peak.joint_penalty_max,
+				peak.joint_c_max,
+				peak.joint_c0_max
+			);
 		}
 	}
 
@@ -884,7 +869,7 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 		d.gpu_pending_impulses.insert(d.gpu_pending_impulses.end(), impulses.begin(), impulses.end());
 		if (d.gpu_solver.body_count() > 0) {
 			channels.push<gpu_solver_frame_info>({
-				.snapshot = &d.gpu_solver.snapshot_buffer(d.gpu_solver.latest_snapshot_slot()),
+				.snapshot = &d.gpu_solver.snapshot_buffer(d.gpu_solver.render_snapshot_slot()),
 				.body_count = d.gpu_solver.body_count(),
 				.body_stride = sizeof(vbd::body_state),
 				.position_offset = static_cast<std::uint32_t>(std::meta::offset_of(^^vbd::body_state::position).bytes)
@@ -1004,6 +989,7 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 		id_to_body_index_staging.resize(body_count);
 
 		const auto& sleep_counters_ref = d.sleep_counters;
+		const auto airborne_ref = std::span<const std::uint8_t>(d.body_airborne);
 
 		const auto build_motion_ids = motion.owner_ids();
 		const bool build_transform_order_matches =
@@ -1043,7 +1029,7 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 					.update_orientation = (dyn && dyn->update_orientation) ? 1u : 0u,
 					.affected_by_gravity = (dyn && dyn->affected_by_gravity) ? 1u : 0u,
 					.sleep_counter = sc,
-					.accel_weight = 0.f,
+					.accel_weight = (i < airborne_ref.size() && airborne_ref[i] != 0) ? 1.f : 0.f,
 					.restitution = dyn ? dyn->restitution : 0.f,
 					.inv_inertia = inv_inertial_tensor(mc, tc->orientation),
 					.reset_pending = mc.reset_pending,
@@ -1056,28 +1042,6 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 
 		d.id_to_body_index.clear();
 		d.id_to_body_index.insert(id_to_body_index_staging.begin(), id_to_body_index_staging.end());
-
-		if (!d.upload_traced && body_count > 64) {
-			d.upload_traced = true;
-			for (std::size_t i = 0; i < body_count; ++i) {
-				if (!is_kinematic(motion[i])) {
-					continue;
-				}
-				log::println(
-					log::category::physics,
-					"[upload-trace] {} slot={}/{} locked={} mass={:.1f} pos={:.2f} vel={:.2f} dispatch_slot={} seeded_count={}",
-					entity_ids[i],
-					i,
-					body_count,
-					bodies[i].locked,
-					bodies[i].mass,
-					bodies[i].position,
-					bodies[i].velocity,
-					1u - d.gpu_solver.latest_snapshot_slot(),
-					d.gpu_solver.body_count()
-				);
-			}
-		}
 	}
 
 	{
@@ -1611,7 +1575,7 @@ auto gse::physics::frame(context& ctx, const std::optional<shared_view<gpu::cont
 	});
 
 	ctx.channels.push<gpu_solver_frame_info>({
-		.snapshot = &d.gpu_solver.snapshot_buffer(d.gpu_solver.latest_snapshot_slot()),
+		.snapshot = &d.gpu_solver.snapshot_buffer(d.gpu_solver.render_snapshot_slot()),
 		.body_count = d.gpu_solver.body_count(),
 		.body_stride = sizeof(vbd::body_state),
 		.position_offset = static_cast<std::uint32_t>(std::meta::offset_of(^^vbd::body_state::position).bytes)

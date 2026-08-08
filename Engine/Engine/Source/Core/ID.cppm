@@ -249,6 +249,8 @@ export namespace gse {
 			this auto&& self
 		) -> decltype(auto);
 
+		[[nodiscard]] auto ids() const -> std::span<const PrimaryIdType>;
+
 		auto contains(
 			const PrimaryIdType& id
 		) const -> bool;
@@ -352,6 +354,11 @@ auto gse::id_mapped_collection<T, PrimaryIdType>::try_get(const PrimaryIdType& i
 template <typename T, typename PrimaryIdType>
 auto gse::id_mapped_collection<T, PrimaryIdType>::items(this auto&& self) -> decltype(auto) {
 	return std::span{ self.m_items };
+}
+
+template <typename T, typename PrimaryIdType>
+auto gse::id_mapped_collection<T, PrimaryIdType>::ids() const -> std::span<const PrimaryIdType> {
+	return m_ids;
 }
 
 template <typename T, typename PrimaryIdType>

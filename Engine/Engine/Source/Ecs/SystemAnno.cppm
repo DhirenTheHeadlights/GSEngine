@@ -90,6 +90,10 @@ export namespace gse::meta {
 		std::meta::info fn
 	) -> std::vector<std::meta::info>;
 
+	consteval auto qualified_name_of(
+		std::meta::info entity
+	) -> std::string_view;
+
 	template <typename State>
 	consteval auto has_system_state() -> bool;
 
@@ -186,9 +190,7 @@ consteval auto gse::meta::system_state_name() -> std::string_view {
 	}
 }
 
-template <typename State>
-consteval auto gse::meta::system_qualified_name() -> std::string_view {
-	const auto entity = std::meta::dealias(^^State);
+consteval auto gse::meta::qualified_name_of(const std::meta::info entity) -> std::string_view {
 	std::string self = std::meta::has_identifier(entity)
 		? std::string(std::meta::identifier_of(entity))
 		: std::string("data");
@@ -203,4 +205,9 @@ consteval auto gse::meta::system_qualified_name() -> std::string_view {
 		parent = std::meta::parent_of(parent);
 	}
 	return std::define_static_string(prefix + self);
+}
+
+template <typename State>
+consteval auto gse::meta::system_qualified_name() -> std::string_view {
+	return qualified_name_of(std::meta::dealias(^^State));
 }

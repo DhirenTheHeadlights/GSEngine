@@ -6,7 +6,6 @@ import :scheduler;
 import :registries;
 import :context;
 import :settings;
-import :context;
 import :system_node;
 import :system_dispatch;
 import :registry;
@@ -250,6 +249,13 @@ namespace gse {
 		output
 	};
 
+	enum class dispatch_state : std::uint8_t {
+		unknown,
+		checking,
+		ready,
+		blocked
+	};
+
 	struct component_dep {
 		id state;
 		id via;
@@ -358,7 +364,7 @@ auto gse::scheduler::wire_component_deps() -> void {
 	{
 		std::size_t idx = 0;
 		for (const auto& node : m_nodes) {
-			for (const id dep : node.run_state_deps) {
+			for (const id dep : node.declared_run_state_deps) {
 				deps[idx].push_back({
 					.state = dep,
 					.via = {},
@@ -542,7 +548,7 @@ auto gse::scheduler::promote_optional_deps() -> void {
 				}
 			}
 		};
-		promote(node.optional_run_state_deps, node.run_state_deps);
+		promote(node.optional_run_state_deps, node.declared_run_state_deps);
 		promote(node.optional_init_state_deps, node.init_state_deps);
 	}
 }
@@ -661,37 +667,46 @@ auto gse::scheduler::settle_progress() const -> settle_stats {
 }
 
 auto gse::scheduler::dep_init_done(const id dep) const -> bool {
-	for (const auto& node : m_nodes) {
-		if (node.state_id == dep || node.state_type_id == dep) {
-			return node.init_done;
-		}
+	const auto it = m_node_index.find(dep);
+	if (it == m_node_index.end()) {
+		return true;
 	}
-	return true;
+	return m_nodes[it->second].init_done;
 }
 
-auto gse::scheduler::is_dispatchable(const id node_id) const -> bool {
-	const system_node* found = nullptr;
-	for (const auto& node : m_nodes) {
-		if (node.state_id == node_id || node.state_type_id == node_id) {
-			found = &node;
-			break;
+auto gse::scheduler::dispatchable_nodes() const -> std::vector<bool> {
+	std::vector<dispatch_state> visited(m_nodes.size(), dispatch_state::unknown);
+
+	auto resolve = [&](const std::size_t idx, auto& self) -> bool {
+		if (visited[idx] == dispatch_state::checking) {
+			return true;
 		}
-	}
-	if (!found) {
-		return true;
-	}
-	if (!found->init_done) {
-		return false;
-	}
-	if (!found->invoke_run_fn) {
-		return true;
-	}
-	for (const id& dep : found->run_state_deps) {
-		if (!is_dispatchable(dep)) {
-			return false;
+		if (visited[idx] != dispatch_state::unknown) {
+			return visited[idx] == dispatch_state::ready;
 		}
+		visited[idx] = dispatch_state::checking;
+
+		const auto& node = m_nodes[idx];
+		bool ready = node.init_done;
+		if (ready && node.invoke_run_fn) {
+			for (const id& dep : node.run_state_deps) {
+				const auto it = m_node_index.find(dep);
+				if (it != m_node_index.end() && !self(it->second, self)) {
+					ready = false;
+					break;
+				}
+			}
+		}
+
+		visited[idx] = ready ? dispatch_state::ready : dispatch_state::blocked;
+		return ready;
+	};
+
+	std::vector<bool> out(m_nodes.size(), false);
+	for (std::size_t i = 0; i < m_nodes.size(); ++i) {
+		out[i] = resolve(i, resolve);
 	}
-	return true;
+	return out;
 }
 
 auto gse::scheduler::run_init_phase() -> void {
@@ -766,7 +781,7 @@ auto gse::scheduler::check_closed_dep_graph() -> void {
 	};
 
 	for (const auto& node : m_nodes) {
-		check_deps(node.run_state_deps, node.state_id, "run()");
+		check_deps(node.declared_run_state_deps, node.state_id, "run()");
 		check_deps(node.init_state_deps, node.state_id, "init()");
 		check_deps(node.frame_state_deps, node.state_id, "frame()");
 	}
@@ -785,43 +800,52 @@ auto gse::scheduler::check_closed_dep_graph() -> void {
 auto gse::scheduler::dispatch_run_systems() -> void {
 	trace::scope_guard sg{ trace_id<"scheduler::dispatch_run_systems">() };
 
-	for (auto& node : m_nodes) {
-		if (!node.invoke_run_fn || !is_dispatchable(node.state_id)) {
-			continue;
-		}
-		m_update_graph.reset_state(node.state_id);
-		if (node.state_type_id.exists() && node.state_type_id != node.state_id) {
-			m_update_graph.reset_state(node.state_type_id);
+	const auto dispatchable = dispatchable_nodes();
+
+	{
+		std::size_t idx = 0;
+		for (auto& node : m_nodes) {
+			if (node.invoke_run_fn && dispatchable[idx]) {
+				m_update_graph.reset_state(node.state_id);
+				if (node.state_type_id.exists() && node.state_type_id != node.state_id) {
+					m_update_graph.reset_state(node.state_type_id);
+				}
+			}
+			++idx;
 		}
 	}
 
-	async::manual_event dummy_resume;
-	async::manual_event dummy_paused;
-	auto writer = m_channels_store.make_writer();
+	if (!m_run_writer) {
+		m_run_writer.emplace(m_channels_store.make_writer());
+	}
+	while (m_run_contexts.size() < m_nodes.size()) {
+		m_run_contexts.push_back(std::make_unique<context>(
+			*this,
+			m_states,
+			m_resources_store,
+			m_channels_store,
+			*m_run_writer,
+			m_update_graph,
+			*m_registry,
+			m_guard
+		));
+	}
 
-	std::vector<std::unique_ptr<context>> contexts;
 	std::vector<async::task<>> tasks;
-	contexts.reserve(m_nodes.size());
 	tasks.reserve(m_nodes.size());
 	{
 		trace::scope_guard sg_dispatch{ trace_id<"sched::run_dispatch">() };
+		std::size_t idx = 0;
 		for (auto& node : m_nodes) {
-			if (!node.invoke_run_fn || !is_dispatchable(node.state_id)) {
+			if (!node.invoke_run_fn || !dispatchable[idx]) {
+				++idx;
 				continue;
 			}
-			auto& ctx = *contexts.emplace_back(std::make_unique<context>(
-				*this,
-				m_states,
-				m_resources_store,
-				m_channels_store,
-				writer,
-				m_update_graph,
-				*m_registry,
-				m_guard,
-				dummy_resume,
-				dummy_paused
-			));
+			auto& ctx = *m_run_contexts[idx];
+			const int held = ctx.held_lock_count();
+			assert(held == 0, "system {} still held {} component access handle(s) when its next run() was dispatched; scope read<>/write<>/structural<> to the function body", node.trace_id, held);
 			tasks.push_back(run_node_update(ctx, node));
+			++idx;
 		}
 	}
 	{
@@ -885,6 +909,8 @@ auto gse::scheduler::drain_hot_add_queue() -> void {
 }
 
 auto gse::scheduler::register_node(system_node node) -> void* {
+	assert(m_registry != nullptr, "scheduler::set_registry must be called before a system node is registered");
+
 	const auto canonical_idx = node.state_id;
 	auto* state_ptr = node.state_ptr;
 	m_states.register_state(canonical_idx, node.state_ptr, node.state_snapshot_ptr);
@@ -893,7 +919,11 @@ auto gse::scheduler::register_node(system_node node) -> void* {
 		m_states.register_state(node.state_type_id, node.state_ptr, node.state_snapshot_ptr);
 	}
 
-	auto combined_deps = node.run_state_deps;
+	if (node.invoke_ensure_storages_fn) {
+		node.invoke_ensure_storages_fn(*m_registry);
+	}
+
+	auto combined_deps = node.declared_run_state_deps;
 	combined_deps.insert(combined_deps.end(), node.init_state_deps.begin(), node.init_state_deps.end());
 	combined_deps.insert(combined_deps.end(), node.frame_state_deps.begin(), node.frame_state_deps.end());
 	m_state_deps.emplace(canonical_idx, std::move(combined_deps));
@@ -904,6 +934,12 @@ auto gse::scheduler::register_node(system_node node) -> void* {
 
 	if (node.settings_record && m_settings_register_hook) {
 		m_settings_register_hook(std::move(*node.settings_record));
+	}
+
+	const auto node_idx = m_nodes.size();
+	m_node_index.emplace(state_id, node_idx);
+	if (state_type_id.exists() && state_type_id != state_id) {
+		m_node_index.emplace(state_type_id, node_idx);
 	}
 
 	m_nodes.push_back(std::move(node));
@@ -942,7 +978,7 @@ auto gse::scheduler::begin_staging() -> void {
 
 auto gse::scheduler::resolve_activation(const std::unordered_set<id>& disabled_roots) -> void {
 	const auto required = [](const system_node& n) {
-		std::vector<id> deps = n.run_state_deps;
+		std::vector<id> deps = n.declared_run_state_deps;
 		deps.insert(deps.end(), n.init_state_deps.begin(), n.init_state_deps.end());
 		deps.insert(deps.end(), n.frame_state_deps.begin(), n.frame_state_deps.end());
 		return deps;
@@ -1067,8 +1103,8 @@ auto gse::scheduler::advance_one_init_system(system_node& node) -> async::task<>
 			m_update_graph,
 			*m_registry,
 			m_guard,
-			*node.resume_event,
-			*node.paused_event
+			node.resume_event.get(),
+			node.paused_event.get()
 		);
 	}
 
@@ -1268,9 +1304,7 @@ auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in
 	trace::scope_guard sg{ trace_id<"scheduler::render">() };
 	auto writer = m_channels_store.make_writer();
 
-	async::manual_event frame_resume;
-	async::manual_event frame_paused;
-	context f_ctx(*this, m_states, m_resources_store, m_channels_store, writer, m_frame_graph, *m_registry, m_guard, frame_resume, frame_paused, false);
+	context f_ctx(*this, m_states, m_resources_store, m_channels_store, writer, m_frame_graph, *m_registry, m_guard, nullptr, nullptr, false);
 
 	for (auto& node : m_nodes) {
 		const bool run_satisfied = node.ran_once || !node.invoke_run_fn;
@@ -1326,6 +1360,9 @@ auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in
 
 auto gse::scheduler::shutdown() -> void {
 	m_channels_store.clear();
+	m_run_contexts.clear();
+	m_run_writer.reset();
+	m_node_index.clear();
 
 	while (!m_nodes.empty()) {
 		auto& node = m_nodes.back();
@@ -1336,6 +1373,9 @@ auto gse::scheduler::shutdown() -> void {
 
 auto gse::scheduler::clear() -> void {
 	m_nodes.clear();
+	m_node_index.clear();
+	m_run_contexts.clear();
+	m_run_writer.reset();
 	m_states.clear();
 	m_resources_store.clear();
 	m_channels_store.clear();
