@@ -10,6 +10,7 @@ set(EDITOR_SRC "${EDITOR_DIR}/Source")
 set(MAIN_CPP "${EDITOR_SRC}/Main.cpp")
 
 set(EDITOR_SEMANTIC_CONTRACT "${CMAKE_CURRENT_SOURCE_DIR}/Tests/SemanticContract.cpp")
+set(EDITOR_SEMANTIC_AUDIT "${EDITOR_SRC}/Tools/SemanticAudit.cpp")
 
 # gse.ide.config used to be generated here by configure_file; it is a real source
 # now. Existing build trees still hold the generated copy, which the binary-dir
@@ -27,6 +28,7 @@ file(GLOB_RECURSE EDITOR_IMPLS CONFIGURE_DEPENDS "${EDITOR_DIR}/*.cpp")
 list(REMOVE_ITEM EDITOR_IMPLS "${MAIN_CPP}")
 list(REMOVE_ITEM EDITOR_IMPLS "${EDITOR_SRC}/Analysis/Plugin/gse_tokens_plugin.cpp")
 list(REMOVE_ITEM EDITOR_IMPLS "${EDITOR_SEMANTIC_CONTRACT}")
+list(REMOVE_ITEM EDITOR_IMPLS "${EDITOR_SEMANTIC_AUDIT}")
 
 # A .cpp that declares an implementation partition (module gse.x:y;) provides a
 # module and must live in a CXX_MODULES file set; a plain implementation unit
@@ -83,6 +85,9 @@ target_link_libraries(EditorLib PRIVATE Engine)
 add_executable(Editor "${MAIN_CPP}")
 target_link_libraries(Editor PRIVATE EditorLib Engine)
 
+add_executable(SemanticAudit "${EDITOR_SEMANTIC_AUDIT}")
+target_link_libraries(SemanticAudit PRIVATE EditorLib Engine)
+
 # MinGW links the console subsystem by default, so Windows allocates a console host
 # (Windows Terminal on 11) alongside the editor's own window. The GUI subsystem drops it.
 # main() still links: mingw-w64's crt2.o exports WinMainCRTStartup next to mainCRTStartup
@@ -100,12 +105,13 @@ endif()
 # Safe here; remove only once the GCC modules vague-linkage bug is fixed.
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND WIN32)
     target_link_options(Editor PRIVATE "-Wl,--allow-multiple-definition")
+    target_link_options(SemanticAudit PRIVATE "-Wl,--allow-multiple-definition")
 endif()
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     get_filename_component(_gcc_bin_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
     get_filename_component(_gcc_root "${_gcc_bin_dir}" DIRECTORY)
-    set_target_properties(Editor PROPERTIES
+    set_target_properties(Editor SemanticAudit PROPERTIES
         BUILD_RPATH "${_gcc_root}/lib64"
         INSTALL_RPATH "${_gcc_root}/lib64"
     )
@@ -167,6 +173,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         add_custom_target(gse_tokens_plugin ALL DEPENDS "${_gse_contract_stamp}")
         add_custom_target(gse_tokens_contract DEPENDS "${_gse_contract_stamp}")
         add_dependencies(Editor gse_tokens_plugin)
+        add_dependencies(SemanticAudit gse_tokens_plugin)
     else()
         message(WARNING "gse_tokens plugin: ${_gse_plugin_dir}/cc1plus.exe.a not found, so the plugin will not be built. The editor still compiles and runs, but syntax highlighting, hover, go-to-definition and the symbol index are all plugin-authoritative and will be silently empty. Install a GCC configured with --enable-plugin and reconfigure.")
     endif()

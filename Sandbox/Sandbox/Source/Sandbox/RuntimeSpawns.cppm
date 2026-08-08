@@ -37,6 +37,16 @@ export namespace sandbox {
 		int box_grid_layers = 3;
 	};
 
+	struct character_spawn_params {
+		[[
+			= gse::settings::describe<"Characters built by one spawn request, whether it came from F7 or the locomotion "
+									  "scenario. A single character measures close to the noise floor, so the scenario needs "
+									  "several before a regression threshold means anything.">{},
+			= gse::settings::range<1, 32>{}
+		]]
+		int count = 8;
+	};
+
 	auto spawn_physics_stress(
 		gse::scene& s,
 		const stress_scene_params& params = {}
@@ -48,6 +58,7 @@ export namespace sandbox {
 
 	auto spawn_character(
 		gse::scene& s,
+		int index,
 		const gse::resource::handle<gse::skinned_model>& model,
 		const gse::animation::locomotion_blend& clips,
 		const gse::vec3<gse::position>& origin
@@ -816,7 +827,7 @@ auto sandbox::spawn_joint_test(gse::scene& s) -> void {
 	s.spawn("Joint Test Sphere", sandbox::sphere(gse::vec3<gse::position>(0.f, 6.f, -8.f), gse::meters(1.f)));
 }
 
-auto sandbox::spawn_character(gse::scene& s, const gse::resource::handle<gse::skinned_model>& model, const gse::animation::locomotion_blend& clips, const gse::vec3<gse::position>& origin) -> gse::id {
+auto sandbox::spawn_character(gse::scene& s, const int index, const gse::resource::handle<gse::skinned_model>& model, const gse::animation::locomotion_blend& clips, const gse::vec3<gse::position>& origin) -> gse::id {
 	if (!model.valid()) {
 		return {};
 	}
@@ -836,7 +847,7 @@ auto sandbox::spawn_character(gse::scene& s, const gse::resource::handle<gse::sk
 		proxy.radius * 2.f
 	);
 
-	const auto proxy_id = s.build("Character.Proxy")
+	const auto proxy_id = s.build(std::format("Character {}.Proxy", index))
 		.with<gse::physics::transform_component>({
 			.position = proxy_center,
 		})
@@ -884,7 +895,7 @@ auto sandbox::spawn_character(gse::scene& s, const gse::resource::handle<gse::sk
 		bodies[i] = gse::animation::compose(joints[i], bone.body_offset, bone.body_rotation);
 		const auto& body = bodies[i];
 
-		instance.bones[i] = s.build(std::format("Character.{}", bone.name))
+		instance.bones[i] = s.build(std::format("Character {}.{}", index, bone.name))
 			.with<gse::physics::transform_component>({
 				.position = body.position,
 				.orientation = body.orientation,
@@ -914,7 +925,7 @@ auto sandbox::spawn_character(gse::scene& s, const gse::resource::handle<gse::sk
 		const auto& body = bodies[i];
 		const auto pivot = joints[i].position;
 
-		s.build(std::format("Character.{}.Joint", bone.name))
+		s.build(std::format("Character {}.{}.Joint", index, bone.name))
 			.with<gse::physics::joint_spec>({
 				.entity_a = instance.bones[bone.parent],
 				.entity_b = instance.bones[i],
@@ -925,7 +936,7 @@ auto sandbox::spawn_character(gse::scene& s, const gse::resource::handle<gse::sk
 			});
 	}
 
-	return s.build("Character")
+	return s.build(std::format("Character {}", index))
 		.with<gse::skeleton_instance_component>(instance)
 		.with<gse::clip_player_component>({
 			.layers = { gse::clip_layer{ .clip = clips.idle, .weight = 1.f } },

@@ -161,9 +161,9 @@ export namespace gse::physics {
 		int broad_phase_chunks_per_worker = 8;
 
 		bool gpu_buffers_created = false;
-		bool kinematic_traced = false;
-		bool snapshot_traced = false;
-		bool upload_traced = false;
+		vbd::solver_diagnostics gpu_diag_peak;
+		std::uint64_t gpu_conflict_total = 0;
+		std::uint32_t gpu_diag_frames = 0;
 		gpu_solver_stats gpu_stats;
 		std::vector<joint_definition> joints;
 
@@ -210,8 +210,7 @@ export namespace gse::physics {
 
 	[[= gse::system_run<1>{}]]
 	auto ensure_results(
-		context& ctx,
-		data& d,
+		write<collision_component> collision,
 		structural<collision_result_component> results
 	) -> async::task<>;
 
@@ -263,8 +262,7 @@ export namespace gse::physics {
 		write<transform_component>& transform,
 		write<motion_component>& motion,
 		std::flat_map<id, transform_component>& step_start,
-		time_t<float, seconds> dt,
-		bool trace
+		time_t<float, seconds> dt
 	) -> void;
 
 	auto collect_collision_objects(

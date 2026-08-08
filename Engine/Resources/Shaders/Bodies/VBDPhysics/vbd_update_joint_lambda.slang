@@ -136,5 +136,12 @@ void vbd_update_joint_lambda(uint3 dispatch_id) {
         }
     }
 
+    if (ji == 0) {
+        collision_state[state_joint_lambda_index] = asuint(abs(j.pos_lambda[0]));
+        collision_state[state_joint_penalty_index] = asuint(abs(j.pos_penalty[0]));
+        collision_state[state_joint_c0_index] = asuint(abs(j.pos_c0[0]));
+        collision_state[state_joint_c_index] = asuint(length(d));
+    }
+
     joint_data[ji] = j;
 }

@@ -78,43 +78,13 @@ namespace gse {
 	template <typename Data>
 	constexpr auto shared_members_v = std::define_static_array(shared_member_infos<Data>());
 
-	template <typename Data>
-	consteval auto view_member_specs() -> std::vector<std::meta::info> {
-		std::vector<std::meta::info> specs;
-		template for (constexpr auto m : shared_members_v<Data>) {
-			constexpr auto field_type = std::meta::dealias(std::meta::type_of(m));
-			using field_t = typename[:field_type:];
-			constexpr auto kind = publish_kind_of<field_t, m>();
-			if constexpr (kind == publish_kind::stable_pointer) {
-				specs.push_back(std::meta::data_member_spec(
-					std::meta::add_pointer(std::meta::dealias(^^typename pointer_like_traits<field_t>::pointee)),
-					{
-						.name = std::meta::identifier_of(m)
-					}
-				));
-			}
-			else if constexpr (kind == publish_kind::owned_snapshot || kind == publish_kind::value) {
-				specs.push_back(std::meta::data_member_spec(
-					field_type,
-					{
-						.name = std::meta::identifier_of(m)
-					}
-				));
-			}
-			else {
-				specs.push_back(std::meta::data_member_spec(
-					std::meta::add_lvalue_reference(std::meta::add_const(field_type)),
-					{
-						.name = std::meta::identifier_of(m)
-					}
-				));
-			}
-		}
-		return specs;
-	}
+	enum class live_field_form : std::uint8_t {
+		reference,
+		pointer
+	};
 
 	template <typename Data>
-	consteval auto snapshot_member_specs() -> std::vector<std::meta::info> {
+	consteval auto shared_field_specs(const live_field_form form) -> std::vector<std::meta::info> {
 		std::vector<std::meta::info> specs;
 		template for (constexpr auto m : shared_members_v<Data>) {
 			constexpr auto field_type = std::meta::dealias(std::meta::type_of(m));
@@ -137,8 +107,11 @@ namespace gse {
 				));
 			}
 			else {
+				const auto live_type = form == live_field_form::reference
+					? std::meta::add_lvalue_reference(std::meta::add_const(field_type))
+					: std::meta::add_pointer(std::meta::add_const(field_type));
 				specs.push_back(std::meta::data_member_spec(
-					std::meta::add_pointer(std::meta::add_const(field_type)),
+					live_type,
 					{
 						.name = std::meta::identifier_of(m)
 					}
@@ -153,7 +126,7 @@ namespace gse {
 		struct type;
 
 		consteval {
-			std::meta::define_aggregate(^^type, view_member_specs<Data>());
+			std::meta::define_aggregate(^^type, shared_field_specs<Data>(live_field_form::reference));
 		}
 	};
 
@@ -162,7 +135,7 @@ namespace gse {
 		struct type;
 
 		consteval {
-			std::meta::define_aggregate(^^type, snapshot_member_specs<Data>());
+			std::meta::define_aggregate(^^type, shared_field_specs<Data>(live_field_form::pointer));
 		}
 	};
 }

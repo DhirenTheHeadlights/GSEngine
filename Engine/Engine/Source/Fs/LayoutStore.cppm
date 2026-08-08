@@ -4,6 +4,7 @@ import std;
 
 import gse.core;
 import gse.log;
+import gse.meta;
 
 export namespace gse::layout_store {
 	struct owner {
@@ -284,8 +285,9 @@ auto gse::layout_store::parse_sections(const std::string_view text) -> std::vect
 	std::vector<section> sections;
 	section* current = nullptr;
 
-	for (const auto& raw : std::views::split(text, '\n')) {
-		const std::string_view line = trimmed(std::string_view(raw));
+	std::size_t position = 0;
+	while (const std::optional<std::string_view> raw = next_line(text, position)) {
+		const std::string_view line = trimmed(*raw);
 		if (line.empty() || line.front() == '#') {
 			continue;
 		}

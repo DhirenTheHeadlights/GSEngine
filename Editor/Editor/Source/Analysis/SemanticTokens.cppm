@@ -28,6 +28,19 @@ export namespace gse::ide::analysis {
 		semantic_kind kind = semantic_kind::variable;
 	};
 
+	enum class identifier_context {
+		block,
+		requires_expression,
+		lambda_body
+	};
+
+	struct identifier_use {
+		std::uint32_t line = 0;
+		std::uint32_t column = 0;
+		std::uint32_t length = 0;
+		identifier_context context = identifier_context::block;
+	};
+
 	struct semantic_tokens {
 		static auto kind_from(
 			std::string_view name
@@ -36,6 +49,10 @@ export namespace gse::ide::analysis {
 		static auto parse(
 			std::string_view text
 		) -> std::vector<semantic_token>;
+
+		static auto parse_identifiers(
+			std::string_view text
+		) -> std::vector<identifier_use>;
 	};
 }
 
@@ -47,55 +64,64 @@ auto gse::ide::analysis::semantic_tokens::kind_from(std::string_view name) -> st
 	return std::nullopt;
 }
 
+auto gse::ide::analysis::semantic_tokens::parse_identifiers(const std::string_view text) -> std::vector<identifier_use> {
+	std::vector<identifier_use> out;
+	std::size_t position = 0;
+	while (const std::optional<std::string_view> line = gse::next_line(text, position)) {
+		if (!line->starts_with("GSEIDENT\t")) {
+			continue;
+		}
+		std::array<std::string_view, 5> fields;
+		if (gse::split_fields(*line, '\t', fields) < 5) {
+			log::println(log::level::warning, log::category::general, "[semantic] GSEIDENT record is malformed: |{}|", *line);
+			continue;
+		}
+		std::uint32_t ln = 0;
+		std::uint32_t col = 0;
+		std::uint32_t len = 0;
+		identifier_context context = identifier_context::block;
+		if (!gse::parse(fields[1], ln) || !gse::parse(fields[2], col) || !gse::parse(fields[3], len) || !gse::enum_from_string(fields[4], context)) {
+			log::println(log::level::warning, log::category::general, "[semantic] GSEIDENT record is not understood: |{}|", *line);
+			continue;
+		}
+		out.push_back({
+			.line = ln,
+			.column = col,
+			.length = len,
+			.context = context,
+		});
+	}
+	return out;
+}
+
 auto gse::ide::analysis::semantic_tokens::parse(std::string_view text) -> std::vector<semantic_token> {
 	std::vector<semantic_token> out;
 
-	auto to_u32 = [](std::string_view s) -> std::optional<std::uint32_t> {
-		std::uint32_t value = 0;
-		const auto result = std::from_chars(s.data(), s.data() + s.size(), value);
-		if (result.ec != std::errc{}) {
-			return std::nullopt;
-		}
-		return value;
-	};
-
-	std::size_t pos = 0;
-	while (pos < text.size()) {
-		const std::size_t eol = text.find('\n', pos);
-		std::string_view line = text.substr(pos, (eol == std::string_view::npos ? text.size() : eol) - pos);
-		pos = eol == std::string_view::npos ? text.size() : eol + 1;
-
-		if (!line.empty() && line.back() == '\r') {
-			line.remove_suffix(1);
-		}
-
-		if (!line.starts_with("GSETOK\t")) {
+	std::size_t position = 0;
+	while (const std::optional<std::string_view> line = gse::next_line(text, position)) {
+		if (!line->starts_with("GSETOK\t")) {
 			continue;
 		}
 
 		std::array<std::string_view, 5> fields;
-		std::size_t count = 0;
-		std::size_t start = 0;
-		for (std::size_t i = 0; i <= line.size() && count < fields.size(); ++i) {
-			if (i == line.size() || line[i] == '\t') {
-				fields[count++] = line.substr(start, i - start);
-				start = i + 1;
-			}
-		}
+		const std::size_t count = gse::split_fields(*line, '\t', fields);
 		if (count < 5) {
-			log::println(log::level::warning, log::category::general, "[semantic] GSETOK record has {} fields, expected 5: |{}|", count, line);
+			log::println(log::level::warning, log::category::general, "[semantic] GSETOK record has {} fields, expected 5: |{}|", count, *line);
 			continue;
 		}
 
-		const std::optional<std::uint32_t> ln = to_u32(fields[1]);
-		const std::optional<std::uint32_t> col = to_u32(fields[2]);
-		const std::optional<std::uint32_t> len = to_u32(fields[3]);
+		std::uint32_t ln = 0;
+		std::uint32_t col = 0;
+		std::uint32_t len = 0;
+		const bool has_line = gse::parse(fields[1], ln);
+		const bool has_column = gse::parse(fields[2], col);
+		const bool has_length = gse::parse(fields[3], len);
 		const std::optional<semantic_kind> kind = kind_from(fields[4]);
-		if (ln && col && len && kind) {
+		if (has_line && has_column && has_length && kind) {
 			out.push_back({
-				.line = *ln,
-				.column = *col,
-				.length = *len,
+				.line = ln,
+				.column = col,
+				.length = len,
 				.kind = *kind,
 			});
 			continue;
@@ -104,8 +130,8 @@ auto gse::ide::analysis::semantic_tokens::parse(std::string_view text) -> std::v
 			log::level::warning,
 			log::category::general,
 			"[semantic] GSETOK record discarded, its {} field is not understood: |{}|",
-			!ln ? "line" : (!col ? "column" : (!len ? "length" : "kind")),
-			line
+			!has_line ? "line" : (!has_column ? "column" : (!has_length ? "length" : "kind")),
+			*line
 		);
 	}
 	return out;

@@ -47,6 +47,23 @@ export namespace gse::vbd {
 	struct vbd_finalize_stage {};
 	struct vbd_state_copy_stage {};
 
+	struct solver_diagnostics {
+		std::uint32_t attempted_contacts = 0;
+		std::uint32_t max_used_color = 0;
+		std::uint32_t coloring_fallbacks = 0;
+		std::uint32_t coloring_conflicts = 0;
+		std::uint32_t contact_duplicates = 0;
+		std::uint32_t warm_start_hits = 0;
+		force joint_lambda_max{};
+		stiffness joint_penalty_max{};
+		gap joint_c_max{};
+		gap joint_c0_max{};
+
+		auto operator==(
+			const solver_diagnostics&
+		) const -> bool = default;
+	};
+
 	class gpu_solver {
 	public:
 		auto create_buffers(
@@ -86,6 +103,8 @@ export namespace gse::vbd {
 
 		auto read_body_states() const -> std::span<const body_state>;
 
+		auto diagnostics() const -> solver_diagnostics;
+
 		auto query_body_snapshot(
 			std::uint32_t body_index
 		) const -> std::optional<body_state>;
@@ -93,6 +112,8 @@ export namespace gse::vbd {
 		auto pending_dispatch() const -> bool;
 
 		auto body_count() const -> std::uint32_t;
+
+		auto reseeding() const -> bool;
 
 		auto snapshot_body_count(
 			std::uint32_t slot
@@ -110,7 +131,9 @@ export namespace gse::vbd {
 			std::uint32_t slot
 		) const -> const gpu::buffer&;
 
-		auto latest_snapshot_slot() const -> std::uint32_t;
+		auto retired_snapshot_slot() const -> std::uint32_t;
+
+		auto render_snapshot_slot() const -> std::uint32_t;
 
 	private:
 		struct compute_shaders {
@@ -155,6 +178,7 @@ export namespace gse::vbd {
 			gpu::buffer solve_state_buffer;
 			gpu::buffer collision_pair_buffer;
 			gpu::buffer collision_state_buffer;
+			gpu::buffer collision_state_readback_buffer;
 			gpu::buffer warm_start_buffer;
 			gpu::buffer joint_buffer;
 			gpu::buffer grid_buffer;

@@ -137,6 +137,7 @@ struct cached_file {
 static auto_vec<cached_file, 16> *g_files = nullptr;
 
 static bool g_index_only = false;
+static bool g_audit = false;
 
 enum class source_token_kind {
 	identifier,
@@ -461,9 +462,19 @@ static void emit_decl(tree d, location_t loc) {
 	emit_ref(loc, d, ident_len(d));
 }
 
+static bool source_spelled_name(tree id) {
+	if (!id || TREE_CODE(id) != IDENTIFIER_NODE || IDENTIFIER_LENGTH(id) <= 0) return false;
+	const char *s = IDENTIFIER_POINTER(id);
+	return s[0] != '_' && s[0] != '.' && s[0] != '<' && !strchr(s, ' ');
+}
+
 static void emit_type(tree d) {
 	if (!d || TREE_CODE(d) != TYPE_DECL || DECL_SELF_REFERENCE_P(d)) return;
-	emit(DECL_SOURCE_LOCATION(d), "type", ident_len(d));
+	tree type = TREE_TYPE(d);
+	if (type && TYPE_P(type) && LAMBDA_TYPE_P(type)) return;
+	tree id = DECL_NAME(d);
+	if (!source_spelled_name(id)) return;
+	emit_at_name(DECL_SOURCE_LOCATION(d), "type", id);
 }
 
 static void walk_fn_default_args(tree decl) {
@@ -507,10 +518,9 @@ static bool function_definition_p(tree decl) {
 static void emit_concept(tree cdecl) {
 	if (!cdecl) return;
 	tree id = DECL_NAME(cdecl);
-	if (!id || TREE_CODE(id) != IDENTIFIER_NODE || IDENTIFIER_LENGTH(id) <= 0) return;
-	emit(DECL_SOURCE_LOCATION(cdecl), "type", IDENTIFIER_LENGTH(id));
+	if (!source_spelled_name(id)) return;
+	emit_at_name(DECL_SOURCE_LOCATION(cdecl), "type", id);
 	const char *s = IDENTIFIER_POINTER(id);
-	if (s[0] == '_' || s[0] == '.' || strchr(s, ' ')) return;
 	expanded_location xl;
 	if (expand_main(DECL_SOURCE_LOCATION(cdecl), &xl) && xl.line > 0 && xl.column > 0) {
 		FILE *out = g_out ? g_out : stderr;
@@ -842,6 +852,31 @@ static void advance_source_position(long *position, int *line, int *column) {
 	}
 }
 
+static bool source_number_start(long position) {
+	const char c = g_src[position];
+	if (c >= '0' && c <= '9') {
+		return true;
+	}
+	return c == '.' && position + 1 < g_src_len && g_src[position + 1] >= '0' && g_src[position + 1] <= '9';
+}
+
+static void skip_number_source(long *position, int *line, int *column) {
+	advance_source_position(position, line, column);
+	while (*position < g_src_len) {
+		const char c = g_src[*position];
+		if (c == '+' || c == '-') {
+			const char previous = g_src[*position - 1];
+			if (previous != 'e' && previous != 'E' && previous != 'p' && previous != 'P') {
+				return;
+			}
+		}
+		else if (!source_identifier_continue(c) && c != '.' && c != '\'') {
+			return;
+		}
+		advance_source_position(position, line, column);
+	}
+}
+
 static void skip_quoted_source(long *position, int *line, int *column, char quote) {
 	advance_source_position(position, line, column);
 	while (*position < g_src_len) {
@@ -1004,7 +1039,10 @@ static bool ensure_source_tokens() {
 		const int token_line = line;
 		const int token_column = column;
 		source_token_kind kind = source_token_kind::other;
-		if (source_identifier_start(c)) {
+		if (source_number_start(position)) {
+			skip_number_source(&position, &line, &column);
+		}
+		else if (source_identifier_start(c)) {
 			kind = source_token_kind::identifier;
 			do {
 				advance_source_position(&position, &line, &column);
@@ -1519,8 +1557,43 @@ static void emit_type_use_ref(const source_token &use, tree decl) {
 }
 
 static bool source_token_is_char(int index, char c) {
+	if (!g_source_tokens || index < 0 || index >= (int)g_source_tokens->length()) {
+		return false;
+	}
 	const source_token &token = (*g_source_tokens)[index];
 	return token.finish - token.start == 1 && g_src[token.start] == c;
+}
+
+static bool trailing_return_arrow_at(int minus) {
+	if (minus < 1) {
+		return false;
+	}
+	if (source_token_equals(minus - 1, "const") || source_token_equals(minus - 1, "noexcept")
+		|| source_token_equals(minus - 1, "override") || source_token_equals(minus - 1, "final")
+		|| source_token_is_char(minus - 1, '&')
+		|| (*g_source_tokens)[minus - 1].kind == source_token_kind::right_brace) {
+		return true;
+	}
+	if ((*g_source_tokens)[minus - 1].kind != source_token_kind::right_paren) {
+		return false;
+	}
+	int parentheses = 0;
+	for (int index = minus - 1, guard = 0; index >= 0 && guard < 512; --index, ++guard) {
+		const source_token_kind kind = (*g_source_tokens)[index].kind;
+		if (kind == source_token_kind::right_paren) {
+			++parentheses;
+			continue;
+		}
+		if (kind != source_token_kind::left_paren || --parentheses > 0) {
+			continue;
+		}
+		if (source_token_is_char(index - 1, ']')) {
+			return true;
+		}
+		return index > 1 && (*g_source_tokens)[index - 1].kind == source_token_kind::identifier
+			&& (source_token_equals(index - 2, "auto") || source_token_equals(index - 2, "operator"));
+	}
+	return false;
 }
 
 static bool source_token_follows_member_access(int index) {
@@ -1540,7 +1613,8 @@ static bool source_token_follows_member_access(int index) {
 	return (*g_source_tokens)[previous].kind == source_token_kind::greater
 		&& previous > 0
 		&& source_token_is_char(previous - 1, '-')
-		&& (*g_source_tokens)[previous - 1].finish == (*g_source_tokens)[previous].start;
+		&& (*g_source_tokens)[previous - 1].finish == (*g_source_tokens)[previous].start
+		&& !trailing_return_arrow_at(previous - 1);
 }
 
 static int source_token_lower_bound(location_t location) {
@@ -2119,17 +2193,214 @@ static void scan_parameter_names(int anchor, int finish) {
 	}
 }
 
+static void emit_local_ref(const source_token &use, const source_token &declaration) {
+	if (!main_input_filename || !main_file_under_root()) {
+		return;
+	}
+	const int use_len = (int)(use.finish - use.start);
+	if (use_len <= 0 || declaration.finish <= declaration.start) {
+		return;
+	}
+	out_printf("GSEREF\t%s\t%d\t%d\t%d\t", main_input_filename, use.line, use.byte_column, use_len);
+	for (long p = use.start; p < use.finish; ++p) {
+		out_char(g_src[p]);
+	}
+	out_printf("\t%s\t%d\t%d\t", main_input_filename, declaration.line, declaration.byte_column);
+	for (long p = declaration.start; p < declaration.finish; ++p) {
+		out_char(g_src[p]);
+	}
+	out_char('\n');
+}
+
+static bool lambda_introducer_p(int index) {
+	if (!source_token_is_char(index, '[')) {
+		return false;
+	}
+	if (index == 0) {
+		return true;
+	}
+	const source_token_kind previous = (*g_source_tokens)[index - 1].kind;
+	return previous != source_token_kind::identifier && previous != source_token_kind::right_paren
+		&& !source_token_is_char(index - 1, ']');
+}
+
+static int requires_expression_at(int brace) {
+	if (brace < 1) {
+		return -1;
+	}
+	if (source_token_equals(brace - 1, "requires")) {
+		return brace - 1;
+	}
+	if ((*g_source_tokens)[brace - 1].kind != source_token_kind::right_paren) {
+		return -1;
+	}
+	int parentheses = 0;
+	for (int index = brace - 1, guard = 0; index >= 0 && guard < 256; --index, ++guard) {
+		const source_token_kind kind = (*g_source_tokens)[index].kind;
+		if (kind == source_token_kind::right_paren) {
+			++parentheses;
+			continue;
+		}
+		if (kind == source_token_kind::left_paren && --parentheses == 0) {
+			return source_token_equals(index - 1, "requires") ? index - 1 : -1;
+		}
+	}
+	return -1;
+}
+
+static bool lambda_body_brace_p(int brace) {
+	for (int index = brace - 1, guard = 0; index >= 0 && guard < 96; --index, ++guard) {
+		const source_token_kind kind = (*g_source_tokens)[index].kind;
+		if (kind == source_token_kind::semicolon || kind == source_token_kind::left_brace
+			|| kind == source_token_kind::right_brace) {
+			return false;
+		}
+		if (!source_token_is_char(index, ']')) {
+			continue;
+		}
+		int depth = 0;
+		for (int back = index - 1, inner = 0; back >= 0 && inner < 96; --back, ++inner) {
+			if (source_token_is_char(back, ']')) {
+				++depth;
+				continue;
+			}
+			if (!source_token_is_char(back, '[')) {
+				continue;
+			}
+			if (depth > 0) {
+				--depth;
+				continue;
+			}
+			if (!lambda_introducer_p(back)) {
+				return false;
+			}
+			const source_token_kind after = (*g_source_tokens)[index + 1].kind;
+			return after == source_token_kind::left_paren || after == source_token_kind::less
+				|| after == source_token_kind::left_brace;
+		}
+		return false;
+	}
+	return false;
+}
+
+static bool qualified_declarator_start_p(int index) {
+	if (index == 0) {
+		return true;
+	}
+	const source_token_kind previous = (*g_source_tokens)[index - 1].kind;
+	if (previous == source_token_kind::semicolon || previous == source_token_kind::left_brace
+		|| previous == source_token_kind::right_brace) {
+		return true;
+	}
+	return source_token_equals(index - 1, "auto") || source_token_equals(index - 1, "export")
+		|| source_token_equals(index - 1, "inline") || source_token_equals(index - 1, "static")
+		|| source_token_equals(index - 1, "constexpr") || source_token_equals(index - 1, "consteval");
+}
+
+static int declarator_chain_limit(int index, int count) {
+	for (int k = index, guard = 0; k < count && guard < 64; ++k, ++guard) {
+		const source_token_kind kind = (*g_source_tokens)[k].kind;
+		if (kind == source_token_kind::left_paren || kind == source_token_kind::semicolon
+			|| kind == source_token_kind::left_brace) {
+			return k;
+		}
+	}
+	return count;
+}
+
+static void register_parameter_names(int open_paren, int limit, int *names, const char **kinds, int *count, int capacity) {
+	int depth = 0;
+	for (int index = open_paren, guard = 0; index < limit && guard < 256; ++index, ++guard) {
+		const source_token_kind kind = (*g_source_tokens)[index].kind;
+		if (kind == source_token_kind::left_paren) {
+			++depth;
+			continue;
+		}
+		if (kind == source_token_kind::right_paren) {
+			if (--depth == 0) {
+				return;
+			}
+			continue;
+		}
+		if (depth != 1 || kind != source_token_kind::identifier || *count >= capacity) {
+			continue;
+		}
+		const source_token_kind next = (*g_source_tokens)[index + 1].kind;
+		if (next != source_token_kind::comma && next != source_token_kind::right_paren && !source_token_is_char(index + 1, '=')) {
+			continue;
+		}
+		if ((*g_source_tokens)[index - 1].kind == source_token_kind::scope || source_token_is_char(index - 1, '.')) {
+			continue;
+		}
+		kinds[*count] = "parameter";
+		names[(*count)++] = index;
+	}
+}
+
+static void register_lambda_names(int introducer, int limit, int *names, const char **kinds, int *count, int capacity) {
+	int cursor = introducer + 1;
+	int depth = 1;
+	for (int guard = 0; cursor < limit && guard < 256; ++cursor, ++guard) {
+		if (source_token_is_char(cursor, '[')) {
+			++depth;
+			continue;
+		}
+		if (source_token_is_char(cursor, ']')) {
+			if (--depth == 0) {
+				break;
+			}
+			continue;
+		}
+		if (depth != 1 || (*g_source_tokens)[cursor].kind != source_token_kind::identifier || *count >= capacity) {
+			continue;
+		}
+		const bool starts_capture = source_token_is_char(cursor - 1, '[')
+			|| (*g_source_tokens)[cursor - 1].kind == source_token_kind::comma
+			|| source_token_is_char(cursor - 1, '&');
+		if (starts_capture && source_token_is_char(cursor + 1, '=')) {
+			kinds[*count] = "variable";
+			names[(*count)++] = cursor;
+		}
+	}
+	if (cursor >= limit) {
+		return;
+	}
+	++cursor;
+	if (cursor < limit && (*g_source_tokens)[cursor].kind == source_token_kind::less) {
+		int angle = 0;
+		for (int guard = 0; cursor < limit && guard < 64; ++cursor, ++guard) {
+			const source_token_kind kind = (*g_source_tokens)[cursor].kind;
+			if (kind == source_token_kind::less) {
+				++angle;
+			}
+			else if (kind == source_token_kind::greater && --angle == 0) {
+				++cursor;
+				break;
+			}
+		}
+	}
+	if (cursor < limit && (*g_source_tokens)[cursor].kind == source_token_kind::left_paren) {
+		register_parameter_names(cursor, limit, names, kinds, count, capacity);
+	}
+}
+
 static void scan_template_body(int open, int close) {
 	if (g_index_only) {
 		return;
 	}
-	int lambda_parms[16];
-	const char *lambda_kinds[16];
+	int lambda_parms[64];
+	const char *lambda_kinds[64];
 	int lambda_count = 0;
 	int local_vars[48];
 	int local_var_count = 0;
 	for (int index = open + 1; index < close; ++index) {
 		const source_token &token = (*g_source_tokens)[index];
+		if (lambda_introducer_p(index)) {
+			register_lambda_names(index, close, lambda_parms, lambda_kinds, &lambda_count, 64);
+		}
+		else if (source_token_equals(index, "requires") && (*g_source_tokens)[index + 1].kind == source_token_kind::left_paren) {
+			register_parameter_names(index + 1, close, lambda_parms, lambda_kinds, &lambda_count, 64);
+		}
 		if (token.kind == source_token_kind::less && source_token_is_char(index - 1, ']')) {
 			int angle = 0;
 			for (int cursor = index, guard = 0; cursor < close && guard < 64; ++cursor, ++guard) {
@@ -2141,7 +2412,7 @@ static void scan_template_body(int open, int close) {
 				if (kind == source_token_kind::greater && --angle == 0) {
 					break;
 				}
-				if (angle == 1 && kind == source_token_kind::identifier && cursor + 1 < close && lambda_count < 16) {
+				if (angle == 1 && kind == source_token_kind::identifier && cursor + 1 < close && lambda_count < 64) {
 					const source_token_kind next = (*g_source_tokens)[cursor + 1].kind;
 					if (next == source_token_kind::comma || next == source_token_kind::greater || source_token_is_char(cursor + 1, '=')) {
 						lambda_kinds[lambda_count] = "type";
@@ -2175,9 +2446,14 @@ static void scan_template_body(int open, int close) {
 		}
 		const source_token &prev = (*g_source_tokens)[index - 1];
 		bool dot = prev.kind == source_token_kind::other && source_token_is_char(index - 1, '.');
-		bool arrow = prev.kind == source_token_kind::greater && index >= 2
+		const bool preceded_by_arrow = prev.kind == source_token_kind::greater && index >= 2
 			&& source_token_is_char(index - 2, '-')
 			&& prev.start == (*g_source_tokens)[index - 2].finish;
+		if (preceded_by_arrow && trailing_return_arrow_at(index - 2)) {
+			scan_qualified_type_chain(index, close, -1, true);
+			continue;
+		}
+		bool arrow = preceded_by_arrow;
 		if (!dot && !arrow && index >= 2 && source_token_equals(index - 1, "template")) {
 			dot = source_token_is_char(index - 2, '.');
 			arrow = !dot && index >= 3 && (*g_source_tokens)[index - 2].kind == source_token_kind::greater && source_token_is_char(index - 3, '-');
@@ -2223,6 +2499,7 @@ static void scan_template_body(int open, int close) {
 		for (int p = 0; p < lambda_count; ++p) {
 			if (source_token_identifier(lambda_parms[p]) == id) {
 				out_printf("GSETOK\t%d\t%d\t%d\t%s\n", token.line, token.byte_column, (int)(token.finish - token.start), lambda_kinds[p]);
+				emit_local_ref(token, (*g_source_tokens)[lambda_parms[p]]);
 				lambda_parm = true;
 				break;
 			}
@@ -2312,6 +2589,13 @@ static void scan_template_prototypes() {
 			}
 			continue;
 		}
+		if (i + 1 < count && (*g_source_tokens)[i + 1].kind == source_token_kind::scope
+			&& qualified_declarator_start_p(i)) {
+			tree outer_scope = g_scope;
+			g_scope = scope;
+			scan_qualified_type_chain(i, declarator_chain_limit(i, count));
+			g_scope = outer_scope;
+		}
 		if (!source_token_equals(i, "template") || i + 1 >= count || (*g_source_tokens)[i + 1].kind != source_token_kind::less) {
 			continue;
 		}
@@ -2348,6 +2632,7 @@ static void scan_template_prototypes() {
 		}
 		const int header_close = cursor;
 		int region_end = -1;
+		int definition_open = -1;
 		int parens = 0;
 		for (int k = header_close + 1, guard = 0; k < count && guard < 220; ++k, ++guard) {
 			const source_token_kind kind = (*g_source_tokens)[k].kind;
@@ -2358,6 +2643,11 @@ static void scan_template_prototypes() {
 				--parens;
 			}
 			else if (kind == source_token_kind::left_brace) {
+				if (requires_expression_at(k) >= 0 && (*g_source_tokens)[k].pair > k) {
+					k = (*g_source_tokens)[k].pair;
+					continue;
+				}
+				definition_open = k;
 				break;
 			}
 			else if (kind == source_token_kind::semicolon && parens == 0) {
@@ -2365,19 +2655,41 @@ static void scan_template_prototypes() {
 				break;
 			}
 		}
-		if (region_end < 0) {
-			i = header_close;
-			continue;
-		}
 		for (int p = 0; p < parm_count; ++p) {
 			const source_token &parm = (*g_source_tokens)[parm_names[p]];
 			parm_kinds[p] = "type";
 			out_printf("GSETOK\t%d\t%d\t%d\t%s\n", parm.line, parm.byte_column, (int)(parm.finish - parm.start), parm_kinds[p]);
 		}
+		if (region_end < 0) {
+			if (definition_open > header_close) {
+				tree outer_scope = g_scope;
+				g_scope = scope;
+				for (int k = header_close + 1; k < definition_open; ++k) {
+					if ((*g_source_tokens)[k].kind == source_token_kind::identifier
+						&& (*g_source_tokens)[k + 1].kind == source_token_kind::scope
+						&& (*g_source_tokens)[k - 1].kind != source_token_kind::scope) {
+						scan_qualified_type_chain(k, definition_open);
+					}
+				}
+				g_scope = outer_scope;
+			}
+			i = header_close;
+			continue;
+		}
 		tree previous_scope = g_scope;
 		auto_vec<tree, 32> *previous_locals = g_local_decls;
 		g_scope = scope;
 		g_local_decls = nullptr;
+		for (int k = header_close + 1; k < region_end; ++k) {
+			if ((*g_source_tokens)[k].kind != source_token_kind::left_brace || (*g_source_tokens)[k].pair <= k) {
+				continue;
+			}
+			const int requires_index = requires_expression_at(k);
+			if (requires_index >= 0) {
+				scan_template_body(requires_index - 1, (*g_source_tokens)[k].pair);
+				k = (*g_source_tokens)[k].pair;
+			}
+		}
 		for (int k = i + 2; k < header_close; ++k) {
 			if ((*g_source_tokens)[k].kind != source_token_kind::identifier) {
 				continue;
@@ -2419,6 +2731,56 @@ static void scan_template_prototypes() {
 		g_local_decls = previous_locals;
 		g_scope = previous_scope;
 		i = region_end;
+	}
+}
+
+static bool module_directive_at(int index) {
+	const int cursor = source_token_equals(index, "export") ? index + 1 : index;
+	return source_token_equals(cursor, "module") || source_token_equals(cursor, "import");
+}
+
+static void emit_identifier_inventory() {
+	if (!g_audit || !main_file_under_root() || !ensure_source_tokens()) {
+		return;
+	}
+	const int count = (int)g_source_tokens->length();
+	const char *stack[64];
+	int depth = 0;
+	for (int i = 0; i < count; ++i) {
+		const source_token &token = (*g_source_tokens)[i];
+		const bool statement_start = i == 0
+			|| (*g_source_tokens)[i - 1].kind == source_token_kind::semicolon
+			|| (*g_source_tokens)[i - 1].kind == source_token_kind::left_brace
+			|| (*g_source_tokens)[i - 1].kind == source_token_kind::right_brace;
+		if (statement_start && module_directive_at(i)) {
+			while (i + 1 < count && (*g_source_tokens)[i].kind != source_token_kind::semicolon) {
+				++i;
+			}
+			continue;
+		}
+		if (token.kind == source_token_kind::left_brace) {
+			if (depth < 64) {
+				stack[depth] = requires_expression_at(i) >= 0 ? "requires_expression"
+					: (lambda_body_brace_p(i) ? "lambda_body" : "block");
+			}
+			++depth;
+			continue;
+		}
+		if (token.kind == source_token_kind::right_brace) {
+			if (depth > 0) {
+				--depth;
+			}
+			continue;
+		}
+		if (token.kind != source_token_kind::identifier) {
+			continue;
+		}
+		tree id = source_token_identifier(i);
+		if (!id || IDENTIFIER_KEYWORD_P(id)) {
+			continue;
+		}
+		const char *context = depth > 0 && depth <= 64 ? stack[depth - 1] : "block";
+		out_printf("GSEIDENT\t%d\t%d\t%d\t%s\n", token.line, token.byte_column, (int)(token.finish - token.start), context);
 	}
 }
 
@@ -3953,6 +4315,7 @@ static void on_finish_type(void *gcc_data, void *) {
 static void on_finish(void *, void *) {
 	emit_directive_names();
 	emit_attribute_names();
+	emit_identifier_inventory();
 	scan_template_prototypes();
 	emit_static_assert_names();
 	walk_ns(global_namespace);
@@ -3983,6 +4346,9 @@ int plugin_init(struct plugin_name_args *info, struct plugin_gcc_version *versio
 		}
 		if (info->argv[i].key && strcmp(info->argv[i].key, "index") == 0) {
 			g_index_only = true;
+		}
+		if (info->argv[i].key && strcmp(info->argv[i].key, "audit") == 0) {
+			g_audit = true;
 		}
 	}
 	atexit(out_flush);

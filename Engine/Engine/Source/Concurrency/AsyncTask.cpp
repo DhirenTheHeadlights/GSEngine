@@ -36,8 +36,9 @@ namespace gse::async {
 
 		static auto await_ready() noexcept -> bool;
 
+		template <typename P>
 		auto await_suspend(
-			std::coroutine_handle<> h
+			std::coroutine_handle<P> h
 		) const noexcept -> std::coroutine_handle<>;
 
 		static auto await_resume() noexcept -> void;
@@ -213,8 +214,13 @@ auto gse::async::symmetric_resume::await_ready() noexcept -> bool {
 	return false;
 }
 
-auto gse::async::symmetric_resume::await_suspend(std::coroutine_handle<>) const noexcept -> std::coroutine_handle<> {
-	return handle ? handle : std::noop_coroutine();
+template <typename P>
+auto gse::async::symmetric_resume::await_suspend(const std::coroutine_handle<P> h) const noexcept -> std::coroutine_handle<> {
+	const std::coroutine_handle<> next = handle ? handle : std::noop_coroutine();
+	if (h.promise().m_detached.load(std::memory_order_acquire)) {
+		h.destroy();
+	}
+	return next;
 }
 
 auto gse::async::symmetric_resume::await_resume() noexcept -> void {

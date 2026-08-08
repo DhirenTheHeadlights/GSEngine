@@ -27,7 +27,7 @@ export namespace gse::vbd {
 
 		auto compute_coloring(
 			std::uint32_t num_bodies,
-			std::span<const bool> inactive
+			std::span<const std::uint8_t> inactive
 		) -> void;
 
 		auto clear() -> void;
@@ -107,7 +107,7 @@ auto gse::vbd::constraint_graph::sort_contacts_canonical() -> void {
 	});
 }
 
-auto gse::vbd::constraint_graph::compute_coloring(const std::uint32_t num_bodies, const std::span<const bool> inactive) -> void {
+auto gse::vbd::constraint_graph::compute_coloring(const std::uint32_t num_bodies, const std::span<const std::uint8_t> inactive) -> void {
 	for (auto& v : m_body_colors) {
 		v.clear();
 	}

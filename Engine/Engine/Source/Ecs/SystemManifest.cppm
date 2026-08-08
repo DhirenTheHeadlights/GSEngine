@@ -35,8 +35,17 @@ namespace gse {
 	};
 
 	template <std::meta::info Ns>
-	struct stateless_system {
-		static constexpr std::string_view name = std::meta::identifier_of(Ns);
+	struct stateless_system {};
+
+	template <typename T>
+	struct stateless_traits {
+		static constexpr bool is_stateless = false;
+	};
+
+	template <std::meta::info Ns>
+	struct stateless_traits<stateless_system<Ns>> {
+		static constexpr bool is_stateless = true;
+		static constexpr std::meta::info ns = Ns;
 	};
 
 	template <std::meta::info FnInfo, typename State>
@@ -108,6 +117,21 @@ namespace gse {
 		std::vector<id>& out
 	) -> void;
 
+	template <typename Arg>
+	auto ensure_arg_storage(
+		registry& reg
+	) -> void;
+
+	template <std::meta::info FnInfo>
+	auto ensure_fn_storages(
+		registry& reg
+	) -> void;
+
+	template <std::meta::info... FnInfos>
+	auto ensure_node_storages(
+		registry& reg
+	) -> void;
+
 	template <std::meta::info StateInfo, std::meta::info... FnInfos>
 	auto make_annotated_system_node(
 		settings::draw_page_thunk page_thunk = nullptr
@@ -129,10 +153,10 @@ namespace gse {
 		std::meta::info entry
 	) -> bool;
 
-	consteval auto hook_fns_for_state(
-		std::meta::info state,
+	consteval auto state_entry_count_for_namespace(
+		std::meta::info ns,
 		std::vector<std::meta::info> entries
-	) -> std::vector<std::meta::info>;
+	) -> std::size_t;
 
 	consteval auto system_namespaces(
 		std::vector<std::meta::info> entries
@@ -328,6 +352,29 @@ auto gse::collect_fn_shared_views(std::vector<id>& out) -> void {
 	}(std::make_index_sequence<arity_of<FnInfo>>{});
 }
 
+template <typename Arg>
+auto gse::ensure_arg_storage(registry& reg) -> void {
+	using U = std::remove_cvref_t<Arg>;
+	if constexpr (is_access_v<U>) {
+		reg.ensure_storage<access_element_t<U>>();
+	}
+	else if constexpr (is_structural_v<U>) {
+		reg.ensure_storage<structural_element_t<U>>();
+	}
+}
+
+template <std::meta::info FnInfo>
+auto gse::ensure_fn_storages(registry& reg) -> void {
+	[&]<std::size_t... Is>(std::index_sequence<Is...>) {
+		((ensure_arg_storage<arg_type_of<FnInfo, Is>>(reg)), ...);
+	}(std::make_index_sequence<arity_of<FnInfo>>{});
+}
+
+template <std::meta::info... FnInfos>
+auto gse::ensure_node_storages(registry& reg) -> void {
+	(ensure_fn_storages<FnInfos>(reg), ...);
+}
+
 template <std::meta::info StateInfo, std::meta::info... FnInfos>
 auto gse::make_annotated_system_node(settings::draw_page_thunk page_thunk) -> system_node {
 	using state_t = [:StateInfo:];
@@ -355,6 +402,11 @@ auto gse::make_annotated_system_node(settings::draw_page_thunk page_thunk) -> sy
 		return rs;
 	}());
 
+	static_assert(
+		run_phases.size() <= 4,
+		"a system namespace declares more than four [[= gse::system_run]] phases; extend the invoke_run_phases chain in make_annotated_system_node, otherwise the extra phases would never be dispatched"
+	);
+
 	if constexpr (run_phases.size() == 1) {
 		node.invoke_run_fn = &invoke_annotated_fn<run_phases[0], state_t>;
 	}
@@ -364,11 +416,13 @@ auto gse::make_annotated_system_node(settings::draw_page_thunk page_thunk) -> sy
 	else if constexpr (run_phases.size() == 3) {
 		node.invoke_run_fn = &invoke_run_phases<state_t, run_phases[0], run_phases[1], run_phases[2]>;
 	}
-	else if constexpr (run_phases.size() >= 4) {
+	else if constexpr (run_phases.size() == 4) {
 		node.invoke_run_fn = &invoke_run_phases<state_t, run_phases[0], run_phases[1], run_phases[2], run_phases[3]>;
 	}
 
-	node.run_state_deps = std::move(run_meta.state_deps);
+	node.invoke_ensure_storages_fn = &ensure_node_storages<FnInfos...>;
+
+	node.declared_run_state_deps = std::move(run_meta.state_deps);
 	node.optional_run_state_deps = std::move(run_meta.optional_state_deps);
 	node.component_reads = std::move(run_meta.component_reads);
 	node.component_writes = std::move(run_meta.component_writes);
@@ -405,9 +459,26 @@ auto gse::make_annotated_system_node(settings::draw_page_thunk page_thunk) -> sy
 	node.frame_wall_id = find_or_generate_id(std::format("frame_wall:{}", type_tag<state_t>()));
 	node.frame_start_id = find_or_generate_id(std::format("frame_start:{}", type_tag<state_t>()));
 	node.trace_id = trace_id<state_t>();
-	node.system_name = std::string(meta::system_qualified_name<state_t>());
-	node.display_name = std::string(meta::system_state_name<state_t>());
-	constexpr auto state_loc = std::meta::source_location_of(StateInfo);
+	if constexpr (stateless_traits<state_t>::is_stateless) {
+		constexpr auto ns_name = meta::qualified_name_of(stateless_traits<state_t>::ns);
+		constexpr auto ns_display = std::define_static_string(std::meta::identifier_of(stateless_traits<state_t>::ns));
+		node.system_name = std::string(ns_name);
+		node.display_name = std::string(ns_display);
+	}
+	else {
+		node.system_name = std::string(meta::system_qualified_name<state_t>());
+		node.display_name = std::string(meta::system_state_name<state_t>());
+	}
+
+	constexpr auto def_info = [] consteval {
+		if constexpr (stateless_traits<state_t>::is_stateless && sizeof...(FnInfos) > 0) {
+			return std::array<std::meta::info, sizeof...(FnInfos)>{ FnInfos... }[0];
+		}
+		else {
+			return StateInfo;
+		}
+	}();
+	constexpr auto state_loc = std::meta::source_location_of(def_info);
 	node.def_file = state_loc.file_name();
 	node.def_line = state_loc.line();
 	node.def_column = state_loc.column();
@@ -563,8 +634,14 @@ consteval auto gse::is_system_state_entry(const std::meta::info entry) -> bool {
 	return meta::find_system_state_anno(entry) != std::meta::info{};
 }
 
-consteval auto gse::hook_fns_for_state(const std::meta::info state, std::vector<std::meta::info> entries) -> std::vector<std::meta::info> {
-	return hook_fns_in_namespace(std::meta::parent_of(state), std::move(entries));
+consteval auto gse::state_entry_count_for_namespace(const std::meta::info ns, std::vector<std::meta::info> entries) -> std::size_t {
+	std::size_t count = 0;
+	for (const auto e : entries) {
+		if (is_system_state_entry(e) && std::meta::parent_of(e) == ns) {
+			++count;
+		}
+	}
+	return count;
 }
 
 consteval auto gse::hook_fns_in_namespace(const std::meta::info ns, std::vector<std::meta::info> entries) -> std::vector<std::meta::info> {
@@ -671,6 +748,15 @@ auto gse::system_manifest<Entries...>::register_with(R& registrar) const -> void
 		constexpr auto state_entry = state_entry_for_namespace(sys_ns, std::vector<std::meta::info>{ Entries... });
 		constexpr auto fns = std::define_static_array(hook_fns_in_namespace(sys_ns, std::vector<std::meta::info>{ Entries... }));
 		constexpr auto state_info = state_entry != std::meta::info{} ? state_entry : ^^stateless_system<sys_ns>;
+
+		static_assert(
+			state_entry_count_for_namespace(sys_ns, std::vector<std::meta::info>{ Entries... }) <= 1,
+			"a system namespace declares more than one [[= gse::system_state]] struct; every hook function in the namespace would be attributed to the first one and the rest would silently never run"
+		);
+		static_assert(
+			fns.size() <= 6,
+			"a system namespace declares more than six annotated hook functions; extend the make_annotated_system_node chain in register_with, otherwise the extra hooks would never be wired"
+		);
 
 		settings::draw_page_thunk page = nullptr;
 		if constexpr (state_entry != std::meta::info{}) {

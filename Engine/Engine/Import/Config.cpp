@@ -137,11 +137,11 @@ auto gse::config::read_file(const std::filesystem::path& path) -> std::string {
 }
 
 auto gse::config::manifest_value(const std::string_view text, const std::string_view key) -> std::string {
-	for (const auto& line : std::views::split(text, '\n')) {
-		const std::string_view entry(line);
-		const std::size_t separator = entry.find('=');
-		if (separator != std::string_view::npos && trim(entry.substr(0, separator)) == key) {
-			return std::string(trim(entry.substr(separator + 1)));
+	std::size_t position = 0;
+	while (const std::optional<std::string_view> entry = next_line(text, position)) {
+		const std::size_t separator = entry->find('=');
+		if (separator != std::string_view::npos && trim(entry->substr(0, separator)) == key) {
+			return std::string(trim(entry->substr(separator + 1)));
 		}
 	}
 	return {};

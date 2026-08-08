@@ -514,6 +514,16 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 		f.collision_state_buffer.host_zero();
 		f.collision_state_buffer.clear_host_dirty();
 
+		f.collision_state_readback_buffer = ctx.device->create_buffer(
+			{
+				.size = limits.collision_state_header_uints * sizeof(std::uint32_t),
+				.usage = storage_dst,
+				.readback = true
+			}
+		);
+		f.collision_state_readback_buffer.host_zero();
+		f.collision_state_readback_buffer.clear_host_dirty();
+
 		f.warm_start_buffer = ctx.device->create_buffer(
 			{
 				.size = limits.max_contacts * sizeof(contact_constraint),
@@ -951,13 +961,17 @@ auto gse::vbd::gpu_solver::commit_upload() -> void {
 	if (!m_upload_impulses.empty()) {
 		f.impulse_buffer.host_write(m_upload_impulses);
 	}
+
+	if (m_apply_all_body_inputs) {
+		f.warm_start_buffer.host_write(contact_constraint{}, 0);
+	}
 }
 
 auto gse::vbd::gpu_solver::read_grounded() const -> std::span<const std::uint32_t> {
 	if (!m_buffers_created) {
 		return {};
 	}
-	const auto& f = m_frames[latest_snapshot_slot()];
+	const auto& f = m_frames[retired_snapshot_slot()];
 	if (!f.grounded_valid) {
 		return {};
 	}
@@ -972,7 +986,7 @@ auto gse::vbd::gpu_solver::read_body_states() const -> std::span<const body_stat
 	if (!m_buffers_created) {
 		return {};
 	}
-	const auto& f = m_frames[latest_snapshot_slot()];
+	const auto& f = m_frames[retired_snapshot_slot()];
 	if (!f.grounded_valid) {
 		return {};
 	}
@@ -983,11 +997,38 @@ auto gse::vbd::gpu_solver::read_body_states() const -> std::span<const body_stat
 	);
 }
 
+auto gse::vbd::gpu_solver::diagnostics() const -> solver_diagnostics {
+	if (!m_buffers_created) {
+		return {};
+	}
+	const auto& f = m_frames[retired_snapshot_slot()];
+	if (!f.grounded_valid) {
+		return {};
+	}
+	const auto bytes = f.collision_state_readback_buffer.host_read();
+	if (bytes.size() < limits.collision_state_header_uints * sizeof(std::uint32_t)) {
+		return {};
+	}
+	const auto* header = reinterpret_cast<const std::uint32_t*>(bytes.data());
+	return {
+		.attempted_contacts = header[limits.state_contact_count_index],
+		.max_used_color = header[limits.state_max_used_color_index],
+		.coloring_fallbacks = header[limits.state_coloring_fallback_index],
+		.coloring_conflicts = header[limits.state_coloring_conflict_index],
+		.contact_duplicates = header[limits.state_contact_duplicate_index],
+		.warm_start_hits = header[limits.state_warm_start_hit_index],
+		.joint_lambda_max = newtons(std::bit_cast<float>(header[limits.state_joint_lambda_index])),
+		.joint_penalty_max = newtons_per_meter(std::bit_cast<float>(header[limits.state_joint_penalty_index])),
+		.joint_c_max = meters(std::bit_cast<float>(header[limits.state_joint_c_index])),
+		.joint_c0_max = meters(std::bit_cast<float>(header[limits.state_joint_c0_index])),
+	};
+}
+
 auto gse::vbd::gpu_solver::query_body_snapshot(const std::uint32_t body_index) const -> std::optional<body_state> {
 	if (!m_buffers_created || body_index >= m_body_count) {
 		return std::nullopt;
 	}
-	const auto& f = m_frames[latest_snapshot_slot()];
+	const auto& f = m_frames[retired_snapshot_slot()];
 	if (!f.grounded_valid || body_index >= f.snapshot_body_count) {
 		return std::nullopt;
 	}
@@ -998,6 +1039,10 @@ auto gse::vbd::gpu_solver::query_body_snapshot(const std::uint32_t body_index) c
 
 auto gse::vbd::gpu_solver::pending_dispatch() const -> bool {
 	return m_pending_dispatch;
+}
+
+auto gse::vbd::gpu_solver::reseeding() const -> bool {
+	return m_apply_all_body_inputs;
 }
 
 auto gse::vbd::gpu_solver::body_count() const -> std::uint32_t {
@@ -1031,7 +1076,11 @@ auto gse::vbd::gpu_solver::snapshot_buffer(const std::uint32_t slot) const -> co
 	return m_frames[slot].physics_snapshot_buffer;
 }
 
-auto gse::vbd::gpu_solver::latest_snapshot_slot() const -> std::uint32_t {
+auto gse::vbd::gpu_solver::retired_snapshot_slot() const -> std::uint32_t {
+	return m_dispatch_slot;
+}
+
+auto gse::vbd::gpu_solver::render_snapshot_slot() const -> std::uint32_t {
 	return 1 - m_dispatch_slot;
 }
 
@@ -1271,6 +1320,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 				bindings,
 				vec3u{ 1u, 1u, 1u }
 			);
+
 		}
 		else {
 			rec = co_await gpu::pass<vbd_build_coloring_stage>(ctx)
@@ -1450,6 +1500,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 	rec.copy_buffer(f.body_buffer, other.body_buffer, body_copy_size);
 	rec.copy_buffer(f.body_buffer, f.physics_snapshot_buffer, body_copy_size);
 	rec.copy_buffer(f.grounded_buffer, f.grounded_readback_buffer, grounded_copy_size);
+	rec.copy_buffer(f.collision_state_buffer, f.collision_state_readback_buffer, limits.collision_state_header_uints * sizeof(std::uint32_t));
 
 	f.grounded_valid = true;
 	f.snapshot_body_count = m_body_count;

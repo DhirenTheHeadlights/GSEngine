@@ -8,16 +8,13 @@ import gse.meta;
 
 import :registries;
 import :context;
-import :context;
+import :registry;
 import :settings;
 import :traits;
 
 export namespace gse {
 	template <typename T>
 	consteval auto has_describe_fields() -> bool;
-
-	template <typename T>
-	consteval auto has_category_annotation() -> bool;
 
 	struct system_node : non_copyable {
 		~system_node() = default;
@@ -69,7 +66,13 @@ export namespace gse {
 			channel_registry&,
 			channel_writer&
 		) = nullptr;
+		void (
+			*invoke_ensure_storages_fn
+		)(
+			registry&
+		) = nullptr;
 
+		std::vector<id> declared_run_state_deps;
 		std::vector<id> run_state_deps;
 		std::vector<id> init_state_deps;
 		std::vector<id> frame_state_deps;
@@ -124,9 +127,4 @@ consteval auto gse::has_describe_fields() -> bool {
 		}
 	}
 	return found;
-}
-
-template <typename T>
-consteval auto gse::has_category_annotation() -> bool {
-	return meta::find_category(^^T) != std::meta::info{};
 }

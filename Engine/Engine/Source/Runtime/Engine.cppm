@@ -36,6 +36,9 @@ export namespace gse {
 		std::string scenario;
 		std::string profile_out;
 		std::string summary_out;
+		std::string state_dump_out;
+		bool update_baseline = false;
+		double regression_threshold = 1.10;
 		scenario::body_fn scenario_body = nullptr;
 	};
 
@@ -127,10 +130,6 @@ export namespace gse {
 		[[nodiscard]] auto snapshot_graph() const -> introspection::system_graph;
 
 		[[nodiscard]] auto all_settled() const -> bool;
-
-		[[nodiscard]] auto world_state_hash() -> std::uint64_t;
-
-		[[nodiscard]] auto world_populated() -> bool;
 
 		auto add_system_node(
 			system_node node

@@ -50,6 +50,11 @@ export namespace gse::asset {
 	) -> asset_result;
 
 	template <typename T>
+	auto fail_if_stale(
+		const std::filesystem::path& baked_path
+	) -> asset_result;
+
+	template <typename T>
 	auto setup_hot_reload_for(
 		data& d
 	) -> void;
@@ -102,6 +107,10 @@ export namespace gse::asset {
 		auto compile_boot_critical() -> compile_result;
 
 		auto register_loaders() -> void;
+
+		auto install_recompile_fns() -> void;
+
+		auto install_stale_checks() -> void;
 
 		auto discover_baked() -> asset_result;
 
@@ -291,6 +300,38 @@ auto gse::asset::recompile_if_stale(const std::filesystem::path& baked_path) -> 
 }
 
 template <typename T>
+auto gse::asset::fail_if_stale(const std::filesystem::path& baked_path) -> asset_result {
+	if constexpr (!has_compile_path<T>) {
+		return {};
+	}
+	else {
+		auto found = record_for<T>(baked_path);
+		if (!found) {
+			return std::unexpected(std::move(found.error()));
+		}
+		if (!*found || !(*found)->source_path) {
+			return {};
+		}
+		const auto& source = *(*found)->source_path;
+		auto stale = needs_recompile<T>(source, baked_path);
+		if (!stale) {
+			return std::unexpected(std::move(stale.error()));
+		}
+		if (*stale) {
+			return std::unexpected(asset_error{
+				.code = asset_error_code::load_failure,
+				.path = baked_path,
+				.detail = std::format(
+					"baked asset is stale against {}; this mode consumes baked assets and does not author them, so bake it from a render-mode run or the editor first",
+					source.generic_display_string()
+				),
+			});
+		}
+		return {};
+	}
+}
+
+template <typename T>
 auto gse::asset::discover_baked(data& d) -> asset_result {
 	if constexpr (!loadable<T> || !has_baked_asset<T>) {
 		return {};
@@ -379,12 +420,33 @@ auto gse::asset::system<Ts...>::register_loaders() -> void {
 	auto try_register = [this]<typename T>() {
 		if constexpr (loadable<T>) {
 			add_loader<T>(*m_data);
+		}
+	};
+	(try_register.template operator()<Ts>(), ...);
+}
+
+template <typename... Ts>
+auto gse::asset::system<Ts...>::install_recompile_fns() -> void {
+	auto try_install = [this]<typename T>() {
+		if constexpr (loadable<T>) {
 			set_pre_load_fn<T>(*m_data, [](const std::filesystem::path& baked_path) -> asset_result {
 				return recompile_if_stale<T>(baked_path);
 			});
 		}
 	};
-	(try_register.template operator()<Ts>(), ...);
+	(try_install.template operator()<Ts>(), ...);
+}
+
+template <typename... Ts>
+auto gse::asset::system<Ts...>::install_stale_checks() -> void {
+	auto try_install = [this]<typename T>() {
+		if constexpr (loadable<T>) {
+			set_pre_load_fn<T>(*m_data, [](const std::filesystem::path& baked_path) -> asset_result {
+				return fail_if_stale<T>(baked_path);
+			});
+		}
+	};
+	(try_install.template operator()<Ts>(), ...);
 }
 
 template <typename... Ts>

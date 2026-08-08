@@ -30,8 +30,8 @@ export namespace gse {
 			task_graph& graph,
 			registry& reg,
 			access_guard& guard,
-			async::manual_event& resume_event,
-			async::manual_event& paused_event,
+			async::manual_event* resume_event = nullptr,
+			async::manual_event* paused_event = nullptr,
 			bool live_state = true
 		);
 
@@ -40,15 +40,6 @@ export namespace gse {
 		) -> void;
 
 		[[nodiscard]] auto yield_tick() -> async::task<>;
-
-		template <typename T>
-		auto drain_component_adds() -> std::vector<id>;
-
-		template <typename T>
-		auto drain_component_updates() -> std::vector<id>;
-
-		template <typename T>
-		auto drain_component_removes() -> std::vector<id>;
 
 		template <typename T>
 		auto add_component(
@@ -84,8 +75,8 @@ export namespace gse {
 		access_guard& m_guard;
 		std::atomic<int> m_held_locks{ 0 };
 		std::vector<id> m_structural_authority;
-		async::manual_event& m_resume_event;
-		async::manual_event& m_paused_event;
+		async::manual_event* m_resume_event = nullptr;
+		async::manual_event* m_paused_event = nullptr;
 	};
 }
 
@@ -100,10 +91,9 @@ namespace gse {
 
 }
 
-gse::context::context(scheduler& sched, state_registry& states, resource_registry& resources_store, channel_registry& channels_store, channel_writer& channels, task_graph& graph, gse::registry& reg, access_guard& guard, async::manual_event& resume_event, async::manual_event& paused_event, bool live_state)
+gse::context::context(scheduler& sched, state_registry& states, resource_registry& resources_store, channel_registry& channels_store, channel_writer& channels, task_graph& graph, gse::registry& reg, access_guard& guard, async::manual_event* resume_event, async::manual_event* paused_event, bool live_state)
 	: task_context{ states, resources_store, channels_store, channels, graph, live_state }, m_sched(sched), m_reg(reg), m_guard(guard), m_resume_event(resume_event), m_paused_event(paused_event) {
 }
-
 
 template <typename Access>
 auto gse::make_locked_handle(access_token token, registry& reg, access_guard& guard, std::atomic<int>* held_locks) -> Access {
@@ -130,21 +120,6 @@ auto gse::context::has_structural_authority(const id type) const -> bool {
 }
 
 template <typename T>
-auto gse::context::drain_component_adds() -> std::vector<id> {
-	return m_reg.drain_component_adds<T>();
-}
-
-template <typename T>
-auto gse::context::drain_component_updates() -> std::vector<id> {
-	return m_reg.drain_component_updates<T>();
-}
-
-template <typename T>
-auto gse::context::drain_component_removes() -> std::vector<id> {
-	return m_reg.drain_component_removes<T>();
-}
-
-template <typename T>
 auto gse::context::add_component(const id owner, T value) -> T* {
 	assert(has_structural_authority(id_of<T>()), "add_component<{}> requires structural<{}> authority in the current phase", type_tag<T>(), type_tag<T>());
 	return m_reg.add_component<T>(owner, std::move(value));
@@ -161,7 +136,6 @@ auto gse::context::ensure_storage() -> void {
 	assert(has_structural_authority(id_of<T>()), "ensure_storage<{}> requires structural<{}> authority in the current phase", type_tag<T>(), type_tag<T>());
 	m_reg.ensure_storage<T>();
 }
-
 
 template <typename T>
 auto gse::context::make_structural() -> structural<T> {

@@ -24,14 +24,9 @@ export namespace gse {
 		) const -> bool;
 
 		auto state_ptr(
-			this state_registry& self,
+			this auto& self,
 			id type
-		) -> void*;
-
-		auto state_ptr(
-			this const state_registry& self,
-			id type
-		) -> const void*;
+		) -> decltype(auto);
 
 		auto state_snapshot_ptr(
 			id type
@@ -55,14 +50,9 @@ export namespace gse {
 		) const -> bool;
 
 		auto resources_ptr(
-			this resource_registry& self,
+			this auto& self,
 			id type
-		) -> void*;
-
-		auto resources_ptr(
-			this const resource_registry& self,
-			id type
-		) -> const void*;
+		) -> decltype(auto);
 
 		auto clear() -> void;
 
@@ -127,20 +117,13 @@ auto gse::state_registry::contains(const id type) const -> bool {
 	return m_slots.contains(type);
 }
 
-auto gse::state_registry::state_ptr(this state_registry& self, const id type) -> void* {
+auto gse::state_registry::state_ptr(this auto& self, const id type) -> decltype(auto) {
+	using result_t = std::conditional_t<std::is_const_v<std::remove_reference_t<decltype(self)>>, const void*, void*>;
 	const auto it = self.m_slots.find(type);
 	if (it == self.m_slots.end()) {
-		return nullptr;
+		return static_cast<result_t>(nullptr);
 	}
-	return it->second.live;
-}
-
-auto gse::state_registry::state_ptr(this const state_registry& self, const id type) -> const void* {
-	const auto it = self.m_slots.find(type);
-	if (it == self.m_slots.end()) {
-		return nullptr;
-	}
-	return it->second.live;
+	return static_cast<result_t>(it->second.live);
 }
 
 auto gse::state_registry::state_snapshot_ptr(const id type) const -> const void* {
@@ -163,20 +146,13 @@ auto gse::resource_registry::contains(const id type) const -> bool {
 	return m_slots.contains(type);
 }
 
-auto gse::resource_registry::resources_ptr(this resource_registry& self, const id type) -> void* {
+auto gse::resource_registry::resources_ptr(this auto& self, const id type) -> decltype(auto) {
+	using result_t = std::conditional_t<std::is_const_v<std::remove_reference_t<decltype(self)>>, const void*, void*>;
 	const auto it = self.m_slots.find(type);
 	if (it == self.m_slots.end()) {
-		return nullptr;
+		return static_cast<result_t>(nullptr);
 	}
-	return it->second;
-}
-
-auto gse::resource_registry::resources_ptr(this const resource_registry& self, const id type) -> const void* {
-	const auto it = self.m_slots.find(type);
-	if (it == self.m_slots.end()) {
-		return nullptr;
-	}
-	return it->second;
+	return static_cast<result_t>(it->second);
 }
 
 auto gse::resource_registry::clear() -> void {

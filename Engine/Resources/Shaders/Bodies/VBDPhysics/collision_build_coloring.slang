@@ -8,6 +8,8 @@ groupshared uint gs_max_contact_color;
 groupshared uint gs_used_motor_only;
 groupshared uint gs_pending;
 groupshared uint gs_max_used_color;
+groupshared uint gs_coloring_fallback;
+groupshared uint gs_coloring_conflicts;
 
 uint body_priority(uint bi) {
     uint state = bi * 747796405u + 2891336453u;
@@ -38,6 +40,8 @@ if (tid == 0) {
     gs_max_contact_color = 0;
     gs_used_motor_only = 0;
     gs_max_used_color = 0;
+    gs_coloring_fallback = 0;
+    gs_coloring_conflicts = 0;
 }
 AllMemoryBarrierWithGroupSync();
 
@@ -175,6 +179,9 @@ for (uint kp1 = 0; kp1 < ELEMS_PER_THREAD; kp1++) {
         coloring_scratch[bi] = motor_only;
         uint dummy;
         InterlockedOr(gs_used_motor_only, 1u, dummy);
+        if (cc > 0) {
+            InterlockedAdd(gs_coloring_fallback, 1u, dummy);
+        }
     }
 }
 AllMemoryBarrierWithGroupSync();
@@ -200,6 +207,19 @@ for (uint kp2 = 0; kp2 < ELEMS_PER_THREAD; kp2++) {
 }
 AllMemoryBarrierWithGroupSync();
 
+for (uint cv = tid; cv < num_contacts; cv += adjacency_workgroup_size) {
+    contact_constraint c = contact_data[cv];
+    if (c.body_a >= body_count || c.body_b >= body_count) continue;
+    if (body_data[c.body_a].locked != 0 || body_data[c.body_b].locked != 0) continue;
+    uint color_a = coloring_scratch[c.body_a];
+    uint color_b = coloring_scratch[c.body_b];
+    if (color_a == color_b && color_a != 0xFFFFFFFF) {
+        uint dummy;
+        InterlockedAdd(gs_coloring_conflicts, 1u, dummy);
+    }
+}
+AllMemoryBarrierWithGroupSync();
+
 [unroll]
 for (uint kc = 0; kc < ELEMS_PER_THREAD; kc++) {
     uint bi = tid + kc * adjacency_workgroup_size;
@@ -220,6 +240,8 @@ if (tid == 0) {
         running += gs_color_count[c];
     }
     collision_state[state_max_used_color_index] = gs_max_used_color;
+    collision_state[state_coloring_fallback_index] = gs_coloring_fallback;
+    collision_state[state_coloring_conflict_index] = gs_coloring_conflicts;
 }
 AllMemoryBarrierWithGroupSync();
 

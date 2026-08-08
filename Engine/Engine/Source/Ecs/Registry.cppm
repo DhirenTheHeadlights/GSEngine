@@ -28,13 +28,10 @@ export namespace gse {
 		) -> void;
 
 		auto try_get(
-			this component_storage& self,
 			id owner
-		) -> decltype(auto);
+		) -> T*;
 
-		auto items(
-			this component_storage& self
-		) -> decltype(auto);
+		auto items() -> std::span<T>;
 
 		auto owners() const -> std::span<const id>;
 
@@ -49,10 +46,7 @@ export namespace gse {
 		auto drain_removed() -> std::vector<id>;
 
 	private:
-		std::vector<T> m_data;
-		std::vector<id> m_owners;
-		std::unordered_map<id, std::uint32_t> m_index;
-
+		id_mapped_collection<T> m_items;
 		std::unordered_map<id, T> m_pending;
 
 		task::concurrent_queue<id> m_added_events;
@@ -143,15 +137,6 @@ export namespace gse {
 		) -> void;
 
 		template <typename T>
-		auto drain_component_adds() -> std::vector<id>;
-
-		template <typename T>
-		auto drain_component_updates() -> std::vector<id>;
-
-		template <typename T>
-		auto drain_component_removes() -> std::vector<id>;
-
-		template <typename T>
 		auto ensure_storage() -> void;
 
 	private:
@@ -178,20 +163,18 @@ export namespace gse {
 
 template <typename T>
 auto gse::component_storage<T>::add(const id owner, const bool entity_active, T value) -> T* {
-	if (entity_active) {
-		if (const auto it = m_index.find(owner); it != m_index.end()) {
-			return &m_data[it->second];
-		}
-		const auto idx = static_cast<std::uint32_t>(m_data.size());
-		m_data.push_back(std::move(value));
-		m_owners.push_back(owner);
-		m_index.emplace(owner, idx);
-		m_added_events.push(owner);
-		return &m_data.back();
+	if (!entity_active) {
+		const auto [it, inserted] = m_pending.try_emplace(owner, std::move(value));
+		return &it->second;
 	}
 
-	const auto [it, inserted] = m_pending.try_emplace(owner, std::move(value));
-	return &it->second;
+	if (auto* existing = m_items.try_get(owner)) {
+		return existing;
+	}
+
+	auto* added = m_items.add(owner, std::move(value));
+	m_added_events.push(owner);
+	return added;
 }
 
 template <typename T>
@@ -201,15 +184,12 @@ auto gse::component_storage<T>::activate_pending(const id owner) -> bool {
 		return false;
 	}
 
-	if (m_index.contains(owner)) {
+	if (m_items.contains(owner)) {
 		m_pending.erase(it);
 		return false;
 	}
 
-	const auto idx = static_cast<std::uint32_t>(m_data.size());
-	m_data.push_back(std::move(it->second));
-	m_owners.push_back(owner);
-	m_index.emplace(owner, idx);
+	m_items.add(owner, std::move(it->second));
 	m_pending.erase(it);
 	m_added_events.push(owner);
 	return true;
@@ -221,40 +201,27 @@ auto gse::component_storage<T>::remove_owner(const id owner) -> void {
 		m_pending.erase(pit);
 	}
 
-	const auto it = m_index.find(owner);
-	if (it == m_index.end()) {
+	if (!m_items.contains(owner)) {
 		return;
 	}
 
-	const auto idx = it->second;
-	const auto last = static_cast<std::uint32_t>(m_data.size() - 1);
-
-	if (idx != last) {
-		m_data[idx] = std::move(m_data[last]);
-		m_owners[idx] = m_owners[last];
-		m_index[m_owners[idx]] = idx;
-	}
-
-	m_data.pop_back();
-	m_owners.pop_back();
-	m_index.erase(it);
+	m_items.remove(owner);
 	m_removed_events.push(owner);
 }
 
 template <typename T>
-auto gse::component_storage<T>::try_get(this component_storage& self, const id owner) -> decltype(auto) {
-	const auto it = self.m_index.find(owner);
-	return it == self.m_index.end() ? nullptr : &self.m_data[it->second];
+auto gse::component_storage<T>::try_get(const id owner) -> T* {
+	return m_items.try_get(owner);
 }
 
 template <typename T>
-auto gse::component_storage<T>::items(this component_storage& self) -> decltype(auto) {
-	return std::span(self.m_data);
+auto gse::component_storage<T>::items() -> std::span<T> {
+	return m_items.items();
 }
 
 template <typename T>
 auto gse::component_storage<T>::owners() const -> std::span<const id> {
-	return m_owners;
+	return m_items.ids();
 }
 
 template <typename T>
@@ -412,16 +379,10 @@ template <typename T>
 auto gse::registry::acquire_read(access_token, access_guard* guard, std::atomic<int>* held_locks) -> read<T> {
 	auto* s = try_storage<T>();
 	if (!s) {
-		return read<T>(
-			{},
-			{},
-			nullptr,
-			nullptr,
-			nullptr,
-			nullptr,
-			guard,
-			held_locks
-		);
+		return read<T>({}, {}, {
+			.guard = guard,
+			.held_locks = held_locks,
+		});
 	}
 	constexpr auto lookup = +[](void* ctx, const id owner) -> const T* {
 		return static_cast<component_storage<T>*>(ctx)->try_get(owner);
@@ -429,35 +390,23 @@ auto gse::registry::acquire_read(access_token, access_guard* guard, std::atomic<
 	constexpr auto mark = +[](void* ctx, const id owner) -> void {
 		static_cast<component_storage<T>*>(ctx)->mark_updated(owner);
 	};
-	constexpr auto drain = +[](void* ctx, const component_event event) -> std::vector<id> {
-		auto* s = static_cast<component_storage<T>*>(ctx);
-		switch (event) {
-			case component_event::added:
-				return s->drain_added();
-			case component_event::updated:
-				return s->drain_updated();
-			case component_event::removed:
-				return s->drain_removed();
-		}
-		return {};
-	};
-	return read<T>(s->items(), s->owners(), lookup, mark, drain, s, guard, held_locks);
+	return read<T>(s->items(), s->owners(), {
+		.lookup = lookup,
+		.mark = mark,
+		.ctx = s,
+		.guard = guard,
+		.held_locks = held_locks,
+	});
 }
 
 template <typename T>
 auto gse::registry::acquire_write(access_token, access_guard* guard, std::atomic<int>* held_locks) -> write<T> {
 	auto* s = try_storage<T>();
 	if (!s) {
-		return write<T>(
-			{},
-			{},
-			nullptr,
-			nullptr,
-			nullptr,
-			nullptr,
-			guard,
-			held_locks
-		);
+		return write<T>({}, {}, {
+			.guard = guard,
+			.held_locks = held_locks,
+		});
 	}
 	constexpr auto lookup = +[](void* ctx, const id owner) -> T* {
 		return static_cast<component_storage<T>*>(ctx)->try_get(owner);
@@ -466,18 +415,25 @@ auto gse::registry::acquire_write(access_token, access_guard* guard, std::atomic
 		static_cast<component_storage<T>*>(ctx)->mark_updated(owner);
 	};
 	constexpr auto drain = +[](void* ctx, const component_event event) -> std::vector<id> {
-		auto* s = static_cast<component_storage<T>*>(ctx);
+		auto* storage = static_cast<component_storage<T>*>(ctx);
 		switch (event) {
 			case component_event::added:
-				return s->drain_added();
+				return storage->drain_added();
 			case component_event::updated:
-				return s->drain_updated();
+				return storage->drain_updated();
 			case component_event::removed:
-				return s->drain_removed();
+				return storage->drain_removed();
 		}
 		return {};
 	};
-	return write<T>(s->items(), s->owners(), lookup, mark, drain, s, guard, held_locks);
+	return write<T>(s->items(), s->owners(), {
+		.lookup = lookup,
+		.mark = mark,
+		.drain = drain,
+		.ctx = s,
+		.guard = guard,
+		.held_locks = held_locks,
+	});
 }
 
 template <typename T>
@@ -485,28 +441,4 @@ auto gse::registry::mark_component_updated(const id owner) -> void {
 	if (auto* s = try_storage<T>()) {
 		s->mark_updated(owner);
 	}
-}
-
-template <typename T>
-auto gse::registry::drain_component_adds() -> std::vector<id> {
-	if (auto* s = try_storage<T>()) {
-		return s->drain_added();
-	}
-	return {};
-}
-
-template <typename T>
-auto gse::registry::drain_component_updates() -> std::vector<id> {
-	if (auto* s = try_storage<T>()) {
-		return s->drain_updated(); 
-	}
-	return {};
-}
-
-template <typename T>
-auto gse::registry::drain_component_removes() -> std::vector<id> {
-	if (auto* s = try_storage<T>()) {
-		return s->drain_removed();
-	}
-	return {};
 }

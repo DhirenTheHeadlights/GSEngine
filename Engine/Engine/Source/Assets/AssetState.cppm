@@ -15,8 +15,8 @@ export namespace gse::asset {
 		bool enabled = false;
 	};
 
-	struct [[= gse::system_state<"Asset">{}]] data {
-		[[= gse::shared]] std::unordered_map<id, std::unique_ptr<resource::loader_base>> resource_loaders;
+	struct [[= system_state<"Asset">{}]] data {
+		[[= shared]] std::unordered_map<id, std::unique_ptr<resource::loader_base>> resource_loaders;
 		file_watcher watcher;
 		std::function<void()> enable_hot_reload_fn;
 		std::function<void()> disable_hot_reload_fn;
@@ -29,19 +29,19 @@ export namespace gse::asset {
 		channel_writer& channels;
 	};
 
-	[[= gse::system_init{}]]
+	[[= system_init{}]]
 	auto init(
 		context& ctx,
 		data& d
 	) -> async::task<>;
 
-	[[= gse::system_run<>{}]]
+	[[= system_run<>{}]]
 	auto run(
 		context& ctx,
 		data& d
 	) -> async::task<>;
 
-	[[= gse::system_shutdown{}]]
+	[[= system_shutdown{}]]
 	auto shutdown(
 		data& d
 	) -> void;
@@ -81,7 +81,7 @@ auto gse::asset::run(context& ctx, data& d) -> async::task<> {
 }
 
 auto gse::asset::shutdown(data& d) -> void {
-	gse::task::wait_idle();
+	task::wait_idle();
 	d.resource_loaders.clear();
 	d.channels = nullptr;
 }

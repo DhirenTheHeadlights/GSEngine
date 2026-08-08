@@ -13,9 +13,7 @@ import :clip;
 import :skinned_model;
 
 export namespace gse::graphics {
-	using simulation_asset_types = type_pack<model, clip_asset, skinned_model>;
-	using presentation_asset_types = type_pack<texture, font>;
-	using asset_types = assets::append<simulation_asset_types, presentation_asset_types>;
+	using asset_types = type_pack<texture, font, model, clip_asset, skinned_model>;
 }
 
 namespace gse::graphics {
