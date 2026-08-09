@@ -166,6 +166,10 @@ auto gse::gpu::frame::begin(window::data* win) -> std::expected<frame_token, fra
 
 		const auto release_fence = m_swapchain->release_fence(m_image_index);
 		const auto release_result = m_device->wait_for_fence(release_fence);
+		if (release_result == result::error_device_lost) {
+			m_device->report_device_lost(std::format("begin_frame release fence (frame {}, image {})", m_current_frame, m_image_index));
+			return std::unexpected(frame_status::device_lost);
+		}
 		assert(release_result == result::success, "Failed to wait for swapchain release fence!");
 	}
 

@@ -153,7 +153,7 @@ auto gse::renderer::taa::init(context& ctx, const shared_view<gpu::context::data
 	return {};
 }
 
-auto gse::renderer::taa::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
+auto gse::renderer::taa::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -172,7 +172,7 @@ auto gse::renderer::taa::frame(const context& ctx, shared_view<gpu::context::dat
 	const bool history_ready = d.taa_enabled && d.frames_since_history_invalid >= 2;
 	++d.frames_since_history_invalid;
 
-	auto rec = co_await gpu::pass<^^gse::renderer::taa::frame>(ctx)
+	auto rec = co_await gpu::pass<^^gse::renderer::taa::frame>(pass_out)
 		.pipeline(d.pipeline)
 		.color(gpu::clear_color(
 			gpu::color_clear{ 0.0f, 0.0f, 0.0f, 1.0f },

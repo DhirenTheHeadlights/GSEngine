@@ -4,7 +4,6 @@ export import :append;
 export import :asset_format;
 export import :asset_state;
 export import :asset_system;
-export import :boot_critical;
 export import :catalog;
 export import :resource_handle;
 export import :resource_loader;

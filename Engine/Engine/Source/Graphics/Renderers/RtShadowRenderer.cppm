@@ -16,6 +16,7 @@ import gse.diag;
 import gse.ecs;
 import gse.math;
 import gse.log;
+import gse.gpu_record;
 
 export namespace gse::renderer::rt_shadow {
 	using blas_key = std::pair<id, std::uint32_t>;
@@ -53,6 +54,8 @@ export namespace gse::renderer::rt_shadow {
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		data& d,
+		channel_write<gpu::render_pass_request> pass_out,
+		channel_read<geometry_collector::render_data> geometry_in,
 		shared_view<geometry_collector::data> gc_r
 	) -> async::task<>;
 }

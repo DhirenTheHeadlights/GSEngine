@@ -63,8 +63,7 @@ export namespace gse {
 			*invoke_apply_settings_fn
 		)(
 			void*,
-			channel_registry&,
-			channel_writer&
+			channel_registry&
 		) = nullptr;
 		void (
 			*invoke_ensure_storages_fn
@@ -82,6 +81,8 @@ export namespace gse {
 		std::vector<id> component_writes;
 		std::vector<id> component_structural;
 		std::vector<id> shared_view_reads;
+		std::vector<id> channel_publishes;
+		std::vector<id> channel_consumes;
 
 		void* state_ptr = nullptr;
 		const void* state_snapshot_ptr = nullptr;

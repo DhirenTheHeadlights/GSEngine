@@ -6,7 +6,7 @@ void skin_palette(uint3 dispatch_id) {
 
     rig_bone_binding binding = bone_data[bone];
 
-    skin_matrix result;
+    skin_matrix result = (skin_matrix)0;
     result.valid = binding.valid;
     result.skin = binding.valid != 0
         ? mul(binding.world, binding.inverse_bind)

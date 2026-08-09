@@ -9,6 +9,7 @@ import gse.concurrency;
 import gse.ecs;
 import gse.meta;
 import gse.math;
+import gse.gpu_record;
 
 export namespace gse::renderer::bloom {
 	constexpr std::uint32_t max_mip_count = 7;
@@ -66,6 +67,7 @@ export namespace gse::renderer::bloom {
 	auto frame(
 		const context& ctx,
 		shared_view<gpu::context::data> gpu_s,
-		data& d
+		data& d,
+		channel_write<gpu::render_pass_request> pass_out
 	) -> async::task<>;
 }

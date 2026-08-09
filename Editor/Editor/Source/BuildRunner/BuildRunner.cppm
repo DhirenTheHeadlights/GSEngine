@@ -120,7 +120,9 @@ export namespace gse::ide::build_runner {
 	auto run(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
-		data& d
+		data& d,
+		channel_read<attached_surface_imported, attached_surface_rejected, build_request, attached_input> requests_in,
+		channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out
 	) -> async::task<>;
 
 	[[= system_shutdown{}]]
@@ -286,18 +288,18 @@ namespace gse::ide::build_runner {
 	auto cleanup_backups() -> void;
 
 	auto start_build(
-		context& ctx,
+		channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out,
 		data& d,
 		const build_request& request
 	) -> void;
 
 	auto drain_completion(
-		context& ctx,
+		channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out,
 		data& d
 	) -> void;
 
 	auto poll_games(
-		context& ctx,
+		channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out,
 		data& d
 	) -> void;
 
@@ -318,7 +320,7 @@ namespace gse::ide::build_runner {
 	) -> std::shared_ptr<const attached_surface_message>;
 
 	auto poll_surface_pipe(
-		context& ctx,
+		channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out,
 		data& d
 	) -> void;
 
@@ -1012,7 +1014,7 @@ auto gse::ide::build_runner::cleanup_backups() -> void {
 	}
 }
 
-auto gse::ide::build_runner::start_build(context& ctx, data& d, const build_request& request) -> void {
+auto gse::ide::build_runner::start_build(const channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out, data& d, const build_request& request) -> void {
 	if (d.building) {
 		return;
 	}
@@ -1021,7 +1023,7 @@ auto gse::ide::build_runner::start_build(context& ctx, data& d, const build_requ
 	// overwrite the game exe until every running instance has actually exited.
 	if (request.target == build_target::game) {
 		if (const std::optional<std::uint32_t> ended = stop_games(d)) {
-			ctx.channels.push<attached_session_ended>({
+			events_out.push<attached_session_ended>({
 				.generation = *ended,
 			});
 		}
@@ -1032,7 +1034,7 @@ auto gse::ide::build_runner::start_build(context& ctx, data& d, const build_requ
 		: request.run_after ? "Build & Run" : "Build Game";
 	auto stream = std::make_shared<spawn::output_stream>();
 	stream->running.store(true, std::memory_order_release);
-	ctx.channels.push<stream_opened>({
+	events_out.push<stream_opened>({
 		.name = std::string(name),
 		.slot = request.target == build_target::editor ? stream_slot::build_editor : stream_slot::build_game,
 		.stream = stream,
@@ -1058,7 +1060,7 @@ auto gse::ide::build_runner::start_build(context& ctx, data& d, const build_requ
 	d.worker = std::jthread(build_worker, &d.completion, std::move(stream), request, d.game_generation + 1);
 }
 
-auto gse::ide::build_runner::drain_completion(context& ctx, data& d) -> void {
+auto gse::ide::build_runner::drain_completion(const channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out, data& d) -> void {
 	if (!d.building) {
 		return;
 	}
@@ -1093,7 +1095,7 @@ auto gse::ide::build_runner::drain_completion(context& ctx, data& d) -> void {
 		auto stream = std::make_shared<spawn::output_stream>();
 		stream->running.store(true, std::memory_order_release);
 		spawn::attach_process(*stream, d.completion.game_process, d.completion.game_job);
-		ctx.channels.push<stream_opened>({
+		events_out.push<stream_opened>({
 			.name = std::format("Game {}", d.completion.game_pid),
 			.slot = stream_slot::game,
 			.stream = stream,
@@ -1108,10 +1110,10 @@ auto gse::ide::build_runner::drain_completion(context& ctx, data& d) -> void {
 		});
 	}
 	d.active_stream.reset();
-	ctx.channels.push<build_finished>({});
+	events_out.push<build_finished>({});
 }
 
-auto gse::ide::build_runner::poll_games(context& ctx, data& d) -> void {
+auto gse::ide::build_runner::poll_games(const channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out, data& d) -> void {
 	for (std::size_t i = 0; i < d.games.size();) {
 		attached_game& game = d.games[i];
 		if (game.output && !spawn::pump_output(*game.stream, game.output, game.pending)) {
@@ -1134,7 +1136,7 @@ auto gse::ide::build_runner::poll_games(context& ctx, data& d) -> void {
 			if (d.session && d.session->generation == game.generation) {
 				d.session.reset();
 			}
-			ctx.channels.push<attached_session_ended>({
+			events_out.push<attached_session_ended>({
 				.generation = game.generation,
 			});
 		}
@@ -1243,7 +1245,7 @@ auto gse::ide::build_runner::own_surface_message(attached_surface_message messag
 	};
 }
 
-auto gse::ide::build_runner::poll_surface_pipe(context& ctx, data& d) -> void {
+auto gse::ide::build_runner::poll_surface_pipe(const channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out, data& d) -> void {
 	if (!d.pipe.handle || d.pipe.handshake_done) {
 		return;
 	}
@@ -1291,7 +1293,7 @@ auto gse::ide::build_runner::poll_surface_pipe(context& ctx, data& d) -> void {
 
 	d.pipe.received = 0;
 	if (d.pipe.message.magic == attached_surface_magic && import_surface_handles(d.pipe.message)) {
-		ctx.channels.push<attached_surface_ready>({
+		events_out.push<attached_surface_ready>({
 			.generation = d.pipe.generation,
 			.message = own_surface_message(std::move(d.pipe.message)),
 		});
@@ -1359,29 +1361,29 @@ auto gse::ide::build_runner::init(data&) -> async::task<> {
 	return {};
 }
 
-auto gse::ide::build_runner::run(context& ctx, shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
-	for (const attached_surface_imported& imported : ctx.read_channel<attached_surface_imported>()) {
+auto gse::ide::build_runner::run(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_read<attached_surface_imported, attached_surface_rejected, build_request, attached_input> requests_in, const channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out) -> async::task<> {
+	for (const attached_surface_imported& imported : requests_in.of<attached_surface_imported>()) {
 		if (d.session && d.session->generation == imported.generation) {
 			d.session->status = attached_session_status::active;
 		}
 	}
-	for (const attached_surface_rejected& rejected : ctx.read_channel<attached_surface_rejected>()) {
+	for (const attached_surface_rejected& rejected : requests_in.of<attached_surface_rejected>()) {
 		if (d.session && d.session->generation == rejected.generation) {
 			if (const std::optional<std::uint32_t> ended = stop_games(d)) {
-				ctx.channels.push<attached_session_ended>({
+				events_out.push<attached_session_ended>({
 					.generation = *ended,
 				});
 			}
 		}
 	}
-	for (const build_request& request : ctx.read_channel<build_request>()) {
-		start_build(ctx, d, request);
+	for (const build_request& request : requests_in.of<build_request>()) {
+		start_build(events_out, d, request);
 	}
-	drain_completion(ctx, d);
-	poll_games(ctx, d);
-	poll_surface_pipe(ctx, d);
+	drain_completion(events_out, d);
+	poll_games(events_out, d);
+	poll_surface_pipe(events_out, d);
 	flush_pipe_tail(d);
-	for (const attached_input& forwarded : ctx.read_channel<attached_input>()) {
+	for (const attached_input& forwarded : requests_in.of<attached_input>()) {
 		send_attached_input(d, forwarded.event);
 	}
 	if (d.pipe.handshake_done && gpu_s.swapchain) {
@@ -1392,7 +1394,7 @@ auto gse::ide::build_runner::run(context& ctx, shared_view<gpu::context::data> g
 	}
 	if (d.session && !d.pipe.handle) {
 		if (const std::optional<std::uint32_t> ended = stop_games(d)) {
-			ctx.channels.push<attached_session_ended>({
+			events_out.push<attached_session_ended>({
 				.generation = *ended,
 			});
 		}

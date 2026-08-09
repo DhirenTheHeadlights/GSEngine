@@ -12,6 +12,7 @@ import gse.concurrency;
 import gse.ecs;
 import gse.meta;
 import gse.math;
+import gse.gpu_record;
 
 export namespace gse::renderer::cloud {
 	constexpr vec3u shape_noise_size{ 128, 128, 128 };
@@ -191,6 +192,7 @@ export namespace gse::renderer::cloud {
 		const context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		data& d,
+		channel_write<gpu::render_pass_request> pass_out,
 		shared_view<atmosphere::data> atm_state,
 		shared_view<camera::data> cam_state
 	) -> async::task<>;

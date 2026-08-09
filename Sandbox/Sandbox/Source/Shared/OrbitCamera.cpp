@@ -5,7 +5,7 @@ import gse;
 
 import :orbit_camera;
 
-auto sandbox::orbit_camera::attach(gse::context& ctx, data& d, gse::write<component> orbits, gse::structural<gse::camera::follow_component> follows) -> gse::async::task<> {
+auto sandbox::orbit_camera::attach(gse::context& ctx, data& d, const gse::channel_write<gse::actions::add_action_request, gse::actions::bind_axis2_request> actions_out, gse::write<component> orbits, gse::structural<gse::camera::follow_component> follows) -> gse::async::task<> {
 	for (const auto owner_id : orbits.drain(gse::component_event::added)) {
 		const auto* o = orbits.find(owner_id);
 		if (!o) {
@@ -13,11 +13,11 @@ auto sandbox::orbit_camera::attach(gse::context& ctx, data& d, gse::write<compon
 		}
 		auto& b = d.bindings_by_owner[owner_id];
 
-		b.toggle = gse::actions::add<"Orbit_Toggle">(ctx.channels, gse::key::c);
-		b.yaw_left = gse::actions::add<"Orbit_Yaw_Left">(ctx.channels, gse::key::left);
-		b.yaw_right = gse::actions::add<"Orbit_Yaw_Right">(ctx.channels, gse::key::right);
-		b.pitch_up = gse::actions::add<"Orbit_Pitch_Up">(ctx.channels, gse::key::up);
-		b.pitch_down = gse::actions::add<"Orbit_Pitch_Down">(ctx.channels, gse::key::down);
+		b.toggle = gse::actions::add<"Orbit_Toggle">(actions_out, gse::key::c);
+		b.yaw_left = gse::actions::add<"Orbit_Yaw_Left">(actions_out, gse::key::left);
+		b.yaw_right = gse::actions::add<"Orbit_Yaw_Right">(actions_out, gse::key::right);
+		b.pitch_up = gse::actions::add<"Orbit_Pitch_Up">(actions_out, gse::key::up);
+		b.pitch_down = gse::actions::add<"Orbit_Pitch_Down">(actions_out, gse::key::down);
 
 		const gse::quat initial_orientation = gse::normalize(
 			gse::quat(gse::vec3f(0.f, 1.f, 0.f), o->yaw) *

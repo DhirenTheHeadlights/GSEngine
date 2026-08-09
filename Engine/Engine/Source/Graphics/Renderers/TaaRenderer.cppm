@@ -9,6 +9,7 @@ import gse.concurrency;
 import gse.ecs;
 import gse.meta;
 import gse.math;
+import gse.gpu_record;
 
 export namespace gse::renderer::taa {
 	struct [[= gse::system_state<"Taa">{}, = gse::settings::category<"Graphics">{}]] data {
@@ -45,6 +46,7 @@ export namespace gse::renderer::taa {
 	auto frame(
 		const context& ctx,
 		shared_view<gpu::context::data> gpu_s,
-		data& d
+		data& d,
+		channel_write<gpu::render_pass_request> pass_out
 	) -> async::task<>;
 }

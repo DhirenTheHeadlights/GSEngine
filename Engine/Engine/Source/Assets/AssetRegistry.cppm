@@ -30,7 +30,7 @@ export namespace gse::asset {
 
 	template <typename T>
 	[[nodiscard]]
-	auto queue_by_path(
+	auto register_by_path(
 		const data& d,
 		const std::filesystem::path& baked_path
 	) -> asset_result;
@@ -158,7 +158,7 @@ namespace gse::resource {
 		auto flush() -> void override;
 
 		[[nodiscard]]
-		auto queue_by_path(
+		auto register_by_path(
 			const std::filesystem::path& baked_path
 		) -> asset_result;
 
@@ -211,6 +211,10 @@ namespace gse::resource {
 			id id
 		);
 
+		auto request_load(
+			const std::shared_ptr<resource_slot<Resource>>& slot
+		) const -> void;
+
 		auto launch_load(
 			id rid
 		) -> async::task<>;
@@ -238,8 +242,8 @@ auto gse::asset::set_pre_load_fn(data& d, std::function<asset_result(const std::
 }
 
 template <typename T>
-auto gse::asset::queue_by_path(const data& d, const std::filesystem::path& baked_path) -> asset_result {
-	return loader_for<T>(d)->queue_by_path(baked_path);
+auto gse::asset::register_by_path(const data& d, const std::filesystem::path& baked_path) -> asset_result {
+	return loader_for<T>(d)->register_by_path(baked_path);
 }
 
 template <typename T>
@@ -447,10 +451,10 @@ auto gse::resource::loader<R>::launch_load(const id rid) -> async::task<> {
 		}
 	}
 
-	assert(m_data.channels != nullptr, "asset::run must run before flush()");
+	assert(m_data.channels.bound(), "asset::run must run before flush()");
 	asset::load_ctx ctx{
 		.assets = m_data,
-		.channels = *m_data.channels
+		.channels = m_data.channels
 	};
 
 	asset_result loaded{};
@@ -504,7 +508,7 @@ auto gse::resource::loader<R>::launch_load(const id rid) -> async::task<> {
 }
 
 template <typename R>
-auto gse::resource::loader<R>::queue_by_path(const std::filesystem::path& baked_path) -> asset_result {
+auto gse::resource::loader<R>::register_by_path(const std::filesystem::path& baked_path) -> asset_result {
 	std::lock_guard lock(m_mutex);
 
 	if (const auto found = m_path_to_id.find(baked_path); found != m_path_to_id.end()) {
@@ -529,7 +533,7 @@ auto gse::resource::loader<R>::queue_by_path(const std::filesystem::path& baked_
 		temp_resource = std::make_unique<R>(baked_path);
 		const id resource_id = temp_resource->id();
 
-		auto slot = std::make_shared<resource_slot<R>>(std::move(temp_resource), state::queued, baked_path);
+		auto slot = std::make_shared<resource_slot<R>>(std::move(temp_resource), state::unloaded, baked_path);
 		if (!m_resources.add(resource_id, slot)) {
 			return std::unexpected(asset_error{
 				.code = asset_error_code::ambiguous_source,
@@ -609,10 +613,10 @@ auto gse::resource::loader<R>::launch_reload(const id rid, const std::uint64_t r
 		co_return;
 	}
 
-	assert(m_data.channels != nullptr, "asset::run must run before finalize_reloads()");
+	assert(m_data.channels.bound(), "asset::run must run before finalize_reloads()");
 	asset::load_ctx ctx{
 		.assets = m_data,
-		.channels = *m_data.channels
+		.channels = m_data.channels
 	};
 
 	asset_result loaded{};
@@ -673,6 +677,7 @@ auto gse::resource::loader<R>::get(const id id) const -> handle<R> {
 	std::lock_guard lock(m_mutex);
 	const auto s = slot_ptr(id);
 	assert(s != nullptr, "Resource with ID {} not found in this loader.", id);
+	request_load(s);
 	return handle<R>(id, s);
 }
 
@@ -682,6 +687,7 @@ auto gse::resource::loader<R>::get(const std::string& filename_no_ext) const -> 
 	std::lock_guard lock(m_mutex);
 	const auto s = slot_ptr(resource_id);
 	assert(s != nullptr, "Resource with ID {} not found in this loader.", resource_id);
+	request_load(s);
 	return handle<R>(resource_id, s);
 }
 
@@ -692,6 +698,7 @@ auto gse::resource::loader<R>::try_get(const id id) const -> handle<R> {
 	if (!s) {
 		return handle<R>{};
 	}
+	request_load(s);
 	return handle<R>(id, s);
 }
 
@@ -706,7 +713,14 @@ auto gse::resource::loader<R>::try_get(const std::string& filename_no_ext) const
 	if (!s) {
 		return handle<R>{};
 	}
+	request_load(s);
 	return handle<R>(resource_id, s);
+}
+
+template <typename R>
+auto gse::resource::loader<R>::request_load(const std::shared_ptr<resource_slot<R>>& slot) const -> void {
+	auto expected = state::unloaded;
+	slot->current_state.compare_exchange_strong(expected, state::queued, std::memory_order_acq_rel, std::memory_order_relaxed);
 }
 
 template <typename R>

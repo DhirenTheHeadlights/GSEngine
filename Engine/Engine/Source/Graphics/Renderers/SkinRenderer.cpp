@@ -107,13 +107,13 @@ auto gse::renderer::skin::init(context& ctx, const shared_view<gpu::context::dat
 	return {};
 }
 
-auto gse::renderer::skin::collect(context& ctx, data& d, read<skeleton_instance_component> skeletons, read<physics::transform_component> transforms, read<physics::motion_component> motions, read<physics::collision_component> collisions) -> async::task<> {
+auto gse::renderer::skin::collect(context& ctx, data& d, const channel_read<physics::interpolation_state> interp_in, read<skeleton_instance_component> skeletons, read<physics::transform_component> transforms, read<physics::motion_component> motions, read<physics::collision_component> collisions) -> async::task<> {
 	d.instances.clear();
 	d.bone_bindings.clear();
 	d.bounds.clear();
 
 	auto lag = system_clock::fixed_lag<time_t<float, seconds>>();
-	if (const auto& interpolation = ctx.read_channel<physics::interpolation_state>(); !interpolation.empty() && !interpolation[0].advancing) {
+	if (const auto& interpolation = interp_in.of<physics::interpolation_state>(); !interpolation.empty() && !interpolation[0].advancing) {
 		lag = time_t<float, seconds>{};
 	}
 
@@ -214,7 +214,7 @@ auto gse::renderer::skin::deformed_slots_for(const deformed_target_map& targets,
 	};
 }
 
-auto gse::renderer::skin::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
+auto gse::renderer::skin::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out) -> async::task<> {
 	if (!d.initialized || d.instances.empty()) {
 		co_return;
 	}
@@ -263,7 +263,7 @@ auto gse::renderer::skin::frame(context& ctx, shared_view<gpu::context::data> gp
 
 	const auto total_bones = static_cast<std::uint32_t>(d.bone_bindings.size());
 
-	auto palette_rec = co_await gpu::pass<^^palette_pass>(ctx)
+	auto palette_rec = co_await gpu::pass<^^palette_pass>(pass_out)
 		.pipeline(d.palette_pipeline);
 
 	palette_rec.dispatch<palette_entry>(
@@ -277,7 +277,7 @@ auto gse::renderer::skin::frame(context& ctx, shared_view<gpu::context::data> gp
 		vec3u{ (total_bones + 63) / 64, 1u, 1u }
 	);
 
-	auto rec = co_await gpu::pass<^^deform_pass>(ctx)
+	auto rec = co_await gpu::pass<^^deform_pass>(pass_out)
 		.pipeline(d.deform_pipeline)
 		.after<^^palette_pass>();
 

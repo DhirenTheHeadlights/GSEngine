@@ -312,7 +312,7 @@ auto gse::renderer::atmosphere::init(context& ctx, const shared_view<gpu::contex
 	return {};
 }
 
-auto gse::renderer::atmosphere::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, shared_view<camera::data> cam_state) -> async::task<> {
+auto gse::renderer::atmosphere::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, shared_view<camera::data> cam_state) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -339,7 +339,7 @@ auto gse::renderer::atmosphere::frame(const context& ctx, shared_view<gpu::conte
 			(multiscatter_lut_size.y() + 7) / 8,
 		};
 
-		auto rec = co_await gpu::pass<^^transmittance_pass>(ctx).pipeline(d.transmittance_pipeline);
+		auto rec = co_await gpu::pass<^^transmittance_pass>(pass_out).pipeline(d.transmittance_pipeline);
 		rec.dispatch<transmittance_entry>(
 			{
 				.transmittance_out = d.transmittance_lut.storage_slot(),
@@ -348,7 +348,7 @@ auto gse::renderer::atmosphere::frame(const context& ctx, shared_view<gpu::conte
 			vec3u{ transmittance_groups.x(), transmittance_groups.y(), 1 }
 		);
 
-		rec = co_await gpu::pass<^^multiscatter_pass>(ctx).pipeline(d.multiscatter_pipeline).after<^^transmittance_pass>();
+		rec = co_await gpu::pass<^^multiscatter_pass>(pass_out).pipeline(d.multiscatter_pipeline).after<^^transmittance_pass>();
 		rec.dispatch<multiscatter_entry>(
 			{
 				.transmittance_in = d.transmittance_lut.sampled_slot(),
@@ -377,7 +377,7 @@ auto gse::renderer::atmosphere::frame(const context& ctx, shared_view<gpu::conte
 	};
 	const float sun_cos_radius = gse::cos(d.sun_angular_radius);
 
-	auto rec = co_await gpu::pass<^^sky_view_pass>(ctx).pipeline(d.sky_view_pipeline).after<^^multiscatter_pass>();
+	auto rec = co_await gpu::pass<^^sky_view_pass>(pass_out).pipeline(d.sky_view_pipeline).after<^^multiscatter_pass>();
 	rec.dispatch<sky_view_entry>(
 		{
 			.sun_direction = d.sun_direction,
@@ -393,7 +393,7 @@ auto gse::renderer::atmosphere::frame(const context& ctx, shared_view<gpu::conte
 		vec3u{ sky_view_groups.x(), sky_view_groups.y(), 1 }
 	);
 
-	rec = co_await gpu::pass<^^ap_compute_pass>(ctx).pipeline(d.ap_pipeline).after<^^multiscatter_pass>();
+	rec = co_await gpu::pass<^^ap_compute_pass>(pass_out).pipeline(d.ap_pipeline).after<^^multiscatter_pass>();
 	rec.dispatch<ap_entry>(
 		{
 			.inv_view_proj = inv_view_proj,
@@ -412,7 +412,7 @@ auto gse::renderer::atmosphere::frame(const context& ctx, shared_view<gpu::conte
 		ap_groups
 	);
 
-	rec = co_await gpu::pass<^^sky_raster_pass>(ctx)
+	rec = co_await gpu::pass<^^sky_raster_pass>(pass_out)
 		.pipeline(d.sky_raster_pipeline)
 		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
 		.depth(gpu::load_depth())

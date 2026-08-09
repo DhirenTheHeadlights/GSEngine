@@ -147,31 +147,31 @@ auto gse::audio::init(data& d) -> async::task<> {
 	return {};
 }
 
-auto gse::audio::run(context& ctx, data& d) -> async::task<> {
-	for (const auto& req : ctx.read_channel<play_request>()) {
+auto gse::audio::run(context& ctx, data& d, const channel_read<play_request, stop_request, pause_request, resume_request, set_volume_request, set_master_volume_request> requests_in) -> async::task<> {
+	for (const auto& req : requests_in.of<play_request>()) {
 		if (req.clip) {
 			const auto handle = allocate_voice(d, *req.clip, req.loop);
 			req.promise.fulfill(handle);
 		}
 	}
 
-	for (const auto& req : ctx.read_channel<stop_request>()) {
+	for (const auto& req : requests_in.of<stop_request>()) {
 		release_voice(d, req.handle);
 	}
 
-	for (const auto& req : ctx.read_channel<pause_request>()) {
+	for (const auto& req : requests_in.of<pause_request>()) {
 		if (valid_voice(d, req.handle)) {
 			ma_sound_stop(&d.voices[req.handle.index]->sound);
 		}
 	}
 
-	for (const auto& req : ctx.read_channel<resume_request>()) {
+	for (const auto& req : requests_in.of<resume_request>()) {
 		if (valid_voice(d, req.handle)) {
 			ma_sound_start(&d.voices[req.handle.index]->sound);
 		}
 	}
 
-	for (const auto& req : ctx.read_channel<set_volume_request>()) {
+	for (const auto& req : requests_in.of<set_volume_request>()) {
 		if (valid_voice(d, req.handle)) {
 			ma_sound_set_volume(
 				&d.voices[req.handle.index]->sound,
@@ -180,7 +180,7 @@ auto gse::audio::run(context& ctx, data& d) -> async::task<> {
 		}
 	}
 
-	for (const auto& req : ctx.read_channel<set_master_volume_request>()) {
+	for (const auto& req : requests_in.of<set_master_volume_request>()) {
 		d.master_vol = req.vol;
 		if (d.engine_initialized) {
 			ma_engine_set_volume(&d.engine->inner, req.vol.value(percentage<float>::bound::zero_to_one));

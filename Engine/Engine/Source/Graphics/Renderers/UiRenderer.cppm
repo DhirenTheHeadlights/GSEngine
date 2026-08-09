@@ -15,6 +15,7 @@ import gse.containers;
 import gse.concurrency;
 import gse.ecs;
 import gse.math;
+import gse.gpu_record;
 
 export namespace gse::renderer {
 	struct sprite_command {
@@ -142,7 +143,8 @@ export namespace gse::renderer::ui {
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		shared_view<asset::data> assets_s,
-		data& d
+		data& d,
+		channel_read<sprite_command, text_command> commands_in
 	) -> async::task<>;
 
 	[[= gse::system_frame{}]]
@@ -150,6 +152,7 @@ export namespace gse::renderer::ui {
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		data& d,
+		channel_write<gpu::render_pass_request> pass_out,
 		shared_view<scene_snapshot::data> snapshot_s
 	) -> async::task<>;
 }

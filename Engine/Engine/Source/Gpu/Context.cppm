@@ -21,6 +21,10 @@ import gse.ecs;
 import gse.meta;
 import gse.save;
 
+export namespace gse::gpu {
+	struct gpu_resume_request;
+}
+
 export namespace gse::gpu::context {
 	struct [[= gse::system_state<"Gpu">{}, = gse::settings::category<"Graphics">{}]] data {
 		[[
@@ -60,7 +64,8 @@ export namespace gse::gpu::context {
 
 	[[= system_run<>{}]] auto run(
 		gse::context& ctx,
-		data& d
+		data& d,
+		channel_read<gpu_resume_request> resume_in
 	) -> async::task<>;
 
 	[[= system_shutdown{}]] auto shutdown(
@@ -95,7 +100,7 @@ export namespace gse::gpu {
 	};
 
 	struct on_gpu_awaitable {
-		channel_writer& channels;
+		channel_write<gpu_resume_request> channels;
 		context::data* state = nullptr;
 
 		auto await_ready() const noexcept -> bool;
@@ -108,7 +113,7 @@ export namespace gse::gpu {
 	};
 
 	[[nodiscard]] auto on_gpu(
-		channel_writer& channels
+		channel_write<gpu_resume_request> channels
 	) -> on_gpu_awaitable;
 }
 
@@ -127,6 +132,6 @@ auto gse::gpu::on_gpu_awaitable::await_resume() -> context::data& {
 	return *state;
 }
 
-auto gse::gpu::on_gpu(channel_writer& channels) -> on_gpu_awaitable {
+auto gse::gpu::on_gpu(const channel_write<gpu_resume_request> channels) -> on_gpu_awaitable {
 	return { channels };
 }

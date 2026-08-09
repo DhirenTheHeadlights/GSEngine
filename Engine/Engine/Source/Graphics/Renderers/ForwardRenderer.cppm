@@ -28,6 +28,7 @@ import gse.assets;
 import gse.gpu;
 import gse.save;
 import gse.meta;
+import gse.gpu_record;
 
 export namespace gse::renderer::forward {
 	constexpr std::size_t max_lights = 1024;
@@ -105,6 +106,8 @@ export namespace gse::renderer::forward {
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		data& d,
+		channel_write<gpu::render_pass_request> pass_out,
+		channel_read<geometry_collector::render_data> geometry_in,
 		shared_view<camera::data> cam_state,
 		shared_view<geometry_collector::data> gc_r,
 		shared_view<light_culling::data> lc_r,

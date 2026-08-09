@@ -3,6 +3,7 @@ export module gse.ide.viewport;
 import std;
 import gse;
 import gse.gpu;
+import gse.gpu_record;
 import gse.ide.build;
 
 export namespace gse::ide::viewport {
@@ -47,6 +48,9 @@ export namespace gse::ide::viewport {
 		const context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		data& d,
+		channel_write<gpu::render_pass_request> pass_out,
+		channel_read<build_runner::attached_session_ended, build_runner::attached_surface_ready> surface_in,
+		channel_write<build_runner::attached_surface_rejected, build_runner::attached_surface_imported> surface_out,
 		shared_view<build_runner::data> build_d
 	) -> async::task<>;
 }

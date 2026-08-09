@@ -16,6 +16,7 @@ import gse.diag;
 import gse.ecs;
 import gse.math;
 import gse.physics;
+import gse.gpu_record;
 
 export namespace gse::renderer::skin {
 	struct palette_pass {};
@@ -25,17 +26,11 @@ export namespace gse::renderer::skin {
 		mat4f inverse_bind;
 		mat4f world;
 		std::uint32_t valid = 0;
-		std::uint32_t pad0 = 0;
-		std::uint32_t pad1 = 0;
-		std::uint32_t pad2 = 0;
 	};
 
 	struct [[= shaders::shader_struct]] skin_matrix {
 		mat4f skin;
 		std::uint32_t valid = 0;
-		std::uint32_t pad0 = 0;
-		std::uint32_t pad1 = 0;
-		std::uint32_t pad2 = 0;
 	};
 
 	struct skinned_instance {
@@ -87,6 +82,7 @@ export namespace gse::renderer::skin {
 	auto collect(
 		context& ctx,
 		data& d,
+		channel_read<physics::interpolation_state> interp_in,
 		read<skeleton_instance_component> skeletons,
 		read<physics::transform_component> transforms,
 		read<physics::motion_component> motions,
@@ -97,7 +93,8 @@ export namespace gse::renderer::skin {
 	auto frame(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
-		data& d
+		data& d,
+		channel_write<gpu::render_pass_request> pass_out
 	) -> async::task<>;
 
 	struct deformed_slots {

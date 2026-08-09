@@ -82,6 +82,14 @@ auto gse::scheduler::snapshot_graph() const -> introspection::system_graph {
 		for (const id w : node.component_writes) {
 			gn.writes.push_back(resolve_name(w));
 		}
+		gn.publishes.reserve(node.channel_publishes.size());
+		for (const id p : node.channel_publishes) {
+			gn.publishes.push_back(resolve_name(p));
+		}
+		gn.consumes.reserve(node.channel_consumes.size());
+		for (const id c : node.channel_consumes) {
+			gn.consumes.push_back(resolve_name(c));
+		}
 		graph.nodes.push_back(std::move(gn));
 	}
 
@@ -869,10 +877,9 @@ auto gse::scheduler::update() -> void {
 	}
 	{
 		trace::scope_guard sg_apply{ trace_id<"sched::apply_settings">() };
-		auto writer = m_channels_store.make_writer();
 		for (auto& node : m_nodes) {
 			if (node.invoke_apply_settings_fn) {
-				node.invoke_apply_settings_fn(node.data.get(), m_channels_store, writer);
+				node.invoke_apply_settings_fn(node.data.get(), m_channels_store);
 			}
 		}
 	}
@@ -991,11 +998,40 @@ auto gse::scheduler::resolve_activation(const std::unordered_set<id>& disabled_r
 		name_of[n.state_id] = n.system_name;
 	}
 
+	std::unordered_map<id, std::vector<id>> publishers;
+	for (const auto& n : m_candidates) {
+		for (const id ch : n.channel_publishes) {
+			publishers[ch].push_back(n.state_id);
+		}
+	}
+
 	std::unordered_map<id, std::vector<id>> dependents;
 	std::unordered_set<id> inactive;
 	std::vector<id> work;
 
+	const auto has_active_producer = [&](const id ch) {
+		const auto it = publishers.find(ch);
+		if (it == publishers.end()) {
+			return true;
+		}
+		return std::ranges::any_of(it->second, [&](const id p) {
+			return !inactive.contains(p);
+		});
+	};
+
 	for (const auto& n : m_candidates) {
+		for (const id ch : n.channel_consumes) {
+			if (publishers.contains(ch)) {
+				continue;
+			}
+			log::println(
+				log::level::warning,
+				log::category::runtime,
+				"system '{}': consumed channel {} has no registered producer — no system declares it in a channel_write<...> parameter",
+				n.system_name,
+				ch
+			);
+		}
 		for (const id dep : required(n)) {
 			dependents[dep].push_back(n.state_id);
 			if (!provided.contains(dep)) {
@@ -1017,12 +1053,35 @@ auto gse::scheduler::resolve_activation(const std::unordered_set<id>& disabled_r
 		}
 	}
 
-	for (std::size_t i = 0; i < work.size(); ++i) {
-		for (const id dep : dependents[work[i]]) {
-			if (inactive.insert(dep).second) {
-				work.push_back(dep);
+	std::size_t propagated = 0;
+	const auto propagate = [&] {
+		for (; propagated < work.size(); ++propagated) {
+			for (const id dep : dependents[work[propagated]]) {
+				if (inactive.insert(dep).second) {
+					work.push_back(dep);
+				}
 			}
 		}
+	};
+
+	propagate();
+	for (bool changed = true; changed;) {
+		changed = false;
+		for (const auto& n : m_candidates) {
+			if (inactive.contains(n.state_id)) {
+				continue;
+			}
+			const bool starved = std::ranges::any_of(n.channel_consumes, [&](const id ch) {
+				return !has_active_producer(ch);
+			});
+			if (!starved) {
+				continue;
+			}
+			inactive.insert(n.state_id);
+			work.push_back(n.state_id);
+			changed = true;
+		}
+		propagate();
 	}
 
 	std::unordered_set<id> deferred;
@@ -1056,6 +1115,14 @@ auto gse::scheduler::resolve_activation(const std::unordered_set<id>& disabled_r
 				if (inactive.contains(dep)) {
 					const auto it = name_of.find(dep);
 					reason = std::format("dependency '{}' is inactive", it != name_of.end() ? it->second : std::string("<unprovided>"));
+					break;
+				}
+			}
+		}
+		if (reason.empty()) {
+			for (const id ch : n.channel_consumes) {
+				if (!has_active_producer(ch)) {
+					reason = std::format("channel {} has no active producer", ch);
 					break;
 				}
 			}

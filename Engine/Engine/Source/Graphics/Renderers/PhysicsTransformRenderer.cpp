@@ -75,8 +75,8 @@ auto gse::renderer::physics_transform::init(context& ctx, const shared_view<gpu:
 	return {};
 }
 
-auto gse::renderer::physics_transform::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, shared_view<geometry_collector::data> gc_r) -> async::task<> {
-	const auto& solver_infos = ctx.read_channel<physics::gpu_solver_frame_info>();
+auto gse::renderer::physics_transform::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<physics::gpu_solver_frame_info, geometry_collector::render_data, physics::interpolation_state> frame_in, shared_view<geometry_collector::data> gc_r) -> async::task<> {
+	const auto& solver_infos = frame_in.of<physics::gpu_solver_frame_info>();
 
 	if (solver_infos.empty()) {
 		co_return;
@@ -91,7 +91,7 @@ auto gse::renderer::physics_transform::frame(context& ctx, shared_view<gpu::cont
 
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
-	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
+	const auto& render_items = frame_in.of<geometry_collector::render_data>();
 
 	if (!render_items.empty() && render_items[0].physics_mapping_count > 0) {
 		const auto& data = render_items[0];
@@ -123,7 +123,7 @@ auto gse::renderer::physics_transform::frame(context& ctx, shared_view<gpu::cont
 	}
 
 	auto interpolation_lag = system_clock::fixed_lag<time_t<float, seconds>>();
-	if (const auto& interpolation = ctx.read_channel<physics::interpolation_state>(); !interpolation.empty() && !interpolation[0].advancing) {
+	if (const auto& interpolation = frame_in.of<physics::interpolation_state>(); !interpolation.empty() && !interpolation[0].advancing) {
 		interpolation_lag = time_t<float, seconds>{};
 	}
 
@@ -134,7 +134,7 @@ auto gse::renderer::physics_transform::frame(context& ctx, shared_view<gpu::cont
 
 	const std::uint32_t workgroups = (d.cached_mapping_count + 63) / 64;
 
-	auto rec = co_await gpu::pass<^^gse::renderer::physics_transform::frame>(ctx)
+	auto rec = co_await gpu::pass<^^gse::renderer::physics_transform::frame>(pass_out)
 		.pipeline(d.pipeline)
 		.after<^^geometry_collector::frame, ^^vbd::vbd_state_copy_stage>();
 

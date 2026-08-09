@@ -73,8 +73,7 @@ namespace gse {
 	template <typename State>
 	auto invoke_annotated_apply_settings(
 		void* data_ptr,
-		channel_registry& channels_store,
-		channel_writer& channels
+		channel_registry& channels_store
 	) -> void;
 
 	template <typename State>
@@ -115,6 +114,12 @@ namespace gse {
 	template <std::meta::info FnInfo>
 	auto collect_fn_shared_views(
 		std::vector<id>& out
+	) -> void;
+
+	template <std::meta::info FnInfo>
+	auto collect_fn_channels(
+		std::vector<id>& reads_out,
+		std::vector<id>& writes_out
 	) -> void;
 
 	template <typename Arg>
@@ -181,7 +186,7 @@ namespace gse {
 	auto page_thunk_for(
 		void* builder,
 		void* panel_state,
-		void* channels,
+		settings::change_request_writer channels,
 		const void* entry
 	) -> void;
 }
@@ -199,7 +204,7 @@ namespace gse::settings {
 
 	template <typename State, std::meta::info M>
 	auto push_annotated_field_change(
-		void* channel_writer_ptr,
+		channel_write<change_request> channels,
 		std::string_view raw
 	) -> bool;
 
@@ -211,7 +216,7 @@ namespace gse::settings {
 
 	template <typename State>
 	auto reset_annotated_defaults(
-		void* channel_writer_ptr
+		channel_write<change_request> channels
 	) -> void;
 
 	template <typename State>
@@ -248,24 +253,14 @@ auto gse::invoke_annotated_snapshot(void* data_ptr) -> void {
 }
 
 template <typename State>
-auto gse::invoke_annotated_apply_settings(void* data_ptr, channel_registry& channels_store, channel_writer& channels) -> void {
+auto gse::invoke_annotated_apply_settings(void* data_ptr, channel_registry& channels_store) -> void {
 	auto& d = *static_cast<annotated_system_data<State>*>(data_ptr);
-	const auto& reqs = channels_store.ensure_typed<settings::annotated_change_request<State>>().data.read_raw();
+	const auto& reqs = channels_store.ensure_typed<settings::change_request>().data.read_raw();
 	for (const auto& req : reqs) {
-		if (!req.apply) {
+		if (!req.apply || req.state_type != id_of<State>()) {
 			continue;
 		}
-		if constexpr (std::is_trivially_copyable_v<State>) {
-			State old_value = d.state;
-			req.apply(d.state);
-			channels.push<settings::annotated_changed<State>>({
-				.old_value = std::move(old_value),
-				.new_value = d.state
-			});
-		}
-		else {
-			req.apply(d.state);
-		}
+		req.apply(&d.state);
 	}
 }
 
@@ -352,6 +347,13 @@ auto gse::collect_fn_shared_views(std::vector<id>& out) -> void {
 	}(std::make_index_sequence<arity_of<FnInfo>>{});
 }
 
+template <std::meta::info FnInfo>
+auto gse::collect_fn_channels(std::vector<id>& reads_out, std::vector<id>& writes_out) -> void {
+	[&]<std::size_t... Is>(std::index_sequence<Is...>) {
+		((append_arg_channel_ids<arg_type_of<FnInfo, Is>>(reads_out, writes_out)), ...);
+	}(std::make_index_sequence<arity_of<FnInfo>>{});
+}
+
 template <typename Arg>
 auto gse::ensure_arg_storage(registry& reg) -> void {
 	using U = std::remove_cvref_t<Arg>;
@@ -431,6 +433,12 @@ auto gse::make_annotated_system_node(settings::draw_page_thunk page_thunk) -> sy
 	node.init_state_deps = std::move(init_deps.required);
 	node.optional_init_state_deps = std::move(init_deps.optional);
 	node.frame_state_deps = std::move(frame_deps);
+
+	std::vector<id> channel_reads;
+	std::vector<id> channel_writes;
+	(collect_fn_channels<FnInfos>(channel_reads, channel_writes), ...);
+	node.channel_consumes = std::move(channel_reads);
+	node.channel_publishes = std::move(channel_writes);
 
 	std::vector<id> shared_views;
 	(collect_fn_shared_views<FnInfos>(shared_views), ...);
@@ -523,17 +531,17 @@ auto gse::settings::annotated_field_options(const void* settings_ptr) -> std::ve
 }
 
 template <typename State, std::meta::info M>
-auto gse::settings::push_annotated_field_change(void* channel_writer_ptr, const std::string_view raw) -> bool {
+auto gse::settings::push_annotated_field_change(const channel_write<change_request> channels, const std::string_view raw) -> bool {
 	using F = [:std::meta::type_of(M):];
-	auto& channels = *static_cast<channel_writer*>(channel_writer_ptr);
 	if constexpr (is_choice_v<F>) {
 		typename F::value_type parsed{};
 		if (!gse::parse(raw, parsed)) {
 			return false;
 		}
-		channels.push<annotated_change_request<State>>({
-			.apply = [parsed](State& d) {
-				d.[:M:].value = parsed;
+		channels.push<change_request>({
+			.state_type = id_of<State>(),
+			.apply = [parsed](void* p) {
+				static_cast<State*>(p)->[:M:].value = parsed;
 			},
 		});
 		return true;
@@ -543,9 +551,10 @@ auto gse::settings::push_annotated_field_change(void* channel_writer_ptr, const 
 		if (!gse::parse(raw, parsed)) {
 			return false;
 		}
-		channels.push<annotated_change_request<State>>({
-			.apply = [parsed = std::move(parsed)](State& d) {
-				d.[:M:] = parsed;
+		channels.push<change_request>({
+			.state_type = id_of<State>(),
+			.apply = [parsed = std::move(parsed)](void* p) {
+				static_cast<State*>(p)->[:M:] = parsed;
 			},
 		});
 		return true;
@@ -595,10 +604,11 @@ auto gse::settings::collect_annotated_fields() -> std::vector<settings_field> {
 }
 
 template <typename State>
-auto gse::settings::reset_annotated_defaults(void* channel_writer_ptr) -> void {
-	auto& channels = *static_cast<channel_writer*>(channel_writer_ptr);
-	channels.push<annotated_change_request<State>>({
-		.apply = [](State& d) {
+auto gse::settings::reset_annotated_defaults(const channel_write<change_request> channels) -> void {
+	channels.push<change_request>({
+		.state_type = id_of<State>(),
+		.apply = [](void* p) {
+			State& d = *static_cast<State*>(p);
 			State defaults{};
 			template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^State, std::meta::access_context::unchecked()))) {
 				if constexpr (meta::find_describe(m) != std::meta::info{}) {
@@ -688,16 +698,15 @@ consteval auto gse::page_fn_for_state(const std::meta::info state, std::vector<s
 }
 
 template <std::meta::info PageInfo>
-auto gse::page_thunk_for(void* builder, void* panel_state, void* channels, const void* entry) -> void {
+auto gse::page_thunk_for(void* builder, void* panel_state, const settings::change_request_writer channels, const void* entry) -> void {
 	using builder_t = [:std::meta::remove_cvref(std::meta::type_of(std::meta::parameters_of(PageInfo)[0])):];
 	using panel_state_t = [:std::meta::remove_cvref(std::meta::type_of(std::meta::parameters_of(PageInfo)[1])):];
 	using entry_t = [:std::meta::remove_cvref(std::meta::type_of(std::meta::parameters_of(PageInfo)[2])):];
-	using channels_t = [:std::meta::remove_cvref(std::meta::type_of(std::meta::parameters_of(PageInfo)[3])):];
 	[:PageInfo:](
 		*static_cast<builder_t*>(builder),
 		*static_cast<panel_state_t*>(panel_state),
 		*static_cast<const entry_t*>(entry),
-		*static_cast<channels_t*>(channels)
+		channels
 	);
 }
 

@@ -172,14 +172,14 @@ auto gse::renderer::light_culling::init(context& ctx, const shared_view<gpu::con
 	return {};
 }
 
-auto gse::renderer::light_culling::frame(context& ctx, shared_view<gpu::context::data> gpu_s, const data& d, shared_view<camera::data> cam_state, shared_view<atmosphere::data> atm_state, read<directional_light_component> dir_lights, read<spot_light_component> spot_lights, read<point_light_component> point_lights) -> async::task<> {
+auto gse::renderer::light_culling::frame(context& ctx, shared_view<gpu::context::data> gpu_s, const data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<geometry_collector::render_data> geometry_in, shared_view<camera::data> cam_state, shared_view<atmosphere::data> atm_state, read<directional_light_component> dir_lights, read<spot_light_component> spot_lights, read<point_light_component> point_lights) -> async::task<> {
 	auto& graph = *gpu_s.render_graph;
 
 	if (!graph.frame_in_progress()) {
 		co_return;
 	}
 
-	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
+	const auto& render_items = geometry_in.of<geometry_collector::render_data>();
 	if (render_items.empty()) {
 		co_return;
 	}
@@ -286,7 +286,7 @@ auto gse::renderer::light_culling::frame(context& ctx, shared_view<gpu::context:
 
 	const auto tiles = tile_count(d);
 
-	auto rec = co_await gpu::pass<^^gse::renderer::light_culling::frame>(ctx).pipeline(d.pipeline).after<^^depth_prepass::frame>();
+	auto rec = co_await gpu::pass<^^gse::renderer::light_culling::frame>(pass_out).pipeline(d.pipeline).after<^^depth_prepass::frame>();
 
 	rec.sample_image(gpu_s.render_graph->depth_image(), gpu::pipeline_stage_flag::compute_shader);
 

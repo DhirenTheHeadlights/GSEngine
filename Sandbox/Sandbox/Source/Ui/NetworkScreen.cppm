@@ -8,7 +8,7 @@ export namespace sandbox {
 	public:
 		network_screen(
 			gse::shared_view<gse::network::data> net,
-			gse::channel_writer channels
+			gse::channel_write<gse::network::connect_request, gse::network::refresh_servers_request, gse::network::send_request> channels
 		);
 
 		auto build(
@@ -20,7 +20,7 @@ export namespace sandbox {
 
 	private:
 		gse::shared_view<gse::network::data> m_net;
-		gse::channel_writer m_channels;
+		gse::channel_write<gse::network::connect_request, gse::network::refresh_servers_request, gse::network::send_request> m_channels;
 		int m_selected = -1;
 		std::uint32_t m_ping_seq = 0;
 		gse::clock m_refresh_clock;
@@ -28,7 +28,7 @@ export namespace sandbox {
 	};
 }
 
-sandbox::network_screen::network_screen(const gse::shared_view<gse::network::data> net, gse::channel_writer channels)
+sandbox::network_screen::network_screen(const gse::shared_view<gse::network::data> net, gse::channel_write<gse::network::connect_request, gse::network::refresh_servers_request, gse::network::send_request> channels)
 	: m_net(net), m_channels(std::move(channels)) {
 }
 

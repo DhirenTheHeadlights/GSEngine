@@ -69,7 +69,6 @@ export namespace gse::ide {
 		std::vector<edge_draw> edges_draw;
 		std::vector<channel_use_draw> channel_uses;
 		std::vector<channel_link_draw> channel_edges;
-		std::optional<std::uint64_t> channel_generation;
 		std::vector<std::string> labels;
 		std::vector<float> widths;
 		std::vector<vec4f> base_colors;
@@ -132,6 +131,6 @@ export namespace gse::ide {
 		const rectf& area,
 		graph_data& gd,
 		const search::index_state* index,
-		channel_writer channels
+		channel_write<jump_to_request, set_cursor_shape_request> channels
 	) -> void;
 }

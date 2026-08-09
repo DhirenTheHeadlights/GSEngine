@@ -17,7 +17,7 @@ import gse.os;
 import gse.assets;
 import gse.gpu;
 
-auto gse::free_camera::system::attach(context& ctx, data& d, write<component> cameras, structural<camera::follow_component> follows) -> async::task<> {
+auto gse::free_camera::system::attach(context& ctx, data& d, const channel_write<actions::add_action_request, actions::bind_axis2_request> actions_out, write<component> cameras, structural<camera::follow_component> follows) -> async::task<> {
 	for (const auto owner_id : cameras.drain(component_event::added)) {
 		const auto* c = cameras.find(owner_id);
 		if (!c) {
@@ -25,16 +25,16 @@ auto gse::free_camera::system::attach(context& ctx, data& d, write<component> ca
 		}
 		auto& b = d.bindings_by_owner[owner_id];
 
-		b.forward = actions::add<"FreeCamera_Move_Forward">(ctx.channels, key::w);
-		b.left = actions::add<"FreeCamera_Move_Left">(ctx.channels, key::a);
-		b.back = actions::add<"FreeCamera_Move_Backward">(ctx.channels, key::s);
-		b.right = actions::add<"FreeCamera_Move_Right">(ctx.channels, key::d);
-		b.up = actions::add<"FreeCamera_Move_Up">(ctx.channels, key::space);
-		b.down = actions::add<"FreeCamera_Move_Down">(ctx.channels, key::left_control);
-		b.toggle = actions::add<"FreeCamera_Toggle">(ctx.channels, key::f1);
+		b.forward = actions::add<"FreeCamera_Move_Forward">(actions_out, key::w);
+		b.left = actions::add<"FreeCamera_Move_Left">(actions_out, key::a);
+		b.back = actions::add<"FreeCamera_Move_Backward">(actions_out, key::s);
+		b.right = actions::add<"FreeCamera_Move_Right">(actions_out, key::d);
+		b.up = actions::add<"FreeCamera_Move_Up">(actions_out, key::space);
+		b.down = actions::add<"FreeCamera_Move_Down">(actions_out, key::left_control);
+		b.toggle = actions::add<"FreeCamera_Toggle">(actions_out, key::f1);
 
 		b.move_axis_id = actions::bind_axis2(
-			ctx.channels,
+			actions_out,
 			actions::pending_axis2_info{
 				.left = b.left,
 				.right = b.right,

@@ -11,6 +11,7 @@ import gse.ecs;
 import gse.math;
 import gse.time;
 import gse.meta;
+import gse.gpu_record;
 
 import :ui_renderer;
 import :capture_ring;
@@ -75,7 +76,8 @@ export namespace gse::renderer::capture {
 	auto init(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
-		data& d
+		data& d,
+		channel_write<actions::add_action_request> actions_out
 	) -> async::task<>;
 
 	[[= gse::system_run<>{}]]
@@ -84,14 +86,17 @@ export namespace gse::renderer::capture {
 		shared_view<gpu::context::data> gpu_s,
 		shared_view<asset::data> assets_s,
 		shared_view<actions::data> sys,
-		data& d
+		data& d,
+		channel_write<screenshot_request, save_clip_request, toggle_recording_request> capture_out
 	) -> async::task<>;
 
 	[[= gse::system_frame{}]]
 	auto frame(
 		const context& ctx,
 		shared_view<gpu::context::data> gpu_s,
-		data& d
+		data& d,
+		channel_write<gpu::render_pass_request> pass_out,
+		channel_read<toggle_recording_request, save_clip_request, screenshot_request> capture_in
 	) -> async::task<>;
 
 	[[= gse::system_shutdown{}]]

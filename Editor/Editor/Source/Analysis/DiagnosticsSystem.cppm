@@ -31,14 +31,16 @@ export namespace gse::ide {
 		[[= gse::system_run<>{}]]
 		auto run(
 			gse::context& ctx,
-			data& d
+			data& d,
+			gse::channel_read<analysis::diagnostics_request> requests_in,
+			gse::channel_write<analysis::diagnostics_completed> completed_out
 		) -> gse::async::task<>;
 	}
 }
 
-auto gse::ide::diagnostics_system::run(gse::context& ctx, data& d) -> gse::async::task<> {
+auto gse::ide::diagnostics_system::run(gse::context& ctx, data& d, const gse::channel_read<analysis::diagnostics_request> requests_in, const gse::channel_write<analysis::diagnostics_completed> completed_out) -> gse::async::task<> {
 	if (d.pending && d.pending->done.load(std::memory_order_acquire)) {
-		ctx.channels.push<analysis::diagnostics_completed>({
+		completed_out.push<analysis::diagnostics_completed>({
 			.check = std::move(d.pending),
 		});
 	}
@@ -48,7 +50,7 @@ auto gse::ide::diagnostics_system::run(gse::context& ctx, data& d) -> gse::async
 	}
 
 	std::optional<analysis::diagnostics_request> request;
-	for (const analysis::diagnostics_request& next : ctx.read_channel<analysis::diagnostics_request>()) {
+	for (const analysis::diagnostics_request& next : requests_in.of<analysis::diagnostics_request>()) {
 		request = next;
 	}
 	if (!request) {

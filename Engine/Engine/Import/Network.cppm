@@ -101,6 +101,8 @@ export namespace gse::network {
 		context& ctx,
 		shared_view<asset::data> assets_d,
 		data& d,
+		channel_read<connect_request, disconnect_request, add_provider_request, clear_providers_request, refresh_servers_request, send_request> requests_in,
+		channel_write<camera_yaw_request, set_networked_request, set_authoritative_request, set_local_controller_id_request, deactivate_active_scene_request, activate_scene_request> requests_out,
 		shared_view<actions::data> actions_d,
 		entities ents,
 		structural<Components>... auths
@@ -117,16 +119,16 @@ auto gse::network::shutdown(data& d) -> void {
 }
 
 template <typename... Components>
-auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, data& d, const shared_view<actions::data> actions_d, entities ents, structural<Components>... auths) -> async::task<> {
+auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, data& d, const channel_read<connect_request, disconnect_request, add_provider_request, clear_providers_request, refresh_servers_request, send_request> requests_in, const channel_write<camera_yaw_request, set_networked_request, set_authoritative_request, set_local_controller_id_request, deactivate_active_scene_request, activate_scene_request> requests_out, const shared_view<actions::data> actions_d, entities ents, structural<Components>... auths) -> async::task<> {
 	((void)auths, ...);
 	(ctx.template ensure_storage<Components>(), ...);
 
 		if (d.camera_yaw_future && d.camera_yaw_future->ready()) {
 			d.camera_yaw = d.camera_yaw_future->get();
 		}
-		d.camera_yaw_future = ctx.channels.push<camera_yaw_request>({});
+		d.camera_yaw_future = requests_out.push<camera_yaw_request>({});
 
-		for (const auto& req : ctx.read_channel<connect_request>()) {
+		for (const auto& req : requests_in.of<connect_request>()) {
 			if (!d.client_ptr) {
 				const address bind = req.options.local_bind.value_or(address{
 					.ip = "0.0.0.0",
@@ -137,20 +139,20 @@ auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, da
 			req.promise.fulfill(d.client_ptr->connect(req.options.timeout, req.options.retry));
 		}
 
-		for (const auto& _ : ctx.read_channel<disconnect_request>()) {
+		for (const auto& _ : requests_in.of<disconnect_request>()) {
 			d.client_ptr.reset();
 		}
 
-		for (const auto& req : ctx.read_channel<add_provider_request>()) {
+		for (const auto& req : requests_in.of<add_provider_request>()) {
 			d.providers.emplace_back(req.provider);
 		}
 
-		for (const auto& _ : ctx.read_channel<clear_providers_request>()) {
+		for (const auto& _ : requests_in.of<clear_providers_request>()) {
 			d.providers.clear();
 			d.available_servers.clear();
 		}
 
-		for (const auto& req : ctx.read_channel<refresh_servers_request>()) {
+		for (const auto& req : requests_in.of<refresh_servers_request>()) {
 			std::unordered_map<address, discovery_result> dedup;
 			for (const auto& p : d.providers) {
 				p->refresh(req.timeout);
@@ -184,11 +186,11 @@ auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, da
 			return {};
 		}
 
-		for (const auto& req : ctx.read_channel<send_request>()) {
+		for (const auto& req : requests_in.of<send_request>()) {
 			req.action(*d.client_ptr);
 		}
 
-		d.client_ptr->drain([&ctx, &d, &assets_d, &ents](raw_message& msg) {
+		d.client_ptr->drain([&ctx, &d, &assets_d, &ents, requests_out](raw_message& msg) {
 			read_bitstream stream(msg.payload);
 
 			const bool is_component = match_and_apply_components<type_pack<Components...>>(
@@ -227,16 +229,16 @@ auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, da
 				stream,
 				msg.id,
 				[&](const auto& m) {
-					ctx.channels.push<set_networked_request>({
+					requests_out.push<set_networked_request>({
 						.value = true,
 					});
-					ctx.channels.push<set_authoritative_request>({
+					requests_out.push<set_authoritative_request>({
 						.value = false,
 					});
-					ctx.channels.push<set_local_controller_id_request>({
+					requests_out.push<set_local_controller_id_request>({
 						.controller_id = m.controller_id,
 					});
-					ctx.channels.push<deactivate_active_scene_request>({});
+					requests_out.push<deactivate_active_scene_request>({});
 					d.client_ptr->send(server_info_request{});
 					d.client_ptr->send(pong{
 						.sequence = 0,
@@ -247,7 +249,7 @@ auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, da
 					stream,
 					msg.id,
 					[&](const auto& m) {
-						ctx.channels.push<activate_scene_request>({
+						requests_out.push<activate_scene_request>({
 							.scene_id = m.scene_id,
 						});
 						std::println("Switched to scene: {}", m.scene_id);

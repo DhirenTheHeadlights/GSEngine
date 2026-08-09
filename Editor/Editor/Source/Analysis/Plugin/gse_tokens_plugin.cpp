@@ -3507,60 +3507,6 @@ static void print_ns_qualified(tree ns) {
 	}
 }
 
-static tree channel_message_type(tree fn) {
-	if (!fn || TREE_CODE(fn) != FUNCTION_DECL || !DECL_LANG_SPECIFIC(fn) || !DECL_TEMPLATE_INFO(fn)) return NULL_TREE;
-	tree args = DECL_TI_ARGS(fn);
-	if (!args || TREE_CODE(args) != TREE_VEC || TREE_VEC_LENGTH(args) < 1) return NULL_TREE;
-	tree first = TREE_VEC_ELT(args, 0);
-	if (first && TREE_CODE(first) == TREE_VEC && TREE_VEC_LENGTH(first) >= 1) first = TREE_VEC_ELT(first, 0);
-	return (first && TYPE_P(first)) ? first : NULL_TREE;
-}
-
-static void emit_channel(const char *dir, tree msg_type) {
-	if (!g_function || !dir || !msg_type || !TYPE_P(msg_type)) return;
-	if (!in_main_file(DECL_SOURCE_LOCATION(g_function))) return;
-	tree ns = enclosing_namespace(g_function);
-	if (!ns || TREE_CODE(ns) != NAMESPACE_DECL || ns == global_namespace) return;
-	tree tn = TYPE_NAME(msg_type);
-	if (!tn || TREE_CODE(tn) != TYPE_DECL) return;
-	tree tid = DECL_NAME(tn);
-	if (!tid || TREE_CODE(tid) != IDENTIFIER_NODE || IDENTIFIER_LENGTH(tid) <= 0) return;
-	const char *tname = IDENTIFIER_POINTER(tid);
-	if (tname[0] == '_' || tname[0] == '.' || strchr(tname, ' ')) return;
-	out_str("GSECHAN\t");
-	out_str(dir);
-	out_char('\t');
-	print_ns_qualified(ns);
-	out_char('\t');
-	print_qualified_prefix(tn);
-	out_str(tname);
-	out_char('\n');
-}
-
-static void maybe_emit_channel(tree fn) {
-	if (!fn || TREE_CODE(fn) != FUNCTION_DECL) return;
-	tree id = DECL_NAME(fn);
-	if (!id || TREE_CODE(id) != IDENTIFIER_NODE) return;
-	const char *name = IDENTIFIER_POINTER(id);
-	const char *dir = nullptr;
-	if (strcmp(name, "push") == 0) {
-		tree ctx = DECL_CONTEXT(fn);
-		tree cn = (ctx && TYPE_P(ctx)) ? TYPE_NAME(ctx) : NULL_TREE;
-		tree cid = (cn && TREE_CODE(cn) == TYPE_DECL) ? DECL_NAME(cn) : NULL_TREE;
-		if (!cid || TREE_CODE(cid) != IDENTIFIER_NODE || strcmp(IDENTIFIER_POINTER(cid), "channel_writer") != 0) return;
-		dir = "produce";
-	}
-	else if (strcmp(name, "read_channel") == 0) {
-		dir = "consume";
-	}
-	else {
-		return;
-	}
-	tree msg = channel_message_type(fn);
-	if (!msg) return;
-	emit_channel(dir, msg);
-}
-
 static tree template_id_decl(tree fn) {
 	for (int guard = 0; fn && guard < 8; ++guard) {
 		switch (TREE_CODE(fn)) {
@@ -3763,7 +3709,6 @@ static tree walk_cb(tree *tp, int *walk_subtrees, void *) {
 					emit_qual(use, fn);
 					maybe_emit_deducible_template_args(t, fn, use);
 				}
-				maybe_emit_channel(fn);
 			}
 			else if (tree id = callee_identifier(fn)) {
 				const bool is_operator = IDENTIFIER_LENGTH(id) >= 8 && strncmp(IDENTIFIER_POINTER(id), "operator", 8) == 0;

@@ -10,7 +10,7 @@ export namespace gse::ide {
 	class project_screen : public gui::screen {
 	public:
 		explicit project_screen(
-			gse::channel_writer channels,
+			gse::channel_write<window_launcher_mode_request, window_open_file_request> channels,
 			gse::shared_view<gse::input::data> input,
 			bool hub = false
 		);
@@ -92,7 +92,7 @@ export namespace gse::ide {
 		gui::text_input_state m_input;
 		bool m_dismiss = false;
 		bool m_hub = false;
-		gse::channel_writer m_channels;
+		gse::channel_write<window_launcher_mode_request, window_open_file_request> m_channels;
 		gse::shared_view<gse::input::data> m_input_data;
 		bool m_launcher_sent = false;
 		float m_content_height = 0.f;
@@ -104,7 +104,7 @@ export namespace gse::ide {
 	};
 }
 
-gse::ide::project_screen::project_screen(gse::channel_writer channels, const gse::shared_view<gse::input::data> input, const bool hub) : m_hub(hub), m_channels(std::move(channels)), m_input_data(input) {
+gse::ide::project_screen::project_screen(gse::channel_write<window_launcher_mode_request, window_open_file_request> channels, const gse::shared_view<gse::input::data> input, const bool hub) : m_hub(hub), m_channels(std::move(channels)), m_input_data(input) {
 	const project::manifest& active = project::current();
 
 	for (const std::filesystem::path& path : project::known()) {

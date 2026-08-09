@@ -9,6 +9,7 @@ import gse.concurrency;
 import gse.ecs;
 import gse.meta;
 import gse.math;
+import gse.gpu_record;
 
 import :camera_system;
 
@@ -53,6 +54,7 @@ export namespace gse::renderer::sdf_grid {
 		const context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		data& d,
+		channel_write<gpu::render_pass_request> pass_out,
 		shared_view<camera::data> cam_state
 	) -> async::task<>;
 }

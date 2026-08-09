@@ -13,6 +13,7 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 import gse.physics;
+import gse.gpu_record;
 
 export namespace gse::renderer::physics_transform {
 	struct [[= gse::system_state<"PhysicsTransform">{}]] data {
@@ -39,6 +40,8 @@ export namespace gse::renderer::physics_transform {
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		data& d,
+		channel_write<gpu::render_pass_request> pass_out,
+		channel_read<physics::gpu_solver_frame_info, geometry_collector::render_data, physics::interpolation_state> frame_in,
 		shared_view<geometry_collector::data> gc_r
 	) -> async::task<>;
 }

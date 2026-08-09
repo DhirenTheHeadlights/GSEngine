@@ -269,8 +269,8 @@ auto gse::ide::capture_frame(profile_system::data& d) -> void {
 	}
 }
 
-auto gse::ide::profile_system::run(context& ctx, data& d) -> async::task<> {
-	for (const profile_capture_request& request : ctx.read_channel<profile_capture_request>()) {
+auto gse::ide::profile_system::run(context& ctx, data& d, const channel_read<profile_capture_request, profile_report_request> requests_in) -> async::task<> {
+	for (const profile_capture_request& request : requests_in.of<profile_capture_request>()) {
 		if (request.source != d.source) {
 			d.source = request.source;
 			d.frames.clear();
@@ -278,7 +278,7 @@ auto gse::ide::profile_system::run(context& ctx, data& d) -> async::task<> {
 		}
 		d.capturing = request.enabled;
 	}
-	for (const profile_report_request& request : ctx.read_channel<profile_report_request>()) {
+	for (const profile_report_request& request : requests_in.of<profile_report_request>()) {
 		d.report = {};
 		d.report_loaded = false;
 		if (request.path.empty()) {
@@ -1089,7 +1089,7 @@ auto gse::ide::draw_detail(const gse::gui::draw_context& ctx, const rectf& rect,
 	}
 }
 
-auto gse::ide::draw_profile_panel(gse::gui::builder& ui, const rectf& rect, profile_view_state& state, const std::deque<captured_frame>& frames, const gse::profile::report_file& report, const bool report_loaded, gse::channel_writer channels) -> void {
+auto gse::ide::draw_profile_panel(gse::gui::builder& ui, const rectf& rect, profile_view_state& state, const std::deque<captured_frame>& frames, const gse::profile::report_file& report, const bool report_loaded, gse::channel_write<gse::set_cursor_shape_request> channels) -> void {
 	const gse::gui::draw_context& ctx = ui.ctx;
 	const auto code_view = ctx.fonts.code.resolve();
 	const float font_sz = ctx.style.font_size;

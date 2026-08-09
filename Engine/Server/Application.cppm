@@ -24,6 +24,7 @@ export namespace gse::server {
 	auto run(
 		context& ctx,
 		data<Components...>& d,
+		channel_write<activate_scene_request> scene_out,
 		shared_view<world_system::data> world_d,
 		shared_view<actions::data> actions_d,
 		structural<player_controller> controller_auth,
@@ -43,6 +44,7 @@ export namespace gse::server_app {
 	auto run(
 		context& ctx,
 		data& d,
+		channel_write<gui::menu_content> ui_out,
 		shared_view<input::data> input_d,
 		shared_view<ServerData> srv
 	) -> async::task<>;
@@ -68,15 +70,15 @@ auto gse::server::init(context& ctx, data<Components...>& d) -> async::task<> {
 }
 
 template <typename... Components>
-auto gse::server::run(context& ctx, data<Components...>& d, const shared_view<world_system::data> world_d, const shared_view<actions::data> actions_d, structural<player_controller> controller_auth, entities ents, write<Components>... comps) -> async::task<> {
+auto gse::server::run(context& ctx, data<Components...>& d, const channel_write<activate_scene_request> scene_out, const shared_view<world_system::data> world_d, const shared_view<actions::data> actions_d, structural<player_controller> controller_auth, entities ents, write<Components>... comps) -> async::task<> {
 	if (d.srv) {
-		d.srv->update(world_d, controller_auth, ents, ctx.channels, actions_d, comps...);
+		d.srv->update(world_d, controller_auth, ents, scene_out, actions_d, comps...);
 	}
 	return {};
 }
 
 template <typename ServerData>
-auto gse::server_app::run(context& ctx, data& d, const shared_view<input::data> input_d, const shared_view<ServerData> srv) -> async::task<> {
+auto gse::server_app::run(context& ctx, data& d, const channel_write<gui::menu_content> ui_out, const shared_view<input::data> input_d, const shared_view<ServerData> srv) -> async::task<> {
 	if (d.timer.tick()) {
 		++d.tick_count;
 	}
@@ -85,7 +87,7 @@ auto gse::server_app::run(context& ctx, data& d, const shared_view<input::data> 
 		shutdown();
 	}
 
-	ctx.channels.push<gui::menu_content>({
+	ui_out.push<gui::menu_content>({
 		.menu = "Server Control",
 		.build = [&d, srv](gui::builder& ui) {
 			ui.draw<gui::text>({

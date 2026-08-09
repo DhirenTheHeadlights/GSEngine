@@ -2,6 +2,7 @@ export module gse.ecs:registries;
 
 import std;
 
+import gse.assert;
 import gse.core;
 import gse.concurrency;
 
@@ -103,6 +104,97 @@ export namespace gse {
 	private:
 		std::unordered_map<id, std::unique_ptr<channel_base>> m_channels;
 		mutable std::mutex m_mutex;
+	};
+
+	template <typename T, typename... Us>
+	constexpr bool channel_pack_contains_v = (std::is_same_v<T, Us> || ...);
+
+	template <typename... Ts>
+	class channel_read {
+	public:
+		channel_read() = default;
+
+		explicit channel_read(
+			channel_registry& channels
+		);
+
+		template <typename... Us>
+		requires (channel_pack_contains_v<Ts, Us...> && ...)
+		channel_read(
+			const channel_read<Us...>& wider
+		);
+
+		template <typename T>
+		auto of() const -> channel_read_guard<T>;
+
+	private:
+		channel_registry* m_channels = nullptr;
+
+		template <typename... Us>
+		friend class channel_read;
+	};
+
+	template <typename... Ts>
+	class channel_write {
+	public:
+		channel_write() = default;
+
+		explicit channel_write(
+			channel_writer& writer
+		);
+
+		template <typename... Us>
+		requires (channel_pack_contains_v<Ts, Us...> && ...)
+		channel_write(
+			const channel_write<Us...>& wider
+		);
+
+		[[nodiscard]] auto bound() const -> bool;
+
+		template <typename T>
+		auto push(
+			T item
+		) const -> void;
+
+		template <promiseable T>
+		auto push(
+			T item
+		) const -> channel_future<typename T::result_type>;
+
+	private:
+		channel_writer* m_writer = nullptr;
+
+		template <typename... Us>
+		friend class channel_write;
+	};
+
+	template <typename T>
+	constexpr bool is_channel_read_v = false;
+
+	template <typename... Ts>
+	constexpr bool is_channel_read_v<channel_read<Ts...>> = true;
+
+	template <typename T>
+	constexpr bool is_channel_write_v = false;
+
+	template <typename... Ts>
+	constexpr bool is_channel_write_v<channel_write<Ts...>> = true;
+
+	template <typename T>
+	struct channel_pack_ids;
+
+	template <typename... Ts>
+	struct channel_pack_ids<channel_read<Ts...>> {
+		static auto append(
+			std::vector<id>& out
+		) -> void;
+	};
+
+	template <typename... Ts>
+	struct channel_pack_ids<channel_write<Ts...>> {
+		static auto append(
+			std::vector<id>& out
+		) -> void;
 	};
 }
 
@@ -227,4 +319,80 @@ auto gse::channel_registry::make_writer() -> channel_writer {
 auto gse::channel_registry::clear() -> void {
 	std::lock_guard lock(m_mutex);
 	m_channels.clear();
+}
+
+template <typename... Ts>
+gse::channel_read<Ts...>::channel_read(channel_registry& channels) : m_channels(&channels) {
+}
+
+template <typename... Ts>
+template <typename... Us>
+requires (gse::channel_pack_contains_v<Ts, Us...> && ...)
+gse::channel_read<Ts...>::channel_read(const channel_read<Us...>& wider) : m_channels(wider.m_channels) {
+}
+
+template <typename... Ts>
+template <typename T>
+auto gse::channel_read<Ts...>::of() const -> channel_read_guard<T> {
+	static_assert(
+		channel_pack_contains_v<T, Ts...>,
+		"channel type is not declared in this channel_read<...> pack; add it to the parameter so the scheduler sees the edge"
+	);
+	static_assert(
+		!is_same_frame_channel_v<T>,
+		"same_frame_channel<T> cannot be consumed via channel_read — the writer routes through "
+		"ensure_same_frame<T>() while channel_read goes through ensure_typed<T>(), which collide on id_of<T>() "
+		"and produce undefined behavior via a wrong-type static_cast. "
+		"Either drop the [[= same_frame_channel]] annotation (and accept normal next-tick double-buffered delivery), "
+		"or consume via scheduler::drain_channel<T>() instead."
+	);
+	assert(m_channels != nullptr, "channel_read used before it was bound to a channel registry");
+	return channel_read_guard<T>(m_channels->ensure_typed<T>().data.read_raw());
+}
+
+template <typename... Ts>
+gse::channel_write<Ts...>::channel_write(channel_writer& writer) : m_writer(&writer) {
+}
+
+template <typename... Ts>
+auto gse::channel_write<Ts...>::bound() const -> bool {
+	return m_writer != nullptr;
+}
+
+template <typename... Ts>
+template <typename... Us>
+requires (gse::channel_pack_contains_v<Ts, Us...> && ...)
+gse::channel_write<Ts...>::channel_write(const channel_write<Us...>& wider) : m_writer(wider.m_writer) {
+}
+
+template <typename... Ts>
+template <typename T>
+auto gse::channel_write<Ts...>::push(T item) const -> void {
+	static_assert(
+		channel_pack_contains_v<T, Ts...>,
+		"channel type is not declared in this channel_write<...> pack; add it to the parameter so the scheduler sees the edge"
+	);
+	assert(m_writer != nullptr, "channel_write used before it was bound to a channel writer");
+	m_writer->push<T>(std::move(item));
+}
+
+template <typename... Ts>
+template <gse::promiseable T>
+auto gse::channel_write<Ts...>::push(T item) const -> channel_future<typename T::result_type> {
+	static_assert(
+		channel_pack_contains_v<T, Ts...>,
+		"channel type is not declared in this channel_write<...> pack; add it to the parameter so the scheduler sees the edge"
+	);
+	assert(m_writer != nullptr, "channel_write used before it was bound to a channel writer");
+	return m_writer->push<T>(std::move(item));
+}
+
+template <typename... Ts>
+auto gse::channel_pack_ids<gse::channel_read<Ts...>>::append(std::vector<id>& out) -> void {
+	(out.push_back(trace_id<Ts>()), ...);
+}
+
+template <typename... Ts>
+auto gse::channel_pack_ids<gse::channel_write<Ts...>>::append(std::vector<id>& out) -> void {
+	(out.push_back(trace_id<Ts>()), ...);
 }

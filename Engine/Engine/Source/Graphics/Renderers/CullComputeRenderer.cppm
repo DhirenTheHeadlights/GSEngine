@@ -14,6 +14,7 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+import gse.gpu_record;
 
 export namespace gse::renderer::cull_compute {
 	struct [[= gse::system_state<"CullCompute">{}]] data {
@@ -38,6 +39,8 @@ export namespace gse::renderer::cull_compute {
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		shared_view<geometry_collector::data> gc_r,
-		const data& d
+		const data& d,
+		channel_write<gpu::render_pass_request> pass_out,
+		channel_read<geometry_collector::render_data> geometry_in
 	) -> async::task<>;
 }

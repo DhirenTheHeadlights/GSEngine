@@ -14,6 +14,7 @@ import gse.concurrency;
 import gse.ecs;
 import gse.meta;
 import gse.math;
+import gse.gpu_record;
 
 export namespace gse::renderer::gi_probe {
 	constexpr vec3u grid_dim{ 16, 6, 16 };
@@ -77,6 +78,8 @@ export namespace gse::renderer::gi_probe {
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		data& d,
+		channel_write<gpu::render_pass_request> pass_out,
+		channel_read<geometry_collector::render_data> geometry_in,
 		shared_view<camera::data> cam_state,
 		shared_view<atmosphere::data> atm_state,
 		shared_view<geometry_collector::data> gc_r

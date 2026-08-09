@@ -115,7 +115,8 @@ export namespace gse::audio {
 	[[= gse::system_run<>{}]]
 	auto run(
 		context& ctx,
-		data& d
+		data& d,
+		channel_read<play_request, stop_request, pause_request, resume_request, set_volume_request, set_master_volume_request> requests_in
 	) -> async::task<>;
 
 	[[= gse::system_shutdown{}]]

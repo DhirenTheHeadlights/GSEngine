@@ -3,6 +3,7 @@ export module gse.dx12:command_pools;
 import std;
 import gse.gpu_backend;
 import gse.directx;
+import gse.log;
 
 import :device;
 
@@ -93,8 +94,22 @@ auto gse::dx12::command_pools::acquire_worker_command_buffer(const gpu::queue_ty
 	auto& lists = m_worker_lists[static_cast<std::size_t>(queue_type)];
 	auto& p = lists[frame_index % lists.size()];
 	if (p.used == p.entries.size()) {
-		auto allocator = directx::create_command_allocator(m_owner->raw_device(), compute);
-		auto list = directx::create_command_list(m_owner->raw_device(), allocator.get(), compute);
+		long allocator_hr = 0;
+		auto allocator = directx::create_command_allocator(m_owner->raw_device(), compute, &allocator_hr);
+		if (!allocator) {
+			log::println(log::level::error, log::category::dx12, "worker command allocator creation FAILED {} f{} #{} hr=0x{:08x} removed=0x{:08x}", compute ? "compute" : "graphics", frame_index % lists.size(), p.entries.size(), static_cast<std::uint32_t>(allocator_hr), static_cast<std::uint32_t>(m_owner->raw_device()->GetDeviceRemovedReason()));
+			m_owner->drain_validation_messages();
+			m_owner->dump_dred_once();
+			return {};
+		}
+		long list_hr = 0;
+		auto list = directx::create_command_list(m_owner->raw_device(), allocator.get(), compute, &list_hr);
+		if (!list) {
+			log::println(log::level::error, log::category::dx12, "worker command list creation FAILED {} f{} #{} hr=0x{:08x} removed=0x{:08x}", compute ? "compute" : "graphics", frame_index % lists.size(), p.entries.size(), static_cast<std::uint32_t>(list_hr), static_cast<std::uint32_t>(m_owner->raw_device()->GetDeviceRemovedReason()));
+			m_owner->drain_validation_messages();
+			m_owner->dump_dred_once();
+			return {};
+		}
 		const auto name = std::format("gse.worker {} f{} #{}", compute ? "compute" : "graphics", frame_index % lists.size(), p.entries.size());
 		directx::set_object_name(list.get(), name.c_str(), name.size());
 		p.entries.push_back(entry{
@@ -103,6 +118,9 @@ auto gse::dx12::command_pools::acquire_worker_command_buffer(const gpu::queue_ty
 		});
 	}
 	auto& e = p.entries[p.used++];
+	if (!e.allocator || !e.list) {
+		return {};
+	}
 	e.allocator->Reset();
 	e.list->Reset(e.allocator.get(), nullptr);
 	m_owner->reset_acquired_list(e.list.get());

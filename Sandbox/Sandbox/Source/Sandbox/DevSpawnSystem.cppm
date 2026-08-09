@@ -43,6 +43,9 @@ export namespace sandbox::dev_spawn {
 	auto run(
 		gse::context& ctx,
 		data& state,
+		gse::channel_write<gse::actions::add_action_request, gse::actions::bind_axis2_request> actions_out,
+		gse::channel_read<spawn_stress_request, spawn_joints_request, spawn_character_request> spawn_in,
+		gse::channel_write<gse::animation::ragdoll_request> ragdoll_out,
 		gse::shared_view<gse::actions::data> actions_d,
 		gse::shared_view<gse::world_system::data> world_d,
 		gse::shared_view<gse::asset::data> assets_d,
@@ -78,6 +81,9 @@ auto sandbox::active_scene_ptr(const gse::shared_view<gse::world_system::data> w
 auto sandbox::dev_spawn::run(
 	gse::context& ctx,
 	data& state,
+	const gse::channel_write<gse::actions::add_action_request, gse::actions::bind_axis2_request> actions_out,
+	const gse::channel_read<spawn_stress_request, spawn_joints_request, spawn_character_request> spawn_in,
+	const gse::channel_write<gse::animation::ragdoll_request> ragdoll_out,
 	const gse::shared_view<gse::actions::data> actions_d,
 	const gse::shared_view<gse::world_system::data> world_d,
 	const gse::shared_view<gse::asset::data> assets_d,
@@ -99,10 +105,10 @@ auto sandbox::dev_spawn::run(
 	gse::structural<gse::clip_player_component>
 ) -> gse::async::task<> {
 	if (!state.bound) {
-		state.spawn_stress = gse::actions::add<"Dev_Spawn_Stress">(ctx.channels, gse::key::f5);
-		state.spawn_joints = gse::actions::add<"Dev_Spawn_Joints">(ctx.channels, gse::key::f6);
-		state.spawn_character = gse::actions::add<"Dev_Spawn_Character">(ctx.channels, gse::key::f7);
-		state.ragdoll = gse::actions::add<"Dev_Ragdoll">(ctx.channels, gse::key::f8);
+		state.spawn_stress = gse::actions::add<"Dev_Spawn_Stress">(actions_out, gse::key::f5);
+		state.spawn_joints = gse::actions::add<"Dev_Spawn_Joints">(actions_out, gse::key::f6);
+		state.spawn_character = gse::actions::add<"Dev_Spawn_Character">(actions_out, gse::key::f7);
+		state.ragdoll = gse::actions::add<"Dev_Ragdoll">(actions_out, gse::key::f8);
 		state.bound = true;
 	}
 
@@ -112,9 +118,9 @@ auto sandbox::dev_spawn::run(
 	const bool key_stress = gse::actions::pressed(state.spawn_stress, cs, actions_d);
 	const bool key_joints = gse::actions::pressed(state.spawn_joints, cs, actions_d);
 	const bool key_character = gse::actions::pressed(state.spawn_character, cs, actions_d);
-	const bool req_stress = !ctx.read_channel<spawn_stress_request>().empty();
-	const bool req_joints = !ctx.read_channel<spawn_joints_request>().empty();
-	const bool req_character = !ctx.read_channel<spawn_character_request>().empty();
+	const bool req_stress = !spawn_in.of<spawn_stress_request>().empty();
+	const bool req_joints = !spawn_in.of<spawn_joints_request>().empty();
+	const bool req_character = !spawn_in.of<spawn_character_request>().empty();
 
 	if (scene != nullptr && (key_stress || req_stress)) {
 		spawn_physics_stress(*scene, state.stress);
@@ -159,7 +165,7 @@ auto sandbox::dev_spawn::run(
 		}
 	}
 	if (state.last_character.exists() && gse::actions::pressed(state.ragdoll, cs, actions_d)) {
-		ctx.channels.push<gse::animation::ragdoll_request>({
+		ragdoll_out.push<gse::animation::ragdoll_request>({
 			.character = state.last_character,
 		});
 	}

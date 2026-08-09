@@ -60,7 +60,7 @@ export namespace gse::settings {
 		[[nodiscard]] auto pending_restart_count() const -> std::size_t;
 		[[nodiscard]] auto needs_restart() const -> bool;
 		auto apply_all(
-			channel_writer& channels
+			channel_write<change_request> channels
 		) -> void;
 		auto discard_all() -> void;
 	};
@@ -83,10 +83,12 @@ export namespace gse::settings {
 		static constexpr auto value = Fn;
 	};
 
+	using panel_writer = channel_write<change_request, gui::popout_toggle>;
+
 	auto panel(
 		gui::builder& b,
 		panel_state& ps,
-		channel_writer& channels,
+		panel_writer channels,
 		const save::registry& save_reg,
 		std::string_view category_filter = ""
 	) -> void;
@@ -94,7 +96,7 @@ export namespace gse::settings {
 	auto draw_fields_for_entry(
 		gui::builder& b,
 		panel_state& ps,
-		channel_writer& channels,
+		channel_write<change_request> channels,
 		const register_settings_type& entry,
 		bool hot_only = false
 	) -> void;
@@ -292,7 +294,7 @@ auto gse::settings::draw_field_tooltip(gui::builder& b, const settings_field& fi
 	}
 }
 
-auto gse::settings::draw_fields_for_entry(gui::builder& b, panel_state& ps, channel_writer& channels, const register_settings_type& entry, const bool hot_only) -> void {
+auto gse::settings::draw_fields_for_entry(gui::builder& b, panel_state& ps, const channel_write<change_request> channels, const register_settings_type& entry, const bool hot_only) -> void {
 	if (!entry.settings_ptr) {
 		return;
 	}
@@ -319,7 +321,7 @@ auto gse::settings::draw_fields_for_entry(gui::builder& b, panel_state& ps, chan
 
 		if (field.hot_reloadable) {
 			if (pending.modified && pending.push_change) {
-				pending.push_change(&channels, pending.value);
+				pending.push_change(channels, pending.value);
 			}
 			pending.modified = false;
 		}
@@ -363,7 +365,7 @@ auto gse::settings::panel_state::needs_restart() const -> bool {
 	return restart_pending_applied;
 }
 
-auto gse::settings::panel_state::apply_all(channel_writer& channels) -> void {
+auto gse::settings::panel_state::apply_all(const channel_write<change_request> channels) -> void {
 	for (auto& entry : std::views::values(pending_by_type)) {
 		for (auto& field : std::views::values(entry.fields)) {
 			if (!field.modified || !field.push_change) {
@@ -372,7 +374,7 @@ auto gse::settings::panel_state::apply_all(channel_writer& channels) -> void {
 			if (field.restart_required) {
 				restart_pending_applied = true;
 			}
-			field.push_change(&channels, field.value);
+			field.push_change(channels, field.value);
 		}
 	}
 }
@@ -407,7 +409,7 @@ auto gse::settings::pretty_label(const std::string_view raw) -> std::string {
 	return result;
 }
 
-auto gse::settings::panel(gui::builder& b, panel_state& ps, channel_writer& channels, const save::registry& save_reg, const std::string_view category_filter) -> void {
+auto gse::settings::panel(gui::builder& b, panel_state& ps, const panel_writer channels, const save::registry& save_reg, const std::string_view category_filter) -> void {
 	std::vector<std::string> category_order;
 	std::unordered_set<std::string> seen;
 	save_reg.for_each_entry([&](const register_settings_type& entry) {
@@ -455,7 +457,7 @@ auto gse::settings::panel(gui::builder& b, panel_state& ps, channel_writer& chan
 								return;
 							}
 							if (entry.reset_to_defaults) {
-								entry.reset_to_defaults(&channels);
+								entry.reset_to_defaults(channels);
 							}
 							ps.pending_by_type.erase(entry.type_id);
 						});
@@ -472,7 +474,7 @@ auto gse::settings::panel(gui::builder& b, panel_state& ps, channel_writer& chan
 						return;
 					}
 					if (entry.draw_page && entry.settings_ptr) {
-						entry.draw_page(&sub, &ps, &channels, &entry);
+						entry.draw_page(&sub, &ps, channels, &entry);
 					}
 					else if (!entry.fields.empty() && entry.settings_ptr) {
 						draw_fields_for_entry(sub, ps, channels, entry);

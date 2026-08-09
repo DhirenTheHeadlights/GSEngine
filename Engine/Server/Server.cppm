@@ -51,7 +51,7 @@ export namespace gse::server {
 			shared_view<world_system::data> w,
 			const structural<player_controller>& controller_auth,
 			const entities& ents,
-			channel_writer& channels,
+			channel_write<activate_scene_request> channels,
 			shared_view<actions::data> actions_s,
 			write<Components>&... comps
 		) -> void;
@@ -227,7 +227,7 @@ auto gse::server::host<Components...>::resend_reliable_messages() -> void {
 }
 
 template <typename... Components>
-auto gse::server::host<Components...>::update(const shared_view<world_system::data> w, const structural<player_controller>& controller_auth, const entities& ents, channel_writer& channels, const shared_view<actions::data> actions_s, write<Components>&... comps) -> void {
+auto gse::server::host<Components...>::update(const shared_view<world_system::data> w, const structural<player_controller>& controller_auth, const entities& ents, const channel_write<activate_scene_request> channels, const shared_view<actions::data> actions_s, write<Components>&... comps) -> void {
 	auto& controllers = std::get<write<player_controller>&>(std::tie(comps...));
 	const bool has_active_scene = w.active_scene.has_value() && std::ranges::find(w.scene_ids, *w.active_scene) != w.scene_ids.end();
 

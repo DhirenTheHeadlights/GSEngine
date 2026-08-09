@@ -124,13 +124,11 @@ namespace gse::ide {
 		const rectf& panel,
 		graph_data& gd,
 		const search::index_state* index,
-		channel_writer channels
+		channel_write<jump_to_request, set_cursor_shape_request> channels
 	) -> void;
 
 	auto merge_channels(
-		graph_data& gd,
-		const search::index_state& index,
-		std::uint64_t generation
+		graph_data& gd
 	) -> void;
 }
 
@@ -408,6 +406,7 @@ auto gse::ide::build_graph_from_file(const std::filesystem::path& path) -> std::
 auto gse::ide::build_graph_from_snapshot(introspection::system_graph snapshot) -> graph_data {
 	graph_data gd;
 	gd.snapshot = std::move(snapshot);
+	merge_channels(gd);
 	const std::size_t n = gd.snapshot.nodes.size();
 	gd.index_of.reserve(n);
 	for (std::uint32_t i = 0; i < n; ++i) {
@@ -512,32 +511,31 @@ auto gse::ide::prepare_presentation(graph_data& gd, const gui::draw_context& ctx
 	gd.presentation_ready = true;
 }
 
-auto gse::ide::merge_channels(graph_data& gd, const search::index_state& index, const std::uint64_t generation) -> void {
+auto gse::ide::merge_channels(graph_data& gd) -> void {
 	gd.channel_uses.clear();
 	gd.channel_edges.clear();
-	gd.channel_generation = generation;
 
 	const std::size_t n = gd.snapshot.nodes.size();
-	std::unordered_map<std::string, std::uint32_t> system_to_node;
-	for (std::uint32_t i = 0; i < n; ++i) {
-		const std::string_view name = gd.snapshot.nodes[i].name;
-		const std::size_t pos = name.rfind("::");
-		system_to_node.emplace(std::string(pos == std::string_view::npos ? name : name.substr(0, pos)), i);
-	}
-
 	std::unordered_map<std::string, std::vector<std::uint32_t>> producers;
 	std::unordered_map<std::string, std::vector<std::uint32_t>> consumers;
-	for (const analysis::channel_use& c : index.channel_links()) {
-		const auto it = system_to_node.find(c.system);
-		if (it == system_to_node.end()) {
-			continue;
+	for (std::uint32_t i = 0; i < n; ++i) {
+		const introspection::graph_node& node = gd.snapshot.nodes[i];
+		for (const std::string& message : node.publishes) {
+			gd.channel_uses.push_back({
+				.node = i,
+				.produce = true,
+				.qualified = message,
+			});
+			producers[message].push_back(i);
 		}
-		gd.channel_uses.push_back({
-			.node = it->second,
-			.produce = c.produce,
-			.qualified = c.message,
-		});
-		(c.produce ? producers : consumers)[c.message].push_back(it->second);
+		for (const std::string& message : node.consumes) {
+			gd.channel_uses.push_back({
+				.node = i,
+				.produce = false,
+				.qualified = message,
+			});
+			consumers[message].push_back(i);
+		}
 	}
 
 	for (const auto& [message, prod] : producers) {
@@ -563,7 +561,7 @@ auto gse::ide::merge_channels(graph_data& gd, const search::index_state& index, 
 	gd.edges.reserve(gd.edges_draw.size() + gd.channel_edges.size());
 }
 
-auto gse::ide::draw_graph(gui::builder& ui, const input::state& input, const rectf& area, graph_data& gd, const search::index_state* index, channel_writer channels) -> void {
+auto gse::ide::draw_graph(gui::builder& ui, const input::state& input, const rectf& area, graph_data& gd, const search::index_state* index, channel_write<jump_to_request, set_cursor_shape_request> channels) -> void {
 	const gui::draw_context& ctx = ui.ctx;
 	const auto text_view = ctx.fonts.text.resolve();
 	const std::size_t n = gd.snapshot.nodes.size();
@@ -576,12 +574,6 @@ auto gse::ide::draw_graph(gui::builder& ui, const input::state& input, const rec
 		return;
 	}
 
-	if (index && index->symbols_ready.load(std::memory_order_acquire)) {
-		const std::uint64_t generation = index->symbol_generation.load(std::memory_order_acquire);
-		if (gd.channel_generation != generation) {
-			merge_channels(gd, *index, generation);
-		}
-	}
 	prepare_presentation(gd, ctx);
 
 	const vec2f mouse = input.mouse_position();
@@ -971,7 +963,7 @@ auto gse::ide::draw_legend(const gui::draw_context& ctx, const rectf& area, grap
 	}
 }
 
-auto gse::ide::draw_detail_panel(gui::builder& ui, const rectf& panel, graph_data& gd, const search::index_state* index, channel_writer channels) -> void {
+auto gse::ide::draw_detail_panel(gui::builder& ui, const rectf& panel, graph_data& gd, const search::index_state* index, channel_write<jump_to_request, set_cursor_shape_request> channels) -> void {
 	gui::draw_context& ctx = ui.ctx;
 	if (!gd.selected) {
 		return;

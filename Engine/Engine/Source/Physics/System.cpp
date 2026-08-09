@@ -623,7 +623,7 @@ auto gse::physics::apply_kinematic_targets(read<kinematic_target_component>& tar
 	}
 }
 
-auto gse::physics::prepare(context& ctx, data& d, write<joint_spec> specs, read<muscle_component> muscles, read<joint_drive_component> drives, read<kinematic_target_component> targets, write<transform_component> transform, write<motion_component> motion) -> async::task<> {
+auto gse::physics::prepare(context& ctx, data& d, const channel_read<gpu_solver_stats> stats_in, const channel_write<interpolation_state> interp_out, write<joint_spec> specs, read<muscle_component> muscles, read<joint_drive_component> drives, read<kinematic_target_component> targets, write<transform_component> transform, write<motion_component> motion) -> async::task<> {
 	if (const int steps = system_clock::fixed_steps_this_frame(); steps > 0 && d.update_phys) {
 		apply_kinematic_targets(
 			targets,
@@ -689,11 +689,11 @@ auto gse::physics::prepare(context& ctx, data& d, write<joint_spec> specs, read<
 		d.gpu_joints_dirty = true;
 	}
 
-	if (const auto& stats_channel = ctx.read_channel<gpu_solver_stats>(); !stats_channel.empty()) {
+	if (const auto& stats_channel = stats_in.of<gpu_solver_stats>(); !stats_channel.empty()) {
 		d.gpu_stats = stats_channel[0];
 	}
 
-	ctx.channels.push<interpolation_state>({
+	interp_out.push<interpolation_state>({
 		.advancing = d.update_phys
 	});
 
@@ -717,7 +717,7 @@ auto gse::physics::ensure_results(write<collision_component> collision, structur
 	co_return;
 }
 
-auto gse::physics::integrate(context& ctx, data& d, write<transform_component> transform, write<motion_component> motion, read<motor_component> motor, write<collision_component> collision, write<collision_result_component> results) -> async::task<> {
+auto gse::physics::integrate(context& ctx, data& d, const channel_read<impulse_request, reset_physics_request> requests_in, const channel_write<gpu_solver_frame_info, gpu_upload_payload, gpu_body_index_map> solver_out, write<transform_component> transform, write<motion_component> motion, read<motor_component> motor, write<collision_component> collision, write<collision_result_component> results) -> async::task<> {
 	if (!d.update_phys) {
 		co_return;
 	}
@@ -725,8 +725,8 @@ auto gse::physics::integrate(context& ctx, data& d, write<transform_component> t
 	const auto const_update_time = system_clock::fixed_dt<time_t<float, seconds>>();
 	const int steps = system_clock::fixed_steps_this_frame();
 
-	const auto impulses = ctx.read_channel<impulse_request>();
-	const bool reset = !ctx.read_channel<reset_physics_request>().empty();
+	const auto impulses = requests_in.of<impulse_request>();
+	const bool reset = !requests_in.of<reset_physics_request>().empty();
 
 	if (motion.empty() && collision.empty() && motor.empty()) {
 		clear_runtime_state(d);
@@ -743,7 +743,7 @@ auto gse::physics::integrate(context& ctx, data& d, write<transform_component> t
 			results,
 			impulses,
 			const_update_time,
-			ctx.channels,
+			solver_out,
 			reset
 		);
 	}
@@ -755,7 +755,7 @@ auto gse::physics::integrate(context& ctx, data& d, write<transform_component> t
 	co_return;
 }
 
-auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_component>& transform, write<motion_component>& motion, read<motor_component>& motor, write<collision_component>& collision, write<collision_result_component>& results, std::span<const impulse_request> impulses, const time_t<float, seconds> dt, channel_writer& channels, const bool reset) -> void {
+auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_component>& transform, write<motion_component>& motion, read<motor_component>& motor, write<collision_component>& collision, write<collision_result_component>& results, std::span<const impulse_request> impulses, const time_t<float, seconds> dt, const channel_write<gpu_solver_frame_info, gpu_upload_payload, gpu_body_index_map> channels, const bool reset) -> void {
 	if (!d.gpu_buffers_created) {
 		return;
 	}
@@ -869,7 +869,7 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 		d.gpu_pending_impulses.insert(d.gpu_pending_impulses.end(), impulses.begin(), impulses.end());
 		if (d.gpu_solver.body_count() > 0) {
 			channels.push<gpu_solver_frame_info>({
-				.snapshot = &d.gpu_solver.snapshot_buffer(d.gpu_solver.render_snapshot_slot()),
+				.snapshot = &d.gpu_solver.body_buffer(d.gpu_solver.render_snapshot_slot()),
 				.body_count = d.gpu_solver.body_count(),
 				.body_stride = sizeof(vbd::body_state),
 				.position_offset = static_cast<std::uint32_t>(std::meta::offset_of(^^vbd::body_state::position).bytes)
@@ -1536,7 +1536,7 @@ auto gse::physics::update_vbd(const int steps, data& d, write<transform_componen
 	}
 }
 
-auto gse::physics::frame(context& ctx, const std::optional<shared_view<gpu::context::data>> gpu_s, data& d) -> async::task<> {
+auto gse::physics::frame(context& ctx, const std::optional<shared_view<gpu::context::data>> gpu_s, data& d, const channel_read<gpu_upload_payload> uploads_in, const channel_write<gpu_solver_stats, gpu_solver_frame_info> stats_out, const channel_write<gpu::render_pass_request> pass_out) -> async::task<> {
 	if (!gpu_s || !d.use_gpu_solver) {
 		co_return;
 	}
@@ -1544,7 +1544,7 @@ auto gse::physics::frame(context& ctx, const std::optional<shared_view<gpu::cont
 		co_return;
 	}
 
-	if (const auto& uploads = ctx.read_channel<gpu_upload_payload>(); !uploads.empty()) {
+	if (const auto& uploads = uploads_in.of<gpu_upload_payload>(); !uploads.empty()) {
 		trace::scope_guard sg{ trace_id<"physics::frame::upload">() };
 		const auto& upload = uploads[0];
 
@@ -1566,16 +1566,16 @@ auto gse::physics::frame(context& ctx, const std::optional<shared_view<gpu::cont
 			trace::scope_guard sg{ trace_id<"physics::frame::commit_upload">() };
 			d.gpu_solver.commit_upload();
 		}
-		co_await d.gpu_solver.dispatch_compute(ctx);
+		co_await d.gpu_solver.dispatch_compute(ctx, pass_out);
 	}
 
-	ctx.channels.push<gpu_solver_stats>({
+	stats_out.push<gpu_solver_stats>({
 		.active = true,
 		.motor_count = d.gpu_solver.motor_count(),
 	});
 
-	ctx.channels.push<gpu_solver_frame_info>({
-		.snapshot = &d.gpu_solver.snapshot_buffer(d.gpu_solver.render_snapshot_slot()),
+	stats_out.push<gpu_solver_frame_info>({
+		.snapshot = &d.gpu_solver.body_buffer(d.gpu_solver.render_snapshot_slot()),
 		.body_count = d.gpu_solver.body_count(),
 		.body_stride = sizeof(vbd::body_state),
 		.position_offset = static_cast<std::uint32_t>(std::meta::offset_of(^^vbd::body_state::position).bytes)

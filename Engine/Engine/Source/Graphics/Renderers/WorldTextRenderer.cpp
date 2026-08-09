@@ -182,7 +182,7 @@ auto gse::renderer::world_text::init(context& ctx, const shared_view<gpu::contex
 	return {};
 }
 
-auto gse::renderer::world_text::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, shared_view<camera::data> cam_state, shared_view<gui::data> gui_d, shared_view<sdf_grid::data> grid_d) -> async::task<> {
+auto gse::renderer::world_text::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, shared_view<camera::data> cam_state, shared_view<gui::data> gui_d, shared_view<sdf_grid::data> grid_d) -> async::task<> {
 	if (!grid_d.enabled || !grid_d.show_labels) {
 		co_return;
 	}
@@ -238,7 +238,7 @@ auto gse::renderer::world_text::frame(const context& ctx, shared_view<gpu::conte
 	const auto ext = gpu_s.render_graph->extent();
 	const auto vertex_count = static_cast<std::uint32_t>(vertices.size());
 
-	auto rec = co_await gpu::pass<^^gse::renderer::world_text::frame>(ctx)
+	auto rec = co_await gpu::pass<^^gse::renderer::world_text::frame>(pass_out)
 		.pipeline(d.pipeline)
 		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
 		.depth(gpu::load_depth())

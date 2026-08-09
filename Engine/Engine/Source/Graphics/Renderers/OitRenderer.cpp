@@ -189,12 +189,12 @@ auto gse::renderer::oit::init(context& ctx, const shared_view<gpu::context::data
 	return {};
 }
 
-auto gse::renderer::oit::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, shared_view<camera::data> cam_state, shared_view<geometry_collector::data> gc_r, shared_view<atmosphere::data> atm_state) -> async::task<> {
+auto gse::renderer::oit::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<geometry_collector::render_data> geometry_in, shared_view<camera::data> cam_state, shared_view<geometry_collector::data> gc_r, shared_view<atmosphere::data> atm_state) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
 
-	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
+	const auto& render_items = geometry_in.of<geometry_collector::render_data>();
 	if (render_items.empty()) {
 		co_return;
 	}
@@ -221,7 +221,7 @@ auto gse::renderer::oit::frame(context& ctx, shared_view<gpu::context::data> gpu
 	};
 	d.camera_ubo_buffers[frame_index].host_write(camera);
 
-	auto rec = co_await gpu::pass<^^accumulate_pass>(ctx)
+	auto rec = co_await gpu::pass<^^accumulate_pass>(pass_out)
 		.pipeline(d.accum_pipeline)
 		.color(
 			gpu::clear_color(
@@ -312,7 +312,7 @@ auto gse::renderer::oit::frame(context& ctx, shared_view<gpu::context::data> gpu
 		rebind_views(gpu_s, d);
 	}
 
-	auto composite_rec = co_await gpu::pass<^^composite_pass>(ctx)
+	auto composite_rec = co_await gpu::pass<^^composite_pass>(pass_out)
 		.pipeline(d.composite_pipeline)
 		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
 		.after<^^accumulate_pass, ^^forward::frame, ^^atmosphere::sky_raster_pass, ^^cloud::cloud_composite_pass>();

@@ -106,7 +106,7 @@ namespace gse::ide::terminal {
 		data& d,
 		instance& inst,
 		const rectf& area,
-		channel_writer channels,
+		channel_write<build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels,
 		bool building
 	) -> void;
 }
@@ -338,8 +338,8 @@ auto gse::ide::terminal::init(data& d) -> async::task<> {
 	return {};
 }
 
-auto gse::ide::terminal::run(context& ctx, data& d, const shared_view<input::data> input_d, const shared_view<build_runner::data> build_d) -> async::task<> {
-	for (const build_runner::stream_opened& opened : ctx.read_channel<build_runner::stream_opened>()) {
+auto gse::ide::terminal::run(context& ctx, data& d, const channel_read<build_runner::stream_opened> stream_in, const channel_write<build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> ui_out, const shared_view<input::data> input_d, const shared_view<build_runner::data> build_d) -> async::task<> {
+	for (const build_runner::stream_opened& opened : stream_in.of<build_runner::stream_opened>()) {
 		close_slot(d, opened.slot);
 		instance inst = make_instance(d, opened.name);
 		inst.cursor = d.sink ? d.sink->sequence() : 0;
@@ -351,10 +351,10 @@ auto gse::ide::terminal::run(context& ctx, data& d, const shared_view<input::dat
 	}
 	const bool building = build_d.building;
 	const input::state input_snapshot = input::current_state(input_d);
-	ctx.channels.push<gui::menu_content>({
+	ui_out.push<gui::menu_content>({
 		.menu = std::string(panel_name),
 		.layer = render_layer::content,
-		.build = [d = &d, channels = ctx.channels, input_snapshot, building](gui::builder& b) {
+		.build = [d = &d, channels = ui_out, input_snapshot, building](gui::builder& b) {
 			draw_panel(b, input_snapshot, *d, channels, building);
 		},
 	});
@@ -441,7 +441,7 @@ auto gse::ide::terminal::header_button(gui::builder& ui, const header_button_par
 	return btn.activated;
 }
 
-auto gse::ide::terminal::draw_instance(gui::builder& ui, const input::state& input, data& d, instance& inst, const rectf& area, channel_writer channels, const bool building) -> void {
+auto gse::ide::terminal::draw_instance(gui::builder& ui, const input::state& input, data& d, instance& inst, const rectf& area, channel_write<build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels, const bool building) -> void {
 	const gui::draw_context& ctx = ui.ctx;
 	const auto text_view = ctx.fonts.text.resolve();
 	const auto code_view = ctx.fonts.code.resolve();
@@ -757,7 +757,7 @@ auto gse::ide::terminal::draw_close_confirm(gui::builder& ui, data& d, const rec
 	}
 }
 
-auto gse::ide::terminal::draw_panel(gui::builder& ui, const input::state& input, data& d, channel_writer channels, const bool building) -> void {
+auto gse::ide::terminal::draw_panel(gui::builder& ui, const input::state& input, data& d, channel_write<build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels, const bool building) -> void {
 	const gui::draw_context& ctx = ui.ctx;
 	if (!d.sink || ctx.clip_stack.empty()) {
 		return;

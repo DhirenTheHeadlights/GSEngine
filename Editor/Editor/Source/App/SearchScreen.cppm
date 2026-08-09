@@ -10,7 +10,7 @@ export namespace gse::ide {
 	class search_screen : public gui::screen {
 	public:
 		search_screen(
-			channel_writer channels,
+			channel_write<jump_to_request> channels,
 			const search::index_state* index,
 			shared_view<input::data> input
 		);
@@ -48,7 +48,7 @@ export namespace gse::ide {
 			bool selected
 		) const -> void;
 
-		channel_writer m_channels;
+		channel_write<jump_to_request> m_channels;
 		const search::index_state* m_index;
 		shared_view<input::data> m_input_data;
 		search::query_driver m_driver;
@@ -58,7 +58,7 @@ export namespace gse::ide {
 	};
 }
 
-gse::ide::search_screen::search_screen(channel_writer channels, const search::index_state* index, const shared_view<input::data> input)
+gse::ide::search_screen::search_screen(channel_write<jump_to_request> channels, const search::index_state* index, const shared_view<input::data> input)
 	: m_channels(std::move(channels)), m_index(index), m_input_data(input) {
 }
 

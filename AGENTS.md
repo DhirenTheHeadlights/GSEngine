@@ -39,3 +39,5 @@ Where runtime files go — **none of them land in the repo**:
 
 Override the roots with the `GSE_USER_DIR` and `GSE_STATE_DIR` environment variables. Running an executable with no `gse.manifest` above it aborts with a message on stderr.
 
+Set `GSE_ASSET_DEBUG_OUTPUT=1` to make asset bakers write their debug artifacts — currently the font MSDF atlas PNG, ~30 MB per font. Off by default because it costs a full PNG compression pass on every bake.
+

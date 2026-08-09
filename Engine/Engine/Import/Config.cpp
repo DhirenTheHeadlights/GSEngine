@@ -36,6 +36,7 @@ namespace gse::config {
 		std::filesystem::path crash;
 		std::filesystem::path profile;
 		std::filesystem::path captures;
+		bool debug_asset_output;
 	};
 
 	[[noreturn]] auto fatal(
@@ -68,6 +69,10 @@ namespace gse::config {
 	auto env_path(
 		const char* name
 	) -> std::filesystem::path;
+
+	auto env_flag(
+		const char* name
+	) -> bool;
 
 	auto resolve() -> resolved;
 
@@ -163,6 +168,14 @@ auto gse::config::env_path(const char* name) -> std::filesystem::path {
 	return { value };
 }
 
+auto gse::config::env_flag(const char* name) -> bool {
+	const char* value = std::getenv(name);
+	if (value == nullptr || *value == '\0') {
+		return false;
+	}
+	return std::string_view(value) != "0";
+}
+
 auto gse::config::generic(const std::filesystem::path& value) -> std::filesystem::path {
 	return { value.generic_wstring() };
 }
@@ -245,7 +258,8 @@ auto gse::config::resolve() -> resolved {
 		.cache = generic(state_root / "cache"),
 		.crash = generic(state_root / "crash"),
 		.profile = generic(state_root / "profile"),
-		.captures = generic(state_root / "captures")
+		.captures = generic(state_root / "captures"),
+		.debug_asset_output = env_flag("GSE_ASSET_DEBUG_OUTPUT")
 	};
 }
 
@@ -260,6 +274,10 @@ auto gse::config::warm_up() -> void {
 
 auto gse::config::mode() -> run_mode {
 	return table().mode;
+}
+
+auto gse::config::debug_asset_output() -> bool {
+	return table().debug_asset_output;
 }
 
 auto gse::config::executable_stem() -> std::string_view {

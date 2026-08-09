@@ -3,6 +3,7 @@ export module gse.graphics:light_culling_renderer;
 import std;
 
 import :camera_system;
+import :geometry_collector;
 import :atmosphere_renderer;
 import :point_light;
 import :spot_light;
@@ -17,6 +18,7 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+import gse.gpu_record;
 
 export namespace gse::renderer::light_culling {
 	constexpr std::uint32_t tile_size = 16;
@@ -49,6 +51,8 @@ export namespace gse::renderer::light_culling {
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		const data& d,
+		channel_write<gpu::render_pass_request> pass_out,
+		channel_read<geometry_collector::render_data> geometry_in,
 		shared_view<camera::data> cam_state,
 		shared_view<atmosphere::data> atm_state,
 		read<directional_light_component> dir_lights,

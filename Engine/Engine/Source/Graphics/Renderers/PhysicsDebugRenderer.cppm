@@ -12,6 +12,7 @@ import gse.save;
 import gse.meta;
 import gse.gpu;
 import gse.assets;
+import gse.gpu_record;
 
 import :camera_system;
 
@@ -96,6 +97,7 @@ export namespace gse::renderer::physics_debug {
 		const context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		data& d,
+		channel_write<gpu::render_pass_request> pass_out,
 		shared_view<camera::data> cam_state
 	) -> async::task<>;
 }

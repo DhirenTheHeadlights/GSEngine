@@ -10,6 +10,7 @@ import gse.containers;
 import gse.concurrency;
 import gse.ecs;
 import gse.meta;
+import gse.gpu_record;
 
 export namespace gse::renderer::tonemap {
 	struct [[= gse::system_state<"Tonemap">{}, = gse::settings::category<"Graphics">{}]] data {
@@ -43,6 +44,7 @@ export namespace gse::renderer::tonemap {
 		const context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		data& d,
+		channel_write<gpu::render_pass_request> pass_out,
 		shared_view<bloom::data> bloom_state
 	) -> async::task<>;
 }

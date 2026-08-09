@@ -11,7 +11,6 @@ import gse.meta;
 import gse.assert;
 
 import :asset_format;
-import :boot_critical;
 import :catalog;
 import :resource_handle;
 import :resource_loader;
@@ -64,16 +63,6 @@ export namespace gse::asset {
 		data& d
 	) -> asset_result;
 
-	struct compile_result {
-		std::size_t success_count = 0;
-		std::size_t failure_count = 0;
-		std::size_t skipped_count = 0;
-
-		auto operator+=(
-			const compile_result& other
-		) -> compile_result&;
-	};
-
 	struct missing_built_in {
 		std::string tag;
 		std::filesystem::path resolved;
@@ -101,11 +90,6 @@ export namespace gse::asset {
 			system&&
 		) noexcept -> system& = default;
 
-		template <typename T>
-		auto compile() -> compile_result;
-
-		auto compile_boot_critical() -> compile_result;
-
 		auto register_loaders() -> void;
 
 		auto install_recompile_fns() -> void;
@@ -124,13 +108,6 @@ export namespace gse::asset {
 
 	template <typename Pack>
 	using system_for = typename Pack::template apply<system>;
-}
-
-auto gse::asset::compile_result::operator+=(const compile_result& other) -> compile_result& {
-	success_count += other.success_count;
-	failure_count += other.failure_count;
-	skipped_count += other.skipped_count;
-	return *this;
 }
 
 template <gse::asset::has_compile_path T>
@@ -342,8 +319,8 @@ auto gse::asset::discover_baked(data& d) -> asset_result {
 			return std::unexpected(std::move(catalog.error()));
 		}
 		for (const catalog_record& record : *catalog) {
-			if (auto queued = queue_by_path<T>(d, record.baked_path); !queued) {
-				return queued;
+			if (auto registered = register_by_path<T>(d, record.baked_path); !registered) {
+				return registered;
 			}
 		}
 		return {};
@@ -385,12 +362,12 @@ auto gse::asset::setup_hot_reload_for(data& d) -> void {
 						log::println(log::category::assets, "Hot reload recompiled: {}", changed_file.filename().generic_display_string());
 						if constexpr (loadable<T>) {
 							if (auto it = d.resource_loaders.find(id_of<T>()); it != d.resource_loaders.end()) {
-								if (auto queued = queue_by_path<T>(d, dst); !queued) {
+								if (auto registered = register_by_path<T>(d, dst); !registered) {
 									log::println(
 										log::level::warning,
 										log::category::assets,
 										"Hot reload failed to queue resource: {}",
-										queued.error().detail
+										registered.error().detail
 									);
 								}
 							}
@@ -471,93 +448,4 @@ auto gse::asset::system<Ts...>::install_hot_reload_fns() -> void {
 	d->disable_hot_reload_fn = [d] {
 		d->watcher.clear();
 	};
-}
-
-template <typename... Ts>
-template <typename T>
-auto gse::asset::system<Ts...>::compile() -> compile_result {
-	compile_result result{};
-
-	if constexpr (!has_compile_path<T>) {
-		return result;
-	}
-	else {
-		auto catalog = catalog_for<T>();
-		if (!catalog) {
-			log::println(
-				log::level::error,
-				log::category::assets,
-				"Unable to catalog {} assets: {}",
-				std::meta::identifier_of(^^T),
-				catalog.error().detail
-			);
-			++result.failure_count;
-			return result;
-		}
-
-		for (const catalog_record& record : *catalog) {
-			if (!record.source_path) {
-				continue;
-			}
-
-			bool compiled = false;
-			auto stale = needs_recompile<T>(*record.source_path, record.baked_path);
-			if (!stale) {
-				log::println(
-					log::level::error,
-					log::category::assets,
-					"Unable to inspect {}: {}",
-					record.source_path->generic_display_string(),
-					stale.error().detail
-				);
-				++result.failure_count;
-				continue;
-			}
-			if (!*stale) {
-				++result.skipped_count;
-			}
-			else if (auto baked = bake_to_disk<T>(*record.source_path, record.baked_path); baked) {
-				++result.success_count;
-				compiled = true;
-			}
-			else {
-				log::println(
-					log::level::error,
-					log::category::assets,
-					"Unable to compile {}: {}",
-					record.source_path->generic_display_string(),
-					baked.error().detail
-				);
-				++result.failure_count;
-				continue;
-			}
-
-			if constexpr (loadable<T>) {
-				if (compiled) {
-					if (auto queued = queue_by_path<T>(*m_data, record.baked_path); !queued) {
-						log::println(
-							log::level::warning,
-							log::category::assets,
-							"Compiled asset could not be queued: {}",
-							queued.error().detail
-						);
-					}
-				}
-			}
-		}
-
-		return result;
-	}
-}
-
-template <typename... Ts>
-auto gse::asset::system<Ts...>::compile_boot_critical() -> compile_result {
-	compile_result total{};
-	auto try_one = [&]<typename T>() {
-		if constexpr (has_annotation<boot_critical>(^^T)) {
-			total += compile<T>();
-		}
-	};
-	(try_one.template operator()<Ts>(), ...);
-	return total;
 }

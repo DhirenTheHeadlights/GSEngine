@@ -46,7 +46,7 @@ export namespace gse {
 		const vec4f uv_rect;
 	};
 
-	class [[= asset::boot_critical{}]] font : public identifiable {
+	class font : public identifiable {
 	public:
 		struct [[
 			= asset_format::baked_ext<".gfont">{},

@@ -317,6 +317,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 				const auto worker_idx = task::current_worker();
 				assert(worker_idx.has_value(), "graph::record_parallel: thread has no arena slot");
 				const auto body = m_device->acquire_worker_command_buffer(queue, *worker_idx, frame_idx);
+				assert(static_cast<bool>(body), "graph::record_parallel: worker command buffer acquire failed; the device is gone");
 
 				const auto* depth_target = pass.depth_output ? resolve_depth_target(*pass.depth_output) : nullptr;
 

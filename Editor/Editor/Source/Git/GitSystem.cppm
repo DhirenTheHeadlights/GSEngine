@@ -26,7 +26,9 @@ export namespace gse::ide::git_system {
 	[[= system_run<>{}]]
 	auto run(
 		context& ctx,
-		data& d
+		data& d,
+		channel_read<init_request, refresh_request> requests_in,
+		channel_write<git::status_updated> status_out
 	) -> async::task<>;
 }
 
@@ -101,10 +103,10 @@ auto gse::ide::git_system::apply_results(data& d, std::vector<git::repository_re
 	return true;
 }
 
-auto gse::ide::git_system::run(context& ctx, data& d) -> async::task<> {
+auto gse::ide::git_system::run(context& ctx, data& d, const channel_read<init_request, refresh_request> requests_in, const channel_write<git::status_updated> status_out) -> async::task<> {
 	if (d.pending && d.pending->done.load(std::memory_order_acquire)) {
 		if (apply_results(d, std::move(d.pending->results))) {
-			ctx.channels.push<git::status_updated>({
+			status_out.push<git::status_updated>({
 				.status = d.status,
 				.rootless = d.rootless,
 			});
@@ -126,14 +128,14 @@ auto gse::ide::git_system::run(context& ctx, data& d) -> async::task<> {
 		d.refresh_requested = true;
 	}
 
-	for (const init_request& request : ctx.read_channel<init_request>()) {
+	for (const init_request& request : requests_in.of<init_request>()) {
 		if (!d.initializing && std::ranges::find(d.rootless, request.root) != d.rootless.end()) {
 			d.initializing = std::make_shared<git::init_check>();
 			git::init_runner::start(d.initializing, request.root);
 		}
 	}
 
-	for ([[maybe_unused]] const refresh_request& request : ctx.read_channel<refresh_request>()) {
+	for ([[maybe_unused]] const refresh_request& request : requests_in.of<refresh_request>()) {
 		d.refresh_requested = true;
 	}
 	if (d.refresh_clock.elapsed() >= seconds(2.f)) {
@@ -151,7 +153,7 @@ auto gse::ide::git_system::run(context& ctx, data& d) -> async::task<> {
 			d.status = std::make_shared<const git::status_map>();
 		}
 		if (cleared || rootless_changed) {
-			ctx.channels.push<git::status_updated>({
+			status_out.push<git::status_updated>({
 				.status = d.status,
 				.rootless = d.rootless,
 			});

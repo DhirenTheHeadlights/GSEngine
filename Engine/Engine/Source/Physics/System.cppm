@@ -15,6 +15,7 @@ import gse.gpu;
 import gse.math;
 import gse.meta;
 import gse.gpu;
+import gse.gpu_record;
 
 import :narrow_phase_collision;
 import :joint_drive_component;
@@ -200,6 +201,8 @@ export namespace gse::physics {
 	auto prepare(
 		context& ctx,
 		data& d,
+		channel_read<gpu_solver_stats> stats_in,
+		channel_write<interpolation_state> interp_out,
 		write<joint_spec> specs,
 		read<muscle_component> muscles,
 		read<joint_drive_component> drives,
@@ -218,6 +221,8 @@ export namespace gse::physics {
 	auto integrate(
 		context& ctx,
 		data& d,
+		channel_read<impulse_request, reset_physics_request> requests_in,
+		channel_write<gpu_solver_frame_info, gpu_upload_payload, gpu_body_index_map> solver_out,
 		write<transform_component> transform,
 		write<motion_component> motion,
 		read<motor_component> motor,
@@ -229,7 +234,10 @@ export namespace gse::physics {
 	auto frame(
 		context& ctx,
 		std::optional<shared_view<gpu::context::data>> gpu_s,
-		data& d
+		data& d,
+		channel_read<gpu_upload_payload> uploads_in,
+		channel_write<gpu_solver_stats, gpu_solver_frame_info> stats_out,
+		channel_write<gpu::render_pass_request> pass_out
 	) -> async::task<>;
 
 	auto create_joint(
@@ -306,7 +314,7 @@ export namespace gse::physics {
 		write<collision_result_component>& results,
 		std::span<const impulse_request> impulses,
 		time_t<float, seconds> dt,
-		channel_writer& channels,
+		channel_write<gpu_solver_frame_info, gpu_upload_payload, gpu_body_index_map> channels,
 		bool reset
 	) -> void;
 }

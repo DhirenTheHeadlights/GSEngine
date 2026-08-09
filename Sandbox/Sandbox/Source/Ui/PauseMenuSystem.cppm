@@ -16,6 +16,7 @@ export namespace sandbox::pause_menu {
 	auto run(
 		gse::context& ctx,
 		data& d,
+		gse::channel_write<gse::activate_scene_request, gse::deactivate_active_scene_request, gse::gui::push_screen_request, gse::gui::pop_screen_request, gse::gui::set_manual_cursor_request, gse::network::connect_request, gse::network::refresh_servers_request, gse::network::send_request, gse::settings::change_request, gse::gui::popout_toggle> ui_out,
 		gse::shared_view<gse::input::data> input_d,
 		gse::shared_view<gse::gui::data> gui_d,
 		gse::shared_view<gse::world_system::data> world_d,
@@ -24,10 +25,10 @@ export namespace sandbox::pause_menu {
 	) -> gse::async::task<>;
 }
 
-auto sandbox::pause_menu::run(gse::context& ctx, data& d, const gse::shared_view<gse::input::data> input_d, const gse::shared_view<gse::gui::data> gui_d, const gse::shared_view<gse::world_system::data> world_d, const gse::shared_view<gse::network::data> net_d, const gse::save::registry& save_reg) -> gse::async::task<> {
+auto sandbox::pause_menu::run(gse::context& ctx, data& d, const gse::channel_write<gse::activate_scene_request, gse::deactivate_active_scene_request, gse::gui::push_screen_request, gse::gui::pop_screen_request, gse::gui::set_manual_cursor_request, gse::network::connect_request, gse::network::refresh_servers_request, gse::network::send_request, gse::settings::change_request, gse::gui::popout_toggle> ui_out, const gse::shared_view<gse::input::data> input_d, const gse::shared_view<gse::gui::data> gui_d, const gse::shared_view<gse::world_system::data> world_d, const gse::shared_view<gse::network::data> net_d, const gse::save::registry& save_reg) -> gse::async::task<> {
 	const auto push_main_menu = [&] {
-		ctx.channels.push<gse::gui::push_screen_request>({
-			.factory = [world_d, net_d, &save_reg, channels = ctx.channels] {
+		ui_out.push<gse::gui::push_screen_request>({
+			.factory = [world_d, net_d, &save_reg, channels = ui_out] {
 				return std::make_unique<main_menu_screen>(world_d, net_d, save_reg, channels);
 			},
 		});
@@ -54,7 +55,7 @@ auto sandbox::pause_menu::run(gse::context& ctx, data& d, const gse::shared_view
 		if (blocks) {
 		}
 		else if (top != nullptr) {
-			ctx.channels.push<gse::gui::pop_screen_request>({});
+			ui_out.push<gse::gui::pop_screen_request>({});
 		}
 		else if (scene_active) {
 			push_main_menu();
@@ -65,13 +66,13 @@ auto sandbox::pause_menu::run(gse::context& ctx, data& d, const gse::shared_view
 		input.key_pressed(gse::key::n) || input.mouse_button_pressed(gse::mouse_button::button_3);
 	if (cursor_toggle_pressed && top == nullptr && scene_active) {
 		d.manual_cursor = !d.manual_cursor;
-		ctx.channels.push<gse::gui::set_manual_cursor_request>({
+		ui_out.push<gse::gui::set_manual_cursor_request>({
 			.show = d.manual_cursor
 		});
 	}
 	else if (top != nullptr && d.manual_cursor) {
 		d.manual_cursor = false;
-		ctx.channels.push<gse::gui::set_manual_cursor_request>({
+		ui_out.push<gse::gui::set_manual_cursor_request>({
 			.show = false
 		});
 	}

@@ -24,6 +24,7 @@ import gse.os;
 import gse.assets;
 import gse.gpu;
 import gse.physics;
+import gse.gpu_record;
 
 import :shared_shaders;
 
@@ -208,6 +209,8 @@ export namespace gse::renderer::geometry_collector {
 		shared_view<gpu::context::data> gpu_s,
 		shared_view<asset::data> assets_s,
 		data& d,
+		channel_read<physics::gpu_body_index_map, physics::interpolation_state> physics_in,
+		channel_write<render_data> geometry_out,
 		shared_view<camera::data> cam_state,
 		shared_view<primitive_resolver::data> resolver_state,
 		shared_view<skin::data> skin_s,
@@ -221,6 +224,7 @@ export namespace gse::renderer::geometry_collector {
 	auto frame(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
-		data& d
+		data& d,
+		channel_read<render_data> geometry_in
 	) -> async::task<>;
 }

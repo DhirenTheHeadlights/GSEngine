@@ -81,7 +81,6 @@ export namespace gse::ide::search {
 		std::unordered_map<file_id, std::vector<xref_entry>> xrefs;
 		std::unordered_map<file_id, std::vector<positioned_kind>> params;
 		std::unordered_map<file_id, std::filesystem::path> files;
-		std::vector<analysis::channel_use> channels;
 		std::unordered_map<file_id, std::vector<std::uint32_t>> symbols_by_file;
 		std::unordered_map<std::string, std::vector<std::uint32_t>, transparent_hash, transparent_equal> symbols_by_name;
 		std::unordered_map<std::string, std::vector<std::uint32_t>, transparent_hash, transparent_equal> definitions_by_identity;
@@ -378,8 +377,6 @@ export namespace gse::ide::search {
 			std::uint32_t line_begin,
 			std::uint32_t line_end
 		) const -> std::vector<positioned_kind>;
-
-		auto channel_links() const -> std::vector<analysis::channel_use>;
 
 		auto merge_file_symbols(
 			const std::filesystem::path& file,
