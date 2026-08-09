@@ -249,6 +249,12 @@ export namespace gse::dx12 {
 			std::uint32_t stride
 		) -> void;
 
+		auto cmd_dispatch_indirect(
+			gpu::command_buffer_handle cmd,
+			gpu::handle<gpu::buffer> buffer,
+			gpu::device_size offset
+		) -> void;
+
 		[[nodiscard]] auto frame_command_buffer(
 			gpu::queue_type queue_type,
 			std::uint32_t frame_index
@@ -495,6 +501,8 @@ export namespace gse::dx12 {
 
 		[[nodiscard]] auto validation_enabled() const -> bool;
 
+		auto drain_validation_messages() const -> void;
+
 		auto dump_dred_once() -> void;
 
 		auto record_queue_op(
@@ -595,6 +603,7 @@ export namespace gse::dx12 {
 		std::unordered_map<std::uint64_t, live_image> m_live_images;
 		directx::com_ptr<directx::ID3D12CommandSignature> m_draw_indexed_signature;
 		directx::com_ptr<directx::ID3D12CommandSignature> m_dispatch_mesh_signature;
+		directx::com_ptr<directx::ID3D12CommandSignature> m_dispatch_signature;
 		std::vector<std::unique_ptr<timestamp_query_pool>> m_query_pools;
 		gpu::bindless_slot_pool m_image_pool;
 		gpu::bindless_slot_pool m_buffer_pool;

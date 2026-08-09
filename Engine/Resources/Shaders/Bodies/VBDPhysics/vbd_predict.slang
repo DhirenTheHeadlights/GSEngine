@@ -117,6 +117,8 @@ if (ang_speed > solver_config_data[0].max_angular_speed) {
     body.angular_velocity = angular_velocity;
 }
 
+body.accel_weight = ((grounded_bits[bi / 32u] >> (bi % 32u)) & 1u) != 0 ? 0.0 : 1.0;
+
 float3 gravity_step = gravity ? float3(0, -9.8 * pc.dt * pc.dt, 0) : float3(0, 0, 0);
 body.inertia_target = body.position + body.velocity * pc.dt + gravity_step;
 body.predicted_position = body.position + body.velocity * pc.dt + gravity_step * body.accel_weight;

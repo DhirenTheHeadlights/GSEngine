@@ -65,6 +65,36 @@ export namespace sandbox::scenarios {
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
 
+	[[= gse::scenario::info{ .name = "parity_cluster_cpu", .scene = "ParityCluster", .headless = true, .warmup_frames = 0 }]]
+	auto parity_cluster_cpu(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "parity_cluster_gpu", .scene = "ParityCluster", .headless = true, .gpu_solver = true, .warmup_frames = 0 }]]
+	auto parity_cluster_gpu(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "parity_heap_cpu", .scene = "ParityHeap", .headless = true, .warmup_frames = 0 }]]
+	auto parity_heap_cpu(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "parity_heap_gpu", .scene = "ParityHeap", .headless = true, .gpu_solver = true, .warmup_frames = 0 }]]
+	auto parity_heap_gpu(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "parity_mound_cpu", .scene = "ParityMound", .headless = true, .warmup_frames = 0 }]]
+	auto parity_mound_cpu(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "parity_mound_gpu", .scene = "ParityMound", .headless = true, .gpu_solver = true, .warmup_frames = 0 }]]
+	auto parity_mound_gpu(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
 	[[= gse::scenario::info{ .name = "parity_pile_cpu", .scene = "ParityPile", .headless = true, .warmup_frames = 0 }]]
 	auto parity_pile_cpu(
 		gse::scenario::context& ctx

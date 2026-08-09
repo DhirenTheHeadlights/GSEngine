@@ -262,13 +262,15 @@ export namespace gse::directx {
 
 	[[nodiscard]] auto create_command_allocator(
 		ID3D12Device* device,
-		bool compute = false
+		bool compute = false,
+		long* out_hr = nullptr
 	) -> com_ptr<ID3D12CommandAllocator>;
 
 	[[nodiscard]] auto create_command_list(
 		ID3D12Device* device,
 		ID3D12CommandAllocator* allocator,
-		bool compute = false
+		bool compute = false,
+		long* out_hr = nullptr
 	) -> com_ptr<ID3D12GraphicsCommandList>;
 
 	[[nodiscard]] auto is_compute_command_list(
@@ -598,6 +600,10 @@ export namespace gse::directx {
 		ID3D12CommandQueue* queue
 	) -> std::uint64_t;
 
+	[[nodiscard]] auto supports_unordered_access(
+		ID3D12Resource* resource
+	) -> bool;
+
 	auto create_raw_buffer_uav(
 		ID3D12Device* device,
 		ID3D12Resource* resource,
@@ -744,6 +750,10 @@ export namespace gse::directx {
 	[[nodiscard]] auto create_dispatch_mesh_command_signature(
 		ID3D12Device* device,
 		std::uint32_t byte_stride
+	) -> com_ptr<ID3D12CommandSignature>;
+
+	[[nodiscard]] auto create_dispatch_command_signature(
+		ID3D12Device* device
 	) -> com_ptr<ID3D12CommandSignature>;
 
 	auto execute_indirect(
@@ -1087,17 +1097,23 @@ auto gse::directx::create_fence(ID3D12Device* device, const std::uint64_t initia
 	return fence;
 }
 
-auto gse::directx::create_command_allocator(ID3D12Device* device, const bool compute) -> com_ptr<ID3D12CommandAllocator> {
+auto gse::directx::create_command_allocator(ID3D12Device* device, const bool compute, long* out_hr) -> com_ptr<ID3D12CommandAllocator> {
 	const auto type = compute ? D3D12_COMMAND_LIST_TYPE_COMPUTE : D3D12_COMMAND_LIST_TYPE_DIRECT;
 	com_ptr<ID3D12CommandAllocator> allocator;
-	device->CreateCommandAllocator(type, IID_PPV_ARGS(allocator.put()));
+	const HRESULT hr = device->CreateCommandAllocator(type, IID_PPV_ARGS(allocator.put()));
+	if (out_hr) {
+		*out_hr = hr;
+	}
 	return allocator;
 }
 
-auto gse::directx::create_command_list(ID3D12Device* device, ID3D12CommandAllocator* allocator, const bool compute) -> com_ptr<ID3D12GraphicsCommandList> {
+auto gse::directx::create_command_list(ID3D12Device* device, ID3D12CommandAllocator* allocator, const bool compute, long* out_hr) -> com_ptr<ID3D12GraphicsCommandList> {
 	const auto type = compute ? D3D12_COMMAND_LIST_TYPE_COMPUTE : D3D12_COMMAND_LIST_TYPE_DIRECT;
 	com_ptr<ID3D12GraphicsCommandList> list;
-	device->CreateCommandList(0, type, allocator, nullptr, IID_PPV_ARGS(list.put()));
+	const HRESULT hr = device->CreateCommandList(0, type, allocator, nullptr, IID_PPV_ARGS(list.put()));
+	if (out_hr) {
+		*out_hr = hr;
+	}
 	if (list) {
 		list->Close();
 	}
@@ -1709,7 +1725,9 @@ auto gse::directx::create_sampler_descriptor(ID3D12Device* device, const sampler
 		.AddressW = address(params.address_w),
 		.MipLODBias = 0.0f,
 		.MaxAnisotropy = params.max_anisotropy,
-		.ComparisonFunc = static_cast<D3D12_COMPARISON_FUNC>(D3D12_COMPARISON_FUNC_NEVER + params.comparison_func),
+		.ComparisonFunc = params.comparison
+			? static_cast<D3D12_COMPARISON_FUNC>(D3D12_COMPARISON_FUNC_NEVER + params.comparison_func)
+			: D3D12_COMPARISON_FUNC_NONE,
 		.MinLOD = params.min_lod,
 		.MaxLOD = params.max_lod,
 	};
@@ -1819,6 +1837,15 @@ auto gse::directx::create_gpu_upload_buffer(ID3D12Device* device, const std::uin
 	com_ptr<ID3D12Resource> resource;
 	device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(resource.put()));
 	return resource;
+}
+
+auto gse::directx::supports_unordered_access(ID3D12Resource* resource) -> bool {
+	if (!resource) {
+		return false;
+	}
+	D3D12_RESOURCE_DESC desc = {};
+	resource->GetDesc(&desc);
+	return (static_cast<int>(desc.Flags) & static_cast<int>(resource_flag_allow_unordered_access)) != 0;
 }
 
 auto gse::directx::create_raw_buffer_uav(ID3D12Device* device, ID3D12Resource* resource, const std::uint32_t first_element, const std::uint32_t num_elements, const D3D12_CPU_DESCRIPTOR_HANDLE handle) -> void {
@@ -2114,6 +2141,20 @@ auto gse::directx::create_dispatch_mesh_command_signature(ID3D12Device* device, 
 	};
 	const D3D12_COMMAND_SIGNATURE_DESC desc = {
 		.ByteStride = byte_stride,
+		.NumArgumentDescs = 1,
+		.pArgumentDescs = &argument,
+	};
+	com_ptr<ID3D12CommandSignature> signature;
+	device->CreateCommandSignature(&desc, nullptr, IID_PPV_ARGS(signature.put()));
+	return signature;
+}
+
+auto gse::directx::create_dispatch_command_signature(ID3D12Device* device) -> com_ptr<ID3D12CommandSignature> {
+	const D3D12_INDIRECT_ARGUMENT_DESC argument = {
+		.Type = D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH,
+	};
+	const D3D12_COMMAND_SIGNATURE_DESC desc = {
+		.ByteStride = sizeof(D3D12_DISPATCH_ARGUMENTS),
 		.NumArgumentDescs = 1,
 		.pArgumentDescs = &argument,
 	};

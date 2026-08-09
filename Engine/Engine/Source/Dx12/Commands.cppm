@@ -464,7 +464,11 @@ auto gse::dx12::commands::dispatch(const std::uint32_t group_count_x, const std:
 	list->Dispatch(group_count_x, group_count_y, group_count_z);
 }
 
-auto gse::dx12::commands::dispatch_indirect(gpu::handle<gpu::buffer>, gpu::device_size) const -> void {}
+auto gse::dx12::commands::dispatch_indirect(const gpu::handle<gpu::buffer> buffer, const gpu::device_size offset) const -> void {
+	if (active_device) {
+		active_device->cmd_dispatch_indirect(m_cmd, buffer, offset);
+	}
+}
 
 auto gse::dx12::commands::set_viewport(const gpu::viewport& viewport) const -> void {
 	if (active_device) {

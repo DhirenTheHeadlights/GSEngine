@@ -38,7 +38,7 @@ void vbd_apply_restitution(uint3 dispatch_id) {
 
         float3 r_self = rotate_vector(body.orientation, is_a ? c.local_anchor_a : c.local_anchor_b);
         float3 r_other = rotate_vector(other.orientation, is_a ? c.local_anchor_b : c.local_anchor_a);
-        float3 v_self = body.velocity + cross(body.angular_velocity, r_self);
+        float3 v_self = body.velocity + v_delta + cross(body.angular_velocity, r_self);
         float3 v_other = other.velocity + cross(other.angular_velocity, r_other);
         float3 v_rel_vec = is_a ? (v_self - v_other) : (v_other - v_self);
         float v_rel_after = dot(c.normal, v_rel_vec);
