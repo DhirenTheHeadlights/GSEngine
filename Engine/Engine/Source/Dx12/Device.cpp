@@ -717,6 +717,15 @@ auto gse::dx12::device::cmd_bind_graphics_shaders(const gpu::command_buffer_hand
 	state.resolved_pso = nullptr;
 }
 
+auto gse::dx12::device::drain_validation_messages() const -> void {
+	if (!m_validation_enabled) {
+		return;
+	}
+	directx::drain_debug_messages(m_device.get(), [](void*, const char* message) {
+		log::println(log::level::warning, log::category::dx12_validation, "{}", message);
+	}, nullptr);
+}
+
 auto gse::dx12::device::dump_dred_once() -> void {
 	if (m_dred_dumped.exchange(true)) {
 		return;
@@ -912,6 +921,27 @@ auto gse::dx12::device::cmd_draw_mesh_tasks_indirect(const gpu::command_buffer_h
 	}
 	list->SetPipelineState(pso);
 	directx::execute_indirect(list, m_dispatch_mesh_signature.get(), draw_count, resource, offset);
+}
+
+auto gse::dx12::device::cmd_dispatch_indirect(const gpu::command_buffer_handle cmd, const gpu::handle<gpu::buffer> buffer, const gpu::device_size offset) -> void {
+	auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(cmd);
+	auto* resource = std::bit_cast<directx::ID3D12Resource*>(buffer);
+	if (!list || !resource) {
+		return;
+	}
+	if (!compute_pso_bound(cmd)) {
+		return;
+	}
+	{
+		const std::lock_guard lock(m_mutex);
+		if (!m_dispatch_signature) {
+			m_dispatch_signature = directx::create_dispatch_command_signature(m_device.get());
+		}
+	}
+	if (!m_dispatch_signature) {
+		return;
+	}
+	directx::execute_indirect(list, m_dispatch_signature.get(), 1, resource, offset);
 }
 
 auto gse::dx12::device::frame_command_buffer(const gpu::queue_type queue_type, const std::uint32_t frame_index) const -> gpu::command_buffer_handle {
@@ -1557,6 +1587,7 @@ auto gse::dx12::device::create_buffer(const gpu::buffer_desc& desc, const std::s
 		const auto stride = desc.stride ? desc.stride : desc.size;
 		const auto element_count = static_cast<std::uint32_t>(stride ? desc.size / stride : 1);
 		if (desc.writable) {
+			assert(directx::supports_unordered_access(raw), "create_buffer '{}': writable bindless buffer landed on a heap without allow_unordered_access (readback={}); creating a uav on it would remove the device", tag, desc.readback);
 			if (is_byte_address) {
 				directx::create_raw_buffer_uav(m_device.get(), raw, 0, raw_elements, handle);
 			}
@@ -1691,6 +1722,10 @@ auto gse::dx12::device::write_storage_buffer(const gpu::bindless_slot slot, cons
 	const std::lock_guard lock(m_mutex);
 	const auto [resource, base] = find_buffer(address);
 	if (!resource) {
+		return;
+	}
+	if (!directx::supports_unordered_access(resource)) {
+		log::println(log::level::error, log::category::dx12, "write_storage_buffer SKIPPED: resource at address=0x{:x} (base=0x{:x} size={}) was not created with allow_unordered_access; creating a uav on it would remove the device", address, base, size);
 		return;
 	}
 	const auto first_element = static_cast<std::uint32_t>((address - base) / 4);

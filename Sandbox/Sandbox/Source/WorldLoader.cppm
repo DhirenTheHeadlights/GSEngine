@@ -17,6 +17,9 @@ auto sandbox::world_loader_setup(gse::engine& e) -> gse::scene* {
 	gse::add_scene(w, reg, "ParityDrop", &parity_drop_scene_setup);
 	gse::add_scene(w, reg, "ParityPair", &parity_pair_scene_setup);
 	gse::add_scene(w, reg, "ParityStack", &parity_stack_scene_setup);
+	gse::add_scene(w, reg, "ParityCluster", &parity_cluster_scene_setup);
+	gse::add_scene(w, reg, "ParityHeap", &parity_heap_scene_setup);
+	gse::add_scene(w, reg, "ParityMound", &parity_mound_scene_setup);
 	gse::add_scene(w, reg, "ParityPile", &parity_pile_scene_setup);
 	gse::add_scene(w, reg, "ParityOverlap", &parity_overlap_scene_setup);
 	gse::add_scene(w, reg, "Pyramid", &pyramid_scene_setup);

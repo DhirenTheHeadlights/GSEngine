@@ -17,9 +17,13 @@ namespace sandbox::startup {
 		double compare_states_threshold = 0.01;
 		std::string scan_states;
 		double scan_states_speed = 20.0;
+		std::uint64_t scan_states_body = 0;
+		bool scan_states_summary = false;
+		double scan_states_settle = 0.1;
 		int compare_states_focus_frame = -1;
 		int compare_states_focus_bodies = 5;
 		int compare_states_focus_window = 4;
+		int compare_states_align = 0;
 	};
 
 	auto run_game(
@@ -34,7 +38,25 @@ namespace sandbox::startup {
 		config& cfg
 	) -> bool;
 
-	using frame_index = std::map<std::uint32_t, std::map<std::uint64_t, gse::state_dump_record>>;
+	using body_index = std::map<std::uint64_t, gse::state_dump_record>;
+	using frame_index = std::map<std::uint32_t, body_index>;
+
+	struct frame_delta {
+		gse::length max_drift;
+		std::uint64_t worst_owner = 0;
+		std::size_t over_threshold = 0;
+	};
+
+	auto frame_drift(
+		const body_index& a,
+		const body_index& b,
+		gse::length threshold
+	) -> frame_delta;
+
+	auto summarize_scan(
+		const config& cfg,
+		const std::vector<gse::state_dump_record>& records
+	) -> int;
 
 	auto trace_focus_frame(
 		const config& cfg,
@@ -44,6 +66,11 @@ namespace sandbox::startup {
 
 	auto run_compare_states(
 		const config& cfg
+	) -> int;
+
+	auto trace_scan_body(
+		const config& cfg,
+		const std::vector<gse::state_dump_record>& records
 	) -> int;
 
 	auto run_scan_states(
@@ -155,11 +182,141 @@ auto sandbox::startup::trace_focus_frame(const config& cfg, const frame_index& f
 	}
 }
 
+auto sandbox::startup::trace_scan_body(const config& cfg, const std::vector<gse::state_dump_record>& records) -> int {
+	std::map<std::uint32_t, gse::state_dump_record> by_frame;
+	for (const auto& record : records) {
+		if (record.owner == cfg.scan_states_body) {
+			by_frame[record.frame] = record;
+		}
+	}
+
+	if (by_frame.empty()) {
+		std::cerr << std::format("body {} is not present in {}\n", cfg.scan_states_body, cfg.scan_states);
+		return 1;
+	}
+
+	std::cout << std::format("body {} over {} frames\n\n", cfg.scan_states_body, by_frame.size());
+	std::cout << std::format("{:>7}  {:>13}  {:>14}  {}\n", "frame", "speed", "step", "position");
+
+	std::optional<gse::vec3<gse::position>> previous;
+	for (const auto& [frame, record] : by_frame) {
+		const gse::displacement step = previous ? gse::distance(*previous, record.position) : gse::displacement{};
+		std::cout << std::format(
+			"{:>7}  {:>13.3f}  {:>14.6f:m}  {:.3f}\n",
+			frame,
+			gse::magnitude(record.velocity),
+			step,
+			record.position
+		);
+		previous = record.position;
+	}
+
+	return 0;
+}
+
+auto sandbox::startup::frame_drift(const body_index& a, const body_index& b, const gse::length threshold) -> frame_delta {
+	frame_delta out;
+	for (const auto& [owner, record_a] : a) {
+		const auto other = b.find(owner);
+		if (other == b.end()) {
+			continue;
+		}
+		const gse::length delta = gse::distance(record_a.position, other->second.position);
+		if (delta > threshold) {
+			++out.over_threshold;
+		}
+		if (delta > out.max_drift) {
+			out.max_drift = delta;
+			out.worst_owner = owner;
+		}
+	}
+	return out;
+}
+
+auto sandbox::startup::summarize_scan(const config& cfg, const std::vector<gse::state_dump_record>& records) -> int {
+	frame_index frames;
+	for (const auto& record : records) {
+		frames[record.frame][record.owner] = record;
+	}
+
+	if (frames.empty()) {
+		std::cerr << std::format("{} contains no frames\n", cfg.scan_states);
+		return 1;
+	}
+
+	const gse::velocity settle = gse::meters_per_second(static_cast<float>(cfg.scan_states_settle));
+
+	std::uint32_t last_active = frames.begin()->first;
+	for (const auto& [frame, bodies] : frames) {
+		for (const auto& record : std::views::values(bodies)) {
+			if (gse::magnitude(record.velocity) >= settle) {
+				last_active = frame;
+				break;
+			}
+		}
+	}
+
+	const auto& first_bodies = frames.begin()->second;
+	const auto& last_bodies = std::prev(frames.end())->second;
+
+	const auto radius_of = [](const gse::state_dump_record& record) {
+		return gse::length{ gse::hypot(record.position.x(), record.position.z()) };
+	};
+
+	const auto horizontal_reach = [&radius_of](const body_index& bodies) {
+		gse::length reach{};
+		for (const auto& record : std::views::values(bodies)) {
+			reach = std::max(reach, radius_of(record));
+		}
+		return reach;
+	};
+
+	const gse::length spawn_reach = horizontal_reach(first_bodies);
+	const gse::length shed_limit = spawn_reach + gse::meters(0.5f);
+
+	gse::length height_sum{};
+	gse::length max_height{};
+	gse::velocity max_speed{};
+	std::size_t shed = 0;
+
+	for (const auto& record : std::views::values(last_bodies)) {
+		const gse::length height{ record.position.y() };
+		height_sum += height;
+		max_height = std::max(max_height, height);
+		max_speed = std::max(max_speed, gse::magnitude(record.velocity));
+		if (radius_of(record) > shed_limit) {
+			++shed;
+		}
+	}
+
+	const auto body_count = last_bodies.size();
+	const gse::length mean_height = body_count > 0 ? height_sum / static_cast<float>(body_count) : gse::length{};
+	const auto final_frame = std::prev(frames.end())->first;
+
+	std::cout << std::format("{} bodies over {} frames\n\n", body_count, frames.size());
+	std::cout << std::format("{:<22}{}\n", "settled at frame", last_active >= final_frame ? std::string("never") : std::format("{}", last_active + 1));
+	std::cout << std::format("{:<22}{:.3f:m}\n", "mean height", mean_height);
+	std::cout << std::format("{:<22}{:.3f:m}\n", "max height", max_height);
+	std::cout << std::format("{:<22}{:.3f}\n", "final max speed", max_speed);
+	std::cout << std::format("{:<22}{:.3f:m}\n", "spawn reach", spawn_reach);
+	std::cout << std::format("{:<22}{} of {}\n", "shed past reach", shed, body_count);
+
+	return 0;
+}
+
 auto sandbox::startup::run_scan_states(const config& cfg) -> int {
 	const auto dump = gse::read_state_dump(cfg.scan_states);
 	if (!dump) {
 		std::cerr << std::format("could not read {}\n", cfg.scan_states);
 		return 1;
+	}
+
+	if (cfg.scan_states_body != 0) {
+		return trace_scan_body(cfg, *dump);
+	}
+
+	if (cfg.scan_states_summary) {
+		return summarize_scan(cfg, *dump);
 	}
 
 	const gse::velocity limit = gse::meters_per_second(static_cast<float>(cfg.scan_states_speed));
@@ -249,32 +406,41 @@ auto sandbox::startup::run_compare_states(const config& cfg) -> int {
 	std::uint64_t worst_jump_owner = 0;
 	bool first_breach_reported = false;
 
+	const auto align = static_cast<std::uint32_t>(std::max(cfg.compare_states_align, 0));
+	std::map<std::uint32_t, std::size_t> shift_histogram;
+
+	if (align > 0) {
+		std::cout << std::format("aligning each frame against the best match in B within {} frames\n\n", align);
+	}
 	std::cout << std::format("{:>7}  {:>14}  {:>8}  {:>22}\n", "frame", "max drift", "over", "worst body");
 
 	for (const auto& [frame, bodies_a] : frames_a) {
-		const auto it = frames_b.find(frame);
-		if (it == frames_b.end()) {
+		frame_delta best;
+		std::uint32_t best_shift = 0;
+		bool matched = false;
+
+		for (std::uint32_t shift = 0; shift <= align; ++shift) {
+			const auto it = frames_b.find(frame + shift);
+			if (it == frames_b.end()) {
+				continue;
+			}
+			const auto candidate = frame_drift(bodies_a, it->second, threshold);
+			if (!matched || candidate.max_drift < best.max_drift) {
+				best = candidate;
+				best_shift = shift;
+				matched = true;
+			}
+		}
+
+		if (!matched) {
 			continue;
 		}
 
-		gse::length max_delta{};
-		std::uint64_t max_owner = 0;
-		std::size_t over_threshold = 0;
+		++shift_histogram[best_shift];
 
-		for (const auto& [owner, record_a] : bodies_a) {
-			const auto other = it->second.find(owner);
-			if (other == it->second.end()) {
-				continue;
-			}
-			const gse::length delta = gse::distance(record_a.position, other->second.position);
-			if (delta > threshold) {
-				++over_threshold;
-			}
-			if (delta > max_delta) {
-				max_delta = delta;
-				max_owner = owner;
-			}
-		}
+		const gse::length max_delta = best.max_drift;
+		const std::uint64_t max_owner = best.worst_owner;
+		const std::size_t over_threshold = best.over_threshold;
 
 		if (max_delta > previous_max * 10.f && previous_max > gse::meters(1e-6f) && max_delta - previous_max > worst_jump_to - worst_jump_from) {
 			worst_jump_from = previous_max;
@@ -299,6 +465,15 @@ auto sandbox::startup::run_compare_states(const config& cfg) -> int {
 	}
 
 	std::cout << std::format("\nthreshold {:.6f:m}\n", threshold);
+
+	if (align > 0) {
+		std::cout << "shift chosen per frame:";
+		for (const auto& [shift, count] : shift_histogram) {
+			std::cout << std::format("  +{}: {}", shift, count);
+		}
+		std::cout << "\n";
+	}
+
 	if (worst_jump_frame != 0) {
 		std::cout << std::format(
 			"largest single-frame jump: frame {}, {:.6f:m} -> {:.6f:m} on body {}\n",

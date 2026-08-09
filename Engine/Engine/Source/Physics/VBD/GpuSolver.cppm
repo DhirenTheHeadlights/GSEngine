@@ -12,6 +12,7 @@ import gse.ecs;
 import gse.os;
 import gse.assets;
 import gse.gpu;
+import gse.gpu_record;
 
 import :vbd_constraints;
 import :vbd_solver;
@@ -43,6 +44,7 @@ export namespace gse::vbd {
 	struct vbd_solve_iterations_stage {};
 	struct vbd_derive_velocities_stage {};
 	struct vbd_apply_restitution_stage {};
+	struct vbd_update_sticking_stage {};
 	struct vbd_post_stabilize_stage {};
 	struct vbd_finalize_stage {};
 	struct vbd_state_copy_stage {};
@@ -76,7 +78,8 @@ export namespace gse::vbd {
 		) -> async::task<>;
 
 		auto dispatch_compute(
-			context& ctx
+			context& ctx,
+			channel_write<gpu::render_pass_request> pass_out
 		) -> async::task<>;
 
 		auto compute_initialized() const -> bool;
@@ -131,6 +134,10 @@ export namespace gse::vbd {
 			std::uint32_t slot
 		) const -> const gpu::buffer&;
 
+		auto body_buffer(
+			std::uint32_t slot
+		) const -> const gpu::buffer&;
+
 		auto retired_snapshot_slot() const -> std::uint32_t;
 
 		auto render_snapshot_slot() const -> std::uint32_t;
@@ -155,6 +162,7 @@ export namespace gse::vbd {
 			gpu::shader_program freeze_jacobians_pipeline;
 			gpu::shader_program apply_jacobi_pipeline;
 			gpu::shader_program apply_restitution_pipeline;
+			gpu::shader_program update_sticking_pipeline;
 			gpu::shader_program apply_impulses_pipeline;
 			gpu::shader_program apply_body_inputs_pipeline;
 

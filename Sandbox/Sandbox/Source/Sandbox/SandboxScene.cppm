@@ -12,6 +12,7 @@ export namespace sandbox::player {
 	auto run(
 		gse::context& ctx,
 		data& d,
+		gse::channel_read<gse::world_system::possess_player_request> possess_in,
 		gse::structural<gse::free_camera::component> cameras
 	) -> gse::async::task<>;
 }
@@ -42,6 +43,18 @@ export namespace sandbox {
 		gse::scene& s
 	) -> void;
 
+	auto parity_cluster_scene_setup(
+		gse::scene& s
+	) -> void;
+
+	auto parity_heap_scene_setup(
+		gse::scene& s
+	) -> void;
+
+	auto parity_mound_scene_setup(
+		gse::scene& s
+	) -> void;
+
 	auto parity_pile_scene_setup(
 		gse::scene& s
 	) -> void;
@@ -64,14 +77,15 @@ export namespace sandbox::physics_parity {
 	auto run(
 		gse::context& ctx,
 		data& d,
+		gse::channel_write<gse::activate_scene_request> scene_out,
 		gse::shared_view<gse::world_system::data> world_d,
 		gse::read<gse::physics::transform_component> transforms,
 		gse::read<gse::physics::motion_component> motions
 	) -> gse::async::task<>;
 }
 
-auto sandbox::player::run(gse::context& ctx, data& d, gse::structural<gse::free_camera::component> cameras) -> gse::async::task<> {
-	for (const auto& request : ctx.read_channel<gse::world_system::possess_player_request>()) {
+auto sandbox::player::run(gse::context& ctx, data& d, const gse::channel_read<gse::world_system::possess_player_request> possess_in, gse::structural<gse::free_camera::component> cameras) -> gse::async::task<> {
+	for (const auto& request : possess_in.of<gse::world_system::possess_player_request>()) {
 		cameras.add(
 			request.entity,
 			{
@@ -157,6 +171,13 @@ auto sandbox::pyramid_scene_setup(gse::scene& s) -> void {
 
 namespace sandbox {
 	inline std::size_t g_physics_parity_n_envs = 1;
+
+	auto spawn_parity_grid(
+		gse::scene& s,
+		int side,
+		float spacing,
+		std::string_view prefix
+	) -> void;
 }
 
 
@@ -275,6 +296,61 @@ auto sandbox::parity_stack_scene_setup(gse::scene& s) -> void {
 	}
 }
 
+auto sandbox::spawn_parity_grid(gse::scene& s, const int side, const float spacing, const std::string_view prefix) -> void {
+	for (int x = 0; x < side; ++x) {
+		for (int y = 0; y < side; ++y) {
+			for (int z = 0; z < side; ++z) {
+				const float px = (static_cast<float>(x) - static_cast<float>(side - 1) * 0.5f) * spacing;
+				const float pz = (static_cast<float>(z) - static_cast<float>(side - 1) * 0.5f) * spacing;
+				const float py = 0.5f + static_cast<float>(y) * spacing;
+				s.spawn(
+					std::format("{}_{}_{}_{}", prefix, x, y, z),
+					box(
+						gse::vec3<gse::position>(gse::meters(px), gse::meters(py), gse::meters(pz)),
+						gse::vec3<gse::length>(gse::meters(0.5f), gse::meters(0.5f), gse::meters(0.5f))
+					)
+				);
+			}
+		}
+	}
+}
+
+auto sandbox::parity_cluster_scene_setup(gse::scene& s) -> void {
+	s.spawn(
+		"ParityFloor",
+		static_box(
+			gse::vec3<gse::position>(gse::meters(0.f), gse::meters(-0.5f), gse::meters(0.f)),
+			gse::vec3<gse::length>(gse::meters(40.f), gse::meters(1.f), gse::meters(40.f))
+		)
+	);
+
+	spawn_parity_grid(s, 3, 0.75f, "ParityCluster");
+}
+
+auto sandbox::parity_heap_scene_setup(gse::scene& s) -> void {
+	s.spawn(
+		"ParityFloor",
+		static_box(
+			gse::vec3<gse::position>(gse::meters(0.f), gse::meters(-0.5f), gse::meters(0.f)),
+			gse::vec3<gse::length>(gse::meters(40.f), gse::meters(1.f), gse::meters(40.f))
+		)
+	);
+
+	spawn_parity_grid(s, 4, 0.75f, "ParityHeap");
+}
+
+auto sandbox::parity_mound_scene_setup(gse::scene& s) -> void {
+	s.spawn(
+		"ParityFloor",
+		static_box(
+			gse::vec3<gse::position>(gse::meters(0.f), gse::meters(-0.5f), gse::meters(0.f)),
+			gse::vec3<gse::length>(gse::meters(40.f), gse::meters(1.f), gse::meters(40.f))
+		)
+	);
+
+	spawn_parity_grid(s, 5, 0.75f, "ParityMound");
+}
+
 auto sandbox::parity_pile_scene_setup(gse::scene& s) -> void {
 	s.spawn(
 		"ParityFloor",
@@ -342,7 +418,7 @@ auto sandbox::physics_parity_world_setup(gse::engine& e, const std::size_t n_env
 	return gse::add_scene(w, reg, "PhysicsParity", &physics_parity_scene_setup);
 }
 
-auto sandbox::physics_parity::run(gse::context& ctx, data& d, gse::shared_view<gse::world_system::data> world_d, gse::read<gse::physics::transform_component> transforms, gse::read<gse::physics::motion_component> motions) -> gse::async::task<> {
+auto sandbox::physics_parity::run(gse::context& ctx, data& d, const gse::channel_write<gse::activate_scene_request> scene_out, gse::shared_view<gse::world_system::data> world_d, gse::read<gse::physics::transform_component> transforms, gse::read<gse::physics::motion_component> motions) -> gse::async::task<> {
 	if (d.done) {
 		return {};
 	}
@@ -357,7 +433,7 @@ auto sandbox::physics_parity::run(gse::context& ctx, data& d, gse::shared_view<g
 	}
 
 	if (d.scene_id.has_value() && world_d.active_scene != d.scene_id) {
-		ctx.channels.push<gse::activate_scene_request>({ .scene_id = *d.scene_id });
+		scene_out.push<gse::activate_scene_request>({ .scene_id = *d.scene_id });
 		return {};
 	}
 

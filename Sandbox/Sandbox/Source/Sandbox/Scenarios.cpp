@@ -71,6 +71,30 @@ auto sandbox::scenarios::parity_stack_gpu(gse::scenario::context& ctx) -> gse::a
 	co_await gse::scenario::wait_settled(ctx);
 }
 
+auto sandbox::scenarios::parity_cluster_cpu(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+}
+
+auto sandbox::scenarios::parity_cluster_gpu(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+}
+
+auto sandbox::scenarios::parity_heap_cpu(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+}
+
+auto sandbox::scenarios::parity_heap_gpu(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+}
+
+auto sandbox::scenarios::parity_mound_cpu(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+}
+
+auto sandbox::scenarios::parity_mound_gpu(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+}
+
 auto sandbox::scenarios::parity_pile_cpu(gse::scenario::context& ctx) -> gse::async::task<> {
 	co_await gse::scenario::wait_settled(ctx);
 }

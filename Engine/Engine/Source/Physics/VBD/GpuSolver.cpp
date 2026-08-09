@@ -283,6 +283,7 @@ namespace gse::vbd {
 	using freeze_jacobians_entry = vbd_compute<"VBDPhysics/vbd_freeze_jacobians">;
 	using apply_jacobi_entry = vbd_compute<"VBDPhysics/vbd_apply_jacobi">;
 	using apply_restitution_entry = vbd_compute<"VBDPhysics/vbd_apply_restitution">;
+	using update_sticking_entry = vbd_compute<"VBDPhysics/vbd_update_sticking">;
 	using apply_impulses_entry = vbd_compute<"VBDPhysics/vbd_apply_impulses">;
 	using apply_body_inputs_entry = vbd_compute<"VBDPhysics/vbd_apply_body_inputs">;
 
@@ -1076,6 +1077,10 @@ auto gse::vbd::gpu_solver::snapshot_buffer(const std::uint32_t slot) const -> co
 	return m_frames[slot].physics_snapshot_buffer;
 }
 
+auto gse::vbd::gpu_solver::body_buffer(const std::uint32_t slot) const -> const gpu::buffer& {
+	return m_frames[slot].body_buffer;
+}
+
 auto gse::vbd::gpu_solver::retired_snapshot_slot() const -> std::uint32_t {
 	return m_dispatch_slot;
 }
@@ -1109,6 +1114,7 @@ auto gse::vbd::gpu_solver::initialize_compute(context& ctx, const shared_view<gp
 	m_compute.freeze_jacobians_pipeline = build(freeze_jacobians_entry::pod);
 	m_compute.apply_jacobi_pipeline = build(apply_jacobi_entry::pod);
 	m_compute.apply_restitution_pipeline = build(apply_restitution_entry::pod);
+	m_compute.update_sticking_pipeline = build(update_sticking_entry::pod);
 	m_compute.apply_impulses_pipeline = build(apply_impulses_entry::pod);
 	m_compute.apply_body_inputs_pipeline = build(apply_body_inputs_entry::pod);
 
@@ -1118,7 +1124,7 @@ auto gse::vbd::gpu_solver::initialize_compute(context& ctx, const shared_view<gp
 	co_return;
 }
 
-auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
+auto gse::vbd::gpu_solver::dispatch_compute(context& ctx, const channel_write<gpu::render_pass_request> pass_out) -> async::task<> {
 	if (!m_buffers_created || m_body_count == 0) {
 		co_return;
 	}
@@ -1216,7 +1222,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 	constexpr std::size_t solve_state_clear_size = limits.max_bodies * limits.solve_state_float4s_per_body * sizeof(float) * 4;
 	constexpr std::size_t solve_deltas_clear_size = limits.max_bodies * 2 * sizeof(float) * 4;
 
-	auto rec = co_await gpu::pass<vbd_apply_body_inputs_stage>(ctx)
+	auto rec = co_await gpu::pass<vbd_apply_body_inputs_stage>(pass_out)
 		.on(gpu::queue_type::compute)
 		.in_chain<vbd_solve_chain>()
 		.pipeline(m_compute.apply_body_inputs_pipeline);
@@ -1227,7 +1233,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 		vec3u{ body_workgroups, 1u, 1u }
 	);
 
-	rec = co_await gpu::pass<vbd_clear_state_buffers_stage>(ctx).on(gpu::queue_type::compute).in_chain<vbd_solve_chain>();
+	rec = co_await gpu::pass<vbd_clear_state_buffers_stage>(pass_out).on(gpu::queue_type::compute).in_chain<vbd_solve_chain>();
 	rec.fill_buffer(f.frozen_jacobian_buffer, 0, frozen_jacobian_clear_size);
 	rec.fill_buffer(f.solve_state_buffer, 0, solve_state_clear_size);
 	rec.fill_buffer(f.solve_deltas_buffer, 0, solve_deltas_clear_size);
@@ -1235,7 +1241,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 	for (std::uint32_t sub = 0; sub < total; ++sub) {
 		const std::uint32_t warm = (sub == 0) ? m_warm_start_count : 0u;
 
-		rec = co_await gpu::pass<vbd_collision_reset_stage>(ctx)
+		rec = co_await gpu::pass<vbd_collision_reset_stage>(pass_out)
 			.on(gpu::queue_type::compute)
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.collision_reset_pipeline);
@@ -1246,7 +1252,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 			vec3u{ reset_workgroups, 1u, 1u }
 		);
 
-		rec = co_await gpu::pass<vbd_grid_build_stage>(ctx)
+		rec = co_await gpu::pass<vbd_grid_build_stage>(pass_out)
 			.on(gpu::queue_type::compute)
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.collision_grid_build_pipeline);
@@ -1257,7 +1263,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 			vec3u{ body_workgroups, 1u, 1u }
 		);
 
-		rec = co_await gpu::pass<vbd_broad_phase_stage>(ctx)
+		rec = co_await gpu::pass<vbd_broad_phase_stage>(pass_out)
 			.on(gpu::queue_type::compute)
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.collision_broad_phase_pipeline);
@@ -1268,7 +1274,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 			vec3u{ body_workgroups, 1u, 1u }
 		);
 
-		rec = co_await gpu::pass<vbd_prepare_indirect_stage>(ctx)
+		rec = co_await gpu::pass<vbd_prepare_indirect_stage>(pass_out)
 			.on(gpu::queue_type::compute)
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.prepare_indirect_pipeline);
@@ -1279,7 +1285,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 			vec3u{ 1u, 1u, 1u }
 		);
 
-		rec = co_await gpu::pass<vbd_narrow_phase_stage>(ctx)
+		rec = co_await gpu::pass<vbd_narrow_phase_stage>(pass_out)
 			.on(gpu::queue_type::compute)
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.collision_narrow_phase_pipeline);
@@ -1287,7 +1293,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 		rec.push_bindings<collision_narrow_phase_entry>(make_pc(0u, 0u, sub, 0u, 0.f, warm), bindings);
 		rec.dispatch_indirect(f.indirect_dispatch_buffer, 0);
 
-		rec = co_await gpu::pass<vbd_prepare_contact_indirect_stage>(ctx)
+		rec = co_await gpu::pass<vbd_prepare_contact_indirect_stage>(pass_out)
 			.on(gpu::queue_type::compute)
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.prepare_contact_indirect_pipeline);
@@ -1298,7 +1304,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 			vec3u{ 1u, 1u, 1u }
 		);
 
-		rec = co_await gpu::pass<vbd_build_adjacency_stage>(ctx)
+		rec = co_await gpu::pass<vbd_build_adjacency_stage>(pass_out)
 			.on(gpu::queue_type::compute)
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.collision_build_adjacency_pipeline);
@@ -1310,7 +1316,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 		);
 
 		if (sub == 0) {
-			rec = co_await gpu::pass<vbd_build_coloring_stage>(ctx)
+			rec = co_await gpu::pass<vbd_build_coloring_stage>(pass_out)
 				.on(gpu::queue_type::compute)
 				.in_chain<vbd_solve_chain>()
 				.pipeline(m_compute.collision_build_coloring_pipeline);
@@ -1323,7 +1329,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 
 		}
 		else {
-			rec = co_await gpu::pass<vbd_build_coloring_stage>(ctx)
+			rec = co_await gpu::pass<vbd_build_coloring_stage>(pass_out)
 				.on(gpu::queue_type::compute)
 				.in_chain<vbd_solve_chain>()
 				.pipeline(m_compute.prepare_color_indirect_pipeline);
@@ -1338,7 +1344,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 		if (sub == 0 && m_impulse_count > 0) {
 			const std::uint32_t impulse_workgroups = ceil_div(m_impulse_count, limits.workgroup_size);
 
-			rec = co_await gpu::pass<vbd_apply_impulses_stage>(ctx)
+			rec = co_await gpu::pass<vbd_apply_impulses_stage>(pass_out)
 				.on(gpu::queue_type::compute)
 				.in_chain<vbd_solve_chain>()
 				.pipeline(m_compute.apply_impulses_pipeline);
@@ -1350,7 +1356,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 			);
 		}
 
-		rec = co_await gpu::pass<vbd_predict_stage>(ctx)
+		rec = co_await gpu::pass<vbd_predict_stage>(pass_out)
 			.on(gpu::queue_type::compute)
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.predict_pipeline);
@@ -1361,7 +1367,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 			vec3u{ body_workgroups, 1u, 1u }
 		);
 
-		rec = co_await gpu::pass<vbd_freeze_jacobians_stage>(ctx)
+		rec = co_await gpu::pass<vbd_freeze_jacobians_stage>(pass_out)
 			.on(gpu::queue_type::compute)
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.freeze_jacobians_pipeline);
@@ -1369,7 +1375,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 		rec.push_bindings<freeze_jacobians_entry>(make_pc(0u, 0u, sub, 0u, 0.f, warm), bindings);
 		rec.dispatch_indirect(f.indirect_dispatch_buffer, 3 * sizeof(std::uint32_t));
 
-		rec = co_await gpu::pass<vbd_solve_iterations_stage>(ctx)
+		rec = co_await gpu::pass<vbd_solve_iterations_stage>(pass_out)
 			.on(gpu::queue_type::compute)
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.solve_color_pipeline);
@@ -1417,7 +1423,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 			}
 		}
 
-		rec = co_await gpu::pass<vbd_derive_velocities_stage>(ctx)
+		rec = co_await gpu::pass<vbd_derive_velocities_stage>(pass_out)
 			.on(gpu::queue_type::compute)
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.derive_velocities_pipeline);
@@ -1428,7 +1434,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 			vec3u{ body_workgroups, 1u, 1u }
 		);
 
-		rec = co_await gpu::pass<vbd_apply_restitution_stage>(ctx)
+		rec = co_await gpu::pass<vbd_apply_restitution_stage>(pass_out)
 			.on(gpu::queue_type::compute)
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.apply_restitution_pipeline);
@@ -1442,7 +1448,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 		}
 
 		if (post_stabilize) {
-			rec = co_await gpu::pass<vbd_post_stabilize_stage>(ctx)
+			rec = co_await gpu::pass<vbd_post_stabilize_stage>(pass_out)
 				.on(gpu::queue_type::compute)
 				.in_chain<vbd_solve_chain>()
 				.pipeline(m_compute.prepare_color_indirect_pipeline);
@@ -1474,7 +1480,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 			}
 		}
 
-		rec = co_await gpu::pass<vbd_finalize_stage>(ctx)
+		rec = co_await gpu::pass<vbd_finalize_stage>(pass_out)
 			.on(gpu::queue_type::compute)
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.finalize_pipeline);
@@ -1485,6 +1491,14 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 			vec3u{ body_workgroups, 1u, 1u }
 		);
 
+		rec = co_await gpu::pass<vbd_update_sticking_stage>(pass_out)
+			.on(gpu::queue_type::compute)
+			.in_chain<vbd_solve_chain>()
+			.pipeline(m_compute.update_sticking_pipeline);
+
+		rec.push_bindings<update_sticking_entry>(make_pc(0u, 0u, sub, num_iterations, 0.f, warm), bindings);
+		rec.dispatch_indirect(f.indirect_dispatch_buffer, 3 * sizeof(std::uint32_t));
+
 		rec.copy_buffer(f.contact_buffer, f.warm_start_buffer, limits.max_contacts * sizeof(contact_constraint));
 	}
 
@@ -1492,7 +1506,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx) -> async::task<> {
 	const std::size_t joint_copy_size = joint_count * sizeof(joint_constraint);
 	constexpr std::size_t grounded_copy_size = limits.max_grounded_uints * sizeof(std::uint32_t);
 
-	rec = co_await gpu::pass<vbd_state_copy_stage>(ctx).on(gpu::queue_type::compute).in_chain<vbd_solve_chain>();
+	rec = co_await gpu::pass<vbd_state_copy_stage>(pass_out).on(gpu::queue_type::compute).in_chain<vbd_solve_chain>();
 	if (joint_count > 0) {
 		rec.copy_buffer(f.joint_buffer, other.joint_buffer, joint_copy_size);
 	}
