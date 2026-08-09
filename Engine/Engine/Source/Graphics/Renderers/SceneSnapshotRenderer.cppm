@@ -7,6 +7,7 @@ import gse.core;
 import gse.concurrency;
 import gse.ecs;
 import gse.math;
+import gse.gpu_record;
 
 export namespace gse::renderer::scene_snapshot {
 	struct [[= gse::system_state<"SceneSnapshot">{}]] data {
@@ -38,6 +39,7 @@ export namespace gse::renderer::scene_snapshot {
 	auto frame(
 		const context& ctx,
 		shared_view<gpu::context::data> gpu_s,
-		data& d
+		data& d,
+		channel_write<gpu::render_pass_request> pass_out
 	) -> async::task<>;
 }

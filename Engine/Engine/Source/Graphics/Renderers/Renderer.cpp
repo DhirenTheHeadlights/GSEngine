@@ -24,9 +24,9 @@ import gse.physics;
 import gse.math;
 import gse.save;
 
-auto gse::renderer::init(context& ctx, data& d) -> async::task<> {
+auto gse::renderer::init(context& ctx, data& d, const channel_write<actions::add_action_request> actions_out) -> async::task<> {
 	const id dump_profile_id = generate_id("Dump Profile");
-	ctx.channels.push<actions::add_action_request>({
+	actions_out.push<actions::add_action_request>({
 		.name = "Dump Profile",
 		.default_combo = { .k = key::f11 },
 		.action_id = dump_profile_id
@@ -35,9 +35,9 @@ auto gse::renderer::init(context& ctx, data& d) -> async::task<> {
 	return {};
 }
 
-auto gse::renderer::run(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<window::data> window_s, data& d, const shared_view<actions::data> sys) -> async::task<> {
+auto gse::renderer::run(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<window::data> window_s, data& d, const channel_write<asset::hot_reload_request, camera::viewport_update> requests_out, const shared_view<actions::data> sys) -> async::task<> {
 	if (d.hot_reload_enabled != d.last_hot_reload_enabled) {
-		ctx.channels.push<asset::hot_reload_request>({
+		requests_out.push<asset::hot_reload_request>({
 			.enabled = d.hot_reload_enabled
 		});
 		d.last_hot_reload_enabled = d.hot_reload_enabled;
@@ -64,7 +64,7 @@ auto gse::renderer::run(context& ctx, const shared_view<gpu::context::data> gpu_
 	const auto new_viewport = vec2f(static_cast<float>(window_size.x()), static_cast<float>(window_size.y()));
 
 	if (new_viewport.x() > 0.f && new_viewport.y() > 0.f && (new_viewport.x() != d.last_viewport.x() || new_viewport.y() != d.last_viewport.y())) {
-		ctx.channels.push<camera::viewport_update>({
+		requests_out.push<camera::viewport_update>({
 			.size = new_viewport
 		});
 		d.last_viewport = new_viewport;

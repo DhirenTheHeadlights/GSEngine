@@ -30,6 +30,7 @@ export namespace gse::ide::search_system {
 	auto frame(
 		const context& ctx,
 		data& d,
+		channel_read<search::index_file_update_request, search::index_merge_request, build_runner::build_finished> requests_in,
 		shared_view<build_runner::data> build_d
 	) -> async::task<>;
 }

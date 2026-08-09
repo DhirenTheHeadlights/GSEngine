@@ -82,7 +82,7 @@ auto gse::ide::search_system::init(data& d) -> async::task<> {
 	return {};
 }
 
-auto gse::ide::search_system::frame(const context& ctx, data& d, const shared_view<build_runner::data> build_d) -> async::task<> {
+auto gse::ide::search_system::frame(const context& ctx, data& d, const channel_read<search::index_file_update_request, search::index_merge_request, build_runner::build_finished> requests_in, const shared_view<build_runner::data> build_d) -> async::task<> {
 	if (d.index) {
 		d.index->cancel.store(build_runner::analysis_pause_requested(), std::memory_order_release);
 		build_runner::report_analysis_busy(d.index->building.load(std::memory_order_acquire));
@@ -107,18 +107,18 @@ auto gse::ide::search_system::frame(const context& ctx, data& d, const shared_vi
 				d.last_index_change = now;
 			}
 		}
-		for (const auto& req : ctx.read_channel<search::index_file_update_request>()) {
+		for (const auto& req : requests_in.of<search::index_file_update_request>()) {
 			search::update_file(*d.index, req.path);
 			if (search::is_symbol_source(req.path)) {
 				d.symbols_dirty = true;
 				d.last_index_change = system_clock::now<time>();
 			}
 		}
-		for (const auto& req : ctx.read_channel<search::index_merge_request>()) {
+		for (const auto& req : requests_in.of<search::index_merge_request>()) {
 			d.index->merge_file_symbols(req.path, req.symbols, req.refs, req.params);
 		}
 
-		if (!ctx.read_channel<build_runner::build_finished>().empty()) {
+		if (!requests_in.of<build_runner::build_finished>().empty()) {
 			d.symbols_dirty = true;
 			d.last_index_change = {};
 		}

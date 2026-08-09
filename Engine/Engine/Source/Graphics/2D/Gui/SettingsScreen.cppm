@@ -35,7 +35,7 @@ export namespace gse::gui {
 	public:
 		settings_screen(
 			const gse::save::registry& save_reg,
-			gse::channel_writer channels,
+			gse::settings::panel_writer channels,
 			settings_screen_config config = {}
 		);
 
@@ -105,7 +105,7 @@ export namespace gse::gui {
 		};
 
 		const gse::save::registry* m_save_reg;
-		gse::channel_writer m_channels;
+		gse::settings::panel_writer m_channels;
 		std::string m_title;
 		bool m_opaque;
 		gse::settings::panel_state m_panel_state;
@@ -117,7 +117,7 @@ export namespace gse::gui {
 	};
 }
 
-gse::gui::settings_screen::settings_screen(const gse::save::registry& save_reg, gse::channel_writer channels, settings_screen_config config)
+gse::gui::settings_screen::settings_screen(const gse::save::registry& save_reg, gse::settings::panel_writer channels, settings_screen_config config)
 	: m_save_reg(&save_reg), m_channels(std::move(channels)), m_title(std::move(config.title)), m_opaque(config.opaque) {
 }
 

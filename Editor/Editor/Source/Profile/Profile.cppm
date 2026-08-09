@@ -98,7 +98,7 @@ export namespace gse::ide {
 		const std::deque<captured_frame>& frames,
 		const gse::profile::report_file& report,
 		bool report_loaded,
-		gse::channel_writer channels
+		gse::channel_write<gse::set_cursor_shape_request> channels
 	) -> void;
 
 	namespace profile_system {
@@ -114,7 +114,8 @@ export namespace gse::ide {
 		[[= system_run<>{}]]
 		auto run(
 			context& ctx,
-			data& d
+			data& d,
+			channel_read<profile_capture_request, profile_report_request> requests_in
 		) -> async::task<>;
 	}
 }

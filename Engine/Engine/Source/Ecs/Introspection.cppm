@@ -79,6 +79,8 @@ export namespace gse::introspection {
 		bool deferred = false;
 		std::vector<std::string> reads;
 		std::vector<std::string> writes;
+		std::vector<std::string> publishes;
+		std::vector<std::string> consumes;
 	};
 
 	struct system_graph {

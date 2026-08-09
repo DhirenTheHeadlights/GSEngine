@@ -46,7 +46,7 @@ export namespace gse::gpu {
 	class request_pass_awaitable : non_copyable {
 	public:
 		request_pass_awaitable(
-			const gse::context& ctx,
+			channel_write<render_pass_request> channels,
 			render_pass_descriptor desc
 		) noexcept;
 
@@ -67,7 +67,7 @@ export namespace gse::gpu {
 		[[nodiscard]] auto await_resume() noexcept -> recording_context;
 
 	private:
-		const gse::context* m_ctx;
+		channel_write<render_pass_request> m_channels;
 		render_pass_descriptor m_desc;
 		recording_context_init m_init;
 		id m_trace_id{};
@@ -77,7 +77,7 @@ export namespace gse::gpu {
 	class pass_builder {
 	public:
 		pass_builder(
-			const gse::context& ctx,
+			channel_write<render_pass_request> channels,
 			id pass_kind,
 			std::string_view pass_name = {},
 			id trace_kind = {}
@@ -111,23 +111,23 @@ export namespace gse::gpu {
 		auto operator co_await() && -> request_pass_awaitable;
 
 	private:
-		const gse::context* m_ctx;
+		channel_write<render_pass_request> m_channels;
 		render_pass_descriptor m_desc;
 	};
 
 	[[nodiscard]] auto pass(
-		const gse::context& ctx,
+		channel_write<render_pass_request> channels,
 		id pass_kind
 	) -> pass_builder;
 
 	template <typename Owner>
 	[[nodiscard]] auto pass(
-		const gse::context& ctx
+		channel_write<render_pass_request> channels
 	) -> pass_builder;
 
 	template <std::meta::info Hook>
 	[[nodiscard]] auto pass(
-		const gse::context& ctx
+		channel_write<render_pass_request> channels
 	) -> pass_builder;
 
 	auto clear_color(
@@ -177,8 +177,8 @@ export namespace gse::gpu {
 }
 
 template <typename Owner>
-auto gse::gpu::pass(const gse::context& ctx) -> pass_builder {
-	return pass_builder{ ctx, trace_id<Owner>(), type_tag<Owner>(), pass_owner_record_cache<Owner> };
+auto gse::gpu::pass(const channel_write<render_pass_request> channels) -> pass_builder {
+	return pass_builder{ channels, trace_id<Owner>(), type_tag<Owner>(), pass_owner_record_cache<Owner> };
 }
 
 namespace gse::gpu {
@@ -212,9 +212,9 @@ auto gse::gpu::pass_builder::after() && -> pass_builder&& {
 }
 
 template <std::meta::info Hook>
-auto gse::gpu::pass(const gse::context& ctx) -> pass_builder {
+auto gse::gpu::pass(const channel_write<render_pass_request> channels) -> pass_builder {
 	constexpr auto name = hook_name<Hook>();
 	static const id hook_id = find_or_generate_id(name);
 	static const id record_id = find_or_generate_id(std::format("record<{}>", name));
-	return pass_builder{ ctx, hook_id, name, record_id };
+	return pass_builder{ channels, hook_id, name, record_id };
 }

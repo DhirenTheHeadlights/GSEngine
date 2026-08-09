@@ -86,12 +86,12 @@ auto gse::renderer::cull_compute::init(context& ctx, const shared_view<gpu::cont
 	return {};
 }
 
-auto gse::renderer::cull_compute::frame(context& ctx, shared_view<gpu::context::data> gpu_s, shared_view<geometry_collector::data> gc_r, const data& d) -> async::task<> {
+auto gse::renderer::cull_compute::frame(context& ctx, shared_view<gpu::context::data> gpu_s, shared_view<geometry_collector::data> gc_r, const data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<geometry_collector::render_data> geometry_in) -> async::task<> {
 	if (!d.enabled) {
 		co_return;
 	}
 
-	const auto& items = ctx.read_channel<geometry_collector::render_data>();
+	const auto& items = geometry_in.of<geometry_collector::render_data>();
 	if (items.empty()) {
 		co_return;
 	}
@@ -133,7 +133,7 @@ auto gse::renderer::cull_compute::frame(context& ctx, shared_view<gpu::context::
 		);
 	}
 
-	auto rec = co_await gpu::pass<^^gse::renderer::cull_compute::frame>(ctx).pipeline(d.pipeline);
+	auto rec = co_await gpu::pass<^^gse::renderer::cull_compute::frame>(pass_out).pipeline(d.pipeline);
 
 	rec.dispatch<entry>(
 		{

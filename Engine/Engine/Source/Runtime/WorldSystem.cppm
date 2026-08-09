@@ -57,6 +57,8 @@ export namespace gse::world_system {
 	auto run(
 		context& ctx,
 		data& d,
+		channel_read<set_networked_request, set_authoritative_request, set_local_controller_id_request, deactivate_active_scene_request, activate_scene_request> requests_in,
+		channel_write<spawn_player_request, possess_player_request> player_out,
 		shared_view<actions::data> actions_d,
 		write<player_controller> controllers,
 		entities ents
@@ -114,7 +116,7 @@ namespace gse {
 		world_system::data& d,
 		write<player_controller>& controllers,
 		const entities& ents,
-		context& ctx
+		channel_write<world_system::spawn_player_request, world_system::possess_player_request> player_out
 	) -> void;
 }
 
@@ -171,11 +173,11 @@ auto gse::deactivate_active_scene(world_system::data& d) -> void {
 	d.active_scene = std::nullopt;
 }
 
-auto gse::update_player_controllers(world_system::data& d, write<player_controller>& controllers, const entities& ents, context& ctx) -> void {
+auto gse::update_player_controllers(world_system::data& d, write<player_controller>& controllers, const entities& ents, const channel_write<world_system::spawn_player_request, world_system::possess_player_request> player_out) -> void {
 	const auto spawn = [&] {
 		const auto player_id = generate_id(std::format("Player_{}", d.next_player++));
 		ents.ensure_active(player_id);
-		ctx.channels.push<world_system::spawn_player_request>({
+		player_out.push<world_system::spawn_player_request>({
 			.entity = player_id,
 		});
 		return player_id;
@@ -185,7 +187,7 @@ auto gse::update_player_controllers(world_system::data& d, write<player_controll
 		if (!d.local_player_spawned) {
 			d.local_controlled_entity = spawn();
 			d.local_player_spawned = true;
-			ctx.channels.push<world_system::possess_player_request>({
+			player_out.push<world_system::possess_player_request>({
 				.entity = d.local_controlled_entity,
 			});
 		}
@@ -215,26 +217,26 @@ auto gse::update_player_controllers(world_system::data& d, write<player_controll
 
 	if (target.exists() && !d.local_controlled_entity.exists() && ents.exists(target)) {
 		d.local_controlled_entity = target;
-		ctx.channels.push<world_system::possess_player_request>({
+		player_out.push<world_system::possess_player_request>({
 			.entity = target,
 		});
 	}
 }
 
-auto gse::world_system::run(context& ctx, data& d, const shared_view<actions::data> actions_d, write<player_controller> controllers, entities ents) -> async::task<> {
-	for (const auto& r : ctx.read_channel<set_networked_request>()) {
+auto gse::world_system::run(context& ctx, data& d, const channel_read<set_networked_request, set_authoritative_request, set_local_controller_id_request, deactivate_active_scene_request, activate_scene_request> requests_in, const channel_write<spawn_player_request, possess_player_request> player_out, const shared_view<actions::data> actions_d, write<player_controller> controllers, entities ents) -> async::task<> {
+	for (const auto& r : requests_in.of<set_networked_request>()) {
 		d.networked = r.value;
 	}
-	for (const auto& r : ctx.read_channel<set_authoritative_request>()) {
+	for (const auto& r : requests_in.of<set_authoritative_request>()) {
 		d.authoritative = r.value;
 	}
-	for (const auto& r : ctx.read_channel<set_local_controller_id_request>()) {
+	for (const auto& r : requests_in.of<set_local_controller_id_request>()) {
 		d.local_controller_id = r.controller_id;
 	}
-	if (!ctx.read_channel<deactivate_active_scene_request>().empty()) {
+	if (!requests_in.of<deactivate_active_scene_request>().empty()) {
 		deactivate_active_scene(d);
 	}
-	for (const auto& r : ctx.read_channel<activate_scene_request>()) {
+	for (const auto& r : requests_in.of<activate_scene_request>()) {
 		activate_scene(d, r.scene_id);
 	}
 
@@ -268,7 +270,7 @@ auto gse::world_system::run(context& ctx, data& d, const shared_view<actions::da
 		}
 	}
 
-	update_player_controllers(d, controllers, ents, ctx);
+	update_player_controllers(d, controllers, ents, player_out);
 
 	d.active_scene_ptr = current_scene(d);
 

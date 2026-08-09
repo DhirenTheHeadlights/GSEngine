@@ -20,6 +20,14 @@ auto gse::assert_fail(const std::source_location loc, const std::string_view com
 		comment
 	);
 	log::flush();
+
+	std::thread([] {
+		std::this_thread::sleep_for(std::chrono::seconds(5));
+		log::println(log::level::fatal, log::category::general, "Stack capture timed out; terminating without a trace");
+		log::flush();
+		std::_Exit(3);
+	}).detach();
+
 	log::println(log::level::fatal, log::category::general, "Stack:\n{}", capture_stacktrace(2));
 	log::flush();
 	std::abort();

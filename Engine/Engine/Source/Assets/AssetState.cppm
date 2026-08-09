@@ -6,6 +6,7 @@ import gse.core;
 import gse.ecs;
 import gse.fs;
 import gse.concurrency;
+import gse.gpu;
 import gse.log;
 
 import :resource_loader;
@@ -21,24 +22,26 @@ export namespace gse::asset {
 		std::function<void()> enable_hot_reload_fn;
 		std::function<void()> disable_hot_reload_fn;
 		bool hot_reload_enabled = false;
-		channel_writer* channels = nullptr;
+		channel_write<gpu::gpu_resume_request> channels;
 	};
 
 	struct load_ctx {
 		data& assets;
-		channel_writer& channels;
+		channel_write<gpu::gpu_resume_request> channels;
 	};
 
 	[[= system_init{}]]
 	auto init(
 		context& ctx,
-		data& d
+		data& d,
+		channel_write<gpu::gpu_resume_request> gpu_out
 	) -> async::task<>;
 
 	[[= system_run<>{}]]
 	auto run(
 		context& ctx,
-		data& d
+		data& d,
+		channel_read<hot_reload_request> reload_in
 	) -> async::task<>;
 
 	[[= system_shutdown{}]]
@@ -47,17 +50,17 @@ export namespace gse::asset {
 	) -> void;
 }
 
-auto gse::asset::init(context& ctx, data& d) -> async::task<> {
-	d.channels = &ctx.channels;
+auto gse::asset::init(context& ctx, data& d, const channel_write<gpu::gpu_resume_request> gpu_out) -> async::task<> {
+	d.channels = gpu_out;
 	return {};
 }
 
-auto gse::asset::run(context& ctx, data& d) -> async::task<> {
+auto gse::asset::run(context& ctx, data& d, const channel_read<hot_reload_request> reload_in) -> async::task<> {
 	for (const auto& loader : std::views::values(d.resource_loaders)) {
 		loader->flush();
 	}
 
-	for (const auto& request : ctx.read_channel<hot_reload_request>()) {
+	for (const auto& request : reload_in.of<hot_reload_request>()) {
 		if (request.enabled == d.hot_reload_enabled) {
 			continue;
 		}
@@ -83,5 +86,5 @@ auto gse::asset::run(context& ctx, data& d) -> async::task<> {
 auto gse::asset::shutdown(data& d) -> void {
 	task::wait_idle();
 	d.resource_loaders.clear();
-	d.channels = nullptr;
+	d.channels = {};
 }

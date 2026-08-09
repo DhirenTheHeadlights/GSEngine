@@ -17,6 +17,7 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 import gse.math;
+import gse.gpu_record;
 
 export namespace gse::renderer::depth_prepass {
 	struct [[= gse::system_state<"DepthPrepass">{}]] data {
@@ -38,6 +39,8 @@ export namespace gse::renderer::depth_prepass {
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		const data& d,
+		channel_write<gpu::render_pass_request> pass_out,
+		channel_read<geometry_collector::render_data> geometry_in,
 		shared_view<geometry_collector::data> gc_r,
 		shared_view<camera::data> cam_state
 	) -> async::task<>;

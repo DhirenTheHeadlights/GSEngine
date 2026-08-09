@@ -493,7 +493,7 @@ auto gse::renderer::physics_debug::build(context& ctx, data& d, read<physics::tr
 	return {};
 }
 
-auto gse::renderer::physics_debug::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, shared_view<camera::data> cam_state) -> async::task<> {
+auto gse::renderer::physics_debug::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, shared_view<camera::data> cam_state) -> async::task<> {
 	if (!d.enabled) {
 		co_return;
 	}
@@ -606,7 +606,7 @@ auto gse::renderer::physics_debug::frame(const context& ctx, shared_view<gpu::co
 		d.line_vertex_buffers[frame_index].host_write(d.line_vertices);
 	}
 
-	auto rec = co_await gpu::pass<^^gse::renderer::physics_debug::frame>(ctx)
+	auto rec = co_await gpu::pass<^^gse::renderer::physics_debug::frame>(pass_out)
 		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
 		.after<^^forward::frame, ^^sdf_grid::frame, ^^world_text::frame, ^^cloud::cloud_composite_pass>();
 	rec.set_viewport(ext);

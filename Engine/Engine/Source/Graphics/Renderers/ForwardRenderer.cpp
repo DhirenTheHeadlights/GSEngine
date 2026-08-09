@@ -237,15 +237,15 @@ auto gse::renderer::forward::init(context& ctx, const shared_view<gpu::context::
 	return {};
 }
 
-auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, shared_view<camera::data> cam_state, shared_view<geometry_collector::data> gc_r, shared_view<light_culling::data> lc_r, shared_view<atmosphere::data> atm_state, shared_view<gi_probe::data> gi_state, read<directional_light_component> dir_lights, read<spot_light_component> spot_lights, read<point_light_component> point_lights) -> async::task<> {
+auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<geometry_collector::render_data> geometry_in, shared_view<camera::data> cam_state, shared_view<geometry_collector::data> gc_r, shared_view<light_culling::data> lc_r, shared_view<atmosphere::data> atm_state, shared_view<gi_probe::data> gi_state, read<directional_light_component> dir_lights, read<spot_light_component> spot_lights, read<point_light_component> point_lights) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
 
-	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
+	const auto& render_items = geometry_in.of<geometry_collector::render_data>();
 	if (render_items.empty()) {
 		const auto ext = gpu_s.render_graph->extent();
-		auto rec = co_await gpu::pass<^^gse::renderer::forward::frame>(ctx)
+		auto rec = co_await gpu::pass<^^gse::renderer::forward::frame>(pass_out)
 			.color(
 				gpu::clear_color(
 					gpu::color_clear{ 0.0f, 0.0f, 0.0f, 1.0f },
@@ -384,7 +384,7 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 	};
 	const bool gi_enabled = gi_state.quality != gi_probe::quality_level::off;
 
-	auto rec = co_await gpu::pass<^^gse::renderer::forward::frame>(ctx)
+	auto rec = co_await gpu::pass<^^gse::renderer::forward::frame>(pass_out)
 		.pipeline(d.pipeline)
 		.color(
 			gpu::clear_color(

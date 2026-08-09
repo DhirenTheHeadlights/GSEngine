@@ -86,8 +86,8 @@ auto gse::renderer::depth_prepass::init(context& ctx, const shared_view<gpu::con
 	return {};
 }
 
-auto gse::renderer::depth_prepass::frame(context& ctx, shared_view<gpu::context::data> gpu_s, const data& d, shared_view<geometry_collector::data> gc_r, shared_view<camera::data> cam_state) -> async::task<> {
-	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
+auto gse::renderer::depth_prepass::frame(context& ctx, shared_view<gpu::context::data> gpu_s, const data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<geometry_collector::render_data> geometry_in, shared_view<geometry_collector::data> gc_r, shared_view<camera::data> cam_state) -> async::task<> {
+	const auto& render_items = geometry_in.of<geometry_collector::render_data>();
 	if (render_items.empty()) {
 		co_return;
 	}
@@ -116,7 +116,7 @@ auto gse::renderer::depth_prepass::frame(context& ctx, shared_view<gpu::context:
 
 	const auto ext = gpu_s.render_graph->extent();
 
-	auto rec = co_await gpu::pass<^^gse::renderer::depth_prepass::frame>(ctx)
+	auto rec = co_await gpu::pass<^^gse::renderer::depth_prepass::frame>(pass_out)
 		.pipeline(d.meshlet_pipeline)
 		.color(
 			gpu::clear_color(

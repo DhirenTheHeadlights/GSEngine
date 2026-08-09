@@ -137,7 +137,7 @@ auto gse::renderer::gi_probe::init(context& ctx, const shared_view<gpu::context:
 	return {};
 }
 
-auto gse::renderer::gi_probe::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, shared_view<camera::data> cam_state, shared_view<atmosphere::data> atm_state, shared_view<geometry_collector::data> gc_r) -> async::task<> {
+auto gse::renderer::gi_probe::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<geometry_collector::render_data> geometry_in, shared_view<camera::data> cam_state, shared_view<atmosphere::data> atm_state, shared_view<geometry_collector::data> gc_r) -> async::task<> {
 	if (d.quality == quality_level::off) {
 		co_return;
 	}
@@ -150,7 +150,7 @@ auto gse::renderer::gi_probe::frame(context& ctx, shared_view<gpu::context::data
 		co_return;
 	}
 
-	const auto& rt_render_items = ctx.read_channel<geometry_collector::render_data>();
+	const auto& rt_render_items = geometry_in.of<geometry_collector::render_data>();
 	if (rt_render_items.empty() || rt_render_items[0].normal_batches.empty()) {
 		co_return;
 	}
@@ -169,7 +169,7 @@ auto gse::renderer::gi_probe::frame(context& ctx, shared_view<gpu::context::data
 
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
-	auto rec = co_await gpu::pass<^^gse::renderer::gi_probe::frame>(ctx).pipeline(d.update_pipeline).after<^^rt_shadow::frame>();
+	auto rec = co_await gpu::pass<^^gse::renderer::gi_probe::frame>(pass_out).pipeline(d.update_pipeline).after<^^rt_shadow::frame>();
 
 	rec.dispatch<entry>(
 		{

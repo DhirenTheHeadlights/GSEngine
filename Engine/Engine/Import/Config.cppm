@@ -12,6 +12,8 @@ export namespace gse::config {
 
 	auto mode() -> run_mode;
 
+	auto debug_asset_output() -> bool;
+
 	auto executable_stem() -> std::string_view;
 
 	auto executable_file() -> const std::filesystem::path&;

@@ -66,13 +66,13 @@ export namespace gse::gpu {
 
 	[[nodiscard]]
 	auto transient_image(
-		const gse::context& ctx,
+		channel_write<transient_image_request> channels,
 		transient_image_desc desc
 	) -> transient_image_handle;
 
 	[[nodiscard]]
 	auto transient_buffer(
-		const gse::context& ctx,
+		channel_write<transient_buffer_request> channels,
 		transient_buffer_desc desc
 	) -> transient_buffer_handle;
 

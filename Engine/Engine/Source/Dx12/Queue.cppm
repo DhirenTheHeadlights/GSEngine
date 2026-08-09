@@ -91,6 +91,11 @@ auto gse::dx12::queue::wait_for_fence(const gpu::handle<gpu::fence> f) const -> 
 		m_owner->record_queue_op(queue_op_kind::cpu_wait, gpu::queue_type::graphics, sp->fence.get(), sp->value, 0);
 		directx::wait_fence(sp->fence.get(), sp->value, m_owner->idle_event());
 	}
+	if (const auto r = m_owner->raw_device()->GetDeviceRemovedReason(); r != 0) {
+		log::println(log::level::error, log::category::dx12, "wait_for_fence removed=0x{:08x}", static_cast<std::uint32_t>(r));
+		m_owner->dump_dred_once();
+		return gpu::result::error_device_lost;
+	}
 	return gpu::result::success;
 }
 

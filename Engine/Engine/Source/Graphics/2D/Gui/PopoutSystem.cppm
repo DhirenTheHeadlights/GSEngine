@@ -33,6 +33,8 @@ export namespace gse::gui::popout_system {
 	auto run(
 		gse::context& ctx,
 		data& d,
+		gse::channel_read<popout_toggle> popout_in,
+		gse::channel_write<popout_closed, gse::settings::change_request, menu_content> popout_out,
 		gse::shared_view<gse::gui::data> gui_d,
 		const gse::save::registry& save_reg
 	) -> gse::async::task<>;
@@ -94,20 +96,21 @@ auto gse::gui::activate_popout(popout_system::data& d, const gse::save::registry
 	return &it->second;
 }
 
-auto gse::gui::popout_system::run(gse::context& ctx, data& d, const gse::shared_view<gui::data> gui_d, const gse::save::registry& save_reg) -> gse::async::task<> {
-		for (const auto& req : ctx.read_channel<popout_toggle>()) {
+auto gse::gui::popout_system::run(gse::context& ctx, data& d, const gse::channel_read<popout_toggle> popout_in, const gse::channel_write<popout_closed, gse::settings::change_request, menu_content> popout_out, const gse::shared_view<gui::data> gui_d, const gse::save::registry& save_reg) -> gse::async::task<> {
+		for (const auto& req : popout_in.of<popout_toggle>()) {
 			auto it = d.popouts.find(req.category);
 			const bool was_active = it != d.popouts.end() && it->second.active;
 			if (was_active) {
 				it->second.active = false;
-				ctx.channels.push<popout_closed>({ .menu_name = it->second.menu_name });
+				popout_out.push<popout_closed>({ .menu_name = it->second.menu_name });
 			}
 			else {
 				activate_popout(d, save_reg, req.category);
 				if (!gui_d.show_dev_overlays) {
-					ctx.channels.push<gse::settings::annotated_change_request<gui::data>>({
-						.apply = [](gui::data& s) {
-							s.show_dev_overlays = true;
+					popout_out.push<gse::settings::change_request>({
+						.state_type = gse::id_of<gui::data>(),
+						.apply = [](void* p) {
+							static_cast<gui::data*>(p)->show_dev_overlays = true;
 						},
 					});
 				}
@@ -143,11 +146,11 @@ auto gse::gui::popout_system::run(gse::context& ctx, data& d, const gse::shared_
 				}
 			}
 
-			ctx.channels.push<menu_content>({
+			popout_out.push<menu_content>({
 				.menu = popout.menu_name,
 				.layer = render_layer::overlay,
-				.build = [entry = popout.entry, ps_ptr = &d.panel_state, &channels_ref = ctx.channels](builder& b) {
-					gse::settings::draw_fields_for_entry(b, *ps_ptr, channels_ref, *entry, true);
+				.build = [entry = popout.entry, ps_ptr = &d.panel_state, settings_out = gse::settings::change_request_writer(popout_out)](builder& b) {
+					gse::settings::draw_fields_for_entry(b, *ps_ptr, settings_out, *entry, true);
 				},
 			});
 		}

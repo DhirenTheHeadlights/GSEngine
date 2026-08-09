@@ -284,7 +284,7 @@ auto gse::renderer::cloud::init(context& ctx, const shared_view<gpu::context::da
 	return {};
 }
 
-auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, shared_view<atmosphere::data> atm_state, shared_view<camera::data> cam_state) -> async::task<> {
+auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, shared_view<atmosphere::data> atm_state, shared_view<camera::data> cam_state) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -312,7 +312,7 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 			detail_noise_size.z(),
 		};
 
-		auto rec = co_await gpu::pass<^^shape_bake_pass>(ctx).pipeline(d.shape_bake_pipeline);
+		auto rec = co_await gpu::pass<^^shape_bake_pass>(pass_out).pipeline(d.shape_bake_pipeline);
 		rec.dispatch<shape_bake_entry>(
 			{
 				.cloud_shape_out = d.shape_noise.storage_slot(),
@@ -320,7 +320,7 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 			shape_groups
 		);
 
-		rec = co_await gpu::pass<^^detail_bake_pass>(ctx).pipeline(d.detail_bake_pipeline).after<^^shape_bake_pass>();
+		rec = co_await gpu::pass<^^detail_bake_pass>(pass_out).pipeline(d.detail_bake_pipeline).after<^^shape_bake_pass>();
 		rec.dispatch<detail_bake_entry>(
 			{
 				.cloud_detail_out = d.detail_noise.storage_slot(),
@@ -348,7 +348,7 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 
 	d.frame_counter += 1;
 
-	auto rec = co_await gpu::pass<^^cloud_raymarch_pass>(ctx)
+	auto rec = co_await gpu::pass<^^cloud_raymarch_pass>(pass_out)
 		.pipeline(d.raymarch_pipeline)
 		.after<^^atmosphere::sky_view_pass, ^^detail_bake_pass>();
 
@@ -377,7 +377,7 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 	);
 
 	const auto ext = gpu_s.render_graph->extent();
-	auto composite_rec = co_await gpu::pass<^^cloud_composite_pass>(ctx)
+	auto composite_rec = co_await gpu::pass<^^cloud_composite_pass>(pass_out)
 		.pipeline(d.composite_pipeline)
 		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
 		.depth(gpu::load_depth())

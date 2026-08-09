@@ -198,9 +198,9 @@ auto gse::renderer::ui::init(const shared_view<gpu::context::data> gpu_s, data& 
 	return {};
 }
 
-auto gse::renderer::ui::run(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, data& d) -> async::task<> {
-	const auto& sprite_commands = ctx.read_channel<sprite_command>();
-	const auto& text_commands = ctx.read_channel<text_command>();
+auto gse::renderer::ui::run(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, data& d, const channel_read<sprite_command, text_command> commands_in) -> async::task<> {
+	const auto& sprite_commands = commands_in.of<sprite_command>();
+	const auto& text_commands = commands_in.of<text_command>();
 
 	if (sprite_commands.empty() && text_commands.empty()) {
 		return {};
@@ -357,7 +357,7 @@ auto gse::renderer::ui::run(context& ctx, const shared_view<gpu::context::data> 
 	return {};
 }
 
-auto gse::renderer::ui::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, shared_view<scene_snapshot::data> snapshot_s) -> async::task<> {
+auto gse::renderer::ui::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, shared_view<scene_snapshot::data> snapshot_s) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -419,7 +419,7 @@ auto gse::renderer::ui::frame(context& ctx, shared_view<gpu::context::data> gpu_
 
 	const vec2u ext_size{ width, height };
 
-	auto rec = co_await gpu::pass<^^gse::renderer::ui::frame>(ctx)
+	auto rec = co_await gpu::pass<^^gse::renderer::ui::frame>(pass_out)
 		.color(gpu::load_color())
 		.after<^^forward::frame, ^^scene_snapshot::frame, ^^physics_debug::frame, ^^sdf_grid::frame, ^^tonemap::frame, ^^world_text::frame>();
 

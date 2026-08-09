@@ -31,7 +31,7 @@ namespace gse::ide {
 	class editor_screen : public gse::gui::screen {
 	public:
 		editor_screen(
-			gse::channel_writer channels,
+			gse::channel_write<build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels,
 			const search::index_state* index,
 			gse::shared_view<gse::input::data> input
 		);
@@ -65,7 +65,7 @@ namespace gse::ide {
 		) const -> gse::gui::caption_exclusion override;
 
 	private:
-		gse::channel_writer m_channels;
+		gse::channel_write<build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> m_channels;
 		const search::index_state* m_index = nullptr;
 		gse::shared_view<gse::input::data> m_input;
 		std::optional<std::string> m_loc_label;
@@ -92,7 +92,7 @@ namespace gse::ide {
 		const gse::input::state& input,
 		quick_search_state& state,
 		const search::index_state* index,
-		gse::channel_writer channels,
+		gse::channel_write<build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels,
 		const gse::rectf& search_rect,
 		std::string_view id_key
 	) -> void;
@@ -103,7 +103,7 @@ namespace gse::ide {
 		workspace::data& ws,
 		quick_search_state& search,
 		const search::index_state* index,
-		gse::channel_writer channels,
+		gse::channel_write<build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels,
 		const git::status_map* git_status,
 		std::span<const std::filesystem::path> git_rootless
 	) -> void;
@@ -123,7 +123,7 @@ namespace gse::ide {
 	) -> void;
 }
 
-gse::ide::editor_screen::editor_screen(gse::channel_writer channels, const search::index_state* index, const gse::shared_view<gse::input::data> input)
+gse::ide::editor_screen::editor_screen(gse::channel_write<build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels, const search::index_state* index, const gse::shared_view<gse::input::data> input)
 	: m_channels(std::move(channels)), m_index(index), m_input(input) {
 }
 
@@ -415,7 +415,7 @@ auto gse::ide::editor_screen::draw_caption(gse::gui::builder& ui, const gse::rec
 	return controls_width;
 }
 
-auto gse::ide::draw_search_bar(gse::gui::builder& ui, const gse::input::state& input, quick_search_state& state, const search::index_state* index, gse::channel_writer channels, const gse::rectf& search_rect, const std::string_view id_key) -> void {
+auto gse::ide::draw_search_bar(gse::gui::builder& ui, const gse::input::state& input, quick_search_state& state, const search::index_state* index, gse::channel_write<build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels, const gse::rectf& search_rect, const std::string_view id_key) -> void {
 	const auto& ctx = ui.ctx;
 	const auto& sty = ctx.style;
 	const auto text_view = ctx.fonts.text.resolve();
@@ -706,7 +706,7 @@ auto gse::ide::git_status_color(const git::file_status status) -> gse::vec4f {
 	}
 }
 
-auto gse::ide::draw_explorer_panel(gse::gui::builder& ui, const gse::input::state& input, workspace::data& ws, quick_search_state& search, const search::index_state* index, gse::channel_writer channels, const git::status_map* git_status, const std::span<const std::filesystem::path> git_rootless) -> void {
+auto gse::ide::draw_explorer_panel(gse::gui::builder& ui, const gse::input::state& input, workspace::data& ws, quick_search_state& search, const search::index_state* index, gse::channel_write<build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels, const git::status_map* git_status, const std::span<const std::filesystem::path> git_rootless) -> void {
 	const auto& ctx = ui.ctx;
 	if (ctx.clip_stack.empty()) {
 		return;

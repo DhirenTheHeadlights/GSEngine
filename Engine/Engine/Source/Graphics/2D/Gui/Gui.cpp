@@ -298,8 +298,8 @@ auto gse::gui::init(context& ctx, const shared_view<window::data> window_s, cons
 	co_return;
 }
 
-auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, const shared_view<gse::input::data> input_state, const save::registry& save_reg, data& d) -> async::task<> {
-	co_await update_body(ctx, window_s, gpu_s, assets_s, input_state, save_reg, d);
+auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, const shared_view<gse::input::data> input_state, const save::registry& save_reg, const channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, popout_closed> requests_in, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> ui_out, data& d) -> async::task<> {
+	co_await update_body(ctx, window_s, gpu_s, assets_s, input_state, save_reg, requests_in, ui_out, d);
 	co_return;
 }
 
@@ -308,7 +308,7 @@ auto gse::gui::clear_menu_interaction(data& d) -> void {
 	d.current_state = states::idle{};
 }
 
-auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_s, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, const shared_view<gse::input::data> input_state, const save::registry& save_reg, data& d) -> async::task<> {
+auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_s, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, const shared_view<gse::input::data> input_state, const save::registry& save_reg, const channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, popout_closed> requests_in, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> ui_out, data& d) -> async::task<> {
 	const auto current_viewport_size = vec2f(gpu_s.render_graph->extent());
 
 	d.display_scale = window_s.content_scale;
@@ -489,29 +489,29 @@ auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_
 		}
 	}
 
-	for (const auto& req : ctx.read_channel<push_screen_request>()) {
+	for (const auto& req : requests_in.of<push_screen_request>()) {
 		d.menu_stack.push_factory(req.factory);
 	}
-	for ([[maybe_unused]] const auto& req : ctx.read_channel<pop_screen_request>()) {
+	for ([[maybe_unused]] const auto& req : requests_in.of<pop_screen_request>()) {
 		d.menu_stack.pop();
 	}
-	for ([[maybe_unused]] const auto& req : ctx.read_channel<clear_screens_request>()) {
+	for ([[maybe_unused]] const auto& req : requests_in.of<clear_screens_request>()) {
 		d.menu_stack.clear();
 	}
-	for (const auto& req : ctx.read_channel<set_manual_cursor_request>()) {
+	for (const auto& req : requests_in.of<set_manual_cursor_request>()) {
 		d.manual_cursor = req.show;
 	}
 
 	if (!d.menu_stack.empty()) {
-		process_screen(d, input_st, viewport_size, ctx.channels);
+		process_screen(d, input_st, viewport_size, ui_out);
 	}
 
-	ctx.channels.push<ui_focus_request>({
+	ui_out.push<ui_focus_request>({
 		.focus = !d.menu_stack.empty() || d.manual_cursor,
 	});
 
 	const bool occluded = d.menu_stack.occludes();
-	for (const auto& content : ctx.read_channel<menu_content>()) {
+	for (const auto& content : requests_in.of<menu_content>()) {
 		if (occluded) {
 			continue;
 		}
@@ -525,12 +525,12 @@ auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_
 		}
 		const std::string_view category = popout_category_from_tag(m->id().tag());
 		if (!category.empty()) {
-			ctx.channels.push<popout_toggle>({ .category = std::string(category) });
+			ui_out.push<popout_toggle>({ .category = std::string(category) });
 		}
 	}
 	d.pending_popout_close_ids.clear();
 
-	for (const auto& req : ctx.read_channel<popout_closed>()) {
+	for (const auto& req : requests_in.of<popout_closed>()) {
 		remove_tab_from_host(d, req.menu_name);
 	}
 
@@ -540,7 +540,7 @@ auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_
 		if (const menu* host = d.menus.try_get(host_id); host && tab_index < host->tab_contents.size()) {
 			const std::string tab_name = host->tab_contents[tab_index];
 			if (const std::string_view category = popout_category_from_tag(tab_name); !category.empty()) {
-				ctx.channels.push<popout_toggle>({ .category = std::string(category) });
+				ui_out.push<popout_toggle>({ .category = std::string(category) });
 			}
 			else {
 				remove_tab_from_host(d, tab_name);
@@ -548,7 +548,7 @@ auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_
 		}
 	}
 
-	process_context_menu(d, input_st, viewport_size, ctx.channels);
+	process_context_menu(d, input_st, viewport_size, ui_out);
 
 	if (d.tooltip.pending_widget_id.exists()) {
 		if (d.tooltip.pending_widget_id == d.tooltip.widget_id) {
@@ -662,7 +662,7 @@ auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_
 				break;
 		}
 		if (os_cursor != cursor_shape::arrow) {
-			ctx.channels.push<set_cursor_shape_request>({ .shape = os_cursor });
+			ui_out.push<set_cursor_shape_request>({ .shape = os_cursor });
 		}
 	}
 
@@ -728,11 +728,11 @@ auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_
 	}
 
 	for (auto& cmd : d.sprite_commands) {
-		ctx.channels.push<renderer::sprite_command>(std::move(cmd));
+		ui_out.push<renderer::sprite_command>(std::move(cmd));
 	}
 
 	for (auto& cmd : d.text_commands) {
-		ctx.channels.push<renderer::text_command>(std::move(cmd));
+		ui_out.push<renderer::text_command>(std::move(cmd));
 	}
 
 	d.fstate = {};
@@ -937,7 +937,7 @@ auto gse::gui::caption_button(builder& b, const rectf& rect, const std::string& 
 	return btn.activated;
 }
 
-auto gse::gui::draw_screen_caption(builder& b, screen& top, const rectf& bar_rect, const rectf& full_rect, channel_writer channels) -> void {
+auto gse::gui::draw_screen_caption(builder& b, screen& top, const rectf& bar_rect, const rectf& full_rect, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> channels) -> void {
 	draw_context& ctx = b.ctx;
 	const style& sty = ctx.style;
 
@@ -983,7 +983,7 @@ auto gse::gui::draw_screen_caption(builder& b, screen& top, const rectf& bar_rec
 	ctx.clip_stack.pop_back();
 }
 
-auto gse::gui::process_screen(data& d, const gse::input::state& input_state, const vec2f viewport_size, channel_writer channels) -> void {
+auto gse::gui::process_screen(data& d, const gse::input::state& input_state, const vec2f viewport_size, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> channels) -> void {
 	if (!d.fstate.active) {
 		return;
 	}
@@ -1351,7 +1351,7 @@ auto gse::gui::draw_tab_bar(data& d, const gse::input::state& input_state, menu&
 	}
 }
 
-auto gse::gui::process_context_menu(data& d, const gse::input::state& input_state, const vec2f viewport_size, channel_writer& channels) -> void {
+auto gse::gui::process_context_menu(data& d, const gse::input::state& input_state, const vec2f viewport_size, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> channels) -> void {
 	context_menu_state& cm = d.context_menu;
 	if (!cm.open) {
 		return;

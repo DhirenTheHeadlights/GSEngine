@@ -68,12 +68,6 @@ export namespace gse::ide::analysis {
 		std::uint32_t end_column = 0;
 	};
 
-	struct channel_use {
-		bool produce = false;
-		std::string system;
-		std::string message;
-	};
-
 	struct param_token {
 		std::string file;
 		std::uint32_t line = 0;
@@ -87,7 +81,6 @@ export namespace gse::ide::analysis {
 		std::vector<symbol_ref> refs;
 		std::vector<qualified_use> quals;
 		std::vector<qualified_use> template_args;
-		std::vector<channel_use> channels;
 		std::vector<param_token> params;
 		bool complete = false;
 	};
@@ -282,22 +275,6 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 			}
 			++discarded;
 			report_discarded_record(main_file, line, "a GSEREF record has a non-numeric position or an empty definition file, so this reference will not resolve", discarded);
-			continue;
-		}
-
-		if (line.starts_with("GSECHAN\t")) {
-			std::array<std::string_view, 4> fields;
-			const std::size_t count = gse::split_fields(line, '\t', fields);
-			if (count >= 4 && !fields[2].empty() && !fields[3].empty()) {
-				out.channels.push_back({
-					.produce = fields[1] == "produce",
-					.system = std::string(fields[2]),
-					.message = std::string(fields[3]),
-				});
-				continue;
-			}
-			++discarded;
-			report_discarded_record(main_file, line, "a GSECHAN record is missing its system or message name", discarded);
 			continue;
 		}
 	}

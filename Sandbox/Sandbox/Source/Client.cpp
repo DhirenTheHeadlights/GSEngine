@@ -11,7 +11,7 @@ import :piston;
 import :tumbler;
 import :sandbox_scene;
 
-auto sandbox::client_system::init(gse::context& ctx) -> gse::async::task<> {
+auto sandbox::client_system::init(gse::context& ctx, const gse::channel_write<gse::network::clear_providers_request, gse::network::add_provider_request, gse::network::refresh_servers_request> net_out) -> gse::async::task<> {
 	gse::system_manifest<
 		^^sandbox::orbit_camera::data, ^^sandbox::orbit_camera::attach, ^^sandbox::orbit_camera::update,
 		^^sandbox::player::data, ^^sandbox::player::run,
@@ -21,7 +21,7 @@ auto sandbox::client_system::init(gse::context& ctx) -> gse::async::task<> {
 	>{}.register_with(ctx);
 	gse::register_systems<^^gse::free_camera::system>(ctx);
 
-	ctx.channels.push<gse::network::clear_providers_request>({});
+	net_out.push<gse::network::clear_providers_request>({});
 	std::vector seed{
 		gse::network::discovery_result{
 			.addr =
@@ -48,10 +48,10 @@ auto sandbox::client_system::init(gse::context& ctx) -> gse::async::task<> {
 			.build = 1,
 		},
 	};
-	ctx.channels.push<gse::network::add_provider_request>({
+	net_out.push<gse::network::add_provider_request>({
 		.provider = std::shared_ptr<gse::network::wan_directory_provider>(new gse::network::wan_directory_provider(std::move(seed))),
 	});
-	ctx.channels.push<gse::network::refresh_servers_request>({
+	net_out.push<gse::network::refresh_servers_request>({
 		.timeout = gse::milliseconds(200),
 	});
 

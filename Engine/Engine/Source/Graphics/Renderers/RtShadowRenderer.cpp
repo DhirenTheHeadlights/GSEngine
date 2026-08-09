@@ -68,8 +68,8 @@ auto gse::renderer::rt_shadow::init(context& ctx, const shared_view<gpu::context
 	return {};
 }
 
-auto gse::renderer::rt_shadow::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, shared_view<geometry_collector::data> gc_r) -> async::task<> {
-	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
+auto gse::renderer::rt_shadow::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<geometry_collector::render_data> geometry_in, shared_view<geometry_collector::data> gc_r) -> async::task<> {
+	const auto& render_items = geometry_in.of<geometry_collector::render_data>();
 	if (render_items.empty()) {
 		co_return;
 	}
@@ -259,7 +259,7 @@ auto gse::renderer::rt_shadow::frame(context& ctx, shared_view<gpu::context::dat
 	};
 
 	if constexpr (use_gpu_tlas_transform_update) {
-		auto rec = co_await gpu::pass<^^gse::renderer::rt_shadow::frame>(ctx).pipeline(d.tlas_update_pipeline).after<^^geometry_collector::frame, ^^physics_transform::frame>();
+		auto rec = co_await gpu::pass<^^gse::renderer::rt_shadow::frame>(pass_out).pipeline(d.tlas_update_pipeline).after<^^geometry_collector::frame, ^^physics_transform::frame>();
 		build_new_blas(rec);
 		if (instance_count != 0) {
 			const std::uint32_t workgroups = (instance_count + 63) / 64;
@@ -280,7 +280,7 @@ auto gse::renderer::rt_shadow::frame(context& ctx, shared_view<gpu::context::dat
 		gpu::build_tlas_in_place(*gpu_s.device, d.tlas_per_frame[frame_index], instance_count, rec);
 	}
 	else {
-		auto rec = co_await gpu::pass<^^gse::renderer::rt_shadow::frame>(ctx).after<^^geometry_collector::frame>();
+		auto rec = co_await gpu::pass<^^gse::renderer::rt_shadow::frame>(pass_out).after<^^geometry_collector::frame>();
 		build_new_blas(rec);
 		gpu::build_tlas_in_place(*gpu_s.device, d.tlas_per_frame[frame_index], instance_count, rec);
 	}

@@ -17,6 +17,7 @@ export namespace sandbox::client_ui {
 	auto run(
 		gse::context& ctx,
 		data& d,
+		gse::channel_write<gse::renderer::sprite_command, gse::gui::menu_content, sandbox::spawn_stress_request, sandbox::spawn_joints_request> ui_out,
 		gse::shared_view<gse::gui::data> gui_d,
 		gse::shared_view<gse::window::data> window_d,
 		gse::shared_view<crosshair::data> crosshair_d,
@@ -27,6 +28,7 @@ export namespace sandbox::client_ui {
 namespace sandbox::client_ui {
 	auto push_crosshair(
 		gse::context& ctx,
+		gse::channel_write<gse::renderer::sprite_command> ui_out,
 		gse::shared_view<gse::gui::data> gui_d,
 		gse::shared_view<gse::window::data> window_d,
 		gse::shared_view<crosshair::data> crosshair_d
@@ -34,13 +36,14 @@ namespace sandbox::client_ui {
 
 	auto push_recording_indicator(
 		gse::context& ctx,
+		gse::channel_write<gse::renderer::sprite_command> ui_out,
 		gse::shared_view<gse::gui::data> gui_d,
 		gse::shared_view<gse::window::data> window_d,
 		std::optional<gse::shared_view<gse::renderer::capture::data>> capture_d
 	) -> void;
 }
 
-auto sandbox::client_ui::push_crosshair(gse::context& ctx, const gse::shared_view<gse::gui::data> gui_d, const gse::shared_view<gse::window::data> window_d, const gse::shared_view<crosshair::data> crosshair_d) -> void {
+auto sandbox::client_ui::push_crosshair(gse::context& ctx, const gse::channel_write<gse::renderer::sprite_command> ui_out, const gse::shared_view<gse::gui::data> gui_d, const gse::shared_view<gse::window::data> window_d, const gse::shared_view<crosshair::data> crosshair_d) -> void {
 	if (!crosshair_d.show) {
 		return;
 	}
@@ -60,14 +63,14 @@ auto sandbox::client_ui::push_crosshair(gse::context& ctx, const gse::shared_vie
 
 	const auto push_arm = [&](const gse::rect_t<gse::vec2f>& r) {
 		if (outline > 0.f) {
-			ctx.channels.push<gse::renderer::sprite_command>({
+			ui_out.push<gse::renderer::sprite_command>({
 				.rect = r.inset({ -outline, -outline }),
 				.color = outline_color,
 				.texture = gui_d.blank_texture,
 				.layer = gse::render_layer::overlay,
 			});
 		}
-		ctx.channels.push<gse::renderer::sprite_command>({
+		ui_out.push<gse::renderer::sprite_command>({
 			.rect = r,
 			.color = color,
 			.texture = gui_d.blank_texture,
@@ -103,7 +106,7 @@ auto sandbox::client_ui::push_crosshair(gse::context& ctx, const gse::shared_vie
 	}
 }
 
-auto sandbox::client_ui::push_recording_indicator(gse::context& ctx, const gse::shared_view<gse::gui::data> gui_d, const gse::shared_view<gse::window::data> window_d, const std::optional<gse::shared_view<gse::renderer::capture::data>> capture_d) -> void {
+auto sandbox::client_ui::push_recording_indicator(gse::context& ctx, const gse::channel_write<gse::renderer::sprite_command> ui_out, const gse::shared_view<gse::gui::data> gui_d, const gse::shared_view<gse::window::data> window_d, const std::optional<gse::shared_view<gse::renderer::capture::data>> capture_d) -> void {
 	if (!capture_d || !(*capture_d).recording || !(*capture_d).recording->active.load()) {
 		return;
 	}
@@ -124,7 +127,7 @@ auto sandbox::client_ui::push_recording_indicator(gse::context& ctx, const gse::
 		{ dot_size, dot_size }
 	);
 
-	ctx.channels.push<gse::renderer::sprite_command>({
+	ui_out.push<gse::renderer::sprite_command>({
 		.rect = rect.inset({ -2.f, -2.f }),
 		.color = { 1.f, 1.f, 1.f, 0.9f },
 		.texture = gui_d.blank_texture,
@@ -132,7 +135,7 @@ auto sandbox::client_ui::push_recording_indicator(gse::context& ctx, const gse::
 		.corner_radius = (dot_size + 4.f) * 0.5f,
 	});
 
-	ctx.channels.push<gse::renderer::sprite_command>({
+	ui_out.push<gse::renderer::sprite_command>({
 		.rect = rect,
 		.color = { 0.95f, 0.15f, 0.15f, pulse },
 		.texture = gui_d.blank_texture,
@@ -141,15 +144,15 @@ auto sandbox::client_ui::push_recording_indicator(gse::context& ctx, const gse::
 	});
 }
 
-auto sandbox::client_ui::run(gse::context& ctx, data& d, const gse::shared_view<gse::gui::data> gui_d, const gse::shared_view<gse::window::data> window_d, const gse::shared_view<crosshair::data> crosshair_d, const std::optional<gse::shared_view<gse::renderer::capture::data>> capture_d) -> gse::async::task<> {
+auto sandbox::client_ui::run(gse::context& ctx, data& d, const gse::channel_write<gse::renderer::sprite_command, gse::gui::menu_content, sandbox::spawn_stress_request, sandbox::spawn_joints_request> ui_out, const gse::shared_view<gse::gui::data> gui_d, const gse::shared_view<gse::window::data> window_d, const gse::shared_view<crosshair::data> crosshair_d, const std::optional<gse::shared_view<gse::renderer::capture::data>> capture_d) -> gse::async::task<> {
 	if (gui_d.menu_stack.empty()) {
-		push_crosshair(ctx, gui_d, window_d, crosshair_d);
+		push_crosshair(ctx, ui_out, gui_d, window_d, crosshair_d);
 	}
 
-	push_recording_indicator(ctx, gui_d, window_d, capture_d);
+	push_recording_indicator(ctx, ui_out, gui_d, window_d, capture_d);
 
 	if (gui_d.show_dev_overlays) {
-		ctx.channels.push<gse::gui::menu_content>({
+		ui_out.push<gse::gui::menu_content>({
 			.menu = "Test",
 			.build = [&](gse::gui::builder& ui) {
 				ui.draw<gse::gui::value<float>>({
@@ -177,25 +180,25 @@ auto sandbox::client_ui::run(gse::context& ctx, data& d, const gse::shared_view<
 			},
 		});
 
-		ctx.channels.push<gse::gui::menu_content>({
+		ui_out.push<gse::gui::menu_content>({
 			.menu = "Profiler",
 			.build = [](gse::gui::builder& ui) {
 				ui.draw<gse::gui::profiler>();
 			},
 		});
 
-		ctx.channels.push<gse::gui::menu_content>({
+		ui_out.push<gse::gui::menu_content>({
 			.menu = "Dev Spawn",
 			.build = [&](gse::gui::builder& ui) {
 				if (ui.draw<gse::gui::button>({
 						.text = "Physics Stress Test (F5)"
 					})) {
-					ctx.channels.push<sandbox::spawn_stress_request>({});
+					ui_out.push<sandbox::spawn_stress_request>({});
 				}
 				if (ui.draw<gse::gui::button>({
 						.text = "Joint Test (F6)"
 					})) {
-					ctx.channels.push<sandbox::spawn_joints_request>({});
+					ui_out.push<sandbox::spawn_joints_request>({});
 				}
 			},
 		});

@@ -15,8 +15,8 @@ import gse.math;
 import gse.assets;
 import gse.physics;
 
-auto gse::animation::ragdoll(context& ctx, data& d, write<skeleton_instance_component> skeletons, write<clip_player_component> players, write<physics::motion_component> motions, write<physics::collision_component> collisions, write<physics::transform_component> transforms) -> async::task<> {
-	for (const auto& [character] : ctx.read_channel<ragdoll_request>()) {
+auto gse::animation::ragdoll(context& ctx, data& d, const channel_read<ragdoll_request> ragdoll_in, write<skeleton_instance_component> skeletons, write<clip_player_component> players, write<physics::motion_component> motions, write<physics::collision_component> collisions, write<physics::transform_component> transforms) -> async::task<> {
+	for (const auto& [character] : ragdoll_in.of<ragdoll_request>()) {
 		auto* skeleton = skeletons.find(character);
 		if (!skeleton || !skeleton->model.valid()) {
 			continue;

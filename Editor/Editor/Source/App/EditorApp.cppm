@@ -38,6 +38,8 @@ export namespace gse::ide {
 		auto run(
 			context& ctx,
 			data& d,
+			channel_read<window_open_file_result, toggle_project_switcher_request, toggle_settings_request> requests_in,
+			channel_write<gui::push_screen_request, settings::change_request, gui::popout_toggle, set_cursor_shape_request, jump_to_request, window_launcher_mode_request, window_open_file_request> ui_out,
 			shared_view<search_system::data> search_d,
 			shared_view<input::data> input_d,
 			const save::registry& save_reg
@@ -73,6 +75,8 @@ export namespace gse::ide {
 		auto run(
 			context& ctx,
 			data& d,
+			channel_read<git::status_updated, jump_to_request, gui::context_menu_result> requests_in,
+			channel_write<gui::menu_content, cursor_capture_request, profile_capture_request, profile_report_request, build_runner::attached_input, build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, analysis::diagnostics_request, git_system::refresh_request, set_cursor_shape_request, search::index_merge_request> ui_out,
 			const scheduler& sched,
 			shared_view<config_system::data> config_d,
 			shared_view<search_system::data> search_d,
@@ -107,7 +111,7 @@ namespace gse::ide {
 
 	auto forward_game_input(
 		const input::state& input,
-		channel_writer channels,
+		channel_write<build_runner::attached_input> channels,
 		vec2f game_cursor,
 		bool release_held
 	) -> void;
@@ -137,7 +141,7 @@ auto gse::ide::save_editor_layout(const editor_app::data& d) -> void {
 	replace_layout_sections(editor_layout_owner(), out);
 }
 
-auto gse::ide::forward_game_input(const input::state& input, channel_writer channels, const vec2f game_cursor, const bool release_held) -> void {
+auto gse::ide::forward_game_input(const input::state& input, const channel_write<build_runner::attached_input> channels, const vec2f game_cursor, const bool release_held) -> void {
 	const auto game_x = static_cast<double>(game_cursor.x());
 	const auto game_y = static_cast<double>(game_cursor.y());
 
@@ -186,7 +190,7 @@ auto gse::ide::forward_game_input(const input::state& input, channel_writer chan
 	}
 }
 
-auto gse::ide::editor_app::run(context& ctx, data& d, const shared_view<search_system::data> search_d, const shared_view<input::data> input_d, const save::registry& save_reg) -> async::task<> {
+auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_open_file_result, toggle_project_switcher_request, toggle_settings_request> requests_in, const channel_write<gui::push_screen_request, settings::change_request, gui::popout_toggle, set_cursor_shape_request, jump_to_request, window_launcher_mode_request, window_open_file_request> ui_out, const shared_view<search_system::data> search_d, const shared_view<input::data> input_d, const save::registry& save_reg) -> async::task<> {
 	if (!d.initialized) {
 		load_editor_layout(d);
 		d.save_clock.reset();
@@ -194,22 +198,22 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const shared_view<search_s
 	}
 
 	if (!d.screen_pushed && search_d.index) {
-		ctx.channels.push<gui::push_screen_request>({
-			.factory = [channels = ctx.channels, index = search_d.index, input_d] {
+		ui_out.push<gui::push_screen_request>({
+			.factory = [channels = channel_write<jump_to_request>(ui_out), index = search_d.index, input_d] {
 				return std::make_unique<editor_screen>(channels, index, input_d);
 			},
 		});
 		const project::manifest& active = project::current();
 		if (!active.valid || !active.requested || !active.engine_problem.empty()) {
-			ctx.channels.push<gui::push_screen_request>({
-				.factory = [channels = ctx.channels, input_d] {
+			ui_out.push<gui::push_screen_request>({
+				.factory = [channels = channel_write<window_launcher_mode_request, window_open_file_request>(ui_out), input_d] {
 					return std::make_unique<project_screen>(channels, input_d, true);
 				},
 			});
 		}
 		d.screen_pushed = true;
 	}
-	for (const auto& res : ctx.read_channel<window_open_file_result>()) {
+	for (const auto& res : requests_in.of<window_open_file_result>()) {
 		if (res.path.empty() || res.path.extension() != ".gseproj") {
 			continue;
 		}
@@ -217,16 +221,16 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const shared_view<search_s
 		gse::shutdown();
 	}
 
-	for ([[maybe_unused]] const auto& req : ctx.read_channel<toggle_project_switcher_request>()) {
-		ctx.channels.push<gui::push_screen_request>({
-			.factory = [channels = ctx.channels, input_d] {
+	for ([[maybe_unused]] const auto& req : requests_in.of<toggle_project_switcher_request>()) {
+		ui_out.push<gui::push_screen_request>({
+			.factory = [channels = channel_write<window_launcher_mode_request, window_open_file_request>(ui_out), input_d] {
 				return std::make_unique<project_screen>(channels, input_d);
 			},
 		});
 	}
-	for ([[maybe_unused]] const auto& req : ctx.read_channel<toggle_settings_request>()) {
-		ctx.channels.push<gui::push_screen_request>({
-			.factory = [save = &save_reg, channels = ctx.channels] {
+	for ([[maybe_unused]] const auto& req : requests_in.of<toggle_settings_request>()) {
+		ui_out.push<gui::push_screen_request>({
+			.factory = [save = &save_reg, channels = settings::panel_writer(ui_out)] {
 				return std::make_unique<gui::settings_screen>(*save, channels, gui::settings_screen_config{ .opaque = true });
 			},
 		});
@@ -237,8 +241,10 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const shared_view<search_s
 	const bool pressed = input.mouse_button_pressed(mouse_button::button_1);
 	const bool held = input.mouse_button_held(mouse_button::button_1);
 
-	ctx.channels.push<settings::annotated_change_request<gui::data>>({
-		.apply = [&d, mouse, pressed, held](gui::data& s) {
+	ui_out.push<settings::change_request>({
+		.state_type = id_of<gui::data>(),
+		.apply = [&d, mouse, pressed, held](void* p) {
+			gui::data& s = *static_cast<gui::data*>(p);
 			gui::menu* explorer = editor_menu(s, explorer_panel_name);
 			gui::menu* code = editor_menu(s, code_panel_name);
 			gui::menu* term = editor_menu(s, terminal::panel_name);
@@ -367,7 +373,7 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const shared_view<search_s
 	});
 
 	if (d.frame_cursor != cursor_shape::arrow) {
-		ctx.channels.push<set_cursor_shape_request>({ .shape = d.frame_cursor });
+		ui_out.push<set_cursor_shape_request>({ .shape = d.frame_cursor });
 	}
 
 	if (d.save_clock.elapsed() > editor_layout_save_interval) {
@@ -378,7 +384,7 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const shared_view<search_s
 	return {};
 }
 
-auto gse::ide::workspace_system::run(context& ctx, data& d, const scheduler& sched, const shared_view<config_system::data> config_d, const shared_view<search_system::data> search_d, const shared_view<input::data> input_d, const shared_view<viewport::data> viewport_d, const shared_view<build_runner::data> build_d, const shared_view<window::data> window_d, const shared_view<profile_system::data> profile_d) -> async::task<> {
+auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<git::status_updated, jump_to_request, gui::context_menu_result> requests_in, const channel_write<gui::menu_content, cursor_capture_request, profile_capture_request, profile_report_request, build_runner::attached_input, build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, analysis::diagnostics_request, git_system::refresh_request, set_cursor_shape_request, search::index_merge_request> ui_out, const scheduler& sched, const shared_view<config_system::data> config_d, const shared_view<search_system::data> search_d, const shared_view<input::data> input_d, const shared_view<viewport::data> viewport_d, const shared_view<build_runner::data> build_d, const shared_view<window::data> window_d, const shared_view<profile_system::data> profile_d) -> async::task<> {
 	if (!d.initialized) {
 		d.ws.fs_root.is_dir = true;
 		d.ws.fs_root.children.clear();
@@ -445,17 +451,17 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const scheduler& sch
 		}
 		const bool release_chord = input.key_held(key::left_shift) || input.key_held(key::right_shift);
 		const bool releasing = release_chord && input.key_pressed(key::escape);
-		forward_game_input(input, ctx.channels, d.ws.game_cursor, releasing);
+		forward_game_input(input, ui_out, d.ws.game_cursor, releasing);
 		if (releasing) {
 			d.ws.game_captured = false;
 		}
 	}
 	else if (d.game_input_forwarding) {
-		forward_game_input(input, ctx.channels, d.ws.game_cursor, true);
+		forward_game_input(input, ui_out, d.ws.game_cursor, true);
 	}
 	d.game_input_forwarding = d.ws.game_captured;
 	workspace::update_explorer(d.ws);
-	for (const git::status_updated& update : ctx.read_channel<git::status_updated>()) {
+	for (const git::status_updated& update : requests_in.of<git::status_updated>()) {
 		d.git_status = update.status;
 		d.git_rootless = update.rootless;
 	}
@@ -468,10 +474,10 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const scheduler& sch
 		workspace::go_forward(d.ws);
 	}
 
-	ctx.channels.push<gui::menu_content>({
+	ui_out.push<gui::menu_content>({
 		.menu = std::string(explorer_panel_name),
 		.layer = render_layer::content,
-		.build = [ws, search = &d.search, index = search_d.index, channels = ctx.channels, input_snapshot, git_status = d.git_status, git_rootless = &d.git_rootless](gui::builder& b) {
+		.build = [ws, search = &d.search, index = search_d.index, channels = ui_out, input_snapshot, git_status = d.git_status, git_rootless = &d.git_rootless](gui::builder& b) {
 			draw_explorer_panel(b, input_snapshot, *ws, *search, index, channels, git_status.get(), *git_rootless);
 		},
 	});
@@ -482,14 +488,14 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const scheduler& sch
 
 	if (d.cursor_capture_sent != d.ws.game_captured) {
 		d.cursor_capture_sent = d.ws.game_captured;
-		ctx.channels.push<cursor_capture_request>({ .capture = d.ws.game_captured });
+		ui_out.push<cursor_capture_request>({ .capture = d.ws.game_captured });
 	}
 
 	const bool profile_enabled = d.ws.profile.enabled;
 	if (d.profile_capture_sent != profile_enabled || d.profile_source_sent != d.ws.profile.source) {
 		d.profile_capture_sent = profile_enabled;
 		d.profile_source_sent = d.ws.profile.source;
-		ctx.channels.push<profile_capture_request>({
+		ui_out.push<profile_capture_request>({
 			.enabled = profile_enabled,
 			.source = d.ws.profile.source,
 		});
@@ -497,16 +503,16 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const scheduler& sch
 
 	if (d.game_was_running && !game_running && d.ws.profile.source == profile_source::game) {
 		const std::filesystem::path game_exe = config::game_executable();
-		ctx.channels.push<profile_report_request>({
+		ui_out.push<profile_report_request>({
 			.path = gse::config::profile_dir() / std::format("{}.gsprof", game_exe.stem().generic_display_string()),
 		});
 	}
 	d.game_was_running = game_running;
 
-	ctx.channels.push<gui::menu_content>({
+	ui_out.push<gui::menu_content>({
 		.menu = std::string(code_panel_name),
 		.layer = render_layer::content,
-		.build = [ws, graph = &d.graph, index = search_d.index, config, channels = ctx.channels, input_snapshot, viewport_slot, game_running, building, game_extent, profile_d](gui::builder& b) {
+		.build = [ws, graph = &d.graph, index = search_d.index, config, channels = ui_out, input_snapshot, viewport_slot, game_running, building, game_extent, profile_d](gui::builder& b) {
 			draw_code_panel(b, input_snapshot, *ws, *graph, channels, {
 				.config = config,
 				.profile = profile_d,
@@ -519,11 +525,11 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const scheduler& sch
 		},
 	});
 
-	for (const auto& req : ctx.read_channel<jump_to_request>()) {
+	for (const auto& req : requests_in.of<jump_to_request>()) {
 		workspace::jump_to(d.ws, req.path, req.line, req.column);
 	}
 
-	for (const auto& res : ctx.read_channel<gui::context_menu_result>()) {
+	for (const auto& res : requests_in.of<gui::context_menu_result>()) {
 		if (res.tag == explorer_context_tag()) {
 			const std::uint64_t* target = std::get_if<std::uint64_t>(&res.target);
 			fs_node* node = target ? workspace::find_node(d.ws.fs_root, *target) : nullptr;

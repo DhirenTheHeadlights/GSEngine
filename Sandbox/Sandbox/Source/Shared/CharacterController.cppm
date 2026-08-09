@@ -35,6 +35,7 @@ export namespace sandbox::character_controller {
 	auto run(
 		gse::context& ctx,
 		data& d,
+		gse::channel_write<gse::actions::add_action_request, gse::actions::bind_axis2_request> actions_out,
 		gse::shared_view<gse::actions::data> as,
 		gse::read<component> characters,
 		gse::read<orbit_camera::component> orbits,
@@ -45,7 +46,7 @@ export namespace sandbox::character_controller {
 	) -> gse::async::task<>;
 }
 
-auto sandbox::character_controller::run(gse::context& ctx, data& d, const gse::shared_view<gse::actions::data> as, gse::read<component> characters, gse::read<orbit_camera::component> orbits, gse::read<gse::physics::motion_component> motions, gse::write<gse::clip_player_component> players, gse::write<gse::physics::motor_component> motors, gse::write<gse::physics::transform_component> transforms) -> gse::async::task<> {
+auto sandbox::character_controller::run(gse::context& ctx, data& d, const gse::channel_write<gse::actions::add_action_request, gse::actions::bind_axis2_request> actions_out, const gse::shared_view<gse::actions::data> as, gse::read<component> characters, gse::read<orbit_camera::component> orbits, gse::read<gse::physics::motion_component> motions, gse::write<gse::clip_player_component> players, gse::write<gse::physics::motor_component> motors, gse::write<gse::physics::transform_component> transforms) -> gse::async::task<> {
 	const auto& cs = gse::actions::current_state(as);
 	const auto dt = gse::system_clock::dt();
 
@@ -57,13 +58,13 @@ auto sandbox::character_controller::run(gse::context& ctx, data& d, const gse::s
 		auto [entry, inserted] = d.bindings_by_owner.try_emplace(owner);
 		auto& b = entry->second;
 		if (inserted) {
-			b.forward = gse::actions::add<"Character_Move_Forward">(ctx.channels, gse::key::w);
-			b.left = gse::actions::add<"Character_Move_Left">(ctx.channels, gse::key::a);
-			b.back = gse::actions::add<"Character_Move_Backward">(ctx.channels, gse::key::s);
-			b.right = gse::actions::add<"Character_Move_Right">(ctx.channels, gse::key::d);
-			b.walk = gse::actions::add<"Character_Walk">(ctx.channels, gse::key::left_shift);
+			b.forward = gse::actions::add<"Character_Move_Forward">(actions_out, gse::key::w);
+			b.left = gse::actions::add<"Character_Move_Left">(actions_out, gse::key::a);
+			b.back = gse::actions::add<"Character_Move_Backward">(actions_out, gse::key::s);
+			b.right = gse::actions::add<"Character_Move_Right">(actions_out, gse::key::d);
+			b.walk = gse::actions::add<"Character_Walk">(actions_out, gse::key::left_shift);
 			b.move_axis_id = gse::actions::bind_axis2(
-				ctx.channels,
+				actions_out,
 				gse::actions::pending_axis2_info{
 					.left = b.left,
 					.right = b.right,

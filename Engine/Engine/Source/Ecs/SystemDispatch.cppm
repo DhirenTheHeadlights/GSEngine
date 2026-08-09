@@ -46,6 +46,12 @@ export namespace gse {
 		else if constexpr (is_entities_v<U>) {
 			return false;
 		}
+		else if constexpr (is_channel_read_v<U>) {
+			return false;
+		}
+		else if constexpr (is_channel_write_v<U>) {
+			return false;
+		}
 		else {
 			return gse::meta::has_system_state<U>();
 		}
@@ -96,6 +102,12 @@ export namespace gse {
 	template <typename Arg>
 	auto append_arg_shared_view(
 		std::vector<id>& shared_out
+	) -> void;
+
+	template <typename Arg>
+	auto append_arg_channel_ids(
+		std::vector<id>& reads_out,
+		std::vector<id>& writes_out
 	) -> void;
 
 	template <typename Arg, typename S>
@@ -165,6 +177,12 @@ auto gse::resolve_run_arg(context& ctx, state_of_t<S>& state) -> decltype(auto) 
 	}
 	else if constexpr (is_entities_v<U>) {
 		return ctx.make_entities();
+	}
+	else if constexpr (is_channel_read_v<U>) {
+		return U(ctx.channels_store);
+	}
+	else if constexpr (is_channel_write_v<U>) {
+		return U(ctx.channels);
 	}
 	else if constexpr (is_shared_view_v<U>) {
 		using Target = shared_view_target_t<U>;
@@ -256,6 +274,17 @@ auto gse::append_arg_shared_view(std::vector<id>& shared_out) -> void {
 	}
 	else if constexpr (is_optional_shared_view_v<U>) {
 		shared_out.push_back(id_of<optional_shared_view_target_t<U>>());
+	}
+}
+
+template <typename Arg>
+auto gse::append_arg_channel_ids(std::vector<id>& reads_out, std::vector<id>& writes_out) -> void {
+	using U = std::remove_cvref_t<Arg>;
+	if constexpr (is_channel_read_v<U>) {
+		channel_pack_ids<U>::append(reads_out);
+	}
+	else if constexpr (is_channel_write_v<U>) {
+		channel_pack_ids<U>::append(writes_out);
 	}
 }
 

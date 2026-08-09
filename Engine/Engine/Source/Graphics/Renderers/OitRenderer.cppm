@@ -13,6 +13,7 @@ import gse.concurrency;
 import gse.ecs;
 import gse.gpu;
 import gse.meta;
+import gse.gpu_record;
 
 export namespace gse::renderer::oit {
 	struct accumulate_pass {};
@@ -42,6 +43,8 @@ export namespace gse::renderer::oit {
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		data& d,
+		channel_write<gpu::render_pass_request> pass_out,
+		channel_read<geometry_collector::render_data> geometry_in,
 		shared_view<camera::data> cam_state,
 		shared_view<geometry_collector::data> gc_r,
 		shared_view<atmosphere::data> atm_state

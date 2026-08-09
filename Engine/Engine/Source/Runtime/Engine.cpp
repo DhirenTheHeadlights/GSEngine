@@ -168,19 +168,6 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 
 		assets.verify_built_ins();
 
-		log::println(log::category::runtime, "boot: compile_boot_critical begin");
-		if (const auto result = assets.compile_boot_critical(); result.success_count > 0 || result.failure_count > 0) {
-			log::println(
-				result.failure_count > 0 ? log::level::warning : log::level::info,
-				log::category::assets,
-				"Compiled {} boot assets ({} skipped, {} failed)",
-				result.success_count,
-				result.skipped_count,
-				result.failure_count
-			);
-		}
-		log::println(log::category::runtime, "boot: compile_boot_critical end");
-
 		log::println(log::category::runtime, "boot: scheduler.initialize begin");
 		m_scheduler.initialize();
 		m_scheduler.enter_running();

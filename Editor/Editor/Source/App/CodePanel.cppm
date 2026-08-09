@@ -36,7 +36,7 @@ namespace gse::ide {
 		const gse::input::state& input,
 		workspace::data& ws,
 		gse::ide::graph_data& graph,
-		gse::channel_writer channels,
+		gse::channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, gse::set_cursor_shape_request, search::index_merge_request> channels,
 		const code_panel_inputs& inputs
 	) -> void;
 
@@ -131,7 +131,7 @@ namespace gse::ide {
 	auto format_and_save(
 		workspace::data& ws,
 		const format_save_request& request,
-		gse::channel_writer channels
+		gse::channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, gse::set_cursor_shape_request, search::index_merge_request> channels
 	) -> document_save_result;
 
 	struct document_prompt_button_params {
@@ -151,17 +151,19 @@ namespace gse::ide {
 		gse::gui::builder& ui,
 		workspace::data& ws,
 		const rectf& body,
-		gse::channel_writer channels
+		gse::channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, gse::set_cursor_shape_request, search::index_merge_request> channels
 	) -> void;
 
 	auto apply_diagnostics(
 		workspace::data& ws,
 		const std::shared_ptr<analysis::diagnostics_check>& check,
-		gse::channel_writer channels
+		gse::channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, gse::set_cursor_shape_request, search::index_merge_request> channels
 	) -> void;
 
 	auto update_diagnostics(
 		gse::context& ctx,
+		gse::channel_read<analysis::diagnostics_completed, build_runner::build_finished> diag_in,
+		gse::channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, gse::set_cursor_shape_request, search::index_merge_request> code_out,
 		workspace::data& ws,
 		gse::shared_view<config_system::data> config,
 		bool building
@@ -1169,7 +1171,7 @@ auto gse::ide::mark_document_dirty(document& doc) -> void {
 	}
 }
 
-auto gse::ide::format_and_save(workspace::data& ws, const format_save_request& request, gse::channel_writer channels) -> document_save_result {
+auto gse::ide::format_and_save(workspace::data& ws, const format_save_request& request, gse::channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, gse::set_cursor_shape_request, search::index_merge_request> channels) -> document_save_result {
 	const auto it = ws.documents.find(request.document_id);
 	if (it == ws.documents.end()) {
 		return document_save_result::failed;
@@ -1188,7 +1190,7 @@ auto gse::ide::format_and_save(workspace::data& ws, const format_save_request& r
 	return document_save_result::unchanged;
 }
 
-auto gse::ide::apply_diagnostics(workspace::data& ws, const std::shared_ptr<analysis::diagnostics_check>& check, gse::channel_writer channels) -> void {
+auto gse::ide::apply_diagnostics(workspace::data& ws, const std::shared_ptr<analysis::diagnostics_check>& check, gse::channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, gse::set_cursor_shape_request, search::index_merge_request> channels) -> void {
 	const auto pending = ws.documents.find(check->document_id);
 	if (pending == ws.documents.end()) {
 		return;
@@ -1341,18 +1343,18 @@ auto gse::ide::audit_semantic_coverage(const document& doc, const search::index_
 	);
 }
 
-auto gse::ide::update_diagnostics(gse::context& ctx, workspace::data& ws, const gse::shared_view<config_system::data> config, const bool building) -> void {
-	for (const analysis::diagnostics_completed& completed : ctx.read_channel<analysis::diagnostics_completed>()) {
+auto gse::ide::update_diagnostics(gse::context& ctx, const gse::channel_read<analysis::diagnostics_completed, build_runner::build_finished> diag_in, const gse::channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, gse::set_cursor_shape_request, search::index_merge_request> code_out, workspace::data& ws, const gse::shared_view<config_system::data> config, const bool building) -> void {
+	for (const analysis::diagnostics_completed& completed : diag_in.of<analysis::diagnostics_completed>()) {
 		if (!completed.check) {
 			continue;
 		}
-		apply_diagnostics(ws, completed.check, ctx.channels);
+		apply_diagnostics(ws, completed.check, code_out);
 		if (ws.diagnostics_pending == completed.check->document_id) {
 			ws.diagnostics_pending.reset();
 		}
 	}
 
-	if (!ctx.read_channel<build_runner::build_finished>().empty()) {
+	if (!diag_in.of<build_runner::build_finished>().empty()) {
 		for (document& doc : std::views::values(ws.documents)) {
 			if (doc.analysis_status != analysis::diagnostics_status::success) {
 				doc.diag_dirty = true;
@@ -1420,14 +1422,14 @@ auto gse::ide::update_diagnostics(gse::context& ctx, workspace::data& ws, const 
 			},
 			.format_enabled = config.format_on_save,
 			.force_save = false,
-		}, ctx.channels);
+		}, code_out);
 		if (saved == document_save_result::failed || saved == document_save_result::conflict) {
 			doc.diag_dirty = false;
 			return;
 		}
 	}
 
-	ctx.channels.push<analysis::diagnostics_request>({
+	code_out.push<analysis::diagnostics_request>({
 		.document_id = candidate->first,
 		.revision = doc.revision,
 		.compile_commands = gse::ide::config::compile_commands_for(doc.path),
@@ -1581,7 +1583,7 @@ auto gse::ide::document_prompt_button(gse::gui::builder& ui, const document_prom
 	return btn.activated;
 }
 
-auto gse::ide::draw_document_prompt(gse::gui::builder& ui, workspace::data& ws, const rectf& body, gse::channel_writer channels) -> void {
+auto gse::ide::draw_document_prompt(gse::gui::builder& ui, workspace::data& ws, const rectf& body, gse::channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, gse::set_cursor_shape_request, search::index_merge_request> channels) -> void {
 	if (!ws.pending_document_prompt) {
 		return;
 	}
@@ -1726,7 +1728,7 @@ auto gse::ide::draw_game_placeholder(const gse::gui::draw_context& ctx, const re
 	});
 }
 
-auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& input, workspace::data& ws, gse::ide::graph_data& graph, gse::channel_writer channels, const code_panel_inputs& inputs) -> void {
+auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& input, workspace::data& ws, gse::ide::graph_data& graph, gse::channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, gse::set_cursor_shape_request, search::index_merge_request> channels, const code_panel_inputs& inputs) -> void {
 	const auto& ctx = ui.ctx;
 	if (ctx.clip_stack.empty()) {
 		return;

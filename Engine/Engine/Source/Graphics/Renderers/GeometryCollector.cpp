@@ -58,7 +58,7 @@ namespace gse::renderer::geometry_collector {
 	) -> void;
 
 	auto read_body_index_map(
-		context& ctx
+		channel_read<physics::gpu_body_index_map> body_map_in
 	) -> std::unordered_map<id, std::uint32_t>;
 
 	auto collect_static(
@@ -98,6 +98,8 @@ namespace gse::renderer::geometry_collector {
 	auto tick(
 		context& ctx,
 		data& d,
+		channel_read<physics::gpu_body_index_map, physics::interpolation_state> physics_in,
+		channel_write<render_data> geometry_out,
 		shared_view<camera::data> cam_state,
 		shared_view<skin::data> skin_s,
 		write<render_component>& render,
@@ -161,9 +163,9 @@ auto gse::renderer::geometry_collector::build_batches(render_data& data, std::ui
 	}
 }
 
-auto gse::renderer::geometry_collector::read_body_index_map(context& ctx) -> std::unordered_map<id, std::uint32_t> {
+auto gse::renderer::geometry_collector::read_body_index_map(const channel_read<physics::gpu_body_index_map> body_map_in) -> std::unordered_map<id, std::uint32_t> {
 	std::unordered_map<id, std::uint32_t> body_index_map;
-	for (const auto& [entries] : ctx.read_channel<physics::gpu_body_index_map>()) {
+	for (const auto& [entries] : body_map_in.of<physics::gpu_body_index_map>()) {
 		for (const auto& [eid, idx] : entries) {
 			body_index_map[eid] = idx;
 		}
@@ -441,11 +443,11 @@ auto gse::renderer::geometry_collector::initialize(context& ctx, const shared_vi
 	co_return;
 }
 
-auto gse::renderer::geometry_collector::tick(context& ctx, data& d, const shared_view<camera::data> cam_state, const shared_view<skin::data> skin_s, write<render_component>& render, read<physics::transform_component>& transform, read<physics::motion_component>& motion, read<skeleton_instance_component>& skeletons) -> async::task<> {
+auto gse::renderer::geometry_collector::tick(context& ctx, data& d, const channel_read<physics::gpu_body_index_map, physics::interpolation_state> physics_in, const channel_write<render_data> geometry_out, const shared_view<camera::data> cam_state, const shared_view<skin::data> skin_s, write<render_component>& render, read<physics::transform_component>& transform, read<physics::motion_component>& motion, read<skeleton_instance_component>& skeletons) -> async::task<> {
 	const view_matrix view_matrix = cam_state.view_matrix;
 	const projection_matrix proj_matrix = cam_state.projection_matrix;
 
-	auto body_index_map = read_body_index_map(ctx);
+	auto body_index_map = read_body_index_map(physics_in);
 
 	if (render.empty()) {
 		co_return;
@@ -456,7 +458,7 @@ auto gse::renderer::geometry_collector::tick(context& ctx, data& d, const shared
 	data.proj = proj_matrix;
 
 	auto lag = system_clock::fixed_lag<time_t<float, seconds>>();
-	if (const auto& interpolation = ctx.read_channel<physics::interpolation_state>(); !interpolation.empty() && !interpolation[0].advancing) {
+	if (const auto& interpolation = physics_in.of<physics::interpolation_state>(); !interpolation.empty() && !interpolation[0].advancing) {
 		lag = time_t<float, seconds>{};
 	}
 
@@ -500,7 +502,7 @@ auto gse::renderer::geometry_collector::tick(context& ctx, data& d, const shared
 
 	data.physics_mapping_count = static_cast<std::uint32_t>(data.physics_mappings.size());
 
-	ctx.channels.push<render_data>(std::move(data));
+	geometry_out.push<render_data>(std::move(data));
 }
 
 auto gse::renderer::geometry_collector::filter_render_queue(const render_data& data, const std::span<const id> exclude_ids) -> std::vector<render_queue_entry> {
@@ -528,13 +530,13 @@ auto gse::renderer::geometry_collector::init(context& ctx, const shared_view<gpu
 	co_return;
 }
 
-auto gse::renderer::geometry_collector::run(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, data& d, const shared_view<camera::data> cam_state, const shared_view<primitive_resolver::data> resolver_state, const shared_view<skin::data> skin_s, write<render_component> render, read<physics::transform_component> transform, read<physics::motion_component> motion, read<skeleton_instance_component> skeletons) -> async::task<> {
-	co_await tick(ctx, d, cam_state, skin_s, render, transform, motion, skeletons);
+auto gse::renderer::geometry_collector::run(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, data& d, const channel_read<physics::gpu_body_index_map, physics::interpolation_state> physics_in, const channel_write<render_data> geometry_out, const shared_view<camera::data> cam_state, const shared_view<primitive_resolver::data> resolver_state, const shared_view<skin::data> skin_s, write<render_component> render, read<physics::transform_component> transform, read<physics::motion_component> motion, read<skeleton_instance_component> skeletons) -> async::task<> {
+	co_await tick(ctx, d, physics_in, geometry_out, cam_state, skin_s, render, transform, motion, skeletons);
 	co_return;
 }
 
-auto gse::renderer::geometry_collector::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
-	const auto& items = ctx.read_channel<render_data>();
+auto gse::renderer::geometry_collector::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_read<render_data> geometry_in) -> async::task<> {
+	const auto& items = geometry_in.of<render_data>();
 	if (items.empty()) {
 		return {};
 	}

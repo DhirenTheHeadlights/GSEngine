@@ -116,7 +116,7 @@ auto gse::renderer::tonemap::init(context& ctx, const shared_view<gpu::context::
 	return {};
 }
 
-auto gse::renderer::tonemap::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, shared_view<bloom::data> bloom_state) -> async::task<> {
+auto gse::renderer::tonemap::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, shared_view<bloom::data> bloom_state) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -132,7 +132,7 @@ auto gse::renderer::tonemap::frame(const context& ctx, shared_view<gpu::context:
 
 	const auto bloom_slot = bloom_active ? bloom_state.mips_up[0].sampled_slot() : d.hdr_view.slot();
 
-	auto rec = co_await gpu::pass<^^gse::renderer::tonemap::frame>(ctx)
+	auto rec = co_await gpu::pass<^^gse::renderer::tonemap::frame>(pass_out)
 		.pipeline(d.pipeline)
 		.color(gpu::load_color())
 		.after<^^forward::frame, ^^physics_debug::frame, ^^sdf_grid::frame, ^^world_text::frame, ^^bloom::downsample_pass, ^^bloom::upsample_pass, ^^depth_prepass::frame, ^^taa::frame>();

@@ -1163,11 +1163,6 @@ auto gse::ide::search::index_state::semantic_tokens_in(const std::filesystem::pa
 	return out;
 }
 
-auto gse::ide::search::index_state::channel_links() const -> std::vector<analysis::channel_use> {
-	std::shared_lock lock(mutex);
-	return symbols.channels;
-}
-
 auto gse::ide::search::build_files_and_content(index_state& idx, const std::span<const index_root> roots) -> void {
 	id_mapped_collection<file_entry> files;
 	id_mapped_collection<std::shared_ptr<content_entry>> content;
@@ -1726,7 +1721,6 @@ auto gse::ide::search::build_symbols(index_state& idx, std::stop_token stop) -> 
 	local.params.reserve(1024);
 	std::size_t reference_count = 0;
 	std::size_t semantic_token_count = 0;
-	std::unordered_set<std::string> seen_channels;
 	begin_index_phase(idx, index_phase::merging_records, collected.size());
 	for (analysis::tu_symbols& tu : collected) {
 		for (analysis::symbol_token& symbol : tu.set.symbols) {
@@ -1755,12 +1749,6 @@ auto gse::ide::search::build_symbols(index_state& idx, std::stop_token stop) -> 
 			const file_id definition_file = intern_cached(local, raw_file_ids, ref.def_file);
 			local.xrefs[file].push_back(make_xref_entry(definition_file, std::move(ref)));
 			++reference_count;
-		}
-		for (analysis::channel_use& channel : tu.set.channels) {
-			std::string key = (channel.produce ? "1|" : "0|") + channel.system + "|" + channel.message;
-			if (seen_channels.insert(std::move(key)).second) {
-				local.channels.push_back(std::move(channel));
-			}
 		}
 		for (const analysis::param_token& param : tu.set.params) {
 			if (!indexed_cached(idx.roots, param.file, indexed_paths)) {

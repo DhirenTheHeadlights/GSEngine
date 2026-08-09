@@ -333,6 +333,7 @@ export namespace gse::actions {
 	[[= gse::system_run<>{}]] auto run(
 		context& ctx,
 		data& d,
+		channel_read<add_action_request, bind_axis2_request, rebind_request> requests_in,
 		shared_view<input::data> input_s
 	) -> async::task<>;
 
@@ -405,7 +406,7 @@ export namespace gse::actions {
 	) -> actions::description&;
 
 	auto add_by_name(
-		channel_writer& channels,
+		channel_write<add_action_request> channels,
 		std::string_view tag,
 		key default_key,
 		key_modifiers default_modifiers = {}
@@ -413,13 +414,13 @@ export namespace gse::actions {
 
 	template <fixed_string Tag>
 	auto add(
-		channel_writer& channels,
+		channel_write<add_action_request> channels,
 		key default_key,
 		key_modifiers default_modifiers = {}
 	) -> handle;
 
 	auto bind_axis2(
-		channel_writer& channels,
+		channel_write<bind_axis2_request> channels,
 		const pending_axis2_info& info,
 		id axis_id
 	) -> id;
@@ -675,22 +676,22 @@ auto gse::actions::init(data& d) -> async::task<> {
 	return {};
 }
 
-auto gse::actions::run(context& ctx, data& d, const shared_view<input::data> input_s) -> async::task<> {
+auto gse::actions::run(context& ctx, data& d, const channel_read<add_action_request, bind_axis2_request, rebind_request> requests_in, const shared_view<input::data> input_s) -> async::task<> {
 	bool config_changed = false;
 
-	for (const auto& [name, default_combo, action_id] : ctx.read_channel<add_action_request>()) {
+	for (const auto& [name, default_combo, action_id] : requests_in.of<add_action_request>()) {
 		add_description(d, name, action_id);
 		d.pending_key_bindings.emplace_back(name, default_combo, action_id);
 		d.action_defaults[name] = default_combo;
 		config_changed = true;
 	}
 
-	for (const auto& [info, axis_id] : ctx.read_channel<bind_axis2_request>()) {
+	for (const auto& [info, axis_id] : requests_in.of<bind_axis2_request>()) {
 		d.pending_axis2_reqs.push_back({ info, axis_id });
 		config_changed = true;
 	}
 
-	for (const auto& [action_name, new_combo] : ctx.read_channel<rebind_request>()) {
+	for (const auto& [action_name, new_combo] : requests_in.of<rebind_request>()) {
 		rebind(d, action_name, new_combo);
 	}
 
@@ -880,7 +881,7 @@ auto gse::actions::combo_held(const input::state& in, const key_combo combo) -> 
 	return held_modifiers(in).bits() == combo.mods.bits();
 }
 
-auto gse::actions::add_by_name(channel_writer& channels, const std::string_view tag, const key default_key, const key_modifiers default_modifiers) -> handle {
+auto gse::actions::add_by_name(const channel_write<add_action_request> channels, const std::string_view tag, const key default_key, const key_modifiers default_modifiers) -> handle {
 	const id action_id = generate_id(tag);
 
 	channels.push<add_action_request>({
@@ -893,11 +894,11 @@ auto gse::actions::add_by_name(channel_writer& channels, const std::string_view 
 }
 
 template <gse::fixed_string Tag>
-auto gse::actions::add(channel_writer& channels, const key default_key, const key_modifiers default_modifiers) -> handle {
+auto gse::actions::add(const channel_write<add_action_request> channels, const key default_key, const key_modifiers default_modifiers) -> handle {
 	return add_by_name(channels, Tag, default_key, default_modifiers);
 }
 
-auto gse::actions::bind_axis2(channel_writer& channels, const pending_axis2_info& info, const id axis_id) -> id {
+auto gse::actions::bind_axis2(const channel_write<bind_axis2_request> channels, const pending_axis2_info& info, const id axis_id) -> id {
 	channels.push<bind_axis2_request>({
 		.info = info,
 		.axis_id = axis_id,

@@ -52,6 +52,7 @@ export namespace gse::free_camera::system {
 	auto attach(
 		context& ctx,
 		data& d,
+		channel_write<actions::add_action_request, actions::bind_axis2_request> actions_out,
 		write<component> cameras,
 		structural<camera::follow_component> follows
 	) -> async::task<>;

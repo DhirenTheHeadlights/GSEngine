@@ -12,8 +12,8 @@ import gse.core;
 import gse.concurrency;
 import gse.diag;
 
-gse::gpu::request_pass_awaitable::request_pass_awaitable(const gse::context& ctx, render_pass_descriptor desc) noexcept
-	: m_ctx(std::addressof(ctx)), m_desc(std::move(desc)) {
+gse::gpu::request_pass_awaitable::request_pass_awaitable(const channel_write<render_pass_request> channels, render_pass_descriptor desc) noexcept
+	: m_channels(channels), m_desc(std::move(desc)) {
 	assert(
 		m_desc.pass_kind.exists(),
 		"render pass descriptor missing pass_kind; pass it via gpu::pass(ctx, trace_id<owner>()) or "
@@ -34,7 +34,7 @@ auto gse::gpu::request_pass_awaitable::await_suspend(const std::coroutine_handle
 	m_trace_key = trace::allocate_async_key();
 	trace::begin_async(m_trace_id, m_trace_key);
 
-	m_ctx->channels.push<render_pass_request>({
+	m_channels.push<render_pass_request>({
 		.desc = std::move(m_desc),
 		.record_handle = h,
 		.record_ctx_slot = std::addressof(m_init),
@@ -46,8 +46,8 @@ auto gse::gpu::request_pass_awaitable::await_resume() noexcept -> recording_cont
 	return recording_context{ std::move(m_init) };
 }
 
-gse::gpu::pass_builder::pass_builder(const gse::context& ctx, const id pass_kind, const std::string_view pass_name, const id trace_kind) noexcept
-	: m_ctx(std::addressof(ctx)) {
+gse::gpu::pass_builder::pass_builder(const channel_write<render_pass_request> channels, const id pass_kind, const std::string_view pass_name, const id trace_kind) noexcept
+	: m_channels(channels) {
 	m_desc.pass_kind = pass_kind;
 	m_desc.pass_name = pass_name;
 	m_desc.trace_kind = trace_kind;
@@ -74,11 +74,11 @@ auto gse::gpu::pass_builder::depth(depth_attachment value) && -> pass_builder&& 
 }
 
 auto gse::gpu::pass_builder::operator co_await() && -> request_pass_awaitable {
-	return request_pass_awaitable{ *m_ctx, std::move(m_desc) };
+	return request_pass_awaitable{ m_channels, std::move(m_desc) };
 }
 
-auto gse::gpu::pass(const gse::context& ctx, const id pass_kind) -> pass_builder {
-	return pass_builder{ ctx, pass_kind };
+auto gse::gpu::pass(const channel_write<render_pass_request> channels, const id pass_kind) -> pass_builder {
+	return pass_builder{ channels, pass_kind };
 }
 
 auto gse::gpu::clear_color(const gpu::color_clear value) -> color_attachment {

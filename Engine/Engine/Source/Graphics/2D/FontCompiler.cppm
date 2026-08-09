@@ -270,16 +270,18 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 		}
 	}
 
-	const std::filesystem::path& source_root = config::source_root_containing(src);
-	const auto debug_atlas_path = config::baked_root_for_source(source_root) / "Fonts" / (src.stem().native_encoded_string() + "_atlas_debug.png");
-	if (!image::write_png(debug_atlas_path, static_cast<std::uint32_t>(atlas_width), static_cast<std::uint32_t>(atlas_height), channels, atlas_data.data())) {
-		log::println(
-			log::level::warning,
-			log::category::assets,
-			"font bake [{}]: failed to write debug atlas PNG to {}",
-			src.filename().generic_display_string(),
-			debug_atlas_path.generic_display_string()
-		);
+	if (config::debug_asset_output()) {
+		const std::filesystem::path& source_root = config::source_root_containing(src);
+		const auto debug_atlas_path = config::baked_root_for_source(source_root) / "Fonts" / (src.stem().native_encoded_string() + "_atlas_debug.png");
+		if (!image::write_png(debug_atlas_path, static_cast<std::uint32_t>(atlas_width), static_cast<std::uint32_t>(atlas_height), channels, atlas_data.data())) {
+			log::println(
+				log::level::warning,
+				log::category::assets,
+				"font bake [{}]: failed to write debug atlas PNG to {}",
+				src.filename().generic_display_string(),
+				debug_atlas_path.generic_display_string()
+			);
+		}
 	}
 
 	destroyFont(font_handle);

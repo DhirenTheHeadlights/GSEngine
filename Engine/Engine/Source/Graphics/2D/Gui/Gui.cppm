@@ -43,7 +43,7 @@ namespace gse::gui {
 		screen& top,
 		const rectf& bar_rect,
 		const rectf& full_rect,
-		channel_writer channels
+		channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> channels
 	) -> void;
 }
 
@@ -153,6 +153,8 @@ export namespace gse::gui {
 		shared_view<asset::data> assets_s,
 		shared_view<gse::input::data> input_state,
 		const save::registry& save_reg,
+		channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, popout_closed> requests_in,
+		channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> ui_out,
 		data& d
 	) -> async::task<>;
 
@@ -182,6 +184,8 @@ export namespace gse::gui {
 		shared_view<asset::data> assets_s,
 		shared_view<gse::input::data> input_state,
 		const save::registry& save_reg,
+		channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, popout_closed> requests_in,
+		channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> ui_out,
 		data& d
 	) -> async::task<>;
 
@@ -244,7 +248,7 @@ export namespace gse::gui {
 		data& d,
 		const input::state& input_state,
 		vec2f viewport_size,
-		channel_writer& channels
+		channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> channels
 	) -> void;
 
 	auto usable_screen_rect(
@@ -308,6 +312,6 @@ export namespace gse::gui {
 		data& d,
 		const input::state& input_state,
 		vec2f viewport_size,
-		channel_writer channels
+		channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> channels
 	) -> void;
 }

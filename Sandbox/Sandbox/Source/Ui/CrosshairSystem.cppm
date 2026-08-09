@@ -91,11 +91,11 @@ export namespace sandbox::crosshair {
 		gse::gui::builder& b,
 		gse::settings::panel_state& ps,
 		const gse::settings::register_settings_type& entry,
-		gse::channel_writer& channels
+		gse::settings::change_request_writer channels
 	) -> void;
 }
 
-auto sandbox::crosshair::draw_settings(gse::gui::builder& b, gse::settings::panel_state& ps, const gse::settings::register_settings_type& entry, gse::channel_writer& channels) -> void {
+auto sandbox::crosshair::draw_settings(gse::gui::builder& b, gse::settings::panel_state& ps, const gse::settings::register_settings_type& entry, const gse::settings::change_request_writer channels) -> void {
 	auto& ctx = b.ctx;
 	const auto& sty = ctx.style;
 	namespace lo = gse::gui::layout;

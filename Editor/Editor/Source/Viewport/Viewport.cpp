@@ -94,8 +94,8 @@ auto gse::ide::viewport::init(const shared_view<gpu::context::data> gpu_s, data&
 	return {};
 }
 
-auto gse::ide::viewport::frame(const context& ctx, const shared_view<gpu::context::data> gpu_s, data& d, const shared_view<build_runner::data> build_d) -> async::task<> {
-	for (const build_runner::attached_session_ended& ended : ctx.read_channel<build_runner::attached_session_ended>()) {
+auto gse::ide::viewport::frame(const context& ctx, const shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<build_runner::attached_session_ended, build_runner::attached_surface_ready> surface_in, const channel_write<build_runner::attached_surface_rejected, build_runner::attached_surface_imported> surface_out, const shared_view<build_runner::data> build_d) -> async::task<> {
+	for (const build_runner::attached_session_ended& ended : surface_in.of<build_runner::attached_session_ended>()) {
 		reset_session(d, ended.generation);
 	}
 
@@ -106,12 +106,12 @@ auto gse::ide::viewport::frame(const context& ctx, const shared_view<gpu::contex
 		reset_session(d, d.imported->generation);
 	}
 
-	for (const build_runner::attached_surface_ready& ready : ctx.read_channel<build_runner::attached_surface_ready>()) {
+	for (const build_runner::attached_surface_ready& ready : surface_in.of<build_runner::attached_surface_ready>()) {
 		if (!build_d.session || build_d.session->generation != ready.generation) {
 			continue;
 		}
 		if (!ready.message) {
-			ctx.channels.push<build_runner::attached_surface_rejected>({
+			surface_out.push<build_runner::attached_surface_rejected>({
 				.generation = ready.generation,
 			});
 			continue;
@@ -127,7 +127,7 @@ auto gse::ide::viewport::frame(const context& ctx, const shared_view<gpu::contex
 				ready.message->backend,
 				gpu::active_backend
 			);
-			ctx.channels.push<build_runner::attached_surface_rejected>({
+			surface_out.push<build_runner::attached_surface_rejected>({
 				.generation = ready.generation,
 			});
 		}
@@ -212,7 +212,7 @@ auto gse::ide::viewport::frame(const context& ctx, const shared_view<gpu::contex
 		if (ok) {
 			d.extent = pending.message->extent;
 			d.imported.emplace(std::move(imported));
-			ctx.channels.push<build_runner::attached_surface_imported>({
+			surface_out.push<build_runner::attached_surface_imported>({
 				.generation = pending.generation,
 			});
 			log::println(log::category::render, "Editor viewport: imported game surface ring {}x{}", pending.message->extent.x(), pending.message->extent.y());
@@ -221,7 +221,7 @@ auto gse::ide::viewport::frame(const context& ctx, const shared_view<gpu::contex
 			d.retiring.push_back({
 				.session = std::move(imported),
 			});
-			ctx.channels.push<build_runner::attached_surface_rejected>({
+			surface_out.push<build_runner::attached_surface_rejected>({
 				.generation = pending.generation,
 			});
 		}
@@ -256,7 +256,7 @@ auto gse::ide::viewport::frame(const context& ctx, const shared_view<gpu::contex
 	constexpr std::size_t buffers = per_frame_resource<gpu::image>::frames_in_flight;
 	d.display_slot = d.slots[(frame_index + 1) % buffers].slot();
 
-	co_await gpu::pass<^^gse::ide::viewport::frame>(ctx)
+	co_await gpu::pass<^^gse::ide::viewport::frame>(pass_out)
 		.color(gpu::clear_color(
 			gpu::color_clear{
 				.r = 0.10f,

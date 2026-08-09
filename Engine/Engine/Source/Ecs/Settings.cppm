@@ -8,23 +8,19 @@ import gse.meta;
 import :registries;
 
 export namespace gse::settings {
-	template <typename State>
-	struct annotated_change_request {
-		std::function<void(State&)> apply;
+	struct change_request {
+		id state_type;
+		std::function<void(void*)> apply;
 	};
 
-	template <typename State>
-	struct annotated_changed {
-		State old_value;
-		State new_value;
-	};
+	using change_request_writer = channel_write<change_request>;
 
 	using draw_page_thunk = void (
 			*
 	)(
 		void* builder,
 		void* panel_state,
-		void* channels,
+		change_request_writer channels,
 		const void* entry
 	);
 
@@ -49,7 +45,7 @@ export namespace gse::settings {
 	using reset_to_defaults_thunk = void (
 			*
 	)(
-		void* channel_writer
+		change_request_writer channels
 	);
 
 	using format_settings_field_thunk = std::string (
@@ -67,7 +63,7 @@ export namespace gse::settings {
 	using push_settings_field_change_thunk = bool (
 			*
 	)(
-		void* channel_writer,
+		change_request_writer channels,
 		std::string_view value
 	);
 

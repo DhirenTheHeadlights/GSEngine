@@ -213,7 +213,7 @@ auto gse::renderer::bloom::init(context& ctx, const shared_view<gpu::context::da
 	return {};
 }
 
-auto gse::renderer::bloom::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
+auto gse::renderer::bloom::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -233,7 +233,7 @@ auto gse::renderer::bloom::frame(const context& ctx, shared_view<gpu::context::d
 	}
 	gpu_s.device->write_sampled_image(d.hdr_view.slot(), hdr);
 
-	auto rec = co_await gpu::pass<^^downsample_pass>(ctx)
+	auto rec = co_await gpu::pass<^^downsample_pass>(pass_out)
 		.pipeline(d.downsample_pipeline)
 		.after<^^forward::frame, ^^atmosphere::sky_raster_pass, ^^physics_debug::frame, ^^sdf_grid::frame, ^^world_text::frame, ^^taa::frame>();
 	rec.sample_image(hdr, gpu::pipeline_stage_flag::compute_shader);
@@ -261,7 +261,7 @@ auto gse::renderer::bloom::frame(const context& ctx, shared_view<gpu::context::d
 		co_return;
 	}
 
-	auto up_rec = co_await gpu::pass<^^upsample_pass>(ctx).pipeline(d.upsample_pipeline).after<^^downsample_pass>();
+	auto up_rec = co_await gpu::pass<^^upsample_pass>(pass_out).pipeline(d.upsample_pipeline).after<^^downsample_pass>();
 
 	for (std::uint32_t i = 0; i < count; ++i) {
 		up_rec.sample_image(d.mips_down[i], gpu::pipeline_stage_flag::compute_shader);

@@ -58,6 +58,7 @@ export namespace gse::camera {
 	auto run(
 		context& ctx,
 		data& d,
+		channel_read<ui_focus_request, viewport_update, camera_yaw_request> requests_in,
 		read<follow_component> cameras
 	) -> async::task<>;
 

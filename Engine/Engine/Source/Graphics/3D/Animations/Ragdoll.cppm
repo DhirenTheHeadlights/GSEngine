@@ -33,6 +33,7 @@ export namespace gse::animation {
 	auto ragdoll(
 		context& ctx,
 		data& d,
+		channel_read<ragdoll_request> ragdoll_in,
 		write<skeleton_instance_component> skeletons,
 		write<clip_player_component> players,
 		write<physics::motion_component> motions,

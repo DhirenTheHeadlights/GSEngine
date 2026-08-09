@@ -71,7 +71,7 @@ auto gse::renderer::sdf_grid::init(context& ctx, const shared_view<gpu::context:
 	return {};
 }
 
-auto gse::renderer::sdf_grid::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, shared_view<camera::data> cam_state) -> async::task<> {
+auto gse::renderer::sdf_grid::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, shared_view<camera::data> cam_state) -> async::task<> {
 	if (!d.enabled) {
 		co_return;
 	}
@@ -98,7 +98,7 @@ auto gse::renderer::sdf_grid::frame(const context& ctx, shared_view<gpu::context
 
 	const auto ext = gpu_s.render_graph->extent();
 
-	auto rec = co_await gpu::pass<^^gse::renderer::sdf_grid::frame>(ctx)
+	auto rec = co_await gpu::pass<^^gse::renderer::sdf_grid::frame>(pass_out)
 		.pipeline(d.pipeline)
 		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
 		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::velocity>()))
