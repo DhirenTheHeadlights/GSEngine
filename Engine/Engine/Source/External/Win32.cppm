@@ -106,6 +106,7 @@ export namespace gse::win32 {
 	using ::DuplicateHandle;
 	using ::OpenProcess;
 	using ::GetCurrentProcess;
+	using ::GetCurrentProcessId;
 	using ::GetCurrentThread;
 	using ::CloseHandle;
 	using ::SuspendThread;

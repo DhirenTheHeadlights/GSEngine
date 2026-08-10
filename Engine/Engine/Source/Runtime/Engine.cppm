@@ -58,6 +58,7 @@ export namespace gse {
 		std::string ipc_pipe_name;
 		std::uint32_t parent_pid = 0;
 		std::string dump_system_graph_path;
+		std::vector<std::string> setting;
 		bench_config bench;
 	};
 

@@ -31,6 +31,14 @@ struct gse::parser<std::string> {
 	) -> bool;
 };
 
+template <>
+struct gse::parser<std::vector<std::string>> {
+	static auto parse(
+		std::string_view raw,
+		std::vector<std::string>& out
+	) -> bool;
+};
+
 export template <typename T>
 requires std::is_arithmetic_v<T> && (!std::same_as<T, bool>)
 struct gse::parser<T> {
@@ -68,6 +76,11 @@ auto gse::parser<bool>::parse(const std::string_view raw, bool& out) -> bool {
 
 auto gse::parser<std::string>::parse(const std::string_view raw, std::string& out) -> bool {
 	out = std::string(raw);
+	return true;
+}
+
+auto gse::parser<std::vector<std::string>>::parse(const std::string_view raw, std::vector<std::string>& out) -> bool {
+	out.emplace_back(raw);
 	return true;
 }
 

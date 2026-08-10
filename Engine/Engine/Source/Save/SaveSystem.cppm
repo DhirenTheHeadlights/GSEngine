@@ -32,6 +32,10 @@ export namespace gse::save {
 			std::function<void()> fn
 		) -> void;
 
+		auto set_overrides(
+			std::span<const std::string> assignments
+		) -> void;
+
 		auto add(
 			settings::register_settings_type entry
 		) -> void;
@@ -98,6 +102,7 @@ export namespace gse::save {
 		std::function<void()> m_on_restart;
 		doc m_loaded;
 		doc m_loaded_project;
+		doc m_overrides;
 	};
 }
 
@@ -138,12 +143,35 @@ auto gse::save::registry::set_on_restart(std::function<void()> fn) -> void {
 	m_on_restart = std::move(fn);
 }
 
+auto gse::save::registry::set_overrides(const std::span<const std::string> assignments) -> void {
+	std::lock_guard lock(m_entries_mutex);
+
+	for (const std::string& assignment : assignments) {
+		const std::string_view text = assignment;
+		const std::size_t equals = text.find('=');
+		const std::size_t dot = text.find('.');
+		if (equals == std::string_view::npos || dot == std::string_view::npos || dot > equals) {
+			log::println(
+				log::level::warning,
+				log::category::general,
+				"ignoring setting override '{}'; expected Section.key=value",
+				text
+			);
+			continue;
+		}
+		const std::string category(trim(text.substr(0, dot)));
+		const std::string key(trim(text.substr(dot + 1, equals - dot - 1)));
+		m_overrides[category][key] = std::string(trim(text.substr(equals + 1)));
+	}
+}
+
 auto gse::save::registry::add(settings::register_settings_type entry) -> void {
 	std::lock_guard lock(m_entries_mutex);
 
 	if (entry.read && entry.settings_ptr) {
 		entry.read(m_loaded, entry.category, entry.settings_ptr, settings::scope_kind::user);
 		entry.read(m_loaded_project, entry.category, entry.settings_ptr, settings::scope_kind::project);
+		entry.read(m_overrides, entry.category, entry.settings_ptr, settings::scope_kind::user);
 	}
 
 	const auto match = std::ranges::find_if(
@@ -352,9 +380,22 @@ auto gse::save::registry::save_to_file(const std::filesystem::path& path, const 
 	doc d;
 	{
 		std::lock_guard lock(m_entries_mutex);
+		const doc& source = scope == settings::scope_kind::project ? m_loaded_project : m_loaded;
+		d = source;
 		for (const auto& entry : m_entries) {
 			if (entry.write && entry.settings_ptr) {
 				entry.write(d, entry.category, entry.settings_ptr, scope);
+			}
+		}
+		for (const auto& [category, keys] : m_overrides) {
+			for (const auto& key : std::views::keys(keys)) {
+				const auto restored = source.find(category);
+				if (restored != source.end() && restored->second.contains(key)) {
+					d[category][key] = restored->second.at(key);
+				}
+				else if (const auto written = d.find(category); written != d.end()) {
+					written->second.erase(key);
+				}
 			}
 		}
 	}
