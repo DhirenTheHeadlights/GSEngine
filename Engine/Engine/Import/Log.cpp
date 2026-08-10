@@ -26,8 +26,9 @@ namespace gse::log {
 		level lvl
 	) -> bool;
 
-	auto rotate_logs(
-		const std::filesystem::path& path,
+	auto prune_logs(
+		const std::filesystem::path& dir,
+		std::string_view prefix,
 		std::size_t max_files
 	) -> void;
 
@@ -76,6 +77,7 @@ namespace gse::log {
 	public:
 		file_sink(
 			std::filesystem::path path,
+			std::string_view prefix,
 			std::size_t max_files
 		);
 
@@ -178,7 +180,7 @@ namespace gse::log {
 }
 
 auto gse::log::log_file_path() -> std::filesystem::path {
-	return config::logs_dir() / std::format("{}.log", config::executable_stem());
+	return config::logs_dir() / std::format("{}.{}.log", config::executable_stem(), win32::GetCurrentProcessId());
 }
 
 auto gse::log::timestamp_string() -> std::string {
@@ -377,33 +379,36 @@ auto gse::log::console_sink::flush() -> void {
 	std::cerr.flush();
 }
 
-auto gse::log::rotate_logs(const std::filesystem::path& path, const std::size_t max_files) -> void {
-	if (max_files <= 1) {
+auto gse::log::prune_logs(const std::filesystem::path& dir, const std::string_view prefix, const std::size_t max_files) -> void {
+	if (max_files == 0) {
 		return;
 	}
 
-	const auto dir = path.parent_path();
-	const auto stem = path.stem().native_encoded_string();
-	const auto ext = path.extension().native_encoded_string();
-
-	auto nth = [&](const std::size_t i) -> std::filesystem::path {
-		if (i == 0) {
-			return path;
-		}
-		return dir / std::format("{}.{}{}", stem, i, ext);
-	};
-
 	std::error_code ec;
-	std::filesystem::remove(nth(max_files - 1), ec);
-	for (std::size_t i = max_files - 1; i > 0; --i) {
-		std::filesystem::rename(nth(i - 1), nth(i), ec);
+	std::vector<std::pair<std::filesystem::file_time_type, std::filesystem::path>> existing;
+	for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+		if (!entry.is_regular_file(ec) || entry.path().extension() != ".log") {
+			continue;
+		}
+		if (!entry.path().filename().native_encoded_string().starts_with(prefix)) {
+			continue;
+		}
+		existing.emplace_back(entry.last_write_time(ec), entry.path());
+	}
+
+	std::ranges::sort(existing, std::ranges::greater{}, [](const auto& row) {
+		return row.first;
+	});
+
+	for (const auto& stale : existing | std::views::drop(max_files - 1) | std::views::values) {
+		std::filesystem::remove(stale, ec);
 	}
 }
 
-gse::log::file_sink::file_sink(const std::filesystem::path path, const std::size_t max_files) {
+gse::log::file_sink::file_sink(const std::filesystem::path path, const std::string_view prefix, const std::size_t max_files) {
 	std::error_code ec;
 	std::filesystem::create_directories(path.parent_path(), ec);
-	rotate_logs(path, max_files);
+	prune_logs(path.parent_path(), prefix, max_files);
 	m_file.open(path, std::ios::out | std::ios::trunc);
 }
 
@@ -427,7 +432,7 @@ auto gse::log::file_sink::flush() -> void {
 
 gse::log::logger::logger() {
 	m_sinks.push_back(std::make_unique<console_sink>());
-	m_sinks.push_back(std::make_unique<file_sink>(log_file_path(), log_files_kept));
+	m_sinks.push_back(std::make_unique<file_sink>(log_file_path(), std::format("{}.", config::executable_stem()), log_files_kept));
 
 	const auto marker = std::format("=== Log started at {} ===", timestamp_string());
 	for (auto& s : m_sinks) {

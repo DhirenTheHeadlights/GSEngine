@@ -83,6 +83,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	if (m_config.persist_settings) {
 		m_save.set_auto_save(true, config::user_config_dir() / std::format("{}.ini", config::executable_stem()));
 	}
+	m_save.set_overrides(m_config.setting);
 	m_save.set_on_restart([] {
 		app::restart();
 	});
