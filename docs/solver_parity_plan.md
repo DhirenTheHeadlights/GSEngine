@@ -1,10 +1,12 @@
 # Solver Parity Harness
 
-> **Status:** four bugs found and fixed. `dispatch_indirect` was an empty stub on DX12, so the whole indirect half of the solver — narrow phase, every colour sweep, restitution — silently did nothing on that backend. With it implemented, restitution turned out to apply once per contact point rather than once per impact, injecting energy on every bounce. With that fixed, pile invariants exposed that `sticking` is never computed on the GPU, pinning tangential stiffness at the floor so piles slid apart instead of stacking. The ladder now agrees to millimetres on every scene up to 16 bodies, and joints-only sits at 3 cm once the readback offset is aligned out. The 217-body pile still spreads more than the CPU's.
+> **Status:** five bugs found and fixed, and the remaining problem is now localised to one backend. `dispatch_indirect` was an empty stub on DX12; restitution applied once per contact point rather than once per impact; `sticking` was never computed on the GPU; `accel_weight` was never refreshed after the seed frame; and the colouring header was zeroed on every substep while colouring only ran on substep 0, so every colour sweep after the first early-outed and half of each tick did no contact solving at all.
+>
+> With all five in, **the settling rungs are exact on both backends** — drop and pair at 0.000000 m with GPU peaks equal to the CPU's to the digit. **DX12 matches the CPU peak on seven of eight rungs including joints-only.** Vulkan diverges from 15 bodies upward and is nondeterministic wherever it diverges. The open question is no longer "why do the solvers disagree" but "what does the Vulkan backend lose that DX12 does not".
 >
 > Read the two-regime section before adding a metric. Per-body drift is the right instrument for scenes that come to rest and the wrong one for piles, and every wrong theory recorded here came from ignoring that.
 >
-> **Record the GPU and the backend with every measurement.** The earlier findings here were taken on a desktop RTX 5090 running Vulkan. Everything below marked DX12 came from a Galaxy Book 5 Pro (Intel Arc 140V) where Vulkan device creation fails and the engine falls back to DX12. The two are not comparable, and nothing about the joint solver can be re-measured on the DX12 machine until the stub is filled in.
+> **Record the GPU and the backend with every measurement**, and prefer putting them in the command line rather than a settings file. `--engine-setting Graphics.backend=<vulkan|dx12>` selects the backend per run and shows up in the log; before it existed, a scenario run silently ignored the ini and took the code default, which is why the original DX12 column could not be reproduced. Add `--no-engine-persist-settings` to any headless run so it cannot write your settings back.
 
 ## The question
 
@@ -68,7 +70,9 @@ The GPU accumulated into `v_delta` but recomputed `v_self` from the unmodified s
 
 The bug was invisible until `dispatch_indirect` was implemented, because `vbd_apply_restitution` is an indirect dispatch and had never executed on this backend.
 
-## The ladder on DX12, both fixes in
+## Historical: the ladder on Arc/DX12, first two fixes in
+
+> **Superseded** by the one-machine table below, and kept only as the record of what the Arc laptop showed. Two reasons not to compare against it: it is a different GPU and driver, and it predates the substep colouring fix, which moved the settling rungs from millimetres to exact. Its "both solvers are now bit-deterministic, including at 217 bodies" does not reproduce — NVIDIA/DX12 shows 3.993 m run-to-run on pile.
 
 Intel Arc 140V, DX12, 250 frames, warmup 0. Drift is max over all bodies at the final frame; "over" counts bodies past a 0.05 m threshold.
 
@@ -86,6 +90,58 @@ Stack and joints-only now match the CPU's peak speed *exactly*. Nothing anywhere
 **Both solvers are now bit-deterministic, including at 217 bodies.** Run-to-run drift is 0.000000 m for GPU-vs-GPU and CPU-vs-CPU on both pile and overlap. That retires the earlier "GPU determinism has a boundary between 9 and 217 bodies" finding — that nondeterminism was an artifact of the broken pipeline, not the spatial hash.
 
 It also means the remaining pile/overlap divergence is **not** chaos. Two deterministic solvers disagreeing by 7–9 m is a systematic, perfectly reproducible difference, and every bisection step against it is now repeatable. That is the next thing to chase, and it is a much better position than the same number would have been yesterday.
+
+## The ladder on one machine, both backends
+
+RTX 5090, NVIDIA 596.75, 250 frames, warmup 0, one binary, every run hermetic. The backend is selected per run with `--engine-setting Graphics.backend=<vulkan|dx12>`, so the configuration is in the command and therefore in the log — the earlier DX12 column could not be reproduced precisely because it was not. Each rung was run three times per backend: CPU, GPU, and GPU again for run-to-run drift.
+
+| scene | bodies | CPU peak | VK peak | VK drift | VK over | VK run-to-run | DX peak | DX drift | DX over | DX run-to-run |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `ParityDrop` | 2 | 5.717 | 5.717 | **0.000000** | 0 | 0.000000 | 5.717 | **0.000000** | 0 | 0.000000 |
+| `ParityPair` | 3 | 6.533 | 6.533 | **0.000000** | 0 | 0.000000 | 6.533 | **0.000000** | 0 | 0.000000 |
+| `ParityStack` | 9 | 8.655 | 8.655 | 0.001239 | 0 | 0.000000 | 8.655 | 0.001239 | 0 | 0.000000 |
+| joints only | 15 | 10.615 | **362.152** | 46.006 | 7 | 70.453 | 10.615 | 0.070 | 1 | 0.000000 |
+| `ParityCluster` | 28 | 3.757 | 14.919 | 7.379 | 27 | 13.642 | 3.757 | 0.080 | 2 | 0.000000 |
+| `ParityHeap` | 65 | 4.409 | 18.171 | 30.966 | 64 | 33.550 | 4.409 | 0.122 | 9 | 0.013 |
+| `ParityMound` | 126 | 4.899 | 19.260 | 31.315 | 125 | 27.062 | 6.015 | 2.418 | 37 | 0.274 |
+| `ParityPile` | 217 | 5.389 | 26.389 | 47.450 | 216 | 41.085 | 5.389 | 6.381 | 85 | 3.993 |
+
+**The settling rungs are now exact.** Drop and pair are 0.000000 m on both backends and both GPU peaks equal the CPU's to the digit. They previously sat at 0.000412 and 0.000006 with GPU peaks of 5.798 and 6.614 — the residual millimetres were the substep colouring bug, not integration error. Anything above zero on these three rungs is now a regression with a cause.
+
+**DX12 matches the CPU peak exactly on seven of eight rungs**, mound being the only exception at 6.015 against 4.899. Joints-only reproduces the Arc result exactly: 10.615 against 10.615, 0.070 m, bit-deterministic. That retires the joint prediction table as a joint problem — it is a Vulkan problem.
+
+**Vulkan diverges from 15 bodies upward and is nondeterministic wherever it diverges.** Run-to-run drift tracks CPU-vs-GPU drift closely at every broken rung, which is the signature of a result that is not a fixed wrong answer but a different wrong answer each time. Joints-only reaching 362 m/s against a 15 m/s clamp is an impulse blowup, not a body escaping.
+
+**DX12 is not perfectly deterministic at scale either** — 0.013 m on heap, 0.274 on mound, 3.993 on pile — so the earlier "bit-deterministic including at 217 bodies" claim from the Arc machine does not hold here. It is two to three orders of magnitude better than Vulkan, not exact.
+
+The 28-body cliff recorded below is a Vulkan cliff. On DX12 the degradation is gradual and proportionate to scene size, which is what a chaotic-but-correct solver should look like.
+
+
+## Where Vulkan diverges: frame 25, after the bodies have landed
+
+Two identical Vulkan `parity_cluster_gpu` runs, compared against each other so there is no CPU or backend confound in the measurement.
+
+```
+frame 19   0.000000 m   2.940 m/s   2.940 m/s   y = 0.797     falling
+frame 20   0.000000 m   2.066 m/s   2.066 m/s   y = 0.746     lands
+frame 21   0.000000 m   0.193 m/s   0.193 m/s   y = 0.751
+frame 24   0.000000 m   0.002 m/s   0.002 m/s   y = 0.750     at rest
+frame 25   0.003291 m   1.261 m/s   0.967 m/s   y = 0.736     diverges
+```
+
+**Everything before frame 25 is bit-exact**, including free fall, the landing at frame 20, and four frames of resting contact. Contact resolution is not the nondeterministic part. DX12 stays at 0.000000 through frame 100 on the same comparison.
+
+Three things this pins down:
+
+- **It is not first contact.** The body is solved identically for four frames after landing. This belongs with the resting-stability item, not with the narrow phase.
+- **A resting body is being kicked.** At frame 24 the body sits at 0.002 m/s. At frame 25 one run reads 1.261 m/s and the other 0.967 m/s. *Both* are large accelerations out of rest — the runs merely disagree about the magnitude. The defect may be the kick itself, with nondeterminism only the visible symptom.
+- **It is global and smooth.** 27 of 28 bodies cross the threshold on the same frame, and the comparator reports no single-frame jump above 10x. That points at something running once per substep or tick across all bodies, not one unlucky contact.
+
+### The trap that produced three wrong leads
+
+Every stage probe before this one measured a **high-water mark over 250 frames** — contacts, colour count, broad-phase pairs, grid entries. Once trajectories diverge, every downstream stage legitimately differs, so a peak makes each stage in turn look like the culprit. Contacts "102 vs 108", pairs "38/35/32 vs 27/27/27" and grid entries "107–114 vs 80" were all consequences, and all three were retracted by one control: at 5 frames both backends report 64 grid entries, at 20 frames both report 80, bit-stable.
+
+This is the sibling of the two warnings already in this document. A clamp value is not a measurement; a high-water mark over a diverged run is not a measurement of the stage that produced it. **Probe at a fixed frame, chosen from the onset, and verify the frame is still identical between runs.**
 
 ## Bisecting the pile: the metric is most of the problem
 
@@ -462,14 +518,33 @@ Everything above still compares trajectories. The instrument that would end the 
 
 ## Next
 
-1. ~~Implement `dispatch_indirect` on DX12.~~ Done — command signature, the `compute_pso_bound` guard, `ExecuteIndirect` count 1.
+Done, kept so they are not re-tried: `dispatch_indirect` on DX12 (command signature, `compute_pso_bound` guard, `ExecuteIndirect` count 1 — **no resource transition is needed and adding one would be a bug**, since every non-AS buffer here lives on an `UPLOAD`/`GPU_UPLOAD` heap fixed at `GENERIC_READ`/`COMMON` and cannot be transitioned at all); the per-contact-point restitution; the single-dump body trace `--scan-states-body`; the ladder re-run on both backends; and the backend override, now `--engine-setting Section.key=value`.
 
-   **No resource transition is needed, and adding one would be a bug.** Every non-acceleration-structure buffer in this backend is created on an `UPLOAD` or `GPU_UPLOAD` heap (`Device.cpp:1592`), and those are fixed at `GENERIC_READ`/`COMMON` for their lifetime — they cannot be transitioned at all, and buffers in `COMMON` are promoted implicitly. `GENERIC_READ` already includes `INDIRECT_ARGUMENT`. The draw-indirect paths have no state gap for the same reason.
-2. ~~`ParityDrop`: find why the bounce gains energy.~~ Done — restitution was applying once per contact point.
-3. ~~Add a single-dump body trace.~~ Done — `--scan-states-body <id>`, and it retired the eruption theory in one run.
-4. **Stamp the dump with the simulation step, not the bench frame.** `--compare-states-align` covers for the aliasing but does not fix it. `write_state_frame` needs the step index the transforms actually hold, which for the GPU path means plumbing the retired snapshot's generation out of `gpu_solver`.
-5. **Resting stability is the open question.** The GPU sheds boxes off a 28-body cluster where the CPU holds. Trace a body that walks off, backwards through its creep phase, and compare its contact tangent forces against the CPU's — friction under load is the first thing to read, not an energy source.
-6. **Build the shadow-step harness** described above. It is the only instrument that makes a 217-body scene informative rather than merely expensive.
+1. **Find what the Vulkan backend loses that DX12 does not.** This is the whole remaining problem. Same GPU, same binary, same dispatches: DX12 matches the CPU peak on seven of eight rungs, Vulkan diverges from 15 bodies up and is nondeterministic wherever it diverges.
+
+   **Start at frame 25 of `ParityCluster`** — see the onset section above. The run is bit-identical to that point, including the landing, so the cause is at or just before it and is not amplification. Probe *at that frame*, never as a peak.
+
+   **Already eliminated — do not re-run these.** Barriers between colour sweeps *are* emitted: `push_bindings` always calls `note_touched`, there is no bindings-unchanged fast path, and `emit_intra_pass_barrier` sees write-after-write on a compute stage. The indirect-args hazard *is* declared: `dispatch_indirect` calls `note_touched` with `indirect_command_read`, and `draw_indirect` is deliberately outside `graphics_mask`. Colour-palette exhaustion is not it — 4 of 16 used, `fallback 0 conflicts 0`. Lost solve invocations are not it — a probe counted 432 on both backends, exactly 27 bodies × 16 iterations. Grid build and broad phase are not it either — at 5 and 20 frames both backends produce identical, bit-stable grid entry counts (64 and 80).
+
+2. **Stamp the dump with the simulation step, not the bench frame.** `--compare-states-align` covers for the aliasing but does not fix it. `write_state_frame` needs the step index the transforms actually hold, which for the GPU path means plumbing the retired snapshot's generation out of `gpu_solver`.
+
+3. **Fix the zeroed CPU dumps on the scene-driven path.** A `--engine-bench-scene` run without a scenario writes `owner 0` and zero velocity for every CPU record. GPU dumps on that path are sound. Now that `--engine-setting` exists the scene path is rarely needed, but a silently-zeroed dump is a trap.
+
+4. **Build the shadow-step harness. This is the next real instrument — read this before writing any more probes.**
+
+   Six hypotheses have died in this document, each one a mechanism that was inferred, instrumented, and refuted: colouring fallback (x4, recorded above), barriers between colour sweeps, the indirect-args hazard, palette exhaustion, lost solve invocations, grid/broad-phase divergence, and `accel_weight` on resting bodies. The pattern is always the same — guess a mechanism, build a probe shaped like the guess, and get a number that is consistent with several stories. Stop doing that. Compare **steps**, not trajectories.
+
+   **Why it works.** Chaos needs time to amplify. Deny it time and 217 bodies stops being an amplifier and becomes 217 independent samples of "does one step agree". A per-step residual at 1e-6 across a pile proves every trajectory divergence here is chaos and closes the question; anything larger localises a real defect with no amplification in the way.
+
+   **Start at the frame that is already known.** On `ParityCluster` the two Vulkan runs are **bit-identical through frame 24** and first differ at frame 25 — see the onset section. So the harness does not need to run long: step from the identical frame-24 state, compare after one step, and the first quantity that differs is the cause with nothing between it and the symptom. Verify the chosen frame is still identical between runs before trusting a residual from it.
+
+   **The plumbing already exists.** `physics::data` holds both `vbd_solver` and `gpu_solver`. The GPU upload path has `m_apply_all_body_inputs`, which forces full body state in — that is the resync primitive. `commit_upload` already handles the warm-start sentinel on such a reseed, so a forced upload will not reintroduce the frame-5 blowup.
+
+   **What to record.** Per body, after one step from a shared pre-step state: position delta, velocity delta, and which solver produced the larger impulse. Velocity is the more sensitive channel — at the frame-25 onset the two runs differ by 30% in speed while position differs by only 3 mm, so a position-only residual would have understated it.
+
+   **Rules that apply to whatever you build.** Warmup must be 0. Never read a high-water mark over a diverged run and call it a stage measurement — that mistake produced three retracted findings in one afternoon. Record the GPU and the backend, and put them in the command with `--engine-setting Graphics.backend=<vulkan|dx12>` so the run's own log carries its configuration. Add `--no-engine-persist-settings` so a headless run cannot write settings back. Run everything at least twice; a single run of a nondeterministic scene tells you nothing.
+
+5. ~~Add a per-run log path.~~ Done — logs are now `<stem>.<pid>.log`, and retention prunes the oldest by write time instead of renaming a single lineage, so parallel headless runs no longer collide or evict each other.
 
 **Watch it directly.** The parity scenes are all headless, but bench mode loads any registered scene windowed, with the fixed-step clock engaged so frame numbers match the dumps exactly:
 
@@ -478,7 +553,3 @@ Sandbox.exe --engine-bench-enabled --engine-bench-scene ParityCluster --engine-b
 ```
 
 Drop `--engine-use-gpu-solver` for the CPU, and swap the scene for `ParityPile`.
-4. Re-run the ladder on Vulkan and record it beside the DX12 column. Both fixes matter there too: the restitution bug is backend-independent and was simply masked on DX12 by a dispatch that never ran.
-5. Re-open the joint question. `parity_jointsonly_gpu` now matches the CPU's peak exactly on DX12, so the prediction table needs a Vulkan run to have anything left to explain.
-
-**Turn on the DX12 debug layer for a run.** A stubbed command is invisible to every test that only checks for crashes, and an `ExecuteIndirect` against a resource in the wrong state is exactly what the layer exists to report.
