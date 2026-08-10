@@ -5,6 +5,12 @@ void collision_reset(uint3 dispatch_id) {
     if (bi == 0) {
         collision_pairs[0] = 0;
         for (uint i = 0; i < collision_state_header_uints; i++) {
+            bool coloring_field = i == state_max_used_color_index
+                || i == state_coloring_fallback_index
+                || i == state_coloring_conflict_index;
+            if (pc.substep != 0 && coloring_field) {
+                continue;
+            }
             collision_state[i] = 0;
         }
     }
