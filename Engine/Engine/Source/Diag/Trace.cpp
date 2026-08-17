@@ -24,6 +24,7 @@ auto gse::trace::start(const config& cfg) -> void {
 	register_virtual_thread(gpu_virtual_tid, "GPU");
 	register_virtual_thread(gpu_stats_virtual_tid, "GPU Stats");
 	register_virtual_thread(gpu_compute_virtual_tid, "GPU Compute");
+	register_virtual_thread(gpu_video_encode_virtual_tid, "GPU Video Encode");
 }
 
 auto gse::trace::current_eid() -> std::uint64_t {

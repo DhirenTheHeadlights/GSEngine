@@ -7,6 +7,7 @@ import gse.assets;
 import gse.gpu;
 import gse.core;
 import gse.containers;
+import gse.meta;
 import gse.time;
 import gse.concurrency;
 import gse.diag;
@@ -44,7 +45,7 @@ namespace gse::gui {
 
 	struct profile_tree {
 		std::vector<profile_row> roots;
-		double frame_ns = 0.0;
+		time_t<double> frame_span;
 		std::uint64_t generation = 0;
 	};
 
@@ -95,7 +96,7 @@ auto gse::gui::rebuild_profile_tree(profile_tree& tree) -> void {
 
 	tree.roots.clear();
 	tree.generation = fv.generation;
-	tree.frame_ns = 0.0;
+	tree.frame_span = {};
 
 	collect_visible_rows(fv, fv.roots, hidden, tree.roots);
 
@@ -120,7 +121,7 @@ auto gse::gui::rebuild_profile_tree(profile_tree& tree) -> void {
 			}
 		}
 
-		tree.frame_ns = static_cast<double>(static_cast<std::uint64_t>(frame_end - frame_start));
+		tree.frame_span = frame_end - frame_start;
 	}
 
 	static const id gpu_root_id = trace_id<"GPU">();
@@ -236,7 +237,7 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 	const float draw_x_dur = draw_x_self - pad - w_dur;
 	const float total_cols_w = w_dur + w_self + w_avg + w_peak + w_frame + (pad * 5);
 
-	auto draw_header_item = [&](const std::string& txt, float x, float w) {
+	auto draw_header_item = [&](const std::string_view txt, float x, float w) {
 		const rectf r = rectf::from_position_size(
 			{ x, header_y },
 			{ w, row_h }
@@ -255,10 +256,13 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 		});
 	};
 
-	draw_header_item("Duration", draw_x_dur, w_dur);
-	draw_header_item("Self", draw_x_self, w_self);
-	draw_header_item("Avg", draw_x_avg, w_avg);
-	draw_header_item("Peak", draw_x_peak, w_peak);
+	constexpr std::string_view time_unit = std::string_view(microseconds.unit_name);
+	std::array<char, 32> heading_buffer{};
+
+	draw_header_item(format_into(heading_buffer, "Duration ({})", time_unit), draw_x_dur, w_dur);
+	draw_header_item(format_into(heading_buffer, "Self ({})", time_unit), draw_x_self, w_self);
+	draw_header_item(format_into(heading_buffer, "Avg ({})", time_unit), draw_x_avg, w_avg);
+	draw_header_item(format_into(heading_buffer, "Peak ({})", time_unit), draw_x_peak, w_peak);
 	draw_header_item("% Frame", draw_x_frame, w_frame);
 
 	const float tree_w = draw_x_dur - menu_content.left() - pad;
@@ -275,7 +279,7 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 	};
 	options.extra_right_padding = total_cols_w;
 
-	const double frame_ns = tree.frame_ns;
+	const time_t<double> frame_span = tree.frame_span;
 
 	const draw::tree_ops<profile_row> ops{
 		.children = [](const profile_row& n) -> std::span<const profile_row> {
@@ -300,16 +304,11 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 		int
 	) {
 				const bool has_cpu_timing = n.stop > n.start;
-				const double dur_ns = has_cpu_timing ? static_cast<double>(static_cast<std::uint64_t>(n.stop - n.start)) : 0.0;
-				const double self_ns = has_cpu_timing ? static_cast<double>(static_cast<std::uint64_t>(n.self)) : 0.0;
-				const double pct_frame = (frame_ns > 0.0 && has_cpu_timing) ? (dur_ns / frame_ns) * 100.0 : 0.0;
+				const time_t<double> duration = has_cpu_timing ? time_t<double>(n.stop - n.start) : time_t<double>{};
+				const time_t<double> self = has_cpu_timing ? time_t<double>(n.self) : time_t<double>{};
+				const double pct_frame = (frame_span > time_t<double>{} && has_cpu_timing) ? duration / frame_span * 100.0 : 0.0;
 
-				auto to_fixed = [](const double v, char* buf, const std::size_t len, const int prec) -> std::string_view {
-					auto [p, ec] = std::to_chars(buf, buf + len, v, std::chars_format::fixed, prec);
-					return ec == std::errc{} ? std::string_view{ buf, static_cast<std::size_t>(p - buf) } : std::string_view{};
-				};
-
-				char buf[32];
+				std::array<char, 32> buf{};
 
 				auto draw_col = [&](const std::string_view val, float x, float w) {
 					const rectf box = rectf::from_position_size(
@@ -333,9 +332,9 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 				};
 
 				if (has_cpu_timing) {
-					draw_col(to_fixed(dur_ns / 1000.0, buf, 32, 1), draw_x_dur, w_dur);
-					draw_col(to_fixed(self_ns / 1000.0, buf, 32, 1), draw_x_self, w_self);
-					draw_col(to_fixed(pct_frame, buf, 32, 1), draw_x_frame, w_frame);
+					draw_col(format_into(buf, "{:.1f:{}!}", duration, time_unit), draw_x_dur, w_dur);
+					draw_col(format_into(buf, "{:.1f:{}!}", self, time_unit), draw_x_self, w_self);
+					draw_col(format_into(buf, "{:.1f}", pct_frame), draw_x_frame, w_frame);
 				}
 				else {
 					draw_col("", draw_x_dur, w_dur);
@@ -347,8 +346,8 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 				const auto gpu_agg = profile::lookup(node_id, profile::domain::gpu);
 				const auto cpu_agg = gpu_agg ? std::nullopt : profile::lookup(node_id, profile::domain::cpu);
 				if (const auto& agg = gpu_agg ? gpu_agg : cpu_agg) {
-					draw_col(to_fixed(agg->ema.as<microseconds>(), buf, 32, 1), draw_x_avg, w_avg);
-					draw_col(to_fixed(agg->peak.as<microseconds>(), buf, 32, 1), draw_x_peak, w_peak);
+					draw_col(format_into(buf, "{:.1f:{}!}", agg->ema, time_unit), draw_x_avg, w_avg);
+					draw_col(format_into(buf, "{:.1f:{}!}", agg->peak, time_unit), draw_x_peak, w_peak);
 				}
 				else {
 					draw_col("", draw_x_avg, w_avg);

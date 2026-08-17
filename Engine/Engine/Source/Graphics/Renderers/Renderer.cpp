@@ -53,6 +53,11 @@ auto gse::renderer::run(context& ctx, const shared_view<gpu::context::data> gpu_
 		profile::set_frame_recording(d.profile_frame_recording);
 		d.last_profile_frame_recording = d.profile_frame_recording;
 	}
+	if (d.profile_warmup_frames != d.last_profile_warmup_frames) {
+		profile::reset();
+		profile::set_warmup_frames(static_cast<std::uint64_t>(std::max(d.profile_warmup_frames, 0)));
+		d.last_profile_warmup_frames = d.profile_warmup_frames;
+	}
 
 	if (actions::pressed(actions::current_state(sys), sys, d.dump_profile_action)) {
 		profile::dump();

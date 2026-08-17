@@ -2,7 +2,6 @@ export module gse.diag:profile_aggregator;
 
 import std;
 
-import gse.config;
 import gse.math;
 import gse.meta;
 import gse.core;
@@ -35,6 +34,8 @@ export namespace gse::profile {
 		sample_time peak;
 		double calls_per_frame = 0.0;
 		std::uint64_t sample_count = 0;
+		std::uint64_t peak_frame = 0;
+		std::uint64_t spike_count = 0;
 		std::uint32_t dominant_tid = 0;
 	};
 
@@ -79,6 +80,16 @@ export namespace gse::profile {
 
 	auto alpha() -> double;
 
+	auto set_warmup_frames(
+		std::uint64_t frames
+	) -> void;
+
+	auto warmup_frames() -> std::uint64_t;
+
+	auto warming_up() -> bool;
+
+	constexpr std::uint64_t default_warmup_frames = 300;
+
 	auto set_enabled(
 		bool enabled
 	) -> void;
@@ -87,16 +98,26 @@ export namespace gse::profile {
 
 	auto reset() -> void;
 
+	constexpr std::string_view summary_name = "profile.txt";
+	constexpr std::string_view trace_name = "trace.json";
+	constexpr std::string_view report_name = "report.gsprof";
+
+	auto run_dir() -> const std::filesystem::path&;
+
+	auto latest_run_dir(
+		std::string_view stem
+	) -> std::filesystem::path;
+
 	auto dump(
-		const std::filesystem::path& path = config::profile_dir() / std::format("{}.txt", config::executable_stem())
+		const std::filesystem::path& path = run_dir() / summary_name
 	) -> void;
 
 	auto dump_chrome_trace(
-		const std::filesystem::path& path = config::profile_dir() / std::format("{}.json", config::executable_stem())
+		const std::filesystem::path& path = run_dir() / trace_name
 	) -> void;
 
 	constexpr std::uint32_t report_magic = 0x47535250;
-	constexpr std::uint32_t report_version = 1;
+	constexpr std::uint32_t report_version = 2;
 
 	struct report_record {
 		std::string tag;
@@ -106,6 +127,8 @@ export namespace gse::profile {
 		sample_time peak;
 		double calls_per_frame = 0.0;
 		std::uint64_t sample_count = 0;
+		std::uint64_t peak_frame = 0;
+		std::uint64_t spike_count = 0;
 		std::uint32_t dominant_tid = 0;
 	};
 
@@ -154,7 +177,7 @@ export namespace gse::profile {
 	auto build_report_file() -> report_file;
 
 	auto dump_report(
-		const std::filesystem::path& path = config::profile_dir() / std::format("{}.gsprof", config::executable_stem())
+		const std::filesystem::path& path = run_dir() / report_name
 	) -> void;
 
 	auto load_report(
@@ -166,6 +189,19 @@ namespace gse::profile {
 	constexpr std::size_t default_recorded_frames = 600;
 	constexpr std::size_t max_recorded_nodes = 4000000;
 	constexpr std::size_t chrome_trace_frames = 8;
+	constexpr std::size_t runs_kept = 5;
+
+	auto stale_run(
+		const std::filesystem::directory_entry& entry,
+		std::string_view prefix
+	) -> bool;
+
+	auto prune_runs(
+		const std::filesystem::path& dir,
+		std::string_view prefix
+	) -> void;
+
+	auto resolve_run_dir() -> std::filesystem::path;
 
 	inline std::atomic recording_frames{ false };
 	inline std::atomic<std::size_t> max_recorded_frames{ default_recorded_frames };
@@ -193,8 +229,12 @@ namespace gse::profile {
 		sample_time ema;
 		sample_time last;
 		sample_time peak;
+		std::uint64_t peak_frame = 0;
+		std::uint64_t spike_count = 0;
 		std::unordered_map<std::uint32_t, std::uint64_t> samples_by_tid;
 	};
+
+	constexpr double spike_ratio = 4.0;
 
 	struct dag_visit {
 		std::uint32_t index = 0;
@@ -212,6 +252,8 @@ namespace gse::profile {
 	inline std::atomic is_enabled{ true };
 	inline std::atomic<std::uint64_t> frame_count{ 0 };
 	inline std::atomic<std::uint64_t> last_generation{ 0 };
+	inline std::atomic<std::uint64_t> warmup_target{ default_warmup_frames };
+	inline std::atomic<std::uint64_t> warmup_remaining{ default_warmup_frames };
 
 	auto storage_for(
 		domain domain
@@ -238,7 +280,8 @@ namespace gse::profile {
 		std::flat_map<id, entry>& map,
 		id id,
 		sample_time duration,
-		std::uint32_t thread_id
+		std::uint32_t thread_id,
+		std::uint64_t frame_index
 	) -> void;
 
 	auto snapshot_entries(
