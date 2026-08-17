@@ -91,6 +91,9 @@ void collision_broad_phase(uint3 dispatch_id) {
     int3 min_cell_i = world_to_cell(min_a - margin, cell_size);
     int3 max_cell_i = world_to_cell(max_a + margin, cell_size);
 
+    uint nodes_walked = 0;
+    uint aabb_tests = 0;
+
     for (int cx = min_cell_i.x; cx <= max_cell_i.x; cx++) {
         for (int cy = min_cell_i.y; cy <= max_cell_i.y; cy++) {
             for (int cz = min_cell_i.z; cz <= max_cell_i.z; cz++) {
@@ -101,6 +104,7 @@ void collision_broad_phase(uint3 dispatch_id) {
                 while (entry_ptr != 0 && entry_ptr >= grid_table_size + 1) {
                     uint j = grid_data[entry_ptr];
                     uint next = grid_data[entry_ptr + 1];
+                    nodes_walked += 1;
 
                     uint env_j = body_env_data[j];
                     bool cross_env = (env_i != 0xFFFFFFFFu) && (env_j != 0xFFFFFFFFu) && (env_i != env_j);
@@ -108,6 +112,7 @@ void collision_broad_phase(uint3 dispatch_id) {
                         body_state body_j = body_data[j];
                         float3 min_b = body_j.aabb_min.xyz;
                         float3 max_b = body_j.aabb_max.xyz;
+                        aabb_tests += 1;
 
                         bool overlap =
                             min_a.x - margin <= max_b.x && max_a.x + margin >= min_b.x &&
@@ -128,5 +133,12 @@ void collision_broad_phase(uint3 dispatch_id) {
                 }
             }
         }
+    }
+
+    if (nodes_walked != 0) {
+        InterlockedAdd(collision_state[state_broad_nodes_index], nodes_walked);
+    }
+    if (aabb_tests != 0) {
+        InterlockedAdd(collision_state[state_broad_tests_index], aabb_tests);
     }
 }
