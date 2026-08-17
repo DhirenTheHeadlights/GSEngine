@@ -90,6 +90,8 @@ auto gse::write_state_frame(registry& reg, std::ostream& out, const std::uint32_
 			.frame = frame,
 			.position = transforms[index].position,
 			.velocity = motion ? motion->current_velocity : vec3<velocity>{},
+			.orientation = transforms[index].orientation,
+			.angular_velocity = motion ? motion->angular_velocity : vec3<angular_velocity>{},
 		};
 		writer & record;
 	}
@@ -214,9 +216,12 @@ auto gse::step_bench(const bench_config& config, bench_state& state, engine& e) 
 	switch (state.phase) {
 		case bench_phase::settling: {
 			if (!state.scene_requested) {
-				state.scene_requested = true;
-				if (!config.scene.empty()) {
-					activate_scene(e.world(), find_or_generate_id(config.scene));
+				if (config.scene.empty()) {
+					state.scene_requested = true;
+				}
+				else if (const auto scene_id = find_or_generate_id(config.scene); find_scene(e.world(), scene_id)) {
+					state.scene_requested = true;
+					activate_scene(e.world(), scene_id);
 					log::println(log::category::general, "bench: requested scene '{}'", config.scene);
 				}
 			}
@@ -232,10 +237,13 @@ auto gse::step_bench(const bench_config& config, bench_state& state, engine& e) 
 				log::println(
 					log::level::error,
 					log::category::general,
-					"bench: world never became ready within {} frames (scene '{}' populated={}); aborting without a measurement",
+					"bench: world never became ready within {} frames (scene '{}' registered={} activated={} populated={} settled={}); aborting without a measurement",
 					bench_settle_frame_limit,
 					config.scene,
-					world_populated(e.registry())
+					config.scene.empty() || find_scene(e.world(), find_or_generate_id(config.scene)) != nullptr,
+					state.scene_requested,
+					world_populated(e.registry()),
+					e.all_settled()
 				);
 				state.phase = bench_phase::done;
 				return true;
