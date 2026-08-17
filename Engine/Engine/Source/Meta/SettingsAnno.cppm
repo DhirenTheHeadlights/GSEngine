@@ -19,7 +19,8 @@ export namespace gse::settings {
 
 	enum class scope_kind : std::uint8_t {
 		user,
-		project
+		project,
+		app
 	};
 
 	template <scope_kind V>
@@ -29,6 +30,7 @@ export namespace gse::settings {
 
 	using user_scope = scope<scope_kind::user>;
 	using project_scope = scope<scope_kind::project>;
+	using app_scope = scope<scope_kind::app>;
 
 	struct restart_required {};
 	struct skip {};

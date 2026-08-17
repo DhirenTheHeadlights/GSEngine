@@ -34,7 +34,9 @@ auto gse::gpu::context::init(const std::optional<shared_view<window::data>> wind
 	d.frame = frame::create(*d.device, d.swapchain.get());
 	d.render_graph = std::make_unique<gpu::render_graph>(*d.device, d.swapchain.get(), *d.frame);
 	if (d.swapchain) {
-		d.render_graph->set_swapchain_clear(d.swapchain_clear);
+		d.render_graph->set_swapchain_clear(
+			d.dark_background ? color_clear{ .r = 0.05f, .g = 0.05f, .b = 0.06f, .a = 1.0f } : color_clear{}
+		);
 	}
 
 	return {};

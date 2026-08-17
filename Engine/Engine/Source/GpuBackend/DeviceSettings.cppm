@@ -23,5 +23,11 @@ export namespace gse::gpu {
 			= gse::settings::restart_required{}
 		]]
 		bool gpu_based_validation = false;
+
+		[[
+			= gse::settings::describe<"Create the video encode queue and its extensions. Off leaves capture limited to screenshots.">{},
+			= gse::settings::app_scope{}
+		]]
+		bool video_encode = true;
 	};
 }

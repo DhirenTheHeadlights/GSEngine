@@ -51,7 +51,11 @@ export namespace gse::gpu::context {
 		[[= stable_shared]] std::unique_ptr<gpu::render_graph> render_graph;
 		concurrency::frame_scheduler scheduler;
 
-		color_clear swapchain_clear{};
+		[[
+			= settings::describe<"Clear the swapchain to a dark neutral tone instead of black.">{},
+			= settings::app_scope{}
+		]]
+		bool dark_background = false;
 	};
 
 	using swap_chain_recreate_callback = std::function<void()>;

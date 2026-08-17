@@ -77,11 +77,22 @@ export namespace gse::gui {
 		]]
 		bool show_dev_overlays = false;
 
+		[[
+			= gse::settings::describe<"Derive UI scale from viewport height instead of the monitor display scale.">{},
+			= gse::settings::app_scope{}
+		]]
 		bool scale_with_resolution = true;
+
 		float display_scale = 1.f;
 		std::unordered_map<std::string, float> ui_scale_by_monitor;
 		std::string active_monitor_key;
+
+		[[
+			= gse::settings::describe<"Reserve a title-bar strip at the top of the viewport for application chrome.">{},
+			= gse::settings::app_scope{}
+		]]
 		bool reserve_top_bar = false;
+
 		std::uint32_t next_z_order = 1;
 
 		[[= gse::shared]] id_mapped_collection<menu> menus;
@@ -93,6 +104,10 @@ export namespace gse::gui {
 		std::optional<dock::space> active_dock_space;
 		gui::state current_state{ states::idle{} };
 
+		[[
+			= gse::settings::describe<"File the dock and window layout is saved to and restored from.">{},
+			= gse::settings::app_scope{}
+		]]
 		std::filesystem::path file_path = config::user_config_dir() / "gui_layout.ini";
 		clock save_clock;
 

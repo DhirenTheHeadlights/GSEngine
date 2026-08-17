@@ -97,6 +97,18 @@ export namespace gse::gui::draw {
 		id& active_widget_id,
 		const dropdown_config& config = {}
 	) -> dropdown_result;
+
+	auto dropdown_in_rect_keyed(
+		const draw_context& ctx,
+		std::uint64_t widget_key,
+		std::size_t current_index,
+		std::span<const std::string_view> options,
+		dropdown_state& state,
+		const rectf& header_rect,
+		id& hot_widget_id,
+		id& active_widget_id,
+		const dropdown_config& config = {}
+	) -> dropdown_result;
 }
 
 export namespace gse::gui {
@@ -235,6 +247,25 @@ auto gse::gui::draw::dropdown_in_rect_keyed(const draw_context& ctx, const std::
 			return options.size();
 		},
 		[&](const std::size_t i) -> std::string_view {
+			return options[i];
+		},
+		state,
+		header_rect,
+		hot_widget_id,
+		active_widget_id,
+		config
+	);
+}
+
+auto gse::gui::draw::dropdown_in_rect_keyed(const draw_context& ctx, const std::uint64_t widget_key, const std::size_t current_index, const std::span<const std::string_view> options, dropdown_state& state, const rectf& header_rect, id& hot_widget_id, id& active_widget_id, const dropdown_config& config) -> dropdown_result {
+	return dropdown_impl_in_rect(
+		ctx,
+		ids::make_from_key(widget_key),
+		current_index,
+		[&] {
+			return options.size();
+		},
+		[&](const std::size_t i) {
 			return options[i];
 		},
 		state,

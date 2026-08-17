@@ -32,11 +32,16 @@ export namespace gse::settings {
 
 	struct dimensioned_input_state {
 		gui::text_input_state input_state;
+		gui::dropdown_state dropdown_state;
+		std::string magnitude;
+		std::string_view unit;
 		bool initialized = false;
 	};
 
 	struct pending_field {
 		std::string value;
+		std::string category;
+		std::string key;
 		push_settings_field_change_thunk push_change = nullptr;
 		bool initialized = false;
 		bool modified = false;
@@ -60,9 +65,12 @@ export namespace gse::settings {
 		[[nodiscard]] auto pending_restart_count() const -> std::size_t;
 		[[nodiscard]] auto needs_restart() const -> bool;
 		auto apply_all(
-			channel_write<change_request> channels
+			channel_write<change_request> channels,
+			const save::registry* save_reg = nullptr
 		) -> void;
-		auto discard_all() -> void;
+		auto discard_all(
+			const save::registry* save_reg = nullptr
+		) -> void;
 	};
 
 	using custom_draw_fn = void (
@@ -98,7 +106,8 @@ export namespace gse::settings {
 		panel_state& ps,
 		channel_write<change_request> channels,
 		const register_settings_type& entry,
-		bool hot_only = false
+		bool hot_only = false,
+		const save::registry* save_reg = nullptr
 	) -> void;
 }
 
@@ -112,6 +121,15 @@ namespace gse::settings {
 		gui::builder& b,
 		panel_state& ps,
 		const void* settings_ptr,
+		const settings_field& field,
+		pending_field& pending,
+		std::uint64_t field_key,
+		std::string_view display_label
+	) -> void;
+
+	auto draw_dimensioned_field(
+		gui::builder& b,
+		dimensioned_input_state& state,
 		const settings_field& field,
 		pending_field& pending,
 		std::uint64_t field_key,
@@ -239,6 +257,10 @@ auto gse::settings::draw_field_control(gui::builder& b, panel_state& ps, const v
 			}
 			break;
 		}
+		case settings_field_widget::dimensioned: {
+			draw_dimensioned_field(b, ps.dimensioned_states[field_key], field, pending, field_key, display_label);
+			break;
+		}
 		case settings_field_widget::text: {
 			auto& state = ps.input_states[field_key];
 			b.draw<gui::text_input>({
@@ -250,6 +272,94 @@ auto gse::settings::draw_field_control(gui::builder& b, panel_state& ps, const v
 		}
 		default:
 			break;
+	}
+}
+
+auto gse::settings::draw_dimensioned_field(gui::builder& b, dimensioned_input_state& state, const settings_field& field, pending_field& pending, const std::uint64_t field_key, const std::string_view display_label) -> void {
+	if (field.units.empty() || !field.convert_unit) {
+		b.draw<gui::text_input>({
+			.name = display_label,
+			.buffer = pending.value,
+			.state = state.input_state,
+		});
+		return;
+	}
+
+	auto& ctx = b.ctx;
+	if (!ctx.current_menu) {
+		return;
+	}
+
+	if (!state.initialized) {
+		state.unit = field.default_unit;
+		state.magnitude = field.convert_unit(pending.value, state.unit);
+		state.initialized = true;
+	}
+
+	const auto text_view = ctx.fonts.text.resolve();
+	const float widget_height = text_view->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
+	const gse::rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
+	const float row_y = ctx.layout_cursor.y();
+
+	float widest_unit = 0.f;
+	for (const std::string_view unit : field.units) {
+		widest_unit = std::max(widest_unit, text_view->width(unit, ctx.style.font_size));
+	}
+
+	const float label_width = content_rect.width() * 0.4f;
+	const float unit_width = std::min(content_rect.width() * 0.25f, widest_unit + ctx.style.icon_extent + ctx.style.padding * 2.f);
+	const float value_width = std::max(0.f, content_rect.width() - label_width - unit_width - ctx.style.padding * 0.5f);
+
+	const gse::rectf label_rect = gse::rectf::from_position_size(
+		{ content_rect.left(), row_y },
+		{ label_width, widget_height }
+	);
+	const gse::rectf value_rect = gse::rectf::from_position_size(
+		{ content_rect.left() + label_width, row_y },
+		{ value_width, widget_height }
+	);
+	const gse::rectf unit_rect = gse::rectf::from_position_size(
+		{ value_rect.right() + ctx.style.padding * 0.5f, row_y },
+		{ unit_width, widget_height }
+	);
+
+	ctx.queue_text({
+		.font = ctx.fonts.text,
+		.text = display_label,
+		.position = { label_rect.left(), label_rect.center().y() + text_view->vertical_center_offset(ctx.style.font_size) },
+		.scale = ctx.style.font_size,
+		.color = ctx.style.color_text,
+		.clip_rect = label_rect,
+	});
+
+	const gse::id input_id = gui::ids::make_from_key(hash_combine(field_key, stable_id("##Magnitude")));
+	gui::draw::text_input_in_rect(ctx, input_id, state.magnitude, state.input_state, value_rect, b.hot_widget_id, b.focus_widget_id);
+
+	const auto selected = std::ranges::find(field.units, state.unit);
+	const gui::dropdown_result picked = gui::draw::dropdown_in_rect_keyed(
+		ctx,
+		hash_combine(field_key, stable_id("##Unit")),
+		selected == field.units.end() ? 0 : static_cast<std::size_t>(std::ranges::distance(field.units.begin(), selected)),
+		field.units,
+		state.dropdown_state,
+		unit_rect,
+		b.hot_widget_id,
+		b.active_widget_id
+	);
+	if (picked.changed && picked.new_index < field.units.size()) {
+		state.unit = field.units[picked.new_index];
+		if (std::string converted = field.convert_unit(pending.value, state.unit); !converted.empty()) {
+			state.magnitude = std::move(converted);
+		}
+	}
+
+	ctx.layout_cursor.y() -= widget_height + ctx.style.padding;
+
+	if (state.magnitude.empty() || !field.normalize) {
+		return;
+	}
+	if (std::string canonical = field.normalize(std::format("{} {}", state.magnitude, state.unit)); !canonical.empty()) {
+		pending.value = std::move(canonical);
 	}
 }
 
@@ -294,7 +404,7 @@ auto gse::settings::draw_field_tooltip(gui::builder& b, const settings_field& fi
 	}
 }
 
-auto gse::settings::draw_fields_for_entry(gui::builder& b, panel_state& ps, const channel_write<change_request> channels, const register_settings_type& entry, const bool hot_only) -> void {
+auto gse::settings::draw_fields_for_entry(gui::builder& b, panel_state& ps, const channel_write<change_request> channels, const register_settings_type& entry, const bool hot_only, const save::registry* save_reg) -> void {
 	if (!entry.settings_ptr) {
 		return;
 	}
@@ -311,17 +421,23 @@ auto gse::settings::draw_fields_for_entry(gui::builder& b, panel_state& ps, cons
 			pending.initialized = true;
 		}
 
-		const std::string display_label = pretty_label(field.key);
+		const bool session_pinned = save_reg && save_reg->provenance_of(entry.category, field.key) == save::value_provenance::session;
+		const std::string display_label = session_pinned ? std::format("{} [session]", pretty_label(field.key)) : pretty_label(field.key);
 		const float row_y_before = b.ctx.current_menu ? b.ctx.layout_cursor.y() : 0.f;
 		draw_field_control(b, ps, entry.settings_ptr, field, pending, field_key, display_label);
 
 		pending.modified = pending.value != live_value;
 		pending.restart_required = field.restart_required;
 		pending.push_change = field.push_change;
+		pending.category = entry.category;
+		pending.key = field.key;
 
-		if (field.hot_reloadable) {
+		if (field.hot_reloadable && !field.restart_required) {
 			if (pending.modified && pending.push_change) {
 				pending.push_change(channels, pending.value);
+				if (save_reg) {
+					save_reg->release_override(pending.category, pending.key);
+				}
 			}
 			pending.modified = false;
 		}
@@ -365,21 +481,43 @@ auto gse::settings::panel_state::needs_restart() const -> bool {
 	return restart_pending_applied;
 }
 
-auto gse::settings::panel_state::apply_all(const channel_write<change_request> channels) -> void {
+auto gse::settings::panel_state::apply_all(const channel_write<change_request> channels, const save::registry* save_reg) -> void {
 	for (auto& entry : std::views::values(pending_by_type)) {
 		for (auto& field : std::views::values(entry.fields)) {
+			if (field.restart_required) {
+				if (save_reg && !field.category.empty()) {
+					if (field.modified) {
+						save_reg->stage_value(field.category, field.key, field.value);
+						restart_pending_applied = true;
+					}
+					else {
+						save_reg->clear_staged(field.category, field.key);
+					}
+				}
+				continue;
+			}
 			if (!field.modified || !field.push_change) {
 				continue;
 			}
-			if (field.restart_required) {
-				restart_pending_applied = true;
-			}
 			field.push_change(channels, field.value);
+			if (save_reg && !field.category.empty()) {
+				save_reg->release_override(field.category, field.key);
+			}
 		}
 	}
 }
 
-auto gse::settings::panel_state::discard_all() -> void {
+auto gse::settings::panel_state::discard_all(const save::registry* save_reg) -> void {
+	if (save_reg) {
+		for (const auto& entry : std::views::values(pending_by_type)) {
+			for (const auto& field : std::views::values(entry.fields)) {
+				if (field.restart_required && !field.category.empty()) {
+					save_reg->clear_staged(field.category, field.key);
+				}
+			}
+		}
+	}
+
 	pending_by_type.clear();
 	input_buffers.clear();
 	input_states.clear();
@@ -477,7 +615,7 @@ auto gse::settings::panel(gui::builder& b, panel_state& ps, const panel_writer c
 						entry.draw_page(&sub, &ps, channels, &entry);
 					}
 					else if (!entry.fields.empty() && entry.settings_ptr) {
-						draw_fields_for_entry(sub, ps, channels, entry);
+						draw_fields_for_entry(sub, ps, channels, entry, false, &save_reg);
 					}
 				});
 			}

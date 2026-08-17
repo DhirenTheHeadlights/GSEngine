@@ -192,24 +192,37 @@ namespace gse {
 }
 
 namespace gse::settings {
-	template <typename State, std::meta::info M>
+	template <std::meta::info M, std::meta::info... Rest>
+	auto resolve_settings_member(
+		auto&& s
+	) -> decltype(auto);
+
+	template <typename State, std::meta::info... Path>
 	auto format_annotated_field(
 		const void* settings_ptr
 	) -> std::string;
 
-	template <typename State, std::meta::info M>
+	template <typename State, std::meta::info... Path>
 	auto annotated_field_options(
 		const void* settings_ptr
 	) -> std::vector<std::string>;
 
-	template <typename State, std::meta::info M>
+	template <typename State, std::meta::info... Path>
 	auto push_annotated_field_change(
 		channel_write<change_request> channels,
 		std::string_view raw
 	) -> bool;
 
-	template <typename State, std::meta::info M>
-	auto make_annotated_field() -> settings_field;
+	template <typename State, std::meta::info... Path>
+	auto make_annotated_field(
+		std::string key
+	) -> settings_field;
+
+	template <typename State, typename Cur, scope_kind Inherited, std::meta::info... Prefix>
+	auto collect_annotated_fields_into(
+		std::vector<settings_field>& out,
+		std::string_view prefix
+	) -> void;
 
 	template <typename State>
 	auto collect_annotated_fields() -> std::vector<settings_field>;
@@ -293,6 +306,11 @@ auto gse::extract_fn_frame_deps() -> std::vector<id> {
 			append_arg_view_deps<arg_t>(out, optional_discard);
 		}()), ...);
 	}(std::make_index_sequence<arity_of<FnInfo>>{});
+
+	template for (constexpr auto s : std::define_static_array(meta::required_order_deps_of(FnInfo))) {
+		out.push_back(id_of<typename[:s:]>());
+	}
+
 	return out;
 }
 
@@ -507,10 +525,21 @@ auto gse::make_annotated_system_node(settings::draw_page_thunk page_thunk) -> sy
 	return node;
 }
 
-template <typename State, std::meta::info M>
+template <std::meta::info M, std::meta::info... Rest>
+auto gse::settings::resolve_settings_member(auto&& s) -> decltype(auto) {
+	if constexpr (sizeof...(Rest) == 0) {
+		return (s.[:M:]);
+	}
+	else {
+		return resolve_settings_member<Rest...>(s.[:M:]);
+	}
+}
+
+template <typename State, std::meta::info... Path>
 auto gse::settings::format_annotated_field(const void* settings_ptr) -> std::string {
-	using F = [:std::meta::type_of(M):];
-	const auto& field = static_cast<const State*>(settings_ptr)->[:M:];
+	constexpr auto leaf = std::array{ Path... }[sizeof...(Path) - 1];
+	using F = [:std::meta::type_of(leaf):];
+	const auto& field = resolve_settings_member<Path...>(*static_cast<const State*>(settings_ptr));
 	if constexpr (is_choice_v<F>) {
 		return std::format("{}", field.value);
 	}
@@ -519,20 +548,22 @@ auto gse::settings::format_annotated_field(const void* settings_ptr) -> std::str
 	}
 }
 
-template <typename State, std::meta::info M>
+template <typename State, std::meta::info... Path>
 auto gse::settings::annotated_field_options(const void* settings_ptr) -> std::vector<std::string> {
-	using F = [:std::meta::type_of(M):];
+	constexpr auto leaf = std::array{ Path... }[sizeof...(Path) - 1];
+	using F = [:std::meta::type_of(leaf):];
 	if constexpr (is_choice_v<F>) {
-		return static_cast<const State*>(settings_ptr)->[:M:].options;
+		return resolve_settings_member<Path...>(*static_cast<const State*>(settings_ptr)).options;
 	}
 	else {
 		return {};
 	}
 }
 
-template <typename State, std::meta::info M>
+template <typename State, std::meta::info... Path>
 auto gse::settings::push_annotated_field_change(const channel_write<change_request> channels, const std::string_view raw) -> bool {
-	using F = [:std::meta::type_of(M):];
+	constexpr auto leaf = std::array{ Path... }[sizeof...(Path) - 1];
+	using F = [:std::meta::type_of(leaf):];
 	if constexpr (is_choice_v<F>) {
 		typename F::value_type parsed{};
 		if (!gse::parse(raw, parsed)) {
@@ -541,7 +572,7 @@ auto gse::settings::push_annotated_field_change(const channel_write<change_reque
 		channels.push<change_request>({
 			.state_type = id_of<State>(),
 			.apply = [parsed](void* p) {
-				static_cast<State*>(p)->[:M:].value = parsed;
+				resolve_settings_member<Path...>(*static_cast<State*>(p)).value = parsed;
 			},
 		});
 		return true;
@@ -554,28 +585,29 @@ auto gse::settings::push_annotated_field_change(const channel_write<change_reque
 		channels.push<change_request>({
 			.state_type = id_of<State>(),
 			.apply = [parsed = std::move(parsed)](void* p) {
-				static_cast<State*>(p)->[:M:] = parsed;
+				resolve_settings_member<Path...>(*static_cast<State*>(p)) = parsed;
 			},
 		});
 		return true;
 	}
 }
 
-template <typename State, std::meta::info M>
-auto gse::settings::make_annotated_field() -> settings_field {
-	using F = [:std::meta::type_of(M):];
-	using describe_t = [:meta::find_describe(M):];
+template <typename State, std::meta::info... Path>
+auto gse::settings::make_annotated_field(std::string key) -> settings_field {
+	constexpr auto leaf = std::array{ Path... }[sizeof...(Path) - 1];
+	using F = [:std::meta::type_of(leaf):];
+	using describe_t = [:meta::find_describe(leaf):];
 	settings_field field{
-		.key = std::string(meta::member_name(M)),
+		.key = std::move(key),
 		.description = std::string(describe_t::value),
 		.widget = field_widget_of<F>(),
-		.format = &format_annotated_field<State, M>,
-		.push_change = &push_annotated_field_change<State, M>,
-		.hot_reloadable = has_annotation<settings::hot_reloadable_tag>(M),
-		.restart_required = has_annotation<settings::restart_required>(M),
+		.format = &format_annotated_field<State, Path...>,
+		.push_change = &push_annotated_field_change<State, Path...>,
+		.hot_reloadable = has_annotation<settings::hot_reloadable_tag>(leaf),
+		.restart_required = has_annotation<settings::restart_required>(leaf),
 	};
 	if constexpr (is_choice_v<F>) {
-		field.runtime_options = &annotated_field_options<State, M>;
+		field.runtime_options = &annotated_field_options<State, Path...>;
 		field.choice_stores_option = std::same_as<typename F::value_type, std::string>;
 	}
 	if constexpr (std::is_enum_v<F>) {
@@ -583,23 +615,43 @@ auto gse::settings::make_annotated_field() -> settings_field {
 			field.options.emplace_back(std::meta::identifier_of(e));
 		}
 	}
-	if constexpr (constexpr auto range_t = meta::find_range(M); range_t != std::meta::info{}) {
+	if constexpr (is_dimensioned_field<F>) {
+		field.units = field_unit_names<F>();
+		field.default_unit = field_default_unit<F>();
+		field.convert_unit = &convert_field_unit<F>;
+		field.normalize = &normalize_field_value<F>;
+	}
+	if constexpr (constexpr auto range_t = meta::find_range(leaf); range_t != std::meta::info{}) {
 		field.range = make_range_field_from_info(range_t);
 	}
 	return field;
 }
 
-template <typename State>
-auto gse::settings::collect_annotated_fields() -> std::vector<settings_field> {
-	std::vector<settings_field> out;
-	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^State, std::meta::access_context::unchecked()))) {
+template <typename State, typename Cur, gse::settings::scope_kind Inherited, std::meta::info... Prefix>
+auto gse::settings::collect_annotated_fields_into(std::vector<settings_field>& out, const std::string_view prefix) -> void {
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^Cur, std::meta::access_context::unchecked()))) {
 		if constexpr (meta::find_describe(m) != std::meta::info{}) {
 			using F = [:std::meta::type_of(m):];
-			if constexpr (!(std::is_class_v<F> && !is_scalar_settings_field<F>) && field_widget_of<F>() != settings_field_widget::unsupported) {
-				out.push_back(make_annotated_field<State, m>());
+			constexpr std::string_view name = meta::member_name(m);
+			constexpr scope_kind effective = field_scope_of<m, Inherited>();
+			std::string key = prefix.empty() ? std::string(name) : std::format("{}.{}", prefix, name);
+			if constexpr (std::is_class_v<F> && !is_scalar_settings_field<F>) {
+				collect_annotated_fields_into<State, F, effective, Prefix..., m>(out, key);
+			}
+			else if constexpr (effective != scope_kind::app && field_widget_of<F>() != settings_field_widget::unsupported) {
+				out.push_back(make_annotated_field<State, Prefix..., m>(std::move(key)));
 			}
 		}
 	}
+}
+
+template <typename State>
+auto gse::settings::collect_annotated_fields() -> std::vector<settings_field> {
+	std::vector<settings_field> out;
+	collect_annotated_fields_into<State, State, scope_of<State>()>(
+		out,
+		{}
+	);
 	return out;
 }
 
@@ -611,7 +663,7 @@ auto gse::settings::reset_annotated_defaults(const channel_write<change_request>
 			State& d = *static_cast<State*>(p);
 			State defaults{};
 			template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^State, std::meta::access_context::unchecked()))) {
-				if constexpr (meta::find_describe(m) != std::meta::info{}) {
+				if constexpr (meta::find_describe(m) != std::meta::info{} && field_scope_of<m, scope_of<State>()>() != scope_kind::app) {
 					using F = [:std::meta::type_of(m):];
 					if constexpr (is_choice_v<F>) {
 						d.[:m:].value = defaults.[:m:].value;

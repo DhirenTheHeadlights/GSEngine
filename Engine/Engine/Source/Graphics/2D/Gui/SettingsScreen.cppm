@@ -510,7 +510,7 @@ auto gse::gui::settings_screen::draw_footer(builder& ui, const gse::rect_t<gse::
 		{ sty.button_min_width, sty.button_height }
 	);
 	if (draw_footer_button(ui, apply_rect, "Apply", can_apply, true, gse::gui::ids::make("settings.footer.apply"))) {
-		m_panel_state.apply_all(m_channels);
+		m_panel_state.apply_all(m_channels, m_save_reg);
 	}
 	cursor_x -= sty.button_spacing;
 
@@ -520,6 +520,6 @@ auto gse::gui::settings_screen::draw_footer(builder& ui, const gse::rect_t<gse::
 		{ sty.button_min_width, sty.button_height }
 	);
 	if (draw_footer_button(ui, discard_rect, "Discard", can_apply, false, gse::gui::ids::make("settings.footer.discard"))) {
-		m_panel_state.discard_all();
+		m_panel_state.discard_all(m_save_reg);
 	}
 }
