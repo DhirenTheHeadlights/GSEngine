@@ -1,67 +1,141 @@
 
-void vbd_apply_restitution(uint3 dispatch_id) {
-    uint idx = dispatch_id.x;
-    uint num_colors = min(collision_state[state_max_used_color_index], pc.color_count);
-    uint color = pc.color_offset;
-    if (color >= num_colors) return;
+static const uint restitution_capacity = 2048;
 
-    uint count = color_data[max_colors + color];
-    if (idx >= count) return;
+groupshared uint64_t restitution_keys[restitution_capacity];
+groupshared uint restitution_contacts[restitution_capacity];
+groupshared uint restitution_count;
 
-    uint offset = color_data[color];
-    uint bi = color_data[max_colors * 2 + offset + idx];
-    if (bi >= pc.body_count) return;
+void apply_one_restitution(uint ci) {
+    contact_constraint c = contact_data[ci];
 
-    body_state body = body_data[bi];
-    if (body.locked != 0) return;
-    if (body.sleep_counter >= sleep_threshold) return;
-    if (body.mass <= 1e-10) return;
+    body_state ba = body_data[c.body_a];
+    body_state bb = body_data[c.body_b];
 
-    float w_self = 1.0 / body.mass;
-    float3 v_delta = float3(0, 0, 0);
+    float3 rAW = rotate_vector(ba.orientation, c.local_anchor_a);
+    float3 rBW = rotate_vector(bb.orientation, c.local_anchor_b);
+    float3 va = ba.velocity + cross(ba.angular_velocity, rAW);
+    float3 vb = bb.velocity + cross(bb.angular_velocity, rBW);
+    float v_rel_after = dot(c.normal, va - vb);
 
-    uint co = contact_offsets[bi];
-    uint cc = contact_counts[bi];
-    for (uint k = 0; k < cc; k++) {
-        uint ci = safe_load_uint(contact_adjacency, co + k, max_contact_adjacency);
-        if (ci >= max_contacts) continue;
+    float speed_ratio = clamp(
+        (-c.approach_speed - solver_config_data[0].restitution_threshold) / solver_config_data[0].restitution_threshold,
+        0.0,
+        1.0
+    );
+    float v_target = -c.restitution * speed_ratio * c.approach_speed;
+    float dv = v_target - v_rel_after;
+    if (dv <= 0.0) return;
 
-        contact_constraint c = contact_data[ci];
-        if (c.restitution <= 0.0) continue;
-        if (c.lambda.x >= 0.0) continue;
-        if (c.approach_speed >= -solver_config_data[0].restitution_threshold) continue;
+    float w_a = (ba.locked != 0 || ba.mass <= 1e-10) ? 0.0 : 1.0 / ba.mass;
+    float w_b = (bb.locked != 0 || bb.mass <= 1e-10) ? 0.0 : 1.0 / bb.mass;
+    float w_total = w_a + w_b;
+    if (w_total <= 0.0) return;
 
-        bool is_a = (c.body_a == bi);
-        uint other_idx = is_a ? c.body_b : c.body_a;
-        if (other_idx >= pc.body_count) continue;
-        body_state other = body_data[other_idx];
+    float3 impulse = c.normal * (dv / w_total);
 
-        float3 r_self = rotate_vector(body.orientation, is_a ? c.local_anchor_a : c.local_anchor_b);
-        float3 r_other = rotate_vector(other.orientation, is_a ? c.local_anchor_b : c.local_anchor_a);
-        float3 v_self = body.velocity + v_delta + cross(body.angular_velocity, r_self);
-        float3 v_other = other.velocity + cross(other.angular_velocity, r_other);
-        float3 v_rel_vec = is_a ? (v_self - v_other) : (v_other - v_self);
-        float v_rel_after = dot(c.normal, v_rel_vec);
+    if (ba.locked == 0) {
+        body_data[c.body_a].velocity = ba.velocity + impulse * w_a;
+    }
+    if (bb.locked == 0) {
+        body_data[c.body_b].velocity = bb.velocity - impulse * w_b;
+    }
+}
 
-        float speed_ratio = clamp(
-            (-c.approach_speed - solver_config_data[0].restitution_threshold) / solver_config_data[0].restitution_threshold,
-            0.0,
-            1.0
-        );
-        float v_target = -c.restitution * speed_ratio * c.approach_speed;
-        float dv = v_target - v_rel_after;
-        if (dv <= 0.0) continue;
+bool restitution_gate(uint ci) {
+    if (contact_data[ci].body_a >= pc.body_count || contact_data[ci].body_b >= pc.body_count) return false;
+    if (contact_data[ci].restitution <= 0.0) return false;
+    if (contact_data[ci].lambda.x >= 0.0) return false;
+    if (contact_data[ci].approach_speed >= -solver_config_data[0].restitution_threshold) return false;
+    return true;
+}
 
-        float w_other = (other.locked != 0) ? 0.0 : 1.0 / other.mass;
-        float w_total = w_self + w_other;
-        if (w_total <= 0.0) continue;
+void vbd_apply_restitution(uint3 dispatch_id, uint3 group_thread_id) {
+    uint tid = group_thread_id.x;
+    uint num_contacts = min(collision_state[state_contact_count_index], max_contacts);
 
-        float impulse_mag = dv / w_total;
-        float sign = is_a ? 1.0 : -1.0;
-        v_delta += c.normal * (impulse_mag * w_self * sign);
+    if (tid == 0) {
+        restitution_count = 0;
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    for (uint ci = tid; ci < num_contacts; ci += adjacency_workgroup_size) {
+        if (!restitution_gate(ci)) {
+            continue;
+        }
+        uint slot;
+        InterlockedAdd(restitution_count, 1u, slot);
+        if (slot < restitution_capacity) {
+            uint pair_key = (contact_data[ci].body_a << 16) | contact_data[ci].body_b;
+            uint64_t fk = contact_data[ci].feature_key;
+            uint64_t feature_rank = (uint64_t)(uint(fk ^ (fk >> 32)) & 0xFFFFFFu);
+            restitution_keys[slot] =
+                ((uint64_t)pair_key << 32) |
+                ((uint64_t)(contact_data[ci].replayed & 0xFFu) << 24) |
+                feature_rank;
+            restitution_contacts[slot] = ci;
+        }
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    uint q = restitution_count;
+    if (tid == 0) {
+        InterlockedMax(collision_state[state_tick_hash_base_index], q);
+    }
+    if (q == 0) {
+        return;
     }
 
-    if (any(v_delta != float3(0, 0, 0))) {
-        body_data[bi].velocity = body.velocity + v_delta;
+    if (q > restitution_capacity) {
+        if (tid == 0) {
+            for (uint ci = 0; ci < num_contacts; ci++) {
+                if (restitution_gate(ci)) {
+                    apply_one_restitution(ci);
+                }
+            }
+        }
+        return;
+    }
+
+    uint m = 1;
+    while (m < q) {
+        m <<= 1;
+    }
+
+    for (uint pad = tid; pad < m; pad += adjacency_workgroup_size) {
+        if (pad >= q) {
+            restitution_keys[pad] = ~(uint64_t)0;
+            restitution_contacts[pad] = 0xFFFFFFFFu;
+        }
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    for (uint k = 2; k <= m; k <<= 1) {
+        for (uint j = k >> 1; j > 0; j >>= 1) {
+            for (uint i = tid; i < m; i += adjacency_workgroup_size) {
+                uint partner = i ^ j;
+                if (partner <= i) {
+                    continue;
+                }
+                bool greater = restitution_keys[i] > restitution_keys[partner];
+                bool ascending = (i & k) == 0;
+                if (greater == ascending) {
+                    uint64_t tk = restitution_keys[i];
+                    restitution_keys[i] = restitution_keys[partner];
+                    restitution_keys[partner] = tk;
+                    uint tc = restitution_contacts[i];
+                    restitution_contacts[i] = restitution_contacts[partner];
+                    restitution_contacts[partner] = tc;
+                }
+            }
+            GroupMemoryBarrierWithGroupSync();
+        }
+    }
+
+    if (tid != 0) {
+        return;
+    }
+
+    for (uint e = 0; e < q; e++) {
+        apply_one_restitution(restitution_contacts[e]);
     }
 }

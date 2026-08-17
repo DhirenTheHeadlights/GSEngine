@@ -8,7 +8,7 @@ bool sleeping = body.sleep_counter >= sleep_threshold;
 bool update_orient = body.update_orientation != 0;
 bool gravity = body.affected_by_gravity != 0;
 
-if (pc.substep == 0) {
+{
     for (uint mi = 0; mi < pc.motor_count; mi++) {
         velocity_motor_constraint m = motor_data[mi];
         if (m.body_index == bi && sleeping && length(m.target_velocity.xyz) > 0.01) {
@@ -67,6 +67,7 @@ body.old_position = body.position;
 body.old_orientation = body.orientation;
 
 if (locked) {
+    body.accel_weight = 0.0;
     body.predicted_position = body.position + body.velocity * pc.dt;
     body.inertia_target = body.predicted_position;
 
@@ -91,6 +92,7 @@ if (locked) {
 }
 
 if (sleeping) {
+    body.accel_weight = 0.0;
     body.predicted_position = body.position;
     body.inertia_target = body.position;
     body.predicted_orientation = body.orientation;
@@ -109,6 +111,7 @@ if (lin_speed > solver_config_data[0].max_linear_speed) {
     linear_velocity *= (solver_config_data[0].max_linear_speed / lin_speed);
     body.velocity = linear_velocity;
 }
+InterlockedMax(collision_state[state_max_speed_index], asuint(min(lin_speed, solver_config_data[0].max_linear_speed)));
 
 float3 angular_velocity = body.angular_velocity.xyz;
 float ang_speed = length(angular_velocity);
@@ -116,8 +119,12 @@ if (ang_speed > solver_config_data[0].max_angular_speed) {
     angular_velocity *= (solver_config_data[0].max_angular_speed / ang_speed);
     body.angular_velocity = angular_velocity;
 }
+InterlockedMax(collision_state[state_max_angular_speed_index], asuint(min(ang_speed, solver_config_data[0].max_angular_speed)));
 
-body.accel_weight = ((grounded_bits[bi / 32u] >> (bi % 32u)) & 1u) != 0 ? 0.0 : 1.0;
+bool unconstrained = contact_counts[bi] == 0 && joint_counts[bi] == 0;
+if (unconstrained) {
+    body.accel_weight = 1.0;
+}
 
 float3 gravity_step = gravity ? float3(0, -9.8 * pc.dt * pc.dt, 0) : float3(0, 0, 0);
 body.inertia_target = body.position + body.velocity * pc.dt + gravity_step;

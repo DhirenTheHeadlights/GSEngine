@@ -55,8 +55,9 @@ void vbd_finalize(uint3 dispatch_id) {
         aabb_he.y = abs(ax.y) * he.x + abs(ay.y) * he.y + abs(az.y) * he.z;
         aabb_he.z = abs(ax.z) * he.x + abs(ay.z) * he.y + abs(az.z) * he.z;
 
-        body.aabb_min = body.position.xyz - aabb_he;
-        body.aabb_max = body.position.xyz + aabb_he;
+        float3 shape_center = body_origin(body.position.xyz, body.orientation, body.com_local.xyz);
+        body.aabb_min = shape_center - aabb_he;
+        body.aabb_max = shape_center + aabb_he;
     }
 
     body_data[bi] = body;

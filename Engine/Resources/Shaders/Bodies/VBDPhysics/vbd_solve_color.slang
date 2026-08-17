@@ -1,4 +1,43 @@
 
+static const float fx_scale = 4194304.0;
+static const float fx_inv_scale = 1.0 / 4194304.0;
+
+int64_t fx_encode(float v) {
+    return int64_t(round(v * fx_scale));
+}
+
+float fx_decode(int64_t v) {
+    return float(v) * fx_inv_scale;
+}
+
+void fx_add_vec3(inout int64_t acc[3], float3 v) {
+    for (uint i = 0; i < 3; i++) {
+        acc[i] += fx_encode(v[i]);
+    }
+}
+
+float3 fx_load_vec3(int64_t acc[3]) {
+    return float3(fx_decode(acc[0]), fx_decode(acc[1]), fx_decode(acc[2]));
+}
+
+void fx_add_mat3(inout int64_t acc[9], mat3 m) {
+    for (uint i = 0; i < 3; i++) {
+        for (uint j = 0; j < 3; j++) {
+            acc[i * 3 + j] += fx_encode(m[i][j]);
+        }
+    }
+}
+
+mat3 fx_load_mat3(int64_t acc[9]) {
+    mat3 m;
+    for (uint i = 0; i < 3; i++) {
+        for (uint j = 0; j < 3; j++) {
+            m[i][j] = fx_decode(acc[i * 3 + j]);
+        }
+    }
+    return m;
+}
+
 void accumulate_geometric_stiffness(float3 r, float3 dir, float abs_force, inout mat3 ang_hess) {
     float rd = dot(r, dir);
     for (int j = 0; j < 3; j++) {
@@ -280,6 +319,20 @@ void solve_body(uint bi, bool live_jac) {
     mat3 hess_xt = mat3_identity(0);
     bool has_cross_terms = false;
 
+    float3 chk_ang_seq = float3(0, 0, 0);
+    float3 chk_ang_even = float3(0, 0, 0);
+    float3 chk_ang_odd = float3(0, 0, 0);
+    float3 chk_lin_seq = float3(0, 0, 0);
+    float3 chk_lin_even = float3(0, 0, 0);
+    float3 chk_lin_odd = float3(0, 0, 0);
+    uint chk_terms = 0;
+
+    int64_t fx_grad[3] = { 0, 0, 0 };
+    int64_t fx_ang_grad[3] = { 0, 0, 0 };
+    int64_t fx_hess[9] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+    int64_t fx_ang_hess[9] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+    int64_t fx_hess_xt[9] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+
     uint contact_offset = contact_offsets[bi];
     uint contact_count = contact_counts[bi];
 
@@ -289,6 +342,11 @@ void solve_body(uint bi, bool live_jac) {
     float motor_grad_before = 0.0;
     float motor_stiffness = 0.0;
     bool motor_horizontal_only = false;
+
+
+
+
+
 
     if (has_motor) {
         velocity_motor_constraint m = motor_data[motor_idx];
@@ -363,15 +421,27 @@ void solve_body(uint bi, bool live_jac) {
             float3 J_lin = dirs[row] * sign;
             float3 J_ang = (live_jac ? cross(my_r, dirs[row]) : J_ang_frozen[row]) * sign;
 
-            grad += J_lin * force[row];
+            fx_add_vec3(fx_grad, J_lin * force[row]);
             hess = mat3_add(hess, mat3_scale(outer_product3(J_lin, J_lin), c.penalty[row]));
 
+            float3 chk_lin_term = J_lin * force[row];
+            chk_lin_seq += chk_lin_term;
+            if ((chk_terms & 1u) == 0u) chk_lin_even += chk_lin_term;
+            else chk_lin_odd += chk_lin_term;
+
             if (update_orient) {
-                ang_grad += J_ang * force[row];
+                fx_add_vec3(fx_ang_grad, J_ang * force[row]);
                 ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(J_ang, J_ang), c.penalty[row]));
                 hess_xt = mat3_add(hess_xt, mat3_scale(outer_product3(J_lin, J_ang), c.penalty[row]));
                 has_cross_terms = true;
+
+                float3 chk_ang_term = J_ang * force[row];
+                chk_ang_seq += chk_ang_term;
+                if ((chk_terms & 1u) == 0u) chk_ang_even += chk_ang_term;
+                else chk_ang_odd += chk_ang_term;
             }
+
+            chk_terms++;
         }
 
         if (has_motor) {
@@ -390,6 +460,21 @@ void solve_body(uint bi, bool live_jac) {
             }
         }
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+    grad = fx_load_vec3(fx_grad);
+    ang_grad = fx_load_vec3(fx_ang_grad);
 
     if (has_motor) {
         float motor_grad_after = length(motor_grad);
@@ -571,12 +656,7 @@ if (solver_config_data[0].use_jacobi != 0) {
 
     solve_body(bi, false);
 
-    if (bi == 0 && pc.current_alpha > 0.0 && pc.iteration + 1 >= solver_config_data[0].min_iterations) {
-        float max_lin = asfloat(collision_state[state_convergence_max_delta_index]);
-        float max_ang = asfloat(collision_state[state_convergence_max_angular_delta_index]);
-        if (max_lin < solver_config_data[0].convergence_threshold_linear && max_ang < solver_config_data[0].convergence_threshold_angular) {
-            collision_state[state_converged_flag_index] = 1;
-        }
+    if (bi == 0) {
         collision_state[state_convergence_max_delta_index] = 0;
         collision_state[state_convergence_max_angular_delta_index] = 0;
     }
@@ -593,18 +673,6 @@ if (idx < count) {
     uint bi = color_data[max_colors * 2 + offset + idx];
     if (bi < pc.body_count) {
         solve_body(bi, false);
-    }
-}
-
-if (color == num_colors - 1 && pc.current_alpha > 0.0 && pc.iteration + 1 >= solver_config_data[0].min_iterations && idx == 0) {
-    float max_lin = asfloat(collision_state[state_convergence_max_delta_index]);
-    float max_ang = asfloat(collision_state[state_convergence_max_angular_delta_index]);
-    if (false) {
-        collision_state[state_converged_flag_index] = 1;
-        indirect_args[1].x = 0;
-        for (uint c = 0; c < max_colors; c++) {
-            indirect_args[2 + c].x = 0;
-        }
     }
 }
 
