@@ -2,6 +2,8 @@ export module gse.graphics:bloom_renderer;
 
 import std;
 
+import :taa_renderer;
+
 import gse.gpu;
 import gse.core;
 import gse.containers;
@@ -64,6 +66,7 @@ export namespace gse::renderer::bloom {
 	) -> async::task<>;
 
 	[[= gse::system_frame{}]]
+	[[= gse::runs_after<^^taa::data>{}]]
 	auto frame(
 		const context& ctx,
 		shared_view<gpu::context::data> gpu_s,

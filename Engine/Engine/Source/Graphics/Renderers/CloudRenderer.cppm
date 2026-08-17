@@ -17,7 +17,6 @@ import gse.gpu_record;
 export namespace gse::renderer::cloud {
 	constexpr vec3u shape_noise_size{ 128, 128, 128 };
 	constexpr vec3u detail_noise_size{ 32, 32, 32 };
-	constexpr std::uint32_t cloud_target_divisor = 2;
 
 	struct cloud_raymarch_pass {};
 	struct cloud_composite_pass {};
@@ -51,6 +50,24 @@ export namespace gse::renderer::cloud {
 	};
 
 	struct [[= gse::system_state<"Cloud">{}, = gse::settings::category<"Clouds">{}]] data {
+		[[
+			= gse::settings::describe<"Render the volumetric cloud layer. Off skips the raymarch and composite "
+									  "passes entirely — the largest camera-dependent GPU cost in the sky stack.">{},
+			= gse::settings::hot_reloadable
+		]]
+		bool enabled = true;
+
+		[[
+			= gse::settings::describe<"Screen divisor for the raymarch target. Cost scales with the square of this: "
+									  "2 is quarter the screen pixels, 4 is a sixteenth. Raising it blurs cloud "
+									  "edges against geometry and coarsens the per-pixel jitter into visible "
+									  "blocks, since the composite is a plain bilinear upsample. Changing it "
+									  "stalls the device once to rebuild the target.">{},
+			= gse::settings::range<1, 8>{},
+			= gse::settings::hot_reloadable
+		]]
+		int target_divisor = 2;
+
 		[[
 			= gse::settings::describe<"Cloud layer bottom altitude (km)">{},
 			= gse::settings::hot_reloadable
@@ -94,11 +111,13 @@ export namespace gse::renderer::cloud {
 		float view_extinction = 0.15f;
 
 		[[
-			= gse::settings::describe<"Light-ray Beer's law extinction coefficient">{},
-			= gse::settings::range<0.f, 1.f>{},
+			= gse::settings::describe<"Light-ray Beer's law extinction coefficient. The sun march covers only "
+									  "6 x 5% of the layer thickness, so this needs to be far larger than the "
+									  "view coefficient to produce visible self-shadowing.">{},
+			= gse::settings::range<0.f, 8.f>{},
 			= gse::settings::hot_reloadable
 		]]
-		float light_extinction = 0.10f;
+		float light_extinction = 3.0f;
 
 		[[
 			= gse::settings::describe<"Shape noise sampling scale (1/km)">{},
@@ -177,6 +196,7 @@ export namespace gse::renderer::cloud {
 
 		vec2u cloud_target_extent{ 0, 0 };
 		std::uint32_t frame_counter = 0;
+		int applied_target_divisor = 0;
 		bool noises_ready = false;
 	};
 

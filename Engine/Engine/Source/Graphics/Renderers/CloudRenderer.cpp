@@ -173,7 +173,8 @@ namespace gse::renderer::cloud {
 	};
 
 	auto compute_cloud_target_extent(
-		vec2u screen_extent
+		vec2u screen_extent,
+		int divisor
 	) -> vec2u;
 
 	auto recreate_cloud_target(
@@ -186,14 +187,16 @@ namespace gse::renderer::cloud {
 	) -> cloud_data;
 }
 
-auto gse::renderer::cloud::compute_cloud_target_extent(const vec2u screen_extent) -> vec2u {
-	const auto w = std::max(screen_extent.x() / cloud_target_divisor, 1u);
-	const auto h = std::max(screen_extent.y() / cloud_target_divisor, 1u);
+auto gse::renderer::cloud::compute_cloud_target_extent(const vec2u screen_extent, const int divisor) -> vec2u {
+	const auto d = static_cast<std::uint32_t>(std::max(divisor, 1));
+	const auto w = std::max(screen_extent.x() / d, 1u);
+	const auto h = std::max(screen_extent.y() / d, 1u);
 	return vec2u{ w, h };
 }
 
 auto gse::renderer::cloud::recreate_cloud_target(const shared_view<gpu::context::data> gpu_s, data& d) -> void {
-	d.cloud_target_extent = compute_cloud_target_extent(gpu_s.render_graph->extent());
+	d.applied_target_divisor = std::max(d.target_divisor, 1);
+	d.cloud_target_extent = compute_cloud_target_extent(gpu_s.render_graph->extent(), d.applied_target_divisor);
 	d.cloud_target = gpu_s.device->create_image(
 		{
 			.size = d.cloud_target_extent,
@@ -289,11 +292,20 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 		co_return;
 	}
 
+	if (std::max(d.target_divisor, 1) != d.applied_target_divisor) {
+		gpu_s.device->wait_idle();
+		recreate_cloud_target(gpu_s, d);
+	}
+
 	if (!d.cloud_target.valid()) {
 		co_return;
 	}
 
 	if (!atm_state.atmosphere_ubo_buffer.valid()) {
+		co_return;
+	}
+
+	if (!d.enabled) {
 		co_return;
 	}
 

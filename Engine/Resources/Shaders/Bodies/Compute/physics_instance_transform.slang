@@ -48,11 +48,13 @@ void physics_instance_transform(uint3 dispatch_id) {
     float3 velocity = body.velocity.xyz;
     float3 angular_velocity = body.angular_velocity.xyz;
 
-    float3 curr_position = body.position.xyz - velocity * pc.interpolation_lag;
+    float3 curr_com = body.position.xyz - velocity * pc.interpolation_lag;
     float4 curr_orientation = back_rotate(body.orientation, angular_velocity, pc.interpolation_lag);
+    float3 curr_position = body_origin(curr_com, curr_orientation, body.com_local.xyz);
 
-    float3 prev_position = curr_position - velocity * pc.frame_delta;
+    float3 prev_com = curr_com - velocity * pc.frame_delta;
     float4 prev_orientation = back_rotate(curr_orientation, angular_velocity, pc.frame_delta);
+    float3 prev_position = body_origin(prev_com, prev_orientation, body.com_local.xyz);
 
     float3 axis_x = rotate_vector(curr_orientation, float3(1.0, 0.0, 0.0));
     float3 axis_y = rotate_vector(curr_orientation, float3(0.0, 1.0, 0.0));

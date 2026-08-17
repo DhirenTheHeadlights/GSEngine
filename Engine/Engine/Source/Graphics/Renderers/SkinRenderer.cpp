@@ -145,7 +145,7 @@ auto gse::renderer::skin::collect(context& ctx, data& d, const channel_read<phys
 				: nullptr;
 
 			const auto render_tc = bone_tc != nullptr
-				? physics::interpolated_transform(*bone_tc, motions.find(skeleton.bones[slot]), lag)
+				? physics::interpolated_transform(*bone_tc, motions.find(skeleton.bones[slot]), vec3<displacement>{}, lag)
 				: physics::transform_component{};
 
 			d.bone_bindings.push_back({
@@ -163,7 +163,7 @@ auto gse::renderer::skin::collect(context& ctx, data& d, const channel_read<phys
 				continue;
 			}
 
-			const auto box = physics::world_aabb_of(render_tc, *bone_cc);
+			const auto box = physics::world_aabb_of(render_tc, *bone_cc, nullptr);
 			bounds.min = gse::min(bounds.min, box.min);
 			bounds.max = gse::max(bounds.max, box.max);
 			any_bounds = true;

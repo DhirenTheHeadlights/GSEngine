@@ -455,7 +455,7 @@ float4 fs_main(MeshOutput input) : SV_Target0 {
     float view_dist_km = view_dist * 0.001;
     float slice = saturate(view_dist_km / atmosphere_ubo.max_view_distance);
     float4 ap = aerial_perspective_in.SampleLevel(ap_sampler, float3(screen_uv, slice), 0);
-    float3 in_scatter = ap.rgb;
+    float3 in_scatter = ap.rgb * atmosphere_ubo.sun_irradiance;
     float transmittance = ap.a;
     result = result * transmittance + in_scatter;
 

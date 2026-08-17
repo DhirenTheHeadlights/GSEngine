@@ -35,6 +35,13 @@ export namespace gse::camera {
 		[[= gse::shared]] id active_controller_entity{};
 		int active_priority = -1;
 
+		target scripted_target{};
+		id scripted_requester{};
+		int scripted_priority = -1;
+		time scripted_blend_duration = milliseconds(300);
+		bool scripted_continuous = true;
+		bool scripted_active = false;
+
 		angle yaw = degrees(0.f);
 
 		[[= gse::shared]] gse::view_matrix view_matrix{};
@@ -58,9 +65,11 @@ export namespace gse::camera {
 	auto run(
 		context& ctx,
 		data& d,
-		channel_read<ui_focus_request, viewport_update, camera_yaw_request> requests_in,
+		channel_read<ui_focus_request, viewport_update, camera_yaw_request, request> requests_in,
 		read<follow_component> cameras
 	) -> async::task<>;
+
+	auto scripted_requester_id() -> id;
 
 	auto position(
 		const data& d

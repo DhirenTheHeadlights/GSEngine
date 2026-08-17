@@ -84,8 +84,9 @@ struct OitOutput {
 
 [shader("fragment")]
 OitOutput fs_oit_main(MeshOutput input) {
-    float3 N = normalize(input.view_normal);
     float3 V = normalize(-input.view_pos);
+    float3 N = normalize(input.view_normal);
+    N = dot(N, V) < 0.0 ? -N : N;
 
     instance_data inst = instance_data_buffer[input.instance_idx];
     material_data mat = material_palette[inst.material_index];
@@ -115,8 +116,8 @@ OitOutput fs_oit_main(MeshOutput input) {
 
     float a = saturate(inst.tint.a + (1.0 - inst.tint.a) * fresnel);
 
-    float z = input.clip_pos.z;
-    float w = clamp(pow(min(1.0, a * 10.0) + 0.01, 3.0) * 1e8 * pow(1.0 - z * 0.9, 3.0), 1e-2, 3e3);
+    float view_depth = abs(input.view_pos.z);
+    float w = clamp(0.03 / (1e-5 + pow(view_depth / 200.0, 4.0)), 1e-2, 3e3);
 
     OitOutput o;
     o.accum = float4(color * a, a) * w;

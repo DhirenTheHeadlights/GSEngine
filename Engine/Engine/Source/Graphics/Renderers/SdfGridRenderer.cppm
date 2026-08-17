@@ -26,9 +26,26 @@ export namespace gse::renderer::sdf_grid {
 		]]
 		bool show_labels = true;
 
+		[[
+			= gse::settings::describe<"Spacing of the fine gridlines. Lines fade out once a cell projects to fewer than "
+									  "a few pixels, so this — not fade_distance — is what decides how far the grid "
+									  "reaches.">{}
+		]]
 		length minor_spacing = meters(1.f);
-		[[= gse::shared]] length major_spacing = meters(10.f);
-		[[= gse::shared]] length fade_distance = meters(200.f);
+
+		[[
+			= gse::settings::describe<"Spacing of the emphasized gridlines. Widen this along with minor_spacing for a "
+									  "shot that needs the grid to survive out to the horizon.">{},
+			= gse::shared
+		]]
+		length major_spacing = meters(10.f);
+		[[
+			= gse::settings::describe<"Distance at which the world grid fades to nothing. The default suits close-up "
+									  "dev work; a shot that shows the horizon needs this out past it or the grid "
+									  "stops well short of where the ground ends.">{},
+			= gse::shared
+		]]
+		length fade_distance = meters(200.f);
 		[[= gse::shared]] length label_size = meters(0.5f);
 		float minor_thickness = 1.0f;
 		float major_thickness = 1.5f;

@@ -50,6 +50,18 @@ float3 integrate_sky_radiance(float3 origin, float3 view_dir, float3 sun_dir) {
         view_transmittance *= step_transmittance;
     }
 
+    if (t_ground >= 0.0) {
+        float3 ground_point = origin + view_dir * t_max;
+        float3 ground_normal = ground_point / length(ground_point);
+        float mu_sun_ground = dot(ground_normal, sun_dir);
+
+        float3 sun_at_ground = sample_transmittance_at(atmosphere_ubo.bottom_radius, mu_sun_ground);
+        float3 sky_at_ground = sample_multiscatter_at(atmosphere_ubo.bottom_radius, mu_sun_ground);
+        float3 ground_irradiance = sun_at_ground * max(mu_sun_ground, 0.0) + sky_at_ground;
+
+        luminance += view_transmittance * atmosphere_ubo.ground_albedo * ground_irradiance * (1.0 / pi);
+    }
+
     return luminance;
 }
 

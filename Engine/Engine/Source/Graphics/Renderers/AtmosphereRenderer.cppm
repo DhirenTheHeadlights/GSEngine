@@ -43,13 +43,29 @@ export namespace gse::renderer::atmosphere {
 		atmosphere_length ozone_peak_height;
 		atmosphere_length ozone_half_width;
 		atmosphere_length max_view_distance;
+
+		vec3f ground_albedo;
+		vec3<irradiance> sun_irradiance;
 	};
 
 	struct [[= shaders::binding<0, 7>{}]] atmosphere_ubo {
 		using element = atmosphere_data;
 	};
 
+	struct sun_request {
+		angle elevation = degrees(60.f);
+		angle azimuth = degrees(45.f);
+	};
+
 	struct [[= gse::system_state<"Atmosphere">{}, = gse::settings::category<"Atmosphere">{}]] data {
+		[[
+			= gse::settings::describe<"Render the atmosphere: scattering LUT updates and the sky draw. Off skips the "
+									  "passes and freezes the last-computed sky; the sun direction stays live for "
+									  "scene lighting and shadows either way.">{},
+			= gse::settings::hot_reloadable
+		]]
+		bool enabled = true;
+
 		[[
 			= gse::settings::describe<"Sun azimuth (degrees from +X around +Y)">{},
 			= gse::settings::range<0.f, 360.f>{},
@@ -77,6 +93,14 @@ export namespace gse::renderer::atmosphere {
 			= gse::settings::hot_reloadable
 		]]
 		vec3f sun_color = { 1.0f, 0.9f, 0.75f };
+
+		[[
+			= gse::settings::describe<"Reflectance of the planet surface, used where a view ray passes below the horizon "
+									  "and hits the ground. Without it those rays return in-scattered haze with nothing "
+									  "behind it, which reads as a bright band under any finite floor.">{},
+			= gse::settings::hot_reloadable
+		]]
+		vec3f ground_albedo = { 0.08f, 0.08f, 0.09f };
 
 		[[
 			= gse::settings::describe<"Sun disk angular radius (degrees)">{},
@@ -203,6 +227,7 @@ export namespace gse::renderer::atmosphere {
 		shared_view<gpu::context::data> gpu_s,
 		data& d,
 		channel_write<gpu::render_pass_request> pass_out,
+		channel_read<sun_request> sun_in,
 		shared_view<camera::data> cam_state
 	) -> async::task<>;
 }
