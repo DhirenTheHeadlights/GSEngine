@@ -2,6 +2,8 @@ export module gse.graphics:taa_renderer;
 
 import std;
 
+import :forward_renderer;
+
 import gse.gpu;
 import gse.core;
 import gse.containers;
@@ -43,6 +45,7 @@ export namespace gse::renderer::taa {
 	) -> async::task<>;
 
 	[[= gse::system_frame{}]]
+	[[= gse::runs_after<^^forward::data>{}]]
 	auto frame(
 		const context& ctx,
 		shared_view<gpu::context::data> gpu_s,

@@ -97,7 +97,6 @@ namespace gse::renderer::atmosphere {
 		vec3f sun_direction;
 		atmosphere_length camera_altitude;
 		vec3<irradiance> sun_irradiance;
-		float _pad;
 	};
 
 	using transmittance_bindings = type_pack<atmosphere_ubo, transmittance_out>;
@@ -238,6 +237,12 @@ auto gse::renderer::atmosphere::build_atmosphere_data(const data& d) -> atmosphe
 		.ozone_peak_height = d.ozone_peak_height,
 		.ozone_half_width = d.ozone_half_width,
 		.max_view_distance = d.max_view_distance,
+		.ground_albedo = d.ground_albedo,
+		.sun_irradiance = {
+			d.sun_intensity * d.sun_color.x(),
+			d.sun_intensity * d.sun_color.y(),
+			d.sun_intensity * d.sun_color.z(),
+		},
 	};
 }
 
@@ -312,7 +317,12 @@ auto gse::renderer::atmosphere::init(context& ctx, const shared_view<gpu::contex
 	return {};
 }
 
-auto gse::renderer::atmosphere::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, shared_view<camera::data> cam_state) -> async::task<> {
+auto gse::renderer::atmosphere::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<sun_request> sun_in, shared_view<camera::data> cam_state) -> async::task<> {
+	for (const auto& [elevation, azimuth] : sun_in.of<sun_request>()) {
+		d.sun_elevation = elevation;
+		d.sun_azimuth = azimuth;
+	}
+
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -328,6 +338,10 @@ auto gse::renderer::atmosphere::frame(const context& ctx, shared_view<gpu::conte
 
 	const atmosphere_data shader_payload = build_atmosphere_data(d);
 	d.atmosphere_ubo_buffer.host_write(shader_payload);
+
+	if (!d.enabled) {
+		co_return;
+	}
 
 	if (!d.luts_ready) {
 		const auto transmittance_groups = vec2u{
@@ -400,7 +414,6 @@ auto gse::renderer::atmosphere::frame(const context& ctx, shared_view<gpu::conte
 			.sun_direction = d.sun_direction,
 			.camera_altitude = d.camera_altitude,
 			.sun_irradiance = sun_irradiance,
-			._pad = 0.0f,
 		},
 		{
 			.transmittance_in = d.transmittance_lut.sampled_slot(),

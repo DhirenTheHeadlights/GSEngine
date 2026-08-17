@@ -136,7 +136,7 @@ auto gse::renderer::physics_transform::frame(context& ctx, shared_view<gpu::cont
 
 	auto rec = co_await gpu::pass<^^gse::renderer::physics_transform::frame>(pass_out)
 		.pipeline(d.pipeline)
-		.after<^^geometry_collector::frame, ^^vbd::vbd_state_copy_stage>();
+		.after<^^geometry_collector::frame, ^^vbd::vbd_render_mirror_stage>();
 
 	rec.dispatch<entry>(
 		{

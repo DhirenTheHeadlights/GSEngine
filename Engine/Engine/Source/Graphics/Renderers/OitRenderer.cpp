@@ -8,6 +8,7 @@ import :camera_system;
 import :atmosphere_renderer;
 import :cloud_renderer;
 import :forward_renderer;
+import :physics_debug_renderer;
 import :sdf_grid_renderer;
 import :world_text_renderer;
 import :render_targets;
@@ -66,7 +67,6 @@ namespace gse::renderer::oit {
 		vec3f sun_direction;
 		float sun_ambient;
 		vec3f sun_color;
-		float pad;
 	};
 
 	using accum_entry = gpu::graphics_entry<
@@ -315,7 +315,7 @@ auto gse::renderer::oit::frame(context& ctx, shared_view<gpu::context::data> gpu
 	auto composite_rec = co_await gpu::pass<^^composite_pass>(pass_out)
 		.pipeline(d.composite_pipeline)
 		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
-		.after<^^accumulate_pass, ^^forward::frame, ^^atmosphere::sky_raster_pass, ^^cloud::cloud_composite_pass>();
+		.after<^^accumulate_pass, ^^forward::frame, ^^atmosphere::sky_raster_pass, ^^cloud::cloud_composite_pass, ^^physics_debug::frame>();
 
 	composite_rec.sample_image(gpu_s.render_graph->framebuffer_image<targets::oit_accum>(), gpu::pipeline_stage_flag::fragment_shader);
 	composite_rec.sample_image(gpu_s.render_graph->framebuffer_image<targets::oit_reveal>(), gpu::pipeline_stage_flag::fragment_shader);
