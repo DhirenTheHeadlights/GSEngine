@@ -7,6 +7,7 @@ export import gse.concurrency;
 export import gse.config;
 export import gse.containers;
 export import gse.core;
+export import gse.devtools;
 export import gse.diag;
 export import gse.ecs;
 export import gse.examples;
