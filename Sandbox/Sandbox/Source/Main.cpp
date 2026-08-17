@@ -522,6 +522,15 @@ auto sandbox::startup::apply_scenario(config& cfg) -> bool {
 	if (selected->info.gpu_solver) {
 		cfg.engine.use_gpu_solver = true;
 	}
+
+	std::vector<std::string> pinned;
+	for (const auto& s : selected->info.settings) {
+		if (s[0] != '\0') {
+			pinned.emplace_back(s);
+		}
+	}
+	cfg.engine.setting.insert(cfg.engine.setting.begin(), pinned.begin(), pinned.end());
+
 	cfg.engine.persist_settings = false;
 
 	return true;

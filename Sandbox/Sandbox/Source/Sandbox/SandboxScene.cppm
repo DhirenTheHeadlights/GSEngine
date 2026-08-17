@@ -4,6 +4,7 @@ import std;
 import gse;
 
 import :entity_builders;
+import :runtime_spawns;
 
 export namespace sandbox::player {
 	struct [[= gse::system_state<"Player">{}]] data {};
@@ -23,6 +24,10 @@ export namespace sandbox {
 	) -> void;
 
 	auto pyramid_scene_setup(
+		gse::scene& s
+	) -> void;
+
+	auto sky_scene_setup(
 		gse::scene& s
 	) -> void;
 
@@ -59,7 +64,19 @@ export namespace sandbox {
 		gse::scene& s
 	) -> void;
 
+	auto parity_hull_pile_scene_setup(
+		gse::scene& s
+	) -> void;
+
 	auto parity_overlap_scene_setup(
+		gse::scene& s
+	) -> void;
+
+	auto parity_shapes_scene_setup(
+		gse::scene& s
+	) -> void;
+
+	auto parity_domino_scene_setup(
 		gse::scene& s
 	) -> void;
 }
@@ -118,15 +135,12 @@ auto sandbox::sandbox_scene_setup(gse::scene& s) -> void {
 }
 
 auto sandbox::pyramid_scene_setup(gse::scene& s) -> void {
-	constexpr int base_count = 50;
-	const gse::length extent = gse::meters(1.f);
-	const gse::length floor_span = extent * static_cast<float>(base_count) + gse::meters(24.f);
-
+	constexpr auto floor_size = gse::vec3<gse::length>(gse::meters(1000.f), gse::meters(1.f), gse::meters(1000.f));
 	s.spawn(
 		"PyramidFloor",
 		static_box(
 			gse::vec3<gse::position>(gse::meters(0.f), gse::meters(-0.5f), gse::meters(0.f)),
-			gse::vec3<gse::length>(floor_span, gse::meters(1.f), floor_span),
+			floor_size,
 			gse::quat(1.f, 0.f, 0.f, 0.f),
 			gse::vec3f(0.08f, 0.08f, 0.09f),
 			0.45f,
@@ -134,38 +148,58 @@ auto sandbox::pyramid_scene_setup(gse::scene& s) -> void {
 		)
 	);
 
-	int blocks = 0;
-	for (int row = 0; row < base_count; ++row) {
-		const int count = base_count - row;
-		const gse::length py = extent * (static_cast<float>(row) + 0.5f);
-
-		for (int col = 0; col < count; ++col) {
-			const gse::length px = extent * (static_cast<float>(col) - static_cast<float>(count - 1) * 0.5f);
-			s.spawn(
-				std::format("PyramidBlock_{}_{}", row, col),
-				box(
-					gse::vec3<gse::position>(px, py, gse::meters(0.f)),
-					gse::vec3<gse::length>(extent),
-					gse::kilograms(20.f)
-				)
-			);
-			++blocks;
-		}
-	}
-
-	const gse::length apex = extent * static_cast<float>(base_count);
-
 	s.build("Pyramid Camera")
 		.with<gse::free_camera::component>({
-			.initial_position = gse::vec3<gse::position>(gse::meters(0.f), apex * 0.75f, apex * 2.4f),
+			.initial_position = gse::vec3<gse::position>(gse::meters(0.f), gse::meters(37.5f), gse::meters(120.f)),
 			.priority = 60,
 			.speed = gse::meters_per_second(30.f),
 			.yaw = gse::degrees(0.f),
 			.pitch = gse::degrees(-14.f),
 			.collide_with_geometry = false,
 		});
+}
 
-	gse::log::println("pyramid: base={} blocks={} height={:.1f:m}", base_count, blocks, apex);
+auto sandbox::sky_scene_setup(gse::scene& s) -> void {
+	constexpr auto floor_size = gse::vec3<gse::length>(gse::kilometers(40.f), gse::meters(1.f), gse::kilometers(40.f));
+	s.spawn(
+		"SkyFloor",
+		static_box(
+			gse::vec3<gse::position>(gse::meters(0.f), gse::meters(-0.5f), gse::meters(0.f)),
+			floor_size,
+			gse::quat(1.f, 0.f, 0.f, 0.f),
+			gse::vec3f(0.08f, 0.08f, 0.09f),
+			0.45f,
+			0.0f
+		)
+	);
+
+	constexpr int monolith_count = 9;
+	const auto ring_radius = gse::meters(34.f);
+	for (int i = 0; i < monolith_count; ++i) {
+		const auto theta = gse::degrees(360.f) * (static_cast<float>(i) / static_cast<float>(monolith_count));
+		const auto height = gse::meters(8.f + 4.f * static_cast<float>((i * 4) % 5));
+		s.spawn(
+			std::format("SkyMonolith_{}", i),
+			static_box(
+				gse::vec3<gse::position>(ring_radius * gse::sin(theta), height * 0.5f, ring_radius * gse::cos(theta)),
+				gse::vec3<gse::length>(gse::meters(2.5f), height, gse::meters(2.5f)),
+				gse::quat(1.f, 0.f, 0.f, 0.f),
+				gse::vec3f(0.10f, 0.10f, 0.11f),
+				0.6f,
+				0.0f
+			)
+		);
+	}
+
+	s.build("Sky Camera")
+		.with<gse::free_camera::component>({
+			.initial_position = gse::vec3<gse::position>(gse::meters(0.f), gse::meters(4.f), gse::meters(70.f)),
+			.priority = 60,
+			.speed = gse::meters_per_second(30.f),
+			.yaw = gse::degrees(0.f),
+			.pitch = gse::degrees(0.f),
+			.collide_with_geometry = false,
+		});
 }
 
 
@@ -296,6 +330,146 @@ auto sandbox::parity_stack_scene_setup(gse::scene& s) -> void {
 	}
 }
 
+auto sandbox::parity_shapes_scene_setup(gse::scene& s) -> void {
+	s.spawn(
+		"ParityFloor",
+		static_box(
+			gse::vec3<gse::position>(gse::meters(0.f), gse::meters(-0.5f), gse::meters(0.f)),
+			gse::vec3<gse::length>(gse::meters(60.f), gse::meters(1.f), gse::meters(20.f))
+		)
+	);
+
+	const auto axis_along_z = gse::quat(gse::axis_x, gse::degrees(90.f));
+	const auto axis_along_x = gse::quat(gse::axis_z, gse::degrees(90.f));
+
+	const auto unit_box = gse::vec3<gse::length>(gse::meters(1.f), gse::meters(1.f), gse::meters(1.f));
+	const auto sphere_radius = gse::meters(0.5f);
+	const auto capsule_radius = gse::meters(0.35f);
+	const auto capsule_half_height = gse::meters(0.5f);
+
+	s.spawn(
+		"ParityShapesBoxBox_support",
+		static_box(gse::vec3<gse::position>(gse::meters(-15.f), gse::meters(0.5f), gse::meters(0.f)), unit_box)
+	);
+	s.spawn(
+		"ParityShapesBoxBox_body",
+		box(gse::vec3<gse::position>(gse::meters(-15.f), gse::meters(1.55f), gse::meters(0.f)), unit_box)
+	);
+
+	s.spawn(
+		"ParityShapesHullBox_support",
+		static_box(gse::vec3<gse::position>(gse::meters(-21.f), gse::meters(0.5f), gse::meters(0.f)), unit_box)
+	);
+	s.spawn(
+		"ParityShapesHullBox_body",
+		box_as_hull(gse::vec3<gse::position>(gse::meters(-21.f), gse::meters(1.55f), gse::meters(0.f)), unit_box)
+	);
+
+	s.spawn(
+		"ParityShapesBoxSphere_support",
+		static_box(gse::vec3<gse::position>(gse::meters(-9.f), gse::meters(0.5f), gse::meters(0.f)), unit_box)
+	);
+	s.spawn(
+		"ParityShapesBoxSphere_body",
+		sphere(gse::vec3<gse::position>(gse::meters(-9.f), gse::meters(1.55f), gse::meters(0.f)), sphere_radius)
+	);
+
+	s.spawn(
+		"ParityShapesBoxCapsule_support",
+		static_box(
+			gse::vec3<gse::position>(gse::meters(-3.f), gse::meters(0.5f), gse::meters(0.f)),
+			gse::vec3<gse::length>(gse::meters(1.6f), gse::meters(1.f), gse::meters(1.6f))
+		)
+	);
+	s.spawn(
+		"ParityShapesBoxCapsule_body",
+		capsule(
+			gse::vec3<gse::position>(gse::meters(-3.f), gse::meters(1.4f), gse::meters(0.f)),
+			capsule_radius,
+			capsule_half_height,
+			gse::kilograms(1000.f),
+			axis_along_z
+		)
+	);
+
+	s.spawn(
+		"ParityShapesSphereSphere_support_a",
+		static_sphere(gse::vec3<gse::position>(gse::meters(2.45f), gse::meters(0.5f), gse::meters(0.f)), sphere_radius)
+	);
+	s.spawn(
+		"ParityShapesSphereSphere_support_b",
+		static_sphere(gse::vec3<gse::position>(gse::meters(3.55f), gse::meters(0.5f), gse::meters(0.f)), sphere_radius)
+	);
+	s.spawn(
+		"ParityShapesSphereSphere_body",
+		sphere(gse::vec3<gse::position>(gse::meters(3.f), gse::meters(1.4f), gse::meters(0.f)), sphere_radius)
+	);
+
+	s.spawn(
+		"ParityShapesSphereCapsule_support_a",
+		static_capsule(
+			gse::vec3<gse::position>(gse::meters(8.55f), gse::meters(0.5f), gse::meters(0.f)),
+			capsule_radius,
+			capsule_half_height,
+			axis_along_z
+		)
+	);
+	s.spawn(
+		"ParityShapesSphereCapsule_support_b",
+		static_capsule(
+			gse::vec3<gse::position>(gse::meters(9.45f), gse::meters(0.5f), gse::meters(0.f)),
+			capsule_radius,
+			capsule_half_height,
+			axis_along_z
+		)
+	);
+	s.spawn(
+		"ParityShapesSphereCapsule_body",
+		sphere(gse::vec3<gse::position>(gse::meters(9.f), gse::meters(1.28f), gse::meters(0.f)), sphere_radius)
+	);
+
+	s.spawn(
+		"ParityShapesCapsuleCapsule_support_a",
+		static_capsule(
+			gse::vec3<gse::position>(gse::meters(14.55f), gse::meters(0.5f), gse::meters(0.f)),
+			capsule_radius,
+			capsule_half_height,
+			axis_along_z
+		)
+	);
+	s.spawn(
+		"ParityShapesCapsuleCapsule_support_b",
+		static_capsule(
+			gse::vec3<gse::position>(gse::meters(15.45f), gse::meters(0.5f), gse::meters(0.f)),
+			capsule_radius,
+			capsule_half_height,
+			axis_along_z
+		)
+	);
+	s.spawn(
+		"ParityShapesCapsuleCapsule_body",
+		capsule(
+			gse::vec3<gse::position>(gse::meters(15.f), gse::meters(1.26f), gse::meters(0.f)),
+			capsule_radius,
+			capsule_half_height,
+			gse::kilograms(1000.f),
+			axis_along_x
+		)
+	);
+}
+
+auto sandbox::parity_domino_scene_setup(gse::scene& s) -> void {
+	s.spawn(
+		"ParityFloor",
+		static_box(
+			gse::vec3<gse::position>(gse::meters(0.f), gse::meters(-0.5f), gse::meters(0.f)),
+			gse::vec3<gse::length>(gse::meters(20.f), gse::meters(1.f), gse::meters(20.f))
+		)
+	);
+
+	spawn_domino_chain(s, gse::vec3<gse::position>(-5.f, 0.f, 0.f));
+}
+
 auto sandbox::spawn_parity_grid(gse::scene& s, const int side, const float spacing, const std::string_view prefix) -> void {
 	for (int x = 0; x < side; ++x) {
 		for (int y = 0; y < side; ++y) {
@@ -372,6 +546,36 @@ auto sandbox::parity_pile_scene_setup(gse::scene& s) -> void {
 				s.spawn(
 					std::format("ParityPile_{}_{}_{}", x, y, z),
 					box(
+						gse::vec3<gse::position>(gse::meters(px), gse::meters(py), gse::meters(pz)),
+						gse::vec3<gse::length>(gse::meters(0.5f), gse::meters(0.5f), gse::meters(0.5f))
+					)
+				);
+			}
+		}
+	}
+}
+
+auto sandbox::parity_hull_pile_scene_setup(gse::scene& s) -> void {
+	s.spawn(
+		"ParityFloor",
+		static_box(
+			gse::vec3<gse::position>(gse::meters(0.f), gse::meters(-0.5f), gse::meters(0.f)),
+			gse::vec3<gse::length>(gse::meters(40.f), gse::meters(1.f), gse::meters(40.f))
+		)
+	);
+
+	constexpr int side = 6;
+	constexpr float spacing = 0.75f;
+
+	for (int x = 0; x < side; ++x) {
+		for (int y = 0; y < side; ++y) {
+			for (int z = 0; z < side; ++z) {
+				const float px = (static_cast<float>(x) - static_cast<float>(side - 1) * 0.5f) * spacing;
+				const float pz = (static_cast<float>(z) - static_cast<float>(side - 1) * 0.5f) * spacing;
+				const float py = 0.5f + static_cast<float>(y) * spacing;
+				s.spawn(
+					std::format("ParityHullPile_{}_{}_{}", x, y, z),
+					box_as_hull(
 						gse::vec3<gse::position>(gse::meters(px), gse::meters(py), gse::meters(pz)),
 						gse::vec3<gse::length>(gse::meters(0.5f), gse::meters(0.5f), gse::meters(0.5f))
 					)

@@ -9,6 +9,7 @@ export namespace sandbox::character_controller {
 	struct component {
 		gse::id proxy;
 		gse::animation::locomotion_blend clips;
+		bool possessed = false;
 		gse::velocity run_speed = gse::meters_per_second(6.35f);
 		gse::velocity walk_speed = gse::meters_per_second(3.3f);
 		gse::acceleration ground_accelerate = gse::meters_per_second_squared(50.f);
@@ -28,7 +29,8 @@ export namespace sandbox::character_controller {
 
 export namespace sandbox::character_controller {
 	struct [[= gse::system_state<"CharacterController">{}]] data {
-		std::unordered_map<gse::id, bindings> bindings_by_owner;
+		bindings binds;
+		bool bound = false;
 	};
 
 	[[= gse::system_run<>{}]]
@@ -50,32 +52,31 @@ auto sandbox::character_controller::run(gse::context& ctx, data& d, const gse::c
 	const auto& cs = gse::actions::current_state(as);
 	const auto dt = gse::system_clock::dt();
 
+	if (!d.bound) {
+		d.binds.forward = gse::actions::add<"Character_Move_Forward">(actions_out, gse::key::w);
+		d.binds.left = gse::actions::add<"Character_Move_Left">(actions_out, gse::key::a);
+		d.binds.back = gse::actions::add<"Character_Move_Backward">(actions_out, gse::key::s);
+		d.binds.right = gse::actions::add<"Character_Move_Right">(actions_out, gse::key::d);
+		d.binds.walk = gse::actions::add<"Character_Walk">(actions_out, gse::key::left_shift);
+		d.binds.move_axis_id = gse::actions::bind_axis2(
+			actions_out,
+			gse::actions::pending_axis2_info{
+				.left = d.binds.left,
+				.right = d.binds.right,
+				.back = d.binds.back,
+				.fwd = d.binds.forward,
+				.scale = 1.f,
+			},
+			gse::trace_id<"Character_Move">()
+		);
+		d.bound = true;
+		return {};
+	}
+
 	const auto character_ids = characters.owner_ids();
 	for (std::size_t i = 0; i < characters.size(); ++i) {
 		const auto owner = character_ids[i];
 		const auto& c = characters[i];
-
-		auto [entry, inserted] = d.bindings_by_owner.try_emplace(owner);
-		auto& b = entry->second;
-		if (inserted) {
-			b.forward = gse::actions::add<"Character_Move_Forward">(actions_out, gse::key::w);
-			b.left = gse::actions::add<"Character_Move_Left">(actions_out, gse::key::a);
-			b.back = gse::actions::add<"Character_Move_Backward">(actions_out, gse::key::s);
-			b.right = gse::actions::add<"Character_Move_Right">(actions_out, gse::key::d);
-			b.walk = gse::actions::add<"Character_Walk">(actions_out, gse::key::left_shift);
-			b.move_axis_id = gse::actions::bind_axis2(
-				actions_out,
-				gse::actions::pending_axis2_info{
-					.left = b.left,
-					.right = b.right,
-					.back = b.back,
-					.fwd = b.forward,
-					.scale = 1.f,
-				},
-				gse::trace_id<"Character_Move">()
-			);
-			continue;
-		}
 
 		auto* motor = motors.find(c.proxy);
 		auto* transform = transforms.find(c.proxy);
@@ -87,13 +88,15 @@ auto sandbox::character_controller::run(gse::context& ctx, data& d, const gse::c
 		const auto camera_yaw = orbit ? orbit->yaw : gse::degrees(0.f);
 		const auto heading = gse::normalize(gse::quat(gse::vec3f(0.f, 1.f, 0.f), camera_yaw));
 
-		const auto input = cs.axis2_v(static_cast<std::uint16_t>(b.move_axis_id.number()));
+		const auto input = c.possessed
+			? cs.axis2_v(static_cast<std::uint16_t>(d.binds.move_axis_id.number()))
+			: gse::vec2f(0.f, 0.f);
 		const auto move = gse::rotate_vector(heading, gse::vec3f(input.x(), 0.f, input.y()));
 		const auto travel = gse::magnitude(move);
 
 		const auto facing = gse::normalize(heading * gse::quat(gse::vec3f(0.f, 1.f, 0.f), gse::degrees(180.f)));
 
-		const bool walking = gse::actions::held(b.walk, cs, as);
+		const bool walking = c.possessed && gse::actions::held(d.binds.walk, cs, as);
 		const auto speed = walking ? c.walk_speed : c.run_speed;
 
 		const auto wish_dir = travel > 1e-4f ? move / travel : gse::vec3f(0.f);

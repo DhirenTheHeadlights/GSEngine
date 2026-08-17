@@ -11,14 +11,6 @@ auto sandbox::orbit_camera::attach(gse::context& ctx, data& d, const gse::channe
 		if (!o) {
 			continue;
 		}
-		auto& b = d.bindings_by_owner[owner_id];
-
-		b.toggle = gse::actions::add<"Orbit_Toggle">(actions_out, gse::key::c);
-		b.yaw_left = gse::actions::add<"Orbit_Yaw_Left">(actions_out, gse::key::left);
-		b.yaw_right = gse::actions::add<"Orbit_Yaw_Right">(actions_out, gse::key::right);
-		b.pitch_up = gse::actions::add<"Orbit_Pitch_Up">(actions_out, gse::key::up);
-		b.pitch_down = gse::actions::add<"Orbit_Pitch_Down">(actions_out, gse::key::down);
-
 		const gse::quat initial_orientation = gse::normalize(
 			gse::quat(gse::vec3f(0.f, 1.f, 0.f), o->yaw) *
 			gse::quat(gse::vec3f(1.f, 0.f, 0.f), o->pitch)
@@ -35,6 +27,18 @@ auto sandbox::orbit_camera::attach(gse::context& ctx, data& d, const gse::channe
 				.orientation = initial_orientation,
 			}
 		);
+
+		if (!o->active) {
+			continue;
+		}
+
+		auto& b = d.bindings_by_owner[owner_id];
+
+		b.toggle = gse::actions::add<"Orbit_Toggle">(actions_out, gse::key::c);
+		b.yaw_left = gse::actions::add<"Orbit_Yaw_Left">(actions_out, gse::key::left);
+		b.yaw_right = gse::actions::add<"Orbit_Yaw_Right">(actions_out, gse::key::right);
+		b.pitch_up = gse::actions::add<"Orbit_Pitch_Up">(actions_out, gse::key::up);
+		b.pitch_down = gse::actions::add<"Orbit_Pitch_Down">(actions_out, gse::key::down);
 	}
 
 	return {};

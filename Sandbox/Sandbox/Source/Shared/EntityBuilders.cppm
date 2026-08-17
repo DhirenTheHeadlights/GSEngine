@@ -11,7 +11,7 @@ export namespace sandbox {
 		gse::primitive_box_spec spec;
 	};
 
-	struct static_collider_archetype {
+	struct collider_archetype {
 		gse::physics::transform_component transform;
 		gse::physics::motion_component motion;
 		gse::physics::collision_component collision;
@@ -66,12 +66,44 @@ export namespace sandbox {
 		const gse::vec3<gse::position>& position,
 		const gse::vec3<gse::length>& size,
 		const gse::quat& orientation = gse::quat(1.f, 0.f, 0.f, 0.f)
-	) -> static_collider_archetype;
+	) -> collider_archetype;
+
+	auto capsule(
+		const gse::vec3<gse::position>& position,
+		gse::length radius,
+		gse::length half_height,
+		gse::mass m = gse::kilograms(1000.f),
+		const gse::quat& orientation = gse::quat(1.f, 0.f, 0.f, 0.f)
+	) -> collider_archetype;
+
+	auto static_sphere(
+		const gse::vec3<gse::position>& position,
+		gse::length radius
+	) -> collider_archetype;
+
+	auto static_capsule(
+		const gse::vec3<gse::position>& position,
+		gse::length radius,
+		gse::length half_height,
+		const gse::quat& orientation = gse::quat(1.f, 0.f, 0.f, 0.f)
+	) -> collider_archetype;
+
+	struct hull_archetype {
+		gse::physics::transform_component transform;
+		gse::physics::motion_component motion;
+		gse::physics::collision_component collision;
+		gse::physics::hull_definition hull;
+	};
+
+	auto box_as_hull(
+		const gse::vec3<gse::position>& position,
+		const gse::vec3<gse::length>& size,
+		gse::mass m = gse::kilograms(1000.f),
+		const gse::quat& orientation = gse::quat(1.f, 0.f, 0.f, 0.f)
+	) -> hull_archetype;
 }
 
 auto sandbox::box(const gse::vec3<gse::position>& position, const gse::vec3<gse::length>& size, const gse::mass m, const gse::quat& orientation, const float roughness, const float metallic) -> box_archetype {
-	const gse::inertia box_inertia = m * gse::dot(size, size) / 18.f;
-
 	return {
 		.transform = {
 			.position = position,
@@ -80,7 +112,6 @@ auto sandbox::box(const gse::vec3<gse::position>& position, const gse::vec3<gse:
 		.motion = {
 			.body = gse::physics::dynamic_body{
 				.mass = m,
-				.moment_of_inertia = box_inertia,
 			},
 		},
 		.collision = {
@@ -185,7 +216,7 @@ auto sandbox::static_box(const gse::vec3<gse::position>& position, const gse::ve
 	};
 }
 
-auto sandbox::static_collider(const gse::vec3<gse::position>& position, const gse::vec3<gse::length>& size, const gse::quat& orientation) -> static_collider_archetype {
+auto sandbox::static_collider(const gse::vec3<gse::position>& position, const gse::vec3<gse::length>& size, const gse::quat& orientation) -> collider_archetype {
 	return {
 		.transform = {
 			.position = position,
@@ -197,6 +228,94 @@ auto sandbox::static_collider(const gse::vec3<gse::position>& position, const gs
 		.collision = {
 			.shape = gse::physics::box_shape{
 				.size = size
+			},
+		},
+	};
+}
+
+auto sandbox::capsule(const gse::vec3<gse::position>& position, const gse::length radius, const gse::length half_height, const gse::mass m, const gse::quat& orientation) -> collider_archetype {
+	return {
+		.transform = {
+			.position = position,
+			.orientation = orientation,
+		},
+		.motion = {
+			.body = gse::physics::dynamic_body{
+				.mass = m,
+			},
+		},
+		.collision = {
+			.shape = gse::physics::capsule_shape{
+				.radius = radius,
+				.half_height = half_height,
+			},
+		},
+	};
+}
+
+auto sandbox::static_sphere(const gse::vec3<gse::position>& position, const gse::length radius) -> collider_archetype {
+	return {
+		.transform = {
+			.position = position,
+		},
+		.motion = {
+			.body = gse::physics::static_body{},
+		},
+		.collision = {
+			.shape = gse::physics::sphere_shape{
+				.radius = radius
+			},
+		},
+	};
+}
+
+auto sandbox::box_as_hull(const gse::vec3<gse::position>& position, const gse::vec3<gse::length>& size, const gse::mass m, const gse::quat& orientation) -> hull_archetype {
+	const auto half = size * 0.5f;
+
+	std::vector<gse::vec3<gse::length>> corners;
+	corners.reserve(8);
+	for (int i = 0; i < 8; ++i) {
+		corners.emplace_back(
+			(i & 1) ? half.x() : -half.x(),
+			(i & 2) ? half.y() : -half.y(),
+			(i & 4) ? half.z() : -half.z()
+		);
+	}
+
+	return {
+		.transform = {
+			.position = position,
+			.orientation = orientation,
+		},
+		.motion = {
+			.body = gse::physics::dynamic_body{
+				.mass = m,
+			},
+		},
+		.collision = {
+			.shape = gse::physics::box_shape{
+				.size = size
+			},
+		},
+		.hull = {
+			.points = std::move(corners),
+		},
+	};
+}
+
+auto sandbox::static_capsule(const gse::vec3<gse::position>& position, const gse::length radius, const gse::length half_height, const gse::quat& orientation) -> collider_archetype {
+	return {
+		.transform = {
+			.position = position,
+			.orientation = orientation,
+		},
+		.motion = {
+			.body = gse::physics::static_body{},
+		},
+		.collision = {
+			.shape = gse::physics::capsule_shape{
+				.radius = radius,
+				.half_height = half_height,
 			},
 		},
 	};
