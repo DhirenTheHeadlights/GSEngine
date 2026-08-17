@@ -110,7 +110,25 @@ The hash covers every transform and motion component, ordered by owner id, diges
 
 ## Rules that will otherwise cost you a cycle
 
-**Keep scenarios headless.** A windowed scenario cannot run unattended: render-mode world systems defer behind the first presented frame, so about half of unattended runs never populate the world and abort at the settle cap. The runs that do complete complete because someone clicked the window — which is real input into a scripted scenario, so that hash is not a baseline either.
+**Windowed scenarios were unusable until 2026-08-14, for a reason worth knowing.** `step_bench` activated `info.scene` on its first step behind a one-shot latch. In render mode `app_setup` — and therefore every `add_scene` call — is deferred behind the loading screen, so the activation named a scene that did not exist yet, was dropped, and was never reissued. The world stayed empty and the run aborted at the settle cap after ~40 s. Headless was unaffected because it runs `app_setup` inline before the bench loop starts.
+
+Fixed by not latching until `find_scene` confirms the scene is registered. If you are writing a windowed scenario and it aborts, read the settle-cap message: it now reports `registered=`, `activated=`, `populated=`, and `settled=` separately, which is what tells you which of those four stages failed.
+
+Two earlier explanations in this file were wrong and are recorded here so they are not re-derived: the boot gate was never at fault — it fires within a frame of the loading screen drawing — and the claim that successful runs succeeded because a human clicked the window does not survive reading `engine::render`, where `window::show` is not called until `rendered_once()` plus two frames.
+
+**A bench run never shows its window.** `engine::render` skips the show step entirely when `bench.enabled`, so a windowed scenario renders and presents to a hidden window and never steals focus. That is what makes an unattended windowed scenario tolerable to run ten times in a row, and it is why a scenario can record itself with no keypress. One consequence: present-timing feedback does not exist against a hidden window, so do not take present-pacing measurements from a bench run.
+
+Do not trust a windowed hash as a baseline. A run that completes because someone interacted with it took real input into a scripted scenario, and the digest reflects that.
+
+**A scenario can drive capture**, because the capture triggers are channel messages like any other:
+
+```cpp
+ctx.channels().push<gse::renderer::capture::toggle_recording_request>({});
+```
+
+`record_clip` is the worked example — settle, spawn, toggle on, wait a declared span, toggle off. Recording needs the renderer, so such a scenario must not declare `headless = true`. Clips land in `%LOCALAPPDATA%/GSE/captures/recordings/`.
+
+Under a scenario the encoder stamps presentation timestamps from *content* time, not wall time, so every frame is exactly 1/60 s apart and the clip is constant-rate 60 fps no matter how slowly it rendered. Verify a clip with `ffmpeg -v error -i <file> -f null -` and require zero output — a file playing in a desktop player proves nothing, as VLC and Windows Media Player both happily played a file that decoded zero frames in dav1d.
 
 **A tripped assert does not terminate the process.** It logs `[fatal]` and hangs forever. Always run under an external timeout, and read `%LOCALAPPDATA%/GSE/logs/Sandbox.log` when a run produces no summary line.
 
