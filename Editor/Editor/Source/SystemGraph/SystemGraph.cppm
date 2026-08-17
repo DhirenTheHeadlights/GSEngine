@@ -6,6 +6,7 @@ import gse;
 import gse.graph;
 
 import gse.ide.search;
+import gse.ide.navigation;
 
 export namespace gse::ide {
 	enum class graph_load_error {

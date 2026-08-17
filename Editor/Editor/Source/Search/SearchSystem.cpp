@@ -83,52 +83,47 @@ auto gse::ide::search_system::init(data& d) -> async::task<> {
 }
 
 auto gse::ide::search_system::frame(const context& ctx, data& d, const channel_read<search::index_file_update_request, search::index_merge_request, build_runner::build_finished> requests_in, const shared_view<build_runner::data> build_d) -> async::task<> {
-	if (d.index) {
-		d.index->cancel.store(build_runner::analysis_pause_requested(), std::memory_order_release);
-		build_runner::report_analysis_busy(d.index->building.load(std::memory_order_acquire));
+	d.index->cancel.store(build_runner::analysis_pause_requested(), std::memory_order_release);
+	build_runner::report_analysis_busy(d.index->building.load(std::memory_order_acquire));
 
-		search::publish_file_build(*d.index);
-		search::publish_symbol_build(*d.index);
-		const time now = system_clock::now<time>();
-		if (d.index->files.loaded.load(std::memory_order_acquire) && now >= d.next_watcher_poll.load(std::memory_order_acquire) && !d.watcher_polling.exchange(true, std::memory_order_acq_rel)) {
-			task::post([&d] {
-				poll_watcher(d);
-			});
-		}
-		std::vector<std::filesystem::path> watcher_changes;
-		{
-			std::lock_guard lock(d.watcher_changes_mutex);
-			watcher_changes.swap(d.watcher_changes);
-		}
-		for (const std::filesystem::path& path : watcher_changes) {
-			search::update_file(*d.index, path);
-			if (search::is_symbol_source(path)) {
-				d.symbols_dirty = true;
-				d.last_index_change = now;
-			}
-		}
-		for (const auto& req : requests_in.of<search::index_file_update_request>()) {
-			search::update_file(*d.index, req.path);
-			if (search::is_symbol_source(req.path)) {
-				d.symbols_dirty = true;
-				d.last_index_change = system_clock::now<time>();
-			}
-		}
-		for (const auto& req : requests_in.of<search::index_merge_request>()) {
-			d.index->merge_file_symbols(req.path, req.symbols, req.refs, req.params);
-		}
-
-		if (!requests_in.of<build_runner::build_finished>().empty()) {
+	search::publish_file_build(*d.index);
+	search::publish_symbol_build(*d.index);
+	const time now = system_clock::now<time>();
+	if (d.index->files.loaded.load(std::memory_order_acquire) && now >= d.next_watcher_poll.load(std::memory_order_acquire) && !d.watcher_polling.exchange(true, std::memory_order_acq_rel)) {
+		task::post([&d] {
+			poll_watcher(d);
+		});
+	}
+	std::vector<std::filesystem::path> watcher_changes;
+	{
+		std::lock_guard lock(d.watcher_changes_mutex);
+		watcher_changes.swap(d.watcher_changes);
+	}
+	for (const std::filesystem::path& path : watcher_changes) {
+		search::update_file(*d.index, path);
+		if (search::is_symbol_source(path)) {
 			d.symbols_dirty = true;
-			d.last_index_change = {};
-		}
-		if (d.symbols_dirty && now - d.last_index_change > milliseconds(500.f) && !build_d.building && !d.index->building.load(std::memory_order_acquire)) {
-			d.symbols_dirty = false;
-			search::request_symbol_build(*d.index);
+			d.last_index_change = now;
 		}
 	}
-	else {
-		build_runner::report_analysis_busy(false);
+	for (const auto& req : requests_in.of<search::index_file_update_request>()) {
+		search::update_file(*d.index, req.path);
+		if (search::is_symbol_source(req.path)) {
+			d.symbols_dirty = true;
+			d.last_index_change = system_clock::now<time>();
+		}
+	}
+	for (const auto& req : requests_in.of<search::index_merge_request>()) {
+		d.index->merge_file_symbols(req.path, req.symbols, req.refs, req.params);
+	}
+
+	if (!requests_in.of<build_runner::build_finished>().empty()) {
+		d.symbols_dirty = true;
+		d.last_index_change = {};
+	}
+	if (d.symbols_dirty && now - d.last_index_change > milliseconds(500.f) && !build_d.building && !d.index->building.load(std::memory_order_acquire)) {
+		d.symbols_dirty = false;
+		search::request_symbol_build(*d.index);
 	}
 	return {};
 }

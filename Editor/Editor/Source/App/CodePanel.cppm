@@ -15,6 +15,7 @@ import gse.ide.lint;
 import gse.ide.config;
 import gse.ide.search;
 import gse.ide.graph;
+import gse.ide.alloc;
 import gse.ide.docs;
 import gse.ide.profile;
 
@@ -36,7 +37,7 @@ namespace gse::ide {
 		const gse::input::state& input,
 		workspace::data& ws,
 		gse::ide::graph_data& graph,
-		gse::channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, gse::set_cursor_shape_request, search::index_merge_request> channels,
+		gse::channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, jump_to_request, gse::set_cursor_shape_request, search::index_merge_request> channels,
 		const code_panel_inputs& inputs
 	) -> void;
 
@@ -1245,7 +1246,7 @@ auto gse::ide::apply_diagnostics(workspace::data& ws, const std::shared_ptr<anal
 			? doc.path
 			: diag.file;
 		std::error_code relative_ec;
-		const std::filesystem::path relative_path = std::filesystem::relative(diagnostic_path, config::project_root(), relative_ec);
+		const std::filesystem::path relative_path = std::filesystem::relative(diagnostic_path, config::worktree_for(diagnostic_path).project_root, relative_ec);
 		const std::string where = relative_ec ? diagnostic_path.generic_display_string() : relative_path.generic_display_string();
 		gse::log::println(level, gse::log::category::task, "analysis: {}:{}:{}: {}", where, diag.line + 1, diag.start_col + 1, diag.message);
 	}
@@ -1728,7 +1729,7 @@ auto gse::ide::draw_game_placeholder(const gse::gui::draw_context& ctx, const re
 	});
 }
 
-auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& input, workspace::data& ws, gse::ide::graph_data& graph, gse::channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, gse::set_cursor_shape_request, search::index_merge_request> channels, const code_panel_inputs& inputs) -> void {
+auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& input, workspace::data& ws, gse::ide::graph_data& graph, gse::channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, jump_to_request, gse::set_cursor_shape_request, search::index_merge_request> channels, const code_panel_inputs& inputs) -> void {
 	const auto& ctx = ui.ctx;
 	if (ctx.clip_stack.empty()) {
 		return;
@@ -1979,6 +1980,9 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& i
 				break;
 			case game_view_kind::profile:
 				draw_profile_panel(ui, content_rect, ws.profile, profile_d.frames, profile_d.report, profile_d.report_loaded, channels);
+				break;
+			case game_view_kind::alloc:
+				draw_alloc_panel(ui, content_rect, ws.alloc);
 				break;
 			case game_view_kind::game:
 				if (showing_game) {

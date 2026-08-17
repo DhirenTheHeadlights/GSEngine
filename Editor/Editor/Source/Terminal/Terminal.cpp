@@ -278,9 +278,22 @@ auto gse::ide::terminal::path_link_at(const std::string_view row, const std::uin
 	const std::uint32_t col = peeled_count == 2 ? peeled[0] : 0;
 
 	const std::filesystem::path candidate(path_str);
-	std::filesystem::path resolved = candidate.is_absolute() ? candidate : ide::config::project_root() / candidate;
 	std::error_code ec;
-	if (!std::filesystem::is_regular_file(resolved, ec)) {
+	std::filesystem::path resolved;
+	if (candidate.is_absolute()) {
+		resolved = candidate;
+	}
+	else {
+		for (const ide::config::worktree* tree : ide::config::worktrees()) {
+			std::filesystem::path attempt = tree->project_root / candidate;
+			if (std::filesystem::is_regular_file(attempt, ec)) {
+				resolved = std::move(attempt);
+				break;
+			}
+		}
+	}
+
+	if (resolved.empty() || !std::filesystem::is_regular_file(resolved, ec)) {
 		return std::nullopt;
 	}
 

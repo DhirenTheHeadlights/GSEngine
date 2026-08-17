@@ -312,7 +312,8 @@ auto main() -> int {{
 		}},
 		{{
 			.title = "{0}",
-			.render_world = false,
+			.dark_background = true,
+			.video_encode = false,
 			.simulate_world = false,
 		}}
 	);

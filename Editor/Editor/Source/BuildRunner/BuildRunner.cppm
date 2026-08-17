@@ -18,6 +18,7 @@ export namespace gse::ide::build_runner {
 	struct build_request {
 		build_target target = build_target::game;
 		bool run_after = false;
+		const config::worktree* tree = nullptr;
 	};
 
 	struct build_finished {};
@@ -182,6 +183,7 @@ namespace gse::ide::build_runner {
 	) -> std::filesystem::path;
 
 	auto project_source_roots(
+		const config::worktree& tree,
 		std::string_view target
 	) -> std::vector<std::filesystem::path>;
 
@@ -202,6 +204,7 @@ namespace gse::ide::build_runner {
 
 	auto refresh_changed_sources(
 		spawn::output_stream& stream,
+		const config::worktree& tree,
 		std::string_view target
 	) -> void;
 
@@ -215,12 +218,14 @@ namespace gse::ide::build_runner {
 	) -> std::filesystem::path;
 
 	auto configure_command(
+		const config::worktree& tree,
 		const std::filesystem::path& project_dir,
 		const std::filesystem::path& build_dir
 	) -> std::wstring;
 
 	auto ensure_configured(
-		spawn::output_stream& stream
+		spawn::output_stream& stream,
+		const config::worktree& tree
 	) -> std::filesystem::path;
 
 	auto build_command(
@@ -261,6 +266,7 @@ namespace gse::ide::build_runner {
 	auto launch_game_attached(
 		build_completion& completion,
 		spawn::output_stream& stream,
+		const config::worktree& tree,
 		std::uint32_t generation
 	) -> void;
 
@@ -268,6 +274,7 @@ namespace gse::ide::build_runner {
 		const std::stop_token& st,
 		build_completion& completion,
 		spawn::output_stream& stream,
+		const config::worktree& tree,
 		bool run_after,
 		std::uint32_t next_generation
 	) -> void;
@@ -353,7 +360,7 @@ auto gse::ide::build_runner::find_build_dir(const std::filesystem::path& candida
 	return candidate;
 }
 
-auto gse::ide::build_runner::project_source_roots(const std::string_view target) -> std::vector<std::filesystem::path> {
+auto gse::ide::build_runner::project_source_roots(const config::worktree& tree, const std::string_view target) -> std::vector<std::filesystem::path> {
 	if (target == config::editor_target) {
 		return {
 			gse::config::source_dir(),
@@ -361,8 +368,8 @@ auto gse::ide::build_runner::project_source_roots(const std::string_view target)
 		};
 	}
 	return {
-		config::engine_source_dir(),
-		config::project_source_dir(),
+		tree.engine_source,
+		tree.project_source,
 	};
 }
 
@@ -414,7 +421,7 @@ auto gse::ide::build_runner::save_source_state(const std::filesystem::path& path
 	std::filesystem::rename(temp, path, ec);
 }
 
-auto gse::ide::build_runner::refresh_changed_sources(spawn::output_stream& stream, const std::string_view target) -> void {
+auto gse::ide::build_runner::refresh_changed_sources(spawn::output_stream& stream, const config::worktree& tree, const std::string_view target) -> void {
 	const std::filesystem::path state_path = source_state_path();
 	std::error_code exists_ec;
 	const bool seeding = !std::filesystem::exists(state_path, exists_ec);
@@ -423,7 +430,7 @@ auto gse::ide::build_runner::refresh_changed_sources(spawn::output_stream& strea
 	std::unordered_map<std::string, source_fingerprint> current = previous;
 	std::size_t refreshed = 0;
 
-	for (const std::filesystem::path& source_root : project_source_roots(target)) {
+	for (const std::filesystem::path& source_root : project_source_roots(tree, target)) {
 		std::error_code walk_ec;
 		if (!std::filesystem::is_directory(source_root, walk_ec)) {
 			continue;
@@ -509,11 +516,11 @@ auto gse::ide::build_runner::compiler_bin_dir(const std::filesystem::path& build
 	return bin;
 }
 
-auto gse::ide::build_runner::configure_command(const std::filesystem::path& project_dir, const std::filesystem::path& build_dir) -> std::wstring {
+auto gse::ide::build_runner::configure_command(const config::worktree& tree, const std::filesystem::path& project_dir, const std::filesystem::path& build_dir) -> std::wstring {
 	const std::filesystem::path& editor_build = gse::ide::config::build_dir();
 
 	std::wstring command = L"cmd.exe /c cmake -G Ninja -S \"" + project_dir.wstring() + L"\" -B \"" + build_dir.wstring() + L"\"";
-	command += L" -DGSE_ENGINE_DIR=\"" + gse::ide::config::engine_root().wstring() + L"\"";
+	command += L" -DGSE_ENGINE_DIR=\"" + tree.engine_root.wstring() + L"\"";
 	command += L" -DVCPKG_MANIFEST_MODE=OFF";
 	command += L" -DVCPKG_INSTALLED_DIR=\"" + (editor_build / "vcpkg_installed").wstring() + L"\"";
 
@@ -539,13 +546,13 @@ auto gse::ide::build_runner::configure_command(const std::filesystem::path& proj
 	return command;
 }
 
-auto gse::ide::build_runner::ensure_configured(spawn::output_stream& stream) -> std::filesystem::path {
-	const std::filesystem::path& build_dir = config::project_build_dir();
+auto gse::ide::build_runner::ensure_configured(spawn::output_stream& stream, const config::worktree& tree) -> std::filesystem::path {
+	const std::filesystem::path& build_dir = tree.project_build;
 	std::error_code ec;
 
 	if (!find_build_dir(build_dir).empty()) {
 		const std::string bound = cache_value(build_dir, "GSE_ENGINE_DIR");
-		const std::string expected = config::engine_root().generic_native_encoded_string();
+		const std::string expected = tree.engine_root.generic_native_encoded_string();
 		if (bound.empty() || bound == expected) {
 			return build_dir;
 		}
@@ -560,7 +567,7 @@ auto gse::ide::build_runner::ensure_configured(spawn::output_stream& stream) -> 
 		ec.clear();
 	}
 
-	const std::filesystem::path& project_dir = config::project_root();
+	const std::filesystem::path& project_dir = tree.project_root;
 	if (!std::filesystem::exists(project_dir / "CMakeLists.txt", ec)) {
 		return {};
 	}
@@ -569,7 +576,7 @@ auto gse::ide::build_runner::ensure_configured(spawn::output_stream& stream) -> 
 	std::filesystem::create_directories(build_dir, ec);
 
 	const std::filesystem::path compiler_bin = compiler_bin_dir(config::build_dir());
-	if (spawn::run_capture(stream, configure_command(project_dir, build_dir), project_dir.wstring(), compiler_bin) != 0) {
+	if (spawn::run_capture(stream, configure_command(tree, project_dir, build_dir), project_dir.wstring(), compiler_bin) != 0) {
 		spawn::emit(stream, "configure failed");
 		return {};
 	}
@@ -846,8 +853,8 @@ auto gse::ide::build_runner::run_build_with_module_recovery(
 	}
 }
 
-auto gse::ide::build_runner::launch_game_attached(build_completion& completion, spawn::output_stream& stream, const std::uint32_t generation) -> void {
-	const std::filesystem::path& game_exe = config::game_executable();
+auto gse::ide::build_runner::launch_game_attached(build_completion& completion, spawn::output_stream& stream, const config::worktree& tree, const std::uint32_t generation) -> void {
+	const std::filesystem::path& game_exe = tree.game_executable;
 	std::error_code ec;
 	if (!std::filesystem::exists(game_exe, ec)) {
 		spawn::emit(stream, "game executable not found: " + game_exe.generic_display_string());
@@ -871,7 +878,7 @@ auto gse::ide::build_runner::launch_game_attached(build_completion& completion, 
 	command += L" --engine-parent-pid " + std::to_wstring(editor_pid);
 	command += L" --engine-dump-system-graph-path \"" + graph_file.wstring() + L"\"";
 
-	const spawn::launched game = spawn::launch_streamed(command, config::project_root().wstring());
+	const spawn::launched game = spawn::launch_streamed(command, tree.project_root.wstring());
 	if (!win32::valid_handle(game.process)) {
 		win32::CloseHandle(pipe);
 		spawn::emit(stream, "failed to launch game");
@@ -894,19 +901,20 @@ auto gse::ide::build_runner::build_game(
 	const std::stop_token& st,
 	build_completion& completion,
 	spawn::output_stream& stream,
+	const config::worktree& tree,
 	const bool run_after,
 	const std::uint32_t next_generation
 ) -> void {
-	const std::filesystem::path build_dir = ensure_configured(stream);
+	const std::filesystem::path build_dir = ensure_configured(stream, tree);
 	if (build_dir.empty()) {
 		spawn::emit(stream, "configured build directory is unavailable");
 		return;
 	}
 
-	refresh_changed_sources(stream, config::game_target());
+	refresh_changed_sources(stream, tree, tree.game_target);
 	const std::filesystem::path compiler_bin = compiler_bin_dir(build_dir);
 
-	const std::filesystem::path& game_exe = config::game_executable();
+	const std::filesystem::path& game_exe = tree.game_executable;
 	const std::filesystem::path backup = backup_path(game_exe);
 	std::error_code ec;
 	if (std::filesystem::exists(game_exe, ec)) {
@@ -918,8 +926,8 @@ auto gse::ide::build_runner::build_game(
 		}
 	}
 
-	spawn::emit(stream, "building " + std::string(config::game_target()) + "...");
-	const int code = run_build_with_module_recovery(st, stream, build_command(build_dir, config::game_target()), config::project_root(), build_dir, compiler_bin);
+	spawn::emit(stream, "building " + tree.game_target + "...");
+	const int code = run_build_with_module_recovery(st, stream, build_command(build_dir, tree.game_target), tree.project_root, build_dir, compiler_bin);
 	if (code != 0) {
 		spawn::emit(stream, "build failed (exit " + std::to_string(code) + ")");
 		if (std::filesystem::exists(backup, ec)) {
@@ -937,7 +945,7 @@ auto gse::ide::build_runner::build_game(
 	}
 
 	if (run_after && !st.stop_requested()) {
-		launch_game_attached(completion, stream, next_generation);
+		launch_game_attached(completion, stream, tree, next_generation);
 	}
 }
 
@@ -948,7 +956,7 @@ auto gse::ide::build_runner::rebuild_editor(const std::stop_token& st, spawn::ou
 		return;
 	}
 
-	refresh_changed_sources(stream, config::editor_target);
+	refresh_changed_sources(stream, config::primary(), config::editor_target);
 	const std::filesystem::path compiler_bin = compiler_bin_dir(build_dir);
 
 	const std::filesystem::path editor_exe = current_executable();
@@ -995,7 +1003,7 @@ auto gse::ide::build_runner::build_worker(
 		rebuild_editor(st, *stream);
 	}
 	else {
-		build_game(st, *completion, *stream, request.run_after, next_generation);
+		build_game(st, *completion, *stream, request.tree ? *request.tree : config::primary(), request.run_after, next_generation);
 	}
 
 	spawn::close_process(*stream);
@@ -1006,7 +1014,9 @@ auto gse::ide::build_runner::build_worker(
 
 auto gse::ide::build_runner::cleanup_backups() -> void {
 	std::error_code ec;
-	std::filesystem::remove(backup_path(config::game_executable()), ec);
+	for (const config::worktree* tree : config::worktrees()) {
+		std::filesystem::remove(backup_path(tree->game_executable), ec);
+	}
 	std::filesystem::remove(backup_path(config::editor_executable()), ec);
 	const std::filesystem::path editor_exe = current_executable();
 	if (!editor_exe.empty()) {
@@ -1029,13 +1039,17 @@ auto gse::ide::build_runner::start_build(const channel_write<attached_session_en
 		}
 	}
 
-	const std::string_view name = request.target == build_target::editor
+	std::string name = request.target == build_target::editor
 		? "Rebuild Editor"
 		: request.run_after ? "Build & Run" : "Build Game";
+	if (request.tree && request.tree != &config::primary()) {
+		name += " (" + request.tree->name + ")";
+	}
+
 	auto stream = std::make_shared<spawn::output_stream>();
 	stream->running.store(true, std::memory_order_release);
 	events_out.push<stream_opened>({
-		.name = std::string(name),
+		.name = name,
 		.slot = request.target == build_target::editor ? stream_slot::build_editor : stream_slot::build_game,
 		.stream = stream,
 	});

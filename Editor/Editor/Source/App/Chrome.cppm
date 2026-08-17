@@ -10,7 +10,6 @@ import gse.ide.search;
 import gse.ide.project;
 
 import :search_screen;
-import :project_screen;
 
 namespace gse::ide {
 	auto rebuild_glyph() -> std::span<const gse::gui::symbol::stroke>;
@@ -31,7 +30,7 @@ namespace gse::ide {
 	class editor_screen : public gse::gui::screen {
 	public:
 		editor_screen(
-			gse::channel_write<build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels,
+			gse::channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels,
 			const search::index_state* index,
 			gse::shared_view<gse::input::data> input
 		);
@@ -65,7 +64,7 @@ namespace gse::ide {
 		) const -> gse::gui::caption_exclusion override;
 
 	private:
-		gse::channel_write<build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> m_channels;
+		gse::channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> m_channels;
 		const search::index_state* m_index = nullptr;
 		gse::shared_view<gse::input::data> m_input;
 		std::optional<std::string> m_loc_label;
@@ -123,7 +122,7 @@ namespace gse::ide {
 	) -> void;
 }
 
-gse::ide::editor_screen::editor_screen(gse::channel_write<build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels, const search::index_state* index, const gse::shared_view<gse::input::data> input)
+gse::ide::editor_screen::editor_screen(gse::channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels, const search::index_state* index, const gse::shared_view<gse::input::data> input)
 	: m_channels(std::move(channels)), m_index(index), m_input(input) {
 }
 
@@ -247,7 +246,7 @@ auto gse::ide::editor_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> 
 	}
 
 	if (control_held && shift_held && input.key_pressed(gse::key::p)) {
-		n.push<project_screen>(m_channels, m_input);
+		m_channels.push<toggle_project_switcher_request>({});
 	}
 }
 

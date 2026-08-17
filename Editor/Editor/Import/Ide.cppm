@@ -1,5 +1,6 @@
 export module gse.ide;
 
+export import gse.ide.alloc;
 export import gse.ide.app;
 export import gse.ide.highlight;
 export import gse.ide.format;

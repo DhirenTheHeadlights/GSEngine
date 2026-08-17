@@ -5,6 +5,7 @@ import gse.system_manifest;
 import gse.ide;
 
 auto main() -> int {
+	gse::alloc::set_enabled(true);
 	gse::ide::config::seed_editor_layout();
 
 	gse::start(
@@ -26,7 +27,8 @@ auto main() -> int {
 			.title = gse::ide::project::current().valid
 				? std::format("{} - GSEditor", gse::ide::project::current().name)
 				: std::string("GSEditor"),
-			.render_world = false,
+			.dark_background = true,
+			.video_encode = false,
 			.simulate_world = false,
 			.custom_chrome = true,
 			.scale_ui_with_resolution = false,

@@ -4,6 +4,7 @@ import std;
 import gse;
 import gse.win32;
 
+import gse.ide.alloc;
 import gse.ide.docs;
 import gse.ide.profile;
 
@@ -117,6 +118,7 @@ export namespace gse::ide {
 		game [[= view_label{ .text = "Game" }]],
 		graph [[= view_label{ .text = "Graph" }]],
 		profile [[= view_label{ .text = "Profile" }]],
+		alloc [[= view_label{ .text = "Alloc" }]],
 	};
 
 	constexpr auto game_view_label(
@@ -132,6 +134,7 @@ export namespace gse::ide {
 			gse::gui::tab_strip_state game_tab_strip;
 			game_view_kind game_view = game_view_kind::game;
 			profile_view_state profile;
+			alloc_view_state alloc;
 			bool game_captured = false;
 			int game_capture_settle_frames = 0;
 			gse::vec2f game_cursor{ 0.f, 0.f };

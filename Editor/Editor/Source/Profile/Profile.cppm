@@ -6,6 +6,7 @@ import gse;
 export namespace gse::ide {
 	struct view_label {
 		char text[32];
+		bool dimensioned = false;
 	};
 
 	enum class profile_mode {
@@ -19,9 +20,9 @@ export namespace gse::ide {
 	};
 
 	enum class profile_column {
-		per_frame [[= view_label{ .text = "per/f us" }]],
-		ema [[= view_label{ .text = "avg us" }]],
-		peak [[= view_label{ .text = "peak us" }]],
+		per_frame [[= view_label{ .text = "per/f", .dimensioned = true }]],
+		ema [[= view_label{ .text = "avg", .dimensioned = true }]],
+		peak [[= view_label{ .text = "peak", .dimensioned = true }]],
 		share [[= view_label{ .text = "% frame" }]],
 		calls [[= view_label{ .text = "calls/f" }]],
 	};
@@ -72,7 +73,9 @@ export namespace gse::ide {
 		gse::gui::column_state columns;
 		gse::profile::sample_time live_frame_time;
 		std::uint32_t live_main_tid = 0;
+		std::string_view time_unit = std::string_view(gse::microseconds.unit_name);
 		gse::gui::dropdown_state source_dropdown;
+		gse::gui::dropdown_state unit_dropdown;
 		std::vector<gse::profile::report_entry> cpu_rows;
 		std::vector<gse::profile::report_entry> gpu_rows;
 		std::vector<profile_row> cpu_display;
