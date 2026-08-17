@@ -11,6 +11,89 @@ namespace sandbox::scenarios {
 	auto build_stress_workload(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
+
+	auto orbit_at(
+		const gse::vec3<gse::position>& center,
+		gse::length radius,
+		gse::length height,
+		gse::angle theta
+	) -> gse::camera::target;
+
+	auto orbit_target(
+		float progress
+	) -> gse::camera::target;
+
+	auto pyramid_target(
+		float progress
+	) -> gse::camera::target;
+
+	auto sky_target(
+		float progress
+	) -> gse::camera::target;
+
+	auto sun_at(
+		float progress
+	) -> gse::renderer::atmosphere::sun_request;
+
+	auto lighting_target(
+		float progress
+	) -> gse::camera::target;
+}
+
+auto sandbox::scenarios::lighting_target(const float progress) -> gse::camera::target {
+	return orbit_at(
+		gse::vec3<gse::position>(gse::meters(0.f), gse::meters(14.f), gse::meters(0.f)),
+		gse::meters(62.f),
+		gse::meters(16.f),
+		gse::degrees(20.f) + gse::degrees(130.f) * progress
+	);
+}
+
+auto sandbox::scenarios::sky_target(const float progress) -> gse::camera::target {
+	const auto sun = sun_at(progress);
+	const auto pitch = std::clamp(sun.elevation * 0.5f, gse::degrees(0.f), gse::degrees(37.f));
+
+	return {
+		.position = gse::vec3<gse::position>(gse::meters(0.f), gse::meters(4.f), gse::meters(70.f)),
+		.orientation = gse::from_axis_angle(gse::axis_y, sun.azimuth) * gse::from_axis_angle(gse::axis_x, pitch),
+		.fov = gse::degrees(75.f),
+	};
+}
+
+auto sandbox::scenarios::sun_at(const float progress) -> gse::renderer::atmosphere::sun_request {
+	const auto phase = gse::radians(std::numbers::pi_v<float> * progress);
+
+	return {
+		.elevation = gse::degrees(-14.f) + gse::degrees(84.f) * gse::sin(phase),
+		.azimuth = gse::degrees(40.f) + gse::degrees(140.f) * progress,
+	};
+}
+
+auto sandbox::scenarios::orbit_at(const gse::vec3<gse::position>& center, const gse::length radius, const gse::length height, const gse::angle theta) -> gse::camera::target {
+	const auto pitch = gse::atan2(-height, radius);
+
+	return {
+		.position = center + gse::vec3<gse::length>(radius * gse::sin(theta), height, radius * gse::cos(theta)),
+		.orientation = gse::from_axis_angle(gse::axis_y, theta) * gse::from_axis_angle(gse::axis_x, pitch),
+	};
+}
+
+auto sandbox::scenarios::orbit_target(const float progress) -> gse::camera::target {
+	return orbit_at(
+		gse::vec3<gse::position>(gse::meters(0.f), gse::meters(3.f), gse::meters(0.f)),
+		gse::meters(48.f),
+		gse::meters(20.f),
+		gse::degrees(35.f) + gse::degrees(70.f) * progress
+	);
+}
+
+auto sandbox::scenarios::pyramid_target(const float progress) -> gse::camera::target {
+	return orbit_at(
+		gse::vec3<gse::position>(gse::meters(0.f), gse::meters(22.f), gse::meters(0.f)),
+		gse::meters(115.f),
+		gse::meters(30.f),
+		gse::degrees(-28.f) + gse::degrees(56.f) * progress
+	);
 }
 
 auto sandbox::scenarios::build_stress_workload(gse::scenario::context& ctx) -> gse::async::task<> {
@@ -28,6 +111,18 @@ auto sandbox::scenarios::render_stress(gse::scenario::context& ctx) -> gse::asyn
 	co_await build_stress_workload(ctx);
 }
 
+auto sandbox::scenarios::pyramid_cpu(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+}
+
+auto sandbox::scenarios::pyramid_gpu(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+}
+
+auto sandbox::scenarios::pyramid16k_cpu(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+}
+
 auto sandbox::scenarios::physics_stress_via_input(gse::scenario::context& ctx) -> gse::async::task<> {
 	co_await gse::scenario::wait_settled(ctx);
 	ctx.channels().push<gse::input::synthetic_input_request>({
@@ -37,6 +132,150 @@ auto sandbox::scenarios::physics_stress_via_input(gse::scenario::context& ctx) -
 	ctx.channels().push<gse::input::synthetic_input_request>({
 		.value = gse::input::key_released{ .key_code = gse::key::f5 },
 	});
+}
+
+auto sandbox::scenarios::record_clip(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::uint64_t lead_in_frames = 60;
+	constexpr std::uint64_t record_frames = 300;
+
+	co_await gse::scenario::wait_settled(ctx);
+	ctx.channels().push<spawn_stress_request>({});
+
+	for (std::uint64_t i = 0; i < lead_in_frames; ++i) {
+		ctx.channels().push<gse::camera::request>({
+			.target = orbit_target(0.f),
+			.priority = 100,
+			.blend_duration = {},
+		});
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+
+	ctx.channels().push<gse::renderer::capture::toggle_recording_request>({});
+
+	for (std::uint64_t i = 0; i < record_frames; ++i) {
+		ctx.channels().push<gse::camera::request>({
+			.target = orbit_target(static_cast<float>(i) / static_cast<float>(record_frames - 1)),
+			.priority = 100,
+			.blend_duration = {},
+		});
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+
+	ctx.channels().push<gse::renderer::capture::toggle_recording_request>({});
+}
+
+auto sandbox::scenarios::solver_showcase(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::uint64_t settle_frames = 180;
+	constexpr std::uint64_t hold_frames = 120;
+	constexpr std::uint64_t strike_frames = 12;
+	constexpr std::uint64_t collapse_frames = 408;
+
+	co_await gse::scenario::wait_settled(ctx);
+
+	for (std::uint64_t i = 0; i < settle_frames; ++i) {
+		ctx.channels().push<gse::camera::request>({
+			.target = pyramid_target(0.f),
+			.priority = 100,
+			.blend_duration = {},
+		});
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+
+	ctx.channels().push<gse::renderer::capture::toggle_recording_request>({});
+
+	const auto total = static_cast<float>(hold_frames + strike_frames + collapse_frames - 1);
+
+	for (std::uint64_t i = 0; i < hold_frames; ++i) {
+		ctx.channels().push<gse::camera::request>({
+			.target = pyramid_target(static_cast<float>(i) / total),
+			.priority = 100,
+			.blend_duration = {},
+		});
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+
+	for (std::uint64_t f = 0; f < strike_frames; ++f) {
+		ctx.channels().push<strike_pyramid_request>({});
+		ctx.channels().push<gse::camera::request>({
+			.target = pyramid_target(static_cast<float>(hold_frames + f) / total),
+			.priority = 100,
+			.blend_duration = {},
+		});
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+
+	for (std::uint64_t i = 0; i < collapse_frames; ++i) {
+		ctx.channels().push<gse::camera::request>({
+			.target = pyramid_target(static_cast<float>(hold_frames + strike_frames + i) / total),
+			.priority = 100,
+			.blend_duration = {},
+		});
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+
+	ctx.channels().push<gse::renderer::capture::toggle_recording_request>({});
+}
+
+auto sandbox::scenarios::atmosphere_showcase(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::uint64_t settle_frames = 60;
+	constexpr std::uint64_t record_frames = 600;
+
+	co_await gse::scenario::wait_settled(ctx);
+
+	for (std::uint64_t i = 0; i < settle_frames; ++i) {
+		ctx.channels().push<gse::camera::request>({
+			.target = sky_target(0.f),
+			.priority = 100,
+			.blend_duration = {},
+		});
+		ctx.channels().push<gse::renderer::atmosphere::sun_request>(sun_at(0.f));
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+
+	ctx.channels().push<gse::renderer::capture::toggle_recording_request>({});
+
+	for (std::uint64_t i = 0; i < record_frames; ++i) {
+		const float progress = static_cast<float>(i) / static_cast<float>(record_frames - 1);
+		ctx.channels().push<gse::camera::request>({
+			.target = sky_target(progress),
+			.priority = 100,
+			.blend_duration = {},
+		});
+		ctx.channels().push<gse::renderer::atmosphere::sun_request>(sun_at(progress));
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+
+	ctx.channels().push<gse::renderer::capture::toggle_recording_request>({});
+}
+
+auto sandbox::scenarios::lighting_showcase(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::uint64_t settle_frames = 90;
+	constexpr std::uint64_t record_frames = 540;
+
+	co_await gse::scenario::wait_settled(ctx);
+	ctx.channels().push<spawn_lights_request>({});
+
+	for (std::uint64_t i = 0; i < settle_frames; ++i) {
+		ctx.channels().push<gse::camera::request>({
+			.target = lighting_target(0.f),
+			.priority = 100,
+			.blend_duration = {},
+		});
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+
+	ctx.channels().push<gse::renderer::capture::toggle_recording_request>({});
+
+	for (std::uint64_t i = 0; i < record_frames; ++i) {
+		ctx.channels().push<gse::camera::request>({
+			.target = lighting_target(static_cast<float>(i) / static_cast<float>(record_frames - 1)),
+			.priority = 100,
+			.blend_duration = {},
+		});
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+
+	ctx.channels().push<gse::renderer::capture::toggle_recording_request>({});
 }
 
 auto sandbox::scenarios::parity_stress_cpu(gse::scenario::context& ctx) -> gse::async::task<> {
@@ -99,6 +338,10 @@ auto sandbox::scenarios::parity_pile_cpu(gse::scenario::context& ctx) -> gse::as
 	co_await gse::scenario::wait_settled(ctx);
 }
 
+auto sandbox::scenarios::parity_hull_pile_cpu(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+}
+
 auto sandbox::scenarios::parity_pile_gpu(gse::scenario::context& ctx) -> gse::async::task<> {
 	co_await gse::scenario::wait_settled(ctx);
 }
@@ -141,5 +384,21 @@ auto sandbox::scenarios::parity_overlap_cpu(gse::scenario::context& ctx) -> gse:
 }
 
 auto sandbox::scenarios::parity_overlap_gpu(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+}
+
+auto sandbox::scenarios::parity_shapes_cpu(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+}
+
+auto sandbox::scenarios::parity_shapes_gpu(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+}
+
+auto sandbox::scenarios::parity_domino_cpu(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+}
+
+auto sandbox::scenarios::parity_domino_gpu(gse::scenario::context& ctx) -> gse::async::task<> {
 	co_await gse::scenario::wait_settled(ctx);
 }

@@ -12,17 +12,20 @@ import :tumbler;
 export namespace sandbox {
 	struct stress_scene_params {
 		[[
-			= gse::settings::describe<"Cubes along each radial axis of a tumbler drum. The two drums hold the bulk of "
-									  "the stress scene's bodies, so this is the scene's main size dial.">{},
-			= gse::settings::range<1, 12>{}
+			= gse::settings::describe<"Cubes along each radial axis of a tumbler drum. The drum geometry scales with "
+									  "the cube counts at a fixed pitch, so this is the scene's main size dial; the "
+									  "two drums hold the bulk of the stress scene's bodies. At the slider maxima the "
+									  "pair approaches the solver's body capacity.">{},
+			= gse::settings::range<1, 16>{}
 		]]
-		int tumbler_radial_cubes = 6;
+		int tumbler_radial_cubes = 12;
 
 		[[
-			= gse::settings::describe<"Cubes along the axial length of a tumbler drum.">{},
-			= gse::settings::range<1, 24>{}
+			= gse::settings::describe<"Cubes along the axial length of a tumbler drum. The drum length scales to "
+									  "match.">{},
+			= gse::settings::range<1, 32>{}
 		]]
-		int tumbler_axial_cubes = 12;
+		int tumbler_axial_cubes = 24;
 
 		[[
 			= gse::settings::describe<"Boxes per side of the stacked box grid.">{},
@@ -47,9 +50,91 @@ export namespace sandbox {
 		int count = 8;
 	};
 
+	struct pyramid_scene_params {
+		[[
+			= gse::settings::describe<"Blocks along the base of the pyramid workload. The stack is this many rows tall and "
+									  "holds base_count * (base_count + 1) / 2 blocks, so this is the dial that sets how "
+									  "much load the bottom contacts carry.">{},
+			= gse::settings::range<1, 200>{}
+		]]
+		int base_count = 50;
+	};
+
+	struct light_field_params {
+		[[
+			= gse::settings::describe<"How many point lights a light-field spawn builds. This is the dial that loads the "
+									  "tiled light culling pass.">{},
+			= gse::settings::range<1, 4096>{}
+		]]
+		int count = 384;
+
+		[[
+			= gse::settings::describe<"Radius of the cylinder the lights are scattered through.">{}
+		]]
+		gse::length field_radius = gse::meters(46.f);
+
+		[[
+			= gse::settings::describe<"Height of the cylinder the lights are scattered through.">{}
+		]]
+		gse::length field_height = gse::meters(34.f);
+
+		[[
+			= gse::settings::describe<"Radius of each emissive sphere standing in for a light.">{}
+		]]
+		gse::length source_radius = gse::meters(0.35f);
+
+		[[
+			= gse::settings::describe<"Radiant intensity of each light.">{}
+		]]
+		gse::irradiance intensity = gse::watts_per_square_meter(26.f);
+	};
+
+	struct pyramid_strike_params {
+		[[
+			= gse::settings::describe<"First pyramid row the strike removes. Row 0 is the base; striking the base does "
+									  "not collapse a pyramid, it just drops onto the floor intact.">{},
+			= gse::settings::range<0, 200>{}
+		]]
+		int row_begin = 26;
+
+		[[
+			= gse::settings::describe<"How many rows the strike removes.">{},
+			= gse::settings::range<1, 40>{}
+		]]
+		int rows = 6;
+
+		[[
+			= gse::settings::describe<"Fraction of each struck row to hit, measured from the left edge. Below 1.0 the "
+									  "support is removed from one side only, so the section above topples instead of "
+									  "dropping flat.">{},
+			= gse::settings::range<0.f, 1.f>{}
+		]]
+		float width_fraction = 0.5f;
+
+		[[
+			= gse::settings::describe<"Impulse applied to each struck block.">{}
+		]]
+		gse::impulse strength = gse::newton_seconds(500.f);
+
+		[[
+			= gse::settings::describe<"Direction the struck blocks are pushed, in world space. Normalized before use.">{}
+		]]
+		gse::vec3f direction = { -1.f, 0.f, 0.f };
+	};
+
 	auto spawn_physics_stress(
 		gse::scene& s,
 		const stress_scene_params& params = {}
+	) -> void;
+
+	auto spawn_pyramid(
+		gse::scene& s,
+		const pyramid_scene_params& params = {}
+	) -> void;
+
+	auto spawn_light_field(
+		gse::scene& s,
+		const light_field_params& params = {}
 	) -> void;
 
 	auto spawn_joint_test(
@@ -59,6 +144,7 @@ export namespace sandbox {
 	auto spawn_character(
 		gse::scene& s,
 		int index,
+		bool possessed,
 		const gse::resource::handle<gse::skinned_model>& model,
 		const gse::animation::locomotion_blend& clips,
 		const gse::vec3<gse::position>& origin
@@ -157,6 +243,35 @@ namespace sandbox {
 	) -> void;
 }
 
+auto sandbox::spawn_pyramid(gse::scene& s, const pyramid_scene_params& params) -> void {
+	const int base_count = params.base_count;
+	const gse::length extent = gse::meters(1.f);
+
+	for (int row = 0; row < base_count; ++row) {
+		const int count = base_count - row;
+		const gse::length py = extent * (static_cast<float>(row) + 0.5f);
+
+		for (int col = 0; col < count; ++col) {
+			const gse::length px = extent * (static_cast<float>(col) - static_cast<float>(count - 1) * 0.5f);
+			s.spawn(
+				std::format("PyramidBlock_{}_{}", row, col),
+				sandbox::box(
+					gse::vec3<gse::position>(px, py, gse::meters(0.f)),
+					gse::vec3<gse::length>(extent),
+					gse::kilograms(20.f)
+				)
+			);
+		}
+	}
+
+	gse::log::println(
+		"pyramid: base={} blocks={} height={:.1f:m}",
+		base_count,
+		base_count * (base_count + 1) / 2,
+		extent * static_cast<float>(base_count)
+	);
+}
+
 auto sandbox::spawn_inverted_mass_pyramid(gse::scene& s, const gse::vec3<gse::position>& origin) -> void {
 	s.spawn(
 		"Pyramid Light Base",
@@ -249,7 +364,7 @@ auto sandbox::spawn_funnel(gse::scene& s, const gse::vec3<gse::position>& origin
 			const auto pos = origin +
 				gse::vec3<gse::length>(
 				-1.f + static_cast<float>(col) * 1.1f,
-				0.5f + static_cast<float>(row) * 1.1f,
+					0.5f + static_cast<float>(row) * 1.1f,
 				-3.f
 				);
 			s.spawn(
@@ -305,8 +420,8 @@ auto sandbox::spawn_high_speed_impact_target(gse::scene& s, const gse::vec3<gse:
 			const auto pos = origin +
 				gse::vec3<gse::length>(
 				-1.1f + static_cast<float>(col) * 1.1f,
-				0.5f + static_cast<float>(row) * 1.05f,
-				0.f
+					0.5f + static_cast<float>(row) * 1.05f,
+					0.f
 				);
 			s.spawn(
 				std::format("Impact Wall r{}c{}", row, col),
@@ -387,12 +502,12 @@ auto sandbox::spawn_spring_tests(gse::scene& s, const gse::vec3<gse::position>& 
 }
 
 auto sandbox::spawn_tumbler(gse::scene& s, const int index, const gse::vec3<gse::position>& center, const gse::vec3f& rotation_axis, const gse::angular_velocity angular_speed, const stress_scene_params& params) -> void {
-	constexpr float interior_half = 3.5f;
-	constexpr float length_half = 6.0f;
+	const float interior_half = static_cast<float>(params.tumbler_radial_cubes) * 0.5f + 0.5f;
+	const float length_half = static_cast<float>(params.tumbler_axial_cubes) * 0.5f;
 	constexpr float thickness = 0.3f;
-	constexpr float outer_half = interior_half + thickness;
-	constexpr float wall_offset = interior_half + thickness * 0.5f;
-	constexpr float side_wall_length = (length_half + thickness) * 2.f;
+	const float outer_half = interior_half + thickness;
+	const float wall_offset = interior_half + thickness * 0.5f;
+	const float side_wall_length = (length_half + thickness) * 2.f;
 
 	struct wall_def {
 		std::string_view suffix;
@@ -459,8 +574,8 @@ auto sandbox::spawn_tumbler(gse::scene& s, const int index, const gse::vec3<gse:
 	const int ny = params.tumbler_radial_cubes;
 	const int nz = params.tumbler_axial_cubes;
 	constexpr float content_size = 0.5f;
-	constexpr float radial_span = interior_half - content_size;
-	constexpr float axial_span = length_half - content_size;
+	const float radial_span = interior_half - content_size;
+	const float axial_span = length_half - content_size;
 
 	int content_id = 0;
 	for (int ix = 0; ix < nx; ++ix) {
@@ -493,9 +608,9 @@ auto sandbox::spawn_box_grid(gse::scene& s, const gse::vec3<gse::position>& orig
 			for (int iz = 0; iz < grid_z; ++iz) {
 				const auto pos = origin +
 					gse::vec3<gse::length>(
-					static_cast<float>(ix) * spacing,
-					0.5f + static_cast<float>(layer) * 1.05f,
-					static_cast<float>(iz) * spacing
+						static_cast<float>(ix) * spacing,
+						0.5f + static_cast<float>(layer) * 1.05f,
+						static_cast<float>(iz) * spacing
 					);
 				s.spawn(
 					std::format("Grid L{}R{}C{}", layer, ix, iz),
@@ -805,8 +920,9 @@ auto sandbox::spawn_physics_stress(gse::scene& s, const stress_scene_params& par
 	spawn_box_grid(s, gse::vec3<gse::position>(20.f, 0.f, -10.f), params);
 	spawn_spring_tests(s, gse::vec3<gse::position>(-25.f, 0.f, -20.f));
 
-	spawn_tumbler(s, 0, gse::vec3<gse::position>(-12.f, 10.f, 24.f), gse::axis_z, gse::radians_per_second(0.6f), params);
-	spawn_tumbler(s, 1, gse::vec3<gse::position>(12.f, 10.f, 24.f), gse::axis_x, gse::radians_per_second(0.5f), params);
+	const float drum_clearance = static_cast<float>(params.tumbler_radial_cubes) * 0.5f + 2.f;
+	spawn_tumbler(s, 0, gse::vec3<gse::position>(-12.f - drum_clearance, 4.f + drum_clearance, 24.f + drum_clearance), gse::axis_z, gse::radians_per_second(0.6f), params);
+	spawn_tumbler(s, 1, gse::vec3<gse::position>(12.f + drum_clearance, 4.f + drum_clearance, 24.f + drum_clearance), gse::axis_x, gse::radians_per_second(0.5f), params);
 
 	spawn_sphere_stack(s, gse::vec3<gse::position>(30.f, 0.f, 5.f));
 	spawn_corner_drop(s, gse::vec3<gse::position>(30.f, 0.f, 15.f));
@@ -816,6 +932,37 @@ auto sandbox::spawn_physics_stress(gse::scene& s, const stress_scene_params& par
 	s.spawn("Bouncy Sphere", sandbox::sphere(gse::vec3<gse::position>(-15.f, 8.f, 0.f), gse::meters(1.f)));
 }
 
+
+auto sandbox::spawn_light_field(gse::scene& s, const light_field_params& params) -> void {
+	constexpr float golden_angle = 137.50776f;
+	constexpr float golden_ratio_frac = 0.6180339f;
+
+	for (int i = 0; i < params.count; ++i) {
+		const auto index = static_cast<float>(i);
+		const auto theta = gse::degrees(golden_angle * index);
+		const auto radial = params.field_radius * std::sqrt((index + 0.5f) / static_cast<float>(params.count));
+		const auto height = params.field_height * (golden_ratio_frac * index - std::floor(golden_ratio_frac * index));
+
+		const auto hue = gse::degrees(360.f * (golden_ratio_frac * index * 3.f - std::floor(golden_ratio_frac * index * 3.f)));
+		const auto color = gse::vec3f(
+			0.55f + 0.45f * gse::sin(hue),
+			0.55f + 0.45f * gse::sin(hue + gse::degrees(120.f)),
+			0.55f + 0.45f * gse::sin(hue + gse::degrees(240.f))
+		);
+
+		auto light = sandbox::sphere_light(
+			gse::vec3<gse::position>(radial * gse::sin(theta), height, radial * gse::cos(theta)),
+			params.source_radius
+		);
+		light.light.color = color;
+		light.light.intensity = params.intensity;
+		light.spec.material.base_color = color;
+
+		s.spawn(std::format("FieldLight_{}", i), light);
+	}
+
+	gse::log::println("light field: {} lights across {:.1f:m} radius", params.count, params.field_radius);
+}
 
 auto sandbox::spawn_joint_test(gse::scene& s) -> void {
 	spawn_fixed_joint(s, gse::vec3<gse::position>(-20.f, 0.f, 0.f));
@@ -827,7 +974,7 @@ auto sandbox::spawn_joint_test(gse::scene& s) -> void {
 	s.spawn("Joint Test Sphere", sandbox::sphere(gse::vec3<gse::position>(0.f, 6.f, -8.f), gse::meters(1.f)));
 }
 
-auto sandbox::spawn_character(gse::scene& s, const int index, const gse::resource::handle<gse::skinned_model>& model, const gse::animation::locomotion_blend& clips, const gse::vec3<gse::position>& origin) -> gse::id {
+auto sandbox::spawn_character(gse::scene& s, const int index, const bool possessed, const gse::resource::handle<gse::skinned_model>& model, const gse::animation::locomotion_blend& clips, const gse::vec3<gse::position>& origin) -> gse::id {
 	if (!model.valid()) {
 		return {};
 	}
@@ -841,11 +988,6 @@ auto sandbox::spawn_character(gse::scene& s, const int index, const gse::resourc
 	const auto& proxy = rig->proxy();
 	const auto proxy_center = origin + proxy.center;
 	const auto proxy_mass = gse::kilograms(78.f);
-	const auto proxy_extent = gse::vec3<gse::length>(
-		proxy.radius * 2.f,
-		(proxy.radius + proxy.half_height) * 2.f,
-		proxy.radius * 2.f
-	);
 
 	const auto proxy_id = s.build(std::format("Character {}.Proxy", index))
 		.with<gse::physics::transform_component>({
@@ -854,7 +996,6 @@ auto sandbox::spawn_character(gse::scene& s, const int index, const gse::resourc
 		.with<gse::physics::motion_component>({
 			.body = gse::physics::dynamic_body{
 				.mass = proxy_mass,
-				.moment_of_inertia = proxy_mass * gse::dot(proxy_extent, proxy_extent) / 18.f,
 				.update_orientation = false,
 			},
 		})
@@ -945,11 +1086,12 @@ auto sandbox::spawn_character(gse::scene& s, const int index, const gse::resourc
 		.with<sandbox::character_controller::component>({
 			.proxy = proxy_id,
 			.clips = clips,
+			.possessed = possessed,
 		})
 		.with<sandbox::orbit_camera::component>({
 			.target = proxy_id,
 			.stepped_views = true,
-			.active = true,
+			.active = possessed,
 			.free_look = true,
 		})
 		.identify();
