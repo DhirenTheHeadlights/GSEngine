@@ -231,7 +231,8 @@ auto gse::gpu::log_slang_diagnostics(slang::IBlob* diagnostics) -> void {
 		return;
 	}
 	const std::string message(static_cast<const char*>(diagnostics->getBufferPointer()), diagnostics->getBufferSize());
-	log::println(log::level::error, log::category::assets, "{}", message);
+	const bool fatal = message.contains("error") || message.contains("fatal");
+	log::println(fatal ? log::level::error : log::level::warning, log::category::assets, "{}", message);
 }
 
 auto gse::gpu::parse_body_file(const std::string_view body_source) -> parsed_body {

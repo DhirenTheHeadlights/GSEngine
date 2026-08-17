@@ -35,6 +35,7 @@ export namespace gse::gpu {
 		std::optional<depth_attachment> depth;
 		std::vector<id> after_deps;
 		id chain_id;
+		bool early_signal = false;
 	};
 
 	struct [[= same_frame_channel]] render_pass_request {
@@ -98,6 +99,8 @@ export namespace gse::gpu {
 		auto depth(
 			depth_attachment value
 		) && -> pass_builder&&;
+
+		auto early_signal() && -> pass_builder&&;
 
 		template <typename Chain>
 		auto in_chain() && -> pass_builder&&;
