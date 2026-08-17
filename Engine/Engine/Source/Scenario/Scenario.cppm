@@ -17,6 +17,7 @@ export namespace gse::scenario {
 		bool gpu_solver = false;
 		int warmup_frames = 120;
 		int frames = 600;
+		char settings[8][96] = {};
 	};
 
 	struct wait_gate {
