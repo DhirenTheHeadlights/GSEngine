@@ -73,8 +73,6 @@ auto gse::renderer::capture::init(context& ctx, const shared_view<gpu::context::
 		log::println(log::category::render, "Video encode probe failed, capture limited to screenshots");
 	}
 	else {
-		const auto half_ext = vec2u{ ext.x() / 2, ext.y() / 2 };
-
 		d.convert_pipeline = gpu::build_compute_program(*gpu_s.device, entry::pod);
 
 		d.sampler = gpu_s.device->register_sampler({
@@ -103,28 +101,6 @@ auto gse::renderer::capture::init(context& ctx, const shared_view<gpu::context::
 			);
 
 			d.rgba_slots[i] = gpu_s.device->register_texture(d.rgba_captures[i], capture_sampler_desc);
-
-			d.y_planes[i] = gpu_s.device->create_image(
-				{
-					.size = ext,
-					.format = gpu::image_format::r8_unorm,
-					.usage = { gpu::image_flag::storage, gpu::image_flag::transfer_src },
-					.bindless = true
-				},
-				"capture.y_plane"
-			);
-			gpu::transition_image_to(*gpu_s.device, d.y_planes[i]);
-
-			d.uv_planes[i] = gpu_s.device->create_image(
-				{
-					.size = half_ext,
-					.format = gpu::image_format::r8g8_unorm,
-					.usage = { gpu::image_flag::storage, gpu::image_flag::transfer_src },
-					.bindless = true
-				},
-				"capture.uv_plane"
-			);
-			gpu::transition_image_to(*gpu_s.device, d.uv_planes[i]);
 		}
 
 		d.encoder = std::move(*encoder);
@@ -204,9 +180,21 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 		d.applied_ring_budget = d.ring_budget;
 	}
 
-	if (d.encode_active && d.encoder.valid()) {
-		d.encoder.wait(frame_index);
-		if (auto unit = d.encoder.read_bitstream(frame_index)) {
+	const auto capture_pts = system_clock::content_now<time>();
+	const bool capture_due = d.encode_enabled && d.encode_active && d.encoder.valid() && gpu_s.render_graph->frame_in_progress() &&
+		(!d.captured_once || capture_pts - d.last_capture_pts >= d.capture_interval);
+
+	d.encode_target = {};
+
+	if (capture_due) {
+		d.encode_target = d.encoder.begin_capture(capture_pts);
+		const auto overshoot = capture_pts - d.last_capture_pts;
+		d.last_capture_pts = d.captured_once && overshoot < d.capture_interval * 2.f
+			? d.last_capture_pts + d.capture_interval
+			: capture_pts;
+		d.captured_once = true;
+
+		if (auto unit = d.encoder.take_bitstream()) {
 			const bool was_keyframe = unit->keyframe;
 			const auto byte_count = unit->bytes.size();
 
@@ -234,11 +222,7 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 				);
 			}
 		}
-		d.encoder.encode_frame(
-			frame_index,
-			d.y_planes[frame_index].handle(),
-			d.uv_planes[frame_index].handle()
-		);
+		d.encoder.submit_ready();
 	}
 
 	const auto toggle_requests = capture_in.of<toggle_recording_request>();
@@ -418,7 +402,7 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 	}
 
 	const bool do_screenshot = d.screenshot_requested;
-	const bool do_encode = d.encode_active;
+	const bool do_encode = d.encode_target.valid;
 
 	if (!do_screenshot && !do_encode) {
 		co_return;
@@ -451,8 +435,8 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 		rec.dispatch<entry>(
 			convert_pc,
 			{
-				.output_y = d.y_planes[frame_index].storage_slot(),
-				.output_uv = d.uv_planes[frame_index].storage_slot(),
+				.output_y = d.encode_target.y,
+				.output_uv = d.encode_target.uv,
 				.textures_sampler = d.sampler.slot(),
 			},
 			vec3u{ (ext.x() + 15) / 16, (ext.y() + 15) / 16, 1 }

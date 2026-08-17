@@ -797,6 +797,12 @@ auto gse::vulkan::to_vk(const gpu::image_aspect_flags fls) -> vk::ImageAspectFla
 	if (fls.test(gpu::image_aspect_flag::stencil)) {
 		result |= vk::ImageAspectFlagBits::eStencil;
 	}
+	if (fls.test(gpu::image_aspect_flag::plane_0)) {
+		result |= vk::ImageAspectFlagBits::ePlane0;
+	}
+	if (fls.test(gpu::image_aspect_flag::plane_1)) {
+		result |= vk::ImageAspectFlagBits::ePlane1;
+	}
 	return result;
 }
 

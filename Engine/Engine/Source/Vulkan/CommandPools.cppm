@@ -89,6 +89,7 @@ export namespace gse::vulkan {
 
 		[[nodiscard]]
 		auto acquire_command_buffer(
+			const device& device_data,
 			gpu::queue_type queue,
 			std::size_t worker_index,
 			std::uint32_t frame_index
@@ -101,6 +102,9 @@ export namespace gse::vulkan {
 			vk::raii::CommandPool pool = nullptr;
 			std::vector<vk::raii::CommandBuffer> buffers;
 			std::size_t used = 0;
+			std::size_t worker = 0;
+			std::uint32_t frame = 0;
+			std::string label;
 		};
 
 		struct family_pools {
@@ -119,6 +123,12 @@ export namespace gse::vulkan {
 			std::size_t worker_count,
 			std::size_t buffers_per_pool
 		) -> family_pools;
+
+		static auto allocate_into_slot(
+			const device& device_data,
+			pool_slot& slot,
+			std::size_t count
+		) -> void;
 
 		std::array<family_pools, gpu::queue_type_count> m_pools;
 		std::array<std::uint32_t, gpu::queue_type_count> m_families{};
@@ -210,6 +220,36 @@ gse::vulkan::worker_command_pools::worker_command_pools(std::array<family_pools,
 
 gse::vulkan::worker_command_pools::~worker_command_pools() = default;
 
+auto gse::vulkan::worker_command_pools::allocate_into_slot(const device& device_data, pool_slot& slot, const std::size_t count) -> void {
+	const auto first = slot.buffers.size();
+
+	const vk::CommandBufferAllocateInfo alloc_info{
+		.commandPool = *slot.pool,
+		.level = vk::CommandBufferLevel::ePrimary,
+		.commandBufferCount = static_cast<std::uint32_t>(count),
+	};
+
+	auto [buffers_result, buffers] = device_data.raii_device().allocateCommandBuffers(alloc_info);
+	assert(buffers_result == vk::Result::eSuccess, "failed to allocate command buffers: {}", vk::to_string(buffers_result));
+
+	for (std::size_t i = 0; i < buffers.size(); ++i) {
+		const std::string buffer_name = std::format("Worker {} Frame {} Buffer {} ({})", slot.worker, slot.frame, first + i, slot.label);
+		const vk::DebugUtilsObjectNameInfoEXT buffer_name_info{
+			.objectType = vk::ObjectType::eCommandBuffer,
+			.objectHandle = std::bit_cast<std::uint64_t>(*buffers[i]),
+			.pObjectName = buffer_name.c_str(),
+		};
+		device_data.raii_device().setDebugUtilsObjectNameEXT(buffer_name_info);
+	}
+
+	slot.buffers.reserve(first + buffers.size());
+	slot.buffers.insert(
+		slot.buffers.end(),
+		std::make_move_iterator(buffers.begin()),
+		std::make_move_iterator(buffers.end())
+	);
+}
+
 auto gse::vulkan::worker_command_pools::build_family_pools(const device& device_data, const std::uint32_t family, const std::string_view label, const std::size_t worker_count, const std::size_t buffers_per_pool) -> family_pools {
 	auto build_slot = [&](const std::size_t worker, const std::uint32_t frame) -> pool_slot {
 		const vk::CommandPoolCreateInfo pool_info{
@@ -228,31 +268,17 @@ auto gse::vulkan::worker_command_pools::build_family_pools(const device& device_
 		};
 		device_data.raii_device().setDebugUtilsObjectNameEXT(pool_name_info);
 
-		const vk::CommandBufferAllocateInfo alloc_info{
-			.commandPool = *pool,
-			.level = vk::CommandBufferLevel::ePrimary,
-			.commandBufferCount = static_cast<std::uint32_t>(buffers_per_pool),
-		};
-
-		auto [buffers_result, buffers] = device_data.raii_device().allocateCommandBuffers(alloc_info);
-		assert(buffers_result == vk::Result::eSuccess, "failed to allocate command buffers: {}", vk::to_string(buffers_result));
-
-		for (std::size_t i = 0; i < buffers.size(); ++i) {
-			const std::string buffer_name = std::format("Worker {} Frame {} Buffer {} ({})", worker, frame, i,
-														label);
-			const vk::DebugUtilsObjectNameInfoEXT buffer_name_info{
-				.objectType = vk::ObjectType::eCommandBuffer,
-				.objectHandle = std::bit_cast<std::uint64_t>(*buffers[i]),
-				.pObjectName = buffer_name.c_str(),
-			};
-			device_data.raii_device().setDebugUtilsObjectNameEXT(buffer_name_info);
-		}
-
-		return pool_slot{
+		pool_slot slot{
 			.pool = std::move(pool),
-			.buffers = std::move(buffers),
 			.used = 0,
+			.worker = worker,
+			.frame = frame,
+			.label = std::string(label),
 		};
+
+		allocate_into_slot(device_data, slot, buffers_per_pool);
+
+		return slot;
 	};
 
 	std::vector<per_frame_resource<pool_slot>> pools;
@@ -322,7 +348,7 @@ auto gse::vulkan::worker_command_pools::reset_frame(const std::uint32_t frame_in
 	}
 }
 
-auto gse::vulkan::worker_command_pools::acquire_command_buffer(const gpu::queue_type queue, const std::size_t worker_index, const std::uint32_t frame_index) -> gpu::command_buffer_handle {
+auto gse::vulkan::worker_command_pools::acquire_command_buffer(const device& device_data, const gpu::queue_type queue, const std::size_t worker_index, const std::uint32_t frame_index) -> gpu::command_buffer_handle {
 	const auto idx = static_cast<std::size_t>(queue);
 	auto& family = m_pools[idx].per_worker.empty() ? m_pools[0] : m_pools[idx];
 
@@ -335,13 +361,17 @@ auto gse::vulkan::worker_command_pools::acquire_command_buffer(const gpu::queue_
 
 	auto& slot = family.per_worker[worker_index][frame_index];
 
-	assert(
-		slot.used < slot.buffers.size(),
-		"Worker command pool exhausted (worker: {}, frame: {}, capacity: {})",
-		worker_index,
-		frame_index,
-		slot.buffers.size()
-	);
+	if (slot.used == slot.buffers.size()) {
+		allocate_into_slot(device_data, slot, slot.buffers.size());
+		log::println(
+			log::level::debug,
+			log::category::vulkan,
+			"Worker command pool grown (worker: {}, frame: {}, capacity: {})",
+			slot.worker,
+			slot.frame,
+			slot.buffers.size()
+		);
+	}
 
 	return std::bit_cast<gpu::command_buffer_handle>(*slot.buffers[slot.used++]);
 }

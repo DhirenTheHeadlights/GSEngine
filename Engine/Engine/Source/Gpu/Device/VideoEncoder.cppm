@@ -26,19 +26,13 @@ export namespace gse::gpu {
 			std::unique_ptr<video_encoder_backend> impl
 		) noexcept;
 
-		auto encode_frame(
-			std::uint32_t frame_slot,
-			handle<gpu::image> y_plane,
-			handle<gpu::image> uv_plane
-		) -> void;
+		[[nodiscard]] auto begin_capture(
+			time pts
+		) -> encode_source;
 
-		auto wait(
-			std::uint32_t frame_slot
-		) -> void;
+		[[nodiscard]] auto take_bitstream() -> std::optional<encoded_unit>;
 
-		[[nodiscard]] auto read_bitstream(
-			std::uint32_t frame_slot
-		) -> std::optional<encoded_unit>;
+		auto submit_ready() -> void;
 
 		[[nodiscard]] auto stream_header() const -> std::span<const std::byte>;
 
