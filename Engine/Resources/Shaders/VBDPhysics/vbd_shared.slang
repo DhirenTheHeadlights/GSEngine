@@ -42,6 +42,24 @@ public mat3 outer_product3(float3 a, float3 b) {
     return mat3(a * b.x, a * b.y, a * b.z);
 }
 
+public uint chash_bits(float v) {
+    return (v == 0.0) ? 0u : asuint(v);
+}
+
+public uint chash_step(uint h, uint v) {
+    h ^= v + 0x9e3779b9u + (h << 6) + (h >> 2);
+    h *= 2654435761u;
+    h ^= h >> 15;
+    return h;
+}
+
+public uint chash_vec3(uint h, float3 v) {
+    h = chash_step(h, chash_bits(v.x));
+    h = chash_step(h, chash_bits(v.y));
+    h = chash_step(h, chash_bits(v.z));
+    return h;
+}
+
 public mat3 mat3_identity(float s) {
     return mat3(
         float3(s, 0, 0),
@@ -107,6 +125,10 @@ public mat3 mat3_inverse(mat3 m) {
         (m[2].x * m[0].y - m[0].x * m[2].y) * inv_d,
         (m[0].x * m[1].y - m[1].x * m[0].y) * inv_d);
     return result;
+}
+
+public float3 body_origin(float3 com, float4 orientation, float3 com_local) {
+    return com - rotate_vector(orientation, com_local);
 }
 
 public mat3 rotation_from_quat(float4 q) {

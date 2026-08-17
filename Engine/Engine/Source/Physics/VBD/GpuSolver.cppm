@@ -29,6 +29,7 @@ export namespace gse::vbd {
 	struct vbd_solve_chain {};
 
 	struct vbd_apply_body_inputs_stage {};
+	struct vbd_render_mirror_stage {};
 	struct vbd_clear_state_buffers_stage {};
 	struct vbd_collision_reset_stage {};
 	struct vbd_grid_build_stage {};
@@ -45,9 +46,11 @@ export namespace gse::vbd {
 	struct vbd_derive_velocities_stage {};
 	struct vbd_apply_restitution_stage {};
 	struct vbd_update_sticking_stage {};
+	struct vbd_prepare_color_indirect_stage {};
 	struct vbd_post_stabilize_stage {};
 	struct vbd_finalize_stage {};
 	struct vbd_state_copy_stage {};
+	struct vbd_hash_state_stage {};
 
 	struct solver_diagnostics {
 		std::uint32_t attempted_contacts = 0;
@@ -56,6 +59,13 @@ export namespace gse::vbd {
 		std::uint32_t coloring_conflicts = 0;
 		std::uint32_t contact_duplicates = 0;
 		std::uint32_t warm_start_hits = 0;
+		std::uint32_t stale_reads = 0;
+		std::uint32_t stale_checks = 0;
+		std::uint32_t sweep_bails = 0;
+		std::array<std::uint32_t, limits.max_colors> color_populations = {};
+		std::uint32_t broad_nodes_walked = 0;
+		std::uint32_t broad_aabb_tests = 0;
+		std::uint32_t broad_pairs = 0;
 		force joint_lambda_max{};
 		stiffness joint_penalty_max{};
 		gap joint_c_max{};
@@ -64,6 +74,18 @@ export namespace gse::vbd {
 		auto operator==(
 			const solver_diagnostics&
 		) const -> bool = default;
+	};
+
+	struct solver_upload {
+		std::vector<body_state> bodies;
+		std::vector<velocity_motor_constraint> motors;
+		std::vector<joint_constraint> joints;
+		std::vector<impulse_constraint> impulses;
+		solver_config solver_cfg;
+		time_step dt{};
+		int steps = 1;
+		bool refresh_joints = false;
+		bool force_reseed = false;
 	};
 
 	class gpu_solver {
@@ -87,22 +109,28 @@ export namespace gse::vbd {
 		auto buffers_created() const -> bool;
 
 		auto upload(
-			std::span<const body_state> bodies,
-			std::span<const velocity_motor_constraint> motors,
-			std::span<const joint_constraint> joints,
-			std::span<const impulse_constraint> impulses,
-			const solver_config& solver_cfg,
-			time_step dt,
-			int steps,
-			bool refresh_joints,
-			bool force_reseed
+			const solver_upload& payload
 		) -> void;
-
-		auto total_substeps() const -> std::uint32_t;
 
 		auto commit_upload() -> void;
 
+		auto set_preserve_warm_starts(
+			bool preserve
+		) -> void;
+
+		auto set_color_launch_hint(
+			std::uint32_t max_used_color
+		) -> void;
+
 		auto read_grounded() const -> std::span<const std::uint32_t>;
+
+		auto read_narrow_phase_debug() const -> std::span<const std::uint32_t>;
+
+		auto read_contact_dump() const -> std::span<const contact_constraint>;
+
+		auto read_adjacency_meta() const -> std::span<const std::uint32_t>;
+
+		auto read_contact_adjacency_dump() const -> std::span<const std::uint32_t>;
 
 		auto read_body_states() const -> std::span<const body_state>;
 
@@ -118,10 +146,6 @@ export namespace gse::vbd {
 
 		auto reseeding() const -> bool;
 
-		auto snapshot_body_count(
-			std::uint32_t slot
-		) const -> std::uint32_t;
-
 		auto motor_count() const -> std::uint32_t;
 
 		auto joint_count() const -> std::uint32_t;
@@ -130,22 +154,19 @@ export namespace gse::vbd {
 
 		auto dt() const -> time_step;
 
-		auto snapshot_buffer(
-			std::uint32_t slot
-		) const -> const gpu::buffer&;
+		auto render_body_buffer() const -> const gpu::buffer&;
 
-		auto body_buffer(
-			std::uint32_t slot
-		) const -> const gpu::buffer&;
+		auto dispatch_generation() const -> std::uint64_t;
 
-		auto retired_snapshot_slot() const -> std::uint32_t;
+		auto retired_generation() const -> std::uint64_t;
 
-		auto render_snapshot_slot() const -> std::uint32_t;
+		auto latest_dispatch_complete() const -> bool;
 
 	private:
 		struct compute_shaders {
 			gpu::shader_program predict_pipeline;
 			gpu::shader_program solve_color_pipeline;
+			gpu::shader_program solve_sweep_pipeline;
 			gpu::shader_program update_lambda_pipeline;
 			gpu::shader_program derive_velocities_pipeline;
 			gpu::shader_program finalize_pipeline;
@@ -154,63 +175,82 @@ export namespace gse::vbd {
 			gpu::shader_program collision_broad_phase_pipeline;
 			gpu::shader_program collision_narrow_phase_pipeline;
 			gpu::shader_program collision_build_adjacency_pipeline;
+			gpu::shader_program collision_sort_adjacency_pipeline;
 			gpu::shader_program collision_build_coloring_pipeline;
+			gpu::shader_program collision_color_round_pipeline;
+			gpu::shader_program collision_color_commit_pipeline;
 			gpu::shader_program update_joint_lambda_pipeline;
 			gpu::shader_program prepare_indirect_pipeline;
 			gpu::shader_program prepare_contact_indirect_pipeline;
 			gpu::shader_program prepare_color_indirect_pipeline;
+			gpu::shader_program convergence_check_pipeline;
 			gpu::shader_program freeze_jacobians_pipeline;
 			gpu::shader_program apply_jacobi_pipeline;
 			gpu::shader_program apply_restitution_pipeline;
 			gpu::shader_program update_sticking_pipeline;
 			gpu::shader_program apply_impulses_pipeline;
 			gpu::shader_program apply_body_inputs_pipeline;
+			gpu::shader_program hash_state_pipeline;
+			gpu::shader_program hash_warm_inputs_pipeline;
+			gpu::shader_program hash_adjacency_pipeline;
+			gpu::shader_program hash_colors_pipeline;
+			gpu::shader_program hash_bodies_pipeline;
 
 			bool initialized = false;
+			bool device_local_seeded = false;
 		} m_compute;
 
 		struct per_frame_data {
 			gpu::buffer body_buffer;
-			gpu::buffer body_input_buffer;
+			gpu::bindless_handle body_alt_view;
 			gpu::buffer contact_buffer;
-			gpu::buffer motor_buffer;
 			gpu::buffer color_buffer;
 			gpu::buffer jointless_color_buffer;
 			gpu::buffer contact_offsets_buffer;
 			gpu::buffer contact_counts_buffer;
 			gpu::buffer contact_adjacency_buffer;
-			gpu::buffer motor_map_buffer;
 			gpu::buffer joint_offsets_buffer;
 			gpu::buffer joint_counts_buffer;
 			gpu::buffer joint_adjacency_buffer;
 			gpu::buffer solve_state_buffer;
 			gpu::buffer collision_pair_buffer;
 			gpu::buffer collision_state_buffer;
-			gpu::buffer collision_state_readback_buffer;
 			gpu::buffer warm_start_buffer;
 			gpu::buffer joint_buffer;
 			gpu::buffer grid_buffer;
-			gpu::buffer physics_snapshot_buffer;
 			gpu::buffer indirect_dispatch_buffer;
 			gpu::buffer jointless_indirect_dispatch_buffer;
 			gpu::buffer frozen_jacobian_buffer;
 			gpu::buffer solve_deltas_buffer;
 			gpu::buffer grounded_buffer;
-			gpu::buffer grounded_readback_buffer;
-			gpu::buffer impulse_buffer;
-			gpu::buffer solver_config_buffer;
-			gpu::buffer jointed_pairs_buffer;
-			gpu::buffer island_buffer;
-			gpu::buffer body_env_buffer;
-			gpu::buffer static_bodies_buffer;
 			gpu::buffer coloring_scratch_buffer;
-
-			bool grounded_valid = false;
-			std::uint32_t snapshot_body_count = 0;
+			gpu::buffer render_body_buffer;
 		};
 
 		per_frame_resource<per_frame_data> m_frames{ per_frame_data{}, per_frame_data{} };
+		const gpu::frame* m_frame = nullptr;
 		std::uint32_t m_dispatch_slot = 0;
+		std::uint64_t m_dispatch_generation = 0;
+		std::uint32_t m_recorded_ring = 0;
+		std::uint64_t m_recorded_frame = 0;
+
+		gpu::upload_channel m_body_input_channel;
+		gpu::upload_channel m_motor_channel;
+		gpu::upload_channel m_motor_map_channel;
+		gpu::upload_channel m_solver_config_channel;
+		gpu::upload_channel m_impulse_channel;
+		gpu::upload_channel m_jointed_pairs_channel;
+		gpu::upload_channel m_island_channel;
+		gpu::upload_channel m_body_env_channel;
+		gpu::upload_channel m_static_bodies_channel;
+		gpu::upload_channel m_joint_upload_channel;
+
+		gpu::readback_channel m_snapshot_channel;
+		gpu::readback_channel m_grounded_channel;
+		gpu::readback_channel m_collision_state_channel;
+		gpu::readback_channel m_contact_dump_channel;
+		gpu::readback_channel m_adjacency_meta_channel;
+		gpu::readback_channel m_contact_adjacency_channel;
 
 		bool m_buffers_created = false;
 		bool m_pending_dispatch = false;
@@ -218,10 +258,12 @@ export namespace gse::vbd {
 		std::uint32_t m_seeded_body_count = 0;
 		bool m_joint_buffers_seeded = false;
 		bool m_apply_all_body_inputs = false;
+		bool m_preserve_warm_starts = false;
 
 		std::uint32_t m_body_count = 0;
 		std::uint32_t m_motor_count = 0;
 		std::uint32_t m_joint_count = 0;
+		std::uint32_t m_color_launch_hint = 0;
 		std::uint32_t m_island_count = 0;
 		std::uint32_t m_jointless_body_count = 0;
 		std::uint32_t m_impulse_count = 0;
@@ -231,13 +273,10 @@ export namespace gse::vbd {
 		solver_config m_solver_cfg;
 		time_step m_dt{};
 
-		std::uint32_t m_warm_start_count = 0;
-
 		std::vector<velocity_motor_constraint> m_upload_motors;
 		std::vector<joint_constraint> m_upload_joints;
 		std::vector<impulse_constraint> m_upload_impulses;
 		std::vector<std::uint32_t> m_upload_motor_map;
-		std::vector<std::uint32_t> m_upload_collision_state;
 		std::vector<std::uint32_t> m_upload_jointed_pairs;
 		std::vector<std::uint32_t> m_upload_islands;
 		std::vector<std::uint32_t> m_upload_body_env;

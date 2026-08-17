@@ -4,4 +4,9 @@ void vbd_prepare_contact_indirect() {
     indirect_args[1].x = max((contact_count + workgroup_size - 1) / workgroup_size, 1);
     indirect_args[1].y = 1;
     indirect_args[1].z = 1;
+
+    if (contact_count < max_contacts) {
+        contact_data[contact_count].body_a = 0xFFFFFFFFu;
+        contact_data[contact_count].body_b = 0xFFFFFFFFu;
+    }
 }
