@@ -380,9 +380,9 @@ constexpr auto gse::identity() -> quat_t<T> {
 
 template <typename T>
 constexpr auto gse::from_axis_angle(const vec3<T>& axis, angle_t<T> angle) -> quat_t<T> {
-	const T half_angle = static_cast<T>(angle) / T(2);
-	const T s = std::sin(half_angle);
-	const T c = std::cos(half_angle);
+	const auto half_angle = angle / T(2);
+	const T s = sin(half_angle);
+	const T c = cos(half_angle);
 	return quat_t<T>{ c, axis[0] * s, axis[1] * s, axis[2] * s };
 }
 
@@ -399,10 +399,10 @@ constexpr auto gse::slerp(const quat_t<T>& a, const quat_t<T>& b, T t) -> quat_t
 		return normalize(quat_t<T>(a.v4() + t * (b_adj.v4() - a.v4())));
 	}
 
-	const T theta = std::acos(d);
-	const T sin_theta = std::sin(theta);
-	const T wa = std::sin((T(1) - t) * theta) / sin_theta;
-	const T wb = std::sin(t * theta) / sin_theta;
+	const auto theta = acos(d);
+	const T sin_theta = sin(theta);
+	const T wa = sin(theta * (T(1) - t)) / sin_theta;
+	const T wb = sin(theta * t) / sin_theta;
 
 	return quat_t<T>(a.v4() * wa + b_adj.v4() * wb);
 }
@@ -421,9 +421,9 @@ constexpr auto gse::to_axis_angle(const quat_t<T>& q) -> vec3<angle_t<T>> {
 		return { radians(T(2) * x), radians(T(2) * y), radians(T(2) * z) };
 	}
 
-	const T angle = T(2) * std::atan2(sin_half, w);
-	const T scale = angle / sin_half;
-	return { radians(scale * x), radians(scale * y), radians(scale * z) };
+	const auto angle = T(2) * atan2(sin_half, w);
+	const auto scale = angle / sin_half;
+	return { scale * x, scale * y, scale * z };
 }
 
 template <typename T>

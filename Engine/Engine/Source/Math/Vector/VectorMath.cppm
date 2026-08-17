@@ -300,7 +300,7 @@ constexpr auto gse::angle_between(const V1& a, const V2& b) -> angle_t<typename 
 
 	const auto d_val = internal::to_storage(dot(a, b));
 	auto cosine = std::clamp(d_val / (ma_val * mb_val), storage_type(-1), storage_type(1));
-	return angle_t<storage_type>(std::acos(cosine));
+	return acos(cosine);
 }
 
 template <gse::is_vec V1, gse::is_vec V2>
@@ -477,10 +477,9 @@ constexpr auto gse::rotate(const V& v, angle_t<typename V::storage_type> angle, 
 	}
 
 	V result = v;
-	const storage_type rad = static_cast<storage_type>(angle);
 
-	const storage_type cos_theta = std::cos(rad);
-	const storage_type sin_theta = std::sin(rad);
+	const storage_type cos_theta = cos(angle);
+	const storage_type sin_theta = sin(angle);
 
 	auto v_span = v.as_storage_span();
 	auto r_span = result.as_storage_span();
