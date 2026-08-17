@@ -89,7 +89,14 @@ export namespace gse::gpu {
 		auto recreate(
 			vec2i framebuffer_size,
 			gpu::present_mode preferred_present_mode
-		) -> void;
+		) -> gpu::expected<void>;
+
+		auto recreate_detached(
+			vec2i framebuffer_size,
+			gpu::present_mode preferred_present_mode
+		) -> gpu::expected<void>;
+
+		[[nodiscard]] auto current_handle() const -> gpu::swap_chain_handle;
 
 	private:
 		swap_chain(
@@ -113,7 +120,7 @@ namespace gse::gpu {
 }
 
 auto gse::gpu::swap_chain::create(const vec2i framebuffer_size, const gpu::present_mode preferred_present_mode, device& dev) -> std::unique_ptr<swap_chain> {
-	auto info = dev.create_swapchain(framebuffer_size, preferred_present_mode);
+	auto info = must(dev.create_swapchain(framebuffer_size, preferred_present_mode));
 	auto depth = create_swapchain_depth(dev, info.extent);
 	return std::unique_ptr<swap_chain>(new swap_chain(std::move(info), std::move(depth), dev));
 }
@@ -218,14 +225,36 @@ auto gse::gpu::swap_chain::notify_recreated() -> void {
 	}
 }
 
-auto gse::gpu::swap_chain::recreate(const vec2i framebuffer_size, const gpu::present_mode preferred_present_mode) -> void {
-	m_depth_image = {};
-
+auto gse::gpu::swap_chain::recreate(const vec2i framebuffer_size, const gpu::present_mode preferred_present_mode) -> gpu::expected<void> {
 	m_device->wait_swapchain_release_fences(m_info.handle);
-	const auto old_handle = m_info.handle;
-	m_info = m_device->create_swapchain(framebuffer_size, preferred_present_mode, old_handle);
 
+	auto info = m_device->create_swapchain(framebuffer_size, preferred_present_mode, m_info.handle);
+	if (!info) {
+		return std::unexpected(info.error());
+	}
+
+	m_depth_image = {};
+	m_info = std::move(*info);
 	m_depth_image = create_swapchain_depth(*m_device, m_info.extent);
+	return {};
+}
+
+auto gse::gpu::swap_chain::recreate_detached(const vec2i framebuffer_size, const gpu::present_mode preferred_present_mode) -> gpu::expected<void> {
+	m_info = {};
+
+	auto info = m_device->create_swapchain(framebuffer_size, preferred_present_mode, {});
+	if (!info) {
+		return std::unexpected(info.error());
+	}
+
+	m_depth_image = {};
+	m_info = std::move(*info);
+	m_depth_image = create_swapchain_depth(*m_device, m_info.extent);
+	return {};
+}
+
+auto gse::gpu::swap_chain::current_handle() const -> gpu::swap_chain_handle {
+	return m_info.handle;
 }
 
 auto gse::gpu::create_swapchain_depth(device& dev, const vec2u extent) -> image {

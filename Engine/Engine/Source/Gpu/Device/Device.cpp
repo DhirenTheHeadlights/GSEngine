@@ -663,8 +663,12 @@ auto gse::gpu::device::query_pool_results(const gpu::handle<gpu::query_pool> poo
 	return m_vt->query_pool_results(m_backend.get(), pool, first_query, query_count, stride);
 }
 
-auto gse::gpu::device::create_swapchain(const vec2i framebuffer_size, const present_mode mode, const gpu::swap_chain_handle old_handle) -> swap_chain_info {
+auto gse::gpu::device::create_swapchain(const vec2i framebuffer_size, const present_mode mode, const gpu::swap_chain_handle old_handle) -> gpu::expected<swap_chain_info> {
 	return m_vt->create_swapchain(m_backend.get(), framebuffer_size, mode, old_handle);
+}
+
+auto gse::gpu::device::recreate_surface(const window::data& win, const gpu::swap_chain_handle current_swapchain) -> void {
+	m_vt->recreate_surface(m_backend.get(), win, current_swapchain);
 }
 
 auto gse::gpu::device::acquire_swapchain_image(const gpu::swap_chain_handle swapchain, const gpu::handle<gpu::semaphore> wait_semaphore, const std::uint64_t timeout_ns) const -> gpu::acquire_next_image_result {

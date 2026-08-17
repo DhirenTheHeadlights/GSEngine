@@ -269,7 +269,12 @@ export namespace gse::gpu {
 			vec2i framebuffer_size,
 			gpu::present_mode mode,
 			gpu::swap_chain_handle old_handle
-		) -> gpu::swap_chain_info;
+		) -> gpu::expected<gpu::swap_chain_info>;
+
+		auto recreate_surface(
+			const window::data& win,
+			gpu::swap_chain_handle current_swapchain
+		) -> void;
 
 		[[nodiscard]] auto acquire_swapchain_image(
 			gpu::swap_chain_handle swapchain,
@@ -646,8 +651,11 @@ auto gse::gpu::dx12_device_backend::query_pool_results(const gpu::handle<gpu::qu
 	return device->query_pool_results(pool, first_query, query_count, stride);
 }
 
-auto gse::gpu::dx12_device_backend::create_swapchain(const vec2i framebuffer_size, const gpu::present_mode mode, const gpu::swap_chain_handle old_handle) -> gpu::swap_chain_info {
+auto gse::gpu::dx12_device_backend::create_swapchain(const vec2i framebuffer_size, const gpu::present_mode mode, const gpu::swap_chain_handle old_handle) -> gpu::expected<gpu::swap_chain_info> {
 	return swapchain.create(framebuffer_size, mode, old_handle);
+}
+
+auto gse::gpu::dx12_device_backend::recreate_surface(const window::data&, gpu::swap_chain_handle) -> void {
 }
 
 auto gse::gpu::dx12_device_backend::acquire_swapchain_image(gpu::swap_chain_handle, const gpu::handle<gpu::semaphore> wait_semaphore, std::uint64_t) const -> gpu::acquire_next_image_result {

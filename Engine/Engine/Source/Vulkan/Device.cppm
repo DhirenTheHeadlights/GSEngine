@@ -309,6 +309,16 @@ export namespace gse::vulkan {
 			const gpu::image& img
 		) -> void;
 
+		auto write_storage_image(
+			gpu::bindless_slot slot,
+			const gpu::image& img
+		) -> void;
+
+		[[nodiscard]]
+		auto register_storage_image(
+			const gpu::image& img
+		) -> gpu::bindless_handle;
+
 		[[nodiscard]]
 		auto register_sampler(
 			const gpu::sampler_desc& desc
@@ -502,7 +512,15 @@ export namespace gse::vulkan {
 			vec2i framebuffer_size,
 			gpu::present_mode preferred_present_mode,
 			gpu::swap_chain_handle old_swapchain = {}
-		) -> gpu::swap_chain_info;
+		) -> gpu::expected<gpu::swap_chain_info>;
+
+		auto destroy_swapchain(
+			gpu::swap_chain_handle swapchain
+		) -> void;
+
+		auto set_surface(
+			gpu::surface surface
+		) -> void;
 
 		auto wait_swapchain_release_fences(
 			gpu::swap_chain_handle swapchain
@@ -634,8 +652,7 @@ export namespace gse::vulkan {
 
 		auto create_buffer(
 			const vk::BufferCreateInfo& buffer_info,
-			const void* data,
-			bool readback,
+			const gpu::buffer_desc& desc,
 			std::string_view tag,
 			const std::source_location& loc
 		) -> gpu::buffer;

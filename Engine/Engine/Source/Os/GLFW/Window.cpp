@@ -1045,16 +1045,17 @@ auto gse::window::viewport(const shared_view<data> d) -> vec2i {
 	return window_handle_viewport(d.handle);
 }
 
+auto gse::window::raw_handle(const data& d) -> native_window_handle {
+	return d.handle;
+}
+
 auto gse::window::raw_handle(const shared_view<data> d) -> native_window_handle {
 	return d.handle;
 }
 
-auto gse::window::show(const data& d) -> void {
+auto gse::window::show(data& d) -> void {
 	window_handle_show(d.handle);
-}
-
-auto gse::window::show(const shared_view<data> d) -> void {
-	window_handle_show(d.handle);
+	d.shown = true;
 }
 
 auto gse::window::ui_focus(const shared_view<data> d) -> bool {
