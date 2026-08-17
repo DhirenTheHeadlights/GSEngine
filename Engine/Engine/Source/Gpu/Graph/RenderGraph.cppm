@@ -8,6 +8,7 @@ import :frame;
 import :transient_pool;
 import :image;
 import :pass_recorder;
+import :graph_channel;
 
 import gse.gpu_backend;
 import gse.assert;
@@ -62,6 +63,7 @@ export namespace gse::gpu {
 		std::vector<resource_usage> writes;
 		std::vector<id> after_passes;
 		id chain_id;
+		bool early_signal = false;
 		std::vector<color_output_info> color_outputs;
 		std::optional<depth_output_info> depth_output;
 		std::coroutine_handle<> record_handle;
@@ -135,6 +137,16 @@ export namespace gse::gpu {
 			const framebuffer_image_desc& desc
 		) -> const image&;
 
+		[[nodiscard]] auto create_readback_channel(
+			std::size_t size,
+			std::string_view tag = {}
+		) const -> readback_channel;
+
+		[[nodiscard]] auto create_upload_channel(
+			const buffer_desc& desc,
+			std::string_view tag = {}
+		) const -> upload_channel;
+
 		template <typename Marker>
 		auto framebuffer_image(
 			this auto& self
@@ -183,6 +195,10 @@ export namespace gse::gpu {
 			gpu_profile_slot& slot
 		) -> void;
 
+		auto log_pass_graph(
+			std::span<const render_pass_data> passes
+		) -> void;
+
 		auto recreate_framebuffer_images() -> void;
 
 		auto create_framebuffer_image(
@@ -205,7 +221,9 @@ export namespace gse::gpu {
 		frame* m_frame;
 		gpu::transient_pool m_transient_pool;
 		std::unordered_map<id, std::unique_ptr<registered_image>> m_framebuffer_images;
+		interval_timer<> m_graph_report{ seconds(5.f) };
 		std::array<per_frame_resource<gpu_profile_slot>, queue_type_count> m_profile_slots{
+			per_frame_resource<gpu_profile_slot>{ gpu_profile_slot{}, gpu_profile_slot{} },
 			per_frame_resource<gpu_profile_slot>{ gpu_profile_slot{}, gpu_profile_slot{} },
 			per_frame_resource<gpu_profile_slot>{ gpu_profile_slot{}, gpu_profile_slot{} },
 		};

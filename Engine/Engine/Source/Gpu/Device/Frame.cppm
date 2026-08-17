@@ -27,6 +27,13 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto current_frame() const -> std::uint32_t;
 
+		[[nodiscard]] auto frame_count() const -> std::uint64_t;
+
+		[[nodiscard]] auto queue_fence_signaled(
+			queue_type queue,
+			std::uint32_t ring_slot
+		) const -> bool;
+
 		[[nodiscard]] auto image_index() const -> std::uint32_t;
 
 		[[nodiscard]]
@@ -61,7 +68,11 @@ export namespace gse::gpu {
 
 		auto recreate_resources(
 			const window::data& win
-		) -> void;
+		) -> gpu::expected<void>;
+
+		auto recreate_surface(
+			const window::data& win
+		) -> gpu::expected<void>;
 
 		static auto create_sync_objects(
 			device& dev,
@@ -72,6 +83,7 @@ export namespace gse::gpu {
 		std::uint32_t m_image_index = 0;
 		std::array<std::uint64_t, queue_type_count> m_command_buffers{};
 		std::uint32_t m_current_frame = 0;
+		std::uint64_t m_frame_count = 0;
 		bool m_frame_in_progress = false;
 		device* m_device;
 		swap_chain* m_swapchain;
