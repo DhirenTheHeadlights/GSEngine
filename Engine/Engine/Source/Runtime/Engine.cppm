@@ -46,7 +46,8 @@ export namespace gse {
 		std::string title = "GSEngine Application";
 		bool create_window = true;
 		bool render = true;
-		bool render_world = true;
+		bool dark_background = false;
+		bool video_encode = true;
 		bool simulate_world = true;
 		bool use_gpu_solver = false;
 		bool custom_chrome = false;
@@ -158,6 +159,7 @@ export namespace gse {
 		bool m_boot_init_baseline_captured = false;
 		std::uint32_t m_frames_since_rendered = 0;
 		bool m_window_shown = false;
+		bool m_headless_gpu = false;
 		std::array<gpu::shared_surface, attached_ring_size> m_attached_surfaces{};
 		std::array<gpu::image, attached_ring_size> m_attached_surface_images;
 		gpu::handle<gpu::semaphore> m_attached_produced_semaphore{};

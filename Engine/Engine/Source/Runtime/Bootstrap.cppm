@@ -235,17 +235,27 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 			}
 		}
 
-		watchdog::stop();
-
 		if (pacing.timer) {
 			win32::CloseHandle(pacing.timer);
 		}
-
-		task::wait_idle();
 	});
 
-	log::set_async(false);
-	e.shutdown();
+	const time exit_budget = seconds(10.f);
 
-	app::run_pending_relaunch();
+	{
+		watchdog::section watch{ trace_id<"exit::log_drain">(), exit_budget };
+		log::set_async(false);
+	}
+
+	{
+		watchdog::section watch{ trace_id<"exit::engine_shutdown">(), exit_budget };
+		e.shutdown();
+	}
+
+	{
+		watchdog::section watch{ trace_id<"exit::relaunch">(), exit_budget };
+		app::run_pending_relaunch();
+	}
+
+	watchdog::stop();
 }

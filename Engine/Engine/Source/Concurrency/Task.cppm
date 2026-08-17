@@ -5,6 +5,7 @@ import std;
 import gse.core;
 import gse.diag;
 import gse.log;
+import gse.math;
 import gse.stacktrace;
 
 import :work_stealing_queue;
@@ -66,6 +67,10 @@ export namespace gse::task {
 	auto current_worker() noexcept -> std::optional<std::size_t>;
 
 	auto wait_idle() -> void;
+
+	[[nodiscard]] auto wait_idle_for(
+		time budget
+	) -> bool;
 
 	auto try_run_one() -> bool;
 
@@ -265,6 +270,8 @@ namespace gse::task {
 
 	auto pool_shutdown() -> void;
 
+	auto drain_and_shutdown_pool() -> void;
+
 	auto likely_idle() noexcept -> bool;
 
 	auto async_key_for(
@@ -373,8 +380,7 @@ auto gse::task::start(F&& fn, std::size_t worker_count) -> std::invoke_result_t<
 			return;
 		}
 
-		wait_idle();
-		pool_shutdown();
+		drain_and_shutdown_pool();
 
 		stopping.store(false, std::memory_order_release);
 		started.store(false, std::memory_order_release);
@@ -564,6 +570,26 @@ auto gse::task::wait_idle() -> void {
 	std::unique_lock lk(idle_mutex);
 	idle_cv.wait(
 		lk,
+		[] {
+			return likely_idle();
+		}
+	);
+}
+
+auto gse::task::wait_idle_for(const time budget) -> bool {
+	for (int i = 0; i < 1024; ++i) {
+		if (likely_idle()) {
+			return true;
+		}
+		std::this_thread::yield();
+	}
+
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(static_cast<std::int64_t>(budget.as<milliseconds>()));
+
+	std::unique_lock lk(idle_mutex);
+	return idle_cv.wait_until(
+		lk,
+		deadline,
 		[] {
 			return likely_idle();
 		}
@@ -975,6 +1001,26 @@ auto gse::task::pool_shutdown() -> void {
 	worker_count_value.store(0, std::memory_order_release);
 	t_worker_index.reset();
 	t_is_main_thread = false;
+}
+
+auto gse::task::drain_and_shutdown_pool() -> void {
+	const time drain_budget = seconds(10.f);
+
+	{
+		watchdog::section watch{ generate_id("task.shutdown.drain"), drain_budget };
+		if (!wait_idle_for(drain_budget)) {
+			log::println(
+				log::level::error,
+				log::category::task,
+				"shutdown: {} jobs still in flight after {::s}; joining workers anyway",
+				in_flight.load(std::memory_order_acquire),
+				drain_budget
+			);
+		}
+	}
+
+	watchdog::section watch{ generate_id("task.shutdown.join"), drain_budget };
+	pool_shutdown();
 }
 
 auto gse::task::likely_idle() noexcept -> bool {

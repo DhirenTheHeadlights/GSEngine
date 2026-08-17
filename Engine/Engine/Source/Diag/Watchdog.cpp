@@ -74,7 +74,7 @@ auto gse::watchdog::monitor_loop(const std::stop_token& st) -> void {
 		log::println(
 			log::level::error,
 			log::category::runtime,
-			"WATCHDOG STALL [section={} elapsed={::ms} dump=#{}] main loop has not progressed",
+			"WATCHDOG STALL [section={} elapsed={::ms} dump=#{}] watched section has not progressed",
 			section,
 			elapsed,
 			dumps
