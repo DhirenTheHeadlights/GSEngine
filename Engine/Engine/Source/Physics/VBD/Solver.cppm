@@ -22,7 +22,7 @@ export namespace gse::vbd {
 	};
 
 	struct [[= shaders::shader_struct]] solver_config {
-		std::uint32_t iterations = 4;
+		std::uint32_t iterations = 15;
 		float alpha = 0.99f;
 		stiffness_per_length beta = newtons_per_meter_squared(100000.f);
 		angular_stiffness_per_angle ang_beta = newton_meters_per_radian_squared(100000.f);
@@ -36,12 +36,15 @@ export namespace gse::vbd {
 		gap stick_threshold = meters(0.01f);
 		float friction_coefficient = 0.6f;
 		velocity restitution_threshold = meters_per_second(0.5f);
-		velocity velocity_sleep_threshold = meters_per_second(0.001f);
+		velocity velocity_sleep_threshold = meters_per_second(0.05f);
 		angular_velocity angular_sleep_threshold = radians_per_second(0.05f);
 		gap speculative_margin = meters(0.02f);
-		length convergence_threshold_linear = meters(0.01f);
-		angle convergence_threshold_angular = radians(0.01f);
+		gap speculative_margin_floor = meters(0.01f);
+		length convergence_threshold_linear = meters(1e-4f);
+		angle convergence_threshold_angular = radians(1e-3f);
+		float convergence_speed_scale = 0.f;
 		std::uint32_t min_iterations = 4;
+		std::uint32_t max_iterations = 40;
 		float linear_damping = 0.f;
 		float angular_damping = 0.01f;
 		std::uint32_t use_jacobi = 0;
@@ -52,6 +55,10 @@ export namespace gse::vbd {
 		angle max_angular_step = radians(0.5f);
 		stiffness linear_regularization = newtons_per_meter(1e-6f);
 		angular_stiffness angular_regularization = newton_meters_per_radian(1e-6f);
+		std::uint32_t trace_hashes = 0;
+		std::uint32_t use_solve_fold = 0;
+		std::uint32_t color_cap = 0;
+		std::uint32_t sweep_workgroups = 0;
 	};
 
 	class solver {
@@ -66,8 +73,13 @@ export namespace gse::vbd {
 			std::size_t grain
 		) -> void;
 
+		auto set_ordered_sweep(
+			bool enabled
+		) -> void;
+
 		auto begin_frame(
 			std::span<const body_state> bodies,
+			std::span<const id> body_ids,
 			contact_cache& cache
 		) -> void;
 
@@ -97,6 +109,10 @@ export namespace gse::vbd {
 		) -> void;
 
 		auto body_states(
+			this auto&& self
+		) -> decltype(auto);
+
+		auto body_ids(
 			this auto&& self
 		) -> decltype(auto);
 
@@ -155,16 +171,29 @@ export namespace gse::vbd {
 			time_squared h_squared
 		) -> step_delta;
 
+		auto build_islands(
+			std::uint32_t num_bodies
+		) -> void;
+
 		solver_config m_config;
 		std::size_t m_color_grain = 8;
+		bool m_ordered_sweep = false;
 		constraint_graph m_graph;
 		std::vector<body_state> m_bodies;
+		std::vector<id> m_body_ids;
 		std::vector<body_solve_state> m_solve_state;
 
 		static constexpr std::uint32_t no_motor = std::numeric_limits<std::uint32_t>::max();
 		std::vector<std::uint32_t> m_body_motor_index;
 		std::vector<bool> m_body_in_color_group;
 		std::vector<std::uint8_t> m_body_inactive;
+
+		std::vector<std::uint32_t> m_island_root;
+		std::vector<std::uint8_t> m_island_wake;
+		std::vector<std::uint8_t> m_island_calm;
+
+		std::vector<std::uint32_t> m_sweep_order;
+		std::vector<std::uint32_t> m_active_contacts;
 
 		std::vector<vec3<velocity>> m_prev_velocity;
 		std::vector<float> m_accel_weight;
@@ -218,16 +247,24 @@ auto gse::vbd::solver::set_color_grain(const std::size_t grain) -> void {
 	m_color_grain = std::max<std::size_t>(grain, 1);
 }
 
+auto gse::vbd::solver::set_ordered_sweep(const bool enabled) -> void {
+	m_ordered_sweep = enabled;
+}
+
 auto gse::vbd::solver::config() const -> const solver_config& {
 	return m_config;
 }
 
-auto gse::vbd::solver::begin_frame(const std::span<const body_state> bodies, contact_cache& cache) -> void {
+auto gse::vbd::solver::begin_frame(const std::span<const body_state> bodies, const std::span<const id> body_ids, contact_cache& cache) -> void {
 	m_bodies.assign(bodies.begin(), bodies.end());
+	m_body_ids.assign(body_ids.begin(), body_ids.end());
 	m_solve_state.resize(m_bodies.size());
 	m_graph.clear();
 
-	cache.age_and_prune();
+	{
+		trace::scope_guard sg{ trace_id<"vbd_cpu::cache_advance">() };
+		cache.advance();
+	}
 }
 
 auto gse::vbd::solver::seed_previous_velocities(const std::span<const vec3<velocity>> velocities) -> void {
@@ -264,6 +301,19 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		m_graph.compute_coloring(num_bodies, m_body_inactive);
 	}
 
+	{
+		const auto& contacts_ref = m_graph.contact_constraints();
+		m_active_contacts.clear();
+		m_active_contacts.reserve(contacts_ref.size());
+		for (std::uint32_t ci = 0; ci < contacts_ref.size(); ++ci) {
+			const auto& c = contacts_ref[ci];
+			if (m_body_inactive[c.body_a] && m_body_inactive[c.body_b]) {
+				continue;
+			}
+			m_active_contacts.push_back(ci);
+		}
+	}
+
 	m_body_motor_index.assign(num_bodies, no_motor);
 	for (std::uint32_t mi = 0; mi < m_graph.motor_constraints().size(); ++mi) {
 		m_body_motor_index[m_graph.motor_constraints()[mi].body_index] = mi;
@@ -282,10 +332,10 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 	{
 		auto& contacts_ref = m_graph.contact_constraints();
 		task::coarse_parallel(
-			contacts_ref.size(),
+			m_active_contacts.size(),
 			512,
-			[&, this](std::size_t ci) {
-				auto& c = contacts_ref[ci];
+			[&, this](std::size_t k) {
+				auto& c = contacts_ref[m_active_contacts[k]];
 				const auto& ba = m_bodies[c.body_a];
 				const auto& bb = m_bodies[c.body_b];
 				const vec3<lever_arm> r_aw = rotate_vector(ba.orientation, c.local_anchor_a);
@@ -310,10 +360,10 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 	{
 		auto& contacts_ref = m_graph.contact_constraints();
 		task::coarse_parallel(
-			contacts_ref.size(),
+			m_active_contacts.size(),
 			256,
-			[&, this](std::size_t ci) {
-				auto& c = contacts_ref[ci];
+			[&, this](std::size_t k) {
+				auto& c = contacts_ref[m_active_contacts[k]];
 				const auto& ba = m_bodies[c.body_a];
 				const auto& bb = m_bodies[c.body_b];
 
@@ -516,15 +566,28 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		}
 	}
 
+	{
+		trace::scope_guard sg{ trace_id<"vbd::islands">() };
+		build_islands(num_bodies);
+	}
+
 	const velocity wake_thresh = m_config.velocity_sleep_threshold * 10.f;
-	for (const auto& c : m_graph.contact_constraints()) {
-		auto& a = m_bodies[c.body_a];
-		auto& b = m_bodies[c.body_b];
-		if (a.sleeping() && !b.locked && !b.sleeping() && magnitude(b.velocity) > wake_thresh) {
-			a.sleep_counter = 0;
+	for (std::uint32_t i = 0; i < num_bodies; ++i) {
+		const auto& body = m_bodies[i];
+		if (body.locked || body.sleeping()) {
+			continue;
 		}
-		if (b.sleeping() && !a.locked && !a.sleeping() && magnitude(a.velocity) > wake_thresh) {
-			b.sleep_counter = 0;
+		if (magnitude(body.velocity) > wake_thresh) {
+			m_island_wake[m_island_root[i]] = 1;
+		}
+	}
+	for (std::uint32_t i = 0; i < num_bodies; ++i) {
+		auto& body = m_bodies[i];
+		if (body.locked || !body.sleeping()) {
+			continue;
+		}
+		if (m_island_wake[m_island_root[i]]) {
+			body.sleep_counter = 0;
 		}
 	}
 
@@ -549,9 +612,10 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 	{
 		m_frozen_jacobians.resize(contacts.size());
 		task::coarse_parallel(
-			contacts.size(),
+			m_active_contacts.size(),
 			256,
-			[&, this](std::size_t ci) {
+			[&, this](std::size_t k) {
+				const std::uint32_t ci = m_active_contacts[k];
 				const auto& c = contacts[ci];
 				const auto& ba = m_bodies[c.body_a];
 				const auto& bb = m_bodies[c.body_b];
@@ -563,16 +627,32 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 				m_frozen_jacobians[ci] = {
 					.world_r_a = r_aw,
 					.world_r_b = r_bw,
-					.j_ang_a = { cross(r_aw, dirs[0]),
-								 cross(r_aw, dirs[1]),
-								 cross(r_aw, dirs[2]) },
-					.j_ang_b = { cross(r_bw, dirs[0]),
-								 cross(r_bw, dirs[1]),
-								 cross(r_bw, dirs[2]) },
+					.j_ang_a = { cross(r_aw, dirs[0]) / rad,
+								 cross(r_aw, dirs[1]) / rad,
+								 cross(r_aw, dirs[2]) / rad },
+					.j_ang_b = { cross(r_bw, dirs[0]) / rad,
+								 cross(r_bw, dirs[1]) / rad,
+								 cross(r_bw, dirs[2]) / rad },
 				};
 			},
 			trace_id<"vbd::frozen_jacobians">()
 		);
+	}
+
+	if (m_ordered_sweep) {
+		m_sweep_order.clear();
+		for (std::uint32_t i = 0; i < num_bodies; ++i) {
+			if (m_body_inactive[i]) {
+				continue;
+			}
+			m_sweep_order.push_back(i);
+		}
+		std::ranges::sort(m_sweep_order, [this](const std::uint32_t a, const std::uint32_t b) {
+			if (m_bodies[a].position.y() != m_bodies[b].position.y()) {
+				return m_bodies[a].position.y() < m_bodies[b].position.y();
+			}
+			return a < b;
+		});
 	}
 
 	auto solve_iteration_gauss_seidel = [&](const float alpha) {
@@ -675,8 +755,28 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		);
 	};
 
+	bool sweep_forward = true;
+
+	auto solve_iteration_ordered = [&](const float alpha) {
+		trace::scope_guard sg{ trace_id<"vbd::ordered_sweep">() };
+		if (sweep_forward) {
+			for (const auto bi : m_sweep_order) {
+				step_colored_body(bi, h_squared, dt, alpha);
+			}
+		}
+		else {
+			for (const auto bi : m_sweep_order | std::views::reverse) {
+				step_colored_body(bi, h_squared, dt, alpha);
+			}
+		}
+		sweep_forward = !sweep_forward;
+	};
+
 	auto solve_iteration = [&](const float alpha) {
-		if (m_config.use_jacobi) {
+		if (m_ordered_sweep) {
+			solve_iteration_ordered(alpha);
+		}
+		else if (m_config.use_jacobi) {
 			solve_iteration_jacobi(alpha);
 		}
 		else {
@@ -686,16 +786,44 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 
 	{
 		trace::scope_guard sg{ trace_id<"vbd::iterations">() };
-		for (int it = 0; it < num_iterations; ++it) {
+		const int max_iterations = std::max(num_iterations, static_cast<int>(m_config.max_iterations));
+		length linear_threshold = m_config.convergence_threshold_linear;
+		angle angular_threshold = m_config.convergence_threshold_angular;
+		if (m_config.convergence_speed_scale > 0.f) {
+			velocity max_speed{};
+			angular_velocity max_angular_speed{};
+			for (const auto& body : m_bodies) {
+				if (!body.locked && !body.sleeping() && body.mass > mass{}) {
+					max_speed = std::max(max_speed, magnitude(body.velocity));
+					max_angular_speed = std::max(max_angular_speed, magnitude(body.angular_velocity));
+				}
+			}
+			linear_threshold = std::max(linear_threshold, max_speed * dt * m_config.convergence_speed_scale);
+			angular_threshold = std::max(angular_threshold, max_angular_speed * dt * m_config.convergence_speed_scale);
+		}
+		step_delta previous_violation{
+			.linear = meters(std::numeric_limits<float>::max()),
+			.angular = radians(std::numeric_limits<float>::max())
+		};
+		for (int it = 0; it < max_iterations; ++it) {
 			solve_iteration(solve_alpha);
 			const auto contact_delta = update_dual(solve_alpha);
 			const auto joint_delta = update_joint_dual(h_squared);
+			if (it + 1 < num_iterations) {
+				continue;
+			}
 			const length linear = std::max(contact_delta.linear, joint_delta.linear);
 			const angle angular = std::max(contact_delta.angular, joint_delta.angular);
-
-			if (it + 1 >= static_cast<int>(m_config.min_iterations) && linear < m_config.convergence_threshold_linear && angular < m_config.convergence_threshold_angular) {
+			if (linear < linear_threshold && angular < angular_threshold) {
 				break;
 			}
+			if (linear > previous_violation.linear * 0.99f && angular > previous_violation.angular * 0.99f) {
+				break;
+			}
+			previous_violation = {
+				.linear = linear,
+				.angular = angular
+			};
 		}
 	}
 
@@ -775,6 +903,16 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		solve_iteration(0.0f);
 	}
 
+	for (std::uint32_t i = 0; i < num_bodies; ++i) {
+		const auto& body = m_bodies[i];
+		if (body.locked || body.sleeping()) {
+			continue;
+		}
+		if (magnitude(body.velocity) > wake_thresh) {
+			m_island_calm[m_island_root[i]] = 0;
+		}
+	}
+
 	{
 		task::coarse_parallel(
 			m_bodies.size(),
@@ -790,7 +928,7 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 					return;
 				}
 
-				if (magnitude(body.velocity) < m_config.velocity_sleep_threshold && magnitude(body.angular_velocity) < m_config.angular_sleep_threshold) {
+				if (m_island_calm[m_island_root[i]] && magnitude(body.velocity) < m_config.velocity_sleep_threshold && magnitude(body.angular_velocity) < m_config.angular_sleep_threshold) {
 					++body.sleep_counter;
 				}
 				else {
@@ -807,38 +945,95 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 	}
 }
 
-auto gse::vbd::solver::end_frame(std::vector<body_state>& bodies, contact_cache& cache) -> void {
+auto gse::vbd::solver::build_islands(const std::uint32_t num_bodies) -> void {
+	m_island_root.resize(num_bodies);
+	std::ranges::iota(m_island_root, 0u);
+
+	const auto find = [this](std::uint32_t i) {
+		while (m_island_root[i] != i) {
+			m_island_root[i] = m_island_root[m_island_root[i]];
+			i = m_island_root[i];
+		}
+		return i;
+	};
+
+	const auto unite = [&](const std::uint32_t a, const std::uint32_t b) {
+		if (m_bodies[a].locked || m_bodies[b].locked) {
+			return;
+		}
+		const auto root_a = find(a);
+		const auto root_b = find(b);
+		if (root_a != root_b) {
+			m_island_root[root_a] = root_b;
+		}
+	};
+
 	for (const auto& c : m_graph.contact_constraints()) {
-		const force friction_bound = abs(c.lambda[0]) * c.friction_coeff;
-		const force tangential_lambda = hypot(c.lambda[1], c.lambda[2]);
-		const length tangential_gap = hypot(c.c0[1], c.c0[2]);
-
-		const bool sticking = c.lambda[0] < newtons(-1e-3f) && tangential_gap < m_config.stick_threshold &&
-			tangential_lambda < friction_bound;
-
-		cache.store(
-			c.body_a,
-			c.body_b,
-			unpack_feature(c.feature_key),
-			cached_lambda{
-				.lambda = c.lambda,
-				.penalty = c.penalty,
-				.normal = c.normal,
-				.tangent_u = c.tangent_u,
-				.tangent_v = c.tangent_v,
-				.local_anchor_a = c.local_anchor_a,
-				.local_anchor_b = c.local_anchor_b,
-				.sticking = sticking,
-				.age = 0
-			}
-		);
+		unite(c.body_a, c.body_b);
+	}
+	for (const auto& j : m_graph.joint_constraints()) {
+		unite(j.body_a, j.body_b);
 	}
 
-	bodies.assign(m_bodies.begin(), m_bodies.end());
+	for (std::uint32_t i = 0; i < num_bodies; ++i) {
+		m_island_root[i] = find(i);
+	}
+
+	m_island_wake.assign(num_bodies, 0);
+	m_island_calm.assign(num_bodies, 1);
+}
+
+auto gse::vbd::solver::end_frame(std::vector<body_state>& bodies, contact_cache& cache) -> void {
+	{
+		trace::scope_guard sg{ trace_id<"vbd_cpu::end_frame::store">() };
+		cache.reserve(m_graph.contact_constraints().size());
+
+		for (const auto& c : m_graph.contact_constraints()) {
+			if (m_body_inactive[c.body_a] && m_body_inactive[c.body_b]) {
+				if (c.replayed & 1u) {
+					continue;
+				}
+				if (cache.touch(m_body_ids[c.body_a], m_body_ids[c.body_b], unpack_feature(c.feature_key))) {
+					continue;
+				}
+			}
+			const force friction_bound = abs(c.lambda[0]) * c.friction_coeff;
+			const force tangential_lambda = hypot(c.lambda[1], c.lambda[2]);
+			const length tangential_gap = hypot(c.c0[1], c.c0[2]);
+
+			const bool sticking = c.lambda[0] < newtons(-1e-3f) && tangential_gap < m_config.stick_threshold &&
+				tangential_lambda < friction_bound;
+
+			cache.store(
+				m_body_ids[c.body_a],
+				m_body_ids[c.body_b],
+				unpack_feature(c.feature_key),
+				cached_lambda{
+					.lambda = c.lambda,
+					.penalty = c.penalty,
+					.normal = c.normal,
+					.tangent_u = c.tangent_u,
+					.tangent_v = c.tangent_v,
+					.local_anchor_a = c.local_anchor_a,
+					.local_anchor_b = c.local_anchor_b,
+					.sticking = sticking
+				}
+			);
+		}
+	}
+
+	{
+		trace::scope_guard sg{ trace_id<"vbd_cpu::end_frame::bodies_copy">() };
+		bodies.assign(m_bodies.begin(), m_bodies.end());
+	}
 }
 
 auto gse::vbd::solver::body_states(this auto&& self) -> decltype(auto) {
 	return std::span(self.m_bodies);
+}
+
+auto gse::vbd::solver::body_ids(this auto&& self) -> decltype(auto) {
+	return std::span(self.m_body_ids);
 }
 
 auto gse::vbd::solver::accumulate_contact(const contact_constraint& constraint, const frozen_jacobian& frozen, const std::uint32_t body_idx, const time_squared h_squared, const float alpha) -> void {
@@ -882,15 +1077,15 @@ auto gse::vbd::solver::accumulate_contact(const contact_constraint& constraint, 
 		}
 
 		const vec3f j_lin = dirs[i] * sign;
-		const vec3<length> j_ang = j_ang_frozen[i] * sign;
+		const vec3<angular_jacobian> j_ang = j_ang_frozen[i] * sign;
 
 		m_solve_state[body_idx].gradient += j_lin * f[i];
 		m_solve_state[body_idx].hessian += outer_product(j_lin, j_lin) * constraint.penalty[i];
 
 		if (m_bodies[body_idx].update_orientation) {
 			m_solve_state[body_idx].angular_gradient += j_ang * f[i];
-			m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * constraint.penalty[i] / rad;
-			m_solve_state[body_idx].hessian_xtheta += outer_product(j_lin, j_ang) * constraint.penalty[i] / rad;
+			m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * constraint.penalty[i];
+			m_solve_state[body_idx].hessian_xtheta += outer_product(j_lin, j_ang) * constraint.penalty[i];
 		}
 	}
 }
@@ -1024,7 +1219,7 @@ auto gse::vbd::solver::perform_newton_step(const std::uint32_t body_idx, const t
 	const vec3<angle> theta_diff = to_axis_angle(q_rel);
 
 	const auto i_body = body.inv_inertia.inverse();
-	const mat3<angular_stiffness> ang_inertia_hessian = i_body / h_squared / rad;
+	const mat3<angular_stiffness> ang_inertia_hessian = i_body / h_squared;
 	const vec3<torque> g_ang_inertia = ang_inertia_hessian * theta_diff;
 
 	const vec3<torque> g_ang = m_solve_state[body_idx].angular_gradient + g_ang_inertia;
@@ -1035,7 +1230,7 @@ auto gse::vbd::solver::perform_newton_step(const std::uint32_t body_idx, const t
 	h_tt[2][2] += m_config.angular_regularization;
 
 	const auto& h_xt = m_solve_state[body_idx].hessian_xtheta;
-	const auto h_tx = h_xt.transpose() * rad;
+	const auto h_tx = h_xt.transpose();
 
 	const auto h_xx_inv = h_xx.inverse();
 	const auto s = h_tt - h_tx * h_xx_inv * h_xt;
@@ -1073,10 +1268,10 @@ auto gse::vbd::solver::update_dual(const float alpha) -> step_delta {
 	}
 
 	task::coarse_parallel(
-		contacts.size(),
+		m_active_contacts.size(),
 		512,
-		[&, this](std::size_t ci) {
-			auto& con = contacts[ci];
+		[&, this](std::size_t k) {
+			auto& con = contacts[m_active_contacts[k]];
 			const auto& body_a = m_bodies[con.body_a];
 			const auto& body_b = m_bodies[con.body_b];
 
@@ -1155,15 +1350,15 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 		const force fi = constraint.pos_penalty[0] * c + constraint.pos_lambda[0];
 
 		const vec3f j_lin = d_hat * sign;
-		const vec3<lever_arm> j_ang = cross(r, d_hat);
+		const vec3<angular_jacobian> j_ang = cross(r, d_hat) / rad;
 
 		m_solve_state[body_idx].gradient += j_lin * fi;
 		m_solve_state[body_idx].hessian += outer_product(j_lin, j_lin) * constraint.pos_penalty[0];
 
 		if (m_bodies[body_idx].update_orientation) {
 			m_solve_state[body_idx].angular_gradient += j_ang * fi;
-			m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * constraint.pos_penalty[0] / rad;
-			m_solve_state[body_idx].hessian_xtheta += outer_product(j_lin, j_ang) * constraint.pos_penalty[0] / rad;
+			m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * constraint.pos_penalty[0];
+			m_solve_state[body_idx].hessian_xtheta += outer_product(j_lin, j_ang) * constraint.pos_penalty[0];
 			accumulate_geometric_stiffness(m_solve_state[body_idx], r, d_hat, abs(fi));
 		}
 	}
@@ -1212,15 +1407,15 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 			(active_err > length{} ? active_K : stiffness{}) + (passive_err > length{} ? passive_K : stiffness{});
 
 		const vec3f j_lin = d_hat * sign;
-		const vec3<lever_arm> j_ang = cross(r, d_hat);
+		const vec3<angular_jacobian> j_ang = cross(r, d_hat) / rad;
 
 		m_solve_state[body_idx].gradient += j_lin * fi;
 		m_solve_state[body_idx].hessian += outer_product(j_lin, j_lin) * total_K;
 
 		if (m_bodies[body_idx].update_orientation) {
 			m_solve_state[body_idx].angular_gradient += j_ang * fi;
-			m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * total_K / rad;
-			m_solve_state[body_idx].hessian_xtheta += outer_product(j_lin, j_ang) * total_K / rad;
+			m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * total_K;
+			m_solve_state[body_idx].hessian_xtheta += outer_product(j_lin, j_ang) * total_K;
 			accumulate_geometric_stiffness(m_solve_state[body_idx], r, d_hat, abs(fi));
 		}
 	}
@@ -1232,16 +1427,15 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 			const force fi = constraint.pos_penalty[k] * c + constraint.pos_lambda[k];
 
 			const vec3f j_lin = dirs[k] * sign;
-			const vec3<lever_arm> j_ang = cross(r, dirs[k]);
+			const vec3<angular_jacobian> j_ang = cross(r, dirs[k]) / rad;
 
 			m_solve_state[body_idx].gradient += j_lin * fi;
 			m_solve_state[body_idx].hessian += outer_product(j_lin, j_lin) * constraint.pos_penalty[k];
 
 			if (m_bodies[body_idx].update_orientation) {
 				m_solve_state[body_idx].angular_gradient += j_ang * fi;
-				m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * constraint.pos_penalty[k] /
-					rad;
-				m_solve_state[body_idx].hessian_xtheta += outer_product(j_lin, j_ang) * constraint.pos_penalty[k] / rad;
+				m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * constraint.pos_penalty[k];
+				m_solve_state[body_idx].hessian_xtheta += outer_product(j_lin, j_ang) * constraint.pos_penalty[k];
 				accumulate_geometric_stiffness(m_solve_state[body_idx], r, dirs[k], abs(fi));
 			}
 		}
@@ -1392,16 +1586,15 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 			const force fi = constraint.pos_penalty[k] * C + constraint.pos_lambda[k];
 
 			const vec3f j_lin = perps[k] * sign;
-			const vec3<lever_arm> j_ang = cross(r, perps[k]);
+			const vec3<angular_jacobian> j_ang = cross(r, perps[k]) / rad;
 
 			m_solve_state[body_idx].gradient += j_lin * fi;
 			m_solve_state[body_idx].hessian += outer_product(j_lin, j_lin) * constraint.pos_penalty[k];
 
 			if (m_bodies[body_idx].update_orientation) {
 				m_solve_state[body_idx].angular_gradient += j_ang * fi;
-				m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * constraint.pos_penalty[k] /
-					rad;
-				m_solve_state[body_idx].hessian_xtheta += outer_product(j_lin, j_ang) * constraint.pos_penalty[k] / rad;
+				m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * constraint.pos_penalty[k];
+				m_solve_state[body_idx].hessian_xtheta += outer_product(j_lin, j_ang) * constraint.pos_penalty[k];
 				accumulate_geometric_stiffness(m_solve_state[body_idx], r, perps[k], abs(fi));
 			}
 		}
@@ -1652,7 +1845,7 @@ auto gse::vbd::accumulate_geometric_stiffness(body_solve_state& state, const vec
 			}
 			col_norm += abs(h);
 		}
-		state.angular_hessian[j][j] += col_norm * abs_force / rad;
+		state.angular_hessian[j][j] += col_norm * abs_force / (rad * rad);
 	}
 }
 
@@ -1660,13 +1853,13 @@ auto gse::vbd::contact_effective_mass(const body_state& body_a, const body_state
 	inverse_mass inv_mass_sum = body_a.inverse_mass() + body_b.inverse_mass();
 
 	if (body_a.update_orientation && !body_a.locked) {
-		const auto ang_j_a = cross(r_aw, dir);
-		inv_mass_sum += dot(cross(body_a.inv_inertia * ang_j_a, r_aw), dir);
+		const auto ang_j_a = cross(r_aw, dir) / rad;
+		inv_mass_sum += dot(cross(body_a.inv_inertia * ang_j_a, r_aw), dir) / rad;
 	}
 
 	if (body_b.update_orientation && !body_b.locked) {
-		const auto ang_j_b = cross(r_bw, dir);
-		inv_mass_sum += dot(cross(body_b.inv_inertia * ang_j_b, r_bw), dir);
+		const auto ang_j_b = cross(r_bw, dir) / rad;
+		inv_mass_sum += dot(cross(body_b.inv_inertia * ang_j_b, r_bw), dir) / rad;
 	}
 
 	if (!gse::isfinite(inv_mass_sum) || inv_mass_sum <= per_kilograms(1e-10f)) {
@@ -1763,7 +1956,7 @@ auto gse::vbd::warm_start_joint(joint_constraint& j, const body_state& ba, const
 		}
 
 		const angular_stiffness eff_ang =
-			inv_i_sum > per_kilogram_meter_squared(1e-10f) ? 1.f / inv_i_sum / h_squared / rad : cfg.ang_penalty_min;
+			inv_i_sum > per_kilogram_meter_squared(1e-10f) ? 1.f / inv_i_sum / h_squared : cfg.ang_penalty_min;
 
 		j.ang_penalty[k] =
 			std::clamp(
@@ -1784,7 +1977,7 @@ auto gse::vbd::warm_start_joint(joint_constraint& j, const body_state& ba, const
 		}
 
 		const angular_stiffness eff_limit =
-			inv_i_sum > per_kilogram_meter_squared(1e-10f) ? 1.f / inv_i_sum / h_squared / rad : cfg.ang_penalty_min;
+			inv_i_sum > per_kilogram_meter_squared(1e-10f) ? 1.f / inv_i_sum / h_squared : cfg.ang_penalty_min;
 
 		j.limit_penalty =
 			std::clamp(
