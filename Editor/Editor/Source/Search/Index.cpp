@@ -254,9 +254,6 @@ auto gse::ide::search::parse_module_declaration(const std::string_view line) -> 
 }
 
 auto gse::ide::search::scan_modules(const std::filesystem::path& path, const std::string_view blob, const std::span<const std::uint32_t> starts, module_index& modules) -> void {
-	if (starts.empty()) {
-		return;
-	}
 	const file_id fid = modules.file_for(path);
 	for (std::size_t line = 0; line < starts.size(); ++line) {
 		if (std::optional<std::pair<std::string, std::uint32_t>> decl = parse_module_declaration(line_at(blob, starts, line))) {
@@ -649,7 +646,7 @@ auto gse::ide::search::end_index_progress(index_state& idx) -> void {
 	idx.phase.store(index_phase::idle, std::memory_order_release);
 }
 
-auto gse::ide::search::run_symbol_batch(const symbol_batch_request& request, index_state& idx, const std::atomic<bool>* cancel, const std::stop_token stop) -> std::vector<analysis::tu_symbols> {
+auto gse::ide::search::run_symbol_batch(const symbol_batch_request& request, index_state& idx, const std::stop_token stop) -> std::vector<analysis::tu_symbols> {
 	const auto& [list, plugin_dll, roots, workers, compile_phase] = request;
 	std::vector<analysis::tu_symbols> out(list.size());
 	const std::size_t n = std::min(workers, list.size());
@@ -659,7 +656,7 @@ auto gse::ide::search::run_symbol_batch(const symbol_batch_request& request, ind
 		for (std::size_t worker = 0; worker < n; ++worker) {
 			pool.emplace_back([&] {
 				while (true) {
-					if (cancel && cancel->load(std::memory_order_acquire)) {
+					if (idx.cancel.load(std::memory_order_acquire)) {
 						break;
 					}
 					const std::size_t i = next.fetch_add(1, std::memory_order_relaxed);
@@ -684,7 +681,7 @@ auto gse::ide::search::run_symbol_batch(const symbol_batch_request& request, ind
 			out[i].failure_detail = module_graph.error();
 		}
 	});
-	if (cancel && cancel->load(std::memory_order_acquire)) {
+	if (idx.cancel.load(std::memory_order_acquire)) {
 		return out;
 	}
 
@@ -704,7 +701,7 @@ auto gse::ide::search::run_symbol_batch(const symbol_batch_request& request, ind
 
 auto gse::ide::search::is_indexed_path(const std::filesystem::path& root, const std::filesystem::path& path) -> bool {
 	const std::filesystem::path relative = path.lexically_normal().lexically_relative(root.lexically_normal());
-	if (relative.empty() || (!relative.empty() && *relative.begin() == "..")) {
+	if (relative.empty() || *relative.begin() == "..") {
 		return false;
 	}
 	for (const std::filesystem::path& part : relative) {
@@ -1008,15 +1005,13 @@ auto gse::ide::search::index_state::module_definition(const std::string_view nam
 	if (candidates == modules.modules_by_name.end()) {
 		return unexpected_lookup(lookup_failure::module_not_found, target);
 	}
-	const module_entry* best = nullptr;
+	const module_entry* best = &modules.modules[candidates->second.front()];
 	for (const std::uint32_t id : candidates->second) {
 		const module_entry& m = modules.modules[id];
-		if (!best || modules.path_for(m.file).extension() == ".cppm") {
+		if (modules.path_for(m.file).extension() == ".cppm") {
 			best = &m;
+			break;
 		}
-	}
-	if (!best) {
-		return unexpected_lookup(lookup_failure::module_not_found, target);
 	}
 	return location{
 		.path = modules.path_for(best->file),
@@ -1139,12 +1134,12 @@ auto gse::ide::search::index_state::semantic_tokens_in(const std::filesystem::pa
 			}
 			const symbol_entry* target = symbol_at_location(symbols, x.def_file, x.def_line, x.def_column, false);
 			if (!target && !x.identity.empty()) {
-				if (const auto it = symbols.definitions_by_identity.find(x.identity); it != symbols.definitions_by_identity.end() && !it->second.empty()) {
+				if (const auto it = symbols.definitions_by_identity.find(x.identity); it != symbols.definitions_by_identity.end()) {
 					target = &symbols.symbols[it->second.front()];
 				}
 			}
 			if (!target && !x.qualified.empty()) {
-				if (const auto it = symbols.definitions_by_qualified.find(x.qualified); it != symbols.definitions_by_qualified.end() && !it->second.empty()) {
+				if (const auto it = symbols.definitions_by_qualified.find(x.qualified); it != symbols.definitions_by_qualified.end()) {
 					target = &symbols.symbols[it->second.front()];
 				}
 			}
@@ -1323,7 +1318,7 @@ auto gse::ide::search::update_file(index_state& idx, const std::filesystem::path
 			idx.modules.files.erase(file_identity);
 		}
 	}
-	if (regular && indexed_content && is_symbol_source(resolved)) {
+	if (indexed_content && is_symbol_source(resolved)) {
 		scan_modules(resolved, indexed_content->blob, indexed_content->line_starts, idx.modules);
 	}
 	rebuild_module_lookups(idx.modules);
@@ -1654,7 +1649,6 @@ auto gse::ide::search::build_symbols(index_state& idx, std::stop_token stop) -> 
 				.phase = round == 0 ? index_phase::compiling : index_phase::retrying,
 			},
 			idx,
-			&idx.cancel,
 			stop
 		);
 		if (idx.cancel.load(std::memory_order_acquire)) {

@@ -13,6 +13,7 @@ namespace gse::ide {
 	constexpr std::size_t label_buffer_size = 192;
 	constexpr float min_bar_width = 1.f;
 	constexpr float bar_label_min_width = 36.f;
+	constexpr float max_name_column_ratio = 0.75f;
 
 	constexpr vec4f color_main_lane{ 0.26f, 0.62f, 0.86f, 0.85f };
 	constexpr vec4f color_worker_lane{ 0.62f, 0.46f, 0.86f, 0.85f };
@@ -32,13 +33,6 @@ namespace gse::ide {
 		const std::deque<captured_frame>& frames,
 		std::uint64_t pinned
 	) -> const captured_frame*;
-
-	template <typename... Args>
-	auto format_into(
-		std::span<char> buffer,
-		std::format_string<Args...> fmt,
-		Args&&... args
-	) -> std::string_view;
 
 	auto lane_color(
 		std::uint32_t tid,
@@ -160,6 +154,11 @@ namespace gse::ide {
 		profile_view_state& state
 	) -> void;
 
+	auto column_duration(
+		const profile_row& row,
+		profile_column column
+	) -> gse::profile::sample_time;
+
 	auto row_precedes(
 		const profile_row& a,
 		const profile_row& b,
@@ -196,19 +195,33 @@ namespace gse::ide {
 		profile_column column,
 		const profile_row& row,
 		gse::profile::sample_time frame_time,
+		std::string_view unit,
 		std::span<char> buffer
 	) -> std::string_view;
+
+	auto column_captions(
+		std::string_view unit,
+		std::span<std::array<char, number_buffer_size>> storage,
+		std::span<std::string_view> out
+	) -> void;
 
 	auto measure_columns(
 		const gse::gui::draw_context& ctx,
 		std::span<const profile_row> rows,
 		gse::profile::sample_time frame_time,
+		std::string_view unit,
 		std::span<float> widths
 	) -> void;
+
+	auto measure_name_column(
+		const gse::gui::draw_context& ctx,
+		std::span<const profile_row> rows
+	) -> float;
 
 	auto draw_row_section(
 		const gse::gui::draw_context& ctx,
 		const rectf& rect,
+		const rectf& content,
 		float y,
 		std::string_view title,
 		std::span<const profile_row> rows,
@@ -219,8 +232,9 @@ namespace gse::ide {
 	auto draw_table(
 		gse::gui::draw_context& ctx,
 		const rectf& rect,
-		profile_view_state& state
-	) -> void;
+		profile_view_state& state,
+		float scroll_x
+	) -> float;
 
 	auto draw_detail(
 		const gse::gui::draw_context& ctx,
@@ -346,14 +360,8 @@ auto gse::ide::frame_for(const std::deque<captured_frame>& frames, const std::ui
 	return &frames.back();
 }
 
-template <typename... Args>
-auto gse::ide::format_into(const std::span<char> buffer, const std::format_string<Args...> fmt, Args&&... args) -> std::string_view {
-	const auto result = std::format_to_n(buffer.data(), static_cast<std::ptrdiff_t>(buffer.size()), fmt, std::forward<Args>(args)...);
-	return { buffer.data(), static_cast<std::size_t>(result.out - buffer.data()) };
-}
-
 auto gse::ide::lane_color(const std::uint32_t tid, const std::uint32_t main_tid) -> vec4f {
-	if (tid >= trace::gpu_compute_virtual_tid) {
+	if (tid >= trace::gpu_virtual_tid_min) {
 		return color_gpu_lane;
 	}
 	if (tid == (main_tid != 0 ? main_tid : trace::main_tid())) {
@@ -366,7 +374,7 @@ auto gse::ide::lane_label(const std::uint32_t tid, const std::uint32_t main_tid,
 	if (tid == (main_tid != 0 ? main_tid : trace::main_tid())) {
 		return "main";
 	}
-	if (tid >= trace::gpu_compute_virtual_tid) {
+	if (tid >= trace::gpu_virtual_tid_min) {
 		if (const std::optional<std::string> name = trace::virtual_thread_name(tid)) {
 			return format_into(buffer, "{}", *name);
 		}
@@ -415,8 +423,8 @@ auto gse::ide::build_lane_buckets(const captured_frame& frame, lane_buckets& out
 	}
 	const std::uint32_t main = trace::main_tid();
 	std::ranges::sort(out.tids, [main](const std::uint32_t a, const std::uint32_t b) {
-		const bool a_gpu = a >= trace::gpu_compute_virtual_tid;
-		const bool b_gpu = b >= trace::gpu_compute_virtual_tid;
+		const bool a_gpu = a >= trace::gpu_virtual_tid_min;
+		const bool b_gpu = b >= trace::gpu_virtual_tid_min;
 		if (a_gpu != b_gpu) {
 			return b_gpu;
 		}
@@ -615,6 +623,32 @@ auto gse::ide::draw_header(gse::gui::builder& ui, const rectf& outer, profile_vi
 		state.worker_offset = 0;
 	}
 
+	const std::span<const std::string_view> units = gse::internal::unit_names<gse::time_tag>();
+	float widest_unit = 0.f;
+	for (const std::string_view unit : units) {
+		widest_unit = std::max(widest_unit, code_view->width(unit, font_sz));
+	}
+	const auto current_unit = std::ranges::find(units, state.time_unit);
+	const float unit_w = widest_unit + ctx.style.icon_extent + pad * 2.f;
+	const rectf unit_rect = rectf::from_position_size(
+		{ dropdown_rect.left() - unit_w - pad * 0.5f, rect.top() },
+		{ unit_w, rect.height() }
+	);
+	const gse::gui::dropdown_result unit_picked = gse::gui::draw::dropdown_in_rect(
+		ctx,
+		"profile.unit",
+		current_unit == units.end() ? 0 : static_cast<std::size_t>(std::ranges::distance(units.begin(), current_unit)),
+		units,
+		state.unit_dropdown,
+		unit_rect,
+		ui.hot_widget_id,
+		ui.active_widget_id
+	);
+	if (unit_picked.changed && unit_picked.new_index < units.size()) {
+		state.time_unit = units[unit_picked.new_index];
+		state.columns = {};
+	}
+
 	const float x = draw_enum_toggle(ctx, rect, rect.left() + pad * 0.5f, state.mode);
 	if (state.source != profile_source::editor) {
 		return;
@@ -776,39 +810,50 @@ auto gse::ide::draw_flame(gse::gui::draw_context& ctx, const rectf& rect, const 
 	ctx.layout_cursor.y() = lane_top;
 }
 
-auto gse::ide::row_precedes(const profile_row& a, const profile_row& b, const profile_column column) -> bool {
+auto gse::ide::column_duration(const profile_row& row, const profile_column column) -> gse::profile::sample_time {
 	switch (column) {
 		case profile_column::ema:
-			return a.ema < b.ema;
+			return row.ema;
 		case profile_column::peak:
-			return a.peak < b.peak;
-		case profile_column::calls:
-			return a.calls_per_frame < b.calls_per_frame;
+			return row.peak;
 		default:
-			return a.per_frame < b.per_frame;
+			return row.per_frame;
 	}
+}
+
+auto gse::ide::row_precedes(const profile_row& a, const profile_row& b, const profile_column column) -> bool {
+	if (column == profile_column::calls) {
+		return a.calls_per_frame < b.calls_per_frame;
+	}
+	return column_duration(a, column) < column_duration(b, column);
 }
 
 auto gse::ide::frame_share(const profile_row& row, const gse::profile::sample_time frame_time) -> double {
 	return frame_time > gse::profile::sample_time{} ? row.per_frame / frame_time * 100.0 : 0.0;
 }
 
-auto gse::ide::format_cell(const profile_column column, const profile_row& row, const gse::profile::sample_time frame_time, const std::span<char> buffer) -> std::string_view {
-	switch (column) {
-		case profile_column::ema:
-			return format_into(buffer, "{:.2f:us!}", row.ema);
-		case profile_column::peak:
-			return format_into(buffer, "{:.2f:us!}", row.peak);
-		case profile_column::share:
-			return format_into(buffer, "{:.1f}", frame_share(row, frame_time));
-		case profile_column::calls:
-			return format_into(buffer, "{:.2f}", row.calls_per_frame);
-		default:
-			return format_into(buffer, "{:.2f:us!}", row.per_frame);
+auto gse::ide::format_cell(const profile_column column, const profile_row& row, const gse::profile::sample_time frame_time, const std::string_view unit, const std::span<char> buffer) -> std::string_view {
+	if (gse::annotation_from_enum<view_label>(column, { .text = "" }).dimensioned) {
+		return format_into(buffer, "{:.2f:{}!}", column_duration(row, column), unit);
+	}
+	if (column == profile_column::share) {
+		return format_into(buffer, "{:.1f}", frame_share(row, frame_time));
+	}
+	return format_into(buffer, "{:.2f}", row.calls_per_frame);
+}
+
+auto gse::ide::column_captions(const std::string_view unit, const std::span<std::array<char, number_buffer_size>> storage, const std::span<std::string_view> out) -> void {
+	std::size_t index = 0;
+	template for (constexpr auto enumerator : std::define_static_array(std::meta::enumerators_of(^^profile_column))) {
+		static constexpr view_label label = gse::annotation_from_enum<view_label>([:enumerator:], { .text = "" });
+		out[index] = label.dimensioned
+			? format_into(storage[index], "{} {}", std::string_view(label.text), unit)
+			: std::string_view(label.text);
+		++index;
 	}
 }
 
-auto gse::ide::measure_columns(const gse::gui::draw_context& ctx, const std::span<const profile_row> rows, const gse::profile::sample_time frame_time, const std::span<float> widths) -> void {
+auto gse::ide::measure_columns(const gse::gui::draw_context& ctx, const std::span<const profile_row> rows, const gse::profile::sample_time frame_time, const std::string_view unit, const std::span<float> widths) -> void {
 	const auto code_view = ctx.fonts.code.resolve();
 	const float font_sz = ctx.style.font_size;
 	std::array<char, number_buffer_size> buffer{};
@@ -816,19 +861,30 @@ auto gse::ide::measure_columns(const gse::gui::draw_context& ctx, const std::spa
 	for (const profile_row& row : rows) {
 		std::size_t index = 0;
 		template for (constexpr auto enumerator : std::define_static_array(std::meta::enumerators_of(^^profile_column))) {
-			const std::string_view text = format_cell([:enumerator:], row, frame_time, buffer);
+			const std::string_view text = format_cell([:enumerator:], row, frame_time, unit, buffer);
 			widths[index] = std::max(widths[index], code_view->width(text, font_sz));
 			++index;
 		}
 	}
 }
 
-auto gse::ide::draw_row_section(const gse::gui::draw_context& ctx, const rectf& rect, float y, const std::string_view title, const std::span<const profile_row> rows, const gse::profile::sample_time frame_time, profile_view_state& state) -> float {
+auto gse::ide::measure_name_column(const gse::gui::draw_context& ctx, const std::span<const profile_row> rows) -> float {
+	const auto code_view = ctx.fonts.code.resolve();
+	const float font_sz = ctx.style.font_size;
+	float widest = 0.f;
+
+	for (const profile_row& row : rows) {
+		widest = std::max(widest, code_view->width(display_tag(row.tag), font_sz));
+	}
+	return widest;
+}
+
+auto gse::ide::draw_row_section(const gse::gui::draw_context& ctx, const rectf& rect, const rectf& content, float y, const std::string_view title, const std::span<const profile_row> rows, const gse::profile::sample_time frame_time, profile_view_state& state) -> float {
 	const auto code_view = ctx.fonts.code.resolve();
 	const float font_sz = ctx.style.font_size;
 	const float pad = ctx.style.padding;
 	const float row_h = row_height(ctx);
-	const float name_left = rect.left() + pad * 0.5f;
+	const float name_left = content.left() + pad * 0.5f;
 
 	auto value_at = [&](const rectf& cell, const std::string_view text) {
 		return cell.right() - code_view->width(text, font_sz) - pad * 0.5f;
@@ -851,15 +907,11 @@ auto gse::ide::draw_row_section(const gse::gui::draw_context& ctx, const rectf& 
 	}
 
 	if (visible(y)) {
+		std::array<std::array<char, number_buffer_size>, profile_column_count> caption_storage{};
 		std::array<std::string_view, profile_column_count> captions{};
-		std::size_t index = 0;
-		template for (constexpr auto enumerator : std::define_static_array(std::meta::enumerators_of(^^profile_column))) {
-			static constexpr view_label label = gse::annotation_from_enum<view_label>([:enumerator:], { .text = "" });
-			captions[index] = label.text;
-			++index;
-		}
+		column_captions(state.time_unit, caption_storage, captions);
 		const gse::gui::column_header_result picked = gse::gui::column_header(ctx, {
-			.area = rectf::from_position_size({ rect.left(), y }, { rect.width(), row_h }),
+			.area = rectf::from_position_size({ content.left(), y }, { content.width(), row_h }),
 			.captions = captions,
 			.active = static_cast<std::size_t>(state.sort_column),
 		}, state.columns);
@@ -879,7 +931,7 @@ auto gse::ide::draw_row_section(const gse::gui::draw_context& ctx, const rectf& 
 			y -= row_h;
 			continue;
 		}
-		const rectf line = rectf::from_position_size({ rect.left(), y }, { rect.width(), row_h });
+		const rectf line = rectf::from_position_size({ content.left(), y }, { content.width(), row_h });
 		if (row.id == state.selected) {
 			ctx.queue_sprite({
 				.rect = line,
@@ -897,7 +949,7 @@ auto gse::ide::draw_row_section(const gse::gui::draw_context& ctx, const rectf& 
 		std::size_t column_index = 0;
 		template for (constexpr auto enumerator : std::define_static_array(std::meta::enumerators_of(^^profile_column))) {
 			constexpr profile_column column = [:enumerator:];
-			const std::string_view text = format_cell(column, row, frame_time, buffer);
+			const std::string_view text = format_cell(column, row, frame_time, state.time_unit, buffer);
 			const vec4f color = column == profile_column::share && over_budget
 				? color_over_budget
 				: (column == profile_column::per_frame ? ctx.style.color_text : ctx.style.color_text_secondary);
@@ -992,31 +1044,52 @@ auto gse::ide::find_row(const profile_view_state& state, const gse::id id) -> co
 	return nullptr;
 }
 
-auto gse::ide::draw_table(gse::gui::draw_context& ctx, const rectf& rect, profile_view_state& state) -> void {
+auto gse::ide::draw_table(gse::gui::draw_context& ctx, const rectf& rect, profile_view_state& state, const float scroll_x) -> float {
 	const std::size_t offset = std::min(state.worker_offset, state.cpu_display.size());
 	const std::span<const profile_row> all_cpu(state.cpu_display);
 	const std::span<const profile_row> main_rows = all_cpu.first(offset);
 	const std::span<const profile_row> worker_rows = all_cpu.subspan(offset);
 	const gse::profile::sample_time frame_time = state.live_frame_time;
 
-	const auto code_view = ctx.fonts.code.resolve();
-	const float font_sz = ctx.style.font_size;
-	std::array<float, profile_column_count> widths{};
-	std::size_t index = 0;
-	template for (constexpr auto enumerator : std::define_static_array(std::meta::enumerators_of(^^profile_column))) {
-		static constexpr view_label label = gse::annotation_from_enum<view_label>([:enumerator:], { .text = "" });
-		widths[index] = code_view->width(label.text, font_sz);
-		++index;
+	const float pad = ctx.style.padding;
+
+	if (gse::gui::needs_seed(state.columns, profile_column_count)) {
+		const auto code_view = ctx.fonts.code.resolve();
+		const float font_sz = ctx.style.font_size;
+
+		std::array<std::array<char, number_buffer_size>, profile_column_count> caption_storage{};
+		std::array<std::string_view, profile_column_count> captions{};
+		column_captions(state.time_unit, caption_storage, captions);
+
+		std::array<float, profile_column_count> widths{};
+		for (std::size_t i = 0; i < profile_column_count; ++i) {
+			widths[i] = code_view->width(captions[i], font_sz);
+		}
+		measure_columns(ctx, all_cpu, frame_time, state.time_unit, widths);
+		measure_columns(ctx, state.gpu_display, frame_time, state.time_unit, widths);
+		gse::gui::seed_columns(ctx, widths, state.columns);
 	}
-	measure_columns(ctx, all_cpu, frame_time, widths);
-	measure_columns(ctx, state.gpu_display, frame_time, widths);
-	gse::gui::seed_columns(ctx, widths, state.columns);
+
+	const float name_width = std::min(
+		rect.width() * max_name_column_ratio,
+		std::max(measure_name_column(ctx, all_cpu), measure_name_column(ctx, state.gpu_display)) + pad
+	);
+	float content_width = name_width;
+	for (const float width : state.columns.widths) {
+		content_width += width;
+	}
+
+	const rectf content = rectf::from_position_size(
+		{ rect.left() - scroll_x, rect.top() },
+		{ std::max(rect.width(), content_width), rect.height() }
+	);
 
 	float y = ctx.layout_cursor.y();
-	y = draw_row_section(ctx, rect, y, "cpu - main thread (blocks the frame)", main_rows, frame_time, state);
-	y = draw_row_section(ctx, rect, y, "cpu - workers (parallel, can exceed 100%)", worker_rows, frame_time, state);
-	y = draw_row_section(ctx, rect, y, "gpu (per pass)", state.gpu_display, frame_time, state);
+	y = draw_row_section(ctx, rect, content, y, "cpu - main thread (blocks the frame)", main_rows, frame_time, state);
+	y = draw_row_section(ctx, rect, content, y, "cpu - workers (parallel, can exceed 100%)", worker_rows, frame_time, state);
+	y = draw_row_section(ctx, rect, content, y, "gpu (per pass)", state.gpu_display, frame_time, state);
 	ctx.layout_cursor.y() = y;
+	return content_width;
 }
 
 auto gse::ide::draw_detail(const gse::gui::draw_context& ctx, const rectf& rect, const std::deque<captured_frame>& frames, const captured_frame* frame, profile_view_state& state) -> void {
@@ -1038,18 +1111,18 @@ auto gse::ide::draw_detail(const gse::gui::draw_context& ctx, const rectf& rect,
 
 	if (focus.exists()) {
 		if (const profile_row* row = find_row(state, focus)) {
-			y = draw_stat(ctx, rect, y, "per/f", format_into(buffer, "{:.2f:us}", row->per_frame));
+			y = draw_stat(ctx, rect, y, "per/f", format_into(buffer, "{:.2f:{}}", row->per_frame, state.time_unit));
 			y = draw_stat(ctx, rect, y, "calls/f", format_into(buffer, "{:.2f}", row->calls_per_frame));
-			y = draw_stat(ctx, rect, y, "avg", format_into(buffer, "{:.2f:us}", row->ema));
-			y = draw_stat(ctx, rect, y, "peak", format_into(buffer, "{:.2f:us}", row->peak));
-			y = draw_stat(ctx, rect, y, "last", format_into(buffer, "{:.2f:us}", row->last));
+			y = draw_stat(ctx, rect, y, "avg", format_into(buffer, "{:.2f:{}}", row->ema, state.time_unit));
+			y = draw_stat(ctx, rect, y, "peak", format_into(buffer, "{:.2f:{}}", row->peak, state.time_unit));
+			y = draw_stat(ctx, rect, y, "last", format_into(buffer, "{:.2f:{}}", row->last, state.time_unit));
 			y = draw_stat(ctx, rect, y, "hits", format_into(buffer, "{}", row->sample_count));
 		}
 	}
 
 	y -= pad * 0.5f;
 	if (frame) {
-		y = draw_stat(ctx, rect, y, "frame", format_into(buffer, "{:.2f:ms}", frame->span));
+		y = draw_stat(ctx, rect, y, "frame", format_into(buffer, "{:.2f:{}}", frame->span, state.time_unit));
 		y = draw_stat(ctx, rect, y, "spans", format_into(buffer, "{}", frame->nodes.size()));
 	}
 	y = draw_stat(ctx, rect, y, "history", format_into(buffer, "{}", frames.size()));
@@ -1081,7 +1154,7 @@ auto gse::ide::draw_detail(const gse::gui::draw_context& ctx, const rectf& rect,
 		.clip_rect = rect,
 		.corner_radius = ctx.style.corner_radius,
 	});
-	const std::string_view worst_value = format_into(buffer, "{:.2f:ms}", worst->span);
+	const std::string_view worst_value = format_into(buffer, "{:.2f:{}}", worst->span, state.time_unit);
 	draw_label(ctx, button, { button.left() + pad * 0.5f, button.center().y() }, "worst frame", ctx.style.color_text);
 	draw_label(ctx, button, { button.right() - code_view->width(worst_value, font_sz) - pad * 0.5f, button.center().y() }, worst_value, ctx.style.color_text_secondary);
 	if (ctx.mouse_pressed_for(button)) {
@@ -1156,8 +1229,10 @@ auto gse::ide::draw_profile_panel(gse::gui::builder& ui, const rectf& rect, prof
 	const captured_frame* frame = frame_for(frames, state.pinned_generation != 0 ? state.pinned_generation : state.live_generation);
 	const bool have_data = state.source == profile_source::editor || report_loaded;
 	if (have_data && state.mode == profile_mode::table) {
-		const gse::gui::scroll_handle region = body_scroll_region(ui, body_rect, "profile.table", row_h);
-		draw_table(ui.ctx, region.valid() ? region.visible_rect() : body_rect, state);
+		gse::gui::scroll_handle region = body_scroll_region(ui, body_rect, "profile.table", row_h);
+		const rectf view = region.valid() ? region.visible_rect() : body_rect;
+		const float content_width = draw_table(ui.ctx, view, state, region.offset_x());
+		region.set_content_width(content_width);
 	}
 	else if (have_data && frame) {
 		const gse::gui::scroll_handle region = body_scroll_region(ui, body_rect, "profile.flame", row_h);

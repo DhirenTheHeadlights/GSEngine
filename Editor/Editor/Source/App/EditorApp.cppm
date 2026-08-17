@@ -39,7 +39,7 @@ export namespace gse::ide {
 			context& ctx,
 			data& d,
 			channel_read<window_open_file_result, toggle_project_switcher_request, toggle_settings_request> requests_in,
-			channel_write<gui::push_screen_request, settings::change_request, gui::popout_toggle, set_cursor_shape_request, jump_to_request, window_launcher_mode_request, window_open_file_request> ui_out,
+			channel_write<gui::push_screen_request, settings::change_request, gui::popout_toggle, set_cursor_shape_request, jump_to_request, window_launcher_mode_request, window_open_file_request, build_runner::build_request, toggle_project_switcher_request, toggle_settings_request> ui_out,
 			shared_view<search_system::data> search_d,
 			shared_view<input::data> input_d,
 			const save::registry& save_reg
@@ -75,7 +75,7 @@ export namespace gse::ide {
 		auto run(
 			context& ctx,
 			data& d,
-			channel_read<git::status_updated, jump_to_request, gui::context_menu_result> requests_in,
+			channel_read<git::status_updated, jump_to_request, gui::context_menu_result, analysis::diagnostics_completed, build_runner::build_finished> requests_in,
 			channel_write<gui::menu_content, cursor_capture_request, profile_capture_request, profile_report_request, build_runner::attached_input, build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, analysis::diagnostics_request, git_system::refresh_request, set_cursor_shape_request, search::index_merge_request> ui_out,
 			const scheduler& sched,
 			shared_view<config_system::data> config_d,
@@ -190,7 +190,7 @@ auto gse::ide::forward_game_input(const input::state& input, const channel_write
 	}
 }
 
-auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_open_file_result, toggle_project_switcher_request, toggle_settings_request> requests_in, const channel_write<gui::push_screen_request, settings::change_request, gui::popout_toggle, set_cursor_shape_request, jump_to_request, window_launcher_mode_request, window_open_file_request> ui_out, const shared_view<search_system::data> search_d, const shared_view<input::data> input_d, const save::registry& save_reg) -> async::task<> {
+auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_open_file_result, toggle_project_switcher_request, toggle_settings_request> requests_in, const channel_write<gui::push_screen_request, settings::change_request, gui::popout_toggle, set_cursor_shape_request, jump_to_request, window_launcher_mode_request, window_open_file_request, build_runner::build_request, toggle_project_switcher_request, toggle_settings_request> ui_out, const shared_view<search_system::data> search_d, const shared_view<input::data> input_d, const save::registry& save_reg) -> async::task<> {
 	if (!d.initialized) {
 		load_editor_layout(d);
 		d.save_clock.reset();
@@ -199,7 +199,7 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 
 	if (!d.screen_pushed && search_d.index) {
 		ui_out.push<gui::push_screen_request>({
-			.factory = [channels = channel_write<jump_to_request>(ui_out), index = search_d.index, input_d] {
+			.factory = [channels = channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request>(ui_out), index = search_d.index, input_d] {
 				return std::make_unique<editor_screen>(channels, index, input_d);
 			},
 		});
@@ -384,7 +384,7 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 	return {};
 }
 
-auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<git::status_updated, jump_to_request, gui::context_menu_result> requests_in, const channel_write<gui::menu_content, cursor_capture_request, profile_capture_request, profile_report_request, build_runner::attached_input, build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, analysis::diagnostics_request, git_system::refresh_request, set_cursor_shape_request, search::index_merge_request> ui_out, const scheduler& sched, const shared_view<config_system::data> config_d, const shared_view<search_system::data> search_d, const shared_view<input::data> input_d, const shared_view<viewport::data> viewport_d, const shared_view<build_runner::data> build_d, const shared_view<window::data> window_d, const shared_view<profile_system::data> profile_d) -> async::task<> {
+auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<git::status_updated, jump_to_request, gui::context_menu_result, analysis::diagnostics_completed, build_runner::build_finished> requests_in, const channel_write<gui::menu_content, cursor_capture_request, profile_capture_request, profile_report_request, build_runner::attached_input, build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, analysis::diagnostics_request, git_system::refresh_request, set_cursor_shape_request, search::index_merge_request> ui_out, const scheduler& sched, const shared_view<config_system::data> config_d, const shared_view<search_system::data> search_d, const shared_view<input::data> input_d, const shared_view<viewport::data> viewport_d, const shared_view<build_runner::data> build_d, const shared_view<window::data> window_d, const shared_view<profile_system::data> profile_d) -> async::task<> {
 	if (!d.initialized) {
 		d.ws.fs_root.is_dir = true;
 		d.ws.fs_root.children.clear();
@@ -465,7 +465,7 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 		d.git_status = update.status;
 		d.git_rootless = update.rootless;
 	}
-	update_diagnostics(ctx, d.ws, config_d, build_d.building);
+	update_diagnostics(ctx, requests_in, ui_out, d.ws, config_d, build_d.building);
 	d.ws.watcher.poll();
 	if (input.mouse_button_pressed(mouse_button::button_4)) {
 		workspace::go_back(d.ws);
@@ -503,8 +503,9 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 
 	if (d.game_was_running && !game_running && d.ws.profile.source == profile_source::game) {
 		const std::filesystem::path game_exe = config::game_executable();
+		const std::filesystem::path run = gse::profile::latest_run_dir(game_exe.stem().native_encoded_string());
 		ui_out.push<profile_report_request>({
-			.path = gse::config::profile_dir() / std::format("{}.gsprof", game_exe.stem().generic_display_string()),
+			.path = run.empty() ? run : run / gse::profile::report_name,
 		});
 	}
 	d.game_was_running = game_running;

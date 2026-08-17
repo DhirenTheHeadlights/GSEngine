@@ -720,7 +720,6 @@ namespace gse::ide::search {
 	auto run_symbol_batch(
 		const symbol_batch_request& request,
 		index_state& index,
-		const std::atomic<bool>* cancel,
 		std::stop_token stop
 	) -> std::vector<analysis::tu_symbols>;
 
