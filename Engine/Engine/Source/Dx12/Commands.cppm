@@ -2,6 +2,7 @@ export module gse.dx12:commands;
 
 import std;
 
+import gse.assert;
 import gse.gpu_backend;
 import gse.math;
 import gse.directx;
@@ -541,7 +542,25 @@ auto gse::dx12::commands::copy_buffer(const gpu::handle<gpu::buffer> src, const 
 	}
 }
 
-auto gse::dx12::commands::fill_buffer(gpu::handle<gpu::buffer>, gpu::device_size, gpu::device_size, std::uint32_t) const -> void {}
+auto gse::dx12::commands::fill_buffer(const gpu::handle<gpu::buffer> dst, const gpu::device_size offset, const gpu::device_size size, const std::uint32_t data) const -> void {
+	assert(data == 0, "dx12 fill_buffer only implements zero fills; got {:#x}", data);
+	auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(m_cmd);
+	auto* dst_res = std::bit_cast<directx::ID3D12Resource*>(dst);
+	if (!list || !dst_res || !active_device) {
+		return;
+	}
+	auto* src = active_device->fill_source_buffer();
+	if (!src) {
+		return;
+	}
+	constexpr gpu::device_size chunk = 4ull * 1024 * 1024;
+	gpu::device_size written = 0;
+	while (written < size) {
+		const gpu::device_size step = std::min(chunk, size - written);
+		list->CopyBufferRegion(dst_res, offset + written, src, 0, step);
+		written += step;
+	}
+}
 
 auto gse::dx12::commands::copy_buffer_to_image(gpu::handle<gpu::buffer>, gpu::handle<gpu::image>, std::span<const gpu::buffer_image_copy_region>) const -> void {}
 

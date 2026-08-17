@@ -489,6 +489,8 @@ export namespace gse::dx12 {
 
 		[[nodiscard]] auto raw_device() const -> directx::ID3D12Device*;
 
+		[[nodiscard]] auto fill_source_buffer() const -> directx::ID3D12Resource*;
+
 		auto reset_acquired_list(
 			directx::ID3D12GraphicsCommandList* list
 		) -> void;
@@ -575,6 +577,7 @@ export namespace gse::dx12 {
 		mutable std::mutex m_mutex;
 		mutable std::vector<directx::com_ptr<directx::ID3D12Resource>> m_owned_buffers;
 		mutable std::vector<directx::com_ptr<directx::ID3D12Resource>> m_owned_images;
+		mutable directx::com_ptr<directx::ID3D12Resource> m_fill_source;
 		std::vector<directx::com_ptr<directx::ID3D12PipelineState>> m_owned_psos;
 		std::deque<gfx_template> m_gfx_templates;
 		std::vector<graphics_pso_entry> m_graphics_psos;

@@ -383,16 +383,24 @@ auto gse::dx12::device::queue_family(const gpu::queue_type queue_type) const -> 
 }
 
 auto gse::dx12::device::wait_idle() const -> void {
+	constexpr std::uint32_t idle_timeout_ms = 10'000;
+
 	const auto graphics_target = m_idle_fence->GetCompletedValue() + 1;
 	record_queue_op(queue_op_kind::signal, gpu::queue_type::graphics, m_idle_fence.get(), graphics_target, 0);
 	m_graphics_queue->Signal(m_idle_fence.get(), graphics_target);
 	record_queue_op(queue_op_kind::cpu_wait, gpu::queue_type::graphics, m_idle_fence.get(), graphics_target, 0);
-	directx::wait_fence(m_idle_fence.get(), graphics_target, m_idle_event);
+	if (!directx::wait_fence_for(m_idle_fence.get(), graphics_target, idle_timeout_ms)) {
+		log::println(log::level::error, log::category::dx12, "wait_idle: graphics queue did not reach fence {} within {} ms (completed={} removed=0x{:08x})", graphics_target, idle_timeout_ms, m_idle_fence->GetCompletedValue(), static_cast<std::uint32_t>(m_device->GetDeviceRemovedReason()));
+		return;
+	}
+
 	const auto compute_target = m_idle_fence->GetCompletedValue() + 1;
 	record_queue_op(queue_op_kind::signal, gpu::queue_type::compute, m_idle_fence.get(), compute_target, 0);
 	m_compute_queue->Signal(m_idle_fence.get(), compute_target);
 	record_queue_op(queue_op_kind::cpu_wait, gpu::queue_type::compute, m_idle_fence.get(), compute_target, 0);
-	directx::wait_fence(m_idle_fence.get(), compute_target, m_idle_event);
+	if (!directx::wait_fence_for(m_idle_fence.get(), compute_target, idle_timeout_ms)) {
+		log::println(log::level::error, log::category::dx12, "wait_idle: compute queue did not reach fence {} within {} ms (completed={} removed=0x{:08x})", compute_target, idle_timeout_ms, m_idle_fence->GetCompletedValue(), static_cast<std::uint32_t>(m_device->GetDeviceRemovedReason()));
+	}
 }
 
 auto gse::dx12::device::timestamp_period() const -> float {
@@ -453,16 +461,36 @@ auto gse::dx12::device::cmd_pipeline_barrier(const gpu::command_buffer_handle cm
 			dst.test(gpu::access_flag::shader_write);
 	};
 
+	const auto transfer_involved = [](const gpu::access_flags src, const gpu::access_flags dst) {
+		return src.test(gpu::access_flag::transfer_read) ||
+			src.test(gpu::access_flag::transfer_write) ||
+			dst.test(gpu::access_flag::transfer_read) ||
+			dst.test(gpu::access_flag::transfer_write);
+	};
+
 	for (const auto& mb : dep.memory_barriers) {
-		if (!unordered_hazard_between(mb.src_access, mb.dst_access)) {
+		const bool hazard = unordered_hazard_between(mb.src_access, mb.dst_access);
+		const bool transfer = transfer_involved(mb.src_access, mb.dst_access);
+		if (!hazard && !transfer) {
 			continue;
 		}
-		barriers.push_back({
-			.Type = directx::barrier_type_uav,
-			.UAV = {
-				.pResource = nullptr,
-			},
-		});
+		if (hazard) {
+			barriers.push_back({
+				.Type = directx::barrier_type_uav,
+				.UAV = {
+					.pResource = nullptr,
+				},
+			});
+		}
+		if (transfer) {
+			barriers.push_back({
+				.Type = directx::barrier_type_aliasing,
+				.Aliasing = {
+					.pResourceBefore = nullptr,
+					.pResourceAfter = nullptr,
+				},
+			});
+		}
 	}
 	{
 		std::unique_lock<std::mutex> map_lock(m_mutex, std::defer_lock);
@@ -530,13 +558,7 @@ auto gse::dx12::device::cmd_pipeline_barrier(const gpu::command_buffer_handle cm
 			if (compute_list) {
 				after = directx::strip_graphics_only_states(after);
 			}
-			if (!map_lock.owns_lock()) {
-				map_lock.lock();
-			}
-			const auto it = m_buffer_states.find(res);
-			auto before = it != m_buffer_states.end()
-				? it->second
-				: d3d12_state_of(gpu::state_of(bb.src_access));
+			auto before = d3d12_state_of(gpu::state_of(bb.src_access));
 			if (compute_list) {
 				before = directx::strip_graphics_only_states(before);
 			}
@@ -550,6 +572,9 @@ auto gse::dx12::device::cmd_pipeline_barrier(const gpu::command_buffer_handle cm
 					});
 				}
 				continue;
+			}
+			if (!map_lock.owns_lock()) {
+				map_lock.lock();
 			}
 			m_buffer_states[res] = after;
 			barriers.push_back({
@@ -1184,6 +1209,15 @@ auto gse::dx12::device::raw_device() const -> directx::ID3D12Device* {
 	return m_device.get();
 }
 
+auto gse::dx12::device::fill_source_buffer() const -> directx::ID3D12Resource* {
+	const std::lock_guard lock(m_mutex);
+	if (!m_fill_source) {
+		constexpr std::uint64_t fill_source_size = 4ull * 1024 * 1024;
+		m_fill_source = directx::create_default_buffer(m_device.get(), fill_source_size, directx::resource_state_common);
+	}
+	return m_fill_source.get();
+}
+
 auto gse::dx12::device::reset_acquired_list(directx::ID3D12GraphicsCommandList* list) -> void {
 	graphics_state(list).compute_pso_bound = false;
 }
@@ -1548,10 +1582,14 @@ auto gse::dx12::device::create_buffer(const gpu::buffer_desc& desc, const std::s
 		);
 	}
 	assert(!desc.readback || !desc.bindless, "a readback buffer lives on a readback heap and cannot carry a descriptor");
+	assert(!desc.device_local || (!desc.data && !desc.readback), "a device-local buffer cannot carry init data or readback semantics");
 
 	auto resource = [&] {
 		if (desc.readback) {
 			return directx::create_readback_buffer(m_device.get(), desc.size);
+		}
+		if (desc.device_local) {
+			return directx::create_default_buffer(m_device.get(), desc.size, directx::resource_state_common);
 		}
 		if (m_gpu_upload_supported) {
 			return directx::create_gpu_upload_buffer(m_device.get(), desc.size);
@@ -1566,7 +1604,7 @@ auto gse::dx12::device::create_buffer(const gpu::buffer_desc& desc, const std::s
 		dump_dred_once();
 		return {};
 	}
-	auto* mapped = static_cast<std::byte*>(directx::map_buffer(resource.get()));
+	auto* mapped = desc.device_local ? nullptr : static_cast<std::byte*>(directx::map_buffer(resource.get()));
 	const auto address = directx::gpu_address(resource.get());
 	if (desc.data && mapped) {
 		std::memcpy(mapped, desc.data, desc.size);
