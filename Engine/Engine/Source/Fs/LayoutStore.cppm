@@ -4,6 +4,7 @@ import std;
 
 import gse.core;
 import gse.log;
+import gse.math;
 import gse.meta;
 
 export namespace gse::layout_store {
@@ -177,9 +178,20 @@ auto gse::layout_store::store::read(const std::filesystem::path& path) -> std::s
 }
 
 auto gse::layout_store::store::flush() -> void {
+	const time budget = seconds(5.f);
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(static_cast<std::int64_t>(budget.as<milliseconds>()));
+
 	std::unique_lock lock(m_mutex);
 	while (!idle()) {
-		m_idle.wait(lock);
+		if (m_idle.wait_until(lock, deadline) == std::cv_status::timeout && !idle()) {
+			log::println(
+				log::level::error,
+				log::category::general,
+				"layout_store: flush abandoned after {::s} with writes still pending",
+				budget
+			);
+			return;
+		}
 	}
 }
 

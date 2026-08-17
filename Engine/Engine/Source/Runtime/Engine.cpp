@@ -83,6 +83,28 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	if (m_config.persist_settings) {
 		m_save.set_auto_save(true, config::user_config_dir() / std::format("{}.ini", config::executable_stem()));
 	}
+
+	m_save.pin<window::data, "title">(id().tag());
+	m_save.pin<gpu::context::data, "dark_background">(m_config.dark_background);
+	m_save.pin<gpu::context::data, "device_settings.video_encode">(m_config.video_encode);
+	m_save.pin<gui::data, "scale_with_resolution">(m_config.scale_ui_with_resolution);
+	m_save.pin<gui::data, "reserve_top_bar">(m_config.custom_chrome);
+
+	if (m_config.custom_chrome) {
+		m_save.pin<window::data, "native_frame">(true);
+		m_save.pin<window::data, "mouse_visible">(true);
+	}
+	if (m_config.attached) {
+		m_save.pin<window::data, "cursor_suppressed">(true);
+		m_save.pin<window::data, "attached">(true);
+	}
+	if (!m_config.gui_layout_path.empty()) {
+		m_save.pin<gui::data, "file_path">(m_config.gui_layout_path);
+	}
+	if (m_config.use_gpu_solver) {
+		m_save.pin<physics::data, "use_gpu_solver">(true);
+	}
+
 	m_save.set_overrides(m_config.setting);
 	m_save.set_on_restart([] {
 		app::restart();
@@ -126,31 +148,6 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	}
 	m_scheduler.resolve_activation(disabled);
 
-	if (auto* win = m_scheduler.try_state_of<window::data>()) {
-		win->title = std::string(id().tag());
-		if (m_config.custom_chrome) {
-			win->native_frame = true;
-			win->mouse_visible = true;
-		}
-		if (m_config.attached) {
-			win->cursor_suppressed = true;
-			win->attached = true;
-		}
-	}
-	if (auto* gpu_state = m_scheduler.try_state_of<gpu::context::data>()) {
-		gpu_state->swapchain_clear = m_config.render_world ? gpu::color_clear{} : gpu::color_clear{ 0.05f, 0.05f, 0.06f, 1.0f };
-	}
-	if (auto* renderer_state = m_scheduler.try_state_of<renderer::data>()) {
-		renderer_state->render_world = m_config.render_world;
-	}
-	if (auto* gui_state = m_scheduler.try_state_of<gui::data>()) {
-		gui_state->scale_with_resolution = m_config.scale_ui_with_resolution;
-		gui_state->reserve_top_bar = m_config.custom_chrome;
-		if (!m_config.gui_layout_path.empty()) {
-			gui_state->file_path = m_config.gui_layout_path;
-		}
-	}
-
 	auto& asset_state = m_scheduler.state<asset::data>();
 
 	using game_assets = gse::assets::append<graphics::asset_types, audio::asset_types>;
@@ -186,10 +183,8 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 
 			m_scheduler.register_deferred();
 
-			if (m_config.use_gpu_solver) {
-				if (auto* phys = m_scheduler.try_state_of<physics::data>()) {
-					phys->use_gpu_solver = true;
-				}
+			if (const auto* shadow = m_scheduler.try_state_of<physics::shadow_step::data>()) {
+				m_headless_gpu = shadow->enabled;
 			}
 
 			task::post_io([this, app_setup] {
@@ -209,10 +204,8 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	else {
 		m_scheduler.register_deferred();
 
-		if (m_config.use_gpu_solver) {
-			if (auto* phys = m_scheduler.try_state_of<physics::data>()) {
-				phys->use_gpu_solver = true;
-			}
+		if (const auto* shadow = m_scheduler.try_state_of<physics::shadow_step::data>()) {
+			m_headless_gpu = shadow->enabled;
 		}
 
 		gse::asset::system_for<game_assets> assets{ asset_state };
@@ -238,7 +231,7 @@ auto gse::engine::update() -> void {
 	system_clock::update();
 	m_scheduler.update();
 
-	if (!m_config.render && m_config.use_gpu_solver) {
+	if (!m_config.render && (m_config.use_gpu_solver || m_headless_gpu)) {
 		if (auto* gpu_state = m_scheduler.try_state_of<gpu::context::data>()) {
 			if (gpu::context::begin_frame(*gpu_state, nullptr)) {
 				m_scheduler.render(
@@ -431,7 +424,11 @@ auto gse::engine::render() -> void {
 				window_state.cursor_suppressed = false;
 				window_state.framebuffer_resized = true;
 			}
-			if (!m_window_shown && (!m_config.attached || attach_failed)) {
+			if (!m_window_shown && m_config.bench.enabled) {
+				m_window_shown = true;
+				log::println(log::category::runtime, "boot: window kept hidden (bench run)");
+			}
+			else if (!m_window_shown && (!m_config.attached || attach_failed)) {
 				if (m_loading.finished()) {
 					window::show(window_state);
 					m_window_shown = true;
@@ -481,24 +478,42 @@ auto gse::engine::push_attached_input(const input::event& event) -> void {
 }
 
 auto gse::engine::shutdown() -> void {
-	profile::dump();
-	profile::dump_chrome_trace();
-	profile::dump_report();
+	const time phase_budget = seconds(10.f);
 
-	m_save.save_now();
-	m_save.set_auto_save(false);
+	{
+		watchdog::section watch{ trace_id<"shutdown::profile_dump">(), phase_budget };
+		profile::dump();
+		profile::dump_chrome_trace();
+		profile::dump_report();
+	}
+
+	{
+		watchdog::section watch{ trace_id<"shutdown::save">(), phase_budget };
+		m_save.save_now();
+		m_save.set_auto_save(false);
+	}
 
 	if (auto* gpu_state = m_scheduler.try_state_of<gpu::context::data>()) {
+		watchdog::section watch{ trace_id<"shutdown::gpu_wait_idle">(), phase_budget };
 		gpu::context::wait_idle(*gpu_state);
 		destroy_attached_surface(*gpu_state->device);
 	}
 
-	m_scheduler.enter_shutdown();
-	m_scheduler.shutdown();
+	{
+		watchdog::section watch{ trace_id<"shutdown::systems">(), phase_budget };
+		m_scheduler.enter_shutdown();
+		m_scheduler.shutdown();
+	}
 
-	layout_store::flush();
+	{
+		watchdog::section watch{ trace_id<"shutdown::layout_flush">(), phase_budget };
+		layout_store::flush();
+	}
 
-	m_scheduler.clear();
+	{
+		watchdog::section watch{ trace_id<"shutdown::scheduler_clear">(), phase_budget };
+		m_scheduler.clear();
+	}
 }
 
 auto gse::engine::make_channel_writer() -> channel_writer {
