@@ -61,6 +61,7 @@ namespace gse::gui {
 		scroll_state& state,
 		const rectf& visible_rect,
 		float content_start_y,
+		float content_width,
 		const scroll_config& config
 	) -> void;
 }
@@ -311,7 +312,7 @@ auto gse::gui::scroll_area(const draw_context& ctx, scroll_state& state, const r
 	return { state.x.offset, state.y.offset };
 }
 
-auto gse::gui::run_scroll_end(draw_context& ctx, scroll_state& state, const rectf& visible_rect, const float content_start_y, const scroll_config& config) -> void {
+auto gse::gui::run_scroll_end(draw_context& ctx, scroll_state& state, const rectf& visible_rect, const float content_start_y, const float content_width, const scroll_config& config) -> void {
 	const float content_height = content_start_y - ctx.layout_cursor.y();
-	scroll_area(ctx, state, visible_rect, { visible_rect.width(), content_height }, config);
+	scroll_area(ctx, state, visible_rect, { std::max(content_width, visible_rect.width()), content_height }, config);
 }

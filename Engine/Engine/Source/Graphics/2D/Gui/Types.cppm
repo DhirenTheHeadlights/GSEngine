@@ -446,6 +446,12 @@ export namespace gse::gui {
 
 		[[nodiscard]] auto offset() const -> float;
 
+		[[nodiscard]] auto offset_x() const -> float;
+
+		auto set_content_width(
+			float width
+		) -> void;
+
 	private:
 		draw_context* m_ctx = nullptr;
 		scroll_state* m_state = nullptr;
@@ -453,6 +459,7 @@ export namespace gse::gui {
 		rectf m_saved_menu_rect;
 		float m_saved_layout_y = 0.f;
 		float m_content_start_y = 0.f;
+		float m_content_width = 0.f;
 		scroll_config m_config{};
 		bool m_active = false;
 	};
