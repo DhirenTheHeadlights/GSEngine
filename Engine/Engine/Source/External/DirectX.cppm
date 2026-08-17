@@ -84,6 +84,7 @@ export namespace gse::directx {
 
 	constexpr auto barrier_type_transition = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
 	constexpr auto barrier_type_uav = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+	constexpr auto barrier_type_aliasing = D3D12_RESOURCE_BARRIER_TYPE_ALIASING;
 	constexpr auto resource_state_common = D3D12_RESOURCE_STATE_COMMON;
 	constexpr auto resource_state_present = D3D12_RESOURCE_STATE_PRESENT;
 	constexpr auto resource_state_render_target = D3D12_RESOURCE_STATE_RENDER_TARGET;
@@ -328,6 +329,12 @@ export namespace gse::directx {
 		std::uint64_t value,
 		void* event
 	) -> void;
+
+	[[nodiscard]] auto wait_fence_for(
+		ID3D12Fence* fence,
+		std::uint64_t value,
+		std::uint32_t timeout_ms
+	) -> bool;
 
 	[[nodiscard]] auto create_upload_buffer(
 		ID3D12Device* device,
@@ -1212,6 +1219,22 @@ auto gse::directx::wait_fence(ID3D12Fence* fence, const std::uint64_t value, voi
 		fence->SetEventOnCompletion(value, event);
 		WaitForSingleObject(event, INFINITE);
 	}
+}
+
+auto gse::directx::wait_fence_for(ID3D12Fence* fence, const std::uint64_t value, const std::uint32_t timeout_ms) -> bool {
+	if (fence->GetCompletedValue() >= value) {
+		return true;
+	}
+
+	void* event = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+	if (event == nullptr) {
+		return false;
+	}
+
+	fence->SetEventOnCompletion(value, event);
+	const bool reached = WaitForSingleObject(event, timeout_ms) == WAIT_OBJECT_0;
+	CloseHandle(event);
+	return reached;
 }
 
 auto gse::directx::create_upload_buffer(ID3D12Device* device, const std::uint64_t size) -> com_ptr<ID3D12Resource> {
