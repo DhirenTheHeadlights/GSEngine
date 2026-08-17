@@ -50,7 +50,7 @@ export namespace gse::gpu {
 			std::uint32_t instance_count = 1,
 			std::uint32_t first_vertex = 0,
 			std::uint32_t first_instance = 0
-		) const -> void;
+		) -> void;
 
 		auto draw_indexed(
 			std::uint32_t index_count,
@@ -58,19 +58,19 @@ export namespace gse::gpu {
 			std::uint32_t first_index = 0,
 			std::int32_t vertex_offset = 0,
 			std::uint32_t first_instance = 0
-		) const -> void;
+		) -> void;
 
 		auto draw_mesh_tasks(
 			std::uint32_t x,
 			std::uint32_t y = 1,
 			std::uint32_t z = 1
-		) const -> void;
+		) -> void;
 
 		auto dispatch(
 			std::uint32_t x,
 			std::uint32_t y = 1,
 			std::uint32_t z = 1
-		) const -> void;
+		) -> void;
 
 		template <typename Entry>
 		auto dispatch(
@@ -166,20 +166,20 @@ export namespace gse::gpu {
 
 		auto pipeline_barrier(
 			const gpu::dependency_info& dep
-		) const -> void;
+		) -> void;
 
 		auto capture_swapchain(
 			const gpu::swap_chain& swapchain,
 			const gpu::frame& frame,
 			const buffer& dst
-		) const -> void;
+		) -> void;
 
 		auto blit_swapchain_to_image(
 			const gpu::swap_chain& swapchain,
 			const gpu::frame& frame,
 			const image& dst,
 			vec2u dst_extent
-		) const -> void;
+		) -> void;
 
 		[[nodiscard]] auto resolve(
 			transient_image_handle h
@@ -236,10 +236,22 @@ export namespace gse::gpu {
 		std::vector<touched_resource> m_touched;
 		std::unordered_map<const void*, access_track> m_last_access;
 		std::unordered_map<const void*, image_state_track> m_image_states;
+		std::vector<gpu::memory_barrier> m_pending_memory_barriers;
+		std::vector<gpu::buffer_barrier> m_pending_buffer_barriers;
+		std::vector<gpu::image_barrier> m_pending_image_barriers;
 		std::thread::id m_origin_thread;
 		gpu::pipeline_state_cache m_state_cache;
 		bool m_bindless_heaps_valid = false;
 		bool m_bound_is_compute = false;
+
+		static constexpr std::size_t binding_cache_capacity = 512;
+		std::array<std::byte, binding_cache_capacity> m_last_binding_bytes{};
+		const void* m_last_binding_pack = nullptr;
+		gpu::pipeline_stage_flags m_last_binding_stages{};
+		gpu::pipeline_stage_flags m_companion_stages{};
+		gpu::access_flags m_companion_access{};
+		bool m_binding_repeat_valid = false;
+		bool m_binding_companion_armed = false;
 
 		recording_context(
 			pass_recorder rec,
@@ -266,7 +278,22 @@ export namespace gse::gpu {
 			const resource_ref& ref,
 			gpu::pipeline_stage_flags stages,
 			gpu::access_flags access
+		) -> bool;
+
+		auto note_bindings_repeat(
+			gpu::pipeline_stage_flags stages,
+			gpu::access_flags access
 		) -> void;
+
+		auto invalidate_binding_repeat() -> void;
+
+		auto note_binding_mutation(
+			gpu::pipeline_stage_flags stages,
+			gpu::access_flags access,
+			bool known_resource
+		) -> void;
+
+		auto flush_pending_barriers() -> void;
 
 		[[nodiscard]] auto bound_shader_stages() const -> gpu::pipeline_stage_flags;
 
@@ -310,6 +337,49 @@ consteval auto gse::gpu::recording_context::bindless_member_for() -> std::meta::
 	return std::meta::info{};
 }
 
+namespace gse::gpu {
+	template <typename Pack>
+	constexpr char binding_pack_tag_v = 0;
+
+	template <typename T>
+	consteval auto binding_access_contribution() -> gpu::access_flags;
+
+	template <typename... Ts>
+	consteval auto binding_union_access(
+		type_pack<Ts...>
+	) -> gpu::access_flags;
+}
+
+template <typename T>
+consteval auto gse::gpu::binding_access_contribution() -> gpu::access_flags {
+	constexpr auto dtype = gpu::descriptor_type_v<T>;
+	constexpr bool is_image = dtype == gpu::descriptor_type::sampled_image
+		|| dtype == gpu::descriptor_type::storage_image
+		|| dtype == gpu::descriptor_type::combined_image_sampler;
+	constexpr bool is_buffer = dtype == gpu::descriptor_type::storage_buffer;
+	if constexpr ((is_image || is_buffer) && gpu::descriptor_count_v<T> == 1) {
+		if constexpr (gpu::descriptor_access_v<T> == gpu::descriptor_access::read_write) {
+			return gpu::access_flags{ gpu::access_flag::shader_storage_read, gpu::access_flag::shader_storage_write };
+		}
+		else if constexpr (is_image) {
+			return gpu::access_flags{ gpu::access_flag::shader_sampled_read };
+		}
+		else {
+			return gpu::access_flags{ gpu::access_flag::shader_storage_read };
+		}
+	}
+	else {
+		return gpu::access_flags{};
+	}
+}
+
+template <typename... Ts>
+consteval auto gse::gpu::binding_union_access(type_pack<Ts...>) -> gpu::access_flags {
+	gpu::access_flags acc{};
+	((acc |= binding_access_contribution<Ts>()), ...);
+	return acc;
+}
+
 template <typename T, typename Args>
 auto gse::gpu::recording_context::register_one_bindless(const Args& args, const gpu::pipeline_stage_flags stages) -> void {
 	constexpr auto dtype = gpu::descriptor_type_v<T>;
@@ -329,8 +399,8 @@ auto gse::gpu::recording_context::register_one_bindless(const Args& args, const 
 		const resource_ref ref = m_device->resource_for_slot(index);
 		if (ref.ptr) {
 			const auto access = (gpu::descriptor_access_v<T> == gpu::descriptor_access::read_write)
-				? gpu::access_flag::shader_storage_write
-				: (is_image ? gpu::access_flag::shader_sampled_read : gpu::access_flag::shader_storage_read);
+				? gpu::access_flags{ gpu::access_flag::shader_storage_read, gpu::access_flag::shader_storage_write }
+				: gpu::access_flags{ is_image ? gpu::access_flag::shader_sampled_read : gpu::access_flag::shader_storage_read };
 			note_touched(ref, stages, access);
 			if constexpr (is_image) {
 				constexpr auto target = dtype == gpu::descriptor_type::storage_image
@@ -344,9 +414,32 @@ auto gse::gpu::recording_context::register_one_bindless(const Args& args, const 
 
 template <typename Entry>
 auto gse::gpu::recording_context::register_bindless_usage(const binding_args<entry_bindings_pack_t<Entry>>& args, const gpu::pipeline_stage_flags stages) -> void {
+	constexpr auto union_access = binding_union_access(entry_bindings_pack_t<Entry>{});
+	const void* pack_tag = &binding_pack_tag_v<entry_bindings_pack_t<Entry>>;
+
+	if constexpr (sizeof(args) <= binding_cache_capacity) {
+		if (m_binding_repeat_valid
+			&& m_last_binding_pack == pack_tag
+			&& m_last_binding_stages.bits() == stages.bits()
+			&& std::memcmp(m_last_binding_bytes.data(), &args, sizeof(args)) == 0) {
+			note_bindings_repeat(stages, union_access);
+			return;
+		}
+	}
+
 	[&]<typename... Ts>(type_pack<Ts...>) {
 		(register_one_bindless<Ts>(args, stages), ...);
 	}(entry_bindings_pack_t<Entry>{});
+
+	if constexpr (sizeof(args) <= binding_cache_capacity) {
+		std::memcpy(m_last_binding_bytes.data(), &args, sizeof(args));
+		m_last_binding_pack = pack_tag;
+		m_last_binding_stages = stages;
+		m_companion_stages = {};
+		m_companion_access = {};
+		m_binding_companion_armed = false;
+		m_binding_repeat_valid = true;
+	}
 }
 
 template <typename Entry>

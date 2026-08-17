@@ -44,7 +44,7 @@ gse::gpu::recording_context::recording_context(recording_context_init&& init)
 }
 
 gse::gpu::recording_context::recording_context(recording_context&& other) noexcept
-	: m_recorder(other.m_recorder), m_pass(other.m_pass), m_transient_pool(other.m_transient_pool), m_device(other.m_device), m_touched(std::move(other.m_touched)), m_last_access(std::move(other.m_last_access)), m_image_states(std::move(other.m_image_states)), m_origin_thread(other.m_origin_thread), m_state_cache(other.m_state_cache), m_bindless_heaps_valid(other.m_bindless_heaps_valid), m_bound_is_compute(other.m_bound_is_compute) {
+	: m_recorder(other.m_recorder), m_pass(other.m_pass), m_transient_pool(other.m_transient_pool), m_device(other.m_device), m_touched(std::move(other.m_touched)), m_last_access(std::move(other.m_last_access)), m_image_states(std::move(other.m_image_states)), m_pending_memory_barriers(std::move(other.m_pending_memory_barriers)), m_pending_buffer_barriers(std::move(other.m_pending_buffer_barriers)), m_pending_image_barriers(std::move(other.m_pending_image_barriers)), m_origin_thread(other.m_origin_thread), m_state_cache(other.m_state_cache), m_bindless_heaps_valid(other.m_bindless_heaps_valid), m_bound_is_compute(other.m_bound_is_compute), m_last_binding_bytes(other.m_last_binding_bytes), m_last_binding_pack(other.m_last_binding_pack), m_last_binding_stages(other.m_last_binding_stages), m_companion_stages(other.m_companion_stages), m_companion_access(other.m_companion_access), m_binding_repeat_valid(other.m_binding_repeat_valid), m_binding_companion_armed(other.m_binding_companion_armed) {
 	if (tl_active_recording_context == &other) {
 		tl_active_recording_context = this;
 	}
@@ -55,6 +55,8 @@ gse::gpu::recording_context::recording_context(recording_context&& other) noexce
 	other.m_device = nullptr;
 	other.m_bindless_heaps_valid = false;
 	other.m_bound_is_compute = false;
+	other.m_binding_repeat_valid = false;
+	other.m_binding_companion_armed = false;
 }
 
 auto gse::gpu::recording_context::operator=(recording_context&& other) noexcept -> recording_context& {
@@ -80,10 +82,20 @@ auto gse::gpu::recording_context::operator=(recording_context&& other) noexcept 
 		m_touched = std::move(other.m_touched);
 		m_last_access = std::move(other.m_last_access);
 		m_image_states = std::move(other.m_image_states);
+		m_pending_memory_barriers = std::move(other.m_pending_memory_barriers);
+		m_pending_buffer_barriers = std::move(other.m_pending_buffer_barriers);
+		m_pending_image_barriers = std::move(other.m_pending_image_barriers);
 		m_origin_thread = other.m_origin_thread;
 		m_state_cache = other.m_state_cache;
 		m_bindless_heaps_valid = other.m_bindless_heaps_valid;
 		m_bound_is_compute = other.m_bound_is_compute;
+		m_last_binding_bytes = other.m_last_binding_bytes;
+		m_last_binding_pack = other.m_last_binding_pack;
+		m_last_binding_stages = other.m_last_binding_stages;
+		m_companion_stages = other.m_companion_stages;
+		m_companion_access = other.m_companion_access;
+		m_binding_repeat_valid = other.m_binding_repeat_valid;
+		m_binding_companion_armed = other.m_binding_companion_armed;
 		if (tl_active_recording_context == &other) {
 			tl_active_recording_context = this;
 		}
@@ -94,6 +106,8 @@ auto gse::gpu::recording_context::operator=(recording_context&& other) noexcept 
 		other.m_device = nullptr;
 		other.m_bindless_heaps_valid = false;
 		other.m_bound_is_compute = false;
+		other.m_binding_repeat_valid = false;
+		other.m_binding_companion_armed = false;
 	}
 	return *this;
 }
@@ -205,11 +219,16 @@ auto gse::gpu::recording_context::note_touched(const resource_ref ref, const gpu
 	if (!ref.ptr) {
 		return;
 	}
-	emit_intra_pass_barrier(ref, stages, access);
+	bool changed = emit_intra_pass_barrier(ref, stages, access);
 	for (auto& existing : m_touched) {
 		if (existing.ref.ptr == ref.ptr) {
+			const auto prev_stages = existing.stages.bits();
+			const auto prev_access = existing.access.bits();
 			existing.stages |= stages;
 			existing.access |= access;
+			if (changed || existing.stages.bits() != prev_stages || existing.access.bits() != prev_access) {
+				note_binding_mutation(stages, access, true);
+			}
 			return;
 		}
 	}
@@ -218,6 +237,27 @@ auto gse::gpu::recording_context::note_touched(const resource_ref ref, const gpu
 		.stages = stages,
 		.access = access,
 	});
+	note_binding_mutation(stages, access, false);
+}
+
+auto gse::gpu::recording_context::invalidate_binding_repeat() -> void {
+	m_binding_repeat_valid = false;
+	m_binding_companion_armed = false;
+	m_companion_stages = {};
+	m_companion_access = {};
+}
+
+auto gse::gpu::recording_context::note_binding_mutation(const gpu::pipeline_stage_flags stages, const gpu::access_flags access, const bool known_resource) -> void {
+	if (!m_binding_repeat_valid) {
+		return;
+	}
+	if (known_resource && !m_binding_companion_armed) {
+		m_binding_companion_armed = true;
+		m_companion_stages |= stages;
+		m_companion_access |= access;
+		return;
+	}
+	invalidate_binding_repeat();
 }
 
 auto gse::gpu::recording_context::bound_shader_stages() const -> gpu::pipeline_stage_flags {
@@ -227,9 +267,9 @@ auto gse::gpu::recording_context::bound_shader_stages() const -> gpu::pipeline_s
 	return { gpu::pipeline_stage_flag::vertex_shader, gpu::pipeline_stage_flag::fragment_shader, gpu::pipeline_stage_flag::mesh_shader, gpu::pipeline_stage_flag::task_shader };
 }
 
-auto gse::gpu::recording_context::emit_intra_pass_barrier(const resource_ref& ref, const gpu::pipeline_stage_flags stages, const gpu::access_flags access) -> void {
+auto gse::gpu::recording_context::emit_intra_pass_barrier(const resource_ref& ref, const gpu::pipeline_stage_flags stages, const gpu::access_flags access) -> bool {
 	if (!m_recorder.valid()) {
-		return;
+		return false;
 	}
 
 	constexpr gpu::access_flags write_mask{ gpu::access_flag::shader_write, gpu::access_flag::shader_storage_write,
@@ -249,56 +289,148 @@ auto gse::gpu::recording_context::emit_intra_pass_barrier(const resource_ref& re
 	const auto it = m_last_access.find(ref.ptr);
 	if (it == m_last_access.end()) {
 		m_last_access.emplace(ref.ptr, access_track{ .stages = stages, .access = access });
-		return;
+		return true;
 	}
 
 	auto& prev = it->second;
 	const bool hazard = (prev.access & write_mask).bits() != 0 || (access & write_mask).bits() != 0;
 	if (!hazard || (stages & graphics_mask).bits() != 0) {
+		const auto prev_stages = prev.stages.bits();
+		const auto prev_access = prev.access.bits();
 		prev.stages |= stages;
 		prev.access |= access;
-		return;
+		return prev.stages.bits() != prev_stages || prev.access.bits() != prev_access;
 	}
 
 	if (ref.type == resource_type::buffer) {
-		const gpu::buffer_barrier bb{
-			.src_stages = prev.stages,
-			.src_access = prev.access,
-			.dst_stages = stages,
-			.dst_access = access,
-			.buffer = std::bit_cast<gpu::handle<gpu::buffer>>(ref.ptr),
-			.offset = 0,
-			.size = ref.buffer_size,
-		};
-		m_recorder.pipeline_barrier(gpu::dependency_info{ .buffer_barriers = std::span(&bb, 1) });
+		const auto handle = std::bit_cast<gpu::handle<gpu::buffer>>(ref.ptr);
+		bool merged = false;
+		for (auto& pending : m_pending_buffer_barriers) {
+			if (pending.buffer.value == handle.value) {
+				pending.src_stages |= prev.stages;
+				pending.src_access |= prev.access;
+				pending.dst_stages |= stages;
+				pending.dst_access |= access;
+				merged = true;
+				break;
+			}
+		}
+		if (!merged) {
+			m_pending_buffer_barriers.push_back({
+				.src_stages = prev.stages,
+				.src_access = prev.access,
+				.dst_stages = stages,
+				.dst_access = access,
+				.buffer = handle,
+				.offset = 0,
+				.size = ref.buffer_size,
+			});
+		}
 	}
 	else if (ref.type == resource_type::image) {
 		const auto tracked = m_image_states.find(ref.ptr);
 		const auto state = tracked != m_image_states.end() ? tracked->second.current : gpu::resource_state::undefined;
-		const gpu::image_barrier ib{
-			.src_stages = prev.stages,
-			.src_access = prev.access,
-			.dst_stages = stages,
-			.dst_access = access,
-			.prev_state = state,
-			.next_state = state,
-			.image = std::bit_cast<gpu::handle<gpu::image>>(ref.ptr),
-			.aspects = ref.aspects,
-		};
-		m_recorder.pipeline_barrier(gpu::dependency_info{ .image_barriers = std::span(&ib, 1) });
+		const auto handle = std::bit_cast<gpu::handle<gpu::image>>(ref.ptr);
+		bool merged = false;
+		for (auto& pending : m_pending_image_barriers) {
+			if (pending.image.value == handle.value && pending.prev_state == state && pending.next_state == state) {
+				pending.src_stages |= prev.stages;
+				pending.src_access |= prev.access;
+				pending.dst_stages |= stages;
+				pending.dst_access |= access;
+				merged = true;
+				break;
+			}
+		}
+		if (!merged) {
+			m_pending_image_barriers.push_back({
+				.src_stages = prev.stages,
+				.src_access = prev.access,
+				.dst_stages = stages,
+				.dst_access = access,
+				.prev_state = state,
+				.next_state = state,
+				.image = handle,
+				.aspects = ref.aspects,
+			});
+		}
 	}
 	else {
-		const gpu::memory_barrier mb{
-			.src_stages = prev.stages,
-			.src_access = prev.access,
-			.dst_stages = stages,
-			.dst_access = access,
-		};
-		m_recorder.pipeline_barrier(gpu::dependency_info{ .memory_barriers = std::span(&mb, 1) });
+		bool merged = false;
+		for (auto& pending : m_pending_memory_barriers) {
+			pending.src_stages |= prev.stages;
+			pending.src_access |= prev.access;
+			pending.dst_stages |= stages;
+			pending.dst_access |= access;
+			merged = true;
+			break;
+		}
+		if (!merged) {
+			m_pending_memory_barriers.push_back({
+				.src_stages = prev.stages,
+				.src_access = prev.access,
+				.dst_stages = stages,
+				.dst_access = access,
+			});
+		}
 	}
 
 	prev.stages = stages;
 	prev.access = access;
+	return true;
+}
+
+auto gse::gpu::recording_context::note_bindings_repeat(const gpu::pipeline_stage_flags stages, const gpu::access_flags access) -> void {
+	if (!m_recorder.valid()) {
+		return;
+	}
+
+	constexpr gpu::access_flags write_mask{ gpu::access_flag::shader_write, gpu::access_flag::shader_storage_write,
+		gpu::access_flag::color_attachment_write, gpu::access_flag::depth_stencil_attachment_write,
+		gpu::access_flag::transfer_write, gpu::access_flag::host_write, gpu::access_flag::memory_write,
+		gpu::access_flag::acceleration_structure_write };
+
+	if ((access & write_mask).bits() == 0 && m_companion_access.bits() == 0) {
+		return;
+	}
+
+	m_binding_companion_armed = false;
+
+	gpu::pipeline_stage_flags cycle_stages = stages;
+	cycle_stages |= m_companion_stages;
+	gpu::access_flags cycle_access = access;
+	cycle_access |= m_companion_access;
+
+	for (auto& pending : m_pending_memory_barriers) {
+		pending.src_stages |= cycle_stages;
+		pending.src_access |= cycle_access;
+		pending.dst_stages |= cycle_stages;
+		pending.dst_access |= cycle_access;
+		return;
+	}
+
+	m_pending_memory_barriers.push_back({
+		.src_stages = cycle_stages,
+		.src_access = cycle_access,
+		.dst_stages = cycle_stages,
+		.dst_access = cycle_access,
+	});
+}
+
+auto gse::gpu::recording_context::flush_pending_barriers() -> void {
+	if (m_pending_memory_barriers.empty() && m_pending_buffer_barriers.empty() && m_pending_image_barriers.empty()) {
+		return;
+	}
+	if (m_recorder.valid()) {
+		m_recorder.pipeline_barrier(gpu::dependency_info{
+			.memory_barriers = m_pending_memory_barriers,
+			.buffer_barriers = m_pending_buffer_barriers,
+			.image_barriers = m_pending_image_barriers,
+		});
+	}
+	m_pending_memory_barriers.clear();
+	m_pending_buffer_barriers.clear();
+	m_pending_image_barriers.clear();
 }
 
 auto gse::gpu::recording_context::transition_image_for_binding(const resource_ref& ref, const gpu::resource_state target, const gpu::pipeline_stage_flags stages, const gpu::access_flags access) -> void {
@@ -307,12 +439,14 @@ auto gse::gpu::recording_context::transition_image_for_binding(const resource_re
 	}
 	const auto it = m_image_states.find(ref.ptr);
 	if (it == m_image_states.end()) {
+		invalidate_binding_repeat();
 		m_image_states.emplace(ref.ptr, image_state_track{ .aspects = ref.aspects, .first = target, .current = target });
 		return;
 	}
 	if (it->second.current == target) {
 		return;
 	}
+	invalidate_binding_repeat();
 	const gpu::image_barrier barrier{
 		.src_stages = stages,
 		.dst_stages = stages,
@@ -322,6 +456,7 @@ auto gse::gpu::recording_context::transition_image_for_binding(const resource_re
 		.image = std::bit_cast<gpu::handle<gpu::image>>(ref.ptr),
 		.aspects = it->second.aspects,
 	};
+	flush_pending_barriers();
 	m_recorder.transition_image_state(barrier);
 	it->second.current = target;
 }
@@ -330,6 +465,8 @@ auto gse::gpu::recording_context::finalize_pass() -> void {
 	if (!m_pass) {
 		return;
 	}
+
+	flush_pending_barriers();
 
 	if (m_recorder.valid()) {
 		for (const auto& [ptr, track] : m_image_states) {
@@ -384,6 +521,7 @@ auto gse::gpu::recording_context::copy_buffer(const buffer& src, const buffer& d
 		gpu::pipeline_stage_flag::copy,
 		gpu::access_flag::transfer_write
 	);
+	flush_pending_barriers();
 	m_recorder.copy_buffer(
 		src.handle(),
 		dst.handle(),
@@ -404,9 +542,10 @@ auto gse::gpu::recording_context::fill_buffer(const buffer& dst, const std::size
 			.buffer_size = dst.size(),
 			.host_buffer = std::addressof(dst),
 		},
-		gpu::pipeline_stage_flag::copy,
+		gpu::pipeline_stage_flag::clear,
 		gpu::access_flag::transfer_write
 	);
+	flush_pending_barriers();
 	m_recorder.fill_buffer(dst.handle(), offset, size, data);
 }
 
@@ -420,16 +559,19 @@ auto gse::gpu::recording_context::build_acceleration_structure(const gpu::accele
 		gpu::pipeline_stage_flag::acceleration_structure_build,
 		{ gpu::access_flag::acceleration_structure_read, gpu::access_flag::acceleration_structure_write }
 	);
+	flush_pending_barriers();
 	m_recorder.build_acceleration_structures(build_info, range_infos);
 }
 
-auto gse::gpu::recording_context::pipeline_barrier(const gpu::dependency_info& dep) const -> void {
+auto gse::gpu::recording_context::pipeline_barrier(const gpu::dependency_info& dep) -> void {
 	check_active();
+	flush_pending_barriers();
 	m_recorder.pipeline_barrier(dep);
 }
 
-auto gse::gpu::recording_context::capture_swapchain(const gpu::swap_chain& swapchain, const gpu::frame& frame, const buffer& dst) const -> void {
+auto gse::gpu::recording_context::capture_swapchain(const gpu::swap_chain& swapchain, const gpu::frame& frame, const buffer& dst) -> void {
 	check_active();
+	flush_pending_barriers();
 	const auto ext = swapchain.extent();
 	const auto dst_buffer = dst.handle();
 	const auto gpu_image = swapchain.image(frame.image_index());
@@ -474,8 +616,9 @@ auto gse::gpu::recording_context::capture_swapchain(const gpu::swap_chain& swapc
 	});
 }
 
-auto gse::gpu::recording_context::blit_swapchain_to_image(const gpu::swap_chain& swapchain, const gpu::frame& frame, const image& dst, const vec2u dst_extent) const -> void {
+auto gse::gpu::recording_context::blit_swapchain_to_image(const gpu::swap_chain& swapchain, const gpu::frame& frame, const image& dst, const vec2u dst_extent) -> void {
 	check_active();
+	flush_pending_barriers();
 	const auto src_image = swapchain.image(frame.image_index());
 	const auto src_ext = swapchain.extent();
 
@@ -584,23 +727,27 @@ auto gse::gpu::recording_context::set_color_blend_equation(const std::uint32_t f
 	m_recorder.set_color_blend_equation(first_attachment, equations);
 }
 
-auto gse::gpu::recording_context::draw(const std::uint32_t vertex_count, const std::uint32_t instance_count, const std::uint32_t first_vertex, const std::uint32_t first_instance) const -> void {
+auto gse::gpu::recording_context::draw(const std::uint32_t vertex_count, const std::uint32_t instance_count, const std::uint32_t first_vertex, const std::uint32_t first_instance) -> void {
 	check_active();
+	flush_pending_barriers();
 	m_recorder.draw(vertex_count, instance_count, first_vertex, first_instance);
 }
 
-auto gse::gpu::recording_context::draw_indexed(const std::uint32_t index_count, const std::uint32_t instance_count, const std::uint32_t first_index, const std::int32_t vertex_offset, const std::uint32_t first_instance) const -> void {
+auto gse::gpu::recording_context::draw_indexed(const std::uint32_t index_count, const std::uint32_t instance_count, const std::uint32_t first_index, const std::int32_t vertex_offset, const std::uint32_t first_instance) -> void {
 	check_active();
+	flush_pending_barriers();
 	m_recorder.draw_indexed(index_count, instance_count, first_index, vertex_offset, first_instance);
 }
 
-auto gse::gpu::recording_context::draw_mesh_tasks(const std::uint32_t x, const std::uint32_t y, const std::uint32_t z) const -> void {
+auto gse::gpu::recording_context::draw_mesh_tasks(const std::uint32_t x, const std::uint32_t y, const std::uint32_t z) -> void {
 	check_active();
+	flush_pending_barriers();
 	m_recorder.draw_mesh_tasks(x, y, z);
 }
 
-auto gse::gpu::recording_context::dispatch(const std::uint32_t x, const std::uint32_t y, const std::uint32_t z) const -> void {
+auto gse::gpu::recording_context::dispatch(const std::uint32_t x, const std::uint32_t y, const std::uint32_t z) -> void {
 	check_active();
+	flush_pending_barriers();
 	m_recorder.dispatch(x, y, z);
 }
 
@@ -616,6 +763,7 @@ auto gse::gpu::recording_context::dispatch_indirect(const buffer& buf, const std
 		gpu::pipeline_stage_flag::draw_indirect,
 		gpu::access_flag::indirect_command_read
 	);
+	flush_pending_barriers();
 	m_recorder.dispatch_indirect(buf.handle(), static_cast<gpu::device_size>(offset));
 }
 
@@ -631,6 +779,7 @@ auto gse::gpu::recording_context::draw_indirect(const buffer& buf, const std::si
 		gpu::pipeline_stage_flag::draw_indirect,
 		gpu::access_flag::indirect_command_read
 	);
+	flush_pending_barriers();
 	m_recorder.draw_indexed_indirect(buf.handle(), offset, draw_count, stride);
 }
 
@@ -646,6 +795,7 @@ auto gse::gpu::recording_context::draw_mesh_tasks_indirect(const buffer& buf, co
 		gpu::pipeline_stage_flag::draw_indirect,
 		gpu::access_flag::indirect_command_read
 	);
+	flush_pending_barriers();
 	m_recorder.draw_mesh_tasks_indirect(buf.handle(), offset, draw_count, stride);
 }
 
@@ -661,6 +811,7 @@ auto gse::gpu::recording_context::bind_index(const buffer& buf, const gpu::index
 		gpu::pipeline_stage_flag::index_input,
 		gpu::access_flag::index_read
 	);
+	flush_pending_barriers();
 	m_recorder.bind_index_buffer_2(buf.handle(), offset, gpu::whole_size, type);
 }
 

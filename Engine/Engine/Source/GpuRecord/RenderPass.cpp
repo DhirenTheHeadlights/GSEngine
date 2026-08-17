@@ -73,6 +73,11 @@ auto gse::gpu::pass_builder::depth(depth_attachment value) && -> pass_builder&& 
 	return std::move(*this);
 }
 
+auto gse::gpu::pass_builder::early_signal() && -> pass_builder&& {
+	m_desc.early_signal = true;
+	return std::move(*this);
+}
+
 auto gse::gpu::pass_builder::operator co_await() && -> request_pass_awaitable {
 	return request_pass_awaitable{ m_channels, std::move(m_desc) };
 }
@@ -164,6 +169,7 @@ auto gse::gpu::to_pass_data(render_pass_request req) -> gpu::render_pass_data {
 		.primary_pipeline = req.desc.primary_pipeline,
 		.after_passes = std::move(req.desc.after_deps),
 		.chain_id = req.desc.chain_id,
+		.early_signal = req.desc.early_signal,
 		.record_handle = req.record_handle,
 		.record_ctx_slot = req.record_ctx_slot,
 	};
