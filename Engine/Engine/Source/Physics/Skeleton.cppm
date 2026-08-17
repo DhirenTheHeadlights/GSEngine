@@ -3,6 +3,7 @@ export module gse.physics:skeleton;
 import std;
 
 import :bounding_box;
+import :convex_hull;
 import :joint_spec;
 
 import gse.math;
@@ -48,18 +49,15 @@ export namespace gse::physics {
 	) -> std::uint16_t;
 
 	auto volume_of(
-		const bone_shape& shape
+		const bone_shape& shape,
+		const convex_hull* hull
 	) -> volume;
 
 	auto mass_from_density(
 		const bone_shape& shape,
-		density d
+		density d,
+		const convex_hull* hull
 	) -> mass;
-
-	auto moment_of_inertia_of(
-		const bone_shape& shape,
-		mass m
-	) -> inertia;
 }
 
 auto gse::physics::bone_index_of(const skeleton& s, const std::string_view name) -> std::uint16_t {
@@ -71,7 +69,7 @@ auto gse::physics::bone_index_of(const skeleton& s, const std::string_view name)
 	return no_bone;
 }
 
-auto gse::physics::volume_of(const bone_shape& shape) -> volume {
+auto gse::physics::volume_of(const bone_shape& shape, const convex_hull* hull) -> volume {
 	volume result;
 	gse::match(shape)
 		.if_is([&](const box_shape& s) {
@@ -86,28 +84,15 @@ auto gse::physics::volume_of(const bone_shape& shape) -> volume {
 			const auto cylinder = 2.f * pi * s.radius * s.radius * s.half_height;
 			const auto caps = 4.f / 3.f * pi * s.radius * s.radius * s.radius;
 			result = cylinder + caps;
+		})
+		.else_if_is([&](const hull_shape&) {
+			if (hull != nullptr && hull->valid()) {
+				result = integrate_hull(*hull).total_volume;
+			}
 		});
 	return result;
 }
 
-auto gse::physics::mass_from_density(const bone_shape& shape, const density d) -> mass {
-	return volume_of(shape) * d;
-}
-
-auto gse::physics::moment_of_inertia_of(const bone_shape& shape, const mass m) -> inertia {
-	inertia result;
-	gse::match(shape)
-		.if_is([&](const box_shape& s) {
-			result = m * gse::dot(s.size, s.size) / 18.f;
-		})
-		.else_if_is([&](const sphere_shape& s) {
-			result = m * s.radius * s.radius * (2.f / 5.f);
-		})
-		.else_if_is([&](const capsule_shape& s) {
-			const auto axial = 2.f * s.half_height + 2.f * s.radius;
-			const auto width = 2.f * s.radius;
-			const vec3<length> bbox(width, axial, width);
-			result = m * gse::dot(bbox, bbox) / 18.f;
-		});
-	return result;
+auto gse::physics::mass_from_density(const bone_shape& shape, const density d, const convex_hull* hull) -> mass {
+	return volume_of(shape, hull) * d;
 }
