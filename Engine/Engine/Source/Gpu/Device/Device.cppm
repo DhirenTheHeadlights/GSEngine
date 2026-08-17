@@ -223,7 +223,12 @@ export namespace gse::gpu {
 			vec2i framebuffer_size,
 			present_mode mode,
 			gpu::swap_chain_handle old_handle = {}
-		) -> swap_chain_info;
+		) -> gpu::expected<swap_chain_info>;
+
+		auto recreate_surface(
+			const window::data& win,
+			gpu::swap_chain_handle current_swapchain
+		) -> void;
 
 		[[nodiscard]]
 		auto acquire_swapchain_image(

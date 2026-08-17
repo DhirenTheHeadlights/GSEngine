@@ -271,7 +271,12 @@ export namespace gse::gpu {
 			vec2i framebuffer_size,
 			gpu::present_mode mode,
 			gpu::swap_chain_handle old_handle
-		) -> gpu::swap_chain_info;
+		) -> gpu::expected<gpu::swap_chain_info>;
+
+		auto recreate_surface(
+			const window::data& win,
+			gpu::swap_chain_handle current_swapchain
+		) -> void;
 
 		[[nodiscard]] auto acquire_swapchain_image(
 			gpu::swap_chain_handle swapchain,
@@ -513,7 +518,7 @@ auto gse::gpu::vulkan_device_backend::reset_worker_command_pools(const std::uint
 }
 
 auto gse::gpu::vulkan_device_backend::acquire_worker_command_buffer(const gpu::queue_type queue_type, const std::size_t worker_index, const std::uint32_t frame_index) -> gpu::command_buffer_handle {
-	return worker_pools.acquire_command_buffer(queue_type, worker_index, frame_index);
+	return worker_pools.acquire_command_buffer(device_config, queue_type, worker_index, frame_index);
 }
 
 auto gse::gpu::vulkan_device_backend::create_image_unbound(const gpu::image_create_info& info) const -> std::pair<gpu::handle<gpu::image>, gpu::memory_requirements> {
@@ -648,8 +653,16 @@ auto gse::gpu::vulkan_device_backend::query_pool_results(const gpu::handle<gpu::
 	return device_config.query_pool_results(pool, first_query, query_count, stride);
 }
 
-auto gse::gpu::vulkan_device_backend::create_swapchain(const vec2i framebuffer_size, const gpu::present_mode mode, const gpu::swap_chain_handle old_handle) -> gpu::swap_chain_info {
+auto gse::gpu::vulkan_device_backend::create_swapchain(const vec2i framebuffer_size, const gpu::present_mode mode, const gpu::swap_chain_handle old_handle) -> gpu::expected<gpu::swap_chain_info> {
 	return device_config.create_swap_chain(framebuffer_size, mode, old_handle);
+}
+
+auto gse::gpu::vulkan_device_backend::recreate_surface(const window::data& win, const gpu::swap_chain_handle current_swapchain) -> void {
+	device_config.wait_idle();
+	device_config.destroy_swapchain(current_swapchain);
+	instance.destroy_surface();
+	instance.create_surface(win);
+	device_config.set_surface(instance.surface());
 }
 
 auto gse::gpu::vulkan_device_backend::acquire_swapchain_image(const gpu::swap_chain_handle swapchain, const gpu::handle<gpu::semaphore> wait_semaphore, const std::uint64_t timeout_ns) const -> gpu::acquire_next_image_result {
@@ -804,6 +817,7 @@ auto gse::gpu::create_vulkan_device_backend(const std::optional<shared_view<wind
 	std::array<std::uint32_t, gpu::queue_type_count> queue_families{};
 	queue_families[static_cast<std::size_t>(gpu::queue_type::graphics)] = creation.families.graphics_family.value();
 	queue_families[static_cast<std::size_t>(gpu::queue_type::compute)] = creation.families.compute_family.value();
+	queue_families[static_cast<std::size_t>(gpu::queue_type::video_encode)] = creation.families.graphics_family.value();
 
 	auto command = vulkan::command::create(creation.device, queue_families);
 

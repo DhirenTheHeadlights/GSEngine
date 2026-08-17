@@ -154,16 +154,32 @@ export namespace gse::window {
 		geometry saved_geometry;
 
 		[[= gse::shared]] native_window_handle handle;
+
+		[[
+			= gse::settings::describe<"Text shown in the window title bar and the taskbar entry.">{},
+			= gse::settings::app_scope{}
+		]]
 		std::string title;
 
 		gse::display_mode current_display_mode = gse::display_mode::windowed;
 		[[= gse::shared]] int current_present_mode_index = 0;
 		[[= gse::shared]] bool focused = true;
+		[[= gse::shared]] bool shown = false;
 		bool framebuffer_resized = false;
 		[[= gse::shared]] bool ui_focus = false;
 		[[= gse::shared]] bool cursor_captured = false;
+		[[
+			= gse::settings::describe<"Hide the cursor because another process hosts the rendered surface.">{},
+			= gse::settings::app_scope{}
+		]]
 		bool cursor_suppressed = false;
+
+		[[
+			= gse::settings::describe<"Render into a surface shared with a host process instead of presenting a swapchain.">{},
+			= gse::settings::app_scope{}
+		]]
 		bool attached = false;
+
 		bool decorated = true;
 		bool maximized = false;
 		int last_monitor_index = 0;
@@ -185,6 +201,11 @@ export namespace gse::window {
 		vec2i launcher_saved_position{ 0, 0 };
 		vec2i launcher_saved_size{ 0, 0 };
 		bool launcher_saved_maximized = false;
+
+		[[
+			= gse::settings::describe<"Keep the OS window frame instead of drawing application chrome inside the client area.">{},
+			= gse::settings::app_scope{}
+		]]
 		bool native_frame = false;
 		int chrome_caption_height = 0;
 		int chrome_controls_width = 0;
@@ -266,15 +287,15 @@ export namespace gse::window {
 	) -> bool;
 
 	[[nodiscard]] auto raw_handle(
+		const data& d
+	) -> native_window_handle;
+
+	[[nodiscard]] auto raw_handle(
 		shared_view<data> d
 	) -> native_window_handle;
 
 	auto show(
-		const data& d
-	) -> void;
-
-	auto show(
-		shared_view<data> d
+		data& d
 	) -> void;
 
 	auto set_ui_focus(

@@ -138,15 +138,21 @@ auto gse::vulkan::device::acquire_next_image(const gpu::swap_chain_handle swapch
 	};
 }
 
-auto gse::vulkan::device::create_swap_chain(const vec2i framebuffer_size, const gpu::present_mode preferred_present_mode, const gpu::swap_chain_handle old_swapchain) -> gpu::swap_chain_info {
+auto gse::vulkan::device::create_swap_chain(const vec2i framebuffer_size, const gpu::present_mode preferred_present_mode, const gpu::swap_chain_handle old_swapchain) -> gpu::expected<gpu::swap_chain_info> {
 	const auto vk_surface = std::bit_cast<vk::SurfaceKHR>(m_surface);
 	const auto vk_phys = std::bit_cast<vk::PhysicalDevice>(m_physical_device.handle());
 	auto [caps_result, vk_capabilities] = vk_phys.getSurfaceCapabilitiesKHR(vk_surface);
-	assert(caps_result == vk::Result::eSuccess, "failed to query surface capabilities: {}", vk::to_string(caps_result));
+	if (caps_result != vk::Result::eSuccess) {
+		return std::unexpected(from_vk(caps_result));
+	}
 	auto [formats_result, vk_formats] = vk_phys.getSurfaceFormatsKHR(vk_surface);
-	assert(formats_result == vk::Result::eSuccess, "failed to query surface formats: {}", vk::to_string(formats_result));
+	if (formats_result != vk::Result::eSuccess) {
+		return std::unexpected(from_vk(formats_result));
+	}
 	auto [modes_result, vk_present_modes] = vk_phys.getSurfacePresentModesKHR(vk_surface);
-	assert(modes_result == vk::Result::eSuccess, "failed to query surface present modes: {}", vk::to_string(modes_result));
+	if (modes_result != vk::Result::eSuccess) {
+		return std::unexpected(from_vk(modes_result));
+	}
 
 	vk::SurfaceFormatKHR surface_format;
 	for (const auto& available_format : vk_formats) {
@@ -282,9 +288,13 @@ auto gse::vulkan::device::create_swap_chain(const vec2i framebuffer_size, const 
 	}
 
 	auto [swapchain_result, vk_swap_chain] = raii_device().createSwapchainKHR(create_info);
-	assert(swapchain_result == vk::Result::eSuccess, "failed to create swapchain: {}", vk::to_string(swapchain_result));
+	if (swapchain_result != vk::Result::eSuccess) {
+		return std::unexpected(from_vk(swapchain_result));
+	}
 	auto [images_result, images] = vk_swap_chain.getImages();
-	assert(images_result == vk::Result::eSuccess, "failed to get swapchain images: {}", vk::to_string(images_result));
+	if (images_result != vk::Result::eSuccess) {
+		return std::unexpected(from_vk(images_result));
+	}
 	auto format = surface_format.format;
 
 	std::vector<vk::raii::ImageView> image_views;
@@ -306,7 +316,9 @@ auto gse::vulkan::device::create_swap_chain(const vec2i framebuffer_size, const 
 			}
 		};
 		auto [view_result, view] = raii_device().createImageView(iv_create_info);
-		assert(view_result == vk::Result::eSuccess, "failed to create swapchain image view: {}", vk::to_string(view_result));
+		if (view_result != vk::Result::eSuccess) {
+			return std::unexpected(from_vk(view_result));
+		}
 		image_views.push_back(std::move(view));
 	}
 
@@ -314,7 +326,9 @@ auto gse::vulkan::device::create_swap_chain(const vec2i framebuffer_size, const 
 	release_fences.reserve(images.size());
 	for (std::size_t i = 0; i < images.size(); ++i) {
 		auto [fence_result, fence] = raii_device().createFence(vk::FenceCreateInfo{ .flags = vk::FenceCreateFlagBits::eSignaled });
-		assert(fence_result == vk::Result::eSuccess, "failed to create release fence: {}", vk::to_string(fence_result));
+		if (fence_result != vk::Result::eSuccess) {
+			return std::unexpected(from_vk(fence_result));
+		}
 		release_fences.push_back(std::move(fence));
 	}
 
@@ -413,6 +427,19 @@ auto gse::vulkan::device::create_swap_chain(const vec2i framebuffer_size, const 
 	}
 
 	return info;
+}
+
+auto gse::vulkan::device::destroy_swapchain(const gpu::swap_chain_handle swapchain) -> void {
+	if (!swapchain) {
+		return;
+	}
+	std::lock_guard lock(m_mutex);
+	m_owned.retire(swapchain, 0);
+	m_owned.collect(std::numeric_limits<std::uint64_t>::max());
+}
+
+auto gse::vulkan::device::set_surface(const gpu::surface surface) -> void {
+	m_surface = surface;
 }
 
 auto gse::vulkan::device::wait_swapchain_release_fences(const gpu::swap_chain_handle swapchain) const -> void {
@@ -603,7 +630,7 @@ auto gse::vulkan::device::create(const instance& instance_data, gpu::device_sett
 		unique_queue_families.insert(families.present_family.value());
 	}
 
-	if (families.video_encode_family.has_value()) {
+	if (cfg.video_encode && families.video_encode_family.has_value()) {
 		unique_queue_families.insert(families.video_encode_family.value());
 	}
 
@@ -657,9 +684,14 @@ auto gse::vulkan::device::create(const instance& instance_data, gpu::device_sett
 	require_extension(vk::KHRCalibratedTimestampsExtensionName);
 
 	const bool video_encode_extensions_available =
+		cfg.video_encode &&
 		families.video_encode_family.has_value() &&
 		supports_extension(vk::KHRVideoQueueExtensionName) &&
 		supports_extension(vk::KHRVideoEncodeQueueExtensionName);
+
+	if (!cfg.video_encode && families.video_encode_family.has_value()) {
+		log::println(log::category::vulkan, "Video encode disabled by device settings; encode queue and extensions not enabled");
+	}
 
 	const auto feature_chain = vk_physical_device.getFeatures2<
 		vk::PhysicalDeviceFeatures2,
@@ -1007,7 +1039,34 @@ auto gse::vulkan::device::vendor_binary_fault_enabled() const -> bool {
 }
 
 auto gse::vulkan::device::wait_idle() const -> void {
-	m_device.waitIdle();
+	constexpr std::uint64_t idle_timeout_ns = 10'000'000'000;
+
+	auto [fence_result, fence] = raii_device().createFence({});
+	if (fence_result != vk::Result::eSuccess) {
+		log::println(log::level::error, log::category::vulkan, "wait_idle: idle fence creation failed ({}); queues left undrained", vk::to_string(fence_result));
+		return;
+	}
+
+	std::vector<std::uint32_t> drained;
+	for (const auto family : m_queue_families) {
+		if (std::ranges::contains(drained, family)) {
+			continue;
+		}
+		drained.push_back(family);
+
+		raii_device().resetFences(*fence);
+
+		const auto queue = raii_device().getQueue(family, 0);
+		if (const auto submit_result = queue.submit({}, *fence); submit_result != vk::Result::eSuccess) {
+			log::println(log::level::error, log::category::vulkan, "wait_idle: idle submit to queue family {} failed ({})", family, vk::to_string(submit_result));
+			return;
+		}
+
+		if (const auto wait_result = raii_device().waitForFences(*fence, vk::True, idle_timeout_ns); wait_result != vk::Result::eSuccess) {
+			log::println(log::level::error, log::category::vulkan, "wait_idle: queue family {} did not go idle within {} ms ({})", family, idle_timeout_ns / 1'000'000, vk::to_string(wait_result));
+			return;
+		}
+	}
 }
 
 auto gse::vulkan::device::timestamp_period() const -> float {
@@ -1079,7 +1138,9 @@ auto gse::vulkan::device::query_fault_info(gpu::device_fault_counts& counts, gpu
 	return from_vk(vk_result);
 }
 
-auto gse::vulkan::device::create_buffer(const vk::BufferCreateInfo& buffer_info, const void* data, const bool readback, const std::string_view tag, const std::source_location& loc) -> gpu::buffer {
+auto gse::vulkan::device::create_buffer(const vk::BufferCreateInfo& buffer_info, const gpu::buffer_desc& desc, const std::string_view tag, const std::source_location& loc) -> gpu::buffer {
+	assert(!desc.device_local || (!desc.data && !desc.readback), "a device-local buffer cannot carry init data or readback semantics");
+	const void* data = desc.data;
 	auto actual_buffer_info = buffer_info;
 	constexpr auto device_addressable_usage = vk::BufferUsageFlagBits::eUniformBuffer |
 		vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eIndirectBuffer |
@@ -1092,10 +1153,17 @@ auto gse::vulkan::device::create_buffer(const vk::BufferCreateInfo& buffer_info,
 		actual_buffer_info.usage |= vk::BufferUsageFlagBits::eShaderDeviceAddress;
 	}
 
-	const auto shared_family_indices = m_queue_families;
-	if (families_distinct() && actual_buffer_info.sharingMode == vk::SharingMode::eExclusive) {
+	std::array<std::uint32_t, gpu::queue_type_count> shared_family_indices{};
+	std::uint32_t shared_family_count = 0;
+	for (const auto family : m_queue_families) {
+		const std::span seen{ shared_family_indices.data(), shared_family_count };
+		if (std::ranges::find(seen, family) == seen.end()) {
+			shared_family_indices[shared_family_count++] = family;
+		}
+	}
+	if (shared_family_count > 1 && actual_buffer_info.sharingMode == vk::SharingMode::eExclusive) {
 		actual_buffer_info.sharingMode = vk::SharingMode::eConcurrent;
-		actual_buffer_info.queueFamilyIndexCount = static_cast<std::uint32_t>(shared_family_indices.size());
+		actual_buffer_info.queueFamilyIndexCount = shared_family_count;
 		actual_buffer_info.pQueueFamilyIndices = shared_family_indices.data();
 	}
 
@@ -1114,8 +1182,14 @@ auto gse::vulkan::device::create_buffer(const vk::BufferCreateInfo& buffer_info,
 			success = true;
 		}
 	}
+	else if (desc.device_local) {
+		if (auto expected_alloc = allocate(requirements, vk::MemoryPropertyFlagBits::eDeviceLocal, tag, loc, needs_device_address)) {
+			alloc = std::move(*expected_alloc);
+			success = true;
+		}
+	}
 	else {
-		for (const auto property_preferences = memory_flag_preferences(actual_buffer_info.usage, readback); const auto& props : property_preferences) {
+		for (const auto property_preferences = memory_flag_preferences(actual_buffer_info.usage, desc.readback); const auto& props : property_preferences) {
 			if (auto expected_alloc = allocate(requirements, props, tag, loc, needs_device_address)) {
 				alloc = std::move(*expected_alloc);
 				success = true;
@@ -1175,7 +1249,7 @@ auto gse::vulkan::device::create_buffer(const gpu::buffer_desc& desc, const std:
 		.size = desc.size,
 		.usage = to_vk(desc.usage),
 	};
-	auto buf = create_buffer(vk_info, desc.data, desc.readback, tag, loc);
+	auto buf = create_buffer(vk_info, desc, tag, loc);
 	if (!desc.bindless) {
 		return buf;
 	}
@@ -2055,6 +2129,7 @@ gse::vulkan::device::device(class physical_device&& physical_device, vk::raii::D
 	: m_physical_device(std::move(physical_device)), m_device(std::move(device)), m_fault_enabled(device_fault_enabled), m_vendor_binary_fault_enabled(device_fault_vendor_binary_enabled), m_settings(&cfg) {
 	m_queue_families[static_cast<std::size_t>(gpu::queue_type::graphics)] = graphics_family;
 	m_queue_families[static_cast<std::size_t>(gpu::queue_type::compute)] = compute_family;
+	m_queue_families[static_cast<std::size_t>(gpu::queue_type::video_encode)] = graphics_family;
 	m_surface = surface;
 	m_descriptor_heap_props = query_descriptor_heap_props(m_physical_device);
 }
@@ -2995,6 +3070,16 @@ auto gse::vulkan::device::write_acceleration_structure(const gpu::bindless_slot 
 
 auto gse::vulkan::device::write_sampled_image(const gpu::bindless_slot slot, const gpu::image& img) -> void {
 	write_image_descriptor(m_bindless->resource_heap, m_bindless->image_pool.offset(slot), gpu::image_descriptor_kind::sampled, img);
+}
+
+auto gse::vulkan::device::write_storage_image(const gpu::bindless_slot slot, const gpu::image& img) -> void {
+	write_image_descriptor(m_bindless->resource_heap, m_bindless->image_pool.offset(slot), gpu::image_descriptor_kind::storage, img);
+}
+
+auto gse::vulkan::device::register_storage_image(const gpu::image& img) -> gpu::bindless_handle {
+	auto handle = allocate_image_slot();
+	write_storage_image(handle.slot(), img);
+	return handle;
 }
 
 auto gse::vulkan::device::register_sampler(const gpu::sampler_desc& desc) -> gpu::bindless_handle {
