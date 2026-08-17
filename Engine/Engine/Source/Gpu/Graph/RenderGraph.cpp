@@ -9,6 +9,7 @@ import :frame;
 import :transient_pool;
 import :image;
 import :pass_recorder;
+import :graph_channel;
 
 import gse.gpu_backend;
 import gse.assert;
@@ -72,6 +73,14 @@ auto gse::gpu::render_graph::register_framebuffer_image(const id name, const fra
 		});
 	}
 	return slot->img;
+}
+
+auto gse::gpu::render_graph::create_readback_channel(const std::size_t size, const std::string_view tag) const -> readback_channel {
+	return readback_channel(*m_device, *m_frame, size, tag);
+}
+
+auto gse::gpu::render_graph::create_upload_channel(const buffer_desc& desc, const std::string_view tag) const -> upload_channel {
+	return upload_channel(*m_device, *m_frame, desc, tag);
 }
 
 auto gse::gpu::render_graph::take_aux_submissions() -> std::vector<gpu::queue_submission> {
@@ -142,13 +151,19 @@ auto gse::gpu::render_graph::read_profile_slot(gpu_profile_slot& slot) -> void {
 	const auto gpu_ref = static_cast<double>(timestamps[0]) * period;
 	const auto offset = time_t<double>(slot.cpu_ref) - gpu_ref;
 
+	static constexpr std::array<std::uint32_t, gpu::queue_type_count> queue_tids{
+		trace::gpu_virtual_tid,
+		trace::gpu_compute_virtual_tid,
+		trace::gpu_video_encode_virtual_tid,
+	};
+
 	for (std::uint32_t i = 0; i < slot.pass_count; ++i) {
 		const auto start = static_cast<double>(timestamps[1 + i * 2]) * period + offset;
 		const auto end = static_cast<double>(timestamps[2 + i * 2]) * period + offset;
 		const auto gpu_id = slot.pass_types[i];
 		const auto queue = slot.pass_queues[i];
 		const std::uint64_t key = (slot.frame_counter << 16) | (static_cast<std::uint64_t>(queue) << 14) | i;
-		const auto tid = (queue == gpu::queue_type::compute) ? trace::gpu_compute_virtual_tid : trace::gpu_virtual_tid;
+		const auto tid = queue_tids[static_cast<std::size_t>(queue)];
 
 		trace::begin_async_at(gpu_id, key, tid, time_t<std::uint64_t>(start));
 		trace::end_async_at(gpu_id, key, tid, time_t<std::uint64_t>(end));
@@ -202,6 +217,96 @@ auto gse::gpu::render_graph::extent() const -> vec2u {
 
 auto gse::gpu::render_graph::frame_in_progress() const -> bool {
 	return m_frame->frame_in_progress();
+}
+
+auto gse::gpu::render_graph::log_pass_graph(const std::span<const render_pass_data> passes) -> void {
+	if (!m_graph_report.tick()) {
+		return;
+	}
+
+	std::unordered_map<const void*, id> target_of;
+	for (const auto& [name, reg] : m_framebuffer_images) {
+		if (reg->img.handle()) {
+			target_of.emplace(std::bit_cast<const void*>(reg->img.handle()), name);
+		}
+	}
+
+	log::println(
+		log::level::info,
+		log::category::general,
+		"[graph] {} passes, {} registered targets",
+		passes.size(),
+		target_of.size()
+	);
+
+	std::string line;
+
+	const auto describe = [&](const std::vector<resource_usage>& list) {
+		line.clear();
+		std::size_t foreign = 0;
+		for (const auto& u : list) {
+			if (const auto it = target_of.find(u.resource.ptr); it != target_of.end()) {
+				if (!line.empty()) {
+					line += ' ';
+				}
+				line += it->second.tag();
+			}
+			else {
+				++foreign;
+			}
+		}
+		if (foreign != 0) {
+			line += std::format(" (+{} non-target)", foreign);
+		}
+		if (line.empty()) {
+			line = "-";
+		}
+		return line;
+	};
+
+	std::string outputs;
+
+	const auto describe_outputs = [&](const render_pass_data& p) {
+		outputs.clear();
+		for (const auto& c : p.color_outputs) {
+			if (!outputs.empty()) {
+				outputs += ' ';
+			}
+			const auto* name = c.is_swapchain ? "swapchain" : c.custom_target != nullptr ? "custom" : "transient";
+			outputs += std::format("{}:{}", name, enum_to_string(c.op));
+		}
+		if (p.depth_output) {
+			outputs += std::format(
+				"{}depth-{}:{}",
+				outputs.empty() ? "" : " ",
+				p.depth_output->is_swapchain ? "swapchain" : "custom",
+				enum_to_string(p.depth_output->op)
+			);
+		}
+		if (outputs.empty()) {
+			outputs = "-";
+		}
+		return outputs;
+	};
+
+	for (const auto& p : passes) {
+		const bool presents = std::ranges::any_of(p.color_outputs, [](const color_output_info& c) { return c.is_swapchain; });
+		const auto reads = describe(p.reads);
+		const auto writes = describe(p.writes);
+		const auto attachments = describe_outputs(p);
+		log::println(
+			log::level::info,
+			log::category::general,
+			"[graph]   {}{}\n            reads:  {}\n            writes: {}\n            outputs: {}",
+			p.pass_name,
+			presents ? "  [SWAPCHAIN]" : "",
+			reads,
+			writes,
+			attachments
+		);
+	}
+
+	log::flush();
 }
 
 auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
@@ -534,6 +639,8 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		passes.insert(passes.end(), std::make_move_iterator(more.begin()), std::make_move_iterator(more.end()));
 	}
 
+	log_pass_graph(passes);
+
 	if (timestamps_enabled) {
 		for (std::size_t qi = 0; qi < gpu::queue_type_count; ++qi) {
 			auto& slot = m_profile_slots[qi][frame_idx];
@@ -597,7 +704,12 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		std::vector<std::size_t> in_degree(passes.size(), 0);
 
 		const std::size_t n = passes.size();
-		std::vector<std::vector<bool>> reaches(n, std::vector<bool>(n, false));
+		const std::size_t words = (n + 63) / 64;
+		std::vector<std::uint64_t> reaches(n * words, 0);
+
+		auto reaches_bit = [&](const std::size_t from, const std::size_t to) -> bool {
+			return (reaches[from * words + to / 64] >> (to % 64)) & 1u;
+		};
 
 		auto has_edge = [&](const std::size_t from, const std::size_t to) -> bool {
 			for (const auto& e : adj[from]) {
@@ -610,16 +722,15 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 
 		auto update_reachability_for_new_edge = [&](const std::size_t from, const std::size_t to) {
 			for (std::size_t x = 0; x < n; ++x) {
-				const bool x_reaches_from = (x == from) || reaches[x][from];
-				if (!x_reaches_from) {
+				if (x != from && !reaches_bit(x, from)) {
 					continue;
 				}
-				for (std::size_t y = 0; y < n; ++y) {
-					const bool to_reaches_y = (y == to) || reaches[to][y];
-					if (to_reaches_y) {
-						reaches[x][y] = true;
-					}
+				auto* row_x = &reaches[x * words];
+				const auto* row_to = &reaches[to * words];
+				for (std::size_t w = 0; w < words; ++w) {
+					row_x[w] |= row_to[w];
 				}
+				row_x[to / 64] |= std::uint64_t{ 1 } << (to % 64);
 			}
 		};
 
@@ -643,6 +754,42 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			}
 		}
 
+		std::vector<std::vector<const void*>> write_sets(n);
+		std::vector<std::vector<const void*>> read_sets(n);
+		for (std::size_t i = 0; i < n; ++i) {
+			write_sets[i].reserve(passes[i].writes.size());
+			for (const auto& w : passes[i].writes) {
+				if (w.resource.ptr) {
+					write_sets[i].push_back(w.resource.ptr);
+				}
+			}
+			std::ranges::sort(write_sets[i]);
+			read_sets[i].reserve(passes[i].reads.size());
+			for (const auto& r : passes[i].reads) {
+				if (r.resource.ptr) {
+					read_sets[i].push_back(r.resource.ptr);
+				}
+			}
+			std::ranges::sort(read_sets[i]);
+		}
+
+		auto sets_intersect = [](std::span<const void* const> a, std::span<const void* const> b) -> bool {
+			std::size_t x = 0;
+			std::size_t y = 0;
+			while (x < a.size() && y < b.size()) {
+				if (a[x] < b[y]) {
+					++x;
+				}
+				else if (b[y] < a[x]) {
+					++y;
+				}
+				else {
+					return true;
+				}
+			}
+			return false;
+		};
+
 		for (std::size_t i = 0; i < passes.size(); ++i) {
 			for (std::size_t j = i + 1; j < passes.size(); ++j) {
 				if (passes[i].chain_id.exists() && passes[i].chain_id == passes[j].chain_id) {
@@ -650,35 +797,13 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 					continue;
 				}
 
-				bool i_writes_j_reads = false;
-				bool j_writes_i_reads = false;
-				bool both_write = false;
-
-				for (const auto& w : passes[i].writes) {
-					for (const auto& r : passes[j].reads) {
-						if (w.resource.ptr && r.resource.ptr && w.resource.ptr == r.resource.ptr) {
-							i_writes_j_reads = true;
-						}
-					}
-				}
-				for (const auto& w : passes[j].writes) {
-					for (const auto& r : passes[i].reads) {
-						if (w.resource.ptr && r.resource.ptr && w.resource.ptr == r.resource.ptr) {
-							j_writes_i_reads = true;
-						}
-					}
-				}
-				for (const auto& wi : passes[i].writes) {
-					for (const auto& wj : passes[j].writes) {
-						if (wi.resource.ptr && wj.resource.ptr && wi.resource.ptr == wj.resource.ptr) {
-							both_write = true;
-						}
-					}
-				}
+				const bool i_writes_j_reads = sets_intersect(write_sets[i], read_sets[j]);
+				const bool j_writes_i_reads = sets_intersect(write_sets[j], read_sets[i]);
+				const bool both_write = sets_intersect(write_sets[i], write_sets[j]);
 
 				if (i_writes_j_reads || both_write) {
-					if (!reaches[j][i]) {
-						if (both_write && !reaches[i][j]) {
+					if (!reaches_bit(j, i)) {
+						if (both_write && !reaches_bit(i, j)) {
 							const auto a = passes[i].pass_type;
 							const auto b = passes[j].pass_type;
 							const auto key = std::pair{ std::min(a, b), std::max(a, b) };
@@ -699,7 +824,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 					}
 				}
 				else if (j_writes_i_reads) {
-					if (!reaches[i][j]) {
+					if (!reaches_bit(i, j)) {
 						add_edge(j, i, edge_kind::write_after_read);
 					}
 				}
@@ -797,11 +922,17 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		}
 	}
 
-	auto queue_label = [](const std::size_t qi) -> const char* {
-		return qi == static_cast<std::size_t>(gpu::queue_type::graphics) ? "graphics" : "compute";
+	auto queue_label = [](const std::size_t qi) -> std::string_view {
+		return enum_to_string(static_cast<gpu::queue_type>(qi));
 	};
 
+	std::vector<std::size_t> sorted_pos(passes.size());
+	for (std::size_t si = 0; si < sorted.size(); ++si) {
+		sorted_pos[sorted[si]] = si;
+	}
+
 	std::array<std::array<bool, gpu::queue_type_count>, gpu::queue_type_count> queue_waits_on{};
+	std::array<std::array<std::size_t, gpu::queue_type_count>, gpu::queue_type_count> queue_wait_positions{};
 	for (std::size_t i = 0; i < passes.size(); ++i) {
 		for (std::size_t j = 0; j < passes.size(); ++j) {
 			if (i == j) {
@@ -816,6 +947,8 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 				for (const auto& r : passes[j].reads) {
 					if (w.resource.ptr && r.resource.ptr && w.resource.ptr == r.resource.ptr) {
 						queue_waits_on[static_cast<std::size_t>(qj)][static_cast<std::size_t>(qi)] = true;
+						auto& position = queue_wait_positions[static_cast<std::size_t>(qj)][static_cast<std::size_t>(qi)];
+						position = std::max(position, sorted_pos[i]);
 					}
 				}
 			}
@@ -837,6 +970,8 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 				const auto qi = pass_queue(it->second);
 				if (qi != qj) {
 					queue_waits_on[static_cast<std::size_t>(qj)][static_cast<std::size_t>(qi)] = true;
+					auto& position = queue_wait_positions[static_cast<std::size_t>(qj)][static_cast<std::size_t>(qi)];
+					position = std::max(position, sorted_pos[it->second]);
 				}
 			}
 		}
@@ -855,6 +990,16 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			}
 		}
 	}
+
+	struct queue_segment {
+		std::size_t buffer_end = 0;
+		std::size_t last_pass_position = 0;
+	};
+	struct queue_segment_signal {
+		std::size_t last_pass_position = 0;
+		std::uint64_t value = 0;
+	};
+	std::array<std::vector<queue_segment>, gpu::queue_type_count> queue_segment_cuts{};
 
 	{
 		trace::scope_guard sg{ gse::trace_id<"graph::record_replay">() };
@@ -1188,6 +1333,13 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			}
 
 			queue_submit_order[queue_index].push_back(pass_bodies[pass_idx]);
+
+			if (pass.early_signal && queue != gpu::queue_type::graphics) {
+				queue_segment_cuts[queue_index].push_back({
+					.buffer_end = queue_submit_order[queue_index].size(),
+					.last_pass_position = si,
+				});
+			}
 		}
 	}
 
@@ -1201,6 +1353,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 	}
 
 	std::array<std::uint64_t, gpu::queue_type_count> this_frame_signal_values{};
+	std::array<std::vector<queue_segment_signal>, gpu::queue_type_count> queue_segment_signals{};
 
 	for (std::size_t qi = 0; qi < gpu::queue_type_count; ++qi) {
 		if (qi == static_cast<std::size_t>(gpu::queue_type::graphics)) {
@@ -1211,49 +1364,74 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		}
 
 		const auto q = static_cast<gpu::queue_type>(qi);
-
 		auto& state = m_queue_states[qi];
-		const std::uint64_t previous_value = state.signal_counter;
-		const std::uint64_t signal_value = ++state.signal_counter;
-		this_frame_signal_values[qi] = signal_value;
 
-		gpu::queue_submission sub;
-		sub.queue = q;
-		sub.command_buffers = std::move(queue_submit_order[qi]);
-		if (previous_value > 0) {
-			sub.waits.push_back({
-				.semaphore = state.timeline.handle(),
-				.value = previous_value,
-				.stages = gpu::pipeline_stage_flag::all_commands,
-			});
-		}
-		for (std::size_t producer = 0; producer < gpu::queue_type_count; ++producer) {
-			if (producer == qi) {
+		auto segments = queue_segment_cuts[qi];
+		segments.push_back({
+			.buffer_end = queue_submit_order[qi].size(),
+			.last_pass_position = sorted.size(),
+		});
+
+		std::size_t buffer_begin = 0;
+		for (const auto& segment : segments) {
+			if (segment.buffer_end == buffer_begin) {
 				continue;
 			}
-			if (queue_waits_on[qi][producer] && this_frame_signal_values[producer] > 0) {
+
+			const std::uint64_t previous_value = state.signal_counter;
+			const std::uint64_t signal_value = ++state.signal_counter;
+
+			gpu::queue_submission sub;
+			sub.queue = q;
+			sub.command_buffers.assign(
+				queue_submit_order[qi].begin() + static_cast<std::ptrdiff_t>(buffer_begin),
+				queue_submit_order[qi].begin() + static_cast<std::ptrdiff_t>(segment.buffer_end)
+			);
+			if (previous_value > 0) {
 				sub.waits.push_back({
-					.semaphore = m_queue_states[producer].timeline.handle(),
-					.value = this_frame_signal_values[producer],
+					.semaphore = state.timeline.handle(),
+					.value = previous_value,
 					.stages = gpu::pipeline_stage_flag::all_commands,
 				});
 			}
-			else if (queue_waits_on[qi][producer] && queue_has_work[producer] && m_warned_dropped_waits.insert({ qi, producer }).second) {
-				log::println(
-					log::level::error,
-					log::category::render,
-					"render_graph: cross-queue wait '{}' -> '{}' dropped (producer emits no timeline signal this frame); consumer reads producer output unsynchronized",
-					queue_label(qi),
-					queue_label(producer)
-				);
+			if (buffer_begin == 0) {
+				for (std::size_t producer = 0; producer < gpu::queue_type_count; ++producer) {
+					if (producer == qi) {
+						continue;
+					}
+					if (queue_waits_on[qi][producer] && this_frame_signal_values[producer] > 0) {
+						sub.waits.push_back({
+							.semaphore = m_queue_states[producer].timeline.handle(),
+							.value = this_frame_signal_values[producer],
+							.stages = gpu::pipeline_stage_flag::all_commands,
+						});
+					}
+					else if (queue_waits_on[qi][producer] && queue_has_work[producer] && m_warned_dropped_waits.insert({ qi, producer }).second) {
+						log::println(
+							log::level::error,
+							log::category::render,
+							"render_graph: cross-queue wait '{}' -> '{}' dropped (producer emits no timeline signal this frame); consumer reads producer output unsynchronized",
+							queue_label(qi),
+							queue_label(producer)
+						);
+					}
+				}
 			}
+			sub.signals.push_back({
+				.semaphore = state.timeline.handle(),
+				.value = signal_value,
+				.stages = gpu::pipeline_stage_flag::all_commands,
+			});
+			queue_segment_signals[qi].push_back({
+				.last_pass_position = segment.last_pass_position,
+				.value = signal_value,
+			});
+			m_pending_aux_submissions.push_back(std::move(sub));
+			buffer_begin = segment.buffer_end;
 		}
-		sub.signals.push_back({
-			.semaphore = state.timeline.handle(),
-			.value = signal_value,
-			.stages = gpu::pipeline_stage_flag::all_commands,
-		});
-		m_pending_aux_submissions.push_back(std::move(sub));
+		if (!queue_segment_signals[qi].empty()) {
+			this_frame_signal_values[qi] = queue_segment_signals[qi].back().value;
+		}
 	}
 
 	const auto graphics_qi = static_cast<std::size_t>(gpu::queue_type::graphics);
@@ -1302,9 +1480,16 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			continue;
 		}
 		if (queue_waits_on[graphics_qi][producer] && this_frame_signal_values[producer] > 0) {
+			std::uint64_t wait_value = this_frame_signal_values[producer];
+			for (const auto& segment : queue_segment_signals[producer]) {
+				if (segment.last_pass_position >= queue_wait_positions[graphics_qi][producer]) {
+					wait_value = segment.value;
+					break;
+				}
+			}
 			m_pending_graphics_extra_waits.push_back({
 				.semaphore = m_queue_states[producer].timeline.handle(),
-				.value = this_frame_signal_values[producer],
+				.value = wait_value,
 				.stages = gpu::pipeline_stage_flag::all_commands,
 			});
 		}

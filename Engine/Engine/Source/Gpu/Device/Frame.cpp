@@ -21,6 +21,7 @@ namespace gse::gpu {
 	std::uint32_t present_total = 0;
 	std::uint32_t present_queue_full = 0;
 	bool pacing_health_reported = false;
+	bool pacing_last_healthy = true;
 }
 
 auto gse::gpu::frame::create(device& dev, swap_chain* sc) -> std::unique_ptr<frame> {
@@ -34,6 +35,14 @@ gse::gpu::frame::frame(frame_sync<device>&& s, device& dev, swap_chain* sc)
 
 auto gse::gpu::frame::current_frame() const -> std::uint32_t {
 	return m_current_frame;
+}
+
+auto gse::gpu::frame::frame_count() const -> std::uint64_t {
+	return m_frame_count;
+}
+
+auto gse::gpu::frame::queue_fence_signaled(const queue_type queue, const std::uint32_t ring_slot) const -> bool {
+	return m_device->wait_for_fence(m_sync.in_flight_fence(queue, ring_slot), 0) == result::success;
 }
 
 auto gse::gpu::frame::image_index() const -> std::uint32_t {
@@ -52,7 +61,7 @@ auto gse::gpu::frame::set_sync(frame_sync<device>&& s) -> void {
 	m_sync = std::move(s);
 }
 
-auto gse::gpu::frame::recreate_resources(const window::data& win) -> void {
+auto gse::gpu::frame::recreate_resources(const window::data& win) -> gpu::expected<void> {
 	const auto requested_size = window::viewport(win);
 	const auto requested_mode = gse::enum_from_annotation<present_mode_setting>(win.current_present_mode_index, present_mode::fifo);
 	const auto current_extent = m_swapchain->extent();
@@ -63,15 +72,41 @@ auto gse::gpu::frame::recreate_resources(const window::data& win) -> void {
 
 	if (size_unchanged && current_mode != requested_mode) {
 		m_swapchain->set_present_mode(requested_mode);
-		return;
+		return {};
 	}
 
 	m_device->wait_idle();
-	m_swapchain->recreate(requested_size, requested_mode);
+
+	if (const auto recreated = m_swapchain->recreate(requested_size, requested_mode); !recreated) {
+		log::println(log::level::error, log::category::render, "swapchain recreate failed ({}), retrying next frame", std::to_underlying(recreated.error()));
+		return std::unexpected(recreated.error());
+	}
+
 	m_sync = create_sync_objects(*m_device, *m_swapchain);
 	m_swapchain->notify_recreated();
 	m_present_ids_in_flight.fill(0);
 	m_device->wait_idle();
+	return {};
+}
+
+auto gse::gpu::frame::recreate_surface(const window::data& win) -> gpu::expected<void> {
+	log::println(log::level::warning, log::category::render, "surface lost, rebuilding surface and swapchain");
+
+	const auto requested_size = window::viewport(win);
+	const auto requested_mode = gse::enum_from_annotation<present_mode_setting>(win.current_present_mode_index, present_mode::fifo);
+
+	m_device->recreate_surface(win, m_swapchain->current_handle());
+
+	if (const auto recreated = m_swapchain->recreate_detached(requested_size, requested_mode); !recreated) {
+		log::println(log::level::error, log::category::render, "swapchain rebuild after surface loss failed ({}), retrying next frame", std::to_underlying(recreated.error()));
+		return std::unexpected(recreated.error());
+	}
+
+	m_sync = create_sync_objects(*m_device, *m_swapchain);
+	m_swapchain->notify_recreated();
+	m_present_ids_in_flight.fill(0);
+	m_device->wait_idle();
+	return {};
 }
 
 auto gse::gpu::frame::begin(window::data* win) -> std::expected<frame_token, frame_status> {
@@ -84,9 +119,16 @@ auto gse::gpu::frame::begin(window::data* win) -> std::expected<frame_token, fra
 	{
 		trace::scope_guard sg{ trace_id<"begin_frame::wait_fence">() };
 		for (std::size_t i = 0; i < queue_type_count; ++i) {
+			const auto queue = static_cast<queue_type>(i);
+			const auto queue_tag = queue == queue_type::graphics
+				? trace_id<"begin_frame::wait_fence::graphics">()
+				: queue == queue_type::compute
+					? trace_id<"begin_frame::wait_fence::compute">()
+					: trace_id<"begin_frame::wait_fence::video_encode">();
+			trace::scope_guard sg_queue{ queue_tag };
 			const auto fence_result =
 				m_device->wait_for_fence(
-					m_sync.in_flight_fence(static_cast<queue_type>(i), m_current_frame)
+					m_sync.in_flight_fence(queue, m_current_frame)
 				);
 			if (fence_result == result::error_device_lost) {
 				m_device->report_device_lost(std::format("begin_frame waitForFences (frame {})", m_current_frame));
@@ -101,24 +143,36 @@ auto gse::gpu::frame::begin(window::data* win) -> std::expected<frame_token, fra
 		const auto refresh = m_swapchain->refresh_interval();
 		m_pacer.observe(m_swapchain->past_presentation_timing(), refresh);
 		system_clock::submit_refresh_interval(quantity_cast<system_clock::internal_time>(refresh));
-		if (m_pacer.has_feedback()) {
+		if (m_pacer.has_feedback() && m_pacer.healthy()) {
 			system_clock::submit_display_interval(m_pacer.frame_delta());
+		}
+
+		if (m_pacer.healthy() != pacing_last_healthy) {
+			pacing_last_healthy = m_pacer.healthy();
+			log::println(
+				log::category::render,
+				"present pacing {} after {} presents (samples_seen={} samples_used={}): dt now driven by {}",
+				pacing_last_healthy ? "recovered" : "degraded",
+				present_total,
+				m_pacer.samples_seen(),
+				m_pacer.samples_used(),
+				pacing_last_healthy ? "display timing" : "snapped CPU loop timing"
+			);
 		}
 
 		if (!pacing_health_reported && present_total >= pacing_health_check_frame) {
 			pacing_health_reported = true;
-			const auto seen = m_pacer.samples_seen();
-			const auto used = m_pacer.samples_used();
-			if (!m_pacer.has_feedback() || seen == 0 || used * 4 < seen) {
+			if (!m_pacer.has_feedback() || !m_pacer.healthy()) {
 				log::println(
 					log::level::warning,
 					log::category::render,
-					"present pacing degraded after {} presents: feedback={} samples_seen={} samples_used={} queue_full_retries={}. "
-					"dt will fall back to CPU loop timing, which does not match display cadence and shows up as motion judder",
+					"present pacing degraded after {} presents: feedback={} healthy={} samples_seen={} samples_used={} queue_full_retries={}. "
+					"dt is falling back to snapped CPU loop timing until presentation feedback recovers",
 					present_total,
 					m_pacer.has_feedback(),
-					seen,
-					used,
+					m_pacer.healthy(),
+					m_pacer.samples_seen(),
+					m_pacer.samples_used(),
 					present_queue_full
 				);
 			}
@@ -131,8 +185,13 @@ auto gse::gpu::frame::begin(window::data* win) -> std::expected<frame_token, fra
 	}
 
 	if (m_swapchain) {
+		if (!m_swapchain->current_handle()) {
+			(void)recreate_surface(*win);
+			return std::unexpected(frame_status::swapchain_out_of_date);
+		}
+
 		if (window::frame_buffer_resized(*win)) {
-			recreate_resources(*win);
+			(void)recreate_resources(*win);
 			return std::unexpected(frame_status::swapchain_out_of_date);
 		}
 
@@ -150,13 +209,18 @@ auto gse::gpu::frame::begin(window::data* win) -> std::expected<frame_token, fra
 			return std::unexpected(frame_status::device_lost);
 		}
 
+		if (acquire_status == result::error_surface_lost_khr) {
+			(void)recreate_surface(*win);
+			return std::unexpected(frame_status::swapchain_out_of_date);
+		}
+
 		if (acquire_status == result::error_out_of_date_khr) {
-			recreate_resources(*win);
+			(void)recreate_resources(*win);
 			return std::unexpected(frame_status::swapchain_out_of_date);
 		}
 
 		if (acquire_status != result::success && acquire_status != result::suboptimal_khr) {
-			recreate_resources(*win);
+			(void)recreate_resources(*win);
 			return std::unexpected(frame_status::swapchain_out_of_date);
 		}
 
@@ -171,6 +235,9 @@ auto gse::gpu::frame::begin(window::data* win) -> std::expected<frame_token, fra
 			return std::unexpected(frame_status::device_lost);
 		}
 		assert(release_result == result::success, "Failed to wait for swapchain release fence!");
+	}
+	else {
+		m_device->reset_fence(m_sync.in_flight_fence(queue_type::graphics, m_current_frame));
 	}
 
 	trace::scope_guard sg_setup{ trace_id<"begin_frame::setup">() };
@@ -226,6 +293,7 @@ auto gse::gpu::frame::begin(window::data* win) -> std::expected<frame_token, fra
 
 	m_device->transient().recorder().run_pre_frame(command_buffer_handle{ m_command_buffers[static_cast<std::size_t>(queue_type::graphics)] });
 
+	++m_frame_count;
 	m_frame_in_progress = true;
 
 	return frame_token{
@@ -299,24 +367,26 @@ auto gse::gpu::frame::end(window::data* win, std::span<const queue_submission> a
 	}
 
 	std::vector<semaphore_submit_info> main_waits;
-	main_waits.push_back({
-		.semaphore = m_sync.image_available(m_current_frame),
-		.value = 0,
-		.stages = pipeline_stage_flag::top_of_pipe,
-	});
+	if (m_swapchain) {
+		main_waits.push_back({
+			.semaphore = m_sync.image_available(m_current_frame),
+			.value = 0,
+			.stages = pipeline_stage_flag::top_of_pipe,
+		});
+	}
 
 	for (const auto& w : extra_graphics_waits) {
 		main_waits.push_back(w);
 	}
 
-	const semaphore_submit_info render_finished_signal{
-		.semaphore = m_sync.render_finished(m_image_index),
-		.value = 0,
-		.stages = pipeline_stage_flag::bottom_of_pipe,
-	};
-
 	std::vector<semaphore_submit_info> main_signals;
-	main_signals.push_back(render_finished_signal);
+	if (m_swapchain) {
+		main_signals.push_back({
+			.semaphore = m_sync.render_finished(m_image_index),
+			.value = 0,
+			.stages = pipeline_stage_flag::bottom_of_pipe,
+		});
+	}
 	for (const auto& s : extra_graphics_signals) {
 		main_signals.push_back(s);
 	}
@@ -362,12 +432,19 @@ auto gse::gpu::frame::end(window::data* win, std::span<const queue_submission> a
 			}
 		}
 
-		if (present_result == result::error_out_of_date_khr || present_result == result::suboptimal_khr) {
-			recreate_resources(*win);
+		if (present_result == result::error_surface_lost_khr) {
+			(void)recreate_surface(*win);
+		}
+		else if (present_result == result::error_out_of_date_khr || present_result == result::suboptimal_khr) {
+			(void)recreate_resources(*win);
+			m_present_ids_in_flight.fill(0);
+		}
+		else if (present_result != result::success) {
+			log::println(log::level::error, log::category::render, "present failed ({}), rebuilding swapchain", std::to_underlying(present_result));
+			(void)recreate_resources(*win);
 			m_present_ids_in_flight.fill(0);
 		}
 		else {
-			assert(present_result == result::success, "Failed to present swap chain image!");
 			m_present_ids_in_flight[m_current_frame] = present_id;
 		}
 	}

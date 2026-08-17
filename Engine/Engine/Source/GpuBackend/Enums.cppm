@@ -124,9 +124,10 @@ export namespace gse::gpu {
 	enum class queue_type : std::uint8_t {
 		graphics,
 		compute,
+		video_encode,
 	};
 
-	constexpr std::uint32_t queue_type_count = 2;
+	constexpr std::uint32_t queue_type_count = 3;
 
 	enum class queue_id : std::uint8_t {
 		graphics = 0,

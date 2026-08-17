@@ -34,6 +34,7 @@ export namespace gse::gpu {
 		bool bindless = false;
 		bool writable = false;
 		bool readback = false;
+		bool device_local = false;
 	};
 
 	struct buffer_copy_region {
@@ -92,8 +93,6 @@ export namespace gse::gpu {
 
 		template <typename T = std::byte>
 		[[nodiscard]] auto mapped() const -> T*;
-
-		auto mark_host_dirty() const noexcept -> void;
 
 		[[nodiscard]] auto host_dirty() const noexcept -> bool;
 
@@ -199,10 +198,6 @@ auto gse::gpu::buffer::host_read() const -> std::span<const std::byte> {
 template <typename T>
 auto gse::gpu::buffer::mapped() const -> T* {
 	return reinterpret_cast<T*>(m_mapped);
-}
-
-auto gse::gpu::buffer::mark_host_dirty() const noexcept -> void {
-	m_host_dirty.store(true, std::memory_order_release);
 }
 
 auto gse::gpu::buffer::host_dirty() const noexcept -> bool {
