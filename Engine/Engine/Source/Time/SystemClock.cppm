@@ -27,6 +27,9 @@ export namespace gse::system_clock {
 	auto now() -> Q;
 
 	template <is_quantity Q = default_time>
+	auto content_now() -> Q;
+
+	template <is_quantity Q = default_time>
 	auto constant_update_time() -> Q;
 
 	template <is_quantity Q = default_time>
@@ -60,6 +63,7 @@ namespace gse::system_clock {
 	clock dt_clock;
 
 	internal_time delta_time{};
+	internal_time content_time{};
 	internal_time frame_rate_update_time{};
 	internal_time fixed_accumulator{};
 	internal_time refresh_interval{};
@@ -107,6 +111,7 @@ auto gse::system_clock::update() -> void {
 		fixed_steps_count = std::max(0, *fixed_step_override);
 		delta_time = const_update_time * fixed_steps_count;
 		fixed_accumulator = internal_time{};
+		content_time += delta_time;
 		update_frame_rate(delta_time);
 		return;
 	}
@@ -123,6 +128,7 @@ auto gse::system_clock::update() -> void {
 	else {
 		delta_time = snap_delta(wall_delta);
 	}
+	content_time += delta_time;
 	report_pacing(wall_delta, external);
 	update_frame_rate(wall_delta);
 
@@ -231,6 +237,11 @@ auto gse::system_clock::dt() -> Q {
 template <gse::is_quantity Q>
 auto gse::system_clock::now() -> Q {
 	return gse::quantity_cast<Q>(main_clock.elapsed<double>());
+}
+
+template <gse::is_quantity Q>
+auto gse::system_clock::content_now() -> Q {
+	return gse::quantity_cast<Q>(content_time);
 }
 
 template <gse::is_quantity Q>

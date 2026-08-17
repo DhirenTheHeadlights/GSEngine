@@ -42,11 +42,28 @@ export namespace gse::renderer::capture {
 
 	struct [[= gse::system_state<"Capture">{}, = gse::settings::category<"Graphics">{}]] data {
 		[[
+			= gse::settings::describe<"Keep the instant-replay encoder running. It costs the video engine every "
+									  "capture interval whether or not a clip is ever saved; off frees that cost but "
+									  "the replay ring is empty, so save-clip has nothing to write until re-enabled. "
+									  "Screenshots are unaffected.">{},
+			= gse::settings::hot_reloadable
+		]]
+		bool encode_enabled = true;
+
+		[[
 			= gse::settings::describe<"Length of the rolling capture ring buffer. Saving a clip writes the most "
 									  "recent N seconds of frames.">{},
 			= gse::settings::range<5.f, 120.f>{}
 		]]
 		time ring_budget = seconds(30.f);
+
+		[[
+			= gse::settings::describe<"Shortest gap between encoded capture frames. Raising it encodes fewer "
+									  "frames per second, which cuts video-engine cost and stretches the ring "
+									  "buffer over more wall time for the same memory.">{},
+			= gse::settings::range<0.004f, 0.2f>{}
+		]]
+		time capture_interval = seconds(1.f / 60.f);
 
 		actions::handle screenshot_action;
 		actions::handle save_clip_action;
@@ -54,10 +71,11 @@ export namespace gse::renderer::capture {
 
 		gpu::shader_program convert_pipeline;
 		per_frame_resource<gpu::image> rgba_captures;
-		per_frame_resource<gpu::image> y_planes;
-		per_frame_resource<gpu::image> uv_planes;
 		std::array<gpu::bindless_handle, per_frame_resource<gpu::image>::frames_in_flight> rgba_slots;
 		gpu::bindless_handle sampler;
+		gpu::encode_source encode_target;
+		time last_capture_pts{};
+		bool captured_once = false;
 		bool encode_active = false;
 
 		per_frame_resource<pending_screenshot> screenshots;

@@ -2,6 +2,8 @@ export module gse.gpu_backend:video;
 
 import std;
 
+import :bindless;
+
 import gse.math;
 import gse.time;
 
@@ -23,5 +25,11 @@ export namespace gse::gpu {
 		std::vector<std::byte> bytes;
 		time pts;
 		bool keyframe = false;
+	};
+
+	struct encode_source {
+		bindless_slot y;
+		bindless_slot uv;
+		bool valid = false;
 	};
 }

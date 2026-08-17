@@ -52,6 +52,8 @@ export namespace gse::gpu {
 		color = 1u << 0,
 		depth = 1u << 1,
 		stencil = 1u << 2,
+		plane_0 = 1u << 3,
+		plane_1 = 1u << 4,
 	};
 
 	using image_aspect_flags = gse::flags<image_aspect_flag>;

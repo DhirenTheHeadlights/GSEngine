@@ -17,16 +17,16 @@ auto gse::gpu::video_encoder::operator=(video_encoder&& other) noexcept -> video
 gse::gpu::video_encoder::video_encoder(std::unique_ptr<video_encoder_backend> impl) noexcept : m_impl(std::move(impl)) {
 }
 
-auto gse::gpu::video_encoder::encode_frame(const std::uint32_t frame_slot, const handle<gpu::image> y_plane, const handle<gpu::image> uv_plane) -> void {
-	m_impl->enc.encode_frame(frame_slot, y_plane, uv_plane);
+auto gse::gpu::video_encoder::begin_capture(const time pts) -> encode_source {
+	return m_impl->enc.begin_capture(pts);
 }
 
-auto gse::gpu::video_encoder::wait(const std::uint32_t frame_slot) -> void {
-	m_impl->enc.wait(frame_slot);
+auto gse::gpu::video_encoder::take_bitstream() -> std::optional<encoded_unit> {
+	return m_impl->enc.take_bitstream();
 }
 
-auto gse::gpu::video_encoder::read_bitstream(const std::uint32_t frame_slot) -> std::optional<encoded_unit> {
-	return m_impl->enc.read_bitstream(frame_slot);
+auto gse::gpu::video_encoder::submit_ready() -> void {
+	m_impl->enc.submit_ready();
 }
 
 auto gse::gpu::video_encoder::stream_header() const -> std::span<const std::byte> {

@@ -306,6 +306,9 @@ auto gse::vulkan::queue::submit(const gpu::queue_type queue, const gpu::submit_i
 			return submit_graphics(info, signal_fence);
 		case gpu::queue_type::compute:
 			return submit_compute(info, signal_fence);
+		case gpu::queue_type::video_encode:
+			submit_video_encode(info, signal_fence);
+			return gpu::result::success;
 	}
 	return gpu::result::error_unknown;
 }

@@ -68,6 +68,7 @@ export namespace gse::renderer::capture::mp4 {
 		std::uint32_t m_sequence = 0;
 		std::uint64_t m_decode_time = 0;
 		std::vector<gpu::encoded_unit> m_pending;
+		std::vector<std::byte> m_sequence_header;
 		std::uint32_t m_last_default_duration = 16'667;
 		std::size_t m_frames_total = 0;
 		bool m_init_written = false;

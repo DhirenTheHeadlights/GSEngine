@@ -20,6 +20,11 @@ import gse.diag;
 import gse.math;
 import gse.log;
 
+namespace gse::vulkan {
+	constexpr std::size_t source_ring_size = 3;
+	constexpr std::uint64_t encode_source_lag = 2;
+}
+
 export namespace gse::vulkan {
 	class video_encoder final : public non_copyable {
 	public:
@@ -44,19 +49,13 @@ export namespace gse::vulkan {
 			const gpu::encode_capabilities& probe_caps
 		) -> video_encoder;
 
-		auto encode_frame(
-			std::uint32_t frame_slot,
-			gpu::handle<gpu::image> y_plane,
-			gpu::handle<gpu::image> uv_plane
-		) -> void;
+		[[nodiscard]] auto begin_capture(
+			time pts
+		) -> gpu::encode_source;
 
-		auto wait(
-			std::uint32_t frame_slot
-		) -> void;
+		[[nodiscard]] auto take_bitstream() -> std::optional<gpu::encoded_unit>;
 
-		[[nodiscard]] auto read_bitstream(
-			std::uint32_t frame_slot
-		) -> std::optional<gpu::encoded_unit>;
+		auto submit_ready() -> void;
 
 		[[nodiscard]] auto stream_header() const -> std::span<const std::byte>;
 
@@ -72,14 +71,24 @@ export namespace gse::vulkan {
 			vk::raii::CommandBuffer cmd = nullptr;
 			vk::raii::Fence fence = nullptr;
 			vk::raii::QueryPool query_pool = nullptr;
+			vk::raii::QueryPool timestamp_pool = nullptr;
 			gpu::buffer bitstream;
 			vk::Image nv12_image = nullptr;
 			vk::raii::ImageView nv12_view = nullptr;
 			vk::DeviceMemory nv12_memory = nullptr;
+			gpu::image y_staging;
+			gpu::image uv_staging;
+			gpu::bindless_handle y_plane_slot;
+			gpu::bindless_handle uv_plane_slot;
+			time capture_pts{};
 			time last_pts{};
+			trace::tick_step cpu_ref{};
+			std::uint64_t timestamp_frame = 0;
+			bool captured = false;
 			bool last_was_keyframe = false;
 			bool submitted = false;
 			bool has_output = false;
+			bool timestamps_pending = false;
 		};
 
 		struct dpb_slot {
@@ -93,19 +102,38 @@ export namespace gse::vulkan {
 			std::int32_t h265_poc = 0;
 		};
 
+		[[nodiscard]] auto timestamps_supported() const -> bool;
+
+		auto publish_encode_timestamps(
+			per_frame& slot
+		) -> void;
+
+		auto encode_capture(
+			per_frame& slot
+		) -> void;
+
+		[[nodiscard]] auto read_slot_bitstream(
+			per_frame& slot
+		) -> std::optional<gpu::encoded_unit>;
+
+		auto prime_source_layouts() -> void;
+
 		vk::raii::VideoSessionKHR m_session = nullptr;
 		vk::raii::VideoSessionParametersKHR m_params = nullptr;
 		std::vector<vk::DeviceMemory> m_session_memory;
-		per_frame_resource<per_frame> m_slots{ per_frame{}, per_frame{} };
+		std::array<per_frame, source_ring_size> m_slots;
 		per_frame_resource<dpb_slot> m_dpb{ dpb_slot{}, dpb_slot{} };
 		std::vector<std::byte> m_stream_header;
-		clock m_clock;
 		gpu::video_codec m_codec = gpu::video_codec::h265;
 		internal::vec_storage<unsigned int, 2> m_extent{};
+		std::uint64_t m_capture_number = 0;
 		std::uint64_t m_frame_number = 0;
 		std::uint32_t m_gop_size = 60;
+		std::uint64_t m_timestamp_ticks_mask = 0;
+		time_t<double> m_timestamp_period_per_tick = nanoseconds(1.0);
 		device* m_device = nullptr;
 		queue* m_queue = nullptr;
+		bool m_direct_plane_writes = false;
 	};
 }
 
@@ -129,6 +157,8 @@ namespace gse::vulkan {
 
 	constexpr vk::DeviceSize bitstream_buffer_size = 4 * 1024 * 1024;
 	constexpr auto nv12_format = vk::Format::eG8B8R82Plane420Unorm;
+	constexpr auto y_plane_format = vk::Format::eR8Unorm;
+	constexpr auto uv_plane_format = vk::Format::eR8G8Unorm;
 
 	constexpr vk::ImageSubresourceRange color_subresource_range{
 		.aspectMask = vk::ImageAspectFlagBits::eColor,
@@ -143,8 +173,14 @@ namespace gse::vulkan {
 		const physical_device& physical_device,
 		vec2u extent,
 		vk::ImageUsageFlags usage,
-		const vk::VideoProfileListInfoKHR& profile_list
+		const vk::VideoProfileListInfoKHR& profile_list,
+		std::span<const std::uint32_t> shared_families = {}
 	) -> std::tuple<vk::Image, vk::raii::ImageView, vk::DeviceMemory>;
+
+	auto plane_writes_supported(
+		const physical_device& physical_device,
+		const vk::VideoProfileListInfoKHR& profile_list
+	) -> bool;
 
 	auto find_memory_type(
 		const physical_device& physical_device,
@@ -217,10 +253,37 @@ auto gse::vulkan::video_encoder::create(device& dev, queue& q, const vec2u exten
 	const auto& physical = dev.physical_device();
 	const auto encode_family = q.video_encode_family_index().value();
 
+	const auto family_properties = std::bit_cast<vk::PhysicalDevice>(physical.handle()).getQueueFamilyProperties();
+	const auto valid_bits = family_properties[encode_family].timestampValidBits;
+	enc.m_timestamp_ticks_mask = valid_bits >= 64 ? ~std::uint64_t{ 0 } : (std::uint64_t{ 1 } << valid_bits) - 1;
+	enc.m_timestamp_period_per_tick = nanoseconds(static_cast<double>(physical.timestamp_period()));
+	if (valid_bits == 0) {
+		log::println(
+			log::level::warning,
+			log::category::vulkan,
+			"Video encode queue family {} exposes no timestamp bits; encode work will not appear in the GPU profile",
+			encode_family
+		);
+	}
+
 	vk::VideoProfileListInfoKHR profile_list{
 		.profileCount = 1,
 		.pProfiles = &chain.profile
 	};
+
+	std::vector<std::uint32_t> shared_families{ q.graphics_family_index(), q.compute_family_index(), encode_family };
+	std::ranges::sort(shared_families);
+	shared_families.erase(std::ranges::unique(shared_families).begin(), shared_families.end());
+
+	enc.m_direct_plane_writes = plane_writes_supported(physical, profile_list);
+	if (!enc.m_direct_plane_writes) {
+		log::println(
+			log::level::warning,
+			log::category::vulkan,
+			"video_encoder: storage writes to {} are unsupported, falling back to per-frame plane copies on the encode queue",
+			vk::to_string(nv12_format)
+		);
+	}
 
 	vk::ExtensionProperties std_header_version{};
 	const auto name_len = std::min(probe_caps.std_header_name.size(), std_header_version.extensionName.size() - 1);
@@ -421,6 +484,15 @@ auto gse::vulkan::video_encoder::create(device& dev, queue& q, const vec2u exten
 		assert(query_pool_result == vk::Result::eSuccess, "failed to create video query pool: {}", vk::to_string(query_pool_result));
 		slot.query_pool = std::move(query_pool);
 
+		if (enc.timestamps_supported()) {
+			auto [timestamp_pool_result, timestamp_pool] = vk_dev.createQueryPool({
+				.queryType = vk::QueryType::eTimestamp,
+				.queryCount = 2
+			});
+			assert(timestamp_pool_result == vk::Result::eSuccess, "failed to create video timestamp query pool: {}", vk::to_string(timestamp_pool_result));
+			slot.timestamp_pool = std::move(timestamp_pool);
+		}
+
 		slot.bitstream = dev.create_buffer(
 			gpu::buffer_desc{
 				.size = bitstream_buffer_size,
@@ -434,15 +506,65 @@ auto gse::vulkan::video_encoder::create(device& dev, queue& q, const vec2u exten
 			vk_dev,
 			physical,
 			extent,
-			vk::ImageUsageFlagBits::eVideoEncodeSrcKHR | vk::ImageUsageFlagBits::eTransferDst,
-			profile_list
+			enc.m_direct_plane_writes
+				? vk::ImageUsageFlagBits::eVideoEncodeSrcKHR | vk::ImageUsageFlagBits::eStorage
+				: vk::ImageUsageFlagBits::eVideoEncodeSrcKHR | vk::ImageUsageFlagBits::eTransferDst,
+			profile_list,
+			enc.m_direct_plane_writes ? std::span<const std::uint32_t>(shared_families) : std::span<const std::uint32_t>{}
 		);
 		slot.nv12_image = img;
 		slot.nv12_view = std::move(v);
 		slot.nv12_memory = mem;
+
+		if (enc.m_direct_plane_writes) {
+			const gpu::image y_plane(
+				std::bit_cast<gpu::handle<gpu::image>>(img),
+				{},
+				gpu::image_format::r8_unorm,
+				vec3u{ extent.x(), extent.y(), 1 },
+				gpu::image_view_create_info{
+					.format = gpu::image_format::r8_unorm,
+					.view_type = gpu::image_view_type::e2d,
+					.aspects = gpu::image_aspect_flag::plane_0,
+				}
+			);
+			const gpu::image uv_plane(
+				std::bit_cast<gpu::handle<gpu::image>>(img),
+				{},
+				gpu::image_format::r8g8_unorm,
+				vec3u{ extent.x() / 2, extent.y() / 2, 1 },
+				gpu::image_view_create_info{
+					.format = gpu::image_format::r8g8_unorm,
+					.view_type = gpu::image_view_type::e2d,
+					.aspects = gpu::image_aspect_flag::plane_1,
+				}
+			);
+			slot.y_plane_slot = dev.register_storage_image(y_plane);
+			slot.uv_plane_slot = dev.register_storage_image(uv_plane);
+		}
+		else {
+			slot.y_staging = dev.create_image(
+				gpu::image_desc{
+					.size = extent,
+					.format = gpu::image_format::r8_unorm,
+					.usage = { gpu::image_flag::storage, gpu::image_flag::transfer_src },
+					.bindless = true
+				},
+				"encode.y_plane"
+			);
+			slot.uv_staging = dev.create_image(
+				gpu::image_desc{
+					.size = vec2u{ extent.x() / 2, extent.y() / 2 },
+					.format = gpu::image_format::r8g8_unorm,
+					.usage = { gpu::image_flag::storage, gpu::image_flag::transfer_src },
+					.bindless = true
+				},
+				"encode.uv_plane"
+			);
+		}
 	}
 
-	enc.m_clock = {};
+	enc.prime_source_layouts();
 
 	const auto* const codec_name = probe_caps.codec == gpu::video_codec::av1 ? "AV1" : "H.265";
 	log::println(log::category::vulkan, "Video encoder created: {} {}x{}", codec_name, extent.x(), extent.y());
@@ -450,23 +572,140 @@ auto gse::vulkan::video_encoder::create(device& dev, queue& q, const vec2u exten
 	return enc;
 }
 
-auto gse::vulkan::video_encoder::encode_frame(const std::uint32_t frame_slot, const gpu::handle<gpu::image> y_plane, const gpu::handle<gpu::image> uv_plane) -> void {
-	auto& slot = m_slots[frame_slot];
+auto gse::vulkan::video_encoder::prime_source_layouts() -> void {
 	const auto& vk_dev = m_device->raii_device();
-	const auto extent = vec2u{ m_extent };
+	auto& primer = m_slots[0];
+
+	primer.cmd.reset();
+	primer.cmd.begin({
+		.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit
+	});
+
+	std::vector<vk::ImageMemoryBarrier2> barriers;
+	barriers.reserve(m_slots.size() * 3);
+	for (const auto& slot : m_slots) {
+		barriers.push_back({
+			.srcStageMask = vk::PipelineStageFlagBits2::eNone,
+			.srcAccessMask = vk::AccessFlagBits2::eNone,
+			.dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+			.dstAccessMask = vk::AccessFlagBits2::eNone,
+			.oldLayout = vk::ImageLayout::eUndefined,
+			.newLayout = vk::ImageLayout::eGeneral,
+			.image = slot.nv12_image,
+			.subresourceRange = color_subresource_range
+		});
+		if (m_direct_plane_writes) {
+			continue;
+		}
+		barriers.push_back({
+			.srcStageMask = vk::PipelineStageFlagBits2::eNone,
+			.srcAccessMask = vk::AccessFlagBits2::eNone,
+			.dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+			.dstAccessMask = vk::AccessFlagBits2::eNone,
+			.oldLayout = vk::ImageLayout::eUndefined,
+			.newLayout = vk::ImageLayout::eGeneral,
+			.image = std::bit_cast<vk::Image>(slot.y_staging.handle()),
+			.subresourceRange = color_subresource_range
+		});
+		barriers.push_back({
+			.srcStageMask = vk::PipelineStageFlagBits2::eNone,
+			.srcAccessMask = vk::AccessFlagBits2::eNone,
+			.dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+			.dstAccessMask = vk::AccessFlagBits2::eNone,
+			.oldLayout = vk::ImageLayout::eUndefined,
+			.newLayout = vk::ImageLayout::eGeneral,
+			.image = std::bit_cast<vk::Image>(slot.uv_staging.handle()),
+			.subresourceRange = color_subresource_range
+		});
+	}
+
+	primer.cmd.pipelineBarrier2({
+		.imageMemoryBarrierCount = static_cast<std::uint32_t>(barriers.size()),
+		.pImageMemoryBarriers = barriers.data()
+	});
+	primer.cmd.end();
+
+	const gpu::command_buffer_submit_info cmd_submit{
+		.command_buffer = std::bit_cast<gpu::command_buffer_handle>(*primer.cmd),
+	};
+	const gpu::submit_info submit{
+		.command_buffers = std::span(&cmd_submit, 1),
+	};
+	m_queue->submit_video_encode(submit, std::bit_cast<gpu::handle<gpu::fence>>(*primer.fence));
+
+	if (vk_dev.waitForFences(*primer.fence, vk::True, std::numeric_limits<std::uint64_t>::max()) != vk::Result::eSuccess) {
+		log::println(log::level::warning, log::category::vulkan, "video_encoder: source layout priming timed out");
+	}
+	vk_dev.resetFences(*primer.fence);
+}
+
+auto gse::vulkan::video_encoder::begin_capture(const time pts) -> gpu::encode_source {
+	auto& slot = m_slots[m_capture_number % source_ring_size];
+	const auto& vk_dev = m_device->raii_device();
 
 	if (slot.submitted) {
-		if (vk_dev.waitForFences(*slot.fence, vk::True, std::numeric_limits<std::uint64_t>::max()) != vk::Result::eSuccess) {
-			return;
+		constexpr std::uint64_t timeout_ns = 500'000'000;
+		if (vk_dev.waitForFences(*slot.fence, vk::True, timeout_ns) != vk::Result::eSuccess) {
+			log::println(
+				log::level::warning,
+				log::category::vulkan,
+				"Video encode fence wait timed out; dropping capture {}",
+				m_capture_number
+			);
+			slot.has_output = false;
+			slot.submitted = false;
+			slot.timestamps_pending = false;
+			return {};
 		}
+		publish_encode_timestamps(slot);
 		vk_dev.resetFences(*slot.fence);
 		slot.submitted = false;
 	}
+
+	slot.capture_pts = pts;
+	slot.captured = true;
+	m_capture_number++;
+
+	return {
+		.y = m_direct_plane_writes ? slot.y_plane_slot.slot() : slot.y_staging.storage_slot(),
+		.uv = m_direct_plane_writes ? slot.uv_plane_slot.slot() : slot.uv_staging.storage_slot(),
+		.valid = true
+	};
+}
+
+auto gse::vulkan::video_encoder::take_bitstream() -> std::optional<gpu::encoded_unit> {
+	if (m_capture_number == 0) {
+		return std::nullopt;
+	}
+	return read_slot_bitstream(m_slots[(m_capture_number - 1) % source_ring_size]);
+}
+
+auto gse::vulkan::video_encoder::submit_ready() -> void {
+	if (m_capture_number <= encode_source_lag) {
+		return;
+	}
+
+	auto& slot = m_slots[(m_capture_number - 1 - encode_source_lag) % source_ring_size];
+	if (!slot.captured || slot.submitted) {
+		return;
+	}
+	slot.captured = false;
+	encode_capture(slot);
+}
+
+auto gse::vulkan::video_encoder::encode_capture(per_frame& slot) -> void {
+	const auto extent = vec2u{ m_extent };
+	const auto pts = slot.capture_pts;
 
 	slot.cmd.reset();
 	slot.cmd.begin({
 		.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit
 	});
+
+	if (timestamps_supported()) {
+		slot.cmd.resetQueryPool(*slot.timestamp_pool, 0, 2);
+		slot.cmd.writeTimestamp2(vk::PipelineStageFlagBits2::eTopOfPipe, *slot.timestamp_pool, 0);
+	}
 
 	constexpr vk::ImageSubresourceLayers y_subresource{
 		.aspectMask = vk::ImageAspectFlagBits::ePlane0,
@@ -489,99 +728,120 @@ auto gse::vulkan::video_encoder::encode_frame(const std::uint32_t frame_slot, co
 		.layerCount = 1
 	};
 
-	const std::array pre_barriers = { vk::ImageMemoryBarrier2{
-										  .srcStageMask = vk::PipelineStageFlagBits2::eNone,
-										  .srcAccessMask = vk::AccessFlagBits2::eNone,
-										  .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
-										  .dstAccessMask = vk::AccessFlagBits2::eTransferWrite,
-										  .oldLayout = vk::ImageLayout::eUndefined,
-										  .newLayout = vk::ImageLayout::eTransferDstOptimal,
-										  .image = slot.nv12_image,
-										  .subresourceRange = color_subresource_range
-									  },
-									  vk::ImageMemoryBarrier2{
-										  .srcStageMask = vk::PipelineStageFlagBits2::eNone,
-										  .srcAccessMask = vk::AccessFlagBits2::eNone,
-										  .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
-										  .dstAccessMask = vk::AccessFlagBits2::eTransferRead,
-										  .oldLayout = vk::ImageLayout::eGeneral,
-										  .newLayout = vk::ImageLayout::eTransferSrcOptimal,
-										  .image = std::bit_cast<vk::Image>(y_plane),
-										  .subresourceRange = color_subresource_range
-									  },
-									  vk::ImageMemoryBarrier2{
-										  .srcStageMask = vk::PipelineStageFlagBits2::eNone,
-										  .srcAccessMask = vk::AccessFlagBits2::eNone,
-										  .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
-										  .dstAccessMask = vk::AccessFlagBits2::eTransferRead,
-										  .oldLayout = vk::ImageLayout::eGeneral,
-										  .newLayout = vk::ImageLayout::eTransferSrcOptimal,
-										  .image = std::bit_cast<vk::Image>(uv_plane),
-										  .subresourceRange = color_subresource_range
-									  } };
-	slot.cmd.pipelineBarrier2({
-		.imageMemoryBarrierCount = static_cast<std::uint32_t>(pre_barriers.size()),
-		.pImageMemoryBarriers = pre_barriers.data()
-	});
+	if (m_direct_plane_writes) {
+		const vk::ImageMemoryBarrier2 to_encode_src{
+			.srcStageMask = vk::PipelineStageFlagBits2::eNone,
+			.srcAccessMask = vk::AccessFlagBits2::eNone,
+			.dstStageMask = vk::PipelineStageFlagBits2::eVideoEncodeKHR,
+			.dstAccessMask = vk::AccessFlagBits2::eVideoEncodeReadKHR,
+			.oldLayout = vk::ImageLayout::eGeneral,
+			.newLayout = vk::ImageLayout::eVideoEncodeSrcKHR,
+			.image = slot.nv12_image,
+			.subresourceRange = color_subresource_range
+		};
+		slot.cmd.pipelineBarrier2({
+			.imageMemoryBarrierCount = 1,
+			.pImageMemoryBarriers = &to_encode_src
+		});
+	}
+	else {
+		const auto y_source = std::bit_cast<vk::Image>(slot.y_staging.handle());
+		const auto uv_source = std::bit_cast<vk::Image>(slot.uv_staging.handle());
 
-	slot.cmd.copyImage(
-		std::bit_cast<vk::Image>(y_plane),
-		vk::ImageLayout::eTransferSrcOptimal,
-		slot.nv12_image,
-		vk::ImageLayout::eTransferDstOptimal,
-		vk::ImageCopy{
-			.srcSubresource = src_subresource,
-			.dstSubresource = y_subresource,
-			.extent = { extent.x(), extent.y(), 1 }
-		}
-	);
+		const std::array pre_barriers = { vk::ImageMemoryBarrier2{
+											  .srcStageMask = vk::PipelineStageFlagBits2::eNone,
+											  .srcAccessMask = vk::AccessFlagBits2::eNone,
+											  .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+											  .dstAccessMask = vk::AccessFlagBits2::eTransferWrite,
+											  .oldLayout = vk::ImageLayout::eUndefined,
+											  .newLayout = vk::ImageLayout::eTransferDstOptimal,
+											  .image = slot.nv12_image,
+											  .subresourceRange = color_subresource_range
+										  },
+										  vk::ImageMemoryBarrier2{
+											  .srcStageMask = vk::PipelineStageFlagBits2::eNone,
+											  .srcAccessMask = vk::AccessFlagBits2::eNone,
+											  .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+											  .dstAccessMask = vk::AccessFlagBits2::eTransferRead,
+											  .oldLayout = vk::ImageLayout::eGeneral,
+											  .newLayout = vk::ImageLayout::eTransferSrcOptimal,
+											  .image = y_source,
+											  .subresourceRange = color_subresource_range
+										  },
+										  vk::ImageMemoryBarrier2{
+											  .srcStageMask = vk::PipelineStageFlagBits2::eNone,
+											  .srcAccessMask = vk::AccessFlagBits2::eNone,
+											  .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+											  .dstAccessMask = vk::AccessFlagBits2::eTransferRead,
+											  .oldLayout = vk::ImageLayout::eGeneral,
+											  .newLayout = vk::ImageLayout::eTransferSrcOptimal,
+											  .image = uv_source,
+											  .subresourceRange = color_subresource_range
+										  } };
+		slot.cmd.pipelineBarrier2({
+			.imageMemoryBarrierCount = static_cast<std::uint32_t>(pre_barriers.size()),
+			.pImageMemoryBarriers = pre_barriers.data()
+		});
 
-	slot.cmd.copyImage(
-		std::bit_cast<vk::Image>(uv_plane),
-		vk::ImageLayout::eTransferSrcOptimal,
-		slot.nv12_image,
-		vk::ImageLayout::eTransferDstOptimal,
-		vk::ImageCopy{
-			.srcSubresource = src_subresource,
-			.dstSubresource = uv_subresource,
-			.extent = { extent.x() / 2, extent.y() / 2, 1 }
-		}
-	);
+		slot.cmd.copyImage(
+			y_source,
+			vk::ImageLayout::eTransferSrcOptimal,
+			slot.nv12_image,
+			vk::ImageLayout::eTransferDstOptimal,
+			vk::ImageCopy{
+				.srcSubresource = src_subresource,
+				.dstSubresource = y_subresource,
+				.extent = { extent.x(), extent.y(), 1 }
+			}
+		);
 
-	const std::array post_copy_barriers = { vk::ImageMemoryBarrier2{
-												.srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
-												.srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
-												.dstStageMask = vk::PipelineStageFlagBits2::eVideoEncodeKHR,
-												.dstAccessMask = vk::AccessFlagBits2::eVideoEncodeReadKHR,
-												.oldLayout = vk::ImageLayout::eTransferDstOptimal,
-												.newLayout = vk::ImageLayout::eVideoEncodeSrcKHR,
-												.image = slot.nv12_image,
-												.subresourceRange = color_subresource_range
-											},
-											vk::ImageMemoryBarrier2{
-												.srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
-												.srcAccessMask = vk::AccessFlagBits2::eTransferRead,
-												.dstStageMask = vk::PipelineStageFlagBits2::eNone,
-												.dstAccessMask = vk::AccessFlagBits2::eNone,
-												.oldLayout = vk::ImageLayout::eTransferSrcOptimal,
-												.newLayout = vk::ImageLayout::eGeneral,
-												.image = std::bit_cast<vk::Image>(y_plane),
-												.subresourceRange = color_subresource_range
-											},
-											vk::ImageMemoryBarrier2{
-												.srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
-												.srcAccessMask = vk::AccessFlagBits2::eTransferRead,
-												.dstStageMask = vk::PipelineStageFlagBits2::eNone,
-												.dstAccessMask = vk::AccessFlagBits2::eNone,
-												.oldLayout = vk::ImageLayout::eTransferSrcOptimal,
-												.newLayout = vk::ImageLayout::eGeneral,
-												.image = std::bit_cast<vk::Image>(uv_plane),
-												.subresourceRange = color_subresource_range
-											} };
-	slot.cmd.pipelineBarrier2({
-		.imageMemoryBarrierCount = static_cast<std::uint32_t>(post_copy_barriers.size()),
-		.pImageMemoryBarriers = post_copy_barriers.data()
-	});
+		slot.cmd.copyImage(
+			uv_source,
+			vk::ImageLayout::eTransferSrcOptimal,
+			slot.nv12_image,
+			vk::ImageLayout::eTransferDstOptimal,
+			vk::ImageCopy{
+				.srcSubresource = src_subresource,
+				.dstSubresource = uv_subresource,
+				.extent = { extent.x() / 2, extent.y() / 2, 1 }
+			}
+		);
+
+		const std::array post_copy_barriers = { vk::ImageMemoryBarrier2{
+													.srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
+													.srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+													.dstStageMask = vk::PipelineStageFlagBits2::eVideoEncodeKHR,
+													.dstAccessMask = vk::AccessFlagBits2::eVideoEncodeReadKHR,
+													.oldLayout = vk::ImageLayout::eTransferDstOptimal,
+													.newLayout = vk::ImageLayout::eVideoEncodeSrcKHR,
+													.image = slot.nv12_image,
+													.subresourceRange = color_subresource_range
+												},
+												vk::ImageMemoryBarrier2{
+													.srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
+													.srcAccessMask = vk::AccessFlagBits2::eTransferRead,
+													.dstStageMask = vk::PipelineStageFlagBits2::eNone,
+													.dstAccessMask = vk::AccessFlagBits2::eNone,
+													.oldLayout = vk::ImageLayout::eTransferSrcOptimal,
+													.newLayout = vk::ImageLayout::eGeneral,
+													.image = y_source,
+													.subresourceRange = color_subresource_range
+												},
+												vk::ImageMemoryBarrier2{
+													.srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
+													.srcAccessMask = vk::AccessFlagBits2::eTransferRead,
+													.dstStageMask = vk::PipelineStageFlagBits2::eNone,
+													.dstAccessMask = vk::AccessFlagBits2::eNone,
+													.oldLayout = vk::ImageLayout::eTransferSrcOptimal,
+													.newLayout = vk::ImageLayout::eGeneral,
+													.image = uv_source,
+													.subresourceRange = color_subresource_range
+												} };
+		slot.cmd.pipelineBarrier2({
+			.imageMemoryBarrierCount = static_cast<std::uint32_t>(post_copy_barriers.size()),
+			.pImageMemoryBarriers = post_copy_barriers.data()
+		});
+	}
 
 	const bool is_keyframe = (m_frame_number % m_gop_size) == 0;
 	const auto dpb_index = static_cast<std::uint32_t>(m_frame_number % 2);
@@ -815,10 +1075,34 @@ auto gse::vulkan::video_encoder::encode_frame(const std::uint32_t frame_slot, co
 	slot.cmd.endQuery(*slot.query_pool, 0);
 
 	slot.cmd.endVideoCodingKHR({});
+
+	if (m_direct_plane_writes) {
+		const vk::ImageMemoryBarrier2 to_general{
+			.srcStageMask = vk::PipelineStageFlagBits2::eVideoEncodeKHR,
+			.srcAccessMask = vk::AccessFlagBits2::eVideoEncodeReadKHR,
+			.dstStageMask = vk::PipelineStageFlagBits2::eNone,
+			.dstAccessMask = vk::AccessFlagBits2::eNone,
+			.oldLayout = vk::ImageLayout::eVideoEncodeSrcKHR,
+			.newLayout = vk::ImageLayout::eGeneral,
+			.image = slot.nv12_image,
+			.subresourceRange = color_subresource_range
+		};
+		slot.cmd.pipelineBarrier2({
+			.imageMemoryBarrierCount = 1,
+			.pImageMemoryBarriers = &to_general
+		});
+	}
+
+	if (timestamps_supported()) {
+		slot.cmd.writeTimestamp2(vk::PipelineStageFlagBits2::eAllCommands, *slot.timestamp_pool, 1);
+	}
+
 	slot.cmd.end();
 
-	slot.last_pts = m_clock.elapsed();
+	slot.last_pts = pts;
 	slot.last_was_keyframe = is_keyframe;
+	slot.cpu_ref = system_clock::now<trace::tick_step>();
+	slot.timestamp_frame = m_frame_number;
 
 	const gpu::command_buffer_submit_info cmd_submit{
 		.command_buffer = std::bit_cast<gpu::command_buffer_handle>(*slot.cmd),
@@ -829,6 +1113,7 @@ auto gse::vulkan::video_encoder::encode_frame(const std::uint32_t frame_slot, co
 	m_queue->submit_video_encode(submit, std::bit_cast<gpu::handle<gpu::fence>>(*slot.fence));
 	slot.submitted = true;
 	slot.has_output = true;
+	slot.timestamps_pending = timestamps_supported();
 
 	if (is_keyframe) {
 		for (auto& dpb : m_dpb) {
@@ -848,8 +1133,7 @@ auto gse::vulkan::video_encoder::encode_frame(const std::uint32_t frame_slot, co
 	m_frame_number++;
 }
 
-auto gse::vulkan::video_encoder::read_bitstream(const std::uint32_t frame_slot) -> std::optional<gpu::encoded_unit> {
-	auto& slot = m_slots[frame_slot];
+auto gse::vulkan::video_encoder::read_slot_bitstream(per_frame& slot) -> std::optional<gpu::encoded_unit> {
 	if (!slot.has_output) {
 		return std::nullopt;
 	}
@@ -914,30 +1198,49 @@ auto gse::vulkan::video_encoder::extent() const -> vec2u {
 	return m_extent;
 }
 
-auto gse::vulkan::video_encoder::wait(const std::uint32_t frame_slot) -> void {
-	auto& slot = m_slots[frame_slot];
-	if (!slot.submitted) {
+auto gse::vulkan::video_encoder::timestamps_supported() const -> bool {
+	return m_timestamp_ticks_mask != 0;
+}
+
+auto gse::vulkan::video_encoder::publish_encode_timestamps(per_frame& slot) -> void {
+	if (!slot.timestamps_pending) {
 		return;
 	}
+	slot.timestamps_pending = false;
 
-	constexpr std::uint64_t timeout_ns = 500'000'000;
-
-	const auto& vk_dev = m_device->raii_device();
-	const auto result = vk_dev.waitForFences(*slot.fence, vk::True, timeout_ns);
-	if (result != vk::Result::eSuccess) {
-		log::println(
-			log::level::warning,
-			log::category::vulkan,
-			"Video encode fence wait timed out on slot {} (result={})",
-			frame_slot,
-			static_cast<int>(result)
+	std::array<std::uint64_t, 2> ticks{};
+	const auto result =
+		(*m_device->raii_device()).getQueryPoolResults(
+			*slot.timestamp_pool,
+			0,
+			2,
+			sizeof(ticks),
+			ticks.data(),
+			sizeof(std::uint64_t),
+			vk::QueryResultFlagBits::e64
 		);
-		slot.has_output = false;
-		slot.submitted = false;
+
+	if (result != vk::Result::eSuccess) {
 		return;
 	}
-	vk_dev.resetFences(*slot.fence);
-	slot.submitted = false;
+
+	const auto begin_ticks = ticks[0] & m_timestamp_ticks_mask;
+	const auto end_ticks = ticks[1] & m_timestamp_ticks_mask;
+	if (end_ticks < begin_ticks) {
+		return;
+	}
+
+	const auto span = static_cast<double>(end_ticks - begin_ticks) * m_timestamp_period_per_tick;
+	const auto begin = time_t<double>(slot.cpu_ref);
+	const auto end = begin + span;
+
+	const auto encode_id = trace_id<"video::encode">();
+	const auto key = (slot.timestamp_frame << 16) | (static_cast<std::uint64_t>(gpu::queue_type::video_encode) << 14);
+
+	trace::begin_async_at(encode_id, key, trace::gpu_video_encode_virtual_tid, time_t<std::uint64_t>(begin));
+	trace::end_async_at(encode_id, key, trace::gpu_video_encode_virtual_tid, time_t<std::uint64_t>(end));
+
+	profile::ingest_gpu_sample(encode_id, span);
 }
 
 auto gse::vulkan::video_encoder::valid() const -> bool {
@@ -978,9 +1281,42 @@ auto gse::vulkan::build_profile(profile_chain& chain, const gpu::video_codec cod
 	chain.profile.pNext = &chain.usage;
 }
 
-auto gse::vulkan::create_nv12_image(const vk::raii::Device& device, const physical_device& physical_device, vec2u extent, vk::ImageUsageFlags usage, const vk::VideoProfileListInfoKHR& profile_list) -> std::tuple<vk::Image, vk::raii::ImageView, vk::DeviceMemory> {
-	auto [image_result, image] = (*device).createImage({
+auto gse::vulkan::plane_writes_supported(const physical_device& physical_device, const vk::VideoProfileListInfoKHR& profile_list) -> bool {
+	const std::array view_formats = { nv12_format, y_plane_format, uv_plane_format };
+	const vk::ImageFormatListCreateInfo format_list{
 		.pNext = &profile_list,
+		.viewFormatCount = static_cast<std::uint32_t>(view_formats.size()),
+		.pViewFormats = view_formats.data()
+	};
+
+	const vk::PhysicalDeviceImageFormatInfo2 info{
+		.pNext = &format_list,
+		.format = nv12_format,
+		.type = vk::ImageType::e2D,
+		.tiling = vk::ImageTiling::eOptimal,
+		.usage = vk::ImageUsageFlagBits::eVideoEncodeSrcKHR | vk::ImageUsageFlagBits::eStorage,
+		.flags = vk::ImageCreateFlagBits::eMutableFormat | vk::ImageCreateFlagBits::eExtendedUsage
+	};
+
+	auto [result, props] = std::bit_cast<vk::PhysicalDevice>(physical_device.handle()).getImageFormatProperties2(info);
+	return result == vk::Result::eSuccess && props.imageFormatProperties.maxExtent.width > 0;
+}
+
+auto gse::vulkan::create_nv12_image(const vk::raii::Device& device, const physical_device& physical_device, vec2u extent, vk::ImageUsageFlags usage, const vk::VideoProfileListInfoKHR& profile_list, const std::span<const std::uint32_t> shared_families) -> std::tuple<vk::Image, vk::raii::ImageView, vk::DeviceMemory> {
+	const bool writable = static_cast<bool>(usage & vk::ImageUsageFlagBits::eStorage);
+	const std::array view_formats = { nv12_format, y_plane_format, uv_plane_format };
+	const vk::ImageFormatListCreateInfo format_list{
+		.pNext = &profile_list,
+		.viewFormatCount = static_cast<std::uint32_t>(view_formats.size()),
+		.pViewFormats = view_formats.data()
+	};
+
+	const bool concurrent = shared_families.size() > 1;
+	auto [image_result, image] = (*device).createImage({
+		.pNext = writable ? static_cast<const void*>(&format_list) : static_cast<const void*>(&profile_list),
+		.flags = writable
+			? vk::ImageCreateFlags{ vk::ImageCreateFlagBits::eMutableFormat | vk::ImageCreateFlagBits::eExtendedUsage }
+			: vk::ImageCreateFlags{},
 		.imageType = vk::ImageType::e2D,
 		.format = nv12_format,
 		.extent = { extent.x(), extent.y(), 1 },
@@ -989,7 +1325,9 @@ auto gse::vulkan::create_nv12_image(const vk::raii::Device& device, const physic
 		.samples = vk::SampleCountFlagBits::e1,
 		.tiling = vk::ImageTiling::eOptimal,
 		.usage = usage,
-		.sharingMode = vk::SharingMode::eExclusive
+		.sharingMode = concurrent ? vk::SharingMode::eConcurrent : vk::SharingMode::eExclusive,
+		.queueFamilyIndexCount = concurrent ? static_cast<std::uint32_t>(shared_families.size()) : 0u,
+		.pQueueFamilyIndices = concurrent ? shared_families.data() : nullptr
 	});
 	assert(image_result == vk::Result::eSuccess, "failed to create nv12 image: {}", vk::to_string(image_result));
 
