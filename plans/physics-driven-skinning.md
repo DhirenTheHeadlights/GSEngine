@@ -95,7 +95,7 @@ Other confirmations:
 | Character motor? | `motor_component` is already one: `velocity_drive_target`, `horizontal_only`, `requires_ground_contact`, `max_force`. Pairs with `is_airborne` / grounded bits. |
 | Capsule collision? | Yes — full narrow-phase support, `bone_shape = collision_shape` variant of box/sphere/capsule |
 | Body budget? | `vbd::limits.max_bodies = 5120` — comfortable for ~25 bones/char even at high character counts |
-| Mass/inertia from shape? | `physics::mass_from_density` and `moment_of_inertia_of` already exist |
+| Mass/inertia from shape? | `physics::mass_from_density` exists; inertia is no longer authored at all — the system derives the tensor and COM from the collision shape via `mass_properties_of` |
 | Bone→GPU index for render? | `physics::data::id_to_body_index` is `[[= gse::shared]]`; `gpu_solver.snapshot_buffer()` is GPU-resident |
 
 Bone bodies still occupy a solver slot and still round-trip their transform (the body array is
@@ -171,7 +171,7 @@ with weights).
 2. Transform them into the joint's bind-local space via `inverseBind[j]`.
 3. Fit an oriented shape to that point cloud: elongated along the child direction → capsule;
    otherwise box or sphere.
-4. Mass via `mass_from_density`, inertia via `moment_of_inertia_of` — both already exist.
+4. Mass via `mass_from_density`; inertia needs nothing — the physics system derives the tensor from the fitted collision shape.
 
 **Bone filtering.** The mixamo rig is 65 joints, ~40 of which are fingers. Do not make 65
 bodies. Drop joints below a volume / dominant-vertex threshold and fold their weights into the
@@ -379,7 +379,7 @@ Worth stating plainly, because it makes the new surface much smaller than it fir
 | Bone entity → GPU body index | `physics::data::id_to_body_index` (`[[= gse::shared]]`) |
 | GPU-resident pose source | `vbd::gpu_solver::snapshot_buffer()` |
 | Ragdoll constraints | `joint_spec` + the full `joint_config` variant |
-| Mass / inertia from a fitted shape | `mass_from_density`, `moment_of_inertia_of` |
+| Mass / inertia from a fitted shape | `mass_from_density`; inertia and COM auto-derived from the shape (`mass_properties_of`) |
 | Asset bake/load/handle framework | `asset_format::*` annotations, `asset::add_loader<T>` |
 | GPU barriers between passes | auto-derived from pass resource usage |
 | System ordering | scheduler derives it from declared component access |

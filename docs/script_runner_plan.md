@@ -293,7 +293,13 @@ Engine/Engine/Source/Scenario/
                            reflection sweep, find. Module gse.scenario, standalone;
                            deliberately not re-exported from Import/, so it never
                            depends on engine (keeps D13's cycle closed).
-    FrameDump.cppm       — TODO (Phase 3): lockstep image-sequence writer
+    FrameDump.cppm       — DROPPED (Phase 3): a lockstep image-sequence writer was
+                           only ever needed because video encode was unavailable on
+                           this hardware. It is available, and the capture triggers
+                           are already channel messages a scenario can push, so a
+                           scenario records by pushing toggle_recording_request.
+                           See scenario_capture_scope.md item 3; that item also
+                           records what would bring this file back.
 Engine/Engine/Source/Runtime/
     Bootstrap.cppm       — DONE: begin/step/finish_bench, bench_world_ready and
                            drive_scenario. The scenario driver lives here because it
@@ -472,7 +478,9 @@ Prime suspects if it ever regresses: unseeded RNG, and system execution order un
 
 ### Phase 3 — Camera and capture
 
-Camera path asset format, in-editor keyframe authoring, playback awaitable, lockstep frame dump, `ffmpeg` invocation.
+**Rescoped 2026-08-13 — see [scenario_capture_scope.md](scenario_capture_scope.md), which is the authoritative version.** The original list here was camera path asset format, in-editor keyframe authoring, playback awaitable, lockstep frame dump, and `ffmpeg` invocation. Half of it is gone: the last two are superseded now that video encode is validated on this hardware and the capture triggers turned out to already be channel messages, and the first two are deferred because a scenario body can interpolate keyframes and push a `camera::request` per frame without an asset type.
+
+What remains is the windowed boot gate, a consumer for `camera::request`, and two small per-clip additions — a sun-arc driver and a light-spawn request.
 
 **Deliverable:** every README clip is reproducible from one command. This is the forcing function for the whole plan.
 

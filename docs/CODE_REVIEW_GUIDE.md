@@ -13,7 +13,7 @@ Review in this order:
 3. Engine congruence: prefer existing engine types, IDs, reflection facilities, helpers, channels, and established idioms over local substitutes.
 4. Dimensional correctness: use strong unit types for every physical quantity. Require a concrete dimensional derivation for any raw numeric math that resembles a physical quantity, ratio, conversion, or integration step. Audit the *exits* from the type, not merely its presence — a conversion that names a unit still leaves the type system, and the arithmetic after it is unchecked.
 5. Runtime cost: avoid per-frame string construction and allocation, repeated formatting, avoidable container churn, redundant work, and synchronization in hot paths. Verify the actual lifetime and call frequency rather than assuming a function is cold.
-6. Complexity: challenge every new state variable, branch, cache, adapter, mapping, and abstraction. Prefer designs where invalid combinations are unrepresentable and behavior follows from one source of truth.
+6. Complexity: challenge every new state variable, branch, cache, adapter, mapping, and abstraction. Establish that each branch is reachable before accepting it. Prefer designs where invalid combinations are unrepresentable and behavior follows from one source of truth.
 7. Style and API shape: enforce every rule in `docs/STYLEGUIDE.md`, including naming, file organization, module visibility, unit types, channel pushes, spans, ranges, and declaration/definition structure.
 
 ## Behavioral Consolidation
@@ -37,6 +37,25 @@ Review the conversions, not the declarations. For each exit ask what external co
 Two shapes recur and are decidable without judgement. Arithmetic that converts before combining same-typed values is always wrong: the operation is defined on the type, and for a ratio the units cancel regardless, so converting only discards the guarantee. Display that converts is always wrong: the formatter's spec performs the conversion, so a unit appearing in a format literal, a heading, or a label is the tell that a value was converted by hand.
 
 The tell is the hand conversion, not the word. A column heading or axis label may name a unit when the values under it are produced by an explicit unit spec — the formatter still owns the conversion, and stating the unit once beats repeating a suffix on every cell. What is never acceptable is reaching for `.as<Unit>()` because the formatter could not express the output you wanted. Extend the format spec instead: the capability belongs next to the conversion, where every future caller inherits it.
+
+## Branches For States The Infrastructure Excludes
+
+Defensive code reads as care. A null check, an emptiness guard, a re-validated precondition — each looks like a reviewer's win, and none is ever challenged, because a branch that cannot fire appears to cost nothing. It is not free. A guard is a claim about the surrounding system: that this state is reachable. When the claim is false the branch becomes documentation that contradicts the code, and every later reader must re-derive the invariant the guard denies before touching anything near it. The dead path is also the one path nothing exercises, so if the invariant ever does break, what runs is whatever the author guessed — usually a silent early return that converts a broken invariant into a missing feature, reported nowhere.
+
+Establish reachability from the write site, not the read site. For a container, find every write; for a pointer parameter, find every call site; for system state, find the lifecycle rule that sequences it. The burden is to name the construction that makes the state possible. When you cannot name it, the branch goes.
+
+Several shapes are decidable without judgement:
+
+- A map reached only through `map[key].push_back(value)` cannot hold an empty mapped value, so an `.empty()` check on one of its entries is dead. Contrast a map whose entries are created and then cleared, where the same check carries the whole meaning. The two are told apart by reading the writes, never by the type.
+- A pointer parameter is a claim that absence is meaningful. When every call site passes a known address the claim is false and the null checks behind it are dead; take a reference. The strong tell is a function receiving both an owner by reference and a pointer to one of that owner's members — the parameter re-expresses something already in scope, and the two names must then be kept in agreement by hand.
+- A defaulted `nullptr` argument that no caller omits is the same defect with the branch hidden in the signature.
+- A precondition re-checked by a callee that only one caller reaches is duplicated knowledge, not defence in depth, and it is the copy that will not be updated when the caller's rule changes.
+- State assigned unconditionally in `init` is non-null in `frame`, because the scheduler sequences them. A guard on it is unreachable, its `else` is dead code, and it costs a level of indentation across the whole function.
+- A clause repeating a condition the short-circuit already decided is tautological.
+
+Resolve these by removing the state, not the branch: narrow the signature, delete the redundant parameter, take the reference. Hardening a value that cannot be invalid is the symptom-only patch described under Findings Format — it leaves the invalid construction exactly as easy to write. The asymmetry is what makes the rule cheap to apply: deleting a dead guard is checked by the compiler and by the invariant, while adding one is checked by nothing.
+
+None of this licenses removing checks at genuine boundaries. A filesystem call, a subprocess result, a parsed file, a driver or OS return, a network payload, and anything a user typed all sit outside the invariant, and their failure paths must be handled and surfaced rather than swallowed. A trailing `return` after a fully covered `switch` is required by `-Wreturn-type` and is not a defensive branch. The distinction is ownership of the invariant: what the engine constructs, it may rely on; what it merely receives, it must check.
 
 ## GUI Interaction Authority
 
@@ -88,6 +107,9 @@ The aggregate must describe one cohesive operation rather than become a catch-al
 - Does a unit appear in a format literal, column heading, or label string rather than in the value's format spec?
 - Does a per-frame path allocate strings, rebuild stable data, scan an unchanged collection, or create transient ownership?
 - Does a subprocess require a different environment? Construct that environment for the child without mutating process-wide state, and keep launch-only variables out of tracked build ABI inputs.
+- Does a branch handle a state the surrounding code makes unreachable — an empty entry in a map written only by `map[key].push_back`, a null pointer parameter every call site fills, a precondition the single caller already established, a tautological short-circuit clause, or system state the scheduler sequenced through `init`? Name the write site or call site that makes it reachable, or delete the branch.
+- Does a function take a pointer, an optional, or a defaulted argument to express an absence that never occurs? Take a reference and remove the branches that pointer implies.
+- Does a function receive both an owner by reference and a pointer into that owner? Delete the redundant parameter and read through the owner already in scope.
 - Is state duplicated such that two fields can disagree? Can one be derived or replaced by a stronger representation?
 - Does the change decide visibility, enablement, reachability, or extent on one path and act on it from another? Both must resolve through the owner of that fact, or the system permits states it treats as impossible, most often input that survives after presentation is clipped, hidden, or disabled.
 - Does UI code reconstruct hover or activation from rectangle containment, raw mouse transitions, and input availability even though `draw_context` or an established widget already owns that decision?

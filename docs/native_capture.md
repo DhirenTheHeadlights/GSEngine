@@ -1,6 +1,14 @@
 # Native Capture — Scope of Work (Locked In)
 
-> **Status:** Phases 0–3 code-complete. F9 (screenshots) is shipped and validated. F10/F11 (clip save, continuous record) are code-complete, gated on `video_encode_enabled()`, and pending hardware validation on a GPU/driver that actually exposes `VideoEncodeKHR` (Intel Arc 140V exposes decode only). Phase 4 (polish: settings UI, toasts, codec selector, perf measurement) not started. Source: `Engine/Engine/Source/Graphics/Renderers/CaptureRenderer.{cppm,cpp}` + `Graphics/Capture/`.
+> **Status:** Phases 0–3 code-complete. A 27 s recording on 2026-08-14 played in VLC and Windows Media Player but decoded **zero of 1744 frames** in libdav1d — so it played in no browser. Root cause was in `Mp4Muxer`, not the encoder: `find_sequence_header_obu` spent the AV1 sequence header on the `av1C` box and never wrote it in-band, so hardware decoders that seed from `av1C` were fine while dav1d (Chrome, Firefox) had nothing to parse frames against. **Fixed 2026-08-14** — the sequence header is now written after the temporal delimiter on every keyframe sample, on both the continuous-record and F10 clip-save paths; verified at 1744/1744 frames. Analysis in [scenario_capture_scope.md](scenario_capture_scope.md) item 0.
+>
+> The Intel Arc 140V decode-only finding below is historical — encode is available and is now intent-gated on `engine_config::video_encode` rather than capability alone. Phase 4 (polish) not started. Source: `Engine/Engine/Source/Graphics/Renderers/CaptureRenderer.{cppm,cpp}` + `Graphics/Capture/`.
+>
+> **Validation rule this incident establishes:** "the clip plays" is not a test. Use `ffmpeg -v error -i <file> -f null -` and require zero errors. A tolerant player masked a bitstream that no software decoder accepts.
+>
+> **Hotkeys below are stale.** The bindings moved to key combos: **F9** screenshot, **F10** save clip, **Ctrl+Shift+R** toggle continuous recording. Every "F11" in this document means Ctrl+Shift+R; the authority is `capture::init` in `CaptureRenderer.cpp`.
+>
+> **Hotkeys below are stale.** The bindings moved to key combos: **F9** screenshot, **F10** save clip, **Ctrl+Shift+R** toggle continuous recording. Every "F11" in this document means Ctrl+Shift+R; the authority is `capture::init` in `CaptureRenderer.cpp`.
 
 ## Overview
 
