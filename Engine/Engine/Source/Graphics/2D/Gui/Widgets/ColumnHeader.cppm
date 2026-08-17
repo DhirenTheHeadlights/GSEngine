@@ -38,6 +38,11 @@ export namespace gse::gui {
 		bool resize_cursor = false;
 	};
 
+	[[nodiscard]] auto needs_seed(
+		const column_state& state,
+		std::size_t column_count
+	) -> bool;
+
 	auto seed_columns(
 		const draw_context& ctx,
 		std::span<const float> content_widths,
@@ -61,8 +66,12 @@ namespace gse::gui {
 	constexpr float column_grip_width = 6.f;
 }
 
+auto gse::gui::needs_seed(const column_state& state, const std::size_t column_count) -> bool {
+	return state.widths.size() != column_count;
+}
+
 auto gse::gui::seed_columns(const draw_context& ctx, const std::span<const float> content_widths, column_state& state) -> void {
-	if (state.widths.size() == content_widths.size()) {
+	if (!needs_seed(state, content_widths.size())) {
 		return;
 	}
 	state.widths.assign(content_widths.begin(), content_widths.end());

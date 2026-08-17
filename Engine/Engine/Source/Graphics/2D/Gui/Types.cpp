@@ -336,7 +336,7 @@ gse::gui::scroll_handle::scroll_handle(draw_context& ctx, scroll_state& state, c
 }
 
 gse::gui::scroll_handle::scroll_handle(scroll_handle&& other) noexcept
-	: m_ctx(other.m_ctx), m_state(other.m_state), m_visible_rect(other.m_visible_rect), m_saved_menu_rect(other.m_saved_menu_rect), m_saved_layout_y(other.m_saved_layout_y), m_content_start_y(other.m_content_start_y), m_config(other.m_config), m_active(other.m_active) {
+	: m_ctx(other.m_ctx), m_state(other.m_state), m_visible_rect(other.m_visible_rect), m_saved_menu_rect(other.m_saved_menu_rect), m_saved_layout_y(other.m_saved_layout_y), m_content_start_y(other.m_content_start_y), m_content_width(other.m_content_width), m_config(other.m_config), m_active(other.m_active) {
 	other.m_active = false;
 }
 
@@ -345,7 +345,7 @@ auto gse::gui::scroll_handle::operator=(scroll_handle&& other) noexcept -> scrol
 		return *this;
 	}
 	if (m_active) {
-		run_scroll_end(*m_ctx, *m_state, m_visible_rect, m_content_start_y, m_config);
+		run_scroll_end(*m_ctx, *m_state, m_visible_rect, m_content_start_y, m_content_width, m_config);
 		m_ctx->clip_stack.pop_back();
 		if (m_ctx->current_menu) {
 			m_ctx->current_menu->rect = m_saved_menu_rect;
@@ -358,6 +358,7 @@ auto gse::gui::scroll_handle::operator=(scroll_handle&& other) noexcept -> scrol
 	m_saved_menu_rect = other.m_saved_menu_rect;
 	m_saved_layout_y = other.m_saved_layout_y;
 	m_content_start_y = other.m_content_start_y;
+	m_content_width = other.m_content_width;
 	m_config = other.m_config;
 	m_active = other.m_active;
 	other.m_active = false;
@@ -368,7 +369,7 @@ gse::gui::scroll_handle::~scroll_handle() noexcept {
 	if (!m_active) {
 		return;
 	}
-	run_scroll_end(*m_ctx, *m_state, m_visible_rect, m_content_start_y, m_config);
+	run_scroll_end(*m_ctx, *m_state, m_visible_rect, m_content_start_y, m_content_width, m_config);
 	m_ctx->clip_stack.pop_back();
 	if (m_ctx->current_menu) {
 		m_ctx->current_menu->rect = m_saved_menu_rect;
@@ -386,6 +387,14 @@ auto gse::gui::scroll_handle::visible_rect() const -> const rectf& {
 
 auto gse::gui::scroll_handle::offset() const -> float {
 	return m_state ? m_state->y.offset : 0.f;
+}
+
+auto gse::gui::scroll_handle::offset_x() const -> float {
+	return m_state ? m_state->x.offset : 0.f;
+}
+
+auto gse::gui::scroll_handle::set_content_width(const float width) -> void {
+	m_content_width = width;
 }
 
 auto gse::gui::draw_context::scoped_layer(const render_layer layer) const -> layer_scope {
