@@ -143,11 +143,7 @@ auto gse::gui::draw::value(const draw_context& ctx, const std::string& name, T v
 	value_row<1>(
 		ctx,
 		name,
-		{ std::format(
-			"{:.2f} {}",
-			gse::internal::value_in<decltype(Unit)>(value),
-			std::string_view(Unit.unit_name)
-		) }
+		{ std::format("{:.2f:{}}", value, std::string_view(Unit.unit_name)) }
 	);
 }
 
@@ -155,7 +151,7 @@ template <typename T, std::size_t N, auto Unit>
 auto gse::gui::draw::vec(const draw_context& ctx, const std::string& name, const gse::vec<T, N>& v) -> void {
 	std::array<std::string, N> values;
 	for (std::size_t i = 0; i < N; ++i) {
-		values[i] = std::format("{:.2f}", gse::internal::value_in<decltype(Unit)>(v[i]));
+		values[i] = std::format("{:.2f:{}!}", v[i], std::string_view(Unit.unit_name));
 	}
 	value_row<N>(ctx, name, values);
 }

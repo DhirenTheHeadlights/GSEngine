@@ -11,6 +11,13 @@ import gse.ecs;
 import gse.assert;
 
 export namespace gse::save {
+	enum class value_provenance : std::uint8_t {
+		code_default,
+		project,
+		user,
+		session
+	};
+
 	class registry : public non_copyable {
 	public:
 		explicit registry(
@@ -35,6 +42,48 @@ export namespace gse::save {
 		auto set_overrides(
 			std::span<const std::string> assignments
 		) -> void;
+
+		template <typename State, fixed_string Key>
+		auto pin(
+			const auto& value
+		) -> void;
+
+		auto set_override(
+			std::string_view category,
+			std::string_view key,
+			std::string_view value
+		) -> void;
+
+		auto clear_override(
+			std::string_view category,
+			std::string_view key
+		) -> void;
+
+		auto release_override(
+			std::string_view category,
+			std::string_view key
+		) const -> void;
+
+		auto stage_value(
+			std::string_view category,
+			std::string_view key,
+			std::string_view value
+		) const -> void;
+
+		auto clear_staged(
+			std::string_view category,
+			std::string_view key
+		) const -> void;
+
+		auto override_of(
+			std::string_view category,
+			std::string_view key
+		) const -> std::optional<std::string>;
+
+		auto provenance_of(
+			std::string_view category,
+			std::string_view key
+		) const -> value_provenance;
 
 		auto add(
 			settings::register_settings_type entry
@@ -95,14 +144,22 @@ export namespace gse::save {
 		auto save_all() const -> bool;
 
 		std::vector<settings::register_settings_type> m_entries;
-		mutable std::mutex m_entries_mutex;
+		mutable std::recursive_mutex m_entries_mutex;
 		std::filesystem::path m_auto_save_path;
 		std::filesystem::path m_project_path;
 		bool m_auto_save = false;
 		std::function<void()> m_on_restart;
+		auto apply_one_key(
+			std::string_view category,
+			std::string_view key,
+			const std::string& value
+		) -> void;
+
 		doc m_loaded;
 		doc m_loaded_project;
-		doc m_overrides;
+		mutable doc m_overrides;
+		mutable doc m_staged;
+		doc m_defaults;
 	};
 }
 
@@ -111,6 +168,19 @@ auto gse::save::registry::for_each_entry(auto&& fn) const -> void {
 	for (const auto& entry : m_entries) {
 		fn(entry);
 	}
+}
+
+template <typename State, gse::fixed_string Key>
+auto gse::save::registry::pin(const auto& value) -> void {
+	static_assert(
+		!settings::category_of<State>().empty(),
+		"pinned state has no settings::category annotation, so its keys are unreachable"
+	);
+	static_assert(
+		settings::settings_key_exists<State>(std::string_view(Key)),
+		"pinned key does not name an annotated setting on that state"
+	);
+	set_override(settings::category_of<State>(), std::string_view(Key), meta::write_field(value));
 }
 
 gse::save::registry::registry(std::filesystem::path auto_save_path) : m_auto_save_path(std::move(auto_save_path)) {
@@ -165,13 +235,128 @@ auto gse::save::registry::set_overrides(const std::span<const std::string> assig
 	}
 }
 
+auto gse::save::registry::set_override(const std::string_view category, const std::string_view key, const std::string_view value) -> void {
+	std::lock_guard lock(m_entries_mutex);
+	auto& stored = m_overrides[std::string(category)][std::string(key)];
+	stored = std::string(value);
+	apply_one_key(category, key, stored);
+}
+
+auto gse::save::registry::clear_override(const std::string_view category, const std::string_view key) -> void {
+	std::lock_guard lock(m_entries_mutex);
+	const auto cat_it = m_overrides.find(std::string(category));
+	if (cat_it == m_overrides.end() || cat_it->second.erase(std::string(key)) == 0) {
+		return;
+	}
+	for (const doc* source : { &m_loaded, &m_loaded_project, &m_defaults }) {
+		const auto sc = source->find(std::string(category));
+		if (sc == source->end()) {
+			continue;
+		}
+		const auto kv = sc->second.find(std::string(key));
+		if (kv == sc->second.end()) {
+			continue;
+		}
+		apply_one_key(category, key, kv->second);
+		return;
+	}
+}
+
+auto gse::save::registry::release_override(const std::string_view category, const std::string_view key) const -> void {
+	std::lock_guard lock(m_entries_mutex);
+	const auto cat_it = m_overrides.find(std::string(category));
+	if (cat_it != m_overrides.end()) {
+		cat_it->second.erase(std::string(key));
+	}
+}
+
+auto gse::save::registry::stage_value(const std::string_view category, const std::string_view key, const std::string_view value) const -> void {
+	std::lock_guard lock(m_entries_mutex);
+	m_staged[std::string(category)][std::string(key)] = std::string(value);
+}
+
+auto gse::save::registry::clear_staged(const std::string_view category, const std::string_view key) const -> void {
+	std::lock_guard lock(m_entries_mutex);
+	const auto cat_it = m_staged.find(std::string(category));
+	if (cat_it != m_staged.end()) {
+		cat_it->second.erase(std::string(key));
+	}
+}
+
+auto gse::save::registry::override_of(const std::string_view category, const std::string_view key) const -> std::optional<std::string> {
+	std::lock_guard lock(m_entries_mutex);
+	const auto cat_it = m_overrides.find(std::string(category));
+	if (cat_it == m_overrides.end()) {
+		return std::nullopt;
+	}
+	const auto kv = cat_it->second.find(std::string(key));
+	if (kv == cat_it->second.end()) {
+		return std::nullopt;
+	}
+	return kv->second;
+}
+
+auto gse::save::registry::provenance_of(const std::string_view category, const std::string_view key) const -> value_provenance {
+	std::lock_guard lock(m_entries_mutex);
+	const auto holds = [&](const doc& d) {
+		const auto cat_it = d.find(std::string(category));
+		return cat_it != d.end() && cat_it->second.contains(std::string(key));
+	};
+	if (holds(m_overrides)) {
+		return value_provenance::session;
+	}
+	if (holds(m_loaded)) {
+		return value_provenance::user;
+	}
+	if (holds(m_loaded_project)) {
+		return value_provenance::project;
+	}
+	return value_provenance::code_default;
+}
+
+auto gse::save::registry::apply_one_key(const std::string_view category, const std::string_view key, const std::string& value) -> void {
+	doc one;
+	one[std::string(category)][std::string(key)] = value;
+	for (auto& entry : m_entries) {
+		if (entry.category != category || !entry.read || !entry.settings_ptr) {
+			continue;
+		}
+		entry.read(one, entry.category, entry.settings_ptr, settings::scope_kind::user);
+		entry.read(one, entry.category, entry.settings_ptr, settings::scope_kind::project);
+		entry.read(one, entry.category, entry.settings_ptr, settings::scope_kind::app);
+	}
+}
+
 auto gse::save::registry::add(settings::register_settings_type entry) -> void {
 	std::lock_guard lock(m_entries_mutex);
+
+	for (const auto& field : entry.fields) {
+		assert(
+			std::ranges::contains(entry.keys, field.key),
+			"settings field '{}' in category '{}' has no matching serialized key",
+			field.key,
+			entry.category
+		);
+	}
+
+	if (entry.write && entry.settings_ptr) {
+		doc snapshot;
+		entry.write(snapshot, entry.category, entry.settings_ptr, settings::scope_kind::user);
+		entry.write(snapshot, entry.category, entry.settings_ptr, settings::scope_kind::project);
+		entry.write(snapshot, entry.category, entry.settings_ptr, settings::scope_kind::app);
+		for (auto& [cat, values] : snapshot) {
+			for (auto& [key, value] : values) {
+				m_defaults[cat].try_emplace(key, std::move(value));
+			}
+		}
+	}
 
 	if (entry.read && entry.settings_ptr) {
 		entry.read(m_loaded, entry.category, entry.settings_ptr, settings::scope_kind::user);
 		entry.read(m_loaded_project, entry.category, entry.settings_ptr, settings::scope_kind::project);
 		entry.read(m_overrides, entry.category, entry.settings_ptr, settings::scope_kind::user);
+		entry.read(m_overrides, entry.category, entry.settings_ptr, settings::scope_kind::project);
+		entry.read(m_overrides, entry.category, entry.settings_ptr, settings::scope_kind::app);
 	}
 
 	const auto match = std::ranges::find_if(
@@ -395,6 +580,14 @@ auto gse::save::registry::save_to_file(const std::filesystem::path& path, const 
 				}
 				else if (const auto written = d.find(category); written != d.end()) {
 					written->second.erase(key);
+				}
+			}
+		}
+
+		if (scope == settings::scope_kind::user) {
+			for (const auto& [category, keys] : m_staged) {
+				for (const auto& [key, value] : keys) {
+					d[category][key] = value;
 				}
 			}
 		}
