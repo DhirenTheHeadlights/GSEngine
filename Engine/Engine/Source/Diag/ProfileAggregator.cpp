@@ -11,6 +11,7 @@ import gse.meta;
 import gse.core;
 import gse.containers;
 import gse.time;
+import gse.win32;
 
 auto gse::profile::storage_for(const domain domain) -> std::flat_map<id, entry>& {
 	return entries[static_cast<std::size_t>(domain)];
@@ -64,11 +65,13 @@ auto gse::profile::to_report(const entry& e, const std::uint64_t frames) -> repo
 		.peak = e.peak,
 		.calls_per_frame = calls,
 		.sample_count = count,
+		.peak_frame = e.peak_frame,
+		.spike_count = e.spike_count,
 		.dominant_tid = dominant_tid_of(e)
 	};
 }
 
-auto gse::profile::update_entry(std::flat_map<id, entry>& map, const id id, const sample_time duration, const std::uint32_t thread_id) -> void {
+auto gse::profile::update_entry(std::flat_map<id, entry>& map, const id id, const sample_time duration, const std::uint32_t thread_id, const std::uint64_t frame_index) -> void {
 	auto& e = map[id];
 
 	if (e.samples_by_tid.empty()) {
@@ -76,6 +79,9 @@ auto gse::profile::update_entry(std::flat_map<id, entry>& map, const id id, cons
 		e.ema = duration;
 	}
 	else {
+		if (e.ema > sample_time{} && duration > e.ema * spike_ratio) {
+			++e.spike_count;
+		}
 		const double a = ema_alpha.load(std::memory_order_relaxed);
 		e.ema = a * duration + (1.0 - a) * e.ema;
 	}
@@ -83,6 +89,7 @@ auto gse::profile::update_entry(std::flat_map<id, entry>& map, const id id, cons
 	e.last = duration;
 	if (duration > e.peak) {
 		e.peak = duration;
+		e.peak_frame = frame_index;
 	}
 
 	++e.samples_by_tid[thread_id];
@@ -99,7 +106,14 @@ auto gse::profile::ingest_frame() -> void {
 	}
 	last_generation.store(fv.generation, std::memory_order_relaxed);
 
+	if (const auto remaining = warmup_remaining.load(std::memory_order_relaxed); remaining > 0) {
+		warmup_remaining.store(remaining - 1, std::memory_order_relaxed);
+		return;
+	}
+
 	const auto hidden = trace::hidden_ids_snapshot();
+
+	const auto frame_index = frame_count.load(std::memory_order_relaxed);
 
 	std::unique_lock lk(state_mutex);
 	auto& agg = storage_for(domain::cpu);
@@ -108,7 +122,7 @@ auto gse::profile::ingest_frame() -> void {
 		if (n.open || hidden.contains(n.id)) {
 			continue;
 		}
-		update_entry(agg, n.id, sample_time(n.self), n.trace_id);
+		update_entry(agg, n.id, sample_time(n.self), n.trace_id, frame_index);
 	}
 
 	frame_count.fetch_add(1, std::memory_order_relaxed);
@@ -178,12 +192,14 @@ auto gse::profile::record_frame(const trace::frame_view& view) -> void {
 }
 
 auto gse::profile::ingest_gpu_sample(const id pass_id, const sample_time duration) -> void {
-	if (!is_enabled.load(std::memory_order_relaxed)) {
+	if (!is_enabled.load(std::memory_order_relaxed) || warming_up()) {
 		return;
 	}
 
+	const auto frame_index = frame_count.load(std::memory_order_relaxed);
+
 	std::unique_lock lk(state_mutex);
-	update_entry(storage_for(domain::gpu), pass_id, duration, 0);
+	update_entry(storage_for(domain::gpu), pass_id, duration, 0, frame_index);
 }
 
 auto gse::profile::lookup(const id id, const domain domain) -> std::optional<row> {
@@ -240,6 +256,19 @@ auto gse::profile::alpha() -> double {
 	return ema_alpha.load(std::memory_order_relaxed);
 }
 
+auto gse::profile::set_warmup_frames(const std::uint64_t frames) -> void {
+	warmup_target.store(frames, std::memory_order_relaxed);
+	warmup_remaining.store(frames, std::memory_order_relaxed);
+}
+
+auto gse::profile::warmup_frames() -> std::uint64_t {
+	return warmup_target.load(std::memory_order_relaxed);
+}
+
+auto gse::profile::warming_up() -> bool {
+	return warmup_remaining.load(std::memory_order_relaxed) > 0;
+}
+
 auto gse::profile::set_enabled(const bool enabled) -> void {
 	is_enabled.store(enabled, std::memory_order_relaxed);
 }
@@ -255,6 +284,7 @@ auto gse::profile::reset() -> void {
 			map.clear();
 		}
 		frame_count.store(0, std::memory_order_relaxed);
+		warmup_remaining.store(0, std::memory_order_relaxed);
 	}
 
 	std::lock_guard lock(recorded_mutex);
@@ -310,12 +340,14 @@ auto gse::profile::write_section(std::ofstream& out, const std::string_view titl
 	}
 
 	const auto header = std::format(
-		"{:<{}} {:>13} {:>13} {:>13} {:>13} {:>7} {:>8} {:>14} {:>9}",
+		"{:<{}} {:>13} {:>13} {:>13} {:>10} {:>7} {:>13} {:>7} {:>8} {:>14} {:>9}",
 		"tag",
 		tag_width,
 		"per/f",
 		"avg",
 		"peak",
+		"peak@f",
+		"spikes",
 		"last",
 		"% top",
 		"% frame",
@@ -335,12 +367,14 @@ auto gse::profile::write_section(std::ofstream& out, const std::string_view titl
 		const auto total = r.ema * static_cast<double>(r.sample_count);
 
 		out << std::format(
-			"{:<{}} {:>10.2f:us} {:>10.2f:us} {:>10.2f:us} {:>10.2f:us} {:>6.1f}% {:>7.1f}% {:>11.2f:ms} {:>9.2f}\n",
+			"{:<{}} {:>10.2f:us} {:>10.2f:us} {:>10.2f:us} {:>10} {:>7} {:>10.2f:us} {:>6.1f}% {:>7.1f}% {:>11.2f:ms} {:>9.2f}\n",
 			r.id.tag(),
 			tag_width,
 			r.per_frame,
 			r.ema,
 			r.peak,
+			r.peak_frame,
+			r.spike_count,
 			r.last,
 			pct_top,
 			pct_frame,
@@ -350,6 +384,86 @@ auto gse::profile::write_section(std::ofstream& out, const std::string_view titl
 	}
 
 	out << '\n';
+}
+
+auto gse::profile::stale_run(const std::filesystem::directory_entry& entry, const std::string_view prefix) -> bool {
+	const std::string name = entry.path().filename().native_encoded_string();
+	const std::string_view digits = std::string_view(name).substr(prefix.size());
+
+	std::uint32_t pid = 0;
+	if (std::from_chars(digits.data(), digits.data() + digits.size(), pid).ec != std::errc{}) {
+		return false;
+	}
+
+	if (void* owner = win32::OpenProcess(win32::process_query_limited_information, 0, pid)) {
+		win32::CloseHandle(owner);
+		return false;
+	}
+
+	std::error_code ec;
+	return std::filesystem::is_empty(entry.path(), ec);
+}
+
+auto gse::profile::prune_runs(const std::filesystem::path& dir, const std::string_view prefix) -> void {
+	std::error_code ec;
+	std::vector<std::pair<std::filesystem::file_time_type, std::filesystem::path>> existing;
+
+	for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+		if (!entry.is_directory(ec) || !entry.path().filename().native_encoded_string().starts_with(prefix)) {
+			continue;
+		}
+		if (stale_run(entry, prefix)) {
+			std::filesystem::remove_all(entry.path(), ec);
+			continue;
+		}
+		existing.emplace_back(entry.last_write_time(ec), entry.path());
+	}
+
+	std::ranges::sort(existing, std::ranges::greater{}, [](const auto& row) {
+		return row.first;
+	});
+
+	for (const auto& stale : existing | std::views::drop(runs_kept - 1) | std::views::values) {
+		std::filesystem::remove_all(stale, ec);
+	}
+}
+
+auto gse::profile::resolve_run_dir() -> std::filesystem::path {
+	const std::filesystem::path& root = config::profile_dir();
+	const std::string prefix = std::format("{}.", config::executable_stem());
+	const std::filesystem::path dir = root / std::format("{}{}", prefix, win32::GetCurrentProcessId());
+
+	std::error_code ec;
+	std::filesystem::remove_all(dir, ec);
+	prune_runs(root, prefix);
+	std::filesystem::create_directories(dir, ec);
+	return dir;
+}
+
+auto gse::profile::run_dir() -> const std::filesystem::path& {
+	static const std::filesystem::path dir = resolve_run_dir();
+	return dir;
+}
+
+auto gse::profile::latest_run_dir(const std::string_view stem) -> std::filesystem::path {
+	const std::string prefix = std::format("{}.", stem);
+
+	std::error_code ec;
+	std::filesystem::path newest;
+	std::filesystem::file_time_type newest_time;
+
+	for (const auto& entry : std::filesystem::directory_iterator(config::profile_dir(), ec)) {
+		if (!entry.is_directory(ec) || !entry.path().filename().native_encoded_string().starts_with(prefix)) {
+			continue;
+		}
+		const std::filesystem::file_time_type stamp = entry.last_write_time(ec);
+		if (newest.empty() || stamp > newest_time) {
+			newest = entry.path();
+			newest_time = stamp;
+		}
+	}
+
+	return newest;
 }
 
 auto gse::profile::dump(const std::filesystem::path& path) -> void {
@@ -402,12 +516,20 @@ auto gse::profile::dump(const std::filesystem::path& path) -> void {
 		alpha()
 	);
 	out << std::format(
-		"dropped trace events: {}    abandoned spans: {}\n",
+		"dropped trace events: {}    abandoned spans: {}    warmup frames discarded: {}{}\n",
 		trace::dropped_events(),
-		trace::abandoned_spans()
+		trace::abandoned_spans(),
+		warmup_frames(),
+		warming_up() ? "  (STILL WARMING UP - rows below are empty or partial)" : ""
 	);
 	out << "sorted by per/f = avg * calls/f (real per-frame cost).  % top = per/f relative to top row.  % frame = "
-		   "per/f / frame_time.  Worker rows can sum > 100% (parallel).\n\n";
+		   "per/f / frame_time.  Worker rows can sum > 100% (parallel).\n";
+	out << std::format(
+		"peak@f = frame index the peak was set on (0 = first counted frame, warmup excluded).  spikes = samples over "
+		"{:.0f}x the running avg.  A large peak with spikes <= 1 is a one-off, not a workload.  GPU rows attribute to "
+		"the frame that ingested the sample, which trails the frame that produced it.\n\n",
+		spike_ratio
+	);
 
 	write_section(out, "CPU - Main Thread (sequential, blocks the frame)", main_rows, frame_time);
 	write_section(out, "CPU - Workers (parallel; sums can exceed 100%)", worker_rows, frame_time);
@@ -820,6 +942,8 @@ auto gse::profile::fill_records(const domain domain, std::vector<report_record>&
 			.peak = row.peak,
 			.calls_per_frame = row.calls_per_frame,
 			.sample_count = row.sample_count,
+			.peak_frame = row.peak_frame,
+			.spike_count = row.spike_count,
 			.dominant_tid = row.dominant_tid,
 		});
 	}

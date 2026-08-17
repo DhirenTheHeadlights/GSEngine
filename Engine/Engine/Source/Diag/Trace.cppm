@@ -114,6 +114,8 @@ export namespace gse::trace {
 	constexpr std::uint32_t gpu_virtual_tid = 0xFFFFFFFFu;
 	constexpr std::uint32_t gpu_stats_virtual_tid = 0xFFFFFFFEu;
 	constexpr std::uint32_t gpu_compute_virtual_tid = 0xFFFFFFFDu;
+	constexpr std::uint32_t gpu_video_encode_virtual_tid = 0xFFFFFFFCu;
+	constexpr std::uint32_t gpu_virtual_tid_min = gpu_video_encode_virtual_tid;
 
 	auto begin_async_at(
 		id id,

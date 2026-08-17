@@ -63,12 +63,21 @@ export namespace gse::renderer {
 		]]
 		bool profile_frame_recording = false;
 
+		[[
+			= gse::settings::describe<"Frames to discard before the profiler starts accumulating. Boot and "
+									  "first-use pipeline warmup produce multi-millisecond frames that would "
+									  "otherwise pin every peak for the rest of the run. Editing this re-arms "
+									  "the countdown, so it doubles as a way to restart a capture.">{},
+			= gse::settings::range<0, 2000>{}
+		]]
+		int profile_warmup_frames = static_cast<int>(profile::default_warmup_frames);
+
 		actions::handle dump_profile_action;
 		vec2f last_viewport{ 1920.f, 1080.f };
 		bool last_hot_reload_enabled = false;
 		bool last_profile_aggregator_enabled = true;
 		bool last_profile_frame_recording = false;
-		bool render_world = true;
+		int last_profile_warmup_frames = static_cast<int>(profile::default_warmup_frames);
 	};
 
 	[[= gse::system_init{}]]

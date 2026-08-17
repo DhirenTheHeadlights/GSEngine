@@ -326,6 +326,32 @@ auto gse::profile::write_summary(const run_summary& summary, const std::filesyst
 	if (summary.rows.size() > summary_row_limit) {
 		out << std::format("\n({} further tags omitted)\n", summary.rows.size() - summary_row_limit);
 	}
+
+	std::vector<row> gpu_rows;
+	top_n(summary_row_limit * 2, domain::gpu, gpu_rows);
+	std::ranges::sort(gpu_rows, std::greater{}, &row::ema);
+
+	if (!gpu_rows.empty()) {
+		out << "\nper-pass gpu time from timestamp queries, ema over the run, sorted by ema.\n\n";
+
+		std::size_t pass_width = std::string_view("pass").size();
+		for (const row& r : gpu_rows) {
+			pass_width = std::max(pass_width, r.id.tag().size());
+		}
+
+		out << std::format("{:<{}}  {:>13}  {:>13}  {:>8}\n", "pass", pass_width, "ema us", "peak us", "samples");
+
+		for (const row& r : gpu_rows) {
+			out << std::format(
+				"{:<{}}  {:>10.2f:us}  {:>10.2f:us}  {:>8}\n",
+				r.id.tag(),
+				pass_width,
+				r.ema,
+				r.peak,
+				r.sample_count
+			);
+		}
+	}
 }
 
 auto gse::profile::write_diff(const run_diff& diff, const std::filesystem::path& path) -> void {

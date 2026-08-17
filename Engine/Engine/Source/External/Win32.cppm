@@ -154,11 +154,19 @@ export namespace gse::win32 {
 	using ::GetStdHandle;
 	using ::GetFileType;
 	using ::ShellExecuteW;
+	using ::VirtualQuery;
+	using ::MEMORY_BASIC_INFORMATION;
 
+	constexpr DWORD mem_commit = MEM_COMMIT;
+	constexpr DWORD mem_reserve = MEM_RESERVE;
+	constexpr DWORD mem_image = MEM_IMAGE;
+	constexpr DWORD mem_mapped = MEM_MAPPED;
+	constexpr DWORD mem_private = MEM_PRIVATE;
 	constexpr DWORD context_full = CONTEXT_FULL;
 	constexpr DWORD unw_flag_nhandler = UNW_FLAG_NHANDLER;
 	constexpr DWORD duplicate_same_access = DUPLICATE_SAME_ACCESS;
 	constexpr DWORD process_dup_handle = PROCESS_DUP_HANDLE;
+	constexpr DWORD process_query_limited_information = PROCESS_QUERY_LIMITED_INFORMATION;
 	constexpr DWORD get_module_handle_ex_flag_from_address = GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS;
 	constexpr DWORD get_module_handle_ex_flag_unchanged_refcount = GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT;
 	constexpr int max_path = MAX_PATH;
