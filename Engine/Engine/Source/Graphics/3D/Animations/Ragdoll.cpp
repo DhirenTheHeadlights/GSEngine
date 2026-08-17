@@ -64,7 +64,6 @@ auto gse::animation::ragdoll(context& ctx, data& d, const channel_read<ragdoll_r
 
 			motion->body = physics::dynamic_body{
 				.mass = bone.mass,
-				.moment_of_inertia = physics::moment_of_inertia_of(bone.shape, bone.mass),
 			};
 			collision->resolve_collisions = true;
 		}

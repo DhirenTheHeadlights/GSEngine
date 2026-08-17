@@ -2,6 +2,7 @@ export module gse.physics:bounding_box;
 
 import std;
 
+import :convex_hull;
 import :transform_component;
 
 import gse.math;
@@ -21,8 +22,12 @@ export namespace gse::physics {
 		length half_height;
 	};
 
+	struct hull_shape {
+		std::uint32_t index = 0;
+	};
+
 	struct collision_shape {
-		using variant_type = std::variant<box_shape, sphere_shape, capsule_shape>;
+		using variant_type = std::variant<box_shape, sphere_shape, capsule_shape, hull_shape>;
 
 		variant_type value;
 
@@ -30,6 +35,7 @@ export namespace gse::physics {
 		collision_shape(box_shape shape);
 		collision_shape(sphere_shape shape);
 		collision_shape(capsule_shape shape);
+		collision_shape(hull_shape shape);
 		collision_shape(const collision_shape&) = default;
 		collision_shape(collision_shape&&) = default;
 		auto operator=(const collision_shape&) -> collision_shape& = default;
@@ -40,6 +46,21 @@ export namespace gse::physics {
 	};
 
 	using bone_shape = collision_shape;
+
+	struct mass_properties {
+		mat3<inverse_inertia> inv_inertia_body;
+		vec3<displacement> centroid;
+	};
+
+	auto inverse_diagonal_inertia(
+		const vec3<inertia>& moments
+	) -> mat3<inverse_inertia>;
+
+	auto mass_properties_of(
+		const collision_shape& shape,
+		mass m,
+		const convex_hull* hull
+	) -> mass_properties;
 }
 
 export namespace gse {
@@ -101,6 +122,11 @@ export namespace gse {
 			const physics::capsule_shape& shape
 		);
 
+		bounding_box(
+			const physics::transform_component& tc,
+			const physics::convex_hull& hull
+		);
+
 		explicit bounding_box(
 			const physics::transform_component& tc
 		);
@@ -156,6 +182,10 @@ gse::physics::collision_shape::collision_shape(const capsule_shape shape)
 	: value(shape) {
 }
 
+gse::physics::collision_shape::collision_shape(const hull_shape shape)
+	: value(shape) {
+}
+
 auto gse::physics::collision_shape::index() const -> std::size_t {
 	return value.index();
 }
@@ -166,6 +196,75 @@ auto gse::match(physics::collision_shape& shape) -> variant<physics::collision_s
 
 auto gse::match(const physics::collision_shape& shape) -> variant<const physics::collision_shape::variant_type&> {
 	return variant<const physics::collision_shape::variant_type&>(shape.value);
+}
+
+auto gse::physics::inverse_diagonal_inertia(const vec3<inertia>& moments) -> mat3<inverse_inertia> {
+	mat3<inverse_inertia> result;
+	for (std::size_t axis = 0; axis < 3; ++axis) {
+		if (moments[axis] > inertia{}) {
+			result[axis][axis] = 1.f / moments[axis];
+		}
+	}
+	return result;
+}
+
+auto gse::physics::mass_properties_of(const collision_shape& shape, const mass m, const convex_hull* hull) -> mass_properties {
+	mass_properties result;
+	gse::match(shape)
+		.if_is([&](const box_shape& s) {
+			const auto x = s.size.x() * s.size.x();
+			const auto y = s.size.y() * s.size.y();
+			const auto z = s.size.z() * s.size.z();
+			const inertia ix = m * (y + z) / 12.f / (rad * rad);
+			const inertia iy = m * (x + z) / 12.f / (rad * rad);
+			const inertia iz = m * (x + y) / 12.f / (rad * rad);
+			result = {
+				.inv_inertia_body = inverse_diagonal_inertia(vec3<inertia>(ix, iy, iz)),
+				.centroid = {}
+			};
+		})
+		.else_if_is([&](const sphere_shape& s) {
+			const inertia i = m * s.radius * s.radius * (2.f / 5.f) / (rad * rad);
+			result = {
+				.inv_inertia_body = inverse_diagonal_inertia(vec3<inertia>(i, i, i)),
+				.centroid = {}
+			};
+		})
+		.else_if_is([&](const capsule_shape& s) {
+			const float pi = std::numbers::pi_v<float>;
+			const auto r_squared = s.radius * s.radius;
+			const auto h_squared = s.half_height * s.half_height;
+			const volume barrel_volume = 2.f * pi * r_squared * s.half_height;
+			const volume cap_volume = 4.f / 3.f * pi * r_squared * s.radius;
+			const volume total_volume = barrel_volume + cap_volume;
+			if (total_volume <= volume{}) {
+				return;
+			}
+			const mass barrel_mass = m * (barrel_volume / total_volume);
+			const mass cap_mass = m - barrel_mass;
+			const inertia axial = (barrel_mass * r_squared * 0.5f + cap_mass * r_squared * (2.f / 5.f)) / (rad * rad);
+			const inertia transverse = (barrel_mass * (h_squared / 3.f + r_squared * 0.25f) +
+				cap_mass * (h_squared + s.half_height * s.radius * 0.75f + r_squared * (2.f / 5.f))) / (rad * rad);
+			result = {
+				.inv_inertia_body = inverse_diagonal_inertia(vec3<inertia>(transverse, axial, transverse)),
+				.centroid = {}
+			};
+		})
+		.else_if_is([&](const hull_shape&) {
+			if (hull == nullptr || !hull->valid()) {
+				return;
+			}
+			const auto terms = integrate_hull(*hull);
+			if (terms.total_volume <= volume{} || m <= mass{}) {
+				return;
+			}
+			const auto scale = m / (terms.total_volume * kilograms_per_cubic_meter(1.f));
+			result = {
+				.inv_inertia_body = (terms.unit_density_tensor * scale).inverse(),
+				.centroid = terms.centroid
+			};
+		});
+	return result;
 }
 
 gse::bounding_box::bounding_box(const bounding_box&) = default;
@@ -194,6 +293,10 @@ gse::bounding_box::bounding_box(const physics::transform_component& tc, const ph
 
 gse::bounding_box::bounding_box(const physics::transform_component& tc, const physics::capsule_shape& shape)
 	: m_center(tc.position), m_orientation(tc.orientation), m_half_extents(shape.radius, shape.half_height + shape.radius, shape.radius) {
+}
+
+gse::bounding_box::bounding_box(const physics::transform_component& tc, const physics::convex_hull& hull)
+	: m_center(tc.position), m_orientation(tc.orientation), m_half_extents(physics::hull_half_extents(hull)) {
 }
 
 gse::bounding_box::bounding_box(const physics::transform_component& tc)

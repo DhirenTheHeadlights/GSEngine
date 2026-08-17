@@ -477,7 +477,8 @@ ClipVertexPoly clip_feature_polygon(
 ClippedFaceContacts build_clipped_face_contacts(
     float3 center_a, float3 he_a, float3 axes_a[3],
     float3 center_b, float3 he_b, float3 axes_b[3],
-    float3 collision_normal
+    float3 collision_normal,
+    bool prefer_reference_a
 ) {
     ClippedFaceContacts result;
     result.vertices.count = 0;
@@ -498,7 +499,9 @@ ClippedFaceContacts build_clipped_face_contacts(
         return result;
     }
 
-    bool reference_is_a = info1.max_dot >= info2.max_dot - 1e-4;
+    bool reference_is_a = abs(info1.max_dot - info2.max_dot) <= 0.02
+        ? prefer_reference_a
+        : info1.max_dot > info2.max_dot;
     FaceInfo reference_info = reference_is_a ? info1 : info2;
     FaceInfo incident_info = reference_is_a ? info2 : info1;
 
@@ -630,6 +633,210 @@ struct ContactResult {
     bool reference_is_a;
 };
 
+struct ObbQuery {
+    float3 closest;
+    float3 normal;
+    float signed_distance;
+};
+
+float3 closest_point_on_segment(float3 a, float3 b, float3 p) {
+    float3 ab = b - a;
+    if (length(ab) < 1e-8) {
+        return a;
+    }
+    float3 ap = p - a;
+    float t = clamp(dot(ap, ab) / dot(ab, ab), 0.0, 1.0);
+    return a + ab * t;
+}
+
+void capsule_endpoints(float3 center, float3 axis, float half_height, out float3 e0, out float3 e1) {
+    e0 = center + axis * half_height;
+    e1 = center - axis * half_height;
+}
+
+void segment_segment_closest_params(float3 p1, float3 q1, float3 p2, float3 q2, out float s, out float t) {
+    float3 d1 = q1 - p1;
+    float3 d2 = q2 - p2;
+    float3 r = p1 - p2;
+
+    float a = dot(d1, d1);
+    float e = dot(d2, d2);
+    float f = dot(d2, r);
+
+    const float eps = 1e-4 * 1e-4;
+
+    if (a <= eps && e <= eps) {
+        s = 0.0;
+        t = 0.0;
+        return;
+    }
+
+    if (a <= eps) {
+        s = 0.0;
+        t = clamp(f / e, 0.0, 1.0);
+        return;
+    }
+
+    float c = dot(d1, r);
+    if (e <= eps) {
+        t = 0.0;
+        s = clamp(-c / a, 0.0, 1.0);
+        return;
+    }
+
+    float b_val = dot(d1, d2);
+    float denom = a * e - b_val * b_val;
+    s = (denom > eps * eps) ? clamp((b_val * f - c * e) / denom, 0.0, 1.0) : 0.0;
+    t = (b_val * s + f) / e;
+    if (t < 0.0) {
+        t = 0.0;
+        s = clamp(-c / a, 0.0, 1.0);
+    } else if (t > 1.0) {
+        t = 1.0;
+        s = clamp((b_val - c) / a, 0.0, 1.0);
+    }
+}
+
+ObbQuery query_obb(float3 center, float3 he, float3 axes[3], float3 point) {
+    float3 diff = point - center;
+    float3 local = float3(dot(axes[0], diff), dot(axes[1], diff), dot(axes[2], diff));
+
+    ObbQuery result;
+
+    if (abs(local.x) > he.x || abs(local.y) > he.y || abs(local.z) > he.z) {
+        float3 cp = center;
+        cp += axes[0] * clamp(local.x, -he.x, he.x);
+        cp += axes[1] * clamp(local.y, -he.y, he.y);
+        cp += axes[2] * clamp(local.z, -he.z, he.z);
+        float3 to_point = point - cp;
+        float dist = length(to_point);
+        result.closest = cp;
+        result.normal = (dist > 1e-6) ? normalize(to_point) : axes[0];
+        result.signed_distance = dist;
+        return result;
+    }
+
+    float depth_x = he.x - abs(local.x);
+    float depth_y = he.y - abs(local.y);
+    float depth_z = he.z - abs(local.z);
+
+    if (depth_x <= depth_y && depth_x <= depth_z) {
+        float axis_sign = local.x >= 0.0 ? 1.0 : -1.0;
+        float3 cp = center;
+        cp += axes[0] * (he.x * axis_sign);
+        cp += axes[1] * local.y;
+        cp += axes[2] * local.z;
+        result.closest = cp;
+        result.normal = axes[0] * axis_sign;
+        result.signed_distance = -depth_x;
+    } else if (depth_y <= depth_z) {
+        float axis_sign = local.y >= 0.0 ? 1.0 : -1.0;
+        float3 cp = center;
+        cp += axes[0] * local.x;
+        cp += axes[1] * (he.y * axis_sign);
+        cp += axes[2] * local.z;
+        result.closest = cp;
+        result.normal = axes[1] * axis_sign;
+        result.signed_distance = -depth_y;
+    } else {
+        float axis_sign = local.z >= 0.0 ? 1.0 : -1.0;
+        float3 cp = center;
+        cp += axes[0] * local.x;
+        cp += axes[1] * local.y;
+        cp += axes[2] * (he.z * axis_sign);
+        result.closest = cp;
+        result.normal = axes[2] * axis_sign;
+        result.signed_distance = -depth_z;
+    }
+
+    return result;
+}
+
+void segment_obb_query(float3 center, float3 he, float3 axes[3], float3 seg_start, float3 seg_end, out float3 best_pt, out ObbQuery best) {
+    float3 seg_pt = closest_point_on_segment(seg_start, seg_end, center);
+    best = query_obb(center, he, axes, seg_pt);
+    best_pt = seg_pt;
+
+    for (int iter = 0; iter < 3; iter++) {
+        seg_pt = closest_point_on_segment(seg_start, seg_end, best.closest);
+        ObbQuery probe = query_obb(center, he, axes, seg_pt);
+        if (probe.signed_distance < best.signed_distance) {
+            best = probe;
+            best_pt = seg_pt;
+        }
+    }
+
+    ObbQuery at_start = query_obb(center, he, axes, seg_start);
+    if (at_start.signed_distance < best.signed_distance) {
+        best = at_start;
+        best_pt = seg_start;
+    }
+
+    ObbQuery at_end = query_obb(center, he, axes, seg_end);
+    if (at_end.signed_distance < best.signed_distance) {
+        best = at_end;
+        best_pt = seg_end;
+    }
+}
+
+uint classify_box_face(float3 axes[3], float3 direction) {
+    float d0 = dot(axes[0], direction);
+    float d1 = dot(axes[1], direction);
+    float d2 = dot(axes[2], direction);
+
+    uint best = 0;
+    float best_dot = d0;
+    if (-d0 > best_dot) { best_dot = -d0; best = 1; }
+    if (d1 > best_dot) { best_dot = d1; best = 2; }
+    if (-d1 > best_dot) { best_dot = -d1; best = 3; }
+    if (d2 > best_dot) { best_dot = d2; best = 4; }
+    if (-d2 > best_dot) { best_dot = -d2; best = 5; }
+    return best;
+}
+
+float3 box_face_normal(float3 axes[3], uint face) {
+    if (face < 2) {
+        return axes[0] * (face == 0 ? 1.0 : -1.0);
+    }
+    if (face < 4) {
+        return axes[1] * (face == 2 ? 1.0 : -1.0);
+    }
+    return axes[2] * (face == 4 ? 1.0 : -1.0);
+}
+
+void classify_capsule_feature(float t, out uint type, out uint index) {
+    const float cap_threshold = 0.01;
+    if (t < cap_threshold) {
+        type = feature_vertex;
+        index = capsule_cap_a_index;
+        return;
+    }
+    if (t > 1.0 - cap_threshold) {
+        type = feature_vertex;
+        index = capsule_cap_b_index;
+        return;
+    }
+    type = feature_edge;
+    index = capsule_barrel_index;
+}
+
+float segment_param_of(float3 seg_start, float3 seg_end, float3 point) {
+    float3 seg_diff = seg_end - seg_start;
+    if (length(seg_diff) <= 1e-6) {
+        return 0.5;
+    }
+    return clamp(dot(point - seg_start, seg_diff) / dot(seg_diff, seg_diff), 0.0, 1.0);
+}
+
+SatResult make_sat_result(float3 normal, float separation, float margin) {
+    SatResult result;
+    result.valid = separation >= -margin;
+    result.normal = normal;
+    result.separation = separation;
+    result.is_speculative = separation < 0.0;
+    return result;
+}
+
 float3 support_obb(float3 center, float3 he, float3 axes[3], float3 dir) {
     float3 result = center;
     for (int i = 0; i < 3; i++) {
@@ -712,7 +919,8 @@ ContactResult generate_contacts(
     float3 center_a, float3 he_a, float3 axes_a[3],
     float3 center_b, float3 he_b, float3 axes_b[3],
     float3 normal,
-    float separation
+    float separation,
+    bool prefer_reference_a
 ) {
     ContactResult result;
     result.count = 0;
@@ -738,7 +946,8 @@ ContactResult generate_contacts(
     ClippedFaceContacts clipped = build_clipped_face_contacts(
         center_a, he_a, axes_a,
         center_b, he_b, axes_b,
-        normal
+        normal,
+        prefer_reference_a
     );
 
     if (clipped.valid) {
@@ -835,6 +1044,219 @@ ContactResult generate_contacts(
     return result;
 }
 
+SatResult shape_speculative(
+    uint lo_kind, float3 lo_center, float3 lo_he, float3 lo_params, float3 lo_axes[3],
+    uint hi_kind, float3 hi_center, float3 hi_params, float3 hi_axes[3],
+    float margin
+) {
+    if (lo_kind == shape_box && hi_kind == shape_sphere) {
+        ObbQuery q = query_obb(lo_center, lo_he, lo_axes, hi_center);
+        return make_sat_result(q.normal, hi_params.x - q.signed_distance, margin);
+    }
+
+    if (lo_kind == shape_box && hi_kind == shape_capsule) {
+        float3 seg_start;
+        float3 seg_end;
+        capsule_endpoints(hi_center, hi_axes[1], hi_params.y, seg_start, seg_end);
+        float3 seg_pt;
+        ObbQuery q;
+        segment_obb_query(lo_center, lo_he, lo_axes, seg_start, seg_end, seg_pt, q);
+        return make_sat_result(q.normal, hi_params.x - q.signed_distance, margin);
+    }
+
+    if (lo_kind == shape_sphere && hi_kind == shape_sphere) {
+        float3 diff = hi_center - lo_center;
+        float dist = length(diff);
+        float3 normal = (dist > 1e-6) ? normalize(diff) : float3(0, 1, 0);
+        return make_sat_result(normal, lo_params.x + hi_params.x - dist, margin);
+    }
+
+    if (lo_kind == shape_sphere && hi_kind == shape_capsule) {
+        float3 seg_start;
+        float3 seg_end;
+        capsule_endpoints(hi_center, hi_axes[1], hi_params.y, seg_start, seg_end);
+        float3 closest_on_seg = closest_point_on_segment(seg_start, seg_end, lo_center);
+        float3 diff = closest_on_seg - lo_center;
+        float dist = length(diff);
+        float3 normal = (dist > 1e-6) ? normalize(diff) : float3(0, 1, 0);
+        return make_sat_result(normal, lo_params.x + hi_params.x - dist, margin);
+    }
+
+    float3 a0;
+    float3 a1;
+    float3 b0;
+    float3 b1;
+    capsule_endpoints(lo_center, lo_axes[1], lo_params.y, a0, a1);
+    capsule_endpoints(hi_center, hi_axes[1], hi_params.y, b0, b1);
+
+    float s;
+    float t;
+    segment_segment_closest_params(a0, a1, b0, b1, s, t);
+    float3 closest_a = a0 + (a1 - a0) * s;
+    float3 closest_b = b0 + (b1 - b0) * t;
+
+    float3 diff = closest_b - closest_a;
+    float dist = length(diff);
+    float3 normal = (dist > 1e-6) ? normalize(diff) : float3(0, 1, 0);
+    return make_sat_result(normal, lo_params.x + hi_params.x - dist, margin);
+}
+
+ContactResult empty_contact_result() {
+    ContactResult result;
+    result.count = 0;
+    result.clipped_vertex_count = 0;
+    result.raw_candidate_count = 0;
+    result.unique_candidate_count = 0;
+    result.reference_face = 0;
+    result.incident_face = 0;
+    result.clipped_valid = false;
+    result.used_fallback = false;
+    result.reference_is_a = true;
+    return result;
+}
+
+void append_shape_contact(
+    inout ContactResult result,
+    float3 position_on_a,
+    float3 position_on_b,
+    uint type_a, uint index_a, uint side_a0, uint side_a1,
+    uint type_b, uint index_b, uint side_b0, uint side_b1
+) {
+    if (result.count >= 4) {
+        return;
+    }
+    result.candidates[result.count].position_on_a = position_on_a;
+    result.candidates[result.count].position_on_b = position_on_b;
+    result.candidates[result.count].feature_hi = pack_feature_component(type_a, index_a, side_a0, side_a1);
+    result.candidates[result.count].feature_lo = pack_feature_component(type_b, index_b, side_b0, side_b1);
+    result.count += 1;
+    result.raw_candidate_count = uint(result.count);
+    result.unique_candidate_count = uint(result.count);
+}
+
+ContactResult shape_contacts(
+    uint lo_kind, float3 lo_center, float3 lo_he, float3 lo_params, float3 lo_axes[3],
+    uint hi_kind, float3 hi_center, float3 hi_params, float3 hi_axes[3],
+    float3 normal
+) {
+    ContactResult result = empty_contact_result();
+
+    float3 tangent_u;
+    if (abs(normal.x) < 0.9) tangent_u = normalize(cross(normal, float3(1, 0, 0)));
+    else tangent_u = normalize(cross(normal, float3(0, 1, 0)));
+    float3 tangent_v = cross(normal, tangent_u);
+
+    if (lo_kind == shape_box && hi_kind == shape_sphere) {
+        float radius = hi_params.x;
+        ObbQuery q = query_obb(lo_center, lo_he, lo_axes, hi_center);
+        uint box_face = classify_box_face(lo_axes, normal);
+
+        if (dot(normal, box_face_normal(lo_axes, box_face)) > 0.9) {
+            float ring_radius = radius * 0.3;
+            for (uint i = 0; i < 4; i++) {
+                float angle = float(i) * (2.0 * 3.14159265358979 / 4.0);
+                float3 offset = tangent_u * (ring_radius * cos(angle)) + tangent_v * (ring_radius * sin(angle));
+                float3 box_point = q.closest + offset;
+                float3 sphere_point = hi_center + normalize(box_point - hi_center) * radius;
+                append_shape_contact(
+                    result,
+                    box_point, sphere_point,
+                    feature_face, box_face, feature_side_none, feature_side_none,
+                    feature_face, sphere_surface_index, i, feature_side_none
+                );
+            }
+            return result;
+        }
+
+        append_shape_contact(
+            result,
+            q.closest, hi_center - normal * radius,
+            feature_face, box_face, feature_side_none, feature_side_none,
+            feature_face, sphere_surface_index, feature_side_none, feature_side_none
+        );
+        return result;
+    }
+
+    if (lo_kind == shape_box && hi_kind == shape_capsule) {
+        float radius = hi_params.x;
+        float3 seg_start;
+        float3 seg_end;
+        capsule_endpoints(hi_center, hi_axes[1], hi_params.y, seg_start, seg_end);
+        float3 seg_pt;
+        ObbQuery q;
+        segment_obb_query(lo_center, lo_he, lo_axes, seg_start, seg_end, seg_pt, q);
+
+        uint cap_type;
+        uint cap_index;
+        classify_capsule_feature(segment_param_of(seg_start, seg_end, seg_pt), cap_type, cap_index);
+
+        append_shape_contact(
+            result,
+            q.closest, seg_pt - normal * radius,
+            feature_face, classify_box_face(lo_axes, normal), feature_side_none, feature_side_none,
+            cap_type, cap_index, feature_side_none, feature_side_none
+        );
+        return result;
+    }
+
+    if (lo_kind == shape_sphere && hi_kind == shape_sphere) {
+        append_shape_contact(
+            result,
+            lo_center + normal * lo_params.x, hi_center - normal * hi_params.x,
+            feature_face, sphere_surface_index, feature_side_none, feature_side_none,
+            feature_face, sphere_surface_index, feature_side_none, feature_side_none
+        );
+        return result;
+    }
+
+    if (lo_kind == shape_sphere && hi_kind == shape_capsule) {
+        float3 seg_start;
+        float3 seg_end;
+        capsule_endpoints(hi_center, hi_axes[1], hi_params.y, seg_start, seg_end);
+        float3 closest_on_seg = closest_point_on_segment(seg_start, seg_end, lo_center);
+
+        uint cap_type;
+        uint cap_index;
+        classify_capsule_feature(segment_param_of(seg_start, seg_end, closest_on_seg), cap_type, cap_index);
+
+        append_shape_contact(
+            result,
+            lo_center + normal * lo_params.x, closest_on_seg - normal * hi_params.x,
+            feature_face, sphere_surface_index, feature_side_none, feature_side_none,
+            cap_type, cap_index, feature_side_none, feature_side_none
+        );
+        return result;
+    }
+
+    float3 a0;
+    float3 a1;
+    float3 b0;
+    float3 b1;
+    capsule_endpoints(lo_center, lo_axes[1], lo_params.y, a0, a1);
+    capsule_endpoints(hi_center, hi_axes[1], hi_params.y, b0, b1);
+
+    float s;
+    float t;
+    segment_segment_closest_params(a0, a1, b0, b1, s, t);
+    float3 closest_a = a0 + (a1 - a0) * s;
+    float3 closest_b = b0 + (b1 - b0) * t;
+
+    uint type_a;
+    uint index_a;
+    uint type_b;
+    uint index_b;
+    classify_capsule_feature(s, type_a, index_a);
+    classify_capsule_feature(t, type_b, index_b);
+
+    append_shape_contact(
+        result,
+        closest_a + normal * lo_params.x, closest_b - normal * hi_params.x,
+        type_a, index_a, feature_side_none, feature_side_none,
+        type_b, index_b, feature_side_none, feature_side_none
+    );
+    return result;
+}
+
 void record_narrow_phase_debug(
     uint body_a_idx,
     uint body_b_idx,
@@ -884,24 +1306,51 @@ void record_narrow_phase_debug(
 bool warm_start_lookup(uint ba, uint bb, uint feature_hi, uint feature_lo, out contact_constraint result) {
     result = (contact_constraint)0;
 
+    if (pc.apply_all_body_inputs != 0 && pc.preserve_accel_weight == 0) {
+        return false;
+    }
+
     uint64_t feature_key = ((uint64_t)feature_hi << 32) | (uint64_t)feature_lo;
 
-    for (uint i = 0; i < max_contacts; i++) {
-        contact_constraint ws = warm_starts[i];
-        if (ws.body_a == ws.body_b) break;
+    uint offset = contact_offsets[ba];
+    uint count = contact_counts[ba];
+    uint matches = 0;
+    for (uint k = 0; k < count; k++) {
+        uint slot = offset + k;
+        if (slot >= max_contact_adjacency) {
+            break;
+        }
+        uint ci = contact_adjacency[slot];
+        if (ci >= max_contacts) {
+            continue;
+        }
+        contact_constraint ws = warm_starts[ci];
         if (ws.body_a == ba && ws.body_b == bb && ws.feature_key == feature_key) {
-            result = ws;
-            return true;
+            if (matches == 0) {
+                result = ws;
+            }
+            matches++;
         }
     }
 
-    return false;
+    if (matches > 0) {
+        uint ignored;
+        InterlockedAdd(collision_state[state_tick_hash_base_index + 12], 1u, ignored);
+        if (matches > 1) {
+            InterlockedAdd(collision_state[state_tick_hash_base_index + 11], 1u, ignored);
+        }
+    }
+
+    return matches > 0;
 }
 
 void collision_narrow_phase(uint3 dispatch_id) {
     uint pair_idx = dispatch_id.x;
 
     uint pair_count = min(collision_pairs[0], max_collision_pairs);
+    if (pair_idx == 0) {
+        InterlockedAdd(collision_state[state_pair_count_index], pair_count);
+    }
     if (pair_idx >= pair_count) return;
 
     uint body_a_idx = collision_pairs[1 + pair_idx * 2];
@@ -912,18 +1361,92 @@ void collision_narrow_phase(uint3 dispatch_id) {
 
     float3 center_a = ba.position.xyz;
     float3 center_b = bb.position.xyz;
-    float3 he_a = ba.half_extents.xyz;
-    float3 he_b = bb.half_extents.xyz;
 
     mat3 rot_a = rotation_from_quat(ba.orientation);
     mat3 rot_b = rotation_from_quat(bb.orientation);
 
+    float3 shape_center_a = body_origin(center_a, ba.orientation, ba.com_local.xyz);
+    float3 shape_center_b = body_origin(center_b, bb.orientation, bb.com_local.xyz);
+    float3 he_a = ba.half_extents.xyz;
+    float3 he_b = bb.half_extents.xyz;
+
     float3 axes_a[3] = { rot_a[0], rot_a[1], rot_a[2] };
     float3 axes_b[3] = { rot_b[0], rot_b[1], rot_b[2] };
 
-    SatResult sat = sat_speculative(center_a, he_a, axes_a, center_b, he_b, axes_b, solver_config_data[0].speculative_margin);
+    uint kind_a = ba.shape_kind;
+    uint kind_b = bb.shape_kind;
 
-    if (!sat.valid) return;
+    SatResult sat;
+    ContactResult contacts;
+    bool swap_shapes = false;
+    float3 relative_velocity = ba.velocity.xyz - bb.velocity.xyz;
+    float3 center_delta = center_b - center_a;
+    float center_distance = length(center_delta);
+    float closing_speed = center_distance > 1e-6
+        ? max(dot(relative_velocity, center_delta) / center_distance, 0.0)
+        : length(relative_velocity);
+    float pair_margin = clamp(
+        closing_speed * sqrt(pc.h_squared) * 2.0,
+        solver_config_data[0].speculative_margin_floor,
+        solver_config_data[0].speculative_margin
+    );
+
+    if (kind_a == shape_box && kind_b == shape_box) {
+        sat = sat_speculative(shape_center_a, he_a, axes_a, shape_center_b, he_b, axes_b, pair_margin);
+        if (!sat.valid) return;
+
+        contacts = generate_contacts(shape_center_a, he_a, axes_a, shape_center_b, he_b, axes_b, sat.normal, sat.separation, body_a_idx < body_b_idx);
+    }
+    else {
+        swap_shapes = kind_a > kind_b;
+
+        if (swap_shapes) {
+            sat = shape_speculative(
+                kind_b, shape_center_b, he_b, bb.shape_params.xyz, axes_b,
+                kind_a, shape_center_a, ba.shape_params.xyz, axes_a,
+                pair_margin
+            );
+        }
+        else {
+            sat = shape_speculative(
+                kind_a, shape_center_a, he_a, ba.shape_params.xyz, axes_a,
+                kind_b, shape_center_b, bb.shape_params.xyz, axes_b,
+                pair_margin
+            );
+        }
+        if (!sat.valid) return;
+
+        float3 manifold_normal = sat.normal;
+        if (swap_shapes) {
+            sat.normal = -sat.normal;
+
+            contacts = shape_contacts(
+                kind_b, shape_center_b, he_b, bb.shape_params.xyz, axes_b,
+                kind_a, shape_center_a, ba.shape_params.xyz, axes_a,
+                manifold_normal
+            );
+
+            for (int ci = 0; ci < 4; ci++) {
+                if (ci >= contacts.count) {
+                    break;
+                }
+                float3 swapped_position = contacts.candidates[ci].position_on_a;
+                contacts.candidates[ci].position_on_a = contacts.candidates[ci].position_on_b;
+                contacts.candidates[ci].position_on_b = swapped_position;
+
+                uint swapped_feature = contacts.candidates[ci].feature_hi;
+                contacts.candidates[ci].feature_hi = contacts.candidates[ci].feature_lo;
+                contacts.candidates[ci].feature_lo = swapped_feature;
+            }
+        }
+        else {
+            contacts = shape_contacts(
+                kind_a, shape_center_a, he_a, ba.shape_params.xyz, axes_a,
+                kind_b, shape_center_b, bb.shape_params.xyz, axes_b,
+                manifold_normal
+            );
+        }
+    }
 
     float3 tangent_u;
     if (abs(sat.normal.x) < 0.9) tangent_u = normalize(cross(sat.normal, float3(1, 0, 0)));
@@ -931,7 +1454,6 @@ void collision_narrow_phase(uint3 dispatch_id) {
     float3 tangent_v = cross(sat.normal, tangent_u);
     float3 constraint_normal = -sat.normal;
 
-    ContactResult contacts = generate_contacts(center_a, he_a, axes_a, center_b, he_b, axes_b, sat.normal, sat.separation);
     record_narrow_phase_debug(body_a_idx, body_b_idx, sat, contacts);
 
     uint local_count = uint(contacts.count);
@@ -973,22 +1495,26 @@ void collision_narrow_phase(uint3 dispatch_id) {
         bool reuse_cached_sticking =
             reuse_cached_tangent &&
             cached_ws.sticking != 0;
+        bool restore_penalty =
+            has_cached &&
+            (cached_ws.lambda.x < -1e-3 || current_normal_gap < solver_config_data[0].stick_threshold);
 
         float3 init_lambda = float3(0, 0, 0);
         float3 init_penalty = float3(solver_config_data[0].penalty_min, solver_config_data[0].penalty_min, solver_config_data[0].penalty_min);
         bool sticking = has_cached && cached_ws.sticking != 0;
 
-        if (reuse_cached_normal) {
+        if (restore_penalty) {
             init_penalty.x = max(cached_ws.penalty.x, solver_config_data[0].penalty_min);
+            init_penalty.y = max(cached_ws.penalty.y, solver_config_data[0].penalty_min);
+            init_penalty.z = max(cached_ws.penalty.z, solver_config_data[0].penalty_min);
+        }
 
+        if (reuse_cached_normal) {
             float3 cached_normal_force = cached_ws.normal.xyz * cached_ws.lambda.x;
             init_lambda.x = min(dot(cached_normal_force, constraint_normal), 0.0);
         }
 
         if (reuse_cached_tangent) {
-            init_penalty.y = max(cached_ws.penalty.y, solver_config_data[0].penalty_min);
-            init_penalty.z = max(cached_ws.penalty.z, solver_config_data[0].penalty_min);
-
             float3 cached_tangent_force =
                 cached_ws.tangent_u.xyz * cached_ws.lambda.y +
                 cached_ws.tangent_v.xyz * cached_ws.lambda.z;
@@ -1073,7 +1599,32 @@ void collision_narrow_phase(uint3 dispatch_id) {
         c.approach_speed = approach;
         c.lambda = lambda;
         c.penalty = penalty;
+        c.replayed = p;
 
         contact_data[ci] = c;
+
+        uint ch = 0x243f6a88u;
+        ch = chash_step(ch, c.body_a);
+        ch = chash_step(ch, c.body_b);
+        ch = chash_step(ch, feature_hi);
+        ch = chash_step(ch, feature_lo);
+        ch = chash_step(ch, c.sticking);
+        ch = chash_step(ch, c.replayed);
+        ch = chash_vec3(ch, c.normal.xyz);
+        ch = chash_vec3(ch, c.tangent_u.xyz);
+        ch = chash_vec3(ch, c.tangent_v.xyz);
+        ch = chash_vec3(ch, c.local_anchor_a.xyz);
+        ch = chash_vec3(ch, c.local_anchor_b.xyz);
+        ch = chash_vec3(ch, c.c0.xyz);
+        ch = chash_vec3(ch, c.lambda.xyz);
+        ch = chash_vec3(ch, c.penalty.xyz);
+        ch = chash_step(ch, chash_bits(c.friction_coeff));
+        ch = chash_step(ch, chash_bits(c.restitution));
+        ch = chash_step(ch, chash_bits(c.penalty_floor));
+        ch = chash_step(ch, chash_bits(c.approach_speed));
+
+        uint chash_ignored;
+        InterlockedAdd(collision_state[state_tick_hash_base_index + 5], ch, chash_ignored);
+        InterlockedAdd(collision_state[state_tick_hash_base_index + 7], 1u, chash_ignored);
     }
 }

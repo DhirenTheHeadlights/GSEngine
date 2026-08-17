@@ -69,7 +69,7 @@ export namespace gse {
 			= asset_format::source_dir<"SkinnedModels">{},
 			= asset_format::source_exts<".gsmdl">{},
 			= asset_format::magic<0x47534D44>{},
-			= asset_format::version<3>{}
+			= asset_format::version<4>{}
 		]] baked {
 			std::vector<rig_bone> bones;
 			rig_proxy proxy;
