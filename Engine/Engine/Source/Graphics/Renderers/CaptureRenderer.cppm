@@ -65,6 +65,18 @@ export namespace gse::renderer::capture {
 		]]
 		time capture_interval = seconds(1.f / 60.f);
 
+		[[
+			= gse::settings::describe<"Target encode bitrate. Without one the driver picks its own budget, which "
+									  "lands near 6 Mb/s at 1080p and goes soft the moment the scene moves. Raise "
+									  "it for sharper high-motion clips at the cost of file size, which is just "
+									  "bitrate times duration: a 16 s clip runs 30 MB at 15 Mb/s, and only 4.5 Mb/s "
+									  "keeps it under GitHub's 10 MB attachment cap. Ignored if the driver exposes "
+									  "no rate control mode.">{},
+			= gse::settings::range<1.f, 60.f>{},
+			= gse::settings::hot_reloadable
+		]]
+		bitrate capture_bitrate = megabits_per_second(15.f);
+
 		actions::handle screenshot_action;
 		actions::handle save_clip_action;
 		actions::handle toggle_recording_action;
@@ -85,6 +97,7 @@ export namespace gse::renderer::capture {
 		gpu::video_encoder encoder;
 		ring clip_ring;
 		time applied_ring_budget = seconds(30.f);
+		bitrate applied_capture_bitrate = megabits_per_second(15.f);
 		bool first_ring_push_logged = false;
 
 		[[= gse::stable_shared]] std::unique_ptr<recording_state> recording = std::make_unique<recording_state>();

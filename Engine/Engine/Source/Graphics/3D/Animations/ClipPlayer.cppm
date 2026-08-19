@@ -65,9 +65,11 @@ export namespace gse::animation {
 	auto run(
 		context& ctx,
 		data& d,
+		channel_read<physics::interpolation_state> interp_in,
 		write<clip_player_component> players,
 		read<skeleton_instance_component> skeletons,
 		read<physics::transform_component> transforms,
+		read<physics::motion_component> motions,
 		write<physics::kinematic_target_component> targets
 	) -> async::task<>;
 }

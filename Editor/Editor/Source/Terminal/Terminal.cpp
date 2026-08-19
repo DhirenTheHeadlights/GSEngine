@@ -28,36 +28,6 @@ namespace gse::ide::terminal {
 		log::level lvl
 	) -> vec4f;
 
-	auto ellipsize_path(
-		std::string_view path
-	) -> std::string;
-
-	struct header_button_params {
-		rectf rect;
-		std::span<const gui::symbol::stroke> glyph;
-		std::string_view label;
-		std::string_view key;
-		bool enabled = true;
-	};
-
-	auto header_button(
-		gui::builder& ui,
-		const header_button_params& params
-	) -> bool;
-
-	struct confirm_button_params {
-		rectf rect;
-		std::string_view label;
-		std::string_view key;
-		bool danger = false;
-		bool enabled = true;
-	};
-
-	auto confirm_button(
-		gui::builder& ui,
-		const confirm_button_params& params
-	) -> bool;
-
 	auto draw_close_confirm(
 		gui::builder& ui,
 		data& d,
@@ -106,7 +76,7 @@ namespace gse::ide::terminal {
 		data& d,
 		instance& inst,
 		const rectf& area,
-		channel_write<build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels,
+		channel_write<agent::start_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels,
 		bool building
 	) -> void;
 }
@@ -118,30 +88,13 @@ auto gse::ide::terminal::level_color(const gui::style& sty, const log::level lvl
 		case log::level::info:
 			return sty.color_text;
 		case log::level::warning:
-			return vec4f{ 0.71f, 0.57f, 0.11f, 1.f };
+			return sty.color_warning;
 		case log::level::error:
-			return vec4f{ 0.855f, 0.451f, 0.424f, 1.f };
+			return sty.color_error;
 		case log::level::fatal:
-			return vec4f{ 0.94f, 0.30f, 0.30f, 1.f };
+			return sty.color_fatal;
 	}
 	return sty.color_text;
-}
-
-auto gse::ide::terminal::ellipsize_path(const std::string_view path) -> std::string {
-	std::vector<std::string_view> parts;
-	std::size_t start = 0;
-	for (std::size_t i = 0; i <= path.size(); ++i) {
-		if (i == path.size() || path[i] == '\\' || path[i] == '/') {
-			if (i > start) {
-				parts.push_back(path.substr(start, i - start));
-			}
-			start = i + 1;
-		}
-	}
-	if (parts.size() <= 3) {
-		return std::string(path);
-	}
-	return std::format("{}\\...\\{}\\{}", parts.front(), parts[parts.size() - 2], parts.back());
 }
 
 auto gse::ide::terminal::make_instance(data& d, std::string name) -> instance {
@@ -284,8 +237,8 @@ auto gse::ide::terminal::path_link_at(const std::string_view row, const std::uin
 		resolved = candidate;
 	}
 	else {
-		for (const ide::config::worktree* tree : ide::config::worktrees()) {
-			std::filesystem::path attempt = tree->project_root / candidate;
+		for (const ide::config::worktree& tree : ide::config::worktrees()) {
+			std::filesystem::path attempt = tree.project_root / candidate;
 			if (std::filesystem::is_regular_file(attempt, ec)) {
 				resolved = std::move(attempt);
 				break;
@@ -351,7 +304,7 @@ auto gse::ide::terminal::init(data& d) -> async::task<> {
 	return {};
 }
 
-auto gse::ide::terminal::run(context& ctx, data& d, const channel_read<build_runner::stream_opened> stream_in, const channel_write<build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> ui_out, const shared_view<input::data> input_d, const shared_view<build_runner::data> build_d) -> async::task<> {
+auto gse::ide::terminal::run(context& ctx, data& d, const channel_read<build_runner::stream_opened> stream_in, const channel_write<agent::start_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> ui_out, const shared_view<input::data> input_d, const shared_view<build_runner::data> build_d) -> async::task<> {
 	for (const build_runner::stream_opened& opened : stream_in.of<build_runner::stream_opened>()) {
 		close_slot(d, opened.slot);
 		instance inst = make_instance(d, opened.name);
@@ -408,53 +361,7 @@ auto gse::ide::terminal::run_command(command_runner& runner, const std::string& 
 	spawn::close_process(runner);
 }
 
-auto gse::ide::terminal::header_button(gui::builder& ui, const header_button_params& params) -> bool {
-	const gui::draw_context& ctx = ui.ctx;
-	const gui::style& sty = ctx.style;
-	const auto text_view = ctx.fonts.text.resolve();
-	const float pad = sty.padding;
-
-	const id widget_id = gui::ids::make(params.key);
-	const auto btn = gui::interaction::press_in_rect(ctx, ui.hot_widget_id, ui.active_widget_id, widget_id, params.rect, params.enabled);
-
-	ctx.queue_sprite({
-		.rect = params.rect,
-		.color = btn.color({
-			.idle = sty.color_input_background,
-			.hot = sty.color_widget_hovered,
-			.active = sty.color_widget_active,
-			.disabled = sty.color_input_background,
-		}),
-		.texture = ctx.blank_texture,
-	});
-
-	const vec4f fg = params.enabled ? sty.color_text : sty.color_text_secondary;
-	const float glyph_size = params.rect.height();
-	const float glyph_left = params.label.empty() ? params.rect.center().x() - glyph_size * 0.5f : params.rect.left() + pad * 0.5f;
-	const rectf glyph_rect = rectf::from_position_size(
-		{ glyph_left, params.rect.top() },
-		{ glyph_size, glyph_size }
-	);
-	gui::symbol::draw(ctx, params.glyph, glyph_rect, {
-		.color = fg,
-		.extent = sty.icon_extent,
-		.clip_rect = params.rect,
-	});
-	if (!params.label.empty()) {
-		ctx.queue_text({
-			.font = ctx.fonts.text,
-			.text = params.label,
-			.position = { glyph_rect.right(), params.rect.center().y() + text_view->vertical_center_offset(sty.font_size) },
-			.scale = sty.font_size,
-			.color = fg,
-			.clip_rect = params.rect,
-		});
-	}
-
-	return btn.activated;
-}
-
-auto gse::ide::terminal::draw_instance(gui::builder& ui, const input::state& input, data& d, instance& inst, const rectf& area, channel_write<build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels, const bool building) -> void {
+auto gse::ide::terminal::draw_instance(gui::builder& ui, const input::state& input, data& d, instance& inst, const rectf& area, channel_write<agent::start_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels, const bool building) -> void {
 	const gui::draw_context& ctx = ui.ctx;
 	const auto text_view = ctx.fonts.text.resolve();
 	const auto code_view = ctx.fonts.code.resolve();
@@ -482,14 +389,24 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, const input::state& inp
 			.lvl = log::level::info,
 			.text = d.prompt + inst.input,
 		});
-		if (!inst.runner) {
-			inst.runner = std::make_shared<command_runner>();
+		constexpr std::string_view agent_prefix = "agent ";
+		if (std::string_view(inst.input).starts_with(agent_prefix)) {
+			channels.push<agent::start_request>({
+				.prompt = inst.input.substr(agent_prefix.size()),
+				.cwd = ide::config::project_root(),
+			});
 		}
-		inst.runner->terminated.store(false, std::memory_order_release);
-		inst.runner->running.store(true, std::memory_order_release);
-		inst.worker = std::jthread([r = inst.runner, cmd = inst.input, cwd = ide::config::project_root().wstring()] {
-			run_command(*r, cmd, cwd);
-		});
+		else {
+			if (!inst.runner) {
+				inst.runner = std::make_shared<command_runner>();
+			}
+			inst.runner->terminated.store(false, std::memory_order_release);
+			inst.runner->running.store(true, std::memory_order_release);
+			inst.worker = std::jthread([r = inst.runner, cmd = inst.input, cwd = ide::config::project_root().wstring()] {
+				run_command(*r, cmd, cwd);
+			});
+		}
+
 		inst.input.clear();
 		inst.input_state = {};
 	}
@@ -587,12 +504,12 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, const input::state& inp
 		{ input_rect.right() - input_h - pad, input_rect.top() },
 		{ input_h, input_h }
 	);
-	if (header_button(ui, {
+	if (gui::draw::button_in_rect(ctx, {
 		.rect = run_btn,
 		.glyph = gui::symbol::play(),
 		.key = "##terminal_run",
 		.enabled = !building,
-	})) {
+	}, ui.hot_widget_id, ui.active_widget_id)) {
 		channels.push<build_runner::build_request>({
 			.target = build_runner::build_target::game,
 			.run_after = true,
@@ -605,13 +522,13 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, const input::state& inp
 		{ run_btn.left() - build_w, input_rect.top() },
 		{ build_w, input_h }
 	);
-	if (header_button(ui, {
+	if (gui::draw::button_in_rect(ctx, {
 		.rect = build_btn,
-		.glyph = gui::symbol::hammer(),
 		.label = build_label,
+		.glyph = gui::symbol::hammer(),
 		.key = "##terminal_build",
 		.enabled = !building,
-	})) {
+	}, ui.hot_widget_id, ui.active_widget_id)) {
 		channels.push<build_runner::build_request>({
 			.target = build_runner::build_target::game,
 		});
@@ -642,35 +559,6 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, const input::state& inp
 	if (ctx.mouse_pressed_for(input_rect)) {
 		ui.focus_widget_id = inst.input_id;
 	}
-}
-
-auto gse::ide::terminal::confirm_button(gui::builder& ui, const confirm_button_params& params) -> bool {
-	const gui::draw_context& ctx = ui.ctx;
-	const gui::style& sty = ctx.style;
-	const auto text_view = ctx.fonts.text.resolve();
-	const id widget_id = gui::ids::make(params.key);
-	const auto btn = gui::interaction::press_in_rect(ctx, ui.hot_widget_id, ui.active_widget_id, widget_id, params.rect, params.enabled);
-
-	ctx.queue_sprite({
-		.rect = params.rect,
-		.color = btn.color({
-			.idle = params.danger ? vec4f{ 0.62f, 0.22f, 0.22f, 1.f } : sty.color_input_background,
-			.hot = params.danger ? vec4f{ 0.78f, 0.28f, 0.28f, 1.f } : sty.color_widget_hovered,
-			.active = sty.color_widget_active,
-			.disabled = sty.color_widget_background,
-		}),
-		.texture = ctx.blank_texture,
-		.corner_radius = sty.corner_radius,
-	});
-	ctx.queue_text({
-		.font = ctx.fonts.text,
-		.text = params.label,
-		.position = { params.rect.center().x() - text_view->width(params.label, sty.font_size) * 0.5f, params.rect.center().y() + text_view->vertical_center_offset(sty.font_size) },
-		.scale = sty.font_size,
-		.color = params.enabled ? sty.color_text : sty.color_text_disabled,
-		.clip_rect = params.rect,
-	});
-	return btn.activated;
 }
 
 auto gse::ide::terminal::draw_close_confirm(gui::builder& ui, data& d, const rectf& body) -> void {
@@ -742,17 +630,17 @@ auto gse::ide::terminal::draw_close_confirm(gui::builder& ui, data& d, const rec
 	const rectf cancel_btn = rectf::from_position_size({ dialog.left() + pad, dialog.bottom() + pad + btn_h }, { btn_w, btn_h });
 	const rectf kill_btn = rectf::from_position_size({ cancel_btn.right() + pad, dialog.bottom() + pad + btn_h }, { btn_w, btn_h });
 
-	bool cancel = confirm_button(ui, {
+	bool cancel = gui::draw::button_in_rect(ctx, {
 		.rect = cancel_btn,
 		.label = "Cancel",
 		.key = "##terminal_close_cancel",
-	});
-	const bool kill = confirm_button(ui, {
+	}, ui.hot_widget_id, ui.active_widget_id);
+	const bool kill = gui::draw::button_in_rect(ctx, {
 		.rect = kill_btn,
 		.label = "Kill",
 		.key = "##terminal_close_kill",
 		.danger = true,
-	});
+	}, ui.hot_widget_id, ui.active_widget_id);
 	if (ctx.key_pressed_for(key::escape)) {
 		ctx.consume_key_press(key::escape);
 		cancel = true;
@@ -770,7 +658,7 @@ auto gse::ide::terminal::draw_close_confirm(gui::builder& ui, data& d, const rec
 	}
 }
 
-auto gse::ide::terminal::draw_panel(gui::builder& ui, const input::state& input, data& d, channel_write<build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels, const bool building) -> void {
+auto gse::ide::terminal::draw_panel(gui::builder& ui, const input::state& input, data& d, channel_write<agent::start_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels, const bool building) -> void {
 	const gui::draw_context& ctx = ui.ctx;
 	if (!d.sink || ctx.clip_stack.empty()) {
 		return;

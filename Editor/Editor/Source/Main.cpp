@@ -17,6 +17,7 @@ auto main() -> int {
 				^^gse::ide::workspace_system,
 				^^gse::ide::terminal,
 				^^gse::ide::build_runner,
+				^^gse::ide::agent,
 				^^gse::ide::viewport,
 				^^gse::ide::search_system,
 				^^gse::ide::git_system,

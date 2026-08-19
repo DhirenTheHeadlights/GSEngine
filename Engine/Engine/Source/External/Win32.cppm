@@ -140,6 +140,8 @@ export namespace gse::win32 {
 	using ::MoveFileExW;
 	using ::GetEnvironmentStringsW;
 	using ::FreeEnvironmentStringsW;
+	using ::GetEnvironmentVariableW;
+	using ::ExpandEnvironmentStringsW;
 	using ::MultiByteToWideChar;
 	using ::LARGE_INTEGER;
 	using ::LONGLONG;
@@ -262,6 +264,32 @@ export namespace gse::win32 {
 
 	auto valid_handle(HANDLE handle) -> bool {
 		return handle != nullptr && handle != INVALID_HANDLE_VALUE;
+	}
+
+	auto read_user_environment(const wchar_t* name, wchar_t* out_value, const DWORD out_capacity) -> bool {
+		if (name == nullptr || out_value == nullptr || out_capacity == 0) {
+			return false;
+		}
+		out_value[0] = L'\0';
+
+		HKEY key = nullptr;
+		if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Environment", 0, KEY_READ, &key) != ERROR_SUCCESS) {
+			return false;
+		}
+
+		DWORD type = 0;
+		DWORD size = out_capacity * static_cast<DWORD>(sizeof(wchar_t));
+		const LSTATUS status = RegQueryValueExW(key, name, nullptr, &type, reinterpret_cast<BYTE*>(out_value), &size);
+		RegCloseKey(key);
+
+		if (status != ERROR_SUCCESS || (type != REG_SZ && type != REG_EXPAND_SZ)) {
+			out_value[0] = L'\0';
+			return false;
+		}
+
+		const DWORD count = size / static_cast<DWORD>(sizeof(wchar_t));
+		out_value[count < out_capacity ? count : out_capacity - 1] = L'\0';
+		return out_value[0] != L'\0';
 	}
 
 	auto open_file_dialog(

@@ -407,7 +407,7 @@ export namespace gse::gpu {
 		auto collect_garbage() -> void;
 
 		[[nodiscard]] auto make_video_encoder_backend(
-			vec2u extent
+			const gpu::encode_desc& desc
 		) -> std::unique_ptr<gpu::video_encoder_backend>;
 	};
 
@@ -793,12 +793,12 @@ auto gse::gpu::vulkan_device_backend::collect_garbage() -> void {
 	device_config.collect_garbage();
 }
 
-auto gse::gpu::vulkan_device_backend::make_video_encoder_backend(const vec2u extent) -> std::unique_ptr<gpu::video_encoder_backend> {
+auto gse::gpu::vulkan_device_backend::make_video_encoder_backend(const gpu::encode_desc& desc) -> std::unique_ptr<gpu::video_encoder_backend> {
 	const auto caps = vulkan::video_encoder::probe(device_config, queue);
 	if (!caps.available) {
 		return nullptr;
 	}
-	return std::make_unique<gpu::video_encoder_backend>(vulkan::video_encoder::create(device_config, queue, extent, caps));
+	return std::make_unique<gpu::video_encoder_backend>(vulkan::video_encoder::create(device_config, queue, desc, caps));
 }
 
 auto gse::gpu::create_vulkan_device_backend(const std::optional<shared_view<window::data>> win, const bool validation_layers_enabled, device_settings& cfg) -> gpu::expected<vulkan_backend_creation> {

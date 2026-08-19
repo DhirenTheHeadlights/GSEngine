@@ -334,6 +334,31 @@ export namespace gse::inline quantities {
 
 	template <typename T = float, auto... U> using angular_stiffness_per_angle_t = internal::quantity_t<angular_stiffness_per_angle_tag, T, U...>;
 	using angular_stiffness_per_angle = angular_stiffness_per_angle_t<>;
+
+	struct [[= internal::quantity_root<^^internal::dimi<0, 0, 0, 0, 1>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "b">]] data_size_tag {};
+
+	constexpr internal::unit<data_size_tag, std::ratio<1>, "b"> bits;
+	constexpr internal::unit<data_size_tag, std::kilo, "kb"> kilobits;
+	constexpr internal::unit<data_size_tag, std::mega, "Mb"> megabits;
+	constexpr internal::unit<data_size_tag, std::giga, "Gb"> gigabits;
+	constexpr internal::unit<data_size_tag, std::ratio<8>, "B"> bytes;
+	constexpr internal::unit<data_size_tag, std::ratio<8'000>, "kB"> kilobytes;
+	constexpr internal::unit<data_size_tag, std::ratio<8'000'000>, "MB"> megabytes;
+	constexpr internal::unit<data_size_tag, std::ratio<8'000'000'000>, "GB"> gigabytes;
+
+	template <typename T = float, auto... U> using data_size_t = internal::quantity_t<data_size_tag, T, U...>;
+	using data_size = data_size_t<>;
+
+	struct [[= internal::quantity_root<^^internal::dimi<0, -1, 0, 0, 1>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "b/s">]] bitrate_tag {};
+
+	constexpr internal::unit<bitrate_tag, std::ratio<1>, "b/s"> bits_per_second;
+	constexpr internal::unit<bitrate_tag, std::kilo, "kb/s"> kilobits_per_second;
+	constexpr internal::unit<bitrate_tag, std::mega, "Mb/s"> megabits_per_second;
+	constexpr internal::unit<bitrate_tag, std::giga, "Gb/s"> gigabits_per_second;
+	constexpr internal::unit<bitrate_tag, std::ratio<8'000'000>, "MB/s"> megabytes_per_second;
+
+	template <typename T = float, auto... U> using bitrate_t = internal::quantity_t<bitrate_tag, T, U...>;
+	using bitrate = bitrate_t<>;
 }
 
 namespace gse::internal {

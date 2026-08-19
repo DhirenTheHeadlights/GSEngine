@@ -97,6 +97,18 @@ namespace gse::renderer::forward {
 	]] gi_atlas_sampler {};
 
 	struct [[
+		= shaders::binding<0, 12>{},
+		= shaders::texture2d
+	]] cloud_shadow_in {
+		using element = vec4f;
+	};
+
+	struct [[
+		= shaders::binding<0, 13>{},
+		= shaders::sampler_state
+	]] cloud_shadow_sampler {};
+
+	struct [[
 		= shaders::binding<1, 5>{},
 		= shaders::ssbo_readonly
 	]] instance_data_buffer {
@@ -115,6 +127,9 @@ namespace gse::renderer::forward {
 		gi_atlas,
 		ap_sampler,
 		gi_atlas_sampler,
+		cloud::cloud_shadow_ubo,
+		cloud_shadow_in,
+		cloud_shadow_sampler,
 		shaders::meshlet::vertices_buffer,
 		shaders::meshlet::meshlets_buffer,
 		shaders::meshlet::meshlet_vertex_indices,
@@ -237,7 +252,7 @@ auto gse::renderer::forward::init(context& ctx, const shared_view<gpu::context::
 	return {};
 }
 
-auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<geometry_collector::render_data> geometry_in, shared_view<camera::data> cam_state, shared_view<geometry_collector::data> gc_r, shared_view<light_culling::data> lc_r, shared_view<atmosphere::data> atm_state, shared_view<gi_probe::data> gi_state, read<directional_light_component> dir_lights, read<spot_light_component> spot_lights, read<point_light_component> point_lights) -> async::task<> {
+auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<geometry_collector::render_data> geometry_in, shared_view<camera::data> cam_state, shared_view<geometry_collector::data> gc_r, shared_view<light_culling::data> lc_r, shared_view<atmosphere::data> atm_state, shared_view<cloud::data> cloud_state, shared_view<gi_probe::data> gi_state, read<directional_light_component> dir_lights, read<spot_light_component> spot_lights, read<point_light_component> point_lights) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -393,7 +408,7 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 			)
 		)
 		.depth(gpu::load_depth())
-		.after<^^rt_shadow::frame, ^^light_culling::frame, ^^depth_prepass::frame, ^^atmosphere::ap_compute_pass, ^^gi_probe::frame, ^^skin::deform_pass>();
+		.after<^^rt_shadow::frame, ^^light_culling::frame, ^^depth_prepass::frame, ^^atmosphere::ap_compute_pass, ^^gi_probe::frame, ^^skin::deform_pass, ^^cloud::cloud_shadow_pass>();
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
 
@@ -416,6 +431,10 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 	const auto ap_sampler_slot = atm_state.lut_sampler_bindless.slot();
 	const auto gi_atlas_slot = gi_state.irradiance_atlas.sampled_slot();
 	const auto gi_atlas_sampler_slot = d.gi_sampler.slot();
+
+	const auto cloud_shadow_slot = cloud_state.shadow_map.sampled_slot();
+	const auto cloud_shadow_sampler_slot = cloud_state.shadow_sampler.slot();
+	const auto cloud_shadow_ubo_slot = cloud_state.shadow_ubo_buffer.slot();
 
 	for (std::size_t i = 0; i < normal_batches.size(); ++i) {
 		const auto& batch = normal_batches[i];
@@ -461,6 +480,9 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 				.gi_atlas = gi_atlas_slot,
 				.ap_sampler = ap_sampler_slot,
 				.gi_atlas_sampler = gi_atlas_sampler_slot,
+				.cloud_shadow_ubo = cloud_shadow_ubo_slot,
+				.cloud_shadow_in = cloud_shadow_slot,
+				.cloud_shadow_sampler = cloud_shadow_sampler_slot,
 				.vertices_buffer = batch.deformed_vertices.valid() ? batch.deformed_vertices : ml.vertex_storage.slot(),
 				.meshlets_buffer = ml.descriptors.slot(),
 				.meshlet_vertex_indices = ml.vertices.slot(),

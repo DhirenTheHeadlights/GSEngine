@@ -196,7 +196,7 @@ auto gse::renderer::geometry_collector::collect_static(write<render_component>& 
 			}
 			const auto mdl = component.models[j].resolve();
 			const auto [model_matrix, normal_matrix] =
-				compute_render_transform(render_tc, mdl->center_of_mass(), component.sizes[j]);
+				compute_render_transform(render_tc, mdl->render_pivot(), component.sizes[j]);
 			const auto prev_model_matrix = entity_prev[j].value_or(model_matrix);
 			entity_prev[j] = model_matrix;
 			const float opacity = component.tints[j].w();

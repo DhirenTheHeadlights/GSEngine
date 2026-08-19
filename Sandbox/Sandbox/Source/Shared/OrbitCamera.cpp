@@ -137,6 +137,12 @@ auto sandbox::orbit_camera::update(gse::context& ctx, data& d, const gse::shared
 			continue;
 		}
 
+		if (phys_s.gpu_readback_age_steps > 0) {
+			if (const auto* target_motion = motions.find(o.target)) {
+				target_pos += target_motion->current_velocity * (gse::system_clock::fixed_dt<gse::time>() * static_cast<float>(phys_s.gpu_readback_age_steps));
+			}
+		}
+
 		target_pos += gse::vec3<gse::displacement>(gse::meters(0.f), o.pivot_height, gse::meters(0.f));
 
 		const gse::vec3f forward = gse::rotate_vector(orientation, gse::vec3f(0.f, 0.f, -1.f));

@@ -2,6 +2,7 @@ export module gse.ide.terminal:terminal_panel;
 
 import std;
 import gse;
+import gse.ide.agent;
 import gse.ide.build;
 import gse.ide.navigation;
 import gse.win32;
@@ -94,7 +95,7 @@ export namespace gse::ide::terminal {
 		context& ctx,
 		data& d,
 		channel_read<build_runner::stream_opened> stream_in,
-		channel_write<build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> ui_out,
+		channel_write<agent::start_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> ui_out,
 		shared_view<input::data> input_d,
 		shared_view<build_runner::data> build_d
 	) -> async::task<>;
@@ -112,7 +113,7 @@ export namespace gse::ide::terminal {
 		gui::builder& ui,
 		const input::state& input,
 		data& d,
-		channel_write<build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels,
+		channel_write<agent::start_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels,
 		bool building
 	) -> void;
 }

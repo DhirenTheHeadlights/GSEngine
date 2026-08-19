@@ -839,6 +839,7 @@ auto gse::vbd::gpu_solver::upload(const solver_upload& payload) -> void {
 	m_motor_count = static_cast<std::uint32_t>(motors.size());
 	m_impulse_count = static_cast<std::uint32_t>(impulses.size());
 	m_steps = static_cast<std::uint32_t>(std::max(payload.steps, 1));
+	m_ticks = static_cast<std::uint32_t>(std::max(payload.ticks, 1));
 	m_solver_cfg = payload.solver_cfg;
 	m_dt = payload.dt;
 
@@ -1209,6 +1210,14 @@ auto gse::vbd::gpu_solver::retired_generation() const -> std::uint64_t {
 		return 0;
 	}
 	return m_snapshot_channel.latest().generation;
+}
+
+auto gse::vbd::gpu_solver::readback_age_steps() const -> int {
+	const auto served = retired_generation();
+	if (served == 0 || m_dispatch_generation == 0 || m_dispatch_generation - served >= m_generation_ticks.size()) {
+		return 0;
+	}
+	return static_cast<int>(m_ticks_dispatched - m_generation_ticks[served % m_generation_ticks.size()]);
 }
 
 auto gse::vbd::gpu_solver::latest_dispatch_complete() const -> bool {
@@ -2015,6 +2024,8 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx, const channel_write<gp
 
 	rec = co_await gpu::pass<vbd_state_copy_stage>(pass_out).on(gpu::queue_type::compute).in_chain<vbd_solve_chain>();
 	++m_dispatch_generation;
+	m_ticks_dispatched += m_ticks;
+	m_generation_ticks[m_dispatch_generation % m_generation_ticks.size()] = m_ticks_dispatched;
 	constexpr std::size_t collision_state_copy_size = (limits.collision_state_header_uints + limits.max_narrow_phase_debug_records * limits.narrow_phase_debug_record_uints) * sizeof(std::uint32_t);
 	constexpr std::size_t adjacency_meta_copy_size = debug_adjacency_meta_count * sizeof(std::uint32_t);
 	rec.copy_buffer(f.body_buffer, m_snapshot_channel.publish_target(m_dispatch_generation, body_copy_size), body_copy_size);

@@ -71,6 +71,7 @@ export namespace gse {
 
 		auto meshes() const -> std::span<const mesh>;
 		auto center_of_mass() const -> vec3<length>;
+		auto render_pivot() const -> vec3<length>;
 
 		auto uploads_ready() const -> bool;
 
@@ -137,6 +138,10 @@ auto gse::model::meshes() const -> std::span<const mesh> {
 
 auto gse::model::center_of_mass() const -> vec3<length> {
 	return m_center_of_mass;
+}
+
+auto gse::model::render_pivot() const -> vec3<length> {
+	return m_baked_model_path.empty() ? vec3<length>{} : m_center_of_mass;
 }
 
 auto gse::model::uploads_ready() const -> bool {

@@ -17,6 +17,10 @@ auto gse::gpu::video_encoder::operator=(video_encoder&& other) noexcept -> video
 gse::gpu::video_encoder::video_encoder(std::unique_ptr<video_encoder_backend> impl) noexcept : m_impl(std::move(impl)) {
 }
 
+auto gse::gpu::video_encoder::set_bitrate(const bitrate rate) -> void {
+	m_impl->enc.set_bitrate(rate);
+}
+
 auto gse::gpu::video_encoder::begin_capture(const time pts) -> encode_source {
 	return m_impl->enc.begin_capture(pts);
 }

@@ -428,7 +428,7 @@ export namespace gse::gpu {
 		) -> gpu::command_buffer_handle;
 
 		[[nodiscard]] auto make_video_encoder(
-			vec2u extent
+			const encode_desc& desc
 		) -> std::optional<video_encoder>;
 
 		[[nodiscard]]

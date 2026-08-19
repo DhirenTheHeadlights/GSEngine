@@ -219,6 +219,34 @@ auto gse::font::width(const std::string_view text, const float scale) const -> f
 	return total_width;
 }
 
+auto gse::font::wrap(const std::string_view text, const float max_width, const float scale) const -> std::vector<std::string_view> {
+	std::vector<std::string_view> lines;
+	if (text.empty() || max_width <= 0.0f) {
+		lines.push_back(text);
+		return lines;
+	}
+
+	std::size_t start = 0;
+	while (start < text.size()) {
+		std::size_t accepted = std::string_view::npos;
+		std::size_t cursor = start;
+		while (cursor < text.size()) {
+			const std::size_t space = text.find(' ', cursor);
+			const std::size_t candidate = space == std::string_view::npos ? text.size() : space + 1;
+			if (accepted != std::string_view::npos && width(text.substr(start, candidate - start), scale) > max_width) {
+				break;
+			}
+			accepted = candidate;
+			cursor = candidate;
+		}
+
+		const std::size_t line_end = accepted == std::string_view::npos ? text.size() : accepted;
+		lines.push_back(text.substr(start, line_end - start));
+		start = line_end;
+	}
+	return lines;
+}
+
 auto gse::font::caret_offsets(const std::string_view text, const float scale) const -> std::vector<float> {
 	std::vector<float> offsets(text.size() + 1, 0.0f);
 	if (m_glyphs.empty()) {

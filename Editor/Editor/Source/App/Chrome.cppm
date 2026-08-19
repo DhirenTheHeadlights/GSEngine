@@ -742,7 +742,7 @@ auto gse::ide::draw_explorer_panel(gse::gui::builder& ui, const gse::input::stat
 			.text = ws.explorer_error,
 			.position = { content.left(), ctx.layout_cursor.y() + text_view->vertical_center_offset(ctx.style.font_size) },
 			.scale = ctx.style.font_size,
-			.color = gse::vec4f{ 0.855f, 0.451f, 0.424f, 1.f },
+			.color = ctx.style.color_error,
 			.clip_rect = body,
 		});
 		ctx.layout_cursor.y() -= error_height + pad;

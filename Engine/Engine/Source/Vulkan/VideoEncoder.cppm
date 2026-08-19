@@ -45,9 +45,13 @@ export namespace gse::vulkan {
 		static auto create(
 			device& dev,
 			queue& q,
-			vec2u extent,
+			const gpu::encode_desc& desc,
 			const gpu::encode_capabilities& probe_caps
 		) -> video_encoder;
+
+		auto set_bitrate(
+			bitrate rate
+		) -> void;
 
 		[[nodiscard]] auto begin_capture(
 			time pts
@@ -108,6 +112,11 @@ export namespace gse::vulkan {
 			per_frame& slot
 		) -> void;
 
+		auto record_rate_control(
+			per_frame& slot,
+			bool reset
+		) -> void;
+
 		auto encode_capture(
 			per_frame& slot
 		) -> void;
@@ -131,6 +140,17 @@ export namespace gse::vulkan {
 		std::uint32_t m_gop_size = 60;
 		std::uint64_t m_timestamp_ticks_mask = 0;
 		time_t<double> m_timestamp_period_per_tick = nanoseconds(1.0);
+		using encode_bitrate = bitrate_t<std::uint64_t, bits_per_second>;
+
+		vk::VideoEncodeRateControlModeFlagBitsKHR m_rate_control_mode = vk::VideoEncodeRateControlModeFlagBitsKHR::eDefault;
+		encode_bitrate m_average_bitrate{};
+		encode_bitrate m_peak_bitrate{};
+		bitrate m_bitrate_ceiling = bits_per_second(0.f);
+		std::uint32_t m_frame_rate_numerator = 60;
+		std::uint32_t m_frame_rate_denominator = 1;
+		std::uint32_t m_quality_level = 0;
+		std::int32_t m_constant_quantizer = 0;
+		bool m_rate_control_dirty = true;
 		device* m_device = nullptr;
 		queue* m_queue = nullptr;
 		bool m_direct_plane_writes = false;
@@ -156,6 +176,12 @@ namespace gse::vulkan {
 	) -> void;
 
 	constexpr vk::DeviceSize bitstream_buffer_size = 4 * 1024 * 1024;
+	constexpr std::uint32_t virtual_buffer_ms = 2000;
+	constexpr std::uint32_t initial_virtual_buffer_ms = 1000;
+	constexpr float peak_bitrate_headroom = 1.5f;
+	constexpr std::uint32_t frame_rate_denominator = 1000;
+	constexpr std::int32_t fallback_h265_qp = 24;
+	constexpr std::int32_t fallback_av1_q_index = 100;
 	constexpr auto nv12_format = vk::Format::eG8B8R82Plane420Unorm;
 	constexpr auto y_plane_format = vk::Format::eR8Unorm;
 	constexpr auto uv_plane_format = vk::Format::eR8G8Unorm;
@@ -187,6 +213,14 @@ namespace gse::vulkan {
 		std::uint32_t type_bits,
 		vk::MemoryPropertyFlags properties
 	) -> std::uint32_t;
+
+	auto select_rate_control(
+		vk::VideoEncodeRateControlModeFlagsKHR modes
+	) -> gpu::encode_rate_control;
+
+	auto rate_control_mode_bit(
+		gpu::encode_rate_control mode
+	) -> vk::VideoEncodeRateControlModeFlagBitsKHR;
 }
 
 auto gse::vulkan::video_encoder::probe(device& dev, queue& q) -> gpu::encode_capabilities {
@@ -201,6 +235,9 @@ auto gse::vulkan::video_encoder::probe(device& dev, queue& q) -> gpu::encode_cap
 		build_profile(chain, codec);
 
 		vk::VideoCapabilitiesKHR caps;
+		vk::VideoEncodeCapabilitiesKHR encode_caps{};
+		std::int32_t min_quantizer = 0;
+		std::int32_t max_quantizer = 0;
 		if (codec == gpu::video_codec::av1) {
 			auto [caps_result, caps_chain] = std::bit_cast<vk::PhysicalDevice>(physical.handle())
 				.getVideoCapabilitiesKHR<vk::VideoCapabilitiesKHR, vk::VideoEncodeCapabilitiesKHR, vk::VideoEncodeAV1CapabilitiesKHR>(chain.profile);
@@ -208,6 +245,10 @@ auto gse::vulkan::video_encoder::probe(device& dev, queue& q) -> gpu::encode_cap
 				continue;
 			}
 			caps = caps_chain.get<vk::VideoCapabilitiesKHR>();
+			encode_caps = caps_chain.get<vk::VideoEncodeCapabilitiesKHR>();
+			const auto& av1_caps = caps_chain.get<vk::VideoEncodeAV1CapabilitiesKHR>();
+			min_quantizer = static_cast<std::int32_t>(av1_caps.minQIndex);
+			max_quantizer = static_cast<std::int32_t>(av1_caps.maxQIndex);
 		}
 		else {
 			auto [caps_result, caps_chain] = std::bit_cast<vk::PhysicalDevice>(physical.handle())
@@ -216,23 +257,47 @@ auto gse::vulkan::video_encoder::probe(device& dev, queue& q) -> gpu::encode_cap
 				continue;
 			}
 			caps = caps_chain.get<vk::VideoCapabilitiesKHR>();
+			encode_caps = caps_chain.get<vk::VideoEncodeCapabilitiesKHR>();
+			const auto& h265_caps = caps_chain.get<vk::VideoEncodeH265CapabilitiesKHR>();
+			min_quantizer = h265_caps.minQp;
+			max_quantizer = h265_caps.maxQp;
 		}
+
+		const auto rate_control = select_rate_control(encode_caps.rateControlModes);
+		const bitrate max_bitrate = bits_per_second(encode_caps.maxBitrate);
 
 		const auto codec_name = codec == gpu::video_codec::av1 ? "AV1" : "H.265";
 		log::println(
 			log::category::vulkan,
-			"Video encode probe: {} supported (max {}x{})",
+			"Video encode probe: {} supported (max {}x{}, rate control {}, max {:.1f:Mb/s}, {} quality levels)",
 			codec_name,
 			caps.maxCodedExtent.width,
-			caps.maxCodedExtent.height
+			caps.maxCodedExtent.height,
+			vk::to_string(rate_control_mode_bit(rate_control)),
+			max_bitrate,
+			encode_caps.maxQualityLevels
 		);
+
+		if (rate_control == gpu::encode_rate_control::driver_default) {
+			log::println(
+				log::level::warning,
+				log::category::vulkan,
+				"Video encode probe: {} exposes no explicit rate control mode; bitrate settings will not apply",
+				codec_name
+			);
+		}
 
 		return {
 			.available = true,
 			.codec = codec,
 			.max_extent = { caps.maxCodedExtent.width, caps.maxCodedExtent.height },
 			.std_header_name = caps.stdHeaderVersion.extensionName.data(),
-			.std_header_spec_version = caps.stdHeaderVersion.specVersion
+			.std_header_spec_version = caps.stdHeaderVersion.specVersion,
+			.rate_control = rate_control,
+			.max_bitrate = max_bitrate,
+			.quality_levels = encode_caps.maxQualityLevels,
+			.min_quantizer = min_quantizer,
+			.max_quantizer = max_quantizer
 		};
 	}
 
@@ -240,12 +305,32 @@ auto gse::vulkan::video_encoder::probe(device& dev, queue& q) -> gpu::encode_cap
 	return {};
 }
 
-auto gse::vulkan::video_encoder::create(device& dev, queue& q, const vec2u extent, const gpu::encode_capabilities& probe_caps) -> video_encoder {
+auto gse::vulkan::video_encoder::create(device& dev, queue& q, const gpu::encode_desc& desc, const gpu::encode_capabilities& probe_caps) -> video_encoder {
+	const auto extent = desc.extent;
+
 	video_encoder enc;
 	enc.m_device = &dev;
 	enc.m_queue = &q;
 	enc.m_codec = probe_caps.codec;
 	enc.m_extent = extent;
+
+	enc.m_rate_control_mode = rate_control_mode_bit(probe_caps.rate_control);
+	enc.m_bitrate_ceiling = probe_caps.max_bitrate;
+	enc.m_quality_level = probe_caps.quality_levels > 0 ? probe_caps.quality_levels - 1 : 0;
+
+	if (enc.m_rate_control_mode == vk::VideoEncodeRateControlModeFlagBitsKHR::eDisabled) {
+		const auto fallback = probe_caps.codec == gpu::video_codec::av1 ? fallback_av1_q_index : fallback_h265_qp;
+		enc.m_constant_quantizer = std::clamp(fallback, probe_caps.min_quantizer, probe_caps.max_quantizer);
+	}
+
+	const time minimum_frame_interval = milliseconds(1.f);
+	const time reference_period = seconds(1.f);
+	const auto frame_interval = std::max(desc.frame_interval, minimum_frame_interval);
+	const float frames_per_reference = reference_period / frame_interval;
+	enc.m_frame_rate_denominator = frame_rate_denominator;
+	enc.m_frame_rate_numerator = static_cast<std::uint32_t>(std::lround(frames_per_reference * static_cast<float>(frame_rate_denominator)));
+
+	enc.set_bitrate(desc.average_bitrate);
 
 	profile_chain chain{};
 	build_profile(chain, probe_caps.codec);
@@ -360,8 +445,13 @@ auto gse::vulkan::video_encoder::create(device& dev, queue& q, const vec2u exten
 			.pParametersAddInfo = &h265_add
 		};
 
-		auto [params_result, params] = vk_dev.createVideoSessionParametersKHR({
+		const vk::VideoEncodeQualityLevelInfoKHR quality_info{
 			.pNext = &info,
+			.qualityLevel = enc.m_quality_level
+		};
+
+		auto [params_result, params] = vk_dev.createVideoSessionParametersKHR({
+			.pNext = &quality_info,
 			.videoSession = *enc.m_session
 		});
 		assert(params_result == vk::Result::eSuccess, "failed to create video session parameters: {}", vk::to_string(params_result));
@@ -404,8 +494,13 @@ auto gse::vulkan::video_encoder::create(device& dev, queue& q, const vec2u exten
 			.pStdSequenceHeader = seq_header
 		};
 
-		auto [params_result, params] = vk_dev.createVideoSessionParametersKHR({
+		const vk::VideoEncodeQualityLevelInfoKHR quality_info{
 			.pNext = &info,
+			.qualityLevel = enc.m_quality_level
+		};
+
+		auto [params_result, params] = vk_dev.createVideoSessionParametersKHR({
+			.pNext = &quality_info,
 			.videoSession = *enc.m_session
 		});
 		assert(params_result == vk::Result::eSuccess, "failed to create video session parameters: {}", vk::to_string(params_result));
@@ -567,9 +662,92 @@ auto gse::vulkan::video_encoder::create(device& dev, queue& q, const vec2u exten
 	enc.prime_source_layouts();
 
 	const auto* const codec_name = probe_caps.codec == gpu::video_codec::av1 ? "AV1" : "H.265";
-	log::println(log::category::vulkan, "Video encoder created: {} {}x{}", codec_name, extent.x(), extent.y());
+	log::println(
+		log::category::vulkan,
+		"Video encoder created: {} {}x{}, {} at {:.1f:Mb/s} (peak {:.1f:Mb/s}), {:.2f:ms} frame interval, quality level {}",
+		codec_name,
+		extent.x(),
+		extent.y(),
+		vk::to_string(enc.m_rate_control_mode),
+		bitrate(enc.m_average_bitrate),
+		bitrate(enc.m_peak_bitrate),
+		frame_interval,
+		enc.m_quality_level
+	);
 
 	return enc;
+}
+
+auto gse::vulkan::video_encoder::set_bitrate(const bitrate rate) -> void {
+	const bitrate no_ceiling = bits_per_second(0.f);
+	const bitrate minimum_bitrate = megabits_per_second(0.5f);
+
+	const auto requested = std::max(rate, minimum_bitrate);
+	const auto ceiling = m_bitrate_ceiling > no_ceiling ? m_bitrate_ceiling : requested;
+	const auto average = std::min(requested, ceiling);
+	const auto peak = m_rate_control_mode == vk::VideoEncodeRateControlModeFlagBitsKHR::eCbr
+		? average
+		: std::min(average * peak_bitrate_headroom, ceiling);
+
+	m_average_bitrate = encode_bitrate(average);
+	m_peak_bitrate = encode_bitrate(peak);
+	m_rate_control_dirty = true;
+}
+
+auto gse::vulkan::video_encoder::record_rate_control(per_frame& slot, const bool reset) -> void {
+	const bool metered = m_rate_control_mode == vk::VideoEncodeRateControlModeFlagBitsKHR::eCbr ||
+		m_rate_control_mode == vk::VideoEncodeRateControlModeFlagBitsKHR::eVbr;
+
+	const vk::VideoEncodeH265RateControlLayerInfoKHR h265_layer{};
+	const vk::VideoEncodeAV1RateControlLayerInfoKHR av1_layer{};
+
+	const vk::VideoEncodeRateControlLayerInfoKHR layer{
+		.pNext = m_codec == gpu::video_codec::av1 ? static_cast<const void*>(&av1_layer) : &h265_layer,
+		.averageBitrate = static_cast<std::uint64_t>(m_average_bitrate),
+		.maxBitrate = static_cast<std::uint64_t>(m_peak_bitrate),
+		.frameRateNumerator = m_frame_rate_numerator,
+		.frameRateDenominator = m_frame_rate_denominator
+	};
+
+	const vk::VideoEncodeH265RateControlInfoKHR h265_rate_control{
+		.gopFrameCount = m_gop_size,
+		.idrPeriod = m_gop_size,
+		.consecutiveBFrameCount = 0,
+		.subLayerCount = 1
+	};
+
+	const vk::VideoEncodeAV1RateControlInfoKHR av1_rate_control{
+		.gopFrameCount = m_gop_size,
+		.keyFramePeriod = m_gop_size,
+		.consecutiveBipredictiveFrameCount = 0,
+		.temporalLayerCount = 1
+	};
+
+	const vk::VideoEncodeRateControlInfoKHR rate_control{
+		.pNext = !metered ? nullptr : (m_codec == gpu::video_codec::av1 ? static_cast<const void*>(&av1_rate_control) : &h265_rate_control),
+		.rateControlMode = m_rate_control_mode,
+		.layerCount = metered ? 1u : 0u,
+		.pLayers = metered ? &layer : nullptr,
+		.virtualBufferSizeInMs = metered ? virtual_buffer_ms : 0u,
+		.initialVirtualBufferSizeInMs = metered ? initial_virtual_buffer_ms : 0u
+	};
+
+	const vk::VideoEncodeQualityLevelInfoKHR quality{
+		.pNext = &rate_control,
+		.qualityLevel = m_quality_level
+	};
+
+	auto flags = vk::VideoCodingControlFlagBitsKHR::eEncodeRateControl | vk::VideoCodingControlFlagBitsKHR::eEncodeQualityLevel;
+	if (reset) {
+		flags |= vk::VideoCodingControlFlagBitsKHR::eReset;
+	}
+
+	slot.cmd.controlVideoCodingKHR({
+		.pNext = &quality,
+		.flags = flags
+	});
+
+	m_rate_control_dirty = false;
 }
 
 auto gse::vulkan::video_encoder::prime_source_layouts() -> void {
@@ -951,10 +1129,8 @@ auto gse::vulkan::video_encoder::encode_capture(per_frame& slot) -> void {
 		.pReferenceSlots = begin_ref_slots.data()
 	});
 
-	if (is_keyframe) {
-		slot.cmd.controlVideoCodingKHR({
-			.flags = vk::VideoCodingControlFlagBitsKHR::eReset
-		});
+	if (is_keyframe || m_rate_control_dirty) {
+		record_rate_control(slot, is_keyframe);
 	}
 
 	slot.cmd.beginQuery(
@@ -1000,6 +1176,7 @@ auto gse::vulkan::video_encoder::encode_capture(per_frame& slot) -> void {
 		};
 
 		const vk::VideoEncodeH265NaluSliceSegmentInfoKHR nalu{
+			.constantQp = m_constant_quantizer,
 			.pStdSliceSegmentHeader = slice_header
 		};
 
@@ -1045,6 +1222,7 @@ auto gse::vulkan::video_encoder::encode_capture(per_frame& slot) -> void {
 											: vk::VideoEncodeAV1PredictionModeKHR::eIntraOnly,
 			.rateControlGroup = is_keyframe ? vk::VideoEncodeAV1RateControlGroupKHR::eIntra
 											: vk::VideoEncodeAV1RateControlGroupKHR::ePredictive,
+			.constantQIndex = static_cast<std::uint32_t>(m_constant_quantizer),
 			.pStdPictureInfo = std_pic_info
 		};
 		for (auto& idx : av1_pic.referenceNameSlotIndices) {
@@ -1382,3 +1560,31 @@ auto gse::vulkan::find_memory_type(const physical_device& physical_device, std::
 	);
 	return 0;
 }
+
+auto gse::vulkan::select_rate_control(const vk::VideoEncodeRateControlModeFlagsKHR modes) -> gpu::encode_rate_control {
+	if (modes & vk::VideoEncodeRateControlModeFlagBitsKHR::eVbr) {
+		return gpu::encode_rate_control::variable_bitrate;
+	}
+	if (modes & vk::VideoEncodeRateControlModeFlagBitsKHR::eCbr) {
+		return gpu::encode_rate_control::constant_bitrate;
+	}
+	if (modes & vk::VideoEncodeRateControlModeFlagBitsKHR::eDisabled) {
+		return gpu::encode_rate_control::disabled;
+	}
+	return gpu::encode_rate_control::driver_default;
+}
+
+auto gse::vulkan::rate_control_mode_bit(const gpu::encode_rate_control mode) -> vk::VideoEncodeRateControlModeFlagBitsKHR {
+	switch (mode) {
+		case gpu::encode_rate_control::variable_bitrate:
+			return vk::VideoEncodeRateControlModeFlagBitsKHR::eVbr;
+		case gpu::encode_rate_control::constant_bitrate:
+			return vk::VideoEncodeRateControlModeFlagBitsKHR::eCbr;
+		case gpu::encode_rate_control::disabled:
+			return vk::VideoEncodeRateControlModeFlagBitsKHR::eDisabled;
+		case gpu::encode_rate_control::driver_default:
+			return vk::VideoEncodeRateControlModeFlagBitsKHR::eDefault;
+	}
+	return vk::VideoEncodeRateControlModeFlagBitsKHR::eDefault;
+}
+

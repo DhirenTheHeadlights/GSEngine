@@ -243,6 +243,9 @@ auto gse::renderer::atmosphere::build_atmosphere_data(const data& d) -> atmosphe
 			d.sun_intensity * d.sun_color.y(),
 			d.sun_intensity * d.sun_color.z(),
 		},
+		.star_intensity = d.star_intensity,
+		.star_density = d.star_density,
+		.star_fade = d.star_fade,
 	};
 }
 

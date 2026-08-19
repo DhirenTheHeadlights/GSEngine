@@ -84,6 +84,7 @@ export namespace gse::vbd {
 		solver_config solver_cfg;
 		time_step dt{};
 		int steps = 1;
+		int ticks = 1;
 		bool refresh_joints = false;
 		bool force_reseed = false;
 	};
@@ -160,6 +161,8 @@ export namespace gse::vbd {
 
 		auto retired_generation() const -> std::uint64_t;
 
+		auto readback_age_steps() const -> int;
+
 		auto latest_dispatch_complete() const -> bool;
 
 	private:
@@ -231,6 +234,9 @@ export namespace gse::vbd {
 		const gpu::frame* m_frame = nullptr;
 		std::uint32_t m_dispatch_slot = 0;
 		std::uint64_t m_dispatch_generation = 0;
+		std::uint32_t m_ticks = 1;
+		std::uint64_t m_ticks_dispatched = 0;
+		std::array<std::uint64_t, 16> m_generation_ticks{};
 		std::uint32_t m_recorded_ring = 0;
 		std::uint64_t m_recorded_frame = 0;
 

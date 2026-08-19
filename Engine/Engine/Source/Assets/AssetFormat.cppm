@@ -3,6 +3,8 @@ export module gse.assets:asset_format;
 import std;
 import gse.meta;
 import gse.containers;
+import gse.diag;
+import gse.log;
 
 #ifdef _WIN32
 import gse.win32;
@@ -97,6 +99,11 @@ export namespace gse {
 		const std::filesystem::path& path,
 		const T& value
 	) -> asset_result;
+
+	template <has_asset_format T>
+	auto baked_schema_current(
+		const std::filesystem::path& path
+	) -> bool;
 }
 
 namespace gse {
@@ -139,6 +146,16 @@ auto gse::load_baked(const std::filesystem::path& path) -> std::expected<T, asse
 		});
 	}
 
+	std::uint64_t stored_fingerprint = 0;
+	*opened & stored_fingerprint;
+	if (!opened->valid() || stored_fingerprint != schema_fingerprint<T>()) {
+		return std::unexpected(asset_error{
+			.code = asset_error_code::invalid_format,
+			.path = path,
+			.detail = "Baked asset schema fingerprint does not match this build; rebake it from source"
+		});
+	}
+
 	try {
 		T out{};
 		*opened & out;
@@ -148,6 +165,15 @@ auto gse::load_baked(const std::filesystem::path& path) -> std::expected<T, asse
 				.path = path,
 				.detail = "Baked asset payload is truncated or malformed"
 			});
+		}
+		for (const std::string& skipped : opened->skipped_fields()) {
+			log::println(
+				log::level::warning,
+				log::category::assets,
+				"{}: schema drift, stored field skipped and left defaulted: {}",
+				path.generic_display_string(),
+				skipped
+			);
 		}
 		return std::move(out);
 	}
@@ -197,6 +223,8 @@ auto gse::write_baked(const std::filesystem::path& path, const T& value) -> asse
 	bool written = false;
 	try {
 		binary_writer writer(out, fmt.magic, fmt.version);
+		constexpr std::uint64_t fingerprint = schema_fingerprint<T>();
+		writer & fingerprint;
 		writer & value;
 		out.flush();
 		written = writer.valid() && out.good();
@@ -233,12 +261,30 @@ auto gse::write_baked(const std::filesystem::path& path, const T& value) -> asse
 	return replace_baked_file(temporary, path);
 }
 
+template <gse::has_asset_format T>
+auto gse::baked_schema_current(const std::filesystem::path& path) -> bool {
+	std::ifstream in(path, std::ios::binary);
+	if (!in.is_open()) {
+		return false;
+	}
+
+	constexpr auto fmt = format_of<T>();
+	std::expected<binary_reader, archive_mismatch> opened = binary_reader::open(in, fmt.magic, fmt.version);
+	if (!opened) {
+		return false;
+	}
+
+	std::uint64_t stored_fingerprint = 0;
+	*opened & stored_fingerprint;
+	return opened->valid() && stored_fingerprint == schema_fingerprint<T>();
+}
+
 auto gse::replace_baked_file(const std::filesystem::path& temporary, const std::filesystem::path& destination) -> asset_result {
 #ifdef _WIN32
 	if (win32::MoveFileExW(
-			temporary.c_str(),
-			destination.c_str(),
-			win32::movefile_replace_existing | win32::movefile_write_through
+		temporary.c_str(),
+		destination.c_str(),
+		win32::movefile_replace_existing | win32::movefile_write_through
 		) == 0) {
 		const auto code = static_cast<int>(win32::GetLastError());
 		std::error_code cleanup;

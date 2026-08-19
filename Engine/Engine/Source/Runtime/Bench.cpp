@@ -63,12 +63,14 @@ auto gse::world_state_hash(registry& reg) -> std::uint64_t {
 
 	for (const std::size_t index : order) {
 		const gse::id owner = owners[index];
+		const auto* motion = reg.try_component<physics::motion_component>(owner);
+		if (!motion) {
+			continue;
+		}
 		const std::uint64_t number = owner.number();
 		writer & number;
 		writer & transforms[index];
-		if (const auto* motion = reg.try_component<physics::motion_component>(owner)) {
-			writer & *motion;
-		}
+		writer & *motion;
 	}
 
 	return stable_id(buffer.view());
@@ -85,13 +87,16 @@ auto gse::write_state_frame(registry& reg, std::ostream& out, const std::uint32_
 	for (const std::size_t index : order) {
 		const gse::id owner = owners[index];
 		const auto* motion = reg.try_component<physics::motion_component>(owner);
+		if (!motion) {
+			continue;
+		}
 		state_dump_record record{
 			.owner = owner.number(),
 			.frame = frame,
 			.position = transforms[index].position,
-			.velocity = motion ? motion->current_velocity : vec3<velocity>{},
+			.velocity = motion->current_velocity,
 			.orientation = transforms[index].orientation,
-			.angular_velocity = motion ? motion->angular_velocity : vec3<angular_velocity>{},
+			.angular_velocity = motion->angular_velocity,
 		};
 		writer & record;
 	}

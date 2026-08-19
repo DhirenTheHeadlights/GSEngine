@@ -84,6 +84,13 @@ export namespace gse::gui {
 		vec4f color_input_background = { 0.06f, 0.08f, 0.12f, 0.35f };
 		vec4f color_selection = { 0.26f, 0.86f, 0.84f, 0.40f };
 		vec4f color_caret = { 0.96f, 0.97f, 0.99f, 1.0f };
+		vec4f color_warning = { 0.71f, 0.57f, 0.11f, 1.0f };
+		vec4f color_error = { 0.855f, 0.451f, 0.424f, 1.0f };
+		vec4f color_fatal = { 0.94f, 0.30f, 0.30f, 1.0f };
+		vec4f color_danger = { 0.62f, 0.22f, 0.22f, 1.0f };
+		vec4f color_danger_hovered = { 0.78f, 0.28f, 0.28f, 1.0f };
+		vec4f color_added = { 0.44f, 0.72f, 0.46f, 1.0f };
+		vec4f color_removed = { 0.82f, 0.44f, 0.44f, 1.0f };
 
 		// Tabs (own surface so strips read as chrome rather than widgets)
 		vec4f color_tab_background = { 0.07f, 0.12f, 0.17f, 0.35f };

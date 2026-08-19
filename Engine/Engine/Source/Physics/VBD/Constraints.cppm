@@ -21,7 +21,7 @@ export namespace gse::vbd {
 		std::uint32_t max_contact_adjacency = max_contacts * 2;
 		std::uint32_t max_joint_adjacency = max_joints * 2;
 		std::uint32_t max_grounded_uints = (max_bodies + 31) / 32;
-		std::uint32_t grid_table_size = 4096;
+		std::uint32_t grid_table_size = 32768;
 		std::uint32_t grid_max_entries = max_bodies * 8;
 		std::uint32_t workgroup_size = 64;
 		std::uint32_t adjacency_workgroup_size = 1024;

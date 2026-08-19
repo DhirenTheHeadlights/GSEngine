@@ -88,6 +88,21 @@ public float cloud_altitude_gradient(float height_fraction, float cloud_type) {
     return bottom * top;
 }
 
+public float cloud_weather_coverage(float weather, float global_coverage, float contrast) {
+    float gate = saturate((weather - 0.5) * max(contrast, 1e-3) + 0.5);
+    return saturate(global_coverage * 2.0 * gate);
+}
+
+public float cloud_coverage_from_shape(float shape, float height_fraction, float cloud_type, float coverage) {
+    float gradient = cloud_altitude_gradient(height_fraction, cloud_type);
+    return saturate(remap(shape * gradient, 1.0 - coverage, 1.0, 0.0, 1.0));
+}
+
+public float cloud_carve_density(float base, float erosion, float detail_strength, float density_multiplier) {
+    float carved = base - erosion * detail_strength * (1.0 - base);
+    return saturate(carved) * density_multiplier;
+}
+
 public float henyey_greenstein(float cos_theta, float g) {
     float g2 = g * g;
     float denom = pow(max(1.0 + g2 - 2.0 * g * cos_theta, 1e-6), 1.5);

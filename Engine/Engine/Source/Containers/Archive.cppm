@@ -63,6 +63,63 @@ export namespace gse {
 	template <typename A, typename T>
 	concept has_user_serialize = requires(A& a, T& v) { serialize(a, v); };
 
+	consteval auto archive_schema_hash_mix(
+		std::uint64_t hash,
+		std::string_view text
+	) -> std::uint64_t;
+
+	template <typename T>
+	struct archive_schema_fingerprint_impl {
+		static consteval auto accumulate(
+			std::uint64_t hash
+		) -> std::uint64_t;
+	};
+
+	template <>
+	struct archive_schema_fingerprint_impl<std::string> {
+		static consteval auto accumulate(
+			std::uint64_t hash
+		) -> std::uint64_t;
+	};
+
+	template <typename T>
+	struct archive_schema_fingerprint_impl<std::vector<T>> {
+		static consteval auto accumulate(
+			std::uint64_t hash
+		) -> std::uint64_t;
+	};
+
+	template <typename T, std::size_t N>
+	struct archive_schema_fingerprint_impl<std::inplace_vector<T, N>> {
+		static consteval auto accumulate(
+			std::uint64_t hash
+		) -> std::uint64_t;
+	};
+
+	template <typename T>
+	struct archive_schema_fingerprint_impl<std::optional<T>> {
+		static consteval auto accumulate(
+			std::uint64_t hash
+		) -> std::uint64_t;
+	};
+
+	template <typename... Ts>
+	struct archive_schema_fingerprint_impl<std::variant<Ts...>> {
+		static consteval auto accumulate(
+			std::uint64_t hash
+		) -> std::uint64_t;
+	};
+
+	template <typename K, typename V>
+	struct archive_schema_fingerprint_impl<std::unordered_map<K, V>> {
+		static consteval auto accumulate(
+			std::uint64_t hash
+		) -> std::uint64_t;
+	};
+
+	template <typename T>
+	consteval auto schema_fingerprint() -> std::uint64_t;
+
 	consteval auto is_archive_skipped(
 		std::meta::info member
 	) -> bool;
@@ -215,6 +272,8 @@ export namespace gse {
 			T& value
 		) -> binary_reader&;
 
+		[[nodiscard]] auto skipped_fields() const -> std::span<const std::string>;
+
 	private:
 		auto read_bytes(
 			void* data,
@@ -232,8 +291,14 @@ export namespace gse {
 			const archive_field& field
 		) -> void;
 
+		auto note_skipped_field(
+			std::string_view type_name,
+			const archive_field& field
+		) -> void;
+
 		std::ifstream& m_stream;
 		std::unordered_map<std::uint64_t, std::vector<archive_field>> m_schemas;
+		std::vector<std::string> m_skipped_fields;
 		std::uint64_t m_remaining = 0;
 		bool m_valid = true;
 	};
@@ -251,6 +316,16 @@ export namespace gse {
 	auto serialize(
 		binary_reader& ar,
 		raw_blob_owned<T>& v
+	) -> void;
+
+	auto serialize(
+		binary_writer& ar,
+		std::filesystem::path& v
+	) -> void;
+
+	auto serialize(
+		binary_reader& ar,
+		std::filesystem::path& v
 	) -> void;
 }
 
@@ -627,6 +702,7 @@ auto gse::binary_reader::operator&(T& value) -> binary_reader& {
 				}
 			}
 			if (!matched) {
+				note_skipped_field(meta::qualified_name<T>(), field);
 				skip_field(field);
 			}
 		}
@@ -779,4 +855,88 @@ auto gse::serialize(binary_writer& ar, raw_blob_owned<T>& v) -> void {
 template <typename T>
 auto gse::serialize(binary_reader& ar, raw_blob_owned<T>& v) -> void {
 	ar& raw_blob<T>{ v.storage };
+}
+
+auto gse::serialize(binary_writer& ar, std::filesystem::path& v) -> void {
+	std::string text = v.generic_native_encoded_string();
+	ar & text;
+}
+
+auto gse::serialize(binary_reader& ar, std::filesystem::path& v) -> void {
+	std::string text;
+	ar & text;
+	v = std::move(text);
+}
+
+consteval auto gse::archive_schema_hash_mix(std::uint64_t hash, const std::string_view text) -> std::uint64_t {
+	for (const char c : text) {
+		hash = (hash ^ static_cast<std::uint8_t>(c)) * 1099511628211ull;
+	}
+	return hash;
+}
+
+template <typename T>
+consteval auto gse::archive_schema_fingerprint_impl<T>::accumulate(std::uint64_t hash) -> std::uint64_t {
+	if constexpr (has_user_serialize<binary_reader, T>) {
+		return hash;
+	}
+	else if constexpr (archive_schema_type<T> || (std::is_class_v<T> && !std::is_trivially_copyable_v<T>)) {
+		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+			if constexpr (!is_archive_skipped(m)) {
+				hash = archive_schema_hash_mix(hash, std::meta::identifier_of(m));
+				hash = archive_schema_hash_mix(hash, meta::qualified_name<typename [:std::meta::type_of(m):]>());
+				hash = archive_schema_fingerprint_impl<typename [:std::meta::type_of(m):]>::accumulate(hash);
+			}
+		}
+		return hash;
+	}
+	else {
+		return hash;
+	}
+}
+
+consteval auto gse::archive_schema_fingerprint_impl<std::string>::accumulate(const std::uint64_t hash) -> std::uint64_t {
+	return hash;
+}
+
+template <typename T>
+consteval auto gse::archive_schema_fingerprint_impl<std::vector<T>>::accumulate(const std::uint64_t hash) -> std::uint64_t {
+	return archive_schema_fingerprint_impl<T>::accumulate(hash);
+}
+
+template <typename T, std::size_t N>
+consteval auto gse::archive_schema_fingerprint_impl<std::inplace_vector<T, N>>::accumulate(const std::uint64_t hash) -> std::uint64_t {
+	return archive_schema_fingerprint_impl<T>::accumulate(hash);
+}
+
+template <typename T>
+consteval auto gse::archive_schema_fingerprint_impl<std::optional<T>>::accumulate(const std::uint64_t hash) -> std::uint64_t {
+	return archive_schema_fingerprint_impl<T>::accumulate(hash);
+}
+
+template <typename... Ts>
+consteval auto gse::archive_schema_fingerprint_impl<std::variant<Ts...>>::accumulate(std::uint64_t hash) -> std::uint64_t {
+	((hash = archive_schema_fingerprint_impl<Ts>::accumulate(hash)), ...);
+	return hash;
+}
+
+template <typename K, typename V>
+consteval auto gse::archive_schema_fingerprint_impl<std::unordered_map<K, V>>::accumulate(const std::uint64_t hash) -> std::uint64_t {
+	return archive_schema_fingerprint_impl<V>::accumulate(archive_schema_fingerprint_impl<K>::accumulate(hash));
+}
+
+template <typename T>
+consteval auto gse::schema_fingerprint() -> std::uint64_t {
+	return archive_schema_fingerprint_impl<T>::accumulate(archive_schema_hash_mix(14695981039346656037ull, meta::qualified_name<T>()));
+}
+
+auto gse::binary_reader::skipped_fields() const -> std::span<const std::string> {
+	return m_skipped_fields;
+}
+
+auto gse::binary_reader::note_skipped_field(const std::string_view type_name, const archive_field& field) -> void {
+	auto entry = std::format("{}.{} stored as {} (size {})", type_name, field.name, field.type, field.size);
+	if (std::ranges::find(m_skipped_fields, entry) == m_skipped_fields.end()) {
+		m_skipped_fields.push_back(std::move(entry));
+	}
 }

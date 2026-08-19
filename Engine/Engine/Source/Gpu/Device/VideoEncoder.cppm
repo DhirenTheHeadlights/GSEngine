@@ -26,6 +26,10 @@ export namespace gse::gpu {
 			std::unique_ptr<video_encoder_backend> impl
 		) noexcept;
 
+		auto set_bitrate(
+			bitrate rate
+		) -> void;
+
 		[[nodiscard]] auto begin_capture(
 			time pts
 		) -> encode_source;

@@ -302,6 +302,29 @@ float3 trace_reflection(float3 origin, float3 normal, float3 view_dir, float rou
     return reflection * F;
 }
 
+float cloud_shadow_at(float3 pos_world, float3 camera_world) {
+    if (cloud_shadow_ubo.strength <= 0.0) {
+        return 1.0;
+    }
+
+    float3 sun_dir = cloud_shadow_ubo.sun_direction;
+    if (sun_dir.y <= 0.02) {
+        return 1.0;
+    }
+
+    float2 relative_xz_km = (pos_world.xz - camera_world.xz) * 0.001;
+    float height_km = pos_world.y * 0.001;
+    float2 plane_xz = relative_xz_km - sun_dir.xz * (height_km / sun_dir.y);
+
+    float2 uv = (plane_xz - cloud_shadow_ubo.origin_km) / max(cloud_shadow_ubo.extent_km, 1e-6);
+    if (any(uv < 0.0) || any(uv > 1.0)) {
+        return 1.0;
+    }
+
+    float transmittance = cloud_shadow_in.SampleLevel(cloud_shadow_sampler, uv, 0).r;
+    return lerp(1.0, transmittance, cloud_shadow_ubo.strength);
+}
+
 float trace_shadow(float3 origin, float3 normal, float3 direction, float t_max, float light_radius, float2 pixel, shadow_config cfg, float view_dist) {
     if (view_dist > cfg.max_range) return 1.0;
 
@@ -361,6 +384,7 @@ float4 fs_main(MeshOutput input) : SV_Target0 {
 
     float3 V = normalize(-pos_vs);
     float3 result = float3(0.0, 0.0, 0.0);
+    float3 cam_world = mul(camera_ubo.inv_view, float4(0.0, 0.0, 0.0, 1.0)).xyz;
 
     uint2 tile_id = uint2(input.clip_pos.xy) / TILE_SIZE;
     uint tiles_x = (pc.screen_size.x + TILE_SIZE - 1) / TILE_SIZE;
@@ -423,6 +447,9 @@ float4 fs_main(MeshOutput input) : SV_Target0 {
         if (scfg.max_samples > 0 && NdotL > 0.0) {
             shadow = trace_shadow(pos_world, world_n, shadow_dir_world, shadow_t_max, l.source_radius, pixel, scfg, view_dist);
         }
+        if (l.light_type == light_type::directional && NdotL > 0.0) {
+            shadow *= cloud_shadow_at(pos_world, cam_world);
+        }
 
         float3 F;
         float3 brdf = evaluate_pbr(normal_vs, V, L, base_color, mat.roughness, mat.metallic, F0, F);
@@ -433,7 +460,6 @@ float4 fs_main(MeshOutput input) : SV_Target0 {
 
     reflection_config rcfg = get_reflection_config(clamp(pc.reflection_quality, 0, 3));
     if (rcfg.max_samples > 0 && mat.roughness <= rcfg.max_roughness) {
-        float3 cam_world = mul(camera_ubo.inv_view, float4(0.0, 0.0, 0.0, 1.0)).xyz;
         float3 world_V = normalize(cam_world - pos_world);
         float NdotV_world = max(dot(world_n, world_V), 0.0);
         float3 F_refl = fresnel_schlick(NdotV_world, F0);
