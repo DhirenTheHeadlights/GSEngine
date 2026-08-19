@@ -20,6 +20,7 @@ export namespace gse::ide::spawn {
 	struct launched {
 		void* process = nullptr;
 		void* output = nullptr;
+		void* input = nullptr;
 		void* job = nullptr;
 		std::uint32_t pid = 0;
 	};
@@ -45,8 +46,15 @@ export namespace gse::ide::spawn {
 
 	auto launch_streamed(
 		const std::wstring& command_line,
-		const std::wstring& working_dir
+		const std::wstring& working_dir,
+		std::span<const wchar_t> environment = {}
 	) -> launched;
+
+	auto read_lines(
+		void* read_end,
+		std::string& pending,
+		std::vector<std::string>& out
+	) -> bool;
 
 	auto pump_output(
 		output_stream& stream,
@@ -59,6 +67,11 @@ namespace gse::ide::spawn {
 	auto strip_escapes(
 		std::string_view text
 	) -> std::string;
+
+	auto split_lines(
+		std::string& pending,
+		std::vector<std::string>& out
+	) -> void;
 
 	auto flush_lines(
 		output_stream& stream,
@@ -89,14 +102,22 @@ auto gse::ide::spawn::strip_escapes(const std::string_view text) -> std::string 
 	return out;
 }
 
-auto gse::ide::spawn::flush_lines(output_stream& stream, std::string& pending) -> void {
+auto gse::ide::spawn::split_lines(std::string& pending, std::vector<std::string>& out) -> void {
 	for (std::size_t newline = pending.find('\n'); newline != std::string::npos; newline = pending.find('\n')) {
 		std::string_view text = std::string_view(pending).substr(0, newline);
 		if (!text.empty() && text.back() == '\r') {
 			text.remove_suffix(1);
 		}
-		emit(stream, strip_escapes(text));
+		out.emplace_back(text);
 		pending.erase(0, newline + 1);
+	}
+}
+
+auto gse::ide::spawn::flush_lines(output_stream& stream, std::string& pending) -> void {
+	std::vector<std::string> lines;
+	split_lines(pending, lines);
+	for (const std::string& line : lines) {
+		emit(stream, strip_escapes(line));
 	}
 }
 
@@ -277,7 +298,7 @@ auto gse::ide::spawn::run_capture(
 	return static_cast<int>(code);
 }
 
-auto gse::ide::spawn::launch_streamed(const std::wstring& command_line, const std::wstring& working_dir) -> launched {
+auto gse::ide::spawn::launch_streamed(const std::wstring& command_line, const std::wstring& working_dir, const std::span<const wchar_t> environment) -> launched {
 	win32::SECURITY_ATTRIBUTES attributes{
 		.nLength = sizeof(win32::SECURITY_ATTRIBUTES),
 		.bInheritHandle = 1,
@@ -289,6 +310,25 @@ auto gse::ide::spawn::launch_streamed(const std::wstring& command_line, const st
 		return {};
 	}
 	win32::SetHandleInformation(read_end, win32::handle_flag_inherit, 0);
+
+	void* input_read = nullptr;
+	void* input_write = nullptr;
+	if (!win32::CreatePipe(&input_read, &input_write, &attributes, 0)) {
+		win32::CloseHandle(read_end);
+		win32::CloseHandle(write_end);
+		return {};
+	}
+	win32::SetHandleInformation(input_write, win32::handle_flag_inherit, 0);
+
+	bool adopted = false;
+	const auto close_input_read = make_scope_exit([input_read] {
+		win32::CloseHandle(input_read);
+	});
+	const auto close_input_write = make_scope_exit([&adopted, input_write] {
+		if (!adopted) {
+			win32::CloseHandle(input_write);
+		}
+	});
 
 	win32::SIZE_T attribute_size = 0;
 	win32::InitializeProcThreadAttributeList(nullptr, 1, 0, &attribute_size);
@@ -307,7 +347,8 @@ auto gse::ide::spawn::launch_streamed(const std::wstring& command_line, const st
 	const auto delete_attribute_list = make_scope_exit([attribute_list] {
 		win32::DeleteProcThreadAttributeList(attribute_list);
 	});
-	if (!win32::UpdateProcThreadAttribute(attribute_list, 0, win32::proc_thread_attribute_handle_list, &write_end, sizeof(write_end), nullptr, nullptr)) {
+	void* inherited[2] = { write_end, input_read };
+	if (!win32::UpdateProcThreadAttribute(attribute_list, 0, win32::proc_thread_attribute_handle_list, inherited, sizeof(inherited), nullptr, nullptr)) {
 		win32::CloseHandle(read_end);
 		win32::CloseHandle(write_end);
 		return {};
@@ -335,6 +376,7 @@ auto gse::ide::spawn::launch_streamed(const std::wstring& command_line, const st
 		.StartupInfo = {
 			.cb = sizeof(win32::STARTUPINFOEXW),
 			.dwFlags = win32::startf_use_std_handles,
+			.hStdInput = input_read,
 			.hStdOutput = write_end,
 			.hStdError = write_end,
 		},
@@ -348,8 +390,8 @@ auto gse::ide::spawn::launch_streamed(const std::wstring& command_line, const st
 		nullptr,
 		nullptr,
 		1,
-		win32::extended_startupinfo_present | win32::create_no_window | win32::create_suspended,
-		nullptr,
+		win32::extended_startupinfo_present | win32::create_no_window | win32::create_suspended | (environment.empty() ? 0u : win32::create_unicode_environment),
+		environment.empty() ? nullptr : const_cast<wchar_t*>(environment.data()),
 		working_dir.empty() ? nullptr : working_dir.c_str(),
 		&startup.StartupInfo,
 		&process
@@ -383,40 +425,49 @@ auto gse::ide::spawn::launch_streamed(const std::wstring& command_line, const st
 
 	win32::CloseHandle(process.hThread);
 
+	adopted = true;
 	return {
 		.process = process.hProcess,
 		.output = read_end,
+		.input = input_write,
 		.job = job,
 		.pid = static_cast<std::uint32_t>(process.dwProcessId),
 	};
 }
 
-auto gse::ide::spawn::pump_output(output_stream& stream, void* read_end, std::string& pending) -> bool {
-	if (!win32::valid_handle(read_end)) {
-		return false;
-	}
+auto gse::ide::spawn::read_lines(void* read_end, std::string& pending, std::vector<std::string>& out) -> bool {
+	bool open = win32::valid_handle(read_end);
 	std::array<char, 4096> chunk{};
-	for (;;) {
+	while (open) {
 		win32::DWORD available = 0;
 		if (!win32::PeekNamedPipe(read_end, nullptr, 0, nullptr, &available, nullptr)) {
-			if (!pending.empty()) {
-				emit(stream, strip_escapes(pending));
-				pending.clear();
-			}
-			return false;
+			open = false;
+			break;
 		}
 		if (available == 0) {
-			return true;
+			break;
 		}
 		win32::DWORD received = 0;
 		if (!win32::ReadFile(read_end, chunk.data(), std::min(available, static_cast<win32::DWORD>(chunk.size())), &received, nullptr) || received == 0) {
-			if (!pending.empty()) {
-				emit(stream, strip_escapes(pending));
-				pending.clear();
-			}
-			return false;
+			open = false;
+			break;
 		}
 		pending.append(chunk.data(), received);
-		flush_lines(stream, pending);
 	}
+
+	split_lines(pending, out);
+
+	if (!open && !pending.empty()) {
+		out.push_back(std::exchange(pending, {}));
+	}
+	return open;
+}
+
+auto gse::ide::spawn::pump_output(output_stream& stream, void* read_end, std::string& pending) -> bool {
+	std::vector<std::string> lines;
+	const bool open = read_lines(read_end, pending, lines);
+	for (const std::string& line : lines) {
+		emit(stream, strip_escapes(line));
+	}
+	return open;
 }

@@ -170,6 +170,7 @@ export namespace gse::trace {
 		std::uint32_t children_first = 0;
 		std::uint32_t children_count = 0;
 		bool open = false;
+		bool lexical = false;
 	};
 
 	struct frame_view {
@@ -224,6 +225,7 @@ namespace gse::trace {
 		time_t<std::uint64_t> ts;
 		double value = 0.0;
 		std::uint64_t key = 0;
+		bool lexical = false;
 	};
 
 	class scsp_events {
@@ -273,6 +275,7 @@ namespace gse::trace {
 		time_t<std::uint64_t> t1;
 		std::uint64_t parent = 0;
 		std::uint64_t opened_frame = 0;
+		bool lexical = false;
 	};
 
 	struct frame_span {

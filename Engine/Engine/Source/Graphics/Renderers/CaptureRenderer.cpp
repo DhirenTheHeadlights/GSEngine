@@ -65,7 +65,11 @@ auto gse::renderer::capture::init(context& ctx, const shared_view<gpu::context::
 	d.toggle_recording_action = register_action("Toggle Recording", key::r, { key_modifier::ctrl, key_modifier::shift });
 
 	const auto ext = gpu_s.render_graph->extent();
-	auto encoder = gpu_s.device->make_video_encoder(ext);
+	auto encoder = gpu_s.device->make_video_encoder({
+		.extent = ext,
+		.average_bitrate = d.capture_bitrate,
+		.frame_interval = d.capture_interval
+	});
 	if (!gpu_s.device->video_encode_enabled()) {
 		log::println(log::category::render, "Video encode not available, capture limited to screenshots");
 	}
@@ -107,6 +111,7 @@ auto gse::renderer::capture::init(context& ctx, const shared_view<gpu::context::
 
 		d.clip_ring.set_budget(d.ring_budget);
 		d.applied_ring_budget = d.ring_budget;
+		d.applied_capture_bitrate = d.capture_bitrate;
 
 		d.encode_active = true;
 	}
@@ -178,6 +183,14 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 	if (d.ring_budget != d.applied_ring_budget) {
 		d.clip_ring.set_budget(d.ring_budget);
 		d.applied_ring_budget = d.ring_budget;
+	}
+
+	if (d.capture_bitrate != d.applied_capture_bitrate) {
+		d.applied_capture_bitrate = d.capture_bitrate;
+		if (d.encode_active && d.encoder.valid()) {
+			d.encoder.set_bitrate(d.capture_bitrate);
+			log::println(log::category::render, "Capture bitrate set to {:.1f:Mb/s}", d.capture_bitrate);
+		}
 	}
 
 	const auto capture_pts = system_clock::content_now<time>();

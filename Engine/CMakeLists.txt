@@ -128,7 +128,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_link_libraries(Engine PUBLIC stdc++exp)
     if(WIN32)
         find_package(directx-headers CONFIG REQUIRED)
-        target_link_libraries(Engine PUBLIC ws2_32 dbghelp shell32 d3d12 dxgi dxguid Microsoft::DirectX-Headers)
+        target_link_libraries(Engine PUBLIC ws2_32 dbghelp shell32 advapi32 d3d12 dxgi dxguid Microsoft::DirectX-Headers)
     endif()
 endif()
 

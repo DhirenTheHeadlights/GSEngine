@@ -36,6 +36,10 @@ export namespace gse {
 		const std::function<void()>& in_scope
 	) -> void;
 
+	auto ellipsize_path(
+		std::string_view path
+	) -> std::string;
+
 	template <is_trivially_copyable... Src>
 	auto memcpy(
 		std::byte* dest,
@@ -104,6 +108,23 @@ auto gse::bulk_invoke(Container&& container, Ret (T::*func)(Args...), Args&&... 
 
 auto gse::scope(const std::function<void()>& in_scope) -> void {
 	in_scope();
+}
+
+auto gse::ellipsize_path(const std::string_view path) -> std::string {
+	std::vector<std::string_view> parts;
+	std::size_t start = 0;
+	for (std::size_t i = 0; i <= path.size(); ++i) {
+		if (i == path.size() || path[i] == '\\' || path[i] == '/') {
+			if (i > start) {
+				parts.push_back(path.substr(start, i - start));
+			}
+			start = i + 1;
+		}
+	}
+	if (parts.size() <= 3) {
+		return std::string(path);
+	}
+	return std::format("{}\\...\\{}\\{}", parts.front(), parts[parts.size() - 2], parts.back());
 }
 
 template <gse::is_trivially_copyable... Src>

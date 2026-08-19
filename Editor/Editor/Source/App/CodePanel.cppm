@@ -135,19 +135,6 @@ namespace gse::ide {
 		gse::channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, gse::set_cursor_shape_request, search::index_merge_request> channels
 	) -> document_save_result;
 
-	struct document_prompt_button_params {
-		rectf rect;
-		std::string_view label;
-		std::string_view key;
-		bool danger = false;
-		bool enabled = true;
-	};
-
-	auto document_prompt_button(
-		gse::gui::builder& ui,
-		const document_prompt_button_params& params
-	) -> bool;
-
 	auto draw_document_prompt(
 		gse::gui::builder& ui,
 		workspace::data& ws,
@@ -1555,35 +1542,6 @@ auto gse::ide::draw_quickfix_tooltip(const gse::gui::draw_context& ctx, const re
 	return layout;
 }
 
-auto gse::ide::document_prompt_button(gse::gui::builder& ui, const document_prompt_button_params& params) -> bool {
-	const gse::gui::draw_context& ctx = ui.ctx;
-	const gse::gui::style& style = ctx.style;
-	const auto text_view = ctx.fonts.text.resolve();
-	const gse::id widget_id = gse::gui::ids::make(params.key);
-	const auto btn = gse::gui::interaction::press_in_rect(ctx, ui.hot_widget_id, ui.active_widget_id, widget_id, params.rect, params.enabled);
-
-	ctx.queue_sprite({
-		.rect = params.rect,
-		.color = btn.color({
-			.idle = params.danger ? gse::vec4f{ 0.62f, 0.22f, 0.22f, 1.f } : style.color_input_background,
-			.hot = params.danger ? gse::vec4f{ 0.78f, 0.28f, 0.28f, 1.f } : style.color_widget_hovered,
-			.active = style.color_widget_active,
-			.disabled = style.color_widget_background,
-		}),
-		.texture = ctx.blank_texture,
-		.corner_radius = style.corner_radius,
-	});
-	ctx.queue_text({
-		.font = ctx.fonts.text,
-		.text = params.label,
-		.position = { params.rect.center().x() - text_view->width(params.label, style.font_size) * 0.5f, params.rect.center().y() + text_view->vertical_center_offset(style.font_size) },
-		.scale = style.font_size,
-		.color = params.enabled ? style.color_text : style.color_text_disabled,
-		.clip_rect = params.rect,
-	});
-	return btn.activated;
-}
-
 auto gse::ide::draw_document_prompt(gse::gui::builder& ui, workspace::data& ws, const rectf& body, gse::channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, gse::set_cursor_shape_request, search::index_merge_request> channels) -> void {
 	if (!ws.pending_document_prompt) {
 		return;
@@ -1657,23 +1615,23 @@ auto gse::ide::draw_document_prompt(gse::gui::builder& ui, workspace::data& ws, 
 	const rectf cancel_button = rectf::from_position_size({ dialog.left() + pad, dialog.bottom() + pad + button_height }, { button_width, button_height });
 	const rectf secondary_button = rectf::from_position_size({ cancel_button.right() + pad, cancel_button.top() }, { button_width, button_height });
 	const rectf primary_button = rectf::from_position_size({ secondary_button.right() + pad, cancel_button.top() }, { button_width, button_height });
-	bool cancel = document_prompt_button(ui, {
+	bool cancel = gse::gui::draw::button_in_rect(ctx, {
 		.rect = cancel_button,
 		.label = "Cancel",
 		.key = "##document_prompt_cancel",
-	});
-	const bool secondary = document_prompt_button(ui, {
+	}, ui.hot_widget_id, ui.active_widget_id);
+	const bool secondary = gse::gui::draw::button_in_rect(ctx, {
 		.rect = secondary_button,
 		.label = conflict ? "Reload Disk" : "Discard",
 		.key = "##document_prompt_secondary",
 		.danger = !conflict,
-	});
-	const bool primary = document_prompt_button(ui, {
+	}, ui.hot_widget_id, ui.active_widget_id);
+	const bool primary = gse::gui::draw::button_in_rect(ctx, {
 		.rect = primary_button,
 		.label = conflict ? "Overwrite Disk" : "Save",
 		.key = "##document_prompt_primary",
 		.danger = conflict,
-	});
+	}, ui.hot_widget_id, ui.active_widget_id);
 	if (ctx.key_pressed_for(gse::key::escape)) {
 		ctx.consume_key_press(gse::key::escape);
 		cancel = true;
@@ -2122,11 +2080,11 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& i
 
 		if (!doc.persistence_error.empty()) {
 			status_text = doc.persistence_error;
-			status_color = gse::vec4f{ 0.855f, 0.451f, 0.424f, 1.f };
+			status_color = ctx.style.color_error;
 		}
 		else if (doc.persistence == document_persistence::conflicted) {
 			status_text = "file changed on disk - save to choose reload or overwrite";
-			status_color = gse::vec4f{ 0.855f, 0.451f, 0.424f, 1.f };
+			status_color = ctx.style.color_error;
 		}
 		else if (analyzing) {
 			const float glyph_size = status_rect.height() * 0.62f;
@@ -2154,19 +2112,19 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& i
 				: std::string{};
 			if (errors > 0) {
 				status_text = prefix + std::to_string(errors) + (errors == 1 ? " error" : " errors") + (warnings > 0 ? ", " + std::to_string(warnings) + (warnings == 1 ? " warning" : " warnings") : "") + elsewhere_note;
-				status_color = gse::vec4f{ 0.855f, 0.451f, 0.424f, 1.f };
+				status_color = ctx.style.color_error;
 			}
 			else if (warnings > 0) {
 				status_text = prefix + std::to_string(warnings) + (warnings == 1 ? " warning" : " warnings") + elsewhere_note;
-				status_color = gse::vec4f{ 0.71f, 0.57f, 0.11f, 1.f };
+				status_color = ctx.style.color_warning;
 			}
 			else if (elsewhere > 0) {
 				status_text = prefix + "no issues in this file" + elsewhere_note;
-				status_color = gse::vec4f{ 0.71f, 0.57f, 0.11f, 1.f };
+				status_color = ctx.style.color_warning;
 			}
 			else {
 				status_text = prefix + "no issues";
-				status_color = gse::vec4f{ 0.48f, 0.65f, 0.29f, 1.f };
+				status_color = ctx.style.color_added;
 			}
 		}
 
@@ -2244,8 +2202,8 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& i
 				continue;
 			}
 			const gse::vec4f color = diagnostic.level == severity::warning
-				? gse::vec4f{ 0.71f, 0.57f, 0.11f, 1.f }
-				: (diagnostic.level == severity::hint ? gse::vec4f{ 0.45f, 0.51f, 0.58f, 0.9f } : diagnostic.level == severity::note ? gse::vec4f{ 0.43f, 0.50f, 0.64f, 1.f } : gse::vec4f{ 0.855f, 0.451f, 0.424f, 1.f });
+				? ctx.style.color_warning
+				: (diagnostic.level == severity::hint ? gse::vec4f{ 0.45f, 0.51f, 0.58f, 0.9f } : diagnostic.level == severity::note ? gse::vec4f{ 0.43f, 0.50f, 0.64f, 1.f } : ctx.style.color_error);
 			const bool faded = diagnostic.source == diagnostic_source::lint && diagnostic.level == severity::hint;
 			const std::uint32_t last_line = std::min<std::uint32_t>(std::max(diagnostic.end_line, diagnostic.line), static_cast<std::uint32_t>(line_count) - 1);
 			for (std::uint32_t seg_line = diagnostic.line; seg_line <= last_line; ++seg_line) {

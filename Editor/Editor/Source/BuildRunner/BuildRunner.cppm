@@ -885,6 +885,10 @@ auto gse::ide::build_runner::launch_game_attached(build_completion& completion, 
 		return;
 	}
 
+	if (win32::valid_handle(game.input)) {
+		win32::CloseHandle(game.input);
+	}
+
 	spawn::emit(stream, "launched game (pid " + std::to_string(game.pid) + ")");
 
 	std::lock_guard lock(completion.mutex);
@@ -1014,8 +1018,8 @@ auto gse::ide::build_runner::build_worker(
 
 auto gse::ide::build_runner::cleanup_backups() -> void {
 	std::error_code ec;
-	for (const config::worktree* tree : config::worktrees()) {
-		std::filesystem::remove(backup_path(tree->game_executable), ec);
+	for (const config::worktree& tree : config::worktrees()) {
+		std::filesystem::remove(backup_path(tree.game_executable), ec);
 	}
 	std::filesystem::remove(backup_path(config::editor_executable()), ec);
 	const std::filesystem::path editor_exe = current_executable();

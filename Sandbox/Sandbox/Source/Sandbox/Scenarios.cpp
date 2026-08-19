@@ -38,6 +38,34 @@ namespace sandbox::scenarios {
 	auto lighting_target(
 		float progress
 	) -> gse::camera::target;
+
+	auto sunset_target(
+		float progress
+	) -> gse::camera::target;
+
+	auto sunset_sun_at(
+		float progress
+	) -> gse::renderer::atmosphere::sun_request;
+
+	auto sunset_weather_at(
+		float progress
+	) -> gse::renderer::cloud::weather_request;
+
+	auto cloud_target(
+		float progress
+	) -> gse::camera::target;
+
+	auto cloud_sun_at(
+		float progress
+	) -> gse::renderer::atmosphere::sun_request;
+
+	auto cloud_weather_at(
+		float progress
+	) -> gse::renderer::cloud::weather_request;
+
+	auto tumbler_target(
+		float progress
+	) -> gse::camera::target;
 }
 
 auto sandbox::scenarios::lighting_target(const float progress) -> gse::camera::target {
@@ -57,6 +85,63 @@ auto sandbox::scenarios::sky_target(const float progress) -> gse::camera::target
 		.position = gse::vec3<gse::position>(gse::meters(0.f), gse::meters(4.f), gse::meters(70.f)),
 		.orientation = gse::from_axis_angle(gse::axis_y, sun.azimuth) * gse::from_axis_angle(gse::axis_x, pitch),
 		.fov = gse::degrees(75.f),
+	};
+}
+
+auto sandbox::scenarios::tumbler_target(const float progress) -> gse::camera::target {
+	return orbit_at(
+		gse::vec3<gse::position>(gse::meters(0.f), gse::meters(13.f), gse::meters(0.f)),
+		gse::meters(82.f),
+		gse::meters(40.f),
+		gse::degrees(-45.f) + gse::degrees(115.f) * progress
+	);
+}
+
+auto sandbox::scenarios::cloud_target(const float progress) -> gse::camera::target {
+	const auto yaw = gse::degrees(55.f) + gse::degrees(135.f) * progress;
+	const auto pitch = gse::degrees(20.f);
+
+	return {
+		.position = gse::vec3<gse::position>(gse::meters(0.f), gse::meters(30.f), gse::meters(0.f)),
+		.orientation = gse::from_axis_angle(gse::axis_y, yaw) * gse::from_axis_angle(gse::axis_x, pitch),
+		.fov = gse::degrees(70.f),
+	};
+}
+
+auto sandbox::scenarios::cloud_sun_at(const float progress) -> gse::renderer::atmosphere::sun_request {
+	return {
+		.elevation = gse::degrees(38.f) - gse::degrees(14.f) * progress,
+		.azimuth = gse::degrees(70.f) + gse::degrees(85.f) * progress,
+	};
+}
+
+auto sandbox::scenarios::cloud_weather_at(const float progress) -> gse::renderer::cloud::weather_request {
+	return {
+		.phase = progress,
+	};
+}
+
+auto sandbox::scenarios::sunset_target(const float progress) -> gse::camera::target {
+	const auto yaw = gse::degrees(82.f) + gse::degrees(247.5f) * progress;
+	const auto pitch = gse::degrees(11.f);
+
+	return {
+		.position = gse::vec3<gse::position>(gse::meters(0.f), gse::meters(45.f), gse::meters(0.f)),
+		.orientation = gse::from_axis_angle(gse::axis_y, yaw) * gse::from_axis_angle(gse::axis_x, pitch),
+		.fov = gse::degrees(66.f),
+	};
+}
+
+auto sandbox::scenarios::sunset_sun_at(const float progress) -> gse::renderer::atmosphere::sun_request {
+	return {
+		.elevation = gse::degrees(24.f) - gse::degrees(22.f) * progress,
+		.azimuth = gse::degrees(94.f) + gse::degrees(190.f) * progress,
+	};
+}
+
+auto sandbox::scenarios::sunset_weather_at(const float progress) -> gse::renderer::cloud::weather_request {
+	return {
+		.phase = 0.51f * progress,
 	};
 }
 
@@ -242,6 +327,110 @@ auto sandbox::scenarios::atmosphere_showcase(gse::scenario::context& ctx) -> gse
 			.blend_duration = {},
 		});
 		ctx.channels().push<gse::renderer::atmosphere::sun_request>(sun_at(progress));
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+
+	ctx.channels().push<gse::renderer::capture::toggle_recording_request>({});
+}
+
+auto sandbox::scenarios::tumbler_showcase(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::uint64_t settle_frames = 90;
+	constexpr std::uint64_t record_frames = 1000;
+
+	const gse::renderer::atmosphere::sun_request sun{
+		.elevation = gse::degrees(34.f),
+		.azimuth = gse::degrees(126.f),
+	};
+
+	co_await gse::scenario::wait_settled(ctx);
+
+	for (std::uint64_t i = 0; i < settle_frames; ++i) {
+		ctx.channels().push<gse::camera::request>({
+			.target = tumbler_target(0.f),
+			.priority = 100,
+			.blend_duration = {},
+		});
+		ctx.channels().push<gse::renderer::atmosphere::sun_request>(sun);
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+
+	ctx.channels().push<gse::renderer::capture::toggle_recording_request>({});
+
+	for (std::uint64_t i = 0; i < record_frames; ++i) {
+		ctx.channels().push<gse::camera::request>({
+			.target = tumbler_target(static_cast<float>(i) / static_cast<float>(record_frames - 1)),
+			.priority = 100,
+			.blend_duration = {},
+		});
+		ctx.channels().push<gse::renderer::atmosphere::sun_request>(sun);
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+
+	ctx.channels().push<gse::renderer::capture::toggle_recording_request>({});
+}
+
+auto sandbox::scenarios::cloud_showcase(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::uint64_t settle_frames = 60;
+	constexpr std::uint64_t record_frames = 1050;
+
+	co_await gse::scenario::wait_settled(ctx);
+
+	for (std::uint64_t i = 0; i < settle_frames; ++i) {
+		ctx.channels().push<gse::camera::request>({
+			.target = cloud_target(0.f),
+			.priority = 100,
+			.blend_duration = {},
+		});
+		ctx.channels().push<gse::renderer::atmosphere::sun_request>(cloud_sun_at(0.f));
+		ctx.channels().push<gse::renderer::cloud::weather_request>(cloud_weather_at(0.f));
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+
+	ctx.channels().push<gse::renderer::capture::toggle_recording_request>({});
+
+	for (std::uint64_t i = 0; i < record_frames; ++i) {
+		const float progress = static_cast<float>(i) / static_cast<float>(record_frames - 1);
+		ctx.channels().push<gse::camera::request>({
+			.target = cloud_target(progress),
+			.priority = 100,
+			.blend_duration = {},
+		});
+		ctx.channels().push<gse::renderer::atmosphere::sun_request>(cloud_sun_at(progress));
+		ctx.channels().push<gse::renderer::cloud::weather_request>(cloud_weather_at(progress));
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+
+	ctx.channels().push<gse::renderer::capture::toggle_recording_request>({});
+}
+
+auto sandbox::scenarios::sunset_showcase(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::uint64_t settle_frames = 60;
+	constexpr std::uint64_t record_frames = 1575;
+
+	co_await gse::scenario::wait_settled(ctx);
+
+	for (std::uint64_t i = 0; i < settle_frames; ++i) {
+		ctx.channels().push<gse::camera::request>({
+			.target = sunset_target(0.f),
+			.priority = 100,
+			.blend_duration = {},
+		});
+		ctx.channels().push<gse::renderer::atmosphere::sun_request>(sunset_sun_at(0.f));
+		ctx.channels().push<gse::renderer::cloud::weather_request>(sunset_weather_at(0.f));
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+
+	ctx.channels().push<gse::renderer::capture::toggle_recording_request>({});
+
+	for (std::uint64_t i = 0; i < record_frames; ++i) {
+		const float progress = static_cast<float>(i) / static_cast<float>(record_frames - 1);
+		ctx.channels().push<gse::camera::request>({
+			.target = sunset_target(progress),
+			.priority = 100,
+			.blend_duration = {},
+		});
+		ctx.channels().push<gse::renderer::atmosphere::sun_request>(sunset_sun_at(progress));
+		ctx.channels().push<gse::renderer::cloud::weather_request>(sunset_weather_at(progress));
 		co_await gse::scenario::wait_frames(ctx, 1);
 	}
 

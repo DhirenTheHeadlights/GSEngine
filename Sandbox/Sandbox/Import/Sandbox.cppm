@@ -15,6 +15,7 @@ export import :pause_menu_system;
 export import :piston;
 export import :runtime_spawns;
 export import :sandbox_scene;
+export import :sidearm;
 export import :scenarios;
 export import :tumbler;
 export import :world_loader;

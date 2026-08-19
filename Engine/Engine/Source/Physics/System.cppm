@@ -85,6 +85,8 @@ export namespace gse::physics {
 
 	struct interpolation_state {
 		bool advancing = true;
+		int steps = 0;
+		int readback_age_steps = 0;
 	};
 
 	struct [[= gse::system_state<"Physics">{}, = gse::settings::category<"Physics">{}, = gse::deferred_system{}]] data {
@@ -318,6 +320,7 @@ export namespace gse::physics {
 		std::flat_map<id, transform_component> kinematic_step_start;
 		std::vector<impulse_request> gpu_pending_impulses;
 		[[= gse::shared]] int sim_steps_this_frame = 0;
+		[[= gse::shared]] int gpu_readback_age_steps = 0;
 		bool gpu_sweep_fold_bailed = false;
 		bool gpu_solve_fold_prev = false;
 		int gpu_sweep_retry_cooldown = 0;

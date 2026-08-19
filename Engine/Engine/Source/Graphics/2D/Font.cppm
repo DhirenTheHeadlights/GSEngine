@@ -101,6 +101,12 @@ export namespace gse {
 			float scale = 1.0f
 		) const -> std::vector<float>;
 
+		[[nodiscard]] auto wrap(
+			std::string_view text,
+			float max_width,
+			float scale = 1.0f
+		) const -> std::vector<std::string_view>;
+
 		[[nodiscard]] auto vertical_center_offset(
 			float scale
 		) const -> float;

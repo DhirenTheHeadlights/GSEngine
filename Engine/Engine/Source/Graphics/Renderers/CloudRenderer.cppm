@@ -17,9 +17,15 @@ import gse.gpu_record;
 export namespace gse::renderer::cloud {
 	constexpr vec3u shape_noise_size{ 128, 128, 128 };
 	constexpr vec3u detail_noise_size{ 32, 32, 32 };
+	constexpr vec3u weather_map_size{ 128, 128, 32 };
+
+	struct weather_request {
+		float phase = 0.f;
+	};
 
 	struct cloud_raymarch_pass {};
 	struct cloud_composite_pass {};
+	struct cloud_shadow_pass {};
 
 	using atmosphere_length = atmosphere::atmosphere_length;
 	using atmosphere_inverse_length = atmosphere::atmosphere_inverse_length;
@@ -43,10 +49,31 @@ export namespace gse::renderer::cloud {
 		float phase_blend;
 		float ambient_strength;
 		atmosphere_length max_distance;
+		atmosphere_inverse_length weather_scale;
+
+		float weather_phase;
+		float weather_contrast;
+		float weather_type_influence;
+		float shadow_extinction;
 	};
 
 	struct [[= shaders::binding<0, 5>{}]] cloud_ubo {
 		using element = cloud_data;
+	};
+
+	struct [[= shaders::shader_struct]] cloud_shadow_data {
+		vec3f sun_direction;
+		float strength;
+
+		vec3<atmosphere_length> wind_offset;
+		atmosphere_length extent_km;
+
+		vec2<atmosphere_length> origin_km;
+		atmosphere_length plane_altitude;
+	};
+
+	struct [[= shaders::binding<0, 11>{}]] cloud_shadow_ubo {
+		using element = cloud_shadow_data;
 	};
 
 	struct [[= gse::system_state<"Cloud">{}, = gse::settings::category<"Clouds">{}]] data {
@@ -178,25 +205,108 @@ export namespace gse::renderer::cloud {
 		]]
 		vec3<atmosphere_length> wind_offset = { kilometers(0.0f), kilometers(0.0f), kilometers(0.0f) };
 
+		[[
+			= gse::settings::describe<"Horizontal scale of the weather field (1/km). This is what groups cloud into "
+									  "masses with clear sky between them, so it wants to be far coarser than the "
+									  "shape noise: 0.015 gives roughly a 66 km pattern.">{},
+			= gse::settings::hot_reloadable
+		]]
+		atmosphere_inverse_length weather_scale = per_kilometer(0.015f);
+
+		[[
+			= gse::settings::describe<"Position in the weather cycle. Cloud masses build and dissolve in place as "
+									  "this advances, rather than merely drifting. Wraps at 1. Drive it from a "
+									  "scenario the way sun elevation is driven, so captures stay reproducible.">{},
+			= gse::settings::range<0.f, 1.f>{},
+			= gse::shared,
+			= gse::settings::hot_reloadable
+		]]
+		float weather_phase = 0.0f;
+
+		[[
+			= gse::settings::describe<"Slope of the weather field about its midpoint. 1 leaves the field as baked; "
+									  "higher values push it toward all-or-nothing, tightening the masses and "
+									  "widening the clear gaps, which is what makes cloud shadows read as moving "
+									  "shapes instead of even grey.">{},
+			= gse::settings::range<0.5f, 6.f>{},
+			= gse::settings::hot_reloadable
+		]]
+		float weather_contrast = 1.6f;
+
+		[[
+			= gse::settings::describe<"How far the weather field is allowed to override the global cloud type, so "
+									  "flat stratus and piled cumulus can coexist in one sky. 0 keeps the single "
+									  "global type everywhere.">{},
+			= gse::settings::range<0.f, 1.f>{},
+			= gse::settings::hot_reloadable
+		]]
+		float weather_type_influence = 0.6f;
+
+		[[
+			= gse::settings::describe<"Beer's law extinction for the cloud shadow march. Deliberately separate from "
+									  "light_extinction: that one is inflated to compensate for a sun march covering "
+									  "only 30 percent of the layer, while the shadow map integrates the full "
+									  "thickness along the sun ray, so the same number means a very different "
+									  "optical depth.">{},
+			= gse::settings::range<0.f, 12.f>{},
+			= gse::settings::hot_reloadable
+		]]
+		float shadow_extinction = 3.0f;
+
+		[[
+			= gse::settings::describe<"How strongly the cloud layer darkens direct sunlight on scene geometry. "
+									  "0 disables the shadow march entirely and costs nothing.">{},
+			= gse::settings::range<0.f, 1.f>{},
+			= gse::settings::hot_reloadable
+		]]
+		float shadow_strength = 1.0f;
+
+		[[
+			= gse::settings::describe<"Edge resolution of the square cloud shadow map. Cost scales with the square "
+									  "of this. Cloud shadows are soft and low frequency, so 512 over the default "
+									  "extent is usually indistinguishable from 1024.">{},
+			= gse::settings::range<128, 2048>{},
+			= gse::settings::hot_reloadable
+		]]
+		int shadow_map_resolution = 1024;
+
+		[[
+			= gse::settings::describe<"World size covered by the cloud shadow map, centred on the camera. A cloud at "
+									  "6 km casts its shadow 34 km downsun at 10 degrees elevation, so low sun needs "
+									  "a wide extent or the shadows fall outside the map and vanish.">{},
+			= gse::settings::hot_reloadable
+		]]
+		atmosphere_length shadow_extent = kilometers(40.0f);
+
 		gpu::shader_program shape_bake_pipeline;
 		gpu::shader_program detail_bake_pipeline;
 		gpu::shader_program raymarch_pipeline;
 		gpu::shader_program composite_pipeline;
+		gpu::shader_program shadow_pipeline;
+		gpu::shader_program weather_bake_pipeline;
 
 		gpu::image shape_noise;
 		gpu::image detail_noise;
+		gpu::image weather_map;
 		gpu::image cloud_target;
+
+		[[= gse::shared]] gpu::image shadow_map;
 
 		gpu::bindless_handle noise_sampler;
 		gpu::bindless_handle atmosphere_lut_sampler;
 		gpu::bindless_handle sky_view_sampler;
 		gpu::bindless_handle composite_sampler;
 
+		[[= gse::shared]] gpu::bindless_handle shadow_sampler;
+
 		gpu::buffer cloud_ubo_buffer;
+
+		[[= gse::shared]] gpu::buffer shadow_ubo_buffer;
 
 		vec2u cloud_target_extent{ 0, 0 };
 		std::uint32_t frame_counter = 0;
 		int applied_target_divisor = 0;
+		int applied_shadow_resolution = 0;
 		bool noises_ready = false;
 	};
 
@@ -213,6 +323,7 @@ export namespace gse::renderer::cloud {
 		shared_view<gpu::context::data> gpu_s,
 		data& d,
 		channel_write<gpu::render_pass_request> pass_out,
+		channel_read<weather_request> weather_in,
 		shared_view<atmosphere::data> atm_state,
 		shared_view<camera::data> cam_state
 	) -> async::task<>;

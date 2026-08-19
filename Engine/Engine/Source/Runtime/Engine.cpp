@@ -106,8 +106,9 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	}
 
 	m_save.set_overrides(m_config.setting);
-	m_save.set_on_restart([] {
-		app::restart();
+	m_save.set_on_restart([this] {
+		app::relaunch_self_on_exit();
+		m_scheduler.make_channel_writer().push(window_close_request{});
 	});
 	m_scheduler.set_settings_register_hook([this](settings::register_settings_type entry) {
 		m_save.add(std::move(entry));

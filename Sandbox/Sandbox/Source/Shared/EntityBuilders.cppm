@@ -88,6 +88,49 @@ export namespace sandbox {
 		const gse::quat& orientation = gse::quat(1.f, 0.f, 0.f, 0.f)
 	) -> collider_archetype;
 
+	struct cylinder_archetype {
+		gse::physics::transform_component transform;
+		gse::physics::motion_component motion;
+		gse::physics::collision_component collision;
+		gse::primitive_cylinder_spec spec;
+	};
+
+	auto static_disc_floor(
+		const gse::vec3<gse::position>& position,
+		const gse::vec3<gse::length>& collider_size,
+		gse::length visual_radius,
+		const gse::vec3f& base_color = gse::vec3f(0.08f, 0.08f, 0.09f),
+		float roughness = 0.45f,
+		float metallic = 0.0f
+	) -> cylinder_archetype;
+
+	struct scatter_rock_archetype {
+		gse::physics::transform_component transform;
+		gse::primitive_box_spec spec;
+	};
+
+	auto scatter_rock(
+		const gse::vec3<gse::position>& position,
+		const gse::vec3<gse::length>& size,
+		const gse::quat& orientation,
+		const gse::vec3f& base_color = gse::vec3f(0.13f, 0.13f, 0.15f),
+		float roughness = 0.95f
+	) -> scatter_rock_archetype;
+
+	struct mountain_ring_archetype {
+		gse::physics::transform_component transform;
+		gse::primitive_mountain_ring_spec spec;
+	};
+
+	auto mountain_ring(
+		gse::length inner_radius,
+		gse::length outer_radius,
+		gse::length peak_height,
+		const gse::vec3f& base_color = gse::vec3f(0.21f, 0.23f, 0.27f),
+		float roughness = 0.92f,
+		std::uint32_t seed = 1337
+	) -> mountain_ring_archetype;
+
 	struct hull_archetype {
 		gse::physics::transform_component transform;
 		gse::physics::motion_component motion;
@@ -265,6 +308,67 @@ auto sandbox::static_sphere(const gse::vec3<gse::position>& position, const gse:
 			.shape = gse::physics::sphere_shape{
 				.radius = radius
 			},
+		},
+	};
+}
+
+auto sandbox::scatter_rock(const gse::vec3<gse::position>& position, const gse::vec3<gse::length>& size, const gse::quat& orientation, const gse::vec3f& base_color, const float roughness) -> scatter_rock_archetype {
+	return {
+		.transform = {
+			.position = position,
+			.orientation = orientation,
+		},
+		.spec = {
+			.material = {
+				.base_color = base_color,
+				.roughness = roughness,
+				.metallic = 0.0f,
+			},
+			.size = size,
+		},
+	};
+}
+
+auto sandbox::static_disc_floor(const gse::vec3<gse::position>& position, const gse::vec3<gse::length>& collider_size, const gse::length visual_radius, const gse::vec3f& base_color, const float roughness, const float metallic) -> cylinder_archetype {
+	return {
+		.transform = {
+			.position = position,
+		},
+		.motion = {
+			.body = gse::physics::static_body{},
+		},
+		.collision = {
+			.shape = gse::physics::box_shape{
+				.size = collider_size
+			},
+		},
+		.spec = {
+			.material = {
+				.base_color = base_color,
+				.roughness = roughness,
+				.metallic = metallic,
+			},
+			.radius = visual_radius,
+			.height = collider_size.y(),
+		},
+	};
+}
+
+auto sandbox::mountain_ring(const gse::length inner_radius, const gse::length outer_radius, const gse::length peak_height, const gse::vec3f& base_color, const float roughness, const std::uint32_t seed) -> mountain_ring_archetype {
+	return {
+		.transform = {
+			.position = gse::vec3<gse::position>(gse::meters(0.f), gse::meters(0.f), gse::meters(0.f)),
+		},
+		.spec = {
+			.material = {
+				.base_color = base_color,
+				.roughness = roughness,
+				.metallic = 0.0f,
+			},
+			.inner_radius = inner_radius,
+			.outer_radius = outer_radius,
+			.peak_height = peak_height,
+			.seed = seed,
 		},
 	};
 }

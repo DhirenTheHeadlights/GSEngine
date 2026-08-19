@@ -18,8 +18,19 @@ import :ids;
 import :styles;
 import :builder;
 import :interaction;
+import :symbols;
 
 export namespace gse::gui::draw {
+	struct button_params {
+		rectf rect;
+		std::string_view label;
+		std::span<const symbol::stroke> glyph;
+		std::string_view key;
+		bool danger = false;
+		bool enabled = true;
+		resource::handle<font> font{};
+	};
+
 	auto button(
 		const draw_context& ctx,
 		std::string_view name,
@@ -38,6 +49,13 @@ export namespace gse::gui::draw {
 		id& active_widget_id,
 		bool enabled = true,
 		resource::handle<font> font = {}
+	) -> bool;
+
+	auto button_in_rect(
+		const draw_context& ctx,
+		const button_params& params,
+		id& hot_widget_id,
+		id& active_widget_id
 	) -> bool;
 }
 
@@ -108,6 +126,60 @@ auto gse::gui::draw::button_in_rect(const draw_context& ctx, const std::string_v
 		.color = enabled ? ctx.style.color_text : ctx.style.color_text_disabled,
 		.clip_rect = button_rect
 	});
+
+	return btn.activated;
+}
+
+auto gse::gui::draw::button_in_rect(const draw_context& ctx, const button_params& params, id& hot_widget_id, id& active_widget_id) -> bool {
+	const style& sty = ctx.style;
+	const auto fnt = params.font.valid() ? params.font : ctx.fonts.text;
+	const auto fnt_view = fnt.resolve();
+	const id widget_id = ids::make(params.key.empty() ? params.label : params.key);
+
+	const auto btn = interaction::press_in_rect(ctx, hot_widget_id, active_widget_id, widget_id, params.rect, params.enabled);
+
+	const vec4f target_color = btn.color({
+		.idle = params.danger ? sty.color_danger : sty.color_input_background,
+		.hot = params.danger ? sty.color_danger_hovered : sty.color_widget_hovered,
+		.active = sty.color_widget_active,
+		.disabled = sty.color_widget_background,
+	});
+
+	ctx.queue_sprite({
+		.rect = params.rect,
+		.color = ctx.animated_color(btn.widget, target_color),
+		.texture = ctx.blank_texture,
+		.corner_radius = sty.corner_radius,
+	});
+
+	const vec4f fg = params.enabled ? sty.color_text : sty.color_text_disabled;
+	float label_left = params.rect.center().x() - fnt_view->width(params.label, sty.font_size) * 0.5f;
+
+	if (!params.glyph.empty()) {
+		const float glyph_size = params.rect.height();
+		const float glyph_left = params.label.empty() ? params.rect.center().x() - glyph_size * 0.5f : params.rect.left() + sty.padding * 0.5f;
+		const rectf glyph_rect = rectf::from_position_size(
+			{ glyph_left, params.rect.top() },
+			{ glyph_size, glyph_size }
+		);
+		symbol::draw(ctx, params.glyph, glyph_rect, {
+			.color = fg,
+			.extent = sty.icon_extent,
+			.clip_rect = params.rect,
+		});
+		label_left = glyph_rect.right();
+	}
+
+	if (!params.label.empty()) {
+		ctx.queue_text({
+			.font = fnt,
+			.text = params.label,
+			.position = { label_left, params.rect.center().y() + fnt_view->vertical_center_offset(sty.font_size) },
+			.scale = sty.font_size,
+			.color = fg,
+			.clip_rect = params.rect,
+		});
+	}
 
 	return btn.activated;
 }

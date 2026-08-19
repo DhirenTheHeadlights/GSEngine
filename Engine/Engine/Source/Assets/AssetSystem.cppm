@@ -272,7 +272,8 @@ auto gse::asset::recompile_if_stale(const std::filesystem::path& baked_path) -> 
 		if (!stale) {
 			return std::unexpected(std::move(stale.error()));
 		}
-		return *stale ? bake_to_disk<T>(source, baked_path) : asset_result{};
+		const bool schema_stale = !*stale && !baked_schema_current<typename T::baked>(baked_path);
+		return *stale || schema_stale ? bake_to_disk<T>(source, baked_path) : asset_result{};
 	}
 }
 
@@ -294,12 +295,12 @@ auto gse::asset::fail_if_stale(const std::filesystem::path& baked_path) -> asset
 		if (!stale) {
 			return std::unexpected(std::move(stale.error()));
 		}
-		if (*stale) {
+		if (*stale || !baked_schema_current<typename T::baked>(baked_path)) {
 			return std::unexpected(asset_error{
 				.code = asset_error_code::load_failure,
 				.path = baked_path,
 				.detail = std::format(
-					"baked asset is stale against {}; this mode consumes baked assets and does not author them, so bake it from a render-mode run or the editor first",
+					"baked asset is stale against {} or its schema drifted; this mode consumes baked assets and does not author them, so bake it from a render-mode run or the editor first",
 					source.generic_display_string()
 				),
 			});

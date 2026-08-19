@@ -6,6 +6,7 @@ import gse;
 import :character_controller;
 import :piston;
 import :runtime_spawns;
+import :sidearm;
 import :tumbler;
 
 export namespace sandbox {
@@ -90,6 +91,7 @@ export namespace sandbox::dev_spawn {
 		gse::structural<gse::physics::motor_component>,
 		gse::structural<sandbox::character_controller::component>,
 		gse::structural<sandbox::orbit_camera::component>,
+		gse::structural<sandbox::sidearm::component>,
 		gse::structural<gse::skeleton_instance_component>,
 		gse::structural<gse::clip_player_component>
 	) -> gse::async::task<>;
@@ -129,6 +131,7 @@ auto sandbox::dev_spawn::run(
 	gse::structural<gse::physics::motor_component>,
 	gse::structural<sandbox::character_controller::component>,
 	gse::structural<sandbox::orbit_camera::component>,
+	gse::structural<sandbox::sidearm::component>,
 	gse::structural<gse::skeleton_instance_component>,
 	gse::structural<gse::clip_player_component>
 ) -> gse::async::task<> {

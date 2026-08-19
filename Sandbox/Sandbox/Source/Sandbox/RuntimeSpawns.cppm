@@ -7,6 +7,7 @@ import :character_controller;
 import :entity_builders;
 import :orbit_camera;
 import :piston;
+import :sidearm;
 import :tumbler;
 
 export namespace sandbox {
@@ -149,6 +150,15 @@ export namespace sandbox {
 		const gse::animation::locomotion_blend& clips,
 		const gse::vec3<gse::position>& origin
 	) -> gse::id;
+
+	auto spawn_tumbler(
+		gse::scene& s,
+		int index,
+		const gse::vec3<gse::position>& center,
+		const gse::vec3f& rotation_axis,
+		gse::angular_velocity angular_speed,
+		const stress_scene_params& params
+	) -> void;
 }
 
 namespace sandbox {
@@ -180,15 +190,6 @@ namespace sandbox {
 	auto spawn_spring_tests(
 		gse::scene& s,
 		const gse::vec3<gse::position>& origin
-	) -> void;
-
-	auto spawn_tumbler(
-		gse::scene& s,
-		int index,
-		const gse::vec3<gse::position>& center,
-		const gse::vec3f& rotation_axis,
-		gse::angular_velocity angular_speed,
-		const stress_scene_params& params
 	) -> void;
 
 	auto spawn_box_grid(
@@ -979,6 +980,17 @@ auto sandbox::spawn_character(gse::scene& s, const int index, const bool possess
 		return {};
 	}
 
+	bool clips_ready = clips.idle.valid();
+	for (const auto& clip : clips.walk) {
+		clips_ready = clips_ready && clip.valid();
+	}
+	for (const auto& clip : clips.run) {
+		clips_ready = clips_ready && clip.valid();
+	}
+	if (!clips_ready) {
+		return {};
+	}
+
 	const auto rig = model.resolve();
 	const auto bones = rig->bones();
 	if (bones.empty()) {
@@ -1088,6 +1100,7 @@ auto sandbox::spawn_character(gse::scene& s, const int index, const bool possess
 			.clips = clips,
 			.possessed = possessed,
 		})
+		.with<sandbox::sidearm::component>({})
 		.with<sandbox::orbit_camera::component>({
 			.target = proxy_id,
 			.stepped_views = true,

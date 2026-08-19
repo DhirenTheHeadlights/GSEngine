@@ -33,6 +33,8 @@ export namespace gse::profile {
 		sample_time last;
 		sample_time peak;
 		double calls_per_frame = 0.0;
+		sample_time main_per_frame;
+		double main_calls_per_frame = 0.0;
 		std::uint64_t sample_count = 0;
 		std::uint64_t peak_frame = 0;
 		std::uint64_t spike_count = 0;
@@ -117,7 +119,7 @@ export namespace gse::profile {
 	) -> void;
 
 	constexpr std::uint32_t report_magic = 0x47535250;
-	constexpr std::uint32_t report_version = 2;
+	constexpr std::uint32_t report_version = 3;
 
 	struct report_record {
 		std::string tag;
@@ -126,6 +128,7 @@ export namespace gse::profile {
 		sample_time last;
 		sample_time peak;
 		double calls_per_frame = 0.0;
+		sample_time main_per_frame;
 		std::uint64_t sample_count = 0;
 		std::uint64_t peak_frame = 0;
 		std::uint64_t spike_count = 0;
@@ -229,8 +232,10 @@ namespace gse::profile {
 		sample_time ema;
 		sample_time last;
 		sample_time peak;
+		sample_time main_total;
 		std::uint64_t peak_frame = 0;
 		std::uint64_t spike_count = 0;
+		std::uint64_t main_samples = 0;
 		std::unordered_map<std::uint32_t, std::uint64_t> samples_by_tid;
 	};
 
@@ -281,7 +286,8 @@ namespace gse::profile {
 		id id,
 		sample_time duration,
 		std::uint32_t thread_id,
-		std::uint64_t frame_index
+		std::uint64_t frame_index,
+		bool on_main
 	) -> void;
 
 	auto snapshot_entries(

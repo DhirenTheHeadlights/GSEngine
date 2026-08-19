@@ -19,6 +19,10 @@ namespace gse::primitives {
 		std::uint32_t sectors,
 		std::uint32_t stacks
 	) -> std::vector<mesh_data>;
+
+	auto build_cylinder_meshes(
+		std::uint32_t segments
+	) -> std::vector<mesh_data>;
 }
 
 auto gse::primitives::build_box_meshes() -> std::vector<mesh_data> {
@@ -170,9 +174,113 @@ auto gse::primitives::build_sphere_meshes(const std::uint32_t sectors, const std
 	return meshes;
 }
 
+auto gse::primitives::build_cylinder_meshes(const std::uint32_t segments) -> std::vector<mesh_data> {
+	const auto radius = meters(1.0f);
+	const auto top = meters(0.5f);
+	const auto bottom = meters(-0.5f);
+	const auto centre = meters(0.0f);
+
+	std::vector<vertex> vertices;
+	vertices.reserve(static_cast<std::size_t>(segments) * 4 + 2);
+
+	const auto top_centre = static_cast<std::uint32_t>(vertices.size());
+	vertices.push_back({
+		.position = vec3<length>(centre, top, centre),
+		.normal = vec3f(0.0f, 1.0f, 0.0f),
+		.tex_coords = vec2f(0.5f, 0.5f),
+	});
+
+	const auto bottom_centre = static_cast<std::uint32_t>(vertices.size());
+	vertices.push_back({
+		.position = vec3<length>(centre, bottom, centre),
+		.normal = vec3f(0.0f, -1.0f, 0.0f),
+		.tex_coords = vec2f(0.5f, 0.5f),
+	});
+
+	const auto top_rim = static_cast<std::uint32_t>(vertices.size());
+	for (const auto i : std::views::iota(0u, segments)) {
+		const angle theta = degrees(360.0f) * (static_cast<float>(i) / static_cast<float>(segments));
+		const float ct = cos(theta);
+		const float st = sin(theta);
+		vertices.push_back({
+			.position = vec3<length>(radius * ct, top, radius * st),
+			.normal = vec3f(0.0f, 1.0f, 0.0f),
+			.tex_coords = vec2f(0.5f + 0.5f * ct, 0.5f + 0.5f * st),
+		});
+	}
+
+	const auto bottom_rim = static_cast<std::uint32_t>(vertices.size());
+	for (const auto i : std::views::iota(0u, segments)) {
+		const angle theta = degrees(360.0f) * (static_cast<float>(i) / static_cast<float>(segments));
+		const float ct = cos(theta);
+		const float st = sin(theta);
+		vertices.push_back({
+			.position = vec3<length>(radius * ct, bottom, radius * st),
+			.normal = vec3f(0.0f, -1.0f, 0.0f),
+			.tex_coords = vec2f(0.5f + 0.5f * ct, 0.5f + 0.5f * st),
+		});
+	}
+
+	const auto wall_top = static_cast<std::uint32_t>(vertices.size());
+	for (const auto i : std::views::iota(0u, segments)) {
+		const angle theta = degrees(360.0f) * (static_cast<float>(i) / static_cast<float>(segments));
+		const float ct = cos(theta);
+		const float st = sin(theta);
+		vertices.push_back({
+			.position = vec3<length>(radius * ct, top, radius * st),
+			.normal = vec3f(ct, 0.0f, st),
+			.tex_coords = vec2f(static_cast<float>(i) / static_cast<float>(segments), 1.0f),
+		});
+	}
+
+	const auto wall_bottom = static_cast<std::uint32_t>(vertices.size());
+	for (const auto i : std::views::iota(0u, segments)) {
+		const angle theta = degrees(360.0f) * (static_cast<float>(i) / static_cast<float>(segments));
+		const float ct = cos(theta);
+		const float st = sin(theta);
+		vertices.push_back({
+			.position = vec3<length>(radius * ct, bottom, radius * st),
+			.normal = vec3f(ct, 0.0f, st),
+			.tex_coords = vec2f(static_cast<float>(i) / static_cast<float>(segments), 0.0f),
+		});
+	}
+
+	std::vector<std::uint32_t> indices;
+	indices.reserve(static_cast<std::size_t>(segments) * 12);
+
+	for (const auto i : std::views::iota(0u, segments)) {
+		const auto next = (i + 1) % segments;
+
+		indices.push_back(top_centre);
+		indices.push_back(top_rim + next);
+		indices.push_back(top_rim + i);
+
+		indices.push_back(bottom_centre);
+		indices.push_back(bottom_rim + i);
+		indices.push_back(bottom_rim + next);
+
+		indices.push_back(wall_top + i);
+		indices.push_back(wall_top + next);
+		indices.push_back(wall_bottom + i);
+
+		indices.push_back(wall_top + next);
+		indices.push_back(wall_bottom + next);
+		indices.push_back(wall_bottom + i);
+	}
+
+	std::vector<mesh_data> meshes;
+	meshes.push_back({
+		.vertices = std::move(vertices),
+		.indices = std::move(indices),
+		.material = {},
+	});
+	return meshes;
+}
+
 auto gse::primitives::initialize(data& d, asset::data& assets) -> void {
 	d.unit_box = asset::queue<model>(assets, "Primitives/unit_box", build_box_meshes());
 	d.sphere_lo = asset::queue<model>(assets, "Primitives/sphere_lo", build_sphere_meshes(8, 6));
 	d.sphere_mid = asset::queue<model>(assets, "Primitives/sphere_mid", build_sphere_meshes(24, 16));
 	d.sphere_hi = asset::queue<model>(assets, "Primitives/sphere_hi", build_sphere_meshes(48, 32));
+	d.unit_cylinder = asset::queue<model>(assets, "Primitives/unit_cylinder", build_cylinder_meshes(128));
 }

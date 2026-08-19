@@ -5,6 +5,7 @@ import gse;
 import gse.gpu;
 
 import gse.ide.workspace;
+import gse.ide.agent;
 import gse.ide.git;
 import gse.ide.terminal;
 import gse.ide.build;
@@ -28,8 +29,10 @@ export namespace gse::ide {
 			bool screen_pushed = false;
 			float explorer_ratio = 0.22f;
 			float terminal_ratio = 0.22f;
+			float agent_ratio = 0.72f;
 			bool resizing_explorer = false;
 			bool resizing_terminal = false;
+			bool resizing_agent = false;
 			cursor_shape frame_cursor = cursor_shape::arrow;
 			clock save_clock;
 		};
@@ -126,6 +129,9 @@ auto gse::ide::load_editor_layout(editor_app::data& d) -> void {
 		if (const auto it = section.values.find("explorer_ratio"); it != section.values.end()) {
 			d.explorer_ratio = std::clamp(parse_layout_float(it->second, d.explorer_ratio), 0.05f, 0.95f);
 		}
+		if (const auto it = section.values.find("agent_ratio"); it != section.values.end()) {
+			d.agent_ratio = std::clamp(parse_layout_float(it->second, d.agent_ratio), 0.05f, 0.95f);
+		}
 		if (const auto it = section.values.find("terminal_ratio"); it != section.values.end()) {
 			d.terminal_ratio = std::clamp(parse_layout_float(it->second, d.terminal_ratio), 0.05f, 0.95f);
 		}
@@ -138,6 +144,7 @@ auto gse::ide::save_editor_layout(const editor_app::data& d) -> void {
 	out.append("[editor]\n");
 	out.append(std::format("explorer_ratio = {}\n", d.explorer_ratio));
 	out.append(std::format("terminal_ratio = {}\n", d.terminal_ratio));
+	out.append(std::format("agent_ratio = {}\n", d.agent_ratio));
 	replace_layout_sections(editor_layout_owner(), out);
 }
 
@@ -248,7 +255,11 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 			gui::menu* explorer = editor_menu(s, explorer_panel_name);
 			gui::menu* code = editor_menu(s, code_panel_name);
 			gui::menu* term = editor_menu(s, terminal::panel_name);
-			if (!explorer || !code || !term || explorer == code || explorer == term || code == term) {
+			gui::menu* agent_panel = editor_menu(s, agent::panel_name);
+			if (!explorer || !code || !term || !agent_panel || explorer == code || explorer == term || code == term) {
+				return;
+			}
+			if (agent_panel == explorer || agent_panel == code || agent_panel == term) {
 				return;
 			}
 
@@ -265,7 +276,8 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 			}
 
 			const float min_explorer_width = 180.f * sty.scale_factor;
-			const float min_code_width = 320.f * sty.scale_factor;
+			const float min_agent_width = 260.f * sty.scale_factor;
+			const float min_code_width = 320.f * sty.scale_factor + min_agent_width;
 			const float min_terminal_height = 120.f * sty.scale_factor;
 			const float min_main_height = 180.f * sty.scale_factor;
 			if (vp.x() < min_explorer_width + min_code_width || top < min_main_height + min_terminal_height) {
@@ -339,9 +351,40 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 			d.terminal_ratio = 1.f - final_rows.ratio;
 			d.explorer_ratio = final_columns.ratio;
 
+			const gui::layout::split_params agent_split{
+				.container = final_columns.second,
+				.axis = gui::layout::split_axis::columns,
+				.ratio = d.agent_ratio,
+				.min_first = min_code_width - min_agent_width,
+				.min_second = min_agent_width,
+				.divider_thickness = divider_thickness,
+			};
+
+			const gui::layout::split_result agent_columns = gui::layout::update_split(
+				agent_split,
+				{
+					.mouse = mouse,
+					.pressed = pressed,
+					.held = held,
+					.blocked = blocked || d.resizing_explorer || d.resizing_terminal,
+				},
+				d.resizing_agent
+			);
+			d.agent_ratio = agent_columns.ratio;
+
+			const gui::layout::split_result final_agent = gui::layout::resolve_split({
+				.container = final_columns.second,
+				.axis = gui::layout::split_axis::columns,
+				.ratio = d.agent_ratio,
+				.min_first = min_code_width - min_agent_width,
+				.min_second = min_agent_width,
+				.divider_thickness = divider_thickness,
+			});
+			d.agent_ratio = final_agent.ratio;
+
 			cursor_shape want_cursor = cursor_shape::arrow;
 			if (!blocked) {
-				if (final_columns.divider.contains(mouse) || d.resizing_explorer) {
+				if (final_columns.divider.contains(mouse) || d.resizing_explorer || final_agent.divider.contains(mouse) || d.resizing_agent) {
 					want_cursor = cursor_shape::resize_ew;
 				}
 				else if (final_rows.divider.contains(mouse) || d.resizing_terminal) {
@@ -356,11 +399,17 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 			explorer->fixed = true;
 			explorer->bare = true;
 
-			code->rect = final_columns.second;
+			code->rect = final_agent.first;
 			code->swap_parent(id());
 			code->docked_to = gui::dock::location::none;
 			code->fixed = true;
 			code->bare = true;
+
+			agent_panel->rect = final_agent.second;
+			agent_panel->swap_parent(id());
+			agent_panel->docked_to = gui::dock::location::none;
+			agent_panel->fixed = true;
+			agent_panel->bare = true;
 
 			term->rect = final_rows.second;
 			term->swap_parent(id());

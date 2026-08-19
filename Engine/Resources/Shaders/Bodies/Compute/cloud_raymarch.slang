@@ -28,16 +28,24 @@ float3 sample_ambient_sky(float3 dir) {
 }
 
 float sample_cloud_coverage(float3 world_pos_km, float height_fraction) {
+    float2 weather_uv = (world_pos_km.xz + pc.wind_offset.xz) * cloud_ubo.weather_scale;
+    float4 weather = cloud_weather_in.SampleLevel(
+        noise_sampler_binding,
+        float3(weather_uv, cloud_ubo.weather_phase),
+        0
+    );
+
+    float local_coverage = cloud_weather_coverage(weather.r, cloud_ubo.cloud_coverage, cloud_ubo.weather_contrast);
+    float local_type = lerp(cloud_ubo.cloud_type, weather.g, cloud_ubo.weather_type_influence);
+
     float3 shape_uvw = (world_pos_km + pc.wind_offset) * cloud_ubo.shape_scale;
     float shape = cloud_shape_in.SampleLevel(noise_sampler_binding, shape_uvw, 0).r;
 
-    float gradient = cloud_altitude_gradient(height_fraction, cloud_ubo.cloud_type);
-    return saturate(remap(shape * gradient, 1.0 - cloud_ubo.cloud_coverage, 1.0, 0.0, 1.0));
+    return cloud_coverage_from_shape(shape, height_fraction, local_type, local_coverage);
 }
 
 float carve_cloud_density(float base, float erosion) {
-    float carved = base - erosion * cloud_ubo.detail_strength * (1.0 - base);
-    return saturate(carved) * cloud_ubo.density_multiplier;
+    return cloud_carve_density(base, erosion, cloud_ubo.detail_strength, cloud_ubo.density_multiplier);
 }
 
 float sample_cloud_density(float3 world_pos_km, float height_fraction) {

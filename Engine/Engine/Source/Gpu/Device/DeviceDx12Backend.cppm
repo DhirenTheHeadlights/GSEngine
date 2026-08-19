@@ -405,7 +405,7 @@ export namespace gse::gpu {
 		auto collect_garbage() -> void;
 
 		[[nodiscard]] auto make_video_encoder_backend(
-			vec2u extent
+			const gpu::encode_desc& desc
 		) -> std::unique_ptr<gpu::video_encoder_backend>;
 	};
 
@@ -787,7 +787,7 @@ auto gse::gpu::dx12_device_backend::collect_garbage() -> void {
 	device->collect_garbage();
 }
 
-auto gse::gpu::dx12_device_backend::make_video_encoder_backend(vec2u) -> std::unique_ptr<gpu::video_encoder_backend> {
+auto gse::gpu::dx12_device_backend::make_video_encoder_backend(const gpu::encode_desc&) -> std::unique_ptr<gpu::video_encoder_backend> {
 	return nullptr;
 }
 

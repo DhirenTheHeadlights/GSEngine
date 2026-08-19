@@ -35,6 +35,21 @@ export namespace sandbox::scenarios {
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
 
+	[[= gse::scenario::info{ .name = "cloud_showcase", .scene = "Sky", .warmup_frames = 0, .frames = 1150, .settings = { "Graphics.enabled=false", "Clouds.cloud_coverage=0.50", "Clouds.weather_contrast=2.6", "Clouds.cloud_type=0.90", "Clouds.shadow_strength=1.0", "Grid.show_labels=false", "Grid.fade_distance=1200 m" } }]]
+	auto cloud_showcase(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "tumbler_showcase", .scene = "Tumblers", .gpu_solver = true, .warmup_frames = 0, .frames = 1150, .settings = { "Graphics.enabled=false", "Clouds.cloud_coverage=0.40", "Clouds.weather_contrast=3.0", "Clouds.shadow_strength=1.0", "Grid.show_labels=false", "Grid.fade_distance=400 m" } }]]
+	auto tumbler_showcase(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "sunset_showcase", .scene = "Sandbox", .warmup_frames = 0, .frames = 1700, .settings = { "Graphics.enabled=false", "Clouds.cloud_coverage=0.40", "Clouds.weather_contrast=3.0", "Clouds.cloud_type=0.85", "Clouds.shadow_strength=1.0", "Grid.fade_distance=2000 m", "Grid.show_labels=false" } }]]
+	auto sunset_showcase(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
 	[[= gse::scenario::info{ .name = "lighting_showcase", .scene = "Pyramid", .warmup_frames = 0, .frames = 660, .settings = { "Dev Spawn.pyramid.base_count=34", "Graphics.enabled=false", "Atmosphere.sun_elevation=-8 deg" } }]]
 	auto lighting_showcase(
 		gse::scenario::context& ctx

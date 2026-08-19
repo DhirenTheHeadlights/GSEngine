@@ -64,6 +64,8 @@ auto gse::profile::to_report(const entry& e, const std::uint64_t frames) -> repo
 		.last = e.last,
 		.peak = e.peak,
 		.calls_per_frame = calls,
+		.main_per_frame = frames > 0 ? e.main_total / static_cast<double>(frames) : sample_time{},
+		.main_calls_per_frame = frames > 0 ? static_cast<double>(e.main_samples) / static_cast<double>(frames) : 0.0,
 		.sample_count = count,
 		.peak_frame = e.peak_frame,
 		.spike_count = e.spike_count,
@@ -71,7 +73,7 @@ auto gse::profile::to_report(const entry& e, const std::uint64_t frames) -> repo
 	};
 }
 
-auto gse::profile::update_entry(std::flat_map<id, entry>& map, const id id, const sample_time duration, const std::uint32_t thread_id, const std::uint64_t frame_index) -> void {
+auto gse::profile::update_entry(std::flat_map<id, entry>& map, const id id, const sample_time duration, const std::uint32_t thread_id, const std::uint64_t frame_index, const bool on_main) -> void {
 	auto& e = map[id];
 
 	if (e.samples_by_tid.empty()) {
@@ -90,6 +92,11 @@ auto gse::profile::update_entry(std::flat_map<id, entry>& map, const id id, cons
 	if (duration > e.peak) {
 		e.peak = duration;
 		e.peak_frame = frame_index;
+	}
+
+	if (on_main) {
+		e.main_total += duration;
+		++e.main_samples;
 	}
 
 	++e.samples_by_tid[thread_id];
@@ -114,6 +121,7 @@ auto gse::profile::ingest_frame() -> void {
 	const auto hidden = trace::hidden_ids_snapshot();
 
 	const auto frame_index = frame_count.load(std::memory_order_relaxed);
+	const auto main_tid = trace::main_tid();
 
 	std::unique_lock lk(state_mutex);
 	auto& agg = storage_for(domain::cpu);
@@ -122,7 +130,7 @@ auto gse::profile::ingest_frame() -> void {
 		if (n.open || hidden.contains(n.id)) {
 			continue;
 		}
-		update_entry(agg, n.id, sample_time(n.self), n.trace_id, frame_index);
+		update_entry(agg, n.id, sample_time(n.self), n.trace_id, frame_index, n.lexical && on_main_thread(n.trace_id, main_tid));
 	}
 
 	frame_count.fetch_add(1, std::memory_order_relaxed);
@@ -199,7 +207,7 @@ auto gse::profile::ingest_gpu_sample(const id pass_id, const sample_time duratio
 	const auto frame_index = frame_count.load(std::memory_order_relaxed);
 
 	std::unique_lock lk(state_mutex);
-	update_entry(storage_for(domain::gpu), pass_id, duration, 0, frame_index);
+	update_entry(storage_for(domain::gpu), pass_id, duration, 0, frame_index, false);
 }
 
 auto gse::profile::lookup(const id id, const domain domain) -> std::optional<row> {
@@ -340,10 +348,12 @@ auto gse::profile::write_section(std::ofstream& out, const std::string_view titl
 	}
 
 	const auto header = std::format(
-		"{:<{}} {:>13} {:>13} {:>13} {:>10} {:>7} {:>13} {:>7} {:>8} {:>14} {:>9}",
+		"{:<{}} {:>13} {:>13} {:>8} {:>13} {:>13} {:>10} {:>7} {:>13} {:>7} {:>8} {:>14} {:>9}",
 		"tag",
 		tag_width,
 		"per/f",
+		"main/f",
+		"main/c",
 		"avg",
 		"peak",
 		"peak@f",
@@ -367,10 +377,12 @@ auto gse::profile::write_section(std::ofstream& out, const std::string_view titl
 		const auto total = r.ema * static_cast<double>(r.sample_count);
 
 		out << std::format(
-			"{:<{}} {:>10.2f:us} {:>10.2f:us} {:>10.2f:us} {:>10} {:>7} {:>10.2f:us} {:>6.1f}% {:>7.1f}% {:>11.2f:ms} {:>9.2f}\n",
+			"{:<{}} {:>10.2f:us} {:>10.2f:us} {:>8.2f} {:>10.2f:us} {:>10.2f:us} {:>10} {:>7} {:>10.2f:us} {:>6.1f}% {:>7.1f}% {:>11.2f:ms} {:>9.2f}\n",
 			r.id.tag(),
 			tag_width,
 			r.per_frame,
+			r.main_per_frame,
+			r.main_calls_per_frame,
 			r.ema,
 			r.peak,
 			r.peak_frame,
@@ -495,21 +507,34 @@ auto gse::profile::dump(const std::filesystem::path& path) -> void {
 	build_report(domain::cpu, cpu_rows);
 	build_report(domain::gpu, gpu_rows);
 
+	auto main_busy = sample_time{};
+	for (const auto& r : cpu_rows) {
+		main_busy += r.main_per_frame;
+	}
+
 	const auto workers = std::ranges::stable_partition(cpu_rows, [main_tid](const report_entry& r) {
 		return on_main_thread(r.dominant_tid, main_tid);
 	});
-	const std::span<const report_entry> main_rows(cpu_rows.begin(), workers.begin());
+	const std::span<report_entry> main_rows(cpu_rows.begin(), workers.begin());
 	const std::span<const report_entry> worker_rows(workers.begin(), cpu_rows.end());
+
+	std::ranges::sort(
+		main_rows,
+		[](const report_entry& a, const report_entry& b) {
+			return a.main_per_frame > b.main_per_frame;
+		}
+	);
 
 	const auto cpu_top = main_rows.empty() ? sample_time{} : main_rows.front().per_frame;
 	const auto gpu_top = gpu_rows.empty() ? sample_time{} : gpu_rows.front().per_frame;
 
 	out << std::format("=== Profile dump ({}) ===\n", system_clock::timestamp_filename());
 	out << std::format(
-		"frame: {:.2f:ms} ({} fps)    main-thread top: {:.2f:ms}    GPU top: {:.2f:ms}    {} frames profiled    EMA "
-		"alpha: {:.3f}\n",
+		"frame: {:.2f:ms} ({} fps)    main-thread busy: {:.2f:ms}    main-thread top: {:.2f:ms}    GPU top: {:.2f:ms}    "
+		"{} frames profiled    EMA alpha: {:.3f}\n",
 		frame_time,
 		fps,
+		main_busy,
 		cpu_top,
 		gpu_top,
 		frames,
@@ -527,11 +552,18 @@ auto gse::profile::dump(const std::filesystem::path& path) -> void {
 	out << std::format(
 		"peak@f = frame index the peak was set on (0 = first counted frame, warmup excluded).  spikes = samples over "
 		"{:.0f}x the running avg.  A large peak with spikes <= 1 is a one-off, not a workload.  GPU rows attribute to "
-		"the frame that ingested the sample, which trails the frame that produced it.\n\n",
+		"the frame that ingested the sample, which trails the frame that produced it.\n"
+		"main/f = main-thread self-time per frame, counted only for lexical (scope_guard) spans, so the values ADD UP "
+		"to the main-thread busy figure above. Suspending coroutine spans (frame_wall/update_wall) are excluded: "
+		"their self-time spans awaits and would double-count. per/f sums work across all threads and is EMA-based, "
+		"so for fan-out tags it is a parallel sum and will not match main/f. main/c is how many of calls/f landed on "
+		"the main thread; parallel_invoke_range traces one outer span on the caller plus one per chunk, so main/c "
+		"near 1 means main only held the outer wait while main/c well above 1 means main executed chunks inline. "
+		"Main section sorted by main/f.\n\n",
 		spike_ratio
 	);
 
-	write_section(out, "CPU - Main Thread (sequential, blocks the frame)", main_rows, frame_time);
+	write_section(out, "CPU - Main Thread (sorted by main/f, blocks the frame)", main_rows, frame_time);
 	write_section(out, "CPU - Workers (parallel; sums can exceed 100%)", worker_rows, frame_time);
 	write_section(out, "GPU (per-pass time)", gpu_rows, frame_time);
 
@@ -941,6 +973,7 @@ auto gse::profile::fill_records(const domain domain, std::vector<report_record>&
 			.last = row.last,
 			.peak = row.peak,
 			.calls_per_frame = row.calls_per_frame,
+			.main_per_frame = row.main_per_frame,
 			.sample_count = row.sample_count,
 			.peak_frame = row.peak_frame,
 			.spike_count = row.spike_count,

@@ -354,7 +354,8 @@ auto gse::trace::absorb_events(const std::span<const event> events) -> void {
 					.t0 = e.ts,
 					.t1 = {},
 					.parent = e.parent_eid,
-					.opened_frame = build_frame_index
+					.opened_frame = build_frame_index,
+					.lexical = e.lexical
 				}
 			);
 			continue;
@@ -441,7 +442,8 @@ auto gse::trace::build_frame(frame_storage& fs) -> void {
 			.self = {},
 			.children_first = 0,
 			.children_count = 0,
-			.open = sp.open
+			.open = sp.open,
+			.lexical = sp.info.lexical
 		});
 	}
 
@@ -618,7 +620,8 @@ auto gse::trace::scope_guard::enter(std::uint64_t parent) -> void {
 		.eid = m_eid,
 		.parent_eid = m_parent,
 		.tid = m_tid,
-		.ts = system_clock::now<tick_step>()
+		.ts = system_clock::now<tick_step>(),
+		.lexical = true
 	});
 
 	tls.stack.push_back(m_eid);

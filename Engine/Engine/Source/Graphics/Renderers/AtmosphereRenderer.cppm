@@ -46,6 +46,10 @@ export namespace gse::renderer::atmosphere {
 
 		vec3f ground_albedo;
 		vec3<irradiance> sun_irradiance;
+
+		float star_intensity;
+		float star_density;
+		float star_fade;
 	};
 
 	struct [[= shaders::binding<0, 7>{}]] atmosphere_ubo {
@@ -124,6 +128,30 @@ export namespace gse::renderer::atmosphere {
 		length sun_source_radius = meters(0.05f);
 
 		[[= gse::shared]] vec3f sun_direction = { 0.0f, 1.0f, 0.0f };
+
+		[[
+			= gse::settings::describe<"Brightness of the procedural starfield. Stars are world-fixed, so they hold "
+									  "still while the camera pans. 0 disables them.">{},
+			= gse::settings::range<0.f, 8.f>{},
+			= gse::settings::hot_reloadable
+		]]
+		float star_intensity = 1.6f;
+
+		[[
+			= gse::settings::describe<"Star field cell subdivision. Higher packs more, smaller stars into the sky; "
+									  "the star radius scales down with it so they stay sub-pixel-stable.">{},
+			= gse::settings::range<20.f, 400.f>{},
+			= gse::settings::hot_reloadable
+		]]
+		float star_density = 140.0f;
+
+		[[
+			= gse::settings::describe<"How fast stars wash out as the sun climbs. Stars reach full brightness once "
+									  "the sun is this far below the horizon, in units of sin(elevation).">{},
+			= gse::settings::range<0.01f, 0.5f>{},
+			= gse::settings::hot_reloadable
+		]]
+		float star_fade = 0.12f;
 
 		[[
 			= gse::settings::describe<"Camera altitude above sea level (km)">{},

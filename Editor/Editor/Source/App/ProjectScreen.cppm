@@ -370,7 +370,7 @@ auto gse::ide::project_screen::build_rebind(gui::builder& ui) -> void {
 		.text = hint,
 		.position = { card.left() + pad, ctx.layout_cursor.y() - text_view->line_height(sty.font_size) * 0.5f },
 		.scale = sty.font_size,
-		.color = m_engine_problem.empty() ? sty.color_text_secondary : vec4f{ 0.86f, 0.36f, 0.32f, 1.f },
+		.color = m_engine_problem.empty() ? sty.color_text_secondary : sty.color_error,
 		.clip_rect = rectf::from_position_size(
 			{ card.left() + pad, ctx.layout_cursor.y() },
 			{ card.width() - pad * 2.f, text_view->line_height(sty.font_size) + pad }
@@ -510,7 +510,7 @@ auto gse::ide::project_screen::build_create(gui::builder& ui) -> void {
 		.text = hint,
 		.position = { input_rect.left(), input_rect.bottom() - pad - text_view->line_height(sty.font_size) * 0.5f },
 		.scale = sty.font_size,
-		.color = m_error.empty() && problem.empty() ? sty.color_text_secondary : vec4f{ 0.86f, 0.36f, 0.32f, 1.f },
+		.color = m_error.empty() && problem.empty() ? sty.color_text_secondary : sty.color_error,
 		.clip_rect = rectf::from_position_size(
 			{ input_rect.left(), input_rect.bottom() - pad },
 			{ input_rect.width(), text_view->line_height(sty.font_size) + pad }

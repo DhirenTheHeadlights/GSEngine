@@ -429,11 +429,11 @@ auto gse::gpu::device::acquire_worker_command_buffer(const queue_type queue, con
 	return m_vt->acquire_worker_command_buffer(m_backend.get(), queue, worker_index, frame_index);
 }
 
-auto gse::gpu::device::make_video_encoder(const vec2u extent) -> std::optional<video_encoder> {
+auto gse::gpu::device::make_video_encoder(const encode_desc& desc) -> std::optional<video_encoder> {
 	if (!m_video_encode_enabled) {
 		return std::nullopt;
 	}
-	auto backend = m_vt->make_video_encoder_backend(m_backend.get(), extent);
+	auto backend = m_vt->make_video_encoder_backend(m_backend.get(), desc);
 	if (!backend) {
 		return std::nullopt;
 	}

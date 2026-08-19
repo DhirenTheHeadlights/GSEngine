@@ -180,6 +180,7 @@ static hash_set<uint64_t, false, token_span_hash> *g_emitted_qualifiers = nullpt
 
 static tree walk_cb(tree *tp, int *walk_subtrees, void *);
 static void walk_fn_body(tree fndecl);
+static tree body_walk_identity(tree fndecl);
 static void process_type_decl(tree d);
 static bool is_coroutine_actor(tree fndecl);
 
@@ -1265,39 +1266,45 @@ static tree loaded_namespace_binding(tree ns, tree name_id) {
 	if (!ns || TREE_CODE(ns) != NAMESPACE_DECL || !name_id || TREE_CODE(name_id) != IDENTIFIER_NODE) {
 		return NULL_TREE;
 	}
-	hash_table<named_decl_hash> *table = DECL_NAMESPACE_BINDINGS(ns);
-	if (!table) {
-		return NULL_TREE;
-	}
-	tree bind = table->find_with_hash(name_id, IDENTIFIER_HASH_VALUE(name_id));
-	if (!bind) {
-		return NULL_TREE;
-	}
-	if (TREE_CODE(bind) != BINDING_VECTOR) {
-		return bind;
-	}
 	tree found = NULL_TREE;
-	binding_cluster *clusters = BINDING_VECTOR_CLUSTER_BASE(bind);
-	const unsigned count = BINDING_VECTOR_NUM_CLUSTERS(bind);
-	for (unsigned i = 0; i < count; ++i) {
-		for (unsigned j = 0; j < BINDING_VECTOR_SLOTS_PER_CLUSTER; ++j) {
-			binding_slot &slot = clusters[i].slots[j];
-			if (slot.is_lazy()) {
-				continue;
+	if (hash_table<named_decl_hash> *table = DECL_NAMESPACE_BINDINGS(ns)) {
+		if (tree bind = table->find_with_hash(name_id, IDENTIFIER_HASH_VALUE(name_id))) {
+			if (TREE_CODE(bind) != BINDING_VECTOR) {
+				return bind;
 			}
-			tree value = slot;
-			if (!value || value == error_mark_node) {
-				continue;
-			}
-			if (MAYBE_STAT_TYPE(value)) {
-				return value;
-			}
-			if (!found) {
-				found = value;
+			binding_cluster *clusters = BINDING_VECTOR_CLUSTER_BASE(bind);
+			const unsigned count = BINDING_VECTOR_NUM_CLUSTERS(bind);
+			for (unsigned i = 0; i < count; ++i) {
+				for (unsigned j = 0; j < BINDING_VECTOR_SLOTS_PER_CLUSTER; ++j) {
+					binding_slot &slot = clusters[i].slots[j];
+					if (slot.is_lazy()) {
+						continue;
+					}
+					tree value = slot;
+					if (!value || value == error_mark_node) {
+						continue;
+					}
+					if (MAYBE_STAT_TYPE(value)) {
+						return value;
+					}
+					if (!found) {
+						found = value;
+					}
+				}
 			}
 		}
 	}
-	return found;
+	if (found) {
+		return found;
+	}
+	if (vec<tree, va_gc> *inlinees = DECL_NAMESPACE_INLINEES(ns)) {
+		for (tree inlinee : *inlinees) {
+			if (tree binding = loaded_namespace_binding(inlinee, name_id)) {
+				return binding;
+			}
+		}
+	}
+	return NULL_TREE;
 }
 
 static tree namespace_binding_at(tree scope_ns, tree name_id, LOOK_want want = LOOK_want::TYPE_NAMESPACE) {
@@ -1529,7 +1536,7 @@ static void emit_type_use_ref(const source_token &use, tree decl) {
 		return;
 	}
 	const char *name = IDENTIFIER_POINTER(id);
-	if (name[0] == '_' || name[0] == '.' || strchr(name, ' ')) {
+	if (name[0] == '.' || strchr(name, ' ')) {
 		return;
 	}
 	const int use_len = (int)(use.finish - use.start);
@@ -1542,7 +1549,7 @@ static void emit_type_use_ref(const source_token &use, tree decl) {
 	if (!g_index_only) {
 		out_printf("GSETOK\t%d\t%d\t%d\ttype\n", use.line, use.byte_column, use_len);
 	}
-	if (!main_file_under_root()) {
+	if (name[0] == '_' || !main_file_under_root()) {
 		return;
 	}
 	const expanded_location dx = expand_cached(DECL_SOURCE_LOCATION(decl));
@@ -3199,7 +3206,7 @@ static void emit_qual(location_t use_loc, tree decl) {
 	const int count = parse_qualified_chain(head, (int)g_source_tokens->length(), components, 32);
 	if (count < 2) return;
 	if (!source_token_matches_identifier(components[count - 1], id)) return;
-	if (source_token_at(DECL_SOURCE_LOCATION(decl), source_token_kind::identifier) == components[count - 1]) return;
+	if (in_main_file(DECL_SOURCE_LOCATION(decl)) && find_decl_anchor(decl) == components[count - 1]) return;
 	tree resolved[32];
 	resolved[count - 1] = decl;
 	tree ctx = CP_DECL_CONTEXT(decl);
@@ -3901,6 +3908,12 @@ static bool is_lambda_op(tree fndecl) {
 	return ctx && TYPE_P(ctx) && LAMBDA_TYPE_P(ctx);
 }
 
+static bool is_user_structor(tree fndecl) {
+	if (!fndecl || TREE_CODE(fndecl) != FUNCTION_DECL || DECL_ARTIFICIAL(fndecl)) return false;
+	if (!DECL_CONSTRUCTOR_P(fndecl) && !DECL_DESTRUCTOR_P(fndecl)) return false;
+	return !DECL_CLONED_FUNCTION_P(fndecl);
+}
+
 /* A capture with an initializer introduces a name that survives only as a
    closure field: the lowered body refers to the field, never to the source
    position that declared it.  Left alone the name is uncoloured and the
@@ -3955,7 +3968,7 @@ static void emit_lambda_captures(tree closure_type) {
 static void on_pre_genericize(void *gcc_data, void *) {
 	tree fndecl = (tree)gcc_data;
 	if (!fndecl || TREE_CODE(fndecl) != FUNCTION_DECL) return;
-	if (is_synthesized_special(fndecl) && !is_coroutine_actor(fndecl) && !is_lambda_op(fndecl)) return;
+	if (is_synthesized_special(fndecl) && !is_coroutine_actor(fndecl) && !is_lambda_op(fndecl) && !is_user_structor(fndecl)) return;
 	if (is_lambda_op(fndecl)) {
 		emit_lambda_captures(DECL_CONTEXT(fndecl));
 	}
@@ -3964,7 +3977,7 @@ static void on_pre_genericize(void *gcc_data, void *) {
 	}
 	tree body = DECL_SAVED_TREE(fndecl);
 	if (body) {
-		if (g_walked) g_walked->add(fndecl);
+		if (g_walked && g_walked->add(body_walk_identity(fndecl))) return;
 		tree prev_scope = g_scope;
 		g_scope = enclosing_namespace(fndecl);
 		walk_function_body(fndecl, body);
@@ -4102,10 +4115,17 @@ static void process_decl(tree d) {
 
 static void walk_template_bodies(tree decl);
 
+static tree body_walk_identity(tree fndecl) {
+	if (fndecl && TREE_CODE(fndecl) == FUNCTION_DECL && DECL_CLONED_FUNCTION_P(fndecl)) {
+		if (tree origin = DECL_CLONED_FUNCTION(fndecl)) return origin;
+	}
+	return fndecl;
+}
+
 static void walk_fn_body(tree fndecl) {
 	if (!fndecl || TREE_CODE(fndecl) != FUNCTION_DECL) return;
 	if (!in_main_file(DECL_SOURCE_LOCATION(fndecl))) return;
-	if (g_walked && g_walked->add(fndecl)) return;
+	if (g_walked && g_walked->add(body_walk_identity(fndecl))) return;
 	tree prev_scope = g_scope;
 	g_scope = enclosing_namespace(fndecl);
 	for (tree p = DECL_ARGUMENTS(fndecl); p; p = DECL_CHAIN(p)) {
@@ -4244,7 +4264,20 @@ static void on_finish_decl(void *gcc_data, void *) {
 }
 
 static void on_finish_parse_function(void *gcc_data, void *) {
-	record_lexical_namespace((tree)gcc_data);
+	tree fndecl = (tree)gcc_data;
+	record_lexical_namespace(fndecl);
+	if (!fndecl || TREE_CODE(fndecl) != FUNCTION_DECL) {
+		return;
+	}
+	tree ctx = DECL_CONTEXT(fndecl);
+	if (!ctx || !TYPE_P(ctx)) {
+		return;
+	}
+	tree owner = TYPE_NAME(ctx);
+	if (owner && DECL_P(owner) && in_main_file(DECL_SOURCE_LOCATION(owner))) {
+		return;
+	}
+	scan_declaration_type_qualifiers(fndecl);
 }
 
 static void on_finish_type(void *gcc_data, void *) {

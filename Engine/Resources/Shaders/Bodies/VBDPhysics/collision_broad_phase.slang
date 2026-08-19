@@ -70,7 +70,7 @@ void collision_broad_phase(uint3 dispatch_id) {
     uint static_count = static_bodies_data[0];
     for (uint s = 0; s < static_count; s++) {
         uint j = static_bodies_data[1 + s];
-        if (j >= pc.body_count || j == i || is_jointed(i, j)) {
+        if (j >= pc.body_count || j == i) {
             continue;
         }
         body_state body_j = body_data[j];
@@ -82,7 +82,7 @@ void collision_broad_phase(uint3 dispatch_id) {
             min_a.y - margin <= max_b.y && max_a.y + margin >= min_b.y &&
             min_a.z - margin <= max_b.z && max_a.z + margin >= min_b.z;
 
-        if (overlap) {
+        if (overlap && !is_jointed(i, j)) {
             emit_pair(min(i, j), max(i, j));
         }
     }
@@ -108,7 +108,7 @@ void collision_broad_phase(uint3 dispatch_id) {
 
                     uint env_j = body_env_data[j];
                     bool cross_env = (env_i != 0xFFFFFFFFu) && (env_j != 0xFFFFFFFFu) && (env_i != env_j);
-                    if (j > i && j < pc.body_count && !is_jointed(i, j) && !cross_env) {
+                    if (j > i && j < pc.body_count && !cross_env) {
                         body_state body_j = body_data[j];
                         float3 min_b = body_j.aabb_min.xyz;
                         float3 max_b = body_j.aabb_max.xyz;
@@ -123,7 +123,7 @@ void collision_broad_phase(uint3 dispatch_id) {
                             int3 min_cell_j = world_to_cell(min_b - margin, cell_size);
                             int3 overlap_min = max(min_cell_i, min_cell_j);
 
-                            if (cell.x == overlap_min.x && cell.y == overlap_min.y && cell.z == overlap_min.z) {
+                            if (cell.x == overlap_min.x && cell.y == overlap_min.y && cell.z == overlap_min.z && !is_jointed(i, j)) {
                                 emit_pair(i, j);
                             }
                         }

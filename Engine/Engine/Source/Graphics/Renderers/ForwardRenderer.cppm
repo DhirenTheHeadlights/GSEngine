@@ -3,6 +3,7 @@ export module gse.graphics:forward_renderer;
 import std;
 
 import :atmosphere_renderer;
+import :cloud_renderer;
 import :geometry_collector;
 import :depth_prepass_renderer;
 import :gi_probe_renderer;
@@ -112,6 +113,7 @@ export namespace gse::renderer::forward {
 		shared_view<geometry_collector::data> gc_r,
 		shared_view<light_culling::data> lc_r,
 		shared_view<atmosphere::data> atm_state,
+		shared_view<cloud::data> cloud_state,
 		shared_view<gi_probe::data> gi_state,
 		read<directional_light_component> dir_lights,
 		read<spot_light_component> spot_lights,

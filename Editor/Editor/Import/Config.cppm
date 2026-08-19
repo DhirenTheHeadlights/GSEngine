@@ -32,40 +32,7 @@ export namespace gse::ide::config {
 		bool analyzable = true;
 	};
 
-	struct browse_root_view {
-		struct iterator {
-			using value_type = browse_root;
-			using difference_type = std::ptrdiff_t;
-
-			const browse_root* const* cursor = nullptr;
-
-			auto operator*() const -> const browse_root&;
-
-			auto operator->() const -> const browse_root*;
-
-			auto operator++() -> iterator&;
-
-			auto operator++(
-				int
-			) -> iterator;
-
-			auto operator==(
-				const iterator& other
-			) const -> bool = default;
-		};
-
-		std::shared_ptr<const std::vector<const browse_root*>> generation;
-
-		auto begin() const -> iterator;
-
-		auto end() const -> iterator;
-
-		auto size() const -> std::size_t;
-
-		auto empty() const -> bool;
-	};
-
-	auto worktrees() -> std::vector<const worktree*>;
+	auto worktrees() -> std::span<const worktree>;
 
 	auto primary() -> const worktree&;
 
@@ -73,11 +40,7 @@ export namespace gse::ide::config {
 		const std::filesystem::path& file
 	) -> const worktree&;
 
-	auto register_worktree(
-		const std::filesystem::path& manifest_file
-	) -> const worktree&;
-
-	auto browse_roots() -> browse_root_view;
+	auto browse_roots() -> std::span<const browse_root>;
 
 	auto analysis_roots() -> std::vector<std::filesystem::path>;
 

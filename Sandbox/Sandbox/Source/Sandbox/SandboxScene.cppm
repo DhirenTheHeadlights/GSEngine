@@ -31,6 +31,10 @@ export namespace sandbox {
 		gse::scene& s
 	) -> void;
 
+	auto tumbler_scene_setup(
+		gse::scene& s
+	) -> void;
+
 	auto physics_parity_world_setup(
 		gse::engine& e,
 		std::size_t n_envs
@@ -101,6 +105,17 @@ export namespace sandbox::physics_parity {
 	) -> gse::async::task<>;
 }
 
+namespace sandbox {
+	auto scatter_rocks(
+		gse::scene& s,
+		std::string_view prefix,
+		int count,
+		gse::length inner,
+		gse::length outer,
+		std::uint32_t seed
+	) -> void;
+}
+
 auto sandbox::player::run(gse::context& ctx, data& d, const gse::channel_read<gse::world_system::possess_player_request> possess_in, gse::structural<gse::free_camera::component> cameras) -> gse::async::task<> {
 	for (const auto& request : possess_in.of<gse::world_system::possess_player_request>()) {
 		cameras.add(
@@ -118,15 +133,23 @@ auto sandbox::sandbox_scene_setup(gse::scene& s) -> void {
 	constexpr auto floor_size = gse::vec3<gse::length>(gse::meters(1000.f), gse::meters(1.f), gse::meters(1000.f));
 	s.spawn(
 		"Floor",
-		sandbox::static_box(
+		static_disc_floor(
 			gse::vec3<gse::position>(0.f, -0.501f, 0.f),
 			floor_size,
-			gse::quat(1.f, 0.f, 0.f, 0.f),
-			gse::vec3f(0.08f, 0.08f, 0.09f),
-			0.45f,
-			0.0f
+			gse::meters(1200.f)
 		)
 	);
+
+	s.spawn(
+		"Mountains",
+		mountain_ring(
+			gse::meters(1200.f),
+			gse::meters(6500.f),
+			gse::meters(920.f)
+		)
+	);
+
+	scatter_rocks(s, "Rock", 26, gse::meters(130.f), gse::meters(450.f), 4127u);
 
 	s.build("Scene Camera")
 		.with<gse::free_camera::component>({
@@ -134,17 +157,65 @@ auto sandbox::sandbox_scene_setup(gse::scene& s) -> void {
 		});
 }
 
+auto sandbox::tumbler_scene_setup(gse::scene& s) -> void {
+	constexpr auto floor_size = gse::vec3<gse::length>(gse::meters(1000.f), gse::meters(1.f), gse::meters(1000.f));
+	s.spawn(
+		"TumblerFloor",
+		static_disc_floor(
+			gse::vec3<gse::position>(gse::meters(0.f), gse::meters(-0.5f), gse::meters(0.f)),
+			floor_size,
+			gse::meters(1200.f)
+		)
+	);
+
+	s.spawn(
+		"TumblerMountains",
+		mountain_ring(
+			gse::meters(1200.f),
+			gse::meters(6500.f),
+			gse::meters(920.f)
+		)
+	);
+
+	const stress_scene_params params{};
+
+	const auto drum_height = gse::meters(13.f);
+	const std::array<gse::vec3<gse::position>, 4> centres = {
+		gse::vec3<gse::position>(gse::meters(-14.f), drum_height, gse::meters(-16.f)),
+		gse::vec3<gse::position>(gse::meters(14.f), drum_height, gse::meters(-16.f)),
+		gse::vec3<gse::position>(gse::meters(-14.f), drum_height, gse::meters(16.f)),
+		gse::vec3<gse::position>(gse::meters(14.f), drum_height, gse::meters(16.f)),
+	};
+	const std::array speeds = {
+		gse::radians_per_second(0.60f),
+		gse::radians_per_second(-0.48f),
+		gse::radians_per_second(0.42f),
+		gse::radians_per_second(-0.70f),
+	};
+
+	for (int i = 0; i < 4; ++i) {
+		spawn_tumbler(s, i, centres[i], gse::axis_z, speeds[i], params);
+	}
+
+	s.build("Tumbler Camera")
+		.with<gse::free_camera::component>({
+			.initial_position = gse::vec3<gse::position>(gse::meters(0.f), gse::meters(50.f), gse::meters(90.f)),
+			.priority = 60,
+			.speed = gse::meters_per_second(30.f),
+			.yaw = gse::degrees(0.f),
+			.pitch = gse::degrees(-20.f),
+			.collide_with_geometry = false,
+		});
+}
+
 auto sandbox::pyramid_scene_setup(gse::scene& s) -> void {
 	constexpr auto floor_size = gse::vec3<gse::length>(gse::meters(1000.f), gse::meters(1.f), gse::meters(1000.f));
 	s.spawn(
 		"PyramidFloor",
-		static_box(
+		static_disc_floor(
 			gse::vec3<gse::position>(gse::meters(0.f), gse::meters(-0.5f), gse::meters(0.f)),
 			floor_size,
-			gse::quat(1.f, 0.f, 0.f, 0.f),
-			gse::vec3f(0.08f, 0.08f, 0.09f),
-			0.45f,
-			0.0f
+			gse::meters(700.f)
 		)
 	);
 
@@ -163,13 +234,10 @@ auto sandbox::sky_scene_setup(gse::scene& s) -> void {
 	constexpr auto floor_size = gse::vec3<gse::length>(gse::kilometers(40.f), gse::meters(1.f), gse::kilometers(40.f));
 	s.spawn(
 		"SkyFloor",
-		static_box(
+		static_disc_floor(
 			gse::vec3<gse::position>(gse::meters(0.f), gse::meters(-0.5f), gse::meters(0.f)),
 			floor_size,
-			gse::quat(1.f, 0.f, 0.f, 0.f),
-			gse::vec3f(0.08f, 0.08f, 0.09f),
-			0.45f,
-			0.0f
+			gse::meters(1200.f)
 		)
 	);
 
@@ -190,6 +258,20 @@ auto sandbox::sky_scene_setup(gse::scene& s) -> void {
 			)
 		);
 	}
+
+	s.spawn(
+		"SkyMountains",
+		mountain_ring(
+			gse::meters(1200.f),
+			gse::meters(6000.f),
+			gse::meters(1030.f),
+			gse::vec3f(0.19f, 0.21f, 0.26f),
+			0.92f,
+			8821u
+		)
+	);
+
+	scatter_rocks(s, "SkyRock", 26, gse::meters(130.f), gse::meters(450.f), 9043u);
 
 	s.build("Sky Camera")
 		.with<gse::free_camera::component>({
@@ -214,6 +296,37 @@ namespace sandbox {
 	) -> void;
 }
 
+
+auto sandbox::scatter_rocks(gse::scene& s, const std::string_view prefix, const int count, const gse::length inner, const gse::length outer, const std::uint32_t seed) -> void {
+	const auto rand01 = [](std::uint32_t x) {
+		x = (x ^ 61u) ^ (x >> 16);
+		x *= 9u;
+		x = x ^ (x >> 4);
+		x *= 0x27d4eb2du;
+		x = x ^ (x >> 15);
+		return static_cast<float>(x) * 0x1p-32f;
+	};
+
+	for (int i = 0; i < count; ++i) {
+		const auto k = seed + static_cast<std::uint32_t>(i) * 2654435761u;
+		const auto theta = gse::degrees(360.f) * rand01(k);
+		const auto radius = inner + (outer - inner) * rand01(k + 17u);
+		const auto width = gse::meters(6.f + 12.f * rand01(k + 41u));
+		const auto height = gse::meters(4.f + 10.f * rand01(k + 73u));
+		const auto depth = gse::meters(6.f + 12.f * rand01(k + 97u));
+		const auto tilt = gse::quat(gse::axis_y, gse::degrees(360.f) * rand01(k + 131u))
+			* gse::quat(gse::axis_x, gse::degrees(-18.f) + gse::degrees(36.f) * rand01(k + 157u));
+
+		s.spawn(
+			std::format("{}_{}", prefix, i),
+			scatter_rock(
+				gse::vec3<gse::position>(radius * gse::sin(theta), height * 0.35f, radius * gse::cos(theta)),
+				gse::vec3<gse::length>(width, height, depth),
+				tilt
+			)
+		);
+	}
+}
 
 auto physics_parity_scene_setup(gse::scene& s) -> void {
 	const auto n = sandbox::g_physics_parity_n_envs;

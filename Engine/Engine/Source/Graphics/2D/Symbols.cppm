@@ -28,6 +28,8 @@ export namespace gse::gui::symbol {
 	auto chevron_left() -> std::span<const stroke>;
 	auto chevron_right() -> std::span<const stroke>;
 	auto gear() -> std::span<const stroke>;
+	auto info() -> std::span<const stroke>;
+	auto plus() -> std::span<const stroke>;
 	auto file() -> std::span<const stroke>;
 	auto folder() -> std::span<const stroke>;
 	auto project() -> std::span<const stroke>;
@@ -151,6 +153,36 @@ auto gse::gui::symbol::gear() -> std::span<const stroke> {
 		}
 		return s;
 	}();
+	return data;
+}
+
+auto gse::gui::symbol::info() -> std::span<const stroke> {
+	static const std::array<stroke, 14> data = [] {
+		std::array<stroke, 14> s{};
+		constexpr int segments = 12;
+		constexpr float pi = std::numbers::pi_v<float>;
+		constexpr float radius = 0.38f;
+		const vec2f c{ 0.5f, 0.5f };
+		std::size_t k = 0;
+		for (int i = 0; i < segments; ++i) {
+			const float a0 = static_cast<float>(i) / segments * 2.f * pi;
+			const float a1 = static_cast<float>(i + 1) / segments * 2.f * pi;
+			const vec2f dir0{ std::cos(a0), std::sin(a0) };
+			const vec2f dir1{ std::cos(a1), std::sin(a1) };
+			s[k++] = { c + dir0 * radius, c + dir1 * radius };
+		}
+		s[k++] = { { 0.50f, 0.28f }, { 0.50f, 0.56f } };
+		s[k++] = { { 0.50f, 0.66f }, { 0.50f, 0.70f } };
+		return s;
+	}();
+	return data;
+}
+
+auto gse::gui::symbol::plus() -> std::span<const stroke> {
+	static constexpr std::array<stroke, 2> data{
+		stroke{ { 0.50f, 0.24f }, { 0.50f, 0.76f } },
+		stroke{ { 0.24f, 0.50f }, { 0.76f, 0.50f } },
+	};
 	return data;
 }
 

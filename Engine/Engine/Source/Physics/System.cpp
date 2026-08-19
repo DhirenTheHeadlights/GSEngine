@@ -164,6 +164,18 @@ auto gse::physics::query_transform(const shared_view<data> d, const id entity_id
 	if (it == d.id_to_body_index.end()) {
 		return std::nullopt;
 	}
+	if (!gpu_solver_active(d)) {
+		const auto cpu_bodies = d.vbd_solver.body_states();
+		if (it->second >= cpu_bodies.size()) {
+			return std::nullopt;
+		}
+		const auto& cpu_body = cpu_bodies[it->second];
+		return transform_snapshot{
+			.position = origin_from_com(cpu_body.position, cpu_body.orientation, cpu_body.com_local),
+			.orientation = cpu_body.orientation,
+		};
+	}
+
 	const auto body = d.gpu_solver.query_body_snapshot(it->second);
 	if (!body) {
 		return std::nullopt;
@@ -1037,8 +1049,12 @@ auto gse::physics::prepare(context& ctx, data& d, const channel_write<interpolat
 		d.gpu_joints_dirty = true;
 	}
 
+	d.gpu_readback_age_steps = gpu_solver_active(d) ? d.gpu_solver.readback_age_steps() : 0;
+
 	interp_out.push<interpolation_state>({
-		.advancing = d.update_phys
+		.advancing = d.update_phys,
+		.steps = d.sim_steps_this_frame,
+		.readback_age_steps = d.gpu_readback_age_steps
 	});
 
 	if (d.update_phys) {
@@ -1431,6 +1447,32 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 			vbd::limits.max_motors
 		);
 		build_motor_constraints(motor, motion, d.id_to_body_index, d.body_airborne, bodies, motors);
+
+		const auto motor_ids = motor.owner_ids();
+		for (std::size_t i = 0; i < motor.size(); ++i) {
+			const auto& mt = motor[i];
+			if (magnitude(mt.velocity_drive_target) <= meters_per_second(.01f)) {
+				continue;
+			}
+			const auto* mc = motion.find(motor_ids[i]);
+			if (!mc || !is_dynamic(*mc)) {
+				continue;
+			}
+			const auto it = d.id_to_body_index.find(motor_ids[i]);
+			if (it == d.id_to_body_index.end()) {
+				continue;
+			}
+			const auto idx = it->second;
+			if (mt.requires_ground_contact && idx < d.body_airborne.size() && d.body_airborne[idx] != 0) {
+				continue;
+			}
+			if (idx < d.body_sleeping.size() && d.body_sleeping[idx] != 0) {
+				gpu_impulses.push_back({
+					.body_index = idx,
+					.delta_velocity = {},
+				});
+			}
+		}
 	}
 
 	std::vector<vbd::joint_constraint> gpu_joints;
@@ -1462,6 +1504,7 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 			.solver_cfg = d.vbd_solver.config(),
 			.dt = dt * static_cast<float>(dispatch_steps),
 			.steps = dispatch_steps * std::max(d.physics_substeps, 1),
+			.ticks = dispatch_steps,
 			.refresh_joints = refresh_joints || reset,
 			.force_reseed = reset,
 		});

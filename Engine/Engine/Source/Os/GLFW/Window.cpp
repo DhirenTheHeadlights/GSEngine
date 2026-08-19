@@ -13,6 +13,7 @@ import gse.assert;
 import gse.math;
 import gse.core;
 import gse.concurrency;
+import gse.diag;
 import gse.ecs;
 
 namespace gse {
@@ -664,10 +665,20 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 		create_window(d);
 	}
 
-	poll_events();
-	sync_clipboard(d.focused);
+	{
+		trace::scope_guard sg{ trace_id<"window::poll">() };
+		poll_events();
+	}
 
-	d.content_scale = window_handle_content_scale(d.handle);
+	{
+		trace::scope_guard sg{ trace_id<"window::clipboard">() };
+		sync_clipboard(d.focused);
+	}
+
+	{
+		trace::scope_guard sg{ trace_id<"window::content_scale">() };
+		d.content_scale = window_handle_content_scale(d.handle);
+	}
 
 	for (const auto& [focus] : sched.read_channel<ui_focus_request>()) {
 		set_ui_focus(d, focus);
@@ -736,6 +747,7 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 	}
 
 	if (d.focused) {
+		trace::scope_guard sg{ trace_id<"window::modes">() };
 		apply_cursor_mode(d);
 
 		const auto desired_display_mode = static_cast<display_mode>(d.display_mode.value);
@@ -749,11 +761,17 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 		}
 	}
 
-	apply_commands(d);
+	{
+		trace::scope_guard sg{ trace_id<"window::commands">() };
+		apply_commands(d);
+	}
 
-	if (const int monitor_index = monitor_index_for_window(d.position, d.size); monitor_index != d.current_monitor_index) {
-		d.current_monitor_index = monitor_index;
-		d.monitor_key = monitor_key_for_index(monitor_index);
+	{
+		trace::scope_guard sg{ trace_id<"window::monitor_scan">() };
+		if (const int monitor_index = monitor_index_for_window(d.position, d.size); monitor_index != d.current_monitor_index) {
+			d.current_monitor_index = monitor_index;
+			d.monitor_key = monitor_key_for_index(monitor_index);
+		}
 	}
 
 	if (d.cmd_open_file) {
