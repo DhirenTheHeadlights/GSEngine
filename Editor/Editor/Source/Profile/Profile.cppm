@@ -68,7 +68,7 @@ export namespace gse::ide {
 		std::size_t strip_visible = 0;
 		std::size_t worker_offset = 0;
 		float detail_width = 0.f;
-		bool resizing_detail = false;
+		gse::gui::layout::split_drag_state resizing_detail;
 		bool wants_resize_cursor = false;
 		gse::gui::column_state columns;
 		gse::profile::sample_time live_frame_time;

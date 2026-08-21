@@ -6,6 +6,7 @@ import gse.win32;
 
 import gse.ide.alloc;
 import gse.ide.docs;
+import gse.ide.highlight;
 import gse.ide.profile;
 
 import :documents;
@@ -114,25 +115,12 @@ export namespace gse::ide {
 		std::uint64_t key = 0;
 	};
 
-	enum class game_view_kind {
-		game [[= view_label{ .text = "Game" }]],
-		graph [[= view_label{ .text = "Graph" }]],
-		profile [[= view_label{ .text = "Profile" }]],
-		alloc [[= view_label{ .text = "Alloc" }]],
-	};
-
-	constexpr auto game_view_label(
-		game_view_kind kind
-	) -> view_label;
-
 	struct workspace {
 		struct data {
 			open_documents documents;
 			std::vector<navigation_entry> back_stack;
 			std::vector<navigation_entry> forward_stack;
 			gse::gui::tab_strip_state tab_strip;
-			gse::gui::tab_strip_state game_tab_strip;
-			game_view_kind game_view = game_view_kind::game;
 			profile_view_state profile;
 			alloc_view_state alloc;
 			bool game_captured = false;
@@ -379,9 +367,9 @@ namespace gse::ide {
 		const navigation_entry& target
 	) -> bool;
 
-	auto highlightable_path(
+	auto language_of(
 		const std::filesystem::path& path
-	) -> bool;
+	) -> document_language;
 
 	auto tab_name_taken(
 		const workspace::data& d,
@@ -424,10 +412,6 @@ namespace gse::ide {
 		std::vector<navigation_entry>& entries,
 		const std::filesystem::path& base
 	) -> void;
-}
-
-constexpr auto gse::ide::game_view_label(const game_view_kind kind) -> view_label {
-	return gse::annotation_from_enum<view_label>(kind, { .text = "" });
 }
 
 auto gse::ide::fs_node_key(const std::filesystem::path& path) -> std::uint64_t {
@@ -531,12 +515,12 @@ auto gse::ide::jump_to_without_history(workspace::data& d, const navigation_entr
 	return true;
 }
 
-auto gse::ide::highlightable_path(const std::filesystem::path& path) -> bool {
+auto gse::ide::language_of(const std::filesystem::path& path) -> document_language {
 	std::string ext = path.extension().native_encoded_string();
 	std::ranges::transform(ext, ext.begin(), [](const unsigned char ch) {
 		return static_cast<char>(std::tolower(ch));
 	});
-	constexpr std::array extensions{
+	constexpr std::array cpp_extensions{
 		std::string_view(".cpp"),
 		std::string_view(".cppm"),
 		std::string_view(".cc"),
@@ -549,7 +533,18 @@ auto gse::ide::highlightable_path(const std::filesystem::path& path) -> bool {
 		std::string_view(".hxx"),
 		std::string_view(".inl"),
 	};
-	return std::ranges::find(extensions, ext) != extensions.end();
+	if (std::ranges::find(cpp_extensions, ext) != cpp_extensions.end()) {
+		return document_language::cpp;
+	}
+	constexpr std::array markdown_extensions{
+		std::string_view(".md"),
+		std::string_view(".markdown"),
+		std::string_view(".mdown"),
+	};
+	if (std::ranges::find(markdown_extensions, ext) != markdown_extensions.end()) {
+		return document_language::markdown;
+	}
+	return document_language::plain;
 }
 
 auto gse::ide::write_document_file(const std::filesystem::path& path, const std::span<const std::string> lines) -> std::expected<void, std::string> {
@@ -691,7 +686,7 @@ auto gse::ide::workspace::open_file(data& d, const std::filesystem::path& path) 
 	doc.path = key;
 	doc.tab_name = unique_tab_name(d, key);
 	doc.buffer = std::move(loaded->buffer);
-	doc.highlightable = highlightable_path(key);
+	doc.language = language_of(key);
 	doc.disk_write_time = loaded->write_time;
 
 	const id id = d.documents.add(std::move(doc));
@@ -1198,7 +1193,7 @@ auto gse::ide::workspace::commit_pending_name(data& d) -> void {
 			d.watcher.watch(doc.path, [&d](const std::filesystem::path& changed_path) {
 				workspace::reload_document_from_disk(d, changed_path);
 			});
-			doc.highlightable = highlightable_path(doc.path);
+			doc.language = language_of(doc.path);
 			doc.tab_name.clear();
 			renamed_documents.push_back(id);
 		}

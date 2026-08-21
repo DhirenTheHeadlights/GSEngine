@@ -101,7 +101,7 @@ export namespace gse::ide {
 			return visible;
 		}();
 		float panel_ratio = 0.3f;
-		bool resizing_panel = false;
+		gui::layout::split_drag_state resizing_panel;
 		bool built = false;
 		node_relations detail;
 		std::optional<std::uint64_t> detail_for;
