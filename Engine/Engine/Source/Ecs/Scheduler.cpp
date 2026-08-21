@@ -1019,18 +1019,13 @@ auto gse::scheduler::resolve_activation(const std::unordered_set<id>& disabled_r
 		});
 	};
 
+	std::unordered_set<id> unproduced_channels;
+
 	for (const auto& n : m_candidates) {
 		for (const id ch : n.channel_consumes) {
-			if (publishers.contains(ch)) {
-				continue;
+			if (!publishers.contains(ch)) {
+				unproduced_channels.insert(ch);
 			}
-			log::println(
-				log::level::warning,
-				log::category::runtime,
-				"system '{}': consumed channel {} has no registered producer — no system declares it in a channel_write<...> parameter",
-				n.system_name,
-				ch
-			);
 		}
 		for (const id dep : required(n)) {
 			dependents[dep].push_back(n.state_id);
@@ -1051,6 +1046,23 @@ auto gse::scheduler::resolve_activation(const std::unordered_set<id>& disabled_r
 				work.push_back(n.state_id);
 			}
 		}
+	}
+
+	if (!unproduced_channels.empty()) {
+		std::string tags;
+		for (const id ch : unproduced_channels) {
+			if (!tags.empty()) {
+				tags += ", ";
+			}
+			tags += ch.tag();
+		}
+		log::println(
+			log::level::warning,
+			log::category::runtime,
+			"{} consumed channels have no registered producer — no system declares them in a channel_write<...> parameter: {}",
+			unproduced_channels.size(),
+			tags
+		);
 	}
 
 	std::size_t propagated = 0;
