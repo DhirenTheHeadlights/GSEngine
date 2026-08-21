@@ -53,6 +53,7 @@ export namespace gse::win32 {
 
 	constexpr UINT wm_nccalcsize = WM_NCCALCSIZE;
 	constexpr UINT wm_nchittest = WM_NCHITTEST;
+	constexpr UINT wm_ncmousemove = WM_NCMOUSEMOVE;
 	constexpr LRESULT ht_left = HTLEFT;
 	constexpr LRESULT ht_right = HTRIGHT;
 	constexpr LRESULT ht_top = HTTOP;
@@ -261,6 +262,27 @@ export namespace gse::win32 {
 	constexpr DWORD thread_suspend_resume = THREAD_SUSPEND_RESUME;
 	constexpr DWORD thread_get_context = THREAD_GET_CONTEXT;
 	constexpr DWORD thread_query_information = THREAD_QUERY_INFORMATION;
+
+	using ::HGLOBAL;
+	using ::HDROP;
+	using ::BITMAPINFOHEADER;
+
+	using ::IsClipboardFormatAvailable;
+	using ::OpenClipboard;
+	using ::CloseClipboard;
+	using ::GetClipboardData;
+	using ::GlobalLock;
+	using ::GlobalUnlock;
+	using ::GlobalSize;
+	using ::DragQueryFileW;
+
+	constexpr UINT cf_dib = CF_DIB;
+	constexpr UINT cf_dibv5 = CF_DIBV5;
+	constexpr UINT cf_hdrop = CF_HDROP;
+	constexpr DWORD bi_rgb = BI_RGB;
+	constexpr DWORD bi_bitfields = BI_BITFIELDS;
+	constexpr DWORD bitmap_info_header_size = sizeof(BITMAPINFOHEADER);
+	constexpr UINT drag_query_count = 0xFFFFFFFFu;
 
 	auto valid_handle(HANDLE handle) -> bool {
 		return handle != nullptr && handle != INVALID_HANDLE_VALUE;
