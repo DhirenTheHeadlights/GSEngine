@@ -25,6 +25,10 @@ export namespace gse {
 		std::uint32_t size = 0;
 	};
 
+	constexpr auto archive_type_key(
+		std::string_view name
+	) -> std::string_view;
+
 	consteval auto is_archive_raw(
 		std::meta::info type
 	) -> bool;
@@ -327,6 +331,11 @@ export namespace gse {
 		binary_reader& ar,
 		std::filesystem::path& v
 	) -> void;
+}
+
+constexpr auto gse::archive_type_key(const std::string_view name) -> std::string_view {
+	const std::size_t at = name.find("#sz");
+	return at == std::string_view::npos ? name : name.substr(0, at);
 }
 
 consteval auto gse::is_archive_raw(const std::meta::info type) -> bool {
@@ -690,7 +699,7 @@ auto gse::binary_reader::operator&(T& value) -> binary_reader& {
 				if constexpr (!is_archive_skipped(m)) {
 					if (!matched
 						&& field.name == std::meta::identifier_of(m)
-						&& field.type == meta::qualified_name<typename [:std::meta::type_of(m):]>()
+						&& archive_type_key(field.type) == archive_type_key(meta::qualified_name<typename [:std::meta::type_of(m):]>())
 						&& field.size == archive_field_size<typename [:std::meta::type_of(m):]>()) {
 						matched = true;
 						if constexpr (archive_field_size<typename [:std::meta::type_of(m):]>() == 0) {
