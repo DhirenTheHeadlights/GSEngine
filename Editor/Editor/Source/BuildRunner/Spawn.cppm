@@ -37,6 +37,11 @@ export namespace gse::ide::spawn {
 
 	auto terminate_process(output_stream& stream) -> void;
 
+	auto terminate(
+		void* process,
+		void* job
+	) -> void;
+
 	auto run_capture(
 		output_stream& stream,
 		const std::wstring& command_line,
@@ -163,11 +168,15 @@ auto gse::ide::spawn::close_process(output_stream& stream) -> void {
 auto gse::ide::spawn::terminate_process(output_stream& stream) -> void {
 	std::lock_guard lock(stream.mutex);
 	stream.terminated.store(true, std::memory_order_release);
-	if (win32::valid_handle(stream.job)) {
-		win32::TerminateJobObject(stream.job, 1);
+	terminate(stream.process, stream.job);
+}
+
+auto gse::ide::spawn::terminate(void* process, void* job) -> void {
+	if (win32::valid_handle(job)) {
+		win32::TerminateJobObject(job, 1);
 	}
-	else if (win32::valid_handle(stream.process)) {
-		win32::TerminateProcess(stream.process, 1);
+	else if (win32::valid_handle(process)) {
+		win32::TerminateProcess(process, 1);
 	}
 }
 
@@ -299,6 +308,8 @@ auto gse::ide::spawn::run_capture(
 }
 
 auto gse::ide::spawn::launch_streamed(const std::wstring& command_line, const std::wstring& working_dir, const std::span<const wchar_t> environment) -> launched {
+	constexpr win32::DWORD output_buffer_bytes = 4u * 1024u * 1024u;
+
 	win32::SECURITY_ATTRIBUTES attributes{
 		.nLength = sizeof(win32::SECURITY_ATTRIBUTES),
 		.bInheritHandle = 1,
@@ -306,7 +317,7 @@ auto gse::ide::spawn::launch_streamed(const std::wstring& command_line, const st
 
 	void* read_end = nullptr;
 	void* write_end = nullptr;
-	if (!win32::CreatePipe(&read_end, &write_end, &attributes, 0)) {
+	if (!win32::CreatePipe(&read_end, &write_end, &attributes, output_buffer_bytes)) {
 		return {};
 	}
 	win32::SetHandleInformation(read_end, win32::handle_flag_inherit, 0);

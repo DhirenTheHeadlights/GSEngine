@@ -631,7 +631,7 @@ auto gse::ide::search::begin_index_phase(index_state& idx, const index_phase pha
 	idx.phase.store(phase, std::memory_order_release);
 	const index_phase_info info = annotation_from_enum<index_phase_info>(phase, {});
 	log::println(
-		log::level::info,
+		log::level::debug,
 		log::category::general,
 		"[symidx] {}{}",
 		info.label,
@@ -1692,13 +1692,19 @@ auto gse::ide::search::build_symbols(index_state& idx, std::stop_token stop) -> 
 		const std::size_t count = static_cast<std::size_t>(std::ranges::count_if(build_failures, [](const auto& failure) {
 			return std::get<1>(failure) == analysis::symbol_index_failure::module_unavailable;
 		}));
-		const std::string detail = std::format(
+		std::string detail = std::format(
 			"{} translation unit{} could not load the current compiled-module graph; first failure: {}",
 			count,
 			count == 1 ? "" : "s",
 			std::get<2>(*module_failure)
 		);
-		log::println(log::level::info, log::category::general, "[symidx] publishing partial index: {}", detail);
+		if (detail != idx.reported_partial_index) {
+			log::println(log::level::info, log::category::general, "[symidx] publishing partial index: {}", detail);
+			idx.reported_partial_index = std::move(detail);
+		}
+	}
+	else {
+		idx.reported_partial_index.clear();
 	}
 
 	symbol_index local;

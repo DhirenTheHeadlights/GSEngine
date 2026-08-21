@@ -336,6 +336,7 @@ export namespace gse::ide::search {
 		std::unordered_map<file_id, symbol_overlay> symbol_overlays;
 		std::unordered_set<file_id> pending_symbol_files;
 		std::shared_ptr<const search_snapshot> current_search_snapshot;
+		std::string reported_partial_index;
 		std::jthread build_worker;
 
 		~index_state();

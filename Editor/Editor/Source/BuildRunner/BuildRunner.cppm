@@ -15,24 +15,48 @@ export namespace gse::ide::build_runner {
 		editor,
 	};
 
+	struct play_session {
+		std::uint8_t clients = 1;
+		bool dedicated_server = false;
+		std::uint16_t base_port = 9000;
+	};
+
 	struct build_request {
 		build_target target = build_target::game;
 		bool run_after = false;
+		play_session session;
 		const config::worktree* tree = nullptr;
 	};
 
-	struct build_finished {};
-
-	enum class stream_slot : std::uint8_t {
+	enum class stream_kind : std::uint8_t {
 		none,
 		build_game,
 		build_editor,
 		game,
 	};
 
+	struct build_error {
+		std::filesystem::path file;
+		std::uint32_t line = 0;
+		std::string message;
+		std::vector<std::string> notes;
+		std::vector<std::filesystem::path> related;
+	};
+
+	struct build_finished {
+		id key;
+		stream_kind kind = stream_kind::none;
+		std::vector<build_error> errors;
+	};
+
+	struct source_changed {
+		std::filesystem::path path;
+		std::int64_t mtime = 0;
+	};
+
 	struct stream_opened {
 		std::string name;
-		stream_slot slot = stream_slot::none;
+		stream_kind kind = stream_kind::none;
 		std::shared_ptr<spawn::output_stream> stream;
 	};
 
@@ -67,8 +91,19 @@ export namespace gse::ide::build_runner {
 		attached_session_status status = attached_session_status::awaiting_surface;
 	};
 
+	struct launched_child {
+		void* process = nullptr;
+		void* job = nullptr;
+		void* output = nullptr;
+		std::uint32_t pid = 0;
+		std::string label;
+	};
+
 	struct build_completion {
 		std::mutex mutex;
+		id key;
+		stream_kind kind = stream_kind::none;
+		std::vector<build_error> errors;
 		bool done = false;
 		bool game_launched = false;
 		std::uint32_t generation = 0;
@@ -78,6 +113,7 @@ export namespace gse::ide::build_runner {
 		std::uint32_t game_pid = 0;
 		void* surface_pipe = nullptr;
 		std::filesystem::path graph_path;
+		std::vector<launched_child> children;
 	};
 
 	struct attached_game {
@@ -140,6 +176,26 @@ export namespace gse::ide::build_runner {
 	auto report_analysis_busy(
 		bool busy
 	) -> void;
+
+	auto is_build_source(
+		const std::filesystem::path& path
+	) -> bool;
+
+	auto is_build_touch(
+		const std::filesystem::path& file,
+		std::int64_t mtime
+	) -> bool;
+
+	auto build_key(
+		const config::worktree& tree,
+		std::string_view target
+	) -> id;
+
+	auto build_keys_for(
+		const std::filesystem::path& file
+	) -> std::vector<id>;
+
+	auto build_times() -> std::unordered_map<id, std::int64_t>;
 }
 
 namespace gse::ide::build_runner {
@@ -149,6 +205,8 @@ namespace gse::ide::build_runner {
 
 	constexpr std::uint32_t source_state_magic = 0x47534253;
 	constexpr std::uint32_t source_state_version = 2;
+	constexpr std::uint32_t build_state_magic = 0x47534254;
+	constexpr std::uint32_t build_state_version = 1;
 
 	constexpr std::array<std::string_view, 10> build_source_extensions = {
 		".cppm",
@@ -187,11 +245,35 @@ namespace gse::ide::build_runner {
 		std::string_view target
 	) -> std::vector<std::filesystem::path>;
 
-	auto is_build_source(
-		const std::filesystem::path& path
+	auto is_inside(
+		const std::filesystem::path& file,
+		const std::filesystem::path& root
 	) -> bool;
 
+	struct build_touch_log {
+		std::mutex mutex;
+		std::unordered_map<id, std::int64_t> stamps;
+	};
+
+	auto build_touches() -> build_touch_log&;
+
+	auto begin_build_touches() -> void;
+
+	auto note_build_touch(
+		const std::filesystem::path& file,
+		std::int64_t mtime
+	) -> void;
+
 	auto source_state_path() -> std::filesystem::path;
+
+	auto build_state_path() -> std::filesystem::path;
+
+	auto record_build_time(
+		id key,
+		std::int64_t built_at
+	) -> void;
+
+	auto source_snapshot_time() -> std::int64_t;
 
 	auto load_source_state(
 		const std::filesystem::path& path
@@ -249,10 +331,30 @@ namespace gse::ide::build_runner {
 		const std::filesystem::path& build_dir
 	) -> std::vector<std::filesystem::path>;
 
+	struct diagnostic_site {
+		std::filesystem::path file;
+		std::uint32_t line = 0;
+	};
+
+	auto parse_diagnostic_site(
+		std::string_view text,
+		const std::filesystem::path& build_dir
+	) -> std::optional<diagnostic_site>;
+
+	auto collect_error_sites(
+		std::span<const std::string> lines,
+		const std::filesystem::path& build_dir
+	) -> std::vector<build_error>;
+
 	auto clear_stale_module_file(
 		spawn::output_stream& stream,
 		const std::filesystem::path& file
 	) -> bool;
+
+	struct build_outcome {
+		int code = 0;
+		std::vector<build_error> errors;
+	};
 
 	auto run_build_with_module_recovery(
 		const std::stop_token& st,
@@ -261,12 +363,29 @@ namespace gse::ide::build_runner {
 		const std::filesystem::path& source_dir,
 		const std::filesystem::path& build_dir,
 		const std::filesystem::path& compiler_bin
-	) -> int;
+	) -> build_outcome;
 
 	auto launch_game_attached(
 		build_completion& completion,
 		spawn::output_stream& stream,
 		const config::worktree& tree,
+		std::uint32_t generation,
+		const std::wstring& extra_args
+	) -> void;
+
+	auto launch_child(
+		build_completion& completion,
+		spawn::output_stream& stream,
+		const config::worktree& tree,
+		std::string label,
+		const std::wstring& extra_args
+	) -> void;
+
+	auto launch_play_session(
+		build_completion& completion,
+		spawn::output_stream& stream,
+		const config::worktree& tree,
+		const play_session& session,
 		std::uint32_t generation
 	) -> void;
 
@@ -276,11 +395,13 @@ namespace gse::ide::build_runner {
 		spawn::output_stream& stream,
 		const config::worktree& tree,
 		bool run_after,
+		const play_session& session,
 		std::uint32_t next_generation
 	) -> void;
 
 	auto rebuild_editor(
 		const std::stop_token& st,
+		build_completion& completion,
 		spawn::output_stream& stream
 	) -> void;
 
@@ -381,8 +502,110 @@ auto gse::ide::build_runner::is_build_source(const std::filesystem::path& path) 
 	return std::ranges::contains(build_source_extensions, extension);
 }
 
+auto gse::ide::build_runner::build_touches() -> build_touch_log& {
+	static build_touch_log log;
+	return log;
+}
+
+auto gse::ide::build_runner::begin_build_touches() -> void {
+	build_touch_log& log = build_touches();
+	std::lock_guard lock(log.mutex);
+	log.stamps.clear();
+}
+
+auto gse::ide::build_runner::note_build_touch(const std::filesystem::path& file, const std::int64_t mtime) -> void {
+	build_touch_log& log = build_touches();
+	std::lock_guard lock(log.mutex);
+	log.stamps[config::path_id(file)] = mtime;
+}
+
+auto gse::ide::build_runner::is_build_touch(const std::filesystem::path& file, const std::int64_t mtime) -> bool {
+	build_touch_log& log = build_touches();
+	std::lock_guard lock(log.mutex);
+	const auto found = log.stamps.find(config::path_id(file));
+	return found != log.stamps.end() && found->second == mtime;
+}
+
+auto gse::ide::build_runner::is_inside(const std::filesystem::path& file, const std::filesystem::path& root) -> bool {
+	if (root.empty()) {
+		return false;
+	}
+	const std::filesystem::path relative = file.lexically_relative(root);
+	return !relative.empty() && *relative.begin() != "..";
+}
+
+auto gse::ide::build_runner::build_key(const config::worktree& tree, const std::string_view target) -> id {
+	return generate_temp_id(stable_id(std::format("{}/{}", tree.name, target)));
+}
+
+auto gse::ide::build_runner::build_keys_for(const std::filesystem::path& file) -> std::vector<id> {
+	if (!is_build_source(file)) {
+		return {};
+	}
+
+	std::vector<id> keys;
+	if (is_inside(file, config::source_dir())) {
+		keys.push_back(build_key(config::primary(), config::editor_target));
+		return keys;
+	}
+	for (const config::worktree& tree : config::worktrees()) {
+		if (is_inside(file, tree.engine_source) || is_inside(file, tree.project_source)) {
+			keys.push_back(build_key(tree, tree.game_target));
+		}
+	}
+	return keys;
+}
+
 auto gse::ide::build_runner::source_state_path() -> std::filesystem::path {
 	return gse::config::cache_dir() / "source_state.bin";
+}
+
+auto gse::ide::build_runner::build_state_path() -> std::filesystem::path {
+	return gse::config::cache_dir() / "build_state.bin";
+}
+
+auto gse::ide::build_runner::build_times() -> std::unordered_map<id, std::int64_t> {
+	std::ifstream in(build_state_path(), std::ios::binary);
+	if (!in) {
+		return {};
+	}
+	binary_reader reader(in);
+	std::uint32_t magic = 0;
+	std::uint32_t version = 0;
+	std::uint32_t epoch = 0;
+	reader & magic & version & epoch;
+	if (!in || magic != build_state_magic || version != build_state_version || epoch != archive_format_epoch) {
+		return {};
+	}
+	std::unordered_map<id, std::int64_t> times;
+	reader & times;
+	if (!in) {
+		return {};
+	}
+	return times;
+}
+
+auto gse::ide::build_runner::record_build_time(const id key, const std::int64_t built_at) -> void {
+	std::unordered_map<id, std::int64_t> times = build_times();
+	times[key] = built_at;
+
+	const std::filesystem::path path = build_state_path();
+	std::filesystem::path temp = path;
+	temp += ".tmp";
+	{
+		std::ofstream out(temp, std::ios::binary | std::ios::trunc);
+		if (!out) {
+			return;
+		}
+		binary_writer writer(out, build_state_magic, build_state_version);
+		writer & times;
+	}
+	std::error_code ec;
+	std::filesystem::rename(temp, path, ec);
+}
+
+auto gse::ide::build_runner::source_snapshot_time() -> std::int64_t {
+	return static_cast<std::int64_t>(std::filesystem::file_time_type::clock::now().time_since_epoch().count());
 }
 
 auto gse::ide::build_runner::load_source_state(const std::filesystem::path& path) -> std::unordered_map<std::string, source_fingerprint> {
@@ -426,6 +649,7 @@ auto gse::ide::build_runner::refresh_changed_sources(spawn::output_stream& strea
 	std::error_code exists_ec;
 	const bool seeding = !std::filesystem::exists(state_path, exists_ec);
 	const std::unordered_map<std::string, source_fingerprint> previous = load_source_state(state_path);
+	begin_build_touches();
 
 	std::unordered_map<std::string, source_fingerprint> current = previous;
 	std::size_t refreshed = 0;
@@ -469,6 +693,7 @@ auto gse::ide::build_runner::refresh_changed_sources(spawn::output_stream& strea
 					if (!read_ec) {
 						fingerprint.mtime = static_cast<std::int64_t>(touched.time_since_epoch().count());
 					}
+					note_build_touch(entry.path(), fingerprint.mtime);
 				}
 			}
 			current[std::move(key)] = fingerprint;
@@ -724,6 +949,134 @@ auto gse::ide::build_runner::collect_locked_output_copies(const std::span<const 
 	return locked;
 }
 
+auto gse::ide::build_runner::parse_diagnostic_site(std::string_view text, const std::filesystem::path& build_dir) -> std::optional<diagnostic_site> {
+	while (!text.empty() && (text.back() == ':' || text.back() == ',' || text.back() == ' ')) {
+		text.remove_suffix(1);
+	}
+	while (!text.empty() && text.front() == ' ') {
+		text.remove_prefix(1);
+	}
+
+	const auto trailing_number = [](std::string_view& head) -> std::optional<std::uint32_t> {
+		const std::size_t colon = head.rfind(':');
+		if (colon == std::string_view::npos || colon + 1 == head.size()) {
+			return std::nullopt;
+		}
+		const std::string_view digits = head.substr(colon + 1);
+		if (!std::ranges::all_of(digits, [](const unsigned char ch) { return std::isdigit(ch) != 0; })) {
+			return std::nullopt;
+		}
+		std::uint32_t value = 0;
+		if (std::from_chars(digits.data(), digits.data() + digits.size(), value).ec != std::errc{}) {
+			return std::nullopt;
+		}
+		head = head.substr(0, colon);
+		return value;
+	};
+
+	std::optional<std::uint32_t> last = trailing_number(text);
+	if (!last) {
+		return std::nullopt;
+	}
+	if (const std::optional<std::uint32_t> earlier = trailing_number(text)) {
+		last = earlier;
+	}
+
+	std::filesystem::path file(text);
+	if (file.empty() || !is_build_source(file)) {
+		return std::nullopt;
+	}
+	if (file.is_relative()) {
+		file = build_dir / file;
+	}
+	return diagnostic_site{
+		.file = std::filesystem::absolute(file).lexically_normal(),
+		.line = *last,
+	};
+}
+
+auto gse::ide::build_runner::collect_error_sites(const std::span<const std::string> lines, const std::filesystem::path& build_dir) -> std::vector<build_error> {
+	constexpr std::size_t max_errors = 32;
+	constexpr std::size_t max_notes = 4;
+	constexpr std::string_view error_marker = ": error: ";
+	constexpr std::string_view fatal_marker = ": fatal error: ";
+	constexpr std::string_view note_marker = ": note: ";
+	constexpr std::string_view included_marker = "In file included from ";
+	constexpr std::string_view imported_marker = "In module imported at ";
+	constexpr std::string_view chain_marker = "from ";
+
+	std::vector<build_error> errors;
+	std::vector<std::filesystem::path> context;
+
+	for (const std::string& line : lines) {
+		std::string_view text = line;
+		while (!text.empty() && text.front() == ' ') {
+			text.remove_prefix(1);
+		}
+
+		if (text.starts_with(included_marker) || text.starts_with(imported_marker)) {
+			context.clear();
+			const std::size_t marker = text.starts_with(included_marker) ? included_marker.size() : imported_marker.size();
+			if (const std::optional<diagnostic_site> site = parse_diagnostic_site(text.substr(marker), build_dir)) {
+				context.push_back(site->file);
+			}
+			continue;
+		}
+		if (text.starts_with(chain_marker)) {
+			if (const std::optional<diagnostic_site> site = parse_diagnostic_site(text.substr(chain_marker.size()), build_dir)) {
+				context.push_back(site->file);
+			}
+			continue;
+		}
+
+		const std::size_t error_at = text.find(error_marker);
+		const std::size_t fatal_at = text.find(fatal_marker);
+		const std::size_t note_at = text.find(note_marker);
+		const std::size_t head_end = std::min({ error_at, fatal_at, note_at });
+		if (head_end == std::string_view::npos) {
+			continue;
+		}
+
+		const std::size_t marker_size = head_end == fatal_at
+			? fatal_marker.size()
+			: head_end == error_at ? error_marker.size() : note_marker.size();
+
+		const std::optional<diagnostic_site> site = parse_diagnostic_site(text.substr(0, head_end), build_dir);
+		if (!site) {
+			continue;
+		}
+
+		if (head_end == note_at) {
+			if (errors.empty()) {
+				continue;
+			}
+			build_error& owner = errors.back();
+			if (owner.file != site->file && !std::ranges::contains(owner.related, site->file)) {
+				owner.related.push_back(site->file);
+			}
+			if (owner.notes.size() < max_notes) {
+				owner.notes.push_back(std::format("{}:{}: note: {}", site->file.generic_display_string(), site->line, text.substr(head_end + marker_size)));
+			}
+			continue;
+		}
+
+		if (errors.size() >= max_errors) {
+			continue;
+		}
+
+		std::vector<std::filesystem::path> related = context;
+		std::erase(related, site->file);
+		errors.push_back({
+			.file = site->file,
+			.line = site->line,
+			.message = std::string(text.substr(head_end + marker_size)),
+			.related = std::move(related),
+		});
+	}
+
+	return errors;
+}
+
 auto gse::ide::build_runner::analysis_pause_state() -> std::atomic<bool>& {
 	static std::atomic<bool> paused = false;
 	return paused;
@@ -773,7 +1126,7 @@ auto gse::ide::build_runner::run_build_with_module_recovery(
 	const std::filesystem::path& source_dir,
 	const std::filesystem::path& build_dir,
 	const std::filesystem::path& compiler_bin
-) -> int {
+) -> build_outcome {
 	constexpr int max_attempts = 16;
 	constexpr int analysis_wait_polls = 400;
 	constexpr std::chrono::milliseconds analysis_poll_delay(50);
@@ -793,14 +1146,21 @@ auto gse::ide::build_runner::run_build_with_module_recovery(
 		spawn::begin_transcript(stream);
 		const int code = spawn::run_capture(stream, command, source_dir.wstring(), compiler_bin);
 		const std::vector<std::string> transcript = spawn::take_transcript(stream);
+		const auto finish = [&]() -> build_outcome {
+			return {
+				.code = code,
+				.errors = code == 0 ? std::vector<build_error>{} : collect_error_sites(transcript, build_dir),
+			};
+		};
+
 		if (code == 0 || attempt >= max_attempts || st.stop_requested() || stream.terminated.load(std::memory_order_acquire)) {
-			return code;
+			return finish();
 		}
 
 		const std::vector<std::filesystem::path> conflicts = collect_module_write_conflicts(transcript, build_dir);
 		const std::vector<std::filesystem::path> locked = collect_locked_output_copies(transcript, build_dir);
 		if (conflicts.empty() && locked.empty()) {
-			return code;
+			return finish();
 		}
 
 		std::size_t cleared = 0;
@@ -841,7 +1201,7 @@ auto gse::ide::build_runner::run_build_with_module_recovery(
 		}
 
 		if (cleared == 0 && displaced == 0) {
-			return code;
+			return finish();
 		}
 
 		if (cleared > 0) {
@@ -853,7 +1213,7 @@ auto gse::ide::build_runner::run_build_with_module_recovery(
 	}
 }
 
-auto gse::ide::build_runner::launch_game_attached(build_completion& completion, spawn::output_stream& stream, const config::worktree& tree, const std::uint32_t generation) -> void {
+auto gse::ide::build_runner::launch_game_attached(build_completion& completion, spawn::output_stream& stream, const config::worktree& tree, const std::uint32_t generation, const std::wstring& extra_args) -> void {
 	const std::filesystem::path& game_exe = tree.game_executable;
 	std::error_code ec;
 	if (!std::filesystem::exists(game_exe, ec)) {
@@ -877,6 +1237,7 @@ auto gse::ide::build_runner::launch_game_attached(build_completion& completion, 
 	command += L" --engine-ipc-pipe-name " + wide_pipe;
 	command += L" --engine-parent-pid " + std::to_wstring(editor_pid);
 	command += L" --engine-dump-system-graph-path \"" + graph_file.wstring() + L"\"";
+	command += extra_args;
 
 	const spawn::launched game = spawn::launch_streamed(command, tree.project_root.wstring());
 	if (!win32::valid_handle(game.process)) {
@@ -901,12 +1262,67 @@ auto gse::ide::build_runner::launch_game_attached(build_completion& completion, 
 	completion.graph_path = graph_file;
 }
 
+auto gse::ide::build_runner::launch_child(build_completion& completion, spawn::output_stream& stream, const config::worktree& tree, std::string label, const std::wstring& extra_args) -> void {
+	const std::filesystem::path& game_exe = tree.game_executable;
+	std::error_code ec;
+	if (!std::filesystem::exists(game_exe, ec)) {
+		spawn::emit(stream, "game executable not found: " + game_exe.generic_display_string());
+		return;
+	}
+
+	const std::wstring command = L"\"" + game_exe.wstring() + L"\"" + extra_args;
+
+	const spawn::launched child = spawn::launch_streamed(command, tree.project_root.wstring());
+	if (!win32::valid_handle(child.process)) {
+		spawn::emit(stream, "failed to launch " + label);
+		return;
+	}
+
+	if (win32::valid_handle(child.input)) {
+		win32::CloseHandle(child.input);
+	}
+
+	spawn::emit(stream, "launched " + label + " (pid " + std::to_string(child.pid) + ")");
+
+	std::lock_guard lock(completion.mutex);
+	completion.children.push_back({
+		.process = child.process,
+		.job = child.job,
+		.output = child.output,
+		.pid = child.pid,
+		.label = std::move(label),
+	});
+}
+
+auto gse::ide::build_runner::launch_play_session(build_completion& completion, spawn::output_stream& stream, const config::worktree& tree, const play_session& session, const std::uint32_t generation) -> void {
+	std::wstring connect_args;
+
+	if (session.dedicated_server) {
+		launch_child(
+			completion,
+			stream,
+			tree,
+			"server",
+			L" --engine-net-role dedicated --engine-net-listen-port " + std::to_wstring(session.base_port)
+		);
+		connect_args = L" --engine-net-connect 127.0.0.1:" + std::to_wstring(session.base_port);
+	}
+
+	launch_game_attached(completion, stream, tree, generation, connect_args);
+
+	const std::uint8_t extra_clients = session.clients > 0 ? static_cast<std::uint8_t>(session.clients - 1) : 0;
+	for (std::uint8_t i = 0; i < extra_clients; ++i) {
+		launch_child(completion, stream, tree, std::format("client {}", i + 2), connect_args);
+	}
+}
+
 auto gse::ide::build_runner::build_game(
 	const std::stop_token& st,
 	build_completion& completion,
 	spawn::output_stream& stream,
 	const config::worktree& tree,
 	const bool run_after,
+	const play_session& session,
 	const std::uint32_t next_generation
 ) -> void {
 	const std::filesystem::path build_dir = ensure_configured(stream, tree);
@@ -916,6 +1332,7 @@ auto gse::ide::build_runner::build_game(
 	}
 
 	refresh_changed_sources(stream, tree, tree.game_target);
+	const std::int64_t snapshot = source_snapshot_time();
 	const std::filesystem::path compiler_bin = compiler_bin_dir(build_dir);
 
 	const std::filesystem::path& game_exe = tree.game_executable;
@@ -931,9 +1348,13 @@ auto gse::ide::build_runner::build_game(
 	}
 
 	spawn::emit(stream, "building " + tree.game_target + "...");
-	const int code = run_build_with_module_recovery(st, stream, build_command(build_dir, tree.game_target), tree.project_root, build_dir, compiler_bin);
-	if (code != 0) {
-		spawn::emit(stream, "build failed (exit " + std::to_string(code) + ")");
+	build_outcome outcome = run_build_with_module_recovery(st, stream, build_command(build_dir, tree.game_target), tree.project_root, build_dir, compiler_bin);
+	if (outcome.code != 0) {
+		spawn::emit(stream, "build failed (exit " + std::to_string(outcome.code) + ")");
+		{
+			std::lock_guard lock(completion.mutex);
+			completion.errors = std::move(outcome.errors);
+		}
 		if (std::filesystem::exists(backup, ec)) {
 			std::filesystem::remove(game_exe, ec);
 			std::filesystem::rename(backup, game_exe, ec);
@@ -942,6 +1363,7 @@ auto gse::ide::build_runner::build_game(
 	}
 
 	spawn::emit(stream, "build succeeded");
+	record_build_time(build_key(tree, tree.game_target), snapshot);
 	std::filesystem::remove(backup, ec);
 	{
 		std::lock_guard lock(completion.mutex);
@@ -949,11 +1371,11 @@ auto gse::ide::build_runner::build_game(
 	}
 
 	if (run_after && !st.stop_requested()) {
-		launch_game_attached(completion, stream, tree, next_generation);
+		launch_play_session(completion, stream, tree, session, next_generation);
 	}
 }
 
-auto gse::ide::build_runner::rebuild_editor(const std::stop_token& st, spawn::output_stream& stream) -> void {
+auto gse::ide::build_runner::rebuild_editor(const std::stop_token& st, build_completion& completion, spawn::output_stream& stream) -> void {
 	const std::filesystem::path build_dir = find_build_dir(config::build_dir());
 	if (build_dir.empty()) {
 		spawn::emit(stream, "configured build directory is unavailable");
@@ -961,6 +1383,7 @@ auto gse::ide::build_runner::rebuild_editor(const std::stop_token& st, spawn::ou
 	}
 
 	refresh_changed_sources(stream, config::primary(), config::editor_target);
+	const std::int64_t snapshot = source_snapshot_time();
 	const std::filesystem::path compiler_bin = compiler_bin_dir(build_dir);
 
 	const std::filesystem::path editor_exe = current_executable();
@@ -979,13 +1402,19 @@ auto gse::ide::build_runner::rebuild_editor(const std::stop_token& st, spawn::ou
 	}
 
 	spawn::emit(stream, "rebuilding editor...");
-	const int code = run_build_with_module_recovery(st, stream, build_command(build_dir, config::editor_target), gse::config::root_dir(), build_dir, compiler_bin);
-	if (code != 0) {
-		spawn::emit(stream, "rebuild failed (exit " + std::to_string(code) + "); restoring previous editor");
+	build_outcome outcome = run_build_with_module_recovery(st, stream, build_command(build_dir, config::editor_target), gse::config::root_dir(), build_dir, compiler_bin);
+	if (outcome.code != 0) {
+		spawn::emit(stream, "rebuild failed (exit " + std::to_string(outcome.code) + "); restoring previous editor");
+		{
+			std::lock_guard lock(completion.mutex);
+			completion.errors = std::move(outcome.errors);
+		}
 		std::filesystem::remove(editor_exe, ec);
 		std::filesystem::rename(backup, editor_exe, ec);
 		return;
 	}
+
+	record_build_time(build_key(config::primary(), config::editor_target), snapshot);
 
 	if (st.stop_requested()) {
 		return;
@@ -1003,11 +1432,21 @@ auto gse::ide::build_runner::build_worker(
 	const build_request request,
 	const std::uint32_t next_generation
 ) -> void {
+	const config::worktree& tree = request.tree ? *request.tree : config::primary();
+	const bool editor = request.target == build_target::editor;
+	{
+		std::lock_guard lock(completion->mutex);
+		completion->key = editor
+			? build_key(config::primary(), config::editor_target)
+			: build_key(tree, tree.game_target);
+		completion->kind = editor ? stream_kind::build_editor : stream_kind::build_game;
+	}
+
 	if (request.target == build_target::editor) {
-		rebuild_editor(st, *stream);
+		rebuild_editor(st, *completion, *stream);
 	}
 	else {
-		build_game(st, *completion, *stream, request.tree ? *request.tree : config::primary(), request.run_after, next_generation);
+		build_game(st, *completion, *stream, tree, request.run_after, request.session, next_generation);
 	}
 
 	spawn::close_process(*stream);
@@ -1054,7 +1493,7 @@ auto gse::ide::build_runner::start_build(const channel_write<attached_session_en
 	stream->running.store(true, std::memory_order_release);
 	events_out.push<stream_opened>({
 		.name = name,
-		.slot = request.target == build_target::editor ? stream_slot::build_editor : stream_slot::build_game,
+		.kind = request.target == build_target::editor ? stream_kind::build_editor : stream_kind::build_game,
 		.stream = stream,
 	});
 
@@ -1069,6 +1508,10 @@ auto gse::ide::build_runner::start_build(const channel_write<attached_session_en
 		d.completion.game_pid = 0;
 		d.completion.surface_pipe = nullptr;
 		d.completion.graph_path.clear();
+		d.completion.key = {};
+		d.completion.kind = stream_kind::none;
+		d.completion.errors.clear();
+		d.completion.children.clear();
 	}
 
 	request_analysis_pause(true);
@@ -1115,7 +1558,7 @@ auto gse::ide::build_runner::drain_completion(const channel_write<attached_sessi
 		spawn::attach_process(*stream, d.completion.game_process, d.completion.game_job);
 		events_out.push<stream_opened>({
 			.name = std::format("Game {}", d.completion.game_pid),
-			.slot = stream_slot::game,
+			.kind = stream_kind::game,
 			.stream = stream,
 		});
 
@@ -1127,8 +1570,33 @@ auto gse::ide::build_runner::drain_completion(const channel_write<attached_sessi
 			.owns_pipe = true,
 		});
 	}
+
+	for (launched_child& child : d.completion.children) {
+		auto child_stream = std::make_shared<spawn::output_stream>();
+		child_stream->running.store(true, std::memory_order_release);
+		spawn::attach_process(*child_stream, child.process, child.job);
+		events_out.push<stream_opened>({
+			.name = std::format("{} {}", child.label, child.pid),
+			.kind = stream_kind::game,
+			.stream = child_stream,
+		});
+
+		d.games.push_back({
+			.generation = d.completion.generation,
+			.process = child.process,
+			.stream = std::move(child_stream),
+			.output = child.output,
+			.owns_pipe = false,
+		});
+	}
+	d.completion.children.clear();
 	d.active_stream.reset();
-	events_out.push<build_finished>({});
+	events_out.push<build_finished>({
+		.key = d.completion.key,
+		.kind = d.completion.kind,
+		.errors = std::move(d.completion.errors),
+	});
+	d.completion.errors.clear();
 }
 
 auto gse::ide::build_runner::poll_games(const channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out, data& d) -> void {
@@ -1149,16 +1617,28 @@ auto gse::ide::build_runner::poll_games(const channel_write<attached_session_end
 		}
 		spawn::close_process(*game.stream);
 		win32::CloseHandle(game.process);
-		if (game.owns_pipe) {
+
+		const bool owned_pipe = game.owns_pipe;
+		const std::uint32_t generation = game.generation;
+
+		if (owned_pipe) {
 			close_surface_pipe(d);
-			if (d.session && d.session->generation == game.generation) {
+			if (d.session && d.session->generation == generation) {
 				d.session.reset();
 			}
 			events_out.push<attached_session_ended>({
-				.generation = game.generation,
+				.generation = generation,
 			});
 		}
 		d.games.erase(d.games.begin() + static_cast<std::ptrdiff_t>(i));
+
+		if (owned_pipe) {
+			for (attached_game& sibling : d.games) {
+				if (sibling.generation == generation) {
+					spawn::terminate_process(*sibling.stream);
+				}
+			}
+		}
 	}
 }
 

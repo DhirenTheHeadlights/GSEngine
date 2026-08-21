@@ -31,6 +31,7 @@ export namespace gse::ide::search_system {
 		const context& ctx,
 		data& d,
 		channel_read<search::index_file_update_request, search::index_merge_request, build_runner::build_finished> requests_in,
+		channel_write<build_runner::source_changed> events_out,
 		shared_view<build_runner::data> build_d
 	) -> async::task<>;
 }
