@@ -90,5 +90,7 @@ export namespace gse::gpu {
 		std::uint64_t m_next_present_id = 1;
 		std::array<std::uint64_t, max_frames_in_flight> m_present_ids_in_flight{};
 		present_pacer m_pacer;
+		bool m_minimized_last = false;
+		std::uint64_t m_minimized_frames = 0;
 	};
 }

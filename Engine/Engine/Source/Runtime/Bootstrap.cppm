@@ -135,6 +135,13 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 		const auto update_id = trace_id<"engine::update">();
 		const auto render_id = trace_id<"engine::render">();
 
+		const auto slow_frame_window = seconds(5.f);
+		std::size_t slow_frames = 0;
+		time_t<double, seconds> slow_frame_worst{};
+		time_t<double, seconds> slow_frame_worst_update{};
+		time_t<double, seconds> slow_frame_worst_render{};
+		interval_timer<> slow_frame_report{ slow_frame_window };
+
 		while (!should_shutdown.load(std::memory_order_acquire)) {
 			{
 				trace::scope_guard sg{ loop_id };
@@ -182,14 +189,29 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 					}
 
 					if (const auto render_end = system_clock::now<time_t<double, seconds>>(); render_end - update_begin > milliseconds(100.0)) {
-						log::println(
-							log::level::warning,
-							log::category::general,
-							"slow frame: update={:.1f:ms} render={:.1f:ms}",
-							time_t<double, seconds>(update_end - update_begin),
-							time_t<double, seconds>(render_end - update_end)
-						);
+						++slow_frames;
+						if (const auto frame_time = time_t<double, seconds>(render_end - update_begin); frame_time > slow_frame_worst) {
+							slow_frame_worst = frame_time;
+							slow_frame_worst_update = time_t<double, seconds>(update_end - update_begin);
+							slow_frame_worst_render = time_t<double, seconds>(render_end - update_end);
+						}
 					}
+				}
+
+				if (slow_frame_report.tick() && slow_frames != 0) {
+					log::println(
+						log::level::warning,
+						log::category::general,
+						"{} slow frames in the last {:.0f:s}, worst update={:.1f:ms} render={:.1f:ms}",
+						slow_frames,
+						slow_frame_window,
+						slow_frame_worst_update,
+						slow_frame_worst_render
+					);
+					slow_frames = 0;
+					slow_frame_worst = {};
+					slow_frame_worst_update = {};
+					slow_frame_worst_render = {};
 				}
 
 				if (editor_pipe && !surface_announced && e.attached_surface_ready()) {

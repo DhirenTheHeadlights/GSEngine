@@ -222,6 +222,7 @@ export namespace gse::gpu {
 		gpu::transient_pool m_transient_pool;
 		std::unordered_map<id, std::unique_ptr<registered_image>> m_framebuffer_images;
 		interval_timer<> m_graph_report{ seconds(5.f) };
+		std::size_t m_graph_report_hash = 0;
 		std::array<per_frame_resource<gpu_profile_slot>, queue_type_count> m_profile_slots{
 			per_frame_resource<gpu_profile_slot>{ gpu_profile_slot{}, gpu_profile_slot{} },
 			per_frame_resource<gpu_profile_slot>{ gpu_profile_slot{}, gpu_profile_slot{} },

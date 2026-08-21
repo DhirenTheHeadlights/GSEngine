@@ -17,9 +17,11 @@ import gse.time;
 
 namespace gse::gpu {
 	constexpr std::uint32_t pacing_health_check_frame = 600;
+	constexpr std::uint32_t pacing_transition_log_limit = 8;
 
 	std::uint32_t present_total = 0;
 	std::uint32_t present_queue_full = 0;
+	std::uint32_t pacing_transitions = 0;
 	bool pacing_health_reported = false;
 	bool pacing_last_healthy = true;
 }
@@ -71,6 +73,12 @@ auto gse::gpu::frame::recreate_resources(const window::data& win) -> gpu::expect
 		current_extent.y() == static_cast<std::uint32_t>(requested_size.y());
 
 	if (size_unchanged && current_mode != requested_mode) {
+		log::println(
+			log::category::render,
+			"[swapchain] present-mode-only change at {}x{}, no recreate",
+			current_extent.x(),
+			current_extent.y()
+		);
 		m_swapchain->set_present_mode(requested_mode);
 		return {};
 	}
@@ -81,6 +89,20 @@ auto gse::gpu::frame::recreate_resources(const window::data& win) -> gpu::expect
 		log::println(log::level::error, log::category::render, "swapchain recreate failed ({}), retrying next frame", std::to_underlying(recreated.error()));
 		return std::unexpected(recreated.error());
 	}
+
+	const auto granted_extent = m_swapchain->extent();
+	log::println(
+		log::category::render,
+		"[swapchain] recreate_resources: requested={}x{} previous={}x{} granted={}x{} minimized={} frame={}",
+		requested_size.x(),
+		requested_size.y(),
+		current_extent.x(),
+		current_extent.y(),
+		granted_extent.x(),
+		granted_extent.y(),
+		window::minimized(win),
+		m_frame_count
+	);
 
 	m_sync = create_sync_objects(*m_device, *m_swapchain);
 	m_swapchain->notify_recreated();
@@ -102,6 +124,18 @@ auto gse::gpu::frame::recreate_surface(const window::data& win) -> gpu::expected
 		return std::unexpected(recreated.error());
 	}
 
+	const auto granted_extent = m_swapchain->extent();
+	log::println(
+		log::category::render,
+		"[swapchain] recreate_surface: requested={}x{} granted={}x{} minimized={} frame={}",
+		requested_size.x(),
+		requested_size.y(),
+		granted_extent.x(),
+		granted_extent.y(),
+		window::minimized(win),
+		m_frame_count
+	);
+
 	m_sync = create_sync_objects(*m_device, *m_swapchain);
 	m_swapchain->notify_recreated();
 	m_present_ids_in_flight.fill(0);
@@ -112,7 +146,25 @@ auto gse::gpu::frame::recreate_surface(const window::data& win) -> gpu::expected
 auto gse::gpu::frame::begin(window::data* win) -> std::expected<frame_token, frame_status> {
 	m_frame_in_progress = false;
 
-	if (win && window::minimized(*win)) {
+	const bool minimized_now = win && window::minimized(*win);
+	if (minimized_now != m_minimized_last) {
+		log::println(
+			log::category::render,
+			"[swapchain] minimized {} -> {} after {} frames: swapchain_extent={}x{} viewport={}x{}",
+			m_minimized_last,
+			minimized_now,
+			m_minimized_frames,
+			m_swapchain ? m_swapchain->extent().x() : 0u,
+			m_swapchain ? m_swapchain->extent().y() : 0u,
+			win ? window::viewport(*win).x() : 0,
+			win ? window::viewport(*win).y() : 0
+		);
+		m_minimized_last = minimized_now;
+		m_minimized_frames = 0;
+	}
+	++m_minimized_frames;
+
+	if (minimized_now) {
 		return std::unexpected(frame_status::minimized);
 	}
 
@@ -149,15 +201,19 @@ auto gse::gpu::frame::begin(window::data* win) -> std::expected<frame_token, fra
 
 		if (m_pacer.healthy() != pacing_last_healthy) {
 			pacing_last_healthy = m_pacer.healthy();
-			log::println(
-				log::category::render,
-				"present pacing {} after {} presents (samples_seen={} samples_used={}): dt now driven by {}",
-				pacing_last_healthy ? "recovered" : "degraded",
-				present_total,
-				m_pacer.samples_seen(),
-				m_pacer.samples_used(),
-				pacing_last_healthy ? "display timing" : "snapped CPU loop timing"
-			);
+			++pacing_transitions;
+			if (pacing_transitions <= pacing_transition_log_limit) {
+				log::println(
+					log::category::render,
+					"present pacing {} after {} presents (samples_seen={} samples_used={}): dt now driven by {}{}",
+					pacing_last_healthy ? "recovered" : "degraded",
+					present_total,
+					m_pacer.samples_seen(),
+					m_pacer.samples_used(),
+					pacing_last_healthy ? "display timing" : "snapped CPU loop timing",
+					pacing_transitions == pacing_transition_log_limit ? " — pacing is flapping, further transitions suppressed" : ""
+				);
+			}
 		}
 
 		if (!pacing_health_reported && present_total >= pacing_health_check_frame) {

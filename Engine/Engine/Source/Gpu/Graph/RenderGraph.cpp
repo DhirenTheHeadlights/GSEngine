@@ -231,9 +231,7 @@ auto gse::gpu::render_graph::log_pass_graph(const std::span<const render_pass_da
 		}
 	}
 
-	log::println(
-		log::level::info,
-		log::category::general,
+	std::string report = std::format(
 		"[graph] {} passes, {} registered targets",
 		passes.size(),
 		target_of.size()
@@ -294,10 +292,8 @@ auto gse::gpu::render_graph::log_pass_graph(const std::span<const render_pass_da
 		const auto reads = describe(p.reads);
 		const auto writes = describe(p.writes);
 		const auto attachments = describe_outputs(p);
-		log::println(
-			log::level::info,
-			log::category::general,
-			"[graph]   {}{}\n            reads:  {}\n            writes: {}\n            outputs: {}",
+		report += std::format(
+			"\n[graph]   {}{}\n            reads:  {}\n            writes: {}\n            outputs: {}",
 			p.pass_name,
 			presents ? "  [SWAPCHAIN]" : "",
 			reads,
@@ -306,6 +302,13 @@ auto gse::gpu::render_graph::log_pass_graph(const std::span<const render_pass_da
 		);
 	}
 
+	const std::size_t report_hash = std::hash<std::string_view>{}(report);
+	if (report_hash == m_graph_report_hash) {
+		return;
+	}
+	m_graph_report_hash = report_hash;
+
+	log::println(log::level::info, log::category::general, "{}", report);
 	log::flush();
 }
 
