@@ -636,7 +636,7 @@ namespace gse::ide {
 
 	auto editor_menu(gui::data& gui, const std::string_view name) -> gse::gui::menu& {
 		const id existing_id = find_or_generate_id(std::string(name));
-		if (gse::gui::menu* existing = gui.menus.try_get(existing_id)) {
+		if (gse::gui::menu* existing = gui.primary.menus.try_get(existing_id)) {
 			return *existing;
 		}
 
@@ -652,7 +652,7 @@ namespace gse::ide {
 		);
 
 		const id new_id = new_menu.id();
-		return *gui.menus.add(new_id, std::move(new_menu));
+		return *gui.primary.menus.add(new_id, std::move(new_menu));
 	}
 }
 
