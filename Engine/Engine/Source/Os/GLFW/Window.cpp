@@ -88,6 +88,15 @@ namespace gse {
 		vec2i size
 	) -> int;
 
+	auto monitor_work_area(
+		int monitor_index
+	) -> std::optional<rect_t<vec2i>>;
+
+	auto reanchor_saved_geometry(
+		window::data& d,
+		int monitor_index
+	) -> void;
+
 	auto set_window_frame_rect(
 		const window::data& d,
 		vec2i position,
@@ -213,12 +222,11 @@ auto gse::apply_cursor_mode(const window::data& d) -> void {
 	glfwSetInputMode(handle, glfw::cursor, target_mode);
 }
 
-auto gse::move_window_to_monitor(const window::data& d, const int monitor_index) -> void {
-	auto* handle = to_glfw_handle(d.handle);
+auto gse::monitor_work_area(const int monitor_index) -> std::optional<rect_t<vec2i>> {
 	int monitor_count = 0;
 	GLFWmonitor** monitors = glfwGetMonitors(&monitor_count);
 	if (!monitors || monitor_index < 0 || monitor_index >= monitor_count) {
-		return;
+		return std::nullopt;
 	}
 
 	int mx = 0;
@@ -227,12 +235,27 @@ auto gse::move_window_to_monitor(const window::data& d, const int monitor_index)
 	int mh = 0;
 	glfwGetMonitorWorkarea(monitors[monitor_index], &mx, &my, &mw, &mh);
 
+	return rect_t<vec2i>::from_position_size(
+		{ mx, my },
+		{ mw, mh }
+	);
+}
+
+auto gse::move_window_to_monitor(const window::data& d, const int monitor_index) -> void {
+	const auto work_area = monitor_work_area(monitor_index);
+	if (!work_area) {
+		return;
+	}
+
+	auto* handle = to_glfw_handle(d.handle);
 	int ww = 0;
 	int wh = 0;
 	glfwGetWindowSize(handle, &ww, &wh);
 
-	const int new_x = mx + (mw - ww) / 2;
-	const int new_y = my + (mh - wh) / 2;
+	const vec2i origin = work_area->top_left();
+	const vec2i extent = work_area->size();
+	const int new_x = origin.x() + (extent.x() - ww) / 2;
+	const int new_y = origin.y() + (extent.y() - wh) / 2;
 	set_window_frame_rect(d, { new_x, new_y }, { ww, wh });
 }
 
@@ -296,24 +319,18 @@ auto gse::restore_window_geometry(window::data& d) -> void {
 		return;
 	}
 
-	const int monitor_index = monitor_index_for_window({ saved.x, saved.y }, { saved.width, saved.height });
-	if (monitor_index < 0) {
+	const auto work_area = monitor_work_area(monitor_index_for_window({ saved.x, saved.y }, { saved.width, saved.height }));
+	if (!work_area) {
 		return;
 	}
 
-	int monitor_count = 0;
-	GLFWmonitor** monitors = glfwGetMonitors(&monitor_count);
+	const vec2i origin = work_area->top_left();
+	const vec2i extent = work_area->size();
 
-	int mx = 0;
-	int my = 0;
-	int mw = 0;
-	int mh = 0;
-	glfwGetMonitorWorkarea(monitors[monitor_index], &mx, &my, &mw, &mh);
-
-	const int width = std::min(saved.width, mw);
-	const int height = std::min(saved.height, mh);
-	const int x = std::clamp(saved.x, mx, mx + mw - width);
-	const int y = std::clamp(saved.y, my, my + mh - height);
+	const int width = std::min(saved.width, extent.x());
+	const int height = std::min(saved.height, extent.y());
+	const int x = std::clamp(saved.x, origin.x(), origin.x() + extent.x() - width);
+	const int y = std::clamp(saved.y, origin.y(), origin.y() + extent.y() - height);
 
 	set_window_frame_rect(d, { x, y }, { width, height });
 
@@ -322,26 +339,61 @@ auto gse::restore_window_geometry(window::data& d) -> void {
 		{ width, height }
 	);
 
-	if (saved.maximized) {
-		glfwMaximizeWindow(to_glfw_handle(d.handle));
+	d.restore_maximized = saved.maximized;
+}
+
+auto gse::reanchor_saved_geometry(window::data& d, const int monitor_index) -> void {
+	window::geometry& saved = d.saved_geometry;
+	if (saved.width <= 0 || saved.height <= 0) {
+		return;
 	}
+
+	const int saved_index = monitor_index_for_window({ saved.x, saved.y }, { saved.width, saved.height });
+	if (saved_index == monitor_index) {
+		return;
+	}
+
+	const auto target = monitor_work_area(monitor_index);
+	if (!target) {
+		return;
+	}
+
+	const vec2i origin = target->top_left();
+	const vec2i extent = target->size();
+	const int width = std::min(saved.width, extent.x());
+	const int height = std::min(saved.height, extent.y());
+
+	vec2i offset{ (extent.x() - width) / 2, (extent.y() - height) / 2 };
+	if (const auto source = monitor_work_area(saved_index)) {
+		offset = vec2i{ saved.x, saved.y } - source->top_left();
+	}
+
+	saved.width = width;
+	saved.height = height;
+	saved.x = std::clamp(origin.x() + offset.x(), origin.x(), origin.x() + extent.x() - width);
+	saved.y = std::clamp(origin.y() + offset.y(), origin.y(), origin.y() + extent.y() - height);
 }
 
 auto gse::record_window_geometry(window::data& d) -> void {
-	if (d.current_display_mode != display_mode::windowed || window_handle_minimized(d.handle)) {
+	if (d.restore_maximized || d.current_display_mode != display_mode::windowed || window_handle_minimized(d.handle)) {
 		return;
 	}
 
 	d.saved_geometry.maximized = d.maximized;
 
-	if (!d.maximized) {
+	const int monitor_index = monitor_index_for_window(d.position, d.size);
+
+	if (d.maximized) {
+		reanchor_saved_geometry(d, monitor_index);
+	}
+	else {
 		d.saved_geometry.x = d.position.x();
 		d.saved_geometry.y = d.position.y();
 		d.saved_geometry.width = d.size.x();
 		d.saved_geometry.height = d.size.y();
 	}
 
-	if (const int monitor_index = monitor_index_for_window(d.position, d.size); monitor_index >= 0 && monitor_index != d.monitor.value) {
+	if (monitor_index >= 0 && monitor_index != d.monitor.value) {
 		d.monitor.value = monitor_index;
 		d.last_monitor_index = monitor_index;
 	}
@@ -563,7 +615,7 @@ auto gse::create_window(window::data& d) -> void {
 	d.current_present_mode_index = desired_present_mode_index(d);
 
 	if (d.native_frame) {
-		window::install_native_frame(d.handle, &d.chrome_caption_height, &d.chrome_controls_width, &d.chrome_interactive_x0, &d.chrome_interactive_x1, &d.chrome_resize_exclude_y0, &d.chrome_resize_exclude_y1);
+		window::install_native_frame(d);
 	}
 
 	restore_window_geometry(d);
@@ -594,10 +646,9 @@ namespace gse::window {
 			return;
 		}
 		clipboard_primed = true;
-		if (const char* contents = glfwGetClipboardString(nullptr)) {
-			const std::scoped_lock lock(clipboard_mutex);
-			clipboard_cache.assign(contents);
-		}
+		const char* contents = glfwGetClipboardString(nullptr);
+		const std::scoped_lock lock(clipboard_mutex);
+		clipboard_cache.assign(contents ? contents : "");
 	}
 }
 
@@ -612,6 +663,172 @@ auto gse::window::clipboard_text() -> std::string {
 auto gse::window::set_clipboard_text(std::string text) -> void {
 	const std::scoped_lock lock(clipboard_mutex);
 	clipboard_pending = std::move(text);
+}
+
+namespace gse::window {
+	std::mutex clipboard_image_mutex;
+	std::optional<clipboard_image> clipboard_image_ready;
+	std::atomic<bool> clipboard_image_present{ false };
+	std::atomic<bool> clipboard_image_wanted{ false };
+
+#ifdef _WIN32
+	auto read_clipboard_dib() -> std::optional<clipboard_image> {
+		win32::HANDLE handle = win32::GetClipboardData(win32::cf_dibv5);
+		if (!handle) {
+			handle = win32::GetClipboardData(win32::cf_dib);
+		}
+		if (!handle) {
+			return std::nullopt;
+		}
+
+		const auto* memory = static_cast<const std::byte*>(win32::GlobalLock(static_cast<win32::HGLOBAL>(handle)));
+		if (!memory) {
+			return std::nullopt;
+		}
+
+		const std::size_t available = win32::GlobalSize(static_cast<win32::HGLOBAL>(handle));
+		const auto* header = reinterpret_cast<const win32::BITMAPINFOHEADER*>(memory);
+		const std::int32_t width = header->biWidth;
+		const std::int32_t signed_height = header->biHeight;
+		const std::int32_t height = signed_height < 0 ? -signed_height : signed_height;
+		const std::uint32_t bits = header->biBitCount;
+		const bool top_down = signed_height < 0;
+		const bool layout_supported = (bits == 24 || bits == 32)
+			&& (header->biCompression == win32::bi_rgb || header->biCompression == win32::bi_bitfields);
+
+		if (width <= 0 || height <= 0 || !layout_supported) {
+			win32::GlobalUnlock(static_cast<win32::HGLOBAL>(handle));
+			return std::nullopt;
+		}
+
+		std::size_t offset = header->biSize;
+		if (header->biCompression == win32::bi_bitfields && header->biSize == win32::bitmap_info_header_size) {
+			offset += 12;
+		}
+		offset += static_cast<std::size_t>(header->biClrUsed) * 4;
+
+		const std::size_t stride = ((static_cast<std::size_t>(width) * bits + 31) / 32) * 4;
+		if (offset + stride * static_cast<std::size_t>(height) > available) {
+			win32::GlobalUnlock(static_cast<win32::HGLOBAL>(handle));
+			return std::nullopt;
+		}
+
+		const std::size_t source_pixel = bits / 8;
+		std::vector<std::byte> pixels(static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4);
+		bool any_opaque = false;
+
+		for (std::int32_t y = 0; y < height; ++y) {
+			const std::size_t source_row = static_cast<std::size_t>(top_down ? y : height - 1 - y);
+			const std::byte* source = memory + offset + source_row * stride;
+			std::byte* destination = pixels.data() + static_cast<std::size_t>(y) * static_cast<std::size_t>(width) * 4;
+			for (std::int32_t x = 0; x < width; ++x) {
+				const std::byte* texel = source + static_cast<std::size_t>(x) * source_pixel;
+				destination[x * 4 + 0] = texel[2];
+				destination[x * 4 + 1] = texel[1];
+				destination[x * 4 + 2] = texel[0];
+				destination[x * 4 + 3] = bits == 32 ? texel[3] : std::byte{ 0xff };
+				any_opaque = any_opaque || destination[x * 4 + 3] != std::byte{ 0 };
+			}
+		}
+
+		win32::GlobalUnlock(static_cast<win32::HGLOBAL>(handle));
+
+		if (!any_opaque) {
+			for (std::size_t i = 3; i < pixels.size(); i += 4) {
+				pixels[i] = std::byte{ 0xff };
+			}
+		}
+
+		return clipboard_image{
+			.size = { static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height) },
+			.pixels = std::move(pixels),
+		};
+	}
+
+	auto read_clipboard_file() -> std::optional<clipboard_image> {
+		const win32::HANDLE handle = win32::GetClipboardData(win32::cf_hdrop);
+		if (!handle) {
+			return std::nullopt;
+		}
+
+		constexpr std::array image_extensions = {
+			std::string_view(".png"),
+			std::string_view(".jpg"),
+			std::string_view(".jpeg"),
+			std::string_view(".bmp"),
+			std::string_view(".tga"),
+			std::string_view(".gif"),
+			std::string_view(".webp"),
+		};
+
+		const auto drop = static_cast<win32::HDROP>(handle);
+		const win32::UINT count = win32::DragQueryFileW(drop, win32::drag_query_count, nullptr, 0);
+
+		for (win32::UINT i = 0; i < count; ++i) {
+			const win32::UINT length = win32::DragQueryFileW(drop, i, nullptr, 0);
+			if (length == 0) {
+				continue;
+			}
+			std::wstring name(length + 1, L'\0');
+			if (win32::DragQueryFileW(drop, i, name.data(), length + 1) == 0) {
+				continue;
+			}
+			name.resize(length);
+
+			std::filesystem::path path(name);
+			std::string extension = path.extension().display_string();
+			std::ranges::transform(extension, extension.begin(), [](const char c) {
+				return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+			});
+			if (std::ranges::contains(image_extensions, extension)) {
+				return clipboard_image{ .path = std::move(path) };
+			}
+		}
+
+		return std::nullopt;
+	}
+
+	auto sync_clipboard_image() -> void {
+		clipboard_image_present.store(
+			win32::IsClipboardFormatAvailable(win32::cf_dibv5) != 0
+				|| win32::IsClipboardFormatAvailable(win32::cf_dib) != 0,
+			std::memory_order_release
+		);
+
+		if (!clipboard_image_wanted.exchange(false, std::memory_order_acq_rel)) {
+			return;
+		}
+
+		if (!win32::OpenClipboard(nullptr)) {
+			return;
+		}
+
+		std::optional<clipboard_image> found = read_clipboard_dib();
+		if (!found) {
+			found = read_clipboard_file();
+		}
+		win32::CloseClipboard();
+
+		const std::scoped_lock lock(clipboard_image_mutex);
+		clipboard_image_ready = std::move(found);
+	}
+#else
+	auto sync_clipboard_image() -> void {
+	}
+#endif
+}
+
+auto gse::window::clipboard_image_available() -> bool {
+	return clipboard_image_present.load(std::memory_order_acquire);
+}
+
+auto gse::window::request_clipboard_image() -> void {
+	clipboard_image_wanted.store(true, std::memory_order_release);
+}
+
+auto gse::window::take_clipboard_image() -> std::optional<clipboard_image> {
+	const std::scoped_lock lock(clipboard_image_mutex);
+	return std::exchange(clipboard_image_ready, std::nullopt);
 }
 
 namespace gse {
@@ -673,6 +890,7 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 	{
 		trace::scope_guard sg{ trace_id<"window::clipboard">() };
 		sync_clipboard(d.focused);
+		sync_clipboard_image();
 	}
 
 	{
@@ -716,8 +934,6 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 	for (const auto& req : sched.read_channel<window_chrome_metrics_request>()) {
 		d.chrome_caption_height = req.caption_height;
 		d.chrome_controls_width = req.controls_width;
-		d.chrome_interactive_x0 = req.interactive_x0;
-		d.chrome_interactive_x1 = req.interactive_x1;
 		d.chrome_resize_exclude_y0 = req.resize_exclude_y0;
 		d.chrome_resize_exclude_y1 = req.resize_exclude_y1;
 	}
@@ -915,12 +1131,7 @@ namespace gse {
 
 	struct native_frame_state {
 		WNDPROC original_proc = nullptr;
-		const int* caption_height = nullptr;
-		const int* controls_width = nullptr;
-		const int* interactive_x0 = nullptr;
-		const int* interactive_x1 = nullptr;
-		const int* resize_exclude_y0 = nullptr;
-		const int* resize_exclude_y1 = nullptr;
+		window::data* owner = nullptr;
 	};
 
 	LRESULT native_frame_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
@@ -940,6 +1151,17 @@ namespace gse {
 				}
 			}
 			return 0;
+		}
+
+		if (msg == wm_ncmousemove && state->owner != nullptr && state->owner->ui_focus) {
+			POINT cursor{ get_x_lparam(lparam), get_y_lparam(lparam) };
+			ScreenToClient(hwnd, &cursor);
+			window::data& d = *state->owner;
+			const auto dims = window_handle_viewport(d.handle);
+			d.input_events.push(input::mouse_moved{
+				.x_pos = static_cast<double>(cursor.x),
+				.y_pos = static_cast<double>(dims.y() - cursor.y),
+			});
 		}
 
 		if (msg == wm_nchittest) {
@@ -971,8 +1193,8 @@ namespace gse {
 					return ht_left;
 				}
 				if (right) {
-					const int exclude_y0 = state->resize_exclude_y0 ? *state->resize_exclude_y0 : 0;
-					const int exclude_y1 = state->resize_exclude_y1 ? *state->resize_exclude_y1 : 0;
+					const int exclude_y0 = state->owner ? state->owner->chrome_resize_exclude_y0 : 0;
+					const int exclude_y1 = state->owner ? state->owner->chrome_resize_exclude_y1 : 0;
 					if (exclude_y1 > exclude_y0 && cursor.y >= exclude_y0 && cursor.y < exclude_y1) {
 						return ht_client;
 					}
@@ -986,15 +1208,10 @@ namespace gse {
 				}
 			}
 
-			const int caption = state->caption_height ? *state->caption_height : 0;
-			const int controls = state->controls_width ? *state->controls_width : 0;
+			const int caption = state->owner ? state->owner->chrome_caption_height : 0;
+			const int controls = state->owner ? state->owner->chrome_controls_width : 0;
 			if (cursor.y < caption) {
 				if (cursor.x >= client.right - controls) {
-					return ht_client;
-				}
-				const int interactive_x0 = state->interactive_x0 ? *state->interactive_x0 : 0;
-				const int interactive_x1 = state->interactive_x1 ? *state->interactive_x1 : 0;
-				if (interactive_x1 > interactive_x0 && cursor.x >= interactive_x0 && cursor.x < interactive_x1) {
 					return ht_client;
 				}
 				return ht_caption;
@@ -1007,35 +1224,23 @@ namespace gse {
 }
 #endif
 
-auto gse::window::install_native_frame(const native_window_handle handle, const int* caption_height, const int* controls_width, const int* interactive_x0, const int* interactive_x1, const int* resize_exclude_y0, const int* resize_exclude_y1) -> void {
+auto gse::window::install_native_frame(data& d) -> void {
 #ifdef _WIN32
 	using namespace gse::win32;
 
-	const HWND hwnd = glfwGetWin32Window(to_glfw_handle(handle));
+	const HWND hwnd = glfwGetWin32Window(to_glfw_handle(d.handle));
 	if (hwnd == nullptr) {
 		return;
 	}
 
-	auto* state = new native_frame_state{};
-	state->caption_height = caption_height;
-	state->controls_width = controls_width;
-	state->interactive_x0 = interactive_x0;
-	state->interactive_x1 = interactive_x1;
-	state->resize_exclude_y0 = resize_exclude_y0;
-	state->resize_exclude_y1 = resize_exclude_y1;
+	auto* state = new native_frame_state{ .owner = &d };
 	state->original_proc = reinterpret_cast<WNDPROC>(
 		SetWindowLongPtrW(hwnd, gwlp_wndproc, reinterpret_cast<LONG_PTR>(&native_frame_proc))
 	);
 	SetPropW(hwnd, L"gse_native_frame", state);
 	SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, swp_frame_changed | swp_no_move | swp_no_size | swp_no_zorder | swp_no_activate);
 #else
-	(void)handle;
-	(void)caption_height;
-	(void)controls_width;
-	(void)interactive_x0;
-	(void)interactive_x1;
-	(void)resize_exclude_y0;
-	(void)resize_exclude_y1;
+	(void)d;
 #endif
 }
 
@@ -1074,6 +1279,10 @@ auto gse::window::raw_handle(const shared_view<data> d) -> native_window_handle 
 auto gse::window::show(data& d) -> void {
 	window_handle_show(d.handle);
 	d.shown = true;
+
+	if (std::exchange(d.restore_maximized, false)) {
+		glfwMaximizeWindow(to_glfw_handle(d.handle));
+	}
 }
 
 auto gse::window::ui_focus(const shared_view<data> d) -> bool {

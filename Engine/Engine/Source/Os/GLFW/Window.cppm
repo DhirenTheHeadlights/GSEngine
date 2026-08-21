@@ -43,8 +43,6 @@ export namespace gse {
 	struct window_chrome_metrics_request {
 		int caption_height = 0;
 		int controls_width = 0;
-		int interactive_x0 = 0;
-		int interactive_x1 = 0;
 		int resize_exclude_y0 = 0;
 		int resize_exclude_y1 = 0;
 	};
@@ -182,6 +180,7 @@ export namespace gse::window {
 
 		bool decorated = true;
 		bool maximized = false;
+		bool restore_maximized = false;
 		int last_monitor_index = 0;
 		int current_monitor_index = -1;
 		vec2i position{ 0, 0 };
@@ -209,8 +208,6 @@ export namespace gse::window {
 		bool native_frame = false;
 		int chrome_caption_height = 0;
 		int chrome_controls_width = 0;
-		int chrome_interactive_x0 = 0;
-		int chrome_interactive_x1 = 0;
 		int chrome_resize_exclude_y0 = 0;
 		int chrome_resize_exclude_y1 = 0;
 
@@ -240,6 +237,18 @@ export namespace gse::window {
 		std::string text
 	) -> void;
 
+	struct clipboard_image {
+		std::filesystem::path path;
+		vec2u size;
+		std::vector<std::byte> pixels;
+	};
+
+	auto clipboard_image_available() -> bool;
+
+	auto request_clipboard_image() -> void;
+
+	auto take_clipboard_image() -> std::optional<clipboard_image>;
+
 	auto prompt_for_file(
 		data& d
 	) -> std::filesystem::path;
@@ -249,13 +258,7 @@ export namespace gse::window {
 	) -> void;
 
 	auto install_native_frame(
-		native_window_handle handle,
-		const int* caption_height,
-		const int* controls_width,
-		const int* interactive_x0,
-		const int* interactive_x1,
-		const int* resize_exclude_y0,
-		const int* resize_exclude_y1
+		data& d
 	) -> void;
 
 	[[nodiscard]] auto is_open(
