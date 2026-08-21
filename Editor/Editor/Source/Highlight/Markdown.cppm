@@ -21,6 +21,7 @@ export namespace gse::ide::markdown {
 		link_url [[= kind_info{ .color = 0x4b5b7e }]],
 		quote [[= kind_info{ .color = 0x4b5b7e }]],
 		rule [[= kind_info{ .color = 0x2b3959 }]],
+		strike [[= kind_info{ .color = 0x6b7590 }]],
 	};
 
 	struct fence_marker {
@@ -99,11 +100,14 @@ namespace gse::ide::markdown {
 		std::string_view line
 	) -> std::size_t;
 
-	auto inline_runs(
+	auto scan(
 		std::string_view line,
 		std::size_t from,
-		const line_context& context
-	) -> std::vector<run>;
+		std::size_t to,
+		kind base,
+		const line_context& context,
+		std::vector<run>& out
+	) -> void;
 
 	auto emit_line(
 		std::vector<gui::text_span>& out,
@@ -295,10 +299,16 @@ auto gse::ide::markdown::marker_extent(const std::string_view line) -> std::size
 	return lead;
 }
 
-auto gse::ide::markdown::inline_runs(const std::string_view line, const std::size_t from, const line_context& context) -> std::vector<run> {
-	std::vector<run> runs;
-	for (std::size_t i = from; i < line.size();) {
-		if (line[i] == '\\' && i + 1 < line.size()) {
+auto gse::ide::markdown::scan(const std::string_view line, const std::size_t from, const std::size_t to, const kind base, const line_context& context, std::vector<run>& out) -> void {
+	std::size_t plain = from;
+	auto flush = [&out, &plain, base](const std::size_t at) {
+		if (at > plain) {
+			out.push_back({ .start = plain, .end = at, .tone = base });
+		}
+	};
+
+	for (std::size_t i = from; i < to;) {
+		if (line[i] == '\\' && i + 1 < to) {
 			i += 2;
 			continue;
 		}
@@ -306,47 +316,83 @@ auto gse::ide::markdown::inline_runs(const std::string_view line, const std::siz
 			const std::size_t next = line.find_first_not_of('`', i);
 			const std::size_t length = (next == std::string_view::npos ? line.size() : next) - i;
 			const std::string ticks(length, '`');
-			if (const std::size_t close = line.find(ticks, i + length); close != std::string_view::npos) {
-				runs.push_back({ .start = i, .end = close + length, .tone = kind::code });
+			if (const std::size_t close = line.find(ticks, i + length); close != std::string_view::npos && close + length <= to) {
+				flush(i);
+				out.push_back({ .start = i, .end = close + length, .tone = kind::code });
 				i = close + length;
+				plain = i;
 				continue;
 			}
 			i += length;
 			continue;
 		}
 		if (context.table_row && line[i] == '|') {
-			runs.push_back({ .start = i, .end = i + 1, .tone = kind::marker });
+			flush(i);
+			out.push_back({ .start = i, .end = i + 1, .tone = kind::marker });
 			++i;
+			plain = i;
 			continue;
 		}
-		if (line.compare(i, 2, "**") == 0) {
-			if (const std::size_t close = line.find("**", i + 2); close != std::string_view::npos && close > i + 2) {
-				runs.push_back({ .start = i, .end = close + 2, .tone = kind::strong });
+		if (line.compare(i, 2, "[[") == 0) {
+			if (const std::size_t close = line.find("]]", i + 2); close != std::string_view::npos && close + 2 <= to) {
+				flush(i);
+				out.push_back({ .start = i, .end = close + 2, .tone = kind::link_text });
 				i = close + 2;
+				plain = i;
 				continue;
 			}
 		}
-		if (line[i] == '*' && i + 1 < line.size() && line[i + 1] != '*' && line[i + 1] != ' ') {
-			if (const std::size_t close = line.find('*', i + 1); close != std::string_view::npos && line[close - 1] != ' ') {
-				runs.push_back({ .start = i, .end = close + 1, .tone = kind::emphasis });
+		if (line.compare(i, 2, "**") == 0 || line.compare(i, 2, "~~") == 0) {
+			const std::string_view pair = line.substr(i, 2);
+			if (const std::size_t close = line.find(pair, i + 2); close != std::string_view::npos && close > i + 2 && close + 2 <= to) {
+				const kind tone = pair == "**" ? kind::strong : kind::strike;
+				flush(i);
+				out.push_back({ .start = i, .end = i + 2, .tone = tone });
+				scan(line, i + 2, close, tone, context, out);
+				out.push_back({ .start = close, .end = close + 2, .tone = tone });
+				i = close + 2;
+				plain = i;
+				continue;
+			}
+		}
+		if (line[i] == '*' && i + 1 < to && line[i + 1] != '*' && line[i + 1] != ' ') {
+			if (const std::size_t close = line.find('*', i + 1); close != std::string_view::npos && close < to && line[close - 1] != ' ') {
+				flush(i);
+				out.push_back({ .start = i, .end = i + 1, .tone = kind::emphasis });
+				scan(line, i + 1, close, kind::emphasis, context, out);
+				out.push_back({ .start = close, .end = close + 1, .tone = kind::emphasis });
 				i = close + 1;
+				plain = i;
 				continue;
 			}
 		}
 		if (line[i] == '[') {
 			const std::size_t close = line.find(']', i + 1);
 			if (close != std::string_view::npos && line.compare(close + 1, 1, "(") == 0) {
-				if (const std::size_t target = line.find(')', close + 2); target != std::string_view::npos) {
-					runs.push_back({ .start = i, .end = close + 1, .tone = kind::link_text });
-					runs.push_back({ .start = close + 1, .end = target + 1, .tone = kind::link_url });
+				if (const std::size_t target = line.find(')', close + 2); target != std::string_view::npos && target < to) {
+					flush(i);
+					out.push_back({ .start = i, .end = i + 1, .tone = kind::link_text });
+					scan(line, i + 1, close, kind::link_text, context, out);
+					out.push_back({ .start = close, .end = close + 1, .tone = kind::link_text });
+					out.push_back({ .start = close + 1, .end = target + 1, .tone = kind::link_url });
 					i = target + 1;
+					plain = i;
 					continue;
 				}
 			}
 		}
+		if (line[i] == '<' && line.compare(i + 1, 4, "http") == 0) {
+			if (const std::size_t close = line.find('>', i + 1); close != std::string_view::npos && close < to) {
+				flush(i);
+				out.push_back({ .start = i, .end = close + 1, .tone = kind::link_url });
+				i = close + 1;
+				plain = i;
+				continue;
+			}
+		}
 		++i;
 	}
-	return runs;
+	flush(to);
 }
 
 auto gse::ide::markdown::emit_line(std::vector<gui::text_span>& out, const std::uint32_t index, const std::string_view line, const std::size_t from, const kind base, const std::span<const run> runs) -> void {
@@ -488,8 +534,10 @@ auto gse::ide::markdown::spans(const std::string_view source) -> std::vector<gui
 			});
 		}
 
-		const std::vector<run> runs = inline_runs(line, content, { .table_row = table });
-		emit_line(out, index, line, content, quoted ? kind::quote : kind::body, runs);
+		const kind base = quoted ? kind::quote : kind::body;
+		std::vector<run> runs;
+		scan(line, content, line.size(), base, { .table_row = table }, runs);
+		emit_line(out, index, line, content, base, runs);
 	}
 
 	return out;
