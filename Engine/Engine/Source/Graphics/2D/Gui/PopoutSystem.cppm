@@ -128,7 +128,7 @@ auto gse::gui::popout_system::run(gse::context& ctx, data& d, const gse::channel
 			activate_popout(d, save_reg, std::move(category));
 		};
 
-		for (const auto& m : gui_d.menus.items()) {
+		for (const auto& m : gui_d.primary.menus.items()) {
 			try_activate_candidate(m.id().tag());
 			for (const std::string& tab : m.tab_contents) {
 				try_activate_candidate(tab);

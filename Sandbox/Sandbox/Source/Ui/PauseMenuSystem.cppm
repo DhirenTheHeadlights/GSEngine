@@ -35,7 +35,7 @@ auto sandbox::pause_menu::run(gse::context& ctx, data& d, const gse::channel_wri
 	};
 
 	const auto& input = gse::input::current_state(input_d);
-	const auto* top = gui_d.menu_stack.top();
+	const auto* top = gui_d.primary.menu_stack.top();
 	const bool blocks = top != nullptr && !top->dismissable();
 	const bool scene_active = world_d.active_scene.has_value();
 

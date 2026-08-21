@@ -18,8 +18,15 @@ namespace gse {
 		value,
 		stable_pointer,
 		owned_snapshot,
+		nested,
 		live
 	};
+
+	template <typename Data>
+	struct shared_view_base;
+
+	template <typename Data>
+	struct shared_snapshot_base;
 
 	template <typename T>
 	struct pointer_like_traits {
@@ -41,6 +48,27 @@ namespace gse {
 		using pointee = T;
 	};
 
+	template <typename Data>
+	consteval auto shared_member_infos() {
+		std::vector<std::meta::info> members;
+		for (auto m : std::meta::nonstatic_data_members_of(^^Data, std::meta::access_context::unchecked())) {
+			if (has_annotation<shared_tag>(m) || has_annotation<stable_shared_tag>(m)) {
+				members.push_back(m);
+			}
+		}
+		return members;
+	}
+
+	template <typename T>
+	consteval auto publishes_nested() -> bool {
+		if constexpr (std::is_class_v<T> && !pointer_like_traits<T>::is_unique && !pointer_like_traits<T>::is_shared) {
+			return !shared_member_infos<T>().empty();
+		}
+		else {
+			return false;
+		}
+	}
+
 	template <typename T, std::meta::info Member>
 	consteval auto publish_kind_of() -> publish_kind {
 		if constexpr (pointer_like_traits<T>::is_unique) {
@@ -54,6 +82,10 @@ namespace gse {
 			static_assert(!has_annotation<stable_shared_tag>(Member), "stable_shared is only for unique_ptr fields");
 			return publish_kind::owned_snapshot;
 		}
+		else if constexpr (publishes_nested<T>()) {
+			static_assert(!has_annotation<stable_shared_tag>(Member), "stable_shared is only for unique_ptr fields");
+			return publish_kind::nested;
+		}
 		else if constexpr (std::is_trivially_copyable_v<T> && std::is_copy_assignable_v<T>) {
 			static_assert(!has_annotation<stable_shared_tag>(Member), "stable_shared is only for unique_ptr fields");
 			return publish_kind::value;
@@ -62,17 +94,6 @@ namespace gse {
 			static_assert(!has_annotation<stable_shared_tag>(Member), "stable_shared is only for unique_ptr fields");
 			return publish_kind::live;
 		}
-	}
-
-	template <typename Data>
-	consteval auto shared_member_infos() {
-		std::vector<std::meta::info> members;
-		for (auto m : std::meta::nonstatic_data_members_of(^^Data, std::meta::access_context::unchecked())) {
-			if (has_annotation<shared_tag>(m) || has_annotation<stable_shared_tag>(m)) {
-				members.push_back(m);
-			}
-		}
-		return members;
 	}
 
 	template <typename Data>
@@ -101,6 +122,16 @@ namespace gse {
 			else if constexpr (kind == publish_kind::owned_snapshot || kind == publish_kind::value) {
 				specs.push_back(std::meta::data_member_spec(
 					field_type,
+					{
+						.name = std::meta::identifier_of(m)
+					}
+				));
+			}
+			else if constexpr (kind == publish_kind::nested) {
+				using nested_view_t = typename shared_view_base<field_t>::type;
+				using nested_snapshot_t = typename shared_snapshot_base<field_t>::type;
+				specs.push_back(std::meta::data_member_spec(
+					form == live_field_form::reference ? ^^nested_view_t : ^^nested_snapshot_t,
 					{
 						.name = std::meta::identifier_of(m)
 					}
@@ -222,6 +253,16 @@ namespace gse {
 		const Data& d,
 		shared_snapshot<Data>& out
 	) -> void;
+
+	template <typename Data>
+	auto live_shared_aggregate(
+		const Data& d
+	) -> typename shared_view_base<Data>::type;
+
+	template <typename Data>
+	auto snapshot_shared_aggregate(
+		const shared_snapshot<Data>& s
+	) -> typename shared_view_base<Data>::type;
 }
 
 template <typename Data, std::size_t I>
@@ -231,6 +272,9 @@ auto gse::live_shared_field(const Data& d) -> decltype(auto) {
 	constexpr auto kind = publish_kind_of<field_t, m>();
 	if constexpr (kind == publish_kind::stable_pointer) {
 		return d.[:m:].get();
+	}
+	else if constexpr (kind == publish_kind::nested) {
+		return live_shared_aggregate<field_t>(d.[:m:]);
 	}
 	else {
 		return (d.[:m:]);
@@ -245,6 +289,9 @@ auto gse::snapshot_shared_field(const shared_snapshot<Data>& s) -> decltype(auto
 	constexpr auto kind = publish_kind_of<field_t, m>();
 	if constexpr (kind == publish_kind::live) {
 		return (*s.[:sm:]);
+	}
+	else if constexpr (kind == publish_kind::nested) {
+		return snapshot_shared_aggregate<field_t>(s.[:sm:]);
 	}
 	else {
 		return (s.[:sm:]);
@@ -264,6 +311,9 @@ auto gse::copy_shared_field(const Data& d, shared_snapshot<Data>& out) -> void {
 	else if constexpr (kind == publish_kind::owned_snapshot || kind == publish_kind::value) {
 		out.[:sm:] = d.[:m:];
 	}
+	else if constexpr (kind == publish_kind::nested) {
+		copy_shared_fields(d.[:m:], out.[:sm:]);
+	}
 	else {
 		out.[:sm:] = &d.[:m:];
 	}
@@ -276,18 +326,28 @@ auto gse::copy_shared_fields(const Data& d, shared_snapshot<Data>& out) -> void 
 	}(std::make_index_sequence<shared_members_v<Data>.size()>{});
 }
 
+template <typename Data>
+auto gse::live_shared_aggregate(const Data& d) -> typename shared_view_base<Data>::type {
+	using base_t = typename shared_view_base<Data>::type;
+	return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+		return base_t{ live_shared_field<Data, Is>(d)... };
+	}(std::make_index_sequence<shared_members_v<Data>.size()>{});
+}
+
+template <typename Data>
+auto gse::snapshot_shared_aggregate(const shared_snapshot<Data>& s) -> typename shared_view_base<Data>::type {
+	using base_t = typename shared_view_base<Data>::type;
+	return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+		return base_t{ snapshot_shared_field<Data, Is>(s)... };
+	}(std::make_index_sequence<shared_members_v<Data>.size()>{});
+}
+
 template <typename S>
 auto gse::make_shared_view_live(const state_of_t<S>& d) -> shared_view<S> {
-	using base_t = shared_view_base<state_of_t<S>>::type;
-	return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-		return shared_view<S>{ base_t{ live_shared_field<state_of_t<S>, Is>(d)... } };
-	}(std::make_index_sequence<shared_members_v<state_of_t<S>>.size()>{});
+	return shared_view<S>{ live_shared_aggregate<state_of_t<S>>(d) };
 }
 
 template <typename S>
 auto gse::make_shared_view_snapshot(const shared_snapshot<state_of_t<S>>& s) -> shared_view<S> {
-	using base_t = shared_view_base<state_of_t<S>>::type;
-	return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-		return shared_view<S>{ base_t{ snapshot_shared_field<state_of_t<S>, Is>(s)... } };
-	}(std::make_index_sequence<shared_members_v<state_of_t<S>>.size()>{});
+	return shared_view<S>{ snapshot_shared_aggregate<state_of_t<S>>(s) };
 }

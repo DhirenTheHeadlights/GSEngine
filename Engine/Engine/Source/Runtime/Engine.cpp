@@ -177,7 +177,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 		m_loading.set_progress(0, 0);
 
 		auto& gui_data = m_scheduler.state<gse::gui::data>();
-		gui_data.menu_stack.push<gse::gui::loading_screen>(m_loading);
+		gui_data.primary.menu_stack.push<gse::gui::loading_screen>(m_loading);
 		log::println(log::category::runtime, "boot: loading_screen pushed to menu stack");
 
 		m_deferred_boot = [this, app_setup] {

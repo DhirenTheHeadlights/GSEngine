@@ -339,12 +339,12 @@ auto gse::ide::toggle_panel(editor_app::data& d, const gse::id panel) -> void {
 }
 
 auto gse::ide::apply_pending_panel_close(gui::data& s, editor_app::data& d) -> void {
-	if (!s.pending_tab_close) {
+	if (!s.primary.pending_tab_close) {
 		return;
 	}
 
-	const auto [host_id, tab_index] = *s.pending_tab_close;
-	const gui::menu* host = s.menus.try_get(host_id);
+	const auto [host_id, tab_index] = *s.primary.pending_tab_close;
+	const gui::menu* host = s.primary.menus.try_get(host_id);
 	if (!host || tab_index >= host->tab_contents.size()) {
 		return;
 	}
@@ -355,7 +355,7 @@ auto gse::ide::apply_pending_panel_close(gui::data& s, editor_app::data& d) -> v
 		return;
 	}
 
-	s.pending_tab_close.reset();
+	s.primary.pending_tab_close.reset();
 	if (panel_count(d.tree) <= 1) {
 		return;
 	}
@@ -415,15 +415,15 @@ auto gse::ide::sync_dock_menus(gui::data& s, editor_app::data& d) -> void {
 		live.push_back(host.id());
 	}
 
-	s.suppressed_menus.clear();
+	s.primary.suppressed_menus.clear();
 	for (const panel_desc& desc : panels) {
 		if (std::ranges::find(shown, desc.id) == shown.end()) {
-			s.suppressed_menus.insert(stable_id(desc.name));
+			s.primary.suppressed_menus.insert(stable_id(desc.name));
 		}
 	}
 
 	std::vector<gse::id> stale;
-	for (const gui::menu& m : s.menus.items()) {
+	for (const gui::menu& m : s.primary.menus.items()) {
 		const std::string_view tag = m.id().tag();
 		const bool owned = std::ranges::any_of(panels, [tag](const panel_desc& desc) {
 			return desc.name == tag;
@@ -433,26 +433,26 @@ auto gse::ide::sync_dock_menus(gui::data& s, editor_app::data& d) -> void {
 		}
 	}
 	for (const gse::id menu_id : stale) {
-		s.menus.remove(menu_id);
+		s.primary.menus.remove(menu_id);
 	}
 }
 
 auto gse::ide::update_dock_interaction(gui::data& s, editor_app::data& d, const dock_input& in) -> void {
-	const vec2f vp = s.previous_viewport_size;
-	if (vp.x() <= 0.f || vp.y() <= 0.f) {
+	const vec2f viewport_size = s.primary.previous_viewport_size;
+	if (viewport_size.x() <= 0.f || viewport_size.y() <= 0.f) {
 		return;
 	}
 
-	const gui::style sty = gui::apply_scale(s, gui::style::from_theme(s.current_theme), vp.y());
+	const gui::style sty = gui::apply_scale(s, s.primary, gui::style::from_theme(s.current_theme), viewport_size.y());
 	const float inset = s.reserve_top_bar ? sty.title_bar_height : 0.f;
-	const float top = vp.y() - inset;
+	const float top = viewport_size.y() - inset;
 	if (top <= 0.f) {
 		return;
 	}
 
 	const dock_metrics metrics = editor_dock_metrics(sty);
 	const std::span<const panel_desc> panels = editor_panels();
-	d.frame = rectf::from_position_size({ 0.f, top }, { vp.x(), top });
+	d.frame = rectf::from_position_size({ 0.f, top }, { viewport_size.x(), top });
 
 	apply_pending_panel_close(s, d);
 	d.layout = resolve(d.tree, d.frame, metrics, panels);
@@ -472,7 +472,7 @@ auto gse::ide::update_dock_interaction(gui::data& s, editor_app::data& d, const 
 	}
 
 	if (d.pending_panels_menu) {
-		s.context_menu = {
+		s.primary.context_menu = {
 			.open = true,
 			.just_opened = true,
 			.position = *d.pending_panels_menu,
@@ -489,13 +489,13 @@ auto gse::ide::update_dock_interaction(gui::data& s, editor_app::data& d, const 
 			}
 			d.drop = d.drag->torn ? drop_target(d.tree, d.layout, metrics, d.drag->panel, in.mouse) : std::nullopt;
 			if (d.drop) {
-				s.active_dock_space = d.drop->space;
+				s.primary.active_dock_space = d.drop->space;
 			}
 			else {
-				s.active_dock_space.reset();
+				s.primary.active_dock_space.reset();
 			}
 			if (d.drag->torn) {
-				s.active_drag_ghost = gui::drag_ghost{
+				s.primary.active_drag_ghost = gui::drag_ghost{
 					.label = std::string(d.drag->panel.tag()),
 					.position = in.mouse,
 				};
@@ -504,8 +504,8 @@ auto gse::ide::update_dock_interaction(gui::data& s, editor_app::data& d, const 
 			return;
 		}
 
-		s.active_dock_space.reset();
-		s.active_drag_ghost.reset();
+		s.primary.active_dock_space.reset();
+		s.primary.active_drag_ghost.reset();
 		if (d.drag->torn && d.drop && d.drop->location != gui::dock::location::none) {
 			insert_panel(d.tree, {
 				.panel = d.drag->panel,
@@ -703,7 +703,7 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 					.mouse = mouse,
 					.pressed = pressed,
 					.held = held,
-					.blocked = s.menu_stack.captures_input() || s.context_menu.open || s.input_layers_data.is_resize_blocked(mouse),
+					.blocked = s.primary.menu_stack.captures_input() || s.primary.context_menu.open || s.primary.input_layers_data.is_resize_blocked(mouse),
 					.context_pressed = context_pressed,
 					.toggle_maximize = toggle_maximize,
 				});

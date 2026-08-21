@@ -148,7 +148,7 @@ auto sandbox::client_ui::push_recording_indicator(gse::context& ctx, const gse::
 }
 
 auto sandbox::client_ui::run(gse::context& ctx, data& d, const gse::channel_write<gse::renderer::sprite_command, gse::gui::menu_content, sandbox::spawn_stress_request, sandbox::spawn_joints_request, sandbox::spawn_pyramid_request> ui_out, const gse::shared_view<gse::gui::data> gui_d, const gse::shared_view<gse::window::data> window_d, const gse::shared_view<crosshair::data> crosshair_d, const std::optional<gse::shared_view<gse::renderer::capture::data>> capture_d) -> gse::async::task<> {
-	if (gui_d.menu_stack.empty()) {
+	if (gui_d.primary.menu_stack.empty()) {
 		push_crosshair(ctx, ui_out, gui_d, window_d, crosshair_d);
 	}
 
