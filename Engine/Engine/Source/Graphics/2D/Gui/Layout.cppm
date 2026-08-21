@@ -101,11 +101,11 @@ auto gse::gui::layout::undock(id_mapped_collection<menu>& menus, const id child_
 		}
 		rectf bounds = root->rect;
 
-		std::function<void(id)> expand = [&](const id parent) {
+		auto expand = [&](this auto& self, const id parent) -> void {
 			for (const auto& item : input_menus.items()) {
 				if (item.owner_id() == parent) {
 					bounds = rectf::bounding_box(bounds, item.rect);
-					expand(item.id());
+					self(item.id());
 				}
 			}
 		};
@@ -125,7 +125,7 @@ auto gse::gui::layout::undock(id_mapped_collection<menu>& menus, const id child_
 	const float scale_x = target_size.x() / group_bounds.width();
 	const float scale_y = target_size.y() / group_bounds.height();
 
-	std::function<void(id)> scale_group = [&](const id current_id) {
+	auto scale_group = [&](this auto& self, const id current_id) -> void {
 		if (menu* item = menus.try_get(current_id)) {
 			vec2f offset = item->rect.top_left() - group_bounds.top_left();
 			offset.x() *= scale_x;
@@ -139,7 +139,7 @@ auto gse::gui::layout::undock(id_mapped_collection<menu>& menus, const id child_
 
 			for (auto& potential_child : menus.items()) {
 				if (potential_child.owner_id() == current_id) {
-					scale_group(potential_child.id());
+					self(potential_child.id());
 				}
 			}
 		}
