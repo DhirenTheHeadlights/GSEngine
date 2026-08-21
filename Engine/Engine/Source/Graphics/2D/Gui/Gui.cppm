@@ -18,11 +18,9 @@ import gse.save;
 
 import :settings;
 import :types;
-import :layout;
 import :font;
 import :ui_renderer;
 import :texture;
-import :cursor;
 import :save;
 import :ids;
 import :input_layers;
@@ -30,92 +28,103 @@ import :styles;
 import :builder;
 import :menu_stack;
 import :render_layer;
-import :symbols;
 
 namespace gse::gui {
 	struct frame_state {
 		style sty{};
 		bool active = false;
 	};
-
-	auto draw_screen_caption(
-		builder& b,
-		screen& top,
-		const rectf& bar_rect,
-		const rectf& full_rect,
-		channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> channels
-	) -> void;
 }
 
 export namespace gse::gui {
-	struct [[= gse::system_state<"Gui">{}, = gse::settings::category<"UI">{}]] data {
+	struct viewport_state {
+		[[= shared]] menu_stack_state menu_stack;
+		[[= shared]] id_mapped_collection<menu> menus;
+		menu* current_menu = nullptr;
+		std::unique_ptr<ids::scope> current_scope;
+		std::uint32_t next_z_order = 1;
+		std::vector<id> visible_menu_ids_last_frame;
+		std::unordered_map<std::uint64_t, id> name_to_menu_id;
+		std::unordered_set<std::uint64_t> suppressed_menus;
+
+		std::optional<dock::space> active_dock_space;
+		std::optional<drag_ghost> active_drag_ghost;
+		state current_state{ states::idle{} };
+		id hot_widget_id;
+		id active_widget_id;
+		id focus_widget_id;
+		tooltip_state tooltip;
+		render_layer input_layer_render = render_layer::content;
+		bool input_suppressed = false;
+		input_layer input_layers_data;
+		context_menu_state context_menu;
+		std::optional<menu> screen_surface;
+		bool manual_cursor = false;
+		std::vector<id> pending_popout_close_ids;
+		std::optional<std::pair<id, std::uint32_t>> pending_tab_close;
+
+		frame_state fstate{};
+		rectf rect;
+		vec2f previous_viewport_size;
+		float previous_scale_factor = 0.f;
+		float display_scale = 1.f;
+		std::string active_monitor_key;
+	};
+
+	struct [[= system_state<"Gui">{}, = settings::category<"UI">{}]] data {
 		[[
-			= gse::settings::describe<"Color theme applied to all UI panels and widgets.">{}
+			= settings::describe<"Color theme applied to all UI panels and widgets.">{}
 		]]
 		theme current_theme = theme::midnight;
 
 		[[
-			= gse::settings::
+			= settings::
 				describe<"Multiplier on UI element sizes and font metrics, on top of the display scale. Remembered per monitor.">{},
-			= gse::settings::range<0.5f, 2.0f>{}
+			= settings::range<0.5f, 2.0f>{}
 		]]
 		float ui_scale = 1.0f;
 
 		[[
-			= gse::settings::describe<"Font used for UI text: labels, menus, and controls.">{}
+			= settings::describe<"Font used for UI text: labels, menus, and controls.">{}
 		]]
-		gse::settings::choice<std::string> ui_font;
+		settings::choice<std::string> ui_font;
 
 		[[
-			= gse::settings::describe<"Font used for code, terminals, and numeric readouts.">{}
+			= settings::describe<"Font used for code, terminals, and numeric readouts.">{}
 		]]
-		gse::settings::choice<std::string> code_font;
+		settings::choice<std::string> code_font;
 
 		[[
-			= gse::settings::describe<"Show developer overlays (Test, Profiler, Physics Debug).">{},
-			= gse::shared
+			= settings::describe<"Show developer overlays (Test, Profiler, Physics Debug).">{},
+			= shared
 		]]
 		bool show_dev_overlays = false;
 
 		[[
-			= gse::settings::describe<"Derive UI scale from viewport height instead of the monitor display scale.">{},
-			= gse::settings::app_scope{}
+			= settings::describe<"Derive UI scale from viewport height instead of the monitor display scale.">{},
+			= settings::app_scope{}
 		]]
 		bool scale_with_resolution = true;
 
-		float display_scale = 1.f;
 		std::unordered_map<std::string, float> ui_scale_by_monitor;
-		std::string active_monitor_key;
 
 		[[
-			= gse::settings::describe<"Reserve a title-bar strip at the top of the viewport for application chrome.">{},
-			= gse::settings::app_scope{}
+			= settings::describe<"Reserve a title-bar strip at the top of the viewport for application chrome.">{},
+			= settings::app_scope{}
 		]]
 		bool reserve_top_bar = false;
 
-		std::uint32_t next_z_order = 1;
 
-		[[= gse::shared]] id_mapped_collection<menu> menus;
-		menu* current_menu = nullptr;
-
-		[[= gse::shared]] font_set fonts;
-		[[= gse::shared]] resource::handle<texture> blank_texture;
-
-		std::optional<dock::space> active_dock_space;
-		gui::state current_state{ states::idle{} };
+		[[= shared]] font_set fonts;
+		[[= shared]] resource::handle<texture> blank_texture;
 
 		[[
-			= gse::settings::describe<"File the dock and window layout is saved to and restored from.">{},
-			= gse::settings::app_scope{}
+			= settings::describe<"File the dock and window layout is saved to and restored from.">{},
+			= settings::app_scope{}
 		]]
 		std::filesystem::path file_path = config::user_config_dir() / "gui_layout.ini";
 		clock save_clock;
 
-		id hot_widget_id;
-		id active_widget_id;
-		id focus_widget_id;
-
-		frame_state fstate{};
 		draw_context* context = nullptr;
 
 		std::string last_ui_font;
@@ -127,34 +136,15 @@ export namespace gse::gui {
 		std::size_t text_pool_slot = 0;
 		std::size_t text_pool_used = 0;
 
-		std::vector<id> visible_menu_ids_last_frame;
-		std::unordered_map<std::uint64_t, id> name_to_menu_id;
-		std::unordered_set<std::uint64_t> suppressed_menus;
-		std::optional<drag_ghost> active_drag_ghost;
-		vec2f previous_viewport_size;
-		float previous_scale_factor = 0.f;
-
-		tooltip_state tooltip;
-		render_layer input_layer_render = render_layer::content;
-		bool input_suppressed = false;
-		input_layer input_layers_data;
 		std::unordered_map<std::uint64_t, scroll_state> widget_scrolls;
 		std::unordered_map<std::uint64_t, vec4f> widget_anim_colors;
 
-		std::unique_ptr<ids::scope> current_scope;
-
-		[[= gse::shared]] menu_stack_state menu_stack;
-		std::optional<menu> screen_surface;
-		bool manual_cursor = false;
-
-		std::vector<id> pending_popout_close_ids;
-		std::optional<std::pair<id, std::uint32_t>> pending_tab_close;
-		context_menu_state context_menu;
+		[[= shared]] viewport_state primary;
 
 		static constexpr time update_interval = seconds(30.f);
 	};
 
-	[[= gse::system_init{}]]
+	[[= system_init{}]]
 	auto init(
 		context& ctx,
 		shared_view<window::data> window_s,
@@ -162,13 +152,13 @@ export namespace gse::gui {
 		data& d
 	) -> async::task<>;
 
-	[[= gse::system_run<>{}]]
+	[[= system_run<>{}]]
 	auto run(
 		context& ctx,
 		shared_view<window::data> window_s,
 		shared_view<gpu::context::data> gpu_s,
 		shared_view<asset::data> assets_s,
-		shared_view<gse::input::data> input_state,
+		shared_view<input::data> input_state,
 		const save::registry& save_reg,
 		channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, popout_closed> requests_in,
 		channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> ui_out,
@@ -181,169 +171,5 @@ export namespace gse::gui {
 
 	auto save(
 		data& d
-	) -> void;
-
-	auto clear_menu_interaction(
-		data& d
-	) -> void;
-
-	[[nodiscard]] auto menu_chrome_height(
-		const font_set& fonts,
-		const menu& m,
-		const style& sty,
-		float width
-	) -> float;
-
-	[[nodiscard]] auto tab_index_at(
-		const font_set& fonts,
-		const menu& m,
-		const style& sty,
-		const rectf& title_bar_rect,
-		vec2f mouse
-	) -> std::optional<std::uint32_t>;
-
-	auto init_body(
-		context& ctx,
-		shared_view<window::data> window_s,
-		shared_view<asset::data> assets,
-		data& d
-	) -> async::task<>;
-
-	auto update_body(
-		context& ctx,
-		shared_view<window::data> window_s,
-		shared_view<gpu::context::data> gpu_s,
-		shared_view<asset::data> assets_s,
-		shared_view<gse::input::data> input_state,
-		const save::registry& save_reg,
-		channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, popout_closed> requests_in,
-		channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> ui_out,
-		data& d
-	) -> async::task<>;
-
-	auto handle_idle_state(
-		data& d,
-		const input::state& input_state,
-		vec2f mouse_position,
-		bool mouse_held,
-		const style& style
-	) -> gui::state;
-
-	auto handle_dragging_state(
-		data& d,
-		const states::dragging& current,
-		shared_view<window::data> window_s,
-		vec2f mouse_position,
-		bool mouse_held
-	) -> gui::state;
-
-	auto handle_resizing_state(
-		data& d,
-		const states::resizing& current,
-		vec2f mouse_position,
-		bool mouse_held,
-		const style& style,
-		shared_view<window::data> window_s
-	) -> gui::state;
-
-	auto handle_resizing_divider_state(
-		data& d,
-		const states::resizing_divider& current,
-		vec2f mouse_position,
-		bool mouse_held,
-		const style& style
-	) -> gui::state;
-
-	auto handle_pending_drag_state(
-		data& d,
-		const states::pending_drag& current,
-		vec2f mouse_position,
-		bool mouse_held
-	) -> gui::state;
-
-	auto draw_menu_chrome(
-		data& d,
-		const input::state& input_state,
-		menu& current_menu,
-		render_layer layer
-	) -> void;
-
-	auto draw_tab_bar(
-		data& d,
-		const input::state& input_state,
-		menu& current_menu,
-		const rectf& title_bar_rect,
-		render_layer layer
-	) -> void;
-
-	auto process_context_menu(
-		data& d,
-		const input::state& input_state,
-		vec2f viewport_size,
-		channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> channels
-	) -> void;
-
-	auto usable_screen_rect(
-		data& d,
-		shared_view<window::data> window_s
-	) -> rectf;
-
-	auto calculate_display_rect(
-		data& d,
-		const menu& m
-	) -> rectf;
-
-	auto sync_monitor_scale(
-		data& d,
-		const std::string& monitor_key
-	) -> void;
-
-	auto scale_factor_for(
-		const data& d,
-		float viewport_height
-	) -> float;
-
-	auto apply_scale(
-		const data& d,
-		style sty,
-		float viewport_height
-	) -> style;
-
-	auto reload_font(
-		data& d,
-		shared_view<asset::data> assets
-	) -> void;
-
-	auto begin_menu(
-		data& d,
-		const std::string& name
-	) -> bool;
-
-	auto end_menu(
-		data& d
-	) -> void;
-
-	auto process_menu(
-		data& d,
-		const input::state& input_state,
-		const std::string& name,
-		render_layer layer,
-		const std::function<void(builder&)>& build
-	) -> void;
-
-	auto caption_button(
-		builder& b,
-		const rectf& rect,
-		const std::string& key,
-		std::span<const symbol::stroke> glyph,
-		vec4f hover_color,
-		bool enabled = true
-	) -> bool;
-
-	auto process_screen(
-		data& d,
-		const input::state& input_state,
-		vec2f viewport_size,
-		channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> channels
 	) -> void;
 }
