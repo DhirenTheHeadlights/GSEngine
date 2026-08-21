@@ -9,6 +9,7 @@ import gse.win32;
 
 namespace gse::ide::terminal {
 	constexpr std::size_t max_lines = 8192;
+	constexpr std::size_t max_offers = 16;
 
 	struct link_hit {
 		std::filesystem::path path;
@@ -59,16 +60,35 @@ namespace gse::ide::terminal {
 		id instance_id
 	) -> void;
 
-	auto close_slot(
+	auto close_kind(
 		data& d,
-		build_runner::stream_slot slot
+		build_runner::stream_kind kind
 	) -> void;
 
 	auto append_lines(
 		instance& inst,
 		std::span<const line> lines,
-		const gui::style& style
+		const gui::draw_context& ctx
 	) -> void;
+
+	auto offer_pending_line(
+		const agent::blame_offer& offer
+	) -> std::string;
+
+	auto offer_sent_line(
+		const agent::blame_offer& offer
+	) -> std::string;
+
+	auto take_offers(
+		data& d,
+		instance& inst,
+		const gui::draw_context& ctx
+	) -> void;
+
+	auto dispatch_at(
+		instance& inst,
+		std::uint32_t buffer_line
+	) -> dispatch_marker*;
 
 	auto draw_instance(
 		gui::builder& ui,
@@ -76,7 +96,7 @@ namespace gse::ide::terminal {
 		data& d,
 		instance& inst,
 		const rectf& area,
-		channel_write<agent::start_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels,
+		channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels,
 		bool building
 	) -> void;
 }
@@ -103,6 +123,7 @@ auto gse::ide::terminal::make_instance(data& d, std::string name) -> instance {
 		.instance_id = instance_id,
 		.input_id = generate_temp_id(hash_combine(instance_id.number(), stable_id("input"))),
 		.log_id = generate_temp_id(hash_combine(instance_id.number(), stable_id("log"))),
+		.tail_id = generate_temp_id(hash_combine(instance_id.number(), stable_id("tail"))),
 		.name = std::move(name),
 	};
 }
@@ -128,21 +149,23 @@ auto gse::ide::terminal::erase_instance(data& d, const id instance_id) -> void {
 	}
 }
 
-auto gse::ide::terminal::close_slot(data& d, const build_runner::stream_slot slot) -> void {
-	if (slot == build_runner::stream_slot::none) {
+auto gse::ide::terminal::close_kind(data& d, const build_runner::stream_kind kind) -> void {
+	if (kind == build_runner::stream_kind::none) {
 		return;
 	}
-	const auto found = std::ranges::find(d.instances, slot, &instance::slot);
-	if (found == d.instances.end()) {
-		return;
+	while (true) {
+		const auto found = std::ranges::find(d.instances, kind, &instance::kind);
+		if (found == d.instances.end()) {
+			return;
+		}
+		if (found->runner && found->runner->running.load(std::memory_order_acquire)) {
+			spawn::terminate_process(*found->runner);
+		}
+		erase_instance(d, found->instance_id);
 	}
-	if (found->runner && found->runner->running.load(std::memory_order_acquire)) {
-		spawn::terminate_process(*found->runner);
-	}
-	erase_instance(d, found->instance_id);
 }
 
-auto gse::ide::terminal::append_lines(instance& inst, const std::span<const line> lines, const gui::style& style) -> void {
+auto gse::ide::terminal::append_lines(instance& inst, const std::span<const line> lines, const gui::draw_context& ctx) -> void {
 	for (const line& l : lines) {
 		std::size_t start = 0;
 		while (true) {
@@ -161,6 +184,17 @@ auto gse::ide::terminal::append_lines(instance& inst, const std::span<const line
 		const std::size_t overflow = inst.buffer.lines.size() - max_lines;
 		inst.buffer.lines.erase(inst.buffer.lines.begin(), inst.buffer.lines.begin() + static_cast<std::ptrdiff_t>(overflow));
 		inst.line_levels.erase(inst.line_levels.begin(), inst.line_levels.begin() + static_cast<std::ptrdiff_t>(overflow));
+
+		std::erase_if(inst.dispatches, [overflow](const dispatch_marker& marker) {
+			return marker.line < overflow;
+		});
+		for (dispatch_marker& marker : inst.dispatches) {
+			marker.line -= static_cast<std::uint32_t>(overflow);
+		}
+
+		const float dropped = static_cast<float>(overflow) * gui::draw::text_area_line_height(ctx);
+		inst.view.scroll.y.offset = std::max(0.f, inst.view.scroll.y.offset - dropped);
+		inst.view.scroll.y.target = std::max(0.f, inst.view.scroll.y.target - dropped);
 	}
 
 	assert(inst.buffer.lines.size() == inst.line_levels.size(), "terminal buffer line metadata diverged");
@@ -171,10 +205,63 @@ auto gse::ide::terminal::append_lines(instance& inst, const std::span<const line
 			.line = static_cast<std::uint32_t>(i),
 			.start_col = 0,
 			.end_col = static_cast<std::uint32_t>(inst.buffer.lines[i].size()),
-			.color = level_color(style, inst.line_levels[i]),
+			.color = level_color(ctx.style, inst.line_levels[i]),
 		});
 	}
-	inst.view.scroll.y.target = std::numeric_limits<float>::max();
+}
+
+auto gse::ide::terminal::offer_pending_line(const agent::blame_offer& offer) -> std::string {
+	const std::string site = std::format("{}:{}", offer.file.filename().generic_display_string(), offer.line);
+	return offer.session == 0
+		? std::format("  -> no chat owns {} - start one to fix it", site)
+		: std::format("  -> send {} to \"{}\"", site, offer.session_name);
+}
+
+auto gse::ide::terminal::offer_sent_line(const agent::blame_offer& offer) -> std::string {
+	const std::string site = std::format("{}:{}", offer.file.filename().generic_display_string(), offer.line);
+	return offer.session == 0
+		? std::format("  -- started a chat to fix {}", site)
+		: std::format("  -- sent {} to \"{}\"", site, offer.session_name);
+}
+
+auto gse::ide::terminal::take_offers(data& d, instance& inst, const gui::draw_context& ctx) -> void {
+	if (d.offers.empty()) {
+		return;
+	}
+
+	std::vector<agent::blame_offer> mine;
+	std::vector<agent::blame_offer> rest;
+	for (agent::blame_offer& offer : d.offers) {
+		(offer.kind == inst.kind ? mine : rest).push_back(std::move(offer));
+	}
+	d.offers = std::move(rest);
+	if (mine.empty()) {
+		return;
+	}
+
+	std::vector<line> rows;
+	rows.reserve(mine.size());
+	for (const agent::blame_offer& offer : mine) {
+		rows.push_back({
+			.seq = 0,
+			.lvl = log::level::warning,
+			.text = offer_pending_line(offer),
+		});
+	}
+	append_lines(inst, rows, ctx);
+
+	auto placed = static_cast<std::uint32_t>(inst.buffer.lines.size() - mine.size());
+	for (agent::blame_offer& offer : mine) {
+		inst.dispatches.push_back({
+			.line = placed++,
+			.offer = std::move(offer),
+		});
+	}
+}
+
+auto gse::ide::terminal::dispatch_at(instance& inst, const std::uint32_t buffer_line) -> dispatch_marker* {
+	const auto found = std::ranges::find(inst.dispatches, buffer_line, &dispatch_marker::line);
+	return found == inst.dispatches.end() ? nullptr : &*found;
 }
 
 auto gse::ide::terminal::path_link_at(const std::string_view row, const std::uint32_t column) -> std::optional<link_hit> {
@@ -304,16 +391,28 @@ auto gse::ide::terminal::init(data& d) -> async::task<> {
 	return {};
 }
 
-auto gse::ide::terminal::run(context& ctx, data& d, const channel_read<build_runner::stream_opened> stream_in, const channel_write<agent::start_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> ui_out, const shared_view<input::data> input_d, const shared_view<build_runner::data> build_d) -> async::task<> {
-	for (const build_runner::stream_opened& opened : stream_in.of<build_runner::stream_opened>()) {
-		close_slot(d, opened.slot);
+auto gse::ide::terminal::run(context& ctx, data& d, const channel_read<build_runner::stream_opened, agent::blame_offer> stream_in, const channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> ui_out, const shared_view<input::data> input_d, const shared_view<build_runner::data> build_d) -> async::task<> {
+	const auto opened_streams = stream_in.of<build_runner::stream_opened>();
+
+	for (const build_runner::stream_opened& opened : opened_streams) {
+		close_kind(d, opened.kind);
+	}
+
+	for (const build_runner::stream_opened& opened : opened_streams) {
 		instance inst = make_instance(d, opened.name);
 		inst.cursor = d.sink ? d.sink->sequence() : 0;
 		inst.runner = opened.stream;
 		inst.interactive = false;
-		inst.slot = opened.slot;
+		inst.kind = opened.kind;
 		d.active = inst.instance_id;
 		d.instances.push_back(std::move(inst));
+	}
+
+	for (const agent::blame_offer& offer : stream_in.of<agent::blame_offer>()) {
+		d.offers.push_back(offer);
+	}
+	if (d.offers.size() > max_offers) {
+		d.offers.erase(d.offers.begin(), d.offers.begin() + static_cast<std::ptrdiff_t>(d.offers.size() - max_offers));
 	}
 	const bool building = build_d.building;
 	const input::state input_snapshot = input::current_state(input_d);
@@ -361,7 +460,7 @@ auto gse::ide::terminal::run_command(command_runner& runner, const std::string& 
 	spawn::close_process(runner);
 }
 
-auto gse::ide::terminal::draw_instance(gui::builder& ui, const input::state& input, data& d, instance& inst, const rectf& area, channel_write<agent::start_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels, const bool building) -> void {
+auto gse::ide::terminal::draw_instance(gui::builder& ui, const input::state& input, data& d, instance& inst, const rectf& area, channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels, const bool building) -> void {
 	const gui::draw_context& ctx = ui.ctx;
 	const auto text_view = ctx.fonts.text.resolve();
 	const auto code_view = ctx.fonts.code.resolve();
@@ -395,6 +494,11 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, const input::state& inp
 				.prompt = inst.input.substr(agent_prefix.size()),
 				.cwd = ide::config::project_root(),
 			});
+			d.fresh.push_back({
+				.seq = 0,
+				.lvl = log::level::info,
+				.text = std::format("started a session in the {} panel", agent::panel_name),
+			});
 		}
 		else {
 			if (!inst.runner) {
@@ -412,8 +516,9 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, const input::state& inp
 	}
 
 	if (!d.fresh.empty()) {
-		append_lines(inst, d.fresh, ctx.style);
+		append_lines(inst, d.fresh, ctx);
 	}
+	take_offers(d, inst, ctx);
 
 	if (inst.buffer.lines.empty()) {
 		inst.buffer.lines.emplace_back();
@@ -428,13 +533,17 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, const input::state& inp
 		{ area.width(), std::max(0.f, area.height() - input_h) }
 	);
 
+	const gui::interaction::press tail_press = gui::draw::follow_tail_button(ui, log_rect, inst.view, inst.tail_id);
+
 	d.underlines.clear();
 	std::optional<link_hit> link;
+	dispatch_marker* offered = nullptr;
 	const vec2f mouse = input.mouse_position();
 	const bool goto_ctrl = input.key_held(key::left_control) || input.key_held(key::right_control);
-	if (goto_ctrl && ctx.hovers(log_rect) && !inst.buffer.lines.empty()) {
+	if ((goto_ctrl || !inst.dispatches.empty()) && ctx.hovers(log_rect) && !tail_press.hovered && !inst.buffer.lines.empty()) {
 		const gui::buffer_position hover = gui::draw::text_area_position_at(ctx, inst.buffer, inst.view, log_rect, false, 4, mouse);
-		if (const std::optional<link_hit> hit = path_link_at(inst.buffer.line(hover.line), hover.column)) {
+		const std::optional<link_hit> hit = goto_ctrl ? path_link_at(inst.buffer.line(hover.line), hover.column) : std::nullopt;
+		if (hit) {
 			link = hit;
 			d.underlines.push_back({
 				.line = hover.line,
@@ -443,13 +552,24 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, const input::state& inp
 				.color = ctx.style.color_text_secondary,
 			});
 		}
+		else if (dispatch_marker* marker = dispatch_at(inst, hover.line)) {
+			offered = marker;
+			d.underlines.push_back({
+				.line = marker->line,
+				.start_col = 0,
+				.end_col = static_cast<std::uint32_t>(inst.buffer.line(marker->line).size()),
+				.color = ctx.style.color_warning,
+			});
+		}
 	}
-	if (link) {
+	if (link || offered) {
 		channels.push<set_cursor_shape_request>({
 			.shape = cursor_shape::hand,
 		});
 	}
-	const bool goto_click = link.has_value() && ctx.mouse_pressed_for(log_rect);
+	const bool acted = (link || offered) && ctx.mouse_pressed_for(log_rect);
+	const bool goto_click = acted && link.has_value();
+	const bool dispatch_click = acted && offered != nullptr;
 
 	gui::draw::text_area_in_rect(
 		ctx,
@@ -461,6 +581,7 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, const input::state& inp
 			.underlines = d.underlines,
 			.rect = log_rect,
 			.read_only = true,
+			.follow_tail = true,
 			.blink_interval = time{},
 		},
 		ui.hot_widget_id,
@@ -472,6 +593,24 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, const input::state& inp
 			.path = link->path,
 			.line = link->line,
 			.column = link->column,
+		});
+	}
+
+	if (dispatch_click && offered) {
+		const std::uint32_t dispatched = offered->offer.session;
+		channels.push<agent::dispatch_request>({
+			.session = dispatched,
+		});
+
+		for (const dispatch_marker& marker : inst.dispatches) {
+			if (marker.offer.session != dispatched) {
+				continue;
+			}
+			inst.buffer.lines[marker.line] = offer_sent_line(marker.offer);
+			inst.spans[marker.line].end_col = static_cast<std::uint32_t>(inst.buffer.line(marker.line).size());
+		}
+		std::erase_if(inst.dispatches, [dispatched](const dispatch_marker& marker) {
+			return marker.offer.session == dispatched;
 		});
 	}
 
@@ -516,10 +655,36 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, const input::state& inp
 		});
 	}
 
+	const build_runner::play_session session_spec{
+		.clients = 2,
+		.dedicated_server = true,
+	};
+	const std::string session_label = session_spec.dedicated_server
+		? std::format("Play {} + Server", session_spec.clients)
+		: std::format("Play {}", session_spec.clients);
+	const float session_w = text_view->width(session_label, ctx.style.font_size) + input_h + pad * 1.5f;
+	const rectf session_btn = rectf::from_position_size(
+		{ run_btn.left() - session_w - pad, input_rect.top() },
+		{ session_w, input_h }
+	);
+	if (gui::draw::button_in_rect(ctx, {
+		.rect = session_btn,
+		.label = session_label,
+		.glyph = gui::symbol::play(),
+		.key = "##terminal_play_session",
+		.enabled = !building,
+	}, ui.hot_widget_id, ui.active_widget_id)) {
+		channels.push<build_runner::build_request>({
+			.target = build_runner::build_target::game,
+			.run_after = true,
+			.session = session_spec,
+		});
+	}
+
 	const std::string_view build_label = building ? "Building..." : "Build Game";
 	const float build_w = text_view->width(build_label, ctx.style.font_size) + input_h + pad * 1.5f;
 	const rectf build_btn = rectf::from_position_size(
-		{ run_btn.left() - build_w, input_rect.top() },
+		{ session_btn.left() - build_w, input_rect.top() },
 		{ build_w, input_h }
 	);
 	if (gui::draw::button_in_rect(ctx, {
@@ -567,98 +732,28 @@ auto gse::ide::terminal::draw_close_confirm(gui::builder& ui, data& d, const rec
 		d.pending_close.reset();
 		return;
 	}
-	const auto text_view = ui.ctx.fonts.text.resolve();
 
-	const gui::draw_context& ctx = ui.ctx;
-	const gui::style& sty = ctx.style;
-	const float pad = sty.padding;
-	const float fs = sty.font_size;
-	const float line_h = text_view->line_height(fs) * 1.25f;
-	const float btn_h = text_view->line_height(fs) + pad;
-
-	constexpr std::string_view title = "Kill running process?";
-	const std::string message = std::format("\"{}\" is still running.", closing->name);
-
-	const auto scope = ctx.scoped_layer(render_layer::modal);
-	ctx.register_hit_region(render_layer::modal, body);
-	ctx.queue_sprite({
-		.rect = body,
-		.color = { 0.f, 0.f, 0.f, 0.45f },
-		.texture = ctx.blank_texture,
+	const gui::draw::confirm_result result = gui::draw::confirm_dialog(ui, {
+		.body = body,
+		.title = "Kill running process?",
+		.message = std::format("\"{}\" is still running.", closing->name),
+		.confirm_label = "Kill",
+		.key = "##terminal_close",
 	});
 
-	const float content_w = std::max({ text_view->width(title, fs), text_view->width(message, fs), 220.f });
-	const float dialog_w = content_w + pad * 4.f;
-	const float dialog_h = line_h * 2.f + btn_h + pad * 4.f;
-	const vec2f center = body.center();
-	const rectf dialog = rectf::from_position_size(
-		{ center.x() - dialog_w * 0.5f, center.y() + dialog_h * 0.5f },
-		{ dialog_w, dialog_h }
-	);
-
-	ctx.queue_sprite({
-		.rect = rectf::from_position_size({ dialog.left() + 4.f, dialog.top() - 4.f }, { dialog_w, dialog_h }),
-		.color = sty.color_shadow,
-		.texture = ctx.blank_texture,
-		.corner_radius = sty.corner_radius_menu,
-	});
-	ctx.queue_sprite({
-		.rect = dialog,
-		.color = { vec3f(sty.color_menu_body), 1.f },
-		.texture = ctx.blank_texture,
-		.corner_radius = sty.corner_radius_menu,
-	});
-
-	ctx.queue_text({
-		.font = ctx.fonts.text,
-		.text = title,
-		.position = { dialog.left() + pad * 2.f, dialog.top() - pad * 2.f - line_h * 0.5f + text_view->vertical_center_offset(fs) },
-		.scale = fs,
-		.color = sty.color_text,
-		.clip_rect = dialog,
-	});
-	ctx.queue_text({
-		.font = ctx.fonts.text,
-		.text = message,
-		.position = { dialog.left() + pad * 2.f, dialog.top() - pad * 2.f - line_h * 1.5f + text_view->vertical_center_offset(fs) },
-		.scale = fs,
-		.color = sty.color_text_secondary,
-		.clip_rect = dialog,
-	});
-
-	const float btn_w = (dialog_w - pad * 3.f) * 0.5f;
-	const rectf cancel_btn = rectf::from_position_size({ dialog.left() + pad, dialog.bottom() + pad + btn_h }, { btn_w, btn_h });
-	const rectf kill_btn = rectf::from_position_size({ cancel_btn.right() + pad, dialog.bottom() + pad + btn_h }, { btn_w, btn_h });
-
-	bool cancel = gui::draw::button_in_rect(ctx, {
-		.rect = cancel_btn,
-		.label = "Cancel",
-		.key = "##terminal_close_cancel",
-	}, ui.hot_widget_id, ui.active_widget_id);
-	const bool kill = gui::draw::button_in_rect(ctx, {
-		.rect = kill_btn,
-		.label = "Kill",
-		.key = "##terminal_close_kill",
-		.danger = true,
-	}, ui.hot_widget_id, ui.active_widget_id);
-	if (ctx.key_pressed_for(key::escape)) {
-		ctx.consume_key_press(key::escape);
-		cancel = true;
-	}
-
-	if (kill) {
+	if (result == gui::draw::confirm_result::confirmed) {
 		if (closing->runner) {
 			spawn::terminate_process(*closing->runner);
 		}
 		erase_instance(d, closing->instance_id);
 		d.pending_close.reset();
 	}
-	else if (cancel) {
+	else if (result == gui::draw::confirm_result::cancelled) {
 		d.pending_close.reset();
 	}
 }
 
-auto gse::ide::terminal::draw_panel(gui::builder& ui, const input::state& input, data& d, channel_write<agent::start_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels, const bool building) -> void {
+auto gse::ide::terminal::draw_panel(gui::builder& ui, const input::state& input, data& d, channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels, const bool building) -> void {
 	const gui::draw_context& ctx = ui.ctx;
 	if (!d.sink || ctx.clip_stack.empty()) {
 		return;
@@ -702,7 +797,7 @@ auto gse::ide::terminal::draw_panel(gui::builder& ui, const input::state& input,
 	const rectf strip = panels.second;
 	d.strip_width = strip.width();
 
-	if ((panels.divider.contains(mouse) && !resize_blocked) || d.resizing_strip) {
+	if ((panels.divider.contains(mouse) && !resize_blocked) || d.resizing_strip.dragging) {
 		channels.push<set_cursor_shape_request>({
 			.shape = cursor_shape::resize_ew,
 		});
@@ -721,6 +816,7 @@ auto gse::ide::terminal::draw_panel(gui::builder& ui, const input::state& input,
 			.caption = inst.name,
 			.busy = inst.runner && inst.runner->running.load(std::memory_order_acquire),
 			.closeable = !inst.follows_log,
+			.pinned = inst.follows_log,
 		});
 	}
 
@@ -729,11 +825,21 @@ auto gse::ide::terminal::draw_panel(gui::builder& ui, const input::state& input,
 		.tabs = d.tab_descs,
 		.active = d.active,
 		.orientation = gui::tab_orientation::vertical,
+		.allow_reorder = true,
 		.show_add = true,
 	}, d.tab_strip);
 
 	if (tabs.activated.exists()) {
 		d.active = tabs.activated;
+	}
+	if (const auto from = tabs.reorder_id.exists() ? std::ranges::find(d.instances, tabs.reorder_id, &instance::instance_id) : d.instances.end(); from != d.instances.end()) {
+		const auto to = d.instances.begin() + static_cast<std::ptrdiff_t>(std::min(tabs.reorder_to, d.instances.size() - 1));
+		if (from < to) {
+			std::rotate(from, from + 1, to + 1);
+		}
+		else if (to < from) {
+			std::rotate(to, from, from + 1);
+		}
 	}
 	if (tabs.add_requested) {
 		instance inst = make_instance(d, std::format("Terminal {}", d.next_number++));

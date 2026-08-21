@@ -50,10 +50,16 @@ export namespace gse::ide::terminal {
 		std::uint64_t m_next = 0;
 	};
 
+	struct dispatch_marker {
+		std::uint32_t line = 0;
+		agent::blame_offer offer;
+	};
+
 	struct instance {
 		id instance_id;
 		id input_id;
 		id log_id;
+		id tail_id;
 		std::string name;
 		bool follows_log = false;
 		std::uint64_t cursor = 0;
@@ -65,8 +71,9 @@ export namespace gse::ide::terminal {
 		gui::text_input_state input_state;
 		std::shared_ptr<command_runner> runner;
 		std::jthread worker;
+		std::vector<dispatch_marker> dispatches;
 		bool interactive = true;
-		build_runner::stream_slot slot = build_runner::stream_slot::none;
+		build_runner::stream_kind kind = build_runner::stream_kind::none;
 	};
 
 	struct [[= system_state<"Terminal">{}]] data {
@@ -77,11 +84,12 @@ export namespace gse::ide::terminal {
 		std::uint64_t next_id = 1;
 		std::string prompt;
 		std::vector<line> fresh;
+		std::vector<agent::blame_offer> offers;
 		std::vector<gui::text_underline> underlines;
 		std::vector<gui::tab_desc> tab_descs;
 		gui::tab_strip_state tab_strip;
 		float strip_width = 140.f;
-		bool resizing_strip = false;
+		gui::layout::split_drag_state resizing_strip;
 		std::optional<id> pending_close;
 	};
 
@@ -94,8 +102,8 @@ export namespace gse::ide::terminal {
 	auto run(
 		context& ctx,
 		data& d,
-		channel_read<build_runner::stream_opened> stream_in,
-		channel_write<agent::start_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> ui_out,
+		channel_read<build_runner::stream_opened, agent::blame_offer> stream_in,
+		channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> ui_out,
 		shared_view<input::data> input_d,
 		shared_view<build_runner::data> build_d
 	) -> async::task<>;
@@ -113,7 +121,7 @@ export namespace gse::ide::terminal {
 		gui::builder& ui,
 		const input::state& input,
 		data& d,
-		channel_write<agent::start_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels,
+		channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels,
 		bool building
 	) -> void;
 }
