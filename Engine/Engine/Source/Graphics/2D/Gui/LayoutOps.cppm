@@ -77,6 +77,7 @@ export namespace gse::gui::layout {
 		float min_first = 0.f;
 		float min_second = 0.f;
 		float divider_thickness = 0.f;
+		float divider_bias = 0.f;
 	};
 
 	struct split_result {
@@ -93,6 +94,11 @@ export namespace gse::gui::layout {
 		bool blocked = false;
 	};
 
+	struct split_drag_state {
+		bool dragging = false;
+		float grab = 0.f;
+	};
+
 	[[nodiscard]] auto resolve_split(
 		const split_params& params
 	) -> split_result;
@@ -100,7 +106,7 @@ export namespace gse::gui::layout {
 	auto update_split(
 		const split_params& params,
 		const split_drag& drag,
-		bool& dragging
+		split_drag_state& state
 	) -> split_result;
 
 	[[nodiscard]]
@@ -288,6 +294,7 @@ auto gse::gui::layout::resolve_split(const split_params& params) -> split_result
 	const float hi = std::max(params.min_first, extent - params.min_second);
 	const float first_len = std::clamp(params.ratio * extent, lo, hi);
 	const float half = params.divider_thickness * 0.5f;
+	const float bias = half * std::clamp(params.divider_bias, -1.f, 1.f);
 
 	split_result r{};
 	r.ratio = extent > 0.f ? first_len / extent : params.ratio;
@@ -296,37 +303,39 @@ auto gse::gui::layout::resolve_split(const split_params& params) -> split_result
 		const float boundary = c.left() + first_len;
 		r.first = rectf::from_position_size({ c.left(), c.top() }, { first_len, c.height() });
 		r.second = rectf::from_position_size({ boundary, c.top() }, { std::max(0.f, extent - first_len), c.height() });
-		r.divider = rectf::from_position_size({ boundary - half, c.top() }, { params.divider_thickness, c.height() });
+		r.divider = rectf::from_position_size({ boundary - half - bias, c.top() }, { params.divider_thickness, c.height() });
 	}
 	else {
 		const float boundary = c.top() - first_len;
 		r.first = rectf::from_position_size({ c.left(), c.top() }, { c.width(), first_len });
 		r.second = rectf::from_position_size({ c.left(), boundary }, { c.width(), std::max(0.f, extent - first_len) });
-		r.divider = rectf::from_position_size({ c.left(), boundary + half }, { c.width(), params.divider_thickness });
+		r.divider = rectf::from_position_size({ c.left(), boundary + half + bias }, { c.width(), params.divider_thickness });
 	}
 
 	return r;
 }
 
-auto gse::gui::layout::update_split(const split_params& params, const split_drag& drag, bool& dragging) -> split_result {
+auto gse::gui::layout::update_split(const split_params& params, const split_drag& drag, split_drag_state& state) -> split_result {
 	const split_result resting = resolve_split(params);
+	const bool columns = params.axis == split_axis::columns;
+	const float along = columns ? drag.mouse.x() : drag.mouse.y();
 
 	if (!drag.held) {
-		dragging = false;
+		state.dragging = false;
 	}
 	else if (drag.pressed && !drag.blocked && resting.divider.contains(drag.mouse)) {
-		dragging = true;
+		state.dragging = true;
+		state.grab = along - (columns ? resting.first.right() : resting.first.bottom());
 	}
 
-	if (!dragging) {
+	if (!state.dragging) {
 		return resting;
 	}
 
 	const rectf& c = params.container;
-	const float extent = params.axis == split_axis::columns ? c.width() : c.height();
-	const float first_len = params.axis == split_axis::columns
-		? drag.mouse.x() - c.left()
-		: c.top() - drag.mouse.y();
+	const float extent = columns ? c.width() : c.height();
+	const float boundary = along - state.grab;
+	const float first_len = columns ? boundary - c.left() : c.top() - boundary;
 
 	split_params moved = params;
 	moved.ratio = extent > 0.f ? first_len / extent : params.ratio;

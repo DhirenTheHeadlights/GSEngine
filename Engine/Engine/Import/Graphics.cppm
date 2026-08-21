@@ -17,6 +17,7 @@ export import :camera_component;
 export import :camera_data;
 export import :camera_system;
 export import :capture_renderer;
+export import :confirm_dialog;
 export import :context_actions;
 export import :capture_ring;
 export import :cull_compute_renderer;

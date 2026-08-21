@@ -73,6 +73,30 @@ export namespace gse::gui {
 	};
 }
 
+namespace gse::gui::draw {
+	auto flatten_newlines(
+		std::string text
+	) -> std::string;
+}
+
+auto gse::gui::draw::flatten_newlines(const std::string text) -> std::string {
+	std::string out;
+	out.reserve(text.size());
+	bool pending_break = false;
+	for (const char c : text) {
+		if (c == '\r' || c == '\n') {
+			pending_break = !out.empty();
+			continue;
+		}
+		if (pending_break) {
+			out += ' ';
+			pending_break = false;
+		}
+		out += c;
+	}
+	return out;
+}
+
 auto gse::gui::draw::text_input(const draw_context& ctx, const std::string& name, std::string& buffer, text_input_state& state, id& hot_widget_id, id& focus_widget_id, const resource::handle<font> font) -> void {
 	if (!ctx.current_menu) {
 		return;
@@ -119,6 +143,8 @@ auto gse::gui::draw::text_input(const draw_context& ctx, const std::string& name
 auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget_id, std::string& buffer, text_input_state& state, const rectf& box_rect, id& hot_widget_id, id& focus_widget_id, const resource::handle<font> font) -> void {
 	const auto fnt = font.valid() ? font : ctx.fonts.text;
 	const auto fnt_view = fnt.resolve();
+	constexpr float text_padding = 5.f;
+	constexpr float caret_extent = 2.f;
 	state.caret = std::clamp(state.caret, 0, static_cast<int>(buffer.size()));
 	state.anchor = std::clamp(state.anchor, 0, static_cast<int>(buffer.size()));
 
@@ -294,11 +320,8 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			state.blink_on = true;
 		}
 
-		if (ctrl && ctx.key_pressed_for(key::v)) {
-			std::string paste = ctx.clipboard();
-			if (const std::size_t newline = paste.find_first_of("\r\n"); newline != std::string::npos) {
-				paste.resize(newline);
-			}
+		if (ctrl && ctx.key_pressed_for(key::v) && !window::clipboard_image_available()) {
+			std::string paste = flatten_newlines(ctx.clipboard());
 			if (!paste.empty()) {
 				if (has_sel(state)) {
 					auto [a, b] = sel_range(state);
@@ -415,12 +438,12 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 
 		const float caret_x = fnt_view->width(buffer.substr(0, state.caret), ctx.style.font_size);
 
-		if (const float inner_r = box_rect.width() - 5.f; caret_x - state.scroll_x > inner_r) {
+		if (const float inner_r = std::max(0.f, box_rect.width() - text_padding * 2.f - caret_extent); caret_x - state.scroll_x > inner_r) {
 			state.scroll_x = caret_x - inner_r;
 		}
 
-		if (constexpr float inner_l = 5.f; caret_x - state.scroll_x < inner_l) {
-			state.scroll_x = caret_x - inner_l;
+		if (caret_x - state.scroll_x < text_padding) {
+			state.scroll_x = caret_x - text_padding;
 		}
 
 		if (state.scroll_x < 0.f) {
@@ -444,7 +467,6 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 		.corner_radius = ctx.style.corner_radius
 	});
 
-	constexpr float text_padding = 5.f;
 	const rectf clip_rect = box_rect.inset({ text_padding, 0.f });
 	const vec2f text_pos = { box_rect.left() + text_padding,
 							 box_rect.center().y() + fnt_view->vertical_center_offset(ctx.style.font_size) };
@@ -463,7 +485,8 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 		ctx.queue_sprite({
 			.rect = sel_rect,
 			.color = ctx.style.color_selection,
-			.texture = ctx.blank_texture
+			.texture = ctx.blank_texture,
+			.clip_rect = clip_rect
 		});
 	}
 
@@ -480,13 +503,14 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 		const float cx = fnt_view->width(buffer.substr(0, state.caret), ctx.style.font_size) - state.scroll_x;
 		const rectf cursor_rect = rectf::from_position_size(
 			{ text_pos.x() + cx, box_rect.top() - (box_rect.height() - ctx.style.font_size) / 2.f },
-			{ 2.f, ctx.style.font_size }
+			{ caret_extent, ctx.style.font_size }
 		);
 
 		ctx.queue_sprite({
 			.rect = cursor_rect,
 			.color = ctx.style.color_caret,
-			.texture = ctx.blank_texture
+			.texture = ctx.blank_texture,
+			.clip_rect = clip_rect
 		});
 	}
 }

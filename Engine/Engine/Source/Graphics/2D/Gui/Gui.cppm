@@ -129,6 +129,8 @@ export namespace gse::gui {
 
 		std::vector<id> visible_menu_ids_last_frame;
 		std::unordered_map<std::uint64_t, id> name_to_menu_id;
+		std::unordered_set<std::uint64_t> suppressed_menus;
+		std::optional<drag_ghost> active_drag_ghost;
 		vec2f previous_viewport_size;
 		float previous_scale_factor = 0.f;
 
@@ -184,6 +186,21 @@ export namespace gse::gui {
 	auto clear_menu_interaction(
 		data& d
 	) -> void;
+
+	[[nodiscard]] auto menu_chrome_height(
+		const font_set& fonts,
+		const menu& m,
+		const style& sty,
+		float width
+	) -> float;
+
+	[[nodiscard]] auto tab_index_at(
+		const font_set& fonts,
+		const menu& m,
+		const style& sty,
+		const rectf& title_bar_rect,
+		vec2f mouse
+	) -> std::optional<std::uint32_t>;
 
 	auto init_body(
 		context& ctx,

@@ -57,7 +57,7 @@ export namespace gse::gui {
 		vec4f color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f };
 		vec4f color_folder = { 0.86f, 0.74f, 0.45f, 1.0f };
 		vec4f color_file = { 0.55f, 0.66f, 0.82f, 1.0f };
-		[[= gse::scaled]] float icon_extent = 14.f;
+		[[= gse::scaled]] float icon_extent = 16.f;
 
 		// Interactive widget states
 		vec4f color_widget_background = { 0.10f, 0.16f, 0.22f, 0.35f };
@@ -122,6 +122,7 @@ export namespace gse::gui {
 		[[= gse::scaled]] float section_spacing_below = 10.f;
 		float section_header_size_mult = 1.30f;
 		[[= gse::scaled]] float accent_bar_width = 3.f;
+		[[= gse::scaled]] float bare_header_height = 6.f;
 
 		// Screen/card layout (referenced by SettingsScreen, MainMenuScreen, etc.)
 		[[= gse::scaled]] vec2f card_min_size = { 720.f, 480.f };
@@ -156,6 +157,10 @@ export namespace gse::gui {
 			theme t
 		) -> style;
 	};
+
+	[[nodiscard]] constexpr auto accent_bar_extent(
+		const style& sty
+	) -> float;
 }
 
 constexpr auto gse::gui::style::midnight() -> style {
@@ -509,6 +514,10 @@ constexpr auto gse::gui::style::from_theme(const theme t) -> style {
 		default:
 			return midnight();
 	}
+}
+
+constexpr auto gse::gui::accent_bar_extent(const style& sty) -> float {
+	return std::max(2.f, sty.accent_bar_width);
 }
 
 constexpr auto gse::gui::dp::px(const style& sty) const -> float {

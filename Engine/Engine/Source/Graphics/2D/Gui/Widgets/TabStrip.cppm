@@ -40,6 +40,9 @@ export namespace gse::gui {
 		bool busy = false;
 		bool closeable = true;
 		bool pinned = false;
+		bool warning = false;
+		bool error = false;
+		bool dimmed = false;
 	};
 
 	struct tab_strip_params {
@@ -50,6 +53,7 @@ export namespace gse::gui {
 		tab_overflow overflow = tab_overflow::scroll;
 		bool allow_reorder = false;
 		bool show_add = false;
+		id renaming;
 		float min_tab_extent = 64.f;
 		float max_tab_extent = 220.f;
 		resource::handle<font> font{};
@@ -63,11 +67,25 @@ export namespace gse::gui {
 		id reorder_id;
 		std::size_t reorder_to = 0;
 		bool add_requested = false;
+		rectf renaming_rect;
+	};
+
+	struct tab_strip_measure_params {
+		resource::handle<font> font{};
+		std::span<const tab_desc> tabs;
+		float available_extent = 0.f;
+		bool show_add = false;
+		float min_tab_extent = 64.f;
+		float max_tab_extent = 220.f;
 	};
 
 	struct tab_strip_metrics {
 		float content_extent = 0.f;
 		std::uint32_t required_rows = 1;
+		float row_extent = 0.f;
+		float row_gap = 0.f;
+		float scroll_bar_extent = 0.f;
+		bool overflow = false;
 	};
 
 	struct tab_strip_placement {
@@ -82,14 +100,20 @@ export namespace gse::gui {
 		tab_strip_state& state
 	) -> tab_strip_result;
 
-	auto tab_strip_measure(
+	auto tab_strip_row_extent(
 		const resource::handle<font>& fnt,
+		const style& sty
+	) -> float;
+
+	auto tab_strip_measure(
 		const style& sty,
-		std::span<const tab_desc> tabs,
-		float available_width,
-		float min_tab_extent = 64.f,
-		float max_tab_extent = 220.f
+		const tab_strip_measure_params& params
 	) -> tab_strip_metrics;
+
+	auto tab_strip_extent(
+		const tab_strip_metrics& metrics,
+		std::uint32_t visible_rows
+	) -> float;
 
 	auto tab_strip_layout(
 		const resource::handle<font>& fnt,
@@ -106,12 +130,9 @@ export namespace gse::gui {
 namespace gse::gui {
 	constexpr float base_tab_gap = 2.f;
 
-	auto draw_tab_spinner(
-		const draw_context& ctx,
-		const rectf& rect,
-		vec4f color,
-		angle rotation
-	) -> void;
+	auto warning_extent(
+		const style& sty
+	) -> float;
 
 	auto tab_extent(
 		const resource::handle<font>& fnt,
@@ -124,26 +145,8 @@ namespace gse::gui {
 	) -> float;
 }
 
-auto gse::gui::draw_tab_spinner(const draw_context& ctx, const rectf& rect, const vec4f color, const angle rotation) -> void {
-	constexpr int segments = 9;
-	constexpr float radius = 0.34f;
-	std::array<symbol::stroke, segments> strokes{};
-	const angle sweep = degrees(270.f);
-	vec2f previous{};
-	for (int i = 0; i <= segments; ++i) {
-		const float t = static_cast<float>(i) / static_cast<float>(segments);
-		const angle a = rotation + sweep * t;
-		const vec2f point{ 0.5f + cos(a) * radius, 0.5f + sin(a) * radius };
-		if (i > 0) {
-			strokes[static_cast<std::size_t>(i - 1)] = { previous, point };
-		}
-		previous = point;
-	}
-	symbol::draw(ctx, strokes, rect, {
-		.color = color,
-		.extent = ctx.style.icon_extent,
-		.clip_rect = rect,
-	});
+auto gse::gui::warning_extent(const style& sty) -> float {
+	return std::floor(sty.font_size * 0.35f);
 }
 
 auto gse::gui::tab_extent(const resource::handle<font>& fnt, const style& sty, const tab_desc& tab, const float min_extent, const float max_extent, const float close_extent, const float pad) -> float {
@@ -151,20 +154,31 @@ auto gse::gui::tab_extent(const resource::handle<font>& fnt, const style& sty, c
 	const float fs = sty.font_size;
 	const float caption_w = fnt_view->width(tab.caption, fs);
 	const float dirty_w = tab.dirty ? fnt_view->width("*", fs) + pad * 0.5f : 0.f;
-	return std::clamp(caption_w + dirty_w + pad * 3.f + close_extent, min_extent * sty.scale_factor, max_extent * sty.scale_factor);
+	const float warning_w = tab.warning || tab.error ? warning_extent(sty) + pad * 0.5f : 0.f;
+	return std::clamp(caption_w + dirty_w + warning_w + pad * 3.f + close_extent, min_extent * sty.scale_factor, max_extent * sty.scale_factor);
 }
 
-auto gse::gui::tab_strip_measure(const resource::handle<font>& fnt, const style& sty, const std::span<const tab_desc> tabs, const float available_width, const float min_tab_extent, const float max_tab_extent) -> tab_strip_metrics {
+auto gse::gui::tab_strip_row_extent(const resource::handle<font>& fnt, const style& sty) -> float {
+	return fnt.resolve()->line_height(sty.font_size) + sty.padding;
+}
+
+auto gse::gui::tab_strip_measure(const style& sty, const tab_strip_measure_params& params) -> tab_strip_metrics {
 	const float pad = sty.padding;
 	const float close_extent = sty.icon_extent;
 	const float tab_gap = base_tab_gap * sty.scale_factor;
+	const float row_extent = tab_strip_row_extent(params.font, sty);
+	const float available = std::max(0.f, params.available_extent - (params.show_add ? row_extent + tab_gap : 0.f));
 
-	tab_strip_metrics metrics{};
+	tab_strip_metrics metrics{
+		.row_extent = row_extent,
+		.row_gap = tab_gap,
+		.scroll_bar_extent = 6.f * sty.scale_factor,
+	};
 	float row_width = 0.f;
-	for (const tab_desc& tab : tabs) {
-		const float w = tab_extent(fnt, sty, tab, min_tab_extent, max_tab_extent, close_extent, pad);
+	for (const tab_desc& tab : params.tabs) {
+		const float w = tab_extent(params.font, sty, tab, params.min_tab_extent, params.max_tab_extent, close_extent, pad);
 		metrics.content_extent += (metrics.content_extent > 0.f ? tab_gap : 0.f) + w;
-		if (row_width > 0.f && row_width + tab_gap + w > available_width) {
+		if (row_width > 0.f && row_width + tab_gap + w > available) {
 			++metrics.required_rows;
 			row_width = w;
 		}
@@ -172,7 +186,15 @@ auto gse::gui::tab_strip_measure(const resource::handle<font>& fnt, const style&
 			row_width += (row_width > 0.f ? tab_gap : 0.f) + w;
 		}
 	}
+	metrics.overflow = metrics.content_extent > available;
 	return metrics;
+}
+
+auto gse::gui::tab_strip_extent(const tab_strip_metrics& metrics, const std::uint32_t visible_rows) -> float {
+	const auto rows = static_cast<float>(std::max(1u, visible_rows));
+	const float rows_extent = rows * metrics.row_extent + (rows - 1.f) * metrics.row_gap;
+	const bool scrolling = visible_rows <= 1 && metrics.overflow;
+	return rows_extent + (scrolling ? metrics.row_gap + metrics.scroll_bar_extent : 0.f);
 }
 
 auto gse::gui::tab_strip_layout(const resource::handle<font>& fnt, const style& sty, const rectf& area, const std::span<const tab_desc> tabs, const tab_strip_state& state, const tab_overflow overflow, const float min_tab_extent, const float max_tab_extent) -> std::vector<tab_strip_placement> {
@@ -263,10 +285,11 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 	const bool pressed = ctx.mouse_pressed() && available;
 	const bool held = ctx.mouse_held();
 
-	state.spinner_phase += 0.16f;
-	const angle spin = radians(state.spinner_phase);
+	const angle spin = symbol::spinner_rotation();
 	const float close_extent = sty.icon_extent;
 	const float dirty_extent = fnt_view->width("*", fs);
+	const float dot_extent = warning_extent(sty);
+	rectf tab_area = params.area;
 
 	const auto draw_cell = [&](const rectf& rect, const rectf& visible, const rectf& close_rect, const tab_desc& tab, const bool is_active, const bool hovered) {
 		ctx.queue_sprite({
@@ -279,18 +302,33 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 		const bool show_close = tab.busy || tab.closeable;
 		const float close_zone = show_close ? close_rect.width() + pad : pad;
 		const float marker_zone = tab.dirty ? dirty_extent + pad * 0.5f : 0.f;
+		const float warning_zone = tab.warning || tab.error ? dot_extent + pad * 0.5f : 0.f;
 		const float caption_right = rect.right() - close_zone - marker_zone;
 		const rectf caption_clip = visible.intersection(rectf::from_position_size(
 			{ rect.left(), rect.top() },
 			{ std::max(0.f, caption_right - rect.left()), rect.height() }
 		));
 
+		if (tab.warning || tab.error) {
+			const vec2f dot_center = symbol::snap_to_pixel_center({ rect.left() + pad + dot_extent * 0.5f, rect.center().y() });
+			ctx.queue_sprite({
+				.rect = rectf::from_position_size(
+					{ dot_center.x() - dot_extent * 0.5f, dot_center.y() + dot_extent * 0.5f },
+					{ dot_extent, dot_extent }
+				),
+				.color = tab.error ? sty.color_error : sty.color_warning,
+				.texture = ctx.blank_texture,
+				.clip_rect = caption_clip,
+				.corner_radius = dot_extent * 0.5f,
+			});
+		}
+
 		ctx.queue_text({
 			.font = fnt,
 			.text = tab.caption,
-			.position = { rect.left() + pad, rect.center().y() + fnt_view->vertical_center_offset(fs) },
+			.position = { rect.left() + pad + warning_zone, rect.center().y() + fnt_view->vertical_center_offset(fs) },
 			.scale = fs,
-			.color = is_active ? sty.color_text : sty.color_text_secondary,
+			.color = tab.dimmed ? sty.color_text_disabled : (is_active ? sty.color_text : sty.color_text_secondary),
 			.clip_rect = caption_clip,
 		});
 		if (tab.dirty) {
@@ -303,9 +341,13 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 				.clip_rect = visible,
 			});
 		}
-		const bool close_hovered = area.contains(mouse) && ctx.hovers(close_rect);
+		const bool close_hovered = tab_area.contains(mouse) && ctx.hovers(close_rect);
 		if (tab.busy && !(tab.closeable && close_hovered)) {
-			draw_tab_spinner(ctx, close_rect, sty.color_text_secondary, spin);
+			symbol::spinner(ctx, close_rect, spin, {
+				.color = sty.color_text_secondary,
+				.extent = sty.icon_extent,
+				.clip_rect = visible,
+			});
 		}
 		else if (tab.closeable) {
 			symbol::draw(ctx, symbol::close(), close_rect, {
@@ -314,6 +356,21 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 				.clip_rect = visible,
 			});
 		}
+	};
+
+	const auto draw_add_cell = [&](const rectf& cell) -> bool {
+		const bool hovered = ctx.hovers(cell);
+		ctx.queue_sprite({
+			.rect = cell,
+			.color = hovered ? sty.color_tab_hovered : sty.color_tab_background,
+			.texture = ctx.blank_texture,
+		});
+		symbol::draw(ctx, symbol::plus(), cell, {
+			.color = hovered ? sty.color_text : sty.color_text_secondary,
+			.extent = sty.icon_extent,
+			.clip_rect = cell,
+		});
+		return hovered && ctx.mouse_pressed_for(cell);
 	};
 
 	if (params.orientation == tab_orientation::vertical) {
@@ -373,6 +430,9 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 				}
 				else {
 					result.activated = tab.tab_id;
+					if (params.allow_reorder && !tab.pinned) {
+						state.dragging = tab.tab_id;
+					}
 				}
 			}
 			if (hovered && ctx.mouse_pressed_for(visible, mouse_button::button_2)) {
@@ -381,27 +441,25 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 			}
 		}
 
+		if (params.allow_reorder && state.dragging.exists() && held) {
+			const auto cur = std::ranges::find(params.tabs, state.dragging, &tab_desc::tab_id);
+			if (cur != params.tabs.end()) {
+				const float row = std::floor((area.top() + state.scroll.offset - mouse.y()) / cell_h);
+				const auto target = static_cast<std::size_t>(std::clamp(row, 0.f, static_cast<float>(params.tabs.size() - 1)));
+				if (target != static_cast<std::size_t>(std::distance(params.tabs.begin(), cur))) {
+					result.reorder_id = state.dragging;
+					result.reorder_to = target;
+				}
+			}
+		}
+		else {
+			state.dragging.reset();
+		}
+
 		if (params.show_add) {
 			const rectf add_cell = rectf::from_position_size({ area.left(), y }, { area.width(), cell_h });
-			const rectf visible = add_cell.intersection(area);
-			if (visible.height() > 0.f) {
-				const bool hovered = ctx.hovers(visible);
-				ctx.queue_sprite({
-					.rect = visible,
-					.color = hovered ? sty.color_tab_hovered : sty.color_tab_background,
-					.texture = ctx.blank_texture,
-				});
-				ctx.queue_text({
-					.font = fnt,
-					.text = "+",
-					.position = { add_cell.center().x() - fnt_view->width("+", fs) * 0.5f, add_cell.center().y() + fnt_view->vertical_center_offset(fs) },
-					.scale = fs,
-					.color = hovered ? sty.color_text : sty.color_text_secondary,
-					.clip_rect = visible,
-				});
-				if (hovered && ctx.mouse_pressed_for(visible)) {
-					result.add_requested = true;
-				}
+			if (const rectf visible = add_cell.intersection(area); visible.height() > 0.f) {
+				result.add_requested = draw_add_cell(visible);
 			}
 		}
 
@@ -415,11 +473,23 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 		return result;
 	}
 
-	const float tab_gap = base_tab_gap * sty.scale_factor;
-	const float total = tab_strip_measure(fnt, sty, params.tabs, area.width(), params.min_tab_extent, params.max_tab_extent).content_extent;
-	const bool overflow = total > area.width();
+	const tab_strip_metrics metrics = tab_strip_measure(sty, {
+		.font = fnt,
+		.tabs = params.tabs,
+		.available_extent = area.width(),
+		.show_add = params.show_add,
+		.min_tab_extent = params.min_tab_extent,
+		.max_tab_extent = params.max_tab_extent,
+	});
+	const float tab_gap = metrics.row_gap;
+	const float row_h = std::min(metrics.row_extent, area.height());
+	const float add_zone = params.show_add ? metrics.row_extent + tab_gap : 0.f;
+	tab_area = rectf::from_position_size(area.top_left(), { std::max(0.f, area.width() - add_zone), area.height() });
 
-	if (overflow && ctx.hovers(area) && !ctx.is_scroll_consumed()) {
+	const float total = metrics.content_extent;
+	const bool overflow = metrics.overflow;
+
+	if (overflow && ctx.hovers(tab_area) && !ctx.is_scroll_consumed()) {
 		const vec2f wheel = ctx.scroll_delta();
 		const bool shift = ctx.key_held(key::left_shift) || ctx.key_held(key::right_shift);
 		if (params.overflow == tab_overflow::wrap && std::abs(wheel.y()) > 0.001f && !shift) {
@@ -439,7 +509,7 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 	}
 
 	const bool single_row = params.overflow == tab_overflow::scroll || state.visible_rows == 1;
-	const float max_scroll = std::max(0.f, total - area.width());
+	const float max_scroll = std::max(0.f, total - tab_area.width());
 	if (single_row) {
 		state.scroll.offset = std::clamp(state.scroll.offset, 0.f, max_scroll);
 		state.scroll.target = std::clamp(state.scroll.target, 0.f, max_scroll);
@@ -451,8 +521,8 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 					if (acc < state.scroll.offset) {
 						state.scroll.offset = acc;
 					}
-					else if (acc + w > state.scroll.offset + area.width()) {
-						state.scroll.offset = acc + w - area.width();
+					else if (acc + w > state.scroll.offset + tab_area.width()) {
+						state.scroll.offset = acc + w - tab_area.width();
 					}
 					break;
 				}
@@ -468,14 +538,17 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 		state.scroll.target = 0.f;
 	}
 
-	const std::vector<tab_strip_placement> placements = tab_strip_layout(fnt, sty, area, params.tabs, state, params.overflow, params.min_tab_extent, params.max_tab_extent);
+	const std::vector<tab_strip_placement> placements = tab_strip_layout(fnt, sty, tab_area, params.tabs, state, params.overflow, params.min_tab_extent, params.max_tab_extent);
 
 	for (const tab_strip_placement& p : placements) {
-		const rectf visible = p.rect.intersection(area);
+		const rectf visible = p.rect.intersection(tab_area);
 		if (visible.width() <= 0.f || !ctx.hovers(visible)) {
 			continue;
 		}
 		const tab_desc& tab = params.tabs[p.index];
+		if (tab.tab_id == params.renaming) {
+			break;
+		}
 		if (ctx.mouse_pressed_for(visible)) {
 			if (tab.closeable && p.close_rect.contains(mouse)) {
 				result.close_requested = tab.tab_id;
@@ -517,22 +590,27 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 	}
 
 	for (const tab_strip_placement& p : placements) {
-		const rectf visible = p.rect.intersection(area);
+		const rectf visible = p.rect.intersection(tab_area);
 		if (visible.width() <= 0.f || visible.height() <= 0.f) {
 			continue;
 		}
 		const tab_desc& tab = params.tabs[p.index];
+		if (tab.tab_id == params.renaming) {
+			result.renaming_rect = visible;
+			continue;
+		}
 		const bool is_active = tab.tab_id == params.active;
 		const bool hovered = ctx.hovers(visible);
 		draw_cell(p.rect, visible, p.close_rect, tab, is_active, hovered);
 	}
 
 	if (single_row && overflow) {
-		const float scrollbar_h = 6.f * sty.scale_factor;
-		const rectf track_rect = rectf::from_position_size({ area.left(), area.bottom() + scrollbar_h + 1.f }, { area.width(), scrollbar_h });
+		const float scrollbar_h = metrics.scroll_bar_extent;
+		const float track_top = std::max(tab_area.bottom() + scrollbar_h, tab_area.top() - row_h - tab_gap);
+		const rectf track_rect = rectf::from_position_size({ tab_area.left(), track_top }, { tab_area.width(), scrollbar_h });
 		const scroll_bar_result bar = update_scroll_bar(state.scroll, {
 			.track_rect = track_rect,
-			.visible_extent = area.width(),
+			.visible_extent = tab_area.width(),
 			.content_extent = total,
 			.horizontal = true,
 			.mouse = mouse,
@@ -555,6 +633,11 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 			.color = bar.held || bar.hovered ? sty.color_widget_hovered : sty.color_widget_background,
 			.texture = ctx.blank_texture,
 		});
+	}
+
+	if (params.show_add) {
+		const rectf add_cell = rectf::from_position_size({ tab_area.right() + tab_gap, area.top() }, { row_h, row_h });
+		result.add_requested = draw_add_cell(add_cell);
 	}
 
 	return result;

@@ -21,6 +21,7 @@ import :builder;
 import :text_buffer;
 import :font;
 import :interaction;
+import :symbols;
 
 export namespace gse::gui {
 	struct text_edit_snapshot {
@@ -40,6 +41,7 @@ export namespace gse::gui {
 		buffer_position caret;
 		buffer_position anchor;
 		scroll_state scroll{};
+		bool tail_pinned = true;
 		time last_blink{};
 		bool blink_on = true;
 		bool rpt_active = false;
@@ -57,6 +59,13 @@ export namespace gse::gui {
 		id context_menu_tag{};
 	};
 
+	struct text_area_layout {
+		float line_height = 0.f;
+		float top = 0.f;
+		float text_left = 0.f;
+		float view_width = 0.f;
+	};
+
 	struct text_area {
 		using result = void;
 
@@ -66,8 +75,10 @@ export namespace gse::gui {
 			std::span<const text_span> spans{};
 			std::span<const text_underline> underlines{};
 			std::span<const text_fade> fades{};
+			std::span<const text_block> blocks{};
 			std::optional<rectf> rect{};
 			bool read_only = false;
+			bool follow_tail = false;
 			bool show_line_numbers = false;
 			std::size_t indent_width = 4;
 			bool indent_with_spaces = false;
@@ -103,8 +114,102 @@ export namespace gse::gui::draw {
 		bool show_line_numbers,
 		std::size_t indent_width,
 		vec2f mouse,
+		std::span<const text_block> blocks = {},
 		resource::handle<font> font = {}
 	) -> buffer_position;
+
+	auto text_area_line_height(
+		const draw_context& ctx,
+		resource::handle<font> font = {}
+	) -> float;
+
+	auto text_area_layout_of(
+		const draw_context& ctx,
+		const text_buffer& buffer,
+		const text_area_state& state,
+		const rectf& rect,
+		bool show_line_numbers = false,
+		resource::handle<font> font = {}
+	) -> text_area_layout;
+
+	auto follow_tail_button(
+		builder& b,
+		const rectf& area,
+		text_area_state& state,
+		id widget_id
+	) -> interaction::press;
+}
+
+namespace gse::gui {
+	struct block_layout {
+		float offset = 0.f;
+		float width = 0.f;
+	};
+
+	auto expanded_width(
+		const font& face,
+		std::string_view line,
+		float scale,
+		std::size_t tab_width
+	) -> float;
+
+	auto block_at_line(
+		std::span<const text_block> blocks,
+		std::uint32_t line
+	) -> std::size_t;
+
+	auto measure_block(
+		const text_buffer& buffer,
+		const font& face,
+		const text_block& block,
+		float scale,
+		std::size_t tab_width,
+		float view_width
+	) -> block_layout;
+}
+
+auto gse::gui::expanded_width(const font& face, const std::string_view line, const float scale, const std::size_t tab_width) -> float {
+	if (line.find('\t') == std::string_view::npos) {
+		return face.width(line, scale);
+	}
+
+	std::string expanded;
+	std::size_t column = 0;
+	for (const char c : line) {
+		if (c == '\t') {
+			const std::size_t fill = tab_width - column % tab_width;
+			expanded.append(fill, ' ');
+			column += fill;
+		}
+		else {
+			expanded.push_back(c);
+			++column;
+		}
+	}
+	return face.width(expanded, scale);
+}
+
+auto gse::gui::block_at_line(const std::span<const text_block> blocks, const std::uint32_t line) -> std::size_t {
+	const auto above = std::ranges::upper_bound(blocks, line, {}, &text_block::first_line);
+	if (above == blocks.begin()) {
+		return blocks.size();
+	}
+
+	const auto found = std::prev(above);
+	return line <= found->last_line ? static_cast<std::size_t>(std::distance(blocks.begin(), found)) : blocks.size();
+}
+
+auto gse::gui::measure_block(const text_buffer& buffer, const font& face, const text_block& block, const float scale, const std::size_t tab_width, const float view_width) -> block_layout {
+	const auto lines = static_cast<std::uint32_t>(buffer.line_count());
+	float widest = 0.f;
+	for (std::uint32_t i = block.first_line; i <= block.last_line && i < lines; ++i) {
+		widest = std::max(widest, expanded_width(face, buffer.line(i), scale, tab_width));
+	}
+
+	return {
+		.offset = block.align_right ? std::max(0.f, view_width - widest) : 0.f,
+		.width = widest,
+	};
 }
 
 auto gse::gui::text_area::draw(const draw_context& ctx, const params& p, id& hot, id& active, id& focus) -> void {
@@ -119,6 +224,7 @@ auto gse::gui::text_area::draw(const draw_context& ctx, const params& p, id& hot
 			.spans = p.spans,
 			.underlines = p.underlines,
 			.fades = p.fades,
+			.blocks = p.blocks,
 			.rect = rect,
 			.read_only = p.read_only,
 			.show_line_numbers = p.show_line_numbers,
@@ -133,22 +239,47 @@ auto gse::gui::text_area::draw(const draw_context& ctx, const params& p, id& hot
 	);
 }
 
-auto gse::gui::draw::text_area_position_at(const draw_context& ctx, const text_buffer& buffer, const text_area_state& state, const rectf& rect, const bool show_line_numbers, const std::size_t indent_width, const vec2f mouse, const resource::handle<font> font) -> buffer_position {
+auto gse::gui::draw::text_area_line_height(const draw_context& ctx, const resource::handle<font> font) -> float {
+	const auto fnt = font.valid() ? font : ctx.fonts.code;
+	return fnt.resolve()->line_height(ctx.style.font_size) * 1.25f;
+}
+
+auto gse::gui::draw::text_area_layout_of(const draw_context& ctx, const text_buffer& buffer, const text_area_state& state, const rectf& rect, const bool show_line_numbers, const resource::handle<font> font) -> text_area_layout {
 	const auto fnt = font.valid() ? font : ctx.fonts.code;
 	const auto fnt_view = fnt.resolve();
 	const float scale = ctx.style.font_size;
 	const float pad = ctx.style.padding;
-	const float line_h = fnt_view->line_height(scale) * 1.25f;
+	const float line_h = text_area_line_height(ctx, fnt);
 	const std::size_t line_digits = std::max<std::size_t>(2, std::to_string(std::max<std::size_t>(1, buffer.line_count())).size());
 	const float gutter_width = show_line_numbers ? fnt_view->width(std::string(line_digits, '0'), scale) + pad * 2.f : 0.f;
 	const float left_inset = show_line_numbers ? gutter_width : pad;
-	const float text_x = rect.left() + left_inset - state.scroll.x.offset;
-	const float top_y = rect.top() - pad + state.scroll.y.offset;
+	const scroll_config scroll_cfg{};
+	const bool scrollable = static_cast<float>(buffer.line_count()) * line_h + pad * 2.f > rect.height();
+
+	return {
+		.line_height = line_h,
+		.top = rect.top() - pad + state.scroll.y.offset,
+		.text_left = rect.left() + left_inset - state.scroll.x.offset,
+		.view_width = std::max(0.f, rect.width() - left_inset - pad - (scrollable ? scroll_cfg.scrollbar_width : 0.f)),
+	};
+}
+
+auto gse::gui::draw::text_area_position_at(const draw_context& ctx, const text_buffer& buffer, const text_area_state& state, const rectf& rect, const bool show_line_numbers, const std::size_t indent_width, const vec2f mouse, const std::span<const text_block> blocks, const resource::handle<font> font) -> buffer_position {
+	const auto fnt = font.valid() ? font : ctx.fonts.code;
+	const auto fnt_view = fnt.resolve();
+	const float scale = ctx.style.font_size;
+	const text_area_layout geometry = text_area_layout_of(ctx, buffer, state, rect, show_line_numbers, fnt);
+	const float text_x = geometry.text_left;
 	const std::size_t display_tab_width = std::clamp<std::size_t>(indent_width, 1, 16);
 
 	const int line_count = static_cast<int>(buffer.line_count());
-	const auto picked_line = static_cast<std::uint32_t>(std::clamp(static_cast<int>((top_y - mouse.y()) / line_h), 0, std::max(0, line_count - 1)));
+	const auto picked_line = static_cast<std::uint32_t>(std::clamp(static_cast<int>((geometry.top - mouse.y()) / geometry.line_height), 0, std::max(0, line_count - 1)));
 	const std::string_view line = buffer.line(picked_line);
+
+	const std::size_t block = block_at_line(blocks, picked_line);
+	const float block_x = block < blocks.size()
+		? measure_block(buffer, *fnt_view, blocks[block], scale, display_tab_width, geometry.view_width).offset
+		: 0.f;
 
 	std::string expanded;
 	std::vector<std::size_t> col_to_expanded(line.size() + 1);
@@ -171,7 +302,7 @@ auto gse::gui::draw::text_area_position_at(const draw_context& ctx, const text_b
 	int picked_col = 0;
 	float best_dx = std::numeric_limits<float>::max();
 	for (int k = 0; k <= static_cast<int>(line.size()); ++k) {
-		const float x = text_x + expanded_offsets[col_to_expanded[static_cast<std::size_t>(k)]];
+		const float x = text_x + block_x + expanded_offsets[col_to_expanded[static_cast<std::size_t>(k)]];
 		if (const float dx = std::abs(x - mouse.x()); dx < best_dx) {
 			best_dx = dx;
 			picked_col = k;
@@ -190,8 +321,10 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 	const std::span<const text_span> spans = params.spans;
 	const std::span<const text_underline> underlines = params.underlines;
 	const std::span<const text_fade> fades = params.fades;
+	const std::span<const text_block> blocks = params.blocks;
 	const rectf& rect = *params.rect;
 	const bool read_only = params.read_only;
+	const bool follow_tail = params.follow_tail;
 	const bool show_line_numbers = params.show_line_numbers;
 	const std::size_t indent_width = params.indent_width;
 	const bool indent_with_spaces = params.indent_with_spaces;
@@ -210,7 +343,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 
 	const float scale = ctx.style.font_size;
 	const float pad = ctx.style.padding;
-	const float line_h = fnt_view->line_height(scale) * 1.25f;
+	const float line_h = text_area_line_height(ctx, fnt);
 	const scroll_config scroll_cfg{};
 	const bool scrollable = static_cast<float>(buffer.line_count()) * line_h + pad * 2.f > rect.height();
 	const float scrollbar_gutter = scrollable ? scroll_cfg.scrollbar_width : 0.f;
@@ -224,6 +357,21 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 
 	const std::size_t display_tab_width = std::clamp<std::size_t>(indent_width, 1, 16);
 	const std::string indent_text = indent_with_spaces ? std::string(display_tab_width, ' ') : std::string(1, '\t');
+
+	const float view_width = std::max(0.f, rect.width() - left_inset - pad - scrollbar_gutter);
+	std::vector<std::optional<block_layout>> block_layouts(blocks.size());
+
+	auto layout_of = [&](const std::size_t index) -> const block_layout& {
+		if (!block_layouts[index]) {
+			block_layouts[index] = measure_block(buffer, *fnt_view, blocks[index], scale, display_tab_width, view_width);
+		}
+		return *block_layouts[index];
+	};
+
+	auto block_x = [&](const std::uint32_t line_no) -> float {
+		const std::size_t index = block_at_line(blocks, line_no);
+		return index < blocks.size() ? layout_of(index).offset : 0.f;
+	};
 
 	auto expand_from = [display_tab_width](std::string_view s, std::size_t start_col, std::string& scratch) -> std::string_view {
 		if (s.find('\t') == std::string_view::npos) {
@@ -245,7 +393,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 		return scratch;
 	};
 
-	auto line_column_x = [&](const std::string_view line) -> std::vector<float> {
+	auto line_column_x = [&](const std::uint32_t line_no, const std::string_view line) -> std::vector<float> {
 		std::string expanded;
 		std::vector<std::size_t> col_to_expanded(line.size() + 1);
 		std::size_t display_col = 0;
@@ -264,15 +412,16 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 		col_to_expanded[line.size()] = expanded.size();
 
 		const std::vector<float> expanded_offsets = fnt_view->caret_offsets(expanded, scale);
+		const float origin = text_x + block_x(line_no);
 		std::vector<float> offsets(line.size() + 1);
 		for (std::size_t k = 0; k <= line.size(); ++k) {
-			offsets[k] = text_x + expanded_offsets[col_to_expanded[k]];
+			offsets[k] = origin + expanded_offsets[col_to_expanded[k]];
 		}
 		return offsets;
 	};
 
 	auto pick_position = [&](const vec2f mouse) -> buffer_position {
-		return text_area_position_at(ctx, buffer, state, rect, show_line_numbers, indent_width, mouse);
+		return text_area_position_at(ctx, buffer, state, rect, show_line_numbers, indent_width, mouse, blocks);
 	};
 
 	auto classify_char = [](const char c) -> int {
@@ -315,42 +464,46 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 		return granularity == 2 ? line_range(p) : word_range(p);
 	};
 
-	std::size_t sig = 14695981039346656037ull;
-	auto fold = [&sig](const std::size_t value) {
-		sig = (sig ^ value) * 1099511628211ull;
-	};
-	fold(buffer.line_count());
-	fold(display_tab_width);
-	for (std::size_t li = 0; li < buffer.line_count(); ++li) {
-		fold(buffer.line(li).size());
-	}
-	fold(std::bit_cast<std::uint32_t>(scale));
-
-	if (sig != state.width_sig) {
-		std::size_t widest_cols = 0;
-		std::string_view widest_line;
+	auto measure_content_width = [&]() -> float {
+		std::size_t sig = 14695981039346656037ull;
+		auto fold = [&sig](const std::size_t value) {
+			sig = (sig ^ value) * 1099511628211ull;
+		};
+		fold(buffer.line_count());
+		fold(display_tab_width);
 		for (std::size_t li = 0; li < buffer.line_count(); ++li) {
-			const std::string_view row = buffer.line(li);
-			std::size_t cols = 0;
-			for (const char c : row) {
-				if (c == '\t') {
-					cols += display_tab_width - cols % display_tab_width;
-				}
-				else {
-					++cols;
-				}
-			}
-			if (cols > widest_cols) {
-				widest_cols = cols;
-				widest_line = row;
-			}
+			fold(buffer.line(li).size());
 		}
-		std::string widest_scratch;
-		state.widest_line_px = fnt_view->width(expand_from(widest_line, 0, widest_scratch), scale);
-		state.width_sig = sig;
-	}
+		fold(std::bit_cast<std::uint32_t>(scale));
 
-	const float content_width = left_inset + state.widest_line_px + pad;
+		if (sig != state.width_sig) {
+			std::size_t widest_cols = 0;
+			std::string_view widest_line;
+			for (std::size_t li = 0; li < buffer.line_count(); ++li) {
+				const std::string_view row = buffer.line(li);
+				std::size_t cols = 0;
+				for (const char c : row) {
+					if (c == '\t') {
+						cols += display_tab_width - cols % display_tab_width;
+					}
+					else {
+						++cols;
+					}
+				}
+				if (cols > widest_cols) {
+					widest_cols = cols;
+					widest_line = row;
+				}
+			}
+			std::string widest_scratch;
+			state.widest_line_px = fnt_view->width(expand_from(widest_line, 0, widest_scratch), scale);
+			state.width_sig = sig;
+		}
+
+		return left_inset + state.widest_line_px + pad;
+	};
+
+	const float content_width = measure_content_width();
 	const bool h_scrollable = content_width > rect.width();
 	const float h_scrollbar_gutter = h_scrollable ? scroll_cfg.scrollbar_width : 0.f;
 	const rectf text_hit_rect = rectf::from_position_size(
@@ -391,7 +544,20 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 
 	if (state.selecting) {
 		if (ctx.mouse_held()) {
-			const buffer_position current = pick_position(ctx.mouse_position());
+			const vec2f drag_mouse = ctx.mouse_position();
+			const float above_top = drag_mouse.y() - text_hit_rect.top();
+			const float below_bottom = text_hit_rect.bottom() - drag_mouse.y();
+			if (const float overshoot = below_bottom > 0.f ? below_bottom : (above_top > 0.f ? -above_top : 0.f); overshoot != 0.f) {
+				const float rows = std::clamp(std::abs(overshoot) / line_h, 1.f, 8.f);
+				const float span = static_cast<float>(buffer.line_count()) * line_h + pad * 2.f;
+				const float limit = std::max(0.f, span - rect.height());
+				const float next = std::clamp(state.scroll.y.offset + std::copysign(rows * line_h, overshoot), 0.f, limit);
+				state.scroll.y.offset = next;
+				state.scroll.y.target = next;
+				state.tail_pinned = false;
+			}
+
+			const buffer_position current = pick_position(drag_mouse);
 			if (state.select_granularity == 0) {
 				state.caret = current;
 			}
@@ -973,6 +1139,41 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 	const int line_total = static_cast<int>(buffer.line_count());
 	const int first_line = std::max(0, static_cast<int>(state.scroll.y.offset / line_h) - 1);
 	const int last_line = std::min(line_total, first_line + static_cast<int>(view_height / line_h) + 3);
+	const float block_pad_x = pad * 0.5f;
+	const float block_pad_y = pad * 0.25f;
+	const float block_border = ctx.style.separator_thickness;
+	for (std::size_t bi = 0; bi < blocks.size(); ++bi) {
+		const text_block& block = blocks[bi];
+		if (static_cast<int>(block.last_line) < first_line || static_cast<int>(block.first_line) >= last_line) {
+			continue;
+		}
+
+		const block_layout& layout = layout_of(bi);
+		const rectf bubble = rectf::from_position_size(
+			{ text_x + layout.offset - block_pad_x, top_y - static_cast<float>(block.first_line) * line_h + block_pad_y },
+			{ layout.width + block_pad_x * 2.f, static_cast<float>(block.last_line - block.first_line + 1) * line_h + block_pad_y * 2.f }
+		);
+
+		if (block.border.w() > 0.f) {
+			ctx.queue_sprite({
+				.rect = bubble.inset({ -block_border, -block_border }),
+				.color = block.border,
+				.texture = ctx.blank_texture,
+				.clip_rect = content_clip,
+				.corner_radius = ctx.style.corner_radius + block_border,
+			});
+		}
+		if (block.fill.w() > 0.f) {
+			ctx.queue_sprite({
+				.rect = bubble,
+				.color = block.fill,
+				.texture = ctx.blank_texture,
+				.clip_rect = content_clip,
+				.corner_radius = ctx.style.corner_radius,
+			});
+		}
+	}
+
 	buffer_position sel_lo = state.anchor;
 	buffer_position sel_hi = state.caret;
 	const bool has_sel = sel_lo != sel_hi;
@@ -984,7 +1185,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 			const std::string_view sline = buffer.line(static_cast<std::uint32_t>(i));
 			const std::size_t col_a = static_cast<std::uint32_t>(i) == sel_lo.line ? std::min<std::size_t>(sel_lo.column, sline.size()) : 0;
 			const std::size_t col_b = static_cast<std::uint32_t>(i) == sel_hi.line ? std::min<std::size_t>(sel_hi.column, sline.size()) : sline.size();
-			const std::vector<float> offsets = line_column_x(sline);
+			const std::vector<float> offsets = line_column_x(static_cast<std::uint32_t>(i), sline);
 			const float x_a = offsets[col_a];
 			const float x_b = offsets[col_b];
 			const float extra = static_cast<std::uint32_t>(i) < sel_hi.line ? fnt_view->width(" ", scale) : 0.f;
@@ -1026,7 +1227,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 		if (!line.empty()) {
 			std::size_t col = 0;
 			std::size_t disp = 0;
-			float run_x = text_x;
+			float run_x = text_x + block_x(line_no);
 			std::array<const text_fade*, 8> line_fades{};
 			std::size_t line_fade_count = 0;
 			for (const text_fade& f : fades) {
@@ -1100,7 +1301,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 				continue;
 			}
 			if (!underline_offsets) {
-				underline_offsets = line_column_x(line);
+				underline_offsets = line_column_x(line_no, line);
 			}
 			const std::size_t a = std::min<std::size_t>(u.start_col, line.size());
 			const std::size_t b = std::min<std::size_t>(std::max<std::size_t>(a + 1, u.end_col), line.size());
@@ -1119,7 +1320,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 
 	if (focused && state.blink_on) {
 		const std::string_view caret_line = buffer.line(state.caret.line);
-		const std::vector<float> caret_col_x = line_column_x(caret_line);
+		const std::vector<float> caret_col_x = line_column_x(state.caret.line, caret_line);
 		const float caret_x = caret_col_x[std::min<std::size_t>(state.caret.column, caret_line.size())];
 		const float caret_top = top_y - static_cast<float>(state.caret.line) * line_h - line_h * 0.5f + fnt_view->vertical_center_offset(scale);
 		const float baseline = caret_top - fnt_view->ascender_height(scale);
@@ -1146,7 +1347,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 		}
 
 		const std::string_view caret_row = buffer.line(state.caret.line);
-		const std::vector<float> caret_row_x = line_column_x(caret_row);
+		const std::vector<float> caret_row_x = line_column_x(state.caret.line, caret_row);
 		const float caret_x_content = left_inset + caret_row_x[std::min<std::size_t>(state.caret.column, caret_row.size())] - text_x;
 		if (caret_x_content - pad - left_inset < state.scroll.x.offset) {
 			const float target = std::max(0.f, caret_x_content - pad - left_inset);
@@ -1161,7 +1362,65 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 	}
 
 	const float content_height = static_cast<float>(buffer.line_count()) * line_h + pad * 2.f;
-	scroll_area(ctx, state.scroll, rect, { content_width, content_height }, scroll_cfg);
+	const float tail_scroll = std::max(0.f, content_height - rect.height());
+
+	if (follow_tail && state.tail_pinned) {
+		state.scroll.y.target = tail_scroll;
+	}
+
+	scroll_area(ctx, state.scroll, rect, { measure_content_width(), content_height }, scroll_cfg);
+
+	if (follow_tail) {
+		state.tail_pinned = state.scroll.y.target >= tail_scroll - 1.f;
+	}
 
 	return modified;
+}
+
+auto gse::gui::draw::follow_tail_button(builder& b, const rectf& area, text_area_state& state, const id widget_id) -> interaction::press {
+	if (state.tail_pinned) {
+		return {};
+	}
+
+	const draw_context& ctx = b.ctx;
+	const float extent = ctx.style.font_size * 1.9f;
+	const float inset = std::max(1.f, ctx.style.separator_thickness);
+	const rectf rect = rectf::from_position_size(
+		{ area.right() - ctx.style.padding - scroll_config{}.scrollbar_width - extent, area.bottom() + ctx.style.padding + extent },
+		{ extent, extent }
+	);
+
+	const interaction::press btn = interaction::press_in_rect(ctx, b.hot_widget_id, b.active_widget_id, widget_id, rect);
+	const std::uint32_t z = ctx.current_z_order + 1;
+
+	ctx.queue_sprite({
+		.rect = rect,
+		.color = ctx.style.color_border,
+		.texture = ctx.blank_texture,
+		.z_order = z,
+		.corner_radius = extent * 0.5f,
+	});
+	ctx.queue_sprite({
+		.rect = rect.inset({ inset, inset }),
+		.color = btn.color({
+			.idle = ctx.style.color_title_bar,
+			.hot = ctx.style.color_tab_hovered,
+			.active = ctx.style.color_tab_active,
+			.disabled = ctx.style.color_title_bar,
+		}),
+		.texture = ctx.blank_texture,
+		.z_order = z,
+		.corner_radius = extent * 0.5f - inset,
+	});
+	symbol::draw(ctx, symbol::chevron_down(), rect, {
+		.color = ctx.style.color_text,
+		.extent = ctx.style.icon_extent,
+		.z_order = z,
+	});
+
+	if (btn.activated) {
+		state.tail_pinned = true;
+	}
+
+	return btn;
 }
