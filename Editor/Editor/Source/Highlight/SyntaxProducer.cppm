@@ -6,6 +6,7 @@ import gse.ide.analysis;
 import gse.ide.diagnostic;
 
 import :lexer;
+import :markdown;
 
 export namespace gse::ide {
 	struct syntax_producer {
@@ -51,7 +52,8 @@ export namespace gse::ide {
 		static auto rebuild(
 			data& d,
 			const gui::text_buffer& buffer,
-			document_revision revision
+			document_revision revision,
+			document_language language
 		) -> void;
 
 		static auto set_semantic(
@@ -348,7 +350,7 @@ auto gse::ide::syntax_producer::data::current_semantic(const document_revision r
 	return semantic && semantic->revision == revision ? semantic.get() : nullptr;
 }
 
-auto gse::ide::syntax_producer::rebuild(data& d, const gui::text_buffer& buffer, const document_revision revision) -> void {
+auto gse::ide::syntax_producer::rebuild(data& d, const gui::text_buffer& buffer, const document_revision revision, const document_language language) -> void {
 	auto job = std::make_shared<highlight_job>();
 	job->revision = revision;
 
@@ -370,8 +372,10 @@ auto gse::ide::syntax_producer::rebuild(data& d, const gui::text_buffer& buffer,
 		: nullptr;
 	d.pending = job;
 
-	std::thread([job, snapshot = std::move(snapshot), sem] {
-		job->spans = syntax::compute(snapshot, sem.get(), nullptr);
+	std::thread([job, snapshot = std::move(snapshot), sem, language] {
+		job->spans = language == document_language::markdown
+			? markdown::spans(snapshot)
+			: syntax::compute(snapshot, sem.get(), nullptr);
 		job->done.store(true, std::memory_order_release);
 	}).detach();
 }

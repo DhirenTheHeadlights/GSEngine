@@ -2,6 +2,14 @@ export module gse.ide.highlight:lexer;
 
 import std;
 
+export namespace gse::ide {
+	enum class document_language : std::uint8_t {
+		plain,
+		cpp,
+		markdown,
+	};
+}
+
 export namespace gse::ide::syntax {
 	enum class token_type {
 		line_comment,

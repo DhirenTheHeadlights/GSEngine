@@ -25,7 +25,7 @@ export namespace gse::ide {
 		std::optional<std::filesystem::file_time_type> disk_write_time;
 		syntax_producer::data syntax;
 		bool highlight_dirty = true;
-		bool highlightable = true;
+		document_language language = document_language::plain;
 		std::vector<diagnostic> diagnostics;
 		std::vector<diagnostic> lint;
 		analysis::diagnostics_status analysis_status = analysis::diagnostics_status::not_analyzed;
