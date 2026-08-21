@@ -1,6 +1,7 @@
 export module gse.ide.config;
 
 import std;
+import gse.core;
 
 export import :config_system;
 
@@ -39,6 +40,14 @@ export namespace gse::ide::config {
 	auto worktree_for(
 		const std::filesystem::path& file
 	) -> const worktree&;
+
+	auto canonical_path(
+		const std::filesystem::path& file
+	) -> std::filesystem::path;
+
+	auto path_id(
+		const std::filesystem::path& file
+	) -> id;
 
 	auto browse_roots() -> std::span<const browse_root>;
 

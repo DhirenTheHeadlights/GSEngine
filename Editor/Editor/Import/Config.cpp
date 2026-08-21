@@ -3,6 +3,7 @@ module gse.ide.config;
 import std;
 
 import gse.config;
+import gse.core;
 import gse.ide.project;
 
 namespace gse::ide::config {
@@ -213,6 +214,19 @@ auto gse::ide::config::worktree_for(const std::filesystem::path& file) -> const 
 		return is_inside(file, tree.project_root) || is_inside(file, tree.engine_root);
 	});
 	return owner != trees.end() ? *owner : primary();
+}
+
+auto gse::ide::config::canonical_path(const std::filesystem::path& file) -> std::filesystem::path {
+	std::error_code ec;
+	std::filesystem::path resolved = std::filesystem::weakly_canonical(file, ec);
+	if (ec) {
+		return file.lexically_normal();
+	}
+	return resolved;
+}
+
+auto gse::ide::config::path_id(const std::filesystem::path& file) -> id {
+	return generate_temp_id(canonical_path(file));
 }
 
 auto gse::ide::config::append_worktree_roots(const worktree& tree, std::vector<browse_root>& out) -> void {

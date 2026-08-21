@@ -1218,7 +1218,7 @@ auto gse::ide::draw_profile_panel(gse::gui::builder& ui, const rectf& rect, prof
 	const rectf detail_rect = panels.second;
 	state.detail_width = detail_rect.width();
 
-	state.wants_resize_cursor = (panels.divider.contains(mouse) && !resize_blocked) || state.resizing_detail;
+	state.wants_resize_cursor = (panels.divider.contains(mouse) && !resize_blocked) || state.resizing_detail.dragging;
 
 	if (state.pinned_generation == 0 && !frames.empty() && (state.live_generation == 0 || state.live_timer.tick())) {
 		state.live_generation = frames.back().generation;

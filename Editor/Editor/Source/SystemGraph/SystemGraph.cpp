@@ -855,13 +855,13 @@ auto gse::ide::draw_graph(gui::builder& ui, const input::state& input, const rec
 		draw_node_tooltip(ctx, canvas, gd, index, *picked.hovered, mouse);
 	}
 
-	if (panel_divider && (over_divider || gd.resizing_panel)) {
+	if (panel_divider && (over_divider || gd.resizing_panel.dragging)) {
 		channels.push<set_cursor_shape_request>({
 			.shape = cursor_shape::resize_ew,
 		});
 	}
 
-	if (over_panel || over_divider || over_legend || over_reset || gd.resizing_panel || gd.dragged) {
+	if (over_panel || over_divider || over_legend || over_reset || gd.resizing_panel.dragging || gd.dragged) {
 		return;
 	}
 	if (picked.background_clicked) {

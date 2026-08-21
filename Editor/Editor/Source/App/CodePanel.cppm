@@ -14,17 +14,13 @@ import gse.ide.diagnostic;
 import gse.ide.lint;
 import gse.ide.config;
 import gse.ide.search;
-import gse.ide.graph;
-import gse.ide.alloc;
 import gse.ide.docs;
-import gse.ide.profile;
 
 import :chrome;
 
 namespace gse::ide {
 	struct code_panel_inputs {
 		gse::shared_view<config_system::data> config;
-		gse::shared_view<profile_system::data> profile;
 		const search::index_state* index = nullptr;
 		gse::gpu::bindless_slot viewport_slot{};
 		gse::vec2u game_extent{};
@@ -36,7 +32,6 @@ namespace gse::ide {
 		gse::gui::builder& ui,
 		const gse::input::state& input,
 		workspace::data& ws,
-		gse::ide::graph_data& graph,
 		gse::channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, jump_to_request, gse::set_cursor_shape_request, search::index_merge_request> channels,
 		const code_panel_inputs& inputs
 	) -> void;
@@ -1131,7 +1126,9 @@ auto gse::ide::adjust_after_format(gse::gui::buffer_position& p, const std::span
 }
 
 auto gse::ide::apply_format(document& doc, const format::options& opts) -> void {
-	const std::vector<format::line_edit> edits = format::compute(doc.buffer.lines, opts);
+	const std::vector<format::line_edit> edits = doc.language == document_language::markdown
+		? format::compute_markdown(doc.buffer.lines)
+		: format::compute(doc.buffer.lines, opts);
 	if (edits.empty()) {
 		return;
 	}
@@ -1165,7 +1162,7 @@ auto gse::ide::format_and_save(workspace::data& ws, const format_save_request& r
 		return document_save_result::failed;
 	}
 	document& doc = it->second;
-	if (request.format_enabled && doc.highlightable) {
+	if (request.format_enabled && doc.language != document_language::plain) {
 		apply_format(doc, request.format_options);
 	}
 	if (request.force_save || doc.persistence != document_persistence::clean) {
@@ -1375,7 +1372,7 @@ auto gse::ide::update_diagnostics(gse::context& ctx, const gse::channel_read<ana
 	}
 
 	auto ready = [](const document& doc) {
-		return doc.highlightable
+		return doc.language == document_language::cpp
 			&& !doc.path.empty()
 			&& doc.diag_dirty
 			&& doc.persistence != document_persistence::conflicted
@@ -1687,13 +1684,12 @@ auto gse::ide::draw_game_placeholder(const gse::gui::draw_context& ctx, const re
 	});
 }
 
-auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& input, workspace::data& ws, gse::ide::graph_data& graph, gse::channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, jump_to_request, gse::set_cursor_shape_request, search::index_merge_request> channels, const code_panel_inputs& inputs) -> void {
+auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& input, workspace::data& ws, gse::channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, jump_to_request, gse::set_cursor_shape_request, search::index_merge_request> channels, const code_panel_inputs& inputs) -> void {
 	const auto& ctx = ui.ctx;
 	if (ctx.clip_stack.empty()) {
 		return;
 	}
 	const gse::shared_view<config_system::data> config = inputs.config;
-	const gse::shared_view<profile_system::data> profile_d = inputs.profile;
 	const search::index_state* index = inputs.index;
 	const gse::gpu::bindless_slot viewport_slot = inputs.viewport_slot;
 	const gse::vec2u game_extent = inputs.game_extent;
@@ -1707,7 +1703,6 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& i
 
 	const std::optional<gse::id> analyzing_id = ws.diagnostics_pending;
 
-	const float row_h = std::min(text_view->line_height(font_sz) + pad, body.height());
 	const float tab_gap = 2.f * ctx.style.scale_factor;
 
 	constexpr std::string_view game_caption = "Game";
@@ -1727,15 +1722,14 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& i
 		});
 	}
 
-	const gse::gui::tab_strip_metrics metrics = gse::gui::tab_strip_measure(ctx.fonts.text, ctx.style, tab_descs, document_area_width);
+	const gse::gui::tab_strip_metrics metrics = gse::gui::tab_strip_measure(ctx.style, {
+		.font = ctx.fonts.text,
+		.tabs = tab_descs,
+		.available_extent = document_area_width,
+	});
 	ws.tab_strip.visible_rows = std::clamp(ws.tab_strip.visible_rows, 1u, std::max(1u, metrics.required_rows));
 
-	const bool overflow = metrics.content_extent > document_area_width;
-	const float tab_scrollbar_h = 6.f * ctx.style.scale_factor;
-	const float tab_bar_h = std::min(
-		body.height(),
-		ws.tab_strip.visible_rows * row_h + static_cast<float>(ws.tab_strip.visible_rows - 1) * tab_gap + (ws.tab_strip.visible_rows == 1 && overflow ? tab_scrollbar_h + tab_gap : 0.f)
-	);
+	const float tab_bar_h = std::min(body.height(), gse::gui::tab_strip_extent(metrics, ws.tab_strip.visible_rows));
 	const gse::rectf tab_bar = gse::rectf::from_position_size(
 		{ body.left(), body.top() },
 		{ body.width(), tab_bar_h }
@@ -1852,108 +1846,31 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& i
 			{ body.width(), std::max(0.f, content_h - accent_h) }
 		);
 
-		const float divider_h = ctx.style.separator_thickness;
-		const float toolbar_h = std::min(text_view->line_height(font_sz) + pad, view_rect.height());
-		const gse::rectf toolbar_rect = gse::rectf::from_position_size(
-			{ view_rect.left(), view_rect.top() },
-			{ view_rect.width(), toolbar_h }
-		);
-		const gse::rectf toolbar_divider = gse::rectf::from_position_size(
-			{ view_rect.left(), toolbar_rect.bottom() },
-			{ view_rect.width(), divider_h }
-		);
-
 		const float button_w = 150.f * ctx.style.scale_factor;
-		const float button_h = std::max(0.f, toolbar_h - pad * 0.5f);
+		const float button_h = text_view->line_height(font_sz) + pad * 0.5f;
 		const gse::rectf button_rect = gse::rectf::from_position_size(
-			{ toolbar_rect.right() - button_w - pad, toolbar_rect.top() - pad * 0.25f },
+			{ view_rect.right() - button_w - pad, view_rect.top() - pad },
 			{ button_w, button_h }
 		);
-		const gse::rectf strip_rect = gse::rectf::from_position_size(
-			{ toolbar_rect.left() + pad, toolbar_rect.top() },
-			{ std::max(0.f, button_rect.left() - pad * 2.f - toolbar_rect.left()), toolbar_h }
-		);
-		const gse::rectf content_rect = gse::rectf::from_position_size(
-			{ view_rect.left(), toolbar_divider.bottom() },
-			{ view_rect.width(), std::max(0.f, view_rect.height() - toolbar_h - divider_h) }
-		);
+		const gse::rectf content_rect = view_rect;
 
-		ctx.queue_sprite({
-			.rect = toolbar_rect,
-			.color = ctx.style.color_title_bar,
-			.texture = ctx.blank_texture,
-		});
-		ctx.queue_sprite({
-			.rect = toolbar_divider,
-			.color = ctx.style.color_separator,
-			.texture = ctx.blank_texture,
-		});
-
-		std::vector<gse::gui::tab_desc> game_tab_descs;
-		gse::id active_view_id;
-		template for (constexpr auto enumerator : std::define_static_array(std::meta::enumerators_of(^^game_view_kind))) {
-			constexpr game_view_kind kind = [:enumerator:];
-			static constexpr view_label label = game_view_label(kind);
-			const std::string_view caption = label.text;
-			const gse::id tab_id = gse::generate_temp_id(gse::stable_id(caption));
-			if (kind == ws.game_view) {
-				active_view_id = tab_id;
-			}
-			game_tab_descs.push_back({
-				.tab_id = tab_id,
-				.caption = caption,
-				.closeable = false,
-			});
-		}
-
-		const gse::gui::tab_strip_result view_tabs = gse::gui::tab_strip(ctx, {
-			.area = strip_rect,
-			.tabs = game_tab_descs,
-			.active = active_view_id,
-			.min_tab_extent = 72.f,
-			.max_tab_extent = 140.f,
-		}, ws.game_tab_strip);
-
-		if (view_tabs.activated.exists()) {
-			template for (constexpr auto enumerator : std::define_static_array(std::meta::enumerators_of(^^game_view_kind))) {
-				constexpr game_view_kind kind = [:enumerator:];
-				static constexpr view_label label = game_view_label(kind);
-				if (gse::generate_temp_id(gse::stable_id(std::string_view(label.text))) == view_tabs.activated) {
-					ws.game_view = kind;
-				}
-			}
-		}
-
-		const bool showing_game = game_running && ws.game_view == game_view_kind::game;
+		const bool showing_game = game_running;
 		if (!showing_game) {
 			ws.game_captured = false;
 		}
 
-		const bool button_hovered = !building && !ws.game_captured && ctx.hovers(button_rect);
+		const bool button_hovered = !showing_game && !building && !ws.game_captured && ctx.hovers(button_rect);
 		const bool build_pressed = button_hovered && ctx.mouse_pressed_for(button_rect);
 
-		switch (ws.game_view) {
-			case game_view_kind::graph:
-				gse::ide::draw_graph(ui, input, content_rect, graph, index, channels);
-				break;
-			case game_view_kind::profile:
-				draw_profile_panel(ui, content_rect, ws.profile, profile_d.frames, profile_d.report, profile_d.report_loaded, channels);
-				break;
-			case game_view_kind::alloc:
-				draw_alloc_panel(ui, content_rect, ws.alloc);
-				break;
-			case game_view_kind::game:
-				if (showing_game) {
-					ctx.queue_sprite({
-						.rect = content_rect,
-						.color = { 1.f, 1.f, 1.f, 1.f },
-						.image_slot = viewport_slot,
-					});
-				}
-				else {
-					draw_game_placeholder(ctx, content_rect, "Build and run to start the game");
-				}
-				break;
+		if (showing_game) {
+			ctx.queue_sprite({
+				.rect = content_rect,
+				.color = { 1.f, 1.f, 1.f, 1.f },
+				.image_slot = viewport_slot,
+			});
+		}
+		else {
+			draw_game_placeholder(ctx, content_rect, "Build and run to start the game");
 		}
 
 		const float view_w = content_rect.width();
@@ -1978,25 +1895,25 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& i
 				.run_after = true,
 			});
 		}
-		const std::string_view button_label = building
-			? "Building..."
-			: (game_running ? "Rebuild & Run" : "Build & Run");
+		if (!showing_game) {
+			const std::string_view button_label = building ? "Building..." : "Build & Run";
 
-		ctx.queue_sprite({
-			.rect = button_rect,
-			.color = building ? ctx.style.color_input_background : (button_hovered ? ctx.style.color_button_hovered : ctx.style.color_button_background),
-			.texture = ctx.blank_texture,
-			.corner_radius = ctx.style.corner_radius,
-		});
-		const float button_text_w = text_view->width(button_label, font_sz);
-		ctx.queue_text({
-			.font = ctx.fonts.text,
-			.text = button_label,
-			.position = { button_rect.center().x() - button_text_w * 0.5f, button_rect.center().y() + text_view->vertical_center_offset(font_sz) },
-			.scale = font_sz,
-			.color = building ? ctx.style.color_text_secondary : ctx.style.color_text,
-			.clip_rect = button_rect,
-		});
+			ctx.queue_sprite({
+				.rect = button_rect,
+				.color = building ? ctx.style.color_input_background : (button_hovered ? ctx.style.color_button_hovered : ctx.style.color_button_background),
+				.texture = ctx.blank_texture,
+				.corner_radius = ctx.style.corner_radius,
+			});
+			const float button_text_w = text_view->width(button_label, font_sz);
+			ctx.queue_text({
+				.font = ctx.fonts.text,
+				.text = button_label,
+				.position = { button_rect.center().x() - button_text_w * 0.5f, button_rect.center().y() + text_view->vertical_center_offset(font_sz) },
+				.scale = font_sz,
+				.color = building ? ctx.style.color_text_secondary : ctx.style.color_text,
+				.clip_rect = button_rect,
+			});
+		}
 
 		if (ws.game_captured) {
 			constexpr std::string_view capture_hint = "Shift+Esc to release input";
@@ -2092,7 +2009,11 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& i
 				{ status_rect.left() + pad, status_rect.center().y() + glyph_size * 0.5f },
 				{ glyph_size, glyph_size }
 			);
-			draw_spinner(ctx, spin_rect, ctx.style.color_text_secondary, spinner_rotation());
+			gse::gui::symbol::spinner(ctx, spin_rect, gse::gui::symbol::spinner_rotation(), {
+				.color = ctx.style.color_text_secondary,
+				.extent = ctx.style.icon_extent,
+				.clip_rect = spin_rect,
+			});
 			text_left = spin_rect.right() + pad * 0.5f;
 			status_text = "analyzing...";
 		}
@@ -2104,7 +2025,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& i
 			status_color = analysis::status_color(status_details);
 			showing_failure = true;
 		}
-		else if (doc.highlightable) {
+		else if (doc.language == document_language::cpp) {
 			const int ms = static_cast<int>(doc.analysis_duration / gse::milliseconds(1.f));
 			const std::string prefix = ms > 0 ? "Analyzed in " + std::to_string(ms) + " ms - " : "";
 			const std::string elsewhere_note = elsewhere > 0
@@ -2158,9 +2079,9 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& i
 
 	syntax_producer::poll(doc.syntax, doc.revision);
 
-	if (doc.highlightable && doc.highlight_dirty && !doc.syntax.pending
+	if (doc.language != document_language::plain && doc.highlight_dirty && !doc.syntax.pending
 		&& (!doc.edit_clock || doc.edit_clock->elapsed() > gse::milliseconds(120))) {
-		syntax_producer::rebuild(doc.syntax, doc.buffer, doc.revision);
+		syntax_producer::rebuild(doc.syntax, doc.buffer, doc.revision, doc.language);
 		doc.highlight_dirty = false;
 	}
 
@@ -2664,7 +2585,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& i
 		{
 			.buffer = doc.buffer,
 			.state = doc.view,
-			.spans = doc.highlightable ? doc.syntax.current_spans(doc.revision) : std::span<const gui::text_span>{},
+			.spans = doc.language != document_language::plain ? doc.syntax.current_spans(doc.revision) : std::span<const gui::text_span>{},
 			.underlines = underlines,
 			.fades = fades,
 			.rect = text_rect,
@@ -2709,11 +2630,11 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& i
 
 	const bool shift = input.key_held(gse::key::left_shift) || input.key_held(gse::key::right_shift);
 	const bool alt = input.key_held(gse::key::left_alt) || input.key_held(gse::key::right_alt);
-	if (ui.focus_widget_id == text_id && shift && alt && input.key_pressed(gse::key::f) && doc.highlightable) {
+	if (ui.focus_widget_id == text_id && shift && alt && input.key_pressed(gse::key::f) && doc.language != document_language::plain) {
 		apply_format(doc, format_opts);
 	}
 
-	if (ui.focus_widget_id == text_id && ctrl && shift && input.key_pressed(key::h) && doc.highlightable) {
+	if (ui.focus_widget_id == text_id && ctrl && shift && input.key_pressed(key::h) && doc.language == document_language::cpp) {
 		audit_semantic_coverage(doc, index);
 	}
 }

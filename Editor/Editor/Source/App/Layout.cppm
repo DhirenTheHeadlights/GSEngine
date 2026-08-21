@@ -64,7 +64,8 @@ auto gse::ide::parse_layout_uint(const std::string& value, const std::uint32_t f
 
 auto gse::ide::editor_layout_owner() -> layout_store::owner {
 	return {
-		.names = { "editor" },
+		.names = { "editor", "dock" },
+		.prefixes = { "dock node " },
 	};
 }
 
@@ -90,9 +91,6 @@ auto gse::ide::load_workspace_layout(workspace::data& ws) -> void {
 		}
 		if (const auto it = section.values.find("active_path"); it != section.values.end()) {
 			active_path = it->second;
-		}
-		if (const auto it = section.values.find("game_view"); it != section.values.end()) {
-			enum_from_string(it->second, ws.game_view);
 		}
 		break;
 	}
@@ -171,7 +169,6 @@ auto gse::ide::save_workspace_layout(const workspace::data& ws) -> void {
 	out.append("[workspace]\n");
 	out.append(std::format("profile_enabled = {}\n", ws.profile.enabled ? 1 : 0));
 	out.append(std::format("profile_source = {}\n", gse::enum_to_string(ws.profile.source)));
-	out.append(std::format("game_view = {}\n", enum_to_string(ws.game_view)));
 	if (workspace::game_active(ws)) {
 		out.append("active = game\n");
 		out.append("active_path = \n");
