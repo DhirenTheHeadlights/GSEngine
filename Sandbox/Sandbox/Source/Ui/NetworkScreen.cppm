@@ -8,7 +8,7 @@ export namespace sandbox {
 	public:
 		network_screen(
 			gse::shared_view<gse::network::data> net,
-			gse::channel_write<gse::network::connect_request, gse::network::refresh_servers_request, gse::network::send_request> channels
+			gse::channel_write<gse::network::connect_request, gse::network::refresh_servers_request, gse::network::refresh_server_info_request, gse::network::ping_request> channels
 		);
 
 		auto build(
@@ -20,7 +20,7 @@ export namespace sandbox {
 
 	private:
 		gse::shared_view<gse::network::data> m_net;
-		gse::channel_write<gse::network::connect_request, gse::network::refresh_servers_request, gse::network::send_request> m_channels;
+		gse::channel_write<gse::network::connect_request, gse::network::refresh_servers_request, gse::network::refresh_server_info_request, gse::network::ping_request> m_channels;
 		int m_selected = -1;
 		std::uint32_t m_ping_seq = 0;
 		gse::clock m_refresh_clock;
@@ -28,20 +28,12 @@ export namespace sandbox {
 	};
 }
 
-sandbox::network_screen::network_screen(const gse::shared_view<gse::network::data> net, gse::channel_write<gse::network::connect_request, gse::network::refresh_servers_request, gse::network::send_request> channels)
+sandbox::network_screen::network_screen(const gse::shared_view<gse::network::data> net, gse::channel_write<gse::network::connect_request, gse::network::refresh_servers_request, gse::network::refresh_server_info_request, gse::network::ping_request> channels)
 	: m_net(net), m_channels(std::move(channels)) {
 }
 
 auto sandbox::network_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> void {
 	const auto& net = m_net;
-
-	const auto send_message = [this](auto m) {
-		m_channels.push<gse::network::send_request>({
-			.action = [m = std::move(m)](gse::network::client& c) {
-				c.send(m);
-			},
-		});
-	};
 
 	if (m_refresh_clock.elapsed<std::uint32_t>() > gse::seconds(1000u)) {
 		m_channels.push<gse::network::refresh_servers_request>({
@@ -51,7 +43,7 @@ auto sandbox::network_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> 
 	}
 
 	if (net.connection_state == gse::network::client::state::connected && m_server_info_timer.tick()) {
-		send_message(gse::network::server_info_request{});
+		m_channels.push<gse::network::refresh_server_info_request>({});
 	}
 
 	switch (net.connection_state) {
@@ -122,7 +114,7 @@ auto sandbox::network_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> 
 	if (ui.draw<gse::gui::button>({
 			.text = "Send Ping",
 		}) && net.connection_state == gse::network::client::state::connected) {
-		send_message(gse::network::ping{
+		m_channels.push<gse::network::ping_request>({
 			.sequence = ++m_ping_seq,
 		});
 	}
