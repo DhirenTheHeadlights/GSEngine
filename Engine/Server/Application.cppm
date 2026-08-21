@@ -7,24 +7,27 @@ import gse;
 import gse.system_manifest;
 
 export namespace gse::server {
-	template <typename... Components>
+	template <typename MessagePack, typename... Components>
 	struct [[= gse::system_state<"Server">{}]] data {
-		[[= gse::shared]] std::optional<host<Components...>> srv;
+		[[= gse::shared]] std::optional<host<MessagePack, Components...>> srv;
 	};
 
-	template <typename... Components>
+	template <typename MessagePack, typename... Components>
 	[[= gse::system_init{}]]
 	auto init(
 		context& ctx,
-		data<Components...>& d
+		data<MessagePack, Components...>& d,
+		const network::config& net_cfg
 	) -> async::task<>;
 
-	template <typename... Components>
+	template <typename MessagePack, typename... Components>
 	[[= gse::system_run<>{}]]
 	auto run(
 		context& ctx,
-		data<Components...>& d,
+		data<MessagePack, Components...>& d,
 		channel_write<activate_scene_request> scene_out,
+		network::inbound_channel_t<MessagePack> messages_out,
+		network::outbound_channel_t<MessagePack> messages_in,
 		shared_view<world_system::data> world_d,
 		shared_view<actions::data> actions_d,
 		structural<player_controller> controller_auth,
@@ -51,29 +54,41 @@ export namespace gse::server_app {
 }
 
 export namespace gse {
-	template <typename... Components>
+	template <typename MessagePack, typename... Components>
 	auto server_app_setup(
 		engine& e,
-		type_pack<Components...> components = {}
-	) -> void;
-
-	auto server_app_setup(
-		engine& e
+		type_pack<Components...> components = {},
+		MessagePack messages = {}
 	) -> void;
 }
 
-template <typename... Components>
-auto gse::server::init(context& ctx, data<Components...>& d) -> async::task<> {
-	d.srv.emplace(9000);
+template <typename MessagePack, typename... Components>
+auto gse::server::init(context& ctx, data<MessagePack, Components...>& d, const network::config& net_cfg) -> async::task<> {
+	d.srv.emplace(net_cfg);
 	d.srv->initialize();
 	return {};
 }
 
-template <typename... Components>
-auto gse::server::run(context& ctx, data<Components...>& d, const channel_write<activate_scene_request> scene_out, const shared_view<world_system::data> world_d, const shared_view<actions::data> actions_d, structural<player_controller> controller_auth, entities ents, write<Components>... comps) -> async::task<> {
-	if (d.srv) {
-		d.srv->update(world_d, controller_auth, ents, scene_out, actions_d, comps...);
+template <typename MessagePack, typename... Components>
+auto gse::server::run(context& ctx, data<MessagePack, Components...>& d, const channel_write<activate_scene_request> scene_out, network::inbound_channel_t<MessagePack> messages_out, network::outbound_channel_t<MessagePack> messages_in, const shared_view<world_system::data> world_d, const shared_view<actions::data> actions_d, structural<player_controller> controller_auth, entities ents, write<Components>... comps) -> async::task<> {
+	if (!d.srv) {
+		return {};
 	}
+
+	network::drain_outbound<MessagePack>(
+		messages_in,
+		[&d](const auto& msg, const std::optional<network::address>& to, const bool reliable) {
+			if (to) {
+				d.srv->send(msg, *to, reliable);
+			}
+			else {
+				d.srv->broadcast(msg, reliable);
+			}
+		}
+	);
+
+	d.srv->update(world_d, controller_auth, ents, scene_out, messages_out, actions_d, comps...);
+
 	return {};
 }
 
@@ -131,8 +146,8 @@ auto gse::server_app::run(context& ctx, data& d, const channel_write<gui::menu_c
 	return {};
 }
 
-template <typename... Components>
-auto gse::server_app_setup(engine& e, type_pack<Components...>) -> void {
+template <typename MessagePack, typename... Components>
+auto gse::server_app_setup(engine& e, type_pack<Components...>, MessagePack) -> void {
 	auto channels = e.make_channel_writer();
 	channels.push<ui_focus_request>({
 		.focus = true
@@ -140,17 +155,13 @@ auto gse::server_app_setup(engine& e, type_pack<Components...>) -> void {
 	e.world().networked = true;
 
 	gse::system_manifest<
-		^^gse::server::data<Components...>,
-		^^gse::server::init<Components...>,
-		^^gse::server::run<Components...>
+		^^gse::server::data<MessagePack, Components...>,
+		^^gse::server::init<MessagePack, Components...>,
+		^^gse::server::run<MessagePack, Components...>
 	>{}.register_with(e);
 
 	gse::system_manifest<
 		^^gse::server_app::data,
-		^^gse::server_app::run<gse::server::data<Components...>>
+		^^gse::server_app::run<gse::server::data<MessagePack, Components...>>
 	>{}.register_with(e);
-}
-
-auto gse::server_app_setup(engine& e) -> void {
-	server_app_setup(e, engine_networked_components{});
 }

@@ -20,7 +20,6 @@ export namespace gse::network {
 	struct discovery_result {
 		address addr;
 		std::string name;
-		std::string map;
 		std::uint8_t players{};
 		std::uint8_t max_players{};
 		std::uint32_t build{};
@@ -49,10 +48,6 @@ export namespace gse::network {
 		) -> void override;
 
 		auto results() -> std::span<const discovery_result> override;
-
-		auto set_seed(
-			std::vector<discovery_result> seed
-		) -> void;
 
 	private:
 		auto query_servers_async(
@@ -177,10 +172,3 @@ auto gse::network::wan_directory_provider::results() -> std::span<const discover
 	return m_published;
 }
 
-auto gse::network::wan_directory_provider::set_seed(std::vector<discovery_result> seed) -> void {
-	std::lock_guard lock(m_mutex);
-	m_seed = seed;
-	m_pending = seed;
-	m_published = std::move(seed);
-	m_has_pending.store(false, std::memory_order_release);
-}

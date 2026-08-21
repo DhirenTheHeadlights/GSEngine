@@ -11,4 +11,3 @@ source = ..
 
 [targets]
 game = Sandbox
-server = SandboxServer

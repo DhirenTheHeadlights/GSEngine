@@ -116,6 +116,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	m_scheduler.register_external_resource<save::registry>(&m_save);
 	m_scheduler.register_external_resource<primitives::data>(&m_primitives);
 	m_scheduler.register_external_resource<engine_config>(&m_config);
+	m_scheduler.register_external_resource<network::config>(&m_config.net);
 	m_scheduler.register_external_resource<scheduler>(&m_scheduler);
 
 	m_scheduler.begin_staging();

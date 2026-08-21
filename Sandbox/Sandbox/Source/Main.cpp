@@ -77,12 +77,6 @@ namespace sandbox::startup {
 		const config& cfg
 	) -> int;
 
-	// gse::network::run is a template over the game's replicated component set, so the manifest
-	// needs its reflection handle rather than the template itself.
-	template <typename... Components>
-	consteval auto network_run_hook(gse::type_pack<Components...>) -> std::meta::info {
-		return ^^gse::network::run<Components...>;
-	}
 }
 
 auto sandbox::startup::run_game(const gse::engine_config& engine) -> void {
@@ -91,11 +85,21 @@ auto sandbox::startup::run_game(const gse::engine_config& engine) -> void {
 		resolved.project_settings_path = gse::config::project_settings_path();
 	}
 
+	const gse::network::session_role mode = gse::network::resolve_role(resolved.net);
+
+	if (mode == gse::network::session_role::dedicated) {
+		resolved.create_window = false;
+		resolved.render = false;
+	}
+
 	gse::start(
-		[render = resolved.render](gse::engine& e) -> void {
-			constexpr auto network_run = network_run_hook(networked_components{});
-			static_assert(gse::meta::find_system_hook_anno(network_run) != std::meta::info{}, "network run hook annotation not visible on the templated instantiation");
-			gse::system_manifest<^^gse::network::data, network_run, ^^gse::network::shutdown>{}.register_with(e);
+		[render = resolved.render, mode](gse::engine& e) -> void {
+			if (mode == gse::network::session_role::dedicated) {
+				server_setup(e);
+				return;
+			}
+
+			gse::network_setup(e, networked_components{}, network_messages{});
 			gse::register_systems<^^sandbox::client_system>(e);
 			gse::system_manifest<^^dev_spawn::data, ^^dev_spawn::run>{}.register_with(e);
 			if (render) {

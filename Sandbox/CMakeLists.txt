@@ -8,13 +8,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(SANDBOX_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Sandbox")
 set(SANDBOX_SRC "${SANDBOX_DIR}/Source")
 set(MAIN_CPP "${SANDBOX_SRC}/Main.cpp")
-set(SERVER_MAIN_CPP "${SANDBOX_SRC}/ServerMain.cpp")
 
 file(GLOB_RECURSE SANDBOX_MODULES CONFIGURE_DEPENDS "${SANDBOX_DIR}/*.cppm")
 
 file(GLOB_RECURSE SANDBOX_IMPLS CONFIGURE_DEPENDS "${SANDBOX_DIR}/*.cpp")
 list(REMOVE_ITEM SANDBOX_IMPLS "${MAIN_CPP}")
-list(REMOVE_ITEM SANDBOX_IMPLS "${SERVER_MAIN_CPP}")
 
 # A .cpp that declares an implementation partition (module sandbox:y;) provides a
 # module and must live in a CXX_MODULES file set; a plain implementation unit
@@ -57,10 +55,10 @@ target_include_directories(SandboxLib PUBLIC
     "${CMAKE_CURRENT_BINARY_DIR}/Sandbox"
 )
 
-target_link_libraries(SandboxLib PRIVATE Engine)
+target_link_libraries(SandboxLib PRIVATE Engine EngineServer)
 
 add_executable(Sandbox "${MAIN_CPP}")
-target_link_libraries(Sandbox PRIVATE SandboxLib Engine)
+target_link_libraries(Sandbox PRIVATE SandboxLib Engine EngineServer)
 
 # GCC-trunk's C++ modules codegen on MinGW (PE/COFF) emits vague-linkage function-local statics
 # as STRONG symbols in every importing TU instead of COMDAT-folding them, so the final link sees
@@ -83,16 +81,4 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 endif()
 
 gse_copy_runtime_deps(Sandbox)
-
-# Dedicated server for this game: the engine-owned session loop (EngineServer) plus
-# this game's networked components. Every project that wants a server declares its own
-# such target and names it in its .gseproj [targets] server key.
-add_executable(SandboxServer "${SERVER_MAIN_CPP}")
-target_link_libraries(SandboxServer PRIVATE SandboxLib Engine EngineServer)
-
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND WIN32)
-    target_link_options(SandboxServer PRIVATE "-Wl,--allow-multiple-definition")
-endif()
-
-gse_copy_runtime_deps(SandboxServer)
 

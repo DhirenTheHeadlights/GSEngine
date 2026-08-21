@@ -12,7 +12,7 @@ import :sidearm;
 import :tumbler;
 import :sandbox_scene;
 
-auto sandbox::client_system::init(gse::context& ctx, const gse::channel_write<gse::network::clear_providers_request, gse::network::add_provider_request, gse::network::refresh_servers_request> net_out) -> gse::async::task<> {
+auto sandbox::client_system::init(gse::context& ctx, const gse::network::config& net_cfg, const gse::channel_write<gse::network::clear_providers_request, gse::network::add_provider_request, gse::network::refresh_servers_request> net_out) -> gse::async::task<> {
 	gse::system_manifest<
 		^^sandbox::orbit_camera::data, ^^sandbox::orbit_camera::attach, ^^sandbox::orbit_camera::update,
 		^^sandbox::player::data, ^^sandbox::player::run,
@@ -24,29 +24,19 @@ auto sandbox::client_system::init(gse::context& ctx, const gse::channel_write<gs
 	gse::register_systems<^^gse::free_camera::system>(ctx);
 
 	net_out.push<gse::network::clear_providers_request>({});
+
+	const auto configured = gse::network::parse_address(net_cfg.connect, gse::network::default_port);
+	const gse::network::address listed = configured.value_or(gse::network::address{
+		.ip = "127.0.0.1",
+		.port = gse::network::default_port,
+	});
+
 	std::vector seed{
 		gse::network::discovery_result{
-			.addr =
-				gse::network::address{
-					.ip = "192.168.1.156",
-					.port = 9000,
-				},
-			.name = "Sandbox Server",
-			.map = "dev_map",
+			.addr = listed,
+			.name = configured ? "Configured Server" : "Local",
 			.players = 0,
-			.max_players = 8,
-			.build = 1,
-		},
-		gse::network::discovery_result{
-			.addr =
-				gse::network::address{
-					.ip = "127.0.0.1",
-					.port = 9000,
-				},
-			.name = "Local",
-			.map = "dev_map",
-			.players = 0,
-			.max_players = 8,
+			.max_players = net_cfg.max_players,
 			.build = 1,
 		},
 	};

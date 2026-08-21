@@ -61,6 +61,7 @@ export namespace gse {
 		std::string dump_system_graph_path;
 		std::vector<std::string> setting;
 		bench_config bench;
+		network::config net;
 	};
 
 	constexpr std::uint32_t attached_surface_magic = 0x47535334;
