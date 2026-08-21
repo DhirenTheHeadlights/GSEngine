@@ -33,6 +33,14 @@ export namespace gse::gui {
 		float alpha = 1.f;
 	};
 
+	struct text_block {
+		std::uint32_t first_line = 0;
+		std::uint32_t last_line = 0;
+		vec4f fill{ 0.f, 0.f, 0.f, 0.f };
+		vec4f border{ 0.f, 0.f, 0.f, 0.f };
+		bool align_right = false;
+	};
+
 	struct text_buffer {
 		std::vector<std::string> lines;
 

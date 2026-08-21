@@ -48,16 +48,20 @@ namespace gse::gui {
 		const style& sty
 	) -> rectf;
 
+	[[nodiscard]] auto has_side_accent(
+		const menu& m
+	) -> bool;
+
 	auto remove_tab_from_host(
 		data& d,
 		std::string_view menu_name
 	) -> void;
 
-	auto tab_chrome_height(
-		const data& d,
-		const menu& m,
-		float width
-	) -> float;
+	auto draw_dock_space(
+		data& d,
+		const dock::space& space,
+		vec2f mouse
+	) -> void;
 }
 
 auto gse::gui::intern_text(data& d, const std::string_view text) -> std::string_view {
@@ -68,6 +72,10 @@ auto gse::gui::intern_text(data& d, const std::string_view text) -> std::string_
 	std::string& slot = pool[d.text_pool_used++];
 	slot.assign(text);
 	return slot;
+}
+
+auto gse::gui::has_side_accent(const menu& m) -> bool {
+	return m.accent_edge == panel_edge::left || m.accent_edge == panel_edge::right;
 }
 
 auto gse::gui::popout_close_button_rect(const rectf& title_bar_rect, const style& sty) -> rectf {
@@ -82,15 +90,76 @@ auto gse::gui::popout_close_button_rect(const rectf& title_bar_rect, const style
 	});
 }
 
-auto gse::gui::tab_chrome_height(const data& d, const menu& m, const float width) -> float {
-	if (m.tab_contents.size() <= 1 || !d.fonts.text.valid()) {
-		return d.fstate.sty.title_bar_height;
+auto gse::gui::draw_dock_space(data& d, const dock::space& space, const vec2f mouse) -> void {
+	const style& sty = d.fstate.sty;
+	const float border = std::max(1.f, std::floor(sty.scale_factor));
+	const float radius = std::max(2.f, 4.f * sty.scale_factor);
+	const float inset = 5.f * sty.scale_factor;
+
+	const dock::area* hot = nullptr;
+	for (const dock::area& area : space.areas) {
+		if (area.rect.width() > 0.f && area.rect.height() > 0.f && area.rect.contains(mouse)) {
+			hot = &area;
+			break;
+		}
 	}
 
-	const style& sty = d.fstate.sty;
-	const float row_h = d.fonts.text.resolve()->line_height(sty.font_size) + sty.padding;
-	const float tab_gap = 2.f * sty.scale_factor;
-	const float scrollbar_h = 6.f * sty.scale_factor;
+	if (hot) {
+		d.sprite_commands.push_back({
+			.rect = hot->target,
+			.color = sty.color_dock_preview,
+			.texture = d.blank_texture,
+			.layer = render_layer::overlay,
+			.z_order = 10,
+			.corner_radius = radius,
+		});
+	}
+
+	for (const dock::area& area : space.areas) {
+		if (area.rect.width() <= 0.f || area.rect.height() <= 0.f) {
+			continue;
+		}
+
+		const bool is_hot = &area == hot;
+
+		d.sprite_commands.push_back({
+			.rect = area.rect.inset({ -border, -border }),
+			.color = is_hot ? sty.color_accent : sty.color_border,
+			.texture = d.blank_texture,
+			.layer = render_layer::overlay,
+			.z_order = 11,
+			.corner_radius = radius + border,
+		});
+
+		d.sprite_commands.push_back({
+			.rect = area.rect,
+			.color = is_hot ? sty.color_widget_hovered : sty.color_menu_body,
+			.texture = d.blank_texture,
+			.layer = render_layer::overlay,
+			.z_order = 12,
+			.corner_radius = radius,
+		});
+
+		d.sprite_commands.push_back({
+			.rect = layout::dock_target_rect(area.rect.inset({ inset, inset }), area.dock_location, 0.5f),
+			.color = is_hot ? sty.color_accent : sty.color_text_secondary,
+			.texture = d.blank_texture,
+			.layer = render_layer::overlay,
+			.z_order = 13,
+			.corner_radius = border,
+		});
+	}
+}
+
+auto gse::gui::menu_chrome_height(const font_set& fonts, const menu& m, const style& sty, const float width) -> float {
+	if (m.bare) {
+		return sty.bare_header_height;
+	}
+
+	if (m.tab_contents.size() <= 1 || !fonts.text.valid()) {
+		return sty.title_bar_height;
+	}
+
 	const float available_width = std::max(0.f, width - sty.padding * 2.f);
 
 	std::vector<tab_desc> descs;
@@ -99,10 +168,37 @@ auto gse::gui::tab_chrome_height(const data& d, const menu& m, const float width
 		descs.push_back({ .caption = tag });
 	}
 
-	const tab_strip_metrics metrics = tab_strip_measure(d.fonts.text, sty, descs, available_width, 60.f, 200.f);
+	const tab_strip_metrics metrics = tab_strip_measure(sty, {
+		.font = fonts.text,
+		.tabs = descs,
+		.available_extent = available_width,
+		.min_tab_extent = 60.f,
+		.max_tab_extent = 200.f,
+	});
 	const std::uint32_t rows = std::max(1u, std::min(metrics.required_rows, std::max(1u, m.tab_bar.visible_rows)));
-	const float scrollbar_extra = rows == 1 && metrics.content_extent > available_width ? scrollbar_h + tab_gap : 0.f;
-	return static_cast<float>(rows) * row_h + static_cast<float>(rows - 1) * tab_gap + scrollbar_extra + 4.f * sty.scale_factor;
+	return tab_strip_extent(metrics, rows) + 4.f * sty.scale_factor;
+}
+
+auto gse::gui::tab_index_at(const font_set& fonts, const menu& m, const style& sty, const rectf& title_bar_rect, const vec2f mouse) -> std::optional<std::uint32_t> {
+	if (m.tab_contents.size() <= 1 || !fonts.text.valid()) {
+		return std::nullopt;
+	}
+
+	std::vector<tab_desc> descs;
+	descs.reserve(m.tab_contents.size());
+	for (std::size_t i = 0; i < m.tab_contents.size(); ++i) {
+		descs.push_back({
+			.tab_id = generate_temp_id(i + 1),
+			.caption = m.tab_contents[i],
+		});
+	}
+
+	for (const tab_strip_placement& p : tab_strip_layout(fonts.text, sty, title_bar_rect, descs, m.tab_bar, tab_overflow::wrap, 60.f, 200.f)) {
+		if (p.rect.intersection(title_bar_rect).contains(mouse)) {
+			return static_cast<std::uint32_t>(p.index);
+		}
+	}
+	return std::nullopt;
 }
 
 auto gse::gui::remove_tab_from_host(data& d, const std::string_view menu_name) -> void {
@@ -462,31 +558,36 @@ auto gse::gui::update_body(context& ctx, const shared_view<window::data> window_
 	const auto viewport_size = vec2f(gpu_s.render_graph->extent());
 
 	if (d.active_dock_space) {
-		const auto [areas] = d.active_dock_space.value();
-		const vec2f mouse_pos = input_st.mouse_position();
+		draw_dock_space(d, *d.active_dock_space, input_st.mouse_position());
+	}
 
-		for (const dock::area& area : areas) {
-			if (area.rect.contains(mouse_pos)) {
-				d.sprite_commands.push_back({
-					.rect = area.target,
-					.color = d.fstate.sty.color_dock_preview,
-					.texture = d.blank_texture,
-					.layer = render_layer::overlay,
-					.z_order = 10,
-				});
-				break;
-			}
-		}
-
-		for (const dock::area& area : areas) {
-			d.sprite_commands.push_back({
-				.rect = area.rect,
-				.color = d.fstate.sty.color_dock_preview,
-				.texture = d.blank_texture,
-				.layer = render_layer::overlay,
-				.z_order = 11,
-			});
-		}
+	if (d.active_drag_ghost && d.fonts.text.valid()) {
+		const style& sty = d.fstate.sty;
+		const auto text_view = d.fonts.text.resolve();
+		const float label_w = text_view->width(d.active_drag_ghost->label, sty.font_size);
+		const float ghost_h = text_view->line_height(sty.font_size) + sty.padding;
+		const rectf ghost = rectf::from_position_size(
+			{ d.active_drag_ghost->position.x() + sty.padding, d.active_drag_ghost->position.y() - sty.padding },
+			{ label_w + sty.padding * 2.f, ghost_h }
+		);
+		d.sprite_commands.push_back({
+			.rect = ghost,
+			.color = sty.color_tab_active,
+			.texture = d.blank_texture,
+			.layer = render_layer::overlay,
+			.z_order = 20,
+			.corner_radius = sty.corner_radius,
+		});
+		d.text_commands.push_back({
+			.font = d.fonts.text,
+			.text = intern_text(d, d.active_drag_ghost->label),
+			.position = { ghost.left() + sty.padding, ghost.center().y() + text_view->vertical_center_offset(sty.font_size) },
+			.scale = sty.font_size,
+			.color = sty.color_text,
+			.clip_rect = ghost,
+			.layer = render_layer::overlay,
+			.z_order = 21,
+		});
 	}
 
 	for (const auto& req : requests_in.of<push_screen_request>()) {
@@ -754,6 +855,10 @@ auto gse::gui::process_menu(data& d, const gse::input::state& input_state, const
 		return;
 	}
 
+	if (d.suppressed_menus.contains(stable_id(name))) {
+		return;
+	}
+
 	if (!begin_menu(d, name)) {
 		return;
 	}
@@ -805,11 +910,12 @@ auto gse::gui::process_menu(data& d, const gse::input::state& input_state, const
 		current_menu.z_order = d.next_z_order++;
 	}
 
-	const float top_inset = current_menu.bare ? 2.f : tab_chrome_height(d, current_menu, display_rect.width());
+	const float top_inset = menu_chrome_height(d.fonts, current_menu, d.fstate.sty, display_rect.width());
 	const float body_height = std::max(0.f, display_rect.height() - top_inset);
+	const float accent_gutter = has_side_accent(current_menu) ? accent_bar_extent(sty) : 0.f;
 	const rectf body_rect = rectf::from_position_size(
-		{ display_rect.left(), display_rect.top() - top_inset },
-		{ display_rect.width(), body_height }
+		{ display_rect.left() + (current_menu.accent_edge == panel_edge::left ? accent_gutter : 0.f), display_rect.top() - top_inset },
+		{ std::max(0.f, display_rect.width() - accent_gutter), body_height }
 	);
 
 	const bool is_floating = current_menu.docked_to == dock::location::none && !current_menu.owner_id().exists() && !current_menu.bare;
@@ -931,7 +1037,7 @@ auto gse::gui::caption_button(builder& b, const rectf& rect, const std::string& 
 
 	symbol::draw(ctx, glyph, rect, {
 		.color = enabled ? ctx.style.color_text : ctx.style.color_text_disabled,
-		.extent = ctx.style.icon_extent,
+		.extent = std::min(ctx.style.icon_extent, std::min(rect.width(), rect.height())),
 	});
 
 	return btn.activated;
@@ -1155,7 +1261,7 @@ auto gse::gui::draw_menu_chrome(data& d, const gse::input::state& input_state, m
 	const bool is_floating = current_menu.docked_to == dock::location::none && !current_menu.owner_id().exists() && !current_menu.bare;
 	const float menu_radius = is_floating ? sty.corner_radius_menu : 0.f;
 
-	const float top_inset = current_menu.bare ? 2.f : tab_chrome_height(d, current_menu, display_rect.width());
+	const float top_inset = menu_chrome_height(d.fonts, current_menu, d.fstate.sty, display_rect.width());
 
 	const rectf title_bar_rect =
 		rectf::from_position_size(
@@ -1245,6 +1351,17 @@ auto gse::gui::draw_menu_chrome(data& d, const gse::input::state& input_state, m
 		}
 	}
 
+	if (has_side_accent(current_menu)) {
+		const float bar_width = accent_bar_extent(sty);
+		const float bar_left = current_menu.accent_edge == panel_edge::right ? display_rect.right() - bar_width : display_rect.left();
+		d.sprite_commands.push_back({
+			.rect = rectf::from_position_size({ bar_left, display_rect.top() }, { bar_width, display_rect.height() }),
+			.color = sty.color_accent,
+			.texture = d.blank_texture,
+			.layer = layer
+		});
+	}
+
 	if (is_popout_menu_tag(current_menu.id().tag())) {
 		const rectf close_rect = popout_close_button_rect(title_bar_rect, sty);
 		const vec2f mouse_pos = input_state.mouse_position();
@@ -1307,6 +1424,7 @@ auto gse::gui::draw_tab_bar(data& d, const gse::input::state& input_state, menu&
 		descs.push_back({
 			.tab_id = generate_temp_id(i + 1),
 			.caption = current_menu.tab_contents[i],
+			.closeable = current_menu.tabs_closeable,
 		});
 	}
 
@@ -1324,7 +1442,7 @@ auto gse::gui::draw_tab_bar(data& d, const gse::input::state& input_state, menu&
 		.widget_anim_colors = d.widget_anim_colors,
 		.widget_scrolls = d.widget_scrolls,
 		.current_layer = layer,
-		.current_z_order = 0,
+		.current_z_order = current_menu.z_order,
 		.input_layer = d.input_layer_render,
 		.input_suppressed = d.input_suppressed,
 		.hit_regions = &d.input_layers_data,
@@ -1339,6 +1457,7 @@ auto gse::gui::draw_tab_bar(data& d, const gse::input::state& input_state, menu&
 		.active = generate_temp_id(current_menu.active_tab_index + 1),
 		.orientation = tab_orientation::horizontal,
 		.overflow = tab_overflow::wrap,
+		.allow_reorder = true,
 		.min_tab_extent = 60.f,
 		.max_tab_extent = 200.f,
 	}, current_menu.tab_bar);
@@ -1348,6 +1467,17 @@ auto gse::gui::draw_tab_bar(data& d, const gse::input::state& input_state, menu&
 	}
 	if (tabs.close_requested.exists()) {
 		d.pending_tab_close = std::pair{ current_menu.id(), static_cast<std::uint32_t>(tabs.close_requested.number() - 1) };
+	}
+	if (tabs.reorder_id.exists()) {
+		const auto from = static_cast<std::size_t>(tabs.reorder_id.number() - 1);
+		const std::size_t to = std::min(tabs.reorder_to, current_menu.tab_contents.size() - 1);
+		if (from < current_menu.tab_contents.size() && from != to) {
+			const auto begin = current_menu.tab_contents.begin();
+			std::string moved = std::move(current_menu.tab_contents[from]);
+			current_menu.tab_contents.erase(begin + static_cast<std::ptrdiff_t>(from));
+			current_menu.tab_contents.insert(current_menu.tab_contents.begin() + static_cast<std::ptrdiff_t>(to), std::move(moved));
+			current_menu.active_tab_index = static_cast<std::uint32_t>(to);
+		}
 	}
 }
 
@@ -1741,7 +1871,7 @@ auto gse::gui::handle_idle_state(data& d, const gse::input::state& input_state, 
 
 			const rectf title_bar_rect = rectf::from_position_size(
 				{ current_menu.rect.left(), current_menu.rect.top() },
-				{ current_menu.rect.width(), current_menu.bare ? 2.f : tab_chrome_height(d, current_menu, current_menu.rect.width()) }
+				{ current_menu.rect.width(), menu_chrome_height(d.fonts, current_menu, d.fstate.sty, current_menu.rect.width()) }
 			);
 
 			if (title_bar_rect.contains(mouse_position)) {
@@ -1752,25 +1882,7 @@ auto gse::gui::handle_idle_state(data& d, const gse::input::state& input_state, 
 					}
 				}
 
-				std::optional<std::uint32_t> clicked_tab;
-
-				if (current_menu.tab_contents.size() > 1 && d.fonts.text.valid()) {
-					std::vector<tab_desc> descs;
-					descs.reserve(current_menu.tab_contents.size());
-					for (std::size_t i = 0; i < current_menu.tab_contents.size(); ++i) {
-						descs.push_back({
-							.tab_id = generate_temp_id(i + 1),
-							.caption = current_menu.tab_contents[i],
-						});
-					}
-					const std::vector<tab_strip_placement> placements = tab_strip_layout(d.fonts.text, d.fstate.sty, title_bar_rect, descs, current_menu.tab_bar, tab_overflow::wrap, 60.f, 200.f);
-					for (const tab_strip_placement& p : placements) {
-						if (p.rect.intersection(title_bar_rect).contains(mouse_position)) {
-							clicked_tab = static_cast<std::uint32_t>(p.index);
-							break;
-						}
-					}
-				}
+				const std::optional<std::uint32_t> clicked_tab = tab_index_at(d.fonts, current_menu, d.fstate.sty, title_bar_rect, mouse_position);
 
 				return interaction_candidate{
 					.future_state =
@@ -1926,14 +2038,14 @@ auto gse::gui::handle_dragging_state(data& d, const states::dragging& current, c
 		}
 
 		if (other_menu.rect.contains(mouse_position)) {
-			d.active_dock_space = layout::dock_space(other_menu.rect);
+			d.active_dock_space = layout::dock_space(other_menu.rect, d.fstate.sty.scale_factor);
 			found_parent_menu = true;
 			break;
 		}
 	}
 
 	if (!found_parent_menu) {
-		d.active_dock_space = layout::dock_space(screen_rect);
+		d.active_dock_space = layout::dock_space(screen_rect, d.fstate.sty.scale_factor);
 	}
 
 	return current;

@@ -16,9 +16,19 @@ import :input_layers;
 
 export namespace gse::gui {
 	namespace symbol {
+		enum class shape : std::uint8_t {
+			segment,
+			arc
+		};
+
 		struct stroke {
+			shape kind = shape::segment;
 			vec2f from;
 			vec2f to;
+			vec2f center;
+			float radius = 0.f;
+			angle begin;
+			angle sweep;
 		};
 	}
 
@@ -104,7 +114,6 @@ export namespace gse::gui {
 		id scroll_active;
 		id dragging;
 		std::uint32_t visible_rows = 1;
-		float spinner_phase = 0.f;
 	};
 }
 
@@ -141,8 +150,20 @@ export namespace gse::gui {
 		float dock_split_ratio = 0.5f;
 	};
 
+	struct drag_ghost {
+		std::string label;
+		vec2f position;
+	};
+
 	struct draw_context;
 	struct layer_scope;
+
+	enum class panel_edge : std::uint8_t {
+		left,
+		right,
+		top,
+		bottom,
+	};
 
 	struct font_set {
 		resource::handle<font> text;
@@ -169,8 +190,10 @@ export namespace gse::gui {
 		dock::location docked_to = dock::location::none;
 		bool fixed = false;
 		bool bare = false;
+		std::optional<panel_edge> accent_edge;
 		std::vector<std::string> tab_contents;
 		std::uint32_t active_tab_index = 0;
+		bool tabs_closeable = true;
 		tab_strip_state tab_bar;
 		std::uint32_t z_order = 0;
 		bool was_begun_this_frame = false;

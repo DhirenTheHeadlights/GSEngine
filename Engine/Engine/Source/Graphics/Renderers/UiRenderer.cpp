@@ -22,8 +22,47 @@ import gse.containers;
 import gse.concurrency;
 import gse.ecs;
 import gse.math;
+import gse.log;
 
 namespace gse::renderer::ui {
+	auto record_state_name(const record_state state) -> std::string_view {
+		switch (state) {
+			case record_state::recording:
+				return "recording";
+			case record_state::skipped_no_frame:
+				return "skipped(no frame in progress)";
+			case record_state::skipped_no_batches:
+				return "skipped(no batches)";
+			default:
+				return "unknown";
+		}
+	}
+
+	auto note_record_state(data& d, const record_state state, const vec2u extent, const std::size_t batches, const std::size_t vertices, const std::size_t indices) -> void {
+		const bool changed = state != d.last_record_state || extent.x() != d.last_extent.x() || extent.y() != d.last_extent.y();
+		if (!changed) {
+			++d.frames_since_state_change;
+			return;
+		}
+		log::println(
+			log::category::render,
+			"[ui] record state {} -> {} after {} frames: extent={}x{} batches={} verts={} indices={} published={} recorded={}",
+			record_state_name(d.last_record_state),
+			record_state_name(state),
+			d.frames_since_state_change,
+			extent.x(),
+			extent.y(),
+			batches,
+			vertices,
+			indices,
+			d.published_frames,
+			d.recorded_frames
+		);
+		d.last_record_state = state;
+		d.last_extent = extent;
+		d.frames_since_state_change = 0;
+	}
+
 	struct [[
 		= shaders::binding<0, 0>{},
 		= shaders::ssbo_readonly
@@ -107,10 +146,12 @@ auto gse::renderer::ui::add_sprite_quad(linear_vector<vertex>& vertices, linear_
 	const float u1 = cmd.uv_rect.x() + cmd.uv_rect.z();
 	const float v1 = cmd.uv_rect.y() + cmd.uv_rect.w();
 
-	vertices.push_back(vertex{ p0, { u0, v0 }, cmd.color, l0, half, cmd.corner_radius });
-	vertices.push_back(vertex{ p1, { u1, v0 }, cmd.color, l1, half, cmd.corner_radius });
-	vertices.push_back(vertex{ p2, { u1, v1 }, cmd.color, l2, half, cmd.corner_radius });
-	vertices.push_back(vertex{ p3, { u0, v1 }, cmd.color, l3, half, cmd.corner_radius });
+	const auto shape_kind = static_cast<std::uint32_t>(cmd.shape);
+
+	vertices.push_back(vertex{ p0, { u0, v0 }, cmd.color, l0, half, cmd.corner_radius, shape_kind, cmd.arc_radius, cmd.arc_half_sweep, cmd.arc_thickness });
+	vertices.push_back(vertex{ p1, { u1, v0 }, cmd.color, l1, half, cmd.corner_radius, shape_kind, cmd.arc_radius, cmd.arc_half_sweep, cmd.arc_thickness });
+	vertices.push_back(vertex{ p2, { u1, v1 }, cmd.color, l2, half, cmd.corner_radius, shape_kind, cmd.arc_radius, cmd.arc_half_sweep, cmd.arc_thickness });
+	vertices.push_back(vertex{ p3, { u0, v1 }, cmd.color, l3, half, cmd.corner_radius, shape_kind, cmd.arc_radius, cmd.arc_half_sweep, cmd.arc_thickness });
 
 	indices.push_back(base_index + 0);
 	indices.push_back(base_index + 2);
@@ -230,6 +271,10 @@ auto gse::renderer::ui::run(context& ctx, const shared_view<gpu::context::data> 
 			.uv_rect = cmd.uv_rect,
 			.rotation = cmd.rotation,
 			.corner_radius = cmd.corner_radius,
+			.shape = cmd.shape,
+			.arc_radius = cmd.arc_radius,
+			.arc_half_sweep = cmd.arc_half_sweep,
+			.arc_thickness = cmd.arc_thickness,
 			.sample_scene_snapshot = cmd.sample_scene_snapshot,
 			.image_slot = cmd.image_slot,
 			.font = {},
@@ -353,20 +398,26 @@ auto gse::renderer::ui::run(context& ctx, const shared_view<gpu::context::data> 
 	flush_batch();
 
 	d.buffered_frames.publish();
+	++d.published_frames;
 
 	return {};
 }
 
 auto gse::renderer::ui::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, shared_view<scene_snapshot::data> snapshot_s) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
+		note_record_state(d, record_state::skipped_no_frame, gpu_s.render_graph->extent(), 0, 0, 0);
 		co_return;
 	}
 
 	const auto& [vertices, indices, batches] = d.buffered_frames.read();
 
 	if (batches.empty()) {
+		note_record_state(d, record_state::skipped_no_batches, gpu_s.render_graph->extent(), 0, vertices.size(), indices.size());
 		co_return;
 	}
+
+	note_record_state(d, record_state::recording, gpu_s.render_graph->extent(), batches.size(), vertices.size(), indices.size());
+	++d.recorded_frames;
 
 	const auto frame_index = gpu_s.render_graph->current_frame();
 	auto& [vertex_buffer, index_buffer] = d.gpu_frames[frame_index];

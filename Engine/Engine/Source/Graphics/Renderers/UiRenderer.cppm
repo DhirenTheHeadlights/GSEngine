@@ -18,6 +18,11 @@ import gse.math;
 import gse.gpu_record;
 
 export namespace gse::renderer {
+	enum class sprite_shape : std::uint8_t {
+		rect,
+		arc
+	};
+
 	struct sprite_command {
 		rect_t<vec2f> rect;
 		vec4f color = { 1.0f, 1.0f, 1.0f, 1.0f };
@@ -28,6 +33,10 @@ export namespace gse::renderer {
 		render_layer layer = render_layer::content;
 		std::uint32_t z_order = 0;
 		float corner_radius = 0.f;
+		sprite_shape shape = sprite_shape::rect;
+		float arc_radius = 0.f;
+		angle arc_half_sweep;
+		float arc_thickness = 0.f;
 		bool sample_scene_snapshot = false;
 		gpu::bindless_slot image_slot = {};
 	};
@@ -57,6 +66,10 @@ namespace gse::renderer::ui {
 		vec2f local_pos;
 		vec2f half_size;
 		float corner_radius = 0.f;
+		std::uint32_t shape_kind = 0;
+		float arc_radius = 0.f;
+		angle arc_half_sweep;
+		float arc_thickness = 0.f;
 	};
 
 	struct draw_batch {
@@ -95,6 +108,10 @@ namespace gse::renderer::ui {
 		vec4f uv_rect;
 		angle rotation;
 		float corner_radius = 0.f;
+		sprite_shape shape = sprite_shape::rect;
+		float arc_radius = 0.f;
+		angle arc_half_sweep;
+		float arc_thickness = 0.f;
 		bool sample_scene_snapshot = false;
 		gpu::bindless_slot image_slot = {};
 
@@ -123,6 +140,13 @@ export namespace gse::renderer::ui {
 		gpu::buffer index_buffer;
 	};
 
+	enum class record_state : std::uint8_t {
+		unknown,
+		recording,
+		skipped_no_frame,
+		skipped_no_batches
+	};
+
 	struct [[= gse::system_state<"Ui">{}]] data {
 		gpu::shader_program sprite_pipeline;
 		gpu::shader_program text_pipeline;
@@ -130,6 +154,12 @@ export namespace gse::renderer::ui {
 		std::array<frame_resources, frames_in_flight> gpu_frames;
 
 		triple_buffer<gpu_frame_data> buffered_frames;
+
+		record_state last_record_state = record_state::unknown;
+		vec2u last_extent;
+		std::uint64_t frames_since_state_change = 0;
+		std::uint64_t published_frames = 0;
+		std::uint64_t recorded_frames = 0;
 	};
 
 	[[= gse::system_init{}]]

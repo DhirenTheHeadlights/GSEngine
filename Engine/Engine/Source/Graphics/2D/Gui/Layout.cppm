@@ -31,7 +31,8 @@ export namespace gse::gui::layout {
 	) -> void;
 
 	auto dock_space(
-		const rectf& target_area
+		const rectf& target_area,
+		float scale
 	) -> dock::space;
 }
 
@@ -176,11 +177,12 @@ auto gse::gui::layout::update(id_mapped_collection<menu>& menus, const id root_i
 	update(menus, child->id());
 }
 
-auto gse::gui::layout::dock_space(const rectf& target_area) -> dock::space {
+auto gse::gui::layout::dock_space(const rectf& target_area, const float scale) -> dock::space {
 	dock::space space;
 
 	const auto center = target_area.center();
-	const vec2f widget_size = { std::min(50.f, target_area.width() * 0.2f), std::min(50.f, target_area.height() * 0.2f) };
+	const float widget_extent = 44.f * scale;
+	const vec2f widget_size = { std::min(widget_extent, target_area.width() * 0.2f), std::min(widget_extent, target_area.height() * 0.2f) };
 
 	const float half_widget_w = widget_size.x() / 2.f;
 	const float half_widget_h = widget_size.y() / 2.f;

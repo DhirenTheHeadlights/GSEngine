@@ -20,6 +20,13 @@ namespace gse {
 		std::string_view text,
 		std::size_t& pos
 	) -> char32_t;
+
+	auto break_at_width(
+		const font& face,
+		std::string_view text,
+		float max_width,
+		float scale
+	) -> std::size_t;
 }
 
 auto gse::decode_utf8(std::string_view text, std::size_t& pos) -> char32_t {
@@ -219,6 +226,36 @@ auto gse::font::width(const std::string_view text, const float scale) const -> f
 	return total_width;
 }
 
+auto gse::break_at_width(const font& face, const std::string_view text, const float max_width, const float scale) -> std::size_t {
+	std::string_view visible = text;
+	while (!visible.empty() && visible.back() == ' ') {
+		visible.remove_suffix(1);
+	}
+
+	if (visible.empty() || face.width(visible, scale) <= max_width) {
+		return text.size();
+	}
+
+	const std::vector<float> offsets = face.caret_offsets(visible, scale);
+	std::size_t fitted = 0;
+	std::size_t first = 0;
+
+	for (std::size_t b = 1; b <= visible.size(); ++b) {
+		if (b < visible.size() && (static_cast<unsigned char>(visible[b]) & 0xC0) == 0x80) {
+			continue;
+		}
+		if (first == 0) {
+			first = b;
+		}
+		if (offsets[b] > max_width) {
+			break;
+		}
+		fitted = b;
+	}
+
+	return fitted > 0 ? fitted : std::max<std::size_t>(first, 1);
+}
+
 auto gse::font::wrap(const std::string_view text, const float max_width, const float scale) const -> std::vector<std::string_view> {
 	std::vector<std::string_view> lines;
 	if (text.empty() || max_width <= 0.0f) {
@@ -241,8 +278,9 @@ auto gse::font::wrap(const std::string_view text, const float max_width, const f
 		}
 
 		const std::size_t line_end = accepted == std::string_view::npos ? text.size() : accepted;
-		lines.push_back(text.substr(start, line_end - start));
-		start = line_end;
+		const std::size_t taken = break_at_width(*this, text.substr(start, line_end - start), max_width, scale);
+		lines.push_back(text.substr(start, taken));
+		start += taken;
 	}
 	return lines;
 }

@@ -16,13 +16,6 @@ import :builder;
 import :render_layer;
 
 export namespace gse::gui {
-	enum class panel_edge : std::uint8_t {
-		left,
-		right,
-		top,
-		bottom,
-	};
-
 	struct panel_accent {
 		panel_edge edge = panel_edge::left;
 		float width = 0.f;
