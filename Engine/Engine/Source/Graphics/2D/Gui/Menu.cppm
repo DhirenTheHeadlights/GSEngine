@@ -12,6 +12,17 @@ import :builder;
 import :render_layer;
 
 namespace gse::gui {
+	[[nodiscard]] auto hosts_menu(
+		const viewport_state& vp,
+		std::string_view name
+	) -> bool;
+
+	[[nodiscard]] auto claims_content(
+		const data& d,
+		const viewport_state& vp,
+		std::string_view name
+	) -> bool;
+
 	auto begin_menu(
 		viewport_state& vp,
 		const std::string& name

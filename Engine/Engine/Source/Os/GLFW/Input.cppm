@@ -59,7 +59,7 @@ auto gse::input::run(gse::context& ctx, data& d, const channel_read<synthetic_in
 
 	std::vector<event> drained;
 	if (win) {
-		drained = win->input_events.drain();
+		drained = win->primary.input_events.drain();
 	}
 
 	for (const auto& request : synthetic_in.of<synthetic_input_request>()) {

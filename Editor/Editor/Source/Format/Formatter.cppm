@@ -1,6 +1,7 @@
 export module gse.ide.format:formatter;
 
 import std;
+import gse.syntax;
 import gse.ide.highlight;
 
 export namespace gse::ide::format {

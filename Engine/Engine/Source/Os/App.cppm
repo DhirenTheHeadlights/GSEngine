@@ -122,6 +122,7 @@ auto gse::app::run_pending_relaunch() -> void {
 
 	const int inherit = attribute_list != nullptr ? 1 : 0;
 	const DWORD creation_flags = attribute_list != nullptr ? extended_startupinfo_present : 0u;
+	const auto startup_size = static_cast<DWORD>(attribute_list != nullptr ? sizeof(STARTUPINFOEXW) : sizeof(STARTUPINFOW));
 
 	if (self) {
 		wchar_t path[max_path]{};
@@ -139,7 +140,7 @@ auto gse::app::run_pending_relaunch() -> void {
 
 		STARTUPINFOEXW self_startup{
 			.StartupInfo = {
-				.cb = attribute_list != nullptr ? sizeof(STARTUPINFOEXW) : sizeof(STARTUPINFOW),
+				.cb = startup_size,
 			},
 			.lpAttributeList = attribute_list,
 		};
@@ -168,7 +169,7 @@ auto gse::app::run_pending_relaunch() -> void {
 
 	STARTUPINFOEXW startup{
 		.StartupInfo = {
-			.cb = attribute_list != nullptr ? sizeof(STARTUPINFOEXW) : sizeof(STARTUPINFOW),
+			.cb = startup_size,
 		},
 		.lpAttributeList = attribute_list,
 	};

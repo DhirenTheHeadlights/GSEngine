@@ -220,14 +220,25 @@ export namespace gse::gpu {
 
 		[[nodiscard]]
 		auto create_swapchain(
+			gpu::surface surface,
 			vec2i framebuffer_size,
 			present_mode mode,
 			gpu::swap_chain_handle old_handle = {}
 		) -> gpu::expected<swap_chain_info>;
 
-		auto recreate_surface(
-			const window::data& win,
+		[[nodiscard]] auto boot_surface() const -> gpu::surface;
+
+		[[nodiscard]] auto recreate_surface(
+			const window::window_surface& win,
 			gpu::swap_chain_handle current_swapchain
+		) -> gpu::surface;
+
+		[[nodiscard]] auto create_surface(
+			native_window_handle handle
+		) -> gpu::surface;
+
+		auto destroy_surface(
+			gpu::surface surface
 		) -> void;
 
 		[[nodiscard]]

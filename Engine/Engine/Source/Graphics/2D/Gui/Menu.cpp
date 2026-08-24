@@ -40,6 +40,25 @@ import :symbols;
 import :tab_strip;
 import :widget_context;
 
+auto gse::gui::hosts_menu(const viewport_state& vp, const std::string_view name) -> bool {
+	return vp.name_to_menu_id.contains(stable_id(name));
+}
+
+auto gse::gui::claims_content(const data& d, const viewport_state& vp, const std::string_view name) -> bool {
+	if (hosts_menu(vp, name)) {
+		return true;
+	}
+	if (!vp.adopts_unclaimed_content) {
+		return false;
+	}
+	for (const auto& other : d.secondaries) {
+		if (hosts_menu(*other, name)) {
+			return false;
+		}
+	}
+	return true;
+}
+
 auto gse::gui::begin_menu(viewport_state& vp, const std::string& name) -> bool {
 	const std::uint64_t name_key = stable_id(name);
 	if (const auto it = vp.name_to_menu_id.find(name_key); it != vp.name_to_menu_id.end()) {
@@ -49,6 +68,10 @@ auto gse::gui::begin_menu(viewport_state& vp, const std::string& name) -> bool {
 			vp.current_scope = std::make_unique<ids::scope>(vp.current_menu->id().number());
 			return true;
 		}
+	}
+
+	if (!vp.adopts_unclaimed_content) {
+		return false;
 	}
 
 	menu new_menu(
@@ -102,6 +125,10 @@ auto gse::gui::process_menu(data& d, viewport_state& vp, const gse::input::state
 	}
 
 	if (vp.suppressed_menus.contains(stable_id(name))) {
+		return;
+	}
+
+	if (!claims_content(d, vp, name)) {
 		return;
 	}
 
@@ -164,7 +191,7 @@ auto gse::gui::process_menu(data& d, viewport_state& vp, const gse::input::state
 		{ std::max(0.f, display_rect.width() - accent_gutter), body_height }
 	);
 
-	const bool is_floating = current_menu.docked_to == dock::location::none && !current_menu.owner_id().exists() && !current_menu.bare;
+	const bool is_floating = is_floating_menu(current_menu);
 	const float menu_radius = is_floating ? sty.corner_radius_menu : 0.f;
 
 	d.sprite_commands.push_back({

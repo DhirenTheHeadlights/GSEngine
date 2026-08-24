@@ -147,6 +147,8 @@ auto gse::ide::agent::attribute_build_errors(data& d, const build_runner::build_
 		d.unclaimed_build = {};
 	}
 
+	std::vector<blame_offer> grouped;
+
 	for (const build_runner::build_error& error : finished.errors) {
 		session* owner = blame_owner(d, error);
 		std::vector<blamed_error>& claim = owner ? owner->blame : d.unclaimed;
@@ -172,13 +174,24 @@ auto gse::ide::agent::attribute_build_errors(data& d, const build_runner::build_
 			});
 		}
 
-		offers.push<blame_offer>({
-			.session = owner ? owner->id : 0,
+		const std::uint32_t claimant = owner ? owner->id : 0;
+		const auto opened = std::ranges::find(grouped, claimant, &blame_offer::session);
+		if (opened != grouped.end()) {
+			++opened->extra;
+			continue;
+		}
+
+		grouped.push_back({
+			.session = claimant,
 			.session_name = owner ? owner->name : std::string{},
 			.file = error.file,
 			.line = error.line,
 			.kind = finished.kind,
 		});
+	}
+
+	for (const blame_offer& offer : grouped) {
+		offers.push<blame_offer>(offer);
 	}
 }
 

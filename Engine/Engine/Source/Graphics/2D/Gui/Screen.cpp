@@ -39,7 +39,7 @@ import :symbols;
 import :tab_strip;
 import :widget_context;
 
-auto gse::gui::draw_screen_caption(builder& b, screen& top, const rectf& bar_rect, const rectf& full_rect, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> channels) -> void {
+auto gse::gui::draw_screen_caption(builder& b, screen& top, const rectf& bar_rect, const rectf& full_rect, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request, window_panel_drag_request> channels) -> void {
 	draw_context& ctx = b.ctx;
 	const style& sty = ctx.style;
 
@@ -85,7 +85,7 @@ auto gse::gui::draw_screen_caption(builder& b, screen& top, const rectf& bar_rec
 	ctx.clip_stack.pop_back();
 }
 
-auto gse::gui::process_screen(data& d, viewport_state& vp, const gse::input::state& input_state, const vec2f viewport_size, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> channels) -> void {
+auto gse::gui::process_screen(data& d, viewport_state& vp, const gse::input::state& input_state, const vec2f viewport_size, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request, window_panel_drag_request> channels) -> void {
 	if (!vp.fstate.active) {
 		return;
 	}

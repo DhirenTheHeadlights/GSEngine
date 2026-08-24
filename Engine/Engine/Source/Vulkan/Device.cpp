@@ -138,8 +138,8 @@ auto gse::vulkan::device::acquire_next_image(const gpu::swap_chain_handle swapch
 	};
 }
 
-auto gse::vulkan::device::create_swap_chain(const vec2i framebuffer_size, const gpu::present_mode preferred_present_mode, const gpu::swap_chain_handle old_swapchain) -> gpu::expected<gpu::swap_chain_info> {
-	const auto vk_surface = std::bit_cast<vk::SurfaceKHR>(m_surface);
+auto gse::vulkan::device::create_swap_chain(const gpu::surface surface, const vec2i framebuffer_size, const gpu::present_mode preferred_present_mode, const gpu::swap_chain_handle old_swapchain) -> gpu::expected<gpu::swap_chain_info> {
+	const auto vk_surface = std::bit_cast<vk::SurfaceKHR>(surface);
 	const auto vk_phys = std::bit_cast<vk::PhysicalDevice>(m_physical_device.handle());
 	auto [caps_result, vk_capabilities] = vk_phys.getSurfaceCapabilitiesKHR(vk_surface);
 	if (caps_result != vk::Result::eSuccess) {
@@ -239,7 +239,7 @@ auto gse::vulkan::device::create_swap_chain(const vec2i framebuffer_size, const 
 		.imageUsage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferSrc
 	};
 
-	const auto families = find_queue_families(m_physical_device, m_surface);
+	const auto families = find_queue_families(m_physical_device, surface);
 	const std::uint32_t queue_family_indices[] = { families.graphics_family.value(), families.present_family.value() };
 
 	if (families.graphics_family != families.present_family) {
@@ -438,10 +438,6 @@ auto gse::vulkan::device::destroy_swapchain(const gpu::swap_chain_handle swapcha
 	m_owned.collect(std::numeric_limits<std::uint64_t>::max());
 }
 
-auto gse::vulkan::device::set_surface(const gpu::surface surface) -> void {
-	m_surface = surface;
-}
-
 auto gse::vulkan::device::wait_swapchain_release_fences(const gpu::swap_chain_handle swapchain) const -> void {
 	const auto* resources = m_owned.find(swapchain);
 	if (!resources) {
@@ -540,7 +536,7 @@ gse::vulkan::device::~device() {
 }
 
 gse::vulkan::device::device(device&& other) noexcept
-	: m_physical_device(std::move(other.m_physical_device)), m_device(std::move(other.m_device)), m_fault_enabled(other.m_fault_enabled), m_vendor_binary_fault_enabled(other.m_vendor_binary_fault_enabled), m_queue_families(other.m_queue_families), m_surface(other.m_surface), m_pools(std::move(other.m_pools)), m_live_allocation_count(other.m_live_allocation_count.load()), m_next_allocation_id(other.m_next_allocation_id.load()), m_cleaned_up(other.m_cleaned_up), m_settings(other.m_settings), m_live_allocations(std::move(other.m_live_allocations)) {
+	: m_physical_device(std::move(other.m_physical_device)), m_device(std::move(other.m_device)), m_fault_enabled(other.m_fault_enabled), m_vendor_binary_fault_enabled(other.m_vendor_binary_fault_enabled), m_queue_families(other.m_queue_families), m_pools(std::move(other.m_pools)), m_live_allocation_count(other.m_live_allocation_count.load()), m_next_allocation_id(other.m_next_allocation_id.load()), m_cleaned_up(other.m_cleaned_up), m_settings(other.m_settings), m_live_allocations(std::move(other.m_live_allocations)) {
 }
 
 auto gse::vulkan::device::operator=(device&& other) noexcept -> device& {
@@ -551,7 +547,6 @@ auto gse::vulkan::device::operator=(device&& other) noexcept -> device& {
 		m_fault_enabled = other.m_fault_enabled;
 		m_vendor_binary_fault_enabled = other.m_vendor_binary_fault_enabled;
 		m_queue_families = other.m_queue_families;
-		m_surface = other.m_surface;
 		m_pools = std::move(other.m_pools);
 		m_live_allocation_count = other.m_live_allocation_count.load();
 		m_next_allocation_id = other.m_next_allocation_id.load();
@@ -2130,7 +2125,6 @@ gse::vulkan::device::device(class physical_device&& physical_device, vk::raii::D
 	m_queue_families[static_cast<std::size_t>(gpu::queue_type::graphics)] = graphics_family;
 	m_queue_families[static_cast<std::size_t>(gpu::queue_type::compute)] = compute_family;
 	m_queue_families[static_cast<std::size_t>(gpu::queue_type::video_encode)] = graphics_family;
-	m_surface = surface;
 	m_descriptor_heap_props = query_descriptor_heap_props(m_physical_device);
 }
 

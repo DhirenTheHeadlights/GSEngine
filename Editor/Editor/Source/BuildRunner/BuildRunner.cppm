@@ -146,6 +146,11 @@ export namespace gse::ide::build_runner {
 		std::jthread worker;
 		std::vector<attached_game> games;
 		surface_pipe pipe;
+		std::optional<std::filesystem::file_time_type> editor_image_time;
+		std::int64_t editor_image_reported = 0;
+		bool editor_image_missing = false;
+		bool editor_image_waiting = false;
+		time next_image_poll{};
 	};
 
 	[[= system_init{}]]
@@ -226,6 +231,8 @@ namespace gse::ide::build_runner {
 	constexpr std::string_view file_exists_signature = "File exists";
 	constexpr std::string_view copy_error_signature = "Error copying file";
 	constexpr std::string_view permission_denied_signature = "Permission denied";
+	constexpr std::string_view dependency_cycle_signature = "build stopped: dependency cycle:";
+	constexpr std::string_view ninja_deps_name = ".ninja_deps";
 
 	struct source_fingerprint {
 		std::uintmax_t size = 0;
@@ -321,6 +328,14 @@ namespace gse::ide::build_runner {
 
 	auto current_executable() -> std::filesystem::path;
 
+	auto image_readable(
+		const std::filesystem::path& file
+	) -> bool;
+
+	auto watch_editor_image(
+		data& d
+	) -> void;
+
 	auto collect_module_write_conflicts(
 		std::span<const std::string> lines,
 		const std::filesystem::path& build_dir
@@ -349,6 +364,15 @@ namespace gse::ide::build_runner {
 	auto clear_stale_module_file(
 		spawn::output_stream& stream,
 		const std::filesystem::path& file
+	) -> bool;
+
+	auto collect_dependency_cycle(
+		std::span<const std::string> lines
+	) -> std::string;
+
+	auto clear_dependency_log(
+		spawn::output_stream& stream,
+		const std::filesystem::path& build_dir
 	) -> bool;
 
 	struct build_outcome {
@@ -836,6 +860,98 @@ auto gse::ide::build_runner::current_executable() -> std::filesystem::path {
 	}
 }
 
+auto gse::ide::build_runner::watch_editor_image(data& d) -> void {
+	const time now = system_clock::now<time>();
+	if (now < d.next_image_poll) {
+		return;
+	}
+	d.next_image_poll = now + seconds(1.f);
+
+	const std::filesystem::path editor_exe = current_executable();
+	if (editor_exe.empty()) {
+		log::println(log::level::warning, log::category::general, "editor watch: could not resolve this instance's executable path");
+		return;
+	}
+
+	std::error_code ec;
+	const std::filesystem::file_time_type stamp = std::filesystem::last_write_time(editor_exe, ec);
+	if (ec) {
+		if (!d.editor_image_missing) {
+			d.editor_image_missing = true;
+			log::println(log::level::info, log::category::general, "editor watch: '{}' is unavailable ({}); a rebuild is probably in flight", editor_exe, ec.message());
+		}
+		return;
+	}
+	if (d.editor_image_missing) {
+		d.editor_image_missing = false;
+		log::println(log::level::info, log::category::general, "editor watch: '{}' is back", editor_exe);
+	}
+	const auto stamp_ticks = static_cast<std::int64_t>(stamp.time_since_epoch().count());
+
+	if (!d.editor_image_time) {
+		d.editor_image_time = stamp;
+		d.editor_image_reported = stamp_ticks;
+		log::println(log::level::info, log::category::general, "editor watch: watching '{}' (image {})", editor_exe, stamp_ticks);
+		return;
+	}
+
+	if (stamp <= *d.editor_image_time) {
+		if (d.editor_image_reported != stamp_ticks) {
+			d.editor_image_reported = stamp_ticks;
+			log::println(log::level::info, log::category::general, "editor watch: '{}' went back to image {}; the rebuild must have failed", editor_exe, stamp_ticks);
+		}
+		return;
+	}
+
+	if (d.editor_image_reported != stamp_ticks) {
+		d.editor_image_reported = stamp_ticks;
+		d.editor_image_waiting = false;
+		log::println(
+			log::level::info,
+			log::category::general,
+			"editor watch: '{}' image {} -> {}, building {}, session {}, relaunching {}",
+			editor_exe,
+			static_cast<std::int64_t>(d.editor_image_time->time_since_epoch().count()),
+			stamp_ticks,
+			d.building,
+			d.session.has_value(),
+			app::relaunch_pending()
+		);
+		return;
+	}
+
+	const bool readable = image_readable(editor_exe);
+	if (!readable || d.building || d.session || app::relaunch_pending()) {
+		if (!d.editor_image_waiting) {
+			d.editor_image_waiting = true;
+			log::println(
+				log::level::info,
+				log::category::general,
+				"editor watch: holding the restart of '{}' (readable {}, building {}, session {}, relaunching {})",
+				editor_exe,
+				readable,
+				d.building,
+				d.session.has_value(),
+				app::relaunch_pending()
+			);
+		}
+		return;
+	}
+
+	log::println(log::level::info, log::category::general, "editor watch: '{}' was rebuilt by another instance; restarting", editor_exe);
+	app::relaunch_self_on_exit();
+	gse::shutdown();
+}
+
+auto gse::ide::build_runner::image_readable(const std::filesystem::path& file) -> bool {
+	void* handle = win32::CreateFileW(file.wstring().c_str(), win32::generic_read, win32::file_share_read, nullptr, win32::open_existing, win32::file_attribute_normal, nullptr);
+	if (!win32::valid_handle(handle)) {
+		return false;
+	}
+	win32::CloseHandle(handle);
+	return true;
+}
+
 auto gse::ide::build_runner::collect_module_write_conflicts(
 	const std::span<const std::string> lines,
 	const std::filesystem::path& build_dir
@@ -1119,6 +1235,53 @@ auto gse::ide::build_runner::clear_stale_module_file(spawn::output_stream& strea
 	return false;
 }
 
+auto gse::ide::build_runner::collect_dependency_cycle(const std::span<const std::string> lines) -> std::string {
+	for (const std::string& line : lines) {
+		const std::size_t marker = line.find(dependency_cycle_signature);
+		if (marker == std::string::npos) {
+			continue;
+		}
+
+		const std::string tail = line.substr(marker + dependency_cycle_signature.size());
+		const std::size_t begin = tail.find_first_not_of(" \t");
+		const std::size_t end = tail.find_last_not_of(" \t\r.");
+		if (begin == std::string::npos || end == std::string::npos || end < begin) {
+			return {};
+		}
+		return tail.substr(begin, end - begin + 1);
+	}
+	return {};
+}
+
+auto gse::ide::build_runner::clear_dependency_log(spawn::output_stream& stream, const std::filesystem::path& build_dir) -> bool {
+	constexpr int clear_attempts = 20;
+	constexpr std::chrono::milliseconds clear_retry_delay(100);
+
+	const std::filesystem::path deps = build_dir / ninja_deps_name;
+
+	std::error_code ec;
+	if (!std::filesystem::exists(deps, ec)) {
+		spawn::emit(stream, "there is no ninja dependency log to clear, so the cycle is in the module sources themselves");
+		return false;
+	}
+
+	for (int attempt = 0; attempt < clear_attempts; ++attempt) {
+		ec.clear();
+		if (std::filesystem::remove(deps, ec)) {
+			spawn::emit(stream, "cleared the stale ninja dependency log " + deps.generic_display_string());
+			spawn::emit(stream, "the retry rescans every module, so this build runs long");
+			return true;
+		}
+		if (!ec) {
+			return false;
+		}
+		std::this_thread::sleep_for(clear_retry_delay);
+	}
+
+	spawn::emit(stream, "could not clear " + deps.generic_display_string() + " after " + std::to_string(clear_attempts) + " attempts: " + ec.message());
+	return false;
+}
+
 auto gse::ide::build_runner::run_build_with_module_recovery(
 	const std::stop_token& st,
 	spawn::output_stream& stream,
@@ -1155,6 +1318,22 @@ auto gse::ide::build_runner::run_build_with_module_recovery(
 
 		if (code == 0 || attempt >= max_attempts || st.stop_requested() || stream.terminated.load(std::memory_order_acquire)) {
 			return finish();
+		}
+
+		if (const std::string cycle = collect_dependency_cycle(transcript); !cycle.empty()) {
+			const std::string key = (build_dir / ninja_deps_name).generic_native_encoded_string();
+			if (recovered.contains(key)) {
+				spawn::emit(stream, "the dependency cycle survived clearing the ninja dependency log, so it is a real module cycle: " + cycle);
+				return finish();
+			}
+
+			spawn::emit(stream, "ninja reported a dependency cycle: " + cycle);
+			if (!clear_dependency_log(stream, build_dir)) {
+				return finish();
+			}
+
+			recovered.insert(key);
+			continue;
 		}
 
 		const std::vector<std::filesystem::path> conflicts = collect_module_write_conflicts(transcript, build_dir);
@@ -1339,10 +1518,19 @@ auto gse::ide::build_runner::build_game(
 	const std::filesystem::path backup = backup_path(game_exe);
 	std::error_code ec;
 	if (std::filesystem::exists(game_exe, ec)) {
+		ec.clear();
 		std::filesystem::remove(backup, ec);
+		if (ec) {
+			spawn::emit(stream, "could not delete the previous backup " + backup.generic_display_string() + ": " + ec.message());
+			spawn::emit(stream, "something still holds that file, usually a play session started from the .bak itself; end that process, then build again");
+			return;
+		}
+
+		ec.clear();
 		std::filesystem::rename(game_exe, backup, ec);
 		if (ec) {
-			spawn::emit(stream, "could not move aside " + game_exe.filename().generic_display_string() + "; aborting build");
+			spawn::emit(stream, "could not rename " + game_exe.generic_display_string() + " to " + backup.filename().generic_display_string() + ": " + ec.message());
+			spawn::emit(stream, "another process has the game executable open; look for a running play session, an attached debugger, or antivirus scanning it, then build again");
 			return;
 		}
 	}
@@ -1394,10 +1582,21 @@ auto gse::ide::build_runner::rebuild_editor(const std::stop_token& st, build_com
 
 	const std::filesystem::path backup = backup_path(editor_exe);
 	std::error_code ec;
-	std::filesystem::remove(backup, ec);
+	if (std::filesystem::exists(backup, ec)) {
+		ec.clear();
+		std::filesystem::remove(backup, ec);
+		if (ec) {
+			spawn::emit(stream, "could not delete the previous backup " + backup.generic_display_string() + ": " + ec.message());
+			spawn::emit(stream, "something still holds that file, usually an editor started from the .bak itself; close it or end that process, then rebuild");
+			return;
+		}
+	}
+
+	ec.clear();
 	std::filesystem::rename(editor_exe, backup, ec);
 	if (ec) {
-		spawn::emit(stream, "could not back up running editor; aborting rebuild");
+		spawn::emit(stream, "could not rename " + editor_exe.generic_display_string() + " to " + backup.filename().generic_display_string() + ": " + ec.message());
+		spawn::emit(stream, "another process has the editor executable open; look for a second editor instance, an attached debugger, or antivirus scanning it, then rebuild");
 		return;
 	}
 
@@ -1897,6 +2096,7 @@ auto gse::ide::build_runner::run(context& ctx, shared_view<gpu::context::data> g
 			});
 		}
 	}
+	watch_editor_image(d);
 	return {};
 }
 

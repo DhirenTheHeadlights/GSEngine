@@ -8,6 +8,7 @@ import gse.core;
 import gse.time;
 
 import :font;
+import :text_buffer;
 import :texture;
 import :ui_renderer;
 import :styles;
@@ -137,6 +138,11 @@ export namespace gse::gui::dock {
 
 	struct space {
 		std::array<area, 5> areas;
+		location hot = location::none;
+
+		[[nodiscard]] auto select(
+			vec2f point
+		) -> location;
 
 		~space() noexcept = default;
 	};
@@ -153,6 +159,13 @@ export namespace gse::gui {
 	struct drag_ghost {
 		std::string label;
 		vec2f position;
+		bool detaching = false;
+	};
+
+	enum class caption_action : std::uint8_t {
+		minimize,
+		toggle_maximize,
+		close,
 	};
 
 	struct draw_context;
@@ -167,11 +180,19 @@ export namespace gse::gui {
 
 	struct font_set {
 		resource::handle<font> text;
+		resource::handle<font> text_strong;
+		resource::handle<font> text_emphasis;
 		resource::handle<font> code;
+		resource::handle<font> code_strong;
 		std::unordered_map<std::string, resource::handle<font>> registry;
 
 		[[nodiscard]] auto named(
 			std::string_view name
+		) const -> resource::handle<font>;
+
+		[[nodiscard]] auto face(
+			text_face which,
+			resource::handle<font> inherited
 		) const -> resource::handle<font>;
 	};
 

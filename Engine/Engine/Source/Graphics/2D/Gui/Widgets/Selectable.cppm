@@ -18,12 +18,18 @@ import :ids;
 import :styles;
 import :builder;
 import :interaction;
+import :column_header_widget;
 import :marquee_widget;
 
 export namespace gse::gui {
 	enum class selectable_align : std::uint8_t {
 		center,
 		left
+	};
+
+	struct selectable_cell {
+		std::string_view text;
+		std::optional<vec4f> color;
 	};
 
 	struct selectable_info {
@@ -34,6 +40,9 @@ export namespace gse::gui {
 		selectable_align align = selectable_align::center;
 		std::optional<vec4f> accent = std::nullopt;
 		float detail_column = 0.f;
+		std::span<const selectable_cell> cells;
+		const column_state* columns = nullptr;
+		std::optional<vec4f> background;
 		resource::handle<font> font{};
 	};
 
@@ -87,7 +96,7 @@ auto gse::gui::draw::selectable(const draw_context& ctx, const selectable_info& 
 	interaction::mark_hot(hot_widget_id, widget_id, hovered);
 	const bool activated = interaction::activate_on_click(active_widget_id, widget_id, hovered, ctx.mouse_pressed_for(row_rect), released);
 
-	vec4f target_color = ctx.style.color_widget_background;
+	vec4f target_color = info.background.value_or(ctx.style.color_widget_background);
 	if (info.selected) {
 		target_color = ctx.style.color_widget_selected;
 	}
@@ -120,6 +129,31 @@ auto gse::gui::draw::selectable(const draw_context& ctx, const selectable_info& 
 			.texture = ctx.blank_texture,
 		});
 		text_left += swatch_w + pad;
+	}
+
+	if (info.columns && !info.cells.empty()) {
+		const std::size_t count = std::min(info.cells.size(), info.columns->widths.size());
+		for (std::size_t i = 0; i < count; ++i) {
+			const rectf cell = column_cell(*info.columns, row_rect, i);
+			if (cell.width() <= 0.f) {
+				continue;
+			}
+			const selectable_cell& entry = info.cells[i];
+			ctx.queue_text({
+				.font = fnt,
+				.text = entry.text,
+				.position = {
+					column_text_left(ctx, *info.columns, cell, i, fnt_view->width(entry.text, ctx.style.font_size)),
+					baseline,
+				},
+				.scale = ctx.style.font_size,
+				.color = entry.color.value_or(i == 0 ? ctx.style.color_text_secondary : ctx.style.color_text),
+				.clip_rect = cell,
+			});
+		}
+
+		ctx.layout_cursor.y() -= widget_height + ctx.style.padding;
+		return activated;
 	}
 
 	const float split = info.detail.empty()

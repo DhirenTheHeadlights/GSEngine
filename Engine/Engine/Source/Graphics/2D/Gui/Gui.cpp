@@ -62,8 +62,8 @@ auto gse::gui::init(context& ctx, const shared_view<window::data> window_s, cons
 		return font_names.empty() ? std::string{} : font_names.front();
 	};
 
-	d.ui_font.value = resolve(d.ui_font.value, built_in_fonts + "Fonts/Inter-Regular");
-	d.code_font.value = resolve(d.code_font.value, built_in_fonts + "Fonts/MonaspaceNeon-Regular");
+	d.ui_font.value = resolve(d.ui_font.value, built_in_fonts + "Fonts/Geist-Regular");
+	d.code_font.value = resolve(d.code_font.value, built_in_fonts + "Fonts/GeistMono-Regular");
 
 	d.blank_texture = asset::queue<texture>(assets_s, "blank", vec4f(1, 1, 1, 1));
 
@@ -71,8 +71,9 @@ auto gse::gui::init(context& ctx, const shared_view<window::data> window_s, cons
 	const std::string& ui_name = d.ui_font.value;
 	const std::string& code_name = d.code_font.value;
 
-	auto text_font = fonts_requested ? asset::get<font>(assets_s, ui_name) : resource::handle<font>{};
-	auto code_font = fonts_requested ? asset::get<font>(assets_s, code_name) : resource::handle<font>{};
+	if (fonts_requested) {
+		assign_faces(d.fonts, assets_s, ui_name, code_name);
+	}
 
 	auto settled = [](const auto& handle) {
 		return handle.valid() || handle.state() == resource::state::failed;
@@ -86,25 +87,20 @@ auto gse::gui::init(context& ctx, const shared_view<window::data> window_s, cons
 		return true;
 	};
 
-	while (!settled(d.blank_texture) || (fonts_requested && (!settled(text_font) || !settled(code_font)))) {
+	while (!settled(d.blank_texture) || (fonts_requested && (!settled(d.fonts.text) || !settled(d.fonts.code)))) {
 		co_await ctx.yield_tick();
 	}
 
-	if (failed(d.blank_texture, "blank texture") || (fonts_requested && (failed(text_font, "UI font") || failed(code_font, "code font")))) {
+	if (failed(d.blank_texture, "blank texture") || (fonts_requested && (failed(d.fonts.text, "UI font") || failed(d.fonts.code, "code font")))) {
 		co_return;
 	}
 
-	if (fonts_requested) {
-		d.fonts.text = std::move(text_font);
-		d.fonts.code = std::move(code_font);
-		d.fonts.registry[ui_name] = d.fonts.text;
-		d.fonts.registry[code_name] = d.fonts.code;
-	}
-	d.primary.display_scale = window_s.content_scale;
+	d.primary.display_scale = window_s.primary.content_scale;
 	d.ui_scale_by_monitor = load_ui_scales(d.file_path);
-	sync_monitor_scale(d, d.primary, window_s.monitor_key);
+	sync_monitor_scale(d, d.primary, window_s.primary.monitor_key);
 
 	const auto viewport_size = vec2f(window::viewport(window_s));
+	d.primary.frame_rect = rectf::from_position_size({ 0.f, viewport_size.y() }, viewport_size);
 	d.primary.menus = load(d.file_path, d.primary.menus, viewport_size, scale_factor_for(d, d.primary, viewport_size.y()));
 
 	d.last_ui_font = d.ui_font.value;
@@ -131,6 +127,7 @@ auto gse::gui::init(context& ctx, const shared_view<window::data> window_s, cons
 		return bounds;
 	};
 
+	d.primary.rect = usable_screen_rect(d.reserve_top_bar ? d.primary.fstate.sty.title_bar_height : 0.f, d.primary.frame_rect);
 	const rectf screen_rect = d.primary.rect;
 
 	for (menu& m : d.primary.menus.items()) {
@@ -189,10 +186,65 @@ auto gse::gui::init(context& ctx, const shared_view<window::data> window_s, cons
 	d.primary.previous_scale_factor = scale_factor_for(d, d.primary, d.primary.previous_viewport_size.y());
 }
 
-auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, const shared_view<input::data> input_state, const save::registry& save_reg, const channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, popout_closed> requests_in, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> ui_out, data& d) -> async::task<> {
+auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, const shared_view<input::data> input_state, const save::registry& save_reg, const channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, popout_closed, menu_migrate_request, window_opened, window_closed, window_resized> requests_in, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request, window_panel_drag_request> ui_out, data& d) -> async::task<> {
 	const auto current_viewport_size = vec2f(gpu_s.render_graph->extent());
+	const auto window_size = vec2f(window::viewport(window_s));
+
+	d.primary.frame_rect = rectf::from_position_size({ 0.f, window_size.y() }, window_size);
+	for (const auto& req : requests_in.of<window_opened>()) {
+		auto vp = std::make_unique<viewport_state>();
+		vp->window = req.id;
+		vp->frame_rect = rectf::from_position_size(
+			{ 0.f, static_cast<float>(req.size.y()) },
+			vec2f(req.size)
+		);
+		viewport_state& created = *vp;
+		d.secondaries.push_back(std::move(vp));
+
+		if (!req.for_menu.empty()) {
+			migrate_menu(d.primary, created, req.for_menu);
+		}
+	}
+
+	for (const auto& req : requests_in.of<window_resized>()) {
+		if (viewport_state* vp = viewport_for_window(d, req.id)) {
+			vp->frame_rect = rectf::from_position_size(
+				{ 0.f, static_cast<float>(req.size.y()) },
+				vec2f(req.size)
+			);
+		}
+	}
+
+	for (const auto& req : requests_in.of<window_closed>()) {
+		close_window_viewport(d, req.id);
+	}
+
+	for (const auto& req : requests_in.of<menu_migrate_request>()) {
+		viewport_state* target = viewport_for_window(d, req.target_window);
+		if (!target) {
+			continue;
+		}
+		if (migrate_menu(d.primary, *target, req.menu_name)) {
+			continue;
+		}
+		for (const auto& vp : d.secondaries) {
+			if (migrate_menu(*vp, *target, req.menu_name)) {
+				break;
+			}
+		}
+	}
+
+	route_cursor(d, input::current_state(input_state).mouse_position(), window_s.focused_window);
+
+	d.sprite_commands.clear();
+	d.text_commands.clear();
+	d.text_pool_slot ^= 1;
+	d.text_pool_used = 0;
 
 	begin_viewport_frame(d, d.primary, window_s, current_viewport_size);
+	for (const auto& vp : d.secondaries) {
+		begin_viewport_frame(d, *vp, window_s, vp->frame_rect.size());
+	}
 
 	if (d.ui_font.value != d.last_ui_font || d.code_font.value != d.last_code_font) {
 		reload_font(d, assets_s);
@@ -201,6 +253,9 @@ auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const
 	}
 
 	update_viewport_interaction(d, d.primary, window_s, input_state);
+	for (const auto& vp : d.secondaries) {
+		update_viewport_interaction(d, *vp, window_s, input_state);
+	}
 
 	if (d.save_clock.elapsed() > data::update_interval) {
 		save(d);
@@ -209,11 +264,13 @@ auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const
 
 	if (!d.primary.fstate.active) {
 		d.primary.fstate = {};
+		for (const auto& vp : d.secondaries) {
+			vp->fstate = {};
+		}
 		co_return;
 	}
 
 	const input::state& input_st = input::current_state(input_state);
-	const auto viewport_size = vec2f(gpu_s.render_graph->extent());
 
 	for (const auto& req : requests_in.of<push_screen_request>()) {
 		d.primary.menu_stack.push_factory(req.factory);
@@ -228,9 +285,36 @@ auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const
 		d.primary.manual_cursor = req.show;
 	}
 
-	update_viewport(d, d.primary, input_st, viewport_size, requests_in, ui_out);
+	ui_out.push<ui_focus_request>({
+		.focus = !d.primary.menu_stack.empty() || d.primary.manual_cursor,
+	});
 
-	if (window_s.ui_focus && !window_s.mouse_visible) {
+	auto stamp_viewport = [&d](const std::size_t sprite_start, const std::size_t text_start, const id window, const rectf& bounds) {
+		auto stamp = [&](auto& commands, const std::size_t start) {
+			for (std::size_t i = start; i < commands.size(); ++i) {
+				auto& cmd = commands[i];
+				cmd.window = window;
+				cmd.clip_rect = cmd.clip_rect ? cmd.clip_rect->intersection(bounds) : bounds;
+			}
+		};
+		stamp(d.sprite_commands, sprite_start);
+		stamp(d.text_commands, text_start);
+	};
+
+	const std::size_t primary_sprite_start = d.sprite_commands.size();
+	const std::size_t primary_text_start = d.text_commands.size();
+	update_viewport(d, d.primary, input_st, requests_in, ui_out);
+	stamp_viewport(primary_sprite_start, primary_text_start, d.primary.window, d.primary.frame_rect);
+
+	for (std::size_t i = 0; i < d.secondaries.size(); ++i) {
+		viewport_state& vp = *d.secondaries[i];
+		const std::size_t sprite_start = d.sprite_commands.size();
+		const std::size_t text_start = d.text_commands.size();
+		update_viewport(d, vp, input_st, requests_in, ui_out);
+		stamp_viewport(sprite_start, text_start, vp.window, vp.frame_rect);
+	}
+
+	if (window_s.primary.ui_focus && !window_s.mouse_visible) {
 		cursor::render_to(assets_s, d.sprite_commands, input_st.mouse_position());
 	}
 	else if (window_s.mouse_visible) {
@@ -305,6 +389,9 @@ auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const
 	}
 
 	d.primary.fstate = {};
+	for (const auto& vp : d.secondaries) {
+		vp->fstate = {};
+	}
 
 	co_return;
 }

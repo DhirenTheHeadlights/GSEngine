@@ -27,6 +27,7 @@ export namespace gse::gpu {
 
 	struct color_output_info {
 		bool is_swapchain = false;
+		gse::id window;
 		const image* custom_target = nullptr;
 		transient_image_handle transient_target;
 		load_op op = load_op::clear;
@@ -95,9 +96,10 @@ export namespace gse::gpu {
 	public:
 		explicit render_graph(
 			device& device,
-			swap_chain* swapchain,
 			frame& frame
 		);
+
+		~render_graph();
 
 		auto execute(
 			frame_request_drain drain
@@ -127,6 +129,10 @@ export namespace gse::gpu {
 		[[nodiscard]] auto current_frame() const -> std::uint32_t;
 
 		[[nodiscard]] auto extent() const -> vec2u;
+
+		[[nodiscard]] auto extent(
+			gse::id window
+		) const -> vec2u;
 
 		[[nodiscard]] auto depth_image(
 			this auto& self
@@ -215,6 +221,8 @@ export namespace gse::gpu {
 			queue_timeline<device> timeline;
 			std::uint64_t signal_counter = 0;
 		};
+
+		static int s_live_count;
 
 		device* m_device;
 		swap_chain* m_swapchain;

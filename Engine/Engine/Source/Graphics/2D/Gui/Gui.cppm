@@ -46,6 +46,7 @@ export namespace gse::gui {
 		std::vector<id> visible_menu_ids_last_frame;
 		std::unordered_map<std::uint64_t, id> name_to_menu_id;
 		std::unordered_set<std::uint64_t> suppressed_menus;
+		bool adopts_unclaimed_content = false;
 
 		std::optional<dock::space> active_dock_space;
 		std::optional<drag_ghost> active_drag_ghost;
@@ -56,14 +57,19 @@ export namespace gse::gui {
 		tooltip_state tooltip;
 		render_layer input_layer_render = render_layer::content;
 		bool input_suppressed = false;
+		bool owns_cursor = true;
 		input_layer input_layers_data;
 		context_menu_state context_menu;
 		std::optional<menu> screen_surface;
 		bool manual_cursor = false;
 		std::vector<id> pending_popout_close_ids;
 		std::optional<std::pair<id, std::uint32_t>> pending_tab_close;
+		std::optional<caption_action> pending_caption_action;
+		bool window_grip_held = false;
 
 		frame_state fstate{};
+		id window;
+		rectf frame_rect;
 		rectf rect;
 		vec2f previous_viewport_size;
 		float previous_scale_factor = 0.f;
@@ -76,6 +82,8 @@ export namespace gse::gui {
 			= settings::describe<"Color theme applied to all UI panels and widgets.">{}
 		]]
 		theme current_theme = theme::midnight;
+
+		std::optional<style> style_override;
 
 		[[
 			= settings::
@@ -139,7 +147,8 @@ export namespace gse::gui {
 		std::unordered_map<std::uint64_t, scroll_state> widget_scrolls;
 		std::unordered_map<std::uint64_t, vec4f> widget_anim_colors;
 
-		[[= shared]] viewport_state primary;
+		[[= shared]] viewport_state primary{ .adopts_unclaimed_content = true };
+		std::vector<std::unique_ptr<viewport_state>> secondaries;
 
 		static constexpr time update_interval = seconds(30.f);
 	};
@@ -160,8 +169,8 @@ export namespace gse::gui {
 		shared_view<asset::data> assets_s,
 		shared_view<input::data> input_state,
 		const save::registry& save_reg,
-		channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, popout_closed> requests_in,
-		channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> ui_out,
+		channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, popout_closed, menu_migrate_request, window_opened, window_closed, window_resized> requests_in,
+		channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request, window_panel_drag_request> ui_out,
 		data& d
 	) -> async::task<>;
 

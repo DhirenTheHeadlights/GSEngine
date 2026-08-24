@@ -44,6 +44,14 @@ auto gse::gui::has_side_accent(const menu& m) -> bool {
 	return m.accent_edge == panel_edge::left || m.accent_edge == panel_edge::right;
 }
 
+auto gse::gui::is_floating_menu(const menu& m) -> bool {
+	return m.docked_to == dock::location::none && !m.owner_id().exists() && !m.bare && !m.fixed;
+}
+
+auto gse::gui::tab_group_grab_extent(const menu& m, const style& sty) -> float {
+	return !m.bare && m.tab_contents.size() > 1 ? sty.bare_header_height : 0.f;
+}
+
 auto gse::gui::popout_close_button_rect(const rectf& title_bar_rect, const style& sty) -> rectf {
 	const float button_size = std::min(sty.close_button_size, sty.title_bar_height);
 	const float vertical_pad = std::max(0.f, (sty.title_bar_height - button_size) * 0.5f);
@@ -56,14 +64,95 @@ auto gse::gui::popout_close_button_rect(const rectf& title_bar_rect, const style
 	});
 }
 
-auto gse::gui::draw_dock_space(data& d, const style& sty, const dock::space& space, const vec2f mouse) -> void {
+auto gse::gui::window_caption_buttons::extent() const -> float {
+	return std::max({ minimize.right(), maximize.right(), close.right() }) -
+		std::min({ minimize.left(), maximize.left(), close.left() });
+}
+
+auto gse::gui::window_caption_buttons_for(const rectf& title_bar_rect, const style& sty) -> window_caption_buttons {
+	const float button_w = sty.title_bar_height * 1.5f;
+	const float button_h = std::min(sty.title_bar_height, title_bar_rect.height());
+	auto slot = [&](const float from_right) {
+		return rectf::from_position_size(
+			{ title_bar_rect.right() - button_w * from_right, title_bar_rect.top() },
+			{ button_w, button_h }
+		);
+	};
+	return {
+		.minimize = slot(3.f),
+		.maximize = slot(2.f),
+		.close = slot(1.f),
+	};
+}
+
+auto gse::gui::window_caption_grip_rect(const font_set& fonts, const menu& m, const style& sty, const rectf& title_bar_rect) -> rectf {
+	if (m.tab_contents.empty()) {
+		return {};
+	}
+
+	const auto caption = std::string_view(m.tab_contents[0]);
+	const float text_extent = fonts.text.valid() ? fonts.text.resolve()->width(caption, sty.font_size) : 0.f;
+	const float available = std::max(0.f, title_bar_rect.width() - window_caption_buttons_for(title_bar_rect, sty).extent());
+	const float extent = std::min(available, text_extent + sty.padding * 4.f);
+	return rectf::from_position_size(
+		title_bar_rect.top_left(),
+		{ extent, std::min(sty.title_bar_height, title_bar_rect.height()) }
+	);
+}
+
+auto gse::gui::draw_window_caption_buttons(data& d, viewport_state& vp, const gse::input::state& input_state, const menu& current_menu, const rectf& title_bar_rect, const render_layer layer) -> void {
+	const style& sty = vp.fstate.sty;
+	const window_caption_buttons buttons = window_caption_buttons_for(title_bar_rect, sty);
+	const vec2f mouse_pos = input_state.mouse_position();
+	const bool pressed = input_state.mouse_button_pressed(mouse_button::button_1);
+	const bool released = input_state.mouse_button_released(mouse_button::button_1);
+
+	auto button = [&](const rectf& rect, const std::string_view key, const std::span<const symbol::stroke> glyph, const vec4f hover_color) {
+		const bool hovered = rect.contains(mouse_pos);
+		const id widget_id = ids::make_from_key(hash_combine(current_menu.id().number(), stable_id(key)));
+		const auto btn = interaction::press_from(vp.hot_widget_id, vp.active_widget_id, widget_id, hovered, hovered && pressed, released, true);
+
+		d.sprite_commands.push_back({
+			.rect = rect,
+			.color = btn.color({
+				.idle = vec4f{ 0.f, 0.f, 0.f, 0.f },
+				.hot = hover_color,
+				.active = hover_color,
+				.disabled = vec4f{ 0.f, 0.f, 0.f, 0.f },
+			}),
+			.texture = d.blank_texture,
+			.layer = layer,
+		});
+
+		symbol::draw(d.sprite_commands, d.blank_texture, glyph, rect, {
+			.color = hovered ? sty.color_icon_hovered : sty.color_icon,
+			.extent = sty.icon_extent,
+			.layer = layer,
+			.clip_rect = rect,
+		});
+
+		return btn.activated;
+	};
+
+	if (button(buttons.minimize, "window_caption_minimize", symbol::minimize(), sty.color_widget_hovered)) {
+		vp.pending_caption_action = caption_action::minimize;
+	}
+	if (button(buttons.maximize, "window_caption_maximize", symbol::maximize(), sty.color_widget_hovered)) {
+		vp.pending_caption_action = caption_action::toggle_maximize;
+	}
+	if (button(buttons.close, "window_caption_close", symbol::close(), vec4f{ 0.78f, 0.22f, 0.22f, 1.f })) {
+		vp.pending_caption_action = caption_action::close;
+	}
+}
+
+auto gse::gui::draw_dock_space(data& d, const style& sty, const dock::space& space) -> void {
 	const float border = std::max(1.f, std::floor(sty.scale_factor));
 	const float radius = std::max(2.f, 4.f * sty.scale_factor);
 	const float inset = 5.f * sty.scale_factor;
 
 	const dock::area* hot = nullptr;
 	for (const dock::area& area : space.areas) {
-		if (area.rect.width() > 0.f && area.rect.height() > 0.f && area.rect.contains(mouse)) {
+		if (area.dock_location == space.hot) {
 			hot = &area;
 			break;
 		}
@@ -158,7 +247,7 @@ auto gse::gui::draw_menu_chrome(data& d, viewport_state& vp, const gse::input::s
 	const style& sty = vp.fstate.sty;
 
 	const rectf display_rect = calculate_display_rect(vp, current_menu);
-	const bool is_floating = current_menu.docked_to == dock::location::none && !current_menu.owner_id().exists() && !current_menu.bare;
+	const bool is_floating = is_floating_menu(current_menu);
 	const float menu_radius = is_floating ? sty.corner_radius_menu : 0.f;
 
 	const float top_inset = menu_chrome_height(d.fonts, current_menu, vp.fstate.sty, display_rect.width());
@@ -228,7 +317,18 @@ auto gse::gui::draw_menu_chrome(data& d, viewport_state& vp, const gse::input::s
 		}
 	}
 	else if (current_menu.tab_contents.size() > 1) {
-		draw_tab_bar(d, vp, input_state, current_menu, title_bar_rect, layer);
+		const float grab_extent = tab_group_grab_extent(current_menu, sty);
+		d.sprite_commands.push_back({
+			.rect = rectf::from_position_size(title_bar_rect.top_left(), { title_bar_rect.width(), grab_extent }),
+			.color = sty.color_accent,
+			.texture = d.blank_texture,
+			.layer = layer,
+			.corner_radius = menu_radius
+		});
+		draw_tab_bar(d, vp, input_state, current_menu, rectf::from_position_size(
+			{ title_bar_rect.left(), title_bar_rect.top() - grab_extent },
+			{ title_bar_rect.width(), std::max(0.f, title_bar_rect.height() - grab_extent) }
+		), layer);
 	}
 	else {
 		d.sprite_commands.push_back({
@@ -239,11 +339,22 @@ auto gse::gui::draw_menu_chrome(data& d, viewport_state& vp, const gse::input::s
 			.corner_radius = menu_radius
 		});
 
+		const bool window_grip = vp.window.exists() && !current_menu.owner_id().exists();
+		if (window_grip) {
+			d.sprite_commands.push_back({
+				.rect = window_caption_grip_rect(d.fonts, current_menu, sty, title_bar_rect),
+				.color = sty.color_tab_active,
+				.texture = d.blank_texture,
+				.layer = layer,
+				.corner_radius = sty.corner_radius
+			});
+		}
+
 		if (d.fonts.text.valid() && !current_menu.tab_contents.empty()) {
 			d.text_commands.push_back({
 				.font = d.fonts.text,
 				.text = intern_text(d, current_menu.tab_contents[0]),
-				.position = { title_bar_rect.left() + sty.padding, title_bar_rect.center().y() + d.fonts.text.resolve()->vertical_center_offset(sty.font_size) },
+				.position = { title_bar_rect.left() + (window_grip ? sty.padding * 2.f : sty.padding), title_bar_rect.center().y() + d.fonts.text.resolve()->vertical_center_offset(sty.font_size) },
 				.scale = sty.font_size,
 				.clip_rect = title_bar_rect,
 				.layer = layer
@@ -260,6 +371,10 @@ auto gse::gui::draw_menu_chrome(data& d, viewport_state& vp, const gse::input::s
 			.texture = d.blank_texture,
 			.layer = layer
 		});
+	}
+
+	if (vp.window.exists() && !current_menu.owner_id().exists()) {
+		draw_window_caption_buttons(d, vp, input_state, current_menu, title_bar_rect, layer);
 	}
 
 	if (is_popout_menu_tag(current_menu.id().tag())) {
@@ -286,7 +401,6 @@ auto gse::gui::draw_menu_chrome(data& d, viewport_state& vp, const gse::input::s
 			.color = bg_color,
 			.texture = d.blank_texture,
 			.layer = layer,
-			.z_order = 1,
 			.corner_radius = close_rect.width() * 0.5f,
 		});
 
@@ -294,7 +408,6 @@ auto gse::gui::draw_menu_chrome(data& d, viewport_state& vp, const gse::input::s
 			.color = hovered ? sty.color_icon_hovered : sty.color_icon,
 			.extent = sty.icon_extent,
 			.layer = layer,
-			.z_order = 2,
 			.clip_rect = close_rect,
 		});
 
@@ -406,7 +519,7 @@ auto gse::gui::menu_chrome_height(const font_set& fonts, const menu& m, const st
 		.max_tab_extent = 200.f,
 	});
 	const std::uint32_t rows = std::max(1u, std::min(metrics.required_rows, std::max(1u, m.tab_bar.visible_rows)));
-	return tab_strip_extent(metrics, rows) + 4.f * sty.scale_factor;
+	return tab_group_grab_extent(m, sty) + tab_strip_extent(metrics, rows) + 4.f * sty.scale_factor;
 }
 
 auto gse::gui::tab_index_at(const font_set& fonts, const menu& m, const style& sty, const rectf& title_bar_rect, const vec2f mouse) -> std::optional<std::uint32_t> {
@@ -423,8 +536,14 @@ auto gse::gui::tab_index_at(const font_set& fonts, const menu& m, const style& s
 		});
 	}
 
-	for (const tab_strip_placement& p : tab_strip_layout(fonts.text, sty, title_bar_rect, descs, m.tab_bar, tab_overflow::wrap, 60.f, 200.f)) {
-		if (p.rect.intersection(title_bar_rect).contains(mouse)) {
+	const float grab_extent = tab_group_grab_extent(m, sty);
+	const rectf strip_rect = rectf::from_position_size(
+		{ title_bar_rect.left(), title_bar_rect.top() - grab_extent },
+		{ title_bar_rect.width(), std::max(0.f, title_bar_rect.height() - grab_extent) }
+	);
+
+	for (const tab_strip_placement& p : tab_strip_layout(fonts.text, sty, strip_rect, descs, m.tab_bar, tab_overflow::wrap, 60.f, 200.f)) {
+		if (p.rect.intersection(strip_rect).contains(mouse)) {
 			return static_cast<std::uint32_t>(p.index);
 		}
 	}

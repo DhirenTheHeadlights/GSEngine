@@ -262,6 +262,7 @@ auto gse::renderer::ui::run(context& ctx, const shared_view<gpu::context::data> 
 
 		unified.push_back({
 			.type = command_type::sprite,
+			.window = cmd.window,
 			.layer = cmd.layer,
 			.z_order = cmd.z_order,
 			.clip_rect = cmd.clip_rect,
@@ -284,31 +285,36 @@ auto gse::renderer::ui::run(context& ctx, const shared_view<gpu::context::data> 
 		});
 	}
 
-	for (const auto& [font, text, position, scale, color, clip_rect, layer, z_order] : text_commands) {
-		if (!font.valid() || text.empty()) {
+	for (const auto& cmd : text_commands) {
+		if (!cmd.font.valid() || cmd.text.empty()) {
 			continue;
 		}
 
 		unified.push_back({
 			.type = command_type::text,
-			.layer = layer,
-			.z_order = z_order,
-			.clip_rect = clip_rect,
+			.window = cmd.window,
+			.layer = cmd.layer,
+			.z_order = cmd.z_order,
+			.clip_rect = cmd.clip_rect,
 			.texture = {},
 			.rect = {},
-			.color = color,
+			.color = cmd.color,
 			.uv_rect = {},
 			.rotation = {},
-			.font = font,
-			.text = text,
-			.position = position,
-			.scale = scale,
+			.font = cmd.font,
+			.text = cmd.text,
+			.position = cmd.position,
+			.scale = cmd.scale,
 		});
 	}
 
 	std::ranges::stable_sort(
 		unified,
 		[](const unified_command& a, const unified_command& b) {
+			if (a.window != b.window) {
+				return a.window.number() < b.window.number();
+			}
+
 			if (a.layer != b.layer) {
 				return static_cast<std::uint8_t>(a.layer) < static_cast<std::uint8_t>(b.layer);
 			}
@@ -329,6 +335,7 @@ auto gse::renderer::ui::run(context& ctx, const shared_view<gpu::context::data> 
 	);
 
 	auto current_type = command_type::sprite;
+	gse::id current_window;
 	resource::handle<texture> current_texture;
 	resource::handle<font> current_font;
 	std::optional<rect_t<vec2f>> current_clip;
@@ -340,6 +347,7 @@ auto gse::renderer::ui::run(context& ctx, const shared_view<gpu::context::data> 
 		if (indices.size() > batch_index_start) {
 			batches.push_back({
 				.type = current_type,
+				.window = current_window,
 				.index_offset = batch_index_start,
 				.index_count = static_cast<std::uint32_t>(indices.size() - batch_index_start),
 				.clip_rect = current_clip,
@@ -355,7 +363,10 @@ auto gse::renderer::ui::run(context& ctx, const shared_view<gpu::context::data> 
 	for (const auto& cmd : unified) {
 		bool needs_flush = false;
 
-		if (cmd.type != current_type) {
+		if (cmd.window != current_window) {
+			needs_flush = true;
+		}
+		else if (cmd.type != current_type) {
 			needs_flush = true;
 		}
 		else if (cmd.clip_rect.has_value() != current_clip.has_value()) {
@@ -379,6 +390,7 @@ auto gse::renderer::ui::run(context& ctx, const shared_view<gpu::context::data> 
 
 		if (needs_flush) {
 			flush_batch();
+			current_window = cmd.window;
 			current_type = cmd.type;
 			current_clip = cmd.clip_rect;
 			current_texture = cmd.texture;
@@ -425,150 +437,175 @@ auto gse::renderer::ui::frame(context& ctx, shared_view<gpu::context::data> gpu_
 	vertex_buffer.host_write(vertices);
 	index_buffer.host_write(indices);
 
-	const auto ext = gpu_s.render_graph->extent();
-	const auto width = ext.x();
-	const auto height = ext.y();
-	const vec2f window_size = { static_cast<float>(width), static_cast<float>(height) };
-
-	const auto projection = orthographic(
-		meters(0.0f),
-		meters(static_cast<float>(width)),
-		meters(0.0f),
-		meters(static_cast<float>(height)),
-		meters(-1.0f),
-		meters(1.0f)
-	);
-
-	const vec2f inv_screen_size{ width > 0 ? 1.0f / static_cast<float>(width) : 0.0f,
-								 height > 0 ? 1.0f / static_cast<float>(height) : 0.0f };
-
-	const std::uint32_t snapshot_idx = [&]() -> std::uint32_t {
-		if (!snapshot_s.ready) {
-			return shaders::bindless::invalid_index;
+	std::vector<gse::id> windows;
+	for (const auto& b : batches) {
+		if (std::ranges::find(windows, b.window) == windows.end()) {
+			windows.push_back(b.window);
 		}
-		const auto& slot = snapshot_s.slots[frame_index];
-		return slot.valid() ? slot.slot().index : shaders::bindless::invalid_index;
-	}();
-
-	sprite_push_constants sprite_pc{
-		.projection = projection,
-		.tex_idx = 0,
-		.snapshot_tex_idx = shaders::bindless::invalid_index,
-		.inv_screen_size = inv_screen_size,
-	};
-
-	msdf_push_constants text_pc{
-		.projection = projection,
-		.unit_range = {},
-		.depth = 0.0f,
-		.tex_idx = 0,
-		.shadow_color = vec3f{ 0.f, 0.f, 0.f },
-		.shadow_offset_px = 1.0f,
-		.shadow_softness = 0.7f,
-		.shadow_strength = 0.45f,
-	};
-
-	const vec2u ext_size{ width, height };
-
-	auto rec = co_await gpu::pass<^^gse::renderer::ui::frame>(pass_out)
-		.color(gpu::load_color())
-		.after<^^forward::frame, ^^scene_snapshot::frame, ^^physics_debug::frame, ^^sdf_grid::frame, ^^tonemap::frame, ^^world_text::frame>();
-
-	if (snapshot_idx != shaders::bindless::invalid_index) {
-		rec.sample_image(snapshot_s.snapshots[frame_index], gpu::pipeline_stage_flag::fragment_shader);
 	}
 
-	rec.bind_index(index_buffer);
-
-	rec.set_viewport(ext_size);
-	rec.set_scissor(ext_size);
-
-	auto bound_type = command_type::sprite;
-	bool first_batch = true;
-
-	for (const auto& [type, index_offset, index_count, clip_rect, texture, font, sample_scene_snapshot, image_slot] : batches) {
-		if (index_count == 0) {
+	for (const gse::id window : windows) {
+		const auto ext = gpu_s.render_graph->extent(window);
+		if (ext.x() == 0 || ext.y() == 0) {
 			continue;
 		}
+		const auto width = ext.x();
+		const auto height = ext.y();
+		const vec2f window_size = { static_cast<float>(width), static_cast<float>(height) };
 
-		if (first_batch || type != bound_type) {
+		const auto projection = orthographic(
+			meters(0.0f),
+			meters(static_cast<float>(width)),
+			meters(0.0f),
+			meters(static_cast<float>(height)),
+			meters(-1.0f),
+			meters(1.0f)
+		);
+
+		const vec2f inv_screen_size{ width > 0 ? 1.0f / static_cast<float>(width) : 0.0f,
+									 height > 0 ? 1.0f / static_cast<float>(height) : 0.0f };
+
+		const std::uint32_t snapshot_idx = [&]() -> std::uint32_t {
+			if (!snapshot_s.ready) {
+				return shaders::bindless::invalid_index;
+			}
+			const auto& slot = snapshot_s.slots[frame_index];
+			return slot.valid() ? slot.slot().index : shaders::bindless::invalid_index;
+		}();
+
+		sprite_push_constants sprite_pc{
+			.projection = projection,
+			.tex_idx = 0,
+			.snapshot_tex_idx = shaders::bindless::invalid_index,
+			.inv_screen_size = inv_screen_size,
+		};
+
+		msdf_push_constants text_pc{
+			.projection = projection,
+			.unit_range = {},
+			.depth = 0.0f,
+			.tex_idx = 0,
+			.shadow_color = vec3f{ 0.f, 0.f, 0.f },
+			.shadow_offset_px = 1.0f,
+			.shadow_softness = 0.7f,
+			.shadow_strength = 0.45f,
+		};
+
+		const vec2u ext_size{ width, height };
+
+		auto builder = window.exists()
+			? gpu::pass(pass_out, find_or_generate_id(std::format("gse::renderer::ui::frame#{}", window.number())))
+			: gpu::pass<^^gse::renderer::ui::frame>(pass_out);
+
+		auto rec = co_await std::move(builder)
+			.color(gpu::load_color())
+			.target(window)
+			.after<^^forward::frame, ^^scene_snapshot::frame, ^^physics_debug::frame, ^^sdf_grid::frame, ^^tonemap::frame, ^^world_text::frame>();
+
+		if (snapshot_idx != shaders::bindless::invalid_index) {
+			rec.sample_image(snapshot_s.snapshots[frame_index], gpu::pipeline_stage_flag::fragment_shader);
+		}
+
+		rec.bind_index(index_buffer);
+
+		rec.set_viewport(ext_size);
+		rec.set_scissor(ext_size);
+
+		auto bound_type = command_type::sprite;
+		bool first_batch = true;
+
+		for (const auto& batch : batches) {
+			if (batch.window != window || batch.index_count == 0) {
+				continue;
+			}
+			const auto type = batch.type;
+			const auto index_offset = batch.index_offset;
+			const auto index_count = batch.index_count;
+			const auto& clip_rect = batch.clip_rect;
+			const auto& texture = batch.texture;
+			const auto& font = batch.font;
+			const auto sample_scene_snapshot = batch.sample_scene_snapshot;
+			const auto image_slot = batch.image_slot;
+
+			if (first_batch || type != bound_type) {
+				if (type == command_type::sprite) {
+					rec.bind(d.sprite_pipeline);
+				}
+				else {
+					rec.bind(d.text_pipeline);
+				}
+				bound_type = type;
+				first_batch = false;
+			}
+
+			std::uint32_t tex_idx = 0;
+			bool has_texture = false;
+			const auto texture_view = texture.valid() ? texture.resolve() : nullptr;
+			const auto font_view = font.valid() ? font.resolve() : nullptr;
 			if (type == command_type::sprite) {
-				rec.bind(d.sprite_pipeline);
+				if (image_slot.valid()) {
+					tex_idx = image_slot.index;
+					has_texture = true;
+				}
+				else if (texture_view && texture_view->bindless_slot().valid()) {
+					tex_idx = texture_view->bindless_slot().index;
+					has_texture = true;
+				}
 			}
 			else {
-				rec.bind(d.text_pipeline);
-			}
-			bound_type = type;
-			first_batch = false;
-		}
-
-		std::uint32_t tex_idx = 0;
-		bool has_texture = false;
-		const auto texture_view = texture.valid() ? texture.resolve() : nullptr;
-		const auto font_view = font.valid() ? font.resolve() : nullptr;
-		if (type == command_type::sprite) {
-			if (image_slot.valid()) {
-				tex_idx = image_slot.index;
-				has_texture = true;
-			}
-			else if (texture_view && texture_view->bindless_slot().valid()) {
-				tex_idx = texture_view->bindless_slot().index;
-				has_texture = true;
-			}
-		}
-		else {
-			if (font_view && font_view->texture()->bindless_slot().valid()) {
-				tex_idx = font_view->texture()->bindless_slot().index;
-				has_texture = true;
-			}
-		}
-
-		if (!has_texture) {
-			continue;
-		}
-
-		if (type == command_type::sprite) {
-			sprite_pc.tex_idx = tex_idx;
-			sprite_pc.snapshot_tex_idx = sample_scene_snapshot ? snapshot_idx : shaders::bindless::invalid_index;
-			rec.push_bindings<sprite_entry>(
-				sprite_pc,
-				{
-					.vertex_buffer = vertex_buffer.slot(),
-					.textures_sampler = d.ui_sampler.slot(),
+				if (font_view && font_view->texture()->bindless_slot().valid()) {
+					tex_idx = font_view->texture()->bindless_slot().index;
+					has_texture = true;
 				}
-			);
-		}
-		else {
-			const auto atlas_size = font_view->texture()->image_data().size;
-			const float atlas_w = std::max(static_cast<float>(atlas_size.x()), 1.f);
-			const float atlas_h = std::max(static_cast<float>(atlas_size.y()), 1.f);
-			text_pc.unit_range = { font_view->pixel_range() / atlas_w, font_view->pixel_range() / atlas_h };
-			text_pc.tex_idx = tex_idx;
-			rec.push_bindings<msdf_entry>(
-				text_pc,
-				{
-					.vertex_buffer = vertex_buffer.slot(),
-					.textures_sampler = d.ui_sampler.slot(),
-				}
-			);
-		}
+			}
 
-		if (clip_rect) {
-			const float left = std::max(0.0f, clip_rect->left());
-			const float right = std::min(window_size.x(), clip_rect->right());
-			const float bottom = std::max(0.0f, clip_rect->bottom());
-			const float top = std::min(window_size.y(), clip_rect->top());
-			rec.set_scissor(
-				static_cast<std::int32_t>(left),
-				static_cast<std::int32_t>(window_size.y() - top),
-				static_cast<std::uint32_t>(std::max(0.0f, right - left)),
-				static_cast<std::uint32_t>(std::max(0.0f, top - bottom))
-			);
-		}
-		else {
-			rec.set_scissor(ext_size);
-		}
+			if (!has_texture) {
+				continue;
+			}
 
-		rec.draw_indexed(index_count, 1, index_offset, 0, 0);
+			if (type == command_type::sprite) {
+				sprite_pc.tex_idx = tex_idx;
+				sprite_pc.snapshot_tex_idx = sample_scene_snapshot ? snapshot_idx : shaders::bindless::invalid_index;
+				rec.push_bindings<sprite_entry>(
+					sprite_pc,
+					{
+						.vertex_buffer = vertex_buffer.slot(),
+						.textures_sampler = d.ui_sampler.slot(),
+					}
+				);
+			}
+			else {
+				const auto atlas_size = font_view->texture()->image_data().size;
+				const float atlas_w = std::max(static_cast<float>(atlas_size.x()), 1.f);
+				const float atlas_h = std::max(static_cast<float>(atlas_size.y()), 1.f);
+				text_pc.unit_range = { font_view->pixel_range() / atlas_w, font_view->pixel_range() / atlas_h };
+				text_pc.tex_idx = tex_idx;
+				rec.push_bindings<msdf_entry>(
+					text_pc,
+					{
+						.vertex_buffer = vertex_buffer.slot(),
+						.textures_sampler = d.ui_sampler.slot(),
+					}
+				);
+			}
+
+			if (clip_rect) {
+				const float left = std::max(0.0f, clip_rect->left());
+				const float right = std::min(window_size.x(), clip_rect->right());
+				const float bottom = std::max(0.0f, clip_rect->bottom());
+				const float top = std::min(window_size.y(), clip_rect->top());
+				rec.set_scissor(
+					static_cast<std::int32_t>(left),
+					static_cast<std::int32_t>(window_size.y() - top),
+					static_cast<std::uint32_t>(std::max(0.0f, right - left)),
+					static_cast<std::uint32_t>(std::max(0.0f, top - bottom))
+				);
+			}
+			else {
+				rec.set_scissor(ext_size);
+			}
+
+			rec.draw_indexed(index_count, 1, index_offset, 0, 0);
+		}
 	}
 }

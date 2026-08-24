@@ -44,12 +44,20 @@ export namespace gse::vulkan {
 		) -> void;
 
 		auto create_surface(
-			const window::data& win
+			const window::window_surface& win
 		) -> void;
 
 		auto destroy_surface() -> void;
 
 		[[nodiscard]] auto surface() const -> gpu::surface;
+
+		[[nodiscard]] auto create_owned_surface(
+			native_window_handle handle
+		) const -> gpu::surface;
+
+		auto destroy_owned_surface(
+			gpu::surface surface
+		) const -> void;
 
 		[[nodiscard]] auto enumerate_physical_devices() const -> std::vector<physical_device>;
 
@@ -102,7 +110,7 @@ auto gse::vulkan::instance::create_surface(const shared_view<window::data> win) 
 	m_surface = vk::raii::SurfaceKHR(m_instance, raw_surface);
 }
 
-auto gse::vulkan::instance::create_surface(const window::data& win) -> void {
+auto gse::vulkan::instance::create_surface(const window::window_surface& win) -> void {
 	const auto raw_surface = create_window_surface(*m_instance, window::raw_handle(win));
 	m_surface = vk::raii::SurfaceKHR(m_instance, raw_surface);
 }
@@ -123,6 +131,17 @@ auto gse::vulkan::instance::enumerate_physical_devices() const -> std::vector<ph
 
 auto gse::vulkan::instance::surface() const -> gpu::surface {
 	return std::bit_cast<gpu::surface>(*m_surface);
+}
+
+auto gse::vulkan::instance::create_owned_surface(const native_window_handle handle) const -> gpu::surface {
+	return std::bit_cast<gpu::surface>(create_window_surface(*m_instance, handle));
+}
+
+auto gse::vulkan::instance::destroy_owned_surface(const gpu::surface surface) const -> void {
+	if (!surface) {
+		return;
+	}
+	vk::Instance(*m_instance).destroySurfaceKHR(std::bit_cast<vk::SurfaceKHR>(surface));
 }
 
 auto gse::vulkan::instance::create(const std::span<const char* const> required_extensions, const bool enable_validation) -> instance {

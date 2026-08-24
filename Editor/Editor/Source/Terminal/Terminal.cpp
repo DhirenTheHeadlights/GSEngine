@@ -71,6 +71,10 @@ namespace gse::ide::terminal {
 		const gui::draw_context& ctx
 	) -> void;
 
+	auto offer_site(
+		const agent::blame_offer& offer
+	) -> std::string;
+
 	auto offer_pending_line(
 		const agent::blame_offer& offer
 	) -> std::string;
@@ -210,15 +214,22 @@ auto gse::ide::terminal::append_lines(instance& inst, const std::span<const line
 	}
 }
 
+auto gse::ide::terminal::offer_site(const agent::blame_offer& offer) -> std::string {
+	const std::string head = std::format("{}:{}", offer.file.filename().generic_display_string(), offer.line);
+	return offer.extra == 0
+		? head
+		: std::format("{} +{}", head, offer.extra);
+}
+
 auto gse::ide::terminal::offer_pending_line(const agent::blame_offer& offer) -> std::string {
-	const std::string site = std::format("{}:{}", offer.file.filename().generic_display_string(), offer.line);
+	const std::string site = offer_site(offer);
 	return offer.session == 0
 		? std::format("  -> no chat owns {} - start one to fix it", site)
 		: std::format("  -> send {} to \"{}\"", site, offer.session_name);
 }
 
 auto gse::ide::terminal::offer_sent_line(const agent::blame_offer& offer) -> std::string {
-	const std::string site = std::format("{}:{}", offer.file.filename().generic_display_string(), offer.line);
+	const std::string site = offer_site(offer);
 	return offer.session == 0
 		? std::format("  -- started a chat to fix {}", site)
 		: std::format("  -- sent {} to \"{}\"", site, offer.session_name);
@@ -541,7 +552,12 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, const input::state& inp
 	const vec2f mouse = input.mouse_position();
 	const bool goto_ctrl = input.key_held(key::left_control) || input.key_held(key::right_control);
 	if ((goto_ctrl || !inst.dispatches.empty()) && ctx.hovers(log_rect) && !tail_press.hovered && !inst.buffer.lines.empty()) {
-		const gui::buffer_position hover = gui::draw::text_area_position_at(ctx, inst.buffer, inst.view, log_rect, false, 4, mouse);
+		const gui::buffer_position hover = gui::draw::text_area_position_at(ctx, {
+			.buffer = inst.buffer,
+			.state = inst.view,
+			.rect = log_rect,
+			.spans = inst.spans,
+		}, mouse);
 		const std::optional<link_hit> hit = goto_ctrl ? path_link_at(inst.buffer.line(hover.line), hover.column) : std::nullopt;
 		if (hit) {
 			link = hit;

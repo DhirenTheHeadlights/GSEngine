@@ -22,6 +22,17 @@ gse::gui::menu::menu(std::string_view tag, const menu_data& data)
 	tab_contents.emplace_back(tag);
 }
 
+auto gse::gui::dock::space::select(const vec2f point) -> location {
+	hot = location::none;
+	for (const area& a : areas) {
+		if (a.rect.width() > 0.f && a.rect.height() > 0.f && a.rect.contains(point)) {
+			hot = a.dock_location;
+			break;
+		}
+	}
+	return hot;
+}
+
 gse::gui::draw_context::draw_context(draw_context_init init, const input::state& input) : current_menu(init.current_menu), style(init.style), fonts(init.fonts), blank_texture(init.blank_texture), layout_cursor(init.layout_cursor), sprites(init.sprites), texts(init.texts), text_pool(init.text_pool), text_pool_used(init.text_pool_used), widget_anim_colors(init.widget_anim_colors), widget_scrolls(init.widget_scrolls), current_layer(init.current_layer), current_z_order(init.current_z_order), input_layer(init.input_layer), input_suppressed(init.input_suppressed), hit_regions(init.hit_regions), tooltip(init.tooltip), context_menu(init.context_menu), clip_stack(std::move(init.clip_stack)), m_input(input) {}
 
 auto gse::gui::font_set::named(const std::string_view name) const -> resource::handle<font> {
@@ -30,6 +41,27 @@ auto gse::gui::font_set::named(const std::string_view name) const -> resource::h
 		return {};
 	}
 	return it->second;
+}
+
+auto gse::gui::font_set::face(const text_face which, const resource::handle<font> inherited) const -> resource::handle<font> {
+	auto pick = [](const resource::handle<font>& preferred, const resource::handle<font>& fallback) -> resource::handle<font> {
+		return preferred.valid() ? preferred : fallback;
+	};
+
+	switch (which) {
+		case text_face::text:
+			return pick(text, inherited);
+		case text_face::text_strong:
+			return pick(text_strong, pick(text, inherited));
+		case text_face::text_emphasis:
+			return pick(text_emphasis, pick(text, inherited));
+		case text_face::code:
+			return pick(code, inherited);
+		case text_face::code_strong:
+			return pick(code_strong, pick(code, inherited));
+		default:
+			return inherited;
+	}
 }
 
 auto gse::gui::draw_context::queue_sprite(renderer::sprite_command cmd) const -> void {

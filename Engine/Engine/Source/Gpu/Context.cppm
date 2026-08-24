@@ -26,6 +26,12 @@ export namespace gse::gpu {
 }
 
 export namespace gse::gpu::context {
+	struct window_presentation {
+		gse::id window;
+		gpu::surface surface;
+		std::unique_ptr<swap_chain> swapchain;
+	};
+
 	struct [[= gse::system_state<"Gpu">{}, = gse::settings::category<"Graphics">{}]] data {
 		[[
 			= settings::describe<"Enable Vulkan validation layers. Catches API misuse but adds significant "
@@ -49,6 +55,7 @@ export namespace gse::gpu::context {
 		[[= stable_shared]] std::unique_ptr<swap_chain> swapchain;
 		[[= stable_shared]] std::unique_ptr<gpu::frame> frame;
 		[[= stable_shared]] std::unique_ptr<gpu::render_graph> render_graph;
+		std::vector<std::unique_ptr<window_presentation>> secondaries;
 		concurrency::frame_scheduler scheduler;
 
 		[[
@@ -69,7 +76,7 @@ export namespace gse::gpu::context {
 	[[= system_run<>{}]] auto run(
 		gse::context& ctx,
 		data& d,
-		channel_read<gpu_resume_request> resume_in
+		channel_read<gpu_resume_request, window_opened, window_closed> resume_in
 	) -> async::task<>;
 
 	[[= system_shutdown{}]] auto shutdown(
@@ -79,13 +86,33 @@ export namespace gse::gpu::context {
 	[[nodiscard]]
 	auto begin_frame(
 		data& d,
-		window::data* window_s
+		window::window_surface* window_s
 	) -> std::expected<frame_token, frame_status>;
 
 	auto end_frame(
-		data& d,
-		window::data* window_s
+		data& d
 	) -> void;
+
+	[[nodiscard]] auto create_presentation(
+		data& d,
+		const window_opened& win
+	) -> window_presentation*;
+
+	auto destroy_presentation(
+		data& d,
+		gse::id window
+	) -> void;
+
+	[[nodiscard]] auto find_presentation(
+		data& d,
+		gse::id window
+	) -> window_presentation*;
+
+	auto sync_present_targets(
+		data& d,
+		window::data& windows
+	) -> void;
+
 
 	auto on_swap_chain_recreate(
 		shared_view<data> d,

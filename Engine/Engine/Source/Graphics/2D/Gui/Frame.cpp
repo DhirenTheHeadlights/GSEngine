@@ -44,9 +44,109 @@ import :symbols;
 import :tab_strip;
 import :widget_context;
 
+auto gse::gui::migrate_menu(viewport_state& from, viewport_state& to, const std::string_view menu_name) -> bool {
+	if (&from == &to) {
+		return false;
+	}
+
+	const auto it = from.name_to_menu_id.find(stable_id(menu_name));
+	if (it == from.name_to_menu_id.end()) {
+		return false;
+	}
+
+	const id menu_id = it->second;
+	if (to.menus.contains(menu_id)) {
+		return false;
+	}
+
+	std::optional<menu> moved = from.menus.pop(menu_id);
+	if (!moved) {
+		return false;
+	}
+
+	if (from.current_menu && from.current_menu->id() == menu_id) {
+		from.current_menu = nullptr;
+	}
+	std::erase(from.visible_menu_ids_last_frame, menu_id);
+	std::erase_if(from.name_to_menu_id, [&](const auto& entry) { return entry.second == menu_id; });
+
+	moved->z_order = 0;
+	to.menus.add(menu_id, std::move(*moved));
+	return true;
+}
+
+auto gse::gui::reclaim_menus(data& d, viewport_state& from) -> void {
+	for (const id& menu_id : std::vector<id>(from.menus.ids().begin(), from.menus.ids().end())) {
+		if (d.primary.menus.contains(menu_id)) {
+			continue;
+		}
+		if (std::optional<menu> moved = from.menus.pop(menu_id)) {
+			moved->z_order = 0;
+			d.primary.menus.add(menu_id, std::move(*moved));
+		}
+	}
+}
+
+auto gse::gui::viewport_for_window(data& d, const id window) -> viewport_state* {
+	if (!window.exists()) {
+		return &d.primary;
+	}
+	const auto it = std::ranges::find(d.secondaries, window, [](const auto& vp) { return vp->window; });
+	return it == d.secondaries.end() ? nullptr : it->get();
+}
+
+auto gse::gui::close_window_viewport(data& d, const id window) -> void {
+	const auto it = std::ranges::find(d.secondaries, window, [](const auto& vp) { return vp->window; });
+	if (it == d.secondaries.end()) {
+		return;
+	}
+
+	reclaim_menus(d, **it);
+	d.secondaries.erase(it);
+
+	d.primary.active_dock_space.reset();
+	d.primary.active_drag_ghost.reset();
+}
+
+auto gse::gui::route_cursor(data& d, const vec2f mouse, const id focused_window) -> void {
+	auto holds_capture = [](const viewport_state& vp) {
+		return vp.menu_stack.captures_input() || !std::holds_alternative<states::idle>(vp.current_state.v);
+	};
+
+	viewport_state* owner = viewport_for_window(d, focused_window);
+
+	if (holds_capture(d.primary)) {
+		owner = &d.primary;
+	}
+	for (const auto& vp : d.secondaries) {
+		if (holds_capture(*vp)) {
+			owner = vp.get();
+			break;
+		}
+	}
+
+	if (!owner) {
+		for (const auto& vp : d.secondaries) {
+			if (!vp->window.exists() && vp->frame_rect.contains(mouse)) {
+				owner = vp.get();
+				break;
+			}
+		}
+	}
+
+	if (!owner) {
+		owner = &d.primary;
+	}
+
+	d.primary.owns_cursor = owner == &d.primary;
+	for (const auto& vp : d.secondaries) {
+		vp->owns_cursor = owner == vp.get();
+	}
+}
+
 auto gse::gui::begin_viewport_frame(data& d, viewport_state& vp, const shared_view<window::data> window_s, const vec2f viewport_size) -> void {
-	vp.display_scale = window_s.content_scale;
-	sync_monitor_scale(d, vp, window_s.monitor_key);
+	vp.display_scale = window_s.primary.content_scale;
+	sync_monitor_scale(d, vp, window_s.primary.monitor_key);
 
 	const float current_scale_factor = scale_factor_for(d, vp, viewport_size.y());
 
@@ -118,26 +218,33 @@ auto gse::gui::begin_viewport_frame(data& d, viewport_state& vp, const shared_vi
 	}
 
 	vp.fstate = {};
-	d.sprite_commands.clear();
-	d.text_commands.clear();
-	d.text_pool_slot ^= 1;
-	d.text_pool_used = 0;
 
 	vp.input_layers_data.begin_frame();
 
-	const style frame_sty = apply_scale(d, vp, style::from_theme(d.current_theme), viewport_size.y());
+	const style frame_sty = apply_scale(d, vp, d.style_override.value_or(style::from_theme(d.current_theme)), viewport_size.y());
 
 	vp.fstate = {
 		.sty = frame_sty,
 		.active = d.fonts.text.valid()
 	};
 
-	vp.rect = usable_screen_rect(d.reserve_top_bar ? frame_sty.title_bar_height : 0.f, window_s);
+	const bool reserves_top_bar = d.reserve_top_bar && !vp.window.exists();
+	vp.rect = usable_screen_rect(reserves_top_bar ? frame_sty.title_bar_height : 0.f, vp.frame_rect);
+
+	if (vp.window.exists()) {
+		for (menu& m : vp.menus.items()) {
+			if (!m.owner_id().exists()) {
+				m.rect = vp.rect;
+				m.bare = false;
+				layout::update(vp.menus, m.id());
+			}
+		}
+	}
 
 	vp.hot_widget_id = {};
 
 	vp.input_layer_render = (vp.menu_stack.captures_input() || vp.context_menu.open) ? render_layer::popup : render_layer::content;
-	vp.input_suppressed = window_s.cursor_captured;
+	vp.input_suppressed = window_s.primary.cursor_captured || !vp.owns_cursor;
 
 	vp.name_to_menu_id.clear();
 	for (menu& m : vp.menus.items()) {
@@ -151,6 +258,11 @@ auto gse::gui::begin_viewport_frame(data& d, viewport_state& vp, const shared_vi
 }
 
 auto gse::gui::update_viewport_interaction(data& d, viewport_state& vp, const shared_view<window::data> window_s, const shared_view<input::data> input_state) -> void {
+	if (!vp.owns_cursor) {
+		vp.current_state = states::idle{};
+		return;
+	}
+
 	const vec2f mouse_position = input::current_state(input_state).mouse_position();
 	const bool mouse_held = input::current_state(input_state).mouse_button_held(mouse_button::button_1);
 	const style& frame_sty = vp.fstate.sty;
@@ -183,9 +295,56 @@ auto gse::gui::update_viewport_interaction(data& d, viewport_state& vp, const sh
 		});
 }
 
-auto gse::gui::update_viewport(data& d, viewport_state& vp, const input::state& input_st, const vec2f viewport_size, const channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, popout_closed> requests_in, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> ui_out) -> void {
+auto gse::gui::update_viewport(data& d, viewport_state& vp, const input::state& input_st, const channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, popout_closed> requests_in, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request, window_panel_drag_request> ui_out) -> void {
+	const vec2f viewport_size = vp.frame_rect.size();
+
+	if (vp.window.exists()) {
+		const menu* host = nullptr;
+		for (const menu& m : vp.menus.items()) {
+			if (!m.owner_id().exists()) {
+				host = &m;
+				break;
+			}
+		}
+
+		float caption = 0.f;
+		float controls = 0.f;
+		float grip = 0.f;
+		if (host) {
+			caption = menu_chrome_height(d.fonts, *host, vp.fstate.sty, host->rect.width());
+			const rectf title_bar = rectf::from_position_size(host->rect.top_left(), { host->rect.width(), caption });
+			const rectf grip_rect = window_caption_grip_rect(d.fonts, *host, vp.fstate.sty, title_bar);
+			controls = window_caption_buttons_for(title_bar, vp.fstate.sty).extent();
+			grip = grip_rect.width();
+
+			const vec2f mouse = input_st.mouse_position();
+			if (vp.owns_cursor && !vp.window_grip_held && input_st.mouse_button_pressed(mouse_button::button_1) && grip_rect.contains(mouse)) {
+				vp.window_grip_held = true;
+			}
+			if (vp.window_grip_held) {
+				const bool released = !input_st.mouse_button_held(mouse_button::button_1);
+				ui_out.push<window_panel_drag_request>({
+					.window = vp.window,
+					.client_cursor = mouse,
+					.released = released,
+				});
+				vp.window_grip_held = !released;
+			}
+		}
+
+		const auto caption_px = static_cast<int>(caption);
+		ui_out.push<window_chrome_metrics_request>({
+			.window = vp.window,
+			.caption_height = caption_px,
+			.controls_width = static_cast<int>(controls),
+			.grip_width = static_cast<int>(grip),
+			.resize_exclude_y0 = 0,
+			.resize_exclude_y1 = caption_px,
+		});
+	}
+
 	if (vp.active_dock_space) {
-		draw_dock_space(d, vp.fstate.sty, *vp.active_dock_space, input_st.mouse_position());
+		draw_dock_space(d, vp.fstate.sty, *vp.active_dock_space);
 	}
 
 	draw_drag_ghost(d, vp);
@@ -193,10 +352,6 @@ auto gse::gui::update_viewport(data& d, viewport_state& vp, const input::state& 
 	if (!vp.menu_stack.empty()) {
 		process_screen(d, vp, input_st, viewport_size, ui_out);
 	}
-
-	ui_out.push<ui_focus_request>({
-		.focus = !vp.menu_stack.empty() || vp.manual_cursor,
-	});
 
 	const bool occluded = vp.menu_stack.occludes();
 	for (const auto& content : requests_in.of<menu_content>()) {
@@ -218,27 +373,44 @@ auto gse::gui::update_viewport(data& d, viewport_state& vp, const input::state& 
 	}
 	vp.pending_popout_close_ids.clear();
 
+	if (const std::optional<caption_action> action = std::exchange(vp.pending_caption_action, std::nullopt)) {
+		switch (*action) {
+			case caption_action::minimize:
+				ui_out.push<window_minimize_request>({ .window = vp.window });
+				break;
+			case caption_action::toggle_maximize:
+				ui_out.push<window_toggle_maximize_request>({ .window = vp.window });
+				break;
+			case caption_action::close:
+				ui_out.push<window_close_request>({ .window = vp.window });
+				break;
+		}
+	}
+
 	for (const auto& req : requests_in.of<popout_closed>()) {
 		remove_tab_from_host(vp, req.menu_name);
 	}
 
 	if (vp.pending_tab_close.has_value()) {
 		const auto [host_id, tab_index] = *vp.pending_tab_close;
-		vp.pending_tab_close.reset();
-		if (const menu* host = vp.menus.try_get(host_id); host && tab_index < host->tab_contents.size()) {
-			const std::string tab_name = host->tab_contents[tab_index];
-			if (const std::string_view category = popout_category_from_tag(tab_name); !category.empty()) {
-				ui_out.push<popout_toggle>({ .category = std::string(category) });
-			}
-			else {
-				remove_tab_from_host(vp, tab_name);
+		const menu* host = vp.menus.try_get(host_id);
+		if (!host || !host->fixed) {
+			vp.pending_tab_close.reset();
+			if (host && tab_index < host->tab_contents.size()) {
+				const std::string tab_name = host->tab_contents[tab_index];
+				if (const std::string_view category = popout_category_from_tag(tab_name); !category.empty()) {
+					ui_out.push<popout_toggle>({ .category = std::string(category) });
+				}
+				else {
+					remove_tab_from_host(vp, tab_name);
+				}
 			}
 		}
 	}
 
-	process_context_menu(d, vp, input_st, viewport_size, ui_out);
+	process_context_menu(d, vp, input_st, ui_out);
 
-	update_tooltip(d, vp, viewport_size);
+	update_tooltip(d, vp);
 
 	vp.visible_menu_ids_last_frame.clear();
 	vp.visible_menu_ids_last_frame.reserve(vp.menus.items().size());

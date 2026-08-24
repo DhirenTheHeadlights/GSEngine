@@ -10,6 +10,7 @@ module;
 #include <shlobj.h>
 #include <shellapi.h>
 #include <commdlg.h>
+#include <dwmapi.h>
 #endif
 
 #define GLFW_INCLUDE_NONE
@@ -46,10 +47,18 @@ export namespace gse::win32 {
 	using ::GetPropW;
 	using ::SetPropW;
 	using ::IsZoomed;
+	using ::IsIconic;
 	using ::MonitorFromWindow;
+	using ::MonitorFromRect;
 	using ::GetMonitorInfoW;
 	using ::ScreenToClient;
 	using ::GetClientRect;
+	using ::WINDOWPLACEMENT;
+	using ::GetWindowPlacement;
+	using ::IsWindowVisible;
+	using ::DwmGetWindowAttribute;
+	using ::WindowFromPoint;
+	using ::GetAncestor;
 
 	constexpr UINT wm_nccalcsize = WM_NCCALCSIZE;
 	constexpr UINT wm_nchittest = WM_NCHITTEST;
@@ -71,6 +80,10 @@ export namespace gse::win32 {
 	constexpr UINT swp_no_zorder = SWP_NOZORDER;
 	constexpr UINT swp_no_activate = SWP_NOACTIVATE;
 	constexpr DWORD monitor_default_to_nearest = MONITOR_DEFAULTTONEAREST;
+	constexpr UINT sw_show_maximized = SW_SHOWMAXIMIZED;
+	constexpr UINT wpf_restore_to_maximized = WPF_RESTORETOMAXIMIZED;
+	constexpr DWORD dwmwa_cloaked = DWMWA_CLOAKED;
+	constexpr UINT ga_root = GA_ROOT;
 
 	auto get_x_lparam(LPARAM lparam) -> int {
 		return GET_X_LPARAM(lparam);

@@ -353,44 +353,34 @@ auto gse::gui::handle_dragging_state(viewport_state& vp, const states::dragging&
 				}
 			}
 
-			for (const dock::area& area : vp.active_dock_space->areas) {
-				if (area.rect.contains(mouse_position)) {
-					if (potential_dock_parent_id.exists()) {
-						if (area.dock_location == dock::location::center) {
-							if (menu* parent = vp.menus.try_get(potential_dock_parent_id)) {
-								parent->tab_contents.insert(
-									parent->tab_contents.end(),
-									std::make_move_iterator(m->tab_contents.begin()),
-									std::make_move_iterator(m->tab_contents.end())
-								);
-								m->tab_contents.clear();
-								parent->active_tab_index = static_cast<std::uint32_t>(parent->tab_contents.size() - 1);
-								vp.menus.remove(current.menu_id);
-							}
-						}
-						else {
-							layout::dock(vp.menus, current.menu_id, potential_dock_parent_id, area.dock_location);
-							layout::update(vp.menus, m->id());
+			if (const dock::location landed = vp.active_dock_space->hot; landed != dock::location::none) {
+				if (potential_dock_parent_id.exists()) {
+					if (landed == dock::location::center) {
+						if (menu* parent = vp.menus.try_get(potential_dock_parent_id)) {
+							parent->tab_contents.insert(
+								parent->tab_contents.end(),
+								std::make_move_iterator(m->tab_contents.begin()),
+								std::make_move_iterator(m->tab_contents.end())
+							);
+							m->tab_contents.clear();
+							parent->active_tab_index = static_cast<std::uint32_t>(parent->tab_contents.size() - 1);
+							vp.menus.remove(current.menu_id);
 						}
 					}
 					else {
-						const rectf screen_rect = vp.rect;
-
-						if (area.dock_location == dock::location::center) {
-							m->rect = screen_rect;
-							m->docked_to = dock::location::center;
-							m->swap_parent(id());
-							layout::update(vp.menus, m->id());
-						}
-						else {
-							m->rect = layout::dock_target_rect(screen_rect, area.dock_location, 0.5f);
-							m->docked_to = area.dock_location;
-							m->swap_parent(id());
-							layout::update(vp.menus, m->id());
-						}
+						layout::dock(vp.menus, current.menu_id, potential_dock_parent_id, landed);
+						layout::update(vp.menus, m->id());
 					}
+				}
+				else {
+					const rectf screen_rect = vp.rect;
 
-					break;
+					m->rect = landed == dock::location::center
+						? screen_rect
+						: layout::dock_target_rect(screen_rect, landed, 0.5f);
+					m->docked_to = landed;
+					m->swap_parent(id());
+					layout::update(vp.menus, m->id());
 				}
 			}
 		}
@@ -448,6 +438,8 @@ auto gse::gui::handle_dragging_state(viewport_state& vp, const states::dragging&
 	if (!found_parent_menu) {
 		vp.active_dock_space = layout::dock_space(screen_rect, vp.fstate.sty.scale_factor);
 	}
+
+	vp.active_dock_space->select(mouse_position);
 
 	return current;
 }

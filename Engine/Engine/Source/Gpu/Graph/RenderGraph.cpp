@@ -28,8 +28,18 @@ namespace gse::gpu {
 		gpu::pipeline_statistic_flag::fragment_shader_invocations };
 }
 
-gse::gpu::render_graph::render_graph(gpu::device& device, gpu::swap_chain* swapchain, gpu::frame& frame)
-	: m_device(std::addressof(device)), m_swapchain(swapchain), m_frame(std::addressof(frame)), m_transient_pool(device) {
+int gse::gpu::render_graph::s_live_count = 0;
+
+gse::gpu::render_graph::~render_graph() {
+	--s_live_count;
+}
+
+gse::gpu::render_graph::render_graph(gpu::device& device, gpu::frame& frame)
+	: m_device(std::addressof(device)), m_swapchain(frame.swapchain()), m_frame(std::addressof(frame)), m_transient_pool(device) {
+	assert(
+		s_live_count++ == 0,
+		"gpu::render_graph is one-per-frame: it allocates every pass command buffer from the device's worker pools"
+	);
 	m_timestamp_period_per_tick = nanoseconds(static_cast<double>(device.timestamp_period()));
 	for (auto& q : m_queue_states) {
 		q.timeline = gpu::queue_timeline<gpu::device>::create(device);
@@ -215,6 +225,14 @@ auto gse::gpu::render_graph::extent() const -> vec2u {
 	return m_swapchain ? m_swapchain->extent() : vec2u{};
 }
 
+auto gse::gpu::render_graph::extent(const gse::id window) const -> vec2u {
+	if (!window.exists()) {
+		return extent();
+	}
+	const present_target* t = m_frame->target(window);
+	return t && t->swapchain ? t->swapchain->extent() : vec2u{};
+}
+
 auto gse::gpu::render_graph::frame_in_progress() const -> bool {
 	return m_frame->frame_in_progress();
 }
@@ -333,7 +351,6 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		return queue_distinct[static_cast<std::size_t>(requested)] ? requested : gpu::queue_type::graphics;
 	};
 
-	const auto image_index = m_frame->image_index();
 	const auto swap_extent = m_swapchain ? m_swapchain->extent() : vec2u{};
 
 	const bool timestamps_enabled = m_gpu_timestamps_enabled.load(std::memory_order_relaxed);
@@ -367,7 +384,10 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		}
 	}
 
-	m_device->reset_worker_command_pools(frame_idx);
+	auto swapchain_of = [&](const color_output_info& info) -> const present_target* {
+		const present_target* t = info.window.exists() ? m_frame->target(info.window) : std::addressof(m_frame->targets().front());
+		return t && t->acquired ? t : nullptr;
+	};
 
 	auto resolve_color_target = [&](const color_output_info& info) -> const image* {
 		if (info.transient_target) {
@@ -451,8 +471,12 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 							extent_set = true;
 						}
 					}
-					else {
-						color_view = m_swapchain->image_view(image_index);
+					else if (const present_target* t = swapchain_of(pass.color_outputs[ci])) {
+						color_view = t->swapchain->image_view(t->image_index);
+						if (!extent_set) {
+							pass_extent = t->swapchain->extent();
+							extent_set = true;
+						}
 					}
 					color_attachments.push_back(
 						gpu::rendering_attachment_info{
@@ -1438,13 +1462,17 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 	}
 
 	const auto graphics_qi = static_cast<std::size_t>(gpu::queue_type::graphics);
-	if (m_swapchain) {
+	for (const present_target& t : m_frame->targets()) {
+		if (!t.acquired) {
+			continue;
+		}
+		const auto target_extent = t.swapchain->extent();
 		const auto clear_cmd = m_device->acquire_worker_command_buffer(gpu::queue_type::graphics, 0, frame_idx);
 		const auto clear_rec = m_device->recorder(clear_cmd);
 		clear_rec.begin();
 		const std::vector<gpu::rendering_attachment_info> clear_attachments{
 			gpu::rendering_attachment_info{
-				.image_view = m_swapchain->image_view(image_index),
+				.image_view = t.swapchain->image_view(t.image_index),
 				.load = load_op::clear,
 				.store = gpu::store_op::store,
 				.color_clear_value = m_swapchain_clear,
@@ -1453,7 +1481,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		clear_rec.begin_rendering(gpu::rendering_info{
 			.render_area = gse::rect_t<vec2i>({
 				.min = vec2i{ 0, 0 },
-				.max = vec2i{ static_cast<int>(swap_extent.x()), static_cast<int>(swap_extent.y()) },
+				.max = vec2i{ static_cast<int>(target_extent.x()), static_cast<int>(target_extent.y()) },
 			}),
 			.layer_count = 1,
 			.color_attachments = clear_attachments,
@@ -1468,7 +1496,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			.dst_access = { gpu::access_flag::color_attachment_write, gpu::access_flag::color_attachment_read },
 			.prev_state = gpu::resource_state::color_target,
 			.next_state = gpu::resource_state::color_target,
-			.image = m_swapchain->image(image_index),
+			.image = t.swapchain->image(t.image_index),
 			.aspects = gpu::image_aspect_flag::color,
 		};
 		clear_rec.pipeline_barrier(gpu::dependency_info{

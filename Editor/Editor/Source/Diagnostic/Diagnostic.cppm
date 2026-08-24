@@ -3,9 +3,32 @@ export module gse.ide.diagnostic;
 import std;
 
 export namespace gse::ide {
-	enum class diagnostic_source {
-		compiler,
-		lint
+	struct lint_rule_info {
+		char title[48];
+		char description[192];
+		char message[112];
+		char fix_title[48];
+	};
+
+	enum class lint_rule : std::uint8_t {
+		redundant_namespace_qualifier [[= lint_rule_info{
+			.title = "Redundant namespace qualifier",
+			.description = "A leading namespace component the shortened spelling already resolves to.",
+			.message = "redundant namespace qualifier",
+			.fix_title = "Remove redundant qualifier",
+		}]],
+		redundant_template_arguments [[= lint_rule_info{
+			.title = "Redundant template arguments",
+			.description = "An explicit argument list the compiler deduces identically from the call.",
+			.message = "redundant template arguments (deducible from the call)",
+			.fix_title = "Remove redundant template arguments",
+		}]],
+		unused_name_placeholder [[= lint_rule_info{
+			.title = "Unused name can be a placeholder",
+			.description = "A block-scope name that is never read, so it can become the placeholder '_'.",
+			.message = "'{}' is never read, so it can be the placeholder '_'",
+			.fix_title = "Rename to '_'",
+		}]],
 	};
 
 	enum class severity {
@@ -38,14 +61,19 @@ export namespace gse::ide {
 		std::vector<text_edit> edits;
 	};
 
+	struct lint_finding {
+		std::string file;
+		lint_rule rule = lint_rule::redundant_namespace_qualifier;
+		text_edit edit;
+	};
+
 	struct diagnostic {
 		std::uint32_t line = 0;
 		std::uint32_t end_line = 0;
 		std::uint32_t start_col = 0;
 		std::uint32_t end_col = 0;
 		severity level = severity::error;
-		diagnostic_source source = diagnostic_source::compiler;
-		std::string rule;
+		std::optional<lint_rule> rule;
 		std::string message;
 		std::filesystem::path file;
 		std::optional<fix_it> fix;
@@ -59,7 +87,7 @@ export namespace gse::ide {
 
 		static auto rule_edits(
 			std::span<const diagnostic> diagnostics,
-			std::string_view rule
+			lint_rule rule
 		) -> std::vector<text_edit>;
 
 		static auto apply(
@@ -81,7 +109,7 @@ auto gse::ide::fix_engine::display_to_byte(const std::string_view row, const std
 	return static_cast<std::uint32_t>(row.size());
 }
 
-auto gse::ide::fix_engine::rule_edits(const std::span<const diagnostic> diagnostics, const std::string_view rule) -> std::vector<text_edit> {
+auto gse::ide::fix_engine::rule_edits(const std::span<const diagnostic> diagnostics, const lint_rule rule) -> std::vector<text_edit> {
 	std::vector<text_edit> out;
 	for (const diagnostic& d : diagnostics) {
 		if (d.rule != rule || !d.fix) {

@@ -107,7 +107,6 @@ auto gse::ide::analysis::gcc_diagnostics::parse_sarif(std::string_view sarif) ->
 
 		for (const json::value& r : results->children) {
 			diagnostic d;
-			d.source = diagnostic_source::compiler;
 
 			if (const json::value* level = r.find("level")) {
 				gse::enum_from_string(level->as_string(), d.level);

@@ -3,7 +3,7 @@ export module gse.ide.highlight:markdown;
 import std;
 import gse;
 
-import :lexer;
+import gse.syntax;
 
 export namespace gse::ide::markdown {
 	struct kind_info {
@@ -71,6 +71,62 @@ export namespace gse::ide::markdown {
 		std::string_view line
 	) -> bool;
 
+	enum class role : std::uint8_t {
+		content,
+		marker,
+	};
+
+	enum class block : std::uint8_t {
+		blank,
+		front_matter,
+		fence,
+		code,
+		rule,
+		heading,
+		table_row,
+		table_delimiter,
+		quote,
+		list_item,
+		paragraph,
+	};
+
+	struct run {
+		std::size_t start = 0;
+		std::size_t end = 0;
+		kind tone = kind::body;
+		role part = role::content;
+	};
+
+	struct line_info {
+		block shape = block::paragraph;
+		std::size_t lead = 0;
+		std::size_t content = 0;
+		std::size_t heading_level = 0;
+		bool quoted = false;
+	};
+
+	auto verbatim(
+		block shape
+	) -> bool;
+
+	auto base_tone(
+		const line_info& info
+	) -> kind;
+
+	auto classify(
+		std::span<const std::string_view> lines
+	) -> std::vector<line_info>;
+
+	auto inline_runs(
+		std::string_view line,
+		const line_info& info,
+		std::vector<run>& out
+	) -> void;
+
+	auto color_of(
+		kind k
+	) -> vec4f;
+
 	auto spans(
 		std::string_view source
 	) -> std::vector<gui::text_span>;
@@ -82,19 +138,9 @@ namespace gse::ide::markdown {
 	constexpr std::size_t min_fence_length = 3;
 	constexpr std::size_t max_ordered_digits = 9;
 
-	struct run {
-		std::size_t start = 0;
-		std::size_t end = 0;
-		kind tone = kind::body;
-	};
-
 	struct line_context {
 		bool table_row = false;
 	};
-
-	auto color_of(
-		kind k
-	) -> vec4f;
 
 	auto marker_extent(
 		std::string_view line
@@ -318,7 +364,11 @@ auto gse::ide::markdown::scan(const std::string_view line, const std::size_t fro
 			const std::string ticks(length, '`');
 			if (const std::size_t close = line.find(ticks, i + length); close != std::string_view::npos && close + length <= to) {
 				flush(i);
-				out.push_back({ .start = i, .end = close + length, .tone = kind::code });
+				out.push_back({ .start = i, .end = i + length, .tone = kind::code, .part = role::marker });
+				if (close > i + length) {
+					out.push_back({ .start = i + length, .end = close, .tone = kind::code });
+				}
+				out.push_back({ .start = close, .end = close + length, .tone = kind::code, .part = role::marker });
 				i = close + length;
 				plain = i;
 				continue;
@@ -328,7 +378,7 @@ auto gse::ide::markdown::scan(const std::string_view line, const std::size_t fro
 		}
 		if (context.table_row && line[i] == '|') {
 			flush(i);
-			out.push_back({ .start = i, .end = i + 1, .tone = kind::marker });
+			out.push_back({ .start = i, .end = i + 1, .tone = kind::marker, .part = role::marker });
 			++i;
 			plain = i;
 			continue;
@@ -336,7 +386,11 @@ auto gse::ide::markdown::scan(const std::string_view line, const std::size_t fro
 		if (line.compare(i, 2, "[[") == 0) {
 			if (const std::size_t close = line.find("]]", i + 2); close != std::string_view::npos && close + 2 <= to) {
 				flush(i);
-				out.push_back({ .start = i, .end = close + 2, .tone = kind::link_text });
+				out.push_back({ .start = i, .end = i + 2, .tone = kind::link_text, .part = role::marker });
+				if (close > i + 2) {
+					out.push_back({ .start = i + 2, .end = close, .tone = kind::link_text });
+				}
+				out.push_back({ .start = close, .end = close + 2, .tone = kind::link_text, .part = role::marker });
 				i = close + 2;
 				plain = i;
 				continue;
@@ -347,9 +401,9 @@ auto gse::ide::markdown::scan(const std::string_view line, const std::size_t fro
 			if (const std::size_t close = line.find(pair, i + 2); close != std::string_view::npos && close > i + 2 && close + 2 <= to) {
 				const kind tone = pair == "**" ? kind::strong : kind::strike;
 				flush(i);
-				out.push_back({ .start = i, .end = i + 2, .tone = tone });
+				out.push_back({ .start = i, .end = i + 2, .tone = tone, .part = role::marker });
 				scan(line, i + 2, close, tone, context, out);
-				out.push_back({ .start = close, .end = close + 2, .tone = tone });
+				out.push_back({ .start = close, .end = close + 2, .tone = tone, .part = role::marker });
 				i = close + 2;
 				plain = i;
 				continue;
@@ -358,9 +412,9 @@ auto gse::ide::markdown::scan(const std::string_view line, const std::size_t fro
 		if (line[i] == '*' && i + 1 < to && line[i + 1] != '*' && line[i + 1] != ' ') {
 			if (const std::size_t close = line.find('*', i + 1); close != std::string_view::npos && close < to && line[close - 1] != ' ') {
 				flush(i);
-				out.push_back({ .start = i, .end = i + 1, .tone = kind::emphasis });
+				out.push_back({ .start = i, .end = i + 1, .tone = kind::emphasis, .part = role::marker });
 				scan(line, i + 1, close, kind::emphasis, context, out);
-				out.push_back({ .start = close, .end = close + 1, .tone = kind::emphasis });
+				out.push_back({ .start = close, .end = close + 1, .tone = kind::emphasis, .part = role::marker });
 				i = close + 1;
 				plain = i;
 				continue;
@@ -371,10 +425,10 @@ auto gse::ide::markdown::scan(const std::string_view line, const std::size_t fro
 			if (close != std::string_view::npos && line.compare(close + 1, 1, "(") == 0) {
 				if (const std::size_t target = line.find(')', close + 2); target != std::string_view::npos && target < to) {
 					flush(i);
-					out.push_back({ .start = i, .end = i + 1, .tone = kind::link_text });
+					out.push_back({ .start = i, .end = i + 1, .tone = kind::link_text, .part = role::marker });
 					scan(line, i + 1, close, kind::link_text, context, out);
-					out.push_back({ .start = close, .end = close + 1, .tone = kind::link_text });
-					out.push_back({ .start = close + 1, .end = target + 1, .tone = kind::link_url });
+					out.push_back({ .start = close, .end = close + 1, .tone = kind::link_text, .part = role::marker });
+					out.push_back({ .start = close + 1, .end = target + 1, .tone = kind::link_url, .part = role::marker });
 					i = target + 1;
 					plain = i;
 					continue;
@@ -384,7 +438,9 @@ auto gse::ide::markdown::scan(const std::string_view line, const std::size_t fro
 		if (line[i] == '<' && line.compare(i + 1, 4, "http") == 0) {
 			if (const std::size_t close = line.find('>', i + 1); close != std::string_view::npos && close < to) {
 				flush(i);
-				out.push_back({ .start = i, .end = close + 1, .tone = kind::link_url });
+				out.push_back({ .start = i, .end = i + 1, .tone = kind::link_url, .part = role::marker });
+				out.push_back({ .start = i + 1, .end = close, .tone = kind::link_url });
+				out.push_back({ .start = close, .end = close + 1, .tone = kind::link_url, .part = role::marker });
 				i = close + 1;
 				plain = i;
 				continue;
@@ -393,6 +449,132 @@ auto gse::ide::markdown::scan(const std::string_view line, const std::size_t fro
 		++i;
 	}
 	flush(to);
+}
+
+auto gse::ide::markdown::verbatim(const block shape) -> bool {
+	switch (shape) {
+		case block::front_matter:
+		case block::fence:
+		case block::code:
+		case block::rule:
+		case block::table_delimiter:
+			return true;
+		default:
+			return false;
+	}
+}
+
+auto gse::ide::markdown::base_tone(const line_info& info) -> kind {
+	switch (info.shape) {
+		case block::front_matter:
+			return kind::quote;
+		case block::fence:
+		case block::table_delimiter:
+			return kind::marker;
+		case block::code:
+			return kind::code;
+		case block::rule:
+			return kind::rule;
+		case block::heading:
+			return kind::heading;
+		default:
+			return info.quoted ? kind::quote : kind::body;
+	}
+}
+
+auto gse::ide::markdown::classify(const std::span<const std::string_view> lines) -> std::vector<line_info> {
+	std::vector<line_info> out(lines.size());
+
+	std::size_t body = 0;
+	if (!lines.empty() && lines.front() == "---") {
+		for (std::size_t i = 1; i < lines.size(); ++i) {
+			if (lines[i] == "---" || lines[i] == "...") {
+				body = i + 1;
+				break;
+			}
+		}
+		for (std::size_t i = 0; i < body; ++i) {
+			out[i] = {
+				.shape = block::front_matter,
+				.content = lines[i].size(),
+			};
+		}
+	}
+
+	std::optional<fence_marker> open;
+	for (std::size_t i = body; i < lines.size(); ++i) {
+		const std::string_view line = lines[i];
+		const std::size_t lead = lead_of(line).size();
+		line_info info{
+			.lead = lead,
+			.content = lead,
+		};
+
+		if (open) {
+			const bool closing = closes_fence(line, *open);
+			info.shape = closing ? block::fence : block::code;
+			info.content = line.size();
+			if (closing) {
+				open.reset();
+			}
+		}
+		else if (line.empty()) {
+			info.shape = block::blank;
+		}
+		else if (const std::optional<fence_marker> marker = fence_at(line)) {
+			open = marker;
+			info.shape = block::fence;
+			info.content = line.size();
+		}
+		else if (indent_width(line) >= code_indent) {
+			info.shape = block::code;
+			info.content = line.size();
+		}
+		else if (thematic_break(line)) {
+			info.shape = block::rule;
+			info.content = line.size();
+		}
+		else {
+			const std::string_view rest = trim(line);
+			const std::size_t hashes = rest.find_first_not_of('#');
+			if (hashes != std::string_view::npos && hashes > 0 && hashes <= max_heading_level
+				&& (rest[hashes] == ' ' || rest[hashes] == '\t')) {
+				info.shape = block::heading;
+				info.heading_level = hashes;
+				info.content = lead + hashes + 1;
+			}
+			else if (rest.starts_with('|')) {
+				const bool delimiter = delimiter_row(line);
+				info.shape = delimiter ? block::table_delimiter : block::table_row;
+				info.content = delimiter ? line.size() : lead;
+			}
+			else {
+				info.quoted = rest.starts_with('>');
+				info.content = marker_extent(line);
+				info.shape = info.quoted ? block::quote : (info.content > lead ? block::list_item : block::paragraph);
+			}
+		}
+
+		out[i] = info;
+	}
+
+	return out;
+}
+
+auto gse::ide::markdown::inline_runs(const std::string_view line, const line_info& info, std::vector<run>& out) -> void {
+	out.clear();
+	if (verbatim(info.shape) || info.shape == block::blank) {
+		return;
+	}
+	if (info.content > info.lead) {
+		out.push_back({
+			.start = info.lead,
+			.end = info.content,
+			.tone = info.shape == block::heading ? kind::heading : kind::marker,
+			.part = role::marker,
+		});
+	}
+	scan(line, info.content, line.size(), base_tone(info), { .table_row = info.shape == block::table_row }, out);
 }
 
 auto gse::ide::markdown::emit_line(std::vector<gui::text_span>& out, const std::uint32_t index, const std::string_view line, const std::size_t from, const kind base, const std::span<const run> runs) -> void {
@@ -426,118 +608,31 @@ auto gse::ide::markdown::emit_line(std::vector<gui::text_span>& out, const std::
 
 auto gse::ide::markdown::spans(const std::string_view source) -> std::vector<gui::text_span> {
 	const std::vector<std::string_view> lines = syntax::split_lines(source);
+	const std::vector<line_info> classified = classify(lines);
 	std::vector<gui::text_span> out;
+	std::vector<run> runs;
 
-	std::size_t start = 0;
-	if (!lines.empty() && lines.front() == "---") {
-		for (std::size_t i = 1; i < lines.size(); ++i) {
-			if (lines[i] == "---" || lines[i] == "...") {
-				start = i + 1;
-				break;
-			}
-		}
-		for (std::size_t i = 0; i < start; ++i) {
-			out.push_back({
-				.line = static_cast<std::uint32_t>(i),
-				.start_col = 0,
-				.end_col = static_cast<std::uint32_t>(lines[i].size()),
-				.color = color_of(kind::quote),
-			});
-		}
-	}
-
-	std::optional<fence_marker> open;
-	for (std::size_t i = start; i < lines.size(); ++i) {
+	for (std::size_t i = 0; i < lines.size(); ++i) {
 		const std::string_view line = lines[i];
+		const line_info& info = classified[i];
 		const auto index = static_cast<std::uint32_t>(i);
 
-		if (line.empty()) {
+		if (line.empty() || info.shape == block::blank) {
 			continue;
 		}
 
-		if (open) {
+		if (verbatim(info.shape) || info.shape == block::heading) {
 			out.push_back({
 				.line = index,
 				.start_col = 0,
 				.end_col = static_cast<std::uint32_t>(line.size()),
-				.color = color_of(closes_fence(line, *open) ? kind::marker : kind::code),
-			});
-			if (closes_fence(line, *open)) {
-				open.reset();
-			}
-			continue;
-		}
-
-		if (const std::optional<fence_marker> marker = fence_at(line)) {
-			open = marker;
-			out.push_back({
-				.line = index,
-				.start_col = 0,
-				.end_col = static_cast<std::uint32_t>(line.size()),
-				.color = color_of(kind::marker),
+				.color = color_of(base_tone(info)),
 			});
 			continue;
 		}
 
-		if (indent_width(line) >= code_indent) {
-			out.push_back({
-				.line = index,
-				.start_col = 0,
-				.end_col = static_cast<std::uint32_t>(line.size()),
-				.color = color_of(kind::code),
-			});
-			continue;
-		}
-
-		if (thematic_break(line)) {
-			out.push_back({
-				.line = index,
-				.start_col = 0,
-				.end_col = static_cast<std::uint32_t>(line.size()),
-				.color = color_of(kind::rule),
-			});
-			continue;
-		}
-
-		const std::string_view rest = trim(line);
-		const std::size_t hashes = rest.find_first_not_of('#');
-		if (hashes != std::string_view::npos && hashes > 0 && hashes <= max_heading_level
-			&& (rest[hashes] == ' ' || rest[hashes] == '\t')) {
-			out.push_back({
-				.line = index,
-				.start_col = 0,
-				.end_col = static_cast<std::uint32_t>(line.size()),
-				.color = color_of(kind::heading),
-			});
-			continue;
-		}
-
-		const bool table = rest.starts_with('|');
-		if (table && delimiter_row(line)) {
-			out.push_back({
-				.line = index,
-				.start_col = 0,
-				.end_col = static_cast<std::uint32_t>(line.size()),
-				.color = color_of(kind::marker),
-			});
-			continue;
-		}
-
-		const bool quoted = rest.starts_with('>');
-		const std::size_t content = marker_extent(line);
-		if (content > lead_of(line).size()) {
-			out.push_back({
-				.line = index,
-				.start_col = static_cast<std::uint32_t>(lead_of(line).size()),
-				.end_col = static_cast<std::uint32_t>(content),
-				.color = color_of(kind::marker),
-			});
-		}
-
-		const kind base = quoted ? kind::quote : kind::body;
-		std::vector<run> runs;
-		scan(line, content, line.size(), base, { .table_row = table }, runs);
-		emit_line(out, index, line, content, base, runs);
+		inline_runs(line, info, runs);
+		emit_line(out, index, line, info.lead, base_tone(info), runs);
 	}
 
 	return out;

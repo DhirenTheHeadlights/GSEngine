@@ -509,6 +509,7 @@ export namespace gse::vulkan {
 
 		[[nodiscard]]
 		auto create_swap_chain(
+			gpu::surface surface,
 			vec2i framebuffer_size,
 			gpu::present_mode preferred_present_mode,
 			gpu::swap_chain_handle old_swapchain = {}
@@ -516,10 +517,6 @@ export namespace gse::vulkan {
 
 		auto destroy_swapchain(
 			gpu::swap_chain_handle swapchain
-		) -> void;
-
-		auto set_surface(
-			gpu::surface surface
 		) -> void;
 
 		auto wait_swapchain_release_fences(
@@ -742,7 +739,6 @@ export namespace gse::vulkan {
 		bool m_fault_enabled = false;
 		bool m_vendor_binary_fault_enabled = false;
 		std::array<std::uint32_t, gpu::queue_type_count> m_queue_families{};
-		gpu::surface m_surface;
 
 		std::unordered_map<pool_key, pool, pool_key_hash> m_pools;
 		mutable std::mutex m_mutex;

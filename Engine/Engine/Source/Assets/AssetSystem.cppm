@@ -245,7 +245,7 @@ auto gse::asset::enumerate_resources() -> std::vector<std::string> {
 			return result;
 		}
 		for (const catalog_record& record : *catalog) {
-			if (record.baked_exists) {
+			if (record.baked_exists || record.source_path) {
 				result.push_back(record.tag);
 			}
 		}

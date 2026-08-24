@@ -26,7 +26,7 @@ export namespace gse::gui::draw {
 		std::string_view label;
 		std::span<const symbol::stroke> glyph;
 		std::string_view key;
-		bool danger = false;
+		button_role role = button_role::standard;
 		bool enabled = true;
 		resource::handle<font> font{};
 	};
@@ -37,7 +37,8 @@ export namespace gse::gui::draw {
 		id& hot_widget_id,
 		id& active_widget_id,
 		bool enabled = true,
-		resource::handle<font> font = {}
+		resource::handle<font> font = {},
+		button_role role = button_role::standard
 	) -> bool;
 
 	auto button_in_rect(
@@ -48,7 +49,8 @@ export namespace gse::gui::draw {
 		id& hot_widget_id,
 		id& active_widget_id,
 		bool enabled = true,
-		resource::handle<font> font = {}
+		resource::handle<font> font = {},
+		button_role role = button_role::standard
 	) -> bool;
 
 	auto button_in_rect(
@@ -65,13 +67,14 @@ export namespace gse::gui {
 		struct params {
 			std::string_view text;
 			bool enabled = true;
+			button_role role = button_role::standard;
 			resource::handle<font> font{};
 		};
 		static auto draw(const draw_context& ctx, const params p, id& hot, id& active, id&) -> bool;
 	};
 }
 
-auto gse::gui::draw::button(const draw_context& ctx, const std::string_view name, id& hot_widget_id, id& active_widget_id, const bool enabled, const resource::handle<font> font) -> bool {
+auto gse::gui::draw::button(const draw_context& ctx, const std::string_view name, id& hot_widget_id, id& active_widget_id, const bool enabled, const resource::handle<font> font, const button_role role) -> bool {
 	const auto fnt = font.valid() ? font : ctx.fonts.text;
 	const auto fnt_view = fnt.resolve();
 	if (!ctx.current_menu) {
@@ -88,30 +91,32 @@ auto gse::gui::draw::button(const draw_context& ctx, const std::string_view name
 		{ content_rect.width(), widget_height }
 	);
 
-	const bool activated_in_rect = button_in_rect(ctx, name, name, button_rect, hot_widget_id, active_widget_id, enabled, fnt);
+	const bool activated_in_rect = button_in_rect(ctx, name, name, button_rect, hot_widget_id, active_widget_id, enabled, fnt, role);
 	ctx.layout_cursor.y() -= widget_height + ctx.style.padding;
 	return activated_in_rect;
 }
 
-auto gse::gui::draw::button_in_rect(const draw_context& ctx, const std::string_view label, const std::string_view key, const rectf& button_rect, id& hot_widget_id, id& active_widget_id, const bool enabled, const resource::handle<font> font) -> bool {
+auto gse::gui::draw::button_in_rect(const draw_context& ctx, const std::string_view label, const std::string_view key, const rectf& button_rect, id& hot_widget_id, id& active_widget_id, const bool enabled, const resource::handle<font> font, const button_role role) -> bool {
 	const auto fnt = font.valid() ? font : ctx.fonts.text;
 	const auto fnt_view = fnt.resolve();
 	const id widget_id = ids::make(key.empty() ? label : key);
 
 	const auto btn = interaction::press_in_rect(ctx, hot_widget_id, active_widget_id, widget_id, button_rect, enabled);
 
+	const button_colors palette = colors_for(ctx.style, role);
+
 	const vec4f target_color = btn.color({
-		.idle = ctx.style.color_button_background,
-		.hot = ctx.style.color_button_hovered,
-		.active = ctx.style.color_widget_active,
-		.disabled = ctx.style.color_widget_background,
+		.idle = palette.idle,
+		.hot = palette.hot,
+		.active = palette.active,
+		.disabled = palette.disabled,
 	});
 
 	ctx.queue_sprite({
 		.rect = button_rect,
 		.color = ctx.animated_color(btn.widget, target_color),
 		.texture = ctx.blank_texture,
-		.corner_radius = ctx.style.corner_radius
+		.corner_radius = ctx.style.corner_radius_button
 	});
 
 	const float text_width = fnt_view->width(label, ctx.style.font_size);
@@ -123,7 +128,7 @@ auto gse::gui::draw::button_in_rect(const draw_context& ctx, const std::string_v
 		.text = label,
 		.position = text_pos,
 		.scale = ctx.style.font_size,
-		.color = enabled ? ctx.style.color_text : ctx.style.color_text_disabled,
+		.color = enabled ? palette.label : ctx.style.color_text_disabled,
 		.clip_rect = button_rect
 	});
 
@@ -138,21 +143,23 @@ auto gse::gui::draw::button_in_rect(const draw_context& ctx, const button_params
 
 	const auto btn = interaction::press_in_rect(ctx, hot_widget_id, active_widget_id, widget_id, params.rect, params.enabled);
 
+	const button_colors palette = colors_for(sty, params.role);
+
 	const vec4f target_color = btn.color({
-		.idle = params.danger ? sty.color_danger : sty.color_input_background,
-		.hot = params.danger ? sty.color_danger_hovered : sty.color_widget_hovered,
-		.active = sty.color_widget_active,
-		.disabled = sty.color_widget_background,
+		.idle = palette.idle,
+		.hot = palette.hot,
+		.active = palette.active,
+		.disabled = palette.disabled,
 	});
 
 	ctx.queue_sprite({
 		.rect = params.rect,
 		.color = ctx.animated_color(btn.widget, target_color),
 		.texture = ctx.blank_texture,
-		.corner_radius = sty.corner_radius,
+		.corner_radius = sty.corner_radius_button,
 	});
 
-	const vec4f fg = params.enabled ? sty.color_text : sty.color_text_disabled;
+	const vec4f fg = params.enabled ? palette.label : sty.color_text_disabled;
 	float label_left = params.rect.center().x() - fnt_view->width(params.label, sty.font_size) * 0.5f;
 
 	if (!params.glyph.empty()) {
@@ -198,7 +205,7 @@ auto gse::gui::button::draw(const draw_context& ctx, const params p, id& hot, id
 		{ content_rect.width(), widget_height }
 	);
 
-	const bool activated = draw::button_in_rect(ctx, p.text, p.text, button_rect, hot, active, p.enabled, fnt);
+	const bool activated = draw::button_in_rect(ctx, p.text, p.text, button_rect, hot, active, p.enabled, fnt, p.role);
 	ctx.layout_cursor.y() -= widget_height + ctx.style.padding;
 	return activated;
 }

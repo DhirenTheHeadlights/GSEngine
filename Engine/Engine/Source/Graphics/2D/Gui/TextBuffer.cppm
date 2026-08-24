@@ -12,11 +12,28 @@ export namespace gse::gui {
 		friend auto operator<=>(const buffer_position&, const buffer_position&) = default;
 	};
 
+	enum class text_face : std::uint8_t {
+		inherit,
+		text,
+		text_strong,
+		text_emphasis,
+		code,
+		code_strong,
+	};
+
 	struct text_span {
 		std::uint32_t line = 0;
 		std::uint32_t start_col = 0;
 		std::uint32_t end_col = 0;
 		vec4f color{ 1.f, 1.f, 1.f, 1.f };
+		text_face face = text_face::inherit;
+		float scale = 1.f;
+	};
+
+	struct text_stop {
+		std::uint32_t line = 0;
+		std::uint32_t column = 0;
+		float x = 0.f;
 	};
 
 	struct text_underline {
@@ -56,6 +73,8 @@ export namespace gse::gui {
 			return index < lines.size() ? std::string_view(lines[index]) : std::string_view{};
 		}
 
+		[[nodiscard]] auto text() const -> std::string;
+
 		auto insert(
 			buffer_position at,
 			std::string_view text
@@ -90,6 +109,23 @@ auto gse::gui::text_buffer::from_file(const std::filesystem::path& path) -> std:
 		buf.lines.emplace_back();
 	}
 	return buf;
+}
+
+auto gse::gui::text_buffer::text() const -> std::string {
+	std::size_t total = 0;
+	for (const std::string& line : lines) {
+		total += line.size() + 1;
+	}
+
+	std::string joined;
+	joined.reserve(total);
+	for (std::size_t i = 0; i < lines.size(); ++i) {
+		if (i != 0) {
+			joined += '\n';
+		}
+		joined += lines[i];
+	}
+	return joined;
 }
 
 auto gse::gui::text_buffer::insert(buffer_position at, std::string_view text) -> buffer_position {

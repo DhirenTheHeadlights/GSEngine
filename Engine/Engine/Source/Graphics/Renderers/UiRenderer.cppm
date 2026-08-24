@@ -39,6 +39,7 @@ export namespace gse::renderer {
 		float arc_thickness = 0.f;
 		bool sample_scene_snapshot = false;
 		gpu::bindless_slot image_slot = {};
+		gse::id window;
 	};
 
 	struct text_command {
@@ -50,6 +51,7 @@ export namespace gse::renderer {
 		std::optional<rect_t<vec2f>> clip_rect = std::nullopt;
 		render_layer layer = render_layer::content;
 		std::uint32_t z_order = 0;
+		gse::id window;
 	};
 }
 
@@ -74,6 +76,7 @@ namespace gse::renderer::ui {
 
 	struct draw_batch {
 		command_type type;
+		gse::id window;
 		std::uint32_t index_offset;
 		std::uint32_t index_count;
 		std::optional<rect_t<vec2f>> clip_rect;
@@ -98,6 +101,7 @@ namespace gse::renderer::ui {
 
 	struct unified_command {
 		command_type type;
+		gse::id window;
 		render_layer layer;
 		std::uint32_t z_order;
 		std::optional<rect_t<vec2f>> clip_rect;

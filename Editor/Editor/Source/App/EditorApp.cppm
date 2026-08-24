@@ -16,6 +16,7 @@ import gse.ide.graph;
 import gse.ide.alloc;
 import gse.ide.problems;
 import gse.ide.search_panel;
+import gse.ide.lint_panel;
 import gse.ide.docs;
 import gse.ide.viewport;
 import gse.ide.profile;
@@ -39,6 +40,10 @@ export namespace gse::ide {
 			std::optional<vec2f> pending_panels_menu;
 			cursor_shape frame_cursor = cursor_shape::arrow;
 			bool layout_dirty = false;
+			std::optional<dock_popout> popout;
+			std::vector<gse::id> pending_popouts;
+			std::unordered_map<gse::id, gse::id> popped_out;
+			std::optional<dock_redock> redock;
 			clock save_clock;
 		};
 
@@ -46,8 +51,8 @@ export namespace gse::ide {
 		auto run(
 			context& ctx,
 			data& d,
-			channel_read<window_open_file_result, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, gui::context_menu_result> requests_in,
-			channel_write<gui::push_screen_request, settings::change_request, gui::popout_toggle, set_cursor_shape_request, jump_to_request, window_launcher_mode_request, window_open_file_request, build_runner::build_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request> ui_out,
+			channel_read<window_open_file_result, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, gui::context_menu_result, window_opened, window_closed, window_panel_drag_over> requests_in,
+			channel_write<gui::push_screen_request, settings::change_request, gui::popout_toggle, set_cursor_shape_request, jump_to_request, window_launcher_mode_request, window_open_file_request, build_runner::build_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, window_popout_request, window_close_request> ui_out,
 			shared_view<search_system::data> search_d,
 			shared_view<input::data> input_d,
 			shared_view<window::data> window_d,
@@ -71,6 +76,7 @@ export namespace gse::ide {
 			quick_search_state search;
 			problems_view_state problems;
 			search_panel_state search_panel;
+			lint_panel_state lint_panel;
 			git::status_snapshot git_status;
 			std::vector<std::filesystem::path> git_rootless;
 			bool initialized = false;
@@ -86,8 +92,8 @@ export namespace gse::ide {
 		auto run(
 			context& ctx,
 			data& d,
-			channel_read<git::status_updated, jump_to_request, gui::context_menu_result, analysis::diagnostics_completed, build_runner::build_finished> requests_in,
-			channel_write<gui::menu_content, cursor_capture_request, profile_capture_request, profile_report_request, build_runner::attached_input, build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, analysis::diagnostics_request, git_system::refresh_request, set_cursor_shape_request, search::index_merge_request> ui_out,
+			channel_read<git::status_updated, jump_to_request, apply_lint_request, gui::context_menu_result, analysis::diagnostics_completed, build_runner::build_finished> requests_in,
+			channel_write<gui::menu_content, cursor_capture_request, profile_capture_request, profile_report_request, build_runner::attached_input, build_runner::build_request, git_system::init_request, jump_to_request, apply_lint_request, toggle_project_switcher_request, toggle_settings_request, analysis::diagnostics_request, git_system::refresh_request, set_cursor_shape_request, search::index_merge_request> ui_out,
 			const scheduler& sched,
 			shared_view<config_system::data> config_d,
 			shared_view<search_system::data> search_d,
@@ -113,11 +119,20 @@ namespace gse::ide {
 	constexpr std::string_view alloc_panel_name = "Alloc";
 	constexpr std::string_view problems_panel_name = "Problems";
 	constexpr std::string_view search_panel_name = "Search";
+	constexpr std::string_view lint_panel_name = "Lints";
 	constexpr time editor_layout_save_interval = seconds(30.f);
 	constexpr time system_graph_retry_interval = milliseconds(100.f);
 	constexpr std::uint32_t system_graph_max_attempts = 100;
 
 	constexpr std::uint32_t reset_layout_action = 0xFFFFFFFF;
+
+	struct dock_external_drag {
+		gse::id window;
+		gse::id panel;
+		vec2f mouse;
+		bool over_primary = false;
+		bool released = false;
+	};
 
 	struct dock_input {
 		vec2f mouse;
@@ -126,6 +141,7 @@ namespace gse::ide {
 		bool blocked = false;
 		bool context_pressed = false;
 		bool toggle_maximize = false;
+		std::optional<dock_external_drag> external;
 	};
 
 	[[nodiscard]] auto panels_context_tag() -> gse::id;
@@ -141,7 +157,7 @@ namespace gse::ide {
 	) -> void;
 
 	auto apply_pending_panel_close(
-		gui::data& s,
+		gui::viewport_state& vp,
 		editor_app::data& d
 	) -> void;
 
@@ -162,12 +178,13 @@ namespace gse::ide {
 	) -> void;
 
 	auto sync_dock_menus(
-		gui::data& s,
+		gui::viewport_state& vp,
 		editor_app::data& d
 	) -> void;
 
 	auto update_dock_interaction(
 		gui::data& s,
+		gui::viewport_state& vp,
 		editor_app::data& d,
 		const dock_input& in
 	) -> void;
@@ -232,6 +249,12 @@ auto gse::ide::editor_panels() -> std::span<const panel_desc> {
 			.id = find_or_generate_id(search_panel_name),
 			.name = search_panel_name,
 			.min_size = { 300.f, 160.f },
+			.start_hidden = true,
+		},
+		panel_desc{
+			.id = find_or_generate_id(lint_panel_name),
+			.name = lint_panel_name,
+			.min_size = { 340.f, 160.f },
 			.start_hidden = true,
 		},
 	};
@@ -338,13 +361,13 @@ auto gse::ide::toggle_panel(editor_app::data& d, const gse::id panel) -> void {
 	d.layout_dirty = true;
 }
 
-auto gse::ide::apply_pending_panel_close(gui::data& s, editor_app::data& d) -> void {
-	if (!s.primary.pending_tab_close) {
+auto gse::ide::apply_pending_panel_close(gui::viewport_state& vp, editor_app::data& d) -> void {
+	if (!vp.pending_tab_close) {
 		return;
 	}
 
-	const auto [host_id, tab_index] = *s.primary.pending_tab_close;
-	const gui::menu* host = s.primary.menus.try_get(host_id);
+	const auto [host_id, tab_index] = *vp.pending_tab_close;
+	const gui::menu* host = vp.menus.try_get(host_id);
 	if (!host || tab_index >= host->tab_contents.size()) {
 		return;
 	}
@@ -355,7 +378,7 @@ auto gse::ide::apply_pending_panel_close(gui::data& s, editor_app::data& d) -> v
 		return;
 	}
 
-	s.primary.pending_tab_close.reset();
+	vp.pending_tab_close.reset();
 	if (panel_count(d.tree) <= 1) {
 		return;
 	}
@@ -364,7 +387,7 @@ auto gse::ide::apply_pending_panel_close(gui::data& s, editor_app::data& d) -> v
 	d.layout_dirty = true;
 }
 
-auto gse::ide::sync_dock_menus(gui::data& s, editor_app::data& d) -> void {
+auto gse::ide::sync_dock_menus(gui::viewport_state& vp, editor_app::data& d) -> void {
 	const std::span<const panel_desc> panels = editor_panels();
 	std::vector<gse::id> live;
 	std::vector<gse::id> shown;
@@ -372,7 +395,7 @@ auto gse::ide::sync_dock_menus(gui::data& s, editor_app::data& d) -> void {
 
 	for (const dock_placement& leaf : d.layout.leaves) {
 		dock_node* node = d.tree.nodes.try_get(leaf.node);
-		gui::menu& host = editor_menu(s, node->panels.front().tag());
+		gui::menu& host = editor_menu(vp, node->panels.front().tag());
 
 		if (host.tab_contents.size() == node->panels.size()) {
 			std::vector<gse::id> reordered;
@@ -415,35 +438,39 @@ auto gse::ide::sync_dock_menus(gui::data& s, editor_app::data& d) -> void {
 		live.push_back(host.id());
 	}
 
-	s.primary.suppressed_menus.clear();
+	vp.suppressed_menus.clear();
 	for (const panel_desc& desc : panels) {
 		if (std::ranges::find(shown, desc.id) == shown.end()) {
-			s.primary.suppressed_menus.insert(stable_id(desc.name));
+			vp.suppressed_menus.insert(stable_id(desc.name));
 		}
 	}
 
+	auto awaiting_popout = [&d](const std::string_view tag) {
+		return std::ranges::any_of(d.pending_popouts, [tag](const gse::id p) { return p.tag() == tag; });
+	};
+
 	std::vector<gse::id> stale;
-	for (const gui::menu& m : s.primary.menus.items()) {
+	for (const gui::menu& m : vp.menus.items()) {
 		const std::string_view tag = m.id().tag();
 		const bool owned = std::ranges::any_of(panels, [tag](const panel_desc& desc) {
 			return desc.name == tag;
 		});
-		if (owned && std::ranges::find(live, m.id()) == live.end()) {
+		if (owned && !awaiting_popout(tag) && std::ranges::find(live, m.id()) == live.end()) {
 			stale.push_back(m.id());
 		}
 	}
 	for (const gse::id menu_id : stale) {
-		s.primary.menus.remove(menu_id);
+		vp.menus.remove(menu_id);
 	}
 }
 
-auto gse::ide::update_dock_interaction(gui::data& s, editor_app::data& d, const dock_input& in) -> void {
-	const vec2f viewport_size = s.primary.previous_viewport_size;
+auto gse::ide::update_dock_interaction(gui::data& s, gui::viewport_state& vp, editor_app::data& d, const dock_input& in) -> void {
+	const vec2f viewport_size = vp.previous_viewport_size;
 	if (viewport_size.x() <= 0.f || viewport_size.y() <= 0.f) {
 		return;
 	}
 
-	const gui::style sty = gui::apply_scale(s, s.primary, gui::style::from_theme(s.current_theme), viewport_size.y());
+	const gui::style sty = gui::apply_scale(s, vp, gui::style::from_theme(s.current_theme), viewport_size.y());
 	const float inset = s.reserve_top_bar ? sty.title_bar_height : 0.f;
 	const float top = viewport_size.y() - inset;
 	if (top <= 0.f) {
@@ -454,7 +481,7 @@ auto gse::ide::update_dock_interaction(gui::data& s, editor_app::data& d, const 
 	const std::span<const panel_desc> panels = editor_panels();
 	d.frame = rectf::from_position_size({ 0.f, top }, { viewport_size.x(), top });
 
-	apply_pending_panel_close(s, d);
+	apply_pending_panel_close(vp, d);
 	d.layout = resolve(d.tree, d.frame, metrics, panels);
 
 	if (in.toggle_maximize && !d.drag) {
@@ -472,7 +499,7 @@ auto gse::ide::update_dock_interaction(gui::data& s, editor_app::data& d, const 
 	}
 
 	if (d.pending_panels_menu) {
-		s.primary.context_menu = {
+		vp.context_menu = {
 			.open = true,
 			.just_opened = true,
 			.position = *d.pending_panels_menu,
@@ -482,37 +509,100 @@ auto gse::ide::update_dock_interaction(gui::data& s, editor_app::data& d, const 
 		d.pending_panels_menu.reset();
 	}
 
+	if (in.external) {
+		const dock_external_drag& ext = *in.external;
+		const dock_drag incoming{ .panel = ext.panel, .start = ext.mouse, .torn = true };
+		const std::optional<dock_drop> drop = ext.over_primary
+			? drop_target(d.tree, d.layout, metrics, incoming, ext.mouse)
+			: std::nullopt;
+
+		if (drop) {
+			vp.active_dock_space = drop->space;
+		}
+		else {
+			vp.active_dock_space.reset();
+		}
+
+		if (ext.released) {
+			vp.active_dock_space.reset();
+			vp.active_drag_ghost.reset();
+			if (drop && drop->space.hot != gui::dock::location::none) {
+				d.redock = dock_redock{
+					.window = ext.window,
+					.where = {
+						.panel = ext.panel,
+						.target = drop->node,
+						.location = drop->space.hot,
+					},
+				};
+			}
+		}
+		else if (ext.over_primary) {
+			vp.active_drag_ghost = gui::drag_ghost{
+				.label = std::string(ext.panel.tag()),
+				.position = ext.mouse,
+			};
+		}
+		else {
+			vp.active_drag_ghost.reset();
+		}
+		return;
+	}
+
 	if (d.drag) {
 		if (in.held) {
 			if (!d.drag->torn && !d.drag->header.contains(in.mouse) && distance(in.mouse, d.drag->start) > metrics.tear_threshold * metrics.scale) {
 				d.drag->torn = true;
 			}
-			d.drop = d.drag->torn ? drop_target(d.tree, d.layout, metrics, d.drag->panel, in.mouse) : std::nullopt;
+			d.drop = d.drag->torn ? drop_target(d.tree, d.layout, metrics, *d.drag, in.mouse) : std::nullopt;
 			if (d.drop) {
-				s.primary.active_dock_space = d.drop->space;
+				vp.active_dock_space = d.drop->space;
 			}
 			else {
-				s.primary.active_dock_space.reset();
+				vp.active_dock_space.reset();
 			}
 			if (d.drag->torn) {
-				s.primary.active_drag_ghost = gui::drag_ghost{
-					.label = std::string(d.drag->panel.tag()),
+				const dock_node* grouped = d.drag->group.exists() ? d.tree.nodes.try_get(d.drag->group) : nullptr;
+				vp.active_drag_ghost = gui::drag_ghost{
+					.label = grouped
+						? std::format("{} +{}", d.drag->panel.tag(), grouped->panels.size() - 1)
+						: std::string(d.drag->panel.tag()),
 					.position = in.mouse,
+					.detaching = !d.drop && !d.drag->group.exists() && panel_count(d.tree) > 1,
 				};
 			}
 			d.frame_cursor = d.drag->torn ? cursor_shape::hand : cursor_shape::arrow;
 			return;
 		}
 
-		s.primary.active_dock_space.reset();
-		s.primary.active_drag_ghost.reset();
-		if (d.drag->torn && d.drop && d.drop->location != gui::dock::location::none) {
-			insert_panel(d.tree, {
+		vp.active_dock_space.reset();
+		vp.active_drag_ghost.reset();
+		if (d.drag->torn && d.drop && d.drop->space.hot != gui::dock::location::none) {
+			if (d.drag->group.exists()) {
+				insert_group(d.tree, d.drag->group, *d.drop);
+			}
+			else {
+				insert_panel(d.tree, {
+					.panel = d.drag->panel,
+					.target = d.drop->node,
+					.location = d.drop->space.hot,
+				});
+				activate_panel(d.tree, d.drag->panel);
+			}
+			d.layout = resolve(d.tree, d.frame, metrics, panels);
+			d.layout_dirty = true;
+		}
+		else if (d.drag->torn && !d.drag->group.exists() && panel_count(d.tree) > 1) {
+			d.popout = dock_popout{
 				.panel = d.drag->panel,
-				.target = d.drop->node,
-				.location = d.drop->location,
-			});
-			activate_panel(d.tree, d.drag->panel);
+				.position = vec2i{ static_cast<int>(in.mouse.x()), static_cast<int>(in.mouse.y()) },
+				.size = vec2i{
+					static_cast<int>(std::max(d.drag->header.width(), 480.f)),
+					static_cast<int>(std::max(d.frame.height() * 0.5f, 320.f)),
+				},
+			};
+			remove_panel(d.tree, d.drag->panel);
+			d.pending_popouts.push_back(d.drag->panel);
 			d.layout = resolve(d.tree, d.frame, metrics, panels);
 			d.layout_dirty = true;
 		}
@@ -527,7 +617,7 @@ auto gse::ide::update_dock_interaction(gui::data& s, editor_app::data& d, const 
 	if (in.context_pressed && !in.blocked) {
 		for (const dock_placement& leaf : d.layout.leaves) {
 			const dock_node* node = d.tree.nodes.try_get(leaf.node);
-			const gui::menu& host = editor_menu(s, node->panels.front().tag());
+			const gui::menu& host = editor_menu(vp, node->panels.front().tag());
 			const rectf header = rectf::from_position_size(leaf.rect.top_left(), { leaf.rect.width(), gui::menu_chrome_height(s.fonts, host, sty, leaf.rect.width()) });
 			if (header.contains(in.mouse)) {
 				d.pending_panels_menu = in.mouse;
@@ -539,7 +629,7 @@ auto gse::ide::update_dock_interaction(gui::data& s, editor_app::data& d, const 
 	if (in.pressed && !in.blocked && !held_axis) {
 		for (const dock_placement& leaf : d.layout.leaves) {
 			const dock_node* node = d.tree.nodes.try_get(leaf.node);
-			const gui::menu& host = editor_menu(s, node->panels.front().tag());
+			const gui::menu& host = editor_menu(vp, node->panels.front().tag());
 			const rectf header = rectf::from_position_size(leaf.rect.top_left(), { leaf.rect.width(), gui::menu_chrome_height(s.fonts, host, sty, leaf.rect.width()) });
 			if (!header.contains(in.mouse)) {
 				continue;
@@ -547,6 +637,7 @@ auto gse::ide::update_dock_interaction(gui::data& s, editor_app::data& d, const 
 			const std::optional<std::uint32_t> tab = gui::tab_index_at(s.fonts, host, sty, header, in.mouse);
 			d.drag = dock_drag{
 				.panel = node->panels[tab.value_or(node->active_panel)],
+				.group = !tab && node->panels.size() > 1 ? leaf.node : gse::id{},
 				.start = in.mouse,
 				.header = header,
 			};
@@ -622,11 +713,62 @@ auto gse::ide::forward_game_input(const input::state& input, const channel_write
 	}
 }
 
-auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_open_file_result, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, gui::context_menu_result> requests_in, const channel_write<gui::push_screen_request, settings::change_request, gui::popout_toggle, set_cursor_shape_request, jump_to_request, window_launcher_mode_request, window_open_file_request, build_runner::build_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request> ui_out, const shared_view<search_system::data> search_d, const shared_view<input::data> input_d, const shared_view<window::data> window_d, const save::registry& save_reg) -> async::task<> {
+auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_open_file_result, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, gui::context_menu_result, window_opened, window_closed, window_panel_drag_over> requests_in, const channel_write<gui::push_screen_request, settings::change_request, gui::popout_toggle, set_cursor_shape_request, jump_to_request, window_launcher_mode_request, window_open_file_request, build_runner::build_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, window_popout_request, window_close_request> ui_out, const shared_view<search_system::data> search_d, const shared_view<input::data> input_d, const shared_view<window::data> window_d, const save::registry& save_reg) -> async::task<> {
 	if (!d.initialized) {
 		load_editor_layout(d);
 		d.save_clock.reset();
 		d.initialized = true;
+	}
+
+	if (d.popout) {
+		ui_out.push<window_popout_request>({
+			.menu_name = std::string(d.popout->panel.tag()),
+			.title = std::string(d.popout->panel.tag()),
+			.client_position = d.popout->position,
+			.size = d.popout->size,
+		});
+		d.popout.reset();
+	}
+
+	for (const auto& req : requests_in.of<window_opened>()) {
+		if (req.for_menu.empty()) {
+			continue;
+		}
+		const auto panel = std::ranges::find_if(d.pending_popouts, [&](const gse::id p) {
+			return p.tag() == req.for_menu;
+		});
+		if (panel != d.pending_popouts.end()) {
+			d.popped_out.emplace(req.id, *panel);
+			d.pending_popouts.erase(panel);
+		}
+	}
+
+	for (const auto& req : requests_in.of<window_closed>()) {
+		const auto it = d.popped_out.find(req.id);
+		if (it == d.popped_out.end()) {
+			continue;
+		}
+		const bool dropped_here = d.redock && d.redock->window == req.id;
+		insert_panel(d.tree, dropped_here ? d.redock->where : dock_insert{
+			.panel = it->second,
+			.target = {},
+			.location = gui::dock::location::center,
+		});
+		activate_panel(d.tree, it->second);
+		if (dropped_here) {
+			d.redock.reset();
+		}
+		d.popped_out.erase(it);
+		d.layout_dirty = true;
+	}
+
+	if (d.redock) {
+		if (d.popped_out.contains(d.redock->window)) {
+			ui_out.push<window_close_request>({ .window = d.redock->window });
+		}
+		else {
+			d.redock.reset();
+		}
 	}
 
 	if (!d.screen_pushed && search_d.index) {
@@ -694,20 +836,37 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 	const bool ctrl = input.key_held(key::left_control) || input.key_held(key::right_control);
 	const bool toggle_maximize = ctrl && input.key_pressed(key::m);
 
-	if (window_d.shown) {
+	std::optional<dock_external_drag> external;
+	for (const auto& req : requests_in.of<window_panel_drag_over>()) {
+		const auto held_panel = d.popped_out.find(req.window);
+		if (held_panel == d.popped_out.end()) {
+			continue;
+		}
+		external = dock_external_drag{
+			.window = req.window,
+			.panel = held_panel->second,
+			.mouse = req.primary_cursor,
+			.over_primary = req.over_primary,
+			.released = req.released,
+		};
+	}
+
+	if (window_d.primary.shown) {
 		ui_out.push<settings::change_request>({
 			.state_type = id_of<gui::data>(),
-			.apply = [&d, mouse, pressed, held, context_pressed, toggle_maximize](void* p) {
+			.apply = [&d, mouse, pressed, held, context_pressed, toggle_maximize, external](void* p) {
 				gui::data& s = *static_cast<gui::data*>(p);
-				update_dock_interaction(s, d, {
+				gui::viewport_state& vp = s.primary;
+				update_dock_interaction(s, vp, d, {
 					.mouse = mouse,
 					.pressed = pressed,
 					.held = held,
-					.blocked = s.primary.menu_stack.captures_input() || s.primary.context_menu.open || s.primary.input_layers_data.is_resize_blocked(mouse),
+					.blocked = vp.menu_stack.captures_input() || vp.context_menu.open || vp.input_layers_data.is_resize_blocked(mouse),
 					.context_pressed = context_pressed,
 					.toggle_maximize = toggle_maximize,
+					.external = external,
 				});
-				sync_dock_menus(s, d);
+				sync_dock_menus(vp, d);
 			},
 		});
 	}
@@ -725,7 +884,7 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 	return {};
 }
 
-auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<git::status_updated, jump_to_request, gui::context_menu_result, analysis::diagnostics_completed, build_runner::build_finished> requests_in, const channel_write<gui::menu_content, cursor_capture_request, profile_capture_request, profile_report_request, build_runner::attached_input, build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, analysis::diagnostics_request, git_system::refresh_request, set_cursor_shape_request, search::index_merge_request> ui_out, const scheduler& sched, const shared_view<config_system::data> config_d, const shared_view<search_system::data> search_d, const shared_view<input::data> input_d, const shared_view<viewport::data> viewport_d, const shared_view<build_runner::data> build_d, const shared_view<window::data> window_d, const shared_view<profile_system::data> profile_d) -> async::task<> {
+auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<git::status_updated, jump_to_request, apply_lint_request, gui::context_menu_result, analysis::diagnostics_completed, build_runner::build_finished> requests_in, const channel_write<gui::menu_content, cursor_capture_request, profile_capture_request, profile_report_request, build_runner::attached_input, build_runner::build_request, git_system::init_request, jump_to_request, apply_lint_request, toggle_project_switcher_request, toggle_settings_request, analysis::diagnostics_request, git_system::refresh_request, set_cursor_shape_request, search::index_merge_request> ui_out, const scheduler& sched, const shared_view<config_system::data> config_d, const shared_view<search_system::data> search_d, const shared_view<input::data> input_d, const shared_view<viewport::data> viewport_d, const shared_view<build_runner::data> build_d, const shared_view<window::data> window_d, const shared_view<profile_system::data> profile_d) -> async::task<> {
 	if (!d.initialized) {
 		d.ws.fs_root.is_dir = true;
 		d.ws.fs_root.children.clear();
@@ -779,7 +938,7 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 	const input::state& input = input::current_state(input_d);
 	const input::state input_snapshot = input;
 	const bool game_running = build_d.session && build_d.session->status == build_runner::attached_session_status::active;
-	if (!workspace::game_active(d.ws) || !game_running || !window_d.focused) {
+	if (!workspace::game_active(d.ws) || !game_running || !window_d.primary.focused) {
 		d.ws.game_captured = false;
 	}
 	if (d.ws.game_captured) {
@@ -906,8 +1065,20 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 		},
 	});
 
+	ui_out.push<gui::menu_content>({
+		.menu = std::string(lint_panel_name),
+		.layer = render_layer::content,
+		.build = [state = &d.lint_panel, index = search_d.index, channels = ui_out](gui::builder& b) {
+			draw_lint_panel(b, b.ctx.clip_stack.back(), *state, index, channels);
+		},
+	});
+
 	for (const auto& req : requests_in.of<jump_to_request>()) {
 		workspace::jump_to(d.ws, req.path, req.line, req.column);
+	}
+
+	for (const auto& req : requests_in.of<apply_lint_request>()) {
+		apply_lint_edits(d.ws, req.files);
 	}
 
 	for (const auto& res : requests_in.of<gui::context_menu_result>()) {

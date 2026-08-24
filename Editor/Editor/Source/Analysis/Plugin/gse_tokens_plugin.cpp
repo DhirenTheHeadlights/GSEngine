@@ -162,6 +162,7 @@ struct source_token {
 	int byte_column = 0;
 	int pair = -1;
 	bool binding_scope = false;
+	bool placeholder_decl = false;
 	tree ident = NULL_TREE;
 };
 
@@ -791,7 +792,11 @@ static tree class_binding(tree name_id) {
 	for (int depth = 0; context && depth < 32; ++depth) {
 		if (TYPE_P(context)) {
 			if (CLASS_TYPE_P(context)) {
-				if (tree binding = lookup_member(context, name_id, 0, false, tf_none)) {
+				tree binding = lookup_member(context, name_id, 0, false, tf_none);
+				// The injected-class-name is declared at the class's opening brace and denotes the
+				// same class the enclosing scope already binds, so keep looking outwards and land on
+				// the declaration the source actually spells.
+				if (binding && !(TREE_CODE(binding) == TYPE_DECL && DECL_SELF_REFERENCE_P(binding))) {
 					return binding;
 				}
 			}
@@ -2546,12 +2551,64 @@ static void scan_template_body(int open, int close) {
 	}
 }
 
+/* Match a class-head at INDEX and report its name token and the opening brace of
+   its definition. Forward declarations, elaborated-type-specifiers, `enum class`
+   and unnamed types report no head, so callers leave the enclosing scope alone.  */
+static bool class_definition_head(int index, int count, int *name_out, int *open_out) {
+	if (!source_token_equals(index, "class") && !source_token_equals(index, "struct")
+		&& !source_token_equals(index, "union")) {
+		return false;
+	}
+	if (index > 0 && source_token_equals(index - 1, "enum")) {
+		return false;
+	}
+	int name = -1;
+	int open = -1;
+	bool bases = false;
+	int cursor = index + 1;
+	for (int guard = 0; cursor < count && guard < 96; ++cursor, ++guard) {
+		const source_token &part = (*g_source_tokens)[cursor];
+		if (part.kind == source_token_kind::semicolon) {
+			break;
+		}
+		if (part.kind == source_token_kind::left_brace) {
+			open = cursor;
+			break;
+		}
+		if (source_token_is_char(cursor, '[')) {
+			int brackets = 0;
+			for (; cursor < count; ++cursor) {
+				if (source_token_is_char(cursor, '[')) {
+					++brackets;
+				}
+				else if (source_token_is_char(cursor, ']') && --brackets == 0) {
+					break;
+				}
+			}
+			continue;
+		}
+		if (source_token_is_char(cursor, ':')) {
+			bases = true;
+			continue;
+		}
+		if (!bases && part.kind == source_token_kind::identifier && !source_token_equals(cursor, "final")) {
+			name = cursor;
+		}
+	}
+	if (open < 0 || name < 0 || (*g_source_tokens)[open].pair <= open) {
+		return false;
+	}
+	*name_out = name;
+	*open_out = open;
+	return true;
+}
+
 static void scan_template_prototypes() {
 	if (g_index_only || !ensure_source_tokens()) {
 		return;
 	}
 	const int count = (int)g_source_tokens->length();
-	struct ns_frame { int close; tree ns; };
+	struct ns_frame { int close; tree ns; tree cls; };
 	ns_frame stack[32];
 	int depth = 0;
 	for (int i = 0; i < count; ++i) {
@@ -2563,6 +2620,11 @@ static void scan_template_prototypes() {
 			continue;
 		}
 		tree scope = depth > 0 ? stack[depth - 1].ns : global_namespace;
+		// A qualifier is only redundant when the shortened spelling still resolves to the same
+		// entity, and inside a class body a member hides an enclosing-namespace name spelled the
+		// same way. Without the class on this stack the scanner looks straight through to the
+		// namespace and offers a fix that would rebind the name to the member.
+		tree enclosing_class = depth > 0 ? stack[depth - 1].cls : NULL_TREE;
 		if ((source_token_equals(i, "class") || source_token_equals(i, "struct")) && i + 2 < count
 			&& (*g_source_tokens)[i + 1].kind == source_token_kind::identifier
 			&& (*g_source_tokens)[i + 2].kind == source_token_kind::semicolon) {
@@ -2591,16 +2653,27 @@ static void scan_template_prototypes() {
 			}
 			if (cursor < count && (*g_source_tokens)[cursor].kind == source_token_kind::left_brace
 				&& (*g_source_tokens)[cursor].pair > cursor && ns && depth < 32) {
-				stack[depth++] = { (*g_source_tokens)[cursor].pair, ns };
+				stack[depth++] = { (*g_source_tokens)[cursor].pair, ns, NULL_TREE };
 				i = cursor;
+			}
+			continue;
+		}
+		if (int class_name = -1, class_open = -1; class_definition_head(i, count, &class_name, &class_open)) {
+			tree cls = binding_scope_type(resolve_scope_component(
+				enclosing_class ? enclosing_class : scope, source_token_identifier(class_name)));
+			if (cls && CLASS_TYPE_P(cls) && depth < 32) {
+				stack[depth++] = { (*g_source_tokens)[class_open].pair, scope, cls };
 			}
 			continue;
 		}
 		if (i + 1 < count && (*g_source_tokens)[i + 1].kind == source_token_kind::scope
 			&& qualified_declarator_start_p(i)) {
 			tree outer_scope = g_scope;
+			tree outer_class = g_class_context;
 			g_scope = scope;
+			g_class_context = enclosing_class;
 			scan_qualified_type_chain(i, declarator_chain_limit(i, count));
+			g_class_context = outer_class;
 			g_scope = outer_scope;
 		}
 		if (!source_token_equals(i, "template") || i + 1 >= count || (*g_source_tokens)[i + 1].kind != source_token_kind::less) {
@@ -2670,7 +2743,9 @@ static void scan_template_prototypes() {
 		if (region_end < 0) {
 			if (definition_open > header_close) {
 				tree outer_scope = g_scope;
+				tree outer_class = g_class_context;
 				g_scope = scope;
+				g_class_context = enclosing_class;
 				for (int k = header_close + 1; k < definition_open; ++k) {
 					if ((*g_source_tokens)[k].kind == source_token_kind::identifier
 						&& (*g_source_tokens)[k + 1].kind == source_token_kind::scope
@@ -2678,14 +2753,17 @@ static void scan_template_prototypes() {
 						scan_qualified_type_chain(k, definition_open);
 					}
 				}
+				g_class_context = outer_class;
 				g_scope = outer_scope;
 			}
 			i = header_close;
 			continue;
 		}
 		tree previous_scope = g_scope;
+		tree previous_class = g_class_context;
 		auto_vec<tree, 32> *previous_locals = g_local_decls;
 		g_scope = scope;
+		g_class_context = enclosing_class;
 		g_local_decls = nullptr;
 		for (int k = header_close + 1; k < region_end; ++k) {
 			if ((*g_source_tokens)[k].kind != source_token_kind::left_brace || (*g_source_tokens)[k].pair <= k) {
@@ -2736,6 +2814,7 @@ static void scan_template_prototypes() {
 		}
 		scan_parameter_names(header_close, region_end);
 		g_local_decls = previous_locals;
+		g_class_context = previous_class;
 		g_scope = previous_scope;
 		i = region_end;
 	}
@@ -2846,51 +2925,13 @@ static void emit_static_assert_names() {
 			}
 			continue;
 		}
-		if ((source_token_equals(i, "class") || source_token_equals(i, "struct") || source_token_equals(i, "union"))
-			&& !(i > 0 && source_token_equals(i - 1, "enum"))) {
-			int name = -1;
-			int open = -1;
-			bool bases = false;
-			int cursor = i + 1;
-			for (int guard = 0; cursor < count && guard < 96; ++cursor, ++guard) {
-				const source_token &part = (*g_source_tokens)[cursor];
-				if (part.kind == source_token_kind::semicolon) {
-					break;
-				}
-				if (part.kind == source_token_kind::left_brace) {
-					open = cursor;
-					break;
-				}
-				if (source_token_is_char(cursor, '[')) {
-					int brackets = 0;
-					for (; cursor < count; ++cursor) {
-						if (source_token_is_char(cursor, '[')) {
-							++brackets;
-						}
-						else if (source_token_is_char(cursor, ']') && --brackets == 0) {
-							break;
-						}
-					}
-					continue;
-				}
-				if (source_token_is_char(cursor, ':')) {
-					bases = true;
-					continue;
-				}
-				if (!bases && part.kind == source_token_kind::identifier && !source_token_equals(cursor, "final")) {
-					name = cursor;
-				}
+		if (int name = -1, open = -1; class_definition_head(i, count, &name, &open)) {
+			tree cls = binding_scope_type(resolve_scope_component(
+				enclosing_class ? enclosing_class : scope, source_token_identifier(name)));
+			if (cls && CLASS_TYPE_P(cls) && depth < 32) {
+				stack[depth++] = { (*g_source_tokens)[open].pair, scope, cls };
+				i = open;
 			}
-			if (open < 0 || name < 0 || (*g_source_tokens)[open].pair <= open || depth >= 32) {
-				continue;
-			}
-			tree binding = resolve_scope_component(enclosing_class ? enclosing_class : scope, source_token_identifier(name));
-			tree cls = binding_scope_type(binding);
-			if (!cls || !CLASS_TYPE_P(cls)) {
-				continue;
-			}
-			stack[depth++] = { (*g_source_tokens)[open].pair, scope, cls };
-			i = open;
 			continue;
 		}
 		if (!source_token_equals(i, "static_assert") || i + 1 >= count
@@ -3531,6 +3572,77 @@ static tree template_id_decl(tree fn) {
 	return NULL_TREE;
 }
 
+struct unused_local {
+	int line = 0;
+	int column = 0;
+	int length = 0;
+	const char *name = nullptr;
+};
+
+static auto_vec<unused_local> *g_unused_locals = nullptr;
+static hash_set<uint64_t, false, token_span_hash> *g_unused_seen = nullptr;
+
+static bool unused_local_shape(tree decl) {
+	if (!decl || TREE_CODE(decl) != VAR_DECL || DECL_ARTIFICIAL(decl)) return false;
+	if (TREE_STATIC(decl) || DECL_EXTERNAL(decl)) return false;
+	tree id = DECL_NAME(decl);
+	if (!id || TREE_CODE(id) != IDENTIFIER_NODE || IDENTIFIER_LENGTH(id) == 0) return false;
+	return IDENTIFIER_POINTER(id)[0] != '_';
+}
+
+static bool name_mentioned_in_scope(int anchor, int scope_end, tree id) {
+	for (int i = anchor + 1; i < scope_end; ++i) {
+		if ((*g_source_tokens)[i].kind != source_token_kind::identifier) continue;
+		if (source_token_identifier(i) == id) return true;
+	}
+	return false;
+}
+
+static void note_local_decl(tree decl, int scope_end) {
+	if (g_index_only || !decl || TREE_CODE(decl) != VAR_DECL || !in_main_file(DECL_SOURCE_LOCATION(decl))) return;
+	if (!main_file_under_root() || !ensure_source_tokens()) return;
+	const bool placeholder = name_independent_decl_p(decl);
+	if (!placeholder && !unused_local_shape(decl)) return;
+	tree id = DECL_NAME(decl);
+	const int anchor = find_decl_anchor(decl);
+	if (anchor < 0 || !source_token_matches_identifier(anchor, id)) return;
+	if (placeholder) {
+		(*g_source_tokens)[anchor].placeholder_decl = true;
+		return;
+	}
+	if (scope_end <= anchor || scope_end > (int)g_source_tokens->length()) return;
+	if (name_mentioned_in_scope(anchor, scope_end, id)) return;
+	const source_token &token = (*g_source_tokens)[anchor];
+	const int length = (int)(token.finish - token.start);
+	if (!g_unused_locals) {
+		g_unused_locals = new auto_vec<unused_local>();
+		g_unused_seen = new hash_set<uint64_t, false, token_span_hash>();
+	}
+	if (g_unused_seen->add(token_span_key(token.line, token.column, length))) return;
+	g_unused_locals->safe_push({
+		.line = token.line,
+		.column = token.column,
+		.length = length,
+		.name = IDENTIFIER_POINTER(id)
+	});
+}
+
+static bool placeholder_is_read() {
+	for (unsigned i = 0; i < g_source_tokens->length(); ++i) {
+		const source_token &token = (*g_source_tokens)[i];
+		if (token.kind != source_token_kind::identifier || token.placeholder_decl) continue;
+		if (token.finish - token.start == 1 && g_src[token.start] == '_') return true;
+	}
+	return false;
+}
+
+static void emit_unused_locals() {
+	if (!g_unused_locals || !main_input_filename || placeholder_is_read()) return;
+	for (const unused_local &entry : *g_unused_locals) {
+		out_printf("GSEUNUSED\t%s\t%d\t%d\t%d\t%s\n", main_input_filename, entry.line, entry.column, entry.length, entry.name);
+	}
+}
+
 static void walk_bind_expr(tree bind) {
 	int closing = source_token_at(EXPR_LOCATION(bind), source_token_kind::right_brace);
 	int opening = closing >= 0 ? (*g_source_tokens)[closing].pair : -1;
@@ -3538,11 +3650,10 @@ static void walk_bind_expr(tree bind) {
 		(*g_source_tokens)[opening].binding_scope = true;
 	}
 	const unsigned start = g_local_decls ? g_local_decls->length() : 0;
-	if (g_local_decls) {
-		for (tree decl = BIND_EXPR_VARS(bind); decl; decl = DECL_CHAIN(decl)) {
-			if (DECL_P(decl)) {
-				g_local_decls->safe_push(decl);
-			}
+	for (tree decl = BIND_EXPR_VARS(bind); decl; decl = DECL_CHAIN(decl)) {
+		note_local_decl(decl, closing);
+		if (g_local_decls && DECL_P(decl)) {
+			g_local_decls->safe_push(decl);
 		}
 	}
 	tree body = BIND_EXPR_BODY(bind);
@@ -4297,6 +4408,7 @@ static void on_finish(void *, void *) {
 	scan_template_prototypes();
 	emit_static_assert_names();
 	walk_ns(global_namespace);
+	emit_unused_locals();
 	if (g_out) {
 		out_str("GSEDONE\n");
 	}

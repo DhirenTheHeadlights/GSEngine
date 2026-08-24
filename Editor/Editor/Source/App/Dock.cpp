@@ -165,6 +165,33 @@ auto gse::ide::insert_panel(dock_tree& tree, const dock_insert& what) -> void {
 	tree.nodes.try_get(anchor)->parent = split_id;
 }
 
+auto gse::ide::insert_group(dock_tree& tree, const id group, const dock_drop& where) -> void {
+	const dock_node* leaf = tree.nodes.try_get(group);
+	if (!leaf || leaf->panels.empty()) {
+		return;
+	}
+
+	const std::vector<id> moved = leaf->panels;
+	const id active = moved[std::min<std::size_t>(leaf->active_panel, moved.size() - 1)];
+
+	insert_panel(tree, {
+		.panel = moved.front(),
+		.target = where.node,
+		.location = where.space.hot,
+	});
+
+	const id landed = find_leaf(tree, moved.front());
+	for (const id panel : moved | std::views::drop(1)) {
+		insert_panel(tree, {
+			.panel = panel,
+			.target = landed,
+			.location = gui::dock::location::center,
+		});
+	}
+
+	activate_panel(tree, active);
+}
+
 auto gse::ide::remove_panel(dock_tree& tree, const id panel) -> void {
 	const id leaf_id = find_leaf(tree, panel);
 	dock_node* leaf = tree.nodes.try_get(leaf_id);
@@ -325,7 +352,7 @@ auto gse::ide::divider_at(const dock_layout& layout, const vec2f mouse) -> const
 	return it == layout.dividers.end() ? nullptr : &*it;
 }
 
-auto gse::ide::drop_target(const dock_tree& tree, const dock_layout& layout, const dock_metrics& metrics, const id panel, const vec2f mouse) -> std::optional<dock_drop> {
+auto gse::ide::drop_target(const dock_tree& tree, const dock_layout& layout, const dock_metrics& metrics, const dock_drag& drag, const vec2f mouse) -> std::optional<dock_drop> {
 	const auto hit = std::ranges::find_if(layout.leaves, [mouse](const dock_placement& leaf) {
 		return leaf.rect.contains(mouse);
 	});
@@ -333,9 +360,9 @@ auto gse::ide::drop_target(const dock_tree& tree, const dock_layout& layout, con
 		return std::nullopt;
 	}
 
-	const id source = find_leaf(tree, panel);
+	const id source = drag.group.exists() ? drag.group : find_leaf(tree, drag.panel);
 	const bool own_leaf = hit->node == source;
-	if (own_leaf && tree.nodes.try_get(source)->panels.size() == 1) {
+	if (own_leaf && (drag.group.exists() || tree.nodes.try_get(source)->panels.size() == 1)) {
 		return std::nullopt;
 	}
 
@@ -353,12 +380,7 @@ auto gse::ide::drop_target(const dock_tree& tree, const dock_layout& layout, con
 		}
 	}
 
-	for (const gui::dock::area& area : drop.space.areas) {
-		if (area.rect.width() > 0.f && area.rect.height() > 0.f && area.rect.contains(mouse)) {
-			drop.location = area.dock_location;
-			break;
-		}
-	}
+	drop.space.select(mouse);
 	return drop;
 }
 

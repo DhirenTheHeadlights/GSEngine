@@ -53,7 +53,7 @@ export namespace gse {
 			= asset_format::baked_dir<"Fonts">{},
 			= asset_format::source_dir<"Fonts">{},
 			= asset_format::source_exts<".ttf", ".otf">{},
-			= asset_format::built_ins<"Inter-Regular.ttf", "MonaspaceNeon-Regular.otf">{},
+			= asset_format::built_ins<"Geist-Regular.ttf", "Geist-SemiBold.ttf", "GeistMono-Regular.ttf", "GeistMono-SemiBold.ttf", "Inter-Regular.ttf", "MonaspaceNeon-Regular.otf">{},
 			= asset_format::magic<0x47464E54>{},
 			= asset_format::version<13>{}
 		]] baked {

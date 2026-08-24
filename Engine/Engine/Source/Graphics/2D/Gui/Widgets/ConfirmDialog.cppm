@@ -119,7 +119,7 @@ auto gse::gui::draw::confirm_dialog(builder& ui, const confirm_params& params) -
 		.rect = confirm_btn,
 		.label = params.confirm_label,
 		.key = confirm_key,
-		.danger = params.danger,
+		.role = params.danger ? button_role::danger : button_role::standard,
 	}, ui.hot_widget_id, ui.active_widget_id);
 
 	if (ctx.key_pressed_for(key::escape)) {

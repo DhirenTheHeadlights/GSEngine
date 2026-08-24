@@ -268,14 +268,25 @@ export namespace gse::gpu {
 		) const -> std::pair<gpu::query_status, std::vector<std::uint64_t>>;
 
 		[[nodiscard]] auto create_swapchain(
+			gpu::surface surface,
 			vec2i framebuffer_size,
 			gpu::present_mode mode,
 			gpu::swap_chain_handle old_handle
 		) -> gpu::expected<gpu::swap_chain_info>;
 
-		auto recreate_surface(
-			const window::data& win,
+		[[nodiscard]] auto boot_surface() const -> gpu::surface;
+
+		[[nodiscard]] auto recreate_surface(
+			const window::window_surface& win,
 			gpu::swap_chain_handle current_swapchain
+		) -> gpu::surface;
+
+		[[nodiscard]] auto create_surface(
+			native_window_handle handle
+		) -> gpu::surface;
+
+		auto destroy_surface(
+			gpu::surface surface
 		) -> void;
 
 		[[nodiscard]] auto acquire_swapchain_image(
@@ -653,16 +664,28 @@ auto gse::gpu::vulkan_device_backend::query_pool_results(const gpu::handle<gpu::
 	return device_config.query_pool_results(pool, first_query, query_count, stride);
 }
 
-auto gse::gpu::vulkan_device_backend::create_swapchain(const vec2i framebuffer_size, const gpu::present_mode mode, const gpu::swap_chain_handle old_handle) -> gpu::expected<gpu::swap_chain_info> {
-	return device_config.create_swap_chain(framebuffer_size, mode, old_handle);
+auto gse::gpu::vulkan_device_backend::create_swapchain(const gpu::surface surface, const vec2i framebuffer_size, const gpu::present_mode mode, const gpu::swap_chain_handle old_handle) -> gpu::expected<gpu::swap_chain_info> {
+	return device_config.create_swap_chain(surface, framebuffer_size, mode, old_handle);
 }
 
-auto gse::gpu::vulkan_device_backend::recreate_surface(const window::data& win, const gpu::swap_chain_handle current_swapchain) -> void {
+auto gse::gpu::vulkan_device_backend::boot_surface() const -> gpu::surface {
+	return instance.surface();
+}
+
+auto gse::gpu::vulkan_device_backend::create_surface(const native_window_handle handle) -> gpu::surface {
+	return instance.create_owned_surface(handle);
+}
+
+auto gse::gpu::vulkan_device_backend::destroy_surface(const gpu::surface surface) -> void {
+	instance.destroy_owned_surface(surface);
+}
+
+auto gse::gpu::vulkan_device_backend::recreate_surface(const window::window_surface& win, const gpu::swap_chain_handle current_swapchain) -> gpu::surface {
 	device_config.wait_idle();
 	device_config.destroy_swapchain(current_swapchain);
 	instance.destroy_surface();
 	instance.create_surface(win);
-	device_config.set_surface(instance.surface());
+	return instance.surface();
 }
 
 auto gse::gpu::vulkan_device_backend::acquire_swapchain_image(const gpu::swap_chain_handle swapchain, const gpu::handle<gpu::semaphore> wait_semaphore, const std::uint64_t timeout_ns) const -> gpu::acquire_next_image_result {

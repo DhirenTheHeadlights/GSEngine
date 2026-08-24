@@ -40,37 +40,64 @@ import :tab_strip;
 import :widget_context;
 
 auto gse::gui::draw_drag_ghost(data& d, viewport_state& vp) -> void {
-	if (vp.active_drag_ghost && d.fonts.text.valid()) {
-		const style& sty = vp.fstate.sty;
-		const auto text_view = d.fonts.text.resolve();
-		const float label_w = text_view->width(vp.active_drag_ghost->label, sty.font_size);
-		const float ghost_h = text_view->line_height(sty.font_size) + sty.padding;
-		const rectf ghost = rectf::from_position_size(
-			{ vp.active_drag_ghost->position.x() + sty.padding, vp.active_drag_ghost->position.y() - sty.padding },
-			{ label_w + sty.padding * 2.f, ghost_h }
-		);
+	if (!vp.active_drag_ghost || !d.fonts.text.valid()) {
+		return;
+	}
+
+	const style& sty = vp.fstate.sty;
+	const drag_ghost& state = *vp.active_drag_ghost;
+	const auto text_view = d.fonts.text.resolve();
+	const float label_w = text_view->width(state.label, sty.font_size);
+	const float ghost_h = text_view->line_height(sty.font_size) + sty.padding;
+	const float icon_w = state.detaching ? ghost_h : 0.f;
+	const rectf ghost = rectf::from_position_size(
+		{ state.position.x() + sty.padding, state.position.y() - sty.padding },
+		{ label_w + icon_w + sty.padding * 2.f, ghost_h }
+	);
+
+	if (state.detaching) {
 		d.sprite_commands.push_back({
-			.rect = ghost,
-			.color = sty.color_tab_active,
+			.rect = ghost.inset({ -1.f, -1.f }),
+			.color = sty.color_accent,
 			.texture = d.blank_texture,
 			.layer = render_layer::overlay,
-			.z_order = 20,
-			.corner_radius = sty.corner_radius,
-		});
-		d.text_commands.push_back({
-			.font = d.fonts.text,
-			.text = intern_text(d, vp.active_drag_ghost->label),
-			.position = { ghost.left() + sty.padding, ghost.center().y() + text_view->vertical_center_offset(sty.font_size) },
-			.scale = sty.font_size,
-			.color = sty.color_text,
-			.clip_rect = ghost,
-			.layer = render_layer::overlay,
-			.z_order = 21,
+			.z_order = 19,
+			.corner_radius = sty.corner_radius + 1.f,
 		});
 	}
+
+	d.sprite_commands.push_back({
+		.rect = ghost,
+		.color = state.detaching ? sty.color_menu_body : sty.color_tab_active,
+		.texture = d.blank_texture,
+		.layer = render_layer::overlay,
+		.z_order = 20,
+		.corner_radius = sty.corner_radius,
+	});
+
+	if (state.detaching) {
+		symbol::draw(d.sprite_commands, d.blank_texture, symbol::maximize(), rectf::from_position_size(ghost.top_left(), { icon_w, ghost_h }), {
+			.color = sty.color_accent,
+			.extent = sty.icon_extent,
+			.layer = render_layer::overlay,
+			.z_order = 21,
+			.clip_rect = ghost,
+		});
+	}
+
+	d.text_commands.push_back({
+		.font = d.fonts.text,
+		.text = intern_text(d, state.label),
+		.position = { ghost.left() + icon_w + sty.padding, ghost.center().y() + text_view->vertical_center_offset(sty.font_size) },
+		.scale = sty.font_size,
+		.color = sty.color_text,
+		.clip_rect = ghost,
+		.layer = render_layer::overlay,
+		.z_order = 21,
+	});
 }
 
-auto gse::gui::update_tooltip(data& d, viewport_state& vp, const vec2f viewport_size) -> void {
+auto gse::gui::update_tooltip(data& d, viewport_state& vp) -> void {
 	if (vp.tooltip.pending_widget_id.exists()) {
 		if (vp.tooltip.pending_widget_id == vp.tooltip.widget_id) {
 			vp.tooltip.hover_time += system_clock::dt<time>();
@@ -105,17 +132,17 @@ auto gse::gui::update_tooltip(data& d, viewport_state& vp, const vec2f viewport_
 
 		vec2f tooltip_pos = vp.tooltip.position + vec2f(15.f, -15.f);
 
-		if (tooltip_pos.x() + tooltip_width > viewport_size.x()) {
-			tooltip_pos.x() = viewport_size.x() - tooltip_width;
+		if (tooltip_pos.x() + tooltip_width > vp.frame_rect.right()) {
+			tooltip_pos.x() = vp.frame_rect.right() - tooltip_width;
 		}
-		if (tooltip_pos.x() < 0.f) {
-			tooltip_pos.x() = 0.f;
+		if (tooltip_pos.x() < vp.frame_rect.left()) {
+			tooltip_pos.x() = vp.frame_rect.left();
 		}
-		if (tooltip_pos.y() > viewport_size.y()) {
-			tooltip_pos.y() = viewport_size.y();
+		if (tooltip_pos.y() > vp.frame_rect.top()) {
+			tooltip_pos.y() = vp.frame_rect.top();
 		}
-		if (tooltip_pos.y() - tooltip_height < 0.f) {
-			tooltip_pos.y() = tooltip_height;
+		if (tooltip_pos.y() - tooltip_height < vp.frame_rect.bottom()) {
+			tooltip_pos.y() = vp.frame_rect.bottom() + tooltip_height;
 		}
 
 		const rectf tooltip_rect = rectf::from_position_size(
@@ -157,7 +184,7 @@ auto gse::gui::update_tooltip(data& d, viewport_state& vp, const vec2f viewport_
 	vp.tooltip.pending_widget_id.reset();
 }
 
-auto gse::gui::process_context_menu(data& d, viewport_state& vp, const gse::input::state& input_state, const vec2f viewport_size, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> channels) -> void {
+auto gse::gui::process_context_menu(data& d, viewport_state& vp, const gse::input::state& input_state, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request, window_panel_drag_request> channels) -> void {
 	context_menu_state& cm = vp.context_menu;
 	if (!cm.open) {
 		return;
@@ -190,8 +217,10 @@ auto gse::gui::process_context_menu(data& d, viewport_state& vp, const gse::inpu
 	}
 
 	vec2f pos = cm.position;
-	pos.x() = std::clamp(pos.x(), 2.f, std::max(2.f, viewport_size.x() - width - 2.f));
-	pos.y() = std::clamp(pos.y(), total_h + 2.f, std::max(total_h + 2.f, viewport_size.y() - 2.f));
+	const float min_x = vp.frame_rect.left() + 2.f;
+	const float min_y = vp.frame_rect.bottom() + total_h + 2.f;
+	pos.x() = std::clamp(pos.x(), min_x, std::max(min_x, vp.frame_rect.right() - width - 2.f));
+	pos.y() = std::clamp(pos.y(), min_y, std::max(min_y, vp.frame_rect.top() - 2.f));
 
 	const rectf panel = rectf::from_position_size(pos, { width, total_h });
 

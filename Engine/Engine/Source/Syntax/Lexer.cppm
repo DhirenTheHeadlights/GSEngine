@@ -1,24 +1,18 @@
-export module gse.ide.highlight:lexer;
+export module gse.syntax:lexer;
 
 import std;
 
-export namespace gse::ide {
-	enum class document_language : std::uint8_t {
-		plain,
-		cpp,
-		markdown,
-	};
-}
+import :kinds;
 
-export namespace gse::ide::syntax {
+export namespace gse::syntax {
 	enum class token_type {
-		line_comment,
-		block_comment,
-		string,
-		number,
+		line_comment [[= kind::comment]],
+		block_comment [[= kind::comment]],
+		string [[= kind::string]],
+		number [[= kind::number]],
 		identifier,
-		preprocessor,
-		punctuation
+		preprocessor [[= kind::preprocessor]],
+		punctuation [[= kind::punctuation]]
 	};
 
 	struct token {
@@ -71,7 +65,7 @@ export namespace gse::ide::syntax {
 	) -> lex_result;
 }
 
-namespace gse::ide::syntax {
+namespace gse::syntax {
 	struct literal_prefix {
 		std::string_view text;
 		bool raw = false;
@@ -117,15 +111,15 @@ namespace gse::ide::syntax {
 	) -> std::optional<literal_start>;
 }
 
-constexpr auto gse::ide::syntax::is_ident_start_byte(const unsigned char c) -> bool {
+constexpr auto gse::syntax::is_ident_start_byte(const unsigned char c) -> bool {
 	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_' || c >= 0x80;
 }
 
-constexpr auto gse::ide::syntax::is_ident_char_byte(const unsigned char c) -> bool {
+constexpr auto gse::syntax::is_ident_char_byte(const unsigned char c) -> bool {
 	return is_ident_start_byte(c) || (c >= '0' && c <= '9');
 }
 
-constexpr auto gse::ide::syntax::splice_position(const std::string_view line) -> std::optional<std::size_t> {
+constexpr auto gse::syntax::splice_position(const std::string_view line) -> std::optional<std::size_t> {
 	std::size_t end = line.size();
 	if (end > 0 && line[end - 1] == '\r') {
 		--end;
@@ -136,28 +130,28 @@ constexpr auto gse::ide::syntax::splice_position(const std::string_view line) ->
 	return std::nullopt;
 }
 
-static_assert(gse::ide::syntax::is_ident_start_byte(0xc3));
-static_assert(gse::ide::syntax::splice_position("value\\") == 5);
-static_assert(gse::ide::syntax::splice_position("value\\\r") == 5);
-static_assert(!gse::ide::syntax::splice_position("value\\ "));
+static_assert(gse::syntax::is_ident_start_byte(0xc3));
+static_assert(gse::syntax::splice_position("value\\") == 5);
+static_assert(gse::syntax::splice_position("value\\\r") == 5);
+static_assert(!gse::syntax::splice_position("value\\ "));
 
-auto gse::ide::syntax::is_ident_start(const char c) -> bool {
+auto gse::syntax::is_ident_start(const char c) -> bool {
 	return is_ident_start_byte(static_cast<unsigned char>(c));
 }
 
-auto gse::ide::syntax::is_ident_char(const char c) -> bool {
+auto gse::syntax::is_ident_char(const char c) -> bool {
 	return is_ident_char_byte(static_cast<unsigned char>(c));
 }
 
-auto gse::ide::syntax::is_digit(const char c) -> bool {
+auto gse::syntax::is_digit(const char c) -> bool {
 	return c >= '0' && c <= '9';
 }
 
-auto gse::ide::syntax::is_space(const char c) -> bool {
+auto gse::syntax::is_space(const char c) -> bool {
 	return c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '\v' || c == '\f';
 }
 
-auto gse::ide::syntax::is_punct(const char c) -> bool {
+auto gse::syntax::is_punct(const char c) -> bool {
 	switch (c) {
 		case '+':
 		case '-':
@@ -190,7 +184,7 @@ auto gse::ide::syntax::is_punct(const char c) -> bool {
 	}
 }
 
-auto gse::ide::syntax::split_lines(const std::string_view source) -> std::vector<std::string_view> {
+auto gse::syntax::split_lines(const std::string_view source) -> std::vector<std::string_view> {
 	std::vector<std::string_view> lines;
 	std::size_t line_start = 0;
 	for (std::size_t i = 0; i <= source.size(); ++i) {
@@ -202,7 +196,7 @@ auto gse::ide::syntax::split_lines(const std::string_view source) -> std::vector
 	return lines;
 }
 
-auto gse::ide::syntax::scan_quoted(const quoted_scan_info& info) -> quoted_scan {
+auto gse::syntax::scan_quoted(const quoted_scan_info& info) -> quoted_scan {
 	bool escaped = info.escaped;
 	for (std::size_t i = info.start; i < info.end; ++i) {
 		const char c = info.line[i];
@@ -225,7 +219,7 @@ auto gse::ide::syntax::scan_quoted(const quoted_scan_info& info) -> quoted_scan 
 	};
 }
 
-auto gse::ide::syntax::match_literal_start(const std::string_view line, const std::size_t index) -> std::optional<literal_start> {
+auto gse::syntax::match_literal_start(const std::string_view line, const std::size_t index) -> std::optional<literal_start> {
 	static constexpr std::array<literal_prefix, 10> prefixes = {
 		literal_prefix{
 			.text = "u8R",
@@ -294,7 +288,7 @@ auto gse::ide::syntax::match_literal_start(const std::string_view line, const st
 	return std::nullopt;
 }
 
-auto gse::ide::syntax::tokenize(const std::span<const std::string_view> lines) -> lex_result {
+auto gse::syntax::tokenize(const std::span<const std::string_view> lines) -> lex_result {
 	lex_result result;
 	lex_mode mode = lex_mode::normal;
 	std::string raw_delimiter;
