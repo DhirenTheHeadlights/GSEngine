@@ -464,7 +464,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 		.rect = box_rect,
 		.color = ctx.style.color_input_background,
 		.texture = ctx.blank_texture,
-		.corner_radius = ctx.style.corner_radius
+		.corner_radius = ctx.style.corner_radius_input
 	});
 
 	const rectf clip_rect = box_rect.inset({ text_padding, 0.f });

@@ -243,7 +243,7 @@ auto gse::engine::update() -> void {
 						gpu::context::execute_frame(*gpu_state, m_scheduler);
 					}
 				);
-				gpu::context::end_frame(*gpu_state, nullptr);
+				gpu::context::end_frame(*gpu_state);
 			}
 		}
 	}
@@ -377,7 +377,8 @@ auto gse::engine::render() -> void {
 		std::expected<gpu::frame_token, gpu::frame_status> result;
 		{
 			trace::scope_guard sg{ trace_id<"render::begin_frame">() };
-			result = gpu::context::begin_frame(*gpu_state, &window_state);
+			gpu::context::sync_present_targets(*gpu_state, window_state);
+			result = gpu::context::begin_frame(*gpu_state, &window_state.primary);
 		}
 		const auto fence_wait = fence_timer.elapsed();
 
@@ -394,6 +395,7 @@ auto gse::engine::render() -> void {
 			);
 			std::abort();
 		}
+
 	}
 
 	m_scheduler.render(
@@ -413,7 +415,7 @@ auto gse::engine::render() -> void {
 		{
 			trace::scope_guard sg{ trace_id<"render::end_frame">() };
 			auto& window_state = m_scheduler.state<window::data>();
-			gpu::context::end_frame(*gpu_state, &window_state);
+			gpu::context::end_frame(*gpu_state);
 			if (asset_state) {
 				trace::scope_guard sg{ trace_id<"end_frame::finalize_reloads">() };
 				for (const auto& l : std::views::values(asset_state->resource_loaders)) {
@@ -424,7 +426,7 @@ auto gse::engine::render() -> void {
 			if (attach_failed && window_state.attached) {
 				window_state.attached = false;
 				window_state.cursor_suppressed = false;
-				window_state.framebuffer_resized = true;
+				window_state.primary.framebuffer_resized = true;
 			}
 			if (!m_window_shown && m_config.bench.enabled) {
 				m_window_shown = true;
@@ -466,17 +468,17 @@ auto gse::engine::push_attached_input(const input::event& event) -> void {
 	if (!window_state) {
 		return;
 	}
-	if (const auto* moved = std::get_if<input::mouse_moved>(&event); moved && window_state->ui_focus) {
+	if (const auto* moved = std::get_if<input::mouse_moved>(&event); moved && window_state->primary.ui_focus) {
 		const auto dims = window::viewport(*window_state);
 		const double clamped_x = std::clamp(moved->x_pos, 0.0, static_cast<double>(dims.x()));
 		const double clamped_y = std::clamp(moved->y_pos, 0.0, static_cast<double>(dims.y()));
-		window_state->input_events.push(input::mouse_moved{
+		window_state->primary.input_events.push(input::mouse_moved{
 			.x_pos = clamped_x,
 			.y_pos = static_cast<double>(dims.y()) - clamped_y,
 		});
 		return;
 	}
-	window_state->input_events.push(event);
+	window_state->primary.input_events.push(event);
 }
 
 auto gse::engine::shutdown() -> void {

@@ -54,6 +54,7 @@ export namespace gse::ide {
 
 	struct dock_drag {
 		gse::id panel;
+		gse::id group;
 		vec2f start;
 		rectf header;
 		bool torn = false;
@@ -62,7 +63,12 @@ export namespace gse::ide {
 	struct dock_drop {
 		gse::id node;
 		gui::dock::space space;
-		gui::dock::location location = gui::dock::location::none;
+	};
+
+	struct dock_popout {
+		gse::id panel;
+		vec2i position;
+		vec2i size;
 	};
 
 	struct dock_insert {
@@ -70,6 +76,11 @@ export namespace gse::ide {
 		gse::id target;
 		gui::dock::location location = gui::dock::location::center;
 		float ratio = 0.5f;
+	};
+
+	struct dock_redock {
+		gse::id window;
+		dock_insert where;
 	};
 
 	[[nodiscard]] auto is_leaf(
@@ -133,9 +144,15 @@ export namespace gse::ide {
 		const dock_tree& tree,
 		const dock_layout& layout,
 		const dock_metrics& metrics,
-		gse::id panel,
+		const dock_drag& drag,
 		vec2f mouse
 	) -> std::optional<dock_drop>;
+
+	auto insert_group(
+		dock_tree& tree,
+		gse::id group,
+		const dock_drop& where
+	) -> void;
 
 	[[nodiscard]] auto serialize_tree(
 		const dock_tree& tree,

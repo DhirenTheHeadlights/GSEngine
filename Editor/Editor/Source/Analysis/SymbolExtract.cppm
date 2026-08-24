@@ -76,12 +76,21 @@ export namespace gse::ide::analysis {
 		semantic_kind kind = semantic_kind::variable;
 	};
 
+	struct unused_local {
+		std::string file;
+		std::uint32_t line = 0;
+		std::uint32_t column = 0;
+		std::uint32_t end_column = 0;
+		std::string name;
+	};
+
 	struct symbol_set {
 		std::vector<symbol_token> symbols;
 		std::vector<symbol_ref> refs;
 		std::vector<qualified_use> quals;
 		std::vector<qualified_use> template_args;
 		std::vector<param_token> params;
+		std::vector<unused_local> unused_locals;
 		bool complete = false;
 	};
 
@@ -240,6 +249,32 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 			}
 			++discarded;
 			report_discarded_record(main_file, line, "a GSETARG record has a non-numeric position", discarded);
+			continue;
+		}
+
+		if (line.starts_with("GSEUNUSED\t")) {
+			std::array<std::string_view, 6> fields;
+			const std::size_t count = gse::split_fields(line, '\t', fields);
+			if (count < 6) {
+				++discarded;
+				report_discarded_record(main_file, line, "a GSEUNUSED record carries fewer than the 6 required fields", discarded);
+				continue;
+			}
+			std::uint32_t ln = 0;
+			std::uint32_t col = 0;
+			std::uint32_t len = 0;
+			if (!fields[5].empty() && gse::parse(fields[2], ln) && gse::parse(fields[3], col) && gse::parse(fields[4], len)) {
+				out.unused_locals.push_back({
+					.file = std::string(fields[1]),
+					.line = ln,
+					.column = col,
+					.end_column = col + len,
+					.name = std::string(fields[5]),
+				});
+				continue;
+			}
+			++discarded;
+			report_discarded_record(main_file, line, "a GSEUNUSED record has an empty name or a non-numeric position", discarded);
 			continue;
 		}
 

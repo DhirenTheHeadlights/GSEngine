@@ -41,108 +41,15 @@ auto gse::ide::agent::row_color(const gui::style& sty, const row_kind kind) -> v
 	}
 }
 
-auto gse::ide::agent::parse_markup(const std::string_view line, markup_state& state) -> markup_line {
-	const std::size_t indent = line.find_first_not_of(' ');
-	if (indent == std::string_view::npos) {
-		return { .text = std::string(line) };
-	}
-
-	const std::string_view lead = line.substr(0, indent);
-	std::string_view rest = line.substr(indent);
-
-	const char fence_kind = rest.front();
-	if (fence_kind == '`' || fence_kind == '~') {
-		const std::size_t run = rest.find_first_not_of(fence_kind);
-		const std::size_t length = run == std::string_view::npos ? rest.size() : run;
-		if (length >= 3) {
-			if (!state.in_fence) {
-				state.in_fence = true;
-				state.fence_kind = fence_kind;
-				state.fence_length = length;
-			}
-			else if (state.fence_kind == fence_kind && length >= state.fence_length) {
-				state.in_fence = false;
-			}
-			return {
-				.text = std::string(line),
-				.kind = markup::code,
-			};
-		}
-	}
-
-	if (state.in_fence) {
+auto gse::ide::agent::line_base_style(const gui::style& sty, const markdown::line_info& info, const vec4f& fallback) -> markdown::display_style {
+	if (info.shape == markdown::block::heading) {
 		return {
-			.text = std::string(line),
-			.kind = markup::code,
+			.color = sty.color_section_header,
+			.face = gui::text_face::code_strong,
+			.scale = markdown::heading_scale(info.heading_level),
 		};
 	}
-
-	markup_line out;
-	std::size_t hashes = 0;
-	while (hashes < rest.size() && rest[hashes] == '#') {
-		++hashes;
-	}
-	if (hashes > 0 && hashes < rest.size() && rest[hashes] == ' ') {
-		out.kind = markup::heading;
-		rest.remove_prefix(hashes + 1);
-	}
-	else if (rest.starts_with("> ")) {
-		out.kind = markup::quote;
-		rest.remove_prefix(2);
-		out.text = "  ";
-	}
-	else if (rest.starts_with("* ") || rest.starts_with("+ ")) {
-		rest.remove_prefix(2);
-		out.text = "- ";
-	}
-
-	out.text.insert(0, lead);
-
-	for (std::size_t i = 0; i < rest.size();) {
-		if (rest[i] == '`') {
-			if (const std::size_t close = rest.find('`', i + 1); close != std::string_view::npos) {
-				const std::size_t begin = out.text.size();
-				out.text.append(rest.substr(i + 1, close - i - 1));
-				out.runs.push_back({ .start = begin, .end = out.text.size(), .kind = markup::code });
-				i = close + 1;
-				continue;
-			}
-		}
-		if (rest.compare(i, 2, "**") == 0) {
-			if (const std::size_t close = rest.find("**", i + 2); close != std::string_view::npos && close > i + 2) {
-				const std::size_t begin = out.text.size();
-				out.text.append(rest.substr(i + 2, close - i - 2));
-				out.runs.push_back({ .start = begin, .end = out.text.size(), .kind = markup::strong });
-				i = close + 2;
-				continue;
-			}
-		}
-		if (rest[i] == '*' && i + 1 < rest.size() && rest[i + 1] != '*' && rest[i + 1] != ' ') {
-			if (const std::size_t close = rest.find('*', i + 1); close != std::string_view::npos && rest[close - 1] != ' ') {
-				const std::size_t begin = out.text.size();
-				out.text.append(rest.substr(i + 1, close - i - 1));
-				out.runs.push_back({ .start = begin, .end = out.text.size(), .kind = markup::emphasis });
-				i = close + 1;
-				continue;
-			}
-		}
-		if (rest[i] == '[') {
-			const std::size_t close = rest.find(']', i + 1);
-			if (close != std::string_view::npos && rest.compare(close + 1, 1, "(") == 0) {
-				if (const std::size_t target = rest.find(')', close + 2); target != std::string_view::npos) {
-					const std::size_t begin = out.text.size();
-					out.text.append(rest.substr(i + 1, close - i - 1));
-					out.runs.push_back({ .start = begin, .end = out.text.size(), .kind = markup::link });
-					i = target + 1;
-					continue;
-				}
-			}
-		}
-		out.text.push_back(rest[i]);
-		++i;
-	}
-
-	return out;
+	return markdown::style_of(markdown::base_tone(info), markdown::family::monospace, sty, fallback);
 }
 
 auto gse::ide::agent::table_extent(const std::span<const std::string> lines, const std::size_t first) -> std::size_t {
@@ -210,28 +117,9 @@ auto gse::ide::agent::align_table(const std::span<const std::string> rows) -> st
 	return out;
 }
 
-auto gse::ide::agent::markup_color(const gui::style& sty, const markup kind, const vec4f& base) -> vec4f {
-	switch (kind) {
-		case markup::strong:
-			return sty.color_text;
-		case markup::emphasis:
-			return sty.color_icon;
-		case markup::code:
-			return sty.color_file;
-		case markup::heading:
-			return sty.color_section_header;
-		case markup::link:
-			return sty.color_folder;
-		case markup::quote:
-			return sty.color_text_secondary;
-		default:
-			return base;
-	}
-}
-
-auto gse::ide::agent::push_markup_line(session& s, const gui::style& sty, const markup_line& parsed, const vec4f& base, const transcript_metrics& metrics, transcript_cursor& cursor) -> void {
+auto gse::ide::agent::push_markup_line(session& s, const gui::style& sty, const markup_line& parsed, const transcript_metrics& metrics, transcript_cursor& cursor) -> void {
 	const std::vector<std::string_view> wrapped = cursor.wrap
-		? metrics.face.wrap(parsed.text, cursor.available, metrics.scale)
+		? metrics.face.wrap(parsed.text, cursor.available, metrics.scale * parsed.base.scale)
 		: std::vector<std::string_view>{ parsed.text };
 
 	for (std::string_view segment : wrapped) {
@@ -258,7 +146,7 @@ auto gse::ide::agent::push_markup_line(session& s, const gui::style& sty, const 
 		}
 
 		std::size_t written = offset;
-		for (const markup_run& run : parsed.runs) {
+		for (const markdown::rendered_run& run : parsed.runs) {
 			if (run.end <= written) {
 				continue;
 			}
@@ -275,14 +163,19 @@ auto gse::ide::agent::push_markup_line(session& s, const gui::style& sty, const 
 					.line = index,
 					.start_col = column + static_cast<std::uint32_t>(written - offset),
 					.end_col = column + static_cast<std::uint32_t>(from - offset),
-					.color = base,
+					.color = parsed.base.color,
+					.face = parsed.base.face,
+					.scale = parsed.base.scale,
 				});
 			}
+			const markdown::display_style shown = markdown::style_of(run.tone, markdown::family::monospace, sty, parsed.base.color);
 			s.spans.push_back({
 				.line = index,
 				.start_col = column + static_cast<std::uint32_t>(from - offset),
 				.end_col = column + static_cast<std::uint32_t>(to - offset),
-				.color = markup_color(sty, run.kind, base),
+				.color = shown.color,
+				.face = shown.face,
+				.scale = parsed.base.scale,
 			});
 			written = to;
 		}
@@ -291,7 +184,9 @@ auto gse::ide::agent::push_markup_line(session& s, const gui::style& sty, const 
 				.line = index,
 				.start_col = column + static_cast<std::uint32_t>(written - offset),
 				.end_col = static_cast<std::uint32_t>(text.size()),
-				.color = base,
+				.color = parsed.base.color,
+				.face = parsed.base.face,
+				.scale = parsed.base.scale,
 			});
 		}
 
@@ -311,11 +206,31 @@ auto gse::ide::agent::push_transcript_line(session& s, const gui::style& sty, co
 		.row = line.row,
 	};
 
-	const std::vector<std::string> sources = to_lines(line.text);
-	markup_state state;
+	const std::vector<std::string> raw = to_lines(line.text);
+	std::vector<std::string> sources;
+	sources.reserve(raw.size());
+	for (const std::string& row : raw) {
+		sources.push_back(expand_tabs(row));
+	}
+
+	if (!line.markdown) {
+		for (const std::string& row : sources) {
+			push_markup_line(s, sty, {
+				.text = row,
+				.base = { .color = line.color },
+			}, metrics, cursor);
+		}
+		return;
+	}
+
+	const std::vector<std::string_view> views(sources.begin(), sources.end());
+	const std::vector<markdown::line_info> classified = markdown::classify(views);
+
+	std::vector<markdown::run> scratch;
+	markdown::rendered_line rendered;
 
 	for (std::size_t i = 0; i < sources.size(); ++i) {
-		if (line.markdown && !state.in_fence) {
+		if (!markdown::verbatim(classified[i].shape)) {
 			if (const std::size_t last = table_extent(sources, i); last > i) {
 				const std::vector<std::string> aligned = align_table(std::span(sources).subspan(i, last - i + 1));
 				const auto widest = std::ranges::max_element(aligned, {}, [&metrics](const std::string& row) {
@@ -324,7 +239,10 @@ auto gse::ide::agent::push_transcript_line(session& s, const gui::style& sty, co
 				if (widest != aligned.end() && metrics.face.width(*widest, metrics.scale) <= cursor.available) {
 					cursor.wrap = false;
 					for (const std::string& row : aligned) {
-						push_markup_line(s, sty, { .text = row }, line.color, metrics, cursor);
+						push_markup_line(s, sty, {
+							.text = row,
+							.base = { .color = line.color },
+						}, metrics, cursor);
 					}
 					cursor.wrap = true;
 					i = last;
@@ -333,9 +251,12 @@ auto gse::ide::agent::push_transcript_line(session& s, const gui::style& sty, co
 			}
 		}
 
-		const std::string expanded = expand_tabs(sources[i]);
-		const markup_line parsed = line.markdown ? parse_markup(expanded, state) : markup_line{ .text = expanded };
-		push_markup_line(s, sty, parsed, markup_color(sty, parsed.kind, line.color), metrics, cursor);
+		markdown::render_line(views[i], classified[i], scratch, rendered);
+		push_markup_line(s, sty, {
+			.text = rendered.text,
+			.runs = rendered.runs,
+			.base = line_base_style(sty, classified[i], line.color),
+		}, metrics, cursor);
 	}
 }
 
@@ -439,7 +360,14 @@ auto gse::ide::agent::draw_diff_bars(const gui::draw_context& ctx, session& s, c
 	}
 
 	constexpr gui::scroll_config bar = { .auto_hide_scrollbar = false };
-	const gui::text_area_layout geometry = gui::draw::text_area_layout_of(ctx, s.buffer, s.view, area);
+	const gui::text_area_layout geometry = gui::draw::text_area_layout_of(ctx, {
+		.buffer = s.buffer,
+		.state = s.view,
+		.rect = area,
+		.spans = s.spans,
+		.blocks = s.blocks,
+		.indent_width = transcript_tab_width,
+	});
 	std::optional<std::uint32_t> stale;
 
 	for (diff_view& view : s.diffs) {
@@ -452,7 +380,7 @@ auto gse::ide::agent::draw_diff_bars(const gui::draw_context& ctx, session& s, c
 			continue;
 		}
 
-		const float center = geometry.top - (static_cast<float>(view.line) + 0.5f) * geometry.line_height;
+		const float center = geometry.top - geometry.line_top(view.line) - geometry.line_extent(view.line) * 0.5f;
 		const rectf track = rectf::from_position_size(
 			{ geometry.text_left + static_cast<float>(diff_indent) * advance, center + bar.scrollbar_width * 0.5f },
 			{ static_cast<float>(view.width - diff_indent) * advance, bar.scrollbar_width }

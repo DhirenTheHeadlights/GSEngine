@@ -149,6 +149,7 @@ export namespace glfw {
 	inline constexpr int resizable = GLFW_RESIZABLE;
 	inline constexpr int decorated = GLFW_DECORATED;
 	inline constexpr int maximized = GLFW_MAXIMIZED;
+	inline constexpr int iconified = GLFW_ICONIFIED;
 	inline constexpr int visible = GLFW_VISIBLE;
 	inline constexpr int true_ = GLFW_TRUE;
 	inline constexpr int false_ = GLFW_FALSE;

@@ -3,6 +3,7 @@ export module gse.graphics:styles;
 import std;
 
 import gse.math;
+import gse.meta;
 
 export namespace gse {
 	struct scaled_tag {};
@@ -68,6 +69,10 @@ export namespace gse::gui {
 		// Buttons (distinct from passive widget surfaces so CTAs read as clickable)
 		vec4f color_button_background = { 0.14f, 0.30f, 0.36f, 0.35f };
 		vec4f color_button_hovered = { 0.20f, 0.44f, 0.50f, 1.0f };
+		vec4f color_button_accent = { 0.26f, 0.86f, 0.84f, 1.0f };
+		vec4f color_button_accent_hovered = { 0.42f, 0.94f, 0.92f, 1.0f };
+		vec4f color_button_accent_text = { 0.04f, 0.09f, 0.12f, 1.0f };
+		vec4f color_button_ghost = { 0.f, 0.f, 0.f, 0.f };
 
 		// Accent (primary theme color: drives sliders, toggle-on, selections, section bars)
 		vec4f color_accent = { 0.26f, 0.86f, 0.84f, 1.0f };
@@ -116,6 +121,8 @@ export namespace gse::gui {
 
 		[[= gse::scaled]] float corner_radius = 6.f;
 		[[= gse::scaled]] float corner_radius_menu = 10.f;
+		[[= gse::scaled]] float corner_radius_button = 6.f;
+		[[= gse::scaled]] float corner_radius_input = 6.f;
 		float widget_height_padding = 0.7f;
 		[[= gse::scaled]] float item_spacing = 4.f;
 		[[= gse::scaled]] float section_spacing_above = 18.f;
@@ -161,6 +168,56 @@ export namespace gse::gui {
 	[[nodiscard]] constexpr auto accent_bar_extent(
 		const style& sty
 	) -> float;
+
+	struct button_role_info {
+		vec4f style::* idle = &style::color_button_background;
+		vec4f style::* hot = &style::color_button_hovered;
+		vec4f style::* active = &style::color_widget_active;
+		vec4f style::* disabled = &style::color_widget_background;
+		vec4f style::* label = &style::color_text;
+	};
+
+	enum class button_role : std::uint8_t {
+		standard [[= button_role_info{}]],
+		accent [[= button_role_info{
+			.idle = &style::color_button_accent,
+			.hot = &style::color_button_accent_hovered,
+			.label = &style::color_button_accent_text,
+		}]],
+		danger [[= button_role_info{
+			.idle = &style::color_danger,
+			.hot = &style::color_danger_hovered,
+		}]],
+		ghost [[= button_role_info{
+			.idle = &style::color_button_ghost,
+			.hot = &style::color_widget_hovered,
+			.label = &style::color_text_secondary,
+		}]]
+	};
+
+	struct button_colors {
+		vec4f idle;
+		vec4f hot;
+		vec4f active;
+		vec4f disabled;
+		vec4f label;
+	};
+
+	[[nodiscard]] auto colors_for(
+		const style& sty,
+		button_role role
+	) -> button_colors;
+}
+
+auto gse::gui::colors_for(const style& sty, const button_role role) -> button_colors {
+	const button_role_info info = annotation_from_enum<button_role_info>(role, {});
+	return {
+		.idle = sty.*info.idle,
+		.hot = sty.*info.hot,
+		.active = sty.*info.active,
+		.disabled = sty.*info.disabled,
+		.label = sty.*info.label,
+	};
 }
 
 constexpr auto gse::gui::style::midnight() -> style {

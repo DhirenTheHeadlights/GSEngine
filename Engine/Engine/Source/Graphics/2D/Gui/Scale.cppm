@@ -21,7 +21,7 @@ namespace gse::gui {
 
 	auto usable_screen_rect(
 		float top_inset,
-		shared_view<window::data> window_s
+		const rectf& frame_rect
 	) -> rectf;
 
 	auto sync_monitor_scale(
@@ -35,6 +35,24 @@ namespace gse::gui {
 		const viewport_state& vp,
 		float viewport_height
 	) -> float;
+
+	auto font_available(
+		std::span<const std::string> available,
+		std::string_view name
+	) -> bool;
+
+	auto variant_of(
+		std::span<const std::string> available,
+		std::string_view base,
+		std::span<const std::string_view> suffixes
+	) -> std::string;
+
+	auto assign_faces(
+		font_set& fonts,
+		shared_view<asset::data> assets,
+		const std::string& ui_name,
+		const std::string& code_name
+	) -> void;
 
 	auto reload_font(
 		data& d,

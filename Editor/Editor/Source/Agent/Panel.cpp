@@ -546,7 +546,14 @@ auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, const rectf& ar
 
 	const gui::interaction::press tail_press = gui::draw::follow_tail_button(ui, area, s->view, gui::ids::make("##agent_follow_tail"));
 
-	const gui::buffer_position at = gui::draw::text_area_position_at(ctx, s->buffer, s->view, area, false, transcript_tab_width, mouse, s->blocks);
+	const gui::buffer_position at = gui::draw::text_area_position_at(ctx, {
+		.buffer = s->buffer,
+		.state = s->view,
+		.rect = area,
+		.spans = s->spans,
+		.blocks = s->blocks,
+		.indent_width = transcript_tab_width,
+	}, mouse);
 	const auto hovered = static_cast<std::uint32_t>(std::min<std::size_t>(at.line, s->line_rows.size() - 1));
 	const std::string_view hovered_text = s->buffer.line(hovered);
 	const link_marker* hit = ctx.hovers(area) && !tail_press.hovered && at.column < hovered_text.size() ? link_at(*s, hovered) : nullptr;

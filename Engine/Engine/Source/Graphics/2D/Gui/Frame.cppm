@@ -14,6 +14,33 @@ import :menu_stack;
 import :ui_renderer;
 
 namespace gse::gui {
+	auto migrate_menu(
+		viewport_state& from,
+		viewport_state& to,
+		std::string_view menu_name
+	) -> bool;
+
+	auto route_cursor(
+		data& d,
+		vec2f mouse,
+		id focused_window
+	) -> void;
+
+	auto reclaim_menus(
+		data& d,
+		viewport_state& from
+	) -> void;
+
+	[[nodiscard]] auto viewport_for_window(
+		data& d,
+		id window
+	) -> viewport_state*;
+
+	auto close_window_viewport(
+		data& d,
+		id window
+	) -> void;
+
 	auto begin_viewport_frame(
 		data& d,
 		viewport_state& vp,
@@ -32,8 +59,7 @@ namespace gse::gui {
 		data& d,
 		viewport_state& vp,
 		const input::state& input_st,
-		vec2f viewport_size,
 		channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, popout_closed> requests_in,
-		channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> ui_out
+		channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request, window_panel_drag_request> ui_out
 	) -> void;
 }

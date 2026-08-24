@@ -5,12 +5,10 @@ import std;
 import :font;
 import :texture;
 
-
 import gse.math;
 import gse.gpu;
 import gse.core;
 import gse.assets;
-import gse.assert;
 import gse.concurrency;
 import gse.config;
 import gse.freetype;
@@ -78,10 +76,7 @@ auto gse::glyph::x_advance() const -> float {
 	return m_x_advance;
 }
 
-gse::font::font(const std::filesystem::path& path)
-	: identifiable(config::asset_tag(path)), m_baked_path(path) {
-	assert(exists(path), "Font file '{}' does not exist.", path.generic_display_string());
-}
+gse::font::font(const std::filesystem::path& path) : identifiable(config::asset_tag(path)), m_baked_path(path) {}
 
 gse::font::~font() = default;
 

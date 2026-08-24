@@ -39,6 +39,7 @@ export namespace gse::ide::agent {
 		std::string session_name;
 		std::filesystem::path file;
 		std::uint32_t line = 0;
+		std::uint32_t extra = 0;
 		build_runner::stream_kind kind = build_runner::stream_kind::none;
 	};
 

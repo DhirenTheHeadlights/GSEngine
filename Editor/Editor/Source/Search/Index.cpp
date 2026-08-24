@@ -4,6 +4,8 @@ import std;
 import gse;
 import gse.win32;
 import gse.ide.analysis;
+import gse.ide.diagnostic;
+import gse.ide.lint;
 
 import :types;
 import :index;
@@ -388,8 +390,23 @@ auto gse::ide::search::publish_symbol_search_snapshot(index_state& index) -> voi
 		});
 	}
 	next->symbols = std::move(searchable);
+
+	auto lints = std::make_shared<lint_snapshot>();
+	lints->symbol_generation = next->symbol_generation;
+	auto sites = std::make_shared<std::vector<lint_site>>();
+	sites->reserve(index.symbols.lints.size());
+	for (const lint_entry& entry : index.symbols.lints) {
+		sites->push_back({
+			.path = index.symbols.path_for(entry.file),
+			.rule = entry.rule,
+			.edit = entry.edit,
+		});
+	}
+	lints->sites = std::move(sites);
+
 	auto combined = std::make_shared<search_snapshot>(*index.current_search_snapshot);
 	combined->symbols = std::move(next);
+	combined->lints = std::move(lints);
 	index.current_search_snapshot = std::move(combined);
 }
 
@@ -1535,6 +1552,9 @@ gse::ide::search::index_state::index_state() : current_search_snapshot(std::make
 		.symbols = std::make_shared<const symbol_search_snapshot>(symbol_search_snapshot{
 			.symbols = std::make_shared<const std::vector<searchable_symbol>>(),
 		}),
+		.lints = std::make_shared<const lint_snapshot>(lint_snapshot{
+			.sites = std::make_shared<const std::vector<lint_site>>(),
+		}),
 	})) {}
 
 gse::ide::search::index_state::~index_state() {
@@ -1762,6 +1782,20 @@ auto gse::ide::search::build_symbols(index_state& idx, std::stop_token stop) -> 
 				.kind = param.kind,
 			});
 			++semantic_token_count;
+		}
+		for (lint_finding& finding : lint::findings({
+			.quals = tu.set.quals,
+			.template_args = tu.set.template_args,
+			.unused_locals = tu.set.unused_locals,
+		})) {
+			if (!indexed_cached(idx.roots, finding.file, indexed_paths)) {
+				continue;
+			}
+			local.lints.push_back({
+				.file = intern_cached(local, raw_file_ids, finding.file),
+				.rule = finding.rule,
+				.edit = std::move(finding.edit),
+			});
 		}
 		idx.progress_done.fetch_add(1, std::memory_order_relaxed);
 	}

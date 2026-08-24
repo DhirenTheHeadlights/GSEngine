@@ -20,6 +20,7 @@ export namespace gse::log {
 		runtime,
 		render,
 		network,
+		http,
 		vulkan,
 		vulkan_validation,
 		vulkan_memory,
@@ -38,6 +39,7 @@ export namespace gse::log {
 		io,
 		watchdog,
 		capture,
+		http,
 		network
 	};
 

@@ -167,6 +167,11 @@ export namespace gse::gui {
 		std::string menu_name;
 	};
 
+	struct menu_migrate_request {
+		std::string menu_name;
+		id target_window;
+	};
+
 	constexpr std::string_view popout_menu_prefix = "live::";
 
 	[[nodiscard]] auto is_popout_menu_tag(

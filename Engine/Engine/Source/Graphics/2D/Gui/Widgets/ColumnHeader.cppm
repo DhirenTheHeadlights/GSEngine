@@ -17,10 +17,12 @@ import :types;
 import :font;
 import :styles;
 import :ui_renderer;
+import :layout_ops;
 
 export namespace gse::gui {
 	struct column_state {
 		std::vector<float> widths;
+		std::vector<layout::halign> alignments;
 		int resizing = -1;
 	};
 
@@ -54,6 +56,19 @@ export namespace gse::gui {
 		const rectf& row,
 		std::size_t index
 	) -> rectf;
+
+	[[nodiscard]] auto column_align(
+		const column_state& state,
+		std::size_t index
+	) -> layout::halign;
+
+	[[nodiscard]] auto column_text_left(
+		const draw_context& ctx,
+		const column_state& state,
+		const rectf& cell,
+		std::size_t index,
+		float text_width
+	) -> float;
 
 	auto column_header(
 		const draw_context& ctx,
@@ -89,6 +104,23 @@ auto gse::gui::column_cell(const column_state& state, const rectf& row, const st
 		left -= state.widths[i - 1];
 	}
 	return rectf::from_position_size({ left, row.top() }, { state.widths[index], row.height() });
+}
+
+auto gse::gui::column_align(const column_state& state, const std::size_t index) -> layout::halign {
+	return index < state.alignments.size() ? state.alignments[index] : layout::halign::end;
+}
+
+auto gse::gui::column_text_left(const draw_context& ctx, const column_state& state, const rectf& cell, const std::size_t index, const float text_width) -> float {
+	const float pad = ctx.style.padding * 0.5f;
+	switch (column_align(state, index)) {
+		case layout::halign::center:
+			return cell.center().x() - text_width * 0.5f;
+		case layout::halign::end:
+			return cell.right() - text_width - pad;
+		case layout::halign::start:
+			break;
+	}
+	return cell.left() + pad;
 }
 
 auto gse::gui::column_header(const draw_context& ctx, const column_header_params& params, column_state& state) -> column_header_result {
@@ -139,7 +171,7 @@ auto gse::gui::column_header(const draw_context& ctx, const column_header_params
 			.font = fnt,
 			.text = caption,
 			.position = {
-				cell.right() - fnt_view->width(caption, fs) - pad * 0.5f,
+				column_text_left(ctx, state, cell, i, fnt_view->width(caption, fs)),
 				cell.center().y() + fnt_view->vertical_center_offset(fs),
 			},
 			.scale = fs,

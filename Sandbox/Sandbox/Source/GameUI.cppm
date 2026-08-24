@@ -110,7 +110,7 @@ auto sandbox::client_ui::push_recording_indicator(gse::context& ctx, const gse::
 	if (!capture_d || !(*capture_d).recording || !(*capture_d).recording->active.load()) {
 		return;
 	}
-	if (!window_d.shown) {
+	if (!window_d.primary.shown) {
 		return;
 	}
 	if (!gui_d.blank_texture.valid()) {

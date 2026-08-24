@@ -44,7 +44,7 @@ namespace gse::log {
 
 	constexpr std::size_t no_thread_index = std::numeric_limits<std::size_t>::max();
 
-	constexpr std::size_t log_files_kept = 5;
+	constexpr std::size_t log_files_kept = 40;
 
 	std::array<std::atomic<level>, category_count> category_levels;
 

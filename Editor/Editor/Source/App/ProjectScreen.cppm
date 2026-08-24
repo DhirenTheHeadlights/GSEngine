@@ -95,6 +95,7 @@ export namespace gse::ide {
 		gse::channel_write<window_launcher_mode_request, window_open_file_request> m_channels;
 		gse::shared_view<gse::input::data> m_input_data;
 		bool m_launcher_sent = false;
+		int m_requested_height = 0;
 		float m_content_height = 0.f;
 		std::vector<engine_choice> m_engines;
 		int m_engine_selected = 0;
@@ -308,21 +309,37 @@ auto gse::ide::project_screen::build(gui::builder& ui, gui::nav&) -> void {
 
 	ctx.layout_cursor = { card.left() + pad, header.bottom() - pad };
 
-	const float row_stride = text_view->line_height(sty.font_size) + pad * 1.5f;
-	const std::size_t rows = m_creating
-		? 4u + project::templates().size()
-		: m_rebinding
-			? m_engines.size() + 1u
-			: m_entries.size();
-	m_content_height = (m_hub ? sty.title_bar_height : 0.f) + header.height() + pad * 3.f + row_stride * static_cast<float>(std::max<std::size_t>(rows, 1u));
+	const float line = text_view->line_height(sty.font_size);
+	const float row_stride = line + pad * 1.5f;
 
-	if (m_hub && !m_launcher_sent) {
-		m_channels.push<window_launcher_mode_request>({
-			.active = true,
-			.width = static_cast<int>(720.f * sty.scale_factor + pad * 4.f),
-			.height = static_cast<int>(m_content_height + pad * 4.f),
-		});
-		m_launcher_sent = true;
+	float body = 0.f;
+	if (m_creating) {
+		body += line + pad;
+		body += line + pad * 2.f;
+		body += row_stride * static_cast<float>(project::templates().size());
+		body += line + pad * sty.widget_height_padding + pad + sty.item_spacing;
+		body += line + pad * 3.f;
+	}
+	else if (m_rebinding) {
+		body += line + pad;
+		body += row_stride * static_cast<float>(std::max<std::size_t>(m_engines.size(), 1u));
+	}
+	else {
+		body += row_stride * static_cast<float>(std::max<std::size_t>(m_entries.size(), 1u));
+	}
+
+	m_content_height = (m_hub ? sty.title_bar_height : 0.f) + pad + header.height() + pad + body + pad;
+
+	if (m_hub) {
+		if (const int height = static_cast<int>(m_content_height + pad * 4.f); height != m_requested_height) {
+			m_channels.push<window_launcher_mode_request>({
+				.active = true,
+				.width = static_cast<int>(720.f * sty.scale_factor + pad * 4.f),
+				.height = height,
+			});
+			m_requested_height = height;
+			m_launcher_sent = true;
+		}
 	}
 
 	if (m_creating) {

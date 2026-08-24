@@ -4,6 +4,7 @@ import std;
 
 import :input_events;
 
+import gse.core;
 import gse.math;
 import gse.concurrency;
 import gse.ecs;
@@ -18,11 +19,17 @@ export namespace gse {
 		bool capture = false;
 	};
 
-	struct window_minimize_request {};
+	struct window_minimize_request {
+		id window;
+	};
 
-	struct window_toggle_maximize_request {};
+	struct window_toggle_maximize_request {
+		id window;
+	};
 
-	struct window_close_request {};
+	struct window_close_request {
+		id window;
+	};
 
 	struct window_open_file_request {
 		std::string title;
@@ -41,8 +48,10 @@ export namespace gse {
 	};
 
 	struct window_chrome_metrics_request {
+		id window;
 		int caption_height = 0;
 		int controls_width = 0;
+		int grip_width = 0;
 		int resize_exclude_y0 = 0;
 		int resize_exclude_y1 = 0;
 	};
@@ -86,12 +95,49 @@ export namespace gse {
 			return value != nullptr;
 		}
 	};
+
+	struct window_popout_request {
+		std::string menu_name;
+		std::string title;
+		vec2i client_position;
+		vec2i size{ 640, 480 };
+	};
+
+	struct window_opened {
+		id id;
+		native_window_handle handle;
+		vec2i size;
+		int present_mode_index = 0;
+		std::string for_menu;
+	};
+
+	struct window_closed {
+		id id;
+	};
+
+	struct window_panel_drag_request {
+		id window;
+		vec2f client_cursor;
+		bool released = false;
+	};
+
+	struct window_panel_drag_over {
+		id window;
+		vec2f primary_cursor;
+		bool over_primary = false;
+		bool released = false;
+	};
+
+	struct window_resized {
+		id id;
+		vec2i size;
+	};
 }
 
 template <>
 struct std::formatter<gse::resolution_info> : std::formatter<std::string> {
-	auto format(const gse::resolution_info& info, std::format_context& ctx) const {
-		return std::formatter<std::string>::format(
+	auto format(const gse::resolution_info& info, format_context& ctx) const {
+		return std::formatter<string>::format(
 			std::format("{}x{} @{}Hz", info.width, info.height, info.refresh_rate),
 			ctx
 		);
@@ -100,93 +146,112 @@ struct std::formatter<gse::resolution_info> : std::formatter<std::string> {
 
 export namespace gse::window {
 	struct geometry {
-		[[= gse::settings::describe<"Left edge of the restored window, in virtual desktop coordinates.">{}]]
+		[[= settings::describe<"Left edge of the restored window, in virtual desktop coordinates.">{}]]
 		int x = 0;
 
-		[[= gse::settings::describe<"Top edge of the restored window, in virtual desktop coordinates.">{}]]
+		[[= settings::describe<"Top edge of the restored window, in virtual desktop coordinates.">{}]]
 		int y = 0;
 
-		[[= gse::settings::describe<"Width of the restored window.">{}]]
+		[[= settings::describe<"Width of the restored window.">{}]]
 		int width = 0;
 
-		[[= gse::settings::describe<"Height of the restored window.">{}]]
+		[[= settings::describe<"Height of the restored window.">{}]]
 		int height = 0;
 
-		[[= gse::settings::describe<"Whether the window was maximized when it was last closed.">{}]]
+		[[= settings::describe<"Whether the window was maximized when it was last closed.">{}]]
 		bool maximized = false;
 	};
 
-	struct [[= gse::settings::category<"Window">{}, = gse::system_state<"Window">{}]] data {
+	struct composition_probe {
+		bool iconified = false;
+		bool visible = false;
+		unsigned int cloaked = 0;
+
+		[[nodiscard]] auto operator==(const composition_probe&) const -> bool = default;
+	};
+
+	struct window_surface {
+		[[= shared]] gse::id id;
+		[[= shared]] native_window_handle handle;
+		[[= shared]] bool focused = true;
+		[[= shared]] bool shown = false;
+		bool framebuffer_resized = false;
+		[[= shared]] bool ui_focus = false;
+		[[= shared]] bool cursor_captured = false;
+		[[= shared]] float content_scale = 1.f;
+		[[= shared]] std::string monitor_key;
+		vec2i position{ 0, 0 };
+		vec2i size{ 0, 0 };
+		int chrome_caption_height = 0;
+		int chrome_controls_width = 0;
+		int chrome_grip_width = 0;
+		int chrome_resize_exclude_y0 = 0;
+		int chrome_resize_exclude_y1 = 0;
+		composition_probe last_composition;
+		[[= shared]] int present_mode_index = 0;
+		bool attached = false;
+		[[= shared]] task::concurrent_queue<input::event> input_events;
+	};
+
+	struct [[= settings::category<"Window">{}, = system_state<"Window">{}]] data {
 		[[
-			= gse::settings::
+			= settings::
 				describe<"Windowed, borderless fullscreen, or exclusive fullscreen on the selected monitor.">{}
 		]]
-		gse::settings::choice<int> display_mode;
+		settings::choice<int> display_mode;
 
 		[[
-			= gse::settings::describe<"Show the system mouse cursor over the window.">{},
-			= gse::shared
+			= settings::describe<"Show the system mouse cursor over the window.">{},
+			= shared
 		]]
 		bool mouse_visible = false;
 
 		[[
-			= gse::settings::describe<"Monitor that hosts the window in fullscreen mode.">{}
+			= settings::describe<"Monitor that hosts the window in fullscreen mode.">{}
 		]]
-		gse::settings::choice<int> monitor;
+		settings::choice<int> monitor;
 
 		[[
-			= gse::settings::describe<"Resolution and refresh rate used when fullscreen.">{}
+			= settings::describe<"Resolution and refresh rate used when fullscreen.">{}
 		]]
-		gse::settings::choice<int> resolution;
+		settings::choice<int> resolution;
 
 		[[
-			= gse::settings::describe<"Vulkan present mode. FIFO is vsync (no tearing). Mailbox is low-latency "
+			= settings::describe<"Vulkan present mode. FIFO is vsync (no tearing). Mailbox is low-latency "
 									  "vsync. Immediate has tearing "
 									  "but lowest latency. FIFO Relaxed is FIFO with tear-on-late-frame.">{}
 		]]
-		gse::settings::choice<int> present_mode;
+		settings::choice<int> present_mode;
 
 		[[
-			= gse::settings::describe<"Position and size the window is restored to on launch.">{}
+			= settings::describe<"Position and size the window is restored to on launch.">{}
 		]]
 		geometry saved_geometry;
 
-		[[= gse::shared]] native_window_handle handle;
-
 		[[
-			= gse::settings::describe<"Text shown in the window title bar and the taskbar entry.">{},
-			= gse::settings::app_scope{}
+			= settings::describe<"Text shown in the window title bar and the taskbar entry.">{},
+			= settings::app_scope{}
 		]]
 		std::string title;
 
 		gse::display_mode current_display_mode = gse::display_mode::windowed;
-		[[= gse::shared]] int current_present_mode_index = 0;
-		[[= gse::shared]] bool focused = true;
-		[[= gse::shared]] bool shown = false;
-		bool framebuffer_resized = false;
-		[[= gse::shared]] bool ui_focus = false;
-		[[= gse::shared]] bool cursor_captured = false;
+		[[= shared]] int current_present_mode_index = 0;
 		[[
-			= gse::settings::describe<"Hide the cursor because another process hosts the rendered surface.">{},
-			= gse::settings::app_scope{}
+			= settings::describe<"Hide the cursor because another process hosts the rendered surface.">{},
+			= settings::app_scope{}
 		]]
 		bool cursor_suppressed = false;
 
 		[[
-			= gse::settings::describe<"Render into a surface shared with a host process instead of presenting a swapchain.">{},
-			= gse::settings::app_scope{}
+			= settings::describe<"Render into a surface shared with a host process instead of presenting a swapchain.">{},
+			= settings::app_scope{}
 		]]
 		bool attached = false;
 
 		bool decorated = true;
-		bool maximized = false;
 		bool restore_maximized = false;
 		int last_monitor_index = 0;
 		int current_monitor_index = -1;
-		vec2i position{ 0, 0 };
-		vec2i size{ 0, 0 };
-		[[= gse::shared]] float content_scale = 1.f;
-		[[= gse::shared]] std::string monitor_key;
 		bool cmd_minimize = false;
 		bool cmd_toggle_maximize = false;
 		bool cmd_close = false;
@@ -202,21 +267,14 @@ export namespace gse::window {
 		bool launcher_saved_maximized = false;
 
 		[[
-			= gse::settings::describe<"Keep the OS window frame instead of drawing application chrome inside the client area.">{},
-			= gse::settings::app_scope{}
+			= settings::describe<"Keep the OS window frame instead of drawing application chrome inside the client area.">{},
+			= settings::app_scope{}
 		]]
 		bool native_frame = false;
-		int chrome_caption_height = 0;
-		int chrome_controls_width = 0;
-		int chrome_resize_exclude_y0 = 0;
-		int chrome_resize_exclude_y1 = 0;
 
-		rect_t<vec2i> windowed_rect = rect_t<vec2i>::from_position_size(
-			{ 100, 100 },
-			{ 1920, 1080 }
-		);
-
-		[[= gse::shared]] task::concurrent_queue<input::event> input_events;
+		[[= shared]] gse::id focused_window;
+		[[= shared]] window_surface primary;
+		std::vector<std::unique_ptr<window_surface>> secondaries;
 	};
 
 	auto tick(
@@ -224,7 +282,7 @@ export namespace gse::window {
 		data& d
 	) -> void;
 
-	[[= gse::system_shutdown{}]]
+	[[= system_shutdown{}]]
 	auto shutdown(
 		data& d
 	) -> void;
@@ -258,9 +316,35 @@ export namespace gse::window {
 	) -> void;
 
 	auto install_native_frame(
-		data& d
+		window_surface& surface
 	) -> void;
 
+	struct secondary_window_desc {
+		std::string title;
+		vec2i size{ 800, 600 };
+		vec2i position{ 0, 0 };
+		bool use_position = false;
+	};
+
+	[[nodiscard]] auto create_secondary(
+		data& d,
+		const secondary_window_desc& desc
+	) -> window_surface*;
+
+	auto destroy_secondary(
+		data& d,
+		window_surface* surface
+	) -> void;
+
+	[[nodiscard]] auto find_surface(
+		data& d,
+		id id
+	) -> window_surface*;
+
+	[[nodiscard]] auto close_requested(
+		const window_surface& s
+	) -> bool;
+
 	[[nodiscard]] auto is_open(
 		const data& d
 	) -> bool;
@@ -277,6 +361,18 @@ export namespace gse::window {
 		shared_view<data> d
 	) -> bool;
 
+	[[nodiscard]] auto minimized(
+		const window_surface& s
+	) -> bool;
+
+	[[nodiscard]] auto raw_handle(
+		const window_surface& s
+	) -> native_window_handle;
+
+	[[nodiscard]] auto frame_buffer_resized(
+		window_surface& s
+	) -> bool;
+
 	[[nodiscard]] auto viewport(
 		const data& d
 	) -> vec2i;
@@ -284,6 +380,14 @@ export namespace gse::window {
 	[[nodiscard]] auto viewport(
 		shared_view<data> d
 	) -> vec2i;
+
+	[[nodiscard]] auto viewport(
+		const window_surface& s
+	) -> vec2i;
+
+	[[nodiscard]] auto frame_rect(
+		const window_surface& s
+	) -> rect_t<vec2i>;
 
 	[[nodiscard]] auto frame_buffer_resized(
 		data& d
@@ -316,4 +420,3 @@ export namespace gse::window {
 		int monitor_index
 	) -> std::vector<resolution_info>;
 }
-

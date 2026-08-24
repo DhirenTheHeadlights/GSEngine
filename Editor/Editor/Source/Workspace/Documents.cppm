@@ -14,6 +14,20 @@ export namespace gse::ide {
 		conflicted,
 	};
 
+	enum class document_view {
+		source,
+		rendered,
+	};
+
+	struct rendered_view {
+		markdown::rendered_document content;
+		document_revision revision;
+		float width = 0.f;
+		float font_size = 0.f;
+		gse::gui::text_area_state view;
+		bool built = false;
+	};
+
 	struct document {
 		std::filesystem::path path;
 		std::string tab_name;
@@ -26,6 +40,8 @@ export namespace gse::ide {
 		syntax_producer::data syntax;
 		bool highlight_dirty = true;
 		document_language language = document_language::plain;
+		document_view mode = document_view::rendered;
+		rendered_view rendered;
 		std::vector<diagnostic> diagnostics;
 		std::vector<diagnostic> lint;
 		analysis::diagnostics_status analysis_status = analysis::diagnostics_status::not_analyzed;

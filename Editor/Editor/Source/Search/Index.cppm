@@ -3,6 +3,7 @@ export module gse.ide.search:index;
 import std;
 import gse;
 import gse.ide.analysis;
+import gse.ide.diagnostic;
 
 import :types;
 
@@ -64,6 +65,12 @@ export namespace gse::ide::search {
 		analysis::semantic_kind kind = analysis::semantic_kind::variable;
 	};
 
+	struct lint_entry {
+		file_id file{};
+		lint_rule rule = lint_rule::redundant_namespace_qualifier;
+		text_edit edit;
+	};
+
 	struct symbol_index : non_copyable {
 		symbol_index() = default;
 
@@ -78,6 +85,7 @@ export namespace gse::ide::search {
 		) noexcept -> symbol_index& = default;
 
 		std::vector<symbol_entry> symbols;
+		std::vector<lint_entry> lints;
 		std::unordered_map<file_id, std::vector<xref_entry>> xrefs;
 		std::unordered_map<file_id, std::vector<positioned_kind>> params;
 		std::unordered_map<file_id, std::filesystem::path> files;
@@ -116,9 +124,21 @@ export namespace gse::ide::search {
 		std::shared_ptr<const std::vector<searchable_symbol>> symbols;
 	};
 
+	struct lint_site {
+		std::filesystem::path path;
+		lint_rule rule = lint_rule::redundant_namespace_qualifier;
+		text_edit edit;
+	};
+
+	struct lint_snapshot {
+		std::uint64_t symbol_generation = 0;
+		std::shared_ptr<const std::vector<lint_site>> sites;
+	};
+
 	struct search_snapshot {
 		std::shared_ptr<const file_search_snapshot> files;
 		std::shared_ptr<const symbol_search_snapshot> symbols;
+		std::shared_ptr<const lint_snapshot> lints;
 	};
 
 	struct symbol_overlay {
@@ -437,7 +457,7 @@ namespace gse::ide::search {
 	};
 
 	constexpr std::uint32_t tu_cache_magic = 0x47535455;
-	constexpr std::uint32_t tu_cache_version = 11;
+	constexpr std::uint32_t tu_cache_version = 12;
 
 	using interned_file_cache = std::unordered_map<std::string, file_id, transparent_hash, transparent_equal>;
 	using indexed_path_cache = std::unordered_map<std::string, bool, transparent_hash, transparent_equal>;

@@ -26,32 +26,10 @@ namespace gse::ide::agent {
 		std::size_t offset = 0;
 	};
 
-	enum class markup : std::uint8_t {
-		body,
-		strong,
-		emphasis,
-		code,
-		heading,
-		link,
-		quote,
-	};
-
-	struct markup_run {
-		std::size_t start = 0;
-		std::size_t end = 0;
-		markup kind = markup::body;
-	};
-
 	struct markup_line {
 		std::string text;
-		std::vector<markup_run> runs;
-		markup kind = markup::body;
-	};
-
-	struct markup_state {
-		char fence_kind = '`';
-		std::size_t fence_length = 0;
-		bool in_fence = false;
+		std::span<const markdown::rendered_run> runs{};
+		markdown::display_style base;
 	};
 
 	struct transcript_cursor {
@@ -88,16 +66,11 @@ namespace gse::ide::agent {
 		row_kind kind
 	) -> vec4f;
 
-	auto parse_markup(
-		std::string_view line,
-		markup_state& state
-	) -> markup_line;
-
-	auto markup_color(
+	auto line_base_style(
 		const gui::style& sty,
-		markup kind,
-		const vec4f& base
-	) -> vec4f;
+		const markdown::line_info& info,
+		const vec4f& fallback
+	) -> markdown::display_style;
 
 	auto table_extent(
 		std::span<const std::string> lines,
@@ -112,7 +85,6 @@ namespace gse::ide::agent {
 		session& s,
 		const gui::style& sty,
 		const markup_line& parsed,
-		const vec4f& base,
 		const transcript_metrics& metrics,
 		transcript_cursor& cursor
 	) -> void;

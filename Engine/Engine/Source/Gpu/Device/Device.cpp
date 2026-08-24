@@ -663,12 +663,24 @@ auto gse::gpu::device::query_pool_results(const gpu::handle<gpu::query_pool> poo
 	return m_vt->query_pool_results(m_backend.get(), pool, first_query, query_count, stride);
 }
 
-auto gse::gpu::device::create_swapchain(const vec2i framebuffer_size, const present_mode mode, const gpu::swap_chain_handle old_handle) -> gpu::expected<swap_chain_info> {
-	return m_vt->create_swapchain(m_backend.get(), framebuffer_size, mode, old_handle);
+auto gse::gpu::device::create_swapchain(const gpu::surface surface, const vec2i framebuffer_size, const present_mode mode, const gpu::swap_chain_handle old_handle) -> gpu::expected<swap_chain_info> {
+	return m_vt->create_swapchain(m_backend.get(), surface, framebuffer_size, mode, old_handle);
 }
 
-auto gse::gpu::device::recreate_surface(const window::data& win, const gpu::swap_chain_handle current_swapchain) -> void {
-	m_vt->recreate_surface(m_backend.get(), win, current_swapchain);
+auto gse::gpu::device::boot_surface() const -> gpu::surface {
+	return m_vt->boot_surface(m_backend.get());
+}
+
+auto gse::gpu::device::recreate_surface(const window::window_surface& win, const gpu::swap_chain_handle current_swapchain) -> gpu::surface {
+	return m_vt->recreate_surface(m_backend.get(), win, current_swapchain);
+}
+
+auto gse::gpu::device::create_surface(const native_window_handle handle) -> gpu::surface {
+	return m_vt->create_surface(m_backend.get(), handle);
+}
+
+auto gse::gpu::device::destroy_surface(const gpu::surface surface) -> void {
+	m_vt->destroy_surface(m_backend.get(), surface);
 }
 
 auto gse::gpu::device::acquire_swapchain_image(const gpu::swap_chain_handle swapchain, const gpu::handle<gpu::semaphore> wait_semaphore, const std::uint64_t timeout_ns) const -> gpu::acquire_next_image_result {

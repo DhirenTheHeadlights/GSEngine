@@ -88,6 +88,7 @@ export namespace gse::ide::analysis {
 		std::vector<diagnostic> lint;
 		std::vector<qualified_use> quals;
 		std::vector<qualified_use> template_args;
+		std::vector<unused_local> unused_locals;
 		std::vector<semantic_token> tokens;
 		std::vector<symbol_token> symbols;
 		std::vector<symbol_ref> refs;
@@ -273,6 +274,7 @@ auto gse::ide::analysis::diagnostics_runner::start(const std::shared_ptr<diagnos
 				check->params = std::move(symbols.params);
 				check->quals = std::move(symbols.quals);
 				check->template_args = std::move(symbols.template_args);
+				check->unused_locals = std::move(symbols.unused_locals);
 				check->symbols_complete = symbols.complete;
 			}
 		}

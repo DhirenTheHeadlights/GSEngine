@@ -48,12 +48,11 @@ auto gse::gui::intern_text(data& d, const std::string_view text) -> std::string_
 	return slot;
 }
 
-auto gse::gui::usable_screen_rect(const float top_inset, const shared_view<window::data> window_s) -> rectf {
-	const auto viewport_size = vec2f(window::viewport(window_s));
-	const float usable_height = std::max(0.f, viewport_size.y() - top_inset);
+auto gse::gui::usable_screen_rect(const float top_inset, const rectf& frame_rect) -> rectf {
+	const float usable_height = std::max(0.f, frame_rect.height() - top_inset);
 	return rectf::from_position_size(
-		{ 0.f, usable_height },
-		{ viewport_size.x(), usable_height }
+		{ frame_rect.left(), frame_rect.top() - top_inset },
+		{ frame_rect.width(), usable_height }
 	);
 }
 
@@ -83,15 +82,61 @@ auto gse::gui::scale_factor_for(const data& d, const viewport_state& vp, const f
 	return base_scale * d.ui_scale;
 }
 
+auto gse::gui::font_available(const std::span<const std::string> available, const std::string_view name) -> bool {
+	return !name.empty() && std::ranges::find(available, name) != available.end();
+}
+
+auto gse::gui::variant_of(const std::span<const std::string> available, const std::string_view base, const std::span<const std::string_view> suffixes) -> std::string {
+	constexpr std::string_view regular = "-Regular";
+	if (!base.ends_with(regular)) {
+		return {};
+	}
+
+	const std::string_view stem = base.substr(0, base.size() - regular.size());
+	for (const std::string_view suffix : suffixes) {
+		std::string candidate = std::string(stem) + std::string(suffix);
+		if (font_available(available, candidate)) {
+			return candidate;
+		}
+	}
+	return {};
+}
+
+auto gse::gui::assign_faces(font_set& fonts, const shared_view<asset::data> assets, const std::string& ui_name, const std::string& code_name) -> void {
+	const std::vector<std::string> available = asset::enumerate_resources<font>();
+
+	auto load = [&fonts, assets, &available](const std::string_view name) -> resource::handle<font> {
+		if (!font_available(available, name)) {
+			return {};
+		}
+		const std::string key(name);
+		resource::handle<font> loaded = asset::get<font>(assets, key);
+		fonts.registry[key] = loaded;
+		return loaded;
+	};
+
+	constexpr std::array strong_suffixes{
+		std::string_view("-SemiBold"),
+		std::string_view("-Bold"),
+		std::string_view("-ExtraBold"),
+	};
+	constexpr std::array emphasis_suffixes{
+		std::string_view("-Italic"),
+	};
+
+	if (font_available(available, ui_name)) {
+		fonts.text = load(ui_name);
+		fonts.text_strong = load(variant_of(available, ui_name, strong_suffixes));
+		fonts.text_emphasis = load(variant_of(available, ui_name, emphasis_suffixes));
+	}
+	if (font_available(available, code_name)) {
+		fonts.code = load(code_name);
+		fonts.code_strong = load(variant_of(available, code_name, strong_suffixes));
+	}
+}
+
 auto gse::gui::reload_font(data& d, const shared_view<asset::data> assets) -> void {
-	if (const std::string& name = d.ui_font.value; !name.empty() && gse::exists(name)) {
-		d.fonts.text = asset::get<font>(assets, name);
-		d.fonts.registry[name] = d.fonts.text;
-	}
-	if (const std::string& name = d.code_font.value; !name.empty() && gse::exists(name)) {
-		d.fonts.code = asset::get<font>(assets, name);
-		d.fonts.registry[name] = d.fonts.code;
-	}
+	assign_faces(d.fonts, assets, d.ui_font.value, d.code_font.value);
 }
 
 auto gse::gui::apply_scale(const data& d, const viewport_state& vp, style sty, const float viewport_height) -> style {
