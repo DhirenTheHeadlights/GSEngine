@@ -45,13 +45,6 @@ namespace gse::gui {
 		const style& sty
 	) -> window_caption_buttons;
 
-	[[nodiscard]] auto window_caption_grip_rect(
-		const font_set& fonts,
-		const menu& m,
-		const style& sty,
-		const rectf& title_bar_rect
-	) -> rectf;
-
 	auto draw_window_caption_buttons(
 		data& d,
 		viewport_state& vp,

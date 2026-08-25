@@ -21,6 +21,8 @@ export namespace gse::ide::build_runner {
 		std::uint16_t base_port = 9000;
 	};
 
+	struct stop_session_request {};
+
 	struct build_request {
 		build_target target = build_target::game;
 		bool run_after = false;
@@ -60,24 +62,39 @@ export namespace gse::ide::build_runner {
 		std::shared_ptr<spawn::output_stream> stream;
 	};
 
+	constexpr std::uint32_t max_attached_instances = 4;
+
+	template <typename Data>
+	[[nodiscard]] auto session_for(
+		const Data& d,
+		std::uint32_t generation,
+		std::uint32_t instance
+	) -> bool;
+
 	struct attached_surface_ready {
 		std::uint32_t generation = 0;
+		std::uint32_t instance = 0;
 		std::shared_ptr<const attached_surface_message> message;
 	};
 
 	struct attached_surface_imported {
 		std::uint32_t generation = 0;
+		std::uint32_t instance = 0;
 	};
 
 	struct attached_surface_rejected {
 		std::uint32_t generation = 0;
+		std::uint32_t instance = 0;
+		std::string reason;
 	};
 
 	struct attached_session_ended {
 		std::uint32_t generation = 0;
+		std::uint32_t instance = 0;
 	};
 
 	struct attached_input {
+		std::uint32_t instance = 0;
 		input::event event;
 	};
 
@@ -88,14 +105,18 @@ export namespace gse::ide::build_runner {
 
 	struct attached_session {
 		std::uint32_t generation = 0;
+		std::uint32_t instance = 0;
 		attached_session_status status = attached_session_status::awaiting_surface;
 	};
 
 	struct launched_child {
+		std::uint32_t instance = 0;
 		void* process = nullptr;
 		void* job = nullptr;
 		void* output = nullptr;
 		std::uint32_t pid = 0;
+		void* surface_pipe = nullptr;
+		bool attached = false;
 		std::string label;
 	};
 
@@ -107,17 +128,18 @@ export namespace gse::ide::build_runner {
 		bool done = false;
 		bool game_launched = false;
 		std::uint32_t generation = 0;
-		void* game_process = nullptr;
-		void* game_job = nullptr;
-		void* game_output = nullptr;
-		std::uint32_t game_pid = 0;
-		void* surface_pipe = nullptr;
 		std::filesystem::path graph_path;
 		std::vector<launched_child> children;
 	};
 
+	struct server_status {
+		bool running = false;
+		std::uint16_t port = 0;
+	};
+
 	struct attached_game {
 		std::uint32_t generation = 0;
+		std::uint32_t instance = 0;
 		void* process = nullptr;
 		std::shared_ptr<spawn::output_stream> stream;
 		void* output = nullptr;
@@ -127,6 +149,7 @@ export namespace gse::ide::build_runner {
 
 	struct surface_pipe {
 		std::uint32_t generation = 0;
+		std::uint32_t instance = 0;
 		void* handle = nullptr;
 		bool connected = false;
 		bool handshake_done = false;
@@ -138,14 +161,18 @@ export namespace gse::ide::build_runner {
 
 	struct [[= system_state<"Build Runner">{}]] data {
 		[[= shared]] bool building = false;
+		[[= shared]] bool building_game = false;
 		[[= shared]] std::uint32_t game_generation = 0;
 		[[= shared]] std::filesystem::path game_graph_path;
-		[[= shared]] std::optional<attached_session> session;
+		[[= shared]] std::array<attached_session, max_attached_instances> sessions{};
+		[[= shared]] std::string session_error;
+		[[= shared]] play_session session;
+		[[= shared]] server_status server;
 		build_completion completion;
 		std::shared_ptr<spawn::output_stream> active_stream;
 		std::jthread worker;
 		std::vector<attached_game> games;
-		surface_pipe pipe;
+		std::array<surface_pipe, max_attached_instances> pipes{};
 		std::optional<std::filesystem::file_time_type> editor_image_time;
 		std::int64_t editor_image_reported = 0;
 		bool editor_image_missing = false;
@@ -163,7 +190,7 @@ export namespace gse::ide::build_runner {
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		data& d,
-		channel_read<attached_surface_imported, attached_surface_rejected, build_request, attached_input> requests_in,
+		channel_read<attached_surface_imported, attached_surface_rejected, build_request, stop_session_request, attached_input> requests_in,
 		channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out
 	) -> async::task<>;
 
@@ -394,6 +421,8 @@ namespace gse::ide::build_runner {
 		spawn::output_stream& stream,
 		const config::worktree& tree,
 		std::uint32_t generation,
+		std::uint32_t instance,
+		std::string label,
 		const std::wstring& extra_args
 	) -> void;
 
@@ -460,7 +489,8 @@ namespace gse::ide::build_runner {
 	) -> std::optional<std::uint32_t>;
 
 	auto close_surface_pipe(
-		data& d
+		data& d,
+		std::uint32_t instance
 	) -> void;
 
 	auto import_surface_handles(
@@ -473,26 +503,31 @@ namespace gse::ide::build_runner {
 
 	auto poll_surface_pipe(
 		channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out,
-		data& d
+		data& d,
+		std::uint32_t instance
 	) -> void;
 
 	auto flush_pipe_tail(
-		data& d
+		data& d,
+		std::uint32_t instance
 	) -> void;
 
 	auto write_pipe_message(
 		data& d,
+		std::uint32_t instance,
 		const void* bytes,
 		std::size_t size
 	) -> void;
 
 	auto send_attached_input(
 		data& d,
+		std::uint32_t instance,
 		const input::event& event
 	) -> void;
 
 	auto send_attached_pacing(
 		data& d,
+		std::uint32_t instance,
 		time_t<std::uint64_t> refresh
 	) -> void;
 }
@@ -914,14 +949,14 @@ auto gse::ide::build_runner::watch_editor_image(data& d) -> void {
 			static_cast<std::int64_t>(d.editor_image_time->time_since_epoch().count()),
 			stamp_ticks,
 			d.building,
-			d.session.has_value(),
+			d.sessions[0].generation != 0,
 			app::relaunch_pending()
 		);
 		return;
 	}
 
 	const bool readable = image_readable(editor_exe);
-	if (!readable || d.building || d.session || app::relaunch_pending()) {
+	if (!readable || d.building || d.sessions[0].generation != 0 || app::relaunch_pending()) {
 		if (!d.editor_image_waiting) {
 			d.editor_image_waiting = true;
 			log::println(
@@ -931,7 +966,7 @@ auto gse::ide::build_runner::watch_editor_image(data& d) -> void {
 				editor_exe,
 				readable,
 				d.building,
-				d.session.has_value(),
+				d.sessions[0].generation != 0,
 				app::relaunch_pending()
 			);
 		}
@@ -1392,7 +1427,7 @@ auto gse::ide::build_runner::run_build_with_module_recovery(
 	}
 }
 
-auto gse::ide::build_runner::launch_game_attached(build_completion& completion, spawn::output_stream& stream, const config::worktree& tree, const std::uint32_t generation, const std::wstring& extra_args) -> void {
+auto gse::ide::build_runner::launch_game_attached(build_completion& completion, spawn::output_stream& stream, const config::worktree& tree, const std::uint32_t generation, const std::uint32_t instance, std::string label, const std::wstring& extra_args) -> void {
 	const std::filesystem::path& game_exe = tree.game_executable;
 	std::error_code ec;
 	if (!std::filesystem::exists(game_exe, ec)) {
@@ -1401,9 +1436,9 @@ auto gse::ide::build_runner::launch_game_attached(build_completion& completion, 
 	}
 
 	const win32::DWORD editor_pid = win32::GetCurrentProcessId();
-	const std::string pipe_name = "\\\\.\\pipe\\gse_editor_" + std::to_string(editor_pid) + "_" + std::to_string(generation);
+	const std::string pipe_name = "\\\\.\\pipe\\gse_editor_" + std::to_string(editor_pid) + "_" + std::to_string(generation) + "_" + std::to_string(instance);
 	const std::wstring wide_pipe(pipe_name.begin(), pipe_name.end());
-	const std::filesystem::path graph_file = std::filesystem::temp_directory_path() / std::format("gse_editor_game_graph_{}_{}.bin", editor_pid, generation);
+	const std::filesystem::path graph_file = std::filesystem::temp_directory_path() / std::format("gse_editor_game_graph_{}_{}_{}.bin", editor_pid, generation, instance);
 
 	void* pipe = win32::CreateNamedPipeW(wide_pipe.c_str(), win32::pipe_access_duplex, win32::pipe_type_byte | win32::pipe_nowait, 1, sizeof(attached_input_message) * 512, sizeof(attached_surface_message) * 2, 0, nullptr);
 	if (!win32::valid_handle(pipe)) {
@@ -1411,17 +1446,23 @@ auto gse::ide::build_runner::launch_game_attached(build_completion& completion, 
 		return;
 	}
 
+	const std::string_view backend_name = enum_to_string(gpu::active_backend);
+	const std::wstring wide_backend(backend_name.begin(), backend_name.end());
+
 	std::wstring command = L"\"" + game_exe.wstring() + L"\"";
 	command += L" --engine-attached";
 	command += L" --engine-ipc-pipe-name " + wide_pipe;
 	command += L" --engine-parent-pid " + std::to_wstring(editor_pid);
-	command += L" --engine-dump-system-graph-path \"" + graph_file.wstring() + L"\"";
+	command += L" --engine-setting Graphics.backend=" + wide_backend;
+	if (instance == 0) {
+		command += L" --engine-dump-system-graph-path \"" + graph_file.wstring() + L"\"";
+	}
 	command += extra_args;
 
 	const spawn::launched game = spawn::launch_streamed(command, tree.project_root.wstring());
 	if (!win32::valid_handle(game.process)) {
 		win32::CloseHandle(pipe);
-		spawn::emit(stream, "failed to launch game");
+		spawn::emit(stream, "failed to launch " + label);
 		return;
 	}
 
@@ -1429,16 +1470,23 @@ auto gse::ide::build_runner::launch_game_attached(build_completion& completion, 
 		win32::CloseHandle(game.input);
 	}
 
-	spawn::emit(stream, "launched game (pid " + std::to_string(game.pid) + ")");
+	spawn::emit(stream, "launched " + label + " (pid " + std::to_string(game.pid) + ")");
 
 	std::lock_guard lock(completion.mutex);
 	completion.game_launched = true;
-	completion.game_process = game.process;
-	completion.game_job = game.job;
-	completion.game_output = game.output;
-	completion.game_pid = game.pid;
-	completion.surface_pipe = pipe;
-	completion.graph_path = graph_file;
+	if (instance == 0) {
+		completion.graph_path = graph_file;
+	}
+	completion.children.push_back({
+		.instance = instance,
+		.process = game.process,
+		.job = game.job,
+		.output = game.output,
+		.pid = game.pid,
+		.surface_pipe = pipe,
+		.attached = true,
+		.label = std::move(label),
+	});
 }
 
 auto gse::ide::build_runner::launch_child(build_completion& completion, spawn::output_stream& stream, const config::worktree& tree, std::string label, const std::wstring& extra_args) -> void {
@@ -1487,11 +1535,9 @@ auto gse::ide::build_runner::launch_play_session(build_completion& completion, s
 		connect_args = L" --engine-net-connect 127.0.0.1:" + std::to_wstring(session.base_port);
 	}
 
-	launch_game_attached(completion, stream, tree, generation, connect_args);
-
-	const std::uint8_t extra_clients = session.clients > 0 ? static_cast<std::uint8_t>(session.clients - 1) : 0;
-	for (std::uint8_t i = 0; i < extra_clients; ++i) {
-		launch_child(completion, stream, tree, std::format("client {}", i + 2), connect_args);
+	const std::uint32_t clients = std::min<std::uint32_t>(std::max<std::uint32_t>(session.clients, 1), max_attached_instances);
+	for (std::uint32_t i = 0; i < clients; ++i) {
+		launch_game_attached(completion, stream, tree, generation, i, std::format("client {}", i + 1), connect_args);
 	}
 }
 
@@ -1671,6 +1717,8 @@ auto gse::ide::build_runner::start_build(const channel_write<attached_session_en
 		return;
 	}
 
+	d.session_error.clear();
+
 	// Windows keeps the image mapped while the process lives, so the linker cannot
 	// overwrite the game exe until every running instance has actually exited.
 	if (request.target == build_target::game) {
@@ -1678,6 +1726,9 @@ auto gse::ide::build_runner::start_build(const channel_write<attached_session_en
 			events_out.push<attached_session_ended>({
 				.generation = *ended,
 			});
+		}
+		if (request.run_after) {
+			d.session = request.session;
 		}
 	}
 
@@ -1701,11 +1752,6 @@ auto gse::ide::build_runner::start_build(const channel_write<attached_session_en
 		d.completion.done = false;
 		d.completion.game_launched = false;
 		d.completion.generation = 0;
-		d.completion.game_process = nullptr;
-		d.completion.game_job = nullptr;
-		d.completion.game_output = nullptr;
-		d.completion.game_pid = 0;
-		d.completion.surface_pipe = nullptr;
 		d.completion.graph_path.clear();
 		d.completion.key = {};
 		d.completion.kind = stream_kind::none;
@@ -1716,6 +1762,7 @@ auto gse::ide::build_runner::start_build(const channel_write<attached_session_en
 	request_analysis_pause(true);
 
 	d.building = true;
+	d.building_game = request.target == build_target::game;
 	d.active_stream = stream;
 	d.worker = std::jthread(build_worker, &d.completion, std::move(stream), request, d.game_generation + 1);
 }
@@ -1734,43 +1781,32 @@ auto gse::ide::build_runner::drain_completion(const channel_write<attached_sessi
 		d.worker.join();
 	}
 	d.building = false;
+	d.building_game = false;
 	request_analysis_pause(false);
 
 	if (d.completion.generation != 0) {
 		d.game_generation = d.completion.generation;
 	}
 	if (d.completion.game_launched) {
-		close_surface_pipe(d);
-		d.pipe.generation = d.completion.generation;
-		d.pipe.handle = d.completion.surface_pipe;
 		d.game_graph_path = std::move(d.completion.graph_path);
-		d.session.emplace(attached_session{
-			.generation = d.completion.generation,
-			.status = attached_session_status::awaiting_surface,
-		});
 		for (attached_game& game : d.games) {
 			game.owns_pipe = false;
 		}
-
-		auto stream = std::make_shared<spawn::output_stream>();
-		stream->running.store(true, std::memory_order_release);
-		spawn::attach_process(*stream, d.completion.game_process, d.completion.game_job);
-		events_out.push<stream_opened>({
-			.name = std::format("Game {}", d.completion.game_pid),
-			.kind = stream_kind::game,
-			.stream = stream,
-		});
-
-		d.games.push_back({
-			.generation = d.completion.generation,
-			.process = d.completion.game_process,
-			.stream = std::move(stream),
-			.output = d.completion.game_output,
-			.owns_pipe = true,
-		});
 	}
 
 	for (launched_child& child : d.completion.children) {
+		if (child.attached && child.instance < max_attached_instances) {
+			close_surface_pipe(d, child.instance);
+			d.pipes[child.instance].generation = d.completion.generation;
+			d.pipes[child.instance].instance = child.instance;
+			d.pipes[child.instance].handle = child.surface_pipe;
+			d.sessions[child.instance] = attached_session{
+				.generation = d.completion.generation,
+				.instance = child.instance,
+				.status = attached_session_status::awaiting_surface,
+			};
+		}
+
 		auto child_stream = std::make_shared<spawn::output_stream>();
 		child_stream->running.store(true, std::memory_order_release);
 		spawn::attach_process(*child_stream, child.process, child.job);
@@ -1782,10 +1818,11 @@ auto gse::ide::build_runner::drain_completion(const channel_write<attached_sessi
 
 		d.games.push_back({
 			.generation = d.completion.generation,
+			.instance = child.instance,
 			.process = child.process,
 			.stream = std::move(child_stream),
 			.output = child.output,
-			.owns_pipe = false,
+			.owns_pipe = child.attached,
 		});
 	}
 	d.completion.children.clear();
@@ -1819,19 +1856,25 @@ auto gse::ide::build_runner::poll_games(const channel_write<attached_session_end
 
 		const bool owned_pipe = game.owns_pipe;
 		const std::uint32_t generation = game.generation;
+		const std::uint32_t instance = game.instance;
 
 		if (owned_pipe) {
-			close_surface_pipe(d);
-			if (d.session && d.session->generation == generation) {
-				d.session.reset();
+			close_surface_pipe(d, instance);
+			if (session_for(d, generation, instance)) {
+				d.sessions[instance] = {};
 			}
 			events_out.push<attached_session_ended>({
 				.generation = generation,
+				.instance = instance,
 			});
 		}
 		d.games.erase(d.games.begin() + static_cast<std::ptrdiff_t>(i));
 
-		if (owned_pipe) {
+		const bool clients_remain = std::ranges::any_of(d.games, [generation](const attached_game& sibling) {
+			return sibling.generation == generation && sibling.owns_pipe;
+		});
+
+		if (owned_pipe && !clients_remain) {
 			for (attached_game& sibling : d.games) {
 				if (sibling.generation == generation) {
 					spawn::terminate_process(*sibling.stream);
@@ -1842,9 +1885,16 @@ auto gse::ide::build_runner::poll_games(const channel_write<attached_session_end
 }
 
 auto gse::ide::build_runner::stop_games(data& d) -> std::optional<std::uint32_t> {
-	const std::optional<std::uint32_t> ended = d.session
-		? std::optional<std::uint32_t>{ d.session->generation }
-		: std::nullopt;
+	std::optional<std::uint32_t> ended;
+	for (const attached_session& session : d.sessions) {
+		if (session.generation != 0) {
+			ended = session.generation;
+			break;
+		}
+	}
+	std::ranges::stable_sort(d.games, [](const attached_game& a, const attached_game& b) {
+		return a.owns_pipe && !b.owns_pipe;
+	});
 	for (attached_game& game : d.games) {
 		spawn::terminate_process(*game.stream);
 		win32::WaitForSingleObject(game.process, 5000);
@@ -1857,23 +1907,36 @@ auto gse::ide::build_runner::stop_games(data& d) -> std::optional<std::uint32_t>
 		win32::CloseHandle(game.process);
 	}
 	d.games.clear();
-	close_surface_pipe(d);
-	d.session.reset();
+	for (std::uint32_t instance = 0; instance < max_attached_instances; ++instance) {
+		close_surface_pipe(d, instance);
+	}
+	d.sessions = {};
 	return ended;
 }
 
-auto gse::ide::build_runner::close_surface_pipe(data& d) -> void {
-	if (d.pipe.handle) {
-		win32::DisconnectNamedPipe(d.pipe.handle);
-		win32::CloseHandle(d.pipe.handle);
+auto gse::ide::build_runner::close_surface_pipe(data& d, const std::uint32_t instance) -> void {
+	if (instance >= max_attached_instances) {
+		return;
 	}
-	d.pipe.handle = nullptr;
-	d.pipe.connected = false;
-	d.pipe.handshake_done = false;
-	d.pipe.received = 0;
-	d.pipe.generation = 0;
-	d.pipe.message = {};
-	d.pipe.pending_tail.clear();
+	surface_pipe& pipe = d.pipes[instance];
+	if (pipe.handle) {
+		win32::DisconnectNamedPipe(pipe.handle);
+		win32::CloseHandle(pipe.handle);
+	}
+	pipe.handle = nullptr;
+	pipe.connected = false;
+	pipe.handshake_done = false;
+	pipe.received = 0;
+	pipe.generation = 0;
+	pipe.message = {};
+	pipe.pending_tail.clear();
+}
+
+template <typename Data>
+auto gse::ide::build_runner::session_for(const Data& d, const std::uint32_t generation, const std::uint32_t instance) -> bool {
+	return instance < max_attached_instances
+		&& d.sessions[instance].generation != 0
+		&& d.sessions[instance].generation == generation;
 }
 
 auto gse::ide::build_runner::import_surface_handles(attached_surface_message& message) -> bool {
@@ -1942,107 +2005,111 @@ auto gse::ide::build_runner::own_surface_message(attached_surface_message messag
 	};
 }
 
-auto gse::ide::build_runner::poll_surface_pipe(const channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out, data& d) -> void {
-	if (!d.pipe.handle || d.pipe.handshake_done) {
+auto gse::ide::build_runner::poll_surface_pipe(const channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out, data& d, const std::uint32_t instance) -> void {
+	surface_pipe& pipe = d.pipes[instance];
+	if (!pipe.handle || pipe.handshake_done) {
 		return;
 	}
 
-	if (!d.pipe.connected) {
-		if (win32::ConnectNamedPipe(d.pipe.handle, nullptr) != 0) {
-			d.pipe.connected = true;
+	if (!pipe.connected) {
+		if (win32::ConnectNamedPipe(pipe.handle, nullptr) != 0) {
+			pipe.connected = true;
 		}
 		else {
 			const win32::DWORD error = win32::GetLastError();
 			if (error == win32::error_pipe_connected) {
-				d.pipe.connected = true;
+				pipe.connected = true;
 			}
 			else if (error != win32::error_pipe_listening) {
-				close_surface_pipe(d);
+				close_surface_pipe(d, instance);
 				return;
 			}
 		}
-		if (!d.pipe.connected) {
+		if (!pipe.connected) {
 			return;
 		}
 	}
 
 	win32::DWORD available = 0;
-	if (!win32::PeekNamedPipe(d.pipe.handle, nullptr, 0, nullptr, &available, nullptr)) {
-		close_surface_pipe(d);
+	if (!win32::PeekNamedPipe(pipe.handle, nullptr, 0, nullptr, &available, nullptr)) {
+		close_surface_pipe(d, instance);
 		return;
 	}
 	if (available == 0) {
 		return;
 	}
 
-	auto* bytes = reinterpret_cast<char*>(&d.pipe.message);
+	auto* bytes = reinterpret_cast<char*>(&pipe.message);
 	win32::DWORD read = 0;
-	if (!win32::ReadFile(d.pipe.handle, bytes + d.pipe.received, static_cast<win32::DWORD>(sizeof(attached_surface_message) - d.pipe.received), &read, nullptr)) {
+	if (!win32::ReadFile(pipe.handle, bytes + pipe.received, static_cast<win32::DWORD>(sizeof(attached_surface_message) - pipe.received), &read, nullptr)) {
 		if (win32::GetLastError() != win32::error_no_data) {
-			close_surface_pipe(d);
+			close_surface_pipe(d, instance);
 		}
 		return;
 	}
-	d.pipe.received += read;
-	if (d.pipe.received < sizeof(attached_surface_message)) {
+	pipe.received += read;
+	if (pipe.received < sizeof(attached_surface_message)) {
 		return;
 	}
 
-	d.pipe.received = 0;
-	if (d.pipe.message.magic == attached_surface_magic && import_surface_handles(d.pipe.message)) {
+	pipe.received = 0;
+	if (pipe.message.magic == attached_surface_magic && import_surface_handles(pipe.message)) {
 		events_out.push<attached_surface_ready>({
-			.generation = d.pipe.generation,
-			.message = own_surface_message(std::move(d.pipe.message)),
+			.generation = pipe.generation,
+			.instance = instance,
+			.message = own_surface_message(std::move(pipe.message)),
 		});
-		d.pipe.message = {};
-		d.pipe.handshake_done = true;
+		pipe.message = {};
+		pipe.handshake_done = true;
 		return;
 	}
-	close_surface_pipe(d);
+	close_surface_pipe(d, instance);
 }
 
-auto gse::ide::build_runner::flush_pipe_tail(data& d) -> void {
-	if (!d.pipe.handle || d.pipe.pending_tail.empty()) {
+auto gse::ide::build_runner::flush_pipe_tail(data& d, const std::uint32_t instance) -> void {
+	surface_pipe& pipe = d.pipes[instance];
+	if (!pipe.handle || pipe.pending_tail.empty()) {
 		return;
 	}
 	win32::DWORD written = 0;
-	if (!win32::WriteFile(d.pipe.handle, d.pipe.pending_tail.data(), static_cast<win32::DWORD>(d.pipe.pending_tail.size()), &written, nullptr)) {
+	if (!win32::WriteFile(pipe.handle, pipe.pending_tail.data(), static_cast<win32::DWORD>(pipe.pending_tail.size()), &written, nullptr)) {
 		log::println(log::level::warning, log::category::general, "attached pipe: write failed (error {}); closing pipe", win32::GetLastError());
-		close_surface_pipe(d);
+		close_surface_pipe(d, instance);
 		return;
 	}
-	d.pipe.pending_tail.erase(d.pipe.pending_tail.begin(), d.pipe.pending_tail.begin() + written);
+	pipe.pending_tail.erase(pipe.pending_tail.begin(), pipe.pending_tail.begin() + written);
 }
 
-auto gse::ide::build_runner::write_pipe_message(data& d, const void* bytes, const std::size_t size) -> void {
-	if (!d.pipe.handle || !d.pipe.handshake_done) {
+auto gse::ide::build_runner::write_pipe_message(data& d, const std::uint32_t instance, const void* bytes, const std::size_t size) -> void {
+	surface_pipe& pipe = d.pipes[instance];
+	if (!pipe.handle || !pipe.handshake_done) {
 		return;
 	}
-	flush_pipe_tail(d);
-	if (!d.pipe.handle || !d.pipe.pending_tail.empty()) {
+	flush_pipe_tail(d, instance);
+	if (!pipe.handle || !pipe.pending_tail.empty()) {
 		return;
 	}
 	win32::DWORD written = 0;
-	if (!win32::WriteFile(d.pipe.handle, bytes, static_cast<win32::DWORD>(size), &written, nullptr)) {
+	if (!win32::WriteFile(pipe.handle, bytes, static_cast<win32::DWORD>(size), &written, nullptr)) {
 		log::println(log::level::warning, log::category::general, "attached pipe: write failed (error {}); closing pipe", win32::GetLastError());
-		close_surface_pipe(d);
+		close_surface_pipe(d, instance);
 		return;
 	}
 	if (written < size) {
 		const auto* tail = static_cast<const char*>(bytes) + written;
-		d.pipe.pending_tail.assign(tail, tail + (size - written));
+		pipe.pending_tail.assign(tail, tail + (size - written));
 	}
 }
 
-auto gse::ide::build_runner::send_attached_input(data& d, const input::event& event) -> void {
+auto gse::ide::build_runner::send_attached_input(data& d, const std::uint32_t instance, const input::event& event) -> void {
 	const attached_input_message message{
 		.magic = attached_input_magic,
 		.event = event,
 	};
-	write_pipe_message(d, &message, sizeof(message));
+	write_pipe_message(d, instance, &message, sizeof(message));
 }
 
-auto gse::ide::build_runner::send_attached_pacing(data& d, const time_t<std::uint64_t> refresh) -> void {
+auto gse::ide::build_runner::send_attached_pacing(data& d, const std::uint32_t instance, const time_t<std::uint64_t> refresh) -> void {
 	if (refresh == time_t<std::uint64_t>{}) {
 		return;
 	}
@@ -2050,7 +2117,7 @@ auto gse::ide::build_runner::send_attached_pacing(data& d, const time_t<std::uin
 		.magic = attached_pacing_magic,
 		.refresh = refresh,
 	};
-	write_pipe_message(d, &message, sizeof(message));
+	write_pipe_message(d, instance, &message, sizeof(message));
 }
 
 auto gse::ide::build_runner::init(data&) -> async::task<> {
@@ -2058,14 +2125,15 @@ auto gse::ide::build_runner::init(data&) -> async::task<> {
 	return {};
 }
 
-auto gse::ide::build_runner::run(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_read<attached_surface_imported, attached_surface_rejected, build_request, attached_input> requests_in, const channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out) -> async::task<> {
+auto gse::ide::build_runner::run(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_read<attached_surface_imported, attached_surface_rejected, build_request, stop_session_request, attached_input> requests_in, const channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out) -> async::task<> {
 	for (const attached_surface_imported& imported : requests_in.of<attached_surface_imported>()) {
-		if (d.session && d.session->generation == imported.generation) {
-			d.session->status = attached_session_status::active;
+		if (session_for(d, imported.generation, imported.instance)) {
+			d.sessions[imported.instance].status = attached_session_status::active;
 		}
 	}
 	for (const attached_surface_rejected& rejected : requests_in.of<attached_surface_rejected>()) {
-		if (d.session && d.session->generation == rejected.generation) {
+		if (session_for(d, rejected.generation, rejected.instance)) {
+			d.session_error = rejected.reason;
 			if (const std::optional<std::uint32_t> ended = stop_games(d)) {
 				events_out.push<attached_session_ended>({
 					.generation = *ended,
@@ -2073,23 +2141,44 @@ auto gse::ide::build_runner::run(context& ctx, shared_view<gpu::context::data> g
 			}
 		}
 	}
+	for (const auto& _ : requests_in.of<stop_session_request>()) {
+		d.session_error.clear();
+		if (const std::optional<std::uint32_t> ended = stop_games(d)) {
+			events_out.push<attached_session_ended>({
+				.generation = *ended,
+			});
+		}
+	}
+
 	for (const build_request& request : requests_in.of<build_request>()) {
 		start_build(events_out, d, request);
 	}
 	drain_completion(events_out, d);
 	poll_games(events_out, d);
-	poll_surface_pipe(events_out, d);
-	flush_pipe_tail(d);
-	for (const attached_input& forwarded : requests_in.of<attached_input>()) {
-		send_attached_input(d, forwarded.event);
+	d.server = {
+		.running = d.session.dedicated_server && std::ranges::any_of(d.games, [](const attached_game& game) {
+			return !game.owns_pipe;
+		}),
+		.port = d.session.base_port,
+	};
+	for (std::uint32_t instance = 0; instance < max_attached_instances; ++instance) {
+		poll_surface_pipe(events_out, d, instance);
+		flush_pipe_tail(d, instance);
 	}
-	if (d.pipe.handshake_done && gpu_s.swapchain) {
-		if (const auto now = system_clock::now<time>(); now >= d.pipe.next_pacing_send) {
-			send_attached_pacing(d, gpu_s.swapchain->refresh_interval());
-			d.pipe.next_pacing_send = now + seconds(1.f);
+	for (const attached_input& forwarded : requests_in.of<attached_input>()) {
+		send_attached_input(d, forwarded.instance, forwarded.event);
+	}
+	if (gpu_s.swapchain) {
+		const auto now = system_clock::now<time>();
+		for (std::uint32_t instance = 0; instance < max_attached_instances; ++instance) {
+			surface_pipe& pipe = d.pipes[instance];
+			if (pipe.handshake_done && now >= pipe.next_pacing_send) {
+				send_attached_pacing(d, instance, gpu_s.swapchain->refresh_interval());
+				pipe.next_pacing_send = now + seconds(1.f);
+			}
 		}
 	}
-	if (d.session && !d.pipe.handle) {
+	if (d.sessions[0].generation != 0 && !d.pipes[0].handle) {
 		if (const std::optional<std::uint32_t> ended = stop_games(d)) {
 			events_out.push<attached_session_ended>({
 				.generation = *ended,

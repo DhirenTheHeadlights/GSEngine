@@ -291,6 +291,7 @@ auto gse::ide::profile_system::run(context& ctx, data& d, const channel_read<pro
 			d.last_generation = 0;
 		}
 		d.capturing = request.enabled;
+		gse::trace::set_enabled(d.capturing && d.source == profile_source::editor);
 	}
 	for (const profile_report_request& request : requests_in.of<profile_report_request>()) {
 		d.report = {};

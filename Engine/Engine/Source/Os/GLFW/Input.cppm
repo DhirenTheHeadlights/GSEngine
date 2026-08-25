@@ -75,9 +75,11 @@ auto gse::input::run(gse::context& ctx, data& d, const channel_read<synthetic_in
 				persistent_state.on_key_released(arg.key_code, tok);
 			})
 			.else_if_is([&](const mouse_button_pressed& arg) {
+				persistent_state.on_mouse_moved(static_cast<float>(arg.x_pos), static_cast<float>(arg.y_pos), tok);
 				persistent_state.on_mouse_button_pressed(arg.button, tok);
 			})
 			.else_if_is([&](const mouse_button_released& arg) {
+				persistent_state.on_mouse_moved(static_cast<float>(arg.x_pos), static_cast<float>(arg.y_pos), tok);
 				persistent_state.on_mouse_button_released(arg.button, tok);
 			})
 			.else_if_is([&](const mouse_moved& arg) {

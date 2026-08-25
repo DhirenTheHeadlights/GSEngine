@@ -37,6 +37,12 @@ export namespace gse::world_system {
 		id entity;
 	};
 
+	struct scene_catalog {
+		std::vector<id> scene_ids;
+		std::vector<trigger> triggers;
+		std::optional<id> active_scene;
+	};
+
 	struct [[= gse::system_state<"World">{}]] data {
 		std::unordered_map<id, std::unique_ptr<scene>> scenes;
 		[[= gse::shared]] std::vector<id> scene_ids;
@@ -51,6 +57,11 @@ export namespace gse::world_system {
 
 		std::uint32_t next_player = 0;
 		bool local_player_spawned = false;
+
+		bool catalog_published = false;
+		std::size_t published_scene_count = 0;
+		std::size_t published_trigger_count = 0;
+		std::optional<id> published_active_scene;
 	};
 
 	[[= gse::system_run<>{}]]
@@ -58,7 +69,7 @@ export namespace gse::world_system {
 		context& ctx,
 		data& d,
 		channel_read<set_networked_request, set_authoritative_request, set_local_controller_id_request, deactivate_active_scene_request, activate_scene_request> requests_in,
-		channel_write<spawn_player_request, possess_player_request> player_out,
+		channel_write<spawn_player_request, possess_player_request, scene_catalog> player_out,
 		shared_view<actions::data> actions_d,
 		write<player_controller> controllers,
 		entities ents
@@ -223,7 +234,7 @@ auto gse::update_player_controllers(world_system::data& d, write<player_controll
 	}
 }
 
-auto gse::world_system::run(context& ctx, data& d, const channel_read<set_networked_request, set_authoritative_request, set_local_controller_id_request, deactivate_active_scene_request, activate_scene_request> requests_in, const channel_write<spawn_player_request, possess_player_request> player_out, const shared_view<actions::data> actions_d, write<player_controller> controllers, entities ents) -> async::task<> {
+auto gse::world_system::run(context& ctx, data& d, const channel_read<set_networked_request, set_authoritative_request, set_local_controller_id_request, deactivate_active_scene_request, activate_scene_request> requests_in, const channel_write<spawn_player_request, possess_player_request, scene_catalog> player_out, const shared_view<actions::data> actions_d, write<player_controller> controllers, entities ents) -> async::task<> {
 	for (const auto& r : requests_in.of<set_networked_request>()) {
 		d.networked = r.value;
 	}
@@ -273,6 +284,21 @@ auto gse::world_system::run(context& ctx, data& d, const channel_read<set_networ
 	update_player_controllers(d, controllers, ents, player_out);
 
 	d.active_scene_ptr = current_scene(d);
+
+	if (!d.catalog_published
+		|| d.published_scene_count != d.scene_ids.size()
+		|| d.published_trigger_count != d.triggers.size()
+		|| d.published_active_scene != d.active_scene) {
+		d.catalog_published = true;
+		d.published_scene_count = d.scene_ids.size();
+		d.published_trigger_count = d.triggers.size();
+		d.published_active_scene = d.active_scene;
+		player_out.push<scene_catalog>({
+			.scene_ids = d.scene_ids,
+			.triggers = d.triggers,
+			.active_scene = d.active_scene,
+		});
+	}
 
 	return {};
 }

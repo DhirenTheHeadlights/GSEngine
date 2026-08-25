@@ -214,6 +214,55 @@ auto gse::gui::scroll_region(draw_context& ctx, const scroll_region_info& info) 
 	return scroll_handle{ ctx, state, visible_rect, saved_layout_y, info.config };
 }
 
+auto gse::gui::row_list(draw_context& ctx, const row_list_info& info, const std::function<void(const row&)>& draw_row) -> void {
+	if (info.row_height <= 0.f) {
+		return;
+	}
+
+	ctx.layout_cursor = { info.bounds.left(), info.bounds.top() };
+
+	const scroll_handle region = scroll_region(ctx, {
+		.id = info.id,
+		.size = info.bounds.size(),
+		.config = info.config,
+	});
+	if (!region.valid()) {
+		return;
+	}
+
+	const rectf& visible_rect = region.visible_rect();
+	const float content_start_y = ctx.layout_cursor.y();
+	const float content_height = static_cast<float>(info.row_count) * info.row_height;
+	const float row_width = std::max(
+		0.f,
+		visible_rect.width() - (content_height > visible_rect.height() ? info.config.scrollbar_width : 0.f)
+	);
+
+	const float first_edge = region.offset() / info.row_height;
+	const float past_last_edge = (region.offset() + visible_rect.height()) / info.row_height;
+	const auto first = static_cast<std::size_t>(std::max(0.f, std::floor(first_edge)));
+	const auto past_last = std::min(info.row_count, static_cast<std::size_t>(std::max(0.f, std::ceil(past_last_edge))));
+
+	for (std::size_t i = first; i < past_last; ++i) {
+		const rectf rect = rectf::from_position_size(
+			{ visible_rect.left(), content_start_y - static_cast<float>(i) * info.row_height },
+			{ row_width, info.row_height }
+		);
+		const rectf visible = rect.intersection(visible_rect);
+		if (visible.height() <= 0.f) {
+			continue;
+		}
+		draw_row({
+			.index = i,
+			.rect = rect,
+			.visible = visible,
+			.hovered = ctx.hovers(visible),
+		});
+	}
+
+	ctx.layout_cursor.y() = content_start_y - content_height;
+}
+
 auto gse::gui::scroll_axis_advance(const draw_context& ctx, const rectf& visible_rect, const scroll_config& config, scroll_axis& axis, const float visible_extent, const float wheel_amount, const bool horizontal, const bool show) -> void {
 	const float max_scroll = std::max(0.f, axis.content - visible_extent);
 

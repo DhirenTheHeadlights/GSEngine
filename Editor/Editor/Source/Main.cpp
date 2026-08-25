@@ -6,6 +6,7 @@ import gse.ide;
 
 auto main() -> int {
 	gse::alloc::set_enabled(true);
+	gse::trace::set_enabled(false);
 	gse::ide::config::seed_editor_layout();
 
 	gse::start(

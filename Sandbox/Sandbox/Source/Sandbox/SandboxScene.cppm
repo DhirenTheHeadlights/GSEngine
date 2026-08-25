@@ -3,17 +3,23 @@ export module sandbox:sandbox_scene;
 import std;
 import gse;
 
+import :dev_spawn_system;
 import :entity_builders;
 import :runtime_spawns;
 
 export namespace sandbox::player {
-	struct [[= gse::system_state<"Player">{}]] data {};
+	struct [[= gse::system_state<"Player">{}]] data {
+		bool character_requested = false;
+	};
 
 	[[= gse::system_run<>{}]]
 	auto run(
 		gse::context& ctx,
 		data& d,
 		gse::channel_read<gse::world_system::possess_player_request> possess_in,
+		gse::channel_write<sandbox::spawn_character_request> spawn_out,
+		gse::shared_view<gse::network::data> net_d,
+		const gse::network::config& net_cfg,
 		gse::structural<gse::free_camera::component> cameras
 	) -> gse::async::task<>;
 }
@@ -116,7 +122,19 @@ namespace sandbox {
 	) -> void;
 }
 
-auto sandbox::player::run(gse::context& ctx, data& d, const gse::channel_read<gse::world_system::possess_player_request> possess_in, gse::structural<gse::free_camera::component> cameras) -> gse::async::task<> {
+auto sandbox::player::run(gse::context& ctx, data& d, const gse::channel_read<gse::world_system::possess_player_request> possess_in, const gse::channel_write<sandbox::spawn_character_request> spawn_out, const gse::shared_view<gse::network::data> net_d, const gse::network::config& net_cfg, gse::structural<gse::free_camera::component> cameras) -> gse::async::task<> {
+	const bool server_owns_player = !net_cfg.connect.empty();
+
+	if (server_owns_player) {
+		if (!d.character_requested && net_d.connection_state == gse::network::client::state::connected) {
+			d.character_requested = true;
+			spawn_out.push<sandbox::spawn_character_request>({
+				.count = 1,
+			});
+		}
+		return {};
+	}
+
 	for (const auto& request : possess_in.of<gse::world_system::possess_player_request>()) {
 		cameras.add(
 			request.entity,

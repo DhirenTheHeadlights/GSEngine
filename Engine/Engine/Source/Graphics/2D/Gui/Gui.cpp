@@ -186,7 +186,7 @@ auto gse::gui::init(context& ctx, const shared_view<window::data> window_s, cons
 	d.primary.previous_scale_factor = scale_factor_for(d, d.primary, d.primary.previous_viewport_size.y());
 }
 
-auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, const shared_view<input::data> input_state, const save::registry& save_reg, const channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, popout_closed, menu_migrate_request, window_opened, window_closed, window_resized> requests_in, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request, window_panel_drag_request> ui_out, data& d) -> async::task<> {
+auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, const shared_view<input::data> input_state, const save::registry& save_reg, const channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, popout_closed, menu_migrate_request, window_opened, window_closed, window_resized> requests_in, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> ui_out, data& d) -> async::task<> {
 	const auto current_viewport_size = vec2f(gpu_s.render_graph->extent());
 	const auto window_size = vec2f(window::viewport(window_s));
 
@@ -202,7 +202,7 @@ auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const
 		d.secondaries.push_back(std::move(vp));
 
 		if (!req.for_menu.empty()) {
-			migrate_menu(d.primary, created, req.for_menu);
+			adopt_menu(d, created, req.for_menu);
 		}
 	}
 
@@ -220,21 +220,12 @@ auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const
 	}
 
 	for (const auto& req : requests_in.of<menu_migrate_request>()) {
-		viewport_state* target = viewport_for_window(d, req.target_window);
-		if (!target) {
-			continue;
-		}
-		if (migrate_menu(d.primary, *target, req.menu_name)) {
-			continue;
-		}
-		for (const auto& vp : d.secondaries) {
-			if (migrate_menu(*vp, *target, req.menu_name)) {
-				break;
-			}
+		if (viewport_state* target = viewport_for_window(d, req.target_window)) {
+			adopt_menu(d, *target, req.menu_name);
 		}
 	}
 
-	route_cursor(d, input::current_state(input_state).mouse_position(), window_s.focused_window);
+	route_cursor(d, input::current_state(input_state).mouse_position(), window_s.focused_window, window_s.cursor_window);
 
 	d.sprite_commands.clear();
 	d.text_commands.clear();
@@ -273,7 +264,9 @@ auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const
 	const input::state& input_st = input::current_state(input_state);
 
 	for (const auto& req : requests_in.of<push_screen_request>()) {
-		d.primary.menu_stack.push_factory(req.factory);
+		if (viewport_state* target = viewport_for_window(d, req.window)) {
+			target->menu_stack.push_factory(req.factory);
+		}
 	}
 	for ([[maybe_unused]] const auto& req : requests_in.of<pop_screen_request>()) {
 		d.primary.menu_stack.pop();

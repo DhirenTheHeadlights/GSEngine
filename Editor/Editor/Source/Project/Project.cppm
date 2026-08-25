@@ -43,6 +43,8 @@ export namespace gse::ide::project {
 
 	auto current() -> const manifest&;
 
+	auto opened() -> bool;
+
 	auto record_recent() -> void;
 
 	struct project_template {

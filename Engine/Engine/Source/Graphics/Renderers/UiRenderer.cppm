@@ -87,6 +87,7 @@ namespace gse::renderer::ui {
 	};
 
 	export constexpr std::size_t max_quads_per_frame = 32768;
+	export constexpr std::size_t max_batches_per_frame = 4096;
 	export constexpr std::size_t vertices_per_quad = 4;
 	export constexpr std::size_t indices_per_quad = 6;
 	export constexpr std::size_t max_vertices = max_quads_per_frame * vertices_per_quad;
@@ -96,7 +97,9 @@ namespace gse::renderer::ui {
 	struct gpu_frame_data {
 		linear_vector<vertex> vertices{ max_vertices };
 		linear_vector<std::uint32_t> indices{ max_indices };
-		linear_vector<draw_batch> batches{ 512 };
+		linear_vector<draw_batch> batches{ max_batches_per_frame };
+		std::size_t dropped_quads = 0;
+		std::size_t dropped_batches = 0;
 	};
 
 	struct unified_command {
@@ -129,13 +132,13 @@ namespace gse::renderer::ui {
 		linear_vector<vertex>& vertices,
 		linear_vector<std::uint32_t>& indices,
 		const unified_command& cmd
-	) -> void;
+	) -> std::size_t;
 
 	auto add_text_quads(
 		linear_vector<vertex>& vertices,
 		linear_vector<std::uint32_t>& indices,
 		const unified_command& cmd
-	) -> void;
+	) -> std::size_t;
 }
 
 export namespace gse::renderer::ui {
@@ -144,11 +147,16 @@ export namespace gse::renderer::ui {
 		gpu::buffer index_buffer;
 	};
 
+	struct record_state_info {
+		char label[40];
+	};
+
 	enum class record_state : std::uint8_t {
-		unknown,
-		recording,
-		skipped_no_frame,
-		skipped_no_batches
+		unknown [[= record_state_info{ .label = "unknown" }]],
+		recording [[= record_state_info{ .label = "recording" }]],
+		truncated [[= record_state_info{ .label = "recording(budget exhausted)" }]],
+		skipped_no_frame [[= record_state_info{ .label = "skipped(no frame in progress)" }]],
+		skipped_no_batches [[= record_state_info{ .label = "skipped(no batches)" }]]
 	};
 
 	struct [[= gse::system_state<"Ui">{}]] data {

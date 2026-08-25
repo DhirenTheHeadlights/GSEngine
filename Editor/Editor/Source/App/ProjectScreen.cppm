@@ -11,7 +11,6 @@ export namespace gse::ide {
 	public:
 		explicit project_screen(
 			gse::channel_write<window_launcher_mode_request, window_open_file_request> channels,
-			gse::shared_view<gse::input::data> input,
 			bool hub = false
 		);
 
@@ -93,7 +92,6 @@ export namespace gse::ide {
 		bool m_dismiss = false;
 		bool m_hub = false;
 		gse::channel_write<window_launcher_mode_request, window_open_file_request> m_channels;
-		gse::shared_view<gse::input::data> m_input_data;
 		bool m_launcher_sent = false;
 		int m_requested_height = 0;
 		float m_content_height = 0.f;
@@ -105,7 +103,7 @@ export namespace gse::ide {
 	};
 }
 
-gse::ide::project_screen::project_screen(gse::channel_write<window_launcher_mode_request, window_open_file_request> channels, const gse::shared_view<gse::input::data> input, const bool hub) : m_hub(hub), m_channels(std::move(channels)), m_input_data(input) {
+gse::ide::project_screen::project_screen(gse::channel_write<window_launcher_mode_request, window_open_file_request> channels, const bool hub) : m_hub(hub), m_channels(std::move(channels)) {
 	const project::manifest& active = project::current();
 
 	for (const std::filesystem::path& path : project::known()) {
@@ -113,7 +111,7 @@ gse::ide::project_screen::project_screen(gse::channel_write<window_launcher_mode
 		if (!found.valid) {
 			continue;
 		}
-		const bool current = active.valid && path == active.file;
+		const bool current = project::opened() && path == active.file;
 		if (current) {
 			m_selected = static_cast<int>(m_entries.size());
 		}
@@ -356,14 +354,13 @@ auto gse::ide::project_screen::build(gui::builder& ui, gui::nav&) -> void {
 auto gse::ide::project_screen::build_rebind(gui::builder& ui) -> void {
 	auto& ctx = ui.ctx;
 	const auto text_view = ctx.fonts.text.resolve();
-	const input::state& input = input::current_state(m_input_data);
 	const gui::style& sty = ctx.style;
 	const rectf card = ctx.current_menu->rect;
 	const float pad = sty.padding;
 
 	const project::manifest& active = project::current();
 
-	if (input.key_pressed(key::escape)) {
+	if (ctx.key_pressed(key::escape)) {
 		m_rebinding = false;
 		m_forced = false;
 		return;
@@ -397,10 +394,10 @@ auto gse::ide::project_screen::build_rebind(gui::builder& ui) -> void {
 	ctx.layout_cursor = { card.left() + pad, ctx.layout_cursor.y() - text_view->line_height(sty.font_size) - pad };
 
 	if (!m_engines.empty()) {
-		if (input.key_pressed(key::down)) {
+		if (ctx.key_pressed(key::down)) {
 			m_engine_selected = std::min(m_engine_selected + 1, static_cast<int>(m_engines.size()) - 1);
 		}
-		if (input.key_pressed(key::up)) {
+		if (ctx.key_pressed(key::up)) {
 			m_engine_selected = std::max(m_engine_selected - 1, 0);
 		}
 	}
@@ -411,7 +408,7 @@ auto gse::ide::project_screen::build_rebind(gui::builder& ui) -> void {
 	}
 	const float detail_column = pad * 3.f + sty.accent_bar_width + widest_name;
 
-	const bool submit = input.key_pressed(key::enter) || input.key_pressed(key::kp_enter);
+	const bool submit = ctx.key_pressed(key::enter) || ctx.key_pressed(key::kp_enter);
 
 	for (const auto& [index, item] : std::views::enumerate(m_engines)) {
 		const bool chosen = ui.draw<gui::selectable>({
@@ -438,20 +435,19 @@ auto gse::ide::project_screen::build_rebind(gui::builder& ui) -> void {
 auto gse::ide::project_screen::build_list(gui::builder& ui) -> void {
 	auto& ctx = ui.ctx;
 	const auto text_view = ctx.fonts.text.resolve();
-	const input::state& input = input::current_state(m_input_data);
 
-	if (!m_hub && input.key_pressed(key::escape)) {
+	if (!m_hub && ctx.key_pressed(key::escape)) {
 		m_dismiss = true;
 		return;
 	}
 	if (!m_entries.empty()) {
-		if (input.key_pressed(key::down)) {
+		if (ctx.key_pressed(key::down)) {
 			m_selected = std::min(m_selected + 1, static_cast<int>(m_entries.size()) - 1);
 		}
-		if (input.key_pressed(key::up)) {
+		if (ctx.key_pressed(key::up)) {
 			m_selected = std::max(m_selected - 1, 0);
 		}
-		if (input.key_pressed(key::enter) || input.key_pressed(key::kp_enter)) {
+		if (ctx.key_pressed(key::enter) || ctx.key_pressed(key::kp_enter)) {
 			activate(m_entries[static_cast<std::size_t>(m_selected)]);
 			return;
 		}
@@ -483,12 +479,11 @@ auto gse::ide::project_screen::build_list(gui::builder& ui) -> void {
 auto gse::ide::project_screen::build_create(gui::builder& ui) -> void {
 	auto& ctx = ui.ctx;
 	const auto text_view = ctx.fonts.text.resolve();
-	const input::state& input = input::current_state(m_input_data);
 	const gui::style& sty = ctx.style;
 	const rectf card = ctx.current_menu->rect;
 	const float pad = sty.padding;
 
-	if (input.key_pressed(key::escape)) {
+	if (ctx.key_pressed(key::escape)) {
 		m_creating = false;
 		return;
 	}
@@ -554,7 +549,7 @@ auto gse::ide::project_screen::build_create(gui::builder& ui) -> void {
 		.value = m_init_git,
 	});
 
-	const bool submit = input.key_pressed(key::enter) || input.key_pressed(key::kp_enter);
+	const bool submit = ctx.key_pressed(key::enter) || ctx.key_pressed(key::kp_enter);
 
 	const float action_h = text_view->line_height(sty.font_size) + pad;
 	const float action_w = (card.width() - pad * 3.f) * 0.5f;

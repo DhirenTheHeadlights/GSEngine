@@ -71,8 +71,24 @@ auto gse::gui::migrate_menu(viewport_state& from, viewport_state& to, const std:
 	std::erase_if(from.name_to_menu_id, [&](const auto& entry) { return entry.second == menu_id; });
 
 	moved->z_order = 0;
+	if (to.window.exists()) {
+		moved->rect = to.frame_rect;
+		moved->fixed = true;
+	}
 	to.menus.add(menu_id, std::move(*moved));
 	return true;
+}
+
+auto gse::gui::adopt_menu(data& d, viewport_state& to, const std::string_view menu_name) -> bool {
+	if (migrate_menu(d.primary, to, menu_name)) {
+		return true;
+	}
+	for (const auto& vp : d.secondaries) {
+		if (migrate_menu(*vp, to, menu_name)) {
+			return true;
+		}
+	}
+	return false;
 }
 
 auto gse::gui::reclaim_menus(data& d, viewport_state& from) -> void {
@@ -108,12 +124,13 @@ auto gse::gui::close_window_viewport(data& d, const id window) -> void {
 	d.primary.active_drag_ghost.reset();
 }
 
-auto gse::gui::route_cursor(data& d, const vec2f mouse, const id focused_window) -> void {
+auto gse::gui::route_cursor(data& d, const vec2f mouse, const id focused_window, const id cursor_window) -> void {
 	auto holds_capture = [](const viewport_state& vp) {
 		return vp.menu_stack.captures_input() || !std::holds_alternative<states::idle>(vp.current_state.v);
 	};
 
-	viewport_state* owner = viewport_for_window(d, focused_window);
+	viewport_state* owner = viewport_for_window(d, cursor_window);
+	const viewport_state* keyboard_owner = viewport_for_window(d, focused_window);
 
 	if (holds_capture(d.primary)) {
 		owner = &d.primary;
@@ -138,9 +155,15 @@ auto gse::gui::route_cursor(data& d, const vec2f mouse, const id focused_window)
 		owner = &d.primary;
 	}
 
+	if (!keyboard_owner) {
+		keyboard_owner = owner;
+	}
+
 	d.primary.owns_cursor = owner == &d.primary;
+	d.primary.owns_keyboard = keyboard_owner == &d.primary;
 	for (const auto& vp : d.secondaries) {
 		vp->owns_cursor = owner == vp.get();
+		vp->owns_keyboard = keyboard_owner == vp.get();
 	}
 }
 
@@ -228,18 +251,7 @@ auto gse::gui::begin_viewport_frame(data& d, viewport_state& vp, const shared_vi
 		.active = d.fonts.text.valid()
 	};
 
-	const bool reserves_top_bar = d.reserve_top_bar && !vp.window.exists();
-	vp.rect = usable_screen_rect(reserves_top_bar ? frame_sty.title_bar_height : 0.f, vp.frame_rect);
-
-	if (vp.window.exists()) {
-		for (menu& m : vp.menus.items()) {
-			if (!m.owner_id().exists()) {
-				m.rect = vp.rect;
-				m.bare = false;
-				layout::update(vp.menus, m.id());
-			}
-		}
-	}
+	vp.rect = usable_screen_rect(d.reserve_top_bar ? frame_sty.title_bar_height : 0.f, vp.frame_rect);
 
 	vp.hot_widget_id = {};
 
@@ -295,53 +307,8 @@ auto gse::gui::update_viewport_interaction(data& d, viewport_state& vp, const sh
 		});
 }
 
-auto gse::gui::update_viewport(data& d, viewport_state& vp, const input::state& input_st, const channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, popout_closed> requests_in, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request, window_panel_drag_request> ui_out) -> void {
+auto gse::gui::update_viewport(data& d, viewport_state& vp, const input::state& input_st, const channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, popout_closed> requests_in, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> ui_out) -> void {
 	const vec2f viewport_size = vp.frame_rect.size();
-
-	if (vp.window.exists()) {
-		const menu* host = nullptr;
-		for (const menu& m : vp.menus.items()) {
-			if (!m.owner_id().exists()) {
-				host = &m;
-				break;
-			}
-		}
-
-		float caption = 0.f;
-		float controls = 0.f;
-		float grip = 0.f;
-		if (host) {
-			caption = menu_chrome_height(d.fonts, *host, vp.fstate.sty, host->rect.width());
-			const rectf title_bar = rectf::from_position_size(host->rect.top_left(), { host->rect.width(), caption });
-			const rectf grip_rect = window_caption_grip_rect(d.fonts, *host, vp.fstate.sty, title_bar);
-			controls = window_caption_buttons_for(title_bar, vp.fstate.sty).extent();
-			grip = grip_rect.width();
-
-			const vec2f mouse = input_st.mouse_position();
-			if (vp.owns_cursor && !vp.window_grip_held && input_st.mouse_button_pressed(mouse_button::button_1) && grip_rect.contains(mouse)) {
-				vp.window_grip_held = true;
-			}
-			if (vp.window_grip_held) {
-				const bool released = !input_st.mouse_button_held(mouse_button::button_1);
-				ui_out.push<window_panel_drag_request>({
-					.window = vp.window,
-					.client_cursor = mouse,
-					.released = released,
-				});
-				vp.window_grip_held = !released;
-			}
-		}
-
-		const auto caption_px = static_cast<int>(caption);
-		ui_out.push<window_chrome_metrics_request>({
-			.window = vp.window,
-			.caption_height = caption_px,
-			.controls_width = static_cast<int>(controls),
-			.grip_width = static_cast<int>(grip),
-			.resize_exclude_y0 = 0,
-			.resize_exclude_y1 = caption_px,
-		});
-	}
 
 	if (vp.active_dock_space) {
 		draw_dock_space(d, vp.fstate.sty, *vp.active_dock_space);
@@ -350,8 +317,16 @@ auto gse::gui::update_viewport(data& d, viewport_state& vp, const input::state& 
 	draw_drag_ghost(d, vp);
 
 	if (!vp.menu_stack.empty()) {
-		process_screen(d, vp, input_st, viewport_size, ui_out);
+		process_screen(d, vp, input_st, viewport_size);
 	}
+
+	ui_out.push<window_chrome_metrics_request>({
+		.window = vp.window,
+		.caption_height = static_cast<int>(vp.chrome.caption_height),
+		.controls_width = static_cast<int>(vp.chrome.controls_width),
+		.resize_exclude_y0 = vp.chrome.resize_exclude_y0,
+		.resize_exclude_y1 = vp.chrome.resize_exclude_y1,
+	});
 
 	const bool occluded = vp.menu_stack.occludes();
 	for (const auto& content : requests_in.of<menu_content>()) {

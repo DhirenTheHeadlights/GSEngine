@@ -52,16 +52,27 @@ auto gse::ide::viewport::destroy_imported_session(gpu::device& device, imported_
 }
 
 auto gse::ide::viewport::reset_session(data& d, const std::uint32_t generation) -> void {
-	if (d.pending && d.pending->generation == generation) {
-		d.pending.reset();
+	std::erase_if(d.pending, [generation](const pending_session& p) {
+		return p.generation == generation;
+	});
+	for (imported_session& session : d.imported) {
+		if (session.generation != generation) {
+			continue;
+		}
+		if (session.instance < build_runner::max_attached_instances) {
+			d.instance_live[session.instance] = false;
+			d.instance_slots[session.instance] = {};
+		}
+		d.retiring.push_back({
+			.session = std::move(session),
+		});
 	}
-	if (d.imported && d.imported->generation == generation) {
+	std::erase_if(d.imported, [generation](const imported_session& session) {
+		return session.generation == generation;
+	});
+	if (d.imported.empty()) {
 		d.display_slot = d.slots[0].slot();
 		d.extent = viewport_extent;
-		d.retiring.push_back({
-			.session = std::move(*d.imported),
-		});
-		d.imported.reset();
 	}
 }
 
@@ -99,24 +110,32 @@ auto gse::ide::viewport::frame(const context& ctx, const shared_view<gpu::contex
 		reset_session(d, ended.generation);
 	}
 
-	if (d.pending && (!build_d.session || build_d.session->generation != d.pending->generation)) {
-		reset_session(d, d.pending->generation);
-	}
-	if (d.imported && (!build_d.session || build_d.session->generation != d.imported->generation)) {
-		reset_session(d, d.imported->generation);
+	std::erase_if(d.pending, [&build_d](const pending_session& p) {
+		return !build_runner::session_for(build_d, p.generation, p.instance);
+	});
+	for (const imported_session& session : d.imported) {
+		if (!build_runner::session_for(build_d, session.generation, session.instance)) {
+			reset_session(d, session.generation);
+			break;
+		}
 	}
 
 	for (const build_runner::attached_surface_ready& ready : surface_in.of<build_runner::attached_surface_ready>()) {
-		if (!build_d.session || build_d.session->generation != ready.generation) {
+		if (!build_runner::session_for(build_d, ready.generation, ready.instance)) {
 			continue;
 		}
 		if (!ready.message) {
 			surface_out.push<build_runner::attached_surface_rejected>({
 				.generation = ready.generation,
+				.instance = ready.instance,
+				.reason = "The game never described its shared surface.",
 			});
 			continue;
 		}
-		if ((d.pending && d.pending->generation == ready.generation) || (d.imported && d.imported->generation == ready.generation)) {
+		const auto same = [&ready](const auto& e) {
+			return e.generation == ready.generation && e.instance == ready.instance;
+		};
+		if (std::ranges::any_of(d.pending, same) || std::ranges::any_of(d.imported, same)) {
 			continue;
 		}
 		if (ready.message->backend != gpu::active_backend) {
@@ -129,17 +148,19 @@ auto gse::ide::viewport::frame(const context& ctx, const shared_view<gpu::contex
 			);
 			surface_out.push<build_runner::attached_surface_rejected>({
 				.generation = ready.generation,
+				.instance = ready.instance,
+				.reason = std::format(
+					"The game runs {} but the editor runs {}. Shared surfaces cannot cross graphics APIs, so it cannot be shown here. Set Graphics.backend to {} for both, then play again.",
+					ready.message->backend,
+					gpu::active_backend,
+					gpu::active_backend
+				),
 			});
 		}
 		else {
-			if (d.pending) {
-				reset_session(d, d.pending->generation);
-			}
-			if (d.imported) {
-				reset_session(d, d.imported->generation);
-			}
-			d.pending.emplace(pending_session{
+			d.pending.push_back(pending_session{
 				.generation = ready.generation,
+				.instance = ready.instance,
 				.message = ready.message,
 			});
 		}
@@ -150,17 +171,19 @@ auto gse::ide::viewport::frame(const context& ctx, const shared_view<gpu::contex
 	}
 	collect_retiring_sessions(*gpu_s.device, d);
 
-	if (!d.imported && d.pending) {
-		const pending_session pending = std::move(*d.pending);
-		d.pending.reset();
+	while (!d.pending.empty()) {
+		const pending_session pending = std::move(d.pending.front());
+		d.pending.erase(d.pending.begin());
 		const gpu::shared_surface_desc desc{
 			.extent = pending.message->extent,
 			.format = pending.message->format,
 		};
 		imported_session imported{
 			.generation = pending.generation,
+			.instance = pending.instance,
 		};
 		bool ok = true;
+		std::string failure;
 		for (std::size_t i = 0; i < attached_ring_size; ++i) {
 			if (ok) {
 				const auto surface = gpu_s.device->import_shared_surface(desc, pending.message->surface_handles[i]);
@@ -185,6 +208,7 @@ auto gse::ide::viewport::frame(const context& ctx, const shared_view<gpu::contex
 				}
 				else {
 					log::println(log::level::error, log::category::render, "Editor viewport: import_shared_surface[{}] failed: {}", i, surface.error());
+					failure = std::format("Importing the game's shared surface {} failed: {}", i, surface.error());
 					ok = false;
 				}
 			}
@@ -196,6 +220,7 @@ auto gse::ide::viewport::frame(const context& ctx, const shared_view<gpu::contex
 			}
 			else {
 				log::println(log::level::error, log::category::render, "Editor viewport: import produced semaphore failed: {}", produced.error());
+				failure = std::format("Importing the game's produced semaphore failed: {}", produced.error());
 				ok = false;
 			}
 		}
@@ -206,16 +231,24 @@ auto gse::ide::viewport::frame(const context& ctx, const shared_view<gpu::contex
 			}
 			else {
 				log::println(log::level::error, log::category::render, "Editor viewport: import consumed semaphore failed: {}", consumed.error());
+				failure = std::format("Importing the game's consumed semaphore failed: {}", consumed.error());
 				ok = false;
 			}
 		}
 		if (ok) {
-			d.extent = pending.message->extent;
-			d.imported.emplace(std::move(imported));
+			if (pending.instance < build_runner::max_attached_instances) {
+				d.instance_extents[pending.instance] = pending.message->extent;
+				d.instance_live[pending.instance] = true;
+			}
+			if (pending.instance == 0) {
+				d.extent = pending.message->extent;
+			}
+			d.imported.push_back(std::move(imported));
 			surface_out.push<build_runner::attached_surface_imported>({
 				.generation = pending.generation,
+				.instance = pending.instance,
 			});
-			log::println(log::category::render, "Editor viewport: imported game surface ring {}x{}", pending.message->extent.x(), pending.message->extent.y());
+			log::println(log::category::render, "Editor viewport: imported surface ring {}x{} for instance {}", pending.message->extent.x(), pending.message->extent.y(), pending.instance);
 		}
 		else {
 			d.retiring.push_back({
@@ -223,30 +256,40 @@ auto gse::ide::viewport::frame(const context& ctx, const shared_view<gpu::contex
 			});
 			surface_out.push<build_runner::attached_surface_rejected>({
 				.generation = pending.generation,
+				.instance = pending.instance,
+				.reason = std::move(failure),
 			});
 		}
 	}
 
-	if (d.imported) {
-		const std::uint64_t produced_value = gpu_s.device->semaphore_counter_value(d.imported->produced_semaphore);
-		if (produced_value > 0) {
+	if (!d.imported.empty()) {
+		for (imported_session& session : d.imported) {
+			const std::uint64_t produced_value = gpu_s.device->semaphore_counter_value(session.produced_semaphore);
+			if (produced_value == 0) {
+				continue;
+			}
 			const std::size_t slot = static_cast<std::size_t>(produced_value % attached_ring_size);
-			d.display_slot = d.imported->slots[slot].slot();
+			if (session.instance < build_runner::max_attached_instances) {
+				d.instance_slots[session.instance] = session.slots[slot].slot();
+			}
+			if (session.instance == 0) {
+				d.display_slot = session.slots[slot].slot();
+			}
 			gpu_s.render_graph->add_graphics_wait({
-				.semaphore = d.imported->produced_semaphore,
+				.semaphore = session.produced_semaphore,
 				.value = produced_value,
 				.stages = gpu::pipeline_stage_flag::all_commands,
 			});
 			const std::uint64_t released_value = produced_value >= attached_ring_size
 				? produced_value - (attached_ring_size - 1)
 				: 0;
-			if (released_value > d.imported->released_value) {
+			if (released_value > session.released_value) {
 				gpu_s.render_graph->add_graphics_signal({
-					.semaphore = d.imported->consumed_semaphore,
+					.semaphore = session.consumed_semaphore,
 					.value = released_value,
 					.stages = gpu::pipeline_stage_flag::all_commands,
 				});
-				d.imported->released_value = released_value;
+				session.released_value = released_value;
 			}
 		}
 		co_return;

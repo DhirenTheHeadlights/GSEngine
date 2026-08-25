@@ -169,6 +169,10 @@ export namespace gse::gui {
 		const style& sty
 	) -> float;
 
+	[[nodiscard]] auto style_key(
+		const style& sty
+	) -> std::uint64_t;
+
 	struct button_role_info {
 		vec4f style::* idle = &style::color_button_background;
 		vec4f style::* hot = &style::color_button_hovered;
@@ -571,6 +575,22 @@ constexpr auto gse::gui::style::from_theme(const theme t) -> style {
 		default:
 			return midnight();
 	}
+}
+
+auto gse::gui::style_key(const style& sty) -> std::uint64_t {
+	std::uint64_t h = 0;
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^style, std::meta::access_context::unchecked()))) {
+		using member_type = std::remove_cvref_t<decltype(sty.[:m:])>;
+		if constexpr (std::is_same_v<member_type, float>) {
+			h = hash_combine(h, static_cast<std::uint64_t>(std::bit_cast<std::uint32_t>(sty.[:m:])));
+		}
+		else if constexpr (requires { { *std::begin(sty.[:m:]) } -> std::convertible_to<float>; }) {
+			for (const float c : sty.[:m:]) {
+				h = hash_combine(h, static_cast<std::uint64_t>(std::bit_cast<std::uint32_t>(c)));
+			}
+		}
+	}
+	return h;
 }
 
 constexpr auto gse::gui::accent_bar_extent(const style& sty) -> float {

@@ -50,6 +50,8 @@ export namespace gse::gui::symbol {
 	auto hammer() -> std::span<const stroke>;
 	auto play() -> std::span<const stroke>;
 	auto stop() -> std::span<const stroke>;
+	auto square() -> std::span<const stroke>;
+	auto check() -> std::span<const stroke>;
 
 	auto draw(
 		const draw_context& ctx,
@@ -301,6 +303,24 @@ auto gse::gui::symbol::stop() -> std::span<const stroke> {
 		segment({ 0.68f, 0.32f }, { 0.68f, 0.68f }),
 		segment({ 0.68f, 0.68f }, { 0.32f, 0.68f }),
 		segment({ 0.32f, 0.68f }, { 0.32f, 0.32f }),
+	};
+	return data;
+}
+
+auto gse::gui::symbol::square() -> std::span<const stroke> {
+	static constexpr std::array<stroke, 4> data{
+		segment({ 0.18f, 0.18f }, { 0.82f, 0.18f }),
+		segment({ 0.82f, 0.18f }, { 0.82f, 0.82f }),
+		segment({ 0.82f, 0.82f }, { 0.18f, 0.82f }),
+		segment({ 0.18f, 0.82f }, { 0.18f, 0.18f }),
+	};
+	return data;
+}
+
+auto gse::gui::symbol::check() -> std::span<const stroke> {
+	static constexpr std::array<stroke, 2> data{
+		segment({ 0.30f, 0.52f }, { 0.45f, 0.34f }),
+		segment({ 0.45f, 0.34f }, { 0.72f, 0.68f }),
 	};
 	return data;
 }

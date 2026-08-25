@@ -11,7 +11,6 @@ export namespace gse::ide::agent {
 	auto draw_panel(
 		gui::builder& ui,
 		data& d,
-		vec2f mouse,
 		channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out
 	) -> void;
 }
@@ -85,7 +84,6 @@ namespace gse::ide::agent {
 		gui::builder& ui,
 		data& d,
 		const rectf& area,
-		vec2f mouse,
 		channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out
 	) -> void;
 

@@ -337,7 +337,7 @@ namespace gse::trace {
 
 	auto registry() -> thread_registry&;
 
-	auto ensure_tls_registered() -> void;
+	auto ensure_tls_registered() -> bool;
 
 	auto make_tid() -> std::uint32_t;
 

@@ -26,9 +26,9 @@ export namespace gse::server {
 		context& ctx,
 		data<MessagePack, Components...>& d,
 		channel_write<activate_scene_request> scene_out,
+		channel_read<world_system::scene_catalog> world_in,
 		network::inbound_channel_t<MessagePack> messages_out,
 		network::outbound_channel_t<MessagePack> messages_in,
-		shared_view<world_system::data> world_d,
 		shared_view<actions::data> actions_d,
 		structural<player_controller> controller_auth,
 		entities ents,
@@ -70,9 +70,13 @@ auto gse::server::init(context& ctx, data<MessagePack, Components...>& d, const 
 }
 
 template <typename MessagePack, typename... Components>
-auto gse::server::run(context& ctx, data<MessagePack, Components...>& d, const channel_write<activate_scene_request> scene_out, network::inbound_channel_t<MessagePack> messages_out, network::outbound_channel_t<MessagePack> messages_in, const shared_view<world_system::data> world_d, const shared_view<actions::data> actions_d, structural<player_controller> controller_auth, entities ents, write<Components>... comps) -> async::task<> {
+auto gse::server::run(context& ctx, data<MessagePack, Components...>& d, const channel_write<activate_scene_request> scene_out, const channel_read<world_system::scene_catalog> world_in, network::inbound_channel_t<MessagePack> messages_out, network::outbound_channel_t<MessagePack> messages_in, const shared_view<actions::data> actions_d, structural<player_controller> controller_auth, entities ents, write<Components>... comps) -> async::task<> {
 	if (!d.srv) {
 		return {};
+	}
+
+	for (const world_system::scene_catalog& catalog : world_in.of<world_system::scene_catalog>()) {
+		d.srv->apply_catalog(catalog);
 	}
 
 	network::drain_outbound<MessagePack>(
@@ -87,7 +91,7 @@ auto gse::server::run(context& ctx, data<MessagePack, Components...>& d, const c
 		}
 	);
 
-	d.srv->update(world_d, controller_auth, ents, scene_out, messages_out, actions_d, comps...);
+	d.srv->update(controller_auth, ents, scene_out, messages_out, actions_d, comps...);
 
 	return {};
 }

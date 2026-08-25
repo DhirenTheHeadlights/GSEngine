@@ -33,8 +33,11 @@ export namespace gse::server {
 
 		auto initialize() -> void;
 
+		auto apply_catalog(
+			const world_system::scene_catalog& catalog
+		) -> void;
+
 		auto update(
-			shared_view<world_system::data> w,
 			const structural<player_controller>& controller_auth,
 			const entities& ents,
 			channel_write<activate_scene_request> channels,
@@ -70,7 +73,6 @@ export namespace gse::server {
 
 	private:
 		auto accept_connection(
-			shared_view<world_system::data> w,
 			const structural<player_controller>& controller_auth,
 			const entities& ents,
 			const network::address& addr
@@ -78,6 +80,10 @@ export namespace gse::server {
 
 		network::config m_config;
 		network::endpoint m_endpoint;
+		std::vector<id> m_scene_ids;
+		std::vector<trigger> m_triggers;
+		std::optional<id> m_active_scene;
+		std::optional<id> m_requested_scene;
 		std::unordered_map<network::address, client_data> m_clients;
 		std::unordered_set<network::address> m_pending_snapshots;
 		std::optional<id> m_host_entity;
@@ -125,13 +131,24 @@ auto gse::server::host<MessagePack, Components...>::broadcast(const T& msg, cons
 }
 
 template <typename MessagePack, typename... Components>
-auto gse::server::host<MessagePack, Components...>::update(const shared_view<world_system::data> w, const structural<player_controller>& controller_auth, const entities& ents, const channel_write<activate_scene_request> channels, const network::inbound_channel_t<MessagePack>& messages_out, const shared_view<actions::data> actions_s, write<Components>&... comps) -> void {
-	auto& controllers = std::get<write<player_controller>&>(std::tie(comps...));
-	const bool has_active_scene = w.active_scene.has_value() && std::ranges::find(w.scene_ids, *w.active_scene) != w.scene_ids.end();
+auto gse::server::host<MessagePack, Components...>::apply_catalog(const world_system::scene_catalog& catalog) -> void {
+	m_scene_ids = catalog.scene_ids;
+	m_triggers = catalog.triggers;
+	m_active_scene = catalog.active_scene;
+	if (m_active_scene.has_value()) {
+		m_requested_scene.reset();
+	}
+}
 
-	if (!has_active_scene && !w.scene_ids.empty()) {
+template <typename MessagePack, typename... Components>
+auto gse::server::host<MessagePack, Components...>::update(const structural<player_controller>& controller_auth, const entities& ents, const channel_write<activate_scene_request> channels, const network::inbound_channel_t<MessagePack>& messages_out, const shared_view<actions::data> actions_s, write<Components>&... comps) -> void {
+	auto& controllers = std::get<write<player_controller>&>(std::tie(comps...));
+	const bool has_active_scene = m_active_scene.has_value();
+
+	if (!has_active_scene && !m_scene_ids.empty() && m_requested_scene != m_scene_ids.front()) {
+		m_requested_scene = m_scene_ids.front();
 		channels.push<activate_scene_request>({
-			.scene_id = w.scene_ids.front(),
+			.scene_id = *m_requested_scene,
 		});
 	}
 
@@ -168,7 +185,7 @@ auto gse::server::host<MessagePack, Components...>::update(const shared_view<wor
 					}
 
 					m_endpoint.ensure_peer(msg.from);
-					accept_connection(w, controller_auth, ents, msg.from);
+					accept_connection(controller_auth, ents, msg.from);
 					std::println(
 						"Client [{}:{}] connected ({}/{})",
 						msg.from.ip,
@@ -196,7 +213,7 @@ auto gse::server::host<MessagePack, Components...>::update(const shared_view<wor
 				m_clients.erase(client_it);
 			}
 
-			accept_connection(w, controller_auth, ents, msg.from);
+			accept_connection(controller_auth, ents, msg.from);
 		})) {
 			return;
 		}
@@ -248,7 +265,7 @@ auto gse::server::host<MessagePack, Components...>::update(const shared_view<wor
 	std::optional<id> scene_requested_id;
 
 	if (has_active_scene) {
-		for (const auto& [scene_id, condition] : w.triggers) {
+		for (const auto& [scene_id, condition] : m_triggers) {
 			for (const auto& cd : m_clients | std::views::values) {
 				const auto* pc = controllers.find(cd.controller_id);
 				const auto controlled_id = pc ? pc->controlled_entity_id : id{};
@@ -265,6 +282,7 @@ auto gse::server::host<MessagePack, Components...>::update(const shared_view<wor
 	}
 
 	if (scene_requested_id) {
+		m_requested_scene = *scene_requested_id;
 		channels.push<activate_scene_request>({
 			.scene_id = *scene_requested_id,
 		});
@@ -312,8 +330,8 @@ auto gse::server::host<MessagePack, Components...>::host_entity() const -> std::
 }
 
 template <typename MessagePack, typename... Components>
-auto gse::server::host<MessagePack, Components...>::accept_connection(const shared_view<world_system::data> w, const structural<player_controller>& controller_auth, const entities& ents, const network::address& addr) -> void {
-	const bool has_active_scene = w.active_scene.has_value() && std::ranges::find(w.scene_ids, *w.active_scene) != w.scene_ids.end();
+auto gse::server::host<MessagePack, Components...>::accept_connection(const structural<player_controller>& controller_auth, const entities& ents, const network::address& addr) -> void {
+	const bool has_active_scene = m_active_scene.has_value();
 
 	id controller_id{};
 	if (has_active_scene) {
@@ -347,7 +365,7 @@ auto gse::server::host<MessagePack, Components...>::accept_connection(const shar
 	if (has_active_scene) {
 		send_reliable(
 			network::notify_scene_change{
-				.scene_id = *w.active_scene,
+				.scene_id = *m_active_scene,
 			},
 			addr
 		);

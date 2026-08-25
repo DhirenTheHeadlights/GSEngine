@@ -7,7 +7,7 @@ import gse.gpu;
 import gse.ide.workspace;
 import gse.ide.git;
 import gse.ide.highlight;
-import gse.ide.format;
+import gse.format;
 import gse.ide.build;
 import gse.ide.analysis;
 import gse.ide.diagnostic;
@@ -23,15 +23,11 @@ namespace gse::ide {
 	struct code_panel_inputs {
 		gse::shared_view<config_system::data> config;
 		const search::index_state* index = nullptr;
-		gse::gpu::bindless_slot viewport_slot{};
-		gse::vec2u game_extent{};
-		bool game_running = false;
 		bool building = false;
 	};
 
 	auto draw_code_panel(
 		gse::gui::builder& ui,
-		const gse::input::state& input,
 		workspace::data& ws,
 		gse::channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, jump_to_request, gse::set_cursor_shape_request, search::index_merge_request> channels,
 		const code_panel_inputs& inputs
@@ -52,7 +48,6 @@ namespace gse::ide {
 
 	auto draw_hover_panel(
 		const gse::gui::draw_context& ctx,
-		const gse::input::state& input,
 		const rectf& text_rect,
 		hover_state& h,
 		std::uint32_t z,
@@ -251,10 +246,12 @@ auto gse::ide::diagnostic_targets_document(const diagnostic& diag, const std::fi
 
 auto gse::ide::refresh_rendered_view(const gse::gui::draw_context& ctx, document& doc, const gse::rectf& rect) -> void {
 	const float width = std::max(0.f, rect.width() - ctx.style.padding * 2.f);
+	const std::uint64_t key = gse::gui::style_key(ctx.style);
 	if (doc.rendered.built
 		&& doc.rendered.revision == doc.revision
 		&& doc.rendered.width == width
-		&& doc.rendered.font_size == ctx.style.font_size) {
+		&& doc.rendered.font_size == ctx.style.font_size
+		&& doc.rendered.style_key == key) {
 		return;
 	}
 
@@ -267,6 +264,7 @@ auto gse::ide::refresh_rendered_view(const gse::gui::draw_context& ctx, document
 	doc.rendered.revision = doc.revision;
 	doc.rendered.width = width;
 	doc.rendered.font_size = ctx.style.font_size;
+	doc.rendered.style_key = key;
 	doc.rendered.built = true;
 }
 
@@ -765,7 +763,7 @@ auto gse::ide::module_name_at(const std::string_view row, const std::uint32_t co
 	return std::nullopt;
 }
 
-auto gse::ide::draw_hover_panel(const gse::gui::draw_context& ctx, const gse::input::state& input, const rectf& text_rect, hover_state& h, const std::uint32_t z, const bool input_owner) -> bool {
+auto gse::ide::draw_hover_panel(const gse::gui::draw_context& ctx, const rectf& text_rect, hover_state& h, const std::uint32_t z, const bool input_owner) -> bool {
 	const auto text_view = ctx.fonts.text.resolve();
 	const auto code_view = ctx.fonts.code.resolve();
 	const auto& sty = ctx.style;
@@ -837,7 +835,7 @@ auto gse::ide::draw_hover_panel(const gse::gui::draw_context& ctx, const gse::in
 		const float max_scroll_x = std::max(0.f, content_w - view_w);
 		const float char_w = code_view->width("0", fs);
 		const gse::vec2f wheel = input_owner ? ctx.scroll_delta_for(panel) : gse::vec2f{};
-		const bool shift = input.key_held(gse::key::left_shift) || input.key_held(gse::key::right_shift);
+		const bool shift = ctx.key_held(gse::key::left_shift) || ctx.key_held(gse::key::right_shift);
 		const float wheel_y = shift ? 0.f : wheel.y();
 		const float wheel_x = wheel.x() + (shift ? wheel.y() : 0.f);
 		h.scroll = std::clamp(h.scroll - wheel_y * code_line_h * 2.f, 0.f, max_scroll);
@@ -876,9 +874,9 @@ auto gse::ide::draw_hover_panel(const gse::gui::draw_context& ctx, const gse::in
 		const rectf code_rect = rectf::from_position_size({ px, code_top }, { pw, view_h });
 		h.code_rect = code_rect;
 
-		const gse::vec2f bar_mouse = input.mouse_position();
-		const bool bar_pressed = input_owner && input.mouse_button_pressed(gse::mouse_button::button_1) && ctx.input_available();
-		const bool bar_held = input_owner && input.mouse_button_held(gse::mouse_button::button_1);
+		const gse::vec2f bar_mouse = ctx.mouse_position();
+		const bool bar_pressed = input_owner && ctx.mouse_pressed(gse::mouse_button::button_1) && ctx.input_available();
+		const bool bar_held = input_owner && ctx.mouse_held(gse::mouse_button::button_1);
 		const float min_thumb = 24.f * sty.scale_factor;
 
 		h.y_axis.offset = h.y_axis.target = h.scroll;
@@ -999,7 +997,7 @@ auto gse::ide::draw_hover_panel(const gse::gui::draw_context& ctx, const gse::in
 
 	const rectf panel = rectf::from_position_size({ px, top_y }, { pw, ph });
 	h.panel = panel;
-	const gse::vec2f mouse = input.mouse_position();
+	const gse::vec2f mouse = ctx.mouse_position();
 	bool link_clicked = false;
 
 	const auto scope = ctx.scoped_layer(gse::render_layer::popup);
@@ -1715,16 +1713,13 @@ auto gse::ide::draw_game_placeholder(const gse::gui::draw_context& ctx, const re
 	});
 }
 
-auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& input, workspace::data& ws, gse::channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, jump_to_request, gse::set_cursor_shape_request, search::index_merge_request> channels, const code_panel_inputs& inputs) -> void {
+auto gse::ide::draw_code_panel(gse::gui::builder& ui, workspace::data& ws, gse::channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, jump_to_request, gse::set_cursor_shape_request, search::index_merge_request> channels, const code_panel_inputs& inputs) -> void {
 	const auto& ctx = ui.ctx;
 	if (ctx.clip_stack.empty()) {
 		return;
 	}
 	const gse::shared_view<config_system::data> config = inputs.config;
 	const search::index_state* index = inputs.index;
-	const gse::gpu::bindless_slot viewport_slot = inputs.viewport_slot;
-	const gse::vec2u game_extent = inputs.game_extent;
-	const bool game_running = inputs.game_running;
 	const bool building = inputs.building;
 	const auto text_view = ctx.fonts.text.resolve();
 	const auto code_view = ctx.fonts.code.resolve();
@@ -1736,10 +1731,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& i
 
 	const float tab_gap = 2.f * ctx.style.scale_factor;
 
-	constexpr std::string_view game_caption = "Game";
-	const float game_width = std::clamp(text_view->width(game_caption, font_sz) + pad * 3.f, 64.f * ctx.style.scale_factor, 220.f * ctx.style.scale_factor);
-	const float game_divider_width = ctx.style.accent_bar_width;
-	const float document_area_width = std::max(0.f, body.width() - game_width - game_divider_width - tab_gap);
+	const float document_area_width = std::max(0.f, body.width() - tab_gap);
 
 	std::vector<gse::gui::tab_desc> tab_descs;
 	tab_descs.reserve(ws.documents.order().size());
@@ -1775,7 +1767,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& i
 		.texture = ctx.blank_texture,
 	});
 
-	const gse::vec2f mouse = input.mouse_position();
+	const gse::vec2f mouse = ctx.mouse_position();
 
 	const gse::gui::tab_strip_result doc_tabs = gse::gui::tab_strip(ctx, {
 		.area = document_tab_bar,
@@ -1806,39 +1798,6 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& i
 		workspace::reorder_document(ws, doc_tabs.reorder_id, doc_tabs.reorder_to);
 	}
 
-	const gse::rectf game_tab = gse::rectf::from_position_size(
-		{ tab_bar.right() - game_width, tab_bar.top() },
-		{ game_width, tab_bar_h }
-	);
-	const gse::rectf game_divider = gse::rectf::from_position_size(
-		{ game_tab.left() - game_divider_width, tab_bar.top() },
-		{ game_divider_width, tab_bar_h }
-	);
-
-	if (ctx.mouse_pressed_for(game_tab)) {
-		workspace::activate_game(ws);
-	}
-
-	const bool game_active = workspace::game_active(ws);
-	const bool game_hovered = ctx.hovers(game_tab);
-	ctx.queue_sprite({
-		.rect = game_divider,
-		.color = ctx.style.color_accent,
-		.texture = ctx.blank_texture,
-	});
-	ctx.queue_sprite({
-		.rect = game_tab,
-		.color = game_active ? ctx.style.color_tab_active : (game_hovered ? ctx.style.color_tab_hovered : ctx.style.color_tab_background),
-		.texture = ctx.blank_texture,
-	});
-	ctx.queue_text({
-		.font = ctx.fonts.text,
-		.text = game_caption,
-		.position = { game_tab.left() + pad, game_tab.center().y() + text_view->vertical_center_offset(font_sz) },
-		.scale = font_sz,
-		.color = game_active ? ctx.style.color_text : ctx.style.color_text_secondary,
-		.clip_rect = game_tab,
-	});
 	ctx.queue_sprite({
 		.rect = gse::rectf::from_position_size(
 			{ tab_bar.left(), tab_bar.bottom() },
@@ -1866,110 +1825,6 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& i
 		{ body.width(), status_h }
 	);
 
-	if (!workspace::game_active(ws) && ws.game_captured) {
-		ws.game_captured = false;
-	}
-
-	if (workspace::game_active(ws)) {
-		const float accent_h = ctx.style.accent_bar_width;
-		const gse::rectf view_rect = gse::rectf::from_position_size(
-			{ body.left(), body.top() - tab_bar_h - accent_h },
-			{ body.width(), std::max(0.f, content_h - accent_h) }
-		);
-
-		const float button_w = 150.f * ctx.style.scale_factor;
-		const float button_h = text_view->line_height(font_sz) + pad * 0.5f;
-		const gse::rectf button_rect = gse::rectf::from_position_size(
-			{ view_rect.right() - button_w - pad, view_rect.top() - pad },
-			{ button_w, button_h }
-		);
-		const gse::rectf content_rect = view_rect;
-
-		const bool showing_game = game_running;
-		if (!showing_game) {
-			ws.game_captured = false;
-		}
-
-		const bool button_hovered = !showing_game && !building && !ws.game_captured && ctx.hovers(button_rect);
-		const bool build_pressed = button_hovered && ctx.mouse_pressed_for(button_rect);
-
-		if (showing_game) {
-			ctx.queue_sprite({
-				.rect = content_rect,
-				.color = { 1.f, 1.f, 1.f, 1.f },
-				.image_slot = viewport_slot,
-			});
-		}
-		else {
-			draw_game_placeholder(ctx, content_rect, "Build and run to start the game");
-		}
-
-		const float view_w = content_rect.width();
-		const float view_h = content_rect.height();
-		const gse::vec2f game_scale = view_w > 0.f && view_h > 0.f
-			? gse::vec2f{ static_cast<float>(game_extent.x()) / view_w, static_cast<float>(game_extent.y()) / view_h }
-			: gse::vec2f{ 1.f, 1.f };
-		ws.game_input_scale = game_scale;
-
-		if (!ws.game_captured && showing_game && ctx.mouse_pressed_for(content_rect)) {
-			ws.game_captured = true;
-			ws.game_capture_settle_frames = 3;
-			ws.game_cursor = {
-				(mouse.x() - content_rect.left()) * game_scale.x(),
-				(content_rect.top() - mouse.y()) * game_scale.y(),
-			};
-		}
-
-		if (build_pressed) {
-			channels.push<build_runner::build_request>({
-				.target = build_runner::build_target::game,
-				.run_after = true,
-			});
-		}
-		if (!showing_game) {
-			const std::string_view button_label = building ? "Building..." : "Build & Run";
-
-			ctx.queue_sprite({
-				.rect = button_rect,
-				.color = building ? ctx.style.color_input_background : (button_hovered ? ctx.style.color_button_hovered : ctx.style.color_button_background),
-				.texture = ctx.blank_texture,
-				.corner_radius = ctx.style.corner_radius,
-			});
-			const float button_text_w = text_view->width(button_label, font_sz);
-			ctx.queue_text({
-				.font = ctx.fonts.text,
-				.text = button_label,
-				.position = { button_rect.center().x() - button_text_w * 0.5f, button_rect.center().y() + text_view->vertical_center_offset(font_sz) },
-				.scale = font_sz,
-				.color = building ? ctx.style.color_text_secondary : ctx.style.color_text,
-				.clip_rect = button_rect,
-			});
-		}
-
-		if (ws.game_captured) {
-			constexpr std::string_view capture_hint = "Shift+Esc to release input";
-			const float hint_w = text_view->width(capture_hint, font_sz);
-			const gse::rectf hint_rect = gse::rectf::from_position_size(
-				{ content_rect.center().x() - hint_w * 0.5f - pad, content_rect.bottom() + button_h + pad },
-				{ hint_w + pad * 2.f, button_h }
-			);
-			ctx.queue_sprite({
-				.rect = hint_rect,
-				.color = ctx.style.color_button_background,
-				.texture = ctx.blank_texture,
-				.corner_radius = ctx.style.corner_radius,
-			});
-			ctx.queue_text({
-				.font = ctx.fonts.text,
-				.text = capture_hint,
-				.position = { hint_rect.center().x() - hint_w * 0.5f, hint_rect.center().y() + text_view->vertical_center_offset(font_sz) },
-				.scale = font_sz,
-				.color = ctx.style.color_text,
-				.clip_rect = hint_rect,
-			});
-		}
-		return;
-	}
 
 	const std::optional<gse::id> active_document_id = workspace::active_document_id(ws);
 	const auto it = active_document_id ? ws.documents.find(*active_document_id) : ws.documents.end();
@@ -2225,7 +2080,8 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& i
 
 	const std::size_t display_tab_width = static_cast<std::size_t>(std::max(1, config.indent_width));
 	const bool rendered_mode = doc.language == document_language::markdown && doc.mode == document_view::rendered;
-	const bool text_hoverable = !rendered_mode && ctx.hovers(text_rect) && !doc.buffer.lines.empty();
+	const bool drag_selecting = doc.view.selecting;
+	const bool text_hoverable = !rendered_mode && !drag_selecting && ctx.hovers(text_rect) && !doc.buffer.lines.empty();
 	const std::span<const gui::text_span> doc_spans = doc.language != document_language::plain
 		? doc.syntax.current_spans(doc.revision)
 		: std::span<const gui::text_span>{};
@@ -2241,7 +2097,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& i
 		}, at);
 	};
 
-	const bool goto_ctrl = input.key_held(gse::key::left_control) || input.key_held(gse::key::right_control);
+	const bool goto_ctrl = ctx.key_held(gse::key::left_control) || ctx.key_held(gse::key::right_control);
 	std::optional<search::location> link_target;
 	std::vector<search::lookup_error> link_issues;
 	std::string link_subject;
@@ -2364,7 +2220,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& i
 		}
 	}
 	int deepest_alive = -1;
-	for (std::size_t i = 0; i < ws.hover_stack.size(); ++i) {
+	for (std::size_t i = 0; !drag_selecting && i < ws.hover_stack.size(); ++i) {
 		if (ws.hover_stack[i].has_card && hover_kept_alive(ws.hover_stack[i], mouse)) {
 			deepest_alive = static_cast<int>(i);
 		}
@@ -2651,7 +2507,7 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& i
 			if (!hv.has_card) {
 				continue;
 			}
-			if (draw_hover_panel(ctx, input, text_rect, hv, ctx.current_z_order + 1 + static_cast<std::uint32_t>(i), static_cast<int>(i) == scroll_owner) && !hv.url.empty()) {
+			if (draw_hover_panel(ctx, text_rect, hv, ctx.current_z_order + 1 + static_cast<std::uint32_t>(i), static_cast<int>(i) == scroll_owner) && !hv.url.empty()) {
 				analysis::process::open_url(hv.url);
 			}
 		}
@@ -2712,7 +2568,14 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& i
 	}
 
 	if (goto_click && link_target) {
-		workspace::jump_to(ws, link_target->path, link_target->line, link_target->column);
+		workspace::jump_to(ws, {
+			.path = link_target->path,
+			.line = link_target->line,
+			.column = link_target->column,
+			.end_line = link_target->line,
+			.end_column = link_target->column + static_cast<std::uint32_t>(link_subject.size()),
+			.highlight = jump_highlight::span,
+		});
 		return;
 	}
 
@@ -2721,8 +2584,8 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& i
 		.indent_with_spaces = config.indent_with_spaces,
 	};
 
-	const bool ctrl = input.key_held(gse::key::left_control) || input.key_held(gse::key::right_control);
-	if (ui.focus_widget_id == text_id && ctrl && input.key_pressed(gse::key::s)) {
+	const bool ctrl = ctx.key_held(gse::key::left_control) || ctx.key_held(gse::key::right_control);
+	if (ui.focus_widget_id == text_id && ctrl && ctx.key_pressed(gse::key::s)) {
 		format_and_save(ws, {
 			.document_id = *active_document_id,
 			.format_options = format_opts,
@@ -2733,19 +2596,19 @@ auto gse::ide::draw_code_panel(gse::gui::builder& ui, const gse::input::state& i
 		doc.edit_clock.reset();
 	}
 
-	const bool shift = input.key_held(gse::key::left_shift) || input.key_held(gse::key::right_shift);
-	const bool alt = input.key_held(gse::key::left_alt) || input.key_held(gse::key::right_alt);
+	const bool shift = ctx.key_held(gse::key::left_shift) || ctx.key_held(gse::key::right_shift);
+	const bool alt = ctx.key_held(gse::key::left_alt) || ctx.key_held(gse::key::right_alt);
 
-	if (doc.language == document_language::markdown && ctrl && shift && input.key_pressed(gse::key::v)
+	if (doc.language == document_language::markdown && ctrl && shift && ctx.key_pressed(gse::key::v)
 		&& (ui.focus_widget_id == text_id || ctx.hovers(text_rect))) {
 		doc.mode = doc.mode == document_view::rendered ? document_view::source : document_view::rendered;
 	}
 
-	if (ui.focus_widget_id == text_id && shift && alt && input.key_pressed(gse::key::f) && doc.language == document_language::cpp) {
+	if (ui.focus_widget_id == text_id && shift && alt && ctx.key_pressed(gse::key::f) && doc.language == document_language::cpp) {
 		apply_format(doc, format_opts);
 	}
 
-	if (ui.focus_widget_id == text_id && ctrl && shift && input.key_pressed(key::h) && doc.language == document_language::cpp) {
+	if (ui.focus_widget_id == text_id && ctrl && shift && ctx.key_pressed(key::h) && doc.language == document_language::cpp) {
 		audit_semantic_coverage(doc, index);
 	}
 }

@@ -62,6 +62,11 @@ export namespace gse::gui {
 			const scroll_region_info& info,
 			const std::function<void(builder&)>& content
 		) -> void;
+
+		auto row_list(
+			const row_list_info& info,
+			const std::function<void(builder&, const row&)>& draw_row
+		) -> void;
 	};
 
 	struct menu_content {
@@ -82,4 +87,10 @@ auto gse::gui::builder::scroll_region(const scroll_region_info& info, const std:
 		return;
 	}
 	content(*this);
+}
+
+auto gse::gui::builder::row_list(const row_list_info& info, const std::function<void(builder&, const row&)>& draw_row) -> void {
+	gse::gui::row_list(ctx, info, [this, &draw_row](const row& r) {
+		draw_row(*this, r);
+	});
 }

@@ -14,7 +14,9 @@ export namespace sandbox {
 
 	struct spawn_joints_request {};
 
-	struct spawn_character_request {};
+	struct spawn_character_request {
+		std::optional<int> count;
+	};
 
 	struct spawn_pyramid_request {};
 
@@ -63,6 +65,8 @@ export namespace sandbox::dev_spawn {
 		gse::id last_character;
 		gse::id possessed_character;
 		gse::id last_scene;
+		int pending_characters = 0;
+		bool character_warning_logged = false;
 		bool bound = false;
 	};
 
@@ -152,7 +156,12 @@ auto sandbox::dev_spawn::run(
 	const bool key_character = gse::actions::pressed(state.spawn_character, cs, actions_d);
 	const bool req_stress = !spawn_in.of<spawn_stress_request>().empty();
 	const bool req_joints = !spawn_in.of<spawn_joints_request>().empty();
-	const bool req_character = !spawn_in.of<spawn_character_request>().empty();
+	std::optional<int> requested_characters;
+	bool req_character = false;
+	for (const auto& req : spawn_in.of<spawn_character_request>()) {
+		req_character = true;
+		requested_characters = req.count;
+	}
 	const bool key_pyramid = gse::actions::pressed(state.spawn_pyramid, cs, actions_d);
 	const bool req_pyramid = !spawn_in.of<spawn_pyramid_request>().empty();
 
@@ -201,7 +210,10 @@ auto sandbox::dev_spawn::run(
 	if (scene != nullptr && (key_joints || req_joints)) {
 		spawn_joint_test(*scene);
 	}
-	if (scene != nullptr && (key_character || req_character)) {
+	if (key_character || req_character) {
+		state.pending_characters = requested_characters.value_or(state.characters.count);
+	}
+	if (scene != nullptr && state.pending_characters > 0) {
 		constexpr float character_spacing = 2.f;
 		const auto rig = gse::asset::get<gse::skinned_model>(assets_d, "SkinnedModels/x_bot.v3");
 		const gse::animation::locomotion_blend clips{
@@ -220,9 +232,10 @@ auto sandbox::dev_spawn::run(
 			},
 		};
 
-		for (int i = 0; i < state.characters.count; ++i) {
+		gse::id spawned;
+		for (int i = 0; i < state.pending_characters; ++i) {
 			const bool possess = !state.possessed_character.exists();
-			state.last_character = sandbox::spawn_character(
+			spawned = sandbox::spawn_character(
 				*scene,
 				i,
 				possess,
@@ -230,15 +243,23 @@ auto sandbox::dev_spawn::run(
 				clips,
 				gse::vec3<gse::position>(static_cast<float>(i) * character_spacing, 0.f, 0.f)
 			);
-			if (possess && state.last_character.exists()) {
-				state.possessed_character = state.last_character;
+			if (!spawned.exists()) {
+				break;
+			}
+			state.last_character = spawned;
+			if (possess) {
+				state.possessed_character = spawned;
 			}
 		}
 
-		if (!state.last_character.exists()) {
+		if (spawned.exists()) {
+			state.pending_characters = 0;
+		}
+		else if (!state.character_warning_logged) {
+			state.character_warning_logged = true;
 			gse::log::println(
 				gse::log::level::warning,
-				"dev_spawn: character spawn produced nothing, so its skinned model or clips were not resolved when the request arrived"
+				"dev_spawn: character spawn produced nothing, so its skinned model or clips are not resolved yet; retrying each tick"
 			);
 		}
 	}

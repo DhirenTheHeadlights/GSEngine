@@ -24,6 +24,7 @@ namespace gse::ide {
 
 	struct open_panels_menu_request {
 		vec2f position;
+		gse::id window;
 	};
 
 	struct quick_search_state {
@@ -36,7 +37,7 @@ namespace gse::ide {
 		editor_screen(
 			channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request> channels,
 			const search::index_state* index,
-			shared_view<input::data> input
+			gse::id window
 		);
 
 		auto build(
@@ -70,7 +71,7 @@ namespace gse::ide {
 	private:
 		channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request> m_channels;
 		const search::index_state* m_index = nullptr;
-		shared_view<input::data> m_input;
+		gse::id m_window;
 		std::optional<std::string> m_loc_label;
 		std::string m_loc_tooltip;
 		search::loc_counts m_loc_counts;
@@ -92,7 +93,6 @@ namespace gse::ide {
 
 	auto draw_search_bar(
 		gui::builder& ui,
-		const input::state& input,
 		quick_search_state& state,
 		const search::index_state* index,
 		channel_write<build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels,
@@ -102,7 +102,6 @@ namespace gse::ide {
 
 	auto draw_explorer_panel(
 		gui::builder& ui,
-		const input::state& input,
 		workspace::data& ws,
 		quick_search_state& search,
 		const search::index_state* index,
@@ -117,8 +116,8 @@ namespace gse::ide {
 	) -> std::vector<gui::menu_item>;
 }
 
-gse::ide::editor_screen::editor_screen(channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request> channels, const search::index_state* index, const shared_view<input::data> input)
-	: m_channels(std::move(channels)), m_index(index), m_input(input) {
+gse::ide::editor_screen::editor_screen(channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request> channels, const search::index_state* index, const gse::id window)
+	: m_channels(std::move(channels)), m_index(index), m_window(window) {
 }
 
 auto gse::ide::editor_screen::title() const -> std::string_view {
@@ -208,19 +207,18 @@ auto gse::ide::rebuild_glyph() -> std::span<const gui::symbol::stroke> {
 
 auto gse::ide::editor_screen::build(gui::builder& ui, gui::nav& n) -> void {
 	const auto& ctx = ui.ctx;
-	const input::state& input = input::current_state(m_input);
-	if (!ctx.current_menu) {
+	if (!ctx.current_menu || m_window.exists()) {
 		return;
 	}
 
-	const bool control_held = input.key_held(key::left_control) || input.key_held(key::right_control);
-	const bool shift_held = input.key_held(key::left_shift) || input.key_held(key::right_shift);
+	const bool control_held = ctx.key_held(key::left_control) || ctx.key_held(key::right_control);
+	const bool shift_held = ctx.key_held(key::left_shift) || ctx.key_held(key::right_shift);
 
-	if (control_held && !shift_held && input.key_pressed(key::f)) {
-		n.push<search_screen>(m_channels, m_index, m_input);
+	if (control_held && !shift_held && ctx.key_pressed(key::f)) {
+		n.push<search_screen>(m_channels, m_index);
 	}
 
-	if (control_held && shift_held && input.key_pressed(key::p)) {
+	if (control_held && shift_held && ctx.key_pressed(key::p)) {
 		m_channels.push<toggle_project_switcher_request>({});
 	}
 }
@@ -253,31 +251,36 @@ auto gse::ide::editor_screen::draw_caption(gui::builder& ui, const rectf& area) 
 	});
 
 	const float button_w = area.height() * 1.5f;
-	const float controls_width = button_w * 4.f;
+	const bool app_controls = !m_window.exists();
+	const float controls_width = button_w * (app_controls ? 4.f : 1.f);
 
-	const rectf settings_rect = rectf::from_position_size({ area.right() - button_w, area.top() }, { button_w, area.height() });
-	const rectf rebuild_rect = rectf::from_position_size({ area.right() - button_w * 2.f, area.top() }, { button_w, area.height() });
-	const rectf project_rect = rectf::from_position_size({ area.right() - button_w * 3.f, area.top() }, { button_w, area.height() });
-	const rectf panels_rect = rectf::from_position_size({ area.right() - button_w * 4.f, area.top() }, { button_w, area.height() });
+	auto slot = [&area, button_w](const float index) {
+		return rectf::from_position_size({ area.right() - button_w * index, area.top() }, { button_w, area.height() });
+	};
 
-	if (gui::caption_button(ui, settings_rect, "##chrome_settings", gui::symbol::gear(), sty.color_widget_hovered)) {
-		m_channels.push<toggle_settings_request>({});
+	if (app_controls) {
+		if (gui::caption_button(ui, slot(1.f), "##chrome_settings", gui::symbol::gear(), sty.color_widget_hovered)) {
+			m_channels.push<toggle_settings_request>({});
+		}
+		if (gui::caption_button(ui, slot(2.f), "##chrome_rebuild", rebuild_glyph(), sty.color_widget_hovered)) {
+			m_channels.push<build_runner::build_request>({
+				.target = build_runner::build_target::editor,
+			});
+		}
+		if (gui::caption_button(ui, slot(3.f), "##chrome_project", gui::symbol::project(), sty.color_widget_hovered)) {
+			m_channels.push<toggle_project_switcher_request>({});
+		}
 	}
-	if (gui::caption_button(ui, rebuild_rect, "##chrome_rebuild", rebuild_glyph(), sty.color_widget_hovered)) {
-		m_channels.push<build_runner::build_request>({
-			.target = build_runner::build_target::editor,
-		});
-	}
-	if (gui::caption_button(ui, project_rect, "##chrome_project", gui::symbol::project(), sty.color_widget_hovered)) {
-		m_channels.push<toggle_project_switcher_request>({});
-	}
+
+	const rectf panels_rect = slot(app_controls ? 4.f : 1.f);
 	if (gui::caption_button(ui, panels_rect, "##chrome_panels", gui::symbol::chevron_down(), sty.color_widget_hovered)) {
 		m_channels.push<open_panels_menu_request>({
 			.position = { panels_rect.left(), panels_rect.bottom() },
+			.window = m_window,
 		});
 	}
 
-	if (!m_index) {
+	if (!m_index || !app_controls) {
 		return controls_width;
 	}
 
@@ -400,7 +403,7 @@ auto gse::ide::editor_screen::draw_caption(gui::builder& ui, const rectf& area) 
 	return controls_width;
 }
 
-auto gse::ide::draw_search_bar(gui::builder& ui, const input::state& input, quick_search_state& state, const search::index_state* index, channel_write<build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels, const rectf& search_rect, const std::string_view id_key) -> void {
+auto gse::ide::draw_search_bar(gui::builder& ui, quick_search_state& state, const search::index_state* index, channel_write<build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels, const rectf& search_rect, const std::string_view id_key) -> void {
 	const auto& ctx = ui.ctx;
 	const auto& sty = ctx.style;
 	const auto text_view = ctx.fonts.text.resolve();
@@ -443,20 +446,16 @@ auto gse::ide::draw_search_bar(gui::builder& ui, const input::state& input, quic
 	}
 
 	if (was_focused && !state.driver.query.empty()) {
-		if (input.key_pressed(key::down)) {
+		if (ctx.key_pressed(key::down)) {
 			state.driver.selected = std::min<int>(state.driver.selected + 1, static_cast<int>(state.driver.results.size()) - 1);
 		}
-		if (input.key_pressed(key::up)) {
+		if (ctx.key_pressed(key::up)) {
 			state.driver.selected = std::max(state.driver.selected - 1, 0);
 		}
-		if (input.key_pressed(key::enter)) {
+		if (ctx.key_pressed(key::enter)) {
 			const int idx = state.driver.selected >= 0 ? state.driver.selected : 0;
 			const search::result& r = state.driver.results[static_cast<std::size_t>(idx)];
-			channels.push<jump_to_request>({
-				.path = r.path,
-				.line = r.line,
-				.column = r.column,
-			});
+			channels.push<jump_to_request>(search::jump_target(r));
 			state.driver.accept();
 			ui.focus_widget_id = {};
 			return;
@@ -501,11 +500,7 @@ auto gse::ide::draw_search_bar(gui::builder& ui, const input::state& input, quic
 			.clip_rect = row,
 		});
 		if (over && ctx.mouse_pressed_for(row)) {
-			channels.push<jump_to_request>({
-				.path = r.path,
-				.line = r.line,
-				.column = r.column,
-			});
+			channels.push<jump_to_request>(search::jump_target(r));
 			state.driver.accept();
 			ui.focus_widget_id = {};
 		}
@@ -690,7 +685,7 @@ auto gse::ide::git_status_color(const git::file_status status) -> vec4f {
 	}
 }
 
-auto gse::ide::draw_explorer_panel(gui::builder& ui, const input::state& input, workspace::data& ws, quick_search_state& search, const search::index_state* index, channel_write<build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels, const git::status_map* git_status, const std::span<const std::filesystem::path> git_rootless) -> void {
+auto gse::ide::draw_explorer_panel(gui::builder& ui, workspace::data& ws, quick_search_state& search, const search::index_state* index, channel_write<build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels, const git::status_map* git_status, const std::span<const std::filesystem::path> git_rootless) -> void {
 	const auto& ctx = ui.ctx;
 	if (ctx.clip_stack.empty()) {
 		return;
@@ -711,7 +706,7 @@ auto gse::ide::draw_explorer_panel(gui::builder& ui, const input::state& input, 
 		{ std::max(0.f, content.width()), search_height }
 	);
 
-	draw_search_bar(ui, input, search, index, channels, search_rect, "##explorer_search");
+	draw_search_bar(ui, search, index, channels, search_rect, "##explorer_search");
 	ctx.layout_cursor.x() = content.left();
 	ctx.layout_cursor.y() = search_rect.bottom() - pad;
 	if (!ws.explorer_error.empty()) {
@@ -797,7 +792,7 @@ auto gse::ide::draw_explorer_panel(gui::builder& ui, const input::state& input, 
 		.is_leaf = [](const fs_node& n) -> bool {
 			return !n.is_dir;
 		},
-		.custom_draw = [&ui, &ws, &name_action, &input](const fs_node& n, const gui::draw_context& c, const rect_t<vec2f>& row_rect, bool, bool, int) {
+		.custom_draw = [&ui, &ws, &name_action](const fs_node& n, const gui::draw_context& c, const rect_t<vec2f>& row_rect, bool, bool, int) {
 			if (!ws.pending_name || ws.pending_name->key != n.key) {
 				return;
 			}
@@ -818,10 +813,10 @@ auto gse::ide::draw_explorer_panel(gui::builder& ui, const input::state& input, 
 				pending.focus_requested = false;
 			}
 			gui::draw::text_input_in_rect(c, input_id, pending.name, pending.input, input_rect, ui.hot_widget_id, ui.focus_widget_id);
-			if (input.key_pressed(key::escape)) {
+			if (c.key_pressed(key::escape)) {
 				name_action = explorer_name_action::cancel;
 			}
-			else if (input.key_pressed(key::enter) || input.key_pressed(key::kp_enter)) {
+			else if (c.key_pressed(key::enter) || c.key_pressed(key::kp_enter)) {
 				name_action = explorer_name_action::commit;
 			}
 			else if (ui.focus_widget_id != input_id) {

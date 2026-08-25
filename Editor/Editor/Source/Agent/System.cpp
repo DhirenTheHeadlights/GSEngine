@@ -16,7 +16,7 @@ import :panel;
 import :session;
 import :system;
 
-auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_request, dispatch_request, gui::context_menu_result, build_runner::build_finished, build_runner::source_changed> requests_in, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request, blame_offer> events_out, const shared_view<input::data> input_d, const shared_view<asset::data> assets_d) -> async::task<> {
+auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_request, dispatch_request, gui::context_menu_result, build_runner::build_finished, build_runner::source_changed> requests_in, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request, blame_offer> events_out, const shared_view<asset::data> assets_d) -> async::task<> {
 	if (!d.initialized) {
 		load_sessions(d);
 		adopt_inherited(d);
@@ -105,8 +105,8 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 	events_out.push<gui::menu_content>({
 		.menu = std::string(panel_name),
 		.layer = render_layer::content,
-		.build = [d = &d, mouse = input::current_state(input_d).mouse_position(), jump_out = events_out](gui::builder& b) {
-			draw_panel(b, *d, mouse, jump_out);
+		.build = [d = &d, jump_out = events_out](gui::builder& b) {
+			draw_panel(b, *d, jump_out);
 		},
 	});
 
@@ -118,6 +118,9 @@ auto gse::ide::agent::shutdown(data& d) -> void {
 	net::cancel(d.link);
 
 	const bool relaunching = app::relaunch_pending();
+	if (relaunching) {
+		app::drop_relaunch_arguments(std::wstring(handoff_option));
+	}
 	for (session& s : d.sessions) {
 		if (relaunching && hand_off_session(s)) {
 			continue;

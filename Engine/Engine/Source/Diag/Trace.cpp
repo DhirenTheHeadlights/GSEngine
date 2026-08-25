@@ -278,9 +278,13 @@ gse::trace::thread_buffer::~thread_buffer() {
 	std::erase(reg.buffers, this);
 }
 
-auto gse::trace::ensure_tls_registered() -> void {
+auto gse::trace::ensure_tls_registered() -> bool {
 	if (tls.registered) {
-		return;
+		return true;
+	}
+
+	if (!enabled()) {
+		return false;
 	}
 
 	tls.events.ensure_storage();
@@ -289,6 +293,7 @@ auto gse::trace::ensure_tls_registered() -> void {
 	std::lock_guard lock(reg.mutex);
 	reg.buffers.push_back(&tls);
 	tls.registered = true;
+	return true;
 }
 
 auto gse::trace::make_tid() -> std::uint32_t {
@@ -300,7 +305,9 @@ auto gse::trace::make_tid() -> std::uint32_t {
 }
 
 auto gse::trace::emit(const event& e) -> void {
-	ensure_tls_registered();
+	if (!ensure_tls_registered()) {
+		return;
+	}
 	tls.events.push(e);
 }
 

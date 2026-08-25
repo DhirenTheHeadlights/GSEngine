@@ -4,6 +4,7 @@ import std;
 
 import :alloc_track;
 
+import gse.log;
 import gse.win32;
 
 namespace gse::alloc {
@@ -68,6 +69,10 @@ namespace gse::alloc {
 	auto forget(
 		void* block
 	) -> void;
+
+	auto megabytes_of(
+		std::int64_t bytes
+	) -> double;
 }
 
 auto gse::alloc::mix(std::uint64_t value) -> std::uint64_t {
@@ -382,3 +387,52 @@ auto gse::alloc::label_of(const std::uint64_t pc) -> std::string {
 	return std::format("0x{:x}", pc);
 }
 #endif
+
+auto gse::alloc::megabytes_of(const std::int64_t bytes) -> double {
+	return static_cast<double>(bytes) / (1024.0 * 1024.0);
+}
+
+auto gse::alloc::log_report(const int top_rows) -> void {
+	std::vector<site> sites;
+	snapshot(sites);
+	std::ranges::sort(sites, std::ranges::greater{}, &site::live_bytes);
+
+	const address_space usage = address_space_usage();
+
+	log::println(
+		log::level::info,
+		log::category::general,
+		"[alloc] process {:.1f} MB private, {:.1f} MB image, {:.1f} MB mapped, {:.1f} MB reserved",
+		megabytes_of(usage.private_committed),
+		megabytes_of(usage.image),
+		megabytes_of(usage.mapped),
+		megabytes_of(usage.reserved)
+	);
+
+	log::println(
+		log::level::info,
+		log::category::general,
+		"[alloc] tracked {:.1f} MB estimated live across {} samples, {} sites, {} evicted, 1 per {} KB{}",
+		megabytes_of(estimated_live_bytes()),
+		live_samples(),
+		sites.size(),
+		evicted_samples(),
+		sample_interval() / 1024,
+		enabled() ? "" : " (sampling paused)"
+	);
+
+	for (const auto& [index, row] : std::views::enumerate(sites | std::views::take(top_rows))) {
+		log::println(
+			log::level::info,
+			log::category::general,
+			"  #{:>3} {:>10.2f} MB live {:>+10.2f} MB since mark {:>8} smp  {}",
+			index,
+			megabytes_of(row.live_bytes),
+			megabytes_of(row.since_mark_bytes),
+			row.live_samples,
+			label_of(row.pc)
+		);
+	}
+
+	log::flush();
+}

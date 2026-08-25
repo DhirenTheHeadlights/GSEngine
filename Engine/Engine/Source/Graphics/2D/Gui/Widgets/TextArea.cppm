@@ -97,6 +97,7 @@ export namespace gse::gui {
 			std::span<const text_stop> stops{};
 			std::optional<rectf> rect{};
 			bool read_only = false;
+			bool consumes_image_paste = false;
 			bool follow_tail = false;
 			bool show_line_numbers = false;
 			std::size_t indent_width = 4;
@@ -542,6 +543,7 @@ auto gse::gui::text_area::draw(const draw_context& ctx, const params& p, id& hot
 			.stops = p.stops,
 			.rect = rect,
 			.read_only = p.read_only,
+			.consumes_image_paste = p.consumes_image_paste,
 			.show_line_numbers = p.show_line_numbers,
 			.indent_width = p.indent_width,
 			.indent_with_spaces = p.indent_with_spaces,
@@ -640,6 +642,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 	const std::span<const text_stop> stops = params.stops;
 	const rectf& rect = *params.rect;
 	const bool read_only = params.read_only;
+	const bool image_paste = params.consumes_image_paste && window::clipboard_image_available();
 	const bool follow_tail = params.follow_tail;
 	const bool show_line_numbers = params.show_line_numbers;
 	const std::size_t indent_width = params.indent_width;
@@ -1287,7 +1290,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 				changed = true;
 				modified = true;
 			}
-			if (ctrl && ctx.key_pressed_for(key::v)) {
+			if (ctrl && !image_paste && ctx.key_pressed_for(key::v)) {
 				std::string paste = ctx.clipboard();
 				if (!paste.empty()) {
 					begin_edit(1);
