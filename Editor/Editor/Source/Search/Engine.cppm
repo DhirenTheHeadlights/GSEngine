@@ -210,6 +210,7 @@ auto gse::ide::search::scan_blob(const std::string_view blob, const std::span<co
 			.path = path,
 			.line = static_cast<std::uint32_t>(line_idx),
 			.column = col,
+			.length = static_cast<std::uint32_t>(q_lower.size()),
 			.display = std::string(display_view.substr(0, max_display_chars)),
 		};
 		if (col >= trim) {
@@ -288,6 +289,7 @@ auto gse::ide::search::engine::rank(const search_snapshot& snapshot, const std::
 				.path = s.path,
 				.line = s.line,
 				.column = s.column,
+				.length = static_cast<std::uint32_t>(s.name.size()),
 				.display = s.name,
 				.detail = std::format("{}", s.kind),
 			});

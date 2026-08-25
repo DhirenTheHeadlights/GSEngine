@@ -20,10 +20,17 @@ namespace gse::gui {
 		std::string_view menu_name
 	) -> bool;
 
+	auto adopt_menu(
+		data& d,
+		viewport_state& to,
+		std::string_view menu_name
+	) -> bool;
+
 	auto route_cursor(
 		data& d,
 		vec2f mouse,
-		id focused_window
+		id focused_window,
+		id cursor_window
 	) -> void;
 
 	auto reclaim_menus(
@@ -60,6 +67,6 @@ namespace gse::gui {
 		viewport_state& vp,
 		const input::state& input_st,
 		channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, popout_closed> requests_in,
-		channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request, window_panel_drag_request> ui_out
+		channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> ui_out
 	) -> void;
 }

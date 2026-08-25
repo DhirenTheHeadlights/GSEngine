@@ -26,6 +26,10 @@ export namespace gse::app {
 		std::wstring argument
 	) -> void;
 
+	auto drop_relaunch_arguments(
+		std::wstring prefix
+	) -> void;
+
 	auto run_pending_relaunch() -> void;
 }
 
@@ -38,6 +42,7 @@ namespace gse::app {
 	std::vector<std::filesystem::path> relaunch_arguments;
 	std::vector<void*> relaunch_handles;
 	std::vector<std::wstring> relaunch_handoff_arguments;
+	std::vector<std::wstring> relaunch_dropped_prefixes;
 }
 
 auto gse::app::relaunch_on_exit(std::filesystem::path executable, std::filesystem::path working_dir, std::vector<std::filesystem::path> arguments) -> void {
@@ -47,6 +52,7 @@ auto gse::app::relaunch_on_exit(std::filesystem::path executable, std::filesyste
 	relaunch_arguments = std::move(arguments);
 	relaunch_handles.clear();
 	relaunch_handoff_arguments.clear();
+	relaunch_dropped_prefixes.clear();
 	relaunch_self = false;
 	relaunch_queued = true;
 }
@@ -58,6 +64,7 @@ auto gse::app::relaunch_self_on_exit() -> void {
 	relaunch_arguments.clear();
 	relaunch_handles.clear();
 	relaunch_handoff_arguments.clear();
+	relaunch_dropped_prefixes.clear();
 	relaunch_self = true;
 	relaunch_queued = true;
 }
@@ -76,12 +83,23 @@ auto gse::app::add_relaunch_handoff(const std::span<void* const> handles, std::w
 	relaunch_handoff_arguments.push_back(std::move(argument));
 }
 
+auto gse::app::drop_relaunch_arguments(std::wstring prefix) -> void {
+	std::lock_guard lock(relaunch_mutex);
+	if (!relaunch_queued || prefix.empty()) {
+		return;
+	}
+	if (std::ranges::find(relaunch_dropped_prefixes, prefix) == relaunch_dropped_prefixes.end()) {
+		relaunch_dropped_prefixes.push_back(std::move(prefix));
+	}
+}
+
 auto gse::app::run_pending_relaunch() -> void {
 	std::filesystem::path executable;
 	std::filesystem::path working_dir;
 	std::vector<std::filesystem::path> arguments;
 	std::vector<void*> handles;
 	std::vector<std::wstring> handoff_arguments;
+	std::vector<std::wstring> dropped_prefixes;
 	bool self = false;
 	{
 		std::lock_guard lock(relaunch_mutex);
@@ -95,6 +113,7 @@ auto gse::app::run_pending_relaunch() -> void {
 		arguments = std::move(relaunch_arguments);
 		handles = std::move(relaunch_handles);
 		handoff_arguments = std::move(relaunch_handoff_arguments);
+		dropped_prefixes = std::move(relaunch_dropped_prefixes);
 	}
 
 #ifdef _WIN32
@@ -132,6 +151,14 @@ auto gse::app::run_pending_relaunch() -> void {
 		}
 
 		std::wstring line(GetCommandLineW());
+		for (const std::wstring& prefix : dropped_prefixes) {
+			for (std::size_t at = line.find(prefix); at != std::wstring::npos; at = line.find(prefix, at)) {
+				const std::size_t end = line.find_first_of(L" \t", at);
+				const std::size_t begin = at > 0 && (line[at - 1] == L' ' || line[at - 1] == L'\t') ? at - 1 : at;
+				line.erase(begin, end == std::wstring::npos ? std::wstring::npos : end - begin);
+				at = begin;
+			}
+		}
 		for (const std::wstring& argument : handoff_arguments) {
 			line += L" " + argument;
 		}

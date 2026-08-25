@@ -4,12 +4,11 @@
 To fill a clip slot below: open any GitHub issue/PR draft, drag-drop the .mp4 into the
 comment box, copy the `https://github.com/user-attachments/assets/...` URL it spits out,
 and paste it as the video src. Don't actually submit the issue.
+-->
 
-<video src="https://github.com/user-attachments/assets/b6eecaf4-c325-48f9-9c29-5455d68b24b6" autoplay muted loop playsinline width="100%"></video>
+GSEngine is a game engine written in modern C++ with C++26 reflection. It began as the foundation for a 3D shooter, but nothing in it is tied to that genre.
 
-GSEngine is a game engine written in modern C++ with C++26 reflection. It began as the foundation for a 3D shooter, but nothing in it is tied to that genre. The [wiki](https://github.com/DhirenTheHeadlights/GSEngine/wiki) is the best place to start.
-
-Targets Windows (Vulkan).
+**Windows only.** x64 Windows is the only supported platform — there is no Linux or macOS build, and none is planned. Both the Vulkan and DX12 backends are fully supported; Vulkan is the default and falls back to DX12 if it is unavailable. The build expects the MinGW-w64 GCC toolchain that `bootstrap.py` installs; MSVC is not supported.
 
 ## Features
 
@@ -41,10 +40,12 @@ Targets Windows (Vulkan).
 * Compile-time dimensional analysis — `length / time` is a `velocity`, `length + time` is a compile error
 * Coroutine async on a lock-free work-stealing scheduler
 * Async render graph with automatic barrier insertion
-* Backend-agnostic RHI (Vulkan today, DX12 in progress)
+* Backend-agnostic RHI with two complete backends — Vulkan and DX12, selectable at startup
 * Built entirely from C++ modules
 
-### Atmosphere, volumetric clouds \& terrain
+### Atmosphere, volumetric clouds & terrain
+
+<video src="https://github.com/user-attachments/assets/b6eecaf4-c325-48f9-9c29-5455d68b24b6" autoplay muted loop playsinline width="100%"></video>
 
 Everything in the clip above is generated at load and driven by live settings — no baked lighting, no authored heightmap, no skybox.
 
@@ -54,7 +55,7 @@ Sun angles, planet radii, Rayleigh/Mie/ozone coefficients, cloud coverage, densi
 
 ### HDR, bloom, AgX tonemap
 
-<!-- <video src="PASTE\_CLIP\_URL\_HERE" autoplay muted loop playsinline width="100%"></video> -->
+<!-- <video src="PASTE_CLIP_URL_HERE" autoplay muted loop playsinline width="100%"></video> -->
 
 R16G16B16A16 scene target end-to-end; AgX with input matrix → log-EV remap → contrast polynomial → punchy-look saturation → output matrix. Bloom downsamples 7 mips with Karis average, then tent-upsamples back into mip 0.
 
@@ -68,9 +69,9 @@ Above: four counter-rotating drums tumbling 13,824 dynamic bodies, solved entire
 
 ### Forward+ light culling
 
-<!-- <video src="PASTE\_CLIP\_URL\_HERE" autoplay muted loop playsinline width="100%"></video> -->
+<!-- <video src="PASTE_CLIP_URL_HERE" autoplay muted loop playsinline width="100%"></video> -->
 
-Bindless point/spot lights tile-culled on the compute queue; renderer dispatches via reflection-driven binding packs (`recording\_context::dispatch<Entry>(pc, args, groups)`).
+Bindless point/spot lights tile-culled on the compute queue; renderer dispatches via reflection-driven binding packs (`recording_context::dispatch<Entry>(pc, args, groups)`).
 
 ## System Prerequisites
 
@@ -78,41 +79,31 @@ Bindless point/spot lights tile-culled on the compute queue; renderer dispatches
 |-|-|
 |Git|2.45+|
 |CMake|3.28+|
-|Ninja|1.11+|
-|MinGW-w64 GCC|16.1+ (UCRT)|
+|Python|3.11+|
 |Vulkan SDK|1.4+|
 
-Two ways to get the toolchain:
-
-**WinLibs prebuilt (fast, but currently stuck on 16.1.0 which has a known module-loading bug for this codebase — see** [**GCC PR 122785**](https://www.mail-archive.com/gcc-bugs@gcc.gnu.org/msg885994.html)**):**
-Grab the UCRT + POSIX threads, GCC 16.1.0+ archive from [WinLibs](https://winlibs.com/). Unzip somewhere stable and point `MINGW\_ROOT` at it:
-
-```powershell
-$env:MINGW\_ROOT = "C:\\mingw64"
-```
-
-**Trunk build (slow but has the fix):**
-
-```powershell
-python scripts/build\_gcc\_trunk.py --persist
-```
-
-Downloads MSYS2 into `.msys2/`, clones GCC trunk, builds, installs to `\~/.gcc-trunk/<sha>/`, and `setx`'s `MINGW\_ROOT`. First run takes 2-4 hours and \~10 GB of disk; subsequent rebuilds reuse `.msys2/` and the GCC source clone. Pin a specific commit with `--sha <hash>`.
-
-Persist `MINGW\_ROOT` so CMake picks it up across shells:
-
-```powershell
-\[Environment]::SetEnvironmentVariable("MINGW\_ROOT", "C:\\path\\to\\gcc", "User")
-```
+GCC and Ninja are not on that list — `bootstrap.py` installs both.
 
 ## Quick Start
 
 ```
 git clone <repo>
-git submodule update --init --recursive
+cd GSEngine
+python bootstrap.py
 cmake --preset x64-mingw-gcc-Release
 cmake --build --preset x64-mingw-gcc-Release
 ```
+
+`bootstrap.py` does everything the build needs:
+
+* initializes submodules recursively
+* downloads the latest `gcc-trunk-v*` release into `~/.gcc-trunk/<tag>/` and points the `~/.gcc-trunk/current` junction at it
+* installs Ninja into `~/.gcc-trunk/ninja/`
+* builds the cppreference hover index used by the editor
+
+The CMake presets resolve the compiler and Ninja through `~/.gcc-trunk/current`, so no `MINGW_ROOT` or `PATH` edit is required. Re-run `python bootstrap.py` to pick up a newer toolchain release; `--force` reinstalls, `--tag gcc-trunk-vN` pins a specific one, and `--skip-gcc`/`--skip-ninja`/`--skip-cppref` narrow the run.
+
+A toolchain bump invalidates every previously built module BMI, so reconfigure from a clean build directory after one.
 
 vcpkg's manifest mode (`vcpkg.json`) auto-installs dependencies when CMake configures. First configure rebuilds the dep tree under the MinGW triplet — expect 30-60 minutes.
 

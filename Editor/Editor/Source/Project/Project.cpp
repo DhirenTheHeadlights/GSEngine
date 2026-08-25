@@ -686,6 +686,11 @@ auto gse::ide::project::current() -> const manifest& {
 	return value;
 }
 
+auto gse::ide::project::opened() -> bool {
+	const manifest& active = current();
+	return active.valid && active.requested && active.engine_problem.empty();
+}
+
 auto gse::ide::project::target(const std::string_view key, const std::string_view fallback) -> std::string {
 	const manifest& active = current();
 	if (const auto entry = active.targets.find(std::string(key)); entry != active.targets.end()) {

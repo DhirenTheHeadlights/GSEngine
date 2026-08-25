@@ -52,6 +52,10 @@ namespace gse::ide::agent {
 		data& d
 	) -> void;
 
+	auto inherited_handle(
+		void* handle
+	) -> bool;
+
 	auto discard_handoff(
 		const handoff& adopted
 	) -> void;

@@ -628,8 +628,10 @@ auto gse::ide::agent::push_row(session& s, const gui::style& sty, transcript_row
 }
 
 auto gse::ide::agent::sync_transcript(session& s, const gui::style& sty, const transcript_metrics& metrics) -> void {
-	if (std::abs(s.wrap_width - metrics.width) > 0.5f) {
+	const std::uint64_t key = gui::style_key(sty);
+	if (std::abs(s.wrap_width - metrics.width) > 0.5f || s.style_key != key) {
 		s.wrap_width = metrics.width;
+		s.style_key = key;
 		s.buffer.lines.clear();
 		s.spans.clear();
 		s.blocks.clear();

@@ -131,6 +131,7 @@ export namespace gse::ide::agent {
 		[[= archive_skip{}]] bool hydrated = false;
 		[[= archive_skip{}]] std::size_t flushed_rows = 0;
 		[[= archive_skip{}]] float wrap_width = 0.f;
+		[[= archive_skip{}]] std::uint64_t style_key = 0;
 		[[= archive_skip{}]] std::vector<diff_view> diffs;
 		[[= archive_skip{}]] gui::text_buffer buffer;
 		[[= archive_skip{}]] gui::text_area_state view;

@@ -39,7 +39,7 @@ import :symbols;
 import :tab_strip;
 import :widget_context;
 
-auto gse::gui::draw_screen_caption(builder& b, screen& top, const rectf& bar_rect, const rectf& full_rect, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request, window_panel_drag_request> channels) -> void {
+auto gse::gui::draw_screen_caption(builder& b, viewport_state& vp, screen& top, const rectf& bar_rect, const rectf& full_rect) -> void {
 	draw_context& ctx = b.ctx;
 	const style& sty = ctx.style;
 
@@ -64,28 +64,28 @@ auto gse::gui::draw_screen_caption(builder& b, screen& top, const rectf& bar_rec
 	const float screen_controls_width = top.draw_caption(b, content_rect);
 
 	if (caption_button(b, close_rect, "##screen_caption_close", symbol::close(), vec4f{ 0.78f, 0.22f, 0.22f, 1.f })) {
-		channels.push<window_close_request>({});
+		vp.pending_caption_action = caption_action::close;
 	}
 	if (caption_button(b, max_rect, "##screen_caption_max", symbol::maximize(), sty.color_widget_hovered)) {
-		channels.push<window_toggle_maximize_request>({});
+		vp.pending_caption_action = caption_action::toggle_maximize;
 	}
 	if (caption_button(b, min_rect, "##screen_caption_min", symbol::minimize(), sty.color_widget_hovered)) {
-		channels.push<window_minimize_request>({});
+		vp.pending_caption_action = caption_action::minimize;
 	}
 
 	const caption_exclusion exclusion = top.caption_exclusion_range(ctx, full_rect);
 
-	channels.push<window_chrome_metrics_request>({
-		.caption_height = static_cast<int>(bar_rect.height()),
-		.controls_width = static_cast<int>(button_w * 3.f + screen_controls_width),
+	vp.chrome = {
+		.caption_height = bar_rect.height(),
+		.controls_width = button_w * 3.f + screen_controls_width,
 		.resize_exclude_y0 = exclusion.y0,
 		.resize_exclude_y1 = exclusion.y1,
-	});
+	};
 
 	ctx.clip_stack.pop_back();
 }
 
-auto gse::gui::process_screen(data& d, viewport_state& vp, const gse::input::state& input_state, const vec2f viewport_size, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request, window_panel_drag_request> channels) -> void {
+auto gse::gui::process_screen(data& d, viewport_state& vp, const gse::input::state& input_state, const vec2f viewport_size) -> void {
 	if (!vp.fstate.active) {
 		return;
 	}
@@ -141,6 +141,7 @@ auto gse::gui::process_screen(data& d, viewport_state& vp, const gse::input::sta
 		.current_layer = render_layer::popup,
 		.input_layer = vp.input_layer_render,
 		.input_suppressed = vp.input_suppressed,
+		.owns_keyboard = vp.owns_keyboard,
 		.hit_regions = &vp.input_layers_data,
 		.tooltip = &vp.tooltip,
 		.context_menu = &vp.context_menu,
@@ -169,7 +170,7 @@ auto gse::gui::process_screen(data& d, viewport_state& vp, const gse::input::sta
 	}
 
 	if (wants_caption) {
-		draw_screen_caption(b, *top, caption_rect, full_rect, channels);
+		draw_screen_caption(b, vp, *top, caption_rect, full_rect);
 	}
 
 	vp.menu_stack.tick(b);

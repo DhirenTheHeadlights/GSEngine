@@ -149,6 +149,7 @@ export namespace gse::win32 {
 	using ::CreatePipe;
 	using ::ReadFile;
 	using ::SetHandleInformation;
+	using ::GetHandleInformation;
 	using ::WaitForSingleObject;
 	using ::GetExitCodeProcess;
 	using ::MoveFileExW;

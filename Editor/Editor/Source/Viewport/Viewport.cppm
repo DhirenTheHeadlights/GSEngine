@@ -9,11 +9,13 @@ import gse.ide.build;
 export namespace gse::ide::viewport {
 	struct pending_session {
 		std::uint32_t generation = 0;
+		std::uint32_t instance = 0;
 		std::shared_ptr<const attached_surface_message> message;
 	};
 
 	struct imported_session {
 		std::uint32_t generation = 0;
+		std::uint32_t instance = 0;
 		std::array<gpu::shared_surface, attached_ring_size> surfaces{};
 		std::array<gpu::bindless_handle, attached_ring_size> slots{};
 		gpu::handle<gpu::semaphore> produced_semaphore{};
@@ -32,8 +34,11 @@ export namespace gse::ide::viewport {
 		[[= shared]] gpu::bindless_slot display_slot = {};
 		[[= shared]] vec2u extent{ 0, 0 };
 		[[= shared]] bool ready = false;
-		std::optional<pending_session> pending;
-		std::optional<imported_session> imported;
+		[[= shared]] std::array<gpu::bindless_slot, build_runner::max_attached_instances> instance_slots{};
+		[[= shared]] std::array<vec2u, build_runner::max_attached_instances> instance_extents{};
+		[[= shared]] std::array<bool, build_runner::max_attached_instances> instance_live{};
+		std::vector<pending_session> pending;
+		std::vector<imported_session> imported;
 		std::vector<retiring_session> retiring;
 	};
 

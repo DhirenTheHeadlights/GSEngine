@@ -1,10 +1,9 @@
-export module gse.ide.format:formatter;
+export module gse.format:formatter;
 
 import std;
 import gse.syntax;
-import gse.ide.highlight;
 
-export namespace gse::ide::format {
+export namespace gse::format {
 	struct options {
 		int indent_width = 4;
 		bool indent_with_spaces = false;
@@ -27,7 +26,7 @@ export namespace gse::ide::format {
 	) -> std::size_t;
 }
 
-namespace gse::ide::format {
+namespace gse::format {
 	enum class directive_kind {
 		none,
 		conditional_begin,
@@ -102,15 +101,15 @@ namespace gse::ide::format {
 	) -> bool;
 }
 
-auto gse::ide::format::is_opener(const char c) -> bool {
+auto gse::format::is_opener(const char c) -> bool {
 	return c == '(' || c == '[' || c == '{';
 }
 
-auto gse::ide::format::is_closer(const char c) -> bool {
+auto gse::format::is_closer(const char c) -> bool {
 	return c == ')' || c == ']' || c == '}';
 }
 
-auto gse::ide::format::matching_opener(const char c) -> char {
+auto gse::format::matching_opener(const char c) -> char {
 	switch (c) {
 		case ')':
 			return '(';
@@ -123,19 +122,19 @@ auto gse::ide::format::matching_opener(const char c) -> char {
 	}
 }
 
-auto gse::ide::format::starts_statement(const char c) -> bool {
+auto gse::format::starts_statement(const char c) -> bool {
 	return c == ';' || c == '{' || c == '}' || c == ',' || c == ':' || c == '(' || c == '[' || c == ']' || c == '>';
 }
 
-auto gse::ide::format::ends_statement(const char c) -> bool {
+auto gse::format::ends_statement(const char c) -> bool {
 	return c == ';' || c == '{' || c == '}' || c == '>';
 }
 
-auto gse::ide::format::clears_continuation(const char c) -> bool {
+auto gse::format::clears_continuation(const char c) -> bool {
 	return ends_statement(c) || c == ',' || c == '(' || c == '[';
 }
 
-auto gse::ide::format::punct_starts_statement(const std::string_view text, const char last_code) -> bool {
+auto gse::format::punct_starts_statement(const std::string_view text, const char last_code) -> bool {
 	const char c = text.front();
 	if (is_closer(c) || c == '{' || c == '[' || c == '(' || c == '~' || c == '^') {
 		return true;
@@ -149,7 +148,7 @@ auto gse::ide::format::punct_starts_statement(const std::string_view text, const
 	return false;
 }
 
-auto gse::ide::format::directive_of(const std::string_view text) -> directive_kind {
+auto gse::format::directive_of(const std::string_view text) -> directive_kind {
 	std::size_t i = 1;
 	while (i < text.size() && (text[i] == ' ' || text[i] == '\t')) {
 		++i;
@@ -170,12 +169,12 @@ auto gse::ide::format::directive_of(const std::string_view text) -> directive_ki
 	return directive_kind::none;
 }
 
-auto gse::ide::format::continues_directive(const std::string_view text) -> bool {
+auto gse::format::continues_directive(const std::string_view text) -> bool {
 	const std::size_t last = text.find_last_not_of(" \t\r");
 	return last != std::string_view::npos && text[last] == '\\';
 }
 
-auto gse::ide::format::structurally_equivalent(const formatter_state& left, const formatter_state& right) -> bool {
+auto gse::format::structurally_equivalent(const formatter_state& left, const formatter_state& right) -> bool {
 	if (left.paren_depth != right.paren_depth || left.switch_pending != right.switch_pending || left.switch_paren_base != right.switch_paren_base || left.angle_depth != right.angle_depth || left.stack.size() != right.stack.size()) {
 		return false;
 	}
@@ -189,7 +188,7 @@ auto gse::ide::format::structurally_equivalent(const formatter_state& left, cons
 	return true;
 }
 
-auto gse::ide::format::merge_branch(conditional_state& conditional, const formatter_state& branch) -> bool {
+auto gse::format::merge_branch(conditional_state& conditional, const formatter_state& branch) -> bool {
 	if (!conditional.completed_branch) {
 		conditional.completed_branch = branch;
 		return true;
@@ -197,7 +196,7 @@ auto gse::ide::format::merge_branch(conditional_state& conditional, const format
 	return structurally_equivalent(*conditional.completed_branch, branch);
 }
 
-auto gse::ide::format::has_matching_angle(const std::span<const syntax::token> tokens, const std::size_t token_index) -> bool {
+auto gse::format::has_matching_angle(const std::span<const syntax::token> tokens, const std::size_t token_index) -> bool {
 	int depth = 1;
 	for (std::size_t i = token_index + 1; i < tokens.size(); ++i) {
 		const syntax::token& token = tokens[i];
@@ -225,15 +224,15 @@ auto gse::ide::format::has_matching_angle(const std::span<const syntax::token> t
 	return false;
 }
 
-auto gse::ide::format::is_comment(const syntax::token_type type) -> bool {
+auto gse::format::is_comment(const syntax::token_type type) -> bool {
 	return type == syntax::token_type::line_comment || type == syntax::token_type::block_comment;
 }
 
-auto gse::ide::format::is_label_keyword(const std::string_view w) -> bool {
+auto gse::format::is_label_keyword(const std::string_view w) -> bool {
 	return w == "case" || w == "default";
 }
 
-auto gse::ide::format::leading_whitespace(const std::string_view s) -> std::string_view {
+auto gse::format::leading_whitespace(const std::string_view s) -> std::string_view {
 	std::size_t i = 0;
 	while (i < s.size() && (s[i] == ' ' || s[i] == '\t')) {
 		++i;
@@ -241,7 +240,7 @@ auto gse::ide::format::leading_whitespace(const std::string_view s) -> std::stri
 	return s.substr(0, i);
 }
 
-auto gse::ide::format::indent_of(const std::string_view ws, const int width) -> int {
+auto gse::format::indent_of(const std::string_view ws, const int width) -> int {
 	int col = 0;
 	for (const char c : ws) {
 		col = c == '\t' ? (col / width + 1) * width : col + 1;
@@ -249,14 +248,14 @@ auto gse::ide::format::indent_of(const std::string_view ws, const int width) -> 
 	return col / width;
 }
 
-auto gse::ide::format::make_indent(const int level, const int width, const options& opts) -> std::string {
+auto gse::format::make_indent(const int level, const int width, const options& opts) -> std::string {
 	if (opts.indent_with_spaces) {
 		return std::string(static_cast<std::size_t>(level) * width, ' ');
 	}
 	return std::string(static_cast<std::size_t>(level), '\t');
 }
 
-auto gse::ide::format::leading_closer_count(const std::span<const syntax::token> line_tokens) -> int {
+auto gse::format::leading_closer_count(const std::span<const syntax::token> line_tokens) -> int {
 	int count = 0;
 	for (const syntax::token& t : line_tokens) {
 		if (t.type != syntax::token_type::punctuation) {
@@ -272,7 +271,7 @@ auto gse::ide::format::leading_closer_count(const std::span<const syntax::token>
 	return count;
 }
 
-auto gse::ide::format::is_access_specifier(const std::span<const syntax::token> line_tokens) -> bool {
+auto gse::format::is_access_specifier(const std::span<const syntax::token> line_tokens) -> bool {
 	if (line_tokens.size() < 2) {
 		return false;
 	}
@@ -287,7 +286,7 @@ auto gse::ide::format::is_access_specifier(const std::span<const syntax::token> 
 	return second.text.front() == ':' && second.text != "::";
 }
 
-auto gse::ide::format::compute(const std::span<const std::string> lines, const options& opts) -> std::vector<line_edit> {
+auto gse::format::compute(const std::span<const std::string> lines, const options& opts) -> std::vector<line_edit> {
 	std::vector<line_edit> edits;
 
 	std::vector<std::string_view> views;
@@ -500,7 +499,7 @@ auto gse::ide::format::compute(const std::span<const std::string> lines, const o
 	return edits;
 }
 
-auto gse::ide::format::apply(std::vector<std::string>& lines, const std::span<const line_edit> edits) -> std::size_t {
+auto gse::format::apply(std::vector<std::string>& lines, const std::span<const line_edit> edits) -> std::size_t {
 	std::size_t applied = 0;
 	for (const line_edit& e : edits) {
 		if (e.line >= lines.size()) {

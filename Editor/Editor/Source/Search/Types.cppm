@@ -5,6 +5,7 @@ import std;
 import gse;
 
 import gse.ide.analysis;
+import gse.ide.navigation;
 
 export namespace gse::ide::search {
 	struct domain_info {
@@ -42,6 +43,7 @@ export namespace gse::ide::search {
 		std::filesystem::path path;
 		std::uint32_t line = 0;
 		std::uint32_t column = 0;
+		std::uint32_t length = 0;
 		std::string display;
 		std::string detail;
 		std::vector<match_range> highlight;
@@ -72,8 +74,8 @@ export namespace gse::ide::search {
 		file_id def_file{};
 		std::uint32_t def_line = 0;
 		std::uint32_t def_column = 0;
-		std::string qualified;
-		std::string identity;
+		id qualified{};
+		id identity{};
 		std::string type;
 		std::string value;
 	};
@@ -88,6 +90,21 @@ export namespace gse::ide::search {
 	auto to_lower(
 		std::string_view text
 	) -> std::string;
+
+	auto jump_target(
+		const result& match
+	) -> jump_to_request;
+}
+
+auto gse::ide::search::jump_target(const result& match) -> jump_to_request {
+	return {
+		.path = match.path,
+		.line = match.line,
+		.column = match.column,
+		.end_line = match.line,
+		.end_column = match.column + match.length,
+		.highlight = match.source == domain::file ? jump_highlight::caret : jump_highlight::span,
+	};
 }
 
 auto gse::ide::search::to_lower(const std::string_view text) -> std::string {

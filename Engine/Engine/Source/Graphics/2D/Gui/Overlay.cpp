@@ -36,6 +36,7 @@ import :menu_stack;
 import :render_layer;
 import :interaction;
 import :symbols;
+import :checkbox_widget;
 import :tab_strip;
 import :widget_context;
 
@@ -184,7 +185,7 @@ auto gse::gui::update_tooltip(data& d, viewport_state& vp) -> void {
 	vp.tooltip.pending_widget_id.reset();
 }
 
-auto gse::gui::process_context_menu(data& d, viewport_state& vp, const gse::input::state& input_state, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request, window_panel_drag_request> channels) -> void {
+auto gse::gui::process_context_menu(data& d, viewport_state& vp, const gse::input::state& input_state, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> channels) -> void {
 	context_menu_state& cm = vp.context_menu;
 	if (!cm.open) {
 		return;
@@ -208,8 +209,10 @@ auto gse::gui::process_context_menu(data& d, viewport_state& vp, const gse::inpu
 		max_label = std::max(max_label, text_view->width(it.label, sty.font_size));
 	}
 	const bool any_icon = std::ranges::any_of(cm.items, [](const menu_item& it) { return it.icon != nullptr; });
+	const bool any_check = std::ranges::any_of(cm.items, [](const menu_item& it) { return it.checkable; });
 	const float icon_col = any_icon ? sty.font_size : 0.f;
-	const float width = max_label + icon_col + sty.padding * 4.f;
+	const float check_col = any_check ? checkbox_extent(sty) + sty.padding * 0.5f : 0.f;
+	const float width = max_label + icon_col + check_col + sty.padding * 4.f;
 
 	float total_h = sty.padding;
 	for (const menu_item& it : cm.items) {
@@ -292,8 +295,18 @@ auto gse::gui::process_context_menu(data& d, viewport_state& vp, const gse::inpu
 		const vec4f text_color = !it.enabled
 			? sty.color_text_disabled
 			: (it.destructive ? vec4f{ 0.92f, 0.45f, 0.45f, 1.f } : sty.color_text);
+		if (it.checkable) {
+			const float extent = checkbox_extent(sty);
+			draw_checkbox(d.sprite_commands, d.blank_texture, rectf::from_position_size({ row.left() + sty.padding, row.center().y() + extent * 0.5f }, { extent, extent }), it.checked, {
+				.color_frame = it.enabled ? (hovered ? sty.color_handle_hovered : sty.color_border) : sty.color_text_disabled,
+				.color_mark = it.enabled ? sty.color_accent : sty.color_text_disabled,
+				.extent = extent,
+				.layer = layer,
+				.z_order = base_z + 3,
+			});
+		}
 		if (it.icon) {
-			symbol::draw(d.sprite_commands, d.blank_texture, it.icon(), rectf::from_position_size({ row.left() + sty.padding, y }, { sty.font_size, row_h }), {
+			symbol::draw(d.sprite_commands, d.blank_texture, it.icon(), rectf::from_position_size({ row.left() + sty.padding + check_col, y }, { sty.font_size, row_h }), {
 				.color = text_color,
 				.extent = sty.icon_extent,
 				.layer = layer,
@@ -303,7 +316,7 @@ auto gse::gui::process_context_menu(data& d, viewport_state& vp, const gse::inpu
 		d.text_commands.push_back({
 			.font = d.fonts.text,
 			.text = intern_text(d, it.label),
-			.position = { row.left() + sty.padding * 1.5f + icon_col, row.center().y() + text_view->vertical_center_offset(sty.font_size) },
+			.position = { row.left() + sty.padding * 1.5f + check_col + icon_col, row.center().y() + text_view->vertical_center_offset(sty.font_size) },
 			.scale = sty.font_size,
 			.color = text_color,
 			.clip_rect = row,

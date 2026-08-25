@@ -96,7 +96,6 @@ namespace gse::ide::terminal {
 
 	auto draw_instance(
 		gui::builder& ui,
-		const input::state& input,
 		data& d,
 		instance& inst,
 		const rectf& area,
@@ -402,7 +401,7 @@ auto gse::ide::terminal::init(data& d) -> async::task<> {
 	return {};
 }
 
-auto gse::ide::terminal::run(context& ctx, data& d, const channel_read<build_runner::stream_opened, agent::blame_offer> stream_in, const channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> ui_out, const shared_view<input::data> input_d, const shared_view<build_runner::data> build_d) -> async::task<> {
+auto gse::ide::terminal::run(context& ctx, data& d, const channel_read<build_runner::stream_opened, agent::blame_offer> stream_in, const channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> ui_out, const shared_view<build_runner::data> build_d) -> async::task<> {
 	const auto opened_streams = stream_in.of<build_runner::stream_opened>();
 
 	for (const build_runner::stream_opened& opened : opened_streams) {
@@ -426,12 +425,11 @@ auto gse::ide::terminal::run(context& ctx, data& d, const channel_read<build_run
 		d.offers.erase(d.offers.begin(), d.offers.begin() + static_cast<std::ptrdiff_t>(d.offers.size() - max_offers));
 	}
 	const bool building = build_d.building;
-	const input::state input_snapshot = input::current_state(input_d);
 	ui_out.push<gui::menu_content>({
 		.menu = std::string(panel_name),
 		.layer = render_layer::content,
-		.build = [d = &d, channels = ui_out, input_snapshot, building](gui::builder& b) {
-			draw_panel(b, input_snapshot, *d, channels, building);
+		.build = [d = &d, channels = ui_out, building](gui::builder& b) {
+			draw_panel(b, *d, channels, building);
 		},
 	});
 	return {};
@@ -471,7 +469,7 @@ auto gse::ide::terminal::run_command(command_runner& runner, const std::string& 
 	spawn::close_process(runner);
 }
 
-auto gse::ide::terminal::draw_instance(gui::builder& ui, const input::state& input, data& d, instance& inst, const rectf& area, channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels, const bool building) -> void {
+auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst, const rectf& area, channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels, const bool building) -> void {
 	const gui::draw_context& ctx = ui.ctx;
 	const auto text_view = ctx.fonts.text.resolve();
 	const auto code_view = ctx.fonts.code.resolve();
@@ -549,8 +547,8 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, const input::state& inp
 	d.underlines.clear();
 	std::optional<link_hit> link;
 	dispatch_marker* offered = nullptr;
-	const vec2f mouse = input.mouse_position();
-	const bool goto_ctrl = input.key_held(key::left_control) || input.key_held(key::right_control);
+	const vec2f mouse = ctx.mouse_position();
+	const bool goto_ctrl = ctx.key_held(key::left_control) || ctx.key_held(key::right_control);
 	if ((goto_ctrl || !inst.dispatches.empty()) && ctx.hovers(log_rect) && !tail_press.hovered && !inst.buffer.lines.empty()) {
 		const gui::buffer_position hover = gui::draw::text_area_position_at(ctx, {
 			.buffer = inst.buffer,
@@ -769,7 +767,7 @@ auto gse::ide::terminal::draw_close_confirm(gui::builder& ui, data& d, const rec
 	}
 }
 
-auto gse::ide::terminal::draw_panel(gui::builder& ui, const input::state& input, data& d, channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels, const bool building) -> void {
+auto gse::ide::terminal::draw_panel(gui::builder& ui, data& d, channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels, const bool building) -> void {
 	const gui::draw_context& ctx = ui.ctx;
 	if (!d.sink || ctx.clip_stack.empty()) {
 		return;
@@ -785,9 +783,9 @@ auto gse::ide::terminal::draw_panel(gui::builder& ui, const input::state& input,
 	const gui::style& sty = ctx.style;
 	const rectf body = ctx.clip_stack.back();
 
-	const vec2f mouse = input.mouse_position();
-	const bool pressed = input.mouse_button_pressed(mouse_button::button_1) && ctx.input_available();
-	const bool held = input.mouse_button_held(mouse_button::button_1);
+	const vec2f mouse = ctx.mouse_position();
+	const bool pressed = ctx.mouse_pressed(mouse_button::button_1) && ctx.input_available();
+	const bool held = ctx.mouse_held(mouse_button::button_1);
 
 	const float divider_thickness = std::max(6.f, sty.resize_border_thickness) * 2.f;
 	const gui::layout::split_params split{
@@ -880,7 +878,7 @@ auto gse::ide::terminal::draw_panel(gui::builder& ui, const input::state& input,
 		active = &d.instances.front();
 	}
 
-	draw_instance(ui, input, d, *active, content, channels, building);
+	draw_instance(ui, d, *active, content, channels, building);
 
 	draw_close_confirm(ui, d, body);
 }

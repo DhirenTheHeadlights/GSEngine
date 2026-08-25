@@ -468,15 +468,30 @@ auto gse::engine::push_attached_input(const input::event& event) -> void {
 	if (!window_state) {
 		return;
 	}
-	if (const auto* moved = std::get_if<input::mouse_moved>(&event); moved && window_state->primary.ui_focus) {
+	if (window_state->primary.ui_focus) {
 		const auto dims = window::viewport(*window_state);
-		const double clamped_x = std::clamp(moved->x_pos, 0.0, static_cast<double>(dims.x()));
-		const double clamped_y = std::clamp(moved->y_pos, 0.0, static_cast<double>(dims.y()));
-		window_state->primary.input_events.push(input::mouse_moved{
-			.x_pos = clamped_x,
-			.y_pos = static_cast<double>(dims.y()) - clamped_y,
-		});
-		return;
+		auto to_surface = [dims](const double x, const double y) {
+			return std::pair{
+				std::clamp(x, 0.0, static_cast<double>(dims.x())),
+				static_cast<double>(dims.y()) - std::clamp(y, 0.0, static_cast<double>(dims.y())),
+			};
+		};
+
+		if (const auto* moved = std::get_if<input::mouse_moved>(&event)) {
+			const auto [x, y] = to_surface(moved->x_pos, moved->y_pos);
+			window_state->primary.input_events.push(input::mouse_moved{ .x_pos = x, .y_pos = y });
+			return;
+		}
+		if (const auto* pressed = std::get_if<input::mouse_button_pressed>(&event)) {
+			const auto [x, y] = to_surface(pressed->x_pos, pressed->y_pos);
+			window_state->primary.input_events.push(input::mouse_button_pressed{ .button = pressed->button, .x_pos = x, .y_pos = y });
+			return;
+		}
+		if (const auto* released = std::get_if<input::mouse_button_released>(&event)) {
+			const auto [x, y] = to_surface(released->x_pos, released->y_pos);
+			window_state->primary.input_events.push(input::mouse_button_released{ .button = released->button, .x_pos = x, .y_pos = y });
+			return;
+		}
 	}
 	window_state->primary.input_events.push(event);
 }

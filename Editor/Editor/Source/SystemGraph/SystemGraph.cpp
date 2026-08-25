@@ -561,7 +561,7 @@ auto gse::ide::merge_channels(graph_data& gd) -> void {
 	gd.edges.reserve(gd.edges_draw.size() + gd.channel_edges.size());
 }
 
-auto gse::ide::draw_graph(gui::builder& ui, const input::state& input, const rectf& area, graph_data& gd, const search::index_state* index, channel_write<jump_to_request, set_cursor_shape_request> channels) -> void {
+auto gse::ide::draw_graph(gui::builder& ui, const rectf& area, graph_data& gd, const search::index_state* index, channel_write<jump_to_request, set_cursor_shape_request> channels) -> void {
 	const gui::draw_context& ctx = ui.ctx;
 	const auto text_view = ctx.fonts.text.resolve();
 	const std::size_t n = gd.snapshot.nodes.size();
@@ -576,7 +576,7 @@ auto gse::ide::draw_graph(gui::builder& ui, const input::state& input, const rec
 
 	prepare_presentation(gd, ctx);
 
-	const vec2f mouse = input.mouse_position();
+	const vec2f mouse = ctx.mouse_position();
 
 	rectf canvas = area;
 	std::optional<rectf> panel_area;
@@ -594,8 +594,8 @@ auto gse::ide::draw_graph(gui::builder& ui, const input::state& input, const rec
 			},
 			{
 				.mouse = mouse,
-				.pressed = input.mouse_button_pressed(mouse_button::button_1) && ctx.input_available(),
-				.held = input.mouse_button_held(mouse_button::button_1),
+				.pressed = ctx.mouse_pressed(mouse_button::button_1) && ctx.input_available(),
+				.held = ctx.mouse_held(mouse_button::button_1),
 			},
 			gd.resizing_panel
 		);
@@ -614,7 +614,7 @@ auto gse::ide::draw_graph(gui::builder& ui, const input::state& input, const rec
 	const bool over_reset = ctx.hovers(reset_rect);
 	const bool over_area = ctx.hovers(canvas) && !over_panel && !over_divider && !over_legend && !over_reset;
 
-	if (gd.panning && input.mouse_button_held(mouse_button::button_1)) {
+	if (gd.panning && ctx.mouse_held(mouse_button::button_1)) {
 		gd.pan += mouse - gd.pan_last;
 		gd.pan_last = mouse;
 		const vec2f moved = mouse - gd.pan_press;

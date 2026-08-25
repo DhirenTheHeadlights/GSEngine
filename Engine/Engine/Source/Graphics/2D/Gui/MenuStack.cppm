@@ -149,6 +149,7 @@ export namespace gse::gui {
 
 	struct push_screen_request {
 		std::function<std::unique_ptr<screen>()> factory;
+		id window;
 	};
 
 	struct pop_screen_request {};

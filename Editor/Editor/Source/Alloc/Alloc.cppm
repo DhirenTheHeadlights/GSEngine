@@ -114,6 +114,15 @@ auto gse::ide::draw_alloc_header(gse::gui::builder& ui, const rectf& row, alloc_
 		gse::alloc::set_enabled(!gse::alloc::enabled());
 	}
 
+	const float report_w = text_view->width("Write report to log", sty.font_size) + pad * 2.f;
+	const rectf report_rect = rectf::from_position_size(
+		{ toggle_rect.left() - pad - report_w, row.top() - pad * 0.5f },
+		{ report_w, std::max(0.f, row.height() - pad) }
+	);
+	if (draw_action(ctx, report_rect, "Write report to log")) {
+		gse::alloc::log_report(state.top_rows);
+	}
+
 	const float line_h = text_view->line_height(sty.font_size);
 
 	ctx.queue_text({
@@ -220,20 +229,13 @@ auto gse::ide::draw_alloc_panel(gse::gui::builder& ui, const rectf& rect, alloc_
 		return;
 	}
 
-	ctx.layout_cursor = { list_rect.left(), list_rect.top() };
-
-	ui.scroll_region({
+	ui.row_list({
 		.id = "##alloc_site_list",
-		.size = list_rect.size(),
-	}, [&](gse::gui::builder& b) {
-		auto& c = b.ctx;
-		for (const auto& entry : state.sites | std::views::take(state.top_rows)) {
-			const rectf row = rectf::from_position_size(
-				{ list_rect.left(), c.layout_cursor.y() },
-				{ list_rect.width(), row_h }
-			);
-			draw_alloc_row(c, row, entry, state.labels.at(entry.pc));
-			c.layout_cursor.y() -= row_h;
-		}
+		.bounds = list_rect,
+		.row_height = row_h,
+		.row_count = std::min(state.sites.size(), static_cast<std::size_t>(state.top_rows)),
+	}, [&](gse::gui::builder& b, const gse::gui::row& r) {
+		const gse::alloc::site& entry = state.sites[r.index];
+		draw_alloc_row(b.ctx, r.rect, entry, state.labels.at(entry.pc));
 	});
 }

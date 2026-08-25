@@ -7,6 +7,7 @@ import gse.win32;
 import gse.ide.alloc;
 import gse.ide.docs;
 import gse.ide.highlight;
+import gse.ide.navigation;
 import gse.ide.profile;
 
 import :documents;
@@ -97,6 +98,9 @@ export namespace gse::ide {
 		std::filesystem::path path;
 		std::uint32_t line = 0;
 		std::uint32_t column = 0;
+		std::uint32_t end_line = 0;
+		std::uint32_t end_column = 0;
+		jump_highlight highlight = jump_highlight::caret;
 	};
 
 	struct pending_explorer_name {
@@ -124,6 +128,7 @@ export namespace gse::ide {
 			profile_view_state profile;
 			alloc_view_state alloc;
 			bool game_captured = false;
+			std::uint32_t game_instance = 0;
 			int game_capture_settle_frames = 0;
 			gse::vec2f game_cursor{ 0.f, 0.f };
 			gse::vec2f game_input_scale{ 1.f, 1.f };
@@ -161,10 +166,6 @@ export namespace gse::ide {
 			const std::filesystem::path& path
 		) -> gse::id;
 
-		[[nodiscard]] static auto game_active(
-			const data& d
-		) -> bool;
-
 		[[nodiscard]] static auto active_document_id(
 			const data& d
 		) -> std::optional<gse::id>;
@@ -172,10 +173,6 @@ export namespace gse::ide {
 		[[nodiscard]] static auto active_tab_id(
 			const data& d
 		) -> gse::id;
-
-		static auto activate_game(
-			data& d
-		) -> void;
 
 		static auto activate_document(
 			data& d,
@@ -190,9 +187,7 @@ export namespace gse::ide {
 
 		static auto jump_to(
 			data& d,
-			const std::filesystem::path& path,
-			std::uint32_t line,
-			std::uint32_t column
+			const navigation_entry& target
 		) -> void;
 
 		static auto go_back(
@@ -328,9 +323,7 @@ namespace gse::ide {
 	) -> std::filesystem::path;
 
 	auto normalized_navigation_entry(
-		const std::filesystem::path& path,
-		const std::uint32_t line,
-		const std::uint32_t column
+		const navigation_entry& entry
 	) -> navigation_entry;
 
 	auto same_navigation_path(
@@ -439,12 +432,10 @@ auto gse::ide::normalized_path(const std::filesystem::path& path) -> std::filesy
 	return (ec ? path : canonical).lexically_normal();
 }
 
-auto gse::ide::normalized_navigation_entry(const std::filesystem::path& path, const std::uint32_t line, const std::uint32_t column) -> navigation_entry {
-	return {
-		.path = normalized_path(path),
-		.line = line,
-		.column = column,
-	};
+auto gse::ide::normalized_navigation_entry(const navigation_entry& entry) -> navigation_entry {
+	navigation_entry normalized = entry;
+	normalized.path = normalized_path(entry.path);
+	return normalized;
 }
 
 auto gse::ide::same_navigation_path(const std::filesystem::path& lhs, const std::filesystem::path& rhs) -> bool {
@@ -505,12 +496,27 @@ auto gse::ide::jump_to_without_history(workspace::data& d, const navigation_entr
 		return false;
 	}
 	document& doc = it->second;
-	doc.view.caret = doc.buffer.clamp({
+	const gse::gui::buffer_position start = doc.buffer.clamp({
 		.line = target.line,
 		.column = target.column,
 	});
-	doc.view.anchor = doc.view.caret;
-	doc.pending_center_line = doc.view.caret.line;
+	const gse::gui::buffer_position end = doc.buffer.clamp({
+		.line = target.end_line,
+		.column = target.end_column,
+	});
+	if (target.highlight == jump_highlight::caret) {
+		doc.view.anchor = start;
+		doc.view.caret = start;
+	}
+	else if (end > start) {
+		doc.view.anchor = start;
+		doc.view.caret = end;
+	}
+	else {
+		doc.view.anchor = { .line = start.line, .column = 0 };
+		doc.view.caret = { .line = start.line, .column = static_cast<std::uint32_t>(doc.buffer.line(start.line).size()) };
+	}
+	doc.pending_center_line = start.line;
 	workspace::activate_document(d, id);
 	return true;
 }
@@ -700,20 +706,12 @@ auto gse::ide::workspace::open_file(data& d, const std::filesystem::path& path) 
 	return id;
 }
 
-auto gse::ide::workspace::game_active(const data& d) -> bool {
-	return d.documents.game_active();
-}
-
 auto gse::ide::workspace::active_document_id(const data& d) -> std::optional<id> {
 	return d.documents.active_document_id();
 }
 
 auto gse::ide::workspace::active_tab_id(const data& d) -> id {
 	return d.documents.active_tab_id();
-}
-
-auto gse::ide::workspace::activate_game(data& d) -> void {
-	d.documents.activate_game();
 }
 
 auto gse::ide::workspace::activate_document(data& d, const id document_id) -> void {
@@ -724,8 +722,8 @@ auto gse::ide::workspace::reorder_document(data& d, const id document_id, const 
 	d.documents.reorder(document_id, index);
 }
 
-auto gse::ide::workspace::jump_to(data& d, const std::filesystem::path& path, const std::uint32_t line, const std::uint32_t column) -> void {
-	const navigation_entry target = normalized_navigation_entry(path, line, column);
+auto gse::ide::workspace::jump_to(data& d, const navigation_entry& entry) -> void {
+	const navigation_entry target = normalized_navigation_entry(entry);
 	const std::optional<navigation_entry> current = current_navigation_entry(d);
 	const bool record_current = current && !same_navigation_entry(*current, target);
 	if (!jump_to_without_history(d, target)) {

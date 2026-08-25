@@ -224,6 +224,7 @@ auto gse::gui::process_menu(data& d, viewport_state& vp, const gse::input::state
 		.current_z_order = menu_z,
 		.input_layer = vp.input_layer_render,
 		.input_suppressed = vp.input_suppressed,
+		.owns_keyboard = vp.owns_keyboard,
 		.hit_regions = &vp.input_layers_data,
 		.tooltip = &vp.tooltip,
 		.context_menu = &vp.context_menu,

@@ -6,7 +6,6 @@ export import gse.ide.search_panel;
 export import gse.ide.lint_panel;
 export import gse.ide.app;
 export import gse.ide.highlight;
-export import gse.ide.format;
 export import gse.ide.workspace;
 export import gse.ide.terminal;
 export import gse.ide.viewport;

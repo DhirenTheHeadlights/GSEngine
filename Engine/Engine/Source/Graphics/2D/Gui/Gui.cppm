@@ -37,6 +37,13 @@ namespace gse::gui {
 }
 
 export namespace gse::gui {
+	struct viewport_chrome {
+		float caption_height = 0.f;
+		float controls_width = 0.f;
+		int resize_exclude_y0 = 0;
+		int resize_exclude_y1 = 0;
+	};
+
 	struct viewport_state {
 		[[= shared]] menu_stack_state menu_stack;
 		[[= shared]] id_mapped_collection<menu> menus;
@@ -58,6 +65,7 @@ export namespace gse::gui {
 		render_layer input_layer_render = render_layer::content;
 		bool input_suppressed = false;
 		bool owns_cursor = true;
+		bool owns_keyboard = true;
 		input_layer input_layers_data;
 		context_menu_state context_menu;
 		std::optional<menu> screen_surface;
@@ -65,7 +73,7 @@ export namespace gse::gui {
 		std::vector<id> pending_popout_close_ids;
 		std::optional<std::pair<id, std::uint32_t>> pending_tab_close;
 		std::optional<caption_action> pending_caption_action;
-		bool window_grip_held = false;
+		viewport_chrome chrome;
 
 		frame_state fstate{};
 		id window;
@@ -170,7 +178,7 @@ export namespace gse::gui {
 		shared_view<input::data> input_state,
 		const save::registry& save_reg,
 		channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, popout_closed, menu_migrate_request, window_opened, window_closed, window_resized> requests_in,
-		channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request, window_panel_drag_request> ui_out,
+		channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> ui_out,
 		data& d
 	) -> async::task<>;
 

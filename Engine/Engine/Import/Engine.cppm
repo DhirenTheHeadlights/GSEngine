@@ -25,5 +25,6 @@ export import gse.os;
 export import gse.runtime;
 export import gse.save;
 export import gse.shell;
+export import gse.format;
 export import gse.syntax;
 export import gse.time;

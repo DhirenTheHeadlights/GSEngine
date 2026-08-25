@@ -281,31 +281,26 @@ auto gse::ide::draw_problems_panel(gse::gui::builder& ui, const rectf& rect, pro
 		return;
 	}
 
-	ctx.layout_cursor = { list_rect.left(), list_rect.top() };
-
-	ui.scroll_region({
+	ui.row_list({
 		.id = "##problem_list",
-		.size = list_rect.size(),
-	}, [&](gse::gui::builder& b) {
+		.bounds = list_rect,
+		.row_height = row_h,
+		.row_count = rows.size(),
+	}, [&](gse::gui::builder& b, const gse::gui::row& r) {
 		auto& c = b.ctx;
-		for (const problem_row& item : rows) {
-			const rectf row = rectf::from_position_size(
-				{ list_rect.left(), c.layout_cursor.y() },
-				{ list_rect.width(), row_h }
-			);
-			const rectf visible = row.intersection(list_rect);
-			const bool hovered = visible.height() > 0.f && c.hovers(visible);
+		const problem_row& item = rows[r.index];
 
-			if (hovered && c.mouse_pressed_for(visible)) {
-				channels.push<jump_to_request>({
-					.path = item.entry->file.empty() ? *item.path : item.entry->file,
-					.line = item.entry->line,
-					.column = item.entry->start_col,
-				});
-			}
-
-			draw_problem_row(c, row, item, hovered);
-			c.layout_cursor.y() -= row_h;
+		if (r.hovered && c.mouse_pressed_for(r.visible)) {
+			const bool byte_columns = item.entry->rule.has_value();
+			channels.push<jump_to_request>({
+				.path = item.entry->file.empty() ? *item.path : item.entry->file,
+				.line = item.entry->line,
+				.column = item.entry->start_col,
+				.end_line = byte_columns ? item.entry->end_line : 0,
+				.end_column = byte_columns ? item.entry->end_col : 0,
+			});
 		}
+
+		draw_problem_row(c, r.rect, item, r.hovered);
 	});
 }

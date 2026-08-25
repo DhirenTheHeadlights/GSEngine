@@ -505,8 +505,9 @@ auto gse::ide::agent::draw_close_confirm(gui::builder& ui, data& d, const rectf&
 	}
 }
 
-auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, const rectf& area, const vec2f mouse, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out) -> void {
+auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, const rectf& area, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out) -> void {
 	const gui::draw_context& ctx = ui.ctx;
+	const vec2f mouse = ctx.mouse_position();
 	const gui::style& sty = ctx.style;
 	const float pad = sty.padding;
 
@@ -601,10 +602,13 @@ auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, const rectf& ar
 		}
 		else if (link) {
 			const transcript_row& owner = s->rows[std::min<std::size_t>(*link, s->rows.size() - 1)];
+			const std::uint32_t first = jump_line_for(owner);
 			jump_out.push<jump_to_request>({
 				.path = owner.file,
-				.line = jump_line_for(owner),
+				.line = first,
 				.column = 0,
+				.end_line = owner.added.empty() ? first : first + static_cast<std::uint32_t>(owner.added.size()) - 1,
+				.end_column = ~0u,
 			});
 		}
 	}
@@ -749,6 +753,7 @@ auto gse::ide::agent::draw_input(gui::builder& ui, session& s, const rectf& area
 			.buffer = s.draft,
 			.state = s.draft_state,
 			.rect = box,
+			.consumes_image_paste = true,
 			.font = ctx.fonts.code,
 		},
 		ui.hot_widget_id,
@@ -883,7 +888,7 @@ auto gse::ide::agent::draw_activity(const gui::draw_context& ctx, const session&
 	});
 }
 
-auto gse::ide::agent::draw_panel(gui::builder& ui, data& d, const vec2f mouse, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out) -> void {
+auto gse::ide::agent::draw_panel(gui::builder& ui, data& d, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out) -> void {
 	const gui::draw_context& ctx = ui.ctx;
 	if (ctx.clip_stack.empty()) {
 		return;
@@ -926,7 +931,7 @@ auto gse::ide::agent::draw_panel(gui::builder& ui, data& d, const vec2f mouse, c
 		draw_input(ui, *shown, input_area);
 		draw_context_bar(ctx, *shown, context_area);
 	}
-	draw_transcript(ui, d, transcript, mouse, jump_out);
+	draw_transcript(ui, d, transcript, jump_out);
 	draw_session_info(ctx, d, body);
 	draw_history(ui, d, body);
 	draw_close_confirm(ui, d, body);

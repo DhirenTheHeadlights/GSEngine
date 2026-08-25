@@ -19,7 +19,6 @@ export namespace gse::ide {
 		gse::gui::builder& ui,
 		const rectf& rect,
 		search_panel_state& state,
-		const gse::input::state& keys,
 		const search::index_state* index,
 		gse::channel_write<jump_to_request> channels
 	) -> void;
@@ -150,7 +149,7 @@ auto gse::ide::draw_search_result_row(const gse::gui::draw_context& ctx, const r
 	}
 }
 
-auto gse::ide::draw_search_panel(gse::gui::builder& ui, const rectf& rect, search_panel_state& state, const gse::input::state& keys, const search::index_state* index, const gse::channel_write<jump_to_request> channels) -> void {
+auto gse::ide::draw_search_panel(gse::gui::builder& ui, const rectf& rect, search_panel_state& state, const search::index_state* index, const gse::channel_write<jump_to_request> channels) -> void {
 	auto& ctx = ui.ctx;
 	const auto& sty = ctx.style;
 	const auto text_view = ctx.fonts.text.resolve();
@@ -224,50 +223,33 @@ auto gse::ide::draw_search_panel(gse::gui::builder& ui, const rectf& rect, searc
 	}
 
 	if (focused) {
-		if (keys.key_pressed(gse::key::down)) {
+		if (ctx.key_pressed(gse::key::down)) {
 			state.driver.selected = std::min<int>(state.driver.selected + 1, static_cast<int>(state.driver.results.size()) - 1);
 		}
-		if (keys.key_pressed(gse::key::up)) {
+		if (ctx.key_pressed(gse::key::up)) {
 			state.driver.selected = std::max(state.driver.selected - 1, 0);
 		}
-		if (keys.key_pressed(gse::key::enter)) {
+		if (ctx.key_pressed(gse::key::enter)) {
 			const int idx = state.driver.selected >= 0 ? state.driver.selected : 0;
 			const search::result& chosen = state.driver.results[static_cast<std::size_t>(idx)];
-			channels.push<jump_to_request>({
-				.path = chosen.path,
-				.line = chosen.line,
-				.column = chosen.column,
-			});
+			channels.push<jump_to_request>(search::jump_target(chosen));
 		}
 	}
 
-	ctx.layout_cursor = { list_rect.left(), list_rect.top() };
-
-	ui.scroll_region({
+	ui.row_list({
 		.id = "##search_panel_results",
-		.size = list_rect.size(),
-	}, [&](gse::gui::builder& b) {
+		.bounds = list_rect,
+		.row_height = row_h,
+		.row_count = state.driver.results.size(),
+	}, [&](gse::gui::builder& b, const gse::gui::row& r) {
 		auto& c = b.ctx;
-		for (std::size_t i = 0; i < state.driver.results.size(); ++i) {
-			const search::result& entry = state.driver.results[i];
-			const rectf row = rectf::from_position_size(
-				{ list_rect.left(), c.layout_cursor.y() },
-				{ list_rect.width(), row_h }
-			);
-			const rectf visible = row.intersection(list_rect);
-			const bool hovered = visible.height() > 0.f && c.hovers(visible);
+		const search::result& entry = state.driver.results[r.index];
 
-			if (hovered && c.mouse_pressed_for(visible)) {
-				state.driver.selected = static_cast<int>(i);
-				channels.push<jump_to_request>({
-					.path = entry.path,
-					.line = entry.line,
-					.column = entry.column,
-				});
-			}
-
-			draw_search_result_row(c, row, entry, hovered, state.driver.selected == static_cast<int>(i));
-			c.layout_cursor.y() -= row_h;
+		if (r.hovered && c.mouse_pressed_for(r.visible)) {
+			state.driver.selected = static_cast<int>(r.index);
+			channels.push<jump_to_request>(search::jump_target(entry));
 		}
+
+		draw_search_result_row(c, r.rect, entry, r.hovered, state.driver.selected == static_cast<int>(r.index));
 	});
 }

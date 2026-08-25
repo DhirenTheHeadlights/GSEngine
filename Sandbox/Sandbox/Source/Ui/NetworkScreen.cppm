@@ -35,9 +35,9 @@ sandbox::network_screen::network_screen(const gse::shared_view<gse::network::dat
 auto sandbox::network_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> void {
 	const auto& net = m_net;
 
-	if (m_refresh_clock.elapsed<std::uint32_t>() > gse::seconds(1000u)) {
+	if (m_refresh_clock.elapsed() > gse::seconds(1.f)) {
 		m_channels.push<gse::network::refresh_servers_request>({
-			.timeout = gse::milliseconds(150),
+			.timeout = gse::milliseconds(150.f),
 		});
 		m_refresh_clock.reset();
 	}
@@ -74,7 +74,7 @@ auto sandbox::network_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> 
 			.text = "Refresh",
 		})) {
 		m_channels.push<gse::network::refresh_servers_request>({
-			.timeout = gse::milliseconds(150),
+			.timeout = gse::milliseconds(150.f),
 		});
 	}
 
@@ -105,8 +105,8 @@ auto sandbox::network_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> 
 					.ip = "0.0.0.0",
 					.port = 0
 				},
-				.timeout = gse::seconds(5),
-				.retry = gse::seconds(1),
+				.timeout = gse::seconds(5.f),
+				.retry = gse::seconds(1.f),
 			},
 		});
 	}

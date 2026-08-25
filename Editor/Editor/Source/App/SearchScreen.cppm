@@ -11,8 +11,7 @@ export namespace gse::ide {
 	public:
 		search_screen(
 			channel_write<jump_to_request> channels,
-			const search::index_state* index,
-			shared_view<input::data> input
+			const search::index_state* index
 		);
 
 		auto build(
@@ -50,7 +49,6 @@ export namespace gse::ide {
 
 		channel_write<jump_to_request> m_channels;
 		const search::index_state* m_index;
-		shared_view<input::data> m_input_data;
 		search::query_driver m_driver;
 		std::vector<std::string> m_locations;
 		gui::text_input_state m_input;
@@ -58,8 +56,8 @@ export namespace gse::ide {
 	};
 }
 
-gse::ide::search_screen::search_screen(channel_write<jump_to_request> channels, const search::index_state* index, const shared_view<input::data> input)
-	: m_channels(std::move(channels)), m_index(index), m_input_data(input) {
+gse::ide::search_screen::search_screen(channel_write<jump_to_request> channels, const search::index_state* index)
+	: m_channels(std::move(channels)), m_index(index) {
 }
 
 auto gse::ide::search_screen::title() const -> std::string_view {
@@ -184,7 +182,6 @@ auto gse::ide::search_screen::draw_row(gui::draw_context& ctx, const rectf& row,
 auto gse::ide::search_screen::build(gui::builder& ui, gui::nav&) -> void {
 	auto& ctx = ui.ctx;
 	const auto text_view = ctx.fonts.text.resolve();
-	const input::state& input = input::current_state(m_input_data);
 	if (!ctx.current_menu) {
 		return;
 	}
@@ -232,26 +229,22 @@ auto gse::ide::search_screen::build(gui::builder& ui, gui::nav&) -> void {
 		}
 	}
 
-	if (input.key_pressed(key::escape)) {
+	if (ctx.key_pressed(key::escape)) {
 		m_driver.accept();
 		m_dismiss = true;
 		return;
 	}
 	if (!m_driver.results.empty()) {
-		if (input.key_pressed(key::down)) {
+		if (ctx.key_pressed(key::down)) {
 			m_driver.selected = std::min<int>(m_driver.selected + 1, static_cast<int>(m_driver.results.size()) - 1);
 		}
-		if (input.key_pressed(key::up)) {
+		if (ctx.key_pressed(key::up)) {
 			m_driver.selected = std::max(m_driver.selected - 1, 0);
 		}
-		if (input.key_pressed(key::enter)) {
+		if (ctx.key_pressed(key::enter)) {
 			const int idx = m_driver.selected >= 0 ? m_driver.selected : 0;
 			const search::result& r = m_driver.results[static_cast<std::size_t>(idx)];
-			m_channels.push<jump_to_request>({
-				.path = r.path,
-				.line = r.line,
-				.column = r.column,
-			});
+			m_channels.push<jump_to_request>(search::jump_target(r));
 			m_driver.accept();
 			m_dismiss = true;
 			return;
@@ -266,35 +259,21 @@ auto gse::ide::search_screen::build(gui::builder& ui, gui::nav&) -> void {
 	);
 	const float row_h = text_view->line_height(sty.font_size) + pad;
 
-	ctx.layout_cursor = { list_rect.left(), list_rect.top() };
-
-	ui.scroll_region({
+	ui.row_list({
 		.id = "##search_palette_list",
-		.size = list_rect.size(),
-	}, [&](gui::builder& b) {
+		.bounds = list_rect,
+		.row_height = row_h,
+		.row_count = m_driver.results.size(),
+	}, [&](gui::builder& b, const gui::row& r) {
 		auto& c = b.ctx;
-		const vec2f mouse = input.mouse_position();
-		const rectf clip = c.current_clip().value_or(list_rect);
-		for (std::size_t i = 0; i < m_driver.results.size(); ++i) {
-			const rectf row = rectf::from_position_size(
-				{ list_rect.left(), c.layout_cursor.y() },
-				{ list_rect.width(), row_h }
-			);
-			const bool over = clip.contains(mouse) && c.hovers(row);
-			if (over) {
-				m_driver.selected = static_cast<int>(i);
-			}
-			draw_row(c, row, m_driver.results[i], m_locations[i], m_driver.selected == static_cast<int>(i));
-			if (over && c.mouse_pressed_for(row)) {
-				m_channels.push<jump_to_request>({
-					.path = m_driver.results[i].path,
-					.line = m_driver.results[i].line,
-					.column = m_driver.results[i].column,
-				});
-				m_driver.accept();
-				m_dismiss = true;
-			}
-			c.layout_cursor.y() -= row_h;
+		if (r.hovered) {
+			m_driver.selected = static_cast<int>(r.index);
+		}
+		draw_row(c, r.rect, m_driver.results[r.index], m_locations[r.index], m_driver.selected == static_cast<int>(r.index));
+		if (r.hovered && c.mouse_pressed_for(r.visible)) {
+			m_channels.push<jump_to_request>(search::jump_target(m_driver.results[r.index]));
+			m_driver.accept();
+			m_dismiss = true;
 		}
 	});
 }

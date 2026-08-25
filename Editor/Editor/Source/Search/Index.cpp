@@ -322,6 +322,7 @@ auto gse::ide::search::sort_xrefs(std::vector<xref_entry>& refs) -> void {
 	std::ranges::sort(refs, [](const xref_entry& a, const xref_entry& b) {
 		return std::tie(a.line, a.column, a.length) < std::tie(b.line, b.column, b.length);
 	});
+	refs.shrink_to_fit();
 }
 
 auto gse::ide::search::sort_symbol_locations(symbol_index& index, std::atomic<std::size_t>* progress) -> void {
@@ -594,7 +595,7 @@ auto gse::ide::search::xrefs_on_line(const symbol_index& index, const file_id fi
 				"col {} len {} '{}' -> {}:{}:{}",
 				it->column + 1,
 				it->length,
-				it->qualified.empty() ? std::string_view("(unqualified)") : std::string_view(it->qualified),
+				it->qualified.tag().empty() ? std::string_view("(unqualified)") : it->qualified.tag(),
 				index.path_for(it->def_file).generic_display_string(),
 				it->def_line + 1,
 				it->def_column + 1));
@@ -872,9 +873,9 @@ auto gse::ide::search::index_state::definition_at(const std::filesystem::path& f
 		});
 	}
 	if (const xref_entry* xref = xref_at(symbols, fid, line, column)) {
-		location definition = promoted_definition(symbols, xref->def_file, xref->def_line, xref->def_column, xref->identity, xref->qualified);
+		location definition = promoted_definition(symbols, xref->def_file, xref->def_line, xref->def_column, xref->identity.tag(), xref->qualified.tag());
 		if (definition.path.empty()) {
-			return unexpected_lookup(lookup_failure::definition_not_found, xref->qualified);
+			return unexpected_lookup(lookup_failure::definition_not_found, std::string(xref->qualified.tag()));
 		}
 		return definition;
 	}
@@ -916,9 +917,9 @@ auto gse::ide::search::index_state::symbol_at(const std::filesystem::path& file,
 			.subject = std::format("{}:{}:{}", file.generic_display_string(), line + 1, column + 1),
 		});
 	}
-	const location definition = promoted_definition(symbols, xref->def_file, xref->def_line, xref->def_column, xref->identity, xref->qualified);
+	const location definition = promoted_definition(symbols, xref->def_file, xref->def_line, xref->def_column, xref->identity.tag(), xref->qualified.tag());
 	if (definition.path.empty()) {
-		return unexpected_lookup(lookup_failure::definition_not_found, xref->qualified);
+		return unexpected_lookup(lookup_failure::definition_not_found, std::string(xref->qualified.tag()));
 	}
 	std::string kind;
 	std::vector<lookup_error> issues;
@@ -929,19 +930,19 @@ auto gse::ide::search::index_state::symbol_at(const std::filesystem::path& file,
 		if (needs_type && xref->type.empty()) {
 			issues.push_back({
 				.reason = lookup_failure::type_not_recorded,
-				.subject = xref->qualified,
+				.subject = std::string(xref->qualified.tag()),
 			});
 		}
 	}
 	else {
 		issues.push_back({
 			.reason = lookup_failure::kind_not_recorded,
-			.subject = xref->qualified,
+			.subject = std::string(xref->qualified.tag()),
 		});
 	}
 	return hover_hit{
 		.def = definition,
-		.qualified = xref->qualified,
+		.qualified = std::string(xref->qualified.tag()),
 		.kind = kind,
 		.type = xref->type,
 		.value = xref->value,
@@ -1150,13 +1151,13 @@ auto gse::ide::search::index_state::semantic_tokens_in(const std::filesystem::pa
 				continue;
 			}
 			const symbol_entry* target = symbol_at_location(symbols, x.def_file, x.def_line, x.def_column, false);
-			if (!target && !x.identity.empty()) {
-				if (const auto it = symbols.definitions_by_identity.find(x.identity); it != symbols.definitions_by_identity.end()) {
+			if (!target && !x.identity.tag().empty()) {
+				if (const auto it = symbols.definitions_by_identity.find(x.identity.tag()); it != symbols.definitions_by_identity.end()) {
 					target = &symbols.symbols[it->second.front()];
 				}
 			}
-			if (!target && !x.qualified.empty()) {
-				if (const auto it = symbols.definitions_by_qualified.find(x.qualified); it != symbols.definitions_by_qualified.end()) {
+			if (!target && !x.qualified.tag().empty()) {
+				if (const auto it = symbols.definitions_by_qualified.find(x.qualified.tag()); it != symbols.definitions_by_qualified.end()) {
 					target = &symbols.symbols[it->second.front()];
 				}
 			}
@@ -1400,8 +1401,8 @@ auto gse::ide::search::make_xref_entry(const file_id definition_file, analysis::
 		.def_file = definition_file,
 		.def_line = ref.def_line > 0 ? ref.def_line - 1 : 0,
 		.def_column = ref.def_column > 0 ? ref.def_column - 1 : 0,
-		.qualified = std::move(ref.qualified),
-		.identity = std::move(ref.identity),
+		.qualified = generate_id(ref.qualified),
+		.identity = generate_id(ref.identity),
 		.type = std::move(ref.type),
 		.value = std::move(ref.value),
 	};

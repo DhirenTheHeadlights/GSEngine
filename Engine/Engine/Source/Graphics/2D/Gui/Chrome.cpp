@@ -85,21 +85,6 @@ auto gse::gui::window_caption_buttons_for(const rectf& title_bar_rect, const sty
 	};
 }
 
-auto gse::gui::window_caption_grip_rect(const font_set& fonts, const menu& m, const style& sty, const rectf& title_bar_rect) -> rectf {
-	if (m.tab_contents.empty()) {
-		return {};
-	}
-
-	const auto caption = std::string_view(m.tab_contents[0]);
-	const float text_extent = fonts.text.valid() ? fonts.text.resolve()->width(caption, sty.font_size) : 0.f;
-	const float available = std::max(0.f, title_bar_rect.width() - window_caption_buttons_for(title_bar_rect, sty).extent());
-	const float extent = std::min(available, text_extent + sty.padding * 4.f);
-	return rectf::from_position_size(
-		title_bar_rect.top_left(),
-		{ extent, std::min(sty.title_bar_height, title_bar_rect.height()) }
-	);
-}
-
 auto gse::gui::draw_window_caption_buttons(data& d, viewport_state& vp, const gse::input::state& input_state, const menu& current_menu, const rectf& title_bar_rect, const render_layer layer) -> void {
 	const style& sty = vp.fstate.sty;
 	const window_caption_buttons buttons = window_caption_buttons_for(title_bar_rect, sty);
@@ -339,22 +324,11 @@ auto gse::gui::draw_menu_chrome(data& d, viewport_state& vp, const gse::input::s
 			.corner_radius = menu_radius
 		});
 
-		const bool window_grip = vp.window.exists() && !current_menu.owner_id().exists();
-		if (window_grip) {
-			d.sprite_commands.push_back({
-				.rect = window_caption_grip_rect(d.fonts, current_menu, sty, title_bar_rect),
-				.color = sty.color_tab_active,
-				.texture = d.blank_texture,
-				.layer = layer,
-				.corner_radius = sty.corner_radius
-			});
-		}
-
 		if (d.fonts.text.valid() && !current_menu.tab_contents.empty()) {
 			d.text_commands.push_back({
 				.font = d.fonts.text,
 				.text = intern_text(d, current_menu.tab_contents[0]),
-				.position = { title_bar_rect.left() + (window_grip ? sty.padding * 2.f : sty.padding), title_bar_rect.center().y() + d.fonts.text.resolve()->vertical_center_offset(sty.font_size) },
+				.position = { title_bar_rect.left() + sty.padding, title_bar_rect.center().y() + d.fonts.text.resolve()->vertical_center_offset(sty.font_size) },
 				.scale = sty.font_size,
 				.clip_rect = title_bar_rect,
 				.layer = layer
@@ -458,6 +432,7 @@ auto gse::gui::draw_tab_bar(data& d, viewport_state& vp, const gse::input::state
 		.current_z_order = current_menu.z_order,
 		.input_layer = vp.input_layer_render,
 		.input_suppressed = vp.input_suppressed,
+		.owns_keyboard = vp.owns_keyboard,
 		.hit_regions = &vp.input_layers_data,
 		.tooltip = &vp.tooltip,
 		.context_menu = &vp.context_menu,

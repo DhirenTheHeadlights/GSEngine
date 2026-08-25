@@ -128,7 +128,6 @@ export namespace gse::ide {
 
 	auto draw_graph(
 		gui::builder& ui,
-		const input::state& input,
 		const rectf& area,
 		graph_data& gd,
 		const search::index_state* index,

@@ -24,6 +24,7 @@ export namespace gse::ide {
 		document_revision revision;
 		float width = 0.f;
 		float font_size = 0.f;
+		std::uint64_t style_key = 0;
 		gse::gui::text_area_state view;
 		bool built = false;
 	};
@@ -76,8 +77,6 @@ export namespace gse::ide {
 
 		[[nodiscard]] auto order() const -> std::span<const gse::id>;
 
-		[[nodiscard]] auto game_active() const -> bool;
-
 		[[nodiscard]] auto active_document_id() const -> std::optional<gse::id>;
 
 		[[nodiscard]] auto active_tab_id() const -> gse::id;
@@ -85,8 +84,6 @@ export namespace gse::ide {
 		auto add(
 			document doc
 		) -> gse::id;
-
-		auto activate_game() -> void;
 
 		auto activate(
 			gse::id document_id
@@ -102,19 +99,19 @@ export namespace gse::ide {
 		) -> void;
 
 	private:
-		struct game_view {};
+		struct no_document {};
 
 		struct document_view {
 			gse::id document_id;
 		};
 
-		using active_view = std::variant<game_view, document_view>;
+		using active_view = std::variant<no_document, document_view>;
 
 		static constexpr gse::id game_tab_id = gse::id_of<"ide.workspace.game_tab">();
 
 		std::unordered_map<gse::id, document> m_documents;
 		std::vector<gse::id> m_order;
-		active_view m_active = game_view{};
+		active_view m_active = no_document{};
 		std::uint64_t m_next_document_sequence = 1;
 	};
 }
@@ -143,10 +140,6 @@ auto gse::ide::open_documents::order() const -> std::span<const id> {
 	return m_order;
 }
 
-auto gse::ide::open_documents::game_active() const -> bool {
-	return std::holds_alternative<game_view>(m_active);
-}
-
 auto gse::ide::open_documents::active_document_id() const -> std::optional<id> {
 	if (const document_view* view = std::get_if<document_view>(&m_active)) {
 		return view->document_id;
@@ -167,10 +160,6 @@ auto gse::ide::open_documents::add(document doc) -> id {
 	m_order.push_back(document_id);
 	m_active = document_view{ .document_id = document_id };
 	return document_id;
-}
-
-auto gse::ide::open_documents::activate_game() -> void {
-	m_active = game_view{};
 }
 
 auto gse::ide::open_documents::activate(const id document_id) -> void {
@@ -198,7 +187,7 @@ auto gse::ide::open_documents::erase(const id document_id) -> void {
 			m_active = document_view{ .document_id = *std::prev(order_it) };
 		}
 		else {
-			m_active = game_view{};
+			m_active = no_document{};
 		}
 	}
 	if (order_it != m_order.end()) {

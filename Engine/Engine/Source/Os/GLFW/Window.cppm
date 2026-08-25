@@ -51,7 +51,6 @@ export namespace gse {
 		id window;
 		int caption_height = 0;
 		int controls_width = 0;
-		int grip_width = 0;
 		int resize_exclude_y0 = 0;
 		int resize_exclude_y1 = 0;
 	};
@@ -99,13 +98,14 @@ export namespace gse {
 	struct window_popout_request {
 		std::string menu_name;
 		std::string title;
-		vec2i client_position;
+		vec2i screen_position;
 		vec2i size{ 640, 480 };
 	};
 
 	struct window_opened {
 		id id;
 		native_window_handle handle;
+		vec2i position;
 		vec2i size;
 		int present_mode_index = 0;
 		std::string for_menu;
@@ -115,22 +115,26 @@ export namespace gse {
 		id id;
 	};
 
-	struct window_panel_drag_request {
-		id window;
+	struct window_locate_cursor_request {
+		id source;
 		vec2f client_cursor;
-		bool released = false;
 	};
 
-	struct window_panel_drag_over {
-		id window;
-		vec2f primary_cursor;
-		bool over_primary = false;
-		bool released = false;
+	struct window_cursor_located {
+		id source;
+		std::optional<id> window;
+		vec2f client_cursor;
+		vec2i screen_cursor;
 	};
 
 	struct window_resized {
 		id id;
 		vec2i size;
+	};
+
+	struct window_moved {
+		id id;
+		vec2i position;
 	};
 }
 
@@ -184,7 +188,6 @@ export namespace gse::window {
 		vec2i size{ 0, 0 };
 		int chrome_caption_height = 0;
 		int chrome_controls_width = 0;
-		int chrome_grip_width = 0;
 		int chrome_resize_exclude_y0 = 0;
 		int chrome_resize_exclude_y1 = 0;
 		composition_probe last_composition;
@@ -273,6 +276,7 @@ export namespace gse::window {
 		bool native_frame = false;
 
 		[[= shared]] gse::id focused_window;
+		[[= shared]] gse::id cursor_window;
 		[[= shared]] window_surface primary;
 		std::vector<std::unique_ptr<window_surface>> secondaries;
 	};

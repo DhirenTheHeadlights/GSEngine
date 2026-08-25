@@ -22,44 +22,47 @@ import gse.containers;
 import gse.concurrency;
 import gse.ecs;
 import gse.math;
+import gse.meta;
 import gse.log;
 
 namespace gse::renderer::ui {
-	auto record_state_name(const record_state state) -> std::string_view {
-		switch (state) {
-			case record_state::recording:
-				return "recording";
-			case record_state::skipped_no_frame:
-				return "skipped(no frame in progress)";
-			case record_state::skipped_no_batches:
-				return "skipped(no batches)";
-			default:
-				return "unknown";
-		}
-	}
+	struct record_stats {
+		vec2u extent;
+		std::size_t batches = 0;
+		std::size_t vertices = 0;
+		std::size_t indices = 0;
+		std::size_t dropped_quads = 0;
+		std::size_t dropped_batches = 0;
+	};
 
-	auto note_record_state(data& d, const record_state state, const vec2u extent, const std::size_t batches, const std::size_t vertices, const std::size_t indices) -> void {
-		const bool changed = state != d.last_record_state || extent.x() != d.last_extent.x() || extent.y() != d.last_extent.y();
+	auto note_record_state(data& d, const record_state state, const record_stats& stats) -> void {
+		const bool changed = state != d.last_record_state || stats.extent.x() != d.last_extent.x() || stats.extent.y() != d.last_extent.y();
 		if (!changed) {
 			++d.frames_since_state_change;
 			return;
 		}
+		const record_state_info from = annotation_from_enum<record_state_info>(d.last_record_state, {});
+		const record_state_info to = annotation_from_enum<record_state_info>(state, {});
 		log::println(
 			log::category::render,
-			"[ui] record state {} -> {} after {} frames: extent={}x{} batches={} verts={} indices={} published={} recorded={}",
-			record_state_name(d.last_record_state),
-			record_state_name(state),
+			"[ui] record state {} -> {} after {} frames: extent={}x{} batches={} verts={} indices={} dropped_quads={}/{} dropped_batches={}/{} published={} recorded={}",
+			from.label,
+			to.label,
 			d.frames_since_state_change,
-			extent.x(),
-			extent.y(),
-			batches,
-			vertices,
-			indices,
+			stats.extent.x(),
+			stats.extent.y(),
+			stats.batches,
+			stats.vertices,
+			stats.indices,
+			stats.dropped_quads,
+			max_quads_per_frame,
+			stats.dropped_batches,
+			max_batches_per_frame,
 			d.published_frames,
 			d.recorded_frames
 		);
 		d.last_record_state = state;
-		d.last_extent = extent;
+		d.last_extent = stats.extent;
 		d.frames_since_state_change = 0;
 	}
 
@@ -119,9 +122,9 @@ namespace gse::renderer::ui {
 	>;
 }
 
-auto gse::renderer::ui::add_sprite_quad(linear_vector<vertex>& vertices, linear_vector<std::uint32_t>& indices, const unified_command& cmd) -> void {
+auto gse::renderer::ui::add_sprite_quad(linear_vector<vertex>& vertices, linear_vector<std::uint32_t>& indices, const unified_command& cmd) -> std::size_t {
 	if (vertices.size() + 4 > max_vertices || indices.size() + 6 > max_indices) {
-		return;
+		return 1;
 	}
 
 	const auto base_index = static_cast<std::uint32_t>(vertices.size());
@@ -159,17 +162,21 @@ auto gse::renderer::ui::add_sprite_quad(linear_vector<vertex>& vertices, linear_
 	indices.push_back(base_index + 0);
 	indices.push_back(base_index + 3);
 	indices.push_back(base_index + 2);
+
+	return 0;
 }
 
-auto gse::renderer::ui::add_text_quads(linear_vector<vertex>& vertices, linear_vector<std::uint32_t>& indices, const unified_command& cmd) -> void {
+auto gse::renderer::ui::add_text_quads(linear_vector<vertex>& vertices, linear_vector<std::uint32_t>& indices, const unified_command& cmd) -> std::size_t {
 	if (!cmd.font.valid()) {
-		return;
+		return 0;
 	}
 
+	std::size_t dropped = 0;
 	const auto font_view = cmd.font.resolve();
 	for (const auto& [screen_rect, uv_rect] : font_view->text_layout(cmd.text, cmd.position, cmd.scale)) {
 		if (vertices.size() + 4 > max_vertices || indices.size() + 6 > max_indices) {
-			break;
+			++dropped;
+			continue;
 		}
 
 		const auto base_index = static_cast<std::uint32_t>(vertices.size());
@@ -199,6 +206,8 @@ auto gse::renderer::ui::add_text_quads(linear_vector<vertex>& vertices, linear_v
 		indices.push_back(base_index + 3);
 		indices.push_back(base_index + 2);
 	}
+
+	return dropped;
 }
 
 auto gse::renderer::ui::init(const shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
@@ -247,10 +256,12 @@ auto gse::renderer::ui::run(context& ctx, const shared_view<gpu::context::data> 
 		return {};
 	}
 
-	auto& [vertices, indices, batches] = d.buffered_frames.write();
+	auto& [vertices, indices, batches, dropped_quads, dropped_batches] = d.buffered_frames.write();
 	vertices.clear();
 	indices.clear();
 	batches.clear();
+	dropped_quads = 0;
+	dropped_batches = 0;
 
 	std::vector<unified_command> unified;
 	unified.reserve(sprite_commands.size() + text_commands.size());
@@ -345,17 +356,22 @@ auto gse::renderer::ui::run(context& ctx, const shared_view<gpu::context::data> 
 
 	auto flush_batch = [&] {
 		if (indices.size() > batch_index_start) {
-			batches.push_back({
-				.type = current_type,
-				.window = current_window,
-				.index_offset = batch_index_start,
-				.index_count = static_cast<std::uint32_t>(indices.size() - batch_index_start),
-				.clip_rect = current_clip,
-				.texture = current_texture,
-				.font = current_font,
-				.sample_scene_snapshot = current_sample_snapshot,
-				.image_slot = current_image_slot,
-			});
+			if (batches.size() == max_batches_per_frame) {
+				++dropped_batches;
+			}
+			else {
+				batches.push_back({
+					.type = current_type,
+					.window = current_window,
+					.index_offset = batch_index_start,
+					.index_count = static_cast<std::uint32_t>(indices.size() - batch_index_start),
+					.clip_rect = current_clip,
+					.texture = current_texture,
+					.font = current_font,
+					.sample_scene_snapshot = current_sample_snapshot,
+					.image_slot = current_image_slot,
+				});
+			}
 		}
 		batch_index_start = static_cast<std::uint32_t>(indices.size());
 	};
@@ -400,10 +416,10 @@ auto gse::renderer::ui::run(context& ctx, const shared_view<gpu::context::data> 
 		}
 
 		if (cmd.type == command_type::sprite) {
-			add_sprite_quad(vertices, indices, cmd);
+			dropped_quads += add_sprite_quad(vertices, indices, cmd);
 		}
 		else {
-			add_text_quads(vertices, indices, cmd);
+			dropped_quads += add_text_quads(vertices, indices, cmd);
 		}
 	}
 
@@ -417,18 +433,30 @@ auto gse::renderer::ui::run(context& ctx, const shared_view<gpu::context::data> 
 
 auto gse::renderer::ui::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, shared_view<scene_snapshot::data> snapshot_s) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
-		note_record_state(d, record_state::skipped_no_frame, gpu_s.render_graph->extent(), 0, 0, 0);
+		note_record_state(d, record_state::skipped_no_frame, { .extent = gpu_s.render_graph->extent() });
 		co_return;
 	}
 
-	const auto& [vertices, indices, batches] = d.buffered_frames.read();
+	const auto& [vertices, indices, batches, dropped_quads, dropped_batches] = d.buffered_frames.read();
 
 	if (batches.empty()) {
-		note_record_state(d, record_state::skipped_no_batches, gpu_s.render_graph->extent(), 0, vertices.size(), indices.size());
+		note_record_state(d, record_state::skipped_no_batches, {
+			.extent = gpu_s.render_graph->extent(),
+			.vertices = vertices.size(),
+			.indices = indices.size(),
+		});
 		co_return;
 	}
 
-	note_record_state(d, record_state::recording, gpu_s.render_graph->extent(), batches.size(), vertices.size(), indices.size());
+	const bool truncated = dropped_quads > 0 || dropped_batches > 0;
+	note_record_state(d, truncated ? record_state::truncated : record_state::recording, {
+		.extent = gpu_s.render_graph->extent(),
+		.batches = batches.size(),
+		.vertices = vertices.size(),
+		.indices = indices.size(),
+		.dropped_quads = dropped_quads,
+		.dropped_batches = dropped_batches,
+	});
 	++d.recorded_frames;
 
 	const auto frame_index = gpu_s.render_graph->current_frame();

@@ -16,17 +16,16 @@ import :ui_renderer;
 namespace gse::gui {
 	auto draw_screen_caption(
 		builder& b,
+		viewport_state& vp,
 		screen& top,
 		const rectf& bar_rect,
-		const rectf& full_rect,
-		channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request, window_panel_drag_request> channels
+		const rectf& full_rect
 	) -> void;
 
 	auto process_screen(
 		data& d,
 		viewport_state& vp,
 		const input::state& input_state,
-		vec2f viewport_size,
-		channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request, window_panel_drag_request> channels
+		vec2f viewport_size
 	) -> void;
 }

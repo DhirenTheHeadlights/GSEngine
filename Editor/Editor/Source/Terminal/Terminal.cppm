@@ -104,7 +104,6 @@ export namespace gse::ide::terminal {
 		data& d,
 		channel_read<build_runner::stream_opened, agent::blame_offer> stream_in,
 		channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> ui_out,
-		shared_view<input::data> input_d,
 		shared_view<build_runner::data> build_d
 	) -> async::task<>;
 
@@ -119,7 +118,6 @@ export namespace gse::ide::terminal {
 
 	auto draw_panel(
 		gui::builder& ui,
-		const input::state& input,
 		data& d,
 		channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels,
 		bool building

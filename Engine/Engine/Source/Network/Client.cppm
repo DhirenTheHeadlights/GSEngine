@@ -53,8 +53,8 @@ export namespace gse::network {
 		) -> client& = delete;
 
 		auto connect(
-			time_t<std::uint32_t> timeout = seconds(5),
-			time_t<std::uint32_t> retry = seconds(1)
+			time timeout = seconds(5.f),
+			time retry = seconds(1.f)
 		) -> bool;
 
 		auto tick() -> void;
@@ -90,8 +90,8 @@ export namespace gse::network {
 		address m_server;
 		state m_state = state::disconnected;
 
-		time_t<std::uint32_t> m_timeout{ seconds(5) };
-		time_t<std::uint32_t> m_retry{ seconds(1) };
+		time m_timeout{ seconds(5.f) };
+		time m_retry{ seconds(1.f) };
 
 		clock m_connection_start_clock;
 		clock m_retry_clock;
@@ -118,7 +118,7 @@ gse::network::client::client(const address& listen, const address& server) : m_s
 
 gse::network::client::~client() = default;
 
-auto gse::network::client::connect(const time_t<std::uint32_t> timeout, const time_t<std::uint32_t> retry) -> bool {
+auto gse::network::client::connect(const time timeout, const time retry) -> bool {
 	if (m_state != state::disconnected) {
 		return false;
 	}
@@ -144,19 +144,19 @@ auto gse::network::client::connect(const time_t<std::uint32_t> timeout, const ti
 
 auto gse::network::client::tick() -> void {
 	if (m_state == state::connecting) {
-		if (m_connection_start_clock.elapsed<std::uint32_t>() > m_timeout) {
+		if (m_connection_start_clock.elapsed() > m_timeout) {
 			log::println(log::level::warning, log::category::network, "Client connection timed out");
 			m_state = state::disconnected;
 		}
-		else if (m_retry_clock.elapsed<std::uint32_t>() > m_retry) {
+		else if (m_retry_clock.elapsed() > m_retry) {
 			send(connection_request{});
 			m_retry_clock.reset();
 		}
 	}
 
-	const time_t<std::uint32_t> input_send_interval = milliseconds(16u);
+	const time input_send_interval = milliseconds(16.f);
 
-	if (m_state == state::connected && m_has_pending && m_input_clock.elapsed<std::uint32_t>() > input_send_interval) {
+	if (m_state == state::connected && m_has_pending && m_input_clock.elapsed() > input_send_interval) {
 		send(
 			extract_input_frame(
 				m_pending.state,
@@ -182,7 +182,7 @@ auto gse::network::client::poll(const std::function<void(inbound_message&)>& on_
 			return;
 		}
 
-		if (m_state == state::connecting && msg.id == message_id_v<connection_accepted>) {
+		if (m_state != state::connected && msg.id == message_id_v<connection_accepted>) {
 			log::println(log::category::network, "Client connected to {}:{}", m_server.ip, m_server.port);
 			m_state = state::connected;
 		}

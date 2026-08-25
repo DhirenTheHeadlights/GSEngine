@@ -45,7 +45,7 @@ export namespace gse::vulkan {
 		) -> void*;
 
 		auto wait_for_crash_dump(
-			time timeout = seconds(5)
+			time timeout = seconds(5.f)
 		) -> void;
 
 		static auto register_spirv(

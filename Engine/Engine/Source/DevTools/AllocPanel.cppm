@@ -8,7 +8,6 @@ import gse.containers;
 import gse.diag;
 import gse.ecs;
 import gse.graphics;
-import gse.log;
 import gse.os;
 import gse.time;
 import gse.math;
@@ -44,10 +43,6 @@ namespace gse::alloc_panel {
 		data& d
 	) -> void;
 
-	auto log_report(
-		const data& d
-	) -> void;
-
 	auto build_panel(
 		data& d,
 		gui::builder& ui
@@ -69,34 +64,6 @@ auto gse::alloc_panel::refresh(data& d) -> void {
 			d.labels.emplace(row.pc, alloc::label_of(row.pc));
 		}
 	}
-}
-
-auto gse::alloc_panel::log_report(const data& d) -> void {
-	log::println(
-		log::level::info,
-		log::category::general,
-		"[alloc] {:.1f} MB estimated live across {} samples, {} sites, {} evicted, 1 per {} KB",
-		megabytes_of(alloc::estimated_live_bytes()),
-		alloc::live_samples(),
-		d.sites.size(),
-		alloc::evicted_samples(),
-		alloc::sample_interval() / 1024
-	);
-
-	for (const auto& [index, row] : std::views::enumerate(d.sites | std::views::take(d.top_rows))) {
-		log::println(
-			log::level::info,
-			log::category::general,
-			"  #{:>2} {:>10.2f} MB live {:>+10.2f} MB since mark {:>8} smp  {}",
-			index,
-			megabytes_of(row.live_bytes),
-			megabytes_of(row.since_mark_bytes),
-			row.live_samples,
-			d.labels.at(row.pc)
-		);
-	}
-
-	log::flush();
 }
 
 auto gse::alloc_panel::build_panel(data& d, gui::builder& ui) -> void {
@@ -150,7 +117,7 @@ auto gse::alloc_panel::build_panel(data& d, gui::builder& ui) -> void {
 	if (ui.draw<gui::button>({
 		.text = "Write report to log"
 		})) {
-		log_report(d);
+		alloc::log_report(d.top_rows);
 	}
 
 	ui.draw<gui::separator>();

@@ -165,8 +165,8 @@ auto gse::ide::insert_panel(dock_tree& tree, const dock_insert& what) -> void {
 	tree.nodes.try_get(anchor)->parent = split_id;
 }
 
-auto gse::ide::insert_group(dock_tree& tree, const id group, const dock_drop& where) -> void {
-	const dock_node* leaf = tree.nodes.try_get(group);
+auto gse::ide::insert_group(dock_tree& from, dock_tree& to, const id group, const dock_drop& where) -> void {
+	const dock_node* leaf = from.nodes.try_get(group);
 	if (!leaf || leaf->panels.empty()) {
 		return;
 	}
@@ -174,22 +174,34 @@ auto gse::ide::insert_group(dock_tree& tree, const id group, const dock_drop& wh
 	const std::vector<id> moved = leaf->panels;
 	const id active = moved[std::min<std::size_t>(leaf->active_panel, moved.size() - 1)];
 
-	insert_panel(tree, {
+	for (const id panel : moved) {
+		remove_panel(from, panel);
+	}
+
+	insert_panel(to, {
 		.panel = moved.front(),
 		.target = where.node,
 		.location = where.space.hot,
 	});
 
-	const id landed = find_leaf(tree, moved.front());
+	const id landed = find_leaf(to, moved.front());
 	for (const id panel : moved | std::views::drop(1)) {
-		insert_panel(tree, {
+		insert_panel(to, {
 			.panel = panel,
 			.target = landed,
 			.location = gui::dock::location::center,
 		});
 	}
 
-	activate_panel(tree, active);
+	activate_panel(to, active);
+}
+
+auto gse::ide::panels_of(const dock_tree& tree) -> std::vector<id> {
+	std::vector<id> out;
+	for (const dock_node& node : tree.nodes.items()) {
+		out.insert(out.end(), node.panels.begin(), node.panels.end());
+	}
+	return out;
 }
 
 auto gse::ide::remove_panel(dock_tree& tree, const id panel) -> void {
@@ -265,7 +277,7 @@ auto gse::ide::split_params_for(const dock_tree& tree, const dock_node& node, co
 		.min_first = columns ? first_min.x() : first_min.y(),
 		.min_second = columns ? second_min.x() : second_min.y(),
 		.divider_thickness = metrics.divider_thickness * metrics.scale,
-		.divider_bias = columns ? 0.f : 1.f,
+		.divider_bias = columns ? -1.f : 1.f,
 	};
 }
 
@@ -398,7 +410,22 @@ auto gse::ide::node_at_slot(const std::unordered_map<std::size_t, id>& id_of, co
 	return it == id_of.end() ? id{} : it->second;
 }
 
-auto gse::ide::serialize_tree(const dock_tree& tree, const std::span<const panel_desc> panels) -> std::string {
+auto gse::ide::primary_tree_sections() -> dock_tree_sections {
+	return {
+		.header = "dock",
+		.node_prefix = std::string(dock_node_section_prefix),
+		.adopt_new_panels = true,
+	};
+}
+
+auto gse::ide::window_tree_sections(const std::size_t index) -> dock_tree_sections {
+	return {
+		.header = std::format("{}{} tree", dock_window_section_prefix, index),
+		.node_prefix = std::format("{}{} tree node ", dock_window_section_prefix, index),
+	};
+}
+
+auto gse::ide::serialize_tree(const dock_tree& tree, const std::span<const panel_desc> panels, const dock_tree_sections& where) -> std::string {
 	std::vector<id> order;
 	collect_nodes(tree, tree.root, order);
 
@@ -416,15 +443,17 @@ auto gse::ide::serialize_tree(const dock_tree& tree, const std::span<const panel
 	}
 
 	std::string out;
-	out.append("[dock]\n");
+	out.append(std::format("[{}]\n", where.header));
 	out.append(std::format("root = {}\n", slot_of_node(index_of, tree.root)));
 	out.append(std::format("maximized = {}\n", tree.maximized.exists() ? tree.maximized.tag() : std::string_view()));
-	out.append(std::format("known = {}\n", known));
+	if (where.adopt_new_panels) {
+		out.append(std::format("known = {}\n", known));
+	}
 
 	for (std::size_t i = 0; i < order.size(); ++i) {
 		const dock_node& node = *tree.nodes.try_get(order[i]);
 		out.push_back('\n');
-		out.append(std::format("[{}{}]\n", dock_node_section_prefix, i));
+		out.append(std::format("[{}{}]\n", where.node_prefix, i));
 		if (is_leaf(node)) {
 			std::string names;
 			for (const id panel : node.panels) {
@@ -449,19 +478,19 @@ auto gse::ide::serialize_tree(const dock_tree& tree, const std::span<const panel
 	return out;
 }
 
-auto gse::ide::deserialize_tree(const std::span<const layout_store::section> sections, const std::span<const panel_desc> panels) -> std::optional<dock_tree> {
+auto gse::ide::deserialize_tree(const std::span<const layout_store::section> sections, const std::span<const panel_desc> panels, const dock_tree_sections& where) -> std::optional<dock_tree> {
 	std::map<std::size_t, const layout_store::section*> raw;
 	const layout_store::section* header = nullptr;
 
 	for (const layout_store::section& section : sections) {
-		if (section.name == "dock") {
+		if (section.name == where.header) {
 			header = &section;
 			continue;
 		}
-		if (!section.name.starts_with(dock_node_section_prefix)) {
+		if (!section.name.starts_with(where.node_prefix)) {
 			continue;
 		}
-		const std::string_view digits = std::string_view(section.name).substr(dock_node_section_prefix.size());
+		const std::string_view digits = std::string_view(section.name).substr(where.node_prefix.size());
 		std::size_t slot = 0;
 		if (std::from_chars(digits.data(), digits.data() + digits.size(), slot).ec != std::errc{}) {
 			continue;
@@ -545,21 +574,23 @@ auto gse::ide::deserialize_tree(const std::span<const layout_store::section> sec
 		return std::nullopt;
 	}
 
-	std::vector<std::string_view> known;
-	if (const auto it = header->values.find("known"); it != header->values.end()) {
-		for (const auto& part : std::views::split(std::string_view(it->second), ',')) {
-			known.push_back(std::string_view(part));
+	if (where.adopt_new_panels) {
+		std::vector<std::string_view> known;
+		if (const auto it = header->values.find("known"); it != header->values.end()) {
+			for (const auto& part : std::views::split(std::string_view(it->second), ',')) {
+				known.push_back(std::string_view(part));
+			}
 		}
-	}
 
-	for (const panel_desc& desc : panels) {
-		const bool was_known = std::ranges::find(known, desc.name) != known.end();
-		if (!contains_panel(tree, desc.id) && !was_known && !desc.start_hidden) {
-			insert_panel(tree, {
-				.panel = desc.id,
-				.target = any_leaf(tree),
-				.location = gui::dock::location::center,
-			});
+		for (const panel_desc& desc : panels) {
+			const bool was_known = std::ranges::find(known, desc.name) != known.end();
+			if (!contains_panel(tree, desc.id) && !was_known && !desc.start_hidden) {
+				insert_panel(tree, {
+					.panel = desc.id,
+					.target = any_leaf(tree),
+					.location = gui::dock::location::center,
+				});
+			}
 		}
 	}
 
@@ -570,4 +601,65 @@ auto gse::ide::deserialize_tree(const std::span<const layout_store::section> sec
 	}
 
 	return tree;
+}
+auto gse::ide::serialize_windows(const std::span<const dock_window_layout> windows, const std::span<const panel_desc> panels) -> std::string {
+	std::string out;
+	for (const auto& [index, window] : std::views::enumerate(windows)) {
+		out.push_back('\n');
+		out.append(std::format("[{}{}]\n", dock_window_section_prefix, index));
+		out.append(std::format("x = {}\n", window.position.x()));
+		out.append(std::format("y = {}\n", window.position.y()));
+		out.append(std::format("width = {}\n", window.size.x()));
+		out.append(std::format("height = {}\n", window.size.y()));
+		out.push_back('\n');
+		out.append(serialize_tree(window.tree, panels, window_tree_sections(static_cast<std::size_t>(index))));
+	}
+	return out;
+}
+
+auto gse::ide::deserialize_windows(const std::span<const layout_store::section> sections, const std::span<const panel_desc> panels) -> std::vector<dock_window_layout> {
+	std::map<std::size_t, const layout_store::section*> raw;
+
+	for (const layout_store::section& section : sections) {
+		if (!section.name.starts_with(dock_window_section_prefix)) {
+			continue;
+		}
+		const std::string_view digits = std::string_view(section.name).substr(dock_window_section_prefix.size());
+		std::size_t slot = 0;
+		const auto parsed = std::from_chars(digits.data(), digits.data() + digits.size(), slot);
+		if (parsed.ec != std::errc{} || parsed.ptr != digits.data() + digits.size()) {
+			continue;
+		}
+		raw.emplace(slot, &section);
+	}
+
+	auto read_int = [](const layout_store::section& section, const std::string_view key, const int fallback) {
+		const auto it = section.values.find(std::string(key));
+		if (it == section.values.end()) {
+			return fallback;
+		}
+		int value = 0;
+		if (std::from_chars(it->second.data(), it->second.data() + it->second.size(), value).ec != std::errc{}) {
+			return fallback;
+		}
+		return value;
+	};
+
+	std::vector<dock_window_layout> out;
+	for (const auto& [slot, section] : raw) {
+		std::optional<dock_tree> tree = deserialize_tree(sections, panels, window_tree_sections(slot));
+		if (!tree) {
+			continue;
+		}
+		const vec2i size{ read_int(*section, "width", 640), read_int(*section, "height", 480) };
+		if (size.x() <= 0 || size.y() <= 0) {
+			continue;
+		}
+		out.push_back({
+			.tree = std::move(*tree),
+			.position = { read_int(*section, "x", 0), read_int(*section, "y", 0) },
+			.size = size,
+		});
+	}
+	return out;
 }

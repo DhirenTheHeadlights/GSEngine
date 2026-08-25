@@ -110,10 +110,14 @@ namespace gse {
 		vec2i size
 	) -> void;
 
-	[[nodiscard]] auto surface_topmost_at(
-		const window::window_surface& s,
+	[[nodiscard]] auto surface_at(
+		window::data& d,
 		vec2i screen_point
-	) -> bool;
+	) -> window::window_surface*;
+
+	[[nodiscard]] auto pointer_event_rank(
+		const input::event& e
+	) -> int;
 
 	auto os_restore_geometry(
 		const window::data& d
@@ -250,7 +254,11 @@ auto gse::apply_cursor_mode(const window::data& d) -> void {
 		return;
 	}
 
-	if (current_mode == glfw::cursor_disabled && target_mode == glfw::cursor_normal) {
+	if (target_mode == glfw::cursor_disabled && !d.primary.focused) {
+		return;
+	}
+
+	if (current_mode == glfw::cursor_disabled && target_mode == glfw::cursor_normal && d.primary.focused) {
 		const auto dims = window_handle_viewport(d.primary.handle);
 		glfwSetCursorPos(handle, dims.x() / 2.0, dims.y() / 2.0);
 	}
@@ -368,18 +376,41 @@ auto gse::set_surface_frame_rect(const window::window_surface& s, const vec2i po
 #endif
 }
 
-auto gse::surface_topmost_at(const window::window_surface& s, const vec2i screen_point) -> bool {
+auto gse::surface_at(window::data& d, const vec2i screen_point) -> window::window_surface* {
 #ifdef _WIN32
 	const win32::HWND under = win32::WindowFromPoint({ .x = screen_point.x(), .y = screen_point.y() });
 	if (under == nullptr) {
-		return false;
+		return nullptr;
 	}
-	return win32::GetAncestor(under, win32::ga_root) == win32::hwnd_from_glfw_window(to_glfw_handle(s.handle));
+	const win32::HWND root = win32::GetAncestor(under, win32::ga_root);
+	for (const auto& surface : d.secondaries) {
+		if (win32::hwnd_from_glfw_window(to_glfw_handle(surface->handle)) == root) {
+			return surface.get();
+		}
+	}
+	return win32::hwnd_from_glfw_window(to_glfw_handle(d.primary.handle)) == root ? &d.primary : nullptr;
 #else
-	const vec2i local = screen_point - s.position;
-	const auto client = window_handle_viewport(s.handle);
-	return local.x() >= 0 && local.y() >= 0 && local.x() < client.x() && local.y() < client.y();
+	auto covers = [screen_point](const window::window_surface& s) {
+		const vec2i local = screen_point - s.position;
+		const auto client = window_handle_viewport(s.handle);
+		return local.x() >= 0 && local.y() >= 0 && local.x() < client.x() && local.y() < client.y();
+	};
+	for (const auto& surface : d.secondaries) {
+		if (covers(*surface)) {
+			return surface.get();
+		}
+	}
+	return covers(d.primary) ? &d.primary : nullptr;
 #endif
+}
+
+auto gse::pointer_event_rank(const input::event& e) -> int {
+	if (std::holds_alternative<input::mouse_scrolled>(e)
+		|| std::holds_alternative<input::mouse_button_pressed>(e)
+		|| std::holds_alternative<input::mouse_button_released>(e)) {
+		return 2;
+	}
+	return std::holds_alternative<input::mouse_moved>(e) ? 1 : 0;
 }
 
 auto gse::os_restore_geometry(const window::data& d) -> std::optional<window::geometry> {
@@ -682,6 +713,9 @@ auto gse::attach_surface_callbacks(GLFWwindow* handle, window::window_surface& s
 			double x = 0.0;
 			double y = 0.0;
 			glfwGetCursorPos(w, &x, &y);
+			if (self->ui_focus) {
+				y = static_cast<double>(window_handle_viewport(self->handle).y()) - y;
+			}
 			if (action == glfw::press) {
 				self->input_events.push(input::mouse_button_pressed{ *mapped, x, y });
 			}
@@ -1053,16 +1087,10 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 	}
 
 	for (const auto& req : sched.read_channel<window_popout_request>()) {
-		const auto client = window_handle_viewport(d.primary.handle);
-		const vec2i screen{
-			d.primary.position.x() + req.client_position.x(),
-			d.primary.position.y() + (client.y() - req.client_position.y()),
-		};
-
 		window_surface* created = create_secondary(d, {
 			.title = req.title.empty() ? req.menu_name : req.title,
 			.size = req.size,
-			.position = screen,
+			.position = req.screen_position,
 			.use_position = true,
 		});
 		if (!created) {
@@ -1072,6 +1100,7 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 		sched.make_channel_writer().push<window_opened>({
 			.id = created->id,
 			.handle = created->handle,
+			.position = created->position,
 			.size = created->size,
 			.present_mode_index = created->present_mode_index,
 			.for_menu = req.menu_name,
@@ -1134,34 +1163,34 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 		}
 		surface->chrome_caption_height = req.caption_height;
 		surface->chrome_controls_width = req.controls_width;
-		surface->chrome_grip_width = req.grip_width;
 		surface->chrome_resize_exclude_y0 = req.resize_exclude_y0;
 		surface->chrome_resize_exclude_y1 = req.resize_exclude_y1;
 	}
 
-	for (const auto& req : sched.read_channel<window_panel_drag_request>()) {
-		const window_surface* source = find_surface(d, req.window);
-		if (!source || source == &d.primary) {
+	for (const auto& req : sched.read_channel<window_locate_cursor_request>()) {
+		const window_surface* source = find_surface(d, req.source);
+		if (!source) {
 			continue;
 		}
 
 		const auto source_client = window_handle_viewport(source->handle);
-		const auto primary_client = window_handle_viewport(d.primary.handle);
 		const vec2i screen{
 			source->position.x() + static_cast<int>(req.client_cursor.x()),
 			source->position.y() + (source_client.y() - static_cast<int>(req.client_cursor.y())),
 		};
-		const vec2i in_primary = screen - d.primary.position;
 
-		sched.make_channel_writer().push<window_panel_drag_over>({
-			.window = req.window,
-			.primary_cursor = vec2f{
-				static_cast<float>(in_primary.x()),
-				static_cast<float>(primary_client.y() - in_primary.y()),
-			},
-			.over_primary = surface_topmost_at(d.primary, screen),
-			.released = req.released,
-		});
+		window_cursor_located located{ .source = req.source, .screen_cursor = screen };
+		if (const window_surface* under = surface_at(d, screen)) {
+			const auto client = window_handle_viewport(under->handle);
+			const vec2i local = screen - under->position;
+			located.window = under == &d.primary ? gse::id() : under->id;
+			located.client_cursor = vec2f{
+				static_cast<float>(local.x()),
+				static_cast<float>(client.y() - local.y()),
+			};
+		}
+
+		sched.make_channel_writer().push<window_cursor_located>(located);
 	}
 
 	cursor_shape desired_cursor = cursor_shape::arrow;
@@ -1176,6 +1205,11 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 			slot = glfwCreateStandardCursor(glfw_standard_cursor(desired_cursor));
 		}
 		glfwSetCursor(to_glfw_handle(d.primary.handle), slot);
+		for (const auto& surface : d.secondaries) {
+			if (surface->handle) {
+				glfwSetCursor(to_glfw_handle(surface->handle), slot);
+			}
+		}
 		g_cursor_shape = desired_cursor;
 	}
 
@@ -1188,10 +1222,13 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 		}
 	}
 
+	{
+		trace::scope_guard sg{ trace_id<"window::cursor_mode">() };
+		apply_cursor_mode(d);
+	}
+
 	if (d.primary.focused) {
 		trace::scope_guard sg{ trace_id<"window::modes">() };
-		apply_cursor_mode(d);
-
 		const auto desired_display_mode = static_cast<display_mode>(d.display_mode.value);
 		if (d.current_display_mode != desired_display_mode) {
 			apply_display_mode(d, desired_display_mode);
@@ -1237,16 +1274,42 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 		}
 		d.focused_window = focused == &d.primary ? gse::id{} : focused->id;
 
-		auto chosen = d.primary.input_events.drain();
+		std::vector<std::pair<const window_surface*, std::vector<input::event>>> drained;
+		drained.emplace_back(&d.primary, d.primary.input_events.drain());
 		for (const auto& surface : d.secondaries) {
-			auto events = surface->input_events.drain();
-			if (surface.get() == focused) {
-				chosen = std::move(events);
+			drained.emplace_back(surface.get(), surface->input_events.drain());
+		}
+
+		const window_surface* pointer = nullptr;
+		int best_rank = 0;
+		for (const auto& [surface, events] : drained) {
+			int rank = 0;
+			for (const auto& event : events) {
+				rank = std::max(rank, pointer_event_rank(event));
+			}
+			if (rank > 0 && rank >= best_rank) {
+				pointer = surface;
+				best_rank = rank;
 			}
 		}
 
-		for (const auto& event : chosen) {
-			d.primary.input_events.push(event);
+		if (pointer) {
+			d.cursor_window = pointer == &d.primary ? gse::id{} : pointer->id;
+		}
+		else if (const window_surface* held = find_surface(d, d.cursor_window)) {
+			pointer = held;
+		}
+		else {
+			pointer = &d.primary;
+			d.cursor_window = gse::id{};
+		}
+
+		for (const auto& [surface, events] : drained) {
+			for (const auto& event : events) {
+				if (surface == (pointer_event_rank(event) > 0 ? pointer : focused)) {
+					d.primary.input_events.push(event);
+				}
+			}
 		}
 	}
 
@@ -1270,7 +1333,10 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 			int win_h = 0;
 			glfwGetWindowPos(handle, &win_x, &win_y);
 			glfwGetWindowSize(handle, &win_w, &win_h);
-			surface->position = vec2i{ win_x, win_y };
+			if (const vec2i position{ win_x, win_y }; position != surface->position) {
+				surface->position = position;
+				sched.make_channel_writer().push<window_moved>({ .id = surface->id, .position = position });
+			}
 			if (const vec2i size{ win_w, win_h }; size != surface->size) {
 				surface->size = size;
 				sched.make_channel_writer().push<window_resized>({ .id = surface->id, .size = size });
@@ -1557,9 +1623,8 @@ namespace gse {
 
 			const int caption = state->surface ? state->surface->chrome_caption_height : 0;
 			const int controls = state->surface ? state->surface->chrome_controls_width : 0;
-			const int grip = state->surface ? state->surface->chrome_grip_width : 0;
 			if (cursor.y < caption) {
-				if (cursor.x >= client.right - controls || cursor.x < grip) {
+				if (cursor.x >= client.right - controls) {
 					return ht_client;
 				}
 				return ht_caption;

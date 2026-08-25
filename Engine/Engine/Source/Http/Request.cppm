@@ -90,7 +90,7 @@ export namespace gse::http {
 		std::string url;
 		std::vector<header> headers;
 		std::string body;
-		time_t<std::uint32_t> timeout{ seconds(15) };
+		time timeout{ seconds(15.f) };
 		std::size_t max_body_bytes = 64ull * 1024ull * 1024ull;
 	};
 

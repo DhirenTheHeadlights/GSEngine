@@ -43,6 +43,20 @@ namespace gse::ide {
 		const search::index_state* index
 	) -> void;
 
+	struct lint_row_ref {
+		std::size_t group = 0;
+		std::optional<std::size_t> site;
+	};
+
+	auto lint_row_count(
+		std::span<const lint_rule_group> groups
+	) -> std::size_t;
+
+	auto resolve_lint_row(
+		std::span<const lint_rule_group> groups,
+		std::size_t index
+	) -> lint_row_ref;
+
 	auto edits_for_group(
 		const search::lint_snapshot& snapshot,
 		const lint_rule_group& group
@@ -52,7 +66,8 @@ namespace gse::ide {
 		const gui::draw_context& ctx,
 		const rectf& row,
 		const lint_rule_group& group,
-		bool hovered
+		bool hovered,
+		float actions_width
 	) -> void;
 
 	auto draw_lint_site_row(
@@ -113,6 +128,30 @@ auto gse::ide::sync_lint_groups(lint_panel_state& state, const search::index_sta
 	state.groups = std::move(groups);
 }
 
+auto gse::ide::lint_row_count(const std::span<const lint_rule_group> groups) -> std::size_t {
+	std::size_t count = 0;
+	for (const lint_rule_group& group : groups) {
+		count += 1 + (group.expanded ? group.rows.size() : 0);
+	}
+	return count;
+}
+
+auto gse::ide::resolve_lint_row(const std::span<const lint_rule_group> groups, const std::size_t index) -> lint_row_ref {
+	std::size_t remaining = index;
+	for (std::size_t g = 0; g < groups.size(); ++g) {
+		if (remaining == 0) {
+			return { .group = g };
+		}
+		--remaining;
+		const std::size_t sites = groups[g].expanded ? groups[g].rows.size() : 0;
+		if (remaining < sites) {
+			return { .group = g, .site = remaining };
+		}
+		remaining -= sites;
+	}
+	return {};
+}
+
 auto gse::ide::edits_for_group(const search::lint_snapshot& snapshot, const lint_rule_group& group) -> std::vector<lint_file_edits> {
 	const std::span<const search::lint_site> sites = *snapshot.sites;
 	std::vector<lint_file_edits> out;
@@ -133,7 +172,7 @@ auto gse::ide::edits_for_group(const search::lint_snapshot& snapshot, const lint
 	return out;
 }
 
-auto gse::ide::draw_lint_rule_row(const gui::draw_context& ctx, const rectf& row, const lint_rule_group& group, const bool hovered) -> void {
+auto gse::ide::draw_lint_rule_row(const gui::draw_context& ctx, const rectf& row, const lint_rule_group& group, const bool hovered, const float actions_width) -> void {
 	const auto& sty = ctx.style;
 	const auto text_view = ctx.fonts.text.resolve();
 	const float pad = sty.padding;
@@ -161,6 +200,11 @@ auto gse::ide::draw_lint_rule_row(const gui::draw_context& ctx, const rectf& row
 		: std::format("{} in {} files", group.rows.size(), group.file_count);
 	const float count_w = text_view->width(count, sty.font_size);
 	const float title_x = row.left() + pad * 3.f;
+	const float content_right = row.right() - actions_width;
+	const rectf content = rectf::from_position_size(
+		{ row.left(), row.top() },
+		{ std::max(0.f, content_right - row.left()), row.height() }
+	);
 
 	ctx.queue_text({
 		.font = ctx.fonts.text,
@@ -168,15 +212,15 @@ auto gse::ide::draw_lint_rule_row(const gui::draw_context& ctx, const rectf& row
 		.position = { title_x, row.center().y() + text_view->vertical_center_offset(sty.font_size) },
 		.scale = sty.font_size,
 		.color = group.rows.empty() ? sty.color_text_secondary : sty.color_text,
-		.clip_rect = rectf::from_position_size({ title_x, row.top() }, { std::max(0.f, row.right() - count_w - pad * 2.f - title_x), row.height() }),
+		.clip_rect = rectf::from_position_size({ title_x, row.top() }, { std::max(0.f, content_right - count_w - pad * 2.f - title_x), row.height() }),
 	});
 	ctx.queue_text({
 		.font = ctx.fonts.text,
 		.text = count,
-		.position = { row.right() - count_w - pad, row.center().y() + text_view->vertical_center_offset(sty.font_size) },
+		.position = { content_right - count_w - pad, row.center().y() + text_view->vertical_center_offset(sty.font_size) },
 		.scale = sty.font_size,
 		.color = sty.color_text_secondary,
-		.clip_rect = row,
+		.clip_rect = content,
 	});
 }
 
@@ -287,66 +331,59 @@ auto gse::ide::draw_lint_panel(gui::builder& ui, const rectf& rect, lint_panel_s
 		{ rect.left(), header_rect.bottom() },
 		{ rect.width(), std::max(0.f, rect.height() - header_rect.height()) }
 	);
-	ctx.layout_cursor = { list_rect.left(), list_rect.top() };
+	const float apply_w = text_view->width("Apply all", sty.font_size) + pad * 2.f;
+	std::optional<std::size_t> toggled;
 
-	ui.scroll_region({
+	ui.row_list({
 		.id = "##lint_list",
-		.size = list_rect.size(),
-	}, [&](gui::builder& b) {
+		.bounds = list_rect,
+		.row_height = row_h,
+		.row_count = lint_row_count(state.groups),
+	}, [&](gui::builder& b, const gui::row& r) {
 		auto& c = b.ctx;
-		for (lint_rule_group& group : state.groups) {
-			const rectf row = rectf::from_position_size(
-				{ list_rect.left(), c.layout_cursor.y() },
-				{ list_rect.width(), row_h }
-			);
-			const rectf visible = row.intersection(list_rect);
-			const bool hovered = visible.height() > 0.f && c.hovers(visible);
+		const lint_row_ref ref = resolve_lint_row(state.groups, r.index);
+		const lint_rule_group& group = state.groups[ref.group];
 
-			const float apply_w = text_view->width("Apply all", sty.font_size) + pad * 2.f;
-			const rectf apply_rect = rectf::from_position_size(
-				{ row.right() - apply_w - pad, row.top() - pad * 0.25f },
-				{ apply_w, std::max(0.f, row.height() - pad * 0.5f) }
-			);
-
-			const bool actionable = !group.rows.empty() && visible.height() > 0.f;
-			const bool over_apply = actionable && apply_rect.contains(c.mouse_position());
-
-			draw_lint_rule_row(c, row, group, hovered && !over_apply);
-
-			if (actionable && gui::draw::button_in_rect(c, {
-				.rect = apply_rect,
-				.label = "Apply all",
-				.key = std::format("##lint_apply_{}", enum_to_string(group.rule)),
-				.role = gui::button_role::danger,
-			}, b.hot_widget_id, b.active_widget_id)) {
-				state.confirming = group.rule;
+		if (ref.site) {
+			const lint_row& item = group.rows[*ref.site];
+			if (r.hovered && c.mouse_pressed_for(r.visible)) {
+				const search::lint_site& site = (*state.snapshot->sites)[item.site];
+				channels.push<jump_to_request>({
+					.path = site.path,
+					.line = site.edit.line,
+					.column = site.edit.start_col,
+					.end_line = site.edit.end_line,
+					.end_column = site.edit.end_col,
+				});
 			}
-			if (hovered && !over_apply && c.mouse_pressed_for(visible)) {
-				group.expanded = !group.expanded;
-			}
-			c.layout_cursor.y() -= row_h;
+			draw_lint_site_row(c, r.rect, item, r.hovered);
+			return;
+		}
 
-			if (!group.expanded) {
-				continue;
-			}
-			for (const lint_row& item : group.rows) {
-				const rectf site_row = rectf::from_position_size(
-					{ list_rect.left(), c.layout_cursor.y() },
-					{ list_rect.width(), row_h }
-				);
-				const rectf site_visible = site_row.intersection(list_rect);
-				const bool site_hovered = site_visible.height() > 0.f && c.hovers(site_visible);
-				if (site_hovered && c.mouse_pressed_for(site_visible)) {
-					const search::lint_site& site = (*state.snapshot->sites)[item.site];
-					channels.push<jump_to_request>({
-						.path = site.path,
-						.line = site.edit.line,
-						.column = site.edit.start_col,
-					});
-				}
-				draw_lint_site_row(c, site_row, item, site_hovered);
-				c.layout_cursor.y() -= row_h;
-			}
+		const rectf apply_rect = rectf::from_position_size(
+			{ r.rect.right() - apply_w - pad, r.rect.top() - pad * 0.25f },
+			{ apply_w, std::max(0.f, r.rect.height() - pad * 0.5f) }
+		);
+		const bool actionable = !group.rows.empty();
+		const bool over_apply = actionable && apply_rect.contains(c.mouse_position());
+
+		draw_lint_rule_row(c, r.rect, group, r.hovered && !over_apply, actionable ? apply_w + pad * 2.f : 0.f);
+
+		if (actionable && gui::draw::button_in_rect(c, {
+			.rect = apply_rect,
+			.label = "Apply all",
+			.key = std::format("##lint_apply_{}", enum_to_string(group.rule)),
+			.role = gui::button_role::danger,
+		}, b.hot_widget_id, b.active_widget_id)) {
+			state.confirming = group.rule;
+		}
+		if (r.hovered && !over_apply && c.mouse_pressed_for(r.visible)) {
+			toggled = ref.group;
 		}
 	});
+
+	if (toggled) {
+		lint_rule_group& group = state.groups[*toggled];
+		group.expanded = !group.expanded;
+	}
 }

@@ -66,4 +66,8 @@ export namespace gse::alloc {
 	auto label_of(
 		std::uint64_t pc
 	) -> std::string;
+
+	auto log_report(
+		int top_rows
+	) -> void;
 }

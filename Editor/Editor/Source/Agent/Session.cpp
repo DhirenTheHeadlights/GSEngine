@@ -122,18 +122,28 @@ auto gse::ide::agent::load_sessions(data& d) -> void {
 
 auto gse::ide::agent::adopt_inherited(data& d) -> void {
 	for (const handoff& adopted : inherited_handoffs()) {
+		if (!inherited_handle(adopted.output) || !inherited_handle(adopted.input)) {
+			log::println(log::level::warning, log::category::task, "agent: session {} was handed off with handles this process never inherited - ignoring the stale argument", adopted.session);
+			continue;
+		}
+
 		const auto match = std::ranges::find(d.sessions, adopted.session, &session::id);
-		if (match != d.sessions.end() && adopt_session(*match, adopted)) {
+		if (match != d.sessions.end() && !match->running && adopt_session(*match, adopted)) {
 			continue;
 		}
 		discard_handoff(adopted);
 	}
 }
 
+auto gse::ide::agent::inherited_handle(void* handle) -> bool {
+	win32::DWORD flags = 0;
+	return win32::valid_handle(handle) && win32::GetHandleInformation(handle, &flags) != 0;
+}
+
 auto gse::ide::agent::discard_handoff(const handoff& adopted) -> void {
 	spawn::terminate(adopted.process, adopted.job);
 	for (void* handle : { adopted.process, adopted.job, adopted.output, adopted.input }) {
-		if (win32::valid_handle(handle)) {
+		if (inherited_handle(handle)) {
 			win32::CloseHandle(handle);
 		}
 	}

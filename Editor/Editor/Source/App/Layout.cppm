@@ -65,7 +65,7 @@ auto gse::ide::parse_layout_uint(const std::string& value, const std::uint32_t f
 auto gse::ide::editor_layout_owner() -> layout_store::owner {
 	return {
 		.names = { "editor", "dock" },
-		.prefixes = { "dock node " },
+		.prefixes = { "dock node ", "dock window " },
 	};
 }
 
@@ -146,10 +146,7 @@ auto gse::ide::load_workspace_layout(workspace::data& ws) -> void {
 		break;
 	}
 
-	if (active == "game") {
-		workspace::activate_game(ws);
-	}
-	else if (!active_path.empty()) {
+	if (!active_path.empty()) {
 		std::error_code ec;
 		const std::filesystem::path canonical = std::filesystem::weakly_canonical(active_path, ec);
 		const std::string key = (ec ? active_path : canonical).generic_native_encoded_string();
@@ -169,11 +166,7 @@ auto gse::ide::save_workspace_layout(const workspace::data& ws) -> void {
 	out.append("[workspace]\n");
 	out.append(std::format("profile_enabled = {}\n", ws.profile.enabled ? 1 : 0));
 	out.append(std::format("profile_source = {}\n", gse::enum_to_string(ws.profile.source)));
-	if (workspace::game_active(ws)) {
-		out.append("active = game\n");
-		out.append("active_path = \n");
-	}
-	else if (const std::optional<gse::id> active_document_id = workspace::active_document_id(ws); active_document_id) {
+	if (const std::optional<gse::id> active_document_id = workspace::active_document_id(ws); active_document_id) {
 		const auto it = ws.documents.find(*active_document_id);
 		if (it == ws.documents.end() || it->second.path.empty()) {
 			out.append("active = none\n");

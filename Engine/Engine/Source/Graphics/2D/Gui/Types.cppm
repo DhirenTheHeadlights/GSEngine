@@ -110,6 +110,21 @@ export namespace gse::gui {
 		scroll_config config{};
 	};
 
+	struct row_list_info {
+		std::string_view id;
+		rectf bounds;
+		float row_height = 0.f;
+		std::size_t row_count = 0;
+		scroll_config config{};
+	};
+
+	struct row {
+		std::size_t index = 0;
+		rectf rect;
+		rectf visible;
+		bool hovered = false;
+	};
+
 	struct tab_strip_state {
 		scroll_axis scroll{};
 		id scroll_active;
@@ -140,7 +155,7 @@ export namespace gse::gui::dock {
 		std::array<area, 5> areas;
 		location hot = location::none;
 
-		[[nodiscard]] auto select(
+		auto select(
 			vec2f point
 		) -> location;
 
@@ -228,6 +243,8 @@ export namespace gse::gui {
 		bool destructive = false;
 		bool enabled = true;
 		bool separator_before = false;
+		bool checkable = false;
+		bool checked = false;
 	};
 
 	using context_menu_target = std::variant<std::monostate, std::uint64_t, id>;
@@ -270,6 +287,7 @@ export namespace gse::gui {
 		std::uint32_t current_z_order = 0;
 		render_layer input_layer = render_layer::content;
 		bool input_suppressed = false;
+		bool owns_keyboard = true;
 		class input_layer* hit_regions = nullptr;
 		tooltip_state* tooltip = nullptr;
 		context_menu_state* context_menu = nullptr;
@@ -296,6 +314,7 @@ export namespace gse::gui {
 
 		render_layer input_layer = render_layer::content;
 		bool input_suppressed = false;
+		bool owns_keyboard = true;
 		class input_layer* hit_regions = nullptr;
 		tooltip_state* tooltip = nullptr;
 		context_menu_state* context_menu = nullptr;
@@ -512,6 +531,12 @@ export namespace gse::gui {
 		draw_context& ctx,
 		const scroll_region_info& info
 	) -> scroll_handle;
+
+	auto row_list(
+		draw_context& ctx,
+		const row_list_info& info,
+		const std::function<void(const row&)>& draw_row
+	) -> void;
 
 	auto scroll_area(
 		const draw_context& ctx,
