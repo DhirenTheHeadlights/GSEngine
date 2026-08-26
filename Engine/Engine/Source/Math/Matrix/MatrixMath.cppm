@@ -14,11 +14,11 @@ import :quat_math;
 import :simd;
 
 export namespace gse {
-	template <typename T, gse::internal::is_quantity QPos, gse::internal::is_quantity QTgt>
+	template <typename T, internal::is_quantity QPos, internal::is_quantity QTgt>
 	requires std::same_as<typename QPos::value_type, T> &&
 		std::same_as<typename QTgt::value_type, T> &&
-		gse::internal::same_unit_family_v<typename QPos::quantity_tag, gse::length_tag> &&
-		gse::internal::same_unit_family_v<typename QTgt::quantity_tag, gse::length_tag>
+		internal::same_unit_family_v<typename QPos::quantity_tag, length_tag> &&
+		internal::same_unit_family_v<typename QTgt::quantity_tag, length_tag>
 	constexpr auto look_at(
 		const vec3<QPos>& position,
 		const vec3<QTgt>& target,
@@ -43,9 +43,9 @@ export namespace gse {
 		length_t<T> far
 	) -> projection_matrix;
 
-	template <typename T, gse::internal::is_quantity Q>
+	template <typename T, internal::is_quantity Q>
 	requires std::same_as<typename Q::value_type, T> &&
-		gse::internal::same_unit_family_v<typename Q::quantity_tag, gse::length_tag>
+		internal::same_unit_family_v<typename Q::quantity_tag, length_tag>
 	constexpr auto translate(
 		const mat4<T>& matrix,
 		const vec3<Q>& translation
@@ -131,9 +131,9 @@ template <typename T>
 constexpr auto gse::orthographic(length_t<T> left, length_t<T> right, length_t<T> bottom, length_t<T> top, length_t<T> near, length_t<T> far) -> projection_matrix {
 	return projection_matrix(
 		mat4<T>{ { 2 / internal::to_storage(right - left), 0, 0, 0 },
-				 { 0, 2 / internal::to_storage(bottom - top), 0, 0 },
-				 { 0, 0, 1 / internal::to_storage(near - far), 0 },
-				 { -(right + left) / (right - left), -(bottom + top) / (bottom - top), near / (near - far), 1 } }
+			{ 0, 2 / internal::to_storage(bottom - top), 0, 0 },
+			{ 0, 0, 1 / internal::to_storage(near - far), 0 },
+			{ -(right + left) / (right - left), -(bottom + top) / (bottom - top), near / (near - far), 1 } }
 	);
 }
 
@@ -142,12 +142,12 @@ requires std::same_as<typename Q::value_type, T> && gse::internal::same_unit_fam
 constexpr auto gse::translate(const mat4<T>& matrix, const vec3<Q>& translation) -> mat4<T> {
 	return matrix *
 		mat4<T>{ { 1, 0, 0, 0 },
-				 { 0, 1, 0, 0 },
-				 { 0, 0, 1, 0 },
-				 { internal::to_storage(translation.x()),
-				   internal::to_storage(translation.y()),
-				   internal::to_storage(translation.z()),
-				   1 } };
+			{ 0, 1, 0, 0 },
+			{ 0, 0, 1, 0 },
+			{ internal::to_storage(translation.x()),
+				internal::to_storage(translation.y()),
+				internal::to_storage(translation.z()),
+				1 } };
 }
 
 template <typename T>
@@ -166,9 +166,9 @@ requires(V::extent == 3)
 constexpr auto gse::scale(const mat4<T>& matrix, const V& scale) -> mat4<T> {
 	return matrix *
 		mat4<T>{ { internal::to_storage(scale.x()), 0, 0, 0 },
-				 { 0, internal::to_storage(scale.y()), 0, 0 },
-				 { 0, 0, internal::to_storage(scale.z()), 0 },
-				 { 0, 0, 0, 1 } };
+			{ 0, internal::to_storage(scale.y()), 0, 0 },
+			{ 0, 0, internal::to_storage(scale.z()), 0 },
+			{ 0, 0, 0, 1 } };
 }
 
 template <gse::is_mat M>
@@ -195,7 +195,7 @@ requires(std::same_as<typename V1::storage_type, typename V2::storage_type>)
 constexpr auto gse::outer_product(const V1& a, const V2& b) {
 	constexpr auto N = V1::extent;
 	constexpr auto M = V2::extent;
-	using result_elem = gse::internal::mul_exposed_t<typename V1::value_type, typename V2::value_type>;
+	using result_elem = internal::mul_exposed_t<typename V1::value_type, typename V2::value_type>;
 
 	mat<result_elem, M, N> result;
 	for (std::size_t col = 0; col < M; ++col) {

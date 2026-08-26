@@ -8,12 +8,12 @@ import :sync_token;
 import :device;
 import :pass_recorder;
 
-auto gse::gpu::upload_to_buffers(gpu::device& dev, const std::span<const buffer_upload> uploads) -> sync_token {
+auto gse::gpu::upload_to_buffers(device& dev, const std::span<const buffer_upload> uploads) -> sync_token {
 	if (uploads.empty()) {
 		return {};
 	}
 
-	std::vector<gpu::buffer> stagings;
+	std::vector<buffer> stagings;
 	stagings.reserve(uploads.size());
 	for (const auto& u : uploads) {
 		stagings.push_back(dev.create_buffer(

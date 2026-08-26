@@ -42,8 +42,8 @@ export namespace gse::animation {
 		) const = default;
 	};
 
-	struct [[= gse::system_state<"ClipPlayer">{}, = gse::settings::category<"Animation">{}]] data {
-		[[= gse::settings::describe<"Advance clip playback each frame.">{}]] bool play = true;
+	struct [[= system_state<"ClipPlayer">{}, = settings::category<"Animation">{}]] data {
+		[[= settings::describe<"Advance clip playback each frame.">{}]] bool play = true;
 
 		std::flat_map<clip_binding_key, clip_binding> bindings;
 	};
@@ -61,7 +61,7 @@ export namespace gse::animation {
 		clip_binding_key key
 	) -> const clip_binding&;
 
-	[[= gse::system_run<>{}]]
+	[[= system_run<>{}]]
 	auto run(
 		context& ctx,
 		data& d,

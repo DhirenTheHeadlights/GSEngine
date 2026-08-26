@@ -17,7 +17,7 @@ export namespace sandbox::client_ui {
 	auto run(
 		gse::context& ctx,
 		data& d,
-		gse::channel_write<gse::renderer::sprite_command, gse::gui::menu_content, sandbox::spawn_stress_request, sandbox::spawn_joints_request, sandbox::spawn_pyramid_request> ui_out,
+		gse::channel_write<gse::renderer::sprite_command, gse::gui::menu_content, spawn_stress_request, spawn_joints_request, spawn_pyramid_request> ui_out,
 		gse::shared_view<gse::gui::data> gui_d,
 		gse::shared_view<gse::window::data> window_d,
 		gse::shared_view<crosshair::data> crosshair_d,
@@ -147,7 +147,7 @@ auto sandbox::client_ui::push_recording_indicator(gse::context& ctx, const gse::
 	});
 }
 
-auto sandbox::client_ui::run(gse::context& ctx, data& d, const gse::channel_write<gse::renderer::sprite_command, gse::gui::menu_content, sandbox::spawn_stress_request, sandbox::spawn_joints_request, sandbox::spawn_pyramid_request> ui_out, const gse::shared_view<gse::gui::data> gui_d, const gse::shared_view<gse::window::data> window_d, const gse::shared_view<crosshair::data> crosshair_d, const std::optional<gse::shared_view<gse::renderer::capture::data>> capture_d) -> gse::async::task<> {
+auto sandbox::client_ui::run(gse::context& ctx, data& d, const gse::channel_write<gse::renderer::sprite_command, gse::gui::menu_content, spawn_stress_request, spawn_joints_request, spawn_pyramid_request> ui_out, const gse::shared_view<gse::gui::data> gui_d, const gse::shared_view<gse::window::data> window_d, const gse::shared_view<crosshair::data> crosshair_d, const std::optional<gse::shared_view<gse::renderer::capture::data>> capture_d) -> gse::async::task<> {
 	if (gui_d.primary.menu_stack.empty()) {
 		push_crosshair(ctx, ui_out, gui_d, window_d, crosshair_d);
 	}
@@ -194,19 +194,19 @@ auto sandbox::client_ui::run(gse::context& ctx, data& d, const gse::channel_writ
 			.menu = "Dev Spawn",
 			.build = [&](gse::gui::builder& ui) {
 				if (ui.draw<gse::gui::button>({
-						.text = "Physics Stress Test (F5)"
+					.text = "Physics Stress Test (F5)"
 					})) {
-					ui_out.push<sandbox::spawn_stress_request>({});
+					ui_out.push<spawn_stress_request>({});
 				}
 				if (ui.draw<gse::gui::button>({
-						.text = "Joint Test (F6)"
+					.text = "Joint Test (F6)"
 					})) {
-					ui_out.push<sandbox::spawn_joints_request>({});
+					ui_out.push<spawn_joints_request>({});
 				}
 				if (ui.draw<gse::gui::button>({
-						.text = "Pyramid (F9)"
+					.text = "Pyramid (F9)"
 					})) {
-					ui_out.push<sandbox::spawn_pyramid_request>({});
+					ui_out.push<spawn_pyramid_request>({});
 				}
 			},
 		});

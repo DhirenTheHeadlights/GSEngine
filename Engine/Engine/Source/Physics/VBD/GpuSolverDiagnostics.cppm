@@ -10,9 +10,9 @@ import :system;
 import :vbd_gpu_solver;
 
 export namespace gse::physics::gpu_diagnostics {
-	struct [[= gse::system_state<"GPU Solver Diagnostics">{}, = gse::settings::category<"GpuSolverDiagnostics">{}, = gse::deferred_system{}]] data {
+	struct [[= system_state<"GPU Solver Diagnostics">{}, = settings::category<"GpuSolverDiagnostics">{}, = deferred_system{}]] data {
 		[[
-			= gse::settings::describe<"Track the gpu solver's per-tick diagnostic counters (contact and colour peaks, "
+			= settings::describe<"Track the gpu solver's per-tick diagnostic counters (contact and colour peaks, "
 									  "coloring conflicts, stale reads, joint extremes) and log them whenever a peak "
 									  "moves or every 60 ticks. Reads the diagnostics header the solver already reads "
 									  "back each dispatch, so the solve itself is untouched.">{}
@@ -27,7 +27,7 @@ export namespace gse::physics::gpu_diagnostics {
 		std::uint32_t ticks = 0;
 	};
 
-	[[= gse::system_run<3>{}]]
+	[[= system_run<3>{}]]
 	auto run(
 		data& d,
 		shared_view<physics::data> phys

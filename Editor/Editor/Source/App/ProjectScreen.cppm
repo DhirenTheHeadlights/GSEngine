@@ -10,7 +10,7 @@ export namespace gse::ide {
 	class project_screen : public gui::screen {
 	public:
 		explicit project_screen(
-			gse::channel_write<window_launcher_mode_request, window_open_file_request> channels,
+			channel_write<window_launcher_mode_request, window_open_file_request> channels,
 			bool hub = false
 		);
 
@@ -91,7 +91,7 @@ export namespace gse::ide {
 		gui::text_input_state m_input;
 		bool m_dismiss = false;
 		bool m_hub = false;
-		gse::channel_write<window_launcher_mode_request, window_open_file_request> m_channels;
+		channel_write<window_launcher_mode_request, window_open_file_request> m_channels;
 		bool m_launcher_sent = false;
 		int m_requested_height = 0;
 		float m_content_height = 0.f;
@@ -103,7 +103,7 @@ export namespace gse::ide {
 	};
 }
 
-gse::ide::project_screen::project_screen(gse::channel_write<window_launcher_mode_request, window_open_file_request> channels, const bool hub) : m_hub(hub), m_channels(std::move(channels)) {
+gse::ide::project_screen::project_screen(channel_write<window_launcher_mode_request, window_open_file_request> channels, const bool hub) : m_hub(hub), m_channels(std::move(channels)) {
 	const project::manifest& active = project::current();
 
 	for (const std::filesystem::path& path : project::known()) {
@@ -211,12 +211,12 @@ auto gse::ide::project_screen::draw_backdrop(gui::draw_context& ctx, const vec2f
 }
 
 auto gse::ide::project_screen::open(const std::filesystem::path& manifest) -> void {
-	gse::app::relaunch_on_exit(
+	app::relaunch_on_exit(
 		gse::config::executable_file(),
 		manifest.parent_path(),
 		{ manifest }
 	);
-	gse::shutdown();
+	shutdown();
 }
 
 auto gse::ide::project_screen::activate(const entry& item) -> void {

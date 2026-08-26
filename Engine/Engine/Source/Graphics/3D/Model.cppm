@@ -59,7 +59,7 @@ export namespace gse {
 		explicit model(const std::filesystem::path& path)
 			: identifiable(config::asset_tag(path)), m_baked_model_path(path) {
 		}
-		
+
 		explicit model(
 			std::string_view name,
 			std::vector<mesh_data> meshes
@@ -100,7 +100,7 @@ auto gse::model::load(asset::load_ctx& ctx) -> async::task<asset_result> {
 
 		m_meshes.reserve(baked->meshes.size());
 		for (auto& mb : baked->meshes) {
-			gse::material mat{
+			material mat{
 				.base_color = mb.material.base_color,
 				.roughness = mb.material.roughness,
 				.metallic = mb.material.metallic,

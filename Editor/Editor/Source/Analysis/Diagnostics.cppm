@@ -109,7 +109,7 @@ auto gse::ide::analysis::gcc_diagnostics::parse_sarif(std::string_view sarif) ->
 			diagnostic d;
 
 			if (const json::value* level = r.find("level")) {
-				gse::enum_from_string(level->as_string(), d.level);
+				enum_from_string(level->as_string(), d.level);
 			}
 			if (const json::value* message = r.find("message")) {
 				if (const json::value* text = message->find("text")) {

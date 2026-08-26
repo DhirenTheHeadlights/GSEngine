@@ -93,15 +93,15 @@ auto gse::settings::set_choice_index(choice<T>& c, const std::size_t index) -> v
 }
 
 export template <typename T>
-struct std::formatter<gse::settings::choice<T>> : std::formatter<T> {
+struct std::formatter<gse::settings::choice<T>> : formatter<T> {
 	auto format(const gse::settings::choice<T>& c, auto& ctx) const {
-		return std::formatter<T>::format(c.value, ctx);
+		return formatter<T>::format(c.value, ctx);
 	}
 };
 
 export template <typename T>
 struct gse::parser<gse::settings::choice<T>> {
-	static auto parse(std::string_view raw, gse::settings::choice<T>& out) -> bool {
+	static auto parse(std::string_view raw, settings::choice<T>& out) -> bool {
 		return gse::parse(raw, out.value);
 	}
 };

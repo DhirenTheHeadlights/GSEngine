@@ -11,7 +11,7 @@ import :pass_recorder;
 import gse.concurrency;
 import gse.math;
 
-auto gse::gpu::transition_image_to(gpu::device& dev, image& img) -> sync_token {
+auto gse::gpu::transition_image_to(device& dev, image& img) -> sync_token {
 	const auto aspect_flags = image_aspect_for(img.format());
 	const bool is_depth = aspect_flags.test(image_aspect_flag::depth);
 	const auto aspect = is_depth ? image_aspect_flag::depth : image_aspect_flag::color;

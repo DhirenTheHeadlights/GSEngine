@@ -58,7 +58,7 @@ export namespace gse::gui {
 		vec4f color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f };
 		vec4f color_folder = { 0.86f, 0.74f, 0.45f, 1.0f };
 		vec4f color_file = { 0.55f, 0.66f, 0.82f, 1.0f };
-		[[= gse::scaled]] float icon_extent = 16.f;
+		[[= scaled]] float icon_extent = 16.f;
 
 		// Interactive widget states
 		vec4f color_widget_background = { 0.10f, 0.16f, 0.22f, 0.35f };
@@ -112,46 +112,46 @@ export namespace gse::gui {
 		float scale_factor = 1.f;
 
 		// Widget sizing (auto-scaled via [[= gse::scaled]] reflection in apply_scale)
-		[[= gse::scaled]] float padding = 12.f;
-		[[= gse::scaled]] float title_bar_height = 32.f;
-		[[= gse::scaled]] float resize_border_thickness = 8.f;
-		[[= gse::scaled]] vec2f min_menu_size = { 200.f, 120.f };
-		[[= gse::scaled]] float font_size = 16.f;
+		[[= scaled]] float padding = 12.f;
+		[[= scaled]] float title_bar_height = 32.f;
+		[[= scaled]] float resize_border_thickness = 8.f;
+		[[= scaled]] vec2f min_menu_size = { 200.f, 120.f };
+		[[= scaled]] float font_size = 16.f;
 		std::filesystem::path font;
 
-		[[= gse::scaled]] float corner_radius = 6.f;
-		[[= gse::scaled]] float corner_radius_menu = 10.f;
-		[[= gse::scaled]] float corner_radius_button = 6.f;
-		[[= gse::scaled]] float corner_radius_input = 6.f;
+		[[= scaled]] float corner_radius = 6.f;
+		[[= scaled]] float corner_radius_menu = 10.f;
+		[[= scaled]] float corner_radius_button = 6.f;
+		[[= scaled]] float corner_radius_input = 6.f;
 		float widget_height_padding = 0.7f;
-		[[= gse::scaled]] float item_spacing = 4.f;
-		[[= gse::scaled]] float section_spacing_above = 18.f;
-		[[= gse::scaled]] float section_spacing_below = 10.f;
+		[[= scaled]] float item_spacing = 4.f;
+		[[= scaled]] float section_spacing_above = 18.f;
+		[[= scaled]] float section_spacing_below = 10.f;
 		float section_header_size_mult = 1.30f;
-		[[= gse::scaled]] float accent_bar_width = 3.f;
-		[[= gse::scaled]] float bare_header_height = 6.f;
+		[[= scaled]] float accent_bar_width = 3.f;
+		[[= scaled]] float bare_header_height = 6.f;
 
 		// Screen/card layout (referenced by SettingsScreen, MainMenuScreen, etc.)
-		[[= gse::scaled]] vec2f card_min_size = { 720.f, 480.f };
-		[[= gse::scaled]] vec2f card_max_size = { 1100.f, 760.f };
-		[[= gse::scaled]] vec2f card_margin = { 80.f, 60.f };
-		[[= gse::scaled]] float sidebar_width = 220.f;
-		[[= gse::scaled]] float header_height = 56.f;
-		[[= gse::scaled]] float footer_height = 64.f;
-		[[= gse::scaled]] float close_button_size = 28.f;
-		[[= gse::scaled]] float separator_thickness = 1.f;
+		[[= scaled]] vec2f card_min_size = { 720.f, 480.f };
+		[[= scaled]] vec2f card_max_size = { 1100.f, 760.f };
+		[[= scaled]] vec2f card_margin = { 80.f, 60.f };
+		[[= scaled]] float sidebar_width = 220.f;
+		[[= scaled]] float header_height = 56.f;
+		[[= scaled]] float footer_height = 64.f;
+		[[= scaled]] float close_button_size = 28.f;
+		[[= scaled]] float separator_thickness = 1.f;
 
 		// Buttons
-		[[= gse::scaled]] float button_height = 32.f;
-		[[= gse::scaled]] float button_min_width = 108.f;
-		[[= gse::scaled]] float accent_button_min_width = 132.f;
-		[[= gse::scaled]] float button_spacing = 8.f;
+		[[= scaled]] float button_height = 32.f;
+		[[= scaled]] float button_min_width = 108.f;
+		[[= scaled]] float accent_button_min_width = 132.f;
+		[[= scaled]] float button_spacing = 8.f;
 
 		// Standalone panels
-		[[= gse::scaled]] float side_panel_max_width = 320.f;
-		[[= gse::scaled]] float progress_bar_max_width = 400.f;
-		[[= gse::scaled]] float progress_bar_height = 12.f;
-		[[= gse::scaled]] float preview_height = 160.f;
+		[[= scaled]] float side_panel_max_width = 320.f;
+		[[= scaled]] float progress_bar_max_width = 400.f;
+		[[= scaled]] float progress_bar_height = 12.f;
+		[[= scaled]] float preview_height = 160.f;
 
 		static constexpr auto midnight() -> style;
 		static constexpr auto eclipse() -> style;
@@ -214,7 +214,7 @@ export namespace gse::gui {
 }
 
 auto gse::gui::colors_for(const style& sty, const button_role role) -> button_colors {
-	const button_role_info info = annotation_from_enum<button_role_info>(role, {});
+	const button_role_info info = annotation_from_enum(role, button_role_info{});
 	return {
 		.idle = sty.*info.idle,
 		.hot = sty.*info.hot,

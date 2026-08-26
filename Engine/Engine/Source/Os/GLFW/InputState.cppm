@@ -102,6 +102,12 @@ export namespace gse::input {
 			const detail::input_state_token& token
 		) -> void;
 
+		auto on_mouse_raw_moved(
+			float x_delta,
+			float y_delta,
+			const detail::input_state_token& token
+		) -> void;
+
 		auto on_scroll(
 			float x,
 			float y,
@@ -133,6 +139,8 @@ export namespace gse::input {
 		vec2f m_mouse_position;
 		vec2f m_mouse_prev_position;
 		vec2f m_mouse_delta;
+		vec2f m_mouse_raw_delta;
+		bool m_mouse_raw_received = false;
 		vec2f m_scroll_delta;
 		std::string m_text_entered_this_frame;
 	};
@@ -209,6 +217,8 @@ auto gse::input::state::begin_frame(const detail::input_state_token&) -> void {
 	m_mouse_buttons_released_this_frame.clear();
 	m_text_entered_this_frame.clear();
 	m_mouse_prev_position = m_mouse_position;
+	m_mouse_raw_delta = {};
+	m_mouse_raw_received = false;
 	m_scroll_delta = {};
 }
 
@@ -248,6 +258,11 @@ auto gse::input::state::on_mouse_moved(const float x, const float y, const detai
 	m_mouse_position = { x, y };
 }
 
+auto gse::input::state::on_mouse_raw_moved(const float x_delta, const float y_delta, const detail::input_state_token&) -> void {
+	m_mouse_raw_delta += vec2f{ x_delta, y_delta };
+	m_mouse_raw_received = true;
+}
+
 auto gse::input::state::on_scroll(const float x, const float y, const detail::input_state_token&) -> void {
 	m_scroll_delta += vec2f{ x, y };
 }
@@ -274,7 +289,7 @@ auto gse::input::state::append_codepoint(const std::uint32_t codepoint, const de
 }
 
 auto gse::input::state::end_frame(const detail::input_state_token&) -> void {
-	m_mouse_delta = m_mouse_position - m_mouse_prev_position;
+	m_mouse_delta = m_mouse_raw_received ? m_mouse_raw_delta : m_mouse_position - m_mouse_prev_position;
 }
 
 auto gse::input::state::copy_persistent_from(const state& other) -> void {

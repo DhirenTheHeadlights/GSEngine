@@ -14,9 +14,7 @@ export namespace sandbox {
 
 	struct spawn_joints_request {};
 
-	struct spawn_character_request {
-		std::optional<int> count;
-	};
+	struct spawn_character_request {};
 
 	struct spawn_pyramid_request {};
 
@@ -32,30 +30,30 @@ export namespace sandbox::dev_spawn {
 									  "by F5 or by the physics_stress scenario.">{},
 			= gse::settings::scope<gse::settings::scope_kind::project>{}
 		]]
-		sandbox::stress_scene_params stress;
+		stress_scene_params stress;
 
 		[[
 			= gse::settings::describe<"How many characters a spawn request builds.">{},
 			= gse::settings::scope<gse::settings::scope_kind::project>{}
 		]]
-		sandbox::character_spawn_params characters;
+		character_spawn_params characters;
 
 		[[
 			= gse::settings::describe<"Size of the pyramid built by a spawn request, whether it came from F9 or the "
 									  "pyramid scenario. User-scoped so it can be swept from --engine-setting.">{}
 		]]
-		sandbox::pyramid_scene_params pyramid;
+		pyramid_scene_params pyramid;
 
 		[[
 			= gse::settings::describe<"Where and how hard a strike request hits the pyramid. Swept from "
 									  "--engine-setting so a capture shot can be reframed without a rebuild.">{}
 		]]
-		sandbox::pyramid_strike_params strike;
+		pyramid_strike_params strike;
 
 		[[
 			= gse::settings::describe<"Size and brightness of the light field built by a light spawn request.">{}
 		]]
-		sandbox::light_field_params lights;
+		light_field_params lights;
 
 		gse::actions::handle spawn_stress;
 		gse::actions::handle spawn_joints;
@@ -81,6 +79,7 @@ export namespace sandbox::dev_spawn {
 		gse::shared_view<gse::actions::data> actions_d,
 		gse::shared_view<gse::world_system::data> world_d,
 		gse::shared_view<gse::asset::data> assets_d,
+		gse::entities ents,
 		gse::structural<gse::physics::transform_component>,
 		gse::structural<gse::physics::motion_component>,
 		gse::structural<gse::physics::collision_component>,
@@ -89,13 +88,13 @@ export namespace sandbox::dev_spawn {
 		gse::structural<gse::physics::joint_spec>,
 		gse::structural<gse::physics::muscle_component>,
 		gse::structural<gse::physics::joint_drive_component>,
-		gse::structural<sandbox::tumbler::component>,
-		gse::structural<sandbox::piston::component>,
+		gse::structural<tumbler::component>,
+		gse::structural<piston::component>,
 		gse::structural<gse::physics::kinematic_target_component>,
 		gse::structural<gse::physics::motor_component>,
-		gse::structural<sandbox::character_controller::component>,
-		gse::structural<sandbox::orbit_camera::component>,
-		gse::structural<sandbox::sidearm::component>,
+		gse::structural<character_controller::component>,
+		gse::structural<orbit_camera::component>,
+		gse::structural<sidearm::component>,
 		gse::structural<gse::skeleton_instance_component>,
 		gse::structural<gse::clip_player_component>
 	) -> gse::async::task<>;
@@ -121,6 +120,7 @@ auto sandbox::dev_spawn::run(
 	const gse::shared_view<gse::actions::data> actions_d,
 	const gse::shared_view<gse::world_system::data> world_d,
 	const gse::shared_view<gse::asset::data> assets_d,
+	gse::entities,
 	gse::structural<gse::physics::transform_component>,
 	gse::structural<gse::physics::motion_component>,
 	gse::structural<gse::physics::collision_component>,
@@ -129,13 +129,13 @@ auto sandbox::dev_spawn::run(
 	gse::structural<gse::physics::joint_spec>,
 	gse::structural<gse::physics::muscle_component>,
 	gse::structural<gse::physics::joint_drive_component>,
-	gse::structural<sandbox::tumbler::component>,
-	gse::structural<sandbox::piston::component>,
+	gse::structural<tumbler::component>,
+	gse::structural<piston::component>,
 	gse::structural<gse::physics::kinematic_target_component>,
 	gse::structural<gse::physics::motor_component>,
-	gse::structural<sandbox::character_controller::component>,
-	gse::structural<sandbox::orbit_camera::component>,
-	gse::structural<sandbox::sidearm::component>,
+	gse::structural<character_controller::component>,
+	gse::structural<orbit_camera::component>,
+	gse::structural<sidearm::component>,
 	gse::structural<gse::skeleton_instance_component>,
 	gse::structural<gse::clip_player_component>
 ) -> gse::async::task<> {
@@ -150,18 +150,17 @@ auto sandbox::dev_spawn::run(
 
 	const auto& cs = gse::actions::current_state(actions_d);
 	auto* scene = active_scene_ptr(world_d);
+	std::optional<gse::scene::mutation_scope> scope;
+	if (scene != nullptr) {
+		scope.emplace(*scene, ctx);
+	}
 
 	const bool key_stress = gse::actions::pressed(state.spawn_stress, cs, actions_d);
 	const bool key_joints = gse::actions::pressed(state.spawn_joints, cs, actions_d);
 	const bool key_character = gse::actions::pressed(state.spawn_character, cs, actions_d);
 	const bool req_stress = !spawn_in.of<spawn_stress_request>().empty();
 	const bool req_joints = !spawn_in.of<spawn_joints_request>().empty();
-	std::optional<int> requested_characters;
-	bool req_character = false;
-	for (const auto& req : spawn_in.of<spawn_character_request>()) {
-		req_character = true;
-		requested_characters = req.count;
-	}
+	const bool req_character = !spawn_in.of<spawn_character_request>().empty();
 	const bool key_pyramid = gse::actions::pressed(state.spawn_pyramid, cs, actions_d);
 	const bool req_pyramid = !spawn_in.of<spawn_pyramid_request>().empty();
 
@@ -177,7 +176,7 @@ auto sandbox::dev_spawn::run(
 		spawn_physics_stress(*scene, state.stress);
 	}
 	if (scene != nullptr && (key_pyramid || req_pyramid || entered_pyramid_scene)) {
-		sandbox::spawn_pyramid(*scene, state.pyramid);
+		spawn_pyramid(*scene, state.pyramid);
 	}
 	if (scene != nullptr && !spawn_in.of<spawn_lights_request>().empty()) {
 		spawn_light_field(*scene, state.lights);
@@ -211,48 +210,33 @@ auto sandbox::dev_spawn::run(
 		spawn_joint_test(*scene);
 	}
 	if (key_character || req_character) {
-		state.pending_characters = requested_characters.value_or(state.characters.count);
+		state.pending_characters = state.characters.count;
 	}
 	if (scene != nullptr && state.pending_characters > 0) {
 		constexpr float character_spacing = 2.f;
-		const auto rig = gse::asset::get<gse::skinned_model>(assets_d, "SkinnedModels/x_bot.v3");
-		const gse::animation::locomotion_blend clips{
-			.idle = gse::asset::get<gse::clip_asset>(assets_d, "Clips/idle"),
-			.walk = {
-				gse::asset::get<gse::clip_asset>(assets_d, "Clips/walking"),
-				gse::asset::get<gse::clip_asset>(assets_d, "Clips/walking_backwards"),
-				gse::asset::get<gse::clip_asset>(assets_d, "Clips/left_strafe_walking"),
-				gse::asset::get<gse::clip_asset>(assets_d, "Clips/right_strafe_walking"),
-			},
-			.run = {
-				gse::asset::get<gse::clip_asset>(assets_d, "Clips/running"),
-				gse::asset::get<gse::clip_asset>(assets_d, "Clips/walking_backwards"),
-				gse::asset::get<gse::clip_asset>(assets_d, "Clips/left_strafe"),
-				gse::asset::get<gse::clip_asset>(assets_d, "Clips/right_strafe"),
-			},
-		};
+		const auto rig = character_model(assets_d);
+		const auto clips = character_clips(assets_d);
 
-		gse::id spawned;
+		character_rig spawned;
 		for (int i = 0; i < state.pending_characters; ++i) {
-			const bool possess = !state.possessed_character.exists();
-			spawned = sandbox::spawn_character(
+			spawned = spawn_character(
 				*scene,
-				i,
-				possess,
+				gse::generate_id(std::format("Character {}", i)),
 				rig,
 				clips,
 				gse::vec3<gse::position>(static_cast<float>(i) * character_spacing, 0.f, 0.f)
 			);
-			if (!spawned.exists()) {
+			if (!spawned.character.exists()) {
 				break;
 			}
-			state.last_character = spawned;
-			if (possess) {
-				state.possessed_character = spawned;
+			state.last_character = spawned.character;
+			if (!state.possessed_character.exists()) {
+				state.possessed_character = spawned.character;
+				possess_character(*scene, spawned, clips);
 			}
 		}
 
-		if (spawned.exists()) {
+		if (spawned.character.exists()) {
 			state.pending_characters = 0;
 		}
 		else if (!state.character_warning_logged) {

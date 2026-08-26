@@ -113,7 +113,7 @@ auto gse::renderer::cull_compute::frame(context& ctx, shared_view<gpu::context::
 	const auto planes = extract_frustum_planes(view_proj);
 	d.frustum_buffer[frame_index].host_write(planes);
 
-	using batch_info = renderer::cull_compute::batch_info;
+	using batch_info = cull_compute::batch_info;
 	std::vector<batch_info> batch_staging(normal_count);
 
 	for (std::size_t i = 0; i < data.normal_batches.size(); ++i) {
@@ -133,7 +133,7 @@ auto gse::renderer::cull_compute::frame(context& ctx, shared_view<gpu::context::
 		);
 	}
 
-	auto rec = co_await gpu::pass<^^gse::renderer::cull_compute::frame>(pass_out).pipeline(d.pipeline);
+	auto rec = co_await gpu::pass<^^frame>(pass_out).pipeline(d.pipeline);
 
 	rec.dispatch<entry>(
 		{

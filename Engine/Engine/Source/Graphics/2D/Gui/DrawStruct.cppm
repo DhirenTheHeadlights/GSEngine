@@ -98,20 +98,20 @@ auto gse::gui::draw_struct(builder& b, T& value, settings::panel_state& state, c
 			}
 			else if constexpr (constexpr auto range_t = meta::find_range(m); range_t != std::meta::info{}) {
 				using R = [:range_t:];
-				if constexpr (gse::internal::is_quantity<F>) {
+				if constexpr (internal::is_quantity<F>) {
 					b.draw<quantity_slider<F, typename F::default_unit{}>>({
 						.name = label,
 						.value = value.[:m:],
-											.min = R::min,
-											.max = R::max,
+						.min = R::min,
+						.max = R::max,
 					});
 				}
 				else {
 					b.draw<slider<F>>({
 						.name = label,
 						.value = value.[:m:],
-											.min = static_cast<F>(R::min),
-											.max = static_cast<F>(R::max),
+						.min = static_cast<F>(R::min),
+						.max = static_cast<F>(R::max),
 					});
 				}
 			}

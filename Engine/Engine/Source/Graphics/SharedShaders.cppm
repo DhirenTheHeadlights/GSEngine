@@ -60,9 +60,9 @@ export namespace gse::shaders::forward {
 	struct [[= shader_struct]] light {
 		light_type light_type;
 		vec3<gse::position> position;
-		vec3<gse::displacement> direction;
+		vec3<displacement> direction;
 		vec3<gse::position> world_position;
-		vec3<gse::displacement> world_direction;
+		vec3<displacement> world_direction;
 		vec3f color;
 		irradiance intensity;
 		float constant;

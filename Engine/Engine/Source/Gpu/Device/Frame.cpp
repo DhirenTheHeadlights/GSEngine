@@ -51,7 +51,7 @@ auto gse::gpu::frame::set_present_target(window::window_surface* win) -> void {
 	m_targets.front().window = win;
 }
 
-auto gse::gpu::frame::add_present_target(const gse::id window_id, swap_chain* sc, window::window_surface* win) -> void {
+auto gse::gpu::frame::add_present_target(const id window_id, swap_chain* sc, window::window_surface* win) -> void {
 	assert(sc != nullptr, "a secondary present target needs a swapchain");
 	m_targets.push_back(present_target{
 		.window_id = window_id,
@@ -61,14 +61,14 @@ auto gse::gpu::frame::add_present_target(const gse::id window_id, swap_chain* sc
 	});
 }
 
-auto gse::gpu::frame::remove_present_target(const gse::id window_id) -> void {
+auto gse::gpu::frame::remove_present_target(const id window_id) -> void {
 	assert(window_id.exists(), "the primary present target cannot be removed");
 	std::erase_if(m_targets, [window_id](const present_target& t) {
 		return t.window_id == window_id;
 	});
 }
 
-auto gse::gpu::frame::target(const gse::id window_id) const -> const present_target* {
+auto gse::gpu::frame::target(const id window_id) const -> const present_target* {
 	const auto it = std::ranges::find(m_targets, window_id, &present_target::window_id);
 	return it == m_targets.end() ? nullptr : std::addressof(*it);
 }
@@ -109,11 +109,11 @@ auto gse::gpu::frame::frame_in_progress() const -> bool {
 	return m_frame_in_progress;
 }
 
-auto gse::gpu::frame::recreate_resources(present_target& t) -> gpu::expected<void> {
+auto gse::gpu::frame::recreate_resources(present_target& t) -> expected<void> {
 	const window::window_surface& win = *t.window;
 	swap_chain* const m_swapchain = t.swapchain;
 	const auto requested_size = window::viewport(win);
-	const auto requested_mode = gse::enum_from_annotation<present_mode_setting>(win.present_mode_index, present_mode::fifo);
+	const auto requested_mode = enum_from_annotation<present_mode_setting>(win.present_mode_index, present_mode::fifo);
 	const auto current_extent = m_swapchain->extent();
 	const auto current_mode = m_swapchain->present_mode();
 
@@ -161,13 +161,13 @@ auto gse::gpu::frame::recreate_resources(present_target& t) -> gpu::expected<voi
 	return {};
 }
 
-auto gse::gpu::frame::recreate_surface(present_target& t, const std::string_view reason) -> gpu::expected<void> {
+auto gse::gpu::frame::recreate_surface(present_target& t, const std::string_view reason) -> expected<void> {
 	const window::window_surface& win = *t.window;
 	swap_chain* const m_swapchain = t.swapchain;
 	log::println(log::level::warning, log::category::render, "{}, rebuilding surface and swapchain", reason);
 
 	const auto requested_size = window::viewport(win);
-	const auto requested_mode = gse::enum_from_annotation<present_mode_setting>(win.present_mode_index, present_mode::fifo);
+	const auto requested_mode = enum_from_annotation<present_mode_setting>(win.present_mode_index, present_mode::fifo);
 
 	m_swapchain->replace_surface(m_device->recreate_surface(win, m_swapchain->current_handle()));
 
@@ -503,7 +503,7 @@ auto gse::gpu::frame::end(std::span<const queue_submission> aux_submissions, std
 					sub.queue,
 					submit,
 					last_for_queue ? m_fences.in_flight(sub.queue, m_current_frame)
-								   : handle<gpu::fence>{}
+								   : handle<fence>{}
 				);
 			}
 		}
@@ -562,7 +562,7 @@ auto gse::gpu::frame::end(std::span<const queue_submission> aux_submissions, std
 		if (!t.acquired) {
 			continue;
 		}
-		const handle<gpu::semaphore> render_finished_handle = t.sync.render_finished(t.image_index);
+		const handle<semaphore> render_finished_handle = t.sync.render_finished(t.image_index);
 		const std::uint64_t present_id = t.next_present_id++;
 		const bool request_timing = !(t.window && t.window->attached);
 

@@ -98,7 +98,7 @@ auto gse::renderer::sdf_grid::frame(const context& ctx, shared_view<gpu::context
 
 	const auto ext = gpu_s.render_graph->extent();
 
-	auto rec = co_await gpu::pass<^^gse::renderer::sdf_grid::frame>(pass_out)
+	auto rec = co_await gpu::pass<^^frame>(pass_out)
 		.pipeline(d.pipeline)
 		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
 		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::velocity>()))

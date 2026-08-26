@@ -14,6 +14,7 @@ export import :character_controller;
 export import :orbit_camera;
 export import :pause_menu_system;
 export import :piston;
+export import :player_spawner;
 export import :runtime_spawns;
 export import :sandbox_scene;
 export import :sidearm;

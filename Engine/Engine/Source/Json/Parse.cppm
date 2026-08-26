@@ -45,7 +45,7 @@ export namespace gse::json {
 	};
 
 	struct parse_error {
-		json::error code = error::unexpected_token;
+		error code = error::unexpected_token;
 		std::size_t offset = 0;
 	};
 
@@ -124,7 +124,7 @@ namespace gse::json {
 }
 
 constexpr auto gse::json::error_of(const error code) -> error_info {
-	return annotation_from_enum<error_info>(code, {
+	return annotation_from_enum(code, error_info{
 		.message = "unknown error",
 	});
 }

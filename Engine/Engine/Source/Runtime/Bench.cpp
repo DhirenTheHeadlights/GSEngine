@@ -62,7 +62,7 @@ auto gse::world_state_hash(registry& reg) -> std::uint64_t {
 	binary_writer writer(buffer);
 
 	for (const std::size_t index : order) {
-		const gse::id owner = owners[index];
+		const id owner = owners[index];
 		const auto* motion = reg.try_component<physics::motion_component>(owner);
 		if (!motion) {
 			continue;
@@ -85,7 +85,7 @@ auto gse::write_state_frame(registry& reg, std::ostream& out, const std::uint32_
 	binary_writer writer(out);
 
 	for (const std::size_t index : order) {
-		const gse::id owner = owners[index];
+		const id owner = owners[index];
 		const auto* motion = reg.try_component<physics::motion_component>(owner);
 		if (!motion) {
 			continue;

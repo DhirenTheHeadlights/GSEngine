@@ -64,7 +64,7 @@ export namespace gse::network {
 	};
 }
 
-gse::network::wan_directory_provider::wan_directory_provider(std::vector<gse::network::discovery_result> seed)
+gse::network::wan_directory_provider::wan_directory_provider(std::vector<discovery_result> seed)
 	: m_seed(seed), m_published(seed), m_pending(std::move(seed)) {
 }
 
@@ -100,8 +100,8 @@ auto gse::network::wan_directory_provider::query_servers_async(time timeout) -> 
 
 	udp_socket socket;
 	if (!socket.bind(address{
-			.ip = "0.0.0.0",
-			.port = 0
+		.ip = "0.0.0.0",
+		.port = 0
 		})) {
 		return;
 	}
@@ -171,4 +171,3 @@ auto gse::network::wan_directory_provider::results() -> std::span<const discover
 	}
 	return m_published;
 }
-

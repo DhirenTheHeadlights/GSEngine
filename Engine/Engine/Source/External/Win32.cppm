@@ -38,6 +38,11 @@ export namespace gse::win32 {
 	using ::HMONITOR;
 	using ::MONITORINFO;
 	using ::NCCALCSIZE_PARAMS;
+	using ::HCURSOR;
+	using ::HRAWINPUT;
+	using ::RAWINPUT;
+	using ::RAWINPUTDEVICE;
+	using ::USHORT;
 
 	using ::glfwGetWin32Window;
 	using ::DefWindowProcW;
@@ -59,6 +64,14 @@ export namespace gse::win32 {
 	using ::DwmGetWindowAttribute;
 	using ::WindowFromPoint;
 	using ::GetAncestor;
+	using ::ClientToScreen;
+	using ::ClipCursor;
+	using ::GetCursorPos;
+	using ::SetCursor;
+	using ::LoadCursorW;
+	using ::SendMessageW;
+	using ::RegisterRawInputDevices;
+	using ::GetRawInputData;
 
 	constexpr UINT wm_nccalcsize = WM_NCCALCSIZE;
 	constexpr UINT wm_nchittest = WM_NCHITTEST;
@@ -84,6 +97,16 @@ export namespace gse::win32 {
 	constexpr UINT wpf_restore_to_maximized = WPF_RESTORETOMAXIMIZED;
 	constexpr DWORD dwmwa_cloaked = DWMWA_CLOAKED;
 	constexpr UINT ga_root = GA_ROOT;
+	constexpr UINT wm_setcursor = WM_SETCURSOR;
+	constexpr UINT wm_mousemove = WM_MOUSEMOVE;
+	constexpr UINT wm_input = WM_INPUT;
+	constexpr UINT rid_input = RID_INPUT;
+	constexpr DWORD rim_type_mouse = RIM_TYPEMOUSE;
+	constexpr USHORT mouse_move_absolute = MOUSE_MOVE_ABSOLUTE;
+	constexpr DWORD ridev_remove = RIDEV_REMOVE;
+	constexpr USHORT hid_usage_page_generic = 0x01;
+	constexpr USHORT hid_usage_generic_mouse = 0x02;
+	constexpr UINT raw_input_header_size = sizeof(RAWINPUTHEADER);
 
 	auto get_x_lparam(LPARAM lparam) -> int {
 		return GET_X_LPARAM(lparam);
@@ -91,6 +114,14 @@ export namespace gse::win32 {
 
 	auto get_y_lparam(LPARAM lparam) -> int {
 		return GET_Y_LPARAM(lparam);
+	}
+
+	auto low_word(LPARAM lparam) -> int {
+		return LOWORD(lparam);
+	}
+
+	auto make_lparam(int low, int high) -> LPARAM {
+		return MAKELPARAM(low, high);
 	}
 
 	auto hwnd_from_glfw_window(void* glfw_window) -> HWND {

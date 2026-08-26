@@ -125,7 +125,7 @@ export namespace gse::gpu {
 	};
 
 	struct acquire_next_image_result {
-		gse::gpu::result result = gse::gpu::result::error_unknown;
+		gpu::result result = gpu::result::error_unknown;
 		std::uint32_t image_index = 0;
 	};
 }

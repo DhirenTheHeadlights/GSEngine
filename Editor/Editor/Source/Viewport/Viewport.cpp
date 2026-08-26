@@ -299,7 +299,7 @@ auto gse::ide::viewport::frame(const context& ctx, const shared_view<gpu::contex
 	constexpr std::size_t buffers = per_frame_resource<gpu::image>::frames_in_flight;
 	d.display_slot = d.slots[(frame_index + 1) % buffers].slot();
 
-	co_await gpu::pass<^^gse::ide::viewport::frame>(pass_out)
+	co_await gpu::pass<^^frame>(pass_out)
 		.color(gpu::clear_color(
 			gpu::color_clear{
 				.r = 0.10f,

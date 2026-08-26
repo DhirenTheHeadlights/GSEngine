@@ -283,6 +283,7 @@ export namespace gse::gui {
 		std::size_t& text_pool_used;
 		std::unordered_map<std::uint64_t, vec4f>& widget_anim_colors;
 		std::unordered_map<std::uint64_t, scroll_state>& widget_scrolls;
+		std::unordered_map<std::uint64_t, std::unordered_set<std::uint64_t>>& widget_tree_open;
 		render_layer current_layer = render_layer::content;
 		std::uint32_t current_z_order = 0;
 		render_layer input_layer = render_layer::content;
@@ -308,6 +309,7 @@ export namespace gse::gui {
 		std::size_t& text_pool_used;
 		std::unordered_map<std::uint64_t, vec4f>& widget_anim_colors;
 		std::unordered_map<std::uint64_t, scroll_state>& widget_scrolls;
+		std::unordered_map<std::uint64_t, std::unordered_set<std::uint64_t>>& widget_tree_open;
 
 		mutable render_layer current_layer = render_layer::content;
 		std::uint32_t current_z_order = 0;
@@ -532,10 +534,12 @@ export namespace gse::gui {
 		const scroll_region_info& info
 	) -> scroll_handle;
 
+	template <typename F>
+	requires std::invocable<F, const row&>
 	auto row_list(
 		draw_context& ctx,
 		const row_list_info& info,
-		const std::function<void(const row&)>& draw_row
+		F&& draw_row
 	) -> void;
 
 	auto scroll_area(
@@ -550,6 +554,57 @@ export namespace gse::gui {
 		scroll_axis& axis,
 		const scroll_bar_input& input
 	) -> scroll_bar_result;
+}
+
+template <typename F>
+requires std::invocable<F, const gse::gui::row&>
+auto gse::gui::row_list(draw_context& ctx, const row_list_info& info, F&& draw_row) -> void {
+	if (info.row_height <= 0.f) {
+		return;
+	}
+
+	ctx.layout_cursor = { info.bounds.left(), info.bounds.top() };
+
+	const scroll_handle region = scroll_region(ctx, {
+		.id = info.id,
+		.size = info.bounds.size(),
+		.config = info.config,
+	});
+	if (!region.valid()) {
+		return;
+	}
+
+	const rectf& visible_rect = region.visible_rect();
+	const float content_start_y = ctx.layout_cursor.y();
+	const float content_height = static_cast<float>(info.row_count) * info.row_height;
+	const float row_width = std::max(
+		0.f,
+		visible_rect.width() - (content_height > visible_rect.height() ? info.config.scrollbar_width : 0.f)
+	);
+
+	const float first_edge = region.offset() / info.row_height;
+	const float past_last_edge = (region.offset() + visible_rect.height()) / info.row_height;
+	const auto first = static_cast<std::size_t>(std::max(0.f, std::floor(first_edge)));
+	const auto past_last = std::min(info.row_count, static_cast<std::size_t>(std::max(0.f, std::ceil(past_last_edge))));
+
+	for (std::size_t i = first; i < past_last; ++i) {
+		const rectf rect = rectf::from_position_size(
+			{ visible_rect.left(), content_start_y - static_cast<float>(i) * info.row_height },
+			{ row_width, info.row_height }
+		);
+		const rectf visible = rect.intersection(visible_rect);
+		if (visible.height() <= 0.f) {
+			continue;
+		}
+		draw_row(row{
+			.index = i,
+			.rect = rect,
+			.visible = visible,
+			.hovered = ctx.hovers(visible),
+		});
+	}
+
+	ctx.layout_cursor.y() = content_start_y - content_height;
 }
 
 namespace gse::gui::states {

@@ -142,14 +142,32 @@ export namespace sandbox {
 		gse::scene& s
 	) -> void;
 
+	struct character_rig {
+		gse::id character;
+		gse::id proxy;
+	};
+
+	auto character_model(
+		gse::shared_view<gse::asset::data> assets_d
+	) -> gse::resource::handle<gse::skinned_model>;
+
+	auto character_clips(
+		gse::shared_view<gse::asset::data> assets_d
+	) -> gse::animation::locomotion_blend;
+
 	auto spawn_character(
 		gse::scene& s,
-		int index,
-		bool possessed,
+		gse::id owner,
 		const gse::resource::handle<gse::skinned_model>& model,
 		const gse::animation::locomotion_blend& clips,
 		const gse::vec3<gse::position>& origin
-	) -> gse::id;
+	) -> character_rig;
+
+	auto possess_character(
+		gse::scene& s,
+		const character_rig& rig,
+		const gse::animation::locomotion_blend& clips
+	) -> void;
 
 	auto spawn_tumbler(
 		gse::scene& s,
@@ -256,7 +274,7 @@ auto sandbox::spawn_pyramid(gse::scene& s, const pyramid_scene_params& params) -
 			const gse::length px = extent * (static_cast<float>(col) - static_cast<float>(count - 1) * 0.5f);
 			s.spawn(
 				std::format("PyramidBlock_{}_{}", row, col),
-				sandbox::box(
+				box(
 					gse::vec3<gse::position>(px, py, gse::meters(0.f)),
 					gse::vec3<gse::length>(extent),
 					gse::kilograms(20.f)
@@ -276,7 +294,7 @@ auto sandbox::spawn_pyramid(gse::scene& s, const pyramid_scene_params& params) -
 auto sandbox::spawn_inverted_mass_pyramid(gse::scene& s, const gse::vec3<gse::position>& origin) -> void {
 	s.spawn(
 		"Pyramid Light Base",
-		sandbox::box(
+		box(
 			origin + gse::vec3<gse::length>(0.f, 0.5f, 0.f),
 			gse::vec3<gse::length>(gse::meters(1.f)),
 			gse::kilograms(5.f)
@@ -284,7 +302,7 @@ auto sandbox::spawn_inverted_mass_pyramid(gse::scene& s, const gse::vec3<gse::po
 	);
 	s.spawn(
 		"Pyramid Mid",
-		sandbox::box(
+		box(
 			origin + gse::vec3<gse::length>(0.f, 1.5f, 0.f),
 			gse::vec3<gse::length>(gse::meters(1.f)),
 			gse::kilograms(50.f)
@@ -292,7 +310,7 @@ auto sandbox::spawn_inverted_mass_pyramid(gse::scene& s, const gse::vec3<gse::po
 	);
 	s.spawn(
 		"Pyramid Heavy Top",
-		sandbox::box(
+		box(
 			origin + gse::vec3<gse::length>(0.f, 2.5f, 0.f),
 			gse::vec3<gse::length>(gse::meters(1.f)),
 			gse::kilograms(500.f)
@@ -313,7 +331,7 @@ auto sandbox::spawn_domino_chain(gse::scene& s, const gse::vec3<gse::position>& 
 								   : gse::quat();
 		s.spawn(
 			std::format("Domino {}", i + 1),
-			sandbox::box(
+			box(
 				pos,
 				gse::vec3<gse::length>(0.3f, 2.f, 1.f),
 				gse::kilograms(30.f),
@@ -338,7 +356,7 @@ auto sandbox::spawn_funnel(gse::scene& s, const gse::vec3<gse::position>& origin
 
 	s.spawn(
 		"Funnel Left Wall",
-		sandbox::static_box(
+		static_box(
 			origin + gse::vec3<gse::length>(-mid_offset, wall_height * 0.5f, 0.f),
 			gse::vec3<gse::length>(wall_len, wall_height, 0.3f),
 			left_rot
@@ -346,7 +364,7 @@ auto sandbox::spawn_funnel(gse::scene& s, const gse::vec3<gse::position>& origin
 	);
 	s.spawn(
 		"Funnel Right Wall",
-		sandbox::static_box(
+		static_box(
 			origin + gse::vec3<gse::length>(mid_offset, wall_height * 0.5f, 0.f),
 			gse::vec3<gse::length>(wall_len, wall_height, 0.3f),
 			right_rot
@@ -354,7 +372,7 @@ auto sandbox::spawn_funnel(gse::scene& s, const gse::vec3<gse::position>& origin
 	);
 	s.spawn(
 		"Funnel Back Wall",
-		sandbox::static_box(
+		static_box(
 			origin + gse::vec3<gse::length>(0.f, wall_height * 0.5f, -half_len),
 			gse::vec3<gse::length>(spread * 2.f + 1.f, wall_height, 0.3f)
 		)
@@ -370,7 +388,7 @@ auto sandbox::spawn_funnel(gse::scene& s, const gse::vec3<gse::position>& origin
 				);
 			s.spawn(
 				std::format("Funnel Box r{}c{}", row, col),
-				sandbox::box(
+				box(
 					pos,
 					gse::vec3<gse::length>(gse::meters(1.f)),
 					gse::kilograms(40.f)
@@ -390,10 +408,10 @@ auto sandbox::spawn_slope_friction_test(gse::scene& s, const gse::vec3<gse::posi
 
 	const gse::quat ramp_tilt(gse::axis_z, gse::degrees(30.f));
 	const auto ramp_position = origin + gse::vec3<gse::length>(0.f, 2.f, 0.f);
-	s.spawn("Ramp 30deg", sandbox::static_box(ramp_position, ramp_size, ramp_tilt));
+	s.spawn("Ramp 30deg", static_box(ramp_position, ramp_size, ramp_tilt));
 	s.spawn(
 		"Ramp Box Should Hold",
-		sandbox::box(
+		box(
 			ramp_position + resting_offset_for(ramp_tilt),
 			box_size,
 			gse::kilograms(50.f),
@@ -403,10 +421,10 @@ auto sandbox::spawn_slope_friction_test(gse::scene& s, const gse::vec3<gse::posi
 
 	const gse::quat steep_tilt(gse::axis_z, gse::degrees(45.f));
 	const auto steep_position = origin + gse::vec3<gse::length>(12.f, 2.f, 0.f);
-	s.spawn("Steep Ramp 45deg", sandbox::static_box(steep_position, ramp_size, steep_tilt));
+	s.spawn("Steep Ramp 45deg", static_box(steep_position, ramp_size, steep_tilt));
 	s.spawn(
 		"Steep Box Should Slide",
-		sandbox::box(
+		box(
 			steep_position + resting_offset_for(steep_tilt),
 			box_size,
 			gse::kilograms(50.f),
@@ -426,7 +444,7 @@ auto sandbox::spawn_high_speed_impact_target(gse::scene& s, const gse::vec3<gse:
 				);
 			s.spawn(
 				std::format("Impact Wall r{}c{}", row, col),
-				sandbox::box(
+				box(
 					pos,
 					gse::vec3<gse::length>(gse::meters(1.f)),
 					gse::kilograms(80.f)
@@ -449,12 +467,12 @@ auto sandbox::spawn_spring_tests(gse::scene& s, const gse::vec3<gse::position>& 
 
 		const auto anchor_id = s.spawn(
 			std::format("Spring {} Anchor", labels[i]),
-			sandbox::static_box(anchor_pos, gse::vec3<gse::length>(0.5f, 0.5f, 0.5f))
+			static_box(anchor_pos, gse::vec3<gse::length>(0.5f, 0.5f, 0.5f))
 		);
 
 		const auto bob_id = s.spawn(
 			std::format("Spring {} Bob", labels[i]),
-			sandbox::sphere(
+			sphere(
 				anchor_pos + gse::vec3<gse::length>(2.f, 0.f, 0.f),
 				gse::meters(0.5f),
 				gse::sphere_lod::lo
@@ -477,7 +495,7 @@ auto sandbox::spawn_spring_tests(gse::scene& s, const gse::vec3<gse::position>& 
 	const auto chain_anchor =
 		s.spawn(
 			"Spring Chain Anchor",
-			sandbox::static_box(chain_anchor_pos, gse::vec3<gse::length>(0.5f, 0.5f, 0.5f))
+			static_box(chain_anchor_pos, gse::vec3<gse::length>(0.5f, 0.5f, 0.5f))
 		);
 
 	auto prev_id = chain_anchor;
@@ -485,7 +503,7 @@ auto sandbox::spawn_spring_tests(gse::scene& s, const gse::vec3<gse::position>& 
 		const auto link_pos = chain_anchor_pos + gse::vec3<gse::length>(0.f, -static_cast<float>(i + 1) * 2.f, 0.f);
 		const auto link_id = s.spawn(
 			std::format("Spring Chain Link {}", i),
-			sandbox::sphere(link_pos, gse::meters(0.4f), gse::sphere_lod::lo)
+			sphere(link_pos, gse::meters(0.4f), gse::sphere_lod::lo)
 		);
 
 		s.build(std::format("Spring Chain Joint {}", i))
@@ -550,11 +568,11 @@ auto sandbox::spawn_tumbler(gse::scene& s, const int index, const gse::vec3<gse:
 	};
 
 	for (const auto& wall : walls) {
-		auto wall_arch = sandbox::box(center + wall.local_offset, wall.size, gse::kilograms(10000.f));
+		auto wall_arch = box(center + wall.local_offset, wall.size, gse::kilograms(10000.f));
 		wall_arch.motion.body = gse::physics::kinematic_body{};
 		wall_arch.spec.material.opacity = 0.2f;
 		const auto wall_id = s.spawn(std::format("Tumbler {} Wall {}", index, wall.suffix), std::move(wall_arch));
-		s.registry().add_component<sandbox::tumbler::component>(
+		s.registry().add_component<tumbler::component>(
 			wall_id,
 			{
 				.center = center,
@@ -587,7 +605,7 @@ auto sandbox::spawn_tumbler(gse::scene& s, const int index, const gse::vec3<gse:
 				const float fz = -axial_span + (static_cast<float>(iz) + 0.5f) * (axial_span * 2.f / static_cast<float>(nz));
 				s.spawn(
 					std::format("Tumbler {} Cube {}", index, content_id++),
-					sandbox::box(
+					box(
 						center + gse::vec3<gse::length>(fx, fy, fz),
 						gse::vec3<gse::length>(gse::meters(content_size)),
 						gse::kilograms(1.f)
@@ -615,7 +633,7 @@ auto sandbox::spawn_box_grid(gse::scene& s, const gse::vec3<gse::position>& orig
 					);
 				s.spawn(
 					std::format("Grid L{}R{}C{}", layer, ix, iz),
-					sandbox::box(
+					box(
 						pos,
 						gse::vec3<gse::length>(gse::meters(1.f)),
 						gse::kilograms(20.f)
@@ -628,11 +646,11 @@ auto sandbox::spawn_box_grid(gse::scene& s, const gse::vec3<gse::position>& orig
 
 auto sandbox::spawn_fixed_joint(gse::scene& s, const gse::vec3<gse::position>& origin) -> void {
 	const auto anchor_pos = origin + gse::vec3<gse::length>(0.f, 5.f, 0.f);
-	const auto anchor_id = s.spawn("Fixed Anchor", sandbox::static_box(anchor_pos, gse::vec3<gse::length>(gse::meters(1.f))));
+	const auto anchor_id = s.spawn("Fixed Anchor", static_box(anchor_pos, gse::vec3<gse::length>(gse::meters(1.f))));
 
 	const auto hanging_id = s.spawn(
 		"Fixed Hanging Box",
-		sandbox::box(
+		box(
 			anchor_pos + gse::vec3<gse::length>(0.f, -1.5f, 0.f),
 			gse::vec3<gse::length>(gse::meters(1.f)),
 			gse::kilograms(20.f)
@@ -652,11 +670,11 @@ auto sandbox::spawn_fixed_joint(gse::scene& s, const gse::vec3<gse::position>& o
 
 auto sandbox::spawn_distance_pendulum(gse::scene& s, const gse::vec3<gse::position>& origin) -> void {
 	const auto pivot_pos = origin + gse::vec3<gse::length>(0.f, 8.f, 0.f);
-	const auto pivot_id = s.spawn("Distance Pivot", sandbox::static_box(pivot_pos, gse::vec3<gse::length>(0.5f, 0.5f, 0.5f)));
+	const auto pivot_id = s.spawn("Distance Pivot", static_box(pivot_pos, gse::vec3<gse::length>(0.5f, 0.5f, 0.5f)));
 
 	const auto bob_id = s.spawn(
 		"Distance Bob",
-		sandbox::box(
+		box(
 			pivot_pos + gse::vec3<gse::length>(3.f, -3.f, 0.f),
 			gse::vec3<gse::length>(gse::meters(1.f)),
 			gse::kilograms(30.f)
@@ -675,9 +693,9 @@ auto sandbox::spawn_distance_pendulum(gse::scene& s, const gse::vec3<gse::positi
 
 auto sandbox::spawn_hinge_door(gse::scene& s, const gse::vec3<gse::position>& origin) -> void {
 	const auto frame_pos = origin + gse::vec3<gse::length>(0.f, 2.f, 0.f);
-	const auto frame_id = s.spawn("Hinge Frame", sandbox::static_box(frame_pos, gse::vec3<gse::length>(0.3f, 4.f, 0.3f)));
+	const auto frame_id = s.spawn("Hinge Frame", static_box(frame_pos, gse::vec3<gse::length>(0.3f, 4.f, 0.3f)));
 
-	auto door = sandbox::box(
+	auto door = box(
 		frame_pos + gse::vec3<gse::length>(1.5f, 0.f, 0.f),
 		gse::vec3<gse::length>(3.f, 3.5f, 0.2f),
 		gse::kilograms(40.f)
@@ -702,11 +720,11 @@ auto sandbox::spawn_hinge_door(gse::scene& s, const gse::vec3<gse::position>& or
 
 auto sandbox::spawn_slider_elevator(gse::scene& s, const gse::vec3<gse::position>& origin) -> void {
 	const auto rail_pos = origin + gse::vec3<gse::length>(0.f, 4.f, 0.f);
-	const auto rail_id = s.spawn("Slider Rail", sandbox::static_box(rail_pos, gse::vec3<gse::length>(0.3f, 8.f, 0.3f)));
+	const auto rail_id = s.spawn("Slider Rail", static_box(rail_pos, gse::vec3<gse::length>(0.3f, 8.f, 0.3f)));
 
 	const auto platform_id = s.spawn(
 		"Slider Platform",
-		sandbox::box(
+		box(
 			rail_pos + gse::vec3<gse::length>(0.f, 2.f, 0.f),
 			gse::vec3<gse::length>(2.f, 0.3f, 2.f),
 			gse::kilograms(30.f)
@@ -728,7 +746,7 @@ auto sandbox::spawn_pendulum_chain(gse::scene& s, const gse::vec3<gse::position>
 	constexpr float link_spacing = 1.5f;
 
 	const auto ceiling_pos = origin + gse::vec3<gse::length>(0.f, 12.f, 0.f);
-	const auto ceiling_id = s.spawn("Chain Ceiling", sandbox::static_box(ceiling_pos, gse::vec3<gse::length>(1.f, 0.5f, 1.f)));
+	const auto ceiling_id = s.spawn("Chain Ceiling", static_box(ceiling_pos, gse::vec3<gse::length>(1.f, 0.5f, 1.f)));
 
 	std::vector<gse::id> link_ids;
 	link_ids.push_back(ceiling_id);
@@ -739,7 +757,7 @@ auto sandbox::spawn_pendulum_chain(gse::scene& s, const gse::vec3<gse::position>
 		const auto link_pos = origin + gse::vec3<gse::length>(x_offset, y, 0.f);
 		const auto link_id = s.spawn(
 			std::format("Chain Link {}", i),
-			sandbox::box(
+			box(
 				link_pos,
 				gse::vec3<gse::length>(0.6f, 0.6f, 0.6f),
 				gse::kilograms(15.f)
@@ -773,7 +791,7 @@ auto sandbox::spawn_sphere_stack(gse::scene& s, const gse::vec3<gse::position>& 
 		);
 		s.spawn(
 			std::format("Sphere Stack {}", i),
-			sandbox::sphere(pos, gse::meters(radius), gse::sphere_lod::mid)
+			sphere(pos, gse::meters(radius), gse::sphere_lod::mid)
 		);
 	}
 }
@@ -781,7 +799,7 @@ auto sandbox::spawn_sphere_stack(gse::scene& s, const gse::vec3<gse::position>& 
 auto sandbox::spawn_corner_drop(gse::scene& s, const gse::vec3<gse::position>& origin) -> void {
 	s.spawn(
 		"Corner Drop Plate",
-		sandbox::static_box(
+		static_box(
 			origin + gse::vec3<gse::length>(0.f, 0.25f, 0.f),
 			gse::vec3<gse::length>(6.f, 0.5f, 6.f)
 		)
@@ -790,7 +808,7 @@ auto sandbox::spawn_corner_drop(gse::scene& s, const gse::vec3<gse::position>& o
 	const auto tilt = gse::quat(gse::axis_x, gse::degrees(45.f)) * gse::quat(gse::axis_z, gse::degrees(35.264f));
 	s.spawn(
 		"Corner Drop Box",
-		sandbox::box(
+		box(
 			origin + gse::vec3<gse::length>(0.f, 8.f, 0.f),
 			gse::vec3<gse::length>(gse::meters(1.f)),
 			gse::kilograms(20.f),
@@ -808,7 +826,7 @@ auto sandbox::spawn_elevator(gse::scene& s, const gse::vec3<gse::position>& orig
 	const float omega_value = 2.f * std::numbers::pi_v<float> * frequency_hz;
 
 	const auto platform_origin = origin + gse::vec3<gse::length>(0.f, platform_y, 0.f);
-	auto platform_arch = sandbox::box(
+	auto platform_arch = box(
 		platform_origin,
 		gse::vec3<gse::length>(platform_size, platform_height, platform_size),
 		gse::kilograms(10000.f)
@@ -816,7 +834,7 @@ auto sandbox::spawn_elevator(gse::scene& s, const gse::vec3<gse::position>& orig
 	platform_arch.motion.body = gse::physics::kinematic_body{};
 
 	const auto platform_id = s.spawn("Elevator Platform", std::move(platform_arch));
-	s.registry().add_component<sandbox::piston::component>(
+	s.registry().add_component<piston::component>(
 		platform_id,
 		{
 			.center = platform_origin,
@@ -843,7 +861,7 @@ auto sandbox::spawn_elevator(gse::scene& s, const gse::vec3<gse::position>& orig
 			);
 			s.spawn(
 				std::format("Elevator Box {}{}", i, j),
-				sandbox::box(pos, gse::vec3<gse::length>(gse::meters(box_size)), gse::kilograms(2.f))
+				box(pos, gse::vec3<gse::length>(gse::meters(box_size)), gse::kilograms(2.f))
 			);
 		}
 	}
@@ -861,7 +879,7 @@ auto sandbox::spawn_vise(gse::scene& s, const gse::vec3<gse::position>& origin) 
 
 	s.spawn(
 		"Vise Floor",
-		sandbox::static_box(
+		static_box(
 			origin + gse::vec3<gse::length>(0.f, floor_thickness * 0.5f, 0.f),
 			gse::vec3<gse::length>(6.f, floor_thickness, wall_depth + 2.f)
 		)
@@ -878,7 +896,7 @@ auto sandbox::spawn_vise(gse::scene& s, const gse::vec3<gse::position>& origin) 
 			floor_thickness + wall_height * 0.5f,
 			0.f
 		);
-		auto wall_arch = sandbox::box(
+		auto wall_arch = box(
 			wall_center,
 			gse::vec3<gse::length>(wall_thickness, wall_height, wall_depth),
 			gse::kilograms(10000.f)
@@ -886,7 +904,7 @@ auto sandbox::spawn_vise(gse::scene& s, const gse::vec3<gse::position>& origin) 
 		wall_arch.motion.body = gse::physics::kinematic_body{};
 
 		const auto wall_id = s.spawn(std::format("Vise {} Wall", name), std::move(wall_arch));
-		s.registry().add_component<sandbox::piston::component>(
+		s.registry().add_component<piston::component>(
 			wall_id,
 			{
 				.center = wall_center,
@@ -904,7 +922,7 @@ auto sandbox::spawn_vise(gse::scene& s, const gse::vec3<gse::position>& origin) 
 
 	s.spawn(
 		"Vise Box",
-		sandbox::box(
+		box(
 			origin + gse::vec3<gse::length>(0.f, floor_thickness + 0.3f, 0.f),
 			gse::vec3<gse::length>(gse::meters(0.5f)),
 			gse::kilograms(5.f)
@@ -930,7 +948,7 @@ auto sandbox::spawn_physics_stress(gse::scene& s, const stress_scene_params& par
 	spawn_elevator(s, gse::vec3<gse::position>(-30.f, 0.f, 10.f));
 	spawn_vise(s, gse::vec3<gse::position>(0.f, 0.f, 30.f));
 
-	s.spawn("Bouncy Sphere", sandbox::sphere(gse::vec3<gse::position>(-15.f, 8.f, 0.f), gse::meters(1.f)));
+	s.spawn("Bouncy Sphere", sphere(gse::vec3<gse::position>(-15.f, 8.f, 0.f), gse::meters(1.f)));
 }
 
 
@@ -951,7 +969,7 @@ auto sandbox::spawn_light_field(gse::scene& s, const light_field_params& params)
 			0.55f + 0.45f * gse::sin(hue + gse::degrees(240.f))
 		);
 
-		auto light = sandbox::sphere_light(
+		auto light = sphere_light(
 			gse::vec3<gse::position>(radial * gse::sin(theta), height, radial * gse::cos(theta)),
 			params.source_radius
 		);
@@ -972,10 +990,32 @@ auto sandbox::spawn_joint_test(gse::scene& s) -> void {
 	spawn_slider_elevator(s, gse::vec3<gse::position>(10.f, 0.f, 0.f));
 	spawn_pendulum_chain(s, gse::vec3<gse::position>(20.f, 0.f, 0.f));
 
-	s.spawn("Joint Test Sphere", sandbox::sphere(gse::vec3<gse::position>(0.f, 6.f, -8.f), gse::meters(1.f)));
+	s.spawn("Joint Test Sphere", sphere(gse::vec3<gse::position>(0.f, 6.f, -8.f), gse::meters(1.f)));
 }
 
-auto sandbox::spawn_character(gse::scene& s, const int index, const bool possessed, const gse::resource::handle<gse::skinned_model>& model, const gse::animation::locomotion_blend& clips, const gse::vec3<gse::position>& origin) -> gse::id {
+auto sandbox::character_model(const gse::shared_view<gse::asset::data> assets_d) -> gse::resource::handle<gse::skinned_model> {
+	return gse::asset::get<gse::skinned_model>(assets_d, "SkinnedModels/x_bot.v3");
+}
+
+auto sandbox::character_clips(const gse::shared_view<gse::asset::data> assets_d) -> gse::animation::locomotion_blend {
+	return {
+		.idle = gse::asset::get<gse::clip_asset>(assets_d, "Clips/idle"),
+		.walk = {
+			gse::asset::get<gse::clip_asset>(assets_d, "Clips/walking"),
+			gse::asset::get<gse::clip_asset>(assets_d, "Clips/walking_backwards"),
+			gse::asset::get<gse::clip_asset>(assets_d, "Clips/left_strafe_walking"),
+			gse::asset::get<gse::clip_asset>(assets_d, "Clips/right_strafe_walking"),
+		},
+		.run = {
+			gse::asset::get<gse::clip_asset>(assets_d, "Clips/running"),
+			gse::asset::get<gse::clip_asset>(assets_d, "Clips/walking_backwards"),
+			gse::asset::get<gse::clip_asset>(assets_d, "Clips/left_strafe"),
+			gse::asset::get<gse::clip_asset>(assets_d, "Clips/right_strafe"),
+		},
+	};
+}
+
+auto sandbox::spawn_character(gse::scene& s, const gse::id owner, const gse::resource::handle<gse::skinned_model>& model, const gse::animation::locomotion_blend& clips, const gse::vec3<gse::position>& origin) -> character_rig {
 	if (!model.valid()) {
 		return {};
 	}
@@ -1001,7 +1041,7 @@ auto sandbox::spawn_character(gse::scene& s, const int index, const bool possess
 	const auto proxy_center = origin + proxy.center;
 	const auto proxy_mass = gse::kilograms(78.f);
 
-	const auto proxy_id = s.build(std::format("Character {}.Proxy", index))
+	const auto proxy_id = s.build(std::format("{}.Proxy", owner.tag()))
 		.with<gse::physics::transform_component>({
 			.position = proxy_center,
 		})
@@ -1048,7 +1088,7 @@ auto sandbox::spawn_character(gse::scene& s, const int index, const bool possess
 		bodies[i] = gse::animation::compose(joints[i], bone.body_offset, bone.body_rotation);
 		const auto& body = bodies[i];
 
-		instance.bones[i] = s.build(std::format("Character {}.{}", index, bone.name))
+		instance.bones[i] = s.build(std::format("{}.{}", owner.tag(), bone.name))
 			.with<gse::physics::transform_component>({
 				.position = body.position,
 				.orientation = body.orientation,
@@ -1078,7 +1118,7 @@ auto sandbox::spawn_character(gse::scene& s, const int index, const bool possess
 		const auto& body = bodies[i];
 		const auto pivot = joints[i].position;
 
-		s.build(std::format("Character {}.{}.Joint", index, bone.name))
+		s.build(std::format("{}.{}.Joint", owner.tag(), bone.name))
 			.with<gse::physics::joint_spec>({
 				.entity_a = instance.bones[bone.parent],
 				.entity_b = instance.bones[i],
@@ -1089,23 +1129,30 @@ auto sandbox::spawn_character(gse::scene& s, const int index, const bool possess
 			});
 	}
 
-	return s.build(std::format("Character {}", index))
-		.with<gse::skeleton_instance_component>(instance)
-		.with<gse::clip_player_component>({
-			.layers = { gse::clip_layer{ .clip = clips.idle, .weight = 1.f } },
-			.layer_count = 1,
-		})
-		.with<sandbox::character_controller::component>({
-			.proxy = proxy_id,
+	return {
+		.character = s.build(owner)
+			.with<gse::skeleton_instance_component>(instance)
+			.with<gse::clip_player_component>({
+				.layers = { gse::clip_layer{ .clip = clips.idle, .weight = 1.f } },
+				.layer_count = 1,
+			})
+			.identify(),
+		.proxy = proxy_id,
+	};
+}
+
+auto sandbox::possess_character(gse::scene& s, const character_rig& rig, const gse::animation::locomotion_blend& clips) -> void {
+	s.build(rig.character)
+		.with<character_controller::component>({
+			.proxy = rig.proxy,
 			.clips = clips,
-			.possessed = possessed,
+			.possessed = true,
 		})
-		.with<sandbox::sidearm::component>({})
-		.with<sandbox::orbit_camera::component>({
-			.target = proxy_id,
+		.with<sidearm::component>({})
+		.with<orbit_camera::component>({
+			.target = rig.proxy,
 			.stepped_views = true,
-			.active = possessed,
+			.active = true,
 			.free_look = true,
-		})
-		.identify();
+		});
 }

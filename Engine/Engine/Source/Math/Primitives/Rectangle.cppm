@@ -93,11 +93,11 @@ constexpr auto gse::rect_t<T>::from_position_size(const T& top_left, const T& si
 
 template <gse::is_vec2 T>
 constexpr auto gse::rect_t<T>::bounding_box(const rect_t& a, const rect_t& b) -> rect_t {
-	return gse::rect_t<T>(min_max_params{
+	return rect_t<T>(min_max_params{
 		.min = T{ std::min(a.m_min.x(), b.m_min.x()),
-				  std::min(a.m_min.y(), b.m_min.y()) },
+			std::min(a.m_min.y(), b.m_min.y()) },
 		.max = T{ std::max(a.m_max.x(), b.m_max.x()),
-				  std::max(a.m_max.y(), b.m_max.y()) }
+			std::max(a.m_max.y(), b.m_max.y()) }
 	});
 }
 
@@ -203,13 +203,13 @@ constexpr auto gse::rect_t<T>::intersection(const rect_t& other) const -> rect_t
 
 template <gse::is_vec2 T>
 struct std::formatter<gse::rect_t<T>> {
-	constexpr auto parse(std::format_parse_context& ctx) {
+	constexpr auto parse(format_parse_context& ctx) {
 		return ctx.begin();
 	}
 
 	template <typename FormatContext>
 	auto format(const gse::rect_t<T>& rect, FormatContext& ctx) const {
-		return std::format_to(
+		return format_to(
 			ctx.out(),
 			"Rect(L:{}, B:{}, W:{}, H:{})",
 			rect.left(),

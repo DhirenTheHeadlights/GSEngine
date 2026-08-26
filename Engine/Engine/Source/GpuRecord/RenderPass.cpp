@@ -58,7 +58,7 @@ auto gse::gpu::pass_builder::on(const queue_type queue) && -> pass_builder&& {
 	return std::move(*this);
 }
 
-auto gse::gpu::pass_builder::pipeline(const gpu::shader_program& p) && -> pass_builder&& {
+auto gse::gpu::pass_builder::pipeline(const shader_program& p) && -> pass_builder&& {
 	m_desc.primary_pipeline = std::addressof(p);
 	return std::move(*this);
 }
@@ -91,14 +91,14 @@ auto gse::gpu::pass(const channel_write<render_pass_request> channels, const id 
 	return pass_builder{ channels, pass_kind };
 }
 
-auto gse::gpu::clear_color(const gpu::color_clear value) -> color_attachment {
+auto gse::gpu::clear_color(const color_clear value) -> color_attachment {
 	return {
 		.op = load_op::clear,
 		.clear = value,
 	};
 }
 
-auto gse::gpu::clear_color(const gpu::color_clear value, const image& target) -> color_attachment {
+auto gse::gpu::clear_color(const color_clear value, const image& target) -> color_attachment {
 	return {
 		.op = load_op::clear,
 		.clear = value,
@@ -119,7 +119,7 @@ auto gse::gpu::load_color(const image& target) -> color_attachment {
 	};
 }
 
-auto gse::gpu::clear_depth(const gpu::depth_clear value) -> depth_attachment {
+auto gse::gpu::clear_depth(const depth_clear value) -> depth_attachment {
 	return {
 		.op = load_op::clear,
 		.clear = value,
@@ -136,18 +136,18 @@ namespace gse::gpu {
 	auto to_color_output_info(
 		const color_attachment& a,
 		id window
-	) -> gpu::color_output_info;
+	) -> color_output_info;
 
 	auto to_depth_output_info(
 		const depth_attachment& a
-	) -> gpu::depth_output_info;
+	) -> depth_output_info;
 
 	auto to_pass_data(
 		render_pass_request req
-	) -> gpu::render_pass_data;
+	) -> render_pass_data;
 }
 
-auto gse::gpu::to_color_output_info(const color_attachment& a, const id window) -> gpu::color_output_info {
+auto gse::gpu::to_color_output_info(const color_attachment& a, const id window) -> color_output_info {
 	return {
 		.is_swapchain = a.target == nullptr && !a.transient_target,
 		.window = window,
@@ -158,7 +158,7 @@ auto gse::gpu::to_color_output_info(const color_attachment& a, const id window) 
 	};
 }
 
-auto gse::gpu::to_depth_output_info(const depth_attachment& a) -> gpu::depth_output_info {
+auto gse::gpu::to_depth_output_info(const depth_attachment& a) -> depth_output_info {
 	return {
 		.is_swapchain = a.target == nullptr && !a.transient_target,
 		.custom_target = a.target,
@@ -168,8 +168,8 @@ auto gse::gpu::to_depth_output_info(const depth_attachment& a) -> gpu::depth_out
 	};
 }
 
-auto gse::gpu::to_pass_data(render_pass_request req) -> gpu::render_pass_data {
-	gpu::render_pass_data p{
+auto gse::gpu::to_pass_data(render_pass_request req) -> render_pass_data {
+	render_pass_data p{
 		.pass_type = req.desc.pass_kind,
 		.pass_name = req.desc.pass_name,
 		.queue = req.desc.queue,

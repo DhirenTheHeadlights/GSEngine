@@ -282,7 +282,7 @@ auto gse::settings::write_settings_with_prefix(std::unordered_map<std::string, s
 }
 
 template <std::meta::info M, gse::settings::scope_kind Fallback>
-consteval auto gse::settings::field_scope_of() -> gse::settings::scope_kind {
+consteval auto gse::settings::field_scope_of() -> scope_kind {
 	constexpr auto found = meta::find_scope(M);
 	if constexpr (found != std::meta::info{}) {
 		using S = [:found:];
@@ -405,7 +405,7 @@ consteval auto gse::settings::category_of() -> std::string_view {
 }
 
 template <typename T>
-consteval auto gse::settings::scope_of() -> gse::settings::scope_kind {
+consteval auto gse::settings::scope_of() -> scope_kind {
 	constexpr auto found = meta::find_scope(^^T);
 	if constexpr (found != std::meta::info{}) {
 		using S = [:found:];
@@ -468,7 +468,7 @@ template <typename F>
 auto gse::settings::convert_field_unit(const std::string_view canonical, const std::string_view unit) -> std::string {
 	if constexpr (is_dimensioned_field<F>) {
 		F parsed{};
-		if (!gse::parse(canonical, parsed)) {
+		if (!parse(canonical, parsed)) {
 			return {};
 		}
 		return std::format("{::{}!}", parsed, unit);
@@ -481,7 +481,7 @@ auto gse::settings::convert_field_unit(const std::string_view canonical, const s
 template <typename F>
 auto gse::settings::normalize_field_value(const std::string_view text) -> std::string {
 	F parsed{};
-	if (!gse::parse(text, parsed)) {
+	if (!parse(text, parsed)) {
 		return {};
 	}
 	return std::format("{}", parsed);
@@ -516,4 +516,3 @@ consteval auto gse::settings::make_range_field_from_info(const std::meta::info r
 	}
 	return {};
 }
-

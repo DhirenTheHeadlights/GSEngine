@@ -122,7 +122,7 @@ consteval auto gse::meta::find_system_state_anno(const std::meta::info type) -> 
 }
 
 consteval auto gse::meta::is_deferred_system(const std::meta::info type) -> bool {
-	return gse::find_annotation<deferred_system>(type) != std::meta::info{};
+	return find_annotation<deferred_system>(type) != std::meta::info{};
 }
 
 consteval auto gse::meta::find_page_for_anno(const std::meta::info fn) -> std::meta::info {

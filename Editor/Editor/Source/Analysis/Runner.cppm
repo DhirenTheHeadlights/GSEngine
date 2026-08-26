@@ -82,7 +82,7 @@ export namespace gse::ide::analysis {
 
 	struct diagnostics_check {
 		std::atomic<bool> done = false;
-		gse::id document_id;
+		id document_id;
 		document_revision revision;
 		std::vector<diagnostic> result;
 		std::vector<diagnostic> lint;
@@ -93,10 +93,11 @@ export namespace gse::ide::analysis {
 		std::vector<symbol_token> symbols;
 		std::vector<symbol_ref> refs;
 		std::vector<param_token> params;
+		std::unordered_map<file_id, std::filesystem::path> files;
 		bool symbols_complete = false;
 		diagnostics_status status = diagnostics_status::success;
 		std::string failure_output;
-		gse::time duration;
+		time duration;
 	};
 
 	struct diagnostics_runner {
@@ -125,7 +126,7 @@ namespace gse::ide::analysis {
 }
 
 auto gse::ide::analysis::status_info(const diagnostics_status status) -> diagnostics_status_info {
-	return gse::annotation_from_enum<diagnostics_status_info>(status, {
+	return annotation_from_enum<diagnostics_status_info>(status, {
 		.label = "analysis state unknown",
 		.hint = "No explanation was recorded for this analysis state.",
 		.color = 0x9ca5b8,
@@ -179,9 +180,9 @@ auto gse::ide::analysis::normalize_diagnostic_files(const std::span<diagnostic> 
 auto gse::ide::analysis::diagnostics_runner::start(const std::shared_ptr<diagnostics_check>& check, const std::filesystem::path& compile_commands, const std::filesystem::path& file, const std::filesystem::path& plugin_dll, const std::span<const std::filesystem::path> workspace_roots, void (*lint_hook)(diagnostics_check&)) -> std::jthread {
 	std::vector<std::filesystem::path> roots(workspace_roots.begin(), workspace_roots.end());
 	return std::jthread([check, compile_commands, file, plugin_dll, roots = std::move(roots), lint_hook](const std::stop_token& stop) {
-		const gse::time started = gse::system_clock::now<gse::time>();
-		const auto publish = gse::make_scope_exit([check, started] {
-			check->duration = gse::system_clock::now<gse::time>() - started;
+		const time started = system_clock::now<time>();
+		const auto publish = make_scope_exit([check, started] {
+			check->duration = system_clock::now<time>() - started;
 			check->done.store(true, std::memory_order_release);
 		});
 		auto read_file = [](const std::filesystem::path& path) -> std::string {
@@ -210,14 +211,14 @@ auto gse::ide::analysis::diagnostics_runner::start(const std::shared_ptr<diagnos
 		}
 		else {
 			const std::filesystem::path sarif_temp = process::temporary_path("diagnostics", "sarif");
-			const auto remove_sarif = gse::make_scope_exit([&sarif_temp] {
+			const auto remove_sarif = make_scope_exit([&sarif_temp] {
 				std::error_code ec;
 				std::filesystem::remove(sarif_temp, ec);
 			});
 
 			std::string command_line = entry->command.command_line;
 			std::filesystem::path token_temp;
-			const auto remove_tokens = gse::make_scope_exit([&token_temp] {
+			const auto remove_tokens = make_scope_exit([&token_temp] {
 				if (!token_temp.empty()) {
 					std::error_code ec;
 					std::filesystem::remove(token_temp, ec);
@@ -275,15 +276,16 @@ auto gse::ide::analysis::diagnostics_runner::start(const std::shared_ptr<diagnos
 				check->quals = std::move(symbols.quals);
 				check->template_args = std::move(symbols.template_args);
 				check->unused_locals = std::move(symbols.unused_locals);
+				check->files = std::move(symbols.files);
 				check->symbols_complete = symbols.complete;
 			}
 		}
 
 		if (check->status != diagnostics_status::success) {
 			const diagnostics_status_info info = status_info(check->status);
-			gse::log::println(
-				info.routine ? gse::log::level::warning : gse::log::level::error,
-				gse::log::category::task,
+			log::println(
+				info.routine ? log::level::warning : log::level::error,
+				log::category::task,
 				"analysis: {} on {}:\n{}",
 				std::string_view(info.label),
 				file.filename().generic_display_string(),

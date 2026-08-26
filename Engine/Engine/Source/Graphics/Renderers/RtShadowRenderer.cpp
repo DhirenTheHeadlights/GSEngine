@@ -259,7 +259,7 @@ auto gse::renderer::rt_shadow::frame(context& ctx, shared_view<gpu::context::dat
 	};
 
 	if constexpr (use_gpu_tlas_transform_update) {
-		auto rec = co_await gpu::pass<^^gse::renderer::rt_shadow::frame>(pass_out).pipeline(d.tlas_update_pipeline).after<^^geometry_collector::frame, ^^physics_transform::frame>();
+		auto rec = co_await gpu::pass<^^frame>(pass_out).pipeline(d.tlas_update_pipeline).after<^^geometry_collector::frame, ^^physics_transform::frame>();
 		build_new_blas(rec);
 		if (instance_count != 0) {
 			const std::uint32_t workgroups = (instance_count + 63) / 64;
@@ -280,7 +280,7 @@ auto gse::renderer::rt_shadow::frame(context& ctx, shared_view<gpu::context::dat
 		gpu::build_tlas_in_place(*gpu_s.device, d.tlas_per_frame[frame_index], instance_count, rec);
 	}
 	else {
-		auto rec = co_await gpu::pass<^^gse::renderer::rt_shadow::frame>(pass_out).after<^^geometry_collector::frame>();
+		auto rec = co_await gpu::pass<^^frame>(pass_out).after<^^geometry_collector::frame>();
 		build_new_blas(rec);
 		gpu::build_tlas_in_place(*gpu_s.device, d.tlas_per_frame[frame_index], instance_count, rec);
 	}

@@ -9,40 +9,31 @@ import gse.ide.navigation;
 export namespace gse::ide {
 	struct search_panel_state {
 		search::query_driver driver;
-		gse::gui::text_input_state input;
+		gui::text_input_state input;
 		bool include_files = true;
 		bool include_symbols = true;
 		bool include_content = true;
 	};
 
 	auto draw_search_panel(
-		gse::gui::builder& ui,
+		gui::builder& ui,
 		const rectf& rect,
 		search_panel_state& state,
 		const search::index_state* index,
-		gse::channel_write<jump_to_request> channels
+		channel_write<jump_to_request> channels
 	) -> void;
 }
 
 namespace gse::ide {
-	[[nodiscard]] auto domain_label(
-		search::domain source
-	) -> std::string_view;
-
-	[[nodiscard]] auto domain_color(
-		const gse::gui::style& sty,
-		search::domain source
-	) -> vec4f;
-
 	auto draw_scope_toggle(
-		const gse::gui::draw_context& ctx,
+		const gui::draw_context& ctx,
 		const rectf& rect,
 		std::string_view label,
 		bool& enabled
 	) -> void;
 
 	auto draw_search_result_row(
-		const gse::gui::draw_context& ctx,
+		const gui::draw_context& ctx,
 		const rectf& row,
 		const search::result& entry,
 		bool hovered,
@@ -50,29 +41,7 @@ namespace gse::ide {
 	) -> void;
 }
 
-auto gse::ide::domain_label(const search::domain source) -> std::string_view {
-	switch (source) {
-		case search::domain::content:
-			return "text";
-		case search::domain::symbol:
-			return "symbol";
-		default:
-			return "file";
-	}
-}
-
-auto gse::ide::domain_color(const gse::gui::style& sty, const search::domain source) -> vec4f {
-	switch (source) {
-		case search::domain::content:
-			return sty.color_text_secondary;
-		case search::domain::symbol:
-			return sty.color_accent;
-		default:
-			return sty.color_file;
-	}
-}
-
-auto gse::ide::draw_scope_toggle(const gse::gui::draw_context& ctx, const rectf& rect, const std::string_view label, bool& enabled) -> void {
+auto gse::ide::draw_scope_toggle(const gui::draw_context& ctx, const rectf& rect, const std::string_view label, bool& enabled) -> void {
 	const auto& sty = ctx.style;
 	const auto text_view = ctx.fonts.text.resolve();
 	const bool hovered = ctx.hovers(rect);
@@ -97,7 +66,7 @@ auto gse::ide::draw_scope_toggle(const gse::gui::draw_context& ctx, const rectf&
 	});
 }
 
-auto gse::ide::draw_search_result_row(const gse::gui::draw_context& ctx, const rectf& row, const search::result& entry, const bool hovered, const bool selected) -> void {
+auto gse::ide::draw_search_result_row(const gui::draw_context& ctx, const rectf& row, const search::result& entry, const bool hovered, const bool selected) -> void {
 	const auto& sty = ctx.style;
 	const auto text_view = ctx.fonts.text.resolve();
 	const float pad = sty.padding;
@@ -110,14 +79,15 @@ auto gse::ide::draw_search_result_row(const gse::gui::draw_context& ctx, const r
 		});
 	}
 
-	const std::string_view tag = domain_label(entry.source);
+	const search::domain_info source_info = annotation_from_enum<search::domain_info>(entry.source, {});
+	const std::string_view tag = source_info.label;
 	const float tag_w = text_view->width(tag, sty.font_size) + pad;
 	ctx.queue_text({
 		.font = ctx.fonts.text,
 		.text = tag,
 		.position = { row.left() + pad * 0.5f, row.center().y() + text_view->vertical_center_offset(sty.font_size) },
 		.scale = sty.font_size,
-		.color = domain_color(sty, entry.source),
+		.color = sty.*source_info.color,
 		.clip_rect = row,
 	});
 
@@ -149,7 +119,7 @@ auto gse::ide::draw_search_result_row(const gse::gui::draw_context& ctx, const r
 	}
 }
 
-auto gse::ide::draw_search_panel(gse::gui::builder& ui, const rectf& rect, search_panel_state& state, const search::index_state* index, const gse::channel_write<jump_to_request> channels) -> void {
+auto gse::ide::draw_search_panel(gui::builder& ui, const rectf& rect, search_panel_state& state, const search::index_state* index, const channel_write<jump_to_request> channels) -> void {
 	auto& ctx = ui.ctx;
 	const auto& sty = ctx.style;
 	const auto text_view = ctx.fonts.text.resolve();
@@ -168,8 +138,8 @@ auto gse::ide::draw_search_panel(gse::gui::builder& ui, const rectf& rect, searc
 		.corner_radius = sty.corner_radius,
 	});
 
-	const gse::id query_id = gse::gui::ids::make("##search_panel_query");
-	gse::gui::draw::text_input_in_rect(ctx, query_id, state.driver.query, state.input, query_rect, ui.hot_widget_id, ui.focus_widget_id);
+	const id query_id = gui::ids::make("##search_panel_query");
+	gui::draw::text_input_in_rect(ctx, query_id, state.driver.query, state.input, query_rect, ui.hot_widget_id, ui.focus_widget_id);
 	const bool focused = ui.focus_widget_id == query_id;
 
 	if (state.driver.query.empty() && !focused) {
@@ -197,7 +167,7 @@ auto gse::ide::draw_search_panel(gse::gui::builder& ui, const rectf& rect, searc
 		x += w + pad * 0.5f;
 	}
 
-	const time now = gse::system_clock::now<time>();
+	const time now = system_clock::now<time>();
 	state.driver.update(now, index, search::options{
 		.max_results = 400,
 		.include_content = state.include_content,
@@ -223,13 +193,13 @@ auto gse::ide::draw_search_panel(gse::gui::builder& ui, const rectf& rect, searc
 	}
 
 	if (focused) {
-		if (ctx.key_pressed(gse::key::down)) {
+		if (ctx.key_pressed(key::down)) {
 			state.driver.selected = std::min<int>(state.driver.selected + 1, static_cast<int>(state.driver.results.size()) - 1);
 		}
-		if (ctx.key_pressed(gse::key::up)) {
+		if (ctx.key_pressed(key::up)) {
 			state.driver.selected = std::max(state.driver.selected - 1, 0);
 		}
-		if (ctx.key_pressed(gse::key::enter)) {
+		if (ctx.key_pressed(key::enter)) {
 			const int idx = state.driver.selected >= 0 ? state.driver.selected : 0;
 			const search::result& chosen = state.driver.results[static_cast<std::size_t>(idx)];
 			channels.push<jump_to_request>(search::jump_target(chosen));
@@ -241,7 +211,7 @@ auto gse::ide::draw_search_panel(gse::gui::builder& ui, const rectf& rect, searc
 		.bounds = list_rect,
 		.row_height = row_h,
 		.row_count = state.driver.results.size(),
-	}, [&](gse::gui::builder& b, const gse::gui::row& r) {
+	}, [&](gui::builder& b, const gui::row& r) {
 		auto& c = b.ctx;
 		const search::result& entry = state.driver.results[r.index];
 

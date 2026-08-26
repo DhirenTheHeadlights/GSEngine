@@ -762,7 +762,7 @@ auto gse::dx12::device::dump_dred_once() -> void {
 		},
 		[](void*, const unsigned int index, const unsigned int completed, const directx::D3D12_AUTO_BREADCRUMB_OP op) {
 			const auto tag = index < completed ? "done" : (index == completed ? ">> HUNG" : "pending");
-			log::println(log::level::error, log::category::dx12, "    op[{}] {} {}", index, tag, gse::enum_to_string(op));
+			log::println(log::level::error, log::category::dx12, "    op[{}] {} {}", index, tag, enum_to_string(op));
 		},
 		nullptr
 	);
@@ -793,7 +793,7 @@ auto gse::dx12::device::dump_queue_ops() -> void {
 	log::println(log::level::error, log::category::dx12, "queue-op ring: {} ops total, dumping last {} (newest last)", m_queue_op_seq, count);
 	for (std::uint64_t s = m_queue_op_seq - count; s < m_queue_op_seq; ++s) {
 		const auto& op = m_queue_op_ring[s % queue_op_ring_size];
-		log::println(log::level::error, log::category::dx12, "  [{}] {} {} fence={} value={} lists={}", op.seq, gse::enum_to_string(op.queue), gse::enum_to_string(op.kind), op.fence, op.value, op.list_count);
+		log::println(log::level::error, log::category::dx12, "  [{}] {} {} fence={} value={} lists={}", op.seq, enum_to_string(op.queue), enum_to_string(op.kind), op.fence, op.value, op.list_count);
 	}
 	log::println(log::level::error, log::category::dx12, "sync points: {}", m_sync_point_registry.size());
 	for (std::size_t i = 0; i < m_sync_point_registry.size(); ++i) {
@@ -846,7 +846,7 @@ auto gse::dx12::device::cmd_set_viewport(const gpu::command_buffer_handle cmd, c
 	}
 }
 
-auto gse::dx12::device::cmd_set_scissor(const gpu::command_buffer_handle cmd, const gse::rect_t<vec2i>& scissor) -> void {
+auto gse::dx12::device::cmd_set_scissor(const gpu::command_buffer_handle cmd, const rect_t<vec2i>& scissor) -> void {
 	auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(cmd);
 	if (!list) {
 		return;

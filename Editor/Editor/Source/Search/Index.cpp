@@ -155,15 +155,6 @@ auto gse::ide::search::compute_line_starts(const std::string_view blob) -> std::
 	return starts;
 }
 
-auto gse::ide::search::canonical_path_id(const std::filesystem::path& path) -> std::pair<std::filesystem::path, id> {
-	std::error_code ec;
-	std::filesystem::path canon = std::filesystem::weakly_canonical(path, ec);
-	if (ec) {
-		canon = path;
-	}
-	return { canon, generate_temp_id(canon) };
-}
-
 auto gse::ide::search::module_ident_start(const char ch) -> bool {
 	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_';
 }
@@ -555,13 +546,13 @@ auto gse::ide::search::promoted_definition(const symbol_index& index, const file
 }
 
 auto gse::ide::search::log_index_phase_completion(const index_state& idx) -> void {
-	const gse::time_t<double> started = idx.phase_started.load(std::memory_order_relaxed);
-	if (started == gse::time_t<double>{}) {
+	const time_t<double> started = idx.phase_started.load(std::memory_order_relaxed);
+	if (started == time_t<double>{}) {
 		return;
 	}
 	const index_phase phase = idx.phase.load(std::memory_order_acquire);
 	const index_phase_info info = annotation_from_enum<index_phase_info>(phase, {});
-	const gse::time_t<double> elapsed = gse::system_clock::now<gse::time_t<double>>() - started;
+	const time_t<double> elapsed = system_clock::now<time_t<double>>() - started;
 	const std::size_t done = idx.progress_done.load(std::memory_order_relaxed);
 	const std::size_t total = idx.progress_total.load(std::memory_order_relaxed);
 	log::println(
@@ -645,7 +636,7 @@ auto gse::ide::search::begin_index_phase(index_state& idx, const index_phase pha
 	log_index_phase_completion(idx);
 	idx.progress_total.store(total, std::memory_order_relaxed);
 	idx.progress_done.store(0, std::memory_order_relaxed);
-	idx.phase_started.store(gse::system_clock::now<gse::time_t<double>>(), std::memory_order_relaxed);
+	idx.phase_started.store(system_clock::now<time_t<double>>(), std::memory_order_relaxed);
 	idx.phase.store(phase, std::memory_order_release);
 	const index_phase_info info = annotation_from_enum<index_phase_info>(phase, {});
 	log::println(
@@ -660,7 +651,7 @@ auto gse::ide::search::end_index_progress(index_state& idx) -> void {
 	log_index_phase_completion(idx);
 	idx.progress_total.store(0, std::memory_order_relaxed);
 	idx.progress_done.store(0, std::memory_order_relaxed);
-	idx.phase_started.store(gse::time_t<double>{}, std::memory_order_relaxed);
+	idx.phase_started.store(time_t<double>{}, std::memory_order_relaxed);
 	idx.phase.store(index_phase::idle, std::memory_order_release);
 }
 
@@ -768,41 +759,14 @@ auto gse::ide::search::symbol_index::path_for(const file_id id) const -> std::fi
 }
 
 auto gse::ide::search::describe(const lookup_error& error) -> std::string {
-	switch (error.reason) {
-	case lookup_failure::index_unavailable:
-		return "the symbol index is unavailable";
-	case lookup_failure::file_not_indexed:
-		return std::format("'{}' is not in the symbol index", error.subject);
-	case lookup_failure::reference_not_found:
-		return std::format("no compiler reference covers {}", error.subject);
-	case lookup_failure::symbol_not_found:
-		return std::format("symbol '{}' is absent from the index", error.subject);
-	case lookup_failure::definition_not_found:
-		return std::format("no definition was recorded for '{}'", error.subject);
-	case lookup_failure::qualified_symbol_not_found:
-		return std::format("no definition matched qualified symbol '{}'", error.subject);
-	case lookup_failure::ambiguous_symbol:
-		return std::format("unqualified symbol '{}' is ambiguous", error.subject);
-	case lookup_failure::module_name_empty:
-		return "the module name is empty";
-	case lookup_failure::module_context_not_found:
-		return std::format("relative module '{}' has no indexed owning module", error.subject);
-	case lookup_failure::module_not_found:
-		return std::format("module '{}' is absent from the module index", error.subject);
-	case lookup_failure::index_building:
-		return error.subject.empty()
-			? "semantic information is still indexing"
-			: std::format("semantic information for '{}' is still indexing", error.subject);
-	case lookup_failure::translation_unit_failed:
-		return error.detail.empty()
-			? std::format("semantic compilation failed for '{}'", error.subject)
-			: std::format("semantic compilation failed for '{}': {}", error.subject, error.detail);
-	case lookup_failure::kind_not_recorded:
-		return std::format("the compiler did not record a symbol kind for '{}'", error.subject);
-	case lookup_failure::type_not_recorded:
-		return std::format("the compiler did not record a resolved type for '{}'", error.subject);
-	}
-	return "the semantic lookup failed for an unknown reason";
+	const lookup_failure_info info = annotation_from_enum<lookup_failure_info>(error.reason, {});
+	const std::string_view text = error.subject.empty() && info.subjectless[0] != '\0'
+		? info.subjectless
+		: !error.detail.empty() && info.detailed[0] != '\0'
+		? info.detailed
+		: info.text;
+
+	return std::vformat(text, std::make_format_args(error.subject, error.detail));
 }
 
 auto gse::ide::search::is_pending(const lookup_error& error) -> bool {
@@ -1382,17 +1346,6 @@ auto gse::ide::search::update_file(index_state& idx, const std::filesystem::path
 	}
 }
 
-auto gse::ide::search::intern_cached(symbol_index& symbols, interned_file_cache& cache, const std::string& raw) -> file_id {
-	if (const auto it = cache.find(raw); it != cache.end()) {
-		return it->second;
-	}
-	auto [canonical, path_identity] = canonical_path_id(raw);
-	symbols.files.try_emplace(path_identity, canonical);
-	cache.emplace(raw, path_identity);
-	cache.try_emplace(canonical.generic_native_encoded_string(), path_identity);
-	return path_identity;
-}
-
 auto gse::ide::search::make_xref_entry(const file_id definition_file, analysis::symbol_ref ref) -> xref_entry {
 	return {
 		.line = ref.line > 0 ? ref.line - 1 : 0,
@@ -1414,6 +1367,16 @@ auto gse::ide::search::indexed_cached(const std::span<const index_root> roots, c
 	}
 	const bool indexed = owning_root(roots, raw) != nullptr;
 	cache.emplace(raw, indexed);
+	return indexed;
+}
+
+auto gse::ide::search::indexed_cached(const std::span<const index_root> roots, const std::unordered_map<file_id, std::filesystem::path>& files, const file_id file, indexed_file_cache& cache) -> bool {
+	if (const auto it = cache.find(file); it != cache.end()) {
+		return it->second;
+	}
+	const auto path = files.find(file);
+	const bool indexed = path != files.end() && owning_root(roots, path->second) != nullptr;
+	cache.emplace(file, indexed);
 	return indexed;
 }
 
@@ -1455,7 +1418,7 @@ auto gse::ide::search::tu_fingerprint(const analysis::compilation_entry& entry, 
 
 auto gse::ide::search::tu_cache_path(const index_state& index, const analysis::compilation_entry& entry) -> std::filesystem::path {
 	const std::uint64_t id = hash_combine(canonical_path_id(entry.file).second.number(), entry.command.fingerprint);
-	return gse::config::cache_dir() / "symbols" / std::format("{:016x}.bin", id);
+	return config::cache_dir() / "symbols" / std::format("{:016x}.bin", id);
 }
 
 auto gse::ide::search::save_tu_cache(const std::filesystem::path& path, const analysis::compilation_entry& entry, const std::filesystem::path& plugin, const analysis::tu_symbols& symbols, file_fingerprint_cache& file_fingerprints) -> std::expected<void, std::string> {
@@ -1546,17 +1509,17 @@ auto gse::ide::search::symbol_worker_loop(const std::stop_token stop, index_stat
 gse::ide::search::file_build_result::~file_build_result() = default;
 
 gse::ide::search::index_state::index_state() : current_search_snapshot(std::make_shared<search_snapshot>(search_snapshot{
-		.files = std::make_shared<const file_search_snapshot>(file_search_snapshot{
-			.files = std::make_shared<const std::vector<file_entry>>(),
-			.content = std::make_shared<const std::vector<std::shared_ptr<const content_entry>>>(),
-		}),
-		.symbols = std::make_shared<const symbol_search_snapshot>(symbol_search_snapshot{
-			.symbols = std::make_shared<const std::vector<searchable_symbol>>(),
-		}),
-		.lints = std::make_shared<const lint_snapshot>(lint_snapshot{
-			.sites = std::make_shared<const std::vector<lint_site>>(),
-		}),
-	})) {}
+	.files = std::make_shared<const file_search_snapshot>(file_search_snapshot{
+		.files = std::make_shared<const std::vector<file_entry>>(),
+		.content = std::make_shared<const std::vector<std::shared_ptr<const content_entry>>>(),
+	}),
+	.symbols = std::make_shared<const symbol_search_snapshot>(symbol_search_snapshot{
+		.symbols = std::make_shared<const std::vector<searchable_symbol>>(),
+	}),
+	.lints = std::make_shared<const lint_snapshot>(lint_snapshot{
+		.sites = std::make_shared<const std::vector<lint_site>>(),
+	}),
+})) {}
 
 gse::ide::search::index_state::~index_state() {
 	cancel.store(true, std::memory_order_release);
@@ -1693,7 +1656,7 @@ auto gse::ide::search::build_symbols(index_state& idx, std::stop_token stop) -> 
 			}
 			else {
 				const std::string reason = result.failure_detail.empty()
-					? std::string(analysis::describe(result.failure))
+					? analysis::describe(result.failure)
 					: result.failure_detail;
 				build_failures.emplace_back(pending[i]->file, result.failure, reason);
 				if (result.failure != analysis::symbol_index_failure::module_unavailable) {
@@ -1738,23 +1701,25 @@ auto gse::ide::search::build_symbols(index_state& idx, std::stop_token stop) -> 
 	raw_file_ids.reserve(1024);
 	indexed_path_cache indexed_paths;
 	indexed_paths.reserve(1024);
+	indexed_file_cache indexed_files;
+	indexed_files.reserve(1024);
 	local.xrefs.reserve(1024);
 	local.params.reserve(1024);
 	std::size_t reference_count = 0;
 	std::size_t semantic_token_count = 0;
 	begin_index_phase(idx, index_phase::merging_records, collected.size());
 	for (analysis::tu_symbols& tu : collected) {
+		local.files.insert(tu.set.files.begin(), tu.set.files.end());
 		for (analysis::symbol_token& symbol : tu.set.symbols) {
-			if (!indexed_cached(idx.roots, symbol.file, indexed_paths)) {
+			if (!indexed_cached(idx.roots, tu.set.files, symbol.file, indexed_files)) {
 				continue;
 			}
-			const file_id file = intern_cached(local, raw_file_ids, symbol.file);
 			std::string name_lower = to_lower(symbol.name);
 			local.symbols.push_back({
 				.name = std::move(symbol.name),
 				.name_lower = std::move(name_lower),
 				.kind = symbol.kind,
-				.file = file,
+				.file = symbol.file,
 				.line = symbol.line > 0 ? symbol.line - 1 : 0,
 				.column = symbol.column > 0 ? symbol.column - 1 : 0,
 				.qualified = std::move(symbol.qualified),
@@ -1763,20 +1728,19 @@ auto gse::ide::search::build_symbols(index_state& idx, std::stop_token stop) -> 
 			});
 		}
 		for (analysis::symbol_ref& ref : tu.set.refs) {
-			if (!indexed_cached(idx.roots, ref.file, indexed_paths)) {
+			if (!indexed_cached(idx.roots, tu.set.files, ref.file, indexed_files)) {
 				continue;
 			}
-			const file_id file = intern_cached(local, raw_file_ids, ref.file);
-			const file_id definition_file = intern_cached(local, raw_file_ids, ref.def_file);
+			const file_id file = ref.file;
+			const file_id definition_file = ref.def_file;
 			local.xrefs[file].push_back(make_xref_entry(definition_file, std::move(ref)));
 			++reference_count;
 		}
 		for (const analysis::param_token& param : tu.set.params) {
-			if (!indexed_cached(idx.roots, param.file, indexed_paths)) {
+			if (!indexed_cached(idx.roots, tu.set.files, param.file, indexed_files)) {
 				continue;
 			}
-			const file_id file = intern_cached(local, raw_file_ids, param.file);
-			local.params[file].push_back({
+			local.params[param.file].push_back({
 				.line = param.line > 0 ? param.line - 1 : 0,
 				.column = param.column > 0 ? param.column - 1 : 0,
 				.length = param.length,
@@ -1793,7 +1757,7 @@ auto gse::ide::search::build_symbols(index_state& idx, std::stop_token stop) -> 
 				continue;
 			}
 			local.lints.push_back({
-				.file = intern_cached(local, raw_file_ids, finding.file),
+				.file = intern_cached(local.files, raw_file_ids, finding.file),
 				.rule = finding.rule,
 				.edit = std::move(finding.edit),
 			});
@@ -1821,7 +1785,7 @@ auto gse::ide::search::build_symbols(index_state& idx, std::stop_token stop) -> 
 		reference_count,
 		semantic_token_count,
 		local.files.size(),
-		indexed_paths.size()
+		indexed_files.size()
 	);
 
 	{
@@ -1831,24 +1795,24 @@ auto gse::ide::search::build_symbols(index_state& idx, std::stop_token stop) -> 
 	begin_index_phase(idx, index_phase::publishing, 1);
 }
 
-auto gse::ide::search::apply_symbol_overlay(symbol_index& index, const symbol_overlay& overlay, const bool rebuild_lookups) -> void {
-	const file_id fid = index.file_for(overlay.path);
-	interned_file_cache local_fid;
-	local_fid.reserve(64);
-	index.failures.erase(fid);
+auto gse::ide::search::build_symbol_overlay(const std::filesystem::path& canonical, const file_id file, const std::span<const analysis::symbol_token> syms, const std::span<const analysis::symbol_ref> refs, const std::span<const analysis::param_token> params, const std::unordered_map<file_id, std::filesystem::path>& files) -> symbol_overlay {
+	symbol_overlay overlay{
+		.path = canonical,
+		.file = file,
+		.files = files,
+	};
+	overlay.files.try_emplace(file, canonical);
 
-	std::erase_if(index.symbols, [fid](const symbol_entry& entry) {
-		return entry.file == fid;
-	});
-	for (const analysis::symbol_token& symbol : overlay.symbols) {
-		if (intern_cached(index, local_fid, symbol.file) != fid) {
+	overlay.symbols.reserve(syms.size());
+	for (const analysis::symbol_token& symbol : syms) {
+		if (symbol.file != file) {
 			continue;
 		}
-		index.symbols.push_back({
+		overlay.symbols.push_back({
 			.name = symbol.name,
 			.name_lower = to_lower(symbol.name),
 			.kind = symbol.kind,
-			.file = fid,
+			.file = file,
 			.line = symbol.line > 0 ? symbol.line - 1 : 0,
 			.column = symbol.column > 0 ? symbol.column - 1 : 0,
 			.qualified = symbol.qualified,
@@ -1857,45 +1821,61 @@ auto gse::ide::search::apply_symbol_overlay(symbol_index& index, const symbol_ov
 		});
 	}
 
-	std::vector<xref_entry>& file_xrefs = index.xrefs[fid];
-	file_xrefs.clear();
-	for (const analysis::symbol_ref& ref : overlay.refs) {
-		if (intern_cached(index, local_fid, ref.file) != fid) {
+	overlay.refs.reserve(refs.size());
+	for (const analysis::symbol_ref& ref : refs) {
+		if (ref.file != file) {
 			continue;
 		}
-		file_xrefs.push_back(make_xref_entry(intern_cached(index, local_fid, ref.def_file), ref));
+		overlay.refs.push_back(make_xref_entry(ref.def_file, ref));
 	}
+	sort_xrefs(overlay.refs);
 
-	std::vector<positioned_kind>& file_params = index.params[fid];
-	file_params.clear();
-	for (const analysis::param_token& param : overlay.params) {
-		if (intern_cached(index, local_fid, param.file) != fid) {
+	overlay.params.reserve(params.size());
+	for (const analysis::param_token& param : params) {
+		if (param.file != file) {
 			continue;
 		}
-		file_params.push_back({
+		overlay.params.push_back({
 			.line = param.line > 0 ? param.line - 1 : 0,
 			.column = param.column > 0 ? param.column - 1 : 0,
 			.length = param.length,
 			.kind = param.kind,
 		});
 	}
+	overlay.params.shrink_to_fit();
+	overlay.symbols.shrink_to_fit();
+
+	return overlay;
+}
+
+auto gse::ide::search::apply_symbol_overlay(symbol_index& index, const symbol_overlay& overlay, const bool rebuild_lookups) -> void {
+	const file_id fid = overlay.file;
+	index.failures.erase(fid);
+	for (const auto& [id, path] : overlay.files) {
+		index.files.try_emplace(id, path);
+	}
+
+	std::erase_if(index.symbols, [fid](const symbol_entry& entry) {
+		return entry.file == fid;
+	});
+	index.symbols.insert(index.symbols.end(), overlay.symbols.begin(), overlay.symbols.end());
+
+	index.xrefs[fid] = overlay.refs;
+	index.params[fid] = overlay.params;
+
 	if (rebuild_lookups) {
 		build_symbol_lookups(index, nullptr);
 		for (auto& ids : index.symbols_by_file | std::views::values) {
 			sort_symbol_ids(index, ids);
 		}
-		sort_xrefs(file_xrefs);
 	}
 }
 
-auto gse::ide::search::index_state::merge_file_symbols(const std::filesystem::path& file, const std::span<const analysis::symbol_token> syms, const std::span<const analysis::symbol_ref> refs, const std::span<const analysis::param_token> params) -> void {
+auto gse::ide::search::index_state::merge_file_symbols(const std::filesystem::path& file, const std::span<const analysis::symbol_token> syms, const std::span<const analysis::symbol_ref> refs, const std::span<const analysis::param_token> params, const std::unordered_map<file_id, std::filesystem::path>& files) -> void {
 	std::unique_lock lock(mutex);
 	const auto [canonical, fid] = canonical_path_id(file);
 	symbol_overlay& overlay = symbol_overlays[fid];
-	overlay.path = canonical;
-	overlay.symbols.assign(syms.begin(), syms.end());
-	overlay.refs.assign(refs.begin(), refs.end());
-	overlay.params.assign(params.begin(), params.end());
+	overlay = build_symbol_overlay(canonical, fid, syms, refs, params, files);
 	apply_symbol_overlay(symbols, overlay, true);
 	pending_symbol_files.erase(fid);
 	symbol_count.store(symbols.symbols.size(), std::memory_order_release);

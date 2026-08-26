@@ -20,13 +20,13 @@ import gse.math;
 import gse.gpu_record;
 
 export namespace gse::renderer::depth_prepass {
-	struct [[= gse::system_state<"DepthPrepass">{}]] data {
+	struct [[= system_state<"DepthPrepass">{}]] data {
 		gpu::shader_program meshlet_pipeline;
 
 		per_frame_resource<gpu::buffer> camera_ubo_buffers;
 	};
 
-	[[= gse::system_init{}]]
+	[[= system_init{}]]
 	auto init(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
@@ -34,7 +34,7 @@ export namespace gse::renderer::depth_prepass {
 		data& d
 	) -> async::task<>;
 
-	[[= gse::system_frame{}]]
+	[[= system_frame{}]]
 	auto frame(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,

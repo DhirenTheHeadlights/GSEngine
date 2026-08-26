@@ -157,7 +157,7 @@ auto gse::settings::draw_field_control(gui::builder& b, panel_state& ps, const v
 	switch (field.widget) {
 		case settings_field_widget::boolean: {
 			bool value = false;
-			gse::parse(pending.value, value);
+			parse(pending.value, value);
 			b.draw<gui::toggle>({
 				.name = display_label,
 				.value = value
@@ -177,7 +177,7 @@ auto gse::settings::draw_field_control(gui::builder& b, panel_state& ps, const v
 			}
 			else {
 				int parsed = 0;
-				gse::parse(pending.value, parsed);
+				parse(pending.value, parsed);
 				idx = parsed < 0 ? 0 : static_cast<std::size_t>(parsed);
 			}
 			if (idx >= options.size()) {
@@ -216,7 +216,7 @@ auto gse::settings::draw_field_control(gui::builder& b, panel_state& ps, const v
 		case settings_field_widget::integer: {
 			if (field.range.enabled) {
 				int value = 0;
-				gse::parse(pending.value, value);
+				parse(pending.value, value);
 				b.draw<gui::slider<int>>({
 					.name = display_label,
 					.value = value,
@@ -238,7 +238,7 @@ auto gse::settings::draw_field_control(gui::builder& b, panel_state& ps, const v
 		case settings_field_widget::floating: {
 			if (field.range.enabled) {
 				float value = 0.f;
-				gse::parse(pending.value, value);
+				parse(pending.value, value);
 				b.draw<gui::slider<float>>({
 					.name = display_label,
 					.value = value,
@@ -298,7 +298,7 @@ auto gse::settings::draw_dimensioned_field(gui::builder& b, dimensioned_input_st
 
 	const auto text_view = ctx.fonts.text.resolve();
 	const float widget_height = text_view->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
-	const gse::rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
+	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
 	const float row_y = ctx.layout_cursor.y();
 
 	float widest_unit = 0.f;
@@ -310,15 +310,15 @@ auto gse::settings::draw_dimensioned_field(gui::builder& b, dimensioned_input_st
 	const float unit_width = std::min(content_rect.width() * 0.25f, widest_unit + ctx.style.icon_extent + ctx.style.padding * 2.f);
 	const float value_width = std::max(0.f, content_rect.width() - label_width - unit_width - ctx.style.padding * 0.5f);
 
-	const gse::rectf label_rect = gse::rectf::from_position_size(
+	const rectf label_rect = rectf::from_position_size(
 		{ content_rect.left(), row_y },
 		{ label_width, widget_height }
 	);
-	const gse::rectf value_rect = gse::rectf::from_position_size(
+	const rectf value_rect = rectf::from_position_size(
 		{ content_rect.left() + label_width, row_y },
 		{ value_width, widget_height }
 	);
-	const gse::rectf unit_rect = gse::rectf::from_position_size(
+	const rectf unit_rect = rectf::from_position_size(
 		{ value_rect.right() + ctx.style.padding * 0.5f, row_y },
 		{ unit_width, widget_height }
 	);
@@ -332,7 +332,7 @@ auto gse::settings::draw_dimensioned_field(gui::builder& b, dimensioned_input_st
 		.clip_rect = label_rect,
 	});
 
-	const gse::id input_id = gui::ids::make_from_key(hash_combine(field_key, stable_id("##Magnitude")));
+	const id input_id = gui::ids::make_from_key(hash_combine(field_key, stable_id("##Magnitude")));
 	gui::draw::text_input_in_rect(ctx, input_id, state.magnitude, state.input_state, value_rect, b.hot_widget_id, b.focus_widget_id);
 
 	const auto selected = std::ranges::find(field.units, state.unit);
@@ -371,8 +371,8 @@ auto gse::settings::draw_restart_marker(gui::builder& b, const bool modified) ->
 	const float subline_size = ctx.style.font_size * 0.85f;
 	const auto text_view = ctx.fonts.text.resolve();
 	const float subline_height = text_view->line_height(subline_size) + ctx.style.padding * 0.25f;
-	const gse::rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
-	const gse::rectf subline_rect = gse::rectf::from_position_size(
+	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
+	const rectf subline_rect = rectf::from_position_size(
 		{ content_rect.left() + ctx.style.padding, ctx.layout_cursor.y() },
 		{ content_rect.width() - ctx.style.padding, subline_height }
 	);
@@ -393,13 +393,13 @@ auto gse::settings::draw_field_tooltip(gui::builder& b, const settings_field& fi
 		return;
 	}
 	const float widget_height = b.ctx.fonts.text.resolve()->line_height(b.ctx.style.font_size) + b.ctx.style.padding * 0.5f;
-	const gse::rectf content_rect = b.ctx.current_menu->rect.inset({ b.ctx.style.padding, b.ctx.style.padding });
-	const gse::rectf row_rect = gse::rectf::from_position_size(
+	const rectf content_rect = b.ctx.current_menu->rect.inset({ b.ctx.style.padding, b.ctx.style.padding });
+	const rectf row_rect = rectf::from_position_size(
 		{ content_rect.left(), row_y_before },
 		{ content_rect.width(), widget_height }
 	);
 	if (b.ctx.hovers(row_rect)) {
-		const gse::id tooltip_id = gui::ids::make_from_key(hash_combine(field_key, stable_id("##tooltip")));
+		const id tooltip_id = gui::ids::make_from_key(hash_combine(field_key, stable_id("##tooltip")));
 		b.ctx.set_tooltip(tooltip_id, field.description);
 	}
 }

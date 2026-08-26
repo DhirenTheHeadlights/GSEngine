@@ -58,7 +58,7 @@ namespace gse::http {
 struct gse::http::client::session {
 	struct pending {
 		id ticket;
-		http::request req;
+		request req;
 	};
 
 	winhttp::handle handle = nullptr;

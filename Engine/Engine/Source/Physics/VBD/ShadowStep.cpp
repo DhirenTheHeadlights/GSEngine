@@ -410,7 +410,7 @@ auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> ph
 
 	const auto& cfg = phys.vbd_solver.config();
 
-	const auto dt = system_clock::fixed_dt<time_t<float, seconds>>();
+	const auto dt = system_clock::fixed_dt();
 	const int substeps = std::max(phys.physics_substeps, 1);
 
 	d.solver.upload({

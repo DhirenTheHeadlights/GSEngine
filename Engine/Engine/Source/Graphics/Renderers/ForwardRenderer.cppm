@@ -57,20 +57,20 @@ export namespace gse::renderer::forward {
 		high = 3
 	};
 
-	struct [[= gse::system_state<"Forward">{}, = gse::settings::category<"Graphics">{}]] data {
+	struct [[= system_state<"Forward">{}, = settings::category<"Graphics">{}]] data {
 		[[
-			= gse::settings::describe<"Shadow map resolution and filtering quality. Off disables shadow rendering "
+			= settings::describe<"Shadow map resolution and filtering quality. Off disables shadow rendering "
 									  "entirely.">{}
 		]]
 		shadow_quality_level shadow_quality = shadow_quality_level::medium;
 
 		[[
-			= gse::settings::describe<"Screen-space ambient occlusion sample count and blur quality.">{}
+			= settings::describe<"Screen-space ambient occlusion sample count and blur quality.">{}
 		]]
 		ao_quality_level ao_quality = ao_quality_level::medium;
 
 		[[
-			= gse::settings::
+			= settings::
 				describe<"Screen-space and ray-traced reflection quality. Higher levels trace more rays "
 						 "per pixel.">{}
 		]]
@@ -89,7 +89,7 @@ export namespace gse::renderer::forward {
 		linear_vector<std::byte> light_staging;
 	};
 
-	[[= gse::system_init{}]]
+	[[= system_init{}]]
 	auto init(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
@@ -102,7 +102,7 @@ export namespace gse::renderer::forward {
 		data& d
 	) -> async::task<>;
 
-	[[= gse::system_frame{}]]
+	[[= system_frame{}]]
 	auto frame(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,

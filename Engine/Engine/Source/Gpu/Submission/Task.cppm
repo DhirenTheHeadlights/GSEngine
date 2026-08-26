@@ -14,10 +14,10 @@ export namespace gse::gpu {
 	class submission {
 	public:
 		submission(
-			gpu::device& gpu_dev,
+			device& gpu_dev,
 			transient_queue<device>& queue,
 			frame_resource_bin& bin,
-			gpu::transient_command_buffer&& cmd
+			transient_command_buffer&& cmd
 		);
 
 		template <typename T>
@@ -36,10 +36,10 @@ export namespace gse::gpu {
 		) && -> submission&&;
 
 	private:
-		gpu::device* m_gpu_device;
+		device* m_gpu_device;
 		transient_queue<device>* m_queue;
 		frame_resource_bin* m_bin;
-		gpu::transient_command_buffer m_cmd;
+		transient_command_buffer m_cmd;
 		std::vector<std::unique_ptr<frame_resource_bin::retained_base>> m_pending_retains;
 		std::uint64_t m_value = 0;
 		bool m_submitted = false;
@@ -47,20 +47,20 @@ export namespace gse::gpu {
 
 	[[nodiscard]]
 	auto begin_transient(
-		gpu::device& dev,
+		device& dev,
 		queue_id id,
 		std::string_view tag = "transient.untagged"
-	) -> gpu::transient_command_buffer;
+	) -> transient_command_buffer;
 
 	[[nodiscard]]
 	auto submit(
-		gpu::device& dev,
-		gpu::transient_command_buffer&& cmd,
+		device& dev,
+		transient_command_buffer&& cmd,
 		queue_id id
 	) -> submission;
 }
 
-gse::gpu::submission::submission(gpu::device& gpu_dev, transient_queue<device>& queue, frame_resource_bin& bin, gpu::transient_command_buffer&& cmd)
+gse::gpu::submission::submission(device& gpu_dev, transient_queue<device>& queue, frame_resource_bin& bin, transient_command_buffer&& cmd)
 	: m_gpu_device(&gpu_dev), m_queue(&queue), m_bin(&bin), m_cmd(std::move(cmd)) {
 }
 
@@ -111,7 +111,7 @@ auto gse::gpu::submission::submit_sync() -> sync_token {
 		const command_buffer_submit_info cmd_info{
 			.command_buffer = m_cmd.handle(),
 		};
-		
+
 		const submit_info info{
 			.command_buffers = std::span(&cmd_info, 1),
 			.signal_semaphores = std::span(&signal, 1),
@@ -127,11 +127,11 @@ auto gse::gpu::submission::submit_sync() -> sync_token {
 		m_bin->retain(m_queue->id(), m_value, std::move(pending));
 	}
 	m_pending_retains.clear();
-	
+
 	return sync_token{ &m_queue->station(), m_value };
 }
 
-auto gse::gpu::begin_transient(gpu::device& dev, const queue_id id, const std::string_view tag) -> gpu::transient_command_buffer {
+auto gse::gpu::begin_transient(device& dev, const queue_id id, const std::string_view tag) -> transient_command_buffer {
 	const auto worker = task::current_worker();
 	assert(worker.has_value(), "begin_transient must be called from a task worker thread");
 	auto& queue = dev.transient().queue(id);
@@ -151,6 +151,6 @@ auto gse::gpu::begin_transient(gpu::device& dev, const queue_id id, const std::s
 	return cmd;
 }
 
-auto gse::gpu::submit(gpu::device& dev, gpu::transient_command_buffer&& cmd, const queue_id id) -> submission {
+auto gse::gpu::submit(device& dev, transient_command_buffer&& cmd, const queue_id id) -> submission {
 	return submission(dev, dev.transient().queue(id), dev.transient().bin(), std::move(cmd));
 }

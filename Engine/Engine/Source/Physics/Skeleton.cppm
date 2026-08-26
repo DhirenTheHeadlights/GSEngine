@@ -71,7 +71,7 @@ auto gse::physics::bone_index_of(const skeleton& s, const std::string_view name)
 
 auto gse::physics::volume_of(const bone_shape& shape, const convex_hull* hull) -> volume {
 	volume result;
-	gse::match(shape)
+	match(shape)
 		.if_is([&](const box_shape& s) {
 			result = s.size.x() * s.size.y() * s.size.z();
 		})

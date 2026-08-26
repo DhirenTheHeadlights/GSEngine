@@ -24,7 +24,7 @@ export namespace gse::camera {
 }
 
 export namespace gse::camera {
-	struct [[= gse::system_state<"Camera">{}, = gse::deferred_system{}]] data {
+	struct [[= system_state<"Camera">{}, = deferred_system{}]] data {
 		target current{};
 		target blend_from{};
 		target blend_to{};
@@ -32,7 +32,7 @@ export namespace gse::camera {
 		time blend_duration{};
 		bool blending = false;
 
-		[[= gse::shared]] id active_controller_entity{};
+		[[= shared]] id active_controller_entity{};
 		int active_priority = -1;
 
 		target scripted_target{};
@@ -44,24 +44,24 @@ export namespace gse::camera {
 
 		angle yaw = degrees(0.f);
 
-		[[= gse::shared]] gse::view_matrix view_matrix{};
-		[[= gse::shared]] gse::projection_matrix projection_matrix{};
-		[[= gse::shared]] gse::view_matrix prev_view_matrix{};
-		[[= gse::shared]] gse::projection_matrix prev_projection_matrix{};
-		[[= gse::shared]] vec2f jitter_ndc{};
-		[[= gse::shared]] vec2f prev_jitter_ndc{};
+		[[= shared]] gse::view_matrix view_matrix{};
+		[[= shared]] gse::projection_matrix projection_matrix{};
+		[[= shared]] gse::view_matrix prev_view_matrix{};
+		[[= shared]] gse::projection_matrix prev_projection_matrix{};
+		[[= shared]] vec2f jitter_ndc{};
+		[[= shared]] vec2f prev_jitter_ndc{};
 
 		std::uint32_t jitter_index = 1;
 		vec2f viewport{ 1920.f, 1080.f };
-		[[= gse::shared]] bool ui_focus = false;
+		[[= shared]] bool ui_focus = false;
 	};
 
-	[[= gse::system_init{}]]
+	[[= system_init{}]]
 	auto init(
 		data& d
 	) -> async::task<>;
 
-	[[= gse::system_run<>{}]]
+	[[= system_run<>{}]]
 	auto run(
 		context& ctx,
 		data& d,

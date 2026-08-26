@@ -213,7 +213,7 @@ auto gse::skinned_model::load(asset::load_ctx& ctx) -> async::task<asset_result>
 		}
 		influences.push_back(std::move(mesh_influences));
 
-		gse::material mat{
+		material mat{
 			.base_color = baked_mesh.material.base_color,
 			.roughness = baked_mesh.material.roughness,
 			.metallic = baked_mesh.material.metallic,

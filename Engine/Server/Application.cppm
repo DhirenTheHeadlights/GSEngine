@@ -8,12 +8,12 @@ import gse.system_manifest;
 
 export namespace gse::server {
 	template <typename MessagePack, typename... Components>
-	struct [[= gse::system_state<"Server">{}]] data {
+	struct [[= system_state<"Server">{}]] data {
 		[[= gse::shared]] std::optional<host<MessagePack, Components...>> srv;
 	};
 
 	template <typename MessagePack, typename... Components>
-	[[= gse::system_init{}]]
+	[[= system_init{}]]
 	auto init(
 		context& ctx,
 		data<MessagePack, Components...>& d,
@@ -21,7 +21,7 @@ export namespace gse::server {
 	) -> async::task<>;
 
 	template <typename MessagePack, typename... Components>
-	[[= gse::system_run<>{}]]
+	[[= system_run<>{}]]
 	auto run(
 		context& ctx,
 		data<MessagePack, Components...>& d,
@@ -37,13 +37,13 @@ export namespace gse::server {
 }
 
 export namespace gse::server_app {
-	struct [[= gse::system_state<"ServerApp">{}]] data {
+	struct [[= system_state<"ServerApp">{}]] data {
 		std::uint32_t tick_count = 0;
 		interval_timer<> timer{ seconds(5.f) };
 	};
 
 	template <typename ServerData>
-	[[= gse::system_run<>{}]]
+	[[= system_run<>{}]]
 	auto run(
 		context& ctx,
 		data& d,
@@ -158,14 +158,14 @@ auto gse::server_app_setup(engine& e, type_pack<Components...>, MessagePack) -> 
 	});
 	e.world().networked = true;
 
-	gse::system_manifest<
-		^^gse::server::data<MessagePack, Components...>,
-		^^gse::server::init<MessagePack, Components...>,
-		^^gse::server::run<MessagePack, Components...>
+	system_manifest<
+		^^server::data<MessagePack, Components...>,
+		^^server::init<MessagePack, Components...>,
+		^^server::run<MessagePack, Components...>
 	>{}.register_with(e);
 
-	gse::system_manifest<
-		^^gse::server_app::data,
-		^^gse::server_app::run<gse::server::data<MessagePack, Components...>>
+	system_manifest<
+		^^server_app::data,
+		^^server_app::run<server::data<MessagePack, Components...>>
 	>{}.register_with(e);
 }

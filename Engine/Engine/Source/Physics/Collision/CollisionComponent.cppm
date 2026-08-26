@@ -31,7 +31,7 @@ export namespace gse::physics {
 
 auto gse::physics::world_aabb_of(const transform_component& tc, const collision_component& cc, const convex_hull* hull) -> aabb {
 	aabb result;
-	gse::match(cc.shape)
+	match(cc.shape)
 		.if_is([&](const box_shape& s) {
 			result = bounding_box(tc, s).aabb();
 		})

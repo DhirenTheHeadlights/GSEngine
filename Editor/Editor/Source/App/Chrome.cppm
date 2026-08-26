@@ -24,7 +24,7 @@ namespace gse::ide {
 
 	struct open_panels_menu_request {
 		vec2f position;
-		gse::id window;
+		id window;
 	};
 
 	struct quick_search_state {
@@ -37,7 +37,7 @@ namespace gse::ide {
 		editor_screen(
 			channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request> channels,
 			const search::index_state* index,
-			gse::id window
+			id window
 		);
 
 		auto build(
@@ -69,9 +69,11 @@ namespace gse::ide {
 		) const -> gui::caption_exclusion override;
 
 	private:
+		[[nodiscard]] auto is_popout() const -> bool;
+
 		channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request> m_channels;
 		const search::index_state* m_index = nullptr;
-		gse::id m_window;
+		id m_window;
 		std::optional<std::string> m_loc_label;
 		std::string m_loc_tooltip;
 		search::loc_counts m_loc_counts;
@@ -116,8 +118,12 @@ namespace gse::ide {
 	) -> std::vector<gui::menu_item>;
 }
 
-gse::ide::editor_screen::editor_screen(channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request> channels, const search::index_state* index, const gse::id window)
+gse::ide::editor_screen::editor_screen(channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request> channels, const search::index_state* index, const id window)
 	: m_channels(std::move(channels)), m_index(index), m_window(window) {
+}
+
+auto gse::ide::editor_screen::is_popout() const -> bool {
+	return m_window.exists();
 }
 
 auto gse::ide::editor_screen::title() const -> std::string_view {
@@ -198,16 +204,16 @@ auto gse::ide::describe_loc(const search::loc_counts& counts) -> std::string {
 
 auto gse::ide::rebuild_glyph() -> std::span<const gui::symbol::stroke> {
 	static constexpr std::array<gui::symbol::stroke, 3> data{
-		gse::gui::symbol::arc({ 0.5f, 0.5f }, 0.27f, degrees(72.f), degrees(288.f)),
-		gse::gui::symbol::segment({ 0.77f, 0.50f }, { 0.84f, 0.38f }),
-		gse::gui::symbol::segment({ 0.77f, 0.50f }, { 0.70f, 0.38f }),
+		gui::symbol::arc({ 0.5f, 0.5f }, 0.27f, degrees(72.f), degrees(288.f)),
+		gui::symbol::segment({ 0.77f, 0.50f }, { 0.84f, 0.38f }),
+		gui::symbol::segment({ 0.77f, 0.50f }, { 0.70f, 0.38f }),
 	};
 	return data;
 }
 
 auto gse::ide::editor_screen::build(gui::builder& ui, gui::nav& n) -> void {
 	const auto& ctx = ui.ctx;
-	if (!ctx.current_menu || m_window.exists()) {
+	if (!ctx.current_menu || is_popout()) {
 		return;
 	}
 
@@ -251,7 +257,7 @@ auto gse::ide::editor_screen::draw_caption(gui::builder& ui, const rectf& area) 
 	});
 
 	const float button_w = area.height() * 1.5f;
-	const bool app_controls = !m_window.exists();
+	const bool app_controls = !is_popout();
 	const float controls_width = button_w * (app_controls ? 4.f : 1.f);
 
 	auto slot = [&area, button_w](const float index) {
@@ -629,15 +635,15 @@ namespace gse::ide {
 		return find_or_generate_id("editor_text_context");
 	}
 
-	auto editor_menu(gui::viewport_state& vp, const std::string_view name) -> gse::gui::menu& {
+	auto editor_menu(gui::viewport_state& vp, const std::string_view name) -> gui::menu& {
 		const id existing_id = find_or_generate_id(std::string(name));
-		if (gse::gui::menu* existing = vp.menus.try_get(existing_id)) {
+		if (gui::menu* existing = vp.menus.try_get(existing_id)) {
 			return *existing;
 		}
 
 		gui::menu new_menu(
 			name,
-			gse::gui::menu_data{
+			gui::menu_data{
 				.rect = rectf::from_position_size(
 					{ 100.f, 100.f },
 					{ 300.f, 200.f }
@@ -667,22 +673,7 @@ auto gse::ide::explorer_menu_items(const workspace::data& w, const fs_node& n) -
 }
 
 auto gse::ide::git_status_color(const git::file_status status) -> vec4f {
-	switch (status) {
-		case git::file_status::modified:
-			return { 0.86f, 0.66f, 0.32f, 1.0f };
-		case git::file_status::added:
-			return { 0.46f, 0.80f, 0.48f, 1.0f };
-		case git::file_status::untracked:
-			return { 0.40f, 0.72f, 0.55f, 1.0f };
-		case git::file_status::deleted:
-			return { 0.86f, 0.40f, 0.40f, 1.0f };
-		case git::file_status::renamed:
-			return { 0.46f, 0.68f, 0.90f, 1.0f };
-		case git::file_status::conflicted:
-			return { 0.92f, 0.48f, 0.30f, 1.0f };
-		default:
-			return { 0.96f, 0.97f, 0.99f, 1.0f };
-	}
+	return annotation_from_enum<git::file_status_info>(status, {}).color;
 }
 
 auto gse::ide::draw_explorer_panel(gui::builder& ui, workspace::data& ws, quick_search_state& search, const search::index_state* index, channel_write<build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels, const git::status_map* git_status, const std::span<const std::filesystem::path> git_rootless) -> void {

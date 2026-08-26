@@ -39,6 +39,10 @@ import :symbols;
 import :tab_strip;
 import :widget_context;
 
+auto gse::gui::is_popout(const viewport_state& vp) -> bool {
+	return vp.window.exists();
+}
+
 auto gse::gui::init(context& ctx, const shared_view<window::data> window_s, const shared_view<asset::data> assets_s, data& d) -> async::task<> {
 	std::vector<std::string> font_names;
 	for (const std::string& tag : asset::enumerate_resources<font>()) {

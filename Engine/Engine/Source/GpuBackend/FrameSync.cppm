@@ -9,9 +9,9 @@ import gse.core;
 
 export namespace gse::gpu {
 	template <typename T>
-	concept sync_device = requires(T& device, gpu::handle<gpu::semaphore> semaphore, gpu::handle<gpu::fence> fence, bool signaled) {
-		{ device.create_semaphore() } -> std::same_as<gpu::handle<gpu::semaphore>>;
-		{ device.create_fence(signaled) } -> std::same_as<gpu::handle<gpu::fence>>;
+	concept sync_device = requires(T& device, handle<semaphore> semaphore, handle<fence> fence, bool signaled) {
+		{ device.create_semaphore() } -> std::same_as<handle<gpu::semaphore>>;
+		{ device.create_fence(signaled) } -> std::same_as<handle<gpu::fence>>;
 		device.retire(semaphore);
 		device.retire(fence);
 	};
@@ -39,18 +39,18 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto image_available(
 			std::uint32_t frame_index
-		) const -> gpu::handle<gpu::semaphore>;
+		) const -> handle<semaphore>;
 
 		[[nodiscard]] auto render_finished(
 			std::uint32_t image_index
-		) const -> gpu::handle<gpu::semaphore>;
+		) const -> handle<semaphore>;
 
 	private:
 		auto reset() -> void;
 
 		Device* m_device = nullptr;
-		std::vector<gpu::handle<gpu::semaphore>> m_image_available;
-		std::vector<gpu::handle<gpu::semaphore>> m_render_finished;
+		std::vector<handle<semaphore>> m_image_available;
+		std::vector<handle<semaphore>> m_render_finished;
 	};
 
 	template <sync_device Device>
@@ -75,15 +75,15 @@ export namespace gse::gpu {
 
 		[[nodiscard]]
 		auto in_flight(
-			gpu::queue_type queue,
+			queue_type queue,
 			std::uint32_t frame_index
-		) const -> gpu::handle<gpu::fence>;
+		) const -> handle<fence>;
 
 	private:
 		auto reset() -> void;
 
 		Device* m_device = nullptr;
-		std::array<std::vector<gpu::handle<gpu::fence>>, gpu::queue_type_count> m_in_flight;
+		std::array<std::vector<handle<fence>>, queue_type_count> m_in_flight;
 	};
 }
 
@@ -95,8 +95,8 @@ gse::gpu::swapchain_sync<Device>::~swapchain_sync() {
 template <gse::gpu::sync_device Device>
 gse::gpu::swapchain_sync<Device>::swapchain_sync(swapchain_sync&& other) noexcept
 	: m_device(other.m_device),
-	  m_image_available(std::move(other.m_image_available)),
-	  m_render_finished(std::move(other.m_render_finished)) {
+m_image_available(std::move(other.m_image_available)),
+m_render_finished(std::move(other.m_render_finished)) {
 	other.m_device = nullptr;
 }
 
@@ -128,12 +128,12 @@ auto gse::gpu::swapchain_sync<Device>::create(Device& device, const std::uint32_
 }
 
 template <gse::gpu::sync_device Device>
-auto gse::gpu::swapchain_sync<Device>::image_available(const std::uint32_t frame_index) const -> gpu::handle<gpu::semaphore> {
+auto gse::gpu::swapchain_sync<Device>::image_available(const std::uint32_t frame_index) const -> handle<semaphore> {
 	return m_image_available[frame_index];
 }
 
 template <gse::gpu::sync_device Device>
-auto gse::gpu::swapchain_sync<Device>::render_finished(const std::uint32_t image_index) const -> gpu::handle<gpu::semaphore> {
+auto gse::gpu::swapchain_sync<Device>::render_finished(const std::uint32_t image_index) const -> handle<semaphore> {
 	return m_render_finished[image_index];
 }
 
@@ -193,7 +193,7 @@ auto gse::gpu::frame_fences<Device>::create(Device& device, const std::uint32_t 
 }
 
 template <gse::gpu::sync_device Device>
-auto gse::gpu::frame_fences<Device>::in_flight(const gpu::queue_type queue, const std::uint32_t frame_index) const -> gpu::handle<gpu::fence> {
+auto gse::gpu::frame_fences<Device>::in_flight(const queue_type queue, const std::uint32_t frame_index) const -> handle<fence> {
 	return m_in_flight[static_cast<std::size_t>(queue)][frame_index];
 }
 

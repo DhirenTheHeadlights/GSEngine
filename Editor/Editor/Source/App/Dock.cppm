@@ -130,6 +130,10 @@ export namespace gse::ide {
 		const dock_tree& tree
 	) -> std::size_t;
 
+	[[nodiscard]] auto is_popout(
+		const dock_view& v
+	) -> bool;
+
 	auto activate_panel(
 		dock_tree& tree,
 		id panel

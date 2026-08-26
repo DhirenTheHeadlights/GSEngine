@@ -27,13 +27,13 @@ auto gse::gpu::context::init(const std::optional<shared_view<window::data>> wind
 		d.swapchain = swap_chain::create(
 			d.device->boot_surface(),
 			window::viewport(*window_s),
-			gse::enum_from_annotation<present_mode_setting>((*window_s).current_present_mode_index, present_mode::fifo),
+			enum_from_annotation<present_mode_setting>((*window_s).current_present_mode_index, present_mode::fifo),
 			*d.device
 		);
 	}
 
 	d.frame = frame::create(*d.device, d.swapchain.get());
-	d.render_graph = std::make_unique<gpu::render_graph>(*d.device, *d.frame);
+	d.render_graph = std::make_unique<render_graph>(*d.device, *d.frame);
 	if (d.swapchain) {
 		d.render_graph->set_swapchain_clear(
 			d.dark_background ? color_clear{ .r = 0.05f, .g = 0.05f, .b = 0.06f, .a = 1.0f } : color_clear{}
@@ -44,7 +44,7 @@ auto gse::gpu::context::init(const std::optional<shared_view<window::data>> wind
 }
 
 auto gse::gpu::context::create_presentation(data& d, const window_opened& win) -> window_presentation* {
-	const gpu::surface surface = d.device->create_surface(win.handle);
+	const surface surface = d.device->create_surface(win.handle);
 
 	auto presentation = std::make_unique<window_presentation>();
 	presentation->window = win.id;
@@ -52,7 +52,7 @@ auto gse::gpu::context::create_presentation(data& d, const window_opened& win) -
 	presentation->swapchain = swap_chain::create(
 		surface,
 		win.size,
-		gse::enum_from_annotation<present_mode_setting>(win.present_mode_index, present_mode::fifo),
+		enum_from_annotation<present_mode_setting>(win.present_mode_index, present_mode::fifo),
 		*d.device
 	);
 	window_presentation* raw = presentation.get();
@@ -61,13 +61,13 @@ auto gse::gpu::context::create_presentation(data& d, const window_opened& win) -
 }
 
 auto gse::gpu::context::sync_present_targets(data& d, window::data& windows) -> void {
-	std::vector<gse::id> closed;
+	std::vector<id> closed;
 	for (const present_target& t : d.frame->targets()) {
 		if (t.window_id.exists() && !window::find_surface(windows, t.window_id)) {
 			closed.push_back(t.window_id);
 		}
 	}
-	for (const gse::id window : closed) {
+	for (const id window : closed) {
 		d.frame->remove_present_target(window);
 	}
 
@@ -81,7 +81,7 @@ auto gse::gpu::context::sync_present_targets(data& d, window::data& windows) -> 
 	}
 }
 
-auto gse::gpu::context::destroy_presentation(data& d, const gse::id window) -> void {
+auto gse::gpu::context::destroy_presentation(data& d, const id window) -> void {
 	const auto it = std::ranges::find_if(d.secondaries, [window](const auto& held) {
 		return held->window == window;
 	});
@@ -98,7 +98,7 @@ auto gse::gpu::context::destroy_presentation(data& d, const gse::id window) -> v
 	d.secondaries.erase(it);
 }
 
-auto gse::gpu::context::find_presentation(data& d, const gse::id window) -> window_presentation* {
+auto gse::gpu::context::find_presentation(data& d, const id window) -> window_presentation* {
 	const auto it = std::ranges::find_if(d.secondaries, [window](const auto& held) {
 		return held->window == window;
 	});
@@ -178,4 +178,3 @@ auto gse::gpu::context::end_frame(data& d) -> void {
 
 	d.frame->end(aux_subs, graphics_waits, graphics_buffers, graphics_signals);
 }
-

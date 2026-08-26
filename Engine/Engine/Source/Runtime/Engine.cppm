@@ -26,7 +26,15 @@ import :world_system;
 
 export namespace gse {
 	using engine_networked_components =
-		type_pack<physics::motion_component, physics::collision_component, render_component, player_controller>;
+		type_pack<
+			physics::transform_component,
+			physics::motion_component,
+			physics::collision_component,
+			render_component,
+			skeleton_instance_component,
+			clip_player_component,
+			player_controller
+		>;
 
 	struct bench_config {
 		bool enabled = false;
@@ -112,7 +120,7 @@ export namespace gse {
 
 		auto make_channel_writer() -> channel_writer;
 
-		auto registry() -> gse::registry&;
+		auto registry() -> registry&;
 
 		auto world() -> world_system::data&;
 

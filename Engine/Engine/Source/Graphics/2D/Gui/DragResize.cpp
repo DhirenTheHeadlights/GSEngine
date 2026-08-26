@@ -39,7 +39,7 @@ import :symbols;
 import :tab_strip;
 import :widget_context;
 
-auto gse::gui::handle_idle_state(const font_set& fonts, viewport_state& vp, const gse::input::state& input_state, vec2f mouse_position, const bool mouse_held, const style& style) -> gui::state {
+auto gse::gui::handle_idle_state(const font_set& fonts, viewport_state& vp, const input::state& input_state, vec2f mouse_position, const bool mouse_held, const style& style) -> state {
 	if (vp.menu_stack.captures_input() || vp.active_widget_id.exists()) {
 		set_style(cursor::style::arrow);
 		return states::idle{};
@@ -58,77 +58,77 @@ auto gse::gui::handle_idle_state(const font_set& fonts, viewport_state& vp, cons
 
 	const std::array<resize_rule, 8> resize_rules = { {
 		{ [style](
-		const rectf& r,
-		const vec2f& p
+			const rectf& r,
+			const vec2f& p
 	) {
-			 const float t = style.resize_border_thickness;
-			 return std::abs(p.y() - r.top()) < t && std::abs(p.x() - r.left()) < t;
-		 },
-		  resize_handle::top_left,
-		  cursor::style::resize_nw },
+			const float t = style.resize_border_thickness;
+			return std::abs(p.y() - r.top()) < t && std::abs(p.x() - r.left()) < t;
+		},
+			resize_handle::top_left,
+			cursor::style::resize_nw },
 		{ [style](
-		const rectf& r,
-		const vec2f& p
+			const rectf& r,
+			const vec2f& p
 	) {
-			 const float t = style.resize_border_thickness;
-			 return std::abs(p.y() - r.top()) < t && std::abs(p.x() - r.right()) < t;
-		 },
-		  resize_handle::top_right,
-		  cursor::style::resize_ne },
+			const float t = style.resize_border_thickness;
+			return std::abs(p.y() - r.top()) < t && std::abs(p.x() - r.right()) < t;
+		},
+			resize_handle::top_right,
+			cursor::style::resize_ne },
 		{ [style](
-		const rectf& r,
-		const vec2f& p
+			const rectf& r,
+			const vec2f& p
 	) {
-			 const float t = style.resize_border_thickness;
-			 return std::abs(p.y() - r.bottom()) < t && std::abs(p.x() - r.left()) < t;
-		 },
-		  resize_handle::bottom_left,
-		  cursor::style::resize_sw },
+			const float t = style.resize_border_thickness;
+			return std::abs(p.y() - r.bottom()) < t && std::abs(p.x() - r.left()) < t;
+		},
+			resize_handle::bottom_left,
+			cursor::style::resize_sw },
 		{ [style](
-		const rectf& r,
-		const vec2f& p
+			const rectf& r,
+			const vec2f& p
 	) {
-			 const float t = style.resize_border_thickness;
-			 return std::abs(p.y() - r.bottom()) < t && std::abs(p.x() - r.right()) < t;
-		 },
-		  resize_handle::bottom_right,
-		  cursor::style::resize_se },
+			const float t = style.resize_border_thickness;
+			return std::abs(p.y() - r.bottom()) < t && std::abs(p.x() - r.right()) < t;
+		},
+			resize_handle::bottom_right,
+			cursor::style::resize_se },
 		{ [style](
-		const rectf& r,
-		const vec2f& p
+			const rectf& r,
+			const vec2f& p
 	) {
-			 const float t = style.resize_border_thickness;
-			 return std::abs(p.x() - r.left()) < t && p.y() <= r.top() + t && p.y() >= r.bottom() - t;
-		 },
-		  resize_handle::left,
-		  cursor::style::resize_w },
+			const float t = style.resize_border_thickness;
+			return std::abs(p.x() - r.left()) < t && p.y() <= r.top() + t && p.y() >= r.bottom() - t;
+		},
+			resize_handle::left,
+			cursor::style::resize_w },
 		{ [style](
-		const rectf& r,
-		const vec2f& p
+			const rectf& r,
+			const vec2f& p
 	) {
-			 const float t = style.resize_border_thickness;
-			 return std::abs(p.x() - r.right()) < t && p.y() <= r.top() + t && p.y() >= r.bottom() - t;
-		 },
-		  resize_handle::right,
-		  cursor::style::resize_e },
+			const float t = style.resize_border_thickness;
+			return std::abs(p.x() - r.right()) < t && p.y() <= r.top() + t && p.y() >= r.bottom() - t;
+		},
+			resize_handle::right,
+			cursor::style::resize_e },
 		{ [style](
-		const rectf& r,
-		const vec2f& p
+			const rectf& r,
+			const vec2f& p
 	) {
-			 const float t = style.resize_border_thickness;
-			 return std::abs(p.y() - r.top()) < t && p.x() >= r.left() - t && p.x() <= r.right() + t;
-		 },
-		  resize_handle::top,
-		  cursor::style::resize_n },
+			const float t = style.resize_border_thickness;
+			return std::abs(p.y() - r.top()) < t && p.x() >= r.left() - t && p.x() <= r.right() + t;
+		},
+			resize_handle::top,
+			cursor::style::resize_n },
 		{ [style](
-		const rectf& r,
-		const vec2f& p
+			const rectf& r,
+			const vec2f& p
 	) {
-			 const float t = style.resize_border_thickness;
-			 return std::abs(p.y() - r.bottom()) < t && p.x() >= r.left() - t && p.x() <= r.right() + t;
-		 },
-		  resize_handle::bottom,
-		  cursor::style::resize_s },
+			const float t = style.resize_border_thickness;
+			return std::abs(p.y() - r.bottom()) < t && p.x() >= r.left() - t && p.x() <= r.right() + t;
+		},
+			resize_handle::bottom,
+			cursor::style::resize_s },
 	} };
 
 	auto calculate_group_bounds = [&vp](const id root_id) -> rectf {
@@ -193,28 +193,28 @@ auto gse::gui::handle_idle_state(const font_set& fonts, viewport_state& vp, cons
 						case dock::location::left:
 							if (std::abs(mouse_position.x() - rect.right()) < style.resize_border_thickness && !resize_blocked) {
 								return interaction_candidate{ states::resizing{ current_menu.id(),
-																				resize_handle::right },
-															  cursor::style::resize_e };
+									resize_handle::right },
+									cursor::style::resize_e };
 							}
 							break;
 						case dock::location::right:
 							if (std::abs(mouse_position.x() - rect.left()) < style.resize_border_thickness && !resize_blocked) {
 								return interaction_candidate{ states::resizing{ current_menu.id(),
-																				resize_handle::left },
-															  cursor::style::resize_w };
+									resize_handle::left },
+									cursor::style::resize_w };
 							}
 							break;
 						case dock::location::top:
 							if (std::abs(mouse_position.y() - rect.bottom()) < style.resize_border_thickness && !resize_blocked) {
 								return interaction_candidate{ states::resizing{ current_menu.id(),
-																				resize_handle::bottom },
-															  cursor::style::resize_s };
+									resize_handle::bottom },
+									cursor::style::resize_s };
 							}
 							break;
 						case dock::location::bottom:
 							if (std::abs(mouse_position.y() - rect.top()) < style.resize_border_thickness && !resize_blocked) {
 								return interaction_candidate{ states::resizing{ current_menu.id(), resize_handle::top },
-															  cursor::style::resize_n };
+									cursor::style::resize_n };
 							}
 							break;
 						default:
@@ -313,7 +313,7 @@ auto gse::gui::handle_idle_state(const font_set& fonts, viewport_state& vp, cons
 			}
 
 			return std::visit(
-				[](auto&& arg) -> gui::state {
+				[](auto&& arg) -> state {
 					return arg;
 				},
 				hot_item->future_state
@@ -327,7 +327,7 @@ auto gse::gui::handle_idle_state(const font_set& fonts, viewport_state& vp, cons
 	return states::idle{};
 }
 
-auto gse::gui::handle_dragging_state(viewport_state& vp, const states::dragging& current, const shared_view<window::data> window_s, const vec2f mouse_position, const bool mouse_held) -> gui::state {
+auto gse::gui::handle_dragging_state(viewport_state& vp, const states::dragging& current, const shared_view<window::data> window_s, const vec2f mouse_position, const bool mouse_held) -> state {
 	menu* m = vp.menus.try_get(current.menu_id);
 	if (!m) {
 		set_style(cursor::style::arrow);
@@ -444,7 +444,7 @@ auto gse::gui::handle_dragging_state(viewport_state& vp, const states::dragging&
 	return current;
 }
 
-auto gse::gui::handle_resizing_state(viewport_state& vp, const states::resizing& current, const vec2f mouse_position, const bool mouse_held, const style& style, const shared_view<window::data> window_s) -> gui::state {
+auto gse::gui::handle_resizing_state(viewport_state& vp, const states::resizing& current, const vec2f mouse_position, const bool mouse_held, const style& style, const shared_view<window::data> window_s) -> state {
 	if (!mouse_held) {
 		vp.active_dock_space.reset();
 		set_style(cursor::style::arrow);
@@ -681,7 +681,7 @@ auto gse::gui::handle_resizing_state(viewport_state& vp, const states::resizing&
 	return current;
 }
 
-auto gse::gui::handle_resizing_divider_state(viewport_state& vp, const states::resizing_divider& current, const vec2f mouse_position, const bool mouse_held, const style& style) -> gui::state {
+auto gse::gui::handle_resizing_divider_state(viewport_state& vp, const states::resizing_divider& current, const vec2f mouse_position, const bool mouse_held, const style& style) -> state {
 	menu* parent = vp.menus.try_get(current.parent_id);
 	menu* child = vp.menus.try_get(current.child_id);
 
@@ -802,7 +802,7 @@ auto gse::gui::handle_resizing_divider_state(viewport_state& vp, const states::r
 	return current;
 }
 
-auto gse::gui::handle_pending_drag_state(viewport_state& vp, const states::pending_drag& current, const vec2f mouse_position, const bool mouse_held) -> gui::state {
+auto gse::gui::handle_pending_drag_state(viewport_state& vp, const states::pending_drag& current, const vec2f mouse_position, const bool mouse_held) -> state {
 	if (!mouse_held) {
 		return states::idle{};
 	}
@@ -835,7 +835,7 @@ auto gse::gui::handle_pending_drag_state(viewport_state& vp, const states::pendi
 
 				const style sty = vp.fstate.sty;
 				const vec2f new_top_left = { mouse_position.x() - default_size.x() * 0.5f,
-											 mouse_position.y() + sty.title_bar_height * 0.5f };
+					mouse_position.y() + sty.title_bar_height * 0.5f };
 
 				menu new_menu(
 					tab_name,

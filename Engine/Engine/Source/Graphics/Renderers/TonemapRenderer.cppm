@@ -13,15 +13,15 @@ import gse.meta;
 import gse.gpu_record;
 
 export namespace gse::renderer::tonemap {
-	struct [[= gse::system_state<"Tonemap">{}, = gse::settings::category<"Graphics">{}]] data {
+	struct [[= system_state<"Tonemap">{}, = settings::category<"Graphics">{}]] data {
 		[[
-			= gse::settings::
+			= settings::
 				describe<"HDR exposure multiplier applied before tonemapping. 1.0 is the neutral default.">{}
 		]]
 		float exposure = 1.0f;
 
 		[[
-			= gse::settings::describe<"Replace the final image with a hue/intensity visualization of the motion-vector buffer.">{}
+			= settings::describe<"Replace the final image with a hue/intensity visualization of the motion-vector buffer.">{}
 		]]
 		bool show_velocity = false;
 
@@ -31,7 +31,7 @@ export namespace gse::renderer::tonemap {
 		gpu::bindless_handle velocity_view;
 	};
 
-	[[= gse::system_init{}]]
+	[[= system_init{}]]
 	auto init(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
@@ -39,7 +39,7 @@ export namespace gse::renderer::tonemap {
 		data& d
 	) -> async::task<>;
 
-	[[= gse::system_frame{}]]
+	[[= system_frame{}]]
 	auto frame(
 		const context& ctx,
 		shared_view<gpu::context::data> gpu_s,

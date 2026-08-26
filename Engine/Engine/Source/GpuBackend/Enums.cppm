@@ -99,7 +99,7 @@ export namespace gse::gpu {
 		a = 1 << 3,
 	};
 
-	using color_component_flags = gse::flags<color_component_flag>;
+	using color_component_flags = flags<color_component_flag>;
 
 	enum class color_format : std::uint8_t {
 		swapchain,
@@ -160,7 +160,7 @@ export namespace gse::gpu {
 		mesh = 1 << 4,
 	};
 
-	using stage_flags = gse::flags<stage_flag>;
+	using stage_flags = flags<stage_flag>;
 
 	enum class vertex_format : std::uint8_t {
 		r32_sfloat,
@@ -203,7 +203,7 @@ export namespace gse::gpu {
 		acceleration_structure_write = 1ull << 21,
 	};
 
-	using access_flags = gse::flags<access_flag>;
+	using access_flags = flags<access_flag>;
 
 	enum class pipeline_stage_flag : std::uint64_t {
 		none = 0,
@@ -237,7 +237,7 @@ export namespace gse::gpu {
 		ray_tracing_shader = 1ull << 27,
 	};
 
-	using pipeline_stage_flags = gse::flags<pipeline_stage_flag>;
+	using pipeline_stage_flags = flags<pipeline_stage_flag>;
 
 	enum class memory_property_flag : std::uint32_t {
 		device_local = 1u << 0,
@@ -247,7 +247,7 @@ export namespace gse::gpu {
 		lazily_allocated = 1u << 4,
 	};
 
-	using memory_property_flags = gse::flags<memory_property_flag>;
+	using memory_property_flags = flags<memory_property_flag>;
 
 	enum class present_mode_setting : int {
 		fifo = 0,
@@ -270,7 +270,7 @@ export namespace gse::gpu {
 		image_first_pixel_visible = 1u << 3,
 	};
 
-	using present_stage_flags = gse::flags<present_stage_flag>;
+	using present_stage_flags = flags<present_stage_flag>;
 
 	enum class load_op : std::uint8_t {
 		load,
@@ -290,7 +290,7 @@ export namespace gse::gpu {
 		fragment_shader_invocations = 1u << 3,
 	};
 
-	using pipeline_statistic_flags = gse::flags<pipeline_statistic_flag>;
+	using pipeline_statistic_flags = flags<pipeline_statistic_flag>;
 
 	enum class query_status : std::uint8_t {
 		success,

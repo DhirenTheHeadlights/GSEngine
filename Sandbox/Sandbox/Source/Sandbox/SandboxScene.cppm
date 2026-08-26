@@ -3,13 +3,15 @@ export module sandbox:sandbox_scene;
 import std;
 import gse;
 
-import :dev_spawn_system;
+import :character_controller;
 import :entity_builders;
+import :orbit_camera;
 import :runtime_spawns;
+import :sidearm;
 
 export namespace sandbox::player {
 	struct [[= gse::system_state<"Player">{}]] data {
-		bool character_requested = false;
+		gse::id pending_possession;
 	};
 
 	[[= gse::system_run<>{}]]
@@ -17,9 +19,14 @@ export namespace sandbox::player {
 		gse::context& ctx,
 		data& d,
 		gse::channel_read<gse::world_system::possess_player_request> possess_in,
-		gse::channel_write<sandbox::spawn_character_request> spawn_out,
-		gse::shared_view<gse::network::data> net_d,
+		gse::shared_view<gse::world_system::data> world_d,
+		gse::shared_view<gse::asset::data> assets_d,
 		const gse::network::config& net_cfg,
+		gse::read<gse::skeleton_instance_component> skeletons,
+		gse::entities ents,
+		gse::structural<character_controller::component>,
+		gse::structural<orbit_camera::component>,
+		gse::structural<sidearm::component>,
 		gse::structural<gse::free_camera::component> cameras
 	) -> gse::async::task<>;
 }
@@ -122,27 +129,43 @@ namespace sandbox {
 	) -> void;
 }
 
-auto sandbox::player::run(gse::context& ctx, data& d, const gse::channel_read<gse::world_system::possess_player_request> possess_in, const gse::channel_write<sandbox::spawn_character_request> spawn_out, const gse::shared_view<gse::network::data> net_d, const gse::network::config& net_cfg, gse::structural<gse::free_camera::component> cameras) -> gse::async::task<> {
-	const bool server_owns_player = !net_cfg.connect.empty();
-
-	if (server_owns_player) {
-		if (!d.character_requested && net_d.connection_state == gse::network::client::state::connected) {
-			d.character_requested = true;
-			spawn_out.push<sandbox::spawn_character_request>({
-				.count = 1,
-			});
+auto sandbox::player::run(gse::context& ctx, data& d, const gse::channel_read<gse::world_system::possess_player_request> possess_in, const gse::shared_view<gse::world_system::data> world_d, const gse::shared_view<gse::asset::data> assets_d, const gse::network::config& net_cfg, gse::read<gse::skeleton_instance_component> skeletons, gse::entities, gse::structural<character_controller::component>, gse::structural<orbit_camera::component>, gse::structural<sidearm::component>, gse::structural<gse::free_camera::component> cameras) -> gse::async::task<> {
+	if (net_cfg.connect.empty()) {
+		for (const auto& request : possess_in.of<gse::world_system::possess_player_request>()) {
+			cameras.add(
+				request.entity,
+				{
+					.initial_position = gse::vec3<gse::position>(0.f, 2.f, 0.f),
+				}
+			);
 		}
 		return {};
 	}
 
 	for (const auto& request : possess_in.of<gse::world_system::possess_player_request>()) {
-		cameras.add(
-			request.entity,
-			{
-				.initial_position = gse::vec3<gse::position>(0.f, 2.f, 0.f),
-			}
-		);
+		d.pending_possession = request.entity;
 	}
+
+	auto* scene = world_d.active_scene_ptr;
+	if (!d.pending_possession.exists() || scene == nullptr) {
+		return {};
+	}
+
+	const auto* skeleton = skeletons.find(d.pending_possession);
+	if (skeleton == nullptr) {
+		return {};
+	}
+
+	const gse::scene::mutation_scope scope(*scene, ctx);
+	possess_character(
+		*scene,
+		{
+			.character = d.pending_possession,
+			.proxy = skeleton->proxy,
+		},
+		character_clips(assets_d)
+	);
+	d.pending_possession = {};
 
 	return {};
 }

@@ -210,7 +210,7 @@ auto gse::physics::inverse_diagonal_inertia(const vec3<inertia>& moments) -> mat
 
 auto gse::physics::mass_properties_of(const collision_shape& shape, const mass m, const convex_hull* hull) -> mass_properties {
 	mass_properties result;
-	gse::match(shape)
+	match(shape)
 		.if_is([&](const box_shape& s) {
 			const auto x = s.size.x() * s.size.x();
 			const auto y = s.size.y() * s.size.y();
@@ -305,8 +305,8 @@ gse::bounding_box::bounding_box(const physics::transform_component& tc)
 
 auto gse::bounding_box::aabb() const -> gse::aabb {
 	const auto rotation = mat3_cast(m_orientation);
-	const auto extent = gse::abs(rotation[0]) * m_half_extents.x() + gse::abs(rotation[1]) * m_half_extents.y() +
-		gse::abs(rotation[2]) * m_half_extents.z();
+	const auto extent = abs(rotation[0]) * m_half_extents.x() + abs(rotation[1]) * m_half_extents.y() +
+		abs(rotation[2]) * m_half_extents.z();
 	return {
 		.max = m_center + extent,
 		.min = m_center - extent,
@@ -356,9 +356,9 @@ auto gse::bounding_box::face_vertices(const std::uint32_t face_index) const -> s
 	const vec3<position> face_center = box_obb.center + primary_axis * (m_half_extents[axis_idx] * sign);
 
 	return { face_center + u_axis * h_u + v_axis * h_v,
-			 face_center - u_axis * h_u + v_axis * h_v,
-			 face_center - u_axis * h_u - v_axis * h_v,
-			 face_center + u_axis * h_u - v_axis * h_v };
+		face_center - u_axis * h_u + v_axis * h_v,
+		face_center - u_axis * h_u - v_axis * h_v,
+		face_center + u_axis * h_u - v_axis * h_v };
 }
 
 auto gse::bounding_box::obb_vertices() const -> std::vector<vec3<position>> {
@@ -377,17 +377,17 @@ auto gse::bounding_box::edge_endpoints(const std::uint32_t edge_index) const -> 
 	const auto vertices = obb_vertices();
 
 	static constexpr std::array<std::pair<std::uint32_t, std::uint32_t>, 12> edge_indices = { { { 0, 1 },
-																								{ 2, 3 },
-																								{ 4, 5 },
-																								{ 6, 7 },
-																								{ 0, 2 },
-																								{ 1, 3 },
-																								{ 4, 6 },
-																								{ 5, 7 },
-																								{ 0, 4 },
-																								{ 1, 5 },
-																								{ 2, 6 },
-																								{ 3, 7 } } };
+		{ 2, 3 },
+		{ 4, 5 },
+		{ 6, 7 },
+		{ 0, 2 },
+		{ 1, 3 },
+		{ 4, 6 },
+		{ 5, 7 },
+		{ 0, 4 },
+		{ 1, 5 },
+		{ 2, 6 },
+		{ 3, 7 } } };
 
 	const auto& [i0, i1] = edge_indices[edge_index % 12];
 	return { vertices[i0], vertices[i1] };

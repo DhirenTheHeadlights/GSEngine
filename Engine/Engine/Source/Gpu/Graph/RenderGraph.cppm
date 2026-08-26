@@ -27,7 +27,7 @@ export namespace gse::gpu {
 
 	struct color_output_info {
 		bool is_swapchain = false;
-		gse::id window;
+		id window;
 		const image* custom_target = nullptr;
 		transient_image_handle transient_target;
 		load_op op = load_op::clear;
@@ -131,7 +131,7 @@ export namespace gse::gpu {
 		[[nodiscard]] auto extent() const -> vec2u;
 
 		[[nodiscard]] auto extent(
-			gse::id window
+			id window
 		) const -> vec2u;
 
 		[[nodiscard]] auto depth_image(

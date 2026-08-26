@@ -89,19 +89,19 @@ export namespace gse::physics {
 		int readback_age_steps = 0;
 	};
 
-	struct [[= gse::system_state<"Physics">{}, = gse::settings::category<"Physics">{}, = gse::deferred_system{}]] data {
-		[[= gse::settings::describe<"Step the physics world each frame.">{}]] bool update_phys = true;
+	struct [[= system_state<"Physics">{}, = settings::category<"Physics">{}, = deferred_system{}]] data {
+		[[= settings::describe<"Step the physics world each frame.">{}]] bool update_phys = true;
 
 		[[
-			= gse::settings::describe<"Run the constraint solver on the GPU instead of the CPU. The GPU pipelines and "
+			= settings::describe<"Run the constraint solver on the GPU instead of the CPU. The GPU pipelines and "
 									  "buffers are built once during startup, so this requires a restart.">{},
-			= gse::settings::restart_required{},
-			= gse::shared
+			= settings::restart_required{},
+			= shared
 		]]
 		bool use_gpu_solver = false;
 
 		[[
-			= gse::settings::describe<"Dispatch at most one GPU solver tick per frame and skip while the previous "
+			= settings::describe<"Dispatch at most one GPU solver tick per frame and skip while the previous "
 									  "batch is still executing; excess fixed-step demand is dropped, so overload "
 									  "dilates the sim instead of multiplying substeps into ever-longer batches. "
 									  "Interactive only: the skip decision follows real GPU timing, so leave this "
@@ -110,7 +110,7 @@ export namespace gse::physics {
 		bool gpu_async_dispatch = false;
 
 		[[
-			= gse::settings::describe<"Fold the GPU solver's per-colour Gauss-Seidel dispatches into one sweep dispatch "
+			= settings::describe<"Fold the GPU solver's per-colour Gauss-Seidel dispatches into one sweep dispatch "
 									  "per iteration, sequencing colours inside the kernel with a device-scope barrier. "
 									  "Bit-identical to the unfolded loop and gate-validated on both backends. The barrier "
 									  "spins, so heavy graphics contention can preempt sweep workgroups and starve it; a "
@@ -121,7 +121,7 @@ export namespace gse::physics {
 		bool gpu_solve_fold = false;
 
 		[[
-			= gse::settings::describe<"Cap the GPU solver's colour palette. Bodies that cannot take a conflict-free "
+			= settings::describe<"Cap the GPU solver's colour palette. Bodies that cannot take a conflict-free "
 									  "colour under the cap share one deterministically instead of opening a new "
 									  "colour, so the solve runs fewer, fatter colour dispatches with fewer barriers "
 									  "per iteration. Conflicting pairs degrade toward undamped Jacobi for that "
@@ -129,198 +129,198 @@ export namespace gse::physics {
 									  "destabilize stiff piles. 0 keeps the natural colouring; -1 sizes the cap "
 									  "automatically from live colour populations, folding tail colours below a "
 									  "population floor and backing off when conflicts exceed a budget.">{},
-			= gse::settings::range<-1, 16>{}
+			= settings::range<-1, 16>{}
 		]]
 		int gpu_color_cap = 0;
 
 		[[
-			= gse::settings::describe<"Workgroups per folded sweep dispatch. More workgroups widen the sweep's stride "
+			= settings::describe<"Workgroups per folded sweep dispatch. More workgroups widen the sweep's stride "
 									  "and raise occupancy on large scenes, but every workgroup must be co-resident "
 									  "for the colour barrier; oversubscribing residency trips the sweep's bail "
 									  "fallback. 0 keeps the built-in width of 32.">{},
-			= gse::settings::range<0, 256>{}
+			= settings::range<0, 256>{}
 		]]
 		int gpu_sweep_workgroups = 0;
 
 		[[
-			= gse::settings::describe<"Number of constraint solver iterations per substep. Higher values reduce "
+			= settings::describe<"Number of constraint solver iterations per substep. Higher values reduce "
 									  "jitter at the cost of frame time.">{},
-			= gse::settings::range<1, 40>{},
-			= gse::shared
+			= settings::range<1, 40>{},
+			= shared
 		]]
 		int solver_iterations = 15;
 
 		[[
-			= gse::settings::describe<"Upper bound on adaptive solver iterations per substep. Past solver_iterations "
+			= settings::describe<"Upper bound on adaptive solver iterations per substep. Past solver_iterations "
 									  "the solver keeps iterating only while the worst violation is above the "
 									  "convergence thresholds and still shrinking.">{},
-			= gse::settings::range<1, 64>{},
-			= gse::shared
+			= settings::range<1, 64>{},
+			= shared
 		]]
 		int max_solver_iterations = 40;
 
 		[[
-			= gse::settings::describe<"Worst contact violation below which the adaptive iteration loop stops at the "
+			= settings::describe<"Worst contact violation below which the adaptive iteration loop stops at the "
 									  "solver_iterations floor.">{}
 		]]
 		length convergence_threshold_linear = meters(1e-4f);
 
 		[[
-			= gse::settings::describe<"Worst joint angular violation below which the adaptive iteration loop stops at "
+			= settings::describe<"Worst joint angular violation below which the adaptive iteration loop stops at "
 									  "the solver_iterations floor.">{}
 		]]
 		angle convergence_threshold_angular = radians(1e-3f);
 
 		[[
-			= gse::settings::describe<"Scale the linear convergence threshold with scene motion: the effective "
+			= settings::describe<"Scale the linear convergence threshold with scene motion: the effective "
 									  "threshold becomes the larger of convergence_threshold_linear and this fraction "
 									  "of the fastest dynamic body's travel per substep. Churning scenes stop "
 									  "iterating once residual error is invisible against their own motion while "
 									  "settling stacks keep the tight threshold and the full adaptive budget. Applies "
 									  "to both solvers identically; 0 disables.">{},
-			= gse::settings::range<0.f, 0.25f>{},
-			= gse::shared
+			= settings::range<0.f, 0.25f>{},
+			= shared
 		]]
 		float convergence_speed_scale = 0.f;
 
 		[[
-			= gse::settings::describe<"Fraction of each contact's pre-existing penetration carried forward per substep; "
+			= settings::describe<"Fraction of each contact's pre-existing penetration carried forward per substep; "
 									  "the remainder is corrected as position error. Lower values depenetrate faster "
 									  "but inject more energy.">{},
-			= gse::settings::range<0.f, 1.f>{}
+			= settings::range<0.f, 1.f>{}
 		]]
 		float solver_alpha = 0.99f;
 
 		[[
-			= gse::settings::describe<"Penalty ramp rate. Each dual update grows a violated contact row's penalty by "
+			= settings::describe<"Penalty ramp rate. Each dual update grows a violated contact row's penalty by "
 									  "this stiffness per meter of violation.">{}
 		]]
 		stiffness_per_length solver_beta = newtons_per_meter_squared(100000.f);
 
 		[[
-			= gse::settings::describe<"Per-substep decay factor for contact penalties and warm-started duals.">{},
-			= gse::settings::range<0.5f, 1.f>{}
+			= settings::describe<"Per-substep decay factor for contact penalties and warm-started duals.">{},
+			= settings::range<0.5f, 1.f>{}
 		]]
 		float solver_gamma = 0.99f;
 
 		[[
-			= gse::settings::describe<"Base penalty stiffness for inactive contact rows. Active rows floor at the "
+			= settings::describe<"Base penalty stiffness for inactive contact rows. Active rows floor at the "
 									  "mass-scaled value instead.">{}
 		]]
 		stiffness penalty_min = newtons_per_meter(1.f);
 
 		[[
-			= gse::settings::describe<"Upper bound on contact penalty stiffness.">{}
+			= settings::describe<"Upper bound on contact penalty stiffness.">{}
 		]]
 		stiffness penalty_max = newtons_per_meter(1e9f);
 
 		[[
-			= gse::settings::describe<"Contact offset added to every separation before the solver sees it. Bodies come "
+			= settings::describe<"Contact offset added to every separation before the solver sees it. Bodies come "
 									  "to rest with this gap.">{}
 		]]
 		gap collision_margin = meters(0.0005f);
 
 		[[
-			= gse::settings::describe<"Grip envelope. Contacts within this distance keep their friction anchors and "
+			= settings::describe<"Grip envelope. Contacts within this distance keep their friction anchors and "
 									  "warm-start stiffness memory.">{}
 		]]
 		gap stick_threshold = meters(0.01f);
 
 		[[
-			= gse::settings::describe<"Linear speed below which a body may begin falling asleep. Zero disables sleeping "
+			= settings::describe<"Linear speed below which a body may begin falling asleep. Zero disables sleeping "
 									  "entirely, which is what a capture run wants — a sleeping island is not woken by "
 									  "having its support removed.">{}
 		]]
 		velocity velocity_sleep_threshold = meters_per_second(0.05f);
 
 		[[
-			= gse::settings::describe<"Angular speed below which a body may begin falling asleep. Paired with "
+			= settings::describe<"Angular speed below which a body may begin falling asleep. Paired with "
 									  "velocity_sleep_threshold; both must be satisfied.">{}
 		]]
 		angular_velocity angular_sleep_threshold = radians_per_second(0.05f);
 
 		[[
-			= gse::settings::describe<"Maximum distance at which approaching pairs get speculative contacts. Each "
+			= settings::describe<"Maximum distance at which approaching pairs get speculative contacts. Each "
 									  "pair's actual window scales with its relative speed, down to "
 									  "speculative_margin_floor for calm pairs.">{}
 		]]
 		gap speculative_margin = meters(0.02f);
 
 		[[
-			= gse::settings::describe<"Minimum speculative contact window. Calm pairs use this window; it must stay "
+			= settings::describe<"Minimum speculative contact window. Calm pairs use this window; it must stay "
 									  "wider than settling pairs' gap oscillation or the contact set churns at the "
 									  "boundary.">{}
 		]]
 		gap speculative_margin_floor = meters(0.01f);
 
 		[[
-			= gse::settings::describe<"Use Jacobi iteration instead of Gauss-Seidel. More parallel-friendly but converges slower.">{},
-			= gse::shared
+			= settings::describe<"Use Jacobi iteration instead of Gauss-Seidel. More parallel-friendly but converges slower.">{},
+			= shared
 		]]
 		bool use_jacobi = false;
 
 		[[
-			= gse::settings::describe<"Record the gpu solver's per-stage diagnostic hash dispatches every tick so ContactTrace "
+			= settings::describe<"Record the gpu solver's per-stage diagnostic hash dispatches every tick so ContactTrace "
 									  "can print the pass-hash line. Off keeps the dispatch stream lean; the solve itself is "
 									  "identical either way.">{},
-			= gse::shared
+			= shared
 		]]
 		bool trace_hashes = false;
 
 		[[
-			= gse::settings::describe<"Relaxation factor for the Jacobi solver. Lower values are more stable; "
+			= settings::describe<"Relaxation factor for the Jacobi solver. Lower values are more stable; "
 									  "higher values converge faster.">{},
-			= gse::settings::range<0.1f, 1.0f>{},
-			= gse::shared
+			= settings::range<0.1f, 1.0f>{},
+			= shared
 		]]
 		float jacobi_omega = 0.67f;
 
 		[[
-			= gse::settings::describe<"Solve bodies serially in height order, alternating sweep direction each "
+			= settings::describe<"Solve bodies serially in height order, alternating sweep direction each "
 									  "iteration, instead of the parallel colour sweep. Trades parallelism for "
 									  "convergence on tall stacks.">{},
-			= gse::shared
+			= shared
 		]]
 		bool use_ordered_sweep = false;
 
 		[[
-			= gse::settings::describe<"Number of substeps per simulation tick. More substeps improve stability for "
+			= settings::describe<"Number of substeps per simulation tick. More substeps improve stability for "
 									  "fast-moving bodies.">{},
-			= gse::settings::range<1, 8>{},
-			= gse::shared
+			= settings::range<1, 8>{},
+			= shared
 		]]
 		int physics_substeps = 2;
 
 		[[
-			= gse::settings::describe<"Bodies per parallel chunk in the constraint solver colour sweep. Lower values "
+			= settings::describe<"Bodies per parallel chunk in the constraint solver colour sweep. Lower values "
 									  "spread the sweep across more threads at the cost of scheduling overhead.">{},
-			= gse::settings::range<1, 256>{}
+			= settings::range<1, 256>{}
 		]]
 		int color_chunk_grain = 8;
 
 		[[
-			= gse::settings::describe<"Parallel chunks per worker in the broad phase. The pair test does more work for "
+			= settings::describe<"Parallel chunks per worker in the broad phase. The pair test does more work for "
 									  "early objects than late ones, so higher values balance the load at the cost of "
 									  "scheduling overhead.">{},
-			= gse::settings::range<1, 32>{}
+			= settings::range<1, 32>{}
 		]]
 		int broad_phase_chunks_per_worker = 8;
 
 		bool gpu_unavailable_reported = false;
 		id_mapped_collection<joint_definition> joints;
-		[[= gse::shared]] std::vector<convex_hull> hulls;
+		[[= shared]] std::vector<convex_hull> hulls;
 
-		[[= gse::shared]] vbd::solver vbd_solver;
+		[[= shared]] vbd::solver vbd_solver;
 		vbd::contact_cache contact_cache;
-		[[= gse::shared]] std::unordered_map<id, std::uint32_t> sleep_counters;
+		[[= shared]] std::unordered_map<id, std::uint32_t> sleep_counters;
 		bool gpu_joints_dirty = true;
 		std::uint32_t gpu_uploaded_body_count = 0;
 		std::uint32_t gpu_uploaded_joint_count = 0;
-		[[= gse::shared]] std::flat_map<id, std::uint32_t> id_to_body_index;
+		[[= shared]] std::flat_map<id, std::uint32_t> id_to_body_index;
 		std::flat_map<id, transform_component> kinematic_step_start;
 		std::vector<impulse_request> gpu_pending_impulses;
-		[[= gse::shared]] int sim_steps_this_frame = 0;
-		[[= gse::shared]] int gpu_readback_age_steps = 0;
+		[[= shared]] int sim_steps_this_frame = 0;
+		[[= shared]] int gpu_readback_age_steps = 0;
 		bool gpu_sweep_fold_bailed = false;
 		bool gpu_solve_fold_prev = false;
 		int gpu_sweep_retry_cooldown = 0;
@@ -330,10 +330,10 @@ export namespace gse::physics {
 		int gpu_color_cap_dwell = 0;
 		int gpu_color_cap_min = 0;
 
-		[[= gse::shared]] std::vector<std::uint8_t> body_airborne;
-		[[= gse::shared]] std::vector<std::uint8_t> body_sleeping;
+		[[= shared]] std::vector<std::uint8_t> body_airborne;
+		[[= shared]] std::vector<std::uint8_t> body_sleeping;
 
-		[[= gse::shared]] vbd::gpu_solver gpu_solver;
+		[[= shared]] vbd::gpu_solver gpu_solver;
 	};
 
 	struct collision_pair {
@@ -419,14 +419,14 @@ export namespace gse::physics {
 		std::vector<vbd::velocity_motor_constraint>& out
 	) -> void;
 
-	[[= gse::system_init{}]]
+	[[= system_init{}]]
 	auto init(
 		context& ctx,
 		std::optional<shared_view<gpu::context::data>> gpu_s,
 		data& d
 	) -> async::task<>;
 
-	[[= gse::system_run<>{}, = gse::runs_after_optional<^^gpu::context::data>{}]]
+	[[= system_run<>{}, = runs_after_optional<^^gpu::context::data>{}]]
 	auto prepare(
 		context& ctx,
 		data& d,
@@ -439,13 +439,13 @@ export namespace gse::physics {
 		write<motion_component> motion
 	) -> async::task<>;
 
-	[[= gse::system_run<1>{}]]
+	[[= system_run<1>{}]]
 	auto ensure_results(
 		write<collision_component> collision,
 		structural<collision_result_component> results
 	) -> async::task<>;
 
-	[[= gse::system_run<2>{}]]
+	[[= system_run<2>{}]]
 	auto integrate(
 		context& ctx,
 		data& d,
@@ -459,7 +459,7 @@ export namespace gse::physics {
 		write<hull_definition> hull_definitions
 	) -> async::task<>;
 
-	[[= gse::system_frame{}]]
+	[[= system_frame{}]]
 	auto frame(
 		context& ctx,
 		std::optional<shared_view<gpu::context::data>> gpu_s,

@@ -39,7 +39,7 @@ export namespace gse::renderer {
 		float arc_thickness = 0.f;
 		bool sample_scene_snapshot = false;
 		gpu::bindless_slot image_slot = {};
-		gse::id window;
+		id window;
 	};
 
 	struct text_command {
@@ -51,7 +51,7 @@ export namespace gse::renderer {
 		std::optional<rect_t<vec2f>> clip_rect = std::nullopt;
 		render_layer layer = render_layer::content;
 		std::uint32_t z_order = 0;
-		gse::id window;
+		id window;
 	};
 }
 
@@ -76,7 +76,7 @@ namespace gse::renderer::ui {
 
 	struct draw_batch {
 		command_type type;
-		gse::id window;
+		id window;
 		std::uint32_t index_offset;
 		std::uint32_t index_count;
 		std::optional<rect_t<vec2f>> clip_rect;
@@ -86,7 +86,7 @@ namespace gse::renderer::ui {
 		gpu::bindless_slot image_slot = {};
 	};
 
-	export constexpr std::size_t max_quads_per_frame = 32768;
+	export constexpr std::size_t max_quads_per_frame = 131072;
 	export constexpr std::size_t max_batches_per_frame = 4096;
 	export constexpr std::size_t vertices_per_quad = 4;
 	export constexpr std::size_t indices_per_quad = 6;
@@ -104,7 +104,7 @@ namespace gse::renderer::ui {
 
 	struct unified_command {
 		command_type type;
-		gse::id window;
+		id window;
 		render_layer layer;
 		std::uint32_t z_order;
 		std::optional<rect_t<vec2f>> clip_rect;
@@ -159,7 +159,7 @@ export namespace gse::renderer::ui {
 		skipped_no_batches [[= record_state_info{ .label = "skipped(no batches)" }]]
 	};
 
-	struct [[= gse::system_state<"Ui">{}]] data {
+	struct [[= system_state<"Ui">{}]] data {
 		gpu::shader_program sprite_pipeline;
 		gpu::shader_program text_pipeline;
 		gpu::bindless_handle ui_sampler;
@@ -174,13 +174,13 @@ export namespace gse::renderer::ui {
 		std::uint64_t recorded_frames = 0;
 	};
 
-	[[= gse::system_init{}]]
+	[[= system_init{}]]
 	auto init(
 		shared_view<gpu::context::data> gpu_s,
 		data& d
 	) -> async::task<>;
 
-	[[= gse::system_run<>{}]]
+	[[= system_run<>{}]]
 	auto run(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
@@ -189,7 +189,7 @@ export namespace gse::renderer::ui {
 		channel_read<sprite_command, text_command> commands_in
 	) -> async::task<>;
 
-	[[= gse::system_frame{}]]
+	[[= system_frame{}]]
 	auto frame(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,

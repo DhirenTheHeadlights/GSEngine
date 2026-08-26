@@ -29,13 +29,13 @@ namespace gse::detail {
 }
 
 export namespace gse::input {
-	struct [[= gse::system_state<"Input">{}]] data {
-		[[= gse::shared]] double_buffer<input::state> states;
+	struct [[= system_state<"Input">{}]] data {
+		[[= shared]] double_buffer<state> states;
 	};
 
-	[[= gse::system_run<>{}]]
+	[[= system_run<>{}]]
 	auto run(
-		gse::context& ctx,
+		context& ctx,
 		data& d,
 		channel_read<synthetic_input_request> synthetic_in,
 		std::optional<shared_view<window::data>> win
@@ -43,14 +43,14 @@ export namespace gse::input {
 
 	auto current_state(
 		shared_view<data> d
-	) -> const input::state&;
+	) -> const state&;
 }
 
-auto gse::input::current_state(const shared_view<data> d) -> const input::state& {
+auto gse::input::current_state(const shared_view<data> d) -> const state& {
 	return d.states.read();
 }
 
-auto gse::input::run(gse::context& ctx, data& d, const channel_read<synthetic_input_request> synthetic_in, const std::optional<shared_view<window::data>> win) -> async::task<> {
+auto gse::input::run(context& ctx, data& d, const channel_read<synthetic_input_request> synthetic_in, const std::optional<shared_view<window::data>> win) -> async::task<> {
 	const auto& tok = detail::token();
 	auto& persistent_state = d.states.write();
 
@@ -84,6 +84,9 @@ auto gse::input::run(gse::context& ctx, data& d, const channel_read<synthetic_in
 			})
 			.else_if_is([&](const mouse_moved& arg) {
 				persistent_state.on_mouse_moved(static_cast<float>(arg.x_pos), static_cast<float>(arg.y_pos), tok);
+			})
+			.else_if_is([&](const mouse_raw_moved& arg) {
+				persistent_state.on_mouse_raw_moved(static_cast<float>(arg.x_delta), static_cast<float>(arg.y_delta), tok);
 			})
 			.else_if_is([&](const mouse_scrolled& arg) {
 				persistent_state.on_scroll(static_cast<float>(arg.x_offset), static_cast<float>(arg.y_offset), tok);

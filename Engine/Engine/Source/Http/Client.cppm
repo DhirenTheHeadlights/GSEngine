@@ -8,8 +8,8 @@ import :request;
 
 export namespace gse::http {
 	struct completion {
-		gse::id ticket;
-		http::result value;
+		id ticket;
+		result value;
 	};
 
 	class client : public non_copyable {

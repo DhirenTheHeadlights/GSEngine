@@ -33,7 +33,7 @@ auto gse::gui::dock::space::select(const vec2f point) -> location {
 	return hot;
 }
 
-gse::gui::draw_context::draw_context(draw_context_init init, const input::state& input) : current_menu(init.current_menu), style(init.style), fonts(init.fonts), blank_texture(init.blank_texture), layout_cursor(init.layout_cursor), sprites(init.sprites), texts(init.texts), text_pool(init.text_pool), text_pool_used(init.text_pool_used), widget_anim_colors(init.widget_anim_colors), widget_scrolls(init.widget_scrolls), current_layer(init.current_layer), current_z_order(init.current_z_order), input_layer(init.input_layer), input_suppressed(init.input_suppressed), owns_keyboard(init.owns_keyboard), hit_regions(init.hit_regions), tooltip(init.tooltip), context_menu(init.context_menu), clip_stack(std::move(init.clip_stack)), m_input(input) {}
+gse::gui::draw_context::draw_context(draw_context_init init, const input::state& input) : current_menu(init.current_menu), style(init.style), fonts(init.fonts), blank_texture(init.blank_texture), layout_cursor(init.layout_cursor), sprites(init.sprites), texts(init.texts), text_pool(init.text_pool), text_pool_used(init.text_pool_used), widget_anim_colors(init.widget_anim_colors), widget_scrolls(init.widget_scrolls), widget_tree_open(init.widget_tree_open), current_layer(init.current_layer), current_z_order(init.current_z_order), input_layer(init.input_layer), input_suppressed(init.input_suppressed), owns_keyboard(init.owns_keyboard), hit_regions(init.hit_regions), tooltip(init.tooltip), context_menu(init.context_menu), clip_stack(std::move(init.clip_stack)), m_input(input) {}
 
 auto gse::gui::font_set::named(const std::string_view name) const -> resource::handle<font> {
 	const auto it = registry.find(std::string(name));

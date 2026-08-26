@@ -36,7 +36,7 @@ namespace gse::gpu {
 	constexpr gpu_dispatch device_dispatch_for = meta::build_dispatch<gpu_dispatch, vulkan_device_backend, meta::pointer_receiver<B>>();
 }
 
-auto gse::gpu::device::create(const std::optional<shared_view<window::data>> win, const bool validation_layers_enabled, backend_kind& backend, gpu::device_settings& device_cfg) -> std::unique_ptr<device> {
+auto gse::gpu::device::create(const std::optional<shared_view<window::data>> win, const bool validation_layers_enabled, backend_kind& backend, device_settings& device_cfg) -> std::unique_ptr<device> {
 	if (backend == backend_kind::vulkan) {
 		auto created = create_vulkan_device_backend(win, validation_layers_enabled, device_cfg);
 		if (created) {
@@ -106,9 +106,9 @@ gse::gpu::device::device(std::unique_ptr<void, void (*)(void*)> backend, const g
 		auto& ring = m_pass_marker_rings[di];
 		ring.checkpoint_buffer = m_vt->create_buffer(
 			m_backend.get(),
-			gpu::buffer_desc{
+			buffer_desc{
 				.size = buffer_size,
-				.usage = gpu::buffer_flag::transfer_dst,
+				.usage = buffer_flag::transfer_dst,
 				.data = zeros.data(),
 			},
 			std::format(
@@ -125,7 +125,7 @@ gse::gpu::device::~device() {
 	log::println(log::category::runtime, "Destroying Device");
 }
 
-auto gse::gpu::device::handle() const -> gpu::device_handle {
+auto gse::gpu::device::handle() const -> device_handle {
 	return m_vt->handle(m_backend.get());
 }
 
@@ -133,7 +133,7 @@ auto gse::gpu::device::surface_format() const -> image_format {
 	return m_surface_format;
 }
 
-auto gse::gpu::device::queue_family(const gpu::queue_type queue) const -> std::uint32_t {
+auto gse::gpu::device::queue_family(const queue_type queue) const -> std::uint32_t {
 	return m_vt->queue_family(m_backend.get(), queue);
 }
 
@@ -145,7 +145,7 @@ auto gse::gpu::device::timestamp_period() const -> float {
 	return m_vt->timestamp_period(m_backend.get());
 }
 
-auto gse::gpu::device::begin_pass_marker(const gpu::command_buffer_handle cmd, const pass_marker_domain domain, const pass_marker marker, const std::string_view name) -> pass_marker_handle {
+auto gse::gpu::device::begin_pass_marker(const command_buffer_handle cmd, const pass_marker_domain domain, const pass_marker marker, const std::string_view name) -> pass_marker_handle {
 	auto& ring = m_pass_marker_rings[static_cast<std::size_t>(domain)];
 	const auto seq = ring.seq.fetch_add(1, std::memory_order_relaxed);
 	ring.entries[seq % pass_marker_ring_size] = marker;
@@ -170,7 +170,7 @@ auto gse::gpu::device::begin_pass_marker(const gpu::command_buffer_handle cmd, c
 	};
 }
 
-auto gse::gpu::device::checkpoint_pass_marker(const gpu::command_buffer_handle cmd, const pass_marker_handle handle) -> void {
+auto gse::gpu::device::checkpoint_pass_marker(const command_buffer_handle cmd, const pass_marker_handle handle) -> void {
 	auto& ring = m_pass_marker_rings[static_cast<std::size_t>(handle.domain)];
 	if (!ring.checkpoint_buffer.valid()) {
 		return;
@@ -187,7 +187,7 @@ auto gse::gpu::device::checkpoint_pass_marker(const gpu::command_buffer_handle c
 	);
 }
 
-auto gse::gpu::device::post_renderpass_pass_marker(const gpu::command_buffer_handle cmd, const pass_marker_handle handle) -> void {
+auto gse::gpu::device::post_renderpass_pass_marker(const command_buffer_handle cmd, const pass_marker_handle handle) -> void {
 	auto& ring = m_pass_marker_rings[static_cast<std::size_t>(handle.domain)];
 	if (!ring.checkpoint_buffer.valid()) {
 		return;
@@ -204,7 +204,7 @@ auto gse::gpu::device::post_renderpass_pass_marker(const gpu::command_buffer_han
 	);
 }
 
-auto gse::gpu::device::end_pass_marker(const gpu::command_buffer_handle cmd, const pass_marker_handle handle) -> void {
+auto gse::gpu::device::end_pass_marker(const command_buffer_handle cmd, const pass_marker_handle handle) -> void {
 	end_debug_event(cmd);
 
 	auto& ring = m_pass_marker_rings[static_cast<std::size_t>(handle.domain)];
@@ -332,7 +332,7 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 	}
 
 	device_fault_counts counts{};
-	if (const auto result = m_vt->query_fault_counts(m_backend.get(), counts); result != gpu::result::success) {
+	if (const auto result = m_vt->query_fault_counts(m_backend.get(), counts); result != result::success) {
 		log::println(
 			log::level::warning,
 			log::category::vulkan,
@@ -347,7 +347,7 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 	}
 
 	device_fault_info fault_info{};
-	if (const auto result = m_vt->query_fault_info(m_backend.get(), counts, fault_info); result != gpu::result::success) {
+	if (const auto result = m_vt->query_fault_info(m_backend.get(), counts, fault_info); result != result::success) {
 		log::println(
 			log::level::warning,
 			log::category::vulkan,
@@ -401,11 +401,11 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 	}
 }
 
-auto gse::gpu::device::frame_command_buffer(const queue_type queue, const std::uint32_t frame_index) const -> gpu::command_buffer_handle {
+auto gse::gpu::device::frame_command_buffer(const queue_type queue, const std::uint32_t frame_index) const -> command_buffer_handle {
 	return m_vt->frame_command_buffer(m_backend.get(), queue, frame_index);
 }
 
-auto gse::gpu::device::submit(const queue_type queue, const submit_info& info, const gpu::handle<gpu::fence> signal_fence) -> void {
+auto gse::gpu::device::submit(const queue_type queue, const submit_info& info, const gpu::handle<fence> signal_fence) -> void {
 	m_vt->submit(m_backend.get(), queue, info, signal_fence);
 }
 
@@ -413,11 +413,11 @@ auto gse::gpu::device::present(const present_info& info) -> result {
 	return m_vt->present(m_backend.get(), info);
 }
 
-auto gse::gpu::device::wait_for_fence(const gpu::handle<gpu::fence> f, const std::uint64_t timeout_ns) const -> result {
+auto gse::gpu::device::wait_for_fence(const gpu::handle<fence> f, const std::uint64_t timeout_ns) const -> result {
 	return m_vt->wait_for_fence(m_backend.get(), f, timeout_ns);
 }
 
-auto gse::gpu::device::reset_fence(const gpu::handle<gpu::fence> f) const -> void {
+auto gse::gpu::device::reset_fence(const gpu::handle<fence> f) const -> void {
 	m_vt->reset_fence(m_backend.get(), f);
 }
 
@@ -425,7 +425,7 @@ auto gse::gpu::device::reset_worker_command_pools(const std::uint32_t frame_inde
 	m_vt->reset_worker_command_pools(m_backend.get(), frame_index);
 }
 
-auto gse::gpu::device::acquire_worker_command_buffer(const queue_type queue, const std::size_t worker_index, const std::uint32_t frame_index) -> gpu::command_buffer_handle {
+auto gse::gpu::device::acquire_worker_command_buffer(const queue_type queue, const std::size_t worker_index, const std::uint32_t frame_index) -> command_buffer_handle {
 	return m_vt->acquire_worker_command_buffer(m_backend.get(), queue, worker_index, frame_index);
 }
 
@@ -440,11 +440,11 @@ auto gse::gpu::device::make_video_encoder(const encode_desc& desc) -> std::optio
 	return video_encoder(std::move(backend));
 }
 
-auto gse::gpu::device::create_image_unbound(const image_create_info& info) const -> std::pair<gpu::handle<gpu::image>, memory_requirements> {
+auto gse::gpu::device::create_image_unbound(const image_create_info& info) const -> std::pair<gpu::handle<image>, memory_requirements> {
 	return m_vt->create_image_unbound(m_backend.get(), info);
 }
 
-auto gse::gpu::device::create_buffer_unbound(const buffer_desc& info) const -> std::pair<gpu::handle<gpu::buffer>, memory_requirements> {
+auto gse::gpu::device::create_buffer_unbound(const buffer_desc& info) const -> std::pair<gpu::handle<buffer>, memory_requirements> {
 	return m_vt->create_buffer_unbound(m_backend.get(), info);
 }
 
@@ -460,51 +460,51 @@ auto gse::gpu::device::destroy_shared_surface(const shared_surface& surface) con
 	m_vt->destroy_shared_surface(m_backend.get(), surface);
 }
 
-auto gse::gpu::device::bind_image_memory(const gpu::handle<gpu::image> img, const device_memory mem, const device_size offset) const -> void {
+auto gse::gpu::device::bind_image_memory(const gpu::handle<image> img, const device_memory mem, const device_size offset) const -> void {
 	m_vt->bind_image_memory(m_backend.get(), img, mem, offset);
 }
 
-auto gse::gpu::device::bind_buffer_memory(const gpu::handle<gpu::buffer> buf, const device_memory mem, const device_size offset) const -> void {
+auto gse::gpu::device::bind_buffer_memory(const gpu::handle<buffer> buf, const device_memory mem, const device_size offset) const -> void {
 	m_vt->bind_buffer_memory(m_backend.get(), buf, mem, offset);
 }
 
-auto gse::gpu::device::buffer_slot(const gpu::handle<gpu::buffer> buffer) const -> gpu::bindless_slot {
+auto gse::gpu::device::buffer_slot(const gpu::handle<buffer> buffer) const -> bindless_slot {
 	return m_vt->buffer_slot(m_backend.get(), buffer);
 }
 
-auto gse::gpu::device::buffer_address(const gpu::handle<gpu::buffer> buffer) const -> gpu::device_address {
+auto gse::gpu::device::buffer_address(const gpu::handle<buffer> buffer) const -> device_address {
 	return m_vt->buffer_address(m_backend.get(), buffer);
 }
 
-auto gse::gpu::device::buffer_size(const gpu::handle<gpu::buffer> buffer) const -> gpu::device_size {
+auto gse::gpu::device::buffer_size(const gpu::handle<buffer> buffer) const -> device_size {
 	return m_vt->buffer_size(m_backend.get(), buffer);
 }
 
-auto gse::gpu::device::buffer_mapped(const gpu::handle<gpu::buffer> buffer) const -> std::byte* {
+auto gse::gpu::device::buffer_mapped(const gpu::handle<buffer> buffer) const -> std::byte* {
 	return m_vt->buffer_mapped(m_backend.get(), buffer);
 }
 
-auto gse::gpu::device::image_sampled_slot(const gpu::handle<gpu::image> image) const -> gpu::bindless_slot {
+auto gse::gpu::device::image_sampled_slot(const gpu::handle<image> image) const -> bindless_slot {
 	return m_vt->image_sampled_slot(m_backend.get(), image);
 }
 
-auto gse::gpu::device::image_storage_slot(const gpu::handle<gpu::image> image) const -> gpu::bindless_slot {
+auto gse::gpu::device::image_storage_slot(const gpu::handle<image> image) const -> bindless_slot {
 	return m_vt->image_storage_slot(m_backend.get(), image);
 }
 
-auto gse::gpu::device::image_format_of(const gpu::handle<gpu::image> image) const -> gpu::image_format {
+auto gse::gpu::device::image_format_of(const gpu::handle<image> image) const -> image_format {
 	return m_vt->image_format_of(m_backend.get(), image);
 }
 
-auto gse::gpu::device::image_extent(const gpu::handle<gpu::image> image) const -> vec3u {
+auto gse::gpu::device::image_extent(const gpu::handle<image> image) const -> vec3u {
 	return m_vt->image_extent(m_backend.get(), image);
 }
 
-auto gse::gpu::device::image_view_of(const gpu::handle<gpu::image> image) const -> gpu::handle<gpu::image_view> {
+auto gse::gpu::device::image_view_of(const gpu::handle<image> image) const -> gpu::handle<image_view> {
 	return m_vt->image_view_of(m_backend.get(), image);
 }
 
-auto gse::gpu::device::create_image_view(const gpu::handle<gpu::image> img, const image_view_create_info& info) const -> gpu::handle<gpu::image_view> {
+auto gse::gpu::device::create_image_view(const gpu::handle<image> img, const image_view_create_info& info) const -> gpu::handle<image_view> {
 	return m_vt->create_image_view(m_backend.get(), img, info);
 }
 
@@ -520,7 +520,7 @@ auto gse::gpu::device::find_memory_type_index(const std::uint32_t type_bits, con
 	return m_vt->find_memory_type_index(m_backend.get(), type_bits, required);
 }
 
-auto gse::gpu::device::make_aliased_image(const gpu::handle<gpu::image> img_handle, const gpu::handle<gpu::image_view> view_handle, const image_format format, const vec3u extent, const image_view_create_info& view_info) -> std::unique_ptr<image> {
+auto gse::gpu::device::make_aliased_image(const gpu::handle<image> img_handle, const gpu::handle<image_view> view_handle, const image_format format, const vec3u extent, const image_view_create_info& view_info) -> std::unique_ptr<image> {
 	return std::make_unique<image>(
 		img_handle,
 		view_handle,
@@ -530,7 +530,7 @@ auto gse::gpu::device::make_aliased_image(const gpu::handle<gpu::image> img_hand
 	);
 }
 
-auto gse::gpu::device::make_aliased_buffer(const gpu::handle<gpu::buffer> buf_handle, const device_size size) -> std::unique_ptr<buffer> {
+auto gse::gpu::device::make_aliased_buffer(const gpu::handle<buffer> buf_handle, const device_size size) -> std::unique_ptr<buffer> {
 	return std::make_unique<buffer>(
 		buf_handle,
 		size,
@@ -543,63 +543,63 @@ auto gse::gpu::device::transient() -> transient_executor<device>& {
 	return *m_transient;
 }
 
-auto gse::gpu::device::recorder(const gpu::command_buffer_handle cmd) const -> pass_recorder {
+auto gse::gpu::device::recorder(const command_buffer_handle cmd) const -> pass_recorder {
 	return pass_recorder(cmd, m_command_dispatch);
 }
 
-auto gse::gpu::device::begin_one_time_commands(const gpu::command_buffer_handle cmd) -> void {
+auto gse::gpu::device::begin_one_time_commands(const command_buffer_handle cmd) -> void {
 	m_vt->begin_one_time_commands(m_backend.get(), cmd);
 }
 
-auto gse::gpu::device::end_commands(const gpu::command_buffer_handle cmd) -> void {
+auto gse::gpu::device::end_commands(const command_buffer_handle cmd) -> void {
 	m_vt->end_commands(m_backend.get(), cmd);
 }
 
-auto gse::gpu::device::cmd_reset(const gpu::command_buffer_handle cmd) -> void {
+auto gse::gpu::device::cmd_reset(const command_buffer_handle cmd) -> void {
 	m_vt->cmd_reset(m_backend.get(), cmd);
 }
 
-auto gse::gpu::device::cmd_begin(const gpu::command_buffer_handle cmd) -> void {
+auto gse::gpu::device::cmd_begin(const command_buffer_handle cmd) -> void {
 	m_vt->cmd_begin(m_backend.get(), cmd);
 }
 
-auto gse::gpu::device::cmd_end(const gpu::command_buffer_handle cmd) -> void {
+auto gse::gpu::device::cmd_end(const command_buffer_handle cmd) -> void {
 	m_vt->cmd_end(m_backend.get(), cmd);
 }
 
-auto gse::gpu::device::cmd_pipeline_barrier(const gpu::command_buffer_handle cmd, const dependency_info& dep) -> void {
+auto gse::gpu::device::cmd_pipeline_barrier(const command_buffer_handle cmd, const dependency_info& dep) -> void {
 	m_vt->cmd_pipeline_barrier(m_backend.get(), cmd, dep);
 }
 
-auto gse::gpu::device::cmd_release_swapchain_to_present(const gpu::command_buffer_handle cmd, const gpu::handle<gpu::image> img, const pipeline_stage_flags src_stages, const access_flags src_access) -> void {
+auto gse::gpu::device::cmd_release_swapchain_to_present(const command_buffer_handle cmd, const gpu::handle<image> img, const pipeline_stage_flags src_stages, const access_flags src_access) -> void {
 	m_vt->cmd_release_swapchain_to_present(m_backend.get(), cmd, img, src_stages, src_access);
 }
 
-auto gse::gpu::device::begin_debug_event(const gpu::command_buffer_handle cmd, const std::string_view label) -> void {
+auto gse::gpu::device::begin_debug_event(const command_buffer_handle cmd, const std::string_view label) -> void {
 	m_vt->begin_debug_event(m_backend.get(), cmd, label);
 }
 
-auto gse::gpu::device::end_debug_event(const gpu::command_buffer_handle cmd) -> void {
+auto gse::gpu::device::end_debug_event(const command_buffer_handle cmd) -> void {
 	m_vt->end_debug_event(m_backend.get(), cmd);
 }
 
-auto gse::gpu::device::create_transient_command_pool(const std::uint32_t family) -> gpu::transient_pool_handle {
+auto gse::gpu::device::create_transient_command_pool(const std::uint32_t family) -> transient_pool_handle {
 	return m_vt->create_transient_command_pool(m_backend.get(), family);
 }
 
-auto gse::gpu::device::allocate_transient_primary(const gpu::transient_pool_handle pool) -> gpu::command_buffer_handle {
+auto gse::gpu::device::allocate_transient_primary(const transient_pool_handle pool) -> command_buffer_handle {
 	return m_vt->allocate_transient_primary(m_backend.get(), pool);
 }
 
-auto gse::gpu::device::transient_pool_try_reset(const gpu::transient_pool_handle pool, const std::uint64_t queue_progress) -> void {
+auto gse::gpu::device::transient_pool_try_reset(const transient_pool_handle pool, const std::uint64_t queue_progress) -> void {
 	m_vt->transient_pool_try_reset(m_backend.get(), pool, queue_progress);
 }
 
-auto gse::gpu::device::transient_pool_mark_in_use(const gpu::transient_pool_handle pool, const std::uint64_t value) -> void {
+auto gse::gpu::device::transient_pool_mark_in_use(const transient_pool_handle pool, const std::uint64_t value) -> void {
 	m_vt->transient_pool_mark_in_use(m_backend.get(), pool, value);
 }
 
-auto gse::gpu::device::transient_pool_reset_all(const gpu::transient_pool_handle pool) -> void {
+auto gse::gpu::device::transient_pool_reset_all(const transient_pool_handle pool) -> void {
 	m_vt->transient_pool_reset_all(m_backend.get(), pool);
 }
 
@@ -611,95 +611,95 @@ auto gse::gpu::device::create_shader_program(const shader_program_create_info& i
 	return m_vt->create_shader_program(m_backend.get(), info);
 }
 
-auto gse::gpu::device::create_timeline_semaphore(const std::uint64_t initial_value) -> gpu::handle<gpu::semaphore> {
+auto gse::gpu::device::create_timeline_semaphore(const std::uint64_t initial_value) -> gpu::handle<semaphore> {
 	return m_vt->create_timeline_semaphore(m_backend.get(), initial_value);
 }
 
-auto gse::gpu::device::create_exportable_semaphore() -> gpu::handle<gpu::semaphore> {
+auto gse::gpu::device::create_exportable_semaphore() -> gpu::handle<semaphore> {
 	return m_vt->create_exportable_semaphore(m_backend.get());
 }
 
-auto gse::gpu::device::export_semaphore_handle(const gpu::handle<gpu::semaphore> semaphore) const -> std::expected<void*, std::string> {
+auto gse::gpu::device::export_semaphore_handle(const gpu::handle<semaphore> semaphore) const -> std::expected<void*, std::string> {
 	return m_vt->export_semaphore_handle(m_backend.get(), semaphore);
 }
 
-auto gse::gpu::device::import_semaphore_handle(void* handle) -> std::expected<gpu::handle<gpu::semaphore>, std::string> {
+auto gse::gpu::device::import_semaphore_handle(void* handle) -> std::expected<gpu::handle<semaphore>, std::string> {
 	return m_vt->import_semaphore_handle(m_backend.get(), handle);
 }
 
-auto gse::gpu::device::create_semaphore() -> gpu::handle<gpu::semaphore> {
+auto gse::gpu::device::create_semaphore() -> gpu::handle<semaphore> {
 	return m_vt->create_semaphore(m_backend.get());
 }
 
-auto gse::gpu::device::create_fence(const bool signaled) -> gpu::handle<gpu::fence> {
+auto gse::gpu::device::create_fence(const bool signaled) -> gpu::handle<fence> {
 	return m_vt->create_fence(m_backend.get(), signaled);
 }
 
-auto gse::gpu::device::retire(const gpu::handle<gpu::semaphore> semaphore) -> void {
+auto gse::gpu::device::retire(const gpu::handle<semaphore> semaphore) -> void {
 	m_vt->retire_semaphore(m_backend.get(), semaphore);
 }
 
-auto gse::gpu::device::retire(const gpu::handle<gpu::fence> fence) -> void {
+auto gse::gpu::device::retire(const gpu::handle<fence> fence) -> void {
 	m_vt->retire_fence(m_backend.get(), fence);
 }
 
-auto gse::gpu::device::semaphore_counter_value(const gpu::handle<gpu::semaphore> semaphore) const -> std::uint64_t {
+auto gse::gpu::device::semaphore_counter_value(const gpu::handle<semaphore> semaphore) const -> std::uint64_t {
 	return m_vt->semaphore_counter_value(m_backend.get(), semaphore);
 }
 
-auto gse::gpu::device::wait_semaphore(const gpu::handle<gpu::semaphore> semaphore, const std::uint64_t value) const -> void {
+auto gse::gpu::device::wait_semaphore(const gpu::handle<semaphore> semaphore, const std::uint64_t value) const -> void {
 	m_vt->wait_semaphore(m_backend.get(), semaphore, value);
 }
 
-auto gse::gpu::device::create_timestamp_query_pool(const std::uint32_t capacity, const std::string_view label) -> gpu::handle<gpu::query_pool> {
+auto gse::gpu::device::create_timestamp_query_pool(const std::uint32_t capacity, const std::string_view label) -> gpu::handle<query_pool> {
 	return m_vt->create_timestamp_query_pool(m_backend.get(), capacity, label);
 }
 
-auto gse::gpu::device::create_pipeline_stats_query_pool(const std::uint32_t capacity, const pipeline_statistic_flags statistics, const std::string_view label) -> gpu::handle<gpu::query_pool> {
+auto gse::gpu::device::create_pipeline_stats_query_pool(const std::uint32_t capacity, const pipeline_statistic_flags statistics, const std::string_view label) -> gpu::handle<query_pool> {
 	return m_vt->create_pipeline_stats_query_pool(m_backend.get(), capacity, statistics, label);
 }
 
-auto gse::gpu::device::query_pool_results(const gpu::handle<gpu::query_pool> pool, const std::uint32_t first_query, const std::uint32_t query_count, const std::uint64_t stride) const -> std::pair<query_status, std::vector<std::uint64_t>> {
+auto gse::gpu::device::query_pool_results(const gpu::handle<query_pool> pool, const std::uint32_t first_query, const std::uint32_t query_count, const std::uint64_t stride) const -> std::pair<query_status, std::vector<std::uint64_t>> {
 	return m_vt->query_pool_results(m_backend.get(), pool, first_query, query_count, stride);
 }
 
-auto gse::gpu::device::create_swapchain(const gpu::surface surface, const vec2i framebuffer_size, const present_mode mode, const gpu::swap_chain_handle old_handle) -> gpu::expected<swap_chain_info> {
+auto gse::gpu::device::create_swapchain(const surface surface, const vec2i framebuffer_size, const present_mode mode, const swap_chain_handle old_handle) -> expected<swap_chain_info> {
 	return m_vt->create_swapchain(m_backend.get(), surface, framebuffer_size, mode, old_handle);
 }
 
-auto gse::gpu::device::boot_surface() const -> gpu::surface {
+auto gse::gpu::device::boot_surface() const -> surface {
 	return m_vt->boot_surface(m_backend.get());
 }
 
-auto gse::gpu::device::recreate_surface(const window::window_surface& win, const gpu::swap_chain_handle current_swapchain) -> gpu::surface {
+auto gse::gpu::device::recreate_surface(const window::window_surface& win, const swap_chain_handle current_swapchain) -> surface {
 	return m_vt->recreate_surface(m_backend.get(), win, current_swapchain);
 }
 
-auto gse::gpu::device::create_surface(const native_window_handle handle) -> gpu::surface {
+auto gse::gpu::device::create_surface(const native_window_handle handle) -> surface {
 	return m_vt->create_surface(m_backend.get(), handle);
 }
 
-auto gse::gpu::device::destroy_surface(const gpu::surface surface) -> void {
+auto gse::gpu::device::destroy_surface(const surface surface) -> void {
 	m_vt->destroy_surface(m_backend.get(), surface);
 }
 
-auto gse::gpu::device::acquire_swapchain_image(const gpu::swap_chain_handle swapchain, const gpu::handle<gpu::semaphore> wait_semaphore, const std::uint64_t timeout_ns) const -> gpu::acquire_next_image_result {
+auto gse::gpu::device::acquire_swapchain_image(const swap_chain_handle swapchain, const gpu::handle<semaphore> wait_semaphore, const std::uint64_t timeout_ns) const -> acquire_next_image_result {
 	return m_vt->acquire_swapchain_image(m_backend.get(), swapchain, wait_semaphore, timeout_ns);
 }
 
-auto gse::gpu::device::wait_swapchain_release_fences(const gpu::swap_chain_handle swapchain) const -> void {
+auto gse::gpu::device::wait_swapchain_release_fences(const swap_chain_handle swapchain) const -> void {
 	m_vt->wait_swapchain_release_fences(m_backend.get(), swapchain);
 }
 
-auto gse::gpu::device::reset_swapchain_release_fence(const gpu::swap_chain_handle swapchain, const std::uint32_t image_index) const -> void {
+auto gse::gpu::device::reset_swapchain_release_fence(const swap_chain_handle swapchain, const std::uint32_t image_index) const -> void {
 	m_vt->reset_swapchain_release_fence(m_backend.get(), swapchain, image_index);
 }
 
-auto gse::gpu::device::swapchain_release_fence(const gpu::swap_chain_handle swapchain, const std::uint32_t image_index) const -> gpu::handle<gpu::fence> {
+auto gse::gpu::device::swapchain_release_fence(const swap_chain_handle swapchain, const std::uint32_t image_index) const -> gpu::handle<fence> {
 	return m_vt->swapchain_release_fence(m_backend.get(), swapchain, image_index);
 }
 
-auto gse::gpu::device::swapchain_past_presentation_timing(const gpu::swap_chain_handle swapchain) const -> std::vector<past_present_timing> {
+auto gse::gpu::device::swapchain_past_presentation_timing(const swap_chain_handle swapchain) const -> std::vector<past_present_timing> {
 	return m_vt->swapchain_past_presentation_timing(m_backend.get(), swapchain);
 }
 
@@ -719,7 +719,7 @@ auto gse::gpu::device::acceleration_structure_scratch_alignment() const -> devic
 	return m_vt->acceleration_structure_scratch_alignment(m_backend.get());
 }
 
-auto gse::gpu::device::host_upload_image_layers(const gpu::handle<gpu::image> img, const std::span<const void* const> layer_pointers, const vec2u extent) const -> void {
+auto gse::gpu::device::host_upload_image_layers(const gpu::handle<image> img, const std::span<const void* const> layer_pointers, const vec2u extent) const -> void {
 	m_vt->host_upload_image_layers(m_backend.get(), img, layer_pointers, extent);
 }
 
@@ -768,19 +768,19 @@ auto gse::gpu::device::resource_for_slot(const std::uint32_t slot_index) const -
 	return slot_index < m_slot_resources.size() ? m_slot_resources[slot_index] : resource_ref{};
 }
 
-auto gse::gpu::device::allocate_buffer_slot() -> gpu::bindless_handle {
+auto gse::gpu::device::allocate_buffer_slot() -> bindless_handle {
 	return m_vt->allocate_buffer_slot(m_backend.get());
 }
 
-auto gse::gpu::device::allocate_image_slot() -> gpu::bindless_handle {
+auto gse::gpu::device::allocate_image_slot() -> bindless_handle {
 	return m_vt->allocate_image_slot(m_backend.get());
 }
 
-auto gse::gpu::device::allocate_acceleration_structure_slot() -> gpu::bindless_handle {
+auto gse::gpu::device::allocate_acceleration_structure_slot() -> bindless_handle {
 	return m_vt->allocate_acceleration_structure_slot(m_backend.get());
 }
 
-auto gse::gpu::device::write_storage_buffer(const gpu::bindless_slot slot, const buffer& buf, const gpu::device_size size) -> void {
+auto gse::gpu::device::write_storage_buffer(const bindless_slot slot, const buffer& buf, const device_size size) -> void {
 	set_slot_resource(slot.index, resource_ref{
 		.ptr = std::bit_cast<const void*>(buf.handle()),
 		.type = resource_type::buffer,
@@ -789,11 +789,11 @@ auto gse::gpu::device::write_storage_buffer(const gpu::bindless_slot slot, const
 	m_vt->write_storage_buffer(m_backend.get(), slot, buf.device_address(), size);
 }
 
-auto gse::gpu::device::write_acceleration_structure(const gpu::bindless_slot slot, const gpu::device_address as_address) -> void {
+auto gse::gpu::device::write_acceleration_structure(const bindless_slot slot, const device_address as_address) -> void {
 	m_vt->write_acceleration_structure(m_backend.get(), slot, as_address);
 }
 
-auto gse::gpu::device::write_sampled_image(const gpu::bindless_slot slot, const image& img) -> void {
+auto gse::gpu::device::write_sampled_image(const bindless_slot slot, const image& img) -> void {
 	set_slot_resource(slot.index, resource_ref{
 		.ptr = std::bit_cast<const void*>(img.handle()),
 		.type = resource_type::image,
@@ -802,23 +802,23 @@ auto gse::gpu::device::write_sampled_image(const gpu::bindless_slot slot, const 
 	m_vt->write_sampled_image(m_backend.get(), slot, img);
 }
 
-auto gse::gpu::device::register_sampler(const sampler_desc& desc) -> gpu::bindless_handle {
+auto gse::gpu::device::register_sampler(const sampler_desc& desc) -> bindless_handle {
 	return m_vt->register_sampler(m_backend.get(), desc);
 }
 
-auto gse::gpu::device::register_texture(const image& img, const sampler_desc& desc) -> gpu::bindless_handle {
+auto gse::gpu::device::register_texture(const image& img, const sampler_desc& desc) -> bindless_handle {
 	return m_vt->register_texture(m_backend.get(), img, desc);
 }
 
-auto gse::gpu::device::bindless_resource_heap_binding() const -> gpu::bindless_heap_binding {
+auto gse::gpu::device::bindless_resource_heap_binding() const -> bindless_heap_binding {
 	return m_vt->bindless_resource_heap_binding(m_backend.get());
 }
 
-auto gse::gpu::device::bindless_sampler_heap_binding() const -> gpu::bindless_heap_binding {
+auto gse::gpu::device::bindless_sampler_heap_binding() const -> bindless_heap_binding {
 	return m_vt->bindless_sampler_heap_binding(m_backend.get());
 }
 
-auto gse::gpu::device::create_sampler(const sampler_desc& desc) -> gpu::handle<gpu::sampler> {
+auto gse::gpu::device::create_sampler(const sampler_desc& desc) -> gpu::handle<sampler> {
 	return m_vt->create_sampler(m_backend.get(), desc);
 }
 

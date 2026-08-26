@@ -78,7 +78,7 @@ export namespace gse {
 			asset::load_ctx& ctx
 		) -> async::task<asset_result>;
 
-		[[nodiscard]] auto texture() const -> const gse::texture*;
+		[[nodiscard]] auto texture() const -> const texture*;
 
 		[[nodiscard]]
 		auto text_layout(

@@ -69,8 +69,8 @@ constexpr auto gse::enum_from_string(const std::string_view name, E& out) -> boo
 
 export template <typename E>
 requires std::is_enum_v<E>
-struct std::formatter<E> : std::formatter<std::string_view> {
+struct std::formatter<E> : formatter<string_view> {
 	auto format(E value, auto& ctx) const {
-		return std::formatter<std::string_view>::format(gse::enum_to_string(value), ctx);
+		return formatter<string_view>::format(gse::enum_to_string(value), ctx);
 	}
 };

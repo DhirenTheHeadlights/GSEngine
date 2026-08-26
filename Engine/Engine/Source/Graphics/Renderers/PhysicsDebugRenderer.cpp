@@ -139,17 +139,17 @@ auto gse::renderer::physics_debug::generate_unit_box() -> std::vector<vec4f> {
 		vec4f{ +1.f, +1.f, 0.f, +1.f },
 	};
 	constexpr std::array<std::pair<int, int>, 12> edges{ { { 0, 1 },
-														   { 1, 3 },
-														   { 3, 2 },
-														   { 2, 0 },
-														   { 4, 5 },
-														   { 5, 7 },
-														   { 7, 6 },
-														   { 6, 4 },
-														   { 0, 4 },
-														   { 1, 5 },
-														   { 2, 6 },
-														   { 3, 7 } } };
+		{ 1, 3 },
+		{ 3, 2 },
+		{ 2, 0 },
+		{ 4, 5 },
+		{ 5, 7 },
+		{ 7, 6 },
+		{ 6, 4 },
+		{ 0, 4 },
+		{ 1, 5 },
+		{ 2, 6 },
+		{ 3, 7 } } };
 	std::vector<vec4f> verts;
 	verts.reserve(edges.size() * 2);
 	for (const auto& [a, b] : edges) {
@@ -452,7 +452,7 @@ auto gse::renderer::physics_debug::build(context& ctx, data& d, read<physics::tr
 		}
 		const std::uint32_t body_index = idx_it->second;
 
-		gse::match(coll.shape)
+		match(coll.shape)
 			.if_is([&](const physics::box_shape& s) {
 				d.box_instances.push_back(
 					shape_instance{
@@ -549,10 +549,10 @@ auto gse::renderer::physics_debug::frame(const context& ctx, shared_view<gpu::co
 
 		const auto upload_instances =
 			[&](
-			std::vector<shape_instance>& instances,
-			gpu::buffer& instance_buffer,
-			std::size_t& capacity,
-			const std::string_view tag
+				std::vector<shape_instance>& instances,
+				gpu::buffer& instance_buffer,
+				std::size_t& capacity,
+				const std::string_view tag
 		) {
 				if (instances.empty()) {
 					return;
@@ -604,7 +604,7 @@ auto gse::renderer::physics_debug::frame(const context& ctx, shared_view<gpu::co
 		d.line_vertex_buffers[frame_index].host_write(d.line_vertices);
 	}
 
-	auto rec = co_await gpu::pass<^^gse::renderer::physics_debug::frame>(pass_out)
+	auto rec = co_await gpu::pass<^^frame>(pass_out)
 		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
 		.after<^^forward::frame, ^^sdf_grid::frame, ^^world_text::frame, ^^cloud::cloud_composite_pass>();
 	rec.set_viewport(ext);
@@ -634,9 +634,9 @@ auto gse::renderer::physics_debug::frame(const context& ctx, shared_view<gpu::co
 
 		draw_shape(d.box_instances, d.box_instance_buffers[frame_index], d.unit_box_vb, d.unit_box_vert_count);
 		draw_shape(d.sphere_instances,
-				   d.sphere_instance_buffers[frame_index],
-				   d.unit_sphere_vb,
-				   d.unit_sphere_vert_count);
+			d.sphere_instance_buffers[frame_index],
+			d.unit_sphere_vb,
+			d.unit_sphere_vert_count);
 		draw_shape(
 			d.capsule_instances,
 			d.capsule_instance_buffers[frame_index],

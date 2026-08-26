@@ -125,18 +125,18 @@ export namespace gse {
 
 template <>
 struct std::formatter<gse::id> {
-	static constexpr auto parse(std::format_parse_context& ctx) {
+	static constexpr auto parse(format_parse_context& ctx) {
 		return ctx.begin();
 	}
 
-	static auto format(const gse::id value, std::format_context& ctx) {
+	static auto format(const gse::id value, format_context& ctx) {
 		if (!value.exists()) {
-			return std::format_to(ctx.out(), "[invalid]");
+			return format_to(ctx.out(), "[invalid]");
 		}
 		if (gse::exists(value.number())) {
-			return std::format_to(ctx.out(), "[{}: {}]", value.number(), value.tag());
+			return format_to(ctx.out(), "[{}: {}]", value.number(), value.tag());
 		}
-		return std::format_to(ctx.out(), "[{}]", value.number());
+		return format_to(ctx.out(), "[{}]", value.number());
 	}
 };
 
@@ -454,5 +454,5 @@ auto gse::trace_id() -> id {
 
 template <typename T>
 consteval auto gse::type_tag() -> std::string_view {
-	return gse::meta::qualified_name<T>();
+	return meta::qualified_name<T>();
 }

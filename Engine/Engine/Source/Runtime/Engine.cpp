@@ -152,12 +152,12 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 
 	auto& asset_state = m_scheduler.state<asset::data>();
 
-	using game_assets = gse::assets::append<graphics::asset_types, audio::asset_types>;
+	using game_assets = assets::append<graphics::asset_types, audio::asset_types>;
 
 	if (m_config.render) {
 		tick_window();
 
-		gse::asset::system_for<game_assets> assets{ asset_state };
+		asset::system_for<game_assets> assets{ asset_state };
 		assets.register_loaders();
 		assets.install_recompile_fns();
 		if (auto discovered = assets.discover_baked(); !discovered) {
@@ -176,8 +176,8 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 		m_loading.set_phase("Initializing");
 		m_loading.set_progress(0, 0);
 
-		auto& gui_data = m_scheduler.state<gse::gui::data>();
-		gui_data.primary.menu_stack.push<gse::gui::loading_screen>(m_loading);
+		auto& gui_data = m_scheduler.state<gui::data>();
+		gui_data.primary.menu_stack.push<gui::loading_screen>(m_loading);
 		log::println(log::category::runtime, "boot: loading_screen pushed to menu stack");
 
 		m_deferred_boot = [this, app_setup] {
@@ -210,7 +210,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 			m_headless_gpu = shadow->enabled;
 		}
 
-		gse::asset::system_for<game_assets> assets{ asset_state };
+		asset::system_for<game_assets> assets{ asset_state };
 		assets.register_loaders();
 		assets.install_stale_checks();
 		if (auto discovered = assets.discover_baked(); !discovered) {
@@ -384,7 +384,7 @@ auto gse::engine::render() -> void {
 
 		// Convert gse::time -> raw seconds at the boundary; the scheduler keeps
 		// quantity off its module surface (GCC PR c++/122785 workaround).
-		gpu_state->scheduler.report_frame_time(fence_wait.as<gse::seconds>());
+		gpu_state->scheduler.report_frame_time(fence_wait.as<seconds>());
 		frame_ok = result.has_value();
 
 		if (!result && result.error() == gpu::frame_status::device_lost) {

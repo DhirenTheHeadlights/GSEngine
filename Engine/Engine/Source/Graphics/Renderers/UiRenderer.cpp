@@ -41,8 +41,8 @@ namespace gse::renderer::ui {
 			++d.frames_since_state_change;
 			return;
 		}
-		const record_state_info from = annotation_from_enum<record_state_info>(d.last_record_state, {});
-		const record_state_info to = annotation_from_enum<record_state_info>(state, {});
+		const record_state_info from = annotation_from_enum(d.last_record_state, record_state_info{});
+		const record_state_info to = annotation_from_enum(state, record_state_info{});
 		log::println(
 			log::category::render,
 			"[ui] record state {} -> {} after {} frames: extent={}x{} batches={} verts={} indices={} dropped_quads={}/{} dropped_batches={}/{} published={} recorded={}",
@@ -174,6 +174,9 @@ auto gse::renderer::ui::add_text_quads(linear_vector<vertex>& vertices, linear_v
 	std::size_t dropped = 0;
 	const auto font_view = cmd.font.resolve();
 	for (const auto& [screen_rect, uv_rect] : font_view->text_layout(cmd.text, cmd.position, cmd.scale)) {
+		if (cmd.clip_rect && screen_rect.intersection(*cmd.clip_rect).height() <= 0.f) {
+			continue;
+		}
 		if (vertices.size() + 4 > max_vertices || indices.size() + 6 > max_indices) {
 			++dropped;
 			continue;
@@ -323,6 +326,11 @@ auto gse::renderer::ui::run(context& ctx, const shared_view<gpu::context::data> 
 		unified,
 		[](const unified_command& a, const unified_command& b) {
 			if (a.window != b.window) {
+				const bool a_primary = !a.window.exists();
+				const bool b_primary = !b.window.exists();
+				if (a_primary != b_primary) {
+					return a_primary;
+				}
 				return a.window.number() < b.window.number();
 			}
 
@@ -346,7 +354,7 @@ auto gse::renderer::ui::run(context& ctx, const shared_view<gpu::context::data> 
 	);
 
 	auto current_type = command_type::sprite;
-	gse::id current_window;
+	id current_window;
 	resource::handle<texture> current_texture;
 	resource::handle<font> current_font;
 	std::optional<rect_t<vec2f>> current_clip;
@@ -465,14 +473,14 @@ auto gse::renderer::ui::frame(context& ctx, shared_view<gpu::context::data> gpu_
 	vertex_buffer.host_write(vertices);
 	index_buffer.host_write(indices);
 
-	std::vector<gse::id> windows;
+	std::vector<id> windows;
 	for (const auto& b : batches) {
 		if (std::ranges::find(windows, b.window) == windows.end()) {
 			windows.push_back(b.window);
 		}
 	}
 
-	for (const gse::id window : windows) {
+	for (const id window : windows) {
 		const auto ext = gpu_s.render_graph->extent(window);
 		if (ext.x() == 0 || ext.y() == 0) {
 			continue;
@@ -491,7 +499,7 @@ auto gse::renderer::ui::frame(context& ctx, shared_view<gpu::context::data> gpu_
 		);
 
 		const vec2f inv_screen_size{ width > 0 ? 1.0f / static_cast<float>(width) : 0.0f,
-									 height > 0 ? 1.0f / static_cast<float>(height) : 0.0f };
+			height > 0 ? 1.0f / static_cast<float>(height) : 0.0f };
 
 		const std::uint32_t snapshot_idx = [&]() -> std::uint32_t {
 			if (!snapshot_s.ready) {
@@ -523,7 +531,7 @@ auto gse::renderer::ui::frame(context& ctx, shared_view<gpu::context::data> gpu_
 
 		auto builder = window.exists()
 			? gpu::pass(pass_out, find_or_generate_id(std::format("gse::renderer::ui::frame#{}", window.number())))
-			: gpu::pass<^^gse::renderer::ui::frame>(pass_out);
+			: gpu::pass<^^frame>(pass_out);
 
 		auto rec = co_await std::move(builder)
 			.color(gpu::load_color())

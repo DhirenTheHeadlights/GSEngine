@@ -6,6 +6,20 @@ import gse;
 import :semantic_tokens;
 
 export namespace gse::ide::analysis {
+	using file_id = id;
+
+	using interned_file_cache = std::unordered_map<std::string, file_id, transparent_hash, transparent_equal>;
+
+	auto canonical_path_id(
+		const std::filesystem::path& path
+	) -> std::pair<std::filesystem::path, file_id>;
+
+	auto intern_cached(
+		std::unordered_map<file_id, std::filesystem::path>& files,
+		interned_file_cache& cache,
+		std::string_view raw
+	) -> file_id;
+
 	struct definition_symbol_kind {};
 	struct type_symbol_kind {};
 
@@ -37,7 +51,7 @@ export namespace gse::ide::analysis {
 	struct symbol_token {
 		std::string name;
 		symbol_kind kind = symbol_kind::type;
-		std::string file;
+		file_id file{};
 		std::uint32_t line = 0;
 		std::uint32_t column = 0;
 		std::string qualified;
@@ -46,12 +60,12 @@ export namespace gse::ide::analysis {
 	};
 
 	struct symbol_ref {
-		std::string file;
+		file_id file{};
 		std::uint32_t line = 0;
 		std::uint32_t column = 0;
 		std::uint32_t length = 0;
 		std::string name;
-		std::string def_file;
+		file_id def_file{};
 		std::uint32_t def_line = 0;
 		std::uint32_t def_column = 0;
 		std::string qualified;
@@ -69,7 +83,7 @@ export namespace gse::ide::analysis {
 	};
 
 	struct param_token {
-		std::string file;
+		file_id file{};
 		std::uint32_t line = 0;
 		std::uint32_t column = 0;
 		std::uint32_t length = 0;
@@ -91,6 +105,7 @@ export namespace gse::ide::analysis {
 		std::vector<qualified_use> template_args;
 		std::vector<param_token> params;
 		std::vector<unused_local> unused_locals;
+		std::unordered_map<file_id, std::filesystem::path> files;
 		bool complete = false;
 	};
 
@@ -101,15 +116,15 @@ export namespace gse::ide::analysis {
 }
 
 constexpr auto gse::ide::analysis::is_definition_kind(const symbol_kind kind) -> bool {
-	return gse::enum_has_annotation<definition_symbol_kind>(kind);
+	return enum_has_annotation<definition_symbol_kind>(kind);
 }
 
 constexpr auto gse::ide::analysis::is_type_kind(const symbol_kind kind) -> bool {
-	return gse::enum_has_annotation<type_symbol_kind>(kind);
+	return enum_has_annotation<type_symbol_kind>(kind);
 }
 
 constexpr auto gse::ide::analysis::to_semantic_kind(const symbol_kind kind) -> semantic_kind {
-	return gse::annotation_from_enum<semantic_kind>(kind, semantic_kind::variable);
+	return annotation_from_enum<semantic_kind>(kind, semantic_kind::variable);
 }
 
 namespace gse::ide::analysis {
@@ -123,19 +138,43 @@ namespace gse::ide::analysis {
 
 auto gse::ide::analysis::symbol_tokens::kind_from(std::string_view name) -> std::optional<symbol_kind> {
 	symbol_kind kind;
-	if (gse::enum_from_string(name, kind)) {
+	if (enum_from_string(name, kind)) {
 		return kind;
 	}
 	return std::nullopt;
 }
 
+auto gse::ide::analysis::canonical_path_id(const std::filesystem::path& path) -> std::pair<std::filesystem::path, file_id> {
+	std::error_code ec;
+	std::filesystem::path canon = std::filesystem::weakly_canonical(path, ec);
+	if (ec) {
+		canon = path;
+	}
+	return { canon, generate_temp_id(canon) };
+}
+
+auto gse::ide::analysis::intern_cached(std::unordered_map<file_id, std::filesystem::path>& files, interned_file_cache& cache, const std::string_view raw) -> file_id {
+	if (const auto it = cache.find(raw); it != cache.end()) {
+		return it->second;
+	}
+	auto [canonical, path_identity] = canonical_path_id(raw);
+	files.try_emplace(path_identity, canonical);
+	cache.emplace(raw, path_identity);
+	cache.try_emplace(canonical.generic_native_encoded_string(), path_identity);
+	return path_identity;
+}
+
 auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string_view main_file) -> symbol_set {
 	symbol_set out;
+	out.refs.reserve(static_cast<std::size_t>(std::ranges::count(text, '\n')));
+
+	interned_file_cache paths;
+	paths.reserve(64);
 
 	std::size_t discarded = 0;
 
 	std::size_t pos = 0;
-	while (const std::optional<std::string_view> record = gse::next_line(text, pos)) {
+	while (const std::optional<std::string_view> record = next_line(text, pos)) {
 		const std::string_view line = *record;
 
 		if (line == "GSEDONE") {
@@ -145,7 +184,7 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 
 		if (line.starts_with("GSETOK")) {
 			std::array<std::string_view, 5> fields;
-			const std::size_t count = gse::split_fields(line, '\t', fields);
+			const std::size_t count = split_fields(line, '\t', fields);
 			if (count < 5) {
 				++discarded;
 				report_discarded_record(main_file, line, "a GSETOK record carries fewer than the 5 required fields", discarded);
@@ -157,7 +196,7 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 			const std::optional<semantic_kind> kind = semantic_tokens::kind_from(fields[4]);
 			if (gse::parse(fields[1], ln) && gse::parse(fields[2], col) && gse::parse(fields[3], len) && kind) {
 				out.params.push_back({
-					.file = std::string(main_file),
+					.file = intern_cached(out.files, paths, main_file),
 					.line = ln,
 					.column = col,
 					.length = len,
@@ -172,7 +211,7 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 
 		if (line.starts_with("GSESYM\t")) {
 			std::array<std::string_view, 9> fields;
-			const std::size_t count = gse::split_fields(line, '\t', fields);
+			const std::size_t count = split_fields(line, '\t', fields);
 			if (count < 6) {
 				++discarded;
 				report_discarded_record(main_file, line, "a GSESYM record carries fewer than the 6 required fields", discarded);
@@ -185,7 +224,7 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 				out.symbols.push_back({
 					.name = std::string(fields[1]),
 					.kind = *kind,
-					.file = std::string(fields[3]),
+					.file = intern_cached(out.files, paths, fields[3]),
 					.line = ln,
 					.column = col,
 					.qualified = count >= 7 ? std::string(fields[6]) : std::string{},
@@ -201,7 +240,7 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 
 		if (line.starts_with("GSEQUAL\t")) {
 			std::array<std::string_view, 5> fields;
-			const std::size_t count = gse::split_fields(line, '\t', fields);
+			const std::size_t count = split_fields(line, '\t', fields);
 			if (count < 5) {
 				++discarded;
 				report_discarded_record(main_file, line, "a GSEQUAL record carries fewer than the 5 required fields", discarded);
@@ -227,7 +266,7 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 
 		if (line.starts_with("GSETARG\t")) {
 			std::array<std::string_view, 6> fields;
-			const std::size_t count = gse::split_fields(line, '\t', fields);
+			const std::size_t count = split_fields(line, '\t', fields);
 			if (count < 6) {
 				++discarded;
 				report_discarded_record(main_file, line, "a GSETARG record carries fewer than the 6 required fields", discarded);
@@ -254,7 +293,7 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 
 		if (line.starts_with("GSEUNUSED\t")) {
 			std::array<std::string_view, 6> fields;
-			const std::size_t count = gse::split_fields(line, '\t', fields);
+			const std::size_t count = split_fields(line, '\t', fields);
 			if (count < 6) {
 				++discarded;
 				report_discarded_record(main_file, line, "a GSEUNUSED record carries fewer than the 6 required fields", discarded);
@@ -280,7 +319,7 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 
 		if (line.starts_with("GSEREF\t")) {
 			std::array<std::string_view, 13> fields;
-			const std::size_t count = gse::split_fields(line, '\t', fields);
+			const std::size_t count = split_fields(line, '\t', fields);
 			if (count < 9) {
 				++discarded;
 				report_discarded_record(main_file, line, "a GSEREF record carries fewer than the 9 required fields, so this reference will not resolve", discarded);
@@ -293,12 +332,12 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 			std::uint32_t dcol = 0;
 			if (!fields[6].empty() && gse::parse(fields[2], ln) && gse::parse(fields[3], col) && gse::parse(fields[4], len) && gse::parse(fields[7], dln) && gse::parse(fields[8], dcol)) {
 				out.refs.push_back({
-					.file = std::string(fields[1]),
+					.file = intern_cached(out.files, paths, fields[1]),
 					.line = ln,
 					.column = col,
 					.length = len,
 					.name = std::string(fields[5]),
-					.def_file = std::string(fields[6]),
+					.def_file = intern_cached(out.files, paths, fields[6]),
 					.def_line = dln,
 					.def_column = dcol,
 					.qualified = count >= 10 ? std::string(fields[9]) : std::string{},

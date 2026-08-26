@@ -85,7 +85,7 @@ auto gse::gui::draw_screen_caption(builder& b, viewport_state& vp, screen& top, 
 	ctx.clip_stack.pop_back();
 }
 
-auto gse::gui::process_screen(data& d, viewport_state& vp, const gse::input::state& input_state, const vec2f viewport_size) -> void {
+auto gse::gui::process_screen(data& d, viewport_state& vp, const input::state& input_state, const vec2f viewport_size) -> void {
 	if (!vp.fstate.active) {
 		return;
 	}
@@ -138,6 +138,7 @@ auto gse::gui::process_screen(data& d, viewport_state& vp, const gse::input::sta
 		.text_pool_used = d.text_pool_used,
 		.widget_anim_colors = d.widget_anim_colors,
 		.widget_scrolls = d.widget_scrolls,
+		.widget_tree_open = d.widget_tree_open,
 		.current_layer = render_layer::popup,
 		.input_layer = vp.input_layer_render,
 		.input_suppressed = vp.input_suppressed,

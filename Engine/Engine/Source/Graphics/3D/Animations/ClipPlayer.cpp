@@ -68,7 +68,7 @@ auto gse::animation::run(context& ctx, data& d, const channel_read<physics::inte
 		co_return;
 	}
 
-	auto lag = system_clock::fixed_lag<time_t<float, seconds>>();
+	auto lag = system_clock::fixed_lag();
 	if (!interpolation.empty() && !interpolation[0].advancing) {
 		lag = time_t<float, seconds>{};
 	}

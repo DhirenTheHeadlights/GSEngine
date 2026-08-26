@@ -239,9 +239,9 @@ auto gse::renderer::geometry_collector::collect_skinned(read<skeleton_instance_c
 		const auto entry_bounds = bounds_it != bounds.end()
 			? bounds_it->second
 			: aabb{
-				.max = vec3<position>(meters(unbounded_extent)),
-				.min = vec3<position>(meters(-unbounded_extent)),
-			};
+			.max = vec3<position>(meters(unbounded_extent)),
+			.min = vec3<position>(meters(-unbounded_extent)),
+		};
 
 		for (std::size_t mi = 0; mi < mdl->meshes().size(); ++mi) {
 			out.push_back({
@@ -313,24 +313,24 @@ auto gse::renderer::geometry_collector::build_queue_batches(render_data& data, s
 			return key.resolve_mesh();
 		},
 		[](
-		vec3<length>& mn,
-		vec3<length>& mx,
-		std::span<const owned_render_queue_entry> batch,
-		const mesh& m
+			vec3<length>& mn,
+			vec3<length>& mx,
+			std::span<const owned_render_queue_entry> batch,
+			const mesh& m
 	) {
 			if (std::ranges::any_of(batch, [](const owned_render_queue_entry& q) {
-					return q.skinned.valid();
-				})) {
+				return q.skinned.valid();
+			})) {
 				for (const auto& q : batch) {
-					mn = vec3<length>(gse::min(mn, q.skinned_bounds.min));
-					mx = vec3<length>(gse::max(mx, q.skinned_bounds.max));
+					mn = vec3<length>(min(mn, q.skinned_bounds.min));
+					mx = vec3<length>(max(mx, q.skinned_bounds.max));
 				}
 				return;
 			}
 
 			if (std::ranges::any_of(batch, [](const owned_render_queue_entry& q) {
-					return q.body_index != owned_render_queue_entry::invalid_body_index;
-				})) {
+				return q.body_index != owned_render_queue_entry::invalid_body_index;
+			})) {
 				constexpr float physics_cull_extent = 1.0e9f;
 				mn = vec3<length>(meters(-physics_cull_extent));
 				mx = vec3<length>(meters(physics_cull_extent));
@@ -353,10 +353,10 @@ auto gse::renderer::geometry_collector::build_queue_batches(render_data& data, s
 			}
 		},
 		[&](
-		const owned_render_queue_entry& q,
-		const normal_batch_key& key,
-		std::uint32_t mat_idx,
-		std::uint32_t instance_index
+			const owned_render_queue_entry& q,
+			const normal_batch_key& key,
+			std::uint32_t mat_idx,
+			std::uint32_t instance_index
 	) {
 			const auto& entry = q.entry;
 			write_instance(
@@ -442,7 +442,7 @@ auto gse::renderer::geometry_collector::tick(context& ctx, data& d, const channe
 	data.view = view_matrix;
 	data.proj = proj_matrix;
 
-	auto lag = system_clock::fixed_lag<time_t<float, seconds>>();
+	auto lag = system_clock::fixed_lag();
 	if (const auto& interpolation = physics_in.of<physics::interpolation_state>(); !interpolation.empty() && !interpolation[0].advancing) {
 		lag = time_t<float, seconds>{};
 	}
@@ -588,7 +588,7 @@ auto gse::renderer::geometry_collector::frame(context& ctx, shared_view<gpu::con
 		}
 	}
 
-	const auto material_count = std::min(data.material_palette_map.size(), geometry_collector::data::max_materials);
+	const auto material_count = std::min(data.material_palette_map.size(), data::max_materials);
 	if (material_count > 0) {
 		auto& mat_staging = d.material_staging;
 		mat_staging.assign(
@@ -598,7 +598,7 @@ auto gse::renderer::geometry_collector::frame(context& ctx, shared_view<gpu::con
 		auto* staging_materials = reinterpret_cast<shaders::forward::material_data*>(mat_staging.data());
 
 		for (const auto& [mat_ptr, idx] : data.material_palette_map) {
-			if (idx >= geometry_collector::data::max_materials) {
+			if (idx >= data::max_materials) {
 				continue;
 			}
 			const auto& diffuse = mat_ptr->diffuse_texture;

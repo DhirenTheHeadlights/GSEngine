@@ -124,7 +124,7 @@ auto gse::ide::search_system::frame(const context& ctx, data& d, const channel_r
 		}
 	}
 	for (const auto& req : requests_in.of<search::index_merge_request>()) {
-		d.index->merge_file_symbols(req.path, req.symbols, req.refs, req.params);
+		d.index->merge_file_symbols(req.path, req.symbols, req.refs, req.params, req.files);
 	}
 
 	if (!requests_in.of<build_runner::build_finished>().empty()) {

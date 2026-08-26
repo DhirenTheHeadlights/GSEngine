@@ -80,7 +80,7 @@ auto gse::ide::load_workspace_layout(workspace::data& ws) -> void {
 	const std::vector<layout_store::section> sections = layout_store::parse_sections(layout_store::read(editor_layout_path()));
 	std::string active;
 	std::filesystem::path active_path;
-	std::unordered_map<std::string, gse::id> id_by_path;
+	std::unordered_map<std::string, id> id_by_path;
 
 	for (const layout_store::section& section : sections) {
 		if (section.name != "workspace") {
@@ -111,7 +111,7 @@ auto gse::ide::load_workspace_layout(workspace::data& ws) -> void {
 			continue;
 		}
 
-		const gse::id id = workspace::open_file(ws, path);
+		const id id = workspace::open_file(ws, path);
 		if (!id.exists()) {
 			continue;
 		}
@@ -141,7 +141,7 @@ auto gse::ide::load_workspace_layout(workspace::data& ws) -> void {
 			ws.profile.enabled = it->second == "1";
 		}
 		if (const auto it = section.values.find("profile_source"); it != section.values.end()) {
-			gse::enum_from_string(it->second, ws.profile.source);
+			enum_from_string(it->second, ws.profile.source);
 		}
 		break;
 	}
@@ -165,16 +165,16 @@ auto gse::ide::save_workspace_layout(const workspace::data& ws) -> void {
 	std::string out;
 	out.append("[workspace]\n");
 	out.append(std::format("profile_enabled = {}\n", ws.profile.enabled ? 1 : 0));
-	out.append(std::format("profile_source = {}\n", gse::enum_to_string(ws.profile.source)));
-	if (const std::optional<gse::id> active_document_id = workspace::active_document_id(ws); active_document_id) {
+	out.append(std::format("profile_source = {}\n", enum_to_string(ws.profile.source)));
+	if (const std::optional<id> active_document_id = workspace::active_document_id(ws); active_document_id) {
 		const auto it = ws.documents.find(*active_document_id);
 		if (it == ws.documents.end() || it->second.path.empty()) {
 			out.append("active = none\n");
 			out.append("active_path = \n");
 		}
 		else {
-		out.append("active = document\n");
-		out.append(std::format("active_path = {}\n", it->second.path.generic_native_encoded_string()));
+			out.append("active = document\n");
+			out.append(std::format("active_path = {}\n", it->second.path.generic_native_encoded_string()));
 		}
 	}
 	else {
@@ -183,12 +183,12 @@ auto gse::ide::save_workspace_layout(const workspace::data& ws) -> void {
 	}
 
 	std::size_t index = 0;
-	for (const gse::id id : ws.documents.order()) {
+	for (const id id : ws.documents.order()) {
 		const document& doc = ws.documents.at(id);
 		if (doc.path.empty()) {
 			continue;
 		}
-		const gse::gui::buffer_position caret = doc.buffer.clamp(doc.view.caret);
+		const gui::buffer_position caret = doc.buffer.clamp(doc.view.caret);
 		out.push_back('\n');
 		out.append(std::format("[document {}]\n", index));
 		out.append(std::format("path = {}\n", doc.path.generic_native_encoded_string()));

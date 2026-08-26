@@ -134,7 +134,7 @@ export namespace gse::vulkan {
 		) const -> void;
 
 		auto set_scissor(
-			const gse::rect_t<vec2i>& scissor
+			const rect_t<vec2i>& scissor
 		) const -> void;
 
 		auto set_vertex_input_none() const -> void;
@@ -516,7 +516,7 @@ auto gse::vulkan::commands::set_viewport(const gpu::viewport& viewport) const ->
 	raw().setViewportWithCount(to_vk(viewport));
 }
 
-auto gse::vulkan::commands::set_scissor(const gse::rect_t<vec2i>& scissor) const -> void {
+auto gse::vulkan::commands::set_scissor(const rect_t<vec2i>& scissor) const -> void {
 	const auto min = scissor.min();
 	const auto size = scissor.size();
 	const vk::Rect2D rect{

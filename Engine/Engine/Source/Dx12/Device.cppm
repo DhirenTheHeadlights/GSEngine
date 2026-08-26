@@ -198,7 +198,7 @@ export namespace gse::dx12 {
 
 		auto cmd_set_scissor(
 			gpu::command_buffer_handle cmd,
-			const gse::rect_t<vec2i>& scissor
+			const rect_t<vec2i>& scissor
 		) -> void;
 
 		auto cmd_bind_index_buffer(
@@ -560,7 +560,7 @@ export namespace gse::dx12 {
 			const gpu::shader_program_create_info& info,
 			const gfx_template* tmpl
 		) -> void;
-		
+
 		[[nodiscard]] auto view_format(
 			std::size_t descriptor_ptr
 		) const -> directx::DXGI_FORMAT;

@@ -112,7 +112,7 @@ auto gse::renderer::skin::collect(context& ctx, data& d, const channel_read<phys
 	d.bone_bindings.clear();
 	d.bounds.clear();
 
-	auto lag = system_clock::fixed_lag<time_t<float, seconds>>();
+	auto lag = system_clock::fixed_lag();
 	if (const auto& interpolation = interp_in.of<physics::interpolation_state>(); !interpolation.empty() && !interpolation[0].advancing) {
 		lag = time_t<float, seconds>{};
 	}
@@ -164,8 +164,8 @@ auto gse::renderer::skin::collect(context& ctx, data& d, const channel_read<phys
 			}
 
 			const auto box = physics::world_aabb_of(render_tc, *bone_cc, nullptr);
-			bounds.min = gse::min(bounds.min, box.min);
-			bounds.max = gse::max(bounds.max, box.max);
+			bounds.min = min(bounds.min, box.min);
+			bounds.max = max(bounds.max, box.max);
 			any_bounds = true;
 		}
 

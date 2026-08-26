@@ -8,8 +8,8 @@ import gse.core;
 
 export namespace gse::gpu {
 	template <typename T>
-	concept timeline_device = requires(T& device, gpu::handle<gpu::semaphore> sem, std::uint64_t value) {
-		{ device.create_timeline_semaphore(value) } -> std::same_as<gpu::handle<gpu::semaphore>>;
+	concept timeline_device = requires(T& device, handle<semaphore> sem, std::uint64_t value) {
+		{ device.create_timeline_semaphore(value) } -> std::same_as<handle<semaphore>>;
 		{ device.semaphore_counter_value(sem) } -> std::same_as<std::uint64_t>;
 		device.wait_semaphore(sem, value);
 		device.retire(sem);
@@ -34,7 +34,7 @@ export namespace gse::gpu {
 			std::uint64_t initial_value = 0
 		) -> queue_timeline;
 
-		[[nodiscard]] auto handle() const -> gpu::handle<gpu::semaphore>;
+		[[nodiscard]] auto handle() const -> gpu::handle<semaphore>;
 
 		[[nodiscard]] auto read() const -> std::uint64_t;
 
@@ -45,13 +45,13 @@ export namespace gse::gpu {
 	private:
 		queue_timeline(
 			Device& device,
-			gpu::handle<gpu::semaphore> semaphore_handle
+			gpu::handle<semaphore> semaphore_handle
 		);
 
 		auto reset() -> void;
 
 		Device* m_device = nullptr;
-		gpu::handle<gpu::semaphore> m_semaphore;
+		gpu::handle<semaphore> m_semaphore;
 	};
 }
 
@@ -85,7 +85,7 @@ auto gse::gpu::queue_timeline<Device>::create(Device& device, const std::uint64_
 }
 
 template <gse::gpu::timeline_device Device>
-auto gse::gpu::queue_timeline<Device>::handle() const -> gpu::handle<gpu::semaphore> {
+auto gse::gpu::queue_timeline<Device>::handle() const -> gpu::handle<semaphore> {
 	return m_semaphore;
 }
 
@@ -100,7 +100,7 @@ auto gse::gpu::queue_timeline<Device>::wait_until(const std::uint64_t value) con
 }
 
 template <gse::gpu::timeline_device Device>
-gse::gpu::queue_timeline<Device>::queue_timeline(Device& device, const gpu::handle<gpu::semaphore> semaphore_handle)
+gse::gpu::queue_timeline<Device>::queue_timeline(Device& device, const gpu::handle<semaphore> semaphore_handle)
 	: m_device(&device), m_semaphore(semaphore_handle) {}
 
 template <gse::gpu::timeline_device Device>

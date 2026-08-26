@@ -351,7 +351,7 @@ auto gse::image::load(const vec4f color, const vec2u size) -> data {
 	std::vector<std::byte> pixels(total_pixels * 4);
 
 	for (std::size_t i = 0; i < total_pixels; ++i) {
-		gse::memcpy(pixels.data() + i * 4, pixel_data);
+		memcpy(pixels.data() + i * 4, pixel_data);
 	}
 
 	return {

@@ -117,7 +117,7 @@ export namespace gse::internal {
 																				  exponent_at(Lhs::exponents, Axes).den,
 																				  exponent_at(Rhs::exponents, Axes).num,
 																				  exponent_at(Rhs::exponents, Axes).den>... {
-	};
+																				};
 
 	template <is_dimension Lhs, is_dimension Rhs>
 	struct dimension_mismatch_diagnostic : dimension_mismatch_checks<Lhs, Rhs, std::make_index_sequence<axis_count<Lhs>()>> {

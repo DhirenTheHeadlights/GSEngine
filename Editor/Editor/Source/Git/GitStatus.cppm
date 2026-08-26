@@ -5,14 +5,30 @@ import gse;
 import gse.ide.analysis;
 
 export namespace gse::ide::git {
+	struct file_status_info {
+		vec4f color = { 0.96f, 0.97f, 0.99f, 1.0f };
+	};
+
 	enum class file_status {
 		none,
-		modified,
-		added,
-		untracked,
-		deleted,
-		renamed,
-		conflicted,
+		modified [[= file_status_info{
+			.color = { 0.86f, 0.66f, 0.32f, 1.0f },
+		}]],
+		added [[= file_status_info{
+			.color = { 0.46f, 0.80f, 0.48f, 1.0f },
+		}]],
+		untracked [[= file_status_info{
+			.color = { 0.40f, 0.72f, 0.55f, 1.0f },
+		}]],
+		deleted [[= file_status_info{
+			.color = { 0.86f, 0.40f, 0.40f, 1.0f },
+		}]],
+		renamed [[= file_status_info{
+			.color = { 0.46f, 0.68f, 0.90f, 1.0f },
+		}]],
+		conflicted [[= file_status_info{
+			.color = { 0.92f, 0.48f, 0.30f, 1.0f },
+		}]],
 	};
 
 	struct repository_status {

@@ -15,7 +15,7 @@ import :gui;
 import :sdf_grid_renderer;
 
 export namespace gse::renderer::world_text {
-	struct [[= gse::system_state<"WorldText">{}]] data {
+	struct [[= system_state<"WorldText">{}]] data {
 		gpu::shader_program pipeline;
 		gpu::bindless_handle text_sampler;
 		per_frame_resource<gpu::buffer> camera_ubo_buffers;
@@ -23,14 +23,14 @@ export namespace gse::renderer::world_text {
 		per_frame_resource<std::size_t> vertex_capacities;
 	};
 
-	[[= gse::system_init{}]]
+	[[= system_init{}]]
 	auto init(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		data& d
 	) -> async::task<>;
 
-	[[= gse::system_frame{}]]
+	[[= system_frame{}]]
 	auto frame(
 		const context& ctx,
 		shared_view<gpu::context::data> gpu_s,

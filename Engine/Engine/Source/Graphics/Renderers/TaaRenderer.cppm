@@ -14,16 +14,16 @@ import gse.math;
 import gse.gpu_record;
 
 export namespace gse::renderer::taa {
-	struct [[= gse::system_state<"Taa">{}, = gse::settings::category<"Graphics">{}]] data {
+	struct [[= system_state<"Taa">{}, = settings::category<"Graphics">{}]] data {
 		[[
-			= gse::settings::describe<"Enable temporal antialiasing. Accumulates jittered frames via motion-vector reprojection.">{},
-			= gse::shared
+			= settings::describe<"Enable temporal antialiasing. Accumulates jittered frames via motion-vector reprojection.">{},
+			= shared
 		]]
 		bool taa_enabled = true;
 
 		[[
-			= gse::settings::describe<"Blend factor for current vs history. 0.1 = retain 90% history; lower = smoother but more ghosting.">{},
-			= gse::settings::range<0.02f, 0.5f>{}
+			= settings::describe<"Blend factor for current vs history. 0.1 = retain 90% history; lower = smoother but more ghosting.">{},
+			= settings::range<0.02f, 0.5f>{}
 		]]
 		float blend_alpha = 0.1f;
 
@@ -34,10 +34,10 @@ export namespace gse::renderer::taa {
 		std::array<gpu::bindless_handle, 2> history_views;
 		std::uint32_t frames_since_history_invalid = 0;
 
-		[[= gse::shared]] std::array<gpu::image, 2> history;
+		[[= shared]] std::array<gpu::image, 2> history;
 	};
 
-	[[= gse::system_init{}]]
+	[[= system_init{}]]
 	auto init(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
@@ -45,7 +45,7 @@ export namespace gse::renderer::taa {
 	) -> async::task<>;
 
 	[[= gse::system_frame{}]]
-	[[= gse::runs_after<^^forward::data>{}]]
+	[[= runs_after<^^forward::data>{}]]
 	auto frame(
 		const context& ctx,
 		shared_view<gpu::context::data> gpu_s,

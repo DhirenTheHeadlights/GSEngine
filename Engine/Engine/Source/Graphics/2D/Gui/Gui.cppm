@@ -154,6 +154,7 @@ export namespace gse::gui {
 
 		std::unordered_map<std::uint64_t, scroll_state> widget_scrolls;
 		std::unordered_map<std::uint64_t, vec4f> widget_anim_colors;
+		std::unordered_map<std::uint64_t, std::unordered_set<std::uint64_t>> widget_tree_open;
 
 		[[= shared]] viewport_state primary{ .adopts_unclaimed_content = true };
 		std::vector<std::unique_ptr<viewport_state>> secondaries;
@@ -189,4 +190,10 @@ export namespace gse::gui {
 	auto save(
 		data& d
 	) -> void;
+}
+
+namespace gse::gui {
+	[[nodiscard]] auto is_popout(
+		const viewport_state& vp
+	) -> bool;
 }

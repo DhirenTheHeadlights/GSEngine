@@ -38,7 +38,7 @@ auto gse::scheduler::snapshot_graph() const -> introspection::system_graph {
 	graph.nodes.reserve(m_nodes.size());
 
 	const auto resolve_name = [](const id value) -> std::string {
-		if (value.exists() && gse::exists(value.number())) {
+		if (value.exists() && exists(value.number())) {
 			std::string tag(value.tag());
 			if (const auto suffix = tag.find('#'); suffix != std::string::npos) {
 				tag.erase(suffix);
@@ -275,6 +275,13 @@ namespace gse {
 		const std::unordered_map<id, std::size_t>& state_to_index
 	) -> std::vector<std::size_t>;
 
+	auto dep_path_exists(
+		const std::vector<std::vector<component_dep>>& deps,
+		const std::unordered_map<id, std::size_t>& state_to_index,
+		std::size_t from,
+		std::size_t to
+	) -> bool;
+
 	struct wait_section_info {
 		id section_id;
 		time budget;
@@ -344,6 +351,31 @@ auto gse::find_dep_cycle(const std::vector<std::vector<component_dep>>& deps, co
 	}
 
 	return cycle;
+}
+
+auto gse::dep_path_exists(const std::vector<std::vector<component_dep>>& deps, const std::unordered_map<id, std::size_t>& state_to_index, const std::size_t from, const std::size_t to) -> bool {
+	std::vector<bool> seen(deps.size(), false);
+	std::vector<std::size_t> stack{ from };
+
+	while (!stack.empty()) {
+		const auto node = stack.back();
+		stack.pop_back();
+		if (node == to) {
+			return true;
+		}
+		if (seen[node]) {
+			continue;
+		}
+		seen[node] = true;
+
+		for (const auto& dep : deps[node]) {
+			if (const auto it = state_to_index.find(dep.state); it != state_to_index.end()) {
+				stack.push_back(it->second);
+			}
+		}
+	}
+
+	return false;
 }
 
 auto gse::scheduler::wire_component_deps() -> void {
@@ -456,6 +488,14 @@ auto gse::scheduler::wire_component_deps() -> void {
 		++idx;
 	}
 
+	struct dropped_protection {
+		std::size_t accessor = 0;
+		std::size_t structural_writer = 0;
+		id via;
+	};
+
+	std::vector<dropped_protection> dropped;
+
 	while (true) {
 		const auto cycle = find_dep_cycle(deps, state_to_index);
 		if (cycle.empty()) {
@@ -483,14 +523,11 @@ auto gse::scheduler::wire_component_deps() -> void {
 					);
 				}
 				else if (target == dep_kind::structural) {
-					log::println(
-						log::level::error,
-						log::category::runtime,
-						"scheduler: {} accesses {} while {} adds or removes it, but ordering them closes a cycle. the access is no longer protected from storage reallocation — break the cycle with an explicit ordering annotation",
-						m_nodes[from].state_id,
-						edge->via,
-						m_nodes[to].state_id
-					);
+					dropped.push_back({
+						.accessor = from,
+						.structural_writer = to,
+						.via = edge->via,
+					});
 				}
 				else {
 					log::println(
@@ -514,6 +551,29 @@ auto gse::scheduler::wire_component_deps() -> void {
 		if (!demoted) {
 			break;
 		}
+	}
+
+	for (const auto& [accessor, structural_writer, via] : dropped) {
+		if (dep_path_exists(deps, state_to_index, accessor, structural_writer)
+			|| dep_path_exists(deps, state_to_index, structural_writer, accessor)) {
+			log::println(
+				log::level::warning,
+				log::category::runtime,
+				"scheduler: {} accesses {} while {} adds or removes it, and ordering them that way closes a cycle. they stay serialised by the reverse path, so the access sees the state from before the structural change",
+				m_nodes[accessor].state_id,
+				via,
+				m_nodes[structural_writer].state_id
+			);
+			continue;
+		}
+
+		assert(
+			false,
+			"scheduler: {} accesses {} while {} adds or removes it, and breaking the cycle left them unordered, so they can run concurrently and the storage can reallocate mid-access. annotate one of them with runs_after<> to force an order",
+			m_nodes[accessor].state_id,
+			via,
+			m_nodes[structural_writer].state_id
+		);
 	}
 
 	{

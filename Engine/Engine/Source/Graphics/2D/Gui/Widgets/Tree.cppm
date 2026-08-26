@@ -87,12 +87,6 @@ export namespace gse::gui {
 }
 
 namespace gse::gui::draw {
-	struct expand_state {
-		std::unordered_map<std::uint64_t, std::unordered_set<std::uint64_t>> open;
-	};
-
-	expand_state global_expand_state;
-
 	template <typename T>
 	auto tree_node_key(
 		const T& t,
@@ -128,7 +122,7 @@ auto gse::gui::draw::tree(const draw_context& ctx, std::span<const T> roots, con
 	}
 
 	const std::uint64_t tree_scope = ids::current_seed();
-	std::unordered_set<std::uint64_t>& open_set = global_expand_state.open[tree_scope];
+	std::unordered_set<std::uint64_t>& open_set = ctx.widget_tree_open[tree_scope];
 	for (const std::uint64_t key : opt.open_keys) {
 		open_set.insert(key);
 	}
@@ -194,18 +188,17 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 	if (opt.reveal_offset && opt.reveal_key == key) {
 		*opt.reveal_offset = row_rect.top();
 	}
-	std::unordered_set<std::uint64_t>& open_set = global_expand_state.open[tree_scope];
+	std::unordered_set<std::uint64_t>& open_set = ctx.widget_tree_open[tree_scope];
 	const bool leaf = tree_node_is_leaf(t, ops);
 	bool is_open = open_set.contains(key);
 
 	const rectf effective_clip = ctx.current_clip().value_or(context_rect);
-	const bool row_visible = row_rect.top() >= effective_clip.bottom() - row_height &&
-		row_rect.bottom() <= effective_clip.top() + row_height;
+	const rectf visible = row_rect.intersection(effective_clip);
+	const bool row_visible = visible.height() > 0.f;
 
 	const vec2f mouse_pos = ctx.mouse_position();
-	const bool mouse_in_clip = effective_clip.contains(mouse_pos);
-	const bool hovered = mouse_in_clip && ctx.hovers(row_rect);
-	const id row_widget_id = ids::make(std::format("tree_row##{}", key));
+	const bool hovered = row_visible && ctx.hovers(visible);
+	const id row_widget_id = ids::make_from_key(hash_combine(stable_id("tree_row"), key));
 
 	bool self_is_active = hovered;
 
@@ -216,11 +209,13 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 
 	const bool released = ctx.mouse_released();
 
-	if (hovered && ops.on_context && ctx.mouse_pressed_for(row_rect, mouse_button::button_2)) {
+	if (hovered && ops.on_context && ctx.mouse_pressed_for(visible, mouse_button::button_2)) {
 		ops.on_context(t, ctx, mouse_pos);
 	}
 
-	const bool released_by_me = interaction::activate_on_click(active_widget_id, row_widget_id, hovered, ctx.mouse_pressed_for(row_rect), released);
+	const bool owns_active = active_widget_id == row_widget_id;
+	const bool released_by_me = (row_visible || owns_active)
+		&& interaction::activate_on_click(active_widget_id, row_widget_id, hovered, hovered && ctx.mouse_pressed_for(visible), released);
 
 	if (active_widget_id == row_widget_id) {
 		self_is_active = true;

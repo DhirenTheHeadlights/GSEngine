@@ -16,7 +16,7 @@ import gse.physics;
 import gse.gpu_record;
 
 export namespace gse::renderer::physics_transform {
-	struct [[= gse::system_state<"PhysicsTransform">{}]] data {
+	struct [[= system_state<"PhysicsTransform">{}]] data {
 		gpu::shader_program pipeline;
 		bool initialized = false;
 
@@ -27,7 +27,7 @@ export namespace gse::renderer::physics_transform {
 		per_frame_resource<gpu::bindless_handle> body_views;
 	};
 
-	[[= gse::system_init{}]]
+	[[= system_init{}]]
 	auto init(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
@@ -35,7 +35,7 @@ export namespace gse::renderer::physics_transform {
 		data& d
 	) -> async::task<>;
 
-	[[= gse::system_frame{}]]
+	[[= system_frame{}]]
 	auto frame(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,

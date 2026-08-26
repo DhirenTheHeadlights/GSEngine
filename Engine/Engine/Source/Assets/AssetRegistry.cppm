@@ -683,7 +683,7 @@ auto gse::resource::loader<R>::get(const id id) const -> handle<R> {
 
 template <typename R>
 auto gse::resource::loader<R>::get(const std::string& filename_no_ext) const -> handle<R> {
-	const auto resource_id = gse::find(filename_no_ext);
+	const auto resource_id = find(filename_no_ext);
 	std::lock_guard lock(m_mutex);
 	const auto s = slot_ptr(resource_id);
 	assert(s != nullptr, "Resource with ID {} not found in this loader.", resource_id);
@@ -704,10 +704,10 @@ auto gse::resource::loader<R>::try_get(const id id) const -> handle<R> {
 
 template <typename R>
 auto gse::resource::loader<R>::try_get(const std::string& filename_no_ext) const -> handle<R> {
-	if (!gse::exists(filename_no_ext)) {
+	if (!exists(filename_no_ext)) {
 		return handle<R>{};
 	}
-	const auto resource_id = gse::find(filename_no_ext);
+	const auto resource_id = find(filename_no_ext);
 	std::lock_guard lock(m_mutex);
 	const auto s = slot_ptr(resource_id);
 	if (!s) {
@@ -727,7 +727,7 @@ template <typename R>
 auto gse::resource::loader<R>::enqueue(const std::string& name, std::unique_ptr<R> resource) -> handle<R> {
 	std::lock_guard lock(m_mutex);
 	if (exists(name)) {
-		if (const auto resource_id = gse::find(name); m_resources.contains(resource_id)) {
+		if (const auto resource_id = find(name); m_resources.contains(resource_id)) {
 			return handle<R>(resource_id, slot_ptr(resource_id));
 		}
 	}

@@ -13,14 +13,14 @@ import :recording_context;
 export namespace gse::gpu {
 	struct color_attachment {
 		load_op op = load_op::clear;
-		gpu::color_clear clear{};
+		color_clear clear{};
 		const image* target = nullptr;
 		transient_image_handle transient_target;
 	};
 
 	struct depth_attachment {
 		load_op op = load_op::clear;
-		gpu::depth_clear clear{};
+		depth_clear clear{};
 		const image* target = nullptr;
 		transient_image_handle transient_target;
 	};
@@ -90,7 +90,7 @@ export namespace gse::gpu {
 		) && -> pass_builder&&;
 
 		auto pipeline(
-			const gpu::shader_program& p
+			const shader_program& p
 		) && -> pass_builder&&;
 
 		auto color(
@@ -139,11 +139,11 @@ export namespace gse::gpu {
 	) -> pass_builder;
 
 	auto clear_color(
-		gpu::color_clear value
+		color_clear value
 	) -> color_attachment;
 
 	auto clear_color(
-		gpu::color_clear value,
+		color_clear value,
 		const image& target
 	) -> color_attachment;
 
@@ -154,7 +154,7 @@ export namespace gse::gpu {
 	) -> color_attachment;
 
 	auto clear_depth(
-		gpu::depth_clear value
+		depth_clear value
 	) -> depth_attachment;
 
 	auto load_depth() -> depth_attachment;

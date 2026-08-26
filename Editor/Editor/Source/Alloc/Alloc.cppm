@@ -5,15 +5,15 @@ import gse;
 
 export namespace gse::ide {
 	struct alloc_view_state {
-		std::vector<gse::alloc::site> sites;
+		std::vector<alloc::site> sites;
 		std::unordered_map<std::uint64_t, std::string> labels;
-		gse::alloc::address_space usage;
-		gse::interval_timer<> refresh{ gse::milliseconds(500.f) };
+		alloc::address_space usage;
+		interval_timer<> refresh{ milliseconds(500.f) };
 		int top_rows = 200;
 	};
 
 	auto draw_alloc_panel(
-		gse::gui::builder& ui,
+		gui::builder& ui,
 		const rectf& rect,
 		alloc_view_state& state
 	) -> void;
@@ -31,20 +31,20 @@ namespace gse::ide {
 	) -> void;
 
 	auto draw_alloc_header(
-		gse::gui::builder& ui,
+		gui::builder& ui,
 		const rectf& row,
 		alloc_view_state& state
 	) -> void;
 
 	auto draw_alloc_row(
-		gse::gui::draw_context& ctx,
+		gui::draw_context& ctx,
 		const rectf& row,
-		const gse::alloc::site& entry,
+		const alloc::site& entry,
 		const std::string& label
 	) -> void;
 
 	auto draw_action(
-		gse::gui::draw_context& ctx,
+		gui::draw_context& ctx,
 		const rectf& rect,
 		std::string_view text
 	) -> bool;
@@ -55,18 +55,18 @@ auto gse::ide::megabytes_of(const std::int64_t bytes) -> double {
 }
 
 auto gse::ide::refresh_alloc_sites(alloc_view_state& state) -> void {
-	state.usage = gse::alloc::address_space_usage();
-	gse::alloc::snapshot(state.sites);
-	std::ranges::sort(state.sites, std::ranges::greater{}, &gse::alloc::site::live_bytes);
+	state.usage = alloc::address_space_usage();
+	alloc::snapshot(state.sites);
+	std::ranges::sort(state.sites, std::ranges::greater{}, &alloc::site::live_bytes);
 
 	for (const auto& entry : state.sites | std::views::take(state.top_rows)) {
 		if (!state.labels.contains(entry.pc)) {
-			state.labels.emplace(entry.pc, gse::alloc::label_of(entry.pc));
+			state.labels.emplace(entry.pc, alloc::label_of(entry.pc));
 		}
 	}
 }
 
-auto gse::ide::draw_action(gse::gui::draw_context& ctx, const rectf& rect, const std::string_view text) -> bool {
+auto gse::ide::draw_action(gui::draw_context& ctx, const rectf& rect, const std::string_view text) -> bool {
 	const auto& sty = ctx.style;
 	const auto text_view = ctx.fonts.text.resolve();
 	const bool hovered = ctx.hovers(rect);
@@ -90,7 +90,7 @@ auto gse::ide::draw_action(gse::gui::draw_context& ctx, const rectf& rect, const
 	return hovered && ctx.mouse_pressed_for(rect);
 }
 
-auto gse::ide::draw_alloc_header(gse::gui::builder& ui, const rectf& row, alloc_view_state& state) -> void {
+auto gse::ide::draw_alloc_header(gui::builder& ui, const rectf& row, alloc_view_state& state) -> void {
 	auto& ctx = ui.ctx;
 	const auto& sty = ctx.style;
 	const auto text_view = ctx.fonts.text.resolve();
@@ -102,7 +102,7 @@ auto gse::ide::draw_alloc_header(gse::gui::builder& ui, const rectf& row, alloc_
 		{ button_w, std::max(0.f, row.height() - pad) }
 	);
 	if (draw_action(ctx, mark_rect, "Reset baseline")) {
-		gse::alloc::mark();
+		alloc::mark();
 	}
 
 	const float toggle_w = text_view->width("Sampling paused", sty.font_size) + pad * 2.f;
@@ -110,8 +110,8 @@ auto gse::ide::draw_alloc_header(gse::gui::builder& ui, const rectf& row, alloc_
 		{ mark_rect.left() - pad - toggle_w, row.top() - pad * 0.5f },
 		{ toggle_w, std::max(0.f, row.height() - pad) }
 	);
-	if (draw_action(ctx, toggle_rect, gse::alloc::enabled() ? "Sampling on" : "Sampling paused")) {
-		gse::alloc::set_enabled(!gse::alloc::enabled());
+	if (draw_action(ctx, toggle_rect, alloc::enabled() ? "Sampling on" : "Sampling paused")) {
+		alloc::set_enabled(!alloc::enabled());
 	}
 
 	const float report_w = text_view->width("Write report to log", sty.font_size) + pad * 2.f;
@@ -120,7 +120,7 @@ auto gse::ide::draw_alloc_header(gse::gui::builder& ui, const rectf& row, alloc_
 		{ report_w, std::max(0.f, row.height() - pad) }
 	);
 	if (draw_action(ctx, report_rect, "Write report to log")) {
-		gse::alloc::log_report(state.top_rows);
+		alloc::log_report(state.top_rows);
 	}
 
 	const float line_h = text_view->line_height(sty.font_size);
@@ -143,10 +143,10 @@ auto gse::ide::draw_alloc_header(gse::gui::builder& ui, const rectf& row, alloc_
 		.font = ctx.fonts.text,
 		.text = std::format(
 			"tracked   {:.1f} MB estimated live   {} samples   {} evicted   1 per {} KB",
-			megabytes_of(gse::alloc::estimated_live_bytes()),
-			gse::alloc::live_samples(),
-			gse::alloc::evicted_samples(),
-			gse::alloc::sample_interval() / 1024
+			megabytes_of(alloc::estimated_live_bytes()),
+			alloc::live_samples(),
+			alloc::evicted_samples(),
+			alloc::sample_interval() / 1024
 		),
 		.position = { row.left() + pad, row.top() - line_h * 2.f - pad * 0.5f },
 		.scale = sty.font_size,
@@ -155,7 +155,7 @@ auto gse::ide::draw_alloc_header(gse::gui::builder& ui, const rectf& row, alloc_
 	});
 }
 
-auto gse::ide::draw_alloc_row(gse::gui::draw_context& ctx, const rectf& row, const gse::alloc::site& entry, const std::string& label) -> void {
+auto gse::ide::draw_alloc_row(gui::draw_context& ctx, const rectf& row, const alloc::site& entry, const std::string& label) -> void {
 	const auto& sty = ctx.style;
 	const auto code_view = ctx.fonts.code.resolve();
 	const float pad = sty.padding;
@@ -194,7 +194,7 @@ auto gse::ide::draw_alloc_row(gse::gui::draw_context& ctx, const rectf& row, con
 	});
 }
 
-auto gse::ide::draw_alloc_panel(gse::gui::builder& ui, const rectf& rect, alloc_view_state& state) -> void {
+auto gse::ide::draw_alloc_panel(gui::builder& ui, const rectf& rect, alloc_view_state& state) -> void {
 	auto& ctx = ui.ctx;
 	const auto& sty = ctx.style;
 	const auto code_view = ctx.fonts.code.resolve();
@@ -220,7 +220,7 @@ auto gse::ide::draw_alloc_panel(gse::gui::builder& ui, const rectf& rect, alloc_
 		const auto text_view = ctx.fonts.text.resolve();
 		ctx.queue_text({
 			.font = ctx.fonts.text,
-			.text = gse::alloc::enabled() ? "No sampled allocations yet." : "Sampling is paused.",
+			.text = alloc::enabled() ? "No sampled allocations yet." : "Sampling is paused.",
 			.position = { list_rect.left() + pad, list_rect.top() - row_h },
 			.scale = sty.font_size,
 			.color = sty.color_text_secondary,
@@ -234,8 +234,8 @@ auto gse::ide::draw_alloc_panel(gse::gui::builder& ui, const rectf& rect, alloc_
 		.bounds = list_rect,
 		.row_height = row_h,
 		.row_count = std::min(state.sites.size(), static_cast<std::size_t>(state.top_rows)),
-	}, [&](gse::gui::builder& b, const gse::gui::row& r) {
-		const gse::alloc::site& entry = state.sites[r.index];
+	}, [&](gui::builder& b, const gui::row& r) {
+		const alloc::site& entry = state.sites[r.index];
 		draw_alloc_row(b.ctx, r.rect, entry, state.labels.at(entry.pc));
 	});
 }

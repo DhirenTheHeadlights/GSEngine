@@ -141,7 +141,7 @@ export namespace gse {
 template <>
 struct std::formatter<gse::resolution_info> : std::formatter<std::string> {
 	auto format(const gse::resolution_info& info, format_context& ctx) const {
-		return std::formatter<string>::format(
+		return formatter<string>::format(
 			std::format("{}x{} @{}Hz", info.width, info.height, info.refresh_rate),
 			ctx
 		);
@@ -252,6 +252,7 @@ export namespace gse::window {
 		bool attached = false;
 
 		bool decorated = true;
+		[[= shared]] bool current_cursor_captured = false;
 		bool restore_maximized = false;
 		int last_monitor_index = 0;
 		int current_monitor_index = -1;
@@ -275,8 +276,8 @@ export namespace gse::window {
 		]]
 		bool native_frame = false;
 
-		[[= shared]] gse::id focused_window;
-		[[= shared]] gse::id cursor_window;
+		[[= shared]] id focused_window;
+		[[= shared]] id cursor_window;
 		[[= shared]] window_surface primary;
 		std::vector<std::unique_ptr<window_surface>> secondaries;
 	};
@@ -319,8 +320,9 @@ export namespace gse::window {
 		data& d
 	) -> void;
 
-	auto install_native_frame(
-		window_surface& surface
+	auto install_window_hook(
+		window_surface& surface,
+		bool custom_frame
 	) -> void;
 
 	struct secondary_window_desc {

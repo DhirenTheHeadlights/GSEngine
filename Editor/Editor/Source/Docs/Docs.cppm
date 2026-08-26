@@ -27,7 +27,7 @@ export namespace gse::ide::docs {
 	};
 
 	struct cppref_index {
-		std::unordered_map<std::string, cppref_entry, gse::transparent_hash, gse::transparent_equal> entries;
+		std::unordered_map<std::string, cppref_entry, transparent_hash, transparent_equal> entries;
 		bool loaded = false;
 		auto load(const std::filesystem::path& file) -> void;
 		auto find(std::string_view qualified) const -> std::optional<cppref_hit>;
@@ -565,8 +565,8 @@ auto gse::ide::docs::extract_header_doc(const std::filesystem::path& file, std::
 	}
 
 	return doc_card{
-        .title = title.empty() ? decl : std::string(title),
-        .body = body.empty() ? decl : body
+		.title = title.empty() ? decl : std::string(title),
+		.body = body.empty() ? decl : body
     };
 }
 

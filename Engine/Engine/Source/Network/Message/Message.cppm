@@ -22,9 +22,6 @@ namespace gse::network {
 	concept variant_field = is_variant<T>::value;
 
 	template <typename T>
-	concept handle_range = std::ranges::range<T> && resource::is_handle_v<std::ranges::range_value_t<T>>;
-
-	template <typename T>
 	concept resizable_range = requires(T value, std::size_t size) { value.resize(size); };
 
 	template <typename T>
@@ -76,15 +73,7 @@ export namespace gse::network {
 
 template <typename T>
 auto gse::network::encode_field(write_bitstream& s, const T& v) -> void {
-	if constexpr (handle_range<T>) {
-		if constexpr (resizable_range<T>) {
-			s.write(static_cast<std::uint32_t>(v.size()));
-		}
-		for (const auto& handle : v) {
-			s.write(handle.id());
-		}
-	}
-	else if constexpr (resource::is_handle_v<T>) {
+	if constexpr (resource::is_handle_v<T>) {
 		s.write(v.id());
 	}
 	else if constexpr (dynamic_field<T>) {
@@ -103,6 +92,14 @@ auto gse::network::encode_field(write_bitstream& s, const T& v) -> void {
 	else if constexpr (std::is_trivially_copyable_v<T>) {
 		s.write(v);
 	}
+	else if constexpr (std::ranges::range<T>) {
+		if constexpr (resizable_range<T>) {
+			s.write(static_cast<std::uint32_t>(std::ranges::size(v)));
+		}
+		for (const auto& element : v) {
+			encode_field(s, element);
+		}
+	}
 	else {
 		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 			encode_field(s, v.[:m:]);
@@ -112,17 +109,7 @@ auto gse::network::encode_field(write_bitstream& s, const T& v) -> void {
 
 template <typename T>
 auto gse::network::decode_field(read_bitstream& s) -> T {
-	if constexpr (handle_range<T>) {
-		T value{};
-		if constexpr (resizable_range<T>) {
-			value.resize(s.read<std::uint32_t>());
-		}
-		for (auto& handle : value) {
-			handle = std::ranges::range_value_t<T>(s.read<id>());
-		}
-		return value;
-	}
-	else if constexpr (resource::is_handle_v<T>) {
+	if constexpr (resource::is_handle_v<T>) {
 		return T(s.read<id>());
 	}
 	else if constexpr (dynamic_field<T>) {
@@ -141,6 +128,16 @@ auto gse::network::decode_field(read_bitstream& s) -> T {
 	}
 	else if constexpr (std::is_trivially_copyable_v<T>) {
 		return s.read<T>();
+	}
+	else if constexpr (std::ranges::range<T>) {
+		T value{};
+		if constexpr (resizable_range<T>) {
+			value.resize(s.read<std::uint32_t>());
+		}
+		for (auto& element : value) {
+			element = decode_field<std::ranges::range_value_t<T>>(s);
+		}
+		return value;
 	}
 	else {
 		T v{};
