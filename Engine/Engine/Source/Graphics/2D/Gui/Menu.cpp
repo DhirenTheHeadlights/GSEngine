@@ -119,7 +119,7 @@ auto gse::gui::calculate_display_rect(viewport_state& vp, const menu& m) -> rect
 	return display_rect;
 }
 
-auto gse::gui::process_menu(data& d, viewport_state& vp, const gse::input::state& input_state, const std::string& name, const render_layer layer, const std::function<void(builder&)>& build) -> void {
+auto gse::gui::process_menu(data& d, viewport_state& vp, const input::state& input_state, const std::string& name, const render_layer layer, const std::function<void(builder&)>& build) -> void {
 	if (!vp.fstate.active) {
 		return;
 	}
@@ -220,6 +220,7 @@ auto gse::gui::process_menu(data& d, viewport_state& vp, const gse::input::state
 		.text_pool_used = d.text_pool_used,
 		.widget_anim_colors = d.widget_anim_colors,
 		.widget_scrolls = d.widget_scrolls,
+		.widget_tree_open = d.widget_tree_open,
 		.current_layer = layer,
 		.current_z_order = menu_z,
 		.input_layer = vp.input_layer_render,

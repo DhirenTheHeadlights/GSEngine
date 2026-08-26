@@ -16,7 +16,7 @@ import :url;
 export namespace gse::http {
 	struct fetch_request {
 		using result_type = result;
-		http::request req;
+		request req;
 		channel_promise<result> promise;
 	};
 
@@ -32,29 +32,29 @@ export namespace gse::http {
 	};
 
 	struct queued_fetch {
-		http::request req;
+		request req;
 		std::string host;
 		channel_promise<result> promise;
 	};
 
-	struct [[= gse::system_state<"Http">{}]] data {
-		[[= gse::shared]] std::uint32_t queued = 0;
-		[[= gse::shared]] std::uint32_t in_flight = 0;
-		[[= gse::shared]] std::uint64_t succeeded = 0;
-		[[= gse::shared]] std::uint64_t failed = 0;
+	struct [[= system_state<"Http">{}]] data {
+		[[= shared]] std::uint32_t queued = 0;
+		[[= shared]] std::uint32_t in_flight = 0;
+		[[= shared]] std::uint64_t succeeded = 0;
+		[[= shared]] std::uint64_t failed = 0;
 		std::unique_ptr<client> client_ptr;
 		std::vector<queued_fetch> queue;
 		std::flat_map<id, channel_promise<result>> waiting;
 		std::unordered_map<std::string, host_throttle> throttles;
 	};
 
-	[[= gse::system_run<>{}]]
+	[[= system_run<>{}]]
 	auto run(
 		data& d,
 		channel_read<fetch_request, throttle_request> requests
 	) -> async::task<>;
 
-	[[= gse::system_shutdown{}]]
+	[[= system_shutdown{}]]
 	auto shutdown(
 		data& d
 	) -> void;

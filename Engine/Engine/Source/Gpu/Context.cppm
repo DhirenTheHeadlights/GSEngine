@@ -27,12 +27,12 @@ export namespace gse::gpu {
 
 export namespace gse::gpu::context {
 	struct window_presentation {
-		gse::id window;
+		id window;
 		gpu::surface surface;
 		std::unique_ptr<swap_chain> swapchain;
 	};
 
-	struct [[= gse::system_state<"Gpu">{}, = gse::settings::category<"Graphics">{}]] data {
+	struct [[= system_state<"Gpu">{}, = settings::category<"Graphics">{}]] data {
 		[[
 			= settings::describe<"Enable Vulkan validation layers. Catches API misuse but adds significant "
 									  "overhead. Requires a restart.">{},
@@ -100,12 +100,12 @@ export namespace gse::gpu::context {
 
 	auto destroy_presentation(
 		data& d,
-		gse::id window
+		id window
 	) -> void;
 
 	[[nodiscard]] auto find_presentation(
 		data& d,
-		gse::id window
+		id window
 	) -> window_presentation*;
 
 	auto sync_present_targets(

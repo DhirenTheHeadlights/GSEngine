@@ -1931,6 +1931,83 @@ static void emit_component_token(const source_token &use, tree binding) {
 	}
 }
 
+static bool token_scope_declares(tree name_id, int limit) {
+	if (!name_id || !g_source_tokens || limit <= 0) {
+		return false;
+	}
+	const int floor = limit > 4096 ? limit - 4096 : 0;
+	int depth = 0;
+	int opening = -1;
+	for (int i = limit - 1; i >= floor; --i) {
+		const source_token_kind kind = (*g_source_tokens)[i].kind;
+		if (kind == source_token_kind::right_brace) {
+			++depth;
+		}
+		else if (kind == source_token_kind::left_brace) {
+			if (depth == 0) {
+				opening = i;
+				break;
+			}
+			--depth;
+		}
+	}
+	if (opening < 0) {
+		return false;
+	}
+	int ranges[4];
+	int range_count = 0;
+	ranges[range_count++] = opening + 1;
+	ranges[range_count++] = limit;
+	if (opening > 0 && (*g_source_tokens)[opening - 1].kind == source_token_kind::right_paren) {
+		int parens = 0;
+		for (int i = opening - 1; i >= 0; --i) {
+			const source_token_kind kind = (*g_source_tokens)[i].kind;
+			if (kind == source_token_kind::right_paren) {
+				++parens;
+			}
+			else if (kind == source_token_kind::left_paren && --parens == 0) {
+				ranges[range_count++] = i + 1;
+				ranges[range_count++] = opening - 1;
+				break;
+			}
+		}
+	}
+	const int total = (int)g_source_tokens->length();
+	for (int r = 0; r + 1 < range_count; r += 2) {
+		for (int i = ranges[r]; i < ranges[r + 1] && i < total; ++i) {
+			if (i <= 0 || i + 1 >= total) {
+				continue;
+			}
+			if ((*g_source_tokens)[i].kind != source_token_kind::identifier
+				|| source_token_identifier(i) != name_id) {
+				continue;
+			}
+			const source_token_kind next = (*g_source_tokens)[i + 1].kind;
+			if (next != source_token_kind::comma && next != source_token_kind::semicolon
+				&& next != source_token_kind::right_paren && next != source_token_kind::left_paren
+				&& !source_token_is_char(i + 1, '=')) {
+				continue;
+			}
+			const source_token_kind prev = (*g_source_tokens)[i - 1].kind;
+			const bool arrow = prev == source_token_kind::greater && i >= 2
+				&& source_token_is_char(i - 2, '-')
+				&& (*g_source_tokens)[i - 2].finish == (*g_source_tokens)[i - 1].start;
+			if (arrow) {
+				continue;
+			}
+			if (prev == source_token_kind::greater || source_token_is_char(i - 1, '&')
+				|| source_token_is_char(i - 1, '*')
+				|| (prev == source_token_kind::identifier && !source_token_equals(i - 1, "return")
+					&& !source_token_equals(i - 1, "case") && !source_token_equals(i - 1, "co_return")
+					&& !source_token_equals(i - 1, "co_yield") && !source_token_equals(i - 1, "throw")
+					&& !source_token_equals(i - 1, "delete") && !source_token_equals(i - 1, "sizeof"))) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 static void emit_redundant_prefix(const int *components, int count, tree *resolved, const source_token& use) {
 	for (int remaining = count - 1; remaining > 0; --remaining) {
 		bool namespace_prefix = true;
@@ -1946,6 +2023,9 @@ static void emit_redundant_prefix(const int *components, int count, tree *resolv
 		}
 		const LOOK_want want = remaining == count - 1 ? LOOK_want::NORMAL : LOOK_want::TYPE_NAMESPACE;
 		tree shortened = visible_binding_at(source_token_identifier(components[remaining]), use, want);
+		if (token_scope_declares(source_token_identifier(components[remaining]), components[remaining])) {
+			continue;
+		}
 		if (source_bindings_match(shortened, resolved[remaining])) {
 			int final_scope = components[remaining] - 1;
 			while (final_scope > components[remaining - 1] && (*g_source_tokens)[final_scope].kind != source_token_kind::scope) {
@@ -3144,6 +3224,60 @@ static bool body_has_template_for(int open, int close) {
 	return false;
 }
 
+static int qualified_declarator_end(int start, int finish) {
+	int angle = 0;
+	int parens = 0;
+	int end = -1;
+	for (int index = start; index < finish; ++index) {
+		const source_token_kind kind = (*g_source_tokens)[index].kind;
+		if (kind == source_token_kind::less) {
+			if (parens == 0) {
+				++angle;
+			}
+		}
+		else if (kind == source_token_kind::greater && parens == 0) {
+			if (angle > 0) {
+				--angle;
+			}
+			else if (source_token_is_char(index - 1, '-')
+				&& (*g_source_tokens)[index - 1].finish == (*g_source_tokens)[index].start) {
+				break;
+			}
+		}
+		else if (kind == source_token_kind::left_paren) {
+			++parens;
+		}
+		else if (kind == source_token_kind::right_paren) {
+			if (parens > 0) {
+				--parens;
+			}
+		}
+		else if (kind == source_token_kind::scope && angle == 0 && parens == 0) {
+			end = index + 1;
+		}
+	}
+	if (end >= 0 && end < finish && source_token_is_char(end, '~')) {
+		++end;
+	}
+	if (end >= 0 && end + 1 < finish && (*g_source_tokens)[end].kind == source_token_kind::identifier
+		&& !source_token_equals(end, "operator")
+		&& (*g_source_tokens)[end + 1].kind == source_token_kind::less) {
+		int targs = 0;
+		int cursor = end + 1;
+		for (; cursor < finish; ++cursor) {
+			const source_token_kind kind = (*g_source_tokens)[cursor].kind;
+			if (kind == source_token_kind::less) {
+				++targs;
+			}
+			else if (kind == source_token_kind::greater && --targs <= 0) {
+				break;
+			}
+		}
+		end = cursor < finish ? cursor + 1 : finish;
+	}
+	return end > finish ? finish : end;
+}
+
 static void scan_declaration_type_qualifiers(tree decl, tree tmpl_override = NULL_TREE) {
 	if (!decl || !DECL_P(decl) || (DECL_ARTIFICIAL(decl) && !real_type_decl(decl))
 		|| ((TREE_CODE(decl) == VAR_DECL || TREE_CODE(decl) == FUNCTION_DECL) && DECL_LOCAL_DECL_P(decl))
@@ -3194,7 +3328,8 @@ static void scan_declaration_type_qualifiers(tree decl, tree tmpl_override = NUL
 		}
 		push_template_parms(tmpl, &locals);
 	}
-	const bool qualified_declarator = anchor > start && (*g_source_tokens)[anchor - 1].kind == source_token_kind::scope;
+	const int declarator_id = qualified_declarator_end(start, finish);
+	const bool qualified_declarator = declarator_id > start;
 	if (qualified_declarator) {
 		g_scope = lexical_namespace_of(decl);
 		g_class_context = NULL_TREE;
@@ -3202,13 +3337,13 @@ static void scan_declaration_type_qualifiers(tree decl, tree tmpl_override = NUL
 	}
 	scan_preceding_annotations(start);
 	for (int index = start; index < finish; ++index) {
-		if (qualified_declarator && index == anchor) {
+		if (qualified_declarator && index == declarator_id) {
 			g_scope = declaration_scope;
 			g_class_context = declaration_class;
 			g_function = declaration_function;
 		}
 		if ((*g_source_tokens)[index].kind == source_token_kind::identifier) {
-			scan_qualified_type_chain(index, finish, anchor, trailing_return >= 0 && index == trailing_return + 1);
+			scan_qualified_type_chain(index, finish, qualified_declarator ? declarator_id : anchor, trailing_return >= 0 && index == trailing_return + 1);
 		}
 	}
 	g_scope = declaration_scope;

@@ -954,8 +954,8 @@ auto gse::narrow_phase_collision::generate_manifold(const bounding_box& bb1, con
 			const auto half_extents = bb.half_extents();
 			const auto box = bb.obb();
 			const std::array<length, 3> local = { dot(world_point - box.center, box.axes[0]),
-												  dot(world_point - box.center, box.axes[1]),
-												  dot(world_point - box.center, box.axes[2]) };
+				dot(world_point - box.center, box.axes[1]),
+				dot(world_point - box.center, box.axes[2]) };
 
 			const std::uint8_t axis_idx = face_index / 2;
 			const std::uint8_t u_axis = (axis_idx + 1) % 3;
@@ -1787,10 +1787,10 @@ auto gse::narrow_phase_collision::speculative_test(const shape_data& a, const sh
 
 	std::optional<sat_result> result;
 
-	gse::match(*lo.shape)
+	match(*lo.shape)
 		.if_is([&](const physics::box_shape& lo_box) {
 			const bounding_box lo_bb(*lo.tc, lo_box);
-			gse::match(*hi.shape)
+			match(*hi.shape)
 				.if_is([&](const physics::box_shape& hi_box) {
 					const bounding_box hi_bb(*hi.tc, hi_box);
 					result = sat_speculative(lo_bb, hi_bb, margin);
@@ -1807,7 +1807,7 @@ auto gse::narrow_phase_collision::speculative_test(const shape_data& a, const sh
 				});
 		})
 		.else_if_is([&](const physics::sphere_shape& lo_sph) {
-			gse::match(*hi.shape)
+			match(*hi.shape)
 				.if_is([&](const physics::sphere_shape& hi_sph) {
 					result = sphere_sphere_speculative(lo.tc->position, lo_sph.radius, hi.tc->position, hi_sph.radius, margin);
 				})
@@ -1828,7 +1828,7 @@ auto gse::narrow_phase_collision::speculative_test(const shape_data& a, const sh
 		})
 		.else_if_is([&](const physics::capsule_shape& lo_cap) {
 			const bounding_box lo_bb(*lo.tc);
-			gse::match(*hi.shape)
+			match(*hi.shape)
 				.if_is([&](const physics::capsule_shape& hi_cap) {
 					const bounding_box hi_bb(*hi.tc);
 					result = capsule_capsule_speculative(
@@ -1846,7 +1846,7 @@ auto gse::narrow_phase_collision::speculative_test(const shape_data& a, const sh
 				});
 		})
 		.else_if_is([&](const physics::hull_shape&) {
-			gse::match(*hi.shape).if_is([&](const physics::hull_shape&) {
+			match(*hi.shape).if_is([&](const physics::hull_shape&) {
 				result = hull_hull_speculative(lo, hi, margin);
 			});
 		});
@@ -1867,10 +1867,10 @@ auto gse::narrow_phase_collision::generate_shape_manifold(const shape_data& a, c
 
 	contact_manifold manifold;
 
-	gse::match(*lo.shape)
+	match(*lo.shape)
 		.if_is([&](const physics::box_shape& lo_box) {
 			const bounding_box lo_bb(*lo.tc, lo_box);
-			gse::match(*hi.shape)
+			match(*hi.shape)
 				.if_is([&](const physics::box_shape& hi_box) {
 					const bounding_box hi_bb(*hi.tc, hi_box);
 					manifold = generate_manifold(lo_bb, hi_bb, n, separation, prefer_reference_lo);
@@ -1887,14 +1887,14 @@ auto gse::narrow_phase_collision::generate_shape_manifold(const shape_data& a, c
 				});
 		})
 		.else_if_is([&](const physics::sphere_shape& lo_sph) {
-			gse::match(*hi.shape)
+			match(*hi.shape)
 				.if_is([&](const physics::sphere_shape& hi_sph) {
 					manifold = sphere_sphere_manifold(lo.tc->position,
-													  lo_sph.radius,
-													  hi.tc->position,
-													  hi_sph.radius,
-													  n,
-													  separation);
+						lo_sph.radius,
+						hi.tc->position,
+						hi_sph.radius,
+						n,
+						separation);
 				})
 				.else_if_is([&](const physics::capsule_shape& hi_cap) {
 					const bounding_box hi_bb(*hi.tc);
@@ -1914,7 +1914,7 @@ auto gse::narrow_phase_collision::generate_shape_manifold(const shape_data& a, c
 		})
 		.else_if_is([&](const physics::capsule_shape& lo_cap) {
 			const bounding_box lo_bb(*lo.tc);
-			gse::match(*hi.shape)
+			match(*hi.shape)
 				.if_is([&](const physics::capsule_shape& hi_cap) {
 					const bounding_box hi_bb(*hi.tc);
 					manifold = capsule_capsule_manifold(
@@ -1933,7 +1933,7 @@ auto gse::narrow_phase_collision::generate_shape_manifold(const shape_data& a, c
 				});
 		})
 		.else_if_is([&](const physics::hull_shape&) {
-			gse::match(*hi.shape).if_is([&](const physics::hull_shape&) {
+			match(*hi.shape).if_is([&](const physics::hull_shape&) {
 				manifold = hull_hull_manifold(lo, hi, n);
 			});
 		});

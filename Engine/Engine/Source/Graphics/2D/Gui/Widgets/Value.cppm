@@ -24,7 +24,7 @@ export namespace gse::gui::draw {
 
 	template <
 		is_quantity T,
-		auto Unit = typename T::default_unit{}
+	auto Unit = typename T::default_unit{}
 	>
 	auto value(
 		const draw_context& ctx,
@@ -34,14 +34,14 @@ export namespace gse::gui::draw {
 
 	template <
 		typename T,
-		std::size_t N,
-		auto Unit = typename T::default_unit{}
+	std::size_t N,
+	auto Unit = typename T::default_unit{}
 	>
 	auto vec(
 		const draw_context& ctx,
 		const std::string& name,
 		const gse::
-			vec<T,
+		vec<T,
 				N>& v
 	) -> void;
 
@@ -50,7 +50,7 @@ export namespace gse::gui::draw {
 		const draw_context& ctx,
 		const std::string& name,
 		gse::
-			vec<T,
+		vec<T,
 				N> v
 	) -> void;
 }
@@ -85,7 +85,7 @@ export namespace gse::gui {
 		using result = void;
 		struct params {
 			std::string_view name;
-			gse::vec<T, N> val;
+			vec<T, N> val;
 		};
 		static auto draw(draw_context& ctx, params p, id&, id&, id&) -> void {
 			draw::vec(ctx, std::string(p.name), p.val);
@@ -97,7 +97,7 @@ export namespace gse::gui {
 		using result = void;
 		struct params {
 			std::string_view name;
-			gse::vec<T, N> val;
+			vec<T, N> val;
 		};
 		static auto draw(draw_context& ctx, params p, id&, id&, id&) -> void {
 			draw::vec<T, N, Unit>(ctx, std::string(p.name), p.val);
@@ -177,7 +177,7 @@ auto gse::gui::draw::value_box(const draw_context& ctx, const std::string& value
 	const auto code_view = ctx.fonts.code.resolve();
 	const float text_width = code_view->width(value, ctx.style.font_size);
 	const vec2f text_pos = { rect.center().x() - text_width / 2.f,
-							 rect.center().y() + code_view->vertical_center_offset(ctx.style.font_size) };
+		rect.center().y() + code_view->vertical_center_offset(ctx.style.font_size) };
 
 	ctx.queue_text({
 		.font = ctx.fonts.code,

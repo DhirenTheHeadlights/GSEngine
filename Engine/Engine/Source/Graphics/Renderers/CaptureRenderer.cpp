@@ -149,18 +149,18 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 		const auto h = height;
 		const auto byte_count = static_cast<std::size_t>(w) * h * 4;
 		std::vector<std::byte> pixels(byte_count);
-		gse::memcpy(pixels.data(), staging.host_read().data(), byte_count);
+		memcpy(pixels.data(), staging.host_read().data(), byte_count);
 
 		const bool needs_swizzle = gpu_s.swapchain->is_bgra();
 		const auto timestamp = system_clock::timestamp_filename();
 
 		task::post_io(
 			[pixels = std::move(pixels),
-			 w,
-			 h,
-			 needs_swizzle,
-			 timestamp,
-			 write_flag = d.write_in_progress.get()] mutable {
+				w,
+				h,
+				needs_swizzle,
+				timestamp,
+				write_flag = d.write_in_progress.get()] mutable {
 				for (std::size_t i = 0; i < pixels.size(); i += 4) {
 					if (needs_swizzle) {
 						std::swap(pixels[i], pixels[i + 2]);
@@ -363,11 +363,11 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 
 				task::post_io(
 					[snap = std::move(snapshot),
-					 codec = d.encoder.codec(),
-					 extent = d.encoder.extent(),
-					 stream_header = std::move(stream_header_copy),
-					 path,
-					 flag = d.clip_save_in_progress.get()] mutable -> void {
+						codec = d.encoder.codec(),
+						extent = d.encoder.extent(),
+						stream_header = std::move(stream_header_copy),
+						path,
+						flag = d.clip_save_in_progress.get()] mutable -> void {
 						const auto ok = mp4::mux(
 							snap,
 							{ codec, extent },
@@ -428,7 +428,7 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 		.rgba_index = d.rgba_slots[frame_index].valid() ? d.rgba_slots[frame_index].slot().index : shaders::bindless::invalid_index,
 	};
 
-	auto rec = co_await gpu::pass<^^gse::renderer::capture::frame>(pass_out).pipeline(d.convert_pipeline).after<^^ui::frame>();
+	auto rec = co_await gpu::pass<^^frame>(pass_out).pipeline(d.convert_pipeline).after<^^ui::frame>();
 
 	if (do_screenshot) {
 		rec.capture_swapchain(*gpu_s.swapchain, *gpu_s.frame, staging);

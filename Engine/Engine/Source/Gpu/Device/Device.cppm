@@ -25,17 +25,17 @@ export namespace gse::gpu {
 			std::optional<shared_view<window::data>> win,
 			bool validation_layers_enabled,
 			backend_kind& backend,
-			gpu::device_settings& device_cfg
+			device_settings& device_cfg
 		) -> std::unique_ptr<device>;
 
 		~device();
 
-		[[nodiscard]] auto handle() const -> gpu::device_handle;
+		[[nodiscard]] auto handle() const -> device_handle;
 
 		[[nodiscard]] auto surface_format() const -> image_format;
 
 		[[nodiscard]] auto queue_family(
-			gpu::queue_type queue
+			queue_type queue
 		) const -> std::uint32_t;
 
 		auto wait_idle() const -> void;
@@ -66,24 +66,24 @@ export namespace gse::gpu {
 		};
 
 		auto begin_pass_marker(
-			gpu::command_buffer_handle cmd,
+			command_buffer_handle cmd,
 			pass_marker_domain domain,
 			pass_marker marker,
 			std::string_view name
 		) -> pass_marker_handle;
 
 		auto checkpoint_pass_marker(
-			gpu::command_buffer_handle cmd,
+			command_buffer_handle cmd,
 			pass_marker_handle handle
 		) -> void;
 
 		auto post_renderpass_pass_marker(
-			gpu::command_buffer_handle cmd,
+			command_buffer_handle cmd,
 			pass_marker_handle handle
 		) -> void;
 
 		auto end_pass_marker(
-			gpu::command_buffer_handle cmd,
+			command_buffer_handle cmd,
 			pass_marker_handle handle
 		) -> void;
 
@@ -92,108 +92,108 @@ export namespace gse::gpu {
 			const shader_program_create_info& info
 		) -> shader_program;
 
-		[[nodiscard]] auto create_semaphore() -> gpu::handle<gpu::semaphore>;
+		[[nodiscard]] auto create_semaphore() -> gpu::handle<semaphore>;
 
 		[[nodiscard]] auto create_fence(
 			bool signaled
-		) -> gpu::handle<gpu::fence>;
+		) -> gpu::handle<fence>;
 
 		auto begin_one_time_commands(
-			gpu::command_buffer_handle cmd
+			command_buffer_handle cmd
 		) -> void;
 
 		auto end_commands(
-			gpu::command_buffer_handle cmd
+			command_buffer_handle cmd
 		) -> void;
 
 		auto cmd_reset(
-			gpu::command_buffer_handle cmd
+			command_buffer_handle cmd
 		) -> void;
 
 		auto cmd_begin(
-			gpu::command_buffer_handle cmd
+			command_buffer_handle cmd
 		) -> void;
 
 		auto cmd_end(
-			gpu::command_buffer_handle cmd
+			command_buffer_handle cmd
 		) -> void;
 
 		auto cmd_pipeline_barrier(
-			gpu::command_buffer_handle cmd,
+			command_buffer_handle cmd,
 			const dependency_info& dep
 		) -> void;
 
 		auto cmd_release_swapchain_to_present(
-			gpu::command_buffer_handle cmd,
-			gpu::handle<gpu::image> img,
+			command_buffer_handle cmd,
+			gpu::handle<image> img,
 			pipeline_stage_flags src_stages,
 			access_flags src_access
 		) -> void;
 
 		auto begin_debug_event(
-			gpu::command_buffer_handle cmd,
+			command_buffer_handle cmd,
 			std::string_view label
 		) -> void;
 
 		auto end_debug_event(
-			gpu::command_buffer_handle cmd
+			command_buffer_handle cmd
 		) -> void;
 
 		[[nodiscard]] auto create_transient_command_pool(
 			std::uint32_t family
-		) -> gpu::transient_pool_handle;
+		) -> transient_pool_handle;
 
 		[[nodiscard]] auto allocate_transient_primary(
-			gpu::transient_pool_handle pool
-		) -> gpu::command_buffer_handle;
+			transient_pool_handle pool
+		) -> command_buffer_handle;
 
 		auto transient_pool_try_reset(
-			gpu::transient_pool_handle pool,
+			transient_pool_handle pool,
 			std::uint64_t queue_progress
 		) -> void;
 
 		auto transient_pool_mark_in_use(
-			gpu::transient_pool_handle pool,
+			transient_pool_handle pool,
 			std::uint64_t value
 		) -> void;
 
 		auto transient_pool_reset_all(
-			gpu::transient_pool_handle pool
+			transient_pool_handle pool
 		) -> void;
 
 		[[nodiscard]]
 		auto create_timeline_semaphore(
 			std::uint64_t initial_value
-		) -> gpu::handle<gpu::semaphore>;
+		) -> gpu::handle<semaphore>;
 
 		[[nodiscard]]
-		auto create_exportable_semaphore() -> gpu::handle<gpu::semaphore>;
+		auto create_exportable_semaphore() -> gpu::handle<semaphore>;
 
 		[[nodiscard]]
 		auto export_semaphore_handle(
-			gpu::handle<gpu::semaphore> semaphore
+			gpu::handle<semaphore> semaphore
 		) const -> std::expected<void*, std::string>;
 
 		[[nodiscard]]
 		auto import_semaphore_handle(
 			void* handle
-		) -> std::expected<gpu::handle<gpu::semaphore>, std::string>;
+		) -> std::expected<gpu::handle<semaphore>, std::string>;
 
 		auto retire(
-			gpu::handle<gpu::semaphore> semaphore
+			gpu::handle<semaphore> semaphore
 		) -> void;
 
 		auto retire(
-			gpu::handle<gpu::fence> fence
+			gpu::handle<fence> fence
 		) -> void;
 
 		[[nodiscard]]
 		auto semaphore_counter_value(
-			gpu::handle<gpu::semaphore> semaphore
+			gpu::handle<semaphore> semaphore
 		) const -> std::uint64_t;
 
 		auto wait_semaphore(
-			gpu::handle<gpu::semaphore> semaphore,
+			gpu::handle<semaphore> semaphore,
 			std::uint64_t value
 		) const -> void;
 
@@ -201,18 +201,18 @@ export namespace gse::gpu {
 		auto create_timestamp_query_pool(
 			std::uint32_t capacity,
 			std::string_view label = {}
-		) -> gpu::handle<gpu::query_pool>;
+		) -> gpu::handle<query_pool>;
 
 		[[nodiscard]]
 		auto create_pipeline_stats_query_pool(
 			std::uint32_t capacity,
 			pipeline_statistic_flags statistics,
 			std::string_view label = {}
-		) -> gpu::handle<gpu::query_pool>;
+		) -> gpu::handle<query_pool>;
 
 		[[nodiscard]]
 		auto query_pool_results(
-			gpu::handle<gpu::query_pool> pool,
+			gpu::handle<query_pool> pool,
 			std::uint32_t first_query,
 			std::uint32_t query_count,
 			std::uint64_t stride
@@ -220,51 +220,51 @@ export namespace gse::gpu {
 
 		[[nodiscard]]
 		auto create_swapchain(
-			gpu::surface surface,
+			surface surface,
 			vec2i framebuffer_size,
 			present_mode mode,
-			gpu::swap_chain_handle old_handle = {}
-		) -> gpu::expected<swap_chain_info>;
+			swap_chain_handle old_handle = {}
+		) -> expected<swap_chain_info>;
 
-		[[nodiscard]] auto boot_surface() const -> gpu::surface;
+		[[nodiscard]] auto boot_surface() const -> surface;
 
 		[[nodiscard]] auto recreate_surface(
 			const window::window_surface& win,
-			gpu::swap_chain_handle current_swapchain
-		) -> gpu::surface;
+			swap_chain_handle current_swapchain
+		) -> surface;
 
 		[[nodiscard]] auto create_surface(
 			native_window_handle handle
-		) -> gpu::surface;
+		) -> surface;
 
 		auto destroy_surface(
-			gpu::surface surface
+			surface surface
 		) -> void;
 
 		[[nodiscard]]
 		auto acquire_swapchain_image(
-			gpu::swap_chain_handle swapchain,
-			gpu::handle<gpu::semaphore> wait_semaphore,
+			swap_chain_handle swapchain,
+			gpu::handle<semaphore> wait_semaphore,
 			std::uint64_t timeout_ns = std::numeric_limits<std::uint64_t>::max()
-		) const -> gpu::acquire_next_image_result;
+		) const -> acquire_next_image_result;
 
 		auto wait_swapchain_release_fences(
-			gpu::swap_chain_handle swapchain
+			swap_chain_handle swapchain
 		) const -> void;
 
 		auto reset_swapchain_release_fence(
-			gpu::swap_chain_handle swapchain,
+			swap_chain_handle swapchain,
 			std::uint32_t image_index
 		) const -> void;
 
 		[[nodiscard]] auto swapchain_release_fence(
-			gpu::swap_chain_handle swapchain,
+			swap_chain_handle swapchain,
 			std::uint32_t image_index
-		) const -> gpu::handle<gpu::fence>;
+		) const -> gpu::handle<fence>;
 
 		[[nodiscard]]
 		auto swapchain_past_presentation_timing(
-			gpu::swap_chain_handle swapchain
+			swap_chain_handle swapchain
 		) const -> std::vector<past_present_timing>;
 
 		[[nodiscard]]
@@ -288,7 +288,7 @@ export namespace gse::gpu {
 		auto acceleration_structure_scratch_alignment() const -> device_size;
 
 		auto host_upload_image_layers(
-			gpu::handle<gpu::image> img,
+			gpu::handle<image> img,
 			std::span<const void* const> layer_pointers,
 			vec2u extent
 		) const -> void;
@@ -312,49 +312,49 @@ export namespace gse::gpu {
 		) -> image;
 
 		[[nodiscard]] auto buffer_slot(
-			gpu::handle<gpu::buffer> buffer
-		) const -> gpu::bindless_slot;
+			gpu::handle<buffer> buffer
+		) const -> bindless_slot;
 
 		[[nodiscard]] auto buffer_address(
-			gpu::handle<gpu::buffer> buffer
-		) const -> gpu::device_address;
+			gpu::handle<buffer> buffer
+		) const -> device_address;
 
 		[[nodiscard]] auto buffer_size(
-			gpu::handle<gpu::buffer> buffer
-		) const -> gpu::device_size;
+			gpu::handle<buffer> buffer
+		) const -> device_size;
 
 		[[nodiscard]] auto buffer_mapped(
-			gpu::handle<gpu::buffer> buffer
+			gpu::handle<buffer> buffer
 		) const -> std::byte*;
 
 		[[nodiscard]] auto image_sampled_slot(
-			gpu::handle<gpu::image> image
-		) const -> gpu::bindless_slot;
+			gpu::handle<image> image
+		) const -> bindless_slot;
 
 		[[nodiscard]] auto image_storage_slot(
-			gpu::handle<gpu::image> image
-		) const -> gpu::bindless_slot;
+			gpu::handle<image> image
+		) const -> bindless_slot;
 
 		[[nodiscard]] auto image_format_of(
-			gpu::handle<gpu::image> image
-		) const -> gpu::image_format;
+			gpu::handle<image> image
+		) const -> image_format;
 
 		[[nodiscard]] auto image_extent(
-			gpu::handle<gpu::image> image
+			gpu::handle<image> image
 		) const -> vec3u;
 
 		[[nodiscard]] auto image_view_of(
-			gpu::handle<gpu::image> image
-		) const -> gpu::handle<gpu::image_view>;
+			gpu::handle<image> image
+		) const -> gpu::handle<image_view>;
 
 		[[nodiscard]]
-		auto allocate_buffer_slot() -> gpu::bindless_handle;
+		auto allocate_buffer_slot() -> bindless_handle;
 
 		[[nodiscard]]
-		auto allocate_image_slot() -> gpu::bindless_handle;
+		auto allocate_image_slot() -> bindless_handle;
 
 		[[nodiscard]]
-		auto allocate_acceleration_structure_slot() -> gpu::bindless_handle;
+		auto allocate_acceleration_structure_slot() -> bindless_handle;
 
 		[[nodiscard]]
 		auto resource_for_slot(
@@ -362,42 +362,42 @@ export namespace gse::gpu {
 		) const -> resource_ref;
 
 		auto write_storage_buffer(
-			gpu::bindless_slot slot,
+			bindless_slot slot,
 			const buffer& buf,
-			gpu::device_size size
+			device_size size
 		) -> void;
 
 		auto write_acceleration_structure(
-			gpu::bindless_slot slot,
-			gpu::device_address as_address
+			bindless_slot slot,
+			device_address as_address
 		) -> void;
 
 		auto write_sampled_image(
-			gpu::bindless_slot slot,
+			bindless_slot slot,
 			const image& img
 		) -> void;
 
 		[[nodiscard]]
 		auto register_sampler(
 			const sampler_desc& desc
-		) -> gpu::bindless_handle;
+		) -> bindless_handle;
 
 		[[nodiscard]]
 		auto register_texture(
 			const image& img,
 			const sampler_desc& desc
-		) -> gpu::bindless_handle;
+		) -> bindless_handle;
 
 		[[nodiscard]]
-		auto bindless_resource_heap_binding() const -> gpu::bindless_heap_binding;
+		auto bindless_resource_heap_binding() const -> bindless_heap_binding;
 
 		[[nodiscard]]
-		auto bindless_sampler_heap_binding() const -> gpu::bindless_heap_binding;
+		auto bindless_sampler_heap_binding() const -> bindless_heap_binding;
 
 		[[nodiscard]]
 		auto create_sampler(
 			const sampler_desc& desc
-		) -> gpu::handle<gpu::sampler>;
+		) -> gpu::handle<sampler>;
 
 		auto collect_garbage() -> void;
 
@@ -405,12 +405,12 @@ export namespace gse::gpu {
 		auto frame_command_buffer(
 			queue_type queue,
 			std::uint32_t frame_index
-		) const -> gpu::command_buffer_handle;
+		) const -> command_buffer_handle;
 
 		auto submit(
 			queue_type queue,
 			const submit_info& info,
-			gpu::handle<gpu::fence> signal_fence = {}
+			gpu::handle<fence> signal_fence = {}
 		) -> void;
 
 		[[nodiscard]] auto present(
@@ -419,12 +419,12 @@ export namespace gse::gpu {
 
 		[[nodiscard]]
 		auto wait_for_fence(
-			gpu::handle<gpu::fence> f,
+			gpu::handle<fence> f,
 			std::uint64_t timeout_ns = std::numeric_limits<std::uint64_t>::max()
 		) const -> result;
 
 		auto reset_fence(
-			gpu::handle<gpu::fence> f
+			gpu::handle<fence> f
 		) const -> void;
 
 		auto reset_worker_command_pools(
@@ -436,7 +436,7 @@ export namespace gse::gpu {
 			queue_type queue,
 			std::size_t worker_index,
 			std::uint32_t frame_index
-		) -> gpu::command_buffer_handle;
+		) -> command_buffer_handle;
 
 		[[nodiscard]] auto make_video_encoder(
 			const encode_desc& desc
@@ -445,12 +445,12 @@ export namespace gse::gpu {
 		[[nodiscard]]
 		auto create_image_unbound(
 			const image_create_info& info
-		) const -> std::pair<gpu::handle<gpu::image>, memory_requirements>;
+		) const -> std::pair<gpu::handle<image>, memory_requirements>;
 
 		[[nodiscard]]
 		auto create_buffer_unbound(
 			const buffer_desc& info
-		) const -> std::pair<gpu::handle<gpu::buffer>, memory_requirements>;
+		) const -> std::pair<gpu::handle<buffer>, memory_requirements>;
 
 		[[nodiscard]]
 		auto create_shared_surface(
@@ -468,22 +468,22 @@ export namespace gse::gpu {
 		) const -> void;
 
 		auto bind_image_memory(
-			gpu::handle<gpu::image> img,
+			gpu::handle<image> img,
 			device_memory mem,
 			device_size offset
 		) const -> void;
 
 		auto bind_buffer_memory(
-			gpu::handle<gpu::buffer> buf,
+			gpu::handle<buffer> buf,
 			device_memory mem,
 			device_size offset
 		) const -> void;
 
 		[[nodiscard]]
 		auto create_image_view(
-			gpu::handle<gpu::image> img,
+			gpu::handle<image> img,
 			const image_view_create_info& info
-		) const -> gpu::handle<gpu::image_view>;
+		) const -> gpu::handle<image_view>;
 
 		[[nodiscard]]
 		auto allocate_aliased_memory(
@@ -503,8 +503,8 @@ export namespace gse::gpu {
 
 		[[nodiscard]]
 		auto make_aliased_image(
-			gpu::handle<gpu::image> img_handle,
-			gpu::handle<gpu::image_view> view_handle,
+			gpu::handle<image> img_handle,
+			gpu::handle<image_view> view_handle,
 			image_format format,
 			vec3u extent,
 			const image_view_create_info& view_info
@@ -512,14 +512,14 @@ export namespace gse::gpu {
 
 		[[nodiscard]]
 		auto make_aliased_buffer(
-			gpu::handle<gpu::buffer> buf_handle,
+			gpu::handle<buffer> buf_handle,
 			device_size size
 		) -> std::unique_ptr<buffer>;
 
 		[[nodiscard]] auto transient() -> transient_executor<device>&;
 
 		[[nodiscard]] auto recorder(
-			gpu::command_buffer_handle cmd
+			command_buffer_handle cmd
 		) const -> pass_recorder;
 
 		[[nodiscard]] auto video_encode_enabled() const -> bool;

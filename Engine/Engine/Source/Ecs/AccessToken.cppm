@@ -34,7 +34,8 @@ export namespace gse {
 	class access_guard {
 	public:
 		auto begin_read(
-			id type
+			id type,
+			const void* owner
 		) -> void;
 
 		auto end_read(
@@ -42,7 +43,8 @@ export namespace gse {
 		) -> void;
 
 		auto begin_write(
-			id type
+			id type,
+			const void* owner
 		) -> void;
 
 		auto end_write(
@@ -53,6 +55,7 @@ export namespace gse {
 		struct slot {
 			std::atomic<int> readers{ 0 };
 			std::atomic<int> writers{ 0 };
+			std::atomic<const void*> writer_owner{ nullptr };
 		};
 
 		auto slot_for(
@@ -274,10 +277,10 @@ export namespace gse {
 		friend class context;
 
 		explicit entities(
-			gse::registry* reg
+			registry* reg
 		);
 
-		gse::registry* m_reg = nullptr;
+		registry* m_reg = nullptr;
 	};
 }
 
@@ -298,34 +301,45 @@ auto gse::access_guard::slot_for(const id type) -> slot& {
 	return ref;
 }
 
-auto gse::access_guard::begin_read(const id type) -> void {
+auto gse::access_guard::begin_read(const id type, const void* owner) -> void {
 	auto& s = slot_for(type);
 	s.readers.fetch_add(1, std::memory_order_acq_rel);
-	assert(s.writers.load(std::memory_order_acquire) == 0, "data race: read access on component {} while a writer is active in the same tick (missing scheduler dependency)", type);
+	const bool writer_is_self = s.writer_owner.load(std::memory_order_acquire) == owner;
+	assert(s.writers.load(std::memory_order_acquire) == 0 || writer_is_self, "data race: read access on component {} while another system is writing it (missing scheduler dependency)", type);
 }
 
 auto gse::access_guard::end_read(const id type) -> void {
 	slot_for(type).readers.fetch_sub(1, std::memory_order_acq_rel);
 }
 
-auto gse::access_guard::begin_write(const id type) -> void {
+auto gse::access_guard::begin_write(const id type, const void* owner) -> void {
 	auto& s = slot_for(type);
 	const int prev_writers = s.writers.fetch_add(1, std::memory_order_acq_rel);
 	const int readers = s.readers.load(std::memory_order_acquire);
-	assert(prev_writers == 0 && readers == 0, "data race: exclusive access on component {} while it is already being accessed in the same tick (missing scheduler dependency)", type);
+
+	if (prev_writers == 0) {
+		s.writer_owner.store(owner, std::memory_order_release);
+		assert(readers == 0, "data race: exclusive access on component {} while another system is reading it (missing scheduler dependency)", type);
+		return;
+	}
+
+	assert(s.writer_owner.load(std::memory_order_acquire) == owner, "data race: exclusive access on component {} while another system is already accessing it (missing scheduler dependency)", type);
 }
 
 auto gse::access_guard::end_write(const id type) -> void {
-	slot_for(type).writers.fetch_sub(1, std::memory_order_acq_rel);
+	auto& s = slot_for(type);
+	if (s.writers.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+		s.writer_owner.store(nullptr, std::memory_order_release);
+	}
 }
 
 gse::component_lock::component_lock(const config cfg) : m_config(cfg) {
 	if (m_config.guard) {
 		if (m_config.mode == access_mode::read) {
-			m_config.guard->begin_read(m_config.type);
+			m_config.guard->begin_read(m_config.type, m_config.held_locks);
 		}
 		else {
-			m_config.guard->begin_write(m_config.type);
+			m_config.guard->begin_write(m_config.type, m_config.held_locks);
 		}
 	}
 	if (m_config.held_locks) {

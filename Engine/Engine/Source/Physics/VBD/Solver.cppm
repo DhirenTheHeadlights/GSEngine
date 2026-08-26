@@ -375,24 +375,24 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 
 				const stiffness normal_floor = active_normal
 					? std::clamp<stiffness>(
-						  contact_effective_mass(ba, bb, r_aw, r_bw, c.normal) / h_squared,
-						  base_floor,
-						  m_config.penalty_max
+						contact_effective_mass(ba, bb, r_aw, r_bw, c.normal) / h_squared,
+						base_floor,
+						m_config.penalty_max
 					  )
 					: base_floor;
 
 				const std::array row_floor = {
 					normal_floor,
 					c.sticking ? std::clamp<stiffness>(
-					contact_effective_mass(ba, bb, r_aw, r_bw, c.tangent_u) / h_squared,
-					m_config.penalty_min,
-					m_config.penalty_max
+						contact_effective_mass(ba, bb, r_aw, r_bw, c.tangent_u) / h_squared,
+						m_config.penalty_min,
+						m_config.penalty_max
 				)
 							   : m_config.penalty_min,
 					c.sticking ? std::clamp<stiffness>(
-					contact_effective_mass(ba, bb, r_aw, r_bw, c.tangent_v) / h_squared,
-					m_config.penalty_min,
-					m_config.penalty_max
+						contact_effective_mass(ba, bb, r_aw, r_bw, c.tangent_v) / h_squared,
+						m_config.penalty_min,
+						m_config.penalty_max
 				)
 							   : m_config.penalty_min
 				};
@@ -628,11 +628,11 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 					.world_r_a = r_aw,
 					.world_r_b = r_bw,
 					.j_ang_a = { cross(r_aw, dirs[0]) / rad,
-								 cross(r_aw, dirs[1]) / rad,
-								 cross(r_aw, dirs[2]) / rad },
+						cross(r_aw, dirs[1]) / rad,
+						cross(r_aw, dirs[2]) / rad },
 					.j_ang_b = { cross(r_bw, dirs[0]) / rad,
-								 cross(r_bw, dirs[1]) / rad,
-								 cross(r_bw, dirs[2]) / rad },
+						cross(r_bw, dirs[1]) / rad,
+						cross(r_bw, dirs[2]) / rad },
 				};
 			},
 			trace_id<"vbd::frozen_jacobians">()
@@ -728,9 +728,9 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 				m_solve_state[bi] = {};
 				for (const auto ci : m_graph.body_contact_indices(bi)) {
 					accumulate_contact(contacts[ci], m_frozen_jacobians[ci],
-									   static_cast<std::uint32_t>(bi),
-									   h_squared,
-									   alpha);
+						static_cast<std::uint32_t>(bi),
+						h_squared,
+						alpha);
 				}
 				for (const auto ji : m_graph.body_joint_indices(bi)) {
 					accumulate_joint(joints[ji], static_cast<std::uint32_t>(bi), h_squared, dt, alpha);
@@ -1046,8 +1046,8 @@ auto gse::vbd::solver::accumulate_contact(const contact_constraint& constraint, 
 	const vec3<displacement> d = p_a - p_b;
 
 	const vec3<gap> cn = { dot(constraint.normal, d) + m_config.collision_margin,
-						   dot(constraint.tangent_u, d),
-						   dot(constraint.tangent_v, d) };
+		dot(constraint.tangent_u, d),
+		dot(constraint.tangent_v, d) };
 	const vec3<gap> c = cn - constraint.c0 * alpha;
 
 	const force friction_bound = abs(constraint.lambda[0]) * constraint.friction_coeff;
@@ -1058,10 +1058,10 @@ auto gse::vbd::solver::accumulate_contact(const contact_constraint& constraint, 
 	);
 	const force f1 = std::clamp<force>(constraint.penalty[1] * c[1] + constraint.lambda[1],
 									   -friction_bound,
-									   friction_bound);
+		friction_bound);
 	const force f2 = std::clamp<force>(constraint.penalty[2] * c[2] + constraint.lambda[2],
 									   -friction_bound,
-									   friction_bound);
+		friction_bound);
 
 	const float sign = is_a ? 1.f : -1.f;
 	const std::array dirs = { constraint.normal, constraint.tangent_u, constraint.tangent_v };
@@ -1282,8 +1282,8 @@ auto gse::vbd::solver::update_dual(const float alpha) -> step_delta {
 			const vec3<displacement> d = pA - pB;
 
 			const vec3<gap> cn = { dot(con.normal, d) + m_config.collision_margin,
-								   dot(con.tangent_u, d),
-								   dot(con.tangent_v, d) };
+				dot(con.tangent_u, d),
+				dot(con.tangent_v, d) };
 			const vec3<gap> c = cn - con.c0 * alpha;
 
 			con.lambda[0] = std::min<force>(
@@ -1542,13 +1542,13 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 						const torque f_limit = constraint.limit_penalty * c_limit + constraint.limit_lambda;
 						const torque f_clamped =
 							(c_limit < angle{}) ? std::min(
-							f_limit,
-							torque{}
-						)
+								f_limit,
+								torque{}
+							)
 												: std::max(
-							f_limit,
-							torque{}
-						);
+													f_limit,
+													torque{}
+												);
 
 						const vec3f j_limit = axis_a * (-sign);
 						m_solve_state[body_idx].angular_gradient += j_limit * f_clamped;
@@ -1721,7 +1721,7 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> step_d
 						const angle c_ang = theta[k] - j.ang_c0[k];
 						j.ang_lambda[k] = j.ang_penalty[k] * c_ang + j.ang_lambda[k];
 						j.ang_penalty[k] = std::min(j.ang_penalty[k] + m_config.ang_beta * abs(c_ang),
-													m_config.ang_penalty_max);
+							m_config.ang_penalty_max);
 						track_angular(c_ang);
 					}
 				}
@@ -1730,7 +1730,7 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> step_d
 					const angle c_twist = dot(axis_a, theta) - j.ang_c0[0];
 					j.ang_lambda[0] = j.ang_penalty[0] * c_twist + j.ang_lambda[0];
 					j.ang_penalty[0] = std::min(j.ang_penalty[0] + m_config.ang_beta * abs(c_twist),
-												m_config.ang_penalty_max);
+						m_config.ang_penalty_max);
 					track_angular(c_twist);
 				}
 				else {
@@ -1815,7 +1815,7 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> step_d
 					const angle c_ang = theta[k] - j.ang_c0[k];
 					j.ang_lambda[k] = j.ang_penalty[k] * c_ang + j.ang_lambda[k];
 					j.ang_penalty[k] = std::min(j.ang_penalty[k] + m_config.ang_beta * abs(c_ang),
-												m_config.ang_penalty_max);
+						m_config.ang_penalty_max);
 					track_angular(c_ang);
 				}
 			}
@@ -1862,7 +1862,7 @@ auto gse::vbd::contact_effective_mass(const body_state& body_a, const body_state
 		inv_mass_sum += dot(cross(body_b.inv_inertia * ang_j_b, r_bw), dir) / rad;
 	}
 
-	if (!gse::isfinite(inv_mass_sum) || inv_mass_sum <= per_kilograms(1e-10f)) {
+	if (!isfinite(inv_mass_sum) || inv_mass_sum <= per_kilograms(1e-10f)) {
 		return {};
 	}
 

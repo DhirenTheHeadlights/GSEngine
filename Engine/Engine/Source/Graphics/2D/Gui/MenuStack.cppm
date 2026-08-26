@@ -348,7 +348,7 @@ auto gse::gui::menu_stack_state::tick(builder& ui) -> void {
 
 auto gse::gui::menu_stack_state::apply(nav& n) -> void {
 	for (auto& a : n.m_actions) {
-		gse::match(a)
+		match(a)
 			.if_is([this](const nav::pop_tag&) {
 				pop();
 			})

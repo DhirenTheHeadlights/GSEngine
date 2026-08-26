@@ -216,10 +216,10 @@ auto gse::renderer::atmosphere::recreate_ap_volume(const shared_view<gpu::contex
 }
 
 auto gse::renderer::atmosphere::compute_sun_direction(const data& d) -> vec3f {
-	const float ce = gse::cos(d.sun_elevation);
-	const float se = gse::sin(d.sun_elevation);
-	const float ca = gse::cos(d.sun_azimuth);
-	const float sa = gse::sin(d.sun_azimuth);
+	const float ce = cos(d.sun_elevation);
+	const float se = sin(d.sun_elevation);
+	const float ca = cos(d.sun_azimuth);
+	const float sa = sin(d.sun_azimuth);
 	return normalize(vec3f{ ce * ca, se, ce * sa });
 }
 
@@ -251,7 +251,7 @@ auto gse::renderer::atmosphere::build_atmosphere_data(const data& d) -> atmosphe
 
 auto gse::renderer::atmosphere::init(context& ctx, const shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
 	d.transmittance_pipeline = gpu::build_compute_program(*gpu_s.device,
-														  transmittance_entry::pod);
+		transmittance_entry::pod);
 	d.multiscatter_pipeline = gpu::build_compute_program(*gpu_s.device, multiscatter_entry::pod);
 	d.sky_view_pipeline = gpu::build_compute_program(*gpu_s.device, sky_view_entry::pod);
 	d.sky_raster_pipeline = gpu::build_graphics_program(*gpu_s.device, sky_raster_entry::pod);
@@ -392,7 +392,7 @@ auto gse::renderer::atmosphere::frame(const context& ctx, shared_view<gpu::conte
 		(d.ap_volume_extent.y() + 7) / 8,
 		d.ap_volume_extent.z(),
 	};
-	const float sun_cos_radius = gse::cos(d.sun_angular_radius);
+	const float sun_cos_radius = cos(d.sun_angular_radius);
 
 	auto rec = co_await gpu::pass<^^sky_view_pass>(pass_out).pipeline(d.sky_view_pipeline).after<^^multiscatter_pass>();
 	rec.dispatch<sky_view_entry>(

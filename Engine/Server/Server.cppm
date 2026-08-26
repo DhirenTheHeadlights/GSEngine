@@ -134,7 +134,9 @@ template <typename MessagePack, typename... Components>
 auto gse::server::host<MessagePack, Components...>::apply_catalog(const world_system::scene_catalog& catalog) -> void {
 	m_scene_ids = catalog.scene_ids;
 	m_triggers = catalog.triggers;
-	m_active_scene = catalog.active_scene;
+	m_active_scene = catalog.active_scene != nullptr
+		? std::optional(catalog.active_scene->id())
+		: std::nullopt;
 	if (m_active_scene.has_value()) {
 		m_requested_scene.reset();
 	}
@@ -172,6 +174,10 @@ auto gse::server::host<MessagePack, Components...>::update(const structural<play
 				stream,
 				msg.id,
 				[&](const auto&) {
+					if (!has_active_scene) {
+						return;
+					}
+
 					const std::uint8_t max_players = m_config.max_players;
 					if (m_clients.size() >= max_players) {
 						std::println(
@@ -331,28 +337,27 @@ auto gse::server::host<MessagePack, Components...>::host_entity() const -> std::
 
 template <typename MessagePack, typename... Components>
 auto gse::server::host<MessagePack, Components...>::accept_connection(const structural<player_controller>& controller_auth, const entities& ents, const network::address& addr) -> void {
-	const bool has_active_scene = m_active_scene.has_value();
+	if (!m_active_scene.has_value()) {
+		return;
+	}
 
-	id controller_id{};
-	if (has_active_scene) {
-		const auto controller_name = std::format("PlayerController_{}:{}", addr.ip, addr.port);
-		controller_id = generate_id(controller_name);
-		ents.ensure_active(controller_id);
-		controller_auth.add(controller_id);
-		m_clients.emplace(
-			addr,
-			client_data{
-				.controller_id = controller_id,
-			}
-		);
+	const auto controller_name = std::format("PlayerController_{}:{}", addr.ip, addr.port);
+	const auto controller_id = generate_id(controller_name);
+	ents.ensure_active(controller_id);
+	controller_auth.add(controller_id);
+	m_clients.emplace(
+		addr,
+		client_data{
+			.controller_id = controller_id,
+		}
+	);
 
-		if (!m_host_entity.has_value()) {
-			m_host_entity = controller_id;
-			m_host_addr = addr;
-		}
-		else if (m_host_addr == addr) {
-			m_host_entity = controller_id;
-		}
+	if (!m_host_entity.has_value()) {
+		m_host_entity = controller_id;
+		m_host_addr = addr;
+	}
+	else if (m_host_addr == addr) {
+		m_host_entity = controller_id;
 	}
 
 	send_reliable(
@@ -362,14 +367,12 @@ auto gse::server::host<MessagePack, Components...>::accept_connection(const stru
 		addr
 	);
 
-	if (has_active_scene) {
-		send_reliable(
-			network::notify_scene_change{
-				.scene_id = *m_active_scene,
-			},
-			addr
-		);
-	}
+	send_reliable(
+		network::notify_scene_change{
+			.scene_id = *m_active_scene,
+		},
+		addr
+	);
 
 	m_pending_snapshots.insert(addr);
 }

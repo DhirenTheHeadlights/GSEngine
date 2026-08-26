@@ -34,8 +34,8 @@ export namespace gse::gui {
 	class settings_screen : public screen {
 	public:
 		settings_screen(
-			const gse::save::registry& save_reg,
-			gse::settings::panel_writer channels,
+			const save::registry& save_reg,
+			settings::panel_writer channels,
 			settings_screen_config config = {}
 		);
 
@@ -48,12 +48,12 @@ export namespace gse::gui {
 
 		auto body_rect(
 			const style& sty,
-			gse::vec2f viewport_size
-		) const -> gse::rect_t<gse::vec2f> override;
+			vec2f viewport_size
+		) const -> rect_t<vec2f> override;
 
 		auto draw_backdrop(
 			draw_context& ctx,
-			gse::vec2f viewport_size
+			vec2f viewport_size
 		) const -> void override;
 
 	private:
@@ -61,40 +61,40 @@ export namespace gse::gui {
 
 		auto draw_header(
 			draw_context& ctx,
-			const gse::rect_t<gse::vec2f>& rect,
+			const rect_t<vec2f>& rect,
 			nav& n
 		) const -> void;
 
 		auto draw_close_button(
 			draw_context& ctx,
-			const gse::rect_t<gse::vec2f>& rect,
+			const rect_t<vec2f>& rect,
 			nav& n
 		) const -> void;
 
 		auto draw_footer(
 			builder& ui,
-			const gse::rect_t<gse::vec2f>& rect
+			const rect_t<vec2f>& rect
 		) -> void;
 
 		auto draw_scope_paths(
 			draw_context& ctx,
-			const gse::rect_t<gse::vec2f>& rect
+			const rect_t<vec2f>& rect
 		) const -> void;
 
 		static auto draw_scope_entry(
 			draw_context& ctx,
-			const gse::rect_t<gse::vec2f>& rect,
+			const rect_t<vec2f>& rect,
 			std::string_view label,
 			const std::filesystem::path& path
 		) -> void;
 
 		static auto draw_footer_button(
 			builder& ui,
-			const gse::rect_t<gse::vec2f>& rect,
+			const rect_t<vec2f>& rect,
 			std::string_view label,
 			bool enabled,
 			bool primary,
-			gse::id key
+			id key
 		) -> bool;
 
 		struct footer_status_cache {
@@ -104,11 +104,11 @@ export namespace gse::gui {
 			std::string text;
 		};
 
-		const gse::save::registry* m_save_reg;
-		gse::settings::panel_writer m_channels;
+		const save::registry* m_save_reg;
+		settings::panel_writer m_channels;
 		std::string m_title;
 		bool m_opaque;
-		gse::settings::panel_state m_panel_state;
+		settings::panel_state m_panel_state;
 		std::string m_selected_category;
 		std::vector<std::string> m_categories;
 		footer_status_cache m_footer_status;
@@ -117,7 +117,7 @@ export namespace gse::gui {
 	};
 }
 
-gse::gui::settings_screen::settings_screen(const gse::save::registry& save_reg, gse::settings::panel_writer channels, settings_screen_config config)
+gse::gui::settings_screen::settings_screen(const save::registry& save_reg, settings::panel_writer channels, settings_screen_config config)
 	: m_save_reg(&save_reg), m_channels(std::move(channels)), m_title(std::move(config.title)), m_opaque(config.opaque) {
 }
 
@@ -125,12 +125,12 @@ auto gse::gui::settings_screen::title() const -> std::string_view {
 	return m_title;
 }
 
-auto gse::gui::settings_screen::body_rect(const style& sty, const gse::vec2f viewport_size) const -> gse::rect_t<gse::vec2f> {
-	return gse::gui::layout::fit_card(viewport_size, sty.card_min_size, sty.card_max_size, sty.card_margin);
+auto gse::gui::settings_screen::body_rect(const style& sty, const vec2f viewport_size) const -> rect_t<vec2f> {
+	return layout::fit_card(viewport_size, sty.card_min_size, sty.card_max_size, sty.card_margin);
 }
 
-auto gse::gui::settings_screen::draw_backdrop(draw_context& ctx, const gse::vec2f viewport_size) const -> void {
-	const gse::rect_t<gse::vec2f> full = gse::rect_t<gse::vec2f>::from_position_size(
+auto gse::gui::settings_screen::draw_backdrop(draw_context& ctx, const vec2f viewport_size) const -> void {
+	const rect_t<vec2f> full = rect_t<vec2f>::from_position_size(
 		{ 0.f, viewport_size.y() },
 		{ viewport_size.x(), viewport_size.y() }
 	);
@@ -139,28 +139,28 @@ auto gse::gui::settings_screen::draw_backdrop(draw_context& ctx, const gse::vec2
 		.rect = full,
 		.color = { 0.f, 0.f, 0.f, backdrop_alpha },
 		.texture = ctx.blank_texture,
-		.layer = gse::render_layer::popup,
+		.layer = render_layer::popup,
 	});
 
-	const gse::rect_t<gse::vec2f> card = body_rect(ctx.style, viewport_size);
+	const rect_t<vec2f> card = body_rect(ctx.style, viewport_size);
 
-	const gse::vec4f card_color = m_opaque
-		? gse::vec4f{ gse::vec3f(ctx.style.color_menu_body), 1.0f }
+	const vec4f card_color = m_opaque
+		? vec4f{ vec3f(ctx.style.color_menu_body), 1.0f }
 		: ctx.style.color_menu_body;
 	ctx.sprites.push_back({
 		.rect = card,
 		.color = card_color,
 		.texture = ctx.blank_texture,
-		.layer = gse::render_layer::popup,
+		.layer = render_layer::popup,
 		.corner_radius = ctx.style.corner_radius_menu,
 	});
 }
 
-auto gse::gui::settings_screen::draw_close_button(draw_context& ctx, const gse::rect_t<gse::vec2f>& rect, nav& n) const -> void {
+auto gse::gui::settings_screen::draw_close_button(draw_context& ctx, const rect_t<vec2f>& rect, nav& n) const -> void {
 	const auto& sty = ctx.style;
-	const gse::id close_id = gse::gui::ids::make("settings.close");
+	const id close_id = ids::make("settings.close");
 	const bool hovered = ctx.hovers(rect);
-	const gse::vec4f bg = hovered ? sty.color_widget_hovered : gse::vec4f{ 0.f, 0.f, 0.f, 0.f };
+	const vec4f bg = hovered ? sty.color_widget_hovered : vec4f{ 0.f, 0.f, 0.f, 0.f };
 
 	ctx.queue_sprite({
 		.rect = rect,
@@ -179,7 +179,7 @@ auto gse::gui::settings_screen::draw_close_button(draw_context& ctx, const gse::
 	}
 }
 
-auto gse::gui::settings_screen::draw_header(draw_context& ctx, const gse::rect_t<gse::vec2f>& rect, nav& n) const -> void {
+auto gse::gui::settings_screen::draw_header(draw_context& ctx, const rect_t<vec2f>& rect, nav& n) const -> void {
 	const auto& sty = ctx.style;
 	namespace lo = gse::gui::layout;
 
@@ -194,8 +194,8 @@ auto gse::gui::settings_screen::draw_header(draw_context& ctx, const gse::rect_t
 	});
 
 	const float close_pad = (rect.height() - sty.close_button_size) * 0.5f;
-	const gse::rect_t<gse::vec2f> close_band = lo::inset_per_side(rect, close_pad, close_pad, close_pad, 0.f);
-	const gse::rect_t<gse::vec2f> close_rect = lo::align_in(
+	const rect_t<vec2f> close_band = lo::inset_per_side(rect, close_pad, close_pad, close_pad, 0.f);
+	const rect_t<vec2f> close_rect = lo::align_in(
 		close_band,
 		{ sty.close_button_size, sty.close_button_size },
 		lo::halign::end,
@@ -203,7 +203,7 @@ auto gse::gui::settings_screen::draw_header(draw_context& ctx, const gse::rect_t
 	);
 	draw_close_button(ctx, close_rect, n);
 
-	const gse::rect_t<gse::vec2f> separator = gse::rect_t<gse::vec2f>::from_position_size(
+	const rect_t<vec2f> separator = rect_t<vec2f>::from_position_size(
 		{ rect.left() + sty.padding, rect.bottom() },
 		{ rect.width() - sty.padding * 2.f, sty.separator_thickness }
 	);
@@ -219,7 +219,7 @@ auto gse::gui::settings_screen::refresh_categories() -> void {
 		return;
 	}
 	std::unordered_set<std::string> seen;
-	m_save_reg->for_each_entry([&](const gse::settings::register_settings_type& entry) {
+	m_save_reg->for_each_entry([&](const settings::register_settings_type& entry) {
 		if (entry.category.empty()) {
 			return;
 		}
@@ -244,7 +244,7 @@ auto gse::gui::settings_screen::build(builder& ui, nav& n) -> void {
 	namespace lo = gse::gui::layout;
 	using spec = lo::size_spec;
 
-	const gse::rect_t<gse::vec2f> card = ctx.current_menu->rect;
+	const rect_t<vec2f> card = ctx.current_menu->rect;
 
 	const auto [header, body, footer] = lo::split_vertical<3>(
 		card,
@@ -265,7 +265,7 @@ auto gse::gui::settings_screen::build(builder& ui, nav& n) -> void {
 
 	draw_header(ctx, header, n);
 
-	const gse::rect_t<gse::vec2f> vertical_sep = gse::rect_t<gse::vec2f>::from_position_size(
+	const rect_t<vec2f> vertical_sep = rect_t<vec2f>::from_position_size(
 		{ body.left() + sty.sidebar_width, body.top() - sty.padding },
 		{ sty.separator_thickness, body.height() - sty.padding * 2.f }
 	);
@@ -280,10 +280,10 @@ auto gse::gui::settings_screen::build(builder& ui, nav& n) -> void {
 		lo::skip(ctx, sty.padding);
 		for (const auto& cat : m_categories) {
 			const bool selected = m_selected_category == cat;
-			if (ui.draw<gse::gui::nav_item>({
-					.text = cat,
-					.selected = selected,
-				})) {
+			if (ui.draw<nav_item>({
+				.text = cat,
+				.selected = selected,
+			})) {
 				m_selected_category = cat;
 			}
 		}
@@ -293,13 +293,13 @@ auto gse::gui::settings_screen::build(builder& ui, nav& n) -> void {
 	{
 		auto scope = lo::within(ctx, content);
 		lo::skip(ctx, sty.padding * 0.5f);
-		gse::settings::panel(ui, m_panel_state, m_channels, *m_save_reg, m_selected_category);
+		settings::panel(ui, m_panel_state, m_channels, *m_save_reg, m_selected_category);
 	}
 
 	draw_footer(ui, footer);
 }
 
-auto gse::gui::settings_screen::draw_scope_entry(draw_context& ctx, const gse::rect_t<gse::vec2f>& rect, const std::string_view label, const std::filesystem::path& path) -> void {
+auto gse::gui::settings_screen::draw_scope_entry(draw_context& ctx, const rect_t<vec2f>& rect, const std::string_view label, const std::filesystem::path& path) -> void {
 	const auto& sty = ctx.style;
 	namespace lo = gse::gui::layout;
 
@@ -331,11 +331,11 @@ auto gse::gui::settings_screen::draw_scope_entry(draw_context& ctx, const gse::r
 	});
 
 	if (ctx.mouse_pressed_for(rect)) {
-		gse::shell::reveal(path);
+		shell::reveal(path);
 	}
 }
 
-auto gse::gui::settings_screen::draw_scope_paths(draw_context& ctx, const gse::rect_t<gse::vec2f>& rect) const -> void {
+auto gse::gui::settings_screen::draw_scope_paths(draw_context& ctx, const rect_t<vec2f>& rect) const -> void {
 	const auto& sty = ctx.style;
 	namespace lo = gse::gui::layout;
 
@@ -349,7 +349,7 @@ auto gse::gui::settings_screen::draw_scope_paths(draw_context& ctx, const gse::r
 	const std::size_t scopes = static_cast<std::size_t>(!user.empty()) + static_cast<std::size_t>(!project.empty());
 	const float block_height = line_height * (1.f + 2.f * static_cast<float>(scopes));
 
-	const gse::rect_t<gse::vec2f> block = lo::inset_per_side(
+	const rect_t<vec2f> block = lo::inset_per_side(
 		lo::align_in(rect, { rect.width(), block_height + sty.padding }, lo::halign::start, lo::valign::bottom),
 		sty.padding * 0.5f,
 		sty.padding,
@@ -357,7 +357,7 @@ auto gse::gui::settings_screen::draw_scope_paths(draw_context& ctx, const gse::r
 		sty.padding * 1.5f
 	);
 
-	const gse::rect_t<gse::vec2f> separator = gse::rect_t<gse::vec2f>::from_position_size(
+	const rect_t<vec2f> separator = rect_t<vec2f>::from_position_size(
 		{ block.left(), block.top() },
 		{ block.width(), sty.separator_thickness }
 	);
@@ -367,7 +367,7 @@ auto gse::gui::settings_screen::draw_scope_paths(draw_context& ctx, const gse::r
 		.texture = ctx.blank_texture,
 	});
 
-	gse::rect_t<gse::vec2f> cursor = gse::rect_t<gse::vec2f>::from_position_size(
+	rect_t<vec2f> cursor = rect_t<vec2f>::from_position_size(
 		{ block.left(), block.top() },
 		{ block.width(), line_height }
 	);
@@ -382,7 +382,7 @@ auto gse::gui::settings_screen::draw_scope_paths(draw_context& ctx, const gse::r
 	});
 
 	auto advance = [&cursor, block](const float amount) {
-		cursor = gse::rect_t<gse::vec2f>::from_position_size({ block.left(), cursor.bottom() }, { block.width(), amount });
+		cursor = rect_t<vec2f>::from_position_size({ block.left(), cursor.bottom() }, { block.width(), amount });
 	};
 
 	if (!user.empty()) {
@@ -395,15 +395,15 @@ auto gse::gui::settings_screen::draw_scope_paths(draw_context& ctx, const gse::r
 	}
 }
 
-auto gse::gui::settings_screen::draw_footer_button(builder& ui, const gse::rect_t<gse::vec2f>& rect, const std::string_view label, const bool enabled, const bool primary, const gse::id key) -> bool {
+auto gse::gui::settings_screen::draw_footer_button(builder& ui, const rect_t<vec2f>& rect, const std::string_view label, const bool enabled, const bool primary, const id key) -> bool {
 	draw_context& ctx = ui.ctx;
 	const auto& sty = ctx.style;
 	const auto btn = interaction::press_in_rect(ctx, ui.hot_widget_id, ui.active_widget_id, key, rect, enabled);
 
-	gse::vec4f disabled_color = sty.color_button_background;
+	vec4f disabled_color = sty.color_button_background;
 	disabled_color.w() = disabled_color.w() * 0.4f;
 
-	const gse::vec4f target_color = btn.color({
+	const vec4f target_color = btn.color({
 		.idle = primary ? sty.color_widget_active : sty.color_button_background,
 		.hot = primary ? sty.color_accent : sty.color_button_hovered,
 		.active = primary ? sty.color_accent : sty.color_button_hovered,
@@ -419,7 +419,7 @@ auto gse::gui::settings_screen::draw_footer_button(builder& ui, const gse::rect_
 
 	const auto text_view = ctx.fonts.text.resolve();
 	const float text_width = text_view->width(label, sty.font_size);
-	const gse::vec4f text_color = enabled ? sty.color_text : sty.color_text_disabled;
+	const vec4f text_color = enabled ? sty.color_text : sty.color_text_disabled;
 	ctx.queue_text({
 		.font = ctx.fonts.text,
 		.text = label,
@@ -432,12 +432,12 @@ auto gse::gui::settings_screen::draw_footer_button(builder& ui, const gse::rect_
 	return btn.activated;
 }
 
-auto gse::gui::settings_screen::draw_footer(builder& ui, const gse::rect_t<gse::vec2f>& rect) -> void {
+auto gse::gui::settings_screen::draw_footer(builder& ui, const rect_t<vec2f>& rect) -> void {
 	draw_context& ctx = ui.ctx;
 	const auto& sty = ctx.style;
 	namespace lo = gse::gui::layout;
 
-	const gse::rect_t<gse::vec2f> separator = gse::rect_t<gse::vec2f>::from_position_size(
+	const rect_t<vec2f> separator = rect_t<vec2f>::from_position_size(
 		{ rect.left() + sty.padding, rect.top() },
 		{ rect.width() - sty.padding * 2.f, sty.separator_thickness }
 	);
@@ -474,7 +474,7 @@ auto gse::gui::settings_screen::draw_footer(builder& ui, const gse::rect_t<gse::
 		}
 	}
 
-	const gse::vec4f status_color = (can_apply || needs_restart) ? sty.color_accent : sty.color_text_secondary;
+	const vec4f status_color = (can_apply || needs_restart) ? sty.color_accent : sty.color_text_secondary;
 	ctx.queue_text({
 		.font = ctx.fonts.text,
 		.text = m_footer_status.text,
@@ -485,41 +485,41 @@ auto gse::gui::settings_screen::draw_footer(builder& ui, const gse::rect_t<gse::
 	});
 
 	const float vertical_inset = (rect.height() - sty.button_height) * 0.5f;
-	const gse::rect_t<gse::vec2f> button_band = lo::inset_per_side(rect,
-															 vertical_inset,
-															 sty.padding,
-															 vertical_inset,
-															 sty.padding);
+	const rect_t<vec2f> button_band = lo::inset_per_side(rect,
+		vertical_inset,
+		sty.padding,
+		vertical_inset,
+		sty.padding);
 	float cursor_x = button_band.right();
 
 	if (needs_restart) {
 		cursor_x -= sty.accent_button_min_width;
-		const gse::rect_t<gse::vec2f> restart_rect = gse::rect_t<gse::vec2f>::from_position_size(
+		const rect_t<vec2f> restart_rect = rect_t<vec2f>::from_position_size(
 			{ cursor_x, button_band.top() },
 			{ sty.accent_button_min_width, sty.button_height }
 		);
-		if (draw_footer_button(ui, restart_rect, "Restart Now", true, true, gse::gui::ids::make("settings.footer.restart"))) {
+		if (draw_footer_button(ui, restart_rect, "Restart Now", true, true, ids::make("settings.footer.restart"))) {
 			m_save_reg->trigger_restart();
 		}
 		cursor_x -= sty.button_spacing;
 	}
 
 	cursor_x -= sty.button_min_width;
-	const gse::rect_t<gse::vec2f> apply_rect = gse::rect_t<gse::vec2f>::from_position_size(
+	const rect_t<vec2f> apply_rect = rect_t<vec2f>::from_position_size(
 		{ cursor_x, button_band.top() },
 		{ sty.button_min_width, sty.button_height }
 	);
-	if (draw_footer_button(ui, apply_rect, "Apply", can_apply, true, gse::gui::ids::make("settings.footer.apply"))) {
+	if (draw_footer_button(ui, apply_rect, "Apply", can_apply, true, ids::make("settings.footer.apply"))) {
 		m_panel_state.apply_all(m_channels, m_save_reg);
 	}
 	cursor_x -= sty.button_spacing;
 
 	cursor_x -= sty.button_min_width;
-	const gse::rect_t<gse::vec2f> discard_rect = gse::rect_t<gse::vec2f>::from_position_size(
+	const rect_t<vec2f> discard_rect = rect_t<vec2f>::from_position_size(
 		{ cursor_x, button_band.top() },
 		{ sty.button_min_width, sty.button_height }
 	);
-	if (draw_footer_button(ui, discard_rect, "Discard", can_apply, false, gse::gui::ids::make("settings.footer.discard"))) {
+	if (draw_footer_button(ui, discard_rect, "Discard", can_apply, false, ids::make("settings.footer.discard"))) {
 		m_panel_state.discard_all(m_save_reg);
 	}
 }

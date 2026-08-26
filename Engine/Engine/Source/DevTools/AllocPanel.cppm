@@ -13,7 +13,7 @@ import gse.time;
 import gse.math;
 
 export namespace gse::alloc_panel {
-	struct [[= gse::system_state<"AllocPanel">{}]] data {
+	struct [[= system_state<"AllocPanel">{}]] data {
 		actions::handle toggle;
 		bool bound = false;
 		bool visible = false;
@@ -24,7 +24,7 @@ export namespace gse::alloc_panel {
 		interval_timer<> refresh_timer{ milliseconds(500.f) };
 	};
 
-	[[= gse::system_run<>{}]]
+	[[= system_run<>{}]]
 	auto run(
 		context& ctx,
 		data& d,

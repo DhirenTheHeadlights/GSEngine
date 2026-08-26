@@ -54,6 +54,10 @@ auto gse::ide::panel_count(const dock_tree& tree) -> std::size_t {
 	return total;
 }
 
+auto gse::ide::is_popout(const dock_view& v) -> bool {
+	return v.window.exists();
+}
+
 auto gse::ide::activate_panel(dock_tree& tree, const id panel) -> void {
 	const id leaf_id = find_leaf(tree, panel);
 	dock_node* leaf = tree.nodes.try_get(leaf_id);

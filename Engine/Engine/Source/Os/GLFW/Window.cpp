@@ -71,7 +71,12 @@ namespace gse {
 	) -> int;
 
 	auto apply_cursor_mode(
-		const window::data& d
+		window::data& d
+	) -> void;
+
+	auto set_cursor_capture(
+		const window::window_surface& s,
+		bool capture
 	) -> void;
 
 	auto apply_display_mode(
@@ -245,25 +250,27 @@ auto gse::desired_present_mode_index(const window::data& d) -> int {
 	return d.attached ? mailbox_index : d.present_mode.value;
 }
 
-auto gse::apply_cursor_mode(const window::data& d) -> void {
+auto gse::apply_cursor_mode(window::data& d) -> void {
+	const bool want_capture = d.primary.focused
+		&& !d.cursor_suppressed
+		&& (d.primary.cursor_captured || !d.mouse_visible);
+
+#ifdef _WIN32
+	set_cursor_capture(d.primary, want_capture);
+	d.current_cursor_captured = want_capture;
+#else
+	if (want_capture == d.current_cursor_captured) {
+		return;
+	}
+	d.current_cursor_captured = want_capture;
+
 	auto* handle = to_glfw_handle(d.primary.handle);
-	const bool want_normal = d.cursor_suppressed || (d.mouse_visible && !d.primary.cursor_captured);
-	const int target_mode = want_normal ? glfw::cursor_normal : glfw::cursor_disabled;
-	const int current_mode = glfwGetInputMode(handle, glfw::cursor);
-	if (current_mode == target_mode) {
-		return;
-	}
-
-	if (target_mode == glfw::cursor_disabled && !d.primary.focused) {
-		return;
-	}
-
-	if (current_mode == glfw::cursor_disabled && target_mode == glfw::cursor_normal && d.primary.focused) {
+	if (!want_capture) {
 		const auto dims = window_handle_viewport(d.primary.handle);
 		glfwSetCursorPos(handle, dims.x() / 2.0, dims.y() / 2.0);
 	}
-
-	glfwSetInputMode(handle, glfw::cursor, target_mode);
+	glfwSetInputMode(handle, glfw::cursor, want_capture ? glfw::cursor_disabled : glfw::cursor_normal);
+#endif
 }
 
 auto gse::monitor_work_area(const int monitor_index) -> std::optional<rect_t<vec2i>> {
@@ -653,8 +660,7 @@ auto gse::create_window(window::data& d) -> void {
 
 	attach_surface_callbacks(handle, d.primary);
 
-	const int cursor_mode = d.cursor_suppressed || d.mouse_visible ? glfw::cursor_normal : glfw::cursor_disabled;
-	glfwSetInputMode(handle, glfw::cursor, cursor_mode);
+	glfwSetInputMode(handle, glfw::cursor, glfw::cursor_normal);
 
 	refresh_monitor_settings(d);
 	d.last_monitor_index = d.monitor.value;
@@ -665,9 +671,7 @@ auto gse::create_window(window::data& d) -> void {
 	d.primary.content_scale = window_handle_content_scale(d.primary.handle);
 	d.current_present_mode_index = desired_present_mode_index(d);
 
-	if (d.native_frame) {
-		window::install_native_frame(d.primary);
-	}
+	window::install_window_hook(d.primary, d.native_frame);
 
 	restore_window_geometry(d);
 }
@@ -1183,7 +1187,7 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 		if (const window_surface* under = surface_at(d, screen)) {
 			const auto client = window_handle_viewport(under->handle);
 			const vec2i local = screen - under->position;
-			located.window = under == &d.primary ? gse::id() : under->id;
+			located.window = under == &d.primary ? id() : under->id;
 			located.client_cursor = vec2f{
 				static_cast<float>(local.x()),
 				static_cast<float>(client.y() - local.y()),
@@ -1272,7 +1276,7 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 				break;
 			}
 		}
-		d.focused_window = focused == &d.primary ? gse::id{} : focused->id;
+		d.focused_window = focused == &d.primary ? id{} : focused->id;
 
 		std::vector<std::pair<const window_surface*, std::vector<input::event>>> drained;
 		drained.emplace_back(&d.primary, d.primary.input_events.drain());
@@ -1294,14 +1298,14 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 		}
 
 		if (pointer) {
-			d.cursor_window = pointer == &d.primary ? gse::id{} : pointer->id;
+			d.cursor_window = pointer == &d.primary ? id{} : pointer->id;
 		}
 		else if (const window_surface* held = find_surface(d, d.cursor_window)) {
 			pointer = held;
 		}
 		else {
 			pointer = &d.primary;
-			d.cursor_window = gse::id{};
+			d.cursor_window = id{};
 		}
 
 		for (const auto& [surface, events] : drained) {
@@ -1472,7 +1476,7 @@ auto gse::window::apply_commands(data& d) -> void {
 
 	const bool changed = win_x != d.primary.position.x() || win_y != d.primary.position.y() || win_w != d.primary.size.x() || win_h != d.primary.size.y();
 
-	if (const window::composition_probe composition = probe_composition(d); composition != d.primary.last_composition) {
+	if (const composition_probe composition = probe_composition(d); composition != d.primary.last_composition) {
 		const auto framebuffer = window_handle_viewport(d.primary.handle);
 		log::println(
 			log::category::render,
@@ -1532,17 +1536,50 @@ auto gse::window::apply_commands(data& d) -> void {
 namespace gse {
 	using namespace gse::win32;
 
-	struct native_frame_state {
+	struct window_hook_state {
 		WNDPROC original_proc = nullptr;
 		window::window_surface* surface = nullptr;
+		bool custom_frame = false;
+		bool captured = false;
 	};
 
 	constexpr long minimized_rect_coordinate = -30000;
+	constexpr wchar_t window_hook_prop[] = L"gse_window_hook";
 
-	LRESULT native_frame_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
-		auto* state = static_cast<native_frame_state*>(GetPropW(hwnd, L"gse_native_frame"));
+	LRESULT window_hook_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
+		auto* state = static_cast<window_hook_state*>(GetPropW(hwnd, window_hook_prop));
 		if (state == nullptr) {
 			return DefWindowProcW(hwnd, msg, wparam, lparam);
+		}
+
+		if (msg == wm_setcursor && state->captured && low_word(lparam) == ht_client) {
+			SetCursor(nullptr);
+			return 1;
+		}
+
+		if (msg == wm_input && state->captured && state->surface != nullptr) {
+			RAWINPUT raw{};
+			UINT size = sizeof(raw);
+			const UINT written = GetRawInputData(
+				reinterpret_cast<HRAWINPUT>(lparam),
+				rid_input,
+				&raw,
+				&size,
+				raw_input_header_size
+			);
+
+			if (written != static_cast<UINT>(-1)
+				&& raw.header.dwType == rim_type_mouse
+				&& (raw.data.mouse.usFlags & mouse_move_absolute) == 0) {
+				state->surface->input_events.push(input::mouse_raw_moved{
+					.x_delta = static_cast<double>(raw.data.mouse.lLastX),
+					.y_delta = -static_cast<double>(raw.data.mouse.lLastY),
+				});
+			}
+		}
+
+		if (!state->custom_frame) {
+			return CallWindowProcW(state->original_proc, hwnd, msg, wparam, lparam);
 		}
 
 		if (msg == wm_nccalcsize && wparam != 0) {
@@ -1637,7 +1674,7 @@ namespace gse {
 }
 #endif
 
-auto gse::window::install_native_frame(window_surface& surface) -> void {
+auto gse::window::install_window_hook(window_surface& surface, const bool custom_frame) -> void {
 #ifdef _WIN32
 	using namespace gse::win32;
 
@@ -1646,14 +1683,75 @@ auto gse::window::install_native_frame(window_surface& surface) -> void {
 		return;
 	}
 
-	auto* state = new native_frame_state{ .surface = &surface };
+	auto* state = new window_hook_state{ .surface = &surface, .custom_frame = custom_frame };
 	state->original_proc = reinterpret_cast<WNDPROC>(
-		SetWindowLongPtrW(hwnd, gwlp_wndproc, reinterpret_cast<LONG_PTR>(&native_frame_proc))
+		SetWindowLongPtrW(hwnd, gwlp_wndproc, reinterpret_cast<LONG_PTR>(&window_hook_proc))
 	);
-	SetPropW(hwnd, L"gse_native_frame", state);
-	SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, swp_frame_changed | swp_no_move | swp_no_size | swp_no_zorder | swp_no_activate);
+	SetPropW(hwnd, window_hook_prop, state);
+
+	if (custom_frame) {
+		SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, swp_frame_changed | swp_no_move | swp_no_size | swp_no_zorder | swp_no_activate);
+	}
 #else
 	(void)surface;
+	(void)custom_frame;
+#endif
+}
+
+auto gse::set_cursor_capture(const window::window_surface& s, const bool capture) -> void {
+#ifdef _WIN32
+	using namespace gse::win32;
+
+	const HWND hwnd = glfwGetWin32Window(to_glfw_handle(s.handle));
+	if (hwnd == nullptr) {
+		return;
+	}
+
+	auto* state = static_cast<window_hook_state*>(GetPropW(hwnd, window_hook_prop));
+	if (state == nullptr) {
+		return;
+	}
+
+	if (state->captured != capture) {
+		state->captured = capture;
+
+		const RAWINPUTDEVICE mouse{
+			.usUsagePage = hid_usage_page_generic,
+			.usUsage = hid_usage_generic_mouse,
+			.dwFlags = capture ? 0u : ridev_remove,
+			.hwndTarget = capture ? hwnd : nullptr,
+		};
+		RegisterRawInputDevices(&mouse, 1, sizeof(mouse));
+
+		if (capture) {
+			SetCursor(nullptr);
+		}
+		else {
+			ClipCursor(nullptr);
+			SendMessageW(hwnd, wm_setcursor, reinterpret_cast<WPARAM>(hwnd), make_lparam(static_cast<int>(ht_client), static_cast<int>(wm_mousemove)));
+		}
+	}
+
+	if (capture) {
+		RECT client{};
+		GetClientRect(hwnd, &client);
+
+		POINT top_left{ .x = client.left, .y = client.top };
+		POINT bottom_right{ .x = client.right, .y = client.bottom };
+		ClientToScreen(hwnd, &top_left);
+		ClientToScreen(hwnd, &bottom_right);
+
+		const RECT clip{
+			.left = top_left.x,
+			.top = top_left.y,
+			.right = bottom_right.x,
+			.bottom = bottom_right.y,
+		};
+		ClipCursor(&clip);
+	}
+#else
+	(void)s;
+	(void)capture;
 #endif
 }
 
@@ -1736,7 +1834,7 @@ auto gse::window::create_secondary(data& d, const secondary_window_desc& desc) -
 
 	attach_surface_callbacks(handle, *surface);
 	glfwSetInputMode(handle, glfw::cursor, glfw::cursor_normal);
-	install_native_frame(*surface);
+	install_window_hook(*surface, true);
 
 	if (desc.use_position) {
 		set_surface_frame_rect(*surface, desc.position, desc.size);
@@ -1751,7 +1849,7 @@ auto gse::window::create_secondary(data& d, const secondary_window_desc& desc) -
 	return raw;
 }
 
-auto gse::window::find_surface(data& d, const gse::id id) -> window_surface* {
+auto gse::window::find_surface(data& d, const id id) -> window_surface* {
 	if (!id.exists() || d.primary.id == id) {
 		return &d.primary;
 	}

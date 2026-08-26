@@ -199,7 +199,7 @@ auto gse::vulkan::device::create_swap_chain(const gpu::surface surface, const ve
 	}
 	else {
 		vk::Extent2D actual_extent = { static_cast<std::uint32_t>(framebuffer_size.x()),
-									   static_cast<std::uint32_t>(framebuffer_size.y()) };
+			static_cast<std::uint32_t>(framebuffer_size.y()) };
 
 		extent.width =
 			std::clamp(
@@ -1203,12 +1203,12 @@ auto gse::vulkan::device::create_buffer(const vk::BufferCreateInfo& buffer_info,
 		const auto file = std::filesystem::path(debug_info.creation_location.file_name()).filename().generic_display_string();
 		const auto name = debug_info.tag.empty()
 			? std::format("Buffer ({}:{})", file,
-						  debug_info.creation_location.line())
+				debug_info.creation_location.line())
 			: std::format(
-				  "Buffer '{}' ({}:{})",
-				  debug_info.tag,
-				  file,
-				  debug_info.creation_location.line()
+				"Buffer '{}' ({}:{})",
+				debug_info.tag,
+				file,
+				debug_info.creation_location.line()
 			  );
 
 		const auto name_result = (*m_device).setDebugUtilsObjectNameEXT({
@@ -1220,7 +1220,7 @@ auto gse::vulkan::device::create_buffer(const vk::BufferCreateInfo& buffer_info,
 	}
 
 	if (data && alloc.mapped()) {
-		gse::memcpy(alloc.mapped(), data, actual_buffer_info.size);
+		memcpy(alloc.mapped(), data, actual_buffer_info.size);
 	}
 	else if (data && !alloc.mapped()) {
 		assert(false, "Buffer created with data, but the allocated memory is not mappable.");
@@ -1283,7 +1283,7 @@ auto gse::vulkan::device::create_image(const vk::ImageCreateInfo& info, const gp
 	assert(bind_result == vk::Result::eSuccess, "failed to bind image memory: {}", vk::to_string(bind_result));
 
 	if (data && alloc.mapped()) {
-		gse::memcpy(alloc.mapped(), data, requirements.size);
+		memcpy(alloc.mapped(), data, requirements.size);
 	}
 
 	vk::ImageView view;
@@ -1324,22 +1324,22 @@ auto gse::vulkan::device::create_image(const vk::ImageCreateInfo& info, const gp
 		const auto image_name = debug_info.tag.empty()
 			? std::format("Image ({}:{})", file, debug_info.creation_location.line())
 			: std::format(
-				  "Image '{}' ({}:{})",
-				  debug_info.tag,
-				  file,
-				  debug_info.creation_location.line()
+				"Image '{}' ({}:{})",
+				debug_info.tag,
+				file,
+				debug_info.creation_location.line()
 			  );
 		const auto view_name = debug_info.tag.empty()
 			? std::format(
-				  "ImageView ({}:{})",
-				  file,
-				  debug_info.creation_location.line()
+				"ImageView ({}:{})",
+				file,
+				debug_info.creation_location.line()
 			  )
 			: std::format(
-				  "ImageView '{}' ({}:{})",
-				  debug_info.tag,
-				  file,
-				  debug_info.creation_location.line()
+				"ImageView '{}' ({}:{})",
+				debug_info.tag,
+				file,
+				debug_info.creation_location.line()
 			  );
 
 		auto name_result = (*m_device).setDebugUtilsObjectNameEXT({
@@ -1999,7 +1999,7 @@ auto gse::vulkan::device::destroy_shared_surface(const gpu::shared_surface& surf
 	}
 	free_aliased_memory(surface.memory);
 	if (surface.handle) {
-		gse::win32::CloseHandle(surface.handle);
+		win32::CloseHandle(surface.handle);
 	}
 }
 
@@ -2225,13 +2225,13 @@ auto gse::vulkan::device::allocate(const vk::MemoryRequirements& requirements, c
 		}
 
 		return gpu::allocation{ std::bit_cast<std::uint64_t>(best_block->memory),
-										 requirements.size,
-										 best_aligned_offset,
-										 best_block->mapped
+			requirements.size,
+			best_aligned_offset,
+			best_block->mapped
 											 ? static_cast<char*>(best_block->mapped) + best_aligned_offset
 											 : nullptr,
 										 &*owner_it,
-										 std::move(debug_info) };
+			std::move(debug_info) };
 	}
 
 	const vk::DeviceSize aligned_offset = (0 + requirements.alignment - 1) & ~(requirements.alignment - 1);
@@ -2286,11 +2286,11 @@ auto gse::vulkan::device::allocate(const vk::MemoryRequirements& requirements, c
 	}
 
 	return gpu::allocation{ std::bit_cast<std::uint64_t>(new_block.memory),
-									 requirements.size,
-									 aligned_offset,
-									 new_block.mapped ? static_cast<char*>(new_block.mapped) + aligned_offset : nullptr,
-									 owner_ptr,
-									 std::move(debug_info) };
+		requirements.size,
+		aligned_offset,
+		new_block.mapped ? static_cast<char*>(new_block.mapped) + aligned_offset : nullptr,
+		owner_ptr,
+		std::move(debug_info) };
 }
 
 auto gse::vulkan::device::clean_up() -> void {

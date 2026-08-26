@@ -20,7 +20,7 @@ namespace gse::gpu {
 	inline thread_local recording_context* tl_active_recording_context = nullptr;
 }
 
-gse::gpu::recording_context::recording_context(pass_recorder rec, render_pass_data* pass, const gpu::transient_pool* transient_pool, gpu::device* device)
+gse::gpu::recording_context::recording_context(pass_recorder rec, render_pass_data* pass, const transient_pool* transient_pool, device* device)
 	: m_recorder(rec), m_pass(pass), m_transient_pool(transient_pool), m_device(device) {
 	if (m_recorder.valid()) {
 		assert(
@@ -204,18 +204,18 @@ auto gse::gpu::recording_context::ensure_descriptor_heaps() -> void {
 	m_bindless_heaps_valid = true;
 }
 
-auto gse::gpu::recording_context::sample_image(const image& img, const gpu::pipeline_stage_flags stages) -> void {
+auto gse::gpu::recording_context::sample_image(const image& img, const pipeline_stage_flags stages) -> void {
 	check_active();
 	const resource_ref ref{
 		.ptr = std::bit_cast<const void*>(img.handle()),
 		.type = resource_type::image,
-		.aspects = gpu::image_aspect_for(img.format()),
+		.aspects = image_aspect_for(img.format()),
 	};
-	note_touched(ref, stages, gpu::access_flag::shader_sampled_read);
-	transition_image_for_binding(ref, gpu::resource_state::sampled, stages, gpu::access_flag::shader_sampled_read);
+	note_touched(ref, stages, access_flag::shader_sampled_read);
+	transition_image_for_binding(ref, resource_state::sampled, stages, access_flag::shader_sampled_read);
 }
 
-auto gse::gpu::recording_context::note_touched(const resource_ref ref, const gpu::pipeline_stage_flags stages, const gpu::access_flags access) -> void {
+auto gse::gpu::recording_context::note_touched(const resource_ref ref, const pipeline_stage_flags stages, const access_flags access) -> void {
 	if (!ref.ptr) {
 		return;
 	}
@@ -247,7 +247,7 @@ auto gse::gpu::recording_context::invalidate_binding_repeat() -> void {
 	m_companion_access = {};
 }
 
-auto gse::gpu::recording_context::note_binding_mutation(const gpu::pipeline_stage_flags stages, const gpu::access_flags access, const bool known_resource) -> void {
+auto gse::gpu::recording_context::note_binding_mutation(const pipeline_stage_flags stages, const access_flags access, const bool known_resource) -> void {
 	if (!m_binding_repeat_valid) {
 		return;
 	}
@@ -260,31 +260,31 @@ auto gse::gpu::recording_context::note_binding_mutation(const gpu::pipeline_stag
 	invalidate_binding_repeat();
 }
 
-auto gse::gpu::recording_context::bound_shader_stages() const -> gpu::pipeline_stage_flags {
+auto gse::gpu::recording_context::bound_shader_stages() const -> pipeline_stage_flags {
 	if (m_bound_is_compute) {
-		return gpu::pipeline_stage_flag::compute_shader;
+		return pipeline_stage_flag::compute_shader;
 	}
-	return { gpu::pipeline_stage_flag::vertex_shader, gpu::pipeline_stage_flag::fragment_shader, gpu::pipeline_stage_flag::mesh_shader, gpu::pipeline_stage_flag::task_shader };
+	return { pipeline_stage_flag::vertex_shader, pipeline_stage_flag::fragment_shader, pipeline_stage_flag::mesh_shader, pipeline_stage_flag::task_shader };
 }
 
-auto gse::gpu::recording_context::emit_intra_pass_barrier(const resource_ref& ref, const gpu::pipeline_stage_flags stages, const gpu::access_flags access) -> bool {
+auto gse::gpu::recording_context::emit_intra_pass_barrier(const resource_ref& ref, const pipeline_stage_flags stages, const access_flags access) -> bool {
 	if (!m_recorder.valid()) {
 		return false;
 	}
 
-	constexpr gpu::access_flags write_mask{ gpu::access_flag::shader_write, gpu::access_flag::shader_storage_write,
-		gpu::access_flag::color_attachment_write, gpu::access_flag::depth_stencil_attachment_write,
-		gpu::access_flag::transfer_write, gpu::access_flag::host_write, gpu::access_flag::memory_write,
-		gpu::access_flag::acceleration_structure_write };
+	constexpr access_flags write_mask{ access_flag::shader_write, access_flag::shader_storage_write,
+		access_flag::color_attachment_write, access_flag::depth_stencil_attachment_write,
+		access_flag::transfer_write, access_flag::host_write, access_flag::memory_write,
+		access_flag::acceleration_structure_write };
 
-	constexpr gpu::pipeline_stage_flags graphics_mask{ gpu::pipeline_stage_flag::vertex_input,
-		gpu::pipeline_stage_flag::vertex_shader, gpu::pipeline_stage_flag::tessellation_control,
-		gpu::pipeline_stage_flag::tessellation_evaluation, gpu::pipeline_stage_flag::geometry_shader,
-		gpu::pipeline_stage_flag::fragment_shader, gpu::pipeline_stage_flag::early_fragment_tests,
-		gpu::pipeline_stage_flag::late_fragment_tests, gpu::pipeline_stage_flag::color_attachment_output,
-		gpu::pipeline_stage_flag::all_graphics, gpu::pipeline_stage_flag::index_input,
-		gpu::pipeline_stage_flag::vertex_attribute_input, gpu::pipeline_stage_flag::pre_rasterization_shaders,
-		gpu::pipeline_stage_flag::mesh_shader, gpu::pipeline_stage_flag::task_shader };
+	constexpr pipeline_stage_flags graphics_mask{ pipeline_stage_flag::vertex_input,
+		pipeline_stage_flag::vertex_shader, pipeline_stage_flag::tessellation_control,
+		pipeline_stage_flag::tessellation_evaluation, pipeline_stage_flag::geometry_shader,
+		pipeline_stage_flag::fragment_shader, pipeline_stage_flag::early_fragment_tests,
+		pipeline_stage_flag::late_fragment_tests, pipeline_stage_flag::color_attachment_output,
+		pipeline_stage_flag::all_graphics, pipeline_stage_flag::index_input,
+		pipeline_stage_flag::vertex_attribute_input, pipeline_stage_flag::pre_rasterization_shaders,
+		pipeline_stage_flag::mesh_shader, pipeline_stage_flag::task_shader };
 
 	const auto it = m_last_access.find(ref.ptr);
 	if (it == m_last_access.end()) {
@@ -303,7 +303,7 @@ auto gse::gpu::recording_context::emit_intra_pass_barrier(const resource_ref& re
 	}
 
 	if (ref.type == resource_type::buffer) {
-		const auto handle = std::bit_cast<gpu::handle<gpu::buffer>>(ref.ptr);
+		const auto handle = std::bit_cast<gpu::handle<buffer>>(ref.ptr);
 		bool merged = false;
 		for (auto& pending : m_pending_buffer_barriers) {
 			if (pending.buffer.value == handle.value) {
@@ -329,8 +329,8 @@ auto gse::gpu::recording_context::emit_intra_pass_barrier(const resource_ref& re
 	}
 	else if (ref.type == resource_type::image) {
 		const auto tracked = m_image_states.find(ref.ptr);
-		const auto state = tracked != m_image_states.end() ? tracked->second.current : gpu::resource_state::undefined;
-		const auto handle = std::bit_cast<gpu::handle<gpu::image>>(ref.ptr);
+		const auto state = tracked != m_image_states.end() ? tracked->second.current : resource_state::undefined;
+		const auto handle = std::bit_cast<gpu::handle<image>>(ref.ptr);
 		bool merged = false;
 		for (auto& pending : m_pending_image_barriers) {
 			if (pending.image.value == handle.value && pending.prev_state == state && pending.next_state == state) {
@@ -380,15 +380,15 @@ auto gse::gpu::recording_context::emit_intra_pass_barrier(const resource_ref& re
 	return true;
 }
 
-auto gse::gpu::recording_context::note_bindings_repeat(const gpu::pipeline_stage_flags stages, const gpu::access_flags access) -> void {
+auto gse::gpu::recording_context::note_bindings_repeat(const pipeline_stage_flags stages, const access_flags access) -> void {
 	if (!m_recorder.valid()) {
 		return;
 	}
 
-	constexpr gpu::access_flags write_mask{ gpu::access_flag::shader_write, gpu::access_flag::shader_storage_write,
-		gpu::access_flag::color_attachment_write, gpu::access_flag::depth_stencil_attachment_write,
-		gpu::access_flag::transfer_write, gpu::access_flag::host_write, gpu::access_flag::memory_write,
-		gpu::access_flag::acceleration_structure_write };
+	constexpr access_flags write_mask{ access_flag::shader_write, access_flag::shader_storage_write,
+		access_flag::color_attachment_write, access_flag::depth_stencil_attachment_write,
+		access_flag::transfer_write, access_flag::host_write, access_flag::memory_write,
+		access_flag::acceleration_structure_write };
 
 	if ((access & write_mask).bits() == 0 && m_companion_access.bits() == 0) {
 		return;
@@ -396,9 +396,9 @@ auto gse::gpu::recording_context::note_bindings_repeat(const gpu::pipeline_stage
 
 	m_binding_companion_armed = false;
 
-	gpu::pipeline_stage_flags cycle_stages = stages;
+	pipeline_stage_flags cycle_stages = stages;
 	cycle_stages |= m_companion_stages;
-	gpu::access_flags cycle_access = access;
+	access_flags cycle_access = access;
 	cycle_access |= m_companion_access;
 
 	for (auto& pending : m_pending_memory_barriers) {
@@ -422,7 +422,7 @@ auto gse::gpu::recording_context::flush_pending_barriers() -> void {
 		return;
 	}
 	if (m_recorder.valid()) {
-		m_recorder.pipeline_barrier(gpu::dependency_info{
+		m_recorder.pipeline_barrier(dependency_info{
 			.memory_barriers = m_pending_memory_barriers,
 			.buffer_barriers = m_pending_buffer_barriers,
 			.image_barriers = m_pending_image_barriers,
@@ -433,7 +433,7 @@ auto gse::gpu::recording_context::flush_pending_barriers() -> void {
 	m_pending_image_barriers.clear();
 }
 
-auto gse::gpu::recording_context::transition_image_for_binding(const resource_ref& ref, const gpu::resource_state target, const gpu::pipeline_stage_flags stages, const gpu::access_flags access) -> void {
+auto gse::gpu::recording_context::transition_image_for_binding(const resource_ref& ref, const resource_state target, const pipeline_stage_flags stages, const access_flags access) -> void {
 	if (ref.type != resource_type::image || !ref.ptr) {
 		return;
 	}
@@ -447,13 +447,13 @@ auto gse::gpu::recording_context::transition_image_for_binding(const resource_re
 		return;
 	}
 	invalidate_binding_repeat();
-	const gpu::image_barrier barrier{
+	const image_barrier barrier{
 		.src_stages = stages,
 		.dst_stages = stages,
 		.dst_access = access,
 		.prev_state = it->second.current,
 		.next_state = target,
-		.image = std::bit_cast<gpu::handle<gpu::image>>(ref.ptr),
+		.image = std::bit_cast<handle<image>>(ref.ptr),
 		.aspects = it->second.aspects,
 	};
 	flush_pending_barriers();
@@ -473,20 +473,20 @@ auto gse::gpu::recording_context::finalize_pass() -> void {
 			if (track.current == track.first) {
 				continue;
 			}
-			const gpu::image_barrier barrier{
+			const image_barrier barrier{
 				.prev_state = track.current,
 				.next_state = track.first,
-				.image = std::bit_cast<gpu::handle<gpu::image>>(ptr),
+				.image = std::bit_cast<handle<image>>(ptr),
 				.aspects = track.aspects,
 			};
 			m_recorder.transition_image_state(barrier);
 		}
 	}
 
-	constexpr gpu::access_flags write_mask{ gpu::access_flag::shader_write, gpu::access_flag::shader_storage_write,
-		gpu::access_flag::color_attachment_write, gpu::access_flag::depth_stencil_attachment_write,
-		gpu::access_flag::transfer_write, gpu::access_flag::host_write, gpu::access_flag::memory_write,
-		gpu::access_flag::acceleration_structure_write };
+	constexpr access_flags write_mask{ access_flag::shader_write, access_flag::shader_storage_write,
+		access_flag::color_attachment_write, access_flag::depth_stencil_attachment_write,
+		access_flag::transfer_write, access_flag::host_write, access_flag::memory_write,
+		access_flag::acceleration_structure_write };
 
 	for (const auto& [ref, stages, access] : m_touched) {
 		const bool has_writes = (access & write_mask).bits() != 0;
@@ -508,8 +508,8 @@ auto gse::gpu::recording_context::copy_buffer(const buffer& src, const buffer& d
 			.buffer_size = src.size(),
 			.host_buffer = std::addressof(src),
 		},
-		gpu::pipeline_stage_flag::copy,
-		gpu::access_flag::transfer_read
+		pipeline_stage_flag::copy,
+		access_flag::transfer_read
 	);
 	note_touched(
 		{
@@ -518,14 +518,14 @@ auto gse::gpu::recording_context::copy_buffer(const buffer& src, const buffer& d
 			.buffer_size = dst.size(),
 			.host_buffer = std::addressof(dst),
 		},
-		gpu::pipeline_stage_flag::copy,
-		gpu::access_flag::transfer_write
+		pipeline_stage_flag::copy,
+		access_flag::transfer_write
 	);
 	flush_pending_barriers();
 	m_recorder.copy_buffer(
 		src.handle(),
 		dst.handle(),
-		gpu::buffer_copy_region{
+		buffer_copy_region{
 			.src_offset = src_offset,
 			.dst_offset = dst_offset,
 			.size = size
@@ -542,58 +542,58 @@ auto gse::gpu::recording_context::fill_buffer(const buffer& dst, const std::size
 			.buffer_size = dst.size(),
 			.host_buffer = std::addressof(dst),
 		},
-		gpu::pipeline_stage_flag::clear,
-		gpu::access_flag::transfer_write
+		pipeline_stage_flag::clear,
+		access_flag::transfer_write
 	);
 	flush_pending_barriers();
 	m_recorder.fill_buffer(dst.handle(), offset, size, data);
 }
 
-auto gse::gpu::recording_context::build_acceleration_structure(const gpu::acceleration_structure_build_geometry_info& build_info, const std::span<const gpu::acceleration_structure_build_range_info* const> range_infos) -> void {
+auto gse::gpu::recording_context::build_acceleration_structure(const acceleration_structure_build_geometry_info& build_info, const std::span<const acceleration_structure_build_range_info* const> range_infos) -> void {
 	check_active();
 	note_touched(
 		{
 			.ptr = std::bit_cast<const void*>(build_info.dst.value),
 			.type = resource_type::acceleration_structure,
 		},
-		gpu::pipeline_stage_flag::acceleration_structure_build,
-		{ gpu::access_flag::acceleration_structure_read, gpu::access_flag::acceleration_structure_write }
+		pipeline_stage_flag::acceleration_structure_build,
+		{ access_flag::acceleration_structure_read, access_flag::acceleration_structure_write }
 	);
 	flush_pending_barriers();
 	m_recorder.build_acceleration_structures(build_info, range_infos);
 }
 
-auto gse::gpu::recording_context::pipeline_barrier(const gpu::dependency_info& dep) -> void {
+auto gse::gpu::recording_context::pipeline_barrier(const dependency_info& dep) -> void {
 	check_active();
 	flush_pending_barriers();
 	m_recorder.pipeline_barrier(dep);
 }
 
-auto gse::gpu::recording_context::capture_swapchain(const gpu::swap_chain& swapchain, const gpu::frame& frame, const buffer& dst) -> void {
+auto gse::gpu::recording_context::capture_swapchain(const swap_chain& swapchain, const frame& frame, const buffer& dst) -> void {
 	check_active();
 	flush_pending_barriers();
 	const auto ext = swapchain.extent();
 	const auto dst_buffer = dst.handle();
 	const auto gpu_image = swapchain.image(frame.image_index());
 
-	const gpu::image_barrier to_transfer{
-		.src_stages = gpu::pipeline_stage_flag::color_attachment_output,
-		.src_access = gpu::access_flag::color_attachment_write,
-		.dst_stages = gpu::pipeline_stage_flag::transfer,
-		.dst_access = gpu::access_flag::transfer_read,
+	const image_barrier to_transfer{
+		.src_stages = pipeline_stage_flag::color_attachment_output,
+		.src_access = access_flag::color_attachment_write,
+		.dst_stages = pipeline_stage_flag::transfer,
+		.dst_access = access_flag::transfer_read,
 		.image = gpu_image,
-		.aspects = gpu::image_aspect_flag::color,
+		.aspects = image_aspect_flag::color,
 	};
-	m_recorder.pipeline_barrier(gpu::dependency_info{
+	m_recorder.pipeline_barrier(dependency_info{
 		.image_barriers = std::span(&to_transfer, 1)
 	});
 
-	const gpu::buffer_image_copy_region gpu_region{
+	const buffer_image_copy_region gpu_region{
 		.buffer_offset = 0,
 		.buffer_row_length = 0,
 		.buffer_image_height = 0,
 		.image_subresource = {
-			.aspects = gpu::image_aspect_flag::color,
+			.aspects = image_aspect_flag::color,
 			.mip_level = 0,
 			.base_array_layer = 0,
 			.layer_count = 1,
@@ -603,52 +603,52 @@ auto gse::gpu::recording_context::capture_swapchain(const gpu::swap_chain& swapc
 	};
 	m_recorder.copy_image_to_buffer(gpu_image, dst_buffer, std::span(&gpu_region, 1));
 
-	const gpu::image_barrier back_to_color{
-		.src_stages = gpu::pipeline_stage_flag::transfer,
-		.src_access = gpu::access_flag::transfer_read,
-		.dst_stages = gpu::pipeline_stage_flag::color_attachment_output,
-		.dst_access = { gpu::access_flag::color_attachment_write, gpu::access_flag::color_attachment_read },
+	const image_barrier back_to_color{
+		.src_stages = pipeline_stage_flag::transfer,
+		.src_access = access_flag::transfer_read,
+		.dst_stages = pipeline_stage_flag::color_attachment_output,
+		.dst_access = { access_flag::color_attachment_write, access_flag::color_attachment_read },
 		.image = gpu_image,
-		.aspects = gpu::image_aspect_flag::color,
+		.aspects = image_aspect_flag::color,
 	};
-	m_recorder.pipeline_barrier(gpu::dependency_info{
+	m_recorder.pipeline_barrier(dependency_info{
 		.image_barriers = std::span(&back_to_color, 1)
 	});
 }
 
-auto gse::gpu::recording_context::blit_swapchain_to_image(const gpu::swap_chain& swapchain, const gpu::frame& frame, const image& dst, const vec2u dst_extent) -> void {
+auto gse::gpu::recording_context::blit_swapchain_to_image(const swap_chain& swapchain, const frame& frame, const image& dst, const vec2u dst_extent) -> void {
 	check_active();
 	flush_pending_barriers();
 	const auto src_image = swapchain.image(frame.image_index());
 	const auto src_ext = swapchain.extent();
 
-	const gpu::image_barrier src_to_transfer{
-		.src_stages = gpu::pipeline_stage_flag::color_attachment_output,
-		.src_access = gpu::access_flag::color_attachment_write,
-		.dst_stages = gpu::pipeline_stage_flag::transfer,
-		.dst_access = gpu::access_flag::transfer_read,
+	const image_barrier src_to_transfer{
+		.src_stages = pipeline_stage_flag::color_attachment_output,
+		.src_access = access_flag::color_attachment_write,
+		.dst_stages = pipeline_stage_flag::transfer,
+		.dst_access = access_flag::transfer_read,
 		.image = src_image,
-		.aspects = gpu::image_aspect_flag::color,
+		.aspects = image_aspect_flag::color,
 	};
 
-	const gpu::image_barrier dst_to_transfer{
+	const image_barrier dst_to_transfer{
 		.src_stages = {},
 		.src_access = {},
-		.dst_stages = gpu::pipeline_stage_flag::transfer,
-		.dst_access = gpu::access_flag::transfer_write,
+		.dst_stages = pipeline_stage_flag::transfer,
+		.dst_access = access_flag::transfer_write,
 		.discard_contents = true,
 		.image = dst.handle(),
-		.aspects = gpu::image_aspect_flag::color,
+		.aspects = image_aspect_flag::color,
 	};
 
 	const std::array pre_barriers = { src_to_transfer, dst_to_transfer };
-	m_recorder.pipeline_barrier(gpu::dependency_info{
+	m_recorder.pipeline_barrier(dependency_info{
 		.image_barriers = pre_barriers
 	});
 
-	const gpu::image_blit_region gpu_region{
+	const image_blit_region gpu_region{
 		.src_subresource = {
-			.aspects = gpu::image_aspect_flag::color,
+			.aspects = image_aspect_flag::color,
 			.mip_level = 0,
 			.base_array_layer = 0,
 			.layer_count = 1,
@@ -658,7 +658,7 @@ auto gse::gpu::recording_context::blit_swapchain_to_image(const gpu::swap_chain&
 			vec3i{ static_cast<int>(src_ext.x()), static_cast<int>(src_ext.y()), 1 },
 		},
 		.dst_subresource = {
-			.aspects = gpu::image_aspect_flag::color,
+			.aspects = image_aspect_flag::color,
 			.mip_level = 0,
 			.base_array_layer = 0,
 			.layer_count = 1,
@@ -668,28 +668,28 @@ auto gse::gpu::recording_context::blit_swapchain_to_image(const gpu::swap_chain&
 			vec3i{ static_cast<int>(dst_extent.x()), static_cast<int>(dst_extent.y()), 1 },
 		},
 	};
-	m_recorder.blit_image(src_image, dst.handle(), gpu_region, gpu::sampler_filter::nearest);
+	m_recorder.blit_image(src_image, dst.handle(), gpu_region, sampler_filter::nearest);
 
-	const gpu::image_barrier src_back{
-		.src_stages = gpu::pipeline_stage_flag::transfer,
-		.src_access = gpu::access_flag::transfer_read,
-		.dst_stages = gpu::pipeline_stage_flag::color_attachment_output,
-		.dst_access = { gpu::access_flag::color_attachment_write, gpu::access_flag::color_attachment_read },
+	const image_barrier src_back{
+		.src_stages = pipeline_stage_flag::transfer,
+		.src_access = access_flag::transfer_read,
+		.dst_stages = pipeline_stage_flag::color_attachment_output,
+		.dst_access = { access_flag::color_attachment_write, access_flag::color_attachment_read },
 		.image = src_image,
-		.aspects = gpu::image_aspect_flag::color,
+		.aspects = image_aspect_flag::color,
 	};
 
-	const gpu::image_barrier dst_to_read{
-		.src_stages = gpu::pipeline_stage_flag::transfer,
-		.src_access = gpu::access_flag::transfer_write,
-		.dst_stages = { gpu::pipeline_stage_flag::compute_shader, gpu::pipeline_stage_flag::fragment_shader },
-		.dst_access = gpu::access_flag::shader_sampled_read,
+	const image_barrier dst_to_read{
+		.src_stages = pipeline_stage_flag::transfer,
+		.src_access = access_flag::transfer_write,
+		.dst_stages = { pipeline_stage_flag::compute_shader, pipeline_stage_flag::fragment_shader },
+		.dst_access = access_flag::shader_sampled_read,
 		.image = dst.handle(),
-		.aspects = gpu::image_aspect_flag::color,
+		.aspects = image_aspect_flag::color,
 	};
 
 	const std::array post_barriers = { src_back, dst_to_read };
-	m_recorder.pipeline_barrier(gpu::dependency_info{
+	m_recorder.pipeline_barrier(dependency_info{
 		.image_barriers = post_barriers
 	});
 }
@@ -697,7 +697,7 @@ auto gse::gpu::recording_context::blit_swapchain_to_image(const gpu::swap_chain&
 auto gse::gpu::recording_context::set_viewport(const float x, const float y, const float width, const float height, const float min_depth, const float max_depth) const -> void {
 	check_active();
 	m_recorder.set_viewport(
-		gpu::viewport{
+		viewport{
 			.x = x,
 			.y = y,
 			.width = width,
@@ -710,7 +710,7 @@ auto gse::gpu::recording_context::set_viewport(const float x, const float y, con
 
 auto gse::gpu::recording_context::set_scissor(const std::int32_t x, const std::int32_t y, const std::uint32_t width, const std::uint32_t height) const -> void {
 	check_active();
-	const gse::rect_t<vec2i> sc{ {
+	const rect_t<vec2i> sc{ {
 		.min = vec2i{ x, y },
 		.max = vec2i{ x + static_cast<int>(width), y + static_cast<int>(height) },
 	} };
@@ -722,7 +722,7 @@ auto gse::gpu::recording_context::set_color_blend_enable(const std::uint32_t fir
 	m_recorder.set_color_blend_enable(first_attachment, enables);
 }
 
-auto gse::gpu::recording_context::set_color_blend_equation(const std::uint32_t first_attachment, const std::span<const gpu::color_blend_equation> equations) const -> void {
+auto gse::gpu::recording_context::set_color_blend_equation(const std::uint32_t first_attachment, const std::span<const color_blend_equation> equations) const -> void {
 	check_active();
 	m_recorder.set_color_blend_equation(first_attachment, equations);
 }
@@ -760,11 +760,11 @@ auto gse::gpu::recording_context::dispatch_indirect(const buffer& buf, const std
 			.buffer_size = buf.size(),
 			.host_buffer = std::addressof(buf),
 		},
-		gpu::pipeline_stage_flag::draw_indirect,
-		gpu::access_flag::indirect_command_read
+		pipeline_stage_flag::draw_indirect,
+		access_flag::indirect_command_read
 	);
 	flush_pending_barriers();
-	m_recorder.dispatch_indirect(buf.handle(), static_cast<gpu::device_size>(offset));
+	m_recorder.dispatch_indirect(buf.handle(), static_cast<device_size>(offset));
 }
 
 auto gse::gpu::recording_context::draw_indirect(const buffer& buf, const std::size_t offset, const std::uint32_t draw_count, const std::uint32_t stride) -> void {
@@ -776,8 +776,8 @@ auto gse::gpu::recording_context::draw_indirect(const buffer& buf, const std::si
 			.buffer_size = buf.size(),
 			.host_buffer = std::addressof(buf),
 		},
-		gpu::pipeline_stage_flag::draw_indirect,
-		gpu::access_flag::indirect_command_read
+		pipeline_stage_flag::draw_indirect,
+		access_flag::indirect_command_read
 	);
 	flush_pending_barriers();
 	m_recorder.draw_indexed_indirect(buf.handle(), offset, draw_count, stride);
@@ -792,14 +792,14 @@ auto gse::gpu::recording_context::draw_mesh_tasks_indirect(const buffer& buf, co
 			.buffer_size = buf.size(),
 			.host_buffer = std::addressof(buf),
 		},
-		gpu::pipeline_stage_flag::draw_indirect,
-		gpu::access_flag::indirect_command_read
+		pipeline_stage_flag::draw_indirect,
+		access_flag::indirect_command_read
 	);
 	flush_pending_barriers();
 	m_recorder.draw_mesh_tasks_indirect(buf.handle(), offset, draw_count, stride);
 }
 
-auto gse::gpu::recording_context::bind_index(const buffer& buf, const gpu::index_type type, const std::size_t offset) -> void {
+auto gse::gpu::recording_context::bind_index(const buffer& buf, const index_type type, const std::size_t offset) -> void {
 	check_active();
 	note_touched(
 		{
@@ -808,17 +808,17 @@ auto gse::gpu::recording_context::bind_index(const buffer& buf, const gpu::index
 			.buffer_size = buf.size(),
 			.host_buffer = std::addressof(buf),
 		},
-		gpu::pipeline_stage_flag::index_input,
-		gpu::access_flag::index_read
+		pipeline_stage_flag::index_input,
+		access_flag::index_read
 	);
 	flush_pending_barriers();
-	m_recorder.bind_index_buffer_2(buf.handle(), offset, gpu::whole_size, type);
+	m_recorder.bind_index_buffer_2(buf.handle(), offset, whole_size, type);
 }
 
 auto gse::gpu::recording_context::set_viewport(const vec2u extent) const -> void {
 	check_active();
 	m_recorder.set_viewport(
-		gpu::viewport{
+		viewport{
 			.x = 0.0f,
 			.y = 0.0f,
 			.width = static_cast<float>(extent.x()),
@@ -831,14 +831,14 @@ auto gse::gpu::recording_context::set_viewport(const vec2u extent) const -> void
 
 auto gse::gpu::recording_context::set_scissor(const vec2u extent) const -> void {
 	check_active();
-	const gse::rect_t<vec2i> sc{ {
+	const rect_t<vec2i> sc{ {
 		.min = vec2i{ 0, 0 },
 		.max = vec2i{ static_cast<int>(extent.x()), static_cast<int>(extent.y()) },
 	} };
 	m_recorder.set_scissor(sc);
 }
 
-auto gse::gpu::recording_context::bind(const gpu::shader_program& p) -> void {
+auto gse::gpu::recording_context::bind(const shader_program& p) -> void {
 	check_active();
 
 	m_bound_is_compute = p.is_compute();
@@ -848,12 +848,12 @@ auto gse::gpu::recording_context::bind(const gpu::shader_program& p) -> void {
 	}
 	else {
 		constexpr std::array all_graphics_stages = {
-			gpu::stage_flag::vertex,
-			gpu::stage_flag::fragment,
-			gpu::stage_flag::task,
-			gpu::stage_flag::mesh,
+			stage_flag::vertex,
+			stage_flag::fragment,
+			stage_flag::task,
+			stage_flag::mesh,
 		};
-		std::array<gpu::handle<gpu::shader_object>, 4> bound{};
+		std::array<handle<shader_object>, 4> bound{};
 		const auto stages = p.stages();
 		const auto handles = p.shader_handles();
 		for (std::size_t i = 0; i < all_graphics_stages.size(); ++i) {
@@ -875,7 +875,7 @@ auto gse::gpu::recording_context::bind(const gpu::shader_program& p) -> void {
 	ensure_descriptor_heaps();
 }
 
-auto gse::gpu::recording_context::apply_dynamic_state(const gpu::dynamic_pipeline_state& s) -> void {
+auto gse::gpu::recording_context::apply_dynamic_state(const dynamic_pipeline_state& s) -> void {
 	if (!m_state_cache.topology || *m_state_cache.topology != s.topology) {
 		m_recorder.set_topology(s.topology);
 		m_state_cache.topology = s.topology;

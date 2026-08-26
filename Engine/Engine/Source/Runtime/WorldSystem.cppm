@@ -40,15 +40,15 @@ export namespace gse::world_system {
 	struct scene_catalog {
 		std::vector<id> scene_ids;
 		std::vector<trigger> triggers;
-		std::optional<id> active_scene;
+		scene* active_scene = nullptr;
 	};
 
-	struct [[= gse::system_state<"World">{}]] data {
+	struct [[= system_state<"World">{}]] data {
 		std::unordered_map<id, std::unique_ptr<scene>> scenes;
-		[[= gse::shared]] std::vector<id> scene_ids;
-		[[= gse::shared]] std::vector<trigger> triggers;
-		[[= gse::shared]] std::optional<id> active_scene;
-		[[= gse::shared]] scene* active_scene_ptr = nullptr;
+		[[= shared]] std::vector<id> scene_ids;
+		[[= shared]] std::vector<trigger> triggers;
+		[[= shared]] std::optional<id> active_scene;
+		[[= shared]] scene* active_scene_ptr = nullptr;
 		bool networked = false;
 		bool authoritative = true;
 		std::optional<id> client_id;
@@ -61,10 +61,10 @@ export namespace gse::world_system {
 		bool catalog_published = false;
 		std::size_t published_scene_count = 0;
 		std::size_t published_trigger_count = 0;
-		std::optional<id> published_active_scene;
+		scene* published_active_scene = nullptr;
 	};
 
-	[[= gse::system_run<>{}]]
+	[[= system_run<>{}]]
 	auto run(
 		context& ctx,
 		data& d,
@@ -75,7 +75,7 @@ export namespace gse::world_system {
 		entities ents
 	) -> async::task<>;
 
-	[[= gse::system_shutdown{}]]
+	[[= system_shutdown{}]]
 	auto shutdown(
 		data& d
 	) -> void;
@@ -140,7 +140,7 @@ auto gse::director::when(const trigger& trigger) -> director& {
 }
 
 auto gse::add_scene(world_system::data& d, registry& reg, std::string_view name, scene::setup_fn setup) -> scene* {
-	auto new_scene = std::make_unique<gse::scene>(reg, name);
+	auto new_scene = std::make_unique<scene>(reg, name);
 	if (setup) {
 		new_scene->set_setup(setup);
 	}
@@ -288,15 +288,15 @@ auto gse::world_system::run(context& ctx, data& d, const channel_read<set_networ
 	if (!d.catalog_published
 		|| d.published_scene_count != d.scene_ids.size()
 		|| d.published_trigger_count != d.triggers.size()
-		|| d.published_active_scene != d.active_scene) {
+		|| d.published_active_scene != d.active_scene_ptr) {
 		d.catalog_published = true;
 		d.published_scene_count = d.scene_ids.size();
 		d.published_trigger_count = d.triggers.size();
-		d.published_active_scene = d.active_scene;
+		d.published_active_scene = d.active_scene_ptr;
 		player_out.push<scene_catalog>({
 			.scene_ids = d.scene_ids,
 			.triggers = d.triggers,
-			.active_scene = d.active_scene,
+			.active_scene = d.active_scene_ptr,
 		});
 	}
 

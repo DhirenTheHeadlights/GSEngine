@@ -23,7 +23,7 @@ export namespace gse {
 	};
 
 	struct clip_layer {
-		resource::handle<clip_asset> clip{};
+		[[= networked]] resource::handle<clip_asset> clip{};
 		float weight = 0.f;
 	};
 

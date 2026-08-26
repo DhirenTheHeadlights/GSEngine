@@ -46,7 +46,7 @@ export namespace gse::gpu {
 		host_transfer = 1 << 6,
 	};
 
-	using image_usage = gse::flags<image_flag>;
+	using image_usage = flags<image_flag>;
 
 	enum class image_aspect_flag : std::uint32_t {
 		color = 1u << 0,
@@ -56,14 +56,14 @@ export namespace gse::gpu {
 		plane_1 = 1u << 4,
 	};
 
-	using image_aspect_flags = gse::flags<image_aspect_flag>;
+	using image_aspect_flags = flags<image_aspect_flag>;
 
 	enum class image_create_flag : std::uint8_t {
 		cube_compatible = 1 << 0,
 		exportable = 1 << 1,
 	};
 
-	using image_create_flags = gse::flags<image_create_flag>;
+	using image_create_flags = flags<image_create_flag>;
 
 	enum class image_type : std::uint8_t {
 		e1d,
@@ -152,13 +152,13 @@ export namespace gse::gpu {
 		~image() = default;
 
 		image(
-			gpu::handle<image> image,
-			gpu::handle<gpu::image_view> view,
-			gpu::image_format format,
+			handle<image> image,
+			handle<image_view> view,
+			image_format format,
 			vec3u extent,
-			gpu::image_view_create_info view_info,
-			gpu::bindless_slot storage_slot = {},
-			gpu::bindless_slot sampled_slot = {}
+			image_view_create_info view_info,
+			bindless_slot storage_slot = {},
+			bindless_slot sampled_slot = {}
 		);
 
 		image(
@@ -171,37 +171,37 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto handle() const -> gpu::handle<image>;
 
-		[[nodiscard]] auto view() const -> gpu::handle<gpu::image_view>;
+		[[nodiscard]] auto view() const -> gpu::handle<image_view>;
 
-		[[nodiscard]] auto format() const -> gpu::image_format;
+		[[nodiscard]] auto format() const -> image_format;
 
 		[[nodiscard]] auto extent() const -> vec3u;
 
-		[[nodiscard]] auto view_create_info() const -> const gpu::image_view_create_info&;
+		[[nodiscard]] auto view_create_info() const -> const image_view_create_info&;
 
-		[[nodiscard]] auto storage_slot() const -> gpu::bindless_slot;
+		[[nodiscard]] auto storage_slot() const -> bindless_slot;
 
-		[[nodiscard]] auto sampled_slot() const -> gpu::bindless_slot;
+		[[nodiscard]] auto sampled_slot() const -> bindless_slot;
 
 		[[nodiscard]] auto valid() const -> bool;
 
 	private:
 		gpu::handle<image> m_image;
-		gpu::handle<gpu::image_view> m_view;
-		gpu::image_format m_format = gpu::image_format::undefined;
+		gpu::handle<image_view> m_view;
+		image_format m_format = image_format::undefined;
 		vec3u m_extent;
-		gpu::image_view_create_info m_view_info;
-		gpu::bindless_slot m_storage_slot;
-		gpu::bindless_slot m_sampled_slot;
+		image_view_create_info m_view_info;
+		bindless_slot m_storage_slot;
+		bindless_slot m_sampled_slot;
 	};
 
 	struct swap_chain_info {
 		swap_chain_handle handle;
 		vec2u extent;
 		image_format format = image_format::d32_sfloat;
-		gse::gpu::present_mode present_mode = gse::gpu::present_mode::fifo;
+		gpu::present_mode present_mode = gpu::present_mode::fifo;
 		std::vector<gpu::handle<image>> images;
-		std::vector<gpu::handle<gpu::image_view>> image_views;
+		std::vector<gpu::handle<image_view>> image_views;
 		bool present_timing_supported = false;
 		time_t<std::uint64_t> refresh_interval{};
 		time_t<std::uint64_t> refresh_duration{};
@@ -216,8 +216,8 @@ export namespace gse::gpu {
 
 	struct shared_surface {
 		gpu::handle<gpu::image> image;
-		gpu::handle<gpu::image_view> view;
-		gpu::device_memory memory;
+		gpu::handle<image_view> view;
+		device_memory memory;
 		vec2u extent;
 		image_format format = image_format::r8g8b8a8_unorm;
 		device_size size = 0;
@@ -237,7 +237,7 @@ auto gse::gpu::image_aspect_for(const image_format f) -> image_aspect_flags {
 	return image_aspect_flag::color;
 }
 
-gse::gpu::image::image(const gpu::handle<image> image, const gpu::handle<gpu::image_view> view, const gpu::image_format format, const vec3u extent, gpu::image_view_create_info view_info, const gpu::bindless_slot storage_slot, const gpu::bindless_slot sampled_slot)
+gse::gpu::image::image(const gpu::handle<image> image, const gpu::handle<image_view> view, const image_format format, const vec3u extent, image_view_create_info view_info, const bindless_slot storage_slot, const bindless_slot sampled_slot)
 	: m_image(image), m_view(view), m_format(format), m_extent(extent), m_view_info(view_info), m_storage_slot(storage_slot), m_sampled_slot(sampled_slot) {
 }
 
@@ -245,11 +245,11 @@ auto gse::gpu::image::handle() const -> gpu::handle<image> {
 	return m_image;
 }
 
-auto gse::gpu::image::view() const -> gpu::handle<gpu::image_view> {
+auto gse::gpu::image::view() const -> gpu::handle<image_view> {
 	return m_view;
 }
 
-auto gse::gpu::image::format() const -> gpu::image_format {
+auto gse::gpu::image::format() const -> image_format {
 	return m_format;
 }
 
@@ -257,15 +257,15 @@ auto gse::gpu::image::extent() const -> vec3u {
 	return m_extent;
 }
 
-auto gse::gpu::image::view_create_info() const -> const gpu::image_view_create_info& {
+auto gse::gpu::image::view_create_info() const -> const image_view_create_info& {
 	return m_view_info;
 }
 
-auto gse::gpu::image::storage_slot() const -> gpu::bindless_slot {
+auto gse::gpu::image::storage_slot() const -> bindless_slot {
 	return m_storage_slot;
 }
 
-auto gse::gpu::image::sampled_slot() const -> gpu::bindless_slot {
+auto gse::gpu::image::sampled_slot() const -> bindless_slot {
 	return m_sampled_slot;
 }
 

@@ -19,7 +19,7 @@ export namespace gse::renderer::oit {
 	struct accumulate_pass {};
 	struct composite_pass {};
 
-	struct [[= gse::system_state<"OIT">{}]] data {
+	struct [[= system_state<"OIT">{}]] data {
 		gpu::shader_program accum_pipeline;
 		gpu::shader_program composite_pipeline;
 
@@ -31,14 +31,14 @@ export namespace gse::renderer::oit {
 		gpu::bindless_handle reveal_view;
 	};
 
-	[[= gse::system_init{}]]
+	[[= system_init{}]]
 	auto init(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		data& d
 	) -> async::task<>;
 
-	[[= gse::system_frame{}]]
+	[[= system_frame{}]]
 	auto frame(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,

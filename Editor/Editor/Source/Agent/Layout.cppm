@@ -57,14 +57,9 @@ namespace gse::ide::agent {
 		vec4f color;
 	};
 
-	auto row_prefix(
+	auto style_of(
 		row_kind kind
-	) -> std::string_view;
-
-	auto row_color(
-		const gui::style& sty,
-		row_kind kind
-	) -> vec4f;
+	) -> row_style;
 
 	auto line_base_style(
 		const gui::style& sty,

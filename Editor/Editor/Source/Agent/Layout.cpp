@@ -8,37 +8,8 @@ import :layout;
 import :model;
 import :stream;
 
-auto gse::ide::agent::row_prefix(const row_kind kind) -> std::string_view {
-	switch (kind) {
-		case row_kind::user:
-		case row_kind::text:
-			return "";
-		case row_kind::tool:
-			return "- ";
-		case row_kind::denial:
-			return "x ";
-		case row_kind::failure:
-			return "! ";
-		default:
-			return "  ";
-	}
-}
-
-auto gse::ide::agent::row_color(const gui::style& sty, const row_kind kind) -> vec4f {
-	switch (kind) {
-		case row_kind::user:
-			return sty.color_text;
-		case row_kind::text:
-			return sty.color_accent;
-		case row_kind::tool:
-			return sty.color_accent_dim;
-		case row_kind::denial:
-			return sty.color_warning;
-		case row_kind::failure:
-			return sty.color_error;
-		default:
-			return sty.color_text_secondary;
-	}
+auto gse::ide::agent::style_of(const row_kind kind) -> row_style {
+	return annotation_from_enum<row_style>(kind, {});
 }
 
 auto gse::ide::agent::line_base_style(const gui::style& sty, const markdown::line_info& info, const vec4f& fallback) -> markdown::display_style {
@@ -593,11 +564,12 @@ auto gse::ide::agent::push_row(session& s, const gui::style& sty, transcript_row
 	}
 
 	const auto opened = static_cast<std::uint32_t>(s.buffer.lines.size());
+	const row_style look = style_of(row.kind);
 
 	push_transcript_line(s, sty, {
-		.prefix = row_prefix(row.kind),
+		.prefix = look.prefix,
 		.text = row.text,
-		.color = row_color(sty, row.kind),
+		.color = sty.*look.color,
 		.row = index,
 		.wrap_width = row.kind == row_kind::user ? metrics.width * chat_wrap_fraction : 0.f,
 		.markdown = row.kind == row_kind::text,
@@ -680,7 +652,7 @@ auto gse::ide::agent::sync_transcript(session& s, const gui::style& sty, const t
 		push_transcript_line(s, sty, {
 			.prefix = expanded ? "- " : "+ ",
 			.text = std::format("ran {} commands", group.rows),
-			.color = row_color(sty, row_kind::tool),
+			.color = sty.*style_of(row_kind::tool).color,
 			.row = group.row,
 		}, metrics);
 

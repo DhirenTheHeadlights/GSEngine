@@ -58,7 +58,7 @@ export namespace gse::ide::analysis {
 
 auto gse::ide::analysis::semantic_tokens::kind_from(std::string_view name) -> std::optional<semantic_kind> {
 	semantic_kind kind;
-	if (gse::enum_from_string(name, kind)) {
+	if (enum_from_string(name, kind)) {
 		return kind;
 	}
 	return std::nullopt;
@@ -67,12 +67,12 @@ auto gse::ide::analysis::semantic_tokens::kind_from(std::string_view name) -> st
 auto gse::ide::analysis::semantic_tokens::parse_identifiers(const std::string_view text) -> std::vector<identifier_use> {
 	std::vector<identifier_use> out;
 	std::size_t position = 0;
-	while (const std::optional<std::string_view> line = gse::next_line(text, position)) {
+	while (const std::optional<std::string_view> line = next_line(text, position)) {
 		if (!line->starts_with("GSEIDENT\t")) {
 			continue;
 		}
 		std::array<std::string_view, 5> fields;
-		if (gse::split_fields(*line, '\t', fields) < 5) {
+		if (split_fields(*line, '\t', fields) < 5) {
 			log::println(log::level::warning, log::category::general, "[semantic] GSEIDENT record is malformed: |{}|", *line);
 			continue;
 		}
@@ -80,7 +80,7 @@ auto gse::ide::analysis::semantic_tokens::parse_identifiers(const std::string_vi
 		std::uint32_t col = 0;
 		std::uint32_t len = 0;
 		identifier_context context = identifier_context::block;
-		if (!gse::parse(fields[1], ln) || !gse::parse(fields[2], col) || !gse::parse(fields[3], len) || !gse::enum_from_string(fields[4], context)) {
+		if (!gse::parse(fields[1], ln) || !gse::parse(fields[2], col) || !gse::parse(fields[3], len) || !enum_from_string(fields[4], context)) {
 			log::println(log::level::warning, log::category::general, "[semantic] GSEIDENT record is not understood: |{}|", *line);
 			continue;
 		}
@@ -98,13 +98,13 @@ auto gse::ide::analysis::semantic_tokens::parse(std::string_view text) -> std::v
 	std::vector<semantic_token> out;
 
 	std::size_t position = 0;
-	while (const std::optional<std::string_view> line = gse::next_line(text, position)) {
+	while (const std::optional<std::string_view> line = next_line(text, position)) {
 		if (!line->starts_with("GSETOK\t")) {
 			continue;
 		}
 
 		std::array<std::string_view, 5> fields;
-		const std::size_t count = gse::split_fields(*line, '\t', fields);
+		const std::size_t count = split_fields(*line, '\t', fields);
 		if (count < 5) {
 			log::println(log::level::warning, log::category::general, "[semantic] GSETOK record has {} fields, expected 5: |{}|", count, *line);
 			continue;

@@ -162,14 +162,14 @@ auto gse::renderer::gi_probe::frame(context& ctx, shared_view<gpu::context::data
 	const length half_z = (static_cast<float>(grid_dim.z() - 1) * 0.5f) * d.spacing;
 	d.origin_world = vec3<position>(cam_world.x() - half_x, meters(1.0f), cam_world.z() - half_z);
 
-	if (!gse::isfinite(d.origin_world) || !gse::isfinite(d.spacing) || !gse::isfinite(d.trace_t_max)) {
+	if (!isfinite(d.origin_world) || !isfinite(d.spacing) || !isfinite(d.trace_t_max)) {
 		log::println(log::level::warning, log::category::render, "gi_probe: non-finite ray inputs (origin/spacing/trace_max); skipping GI trace this frame");
 		co_return;
 	}
 
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
-	auto rec = co_await gpu::pass<^^gse::renderer::gi_probe::frame>(pass_out).pipeline(d.update_pipeline).after<^^rt_shadow::frame>();
+	auto rec = co_await gpu::pass<^^frame>(pass_out).pipeline(d.update_pipeline).after<^^rt_shadow::frame>();
 
 	rec.dispatch<entry>(
 		{

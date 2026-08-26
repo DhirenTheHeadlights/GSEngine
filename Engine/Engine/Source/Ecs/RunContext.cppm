@@ -21,6 +21,18 @@ export namespace gse {
 
 	class context : public task_context {
 	public:
+		class construction_scope : public non_copyable {
+		public:
+			explicit construction_scope(
+				context& ctx
+			);
+
+			~construction_scope();
+
+		private:
+			context* m_ctx = nullptr;
+		};
+
 		context(
 			scheduler& sched,
 			state_registry& states,
@@ -71,10 +83,11 @@ export namespace gse {
 
 	private:
 		scheduler& m_sched;
-		gse::registry& m_reg;
+		registry& m_reg;
 		access_guard& m_guard;
 		std::atomic<int> m_held_locks{ 0 };
 		std::vector<id> m_structural_authority;
+		bool m_construction = false;
 		async::manual_event* m_resume_event = nullptr;
 		async::manual_event* m_paused_event = nullptr;
 	};
@@ -91,7 +104,7 @@ namespace gse {
 
 }
 
-gse::context::context(scheduler& sched, state_registry& states, resource_registry& resources_store, channel_registry& channels_store, channel_writer& channels, task_graph& graph, gse::registry& reg, access_guard& guard, async::manual_event* resume_event, async::manual_event* paused_event, bool live_state)
+gse::context::context(scheduler& sched, state_registry& states, resource_registry& resources_store, channel_registry& channels_store, channel_writer& channels, task_graph& graph, registry& reg, access_guard& guard, async::manual_event* resume_event, async::manual_event* paused_event, bool live_state)
 	: task_context{ states, resources_store, channels_store, channels, graph, live_state }, m_sched(sched), m_reg(reg), m_guard(guard), m_resume_event(resume_event), m_paused_event(paused_event) {
 }
 
@@ -115,8 +128,16 @@ auto gse::context::held_lock_count() const -> int {
 	return m_held_locks.load(std::memory_order_acquire);
 }
 
+gse::context::construction_scope::construction_scope(context& ctx) : m_ctx(&ctx) {
+	m_ctx->m_construction = true;
+}
+
+gse::context::construction_scope::~construction_scope() {
+	m_ctx->m_construction = false;
+}
+
 auto gse::context::has_structural_authority(const id type) const -> bool {
-	return std::ranges::find(m_structural_authority, type) != m_structural_authority.end();
+	return m_construction || std::ranges::find(m_structural_authority, type) != m_structural_authority.end();
 }
 
 template <typename T>
@@ -146,7 +167,7 @@ auto gse::context::make_entities() -> entities {
 	return entities(&m_reg);
 }
 
-gse::entities::entities(gse::registry* reg) : m_reg(reg) {
+gse::entities::entities(registry* reg) : m_reg(reg) {
 }
 
 auto gse::entities::ensure_exists(const id owner) const -> void {

@@ -17,7 +17,7 @@ export namespace gse::ide::analysis {
 	};
 
 	struct compilation_database {
-		gse::id_mapped_collection<compilation_entry> entries;
+		id_mapped_collection<compilation_entry> entries;
 		std::uint64_t content_hash = 0;
 
 		auto find(

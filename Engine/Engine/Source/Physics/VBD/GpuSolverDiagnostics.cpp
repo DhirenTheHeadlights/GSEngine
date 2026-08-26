@@ -56,7 +56,7 @@ auto gse::physics::gpu_diagnostics::run(data& d, const shared_view<physics::data
 		.joint_c0_max = std::max(diag.joint_c0_max, d.peak.joint_c0_max),
 	};
 
-	if (peak == d.peak && d.ticks % 60 != 0) {
+	if (peak == d.peak) {
 		co_return;
 	}
 

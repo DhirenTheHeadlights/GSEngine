@@ -156,7 +156,7 @@ template <std::meta::info Ns>
 consteval auto gse::scenario::scenario_members() -> std::vector<std::meta::info> {
 	std::vector<std::meta::info> found;
 	for (const auto m : std::meta::members_of(Ns, std::meta::access_context::unchecked())) {
-		if (std::meta::is_function(m) && has_annotation<scenario::info>(m)) {
+		if (std::meta::is_function(m) && has_annotation<info>(m)) {
 			found.push_back(m);
 		}
 	}
@@ -168,8 +168,8 @@ auto gse::scenario::registry() -> std::span<const entry> {
 	static const std::vector<entry> table = [] {
 		std::vector<entry> built;
 		template for (constexpr auto m : std::define_static_array(scenario_members<Ns>())) {
-			constexpr auto ann = first_annotation_of_type(m, ^^scenario::info);
-			static constexpr scenario::info declared = [:std::meta::constant_of(ann):];
+			constexpr auto ann = first_annotation_of_type(m, ^^info);
+			static constexpr info declared = [:std::meta::constant_of(ann):];
 			built.push_back({
 				.id = find_or_generate_id(std::string_view(declared.name)),
 				.info = declared,

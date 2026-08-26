@@ -53,15 +53,15 @@ export namespace gse::renderer::skin {
 
 	using skinned_bounds_map = std::flat_map<id, aabb>;
 
-	struct [[= gse::system_state<"Skin">{}]] data {
+	struct [[= system_state<"Skin">{}]] data {
 		gpu::shader_program palette_pipeline;
 		gpu::shader_program deform_pipeline;
 		bool initialized = false;
 
 		std::vector<skinned_instance> instances;
 		std::vector<rig_bone_binding> bone_bindings;
-		[[= gse::shared]] deformed_target_map targets;
-		[[= gse::shared]] skinned_bounds_map bounds;
+		[[= shared]] deformed_target_map targets;
+		[[= shared]] skinned_bounds_map bounds;
 
 		per_frame_resource<gpu::buffer> bone_buffers;
 		std::size_t bone_buffer_size = 0;
@@ -70,7 +70,7 @@ export namespace gse::renderer::skin {
 		std::size_t palette_buffer_size = 0;
 	};
 
-	[[= gse::system_init{}]]
+	[[= system_init{}]]
 	auto init(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
@@ -78,7 +78,7 @@ export namespace gse::renderer::skin {
 		data& d
 	) -> async::task<>;
 
-	[[= gse::system_run<>{}]]
+	[[= system_run<>{}]]
 	auto collect(
 		context& ctx,
 		data& d,
@@ -89,7 +89,7 @@ export namespace gse::renderer::skin {
 		read<physics::collision_component> collisions
 	) -> async::task<>;
 
-	[[= gse::system_frame{}]]
+	[[= system_frame{}]]
 	auto frame(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,

@@ -8,7 +8,7 @@ import :diagnostics_runner;
 export namespace gse::ide {
 	namespace analysis {
 		struct diagnostics_request {
-			gse::id document_id;
+			id document_id;
 			document_revision revision;
 			std::filesystem::path compile_commands;
 			std::filesystem::path file;
@@ -23,22 +23,22 @@ export namespace gse::ide {
 	}
 
 	namespace diagnostics_system {
-		struct [[= gse::system_state<"Diagnostics">{}]] data {
+		struct [[= system_state<"Diagnostics">{}]] data {
 			std::shared_ptr<analysis::diagnostics_check> pending;
 			std::jthread worker;
 		};
 
-		[[= gse::system_run<>{}]]
+		[[= system_run<>{}]]
 		auto run(
-			gse::context& ctx,
+			context& ctx,
 			data& d,
-			gse::channel_read<analysis::diagnostics_request> requests_in,
-			gse::channel_write<analysis::diagnostics_completed> completed_out
-		) -> gse::async::task<>;
+			channel_read<analysis::diagnostics_request> requests_in,
+			channel_write<analysis::diagnostics_completed> completed_out
+		) -> async::task<>;
 	}
 }
 
-auto gse::ide::diagnostics_system::run(gse::context& ctx, data& d, const gse::channel_read<analysis::diagnostics_request> requests_in, const gse::channel_write<analysis::diagnostics_completed> completed_out) -> gse::async::task<> {
+auto gse::ide::diagnostics_system::run(context& ctx, data& d, const channel_read<analysis::diagnostics_request> requests_in, const channel_write<analysis::diagnostics_completed> completed_out) -> async::task<> {
 	if (d.pending && d.pending->done.load(std::memory_order_acquire)) {
 		completed_out.push<analysis::diagnostics_completed>({
 			.check = std::move(d.pending),

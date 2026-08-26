@@ -169,7 +169,7 @@ auto gse::async::suspend_and_capture::await_suspend(const std::coroutine_handle<
 		return std::noop_coroutine();
 	}
 	if (helpers.size() > 1) {
-		std::vector<gse::job> jobs;
+		std::vector<job> jobs;
 		jobs.reserve(helpers.size() - 1);
 		for (std::size_t i = 1; i < helpers.size(); ++i) {
 			const checked_handle tracked = track_frame(helpers[i].consume_start_handle());

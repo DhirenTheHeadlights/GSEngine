@@ -86,7 +86,7 @@ export namespace gse::http {
 	};
 
 	struct request {
-		http::method verb = method::get;
+		method verb = method::get;
 		std::string url;
 		std::vector<header> headers;
 		std::string body;
@@ -130,13 +130,13 @@ export namespace gse::http {
 }
 
 constexpr auto gse::http::method_of(const method verb) -> method_info {
-	return annotation_from_enum<method_info>(verb, {
+	return annotation_from_enum(verb, method_info{
 		.verb = "GET",
 	});
 }
 
 constexpr auto gse::http::error_of(const error code) -> error_info {
-	return annotation_from_enum<error_info>(code, {
+	return annotation_from_enum(code, error_info{
 		.message = "unknown error",
 	});
 }

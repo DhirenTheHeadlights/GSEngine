@@ -55,9 +55,16 @@ auto gse::asset::resolve_handles(T& c, const shared_view<data> assets) -> void {
 				resolve(c.[:m:], assets);
 			}
 			else if constexpr (std::ranges::range<m_type>) {
-				if constexpr (resource::is_handle_v<std::ranges::range_value_t<m_type>>) {
+				using element_type = std::ranges::range_value_t<m_type>;
+
+				if constexpr (resource::is_handle_v<element_type>) {
 					for (auto& h : c.[:m:]) {
 						resolve(h, assets);
+					}
+				}
+				else if constexpr (has_networked_members<element_type>()) {
+					for (auto& element : c.[:m:]) {
+						resolve_handles(element, assets);
 					}
 				}
 			}

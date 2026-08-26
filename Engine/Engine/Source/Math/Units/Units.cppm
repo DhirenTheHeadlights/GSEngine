@@ -373,8 +373,8 @@ namespace gse::internal {
 	};
 
 	template <>
-	struct base_unit_override<gse::time_tag> {
-		using type = std::remove_cvref_t<decltype(gse::seconds)>;
+	struct base_unit_override<time_tag> {
+		using type = std::remove_cvref_t<decltype(seconds)>;
 	};
 }
 
@@ -460,10 +460,10 @@ namespace gse::internal {
 		quantity_tag_traits<position_tag>::semantic_kind == quantity_semantic_kind::absolute
 	);
 	static_assert(
-		dimension_to_tag<dimi<1, 0, 0, 0>>::match_count == 1 && std::same_as<dimension_to_tag<dimi<1, 0, 0, 0>>::tag, gse::length_tag>
+		dimension_to_tag<dimi<1, 0, 0, 0>>::match_count == 1 && std::same_as<dimension_to_tag<dimi<1, 0, 0, 0>>::tag, length_tag>
 	);
 	static_assert(
-		dimension_to_tag<dimi<2, -2, 1, 0>>::match_count == 1 && std::same_as<dimension_to_tag<dimi<2, -2, 1, 0>>::tag, gse::energy_tag>
+		dimension_to_tag<dimi<2, -2, 1, 0>>::match_count == 1 && std::same_as<dimension_to_tag<dimi<2, -2, 1, 0>>::tag, energy_tag>
 	);
 	static_assert(
 		std::same_as<decltype(std::declval<torque>() * std::declval<angle>()), energy>
@@ -505,6 +505,6 @@ namespace gse::internal {
 		has_unit_list<volume_tag>
 	);
 	static_assert(
-		std::same_as<unit_list_t<force_tag>, unit_set<std::remove_cvref_t<decltype(gse::newtons)>, std::remove_cvref_t<decltype(gse::pounds_force)>>>
+		std::same_as<unit_list_t<force_tag>, unit_set<std::remove_cvref_t<decltype(newtons)>, std::remove_cvref_t<decltype(pounds_force)>>>
 	);
 }

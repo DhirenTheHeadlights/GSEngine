@@ -9,13 +9,33 @@ import gse.ide.net;
 export namespace gse::ide::agent {
 	constexpr std::string_view panel_name = "Agent";
 
+	struct row_style {
+		char prefix[8] = "  ";
+		vec4f gui::style::* color = &gui::style::color_text_secondary;
+	};
+
 	enum class row_kind : std::uint8_t {
 		note,
-		user,
-		text,
-		tool,
-		denial,
-		failure,
+		user [[= row_style{
+			.prefix = "",
+			.color = &gui::style::color_text,
+		}]],
+		text [[= row_style{
+			.prefix = "",
+			.color = &gui::style::color_accent,
+		}]],
+		tool [[= row_style{
+			.prefix = "- ",
+			.color = &gui::style::color_accent_dim,
+		}]],
+		denial [[= row_style{
+			.prefix = "x ",
+			.color = &gui::style::color_warning,
+		}]],
+		failure [[= row_style{
+			.prefix = "! ",
+			.color = &gui::style::color_error,
+		}]],
 	};
 
 	struct transcript_row {
@@ -82,7 +102,7 @@ export namespace gse::ide::agent {
 	};
 
 	struct touched_source {
-		gse::id build_key;
+		id build_key;
 		std::int64_t mtime = 0;
 		bool wrote = false;
 	};
@@ -176,8 +196,8 @@ export namespace gse::ide::agent {
 		std::unordered_map<std::string, std::string> chat_names;
 		bool initialized = false;
 		std::vector<blamed_error> unclaimed;
-		gse::id unclaimed_build;
-		[[= archive_skip{}]] std::unordered_map<gse::id, std::int64_t> built;
+		id unclaimed_build;
+		[[= archive_skip{}]] std::unordered_map<id, std::int64_t> built;
 		[[= archive_skip{}]] net::probe link;
 		[[= archive_skip{}]] std::optional<clock> link_clock;
 		[[= archive_skip{}]] std::uint32_t link_misses = 0;

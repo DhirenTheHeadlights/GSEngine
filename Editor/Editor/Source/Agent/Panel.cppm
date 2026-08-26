@@ -45,7 +45,7 @@ namespace gse::ide::agent {
 		window::clipboard_image pasted
 	) -> void;
 
-	auto agent_context_tag() -> gse::id;
+	auto agent_context_tag() -> id;
 
 	auto draw_session_info(
 		const gui::draw_context& ctx,
@@ -66,7 +66,7 @@ namespace gse::ide::agent {
 
 	auto session_tab_id(
 		std::uint32_t session_id
-	) -> gse::id;
+	) -> id;
 
 	auto draw_session_tabs(
 		gui::builder& ui,

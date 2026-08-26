@@ -11,9 +11,9 @@ import :blame;
 import :model;
 import :session;
 
-auto gse::ide::agent::note_source_change(session& s, const std::filesystem::path& file, const std::int64_t mtime) -> gse::id {
-	gse::id touched_id;
-	for (const gse::id key : build_runner::build_keys_for(file)) {
+auto gse::ide::agent::note_source_change(session& s, const std::filesystem::path& file, const std::int64_t mtime) -> id {
+	id touched_id;
+	for (const id key : build_runner::build_keys_for(file)) {
 		const auto [stamp, unseen] = s.unbuilt.try_emplace(key, mtime);
 		if (!unseen) {
 			stamp->second = std::max(stamp->second, mtime);
@@ -110,7 +110,7 @@ auto gse::ide::agent::touch_owner(data& d, const std::span<const std::filesystem
 	session* owner = nullptr;
 	touched_source best;
 	for (const std::filesystem::path& file : files) {
-		const gse::id key = config::path_id(file);
+		const id key = config::path_id(file);
 		for (session& s : d.sessions) {
 			const auto touch = s.touched.find(key);
 			if (touch == s.touched.end()) {

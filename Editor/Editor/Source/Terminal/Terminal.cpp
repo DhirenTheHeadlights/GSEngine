@@ -334,7 +334,7 @@ auto gse::ide::terminal::path_link_at(const std::string_view row, const std::uin
 		resolved = candidate;
 	}
 	else {
-		for (const ide::config::worktree& tree : ide::config::worktrees()) {
+		for (const config::worktree& tree : config::worktrees()) {
 			std::filesystem::path attempt = tree.project_root / candidate;
 			if (std::filesystem::is_regular_file(attempt, ec)) {
 				resolved = std::move(attempt);
@@ -396,7 +396,7 @@ auto gse::ide::terminal::ring_sink::sequence() -> std::uint64_t {
 }
 
 auto gse::ide::terminal::init(data& d) -> async::task<> {
-	d.prompt = ellipsize_path(ide::config::project_root().generic_display_string()) + "> ";
+	d.prompt = ellipsize_path(config::project_root().generic_display_string()) + "> ";
 	register_sink(d);
 	return {};
 }
@@ -501,7 +501,7 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst
 		if (std::string_view(inst.input).starts_with(agent_prefix)) {
 			channels.push<agent::start_request>({
 				.prompt = inst.input.substr(agent_prefix.size()),
-				.cwd = ide::config::project_root(),
+				.cwd = config::project_root(),
 			});
 			d.fresh.push_back({
 				.seq = 0,
@@ -515,7 +515,7 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst
 			}
 			inst.runner->terminated.store(false, std::memory_order_release);
 			inst.runner->running.store(true, std::memory_order_release);
-			inst.worker = std::jthread([r = inst.runner, cmd = inst.input, cwd = ide::config::project_root().wstring()] {
+			inst.worker = std::jthread([r = inst.runner, cmd = inst.input, cwd = config::project_root().wstring()] {
 				run_command(*r, cmd, cwd);
 			});
 		}

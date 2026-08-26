@@ -815,9 +815,9 @@ auto gse::internal::unit_names() -> std::span<const std::string_view> {
 
 template <typename A, typename Dim, typename Tag, typename Unit, typename CharT>
 struct std::formatter<gse::internal::quantity<A, Dim, Tag, Unit>, CharT> {
-	std::formatter<A, CharT> value_fmt;
-	std::basic_string_view<CharT> unit_override;
-	std::optional<std::size_t> unit_arg;
+	formatter<A, CharT> value_fmt;
+	basic_string_view<CharT> unit_override;
+	optional<std::size_t> unit_arg;
 	bool hide_unit = false;
 
 	template <class ParseContext>
@@ -830,8 +830,8 @@ struct std::formatter<gse::internal::quantity<A, Dim, Tag, Unit>, CharT> {
 			++value_spec_end;
 		}
 
-		std::basic_string_view<CharT> value_spec(begin, value_spec_end);
-		std::basic_format_parse_context<CharT> sub(value_spec);
+		basic_string_view<CharT> value_spec(begin, value_spec_end);
+		basic_format_parse_context<CharT> sub(value_spec);
 		value_fmt.parse(sub);
 
 		if (value_spec_end == end || *value_spec_end != ':') {
@@ -844,7 +844,7 @@ struct std::formatter<gse::internal::quantity<A, Dim, Tag, Unit>, CharT> {
 		if (unit_start != end && *unit_start == '{') {
 			unit_end = unit_start + 1;
 			if (unit_end == end || *unit_end != '}') {
-				throw std::format_error("gse quantity: dynamic unit must be spelled {}");
+				throw format_error("gse quantity: dynamic unit must be spelled {}");
 			}
 			unit_arg = ctx.next_arg_id();
 			ctx.check_dynamic_spec_string(*unit_arg);
@@ -859,7 +859,7 @@ struct std::formatter<gse::internal::quantity<A, Dim, Tag, Unit>, CharT> {
 				}
 				++unit_end;
 			}
-			unit_override = std::basic_string_view<CharT>(unit_start, unit_end);
+			unit_override = basic_string_view<CharT>(unit_start, unit_end);
 		}
 
 		if (unit_end != end && *unit_end == '!') {
@@ -878,27 +878,27 @@ struct std::formatter<gse::internal::quantity<A, Dim, Tag, Unit>, CharT> {
 			if (hide_unit) {
 				return;
 			}
-			if constexpr (!std::same_as<Unit, gse::internal::no_default_unit>) {
-				it = std::ranges::copy(
-						 std::string_view{ " " },
-						 it
+			if constexpr (!same_as<Unit, gse::internal::no_default_unit>) {
+				it = ranges::copy(
+					string_view{ " " },
+					it
 				)
 					.out;
-				it = std::ranges::copy(
-						 std::string_view{ Unit::unit_name },
-						 it
+				it = ranges::copy(
+					string_view{ Unit::unit_name },
+					it
 				)
 					.out;
 			}
 		};
 
-		std::basic_string_view<CharT> selected = unit_override;
+		basic_string_view<CharT> selected = unit_override;
 		if (unit_arg) {
 			ctx.arg(*unit_arg).visit([&selected]<typename T>(const T& value) {
-				if constexpr (std::same_as<T, std::basic_string_view<CharT>>) {
+				if constexpr (same_as<T, basic_string_view<CharT>>) {
 					selected = value;
 				}
-				else if constexpr (std::same_as<T, const CharT*>) {
+				else if constexpr (same_as<T, const CharT*>) {
 					selected = value;
 				}
 			});
@@ -915,19 +915,19 @@ struct std::formatter<gse::internal::quantity<A, Dim, Tag, Unit>, CharT> {
 				gse::internal::unit_list_t<gse::internal::unit_family_tag_t<Tag>>{},
 				selected,
 				[&](auto unit_const) {
-					using U = std::remove_cvref_t<decltype(unit_const)>;
+					using U = remove_cvref_t<decltype(unit_const)>;
 					it = value_fmt.format(gse::internal::value_in<U>(q), ctx);
 					if (hide_unit) {
 						return;
 					}
-					it = std::ranges::copy(
-							 std::string_view{ " " },
-							 it
+					it = ranges::copy(
+						string_view{ " " },
+						it
 					)
 						.out;
-					it = std::ranges::copy(
-							 std::string_view{ U::unit_name },
-							 it
+					it = ranges::copy(
+						string_view{ U::unit_name },
+						it
 					)
 						.out;
 				}
@@ -944,7 +944,7 @@ struct std::formatter<gse::internal::quantity<A, Dim, Tag, Unit>, CharT> {
 
 export template <typename A, typename Dim, typename Tag, typename Unit>
 struct gse::parser<gse::internal::quantity<A, Dim, Tag, Unit>> {
-	static auto parse(std::string_view raw, gse::internal::quantity<A, Dim, Tag, Unit>& out) -> bool {
+	static auto parse(std::string_view raw, internal::quantity<A, Dim, Tag, Unit>& out) -> bool {
 		while (!raw.empty() && (raw.front() == ' ' || raw.front() == '\t')) {
 			raw.remove_prefix(1);
 		}
@@ -966,18 +966,18 @@ struct gse::parser<gse::internal::quantity<A, Dim, Tag, Unit>> {
 			suffix.remove_suffix(1);
 		}
 
-		if constexpr (gse::internal::has_unit_list<gse::internal::unit_family_tag_t<Tag>>) {
+		if constexpr (internal::has_unit_list<internal::unit_family_tag_t<Tag>>) {
 			if (suffix.empty()) {
 				return false;
 			}
 
 			bool matched = false;
-			gse::internal::dispatch_named_unit(
-				gse::internal::unit_list_t<gse::internal::unit_family_tag_t<Tag>>{},
+			internal::dispatch_named_unit(
+				internal::unit_list_t<internal::unit_family_tag_t<Tag>>{},
 				suffix,
 				[&](const auto& u) {
 					using U = std::remove_cvref_t<decltype(u)>;
-					out = gse::internal::quantity<A, Dim, Tag, Unit>::template from<U>(tmp);
+					out = internal::quantity<A, Dim, Tag, Unit>::template from<U>(tmp);
 					matched = true;
 				}
 			);
@@ -985,7 +985,7 @@ struct gse::parser<gse::internal::quantity<A, Dim, Tag, Unit>> {
 		}
 
 		if (suffix.empty()) {
-			out = gse::internal::quantity<A, Dim, Tag, Unit>::template from<Unit>(tmp);
+			out = internal::quantity<A, Dim, Tag, Unit>::template from<Unit>(tmp);
 			return true;
 		}
 
@@ -997,12 +997,12 @@ export template <typename A, typename Dim, typename Tag, typename Unit>
 struct gse::scalar<gse::internal::quantity<A, Dim, Tag, Unit>> {
 	using type = A;
 
-	static auto get(const gse::internal::quantity<A, Dim, Tag, Unit>& v) -> A {
-		return gse::internal::value_in<Unit>(v);
+	static auto get(const internal::quantity<A, Dim, Tag, Unit>& v) -> A {
+		return internal::value_in<Unit>(v);
 	}
 
-	static auto from(A v) -> gse::internal::quantity<A, Dim, Tag, Unit> {
-		return gse::internal::quantity<A, Dim, Tag, Unit>::template from<Unit>(v);
+	static auto from(A v) -> internal::quantity<A, Dim, Tag, Unit> {
+		return internal::quantity<A, Dim, Tag, Unit>::template from<Unit>(v);
 	}
 };
 
@@ -1303,7 +1303,7 @@ constexpr auto gse::internal::operator-(const Q& v) -> Q {
 
 export namespace gse {
 	template <typename ToQuantity, typename FromQuantity>
-	requires gse::internal::has_same_dimension_as<ToQuantity, FromQuantity>
+	requires internal::has_same_dimension_as<ToQuantity, FromQuantity>
 	constexpr auto quantity_cast(
 		const FromQuantity& q
 	) -> ToQuantity;

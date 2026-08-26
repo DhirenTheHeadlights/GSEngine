@@ -64,7 +64,7 @@ export namespace gse {
 		explicit mesh(
 			mesh_data&& data
 		);
-		mesh(std::vector<vertex> vertices, std::vector<std::uint32_t> indices, const gse::material& mat = {})
+		mesh(std::vector<vertex> vertices, std::vector<std::uint32_t> indices, const material& mat = {})
 			: m_vertices(std::move(vertices)), m_indices(std::move(indices)), m_material(mat) {
 		}
 
@@ -73,7 +73,7 @@ export namespace gse {
 		) -> void;
 
 		auto center_of_mass() const -> vec3<displacement>;
-		auto material() const -> const gse::material&;
+		auto material() const -> const material&;
 		auto indices() const -> const std::vector<std::uint32_t>&;
 		auto aabb() const -> std::pair<vec3<displacement>, vec3<displacement>>;
 
@@ -160,7 +160,7 @@ auto gse::mesh::initialize(gpu::context::data& ctx) -> void {
 	);
 
 	std::vector<gpu::buffer_upload> uploads{ { &m_vertex_buffer, m_vertices.data(), vertex_buffer_size },
-											 { &m_index_buffer, m_indices.data(), index_buffer_size } };
+		{ &m_index_buffer, m_indices.data(), index_buffer_size } };
 
 	if (!m_meshlets.descriptors.empty()) {
 		const auto tri_size = (m_meshlets.triangles.size() + 3) & ~std::size_t(3);
@@ -257,14 +257,14 @@ auto gse::mesh::center_of_mass() const -> vec3<displacement> {
 		);
 
 		const vec3_ld v0 = { length_d(m_vertices[idx0].position.x()),
-							 length_d(m_vertices[idx0].position.y()),
-							 length_d(m_vertices[idx0].position.z()) };
+			length_d(m_vertices[idx0].position.y()),
+			length_d(m_vertices[idx0].position.z()) };
 		const vec3_ld v1 = { length_d(m_vertices[idx1].position.x()),
-							 length_d(m_vertices[idx1].position.y()),
-							 length_d(m_vertices[idx1].position.z()) };
+			length_d(m_vertices[idx1].position.y()),
+			length_d(m_vertices[idx1].position.z()) };
 		const vec3_ld v2 = { length_d(m_vertices[idx2].position.x()),
-							 length_d(m_vertices[idx2].position.y()),
-							 length_d(m_vertices[idx2].position.z()) };
+			length_d(m_vertices[idx2].position.y()),
+			length_d(m_vertices[idx2].position.z()) };
 
 		const vec3_ld a = v0 - reference_point;
 		const vec3_ld b = v1 - reference_point;

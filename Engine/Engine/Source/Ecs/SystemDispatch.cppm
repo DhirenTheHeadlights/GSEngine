@@ -53,7 +53,7 @@ export namespace gse {
 			return false;
 		}
 		else {
-			return gse::meta::has_system_state<U>();
+			return meta::has_system_state<U>();
 		}
 	}();
 

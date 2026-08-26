@@ -317,13 +317,36 @@ auto gse::ide::draw_lint_panel(gui::builder& ui, const rectf& rect, lint_panel_s
 		.color = sty.color_panel_alt,
 		.texture = ctx.blank_texture,
 	});
-	const std::string summary = std::format("{} findings in {} rules", total, state.groups.size());
+	const search::index_phase phase = index->phase.load(std::memory_order_acquire);
+	const bool analyzing = phase != search::index_phase::idle;
+	const bool never_analyzed = !state.snapshot || state.snapshot->symbol_generation == 0;
+	const bool incomplete = analyzing || never_analyzed;
+	std::string summary;
+	if (analyzing) {
+		const search::index_phase_info info = annotation_from_enum<search::index_phase_info>(phase, {
+			.label = "Analyzing",
+			.detail = "No explanation was recorded for this indexing stage.",
+		});
+		const std::size_t scanned_total = index->progress_total.load(std::memory_order_acquire);
+		const std::size_t scanned_done = std::min(index->progress_done.load(std::memory_order_acquire), scanned_total);
+		summary = std::string(info.label);
+		if (scanned_total > 0) {
+			summary += std::format(" {}/{}", scanned_done, scanned_total);
+		}
+		summary += std::format(" \xC2\xB7 {} findings so far", total);
+	}
+	else if (never_analyzed) {
+		summary = std::format("Not analyzed yet \xC2\xB7 {} findings", total);
+	}
+	else {
+		summary = std::format("{} findings in {} rules", total, state.groups.size());
+	}
 	ctx.queue_text({
 		.font = ctx.fonts.text,
 		.text = summary,
 		.position = { header_rect.left() + pad, header_rect.center().y() + text_view->vertical_center_offset(sty.font_size) },
 		.scale = sty.font_size,
-		.color = sty.color_text_secondary,
+		.color = incomplete ? sty.color_accent : sty.color_text_secondary,
 		.clip_rect = header_rect,
 	});
 
@@ -331,6 +354,23 @@ auto gse::ide::draw_lint_panel(gui::builder& ui, const rectf& rect, lint_panel_s
 		{ rect.left(), header_rect.bottom() },
 		{ rect.width(), std::max(0.f, rect.height() - header_rect.height()) }
 	);
+	if (total == 0) {
+		const std::string_view empty_text = analyzing
+			? "Still analyzing the project, so this list is incomplete."
+			: never_analyzed
+				? "The project has not been analyzed yet."
+				: "No lint findings.";
+		ctx.queue_text({
+			.font = ctx.fonts.text,
+			.text = empty_text,
+			.position = { list_rect.left() + pad, list_rect.top() - row_h },
+			.scale = sty.font_size,
+			.color = incomplete ? sty.color_accent : sty.color_text_secondary,
+			.clip_rect = list_rect,
+		});
+		return;
+	}
+
 	const float apply_w = text_view->width("Apply all", sty.font_size) + pad * 2.f;
 	std::optional<std::size_t> toggled;
 

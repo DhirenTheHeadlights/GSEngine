@@ -23,24 +23,24 @@ export namespace gse::gpu {
 	) -> acceleration_structure_geometry;
 
 	auto build_blas_in_place(
-		gpu::device& device,
+		device& device,
 		acceleration_structure dst,
 		const acceleration_structure_geometry& geometry,
 		std::uint32_t prim_count,
 		const buffer& scratch,
-		gpu::recording_context& rec
+		recording_context& rec
 	) -> void;
 
 	auto build_tlas(
-		gpu::device& device,
+		device& device,
 		std::uint32_t max_instances
 	) -> tlas;
 
 	auto rebuild_tlas(
-		gpu::device& device,
+		device& device,
 		tlas& t,
 		std::span<const tlas_instance_desc> instances,
-		gpu::recording_context& rec
+		recording_context& rec
 	) -> void;
 
 	auto write_tlas_instances(
@@ -49,9 +49,9 @@ export namespace gse::gpu {
 	) -> void;
 
 	auto build_tlas_in_place(
-		gpu::device& device,
+		device& device,
 		tlas& t,
 		std::uint32_t instance_count,
-		gpu::recording_context& rec
+		recording_context& rec
 	) -> void;
 }

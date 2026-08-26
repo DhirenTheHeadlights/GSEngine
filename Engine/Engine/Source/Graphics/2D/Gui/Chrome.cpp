@@ -85,7 +85,7 @@ auto gse::gui::window_caption_buttons_for(const rectf& title_bar_rect, const sty
 	};
 }
 
-auto gse::gui::draw_window_caption_buttons(data& d, viewport_state& vp, const gse::input::state& input_state, const menu& current_menu, const rectf& title_bar_rect, const render_layer layer) -> void {
+auto gse::gui::draw_window_caption_buttons(data& d, viewport_state& vp, const input::state& input_state, const menu& current_menu, const rectf& title_bar_rect, const render_layer layer) -> void {
 	const style& sty = vp.fstate.sty;
 	const window_caption_buttons buttons = window_caption_buttons_for(title_bar_rect, sty);
 	const vec2f mouse_pos = input_state.mouse_position();
@@ -228,7 +228,7 @@ auto gse::gui::remove_tab_from_host(viewport_state& vp, const std::string_view m
 	}
 }
 
-auto gse::gui::draw_menu_chrome(data& d, viewport_state& vp, const gse::input::state& input_state, menu& current_menu, const render_layer layer) -> void {
+auto gse::gui::draw_menu_chrome(data& d, viewport_state& vp, const input::state& input_state, menu& current_menu, const render_layer layer) -> void {
 	const style& sty = vp.fstate.sty;
 
 	const rectf display_rect = calculate_display_rect(vp, current_menu);
@@ -347,7 +347,7 @@ auto gse::gui::draw_menu_chrome(data& d, viewport_state& vp, const gse::input::s
 		});
 	}
 
-	if (vp.window.exists() && !current_menu.owner_id().exists()) {
+	if (is_popout(vp) && !current_menu.owner_id().exists()) {
 		draw_window_caption_buttons(d, vp, input_state, current_menu, title_bar_rect, layer);
 	}
 
@@ -391,7 +391,7 @@ auto gse::gui::draw_menu_chrome(data& d, viewport_state& vp, const gse::input::s
 	}
 }
 
-auto gse::gui::draw_tab_bar(data& d, viewport_state& vp, const gse::input::state& input_state, menu& current_menu, const rectf& title_bar_rect, const render_layer layer) -> void {
+auto gse::gui::draw_tab_bar(data& d, viewport_state& vp, const input::state& input_state, menu& current_menu, const rectf& title_bar_rect, const render_layer layer) -> void {
 	const style& sty = vp.fstate.sty;
 
 	d.sprite_commands.push_back({
@@ -428,6 +428,7 @@ auto gse::gui::draw_tab_bar(data& d, viewport_state& vp, const gse::input::state
 		.text_pool_used = d.text_pool_used,
 		.widget_anim_colors = d.widget_anim_colors,
 		.widget_scrolls = d.widget_scrolls,
+		.widget_tree_open = d.widget_tree_open,
 		.current_layer = layer,
 		.current_z_order = current_menu.z_order,
 		.input_layer = vp.input_layer_render,

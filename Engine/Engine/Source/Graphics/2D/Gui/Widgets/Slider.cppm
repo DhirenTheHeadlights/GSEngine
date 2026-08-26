@@ -34,7 +34,7 @@ export namespace gse::gui::draw {
 
 	template <
 		internal::is_quantity T,
-		auto Unit = typename T::default_unit{}
+	auto Unit = typename T::default_unit{}
 	>
 	auto slider(
 		const draw_context& ctx,
@@ -63,8 +63,8 @@ export namespace gse::gui::draw {
 
 	template <
 		internal::is_quantity T,
-		std::size_t N,
-		auto Unit = typename T::default_unit{}
+	std::size_t N,
+	auto Unit = typename T::default_unit{}
 	>
 	auto slider(
 		const draw_context& ctx,
@@ -174,7 +174,7 @@ auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, T&
 
 template <typename T, std::size_t N>
 requires gse::is_arithmetic<T>
-auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, gse::vec<T, N>& v, gse::vec<T, N> min, gse::vec<T, N> max, id& hot_widget_id, id& active_widget_id) -> void {
+auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, vec<T, N>& v, vec<T, N> min, vec<T, N> max, id& hot_widget_id, id& active_widget_id) -> void {
 	std::array<T*, N> value_ptrs;
 	std::array<T, N> min_values;
 	std::array<T, N> max_values;
@@ -189,7 +189,7 @@ auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, gs
 }
 
 template <gse::internal::is_quantity T, std::size_t N, auto Unit>
-auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, gse::vec<T, N>& v, gse::vec<T, N> min, gse::vec<T, N> max, id& hot_widget_id, id& active_widget_id) -> void {
+auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, vec<T, N>& v, vec<T, N> min, vec<T, N> max, id& hot_widget_id, id& active_widget_id) -> void {
 	std::array<T*, N> value_ptrs;
 	std::array<T, N> min_values;
 	std::array<T, N> max_values;
@@ -277,7 +277,7 @@ auto gse::gui::draw::slider_box(const draw_context& ctx, const rectf& rect, cons
 	const auto code_view = ctx.fonts.code.resolve();
 	const float text_width = code_view->width(value_str, ctx.style.font_size);
 	const vec2f value_text_pos = { rect.center().x() - text_width / 2.f,
-								   rect.center().y() + code_view->vertical_center_offset(ctx.style.font_size) };
+		rect.center().y() + code_view->vertical_center_offset(ctx.style.font_size) };
 
 	ctx.queue_text({
 		.font = ctx.fonts.code,

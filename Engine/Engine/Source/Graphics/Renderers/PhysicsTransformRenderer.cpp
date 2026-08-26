@@ -122,7 +122,7 @@ auto gse::renderer::physics_transform::frame(context& ctx, shared_view<gpu::cont
 		co_return;
 	}
 
-	auto interpolation_lag = system_clock::fixed_lag<time_t<float, seconds>>();
+	auto interpolation_lag = system_clock::fixed_lag();
 	if (const auto& interpolation = frame_in.of<physics::interpolation_state>(); !interpolation.empty() && !interpolation[0].advancing) {
 		interpolation_lag = time_t<float, seconds>{};
 	}
@@ -134,7 +134,7 @@ auto gse::renderer::physics_transform::frame(context& ctx, shared_view<gpu::cont
 
 	const std::uint32_t workgroups = (d.cached_mapping_count + 63) / 64;
 
-	auto rec = co_await gpu::pass<^^gse::renderer::physics_transform::frame>(pass_out)
+	auto rec = co_await gpu::pass<^^frame>(pass_out)
 		.pipeline(d.pipeline)
 		.after<^^geometry_collector::frame, ^^vbd::vbd_render_mirror_stage>();
 
@@ -143,7 +143,7 @@ auto gse::renderer::physics_transform::frame(context& ctx, shared_view<gpu::cont
 			.mapping_count = d.cached_mapping_count,
 			.body_count = info.body_count,
 			.interpolation_lag = interpolation_lag,
-			.frame_delta = system_clock::dt<time_t<float, seconds>>(),
+			.frame_delta = system_clock::dt(),
 		},
 		{
 			.body_data = d.body_views[frame_index].slot(),

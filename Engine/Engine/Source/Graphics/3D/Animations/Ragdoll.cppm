@@ -25,11 +25,11 @@ export namespace gse::animation {
 		quat proxy = quat(1.f, 0.f, 0.f, 0.f);
 	};
 
-	struct [[= gse::system_state<"Ragdoll">{}]] data {
+	struct [[= system_state<"Ragdoll">{}]] data {
 		std::flat_map<id, ragdoll_anchor> anchors;
 	};
 
-	[[= gse::system_run<>{}]]
+	[[= system_run<>{}]]
 	auto ragdoll(
 		context& ctx,
 		data& d,

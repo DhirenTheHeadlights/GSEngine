@@ -21,23 +21,19 @@ export namespace gse::ide {
 	};
 
 	auto draw_problems_panel(
-		gse::gui::builder& ui,
+		gui::builder& ui,
 		const rectf& rect,
 		problems_view_state& state,
 		const workspace::data& ws,
-		gse::channel_write<jump_to_request> channels
+		channel_write<jump_to_request> channels
 	) -> void;
 }
 
 namespace gse::ide {
 	[[nodiscard]] auto severity_color(
-		const gse::gui::style& sty,
+		const gui::style& sty,
 		severity level
 	) -> vec4f;
-
-	[[nodiscard]] auto severity_label(
-		severity level
-	) -> std::string_view;
 
 	[[nodiscard]] auto shows_severity(
 		const problems_view_state& state,
@@ -50,14 +46,14 @@ namespace gse::ide {
 	) -> std::vector<problem_row>;
 
 	auto draw_problem_row(
-		const gse::gui::draw_context& ctx,
+		const gui::draw_context& ctx,
 		const rectf& row,
 		const problem_row& item,
 		bool hovered
 	) -> void;
 
 	auto draw_problems_header(
-		gse::gui::builder& ui,
+		gui::builder& ui,
 		const rectf& row,
 		problems_view_state& state,
 		std::size_t shown,
@@ -65,7 +61,7 @@ namespace gse::ide {
 	) -> void;
 
 	auto draw_filter_toggle(
-		const gse::gui::draw_context& ctx,
+		const gui::draw_context& ctx,
 		const rectf& rect,
 		std::string_view label,
 		const vec4f& accent,
@@ -73,7 +69,7 @@ namespace gse::ide {
 	) -> void;
 }
 
-auto gse::ide::severity_color(const gse::gui::style& sty, const severity level) -> vec4f {
+auto gse::ide::severity_color(const gui::style& sty, const severity level) -> vec4f {
 	switch (level) {
 		case severity::error:
 			return sty.color_error;
@@ -81,19 +77,6 @@ auto gse::ide::severity_color(const gse::gui::style& sty, const severity level) 
 			return sty.color_warning;
 		default:
 			return sty.color_text_secondary;
-	}
-}
-
-auto gse::ide::severity_label(const severity level) -> std::string_view {
-	switch (level) {
-		case severity::error:
-			return "error";
-		case severity::warning:
-			return "warning";
-		case severity::note:
-			return "note";
-		default:
-			return "hint";
 	}
 }
 
@@ -110,7 +93,7 @@ auto gse::ide::shows_severity(const problems_view_state& state, const severity l
 
 auto gse::ide::collect_problems(const problems_view_state& state, const workspace::data& ws) -> std::vector<problem_row> {
 	std::vector<problem_row> rows;
-	for (const gse::id doc_id : ws.documents.order()) {
+	for (const id doc_id : ws.documents.order()) {
 		const document& doc = ws.documents.at(doc_id);
 		for (const std::vector<diagnostic>* list : { &doc.diagnostics, &doc.lint }) {
 			for (const diagnostic& entry : *list) {
@@ -135,7 +118,7 @@ auto gse::ide::collect_problems(const problems_view_state& state, const workspac
 	return rows;
 }
 
-auto gse::ide::draw_filter_toggle(const gse::gui::draw_context& ctx, const rectf& rect, const std::string_view label, const vec4f& accent, bool& enabled) -> void {
+auto gse::ide::draw_filter_toggle(const gui::draw_context& ctx, const rectf& rect, const std::string_view label, const vec4f& accent, bool& enabled) -> void {
 	const auto& sty = ctx.style;
 	const auto text_view = ctx.fonts.text.resolve();
 	const bool hovered = ctx.hovers(rect);
@@ -160,7 +143,7 @@ auto gse::ide::draw_filter_toggle(const gse::gui::draw_context& ctx, const rectf
 	});
 }
 
-auto gse::ide::draw_problems_header(gse::gui::builder& ui, const rectf& row, problems_view_state& state, const std::size_t shown, const std::size_t total) -> void {
+auto gse::ide::draw_problems_header(gui::builder& ui, const rectf& row, problems_view_state& state, const std::size_t shown, const std::size_t total) -> void {
 	const auto& ctx = ui.ctx;
 	const auto& sty = ctx.style;
 	const auto text_view = ctx.fonts.text.resolve();
@@ -197,7 +180,7 @@ auto gse::ide::draw_problems_header(gse::gui::builder& ui, const rectf& row, pro
 	});
 }
 
-auto gse::ide::draw_problem_row(const gse::gui::draw_context& ctx, const rectf& row, const problem_row& item, const bool hovered) -> void {
+auto gse::ide::draw_problem_row(const gui::draw_context& ctx, const rectf& row, const problem_row& item, const bool hovered) -> void {
 	const auto& sty = ctx.style;
 	const auto text_view = ctx.fonts.text.resolve();
 	const float pad = sty.padding;
@@ -243,7 +226,7 @@ auto gse::ide::draw_problem_row(const gse::gui::draw_context& ctx, const rectf& 
 	});
 }
 
-auto gse::ide::draw_problems_panel(gse::gui::builder& ui, const rectf& rect, problems_view_state& state, const workspace::data& ws, const gse::channel_write<jump_to_request> channels) -> void {
+auto gse::ide::draw_problems_panel(gui::builder& ui, const rectf& rect, problems_view_state& state, const workspace::data& ws, const channel_write<jump_to_request> channels) -> void {
 	auto& ctx = ui.ctx;
 	const auto& sty = ctx.style;
 	const auto text_view = ctx.fonts.text.resolve();
@@ -251,7 +234,7 @@ auto gse::ide::draw_problems_panel(gse::gui::builder& ui, const rectf& rect, pro
 	const float row_h = text_view->line_height(sty.font_size) + pad;
 
 	std::size_t total = 0;
-	for (const gse::id doc_id : ws.documents.order()) {
+	for (const id doc_id : ws.documents.order()) {
 		const document& doc = ws.documents.at(doc_id);
 		total += doc.diagnostics.size() + doc.lint.size();
 	}
@@ -286,7 +269,7 @@ auto gse::ide::draw_problems_panel(gse::gui::builder& ui, const rectf& rect, pro
 		.bounds = list_rect,
 		.row_height = row_h,
 		.row_count = rows.size(),
-	}, [&](gse::gui::builder& b, const gse::gui::row& r) {
+	}, [&](gui::builder& b, const gui::row& r) {
 		auto& c = b.ctx;
 		const problem_row& item = rows[r.index];
 

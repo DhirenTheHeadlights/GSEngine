@@ -202,9 +202,9 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 	};
 
 	for (const auto* name : {
-			 vk::KHRGetSurfaceCapabilities2ExtensionName,
-			 vk::EXTSurfaceMaintenance1ExtensionName,
-		 }) {
+		vk::KHRGetSurfaceCapabilities2ExtensionName,
+		vk::EXTSurfaceMaintenance1ExtensionName,
+	}) {
 		if (has_instance_extension(name) && !already_enabled(name)) {
 			extensions.push_back(name);
 		}
@@ -310,5 +310,5 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 		}
 	}
 
-	return gse::vulkan::instance(std::move(context), std::move(instance), std::move(debug_messenger));
+	return vulkan::instance(std::move(context), std::move(instance), std::move(debug_messenger));
 }

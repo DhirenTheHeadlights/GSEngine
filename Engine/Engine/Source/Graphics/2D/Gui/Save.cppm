@@ -13,7 +13,7 @@ export namespace gse::gui {
 	struct loaded_menu_data {
 		std::string tag;
 
-		[[= gse::field_key<"owner">{}]]
+		[[= field_key<"owner">{}]]
 		std::string owner_tag;
 
 		std::optional<vec2f> position_ratio;
@@ -21,12 +21,12 @@ export namespace gse::gui {
 		dock::location docked_to = dock::location::none;
 		float dock_split_ratio = 0.5f;
 
-		[[= gse::field_key<"active_tab">{}]]
+		[[= field_key<"active_tab">{}]]
 		std::uint32_t active_tab_index = 0;
 
 		std::uint32_t tab_visible_rows = 1;
 
-		[[= gse::field_key<"tabs">{}]]
+		[[= field_key<"tabs">{}]]
 		std::vector<std::string> tab_tags;
 	};
 

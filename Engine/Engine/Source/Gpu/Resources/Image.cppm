@@ -17,7 +17,7 @@ import gse.math;
 
 export namespace gse::gpu {
 	auto transition_image_to(
-		gpu::device& dev,
+		device& dev,
 		image& img
 	) -> sync_token;
 }

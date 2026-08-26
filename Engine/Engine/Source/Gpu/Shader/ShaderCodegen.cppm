@@ -296,11 +296,11 @@ template <gse::shaders::has_slang_type T, std::size_t Cols, std::size_t Rows>
 requires(Cols >= 2 && Cols <= 4 && Rows >= 2 && Rows <= 4)
 struct gse::shaders::slang_type<gse::mat<T, Cols, Rows>> {
 	static constexpr std::string_view name{ mat_name_storage<T, Cols, Rows>::value.data(),
-											mat_name_storage<T, Cols, Rows>::value.size() };
+		mat_name_storage<T, Cols, Rows>::value.size() };
 };
 
 template <typename ColSpec, typename RowSpec, gse::shaders::has_slang_type T>
-struct gse::shaders::slang_type<gse::mixed_mat<ColSpec, RowSpec, T>> : gse::shaders::slang_type<gse::mat<T, ColSpec::size, ColSpec::size>> {};
+struct gse::shaders::slang_type<gse::mixed_mat<ColSpec, RowSpec, T>> : slang_type<mat<T, ColSpec::size, ColSpec::size>> {};
 
 template <gse::shaders::has_slang_type T>
 struct gse::shaders::slang_type<gse::quat_t<T>> {
@@ -352,10 +352,10 @@ namespace gse::shaders {
 
 template <typename T>
 auto gse::shaders::format_slang_literal(const T& v) -> std::string {
-	if constexpr (gse::internal::is_quantity<T>) {
+	if constexpr (internal::is_quantity<T>) {
 		return format_slang_literal(static_cast<typename T::value_type>(v));
 	}
-	else if constexpr (gse::is_vec<T>) {
+	else if constexpr (is_vec<T>) {
 		std::string out = std::format("{}(", slang_type<T>::name);
 		for (std::size_t i = 0; i < T::extent; ++i) {
 			if (i > 0) {
@@ -570,10 +570,10 @@ consteval auto gse::shaders::push_constant_layout_is_portable() -> bool {
 		constexpr auto align = alignof(member_t);
 		scalar_off = (scalar_off + align - 1) & ~(align - 1);
 		cbuffer_off = (cbuffer_off + align - 1) & ~(align - 1);
-		if constexpr (gse::is_mat<member_t> || sizeof(member_t) > 16) {
+		if constexpr (is_mat<member_t> || sizeof(member_t) > 16) {
 			cbuffer_off = (cbuffer_off + 15) & ~std::size_t{ 15 };
 		}
-		else if constexpr (gse::is_vec<member_t>) {
+		else if constexpr (is_vec<member_t>) {
 			if constexpr (member_t::extent == 4) {
 				cbuffer_off = (cbuffer_off + 15) & ~std::size_t{ 15 };
 			}

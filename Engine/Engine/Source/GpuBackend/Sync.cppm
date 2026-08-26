@@ -26,13 +26,13 @@ export namespace gse::gpu {
 	};
 
 	struct semaphore_submit_info {
-		gpu::handle<gpu::semaphore> semaphore;
+		handle<gpu::semaphore> semaphore;
 		std::uint64_t value = 0;
 		pipeline_stage_flags stages;
 	};
 
 	struct command_buffer_submit_info {
-		gpu::command_buffer_handle command_buffer;
+		command_buffer_handle command_buffer;
 	};
 
 	struct submit_info {
@@ -42,11 +42,11 @@ export namespace gse::gpu {
 	};
 
 	struct present_info {
-		std::span<const gpu::handle<gpu::semaphore>> wait_semaphores;
-		std::span<const gpu::swap_chain_handle> swapchains;
+		std::span<const handle<semaphore>> wait_semaphores;
+		std::span<const swap_chain_handle> swapchains;
 		std::span<const std::uint32_t> image_indices;
 		std::span<const present_mode> present_modes;
-		std::span<const gpu::handle<gpu::fence>> release_fences;
+		std::span<const handle<fence>> release_fences;
 		std::span<const std::uint64_t> present_ids;
 		std::span<const time_t<std::uint64_t>> target_present_times;
 		present_stage_flags present_stage_queries;

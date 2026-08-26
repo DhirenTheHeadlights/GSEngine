@@ -10,13 +10,34 @@ import :symbol_extract;
 import :gcc_diagnostics;
 
 export namespace gse::ide::analysis {
+	struct symbol_index_failure_info {
+		char text[48] = "unknown compiler failure";
+		bool retryable = false;
+	};
+
 	enum class symbol_index_failure {
-		none,
-		launch,
-		timeout,
-		compiler,
-		module_unavailable,
-		incomplete,
+		none [[= symbol_index_failure_info{
+			.text = "none",
+		}]],
+		launch [[= symbol_index_failure_info{
+			.text = "compiler launch failed",
+			.retryable = true,
+		}]],
+		timeout [[= symbol_index_failure_info{
+			.text = "compiler timed out",
+			.retryable = true,
+		}]],
+		compiler [[= symbol_index_failure_info{
+			.text = "compiler exited with an error",
+			.retryable = true,
+		}]],
+		module_unavailable [[= symbol_index_failure_info{
+			.text = "compiled module artifacts are unavailable",
+		}]],
+		incomplete [[= symbol_index_failure_info{
+			.text = "compiler plugin output was incomplete",
+			.retryable = true,
+		}]],
 	};
 
 	struct tu_symbols {
@@ -43,7 +64,7 @@ export namespace gse::ide::analysis {
 
 	auto describe(
 		symbol_index_failure failure
-	) -> std::string_view;
+	) -> std::string;
 
 	struct symbol_index_builder {
 		static auto run_one(
@@ -77,7 +98,7 @@ namespace gse::ide::analysis {
 		}
 
 		std::vector<std::filesystem::path> paths;
-		std::unordered_set<gse::id> seen;
+		std::unordered_set<id> seen;
 		auto append = [&](std::filesystem::path path) {
 			if (path.is_relative()) {
 				path = directory / path;
@@ -87,7 +108,7 @@ namespace gse::ide::analysis {
 			if (!ec) {
 				path = canonical;
 			}
-			if (seen.insert(gse::generate_temp_id(path)).second) {
+			if (seen.insert(generate_temp_id(path)).second) {
 				paths.push_back(std::move(path));
 			}
 		};
@@ -118,28 +139,11 @@ namespace gse::ide::analysis {
 }
 
 auto gse::ide::analysis::tu_symbols::retryable() const -> bool {
-	return failure == symbol_index_failure::launch
-		|| failure == symbol_index_failure::timeout
-		|| failure == symbol_index_failure::compiler
-		|| failure == symbol_index_failure::incomplete;
+	return annotation_from_enum<symbol_index_failure_info>(failure, {}).retryable;
 }
 
-auto gse::ide::analysis::describe(const symbol_index_failure failure) -> std::string_view {
-	switch (failure) {
-	case symbol_index_failure::none:
-		return "none";
-	case symbol_index_failure::launch:
-		return "compiler launch failed";
-	case symbol_index_failure::timeout:
-		return "compiler timed out";
-	case symbol_index_failure::compiler:
-		return "compiler exited with an error";
-	case symbol_index_failure::module_unavailable:
-		return "compiled module artifacts are unavailable";
-	case symbol_index_failure::incomplete:
-		return "compiler plugin output was incomplete";
-	}
-	return "unknown compiler failure";
+auto gse::ide::analysis::describe(const symbol_index_failure failure) -> std::string {
+	return annotation_from_enum<symbol_index_failure_info>(failure, {}).text;
 }
 
 namespace gse::ide::analysis {
@@ -180,7 +184,7 @@ auto gse::ide::analysis::run_plugin(const compilation_entry& entry, const symbol
 	const std::filesystem::path token_temp = process::temporary_path("symbols", "txt");
 	const std::filesystem::path sarif_temp = process::temporary_path("symbols", "sarif");
 	const std::filesystem::path dependency_temp = process::temporary_path("symbols", "d");
-	const auto remove_temporary_files = gse::make_scope_exit([&] {
+	const auto remove_temporary_files = make_scope_exit([&] {
 		std::error_code ec;
 		std::filesystem::remove(token_temp, ec);
 		std::filesystem::remove(sarif_temp, ec);
@@ -261,7 +265,7 @@ auto gse::ide::analysis::run_plugin(const compilation_entry& entry, const symbol
 				: std::format("compiler exit code {}: {}", run.value_or(-1), raw);
 		}
 		else {
-			out.failure_detail = std::string(describe(out.failure));
+			out.failure_detail = describe(out.failure);
 		}
 	}
 	return result;

@@ -9,9 +9,9 @@ import gse.ecs;
 import :system;
 
 export namespace gse::physics::contact_trace {
-	struct [[= gse::system_state<"Contact Trace">{}, = gse::settings::category<"ContactTrace">{}, = gse::deferred_system{}]] data {
+	struct [[= system_state<"Contact Trace">{}, = settings::category<"ContactTrace">{}, = deferred_system{}]] data {
 		[[
-			= gse::settings::describe<"Log the gpu solver's retired per-tick contact state (lambda, penalty, gap, sticking, "
+			= settings::describe<"Log the gpu solver's retired per-tick contact state (lambda, penalty, gap, sticking, "
 									  "anchors) for every contact touching the body with this owner id, plus the body's own "
 									  "state line each tick. 0 traces nothing. A real-path instrument: it consumes the "
 									  "readback the solver already performs every dispatch, so the solve itself is untouched. "
@@ -25,7 +25,7 @@ export namespace gse::physics::contact_trace {
 		bool hashes_warned = false;
 	};
 
-	[[= gse::system_run<3>{}]]
+	[[= system_run<3>{}]]
 	auto run(
 		data& d,
 		shared_view<physics::data> phys

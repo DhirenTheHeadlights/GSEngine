@@ -43,13 +43,13 @@ export namespace gse::renderer {
 
 	auto transform_aabb(const vec3<length>& local_min, const vec3<length>& local_max, const mat4f& model_matrix) -> std::pair<vec3<length>, vec3<length>> {
 		const std::array corners = { vec4<length>(local_min.x(), local_min.y(), local_min.z(), meters(1.0f)),
-									 vec4<length>(local_max.x(), local_min.y(), local_min.z(), meters(1.0f)),
-									 vec4<length>(local_min.x(), local_max.y(), local_min.z(), meters(1.0f)),
-									 vec4<length>(local_max.x(), local_max.y(), local_min.z(), meters(1.0f)),
-									 vec4<length>(local_min.x(), local_min.y(), local_max.z(), meters(1.0f)),
-									 vec4<length>(local_max.x(), local_min.y(), local_max.z(), meters(1.0f)),
-									 vec4<length>(local_min.x(), local_max.y(), local_max.z(), meters(1.0f)),
-									 vec4<length>(local_max.x(), local_max.y(), local_max.z(), meters(1.0f)) };
+			vec4<length>(local_max.x(), local_min.y(), local_min.z(), meters(1.0f)),
+			vec4<length>(local_min.x(), local_max.y(), local_min.z(), meters(1.0f)),
+			vec4<length>(local_max.x(), local_max.y(), local_min.z(), meters(1.0f)),
+			vec4<length>(local_min.x(), local_min.y(), local_max.z(), meters(1.0f)),
+			vec4<length>(local_max.x(), local_min.y(), local_max.z(), meters(1.0f)),
+			vec4<length>(local_min.x(), local_max.y(), local_max.z(), meters(1.0f)),
+			vec4<length>(local_max.x(), local_max.y(), local_max.z(), meters(1.0f)) };
 
 		vec3 world_min(meters(std::numeric_limits<float>::max()));
 		vec3 world_max(meters(std::numeric_limits<float>::lowest()));
@@ -180,30 +180,30 @@ export namespace gse::renderer::geometry_collector {
 		std::span<const id> exclude_ids
 	) -> std::vector<render_queue_entry>;
 
-	struct [[= gse::system_state<"GeometryCollector">{}]] data {
-		[[= gse::shared]] per_frame_resource<gpu::buffer> instance_buffer;
+	struct [[= system_state<"GeometryCollector">{}]] data {
+		[[= shared]] per_frame_resource<gpu::buffer> instance_buffer;
 
 		static constexpr std::size_t max_instances = 4096;
 		static constexpr std::size_t max_materials = 1024;
 
 		std::size_t instance_capacity = max_instances;
 
-		[[= gse::shared]] per_frame_resource<gpu::buffer> normal_indirect_commands_buffer;
-		[[= gse::shared]] per_frame_resource<gpu::buffer> transparent_indirect_commands_buffer;
-		[[= gse::shared]] per_frame_resource<gpu::buffer> material_palette_buffers;
+		[[= shared]] per_frame_resource<gpu::buffer> normal_indirect_commands_buffer;
+		[[= shared]] per_frame_resource<gpu::buffer> transparent_indirect_commands_buffer;
+		[[= shared]] per_frame_resource<gpu::buffer> material_palette_buffers;
 
 		linear_vector<std::byte> material_staging;
 		std::unordered_map<id, std::vector<std::optional<spatial_matrix>>> prev_model_matrices;
 	};
 
-	[[= gse::system_init{}]]
+	[[= system_init{}]]
 	auto init(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		data& d
 	) -> async::task<>;
 
-	[[= gse::system_run<>{}]]
+	[[= system_run<>{}]]
 	auto run(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
@@ -221,7 +221,7 @@ export namespace gse::renderer::geometry_collector {
 		read<skeleton_instance_component> skeletons
 	) -> async::task<>;
 
-	[[= gse::system_frame{}]]
+	[[= system_frame{}]]
 	auto frame(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,

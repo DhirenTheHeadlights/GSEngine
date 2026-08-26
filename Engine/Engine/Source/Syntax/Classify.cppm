@@ -72,7 +72,7 @@ auto gse::syntax::classify_token(const token& t) -> std::optional<kind> {
 	if (!enum_has_annotation<kind>(t.type)) {
 		return classify_word(t.text);
 	}
-	return annotation_from_enum<kind>(t.type, kind::punctuation);
+	return annotation_from_enum(t.type, kind::punctuation);
 }
 
 auto gse::syntax::classify(const std::span<const token> tokens) -> std::vector<classified_token> {

@@ -137,7 +137,7 @@ export namespace gse::dx12 {
 		) const -> void;
 
 		auto set_scissor(
-			const gse::rect_t<vec2i>& scissor
+			const rect_t<vec2i>& scissor
 		) const -> void;
 
 		auto set_vertex_input_none() const -> void;
@@ -477,7 +477,7 @@ auto gse::dx12::commands::set_viewport(const gpu::viewport& viewport) const -> v
 	}
 }
 
-auto gse::dx12::commands::set_scissor(const gse::rect_t<vec2i>& scissor) const -> void {
+auto gse::dx12::commands::set_scissor(const rect_t<vec2i>& scissor) const -> void {
 	if (active_device) {
 		active_device->cmd_set_scissor(m_cmd, scissor);
 	}

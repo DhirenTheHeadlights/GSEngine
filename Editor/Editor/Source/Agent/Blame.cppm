@@ -12,7 +12,7 @@ namespace gse::ide::agent {
 		session& s,
 		const std::filesystem::path& file,
 		std::int64_t mtime
-	) -> gse::id;
+	) -> id;
 
 	auto note_written_file(
 		session& s,

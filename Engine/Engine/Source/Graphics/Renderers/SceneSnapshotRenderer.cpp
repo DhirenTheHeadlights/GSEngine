@@ -84,7 +84,7 @@ auto gse::renderer::scene_snapshot::frame(const context& ctx, shared_view<gpu::c
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
 	auto rec =
-		co_await gpu::pass<^^gse::renderer::scene_snapshot::frame>(pass_out)
+		co_await gpu::pass<^^frame>(pass_out)
 		.after<^^forward::frame, ^^physics_debug::frame, ^^sdf_grid::frame, ^^world_text::frame, ^^tonemap::frame>();
 
 	rec.blit_swapchain_to_image(*gpu_s.swapchain, *gpu_s.frame, d.snapshots[frame_index], extent);

@@ -23,7 +23,7 @@ auto gse::gpu::make_blas_geometry(const blas_geometry_desc& desc) -> acceleratio
 	};
 }
 
-auto gse::gpu::build_blas_in_place(gpu::device& device, const acceleration_structure dst, const acceleration_structure_geometry& geometry, const std::uint32_t prim_count, const buffer& scratch, recording_context& rec) -> void {
+auto gse::gpu::build_blas_in_place(device& device, const acceleration_structure dst, const acceleration_structure_geometry& geometry, const std::uint32_t prim_count, const buffer& scratch, recording_context& rec) -> void {
 	const auto scratch_alignment = device.acceleration_structure_scratch_alignment();
 	const auto scratch_raw = scratch.device_address();
 	const device_address scratch_addr = (scratch_raw + scratch_alignment - 1) & ~(scratch_alignment - 1);
@@ -58,11 +58,11 @@ auto gse::gpu::build_blas_in_place(gpu::device& device, const acceleration_struc
 	});
 }
 
-auto gse::gpu::build_tlas(gpu::device& device, const std::uint32_t max_instances) -> tlas {
+auto gse::gpu::build_tlas(device& device, const std::uint32_t max_instances) -> tlas {
 	return device.create_tlas(max_instances);
 }
 
-auto gse::gpu::rebuild_tlas(gpu::device& device, tlas& t, const std::span<const tlas_instance_desc> instances, recording_context& rec) -> void {
+auto gse::gpu::rebuild_tlas(device& device, tlas& t, const std::span<const tlas_instance_desc> instances, recording_context& rec) -> void {
 	std::vector<acceleration_structure_instance> packed_instances;
 	packed_instances.reserve(instances.size());
 	for (const auto& inst : instances) {
@@ -147,7 +147,7 @@ auto gse::gpu::write_tlas_instances(tlas& t, const std::span<const tlas_instance
 	}
 }
 
-auto gse::gpu::build_tlas_in_place(gpu::device& device, tlas& t, const std::uint32_t instance_count, recording_context& rec) -> void {
+auto gse::gpu::build_tlas_in_place(device& device, tlas& t, const std::uint32_t instance_count, recording_context& rec) -> void {
 	const auto instance_addr = t.instance_buffer().device_address();
 	const auto scratch_alignment = device.acceleration_structure_scratch_alignment();
 	const auto scratch_raw = t.scratch_buffer().device_address();

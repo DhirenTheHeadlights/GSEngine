@@ -34,7 +34,7 @@ export namespace gse::ide {
 		std::uint32_t line = 0;
 		std::uint32_t column = 0;
 		std::string ident;
-		gse::time since{};
+		time since{};
 		bool resolved = false;
 		bool has_card = false;
 		bool pending = false;
@@ -47,25 +47,25 @@ export namespace gse::ide {
 		bool body_is_code = false;
 		float scroll = 0.f;
 		float scroll_x = 0.f;
-		gse::gui::scroll_axis x_axis;
-		gse::gui::scroll_axis y_axis;
-		std::vector<gse::gui::text_span> code_spans;
-		gse::vec4f kind_color;
-		gse::vec2f anchor;
-		gse::rect_t<gse::vec2f> panel;
-		gse::rect_t<gse::vec2f> code_rect;
+		gui::scroll_axis x_axis;
+		gui::scroll_axis y_axis;
+		std::vector<gui::text_span> code_spans;
+		vec4f kind_color;
+		vec2f anchor;
+		rect_t<vec2f> panel;
+		rect_t<vec2f> code_rect;
 	};
 
 	struct quickfix_popup {
-		gse::id document_id;
+		id document_id;
 		std::uint32_t line = 0;
 		std::uint32_t start_col = 0;
-		gse::vec2f anchor;
-		gse::rect_t<gse::vec2f> panel;
+		vec2f anchor;
+		rect_t<vec2f> panel;
 	};
 
 	struct document_prompt {
-		gse::id document_id;
+		id document_id;
 		document_prompt_kind kind = document_prompt_kind::close_dirty;
 		bool close_after_resolution = false;
 	};
@@ -81,7 +81,7 @@ export namespace gse::ide {
 		std::uint64_t key = 0;
 		bool is_dir = false;
 		fs_node_role role = fs_node_role::entry;
-		gse::gui::symbol_glyph glyph = nullptr;
+		gui::symbol_glyph glyph = nullptr;
 		bool loaded = false;
 		std::filesystem::file_time_type write_time{};
 		std::vector<fs_node> children;
@@ -111,7 +111,7 @@ export namespace gse::ide {
 		bool is_dir = false;
 		bool created = false;
 		bool focus_requested = false;
-		gse::gui::text_input_state input;
+		gui::text_input_state input;
 	};
 
 	struct explorer_reveal {
@@ -124,30 +124,30 @@ export namespace gse::ide {
 			open_documents documents;
 			std::vector<navigation_entry> back_stack;
 			std::vector<navigation_entry> forward_stack;
-			gse::gui::tab_strip_state tab_strip;
+			gui::tab_strip_state tab_strip;
 			profile_view_state profile;
 			alloc_view_state alloc;
 			bool game_captured = false;
 			std::uint32_t game_instance = 0;
 			int game_capture_settle_frames = 0;
-			gse::vec2f game_cursor{ 0.f, 0.f };
-			gse::vec2f game_input_scale{ 1.f, 1.f };
-			gse::file_watcher watcher;
+			vec2f game_cursor{ 0.f, 0.f };
+			vec2f game_input_scale{ 1.f, 1.f };
+			file_watcher watcher;
 
 			fs_node fs_root;
-			gse::gui::draw::tree_selection explorer_selection;
+			gui::draw::tree_selection explorer_selection;
 			std::unordered_set<std::uint64_t> explorer_selection_seen;
 			std::optional<pending_explorer_name> pending_name;
 			std::optional<std::filesystem::path> reveal_path;
 			std::optional<explorer_reveal> pending_reveal;
 			std::vector<std::uint64_t> explorer_load_requests;
-			gse::interval_timer<> explorer_scan_timer{ gse::milliseconds(500.f) };
+			interval_timer<> explorer_scan_timer{ milliseconds(500.f) };
 			bool commit_name_requested = false;
 			bool cancel_name_requested = false;
 			std::string explorer_error;
 
-			std::optional<gse::id> diagnostics_pending;
-			gse::clock diagnostics_clock;
+			std::optional<id> diagnostics_pending;
+			clock diagnostics_clock;
 			bool diagnostics_paused_for_build = false;
 			std::optional<document_prompt> pending_document_prompt;
 
@@ -164,24 +164,24 @@ export namespace gse::ide {
 		static auto open_file(
 			data& d,
 			const std::filesystem::path& path
-		) -> gse::id;
+		) -> id;
 
 		[[nodiscard]] static auto active_document_id(
 			const data& d
-		) -> std::optional<gse::id>;
+		) -> std::optional<id>;
 
 		[[nodiscard]] static auto active_tab_id(
 			const data& d
-		) -> gse::id;
+		) -> id;
 
 		static auto activate_document(
 			data& d,
-			gse::id document_id
+			id document_id
 		) -> void;
 
 		static auto reorder_document(
 			data& d,
-			gse::id document_id,
+			id document_id,
 			std::size_t index
 		) -> void;
 
@@ -200,23 +200,23 @@ export namespace gse::ide {
 
 		static auto save_document(
 			data& d,
-			gse::id document_id,
+			id document_id,
 			document_save_mode mode = document_save_mode::preserve_external
 		) -> document_save_result;
 
 		static auto close_document(
 			data& d,
-			gse::id document_id
+			id document_id
 		) -> bool;
 
 		static auto discard_document(
 			data& d,
-			gse::id document_id
+			id document_id
 		) -> void;
 
 		static auto discard_document_changes(
 			data& d,
-			gse::id document_id
+			id document_id
 		) -> bool;
 
 		static auto save_dirty_documents(
@@ -230,7 +230,7 @@ export namespace gse::ide {
 		static auto make_root(
 			const std::filesystem::path& path,
 			std::string name,
-			gse::gui::symbol_glyph glyph
+			gui::symbol_glyph glyph
 		) -> fs_node;
 
 		static auto find_node(
@@ -301,7 +301,7 @@ namespace gse::ide {
 	constexpr std::size_t max_navigation_history = 256;
 
 	struct loaded_document {
-		gse::gui::text_buffer buffer;
+		gui::text_buffer buffer;
 		std::filesystem::file_time_type write_time;
 	};
 
@@ -384,7 +384,7 @@ namespace gse::ide {
 
 	auto preserve_document_recovery(
 		const document& doc,
-		gse::id document_id
+		id document_id
 	) -> void;
 
 	auto remapped_path(
@@ -471,7 +471,7 @@ auto gse::ide::current_navigation_entry(const workspace::data& d) -> std::option
 	}
 
 	const document& doc = it->second;
-	const gse::gui::buffer_position caret = doc.buffer.clamp(doc.view.caret);
+	const gui::buffer_position caret = doc.buffer.clamp(doc.view.caret);
 	return navigation_entry{
 		.path = doc.path,
 		.line = caret.line,
@@ -496,11 +496,11 @@ auto gse::ide::jump_to_without_history(workspace::data& d, const navigation_entr
 		return false;
 	}
 	document& doc = it->second;
-	const gse::gui::buffer_position start = doc.buffer.clamp({
+	const gui::buffer_position start = doc.buffer.clamp({
 		.line = target.line,
 		.column = target.column,
 	});
-	const gse::gui::buffer_position end = doc.buffer.clamp({
+	const gui::buffer_position end = doc.buffer.clamp({
 		.line = target.end_line,
 		.column = target.end_column,
 	});
@@ -596,7 +596,7 @@ auto gse::ide::read_document_file(const std::filesystem::path& path) -> std::exp
 		if (!before) {
 			return std::unexpected(before.error());
 		}
-		std::expected<gse::gui::text_buffer, std::string> buffer = gse::gui::text_buffer::from_file(path);
+		std::expected<gui::text_buffer, std::string> buffer = gui::text_buffer::from_file(path);
 		if (!buffer) {
 			return std::unexpected(buffer.error());
 		}
@@ -835,8 +835,8 @@ auto gse::ide::workspace::reload_document_from_disk(data& d, const std::filesyst
 			log::println(log::level::error, log::category::general, "workspace: {}", loaded.error());
 			return;
 		}
-		const gse::gui::buffer_position caret = doc.view.caret;
-		const gse::gui::buffer_position anchor = doc.view.anchor;
+		const gui::buffer_position caret = doc.view.caret;
+		const gui::buffer_position anchor = doc.view.anchor;
 		doc.buffer = std::move(loaded->buffer);
 		doc.disk_write_time = loaded->write_time;
 		++doc.revision.value;
@@ -852,7 +852,7 @@ auto gse::ide::workspace::reload_document_from_disk(data& d, const std::filesyst
 }
 
 auto gse::ide::preserve_document_recovery(const document& doc, const id document_id) -> void {
-	const std::filesystem::path recovery_directory = gse::config::user_state_dir() / "recovery";
+	const std::filesystem::path recovery_directory = config::user_state_dir() / "recovery";
 	std::error_code ec;
 	std::filesystem::create_directories(recovery_directory, ec);
 	if (ec) {
@@ -937,7 +937,7 @@ auto gse::ide::workspace::save_dirty_documents(data& d) -> void {
 	}
 }
 
-auto gse::ide::workspace::make_root(const std::filesystem::path& path, std::string name, const gse::gui::symbol_glyph glyph) -> fs_node {
+auto gse::ide::workspace::make_root(const std::filesystem::path& path, std::string name, const gui::symbol_glyph glyph) -> fs_node {
 	const std::filesystem::path normalized = normalized_path(path);
 	return {
 		.path = normalized,

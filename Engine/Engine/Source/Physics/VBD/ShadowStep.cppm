@@ -34,19 +34,19 @@ export namespace gse::physics::shadow_step {
 		std::vector<body_sample> cpu_post;
 	};
 
-	struct [[= gse::system_state<"Shadow Step">{}, = gse::settings::category<"ShadowStep">{}, = gse::deferred_system{}]] data {
+	struct [[= system_state<"Shadow Step">{}, = settings::category<"ShadowStep">{}, = deferred_system{}]] data {
 		[[
-			= gse::settings::describe<"Step a second, GPU-resident copy of the solver from the CPU solver's pre-step state "
+			= settings::describe<"Step a second, GPU-resident copy of the solver from the CPU solver's pre-step state "
 									  "every tick and log the one-step residual, then discard it. A parity instrument: it "
 									  "denies divergence any time to amplify, so a residual is a defect rather than chaos. "
 									  "Stalls the device once per tick, so timings from such a run are meaningless. "
 									  "Requires a restart, and requires the CPU solver.">{},
-			= gse::settings::restart_required{}
+			= settings::restart_required{}
 		]]
 		bool enabled = false;
 
 		[[
-			= gse::settings::describe<"Dump every body's one-step residual at this shadow step, once; -1 dumps nothing. "
+			= settings::describe<"Dump every body's one-step residual at this shadow step, once; -1 dumps nothing. "
 									  "Choose the step from the aggregate column rather than letting a magnitude trigger "
 									  "choose it: the steps just after first contact carry a large backend-independent "
 									  "residual from the per-tick reseed, so any threshold fires there instead of at the "
@@ -61,14 +61,14 @@ export namespace gse::physics::shadow_step {
 		vbd::gpu_solver solver;
 	};
 
-	[[= gse::system_init{}]]
+	[[= system_init{}]]
 	auto init(
 		context& ctx,
 		std::optional<shared_view<gpu::context::data>> gpu_s,
 		data& d
 	) -> async::task<>;
 
-	[[= gse::system_run<1>{}]]
+	[[= system_run<1>{}]]
 	auto run(
 		data& d,
 		shared_view<physics::data> phys,
@@ -77,7 +77,7 @@ export namespace gse::physics::shadow_step {
 		read<collision_component> collision
 	) -> async::task<>;
 
-	[[= gse::system_frame{}]]
+	[[= system_frame{}]]
 	auto frame(
 		context& ctx,
 		std::optional<shared_view<gpu::context::data>> gpu_s,

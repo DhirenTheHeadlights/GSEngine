@@ -36,39 +36,39 @@ import gse.save;
 import gse.meta;
 
 export namespace gse::renderer {
-	struct [[= gse::system_state<"Renderer">{}, = gse::settings::category<"Graphics">{}]] data {
+	struct [[= system_state<"Renderer">{}, = settings::category<"Graphics">{}]] data {
 		[[
-			= gse::settings::describe<"Watch shader sources on disk and reload pipelines when files change.">{}
+			= settings::describe<"Watch shader sources on disk and reload pipelines when files change.">{}
 		]]
 		bool hot_reload_enabled = false;
 
 		[[
-			= gse::settings::describe<"Record GPU timestamp queries around each render pass for the profiler.">{}
+			= settings::describe<"Record GPU timestamp queries around each render pass for the profiler.">{}
 		]]
 		bool gpu_timestamps_enabled = true;
 
 		[[
-			= gse::settings::describe<"Collect pipeline statistics (invocations, primitives) per pass. Has measurable overhead.">{}
+			= settings::describe<"Collect pipeline statistics (invocations, primitives) per pass. Has measurable overhead.">{}
 		]]
 		bool gpu_pipeline_stats_enabled = false;
 
 		[[
-			= gse::settings::describe<"Aggregate per-frame profiler samples into rolling averages for the HUD.">{}
+			= settings::describe<"Aggregate per-frame profiler samples into rolling averages for the HUD.">{}
 		]]
 		bool profile_aggregator_enabled = true;
 
 		[[
-			= gse::settings::describe<"Retain a rolling ring of recent frame traces so a profile dump can emit the "
+			= settings::describe<"Retain a rolling ring of recent frame traces so a profile dump can emit the "
 									  "worst frames instead of the current one. Costs a per-frame copy of the trace.">{}
 		]]
 		bool profile_frame_recording = false;
 
 		[[
-			= gse::settings::describe<"Frames to discard before the profiler starts accumulating. Boot and "
+			= settings::describe<"Frames to discard before the profiler starts accumulating. Boot and "
 									  "first-use pipeline warmup produce multi-millisecond frames that would "
 									  "otherwise pin every peak for the rest of the run. Editing this re-arms "
 									  "the countdown, so it doubles as a way to restart a capture.">{},
-			= gse::settings::range<0, 2000>{}
+			= settings::range<0, 2000>{}
 		]]
 		int profile_warmup_frames = static_cast<int>(profile::default_warmup_frames);
 
@@ -80,14 +80,14 @@ export namespace gse::renderer {
 		int last_profile_warmup_frames = static_cast<int>(profile::default_warmup_frames);
 	};
 
-	[[= gse::system_init{}]]
+	[[= system_init{}]]
 	auto init(
 		context& ctx,
 		data& d,
 		channel_write<actions::add_action_request> actions_out
 	) -> async::task<>;
 
-	[[= gse::system_run<>{}]]
+	[[= system_run<>{}]]
 	auto run(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,

@@ -61,152 +61,152 @@ export namespace gse::renderer::atmosphere {
 		angle azimuth = degrees(45.f);
 	};
 
-	struct [[= gse::system_state<"Atmosphere">{}, = gse::settings::category<"Atmosphere">{}]] data {
+	struct [[= system_state<"Atmosphere">{}, = settings::category<"Atmosphere">{}]] data {
 		[[
-			= gse::settings::describe<"Render the atmosphere: scattering LUT updates and the sky draw. Off skips the "
+			= settings::describe<"Render the atmosphere: scattering LUT updates and the sky draw. Off skips the "
 									  "passes and freezes the last-computed sky; the sun direction stays live for "
 									  "scene lighting and shadows either way.">{},
-			= gse::settings::hot_reloadable
+			= settings::hot_reloadable
 		]]
 		bool enabled = true;
 
 		[[
-			= gse::settings::describe<"Sun azimuth (degrees from +X around +Y)">{},
-			= gse::settings::range<0.f, 360.f>{},
-			= gse::settings::hot_reloadable
+			= settings::describe<"Sun azimuth (degrees from +X around +Y)">{},
+			= settings::range<0.f, 360.f>{},
+			= settings::hot_reloadable
 		]]
 		angle sun_azimuth = degrees(45.0f);
 
 		[[
-			= gse::settings::describe<"Sun elevation above horizon (degrees)">{},
-			= gse::settings::range<-90.f, 90.f>{},
-			= gse::settings::hot_reloadable
+			= settings::describe<"Sun elevation above horizon (degrees)">{},
+			= settings::range<-90.f, 90.f>{},
+			= settings::hot_reloadable
 		]]
 		angle sun_elevation = degrees(60.0f);
 
 		[[
-			= gse::settings::describe<"Sun radiant intensity (W/m^2)">{},
-			= gse::shared,
-			= gse::settings::hot_reloadable
+			= settings::describe<"Sun radiant intensity (W/m^2)">{},
+			= shared,
+			= settings::hot_reloadable
 		]]
 		irradiance sun_intensity = watts_per_square_meter(1.6f);
 
 		[[
-			= gse::settings::describe<"Sun color tint applied to direct lighting and the sun disk">{},
-			= gse::shared,
-			= gse::settings::hot_reloadable
+			= settings::describe<"Sun color tint applied to direct lighting and the sun disk">{},
+			= shared,
+			= settings::hot_reloadable
 		]]
 		vec3f sun_color = { 1.0f, 0.9f, 0.75f };
 
 		[[
-			= gse::settings::describe<"Reflectance of the planet surface, used where a view ray passes below the horizon "
+			= settings::describe<"Reflectance of the planet surface, used where a view ray passes below the horizon "
 									  "and hits the ground. Without it those rays return in-scattered haze with nothing "
 									  "behind it, which reads as a bright band under any finite floor.">{},
-			= gse::settings::hot_reloadable
+			= settings::hot_reloadable
 		]]
 		vec3f ground_albedo = { 0.08f, 0.08f, 0.09f };
 
 		[[
-			= gse::settings::describe<"Sun disk angular radius (degrees)">{},
-			= gse::settings::range<0.1f, 5.f>{},
-			= gse::settings::hot_reloadable
+			= settings::describe<"Sun disk angular radius (degrees)">{},
+			= settings::range<0.1f, 5.f>{},
+			= settings::hot_reloadable
 		]]
 		angle sun_angular_radius = degrees(1.5f);
 
 		[[
-			= gse::settings::describe<"Sun ambient term applied to surfaces not directly lit by the sun.">{},
-			= gse::settings::range<0.f, 1.f>{},
-			= gse::shared,
-			= gse::settings::hot_reloadable
+			= settings::describe<"Sun ambient term applied to surfaces not directly lit by the sun.">{},
+			= settings::range<0.f, 1.f>{},
+			= shared,
+			= settings::hot_reloadable
 		]]
 		float sun_ambient_strength = 0.1f;
 
 		[[
-			= gse::settings::describe<"Sun source radius for soft-shadow penumbra calculation.">{},
-			= gse::shared
+			= settings::describe<"Sun source radius for soft-shadow penumbra calculation.">{},
+			= shared
 		]]
 		length sun_source_radius = meters(0.05f);
 
-		[[= gse::shared]] vec3f sun_direction = { 0.0f, 1.0f, 0.0f };
+		[[= shared]] vec3f sun_direction = { 0.0f, 1.0f, 0.0f };
 
 		[[
-			= gse::settings::describe<"Brightness of the procedural starfield. Stars are world-fixed, so they hold "
+			= settings::describe<"Brightness of the procedural starfield. Stars are world-fixed, so they hold "
 									  "still while the camera pans. 0 disables them.">{},
-			= gse::settings::range<0.f, 8.f>{},
-			= gse::settings::hot_reloadable
+			= settings::range<0.f, 8.f>{},
+			= settings::hot_reloadable
 		]]
 		float star_intensity = 1.6f;
 
 		[[
-			= gse::settings::describe<"Star field cell subdivision. Higher packs more, smaller stars into the sky; "
+			= settings::describe<"Star field cell subdivision. Higher packs more, smaller stars into the sky; "
 									  "the star radius scales down with it so they stay sub-pixel-stable.">{},
-			= gse::settings::range<20.f, 400.f>{},
-			= gse::settings::hot_reloadable
+			= settings::range<20.f, 400.f>{},
+			= settings::hot_reloadable
 		]]
 		float star_density = 140.0f;
 
 		[[
-			= gse::settings::describe<"How fast stars wash out as the sun climbs. Stars reach full brightness once "
+			= settings::describe<"How fast stars wash out as the sun climbs. Stars reach full brightness once "
 									  "the sun is this far below the horizon, in units of sin(elevation).">{},
-			= gse::settings::range<0.01f, 0.5f>{},
-			= gse::settings::hot_reloadable
+			= settings::range<0.01f, 0.5f>{},
+			= settings::hot_reloadable
 		]]
 		float star_fade = 0.12f;
 
 		[[
-			= gse::settings::describe<"Camera altitude above sea level (km)">{},
-			= gse::shared
+			= settings::describe<"Camera altitude above sea level (km)">{},
+			= shared
 		]]
 		atmosphere_length camera_altitude = kilometers(0.0f);
 
 		[[
-			= gse::settings::describe<"Planet (ground) radius (km)">{}
+			= settings::describe<"Planet (ground) radius (km)">{}
 		]]
 		atmosphere_length bottom_radius = kilometers(6360.0f);
 
 		[[
-			= gse::settings::describe<"Top of atmosphere radius (km)">{}
+			= settings::describe<"Top of atmosphere radius (km)">{}
 		]]
 		atmosphere_length top_radius = kilometers(6460.0f);
 
 		[[
-			= gse::settings::describe<"Rayleigh density scale height (km)">{}
+			= settings::describe<"Rayleigh density scale height (km)">{}
 		]]
 		atmosphere_length rayleigh_scale_height = kilometers(8.0f);
 
 		[[
-			= gse::settings::describe<"Mie scattering coefficient (per km)">{}
+			= settings::describe<"Mie scattering coefficient (per km)">{}
 		]]
 		atmosphere_inverse_length mie_scattering = per_kilometer(3.996e-3f);
 
 		[[
-			= gse::settings::describe<"Mie absorption coefficient (per km)">{}
+			= settings::describe<"Mie absorption coefficient (per km)">{}
 		]]
 		atmosphere_inverse_length mie_absorption = per_kilometer(0.444e-3f);
 
 		[[
-			= gse::settings::describe<"Mie density scale height (km)">{}
+			= settings::describe<"Mie density scale height (km)">{}
 		]]
 		atmosphere_length mie_scale_height = kilometers(1.2f);
 
 		[[
-			= gse::settings::describe<"Mie phase asymmetry g (-1 to 1)">{},
-			= gse::settings::range<-1.f, 1.f>{}
+			= settings::describe<"Mie phase asymmetry g (-1 to 1)">{},
+			= settings::range<-1.f, 1.f>{}
 		]]
 		float mie_phase_g = 0.85f;
 
 		[[
-			= gse::settings::describe<"Ozone peak altitude (km)">{}
+			= settings::describe<"Ozone peak altitude (km)">{}
 		]]
 		atmosphere_length ozone_peak_height = kilometers(25.0f);
 
 		[[
-			= gse::settings::describe<"Ozone layer half-width (km)">{}
+			= settings::describe<"Ozone layer half-width (km)">{}
 		]]
 		atmosphere_length ozone_half_width = kilometers(15.0f);
 
 		[[
-			= gse::settings::describe<"Aerial perspective max view distance (km)">{}
+			= settings::describe<"Aerial perspective max view distance (km)">{}
 		]]
 		atmosphere_length max_view_distance = kilometers(32.0f);
 
@@ -227,29 +227,29 @@ export namespace gse::renderer::atmosphere {
 		gpu::shader_program sky_raster_pipeline;
 		gpu::shader_program ap_pipeline;
 
-		[[= gse::shared]] gpu::image transmittance_lut;
+		[[= shared]] gpu::image transmittance_lut;
 		gpu::image multiscatter_lut;
-		[[= gse::shared]] gpu::image sky_view_lut;
-		[[= gse::shared]] gpu::image ap_volume;
+		[[= shared]] gpu::image sky_view_lut;
+		[[= shared]] gpu::image ap_volume;
 		vec3u ap_volume_extent{ 32, 32, 32 };
 
 		gpu::handle<gpu::sampler> lut_sampler;
-		[[= gse::shared]] gpu::bindless_handle lut_sampler_bindless;
+		[[= shared]] gpu::bindless_handle lut_sampler_bindless;
 		gpu::bindless_handle sky_view_sampler_bindless;
 
-		[[= gse::shared]] gpu::buffer atmosphere_ubo_buffer;
+		[[= shared]] gpu::buffer atmosphere_ubo_buffer;
 
 		bool luts_ready = false;
 	};
 
-	[[= gse::system_init{}]]
+	[[= system_init{}]]
 	auto init(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		data& d
 	) -> async::task<>;
 
-	[[= gse::system_frame{}]]
+	[[= system_frame{}]]
 	auto frame(
 		const context& ctx,
 		shared_view<gpu::context::data> gpu_s,

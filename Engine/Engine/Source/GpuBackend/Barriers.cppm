@@ -36,7 +36,7 @@ export namespace gse::gpu {
 		access_flags src_access;
 		pipeline_stage_flags dst_stages;
 		access_flags dst_access;
-		gpu::handle<gpu::buffer> buffer;
+		handle<gpu::buffer> buffer;
 		device_size offset = 0;
 		device_size size = 0;
 	};
@@ -49,7 +49,7 @@ export namespace gse::gpu {
 		resource_state prev_state = resource_state::undefined;
 		resource_state next_state = resource_state::undefined;
 		bool discard_contents = false;
-		gpu::handle<gpu::image> image;
+		handle<gpu::image> image;
 		image_aspect_flags aspects;
 		std::uint32_t base_mip_level = 0;
 		std::uint32_t level_count = 1;

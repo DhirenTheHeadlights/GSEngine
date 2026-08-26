@@ -10,14 +10,20 @@ import gse.ide.navigation;
 export namespace gse::ide::search {
 	struct domain_info {
 		int priority = 0;
+		char label[8] = "file";
+		vec4f gui::style::* color = &gui::style::color_file;
 	};
 
 	enum class domain {
 		content [[= domain_info{
 			.priority = 2,
+			.label = "text",
+			.color = &gui::style::color_text_secondary,
 		}]],
 		symbol [[= domain_info{
 			.priority = 0,
+			.label = "symbol",
+			.color = &gui::style::color_accent,
 		}]],
 		file [[= domain_info{
 			.priority = 1,

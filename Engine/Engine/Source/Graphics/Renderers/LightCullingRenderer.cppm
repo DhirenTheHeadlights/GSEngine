@@ -25,7 +25,7 @@ export namespace gse::renderer::light_culling {
 	constexpr std::uint32_t max_lights_per_tile = 64;
 	constexpr std::size_t max_lights = 1024;
 
-	struct [[= gse::system_state<"LightCulling">{}]] data {
+	struct [[= system_state<"LightCulling">{}]] data {
 		std::uint32_t current_width = 0;
 		std::uint32_t current_height = 0;
 
@@ -33,21 +33,21 @@ export namespace gse::renderer::light_culling {
 
 		per_frame_resource<gpu::buffer> culling_params_buffers;
 		per_frame_resource<gpu::buffer> light_buffers;
-		[[= gse::shared]] per_frame_resource<gpu::handle<gpu::buffer>> light_index_list_buffers;
-		[[= gse::shared]] per_frame_resource<gpu::handle<gpu::buffer>> tile_light_table_buffers;
+		[[= shared]] per_frame_resource<gpu::handle<gpu::buffer>> light_index_list_buffers;
+		[[= shared]] per_frame_resource<gpu::handle<gpu::buffer>> tile_light_table_buffers;
 
 		gpu::bindless_handle depth_sampler;
 		gpu::bindless_handle depth_view;
 	};
 
-	[[= gse::system_init{}]] auto init(
+	[[= system_init{}]] auto init(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		shared_view<asset::data> assets_s,
 		data& d
 	) -> async::task<>;
 
-	[[= gse::system_frame{}]] auto frame(
+	[[= system_frame{}]] auto frame(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		const data& d,

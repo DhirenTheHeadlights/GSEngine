@@ -575,7 +575,7 @@ gse::binary_reader::binary_reader(std::ifstream& stream, const std::uint32_t exp
 	std::uint32_t epoch = 0;
 	*this & magic & version & epoch;
 	m_valid = m_valid && magic == expected_magic && version == expected_version && epoch == archive_format_epoch;
-	gse::assert(m_valid, loc, "Invalid or outdated baked file: {}", path);
+	assert(m_valid, loc, "Invalid or outdated baked file: {}", path);
 }
 
 auto gse::binary_reader::open(std::ifstream& stream, const std::uint32_t expected_magic, const std::uint32_t expected_version) -> std::expected<binary_reader, archive_mismatch> {

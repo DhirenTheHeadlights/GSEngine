@@ -90,7 +90,7 @@ export namespace gse::introspection {
 }
 
 constexpr auto gse::introspection::edge_info(const edge_kind kind) -> edge_kind_info {
-	return gse::annotation_from_enum<edge_kind_info>(kind, {
+	return annotation_from_enum(kind, edge_kind_info{
 		.label = "unknown",
 		.color = 0x808080,
 		.alpha = 0.8f,

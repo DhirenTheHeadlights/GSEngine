@@ -122,7 +122,7 @@ auto gse::network::bitstream<Mode>::read() -> T {
 
 template <typename Mode>
 auto gse::network::bitstream<Mode>::read(std::span<std::byte> data) -> void
-requires gse::network::is_read_mode_v<Mode>
+requires is_read_mode_v<Mode>
 {
 	const std::size_t bits = data.size_bytes() * 8;
 	const bool ok = can_advance(bits);
@@ -142,7 +142,7 @@ requires gse::network::is_read_mode_v<Mode>
 
 	if ((m_head_bits % 8) == 0) {
 		const std::size_t byte_index = m_head_bits / 8;
-		gse::memcpy(data.data(), m_buffer.data() + byte_index, data.size_bytes());
+		memcpy(data.data(), m_buffer.data() + byte_index, data.size_bytes());
 		m_head_bits += bits;
 		return;
 	}
@@ -164,21 +164,21 @@ requires gse::network::is_read_mode_v<Mode>
 
 template <typename Mode>
 auto gse::network::bitstream<Mode>::read_bytes(std::byte* data, const std::size_t bytes) -> void
-requires gse::network::is_read_mode_v<Mode>
+requires is_read_mode_v<Mode>
 {
 	read(std::span(data, bytes));
 }
 
 template <typename Mode>
 auto gse::network::bitstream<Mode>::remaining_bytes() const -> std::size_t
-requires gse::network::is_read_mode_v<Mode>
+requires is_read_mode_v<Mode>
 {
 	return remaining_bits() / 8;
 }
 
 template <typename Mode>
 auto gse::network::bitstream<Mode>::try_read(std::span<std::byte> data) -> read_result
-requires gse::network::is_read_mode_v<Mode>
+requires is_read_mode_v<Mode>
 {
 	const std::size_t bits = data.size_bytes() * 8;
 	if (!can_advance(bits)) {
@@ -197,7 +197,7 @@ auto gse::network::bitstream<Mode>::write(const T& data) -> void {
 
 template <typename Mode>
 auto gse::network::bitstream<Mode>::write(const std::span<const std::byte> data) -> void
-requires(!gse::network::is_read_mode_v<Mode>)
+requires(!is_read_mode_v<Mode>)
 {
 	const std::size_t bits = data.size_bytes() * 8;
 	const bool ok = can_advance(bits);
@@ -211,7 +211,7 @@ requires(!gse::network::is_read_mode_v<Mode>)
 
 	if ((m_head_bits % 8) == 0) {
 		const std::size_t byte_index = m_head_bits / 8;
-		gse::memcpy(m_buffer.data() + byte_index, data);
+		memcpy(m_buffer.data() + byte_index, data);
 		m_head_bits += bits;
 		return;
 	}
@@ -235,21 +235,21 @@ requires(!gse::network::is_read_mode_v<Mode>)
 
 template <typename Mode>
 auto gse::network::bitstream<Mode>::write_bytes(const std::byte* data, const std::size_t bytes) -> void
-requires(!gse::network::is_read_mode_v<Mode>)
+requires(!is_read_mode_v<Mode>)
 {
 	write(std::span(data, bytes));
 }
 
 template <typename Mode>
 auto gse::network::bitstream<Mode>::bytes_written() const -> std::size_t
-requires(!gse::network::is_read_mode_v<Mode>)
+requires(!is_read_mode_v<Mode>)
 {
 	return (m_head_bits + 7) / 8;
 }
 
 template <typename Mode>
 auto gse::network::bitstream<Mode>::reset(const std::span<std::byte> buffer) -> void
-requires(!gse::network::is_read_mode_v<Mode>)
+requires(!is_read_mode_v<Mode>)
 {
 	m_buffer = buffer;
 	m_head_bits = 0;

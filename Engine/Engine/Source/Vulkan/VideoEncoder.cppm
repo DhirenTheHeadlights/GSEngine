@@ -927,34 +927,34 @@ auto gse::vulkan::video_encoder::encode_capture(per_frame& slot) -> void {
 		const auto uv_source = std::bit_cast<vk::Image>(slot.uv_staging.handle());
 
 		const std::array pre_barriers = { vk::ImageMemoryBarrier2{
-											  .srcStageMask = vk::PipelineStageFlagBits2::eNone,
-											  .srcAccessMask = vk::AccessFlagBits2::eNone,
-											  .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
-											  .dstAccessMask = vk::AccessFlagBits2::eTransferWrite,
-											  .oldLayout = vk::ImageLayout::eUndefined,
-											  .newLayout = vk::ImageLayout::eTransferDstOptimal,
-											  .image = slot.nv12_image,
-											  .subresourceRange = color_subresource_range
+			.srcStageMask = vk::PipelineStageFlagBits2::eNone,
+			.srcAccessMask = vk::AccessFlagBits2::eNone,
+			.dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+			.dstAccessMask = vk::AccessFlagBits2::eTransferWrite,
+			.oldLayout = vk::ImageLayout::eUndefined,
+			.newLayout = vk::ImageLayout::eTransferDstOptimal,
+			.image = slot.nv12_image,
+			.subresourceRange = color_subresource_range
 										  },
-										  vk::ImageMemoryBarrier2{
-											  .srcStageMask = vk::PipelineStageFlagBits2::eNone,
-											  .srcAccessMask = vk::AccessFlagBits2::eNone,
-											  .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
-											  .dstAccessMask = vk::AccessFlagBits2::eTransferRead,
-											  .oldLayout = vk::ImageLayout::eGeneral,
-											  .newLayout = vk::ImageLayout::eTransferSrcOptimal,
-											  .image = y_source,
-											  .subresourceRange = color_subresource_range
+			vk::ImageMemoryBarrier2{
+				.srcStageMask = vk::PipelineStageFlagBits2::eNone,
+				.srcAccessMask = vk::AccessFlagBits2::eNone,
+				.dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+				.dstAccessMask = vk::AccessFlagBits2::eTransferRead,
+				.oldLayout = vk::ImageLayout::eGeneral,
+				.newLayout = vk::ImageLayout::eTransferSrcOptimal,
+				.image = y_source,
+				.subresourceRange = color_subresource_range
 										  },
-										  vk::ImageMemoryBarrier2{
-											  .srcStageMask = vk::PipelineStageFlagBits2::eNone,
-											  .srcAccessMask = vk::AccessFlagBits2::eNone,
-											  .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
-											  .dstAccessMask = vk::AccessFlagBits2::eTransferRead,
-											  .oldLayout = vk::ImageLayout::eGeneral,
-											  .newLayout = vk::ImageLayout::eTransferSrcOptimal,
-											  .image = uv_source,
-											  .subresourceRange = color_subresource_range
+			vk::ImageMemoryBarrier2{
+				.srcStageMask = vk::PipelineStageFlagBits2::eNone,
+				.srcAccessMask = vk::AccessFlagBits2::eNone,
+				.dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+				.dstAccessMask = vk::AccessFlagBits2::eTransferRead,
+				.oldLayout = vk::ImageLayout::eGeneral,
+				.newLayout = vk::ImageLayout::eTransferSrcOptimal,
+				.image = uv_source,
+				.subresourceRange = color_subresource_range
 										  } };
 		slot.cmd.pipelineBarrier2({
 			.imageMemoryBarrierCount = static_cast<std::uint32_t>(pre_barriers.size()),
@@ -986,34 +986,34 @@ auto gse::vulkan::video_encoder::encode_capture(per_frame& slot) -> void {
 		);
 
 		const std::array post_copy_barriers = { vk::ImageMemoryBarrier2{
-													.srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
-													.srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
-													.dstStageMask = vk::PipelineStageFlagBits2::eVideoEncodeKHR,
-													.dstAccessMask = vk::AccessFlagBits2::eVideoEncodeReadKHR,
-													.oldLayout = vk::ImageLayout::eTransferDstOptimal,
-													.newLayout = vk::ImageLayout::eVideoEncodeSrcKHR,
-													.image = slot.nv12_image,
-													.subresourceRange = color_subresource_range
+			.srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
+			.srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+			.dstStageMask = vk::PipelineStageFlagBits2::eVideoEncodeKHR,
+			.dstAccessMask = vk::AccessFlagBits2::eVideoEncodeReadKHR,
+			.oldLayout = vk::ImageLayout::eTransferDstOptimal,
+			.newLayout = vk::ImageLayout::eVideoEncodeSrcKHR,
+			.image = slot.nv12_image,
+			.subresourceRange = color_subresource_range
 												},
-												vk::ImageMemoryBarrier2{
-													.srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
-													.srcAccessMask = vk::AccessFlagBits2::eTransferRead,
-													.dstStageMask = vk::PipelineStageFlagBits2::eNone,
-													.dstAccessMask = vk::AccessFlagBits2::eNone,
-													.oldLayout = vk::ImageLayout::eTransferSrcOptimal,
-													.newLayout = vk::ImageLayout::eGeneral,
-													.image = y_source,
-													.subresourceRange = color_subresource_range
+			vk::ImageMemoryBarrier2{
+				.srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
+				.srcAccessMask = vk::AccessFlagBits2::eTransferRead,
+				.dstStageMask = vk::PipelineStageFlagBits2::eNone,
+				.dstAccessMask = vk::AccessFlagBits2::eNone,
+				.oldLayout = vk::ImageLayout::eTransferSrcOptimal,
+				.newLayout = vk::ImageLayout::eGeneral,
+				.image = y_source,
+				.subresourceRange = color_subresource_range
 												},
-												vk::ImageMemoryBarrier2{
-													.srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
-													.srcAccessMask = vk::AccessFlagBits2::eTransferRead,
-													.dstStageMask = vk::PipelineStageFlagBits2::eNone,
-													.dstAccessMask = vk::AccessFlagBits2::eNone,
-													.oldLayout = vk::ImageLayout::eTransferSrcOptimal,
-													.newLayout = vk::ImageLayout::eGeneral,
-													.image = uv_source,
-													.subresourceRange = color_subresource_range
+			vk::ImageMemoryBarrier2{
+				.srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
+				.srcAccessMask = vk::AccessFlagBits2::eTransferRead,
+				.dstStageMask = vk::PipelineStageFlagBits2::eNone,
+				.dstAccessMask = vk::AccessFlagBits2::eNone,
+				.oldLayout = vk::ImageLayout::eTransferSrcOptimal,
+				.newLayout = vk::ImageLayout::eGeneral,
+				.image = uv_source,
+				.subresourceRange = color_subresource_range
 												} };
 		slot.cmd.pipelineBarrier2({
 			.imageMemoryBarrierCount = static_cast<std::uint32_t>(post_copy_barriers.size()),
@@ -1358,7 +1358,7 @@ auto gse::vulkan::video_encoder::read_slot_bitstream(per_frame& slot) -> std::op
 	unit.keyframe = slot.last_was_keyframe;
 
 	const auto src = slot.bitstream.host_read().subspan(feedback.offset);
-	gse::memcpy(unit.bytes.data(), src.data(), feedback.bytes_written);
+	memcpy(unit.bytes.data(), src.data(), feedback.bytes_written);
 
 	slot.has_output = false;
 	return unit;
@@ -1587,4 +1587,3 @@ auto gse::vulkan::rate_control_mode_bit(const gpu::encode_rate_control mode) -> 
 	}
 	return vk::VideoEncodeRateControlModeFlagBitsKHR::eDefault;
 }
-

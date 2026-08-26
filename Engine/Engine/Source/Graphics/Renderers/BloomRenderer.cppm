@@ -27,38 +27,38 @@ export namespace gse::renderer::bloom {
 	struct downsample_pass {};
 	struct upsample_pass {};
 
-	struct [[= gse::system_state<"Bloom">{}, = gse::settings::category<"Graphics">{}]] data {
+	struct [[= system_state<"Bloom">{}, = settings::category<"Graphics">{}]] data {
 		[[
-			= gse::settings::describe<"Bloom mip count: low=4, medium=6, high=7. Off disables bloom entirely.">{},
-			= gse::shared
+			= settings::describe<"Bloom mip count: low=4, medium=6, high=7. Off disables bloom entirely.">{},
+			= shared
 		]]
 		quality_level bloom_quality = quality_level::medium;
 
 		[[
-			= gse::settings::
+			= settings::
 				describe<"Bloom intensity. Additive scale applied when compositing bloom into the HDR target.">{},
-			= gse::shared
+			= shared
 		]]
 		float bloom_intensity = 0.04f;
 
 		[[
-			= gse::settings::describe<"Upsample tent filter radius in source-texel units. 1.0 is the canonical Sledgehammer value.">{}
+			= settings::describe<"Upsample tent filter radius in source-texel units. 1.0 is the canonical Sledgehammer value.">{}
 		]]
 		float bloom_radius = 1.0f;
 
 		gpu::shader_program downsample_pipeline;
 		gpu::shader_program upsample_pipeline;
 
-		[[= gse::shared]] std::array<gpu::image, max_mip_count> mips_down;
-		[[= gse::shared]] std::array<gpu::image, max_mip_count> mips_up;
+		[[= shared]] std::array<gpu::image, max_mip_count> mips_down;
+		[[= shared]] std::array<gpu::image, max_mip_count> mips_up;
 		std::array<vec2u, max_mip_count> mip_extents{};
-		[[= gse::shared]] std::uint32_t active_mip_count = 0;
+		[[= shared]] std::uint32_t active_mip_count = 0;
 
 		gpu::bindless_handle sampler;
 		gpu::bindless_handle hdr_view;
 	};
 
-	[[= gse::system_init{}]]
+	[[= system_init{}]]
 	auto init(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
@@ -66,7 +66,7 @@ export namespace gse::renderer::bloom {
 	) -> async::task<>;
 
 	[[= gse::system_frame{}]]
-	[[= gse::runs_after<^^taa::data>{}]]
+	[[= runs_after<^^taa::data>{}]]
 	auto frame(
 		const context& ctx,
 		shared_view<gpu::context::data> gpu_s,

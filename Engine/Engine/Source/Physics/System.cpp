@@ -41,7 +41,7 @@ namespace gse::physics {
 
 auto gse::physics::make_joint_definition(const id a, const id b, const joint_config& config) -> joint_definition {
 	joint_definition result;
-	gse::match(config)
+	match(config)
 		.if_is([&](const fixed_joint& cfg) {
 			result = {
 				.entity_a = a,
@@ -248,7 +248,7 @@ auto gse::physics::gpu_solver_frame_info_of(const data& d) -> gpu_solver_frame_i
 
 auto gse::physics::resolve_hull(const collision_shape& shape, const std::span<const convex_hull> hulls) -> const convex_hull* {
 	const convex_hull* result = nullptr;
-	gse::match(shape).if_is([&](const hull_shape& s) {
+	match(shape).if_is([&](const hull_shape& s) {
 		if (s.index < hulls.size()) {
 			result = std::addressof(hulls[s.index]);
 		}
@@ -372,12 +372,12 @@ auto gse::physics::build_body_states(const body_build_view& view, const std::uno
 				.predicted_position = com,
 				.inertia_target = com,
 				.old_position = com,
-				.velocity = is_static_body ? vec3<gse::velocity>{} : mc.current_velocity,
+				.velocity = is_static_body ? vec3<velocity>{} : mc.current_velocity,
 				.orientation = tc->orientation,
 				.predicted_orientation = tc->orientation,
 				.angular_inertia_target = tc->orientation,
 				.old_orientation = tc->orientation,
-				.angular_velocity = is_static_body ? vec3<gse::angular_velocity>{} : mc.angular_velocity,
+				.angular_velocity = is_static_body ? vec3<angular_velocity>{} : mc.angular_velocity,
 				.mass = dyn ? dyn->mass : kilograms(0.f),
 				.locked = locked ? 1u : 0u,
 				.update_orientation = (dyn && dyn->update_orientation && is_rotatable(inv_inertia)) ? 1u : 0u,
@@ -429,23 +429,23 @@ auto gse::physics::build_body_bounds(const body_build_view& view, const std::fla
 				.position = origin_from_com(b.position, b.orientation, b.com_local),
 				.orientation = b.orientation,
 			};
-			gse::bounding_box bb;
+			bounding_box bb;
 			vec3<displacement> shape_params;
-			gse::match(cc.shape)
+			match(cc.shape)
 				.if_is([&](const box_shape& s) {
-					bb = gse::bounding_box(body_tc, s);
+					bb = bounding_box(body_tc, s);
 				})
 				.else_if_is([&](const sphere_shape& s) {
-					bb = gse::bounding_box(body_tc, s);
+					bb = bounding_box(body_tc, s);
 					shape_params = vec3<displacement>(s.radius, displacement{}, displacement{});
 				})
 				.else_if_is([&](const capsule_shape& s) {
-					bb = gse::bounding_box(body_tc, s);
+					bb = bounding_box(body_tc, s);
 					shape_params = vec3<displacement>(s.radius, s.half_height, displacement{});
 				})
 				.else_if_is([&](const hull_shape&) {
 					if (const auto* hull = resolve_hull(cc.shape, view.hulls)) {
-						bb = gse::bounding_box(body_tc, *hull);
+						bb = bounding_box(body_tc, *hull);
 					}
 				});
 			const auto [max, min] = bb.aabb();
@@ -994,7 +994,7 @@ auto gse::physics::prepare(context& ctx, data& d, const channel_write<interpolat
 				transform,
 				motion,
 				d.kinematic_step_start,
-				system_clock::fixed_dt<time_t<float, seconds>>() * static_cast<float>(effective_steps)
+				system_clock::fixed_dt() * static_cast<float>(effective_steps)
 			);
 		}
 	}
@@ -1105,7 +1105,7 @@ auto gse::physics::integrate(context& ctx, data& d, const channel_read<impulse_r
 		co_return;
 	}
 
-	const auto const_update_time = system_clock::fixed_dt<time_t<float, seconds>>();
+	const auto const_update_time = system_clock::fixed_dt();
 	const int steps = system_clock::fixed_steps_this_frame();
 
 	const auto impulses = requests_in.of<impulse_request>();
@@ -1514,7 +1514,7 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 auto gse::physics::update_vbd(const int steps, data& d, write<transform_component>& transform, write<motion_component>& motion, read<motor_component>& motor, write<collision_component>& collision, write<collision_result_component>& results, std::span<const impulse_request> impulses) -> void {
 	trace::scope_guard sg_update{ trace_id<"vbd_cpu::update">() };
 
-	const auto const_update_time = system_clock::constant_update_time<time_t<float, seconds>>();
+	const auto const_update_time = system_clock::constant_update_time();
 	const int substeps = std::max(d.physics_substeps, 1);
 	const auto sub_dt = const_update_time / static_cast<float>(substeps);
 

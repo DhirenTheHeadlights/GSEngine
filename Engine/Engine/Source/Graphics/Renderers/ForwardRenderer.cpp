@@ -260,7 +260,7 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 	const auto& render_items = geometry_in.of<geometry_collector::render_data>();
 	if (render_items.empty()) {
 		const auto ext = gpu_s.render_graph->extent();
-		auto rec = co_await gpu::pass<^^gse::renderer::forward::frame>(pass_out)
+		auto rec = co_await gpu::pass<^^frame>(pass_out)
 			.color(
 				gpu::clear_color(
 					gpu::color_clear{ 0.0f, 0.0f, 0.0f, 1.0f },
@@ -298,7 +298,7 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 	auto& point_chunk = point_lights;
 
 	const std::size_t total_lights = std::min(dir_chunk.size() + spot_chunk.size() + point_chunk.size() + 1u,
-											  max_lights);
+		max_lights);
 	auto& staging = d.light_staging;
 	staging.assign(
 		total_lights * sizeof(shaders::forward::light),
@@ -341,8 +341,8 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 		if (light_count >= max_lights) {
 			break;
 		}
-		const float cut_off_cos = gse::cos(comp.cut_off);
-		const float outer_cut_off_cos = gse::cos(comp.outer_cut_off);
+		const float cut_off_cos = cos(comp.cut_off);
+		const float outer_cut_off_cos = cos(comp.outer_cut_off);
 		staging_lights[light_count] = {
 			.light_type = shaders::forward::light_type::spot,
 			.position = view.transform_point(comp.position),
@@ -399,7 +399,7 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 	};
 	const bool gi_enabled = gi_state.quality != gi_probe::quality_level::off;
 
-	auto rec = co_await gpu::pass<^^gse::renderer::forward::frame>(pass_out)
+	auto rec = co_await gpu::pass<^^frame>(pass_out)
 		.pipeline(d.pipeline)
 		.color(
 			gpu::clear_color(

@@ -116,7 +116,7 @@ auto gse::system_clock::update() -> void {
 		return;
 	}
 
-	const auto wall_delta = gse::quantity_cast<internal_time>(dt_clock.reset<double>());
+	const auto wall_delta = quantity_cast<internal_time>(dt_clock.reset<double>());
 	record_delta(wall_delta);
 
 	const bool external = external_display_interval.has_value();
@@ -231,27 +231,27 @@ auto gse::system_clock::update_frame_rate(const internal_time elapsed) -> void {
 
 template <gse::is_quantity Q>
 auto gse::system_clock::dt() -> Q {
-	return gse::quantity_cast<Q>(std::min(delta_time, max_render_step));
+	return quantity_cast<Q>(std::min(delta_time, max_render_step));
 }
 
 template <gse::is_quantity Q>
 auto gse::system_clock::now() -> Q {
-	return gse::quantity_cast<Q>(main_clock.elapsed<double>());
+	return quantity_cast<Q>(main_clock.elapsed<double>());
 }
 
 template <gse::is_quantity Q>
 auto gse::system_clock::content_now() -> Q {
-	return gse::quantity_cast<Q>(content_time);
+	return quantity_cast<Q>(content_time);
 }
 
 template <gse::is_quantity Q>
 auto gse::system_clock::constant_update_time() -> Q {
-	return gse::quantity_cast<Q>(const_update_time);
+	return quantity_cast<Q>(const_update_time);
 }
 
 template <gse::is_quantity Q>
 auto gse::system_clock::fixed_dt() -> Q {
-	return gse::quantity_cast<Q>(const_update_time);
+	return quantity_cast<Q>(const_update_time);
 }
 
 auto gse::system_clock::fixed_steps_this_frame() -> int {
@@ -264,7 +264,7 @@ auto gse::system_clock::fixed_alpha() -> float {
 
 template <gse::is_quantity Q>
 auto gse::system_clock::fixed_lag() -> Q {
-	return gse::quantity_cast<Q>(const_update_time * (1.f - fixed_alpha()));
+	return quantity_cast<Q>(const_update_time * (1.f - fixed_alpha()));
 }
 
 auto gse::system_clock::set_fixed_step_override(const std::optional<int> steps) -> void {

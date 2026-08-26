@@ -97,77 +97,23 @@ namespace gse::ide::markdown {
 }
 
 auto gse::ide::markdown::heading_scale(const std::size_t level) -> float {
-	switch (level) {
-		case 1:
-			return 1.85f;
-		case 2:
-			return 1.5f;
-		case 3:
-			return 1.28f;
-		case 4:
-			return 1.14f;
-		case 5:
-			return 1.06f;
-		default:
-			return 1.f;
-	}
+	constexpr std::array scales{ 1.f, 1.85f, 1.5f, 1.28f, 1.14f, 1.06f };
+	return level < scales.size() ? scales[level] : 1.f;
 }
 
 auto gse::ide::markdown::style_of(const kind tone, const family group, const gui::style& sty, const vec4f& fallback) -> display_style {
 	const bool mono = group == family::monospace;
-	const gui::text_face body = mono ? gui::text_face::code : gui::text_face::text;
-	const gui::text_face strong = mono ? gui::text_face::code_strong : gui::text_face::text_strong;
-	const gui::text_face slanted = mono ? gui::text_face::code : gui::text_face::text_emphasis;
+	const face_set faces{
+		.body = mono ? gui::text_face::code : gui::text_face::text,
+		.strong = mono ? gui::text_face::code_strong : gui::text_face::text_strong,
+		.slanted = mono ? gui::text_face::code : gui::text_face::text_emphasis,
+	};
+	const kind_info info = annotation_from_enum<kind_info>(tone, {});
 
-	switch (tone) {
-		case kind::heading:
-			return {
-				.color = sty.color_section_header,
-				.face = strong,
-			};
-		case kind::strong:
-			return {
-				.color = sty.color_text,
-				.face = strong,
-			};
-		case kind::emphasis:
-			return {
-				.color = sty.color_icon,
-				.face = slanted,
-			};
-		case kind::code:
-			return {
-				.color = sty.color_file,
-				.face = gui::text_face::code,
-			};
-		case kind::link_text:
-		case kind::link_url:
-			return {
-				.color = sty.color_folder,
-				.face = body,
-			};
-		case kind::quote:
-			return {
-				.color = sty.color_text_secondary,
-				.face = slanted,
-			};
-		case kind::rule:
-		case kind::marker:
-			return {
-				.color = sty.color_border,
-				.face = body,
-			};
-		case kind::strike:
-			return {
-				.color = sty.color_text_disabled,
-				.face = body,
-			};
-		default:
-			return {
-				.color = fallback,
-				.face = body,
-			};
-	}
+	return {
+		.color = info.ui_color ? sty.*info.ui_color : fallback,
+		.face = faces.*info.face,
+	};
 }
 
 auto gse::ide::markdown::bullet_for(const std::string_view marker) -> std::string {

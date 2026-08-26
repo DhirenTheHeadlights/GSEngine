@@ -116,7 +116,7 @@ auto gse::renderer::depth_prepass::frame(context& ctx, shared_view<gpu::context:
 
 	const auto ext = gpu_s.render_graph->extent();
 
-	auto rec = co_await gpu::pass<^^gse::renderer::depth_prepass::frame>(pass_out)
+	auto rec = co_await gpu::pass<^^frame>(pass_out)
 		.pipeline(d.meshlet_pipeline)
 		.color(
 			gpu::clear_color(

@@ -25,16 +25,16 @@ export namespace gse::ide {
 		float width = 0.f;
 		float font_size = 0.f;
 		std::uint64_t style_key = 0;
-		gse::gui::text_area_state view;
+		gui::text_area_state view;
 		bool built = false;
 	};
 
 	struct document {
 		std::filesystem::path path;
 		std::string tab_name;
-		gse::gui::text_buffer buffer;
+		gui::text_buffer buffer;
 		document_revision revision;
-		gse::gui::text_area_state view;
+		gui::text_area_state view;
 		document_persistence persistence = document_persistence::clean;
 		std::string persistence_error;
 		std::optional<std::filesystem::file_time_type> disk_write_time;
@@ -47,9 +47,9 @@ export namespace gse::ide {
 		std::vector<diagnostic> lint;
 		analysis::diagnostics_status analysis_status = analysis::diagnostics_status::not_analyzed;
 		std::string analysis_detail;
-		gse::time analysis_duration{};
+		time analysis_duration{};
 		bool diag_dirty = true;
-		std::optional<gse::clock> edit_clock;
+		std::optional<clock> edit_clock;
 		std::optional<std::uint32_t> pending_center_line;
 	};
 
@@ -65,52 +65,52 @@ export namespace gse::ide {
 
 		auto find(
 			this auto& self,
-			gse::id document_id
+			id document_id
 		) -> decltype(auto);
 
 		auto at(
 			this auto& self,
-			gse::id document_id
+			id document_id
 		) -> decltype(auto);
 
 		[[nodiscard]] auto empty() const -> bool;
 
-		[[nodiscard]] auto order() const -> std::span<const gse::id>;
+		[[nodiscard]] auto order() const -> std::span<const id>;
 
-		[[nodiscard]] auto active_document_id() const -> std::optional<gse::id>;
+		[[nodiscard]] auto active_document_id() const -> std::optional<id>;
 
-		[[nodiscard]] auto active_tab_id() const -> gse::id;
+		[[nodiscard]] auto active_tab_id() const -> id;
 
 		auto add(
 			document doc
-		) -> gse::id;
+		) -> id;
 
 		auto activate(
-			gse::id document_id
+			id document_id
 		) -> void;
 
 		auto reorder(
-			gse::id document_id,
+			id document_id,
 			std::size_t index
 		) -> void;
 
 		auto erase(
-			gse::id document_id
+			id document_id
 		) -> void;
 
 	private:
 		struct no_document {};
 
 		struct document_view {
-			gse::id document_id;
+			id document_id;
 		};
 
 		using active_view = std::variant<no_document, document_view>;
 
-		static constexpr gse::id game_tab_id = gse::id_of<"ide.workspace.game_tab">();
+		static constexpr id game_tab_id = id_of<"ide.workspace.game_tab">();
 
-		std::unordered_map<gse::id, document> m_documents;
-		std::vector<gse::id> m_order;
+		std::unordered_map<id, document> m_documents;
+		std::vector<id> m_order;
 		active_view m_active = no_document{};
 		std::uint64_t m_next_document_sequence = 1;
 	};

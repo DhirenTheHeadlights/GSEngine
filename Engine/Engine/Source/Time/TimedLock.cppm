@@ -97,7 +97,7 @@ export namespace gse {
 }
 
 template <typename T, int N>
-auto gse::quota_timed_lock<T, N>::operator=(const T& value) -> gse::quota_timed_lock<T, N>& {
+auto gse::quota_timed_lock<T, N>::operator=(const T& value) -> quota_timed_lock<T, N>& {
 	if (m_quota > 0) {
 		m_quota--;
 		this->m_value = value;

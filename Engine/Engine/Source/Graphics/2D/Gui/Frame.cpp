@@ -71,7 +71,7 @@ auto gse::gui::migrate_menu(viewport_state& from, viewport_state& to, const std:
 	std::erase_if(from.name_to_menu_id, [&](const auto& entry) { return entry.second == menu_id; });
 
 	moved->z_order = 0;
-	if (to.window.exists()) {
+	if (is_popout(to)) {
 		moved->rect = to.frame_rect;
 		moved->fixed = true;
 	}
@@ -139,15 +139,6 @@ auto gse::gui::route_cursor(data& d, const vec2f mouse, const id focused_window,
 		if (holds_capture(*vp)) {
 			owner = vp.get();
 			break;
-		}
-	}
-
-	if (!owner) {
-		for (const auto& vp : d.secondaries) {
-			if (!vp->window.exists() && vp->frame_rect.contains(mouse)) {
-				owner = vp.get();
-				break;
-			}
 		}
 	}
 

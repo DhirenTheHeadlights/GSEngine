@@ -343,7 +343,7 @@ gse::log::scope::~scope() {
 }
 
 auto gse::log::level_sgr(const level lvl) -> int {
-	return gse::annotation_from_enum<ansi_sgr>(lvl, ansi_sgr{ 0 }).code;
+	return annotation_from_enum(lvl, ansi_sgr{ 0 }).code;
 }
 
 gse::log::sink::~sink() = default;

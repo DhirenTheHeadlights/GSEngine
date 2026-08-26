@@ -53,19 +53,19 @@ export namespace gse::gpu {
 		) noexcept -> shader_program& = default;
 
 		shader_program(
-			handle<gpu::pipeline_layout> layout,
+			handle<pipeline_layout> layout,
 			std::vector<stage_flag> stages,
-			std::vector<handle<gpu::shader_object>> shader_handles,
+			std::vector<handle<shader_object>> shader_handles,
 			dynamic_pipeline_state state,
 			bool is_compute,
 			bool is_mesh
 		);
 
-		[[nodiscard]] auto layout() const -> handle<gpu::pipeline_layout>;
+		[[nodiscard]] auto layout() const -> handle<pipeline_layout>;
 
 		[[nodiscard]] auto stages() const -> std::span<const stage_flag>;
 
-		[[nodiscard]] auto shader_handles() const -> std::span<const handle<gpu::shader_object>>;
+		[[nodiscard]] auto shader_handles() const -> std::span<const handle<shader_object>>;
 
 		[[nodiscard]] auto state() const -> const dynamic_pipeline_state&;
 
@@ -73,25 +73,25 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto is_mesh() const -> bool;
 
-		[[nodiscard]] auto bind_point() const -> gpu::bind_point;
+		[[nodiscard]] auto bind_point() const -> bind_point;
 
 		[[nodiscard]] auto valid() const -> bool;
 
 	private:
-		handle<gpu::pipeline_layout> m_layout;
+		handle<pipeline_layout> m_layout;
 		std::vector<stage_flag> m_stages;
-		std::vector<handle<gpu::shader_object>> m_shader_handles;
+		std::vector<handle<shader_object>> m_shader_handles;
 		dynamic_pipeline_state m_state;
 		bool m_is_compute = false;
 		bool m_is_mesh = false;
 	};
 }
 
-gse::gpu::shader_program::shader_program(const handle<gpu::pipeline_layout> layout, std::vector<stage_flag> stages, std::vector<handle<gpu::shader_object>> shader_handles, dynamic_pipeline_state state, const bool is_compute, const bool is_mesh)
+gse::gpu::shader_program::shader_program(const handle<pipeline_layout> layout, std::vector<stage_flag> stages, std::vector<handle<shader_object>> shader_handles, dynamic_pipeline_state state, const bool is_compute, const bool is_mesh)
 	: m_layout(layout), m_stages(std::move(stages)), m_shader_handles(std::move(shader_handles)), m_state(std::move(state)), m_is_compute(is_compute), m_is_mesh(is_mesh) {
 }
 
-auto gse::gpu::shader_program::layout() const -> handle<gpu::pipeline_layout> {
+auto gse::gpu::shader_program::layout() const -> handle<pipeline_layout> {
 	return m_layout;
 }
 
@@ -99,7 +99,7 @@ auto gse::gpu::shader_program::stages() const -> std::span<const stage_flag> {
 	return m_stages;
 }
 
-auto gse::gpu::shader_program::shader_handles() const -> std::span<const handle<gpu::shader_object>> {
+auto gse::gpu::shader_program::shader_handles() const -> std::span<const handle<shader_object>> {
 	return m_shader_handles;
 }
 

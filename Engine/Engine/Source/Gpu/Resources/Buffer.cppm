@@ -21,7 +21,7 @@ export namespace gse::gpu {
 	};
 
 	auto upload_to_buffers(
-		gpu::device& dev,
+		device& dev,
 		std::span<const buffer_upload> uploads
 	) -> sync_token;
 }

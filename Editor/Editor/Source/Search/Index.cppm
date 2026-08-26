@@ -143,9 +143,11 @@ export namespace gse::ide::search {
 
 	struct symbol_overlay {
 		std::filesystem::path path;
-		std::vector<analysis::symbol_token> symbols;
-		std::vector<analysis::symbol_ref> refs;
-		std::vector<analysis::param_token> params;
+		file_id file{};
+		std::vector<symbol_entry> symbols;
+		std::vector<xref_entry> refs;
+		std::vector<positioned_kind> params;
+		std::unordered_map<file_id, std::filesystem::path> files;
 	};
 
 	enum class loc_origin : std::uint8_t {
@@ -221,21 +223,73 @@ export namespace gse::ide::search {
 		loc_counts loc;
 	};
 
+	struct lookup_evidence {
+		bool none = false;
+		bool definition = false;
+		bool kind = false;
+		bool type = false;
+	};
+
+	struct lookup_failure_info {
+		char text[80] = "the semantic lookup failed for an unknown reason";
+		char subjectless[80] = "";
+		char detailed[80] = "";
+		bool lookup_evidence::* superseded_by = &lookup_evidence::none;
+	};
+
 	enum class lookup_failure {
-		index_unavailable,
-		file_not_indexed,
-		reference_not_found,
-		symbol_not_found,
-		definition_not_found,
-		qualified_symbol_not_found,
-		ambiguous_symbol,
-		module_name_empty,
-		module_context_not_found,
-		module_not_found,
-		index_building,
-		translation_unit_failed,
-		kind_not_recorded,
-		type_not_recorded,
+		index_unavailable [[= lookup_failure_info{
+			.text = "the symbol index is unavailable",
+		}]],
+		file_not_indexed [[= lookup_failure_info{
+			.text = "'{}' is not in the symbol index",
+			.superseded_by = &lookup_evidence::definition,
+		}]],
+		reference_not_found [[= lookup_failure_info{
+			.text = "no compiler reference covers {}",
+			.superseded_by = &lookup_evidence::definition,
+		}]],
+		symbol_not_found [[= lookup_failure_info{
+			.text = "symbol '{}' is absent from the index",
+			.superseded_by = &lookup_evidence::definition,
+		}]],
+		definition_not_found [[= lookup_failure_info{
+			.text = "no definition was recorded for '{}'",
+			.superseded_by = &lookup_evidence::definition,
+		}]],
+		qualified_symbol_not_found [[= lookup_failure_info{
+			.text = "no definition matched qualified symbol '{}'",
+			.superseded_by = &lookup_evidence::definition,
+		}]],
+		ambiguous_symbol [[= lookup_failure_info{
+			.text = "unqualified symbol '{}' is ambiguous",
+			.superseded_by = &lookup_evidence::definition,
+		}]],
+		module_name_empty [[= lookup_failure_info{
+			.text = "the module name is empty",
+		}]],
+		module_context_not_found [[= lookup_failure_info{
+			.text = "relative module '{}' has no indexed owning module",
+		}]],
+		module_not_found [[= lookup_failure_info{
+			.text = "module '{}' is absent from the module index",
+		}]],
+		index_building [[= lookup_failure_info{
+			.text = "semantic information for '{}' is still indexing",
+			.subjectless = "semantic information is still indexing",
+		}]],
+		translation_unit_failed [[= lookup_failure_info{
+			.text = "semantic compilation failed for '{}'",
+			.detailed = "semantic compilation failed for '{}': {}",
+		}]],
+		kind_not_recorded [[= lookup_failure_info{
+			.text = "the compiler did not record a symbol kind for '{}'",
+			.superseded_by = &lookup_evidence::kind,
+		}]],
+		type_not_recorded [[= lookup_failure_info{
+			.text = "the compiler did not record a resolved type for '{}'",
+			.superseded_by = &lookup_evidence::type,
+		}]],
 	};
 
 	struct lookup_error {
@@ -339,7 +393,7 @@ export namespace gse::ide::search {
 		loc_index loc;
 		std::atomic<std::size_t> progress_total = 0;
 		std::atomic<std::size_t> progress_done = 0;
-		std::atomic<gse::time_t<double>> phase_started{};
+		std::atomic<time_t<double>> phase_started{};
 		std::atomic<std::size_t> symbol_count = 0;
 		std::atomic<index_phase> phase = index_phase::idle;
 		std::atomic<bool> cancel = false;
@@ -403,7 +457,8 @@ export namespace gse::ide::search {
 			const std::filesystem::path& file,
 			std::span<const analysis::symbol_token> syms,
 			std::span<const analysis::symbol_ref> refs,
-			std::span<const analysis::param_token> params
+			std::span<const analysis::param_token> params,
+			const std::unordered_map<file_id, std::filesystem::path>& files
 		) -> void;
 
 		auto query_snapshot() const -> std::shared_ptr<const search_snapshot>;
@@ -414,6 +469,7 @@ export namespace gse::ide::search {
 		std::vector<analysis::symbol_token> symbols;
 		std::vector<analysis::symbol_ref> refs;
 		std::vector<analysis::param_token> params;
+		std::unordered_map<file_id, std::filesystem::path> files;
 	};
 
 	struct index_file_update_request {
@@ -457,10 +513,11 @@ namespace gse::ide::search {
 	};
 
 	constexpr std::uint32_t tu_cache_magic = 0x47535455;
-	constexpr std::uint32_t tu_cache_version = 12;
+	constexpr std::uint32_t tu_cache_version = 13;
 
-	using interned_file_cache = std::unordered_map<std::string, file_id, transparent_hash, transparent_equal>;
+	using analysis::interned_file_cache;
 	using indexed_path_cache = std::unordered_map<std::string, bool, transparent_hash, transparent_equal>;
+	using indexed_file_cache = std::unordered_map<file_id, bool>;
 	using file_fingerprint_cache = std::unordered_map<std::string, std::uint64_t, transparent_hash, transparent_equal>;
 
 	auto build_files_and_content(
@@ -548,9 +605,7 @@ namespace gse::ide::search {
 		std::string_view blob
 	) -> std::vector<std::uint32_t>;
 
-	auto canonical_path_id(
-		const std::filesystem::path& path
-	) -> std::pair<std::filesystem::path, id>;
+	using analysis::canonical_path_id;
 
 	auto module_ident_start(
 		char ch
@@ -744,11 +799,16 @@ namespace gse::ide::search {
 		std::stop_token stop
 	) -> std::vector<analysis::tu_symbols>;
 
-	auto intern_cached(
-		symbol_index& symbols,
-		interned_file_cache& cache,
-		const std::string& raw
-	) -> file_id;
+	using analysis::intern_cached;
+
+	auto build_symbol_overlay(
+		const std::filesystem::path& canonical,
+		file_id file,
+		std::span<const analysis::symbol_token> syms,
+		std::span<const analysis::symbol_ref> refs,
+		std::span<const analysis::param_token> params,
+		const std::unordered_map<file_id, std::filesystem::path>& files
+	) -> symbol_overlay;
 
 	auto make_xref_entry(
 		file_id definition_file,
@@ -759,6 +819,13 @@ namespace gse::ide::search {
 		std::span<const index_root> roots,
 		const std::string& raw,
 		indexed_path_cache& cache
+	) -> bool;
+
+	auto indexed_cached(
+		std::span<const index_root> roots,
+		const std::unordered_map<file_id, std::filesystem::path>& files,
+		file_id file,
+		indexed_file_cache& cache
 	) -> bool;
 
 	auto file_fingerprint(

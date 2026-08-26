@@ -23,7 +23,7 @@ export namespace gse::gpu {
 		acceleration_structure_scratch = 0x400,
 	};
 
-	using buffer_usage = gse::flags<buffer_flag>;
+	using buffer_usage = flags<buffer_flag>;
 
 	struct buffer_desc {
 		device_size size = 0;
@@ -49,11 +49,11 @@ export namespace gse::gpu {
 		~buffer() = default;
 
 		buffer(
-			gpu::handle<buffer> buffer,
-			gpu::device_size size,
-			gpu::device_address address,
+			handle<buffer> buffer,
+			device_size size,
+			device_address address,
 			std::byte* mapped,
-			gpu::bindless_slot slot = {}
+			bindless_slot slot = {}
 		);
 
 		buffer(
@@ -66,13 +66,13 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto handle() const -> gpu::handle<buffer>;
 
-		[[nodiscard]] auto size_bytes() const -> gpu::device_size;
+		[[nodiscard]] auto size_bytes() const -> device_size;
 
-		[[nodiscard]] auto size() const -> gpu::device_size;
+		[[nodiscard]] auto size() const -> device_size;
 
-		[[nodiscard]] auto device_address() const -> gpu::device_address;
+		[[nodiscard]] auto device_address() const -> device_address;
 
-		[[nodiscard]] auto slot() const -> gpu::bindless_slot;
+		[[nodiscard]] auto slot() const -> bindless_slot;
 
 		auto host_write(
 			const void* data,
@@ -102,15 +102,15 @@ export namespace gse::gpu {
 
 	private:
 		gpu::handle<buffer> m_buffer;
-		gpu::device_size m_size = 0;
+		device_size m_size = 0;
 		gpu::device_address m_address = 0;
 		std::byte* m_mapped = nullptr;
-		gpu::bindless_slot m_slot;
+		bindless_slot m_slot;
 		mutable std::atomic<bool> m_host_dirty{ false };
 	};
 }
 
-gse::gpu::buffer::buffer(const gpu::handle<buffer> buffer, const gpu::device_size size, const gpu::device_address address, std::byte* mapped, const gpu::bindless_slot slot)
+gse::gpu::buffer::buffer(const gpu::handle<buffer> buffer, const device_size size, const gpu::device_address address, std::byte* mapped, const bindless_slot slot)
 	: m_buffer(buffer), m_size(size), m_address(address), m_mapped(mapped), m_slot(slot) {
 }
 
@@ -144,11 +144,11 @@ auto gse::gpu::buffer::handle() const -> gpu::handle<buffer> {
 	return m_buffer;
 }
 
-auto gse::gpu::buffer::size_bytes() const -> gpu::device_size {
+auto gse::gpu::buffer::size_bytes() const -> device_size {
 	return m_size;
 }
 
-auto gse::gpu::buffer::size() const -> gpu::device_size {
+auto gse::gpu::buffer::size() const -> device_size {
 	return m_size;
 }
 
@@ -156,7 +156,7 @@ auto gse::gpu::buffer::device_address() const -> gpu::device_address {
 	return m_address;
 }
 
-auto gse::gpu::buffer::slot() const -> gpu::bindless_slot {
+auto gse::gpu::buffer::slot() const -> bindless_slot {
 	return m_slot;
 }
 
@@ -168,7 +168,7 @@ auto gse::gpu::buffer::host_write(const void* data, const std::size_t bytes, con
 	assert(m_mapped, "Buffer must be persistently mapped to host_write");
 	assert(offset + bytes <= m_size, "host_write extends past buffer size");
 
-	gse::memcpy(m_mapped + offset, data, bytes);
+	memcpy(m_mapped + offset, data, bytes);
 	m_host_dirty.store(true, std::memory_order_release);
 }
 

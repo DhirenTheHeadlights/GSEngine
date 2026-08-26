@@ -17,7 +17,7 @@ export namespace gse::gpu {
 		std::optional<gpu::front_face> front_face;
 		std::optional<bool> depth_test_enable;
 		std::optional<bool> depth_write_enable;
-		std::optional<gpu::compare_op> depth_compare_op;
+		std::optional<compare_op> depth_compare_op;
 		std::optional<bool> depth_bias_enable;
 		std::optional<bool> rasterizer_discard_enable;
 		std::optional<bool> primitive_restart_enable;
@@ -156,7 +156,7 @@ export namespace gse::gpu {
 	};
 
 	struct rendering_attachment_info {
-		gpu::handle<gpu::image_view> image_view;
+		handle<gpu::image_view> image_view;
 		load_op load = load_op::dont_care;
 		store_op store = store_op::dont_care;
 		color_clear color_clear_value;
@@ -164,7 +164,7 @@ export namespace gse::gpu {
 	};
 
 	struct rendering_info {
-		gse::rect_t<vec2i> render_area;
+		rect_t<vec2i> render_area;
 		std::uint32_t layer_count = 1;
 		std::span<const rendering_attachment_info> color_attachments;
 		const rendering_attachment_info* depth_attachment = nullptr;

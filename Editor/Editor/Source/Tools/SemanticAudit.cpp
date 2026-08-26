@@ -46,7 +46,7 @@ namespace gse::ide::audit {
 	};
 
 	struct miss {
-		gse::id file;
+		id file;
 		std::uint32_t line = 0;
 		std::uint32_t column = 0;
 		std::uint32_t length = 0;
@@ -74,7 +74,7 @@ namespace gse::ide::audit {
 	struct sweep_result {
 		std::vector<miss> misses;
 		std::vector<std::string> failures;
-		std::unordered_map<gse::id, std::filesystem::path> paths;
+		std::unordered_map<id, std::filesystem::path> paths;
 		totals counted;
 	};
 
@@ -94,11 +94,6 @@ namespace gse::ide::audit {
 	auto read_lines(
 		const std::filesystem::path& path
 	) -> std::vector<std::string>;
-
-	auto same_file(
-		std::string_view left,
-		std::string_view right
-	) -> bool;
 
 	auto covering(
 		std::span<const span> spans,
@@ -225,20 +220,6 @@ auto gse::ide::audit::read_lines(const std::filesystem::path& path) -> std::vect
 		start = eol + 1;
 	}
 	return lines;
-}
-
-auto gse::ide::audit::same_file(const std::string_view left, const std::string_view right) -> bool {
-	if (left.size() != right.size()) {
-		return false;
-	}
-	for (std::size_t i = 0; i < left.size(); ++i) {
-		const char a = left[i] == '\\' ? '/' : left[i];
-		const char b = right[i] == '\\' ? '/' : right[i];
-		if (a != b) {
-			return false;
-		}
-	}
-	return true;
 }
 
 auto gse::ide::audit::covering(const std::span<const span> spans, const identifier_use& use) -> const span* {
@@ -398,10 +379,10 @@ auto gse::ide::audit::audit_file(const std::filesystem::path& path, const analys
 		});
 	}
 
-	const std::string key = path.generic_display_string();
+	const analysis::file_id key = analysis::canonical_path_id(path).second;
 	std::unordered_map<std::uint32_t, std::vector<span>> references;
 	for (const symbol_ref& ref : analysed.symbols.set.refs) {
-		if (ref.line == 0 || ref.column == 0 || !same_file(ref.file, key)) {
+		if (ref.line == 0 || ref.column == 0 || ref.file != key) {
 			continue;
 		}
 		references[ref.line].push_back({
@@ -410,7 +391,7 @@ auto gse::ide::audit::audit_file(const std::filesystem::path& path, const analys
 		});
 	}
 
-	const gse::id identity = gse::generate_temp_id(path);
+	const id identity = generate_temp_id(path);
 	file_audit out;
 	out.identifiers = analysed.identifiers.size();
 
@@ -484,7 +465,7 @@ auto gse::ide::audit::sweep(const options& opts, const std::span<const analysis:
 					if (failure.empty()) {
 						++result.counted.files;
 						result.counted.identifiers += audited.identifiers;
-						result.paths.emplace(gse::generate_temp_id(entry.file), entry.file);
+						result.paths.emplace(generate_temp_id(entry.file), entry.file);
 						result.misses.insert(result.misses.end(), audited.misses.begin(), audited.misses.end());
 					}
 					else {
@@ -507,7 +488,7 @@ auto gse::ide::audit::sweep(const options& opts, const std::span<const analysis:
 
 auto gse::ide::audit::write_report(const options& opts, const sweep_result& result) -> void {
 	std::map<bucket, tally> by_bucket;
-	std::unordered_map<gse::id, tally> by_file;
+	std::unordered_map<id, tally> by_file;
 	for (const miss& entry : result.misses) {
 		tally& group = by_bucket[entry.group];
 		tally& file = by_file[entry.file];
@@ -540,11 +521,11 @@ auto gse::ide::audit::write_report(const options& opts, const sweep_result& resu
 
 	std::println(out, "== classes, worst first ==");
 	for (const auto& [group, counts] : ranked) {
-		std::println(out, "  {:<24} {:>6} total  ({} uncoloured, {} unreferenced)", gse::enum_to_string(group), counts.total(), counts.uncoloured, counts.unreferenced);
+		std::println(out, "  {:<24} {:>6} total  ({} uncoloured, {} unreferenced)", enum_to_string(group), counts.total(), counts.uncoloured, counts.unreferenced);
 	}
 	std::println(out, "");
 
-	std::vector<std::pair<gse::id, tally>> worst(by_file.begin(), by_file.end());
+	std::vector<std::pair<id, tally>> worst(by_file.begin(), by_file.end());
 	std::ranges::sort(worst, std::ranges::greater{}, [](const auto& row) {
 		return row.second.total();
 	});
@@ -554,7 +535,7 @@ auto gse::ide::audit::write_report(const options& opts, const sweep_result& resu
 	}
 	std::println(out, "");
 
-	std::unordered_map<gse::id, std::vector<std::string>> sources;
+	std::unordered_map<id, std::vector<std::string>> sources;
 	for (const auto& [group, counts] : ranked) {
 		std::println(out, "== {} ({} uncoloured, {} unreferenced) ==", group, counts.uncoloured, counts.unreferenced);
 		std::size_t shown = 0;

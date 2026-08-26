@@ -9,9 +9,9 @@ import gse.ecs;
 import :system;
 
 export namespace gse::physics::cpu_contact_trace {
-	struct [[= gse::system_state<"CPU Contact Trace">{}, = gse::settings::category<"CpuContactTrace">{}, = gse::deferred_system{}]] data {
+	struct [[= system_state<"CPU Contact Trace">{}, = settings::category<"CpuContactTrace">{}, = deferred_system{}]] data {
 		[[
-			= gse::settings::describe<"Log the cpu solver's retired contact state (feature key, lambda, penalty, gap, sticking, "
+			= settings::describe<"Log the cpu solver's retired contact state (feature key, lambda, penalty, gap, sticking, "
 									  "anchors) for every contact touching the body with this owner id, plus the body's own "
 									  "state line each frame. 0 traces nothing. A real-path instrument: it reads the constraint "
 									  "graph the solver already holds after its solve, so the solve itself is untouched. "
@@ -23,7 +23,7 @@ export namespace gse::physics::cpu_contact_trace {
 		std::uint32_t reports = 0;
 	};
 
-	[[= gse::system_run<3>{}]]
+	[[= system_run<3>{}]]
 	auto run(
 		data& d,
 		shared_view<physics::data> phys

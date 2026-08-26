@@ -12,7 +12,7 @@ import gse.core;
 
 export namespace gse::gpu {
 	struct present_target {
-		gse::id window_id;
+		id window_id;
 		swap_chain* swapchain = nullptr;
 		window::window_surface* window = nullptr;
 		swapchain_sync<device> sync;
@@ -48,17 +48,17 @@ export namespace gse::gpu {
 		) -> void;
 
 		auto add_present_target(
-			gse::id window_id,
+			id window_id,
 			swap_chain* sc,
 			window::window_surface* win
 		) -> void;
 
 		auto remove_present_target(
-			gse::id window_id
+			id window_id
 		) -> void;
 
 		[[nodiscard]] auto target(
-			gse::id window_id
+			id window_id
 		) const -> const present_target*;
 
 		[[nodiscard]] auto targets() const -> std::span<const present_target>;
@@ -100,12 +100,12 @@ export namespace gse::gpu {
 
 		auto recreate_resources(
 			present_target& t
-		) -> gpu::expected<void>;
+		) -> expected<void>;
 
 		auto recreate_surface(
 			present_target& t,
 			std::string_view reason
-		) -> gpu::expected<void>;
+		) -> expected<void>;
 
 		static auto create_sync_objects(
 			device& dev,

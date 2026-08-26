@@ -817,11 +817,11 @@ auto gse::ide::panels_menu_items(const dock_tree& tree, const std::span<const pa
 
 auto gse::ide::toggle_panel(editor_app::data& d, dock_view& v, const id panel) -> void {
 	if (contains_panel(v.tree, panel)) {
-		if (panel_count(v.tree) <= 1 && !v.window.exists()) {
+		if (panel_count(v.tree) <= 1 && !is_popout(v)) {
 			return;
 		}
 		remove_panel(v.tree, panel);
-		if (v.window.exists() && panel_count(v.tree) == 0) {
+		if (is_popout(v) && panel_count(v.tree) == 0) {
 			d.pending_window_closes.push_back(v.window);
 		}
 	}
@@ -854,12 +854,12 @@ auto gse::ide::apply_pending_panel_close(gui::viewport_state& vp, editor_app::da
 	}
 
 	vp.pending_tab_close.reset();
-	if (panel_count(v.tree) <= 1 && !v.window.exists()) {
+	if (panel_count(v.tree) <= 1 && !is_popout(v)) {
 		return;
 	}
 
 	remove_panel(v.tree, *panel);
-	if (v.window.exists() && panel_count(v.tree) == 0) {
+	if (is_popout(v) && panel_count(v.tree) == 0) {
 		d.pending_window_closes.push_back(v.window);
 	}
 	d.layout_dirty = true;
@@ -944,7 +944,7 @@ auto gse::ide::apply_dock_landing(editor_app::data& d, dock_view& from, const do
 		for (const id panel : carried) {
 			d.pending_migrations.push_back({ .panel = panel, .window = to->window });
 		}
-		if (from.window.exists() && panel_count(from.tree) == 0) {
+		if (is_popout(from) && panel_count(from.tree) == 0) {
 			d.pending_window_closes.push_back(from.window);
 		}
 	}
@@ -1088,7 +1088,7 @@ auto gse::ide::update_dock_interaction(gui::data& s, gui::viewport_state& vp, ed
 			.open = true,
 			.just_opened = true,
 			.position = *d.pending_panels_menu,
-			.items = panels_menu_items(v.tree, panels, !v.window.exists()),
+			.items = panels_menu_items(v.tree, panels, !is_popout(v)),
 			.tag = panels_context_tag(),
 		};
 		d.pending_panels_menu.reset();

@@ -80,16 +80,16 @@ namespace gse {
 
 template <gse::internal::is_arithmetic T, typename CharT>
 struct std::formatter<gse::quaternion<T>, CharT> {
-	std::formatter<gse::vec<T, 4>, CharT> vec_formatter;
+	formatter<gse::vec<T, 4>, CharT> vec_formatter;
 
-	constexpr auto parse(std::format_parse_context& ctx) {
+	constexpr auto parse(format_parse_context& ctx) {
 		return vec_formatter.parse(ctx);
 	}
 
 	template <typename FormatContext>
 	auto format(const gse::quaternion<T>& q, FormatContext& ctx) const {
 		auto out = ctx.out();
-		out = std::format_to(out, "quat");
+		out = format_to(out, "quat");
 		const auto& v4 = static_cast<const gse::vec<T, 4>&>(q);
 		return vec_formatter.format(v4, ctx);
 	}

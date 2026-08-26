@@ -14,7 +14,7 @@ namespace gse::ide::analysis {
 	};
 
 	std::mutex compilation_database_cache_mutex;
-	std::unordered_map<gse::id, compilation_database_cache_entry> compilation_database_cache;
+	std::unordered_map<id, compilation_database_cache_entry> compilation_database_cache;
 
 	struct dyndep_edge {
 		std::vector<std::filesystem::path> provided;
@@ -22,8 +22,8 @@ namespace gse::ide::analysis {
 	};
 
 	struct dyndep_graph {
-		std::unordered_map<gse::id, dyndep_edge> by_output;
-		std::unordered_map<gse::id, dyndep_edge> by_provided;
+		std::unordered_map<id, dyndep_edge> by_output;
+		std::unordered_map<id, dyndep_edge> by_provided;
 	};
 
 	struct dyndep_cache_entry {
@@ -33,7 +33,7 @@ namespace gse::ide::analysis {
 	};
 
 	std::mutex dyndep_cache_mutex;
-	std::unordered_map<gse::id, dyndep_cache_entry> dyndep_cache;
+	std::unordered_map<id, dyndep_cache_entry> dyndep_cache;
 
 	auto tokenize_command(
 		std::string_view command
@@ -82,15 +82,15 @@ namespace gse::ide::analysis {
 	auto validate_module_edge(
 		const dyndep_edge& edge,
 		const std::filesystem::path& directory,
-		std::unordered_set<gse::id>& visiting,
-		std::unordered_set<gse::id>& validated
+		std::unordered_set<id>& visiting,
+		std::unordered_set<id>& validated
 	) -> std::expected<void, std::string>;
 
 	auto validate_module(
 		const std::filesystem::path& module,
 		const std::filesystem::path& directory,
-		std::unordered_set<gse::id>& visiting,
-		std::unordered_set<gse::id>& validated
+		std::unordered_set<id>& visiting,
+		std::unordered_set<id>& validated
 	) -> std::expected<void, std::string>;
 
 	auto parse_compilation_database(
@@ -251,9 +251,9 @@ auto gse::ide::analysis::parse_dyndep(const std::string_view text, const std::fi
 		if (implicit_inputs != std::string_view::npos) {
 			edge.required = ninja_paths(inputs.substr(implicit_inputs + 1), directory);
 		}
-		graph->by_output.emplace(gse::generate_temp_id(primary.front()), edge);
+		graph->by_output.emplace(generate_temp_id(primary.front()), edge);
 		for (const std::filesystem::path& provided : edge.provided) {
-			graph->by_provided.emplace(gse::generate_temp_id(provided), edge);
+			graph->by_provided.emplace(generate_temp_id(provided), edge);
 		}
 	}
 	return graph;
@@ -282,7 +282,7 @@ auto gse::ide::analysis::load_dyndep(const std::filesystem::path& path, const st
 	if (time_ec || size_ec) {
 		return {};
 	}
-	const gse::id path_id = gse::generate_temp_id(path);
+	const id path_id = generate_temp_id(path);
 	{
 		std::lock_guard lock(dyndep_cache_mutex);
 		if (const auto found = dyndep_cache.find(path_id); found != dyndep_cache.end() && found->second.modified == modified && found->second.size == size) {
@@ -307,19 +307,19 @@ auto gse::ide::analysis::load_dyndep(const std::filesystem::path& path, const st
 	return graph;
 }
 
-auto gse::ide::analysis::validate_module(const std::filesystem::path& module, const std::filesystem::path& directory, std::unordered_set<gse::id>& visiting, std::unordered_set<gse::id>& validated) -> std::expected<void, std::string> {
+auto gse::ide::analysis::validate_module(const std::filesystem::path& module, const std::filesystem::path& directory, std::unordered_set<id>& visiting, std::unordered_set<id>& validated) -> std::expected<void, std::string> {
 	std::error_code exists_ec;
 	if (!std::filesystem::is_regular_file(module, exists_ec)) {
 		return std::unexpected(std::format("compiled module '{}' is missing", module.generic_display_string()));
 	}
-	const gse::id module_id = gse::generate_temp_id(module);
+	const id module_id = generate_temp_id(module);
 	if (validated.contains(module_id)) {
 		return {};
 	}
 	if (!visiting.insert(module_id).second) {
 		return {};
 	}
-	const auto erase_visiting = gse::make_scope_exit([&] {
+	const auto erase_visiting = make_scope_exit([&] {
 		visiting.erase(module_id);
 	});
 	const std::shared_ptr<const dyndep_graph> graph = load_dyndep(dyndep_path(module, directory), directory);
@@ -339,7 +339,7 @@ auto gse::ide::analysis::validate_module(const std::filesystem::path& module, co
 	return status;
 }
 
-auto gse::ide::analysis::validate_module_edge(const dyndep_edge& edge, const std::filesystem::path& directory, std::unordered_set<gse::id>& visiting, std::unordered_set<gse::id>& validated) -> std::expected<void, std::string> {
+auto gse::ide::analysis::validate_module_edge(const dyndep_edge& edge, const std::filesystem::path& directory, std::unordered_set<id>& visiting, std::unordered_set<id>& validated) -> std::expected<void, std::string> {
 	for (const std::filesystem::path& required : edge.required) {
 		if (const std::expected<void, std::string> status = validate_module(required, directory, visiting, validated); !status) {
 			return status;
@@ -410,7 +410,7 @@ auto gse::ide::analysis::parse_compilation_database(const std::string_view text)
 			.file = file,
 			.command = make_check_command(std::move(tokens), directory, std::move(output)),
 		};
-		const gse::id file_id = gse::generate_temp_id(file);
+		const id file_id = generate_temp_id(file);
 		if (compilation_entry* existing = database->entries.try_get(file_id)) {
 			*existing = std::move(entry);
 		}
@@ -429,24 +429,24 @@ auto gse::ide::analysis::validate_module_graph(const compilation_entry& entry) -
 	if (!graph) {
 		return {};
 	}
-	const auto found = graph->by_output.find(gse::generate_temp_id(entry.command.output));
+	const auto found = graph->by_output.find(generate_temp_id(entry.command.output));
 	if (found == graph->by_output.end()) {
 		return {};
 	}
-	std::unordered_set<gse::id> visiting;
-	std::unordered_set<gse::id> validated;
+	std::unordered_set<id> visiting;
+	std::unordered_set<id> validated;
 	return validate_module_edge(found->second, entry.command.directory, visiting, validated);
 }
 
 auto gse::ide::analysis::compilation_database::find(const std::filesystem::path& file) const -> const compilation_entry* {
-	return entries.try_get(gse::generate_temp_id(file));
+	return entries.try_get(generate_temp_id(file));
 }
 
 auto gse::ide::analysis::load_compilation_database(const std::filesystem::path& path) -> std::shared_ptr<const compilation_database> {
 	std::error_code canonical_ec;
 	const std::filesystem::path canonical = std::filesystem::weakly_canonical(path, canonical_ec);
 	const std::filesystem::path resolved = canonical_ec ? path.lexically_normal() : canonical;
-	const gse::id database_id = gse::generate_temp_id(resolved);
+	const id database_id = generate_temp_id(resolved);
 
 	std::error_code time_ec;
 	const std::filesystem::file_time_type modified = std::filesystem::last_write_time(resolved, time_ec);

@@ -6,22 +6,66 @@ import gse;
 import gse.syntax;
 
 export namespace gse::ide::markdown {
+	struct face_set {
+		gui::text_face body = gui::text_face::text;
+		gui::text_face strong = gui::text_face::text_strong;
+		gui::text_face slanted = gui::text_face::text_emphasis;
+		gui::text_face fixed = gui::text_face::code;
+	};
+
 	struct kind_info {
 		std::uint32_t color = 0;
+		vec4f gui::style::* ui_color = nullptr;
+		gui::text_face face_set::* face = &face_set::body;
 	};
 
 	enum class kind {
 		body [[= kind_info{ .color = 0xc2cce0 }]],
-		heading [[= kind_info{ .color = 0xd57192 }]],
-		marker [[= kind_info{ .color = 0x2a7195 }]],
-		strong [[= kind_info{ .color = 0xe8edf7 }]],
-		emphasis [[= kind_info{ .color = 0xb8a5df }]],
-		code [[= kind_info{ .color = 0x9586df }]],
-		link_text [[= kind_info{ .color = 0x4fa3c7 }]],
-		link_url [[= kind_info{ .color = 0x4b5b7e }]],
-		quote [[= kind_info{ .color = 0x4b5b7e }]],
-		rule [[= kind_info{ .color = 0x2b3959 }]],
-		strike [[= kind_info{ .color = 0x6b7590 }]],
+		heading [[= kind_info{
+			.color = 0xd57192,
+			.ui_color = &gui::style::color_section_header,
+			.face = &face_set::strong,
+		}]],
+		marker [[= kind_info{
+			.color = 0x2a7195,
+			.ui_color = &gui::style::color_border,
+		}]],
+		strong [[= kind_info{
+			.color = 0xe8edf7,
+			.ui_color = &gui::style::color_text,
+			.face = &face_set::strong,
+		}]],
+		emphasis [[= kind_info{
+			.color = 0xb8a5df,
+			.ui_color = &gui::style::color_icon,
+			.face = &face_set::slanted,
+		}]],
+		code [[= kind_info{
+			.color = 0x9586df,
+			.ui_color = &gui::style::color_file,
+			.face = &face_set::fixed,
+		}]],
+		link_text [[= kind_info{
+			.color = 0x4fa3c7,
+			.ui_color = &gui::style::color_folder,
+		}]],
+		link_url [[= kind_info{
+			.color = 0x4b5b7e,
+			.ui_color = &gui::style::color_folder,
+		}]],
+		quote [[= kind_info{
+			.color = 0x4b5b7e,
+			.ui_color = &gui::style::color_text_secondary,
+			.face = &face_set::slanted,
+		}]],
+		rule [[= kind_info{
+			.color = 0x2b3959,
+			.ui_color = &gui::style::color_border,
+		}]],
+		strike [[= kind_info{
+			.color = 0x6b7590,
+			.ui_color = &gui::style::color_text_disabled,
+		}]],
 	};
 
 	struct fence_marker {
@@ -76,15 +120,37 @@ export namespace gse::ide::markdown {
 		marker,
 	};
 
+	struct block_info {
+		bool verbatim = false;
+		kind tone = kind::body;
+	};
+
 	enum class block : std::uint8_t {
 		blank,
-		front_matter,
-		fence,
-		code,
-		rule,
-		heading,
+		front_matter [[= block_info{
+			.verbatim = true,
+			.tone = kind::quote,
+		}]],
+		fence [[= block_info{
+			.verbatim = true,
+			.tone = kind::marker,
+		}]],
+		code [[= block_info{
+			.verbatim = true,
+			.tone = kind::code,
+		}]],
+		rule [[= block_info{
+			.verbatim = true,
+			.tone = kind::rule,
+		}]],
+		heading [[= block_info{
+			.tone = kind::heading,
+		}]],
 		table_row,
-		table_delimiter,
+		table_delimiter [[= block_info{
+			.verbatim = true,
+			.tone = kind::marker,
+		}]],
 		quote,
 		list_item,
 		paragraph,
@@ -452,34 +518,13 @@ auto gse::ide::markdown::scan(const std::string_view line, const std::size_t fro
 }
 
 auto gse::ide::markdown::verbatim(const block shape) -> bool {
-	switch (shape) {
-		case block::front_matter:
-		case block::fence:
-		case block::code:
-		case block::rule:
-		case block::table_delimiter:
-			return true;
-		default:
-			return false;
-	}
+	return annotation_from_enum<block_info>(shape, {}).verbatim;
 }
 
 auto gse::ide::markdown::base_tone(const line_info& info) -> kind {
-	switch (info.shape) {
-		case block::front_matter:
-			return kind::quote;
-		case block::fence:
-		case block::table_delimiter:
-			return kind::marker;
-		case block::code:
-			return kind::code;
-		case block::rule:
-			return kind::rule;
-		case block::heading:
-			return kind::heading;
-		default:
-			return info.quoted ? kind::quote : kind::body;
-	}
+	return annotation_from_enum<block_info>(info.shape, {
+		.tone = info.quoted ? kind::quote : kind::body,
+	}).tone;
 }
 
 auto gse::ide::markdown::classify(const std::span<const std::string_view> lines) -> std::vector<line_info> {

@@ -801,7 +801,7 @@ auto gse::ide::build_runner::compiler_bin_dir(const std::filesystem::path& build
 }
 
 auto gse::ide::build_runner::configure_command(const config::worktree& tree, const std::filesystem::path& project_dir, const std::filesystem::path& build_dir) -> std::wstring {
-	const std::filesystem::path& editor_build = gse::ide::config::build_dir();
+	const std::filesystem::path& editor_build = config::build_dir();
 
 	std::wstring command = L"cmd.exe /c cmake -G Ninja -S \"" + project_dir.wstring() + L"\" -B \"" + build_dir.wstring() + L"\"";
 	command += L" -DGSE_ENGINE_DIR=\"" + tree.engine_root.wstring() + L"\"";

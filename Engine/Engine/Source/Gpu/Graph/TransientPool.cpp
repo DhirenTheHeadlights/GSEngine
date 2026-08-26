@@ -173,7 +173,7 @@ auto gse::gpu::greedy_color(const std::span<const lifetime_entry> intervals) -> 
 	return colors;
 }
 
-gse::gpu::transient_pool::transient_pool(gpu::device& dev) : m_device(std::addressof(dev)) {
+gse::gpu::transient_pool::transient_pool(device& dev) : m_device(std::addressof(dev)) {
 }
 
 gse::gpu::transient_pool::~transient_pool() {
@@ -265,7 +265,7 @@ auto gse::gpu::transient_pool::transient_images() const -> std::vector<transient
 	return out;
 }
 
-auto gse::gpu::transient_pool::ensure_block_for_color(frame_state& slot, const std::uint32_t color, const gpu::device_size required_size, const std::uint32_t memory_type_mask) -> void {
+auto gse::gpu::transient_pool::ensure_block_for_color(frame_state& slot, const std::uint32_t color, const device_size required_size, const std::uint32_t memory_type_mask) -> void {
 	while (slot.blocks.size() <= color) {
 		slot.blocks.push_back({});
 	}
@@ -324,18 +324,18 @@ auto gse::gpu::transient_pool::plan(const std::uint32_t frame_idx, const std::sp
 	const auto colors = greedy_color(intervals);
 
 	struct color_aggregate {
-		gpu::device_size size = 0;
+		device_size size = 0;
 		std::uint32_t type_mask = std::numeric_limits<std::uint32_t>::max();
 	};
 	std::vector<color_aggregate> aggregates;
 
 	struct staged_image {
-		gpu::handle<gpu::image> handle;
+		handle<image> handle;
 		std::uint32_t color = 0;
 		std::size_t entry_index = 0;
 	};
 	struct staged_buffer {
-		gpu::handle<gpu::buffer> handle;
+		handle<buffer> handle;
 		std::uint32_t color = 0;
 		std::size_t entry_index = 0;
 	};

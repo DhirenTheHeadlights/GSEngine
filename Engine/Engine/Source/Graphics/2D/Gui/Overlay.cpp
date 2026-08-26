@@ -185,7 +185,7 @@ auto gse::gui::update_tooltip(data& d, viewport_state& vp) -> void {
 	vp.tooltip.pending_widget_id.reset();
 }
 
-auto gse::gui::process_context_menu(data& d, viewport_state& vp, const gse::input::state& input_state, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> channels) -> void {
+auto gse::gui::process_context_menu(data& d, viewport_state& vp, const input::state& input_state, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> channels) -> void {
 	context_menu_state& cm = vp.context_menu;
 	if (!cm.open) {
 		return;

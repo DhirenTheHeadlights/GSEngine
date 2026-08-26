@@ -72,10 +72,10 @@ auto gse::ide::agent::attach_image(data& d, const shared_view<asset::data> asset
 
 	image::data decoded = pasted.path.empty()
 		? image::data{
-			.size = pasted.size,
-			.channels = 4,
-			.pixels = std::move(pasted.pixels),
-		}
+		.size = pasted.size,
+		.channels = 4,
+		.pixels = std::move(pasted.pixels),
+	}
 		: image::load_rgba(pasted.path);
 
 	if (decoded.pixels.empty() || decoded.size.x() == 0 || decoded.size.y() == 0) {
@@ -107,7 +107,7 @@ auto gse::ide::agent::attach_image(data& d, const shared_view<asset::data> asset
 	});
 }
 
-auto gse::ide::agent::agent_context_tag() -> gse::id {
+auto gse::ide::agent::agent_context_tag() -> id {
 	return find_or_generate_id("agent_transcript_context");
 }
 
@@ -331,7 +331,7 @@ auto gse::ide::agent::draw_history(gui::builder& ui, data& d, const rectf& body)
 	}
 }
 
-auto gse::ide::agent::session_tab_id(const std::uint32_t session_id) -> gse::id {
+auto gse::ide::agent::session_tab_id(const std::uint32_t session_id) -> id {
 	return gui::ids::make(std::format("##agent_tab_{}", session_id));
 }
 
@@ -387,10 +387,10 @@ auto gse::ide::agent::draw_session_tabs(gui::builder& ui, data& d, const rectf& 
 		.active = session_tab_id(d.active),
 		.allow_reorder = true,
 		.show_add = true,
-		.renaming = d.renaming != 0 ? session_tab_id(d.renaming) : gse::id{},
+		.renaming = d.renaming != 0 ? session_tab_id(d.renaming) : id{},
 	}, d.tab_strip);
 
-	const auto session_of = [&](const gse::id tab_id) -> session* {
+	const auto session_of = [&](const id tab_id) -> session* {
 		const auto found = std::ranges::find_if(d.sessions, [&](const session& s) {
 			return session_tab_id(s.id) == tab_id;
 		});
@@ -430,7 +430,7 @@ auto gse::ide::agent::draw_session_tabs(gui::builder& ui, data& d, const rectf& 
 
 	session* renaming = d.renaming != 0 && tabs.renaming_rect.width() > 0.f ? session_of(session_tab_id(d.renaming)) : nullptr;
 	if (renaming) {
-		const gse::id input_id = gui::ids::make(std::format("##agent_name_{}", renaming->id));
+		const id input_id = gui::ids::make(std::format("##agent_name_{}", renaming->id));
 		gui::draw::text_input_in_rect(
 			ctx,
 			input_id,

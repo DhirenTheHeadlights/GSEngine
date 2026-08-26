@@ -566,7 +566,7 @@ auto gse::settings::push_annotated_field_change(const channel_write<change_reque
 	using F = [:std::meta::type_of(leaf):];
 	if constexpr (is_choice_v<F>) {
 		typename F::value_type parsed{};
-		if (!gse::parse(raw, parsed)) {
+		if (!parse(raw, parsed)) {
 			return false;
 		}
 		channels.push<change_request>({
@@ -579,7 +579,7 @@ auto gse::settings::push_annotated_field_change(const channel_write<change_reque
 	}
 	else {
 		F parsed{};
-		if (!gse::parse(raw, parsed)) {
+		if (!parse(raw, parsed)) {
 			return false;
 		}
 		channels.push<change_request>({
@@ -603,8 +603,8 @@ auto gse::settings::make_annotated_field(std::string key) -> settings_field {
 		.widget = field_widget_of<F>(),
 		.format = &format_annotated_field<State, Path...>,
 		.push_change = &push_annotated_field_change<State, Path...>,
-		.hot_reloadable = has_annotation<settings::hot_reloadable_tag>(leaf),
-		.restart_required = has_annotation<settings::restart_required>(leaf),
+		.hot_reloadable = has_annotation<hot_reloadable_tag>(leaf),
+		.restart_required = has_annotation<restart_required>(leaf),
 	};
 	if constexpr (is_choice_v<F>) {
 		field.runtime_options = &annotated_field_options<State, Path...>;

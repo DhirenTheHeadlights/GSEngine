@@ -26,8 +26,8 @@ export namespace gse::renderer::rt_shadow {
 		gpu::blas blas;
 	};
 
-	struct [[= gse::system_state<"RtShadow">{}]] data {
-		[[= gse::shared]] per_frame_resource<const gpu::tlas*> tlas_ptrs{};
+	struct [[= system_state<"RtShadow">{}]] data {
+		[[= shared]] per_frame_resource<const gpu::tlas*> tlas_ptrs{};
 
 		std::flat_map<blas_key, blas_entry> blas_cache;
 		per_frame_resource<gpu::buffer> blas_scratch;
@@ -41,7 +41,7 @@ export namespace gse::renderer::rt_shadow {
 		per_frame_resource<gpu::bindless_handle> tlas_instance_views;
 	};
 
-	[[= gse::system_init{}]]
+	[[= system_init{}]]
 	auto init(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
@@ -49,7 +49,7 @@ export namespace gse::renderer::rt_shadow {
 		data& d
 	) -> async::task<>;
 
-	[[= gse::system_frame{}]]
+	[[= system_frame{}]]
 	auto frame(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,

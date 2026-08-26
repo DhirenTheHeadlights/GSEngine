@@ -30,9 +30,9 @@ export namespace gse::renderer::physics_debug {
 		vec3f color;
 	};
 
-	struct [[= gse::system_state<"PhysicsDebug">{}, = gse::settings::category<"Graphics">{}]] data {
+	struct [[= system_state<"PhysicsDebug">{}, = settings::category<"Graphics">{}]] data {
 		[[
-			= gse::settings::describe<"Draw collision shapes, contact points, and joint anchors over the scene.">{}
+			= settings::describe<"Draw collision shapes, contact points, and joint anchors over the scene.">{}
 		]]
 		bool enabled = true;
 
@@ -69,20 +69,20 @@ export namespace gse::renderer::physics_debug {
 		std::unordered_map<id, std::uint32_t> body_index_map;
 	};
 
-	[[= gse::system_init{}]]
+	[[= system_init{}]]
 	auto init(
 		shared_view<gpu::context::data> gpu_s,
 		data& d
 	) -> async::task<>;
 
-	[[= gse::system_run<>{}]]
+	[[= system_run<>{}]]
 	auto prepare(
 		context& ctx,
 		data& d,
 		shared_view<physics::data> ps
 	) -> async::task<>;
 
-	[[= gse::system_run<1>{}]]
+	[[= system_run<1>{}]]
 	auto build(
 		context& ctx,
 		data& d,
@@ -92,7 +92,7 @@ export namespace gse::renderer::physics_debug {
 		read<physics::collision_result_component> results
 	) -> async::task<>;
 
-	[[= gse::system_frame{}]]
+	[[= system_frame{}]]
 	auto frame(
 		const context& ctx,
 		shared_view<gpu::context::data> gpu_s,
