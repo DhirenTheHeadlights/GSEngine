@@ -66,18 +66,18 @@ export namespace gse::gpu {
 
 	[[nodiscard]]
 	auto transient_image(
-		const gse::context& ctx,
+		channel_write<transient_image_request> channels,
 		transient_image_desc desc
 	) -> transient_image_handle;
 
 	[[nodiscard]]
 	auto transient_buffer(
-		const gse::context& ctx,
+		channel_write<transient_buffer_request> channels,
 		transient_buffer_desc desc
 	) -> transient_buffer_handle;
 
 	struct transient_image_allocation {
-		std::unique_ptr<gpu::image> resource;
+		std::unique_ptr<image> resource;
 		image_aspect_flags aspects;
 		image_format format = image_format::r8g8b8a8_unorm;
 		std::uint32_t color = 0;
@@ -86,7 +86,7 @@ export namespace gse::gpu {
 	};
 
 	struct transient_buffer_allocation {
-		std::unique_ptr<gpu::buffer> resource;
+		std::unique_ptr<buffer> resource;
 		std::uint32_t color = 0;
 		std::uint32_t first_pass = 0;
 		std::uint32_t last_pass = 0;
@@ -95,7 +95,7 @@ export namespace gse::gpu {
 	class transient_pool : public non_copyable {
 	public:
 		explicit transient_pool(
-			gpu::device& dev
+			device& dev
 		);
 
 		~transient_pool();
@@ -136,7 +136,7 @@ export namespace gse::gpu {
 	private:
 		struct memory_block {
 			device_memory memory;
-			gpu::device_size size = 0;
+			device_size size = 0;
 			std::uint32_t memory_type_index = 0;
 		};
 
@@ -149,7 +149,7 @@ export namespace gse::gpu {
 		auto ensure_block_for_color(
 			frame_state& slot,
 			std::uint32_t color,
-			gpu::device_size required_size,
+			device_size required_size,
 			std::uint32_t memory_type_mask
 		) -> void;
 
@@ -161,7 +161,7 @@ export namespace gse::gpu {
 			frame_state& slot
 		) -> void;
 
-		gpu::device* m_device = nullptr;
+		device* m_device = nullptr;
 		per_frame_resource<frame_state> m_slots;
 		std::uint32_t m_current_frame = 0;
 	};

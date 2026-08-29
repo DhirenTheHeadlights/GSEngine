@@ -1,0 +1,13 @@
+[project]
+name = Sandbox
+engine_version = 0.1.0
+source = Sandbox
+assets = Assets
+art = Art
+
+[engine]
+name = GSEngine
+source = ..
+
+[targets]
+game = Sandbox

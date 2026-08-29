@@ -5,6 +5,7 @@ import std;
 import :core;
 import :enums;
 import :buffer;
+import :bindless;
 
 import gse.core;
 import gse.math;
@@ -36,20 +37,14 @@ export namespace gse::gpu {
 		low_memory = 1u << 4,
 	};
 
-	using build_acceleration_structure_flags = gse::flags<build_acceleration_structure_flag>;
-	constexpr auto operator|(build_acceleration_structure_flag a, build_acceleration_structure_flag b) -> build_acceleration_structure_flags {
-		return build_acceleration_structure_flags(a) | b;
-	}
+	using build_acceleration_structure_flags = flags<build_acceleration_structure_flag>;
 
 	enum class geometry_flag : std::uint8_t {
 		opaque = 1 << 0,
 		no_duplicate_any_hit_invocation = 1 << 1,
 	};
 
-	using geometry_flags = gse::flags<geometry_flag>;
-	constexpr auto operator|(geometry_flag a, geometry_flag b) -> geometry_flags {
-		return geometry_flags(a) | b;
-	}
+	using geometry_flags = flags<geometry_flag>;
 
 	struct acceleration_structure_geometry_triangles_data {
 		vertex_format vertex_format = vertex_format::r32g32b32_sfloat;
@@ -136,9 +131,10 @@ export namespace gse::gpu {
 	public:
 		blas() {}
 		blas(
-			gpu::buffer storage,
-			gpu::acceleration_structure acceleration_structure,
-			gpu::device_address device_address
+			buffer storage,
+			acceleration_structure acceleration_structure,
+			device_address device_address,
+			bindless_handle heap_handle = {}
 		);
 
 		~blas() = default;
@@ -151,27 +147,28 @@ export namespace gse::gpu {
 			blas&&
 		) noexcept -> blas& = default;
 
-		[[nodiscard]] auto handle() const -> gpu::acceleration_structure;
+		[[nodiscard]] auto handle() const -> acceleration_structure;
 
-		[[nodiscard]] auto device_address() const -> gpu::device_address;
+		[[nodiscard]] auto device_address() const -> device_address;
 
 		[[nodiscard]] auto valid() const -> bool;
 
 	private:
-		gpu::buffer m_storage;
-		gpu::acceleration_structure m_acceleration_structure;
+		buffer m_storage;
+		acceleration_structure m_acceleration_structure;
 		gpu::device_address m_device_address = 0;
+		bindless_handle m_heap_handle;
 	};
 
 	class tlas final : public non_copyable {
 	public:
 		tlas() {}
 		tlas(
-			gpu::buffer storage,
-			gpu::buffer scratch,
-			gpu::buffer instance_buffer,
-			gpu::acceleration_structure acceleration_structure,
-			gpu::device_address device_address
+			buffer storage,
+			buffer scratch,
+			buffer instance_buffer,
+			acceleration_structure acceleration_structure,
+			device_address device_address
 		);
 
 		~tlas() = default;
@@ -184,32 +181,32 @@ export namespace gse::gpu {
 			tlas&&
 		) noexcept -> tlas& = default;
 
-		[[nodiscard]] auto handle() const -> gpu::acceleration_structure;
+		[[nodiscard]] auto handle() const -> acceleration_structure;
 
-		[[nodiscard]] auto device_address() const -> gpu::device_address;
+		[[nodiscard]] auto device_address() const -> device_address;
 
 		[[nodiscard]] auto instance_buffer(
 			this auto& self
 		) -> auto&;
 
-		[[nodiscard]] auto scratch_buffer() const -> const gpu::buffer&;
+		[[nodiscard]] auto scratch_buffer() const -> const buffer&;
 
 		[[nodiscard]] auto valid() const -> bool;
 
 	private:
-		gpu::buffer m_storage;
-		gpu::buffer m_scratch;
-		gpu::buffer m_instance_buffer;
-		gpu::acceleration_structure m_acceleration_structure;
+		buffer m_storage;
+		buffer m_scratch;
+		buffer m_instance_buffer;
+		acceleration_structure m_acceleration_structure;
 		gpu::device_address m_device_address = 0;
 	};
 }
 
-gse::gpu::blas::blas(gpu::buffer storage, const gpu::acceleration_structure acceleration_structure, const gpu::device_address device_address)
-	: m_storage(std::move(storage)), m_acceleration_structure(acceleration_structure), m_device_address(device_address) {
+gse::gpu::blas::blas(buffer storage, const acceleration_structure acceleration_structure, const gpu::device_address device_address, bindless_handle heap_handle)
+	: m_storage(std::move(storage)), m_acceleration_structure(acceleration_structure), m_device_address(device_address), m_heap_handle(std::move(heap_handle)) {
 }
 
-auto gse::gpu::blas::handle() const -> gpu::acceleration_structure {
+auto gse::gpu::blas::handle() const -> acceleration_structure {
 	return m_acceleration_structure;
 }
 
@@ -221,11 +218,11 @@ auto gse::gpu::blas::valid() const -> bool {
 	return static_cast<bool>(m_acceleration_structure);
 }
 
-gse::gpu::tlas::tlas(gpu::buffer storage, gpu::buffer scratch, gpu::buffer instance_buffer, const gpu::acceleration_structure acceleration_structure, const gpu::device_address device_address)
+gse::gpu::tlas::tlas(buffer storage, buffer scratch, buffer instance_buffer, const acceleration_structure acceleration_structure, const gpu::device_address device_address)
 	: m_storage(std::move(storage)), m_scratch(std::move(scratch)), m_instance_buffer(std::move(instance_buffer)), m_acceleration_structure(acceleration_structure), m_device_address(device_address) {
 }
 
-auto gse::gpu::tlas::handle() const -> gpu::acceleration_structure {
+auto gse::gpu::tlas::handle() const -> acceleration_structure {
 	return m_acceleration_structure;
 }
 
@@ -237,7 +234,7 @@ auto gse::gpu::tlas::instance_buffer(this auto& self) -> auto& {
 	return self.m_instance_buffer;
 }
 
-auto gse::gpu::tlas::scratch_buffer() const -> const gpu::buffer& {
+auto gse::gpu::tlas::scratch_buffer() const -> const buffer& {
 	return m_scratch;
 }
 

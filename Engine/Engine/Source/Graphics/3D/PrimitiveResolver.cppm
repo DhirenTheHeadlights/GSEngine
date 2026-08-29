@@ -6,25 +6,32 @@ import :primitives;
 import :primitive_specs;
 import :render_component;
 
+import gse.assets;
 import gse.concurrency;
 import gse.core;
 import gse.ecs;
 
 export namespace gse::primitive_resolver {
-	struct [[= gse::system_state<"PrimitiveResolver">{}]] data {};
+	struct [[= system_state<"PrimitiveResolver">{}]] data {};
 
-	[[= gse::system_run<>{}]]
+	[[= system_run<>{}]]
 	auto ensure_renders(
-		context& ctx,
+		write<primitive_box_spec> boxes,
+		write<primitive_sphere_spec> spheres,
+		write<primitive_cylinder_spec> cylinders,
+		write<primitive_mountain_ring_spec> mountain_rings,
 		structural<render_component> renders
 	) -> async::task<>;
 
-	[[= gse::system_run<1>{}]]
+	[[= system_run<1>{}]]
 	auto populate(
 		context& ctx,
 		const primitives::data& prims,
+		shared_view<asset::data> assets,
 		write<primitive_box_spec> boxes,
 		write<primitive_sphere_spec> spheres,
+		write<primitive_cylinder_spec> cylinders,
+		write<primitive_mountain_ring_spec> mountain_rings,
 		write<render_component> renders
 	) -> async::task<>;
 }

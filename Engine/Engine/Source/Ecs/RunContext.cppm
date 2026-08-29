@@ -21,6 +21,18 @@ export namespace gse {
 
 	class context : public task_context {
 	public:
+		class construction_scope : public non_copyable {
+		public:
+			explicit construction_scope(
+				context& ctx
+			);
+
+			~construction_scope();
+
+		private:
+			context* m_ctx = nullptr;
+		};
+
 		context(
 			scheduler& sched,
 			state_registry& states,
@@ -30,8 +42,8 @@ export namespace gse {
 			task_graph& graph,
 			registry& reg,
 			access_guard& guard,
-			async::manual_event& resume_event,
-			async::manual_event& paused_event,
+			async::manual_event* resume_event = nullptr,
+			async::manual_event* paused_event = nullptr,
 			bool live_state = true
 		);
 
@@ -40,15 +52,6 @@ export namespace gse {
 		) -> void;
 
 		[[nodiscard]] auto yield_tick() -> async::task<>;
-
-		template <typename T>
-		auto drain_component_adds() -> std::vector<id>;
-
-		template <typename T>
-		auto drain_component_updates() -> std::vector<id>;
-
-		template <typename T>
-		auto drain_component_removes() -> std::vector<id>;
 
 		template <typename T>
 		auto add_component(
@@ -76,18 +79,17 @@ export namespace gse {
 		template <typename T>
 		auto make_structural() -> structural<T>;
 
-		auto make_registry_access() -> registry_access;
-
 		auto make_entities() -> entities;
 
 	private:
 		scheduler& m_sched;
-		gse::registry& m_reg;
+		registry& m_reg;
 		access_guard& m_guard;
 		std::atomic<int> m_held_locks{ 0 };
 		std::vector<id> m_structural_authority;
-		async::manual_event& m_resume_event;
-		async::manual_event& m_paused_event;
+		bool m_construction = false;
+		async::manual_event* m_resume_event = nullptr;
+		async::manual_event* m_paused_event = nullptr;
 	};
 }
 
@@ -102,10 +104,9 @@ namespace gse {
 
 }
 
-gse::context::context(scheduler& sched, state_registry& states, resource_registry& resources_store, channel_registry& channels_store, channel_writer& channels, task_graph& graph, gse::registry& reg, access_guard& guard, async::manual_event& resume_event, async::manual_event& paused_event, bool live_state)
+gse::context::context(scheduler& sched, state_registry& states, resource_registry& resources_store, channel_registry& channels_store, channel_writer& channels, task_graph& graph, registry& reg, access_guard& guard, async::manual_event* resume_event, async::manual_event* paused_event, bool live_state)
 	: task_context{ states, resources_store, channels_store, channels, graph, live_state }, m_sched(sched), m_reg(reg), m_guard(guard), m_resume_event(resume_event), m_paused_event(paused_event) {
 }
-
 
 template <typename Access>
 auto gse::make_locked_handle(access_token token, registry& reg, access_guard& guard, std::atomic<int>* held_locks) -> Access {
@@ -127,23 +128,16 @@ auto gse::context::held_lock_count() const -> int {
 	return m_held_locks.load(std::memory_order_acquire);
 }
 
+gse::context::construction_scope::construction_scope(context& ctx) : m_ctx(&ctx) {
+	m_ctx->m_construction = true;
+}
+
+gse::context::construction_scope::~construction_scope() {
+	m_ctx->m_construction = false;
+}
+
 auto gse::context::has_structural_authority(const id type) const -> bool {
-	return std::ranges::find(m_structural_authority, type) != m_structural_authority.end();
-}
-
-template <typename T>
-auto gse::context::drain_component_adds() -> std::vector<id> {
-	return m_reg.drain_component_adds<T>();
-}
-
-template <typename T>
-auto gse::context::drain_component_updates() -> std::vector<id> {
-	return m_reg.drain_component_updates<T>();
-}
-
-template <typename T>
-auto gse::context::drain_component_removes() -> std::vector<id> {
-	return m_reg.drain_component_removes<T>();
+	return m_construction || std::ranges::find(m_structural_authority, type) != m_structural_authority.end();
 }
 
 template <typename T>
@@ -164,28 +158,16 @@ auto gse::context::ensure_storage() -> void {
 	m_reg.ensure_storage<T>();
 }
 
-
 template <typename T>
 auto gse::context::make_structural() -> structural<T> {
 	return structural<T>(&m_reg, &m_guard, &m_held_locks, &m_structural_authority);
-}
-
-auto gse::context::make_registry_access() -> registry_access {
-	return registry_access(&m_reg);
-}
-
-gse::registry_access::registry_access(gse::registry* reg) : m_reg(reg) {
-}
-
-auto gse::registry_access::registry() const -> gse::registry& {
-	return *m_reg;
 }
 
 auto gse::context::make_entities() -> entities {
 	return entities(&m_reg);
 }
 
-gse::entities::entities(gse::registry* reg) : m_reg(reg) {
+gse::entities::entities(registry* reg) : m_reg(reg) {
 }
 
 auto gse::entities::ensure_exists(const id owner) const -> void {

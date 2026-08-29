@@ -16,7 +16,7 @@ export namespace gse {
 			registry* reg
 		);
 
-		auto id() const -> gse::id;
+		auto id() const -> id;
 
 		template <typename T>
 		auto add_component(
@@ -45,7 +45,19 @@ export namespace gse {
 
 	class scene final : public identifiable {
 	public:
-		using player_factory_fn = std::function<gse::id(scene&, std::optional<gse::id>)>;
+		class mutation_scope : public non_copyable {
+		public:
+			mutation_scope(
+				scene& target,
+				context& ctx
+			);
+
+			~mutation_scope();
+
+		private:
+			scene* m_scene = nullptr;
+		};
+
 		using init_fn = std::move_only_function<void(gse::id, registry&)>;
 		using setup_fn = void (
 				*
@@ -96,12 +108,20 @@ export namespace gse {
 			const std::string& name
 		) -> gse::id;
 
+		auto adopt_entity(
+			gse::id entity_id
+		) -> gse::id;
+
 		auto remove_entity(
 			const gse::id& id
 		) -> void;
 
 		auto build(
 			const std::string& name
+		) -> builder;
+
+		auto build(
+			gse::id entity_id
 		) -> builder;
 
 		template <typename Archetype>
@@ -124,23 +144,19 @@ export namespace gse {
 
 		auto registry() const -> registry&;
 
-		auto set_player_factory(
-			player_factory_fn factory
-		) -> void;
-
-		auto player_factory() const -> const player_factory_fn&;
-
 		auto push_init(
 			gse::id entity_id,
 			init_fn fn
 		) -> void;
 
+		[[nodiscard]] auto mutation_context() const -> context*;
+
 	private:
 		gse::registry& m_registry;
+		context* m_ctx = nullptr;
 		std::vector<gse::id> m_entities;
 		std::vector<gse::id> m_queue;
 		std::vector<std::pair<gse::id, init_fn>> m_pending_inits;
-		player_factory_fn m_player_factory;
 		setup_fn m_setup;
 
 		bool m_is_active = false;
@@ -189,6 +205,18 @@ gse::scene::scene(gse::registry& registry, const std::string_view name)
 	: identifiable(std::string(name)), m_registry(registry) {
 }
 
+gse::scene::mutation_scope::mutation_scope(scene& target, context& ctx) : m_scene(&target) {
+	m_scene->m_ctx = &ctx;
+}
+
+gse::scene::mutation_scope::~mutation_scope() {
+	m_scene->m_ctx = nullptr;
+}
+
+auto gse::scene::mutation_context() const -> context* {
+	return m_ctx;
+}
+
 auto gse::scene::add_entity(const std::string& name) -> gse::id {
 	const auto id = m_registry.create(name);
 
@@ -203,6 +231,20 @@ auto gse::scene::add_entity(const std::string& name) -> gse::id {
 	return id;
 }
 
+auto gse::scene::adopt_entity(const gse::id entity_id) -> gse::id {
+	auto& owned = m_is_active ? m_entities : m_queue;
+	if (std::ranges::find(owned, entity_id) != owned.end()) {
+		return entity_id;
+	}
+
+	if (m_is_active) {
+		m_registry.ensure_active(entity_id);
+	}
+	owned.push_back(entity_id);
+
+	return entity_id;
+}
+
 auto gse::scene::remove_entity(const gse::id& id) -> void {
 	assert(m_registry.exists(id), "Cannot remove entity with id {}: it does not exist.", id);
 
@@ -215,13 +257,22 @@ auto gse::scene::build(const std::string& name) -> builder {
 	return builder(id, this, &m_registry);
 }
 
+auto gse::scene::build(const gse::id entity_id) -> builder {
+	return builder(adopt_entity(entity_id), this, &m_registry);
+}
+
 template <typename Archetype>
 auto gse::scene::spawn(const std::string& name, Archetype&& archetype) -> gse::id {
 	const auto id = add_entity(name);
 	using arch_t = std::remove_cvref_t<Archetype>;
 	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^arch_t, std::meta::access_context::unchecked()))) {
 		using component_t = typename[:std::meta::type_of(m):];
-		m_registry.add_component<component_t>(id, std::forward_like<Archetype>(archetype.[:m:]));
+		if (m_ctx != nullptr) {
+			m_ctx->add_component<component_t>(id, std::forward_like<Archetype>(archetype.[:m:]));
+		}
+		else {
+			m_registry.add_component<component_t>(id, std::forward_like<Archetype>(archetype.[:m:]));
+		}
 	}
 	return id;
 }
@@ -271,14 +322,6 @@ auto gse::scene::registry() const -> gse::registry& {
 	return m_registry;
 }
 
-auto gse::scene::set_player_factory(player_factory_fn factory) -> void {
-	m_player_factory = std::move(factory);
-}
-
-auto gse::scene::player_factory() const -> const player_factory_fn& {
-	return m_player_factory;
-}
-
 auto gse::scene::push_init(const gse::id entity_id, init_fn fn) -> void {
 	m_pending_inits.emplace_back(entity_id, std::move(fn));
 }
@@ -289,6 +332,11 @@ gse::scene::builder::builder(const gse::id entity_id, scene* owner, gse::registr
 
 template <typename T>
 auto gse::scene::builder::with(T value) -> builder& {
+	if (context* ctx = m_scene->mutation_context()) {
+		ctx->add_component<T>(m_entity_id, std::move(value));
+		return *this;
+	}
+
 	m_registry->add_component<T>(m_entity_id, std::move(value));
 	return *this;
 }

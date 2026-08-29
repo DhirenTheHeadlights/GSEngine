@@ -19,6 +19,7 @@ GSKEL_MAGIC = b'GSKL'
 GCLIP_MAGIC = b'GCLP'
 GSMDL_MAGIC = b'GSMD'
 VERSION = 1
+GCLIP_VERSION = 2
 
 # Coordinate system conversion: Blender (Z-up) to Engine (Y-up)
 # Blender: X-right, Y-forward, Z-up
@@ -264,8 +265,6 @@ def export_clip(filepath, armature, action, bone_name_to_index, mesh_obj=None):
             if pose_bone.name not in bone_name_to_index:
                 continue
 
-            joint_index = bone_name_to_index[pose_bone.name]
-
             # Build world matrix with proper scaling
             bone_world = build_pose_bone_world_matrix(armature, pose_bone)
 
@@ -279,17 +278,17 @@ def export_clip(filepath, armature, action, bone_name_to_index, mesh_obj=None):
             # Convert to engine coordinate system
             local_transform_converted = convert_matrix(local_transform)
 
-            if joint_index not in tracks:
-                tracks[joint_index] = []
+            if pose_bone.name not in tracks:
+                tracks[pose_bone.name] = []
 
-            tracks[joint_index].append((time_seconds, local_transform_converted.copy()))
+            tracks[pose_bone.name].append((time_seconds, local_transform_converted.copy()))
 
     if original_action:
         armature.animation_data.action = original_action
 
     with open(filepath, 'wb') as f:
         f.write(GCLIP_MAGIC)
-        f.write(struct.pack('<I', VERSION))
+        f.write(struct.pack('<I', GCLIP_VERSION))
 
         write_string(f, action.name)
         f.write(struct.pack('<f', length))
@@ -297,8 +296,8 @@ def export_clip(filepath, armature, action, bone_name_to_index, mesh_obj=None):
 
         f.write(struct.pack('<I', len(tracks)))
 
-        for joint_index, keys in tracks.items():
-            f.write(struct.pack('<H', joint_index))
+        for bone_name, keys in tracks.items():
+            write_string(f, bone_name)
             f.write(struct.pack('<I', len(keys)))
 
             for time_seconds, local_transform in keys:
@@ -381,7 +380,9 @@ def export_texture(image, textures_dir):
         image.filepath_raw = original_path
         image.file_format = original_format
 
-    return safe_name
+    # Engine asset tag, not a filename: loaders resolve this through the asset
+    # registry rather than reconstructing a directory from the model's path.
+    return 'Textures/' + os.path.splitext(safe_name)[0]
 
 GMDL_MAGIC = b'GMDL'
 GMDL_VERSION = 4

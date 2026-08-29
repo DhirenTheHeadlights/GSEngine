@@ -7,6 +7,13 @@ import :annotations;
 export namespace gse {
 	struct format_skip_tag {};
 	constexpr format_skip_tag format_skip{};
+
+	template <typename... Args>
+	auto format_into(
+		std::span<char> buffer,
+		std::format_string<Args...> fmt,
+		Args&&... args
+	) -> std::string_view;
 }
 
 namespace gse::internal {
@@ -19,6 +26,12 @@ namespace gse::internal {
 	template <typename T, typename CharT>
 	concept reflectable_user_class =
 		(std::is_class_v<T> && !std::is_polymorphic_v<T> && std::is_same_v<CharT, char> && is_user_namespace(^^T));
+}
+
+template <typename... Args>
+auto gse::format_into(const std::span<char> buffer, const std::format_string<Args...> fmt, Args&&... args) -> std::string_view {
+	const auto result = std::format_to_n(buffer.data(), static_cast<std::ptrdiff_t>(buffer.size()), fmt, std::forward<Args>(args)...);
+	return { buffer.data(), static_cast<std::size_t>(result.out - buffer.data()) };
 }
 
 consteval auto gse::internal::is_user_namespace(std::meta::info type) -> bool {

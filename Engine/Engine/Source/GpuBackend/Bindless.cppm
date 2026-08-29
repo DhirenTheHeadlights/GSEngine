@@ -16,12 +16,6 @@ export namespace gse::gpu {
 		texture,
 	};
 
-	enum class buffer_descriptor_kind : std::uint8_t {
-		storage,
-		uniform,
-		acceleration_structure,
-	};
-
 	struct descriptor_heap_properties {
 		device_size sampler_heap_alignment = 0;
 		device_size resource_heap_alignment = 0;
@@ -32,23 +26,13 @@ export namespace gse::gpu {
 		device_size sampler_descriptor_size = 0;
 		device_size image_descriptor_size = 0;
 		device_size buffer_descriptor_size = 0;
+		device_size acceleration_structure_descriptor_size = 0;
 		device_size sampler_descriptor_alignment = 0;
 		device_size image_descriptor_alignment = 0;
 		device_size buffer_descriptor_alignment = 0;
 		device_size max_push_data_size = 0;
 		std::uint32_t max_embedded_samplers = 0;
 		bool sparse_descriptor_heaps = false;
-	};
-
-	struct bindless_layout {
-		device_size image_range_offset = 0;
-		device_size image_stride = 0;
-		device_size texture_image_offset = 0;
-		device_size buffer_range_offset = 0;
-		device_size buffer_stride = 0;
-		device_size texture_sampler_offset = 0;
-		device_size sampler_range_offset = 0;
-		device_size sampler_stride = 0;
 	};
 
 	struct bindless_heap_binding {
@@ -61,6 +45,7 @@ export namespace gse::gpu {
 	struct bindless_slot_pool {
 		device_size base_offset = 0;
 		device_size stride = 0;
+		device_size base_index = 0;
 		std::vector<std::uint32_t> free_list;
 		std::mutex mutex;
 
@@ -122,17 +107,17 @@ auto gse::gpu::bindless_slot_pool::allocate() -> bindless_slot {
 	const auto index = free_list.back();
 	free_list.pop_back();
 	return {
-		.index = index
+		.index = static_cast<std::uint32_t>(base_index) + index
 	};
 }
 
 auto gse::gpu::bindless_slot_pool::release(const bindless_slot slot) -> void {
 	std::lock_guard lock(mutex);
-	free_list.push_back(slot.index);
+	free_list.push_back(slot.index - static_cast<std::uint32_t>(base_index));
 }
 
 auto gse::gpu::bindless_slot_pool::offset(const bindless_slot slot) const -> device_size {
-	return base_offset + slot.index * stride;
+	return base_offset + (slot.index - base_index) * stride;
 }
 
 gse::gpu::bindless_handle::bindless_handle(bindless_slot_pool* pool, const bindless_slot slot)

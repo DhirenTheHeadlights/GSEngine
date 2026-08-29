@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="26" y1="25" x2="230" y2="228" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#10151f"/>
+      <stop offset="1" stop-color="#05070a"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="42" y1="62" x2="211" y2="185" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6ef7ff"/>
+      <stop offset="0.5" stop-color="#f7fbff"/>
+      <stop offset="1" stop-color="#ffe36e"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#000000" flood-opacity="0.42"/>
+    </filter>
+  </defs>
+  <rect x="18" y="18" width="220" height="220" rx="38" fill="url(#bg)"/>
+  <g fill="url(#mark)" filter="url(#shadow)">
+    <rect x="47" y="68" width="55" height="16" rx="8"/>
+    <rect x="47" y="68" width="16" height="88" rx="8"/>
+    <rect x="47" y="140" width="55" height="16" rx="8"/>
+    <rect x="74" y="104" width="37" height="16" rx="8"/>
+    <rect x="95" y="104" width="16" height="52" rx="8"/>
+    <rect x="107" y="68" width="57" height="16" rx="8"/>
+    <rect x="107" y="68" width="16" height="44" rx="8"/>
+    <rect x="107" y="104" width="57" height="16" rx="8"/>
+    <rect x="148" y="104" width="16" height="52" rx="8"/>
+    <rect x="107" y="140" width="57" height="16" rx="8"/>
+    <rect x="170" y="68" width="48" height="16" rx="8"/>
+    <rect x="170" y="68" width="16" height="88" rx="8"/>
+    <rect x="170" y="104" width="43" height="16" rx="8"/>
+    <rect x="170" y="140" width="48" height="16" rx="8"/>
+  </g>
+  <path d="M47 184h171" stroke="#31435d" stroke-width="8" stroke-linecap="round"/>
+  <path d="M65 184h72" stroke="#6ef7ff" stroke-width="8" stroke-linecap="round"/>
+  <path d="M165 184h35" stroke="#ffe36e" stroke-width="8" stroke-linecap="round"/>
+</svg>

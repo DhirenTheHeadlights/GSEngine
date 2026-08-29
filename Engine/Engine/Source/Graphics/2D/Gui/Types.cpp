@@ -15,10 +15,53 @@ import gse.math;
 import gse.os;
 import gse.core;
 import gse.time;
+import gse.glfw;
 
 gse::gui::menu::menu(std::string_view tag, const menu_data& data)
 	: identifiable(tag), identifiable_owned(data.parent_id), rect(data.rect), dock_split_ratio(data.dock_split_ratio), docked_to(data.docked_to) {
 	tab_contents.emplace_back(tag);
+}
+
+auto gse::gui::dock::space::select(const vec2f point) -> location {
+	hot = location::none;
+	for (const area& a : areas) {
+		if (a.rect.width() > 0.f && a.rect.height() > 0.f && a.rect.contains(point)) {
+			hot = a.dock_location;
+			break;
+		}
+	}
+	return hot;
+}
+
+gse::gui::draw_context::draw_context(draw_context_init init, const input::state& input) : current_menu(init.current_menu), style(init.style), fonts(init.fonts), blank_texture(init.blank_texture), layout_cursor(init.layout_cursor), sprites(init.sprites), texts(init.texts), text_pool(init.text_pool), text_pool_used(init.text_pool_used), widget_anim_colors(init.widget_anim_colors), widget_scrolls(init.widget_scrolls), widget_tree_open(init.widget_tree_open), current_layer(init.current_layer), current_z_order(init.current_z_order), input_layer(init.input_layer), input_suppressed(init.input_suppressed), owns_keyboard(init.owns_keyboard), hit_regions(init.hit_regions), tooltip(init.tooltip), context_menu(init.context_menu), clip_stack(std::move(init.clip_stack)), m_input(input) {}
+
+auto gse::gui::font_set::named(const std::string_view name) const -> resource::handle<font> {
+	const auto it = registry.find(std::string(name));
+	if (it == registry.end()) {
+		return {};
+	}
+	return it->second;
+}
+
+auto gse::gui::font_set::face(const text_face which, const resource::handle<font> inherited) const -> resource::handle<font> {
+	auto pick = [](const resource::handle<font>& preferred, const resource::handle<font>& fallback) -> resource::handle<font> {
+		return preferred.valid() ? preferred : fallback;
+	};
+
+	switch (which) {
+		case text_face::text:
+			return pick(text, inherited);
+		case text_face::text_strong:
+			return pick(text_strong, pick(text, inherited));
+		case text_face::text_emphasis:
+			return pick(text_emphasis, pick(text, inherited));
+		case text_face::code:
+			return pick(code, inherited);
+		case text_face::code_strong:
+			return pick(code_strong, pick(code, inherited));
+		default:
+			return inherited;
+	}
 }
 
 auto gse::gui::draw_context::queue_sprite(renderer::sprite_command cmd) const -> void {
@@ -29,13 +72,24 @@ auto gse::gui::draw_context::queue_sprite(renderer::sprite_command cmd) const ->
 		cmd.z_order = current_z_order;
 	}
 	if (!clip_stack.empty() && static_cast<std::uint8_t>(cmd.layer) <= static_cast<std::uint8_t>(render_layer::popup)) {
-		const ui_rect& clip = clip_stack.back();
+		const rectf& clip = clip_stack.back();
 		cmd.clip_rect = cmd.clip_rect.has_value() ? cmd.clip_rect->intersection(clip) : clip;
 	}
 	sprites.push_back(std::move(cmd));
 }
 
+auto gse::gui::draw_context::intern(const std::string_view text) const -> std::string_view {
+	if (text_pool_used == text_pool.size()) {
+		text_pool.emplace_back();
+	}
+	std::string& slot = text_pool[text_pool_used++];
+	slot.assign(text);
+	return slot;
+}
+
 auto gse::gui::draw_context::queue_text(renderer::text_command cmd) const -> void {
+	cmd.text = intern(cmd.text);
+
 	if (static_cast<std::uint8_t>(cmd.layer) < static_cast<std::uint8_t>(current_layer)) {
 		cmd.layer = current_layer;
 	}
@@ -43,30 +97,53 @@ auto gse::gui::draw_context::queue_text(renderer::text_command cmd) const -> voi
 		cmd.z_order = current_z_order;
 	}
 	if (!clip_stack.empty() && static_cast<std::uint8_t>(cmd.layer) <= static_cast<std::uint8_t>(render_layer::popup)) {
-		const ui_rect& clip = clip_stack.back();
+		const rectf& clip = clip_stack.back();
 		cmd.clip_rect = cmd.clip_rect.has_value() ? cmd.clip_rect->intersection(clip) : clip;
 	}
 	texts.push_back(std::move(cmd));
 }
 
-auto gse::gui::draw_context::current_clip() const -> std::optional<ui_rect> {
+auto gse::gui::draw_context::set_clipboard(const std::string& text) const -> void {
+	window::set_clipboard_text(text);
+}
+
+auto gse::gui::draw_context::clipboard() const -> std::string {
+	return window::clipboard_text();
+}
+
+auto gse::gui::draw_context::open_context_menu(context_menu_open request) const -> void {
+	if (!context_menu) {
+		return;
+	}
+	context_menu->open = true;
+	context_menu->just_opened = true;
+	context_menu->position = request.position;
+	context_menu->items = std::move(request.items);
+	context_menu->target = request.target;
+	context_menu->tag = request.tag;
+}
+
+auto gse::gui::draw_context::current_clip() const -> std::optional<rectf> {
 	if (clip_stack.empty()) {
 		return std::nullopt;
 	}
 	return clip_stack.back();
 }
 
-auto gse::gui::draw_context::register_hit_region(const render_layer layer, const ui_rect& rect) const -> void {
+auto gse::gui::draw_context::register_hit_region(const render_layer layer, const rectf& rect) const -> void {
 	if (hit_regions) {
 		hit_regions->register_hit_region(layer, current_z_order, rect);
 	}
 }
 
 auto gse::gui::draw_context::input_available() const -> bool {
-	return input_available_at(input.mouse_position());
+	return input_available_at(m_input.mouse_position());
 }
 
 auto gse::gui::draw_context::input_available_at(const vec2f position) const -> bool {
+	if (input_suppressed) {
+		return false;
+	}
 	if (static_cast<std::uint8_t>(current_layer) < static_cast<std::uint8_t>(input_layer)) {
 		return false;
 	}
@@ -76,11 +153,26 @@ auto gse::gui::draw_context::input_available_at(const vec2f position) const -> b
 	return hit_regions->input_available_at(current_layer, current_z_order, position);
 }
 
-auto gse::gui::draw_context::mouse_pressed_for(const ui_rect& rect, const mouse_button button) const -> bool {
+auto gse::gui::draw_context::hovers(const rectf& rect) const -> bool {
+	const input::state& input = m_input;
+	if (!rect.contains(input.mouse_position())) {
+		return false;
+	}
+	if (const std::optional<rectf> clip = current_clip(); clip && !clip->contains(input.mouse_position())) {
+		return false;
+	}
+	return input_available();
+}
+
+auto gse::gui::draw_context::mouse_pressed_for(const rectf& rect, const mouse_button button) const -> bool {
+	const input::state& input = m_input;
 	if (!input.mouse_button_pressed(button)) {
 		return false;
 	}
 	if (!rect.contains(input.mouse_position())) {
+		return false;
+	}
+	if (const std::optional<rectf> clip = current_clip(); clip && !clip->contains(input.mouse_position())) {
 		return false;
 	}
 	if (!input_available()) {
@@ -95,11 +187,15 @@ auto gse::gui::draw_context::mouse_pressed_for(const ui_rect& rect, const mouse_
 	return true;
 }
 
-auto gse::gui::draw_context::mouse_released_for(const ui_rect& rect, const mouse_button button) const -> bool {
+auto gse::gui::draw_context::mouse_released_for(const rectf& rect, const mouse_button button) const -> bool {
+	const input::state& input = m_input;
 	if (!input.mouse_button_released(button)) {
 		return false;
 	}
 	if (!rect.contains(input.mouse_position())) {
+		return false;
+	}
+	if (const std::optional<rectf> clip = current_clip(); clip && !clip->contains(input.mouse_position())) {
 		return false;
 	}
 	if (!input_available()) {
@@ -112,6 +208,39 @@ auto gse::gui::draw_context::mouse_released_for(const ui_rect& rect, const mouse
 		hit_regions->consume_release(button);
 	}
 	return true;
+}
+
+auto gse::gui::draw_context::mouse_released(const mouse_button button) const -> bool {
+	return m_input.mouse_button_released(button);
+}
+
+auto gse::gui::draw_context::mouse_pressed(const mouse_button button) const -> bool {
+	return m_input.mouse_button_pressed(button);
+}
+
+auto gse::gui::draw_context::mouse_held(const mouse_button button) const -> bool {
+	return m_input.mouse_button_held(button);
+}
+
+auto gse::gui::draw_context::mouse_position() const -> vec2f {
+	return m_input.mouse_position();
+}
+
+auto gse::gui::draw_context::scroll_delta() const -> vec2f {
+	return m_input.scroll_delta();
+}
+
+auto gse::gui::draw_context::key_pressed(const key k) const -> bool {
+	return owns_keyboard && m_input.key_pressed(k);
+}
+
+auto gse::gui::draw_context::key_held(const key k) const -> bool {
+	return owns_keyboard && m_input.key_held(k);
+}
+
+auto gse::gui::draw_context::text_entered() const -> const std::string& {
+	static const std::string none;
+	return owns_keyboard ? m_input.text_entered() : none;
 }
 
 auto gse::gui::draw_context::consume_press(const mouse_button button) const -> void {
@@ -130,7 +259,8 @@ auto gse::gui::draw_context::is_press_consumed(const mouse_button button) const 
 	return hit_regions && hit_regions->is_press_consumed(button);
 }
 
-auto gse::gui::draw_context::scroll_delta_for(const ui_rect& rect) const -> vec2f {
+auto gse::gui::draw_context::scroll_delta_for(const rectf& rect) const -> vec2f {
+	const input::state& input = m_input;
 	if (!rect.contains(input.mouse_position())) {
 		return {};
 	}
@@ -161,7 +291,8 @@ auto gse::gui::draw_context::is_scroll_consumed() const -> bool {
 }
 
 auto gse::gui::draw_context::key_pressed_for(const key k) const -> bool {
-	if (!input.key_pressed(k)) {
+	const input::state& input = m_input;
+	if (!owns_keyboard || !input.key_pressed(k)) {
 		return false;
 	}
 	if (hit_regions && hit_regions->is_key_press_consumed(k)) {
@@ -188,20 +319,20 @@ auto gse::gui::draw_context::set_tooltip(const id& widget_id, const std::string_
 	if (tooltip->text != text) {
 		tooltip->text.assign(text);
 	}
-	tooltip->position = input.mouse_position();
+	tooltip->position = m_input.mouse_position();
 }
 
-auto gse::gui::draw_context::next_row(const float height_multiplier) const -> ui_rect {
+auto gse::gui::draw_context::next_row(const resource::handle<font>& font, const float height_multiplier) const -> rectf {
 	if (!current_menu) {
 		return {};
 	}
 
 	const float row_height =
-		(font->line_height(style.font_size) + style.padding * style.widget_height_padding) * height_multiplier;
-	const ui_rect content_rect = current_menu->rect.inset({ style.padding, style.padding });
+		(font.resolve()->line_height(style.font_size) + style.padding * style.widget_height_padding) * height_multiplier;
+	const rectf content_rect = current_menu->rect.inset({ style.padding, style.padding });
 
-	const ui_rect row =
-		ui_rect::from_position_size(
+	const rectf row =
+		rectf::from_position_size(
 			{ content_rect.left(), layout_cursor.y() },
 			{ content_rect.width(), row_height }
 		);
@@ -224,12 +355,12 @@ auto gse::gui::draw_context::animated_color(const id& widget_id, const vec4f tar
 	return it->second;
 }
 
-gse::gui::scroll_handle::scroll_handle(draw_context& ctx, scroll_state& state, const ui_rect& visible_rect, const float saved_layout_y, const scroll_config& config) noexcept
-	: m_ctx(&ctx), m_state(&state), m_visible_rect(visible_rect), m_saved_menu_rect(ctx.current_menu ? ctx.current_menu->rect : ui_rect{}), m_saved_layout_y(saved_layout_y), m_content_start_y(visible_rect.top() + state.offset), m_config(config), m_active(true) {
+gse::gui::scroll_handle::scroll_handle(draw_context& ctx, scroll_state& state, const rectf& visible_rect, const float saved_layout_y, const scroll_config& config) noexcept
+	: m_ctx(&ctx), m_state(&state), m_visible_rect(visible_rect), m_saved_menu_rect(ctx.current_menu ? ctx.current_menu->rect : rectf{}), m_saved_layout_y(saved_layout_y), m_content_start_y(visible_rect.top() + state.y.offset), m_config(config), m_active(true) {
 	ctx.layout_cursor.y() = m_content_start_y;
 	ctx.clip_stack.push_back(visible_rect);
 	if (ctx.current_menu) {
-		const ui_rect shrunk = ui_rect({
+		const rectf shrunk = rectf({
 			.min = ctx.current_menu->rect.min(),
 			.max = { ctx.current_menu->rect.max().x() - config.scrollbar_width, ctx.current_menu->rect.max().y() }
 		});
@@ -238,7 +369,7 @@ gse::gui::scroll_handle::scroll_handle(draw_context& ctx, scroll_state& state, c
 }
 
 gse::gui::scroll_handle::scroll_handle(scroll_handle&& other) noexcept
-	: m_ctx(other.m_ctx), m_state(other.m_state), m_visible_rect(other.m_visible_rect), m_saved_menu_rect(other.m_saved_menu_rect), m_saved_layout_y(other.m_saved_layout_y), m_content_start_y(other.m_content_start_y), m_config(other.m_config), m_active(other.m_active) {
+	: m_ctx(other.m_ctx), m_state(other.m_state), m_visible_rect(other.m_visible_rect), m_saved_menu_rect(other.m_saved_menu_rect), m_saved_layout_y(other.m_saved_layout_y), m_content_start_y(other.m_content_start_y), m_content_width(other.m_content_width), m_config(other.m_config), m_active(other.m_active) {
 	other.m_active = false;
 }
 
@@ -247,7 +378,7 @@ auto gse::gui::scroll_handle::operator=(scroll_handle&& other) noexcept -> scrol
 		return *this;
 	}
 	if (m_active) {
-		run_scroll_end(*m_ctx, *m_state, m_visible_rect, m_content_start_y, m_config);
+		run_scroll_end(*m_ctx, *m_state, m_visible_rect, m_content_start_y, m_content_width, m_config);
 		m_ctx->clip_stack.pop_back();
 		if (m_ctx->current_menu) {
 			m_ctx->current_menu->rect = m_saved_menu_rect;
@@ -260,6 +391,7 @@ auto gse::gui::scroll_handle::operator=(scroll_handle&& other) noexcept -> scrol
 	m_saved_menu_rect = other.m_saved_menu_rect;
 	m_saved_layout_y = other.m_saved_layout_y;
 	m_content_start_y = other.m_content_start_y;
+	m_content_width = other.m_content_width;
 	m_config = other.m_config;
 	m_active = other.m_active;
 	other.m_active = false;
@@ -270,7 +402,7 @@ gse::gui::scroll_handle::~scroll_handle() noexcept {
 	if (!m_active) {
 		return;
 	}
-	run_scroll_end(*m_ctx, *m_state, m_visible_rect, m_content_start_y, m_config);
+	run_scroll_end(*m_ctx, *m_state, m_visible_rect, m_content_start_y, m_content_width, m_config);
 	m_ctx->clip_stack.pop_back();
 	if (m_ctx->current_menu) {
 		m_ctx->current_menu->rect = m_saved_menu_rect;
@@ -282,10 +414,52 @@ auto gse::gui::scroll_handle::valid() const -> bool {
 	return m_active;
 }
 
-auto gse::gui::scroll_handle::visible_rect() const -> const ui_rect& {
+auto gse::gui::scroll_handle::visible_rect() const -> const rectf& {
 	return m_visible_rect;
 }
 
 auto gse::gui::scroll_handle::offset() const -> float {
-	return m_state ? m_state->offset : 0.f;
+	return m_state ? m_state->y.offset : 0.f;
+}
+
+auto gse::gui::scroll_handle::offset_x() const -> float {
+	return m_state ? m_state->x.offset : 0.f;
+}
+
+auto gse::gui::scroll_handle::set_content_width(const float width) -> void {
+	m_content_width = width;
+}
+
+auto gse::gui::draw_context::scoped_layer(const render_layer layer) const -> layer_scope {
+	return layer_scope{ *this, layer };
+}
+
+gse::gui::layer_scope::layer_scope(const draw_context& ctx, const render_layer layer) noexcept
+	: m_ctx(&ctx), m_saved(ctx.current_layer), m_active(true) {
+	ctx.current_layer = layer;
+}
+
+gse::gui::layer_scope::layer_scope(layer_scope&& other) noexcept
+	: m_ctx(other.m_ctx), m_saved(other.m_saved), m_active(other.m_active) {
+	other.m_active = false;
+}
+
+auto gse::gui::layer_scope::operator=(layer_scope&& other) noexcept -> layer_scope& {
+	if (this == &other) {
+		return *this;
+	}
+	if (m_active && m_ctx) {
+		m_ctx->current_layer = m_saved;
+	}
+	m_ctx = other.m_ctx;
+	m_saved = other.m_saved;
+	m_active = other.m_active;
+	other.m_active = false;
+	return *this;
+}
+
+gse::gui::layer_scope::~layer_scope() noexcept {
+	if (m_active && m_ctx) {
+		m_ctx->current_layer = m_saved;
+	}
 }

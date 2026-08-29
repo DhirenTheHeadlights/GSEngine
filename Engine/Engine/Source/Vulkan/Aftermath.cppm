@@ -45,7 +45,7 @@ export namespace gse::vulkan {
 		) -> void*;
 
 		auto wait_for_crash_dump(
-			time timeout = seconds(5)
+			time timeout = seconds(5.f)
 		) -> void;
 
 		static auto register_spirv(
@@ -75,6 +75,7 @@ namespace gse::vulkan {
 	};
 
 	inline dump_writer dumps;
+	inline std::mutex shader_registry_mutex;
 
 	auto default_dump_directory() -> std::filesystem::path;
 
@@ -104,11 +105,11 @@ namespace gse::vulkan {
 }
 
 auto gse::vulkan::default_dump_directory() -> std::filesystem::path {
-	return config::resource_path / "Misc" / "crash_dumps";
+	return config::crash_dir();
 }
 
 auto gse::vulkan::default_shader_directory() -> std::filesystem::path {
-	return config::resource_path / "Misc" / "aftermath_shaders";
+	return config::crash_dir() / "shaders";
 }
 
 auto gse::vulkan::write_dump_to_disk(const std::filesystem::path& directory, const std::string& stem, std::string_view extension, const void* data, std::size_t size) -> std::filesystem::path {
@@ -149,8 +150,93 @@ auto gse::vulkan::on_gpu_crash_dump(const void* data, std::uint32_t size) -> voi
 		log::level::error,
 		log::category::vulkan,
 		"Aftermath crash dump written: {}",
-		path.string()
+		path.generic_display_string()
 	);
+
+	const auto analysis = gse::aftermath::analyze_crash_dump(data, size);
+	if (!analysis.decoded) {
+		log::println(log::level::error, log::category::vulkan, "Aftermath: crash dump decode unavailable");
+		return;
+	}
+
+	const auto access_name = [](const std::uint32_t a) -> std::string_view {
+		switch (a) {
+			case 1: return "read";
+			case 2: return "write";
+			case 3: return "atomic";
+			default: return "unknown";
+		}
+	};
+	const auto fault_name = [](const std::uint32_t f) -> std::string_view {
+		switch (f) {
+			case 1: return "address_translation";
+			case 2: return "illegal_access";
+			default: return "unknown";
+		}
+	};
+	const auto shader_name = [](const std::uint32_t t) -> std::string_view {
+		switch (t) {
+			case 1: return "vertex";
+			case 4: return "geometry";
+			case 5: return "fragment";
+			case 6: return "compute";
+			case 7: return "rt_raygen";
+			case 8: return "rt_miss";
+			case 9: return "rt_intersection";
+			case 10: return "rt_anyhit";
+			case 11: return "rt_closesthit";
+			case 12: return "rt_callable";
+			case 13: return "rt_internal";
+			case 14: return "mesh";
+			case 15: return "task";
+			default: return "other";
+		}
+	};
+
+	if (analysis.has_page_fault && (analysis.faulting_va != 0 || analysis.resource_count != 0)) {
+		log::println(
+			log::level::error,
+			log::category::vulkan,
+			"Aftermath PAGE FAULT: gpu_va=0x{:x} fault={} access={} resources={}",
+			analysis.faulting_va,
+			fault_name(analysis.fault_type),
+			access_name(analysis.access_type),
+			analysis.resource_count
+		);
+		for (std::uint32_t i = 0; i < analysis.resource_count; ++i) {
+			const auto& r = analysis.resources[i];
+			log::println(
+				log::level::error,
+				log::category::vulkan,
+				"  resource[{}]: va=0x{:x} size={} api_handle=0x{:x} destroyed={} name='{}'",
+				i,
+				r.gpu_va,
+				r.size,
+				r.api_handle,
+				r.was_destroyed != 0,
+				std::string_view(r.debug_name)
+			);
+		}
+	}
+	else {
+		log::println(
+			log::level::error,
+			log::category::vulkan,
+			"Aftermath: no page-fault record (GPU hang/timeout, not a memory fault)"
+		);
+	}
+
+	for (std::uint32_t i = 0; i < analysis.shader_count; ++i) {
+		const auto& s = analysis.shaders[i];
+		log::println(
+			log::level::error,
+			log::category::vulkan,
+			"  active shader[{}]: type={} hash=0x{:x}",
+			i,
+			shader_name(s.type),
+			s.hash
+		);
+	}
 }
 
 auto gse::vulkan::on_shader_debug_info(const void* data, std::uint32_t size) -> void {
@@ -210,8 +296,8 @@ auto gse::vulkan::aftermath::create(settings cfg) -> aftermath {
 		log::println(
 			log::category::vulkan,
 			"Nsight Aftermath crash dumps enabled (dumps -> {}, shaders -> {})",
-			dumps.dump_directory.string(),
-			dumps.shader_directory.string()
+			dumps.dump_directory.generic_display_string(),
+			dumps.shader_directory.generic_display_string()
 		);
 	}
 	else if (gse::aftermath::compiled_in) {
@@ -270,10 +356,13 @@ auto gse::vulkan::aftermath::register_spirv(std::span<const std::uint32_t> spirv
 		return;
 	}
 
+	const auto aftermath_hash = gse::aftermath::shader_hash_spirv(spirv);
 	const auto bytes = std::as_bytes(spirv);
-	const std::string_view bytes_view(reinterpret_cast<const char*>(bytes.data()), bytes.size());
-	const auto hash = std::hash<std::string_view>{}(bytes_view);
-	const auto filename = std::format("{:016x}.spv", hash);
+	const auto filename = aftermath_hash.has_value()
+		? std::format("{:016X}.spv", *aftermath_hash)
+		: std::format("{:016x}.spv", std::hash<std::string_view>{}(std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size())));
+
+	const std::lock_guard lock(shader_registry_mutex);
 
 	std::error_code ec;
 	std::filesystem::create_directories(dumps.shader_directory, ec);
@@ -286,4 +375,11 @@ auto gse::vulkan::aftermath::register_spirv(std::span<const std::uint32_t> spirv
 	if (out) {
 		out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
 	}
+
+	log::println(
+		log::category::vulkan,
+		"Aftermath shader registered: {} ({} bytes)",
+		filename,
+		bytes.size()
+	);
 }

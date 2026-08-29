@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="27" y1="23" x2="229" y2="229" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0e151d"/>
+      <stop offset="1" stop-color="#050609"/>
+    </linearGradient>
+    <linearGradient id="underline" x1="50" y1="196" x2="206" y2="196" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff6d9e"/>
+      <stop offset="0.42" stop-color="#6ef7ff"/>
+      <stop offset="1" stop-color="#ffe36e"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="12" stdDeviation="11" flood-color="#000000" flood-opacity="0.42"/>
+    </filter>
+  </defs>
+  <rect x="18" y="18" width="220" height="220" rx="40" fill="url(#bg)"/>
+  <g fill="#f3f8ff" filter="url(#shadow)">
+    <rect x="50" y="72" width="53" height="17" rx="8"/>
+    <rect x="50" y="72" width="17" height="102" rx="8"/>
+    <rect x="50" y="157" width="53" height="17" rx="8"/>
+    <rect x="78" y="115" width="31" height="17" rx="8"/>
+    <rect x="92" y="115" width="17" height="59" rx="8"/>
+    <rect x="119" y="72" width="53" height="17" rx="8"/>
+    <rect x="119" y="72" width="17" height="60" rx="8"/>
+    <rect x="119" y="115" width="53" height="17" rx="8"/>
+    <rect x="155" y="115" width="17" height="59" rx="8"/>
+    <rect x="119" y="157" width="53" height="17" rx="8"/>
+    <rect x="188" y="72" width="17" height="102" rx="8"/>
+    <rect x="188" y="72" width="46" height="17" rx="8"/>
+    <rect x="188" y="115" width="37" height="17" rx="8"/>
+    <rect x="188" y="157" width="46" height="17" rx="8"/>
+  </g>
+  <rect x="50" y="193" width="156" height="9" rx="4" fill="url(#underline)"/>
+  <rect x="50" y="54" width="72" height="7" rx="3" fill="#6ef7ff"/>
+  <rect x="176" y="54" width="30" height="7" rx="3" fill="#ffe36e"/>
+</svg>

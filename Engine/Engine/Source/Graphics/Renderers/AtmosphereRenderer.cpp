@@ -9,6 +9,7 @@ import :render_targets;
 
 
 import gse.gpu;
+import gse.gpu_record;
 import gse.core;
 import gse.containers;
 import gse.concurrency;
@@ -28,8 +29,10 @@ namespace gse::renderer::atmosphere {
 
 	struct [[
 		= shaders::binding<0, 0>{},
-		= shaders::sampler2d
-	]] transmittance_in {};
+		= shaders::texture2d
+	]] transmittance_in {
+		using element = vec4f;
+	};
 
 	struct [[
 		= shaders::binding<0, 1>{},
@@ -40,8 +43,10 @@ namespace gse::renderer::atmosphere {
 
 	struct [[
 		= shaders::binding<0, 1>{},
-		= shaders::sampler2d
-	]] multiscatter_in {};
+		= shaders::texture2d
+	]] multiscatter_in {
+		using element = vec4f;
+	};
 
 	struct [[
 		= shaders::binding<0, 2>{},
@@ -52,8 +57,20 @@ namespace gse::renderer::atmosphere {
 
 	struct [[
 		= shaders::binding<0, 1>{},
-		= shaders::sampler2d
-	]] sky_view_in {};
+		= shaders::texture2d
+	]] sky_view_in {
+		using element = vec4f;
+	};
+
+	struct [[
+		= shaders::binding<0, 3>{},
+		= shaders::sampler_state
+	]] lut_sampler {};
+
+	struct [[
+		= shaders::binding<0, 2>{},
+		= shaders::sampler_state
+	]] sky_view_sampler {};
 
 	struct [[
 		= shaders::binding<0, 2>{},
@@ -80,14 +97,13 @@ namespace gse::renderer::atmosphere {
 		vec3f sun_direction;
 		atmosphere_length camera_altitude;
 		vec3<irradiance> sun_irradiance;
-		float _pad;
 	};
 
 	using transmittance_bindings = type_pack<atmosphere_ubo, transmittance_out>;
-	using multiscatter_bindings = type_pack<atmosphere_ubo, transmittance_in, multiscatter_out>;
-	using sky_view_bindings = type_pack<atmosphere_ubo, transmittance_in, multiscatter_in, sky_view_out>;
-	using sky_raster_bindings = type_pack<atmosphere_ubo, transmittance_in, sky_view_in>;
-	using ap_bindings = type_pack<atmosphere_ubo, transmittance_in, multiscatter_in, ap_volume_out>;
+	using multiscatter_bindings = type_pack<atmosphere_ubo, transmittance_in, lut_sampler, multiscatter_out>;
+	using sky_view_bindings = type_pack<atmosphere_ubo, transmittance_in, multiscatter_in, lut_sampler, sky_view_out>;
+	using sky_raster_bindings = type_pack<atmosphere_ubo, transmittance_in, sky_view_in, lut_sampler, sky_view_sampler>;
+	using ap_bindings = type_pack<atmosphere_ubo, transmittance_in, multiscatter_in, lut_sampler, ap_volume_out>;
 
 	using transmittance_entry = gpu::compute_entry<
 		gpu::body_path<"Compute/atmosphere_transmittance">,
@@ -191,7 +207,7 @@ auto gse::renderer::atmosphere::recreate_ap_volume(const shared_view<gpu::contex
 			.depth = d.ap_volume_extent.z(),
 			.format = gpu::image_format::r16g16b16a16_sfloat,
 			.view = gpu::image_view_type::e3d,
-			.usage = gpu::image_flag::storage | gpu::image_flag::sampled,
+			.usage = { gpu::image_flag::storage, gpu::image_flag::sampled },
 			.bindless = true,
 		},
 		"atmosphere_ap_volume"
@@ -200,10 +216,10 @@ auto gse::renderer::atmosphere::recreate_ap_volume(const shared_view<gpu::contex
 }
 
 auto gse::renderer::atmosphere::compute_sun_direction(const data& d) -> vec3f {
-	const float ce = gse::cos(d.sun_elevation);
-	const float se = gse::sin(d.sun_elevation);
-	const float ca = gse::cos(d.sun_azimuth);
-	const float sa = gse::sin(d.sun_azimuth);
+	const float ce = cos(d.sun_elevation);
+	const float se = sin(d.sun_elevation);
+	const float ca = cos(d.sun_azimuth);
+	const float sa = sin(d.sun_azimuth);
 	return normalize(vec3f{ ce * ca, se, ce * sa });
 }
 
@@ -221,12 +237,21 @@ auto gse::renderer::atmosphere::build_atmosphere_data(const data& d) -> atmosphe
 		.ozone_peak_height = d.ozone_peak_height,
 		.ozone_half_width = d.ozone_half_width,
 		.max_view_distance = d.max_view_distance,
+		.ground_albedo = d.ground_albedo,
+		.sun_irradiance = {
+			d.sun_intensity * d.sun_color.x(),
+			d.sun_intensity * d.sun_color.y(),
+			d.sun_intensity * d.sun_color.z(),
+		},
+		.star_intensity = d.star_intensity,
+		.star_density = d.star_density,
+		.star_fade = d.star_fade,
 	};
 }
 
 auto gse::renderer::atmosphere::init(context& ctx, const shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
 	d.transmittance_pipeline = gpu::build_compute_program(*gpu_s.device,
-														  transmittance_entry::pod);
+		transmittance_entry::pod);
 	d.multiscatter_pipeline = gpu::build_compute_program(*gpu_s.device, multiscatter_entry::pod);
 	d.sky_view_pipeline = gpu::build_compute_program(*gpu_s.device, sky_view_entry::pod);
 	d.sky_raster_pipeline = gpu::build_graphics_program(*gpu_s.device, sky_raster_entry::pod);
@@ -236,7 +261,7 @@ auto gse::renderer::atmosphere::init(context& ctx, const shared_view<gpu::contex
 		{
 			.size = transmittance_lut_size,
 			.format = gpu::image_format::r16g16b16a16_sfloat,
-			.usage = gpu::image_flag::storage | gpu::image_flag::sampled,
+			.usage = { gpu::image_flag::storage, gpu::image_flag::sampled },
 			.bindless = true,
 		},
 		"atmosphere_transmittance_lut"
@@ -245,7 +270,7 @@ auto gse::renderer::atmosphere::init(context& ctx, const shared_view<gpu::contex
 		{
 			.size = multiscatter_lut_size,
 			.format = gpu::image_format::r16g16b16a16_sfloat,
-			.usage = gpu::image_flag::storage | gpu::image_flag::sampled,
+			.usage = { gpu::image_flag::storage, gpu::image_flag::sampled },
 			.bindless = true,
 		},
 		"atmosphere_multiscatter_lut"
@@ -254,7 +279,7 @@ auto gse::renderer::atmosphere::init(context& ctx, const shared_view<gpu::contex
 		{
 			.size = sky_view_lut_size,
 			.format = gpu::image_format::r16g16b16a16_sfloat,
-			.usage = gpu::image_flag::storage | gpu::image_flag::sampled,
+			.usage = { gpu::image_flag::storage, gpu::image_flag::sampled },
 			.bindless = true,
 		},
 		"atmosphere_sky_view_lut"
@@ -271,7 +296,8 @@ auto gse::renderer::atmosphere::init(context& ctx, const shared_view<gpu::contex
 	d.atmosphere_ubo_buffer = gpu_s.device->create_buffer(
 		{
 			.size = sizeof(atmosphere_data),
-			.usage = gpu::buffer_flag::uniform,
+			.stride = sizeof(atmosphere_data),
+			.usage = gpu::buffer_flag::storage,
 			.bindless = true,
 		},
 		"atmosphere_ubo"
@@ -294,7 +320,12 @@ auto gse::renderer::atmosphere::init(context& ctx, const shared_view<gpu::contex
 	return {};
 }
 
-auto gse::renderer::atmosphere::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, shared_view<camera::data> cam_state) -> async::task<> {
+auto gse::renderer::atmosphere::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<sun_request> sun_in, shared_view<camera::data> cam_state) -> async::task<> {
+	for (const auto& [elevation, azimuth] : sun_in.of<sun_request>()) {
+		d.sun_elevation = elevation;
+		d.sun_azimuth = azimuth;
+	}
+
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -311,6 +342,10 @@ auto gse::renderer::atmosphere::frame(const context& ctx, shared_view<gpu::conte
 	const atmosphere_data shader_payload = build_atmosphere_data(d);
 	d.atmosphere_ubo_buffer.host_write(shader_payload);
 
+	if (!d.enabled) {
+		co_return;
+	}
+
 	if (!d.luts_ready) {
 		const auto transmittance_groups = vec2u{
 			(transmittance_lut_size.x() + 7) / 8,
@@ -321,7 +356,7 @@ auto gse::renderer::atmosphere::frame(const context& ctx, shared_view<gpu::conte
 			(multiscatter_lut_size.y() + 7) / 8,
 		};
 
-		auto rec = co_await gpu::pass<^^transmittance_pass>(ctx).pipeline(d.transmittance_pipeline);
+		auto rec = co_await gpu::pass<^^transmittance_pass>(pass_out).pipeline(d.transmittance_pipeline);
 		rec.dispatch<transmittance_entry>(
 			{
 				.transmittance_out = d.transmittance_lut.storage_slot(),
@@ -330,11 +365,12 @@ auto gse::renderer::atmosphere::frame(const context& ctx, shared_view<gpu::conte
 			vec3u{ transmittance_groups.x(), transmittance_groups.y(), 1 }
 		);
 
-		rec = co_await gpu::pass<^^multiscatter_pass>(ctx).pipeline(d.multiscatter_pipeline).after<^^transmittance_pass>();
+		rec = co_await gpu::pass<^^multiscatter_pass>(pass_out).pipeline(d.multiscatter_pipeline).after<^^transmittance_pass>();
 		rec.dispatch<multiscatter_entry>(
 			{
-				.transmittance_in = { d.transmittance_lut.sampled_slot(), d.lut_sampler_bindless.slot() },
+				.transmittance_in = d.transmittance_lut.sampled_slot(),
 				.multiscatter_out = d.multiscatter_lut.storage_slot(),
+				.lut_sampler = d.lut_sampler_bindless.slot(),
 				.atmosphere_ubo = d.atmosphere_ubo_buffer.slot(),
 			},
 			vec3u{ multiscatter_groups.x(), multiscatter_groups.y(), 1 }
@@ -356,54 +392,43 @@ auto gse::renderer::atmosphere::frame(const context& ctx, shared_view<gpu::conte
 		(d.ap_volume_extent.y() + 7) / 8,
 		d.ap_volume_extent.z(),
 	};
-	const float sun_cos_radius = gse::cos(d.sun_angular_radius);
+	const float sun_cos_radius = cos(d.sun_angular_radius);
 
-	auto rec = co_await gpu::pass<^^sky_view_pass>(ctx).pipeline(d.sky_view_pipeline).after<^^multiscatter_pass>();
+	auto rec = co_await gpu::pass<^^sky_view_pass>(pass_out).pipeline(d.sky_view_pipeline).after<^^multiscatter_pass>();
 	rec.dispatch<sky_view_entry>(
 		{
 			.sun_direction = d.sun_direction,
 			.camera_altitude = d.camera_altitude,
 		},
 		{
-			.transmittance_in = {
-				.image = d.transmittance_lut.sampled_slot(),
-				.sampler = d.lut_sampler_bindless.slot()
-			},
-			.multiscatter_in = {
-				.image = d.multiscatter_lut.sampled_slot(),
-				.sampler = d.lut_sampler_bindless.slot()
-			},
+			.transmittance_in = d.transmittance_lut.sampled_slot(),
+			.multiscatter_in = d.multiscatter_lut.sampled_slot(),
 			.sky_view_out = d.sky_view_lut.storage_slot(),
+			.lut_sampler = d.lut_sampler_bindless.slot(),
 			.atmosphere_ubo = d.atmosphere_ubo_buffer.slot(),
 		},
 		vec3u{ sky_view_groups.x(), sky_view_groups.y(), 1 }
 	);
 
-	rec = co_await gpu::pass<^^ap_compute_pass>(ctx).pipeline(d.ap_pipeline).after<^^multiscatter_pass>();
+	rec = co_await gpu::pass<^^ap_compute_pass>(pass_out).pipeline(d.ap_pipeline).after<^^multiscatter_pass>();
 	rec.dispatch<ap_entry>(
 		{
 			.inv_view_proj = inv_view_proj,
 			.sun_direction = d.sun_direction,
 			.camera_altitude = d.camera_altitude,
 			.sun_irradiance = sun_irradiance,
-			._pad = 0.0f,
 		},
 		{
-			.transmittance_in = {
-				.image = d.transmittance_lut.sampled_slot(),
-				.sampler = d.lut_sampler_bindless.slot()
-			},
-			.multiscatter_in = {
-				.image = d.multiscatter_lut.sampled_slot(),
-				.sampler = d.lut_sampler_bindless.slot()
-			},
+			.transmittance_in = d.transmittance_lut.sampled_slot(),
+			.multiscatter_in = d.multiscatter_lut.sampled_slot(),
 			.ap_volume_out = d.ap_volume.storage_slot(),
+			.lut_sampler = d.lut_sampler_bindless.slot(),
 			.atmosphere_ubo = d.atmosphere_ubo_buffer.slot(),
 		},
 		ap_groups
 	);
 
-	rec = co_await gpu::pass<^^sky_raster_pass>(ctx)
+	rec = co_await gpu::pass<^^sky_raster_pass>(pass_out)
 		.pipeline(d.sky_raster_pipeline)
 		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
 		.depth(gpu::load_depth())
@@ -419,14 +444,10 @@ auto gse::renderer::atmosphere::frame(const context& ctx, shared_view<gpu::conte
 			.sun_cos_radius = sun_cos_radius,
 		},
 		{
-			.transmittance_in = {
-				.image = d.transmittance_lut.sampled_slot(),
-				.sampler = d.lut_sampler_bindless.slot()
-			},
-			.sky_view_in = {
-				.image = d.sky_view_lut.sampled_slot(),
-				.sampler = d.sky_view_sampler_bindless.slot()
-			},
+			.transmittance_in = d.transmittance_lut.sampled_slot(),
+			.sky_view_in = d.sky_view_lut.sampled_slot(),
+			.sky_view_sampler = d.sky_view_sampler_bindless.slot(),
+			.lut_sampler = d.lut_sampler_bindless.slot(),
 			.atmosphere_ubo = d.atmosphere_ubo_buffer.slot(),
 		}
 	);

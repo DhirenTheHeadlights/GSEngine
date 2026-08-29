@@ -6,15 +6,14 @@ import :buffer;
 import :gpu_task;
 import :sync_token;
 import :device;
+import :pass_recorder;
 
-import gse.vulkan;
-
-auto gse::gpu::upload_to_buffers(gpu::device& dev, const std::span<const buffer_upload> uploads) -> sync_token {
+auto gse::gpu::upload_to_buffers(device& dev, const std::span<const buffer_upload> uploads) -> sync_token {
 	if (uploads.empty()) {
 		return {};
 	}
 
-	std::vector<gpu::buffer> stagings;
+	std::vector<buffer> stagings;
 	stagings.reserve(uploads.size());
 	for (const auto& u : uploads) {
 		stagings.push_back(dev.create_buffer(
@@ -26,11 +25,10 @@ auto gse::gpu::upload_to_buffers(gpu::device& dev, const std::span<const buffer_
 		));
 	}
 
-	auto cmd_awaiter = begin_transient(dev, queue_id::graphics, "transient.buffer_upload");
-	auto cmd = cmd_awaiter.await_resume();
+	auto cmd = begin_transient(dev, queue_id::graphics, "transient.buffer_upload");
 
 	for (std::size_t i = 0; i < uploads.size(); ++i) {
-		vulkan::commands(cmd.handle())
+		dev.recorder(cmd.handle())
 			.copy_buffer(
 				stagings[i].handle(),
 				uploads[i].dst->handle(),

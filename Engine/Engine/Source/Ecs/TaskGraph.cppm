@@ -5,6 +5,7 @@ import std;
 import gse.concurrency;
 import gse.core;
 import gse.containers;
+import gse.log;
 
 export namespace gse {
 	class task_graph {
@@ -31,7 +32,7 @@ export namespace gse {
 		struct state_slot {
 			std::atomic<bool> ready{ false };
 			std::mutex waiter_lock;
-			std::vector<std::coroutine_handle<>> waiters;
+			std::vector<async::checked_handle> waiters;
 		};
 
 		auto get_or_create_slot(
@@ -74,20 +75,43 @@ auto gse::task_graph::notify_state_ready(const id state_type) -> void {
 	auto* slot = get_or_create_slot(state_type);
 	slot->ready.store(true, std::memory_order_release);
 
-	std::vector<std::coroutine_handle<>> handles;
+	std::vector<async::checked_handle> handles;
 	{
 		std::lock_guard lock(slot->waiter_lock);
 		handles = std::move(slot->waiters);
 	}
 
-	for (auto h : handles) {
-		h.resume();
+	for (const async::checked_handle& h : handles) {
+		if (!async::resume_checked(h)) {
+			log::println(
+				log::level::error,
+				log::category::task,
+				"task_graph: waiter on state {} was not resumed because its coroutine frame had already been destroyed",
+				state_type
+			);
+		}
 	}
 }
 
 auto gse::task_graph::reset_state(const id state_type) -> void {
 	auto* slot = get_or_create_slot(state_type);
 	slot->ready.store(false, std::memory_order_release);
+
+	std::vector<async::checked_handle> stale;
+	{
+		std::lock_guard lock(slot->waiter_lock);
+		stale = std::move(slot->waiters);
+	}
+
+	if (!stale.empty()) {
+		log::println(
+			log::level::error,
+			log::category::task,
+			"task_graph: reset state {} while {} waiter(s) were still parked; they belong to a finished dispatch and are being dropped",
+			state_type,
+			stale.size()
+		);
+	}
 }
 
 auto gse::task_graph::is_state_ready(const id state_type) -> bool {
@@ -109,6 +133,7 @@ auto gse::task_graph::wait_state_ready(const id state_type) -> async::task<> {
 		}
 
 		auto await_suspend(std::coroutine_handle<> h) const noexcept -> void {
+			const async::checked_handle tracked = async::track_frame(h);
 			bool ready_now = false;
 			{
 				std::lock_guard lock(slot->waiter_lock);
@@ -116,12 +141,12 @@ auto gse::task_graph::wait_state_ready(const id state_type) -> async::task<> {
 					ready_now = true;
 				}
 				else {
-					slot->waiters.push_back(h);
+					slot->waiters.push_back(tracked);
 				}
 			}
 
 			if (ready_now) {
-				h.resume();
+				async::resume_checked(tracked);
 			}
 		}
 

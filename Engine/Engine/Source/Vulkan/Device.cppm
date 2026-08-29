@@ -21,6 +21,7 @@ import gse.concurrency;
 import gse.diag;
 import gse.meta;
 import gse.log;
+import gse.win32;
 
 namespace gse::vulkan {
 	class transient_command_pool final : public non_copyable {
@@ -85,11 +86,11 @@ namespace gse::vulkan {
 	struct bindless_state {
 		gpu::handle<gpu::descriptor_heap> resource_heap;
 		gpu::handle<gpu::descriptor_heap> sampler_heap;
-		gpu::bindless_layout layout;
 		gpu::bindless_heap_binding resource_binding;
 		gpu::bindless_heap_binding sampler_binding;
 		gpu::bindless_slot_pool image_pool;
 		gpu::bindless_slot_pool buffer_pool;
+		gpu::bindless_slot_pool acceleration_structure_pool;
 		gpu::bindless_slot_pool texture_pool;
 		gpu::bindless_slot_pool sampler_pool;
 	};
@@ -134,7 +135,7 @@ export namespace gse::vulkan {
 			const instance& instance_data,
 			gpu::device_settings& cfg,
 			aftermath& aftermath_tracker
-		) -> device_creation_result;
+		) -> gpu::expected<device_creation_result>;
 
 		[[nodiscard]] auto physical_device(
 			this auto&& self
@@ -196,6 +197,51 @@ export namespace gse::vulkan {
 		) -> gpu::image;
 
 		[[nodiscard]]
+		auto buffer_slot(
+			gpu::handle<gpu::buffer> buffer
+		) const -> gpu::bindless_slot;
+
+		[[nodiscard]]
+		auto buffer_address(
+			gpu::handle<gpu::buffer> buffer
+		) const -> gpu::device_address;
+
+		[[nodiscard]]
+		auto buffer_size(
+			gpu::handle<gpu::buffer> buffer
+		) const -> gpu::device_size;
+
+		[[nodiscard]]
+		auto buffer_mapped(
+			gpu::handle<gpu::buffer> buffer
+		) const -> std::byte*;
+
+		[[nodiscard]]
+		auto image_sampled_slot(
+			gpu::handle<gpu::image> image
+		) const -> gpu::bindless_slot;
+
+		[[nodiscard]]
+		auto image_storage_slot(
+			gpu::handle<gpu::image> image
+		) const -> gpu::bindless_slot;
+
+		[[nodiscard]]
+		auto image_format_of(
+			gpu::handle<gpu::image> image
+		) const -> gpu::image_format;
+
+		[[nodiscard]]
+		auto image_extent(
+			gpu::handle<gpu::image> image
+		) const -> vec3u;
+
+		[[nodiscard]]
+		auto image_view(
+			gpu::handle<gpu::image> image
+		) const -> gpu::handle<gpu::image_view>;
+
+		[[nodiscard]]
 		auto create_sampler(
 			const gpu::sampler_desc& desc
 		) -> gpu::handle<gpu::sampler>;
@@ -228,7 +274,6 @@ export namespace gse::vulkan {
 		auto write_buffer_descriptor(
 			gpu::handle<gpu::descriptor_heap> heap,
 			gpu::device_size byte_offset,
-			gpu::buffer_descriptor_kind kind,
 			gpu::device_address address,
 			gpu::device_size range
 		) const -> void;
@@ -245,13 +290,10 @@ export namespace gse::vulkan {
 		[[nodiscard]]
 		auto allocate_image_slot() -> gpu::bindless_handle;
 
-		auto write_storage_buffer(
-			gpu::bindless_slot slot,
-			gpu::device_address address,
-			gpu::device_size size
-		) -> void;
+		[[nodiscard]]
+		auto allocate_acceleration_structure_slot() -> gpu::bindless_handle;
 
-		auto write_uniform_buffer(
+		auto write_storage_buffer(
 			gpu::bindless_slot slot,
 			gpu::device_address address,
 			gpu::device_size size
@@ -267,6 +309,16 @@ export namespace gse::vulkan {
 			const gpu::image& img
 		) -> void;
 
+		auto write_storage_image(
+			gpu::bindless_slot slot,
+			const gpu::image& img
+		) -> void;
+
+		[[nodiscard]]
+		auto register_storage_image(
+			const gpu::image& img
+		) -> gpu::bindless_handle;
+
 		[[nodiscard]]
 		auto register_sampler(
 			const gpu::sampler_desc& desc
@@ -277,9 +329,6 @@ export namespace gse::vulkan {
 			const gpu::image& img,
 			const gpu::sampler_desc& desc
 		) -> gpu::bindless_handle;
-
-		[[nodiscard]]
-		auto bindless_layout() const -> gpu::bindless_layout;
 
 		[[nodiscard]]
 		auto bindless_resource_heap_binding() const -> gpu::bindless_heap_binding;
@@ -375,6 +424,61 @@ export namespace gse::vulkan {
 		) const -> void;
 
 		[[nodiscard]]
+		auto create_exportable_image_unbound(
+			const gpu::image_create_info& info
+		) const -> std::pair<gpu::handle<gpu::image>, gpu::memory_requirements>;
+
+		[[nodiscard]]
+		auto allocate_exportable_memory(
+			gpu::device_size size,
+			std::uint32_t memory_type_index,
+			gpu::handle<gpu::image> img
+		) const -> gpu::device_memory;
+
+		[[nodiscard]]
+		auto export_memory_handle(
+			gpu::device_memory mem
+		) const -> std::expected<void*, std::string>;
+
+		[[nodiscard]]
+		auto import_memory_handle(
+			gpu::device_size size,
+			std::uint32_t memory_type_index,
+			gpu::handle<gpu::image> img,
+			void* handle
+		) const -> std::expected<gpu::device_memory, std::string>;
+
+		[[nodiscard]]
+		auto create_exportable_semaphore() -> gpu::handle<gpu::semaphore>;
+
+		[[nodiscard]]
+		auto export_semaphore_handle(
+			gpu::handle<gpu::semaphore> semaphore
+		) const -> std::expected<void*, std::string>;
+
+		[[nodiscard]]
+		auto import_semaphore_handle(
+			void* handle
+		) -> std::expected<gpu::handle<gpu::semaphore>, std::string>;
+
+		[[nodiscard]]
+		auto create_shared_surface(
+			const gpu::shared_surface_desc& desc
+		) const -> std::expected<gpu::shared_surface, std::string>;
+
+		[[nodiscard]]
+		auto import_shared_surface(
+			const gpu::shared_surface_desc& desc,
+			void* handle
+		) const -> std::expected<gpu::shared_surface, std::string>;
+
+		auto destroy_shared_surface(
+			const gpu::shared_surface& surface
+		) const -> void;
+
+		auto run_exportable_self_test() const -> void;
+
+		[[nodiscard]]
 		auto find_memory_type_index(
 			std::uint32_t type_bits,
 			gpu::memory_property_flags required
@@ -405,10 +509,15 @@ export namespace gse::vulkan {
 
 		[[nodiscard]]
 		auto create_swap_chain(
+			gpu::surface surface,
 			vec2i framebuffer_size,
 			gpu::present_mode preferred_present_mode,
 			gpu::swap_chain_handle old_swapchain = {}
-		) -> gpu::swap_chain_info;
+		) -> gpu::expected<gpu::swap_chain_info>;
+
+		auto destroy_swapchain(
+			gpu::swap_chain_handle swapchain
+		) -> void;
 
 		auto wait_swapchain_release_fences(
 			gpu::swap_chain_handle swapchain
@@ -540,13 +649,14 @@ export namespace gse::vulkan {
 
 		auto create_buffer(
 			const vk::BufferCreateInfo& buffer_info,
-			const void* data,
+			const gpu::buffer_desc& desc,
 			std::string_view tag,
 			const std::source_location& loc
 		) -> gpu::buffer;
 
 		auto create_image(
 			const vk::ImageCreateInfo& info,
+			gpu::image_format format,
 			vk::MemoryPropertyFlags properties,
 			const vk::ImageViewCreateInfo& view_info,
 			const void* data,
@@ -566,7 +676,8 @@ export namespace gse::vulkan {
 		auto clean_up() -> void;
 
 		static auto memory_flag_preferences(
-			vk::BufferUsageFlags usage
+			vk::BufferUsageFlags usage,
+			bool readback
 		) -> std::vector<vk::MemoryPropertyFlags>;
 
 		auto host_transition_image_to_general(
@@ -628,10 +739,9 @@ export namespace gse::vulkan {
 		bool m_fault_enabled = false;
 		bool m_vendor_binary_fault_enabled = false;
 		std::array<std::uint32_t, gpu::queue_type_count> m_queue_families{};
-		gpu::surface m_surface;
 
 		std::unordered_map<pool_key, pool, pool_key_hash> m_pools;
-		std::mutex m_mutex;
+		mutable std::mutex m_mutex;
 
 		std::atomic<std::uint32_t> m_live_allocation_count = 0;
 		std::atomic<std::uint64_t> m_next_allocation_id = 1;
@@ -643,6 +753,9 @@ export namespace gse::vulkan {
 		struct live_buffer {
 			gpu::allocation alloc;
 			gpu::bindless_slot slot;
+			gpu::device_size size = 0;
+			gpu::device_address address = 0;
+			std::byte* mapped = nullptr;
 		};
 
 		struct live_image {
@@ -650,6 +763,9 @@ export namespace gse::vulkan {
 			gpu::handle<gpu::image_view> view;
 			gpu::bindless_slot storage_slot;
 			gpu::bindless_slot sampled_slot;
+			gpu::image_format format = gpu::image_format::undefined;
+			vec3u extent;
+			gpu::image_view_create_info view_info;
 		};
 
 		std::unordered_map<std::uint64_t, live_buffer> m_live_buffers;

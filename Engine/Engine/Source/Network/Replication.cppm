@@ -16,32 +16,32 @@ import :packet_header;
 import :remote_peer;
 
 export namespace gse::network {
-	template <typename T>
+	template <typename T, access_mode M>
 	auto broadcast_component_deltas(
 		auto& send_fn,
-		registry& reg,
+		const access<T, M>& components,
 		const std::unordered_map<address, remote_peer>& peers
 	) -> void;
 
-	template <typename Pack>
+	template <typename... C, access_mode... M>
 	auto replicate_deltas(
 		auto& send_fn,
-		registry& reg,
-		const std::unordered_map<address, remote_peer>& peers
+		const std::unordered_map<address, remote_peer>& peers,
+		const access<C, M>&... components
 	) -> void;
 
-	template <typename T>
+	template <typename T, access_mode M>
 	auto snapshot_components_to(
 		auto& send_fn,
-		registry& reg,
+		const access<T, M>& components,
 		const address& addr
 	) -> void;
 
-	template <typename Pack>
+	template <typename... C, access_mode... M>
 	auto replicate_snapshot_to(
 		auto& send_fn,
-		registry& reg,
-		const address& addr
+		const address& addr,
+		const access<C, M>&... components
 	) -> void;
 
 	template <typename Pack>
@@ -53,8 +53,8 @@ export namespace gse::network {
 	) -> bool;
 }
 
-template <typename T>
-auto gse::network::broadcast_component_deltas(auto& send_fn, registry& reg, const std::unordered_map<address, remote_peer>& peers) -> void {
+template <typename T, gse::access_mode M>
+auto gse::network::broadcast_component_deltas(auto& send_fn, const access<T, M>& components, const std::unordered_map<address, remote_peer>& peers) -> void {
 	const auto broadcast = [&](const auto& msg) {
 		for (const auto& addr : peers | std::views::keys) {
 			send_fn(msg, addr);
@@ -62,7 +62,7 @@ auto gse::network::broadcast_component_deltas(auto& send_fn, registry& reg, cons
 	};
 
 	const auto upsert = [&](const id eid) {
-		if (auto* c = reg.try_component<T>(eid)) {
+		if (const auto* c = components.find(eid)) {
 			broadcast(component_upsert<T>{
 				.owner_id = eid,
 				.data = extract_networked(*c)
@@ -70,34 +70,31 @@ auto gse::network::broadcast_component_deltas(auto& send_fn, registry& reg, cons
 		}
 	};
 
-	for (const auto eid : reg.drain_component_adds<T>()) {
+	for (const auto eid : components.drain(component_event::added)) {
 		upsert(eid);
 	}
-	for (const auto eid : reg.drain_component_updates<T>()) {
+	for (const auto eid : components.drain(component_event::updated)) {
 		upsert(eid);
 	}
-	for (const auto eid : reg.drain_component_removes<T>()) {
+	for (const auto eid : components.drain(component_event::removed)) {
 		broadcast(component_remove<T>{
 			.owner_id = eid
 		});
 	}
 }
 
-template <typename Pack>
-auto gse::network::replicate_deltas(auto& send_fn, registry& reg, const std::unordered_map<address, remote_peer>& peers) -> void {
+template <typename... C, gse::access_mode... M>
+auto gse::network::replicate_deltas(auto& send_fn, const std::unordered_map<address, remote_peer>& peers, const access<C, M>&... components) -> void {
 	if (peers.empty()) {
 		return;
 	}
 
-	[&]<typename... C>(type_pack<C...>) {
-		(broadcast_component_deltas<C>(send_fn, reg, peers), ...);
-	}(Pack{});
+	(broadcast_component_deltas(send_fn, components, peers), ...);
 }
 
-template <typename T>
-auto gse::network::snapshot_components_to(auto& send_fn, registry& reg, const address& addr) -> void {
-	const auto components = reg.components<T>();
-	const auto ids = reg.owner_ids<T>();
+template <typename T, gse::access_mode M>
+auto gse::network::snapshot_components_to(auto& send_fn, const access<T, M>& components, const address& addr) -> void {
+	const auto ids = components.owner_ids();
 	for (std::size_t i = 0; i < components.size(); ++i) {
 		send_fn(
 			component_upsert<T>{
@@ -109,11 +106,9 @@ auto gse::network::snapshot_components_to(auto& send_fn, registry& reg, const ad
 	}
 }
 
-template <typename Pack>
-auto gse::network::replicate_snapshot_to(auto& send_fn, registry& reg, const address& addr) -> void {
-	[&]<typename... C>(type_pack<C...>) {
-		(snapshot_components_to<C>(send_fn, reg, addr), ...);
-	}(Pack{});
+template <typename... C, gse::access_mode... M>
+auto gse::network::replicate_snapshot_to(auto& send_fn, const address& addr, const access<C, M>&... components) -> void {
+	(snapshot_components_to(send_fn, components, addr), ...);
 }
 
 template <typename Pack>

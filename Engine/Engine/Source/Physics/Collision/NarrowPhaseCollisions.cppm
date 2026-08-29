@@ -5,6 +5,8 @@ import std;
 import :bounding_box;
 import :collision_component;
 import :contact_manifold;
+import :convex_hull;
+import :hull_collision;
 import :transform_component;
 
 import gse.math;
@@ -26,6 +28,8 @@ export namespace gse::narrow_phase_collision {
 	struct shape_data {
 		const physics::transform_component* tc = nullptr;
 		const physics::collision_shape* shape = nullptr;
+		const physics::convex_hull* hull = nullptr;
+		std::uint32_t body_index = 0;
 	};
 
 	auto sat_speculative(
@@ -38,7 +42,8 @@ export namespace gse::narrow_phase_collision {
 		const bounding_box& bb1,
 		const bounding_box& bb2,
 		const vec3f& normal,
-		separation separation
+		separation separation,
+		bool prefer_reference_a
 	) -> contact_manifold;
 
 	auto speculative_test(
@@ -195,7 +200,8 @@ namespace gse::narrow_phase_collision {
 	auto build_clipped_face_contacts(
 		const bounding_box& bb1,
 		const bounding_box& bb2,
-		const vec3f& collision_normal
+		const vec3f& collision_normal,
+		bool prefer_reference_a
 	) -> std::optional<clipped_face_contacts>;
 
 	auto build_feature_from_clip_vertex(
@@ -227,6 +233,71 @@ namespace gse::narrow_phase_collision {
 		const bounding_box& bb2
 	) -> std::pair<vec3f, length>;
 
+	auto pose_of(
+		const shape_data& s
+	) -> physics::hull_pose;
+
+	auto hull_sat_to_result(
+		const physics::hull_sat& sat
+	) -> std::optional<sat_result>;
+
+	auto box_hull_speculative(
+		const shape_data& box,
+		const physics::box_shape& box_shape,
+		const shape_data& hull,
+		length margin
+	) -> std::optional<sat_result>;
+
+	auto sphere_hull_speculative(
+		const vec3<position>& center,
+		length radius,
+		const shape_data& hull,
+		length margin
+	) -> std::optional<sat_result>;
+
+	auto capsule_hull_speculative(
+		const bounding_box& cap_bb,
+		length half_height,
+		length radius,
+		const shape_data& hull,
+		length margin
+	) -> std::optional<sat_result>;
+
+	auto hull_hull_speculative(
+		const shape_data& a,
+		const shape_data& b,
+		length margin
+	) -> std::optional<sat_result>;
+
+	auto box_hull_manifold(
+		const shape_data& box,
+		const physics::box_shape& box_shape,
+		const shape_data& hull,
+		const vec3f& normal
+	) -> contact_manifold;
+
+	auto sphere_hull_manifold(
+		const vec3<position>& center,
+		length radius,
+		const shape_data& hull,
+		const vec3f& normal
+	) -> contact_manifold;
+
+	auto capsule_hull_manifold(
+		const bounding_box& cap_bb,
+		length half_height,
+		length radius,
+		const shape_data& hull,
+		const vec3f& normal
+	) -> contact_manifold;
+
+	auto hull_hull_manifold(
+		const shape_data& a,
+		const shape_data& b,
+		const vec3f& normal
+	) -> contact_manifold;
+
+	constexpr std::uint8_t hull_surface_index = 9;
 	constexpr std::uint8_t sphere_surface_index = 6;
 	constexpr std::uint8_t capsule_barrel_index = 6;
 	constexpr std::uint8_t capsule_cap_a_index = 7;
@@ -510,7 +581,7 @@ auto gse::narrow_phase_collision::clip_polygon(const std::inplace_vector<clip_ve
 	return out;
 }
 
-auto gse::narrow_phase_collision::build_clipped_face_contacts(const bounding_box& bb1, const bounding_box& bb2, const vec3f& collision_normal) -> std::optional<clipped_face_contacts> {
+auto gse::narrow_phase_collision::build_clipped_face_contacts(const bounding_box& bb1, const bounding_box& bb2, const vec3f& collision_normal, const bool prefer_reference_a) -> std::optional<clipped_face_contacts> {
 	vec3f n = normalize(collision_normal);
 	if (dot(n, bb2.center() - bb1.center()) < length{}) {
 		n = -n;
@@ -523,8 +594,8 @@ auto gse::narrow_phase_collision::build_clipped_face_contacts(const bounding_box
 		return std::nullopt;
 	}
 
-	constexpr float reference_face_tie_break = 1e-4f;
-	const bool reference_is_a = info1.max_dot >= info2.max_dot - reference_face_tie_break;
+	constexpr float reference_face_preference_margin = 0.02f;
+	const bool reference_is_a = std::abs(info1.max_dot - info2.max_dot) <= reference_face_preference_margin ? prefer_reference_a : info1.max_dot > info2.max_dot;
 	const auto& reference_info = reference_is_a ? info1 : info2;
 	const auto& incident_info = reference_is_a ? info2 : info1;
 
@@ -829,7 +900,7 @@ auto gse::narrow_phase_collision::sat_speculative(const bounding_box& bb1, const
 	};
 }
 
-auto gse::narrow_phase_collision::generate_manifold(const bounding_box& bb1, const bounding_box& bb2, const vec3f& normal, const separation separation) -> contact_manifold {
+auto gse::narrow_phase_collision::generate_manifold(const bounding_box& bb1, const bounding_box& bb2, const vec3f& normal, const separation separation, const bool prefer_reference_a) -> contact_manifold {
 	contact_manifold manifold;
 
 	auto [tangent_u, tangent_v] = compute_tangent_basis(normal);
@@ -883,8 +954,8 @@ auto gse::narrow_phase_collision::generate_manifold(const bounding_box& bb1, con
 			const auto half_extents = bb.half_extents();
 			const auto box = bb.obb();
 			const std::array<length, 3> local = { dot(world_point - box.center, box.axes[0]),
-												  dot(world_point - box.center, box.axes[1]),
-												  dot(world_point - box.center, box.axes[2]) };
+				dot(world_point - box.center, box.axes[1]),
+				dot(world_point - box.center, box.axes[2]) };
 
 			const std::uint8_t axis_idx = face_index / 2;
 			const std::uint8_t u_axis = (axis_idx + 1) % 3;
@@ -942,7 +1013,7 @@ auto gse::narrow_phase_collision::generate_manifold(const bounding_box& bb1, con
 	};
 
 	std::vector<manifold_candidate> candidates;
-	if (const auto clipped = build_clipped_face_contacts(bb1, bb2, normal)) {
+	if (const auto clipped = build_clipped_face_contacts(bb1, bb2, normal, prefer_reference_a)) {
 		candidates.reserve(clipped->vertices.size());
 		for (const auto& vertex : clipped->vertices) {
 			const vec3<position> position_on_a = clipped->reference_is_a ? vertex.point : (vertex.point - normal * contact_gap);
@@ -1525,6 +1596,190 @@ auto gse::narrow_phase_collision::sphere_capsule_manifold(const vec3<position>& 
 	return manifold;
 }
 
+auto gse::narrow_phase_collision::pose_of(const shape_data& s) -> physics::hull_pose {
+	return {
+		.center = s.tc->position,
+		.orientation = s.tc->orientation,
+		.body_index = s.body_index
+	};
+}
+
+auto gse::narrow_phase_collision::hull_sat_to_result(const physics::hull_sat& sat) -> std::optional<sat_result> {
+	if (!sat.hit) {
+		return std::nullopt;
+	}
+	return sat_result{
+		.normal = sat.normal,
+		.separation = sat.separation,
+		.is_speculative = sat.is_speculative
+	};
+}
+
+auto gse::narrow_phase_collision::box_hull_speculative(const shape_data& box, const physics::box_shape& box_shape, const shape_data& hull, const length margin) -> std::optional<sat_result> {
+	if (hull.hull == nullptr || !hull.hull->valid()) {
+		return std::nullopt;
+	}
+	const auto box_poly = physics::make_box_polytope(box_shape.size * 0.5f);
+	return hull_sat_to_result(
+		physics::polytope_sat(box_poly.view(), pose_of(box), physics::hull_polytope(*hull.hull), pose_of(hull), margin)
+	);
+}
+
+auto gse::narrow_phase_collision::sphere_hull_speculative(const vec3<position>& center, const length radius, const shape_data& hull, const length margin) -> std::optional<sat_result> {
+	if (hull.hull == nullptr || !hull.hull->valid()) {
+		return std::nullopt;
+	}
+	const auto query = physics::query_polytope(physics::hull_polytope(*hull.hull), pose_of(hull), center);
+	const separation separation = radius - query.signed_distance;
+	if (separation < -margin) {
+		return std::nullopt;
+	}
+	return sat_result{
+		.normal = -query.normal,
+		.separation = separation,
+		.is_speculative = separation < length{}
+	};
+}
+
+auto gse::narrow_phase_collision::capsule_hull_speculative(const bounding_box& cap_bb, const length half_height, const length radius, const shape_data& hull, const length margin) -> std::optional<sat_result> {
+	if (hull.hull == nullptr || !hull.hull->valid()) {
+		return std::nullopt;
+	}
+	const auto [seg_start, seg_end] = capsule_endpoints(cap_bb, half_height);
+	vec3<position> best_point;
+	const auto query = physics::segment_polytope_query(
+		physics::hull_polytope(*hull.hull),
+		pose_of(hull),
+		seg_start,
+		seg_end,
+		best_point
+	);
+	const separation separation = radius - query.signed_distance;
+	if (separation < -margin) {
+		return std::nullopt;
+	}
+	return sat_result{
+		.normal = -query.normal,
+		.separation = separation,
+		.is_speculative = separation < length{}
+	};
+}
+
+auto gse::narrow_phase_collision::hull_hull_speculative(const shape_data& a, const shape_data& b, const length margin) -> std::optional<sat_result> {
+	if (a.hull == nullptr || b.hull == nullptr || !a.hull->valid() || !b.hull->valid()) {
+		return std::nullopt;
+	}
+	return hull_sat_to_result(
+		physics::polytope_sat(
+			physics::hull_polytope(*a.hull),
+			pose_of(a),
+			physics::hull_polytope(*b.hull),
+			pose_of(b),
+			margin
+		)
+	);
+}
+
+auto gse::narrow_phase_collision::box_hull_manifold(const shape_data& box, const physics::box_shape& box_shape, const shape_data& hull, const vec3f& normal) -> contact_manifold {
+	if (hull.hull == nullptr || !hull.hull->valid()) {
+		return {};
+	}
+	const auto box_poly = physics::make_box_polytope(box_shape.size * 0.5f);
+	return physics::polytope_manifold(
+		box_poly.view(),
+		pose_of(box),
+		physics::hull_polytope(*hull.hull),
+		pose_of(hull),
+		normal
+	);
+}
+
+auto gse::narrow_phase_collision::sphere_hull_manifold(const vec3<position>& center, const length radius, const shape_data& hull, const vec3f& normal) -> contact_manifold {
+	contact_manifold manifold;
+	if (hull.hull == nullptr || !hull.hull->valid()) {
+		return manifold;
+	}
+	auto [tu, tv] = compute_tangent_basis(normal);
+	manifold.tangent_u = tu;
+	manifold.tangent_v = tv;
+
+	const auto query = physics::query_polytope(physics::hull_polytope(*hull.hull), pose_of(hull), center);
+
+	manifold.add_point(
+		contact_point{
+			.position_on_a = center + normal * radius,
+			.position_on_b = query.closest,
+			.normal = normal,
+			.separation = meters(0.f),
+			.feature =
+				feature_id{
+					.type_a = feature_type::face,
+					.type_b = feature_type::face,
+					.index_a = sphere_surface_index,
+					.index_b = query.face_index,
+				}
+		}
+	);
+	return manifold;
+}
+
+auto gse::narrow_phase_collision::capsule_hull_manifold(const bounding_box& cap_bb, const length half_height, const length radius, const shape_data& hull, const vec3f& normal) -> contact_manifold {
+	contact_manifold manifold;
+	if (hull.hull == nullptr || !hull.hull->valid()) {
+		return manifold;
+	}
+	auto [tu, tv] = compute_tangent_basis(normal);
+	manifold.tangent_u = tu;
+	manifold.tangent_v = tv;
+
+	const auto [seg_start, seg_end] = capsule_endpoints(cap_bb, half_height);
+	vec3<position> best_point;
+	const auto query = physics::segment_polytope_query(
+		physics::hull_polytope(*hull.hull),
+		pose_of(hull),
+		seg_start,
+		seg_end,
+		best_point
+	);
+
+	float t_param = 0.5f;
+	if (const auto seg_diff = seg_end - seg_start; magnitude(seg_diff) > meters(1e-6f)) {
+		t_param = std::clamp<float>(dot(best_point - seg_start, seg_diff) / dot(seg_diff, seg_diff), 0.f, 1.f);
+	}
+
+	auto [cap_type, cap_index] = classify_capsule_feature(t_param);
+
+	manifold.add_point(
+		contact_point{
+			.position_on_a = best_point + normal * radius,
+			.position_on_b = query.closest,
+			.normal = normal,
+			.separation = meters(0.f),
+			.feature =
+				feature_id{
+					.type_a = cap_type,
+					.type_b = feature_type::face,
+					.index_a = cap_index,
+					.index_b = query.face_index,
+				}
+		}
+	);
+	return manifold;
+}
+
+auto gse::narrow_phase_collision::hull_hull_manifold(const shape_data& a, const shape_data& b, const vec3f& normal) -> contact_manifold {
+	if (a.hull == nullptr || b.hull == nullptr || !a.hull->valid() || !b.hull->valid()) {
+		return {};
+	}
+	return physics::polytope_manifold(
+		physics::hull_polytope(*a.hull),
+		pose_of(a),
+		physics::hull_polytope(*b.hull),
+		pose_of(b),
+		normal
+	);
+}
+
 auto gse::narrow_phase_collision::speculative_test(const shape_data& a, const shape_data& b, const length margin) -> std::optional<sat_result> {
 	const bool swap = a.shape->index() > b.shape->index();
 	const auto& lo = swap ? b : a;
@@ -1532,10 +1787,10 @@ auto gse::narrow_phase_collision::speculative_test(const shape_data& a, const sh
 
 	std::optional<sat_result> result;
 
-	gse::match(*lo.shape)
+	match(*lo.shape)
 		.if_is([&](const physics::box_shape& lo_box) {
 			const bounding_box lo_bb(*lo.tc, lo_box);
-			gse::match(*hi.shape)
+			match(*hi.shape)
 				.if_is([&](const physics::box_shape& hi_box) {
 					const bounding_box hi_bb(*hi.tc, hi_box);
 					result = sat_speculative(lo_bb, hi_bb, margin);
@@ -1546,10 +1801,13 @@ auto gse::narrow_phase_collision::speculative_test(const shape_data& a, const sh
 				.else_if_is([&](const physics::capsule_shape& hi_cap) {
 					const bounding_box hi_bb(*hi.tc);
 					result = box_capsule_speculative(lo_bb, hi_bb, hi_cap.half_height, hi_cap.radius, margin);
+				})
+				.else_if_is([&](const physics::hull_shape&) {
+					result = box_hull_speculative(lo, lo_box, hi, margin);
 				});
 		})
 		.else_if_is([&](const physics::sphere_shape& lo_sph) {
-			gse::match(*hi.shape)
+			match(*hi.shape)
 				.if_is([&](const physics::sphere_shape& hi_sph) {
 					result = sphere_sphere_speculative(lo.tc->position, lo_sph.radius, hi.tc->position, hi_sph.radius, margin);
 				})
@@ -1563,21 +1821,33 @@ auto gse::narrow_phase_collision::speculative_test(const shape_data& a, const sh
 						hi_cap.radius,
 						margin
 					);
+				})
+				.else_if_is([&](const physics::hull_shape&) {
+					result = sphere_hull_speculative(lo.tc->position, lo_sph.radius, hi, margin);
 				});
 		})
 		.else_if_is([&](const physics::capsule_shape& lo_cap) {
 			const bounding_box lo_bb(*lo.tc);
-			gse::match(*hi.shape).if_is([&](const physics::capsule_shape& hi_cap) {
-				const bounding_box hi_bb(*hi.tc);
-				result = capsule_capsule_speculative(
-					lo_bb,
-					lo_cap.half_height,
-					lo_cap.radius,
-					hi_bb,
-					hi_cap.half_height,
-					hi_cap.radius,
-					margin
-				);
+			match(*hi.shape)
+				.if_is([&](const physics::capsule_shape& hi_cap) {
+					const bounding_box hi_bb(*hi.tc);
+					result = capsule_capsule_speculative(
+						lo_bb,
+						lo_cap.half_height,
+						lo_cap.radius,
+						hi_bb,
+						hi_cap.half_height,
+						hi_cap.radius,
+						margin
+					);
+				})
+				.else_if_is([&](const physics::hull_shape&) {
+					result = capsule_hull_speculative(lo_bb, lo_cap.half_height, lo_cap.radius, hi, margin);
+				});
+		})
+		.else_if_is([&](const physics::hull_shape&) {
+			match(*hi.shape).if_is([&](const physics::hull_shape&) {
+				result = hull_hull_speculative(lo, hi, margin);
 			});
 		});
 
@@ -1593,16 +1863,17 @@ auto gse::narrow_phase_collision::generate_shape_manifold(const shape_data& a, c
 	const auto& lo = swap ? b : a;
 	const auto& hi = swap ? a : b;
 	const auto n = swap ? -normal : normal;
+	const bool prefer_reference_lo = lo.body_index < hi.body_index;
 
 	contact_manifold manifold;
 
-	gse::match(*lo.shape)
+	match(*lo.shape)
 		.if_is([&](const physics::box_shape& lo_box) {
 			const bounding_box lo_bb(*lo.tc, lo_box);
-			gse::match(*hi.shape)
+			match(*hi.shape)
 				.if_is([&](const physics::box_shape& hi_box) {
 					const bounding_box hi_bb(*hi.tc, hi_box);
-					manifold = generate_manifold(lo_bb, hi_bb, n, separation);
+					manifold = generate_manifold(lo_bb, hi_bb, n, separation, prefer_reference_lo);
 				})
 				.else_if_is([&](const physics::sphere_shape& hi_sph) {
 					manifold = box_sphere_manifold(lo_bb, hi.tc->position, hi_sph.radius, n, separation);
@@ -1610,17 +1881,20 @@ auto gse::narrow_phase_collision::generate_shape_manifold(const shape_data& a, c
 				.else_if_is([&](const physics::capsule_shape& hi_cap) {
 					const bounding_box hi_bb(*hi.tc);
 					manifold = box_capsule_manifold(lo_bb, hi_bb, hi_cap.half_height, hi_cap.radius, n, separation);
+				})
+				.else_if_is([&](const physics::hull_shape&) {
+					manifold = box_hull_manifold(lo, lo_box, hi, n);
 				});
 		})
 		.else_if_is([&](const physics::sphere_shape& lo_sph) {
-			gse::match(*hi.shape)
+			match(*hi.shape)
 				.if_is([&](const physics::sphere_shape& hi_sph) {
 					manifold = sphere_sphere_manifold(lo.tc->position,
-													  lo_sph.radius,
-													  hi.tc->position,
-													  hi_sph.radius,
-													  n,
-													  separation);
+						lo_sph.radius,
+						hi.tc->position,
+						hi_sph.radius,
+						n,
+						separation);
 				})
 				.else_if_is([&](const physics::capsule_shape& hi_cap) {
 					const bounding_box hi_bb(*hi.tc);
@@ -1633,22 +1907,34 @@ auto gse::narrow_phase_collision::generate_shape_manifold(const shape_data& a, c
 						n,
 						separation
 					);
+				})
+				.else_if_is([&](const physics::hull_shape&) {
+					manifold = sphere_hull_manifold(lo.tc->position, lo_sph.radius, hi, n);
 				});
 		})
 		.else_if_is([&](const physics::capsule_shape& lo_cap) {
 			const bounding_box lo_bb(*lo.tc);
-			gse::match(*hi.shape).if_is([&](const physics::capsule_shape& hi_cap) {
-				const bounding_box hi_bb(*hi.tc);
-				manifold = capsule_capsule_manifold(
-					lo_bb,
-					lo_cap.half_height,
-					lo_cap.radius,
-					hi_bb,
-					hi_cap.half_height,
-					hi_cap.radius,
-					n,
-					separation
-				);
+			match(*hi.shape)
+				.if_is([&](const physics::capsule_shape& hi_cap) {
+					const bounding_box hi_bb(*hi.tc);
+					manifold = capsule_capsule_manifold(
+						lo_bb,
+						lo_cap.half_height,
+						lo_cap.radius,
+						hi_bb,
+						hi_cap.half_height,
+						hi_cap.radius,
+						n,
+						separation
+					);
+				})
+				.else_if_is([&](const physics::hull_shape&) {
+					manifold = capsule_hull_manifold(lo_bb, lo_cap.half_height, lo_cap.radius, hi, n);
+				});
+		})
+		.else_if_is([&](const physics::hull_shape&) {
+			match(*hi.shape).if_is([&](const physics::hull_shape&) {
+				manifold = hull_hull_manifold(lo, hi, n);
 			});
 		});
 

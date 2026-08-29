@@ -7,7 +7,6 @@ import :swap_chain;
 import :frame;
 import :transient_pool;
 import :render_graph;
-import :render_pass;
 
 import gse.gpu_backend;
 import gse.os;
@@ -20,62 +19,100 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 import gse.meta;
+import gse.save;
+
+export namespace gse::gpu {
+	struct gpu_resume_request;
+}
 
 export namespace gse::gpu::context {
-	struct [[= gse::system_state<"Gpu">{}, = gse::settings::category<"Graphics">{}]] data {
+	struct window_presentation {
+		id window;
+		gpu::surface surface;
+		std::unique_ptr<swap_chain> swapchain;
+	};
+
+	struct [[= system_state<"Gpu">{}, = settings::category<"Graphics">{}]] data {
 		[[
-			= gse::settings::describe<"Enable Vulkan validation layers. Catches API misuse but adds significant "
+			= settings::describe<"Enable Vulkan validation layers. Catches API misuse but adds significant "
 									  "overhead. Requires a restart.">{},
-			= gse::settings::restart_required{}
+			= settings::restart_required{}
 		]]
 		bool validation_layers_enabled = false;
 
 		[[
-			= gse::settings::describe<"Vulkan device tracking and naming options.">{}
+			= settings::describe<"GPU backend to initialize on startup. Vulkan falls back to dx12 if it is unsupported. Requires a restart.">{},
+			= settings::restart_required{}
+		]]
+		backend_kind backend = backend_kind::vulkan;
+
+		[[
+			= settings::describe<"Vulkan device tracking and naming options.">{}
 		]]
 		gpu::device_settings device_settings;
 
-		[[= gse::shared]] std::unique_ptr<gpu::device> device;
-		[[= gse::shared]] std::unique_ptr<swap_chain> swapchain;
-		[[= gse::shared]] std::unique_ptr<gpu::frame> frame;
-		[[= gse::shared]] std::unique_ptr<gpu::render_graph> render_graph;
+		[[= stable_shared]] std::unique_ptr<gpu::device> device;
+		[[= stable_shared]] std::unique_ptr<swap_chain> swapchain;
+		[[= stable_shared]] std::unique_ptr<gpu::frame> frame;
+		[[= stable_shared]] std::unique_ptr<gpu::render_graph> render_graph;
+		std::vector<std::unique_ptr<window_presentation>> secondaries;
 		concurrency::frame_scheduler scheduler;
 
-		gpu::color_clear swapchain_clear{};
+		[[
+			= settings::describe<"Clear the swapchain to a dark neutral tone instead of black.">{},
+			= settings::app_scope{}
+		]]
+		bool dark_background = false;
 	};
 
 	using swap_chain_recreate_callback = std::function<void()>;
 
-	[[= gse::system_init{}]] auto init(
-		shared_view<window::data> window_s,
+	[[= system_init{}]] auto init(
+		std::optional<shared_view<window::data>> window_s,
+		const save::registry* save_reg,
 		data& d
 	) -> async::task<>;
 
-	[[= gse::system_run<>{}]] auto run(
+	[[= system_run<>{}]] auto run(
 		gse::context& ctx,
-		data& d
+		data& d,
+		channel_read<gpu_resume_request, window_opened, window_closed> resume_in
 	) -> async::task<>;
 
-	[[= gse::system_shutdown{}]] auto shutdown(
+	[[= system_shutdown{}]] auto shutdown(
 		data& d
 	) -> void;
 
 	[[nodiscard]]
 	auto begin_frame(
 		data& d,
-		window::data& window_s
-	) -> std::
-		expected<frame_token, frame_status>;
-
-	auto execute_frame(
-		data& d,
-		scheduler& s
-	) -> void;
+		window::window_surface* window_s
+	) -> std::expected<frame_token, frame_status>;
 
 	auto end_frame(
-		data& d,
-		window::data& window_s
+		data& d
 	) -> void;
+
+	[[nodiscard]] auto create_presentation(
+		data& d,
+		const window_opened& win
+	) -> window_presentation*;
+
+	auto destroy_presentation(
+		data& d,
+		id window
+	) -> void;
+
+	[[nodiscard]] auto find_presentation(
+		data& d,
+		id window
+	) -> window_presentation*;
+
+	auto sync_present_targets(
+		data& d,
+		window::data& windows
+	) -> void;
+
 
 	auto on_swap_chain_recreate(
 		shared_view<data> d,
@@ -94,7 +131,7 @@ export namespace gse::gpu {
 	};
 
 	struct on_gpu_awaitable {
-		channel_writer& channels;
+		channel_write<gpu_resume_request> channels;
 		context::data* state = nullptr;
 
 		auto await_ready() const noexcept -> bool;
@@ -107,7 +144,7 @@ export namespace gse::gpu {
 	};
 
 	[[nodiscard]] auto on_gpu(
-		channel_writer& channels
+		channel_write<gpu_resume_request> channels
 	) -> on_gpu_awaitable;
 }
 
@@ -126,6 +163,6 @@ auto gse::gpu::on_gpu_awaitable::await_resume() -> context::data& {
 	return *state;
 }
 
-auto gse::gpu::on_gpu(channel_writer& channels) -> on_gpu_awaitable {
+auto gse::gpu::on_gpu(const channel_write<gpu_resume_request> channels) -> on_gpu_awaitable {
 	return { channels };
 }

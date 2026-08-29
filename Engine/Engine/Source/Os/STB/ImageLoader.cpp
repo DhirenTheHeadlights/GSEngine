@@ -67,7 +67,7 @@ auto gse::image::data::size_bytes() const -> std::size_t {
 }
 
 auto gse::image::detect_format(const std::filesystem::path& path) -> image_format {
-	std::FILE* f = std::fopen(path.string().c_str(), "rb");
+	std::FILE* f = std::fopen(path.native_encoded_string().c_str(), "rb");
 	if (!f) {
 		return image_format::unknown;
 	}
@@ -85,7 +85,7 @@ auto gse::image::detect_format(const std::filesystem::path& path) -> image_forma
 
 auto gse::image::read_png_file(const std::filesystem::path& path, const bool force_rgba) -> read_result {
 	read_result out;
-	std::FILE* fp = std::fopen(path.string().c_str(), "rb");
+	std::FILE* fp = std::fopen(path.native_encoded_string().c_str(), "rb");
 	if (!fp) {
 		return out;
 	}
@@ -174,7 +174,7 @@ void gse::image::jpeg_error_exit(j_common_ptr cinfo) {
 
 auto gse::image::read_jpeg_file(const std::filesystem::path& path, const bool force_rgba) -> read_result {
 	read_result out;
-	std::FILE* fp = std::fopen(path.string().c_str(), "rb");
+	std::FILE* fp = std::fopen(path.native_encoded_string().c_str(), "rb");
 	if (!fp) {
 		return out;
 	}
@@ -255,7 +255,7 @@ auto gse::image::load_any(const std::filesystem::path& path, const bool force_rg
 }
 
 auto gse::image::write_png_file(const std::filesystem::path& path, const std::uint32_t width, const std::uint32_t height, const std::uint32_t channels, const void* pixels) -> bool {
-	std::FILE* fp = std::fopen(path.string().c_str(), "wb");
+	std::FILE* fp = std::fopen(path.native_encoded_string().c_str(), "wb");
 	if (!fp) {
 		return false;
 	}
@@ -330,7 +330,7 @@ auto gse::image::write_png_file(const std::filesystem::path& path, const std::ui
 
 auto gse::image::load(const std::filesystem::path& path) -> data {
 	auto result = load_any(path, true);
-	assert(result.ok, "Failed to load image: {}", path.string());
+	assert(result.ok, "Failed to load image: {}", path.generic_display_string());
 
 	return {
 		.path = path,
@@ -351,7 +351,7 @@ auto gse::image::load(const vec4f color, const vec2u size) -> data {
 	std::vector<std::byte> pixels(total_pixels * 4);
 
 	for (std::size_t i = 0; i < total_pixels; ++i) {
-		gse::memcpy(pixels.data() + i * 4, pixel_data);
+		memcpy(pixels.data() + i * 4, pixel_data);
 	}
 
 	return {
@@ -370,11 +370,11 @@ auto gse::image::load_cube_faces(const std::array<std::filesystem::path, 6>& pat
 
 	faces[0] = load(paths[0]);
 	const auto required = faces[0].size;
-	assert(required.x() == required.y(), "Cube face must be square: {}", paths[0].string());
+	assert(required.x() == required.y(), "Cube face must be square: {}", paths[0].generic_display_string());
 
 	for (std::size_t i = 1; i < paths.size(); ++i) {
 		faces[i] = load(paths[i]);
-		assert(faces[i].size == required, "All cube faces must match size {}: {}", required, paths[i].string());
+		assert(faces[i].size == required, "All cube faces must match size {}: {}", required, paths[i].generic_display_string());
 	}
 
 	return faces;
@@ -382,7 +382,7 @@ auto gse::image::load_cube_faces(const std::array<std::filesystem::path, 6>& pat
 
 auto gse::image::load_raw(const std::filesystem::path& path) -> data {
 	auto result = load_any(path, false);
-	assert(result.ok, "Failed to load image: {}", path.string());
+	assert(result.ok, "Failed to load image: {}", path.generic_display_string());
 
 	return {
 		.path = path,

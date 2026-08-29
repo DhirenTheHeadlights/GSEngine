@@ -4,28 +4,30 @@ import std;
 
 import gse.math;
 import gse.gpu;
+
 import :contact_manifold;
 import :motion_component;
 
 export namespace gse::vbd {
 	struct [[= shaders::shader_constant_block]] vbd_limits {
-		std::uint32_t max_bodies = 2048;
-		std::uint32_t max_contacts = 16384;
-		std::uint32_t max_collision_pairs = 16384;
+		std::uint32_t max_bodies = 20480;
+		std::uint32_t max_contacts = 262144;
+		std::uint32_t max_collision_pairs = 262144;
 		std::uint32_t max_colors = 16;
-		std::uint32_t max_joints = 128;
+		std::uint32_t max_joints = 8192;
+		std::uint32_t max_islands = 512;
 		std::uint32_t max_impulses = 64;
-		std::uint32_t max_motors = 16;
-		std::uint32_t max_contact_adjacency = 16384 * 2;
-		std::uint32_t max_joint_adjacency = 128 * 2;
-		std::uint32_t max_grounded_uints = (2048 + 31) / 32;
-		std::uint32_t grid_table_size = 4096;
-		std::uint32_t grid_max_entries = 2048 * 8;
+		std::uint32_t max_motors = 1024;
+		std::uint32_t max_contact_adjacency = max_contacts * 2;
+		std::uint32_t max_joint_adjacency = max_joints * 2;
+		std::uint32_t max_grounded_uints = (max_bodies + 31) / 32;
+		std::uint32_t grid_table_size = 32768;
+		std::uint32_t grid_max_entries = max_bodies * 8;
 		std::uint32_t workgroup_size = 64;
 		std::uint32_t adjacency_workgroup_size = 1024;
 		std::uint32_t coloring_rounds = 32;
 		std::uint32_t sleep_threshold = 60;
-		std::uint32_t collision_state_header_uints = 8;
+		std::uint32_t collision_state_header_uints = 81;
 		std::uint32_t solve_state_float4s_per_body = 11;
 		std::uint32_t state_contact_count_index = 0;
 		std::uint32_t state_max_used_color_index = 1;
@@ -33,6 +35,35 @@ export namespace gse::vbd {
 		std::uint32_t state_convergence_max_delta_index = 4;
 		std::uint32_t state_converged_flag_index = 5;
 		std::uint32_t state_convergence_max_angular_delta_index = 6;
+		std::uint32_t state_coloring_fallback_index = 7;
+		std::uint32_t state_coloring_conflict_index = 8;
+		std::uint32_t state_contact_duplicate_index = 9;
+		std::uint32_t state_warm_start_hit_index = 10;
+		std::uint32_t state_joint_lambda_index = 11;
+		std::uint32_t state_joint_c0_index = 12;
+		std::uint32_t state_joint_penalty_index = 13;
+		std::uint32_t state_joint_c_index = 14;
+		std::uint32_t state_convergence_prev_linear_index = 15;
+		std::uint32_t state_convergence_prev_angular_index = 16;
+		std::uint32_t state_pass_hash_base_index = 17;
+		std::uint32_t pass_hash_stage_count = 11;
+		std::uint32_t state_tick_hash_base_index = state_pass_hash_base_index + 2 * pass_hash_stage_count + 2;
+		std::uint32_t state_stale_read_count_index = 56;
+		std::uint32_t state_stale_check_count_index = 57;
+		std::uint32_t state_sweep_arrive_index = 3;
+		std::uint32_t state_sweep_phase_index = 53;
+		std::uint32_t state_sweep_bail_index = 58;
+		std::uint32_t state_color_population_base_index = 59;
+		std::uint32_t state_max_speed_index = 75;
+		std::uint32_t state_max_angular_speed_index = 76;
+		std::uint32_t state_color_pending_index = 77;
+		std::uint32_t state_broad_nodes_index = 78;
+		std::uint32_t state_broad_tests_index = 79;
+		std::uint32_t state_pair_count_index = 80;
+		std::uint32_t solve_sweep_workgroups = 32;
+		std::uint32_t sweep_spin_checks = 1024;
+		std::uint32_t sweep_spin_delay_start = 64;
+		std::uint32_t sweep_spin_delay_max = 8192;
 		std::uint32_t narrow_phase_debug_record_uints = 8;
 		std::uint32_t max_narrow_phase_debug_records = 32;
 		std::uint32_t feature_vertex = 0;
@@ -41,6 +72,13 @@ export namespace gse::vbd {
 		std::uint32_t feature_side_none = 0xFFu;
 		std::uint32_t sat_axis_face = 0;
 		std::uint32_t sat_axis_cross = 1;
+		std::uint32_t shape_box = 0;
+		std::uint32_t shape_sphere = 1;
+		std::uint32_t shape_capsule = 2;
+		std::uint32_t sphere_surface_index = 6;
+		std::uint32_t capsule_barrel_index = 6;
+		std::uint32_t capsule_cap_a_index = 7;
+		std::uint32_t capsule_cap_b_index = 8;
 	};
 
 	constexpr vbd_limits limits{};
@@ -66,8 +104,8 @@ export namespace gse::vbd {
 	struct [[= shaders::shader_struct]] frozen_jacobian {
 		vec3<lever_arm> world_r_a;
 		vec3<lever_arm> world_r_b;
-		mat3<length> j_ang_a;
-		mat3<length> j_ang_b;
+		mat3<angular_jacobian> j_ang_a;
+		mat3<angular_jacobian> j_ang_b;
 	};
 
 	struct [[= shaders::shader_struct]] contact_constraint {
@@ -94,7 +132,7 @@ export namespace gse::vbd {
 		vec3<force> lambda;
 		vec3<stiffness> penalty;
 
-		std::uint32_t pad_end = 0;
+		std::uint32_t replayed = 0;
 	};
 
 	struct [[= shaders::shader_struct]] velocity_motor_constraint {
@@ -182,9 +220,15 @@ export namespace gse::vbd {
 		float restitution = 0.f;
 		mat3<inverse_inertia> inv_inertia;
 
+		vec3<displacement> com_local;
+
+		std::uint32_t shape_kind = 0;
+		vec3<displacement> shape_params;
 		vec3<displacement> half_extents;
 		vec3<gse::position> aabb_min;
 		vec3<gse::position> aabb_max;
+
+		std::uint32_t reset_pending = 0;
 
 		auto inverse_mass() const -> inverse_mass;
 		auto sleeping() const -> bool;

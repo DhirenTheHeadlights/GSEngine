@@ -7,6 +7,10 @@ module;
 #include <windowsx.h>
 #include <dbghelp.h>
 #include <tlhelp32.h>
+#include <shlobj.h>
+#include <shellapi.h>
+#include <commdlg.h>
+#include <dwmapi.h>
 #endif
 
 #define GLFW_INCLUDE_NONE
@@ -34,6 +38,11 @@ export namespace gse::win32 {
 	using ::HMONITOR;
 	using ::MONITORINFO;
 	using ::NCCALCSIZE_PARAMS;
+	using ::HCURSOR;
+	using ::HRAWINPUT;
+	using ::RAWINPUT;
+	using ::RAWINPUTDEVICE;
+	using ::USHORT;
 
 	using ::glfwGetWin32Window;
 	using ::DefWindowProcW;
@@ -43,13 +52,30 @@ export namespace gse::win32 {
 	using ::GetPropW;
 	using ::SetPropW;
 	using ::IsZoomed;
+	using ::IsIconic;
 	using ::MonitorFromWindow;
+	using ::MonitorFromRect;
 	using ::GetMonitorInfoW;
 	using ::ScreenToClient;
 	using ::GetClientRect;
+	using ::WINDOWPLACEMENT;
+	using ::GetWindowPlacement;
+	using ::IsWindowVisible;
+	using ::DwmGetWindowAttribute;
+	using ::WindowFromPoint;
+	using ::GetAncestor;
+	using ::ClientToScreen;
+	using ::ClipCursor;
+	using ::GetCursorPos;
+	using ::SetCursor;
+	using ::LoadCursorW;
+	using ::SendMessageW;
+	using ::RegisterRawInputDevices;
+	using ::GetRawInputData;
 
 	constexpr UINT wm_nccalcsize = WM_NCCALCSIZE;
 	constexpr UINT wm_nchittest = WM_NCHITTEST;
+	constexpr UINT wm_ncmousemove = WM_NCMOUSEMOVE;
 	constexpr LRESULT ht_left = HTLEFT;
 	constexpr LRESULT ht_right = HTRIGHT;
 	constexpr LRESULT ht_top = HTTOP;
@@ -67,6 +93,20 @@ export namespace gse::win32 {
 	constexpr UINT swp_no_zorder = SWP_NOZORDER;
 	constexpr UINT swp_no_activate = SWP_NOACTIVATE;
 	constexpr DWORD monitor_default_to_nearest = MONITOR_DEFAULTTONEAREST;
+	constexpr UINT sw_show_maximized = SW_SHOWMAXIMIZED;
+	constexpr UINT wpf_restore_to_maximized = WPF_RESTORETOMAXIMIZED;
+	constexpr DWORD dwmwa_cloaked = DWMWA_CLOAKED;
+	constexpr UINT ga_root = GA_ROOT;
+	constexpr UINT wm_setcursor = WM_SETCURSOR;
+	constexpr UINT wm_mousemove = WM_MOUSEMOVE;
+	constexpr UINT wm_input = WM_INPUT;
+	constexpr UINT rid_input = RID_INPUT;
+	constexpr DWORD rim_type_mouse = RIM_TYPEMOUSE;
+	constexpr USHORT mouse_move_absolute = MOUSE_MOVE_ABSOLUTE;
+	constexpr DWORD ridev_remove = RIDEV_REMOVE;
+	constexpr USHORT hid_usage_page_generic = 0x01;
+	constexpr USHORT hid_usage_generic_mouse = 0x02;
+	constexpr UINT raw_input_header_size = sizeof(RAWINPUTHEADER);
 
 	auto get_x_lparam(LPARAM lparam) -> int {
 		return GET_X_LPARAM(lparam);
@@ -76,9 +116,24 @@ export namespace gse::win32 {
 		return GET_Y_LPARAM(lparam);
 	}
 
+	auto low_word(LPARAM lparam) -> int {
+		return LOWORD(lparam);
+	}
+
+	auto make_lparam(int low, int high) -> LPARAM {
+		return MAKELPARAM(low, high);
+	}
+
+	auto hwnd_from_glfw_window(void* glfw_window) -> HWND {
+		return glfwGetWin32Window(static_cast<::GLFWwindow*>(glfw_window));
+	}
+
 	using ::HANDLE;
 	using ::HMODULE;
 	using ::LONG;
+	using ::BOOL;
+	using ::SIZE_T;
+	using ::DWORD_PTR;
 	using ::PVOID;
 	using ::DWORD64;
 	using ::CONTEXT;
@@ -86,10 +141,17 @@ export namespace gse::win32 {
 	using ::EXCEPTION_POINTERS;
 	using ::EXCEPTION_RECORD;
 	using ::STARTUPINFOW;
+	using ::STARTUPINFOEXW;
 	using ::PROCESS_INFORMATION;
+	using ::SECURITY_ATTRIBUTES;
+	using ::LPPROC_THREAD_ATTRIBUTE_LIST;
+	using ::JOBOBJECTINFOCLASS;
+	using ::JOBOBJECT_EXTENDED_LIMIT_INFORMATION;
 
 	using ::DuplicateHandle;
+	using ::OpenProcess;
 	using ::GetCurrentProcess;
+	using ::GetCurrentProcessId;
 	using ::GetCurrentThread;
 	using ::CloseHandle;
 	using ::SuspendThread;
@@ -99,18 +161,104 @@ export namespace gse::win32 {
 	using ::RtlVirtualUnwind;
 	using ::GetModuleHandleExW;
 	using ::GetModuleFileNameW;
+	using ::SHGetFolderPathW;
 	using ::AddVectoredExceptionHandler;
 	using ::GetLastError;
 	using ::CreateProcessW;
+	using ::TerminateProcess;
+	using ::InitializeProcThreadAttributeList;
+	using ::UpdateProcThreadAttribute;
+	using ::DeleteProcThreadAttributeList;
+	using ::CreateJobObjectW;
+	using ::AssignProcessToJobObject;
+	using ::TerminateJobObject;
+	using ::SetInformationJobObject;
 	using ::GetCommandLineW;
+	using ::CommandLineToArgvW;
+	using ::LocalFree;
 	using ::ExitProcess;
+	using ::CreatePipe;
+	using ::ReadFile;
+	using ::SetHandleInformation;
+	using ::GetHandleInformation;
+	using ::WaitForSingleObject;
+	using ::GetExitCodeProcess;
+	using ::MoveFileExW;
+	using ::GetEnvironmentStringsW;
+	using ::FreeEnvironmentStringsW;
+	using ::GetEnvironmentVariableW;
+	using ::ExpandEnvironmentStringsW;
+	using ::MultiByteToWideChar;
+	using ::LARGE_INTEGER;
+	using ::LONGLONG;
+	using ::CreateWaitableTimerExW;
+	using ::SetWaitableTimer;
+	using ::CreateNamedPipeW;
+	using ::ConnectNamedPipe;
+	using ::DisconnectNamedPipe;
+	using ::CreateFileW;
+	using ::WriteFile;
+	using ::PeekNamedPipe;
+	using ::GetStdHandle;
+	using ::GetFileType;
+	using ::ShellExecuteW;
+	using ::VirtualQuery;
+	using ::MEMORY_BASIC_INFORMATION;
 
+	constexpr DWORD mem_commit = MEM_COMMIT;
+	constexpr DWORD mem_reserve = MEM_RESERVE;
+	constexpr DWORD mem_image = MEM_IMAGE;
+	constexpr DWORD mem_mapped = MEM_MAPPED;
+	constexpr DWORD mem_private = MEM_PRIVATE;
 	constexpr DWORD context_full = CONTEXT_FULL;
 	constexpr DWORD unw_flag_nhandler = UNW_FLAG_NHANDLER;
 	constexpr DWORD duplicate_same_access = DUPLICATE_SAME_ACCESS;
+	constexpr DWORD process_dup_handle = PROCESS_DUP_HANDLE;
+	constexpr DWORD process_query_limited_information = PROCESS_QUERY_LIMITED_INFORMATION;
 	constexpr DWORD get_module_handle_ex_flag_from_address = GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS;
 	constexpr DWORD get_module_handle_ex_flag_unchanged_refcount = GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT;
 	constexpr int max_path = MAX_PATH;
+	constexpr int csidl_appdata = CSIDL_APPDATA;
+	constexpr int csidl_profile = CSIDL_PROFILE;
+	constexpr int csidl_local_appdata = CSIDL_LOCAL_APPDATA;
+	constexpr int shgfp_type_current = SHGFP_TYPE_CURRENT;
+	constexpr DWORD startf_use_std_handles = STARTF_USESTDHANDLES;
+	constexpr DWORD create_no_window = CREATE_NO_WINDOW;
+	constexpr DWORD create_unicode_environment = CREATE_UNICODE_ENVIRONMENT;
+	constexpr DWORD create_suspended = CREATE_SUSPENDED;
+	constexpr DWORD extended_startupinfo_present = EXTENDED_STARTUPINFO_PRESENT;
+	constexpr DWORD_PTR proc_thread_attribute_handle_list = PROC_THREAD_ATTRIBUTE_HANDLE_LIST;
+	constexpr JOBOBJECTINFOCLASS job_object_extended_limit_information = JobObjectExtendedLimitInformation;
+	constexpr DWORD job_object_limit_kill_on_job_close = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+	constexpr DWORD infinite = INFINITE;
+	constexpr DWORD wait_timeout = WAIT_TIMEOUT;
+	constexpr DWORD wait_object_0 = WAIT_OBJECT_0;
+	constexpr DWORD create_waitable_timer_high_resolution = CREATE_WAITABLE_TIMER_HIGH_RESOLUTION;
+	constexpr DWORD timer_all_access = TIMER_ALL_ACCESS;
+	constexpr DWORD handle_flag_inherit = HANDLE_FLAG_INHERIT;
+	constexpr DWORD movefile_replace_existing = MOVEFILE_REPLACE_EXISTING;
+	constexpr DWORD movefile_write_through = MOVEFILE_WRITE_THROUGH;
+	constexpr UINT cp_utf8 = CP_UTF8;
+	constexpr DWORD pipe_access_duplex = PIPE_ACCESS_DUPLEX;
+	constexpr DWORD pipe_access_inbound = PIPE_ACCESS_INBOUND;
+	constexpr DWORD pipe_type_byte = PIPE_TYPE_BYTE;
+	constexpr DWORD pipe_wait = PIPE_WAIT;
+	constexpr DWORD pipe_nowait = PIPE_NOWAIT;
+	constexpr DWORD pipe_unlimited_instances = PIPE_UNLIMITED_INSTANCES;
+	constexpr DWORD generic_read = GENERIC_READ;
+	constexpr DWORD generic_write = GENERIC_WRITE;
+	constexpr DWORD open_existing = OPEN_EXISTING;
+	constexpr DWORD create_always = CREATE_ALWAYS;
+	constexpr DWORD file_share_read = FILE_SHARE_READ;
+	constexpr DWORD file_share_write = FILE_SHARE_WRITE;
+	constexpr DWORD file_attribute_normal = FILE_ATTRIBUTE_NORMAL;
+	constexpr DWORD std_output_handle = STD_OUTPUT_HANDLE;
+	constexpr DWORD file_type_char = FILE_TYPE_CHAR;
+	constexpr DWORD error_pipe_connected = ERROR_PIPE_CONNECTED;
+	constexpr DWORD error_pipe_listening = ERROR_PIPE_LISTENING;
+	constexpr DWORD error_no_data = ERROR_NO_DATA;
+	constexpr DWORD error_broken_pipe = ERROR_BROKEN_PIPE;
+	constexpr int sw_show_normal = SW_SHOWNORMAL;
 
 	constexpr LONG exception_continue_search = EXCEPTION_CONTINUE_SEARCH;
 	constexpr DWORD exception_access_violation = EXCEPTION_ACCESS_VIOLATION;
@@ -160,8 +308,80 @@ export namespace gse::win32 {
 	constexpr DWORD thread_get_context = THREAD_GET_CONTEXT;
 	constexpr DWORD thread_query_information = THREAD_QUERY_INFORMATION;
 
+	using ::HGLOBAL;
+	using ::HDROP;
+	using ::BITMAPINFOHEADER;
+
+	using ::IsClipboardFormatAvailable;
+	using ::OpenClipboard;
+	using ::CloseClipboard;
+	using ::GetClipboardData;
+	using ::GlobalLock;
+	using ::GlobalUnlock;
+	using ::GlobalSize;
+	using ::DragQueryFileW;
+
+	constexpr UINT cf_dib = CF_DIB;
+	constexpr UINT cf_dibv5 = CF_DIBV5;
+	constexpr UINT cf_hdrop = CF_HDROP;
+	constexpr DWORD bi_rgb = BI_RGB;
+	constexpr DWORD bi_bitfields = BI_BITFIELDS;
+	constexpr DWORD bitmap_info_header_size = sizeof(BITMAPINFOHEADER);
+	constexpr UINT drag_query_count = 0xFFFFFFFFu;
+
 	auto valid_handle(HANDLE handle) -> bool {
 		return handle != nullptr && handle != INVALID_HANDLE_VALUE;
+	}
+
+	auto read_user_environment(const wchar_t* name, wchar_t* out_value, const DWORD out_capacity) -> bool {
+		if (name == nullptr || out_value == nullptr || out_capacity == 0) {
+			return false;
+		}
+		out_value[0] = L'\0';
+
+		HKEY key = nullptr;
+		if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Environment", 0, KEY_READ, &key) != ERROR_SUCCESS) {
+			return false;
+		}
+
+		DWORD type = 0;
+		DWORD size = out_capacity * static_cast<DWORD>(sizeof(wchar_t));
+		const LSTATUS status = RegQueryValueExW(key, name, nullptr, &type, reinterpret_cast<BYTE*>(out_value), &size);
+		RegCloseKey(key);
+
+		if (status != ERROR_SUCCESS || (type != REG_SZ && type != REG_EXPAND_SZ)) {
+			out_value[0] = L'\0';
+			return false;
+		}
+
+		const DWORD count = size / static_cast<DWORD>(sizeof(wchar_t));
+		out_value[count < out_capacity ? count : out_capacity - 1] = L'\0';
+		return out_value[0] != L'\0';
+	}
+
+	auto open_file_dialog(
+		HWND owner,
+		const wchar_t* title,
+		const wchar_t* filter,
+		wchar_t* out_path,
+		DWORD out_capacity
+	) -> bool {
+		if (out_path == nullptr || out_capacity == 0) {
+			return false;
+		}
+		out_path[0] = L'\0';
+
+		OPENFILENAMEW ofn{
+			.lStructSize = sizeof(OPENFILENAMEW),
+			.hwndOwner = owner,
+			.lpstrFilter = filter,
+			.lpstrFile = out_path,
+			.nMaxFile = out_capacity,
+			.lpstrTitle = title,
+			.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_EXPLORER,
+		};
+
+		return GetOpenFileNameW(&ofn) != 0;
 	}
 }
 #endif

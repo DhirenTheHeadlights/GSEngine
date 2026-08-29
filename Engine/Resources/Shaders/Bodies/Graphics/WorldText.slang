@@ -7,7 +7,7 @@ struct VS_OUT {
 VS_OUT vs_main(uint vid : SV_VertexID) {
     world_text_vertex v = world_text_vertex_buffer[vid];
     VS_OUT output;
-    output.clip_pos = mul(proj, mul(view, float4(v.position, 1.0)));
+    output.clip_pos = mul(camera_ubo.proj, mul(camera_ubo.view, float4(v.position, 1.0)));
     output.tex_coord = v.tex_coord;
     return output;
 }
@@ -16,14 +16,17 @@ float median(float r, float g, float b) {
     return max(min(r, g), min(max(r, g), b));
 }
 
-float msd_alpha(uint tex_idx, float2 uv, float screen_px_range) {
-    float4 s = textures[NonUniformResourceIndex(tex_idx)].Sample(uv);
+float mtsd_alpha(uint tex_idx, float2 uv, float screen_px_range) {
+    float4 s = textures[NonUniformResourceIndex(tex_idx)].Sample(textures_sampler, uv);
     float sd = median(s.r, s.g, s.b);
+    if ((sd < 0.5) != (s.a < 0.5)) {
+        sd = s.a;
+    }
     return clamp(screen_px_range * (sd - 0.5) + 0.5, 0.0, 1.0);
 }
 
 float tsd_alpha(uint tex_idx, float2 uv, float screen_px_range) {
-    float sd = textures[NonUniformResourceIndex(tex_idx)].Sample(uv).a;
+    float sd = textures[NonUniformResourceIndex(tex_idx)].Sample(textures_sampler, uv).a;
     return clamp(screen_px_range * (sd - 0.5) + 0.5, 0.0, 1.0);
 }
 
@@ -32,10 +35,10 @@ float supersampled_msd(uint tex_idx, float2 uv, float2 dx, float2 dy, float scre
     float2 ox3 = dx * 0.375;
     float2 oy1 = dy * 0.125;
     float2 oy3 = dy * 0.375;
-    float a0 = msd_alpha(tex_idx, uv - ox1 - oy3, screen_px_range);
-    float a1 = msd_alpha(tex_idx, uv + ox3 - oy1, screen_px_range);
-    float a2 = msd_alpha(tex_idx, uv + ox1 + oy3, screen_px_range);
-    float a3 = msd_alpha(tex_idx, uv - ox3 + oy1, screen_px_range);
+    float a0 = mtsd_alpha(tex_idx, uv - ox1 - oy3, screen_px_range);
+    float a1 = mtsd_alpha(tex_idx, uv + ox3 - oy1, screen_px_range);
+    float a2 = mtsd_alpha(tex_idx, uv + ox1 + oy3, screen_px_range);
+    float a3 = mtsd_alpha(tex_idx, uv - ox3 + oy1, screen_px_range);
     return (a0 + a1 + a2 + a3) * 0.25;
 }
 

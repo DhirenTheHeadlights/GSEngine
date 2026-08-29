@@ -41,6 +41,12 @@ export namespace gse {
 	template <typename AnnotationType, typename MatchType, typename Enum>
 	constexpr auto enum_from_annotation(const MatchType& value, const Enum default_value) -> Enum;
 
+	template <typename AnnotationType, typename Enum>
+	constexpr auto annotation_from_enum(const Enum value, const AnnotationType default_value) -> AnnotationType;
+
+	template <typename AnnotationType, typename Enum>
+	constexpr auto enum_has_annotation(const Enum value) -> bool;
+
 	template <typename Source, typename Tag>
 	struct project_holder;
 
@@ -111,8 +117,10 @@ consteval auto gse::has_annotation(const std::meta::info member) -> bool {
 }
 
 consteval auto gse::first_annotation_of_type(const std::meta::info enumerator, const std::meta::info annotation_type) -> std::meta::info {
+	const std::meta::info requested_type = std::meta::remove_cvref(std::meta::dealias(annotation_type));
 	for (std::meta::info ann : std::meta::annotations_of(enumerator)) {
-		if (std::meta::type_of(ann) == annotation_type) {
+		const std::meta::info ann_type = std::meta::remove_cvref(std::meta::dealias(std::meta::type_of(ann)));
+		if (std::meta::is_same_type(ann_type, requested_type)) {
 			return ann;
 		}
 	}
@@ -165,12 +173,25 @@ consteval auto gse::find_field_by_name(const std::string_view name) -> std::meta
 	return std::meta::info{};
 }
 
+namespace gse {
+	template <typename T>
+	consteval auto annotations_array() {
+		constexpr auto count = std::meta::annotations_of(^^T).size();
+		std::array<std::meta::info, count> out{};
+		const auto annotations = std::meta::annotations_of(^^T);
+		for (std::size_t i = 0; i < count; ++i) {
+			out[i] = annotations[i];
+		}
+		return out;
+	}
+}
+
 template <typename Schema, typename T>
 consteval auto gse::apply_annotations() -> std::optional<Schema> {
 	Schema out{};
 	bool any = false;
 
-	template for (constexpr auto ann : std::define_static_array(std::meta::annotations_of(^^T))) {
+	template for (constexpr auto ann : annotations_array<T>()) {
 		constexpr auto ann_type = std::meta::dealias(std::meta::type_of(ann));
 		constexpr auto key = std::meta::has_template_arguments(ann_type) ? std::meta::template_of(ann_type) : ann_type;
 		constexpr auto matched_field = find_field_by_name<Schema>(std::meta::identifier_of(key));
@@ -198,5 +219,29 @@ constexpr auto gse::enum_from_annotation(const MatchType& value, const Enum defa
 		}
 	}
 	return default_value;
+}
+
+template <typename AnnotationType, typename Enum>
+constexpr auto gse::annotation_from_enum(const Enum value, const AnnotationType default_value) -> AnnotationType {
+	template for (constexpr auto e : std::define_static_array(std::meta::enumerators_of(^^Enum))) {
+		constexpr auto ann = first_annotation_of_type(e, ^^AnnotationType);
+		if constexpr (ann != std::meta::info{}) {
+			if ([:e:] == value) {
+				return [:std::meta::constant_of(ann):];
+			}
+		}
+	}
+	return default_value;
+}
+
+template <typename AnnotationType, typename Enum>
+constexpr auto gse::enum_has_annotation(const Enum value) -> bool {
+	template for (constexpr auto e : std::define_static_array(std::meta::enumerators_of(^^Enum))) {
+		constexpr bool present = first_annotation_of_type(e, ^^AnnotationType) != std::meta::info{};
+		if ([:e:] == value) {
+			return present;
+		}
+	}
+	return false;
 }
 

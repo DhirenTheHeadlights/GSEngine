@@ -3,12 +3,15 @@ module gse.graphics:geometry_collector_impl;
 import std;
 
 import :geometry_collector;
+import :animation_components;
 import :camera_system;
 import :mesh;
 import :model;
 import :render_component;
 import :material;
 import :primitive_resolver;
+import :skin_renderer;
+import :skinned_model;
 import :texture;
 import :shared_shaders;
 
@@ -39,7 +42,7 @@ namespace gse::renderer::geometry_collector {
 		const spatial_matrix& normal_matrix,
 		const spatial_matrix& prev_model_matrix,
 		std::uint32_t mat_idx,
-		const vec3f& tint
+		const vec4f& tint
 	) -> void;
 
 	template <typename Items, typename Batches, typename KeyOf, typename GetMesh, typename AccumAabb, typename OnInstance>
@@ -54,15 +57,20 @@ namespace gse::renderer::geometry_collector {
 		OnInstance on_instance
 	) -> void;
 
-	auto read_body_index_map(
-		context& ctx
-	) -> std::unordered_map<id, std::uint32_t>;
-
 	auto collect_static(
 		write<render_component>& render,
 		read<physics::transform_component>& transform,
-		const std::unordered_map<id, std::uint32_t>& body_index_map,
+		read<physics::motion_component>& motion,
+		const std::flat_map<id, std::uint32_t>& body_index_map,
 		std::unordered_map<id, std::vector<std::optional<spatial_matrix>>>& prev_model_matrices,
+		time_t<float, seconds> lag,
+		std::vector<owned_render_queue_entry>& out,
+		std::vector<owned_render_queue_entry>& transparent_out
+	) -> void;
+
+	auto collect_skinned(
+		read<skeleton_instance_component>& skeletons,
+		const skin::skinned_bounds_map& bounds,
 		std::vector<owned_render_queue_entry>& out
 	) -> void;
 
@@ -70,9 +78,11 @@ namespace gse::renderer::geometry_collector {
 		std::vector<owned_render_queue_entry>& out
 	) -> void;
 
-	auto build_normal_batches(
+	auto build_queue_batches(
 		render_data& data,
-		std::uint32_t& global_instance_offset
+		std::uint32_t& global_instance_offset,
+		const std::vector<owned_render_queue_entry>& queue,
+		std::inplace_vector<normal_instance_batch, render_data::max_batches>& batches
 	) -> void;
 
 	auto initialize(
@@ -84,9 +94,15 @@ namespace gse::renderer::geometry_collector {
 	auto tick(
 		context& ctx,
 		data& d,
+		channel_read<physics::interpolation_state> physics_in,
+		shared_view<physics::data> phys_s,
+		channel_write<render_data> geometry_out,
 		shared_view<camera::data> cam_state,
+		shared_view<skin::data> skin_s,
 		write<render_component>& render,
-		read<physics::transform_component>& transform
+		read<physics::transform_component>& transform,
+		read<physics::motion_component>& motion,
+		read<skeleton_instance_component>& skeletons
 	) -> async::task<>;
 }
 
@@ -99,7 +115,7 @@ auto gse::renderer::geometry_collector::material_palette_index(render_data& data
 	return index;
 }
 
-auto gse::renderer::geometry_collector::write_instance(std::vector<shaders::common::instance_data>& instance_staging, const spatial_matrix& model_matrix, const spatial_matrix& normal_matrix, const spatial_matrix& prev_model_matrix, const std::uint32_t mat_idx, const vec3f& tint) -> void {
+auto gse::renderer::geometry_collector::write_instance(std::vector<shaders::common::instance_data>& instance_staging, const spatial_matrix& model_matrix, const spatial_matrix& normal_matrix, const spatial_matrix& prev_model_matrix, const std::uint32_t mat_idx, const vec4f& tint) -> void {
 	instance_staging.push_back({
 		.model_matrix = model_matrix,
 		.normal_matrix = normal_matrix,
@@ -144,17 +160,7 @@ auto gse::renderer::geometry_collector::build_batches(render_data& data, std::ui
 	}
 }
 
-auto gse::renderer::geometry_collector::read_body_index_map(context& ctx) -> std::unordered_map<id, std::uint32_t> {
-	std::unordered_map<id, std::uint32_t> body_index_map;
-	for (const auto& [entries] : ctx.read_channel<physics::gpu_body_index_map>()) {
-		for (const auto& [eid, idx] : entries) {
-			body_index_map[eid] = idx;
-		}
-	}
-	return body_index_map;
-}
-
-auto gse::renderer::geometry_collector::collect_static(write<render_component>& render, read<physics::transform_component>& transform, const std::unordered_map<id, std::uint32_t>& body_index_map, std::unordered_map<id, std::vector<std::optional<spatial_matrix>>>& prev_model_matrices, std::vector<owned_render_queue_entry>& out) -> void {
+auto gse::renderer::geometry_collector::collect_static(write<render_component>& render, read<physics::transform_component>& transform, read<physics::motion_component>& motion, const std::flat_map<id, std::uint32_t>& body_index_map, std::unordered_map<id, std::vector<std::optional<spatial_matrix>>>& prev_model_matrices, const time_t<float, seconds> lag, std::vector<owned_render_queue_entry>& out, std::vector<owned_render_queue_entry>& transparent_out) -> void {
 	const auto render_size = render.size();
 	const auto render_ids = render.owner_ids();
 	const bool transform_order_matches =
@@ -172,6 +178,8 @@ auto gse::renderer::geometry_collector::collect_static(write<render_component>& 
 			continue;
 		}
 
+		const auto render_tc = physics::interpolated_transform(*tc, motion.find(eid), vec3<displacement>{}, lag);
+
 		std::uint32_t body_index = owned_render_queue_entry::invalid_body_index;
 		if (const auto it = body_index_map.find(eid); it != body_index_map.end()) {
 			body_index = it->second;
@@ -186,13 +194,15 @@ auto gse::renderer::geometry_collector::collect_static(write<render_component>& 
 			if (!component.models[j].valid()) {
 				continue;
 			}
-			const auto& mdl = component.models[j].resolve();
+			const auto mdl = component.models[j].resolve();
 			const auto [model_matrix, normal_matrix] =
-				compute_render_transform(*tc, mdl.center_of_mass(), component.sizes[j]);
+				compute_render_transform(render_tc, mdl->render_pivot(), component.sizes[j]);
 			const auto prev_model_matrix = entity_prev[j].value_or(model_matrix);
 			entity_prev[j] = model_matrix;
-			for (std::size_t mi = 0; mi < mdl.meshes().size(); ++mi) {
-				out.push_back({
+			const float opacity = component.tints[j].w();
+			auto& target = opacity < 1.0f ? transparent_out : out;
+			for (std::size_t mi = 0; mi < mdl->meshes().size(); ++mi) {
+				target.push_back({
 					.entry = {
 						.model = component.models[j],
 						.index = mi,
@@ -202,9 +212,51 @@ auto gse::renderer::geometry_collector::collect_static(write<render_component>& 
 						.color = component.tints[j]
 					},
 					.owner = eid,
-					.body_index = body_index
+					.body_index = body_index,
+					.model_snapshot = mdl
 				});
 			}
+		}
+	}
+}
+
+auto gse::renderer::geometry_collector::collect_skinned(read<skeleton_instance_component>& skeletons, const skin::skinned_bounds_map& bounds, std::vector<owned_render_queue_entry>& out) -> void {
+	const auto owners = skeletons.owner_ids();
+
+	for (std::size_t i = 0; i < skeletons.size(); ++i) {
+		const auto& skeleton = skeletons[i];
+		if (!skeleton.model.valid()) {
+			continue;
+		}
+
+		const auto mdl = skeleton.model.resolve();
+		if (!mdl->uploads_ready()) {
+			continue;
+		}
+
+		constexpr float unbounded_extent = 1.0e9f;
+		const auto bounds_it = bounds.find(owners[i]);
+		const auto entry_bounds = bounds_it != bounds.end()
+			? bounds_it->second
+			: aabb{
+			.max = vec3<position>(meters(unbounded_extent)),
+			.min = vec3<position>(meters(-unbounded_extent)),
+		};
+
+		for (std::size_t mi = 0; mi < mdl->meshes().size(); ++mi) {
+			out.push_back({
+				.entry = {
+					.index = mi,
+					.model_matrix = spatial_matrix(mat4f(1.f)),
+					.normal_matrix = spatial_matrix(mat4f(1.f)),
+					.prev_model_matrix = spatial_matrix(mat4f(1.f)),
+					.color = vec4f(1.f)
+				},
+				.owner = owners[i],
+				.skinned = skeleton.model,
+				.skinned_snapshot = mdl,
+				.skinned_bounds = entry_bounds
+			});
 		}
 	}
 }
@@ -221,36 +273,64 @@ auto gse::renderer::geometry_collector::sort_queues(std::vector<owned_render_que
 				return ma < mb;
 			}
 
+			const auto sa = a.skinned.id();
+			const auto sb = b.skinned.id();
+
+			if (sa != sb) {
+				return sa < sb;
+			}
+
+			const auto oa = a.skinned.valid() ? a.owner : id{};
+			const auto ob = b.skinned.valid() ? b.owner : id{};
+
+			if (oa != ob) {
+				return oa < ob;
+			}
+
 			return a.entry.index < b.entry.index;
 		}
 	);
 }
 
-auto gse::renderer::geometry_collector::build_normal_batches(render_data& data, std::uint32_t& global_instance_offset) -> void {
-	trace::scope_guard sg{ trace_id<"geom_collect::batch_normal">() };
+auto gse::renderer::geometry_collector::build_queue_batches(render_data& data, std::uint32_t& global_instance_offset, const std::vector<owned_render_queue_entry>& queue, std::inplace_vector<normal_instance_batch, render_data::max_batches>& batches) -> void {
+	trace::scope_guard sg{ trace_id<"geom_collect::batch">() };
 	build_batches(
 		data,
 		global_instance_offset,
-		data.render_queue,
-		data.normal_batches,
+		queue,
+		batches,
 		[](const owned_render_queue_entry& q) {
 			return normal_batch_key{
-				.model_ptr = &q.entry.model.resolve(),
+				.model = q.entry.model,
+				.skinned = q.skinned,
+				.model_snapshot = q.model_snapshot,
+				.skinned_snapshot = q.skinned_snapshot,
+				.skinned_owner = q.skinned.valid() ? q.owner : id{},
 				.mesh_index = q.entry.index
 			};
 		},
 		[](const normal_batch_key& key) -> const mesh& {
-			return key.model_ptr->meshes()[key.mesh_index];
+			return key.resolve_mesh();
 		},
 		[](
-		vec3<length>& mn,
-		vec3<length>& mx,
-		std::span<const owned_render_queue_entry> batch,
-		const mesh& m
+			vec3<length>& mn,
+			vec3<length>& mx,
+			std::span<const owned_render_queue_entry> batch,
+			const mesh& m
 	) {
 			if (std::ranges::any_of(batch, [](const owned_render_queue_entry& q) {
-					return q.body_index != owned_render_queue_entry::invalid_body_index;
-				})) {
+				return q.skinned.valid();
+			})) {
+				for (const auto& q : batch) {
+					mn = vec3<length>(min(mn, q.skinned_bounds.min));
+					mx = vec3<length>(max(mx, q.skinned_bounds.max));
+				}
+				return;
+			}
+
+			if (std::ranges::any_of(batch, [](const owned_render_queue_entry& q) {
+				return q.body_index != owned_render_queue_entry::invalid_body_index;
+			})) {
 				constexpr float physics_cull_extent = 1.0e9f;
 				mn = vec3<length>(meters(-physics_cull_extent));
 				mx = vec3<length>(meters(physics_cull_extent));
@@ -273,10 +353,10 @@ auto gse::renderer::geometry_collector::build_normal_batches(render_data& data, 
 			}
 		},
 		[&](
-		const owned_render_queue_entry& q,
-		const normal_batch_key& key,
-		std::uint32_t mat_idx,
-		std::uint32_t instance_index
+			const owned_render_queue_entry& q,
+			const normal_batch_key& key,
+			std::uint32_t mat_idx,
+			std::uint32_t instance_index
 	) {
 			const auto& entry = q.entry;
 			write_instance(
@@ -291,7 +371,7 @@ auto gse::renderer::geometry_collector::build_normal_batches(render_data& data, 
 				data.physics_mappings.push_back({
 					.body_index = q.body_index,
 					.instance_index = instance_index,
-					.center_of_mass = key.model_ptr->center_of_mass()
+					.center_of_mass = key.model_snapshot->center_of_mass()
 				});
 			}
 		}
@@ -307,7 +387,8 @@ auto gse::renderer::geometry_collector::initialize(context& ctx, const shared_vi
 		d.instance_buffer[i] = gpu_s.device->create_buffer(
 			{
 				.size = instance_buffer_size,
-				.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_src | gpu::buffer_flag::transfer_dst,
+				.stride = sizeof(shaders::common::instance_data),
+				.usage = { gpu::buffer_flag::storage, gpu::buffer_flag::transfer_src, gpu::buffer_flag::transfer_dst },
 				.bindless = true
 			},
 			"gc_instance_buffer"
@@ -318,15 +399,27 @@ auto gse::renderer::geometry_collector::initialize(context& ctx, const shared_vi
 		d.normal_indirect_commands_buffer[i] = gpu_s.device->create_buffer(
 			{
 				.size = normal_indirect_buffer_size,
-				.usage = gpu::buffer_flag::indirect | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst,
-				.bindless = true
+				.stride = sizeof(gpu::draw_mesh_tasks_indirect_command),
+				.usage = { gpu::buffer_flag::indirect, gpu::buffer_flag::storage, gpu::buffer_flag::transfer_dst, gpu::buffer_flag::byte_address },
+				.bindless = true,
+				.writable = true
 			},
 			"gc_indirect_commands"
+		);
+
+		d.transparent_indirect_commands_buffer[i] = gpu_s.device->create_buffer(
+			{
+				.size = normal_indirect_buffer_size,
+				.usage = { gpu::buffer_flag::indirect, gpu::buffer_flag::storage, gpu::buffer_flag::transfer_dst },
+				.bindless = true
+			},
+			"gc_transparent_indirect_commands"
 		);
 
 		d.material_palette_buffers[i] = gpu_s.device->create_buffer(
 			{
 				.size = material_buffer_size,
+				.stride = sizeof(shaders::forward::material_data),
 				.usage = gpu::buffer_flag::storage,
 				.bindless = true
 			},
@@ -337,11 +430,9 @@ auto gse::renderer::geometry_collector::initialize(context& ctx, const shared_vi
 	co_return;
 }
 
-auto gse::renderer::geometry_collector::tick(context& ctx, data& d, const shared_view<camera::data> cam_state, write<render_component>& render, read<physics::transform_component>& transform) -> async::task<> {
+auto gse::renderer::geometry_collector::tick(context& ctx, data& d, const channel_read<physics::interpolation_state> physics_in, const shared_view<physics::data> phys_s, const channel_write<render_data> geometry_out, const shared_view<camera::data> cam_state, const shared_view<skin::data> skin_s, write<render_component>& render, read<physics::transform_component>& transform, read<physics::motion_component>& motion, read<skeleton_instance_component>& skeletons) -> async::task<> {
 	const view_matrix view_matrix = cam_state.view_matrix;
 	const projection_matrix proj_matrix = cam_state.projection_matrix;
-
-	auto body_index_map = read_body_index_map(ctx);
 
 	if (render.empty()) {
 		co_return;
@@ -351,22 +442,52 @@ auto gse::renderer::geometry_collector::tick(context& ctx, data& d, const shared
 	data.view = view_matrix;
 	data.proj = proj_matrix;
 
+	auto lag = system_clock::fixed_lag();
+	if (const auto& interpolation = physics_in.of<physics::interpolation_state>(); !interpolation.empty() && !interpolation[0].advancing) {
+		lag = time_t<float, seconds>{};
+	}
+
 	{
 		trace::scope_guard sg{ trace_id<"geom_collect::collect">() };
-		collect_static(render, transform, body_index_map, d.prev_model_matrices, data.render_queue);
+		collect_static(
+			render,
+			transform,
+			motion,
+			phys_s.id_to_body_index,
+			d.prev_model_matrices,
+			lag,
+			data.render_queue,
+			data.transparent_queue
+		);
+		collect_skinned(skeletons, skin_s.bounds, data.render_queue);
 	}
 
 	sort_queues(data.render_queue);
+	sort_queues(data.transparent_queue);
 
-	data.instance_staging.reserve(data.render_queue.size());
-	data.physics_mappings.reserve(data.render_queue.size());
+	const auto total_entries = data.render_queue.size() + data.transparent_queue.size();
+	data.instance_staging.reserve(total_entries);
+	data.physics_mappings.reserve(total_entries);
 
 	std::uint32_t global_instance_offset = 0;
-	build_normal_batches(data, global_instance_offset);
+	build_queue_batches(data, global_instance_offset, data.render_queue, data.normal_batches);
+	build_queue_batches(data, global_instance_offset, data.transparent_queue, data.transparent_batches);
+
+	for (auto& batch : data.normal_batches) {
+		if (batch.key.skinned.valid()) {
+			const auto slots = skin::deformed_slots_for(
+				skin_s.targets,
+				batch.key.skinned_owner,
+				static_cast<std::uint32_t>(batch.key.mesh_index)
+			);
+			batch.deformed_vertices = slots.current;
+			batch.prev_deformed_vertices = slots.previous;
+		}
+	}
 
 	data.physics_mapping_count = static_cast<std::uint32_t>(data.physics_mappings.size());
 
-	ctx.channels.push<render_data>(std::move(data));
+	geometry_out.push<render_data>(std::move(data));
 }
 
 auto gse::renderer::geometry_collector::filter_render_queue(const render_data& data, const std::span<const id> exclude_ids) -> std::vector<render_queue_entry> {
@@ -394,13 +515,13 @@ auto gse::renderer::geometry_collector::init(context& ctx, const shared_view<gpu
 	co_return;
 }
 
-auto gse::renderer::geometry_collector::run(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, data& d, const shared_view<camera::data> cam_state, const shared_view<primitive_resolver::data> resolver_state, write<render_component> render, read<physics::transform_component> transform) -> async::task<> {
-	co_await tick(ctx, d, cam_state, render, transform);
+auto gse::renderer::geometry_collector::run(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, data& d, const channel_read<physics::interpolation_state> physics_in, const shared_view<physics::data> phys_s, const channel_write<render_data> geometry_out, const shared_view<camera::data> cam_state, const shared_view<primitive_resolver::data> resolver_state, const shared_view<skin::data> skin_s, write<render_component> render, read<physics::transform_component> transform, read<physics::motion_component> motion, read<skeleton_instance_component> skeletons) -> async::task<> {
+	co_await tick(ctx, d, physics_in, phys_s, geometry_out, cam_state, skin_s, render, transform, motion, skeletons);
 	co_return;
 }
 
-auto gse::renderer::geometry_collector::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
-	const auto& items = ctx.read_channel<render_data>();
+auto gse::renderer::geometry_collector::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_read<render_data> geometry_in) -> async::task<> {
+	const auto& items = geometry_in.of<render_data>();
 	if (items.empty()) {
 		return {};
 	}
@@ -409,14 +530,31 @@ auto gse::renderer::geometry_collector::frame(context& ctx, shared_view<gpu::con
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
 	if (!data.instance_staging.empty()) {
-		d.instance_buffer[frame_index].host_write(data.instance_staging);
+		if (data.instance_staging.size() > d.instance_capacity) {
+			d.instance_capacity = data.instance_staging.size();
+			for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
+				d.instance_buffer[i] = gpu_s.device->create_buffer(
+					{
+						.size = d.instance_capacity * sizeof(shaders::common::instance_data),
+						.stride = sizeof(shaders::common::instance_data),
+						.usage = { gpu::buffer_flag::storage, gpu::buffer_flag::transfer_src, gpu::buffer_flag::transfer_dst },
+						.data = data.instance_staging.data(),
+						.bindless = true
+					},
+					"gc_instance_buffer"
+				);
+			}
+		}
+		else {
+			d.instance_buffer[frame_index].host_write(data.instance_staging);
+		}
 	}
 
 	if (!data.normal_batches.empty()) {
 		std::inplace_vector<gpu::draw_mesh_tasks_indirect_command, render_data::max_batches> normal_indirect_commands;
 
 		for (const auto& batch : data.normal_batches) {
-			const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
+			const auto& mesh = batch.key.resolve_mesh();
 			const std::uint32_t task_groups = (mesh.meshlet_count() + 31) / 32;
 
 			normal_indirect_commands.push_back({
@@ -431,7 +569,26 @@ auto gse::renderer::geometry_collector::frame(context& ctx, shared_view<gpu::con
 		}
 	}
 
-	const auto material_count = std::min(data.material_palette_map.size(), geometry_collector::data::max_materials);
+	if (!data.transparent_batches.empty()) {
+		std::inplace_vector<gpu::draw_mesh_tasks_indirect_command, render_data::max_batches> transparent_indirect_commands;
+
+		for (const auto& batch : data.transparent_batches) {
+			const auto& mesh = batch.key.resolve_mesh();
+			const std::uint32_t task_groups = (mesh.meshlet_count() + 31) / 32;
+
+			transparent_indirect_commands.push_back({
+				.group_count_x = task_groups,
+				.group_count_y = batch.instance_count,
+				.group_count_z = 1
+			});
+		}
+
+		if (!transparent_indirect_commands.empty()) {
+			d.transparent_indirect_commands_buffer[frame_index].host_write(transparent_indirect_commands);
+		}
+	}
+
+	const auto material_count = std::min(data.material_palette_map.size(), data::max_materials);
 	if (material_count > 0) {
 		auto& mat_staging = d.material_staging;
 		mat_staging.assign(
@@ -441,11 +598,12 @@ auto gse::renderer::geometry_collector::frame(context& ctx, shared_view<gpu::con
 		auto* staging_materials = reinterpret_cast<shaders::forward::material_data*>(mat_staging.data());
 
 		for (const auto& [mat_ptr, idx] : data.material_palette_map) {
-			if (idx >= geometry_collector::data::max_materials) {
+			if (idx >= data::max_materials) {
 				continue;
 			}
 			const auto& diffuse = mat_ptr->diffuse_texture;
-			const auto diffuse_slot = diffuse.valid() ? diffuse->bindless_slot() : gpu::bindless_slot{};
+			const auto diffuse_view = diffuse.valid() ? diffuse.resolve() : nullptr;
+			const auto diffuse_slot = diffuse_view ? diffuse_view->bindless_slot() : gpu::bindless_slot{};
 			staging_materials[idx] = {
 				.base_color = mat_ptr->base_color,
 				.roughness = mat_ptr->roughness,

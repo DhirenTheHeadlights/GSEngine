@@ -8,11 +8,11 @@ import gse.concurrency;
 import gse.time;
 import gse.math;
 import gse.diag;
+import gse.introspection;
 
 import :registries;
 import :context;
 import :settings;
-import :context;
 import :system_node;
 import :system_dispatch;
 import :registry;
@@ -64,6 +64,8 @@ export namespace gse {
 
 		[[nodiscard]] auto settle_progress() const -> settle_stats;
 
+		[[nodiscard]] auto snapshot_graph() const -> introspection::system_graph;
+
 		auto update() -> void;
 
 		auto tick(
@@ -95,13 +97,23 @@ export namespace gse {
 
 		template <typename State>
 		auto state(
-			this auto& self
-		) -> auto&;
+			this scheduler& self
+		) -> State&;
+
+		template <typename State>
+		auto state(
+			this const scheduler& self
+		) -> const State&;
 
 		template <typename State>
 		auto try_state_of(
-			this auto& self
-		) -> auto*;
+			this scheduler& self
+		) -> State*;
+
+		template <typename State>
+		auto try_state_of(
+			this const scheduler& self
+		) -> const State*;
 
 		template <typename State>
 		auto has() const -> bool;
@@ -166,9 +178,7 @@ export namespace gse {
 			id dep
 		) const -> bool;
 
-		[[nodiscard]] auto is_dispatchable(
-			id node_id
-		) const -> bool;
+		[[nodiscard]] auto dispatchable_nodes() const -> std::vector<bool>;
 
 		auto drain_hot_add_queue() -> void;
 
@@ -186,6 +196,9 @@ export namespace gse {
 		) -> void;
 
 		std::deque<system_node> m_nodes;
+		std::unordered_map<id, std::size_t> m_node_index;
+		std::vector<std::unique_ptr<context>> m_run_contexts;
+		std::optional<channel_writer> m_run_writer;
 		std::vector<system_node> m_candidates;
 		std::vector<system_node> m_deferred_nodes;
 		bool m_staging = false;
@@ -208,18 +221,29 @@ export namespace gse {
 }
 
 template <typename State>
-auto gse::scheduler::state(this auto& self) -> auto& {
+auto gse::scheduler::state(this scheduler& self) -> State& {
 	auto* p = self.m_states.state_ptr(id_of<State>());
 	assert(p != nullptr, "state not found");
-	using state_t = std::conditional_t<std::is_const_v<std::remove_pointer_t<decltype(p)>>, const State, State>;
-	return *static_cast<state_t*>(p);
+	return *static_cast<State*>(p);
 }
 
 template <typename State>
-auto gse::scheduler::try_state_of(this auto& self) -> auto* {
+auto gse::scheduler::state(this const scheduler& self) -> const State& {
+	const auto* p = self.m_states.state_ptr(id_of<State>());
+	assert(p != nullptr, "state not found");
+	return *static_cast<const State*>(p);
+}
+
+template <typename State>
+auto gse::scheduler::try_state_of(this scheduler& self) -> State* {
 	auto* p = self.m_states.state_ptr(id_of<State>());
-	using state_t = std::conditional_t<std::is_const_v<std::remove_pointer_t<decltype(p)>>, const State, State>;
-	return static_cast<state_t*>(p);
+	return static_cast<State*>(p);
+}
+
+template <typename State>
+auto gse::scheduler::try_state_of(this const scheduler& self) -> const State* {
+	const auto* p = self.m_states.state_ptr(id_of<State>());
+	return static_cast<const State*>(p);
 }
 
 template <typename State>

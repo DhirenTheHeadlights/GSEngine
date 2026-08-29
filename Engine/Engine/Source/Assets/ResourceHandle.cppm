@@ -3,11 +3,9 @@ export module gse.assets:resource_handle;
 import std;
 
 import gse.core;
-import gse.containers;
-import gse.time;
-import gse.concurrency;
-import gse.diag;
 import gse.assert;
+
+import :asset_format;
 
 export namespace gse::resource {
 	enum struct state {
@@ -20,25 +18,34 @@ export namespace gse::resource {
 	};
 
 	template <typename T>
-	struct resource_slot : non_copyable {
-		double_buffer<std::unique_ptr<T>> resource;
-		std::atomic<state> current_state;
+	struct generation {
+		std::shared_ptr<const T> resource;
+		std::uint32_t version = 0;
+	};
+
+	template <typename T>
+	struct acquired_resource {
+		std::shared_ptr<const T> resource;
+		std::uint32_t version = 0;
+	};
+
+	template <typename T>
+	struct resource_slot {
+		std::unique_ptr<T> pending_resource;
+		std::atomic<std::shared_ptr<const generation<T>>> current;
+		std::atomic<std::shared_ptr<const asset_error>> error;
+		std::atomic<state> current_state = state::unloaded;
 		std::filesystem::path path;
-		std::atomic<std::uint32_t> version{ 0 };
+		std::uint32_t next_version = 0;
+		std::uint64_t requested_reload = 0;
+		std::uint64_t started_reload = 0;
+		bool load_in_flight = false;
 
 		resource_slot(
-			std::unique_ptr<T>&& res,
-			state s,
-			const std::filesystem::path& p
+			std::unique_ptr<T>&& resource,
+			state initial_state,
+			const std::filesystem::path& baked_path
 		);
-
-		resource_slot(
-			resource_slot&& other
-		) noexcept;
-
-		auto operator=(
-			resource_slot&& other
-		) noexcept -> resource_slot&;
 	};
 
 	template <typename T>
@@ -46,32 +53,28 @@ export namespace gse::resource {
 	public:
 		handle() = default;
 
-		handle(
-			id resource_id,
-			const resource_slot<T>* slot
+		explicit handle(
+			id resource_id
 		);
 
 		handle(
 			id resource_id,
-			const resource_slot<T>* slot,
-			std::uint32_t version
+			std::shared_ptr<resource_slot<T>> slot
 		);
 
-		[[nodiscard]] auto resolve() const -> T&;
+		[[nodiscard]] auto acquire() const -> acquired_resource<T>;
+
+		[[nodiscard]] auto resolve() const -> std::shared_ptr<const T>;
 
 		[[nodiscard]] auto state() const -> resource::state;
+
+		[[nodiscard]] auto error() const -> std::shared_ptr<const asset_error>;
 
 		[[nodiscard]] auto valid() const -> bool;
 
 		[[nodiscard]] auto id() const -> id;
 
 		[[nodiscard]] auto version() const -> std::uint32_t;
-
-		[[nodiscard]] auto is_current() const -> bool;
-
-		[[nodiscard]] auto operator->() const -> T*;
-
-		[[nodiscard]] auto operator*() const -> T&;
 
 		[[nodiscard]] auto operator==(
 			const handle& other
@@ -84,70 +87,68 @@ export namespace gse::resource {
 		explicit operator bool() const;
 
 	private:
-		const resource_slot<T>* m_slot = nullptr;
-		mutable std::uint32_t m_version = 0;
+		std::shared_ptr<resource_slot<T>> m_slot;
+	};
+
+	template <typename>
+	constexpr bool is_handle_v = false;
+
+	template <typename T>
+	constexpr bool is_handle_v<handle<T>> = true;
+}
+
+template <typename T>
+gse::resource::resource_slot<T>::resource_slot(std::unique_ptr<T>&& resource, const state initial_state, const std::filesystem::path& baked_path) : pending_resource(std::move(resource)), current_state(initial_state), path(baked_path) {
+	if (initial_state == state::loaded && pending_resource) {
+		auto immutable = std::shared_ptr<const T>(std::move(pending_resource));
+		current.store(
+			std::make_shared<const generation<T>>(
+				generation<T>{
+					.resource = std::move(immutable),
+					.version = next_version
+				}
+			),
+			std::memory_order_release
+		);
+		++next_version;
+	}
+}
+
+template <typename T>
+gse::resource::handle<T>::handle(const gse::id resource_id) : identifiable_owned(resource_id) {}
+
+template <typename T>
+gse::resource::handle<T>::handle(const gse::id resource_id, std::shared_ptr<resource_slot<T>> slot) : identifiable_owned(resource_id), m_slot(std::move(slot)) {}
+
+template <typename T>
+auto gse::resource::handle<T>::acquire() const -> acquired_resource<T> {
+	assert(m_slot != nullptr, "acquire() on unresolved resource handle: id {}", owner_id());
+	const auto generation = m_slot->current.load(std::memory_order_acquire);
+	assert(generation && generation->resource, "acquire() on unavailable resource handle: id {}", owner_id());
+	return {
+		.resource = generation->resource,
+		.version = generation->version
 	};
 }
 
 template <typename T>
-gse::resource::resource_slot<T>::resource_slot(std::unique_ptr<T>&& res, const state s, const std::filesystem::path& p)
-	: current_state(s), path(p) {
-	resource.write() = std::move(res);
-	resource.publish();
-}
-
-template <typename T>
-gse::resource::resource_slot<T>::resource_slot(resource_slot&& other) noexcept
-	: current_state(other.current_state.load(std::memory_order_relaxed)), path(std::move(other.path)), version(other.version.load(std::memory_order_relaxed)) {
-	resource.write() = other.resource.take_ready();
-	resource.publish();
-}
-
-template <typename T>
-auto gse::resource::resource_slot<T>::operator=(resource_slot&& other) noexcept -> resource_slot& {
-	if (this != &other) {
-		resource.write() = other.resource.take_ready();
-		resource.publish();
-		current_state.store(other.current_state.load(std::memory_order_relaxed));
-		path = std::move(other.path);
-		version.store(other.version.load(std::memory_order_relaxed));
-	}
-	return *this;
-}
-
-template <typename T>
-gse::resource::handle<T>::handle(const gse::id resource_id, const resource_slot<T>* slot)
-	: identifiable_owned(resource_id), m_slot(slot) {
-	if (m_slot) {
-		m_version = m_slot->version.load(std::memory_order_acquire);
-	}
-}
-
-template <typename T>
-gse::resource::handle<T>::handle(const gse::id resource_id, const resource_slot<T>* slot, const std::uint32_t version)
-	: identifiable_owned(resource_id), m_slot(slot), m_version(version) {
-}
-
-template <typename T>
-auto gse::resource::handle<T>::resolve() const -> T& {
-	assert(valid(), "resolve() on invalid resource handle: id {}", owner_id());
-	m_version = m_slot->version.load(std::memory_order_acquire);
-	const auto& ptr = m_slot->resource.read();
-	return *ptr;
+auto gse::resource::handle<T>::resolve() const -> std::shared_ptr<const T> {
+	return acquire().resource;
 }
 
 template <typename T>
 auto gse::resource::handle<T>::state() const -> resource::state {
-	if (!m_slot) {
-		return state::unloaded;
-	}
-	return m_slot->current_state.load(std::memory_order_acquire);
+	return m_slot ? m_slot->current_state.load(std::memory_order_acquire) : state::unloaded;
+}
+
+template <typename T>
+auto gse::resource::handle<T>::error() const -> std::shared_ptr<const asset_error> {
+	return m_slot ? m_slot->error.load(std::memory_order_acquire) : nullptr;
 }
 
 template <typename T>
 auto gse::resource::handle<T>::valid() const -> bool {
-	const auto s = state();
-	return m_slot && (s == state::loaded || s == state::reloading);
+	return m_slot && m_slot->current.load(std::memory_order_acquire) != nullptr;
 }
 
 template <typename T>
@@ -157,33 +158,13 @@ auto gse::resource::handle<T>::id() const -> gse::id {
 
 template <typename T>
 auto gse::resource::handle<T>::version() const -> std::uint32_t {
-	return m_version;
-}
-
-template <typename T>
-auto gse::resource::handle<T>::is_current() const -> bool {
-	if (!m_slot) {
-		return false;
-	}
-	return m_version == m_slot->version.load(std::memory_order_acquire);
-}
-
-template <typename T>
-auto gse::resource::handle<T>::operator->() const -> T* {
-	return &resolve();
-}
-
-template <typename T>
-auto gse::resource::handle<T>::operator*() const -> T& {
-	return resolve();
+	const auto current = m_slot ? m_slot->current.load(std::memory_order_acquire) : nullptr;
+	return current ? current->version : 0;
 }
 
 template <typename T>
 auto gse::resource::handle<T>::operator==(const handle& other) const -> bool {
-	if (!valid() || !other.valid()) {
-		return false;
-	}
-	return owner_id() == other.owner_id() && m_slot == other.m_slot;
+	return owner_id() == other.owner_id();
 }
 
 template <typename T>

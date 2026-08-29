@@ -4,16 +4,20 @@ import std;
 
 import :core;
 import :enums;
+import :image;
+
+import gse.math;
 
 export namespace gse::gpu {
 	struct pipeline_state_cache {
+		bool vertex_input_set = false;
 		std::optional<gpu::topology> topology;
 		std::optional<gpu::polygon_mode> polygon_mode;
 		std::optional<gpu::cull_mode> cull_mode;
 		std::optional<gpu::front_face> front_face;
 		std::optional<bool> depth_test_enable;
 		std::optional<bool> depth_write_enable;
-		std::optional<gpu::compare_op> depth_compare_op;
+		std::optional<compare_op> depth_compare_op;
 		std::optional<bool> depth_bias_enable;
 		std::optional<bool> rasterizer_discard_enable;
 		std::optional<bool> primitive_restart_enable;
@@ -30,6 +34,9 @@ export namespace gse::gpu {
 	struct resource_ref {
 		const void* ptr = nullptr;
 		resource_type type = resource_type::buffer;
+		image_aspect_flags aspects = {};
+		device_size buffer_size = 0;
+		const void* host_buffer = nullptr;
 	};
 
 	struct resource_slot {
@@ -103,13 +110,6 @@ export namespace gse::gpu {
 		device_size range = 0;
 	};
 
-	struct secondary_inheritance_info {
-		bool render_pass_continue = false;
-		std::span<const image_format_value> color_attachment_formats;
-		image_format_value depth_attachment_format = 0;
-		pipeline_statistic_flags pipeline_statistics;
-	};
-
 	struct draw_indexed_indirect_command {
 		std::uint32_t index_count;
 		std::uint32_t instance_count;
@@ -153,5 +153,22 @@ export namespace gse::gpu {
 		std::vector<std::uint8_t> blend_enables;
 		std::vector<color_blend_equation> blend_equations;
 		std::vector<color_component_flags> color_write_masks;
+	};
+
+	struct rendering_attachment_info {
+		handle<gpu::image_view> image_view;
+		load_op load = load_op::dont_care;
+		store_op store = store_op::dont_care;
+		color_clear color_clear_value;
+		depth_clear depth_clear_value;
+	};
+
+	struct rendering_info {
+		rect_t<vec2i> render_area;
+		std::uint32_t layer_count = 1;
+		std::span<const rendering_attachment_info> color_attachments;
+		const rendering_attachment_info* depth_attachment = nullptr;
+		const rendering_attachment_info* stencil_attachment = nullptr;
+		bool secondary_command_buffers = false;
 	};
 }

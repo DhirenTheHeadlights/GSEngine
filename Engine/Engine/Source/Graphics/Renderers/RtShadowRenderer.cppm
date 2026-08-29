@@ -16,12 +16,21 @@ import gse.diag;
 import gse.ecs;
 import gse.math;
 import gse.log;
+import gse.gpu_record;
 
 export namespace gse::renderer::rt_shadow {
-	struct [[= gse::system_state<"RtShadow">{}]] data {
-		[[= gse::shared]] per_frame_resource<const gpu::tlas*> tlas_ptrs{};
+	using blas_key = std::pair<id, std::uint32_t>;
 
-		std::unordered_map<const mesh*, gpu::blas> blas_cache;
+	struct blas_entry {
+		const mesh* source = nullptr;
+		gpu::blas blas;
+	};
+
+	struct [[= system_state<"RtShadow">{}]] data {
+		[[= shared]] per_frame_resource<const gpu::tlas*> tlas_ptrs{};
+
+		std::flat_map<blas_key, blas_entry> blas_cache;
+		per_frame_resource<gpu::buffer> blas_scratch;
 		per_frame_resource<gpu::tlas> tlas_per_frame;
 		per_frame_resource<linear_vector<gpu::tlas_instance_desc>> instances;
 
@@ -32,7 +41,7 @@ export namespace gse::renderer::rt_shadow {
 		per_frame_resource<gpu::bindless_handle> tlas_instance_views;
 	};
 
-	[[= gse::system_init{}]]
+	[[= system_init{}]]
 	auto init(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
@@ -40,11 +49,13 @@ export namespace gse::renderer::rt_shadow {
 		data& d
 	) -> async::task<>;
 
-	[[= gse::system_frame{}]]
+	[[= system_frame{}]]
 	auto frame(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		data& d,
+		channel_write<gpu::render_pass_request> pass_out,
+		channel_read<geometry_collector::render_data> geometry_in,
 		shared_view<geometry_collector::data> gc_r
 	) -> async::task<>;
 }

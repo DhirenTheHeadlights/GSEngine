@@ -8,8 +8,8 @@ import gse.core;
 
 export namespace gse::gpu {
 	struct sub_allocation {
-		gpu::device_size offset;
-		gpu::device_size size;
+		device_size offset;
+		device_size size;
 		bool in_use = false;
 	};
 
@@ -35,8 +35,8 @@ export namespace gse::gpu {
 
 		allocation(
 			std::uint64_t memory,
-			gpu::device_size size,
-			gpu::device_size offset,
+			device_size size,
+			device_size offset,
 			void* mapped,
 			sub_allocation* owner,
 			allocation_debug_info debug_info = {}
@@ -44,9 +44,9 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto memory() const -> std::uint64_t;
 
-		[[nodiscard]] auto size() const -> gpu::device_size;
+		[[nodiscard]] auto size() const -> device_size;
 
-		[[nodiscard]] auto offset() const -> gpu::device_size;
+		[[nodiscard]] auto offset() const -> device_size;
 
 		[[nodiscard]] auto mapped() const -> std::byte*;
 
@@ -56,15 +56,15 @@ export namespace gse::gpu {
 
 	private:
 		std::uint64_t m_memory = 0;
-		gpu::device_size m_size = 0;
-		gpu::device_size m_offset = 0;
+		device_size m_size = 0;
+		device_size m_offset = 0;
 		void* m_mapped = nullptr;
 		sub_allocation* m_owner = nullptr;
 		allocation_debug_info m_debug_info;
 	};
 }
 
-gse::gpu::allocation::allocation(const std::uint64_t memory, const gpu::device_size size, const gpu::device_size offset, void* mapped, sub_allocation* owner, allocation_debug_info debug_info)
+gse::gpu::allocation::allocation(const std::uint64_t memory, const device_size size, const device_size offset, void* mapped, sub_allocation* owner, allocation_debug_info debug_info)
 	: m_memory(memory), m_size(size), m_offset(offset), m_mapped(mapped), m_owner(owner), m_debug_info(std::move(debug_info)) {
 }
 
@@ -72,11 +72,11 @@ auto gse::gpu::allocation::memory() const -> std::uint64_t {
 	return m_memory;
 }
 
-auto gse::gpu::allocation::size() const -> gpu::device_size {
+auto gse::gpu::allocation::size() const -> device_size {
 	return m_size;
 }
 
-auto gse::gpu::allocation::offset() const -> gpu::device_size {
+auto gse::gpu::allocation::offset() const -> device_size {
 	return m_offset;
 }
 

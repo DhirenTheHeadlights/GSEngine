@@ -4,6 +4,7 @@ import std;
 
 import :sdf_grid_renderer;
 import :atmosphere_renderer;
+import :depth_prepass_renderer;
 import :forward_renderer;
 import :camera_system;
 import :render_targets;
@@ -12,6 +13,7 @@ import :render_targets;
 import gse.os;
 import gse.assets;
 import gse.gpu;
+import gse.gpu_record;
 import gse.core;
 import gse.containers;
 import gse.concurrency;
@@ -43,7 +45,7 @@ namespace gse::renderer::sdf_grid {
 		gpu::fragment_stage<"fs_main">,
 		gpu::push_constant<push_constants>,
 		gpu::rasterization<gpu::polygon_mode::fill, gpu::cull_mode::none>,
-		gpu::color_targets<gpu::color_format::hdr>,
+		gpu::color_targets<gpu::color_format::hdr, gpu::color_format::hdr>,
 		gpu::depth<true, true, gpu::compare_op::less_or_equal>,
 		gpu::blend<gpu::blend_preset::alpha>
 	>;
@@ -58,7 +60,8 @@ auto gse::renderer::sdf_grid::init(context& ctx, const shared_view<gpu::context:
 		d.camera_ubo_buffers[i] = gpu_s.device->create_buffer(
 			{
 				.size = camera_ubo_size,
-				.usage = gpu::buffer_flag::uniform,
+				.stride = sizeof(shaders::common::camera_data),
+				.usage = gpu::buffer_flag::storage,
 				.bindless = true
 			},
 			"sdf_grid.camera_ubo"
@@ -68,7 +71,7 @@ auto gse::renderer::sdf_grid::init(context& ctx, const shared_view<gpu::context:
 	return {};
 }
 
-auto gse::renderer::sdf_grid::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, shared_view<camera::data> cam_state) -> async::task<> {
+auto gse::renderer::sdf_grid::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, shared_view<camera::data> cam_state) -> async::task<> {
 	if (!d.enabled) {
 		co_return;
 	}
@@ -95,11 +98,12 @@ auto gse::renderer::sdf_grid::frame(const context& ctx, shared_view<gpu::context
 
 	const auto ext = gpu_s.render_graph->extent();
 
-	auto rec = co_await gpu::pass<^^gse::renderer::sdf_grid::frame>(ctx)
+	auto rec = co_await gpu::pass<^^frame>(pass_out)
 		.pipeline(d.pipeline)
 		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
+		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::velocity>()))
 		.depth(gpu::load_depth())
-		.after<^^forward::frame, ^^atmosphere::sky_raster_pass>();
+		.after<^^forward::frame, ^^atmosphere::sky_raster_pass, ^^depth_prepass::frame>();
 
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);

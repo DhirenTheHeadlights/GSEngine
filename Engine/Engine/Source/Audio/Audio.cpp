@@ -28,7 +28,7 @@ namespace gse::audio {
 auto gse::bake(const std::filesystem::path& src, audio_clip::baked& out) -> bool {
 	std::ifstream file(src, std::ios::binary | std::ios::ate);
 	if (!file.is_open()) {
-		log::println(log::level::warning, log::category::assets, "Failed to open audio source: {}", src.string());
+		log::println(log::level::warning, log::category::assets, "Failed to open audio source: {}", src.generic_display_string());
 		return false;
 	}
 	const auto size = file.tellg();
@@ -38,12 +38,12 @@ auto gse::bake(const std::filesystem::path& src, audio_clip::baked& out) -> bool
 	return true;
 }
 
-auto gse::audio_clip::load(asset::load_ctx&) -> async::task<> {
-	baked b{};
-	if (!load_baked(std::filesystem::path(m_path), b)) {
-		co_return;
+auto gse::audio_clip::load(asset::load_ctx&) -> async::task<asset_result> {
+	auto loaded = load_baked<baked>(std::filesystem::path(m_path));
+	if (!loaded) {
+		co_return std::unexpected(std::move(loaded.error()));
 	}
-	m_bytes = std::move(b.bytes.storage);
+	m_bytes = std::move(loaded->bytes.storage);
 
 	const ma_decoder_config cfg = ma_decoder_config_init(ma_format_value_unknown, 0, 0);
 	ma_decoder decoder;
@@ -58,16 +58,14 @@ auto gse::audio_clip::load(asset::load_ctx&) -> async::task<> {
 			: seconds(0.f);
 		ma_decoder_uninit(&decoder);
 	}
-	co_return;
-}
-
-auto gse::audio_clip::unload() -> void {
-	m_bytes.clear();
-	m_bytes.shrink_to_fit();
-	m_sample_rate = 0;
-	m_channels = 0;
-	m_frame_count = 0;
-	m_duration = {};
+	else {
+		co_return std::unexpected(asset_error{
+			.code = asset_error_code::load_failure,
+			.path = std::filesystem::path(m_path),
+			.detail = "Unable to decode baked audio"
+		});
+	}
+	co_return asset_result{};
 }
 
 auto gse::audio_clip::data() const -> const std::vector<std::byte>& {
@@ -149,31 +147,31 @@ auto gse::audio::init(data& d) -> async::task<> {
 	return {};
 }
 
-auto gse::audio::run(context& ctx, data& d) -> async::task<> {
-	for (const auto& req : ctx.read_channel<play_request>()) {
+auto gse::audio::run(context& ctx, data& d, const channel_read<play_request, stop_request, pause_request, resume_request, set_volume_request, set_master_volume_request> requests_in) -> async::task<> {
+	for (const auto& req : requests_in.of<play_request>()) {
 		if (req.clip) {
 			const auto handle = allocate_voice(d, *req.clip, req.loop);
 			req.promise.fulfill(handle);
 		}
 	}
 
-	for (const auto& req : ctx.read_channel<stop_request>()) {
+	for (const auto& req : requests_in.of<stop_request>()) {
 		release_voice(d, req.handle);
 	}
 
-	for (const auto& req : ctx.read_channel<pause_request>()) {
+	for (const auto& req : requests_in.of<pause_request>()) {
 		if (valid_voice(d, req.handle)) {
 			ma_sound_stop(&d.voices[req.handle.index]->sound);
 		}
 	}
 
-	for (const auto& req : ctx.read_channel<resume_request>()) {
+	for (const auto& req : requests_in.of<resume_request>()) {
 		if (valid_voice(d, req.handle)) {
 			ma_sound_start(&d.voices[req.handle.index]->sound);
 		}
 	}
 
-	for (const auto& req : ctx.read_channel<set_volume_request>()) {
+	for (const auto& req : requests_in.of<set_volume_request>()) {
 		if (valid_voice(d, req.handle)) {
 			ma_sound_set_volume(
 				&d.voices[req.handle.index]->sound,
@@ -182,7 +180,7 @@ auto gse::audio::run(context& ctx, data& d) -> async::task<> {
 		}
 	}
 
-	for (const auto& req : ctx.read_channel<set_master_volume_request>()) {
+	for (const auto& req : requests_in.of<set_master_volume_request>()) {
 		d.master_vol = req.vol;
 		if (d.engine_initialized) {
 			ma_engine_set_volume(&d.engine->inner, req.vol.value(percentage<float>::bound::zero_to_one));

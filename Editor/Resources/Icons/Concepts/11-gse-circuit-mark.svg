@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="27" y1="24" x2="228" y2="229" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#081411"/>
+      <stop offset="1" stop-color="#030508"/>
+    </linearGradient>
+    <linearGradient id="wire" x1="46" y1="60" x2="210" y2="197" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#67ff9a"/>
+      <stop offset="0.5" stop-color="#71f2ff"/>
+      <stop offset="1" stop-color="#ffda5e"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#000000" flood-opacity="0.45"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="9" flood-color="#67ff9a" flood-opacity="0.24"/>
+    </filter>
+  </defs>
+  <rect x="18" y="18" width="220" height="220" rx="48" fill="url(#bg)"/>
+  <path d="M58 79h39v33H63v57h39M127 79h51M127 79v45h51v45h-51M198 79h-45v45h39M153 169h45" fill="none" stroke="url(#wire)" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>
+  <path d="M58 79H35M63 169H36M178 79h36M198 169h23M153 124h-25M192 124h29" stroke="#355151" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="35" cy="79" r="8" fill="#67ff9a"/>
+  <circle cx="36" cy="169" r="8" fill="#71f2ff"/>
+  <circle cx="214" cy="79" r="8" fill="#ffda5e"/>
+  <circle cx="221" cy="169" r="8" fill="#ff6d9e"/>
+  <rect x="48" y="51" width="160" height="154" rx="22" fill="none" stroke="#244141" stroke-width="4"/>
+</svg>

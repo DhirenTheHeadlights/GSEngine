@@ -27,7 +27,7 @@ export namespace gse {
 		spatial_matrix model_matrix;
 		spatial_matrix normal_matrix;
 		spatial_matrix prev_model_matrix;
-		vec3f color;
+		vec4f color;
 	};
 
 	class model : public identifiable {
@@ -51,15 +51,15 @@ export namespace gse {
 			= asset_format::baked_ext<".gmdl">{},
 			= asset_format::baked_dir<"Models">{},
 			= asset_format::magic<0x474D444C>{},
-			= asset_format::version<4>{}
+			= asset_format::version<5>{}
 		]] baked {
 			std::vector<mesh_baked> meshes;
 		};
 
 		explicit model(const std::filesystem::path& path)
-			: identifiable(path, config::baked_resource_path), m_baked_model_path(path) {
+			: identifiable(config::asset_tag(path)), m_baked_model_path(path) {
 		}
-		
+
 		explicit model(
 			std::string_view name,
 			std::vector<mesh_data> meshes
@@ -67,12 +67,11 @@ export namespace gse {
 
 		auto load(
 			asset::load_ctx& ctx
-		) -> async::task<>;
-
-		auto unload() -> void;
+		) -> async::task<asset_result>;
 
 		auto meshes() const -> std::span<const mesh>;
 		auto center_of_mass() const -> vec3<length>;
+		auto render_pivot() const -> vec3<length>;
 
 		auto uploads_ready() const -> bool;
 
@@ -90,41 +89,25 @@ gse::model::model(const std::string_view name, std::vector<mesh_data> meshes) : 
 	}
 }
 
-auto gse::model::load(asset::load_ctx& ctx) -> async::task<> {
+auto gse::model::load(asset::load_ctx& ctx) -> async::task<asset_result> {
 	if (!m_baked_model_path.empty()) {
 		m_meshes.clear();
 
-		model::baked baked{};
-		if (!load_baked(m_baked_model_path, baked)) {
-			co_return;
+		auto baked = load_baked<model::baked>(m_baked_model_path);
+		if (!baked) {
+			co_return std::unexpected(std::move(baked.error()));
 		}
 
-		const auto model_relative = m_baked_model_path.lexically_relative(config::baked_resource_path);
-		auto texture_dir = model_relative.parent_path().string();
-		std::ranges::replace(texture_dir, '\\', '/');
-		if (texture_dir.starts_with("Models/")) {
-			texture_dir = "Textures/" + texture_dir.substr(7);
-		}
-
-		m_meshes.reserve(baked.meshes.size());
-		for (auto& mb : baked.meshes) {
-			gse::material mat;
-			mat.base_color = mb.material.base_color;
-			mat.roughness = mb.material.roughness;
-			mat.metallic = mb.material.metallic;
-
-			if (!mb.material.albedo_file.empty()) {
-				auto stem = std::filesystem::path(mb.material.albedo_file).stem().string();
-				mat.diffuse_texture = asset::get<texture>(ctx.assets, texture_dir + "/" + stem);
-			}
-			if (!mb.material.normal_file.empty()) {
-				auto stem = std::filesystem::path(mb.material.normal_file).stem().string();
-				mat.normal_texture = asset::get<texture>(ctx.assets, texture_dir + "/" + stem);
-			}
-			if (!mb.material.rm_file.empty()) {
-				auto stem = std::filesystem::path(mb.material.rm_file).stem().string();
-				mat.specular_texture = asset::get<texture>(ctx.assets, texture_dir + "/" + stem);
-			}
+		m_meshes.reserve(baked->meshes.size());
+		for (auto& mb : baked->meshes) {
+			material mat{
+				.base_color = mb.material.base_color,
+				.roughness = mb.material.roughness,
+				.metallic = mb.material.metallic,
+				.diffuse_texture = asset::try_get<texture>(ctx.assets, mb.material.albedo_file),
+				.normal_texture = asset::try_get<texture>(ctx.assets, mb.material.normal_file),
+				.specular_texture = asset::try_get<texture>(ctx.assets, mb.material.rm_file),
+			};
 
 			m_meshes.emplace_back(
 				mesh_data{
@@ -146,10 +129,7 @@ auto gse::model::load(asset::load_ctx& ctx) -> async::task<> {
 		sum += mesh.center_of_mass();
 	}
 	m_center_of_mass = m_meshes.empty() ? vec3<length>{} : sum / static_cast<float>(m_meshes.size());
-}
-
-auto gse::model::unload() -> void {
-	m_meshes.clear();
+	co_return asset_result{};
 }
 
 auto gse::model::meshes() const -> std::span<const mesh> {
@@ -158,6 +138,10 @@ auto gse::model::meshes() const -> std::span<const mesh> {
 
 auto gse::model::center_of_mass() const -> vec3<length> {
 	return m_center_of_mass;
+}
+
+auto gse::model::render_pivot() const -> vec3<length> {
+	return m_baked_model_path.empty() ? vec3<length>{} : m_center_of_mass;
 }
 
 auto gse::model::uploads_ready() const -> bool {

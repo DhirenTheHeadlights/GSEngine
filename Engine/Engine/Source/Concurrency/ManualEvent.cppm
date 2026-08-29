@@ -3,6 +3,9 @@ export module gse.concurrency:manual_event;
 import std;
 
 import gse.core;
+import gse.log;
+
+import :async_task;
 
 export namespace gse::async {
 	class manual_event : non_copyable, non_movable {
@@ -34,7 +37,7 @@ export namespace gse::async {
 	private:
 		mutable std::mutex m_state;
 		bool m_set = false;
-		std::vector<std::coroutine_handle<>> m_waiters;
+		std::vector<checked_handle> m_waiters;
 	};
 }
 
@@ -48,7 +51,7 @@ auto gse::async::manual_event::awaiter::await_suspend(const std::coroutine_handl
 	if (m_event->m_set) {
 		return false;
 	}
-	m_event->m_waiters.push_back(h);
+	m_event->m_waiters.push_back(track_frame(h));
 	return true;
 }
 
@@ -60,7 +63,7 @@ auto gse::async::manual_event::wait() -> awaiter {
 }
 
 auto gse::async::manual_event::set() -> void {
-	std::vector<std::coroutine_handle<>> to_wake;
+	std::vector<checked_handle> to_wake;
 	{
 		std::lock_guard lock(m_state);
 		if (m_set) {
@@ -69,8 +72,14 @@ auto gse::async::manual_event::set() -> void {
 		m_set = true;
 		to_wake.swap(m_waiters);
 	}
-	for (const auto h : to_wake) {
-		h.resume();
+	for (const checked_handle& h : to_wake) {
+		if (!resume_checked(h)) {
+			log::println(
+				log::level::error,
+				log::category::task,
+				"manual_event: waiter was not resumed because its coroutine frame had already been destroyed"
+			);
+		}
 	}
 }
 

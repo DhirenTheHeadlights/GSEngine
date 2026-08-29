@@ -2,12 +2,15 @@ export module gse.graphics:geometry_collector;
 
 import std;
 
+import :animation_components;
 import :camera_system;
 import :mesh;
 import :model;
 import :render_component;
 import :material;
 import :primitive_resolver;
+import :skin_renderer;
+import :skinned_model;
 import :texture;
 
 import gse.math;
@@ -21,6 +24,7 @@ import gse.os;
 import gse.assets;
 import gse.gpu;
 import gse.physics;
+import gse.gpu_record;
 
 import :shared_shaders;
 
@@ -36,15 +40,16 @@ export namespace gse::renderer {
 		return { spatial_matrix(model_matrix), spatial_matrix(rot_mat) };
 	}
 
+
 	auto transform_aabb(const vec3<length>& local_min, const vec3<length>& local_max, const mat4f& model_matrix) -> std::pair<vec3<length>, vec3<length>> {
 		const std::array corners = { vec4<length>(local_min.x(), local_min.y(), local_min.z(), meters(1.0f)),
-									 vec4<length>(local_max.x(), local_min.y(), local_min.z(), meters(1.0f)),
-									 vec4<length>(local_min.x(), local_max.y(), local_min.z(), meters(1.0f)),
-									 vec4<length>(local_max.x(), local_max.y(), local_min.z(), meters(1.0f)),
-									 vec4<length>(local_min.x(), local_min.y(), local_max.z(), meters(1.0f)),
-									 vec4<length>(local_max.x(), local_min.y(), local_max.z(), meters(1.0f)),
-									 vec4<length>(local_min.x(), local_max.y(), local_max.z(), meters(1.0f)),
-									 vec4<length>(local_max.x(), local_max.y(), local_max.z(), meters(1.0f)) };
+			vec4<length>(local_max.x(), local_min.y(), local_min.z(), meters(1.0f)),
+			vec4<length>(local_min.x(), local_max.y(), local_min.z(), meters(1.0f)),
+			vec4<length>(local_max.x(), local_max.y(), local_min.z(), meters(1.0f)),
+			vec4<length>(local_min.x(), local_min.y(), local_max.z(), meters(1.0f)),
+			vec4<length>(local_max.x(), local_min.y(), local_max.z(), meters(1.0f)),
+			vec4<length>(local_min.x(), local_max.y(), local_max.z(), meters(1.0f)),
+			vec4<length>(local_max.x(), local_max.y(), local_max.z(), meters(1.0f)) };
 
 		vec3 world_min(meters(std::numeric_limits<float>::max()));
 		vec3 world_max(meters(std::numeric_limits<float>::lowest()));
@@ -95,12 +100,29 @@ export namespace gse::renderer {
 	}
 
 	struct normal_batch_key {
-		const model* model_ptr;
+		resource::handle<model> model;
+		resource::handle<skinned_model> skinned;
+		std::shared_ptr<const gse::model> model_snapshot;
+		std::shared_ptr<const skinned_model> skinned_snapshot;
+		id skinned_owner;
 		std::size_t mesh_index;
 
 		auto operator==(
-			const normal_batch_key&
-		) const -> bool = default;
+			const normal_batch_key& other
+		) const -> bool {
+			return model.id() == other.model.id()
+				&& skinned.id() == other.skinned.id()
+				&& model_snapshot == other.model_snapshot
+				&& skinned_snapshot == other.skinned_snapshot
+				&& skinned_owner == other.skinned_owner
+				&& mesh_index == other.mesh_index;
+		}
+
+		auto resolve_mesh() const -> const mesh& {
+			return skinned_snapshot
+				? skinned_snapshot->meshes()[mesh_index]
+				: model_snapshot->meshes()[mesh_index];
+		}
 	};
 
 	struct normal_instance_batch {
@@ -109,6 +131,8 @@ export namespace gse::renderer {
 		std::uint32_t instance_count;
 		vec3<length> world_aabb_min;
 		vec3<length> world_aabb_max;
+		gpu::bindless_slot deformed_vertices;
+		gpu::bindless_slot prev_deformed_vertices;
 	};
 }
 
@@ -125,6 +149,10 @@ export namespace gse::renderer::geometry_collector {
 		render_queue_entry entry;
 		id owner;
 		std::uint32_t body_index = invalid_body_index;
+		resource::handle<skinned_model> skinned;
+		std::shared_ptr<const model> model_snapshot;
+		std::shared_ptr<const skinned_model> skinned_snapshot;
+		aabb skinned_bounds;
 	};
 
 	struct render_data {
@@ -132,6 +160,9 @@ export namespace gse::renderer::geometry_collector {
 
 		std::vector<owned_render_queue_entry> render_queue;
 		std::inplace_vector<normal_instance_batch, max_batches> normal_batches;
+
+		std::vector<owned_render_queue_entry> transparent_queue;
+		std::inplace_vector<normal_instance_batch, max_batches> transparent_batches;
 
 		std::vector<shaders::common::instance_data> instance_staging;
 
@@ -149,42 +180,52 @@ export namespace gse::renderer::geometry_collector {
 		std::span<const id> exclude_ids
 	) -> std::vector<render_queue_entry>;
 
-	struct [[= gse::system_state<"GeometryCollector">{}]] data {
-		[[= gse::shared]] per_frame_resource<gpu::buffer> instance_buffer;
+	struct [[= system_state<"GeometryCollector">{}]] data {
+		[[= shared]] per_frame_resource<gpu::buffer> instance_buffer;
 
 		static constexpr std::size_t max_instances = 4096;
 		static constexpr std::size_t max_materials = 1024;
 
-		[[= gse::shared]] per_frame_resource<gpu::buffer> normal_indirect_commands_buffer;
-		[[= gse::shared]] per_frame_resource<gpu::buffer> material_palette_buffers;
+		std::size_t instance_capacity = max_instances;
+
+		[[= shared]] per_frame_resource<gpu::buffer> normal_indirect_commands_buffer;
+		[[= shared]] per_frame_resource<gpu::buffer> transparent_indirect_commands_buffer;
+		[[= shared]] per_frame_resource<gpu::buffer> material_palette_buffers;
 
 		linear_vector<std::byte> material_staging;
 		std::unordered_map<id, std::vector<std::optional<spatial_matrix>>> prev_model_matrices;
 	};
 
-	[[= gse::system_init{}]]
+	[[= system_init{}]]
 	auto init(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		data& d
 	) -> async::task<>;
 
-	[[= gse::system_run<>{}]]
+	[[= system_run<>{}]]
 	auto run(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		shared_view<asset::data> assets_s,
 		data& d,
+		channel_read<physics::interpolation_state> physics_in,
+		shared_view<physics::data> phys_s,
+		channel_write<render_data> geometry_out,
 		shared_view<camera::data> cam_state,
 		shared_view<primitive_resolver::data> resolver_state,
+		shared_view<skin::data> skin_s,
 		write<render_component> render,
-		read<physics::transform_component> transform
+		read<physics::transform_component> transform,
+		read<physics::motion_component> motion,
+		read<skeleton_instance_component> skeletons
 	) -> async::task<>;
 
-	[[= gse::system_frame{}]]
+	[[= system_frame{}]]
 	auto frame(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
-		data& d
+		data& d,
+		channel_read<render_data> geometry_in
 	) -> async::task<>;
 }

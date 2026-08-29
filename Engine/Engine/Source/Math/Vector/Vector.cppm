@@ -35,7 +35,7 @@ export namespace gse::internal {
 	template <typename T>
 	constexpr float vec_unit_scale_v = []() consteval {
 		if constexpr (requires {
-						  { T::canonical_storage_scale() } -> std::convertible_to<float>; }) {
+			{ T::canonical_storage_scale() } -> std::convertible_to<float>; }) {
 			return T::canonical_storage_scale();
 		}
 		else {
@@ -173,7 +173,7 @@ export namespace gse {
 		constexpr vec(
 			Args&&... args
 		)
-		requires gse::internal::vec_ctor_compatible<T, N, Args...>;
+		requires internal::vec_ctor_compatible<T, N, Args...>;
 
 		template <std::size_t M>
 		constexpr vec(
@@ -258,84 +258,84 @@ export namespace gse {
 			this const Self& self,
 			const vec<T2, M>& rhs
 		)
-		requires(N == M && gse::internal::are_addable<T, T2>);
+		requires(N == M && internal::are_addable<T, T2>);
 
 		template <typename Self, internal::is_vec_element T2, std::size_t M>
 		constexpr auto operator-(
 			this const Self& self,
 			const vec<T2, M>& rhs
 		)
-		requires(N == M && gse::internal::are_subtractable<T, T2>);
+		requires(N == M && internal::are_subtractable<T, T2>);
 
 		template <typename Self, internal::is_vec_element T2, std::size_t M>
 		constexpr auto operator*(
 			this const Self& self,
 			const vec<T2, M>& rhs
 		)
-		requires(N == M && gse::internal::are_multipliable<T, T2>);
+		requires(N == M && internal::are_multipliable<T, T2>);
 
 		template <typename Self, internal::is_vec_element T2, std::size_t M>
 		constexpr auto operator/(
 			this const Self& self,
 			const vec<T2, M>& rhs
 		)
-		requires(N == M && gse::internal::are_divisible<T, T2>);
+		requires(N == M && internal::are_divisible<T, T2>);
 
 		template <typename Self, internal::is_vec_element T2, std::size_t M>
 		constexpr auto operator+=(
 			this Self& self,
 			const vec<T2, M>& rhs
 		) -> Self&
-		requires(N == M && gse::internal::are_addable<T, T2> && std::same_as<gse::internal::add_exposed_t<T, T2>, T>);
+		requires(N == M && internal::are_addable<T, T2> && std::same_as<internal::add_exposed_t<T, T2>, T>);
 
 		template <typename Self, internal::is_vec_element T2, std::size_t M>
 		constexpr auto operator-=(
 			this Self& self,
 			const vec<T2, M>& rhs
 		) -> Self&
-		requires(N == M && gse::internal::are_subtractable<T, T2> && std::same_as<gse::internal::sub_exposed_t<T, T2>, T>);
+		requires(N == M && internal::are_subtractable<T, T2> && std::same_as<internal::sub_exposed_t<T, T2>, T>);
 
 		template <typename Self, internal::is_vec_element T2, std::size_t M>
 		constexpr auto operator*=(
 			this Self& self,
 			const vec<T2, M>& rhs
 		) -> Self&
-		requires(N == M && gse::internal::are_multipliable<T, T2> && std::same_as<gse::internal::mul_exposed_t<T, T2>, T>);
+		requires(N == M && internal::are_multipliable<T, T2> && std::same_as<internal::mul_exposed_t<T, T2>, T>);
 
 		template <typename Self, internal::is_vec_element T2, std::size_t M>
 		constexpr auto operator/=(
 			this Self& self,
 			const vec<T2, M>& rhs
 		) -> Self&
-		requires(N == M && gse::internal::are_divisible<T, T2> && std::same_as<gse::internal::div_exposed_t<T, T2>, T>);
+		requires(N == M && internal::are_divisible<T, T2> && std::same_as<internal::div_exposed_t<T, T2>, T>);
 
 		template <typename Self, internal::is_vec_element S>
 		constexpr auto operator*(
 			this const Self& self,
 			const S& rhs
 		)
-		requires gse::internal::are_multipliable<T, S>;
+		requires internal::are_multipliable<T, S>;
 
 		template <typename Self, internal::is_vec_element S>
 		constexpr auto operator/(
 			this const Self& self,
 			const S& rhs
 		)
-		requires gse::internal::are_divisible<T, S>;
+		requires internal::are_divisible<T, S>;
 
 		template <typename Self, internal::is_vec_element S>
 		constexpr auto operator*=(
 			this Self& self,
 			const S& rhs
 		) -> Self&
-		requires(gse::internal::are_multipliable<T, S> && std::same_as<gse::internal::mul_exposed_t<T, S>, T>);
+		requires(internal::are_multipliable<T, S> && std::same_as<internal::mul_exposed_t<T, S>, T>);
 
 		template <typename Self, internal::is_vec_element S>
 		constexpr auto operator/=(
 			this Self& self,
 			const S& rhs
 		) -> Self&
-		requires(gse::internal::are_divisible<T, S> && std::same_as<gse::internal::div_exposed_t<T, S>, T>);
+		requires(internal::are_divisible<T, S> && std::same_as<internal::div_exposed_t<T, S>, T>);
 
 		template <typename Self>
 		constexpr auto operator+(
@@ -399,10 +399,10 @@ constexpr gse::vec<T, N>::vec(const std::array<V, N>& data) {
 template <gse::internal::is_vec_element T, std::size_t N>
 template <typename... Args>
 constexpr gse::vec<T, N>::vec(Args&&... args)
-requires gse::internal::vec_ctor_compatible<T, N, Args...>
+requires internal::vec_ctor_compatible<T, N, Args...>
 {
 	std::size_t idx = 0;
-	(gse::internal::vec_append_arg<T>(this->data, idx, std::forward<Args>(args)), ...);
+	(internal::vec_append_arg<T>(this->data, idx, std::forward<Args>(args)), ...);
 }
 
 template <gse::internal::is_vec_element T, std::size_t N>
@@ -521,17 +521,16 @@ constexpr auto gse::vec<T, N>::end(this auto&& self) {
 
 template <gse::internal::is_vec_element T, std::size_t N>
 auto gse::vec<T, N>::as_storage_span(this auto&& self) {
-	using qualified_storage =
-		std::conditional_t<std::is_const_v<std::remove_reference_t<decltype(self)>>, const storage_type, storage_type>;
+	using qualified_storage = std::conditional_t<std::is_const_v<std::remove_reference_t<decltype(self)>>, const storage_type, storage_type>;
 	return std::span<qualified_storage, N>(reinterpret_cast<qualified_storage*>(self.data.data()), N);
 }
 
 template <gse::internal::is_vec_element T, std::size_t N>
 template <typename Self, gse::internal::is_vec_element T2, std::size_t M>
 constexpr auto gse::vec<T, N>::operator+(this const Self& self, const vec<T2, M>& rhs)
-requires(N == M && gse::internal::are_addable<T, T2>)
+requires(N == M && internal::are_addable<T, T2>)
 {
-	using R = gse::internal::add_exposed_t<T, T2>;
+	using R = internal::add_exposed_t<T, T2>;
 	std::conditional_t<std::same_as<R, T>, Self, vec<R, N>> out{};
 	simd::add(self.as_storage_span(), rhs.as_storage_span(), out.as_storage_span());
 	return out;
@@ -540,9 +539,9 @@ requires(N == M && gse::internal::are_addable<T, T2>)
 template <gse::internal::is_vec_element T, std::size_t N>
 template <typename Self, gse::internal::is_vec_element T2, std::size_t M>
 constexpr auto gse::vec<T, N>::operator-(this const Self& self, const vec<T2, M>& rhs)
-requires(N == M && gse::internal::are_subtractable<T, T2>)
+requires(N == M && internal::are_subtractable<T, T2>)
 {
-	using R = gse::internal::sub_exposed_t<T, T2>;
+	using R = internal::sub_exposed_t<T, T2>;
 	std::conditional_t<std::same_as<R, T>, Self, vec<R, N>> out{};
 	simd::sub(self.as_storage_span(), rhs.as_storage_span(), out.as_storage_span());
 	return out;
@@ -551,10 +550,10 @@ requires(N == M && gse::internal::are_subtractable<T, T2>)
 template <gse::internal::is_vec_element T, std::size_t N>
 template <typename Self, gse::internal::is_vec_element T2, std::size_t M>
 constexpr auto gse::vec<T, N>::operator*(this const Self& self, const vec<T2, M>& rhs)
-requires(N == M && gse::internal::are_multipliable<T, T2>)
+requires(N == M && internal::are_multipliable<T, T2>)
 {
-	using R = gse::internal::mul_exposed_t<T, T2>;
-	constexpr float scale = gse::internal::vec_mul_scale_v<T, T2, R>;
+	using R = internal::mul_exposed_t<T, T2>;
+	constexpr float scale = internal::vec_mul_scale_v<T, T2, R>;
 	std::conditional_t<std::same_as<R, T>, Self, vec<R, N>> out{};
 	simd::mul(self.as_storage_span(), rhs.as_storage_span(), out.as_storage_span());
 	if constexpr (scale != 1.0f) {
@@ -566,10 +565,10 @@ requires(N == M && gse::internal::are_multipliable<T, T2>)
 template <gse::internal::is_vec_element T, std::size_t N>
 template <typename Self, gse::internal::is_vec_element T2, std::size_t M>
 constexpr auto gse::vec<T, N>::operator/(this const Self& self, const vec<T2, M>& rhs)
-requires(N == M && gse::internal::are_divisible<T, T2>)
+requires(N == M && internal::are_divisible<T, T2>)
 {
-	using R = gse::internal::div_exposed_t<T, T2>;
-	constexpr float scale = gse::internal::vec_div_scale_v<T, T2, R>;
+	using R = internal::div_exposed_t<T, T2>;
+	constexpr float scale = internal::vec_div_scale_v<T, T2, R>;
 	std::conditional_t<std::same_as<R, T>, Self, vec<R, N>> out{};
 	simd::div(self.as_storage_span(), rhs.as_storage_span(), out.as_storage_span());
 	if constexpr (scale != 1.0f) {
@@ -581,7 +580,7 @@ requires(N == M && gse::internal::are_divisible<T, T2>)
 template <gse::internal::is_vec_element T, std::size_t N>
 template <typename Self, gse::internal::is_vec_element T2, std::size_t M>
 constexpr auto gse::vec<T, N>::operator+=(this Self& self, const vec<T2, M>& rhs) -> Self&
-requires(N == M && gse::internal::are_addable<T, T2> && std::same_as<gse::internal::add_exposed_t<T, T2>, T>)
+requires(N == M && internal::are_addable<T, T2> && std::same_as<internal::add_exposed_t<T, T2>, T>)
 {
 	simd::add(self.as_storage_span(), rhs.as_storage_span(), self.as_storage_span());
 	return self;
@@ -590,7 +589,7 @@ requires(N == M && gse::internal::are_addable<T, T2> && std::same_as<gse::intern
 template <gse::internal::is_vec_element T, std::size_t N>
 template <typename Self, gse::internal::is_vec_element T2, std::size_t M>
 constexpr auto gse::vec<T, N>::operator-=(this Self& self, const vec<T2, M>& rhs) -> Self&
-requires(N == M && gse::internal::are_subtractable<T, T2> && std::same_as<gse::internal::sub_exposed_t<T, T2>, T>)
+requires(N == M && internal::are_subtractable<T, T2> && std::same_as<internal::sub_exposed_t<T, T2>, T>)
 {
 	simd::sub(self.as_storage_span(), rhs.as_storage_span(), self.as_storage_span());
 	return self;
@@ -599,7 +598,7 @@ requires(N == M && gse::internal::are_subtractable<T, T2> && std::same_as<gse::i
 template <gse::internal::is_vec_element T, std::size_t N>
 template <typename Self, gse::internal::is_vec_element T2, std::size_t M>
 constexpr auto gse::vec<T, N>::operator*=(this Self& self, const vec<T2, M>& rhs) -> Self&
-requires(N == M && gse::internal::are_multipliable<T, T2> && std::same_as<gse::internal::mul_exposed_t<T, T2>, T>)
+requires(N == M && internal::are_multipliable<T, T2> && std::same_as<internal::mul_exposed_t<T, T2>, T>)
 {
 	simd::mul(self.as_storage_span(), rhs.as_storage_span(), self.as_storage_span());
 	return self;
@@ -608,7 +607,7 @@ requires(N == M && gse::internal::are_multipliable<T, T2> && std::same_as<gse::i
 template <gse::internal::is_vec_element T, std::size_t N>
 template <typename Self, gse::internal::is_vec_element T2, std::size_t M>
 constexpr auto gse::vec<T, N>::operator/=(this Self& self, const vec<T2, M>& rhs) -> Self&
-requires(N == M && gse::internal::are_divisible<T, T2> && std::same_as<gse::internal::div_exposed_t<T, T2>, T>)
+requires(N == M && internal::are_divisible<T, T2> && std::same_as<internal::div_exposed_t<T, T2>, T>)
 {
 	simd::div(self.as_storage_span(), rhs.as_storage_span(), self.as_storage_span());
 	return self;
@@ -617,10 +616,10 @@ requires(N == M && gse::internal::are_divisible<T, T2> && std::same_as<gse::inte
 template <gse::internal::is_vec_element T, std::size_t N>
 template <typename Self, gse::internal::is_vec_element S>
 constexpr auto gse::vec<T, N>::operator*(this const Self& self, const S& rhs)
-requires gse::internal::are_multipliable<T, S>
+requires internal::are_multipliable<T, S>
 {
-	using R = gse::internal::mul_exposed_t<T, S>;
-	constexpr float scale = gse::internal::vec_mul_scale_v<T, S, R>;
+	using R = internal::mul_exposed_t<T, S>;
+	constexpr float scale = internal::vec_mul_scale_v<T, S, R>;
 	std::conditional_t<std::same_as<R, T>, Self, vec<R, N>> out{};
 	const auto adjusted_rhs = static_cast<storage_type>(internal::to_storage(rhs)) * scale;
 	simd::mul_s(self.as_storage_span(), adjusted_rhs, out.as_storage_span());
@@ -630,10 +629,10 @@ requires gse::internal::are_multipliable<T, S>
 template <gse::internal::is_vec_element T, std::size_t N>
 template <typename Self, gse::internal::is_vec_element S>
 constexpr auto gse::vec<T, N>::operator/(this const Self& self, const S& rhs)
-requires gse::internal::are_divisible<T, S>
+requires internal::are_divisible<T, S>
 {
-	using R = gse::internal::div_exposed_t<T, S>;
-	constexpr float scale = gse::internal::vec_div_scale_v<T, S, R>;
+	using R = internal::div_exposed_t<T, S>;
+	constexpr float scale = internal::vec_div_scale_v<T, S, R>;
 	std::conditional_t<std::same_as<R, T>, Self, vec<R, N>> out{};
 	const auto adjusted_rhs = static_cast<storage_type>(internal::to_storage(rhs)) / scale;
 	simd::div_s(self.as_storage_span(), adjusted_rhs, out.as_storage_span());
@@ -643,7 +642,7 @@ requires gse::internal::are_divisible<T, S>
 template <gse::internal::is_vec_element T, std::size_t N>
 template <typename Self, gse::internal::is_vec_element S>
 constexpr auto gse::vec<T, N>::operator*=(this Self& self, const S& rhs) -> Self&
-requires(gse::internal::are_multipliable<T, S> && std::same_as<gse::internal::mul_exposed_t<T, S>, T>)
+requires(internal::are_multipliable<T, S> && std::same_as<internal::mul_exposed_t<T, S>, T>)
 {
 	simd::mul_s(self.as_storage_span(), static_cast<storage_type>(internal::to_storage(rhs)), self.as_storage_span());
 	return self;
@@ -652,7 +651,7 @@ requires(gse::internal::are_multipliable<T, S> && std::same_as<gse::internal::mu
 template <gse::internal::is_vec_element T, std::size_t N>
 template <typename Self, gse::internal::is_vec_element S>
 constexpr auto gse::vec<T, N>::operator/=(this Self& self, const S& rhs) -> Self&
-requires(gse::internal::are_divisible<T, S> && std::same_as<gse::internal::div_exposed_t<T, S>, T>)
+requires(internal::are_divisible<T, S> && std::same_as<internal::div_exposed_t<T, S>, T>)
 {
 	simd::div_s(self.as_storage_span(), static_cast<storage_type>(internal::to_storage(rhs)), self.as_storage_span());
 	return self;
@@ -736,7 +735,7 @@ export namespace gse {
 
 template <gse::internal::is_vec_element T, std::size_t N, typename CharT>
 struct std::formatter<gse::vec<T, N>, CharT> {
-	std::formatter<T, CharT> elem_;
+	formatter<T, CharT> elem_;
 
 	template <class ParseContext>
 	constexpr auto parse(ParseContext& ctx) -> ParseContext::iterator {
@@ -746,13 +745,13 @@ struct std::formatter<gse::vec<T, N>, CharT> {
 	template <class FormatContext>
 	auto format(const gse::vec<T, N>& v, FormatContext& ctx) const -> FormatContext::iterator {
 		auto out = ctx.out();
-		out = std::format_to(out, "(");
+		out = format_to(out, "(");
 		for (std::size_t i = 0; i < N; ++i) {
 			if (i > 0) {
-				out = std::format_to(out, ", ");
+				out = format_to(out, ", ");
 			}
 			out = elem_.format(v[i], ctx);
 		}
-		return std::format_to(out, ")");
+		return format_to(out, ")");
 	}
 };

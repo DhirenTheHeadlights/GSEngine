@@ -20,6 +20,9 @@ void vbd_derive_velocities(uint3 dispatch_id) {
     }
 
     float3 new_vel = (body.predicted_position.xyz - body.old_position.xyz) / pc.dt;
+    float accel_y = (new_vel.y - body.velocity.y) / pc.dt;
+    float aw = clamp(-accel_y / 9.8, 0.0, 1.0);
+    body.accel_weight = (isnan(aw) || isinf(aw)) ? 0.0 : aw;
     body.velocity = new_vel;
 
     if (update_orient) {
@@ -48,7 +51,28 @@ void vbd_derive_velocities(uint3 dispatch_id) {
 
     float lin_speed = length(body.velocity.xyz);
     float ang_speed = length(body.angular_velocity.xyz);
-    if (lin_speed < pc.cfg.velocity_sleep_threshold && ang_speed < pc.cfg.angular_sleep_threshold) {
+    bool calm = lin_speed < solver_config_data[0].velocity_sleep_threshold && ang_speed < solver_config_data[0].angular_sleep_threshold;
+
+    if (calm) {
+        float wake_thresh = solver_config_data[0].velocity_sleep_threshold * 10.0;
+        uint contact_offset = contact_offsets[bi];
+        uint contact_count = contact_counts[bi];
+        for (uint k = 0; k < contact_count && calm; k++) {
+            uint ci = safe_load_uint(contact_adjacency, contact_offset + k, max_contact_adjacency);
+            if (ci >= max_contacts) continue;
+            contact_constraint c = contact_data[ci];
+            if (c.body_a >= pc.body_count || c.body_b >= pc.body_count) continue;
+            uint other_idx = c.body_a == bi ? c.body_b : c.body_a;
+            body_state other = body_data[other_idx];
+            if (other.locked != 0 || other.sleep_counter >= sleep_threshold) continue;
+            float other_speed = length(other.predicted_position.xyz - other.old_position.xyz) / pc.dt;
+            if (other_speed >= wake_thresh) {
+                calm = false;
+            }
+        }
+    }
+
+    if (calm) {
         body.sleep_counter = body.sleep_counter + 1;
     } else {
         body.sleep_counter = body.sleep_counter / 2;

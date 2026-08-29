@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="24" y1="22" x2="232" y2="228" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f4f8fb"/>
+      <stop offset="1" stop-color="#c8d5e5"/>
+    </linearGradient>
+    <linearGradient id="screen" x1="47" y1="55" x2="210" y2="202" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#182233"/>
+      <stop offset="1" stop-color="#06090f"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="13" stdDeviation="12" flood-color="#1d2837" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+  <rect x="18" y="18" width="220" height="220" rx="44" fill="url(#bg)"/>
+  <rect x="42" y="54" width="172" height="148" rx="22" fill="url(#screen)" filter="url(#shadow)"/>
+  <path d="M42 88h172" stroke="#5d708b" stroke-width="6"/>
+  <circle cx="65" cy="72" r="6" fill="#ff637d"/>
+  <circle cx="85" cy="72" r="6" fill="#ffd666"/>
+  <circle cx="105" cy="72" r="6" fill="#67ff9a"/>
+  <text x="57" y="159" fill="#f8fbff" font-family="Segoe UI, Arial, sans-serif" font-size="61" font-weight="900" letter-spacing="-4">GSE</text>
+  <path d="M63 173h70" stroke="#71f2ff" stroke-width="7" stroke-linecap="round"/>
+  <path d="M147 173h43" stroke="#ffda5e" stroke-width="7" stroke-linecap="round"/>
+  <path d="M178 109 193 124 178 139" fill="none" stroke="#67ff9a" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M78 109 63 124 78 139" fill="none" stroke="#ff6d9e" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -1,8 +1,0 @@
-If:
-  PathMatch: .*
-
-Diagnostics:
-  Suppress: ['*']
-
-Index:
-  Background: Skip

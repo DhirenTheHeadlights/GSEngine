@@ -21,10 +21,11 @@ VS_OUTPUT vs_main(uint vid : SV_VertexID, uint instance_id : SV_InstanceID) {
         in_unit_pos.w * depth_scale
     );
 
-    float3 world_pos = body.position.xyz + rotate_vector(body.orientation, local_pos);
+    float3 shape_center = body_origin(body.position.xyz, body.orientation, body.com_local.xyz);
+    float3 world_pos = shape_center + rotate_vector(body.orientation, local_pos);
 
-    float4 view_pos = mul(view, float4(world_pos, 1.0));
-    output.clip_pos = mul(proj, view_pos);
+    float4 view_pos = mul(camera_ubo.view, float4(world_pos, 1.0));
+    output.clip_pos = mul(camera_ubo.proj, view_pos);
     output.color = inst.color;
 
     return output;

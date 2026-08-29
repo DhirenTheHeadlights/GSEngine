@@ -6,6 +6,7 @@ import :depth_prepass_renderer;
 import :geometry_collector;
 import :cull_compute_renderer;
 import :physics_transform_renderer;
+import :skin_renderer;
 import :camera_system;
 import :render_targets;
 
@@ -13,6 +14,7 @@ import :render_targets;
 import gse.os;
 import gse.assets;
 import gse.gpu;
+import gse.gpu_record;
 import gse.core;
 import gse.containers;
 import gse.time;
@@ -33,12 +35,21 @@ namespace gse::renderer::depth_prepass::meshlet {
 		using element = shaders::common::instance_data;
 	};
 
-	using shader_binding_types = type_pack<camera_ubo, shaders::meshlet::vertices_buffer, shaders::meshlet::meshlets_buffer, shaders::meshlet::meshlet_vertex_indices, shaders::meshlet::meshlet_triangles, shaders::meshlet::meshlet_bounds_buffer, instance_data_buffer>;
+	struct [[
+		= shaders::binding<1, 6>{},
+		= shaders::ssbo_readonly
+	]] prev_vertices_buffer {
+		using element = shaders::forward::vertex;
+	};
+
+	using shader_binding_types = type_pack<camera_ubo, shaders::meshlet::vertices_buffer, shaders::meshlet::meshlets_buffer, shaders::meshlet::meshlet_vertex_indices, shaders::meshlet::meshlet_triangles, shaders::meshlet::meshlet_bounds_buffer, instance_data_buffer, prev_vertices_buffer>;
 
 	struct [[= shaders::shader_struct]] push_constants {
 		std::uint32_t meshlet_offset;
 		std::uint32_t meshlet_count;
 		std::uint32_t first_instance;
+		std::uint32_t skip_meshlet_cull;
+		std::uint32_t use_prev_vertices;
 	};
 
 	using entry = gpu::graphics_entry<
@@ -64,7 +75,8 @@ auto gse::renderer::depth_prepass::init(context& ctx, const shared_view<gpu::con
 		d.camera_ubo_buffers[i] = gpu_s.device->create_buffer(
 			{
 				.size = camera_ubo_size,
-				.usage = gpu::buffer_flag::uniform,
+				.stride = sizeof(shaders::common::camera_data),
+				.usage = gpu::buffer_flag::storage,
 				.bindless = true
 			},
 			"depth_prepass.camera_ubo"
@@ -74,8 +86,8 @@ auto gse::renderer::depth_prepass::init(context& ctx, const shared_view<gpu::con
 	return {};
 }
 
-auto gse::renderer::depth_prepass::frame(context& ctx, shared_view<gpu::context::data> gpu_s, const data& d, shared_view<geometry_collector::data> gc_r, shared_view<camera::data> cam_state) -> async::task<> {
-	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
+auto gse::renderer::depth_prepass::frame(context& ctx, shared_view<gpu::context::data> gpu_s, const data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<geometry_collector::render_data> geometry_in, shared_view<geometry_collector::data> gc_r, shared_view<camera::data> cam_state) -> async::task<> {
+	const auto& render_items = geometry_in.of<geometry_collector::render_data>();
 	if (render_items.empty()) {
 		co_return;
 	}
@@ -104,7 +116,7 @@ auto gse::renderer::depth_prepass::frame(context& ctx, shared_view<gpu::context:
 
 	const auto ext = gpu_s.render_graph->extent();
 
-	auto rec = co_await gpu::pass<^^gse::renderer::depth_prepass::frame>(ctx)
+	auto rec = co_await gpu::pass<^^frame>(pass_out)
 		.pipeline(d.meshlet_pipeline)
 		.color(
 			gpu::clear_color(
@@ -113,7 +125,7 @@ auto gse::renderer::depth_prepass::frame(context& ctx, shared_view<gpu::context:
 			)
 		)
 		.depth(gpu::clear_depth(gpu::depth_clear{ 1.0f }))
-		.after<^^cull_compute::frame, ^^physics_transform::frame>();
+		.after<^^cull_compute::frame, ^^physics_transform::frame, ^^skin::deform_pass>();
 
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
@@ -127,7 +139,7 @@ auto gse::renderer::depth_prepass::frame(context& ctx, shared_view<gpu::context:
 
 	for (std::size_t i = 0; i < data.normal_batches.size(); ++i) {
 		const auto& batch = data.normal_batches[i];
-		const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
+		const auto& mesh = batch.key.resolve_mesh();
 		if (!mesh.has_meshlets()) {
 			continue;
 		}
@@ -139,20 +151,28 @@ auto gse::renderer::depth_prepass::frame(context& ctx, shared_view<gpu::context:
 		const auto& ml = mesh.meshlet_gpu();
 		const std::uint32_t meshlet_count = mesh.meshlet_count();
 
+		const auto vertices_slot = batch.deformed_vertices.valid()
+			? batch.deformed_vertices
+			: ml.vertex_storage.slot();
+		const bool use_prev_vertices = batch.prev_deformed_vertices.valid();
+
 		rec.push_bindings<meshlet::entry>(
 			{
 				.meshlet_offset = 0,
 				.meshlet_count = meshlet_count,
 				.first_instance = batch.first_instance,
+				.skip_meshlet_cull = batch.deformed_vertices.valid() ? 1u : 0u,
+				.use_prev_vertices = use_prev_vertices ? 1u : 0u,
 			},
 			{
 				.camera_ubo = camera_slot,
-				.vertices_buffer = ml.vertex_storage.slot(),
+				.vertices_buffer = vertices_slot,
 				.meshlets_buffer = ml.descriptors.slot(),
 				.meshlet_vertex_indices = ml.vertices.slot(),
 				.meshlet_triangles = ml.triangles.slot(),
 				.meshlet_bounds_buffer = ml.bounds.slot(),
 				.instance_data_buffer = instance_slot,
+				.prev_vertices_buffer = use_prev_vertices ? batch.prev_deformed_vertices : vertices_slot,
 			}
 		);
 

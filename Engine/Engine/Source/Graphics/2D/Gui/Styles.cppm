@@ -3,6 +3,7 @@ export module gse.graphics:styles;
 import std;
 
 import gse.math;
+import gse.meta;
 
 export namespace gse {
 	struct scaled_tag {};
@@ -39,8 +40,8 @@ export namespace gse::gui {
 
 	struct style {
 		// Menu chrome
-		vec4f color_title_bar = { 0.10f, 0.14f, 0.20f, 0.55f };
-		vec4f color_title_bar_inactive = { 0.07f, 0.10f, 0.14f, 0.55f };
+		vec4f color_title_bar = { 0.10f, 0.14f, 0.20f, 1.0f };
+		vec4f color_title_bar_inactive = { 0.07f, 0.10f, 0.14f, 1.0f };
 		vec4f color_menu_body = { 0.08f, 0.12f, 0.16f, 0.15f };
 		vec4f color_panel_alt = { 0.06f, 0.10f, 0.14f, 0.25f };
 		vec4f color_border = { 0.22f, 0.32f, 0.42f, 1.0f };
@@ -55,16 +56,23 @@ export namespace gse::gui {
 		// Icons
 		vec4f color_icon = { 0.70f, 0.74f, 0.84f, 1.0f };
 		vec4f color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f };
+		vec4f color_folder = { 0.86f, 0.74f, 0.45f, 1.0f };
+		vec4f color_file = { 0.55f, 0.66f, 0.82f, 1.0f };
+		[[= scaled]] float icon_extent = 16.f;
 
 		// Interactive widget states
-		vec4f color_widget_background = { 0.10f, 0.16f, 0.22f, 1.0f };
+		vec4f color_widget_background = { 0.10f, 0.16f, 0.22f, 0.35f };
 		vec4f color_widget_hovered = { 0.14f, 0.24f, 0.32f, 1.0f };
 		vec4f color_widget_active = { 0.26f, 0.86f, 0.84f, 1.0f };
 		vec4f color_widget_selected = { 0.26f, 0.86f, 0.84f, 0.32f };
 
 		// Buttons (distinct from passive widget surfaces so CTAs read as clickable)
-		vec4f color_button_background = { 0.14f, 0.30f, 0.36f, 1.0f };
+		vec4f color_button_background = { 0.14f, 0.30f, 0.36f, 0.35f };
 		vec4f color_button_hovered = { 0.20f, 0.44f, 0.50f, 1.0f };
+		vec4f color_button_accent = { 0.26f, 0.86f, 0.84f, 1.0f };
+		vec4f color_button_accent_hovered = { 0.42f, 0.94f, 0.92f, 1.0f };
+		vec4f color_button_accent_text = { 0.04f, 0.09f, 0.12f, 1.0f };
+		vec4f color_button_ghost = { 0.f, 0.f, 0.f, 0.f };
 
 		// Accent (primary theme color: drives sliders, toggle-on, selections, section bars)
 		vec4f color_accent = { 0.26f, 0.86f, 0.84f, 1.0f };
@@ -78,9 +86,21 @@ export namespace gse::gui {
 		vec4f color_handle_hovered = { 1.0f, 1.0f, 1.0f, 1.0f };
 
 		// Inputs
-		vec4f color_input_background = { 0.06f, 0.08f, 0.12f, 1.0f };
+		vec4f color_input_background = { 0.06f, 0.08f, 0.12f, 0.35f };
 		vec4f color_selection = { 0.26f, 0.86f, 0.84f, 0.40f };
 		vec4f color_caret = { 0.96f, 0.97f, 0.99f, 1.0f };
+		vec4f color_warning = { 0.71f, 0.57f, 0.11f, 1.0f };
+		vec4f color_error = { 0.855f, 0.451f, 0.424f, 1.0f };
+		vec4f color_fatal = { 0.94f, 0.30f, 0.30f, 1.0f };
+		vec4f color_danger = { 0.62f, 0.22f, 0.22f, 1.0f };
+		vec4f color_danger_hovered = { 0.78f, 0.28f, 0.28f, 1.0f };
+		vec4f color_added = { 0.44f, 0.72f, 0.46f, 1.0f };
+		vec4f color_removed = { 0.82f, 0.44f, 0.44f, 1.0f };
+
+		// Tabs (own surface so strips read as chrome rather than widgets)
+		vec4f color_tab_background = { 0.07f, 0.12f, 0.17f, 0.35f };
+		vec4f color_tab_hovered = { 0.12f, 0.20f, 0.28f, 1.0f };
+		vec4f color_tab_active = { 0.16f, 0.26f, 0.34f, 1.0f };
 
 		// Docking
 		vec4f color_dock_preview = { 0.26f, 0.86f, 0.84f, 0.35f };
@@ -92,43 +112,46 @@ export namespace gse::gui {
 		float scale_factor = 1.f;
 
 		// Widget sizing (auto-scaled via [[= gse::scaled]] reflection in apply_scale)
-		[[= gse::scaled]] float padding = 12.f;
-		[[= gse::scaled]] float title_bar_height = 32.f;
-		[[= gse::scaled]] float resize_border_thickness = 8.f;
-		[[= gse::scaled]] vec2f min_menu_size = { 200.f, 120.f };
-		[[= gse::scaled]] float font_size = 16.f;
+		[[= scaled]] float padding = 12.f;
+		[[= scaled]] float title_bar_height = 32.f;
+		[[= scaled]] float resize_border_thickness = 8.f;
+		[[= scaled]] vec2f min_menu_size = { 200.f, 120.f };
+		[[= scaled]] float font_size = 16.f;
 		std::filesystem::path font;
 
-		[[= gse::scaled]] float corner_radius = 6.f;
-		[[= gse::scaled]] float corner_radius_menu = 10.f;
+		[[= scaled]] float corner_radius = 6.f;
+		[[= scaled]] float corner_radius_menu = 10.f;
+		[[= scaled]] float corner_radius_button = 6.f;
+		[[= scaled]] float corner_radius_input = 6.f;
 		float widget_height_padding = 0.7f;
-		[[= gse::scaled]] float item_spacing = 4.f;
-		[[= gse::scaled]] float section_spacing_above = 18.f;
-		[[= gse::scaled]] float section_spacing_below = 10.f;
+		[[= scaled]] float item_spacing = 4.f;
+		[[= scaled]] float section_spacing_above = 18.f;
+		[[= scaled]] float section_spacing_below = 10.f;
 		float section_header_size_mult = 1.30f;
-		[[= gse::scaled]] float accent_bar_width = 3.f;
+		[[= scaled]] float accent_bar_width = 3.f;
+		[[= scaled]] float bare_header_height = 6.f;
 
 		// Screen/card layout (referenced by SettingsScreen, MainMenuScreen, etc.)
-		[[= gse::scaled]] vec2f card_min_size = { 720.f, 480.f };
-		[[= gse::scaled]] vec2f card_max_size = { 1100.f, 760.f };
-		[[= gse::scaled]] vec2f card_margin = { 80.f, 60.f };
-		[[= gse::scaled]] float sidebar_width = 220.f;
-		[[= gse::scaled]] float header_height = 56.f;
-		[[= gse::scaled]] float footer_height = 64.f;
-		[[= gse::scaled]] float close_button_size = 28.f;
-		[[= gse::scaled]] float separator_thickness = 1.f;
+		[[= scaled]] vec2f card_min_size = { 720.f, 480.f };
+		[[= scaled]] vec2f card_max_size = { 1100.f, 760.f };
+		[[= scaled]] vec2f card_margin = { 80.f, 60.f };
+		[[= scaled]] float sidebar_width = 220.f;
+		[[= scaled]] float header_height = 56.f;
+		[[= scaled]] float footer_height = 64.f;
+		[[= scaled]] float close_button_size = 28.f;
+		[[= scaled]] float separator_thickness = 1.f;
 
 		// Buttons
-		[[= gse::scaled]] float button_height = 32.f;
-		[[= gse::scaled]] float button_min_width = 108.f;
-		[[= gse::scaled]] float accent_button_min_width = 132.f;
-		[[= gse::scaled]] float button_spacing = 8.f;
+		[[= scaled]] float button_height = 32.f;
+		[[= scaled]] float button_min_width = 108.f;
+		[[= scaled]] float accent_button_min_width = 132.f;
+		[[= scaled]] float button_spacing = 8.f;
 
 		// Standalone panels
-		[[= gse::scaled]] float side_panel_max_width = 320.f;
-		[[= gse::scaled]] float progress_bar_max_width = 400.f;
-		[[= gse::scaled]] float progress_bar_height = 12.f;
-		[[= gse::scaled]] float preview_height = 160.f;
+		[[= scaled]] float side_panel_max_width = 320.f;
+		[[= scaled]] float progress_bar_max_width = 400.f;
+		[[= scaled]] float progress_bar_height = 12.f;
+		[[= scaled]] float preview_height = 160.f;
 
 		static constexpr auto midnight() -> style;
 		static constexpr auto eclipse() -> style;
@@ -141,14 +164,72 @@ export namespace gse::gui {
 			theme t
 		) -> style;
 	};
+
+	[[nodiscard]] constexpr auto accent_bar_extent(
+		const style& sty
+	) -> float;
+
+	[[nodiscard]] auto style_key(
+		const style& sty
+	) -> std::uint64_t;
+
+	struct button_role_info {
+		vec4f style::* idle = &style::color_button_background;
+		vec4f style::* hot = &style::color_button_hovered;
+		vec4f style::* active = &style::color_widget_active;
+		vec4f style::* disabled = &style::color_widget_background;
+		vec4f style::* label = &style::color_text;
+	};
+
+	enum class button_role : std::uint8_t {
+		standard [[= button_role_info{}]],
+		accent [[= button_role_info{
+			.idle = &style::color_button_accent,
+			.hot = &style::color_button_accent_hovered,
+			.label = &style::color_button_accent_text,
+		}]],
+		danger [[= button_role_info{
+			.idle = &style::color_danger,
+			.hot = &style::color_danger_hovered,
+		}]],
+		ghost [[= button_role_info{
+			.idle = &style::color_button_ghost,
+			.hot = &style::color_widget_hovered,
+			.label = &style::color_text_secondary,
+		}]]
+	};
+
+	struct button_colors {
+		vec4f idle;
+		vec4f hot;
+		vec4f active;
+		vec4f disabled;
+		vec4f label;
+	};
+
+	[[nodiscard]] auto colors_for(
+		const style& sty,
+		button_role role
+	) -> button_colors;
+}
+
+auto gse::gui::colors_for(const style& sty, const button_role role) -> button_colors {
+	const button_role_info info = annotation_from_enum(role, button_role_info{});
+	return {
+		.idle = sty.*info.idle,
+		.hot = sty.*info.hot,
+		.active = sty.*info.active,
+		.disabled = sty.*info.disabled,
+		.label = sty.*info.label,
+	};
 }
 
 constexpr auto gse::gui::style::midnight() -> style {
 	constexpr vec4f accent{ 0.26f, 0.86f, 0.84f, 1.0f };
 	constexpr vec4f accent_dim{ 0.26f, 0.86f, 0.84f, 0.30f };
 	return style{
-		.color_title_bar = { 0.10f, 0.14f, 0.20f, 0.55f },
-		.color_title_bar_inactive = { 0.07f, 0.10f, 0.14f, 0.55f },
+		.color_title_bar = { 0.10f, 0.14f, 0.20f, 1.0f },
+		.color_title_bar_inactive = { 0.07f, 0.10f, 0.14f, 1.0f },
 		.color_menu_body = { 0.08f, 0.12f, 0.16f, 0.15f },
 		.color_panel_alt = { 0.06f, 0.10f, 0.14f, 0.25f },
 		.color_border = { 0.22f, 0.32f, 0.42f, 1.0f },
@@ -159,11 +240,11 @@ constexpr auto gse::gui::style::midnight() -> style {
 		.color_section_header = { 0.96f, 0.97f, 0.99f, 1.0f },
 		.color_icon = { 0.70f, 0.74f, 0.84f, 1.0f },
 		.color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
-		.color_widget_background = { 0.10f, 0.18f, 0.24f, 1.0f },
+		.color_widget_background = { 0.10f, 0.18f, 0.24f, 0.35f },
 		.color_widget_hovered = { 0.16f, 0.28f, 0.36f, 1.0f },
 		.color_widget_active = accent,
 		.color_widget_selected = accent_dim,
-		.color_button_background = { 0.14f, 0.32f, 0.36f, 1.0f },
+		.color_button_background = { 0.14f, 0.32f, 0.36f, 0.35f },
 		.color_button_hovered = { 0.20f, 0.46f, 0.50f, 1.0f },
 		.color_accent = accent,
 		.color_accent_dim = accent_dim,
@@ -172,11 +253,14 @@ constexpr auto gse::gui::style::midnight() -> style {
 		.color_toggle_off = { 0.22f, 0.25f, 0.34f, 1.0f },
 		.color_handle = { 0.96f, 0.97f, 0.99f, 1.0f },
 		.color_handle_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
-		.color_input_background = { 0.06f, 0.08f, 0.12f, 1.0f },
-		.color_selection = { accent.x(), accent.y(), accent.z(), 0.40f },
+		.color_input_background = { 0.06f, 0.08f, 0.12f, 0.35f },
+		.color_selection = { vec3f(accent), 0.40f },
 		.color_caret = { 0.96f, 0.97f, 0.99f, 1.0f },
-		.color_dock_preview = { accent.x(), accent.y(), accent.z(), 0.35f },
-		.color_dock_tab_active = { accent.x(), accent.y(), accent.z(), 0.6f },
+		.color_tab_background = { 0.07f, 0.12f, 0.17f, 0.35f },
+		.color_tab_hovered = { 0.12f, 0.20f, 0.28f, 1.0f },
+		.color_tab_active = { 0.16f, 0.26f, 0.34f, 1.0f },
+		.color_dock_preview = { vec3f(accent), 0.35f },
+		.color_dock_tab_active = { vec3f(accent), 0.6f },
 		.color_shadow = { 0.f, 0.f, 0.f, 0.40f },
 		.padding = 12.f,
 		.title_bar_height = 32.f,
@@ -199,8 +283,8 @@ constexpr auto gse::gui::style::eclipse() -> style {
 	constexpr vec4f accent{ 0.92f, 0.38f, 0.82f, 1.0f };
 	constexpr vec4f accent_dim{ 0.92f, 0.38f, 0.82f, 0.28f };
 	return style{
-		.color_title_bar = { 0.08f, 0.04f, 0.10f, 0.55f },
-		.color_title_bar_inactive = { 0.04f, 0.02f, 0.05f, 0.55f },
+		.color_title_bar = { 0.08f, 0.04f, 0.10f, 1.0f },
+		.color_title_bar_inactive = { 0.04f, 0.02f, 0.05f, 1.0f },
 		.color_menu_body = { 0.06f, 0.03f, 0.08f, 0.15f },
 		.color_panel_alt = { 0.04f, 0.02f, 0.06f, 0.25f },
 		.color_border = { 0.32f, 0.16f, 0.36f, 1.0f },
@@ -208,14 +292,14 @@ constexpr auto gse::gui::style::eclipse() -> style {
 		.color_text = { 0.95f, 0.93f, 0.96f, 1.0f },
 		.color_text_secondary = { 0.62f, 0.58f, 0.66f, 1.0f },
 		.color_text_disabled = { 0.36f, 0.34f, 0.40f, 1.0f },
-		.color_section_header = { accent.x(), accent.y(), accent.z(), 1.0f },
+		.color_section_header = accent,
 		.color_icon = { 0.70f, 0.66f, 0.74f, 1.0f },
 		.color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
-		.color_widget_background = { 0.14f, 0.07f, 0.18f, 1.0f },
+		.color_widget_background = { 0.14f, 0.07f, 0.18f, 0.35f },
 		.color_widget_hovered = { 0.24f, 0.10f, 0.30f, 1.0f },
 		.color_widget_active = accent,
 		.color_widget_selected = accent_dim,
-		.color_button_background = { 0.26f, 0.10f, 0.26f, 1.0f },
+		.color_button_background = { 0.26f, 0.10f, 0.26f, 0.35f },
 		.color_button_hovered = { 0.40f, 0.16f, 0.40f, 1.0f },
 		.color_accent = accent,
 		.color_accent_dim = accent_dim,
@@ -224,11 +308,14 @@ constexpr auto gse::gui::style::eclipse() -> style {
 		.color_toggle_off = { 0.14f, 0.12f, 0.16f, 1.0f },
 		.color_handle = { 0.95f, 0.93f, 0.96f, 1.0f },
 		.color_handle_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
-		.color_input_background = { 0.02f, 0.02f, 0.03f, 1.0f },
-		.color_selection = { accent.x(), accent.y(), accent.z(), 0.40f },
+		.color_input_background = { 0.02f, 0.02f, 0.03f, 0.35f },
+		.color_selection = { vec3f(accent), 0.40f },
 		.color_caret = { 0.95f, 0.93f, 0.96f, 1.0f },
-		.color_dock_preview = { accent.x(), accent.y(), accent.z(), 0.35f },
-		.color_dock_tab_active = { accent.x(), accent.y(), accent.z(), 0.6f },
+		.color_tab_background = { 0.10f, 0.05f, 0.13f, 0.35f },
+		.color_tab_hovered = { 0.19f, 0.09f, 0.24f, 1.0f },
+		.color_tab_active = { 0.27f, 0.13f, 0.33f, 1.0f },
+		.color_dock_preview = { vec3f(accent), 0.35f },
+		.color_dock_tab_active = { vec3f(accent), 0.6f },
 		.color_shadow = { 0.f, 0.f, 0.f, 0.50f },
 		.padding = 12.f,
 		.title_bar_height = 32.f,
@@ -251,8 +338,8 @@ constexpr auto gse::gui::style::ember() -> style {
 	constexpr vec4f accent{ 0.98f, 0.62f, 0.20f, 1.0f };
 	constexpr vec4f accent_dim{ 0.98f, 0.62f, 0.20f, 0.28f };
 	return style{
-		.color_title_bar = { 0.20f, 0.14f, 0.10f, 0.55f },
-		.color_title_bar_inactive = { 0.14f, 0.10f, 0.07f, 0.55f },
+		.color_title_bar = { 0.20f, 0.14f, 0.10f, 1.0f },
+		.color_title_bar_inactive = { 0.14f, 0.10f, 0.07f, 1.0f },
 		.color_menu_body = { 0.14f, 0.10f, 0.07f, 0.15f },
 		.color_panel_alt = { 0.12f, 0.08f, 0.06f, 0.25f },
 		.color_border = { 0.44f, 0.28f, 0.15f, 1.0f },
@@ -260,14 +347,14 @@ constexpr auto gse::gui::style::ember() -> style {
 		.color_text = { 0.98f, 0.94f, 0.88f, 1.0f },
 		.color_text_secondary = { 0.74f, 0.68f, 0.60f, 1.0f },
 		.color_text_disabled = { 0.46f, 0.42f, 0.38f, 1.0f },
-		.color_section_header = { accent.x(), accent.y(), accent.z(), 1.0f },
+		.color_section_header = accent,
 		.color_icon = { 0.78f, 0.72f, 0.64f, 1.0f },
 		.color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
-		.color_widget_background = { 0.24f, 0.16f, 0.10f, 1.0f },
+		.color_widget_background = { 0.24f, 0.16f, 0.10f, 0.35f },
 		.color_widget_hovered = { 0.34f, 0.22f, 0.13f, 1.0f },
 		.color_widget_active = accent,
 		.color_widget_selected = accent_dim,
-		.color_button_background = { 0.36f, 0.22f, 0.10f, 1.0f },
+		.color_button_background = { 0.36f, 0.22f, 0.10f, 0.35f },
 		.color_button_hovered = { 0.52f, 0.32f, 0.14f, 1.0f },
 		.color_accent = accent,
 		.color_accent_dim = accent_dim,
@@ -276,11 +363,14 @@ constexpr auto gse::gui::style::ember() -> style {
 		.color_toggle_off = { 0.26f, 0.22f, 0.18f, 1.0f },
 		.color_handle = { 0.98f, 0.94f, 0.88f, 1.0f },
 		.color_handle_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
-		.color_input_background = { 0.08f, 0.06f, 0.05f, 1.0f },
-		.color_selection = { accent.x(), accent.y(), accent.z(), 0.40f },
+		.color_input_background = { 0.08f, 0.06f, 0.05f, 0.35f },
+		.color_selection = { vec3f(accent), 0.40f },
 		.color_caret = { 0.98f, 0.94f, 0.88f, 1.0f },
-		.color_dock_preview = { accent.x(), accent.y(), accent.z(), 0.35f },
-		.color_dock_tab_active = { accent.x(), accent.y(), accent.z(), 0.6f },
+		.color_tab_background = { 0.16f, 0.11f, 0.07f, 0.35f },
+		.color_tab_hovered = { 0.28f, 0.19f, 0.11f, 1.0f },
+		.color_tab_active = { 0.38f, 0.25f, 0.13f, 1.0f },
+		.color_dock_preview = { vec3f(accent), 0.35f },
+		.color_dock_tab_active = { vec3f(accent), 0.6f },
 		.color_shadow = { 0.f, 0.f, 0.f, 0.40f },
 		.padding = 12.f,
 		.title_bar_height = 32.f,
@@ -303,8 +393,8 @@ constexpr auto gse::gui::style::forest() -> style {
 	constexpr vec4f accent{ 0.42f, 0.92f, 0.62f, 1.0f };
 	constexpr vec4f accent_dim{ 0.42f, 0.92f, 0.62f, 0.28f };
 	return style{
-		.color_title_bar = { 0.08f, 0.16f, 0.12f, 0.55f },
-		.color_title_bar_inactive = { 0.05f, 0.11f, 0.08f, 0.55f },
+		.color_title_bar = { 0.08f, 0.16f, 0.12f, 1.0f },
+		.color_title_bar_inactive = { 0.05f, 0.11f, 0.08f, 1.0f },
 		.color_menu_body = { 0.06f, 0.12f, 0.09f, 0.15f },
 		.color_panel_alt = { 0.05f, 0.10f, 0.07f, 0.25f },
 		.color_border = { 0.18f, 0.38f, 0.26f, 1.0f },
@@ -312,14 +402,14 @@ constexpr auto gse::gui::style::forest() -> style {
 		.color_text = { 0.94f, 0.97f, 0.94f, 1.0f },
 		.color_text_secondary = { 0.66f, 0.74f, 0.68f, 1.0f },
 		.color_text_disabled = { 0.40f, 0.46f, 0.42f, 1.0f },
-		.color_section_header = { accent.x(), accent.y(), accent.z(), 1.0f },
+		.color_section_header = accent,
 		.color_icon = { 0.70f, 0.78f, 0.72f, 1.0f },
 		.color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
-		.color_widget_background = { 0.10f, 0.24f, 0.16f, 1.0f },
+		.color_widget_background = { 0.10f, 0.24f, 0.16f, 0.35f },
 		.color_widget_hovered = { 0.14f, 0.34f, 0.22f, 1.0f },
 		.color_widget_active = accent,
 		.color_widget_selected = accent_dim,
-		.color_button_background = { 0.14f, 0.34f, 0.22f, 1.0f },
+		.color_button_background = { 0.14f, 0.34f, 0.22f, 0.35f },
 		.color_button_hovered = { 0.22f, 0.50f, 0.32f, 1.0f },
 		.color_accent = accent,
 		.color_accent_dim = accent_dim,
@@ -328,11 +418,14 @@ constexpr auto gse::gui::style::forest() -> style {
 		.color_toggle_off = { 0.16f, 0.22f, 0.18f, 1.0f },
 		.color_handle = { 0.94f, 0.97f, 0.94f, 1.0f },
 		.color_handle_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
-		.color_input_background = { 0.05f, 0.08f, 0.06f, 1.0f },
-		.color_selection = { accent.x(), accent.y(), accent.z(), 0.40f },
+		.color_input_background = { 0.05f, 0.08f, 0.06f, 0.35f },
+		.color_selection = { vec3f(accent), 0.40f },
 		.color_caret = { 0.94f, 0.97f, 0.94f, 1.0f },
-		.color_dock_preview = { accent.x(), accent.y(), accent.z(), 0.35f },
-		.color_dock_tab_active = { accent.x(), accent.y(), accent.z(), 0.6f },
+		.color_tab_background = { 0.06f, 0.15f, 0.10f, 0.35f },
+		.color_tab_hovered = { 0.12f, 0.28f, 0.19f, 1.0f },
+		.color_tab_active = { 0.17f, 0.38f, 0.25f, 1.0f },
+		.color_dock_preview = { vec3f(accent), 0.35f },
+		.color_dock_tab_active = { vec3f(accent), 0.6f },
 		.color_shadow = { 0.f, 0.f, 0.f, 0.40f },
 		.padding = 12.f,
 		.title_bar_height = 32.f,
@@ -355,8 +448,8 @@ constexpr auto gse::gui::style::frost() -> style {
 	constexpr vec4f accent{ 0.20f, 0.50f, 0.95f, 1.0f };
 	constexpr vec4f accent_dim{ 0.20f, 0.50f, 0.95f, 0.20f };
 	return style{
-		.color_title_bar = { 0.90f, 0.94f, 0.99f, 0.55f },
-		.color_title_bar_inactive = { 0.84f, 0.88f, 0.94f, 0.55f },
+		.color_title_bar = { 0.90f, 0.94f, 0.99f, 1.0f },
+		.color_title_bar_inactive = { 0.84f, 0.88f, 0.94f, 1.0f },
 		.color_menu_body = { 0.94f, 0.96f, 0.99f, 0.15f },
 		.color_panel_alt = { 0.90f, 0.93f, 0.97f, 0.25f },
 		.color_border = { 0.62f, 0.74f, 0.92f, 1.0f },
@@ -367,11 +460,13 @@ constexpr auto gse::gui::style::frost() -> style {
 		.color_section_header = { 0.08f, 0.12f, 0.20f, 1.0f },
 		.color_icon = { 0.35f, 0.40f, 0.50f, 1.0f },
 		.color_icon_hovered = { 0.05f, 0.08f, 0.15f, 1.0f },
-		.color_widget_background = { 0.84f, 0.91f, 0.99f, 1.0f },
+		.color_folder = { 0.72f, 0.55f, 0.20f, 1.0f },
+		.color_file = { 0.30f, 0.44f, 0.66f, 1.0f },
+		.color_widget_background = { 0.84f, 0.91f, 0.99f, 0.35f },
 		.color_widget_hovered = { 0.72f, 0.84f, 0.96f, 1.0f },
 		.color_widget_active = accent,
 		.color_widget_selected = accent_dim,
-		.color_button_background = { 0.74f, 0.86f, 0.99f, 1.0f },
+		.color_button_background = { 0.74f, 0.86f, 0.99f, 0.35f },
 		.color_button_hovered = { 0.56f, 0.76f, 0.97f, 1.0f },
 		.color_accent = accent,
 		.color_accent_dim = accent_dim,
@@ -380,11 +475,14 @@ constexpr auto gse::gui::style::frost() -> style {
 		.color_toggle_off = { 0.78f, 0.82f, 0.88f, 1.0f },
 		.color_handle = { 1.0f, 1.0f, 1.0f, 1.0f },
 		.color_handle_hovered = { 0.97f, 0.98f, 1.0f, 1.0f },
-		.color_input_background = { 1.0f, 1.0f, 1.0f, 1.0f },
-		.color_selection = { accent.x(), accent.y(), accent.z(), 0.30f },
+		.color_input_background = { 1.0f, 1.0f, 1.0f, 0.35f },
+		.color_selection = { vec3f(accent), 0.30f },
 		.color_caret = { 0.10f, 0.12f, 0.18f, 1.0f },
-		.color_dock_preview = { accent.x(), accent.y(), accent.z(), 0.30f },
-		.color_dock_tab_active = { accent.x(), accent.y(), accent.z(), 0.55f },
+		.color_tab_background = { 0.80f, 0.86f, 0.94f, 0.35f },
+		.color_tab_hovered = { 0.88f, 0.93f, 0.99f, 1.0f },
+		.color_tab_active = { 0.98f, 0.99f, 1.0f, 1.0f },
+		.color_dock_preview = { vec3f(accent), 0.30f },
+		.color_dock_tab_active = { vec3f(accent), 0.55f },
 		.color_shadow = { 0.10f, 0.12f, 0.18f, 0.18f },
 		.padding = 12.f,
 		.title_bar_height = 32.f,
@@ -419,6 +517,8 @@ constexpr auto gse::gui::style::high_contrast() -> style {
 		.color_section_header = accent,
 		.color_icon = { 1.0f, 1.0f, 1.0f, 1.0f },
 		.color_icon_hovered = accent,
+		.color_folder = accent,
+		.color_file = { 1.0f, 1.0f, 1.0f, 1.0f },
 		.color_widget_background = { 0.0f, 0.0f, 0.0f, 1.0f },
 		.color_widget_hovered = { 0.25f, 0.25f, 0.0f, 1.0f },
 		.color_widget_active = accent,
@@ -435,6 +535,9 @@ constexpr auto gse::gui::style::high_contrast() -> style {
 		.color_input_background = { 0.0f, 0.0f, 0.0f, 1.0f },
 		.color_selection = { 0.0f, 0.5f, 1.0f, 0.6f },
 		.color_caret = { 1.0f, 1.0f, 1.0f, 1.0f },
+		.color_tab_background = { 0.0f, 0.0f, 0.0f, 1.0f },
+		.color_tab_hovered = { 0.20f, 0.18f, 0.0f, 1.0f },
+		.color_tab_active = { 0.38f, 0.35f, 0.0f, 1.0f },
 		.color_dock_preview = { 1.0f, 0.92f, 0.0f, 0.5f },
 		.color_dock_tab_active = { 1.0f, 0.92f, 0.0f, 0.8f },
 		.color_shadow = { 0.f, 0.f, 0.f, 0.5f },
@@ -472,6 +575,26 @@ constexpr auto gse::gui::style::from_theme(const theme t) -> style {
 		default:
 			return midnight();
 	}
+}
+
+auto gse::gui::style_key(const style& sty) -> std::uint64_t {
+	std::uint64_t h = 0;
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^style, std::meta::access_context::unchecked()))) {
+		using member_type = std::remove_cvref_t<decltype(sty.[:m:])>;
+		if constexpr (std::is_same_v<member_type, float>) {
+			h = hash_combine(h, static_cast<std::uint64_t>(std::bit_cast<std::uint32_t>(sty.[:m:])));
+		}
+		else if constexpr (requires { { *std::begin(sty.[:m:]) } -> std::convertible_to<float>; }) {
+			for (const float c : sty.[:m:]) {
+				h = hash_combine(h, static_cast<std::uint64_t>(std::bit_cast<std::uint32_t>(c)));
+			}
+		}
+	}
+	return h;
+}
+
+constexpr auto gse::gui::accent_bar_extent(const style& sty) -> float {
+	return std::max(2.f, sty.accent_bar_width);
 }
 
 constexpr auto gse::gui::dp::px(const style& sty) const -> float {

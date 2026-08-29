@@ -19,21 +19,19 @@ export namespace gse {
 			= asset_format::source_dir<"Audio">{},
 			= asset_format::source_exts<".wav", ".mp3", ".ogg", ".flac">{},
 			= asset_format::magic<0x47415544>{},
-			= asset_format::version<1>{}
+			= asset_format::version<2>{}
 		]] baked {
 			raw_blob_owned<std::byte> bytes;
 		};
 
 		explicit audio_clip(
 			const std::filesystem::path& filepath
-		) : identifiable(filepath, config::baked_resource_path), m_path(filepath.string()) {
+		) : identifiable(config::asset_tag(filepath)), m_path(filepath.native_encoded_string()) {
 		}
 
 		auto load(
 			asset::load_ctx& ctx
-		) -> async::task<>;
-
-		auto unload() -> void;
+		) -> async::task<asset_result>;
 
 		auto data() const -> const std::vector<std::byte>&;
 
@@ -75,7 +73,7 @@ export namespace gse::audio {
 
 	struct play_request {
 		using result_type = voice_handle;
-		const audio_clip* clip = nullptr;
+		std::shared_ptr<const audio_clip> clip;
 		bool loop = false;
 		channel_promise<voice_handle> promise;
 	};
@@ -101,7 +99,7 @@ export namespace gse::audio {
 		percentage<float> vol;
 	};
 
-	struct [[= gse::system_state<"Audio">{}, = gse::deferred_system{}]] data {
+	struct [[= system_state<"Audio">{}, = deferred_system{}]] data {
 		audio_engine* engine = nullptr;
 		bool engine_initialized = false;
 		percentage<float> master_vol = percentage<float>::one();
@@ -109,18 +107,19 @@ export namespace gse::audio {
 		std::vector<std::uint32_t> free_list;
 	};
 
-	[[= gse::system_init{}]]
+	[[= system_init{}]]
 	auto init(
 		data& d
 	) -> async::task<>;
 
-	[[= gse::system_run<>{}]]
+	[[= system_run<>{}]]
 	auto run(
 		context& ctx,
-		data& d
+		data& d,
+		channel_read<play_request, stop_request, pause_request, resume_request, set_volume_request, set_master_volume_request> requests_in
 	) -> async::task<>;
 
-	[[= gse::system_shutdown{}]]
+	[[= system_shutdown{}]]
 	auto shutdown(
 		data& d
 	) -> void;

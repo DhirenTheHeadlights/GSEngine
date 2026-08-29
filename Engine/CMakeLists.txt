@@ -5,13 +5,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 project(Engine LANGUAGES CXX)
 
+# gse.config used to be generated here by configure_file; it is a real source now.
+# Existing build trees still hold the generated copy, which the binary-dir glob
+# below would collect alongside the source one - a duplicate module definition.
+# This must stay above the glob to have any effect.
+file(REMOVE "${CMAKE_CURRENT_BINARY_DIR}/Engine/Import/Config.cppm")
+
 file(GLOB_RECURSE ENGINE_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/*.cppm" "${CMAKE_CURRENT_BINARY_DIR}/Engine/*.cppm")
 list(REMOVE_ITEM ENGINE_MODULES "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Import/Engine.cppm")
-list(FILTER ENGINE_MODULES EXCLUDE REGEX "/(Source/Dx12|Import/Dx12\\.cppm)")
 
 file(GLOB_RECURSE ENGINE_IMPLS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/*.cpp")
 list(REMOVE_ITEM ENGINE_IMPLS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/External/MiniaudioImpl.cpp")
-list(FILTER ENGINE_IMPLS EXCLUDE REGEX "/Source/Dx12/")
 
 # A .cpp that declares an implementation partition (module gse.x:y;) provides a
 # module and must live in a CXX_MODULES file set; a plain implementation unit
@@ -19,7 +23,7 @@ list(FILTER ENGINE_IMPLS EXCLUDE REGEX "/Source/Dx12/")
 set(ENGINE_MODULE_IMPLS "")
 set(ENGINE_PLAIN_IMPLS "")
 foreach(_impl IN LISTS ENGINE_IMPLS)
-    file(STRINGS "${_impl}" _part_decl REGEX "^module gse\\.[A-Za-z_]+:[A-Za-z_0-9]+ *;" LIMIT_COUNT 1)
+    file(STRINGS "${_impl}" _part_decl REGEX "^module gse\\.[A-Za-z_0-9]+:[A-Za-z_0-9]+ *;" LIMIT_COUNT 1)
     if(_part_decl)
         list(APPEND ENGINE_MODULE_IMPLS "${_impl}")
     else()
@@ -123,7 +127,8 @@ target_link_libraries(Engine PUBLIC
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_link_libraries(Engine PUBLIC stdc++exp)
     if(WIN32)
-        target_link_libraries(Engine PUBLIC ws2_32 dbghelp)
+        find_package(directx-headers CONFIG REQUIRED)
+        target_link_libraries(Engine PUBLIC ws2_32 winhttp dbghelp shell32 advapi32 dwmapi d3d12 dxgi dxguid Microsoft::DirectX-Headers)
     endif()
 endif()
 
@@ -135,12 +140,56 @@ else()
     message(STATUS "Nsight Aftermath SDK not found; GPU crash dumps disabled (enable with vcpkg feature 'aftermath' and NSIGHT_AFTERMATH_SDK env var)")
 endif()
 
-set(ENGINE_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
-set(BAKED_RESOURCES_PATH "${CMAKE_CURRENT_BINARY_DIR}/Resources/")
+# DirectX 12 Agility SDK: fetch a pinned D3D12 runtime so mesh shaders / SM6.6 bindless behave
+# the same on every machine instead of depending on the OS-shipped runtime. The DX12 backend owns
+# the loader exports (Engine/Source/Dx12/AgilitySdk.cpp); they're force-linked into any exe that
+# links Engine, so application code never touches D3D12. gse_copy_runtime_deps() copies the DLLs
+# into the exe's D3D12/ subfolder. Bump GSE_AGILITY_VERSION (+ GSE_AGILITY_SDK_NUMBER) together.
+if(WIN32)
+    set(GSE_AGILITY_VERSION "1.616.0")
+    set(GSE_AGILITY_SDK_NUMBER 616)
+    set(_agility_root "${CMAKE_BINARY_DIR}/_agility/${GSE_AGILITY_VERSION}")
+    set(_agility_bin "${_agility_root}/build/native/bin/x64")
+    if(NOT EXISTS "${_agility_bin}/D3D12Core.dll")
+        set(_agility_zip "${CMAKE_BINARY_DIR}/_agility/agility-${GSE_AGILITY_VERSION}.zip")
+        message(STATUS "Fetching DirectX 12 Agility SDK ${GSE_AGILITY_VERSION} ...")
+        file(DOWNLOAD
+            "https://www.nuget.org/api/v2/package/Microsoft.Direct3D.D3D12/${GSE_AGILITY_VERSION}"
+            "${_agility_zip}"
+            STATUS _agility_status
+            TLS_VERIFY ON
+        )
+        list(GET _agility_status 0 _agility_code)
+        if(_agility_code EQUAL 0)
+            file(ARCHIVE_EXTRACT INPUT "${_agility_zip}" DESTINATION "${_agility_root}")
+        else()
+            list(GET _agility_status 1 _agility_msg)
+            message(WARNING "Agility SDK download failed (${_agility_msg}); falling back to the OS D3D12 runtime.")
+        endif()
+    endif()
+    if(EXISTS "${_agility_bin}/D3D12Core.dll")
+        set(GSE_AGILITY_BIN_DIR "${_agility_bin}" CACHE INTERNAL "DirectX 12 Agility SDK x64 runtime dir")
+        target_compile_definitions(Engine PRIVATE GSE_D3D12_AGILITY_VERSION=${GSE_AGILITY_SDK_NUMBER})
+        if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+            target_link_options(Engine INTERFACE "-Wl,--undefined=D3D12SDKVersion" "-Wl,--undefined=D3D12SDKPath")
+        else()
+            target_link_options(Engine INTERFACE "/INCLUDE:D3D12SDKVersion" "/INCLUDE:D3D12SDKPath")
+        endif()
+    endif()
+endif()
 
-configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/Engine/Import/Config.cppm.in
-    ${CMAKE_CURRENT_BINARY_DIR}/Engine/Import/Config.cppm
-    @ONLY
+
+# Dedicated-server session loop. Engine-owned and game-agnostic, but optional, so it
+# is a separate target rather than part of Engine: it imports the gse umbrella, and
+# nothing inside the Engine target does that. A project that wants a server links this
+# and supplies its own entry point registering the game's networked components.
+add_library(EngineServer STATIC)
+target_sources(EngineServer
+    PUBLIC
+        FILE_SET CXX_MODULES
+        BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Server"
+        FILES
+            "${CMAKE_CURRENT_SOURCE_DIR}/Server/Application.cppm"
+            "${CMAKE_CURRENT_SOURCE_DIR}/Server/Server.cppm"
 )
-
+target_link_libraries(EngineServer PUBLIC Engine)

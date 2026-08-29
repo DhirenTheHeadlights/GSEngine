@@ -1,0 +1,90 @@
+export module gse.assets:asset_state;
+
+import std;
+
+import gse.core;
+import gse.ecs;
+import gse.fs;
+import gse.concurrency;
+import gse.gpu;
+import gse.log;
+
+import :resource_loader;
+
+export namespace gse::asset {
+	struct hot_reload_request {
+		bool enabled = false;
+	};
+
+	struct [[= system_state<"Asset">{}]] data {
+		[[= shared]] std::unordered_map<id, std::unique_ptr<resource::loader_base>> resource_loaders;
+		file_watcher watcher;
+		std::function<void()> enable_hot_reload_fn;
+		std::function<void()> disable_hot_reload_fn;
+		bool hot_reload_enabled = false;
+		channel_write<gpu::gpu_resume_request> channels;
+	};
+
+	struct load_ctx {
+		data& assets;
+		channel_write<gpu::gpu_resume_request> channels;
+	};
+
+	[[= system_init{}]]
+	auto init(
+		context& ctx,
+		data& d,
+		channel_write<gpu::gpu_resume_request> gpu_out
+	) -> async::task<>;
+
+	[[= system_run<>{}]]
+	auto run(
+		context& ctx,
+		data& d,
+		channel_read<hot_reload_request> reload_in
+	) -> async::task<>;
+
+	[[= system_shutdown{}]]
+	auto shutdown(
+		data& d
+	) -> void;
+}
+
+auto gse::asset::init(context& ctx, data& d, const channel_write<gpu::gpu_resume_request> gpu_out) -> async::task<> {
+	d.channels = gpu_out;
+	return {};
+}
+
+auto gse::asset::run(context& ctx, data& d, const channel_read<hot_reload_request> reload_in) -> async::task<> {
+	for (const auto& loader : std::views::values(d.resource_loaders)) {
+		loader->flush();
+	}
+
+	for (const auto& request : reload_in.of<hot_reload_request>()) {
+		if (request.enabled == d.hot_reload_enabled) {
+			continue;
+		}
+		if (request.enabled) {
+			if (d.enable_hot_reload_fn) {
+				d.enable_hot_reload_fn();
+			}
+			log::println(log::category::assets, "Hot reload enabled");
+		}
+		else {
+			if (d.disable_hot_reload_fn) {
+				d.disable_hot_reload_fn();
+			}
+			log::println(log::category::assets, "Hot reload disabled");
+		}
+		d.hot_reload_enabled = request.enabled;
+	}
+
+	d.watcher.poll();
+	return {};
+}
+
+auto gse::asset::shutdown(data& d) -> void {
+	task::wait_idle();
+	d.resource_loaders.clear();
+	d.channels = {};
+}

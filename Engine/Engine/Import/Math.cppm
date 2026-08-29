@@ -15,12 +15,17 @@ export import :segment;
 export import :simd;
 export import :units;
 export import :vector;
+export import :vector_parse;
 export import :vector_math;
 export import :mixed_vec;
 export import :mixed_mat;
 export import :matrix_types;
 
 export namespace gse {
+	using rectf = rect_t<vec2f>;
+	using recti = rect_t<vec2i>;
+	using rectu = rect_t<vec2u>;
+
 	template <typename T>
 	concept is_arithmetic = internal::is_arithmetic<T>;
 

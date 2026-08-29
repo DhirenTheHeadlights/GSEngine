@@ -4,27 +4,25 @@ import std;
 
 import gse.core;
 import gse.meta;
+import gse.math;
+import gse.log;
 
 import :registries;
 
 export namespace gse::settings {
-	template <typename State>
-	struct annotated_change_request {
-		std::function<void(State&)> apply;
+	struct change_request {
+		id state_type;
+		std::function<void(void*)> apply;
 	};
 
-	template <typename State>
-	struct annotated_changed {
-		State old_value;
-		State new_value;
-	};
+	using change_request_writer = channel_write<change_request>;
 
 	using draw_page_thunk = void (
 			*
 	)(
 		void* builder,
 		void* panel_state,
-		void* channels,
+		change_request_writer channels,
 		const void* entry
 	);
 
@@ -33,7 +31,8 @@ export namespace gse::settings {
 	)(
 		std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
 		std::string_view category,
-		const void* settings_ptr
+		const void* settings_ptr,
+		scope_kind filter
 	);
 
 	using read_settings_thunk = void (
@@ -41,13 +40,14 @@ export namespace gse::settings {
 	)(
 		const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
 		std::string_view category,
-		void* settings_ptr
+		void* settings_ptr,
+		scope_kind filter
 	);
 
 	using reset_to_defaults_thunk = void (
 			*
 	)(
-		void* channel_writer
+		change_request_writer channels
 	);
 
 	using format_settings_field_thunk = std::string (
@@ -65,8 +65,21 @@ export namespace gse::settings {
 	using push_settings_field_change_thunk = bool (
 			*
 	)(
-		void* channel_writer,
+		change_request_writer channels,
 		std::string_view value
+	);
+
+	using convert_settings_field_unit_thunk = std::string (
+			*
+	)(
+		std::string_view canonical,
+		std::string_view unit
+	);
+
+	using normalize_settings_field_thunk = std::string (
+			*
+	)(
+		std::string_view text
 	);
 
 	enum class settings_field_widget : std::uint8_t {
@@ -76,6 +89,7 @@ export namespace gse::settings {
 		enumeration,
 		integer,
 		floating,
+		dimensioned,
 		text,
 	};
 
@@ -91,11 +105,16 @@ export namespace gse::settings {
 		settings_field_widget widget = settings_field_widget::unsupported;
 		settings_field_range range;
 		std::vector<std::string> options;
+		std::span<const std::string_view> units;
+		std::string_view default_unit;
 		format_settings_field_thunk format = nullptr;
 		settings_field_options_thunk runtime_options = nullptr;
 		push_settings_field_change_thunk push_change = nullptr;
+		convert_settings_field_unit_thunk convert_unit = nullptr;
+		normalize_settings_field_thunk normalize = nullptr;
 		bool hot_reloadable = false;
 		bool restart_required = false;
+		bool choice_stores_option = false;
 	};
 
 	struct register_settings_type {
@@ -116,37 +135,45 @@ export namespace gse::settings {
 
 	template <typename T>
 	concept is_scalar_settings_field = std::is_arithmetic_v<T> || std::is_enum_v<T> || std::same_as<T, bool> ||
-		std::same_as<T, std::string> || has_parser_specialization<T>;
+		std::same_as<T, std::string> || has_parser_specialization<T> || meta::is_optional_field<T> ||
+		meta::is_list_field<T>;
 
-	template <typename T>
+	template <typename T, scope_kind Inherited = scope_kind::user>
 	auto write_settings_with_prefix(
 		std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
 		std::string_view category,
 		std::string_view prefix,
-		const T& value
+		const T& value,
+		scope_kind filter
 	) -> void;
 
-	template <typename T>
+	template <typename T, scope_kind Inherited = scope_kind::user>
 	auto read_settings_with_prefix(
 		const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
 		std::string_view category,
 		std::string_view prefix,
-		T& value
+		T& value,
+		scope_kind filter
 	) -> void;
 
 	template <typename T>
 	auto write_settings_for(
 		std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
 		std::string_view category,
-		const void* settings_ptr
+		const void* settings_ptr,
+		scope_kind filter
 	) -> void;
 
 	template <typename T>
 	auto read_settings_for(
 		const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
 		std::string_view category,
-		void* settings_ptr
+		void* settings_ptr,
+		scope_kind filter
 	) -> void;
+
+	template <std::meta::info M, scope_kind Fallback>
+	consteval auto field_scope_of() -> scope_kind;
 
 	template <typename T>
 	auto collect_settings_keys_with_prefix(
@@ -158,7 +185,15 @@ export namespace gse::settings {
 	auto collect_settings_keys() -> std::vector<std::string>;
 
 	template <typename T>
+	consteval auto settings_key_exists(
+		std::string_view key
+	) -> bool;
+
+	template <typename T>
 	consteval auto category_of() -> std::string_view;
+
+	template <typename T>
+	consteval auto scope_of() -> scope_kind;
 
 	template <typename F>
 	consteval auto field_widget_of() -> settings_field_widget;
@@ -166,30 +201,100 @@ export namespace gse::settings {
 	consteval auto make_range_field_from_info(
 		std::meta::info range_type
 	) -> settings_field_range;
+
+	template <typename F>
+	constexpr bool is_dimensioned_field = internal::is_quantity<F>;
+
+	template <typename F>
+	auto field_unit_names() -> std::span<const std::string_view>;
+
+	template <typename F>
+	consteval auto field_default_unit() -> std::string_view;
+
+	template <typename F>
+	auto convert_field_unit(
+		std::string_view canonical,
+		std::string_view unit
+	) -> std::string;
+
+	template <typename F>
+	auto normalize_field_value(
+		std::string_view text
+	) -> std::string;
+
+	template <typename F>
+	auto warn_unparsed_field(
+		std::string_view category,
+		std::string_view key,
+		std::string_view text
+	) -> void;
 }
 
-template <typename T>
-auto gse::settings::write_settings_with_prefix(std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc, const std::string_view category, const std::string_view prefix, const T& value) -> void {
+template <typename F>
+auto gse::settings::warn_unparsed_field(const std::string_view category, const std::string_view key, const std::string_view text) -> void {
+	if constexpr (is_dimensioned_field<F>) {
+		std::string units;
+		for (const auto name : field_unit_names<F>()) {
+			if (!units.empty()) {
+				units += ", ";
+			}
+			units += name;
+		}
+		log::println(
+			log::level::warning,
+			log::category::general,
+			"setting '{}.{}' ignored: could not parse '{}'. Dimensioned values require a unit suffix, one of: {}",
+			category,
+			key,
+			text,
+			units
+		);
+	}
+	else {
+		log::println(
+			log::level::warning,
+			log::category::general,
+			"setting '{}.{}' ignored: could not parse '{}'",
+			category,
+			key,
+			text
+		);
+	}
+}
+
+template <typename T, gse::settings::scope_kind Inherited>
+auto gse::settings::write_settings_with_prefix(std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc, const std::string_view category, const std::string_view prefix, const T& value, const scope_kind filter) -> void {
 	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 		if constexpr (meta::find_describe(m) != std::meta::info{}) {
 			using F = [:std::meta::type_of(m):];
 			constexpr std::string_view name = meta::member_name(m);
+			constexpr scope_kind effective = field_scope_of<m, Inherited>();
 			const std::string key = prefix.empty() ? std::string(name) : std::format("{}.{}", prefix, name);
 
 			if constexpr (std::is_class_v<F> && !is_scalar_settings_field<F>) {
-				write_settings_with_prefix<F>(doc, category, key, value.[:m:]);
+				write_settings_with_prefix<F, effective>(doc, category, key, value.[:m:], filter);
 			}
-			else {
-				std::string formatted;
-				std::format_to(std::back_inserter(formatted), "{}", value.[:m:]);
-				doc[std::string(category)][key] = std::move(formatted);
+			else if (effective == filter) {
+				doc[std::string(category)][key] = meta::write_field(value.[:m:]);
 			}
 		}
 	}
 }
 
-template <typename T>
-auto gse::settings::read_settings_with_prefix(const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc, const std::string_view category, const std::string_view prefix, T& value) -> void {
+template <std::meta::info M, gse::settings::scope_kind Fallback>
+consteval auto gse::settings::field_scope_of() -> scope_kind {
+	constexpr auto found = meta::find_scope(M);
+	if constexpr (found != std::meta::info{}) {
+		using S = [:found:];
+		return S::value;
+	}
+	else {
+		return Fallback;
+	}
+}
+
+template <typename T, gse::settings::scope_kind Inherited>
+auto gse::settings::read_settings_with_prefix(const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc, const std::string_view category, const std::string_view prefix, T& value, const scope_kind filter) -> void {
 	const auto cat_it = doc.find(std::string(category));
 	if (cat_it == doc.end()) {
 		return;
@@ -198,35 +303,42 @@ auto gse::settings::read_settings_with_prefix(const std::unordered_map<std::stri
 		if constexpr (meta::find_describe(m) != std::meta::info{}) {
 			using F = [:std::meta::type_of(m):];
 			constexpr std::string_view name = meta::member_name(m);
+			constexpr scope_kind effective = field_scope_of<m, Inherited>();
 			const std::string key = prefix.empty() ? std::string(name) : std::format("{}.{}", prefix, name);
 
 			if constexpr (std::is_class_v<F> && !is_scalar_settings_field<F>) {
-				read_settings_with_prefix<F>(doc, category, key, value.[:m:]);
+				read_settings_with_prefix<F, effective>(doc, category, key, value.[:m:], filter);
 			}
-			else if (const auto it = cat_it->second.find(key); it != cat_it->second.end()) {
-				gse::parse(it->second, value.[:m:]);
+			else if (effective == filter) {
+				if (const auto it = cat_it->second.find(key); it != cat_it->second.end()) {
+					if (!meta::read_field(it->second, value.[:m:])) {
+						warn_unparsed_field<F>(category, key, it->second);
+					}
+				}
 			}
 		}
 	}
 }
 
 template <typename T>
-auto gse::settings::write_settings_for(std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc, const std::string_view category, const void* settings_ptr) -> void {
-	write_settings_with_prefix<T>(
+auto gse::settings::write_settings_for(std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc, const std::string_view category, const void* settings_ptr, const scope_kind filter) -> void {
+	write_settings_with_prefix<T, scope_of<T>()>(
 		doc,
 		category,
 		{},
-		*static_cast<const T*>(settings_ptr)
+		*static_cast<const T*>(settings_ptr),
+		filter
 	);
 }
 
 template <typename T>
-auto gse::settings::read_settings_for(const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc, const std::string_view category, void* settings_ptr) -> void {
-	read_settings_with_prefix<T>(
+auto gse::settings::read_settings_for(const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc, const std::string_view category, void* settings_ptr, const scope_kind filter) -> void {
+	read_settings_with_prefix<T, scope_of<T>()>(
 		doc,
 		category,
 		{},
-		*static_cast<T*>(settings_ptr)
+		*static_cast<T*>(settings_ptr),
+		filter
 	);
 }
 
@@ -259,6 +371,28 @@ auto gse::settings::collect_settings_keys() -> std::vector<std::string> {
 }
 
 template <typename T>
+consteval auto gse::settings::settings_key_exists(const std::string_view key) -> bool {
+	bool found = false;
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+		if constexpr (meta::find_describe(m) != std::meta::info{}) {
+			using F = [:std::meta::type_of(m):];
+			constexpr std::string_view name = meta::member_name(m);
+
+			if constexpr (std::is_class_v<F> && !is_scalar_settings_field<F>) {
+				if (key.size() > name.size() && key.starts_with(name) && key[name.size()] == '.' &&
+					settings_key_exists<F>(key.substr(name.size() + 1))) {
+					found = true;
+				}
+			}
+			else if (key == name) {
+				found = true;
+			}
+		}
+	}
+	return found;
+}
+
+template <typename T>
 consteval auto gse::settings::category_of() -> std::string_view {
 	constexpr auto cat = meta::find_category(^^T);
 	if constexpr (cat != std::meta::info{}) {
@@ -267,6 +401,18 @@ consteval auto gse::settings::category_of() -> std::string_view {
 	}
 	else {
 		return std::string_view{};
+	}
+}
+
+template <typename T>
+consteval auto gse::settings::scope_of() -> scope_kind {
+	constexpr auto found = meta::find_scope(^^T);
+	if constexpr (found != std::meta::info{}) {
+		using S = [:found:];
+		return S::value;
+	}
+	else {
+		return scope_kind::user;
 	}
 }
 
@@ -287,12 +433,58 @@ consteval auto gse::settings::field_widget_of() -> settings_field_widget {
 	else if constexpr (std::is_floating_point_v<F>) {
 		return settings_field_widget::floating;
 	}
+	else if constexpr (is_dimensioned_field<F>) {
+		return settings_field_widget::dimensioned;
+	}
 	else if constexpr (std::same_as<F, std::string> || has_parser_specialization<F>) {
 		return settings_field_widget::text;
 	}
 	else {
 		return settings_field_widget::unsupported;
 	}
+}
+
+template <typename F>
+auto gse::settings::field_unit_names() -> std::span<const std::string_view> {
+	if constexpr (is_dimensioned_field<F>) {
+		return internal::unit_names<typename F::quantity_tag>();
+	}
+	else {
+		return {};
+	}
+}
+
+template <typename F>
+consteval auto gse::settings::field_default_unit() -> std::string_view {
+	if constexpr (is_dimensioned_field<F>) {
+		return std::string_view(F::default_unit::unit_name);
+	}
+	else {
+		return {};
+	}
+}
+
+template <typename F>
+auto gse::settings::convert_field_unit(const std::string_view canonical, const std::string_view unit) -> std::string {
+	if constexpr (is_dimensioned_field<F>) {
+		F parsed{};
+		if (!parse(canonical, parsed)) {
+			return {};
+		}
+		return std::format("{::{}!}", parsed, unit);
+	}
+	else {
+		return {};
+	}
+}
+
+template <typename F>
+auto gse::settings::normalize_field_value(const std::string_view text) -> std::string {
+	F parsed{};
+	if (!parse(text, parsed)) {
+		return {};
+	}
+	return std::format("{}", parsed);
 }
 
 consteval auto gse::settings::make_range_field_from_info(const std::meta::info range_type) -> settings_field_range {
@@ -324,4 +516,3 @@ consteval auto gse::settings::make_range_field_from_info(const std::meta::info r
 	}
 	return {};
 }
-

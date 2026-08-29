@@ -10,6 +10,7 @@ import :camera_system;
 import gse.os;
 import gse.assets;
 import gse.gpu;
+import gse.gpu_record;
 import gse.math;
 import gse.core;
 import gse.containers;
@@ -65,7 +66,8 @@ auto gse::renderer::cull_compute::init(context& ctx, const shared_view<gpu::cont
 		d.frustum_buffer[i] = gpu_s.device->create_buffer(
 			{
 				.size = frustum_size,
-				.usage = gpu::buffer_flag::uniform | gpu::buffer_flag::transfer_dst,
+				.stride = sizeof(std::array<vec4f, 6>),
+				.usage = { gpu::buffer_flag::storage, gpu::buffer_flag::transfer_dst },
 				.bindless = true
 			}
 		);
@@ -74,7 +76,8 @@ auto gse::renderer::cull_compute::init(context& ctx, const shared_view<gpu::cont
 		d.batch_info_buffer[i] = gpu_s.device->create_buffer(
 			{
 				.size = batch_info_size,
-				.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst,
+				.stride = sizeof(batch_info),
+				.usage = { gpu::buffer_flag::storage, gpu::buffer_flag::transfer_dst },
 				.bindless = true
 			}
 		);
@@ -83,12 +86,12 @@ auto gse::renderer::cull_compute::init(context& ctx, const shared_view<gpu::cont
 	return {};
 }
 
-auto gse::renderer::cull_compute::frame(context& ctx, shared_view<gpu::context::data> gpu_s, shared_view<geometry_collector::data> gc_r, const data& d) -> async::task<> {
+auto gse::renderer::cull_compute::frame(context& ctx, shared_view<gpu::context::data> gpu_s, shared_view<geometry_collector::data> gc_r, const data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<geometry_collector::render_data> geometry_in) -> async::task<> {
 	if (!d.enabled) {
 		co_return;
 	}
 
-	const auto& items = ctx.read_channel<geometry_collector::render_data>();
+	const auto& items = geometry_in.of<geometry_collector::render_data>();
 	if (items.empty()) {
 		co_return;
 	}
@@ -110,7 +113,7 @@ auto gse::renderer::cull_compute::frame(context& ctx, shared_view<gpu::context::
 	const auto planes = extract_frustum_planes(view_proj);
 	d.frustum_buffer[frame_index].host_write(planes);
 
-	using batch_info = renderer::cull_compute::batch_info;
+	using batch_info = cull_compute::batch_info;
 	std::vector<batch_info> batch_staging(normal_count);
 
 	for (std::size_t i = 0; i < data.normal_batches.size(); ++i) {
@@ -130,7 +133,7 @@ auto gse::renderer::cull_compute::frame(context& ctx, shared_view<gpu::context::
 		);
 	}
 
-	auto rec = co_await gpu::pass<^^gse::renderer::cull_compute::frame>(ctx).pipeline(d.pipeline);
+	auto rec = co_await gpu::pass<^^frame>(pass_out).pipeline(d.pipeline);
 
 	rec.dispatch<entry>(
 		{

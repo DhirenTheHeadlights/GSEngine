@@ -8,16 +8,13 @@ import gse.meta;
 
 import :registries;
 import :context;
-import :context;
+import :registry;
 import :settings;
 import :traits;
 
 export namespace gse {
 	template <typename T>
 	consteval auto has_describe_fields() -> bool;
-
-	template <typename T>
-	consteval auto has_category_annotation() -> bool;
 
 	struct system_node : non_copyable {
 		~system_node() = default;
@@ -66,10 +63,15 @@ export namespace gse {
 			*invoke_apply_settings_fn
 		)(
 			void*,
-			channel_registry&,
-			channel_writer&
+			channel_registry&
+		) = nullptr;
+		void (
+			*invoke_ensure_storages_fn
+		)(
+			registry&
 		) = nullptr;
 
+		std::vector<id> declared_run_state_deps;
 		std::vector<id> run_state_deps;
 		std::vector<id> init_state_deps;
 		std::vector<id> frame_state_deps;
@@ -77,11 +79,16 @@ export namespace gse {
 		std::vector<id> optional_init_state_deps;
 		std::vector<id> component_reads;
 		std::vector<id> component_writes;
+		std::vector<id> component_structural;
+		std::vector<id> shared_view_reads;
+		std::vector<id> channel_publishes;
+		std::vector<id> channel_consumes;
 
 		void* state_ptr = nullptr;
 		const void* state_snapshot_ptr = nullptr;
 
 		bool has_frame = false;
+		bool entity_structural = false;
 		bool deferred = false;
 		bool init_launched = false;
 		bool init_done = false;
@@ -104,6 +111,10 @@ export namespace gse {
 		std::optional<settings::register_settings_type> settings_record;
 
 		std::string system_name;
+		std::string display_name;
+		std::string def_file;
+		std::uint32_t def_line = 0;
+		std::uint32_t def_column = 0;
 	};
 
 }
@@ -117,9 +128,4 @@ consteval auto gse::has_describe_fields() -> bool {
 		}
 	}
 	return found;
-}
-
-template <typename T>
-consteval auto gse::has_category_annotation() -> bool {
-	return meta::find_category(^^T) != std::meta::info{};
 }

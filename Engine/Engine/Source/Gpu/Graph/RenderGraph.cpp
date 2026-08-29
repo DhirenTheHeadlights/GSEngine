@@ -6,12 +6,12 @@ import :render_graph;
 import :device;
 import :swap_chain;
 import :frame;
-import :pipeline_builder;
 import :transient_pool;
 import :image;
 import :pass_recorder;
+import :graph_channel;
 
-import gse.vulkan;
+import gse.gpu_backend;
 import gse.assert;
 import gse.core;
 import gse.containers;
@@ -23,711 +23,32 @@ import gse.math;
 import gse.meta;
 
 namespace gse::gpu {
-	inline thread_local recording_context* tl_active_recording_context = nullptr;
+	constexpr pipeline_statistic_flags profile_stats_flags{ pipeline_statistic_flag::input_assembly_vertices,
+		pipeline_statistic_flag::input_assembly_primitives, pipeline_statistic_flag::clipping_invocations,
+		pipeline_statistic_flag::fragment_shader_invocations };
 }
 
-gse::gpu::recording_context::recording_context(pass_recorder rec, render_pass_data* pass, const gpu::transient_pool* transient_pool, gpu::device* device)
-	: m_recorder(rec), m_pass(pass), m_transient_pool(transient_pool), m_device(device) {
-	if (m_recorder.valid()) {
-		assert(
-			tl_active_recording_context == nullptr,
-			"another recording_context is still active on this worker thread; a prior coroutine held its rec across a "
-			"co_await that was not gpu::pass<...>(ctx). Scope each rec to end before any non-pass await."
-		);
-		tl_active_recording_context = this;
-		m_origin_thread = std::this_thread::get_id();
-	}
+int gse::gpu::render_graph::s_live_count = 0;
+
+gse::gpu::render_graph::~render_graph() {
+	--s_live_count;
 }
 
-gse::gpu::recording_context::recording_context(recording_context&& other) noexcept
-	: m_recorder(other.m_recorder), m_pass(other.m_pass), m_transient_pool(other.m_transient_pool), m_device(other.m_device), m_touched(std::move(other.m_touched)), m_origin_thread(other.m_origin_thread), m_state_cache(other.m_state_cache), m_bindless_heaps_valid(other.m_bindless_heaps_valid) {
-	if (tl_active_recording_context == &other) {
-		tl_active_recording_context = this;
-	}
-	other.m_state_cache.invalidate();
-	other.m_recorder = pass_recorder{};
-	other.m_pass = nullptr;
-	other.m_transient_pool = nullptr;
-	other.m_device = nullptr;
-	other.m_bindless_heaps_valid = false;
-}
-
-auto gse::gpu::recording_context::operator=(recording_context&& other) noexcept -> recording_context& {
-	if (this != &other) {
-		if (m_recorder.valid()) {
-			assert(
-				std::this_thread::get_id() == m_origin_thread,
-				"recording_context's secondary command buffer is being ended on a thread other than its origin. "
-				"This means the rec was held alive across a co_await that was not gpu::pass<...>(ctx) and the "
-				"coroutine "
-				"resumed on a different worker. Scope the rec to end before any non-pass await."
-			);
-			finalize_pass();
-			m_recorder.end();
-		}
-		if (tl_active_recording_context == this) {
-			tl_active_recording_context = nullptr;
-		}
-		m_recorder = other.m_recorder;
-		m_pass = other.m_pass;
-		m_transient_pool = other.m_transient_pool;
-		m_device = other.m_device;
-		m_touched = std::move(other.m_touched);
-		m_origin_thread = other.m_origin_thread;
-		m_state_cache = other.m_state_cache;
-		m_bindless_heaps_valid = other.m_bindless_heaps_valid;
-		if (tl_active_recording_context == &other) {
-			tl_active_recording_context = this;
-		}
-		other.m_state_cache.invalidate();
-		other.m_recorder = pass_recorder{};
-		other.m_pass = nullptr;
-		other.m_transient_pool = nullptr;
-		other.m_device = nullptr;
-		other.m_bindless_heaps_valid = false;
-	}
-	return *this;
-}
-
-auto gse::gpu::recording_context::resolve(const transient_image_handle h) const -> const image& {
-	assert(m_transient_pool != nullptr, "recording_context::resolve called but no transient_pool is bound");
-	const auto* img = m_transient_pool->resolve_image(h);
+gse::gpu::render_graph::render_graph(device& device, frame& frame)
+	: m_device(std::addressof(device)), m_swapchain(frame.swapchain()), m_frame(std::addressof(frame)), m_transient_pool(device) {
 	assert(
-		img != nullptr,
-		"transient_image_handle {} could not be resolved; ensure it was declared via gpu::transient_image before this "
-		"pass runs",
-		h.key
+		s_live_count++ == 0,
+		"gpu::render_graph is one-per-frame: it allocates every pass command buffer from the device's worker pools"
 	);
-	return *img;
-}
-
-auto gse::gpu::recording_context::resolve(const transient_buffer_handle h) const -> const buffer& {
-	assert(m_transient_pool != nullptr, "recording_context::resolve called but no transient_pool is bound");
-	const auto* buf = m_transient_pool->resolve_buffer(h);
-	assert(
-		buf != nullptr,
-		"transient_buffer_handle {} could not be resolved; ensure it was declared via gpu::transient_buffer before "
-		"this pass runs",
-		h.key
-	);
-	return *buf;
-}
-
-gse::gpu::recording_context::~recording_context() {
-	if (m_recorder.valid()) {
-		assert(
-			std::this_thread::get_id() == m_origin_thread,
-			"recording_context's secondary command buffer is being ended on a thread other than its origin. "
-			"This means the rec was held alive across a co_await that was not gpu::pass<...>(ctx) and the coroutine "
-			"resumed on a different worker. Scope the rec to end before any non-pass await."
-		);
-		finalize_pass();
-		m_recorder.end();
-	}
-	if (tl_active_recording_context == this) {
-		tl_active_recording_context = nullptr;
-	}
-}
-
-auto gse::gpu::recording_context::finalize_active_on_current_thread() noexcept -> void {
-	auto* active = tl_active_recording_context;
-	if (active != nullptr && active->m_recorder.valid()) {
-		assert(
-			std::this_thread::get_id() == active->m_origin_thread,
-			"finalize_active_on_current_thread invoked on a thread that does not own the active rec's secondary; "
-			"tl_active_recording_context was corrupted (probably by a rec being held across a non-pass co_await)."
-		);
-		active->finalize_pass();
-		active->m_recorder.end();
-		active->m_recorder = pass_recorder{};
-	}
-	tl_active_recording_context = nullptr;
-}
-
-auto gse::gpu::recording_context::check_active() const -> void {
-	assert(
-		m_recorder.valid(),
-		"recording_context method called after the pass's secondary was finalized. This happens when the previous rec "
-		"was implicitly closed by a subsequent `co_await gpu::pass(...)` (each new pass await closes the prior rec on "
-		"the suspending thread to keep VkCommandPool access single-threaded). Use only the rec returned by the most "
-		"recent co_await, or scope each rec in its own block."
-	);
-	assert(
-		std::this_thread::get_id() == m_origin_thread,
-		"recording_context method called from a different thread than the one that constructed it. This means the rec "
-		"was held alive across a co_await that was not gpu::pass<...>(ctx) and the coroutine resumed on a different "
-		"worker. Recording onto a secondary from a thread that does not own its command pool is undefined; scope the "
-		"rec to end before any non-pass await."
-	);
-}
-
-auto gse::gpu::recording_context::ensure_descriptor_heaps() -> void {
-	if (m_bindless_heaps_valid) {
-		return;
-	}
-	assert(m_device != nullptr, "recording_context has no device");
-	const auto resource_binding = m_device->bindless_resource_heap_binding();
-	m_recorder.bind_resource_heap(
-		resource_binding.address,
-		resource_binding.size,
-		resource_binding.reserved_offset,
-		resource_binding.reserved_size
-	);
-	const auto sampler_binding = m_device->bindless_sampler_heap_binding();
-	m_recorder.bind_sampler_heap(
-		sampler_binding.address,
-		sampler_binding.size,
-		sampler_binding.reserved_offset,
-		sampler_binding.reserved_size
-	);
-	m_bindless_heaps_valid = true;
-}
-
-auto gse::gpu::recording_context::sample_image(const image& img, const gpu::pipeline_stage_flags stages) -> void {
-	check_active();
-	note_touched(
-		{
-			.ptr = std::addressof(img),
-			.type = resource_type::image,
-		},
-		stages,
-		gpu::access_flag::shader_sampled_read
-	);
-}
-
-auto gse::gpu::recording_context::note_touched(const resource_ref ref, const gpu::pipeline_stage_flags stages, const gpu::access_flags access) -> void {
-	if (!ref.ptr) {
-		return;
-	}
-	for (auto& existing : m_touched) {
-		if (existing.ref.ptr == ref.ptr) {
-			existing.stages |= stages;
-			existing.access |= access;
-			return;
-		}
-	}
-	m_touched.push_back({
-		.ref = ref,
-		.stages = stages,
-		.access = access,
-	});
-}
-
-auto gse::gpu::recording_context::finalize_pass() -> void {
-	if (!m_pass) {
-		return;
-	}
-
-	constexpr gpu::access_flags write_mask = gpu::access_flag::shader_write | gpu::access_flag::shader_storage_write |
-		gpu::access_flag::color_attachment_write | gpu::access_flag::depth_stencil_attachment_write |
-		gpu::access_flag::transfer_write | gpu::access_flag::host_write | gpu::access_flag::memory_write |
-		gpu::access_flag::acceleration_structure_write;
-
-	for (const auto& [ref, stages, access] : m_touched) {
-		const bool has_writes = (access & write_mask).bits() != 0;
-		auto& bucket = has_writes ? m_pass->writes : m_pass->reads;
-		bucket.push_back({
-			.resource = ref,
-			.stage = stages,
-			.access = access,
-		});
-	}
-}
-
-auto gse::gpu::recording_context::copy_buffer(const buffer& src, const buffer& dst, const std::size_t size, const std::size_t src_offset, const std::size_t dst_offset) -> void {
-	check_active();
-	note_touched(
-		{
-			.ptr = std::addressof(src),
-			.type = resource_type::buffer,
-		},
-		gpu::pipeline_stage_flag::copy,
-		gpu::access_flag::transfer_read
-	);
-	note_touched(
-		{
-			.ptr = std::addressof(dst),
-			.type = resource_type::buffer,
-		},
-		gpu::pipeline_stage_flag::copy,
-		gpu::access_flag::transfer_write
-	);
-	m_recorder.copy_buffer(
-		src.handle(),
-		dst.handle(),
-		gpu::buffer_copy_region{
-			.src_offset = src_offset,
-			.dst_offset = dst_offset,
-			.size = size
-		}
-	);
-}
-
-auto gse::gpu::recording_context::fill_buffer(const buffer& dst, const std::size_t offset, const std::size_t size, const std::uint32_t data) -> void {
-	check_active();
-	note_touched(
-		{
-			.ptr = std::addressof(dst),
-			.type = resource_type::buffer,
-		},
-		gpu::pipeline_stage_flag::copy,
-		gpu::access_flag::transfer_write
-	);
-	m_recorder.fill_buffer(dst.handle(), offset, size, data);
-}
-
-auto gse::gpu::recording_context::barrier(const gpu::barrier_scope scope) const -> void {
-	check_active();
-	using ps = gpu::pipeline_stage_flag;
-	using ac = gpu::access_flag;
-	gpu::memory_barrier mb;
-	switch (scope) {
-		case gpu::barrier_scope::compute_to_compute:
-			mb = {
-				.src_stages = ps::compute_shader,
-				.src_access = ac::shader_storage_write,
-				.dst_stages = ps::compute_shader,
-				.dst_access = ac::shader_storage_read | ac::shader_storage_write | ac::shader_sampled_read,
-			};
-			break;
-		case gpu::barrier_scope::compute_to_indirect:
-			mb = {
-				.src_stages = ps::compute_shader,
-				.src_access = ac::shader_storage_write,
-				.dst_stages = ps::draw_indirect | ps::compute_shader,
-				.dst_access = ac::indirect_command_read | ac::shader_storage_read | ac::shader_storage_write,
-			};
-			break;
-		case gpu::barrier_scope::host_to_compute:
-			mb = {
-				.src_stages = ps::host,
-				.src_access = ac::host_write,
-				.dst_stages = ps::compute_shader,
-				.dst_access = ac::shader_storage_read | ac::shader_storage_write,
-			};
-			break;
-		case gpu::barrier_scope::transfer_to_compute:
-			mb = {
-				.src_stages = ps::copy,
-				.src_access = ac::transfer_write,
-				.dst_stages = ps::compute_shader,
-				.dst_access = ac::shader_storage_read | ac::shader_storage_write,
-			};
-			break;
-		case gpu::barrier_scope::compute_to_transfer:
-			mb = {
-				.src_stages = ps::compute_shader,
-				.src_access = ac::shader_storage_write,
-				.dst_stages = ps::copy,
-				.dst_access = ac::transfer_read,
-			};
-			break;
-		case gpu::barrier_scope::transfer_to_host:
-			mb = {
-				.src_stages = ps::transfer,
-				.src_access = ac::transfer_write,
-				.dst_stages = ps::host,
-				.dst_access = ac::host_read,
-			};
-			break;
-		case gpu::barrier_scope::transfer_to_transfer:
-			mb = {
-				.src_stages = ps::copy,
-				.src_access = ac::transfer_write,
-				.dst_stages = ps::copy,
-				.dst_access = ac::transfer_write,
-			};
-			break;
-	}
-	const gpu::dependency_info dep{
-		.memory_barriers = std::span(&mb, 1)
-	};
-	m_recorder.pipeline_barrier(dep);
-}
-
-auto gse::gpu::recording_context::build_acceleration_structure(const gpu::acceleration_structure_build_geometry_info& build_info, const std::span<const gpu::acceleration_structure_build_range_info* const> range_infos) -> void {
-	check_active();
-	note_touched(
-		{
-			.ptr = std::bit_cast<const void*>(build_info.dst.value),
-			.type = resource_type::acceleration_structure,
-		},
-		gpu::pipeline_stage_flag::acceleration_structure_build,
-		gpu::access_flag::acceleration_structure_read | gpu::access_flag::acceleration_structure_write
-	);
-	m_recorder.build_acceleration_structures(build_info, range_infos);
-}
-
-auto gse::gpu::recording_context::pipeline_barrier(const gpu::dependency_info& dep) const -> void {
-	check_active();
-	m_recorder.pipeline_barrier(dep);
-}
-
-auto gse::gpu::recording_context::capture_swapchain(const gpu::swap_chain& swapchain, const gpu::frame& frame, const buffer& dst) const -> void {
-	check_active();
-	const auto ext = swapchain.extent();
-	const auto dst_buffer = dst.handle();
-	const auto gpu_image = swapchain.image(frame.image_index());
-
-	const gpu::image_barrier to_transfer{
-		.src_stages = gpu::pipeline_stage_flag::color_attachment_output,
-		.src_access = gpu::access_flag::color_attachment_write,
-		.dst_stages = gpu::pipeline_stage_flag::transfer,
-		.dst_access = gpu::access_flag::transfer_read,
-		.image = gpu_image,
-		.aspects = gpu::image_aspect_flag::color,
-	};
-	m_recorder.pipeline_barrier(gpu::dependency_info{
-		.image_barriers = std::span(&to_transfer, 1)
-	});
-
-	const gpu::buffer_image_copy_region gpu_region{
-		.buffer_offset = 0,
-		.buffer_row_length = 0,
-		.buffer_image_height = 0,
-		.image_subresource = {
-			.aspects = gpu::image_aspect_flag::color,
-			.mip_level = 0,
-			.base_array_layer = 0,
-			.layer_count = 1,
-		},
-		.image_offset = vec3i{ 0, 0, 0 },
-		.image_extent = vec3u{ ext.x(), ext.y(), 1 },
-	};
-	m_recorder.copy_image_to_buffer(gpu_image, dst_buffer, std::span(&gpu_region, 1));
-
-	const gpu::image_barrier back_to_color{
-		.src_stages = gpu::pipeline_stage_flag::transfer,
-		.src_access = gpu::access_flag::transfer_read,
-		.dst_stages = gpu::pipeline_stage_flag::color_attachment_output,
-		.dst_access = gpu::access_flag::color_attachment_write | gpu::access_flag::color_attachment_read,
-		.image = gpu_image,
-		.aspects = gpu::image_aspect_flag::color,
-	};
-	m_recorder.pipeline_barrier(gpu::dependency_info{
-		.image_barriers = std::span(&back_to_color, 1)
-	});
-}
-
-auto gse::gpu::recording_context::blit_swapchain_to_image(const gpu::swap_chain& swapchain, const gpu::frame& frame, const image& dst, const vec2u dst_extent) const -> void {
-	check_active();
-	const auto src_image = swapchain.image(frame.image_index());
-	const auto src_ext = swapchain.extent();
-
-	const gpu::image_barrier src_to_transfer{
-		.src_stages = gpu::pipeline_stage_flag::color_attachment_output,
-		.src_access = gpu::access_flag::color_attachment_write,
-		.dst_stages = gpu::pipeline_stage_flag::transfer,
-		.dst_access = gpu::access_flag::transfer_read,
-		.image = src_image,
-		.aspects = gpu::image_aspect_flag::color,
-	};
-
-	const gpu::image_barrier dst_to_transfer{
-		.src_stages = {},
-		.src_access = {},
-		.dst_stages = gpu::pipeline_stage_flag::transfer,
-		.dst_access = gpu::access_flag::transfer_write,
-		.discard_contents = true,
-		.image = dst.handle(),
-		.aspects = gpu::image_aspect_flag::color,
-	};
-
-	const std::array pre_barriers = { src_to_transfer, dst_to_transfer };
-	m_recorder.pipeline_barrier(gpu::dependency_info{
-		.image_barriers = pre_barriers
-	});
-
-	const gpu::image_blit_region gpu_region{
-		.src_subresource = {
-			.aspects = gpu::image_aspect_flag::color,
-			.mip_level = 0,
-			.base_array_layer = 0,
-			.layer_count = 1,
-		},
-		.src_offsets = {
-			vec3i{ 0, 0, 0 },
-			vec3i{ static_cast<int>(src_ext.x()), static_cast<int>(src_ext.y()), 1 },
-		},
-		.dst_subresource = {
-			.aspects = gpu::image_aspect_flag::color,
-			.mip_level = 0,
-			.base_array_layer = 0,
-			.layer_count = 1,
-		},
-		.dst_offsets = {
-			vec3i{ 0, 0, 0 },
-			vec3i{ static_cast<int>(dst_extent.x()), static_cast<int>(dst_extent.y()), 1 },
-		},
-	};
-	m_recorder.blit_image(src_image, dst.handle(), gpu_region, gpu::sampler_filter::nearest);
-
-	const gpu::image_barrier src_back{
-		.src_stages = gpu::pipeline_stage_flag::transfer,
-		.src_access = gpu::access_flag::transfer_read,
-		.dst_stages = gpu::pipeline_stage_flag::color_attachment_output,
-		.dst_access = gpu::access_flag::color_attachment_write | gpu::access_flag::color_attachment_read,
-		.image = src_image,
-		.aspects = gpu::image_aspect_flag::color,
-	};
-
-	const gpu::image_barrier dst_to_read{
-		.src_stages = gpu::pipeline_stage_flag::transfer,
-		.src_access = gpu::access_flag::transfer_write,
-		.dst_stages = gpu::pipeline_stage_flag::compute_shader | gpu::pipeline_stage_flag::fragment_shader,
-		.dst_access = gpu::access_flag::shader_sampled_read,
-		.image = dst.handle(),
-		.aspects = gpu::image_aspect_flag::color,
-	};
-
-	const std::array post_barriers = { src_back, dst_to_read };
-	m_recorder.pipeline_barrier(gpu::dependency_info{
-		.image_barriers = post_barriers
-	});
-}
-
-auto gse::gpu::recording_context::set_viewport(const float x, const float y, const float width, const float height, const float min_depth, const float max_depth) const -> void {
-	check_active();
-	m_recorder.set_viewport(
-		gpu::viewport{
-			.x = x,
-			.y = y,
-			.width = width,
-			.height = height,
-			.min_depth = min_depth,
-			.max_depth = max_depth,
-		}
-	);
-}
-
-auto gse::gpu::recording_context::set_scissor(const std::int32_t x, const std::int32_t y, const std::uint32_t width, const std::uint32_t height) const -> void {
-	check_active();
-	const gse::rect_t<vec2i> sc{ {
-		.min = vec2i{ x, y },
-		.max = vec2i{ x + static_cast<int>(width), y + static_cast<int>(height) },
-	} };
-	m_recorder.set_scissor(sc);
-}
-
-auto gse::gpu::recording_context::draw(const std::uint32_t vertex_count, const std::uint32_t instance_count, const std::uint32_t first_vertex, const std::uint32_t first_instance) const -> void {
-	check_active();
-	m_recorder.draw(vertex_count, instance_count, first_vertex, first_instance);
-}
-
-auto gse::gpu::recording_context::draw_indexed(const std::uint32_t index_count, const std::uint32_t instance_count, const std::uint32_t first_index, const std::int32_t vertex_offset, const std::uint32_t first_instance) const -> void {
-	check_active();
-	m_recorder.draw_indexed(index_count, instance_count, first_index, vertex_offset, first_instance);
-}
-
-auto gse::gpu::recording_context::draw_mesh_tasks(const std::uint32_t x, const std::uint32_t y, const std::uint32_t z) const -> void {
-	check_active();
-	m_recorder.draw_mesh_tasks(x, y, z);
-}
-
-auto gse::gpu::recording_context::dispatch(const std::uint32_t x, const std::uint32_t y, const std::uint32_t z) const -> void {
-	check_active();
-	m_recorder.dispatch(x, y, z);
-}
-
-auto gse::gpu::recording_context::dispatch_indirect(const buffer& buf, const std::size_t offset) -> void {
-	check_active();
-	note_touched(
-		{
-			.ptr = std::addressof(buf),
-			.type = resource_type::buffer,
-		},
-		gpu::pipeline_stage_flag::draw_indirect,
-		gpu::access_flag::indirect_command_read
-	);
-	m_recorder.dispatch_indirect(buf.handle(), static_cast<gpu::device_size>(offset));
-}
-
-auto gse::gpu::recording_context::draw_indirect(const buffer& buf, const std::size_t offset, const std::uint32_t draw_count, const std::uint32_t stride) -> void {
-	check_active();
-	note_touched(
-		{
-			.ptr = std::addressof(buf),
-			.type = resource_type::buffer,
-		},
-		gpu::pipeline_stage_flag::draw_indirect,
-		gpu::access_flag::indirect_command_read
-	);
-	m_recorder.draw_indexed_indirect(buf.handle(), offset, draw_count, stride);
-}
-
-auto gse::gpu::recording_context::draw_mesh_tasks_indirect(const buffer& buf, const std::size_t offset, const std::uint32_t draw_count, const std::uint32_t stride) -> void {
-	check_active();
-	note_touched(
-		{
-			.ptr = std::addressof(buf),
-			.type = resource_type::buffer,
-		},
-		gpu::pipeline_stage_flag::draw_indirect,
-		gpu::access_flag::indirect_command_read
-	);
-	m_recorder.draw_mesh_tasks_indirect(buf.handle(), offset, draw_count, stride);
-}
-
-auto gse::gpu::recording_context::bind_index(const buffer& buf, const gpu::index_type type, const std::size_t offset) -> void {
-	check_active();
-	note_touched(
-		{
-			.ptr = std::addressof(buf),
-			.type = resource_type::buffer,
-		},
-		gpu::pipeline_stage_flag::index_input,
-		gpu::access_flag::index_read
-	);
-	m_recorder.bind_index_buffer_2(buf.handle(), offset, gpu::whole_size, type);
-}
-
-auto gse::gpu::recording_context::set_viewport(const vec2u extent) const -> void {
-	check_active();
-	m_recorder.set_viewport(
-		gpu::viewport{
-			.x = 0.0f,
-			.y = 0.0f,
-			.width = static_cast<float>(extent.x()),
-			.height = static_cast<float>(extent.y()),
-			.min_depth = 0.0f,
-			.max_depth = 1.0f,
-		}
-	);
-}
-
-auto gse::gpu::recording_context::set_scissor(const vec2u extent) const -> void {
-	check_active();
-	const gse::rect_t<vec2i> sc{ {
-		.min = vec2i{ 0, 0 },
-		.max = vec2i{ static_cast<int>(extent.x()), static_cast<int>(extent.y()) },
-	} };
-	m_recorder.set_scissor(sc);
-}
-
-auto gse::gpu::recording_context::bind(const gpu::shader_program& p) -> void {
-	check_active();
-
-	if (p.is_compute()) {
-		m_recorder.bind_shaders(p.stages(), p.shader_handles());
-	}
-	else {
-		constexpr std::array all_graphics_stages = {
-			gpu::stage_flag::vertex,
-			gpu::stage_flag::fragment,
-			gpu::stage_flag::task,
-			gpu::stage_flag::mesh,
-		};
-		std::array<gpu::handle<gpu::shader_object>, 4> bound{};
-		const auto stages = p.stages();
-		const auto handles = p.shader_handles();
-		for (std::size_t i = 0; i < all_graphics_stages.size(); ++i) {
-			for (std::size_t j = 0; j < stages.size(); ++j) {
-				if (stages[j] == all_graphics_stages[i]) {
-					bound[i] = handles[j];
-					break;
-				}
-			}
-		}
-		m_recorder.bind_shaders(all_graphics_stages, bound);
-		apply_dynamic_state(p.state());
-	}
-
-	ensure_descriptor_heaps();
-}
-
-auto gse::gpu::recording_context::apply_dynamic_state(const gpu::dynamic_pipeline_state& s) -> void {
-	if (!m_state_cache.topology || *m_state_cache.topology != s.topology) {
-		m_recorder.set_topology(s.topology);
-		m_state_cache.topology = s.topology;
-	}
-	if (!m_state_cache.polygon_mode || *m_state_cache.polygon_mode != s.polygon) {
-		m_recorder.set_polygon_mode(s.polygon);
-		m_state_cache.polygon_mode = s.polygon;
-	}
-	if (!m_state_cache.cull_mode || *m_state_cache.cull_mode != s.cull) {
-		m_recorder.set_cull_mode(s.cull);
-		m_state_cache.cull_mode = s.cull;
-	}
-	if (!m_state_cache.front_face || *m_state_cache.front_face != s.front) {
-		m_recorder.set_front_face(s.front);
-		m_state_cache.front_face = s.front;
-	}
-	if (!m_state_cache.depth_test_enable || *m_state_cache.depth_test_enable != s.depth.test) {
-		m_recorder.set_depth_test_enable(s.depth.test);
-		m_state_cache.depth_test_enable = s.depth.test;
-	}
-	if (!m_state_cache.depth_write_enable || *m_state_cache.depth_write_enable != s.depth.write) {
-		m_recorder.set_depth_write_enable(s.depth.write);
-		m_state_cache.depth_write_enable = s.depth.write;
-	}
-	if (!m_state_cache.depth_compare_op || *m_state_cache.depth_compare_op != s.depth.compare) {
-		m_recorder.set_depth_compare_op(s.depth.compare);
-		m_state_cache.depth_compare_op = s.depth.compare;
-	}
-	if (!m_state_cache.depth_bias_enable || *m_state_cache.depth_bias_enable != s.depth_bias_enable) {
-		m_recorder.set_depth_bias_enable(s.depth_bias_enable);
-		m_state_cache.depth_bias_enable = s.depth_bias_enable;
-	}
-	if (s.depth_bias_enable) {
-		m_recorder.set_depth_bias(s.depth_bias_constant, s.depth_bias_clamp, s.depth_bias_slope);
-	}
-	if (!m_state_cache.depth_clamp_enable || *m_state_cache.depth_clamp_enable != s.depth_clamp_enable) {
-		m_recorder.set_depth_clamp_enable(s.depth_clamp_enable);
-		m_state_cache.depth_clamp_enable = s.depth_clamp_enable;
-	}
-	if (!m_state_cache.rasterizer_discard_enable || *m_state_cache.rasterizer_discard_enable != s.rasterizer_discard_enable) {
-		m_recorder.set_rasterizer_discard_enable(s.rasterizer_discard_enable);
-		m_state_cache.rasterizer_discard_enable = s.rasterizer_discard_enable;
-	}
-	if (!m_state_cache.primitive_restart_enable || *m_state_cache.primitive_restart_enable != s.primitive_restart_enable) {
-		m_recorder.set_primitive_restart_enable(s.primitive_restart_enable);
-		m_state_cache.primitive_restart_enable = s.primitive_restart_enable;
-	}
-	if (!m_state_cache.alpha_to_coverage_enable || *m_state_cache.alpha_to_coverage_enable != s.alpha_to_coverage_enable) {
-		m_recorder.set_alpha_to_coverage_enable(s.alpha_to_coverage_enable);
-		m_state_cache.alpha_to_coverage_enable = s.alpha_to_coverage_enable;
-	}
-	if (!m_state_cache.alpha_to_one_enable || *m_state_cache.alpha_to_one_enable != s.alpha_to_one_enable) {
-		m_recorder.set_alpha_to_one_enable(s.alpha_to_one_enable);
-		m_state_cache.alpha_to_one_enable = s.alpha_to_one_enable;
-	}
-	if (!m_state_cache.logic_op_enable || *m_state_cache.logic_op_enable != s.logic_op_enable) {
-		m_recorder.set_logic_op_enable(s.logic_op_enable);
-		m_state_cache.logic_op_enable = s.logic_op_enable;
-	}
-
-	m_recorder.set_rasterization_samples(s.samples);
-	m_recorder.set_sample_mask(s.samples, s.sample_mask);
-	m_recorder.set_depth_bounds_test_enable(false);
-	m_recorder.set_stencil_test_enable(false);
-	m_recorder.set_line_width(1.0f);
-
-	if (!s.blend_enables.empty()) {
-		m_recorder.set_color_blend_enable(0, s.blend_enables);
-	}
-	if (!s.blend_equations.empty()) {
-		m_recorder.set_color_blend_equation(0, s.blend_equations);
-	}
-	if (!s.color_write_masks.empty()) {
-		m_recorder.set_color_write_mask(0, s.color_write_masks);
-	}
-}
-
-namespace gse::gpu {
-	constexpr auto profile_stats_flags = gpu::pipeline_statistic_flag::input_assembly_vertices |
-		gpu::pipeline_statistic_flag::input_assembly_primitives | gpu::pipeline_statistic_flag::clipping_invocations |
-		gpu::pipeline_statistic_flag::fragment_shader_invocations;
-}
-
-gse::gpu::render_graph::render_graph(gpu::device& device, gpu::swap_chain& swapchain, gpu::frame& frame)
-	: m_device(std::addressof(device)), m_swapchain(std::addressof(swapchain)), m_frame(std::addressof(frame)), m_transient_pool(device) {
 	m_timestamp_period_per_tick = nanoseconds(static_cast<double>(device.timestamp_period()));
 	for (auto& q : m_queue_states) {
-		q.timeline = gpu::queue_timeline<gpu::device>::create(device);
+		q.timeline = queue_timeline<gpu::device>::create(device);
 	}
-	swapchain.on_recreate([this] {
-		recreate_framebuffer_images();
-	});
+	if (m_swapchain) {
+		m_swapchain->on_recreate([this] {
+			recreate_framebuffer_images();
+		});
+	}
 }
 
 auto gse::gpu::render_graph::create_framebuffer_image(const framebuffer_image_desc& desc, const std::string_view tag) -> image {
@@ -736,14 +57,14 @@ auto gse::gpu::render_graph::create_framebuffer_image(const framebuffer_image_de
 		return {};
 	}
 	auto img = m_device->create_image(
-		gpu::image_desc{
+		image_desc{
 			.size = ext,
 			.format = desc.format,
 			.usage = desc.usage,
 		},
 		tag
 	);
-	gpu::transition_image_to(*m_device, img);
+	transition_image_to(*m_device, img);
 	return img;
 }
 
@@ -764,12 +85,36 @@ auto gse::gpu::render_graph::register_framebuffer_image(const id name, const fra
 	return slot->img;
 }
 
-auto gse::gpu::render_graph::take_aux_submissions() -> std::vector<gpu::queue_submission> {
+auto gse::gpu::render_graph::create_readback_channel(const std::size_t size, const std::string_view tag) const -> readback_channel {
+	return readback_channel(*m_device, *m_frame, size, tag);
+}
+
+auto gse::gpu::render_graph::create_upload_channel(const buffer_desc& desc, const std::string_view tag) const -> upload_channel {
+	return upload_channel(*m_device, *m_frame, desc, tag);
+}
+
+auto gse::gpu::render_graph::take_aux_submissions() -> std::vector<queue_submission> {
 	return std::move(m_pending_aux_submissions);
 }
 
-auto gse::gpu::render_graph::take_graphics_extra_waits() -> std::vector<gpu::semaphore_submit_info> {
+auto gse::gpu::render_graph::take_graphics_extra_waits() -> std::vector<semaphore_submit_info> {
 	return std::move(m_pending_graphics_extra_waits);
+}
+
+auto gse::gpu::render_graph::add_graphics_signal(semaphore_submit_info signal) -> void {
+	m_pending_graphics_extra_signals.push_back(signal);
+}
+
+auto gse::gpu::render_graph::add_graphics_wait(semaphore_submit_info wait) -> void {
+	m_pending_graphics_extra_waits.push_back(wait);
+}
+
+auto gse::gpu::render_graph::take_graphics_extra_signals() -> std::vector<semaphore_submit_info> {
+	return std::move(m_pending_graphics_extra_signals);
+}
+
+auto gse::gpu::render_graph::take_graphics_buffers() -> std::vector<command_buffer_handle> {
+	return std::move(m_pending_graphics_buffers);
 }
 
 auto gse::gpu::render_graph::set_gpu_timestamps_enabled(const bool enabled) -> void {
@@ -780,9 +125,13 @@ auto gse::gpu::render_graph::set_gpu_pipeline_stats_enabled(const bool enabled) 
 	m_gpu_pipeline_stats_enabled.store(enabled, std::memory_order_relaxed);
 }
 
-auto gse::gpu::render_graph::set_swapchain_clear(const gpu::color_clear value, const load_op op) -> void {
+auto gse::gpu::render_graph::set_swapchain_clear(const color_clear value, const load_op op) -> void {
 	m_swapchain_clear = value;
 	m_swapchain_load = op;
+}
+
+auto gse::gpu::render_graph::set_offscreen_target(const image* target) -> void {
+	m_offscreen_target = target;
 }
 
 auto gse::gpu::render_graph::ensure_profile_pools(gpu_profile_slot& slot, const bool allow_stats) const -> void {
@@ -803,7 +152,7 @@ auto gse::gpu::render_graph::read_profile_slot(gpu_profile_slot& slot) -> void {
 	const auto [ts_status, timestamps] =
 		m_device->query_pool_results(slot.timestamp_pool, 0, timestamp_count, sizeof(std::uint64_t));
 
-	if (ts_status != gpu::query_status::success) {
+	if (ts_status != query_status::success) {
 		slot.results_valid = false;
 		return;
 	}
@@ -812,13 +161,19 @@ auto gse::gpu::render_graph::read_profile_slot(gpu_profile_slot& slot) -> void {
 	const auto gpu_ref = static_cast<double>(timestamps[0]) * period;
 	const auto offset = time_t<double>(slot.cpu_ref) - gpu_ref;
 
+	static constexpr std::array<std::uint32_t, queue_type_count> queue_tids{
+		trace::gpu_virtual_tid,
+		trace::gpu_compute_virtual_tid,
+		trace::gpu_video_encode_virtual_tid,
+	};
+
 	for (std::uint32_t i = 0; i < slot.pass_count; ++i) {
 		const auto start = static_cast<double>(timestamps[1 + i * 2]) * period + offset;
 		const auto end = static_cast<double>(timestamps[2 + i * 2]) * period + offset;
 		const auto gpu_id = slot.pass_types[i];
 		const auto queue = slot.pass_queues[i];
 		const std::uint64_t key = (slot.frame_counter << 16) | (static_cast<std::uint64_t>(queue) << 14) | i;
-		const auto tid = (queue == gpu::queue_type::compute) ? trace::gpu_compute_virtual_tid : trace::gpu_virtual_tid;
+		const auto tid = queue_tids[static_cast<std::size_t>(queue)];
 
 		trace::begin_async_at(gpu_id, key, tid, time_t<std::uint64_t>(start));
 		trace::end_async_at(gpu_id, key, tid, time_t<std::uint64_t>(end));
@@ -827,22 +182,29 @@ auto gse::gpu::render_graph::read_profile_slot(gpu_profile_slot& slot) -> void {
 	}
 
 	if (slot.stats_issued) {
-		constexpr std::uint32_t stats_per_pass = 4;
 		const auto [stats_status, stats] =
 			m_device->query_pool_results(slot.stats_pool, 0, slot.pass_count, sizeof(std::uint64_t) * stats_per_pass);
 
-		if (stats_status == gpu::query_status::success) {
+		if (stats_status == query_status::success) {
 			static constexpr std::array<const char*, stats_per_pass> labels{ ":ia_verts",
-																			 ":ia_prims",
-																			 ":clip_invocs",
-																			 ":fs_invocs" };
+				":ia_prims",
+				":clip_invocs",
+				":fs_invocs" };
 			for (std::uint32_t i = 0; i < slot.pass_count; ++i) {
 				const auto start = static_cast<double>(timestamps[1 + i * 2]) * period + offset;
-				const auto pass_name = std::string(slot.pass_types[i].tag());
+				auto cache_it = m_stat_ids.find(slot.pass_types[i]);
+				if (cache_it == m_stat_ids.end()) {
+					const auto pass_name = std::string(slot.pass_types[i].tag());
+					std::array<id, stats_per_pass> ids;
+					for (std::uint32_t s = 0; s < stats_per_pass; ++s) {
+						ids[s] = find_or_generate_id(pass_name + labels[s]);
+					}
+					cache_it = m_stat_ids.emplace(slot.pass_types[i], ids).first;
+				}
+				const auto& stat_ids = cache_it->second;
 				for (std::uint32_t s = 0; s < stats_per_pass; ++s) {
-					const auto stat_id = find_or_generate_id(pass_name + labels[s]);
 					trace::counter_at(
-						stat_id,
+						stat_ids[s],
 						static_cast<double>(stats[i * stats_per_pass + s]),
 						trace::gpu_stats_virtual_tid,
 						time_t<std::uint64_t>(start)
@@ -860,41 +222,136 @@ auto gse::gpu::render_graph::current_frame() const -> std::uint32_t {
 }
 
 auto gse::gpu::render_graph::extent() const -> vec2u {
-	return m_swapchain->extent();
+	return m_swapchain ? m_swapchain->extent() : vec2u{};
+}
+
+auto gse::gpu::render_graph::extent(const id window) const -> vec2u {
+	if (!window.exists()) {
+		return extent();
+	}
+	const present_target* t = m_frame->target(window);
+	return t && t->swapchain ? t->swapchain->extent() : vec2u{};
 }
 
 auto gse::gpu::render_graph::frame_in_progress() const -> bool {
 	return m_frame->frame_in_progress();
 }
 
+auto gse::gpu::render_graph::log_pass_graph(const std::span<const render_pass_data> passes) -> void {
+	if (!m_graph_report.tick()) {
+		return;
+	}
+
+	std::unordered_map<const void*, id> target_of;
+	for (const auto& [name, reg] : m_framebuffer_images) {
+		if (reg->img.handle()) {
+			target_of.emplace(std::bit_cast<const void*>(reg->img.handle()), name);
+		}
+	}
+
+	std::string report = std::format(
+		"[graph] {} passes, {} registered targets",
+		passes.size(),
+		target_of.size()
+	);
+
+	std::string line;
+
+	const auto describe = [&](const std::vector<resource_usage>& list) {
+		line.clear();
+		std::size_t foreign = 0;
+		for (const auto& u : list) {
+			if (const auto it = target_of.find(u.resource.ptr); it != target_of.end()) {
+				if (!line.empty()) {
+					line += ' ';
+				}
+				line += it->second.tag();
+			}
+			else {
+				++foreign;
+			}
+		}
+		if (foreign != 0) {
+			line += std::format(" (+{} non-target)", foreign);
+		}
+		if (line.empty()) {
+			line = "-";
+		}
+		return line;
+	};
+
+	std::string outputs;
+
+	const auto describe_outputs = [&](const render_pass_data& p) {
+		outputs.clear();
+		for (const auto& c : p.color_outputs) {
+			if (!outputs.empty()) {
+				outputs += ' ';
+			}
+			const auto* name = c.is_swapchain ? "swapchain" : c.custom_target != nullptr ? "custom" : "transient";
+			outputs += std::format("{}:{}", name, enum_to_string(c.op));
+		}
+		if (p.depth_output) {
+			outputs += std::format(
+				"{}depth-{}:{}",
+				outputs.empty() ? "" : " ",
+				p.depth_output->is_swapchain ? "swapchain" : "custom",
+				enum_to_string(p.depth_output->op)
+			);
+		}
+		if (outputs.empty()) {
+			outputs = "-";
+		}
+		return outputs;
+	};
+
+	for (const auto& p : passes) {
+		const bool presents = std::ranges::any_of(p.color_outputs, [](const color_output_info& c) { return c.is_swapchain; });
+		const auto reads = describe(p.reads);
+		const auto writes = describe(p.writes);
+		const auto attachments = describe_outputs(p);
+		report += std::format(
+			"\n[graph]   {}{}\n            reads:  {}\n            writes: {}\n            outputs: {}",
+			p.pass_name,
+			presents ? "  [SWAPCHAIN]" : "",
+			reads,
+			writes,
+			attachments
+		);
+	}
+
+	const std::size_t report_hash = std::hash<std::string_view>{}(report);
+	if (report_hash == m_graph_report_hash) {
+		return;
+	}
+	m_graph_report_hash = report_hash;
+
+	log::println(log::level::info, log::category::general, "{}", report);
+	log::flush();
+}
+
 auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 	m_pending_aux_submissions.clear();
 	m_pending_graphics_extra_waits.clear();
+	m_pending_graphics_buffers.clear();
 
 	if (!m_frame->frame_in_progress()) {
 		return;
 	}
 
 	const auto frame_idx = m_frame->current_frame();
-	std::array<gpu::command_buffer_handle, gpu::queue_type_count> primary_handles;
-	std::array<vulkan::commands, gpu::queue_type_count> primary_buffers;
-	for (std::size_t qi = 0; qi < gpu::queue_type_count; ++qi) {
-		primary_handles[qi] = m_frame->command_buffer(static_cast<gpu::queue_type>(qi));
-		primary_buffers[qi] = vulkan::commands(primary_handles[qi]);
+	const auto graphics_family = m_device->queue_family(queue_type::graphics);
+	std::array<bool, queue_type_count> queue_distinct{};
+	for (std::size_t qi = 0; qi < queue_type_count; ++qi) {
+		queue_distinct[qi] = m_device->queue_family(static_cast<queue_type>(qi)) != graphics_family;
 	}
-	const auto graphics_family = m_device->queue_family(gpu::queue_type::graphics);
-	std::array<bool, gpu::queue_type_count> queue_distinct{};
-	for (std::size_t qi = 0; qi < gpu::queue_type_count; ++qi) {
-		queue_distinct[qi] = m_device->queue_family(static_cast<gpu::queue_type>(qi)) != graphics_family;
-	}
-	queue_distinct[static_cast<std::size_t>(gpu::queue_type::graphics)] = true;
+	queue_distinct[static_cast<std::size_t>(queue_type::graphics)] = true;
 
-	auto effective_queue = [&](const gpu::queue_type requested) -> gpu::queue_type {
-		return queue_distinct[static_cast<std::size_t>(requested)] ? requested : gpu::queue_type::graphics;
+	auto effective_queue = [&](const queue_type requested) -> queue_type {
+		return queue_distinct[static_cast<std::size_t>(requested)] ? requested : queue_type::graphics;
 	};
 
-	const auto image_index = m_frame->image_index();
-	const auto swap_extent = m_swapchain->extent();
+	const auto swap_extent = m_swapchain ? m_swapchain->extent() : vec2u{};
 
 	const bool timestamps_enabled = m_gpu_timestamps_enabled.load(std::memory_order_relaxed);
 	const bool stats_enabled = m_gpu_pipeline_stats_enabled.load(std::memory_order_relaxed);
@@ -910,8 +367,8 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 	});
 
 	auto reset_slot = [](gpu_profile_slot& s) {
-		s.pass_types.clear();
-		s.pass_queues.clear();
+		s.pass_types.resize(max_profiled_passes);
+		s.pass_queues.resize(max_profiled_passes);
 		s.pass_count = 0;
 		s.stats_issued = false;
 		s.results_valid = false;
@@ -920,8 +377,17 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		reset_slot(slots[frame_idx]);
 	}
 
-	m_device->reset_worker_command_pools(frame_idx);
-	const auto color_format_value = gpu::format_value(m_swapchain->format());
+	if (timestamps_enabled) {
+		for (std::size_t qi = 0; qi < queue_type_count; ++qi) {
+			const bool with_stats = qi == static_cast<std::size_t>(queue_type::graphics) && stats_enabled;
+			ensure_profile_pools(m_profile_slots[qi][frame_idx], with_stats);
+		}
+	}
+
+	auto swapchain_of = [&](const color_output_info& info) -> const present_target* {
+		const present_target* t = info.window.exists() ? m_frame->target(info.window) : std::addressof(m_frame->targets().front());
+		return t && t->acquired ? t : nullptr;
+	};
 
 	auto resolve_color_target = [&](const color_output_info& info) -> const image* {
 		if (info.transient_target) {
@@ -929,6 +395,9 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		}
 		if (info.custom_target) {
 			return info.custom_target;
+		}
+		if (m_offscreen_target) {
+			return m_offscreen_target;
 		}
 		return nullptr;
 	};
@@ -956,11 +425,13 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		m_transient_pool.plan(frame_idx, transient_images, transient_buffers, pass_kind_order);
 	}
 
-	auto pass_queue = [&](const std::size_t pi) -> gpu::queue_type {
+	auto pass_queue = [&](const std::size_t pi) -> queue_type {
 		return effective_queue(passes[pi].queue);
 	};
 
-	std::vector<gpu::command_buffer_handle> pass_secondaries;
+	std::vector<command_buffer_handle> pass_bodies;
+	std::array<std::atomic<std::uint32_t>, queue_type_count> profile_next_slot{};
+	std::array<std::atomic<bool>, queue_type_count> profile_stats_issued{};
 
 	auto record_range = [&](const std::size_t start, const std::size_t end) {
 		task::parallel_invoke_range(
@@ -970,58 +441,153 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 				auto& pass = passes[pi];
 				const auto queue = pass_queue(pi);
 				const bool is_graphics_pass = !pass.color_outputs.empty() || pass.depth_output;
-				const bool maybe_issue_stats = timestamps_enabled && stats_enabled && is_graphics_pass;
 
 				const auto worker_idx = task::current_worker();
 				assert(worker_idx.has_value(), "graph::record_parallel: thread has no arena slot");
-				const auto secondary = m_device->acquire_worker_command_buffer(queue, *worker_idx, frame_idx);
+				const auto body = m_device->acquire_worker_command_buffer(queue, *worker_idx, frame_idx);
+				assert(static_cast<bool>(body), "graph::record_parallel: worker command buffer acquire failed; the device is gone");
 
 				const auto* depth_target = pass.depth_output ? resolve_depth_target(*pass.depth_output) : nullptr;
 
 				std::vector<const image*> color_targets;
 				color_targets.reserve(pass.color_outputs.size());
-				std::vector<gpu::image_format_value> color_formats;
-				color_formats.reserve(pass.color_outputs.size());
 				for (const auto& info : pass.color_outputs) {
-					const auto* target = resolve_color_target(info);
-					color_targets.push_back(target);
-					color_formats.push_back(target ? target->format() : color_format_value);
+					color_targets.push_back(resolve_color_target(info));
 				}
 
-				const auto depth_attach_format =
-					depth_target ? depth_target->format() : gpu::format_value(gpu::image_format::d32_sfloat);
+				std::vector<rendering_attachment_info> color_attachments;
+				color_attachments.reserve(pass.color_outputs.size());
+				std::optional<rendering_attachment_info> depth_att;
+				vec2u pass_extent = swap_extent;
+				bool extent_set = false;
+				for (std::size_t ci = 0; ci < pass.color_outputs.size(); ++ci) {
+					const auto* color_target = color_targets[ci];
+					handle<image_view> color_view;
+					if (color_target) {
+						color_view = color_target->view();
+						if (!extent_set) {
+							const auto ext = color_target->extent();
+							pass_extent = vec2u{ ext.x(), ext.y() };
+							extent_set = true;
+						}
+					}
+					else if (const present_target* t = swapchain_of(pass.color_outputs[ci])) {
+						color_view = t->swapchain->image_view(t->image_index);
+						if (!extent_set) {
+							pass_extent = t->swapchain->extent();
+							extent_set = true;
+						}
+					}
+					color_attachments.push_back(
+						rendering_attachment_info{
+							.image_view = color_view,
+							.load = pass.color_outputs[ci].op,
+							.store = store_op::store,
+							.color_clear_value = pass.color_outputs[ci].clear_value,
+						}
+					);
+				}
+				if (pass.depth_output) {
+					handle<image_view> depth_view;
+					if (depth_target) {
+						depth_view = depth_target->view();
+						if (!extent_set) {
+							const auto ext = depth_target->extent();
+							pass_extent = vec2u{ ext.x(), ext.y() };
+							extent_set = true;
+						}
+					}
+					else {
+						depth_view = m_swapchain->depth_image().view();
+					}
+					depth_att = rendering_attachment_info{
+						.image_view = depth_view,
+						.load = pass.depth_output->op,
+						.store = store_op::store,
+						.depth_clear_value = pass.depth_output->clear_value,
+					};
+				}
 
-				const gpu::secondary_inheritance_info inherit_info{
-					.render_pass_continue = is_graphics_pass,
-					.color_attachment_formats = std::span<const gpu::image_format_value>{ color_formats },
-					.depth_attachment_format = pass.depth_output ? depth_attach_format : gpu::image_format_value{ 0 },
-					.pipeline_statistics = maybe_issue_stats ? profile_stats_flags : gpu::pipeline_statistic_flags{},
+				const auto body_cmd = m_device->recorder(body);
+				body_cmd.begin();
+
+				const auto marker_domain = (queue == queue_type::graphics)
+					? device::pass_marker_domain::graphics_queue
+					: device::pass_marker_domain::compute_queue;
+				const auto marker_handle = m_device->begin_pass_marker(
+					body,
+					marker_domain,
+					{
+						.frame_counter = m_frames_submitted,
+						.pass_index = static_cast<std::uint32_t>(pi),
+						.pass_type = pass.pass_type,
+					},
+					pass.pass_name
+				);
+
+				std::uint32_t profile_slot = max_profiled_passes;
+				gpu_profile_slot* profile = nullptr;
+				bool issue_stats = false;
+				if (timestamps_enabled) {
+					const auto slot = profile_next_slot[static_cast<std::size_t>(queue)].fetch_add(1, std::memory_order_relaxed);
+					if (slot < max_profiled_passes) {
+						profile_slot = slot;
+						profile = std::addressof(m_profile_slots[static_cast<std::size_t>(queue)][frame_idx]);
+						body_cmd.write_timestamp(pipeline_stage_flags{}, profile->timestamp_pool, 1 + profile_slot * 2);
+						profile->pass_types[profile_slot] = pass.pass_type;
+						profile->pass_queues[profile_slot] = queue;
+						issue_stats = stats_enabled && is_graphics_pass && queue == queue_type::graphics;
+						if (issue_stats) {
+							body_cmd.begin_query(profile->stats_pool, profile_slot);
+							profile_stats_issued[static_cast<std::size_t>(queue)].store(true, std::memory_order_relaxed);
+						}
+					}
+				}
+
+				if (is_graphics_pass) {
+					body_cmd.begin_rendering(
+						rendering_info{
+							.render_area = rect_t<vec2i>({
+								.min = vec2i{ 0, 0 },
+								.max = vec2i{ static_cast<int>(pass_extent.x()), static_cast<int>(pass_extent.y()) }
+							}),
+							.layer_count = 1,
+							.color_attachments = color_attachments,
+							.depth_attachment = depth_att ? &*depth_att : nullptr,
+							.secondary_command_buffers = false,
+						}
+					);
+				}
+
+				auto& rec_init = *static_cast<recording_context_init*>(pass.record_ctx_slot);
+				rec_init.recorder = m_device->recorder(body);
+				rec_init.pass = std::addressof(pass);
+				rec_init.transient_pool = std::addressof(m_transient_pool);
+				rec_init.device = m_device;
+				rec_init.primary = pass.primary_pipeline;
+				rec_init.touches.clear();
+				const auto note = [&](const resource_ref ref, const pipeline_stage_flags stages, const access_flags access) {
+					rec_init.touches.push_back({ ref, stages, access });
 				};
-
-				const vulkan::commands sec_cmd(secondary);
-				sec_cmd.begin_secondary(inherit_info);
-				recording_context rec{ pass_recorder{ sec_cmd.native() }, std::addressof(pass), std::addressof(m_transient_pool), m_device };
-				if (pass.primary_pipeline) {
-					rec.bind(*pass.primary_pipeline);
-				}
 				if (pass.depth_output) {
 					const auto* depth_img = depth_target ? depth_target : std::addressof(m_swapchain->depth_image());
 					const auto depth_ref = resource_ref{
-						.ptr = depth_img,
+						.ptr = std::bit_cast<const void*>(depth_img->handle()),
 						.type = resource_type::image,
+						.aspects = image_aspect_for(depth_img->format()),
 					};
 					if (pass.depth_output->op == load_op::load) {
-						rec.note_touched(
+						note(
 							depth_ref,
-							gpu::pipeline_stage_flag::early_fragment_tests,
-							gpu::access_flag::depth_stencil_attachment_read
+							{ pipeline_stage_flag::early_fragment_tests, pipeline_stage_flag::late_fragment_tests },
+							{ access_flag::depth_stencil_attachment_read, access_flag::depth_stencil_attachment_write }
 						);
 					}
 					else {
-						rec.note_touched(
+						note(
 							depth_ref,
-							gpu::pipeline_stage_flag::late_fragment_tests,
-							gpu::access_flag::depth_stencil_attachment_write
+							pipeline_stage_flag::late_fragment_tests,
+							access_flag::depth_stencil_attachment_write
 						);
 					}
 				}
@@ -1031,28 +597,43 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 						continue;
 					}
 					const auto color_ref = resource_ref{
-						.ptr = color_img,
+						.ptr = std::bit_cast<const void*>(color_img->handle()),
 						.type = resource_type::image,
+						.aspects = image_aspect_for(color_img->format()),
 					};
 					if (pass.color_outputs[ci].op == load_op::load) {
-						rec.note_touched(
+						note(
 							color_ref,
-							gpu::pipeline_stage_flag::color_attachment_output,
-							gpu::access_flag::color_attachment_read | gpu::access_flag::color_attachment_write
+							pipeline_stage_flag::color_attachment_output,
+							{ access_flag::color_attachment_read, access_flag::color_attachment_write }
 						);
 					}
 					else {
-						rec.note_touched(
+						note(
 							color_ref,
-							gpu::pipeline_stage_flag::color_attachment_output,
-							gpu::access_flag::color_attachment_write
+							pipeline_stage_flag::color_attachment_output,
+							access_flag::color_attachment_write
 						);
 					}
 				}
-				*pass.record_ctx_slot = std::move(rec);
 				pass.record_handle.resume();
 
-				pass_secondaries[pi] = secondary;
+				if (is_graphics_pass) {
+					body_cmd.end_rendering();
+				}
+
+				if (issue_stats) {
+					body_cmd.end_query(profile->stats_pool, profile_slot);
+				}
+				if (profile != nullptr) {
+					body_cmd.write_timestamp(pipeline_stage_flag::all_commands, profile->timestamp_pool, 2 + profile_slot * 2);
+				}
+
+				m_device->post_renderpass_pass_marker(body, marker_handle);
+				m_device->end_pass_marker(body, marker_handle);
+				body_cmd.end();
+
+				pass_bodies[pi] = body;
 			},
 			trace_id<"render_graph::record_passes">()
 		);
@@ -1060,7 +641,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 
 	std::size_t round_start = 0;
 	while (true) {
-		pass_secondaries.resize(passes.size());
+		pass_bodies.resize(passes.size());
 		record_range(round_start, passes.size());
 
 		auto more = drain.drain_passes();
@@ -1085,53 +666,50 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		passes.insert(passes.end(), std::make_move_iterator(more.begin()), std::make_move_iterator(more.end()));
 	}
 
-	std::array<bool, gpu::queue_type_count> queue_has_work{};
-	queue_has_work[static_cast<std::size_t>(gpu::queue_type::graphics)] = true;
+	log_pass_graph(passes);
+
+	if (timestamps_enabled) {
+		for (std::size_t qi = 0; qi < queue_type_count; ++qi) {
+			auto& slot = m_profile_slots[qi][frame_idx];
+			slot.pass_count = std::min(profile_next_slot[qi].load(std::memory_order_relaxed), max_profiled_passes);
+			slot.stats_issued = profile_stats_issued[qi].load(std::memory_order_relaxed);
+		}
+	}
+
+	std::array<bool, queue_type_count> queue_has_work{};
+	queue_has_work[static_cast<std::size_t>(queue_type::graphics)] = true;
 	for (const auto& p : passes) {
 		queue_has_work[static_cast<std::size_t>(effective_queue(p.queue))] = true;
 	}
 
-	auto open_primary = [](const gpu::command_buffer_handle handle) {
-		const vulkan::commands cmd(handle);
-		cmd.reset();
-		cmd.begin();
-	};
-
-	for (std::size_t qi = 0; qi < gpu::queue_type_count; ++qi) {
-		if (qi == static_cast<std::size_t>(gpu::queue_type::graphics)) {
-			continue;
-		}
-		if (queue_has_work[qi]) {
-			open_primary(m_frame->command_buffer(static_cast<gpu::queue_type>(qi)));
-		}
-	}
-
-	auto setup_timestamps = [&](gpu_profile_slot& s, const vulkan::commands& cb, const bool with_stats) {
-		ensure_profile_pools(s, with_stats);
-		cb.reset_query_pool(s.timestamp_pool, 0, max_profiled_passes * 2 + 1);
-		if (with_stats) {
-			cb.reset_query_pool(s.stats_pool, 0, max_profiled_passes);
-		}
-		s.cpu_ref = system_clock::now<trace::tick_step>();
-		s.frame_counter = m_frames_submitted;
-		cb.write_timestamp(gpu::pipeline_stage_flag::all_commands, s.timestamp_pool, 0);
-	};
+	std::vector<std::size_t> sorted;
+	std::array<std::vector<command_buffer_handle>, queue_type_count> queue_submit_order;
 
 	if (timestamps_enabled) {
-		for (std::size_t qi = 0; qi < gpu::queue_type_count; ++qi) {
+		for (std::size_t qi = 0; qi < queue_type_count; ++qi) {
 			if (!queue_has_work[qi]) {
 				continue;
 			}
-			const auto q = static_cast<gpu::queue_type>(qi);
-			const bool with_stats = (q == gpu::queue_type::graphics) && stats_enabled;
-			setup_timestamps(m_profile_slots[qi][frame_idx], primary_buffers[qi], with_stats);
+			auto& slot = m_profile_slots[qi][frame_idx];
+			const auto q = static_cast<queue_type>(qi);
+			const bool with_stats = qi == static_cast<std::size_t>(queue_type::graphics) && stats_enabled;
+			const auto profile_begin = m_device->acquire_worker_command_buffer(q, 0, frame_idx);
+			const auto pcmd = m_device->recorder(profile_begin);
+			pcmd.begin();
+			pcmd.reset_query_pool(slot.timestamp_pool, 0, max_profiled_passes * 2 + 1);
+			if (with_stats) {
+				pcmd.reset_query_pool(slot.stats_pool, 0, max_profiled_passes);
+			}
+			slot.cpu_ref = system_clock::now<trace::tick_step>();
+			slot.frame_counter = m_frames_submitted;
+			pcmd.write_timestamp(pipeline_stage_flag::all_commands, slot.timestamp_pool, 0);
+			pcmd.end();
+			queue_submit_order[qi].push_back(profile_begin);
 		}
 	}
 
-	std::vector<std::size_t> sorted;
-
 	{
-		trace::scope_guard sg{ gse::trace_id<"graph::plan">() };
+		trace::scope_guard sg{ trace_id<"graph::plan">() };
 		std::unordered_map<id, std::size_t> type_to_index;
 		for (std::size_t i = 0; i < passes.size(); ++i) {
 			type_to_index[passes[i].pass_type] = i;
@@ -1153,7 +731,12 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		std::vector<std::size_t> in_degree(passes.size(), 0);
 
 		const std::size_t n = passes.size();
-		std::vector<std::vector<bool>> reaches(n, std::vector<bool>(n, false));
+		const std::size_t words = (n + 63) / 64;
+		std::vector<std::uint64_t> reaches(n * words, 0);
+
+		auto reaches_bit = [&](const std::size_t from, const std::size_t to) -> bool {
+			return (reaches[from * words + to / 64] >> (to % 64)) & 1u;
+		};
 
 		auto has_edge = [&](const std::size_t from, const std::size_t to) -> bool {
 			for (const auto& e : adj[from]) {
@@ -1166,16 +749,15 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 
 		auto update_reachability_for_new_edge = [&](const std::size_t from, const std::size_t to) {
 			for (std::size_t x = 0; x < n; ++x) {
-				const bool x_reaches_from = (x == from) || reaches[x][from];
-				if (!x_reaches_from) {
+				if (x != from && !reaches_bit(x, from)) {
 					continue;
 				}
-				for (std::size_t y = 0; y < n; ++y) {
-					const bool to_reaches_y = (y == to) || reaches[to][y];
-					if (to_reaches_y) {
-						reaches[x][y] = true;
-					}
+				auto* row_x = &reaches[x * words];
+				const auto* row_to = &reaches[to * words];
+				for (std::size_t w = 0; w < words; ++w) {
+					row_x[w] |= row_to[w];
 				}
+				row_x[to / 64] |= std::uint64_t{ 1 } << (to % 64);
 			}
 		};
 
@@ -1199,6 +781,42 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			}
 		}
 
+		std::vector<std::vector<const void*>> write_sets(n);
+		std::vector<std::vector<const void*>> read_sets(n);
+		for (std::size_t i = 0; i < n; ++i) {
+			write_sets[i].reserve(passes[i].writes.size());
+			for (const auto& w : passes[i].writes) {
+				if (w.resource.ptr) {
+					write_sets[i].push_back(w.resource.ptr);
+				}
+			}
+			std::ranges::sort(write_sets[i]);
+			read_sets[i].reserve(passes[i].reads.size());
+			for (const auto& r : passes[i].reads) {
+				if (r.resource.ptr) {
+					read_sets[i].push_back(r.resource.ptr);
+				}
+			}
+			std::ranges::sort(read_sets[i]);
+		}
+
+		auto sets_intersect = [](std::span<const void* const> a, std::span<const void* const> b) -> bool {
+			std::size_t x = 0;
+			std::size_t y = 0;
+			while (x < a.size() && y < b.size()) {
+				if (a[x] < b[y]) {
+					++x;
+				}
+				else if (b[y] < a[x]) {
+					++y;
+				}
+				else {
+					return true;
+				}
+			}
+			return false;
+		};
+
 		for (std::size_t i = 0; i < passes.size(); ++i) {
 			for (std::size_t j = i + 1; j < passes.size(); ++j) {
 				if (passes[i].chain_id.exists() && passes[i].chain_id == passes[j].chain_id) {
@@ -1206,35 +824,13 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 					continue;
 				}
 
-				bool i_writes_j_reads = false;
-				bool j_writes_i_reads = false;
-				bool both_write = false;
-
-				for (const auto& w : passes[i].writes) {
-					for (const auto& r : passes[j].reads) {
-						if (w.resource.ptr && r.resource.ptr && w.resource.ptr == r.resource.ptr) {
-							i_writes_j_reads = true;
-						}
-					}
-				}
-				for (const auto& w : passes[j].writes) {
-					for (const auto& r : passes[i].reads) {
-						if (w.resource.ptr && r.resource.ptr && w.resource.ptr == r.resource.ptr) {
-							j_writes_i_reads = true;
-						}
-					}
-				}
-				for (const auto& wi : passes[i].writes) {
-					for (const auto& wj : passes[j].writes) {
-						if (wi.resource.ptr && wj.resource.ptr && wi.resource.ptr == wj.resource.ptr) {
-							both_write = true;
-						}
-					}
-				}
+				const bool i_writes_j_reads = sets_intersect(write_sets[i], read_sets[j]);
+				const bool j_writes_i_reads = sets_intersect(write_sets[j], read_sets[i]);
+				const bool both_write = sets_intersect(write_sets[i], write_sets[j]);
 
 				if (i_writes_j_reads || both_write) {
-					if (!reaches[j][i]) {
-						if (both_write && !reaches[i][j]) {
+					if (!reaches_bit(j, i)) {
+						if (both_write && !reaches_bit(i, j)) {
 							const auto a = passes[i].pass_type;
 							const auto b = passes[j].pass_type;
 							const auto key = std::pair{ std::min(a, b), std::max(a, b) };
@@ -1255,7 +851,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 					}
 				}
 				else if (j_writes_i_reads) {
-					if (!reaches[i][j]) {
+					if (!reaches_bit(i, j)) {
 						add_edge(j, i, edge_kind::write_after_read);
 					}
 				}
@@ -1334,8 +930,8 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		}
 	}
 
+	bool swapchain_cleared = false;
 	{
-		bool swapchain_cleared = false;
 		for (const auto pi : sorted) {
 			for (auto& info : passes[pi].color_outputs) {
 				if (resolve_color_target(info) != nullptr) {
@@ -1353,7 +949,17 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		}
 	}
 
-	std::array<std::array<bool, gpu::queue_type_count>, gpu::queue_type_count> queue_waits_on{};
+	auto queue_label = [](const std::size_t qi) -> std::string_view {
+		return enum_to_string(static_cast<queue_type>(qi));
+	};
+
+	std::vector<std::size_t> sorted_pos(passes.size());
+	for (std::size_t si = 0; si < sorted.size(); ++si) {
+		sorted_pos[sorted[si]] = si;
+	}
+
+	std::array<std::array<bool, queue_type_count>, queue_type_count> queue_waits_on{};
+	std::array<std::array<std::size_t, queue_type_count>, queue_type_count> queue_wait_positions{};
 	for (std::size_t i = 0; i < passes.size(); ++i) {
 		for (std::size_t j = 0; j < passes.size(); ++j) {
 			if (i == j) {
@@ -1368,73 +974,103 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 				for (const auto& r : passes[j].reads) {
 					if (w.resource.ptr && r.resource.ptr && w.resource.ptr == r.resource.ptr) {
 						queue_waits_on[static_cast<std::size_t>(qj)][static_cast<std::size_t>(qi)] = true;
+						auto& position = queue_wait_positions[static_cast<std::size_t>(qj)][static_cast<std::size_t>(qi)];
+						position = std::max(position, sorted_pos[i]);
 					}
 				}
 			}
 		}
 	}
 
-	for (std::size_t a = 0; a < gpu::queue_type_count; ++a) {
-		for (std::size_t b = 0; b < gpu::queue_type_count; ++b) {
-			if (a == b) {
-				continue;
+	{
+		std::unordered_map<id, std::size_t> after_index;
+		for (std::size_t i = 0; i < passes.size(); ++i) {
+			after_index[passes[i].pass_type] = i;
+		}
+		for (std::size_t j = 0; j < passes.size(); ++j) {
+			const auto qj = pass_queue(j);
+			for (const auto dep : passes[j].after_passes) {
+				const auto it = after_index.find(dep);
+				if (it == after_index.end()) {
+					continue;
+				}
+				const auto qi = pass_queue(it->second);
+				if (qi != qj) {
+					queue_waits_on[static_cast<std::size_t>(qj)][static_cast<std::size_t>(qi)] = true;
+					auto& position = queue_wait_positions[static_cast<std::size_t>(qj)][static_cast<std::size_t>(qi)];
+					position = std::max(position, sorted_pos[it->second]);
+				}
 			}
-			assert(
-				!(queue_waits_on[a][b] && queue_waits_on[b][a]),
-				"render_graph: cyclic cross-queue dependency between two queues; split a submission or move the pass"
-			);
 		}
 	}
 
+	for (std::size_t a = 0; a < queue_type_count; ++a) {
+		for (std::size_t b = a + 1; b < queue_type_count; ++b) {
+			if (queue_waits_on[a][b] && queue_waits_on[b][a] && m_warned_queue_cycles.insert({ a, b }).second) {
+				log::println(
+					log::level::error,
+					log::category::render,
+					"render_graph: cyclic cross-queue dependency between '{}' and '{}'; frame-granular sync cannot express this -- one direction is dropped (races) and the device may hang. See docs/render_graph_cross_queue_batching_plan.md",
+					queue_label(a),
+					queue_label(b)
+				);
+			}
+		}
+	}
+
+	struct queue_segment {
+		std::size_t buffer_end = 0;
+		std::size_t last_pass_position = 0;
+	};
+	struct queue_segment_signal {
+		std::size_t last_pass_position = 0;
+		std::uint64_t value = 0;
+	};
+	std::array<std::vector<queue_segment>, queue_type_count> queue_segment_cuts{};
+
 	{
-		trace::scope_guard sg{ gse::trace_id<"graph::record_replay">() };
+		trace::scope_guard sg{ trace_id<"graph::record_replay">() };
 
-		auto aspect_for_image = [](const image& img) -> gpu::image_aspect_flags {
-			return gpu::image_aspect_for(img.format());
-		};
-
-		auto access_has_write = [](const gpu::access_flags a) -> bool {
-			using ac = gpu::access_flag;
-			constexpr auto write_mask = ac::shader_storage_write | ac::shader_write | ac::color_attachment_write |
-				ac::depth_stencil_attachment_write | ac::transfer_write | ac::host_write | ac::memory_write |
-				ac::acceleration_structure_write;
+		auto access_has_write = [](const access_flags a) -> bool {
+			using ac = access_flag;
+			constexpr access_flags write_mask{ ac::shader_storage_write, ac::shader_write, ac::color_attachment_write,
+				ac::depth_stencil_attachment_write, ac::transfer_write, ac::host_write, ac::memory_write,
+				ac::acceleration_structure_write };
 			return static_cast<bool>(a & write_mask);
 		};
 
 		auto append_barrier_for_resource = [&](
 			const resource_ref& resource,
-			const gpu::pipeline_stage_flags src_stages,
-			const gpu::access_flags src_access,
-			const gpu::pipeline_stage_flags dst_stages,
-			const gpu::access_flags dst_access,
-			std::vector<gpu::memory_barrier>& memory_out,
-			std::vector<gpu::buffer_barrier>& buffer_out,
-			std::vector<gpu::image_barrier>& image_out
+			const pipeline_stage_flags src_stages,
+			const access_flags src_access,
+			const pipeline_stage_flags dst_stages,
+			const access_flags dst_access,
+			std::vector<memory_barrier>& memory_out,
+			std::vector<buffer_barrier>& buffer_out,
+			std::vector<image_barrier>& image_out
 		) {
 			if (!access_has_write(src_access) && !access_has_write(dst_access) && src_stages.bits() == dst_stages.bits()) {
 				return;
 			}
 			if (resource.type == resource_type::buffer) {
-				const auto* buf = static_cast<const buffer*>(resource.ptr);
 				buffer_out.push_back({
 					.src_stages = src_stages,
 					.src_access = src_access,
 					.dst_stages = dst_stages,
 					.dst_access = dst_access,
-					.buffer = buf->handle(),
+					.buffer = std::bit_cast<handle<buffer>>(resource.ptr),
 					.offset = 0,
-					.size = buf->size(),
+					.size = resource.buffer_size,
 				});
 			}
 			else if (resource.type == resource_type::image) {
-				const auto* img = static_cast<const image*>(resource.ptr);
 				image_out.push_back({
 					.src_stages = src_stages,
 					.src_access = src_access,
 					.dst_stages = dst_stages,
 					.dst_access = dst_access,
-					.image = img->handle(),
-					.aspects = aspect_for_image(*img),
+					.image = std::bit_cast<handle<image>>(resource.ptr),
+					.aspects = resource.aspects,
 					.base_mip_level = 0,
 					.level_count = 1,
 					.base_array_layer = 0,
@@ -1451,19 +1087,19 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			}
 		};
 
-		auto append_host_dirty_barriers = [&](const render_pass_data& p, std::vector<gpu::buffer_barrier>& out) {
+		auto append_host_dirty_barriers = [&](const render_pass_data& p, std::vector<buffer_barrier>& out) {
 			auto walk = [&](const std::vector<resource_usage>& list) {
 				for (const auto& [resource, stage, access] : list) {
-					if (resource.type != resource_type::buffer || !resource.ptr) {
+					if (resource.type != resource_type::buffer || !resource.host_buffer) {
 						continue;
 					}
-					const auto* buf = static_cast<const buffer*>(resource.ptr);
+					const auto* buf = static_cast<const buffer*>(resource.host_buffer);
 					if (!buf->host_dirty()) {
 						continue;
 					}
 					out.push_back({
-						.src_stages = gpu::pipeline_stage_flag::host,
-						.src_access = gpu::access_flag::host_write,
+						.src_stages = pipeline_stage_flag::host,
+						.src_access = access_flag::host_write,
 						.dst_stages = stage,
 						.dst_access = access,
 						.buffer = buf->handle(),
@@ -1479,19 +1115,19 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 
 		struct prev_use_record {
 			resource_ref resource;
-			gpu::pipeline_stage_flags stages;
-			gpu::access_flags access;
+			pipeline_stage_flags stages;
+			access_flags access;
 		};
 
-		std::array<std::unordered_map<const void*, prev_use_record>, gpu::queue_type_count> latest_writes;
-		std::array<std::unordered_map<const void*, std::vector<prev_use_record>>, gpu::queue_type_count> reads_since_write;
+		std::array<std::unordered_map<const void*, prev_use_record>, queue_type_count> latest_writes;
+		std::array<std::unordered_map<const void*, std::vector<prev_use_record>>, queue_type_count> reads_since_write;
 
 		auto append_prev_pass_barriers = [&](
 			const render_pass_data& cur,
-			const gpu::queue_type cur_queue,
-			std::vector<gpu::memory_barrier>& memory_out,
-			std::vector<gpu::buffer_barrier>& buffer_out,
-			std::vector<gpu::image_barrier>& image_out
+			const queue_type cur_queue,
+			std::vector<memory_barrier>& memory_out,
+			std::vector<buffer_barrier>& buffer_out,
+			std::vector<image_barrier>& image_out
 		) {
 			auto& latest = latest_writes[static_cast<std::size_t>(cur_queue)];
 			auto& reads = reads_since_write[static_cast<std::size_t>(cur_queue)];
@@ -1513,12 +1149,25 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 						image_out
 					);
 				}
+				else if (cur_resource.type == resource_type::image) {
+					append_barrier_for_resource(
+						cur_resource,
+						{},
+						{},
+						cur_stage,
+						cur_access,
+						memory_out,
+						buffer_out,
+						image_out
+					);
+				}
 			}
 
 			for (const auto& [cur_resource, cur_stage, cur_access] : cur.writes) {
 				if (!cur_resource.ptr) {
 					continue;
 				}
+				bool had_prev = false;
 				if (const auto it = latest.find(cur_resource.ptr); it != latest.end()) {
 					const auto& prev = it->second;
 					append_barrier_for_resource(
@@ -1531,6 +1180,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 						buffer_out,
 						image_out
 					);
+					had_prev = true;
 				}
 				if (const auto it = reads.find(cur_resource.ptr); it != reads.end()) {
 					for (const auto& prev_read : it->second) {
@@ -1545,6 +1195,19 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 							image_out
 						);
 					}
+					had_prev = true;
+				}
+				if (!had_prev) {
+					append_barrier_for_resource(
+						cur_resource,
+						cur_stage,
+						{},
+						cur_stage,
+						cur_access,
+						memory_out,
+						buffer_out,
+						image_out
+					);
 				}
 			}
 
@@ -1563,18 +1226,18 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			}
 		};
 
-		std::vector<std::vector<gpu::image_barrier>> alias_barriers_for_sorted(sorted.size());
+		std::vector<std::vector<image_barrier>> alias_barriers_for_sorted(sorted.size());
 		{
 			const auto transient_infos = m_transient_pool.transient_images();
 			for (const auto& info : transient_infos) {
 				std::size_t first_si = sorted.size();
-				gpu::pipeline_stage_flags first_stages;
-				gpu::access_flags first_access;
+				pipeline_stage_flags first_stages;
+				access_flags first_access;
 				for (std::size_t si = 0; si < sorted.size(); ++si) {
 					const auto& p = passes[sorted[si]];
 					auto match = [&](const std::vector<resource_usage>& list) -> bool {
 						for (const auto& u : list) {
-							if (u.resource.type == resource_type::image && u.resource.ptr == info.resource) {
+							if (u.resource.type == resource_type::image && u.resource.ptr == std::bit_cast<const void*>(info.resource->handle())) {
 								first_stages |= u.stage;
 								first_access |= u.access;
 								return true;
@@ -1593,8 +1256,8 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 					continue;
 				}
 				alias_barriers_for_sorted[first_si].push_back({
-					.src_stages = gpu::pipeline_stage_flag::all_commands,
-					.src_access = gpu::access_flag::memory_write,
+					.src_stages = pipeline_stage_flag::all_commands,
+					.src_access = access_flag::memory_write,
 					.dst_stages = first_stages,
 					.dst_access = first_access,
 					.discard_contents = true,
@@ -1612,19 +1275,16 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			const auto pass_idx = sorted[si];
 			auto& pass = passes[pass_idx];
 			const auto queue = pass_queue(pass_idx);
-			const auto target_handle = primary_handles[static_cast<std::size_t>(queue)];
-			const auto target_primary = primary_buffers[static_cast<std::size_t>(queue)];
-			auto& target_slot = m_profile_slots[static_cast<std::size_t>(queue)][frame_idx];
 
-			std::vector<gpu::memory_barrier> memory_barriers;
-			std::vector<gpu::buffer_barrier> buffer_barriers;
-			std::vector<gpu::image_barrier> image_barriers = std::move(alias_barriers_for_sorted[si]);
+			std::vector<memory_barrier> memory_barriers;
+			std::vector<buffer_barrier> buffer_barriers;
+			std::vector<image_barrier> image_barriers = std::move(alias_barriers_for_sorted[si]);
 
 			append_host_dirty_barriers(pass, buffer_barriers);
 			append_prev_pass_barriers(pass, queue, memory_barriers, buffer_barriers, image_barriers);
 
 			{
-				std::vector<gpu::memory_barrier> coalesced;
+				std::vector<memory_barrier> coalesced;
 				coalesced.reserve(memory_barriers.size());
 				for (const auto& b : memory_barriers) {
 					bool merged = false;
@@ -1644,7 +1304,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			}
 
 			{
-				std::vector<gpu::buffer_barrier> coalesced;
+				std::vector<buffer_barrier> coalesced;
 				coalesced.reserve(buffer_barriers.size());
 				for (const auto& b : buffer_barriers) {
 					bool merged = false;
@@ -1664,7 +1324,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			}
 
 			{
-				std::vector<gpu::image_barrier> coalesced;
+				std::vector<image_barrier> coalesced;
 				coalesced.reserve(image_barriers.size());
 				for (const auto& b : image_barriers) {
 					bool merged = false;
@@ -1683,150 +1343,35 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 				image_barriers = std::move(coalesced);
 			}
 
-			const bool profile_pass = timestamps_enabled && target_slot.pass_count < max_profiled_passes;
-			const std::uint32_t pass_index = target_slot.pass_count;
-			const bool is_graphics_pass = !pass.color_outputs.empty() || pass.depth_output;
-			const bool issue_stats = profile_pass && stats_enabled && is_graphics_pass && queue == gpu::queue_type::graphics;
-
-			const auto marker_domain = (queue == gpu::queue_type::graphics)
-				? gpu::device::pass_marker_domain::graphics_queue
-				: gpu::device::pass_marker_domain::compute_queue;
-			const auto marker_handle = m_device->begin_pass_marker(
-				target_handle,
-				marker_domain,
-				{
-					.frame_counter = m_frames_submitted,
-					.pass_index = static_cast<std::uint32_t>(si),
-					.pass_type = pass.pass_type,
-				}
-			);
-
+			const auto queue_index = static_cast<std::size_t>(queue);
 			if (!memory_barriers.empty() || !buffer_barriers.empty() || !image_barriers.empty()) {
-				target_primary.pipeline_barrier(
-					gpu::dependency_info{
+				const auto transition = m_device->acquire_worker_command_buffer(queue, 0, frame_idx);
+				const auto tcmd = m_device->recorder(transition);
+				tcmd.begin();
+				tcmd.pipeline_barrier(
+					dependency_info{
 						.memory_barriers = memory_barriers,
 						.buffer_barriers = buffer_barriers,
 						.image_barriers = image_barriers,
 					}
 				);
+				tcmd.end();
+				queue_submit_order[queue_index].push_back(transition);
 			}
 
-			m_device->checkpoint_pass_marker(target_handle, marker_handle);
+			queue_submit_order[queue_index].push_back(pass_bodies[pass_idx]);
 
-			if (profile_pass) {
-				target_primary.write_timestamp(
-					gpu::pipeline_stage_flags{},
-					target_slot.timestamp_pool,
-					1 + pass_index * 2
-				);
-				target_slot.pass_types.push_back(pass.pass_type);
-				target_slot.pass_queues.push_back(queue);
-				++target_slot.pass_count;
-				if (issue_stats) {
-					target_primary.begin_query(target_slot.stats_pool, pass_index);
-					target_slot.stats_issued = true;
-				}
+			if (pass.early_signal && queue != queue_type::graphics) {
+				queue_segment_cuts[queue_index].push_back({
+					.buffer_end = queue_submit_order[queue_index].size(),
+					.last_pass_position = si,
+				});
 			}
-
-			const auto secondary = pass_secondaries[sorted[si]];
-
-			if (is_graphics_pass) {
-				std::vector<gpu::rendering_attachment_info> color_attachments;
-				color_attachments.reserve(pass.color_outputs.size());
-				std::optional<gpu::rendering_attachment_info> depth_att;
-				vec2u pass_extent = swap_extent;
-				bool extent_set = false;
-
-				for (const auto& info : pass.color_outputs) {
-					const auto op = info.op;
-					const auto* color_target = resolve_color_target(info);
-
-					gpu::handle<gpu::image_view> color_view;
-					if (color_target) {
-						color_view = color_target->view();
-						if (!extent_set) {
-							const auto ext = color_target->extent();
-							pass_extent = vec2u{ ext.x(), ext.y() };
-							extent_set = true;
-						}
-					}
-					else {
-						color_view = m_swapchain->image_view(image_index);
-					}
-
-					color_attachments.push_back(
-						gpu::rendering_attachment_info{
-							.image_view = color_view,
-							.load = op,
-							.store = gpu::store_op::store,
-							.color_clear_value = info.clear_value,
-						}
-					);
-				}
-
-				if (pass.depth_output) {
-					const auto& info = *pass.depth_output;
-					const auto op = info.op;
-					const auto* depth_target = resolve_depth_target(info);
-
-					gpu::handle<gpu::image_view> depth_view;
-					if (depth_target) {
-						depth_view = depth_target->view();
-						if (!extent_set) {
-							const auto ext = depth_target->extent();
-							pass_extent = vec2u{ ext.x(), ext.y() };
-							extent_set = true;
-						}
-					}
-					else {
-						depth_view = m_swapchain->depth_image().view();
-					}
-
-					depth_att = gpu::rendering_attachment_info{
-						.image_view = depth_view,
-						.load = op,
-						.store = gpu::store_op::store,
-						.depth_clear_value = info.clear_value,
-					};
-				}
-
-				const gpu::rendering_info ri{
-					.render_area = gse::rect_t<vec2i>({
-						.min = vec2i{ 0, 0 },
-						.max = vec2i{ static_cast<int>(pass_extent.x()), static_cast<int>(pass_extent.y()) }
-					}),
-					.layer_count = 1,
-					.color_attachments = color_attachments,
-					.depth_attachment = depth_att ? &*depth_att : nullptr,
-					.secondary_command_buffers = true,
-				};
-				target_primary.begin_rendering(ri);
-				target_primary.execute_commands(secondary);
-				target_primary.end_rendering();
-			}
-			else {
-				target_primary.execute_commands(secondary);
-			}
-
-			m_device->post_renderpass_pass_marker(target_handle, marker_handle);
-
-			if (profile_pass) {
-				if (issue_stats) {
-					target_primary.end_query(target_slot.stats_pool, pass_index);
-				}
-				target_primary.write_timestamp(
-					gpu::pipeline_stage_flag::all_commands,
-					target_slot.timestamp_pool,
-					2 + pass_index * 2
-				);
-			}
-
-			m_device->end_pass_marker(target_handle, marker_handle);
 		}
 	}
 
 	if (timestamps_enabled) {
-		for (std::size_t qi = 0; qi < gpu::queue_type_count; ++qi) {
+		for (std::size_t qi = 0; qi < queue_type_count; ++qi) {
 			auto& slot = m_profile_slots[qi][frame_idx];
 			if (slot.pass_count > 0) {
 				slot.results_valid = true;
@@ -1834,66 +1379,159 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		}
 	}
 
-	std::array<std::uint64_t, gpu::queue_type_count> this_frame_signal_values{};
+	std::array<std::uint64_t, queue_type_count> this_frame_signal_values{};
+	std::array<std::vector<queue_segment_signal>, queue_type_count> queue_segment_signals{};
 
-	for (std::size_t qi = 0; qi < gpu::queue_type_count; ++qi) {
-		if (qi == static_cast<std::size_t>(gpu::queue_type::graphics)) {
+	for (std::size_t qi = 0; qi < queue_type_count; ++qi) {
+		if (qi == static_cast<std::size_t>(queue_type::graphics)) {
 			continue;
 		}
 		if (!queue_has_work[qi]) {
 			continue;
 		}
 
-		const auto q = static_cast<gpu::queue_type>(qi);
-		const auto handle = m_frame->command_buffer(q);
-		vulkan::commands(handle).end();
-
+		const auto q = static_cast<queue_type>(qi);
 		auto& state = m_queue_states[qi];
-		const std::uint64_t previous_value = state.signal_counter;
-		const std::uint64_t signal_value = ++state.signal_counter;
-		this_frame_signal_values[qi] = signal_value;
 
-		gpu::queue_submission sub;
-		sub.queue = q;
-		sub.command_buffer = handle;
-		if (previous_value > 0) {
-			sub.waits.push_back({
-				.semaphore = state.timeline.handle(),
-				.value = previous_value,
-				.stages = gpu::pipeline_stage_flag::all_commands,
-			});
-		}
-		for (std::size_t producer = 0; producer < gpu::queue_type_count; ++producer) {
-			if (producer == qi) {
+		auto segments = queue_segment_cuts[qi];
+		segments.push_back({
+			.buffer_end = queue_submit_order[qi].size(),
+			.last_pass_position = sorted.size(),
+		});
+
+		std::size_t buffer_begin = 0;
+		for (const auto& segment : segments) {
+			if (segment.buffer_end == buffer_begin) {
 				continue;
 			}
-			if (queue_waits_on[qi][producer] && this_frame_signal_values[producer] > 0) {
+
+			const std::uint64_t previous_value = state.signal_counter;
+			const std::uint64_t signal_value = ++state.signal_counter;
+
+			queue_submission sub;
+			sub.queue = q;
+			sub.command_buffers.assign(
+				queue_submit_order[qi].begin() + static_cast<std::ptrdiff_t>(buffer_begin),
+				queue_submit_order[qi].begin() + static_cast<std::ptrdiff_t>(segment.buffer_end)
+			);
+			if (previous_value > 0) {
 				sub.waits.push_back({
-					.semaphore = m_queue_states[producer].timeline.handle(),
-					.value = this_frame_signal_values[producer],
-					.stages = gpu::pipeline_stage_flag::all_commands,
+					.semaphore = state.timeline.handle(),
+					.value = previous_value,
+					.stages = pipeline_stage_flag::all_commands,
 				});
 			}
+			if (buffer_begin == 0) {
+				for (std::size_t producer = 0; producer < queue_type_count; ++producer) {
+					if (producer == qi) {
+						continue;
+					}
+					if (queue_waits_on[qi][producer] && this_frame_signal_values[producer] > 0) {
+						sub.waits.push_back({
+							.semaphore = m_queue_states[producer].timeline.handle(),
+							.value = this_frame_signal_values[producer],
+							.stages = pipeline_stage_flag::all_commands,
+						});
+					}
+					else if (queue_waits_on[qi][producer] && queue_has_work[producer] && m_warned_dropped_waits.insert({ qi, producer }).second) {
+						log::println(
+							log::level::error,
+							log::category::render,
+							"render_graph: cross-queue wait '{}' -> '{}' dropped (producer emits no timeline signal this frame); consumer reads producer output unsynchronized",
+							queue_label(qi),
+							queue_label(producer)
+						);
+					}
+				}
+			}
+			sub.signals.push_back({
+				.semaphore = state.timeline.handle(),
+				.value = signal_value,
+				.stages = pipeline_stage_flag::all_commands,
+			});
+			queue_segment_signals[qi].push_back({
+				.last_pass_position = segment.last_pass_position,
+				.value = signal_value,
+			});
+			m_pending_aux_submissions.push_back(std::move(sub));
+			buffer_begin = segment.buffer_end;
 		}
-		sub.signals.push_back({
-			.semaphore = state.timeline.handle(),
-			.value = signal_value,
-			.stages = gpu::pipeline_stage_flag::all_commands,
-		});
-		m_pending_aux_submissions.push_back(std::move(sub));
+		if (!queue_segment_signals[qi].empty()) {
+			this_frame_signal_values[qi] = queue_segment_signals[qi].back().value;
+		}
 	}
 
-	const auto graphics_qi = static_cast<std::size_t>(gpu::queue_type::graphics);
-	for (std::size_t producer = 0; producer < gpu::queue_type_count; ++producer) {
+	const auto graphics_qi = static_cast<std::size_t>(queue_type::graphics);
+	for (const present_target& t : m_frame->targets()) {
+		if (!t.acquired) {
+			continue;
+		}
+		const auto target_extent = t.swapchain->extent();
+		const auto clear_cmd = m_device->acquire_worker_command_buffer(queue_type::graphics, 0, frame_idx);
+		const auto clear_rec = m_device->recorder(clear_cmd);
+		clear_rec.begin();
+		const std::vector<rendering_attachment_info> clear_attachments{
+			rendering_attachment_info{
+				.image_view = t.swapchain->image_view(t.image_index),
+				.load = load_op::clear,
+				.store = store_op::store,
+				.color_clear_value = m_swapchain_clear,
+			},
+		};
+		clear_rec.begin_rendering(rendering_info{
+			.render_area = rect_t<vec2i>({
+				.min = vec2i{ 0, 0 },
+				.max = vec2i{ static_cast<int>(target_extent.x()), static_cast<int>(target_extent.y()) },
+			}),
+			.layer_count = 1,
+			.color_attachments = clear_attachments,
+			.depth_attachment = nullptr,
+			.secondary_command_buffers = false,
+		});
+		clear_rec.end_rendering();
+		const image_barrier clear_sync{
+			.src_stages = pipeline_stage_flag::color_attachment_output,
+			.src_access = access_flag::color_attachment_write,
+			.dst_stages = pipeline_stage_flag::color_attachment_output,
+			.dst_access = { access_flag::color_attachment_write, access_flag::color_attachment_read },
+			.prev_state = resource_state::color_target,
+			.next_state = resource_state::color_target,
+			.image = t.swapchain->image(t.image_index),
+			.aspects = image_aspect_flag::color,
+		};
+		clear_rec.pipeline_barrier(dependency_info{
+			.image_barriers = std::span(&clear_sync, 1),
+		});
+		clear_rec.end();
+		queue_submit_order[graphics_qi].insert(queue_submit_order[graphics_qi].begin(), clear_cmd);
+	}
+	m_pending_graphics_buffers = std::move(queue_submit_order[graphics_qi]);
+	for (std::size_t producer = 0; producer < queue_type_count; ++producer) {
 		if (producer == graphics_qi) {
 			continue;
 		}
 		if (queue_waits_on[graphics_qi][producer] && this_frame_signal_values[producer] > 0) {
+			std::uint64_t wait_value = this_frame_signal_values[producer];
+			for (const auto& segment : queue_segment_signals[producer]) {
+				if (segment.last_pass_position >= queue_wait_positions[graphics_qi][producer]) {
+					wait_value = segment.value;
+					break;
+				}
+			}
 			m_pending_graphics_extra_waits.push_back({
 				.semaphore = m_queue_states[producer].timeline.handle(),
-				.value = this_frame_signal_values[producer],
-				.stages = gpu::pipeline_stage_flag::all_commands,
+				.value = wait_value,
+				.stages = pipeline_stage_flag::all_commands,
 			});
+		}
+		else if (queue_waits_on[graphics_qi][producer] && queue_has_work[producer] && m_warned_dropped_waits.insert({ graphics_qi, producer }).second) {
+			log::println(
+				log::level::error,
+				log::category::render,
+				"render_graph: cross-queue wait '{}' -> '{}' dropped (producer emits no timeline signal this frame); consumer reads producer output unsynchronized",
+				queue_label(graphics_qi),
+				queue_label(producer)
+			);
 		}
 	}
 }

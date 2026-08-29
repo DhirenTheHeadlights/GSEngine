@@ -90,5 +90,5 @@ auto gse::network::apply_input_frame(actions::state& target, const input_frame& 
 		);
 	}
 
-	target.set_camera_yaw(gse::radians(m.camera_yaw));
+	target.set_camera_yaw(radians(m.camera_yaw));
 }

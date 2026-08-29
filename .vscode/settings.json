@@ -1,22 +1,9 @@
 {
-  "clangd.path": "${workspaceFolder}/dist/clang-p2996/bin/clangd.exe",
-  "clangd.arguments": [
-    "--background-index",
-    "--header-insertion=never",
-    "--completion-style=detailed",
-    "--pch-storage=memory",
-    "-j=8"
-  ],
-  "clangd.checkUpdates": false,
   "C_Cpp.intelliSenseEngine": "disabled",
   "editor.inlayHints.enabled": "off",
   "files.associations": {
     "*.cppm": "cpp",
     "*.ixx": "cpp"
-  },
-  "[cpp]": {
-    "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
-    "editor.formatOnSave": true
   },
   "cmake.debugConfig": {
     "environment": [
@@ -26,7 +13,11 @@
       },
       {
         "name": "VK_LAYER_PATH",
-        "value": "${env:VULKAN_SDK}/share/vulkan/explicit_layer.d:${env:VULKAN_SDK}/etc/vulkan/explicit_layer.d"
+        "value": "${env:VULKAN_SDK}\\Bin"
+      },
+      {
+        "name": "PATH",
+        "value": "${env:VULKAN_SDK}\\Bin;${env:PATH}"
       }
     ]
   }

@@ -4,6 +4,7 @@ import std;
 
 import :resource_loader;
 import :resource_handle;
+import :asset_state;
 
 import gse.assert;
 import gse.log;
@@ -15,46 +16,24 @@ import gse.diag;
 import gse.ecs;
 import gse.fs;
 
-export namespace gse::resource {
-	template <typename Resource>
-	class loader;
-}
-
 export namespace gse::asset {
-	struct hot_reload_request {
-		bool enabled = false;
-	};
-
-	struct [[= gse::system_state<"Asset">{}]] data {
-		[[= gse::shared]] std::unordered_map<id, std::unique_ptr<resource::loader_base>> resource_loaders;
-		file_watcher watcher;
-		std::function<void()> enable_hot_reload_fn;
-		std::function<void()> disable_hot_reload_fn;
-		bool hot_reload_enabled = false;
-		channel_writer* channels = nullptr;
-	};
-
-	[[= gse::system_init{}]]
-	auto init(
-		context& ctx,
-		data& d
-	) -> async::task<>;
-
-	[[= gse::system_run<>{}]]
-	auto run(
-		context& ctx,
-		data& d
-	) -> async::task<>;
-
-	[[= gse::system_shutdown{}]]
-	auto shutdown(
+	template <typename T>
+	auto add_loader(
 		data& d
 	) -> void;
 
 	template <typename T>
-	auto add_loader(
-		data& d
-	) -> resource::loader<T>*;
+	auto set_pre_load_fn(
+		data& d,
+		std::function<asset_result(const std::filesystem::path&)> fn
+	) -> void;
+
+	template <typename T>
+	[[nodiscard]]
+	auto register_by_path(
+		const data& d,
+		const std::filesystem::path& baked_path
+	) -> asset_result;
 
 	template <typename T>
 	auto get(
@@ -137,19 +116,11 @@ export namespace gse::asset {
 		shared_view<data> d,
 		id resource_id
 	) -> resource::state;
+}
 
-	struct load_ctx {
-		data& assets;
-		channel_writer& channels;
-	};
-
-	template <typename T>
-	[[nodiscard]]
-	auto load(
-		context& ctx,
-		shared_view<data> assets,
-		std::string_view path
-	) -> async::task<resource::handle<T>>;
+namespace gse::resource {
+	template <typename Resource>
+	class loader;
 }
 
 namespace gse::asset {
@@ -174,7 +145,7 @@ namespace gse::asset {
 	) -> resource::loader_base*;
 }
 
-export namespace gse::resource {
+namespace gse::resource {
 	template <typename Resource>
 	class loader final : public loader_base, public non_copyable {
 	public:
@@ -186,27 +157,15 @@ export namespace gse::resource {
 
 		auto flush() -> void override;
 
-		auto update_state(
-			id resource_id,
-			state new_state
-		) -> void override;
-
-		auto queue_reload(
-			id resource_id
-		) -> void;
-
-		auto queue_reload_by_path(
+		[[nodiscard]]
+		auto register_by_path(
 			const std::filesystem::path& baked_path
-		) -> void;
-
-		auto queue_by_path(
-			const std::filesystem::path& baked_path
-		) -> void;
+		) -> asset_result;
 
 		auto finalize_reloads() -> void override;
 
 		auto set_pre_load_fn(
-			std::function<void(const std::filesystem::path&)> fn
+			std::function<asset_result(const std::filesystem::path&)> fn
 		) -> void;
 
 		auto get(
@@ -240,86 +199,51 @@ export namespace gse::resource {
 
 	private:
 		asset::data& m_data;
-		id_mapped_collection<std::unique_ptr<resource_slot<Resource>>> m_resources;
+		id_mapped_collection<std::shared_ptr<resource_slot<Resource>>> m_resources;
 		std::unordered_map<std::filesystem::path, id> m_path_to_id;
 		std::vector<async::task<>> m_in_flight;
 		mutable std::mutex m_mutex;
 
-		std::vector<id> m_pending_reloads;
-		std::mutex m_reload_mutex;
-
-		std::function<void(const std::filesystem::path&)> m_pre_load_fn;
+		std::function<asset_result(const std::filesystem::path&)> m_pre_load_fn;
 
 		auto slot_ptr(
 			this auto&& self,
 			id id
 		);
 
+		auto request_load(
+			const std::shared_ptr<resource_slot<Resource>>& slot
+		) const -> void;
+
 		auto launch_load(
 			id rid
 		) -> async::task<>;
 
 		auto launch_reload(
-			id rid
+			id rid,
+			std::uint64_t revision
 		) -> async::task<>;
 
 		auto reap_done_tasks() -> void;
 	};
 }
 
-auto gse::asset::init(context& ctx, data& d) -> async::task<> {
-	d.channels = &ctx.channels;
-	return {};
-}
-
-auto gse::asset::run(context& ctx, data& d) -> async::task<> {
-	for (const auto& l : std::views::values(d.resource_loaders)) {
-		l->flush();
-	}
-
-	for (const auto& req : ctx.read_channel<hot_reload_request>()) {
-		if (req.enabled == d.hot_reload_enabled) {
-			continue;
-		}
-		if (req.enabled) {
-			if (d.enable_hot_reload_fn) {
-				d.enable_hot_reload_fn();
-			}
-			log::println(log::category::assets, "Hot reload enabled");
-		}
-		else {
-			if (d.disable_hot_reload_fn) {
-				d.disable_hot_reload_fn();
-			}
-			log::println(log::category::assets, "Hot reload disabled");
-		}
-		d.hot_reload_enabled = req.enabled;
-	}
-
-	d.watcher.poll();
-
-	return {};
-}
-
-auto gse::asset::shutdown(data& d) -> void {
-	gse::task::wait_idle();
-	for (auto& l : std::views::values(d.resource_loaders)) {
-		l.reset();
-	}
-	d.resource_loaders.clear();
-	d.channels = nullptr;
-}
-
 template <typename T>
-auto gse::asset::add_loader(data& d) -> resource::loader<T>* {
+auto gse::asset::add_loader(data& d) -> void {
 	const auto type_id = id_of<T>();
 	assert(!d.resource_loaders.contains(type_id), "Resource loader for type {} already exists.", type_tag<T>());
 
-	auto new_loader = std::make_unique<resource::loader<T>>(d);
-	auto* loader_ptr = new_loader.get();
-	d.resource_loaders[type_id] = std::move(new_loader);
+	d.resource_loaders[type_id] = std::make_unique<resource::loader<T>>(d);
+}
 
-	return loader_ptr;
+template <typename T>
+auto gse::asset::set_pre_load_fn(data& d, std::function<asset_result(const std::filesystem::path&)> fn) -> void {
+	loader_for<T>(d)->set_pre_load_fn(std::move(fn));
+}
+
+template <typename T>
+auto gse::asset::register_by_path(const data& d, const std::filesystem::path& baked_path) -> asset_result {
+	return loader_for<T>(d)->register_by_path(baked_path);
 }
 
 template <typename T>
@@ -407,30 +331,18 @@ auto gse::asset::loader_base_for(const shared_view<data> d, const id type_id) ->
 	return d.resource_loaders.at(type_id).get();
 }
 
-template <typename T>
-auto gse::asset::load(context& ctx, const shared_view<data> assets, const std::string_view path) -> async::task<resource::handle<T>> {
-	auto handle = get<T>(assets, std::string(path));
-
-	while (resource_state<T>(assets, handle.id()) != resource::state::loaded) {
-		co_await ctx.yield_tick();
-	}
-
-	co_return handle;
-}
+template <typename R>
+gse::resource::loader<R>::loader(asset::data& d) : m_data(d) {}
 
 template <typename R>
-gse::resource::loader<R>::loader(asset::data& d) : m_data(d) {
-}
-
-template <typename R>
-auto gse::resource::loader<R>::set_pre_load_fn(std::function<void(const std::filesystem::path&)> fn) -> void {
+auto gse::resource::loader<R>::set_pre_load_fn(std::function<asset_result(const std::filesystem::path&)> fn) -> void {
 	m_pre_load_fn = std::move(fn);
 }
 
 template <typename R>
 auto gse::resource::loader<R>::state_of(const id resource_id) const -> state {
 	std::lock_guard lock(m_mutex);
-	if (const auto* s = slot_ptr(resource_id)) {
+	if (const auto s = slot_ptr(resource_id)) {
 		return s->current_state.load(std::memory_order_acquire);
 	}
 	return state::unloaded;
@@ -438,8 +350,8 @@ auto gse::resource::loader<R>::state_of(const id resource_id) const -> state {
 
 template <typename R>
 auto gse::resource::loader<R>::slot_ptr(this auto&& self, const id id) {
-	auto* uptr = self.m_resources.try_get(id);
-	return uptr ? uptr->get() : nullptr;
+	auto* slot = self.m_resources.try_get(id);
+	return slot ? *slot : nullptr;
 }
 
 template <typename R>
@@ -459,13 +371,11 @@ auto gse::resource::loader<R>::flush() -> void {
 	std::vector<id> ids_to_load;
 	{
 		std::lock_guard lock(m_mutex);
-		for (const auto& uptr : m_resources.items()) {
-			if (uptr->current_state.load(std::memory_order_acquire) == state::queued) {
-				uptr->current_state.store(state::loading, std::memory_order_release);
-
-				const id rid = uptr->resource.read() ? uptr->resource.read()->id() : m_path_to_id[uptr->path];
-
-				ids_to_load.push_back(rid);
+		for (const auto& slot : m_resources.items()) {
+			if (slot->current_state.load(std::memory_order_acquire) == state::queued && !slot->load_in_flight) {
+				slot->load_in_flight = true;
+				slot->current_state.store(state::loading, std::memory_order_release);
+				ids_to_load.push_back(slot->pending_resource->id());
 			}
 		}
 	}
@@ -481,230 +391,352 @@ template <typename R>
 auto gse::resource::loader<R>::launch_load(const id rid) -> async::task<> {
 	co_await async::yield_to_worker();
 
-	R* resource_ptr;
+	std::shared_ptr<resource_slot<R>> slot;
+	std::unique_ptr<R> candidate;
 	std::filesystem::path path;
 	{
 		std::lock_guard lock(m_mutex);
-		if (auto* s = slot_ptr(rid)) {
-			if (!s->resource.read()) {
-				s->resource.write() = std::make_unique<R>(s->path);
-				s->resource.publish();
-			}
-			resource_ptr = s->resource.read().get();
-			path = s->path;
+		slot = slot_ptr(rid);
+		if (!slot) {
+			co_return;
+		}
+		path = slot->path;
+		candidate = std::move(slot->pending_resource);
+		assert(candidate != nullptr, "Queued resource has no load candidate: {}", path.generic_display_string());
+	}
+
+	auto fail = [this, slot, path](asset_error error) {
+		log::println(
+			log::level::error,
+			log::category::assets,
+			"Unable to load {}: {}",
+			path.generic_display_string(),
+			error.detail
+		);
+		std::lock_guard lock(m_mutex);
+		slot->error.store(std::make_shared<const asset_error>(std::move(error)), std::memory_order_release);
+		if (!slot->current.load(std::memory_order_acquire) && slot->requested_reload > slot->started_reload) {
+			slot->started_reload = slot->requested_reload;
+			slot->pending_resource = std::make_unique<R>(path);
+			slot->current_state.store(state::queued, std::memory_order_release);
 		}
 		else {
-			update_state(rid, state::failed);
+			slot->current_state.store(slot->current.load(std::memory_order_acquire) ? state::loaded : state::failed, std::memory_order_release);
+		}
+		slot->load_in_flight = false;
+	};
+
+	if (m_pre_load_fn && !path.empty()) {
+		asset_result prepared{};
+		try {
+			prepared = m_pre_load_fn(path);
+		}
+		catch (const std::exception& exception) {
+			prepared = std::unexpected(asset_error{
+				.code = asset_error_code::load_failure,
+				.path = path,
+				.detail = exception.what()
+			});
+		}
+		catch (...) {
+			prepared = std::unexpected(asset_error{
+				.code = asset_error_code::load_failure,
+				.path = path,
+				.detail = "Resource preparation failed"
+			});
+		}
+		if (!prepared) {
+			fail(std::move(prepared.error()));
 			co_return;
 		}
 	}
 
-	if (m_pre_load_fn && !path.empty()) {
-		m_pre_load_fn(path);
-	}
-
-	assert(m_data.channels != nullptr, "asset::run must run before flush()");
+	assert(m_data.channels.bound(), "asset::run must run before flush()");
 	asset::load_ctx ctx{
 		.assets = m_data,
-		.channels = *m_data.channels
+		.channels = m_data.channels
 	};
 
+	asset_result loaded{};
 	try {
-		co_await resource_ptr->load(ctx);
+		loaded = co_await candidate->load(ctx);
+	}
+	catch (const std::exception& exception) {
+		loaded = std::unexpected(asset_error{
+			.code = asset_error_code::load_failure,
+			.path = path,
+			.detail = exception.what()
+		});
 	}
 	catch (...) {
-		update_state(rid, state::failed);
+		loaded = std::unexpected(asset_error{
+			.code = asset_error_code::load_failure,
+			.path = path,
+			.detail = "Resource load threw an unknown exception"
+		});
+	}
+	if (!loaded) {
+		fail(std::move(loaded.error()));
 		co_return;
 	}
 
-	update_state(rid, state::loaded);
-}
-
-template <typename R>
-auto gse::resource::loader<R>::update_state(const id resource_id, const state new_state) -> void {
-	std::lock_guard lock(m_mutex);
-	if (auto* s = slot_ptr(resource_id)) {
-		s->current_state.store(new_state, std::memory_order_release);
+	try {
+		auto immutable = std::shared_ptr<const R>(std::move(candidate));
+		std::lock_guard lock(m_mutex);
+		const auto version = slot->next_version++;
+		slot->current.store(
+			std::make_shared<const generation<R>>(
+				generation<R>{
+					.resource = std::move(immutable),
+					.version = version
+				}
+			),
+			std::memory_order_release
+		);
+		slot->error.store(std::shared_ptr<const asset_error>{}, std::memory_order_release);
+		slot->current_state.store(state::loaded, std::memory_order_release);
+		slot->load_in_flight = false;
+	}
+	catch (const std::exception& exception) {
+		fail(asset_error{
+			.code = asset_error_code::load_failure,
+			.path = path,
+			.detail = exception.what()
+		});
+		co_return;
 	}
 }
 
 template <typename R>
-auto gse::resource::loader<R>::queue_reload(const id resource_id) -> void {
-	std::lock_guard lock(m_reload_mutex);
-
-	if (std::ranges::find(m_pending_reloads, resource_id) != m_pending_reloads.end()) {
-		return;
-	}
-
-	m_pending_reloads.push_back(resource_id);
-}
-
-template <typename R>
-auto gse::resource::loader<R>::queue_reload_by_path(const std::filesystem::path& baked_path) -> void {
-	std::lock_guard lock(m_mutex);
-
-	auto it = m_path_to_id.find(baked_path);
-	if (it == m_path_to_id.end()) {
-		return;
-	}
-
-	queue_reload(it->second);
-}
-
-template <typename R>
-auto gse::resource::loader<R>::queue_by_path(const std::filesystem::path& baked_path) -> void {
+auto gse::resource::loader<R>::register_by_path(const std::filesystem::path& baked_path) -> asset_result {
 	std::lock_guard lock(m_mutex);
 
-	if (m_path_to_id.contains(baked_path)) {
-		return;
+	if (const auto found = m_path_to_id.find(baked_path); found != m_path_to_id.end()) {
+		if (auto slot = slot_ptr(found->second)) {
+			if (slot->current.load(std::memory_order_acquire)) {
+				++slot->requested_reload;
+			}
+			else if (slot->load_in_flight) {
+				++slot->requested_reload;
+			}
+			else if (slot->current_state.load(std::memory_order_acquire) == state::failed) {
+				slot->pending_resource = std::make_unique<R>(slot->path);
+				slot->current_state.store(state::queued, std::memory_order_release);
+				slot->error.store(std::shared_ptr<const asset_error>{}, std::memory_order_release);
+			}
+		}
+		return {};
 	}
 
-	auto temp_resource = std::make_unique<R>(baked_path);
-	const id resource_id = temp_resource->id();
+	std::unique_ptr<R> temp_resource;
+	try {
+		temp_resource = std::make_unique<R>(baked_path);
+		const id resource_id = temp_resource->id();
 
-	auto slot = std::make_unique<resource_slot<R>>(std::move(temp_resource), state::queued, baked_path);
-	if (m_resources.add(resource_id, std::move(slot))) {
+		auto slot = std::make_shared<resource_slot<R>>(std::move(temp_resource), state::unloaded, baked_path);
+		if (!m_resources.add(resource_id, slot)) {
+			return std::unexpected(asset_error{
+				.code = asset_error_code::ambiguous_source,
+				.path = baked_path,
+				.detail = "Resource ID collision while cataloging baked asset"
+			});
+		}
 		m_path_to_id[baked_path] = resource_id;
 	}
+	catch (const std::exception& exception) {
+		return std::unexpected(asset_error{
+			.code = asset_error_code::load_failure,
+			.path = baked_path,
+			.detail = exception.what()
+		});
+	}
+	return {};
 }
 
 template <typename R>
 auto gse::resource::loader<R>::finalize_reloads() -> void {
 	reap_done_tasks();
 
-	std::vector<id> reloads_to_process;
+	std::vector<std::pair<id, std::uint64_t>> reloads_to_process;
 	{
-		std::lock_guard lock(m_reload_mutex);
-		reloads_to_process.swap(m_pending_reloads);
-	}
-
-	if (reloads_to_process.empty()) {
-		return;
-	}
-
-	for (const id rid : reloads_to_process) {
-		resource_slot<R>* s;
-		{
-			std::lock_guard lock(m_mutex);
-			s = slot_ptr(rid);
-			if (!s) {
+		std::lock_guard lock(m_mutex);
+		for (const auto& slot : m_resources.items()) {
+			if (!slot->current.load(std::memory_order_acquire) || slot->load_in_flight || slot->requested_reload <= slot->started_reload) {
 				continue;
 			}
+			slot->started_reload = slot->requested_reload;
+			slot->load_in_flight = true;
+			slot->current_state.store(state::reloading, std::memory_order_release);
+			const auto current = slot->current.load(std::memory_order_acquire);
+			reloads_to_process.emplace_back(current->resource->id(), slot->started_reload);
 		}
+	}
 
-		const auto current_state = s->current_state.load(std::memory_order_acquire);
-		if (current_state != state::loaded && current_state != state::reloading) {
-			continue;
-		}
-
-		s->current_state.store(state::reloading, std::memory_order_release);
-
-		auto t = launch_reload(rid);
+	for (const auto [rid, revision] : reloads_to_process) {
+		auto t = launch_reload(rid, revision);
 		t.start();
 		m_in_flight.push_back(std::move(t));
 	}
 }
 
 template <typename R>
-auto gse::resource::loader<R>::launch_reload(const id rid) -> async::task<> {
+auto gse::resource::loader<R>::launch_reload(const id rid, const std::uint64_t revision) -> async::task<> {
 	co_await async::yield_to_worker();
 
-	resource_slot<R>* s;
+	std::shared_ptr<resource_slot<R>> slot;
 	std::filesystem::path path;
 	{
 		std::lock_guard lock(m_mutex);
-		s = slot_ptr(rid);
-		if (!s) {
+		slot = slot_ptr(rid);
+		if (!slot) {
 			co_return;
 		}
-		path = s->path;
+		path = slot->path;
 	}
 
-	auto new_resource = std::make_unique<R>(path);
-
-	assert(m_data.channels != nullptr, "asset::run must run before finalize_reloads()");
-	asset::load_ctx ctx{
-		.assets = m_data,
-		.channels = *m_data.channels
+	auto fail = [this, slot](asset_error error) {
+		std::lock_guard lock(m_mutex);
+		slot->error.store(std::make_shared<const asset_error>(std::move(error)), std::memory_order_release);
+		slot->current_state.store(slot->current.load(std::memory_order_acquire) ? state::loaded : state::failed, std::memory_order_release);
+		slot->load_in_flight = false;
 	};
-
+	std::unique_ptr<R> new_resource;
 	try {
-		co_await new_resource->load(ctx);
+		new_resource = std::make_unique<R>(path);
 	}
-	catch (...) {
-		s->current_state.store(state::failed, std::memory_order_release);
+	catch (const std::exception& exception) {
+		fail(asset_error{
+			.code = asset_error_code::load_failure,
+			.path = path,
+			.detail = exception.what()
+		});
 		co_return;
 	}
 
-	if (auto old_resource = s->resource.take_ready()) {
-		old_resource->unload();
+	assert(m_data.channels.bound(), "asset::run must run before finalize_reloads()");
+	asset::load_ctx ctx{
+		.assets = m_data,
+		.channels = m_data.channels
+	};
+
+	asset_result loaded{};
+	try {
+		loaded = co_await new_resource->load(ctx);
+	}
+	catch (const std::exception& exception) {
+		loaded = std::unexpected(asset_error{
+			.code = asset_error_code::load_failure,
+			.path = path,
+			.detail = exception.what()
+		});
+	}
+	catch (...) {
+		loaded = std::unexpected(asset_error{
+			.code = asset_error_code::load_failure,
+			.path = path,
+			.detail = "Resource reload threw an unknown exception"
+		});
+	}
+	if (!loaded) {
+		fail(std::move(loaded.error()));
+		co_return;
 	}
 
-	s->resource.write() = std::move(new_resource);
-	s->resource.publish();
-	s->version.fetch_add(1, std::memory_order_release);
-	s->current_state.store(state::loaded, std::memory_order_release);
+	try {
+		auto immutable = std::shared_ptr<const R>(std::move(new_resource));
+		std::lock_guard lock(m_mutex);
+		const auto version = slot->next_version++;
+		slot->current.store(
+			std::make_shared<const generation<R>>(
+				generation<R>{
+					.resource = std::move(immutable),
+					.version = version
+				}
+			),
+			std::memory_order_release
+		);
+		slot->error.store(std::shared_ptr<const asset_error>{}, std::memory_order_release);
+		slot->current_state.store(state::loaded, std::memory_order_release);
+		slot->load_in_flight = false;
+		assert(slot->started_reload == revision, "Resource reload revision changed while in flight");
+	}
+	catch (const std::exception& exception) {
+		fail(asset_error{
+			.code = asset_error_code::load_failure,
+			.path = path,
+			.detail = exception.what()
+		});
+		co_return;
+	}
 
-	log::println(log::category::assets, "Hot reload reloaded resource: {}", path.filename().string());
+	log::println(log::category::assets, "Hot reload reloaded resource: {}", path.filename().generic_display_string());
 }
 
 template <typename R>
 auto gse::resource::loader<R>::get(const id id) const -> handle<R> {
 	std::lock_guard lock(m_mutex);
-	const auto* s = slot_ptr(id);
-	assert(s, "Resource with ID {} not found in this loader.", id);
-	return handle<R>(id, s, s->version.load(std::memory_order_acquire));
+	const auto s = slot_ptr(id);
+	assert(s != nullptr, "Resource with ID {} not found in this loader.", id);
+	request_load(s);
+	return handle<R>(id, s);
 }
 
 template <typename R>
 auto gse::resource::loader<R>::get(const std::string& filename_no_ext) const -> handle<R> {
-	const auto resource_id = gse::find(filename_no_ext);
+	const auto resource_id = find(filename_no_ext);
 	std::lock_guard lock(m_mutex);
-	const auto* s = slot_ptr(resource_id);
-	assert(s, "Resource with ID {} not found in this loader.", resource_id);
-	return handle<R>(resource_id, s, s->version.load(std::memory_order_acquire));
+	const auto s = slot_ptr(resource_id);
+	assert(s != nullptr, "Resource with ID {} not found in this loader.", resource_id);
+	request_load(s);
+	return handle<R>(resource_id, s);
 }
 
 template <typename R>
 auto gse::resource::loader<R>::try_get(const id id) const -> handle<R> {
 	std::lock_guard lock(m_mutex);
-	const auto* s = slot_ptr(id);
+	const auto s = slot_ptr(id);
 	if (!s) {
 		return handle<R>{};
 	}
-	return handle<R>(id, s, s->version.load(std::memory_order_acquire));
+	request_load(s);
+	return handle<R>(id, s);
 }
 
 template <typename R>
 auto gse::resource::loader<R>::try_get(const std::string& filename_no_ext) const -> handle<R> {
-	if (!gse::exists(filename_no_ext)) {
+	if (!exists(filename_no_ext)) {
 		return handle<R>{};
 	}
-	const auto resource_id = gse::find(filename_no_ext);
+	const auto resource_id = find(filename_no_ext);
 	std::lock_guard lock(m_mutex);
-	const auto* s = slot_ptr(resource_id);
+	const auto s = slot_ptr(resource_id);
 	if (!s) {
 		return handle<R>{};
 	}
-	return handle<R>(resource_id, s, s->version.load(std::memory_order_acquire));
+	request_load(s);
+	return handle<R>(resource_id, s);
+}
+
+template <typename R>
+auto gse::resource::loader<R>::request_load(const std::shared_ptr<resource_slot<R>>& slot) const -> void {
+	auto expected = state::unloaded;
+	slot->current_state.compare_exchange_strong(expected, state::queued, std::memory_order_acq_rel, std::memory_order_relaxed);
 }
 
 template <typename R>
 auto gse::resource::loader<R>::enqueue(const std::string& name, std::unique_ptr<R> resource) -> handle<R> {
 	std::lock_guard lock(m_mutex);
 	if (exists(name)) {
-		if (const auto resource_id = gse::find(name); m_resources.contains(resource_id)) {
-			const auto* s = slot_ptr(resource_id);
-			return handle<R>(resource_id, s, s->version.load(std::memory_order_acquire));
+		if (const auto resource_id = find(name); m_resources.contains(resource_id)) {
+			return handle<R>(resource_id, slot_ptr(resource_id));
 		}
 	}
 
 	const auto resource_id = resource->id();
 
-	auto slot = std::make_unique<resource_slot<R>>(std::move(resource), state::queued, "");
-	auto* slot_raw = slot.get();
-	m_resources.add(resource_id, std::move(slot));
-	return handle<R>(resource_id, slot_raw, 0);
+	auto slot = std::make_shared<resource_slot<R>>(std::move(resource), state::queued, "");
+	assert(m_resources.add(resource_id, slot), "Resource with ID {} already exists.", resource_id);
+	return handle<R>(resource_id, std::move(slot));
 }
 
 template <typename R>
@@ -713,9 +745,8 @@ auto gse::resource::loader<R>::add(std::unique_ptr<R> resource) -> handle<R> {
 	const auto id = resource->id();
 	assert(!m_resources.contains(id), "Resource with ID {} already exists.", id);
 
-	auto slot = std::make_unique<resource_slot<R>>(std::move(resource), state::loaded, "");
-	auto* slot_raw = slot.get();
-	m_resources.add(id, std::move(slot));
+	auto slot = std::make_shared<resource_slot<R>>(std::move(resource), state::loaded, "");
+	assert(m_resources.add(id, slot), "Resource with ID {} already exists.", id);
 
-	return handle<R>(id, slot_raw, 0);
+	return handle<R>(id, std::move(slot));
 }

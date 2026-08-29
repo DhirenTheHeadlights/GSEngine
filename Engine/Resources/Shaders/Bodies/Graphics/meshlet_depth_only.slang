@@ -8,7 +8,10 @@ void as_main(uint gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
     uint instance_index = pc.first_instance + gid.y;
     bool visible = false;
 
-    if (meshlet_idx < pc.meshlet_count) {
+    if (meshlet_idx < pc.meshlet_count && pc.skip_meshlet_cull != 0) {
+        visible = true;
+    }
+    else if (meshlet_idx < pc.meshlet_count) {
         uint global_idx = pc.meshlet_offset + meshlet_idx;
         meshlet_bounds bounds = meshlet_bounds_buffer[global_idx];
         instance_data inst = instance_data_buffer[instance_index];
@@ -23,12 +26,12 @@ void as_main(uint gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
         float max_scale = sqrt(max(scale_sq.x, max(scale_sq.y, scale_sq.z)));
         float world_radius = bounds.radius * max_scale;
 
-        visible = !frustum_cull_sphere(world_center, world_radius, view, proj);
+        visible = !frustum_cull_sphere(world_center, world_radius, camera_ubo.view, camera_ubo.proj);
 
         if (visible && bounds.cone_cutoff >= 0.0) {
             float3 world_cone_axis = normalize(mul((float3x3)inst.model_matrix, bounds.cone_axis));
-            float3 view_center = mul(view, float4(world_center, 1.0)).xyz;
-            float3 view_cone_axis = normalize(mul((float3x3)view, world_cone_axis));
+            float3 view_center = mul(camera_ubo.view, float4(world_center, 1.0)).xyz;
+            float3 view_cone_axis = normalize(mul((float3x3)camera_ubo.view, world_cone_axis));
             float3 view_dir = normalize(-view_center);
             float cone_sin = sqrt(1.0 - bounds.cone_cutoff * bounds.cone_cutoff);
             if (dot(view_cone_axis, view_dir) < -cone_sin) {
@@ -79,11 +82,13 @@ void ms_main(
         uint global_vertex_idx = meshlet_vertex_indices[desc.vertex_offset + v_idx];
         vertex v = vertices_buffer[global_vertex_idx];
 
-        MeshVertexOutput mv = compute_mesh_vertex(v, inst, view, proj);
+        MeshVertexOutput mv = compute_mesh_vertex(v, inst, camera_ubo.view, camera_ubo.proj);
 
-        precise float4 prev_world = mul(inst.prev_model_matrix, float4(v.position, 1.0));
-        precise float4 prev_view_pos = mul(prev_view, prev_world);
-        precise float4 prev_clip = mul(prev_proj, prev_view_pos);
+        precise float4 prev_world = pc.use_prev_vertices != 0
+            ? float4(prev_vertices_buffer[global_vertex_idx].position, 1.0)
+            : mul(inst.prev_model_matrix, float4(v.position, 1.0));
+        precise float4 prev_view_pos = mul(camera_ubo.prev_view, prev_world);
+        precise float4 prev_clip = mul(camera_ubo.prev_proj, prev_view_pos);
 
         DepthOutput o;
         o.clip_pos = mv.clip_pos;
@@ -99,7 +104,7 @@ void ms_main(
 
 [shader("fragment")]
 float2 fs_main(DepthOutput input) : SV_Target0 {
-    float2 curr_ndc = input.curr_clip_pos.xy / input.curr_clip_pos.w + jitter_ndc;
-    float2 prev_ndc = input.prev_clip_pos.xy / input.prev_clip_pos.w + prev_jitter_ndc;
+    float2 curr_ndc = input.curr_clip_pos.xy / input.curr_clip_pos.w + camera_ubo.jitter_ndc;
+    float2 prev_ndc = input.prev_clip_pos.xy / input.prev_clip_pos.w + camera_ubo.prev_jitter_ndc;
     return (curr_ndc - prev_ndc) * float2(0.5, -0.5);
 }

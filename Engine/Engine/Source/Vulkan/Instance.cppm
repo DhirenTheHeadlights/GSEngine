@@ -43,7 +43,21 @@ export namespace gse::vulkan {
 			shared_view<window::data> win
 		) -> void;
 
+		auto create_surface(
+			const window::window_surface& win
+		) -> void;
+
+		auto destroy_surface() -> void;
+
 		[[nodiscard]] auto surface() const -> gpu::surface;
+
+		[[nodiscard]] auto create_owned_surface(
+			native_window_handle handle
+		) const -> gpu::surface;
+
+		auto destroy_owned_surface(
+			gpu::surface surface
+		) const -> void;
 
 		[[nodiscard]] auto enumerate_physical_devices() const -> std::vector<physical_device>;
 
@@ -64,7 +78,7 @@ export namespace gse::vulkan {
 namespace gse::vulkan {
 	auto create_window_surface(
 		vk::Instance instance,
-		shared_view<window::data> win
+		native_window_handle handle
 	) -> vk::SurfaceKHR;
 }
 
@@ -81,19 +95,28 @@ auto gse::vulkan::instance::required_window_extensions() -> std::span<const char
 	return { extensions, count };
 }
 
-auto gse::vulkan::create_window_surface(const vk::Instance instance, const shared_view<window::data> win) -> vk::SurfaceKHR {
-	auto* handle = static_cast<GLFWwindow*>(window::raw_handle(win).value);
-	assert(handle != nullptr, "Failed to create window surface for Vulkan: window handle is null");
+auto gse::vulkan::create_window_surface(const vk::Instance instance, const native_window_handle handle) -> vk::SurfaceKHR {
+	auto* glfw_handle = static_cast<GLFWwindow*>(handle.value);
+	assert(glfw_handle != nullptr, "Failed to create window surface for Vulkan: window handle is null");
 
 	VkSurfaceKHR surface = nullptr;
-	const VkResult result = glfwCreateWindowSurface(static_cast<VkInstance>(instance), handle, nullptr, &surface);
+	const VkResult result = glfwCreateWindowSurface(static_cast<VkInstance>(instance), glfw_handle, nullptr, &surface);
 	assert(result == VK_SUCCESS, "Failed to create window surface for Vulkan!");
 	return vk::SurfaceKHR(surface);
 }
 
 auto gse::vulkan::instance::create_surface(const shared_view<window::data> win) -> void {
-	const auto raw_surface = create_window_surface(*m_instance, win);
+	const auto raw_surface = create_window_surface(*m_instance, window::raw_handle(win));
 	m_surface = vk::raii::SurfaceKHR(m_instance, raw_surface);
+}
+
+auto gse::vulkan::instance::create_surface(const window::window_surface& win) -> void {
+	const auto raw_surface = create_window_surface(*m_instance, window::raw_handle(win));
+	m_surface = vk::raii::SurfaceKHR(m_instance, raw_surface);
+}
+
+auto gse::vulkan::instance::destroy_surface() -> void {
+	m_surface = nullptr;
 }
 
 auto gse::vulkan::instance::enumerate_physical_devices() const -> std::vector<physical_device> {
@@ -108,6 +131,17 @@ auto gse::vulkan::instance::enumerate_physical_devices() const -> std::vector<ph
 
 auto gse::vulkan::instance::surface() const -> gpu::surface {
 	return std::bit_cast<gpu::surface>(*m_surface);
+}
+
+auto gse::vulkan::instance::create_owned_surface(const native_window_handle handle) const -> gpu::surface {
+	return std::bit_cast<gpu::surface>(create_window_surface(*m_instance, handle));
+}
+
+auto gse::vulkan::instance::destroy_owned_surface(const gpu::surface surface) const -> void {
+	if (!surface) {
+		return;
+	}
+	vk::Instance(*m_instance).destroySurfaceKHR(std::bit_cast<vk::SurfaceKHR>(surface));
 }
 
 auto gse::vulkan::instance::create(const std::span<const char* const> required_extensions, const bool enable_validation) -> instance {
@@ -168,9 +202,9 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 	};
 
 	for (const auto* name : {
-			 vk::KHRGetSurfaceCapabilities2ExtensionName,
-			 vk::EXTSurfaceMaintenance1ExtensionName,
-		 }) {
+		vk::KHRGetSurfaceCapabilities2ExtensionName,
+		vk::EXTSurfaceMaintenance1ExtensionName,
+	}) {
 		if (has_instance_extension(name) && !already_enabled(name)) {
 			extensions.push_back(name);
 		}
@@ -276,5 +310,5 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 		}
 	}
 
-	return gse::vulkan::instance(std::move(context), std::move(instance), std::move(debug_messenger));
+	return vulkan::instance(std::move(context), std::move(instance), std::move(debug_messenger));
 }

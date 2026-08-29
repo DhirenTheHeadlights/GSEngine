@@ -26,8 +26,10 @@ export {
 
 	using ::socket;
 	using ::bind;
+	using ::connect;
 	using ::getsockname;
 	using ::setsockopt;
+	using ::getsockopt;
 	using ::sendto;
 	using ::recvfrom;
 
@@ -62,12 +64,16 @@ export {
 export namespace gse::sockets {
 	inline constexpr int af_inet = AF_INET;
 	inline constexpr int sock_dgram = SOCK_DGRAM;
+	inline constexpr int sock_stream = SOCK_STREAM;
 	inline constexpr int ipproto_udp = IPPROTO_UDP;
+	inline constexpr int ipproto_tcp = IPPROTO_TCP;
 	inline constexpr int sol_socket = SOL_SOCKET;
 	inline constexpr int so_reuseaddr = SO_REUSEADDR;
+	inline constexpr int so_error = SO_ERROR;
 	inline constexpr int inet_addrstrlen = INET_ADDRSTRLEN;
 
 	inline constexpr short pollin = POLLIN;
+	inline constexpr short pollout = POLLOUT;
 	inline constexpr short pollerr = POLLERR;
 	inline constexpr short pollhup = POLLHUP;
 
@@ -76,6 +82,8 @@ export namespace gse::sockets {
 	inline constexpr int socket_error = SOCKET_ERROR;
 	inline constexpr long fionbio = FIONBIO;
 	inline constexpr short pollrdnorm = POLLRDNORM;
+	inline constexpr short pollwrnorm = POLLWRNORM;
+	inline constexpr int connect_pending = WSAEWOULDBLOCK;
 
 	inline auto last_error() -> int {
 		return ::WSAGetLastError();
@@ -95,6 +103,7 @@ export namespace gse::sockets {
 	inline constexpr int o_nonblock = O_NONBLOCK;
 	inline constexpr int f_getfl = F_GETFL;
 	inline constexpr int f_setfl = F_SETFL;
+	inline constexpr int connect_pending = EINPROGRESS;
 
 	inline auto last_error() -> int {
 		return errno;

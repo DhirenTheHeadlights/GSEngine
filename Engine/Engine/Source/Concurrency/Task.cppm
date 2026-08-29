@@ -5,6 +5,7 @@ import std;
 import gse.core;
 import gse.diag;
 import gse.log;
+import gse.math;
 import gse.stacktrace;
 
 import :work_stealing_queue;
@@ -38,14 +39,19 @@ export namespace gse::task {
 
 	auto post(
 		job j,
-		id id = trace::loc_id<trace::current_loc_tag()>()
+		id id = trace_id<trace::current_loc_tag()>()
+	) -> void;
+
+	auto post_io(
+		job j,
+		id id = trace_id<trace::current_loc_tag()>()
 	) -> void;
 
 	template <std::forward_iterator It>
 	auto post_range(
 		It first,
 		It last,
-		id id = trace::loc_id<trace::current_loc_tag()>()
+		id id = trace_id<trace::current_loc_tag()>()
 	) -> void;
 
 	template <typename F>
@@ -53,7 +59,7 @@ export namespace gse::task {
 		first_arg_t<F> first,
 		first_arg_t<F> last,
 		F&& func,
-		id id = trace::loc_id<trace::current_loc_tag()>()
+		id id = trace_id<trace::current_loc_tag()>()
 	) -> void;
 
 	auto thread_count() -> std::size_t;
@@ -62,13 +68,18 @@ export namespace gse::task {
 
 	auto wait_idle() -> void;
 
+	[[nodiscard]] auto wait_idle_for(
+		time budget
+	) -> bool;
+
 	auto try_run_one() -> bool;
 
 	auto parallel_invoke_range(
 		std::size_t first,
 		std::size_t last,
 		std::move_only_function<void(std::size_t)> func,
-		id id = trace::loc_id<trace::current_loc_tag()>()
+		id id = trace_id<trace::current_loc_tag()>(),
+		std::size_t chunks_per_worker = 0
 	) -> void;
 
 	template <typename Fn>
@@ -76,36 +87,38 @@ export namespace gse::task {
 		std::size_t n,
 		std::size_t min_chunk_items,
 		Fn&& fn,
-		id label = trace::loc_id<trace::current_loc_tag()>()
+		id label = trace_id<trace::current_loc_tag()>()
 	) -> void;
 
 	class group : non_copyable, non_movable {
 	public:
 		explicit group(
-			id label = trace::loc_id<trace::current_loc_tag()>()
+			id label = trace_id<trace::current_loc_tag()>()
 		);
 
 		~group() noexcept;
 
 		auto post(
 			job j,
-			id id = trace::loc_id<trace::current_loc_tag()>()
+			id id = trace_id<trace::current_loc_tag()>()
 		) -> void;
 
 		template <std::input_iterator It>
 		auto post_range(
 			It first,
 			It last,
-			id id = trace::loc_id<trace::current_loc_tag()>()
+			id id = trace_id<trace::current_loc_tag()>()
 		) -> void;
 
 		auto wait() const -> void;
 
 	private:
 		friend struct job_entry;
+
 		friend auto run_job(
 			struct job_entry& entry
 		) -> void;
+		
 		friend auto submit_to_group(
 			group& gp,
 			job j,
@@ -113,9 +126,7 @@ export namespace gse::task {
 			std::uint64_t parent_eid
 		) -> void;
 
-		id m_label;
-		std::uint64_t m_outer_parent = 0;
-		std::uint64_t m_parent_eid = 0;
+		trace::open_span m_span;
 		std::atomic<std::size_t> m_counter{ 0 };
 		std::atomic<std::size_t> m_inflight_notifies{ 0 };
 	};
@@ -203,11 +214,17 @@ namespace gse::task {
 	inline std::counting_semaphore work_available{ 0 };
 	inline std::atomic<std::size_t> external_post_rotation{ 0 };
 
+	inline std::vector<std::jthread> io_threads;
+	inline std::mutex io_mutex;
+	inline std::deque<job_entry> io_entries;
+	inline std::counting_semaphore io_available{ 0 };
+
 	inline std::mutex idle_mutex;
 	inline std::condition_variable idle_cv;
 
 	inline thread_local std::optional<std::size_t> t_worker_index;
 	inline thread_local bool t_is_main_thread = false;
+	inline thread_local bool t_is_io_thread = false;
 
 	inline constexpr std::size_t coalesce_threshold = 64;
 	inline constexpr std::size_t min_chunks_per_worker = 4;
@@ -222,7 +239,19 @@ namespace gse::task {
 		std::size_t index
 	) -> void;
 
+	auto io_loop(
+		const std::stop_token& st
+	) -> void;
+
+	auto io_thread_count() -> std::size_t;
+
 	auto submit_async(
+		job j,
+		id trace_id,
+		std::uint64_t parent_eid
+	) -> void;
+
+	auto submit_io(
 		job j,
 		id trace_id,
 		std::uint64_t parent_eid
@@ -240,6 +269,8 @@ namespace gse::task {
 	) -> void;
 
 	auto pool_shutdown() -> void;
+
+	auto drain_and_shutdown_pool() -> void;
 
 	auto likely_idle() noexcept -> bool;
 
@@ -274,23 +305,25 @@ namespace gse::task {
 	) noexcept -> bool;
 
 	auto select_post_target() -> std::size_t;
+
+	auto select_fanout_target() -> std::size_t;
 }
 
-gse::task::group::group(const id label) : m_label(label) {
-	m_outer_parent = trace::current_eid();
-	m_parent_eid = trace::begin_block(m_label, m_outer_parent);
-}
+gse::task::group::group(const id label) : m_span(label, trace::current_eid()) {}
 
 gse::task::group::~group() noexcept {
 	wait();
 	while (m_inflight_notifies.load(std::memory_order_acquire) > 0) {
 		std::this_thread::yield();
 	}
-	trace::end_block(m_label, m_parent_eid, m_outer_parent);
 }
 
 auto gse::task::group::wait() const -> void {
 	while (m_counter.load(std::memory_order_acquire) > 0) {
+		if (t_is_io_thread) {
+			std::this_thread::yield();
+			continue;
+		}
 		if (auto entry = try_pop_or_steal(t_worker_index)) {
 			run_job(*entry);
 		}
@@ -301,7 +334,7 @@ auto gse::task::group::wait() const -> void {
 }
 
 auto gse::task::group::post(job j, const id id) -> void {
-	submit_to_group(*this, std::move(j), id, m_parent_eid);
+	submit_to_group(*this, std::move(j), id, m_span.eid());
 }
 
 template <typename F>
@@ -347,8 +380,7 @@ auto gse::task::start(F&& fn, std::size_t worker_count) -> std::invoke_result_t<
 			return;
 		}
 
-		wait_idle();
-		pool_shutdown();
+		drain_and_shutdown_pool();
 
 		stopping.store(false, std::memory_order_release);
 		started.store(false, std::memory_order_release);
@@ -376,6 +408,14 @@ auto gse::task::post(job j, const id id) -> void {
 	submit_async(std::move(j), id, trace::current_eid());
 }
 
+auto gse::task::post_io(job j, const id id) -> void {
+	if (io_threads.empty()) {
+		submit_async(std::move(j), id, trace::current_eid());
+		return;
+	}
+	submit_io(std::move(j), id, trace::current_eid());
+}
+
 template <std::forward_iterator It>
 auto gse::task::post_range(It first, It last, const id id) -> void {
 	const std::size_t count = static_cast<std::size_t>(std::distance(first, last));
@@ -384,6 +424,7 @@ auto gse::task::post_range(It first, It last, const id id) -> void {
 	}
 
 	const std::uint64_t parent_eid = trace::current_eid();
+
 	in_flight.fetch_add(count, std::memory_order_relaxed);
 
 	for (auto it = first; it != last; ++it) {
@@ -395,7 +436,7 @@ auto gse::task::post_range(It first, It last, const id id) -> void {
 		const auto key = async_key_for(&*it);
 		trace::begin_async(id, key);
 		push_to_queue(
-			select_post_target(),
+			select_fanout_target(),
 			job_entry{
 				.fn = std::move(*it),
 				.trace_id = id,
@@ -535,6 +576,26 @@ auto gse::task::wait_idle() -> void {
 	);
 }
 
+auto gse::task::wait_idle_for(const time budget) -> bool {
+	for (int i = 0; i < 1024; ++i) {
+		if (likely_idle()) {
+			return true;
+		}
+		std::this_thread::yield();
+	}
+
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(static_cast<std::int64_t>(budget.as<milliseconds>()));
+
+	std::unique_lock lk(idle_mutex);
+	return idle_cv.wait_until(
+		lk,
+		deadline,
+		[] {
+			return likely_idle();
+		}
+	);
+}
+
 auto gse::task::try_run_one() -> bool {
 	if (auto entry = try_pop_or_steal(t_worker_index)) {
 		run_job(*entry);
@@ -638,7 +699,19 @@ auto gse::task::select_post_target() -> std::size_t {
 	return external_post_rotation.fetch_add(1, std::memory_order_relaxed) % queue_count;
 }
 
-auto gse::task::parallel_invoke_range(const std::size_t first, const std::size_t last, std::move_only_function<void(std::size_t)> func, const id id) -> void {
+auto gse::task::select_fanout_target() -> std::size_t {
+	const auto queue_count = per_worker_queues.size();
+	if (queue_count == 0) {
+		return 0;
+	}
+	const auto target = external_post_rotation.fetch_add(1, std::memory_order_relaxed) % queue_count;
+	if (queue_count > 1 && owns_queue(target)) {
+		return (target + 1) % queue_count;
+	}
+	return target;
+}
+
+auto gse::task::parallel_invoke_range(const std::size_t first, const std::size_t last, std::move_only_function<void(std::size_t)> func, const id id, const std::size_t chunks_per_worker) -> void {
 	if (last <= first) {
 		return;
 	}
@@ -653,7 +726,9 @@ auto gse::task::parallel_invoke_range(const std::size_t first, const std::size_t
 	}
 
 	const std::size_t workers = std::max<std::size_t>(1, worker_count_value.load(std::memory_order_acquire));
-	const std::size_t chunk = compute_chunk_size(n, workers);
+	const std::size_t per_worker = chunks_per_worker > 0 ? chunks_per_worker : min_chunks_per_worker;
+	const std::size_t target_chunks = std::max<std::size_t>(1, workers * per_worker);
+	const std::size_t chunk = std::max<std::size_t>(1, (n + target_chunks - 1) / target_chunks);
 
 	group g(id);
 	for (std::size_t chunk_start = first; chunk_start < last; chunk_start += chunk) {
@@ -766,6 +841,32 @@ auto gse::task::worker_loop(const std::stop_token& st, std::size_t index) -> voi
 	}
 }
 
+auto gse::task::io_loop(const std::stop_token& st) -> void {
+	t_is_io_thread = true;
+
+	while (!st.stop_requested()) {
+		std::optional<job_entry> entry;
+		{
+			std::lock_guard lk(io_mutex);
+			if (!io_entries.empty()) {
+				entry.emplace(std::move(io_entries.front()));
+				io_entries.pop_front();
+			}
+		}
+
+		if (entry) {
+			run_job(*entry);
+			continue;
+		}
+
+		io_available.acquire();
+	}
+}
+
+auto gse::task::io_thread_count() -> std::size_t {
+	return std::max<std::size_t>(2, std::thread::hardware_concurrency() / 4);
+}
+
 auto gse::task::submit_async(job j, const id trace_id, const std::uint64_t parent_eid) -> void {
 	if (!j) {
 		log::println(log::level::error, log::category::task, "submit_async: null job submitted (trace_id={})",
@@ -791,11 +892,38 @@ auto gse::task::submit_async(job j, const id trace_id, const std::uint64_t paren
 	work_available.release();
 }
 
+auto gse::task::submit_io(job j, const id trace_id, const std::uint64_t parent_eid) -> void {
+	if (!j) {
+		log::println(log::level::error, log::category::task, "submit_io: null job submitted (trace_id={})",
+					 trace_id);
+	}
+	in_flight.fetch_add(1, std::memory_order_relaxed);
+
+	const auto key = async_key_for(&j);
+	trace::begin_async(trace_id, key);
+
+	{
+		std::lock_guard lk(io_mutex);
+		io_entries.push_back(
+			job_entry{
+				.fn = std::move(j),
+				.trace_id = trace_id,
+				.parent_eid = parent_eid,
+				.async_key = key,
+				.async_trace = true,
+				.counts_in_flight = true,
+				.gp = nullptr,
+			}
+		);
+	}
+	io_available.release();
+}
+
 auto gse::task::submit_to_group(group& gp, job j, const id trace_id, const std::uint64_t parent_eid) -> void {
 	gp.m_counter.fetch_add(1, std::memory_order_relaxed);
 
 	push_to_queue(
-		select_post_target(),
+		select_fanout_target(),
 		job_entry{
 			.fn = std::move(j),
 			.trace_id = trace_id,
@@ -810,8 +938,12 @@ auto gse::task::submit_to_group(group& gp, job j, const id trace_id, const std::
 }
 
 auto gse::task::pool_start(const std::size_t worker_count) -> void {
+	trace::mark_hidden(generate_id("task.start.reentrant"));
+	trace::mark_hidden(generate_id("task.start.body"));
+
 	worker_count_value.store(worker_count, std::memory_order_release);
 	workers.clear();
+	io_threads.clear();
 	per_worker_queues.clear();
 	external_post_rotation.store(0, std::memory_order_relaxed);
 
@@ -825,18 +957,33 @@ auto gse::task::pool_start(const std::size_t worker_count) -> void {
 
 	for (std::size_t i = 0; i < background_workers; ++i) {
 		workers.emplace_back([i](std::stop_token st) {
+			log::name_thread(log::thread_role::worker, i);
 			worker_loop(st, i);
+		});
+	}
+
+	const std::size_t io_workers = io_thread_count();
+	io_threads.reserve(io_workers);
+
+	for (std::size_t i = 0; i < io_workers; ++i) {
+		io_threads.emplace_back([i](std::stop_token st) {
+			log::name_thread(log::thread_role::io, i);
+			io_loop(st);
 		});
 	}
 
 	t_worker_index = worker_count - 1;
 	t_is_main_thread = true;
 	trace::register_main_thread();
+	log::name_thread(log::thread_role::main);
 }
 
 auto gse::task::pool_shutdown() -> void {
 	for (auto& w : workers) {
 		w.request_stop();
+	}
+	for (auto& t : io_threads) {
+		t.request_stop();
 	}
 
 	const auto count = worker_count_value.load(std::memory_order_acquire);
@@ -844,12 +991,36 @@ auto gse::task::pool_shutdown() -> void {
 	for (std::size_t i = 0; i < background_workers; ++i) {
 		work_available.release();
 	}
+	for (std::size_t i = 0; i < io_threads.size(); ++i) {
+		io_available.release();
+	}
 
 	workers.clear();
+	io_threads.clear();
 	per_worker_queues.clear();
 	worker_count_value.store(0, std::memory_order_release);
 	t_worker_index.reset();
 	t_is_main_thread = false;
+}
+
+auto gse::task::drain_and_shutdown_pool() -> void {
+	const time drain_budget = seconds(10.f);
+
+	{
+		watchdog::section watch{ generate_id("task.shutdown.drain"), drain_budget };
+		if (!wait_idle_for(drain_budget)) {
+			log::println(
+				log::level::error,
+				log::category::task,
+				"shutdown: {} jobs still in flight after {::s}; joining workers anyway",
+				in_flight.load(std::memory_order_acquire),
+				drain_budget
+			);
+		}
+	}
+
+	watchdog::section watch{ generate_id("task.shutdown.join"), drain_budget };
+	pool_shutdown();
 }
 
 auto gse::task::likely_idle() noexcept -> bool {

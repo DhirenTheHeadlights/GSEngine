@@ -23,9 +23,10 @@ export namespace gse {
 		struct [[
 			= asset_format::baked_ext<".gtx">{},
 			= asset_format::baked_dir<"Textures">{},
+			= asset_format::source_dir<"Textures">{},
 			= asset_format::source_exts<".png", ".jpg", ".jpeg", ".tga", ".bmp">{},
 			= asset_format::magic<0x47544558>{},
-			= asset_format::version<1>{},
+			= asset_format::version<2>{},
 			= asset_format::meta_sidecar<>{}
 		]] baked {
 			std::uint32_t width = 0;
@@ -55,17 +56,13 @@ export namespace gse {
 
 		auto load(
 			asset::load_ctx& ctx
-		) -> async::task<>;
-
-		auto unload() -> void;
+		) -> async::task<asset_result>;
 
 		auto gpu_image() const -> const gpu::image&;
 
 		auto image_data() const -> const image::data&;
 
 		[[nodiscard]] auto bindless_slot() const -> gpu::bindless_slot;
-
-		auto upload_token() const -> const gpu::sync_token&;
 
 	private:
 		auto create_vulkan_resources(
@@ -77,6 +74,5 @@ export namespace gse {
 		gpu::bindless_handle m_bindless_slot;
 		image::data m_image_data;
 		profile m_profile = profile::generic_repeat;
-		gpu::sync_token m_upload_token;
 	};
 }

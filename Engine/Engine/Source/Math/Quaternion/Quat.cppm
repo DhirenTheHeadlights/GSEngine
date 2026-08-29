@@ -80,16 +80,16 @@ namespace gse {
 
 template <gse::internal::is_arithmetic T, typename CharT>
 struct std::formatter<gse::quaternion<T>, CharT> {
-	std::formatter<gse::vec<T, 4>, CharT> vec_formatter;
+	formatter<gse::vec<T, 4>, CharT> vec_formatter;
 
-	constexpr auto parse(std::format_parse_context& ctx) {
+	constexpr auto parse(format_parse_context& ctx) {
 		return vec_formatter.parse(ctx);
 	}
 
 	template <typename FormatContext>
 	auto format(const gse::quaternion<T>& q, FormatContext& ctx) const {
 		auto out = ctx.out();
-		out = std::format_to(out, "quat");
+		out = format_to(out, "quat");
 		const auto& v4 = static_cast<const gse::vec<T, 4>&>(q);
 		return vec_formatter.format(v4, ctx);
 	}
@@ -119,9 +119,9 @@ constexpr gse::quaternion<T>::quaternion(T s, T x, T y, T z) : vec<T, 4>{ s, x, 
 
 template <gse::internal::is_arithmetic T>
 constexpr gse::quaternion<T>::quaternion(const vec<T, 3>& axis, angle_t<T> angle) {
-	auto half_angle = static_cast<T>(angle) / T(2);
-	auto sin_half_angle = std::sin(half_angle);
-	*this = quaternion(axis * sin_half_angle, std::cos(half_angle));
+	const auto half_angle = angle / T(2);
+	const auto sin_half_angle = sin(half_angle);
+	*this = quaternion(axis * sin_half_angle, cos(half_angle));
 }
 
 template <gse::internal::is_arithmetic T>
@@ -172,13 +172,13 @@ constexpr auto gse::quaternion<T>::euler_angles() const -> vec3<angle_t<T>> {
 	const T sinp = T(2) * (s() * y() - z() * x());
 	if (std::abs(sinp) >= 1) {
 		angle_y = radians(std::copysign(std::numbers::pi_v<T> / T(2), sinp));
-		angle_x = radians(T(2) * std::atan2(x(), s()));
+		angle_x = T(2) * atan2(x(), s());
 		angle_z = radians(T(0));
 	}
 	else {
-		angle_y = radians(std::asin(sinp));
-		angle_x = radians(std::atan2(T(2) * (s() * x() + y() * z()), T(1) - T(2) * (x() * x() + y() * y())));
-		angle_z = radians(std::atan2(T(2) * (s() * z() + x() * y()), T(1) - T(2) * (y() * y() + z() * z())));
+		angle_y = asin(sinp);
+		angle_x = atan2(T(2) * (s() * x() + y() * z()), T(1) - T(2) * (x() * x() + y() * y()));
+		angle_z = atan2(T(2) * (s() * z() + x() * y()), T(1) - T(2) * (y() * y() + z() * z()));
 	}
 
 	return { angle_x, angle_y, angle_z };

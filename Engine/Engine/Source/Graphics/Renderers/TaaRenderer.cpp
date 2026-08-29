@@ -14,6 +14,7 @@ import :world_text_renderer;
 
 
 import gse.gpu;
+import gse.gpu_record;
 import gse.core;
 import gse.containers;
 import gse.concurrency;
@@ -24,18 +25,29 @@ import gse.meta;
 namespace gse::renderer::taa {
 	struct [[
 		= shaders::binding<0, 0>{},
-		= shaders::sampler2d
-	]] hdr_color {};
+		= shaders::texture2d
+	]] hdr_color {
+		using element = vec4f;
+	};
 
 	struct [[
 		= shaders::binding<0, 1>{},
-		= shaders::sampler2d
-	]] velocity_color {};
+		= shaders::texture2d
+	]] velocity_color {
+		using element = vec4f;
+	};
 
 	struct [[
 		= shaders::binding<0, 2>{},
-		= shaders::sampler2d
-	]] history_color {};
+		= shaders::texture2d
+	]] history_color {
+		using element = vec4f;
+	};
+
+	struct [[
+		= shaders::binding<0, 3>{},
+		= shaders::sampler_state
+	]] color_sampler {};
 
 	struct [[= shaders::shader_struct]] push_constants {
 		float blend_alpha;
@@ -43,7 +55,7 @@ namespace gse::renderer::taa {
 		vec2f inv_extent;
 	};
 
-	using shader_binding_types = type_pack<hdr_color, velocity_color, history_color>;
+	using shader_binding_types = type_pack<hdr_color, velocity_color, history_color, color_sampler>;
 
 	using entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/Taa">,
@@ -85,7 +97,7 @@ auto gse::renderer::taa::recreate_history(const shared_view<gpu::context::data> 
 			{
 				.size = extent,
 				.format = gpu::image_format::r16g16b16a16_sfloat,
-				.usage = gpu::image_flag::color_attachment | gpu::image_flag::sampled,
+				.usage = { gpu::image_flag::color_attachment, gpu::image_flag::sampled },
 			},
 			std::format("taa_history_{}", i)
 		);
@@ -141,7 +153,7 @@ auto gse::renderer::taa::init(context& ctx, const shared_view<gpu::context::data
 	return {};
 }
 
-auto gse::renderer::taa::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
+auto gse::renderer::taa::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -160,7 +172,7 @@ auto gse::renderer::taa::frame(const context& ctx, shared_view<gpu::context::dat
 	const bool history_ready = d.taa_enabled && d.frames_since_history_invalid >= 2;
 	++d.frames_since_history_invalid;
 
-	auto rec = co_await gpu::pass<^^gse::renderer::taa::frame>(ctx)
+	auto rec = co_await gpu::pass<^^frame>(pass_out)
 		.pipeline(d.pipeline)
 		.color(gpu::clear_color(
 			gpu::color_clear{ 0.0f, 0.0f, 0.0f, 1.0f },
@@ -187,9 +199,10 @@ auto gse::renderer::taa::frame(const context& ctx, shared_view<gpu::context::dat
 			.inv_extent = vec2f{ 1.0f / static_cast<float>(ext.x()), 1.0f / static_cast<float>(ext.y()) },
 		},
 		{
-			.hdr_color = { d.hdr_view.slot(), d.sampler.slot() },
-			.velocity_color = { d.velocity_view.slot(), d.sampler.slot() },
-			.history_color = { d.history_views[1u - frame_index].slot(), d.sampler.slot() },
+			.hdr_color = d.hdr_view.slot(),
+			.velocity_color = d.velocity_view.slot(),
+			.history_color = d.history_views[1u - frame_index].slot(),
+			.color_sampler = d.sampler.slot(),
 		}
 	);
 	rec.draw(3);

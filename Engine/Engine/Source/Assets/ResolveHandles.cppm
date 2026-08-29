@@ -22,12 +22,6 @@ export namespace gse::asset {
 }
 
 namespace gse::asset {
-	template <typename>
-	constexpr bool is_resource_handle_v = false;
-
-	template <typename T>
-	constexpr bool is_resource_handle_v<resource::handle<T>> = true;
-
 	template <typename T>
 	consteval auto has_networked_members() -> bool;
 }
@@ -57,13 +51,20 @@ auto gse::asset::resolve_handles(T& c, const shared_view<data> assets) -> void {
 		if constexpr (has_annotation<networked_tag>(m)) {
 			using m_type = typename[:std::meta::type_of(m):];
 
-			if constexpr (is_resource_handle_v<m_type>) {
+			if constexpr (resource::is_handle_v<m_type>) {
 				resolve(c.[:m:], assets);
 			}
 			else if constexpr (std::ranges::range<m_type>) {
-				if constexpr (is_resource_handle_v<std::ranges::range_value_t<m_type>>) {
+				using element_type = std::ranges::range_value_t<m_type>;
+
+				if constexpr (resource::is_handle_v<element_type>) {
 					for (auto& h : c.[:m:]) {
 						resolve(h, assets);
+					}
+				}
+				else if constexpr (has_networked_members<element_type>()) {
+					for (auto& element : c.[:m:]) {
+						resolve_handles(element, assets);
 					}
 				}
 			}

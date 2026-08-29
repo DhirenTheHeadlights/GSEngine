@@ -8,6 +8,7 @@ import gse.core;
 import gse.time;
 
 import :font;
+import :text_buffer;
 import :texture;
 import :ui_renderer;
 import :styles;
@@ -15,7 +16,24 @@ import :render_layer;
 import :input_layers;
 
 export namespace gse::gui {
-	using ui_rect = rect_t<vec2f>;
+	namespace symbol {
+		enum class shape : std::uint8_t {
+			segment,
+			arc
+		};
+
+		struct stroke {
+			shape kind = shape::segment;
+			vec2f from;
+			vec2f to;
+			vec2f center;
+			float radius = 0.f;
+			angle begin;
+			angle sweep;
+		};
+	}
+
+	using symbol_glyph = std::span<const symbol::stroke> (*)();
 
 	enum class resize_handle {
 		none,
@@ -40,14 +58,21 @@ export namespace gse::gui {
 		static constexpr time show_delay = seconds(0.5f);
 	};
 
-	struct scroll_state {
+	struct scroll_axis {
 		float offset = 0.f;
+		float target = 0.f;
 		float velocity = 0.f;
-		float target_offset = 0.f;
-		float content_height = 0.f;
-		bool scrollbar_held = false;
-		bool scrollbar_hovered = false;
-		float scrollbar_grab_offset = 0.f;
+		float content = 0.f;
+		bool held = false;
+		bool hovered = false;
+		float grab = 0.f;
+	};
+
+	struct scroll_state {
+		scroll_axis y;
+		scroll_axis x;
+		bool auto_scroll_active = false;
+		vec2f auto_scroll_anchor;
 	};
 
 	struct scroll_config {
@@ -59,10 +84,52 @@ export namespace gse::gui {
 		bool smooth_scrolling = true;
 	};
 
+	struct scroll_bar_input {
+		rectf track_rect;
+		float visible_extent = 0.f;
+		float content_extent = 0.f;
+		bool horizontal = false;
+		vec2f mouse;
+		bool mouse_pressed = false;
+		bool mouse_held = false;
+		float min_thumb = 20.f;
+	};
+
+	struct scroll_bar_result {
+		rectf track_rect;
+		rectf thumb_rect;
+		bool visible = false;
+		bool hovered = false;
+		bool held = false;
+		bool used_press = false;
+	};
+
 	struct scroll_region_info {
 		std::string_view id;
 		vec2f size{ 0.f, 0.f };
 		scroll_config config{};
+	};
+
+	struct row_list_info {
+		std::string_view id;
+		rectf bounds;
+		float row_height = 0.f;
+		std::size_t row_count = 0;
+		scroll_config config{};
+	};
+
+	struct row {
+		std::size_t index = 0;
+		rectf rect;
+		rectf visible;
+		bool hovered = false;
+	};
+
+	struct tab_strip_state {
+		scroll_axis scroll{};
+		id scroll_active;
+		id dragging;
+		std::uint32_t visible_rows = 1;
 	};
 }
 
@@ -77,8 +144,8 @@ export namespace gse::gui::dock {
 	};
 
 	struct area {
-		ui_rect rect;
-		ui_rect target;
+		rectf rect;
+		rectf target;
 		location dock_location = location::none;
 
 		~area() noexcept = default;
@@ -86,6 +153,11 @@ export namespace gse::gui::dock {
 
 	struct space {
 		std::array<area, 5> areas;
+		location hot = location::none;
+
+		auto select(
+			vec2f point
+		) -> location;
 
 		~space() noexcept = default;
 	};
@@ -93,13 +165,51 @@ export namespace gse::gui::dock {
 
 export namespace gse::gui {
 	struct menu_data {
-		ui_rect rect;
+		rectf rect;
 		id parent_id;
 		dock::location docked_to = dock::location::none;
 		float dock_split_ratio = 0.5f;
 	};
 
+	struct drag_ghost {
+		std::string label;
+		vec2f position;
+		bool detaching = false;
+	};
+
+	enum class caption_action : std::uint8_t {
+		minimize,
+		toggle_maximize,
+		close,
+	};
+
 	struct draw_context;
+	struct layer_scope;
+
+	enum class panel_edge : std::uint8_t {
+		left,
+		right,
+		top,
+		bottom,
+	};
+
+	struct font_set {
+		resource::handle<font> text;
+		resource::handle<font> text_strong;
+		resource::handle<font> text_emphasis;
+		resource::handle<font> code;
+		resource::handle<font> code_strong;
+		std::unordered_map<std::string, resource::handle<font>> registry;
+
+		[[nodiscard]] auto named(
+			std::string_view name
+		) const -> resource::handle<font>;
+
+		[[nodiscard]] auto face(
+			text_face which,
+			resource::handle<font> inherited
+		) const -> resource::handle<font>;
+	};
 
 	struct menu : identifiable, identifiable_owned {
 		explicit menu(
@@ -107,40 +217,110 @@ export namespace gse::gui {
 			const menu_data& data
 		);
 
-		ui_rect rect;
+		rectf rect;
 		vec2f grab_offset;
 		std::optional<vec2f> pre_docked_size;
 		bool grabbed = false;
 		bool chrome_drawn_this_frame = false;
 		float dock_split_ratio = 0.5f;
-		resize_handle active_resize_handle = resize_handle::none;
 		dock::location docked_to = dock::location::none;
+		bool fixed = false;
+		bool bare = false;
+		std::optional<panel_edge> accent_edge;
 		std::vector<std::string> tab_contents;
 		std::uint32_t active_tab_index = 0;
+		bool tabs_closeable = true;
+		tab_strip_state tab_bar;
 		std::uint32_t z_order = 0;
 		bool was_begun_this_frame = false;
 		bool was_visible_last_frame = false;
 	};
 
-	struct draw_context {
+	struct menu_item {
+		std::string label;
+		symbol_glyph icon = nullptr;
+		std::uint32_t action_id = 0;
+		bool destructive = false;
+		bool enabled = true;
+		bool separator_before = false;
+		bool checkable = false;
+		bool checked = false;
+	};
+
+	using context_menu_target = std::variant<std::monostate, std::uint64_t, id>;
+
+	struct context_menu_open {
+		vec2f position;
+		std::vector<menu_item> items;
+		context_menu_target target;
+		id tag;
+	};
+
+	struct context_menu_state {
+		bool open = false;
+		bool just_opened = false;
+		vec2f position;
+		std::vector<menu_item> items;
+		context_menu_target target;
+		id tag;
+	};
+
+	struct context_menu_result {
+		id tag;
+		std::uint32_t action_id = 0;
+		context_menu_target target;
+	};
+
+	struct draw_context_init {
 		menu* current_menu;
 		const style& style;
-		const input::state& input;
-		resource::handle<font> font;
+		const font_set& fonts;
 		resource::handle<texture> blank_texture;
 		vec2f& layout_cursor;
 		std::vector<renderer::sprite_command>& sprites;
 		std::vector<renderer::text_command>& texts;
+		std::deque<std::string>& text_pool;
+		std::size_t& text_pool_used;
 		std::unordered_map<std::uint64_t, vec4f>& widget_anim_colors;
 		std::unordered_map<std::uint64_t, scroll_state>& widget_scrolls;
-
+		std::unordered_map<std::uint64_t, std::unordered_set<std::uint64_t>>& widget_tree_open;
 		render_layer current_layer = render_layer::content;
+		std::uint32_t current_z_order = 0;
+		render_layer input_layer = render_layer::content;
+		bool input_suppressed = false;
+		bool owns_keyboard = true;
+		class input_layer* hit_regions = nullptr;
+		tooltip_state* tooltip = nullptr;
+		context_menu_state* context_menu = nullptr;
+		std::vector<rectf> clip_stack;
+	};
+
+	struct draw_context : non_copyable, non_movable {
+		~draw_context() = default;
+
+		menu* current_menu;
+		const style& style;
+		const font_set& fonts;
+		resource::handle<texture> blank_texture;
+		vec2f& layout_cursor;
+		std::vector<renderer::sprite_command>& sprites;
+		std::vector<renderer::text_command>& texts;
+		std::deque<std::string>& text_pool;
+		std::size_t& text_pool_used;
+		std::unordered_map<std::uint64_t, vec4f>& widget_anim_colors;
+		std::unordered_map<std::uint64_t, scroll_state>& widget_scrolls;
+		std::unordered_map<std::uint64_t, std::unordered_set<std::uint64_t>>& widget_tree_open;
+
+		mutable render_layer current_layer = render_layer::content;
 		std::uint32_t current_z_order = 0;
 
 		render_layer input_layer = render_layer::content;
+		bool input_suppressed = false;
+		bool owns_keyboard = true;
 		class input_layer* hit_regions = nullptr;
 		tooltip_state* tooltip = nullptr;
-		std::vector<ui_rect> clip_stack;
+		context_menu_state* context_menu = nullptr;
+		std::vector<rectf> clip_stack;
 
 		auto queue_sprite(
 			renderer::sprite_command cmd
@@ -150,9 +330,23 @@ export namespace gse::gui {
 			renderer::text_command cmd
 		) const -> void;
 
+		auto intern(
+			std::string_view text
+		) const -> std::string_view;
+
+		auto open_context_menu(
+			context_menu_open request
+		) const -> void;
+
+		auto set_clipboard(
+			const std::string& text
+		) const -> void;
+
+		auto clipboard() const -> std::string;
+
 		auto register_hit_region(
 			render_layer layer,
-			const ui_rect& rect
+			const rectf& rect
 		) const -> void;
 
 		[[nodiscard]] auto input_available() const -> bool;
@@ -161,17 +355,50 @@ export namespace gse::gui {
 			vec2f position
 		) const -> bool;
 
+		[[nodiscard]] auto hovers(
+			const rectf& rect
+		) const -> bool;
+
 		[[nodiscard]]
 		auto mouse_pressed_for(
-			const ui_rect& rect,
+			const rectf& rect,
 			mouse_button button = mouse_button::button_1
 		) const -> bool;
 
 		[[nodiscard]]
 		auto mouse_released_for(
-			const ui_rect& rect,
+			const rectf& rect,
 			mouse_button button = mouse_button::button_1
 		) const -> bool;
+
+		[[nodiscard]]
+		auto mouse_released(
+			mouse_button button = mouse_button::button_1
+		) const -> bool;
+
+		[[nodiscard]]
+		auto mouse_pressed(
+			mouse_button button = mouse_button::button_1
+		) const -> bool;
+
+		[[nodiscard]]
+		auto mouse_held(
+			mouse_button button = mouse_button::button_1
+		) const -> bool;
+
+		[[nodiscard]] auto mouse_position() const -> vec2f;
+
+		[[nodiscard]] auto scroll_delta() const -> vec2f;
+
+		[[nodiscard]] auto key_pressed(
+			key k
+		) const -> bool;
+
+		[[nodiscard]] auto key_held(
+			key k
+		) const -> bool;
+
+		[[nodiscard]] auto text_entered() const -> const std::string&;
 
 		auto consume_press(
 			mouse_button button = mouse_button::button_1
@@ -186,7 +413,7 @@ export namespace gse::gui {
 		) const -> bool;
 
 		[[nodiscard]] auto scroll_delta_for(
-			const ui_rect& rect
+			const rectf& rect
 		) const -> vec2f;
 
 		auto consume_scroll() const -> void;
@@ -207,8 +434,9 @@ export namespace gse::gui {
 		) const -> void;
 
 		auto next_row(
+			const resource::handle<font>& font,
 			float height_multiplier = 1.f
-		) const -> ui_rect;
+		) const -> rectf;
 
 		auto animated_color(
 			const id& widget_id,
@@ -216,7 +444,44 @@ export namespace gse::gui {
 			float speed = 10.f
 		) const -> vec4f;
 
-		[[nodiscard]] auto current_clip() const -> std::optional<ui_rect>;
+		[[nodiscard]] auto current_clip() const -> std::optional<rectf>;
+
+		[[nodiscard]] auto scoped_layer(
+			render_layer layer
+		) const -> layer_scope;
+
+	protected:
+		draw_context(
+			draw_context_init init,
+			const input::state& input
+		);
+
+	private:
+		const input::state& m_input;
+	};
+
+	struct layer_scope : non_copyable {
+		layer_scope() noexcept = default;
+
+		layer_scope(
+			const draw_context& ctx,
+			render_layer layer
+		) noexcept;
+
+		layer_scope(
+			layer_scope&& other
+		) noexcept;
+
+		auto operator=(
+			layer_scope&& other
+		) noexcept -> layer_scope&;
+
+		~layer_scope() noexcept;
+
+	private:
+		const draw_context* m_ctx = nullptr;
+		render_layer m_saved = render_layer::content;
+		bool m_active = false;
 	};
 
 	struct scroll_handle : non_copyable {
@@ -225,7 +490,7 @@ export namespace gse::gui {
 		scroll_handle(
 			draw_context& ctx,
 			scroll_state& state,
-			const ui_rect& visible_rect,
+			const rectf& visible_rect,
 			float saved_layout_y,
 			const scroll_config& config
 		) noexcept;
@@ -242,17 +507,24 @@ export namespace gse::gui {
 
 		[[nodiscard]] auto valid() const -> bool;
 
-		[[nodiscard]] auto visible_rect() const -> const ui_rect&;
+		[[nodiscard]] auto visible_rect() const -> const rectf&;
 
 		[[nodiscard]] auto offset() const -> float;
+
+		[[nodiscard]] auto offset_x() const -> float;
+
+		auto set_content_width(
+			float width
+		) -> void;
 
 	private:
 		draw_context* m_ctx = nullptr;
 		scroll_state* m_state = nullptr;
-		ui_rect m_visible_rect;
-		ui_rect m_saved_menu_rect;
+		rectf m_visible_rect;
+		rectf m_saved_menu_rect;
 		float m_saved_layout_y = 0.f;
 		float m_content_start_y = 0.f;
+		float m_content_width = 0.f;
 		scroll_config m_config{};
 		bool m_active = false;
 	};
@@ -261,6 +533,78 @@ export namespace gse::gui {
 		draw_context& ctx,
 		const scroll_region_info& info
 	) -> scroll_handle;
+
+	template <typename F>
+	requires std::invocable<F, const row&>
+	auto row_list(
+		draw_context& ctx,
+		const row_list_info& info,
+		F&& draw_row
+	) -> void;
+
+	auto scroll_area(
+		const draw_context& ctx,
+		scroll_state& state,
+		const rectf& visible_rect,
+		vec2f content_size,
+		const scroll_config& config = {}
+	) -> vec2f;
+
+	auto update_scroll_bar(
+		scroll_axis& axis,
+		const scroll_bar_input& input
+	) -> scroll_bar_result;
+}
+
+template <typename F>
+requires std::invocable<F, const gse::gui::row&>
+auto gse::gui::row_list(draw_context& ctx, const row_list_info& info, F&& draw_row) -> void {
+	if (info.row_height <= 0.f) {
+		return;
+	}
+
+	ctx.layout_cursor = { info.bounds.left(), info.bounds.top() };
+
+	const scroll_handle region = scroll_region(ctx, {
+		.id = info.id,
+		.size = info.bounds.size(),
+		.config = info.config,
+	});
+	if (!region.valid()) {
+		return;
+	}
+
+	const rectf& visible_rect = region.visible_rect();
+	const float content_start_y = ctx.layout_cursor.y();
+	const float content_height = static_cast<float>(info.row_count) * info.row_height;
+	const float row_width = std::max(
+		0.f,
+		visible_rect.width() - (content_height > visible_rect.height() ? info.config.scrollbar_width : 0.f)
+	);
+
+	const float first_edge = region.offset() / info.row_height;
+	const float past_last_edge = (region.offset() + visible_rect.height()) / info.row_height;
+	const auto first = static_cast<std::size_t>(std::max(0.f, std::floor(first_edge)));
+	const auto past_last = std::min(info.row_count, static_cast<std::size_t>(std::max(0.f, std::ceil(past_last_edge))));
+
+	for (std::size_t i = first; i < past_last; ++i) {
+		const rectf rect = rectf::from_position_size(
+			{ visible_rect.left(), content_start_y - static_cast<float>(i) * info.row_height },
+			{ row_width, info.row_height }
+		);
+		const rectf visible = rect.intersection(visible_rect);
+		if (visible.height() <= 0.f) {
+			continue;
+		}
+		draw_row(row{
+			.index = i,
+			.rect = rect,
+			.visible = visible,
+			.hovered = ctx.hovers(visible),
+		});
+	}
+
+	ctx.layout_cursor.y() = content_start_y - content_height;
 }
 
 namespace gse::gui::states {
@@ -292,7 +636,7 @@ namespace gse::gui::states {
 namespace gse::gui {
 	struct state {
 		using value_type = std::
-			variant<states::idle, states::dragging, states::resizing, states::resizing_divider, states::pending_drag>;
+		variant<states::idle, states::dragging, states::resizing, states::resizing_divider, states::pending_drag>;
 
 		value_type v;
 

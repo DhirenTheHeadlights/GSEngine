@@ -44,7 +44,7 @@ export namespace gse::network {
 		) -> void;
 
 		auto messages_to_resend(
-			std::uint32_t retry_interval_ms
+			time_t<std::uint64_t, milliseconds> retry_interval
 		) -> std::vector<pending_reliable_message*>;
 
 	private:
@@ -126,10 +126,9 @@ auto gse::network::remote_peer::process_acks(const std::uint32_t ack, const std:
 	);
 }
 
-auto gse::network::remote_peer::messages_to_resend(const std::uint32_t retry_interval_ms) -> std::vector<pending_reliable_message*> {
+auto gse::network::remote_peer::messages_to_resend(const time_t<std::uint64_t, milliseconds> retry_interval) -> std::vector<pending_reliable_message*> {
 	std::vector<pending_reliable_message*> result;
 	const auto now = system_clock::now<time_t<std::uint64_t, milliseconds>>();
-	const auto retry_interval = milliseconds(static_cast<std::uint64_t>(retry_interval_ms));
 
 	for (auto& msg : m_pending_reliable) {
 		if (now - msg.sent_time >= retry_interval) {

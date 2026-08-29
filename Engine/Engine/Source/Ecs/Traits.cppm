@@ -64,8 +64,5 @@ export namespace gse {
 	using structural_element_t = structural_traits<std::remove_cvref_t<T>>::element_type;
 
 	template <typename T>
-	constexpr bool is_registry_access_v = std::is_same_v<std::remove_cvref_t<T>, registry_access>;
-
-	template <typename T>
 	constexpr bool is_entities_v = std::is_same_v<std::remove_cvref_t<T>, entities>;
 }

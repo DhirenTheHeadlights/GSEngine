@@ -14,7 +14,7 @@ import gse.os;
 import gse.assets;
 import gse.config;
 import gse.gpu;
-import gse.vulkan;
+import gse.gpu_record;
 import gse.core;
 import gse.concurrency;
 import gse.diag;
@@ -44,17 +44,17 @@ namespace gse::renderer::capture {
 		using element = vec2f;
 	};
 
-	using shader_binding_types = type_pack<output_y, output_uv, shaders::bindless::textures>;
+	using shader_binding_types = type_pack<output_y, output_uv, shaders::bindless::textures, shaders::bindless::textures_sampler>;
 
 	using entry = gpu::compute_entry<gpu::body_path<"Compute/rgba_to_nv12">, gpu::bindings<shader_binding_types>, gpu::threads<16, 16, 1>, gpu::push_constant<push_constants>, gpu::system_values<gpu::dispatch_thread_id>>;
 }
 
-auto gse::renderer::capture::init(context& ctx, const shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
-	const auto register_action = [&](const std::string_view name, const key default_key) -> actions::handle {
+auto gse::renderer::capture::init(context& ctx, const shared_view<gpu::context::data> gpu_s, data& d, const channel_write<actions::add_action_request> actions_out) -> async::task<> {
+	const auto register_action = [&](const std::string_view name, const key default_key, const key_modifiers default_modifiers = {}) -> actions::handle {
 		const id action_id = generate_id(name);
-		ctx.channels.push<actions::add_action_request>({
+		actions_out.push<actions::add_action_request>({
 			.name = std::string(name),
-			.default_key = default_key,
+			.default_combo = { .k = default_key, .mods = default_modifiers },
 			.action_id = action_id,
 		});
 		return actions::handle(action_id);
@@ -62,10 +62,14 @@ auto gse::renderer::capture::init(context& ctx, const shared_view<gpu::context::
 
 	d.screenshot_action = register_action("Screenshot", key::f9);
 	d.save_clip_action = register_action("Save Clip", key::f10);
-	d.toggle_recording_action = register_action("Toggle Recording", key::p);
+	d.toggle_recording_action = register_action("Toggle Recording", key::r, { key_modifier::ctrl, key_modifier::shift });
 
 	const auto ext = gpu_s.render_graph->extent();
-	auto encoder = gpu_s.device->make_video_encoder(ext);
+	auto encoder = gpu_s.device->make_video_encoder({
+		.extent = ext,
+		.average_bitrate = d.capture_bitrate,
+		.frame_interval = d.capture_interval
+	});
 	if (!gpu_s.device->video_encode_enabled()) {
 		log::println(log::category::render, "Video encode not available, capture limited to screenshots");
 	}
@@ -73,9 +77,15 @@ auto gse::renderer::capture::init(context& ctx, const shared_view<gpu::context::
 		log::println(log::category::render, "Video encode probe failed, capture limited to screenshots");
 	}
 	else {
-		const auto half_ext = vec2u{ ext.x() / 2, ext.y() / 2 };
-
 		d.convert_pipeline = gpu::build_compute_program(*gpu_s.device, entry::pod);
+
+		d.sampler = gpu_s.device->register_sampler({
+			.min = gpu::sampler_filter::linear,
+			.mag = gpu::sampler_filter::linear,
+			.address_u = gpu::sampler_address_mode::clamp_to_edge,
+			.address_v = gpu::sampler_address_mode::clamp_to_edge,
+			.address_w = gpu::sampler_address_mode::clamp_to_edge,
+		});
 
 		constexpr gpu::sampler_desc capture_sampler_desc{
 			.min = gpu::sampler_filter::nearest,
@@ -90,39 +100,18 @@ auto gse::renderer::capture::init(context& ctx, const shared_view<gpu::context::
 				{
 					.size = ext,
 					.format = gpu::image_format::r8g8b8a8_unorm,
-					.usage = gpu::image_flag::sampled | gpu::image_flag::transfer_dst,
+					.usage = { gpu::image_flag::sampled, gpu::image_flag::transfer_dst },
 				}
 			);
 
 			d.rgba_slots[i] = gpu_s.device->register_texture(d.rgba_captures[i], capture_sampler_desc);
-
-			d.y_planes[i] = gpu_s.device->create_image(
-				{
-					.size = ext,
-					.format = gpu::image_format::r8_unorm,
-					.usage = gpu::image_flag::storage | gpu::image_flag::transfer_src,
-					.bindless = true
-				},
-				"capture.y_plane"
-			);
-			gpu::transition_image_to(*gpu_s.device, d.y_planes[i]);
-
-			d.uv_planes[i] = gpu_s.device->create_image(
-				{
-					.size = half_ext,
-					.format = gpu::image_format::r8g8_unorm,
-					.usage = gpu::image_flag::storage | gpu::image_flag::transfer_src,
-					.bindless = true
-				},
-				"capture.uv_plane"
-			);
-			gpu::transition_image_to(*gpu_s.device, d.uv_planes[i]);
 		}
 
 		d.encoder = std::move(*encoder);
 
 		d.clip_ring.set_budget(d.ring_budget);
 		d.applied_ring_budget = d.ring_budget;
+		d.applied_capture_bitrate = d.capture_bitrate;
 
 		d.encode_active = true;
 	}
@@ -130,24 +119,24 @@ auto gse::renderer::capture::init(context& ctx, const shared_view<gpu::context::
 	return {};
 }
 
-auto gse::renderer::capture::run(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, const shared_view<actions::data> sys, data& d) -> async::task<> {
+auto gse::renderer::capture::run(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, const shared_view<actions::data> sys, data& d, const channel_write<screenshot_request, save_clip_request, toggle_recording_request> capture_out) -> async::task<> {
 	const auto& action_state = actions::current_state(sys);
 
 	if (actions::pressed(action_state, sys, d.screenshot_action)) {
-		ctx.channels.push<screenshot_request>({});
+		capture_out.push<screenshot_request>({});
 	}
 	if (actions::pressed(action_state, sys, d.save_clip_action)) {
-		ctx.channels.push<save_clip_request>({});
+		capture_out.push<save_clip_request>({});
 	}
 	if (actions::pressed(action_state, sys, d.toggle_recording_action)) {
 		log::println(log::category::render, "toggle_recording_action edge detected in run()");
-		ctx.channels.push<toggle_recording_request>({});
+		capture_out.push<toggle_recording_request>({});
 	}
 
 	return {};
 }
 
-auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
+auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<toggle_recording_request, save_clip_request, screenshot_request> capture_in) -> async::task<> {
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
 	auto& [staging, width, height, pending] = d.screenshots[frame_index];
@@ -160,18 +149,18 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 		const auto h = height;
 		const auto byte_count = static_cast<std::size_t>(w) * h * 4;
 		std::vector<std::byte> pixels(byte_count);
-		gse::memcpy(pixels.data(), staging.host_read().data(), byte_count);
+		memcpy(pixels.data(), staging.host_read().data(), byte_count);
 
 		const bool needs_swizzle = gpu_s.swapchain->is_bgra();
 		const auto timestamp = system_clock::timestamp_filename();
 
-		task::post(
+		task::post_io(
 			[pixels = std::move(pixels),
-			 w,
-			 h,
-			 needs_swizzle,
-			 timestamp,
-			 write_flag = d.write_in_progress.get()] mutable {
+				w,
+				h,
+				needs_swizzle,
+				timestamp,
+				write_flag = d.write_in_progress.get()] mutable {
 				for (std::size_t i = 0; i < pixels.size(); i += 4) {
 					if (needs_swizzle) {
 						std::swap(pixels[i], pixels[i + 2]);
@@ -179,11 +168,11 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 					pixels[i + 3] = std::byte{ 0xFF };
 				}
 
-				const auto path = config::resource_path / "Screenshots" / std::format("screenshot_{}.png", timestamp);
+				const auto path = config::captures_dir() / "screenshots" / std::format("screenshot_{}.png", timestamp);
 				std::filesystem::create_directories(path.parent_path());
 
 				image::write_png(path, w, h, 4, pixels.data());
-				log::println(log::category::render, "Screenshot saved: {}", path.string());
+				log::println(log::category::render, "Screenshot saved: {}", path.generic_display_string());
 
 				write_flag->store(false);
 			},
@@ -196,9 +185,29 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 		d.applied_ring_budget = d.ring_budget;
 	}
 
-	if (d.encode_active && d.encoder.valid()) {
-		d.encoder.wait(frame_index);
-		if (auto unit = d.encoder.read_bitstream(frame_index)) {
+	if (d.capture_bitrate != d.applied_capture_bitrate) {
+		d.applied_capture_bitrate = d.capture_bitrate;
+		if (d.encode_active && d.encoder.valid()) {
+			d.encoder.set_bitrate(d.capture_bitrate);
+			log::println(log::category::render, "Capture bitrate set to {:.1f:Mb/s}", d.capture_bitrate);
+		}
+	}
+
+	const auto capture_pts = system_clock::content_now<time>();
+	const bool capture_due = d.encode_enabled && d.encode_active && d.encoder.valid() && gpu_s.render_graph->frame_in_progress() &&
+		(!d.captured_once || capture_pts - d.last_capture_pts >= d.capture_interval);
+
+	d.encode_target = {};
+
+	if (capture_due) {
+		d.encode_target = d.encoder.begin_capture(capture_pts);
+		const auto overshoot = capture_pts - d.last_capture_pts;
+		d.last_capture_pts = d.captured_once && overshoot < d.capture_interval * 2.f
+			? d.last_capture_pts + d.capture_interval
+			: capture_pts;
+		d.captured_once = true;
+
+		if (auto unit = d.encoder.take_bitstream()) {
 			const bool was_keyframe = unit->keyframe;
 			const auto byte_count = unit->bytes.size();
 
@@ -226,14 +235,10 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 				);
 			}
 		}
-		d.encoder.encode_frame(
-			frame_index,
-			d.y_planes[frame_index].handle(),
-			d.uv_planes[frame_index].handle()
-		);
+		d.encoder.submit_ready();
 	}
 
-	const auto toggle_requests = ctx.read_channel<toggle_recording_request>();
+	const auto toggle_requests = capture_in.of<toggle_recording_request>();
 	if (!toggle_requests.empty()) {
 		const auto now = std::chrono::steady_clock::now();
 		const auto since_last = now - d.recording->last_toggle;
@@ -261,7 +266,7 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 			if (d.recording->thread.joinable()) {
 				d.recording->thread.join();
 			}
-			log::println(log::category::render, "Recording stopped: {}", d.recording->path.string());
+			log::println(log::category::render, "Recording stopped: {}", d.recording->path.generic_display_string());
 		}
 		else if (d.encoder.stream_header().empty()) {
 			log::println(
@@ -272,7 +277,7 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 		}
 		else {
 			d.recording->last_toggle = now;
-			const auto path = config::resource_path / "Recordings" / std::format("recording_{}.mp4", system_clock::timestamp_filename());
+			const auto path = config::captures_dir() / "recordings" / std::format("recording_{}.mp4", system_clock::timestamp_filename());
 			std::filesystem::create_directories(path.parent_path());
 
 			auto live = mp4::live_muxer::open(
@@ -285,7 +290,7 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 					log::level::warning,
 					log::category::render,
 					"Failed to open recording file at {}",
-					path.string()
+					path.generic_display_string()
 				);
 			}
 			else {
@@ -297,6 +302,7 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 					d.recording->running = true;
 				}
 				d.recording->thread = std::thread([muxer = std::move(*live), state = d.recording.get()] mutable {
+					log::name_thread(log::thread_role::capture);
 					while (true) {
 						std::unique_lock lock(state->mutex);
 						state->cv.wait(
@@ -319,12 +325,12 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 					muxer.close();
 				});
 				d.recording->active.store(true);
-				log::println(log::category::render, "Recording started: {}", path.string());
+				log::println(log::category::render, "Recording started: {}", path.generic_display_string());
 			}
 		}
 	}
 
-	if (!ctx.read_channel<save_clip_request>().empty()) {
+	if (!capture_in.of<save_clip_request>().empty()) {
 		if (!d.encode_active || !d.encoder.valid()) {
 			log::println(log::category::render, "Save Clip pressed but video capture is unavailable");
 		}
@@ -347,7 +353,7 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 				d.clip_save_in_progress->store(true);
 
 				const auto path =
-					config::resource_path / "Clips" / std::format("clip_{}.mp4", system_clock::timestamp_filename());
+					config::captures_dir() / "clips" / std::format("clip_{}.mp4", system_clock::timestamp_filename());
 				std::filesystem::create_directories(path.parent_path());
 
 				std::vector<std::byte> stream_header_copy(
@@ -355,13 +361,13 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 					d.encoder.stream_header().end()
 				);
 
-				task::post(
+				task::post_io(
 					[snap = std::move(snapshot),
-					 codec = d.encoder.codec(),
-					 extent = d.encoder.extent(),
-					 stream_header = std::move(stream_header_copy),
-					 path,
-					 flag = d.clip_save_in_progress.get()] mutable -> void {
+						codec = d.encoder.codec(),
+						extent = d.encoder.extent(),
+						stream_header = std::move(stream_header_copy),
+						path,
+						flag = d.clip_save_in_progress.get()] mutable -> void {
 						const auto ok = mp4::mux(
 							snap,
 							{ codec, extent },
@@ -369,14 +375,14 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 							path
 						);
 						if (ok) {
-							log::println(log::category::render, "Clip saved: {}", path.string());
+							log::println(log::category::render, "Clip saved: {}", path.generic_display_string());
 						}
 						else {
 							log::println(
 								log::level::warning,
 								log::category::render,
 								"Failed to mux clip to {}",
-								path.string()
+								path.generic_display_string()
 							);
 						}
 						flag->store(false);
@@ -387,7 +393,7 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 		}
 	}
 
-	if (!ctx.read_channel<screenshot_request>().empty() && !d.write_in_progress->load()) {
+	if (!capture_in.of<screenshot_request>().empty() && !d.write_in_progress->load()) {
 		const auto ext = gpu_s.render_graph->extent();
 
 		if (const auto needed = static_cast<std::size_t>(ext.x()) * ext.y() * 4; !staging.valid() || staging.size() < needed) {
@@ -409,7 +415,7 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 	}
 
 	const bool do_screenshot = d.screenshot_requested;
-	const bool do_encode = d.encode_active;
+	const bool do_encode = d.encode_target.valid;
 
 	if (!do_screenshot && !do_encode) {
 		co_return;
@@ -422,7 +428,7 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 		.rgba_index = d.rgba_slots[frame_index].valid() ? d.rgba_slots[frame_index].slot().index : shaders::bindless::invalid_index,
 	};
 
-	auto rec = co_await gpu::pass<^^gse::renderer::capture::frame>(ctx).pipeline(d.convert_pipeline).after<^^ui::frame>();
+	auto rec = co_await gpu::pass<^^frame>(pass_out).pipeline(d.convert_pipeline).after<^^ui::frame>();
 
 	if (do_screenshot) {
 		rec.capture_swapchain(*gpu_s.swapchain, *gpu_s.frame, staging);
@@ -442,8 +448,9 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 		rec.dispatch<entry>(
 			convert_pc,
 			{
-				.output_y = d.y_planes[frame_index].storage_slot(),
-				.output_uv = d.uv_planes[frame_index].storage_slot(),
+				.output_y = d.encode_target.y,
+				.output_uv = d.encode_target.uv,
+				.textures_sampler = d.sampler.slot(),
 			},
 			vec3u{ (ext.x() + 15) / 16, (ext.y() + 15) / 16, 1 }
 		);
@@ -466,5 +473,5 @@ auto gse::renderer::capture::shutdown(data& d) -> void {
 	if (d.recording->thread.joinable()) {
 		d.recording->thread.join();
 	}
-	log::println(log::category::render, "Recording stopped on shutdown: {}", d.recording->path.string());
+	log::println(log::category::render, "Recording stopped on shutdown: {}", d.recording->path.generic_display_string());
 }

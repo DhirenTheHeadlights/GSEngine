@@ -16,7 +16,7 @@ import gse.assets;
 import gse.log;
 
 gse::texture::texture(const std::filesystem::path& filepath)
-	: identifiable(filepath, config::baked_resource_path), m_image_data{
+	: identifiable(config::asset_tag(filepath)), m_image_data{
 		  .path = filepath
 	  } {
 }
@@ -35,27 +35,22 @@ gse::texture::texture(const std::string_view name, const std::vector<std::byte>&
 	  m_profile(texture_profile) {
 }
 
-auto gse::texture::load(asset::load_ctx& ctx) -> async::task<> {
+auto gse::texture::load(asset::load_ctx& ctx) -> async::task<asset_result> {
 	if (!m_image_data.path.empty()) {
-		texture::baked baked{};
-		if (!load_baked(m_image_data.path, baked)) {
-			co_return;
+		auto baked = load_baked<texture::baked>(m_image_data.path);
+		if (!baked) {
+			co_return std::unexpected(std::move(baked.error()));
 		}
 
-		m_image_data.size = { baked.width, baked.height };
-		m_image_data.channels = baked.channels;
-		m_image_data.pixels = std::move(baked.pixels.storage);
-		m_profile = baked.profile;
+		m_image_data.size = { baked->width, baked->height };
+		m_image_data.channels = baked->channels;
+		m_image_data.pixels = std::move(baked->pixels.storage);
+		m_profile = baked->profile;
 	}
 
 	auto& gpu_s = co_await gpu::on_gpu(ctx.channels);
 	create_vulkan_resources(gpu_s, m_profile);
-}
-
-auto gse::texture::unload() -> void {
-	m_image_data = {};
-	m_image = {};
-	m_bindless_slot = {};
+	co_return asset_result{};
 }
 
 auto gse::texture::gpu_image() const -> const gpu::image& {
@@ -68,10 +63,6 @@ auto gse::texture::image_data() const -> const image::data& {
 
 auto gse::texture::bindless_slot() const -> gpu::bindless_slot {
 	return m_bindless_slot.slot();
-}
-
-auto gse::texture::upload_token() const -> const gpu::sync_token& {
-	return m_upload_token;
 }
 
 auto gse::texture::create_vulkan_resources(gpu::context::data& context, const profile texture_profile) -> void {
@@ -96,12 +87,12 @@ auto gse::texture::create_vulkan_resources(gpu::context::data& context, const pr
 		{
 			.size = { width, height },
 			.format = gpu_format,
-			.usage = gpu::image_flag::sampled | gpu::image_flag::transfer_dst,
+			.usage = { gpu::image_flag::sampled, gpu::image_flag::transfer_dst },
 		},
 		std::format("texture:{}", id())
 	);
 
-	m_upload_token = context.device->upload_image_2d(m_image, m_image_data.pixels.data());
+	context.device->upload_image_2d(m_image, m_image_data.pixels.data());
 
 	constexpr auto clamp = gpu::sampler_address_mode::clamp_to_edge;
 	constexpr auto repeat = gpu::sampler_address_mode::repeat;

@@ -15,8 +15,14 @@ import gse.containers;
 import gse.concurrency;
 import gse.ecs;
 import gse.math;
+import gse.gpu_record;
 
 export namespace gse::renderer {
+	enum class sprite_shape : std::uint8_t {
+		rect,
+		arc
+	};
+
 	struct sprite_command {
 		rect_t<vec2f> rect;
 		vec4f color = { 1.0f, 1.0f, 1.0f, 1.0f };
@@ -27,18 +33,25 @@ export namespace gse::renderer {
 		render_layer layer = render_layer::content;
 		std::uint32_t z_order = 0;
 		float corner_radius = 0.f;
+		sprite_shape shape = sprite_shape::rect;
+		float arc_radius = 0.f;
+		angle arc_half_sweep;
+		float arc_thickness = 0.f;
 		bool sample_scene_snapshot = false;
+		gpu::bindless_slot image_slot = {};
+		id window;
 	};
 
 	struct text_command {
 		resource::handle<font> font;
-		std::string text;
+		std::string_view text;
 		vec2f position;
 		float scale = 1.0f;
 		vec4f color = { 1.0f, 1.0f, 1.0f, 1.0f };
 		std::optional<rect_t<vec2f>> clip_rect = std::nullopt;
 		render_layer layer = render_layer::content;
 		std::uint32_t z_order = 0;
+		id window;
 	};
 }
 
@@ -55,19 +68,26 @@ namespace gse::renderer::ui {
 		vec2f local_pos;
 		vec2f half_size;
 		float corner_radius = 0.f;
+		std::uint32_t shape_kind = 0;
+		float arc_radius = 0.f;
+		angle arc_half_sweep;
+		float arc_thickness = 0.f;
 	};
 
 	struct draw_batch {
 		command_type type;
+		id window;
 		std::uint32_t index_offset;
 		std::uint32_t index_count;
 		std::optional<rect_t<vec2f>> clip_rect;
 		resource::handle<texture> texture;
 		resource::handle<font> font;
 		bool sample_scene_snapshot = false;
+		gpu::bindless_slot image_slot = {};
 	};
 
-	export constexpr std::size_t max_quads_per_frame = 32768;
+	export constexpr std::size_t max_quads_per_frame = 131072;
+	export constexpr std::size_t max_batches_per_frame = 4096;
 	export constexpr std::size_t vertices_per_quad = 4;
 	export constexpr std::size_t indices_per_quad = 6;
 	export constexpr std::size_t max_vertices = max_quads_per_frame * vertices_per_quad;
@@ -77,11 +97,14 @@ namespace gse::renderer::ui {
 	struct gpu_frame_data {
 		linear_vector<vertex> vertices{ max_vertices };
 		linear_vector<std::uint32_t> indices{ max_indices };
-		linear_vector<draw_batch> batches{ 512 };
+		linear_vector<draw_batch> batches{ max_batches_per_frame };
+		std::size_t dropped_quads = 0;
+		std::size_t dropped_batches = 0;
 	};
 
 	struct unified_command {
 		command_type type;
+		id window;
 		render_layer layer;
 		std::uint32_t z_order;
 		std::optional<rect_t<vec2f>> clip_rect;
@@ -92,10 +115,15 @@ namespace gse::renderer::ui {
 		vec4f uv_rect;
 		angle rotation;
 		float corner_radius = 0.f;
+		sprite_shape shape = sprite_shape::rect;
+		float arc_radius = 0.f;
+		angle arc_half_sweep;
+		float arc_thickness = 0.f;
 		bool sample_scene_snapshot = false;
+		gpu::bindless_slot image_slot = {};
 
 		resource::handle<font> font;
-		std::string text;
+		std::string_view text;
 		vec2f position;
 		float scale;
 	};
@@ -104,13 +132,13 @@ namespace gse::renderer::ui {
 		linear_vector<vertex>& vertices,
 		linear_vector<std::uint32_t>& indices,
 		const unified_command& cmd
-	) -> void;
+	) -> std::size_t;
 
 	auto add_text_quads(
 		linear_vector<vertex>& vertices,
 		linear_vector<std::uint32_t>& indices,
 		const unified_command& cmd
-	) -> void;
+	) -> std::size_t;
 }
 
 export namespace gse::renderer::ui {
@@ -119,33 +147,54 @@ export namespace gse::renderer::ui {
 		gpu::buffer index_buffer;
 	};
 
-	struct [[= gse::system_state<"Ui">{}]] data {
+	struct record_state_info {
+		char label[40];
+	};
+
+	enum class record_state : std::uint8_t {
+		unknown [[= record_state_info{ .label = "unknown" }]],
+		recording [[= record_state_info{ .label = "recording" }]],
+		truncated [[= record_state_info{ .label = "recording(budget exhausted)" }]],
+		skipped_no_frame [[= record_state_info{ .label = "skipped(no frame in progress)" }]],
+		skipped_no_batches [[= record_state_info{ .label = "skipped(no batches)" }]]
+	};
+
+	struct [[= system_state<"Ui">{}]] data {
 		gpu::shader_program sprite_pipeline;
 		gpu::shader_program text_pipeline;
+		gpu::bindless_handle ui_sampler;
 		std::array<frame_resources, frames_in_flight> gpu_frames;
 
 		triple_buffer<gpu_frame_data> buffered_frames;
+
+		record_state last_record_state = record_state::unknown;
+		vec2u last_extent;
+		std::uint64_t frames_since_state_change = 0;
+		std::uint64_t published_frames = 0;
+		std::uint64_t recorded_frames = 0;
 	};
 
-	[[= gse::system_init{}]]
+	[[= system_init{}]]
 	auto init(
 		shared_view<gpu::context::data> gpu_s,
 		data& d
 	) -> async::task<>;
 
-	[[= gse::system_run<>{}]]
+	[[= system_run<>{}]]
 	auto run(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		shared_view<asset::data> assets_s,
-		data& d
+		data& d,
+		channel_read<sprite_command, text_command> commands_in
 	) -> async::task<>;
 
-	[[= gse::system_frame{}]]
+	[[= system_frame{}]]
 	auto frame(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		data& d,
+		channel_write<gpu::render_pass_request> pass_out,
 		shared_view<scene_snapshot::data> snapshot_s
 	) -> async::task<>;
 }

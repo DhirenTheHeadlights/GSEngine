@@ -14,6 +14,7 @@ export namespace gse::primitives {
 		resource::handle<model> sphere_lo;
 		resource::handle<model> sphere_mid;
 		resource::handle<model> sphere_hi;
+		resource::handle<model> unit_cylinder;
 	};
 
 	auto initialize(

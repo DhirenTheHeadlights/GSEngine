@@ -13,7 +13,6 @@ import gse.diag;
 import gse.ecs;
 import gse.os;
 import gse.assets;
-import gse.gpu;
 
 export namespace gse {
 	struct material {
@@ -31,13 +30,7 @@ export namespace gse {
 
 auto gse::material::textures_ready() const -> bool {
 	const auto check = [](const resource::handle<texture>& h) {
-		if (!h.id().exists()) {
-			return true;
-		}
-		if (!h.valid()) {
-			return false;
-		}
-		return h->upload_token().ready();
+		return !h.id().exists() || h.valid();
 	};
 	return check(diffuse_texture) && check(normal_texture) && check(specular_texture);
 }

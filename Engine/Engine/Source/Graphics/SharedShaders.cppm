@@ -12,6 +12,11 @@ export namespace gse::shaders::bindless {
 		= sampler2d_array
 	]] textures {};
 
+	struct [[
+		= binding<2, 1>{},
+		= sampler_state
+	]] textures_sampler {};
+
 	constexpr std::uint32_t invalid_index = std::numeric_limits<std::uint32_t>::max();
 }
 
@@ -32,7 +37,7 @@ export namespace gse::shaders::common {
 		spatial_matrix normal_matrix;
 		spatial_matrix prev_model_matrix;
 		std::uint32_t material_index;
-		vec3f tint;
+		vec4f tint;
 	};
 
 	using shader_types = type_pack<camera_data, instance_data>;
@@ -55,9 +60,9 @@ export namespace gse::shaders::forward {
 	struct [[= shader_struct]] light {
 		light_type light_type;
 		vec3<gse::position> position;
-		vec3<gse::displacement> direction;
+		vec3<displacement> direction;
 		vec3<gse::position> world_position;
-		vec3<gse::displacement> world_direction;
+		vec3<displacement> world_direction;
 		vec3f color;
 		irradiance intensity;
 		float constant;

@@ -14,6 +14,7 @@ import gse.concurrency;
 import gse.ecs;
 import gse.meta;
 import gse.math;
+import gse.gpu_record;
 
 export namespace gse::renderer::gi_probe {
 	constexpr vec3u grid_dim{ 16, 6, 16 };
@@ -27,42 +28,43 @@ export namespace gse::renderer::gi_probe {
 		high = 3,
 	};
 
-	struct [[= gse::system_state<"GiProbe">{}, = gse::settings::category<"Graphics">{}]] data {
+	struct [[= system_state<"GiProbe">{}, = settings::category<"Graphics">{}]] data {
 		[[
-			= gse::settings::describe<"Probe-based indirect diffuse global illumination. Off disables probe updates and sampling.">{},
-			= gse::shared
+			= settings::describe<"Probe-based indirect diffuse global illumination. Off disables probe updates and sampling.">{},
+			= shared
 		]]
 		quality_level quality = quality_level::medium;
 
 		[[
-			= gse::settings::describe<"Spacing between probes.">{},
-			= gse::settings::range<0.5f, 8.0f>{},
-			= gse::shared
+			= settings::describe<"Spacing between probes.">{},
+			= settings::range<0.5f, 8.0f>{},
+			= shared
 		]]
 		length spacing = meters(2.0f);
 
 		[[
-			= gse::settings::describe<"Multiplier on indirect diffuse contribution from probes.">{},
-			= gse::settings::range<0.0f, 4.0f>{},
-			= gse::shared
+			= settings::describe<"Multiplier on indirect diffuse contribution from probes.">{},
+			= settings::range<0.0f, 4.0f>{},
+			= shared
 		]]
 		float intensity = 1.0f;
 
 		[[
-			= gse::settings::describe<"Maximum ray distance for probe updates.">{},
-			= gse::settings::range<5.0f, 200.0f>{}
+			= settings::describe<"Maximum ray distance for probe updates.">{},
+			= settings::range<5.0f, 200.0f>{}
 		]]
 		length trace_t_max = meters(50.0f);
 
 		gpu::shader_program update_pipeline;
 		per_frame_resource<gpu::bindless_handle> tlas_views;
+		per_frame_resource<gpu::device_address> tlas_addresses;
 		std::uint32_t frame_counter = 0;
 
-		[[= gse::shared]] gpu::image irradiance_atlas;
-		[[= gse::shared]] vec3<position> origin_world{};
+		[[= shared]] gpu::image irradiance_atlas;
+		[[= shared]] vec3<position> origin_world{};
 	};
 
-	[[= gse::system_init{}]]
+	[[= system_init{}]]
 	auto init(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
@@ -71,11 +73,13 @@ export namespace gse::renderer::gi_probe {
 		data& d
 	) -> async::task<>;
 
-	[[= gse::system_frame{}]]
+	[[= system_frame{}]]
 	auto frame(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		data& d,
+		channel_write<gpu::render_pass_request> pass_out,
+		channel_read<geometry_collector::render_data> geometry_in,
 		shared_view<camera::data> cam_state,
 		shared_view<atmosphere::data> atm_state,
 		shared_view<geometry_collector::data> gc_r

@@ -11,7 +11,6 @@ import :access_token;
 import :traits;
 import :context;
 import :settings;
-import :context;
 import :system_node;
 import :shared_view;
 import :system_anno;
@@ -44,14 +43,17 @@ export namespace gse {
 		else if constexpr (is_structural_v<U>) {
 			return false;
 		}
-		else if constexpr (is_registry_access_v<U>) {
-			return false;
-		}
 		else if constexpr (is_entities_v<U>) {
 			return false;
 		}
+		else if constexpr (is_channel_read_v<U>) {
+			return false;
+		}
+		else if constexpr (is_channel_write_v<U>) {
+			return false;
+		}
 		else {
-			return gse::meta::has_system_state<U>();
+			return meta::has_system_state<U>();
 		}
 	}();
 
@@ -77,6 +79,8 @@ export namespace gse {
 		std::vector<id> optional_state_deps;
 		std::vector<id> component_reads;
 		std::vector<id> component_writes;
+		std::vector<id> component_structural;
+		bool entity_structural = false;
 	};
 
 	struct phase_state_deps {
@@ -95,8 +99,24 @@ export namespace gse {
 		std::vector<id>& optional_out
 	) -> void;
 
+	template <typename Arg>
+	auto append_arg_shared_view(
+		std::vector<id>& shared_out
+	) -> void;
+
+	template <typename Arg>
+	auto append_arg_channel_ids(
+		std::vector<id>& reads_out,
+		std::vector<id>& writes_out
+	) -> void;
+
 	template <typename Arg, typename S>
 	auto append_arg_run_metadata(
+		run_signature_metadata& out
+	) -> void;
+
+	template <auto Fn>
+	auto append_fn_order_deps(
 		run_signature_metadata& out
 	) -> void;
 
@@ -155,11 +175,14 @@ auto gse::resolve_run_arg(context& ctx, state_of_t<S>& state) -> decltype(auto) 
 	else if constexpr (is_structural_v<U>) {
 		return ctx.template make_structural<structural_element_t<U>>();
 	}
-	else if constexpr (is_registry_access_v<U>) {
-		return ctx.make_registry_access();
-	}
 	else if constexpr (is_entities_v<U>) {
 		return ctx.make_entities();
+	}
+	else if constexpr (is_channel_read_v<U>) {
+		return U(ctx.channels_store);
+	}
+	else if constexpr (is_channel_write_v<U>) {
+		return U(ctx.channels);
 	}
 	else if constexpr (is_shared_view_v<U>) {
 		using Target = shared_view_target_t<U>;
@@ -243,6 +266,28 @@ auto gse::append_arg_view_deps(std::vector<id>& required_out, std::vector<id>& o
 	}
 }
 
+template <typename Arg>
+auto gse::append_arg_shared_view(std::vector<id>& shared_out) -> void {
+	using U = std::remove_cvref_t<Arg>;
+	if constexpr (is_shared_view_v<U>) {
+		shared_out.push_back(id_of<shared_view_target_t<U>>());
+	}
+	else if constexpr (is_optional_shared_view_v<U>) {
+		shared_out.push_back(id_of<optional_shared_view_target_t<U>>());
+	}
+}
+
+template <typename Arg>
+auto gse::append_arg_channel_ids(std::vector<id>& reads_out, std::vector<id>& writes_out) -> void {
+	using U = std::remove_cvref_t<Arg>;
+	if constexpr (is_channel_read_v<U>) {
+		channel_pack_ids<U>::append(reads_out);
+	}
+	else if constexpr (is_channel_write_v<U>) {
+		channel_pack_ids<U>::append(writes_out);
+	}
+}
+
 template <typename Arg, typename S>
 auto gse::append_arg_run_metadata(run_signature_metadata& out) -> void {
 	append_arg_state_dep<Arg, S>(out.state_deps);
@@ -250,14 +295,31 @@ auto gse::append_arg_run_metadata(run_signature_metadata& out) -> void {
 
 	using ArgT = std::remove_cvref_t<Arg>;
 	if constexpr (is_access_v<ArgT> && is_read_access_v<ArgT>) {
+		(void)trace_id<access_element_t<ArgT>>();
 		out.component_reads.push_back(id_of<access_element_t<ArgT>>());
 	}
 
 	if constexpr (is_access_v<ArgT> && !is_read_access_v<ArgT>) {
+		(void)trace_id<access_element_t<ArgT>>();
 		out.component_writes.push_back(id_of<access_element_t<ArgT>>());
 	}
 	else if constexpr (is_structural_v<ArgT>) {
-		out.component_writes.push_back(id_of<structural_element_t<ArgT>>());
+		(void)trace_id<structural_element_t<ArgT>>();
+		out.component_structural.push_back(id_of<structural_element_t<ArgT>>());
+	}
+
+	if constexpr (is_entities_v<ArgT>) {
+		out.entity_structural = true;
+	}
+}
+
+template <auto Fn>
+auto gse::append_fn_order_deps(run_signature_metadata& out) -> void {
+	template for (constexpr auto s : std::define_static_array(meta::required_order_deps_of(Fn))) {
+		out.state_deps.push_back(id_of<typename [:s:]>());
+	}
+	template for (constexpr auto s : std::define_static_array(meta::optional_order_deps_of(Fn))) {
+		out.optional_state_deps.push_back(id_of<typename [:s:]>());
 	}
 }
 
@@ -266,5 +328,5 @@ auto gse::append_signature_run_metadata(run_signature_metadata& out) -> void {
 	[&]<std::size_t... Is>(std::index_sequence<Is...>) {
 		((append_arg_run_metadata<arg_type_of<Fn, Is>, S>(out)), ...);
 	}(std::make_index_sequence<arity_of<Fn>>{});
+	append_fn_order_deps<Fn>(out);
 }
-

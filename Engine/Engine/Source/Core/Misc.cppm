@@ -36,6 +36,10 @@ export namespace gse {
 		const std::function<void()>& in_scope
 	) -> void;
 
+	auto ellipsize_path(
+		std::string_view path
+	) -> std::string;
+
 	template <is_trivially_copyable... Src>
 	auto memcpy(
 		std::byte* dest,
@@ -60,6 +64,13 @@ export namespace gse {
 		std::byte* dest,
 		const T (&src)[N]
 	) -> void;
+
+	template <typename T, std::size_t Extent, is_trivially_copyable... Src>
+	auto memcpy(
+		std::span<T, Extent> dest,
+		const Src&... src
+	) -> void
+	requires(Extent != std::dynamic_extent && (!std::is_pointer_v<Src> && ...));
 
 	auto memcpy(
 		std::byte* dest,
@@ -99,6 +110,23 @@ auto gse::scope(const std::function<void()>& in_scope) -> void {
 	in_scope();
 }
 
+auto gse::ellipsize_path(const std::string_view path) -> std::string {
+	std::vector<std::string_view> parts;
+	std::size_t start = 0;
+	for (std::size_t i = 0; i <= path.size(); ++i) {
+		if (i == path.size() || path[i] == '\\' || path[i] == '/') {
+			if (i > start) {
+				parts.push_back(path.substr(start, i - start));
+			}
+			start = i + 1;
+		}
+	}
+	if (parts.size() <= 3) {
+		return std::string(path);
+	}
+	return std::format("{}\\...\\{}\\{}", parts.front(), parts[parts.size() - 2], parts.back());
+}
+
 template <gse::is_trivially_copyable... Src>
 auto gse::memcpy(std::byte* dest, const Src&... src) -> void
 requires(!std::is_pointer_v<Src> && ...)
@@ -122,6 +150,15 @@ auto gse::memcpy(T& dest, const std::byte* src) -> void {
 template <gse::is_trivially_copyable T, std::size_t N>
 auto gse::memcpy(std::byte* dest, const T (&src)[N]) -> void {
 	std::memcpy(dest, src, sizeof(T) * N);
+}
+
+template <typename T, std::size_t Extent, gse::is_trivially_copyable... Src>
+auto gse::memcpy(std::span<T, Extent> dest, const Src&... src) -> void
+requires(Extent != std::dynamic_extent && (!std::is_pointer_v<Src> && ...))
+{
+	static_assert((sizeof(Src) + ... + 0) <= Extent * sizeof(T), "gse::memcpy: source bytes exceed fixed-extent destination span");
+	std::byte* out = reinterpret_cast<std::byte*>(dest.data());
+	((std::memcpy(out, std::addressof(src), sizeof(Src)), out += sizeof(Src)), ...);
 }
 
 auto gse::memcpy(std::byte* dest, const void* src, const std::size_t size) -> void {

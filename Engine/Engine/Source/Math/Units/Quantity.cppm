@@ -22,8 +22,8 @@ namespace gse::internal {
 	export template <typename QuantityTagType, is_ratio ConversionRatio, fixed_string UnitName>
 	struct unit;
 
-	template <std::meta::info UnitTypeInfo>
-	constexpr typename[:UnitTypeInfo:] default_unit_for_type{};
+	export template <typename... Units>
+	struct unit_set {};
 
 	template <std::meta::info Dim, quantity_semantic_kind Kind, typename DefaultRatio, fixed_string DefaultName>
 	struct quantity_root_spec {};
@@ -73,7 +73,7 @@ namespace gse::internal {
 		std::meta::info tag_info
 	) -> std::meta::info;
 
-	consteval auto resolve_default_unit_info(
+	consteval auto resolve_default_unit(
 		std::meta::info tag_info
 	) -> std::meta::info;
 
@@ -101,13 +101,63 @@ namespace gse::internal {
 		static constexpr quantity_semantic_kind semantic_kind = resolve_semantic_kind(^^Tag);
 	};
 
-	template <typename Dim>
-	struct dimension_to_tag {
-		static constexpr bool found = false;
+	export template <typename... Tags>
+	struct tag_list {};
+
+	consteval auto collect_root_tags(
+		std::meta::info ns
+	) -> std::vector<std::meta::info>;
+
+	template <std::meta::info Ns>
+	struct namespace_root_tags {
+		static constexpr auto value = std::define_static_array(collect_root_tags(Ns));
 	};
 
-	template <typename Tag, typename T = float, auto U = ([:resolve_default_unit_info(^^Tag):])>
-	using quantity_t = typename quantity_traits<Tag>::template type<T, U>;
+	template <std::meta::info Ns>
+	using scanned_tag_list = typename[:std::meta::substitute(^^tag_list, namespace_root_tags<Ns>::value):];
+
+	template <typename Dummy = void>
+	struct canonical_tag_list {
+		using type = tag_list<>;
+	};
+
+	template <typename Tag>
+	using tag_dimension_t = typename[:resolve_dim_info(^^Tag):];
+
+	template <typename Dim, typename List>
+	struct find_canonical_tag {
+		static constexpr std::size_t match_count = 0;
+		static constexpr bool found = false;
+		using tag = no_parent_quantity_tag;
+	};
+
+	template <typename Dim, typename Head, typename... Tail>
+	struct find_canonical_tag<Dim, tag_list<Head, Tail...>> {
+		using next = find_canonical_tag<Dim, tag_list<Tail...>>;
+		static constexpr bool matched = has_same_dimensions<Dim, tag_dimension_t<Head>>;
+		static constexpr std::size_t match_count = (matched ? 1 : 0) + next::match_count;
+		static constexpr bool found = match_count == 1;
+		using tag = std::conditional_t<matched, Head, typename next::tag>;
+	};
+
+	template <typename Dim>
+	struct dimension_to_tag : find_canonical_tag<Dim, typename canonical_tag_list<std::void_t<Dim>>::type> {};
+
+	template <typename Tag, auto... U>
+	struct selected_unit;
+
+	template <typename Tag>
+	struct selected_unit<Tag> {
+		using type = typename[:resolve_default_unit(^^Tag):];
+	};
+
+	template <typename Tag, auto U>
+	struct selected_unit<Tag, U> {
+		using type = std::remove_cvref_t<decltype(U)>;
+	};
+
+	template <typename Tag, typename T = float, auto... U>
+	using quantity_t = typename quantity_traits<Tag>::template type<T, typename selected_unit<Tag, U...>::type>;
 
 	export template <typename Tag>
 	struct base_unit_override {
@@ -173,19 +223,17 @@ consteval auto gse::internal::resolve_dim_info(std::meta::info tag_info) -> std:
 	return std::meta::info{};
 }
 
-consteval auto gse::internal::resolve_default_unit_info(std::meta::info tag_info) -> std::meta::info {
+consteval auto gse::internal::resolve_default_unit(std::meta::info tag_info) -> std::meta::info {
 	auto spec_t = quantity_spec_type_of(tag_info);
 	auto kind = classify_spec(spec_t);
 	if (kind == spec_kind::root) {
 		auto args = std::meta::template_arguments_of(spec_t);
 		std::array<std::meta::info, 3> unit_args = { tag_info, args[2], args[3] };
-		auto unit_t = std::meta::substitute(^^unit, unit_args);
-		std::array<std::meta::info, 1> holder_args = { std::meta::reflect_constant(unit_t) };
-		return std::meta::substitute(^^default_unit_for_type, holder_args);
+		return std::meta::substitute(^^unit, unit_args);
 	}
 	if (kind == spec_kind::child || kind == spec_kind::sub_root || kind == spec_kind::absolute) {
 		auto parent_info = std::meta::extract<std::meta::info>(std::meta::template_arguments_of(spec_t)[0]);
-		return resolve_default_unit_info(parent_info);
+		return resolve_default_unit(parent_info);
 	}
 	return std::meta::info{};
 }
@@ -620,18 +668,66 @@ namespace gse::internal {
 		const quantity<A, D, Tag, DefUnit>& q
 	) -> A;
 
-	template <typename Units, typename Fn>
+	template <typename... Units, typename Fn>
 	constexpr auto dispatch_named_unit(
-		const Units& units,
+		unit_set<Units...> units,
 		std::string_view name,
 		Fn&& fn
 	) -> bool;
 
+	template <typename... Units>
+	auto unit_names_of(
+		unit_set<Units...> units
+	) -> std::span<const std::string_view>;
+
 	export template <typename Tag>
-	struct quantity_units;
+	auto unit_names() -> std::span<const std::string_view>;
+
+	consteval auto collect_unit_types(
+		std::meta::info ns
+	) -> std::vector<std::meta::info>;
+
+	template <std::meta::info Ns>
+	struct namespace_unit_types {
+		static constexpr auto value = std::define_static_array(collect_unit_types(Ns));
+	};
+
+	template <std::meta::info Ns>
+	using scanned_unit_set = typename[:std::meta::substitute(^^unit_set, namespace_unit_types<Ns>::value):];
+
+	template <typename Dummy = void>
+	struct unit_registry {
+		using type = unit_set<>;
+	};
+
+	template <typename Unit, typename Set>
+	struct unit_set_prepend;
+
+	template <typename Unit, typename... Units>
+	struct unit_set_prepend<Unit, unit_set<Units...>> {
+		using type = unit_set<Unit, Units...>;
+	};
+
+	template <typename Tag, typename Set>
+	struct units_for_tag {
+		using type = unit_set<>;
+	};
+
+	template <typename Tag, typename Head, typename... Tail>
+	struct units_for_tag<Tag, unit_set<Head, Tail...>> {
+		using rest = typename units_for_tag<Tag, unit_set<Tail...>>::type;
+		using type = std::conditional_t<
+			std::same_as<typename Head::quantity_tag, Tag>,
+			typename unit_set_prepend<Head, rest>::type,
+			rest
+		>;
+	};
 
 	template <typename Tag>
-	concept has_unit_list = requires { quantity_units<Tag>::units; };
+	using unit_list_t = typename units_for_tag<Tag, typename unit_registry<std::void_t<Tag>>::type>::type;
+
+	template <typename Tag>
+	concept has_unit_list = !std::same_as<unit_list_t<Tag>, unit_set<>>;
 }
 
 template <typename TargetUnit, gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
@@ -660,28 +756,69 @@ constexpr auto gse::internal::value_in(const quantity<A, D, Tag, DefUnit>& q) ->
 	}
 }
 
-template <typename Units, typename Fn>
-constexpr auto gse::internal::dispatch_named_unit(const Units& units, std::string_view name, Fn&& fn) -> bool {
-	return std::apply(
-		[&](const auto&... u) {
-			bool found = false;
-			auto try_match = [&](const auto& unit_const) {
-				if (!found && name == std::string_view(std::remove_cvref_t<decltype(unit_const)>::unit_name)) {
-					fn(unit_const);
-					found = true;
-				}
-			};
-			(try_match(u), ...);
-			return found;
-		},
-		units
-	);
+consteval auto gse::internal::collect_root_tags(std::meta::info ns) -> std::vector<std::meta::info> {
+	std::vector<std::meta::info> out;
+	for (const auto m : std::meta::members_of(ns, std::meta::access_context::unchecked())) {
+		if (!std::meta::is_type(m)) {
+			continue;
+		}
+		if (classify_spec(quantity_spec_type_of(m)) != spec_kind::root) {
+			continue;
+		}
+		out.push_back(m);
+	}
+	return out;
+}
+
+consteval auto gse::internal::collect_unit_types(std::meta::info ns) -> std::vector<std::meta::info> {
+	std::vector<std::meta::info> out;
+	for (const auto m : std::meta::members_of(ns, std::meta::access_context::unchecked())) {
+		if (!std::meta::is_variable(m)) {
+			continue;
+		}
+		std::array<std::meta::info, 1> decay_args = { std::meta::type_of(m) };
+		const auto t = std::meta::dealias(std::meta::substitute(^^std::remove_cvref_t, decay_args));
+		if (!std::meta::has_template_arguments(t)) {
+			continue;
+		}
+		if (std::meta::template_of(t) != ^^unit) {
+			continue;
+		}
+		out.push_back(t);
+	}
+	return out;
+}
+
+template <typename... Units, typename Fn>
+constexpr auto gse::internal::dispatch_named_unit(unit_set<Units...>, std::string_view name, Fn&& fn) -> bool {
+	bool found = false;
+	auto try_match = [&](const auto& unit_const) {
+		if (!found && name == std::string_view(std::remove_cvref_t<decltype(unit_const)>::unit_name)) {
+			fn(unit_const);
+			found = true;
+		}
+	};
+	(try_match(Units{}), ...);
+	return found;
+}
+
+template <typename... Units>
+auto gse::internal::unit_names_of(unit_set<Units...>) -> std::span<const std::string_view> {
+	static constexpr std::array<std::string_view, sizeof...(Units)> names{ std::string_view(Units::unit_name)... };
+	return names;
+}
+
+template <typename Tag>
+auto gse::internal::unit_names() -> std::span<const std::string_view> {
+	return unit_names_of(unit_list_t<unit_family_tag_t<Tag>>{});
 }
 
 template <typename A, typename Dim, typename Tag, typename Unit, typename CharT>
 struct std::formatter<gse::internal::quantity<A, Dim, Tag, Unit>, CharT> {
-	std::formatter<A, CharT> value_fmt;
-	std::basic_string_view<CharT> unit_override;
+	formatter<A, CharT> value_fmt;
+	basic_string_view<CharT> unit_override;
+	optional<std::size_t> unit_arg;
+	bool hide_unit = false;
 
 	template <class ParseContext>
 	constexpr auto parse(ParseContext& ctx) -> ParseContext::iterator {
@@ -693,13 +830,27 @@ struct std::formatter<gse::internal::quantity<A, Dim, Tag, Unit>, CharT> {
 			++value_spec_end;
 		}
 
-		std::basic_string_view<CharT> value_spec(begin, value_spec_end);
-		std::basic_format_parse_context<CharT> sub(value_spec);
+		basic_string_view<CharT> value_spec(begin, value_spec_end);
+		basic_format_parse_context<CharT> sub(value_spec);
 		value_fmt.parse(sub);
 
-		if (value_spec_end != end && *value_spec_end == ':') {
-			auto unit_start = value_spec_end + 1;
-			auto unit_end = unit_start;
+		if (value_spec_end == end || *value_spec_end != ':') {
+			return value_spec_end;
+		}
+
+		auto unit_start = value_spec_end + 1;
+		auto unit_end = unit_start;
+
+		if (unit_start != end && *unit_start == '{') {
+			unit_end = unit_start + 1;
+			if (unit_end == end || *unit_end != '}') {
+				throw format_error("gse quantity: dynamic unit must be spelled {}");
+			}
+			unit_arg = ctx.next_arg_id();
+			ctx.check_dynamic_spec_string(*unit_arg);
+			++unit_end;
+		}
+		else {
 			while (unit_end != end) {
 				const auto c = *unit_end;
 				const bool is_alpha = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
@@ -708,10 +859,14 @@ struct std::formatter<gse::internal::quantity<A, Dim, Tag, Unit>, CharT> {
 				}
 				++unit_end;
 			}
-			unit_override = std::basic_string_view<CharT>(unit_start, unit_end);
-			return unit_end;
+			unit_override = basic_string_view<CharT>(unit_start, unit_end);
 		}
-		return value_spec_end;
+
+		if (unit_end != end && *unit_end == '!') {
+			hide_unit = true;
+			++unit_end;
+		}
+		return unit_end;
 	}
 
 	template <typename FormatContext>
@@ -720,41 +875,59 @@ struct std::formatter<gse::internal::quantity<A, Dim, Tag, Unit>, CharT> {
 
 		auto format_default = [&] {
 			it = value_fmt.format(gse::internal::value_in<Unit>(q), ctx);
-			if constexpr (!std::same_as<Unit, gse::internal::no_default_unit>) {
-				it = std::ranges::copy(
-						 std::string_view{ " " },
-						 it
+			if (hide_unit) {
+				return;
+			}
+			if constexpr (!same_as<Unit, gse::internal::no_default_unit>) {
+				it = ranges::copy(
+					string_view{ " " },
+					it
 				)
 					.out;
-				it = std::ranges::copy(
-						 std::string_view{ Unit::unit_name },
-						 it
+				it = ranges::copy(
+					string_view{ Unit::unit_name },
+					it
 				)
 					.out;
 			}
 		};
 
-		if (unit_override.empty()) {
+		basic_string_view<CharT> selected = unit_override;
+		if (unit_arg) {
+			ctx.arg(*unit_arg).visit([&selected]<typename T>(const T& value) {
+				if constexpr (same_as<T, basic_string_view<CharT>>) {
+					selected = value;
+				}
+				else if constexpr (same_as<T, const CharT*>) {
+					selected = value;
+				}
+			});
+		}
+
+		if (selected.empty()) {
 			format_default();
 			return it;
 		}
 
 		bool dispatched = false;
-		if constexpr (gse::internal::has_unit_list<Tag>) {
+		if constexpr (gse::internal::has_unit_list<gse::internal::unit_family_tag_t<Tag>>) {
 			dispatched = gse::internal::dispatch_named_unit(
-				gse::internal::quantity_units<Tag>::units,
-				unit_override,
+				gse::internal::unit_list_t<gse::internal::unit_family_tag_t<Tag>>{},
+				selected,
 				[&](auto unit_const) {
-					using U = std::remove_cvref_t<decltype(unit_const)>;
+					using U = remove_cvref_t<decltype(unit_const)>;
 					it = value_fmt.format(gse::internal::value_in<U>(q), ctx);
-					it = std::ranges::copy(
-							 std::string_view{ " " },
-							 it
+					if (hide_unit) {
+						return;
+					}
+					it = ranges::copy(
+						string_view{ " " },
+						it
 					)
 						.out;
-					it = std::ranges::copy(
-							 std::string_view{ U::unit_name },
-							 it
+					it = ranges::copy(
+						string_view{ U::unit_name },
+						it
 					)
 						.out;
 				}
@@ -771,7 +944,7 @@ struct std::formatter<gse::internal::quantity<A, Dim, Tag, Unit>, CharT> {
 
 export template <typename A, typename Dim, typename Tag, typename Unit>
 struct gse::parser<gse::internal::quantity<A, Dim, Tag, Unit>> {
-	static auto parse(std::string_view raw, gse::internal::quantity<A, Dim, Tag, Unit>& out) -> bool {
+	static auto parse(std::string_view raw, internal::quantity<A, Dim, Tag, Unit>& out) -> bool {
 		while (!raw.empty() && (raw.front() == ' ' || raw.front() == '\t')) {
 			raw.remove_prefix(1);
 		}
@@ -793,25 +966,26 @@ struct gse::parser<gse::internal::quantity<A, Dim, Tag, Unit>> {
 			suffix.remove_suffix(1);
 		}
 
-		if constexpr (gse::internal::has_unit_list<Tag>) {
-			gse::assert(!suffix.empty(), "Quantity value '{}' is missing a unit suffix", raw);
+		if constexpr (internal::has_unit_list<internal::unit_family_tag_t<Tag>>) {
+			if (suffix.empty()) {
+				return false;
+			}
 
 			bool matched = false;
-			gse::internal::dispatch_named_unit(
-				gse::internal::quantity_units<Tag>::units,
+			internal::dispatch_named_unit(
+				internal::unit_list_t<internal::unit_family_tag_t<Tag>>{},
 				suffix,
 				[&](const auto& u) {
 					using U = std::remove_cvref_t<decltype(u)>;
-					out = gse::internal::quantity<A, Dim, Tag, Unit>::template from<U>(tmp);
+					out = internal::quantity<A, Dim, Tag, Unit>::template from<U>(tmp);
 					matched = true;
 				}
 			);
-			gse::assert(matched, "Quantity value '{}' uses unknown unit suffix '{}'", raw, suffix);
 			return matched;
 		}
 
 		if (suffix.empty()) {
-			out = gse::internal::quantity<A, Dim, Tag, Unit>::template from<Unit>(tmp);
+			out = internal::quantity<A, Dim, Tag, Unit>::template from<Unit>(tmp);
 			return true;
 		}
 
@@ -823,12 +997,12 @@ export template <typename A, typename Dim, typename Tag, typename Unit>
 struct gse::scalar<gse::internal::quantity<A, Dim, Tag, Unit>> {
 	using type = A;
 
-	static auto get(const gse::internal::quantity<A, Dim, Tag, Unit>& v) -> A {
-		return gse::internal::value_in<Unit>(v);
+	static auto get(const internal::quantity<A, Dim, Tag, Unit>& v) -> A {
+		return internal::value_in<Unit>(v);
 	}
 
-	static auto from(A v) -> gse::internal::quantity<A, Dim, Tag, Unit> {
-		return gse::internal::quantity<A, Dim, Tag, Unit>::template from<Unit>(v);
+	static auto from(A v) -> internal::quantity<A, Dim, Tag, Unit> {
+		return internal::quantity<A, Dim, Tag, Unit>::template from<Unit>(v);
 	}
 };
 
@@ -850,8 +1024,8 @@ export namespace gse::internal {
 	template <typename Tag>
 	requires(has_quantity_spec(^^Tag))
 	struct quantity_traits<Tag> {
-		template <typename T, auto U = ([:resolve_default_unit_info(^^Tag):])>
-		using type = quantity<T, typename[:resolve_dim_info(^^Tag):], Tag, decltype(U)>;
+		template <typename T, typename U = typename[:resolve_default_unit(^^Tag):]>
+		using type = quantity<T, typename[:resolve_dim_info(^^Tag):], Tag, U>;
 	};
 
 	template <bool IsGeneric, typename Tag, typename ValueType, typename Dim>
@@ -1129,7 +1303,7 @@ constexpr auto gse::internal::operator-(const Q& v) -> Q {
 
 export namespace gse {
 	template <typename ToQuantity, typename FromQuantity>
-	requires gse::internal::has_same_dimension_as<ToQuantity, FromQuantity>
+	requires internal::has_same_dimension_as<ToQuantity, FromQuantity>
 	constexpr auto quantity_cast(
 		const FromQuantity& q
 	) -> ToQuantity;
@@ -1197,21 +1371,6 @@ export namespace gse {
 	constexpr auto sqrt(const Q& q) {
 		using result_d = decltype(internal::dim_sqrt(typename Q::dimension()));
 		return internal::generic_quantity<typename Q::value_type, result_d>(std::sqrt(internal::value_in<typename Q::default_unit>(q)));
-	}
-
-	template <internal::is_quantity Q>
-	constexpr auto sin(const Q& q) -> Q::value_type {
-		return std::sin(internal::value_in<typename Q::default_unit>(q));
-	}
-
-	template <internal::is_quantity Q>
-	constexpr auto cos(const Q& q) -> Q::value_type {
-		return std::cos(internal::value_in<typename Q::default_unit>(q));
-	}
-
-	template <internal::is_quantity Q>
-	constexpr auto tan(const Q& q) -> Q::value_type {
-		return std::tan(internal::value_in<typename Q::default_unit>(q));
 	}
 
 	template <internal::is_quantity Q>

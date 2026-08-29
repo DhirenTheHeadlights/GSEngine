@@ -8,32 +8,101 @@ import :swap_chain;
 import :frame;
 import :transient_pool;
 import :render_graph;
-import :render_pass;
-
-import gse.vulkan;
 
 import gse.os;
 import gse.core;
 import gse.concurrency;
 import gse.diag;
 import gse.log;
+import gse.save;
 
-auto gse::gpu::context::init(const shared_view<window::data> window_s, data& d) -> async::task<> {
-	d.device = device::create(window_s, d.validation_layers_enabled, d.device_settings);
-	d.swapchain = swap_chain::create(
-		window::viewport(window_s),
-		gse::enum_from_annotation<present_mode_setting>(window_s.current_present_mode_index, present_mode::fifo),
-		*d.device
-	);
-	d.frame = frame::create(*d.device, *d.swapchain);
-	d.render_graph = std::make_unique<gpu::render_graph>(
-		*d.device,
-		*d.swapchain,
-		*d.frame
-	);
-	d.render_graph->set_swapchain_clear(d.swapchain_clear);
+auto gse::gpu::context::init(const std::optional<shared_view<window::data>> window_s, const save::registry* save_reg, data& d) -> async::task<> {
+	const auto requested_backend = d.backend;
+	d.device = device::create(window_s, d.validation_layers_enabled, d.backend, d.device_settings);
+	if (save_reg && d.backend != requested_backend) {
+		save_reg->save_now();
+	}
+
+	if (window_s) {
+		d.swapchain = swap_chain::create(
+			d.device->boot_surface(),
+			window::viewport(*window_s),
+			enum_from_annotation<present_mode_setting>((*window_s).current_present_mode_index, present_mode::fifo),
+			*d.device
+		);
+	}
+
+	d.frame = frame::create(*d.device, d.swapchain.get());
+	d.render_graph = std::make_unique<render_graph>(*d.device, *d.frame);
+	if (d.swapchain) {
+		d.render_graph->set_swapchain_clear(
+			d.dark_background ? color_clear{ .r = 0.05f, .g = 0.05f, .b = 0.06f, .a = 1.0f } : color_clear{}
+		);
+	}
 
 	return {};
+}
+
+auto gse::gpu::context::create_presentation(data& d, const window_opened& win) -> window_presentation* {
+	const surface surface = d.device->create_surface(win.handle);
+
+	auto presentation = std::make_unique<window_presentation>();
+	presentation->window = win.id;
+	presentation->surface = surface;
+	presentation->swapchain = swap_chain::create(
+		surface,
+		win.size,
+		enum_from_annotation<present_mode_setting>(win.present_mode_index, present_mode::fifo),
+		*d.device
+	);
+	window_presentation* raw = presentation.get();
+	d.secondaries.push_back(std::move(presentation));
+	return raw;
+}
+
+auto gse::gpu::context::sync_present_targets(data& d, window::data& windows) -> void {
+	std::vector<id> closed;
+	for (const present_target& t : d.frame->targets()) {
+		if (t.window_id.exists() && !window::find_surface(windows, t.window_id)) {
+			closed.push_back(t.window_id);
+		}
+	}
+	for (const id window : closed) {
+		d.frame->remove_present_target(window);
+	}
+
+	for (const auto& presentation : d.secondaries) {
+		if (d.frame->target(presentation->window)) {
+			continue;
+		}
+		if (window::window_surface* surface = window::find_surface(windows, presentation->window)) {
+			d.frame->add_present_target(presentation->window, presentation->swapchain.get(), surface);
+		}
+	}
+}
+
+auto gse::gpu::context::destroy_presentation(data& d, const id window) -> void {
+	const auto it = std::ranges::find_if(d.secondaries, [window](const auto& held) {
+		return held->window == window;
+	});
+	if (it == d.secondaries.end()) {
+		return;
+	}
+
+	d.device->wait_idle();
+
+	d.frame->remove_present_target(window);
+	(*it)->swapchain.reset();
+	d.device->destroy_surface((*it)->surface);
+
+	d.secondaries.erase(it);
+}
+
+auto gse::gpu::context::find_presentation(data& d, const id window) -> window_presentation* {
+	const auto it = std::ranges::find_if(d.secondaries, [window](const auto& held) {
+		return held->window == window;
+	});
+	return it == d.secondaries.end() ? nullptr : it->get();
 }
 
 auto gse::gpu::context::on_swap_chain_recreate(const shared_view<data> d, swap_chain_recreate_callback callback) -> void {
@@ -44,12 +113,20 @@ auto gse::gpu::context::wait_idle(const data& d) -> void {
 	d.device->wait_idle();
 }
 
-auto gse::gpu::context::run(gse::context& ctx, data& d) -> async::task<> {
-	for (const auto& req : ctx.read_channel<gpu_resume_request>()) {
+auto gse::gpu::context::run(gse::context& ctx, data& d, const channel_read<gpu_resume_request, window_opened, window_closed> resume_in) -> async::task<> {
+	for (const auto& req : resume_in.of<gpu_resume_request>()) {
 		if (req.handle && req.out_state) {
 			*req.out_state = &d;
 			req.handle.resume();
 		}
+	}
+
+	for (const auto& req : resume_in.of<window_opened>()) {
+		(void)create_presentation(d, req);
+	}
+
+	for (const auto& req : resume_in.of<window_closed>()) {
+		destroy_presentation(d, req.id);
 	}
 
 	return {};
@@ -62,100 +139,42 @@ auto gse::gpu::context::shutdown(data& d) -> void {
 
 	d.device->wait_idle();
 
+	for (const auto& presentation : d.secondaries) {
+		d.frame->remove_present_target(presentation->window);
+		presentation->swapchain.reset();
+		d.device->destroy_surface(presentation->surface);
+	}
+	d.secondaries.clear();
+
 	d.render_graph.reset();
 	d.frame.reset();
 	d.swapchain.reset();
 	d.device.reset();
 }
 
-auto gse::gpu::context::begin_frame(data& d, window::data& window_s) -> std::expected<frame_token, frame_status> {
+auto gse::gpu::context::begin_frame(data& d, window::window_surface* window_s) -> std::expected<frame_token, frame_status> {
 	d.device->collect_garbage();
+	d.frame->set_present_target(window_s);
 
-	auto result = d.frame->begin(window_s);
+	auto result = d.frame->begin();
 
 	return result;
 }
 
-auto gse::gpu::context::end_frame(data& d, window::data& window_s) -> void {
+auto gse::gpu::context::end_frame(data& d) -> void {
 	auto aux_subs = d.render_graph->take_aux_submissions();
 	auto graphics_waits = d.render_graph->take_graphics_extra_waits();
-	d.frame->end(window_s, aux_subs, graphics_waits);
-}
+	auto graphics_buffers = d.render_graph->take_graphics_buffers();
+	auto graphics_signals = d.render_graph->take_graphics_extra_signals();
 
-namespace gse::gpu {
-	auto to_color_output_info(
-		const color_attachment& a
-	) -> gpu::color_output_info;
-
-	auto to_depth_output_info(
-		const depth_attachment& a
-	) -> gpu::depth_output_info;
-
-	auto to_pass_data(
-		render_pass_request req
-	) -> gpu::render_pass_data;
-}
-
-auto gse::gpu::to_color_output_info(const color_attachment& a) -> gpu::color_output_info {
-	return {
-		.is_swapchain = a.target == nullptr && !a.transient_target,
-		.custom_target = a.target,
-		.transient_target = a.transient_target,
-		.op = a.op,
-		.clear_value = a.clear,
-	};
-}
-
-auto gse::gpu::to_depth_output_info(const depth_attachment& a) -> gpu::depth_output_info {
-	return {
-		.is_swapchain = a.target == nullptr && !a.transient_target,
-		.custom_target = a.target,
-		.transient_target = a.transient_target,
-		.op = a.op,
-		.clear_value = a.clear,
-	};
-}
-
-auto gse::gpu::to_pass_data(render_pass_request req) -> gpu::render_pass_data {
-	gpu::render_pass_data p{
-		.pass_type = req.desc.pass_kind,
-		.queue = req.desc.queue,
-		.primary_pipeline = req.desc.primary_pipeline,
-		.after_passes = std::move(req.desc.after_deps),
-		.chain_id = req.desc.chain_id,
-		.record_handle = req.record_handle,
-		.record_ctx_slot = req.record_ctx_slot,
-	};
-
-	p.color_outputs.reserve(req.desc.colors.size());
-	for (const auto& c : req.desc.colors) {
-		p.color_outputs.push_back(to_color_output_info(c));
+	auto& transient_graphics = d.device->transient().queue(queue_id::graphics);
+	if (const auto transient_value = transient_graphics.pending_value(); transient_value > 0) {
+		graphics_waits.push_back({
+			.semaphore = transient_graphics.timeline_handle(),
+			.value = transient_value,
+			.stages = pipeline_stage_flag::all_commands,
+		});
 	}
 
-	if (req.desc.depth) {
-		p.depth_output = to_depth_output_info(*req.desc.depth);
-	}
-
-	return p;
+	d.frame->end(aux_subs, graphics_waits, graphics_buffers, graphics_signals);
 }
-
-auto gse::gpu::context::execute_frame(data& d, scheduler& s) -> void {
-	d.render_graph->execute(frame_request_drain{
-		.drain_passes = [&s] {
-			auto requests = s.drain_channel<render_pass_request>();
-			std::vector<render_pass_data> passes;
-			passes.reserve(requests.size());
-			for (auto& req : requests) {
-				passes.push_back(to_pass_data(std::move(req)));
-			}
-			return passes;
-		},
-		.drain_images = [&s] {
-			return s.drain_channel<transient_image_request>();
-		},
-		.drain_buffers = [&s] {
-			return s.drain_channel<transient_buffer_request>();
-		},
-	});
-}
-

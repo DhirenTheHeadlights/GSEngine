@@ -7,7 +7,7 @@ import :core;
 import gse.core;
 
 export namespace gse::gpu {
-	using frame_record_fn = std::move_only_function<void(gpu::command_buffer_handle)>;
+	using frame_record_fn = std::move_only_function<void(command_buffer_handle)>;
 
 	class frame_recorder final : public non_copyable {
 	public:
@@ -31,11 +31,11 @@ export namespace gse::gpu {
 		) -> void;
 
 		auto run_pre_frame(
-			gpu::command_buffer_handle cmd
+			command_buffer_handle cmd
 		) -> void;
 
 		auto run_post_frame(
-			gpu::command_buffer_handle cmd
+			command_buffer_handle cmd
 		) -> void;
 
 		auto clear() -> void;
@@ -56,13 +56,13 @@ auto gse::gpu::frame_recorder::post_frame(frame_record_fn commands) -> void {
 	m_post.push_back(std::move(commands));
 }
 
-auto gse::gpu::frame_recorder::run_pre_frame(gpu::command_buffer_handle cmd) -> void {
+auto gse::gpu::frame_recorder::run_pre_frame(command_buffer_handle cmd) -> void {
 	for (auto& fn : m_pre) {
 		fn(cmd);
 	}
 }
 
-auto gse::gpu::frame_recorder::run_post_frame(gpu::command_buffer_handle cmd) -> void {
+auto gse::gpu::frame_recorder::run_post_frame(command_buffer_handle cmd) -> void {
 	for (auto& fn : m_post) {
 		fn(cmd);
 	}

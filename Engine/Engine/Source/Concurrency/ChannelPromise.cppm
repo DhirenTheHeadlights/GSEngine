@@ -2,6 +2,9 @@ export module gse.concurrency:channel_promise;
 
 import std;
 
+import gse.log;
+
+import :async_task;
 import :task;
 
 export namespace gse {
@@ -16,7 +19,7 @@ export namespace gse {
 		std::optional<T> value;
 		std::atomic<bool> ready{ false };
 		std::mutex mutex;
-		std::coroutine_handle<> continuation;
+		async::checked_handle continuation;
 	};
 
 	template <typename T>
@@ -93,7 +96,7 @@ auto gse::channel_future<T>::awaiter::await_suspend(std::coroutine_handle<> h) -
 	if (m_state->ready.load(std::memory_order_acquire)) {
 		return false;
 	}
-	m_state->continuation = h;
+	m_state->continuation = async::track_frame(h);
 	return true;
 }
 
@@ -134,13 +137,19 @@ auto gse::channel_promise<T>::fulfill(T value) const -> void {
 	std::lock_guard lock(m_state->mutex);
 	m_state->value = std::move(value);
 	m_state->ready.store(true, std::memory_order_release);
-	if (m_state->continuation) {
+
+	const async::checked_handle waiter = m_state->continuation;
+	m_state->continuation = {};
+	if (waiter.handle) {
 		task::post(
-			[h = m_state->continuation] -> auto {
-				if (!h) {
-					return;
+			[waiter] -> auto {
+				if (!async::resume_checked(waiter)) {
+					log::println(
+						log::level::error,
+						log::category::task,
+						"channel_promise: continuation was not resumed because its coroutine frame had already been destroyed"
+					);
 				}
-				h.resume();
 			},
 			trace_id<"channel_promise::fulfill::resume">()
 		);

@@ -6,6 +6,7 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+import gse.math;
 import :types;
 import :styles;
 import :builder;
@@ -27,13 +28,13 @@ auto gse::gui::separator::draw(const draw_context& ctx, id&, id&, id&) -> void {
 		return;
 	}
 
-	const ui_rect content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
+	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
 	const float half_spacing = ctx.style.padding * 0.5f;
 
 	ctx.layout_cursor.y() -= half_spacing;
 
 	const float line_height = 1.f;
-	const ui_rect line_rect = ui_rect::from_position_size(
+	const rectf line_rect = rectf::from_position_size(
 		{ content_rect.left(), ctx.layout_cursor.y() },
 		{ content_rect.width(), line_height }
 	);

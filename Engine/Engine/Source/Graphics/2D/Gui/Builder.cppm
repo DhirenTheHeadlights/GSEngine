@@ -58,9 +58,18 @@ export namespace gse::gui {
 			const scroll_region_info& info
 		) -> scroll_handle;
 
+		template <typename F>
+		requires std::invocable<F, builder&>
 		auto scroll_region(
 			const scroll_region_info& info,
-			const std::function<void(builder&)>& content
+			F&& content
+		) -> void;
+
+		template <typename F>
+		requires std::invocable<F, builder&, const row&>
+		auto row_list(
+			const row_list_info& info,
+			F&& draw_row
 		) -> void;
 	};
 
@@ -73,13 +82,23 @@ export namespace gse::gui {
 }
 
 auto gse::gui::builder::scroll_region(const scroll_region_info& info) -> scroll_handle {
-	return gse::gui::scroll_region(ctx, info);
+	return gui::scroll_region(ctx, info);
 }
 
-auto gse::gui::builder::scroll_region(const scroll_region_info& info, const std::function<void(builder&)>& content) -> void {
+template <typename F>
+requires std::invocable<F, gse::gui::builder&>
+auto gse::gui::builder::scroll_region(const scroll_region_info& info, F&& content) -> void {
 	auto guard = scroll_region(info);
 	if (!guard.valid()) {
 		return;
 	}
 	content(*this);
+}
+
+template <typename F>
+requires std::invocable<F, gse::gui::builder&, const gse::gui::row&>
+auto gse::gui::builder::row_list(const row_list_info& info, F&& draw_row) -> void {
+	gui::row_list(ctx, info, [this, &draw_row](const row& r) {
+		draw_row(*this, r);
+	});
 }

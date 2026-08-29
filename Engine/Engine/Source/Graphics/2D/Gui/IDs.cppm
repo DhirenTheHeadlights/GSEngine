@@ -3,6 +3,7 @@ export module gse.graphics:ids;
 import std;
 
 import gse.core;
+import gse.meta;
 import gse.containers;
 import gse.time;
 import gse.concurrency;

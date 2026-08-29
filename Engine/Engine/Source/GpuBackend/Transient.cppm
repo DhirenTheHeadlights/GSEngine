@@ -11,7 +11,6 @@ import :frame_recorder;
 import :frame_resource_bin;
 
 import gse.core;
-import gse.concurrency;
 
 export namespace gse::gpu {
 	struct transient_pool_handle {
@@ -23,11 +22,11 @@ export namespace gse::gpu {
 		transient_command_buffer() = default;
 
 		transient_command_buffer(
-			gpu::command_buffer_handle cmd,
+			command_buffer_handle cmd,
 			std::size_t worker_index
 		);
 
-		[[nodiscard]] auto handle() const -> gpu::command_buffer_handle;
+		[[nodiscard]] auto handle() const -> command_buffer_handle;
 
 		[[nodiscard]] auto worker_index() const -> std::size_t;
 
@@ -40,7 +39,7 @@ export namespace gse::gpu {
 		[[nodiscard]] auto valid() const -> bool;
 
 	private:
-		gpu::command_buffer_handle m_cmd;
+		command_buffer_handle m_cmd;
 		std::size_t m_worker_index = 0;
 		std::uint64_t m_marker_seq = std::numeric_limits<std::uint64_t>::max();
 	};
@@ -66,12 +65,12 @@ export namespace gse::gpu {
 		[[nodiscard]]
 		static auto create(
 			Device& dev,
-			gpu::queue_id id,
+			queue_id id,
 			std::uint32_t family,
 			std::size_t worker_count
 		) -> transient_queue;
 
-		[[nodiscard]] auto id() const -> gpu::queue_id;
+		[[nodiscard]] auto id() const -> queue_id;
 
 		[[nodiscard]] auto reserve_for_submit() -> submit_ticket;
 
@@ -81,9 +80,11 @@ export namespace gse::gpu {
 			std::uint64_t value
 		) const -> bool;
 
-		[[nodiscard]] auto timeline_handle() const -> gpu::handle<gpu::semaphore>;
+		[[nodiscard]] auto pending_value() const -> std::uint64_t;
 
-		[[nodiscard]] auto station() -> gpu::wait_station&;
+		[[nodiscard]] auto timeline_handle() const -> handle<semaphore>;
+
+		[[nodiscard]] auto station() -> wait_station&;
 
 		[[nodiscard]] auto allocate_primary(
 			std::size_t worker_idx
@@ -109,18 +110,18 @@ export namespace gse::gpu {
 
 	private:
 		transient_queue(
-			gpu::queue_id id,
-			gpu::queue_timeline<Device>&& timeline,
+			queue_id id,
+			queue_timeline<Device>&& timeline,
 			std::vector<transient_pool_handle>&& pools,
 			Device& dev
 		);
 
-		gpu::queue_id m_id;
-		gpu::queue_timeline<Device> m_timeline;
+		queue_id m_id;
+		queue_timeline<Device> m_timeline;
 		std::vector<transient_pool_handle> m_pool_handles;
 		Device* m_device;
 		std::uint64_t m_next_value = 0;
-		gpu::wait_station m_station;
+		wait_station m_station;
 		std::unique_ptr<std::mutex> m_mutex = std::make_unique<std::mutex>();
 	};
 
@@ -145,17 +146,13 @@ export namespace gse::gpu {
 			std::size_t worker_count
 		) -> std::unique_ptr<transient_executor>;
 
-		[[nodiscard]] auto recorder() -> gpu::frame_recorder&;
+		[[nodiscard]] auto recorder() -> frame_recorder&;
 
-		[[nodiscard]] auto bin() -> gpu::frame_resource_bin&;
+		[[nodiscard]] auto bin() -> frame_resource_bin&;
 
 		[[nodiscard]] auto queue(
-			gpu::queue_id id
+			queue_id id
 		) -> transient_queue<Device>&;
-
-		auto detach(
-			async::task<> task
-		) -> void;
 
 		auto begin_frame() -> void;
 
@@ -167,20 +164,18 @@ export namespace gse::gpu {
 			transient_queue<Device>&& compute
 		);
 
-		gpu::frame_recorder m_recorder;
-		gpu::frame_resource_bin m_bin;
+		frame_recorder m_recorder;
+		frame_resource_bin m_bin;
 		transient_queue<Device> m_graphics;
 		transient_queue<Device> m_compute;
-		std::vector<async::task<>> m_detached;
-		std::unique_ptr<std::mutex> m_detached_mutex = std::make_unique<std::mutex>();
 	};
 }
 
-gse::gpu::transient_command_buffer::transient_command_buffer(const gpu::command_buffer_handle cmd, const std::size_t worker_index)
+gse::gpu::transient_command_buffer::transient_command_buffer(const command_buffer_handle cmd, const std::size_t worker_index)
 	: m_cmd(cmd), m_worker_index(worker_index) {
 }
 
-auto gse::gpu::transient_command_buffer::handle() const -> gpu::command_buffer_handle {
+auto gse::gpu::transient_command_buffer::handle() const -> command_buffer_handle {
 	return m_cmd;
 }
 
@@ -201,7 +196,7 @@ auto gse::gpu::transient_command_buffer::valid() const -> bool {
 }
 
 template <typename Device>
-gse::gpu::transient_queue<Device>::transient_queue(gpu::queue_id id, gpu::queue_timeline<Device>&& timeline, std::vector<transient_pool_handle>&& pools, Device& dev)
+gse::gpu::transient_queue<Device>::transient_queue(queue_id id, queue_timeline<Device>&& timeline, std::vector<transient_pool_handle>&& pools, Device& dev)
 	: m_id(id), m_timeline(std::move(timeline)), m_pool_handles(std::move(pools)), m_device(&dev) {
 }
 
@@ -225,17 +220,17 @@ auto gse::gpu::transient_queue<Device>::operator=(transient_queue&& other) noexc
 }
 
 template <typename Device>
-auto gse::gpu::transient_queue<Device>::create(Device& dev, const gpu::queue_id id, const std::uint32_t family, const std::size_t worker_count) -> transient_queue {
+auto gse::gpu::transient_queue<Device>::create(Device& dev, const queue_id id, const std::uint32_t family, const std::size_t worker_count) -> transient_queue {
 	std::vector<transient_pool_handle> pools;
 	pools.reserve(worker_count);
 	for (std::size_t i = 0; i < worker_count; ++i) {
 		pools.push_back(dev.create_transient_command_pool(family));
 	}
-	return transient_queue(id, gpu::queue_timeline<Device>::create(dev), std::move(pools), dev);
+	return transient_queue(id, queue_timeline<Device>::create(dev), std::move(pools), dev);
 }
 
 template <typename Device>
-auto gse::gpu::transient_queue<Device>::id() const -> gpu::queue_id {
+auto gse::gpu::transient_queue<Device>::id() const -> queue_id {
 	return m_id;
 }
 
@@ -260,12 +255,18 @@ auto gse::gpu::transient_queue<Device>::reached(const std::uint64_t value) const
 }
 
 template <typename Device>
-auto gse::gpu::transient_queue<Device>::timeline_handle() const -> gpu::handle<gpu::semaphore> {
+auto gse::gpu::transient_queue<Device>::pending_value() const -> std::uint64_t {
+	std::lock_guard lock(*m_mutex);
+	return m_next_value;
+}
+
+template <typename Device>
+auto gse::gpu::transient_queue<Device>::timeline_handle() const -> handle<semaphore> {
 	return m_timeline.handle();
 }
 
 template <typename Device>
-auto gse::gpu::transient_queue<Device>::station() -> gpu::wait_station& {
+auto gse::gpu::transient_queue<Device>::station() -> wait_station& {
 	return m_station;
 }
 
@@ -325,28 +326,28 @@ gse::gpu::transient_executor<Device>::transient_executor(transient_queue<Device>
 
 template <typename Device>
 auto gse::gpu::transient_executor<Device>::create(Device& dev, const std::uint32_t graphics_family, const std::uint32_t compute_family, const std::size_t worker_count) -> std::unique_ptr<transient_executor> {
-	auto graphics = transient_queue<Device>::create(dev, gpu::queue_id::graphics, graphics_family, worker_count);
-	auto compute = transient_queue<Device>::create(dev, gpu::queue_id::compute, compute_family, worker_count);
+	auto graphics = transient_queue<Device>::create(dev, queue_id::graphics, graphics_family, worker_count);
+	auto compute = transient_queue<Device>::create(dev, queue_id::compute, compute_family, worker_count);
 	return std::unique_ptr<transient_executor>(new transient_executor(std::move(graphics), std::move(compute)));
 }
 
 template <typename Device>
-auto gse::gpu::transient_executor<Device>::recorder() -> gpu::frame_recorder& {
+auto gse::gpu::transient_executor<Device>::recorder() -> frame_recorder& {
 	return m_recorder;
 }
 
 template <typename Device>
-auto gse::gpu::transient_executor<Device>::bin() -> gpu::frame_resource_bin& {
+auto gse::gpu::transient_executor<Device>::bin() -> frame_resource_bin& {
 	return m_bin;
 }
 
 template <typename Device>
-auto gse::gpu::transient_executor<Device>::queue(const gpu::queue_id id) -> transient_queue<Device>& {
+auto gse::gpu::transient_executor<Device>::queue(const queue_id id) -> transient_queue<Device>& {
 	switch (id) {
-		case gpu::queue_id::graphics: {
+		case queue_id::graphics: {
 			return m_graphics;
 		}
-		case gpu::queue_id::compute: {
+		case queue_id::compute: {
 			return m_compute;
 		}
 	}
@@ -354,48 +355,28 @@ auto gse::gpu::transient_executor<Device>::queue(const gpu::queue_id id) -> tran
 }
 
 template <typename Device>
-auto gse::gpu::transient_executor<Device>::detach(async::task<> task) -> void {
-	std::lock_guard lock(*m_detached_mutex);
-	m_detached.push_back(std::move(task));
-}
-
-template <typename Device>
 auto gse::gpu::transient_executor<Device>::begin_frame() -> void {
 	const auto graphics_progress = m_graphics.poll();
 	const auto compute_progress = m_compute.poll();
 
-	const std::array<gpu::queue_progress, gpu::queue_id_count> progress{
-		gpu::queue_progress{
-			.queue = gpu::queue_id::graphics,
+	const std::array<queue_progress, queue_id_count> progress{
+		queue_progress{
+			.queue = queue_id::graphics,
 			.reached_value = graphics_progress,
 		},
-		gpu::queue_progress{
-			.queue = gpu::queue_id::compute,
+		queue_progress{
+			.queue = queue_id::compute,
 			.reached_value = compute_progress,
 		},
 	};
 
 	m_bin.drain(progress);
-
-	{
-		std::lock_guard lock(*m_detached_mutex);
-		std::erase_if(
-			m_detached,
-			[](const async::task<>& t) {
-				return t.done();
-			}
-		);
-	}
 }
 
 template <typename Device>
 auto gse::gpu::transient_executor<Device>::wait_idle() -> void {
 	m_graphics.wait_idle();
 	m_compute.wait_idle();
-	{
-		std::lock_guard lock(*m_detached_mutex);
-		m_detached.clear();
-	}
 	m_bin.wait_idle_clear();
 	m_recorder.clear();
 }

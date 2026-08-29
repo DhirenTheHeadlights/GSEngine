@@ -11,30 +11,13 @@ import gse.concurrency;
 import gse.core;
 
 export namespace gse::gpu {
-	template <typename T = void>
-	using gpu_task = async::task<T>;
-
-	struct begin_transient_awaiter {
-		gpu::device* m_gpu_device;
-		transient_queue<device>* m_queue;
-		device::pass_marker m_pass_marker;
-
-		auto await_ready() const noexcept -> bool;
-
-		auto await_suspend(
-			std::coroutine_handle<>
-		) noexcept -> bool;
-
-		auto await_resume() -> gpu::transient_command_buffer;
-	};
-
 	class submission {
 	public:
 		submission(
-			gpu::device& gpu_dev,
+			device& gpu_dev,
 			transient_queue<device>& queue,
 			frame_resource_bin& bin,
-			gpu::transient_command_buffer&& cmd
+			transient_command_buffer&& cmd
 		);
 
 		template <typename T>
@@ -52,19 +35,11 @@ export namespace gse::gpu {
 			std::vector<buffer>&& resources
 		) && -> submission&&;
 
-		auto await_ready() noexcept -> bool;
-
-		auto await_suspend(
-			std::coroutine_handle<> caller
-		) -> bool;
-
-		auto await_resume() noexcept -> sync_token;
-
 	private:
-		gpu::device* m_gpu_device;
+		device* m_gpu_device;
 		transient_queue<device>* m_queue;
 		frame_resource_bin* m_bin;
-		gpu::transient_command_buffer m_cmd;
+		transient_command_buffer m_cmd;
 		std::vector<std::unique_ptr<frame_resource_bin::retained_base>> m_pending_retains;
 		std::uint64_t m_value = 0;
 		bool m_submitted = false;
@@ -72,50 +47,20 @@ export namespace gse::gpu {
 
 	[[nodiscard]]
 	auto begin_transient(
-		gpu::device& dev,
+		device& dev,
 		queue_id id,
 		std::string_view tag = "transient.untagged"
-	) -> begin_transient_awaiter;
+	) -> transient_command_buffer;
 
 	[[nodiscard]]
 	auto submit(
-		gpu::device& dev,
-		gpu::transient_command_buffer&& cmd,
+		device& dev,
+		transient_command_buffer&& cmd,
 		queue_id id
 	) -> submission;
-
-	auto dispatch(
-		gpu::device& dev,
-		async::task<> task
-	) -> void;
 }
 
-auto gse::gpu::begin_transient_awaiter::await_ready() const noexcept -> bool {
-	return true;
-}
-
-auto gse::gpu::begin_transient_awaiter::await_suspend(std::coroutine_handle<>) noexcept -> bool {
-	return false;
-}
-
-auto gse::gpu::begin_transient_awaiter::await_resume() -> gpu::transient_command_buffer {
-	const auto worker = task::current_worker();
-	assert(worker.has_value(), "begin_transient must be co_awaited from a task worker thread");
-	auto cmd = m_queue->allocate_primary(*worker);
-	m_gpu_device->begin_one_time_commands(cmd.handle());
-	const auto marker =
-		m_gpu_device->begin_pass_marker(
-			cmd.handle(),
-			device::pass_marker_domain::transient,
-			m_pass_marker
-		);
-	m_gpu_device->checkpoint_pass_marker(cmd.handle(), marker);
-	m_gpu_device->post_renderpass_pass_marker(cmd.handle(), marker);
-	cmd.set_marker_seq(marker.seq);
-	return cmd;
-}
-
-gse::gpu::submission::submission(gpu::device& gpu_dev, transient_queue<device>& queue, frame_resource_bin& bin, gpu::transient_command_buffer&& cmd)
+gse::gpu::submission::submission(device& gpu_dev, transient_queue<device>& queue, frame_resource_bin& bin, transient_command_buffer&& cmd)
 	: m_gpu_device(&gpu_dev), m_queue(&queue), m_bin(&bin), m_cmd(std::move(cmd)) {
 }
 
@@ -162,9 +107,11 @@ auto gse::gpu::submission::submit_sync() -> sync_token {
 			.value = m_value,
 			.stages = pipeline_stage_flag::all_commands,
 		};
+
 		const command_buffer_submit_info cmd_info{
 			.command_buffer = m_cmd.handle(),
 		};
+
 		const submit_info info{
 			.command_buffers = std::span(&cmd_info, 1),
 			.signal_semaphores = std::span(&signal, 1),
@@ -184,41 +131,26 @@ auto gse::gpu::submission::submit_sync() -> sync_token {
 	return sync_token{ &m_queue->station(), m_value };
 }
 
-auto gse::gpu::submission::await_ready() noexcept -> bool {
-	return false;
+auto gse::gpu::begin_transient(device& dev, const queue_id id, const std::string_view tag) -> transient_command_buffer {
+	const auto worker = task::current_worker();
+	assert(worker.has_value(), "begin_transient must be called from a task worker thread");
+	auto& queue = dev.transient().queue(id);
+	auto cmd = queue.allocate_primary(*worker);
+	dev.begin_one_time_commands(cmd.handle());
+	const auto marker = dev.begin_pass_marker(
+		cmd.handle(),
+		device::pass_marker_domain::transient,
+		device::pass_marker{
+			.pass_type = find_or_generate_id(tag)
+		},
+		tag
+	);
+	dev.checkpoint_pass_marker(cmd.handle(), marker);
+	dev.post_renderpass_pass_marker(cmd.handle(), marker);
+	cmd.set_marker_seq(marker.seq);
+	return cmd;
 }
 
-auto gse::gpu::submission::await_suspend(std::coroutine_handle<> caller) -> bool {
-	submit_sync();
-
-	if (m_queue->reached(m_value)) {
-		return false;
-	}
-
-	m_queue->park(m_value, caller);
-	return true;
-}
-
-auto gse::gpu::submission::await_resume() noexcept -> sync_token {
-	return sync_token{ &m_queue->station(), m_value };
-}
-
-auto gse::gpu::begin_transient(gpu::device& dev, const queue_id id, const std::string_view tag) -> begin_transient_awaiter {
-	return begin_transient_awaiter{
-		.m_gpu_device = &dev,
-		.m_queue = &dev.transient().queue(id),
-		.m_pass_marker =
-			device::pass_marker{
-				.pass_type = find_or_generate_id(tag)
-			},
-	};
-}
-
-auto gse::gpu::submit(gpu::device& dev, gpu::transient_command_buffer&& cmd, const queue_id id) -> submission {
+auto gse::gpu::submit(device& dev, transient_command_buffer&& cmd, const queue_id id) -> submission {
 	return submission(dev, dev.transient().queue(id), dev.transient().bin(), std::move(cmd));
-}
-
-auto gse::gpu::dispatch(gpu::device& dev, async::task<> task) -> void {
-	task.start();
-	dev.transient().detach(std::move(task));
 }

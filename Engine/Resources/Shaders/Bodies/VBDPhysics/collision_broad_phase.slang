@@ -8,6 +8,47 @@ uint hash_cell(int3 cell) {
     return (h % grid_table_size) + 1;
 }
 
+bool is_jointed(uint a, uint b) {
+    uint count = jointed_pairs_data[0];
+    if (count == 0) {
+        return false;
+    }
+
+    uint lo_key = min(a, b);
+    uint hi_key = max(a, b);
+
+    uint lo = 0;
+    uint hi = count;
+    while (lo < hi) {
+        uint mid = (lo + hi) >> 1;
+        uint mid_lo = jointed_pairs_data[1 + mid * 2];
+        uint mid_hi = jointed_pairs_data[1 + mid * 2 + 1];
+        if (mid_lo < lo_key || (mid_lo == lo_key && mid_hi < hi_key)) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+
+    if (lo < count) {
+        uint found_lo = jointed_pairs_data[1 + lo * 2];
+        uint found_hi = jointed_pairs_data[1 + lo * 2 + 1];
+        return found_lo == lo_key && found_hi == hi_key;
+    }
+    return false;
+}
+
+void emit_pair(uint a, uint b) {
+    uint slot;
+    InterlockedAdd(collision_pairs[0], 1, slot);
+    if (slot >= max_collision_pairs) {
+        InterlockedAdd(collision_pairs[0], -1, slot);
+        return;
+    }
+    collision_pairs[1 + slot * 2] = a;
+    collision_pairs[1 + slot * 2 + 1] = b;
+}
+
 void collision_broad_phase(uint3 dispatch_id) {
     uint i = dispatch_id.x;
     if (i >= pc.body_count) {
@@ -16,15 +57,42 @@ void collision_broad_phase(uint3 dispatch_id) {
 
     body_state body_i = body_data[i];
 
-    bool i_locked = body_i.locked != 0;
+    if (body_i.locked != 0) {
+        return;
+    }
 
-    float margin = pc.cfg.speculative_margin;
+    uint env_i = body_env_data[i];
+
+    float margin = solver_config_data[0].speculative_margin;
     float3 min_a = body_i.aabb_min.xyz;
     float3 max_a = body_i.aabb_max.xyz;
+
+    uint static_count = static_bodies_data[0];
+    for (uint s = 0; s < static_count; s++) {
+        uint j = static_bodies_data[1 + s];
+        if (j >= pc.body_count || j == i) {
+            continue;
+        }
+        body_state body_j = body_data[j];
+        float3 min_b = body_j.aabb_min.xyz;
+        float3 max_b = body_j.aabb_max.xyz;
+
+        bool overlap =
+            min_a.x - margin <= max_b.x && max_a.x + margin >= min_b.x &&
+            min_a.y - margin <= max_b.y && max_a.y + margin >= min_b.y &&
+            min_a.z - margin <= max_b.z && max_a.z + margin >= min_b.z;
+
+        if (overlap && !is_jointed(i, j)) {
+            emit_pair(min(i, j), max(i, j));
+        }
+    }
 
     float cell_size = pc.grid_cell_size;
     int3 min_cell_i = world_to_cell(min_a - margin, cell_size);
     int3 max_cell_i = world_to_cell(max_a + margin, cell_size);
+
+    uint nodes_walked = 0;
+    uint aabb_tests = 0;
 
     for (int cx = min_cell_i.x; cx <= max_cell_i.x; cx++) {
         for (int cy = min_cell_i.y; cy <= max_cell_i.y; cy++) {
@@ -36,35 +104,27 @@ void collision_broad_phase(uint3 dispatch_id) {
                 while (entry_ptr != 0 && entry_ptr >= grid_table_size + 1) {
                     uint j = grid_data[entry_ptr];
                     uint next = grid_data[entry_ptr + 1];
+                    nodes_walked += 1;
 
-                    if (j > i && j < pc.body_count) {
+                    uint env_j = body_env_data[j];
+                    bool cross_env = (env_i != 0xFFFFFFFFu) && (env_j != 0xFFFFFFFFu) && (env_i != env_j);
+                    if (j > i && j < pc.body_count && !cross_env) {
                         body_state body_j = body_data[j];
-                        bool j_locked = body_j.locked != 0;
-                        if (!(i_locked && j_locked)) {
-                            float3 min_b = body_j.aabb_min.xyz;
-                            float3 max_b = body_j.aabb_max.xyz;
+                        float3 min_b = body_j.aabb_min.xyz;
+                        float3 max_b = body_j.aabb_max.xyz;
+                        aabb_tests += 1;
 
-                            bool overlap =
-                                min_a.x - margin <= max_b.x && max_a.x + margin >= min_b.x &&
-                                min_a.y - margin <= max_b.y && max_a.y + margin >= min_b.y &&
-                                min_a.z - margin <= max_b.z && max_a.z + margin >= min_b.z;
+                        bool overlap =
+                            min_a.x - margin <= max_b.x && max_a.x + margin >= min_b.x &&
+                            min_a.y - margin <= max_b.y && max_a.y + margin >= min_b.y &&
+                            min_a.z - margin <= max_b.z && max_a.z + margin >= min_b.z;
 
-                            if (overlap) {
-                                int3 min_cell_j = world_to_cell(min_b - margin, cell_size);
-                                int3 overlap_min = max(min_cell_i, min_cell_j);
+                        if (overlap) {
+                            int3 min_cell_j = world_to_cell(min_b - margin, cell_size);
+                            int3 overlap_min = max(min_cell_i, min_cell_j);
 
-                                if (cell.x == overlap_min.x && cell.y == overlap_min.y && cell.z == overlap_min.z) {
-                                    uint slot;
-                                    InterlockedAdd(collision_pairs[0], 1, slot);
-
-                                    if (slot >= max_collision_pairs) {
-                                        InterlockedAdd(collision_pairs[0], -1, slot);
-                                        return;
-                                    }
-
-                                    collision_pairs[1 + slot * 2] = i;
-                                    collision_pairs[1 + slot * 2 + 1] = j;
-                                }
+                            if (cell.x == overlap_min.x && cell.y == overlap_min.y && cell.z == overlap_min.z && !is_jointed(i, j)) {
+                                emit_pair(i, j);
                             }
                         }
                     }
@@ -73,5 +133,12 @@ void collision_broad_phase(uint3 dispatch_id) {
                 }
             }
         }
+    }
+
+    if (nodes_walked != 0) {
+        InterlockedAdd(collision_state[state_broad_nodes_index], nodes_walked);
+    }
+    if (aabb_tests != 0) {
+        InterlockedAdd(collision_state[state_broad_tests_index], aabb_tests);
     }
 }

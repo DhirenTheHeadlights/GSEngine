@@ -12,6 +12,7 @@ import :render_targets;
 
 
 import gse.gpu;
+import gse.gpu_record;
 import gse.core;
 import gse.containers;
 import gse.concurrency;
@@ -34,15 +35,15 @@ namespace gse::renderer::world_text {
 
 	struct [[= shaders::shader_struct]] push_constants {
 		vec3f color;
-		vec2f unit_range;
 		std::uint32_t tex_idx;
 		vec3f shadow_color;
 		float shadow_offset_px;
+		vec2f unit_range;
 		float shadow_softness;
 		float shadow_strength;
 	};
 
-	using world_text_bindings = type_pack<shaders::standard_3d::camera_ubo, world_text_vertex_buffer, shaders::bindless::textures>;
+	using world_text_bindings = type_pack<shaders::standard_3d::camera_ubo, world_text_vertex_buffer, shaders::bindless::textures, shaders::bindless::textures_sampler>;
 	using world_text_shader_types = type_pack<world_text_vertex>;
 
 	using entry = gpu::graphics_entry<
@@ -143,6 +144,7 @@ auto gse::renderer::world_text::ensure_vertex_capacity(data& d, gpu::device& dev
 	buf = device.create_buffer(
 		{
 			.size = cap * sizeof(world_text_vertex),
+			.stride = sizeof(world_text_vertex),
 			.usage = gpu::buffer_flag::storage,
 			.bindless = true
 		},
@@ -153,13 +155,24 @@ auto gse::renderer::world_text::ensure_vertex_capacity(data& d, gpu::device& dev
 auto gse::renderer::world_text::init(context& ctx, const shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
 	d.pipeline = gpu::build_graphics_program(*gpu_s.device, entry::pod);
 
+	d.text_sampler = gpu_s.device->register_sampler(
+		{
+			.min = gpu::sampler_filter::linear,
+			.mag = gpu::sampler_filter::linear,
+			.address_u = gpu::sampler_address_mode::clamp_to_edge,
+			.address_v = gpu::sampler_address_mode::clamp_to_edge,
+			.address_w = gpu::sampler_address_mode::clamp_to_edge,
+		}
+	);
+
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 		d.camera_ubo_buffers[i] = gpu_s.device->create_buffer(
 			{
 				.size = camera_ubo_size,
-				.usage = gpu::buffer_flag::uniform,
+				.stride = sizeof(shaders::common::camera_data),
+				.usage = gpu::buffer_flag::storage,
 				.bindless = true
 			},
 			"world_text.camera_ubo"
@@ -169,7 +182,7 @@ auto gse::renderer::world_text::init(context& ctx, const shared_view<gpu::contex
 	return {};
 }
 
-auto gse::renderer::world_text::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, shared_view<camera::data> cam_state, shared_view<gui::data> gui_d, shared_view<sdf_grid::data> grid_d) -> async::task<> {
+auto gse::renderer::world_text::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, shared_view<camera::data> cam_state, shared_view<gui::data> gui_d, shared_view<sdf_grid::data> grid_d) -> async::task<> {
 	if (!grid_d.enabled || !grid_d.show_labels) {
 		co_return;
 	}
@@ -178,12 +191,12 @@ auto gse::renderer::world_text::frame(const context& ctx, shared_view<gpu::conte
 		co_return;
 	}
 
-	if (!gui_d.gui_font.valid()) {
+	if (!gui_d.fonts.text.valid()) {
 		co_return;
 	}
 
-	const auto& f = gui_d.gui_font.resolve();
-	if (!f.texture() || !f.texture()->bindless_slot().valid()) {
+	const auto font = gui_d.fonts.text.resolve();
+	if (!font->texture() || !font->texture()->bindless_slot().valid()) {
 		co_return;
 	}
 
@@ -192,8 +205,8 @@ auto gse::renderer::world_text::frame(const context& ctx, shared_view<gpu::conte
 
 	std::vector<world_text_vertex> vertices;
 	vertices.reserve(static_cast<std::size_t>(max_ticks) * 32);
-	build_labels_for_axis(vertices, f, world_scale, grid_d.major_spacing, max_ticks, true);
-	build_labels_for_axis(vertices, f, world_scale, grid_d.major_spacing, max_ticks, false);
+	build_labels_for_axis(vertices, *font, world_scale, grid_d.major_spacing, max_ticks, true);
+	build_labels_for_axis(vertices, *font, world_scale, grid_d.major_spacing, max_ticks, false);
 
 	if (vertices.empty()) {
 		co_return;
@@ -217,15 +230,15 @@ auto gse::renderer::world_text::frame(const context& ctx, shared_view<gpu::conte
 	};
 	d.camera_ubo_buffers[frame_index].host_write(camera);
 
-	const auto atlas_size = f.texture()->image_data().size;
+	const auto atlas_size = font->texture()->image_data().size;
 	const float atlas_w = std::max(static_cast<float>(atlas_size.x()), 1.f);
 	const float atlas_h = std::max(static_cast<float>(atlas_size.y()), 1.f);
-	const vec2f unit_range{ f.pixel_range() / atlas_w, f.pixel_range() / atlas_h };
+	const vec2f unit_range{ font->pixel_range() / atlas_w, font->pixel_range() / atlas_h };
 
 	const auto ext = gpu_s.render_graph->extent();
 	const auto vertex_count = static_cast<std::uint32_t>(vertices.size());
 
-	auto rec = co_await gpu::pass<^^gse::renderer::world_text::frame>(ctx)
+	auto rec = co_await gpu::pass<^^frame>(pass_out)
 		.pipeline(d.pipeline)
 		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
 		.depth(gpu::load_depth())
@@ -236,16 +249,17 @@ auto gse::renderer::world_text::frame(const context& ctx, shared_view<gpu::conte
 	rec.push_bindings<entry>(
 		{
 			.color = grid_d.label_color,
-			.unit_range = unit_range,
-			.tex_idx = f.texture()->bindless_slot().index,
+			.tex_idx = font->texture()->bindless_slot().index,
 			.shadow_color = vec3f{ 0.f, 0.f, 0.f },
 			.shadow_offset_px = 1.5f,
+			.unit_range = unit_range,
 			.shadow_softness = 0.6f,
 			.shadow_strength = 0.55f,
 		},
 		{
 			.camera_ubo = d.camera_ubo_buffers[frame_index].slot(),
 			.world_text_vertex_buffer = d.vertex_buffers[frame_index].slot(),
+			.textures_sampler = d.text_sampler.slot(),
 		}
 	);
 	rec.draw(vertex_count);

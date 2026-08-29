@@ -12,6 +12,7 @@ import :shared_shaders;
 
 
 import gse.gpu;
+import gse.gpu_record;
 import gse.core;
 import gse.concurrency;
 import gse.math;
@@ -38,7 +39,7 @@ namespace gse::renderer::scene_snapshot {
 				{
 					.size = extent,
 					.format = gpu_s.swapchain->format(),
-					.usage = gpu::image_flag::sampled | gpu::image_flag::transfer_dst,
+					.usage = { gpu::image_flag::sampled, gpu::image_flag::transfer_dst },
 				}
 			);
 
@@ -62,7 +63,7 @@ auto gse::renderer::scene_snapshot::run(context& ctx, const shared_view<gpu::con
 	return {};
 }
 
-auto gse::renderer::scene_snapshot::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
+auto gse::renderer::scene_snapshot::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -83,7 +84,7 @@ auto gse::renderer::scene_snapshot::frame(const context& ctx, shared_view<gpu::c
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
 	auto rec =
-		co_await gpu::pass<^^gse::renderer::scene_snapshot::frame>(ctx)
+		co_await gpu::pass<^^frame>(pass_out)
 		.after<^^forward::frame, ^^physics_debug::frame, ^^sdf_grid::frame, ^^world_text::frame, ^^tonemap::frame>();
 
 	rec.blit_swapchain_to_image(*gpu_s.swapchain, *gpu_s.frame, d.snapshots[frame_index], extent);

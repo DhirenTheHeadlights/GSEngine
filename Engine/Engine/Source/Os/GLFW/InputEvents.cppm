@@ -39,5 +39,14 @@ export namespace gse::input {
 		std::uint32_t codepoint;
 	};
 
-	using event = std::variant<key_pressed, key_released, mouse_button_pressed, mouse_button_released, mouse_moved, mouse_scrolled, text_entered>;
+	struct mouse_raw_moved {
+		double x_delta;
+		double y_delta;
+	};
+
+	using event = std::variant<key_pressed, key_released, mouse_button_pressed, mouse_button_released, mouse_moved, mouse_scrolled, text_entered, mouse_raw_moved>;
+
+	struct synthetic_input_request {
+		event value;
+	};
 }

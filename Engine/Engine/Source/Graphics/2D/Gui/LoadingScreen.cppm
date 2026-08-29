@@ -33,6 +33,8 @@ export namespace gse::gui {
 
 		auto captures_input() const -> bool override;
 
+		auto should_dismiss() const -> bool override;
+
 	private:
 		const loading::state* m_state;
 		bool m_logged_first_build = false;
@@ -49,12 +51,6 @@ auto gse::gui::loading_screen::build(builder& ui, nav& n) -> void {
 		log::println(log::category::runtime, "boot: loading_screen first build()");
 	}
 
-	if (m_state->finished()) {
-		log::println(log::category::runtime, "boot: loading_screen dismissed (state.finished)");
-		n.pop();
-		return;
-	}
-
 	const_cast<loading::state*>(m_state)->mark_rendered();
 
 	const auto& ctx = ui.ctx;
@@ -64,9 +60,10 @@ auto gse::gui::loading_screen::build(builder& ui, nav& n) -> void {
 
 	const float pad = ctx.style.padding;
 	const float font_sz = ctx.style.font_size;
-	const ui_rect body = ctx.current_menu->rect.inset({ pad, pad });
+	const rectf body = ctx.current_menu->rect.inset({ pad, pad });
 
-	const float row_h = ctx.font->line_height(font_sz);
+	const auto text_view = ctx.fonts.text.resolve();
+	const float row_h = text_view->line_height(font_sz);
 	const vec2f center = body.center();
 
 	const std::string phase = m_state->phase();
@@ -83,20 +80,20 @@ auto gse::gui::loading_screen::build(builder& ui, nav& n) -> void {
 		);
 	}
 
-	const std::string label = phase.empty() ? std::string("Loading...") : phase;
-	const float label_w = ctx.font->width(label, font_sz);
+	const std::string_view label = phase.empty() ? std::string_view("Loading...") : std::string_view(phase);
+	const float label_w = text_view->width(label, font_sz);
 
 	ctx.queue_text({
-		.font = ctx.font,
+		.font = ctx.fonts.text,
 		.text = label,
-		.position = { center.x() - label_w * 0.5f, center.y() + ctx.font->vertical_center_offset(font_sz) + row_h * 1.5f },
+		.position = { center.x() - label_w * 0.5f, center.y() + text_view->vertical_center_offset(font_sz) + row_h * 1.5f },
 		.scale = font_sz,
 		.color = ctx.style.color_text,
 	});
 
 	const float bar_width = std::min(ctx.style.progress_bar_max_width, body.width() * 0.6f);
 	const float bar_height = ctx.style.progress_bar_height;
-	const ui_rect bar_outline = layout::centered(
+	const rectf bar_outline = layout::centered(
 		body,
 		{ bar_width, bar_height }
 	);
@@ -115,7 +112,7 @@ auto gse::gui::loading_screen::build(builder& ui, nav& n) -> void {
 	const float fill_width = (bar_width - inset * 2.f) * fill_ratio;
 
 	if (fill_width > 0.f) {
-		const ui_rect fill_rect = ui_rect::from_position_size(
+		const rectf fill_rect = rectf::from_position_size(
 			{ bar_outline.left() + inset, bar_outline.top() - inset },
 			{ fill_width, bar_height - inset * 2.f }
 		);
@@ -129,9 +126,9 @@ auto gse::gui::loading_screen::build(builder& ui, nav& n) -> void {
 
 	if (total > 0) {
 		const std::string detail = std::format("{} / {}", done, total);
-		const float detail_w = ctx.font->width(detail, font_sz);
+		const float detail_w = text_view->width(detail, font_sz);
 		ctx.queue_text({
-			.font = ctx.font,
+			.font = ctx.fonts.text,
 			.text = detail,
 			.position = { center.x() - detail_w * 0.5f, center.y() - bar_height * 0.5f - pad },
 			.scale = font_sz,
@@ -150,4 +147,8 @@ auto gse::gui::loading_screen::dismissable() const -> bool {
 
 auto gse::gui::loading_screen::captures_input() const -> bool {
 	return true;
+}
+
+auto gse::gui::loading_screen::should_dismiss() const -> bool {
+	return m_state->finished();
 }

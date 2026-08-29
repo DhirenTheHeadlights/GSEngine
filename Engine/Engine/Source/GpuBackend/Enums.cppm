@@ -5,6 +5,11 @@ import std;
 import gse.core;
 
 export namespace gse::gpu {
+	enum class backend_kind : std::uint8_t {
+		vulkan,
+		dx12,
+	};
+
 	enum class resource_type : std::uint8_t {
 		buffer,
 		image,
@@ -94,10 +99,7 @@ export namespace gse::gpu {
 		a = 1 << 3,
 	};
 
-	using color_component_flags = gse::flags<color_component_flag>;
-	constexpr auto operator|(color_component_flag a, color_component_flag b) -> color_component_flags {
-		return color_component_flags(a) | b;
-	}
+	using color_component_flags = flags<color_component_flag>;
 
 	enum class color_format : std::uint8_t {
 		swapchain,
@@ -122,9 +124,10 @@ export namespace gse::gpu {
 	enum class queue_type : std::uint8_t {
 		graphics,
 		compute,
+		video_encode,
 	};
 
-	constexpr std::uint32_t queue_type_count = 2;
+	constexpr std::uint32_t queue_type_count = 3;
 
 	enum class queue_id : std::uint8_t {
 		graphics = 0,
@@ -134,16 +137,6 @@ export namespace gse::gpu {
 	constexpr std::size_t queue_id_count = 2;
 
 	constexpr std::uint32_t max_frames_in_flight = 2;
-
-	enum class barrier_scope : std::uint8_t {
-		compute_to_compute,
-		compute_to_indirect,
-		host_to_compute,
-		transfer_to_compute,
-		compute_to_transfer,
-		transfer_to_host,
-		transfer_to_transfer
-	};
 
 	enum class frame_status : std::uint8_t {
 		minimized,
@@ -167,10 +160,7 @@ export namespace gse::gpu {
 		mesh = 1 << 4,
 	};
 
-	using stage_flags = gse::flags<stage_flag>;
-	constexpr auto operator|(stage_flag a, stage_flag b) -> stage_flags {
-		return stage_flags(a) | b;
-	}
+	using stage_flags = flags<stage_flag>;
 
 	enum class vertex_format : std::uint8_t {
 		r32_sfloat,
@@ -213,10 +203,7 @@ export namespace gse::gpu {
 		acceleration_structure_write = 1ull << 21,
 	};
 
-	using access_flags = gse::flags<access_flag>;
-	constexpr auto operator|(access_flag a, access_flag b) -> access_flags {
-		return access_flags(a) | b;
-	}
+	using access_flags = flags<access_flag>;
 
 	enum class pipeline_stage_flag : std::uint64_t {
 		none = 0,
@@ -250,10 +237,7 @@ export namespace gse::gpu {
 		ray_tracing_shader = 1ull << 27,
 	};
 
-	using pipeline_stage_flags = gse::flags<pipeline_stage_flag>;
-	constexpr auto operator|(pipeline_stage_flag a, pipeline_stage_flag b) -> pipeline_stage_flags {
-		return pipeline_stage_flags(a) | b;
-	}
+	using pipeline_stage_flags = flags<pipeline_stage_flag>;
 
 	enum class memory_property_flag : std::uint32_t {
 		device_local = 1u << 0,
@@ -263,10 +247,7 @@ export namespace gse::gpu {
 		lazily_allocated = 1u << 4,
 	};
 
-	using memory_property_flags = gse::flags<memory_property_flag>;
-	constexpr auto operator|(memory_property_flag a, memory_property_flag b) -> memory_property_flags {
-		return memory_property_flags(a) | b;
-	}
+	using memory_property_flags = flags<memory_property_flag>;
 
 	enum class present_mode_setting : int {
 		fifo = 0,
@@ -289,10 +270,7 @@ export namespace gse::gpu {
 		image_first_pixel_visible = 1u << 3,
 	};
 
-	using present_stage_flags = gse::flags<present_stage_flag>;
-	constexpr auto operator|(present_stage_flag a, present_stage_flag b) -> present_stage_flags {
-		return present_stage_flags(a) | b;
-	}
+	using present_stage_flags = flags<present_stage_flag>;
 
 	enum class load_op : std::uint8_t {
 		load,
@@ -312,10 +290,7 @@ export namespace gse::gpu {
 		fragment_shader_invocations = 1u << 3,
 	};
 
-	using pipeline_statistic_flags = gse::flags<pipeline_statistic_flag>;
-	constexpr auto operator|(pipeline_statistic_flag a, pipeline_statistic_flag b) -> pipeline_statistic_flags {
-		return pipeline_statistic_flags(a) | b;
-	}
+	using pipeline_statistic_flags = flags<pipeline_statistic_flag>;
 
 	enum class query_status : std::uint8_t {
 		success,

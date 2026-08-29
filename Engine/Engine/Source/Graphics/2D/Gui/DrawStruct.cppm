@@ -46,7 +46,7 @@ auto gse::gui::draw_struct(builder& b, T& value, settings::panel_state& state, c
 			}
 			else if constexpr (settings::is_choice_v<F>) {
 				auto& dd_state = state.dropdowns[field_key];
-				std::size_t idx = static_cast<std::size_t>(value.[:m:].value);
+				std::size_t idx = settings::choice_index(value.[:m:]);
 				const auto r = b.draw<dropdown>({
 					.name = label,
 					.current_index = idx,
@@ -55,7 +55,7 @@ auto gse::gui::draw_struct(builder& b, T& value, settings::panel_state& state, c
 					.state = dd_state,
 				});
 				if (r.changed) {
-					value.[:m:].value = static_cast<typename F::value_type>(idx);
+					settings::set_choice_index(value.[:m:], idx);
 				}
 			}
 			else if constexpr (std::is_enum_v<F>) {
@@ -98,20 +98,20 @@ auto gse::gui::draw_struct(builder& b, T& value, settings::panel_state& state, c
 			}
 			else if constexpr (constexpr auto range_t = meta::find_range(m); range_t != std::meta::info{}) {
 				using R = [:range_t:];
-				if constexpr (gse::internal::is_quantity<F>) {
+				if constexpr (internal::is_quantity<F>) {
 					b.draw<quantity_slider<F, typename F::default_unit{}>>({
 						.name = label,
 						.value = value.[:m:],
-											.min = R::min,
-											.max = R::max,
+						.min = R::min,
+						.max = R::max,
 					});
 				}
 				else {
 					b.draw<slider<F>>({
 						.name = label,
 						.value = value.[:m:],
-											.min = static_cast<F>(R::min),
-											.max = static_cast<F>(R::max),
+						.min = static_cast<F>(R::min),
+						.max = static_cast<F>(R::max),
 					});
 				}
 			}

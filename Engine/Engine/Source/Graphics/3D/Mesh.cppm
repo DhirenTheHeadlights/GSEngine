@@ -64,7 +64,7 @@ export namespace gse {
 		explicit mesh(
 			mesh_data&& data
 		);
-		mesh(std::vector<vertex> vertices, std::vector<std::uint32_t> indices, const gse::material& mat = {})
+		mesh(std::vector<vertex> vertices, std::vector<std::uint32_t> indices, const material& mat = {})
 			: m_vertices(std::move(vertices)), m_indices(std::move(indices)), m_material(mat) {
 		}
 
@@ -73,9 +73,13 @@ export namespace gse {
 		) -> void;
 
 		auto center_of_mass() const -> vec3<displacement>;
-		auto material() const -> const gse::material&;
+		auto material() const -> const material&;
 		auto indices() const -> const std::vector<std::uint32_t>&;
 		auto aabb() const -> std::pair<vec3<displacement>, vec3<displacement>>;
+
+		auto vertex_count() const -> std::uint32_t {
+			return static_cast<std::uint32_t>(m_vertices.size());
+		}
 
 		auto vertex_gpu_buffer(this const mesh& self) -> const gpu::buffer& {
 			return self.m_vertex_buffer;
@@ -135,13 +139,13 @@ auto gse::mesh::initialize(gpu::context::data& ctx) -> void {
 	const std::size_t vertex_buffer_size = sizeof(vertex) * m_vertices.size();
 	const std::size_t index_buffer_size = sizeof(std::uint32_t) * m_indices.size();
 
-	constexpr auto storage_dst = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst;
+	constexpr gpu::buffer_usage storage_dst{ gpu::buffer_flag::storage, gpu::buffer_flag::transfer_dst };
 
 	m_vertex_buffer = ctx.device->create_buffer(
 		{
 			.size = vertex_buffer_size,
-			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst |
-				gpu::buffer_flag::acceleration_structure_build_input
+			.usage = { gpu::buffer_flag::storage, gpu::buffer_flag::transfer_dst,
+				gpu::buffer_flag::acceleration_structure_build_input }
 		},
 		"mesh.vertex"
 	);
@@ -149,14 +153,14 @@ auto gse::mesh::initialize(gpu::context::data& ctx) -> void {
 	m_index_buffer = ctx.device->create_buffer(
 		{
 			.size = index_buffer_size,
-			.usage = gpu::buffer_flag::index | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst |
-				gpu::buffer_flag::acceleration_structure_build_input
+			.usage = { gpu::buffer_flag::index, gpu::buffer_flag::storage, gpu::buffer_flag::transfer_dst,
+				gpu::buffer_flag::acceleration_structure_build_input }
 		},
 		"mesh.index"
 	);
 
 	std::vector<gpu::buffer_upload> uploads{ { &m_vertex_buffer, m_vertices.data(), vertex_buffer_size },
-											 { &m_index_buffer, m_indices.data(), index_buffer_size } };
+		{ &m_index_buffer, m_indices.data(), index_buffer_size } };
 
 	if (!m_meshlets.descriptors.empty()) {
 		const auto tri_size = (m_meshlets.triangles.size() + 3) & ~std::size_t(3);
@@ -167,6 +171,7 @@ auto gse::mesh::initialize(gpu::context::data& ctx) -> void {
 		ml.vertex_storage = ctx.device->create_buffer(
 			{
 				.size = vertex_buffer_size,
+				.stride = sizeof(vertex),
 				.usage = storage_dst,
 				.bindless = true
 			},
@@ -175,6 +180,7 @@ auto gse::mesh::initialize(gpu::context::data& ctx) -> void {
 		ml.descriptors = ctx.device->create_buffer(
 			{
 				.size = sizeof(meshlet_descriptor) * m_meshlets.descriptors.size(),
+				.stride = sizeof(meshlet_descriptor),
 				.usage = storage_dst,
 				.bindless = true
 			},
@@ -183,6 +189,7 @@ auto gse::mesh::initialize(gpu::context::data& ctx) -> void {
 		ml.vertices = ctx.device->create_buffer(
 			{
 				.size = sizeof(std::uint32_t) * m_meshlets.vertex_indices.size(),
+				.stride = sizeof(std::uint32_t),
 				.usage = storage_dst,
 				.bindless = true
 			},
@@ -191,7 +198,8 @@ auto gse::mesh::initialize(gpu::context::data& ctx) -> void {
 		ml.triangles = ctx.device->create_buffer(
 			{
 				.size = tri_size,
-				.usage = storage_dst,
+				.stride = sizeof(std::uint8_t),
+				.usage = storage_dst | gpu::buffer_flag::byte_address,
 				.bindless = true
 			},
 			"mesh.meshlet.triangles"
@@ -199,6 +207,7 @@ auto gse::mesh::initialize(gpu::context::data& ctx) -> void {
 		ml.bounds = ctx.device->create_buffer(
 			{
 				.size = sizeof(meshlet_bounds) * m_meshlets.bounds.size(),
+				.stride = sizeof(meshlet_bounds),
 				.usage = storage_dst,
 				.bindless = true
 			},
@@ -248,14 +257,14 @@ auto gse::mesh::center_of_mass() const -> vec3<displacement> {
 		);
 
 		const vec3_ld v0 = { length_d(m_vertices[idx0].position.x()),
-							 length_d(m_vertices[idx0].position.y()),
-							 length_d(m_vertices[idx0].position.z()) };
+			length_d(m_vertices[idx0].position.y()),
+			length_d(m_vertices[idx0].position.z()) };
 		const vec3_ld v1 = { length_d(m_vertices[idx1].position.x()),
-							 length_d(m_vertices[idx1].position.y()),
-							 length_d(m_vertices[idx1].position.z()) };
+			length_d(m_vertices[idx1].position.y()),
+			length_d(m_vertices[idx1].position.z()) };
 		const vec3_ld v2 = { length_d(m_vertices[idx2].position.x()),
-							 length_d(m_vertices[idx2].position.y()),
-							 length_d(m_vertices[idx2].position.z()) };
+			length_d(m_vertices[idx2].position.y()),
+			length_d(m_vertices[idx2].position.z()) };
 
 		const vec3_ld a = v0 - reference_point;
 		const vec3_ld b = v1 - reference_point;

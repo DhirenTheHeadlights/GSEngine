@@ -17,6 +17,7 @@ export namespace gse::frame_arena {
 namespace gse::frame_arena {
 	constexpr std::size_t bucket_count = 5;
 	constexpr std::size_t min_bucket_size = 64;
+	constexpr std::size_t max_free_blocks = 128;
 
 	struct block {
 		block* next = nullptr;
@@ -25,6 +26,7 @@ namespace gse::frame_arena {
 	struct bucket {
 		block* free_list = nullptr;
 		std::size_t block_size = 0;
+		std::size_t free_count = 0;
 	};
 
 	struct thread_pool {
@@ -79,6 +81,7 @@ auto gse::frame_arena::allocate(const std::size_t size, const std::size_t) -> vo
 	if (b.free_list) {
 		auto* blk = b.free_list;
 		b.free_list = blk->next;
+		--b.free_count;
 		return blk;
 	}
 
@@ -94,7 +97,14 @@ auto gse::frame_arena::deallocate(void* ptr, const std::size_t size) -> void {
 	}
 
 	auto& b = pool.buckets[idx];
+
+	if (b.free_count >= max_free_blocks) {
+		::operator delete(ptr);
+		return;
+	}
+
 	auto* blk = static_cast<block*>(ptr);
 	blk->next = b.free_list;
 	b.free_list = blk;
+	++b.free_count;
 }

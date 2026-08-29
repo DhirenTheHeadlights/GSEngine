@@ -20,7 +20,6 @@ export namespace gse::network {
 	struct discovery_result {
 		address addr;
 		std::string name;
-		std::string map;
 		std::uint8_t players{};
 		std::uint8_t max_players{};
 		std::uint32_t build{};
@@ -30,7 +29,7 @@ export namespace gse::network {
 		virtual ~discovery_provider() = default;
 
 		virtual auto refresh(
-			time_t<std::uint32_t>
+			time
 		) -> void = 0;
 
 		virtual auto results() -> std::span<const discovery_result> = 0;
@@ -45,18 +44,14 @@ export namespace gse::network {
 		~wan_directory_provider();
 
 		auto refresh(
-			time_t<std::uint32_t>
+			time
 		) -> void override;
 
 		auto results() -> std::span<const discovery_result> override;
 
-		auto set_seed(
-			std::vector<discovery_result> seed
-		) -> void;
-
 	private:
 		auto query_servers_async(
-			time_t<std::uint32_t> timeout
+			time timeout
 		) -> void;
 
 		std::vector<discovery_result> m_seed;
@@ -65,11 +60,11 @@ export namespace gse::network {
 		std::mutex m_mutex;
 		std::atomic<bool> m_querying{ false };
 		std::atomic<bool> m_has_pending{ false };
-		time_t<std::uint32_t> m_last_refresh{ seconds(0) };
+		time m_last_refresh{ seconds(0.f) };
 	};
 }
 
-gse::network::wan_directory_provider::wan_directory_provider(std::vector<gse::network::discovery_result> seed)
+gse::network::wan_directory_provider::wan_directory_provider(std::vector<discovery_result> seed)
 	: m_seed(seed), m_published(seed), m_pending(std::move(seed)) {
 }
 
@@ -79,7 +74,7 @@ gse::network::wan_directory_provider::~wan_directory_provider() {
 	}
 }
 
-auto gse::network::wan_directory_provider::refresh(time_t<std::uint32_t> timeout) -> void {
+auto gse::network::wan_directory_provider::refresh(time timeout) -> void {
 	m_last_refresh = system_clock::now();
 
 	if (m_querying.exchange(true)) {
@@ -92,7 +87,7 @@ auto gse::network::wan_directory_provider::refresh(time_t<std::uint32_t> timeout
 	}).detach();
 }
 
-auto gse::network::wan_directory_provider::query_servers_async(time_t<std::uint32_t> timeout) -> void {
+auto gse::network::wan_directory_provider::query_servers_async(time timeout) -> void {
 	std::vector<discovery_result> local_copy;
 	{
 		std::lock_guard lock(m_mutex);
@@ -105,8 +100,8 @@ auto gse::network::wan_directory_provider::query_servers_async(time_t<std::uint3
 
 	udp_socket socket;
 	if (!socket.bind(address{
-			.ip = "0.0.0.0",
-			.port = 0
+		.ip = "0.0.0.0",
+		.port = 0
 		})) {
 		return;
 	}
@@ -132,7 +127,7 @@ auto gse::network::wan_directory_provider::query_servers_async(time_t<std::uint3
 	clock timeout_clock;
 	std::array<std::byte, 256> recv_buffer;
 
-	while (timeout_clock.elapsed<std::uint32_t>() < timeout) {
+	while (timeout_clock.elapsed() < timeout) {
 		if (socket.wait_readable(milliseconds(10)) != wait_result::ready) {
 			continue;
 		}
@@ -175,12 +170,4 @@ auto gse::network::wan_directory_provider::results() -> std::span<const discover
 		m_has_pending.store(false, std::memory_order_release);
 	}
 	return m_published;
-}
-
-auto gse::network::wan_directory_provider::set_seed(std::vector<discovery_result> seed) -> void {
-	std::lock_guard lock(m_mutex);
-	m_seed = seed;
-	m_pending = seed;
-	m_published = std::move(seed);
-	m_has_pending.store(false, std::memory_order_release);
 }

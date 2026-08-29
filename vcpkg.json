@@ -9,6 +9,14 @@
     "shader-slang",
     "nsight-aftermath",
     {
+      "name": "directx-headers",
+      "platform": "windows"
+    },
+    {
+      "name": "directx-dxc",
+      "platform": "windows"
+    },
+    {
       "name": "freetype",
       "default-features": false
     },

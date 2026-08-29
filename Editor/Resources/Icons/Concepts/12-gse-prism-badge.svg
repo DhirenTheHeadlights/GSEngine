@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="26" y1="27" x2="229" y2="226" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#151922"/>
+      <stop offset="1" stop-color="#06070b"/>
+    </linearGradient>
+    <linearGradient id="faceA" x1="68" y1="51" x2="135" y2="191" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#70f4ff"/>
+      <stop offset="1" stop-color="#1b74ff"/>
+    </linearGradient>
+    <linearGradient id="faceB" x1="128" y1="49" x2="195" y2="191" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f9e26f"/>
+      <stop offset="1" stop-color="#ff6d9e"/>
+    </linearGradient>
+    <filter id="shadow" x="-35%" y="-35%" width="170%" height="170%">
+      <feDropShadow dx="0" dy="16" stdDeviation="14" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+  <rect x="18" y="18" width="220" height="220" rx="46" fill="url(#bg)"/>
+  <path d="M128 44 204 184H52Z" fill="#0c1018" stroke="#e9f2ff" stroke-width="6" filter="url(#shadow)"/>
+  <path d="M128 44 128 184H52Z" fill="url(#faceA)" opacity="0.9"/>
+  <path d="M128 44 204 184h-76Z" fill="url(#faceB)" opacity="0.9"/>
+  <path d="M52 184h152L128 44Z" fill="none" stroke="#f8fbff" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M128 44v140" stroke="#f8fbff" stroke-width="5" stroke-opacity="0.7"/>
+  <text x="64" y="157" fill="#06090f" font-family="Segoe UI, Arial, sans-serif" font-size="55" font-weight="900" letter-spacing="-3">GSE</text>
+  <path d="M78 202h100" stroke="#38475e" stroke-width="8" stroke-linecap="round"/>
+  <path d="M95 202h34" stroke="#70f4ff" stroke-width="8" stroke-linecap="round"/>
+  <path d="M143 202h35" stroke="#f9e26f" stroke-width="8" stroke-linecap="round"/>
+</svg>

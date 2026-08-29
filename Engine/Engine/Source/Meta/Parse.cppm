@@ -31,6 +31,22 @@ struct gse::parser<std::string> {
 	) -> bool;
 };
 
+template <>
+struct gse::parser<std::vector<std::string>> {
+	static auto parse(
+		std::string_view raw,
+		std::vector<std::string>& out
+	) -> bool;
+};
+
+template <>
+struct gse::parser<std::filesystem::path> {
+	static auto parse(
+		std::string_view raw,
+		std::filesystem::path& out
+	) -> bool;
+};
+
 export template <typename T>
 requires std::is_arithmetic_v<T> && (!std::same_as<T, bool>)
 struct gse::parser<T> {
@@ -71,6 +87,16 @@ auto gse::parser<std::string>::parse(const std::string_view raw, std::string& ou
 	return true;
 }
 
+auto gse::parser<std::vector<std::string>>::parse(const std::string_view raw, std::vector<std::string>& out) -> bool {
+	out.emplace_back(raw);
+	return true;
+}
+
+auto gse::parser<std::filesystem::path>::parse(const std::string_view raw, std::filesystem::path& out) -> bool {
+	out = std::filesystem::path(raw);
+	return true;
+}
+
 template <typename T>
 requires std::is_arithmetic_v<T> && (!std::same_as<T, bool>)
 auto gse::parser<T>::parse(const std::string_view raw, T& out) -> bool {
@@ -84,13 +110,13 @@ auto gse::parser<T>::parse(const std::string_view raw, T& out) -> bool {
 		}
 	}
 	else {
-		std::int64_t tmp{};
+		T value{};
 		const auto* first = raw.data();
 		const auto* last = first + raw.size();
-		if (std::from_chars(first, last, tmp).ec != std::errc{}) {
+		if (std::from_chars(first, last, value).ec != std::errc{}) {
 			return false;
 		}
-		out = static_cast<T>(tmp);
+		out = value;
 		return true;
 	}
 }

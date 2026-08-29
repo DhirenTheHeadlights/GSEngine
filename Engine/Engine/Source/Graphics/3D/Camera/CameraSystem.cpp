@@ -85,15 +85,33 @@ auto gse::camera::init(data& d) -> async::task<> {
 	return {};
 }
 
-auto gse::camera::run(context& ctx, data& d, read<follow_component> cameras) -> async::task<> {
+auto gse::camera::scripted_requester_id() -> id {
+	return find_or_generate_id("gse::camera::scripted");
+}
+
+auto gse::camera::run(context& ctx, data& d, const channel_read<ui_focus_request, viewport_update, camera_yaw_request, request> requests_in, read<follow_component> cameras) -> async::task<> {
 	const time dt = system_clock::dt();
 
-	for (const auto& [focus] : ctx.read_channel<ui_focus_request>()) {
+	for (const auto& [focus] : requests_in.of<ui_focus_request>()) {
 		d.ui_focus = focus;
 	}
 
-	for (const auto& [size] : ctx.read_channel<viewport_update>()) {
+	for (const auto& [size] : requests_in.of<viewport_update>()) {
 		d.viewport = size;
+	}
+
+	for (const auto& req : requests_in.of<request>()) {
+		const auto requester = req.requester_id.exists() ? req.requester_id : scripted_requester_id();
+		const bool same_requester = d.scripted_active && requester == d.scripted_requester;
+		if (d.scripted_active && !same_requester && req.priority < d.scripted_priority) {
+			continue;
+		}
+		d.scripted_target = req.target;
+		d.scripted_requester = requester;
+		d.scripted_priority = req.priority;
+		d.scripted_blend_duration = req.blend_duration;
+		d.scripted_continuous = req.continuous;
+		d.scripted_active = true;
 	}
 
 	int highest_priority = -1;
@@ -121,8 +139,15 @@ auto gse::camera::run(context& ctx, data& d, read<follow_component> cameras) -> 
 		}
 	}
 
+	if (d.scripted_active && d.scripted_priority > highest_priority) {
+		highest_priority = d.scripted_priority;
+		best_controller = d.scripted_requester;
+		best_blend_duration = d.scripted_blend_duration;
+		best_target = d.scripted_target;
+	}
+
 	if (best_controller.exists() && best_controller != d.active_controller_entity) {
-		if (d.active_controller_entity.exists()) {
+		if (d.active_controller_entity.exists() && best_blend_duration > time{}) {
 			d.blend_from = d.current;
 			d.blend_to = best_target;
 			d.blend_duration = best_blend_duration;
@@ -155,9 +180,16 @@ auto gse::camera::run(context& ctx, data& d, read<follow_component> cameras) -> 
 		}
 	}
 
+	if (d.scripted_active && !d.scripted_continuous && !d.blending && d.active_controller_entity == d.scripted_requester) {
+		d.scripted_active = false;
+		d.scripted_priority = -1;
+		d.active_controller_entity = {};
+		d.active_priority = -1;
+	}
+
 	const vec3f forward = rotate_vector(d.current.orientation, vec3f(0.f, 0.f, -1.f));
 	d.yaw = radians(std::atan2(-forward.x(), -forward.z()));
-	for (const auto& req : ctx.read_channel<camera_yaw_request>()) {
+	for (const auto& req : requests_in.of<camera_yaw_request>()) {
 		req.promise.fulfill(d.yaw);
 	}
 

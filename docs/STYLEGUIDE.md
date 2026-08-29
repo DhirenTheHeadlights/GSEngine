@@ -1,14 +1,12 @@
 # GSE Style Guide
 
-Most layout decisions in this codebase are owned by `.clang-format` (e.g. tabs, brace style, pointer alignment, how to indent continuations, where blank lines go inside namespaces, no vertical alignment, always-braces on `if`/`for`/`while`, "fully wrapped or fully inline" arg lists, designated initializers always one per line). `ColumnLimit` is `0` — there is no line-length-based wrapping, so *where* a statement breaks is author-driven; clang-format only normalizes the indentation of a break and keeps argument lists all-or-nothing (`BinPackArguments`/`BinPackParameters` are off). This document covers everything *clang-format can't decide for you* — semantic conventions, naming, API shape, and patterns specific to the engine.
+Layout conventions in this codebase: tabs, brace style, pointer alignment, how to indent continuations, where blank lines go inside namespaces, no vertical alignment, always-braces on `if`/`for`/`while`, "fully wrapped or fully inline" arg lists, designated initializers always one per line. There is no line-length-based wrapping, so *where* a statement breaks is author-driven; argument lists stay all-or-nothing (never bin-packed). Beyond layout, this document covers the semantic conventions — naming, API shape, and patterns specific to the engine.
 
 ## Naming
 - STL style (snake_case for everything).
 - snake_case includes compile-time constants, `static constexpr`, enum values, and `shader_constant_block` fields. There is no `SCREAMING_SNAKE_CASE` in this codebase — the HLSL/C habit of uppercase constants does not carry over.
 - Private member variables prefixed with `m_`.
 - Do not prefix functions with `get_`. The verb is implied — a function that returns a value is already a getter. Use the noun (`name()`, `value()`), `_of` for projections (`type_of(x)`, `annotation_of<A>(m)`), or a verb that describes the action (`fetch_`, `compute_`, `find_`) when the work is non-trivial.
-
-Enforced by `clang-tidy` (`readability-identifier-naming` + custom `gse-no-get-prefix`).
 
 ## Comments
 
@@ -18,7 +16,7 @@ Do not add comments. Code should be self-documenting.
 
 ## Bodies on Their Own Line
 
-A body goes on its own line even when it holds a single statement — never collapse it. clang-format enforces this for `if`/`for`/`while` and for non-empty lambdas, but **not for `struct`/`class`/`union` bodies** — with `ColumnLimit` at `0`, nothing forces a record body to expand, so a one-liner survives clang-format untouched. Keep it expanded:
+A body goes on its own line even when it holds a single statement — never collapse it. This holds for `if`/`for`/`while`, non-empty lambdas, and `struct`/`class`/`union` bodies alike — a one-line record body must still be expanded. Keep it expanded:
 
 ```cpp
 // correct
@@ -40,7 +38,10 @@ Empty bodies stay collapsed (`{}`, `= default`).
 
 ```cpp
 export namespace gse::foo {
-    auto bar(const type& param1, type param2) -> return_type;
+    auto bar(
+        const type& param1,
+        type param2
+    ) -> return_type;
 }
 
 auto gse::foo::bar(const type& param1, type param2) -> return_type {
@@ -48,7 +49,25 @@ auto gse::foo::bar(const type& param1, type param2) -> return_type {
 }
 ```
 
-clang-format handles all wrapping based on the column limit — short signatures stay on one line, long ones wrap with one parameter per line and `)` on its own line.
+- Declarations with parameters always wrap: one parameter per line and `)` on its own line.
+- Definitions never wrap their parameter list.
+- Zero-parameter declarations remain inline as `()`.
+- Put one blank line between adjacent function declarations.
+- This applies to constructors, operators, static functions, and templates.
+
+When an inline member definition is moved out of an exported type, keep the out-of-class definition's parameter list on one line:
+
+```cpp
+struct value {
+    auto find(
+        std::string_view key
+    ) const -> const value*;
+};
+
+auto value::find(const std::string_view key) const -> const value* {
+    ...
+}
+```
 
 Default argument values belong only on declarations, never on definitions.
 
@@ -70,8 +89,13 @@ class my_type : public non_copyable {
 public:
     ~my_type();
 
-    my_type(my_type&&) noexcept = default;
-    auto operator=(my_type&&) noexcept -> my_type& = default;
+    my_type(
+        my_type&&
+    ) noexcept = default;
+
+    auto operator=(
+        my_type&&
+    ) noexcept -> my_type& = default;
 };
 
 // wrong — user-declared destructor kills the implicit move ops; instances
@@ -84,8 +108,13 @@ public:
 // wrong — re-implementing what non_copyable already provides
 class my_type {
 public:
-    my_type(const my_type&) = delete;
-    auto operator=(const my_type&) -> my_type& = delete;
+    my_type(
+        const my_type&
+    ) = delete;
+
+    auto operator=(
+        const my_type&
+    ) -> my_type& = delete;
 };
 ```
 
@@ -122,9 +151,25 @@ namespace {
 }
 ```
 
-This is not a module-only rule. It holds in every translation unit, including non-module `.cpp` files and single-TU executables (e.g. the codegen tools) — TU-local helpers go at file scope or in a named namespace, never an anonymous one.
+The same holds for `static` on a namespace-scope function. It is the C spelling of an anonymous namespace and it is redundant for the same reason — a non-exported function already has module linkage. Module-private *functions* are declared in the same non-exported namespace block as the module-private types, and defined out-of-namespace, exactly like exported ones:
 
-Enforced by `clang-tidy` (`gse-no-detail-namespace`, `gse-no-anonymous-namespace`).
+```cpp
+// correct — declared with the other module-private entities, defined below
+namespace gse {
+    auto my_impl_helper(
+        int value
+    ) -> void;
+}
+
+auto gse::my_impl_helper(const int value) -> void { ... }
+
+// wrong — C-style file-scope hiding
+static auto my_impl_helper(const int value) -> void { ... }
+```
+
+Besides matching the exported style, this frees a definition from having to sit above its callers — a `static` helper is load-bearing on definition order, a declared one is not. The `static` spelling is also the one with no automated check behind it, so it is how the habit gets back in; catch it in review.
+
+This is not a module-only rule. It holds in every translation unit, including non-module `.cpp` files and single-TU executables (e.g. the codegen tools) — TU-local helpers go at file scope or in a named namespace, never an anonymous one.
 
 ---
 
@@ -168,8 +213,6 @@ constexpr std::array<std::string_view, 5> exts = { ".png", ".jpg", ".jpeg", ".tg
 inline constexpr std::array<std::string_view, 5> exts = { ".png", ".jpg", ".jpeg", ".tga", ".bmp" };
 ```
 
-Enforced by `clang-tidy` (`gse-no-inline-in-modules`).
-
 ---
 
 ## Concepts in Template Parameter Lists
@@ -179,11 +222,17 @@ When constraining a template parameter on a single concept, put the concept in p
 ```cpp
 // correct — concept is the parameter introducer
 template <has_asset_format T>
-auto load_baked(const std::filesystem::path& path, T& out) -> bool;
+auto load_baked(
+    const std::filesystem::path& path,
+    T& out
+) -> bool;
 
 // wrong — extra requires clause for what is just a single concept
 template <typename T> requires has_asset_format<T>
-auto load_baked(const std::filesystem::path& path, T& out) -> bool;
+auto load_baked(
+    const std::filesystem::path& path,
+    T& out
+) -> bool;
 ```
 
 Reserve `requires` clauses for constraints that genuinely don't fit the parameter slot — multi-parameter relationships, ad-hoc `requires { ... }` expressions, or boolean compositions of concepts.
@@ -191,20 +240,24 @@ Reserve `requires` clauses for constraints that genuinely don't fit the paramete
 ```cpp
 // correct — relationship between two parameters needs a requires clause
 template <typename T, typename U> requires std::convertible_to<T, U>
-auto coerce(T&& v) -> U;
+auto coerce(
+    T&& v
+) -> U;
 ```
 
 Apply the same rule to abbreviated function templates (`auto` parameters) — use the concept directly:
 
 ```cpp
 // correct
-auto print_one(std::integral auto v) -> void;
+auto print_one(
+    std::integral auto v
+) -> void;
 
 // wrong
-auto print_one(auto v) -> void requires std::integral<decltype(v)>;
+auto print_one(
+    auto v
+) -> void requires std::integral<decltype(v)>;
 ```
-
-Enforced by `clang-tidy` (`gse-concept-in-template-param`).
 
 ---
 
@@ -225,8 +278,6 @@ auto gse::foo::do_thing(const gse::foo::bar_type& x) -> gse::foo::result_type {
 ```
 
 This applies to both function signatures and bodies.
-
-Enforced by `clang-tidy` (`gse-redundant-namespace-qualifier`).
 
 ---
 
@@ -302,19 +353,49 @@ Numeric type can be specified via `time_t<T>`, `length_t<T>`, etc. when `float` 
 
 Unit types are layout-compatible with their underlying arithmetic type and pass through math and GPU push constants directly. `.as<Unit>()` is for converting between units (e.g. `time.as<milliseconds>()` from ns-stored time); identity strip via `.as<DefaultUnit>()` is a compile error. When you genuinely need the raw scalar at a foreign-API boundary, write `static_cast<value_type>(q)`.
 
+### Stay in the Unit Type
+
+`.as<Unit>()` is an exit from the type system, not a way to "get a number to do maths with". Naming a unit does not make an expression dimensionally careful — converting early and then doing `double` arithmetic is exactly the weakly-typed math the unit system exists to prevent. It has **one** legitimate purpose: an external contract that mandates a specific unit (a wire/file format, an OS or driver API, a shader constant). Everything else stays in the quantity.
+
+The three cases that tempt a conversion, and what to write instead:
+
+```cpp
+// wrong — converts, then divides two raw doubles
+const double ratio = span.as<milliseconds>() / peak.as<milliseconds>();
+// correct — same-dimension division is ALREADY dimensionless
+const double ratio = span / peak;
+
+// wrong — converts to compare against a bare number
+if (duration.as<microseconds>() < 5.0) { ... }
+// correct — quantities are ordered; the threshold carries its own unit
+const time min_span = microseconds(5.0);
+if (duration < min_span) { ... }
+
+// wrong — converts to scale by a count
+const double per_column = total.as<microseconds>() / columns;
+// correct — quantity / scalar is a quantity
+const time per_column = total / static_cast<double>(columns);
+```
+
+`std::max`, `std::clamp`, and every comparison work on quantities directly. A ratio of two same-dimension quantities is a plain `double` by construction, so the units cancel whether or not you convert first — converting only throws away the checking. If a `.as<>()` result flows into arithmetic with anything else derived from a quantity, it is wrong.
+
+Function-local `const` is the right home for a unit-typed threshold. Do not introduce one as a `constexpr` at module namespace scope — that serialises a reflection-derived NTTP into the BMI and corrupts it.
+
 ---
 
 ## Deducing `this`
 
-Use explicit object parameters (deducing `this`) to collapse const/non-const overload pairs into a single function:
+Use abbreviated explicit object parameters (deducing `this`) to collapse const/non-const overload pairs into a single function. Do not introduce a named `Self` template parameter when `this auto& self` expresses the constraint:
 
 ```cpp
 // correct — one function handles both const and non-const
-template <typename Self>
-auto networked_data(this Self& self) -> decltype(auto);
+auto networked_data(
+	this auto& self
+) -> decltype(auto);
 
 // wrong — two identical functions differing only in constness
 auto networked_data() -> network_data_t&;
+
 auto networked_data() const -> const network_data_t&;
 ```
 
@@ -336,7 +417,15 @@ ctx.channels.push<set_some_field_request>({
 mutable int m_some_field = 0;  // in a system state accessed via shared_view
 ```
 
-Enforced by `clang-tidy` (`gse-no-mutable`).
+---
+
+## Published Ownership
+
+Use `[[= stable_shared]]` for a shared `unique_ptr` only when the pointee is initialized once and its address remains stable until system shutdown. The shared-view infrastructure rejects a `unique_ptr` annotated with ordinary `shared` and asserts if a stable shared pointer is reseated after publication.
+
+Represent replaceable published generations with `shared_ptr<const T>`. The `const` makes each generation immutable and the shared ownership keeps an older generation alive while consumers finish using it. For independently scheduled producer and consumer systems, publish the owning snapshot through a channel and let each consumer retain the latest generation.
+
+Never capture a raw pointer or reference from a shared view in a deferred callback or task unless it comes from a stable shared owner. Capture an owning immutable snapshot instead.
 
 ---
 
@@ -373,6 +462,22 @@ gse::log::println("pos=({:.2f}, {:.2f}, {:.2f})", drum_local.x(), drum_local.y()
 ```
 
 Inline per-component labels (`x`/`y`/`z`) are the only reason to decompose — the exception, not the default.
+
+For quantities the format spec is `{[value-spec]:[unit]}` — everything before the inner `:` goes to the underlying arithmetic formatter, and the trailing token picks the unit. It **converts and appends the unit name**, so it replaces the conversion, the precision, and the unit label in one spec:
+
+```cpp
+// correct
+std::format("{:.2f:us}", per_frame);   // 1234.56 us
+
+// wrong — hand-rolled conversion and precision
+format_fixed(per_frame.as<microseconds>(), buffer);
+
+// wrong — unit baked into the surrounding text instead of the value
+std::format("{:.2f} us per column", total.as<microseconds>() / columns);
+draw_stat(ctx, rect, y, "peak us", value);
+```
+
+A unit that appears in a format literal, a column heading, or a label string is the tell that the value was converted by hand. Column widths must account for the appended unit — the profile dump pairs a `{:>10.2f:us}` value with a `{:>13}` heading for exactly that reason.
 
 ---
 
@@ -448,7 +553,9 @@ Template function definitions go outside the namespace, same as non-templates:
 ```cpp
 // declaration (inside namespace)
 template <fixed_string Tag>
-auto add(key default_key) -> handle;
+auto add(
+    key default_key
+) -> handle;
 
 // definition (outside namespace)
 template <gse::foo::fixed_string Tag>

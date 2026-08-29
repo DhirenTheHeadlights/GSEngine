@@ -167,14 +167,6 @@ export namespace gse::vulkan {
 		gpu::present_stage_flags fls
 	) -> vk::PresentStageFlagsEXT;
 
-	auto format_value(
-		gpu::image_format f
-	) -> gpu::image_format_value;
-
-	auto image_aspect_for(
-		gpu::image_format_value f
-	) -> gpu::image_aspect_flags;
-
 	auto to_vk(
 		gpu::memory_property_flags fls
 	) -> vk::MemoryPropertyFlags;
@@ -446,6 +438,8 @@ auto gse::vulkan::to_vk(const gpu::image_format f) -> vk::Format {
 			return vk::Format::eR16G16B16A16Sfloat;
 		case gpu::image_format::r16g16_sfloat:
 			return vk::Format::eR16G16Sfloat;
+		case gpu::image_format::undefined:
+			return vk::Format::eUndefined;
 	}
 	std::unreachable();
 }
@@ -578,6 +572,8 @@ auto gse::vulkan::to_vk(const gpu::result r) -> vk::Result {
 			return vk::Result::eErrorOutOfDateKHR;
 		case gpu::result::error_surface_lost_khr:
 			return vk::Result::eErrorSurfaceLostKHR;
+		case gpu::result::error_present_timing_queue_full:
+			return vk::Result::eErrorPresentTimingQueueFullEXT;
 		case gpu::result::error_unknown:
 			return vk::Result::eErrorUnknown;
 	}
@@ -704,6 +700,9 @@ auto gse::vulkan::to_vk(const gpu::buffer_usage fls) -> vk::BufferUsageFlags {
 		result |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
 			vk::BufferUsageFlagBits::eShaderDeviceAddress;
 	}
+	if (fls.test(gpu::buffer_flag::acceleration_structure_scratch)) {
+		result |= vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress;
+	}
 	if (fls.test(gpu::buffer_flag::video_encode_dst)) {
 		result |= vk::BufferUsageFlagBits::eVideoEncodeDstKHR;
 	}
@@ -797,6 +796,12 @@ auto gse::vulkan::to_vk(const gpu::image_aspect_flags fls) -> vk::ImageAspectFla
 	}
 	if (fls.test(gpu::image_aspect_flag::stencil)) {
 		result |= vk::ImageAspectFlagBits::eStencil;
+	}
+	if (fls.test(gpu::image_aspect_flag::plane_0)) {
+		result |= vk::ImageAspectFlagBits::ePlane0;
+	}
+	if (fls.test(gpu::image_aspect_flag::plane_1)) {
+		result |= vk::ImageAspectFlagBits::ePlane1;
 	}
 	return result;
 }
@@ -1117,6 +1122,8 @@ auto gse::vulkan::from_vk(const vk::Result r) -> gpu::result {
 			return gpu::result::error_out_of_date_khr;
 		case vk::Result::eErrorSurfaceLostKHR:
 			return gpu::result::error_surface_lost_khr;
+		case vk::Result::eErrorPresentTimingQueueFullEXT:
+			return gpu::result::error_present_timing_queue_full;
 		default:
 			return gpu::result::error_unknown;
 	}
@@ -1172,6 +1179,10 @@ auto gse::vulkan::from_vk(const vk::Format f) -> gpu::image_format {
 			return gpu::image_format::r8g8_unorm;
 		case vk::Format::eR16G16B16A16Sfloat:
 			return gpu::image_format::r16g16b16a16_sfloat;
+		case vk::Format::eR16G16Sfloat:
+			return gpu::image_format::r16g16_sfloat;
+		case vk::Format::eUndefined:
+			return gpu::image_format::undefined;
 		default:
 			return gpu::image_format::r8g8b8a8_unorm;
 	}
@@ -1210,15 +1221,4 @@ auto gse::vulkan::to_vk(const gpu::pipeline_statistic_flags fls) -> vk::QueryPip
 		out |= vk::QueryPipelineStatisticFlagBits::eFragmentShaderInvocations;
 	}
 	return out;
-}
-
-auto gse::vulkan::format_value(const gpu::image_format f) -> gpu::image_format_value {
-	return static_cast<gpu::image_format_value>(to_vk(f));
-}
-
-auto gse::vulkan::image_aspect_for(const gpu::image_format_value f) -> gpu::image_aspect_flags {
-	if (f == static_cast<gpu::image_format_value>(vk::Format::eD32Sfloat)) {
-		return gpu::image_aspect_flag::depth;
-	}
-	return gpu::image_aspect_flag::color;
 }

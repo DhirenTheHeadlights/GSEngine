@@ -9,7 +9,6 @@ import gse.gpu;
 import gse.core;
 import gse.assets;
 import gse.containers;
-import gse.freetype;
 
 export namespace gse {
 	class glyph {
@@ -47,17 +46,17 @@ export namespace gse {
 		const vec4f uv_rect;
 	};
 
-	class [[= asset::boot_critical{}]] font : public identifiable {
+	class font : public identifiable {
 	public:
 		struct [[
 			= asset_format::baked_ext<".gfont">{},
 			= asset_format::baked_dir<"Fonts">{},
 			= asset_format::source_dir<"Fonts">{},
 			= asset_format::source_exts<".ttf", ".otf">{},
+			= asset_format::built_ins<"Geist-Regular.ttf", "Geist-SemiBold.ttf", "GeistMono-Regular.ttf", "GeistMono-SemiBold.ttf", "Inter-Regular.ttf", "MonaspaceNeon-Regular.otf">{},
 			= asset_format::magic<0x47464E54>{},
-			= asset_format::version<6>{}
+			= asset_format::version<13>{}
 		]] baked {
-			std::string source_path_relative;
 			float ascender = 0.0f;
 			float descender = 0.0f;
 			float pixel_range = 0.0f;
@@ -66,6 +65,7 @@ export namespace gse {
 			std::uint32_t channels = 0;
 			raw_blob_owned<std::byte> rgba;
 			std::unordered_map<char32_t, glyph> glyphs;
+			std::unordered_map<std::uint64_t, float> kerning;
 		};
 
 		explicit font(
@@ -76,11 +76,9 @@ export namespace gse {
 
 		auto load(
 			asset::load_ctx& ctx
-		) -> async::task<>;
+		) -> async::task<asset_result>;
 
-		auto unload() -> void;
-
-		[[nodiscard]] auto texture() const -> const gse::texture*;
+		[[nodiscard]] auto texture() const -> const texture*;
 
 		[[nodiscard]]
 		auto text_layout(
@@ -98,11 +96,30 @@ export namespace gse {
 			float scale = 1.0f
 		) const -> float;
 
+		[[nodiscard]] auto caret_offsets(
+			std::string_view text,
+			float scale = 1.0f
+		) const -> std::vector<float>;
+
+		[[nodiscard]] auto wrap(
+			std::string_view text,
+			float max_width,
+			float scale = 1.0f
+		) const -> std::vector<std::string_view>;
+
 		[[nodiscard]] auto vertical_center_offset(
 			float scale
 		) const -> float;
 
 		[[nodiscard]] auto ascender_height(
+			float scale
+		) const -> float;
+
+		[[nodiscard]] auto max_glyph_top(
+			float scale
+		) const -> float;
+
+		[[nodiscard]] auto min_glyph_bottom(
 			float scale
 		) const -> float;
 
@@ -116,9 +133,8 @@ export namespace gse {
 		float m_ascender = 0.0f;
 		float m_descender = 0.0f;
 		float m_pixel_range = 0.0f;
-
-		FT_Face m_face = nullptr;
-		FT_Library m_ft = nullptr;
+		float m_max_glyph_top = 0.0f;
+		float m_min_glyph_bottom = 0.0f;
 
 		std::filesystem::path m_baked_path;
 	};

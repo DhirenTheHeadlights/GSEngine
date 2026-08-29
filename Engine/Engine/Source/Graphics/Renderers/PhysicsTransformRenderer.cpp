@@ -9,6 +9,7 @@ import :geometry_collector;
 import gse.os;
 import gse.assets;
 import gse.gpu;
+import gse.gpu_record;
 import gse.core;
 import gse.containers;
 import gse.time;
@@ -27,6 +28,8 @@ namespace gse::renderer::physics_transform {
 	struct [[= shaders::shader_struct]] push_constants {
 		std::uint32_t mapping_count;
 		std::uint32_t body_count;
+		time_t<float, seconds> interpolation_lag;
+		time_t<float, seconds> frame_delta;
 	};
 
 	struct [[
@@ -72,8 +75,8 @@ auto gse::renderer::physics_transform::init(context& ctx, const shared_view<gpu:
 	return {};
 }
 
-auto gse::renderer::physics_transform::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, shared_view<geometry_collector::data> gc_r) -> async::task<> {
-	const auto& solver_infos = ctx.read_channel<physics::gpu_solver_frame_info>();
+auto gse::renderer::physics_transform::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<physics::gpu_solver_frame_info, geometry_collector::render_data, physics::interpolation_state> frame_in, shared_view<geometry_collector::data> gc_r) -> async::task<> {
+	const auto& solver_infos = frame_in.of<physics::gpu_solver_frame_info>();
 
 	if (solver_infos.empty()) {
 		co_return;
@@ -88,7 +91,7 @@ auto gse::renderer::physics_transform::frame(context& ctx, shared_view<gpu::cont
 
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
-	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
+	const auto& render_items = frame_in.of<geometry_collector::render_data>();
 
 	if (!render_items.empty() && render_items[0].physics_mapping_count > 0) {
 		const auto& data = render_items[0];
@@ -101,6 +104,7 @@ auto gse::renderer::physics_transform::frame(context& ctx, shared_view<gpu::cont
 				d.mapping_buffers[i] = gpu_s.device->create_buffer(
 					{
 						.size = required,
+						.stride = sizeof(geometry_collector::physics_mapping_entry),
 						.usage = gpu::buffer_flag::storage,
 						.data = data.physics_mappings.data(),
 						.bindless = true
@@ -118,21 +122,28 @@ auto gse::renderer::physics_transform::frame(context& ctx, shared_view<gpu::cont
 		co_return;
 	}
 
+	auto interpolation_lag = system_clock::fixed_lag();
+	if (const auto& interpolation = frame_in.of<physics::interpolation_state>(); !interpolation.empty() && !interpolation[0].advancing) {
+		interpolation_lag = time_t<float, seconds>{};
+	}
+
 	if (!d.body_views[frame_index].valid()) {
 		d.body_views[frame_index] = gpu_s.device->allocate_buffer_slot();
 	}
-	gpu_s.device->write_storage_buffer(d.body_views[frame_index].slot(), snapshot.device_address(), info.body_count * info.body_stride);
+	gpu_s.device->write_storage_buffer(d.body_views[frame_index].slot(), snapshot, info.body_count * info.body_stride);
 
 	const std::uint32_t workgroups = (d.cached_mapping_count + 63) / 64;
 
-	auto rec = co_await gpu::pass<^^gse::renderer::physics_transform::frame>(ctx)
+	auto rec = co_await gpu::pass<^^frame>(pass_out)
 		.pipeline(d.pipeline)
-		.after<^^geometry_collector::frame, ^^vbd::vbd_state_copy_stage>();
+		.after<^^geometry_collector::frame, ^^vbd::vbd_render_mirror_stage>();
 
 	rec.dispatch<entry>(
 		{
 			.mapping_count = d.cached_mapping_count,
 			.body_count = info.body_count,
+			.interpolation_lag = interpolation_lag,
+			.frame_delta = system_clock::dt(),
 		},
 		{
 			.body_data = d.body_views[frame_index].slot(),

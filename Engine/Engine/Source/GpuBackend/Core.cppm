@@ -24,7 +24,6 @@ export namespace gse::gpu {
 
 	using device_size = std::uint64_t;
 	using device_address = std::uint64_t;
-	using image_format_value = std::uint32_t;
 
 	constexpr device_size whole_size = ~static_cast<device_size>(0);
 
@@ -68,6 +67,7 @@ export namespace gse::gpu {
 		error_device_lost,
 		error_out_of_date_khr,
 		error_surface_lost_khr,
+		error_present_timing_queue_full,
 		error_unknown,
 	};
 
@@ -106,6 +106,7 @@ export namespace gse::gpu {
 
 	struct device_fault_address_info {
 		std::uint32_t address_type = 0;
+		std::string address_type_name;
 		device_address reported_address = 0;
 		device_address address_precision = 0;
 	};
@@ -124,7 +125,7 @@ export namespace gse::gpu {
 	};
 
 	struct acquire_next_image_result {
-		gse::gpu::result result = gse::gpu::result::error_unknown;
+		gpu::result result = gpu::result::error_unknown;
 		std::uint32_t image_index = 0;
 	};
 }

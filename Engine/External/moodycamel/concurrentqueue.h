@@ -90,8 +90,8 @@ namespace moodycamel { namespace details {
 #if defined(MCDBGQ_USE_RELACY)
 namespace moodycamel { namespace details {
 	typedef std::uint32_t thread_id_t;
-	static const thread_id_t invalid_thread_id  = 0xFFFFFFFFU;
-	static const thread_id_t invalid_thread_id2 = 0xFFFFFFFEU;
+	inline constexpr thread_id_t invalid_thread_id  = 0xFFFFFFFFU;
+	inline constexpr thread_id_t invalid_thread_id2 = 0xFFFFFFFEU;
 	inline thread_id_t thread_id() { return rl::thread_index(); }
 } }
 #elif defined(_WIN32) || defined(__WINDOWS__) || defined(__WIN32__)
@@ -101,8 +101,8 @@ extern "C" __declspec(dllimport) unsigned long __stdcall GetCurrentThreadId(void
 namespace moodycamel { namespace details {
 	static_assert(sizeof(unsigned long) == sizeof(std::uint32_t), "Expected size of unsigned long to be 32 bits on Windows");
 	typedef std::uint32_t thread_id_t;
-	static const thread_id_t invalid_thread_id  = 0;			// See http://blogs.msdn.com/b/oldnewthing/archive/2004/02/23/78395.aspx
-	static const thread_id_t invalid_thread_id2 = 0xFFFFFFFFU;	// Not technically guaranteed to be invalid, but is never used in practice. Note that all Win32 thread IDs are presently multiples of 4.
+	inline constexpr thread_id_t invalid_thread_id  = 0;			// See http://blogs.msdn.com/b/oldnewthing/archive/2004/02/23/78395.aspx
+	inline constexpr thread_id_t invalid_thread_id2 = 0xFFFFFFFFU;	// Not technically guaranteed to be invalid, but is never used in practice. Note that all Win32 thread IDs are presently multiples of 4.
 	inline thread_id_t thread_id() { return static_cast<thread_id_t>(::GetCurrentThreadId()); }
 } }
 #elif defined(__arm__) || defined(_M_ARM) || defined(__aarch64__) || (defined(__APPLE__) && TARGET_OS_IPHONE) || defined(__MVS__) || defined(MOODYCAMEL_NO_THREAD_LOCAL)
@@ -110,7 +110,7 @@ namespace moodycamel { namespace details {
 	static_assert(sizeof(std::thread::id) == 4 || sizeof(std::thread::id) == 8, "std::thread::id is expected to be either 4 or 8 bytes");
 	
 	typedef std::thread::id thread_id_t;
-	static const thread_id_t invalid_thread_id;         // Default ctor creates invalid ID
+	inline const thread_id_t invalid_thread_id;         // Default ctor creates invalid ID
 
 	// Note we don't define a invalid_thread_id2 since std::thread::id doesn't have one; it's
 	// only used if MOODYCAMEL_CPP11_THREAD_LOCAL_SUPPORTED is defined anyway, which it won't
@@ -153,8 +153,8 @@ namespace moodycamel { namespace details {
 #endif
 namespace moodycamel { namespace details {
 	typedef std::uintptr_t thread_id_t;
-	static const thread_id_t invalid_thread_id  = 0;		// Address can't be nullptr
-	static const thread_id_t invalid_thread_id2 = 1;		// Member accesses off a null pointer are also generally invalid. Plus it's not aligned.
+	inline constexpr thread_id_t invalid_thread_id  = 0;		// Address can't be nullptr
+	inline constexpr thread_id_t invalid_thread_id2 = 1;		// Member accesses off a null pointer are also generally invalid. Plus it's not aligned.
 	inline thread_id_t thread_id() { static MOODYCAMEL_THREADLOCAL int x; return reinterpret_cast<thread_id_t>(&x); }
 } }
 #endif
@@ -617,22 +617,25 @@ namespace details
 		}
 		
 		// Thread-local
-		static inline ThreadExitNotifier& instance()
-		{
-			static thread_local ThreadExitNotifier notifier;
-			return notifier;
-		}
+		static ThreadExitNotifier& instance();
 
-		static inline std::mutex& mutex()
-		{
-			// Must be static because the ThreadExitNotifier could be destroyed while unsubscribe is called
-			static std::mutex mutex;
-			return mutex;
-		}
+		static std::mutex& mutex();
 		
 	private:
 		ThreadExitListener* tail;
 	};
+
+	ThreadExitNotifier& ThreadExitNotifier::instance()
+	{
+		static thread_local ThreadExitNotifier notifier;
+		return notifier;
+	}
+
+	std::mutex& ThreadExitNotifier::mutex()
+	{
+		static std::mutex mutex;
+		return mutex;
+	}
 #endif
 #endif
 	

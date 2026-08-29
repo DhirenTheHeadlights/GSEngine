@@ -13,6 +13,7 @@ import :world_text_renderer;
 
 
 import gse.gpu;
+import gse.gpu_record;
 import gse.core;
 import gse.containers;
 import gse.concurrency;
@@ -25,8 +26,10 @@ import gse.time;
 namespace gse::renderer::bloom {
 	struct [[
 		= shaders::binding<0, 0>{},
-		= shaders::sampler2d
-	]] bloom_in {};
+		= shaders::texture2d
+	]] bloom_in {
+		using element = vec4f;
+	};
 
 	struct [[
 		= shaders::binding<0, 1>{},
@@ -36,14 +39,23 @@ namespace gse::renderer::bloom {
 	};
 
 	struct [[
+		= shaders::binding<0, 2>{},
+		= shaders::sampler_state
+	]] bloom_sampler {};
+
+	struct [[
 		= shaders::binding<0, 0>{},
-		= shaders::sampler2d
-	]] bloom_up_in {};
+		= shaders::texture2d
+	]] bloom_up_in {
+		using element = vec4f;
+	};
 
 	struct [[
 		= shaders::binding<0, 1>{},
-		= shaders::sampler2d
-	]] bloom_up_dn {};
+		= shaders::texture2d
+	]] bloom_up_dn {
+		using element = vec4f;
+	};
 
 	struct [[
 		= shaders::binding<0, 2>{},
@@ -51,6 +63,11 @@ namespace gse::renderer::bloom {
 	]] bloom_up_out {
 		using element = vec4f;
 	};
+
+	struct [[
+		= shaders::binding<0, 3>{},
+		= shaders::sampler_state
+	]] bloom_up_sampler {};
 
 	struct [[= shaders::shader_struct]] downsample_push_constants {
 		std::uint32_t use_karis_average;
@@ -60,8 +77,8 @@ namespace gse::renderer::bloom {
 		float radius;
 	};
 
-	using downsample_bindings = type_pack<bloom_in, bloom_out>;
-	using upsample_bindings = type_pack<bloom_up_in, bloom_up_dn, bloom_up_out>;
+	using downsample_bindings = type_pack<bloom_in, bloom_out, bloom_sampler>;
+	using upsample_bindings = type_pack<bloom_up_in, bloom_up_dn, bloom_up_out, bloom_up_sampler>;
 
 	using downsample_entry = gpu::compute_entry<gpu::body_path<"Compute/bloom_downsample">, gpu::bindings<downsample_bindings>, gpu::push_constant<downsample_push_constants>, gpu::threads<8, 8, 1>, gpu::system_values<gpu::dispatch_thread_id>>;
 
@@ -134,7 +151,7 @@ auto gse::renderer::bloom::recreate_mip_chain(const shared_view<gpu::context::da
 				{
 					.size = extents[i],
 					.format = gpu::image_format::r16g16b16a16_sfloat,
-					.usage = gpu::image_flag::storage | gpu::image_flag::sampled,
+					.usage = { gpu::image_flag::storage, gpu::image_flag::sampled },
 					.bindless = true
 				},
 				std::format("bloom_down_{}", i)
@@ -144,7 +161,7 @@ auto gse::renderer::bloom::recreate_mip_chain(const shared_view<gpu::context::da
 				{
 					.size = extents[i],
 					.format = gpu::image_format::r16g16b16a16_sfloat,
-					.usage = gpu::image_flag::storage | gpu::image_flag::sampled,
+					.usage = { gpu::image_flag::storage, gpu::image_flag::sampled },
 					.bindless = true
 				},
 				std::format("bloom_up_{}", i)
@@ -196,7 +213,7 @@ auto gse::renderer::bloom::init(context& ctx, const shared_view<gpu::context::da
 	return {};
 }
 
-auto gse::renderer::bloom::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
+auto gse::renderer::bloom::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -216,23 +233,21 @@ auto gse::renderer::bloom::frame(const context& ctx, shared_view<gpu::context::d
 	}
 	gpu_s.device->write_sampled_image(d.hdr_view.slot(), hdr);
 
-	auto rec = co_await gpu::pass<^^downsample_pass>(ctx)
+	auto rec = co_await gpu::pass<^^downsample_pass>(pass_out)
 		.pipeline(d.downsample_pipeline)
 		.after<^^forward::frame, ^^atmosphere::sky_raster_pass, ^^physics_debug::frame, ^^sdf_grid::frame, ^^world_text::frame, ^^taa::frame>();
 	rec.sample_image(hdr, gpu::pipeline_stage_flag::compute_shader);
 
 	for (std::uint32_t i = 0; i < count; ++i) {
-		if (i > 0) {
-			rec.barrier(gpu::barrier_scope::compute_to_compute);
-		}
 		const auto source_slot = (i == 0) ? d.hdr_view.slot() : d.mips_down[i - 1].sampled_slot();
 		rec.dispatch<downsample_entry>(
 			{
 				.use_karis_average = i == 0 ? 1u : 0u
 			},
 			{
-				.bloom_in = { source_slot, d.sampler.slot() },
+				.bloom_in = source_slot,
 				.bloom_out = d.mips_down[i].storage_slot(),
+				.bloom_sampler = d.sampler.slot(),
 			},
 			vec3u{
 				(d.mip_extents[i].x() + 7u) / 8u,
@@ -246,25 +261,23 @@ auto gse::renderer::bloom::frame(const context& ctx, shared_view<gpu::context::d
 		co_return;
 	}
 
-	auto up_rec = co_await gpu::pass<^^upsample_pass>(ctx).pipeline(d.upsample_pipeline).after<^^downsample_pass>();
+	auto up_rec = co_await gpu::pass<^^upsample_pass>(pass_out).pipeline(d.upsample_pipeline).after<^^downsample_pass>();
 
 	for (std::uint32_t i = 0; i < count; ++i) {
 		up_rec.sample_image(d.mips_down[i], gpu::pipeline_stage_flag::compute_shader);
 	}
 
 	for (std::uint32_t i = count - 1; i-- > 0;) {
-		if (i + 1 < count - 1) {
-			up_rec.barrier(gpu::barrier_scope::compute_to_compute);
-		}
 		const auto up_source = (i + 1 == count - 1) ? d.mips_down[count - 1].sampled_slot() : d.mips_up[i + 1].sampled_slot();
 		up_rec.dispatch<upsample_entry>(
 			{
 				.radius = d.bloom_radius
 			},
 			{
-				.bloom_up_in = { up_source, d.sampler.slot() },
-				.bloom_up_dn = { d.mips_down[i].sampled_slot(), d.sampler.slot() },
+				.bloom_up_in = up_source,
+				.bloom_up_dn = d.mips_down[i].sampled_slot(),
 				.bloom_up_out = d.mips_up[i].storage_slot(),
+				.bloom_up_sampler = d.sampler.slot(),
 			},
 			vec3u{
 				(d.mip_extents[i].x() + 7u) / 8u,

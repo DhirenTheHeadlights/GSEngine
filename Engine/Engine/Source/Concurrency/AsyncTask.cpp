@@ -36,8 +36,9 @@ namespace gse::async {
 
 		static auto await_ready() noexcept -> bool;
 
+		template <typename P>
 		auto await_suspend(
-			std::coroutine_handle<> h
+			std::coroutine_handle<P> h
 		) const noexcept -> std::coroutine_handle<>;
 
 		static auto await_resume() noexcept -> void;
@@ -85,7 +86,64 @@ auto gse::async::promise_base::operator new(const std::size_t size) -> void* {
 }
 
 auto gse::async::promise_base::operator delete(void* ptr, const std::size_t size) -> void {
+	untrack_frame(ptr);
 	frame_arena::deallocate(ptr, size);
+}
+
+auto gse::async::track_frame(const std::coroutine_handle<> h) -> checked_handle {
+	if (!h) {
+		return {};
+	}
+
+	const std::uint64_t generation = tracked_generation.fetch_add(1, std::memory_order_relaxed) + 1;
+	{
+		const std::lock_guard lock(tracked_frames_mutex);
+		tracked_frames.insert_or_assign(h.address(), generation);
+		tracked_frame_count.store(tracked_frames.size(), std::memory_order_release);
+		if (tracked_frames.size() > tracked_frame_warn_threshold && !tracked_frame_warned) {
+			tracked_frame_warned = true;
+			log::println(
+				log::level::error,
+				log::category::task,
+				"async: {} coroutine frames are still marked live; frames are not being untracked on destruction, so resume_checked cannot detect dead frames",
+				tracked_frames.size()
+			);
+		}
+	}
+	return {
+		.handle = h,
+		.generation = generation,
+	};
+}
+
+auto gse::async::untrack_frame(void* frame) -> void {
+	if (tracked_frame_count.load(std::memory_order_acquire) == 0) {
+		return;
+	}
+
+	const std::lock_guard lock(tracked_frames_mutex);
+	if (tracked_frames.erase(frame) != 0) {
+		tracked_frame_count.store(tracked_frames.size(), std::memory_order_release);
+	}
+}
+
+auto gse::async::resume_checked(const checked_handle& tracked) -> bool {
+	if (!tracked.handle || tracked.generation == 0) {
+		return false;
+	}
+
+	{
+		const std::lock_guard lock(tracked_frames_mutex);
+		const auto it = tracked_frames.find(tracked.handle.address());
+		if (it == tracked_frames.end() || it->second != tracked.generation) {
+			return false;
+		}
+		tracked_frames.erase(it);
+		tracked_frame_count.store(tracked_frames.size(), std::memory_order_release);
+	}
+
+	tracked.handle.resume();
+	return true;
 }
 
 auto gse::async::void_promise::get_return_object() -> task<> {
@@ -111,11 +169,11 @@ auto gse::async::suspend_and_capture::await_suspend(const std::coroutine_handle<
 		return std::noop_coroutine();
 	}
 	if (helpers.size() > 1) {
-		std::vector<gse::job> jobs;
+		std::vector<job> jobs;
 		jobs.reserve(helpers.size() - 1);
 		for (std::size_t i = 1; i < helpers.size(); ++i) {
-			const auto handle = helpers[i].consume_start_handle();
-			if (!handle) {
+			const checked_handle tracked = track_frame(helpers[i].consume_start_handle());
+			if (!tracked.handle) {
 				log::println(
 					log::level::error,
 					log::category::task,
@@ -124,16 +182,29 @@ auto gse::async::suspend_and_capture::await_suspend(const std::coroutine_handle<
 				);
 				continue;
 			}
-			jobs.emplace_back([handle] {
-				if (!handle) {
-					return;
+			jobs.emplace_back([tracked] {
+				if (!resume_checked(tracked)) {
+					log::println(
+						log::level::error,
+						log::category::task,
+						"when_all helper resume skipped: coroutine frame was destroyed before the job ran"
+					);
 				}
-				handle.resume();
 			});
 		}
 		gse::task::post_range(jobs.begin(), jobs.end(), trace_id<"async::when_all::resume">());
 	}
-	return helpers[0].consume_start_handle();
+
+	const std::coroutine_handle<> first = helpers[0].consume_start_handle();
+	if (!first) {
+		log::println(
+			log::level::error,
+			log::category::task,
+			"when_all: first helper produced an empty start handle"
+		);
+		return std::noop_coroutine();
+	}
+	return first;
 }
 
 auto gse::async::suspend_and_capture::await_resume() noexcept -> void {
@@ -143,8 +214,13 @@ auto gse::async::symmetric_resume::await_ready() noexcept -> bool {
 	return false;
 }
 
-auto gse::async::symmetric_resume::await_suspend(std::coroutine_handle<>) const noexcept -> std::coroutine_handle<> {
-	return handle ? handle : std::noop_coroutine();
+template <typename P>
+auto gse::async::symmetric_resume::await_suspend(const std::coroutine_handle<P> h) const noexcept -> std::coroutine_handle<> {
+	const std::coroutine_handle<> next = handle ? handle : std::noop_coroutine();
+	if (h.promise().m_detached.load(std::memory_order_acquire)) {
+		h.destroy();
+	}
+	return next;
 }
 
 auto gse::async::symmetric_resume::await_resume() noexcept -> void {
@@ -159,12 +235,16 @@ auto gse::async::yield_to_worker_t::await_suspend(std::coroutine_handle<> h) con
 		log::println(log::level::error, log::category::task, "yield_to_worker: empty handle from coroutine machinery");
 		return;
 	}
-	gse::task::post(
-		[h] {
-			if (!h) {
-				return;
+	const checked_handle tracked = track_frame(h);
+	gse::task::post_io(
+		[tracked] {
+			if (!resume_checked(tracked)) {
+				log::println(
+					log::level::error,
+					log::category::task,
+					"yield_to_worker: coroutine frame was destroyed before the resume job ran"
+				);
 			}
-			h.resume();
 		},
 		trace_id<"async::yield_to_worker">()
 	);

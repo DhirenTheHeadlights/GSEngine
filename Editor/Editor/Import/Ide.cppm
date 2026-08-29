@@ -1,0 +1,20 @@
+export module gse.ide;
+
+export import gse.ide.alloc;
+export import gse.ide.problems;
+export import gse.ide.search_panel;
+export import gse.ide.lint_panel;
+export import gse.ide.app;
+export import gse.ide.highlight;
+export import gse.ide.workspace;
+export import gse.ide.terminal;
+export import gse.ide.viewport;
+export import gse.ide.build;
+export import gse.ide.agent;
+export import gse.ide.config;
+export import gse.ide.project;
+export import gse.ide.analysis;
+export import gse.ide.search;
+export import gse.ide.git;
+export import gse.ide.graph;
+export import gse.ide.profile;

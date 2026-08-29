@@ -8,8 +8,6 @@ export import :access_token;
 export import :component;
 export import :context;
 export import :registry;
-export import :requests;
-export import :context;
 export import :scheduler;
 export import :settings;
 export import :task_context;

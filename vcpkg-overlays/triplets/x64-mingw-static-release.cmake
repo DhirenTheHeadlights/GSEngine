@@ -4,7 +4,8 @@ set(VCPKG_LIBRARY_LINKAGE static)
 set(VCPKG_CMAKE_SYSTEM_NAME MinGW)
 set(VCPKG_POLICY_DLLS_WITHOUT_LIBS enabled)
 set(VCPKG_BUILD_TYPE release)
-set(VCPKG_ENV_PASSTHROUGH "PATH;NSIGHT_AFTERMATH_SDK;USERPROFILE")
+set(VCPKG_ENV_PASSTHROUGH "NSIGHT_AFTERMATH_SDK")
+set(VCPKG_ENV_PASSTHROUGH_UNTRACKED "PATH;USERPROFILE")
 
 # Build dependencies with the prebuilt gcc-trunk MinGW compiler by explicit path
 # (see the toolchain file), so vcpkg doesn't depend on the gcc-trunk bin being on

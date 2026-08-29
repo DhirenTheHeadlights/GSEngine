@@ -34,7 +34,7 @@ namespace gse {
 auto gse::bake(const std::filesystem::path& src, texture::baked& out) -> bool {
 	auto image_data = image::load(src);
 	if (image_data.pixels.empty()) {
-		log::println(log::level::warning, log::category::assets, "Failed to load texture '{}', skipping", src.string());
+		log::println(log::level::warning, log::category::assets, "Failed to load texture '{}', skipping", src.generic_display_string());
 		return false;
 	}
 
@@ -47,7 +47,7 @@ auto gse::bake(const std::filesystem::path& src, texture::baked& out) -> bool {
 }
 
 auto gse::read_texture_profile(const std::filesystem::path& src) -> texture::profile {
-	const auto meta_path = src.parent_path() / (src.stem().string() + ".meta");
+	const auto meta_path = src.parent_path() / (src.stem().native_encoded_string() + ".meta");
 	if (!std::filesystem::exists(meta_path)) {
 		return texture::profile::generic_repeat;
 	}

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="27" y1="24" x2="229" y2="229" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#11151d"/>
+      <stop offset="1" stop-color="#040609"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="13" stdDeviation="12" flood-color="#000000" flood-opacity="0.44"/>
+    </filter>
+  </defs>
+  <rect x="18" y="18" width="220" height="220" rx="42" fill="url(#bg)"/>
+  <path d="M55 77h47M55 77v102h51v-43H83M164 77h-46v51h46v51h-46M190 77v102M190 77h42M190 128h35M190 179h42" fill="none" stroke="#f5f8ff" stroke-width="17" stroke-linecap="round" stroke-linejoin="round" filter="url(#shadow)"/>
+  <path d="M45 48h54M45 48v34" stroke="#6ef7ff" stroke-width="8" stroke-linecap="round"/>
+  <path d="M211 48h-34M211 48v54" stroke="#ffe36e" stroke-width="8" stroke-linecap="round"/>
+  <path d="M45 208h54M45 208v-34" stroke="#ff6d9e" stroke-width="8" stroke-linecap="round"/>
+  <path d="M211 208h-54M211 208v-34" stroke="#67ff9a" stroke-width="8" stroke-linecap="round"/>
+</svg>

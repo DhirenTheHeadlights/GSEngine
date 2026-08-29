@@ -52,40 +52,84 @@ export namespace gse::gui::layout {
 	template <std::size_t N>
 	[[nodiscard]]
 	auto split_horizontal(
-		const ui_rect& parent,
+		const rectf& parent,
 		const std::array<size_spec, N>& specs,
 		float gap = 0.f
-	) -> std::array<ui_rect, N>;
+	) -> std::array<rectf, N>;
 
 	template <std::size_t N>
 	[[nodiscard]]
 	auto split_vertical(
-		const ui_rect& parent,
+		const rectf& parent,
 		const std::array<size_spec, N>& specs,
 		float gap = 0.f
-	) -> std::array<ui_rect, N>;
+	) -> std::array<rectf, N>;
+
+	enum class split_axis {
+		columns,
+		rows,
+	};
+
+	struct split_params {
+		rectf container;
+		split_axis axis = split_axis::columns;
+		float ratio = 0.5f;
+		float min_first = 0.f;
+		float min_second = 0.f;
+		float divider_thickness = 0.f;
+		float divider_bias = 0.f;
+	};
+
+	struct split_result {
+		rectf first;
+		rectf second;
+		rectf divider;
+		float ratio = 0.f;
+	};
+
+	struct split_drag {
+		vec2f mouse;
+		bool pressed = false;
+		bool held = false;
+		bool blocked = false;
+	};
+
+	struct split_drag_state {
+		bool dragging = false;
+		float grab = 0.f;
+	};
+
+	[[nodiscard]] auto resolve_split(
+		const split_params& params
+	) -> split_result;
+
+	auto update_split(
+		const split_params& params,
+		const split_drag& drag,
+		split_drag_state& state
+	) -> split_result;
 
 	[[nodiscard]]
 	auto align_in(
-		const ui_rect& parent,
+		const rectf& parent,
 		vec2f child_size,
 		halign h = halign::center,
 		valign v = valign::center
-	) -> ui_rect;
+	) -> rectf;
 
 	[[nodiscard]]
 	auto inset_per_side(
-		const ui_rect& parent,
+		const rectf& parent,
 		float top,
 		float right,
 		float bottom,
 		float left
-	) -> ui_rect;
+	) -> rectf;
 
 	[[nodiscard]] auto centered(
-		const ui_rect& parent,
+		const rectf& parent,
 		vec2f child_size
-	) -> ui_rect;
+	) -> rectf;
 
 	[[nodiscard]]
 	auto fit_card(
@@ -93,7 +137,7 @@ export namespace gse::gui::layout {
 		vec2f min_size,
 		vec2f max_size,
 		vec2f margin
-	) -> ui_rect;
+	) -> rectf;
 
 	auto skip(
 		const draw_context& ctx,
@@ -105,13 +149,13 @@ export namespace gse::gui::layout {
 		const draw_context& ctx,
 		float height,
 		float trailing_gap = 0.f
-	) -> ui_rect;
+	) -> rectf;
 
 	class within_scope {
 	public:
 		within_scope(
 			draw_context& ctx,
-			const ui_rect& sub_rect
+			const rectf& sub_rect
 		);
 
 		within_scope(
@@ -134,13 +178,13 @@ export namespace gse::gui::layout {
 
 	private:
 		draw_context* m_ctx = nullptr;
-		ui_rect m_saved_rect;
+		rectf m_saved_rect;
 		vec2f m_saved_cursor;
 	};
 
 	[[nodiscard]] auto within(
 		draw_context& ctx,
-		const ui_rect& sub_rect
+		const rectf& sub_rect
 	) -> within_scope;
 }
 
@@ -212,13 +256,13 @@ auto gse::gui::layout::resolve_lengths(const float available, const std::array<s
 }
 
 template <std::size_t N>
-auto gse::gui::layout::split_horizontal(const ui_rect& parent, const std::array<size_spec, N>& specs, const float gap) -> std::array<ui_rect, N> {
+auto gse::gui::layout::split_horizontal(const rectf& parent, const std::array<size_spec, N>& specs, const float gap) -> std::array<rectf, N> {
 	const auto widths = resolve_lengths<N>(parent.width(), specs, gap);
 
-	std::array<ui_rect, N> out{};
+	std::array<rectf, N> out{};
 	float x = parent.left();
 	for (std::size_t i = 0; i < N; ++i) {
-		out[i] = ui_rect::from_position_size(
+		out[i] = rectf::from_position_size(
 			{ x, parent.top() },
 			{ widths[i], parent.height() }
 		);
@@ -228,13 +272,13 @@ auto gse::gui::layout::split_horizontal(const ui_rect& parent, const std::array<
 }
 
 template <std::size_t N>
-auto gse::gui::layout::split_vertical(const ui_rect& parent, const std::array<size_spec, N>& specs, const float gap) -> std::array<ui_rect, N> {
+auto gse::gui::layout::split_vertical(const rectf& parent, const std::array<size_spec, N>& specs, const float gap) -> std::array<rectf, N> {
 	const auto heights = resolve_lengths<N>(parent.height(), specs, gap);
 
-	std::array<ui_rect, N> out{};
+	std::array<rectf, N> out{};
 	float y = parent.top();
 	for (std::size_t i = 0; i < N; ++i) {
-		out[i] = ui_rect::from_position_size(
+		out[i] = rectf::from_position_size(
 			{ parent.left(), y },
 			{ parent.width(), heights[i] }
 		);
@@ -243,7 +287,62 @@ auto gse::gui::layout::split_vertical(const ui_rect& parent, const std::array<si
 	return out;
 }
 
-auto gse::gui::layout::align_in(const ui_rect& parent, const vec2f child_size, const halign h, const valign v) -> ui_rect {
+auto gse::gui::layout::resolve_split(const split_params& params) -> split_result {
+	const rectf& c = params.container;
+	const float extent = params.axis == split_axis::columns ? c.width() : c.height();
+	const float lo = params.min_first;
+	const float hi = std::max(params.min_first, extent - params.min_second);
+	const float first_len = std::clamp(params.ratio * extent, lo, hi);
+	const float half = params.divider_thickness * 0.5f;
+	const float bias = half * std::clamp(params.divider_bias, -1.f, 1.f);
+
+	split_result r{};
+	r.ratio = extent > 0.f ? first_len / extent : params.ratio;
+
+	if (params.axis == split_axis::columns) {
+		const float boundary = c.left() + first_len;
+		r.first = rectf::from_position_size({ c.left(), c.top() }, { first_len, c.height() });
+		r.second = rectf::from_position_size({ boundary, c.top() }, { std::max(0.f, extent - first_len), c.height() });
+		r.divider = rectf::from_position_size({ boundary - half - bias, c.top() }, { params.divider_thickness, c.height() });
+	}
+	else {
+		const float boundary = c.top() - first_len;
+		r.first = rectf::from_position_size({ c.left(), c.top() }, { c.width(), first_len });
+		r.second = rectf::from_position_size({ c.left(), boundary }, { c.width(), std::max(0.f, extent - first_len) });
+		r.divider = rectf::from_position_size({ c.left(), boundary + half + bias }, { c.width(), params.divider_thickness });
+	}
+
+	return r;
+}
+
+auto gse::gui::layout::update_split(const split_params& params, const split_drag& drag, split_drag_state& state) -> split_result {
+	const split_result resting = resolve_split(params);
+	const bool columns = params.axis == split_axis::columns;
+	const float along = columns ? drag.mouse.x() : drag.mouse.y();
+
+	if (!drag.held) {
+		state.dragging = false;
+	}
+	else if (drag.pressed && !drag.blocked && resting.divider.contains(drag.mouse)) {
+		state.dragging = true;
+		state.grab = along - (columns ? resting.first.right() : resting.first.bottom());
+	}
+
+	if (!state.dragging) {
+		return resting;
+	}
+
+	const rectf& c = params.container;
+	const float extent = columns ? c.width() : c.height();
+	const float boundary = along - state.grab;
+	const float first_len = columns ? boundary - c.left() : c.top() - boundary;
+
+	split_params moved = params;
+	moved.ratio = extent > 0.f ? first_len / extent : params.ratio;
+	return resolve_split(moved);
+}
+
+auto gse::gui::layout::align_in(const rectf& parent, const vec2f child_size, const halign h, const valign v) -> rectf {
 	float x = parent.left();
 	switch (h) {
 		case halign::start:
@@ -270,29 +369,29 @@ auto gse::gui::layout::align_in(const ui_rect& parent, const vec2f child_size, c
 			break;
 	}
 
-	return ui_rect::from_position_size(
+	return rectf::from_position_size(
 		{ x, y },
 		child_size
 	);
 }
 
-auto gse::gui::layout::inset_per_side(const ui_rect& parent, const float top, const float right, const float bottom, const float left) -> ui_rect {
-	return ui_rect({
+auto gse::gui::layout::inset_per_side(const rectf& parent, const float top, const float right, const float bottom, const float left) -> rectf {
+	return rectf({
 		.min = { parent.left() + left, parent.bottom() + bottom },
 		.max = { parent.right() - right, parent.top() - top }
 	});
 }
 
-auto gse::gui::layout::centered(const ui_rect& parent, const vec2f child_size) -> ui_rect {
+auto gse::gui::layout::centered(const rectf& parent, const vec2f child_size) -> rectf {
 	return align_in(parent, child_size, halign::center, valign::center);
 }
 
-auto gse::gui::layout::fit_card(const vec2f viewport_size, const vec2f min_size, const vec2f max_size, const vec2f margin) -> ui_rect {
+auto gse::gui::layout::fit_card(const vec2f viewport_size, const vec2f min_size, const vec2f max_size, const vec2f margin) -> rectf {
 	const float w = std::clamp(viewport_size.x() - margin.x() * 2.f, min_size.x(), max_size.x());
 	const float h = std::clamp(viewport_size.y() - margin.y() * 2.f, min_size.y(), max_size.y());
 	const float left = (viewport_size.x() - w) * 0.5f;
 	const float top = (viewport_size.y() + h) * 0.5f;
-	return ui_rect::from_position_size(
+	return rectf::from_position_size(
 		{ left, top },
 		{ w, h }
 	);
@@ -302,16 +401,16 @@ auto gse::gui::layout::skip(const draw_context& ctx, const float amount) -> void
 	ctx.layout_cursor.y() -= amount;
 }
 
-auto gse::gui::layout::reserve_row(const draw_context& ctx, const float height, const float trailing_gap) -> ui_rect {
+auto gse::gui::layout::reserve_row(const draw_context& ctx, const float height, const float trailing_gap) -> rectf {
 	if (!ctx.current_menu) {
-		return ui_rect::from_position_size(
+		return rectf::from_position_size(
 			ctx.layout_cursor,
 			{ 0.f, height }
 		);
 	}
 
-	const ui_rect content = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
-	const ui_rect row = ui_rect::from_position_size(
+	const rectf content = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
+	const rectf row = rectf::from_position_size(
 		{ content.left(), ctx.layout_cursor.y() },
 		{ content.width(), height }
 	);
@@ -320,8 +419,8 @@ auto gse::gui::layout::reserve_row(const draw_context& ctx, const float height, 
 	return row;
 }
 
-gse::gui::layout::within_scope::within_scope(draw_context& ctx, const ui_rect& sub_rect)
-	: m_ctx(&ctx), m_saved_rect(ctx.current_menu ? ctx.current_menu->rect : ui_rect{}), m_saved_cursor(ctx.layout_cursor) {
+gse::gui::layout::within_scope::within_scope(draw_context& ctx, const rectf& sub_rect)
+	: m_ctx(&ctx), m_saved_rect(ctx.current_menu ? ctx.current_menu->rect : rectf{}), m_saved_cursor(ctx.layout_cursor) {
 	if (ctx.current_menu) {
 		ctx.current_menu->rect = sub_rect;
 	}
@@ -338,6 +437,6 @@ gse::gui::layout::within_scope::~within_scope() {
 	m_ctx->layout_cursor = m_saved_cursor;
 }
 
-auto gse::gui::layout::within(draw_context& ctx, const ui_rect& sub_rect) -> within_scope {
+auto gse::gui::layout::within(draw_context& ctx, const rectf& sub_rect) -> within_scope {
 	return within_scope(ctx, sub_rect);
 }
