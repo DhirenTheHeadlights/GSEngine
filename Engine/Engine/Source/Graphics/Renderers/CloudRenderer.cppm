@@ -24,6 +24,7 @@ export namespace gse::renderer::cloud {
 	};
 
 	struct cloud_raymarch_pass {};
+	struct cloud_resolve_pass {};
 	struct cloud_composite_pass {};
 	struct cloud_shadow_pass {};
 
@@ -37,8 +38,8 @@ export namespace gse::renderer::cloud {
 		float cloud_type;
 
 		float density_multiplier;
-		float view_extinction;
-		float light_extinction;
+		atmosphere_inverse_length view_extinction;
+		atmosphere_inverse_length light_extinction;
 		atmosphere_inverse_length shape_scale;
 
 		atmosphere_inverse_length detail_scale;
@@ -54,7 +55,11 @@ export namespace gse::renderer::cloud {
 		float weather_phase;
 		float weather_contrast;
 		float weather_type_influence;
-		float shadow_extinction;
+		atmosphere_inverse_length shadow_extinction;
+
+		auto operator==(
+			const cloud_data&
+		) const -> bool = default;
 	};
 
 	struct [[= shaders::binding<0, 5>{}]] cloud_ubo {
@@ -70,6 +75,10 @@ export namespace gse::renderer::cloud {
 
 		vec2<atmosphere_length> origin_km;
 		atmosphere_length plane_altitude;
+
+		auto operator==(
+			const cloud_shadow_data&
+		) const -> bool = default;
 	};
 
 	struct [[= shaders::binding<0, 11>{}]] cloud_shadow_ubo {
@@ -93,7 +102,7 @@ export namespace gse::renderer::cloud {
 			= settings::range<1, 8>{},
 			= settings::hot_reloadable
 		]]
-		int target_divisor = 2;
+		int target_divisor = 4;
 
 		[[
 			= settings::describe<"Cloud layer bottom altitude (km)">{},
@@ -132,19 +141,19 @@ export namespace gse::renderer::cloud {
 
 		[[
 			= settings::describe<"View-ray Beer's law extinction coefficient">{},
-			= settings::range<0.f, 1.f>{},
+			= settings::range<per_kilometer(0.f), per_kilometer(1.f)>{},
 			= settings::hot_reloadable
 		]]
-		float view_extinction = 0.15f;
+		atmosphere_inverse_length view_extinction = per_kilometer(0.15f);
 
 		[[
 			= settings::describe<"Light-ray Beer's law extinction coefficient. The sun march covers only "
 									  "6 x 5% of the layer thickness, so this needs to be far larger than the "
 									  "view coefficient to produce visible self-shadowing.">{},
-			= settings::range<0.f, 8.f>{},
+			= settings::range<per_kilometer(0.f), per_kilometer(8.f)>{},
 			= settings::hot_reloadable
 		]]
-		float light_extinction = 3.0f;
+		atmosphere_inverse_length light_extinction = per_kilometer(3.0f);
 
 		[[
 			= settings::describe<"Shape noise sampling scale (1/km)">{},
@@ -248,10 +257,10 @@ export namespace gse::renderer::cloud {
 									  "only 30 percent of the layer, while the shadow map integrates the full "
 									  "thickness along the sun ray, so the same number means a very different "
 									  "optical depth.">{},
-			= settings::range<0.f, 12.f>{},
+			= settings::range<per_kilometer(0.f), per_kilometer(12.f)>{},
 			= settings::hot_reloadable
 		]]
-		float shadow_extinction = 3.0f;
+		atmosphere_inverse_length shadow_extinction = per_kilometer(3.0f);
 
 		[[
 			= settings::describe<"How strongly the cloud layer darkens direct sunlight on scene geometry. "
@@ -281,6 +290,7 @@ export namespace gse::renderer::cloud {
 		gpu::shader_program shape_bake_pipeline;
 		gpu::shader_program detail_bake_pipeline;
 		gpu::shader_program raymarch_pipeline;
+		gpu::shader_program resolve_pipeline;
 		gpu::shader_program composite_pipeline;
 		gpu::shader_program shadow_pipeline;
 		gpu::shader_program weather_bake_pipeline;
@@ -289,6 +299,7 @@ export namespace gse::renderer::cloud {
 		gpu::image detail_noise;
 		gpu::image weather_map;
 		gpu::image cloud_target;
+		per_frame_resource<gpu::image> cloud_resolve;
 
 		[[= shared]] gpu::image shadow_map;
 
@@ -296,6 +307,10 @@ export namespace gse::renderer::cloud {
 		gpu::bindless_handle atmosphere_lut_sampler;
 		gpu::bindless_handle sky_view_sampler;
 		gpu::bindless_handle composite_sampler;
+		gpu::bindless_handle resolve_sampler;
+		per_frame_resource<gpu::bindless_handle> cloud_resolve_views;
+		gpu::bindless_handle depth_sampler;
+		gpu::bindless_handle depth_view;
 
 		[[= shared]] gpu::bindless_handle shadow_sampler;
 
@@ -304,10 +319,17 @@ export namespace gse::renderer::cloud {
 		[[= shared]] gpu::buffer shadow_ubo_buffer;
 
 		vec2u cloud_target_extent{ 0, 0 };
+		vec2u cloud_resolve_extent{ 0, 0 };
+		mat4f prev_view_proj{};
+		std::uint32_t frames_since_history_invalid = 0;
 		std::uint32_t frame_counter = 0;
 		int applied_target_divisor = 0;
 		int applied_shadow_resolution = 0;
 		bool noises_ready = false;
+
+		cloud_data shadow_cloud_inputs{};
+		cloud_shadow_data shadow_plane_inputs{};
+		bool shadow_map_written = false;
 	};
 
 	[[= system_init{}]]

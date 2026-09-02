@@ -1,9 +1,3 @@
-static const int max_view_steps = 40;
-static const int light_steps = 6;
-static const float light_march_min_transmittance = 0.1;
-static const float light_march_opaque_density = 3.0;
-static const float mean_detail_erosion = 0.5;
-
 float3 reconstruct_world_ray(float2 ndc) {
     float4 wn = mul(pc.inv_view_proj, float4(ndc, 0.0, 1.0));
     float4 wf = mul(pc.inv_view_proj, float4(ndc, 1.0, 1.0));
@@ -13,6 +7,10 @@ float3 reconstruct_world_ray(float2 ndc) {
 }
 
 float3 sample_atmosphere_transmittance(float radius, float view_zenith_cos) {
+    if (ray_occluded_by_ground(radius, view_zenith_cos)) {
+        return float3(0.0, 0.0, 0.0);
+    }
+
     float2 uv = transmittance_r_mu_to_uv(radius, view_zenith_cos);
     return transmittance_in.SampleLevel(transmittance_sampler, uv, 0).rgb;
 }
@@ -72,12 +70,21 @@ float sample_cloud_density_shape_only(float3 world_pos_km, float height_fraction
     return carve_cloud_density(base, mean_detail_erosion);
 }
 
+bool scene_occludes_footprint(float2 screen_uv, float2 texel) {
+    float2 corner = texel * 0.5;
+    float d00 = scene_depth_in.SampleLevel(scene_depth_sampler, screen_uv + float2(-corner.x, -corner.y), 0).r;
+    float d10 = scene_depth_in.SampleLevel(scene_depth_sampler, screen_uv + float2(corner.x, -corner.y), 0).r;
+    float d01 = scene_depth_in.SampleLevel(scene_depth_sampler, screen_uv + float2(-corner.x, corner.y), 0).r;
+    float d11 = scene_depth_in.SampleLevel(scene_depth_sampler, screen_uv + float2(corner.x, corner.y), 0).r;
+    return max(max(d00, d10), max(d01, d11)) < scene_far_depth;
+}
+
 float sample_light_transmittance(float3 world_pos_km, float3 sun_dir, float layer_thickness_km) {
     float total_density = 0.0;
-    float step_km = layer_thickness_km * 0.05;
+    float step_km = layer_thickness_km * light_march_layer_fraction;
 
     for (int i = 0; i < light_steps; ++i) {
-        if (total_density * cloud_ubo.light_extinction > light_march_opaque_density) {
+        if (total_density * cloud_ubo.light_extinction > light_march_opaque_optical_depth) {
             break;
         }
         float t = step_km * (float(i) + 0.5);
@@ -96,11 +103,16 @@ void cloud_raymarch(uint3 dispatch_id) {
         return;
     }
 
-    float2 screen_uv = (float2(dispatch_id.xy) + 0.5) / float2(size);
+    float2 screen_uv = (float2(dispatch_id.xy) + pc.subpixel_offset) / float2(size);
     float2 ndc = screen_uv * 2.0 - 1.0;
     float3 view_dir = reconstruct_world_ray(ndc);
 
     if (view_dir.y < 0.01) {
+        cloud_out[dispatch_id.xy] = float4(0.0, 0.0, 0.0, 1.0);
+        return;
+    }
+
+    if (scene_occludes_footprint(screen_uv, 1.0 / float2(size))) {
         cloud_out[dispatch_id.xy] = float4(0.0, 0.0, 0.0, 1.0);
         return;
     }
@@ -133,13 +145,14 @@ void cloud_raymarch(uint3 dispatch_id) {
 
     t_exit = min(t_exit, t_enter + cloud_ubo.max_distance);
 
-    float dt = (t_exit - t_enter) / float(max_view_steps);
+    float span = t_exit - t_enter;
+    int view_steps = clamp(int(ceil(span / target_step)), min_view_steps, max_view_steps);
+    float dt = span / float(view_steps);
 
     float mu_view_sun = dot(view_dir, pc.sun_direction);
     float phase = dual_henyey_greenstein(mu_view_sun, cloud_ubo.phase_g_forward, cloud_ubo.phase_g_back, cloud_ubo.phase_blend);
 
-    float view_zenith_cos = view_dir.y;
-    float3 sun_transmittance_atm = sample_atmosphere_transmittance(atmosphere_ubo.bottom_radius + pc.camera_altitude, view_zenith_cos);
+    float3 sun_transmittance_atm = sample_atmosphere_transmittance(atmosphere_ubo.bottom_radius + pc.camera_altitude, pc.sun_direction.y);
     float3 ambient_sky = sample_ambient_sky(float3(0.0, 1.0, 0.0)) * pc.sun_irradiance;
 
     float3 accumulated = float3(0.0, 0.0, 0.0);
@@ -149,7 +162,7 @@ void cloud_raymarch(uint3 dispatch_id) {
     float t = t_enter + dt * jitter;
     float light_trans = 1.0;
 
-    for (int i = 0; i < max_view_steps; ++i) {
+    for (int i = 0; i < view_steps; ++i) {
         if (transmittance < 0.01) {
             break;
         }

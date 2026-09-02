@@ -5,6 +5,7 @@ import std;
 import :cloud_renderer;
 import :atmosphere_renderer;
 import :camera_system;
+import :depth_prepass_renderer;
 import :sdf_grid_renderer;
 import :world_text_renderer;
 import :render_targets;
@@ -24,8 +25,24 @@ namespace gse::renderer::cloud {
 	struct detail_bake_pass {};
 	struct weather_bake_pass {};
 
-	using cloud_types = type_pack<cloud_data, atmosphere::atmosphere_data>;
-	using shadow_types = type_pack<cloud_data, cloud_shadow_data, atmosphere::atmosphere_data>;
+	struct [[= shaders::shader_constant_block]] cloud_limits {
+		int max_view_steps = 40;
+		int min_view_steps = 8;
+		int light_steps = 6;
+		int shadow_march_steps = 16;
+
+		atmosphere_length target_step = kilometers(0.2f);
+		angle shadow_min_sun_elevation = degrees(1.15f);
+
+		float light_march_layer_fraction = 0.05f;
+		float light_march_min_transmittance = 0.1f;
+		float light_march_opaque_optical_depth = 3.f;
+		float mean_detail_erosion = 0.5f;
+		float scene_far_depth = 1.f - 1e-5f;
+	};
+
+	using cloud_types = type_pack<cloud_limits, cloud_data, atmosphere::atmosphere_data>;
+	using shadow_types = type_pack<cloud_limits, cloud_data, cloud_shadow_data, atmosphere::atmosphere_data>;
 
 	struct [[
 		= shaders::binding<0, 0>{},
@@ -113,6 +130,18 @@ namespace gse::renderer::cloud {
 	};
 
 	struct [[
+		= shaders::binding<0, 13>{},
+		= shaders::texture2d
+	]] scene_depth_in {
+		using element = vec4f;
+	};
+
+	struct [[
+		= shaders::binding<0, 14>{},
+		= shaders::sampler_state
+	]] scene_depth_sampler {};
+
+	struct [[
 		= shaders::binding<0, 0>{},
 		= shaders::texture2d
 	]] cloud_in {
@@ -124,20 +153,51 @@ namespace gse::renderer::cloud {
 		= shaders::sampler_state
 	]] cloud_composite_sampler {};
 
+	struct [[
+		= shaders::binding<0, 0>{},
+		= shaders::texture2d
+	]] resolve_low_in {
+		using element = vec4f;
+	};
+
+	struct [[
+		= shaders::binding<0, 1>{},
+		= shaders::texture2d
+	]] resolve_history_in {
+		using element = vec4f;
+	};
+
+	struct [[
+		= shaders::binding<0, 2>{},
+		= shaders::sampler_state
+	]] resolve_sampler_binding {};
+
 	struct [[= shaders::shader_struct]] cloud_push_constants {
 		mat4f inv_view_proj;
 		vec3f sun_direction;
 		atmosphere_length camera_altitude;
 		vec3<irradiance> sun_irradiance;
 		float frame_index;
+		vec2f subpixel_offset;
+		vec2f full_extent;
 		vec3<atmosphere_length> wind_offset;
+	};
+
+	struct [[= shaders::shader_struct]] cloud_resolve_push_constants {
+		mat4f inv_view_proj;
+		mat4f prev_view_proj;
+		vec2u full_extent;
+		vec2u block_offset;
+		std::int32_t divisor;
+		std::int32_t history_valid;
 	};
 
 	using shape_bake_bindings = type_pack<cloud_shape_out>;
 	using detail_bake_bindings = type_pack<cloud_detail_out>;
 	using weather_bake_bindings = type_pack<cloud_weather_out>;
-	using raymarch_bindings = type_pack<atmosphere::atmosphere_ubo, cloud_ubo, transmittance_in, sky_view_in, cloud_shape_in, cloud_detail_in, cloud_out, transmittance_sampler, sky_view_sampler_binding, noise_sampler_binding, cloud_weather_in>;
+	using raymarch_bindings = type_pack<atmosphere::atmosphere_ubo, cloud_ubo, transmittance_in, sky_view_in, cloud_shape_in, cloud_detail_in, cloud_out, transmittance_sampler, sky_view_sampler_binding, noise_sampler_binding, cloud_weather_in, scene_depth_in, scene_depth_sampler>;
 	using composite_bindings = type_pack<cloud_in, cloud_composite_sampler>;
+	using resolve_bindings = type_pack<resolve_low_in, resolve_history_in, resolve_sampler_binding>;
 	using shadow_bindings = type_pack<atmosphere::atmosphere_ubo, cloud_ubo, cloud_shadow_ubo, cloud_shape_in, cloud_shadow_out, noise_sampler_binding, cloud_weather_in>;
 
 	using shape_bake_entry = gpu::compute_entry<gpu::body_path<"Compute/cloud_shape_bake">, gpu::bindings<shape_bake_bindings>, gpu::helpers<"Clouds/cloud_common">, gpu::threads<8, 8, 1>, gpu::system_values<gpu::dispatch_thread_id>>;
@@ -154,6 +214,18 @@ namespace gse::renderer::cloud {
 		gpu::push_constant<cloud_push_constants>,
 		gpu::threads<8, 8, 1>,
 		gpu::system_values<gpu::dispatch_thread_id>
+	>;
+
+	using resolve_entry = gpu::graphics_entry<
+		gpu::body_path<"Graphics/CloudResolve">,
+		gpu::bindings<resolve_bindings>,
+		gpu::vertex_stage<"vs_main">,
+		gpu::fragment_stage<"fs_main">,
+		gpu::push_constant<cloud_resolve_push_constants>,
+		gpu::rasterization<gpu::polygon_mode::fill, gpu::cull_mode::none>,
+		gpu::depth<false, false>,
+		gpu::depth_target<gpu::depth_format::none>,
+		gpu::color_targets<gpu::color_format::hdr>
 	>;
 
 	using shadow_entry = gpu::compute_entry<
@@ -208,6 +280,21 @@ namespace gse::renderer::cloud {
 		.address_w = gpu::sampler_address_mode::clamp_to_edge,
 	};
 
+	constexpr gpu::sampler_desc depth_sampler_desc{
+		.min = gpu::sampler_filter::nearest,
+		.mag = gpu::sampler_filter::nearest,
+		.address_u = gpu::sampler_address_mode::clamp_to_edge,
+		.address_v = gpu::sampler_address_mode::clamp_to_edge,
+		.address_w = gpu::sampler_address_mode::clamp_to_edge,
+		.border = gpu::border_color::float_opaque_white,
+		.max_lod = 1.0f,
+	};
+
+	auto update_depth_descriptor(
+		shared_view<gpu::context::data> gpu_s,
+		data& d
+	) -> void;
+
 	auto compute_cloud_target_extent(
 		vec2u screen_extent,
 		int divisor
@@ -235,6 +322,13 @@ namespace gse::renderer::cloud {
 	) -> cloud_shadow_data;
 }
 
+auto gse::renderer::cloud::update_depth_descriptor(const shared_view<gpu::context::data> gpu_s, data& d) -> void {
+	if (!d.depth_view.valid()) {
+		d.depth_view = gpu_s.device->allocate_image_slot();
+	}
+	gpu_s.device->write_sampled_image(d.depth_view.slot(), gpu_s.render_graph->depth_image());
+}
+
 auto gse::renderer::cloud::compute_cloud_target_extent(const vec2u screen_extent, const int divisor) -> vec2u {
 	const auto d = static_cast<std::uint32_t>(std::max(divisor, 1));
 	const auto w = std::max(screen_extent.x() / d, 1u);
@@ -255,6 +349,26 @@ auto gse::renderer::cloud::recreate_cloud_target(const shared_view<gpu::context:
 		"cloud_target"
 	);
 	gpu::transition_image_to(*gpu_s.device, d.cloud_target);
+
+	d.cloud_resolve_extent = gpu_s.render_graph->extent();
+	d.frames_since_history_invalid = 0;
+	for (std::size_t i = 0; i < d.cloud_resolve.frames_in_flight; ++i) {
+		d.cloud_resolve[i] = gpu_s.device->create_image(
+			{
+				.size = d.cloud_resolve_extent,
+				.format = gpu::image_format::r16g16b16a16_sfloat,
+				.usage = { gpu::image_flag::color_attachment, gpu::image_flag::sampled },
+			},
+			std::format("cloud_resolve_{}", i)
+		);
+		gpu::transition_image_to(*gpu_s.device, d.cloud_resolve[i]);
+		if (!d.cloud_resolve_views[i].valid()) {
+			d.cloud_resolve_views[i] = gpu_s.device->allocate_image_slot();
+		}
+		gpu_s.device->write_sampled_image(d.cloud_resolve_views[i].slot(), d.cloud_resolve[i]);
+	}
+
+	update_depth_descriptor(gpu_s, d);
 }
 
 auto gse::renderer::cloud::recreate_shadow_map(const shared_view<gpu::context::data> gpu_s, data& d) -> void {
@@ -270,6 +384,7 @@ auto gse::renderer::cloud::recreate_shadow_map(const shared_view<gpu::context::d
 		"cloud_shadow_map"
 	);
 	gpu::transition_image_to(*gpu_s.device, d.shadow_map);
+	d.shadow_map_written = false;
 }
 
 auto gse::renderer::cloud::build_cloud_shadow_data(const data& d, const vec3f& sun_direction, const atmosphere_length camera_altitude, const bool active) -> cloud_shadow_data {
@@ -314,6 +429,7 @@ auto gse::renderer::cloud::init(context& ctx, const shared_view<gpu::context::da
 	d.shape_bake_pipeline = gpu::build_compute_program(*gpu_s.device, shape_bake_entry::pod);
 	d.detail_bake_pipeline = gpu::build_compute_program(*gpu_s.device, detail_bake_entry::pod);
 	d.raymarch_pipeline = gpu::build_compute_program(*gpu_s.device, raymarch_entry::pod);
+	d.resolve_pipeline = gpu::build_graphics_program(*gpu_s.device, resolve_entry::pod);
 	d.composite_pipeline = gpu::build_graphics_program(*gpu_s.device, composite_entry::pod);
 	d.shadow_pipeline = gpu::build_compute_program(*gpu_s.device, shadow_entry::pod);
 	d.weather_bake_pipeline = gpu::build_compute_program(*gpu_s.device, weather_bake_entry::pod);
@@ -384,6 +500,8 @@ auto gse::renderer::cloud::init(context& ctx, const shared_view<gpu::context::da
 	d.atmosphere_lut_sampler = gpu_s.device->register_sampler(atmosphere_lut_sampler_desc);
 	d.sky_view_sampler = gpu_s.device->register_sampler(sky_view_sampler_desc);
 	d.composite_sampler = gpu_s.device->register_sampler(composite_sampler_desc);
+	d.resolve_sampler = gpu_s.device->register_sampler(composite_sampler_desc);
+	d.depth_sampler = gpu_s.device->register_sampler(depth_sampler_desc);
 
 	gpu::context::on_swap_chain_recreate(
 		gpu_s,
@@ -420,10 +538,10 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 		&& d.shadow_ubo_buffer.valid()
 		&& atm_state.atmosphere_ubo_buffer.valid();
 
+	const cloud_shadow_data shadow_payload = build_cloud_shadow_data(d, atm_state.sun_direction, atm_state.camera_altitude, shadows_active);
+
 	if (d.shadow_ubo_buffer.valid()) {
-		d.shadow_ubo_buffer.host_write(
-			build_cloud_shadow_data(d, atm_state.sun_direction, atm_state.camera_altitude, shadows_active)
-		);
+		d.shadow_ubo_buffer.host_write(shadow_payload);
 	}
 
 	if (!d.cloud_target.valid()) {
@@ -486,7 +604,15 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 		d.noises_ready = true;
 	}
 
-	if (shadows_active) {
+	const bool shadow_inputs_changed = !d.shadow_map_written
+		|| d.shadow_plane_inputs != shadow_payload
+		|| d.shadow_cloud_inputs != shader_payload;
+
+	if (shadows_active && shadow_inputs_changed) {
+		d.shadow_plane_inputs = shadow_payload;
+		d.shadow_cloud_inputs = shader_payload;
+		d.shadow_map_written = true;
+
 		const auto shadow_groups = (static_cast<std::uint32_t>(d.applied_shadow_resolution) + 7) / 8;
 
 		auto shadow_rec = co_await gpu::pass<^^cloud_shadow_pass>(pass_out)
@@ -524,9 +650,21 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 
 	d.frame_counter += 1;
 
+	const auto divisor = static_cast<std::uint32_t>(std::max(d.applied_target_divisor, 1));
+	const auto cycle = divisor * divisor;
+	const auto slot = (d.frame_counter * 7u) % cycle;
+	const auto block_offset = vec2u{ slot % divisor, slot / divisor };
+	const auto resolve_extent = d.cloud_resolve_extent;
+	const auto history_index = gpu_s.render_graph->current_frame();
+	const auto previous_index = 1u - history_index;
+	const bool history_ready = d.frames_since_history_invalid >= 2;
+	++d.frames_since_history_invalid;
+
 	auto rec = co_await gpu::pass<^^cloud_raymarch_pass>(pass_out)
 		.pipeline(d.raymarch_pipeline)
-		.after<^^atmosphere::sky_view_pass, ^^weather_bake_pass>();
+		.after<^^atmosphere::sky_view_pass, ^^weather_bake_pass, ^^depth_prepass::frame>();
+
+	rec.sample_image(gpu_s.render_graph->depth_image(), gpu::pipeline_stage_flag::compute_shader);
 
 	rec.dispatch<raymarch_entry>(
 		{
@@ -535,6 +673,14 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 			.camera_altitude = atm_state.camera_altitude,
 			.sun_irradiance = sun_irradiance,
 			.frame_index = static_cast<float>(d.frame_counter),
+			.subpixel_offset = vec2f{
+				(static_cast<float>(block_offset.x()) + 0.5f) / static_cast<float>(divisor),
+				(static_cast<float>(block_offset.y()) + 0.5f) / static_cast<float>(divisor),
+			},
+			.full_extent = vec2f{
+				static_cast<float>(resolve_extent.x()),
+				static_cast<float>(resolve_extent.y()),
+			},
 			.wind_offset = d.wind_offset,
 		},
 		{
@@ -549,22 +695,55 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 			.transmittance_sampler = d.atmosphere_lut_sampler.slot(),
 			.noise_sampler_binding = d.noise_sampler.slot(),
 			.cloud_weather_in = d.weather_map.sampled_slot(),
+			.scene_depth_in = d.depth_view.slot(),
+			.scene_depth_sampler = d.depth_sampler.slot(),
 		},
 		vec3u{ raymarch_groups.x(), raymarch_groups.y(), 1 }
 	);
+
+	auto resolve_rec = co_await gpu::pass<^^cloud_resolve_pass>(pass_out)
+		.pipeline(d.resolve_pipeline)
+		.color(gpu::clear_color(
+			gpu::color_clear{ 0.0f, 0.0f, 0.0f, 1.0f },
+			d.cloud_resolve[history_index]
+		))
+		.after<^^cloud_raymarch_pass>();
+
+	resolve_rec.sample_image(d.cloud_target, gpu::pipeline_stage_flag::fragment_shader);
+	resolve_rec.sample_image(d.cloud_resolve[previous_index], gpu::pipeline_stage_flag::fragment_shader);
+	resolve_rec.set_viewport(resolve_extent);
+	resolve_rec.set_scissor(resolve_extent);
+	resolve_rec.push_bindings<resolve_entry>(
+		{
+			.inv_view_proj = inv_view_proj,
+			.prev_view_proj = history_ready ? d.prev_view_proj : proj * view,
+			.full_extent = resolve_extent,
+			.block_offset = block_offset,
+			.divisor = static_cast<std::int32_t>(divisor),
+			.history_valid = history_ready ? 1 : 0,
+		},
+		{
+			.resolve_low_in = d.cloud_target.sampled_slot(),
+			.resolve_history_in = d.cloud_resolve_views[previous_index].slot(),
+			.resolve_sampler_binding = d.resolve_sampler.slot(),
+		}
+	);
+	resolve_rec.draw(3);
+
+	d.prev_view_proj = proj * view;
 
 	const auto ext = gpu_s.render_graph->extent();
 	auto composite_rec = co_await gpu::pass<^^cloud_composite_pass>(pass_out)
 		.pipeline(d.composite_pipeline)
 		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
 		.depth(gpu::load_depth())
-		.after<^^atmosphere::sky_raster_pass, ^^cloud_raymarch_pass, ^^sdf_grid::frame, ^^world_text::frame>();
+		.after<^^atmosphere::sky_raster_pass, ^^cloud_resolve_pass, ^^sdf_grid::frame, ^^world_text::frame>();
 
-	composite_rec.sample_image(d.cloud_target, gpu::pipeline_stage_flag::fragment_shader);
+	composite_rec.sample_image(d.cloud_resolve[history_index], gpu::pipeline_stage_flag::fragment_shader);
 	composite_rec.set_viewport(ext);
 	composite_rec.set_scissor(ext);
 	composite_rec.push_bindings<composite_entry>({
-		.cloud_in = d.cloud_target.sampled_slot(),
+		.cloud_in = d.cloud_resolve_views[history_index].slot(),
 		.cloud_composite_sampler = d.composite_sampler.slot(),
 	});
 	composite_rec.draw(3);
