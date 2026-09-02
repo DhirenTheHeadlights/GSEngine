@@ -82,7 +82,8 @@ float4 fs_main(VS_OUT input) : SV_Target {
     float3 hdr = hdr_color.Sample(color_sampler, input.uv).rgb;
     float3 bloom = bloom_color.Sample(color_sampler, input.uv).rgb;
     float3 combined = hdr + bloom * pc.bloom_intensity;
-    float3 exposed = combined * pc.exposure;
+    float exposure = pc.auto_exposure != 0 ? exposure_in[0] : pc.exposure;
+    float3 exposed = combined * exposure;
 
     float3 mapped = agx(exposed);
     mapped = agx_punchy_look(mapped);
