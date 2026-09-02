@@ -220,6 +220,10 @@ constexpr auto gse::magnitude(const V& v) {
 	using storage_type = V::storage_type;
 	auto d = dot(v, v);
 	storage_type m = std::sqrt(internal::to_storage(d));
+	constexpr float scale = internal::vec_unit_scale_v<typename V::value_type>;
+	if constexpr (scale != 1.0f) {
+		m *= scale;
+	}
 	return typename V::value_type(m);
 }
 
@@ -298,8 +302,9 @@ constexpr auto gse::angle_between(const V1& a, const V2& b) -> angle_t<typename 
 		return angle_t<storage_type>(storage_type(0));
 	}
 
+	constexpr float scale = internal::vec_unit_scale_v<typename V1::value_type> * internal::vec_unit_scale_v<typename V2::value_type>;
 	const auto d_val = internal::to_storage(dot(a, b));
-	auto cosine = std::clamp(d_val / (ma_val * mb_val), storage_type(-1), storage_type(1));
+	auto cosine = std::clamp(d_val * scale / (ma_val * mb_val), storage_type(-1), storage_type(1));
 	return acos(cosine);
 }
 
