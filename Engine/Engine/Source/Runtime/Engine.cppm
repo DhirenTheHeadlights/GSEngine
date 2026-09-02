@@ -60,7 +60,9 @@ export namespace gse {
 		bool use_gpu_solver = false;
 		bool custom_chrome = false;
 		bool scale_ui_with_resolution = true;
+		bool load_settings = true;
 		bool persist_settings = true;
+		bool dump_settings = false;
 		std::filesystem::path gui_layout_path;
 		std::filesystem::path project_settings_path;
 		bool attached = false;
@@ -156,16 +158,21 @@ export namespace gse {
 			gpu::device& device
 		) -> void;
 
+		auto install_actions() -> void;
+
 		engine_config m_config;
 		scheduler m_scheduler;
 		save::registry m_save;
+		actions::registry m_actions;
 		primitives::data m_primitives;
 		gse::registry m_registry;
 		loading::state m_loading;
 		std::function<void()> m_deferred_boot;
 		std::atomic<bool> m_boot_tasks_done = false;
+		std::size_t m_actions_revision = 0;
 		std::uint32_t m_boot_init_baseline_settled = 0;
 		bool m_boot_init_baseline_captured = false;
+		bool m_settings_audited = false;
 		std::uint32_t m_frames_since_rendered = 0;
 		bool m_window_shown = false;
 		bool m_headless_gpu = false;

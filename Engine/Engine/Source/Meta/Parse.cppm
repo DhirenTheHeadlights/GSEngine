@@ -124,5 +124,5 @@ auto gse::parser<T>::parse(const std::string_view raw, T& out) -> bool {
 template <typename E>
 requires std::is_enum_v<E>
 auto gse::parser<E>::parse(const std::string_view raw, E& out) -> bool {
-	return enum_from_string(raw, out);
+	return enum_from_string(raw, out) || enum_from_ordinal(raw, out);
 }

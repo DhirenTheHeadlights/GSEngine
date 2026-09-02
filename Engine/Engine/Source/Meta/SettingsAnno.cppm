@@ -43,66 +43,51 @@ export namespace gse::settings {
 		static constexpr auto max = Max;
 	};
 
-	template <typename T>
+	struct option_label {
+		char text[48];
+	};
+
 	struct choice {
-		using value_type = T;
-		T value{};
+		std::string value;
 		std::vector<std::string> options;
 	};
 
 	template <typename T>
-	struct is_choice : std::false_type {};
+	constexpr bool is_choice_v = std::same_as<T, choice>;
 
-	template <typename T>
-	struct is_choice<choice<T>> : std::true_type {};
-
-	template <typename T>
-	constexpr bool is_choice_v = is_choice<T>::value;
-
-	template <typename T>
 	auto choice_index(
-		const choice<T>& c
+		const choice& c
 	) -> std::size_t;
 
-	template <typename T>
 	auto set_choice_index(
-		choice<T>& c,
+		choice& c,
 		std::size_t index
 	) -> void;
 }
 
-template <typename T>
-auto gse::settings::choice_index(const choice<T>& c) -> std::size_t {
-	if constexpr (std::same_as<T, std::string>) {
-		const auto it = std::ranges::find(c.options, c.value);
-		return it == c.options.end() ? 0 : static_cast<std::size_t>(std::ranges::distance(c.options.begin(), it));
-	}
-	else {
-		return static_cast<std::size_t>(c.value);
+auto gse::settings::choice_index(const choice& c) -> std::size_t {
+	const auto it = std::ranges::find(c.options, c.value);
+	return it == c.options.end() ? 0 : static_cast<std::size_t>(std::ranges::distance(c.options.begin(), it));
+}
+
+auto gse::settings::set_choice_index(choice& c, const std::size_t index) -> void {
+	if (index < c.options.size()) {
+		c.value = c.options[index];
 	}
 }
 
-template <typename T>
-auto gse::settings::set_choice_index(choice<T>& c, const std::size_t index) -> void {
-	if constexpr (std::same_as<T, std::string>) {
-		c.value = index < c.options.size() ? c.options[index] : std::string{};
-	}
-	else {
-		c.value = static_cast<T>(index);
-	}
-}
-
-export template <typename T>
-struct std::formatter<gse::settings::choice<T>> : formatter<T> {
-	auto format(const gse::settings::choice<T>& c, auto& ctx) const {
-		return formatter<T>::format(c.value, ctx);
+template <>
+struct std::formatter<gse::settings::choice> : formatter<std::string> {
+	auto format(const gse::settings::choice& c, auto& ctx) const {
+		return formatter<std::string>::format(c.value, ctx);
 	}
 };
 
-export template <typename T>
-struct gse::parser<gse::settings::choice<T>> {
-	static auto parse(std::string_view raw, settings::choice<T>& out) -> bool {
-		return gse::parse(raw, out.value);
+template <>
+struct gse::parser<gse::settings::choice> {
+	static auto parse(const std::string_view raw, settings::choice& out) -> bool {
+		out.value = std::string(raw);
+		return true;
 	}
 };
 

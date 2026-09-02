@@ -12,7 +12,7 @@ export namespace sandbox {
 			gse::shared_view<gse::world_system::data> world,
 			gse::shared_view<gse::network::data> net,
 			const gse::save::registry& save_reg,
-			gse::channel_write<gse::activate_scene_request, gse::deactivate_active_scene_request, gse::gui::push_screen_request, gse::gui::pop_screen_request, gse::network::connect_request, gse::network::refresh_servers_request, gse::network::refresh_server_info_request, gse::network::ping_request, gse::settings::change_request, gse::gui::popout_toggle> channels
+			gse::channel_write<gse::activate_scene_request, gse::deactivate_active_scene_request, gse::gui::push_screen_request, gse::gui::pop_screen_request, gse::network::connect_request, gse::network::refresh_servers_request, gse::network::refresh_server_info_request, gse::network::ping_request, gse::settings::change_request, gse::settings::override_request, gse::gui::popout_toggle> channels
 		);
 
 		auto build(
@@ -42,7 +42,7 @@ export namespace sandbox {
 		gse::shared_view<gse::world_system::data> m_world;
 		gse::shared_view<gse::network::data> m_net;
 		const gse::save::registry* m_save_reg;
-		gse::channel_write<gse::activate_scene_request, gse::deactivate_active_scene_request, gse::gui::push_screen_request, gse::gui::pop_screen_request, gse::network::connect_request, gse::network::refresh_servers_request, gse::network::refresh_server_info_request, gse::network::ping_request, gse::settings::change_request, gse::gui::popout_toggle> m_channels;
+		gse::channel_write<gse::activate_scene_request, gse::deactivate_active_scene_request, gse::gui::push_screen_request, gse::gui::pop_screen_request, gse::network::connect_request, gse::network::refresh_servers_request, gse::network::refresh_server_info_request, gse::network::ping_request, gse::settings::change_request, gse::settings::override_request, gse::gui::popout_toggle> m_channels;
 		gse::clock m_opened_at;
 
 		static constexpr gse::time slide_duration = gse::milliseconds(220.f);
@@ -50,7 +50,7 @@ export namespace sandbox {
 	};
 }
 
-sandbox::main_menu_screen::main_menu_screen(const gse::shared_view<gse::world_system::data> world, const gse::shared_view<gse::network::data> net, const gse::save::registry& save_reg, gse::channel_write<gse::activate_scene_request, gse::deactivate_active_scene_request, gse::gui::push_screen_request, gse::gui::pop_screen_request, gse::network::connect_request, gse::network::refresh_servers_request, gse::network::refresh_server_info_request, gse::network::ping_request, gse::settings::change_request, gse::gui::popout_toggle> channels)
+sandbox::main_menu_screen::main_menu_screen(const gse::shared_view<gse::world_system::data> world, const gse::shared_view<gse::network::data> net, const gse::save::registry& save_reg, gse::channel_write<gse::activate_scene_request, gse::deactivate_active_scene_request, gse::gui::push_screen_request, gse::gui::pop_screen_request, gse::network::connect_request, gse::network::refresh_servers_request, gse::network::refresh_server_info_request, gse::network::ping_request, gse::settings::change_request, gse::settings::override_request, gse::gui::popout_toggle> channels)
 	: m_world(world), m_net(net), m_save_reg(&save_reg), m_channels(std::move(channels)) {
 }
 

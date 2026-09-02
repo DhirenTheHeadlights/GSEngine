@@ -34,6 +34,10 @@ namespace gse {
 		native_window_handle handle
 	) -> bool;
 
+	auto window_handle_visible(
+		native_window_handle handle
+	) -> bool;
+
 	auto window_handle_viewport(
 		native_window_handle handle
 	) -> vec2i;
@@ -50,6 +54,8 @@ namespace gse {
 		native_window_handle handle
 	) -> void;
 
+	constexpr std::string_view native_resolution_option = "Native";
+
 	auto refresh_monitor_settings(
 		window::data& d
 	) -> void;
@@ -58,17 +64,18 @@ namespace gse {
 		window::data& d
 	) -> void;
 
-	auto refresh_display_mode_settings(
-		window::data& d
-	) -> void;
-
-	auto refresh_present_mode_settings(
-		window::data& d
-	) -> void;
-
-	auto desired_present_mode_index(
+	auto selected_monitor_index(
 		const window::data& d
 	) -> int;
+
+	auto selected_resolution(
+		const window::data& d,
+		int monitor_index
+	) -> std::optional<resolution_info>;
+
+	auto desired_present_mode(
+		const window::data& d
+	) -> gpu::present_mode;
 
 	auto apply_cursor_mode(
 		window::data& d
@@ -84,10 +91,20 @@ namespace gse {
 		display_mode mode
 	) -> void;
 
-	auto move_window_to_monitor(
+	auto apply_fullscreen_placement(
 		const window::data& d,
 		int monitor_index
 	) -> void;
+
+	auto center_window_in_work_area(
+		const window::data& d,
+		const rect_t<vec2i>& work_area
+	) -> void;
+
+	[[nodiscard]] auto place_window_on_monitor(
+		const window::data& d,
+		int monitor_index
+	) -> bool;
 
 	auto monitor_index_for_window(
 		vec2i position,
@@ -197,61 +214,68 @@ auto gse::refresh_monitor_settings(window::data& d) -> void {
 	const auto monitors = window::enumerate_monitors();
 
 	d.monitor.options.clear();
-	for (const auto& monitor : monitors) {
-		d.monitor.options.push_back(std::format("{}: {}x{}", monitor.name, monitor.width, monitor.height));
+	for (const auto& [index, monitor] : std::views::enumerate(monitors)) {
+		std::string label = std::format("{}: {}x{}", monitor.name, monitor.width, monitor.height);
+		if (std::ranges::contains(d.monitor.options, label)) {
+			label = std::format("{} #{}", label, index + 1);
+		}
+		d.monitor.options.push_back(std::move(label));
 	}
 
-	if (d.monitor.value < 0 || d.monitor.value >= static_cast<int>(monitors.size())) {
-		d.monitor.value = 0;
+	if (!std::ranges::contains(d.monitor.options, d.monitor.value)) {
+		if (!d.monitor.value.empty()) {
+			log::println(
+				log::level::warning,
+				log::category::general,
+				"monitor '{}' is not in the current monitor list; falling back to '{}'",
+				d.monitor.value,
+				d.monitor.options.empty() ? std::string("<none>") : d.monitor.options.front()
+			);
+		}
+		d.monitor.value = d.monitor.options.empty() ? std::string{} : d.monitor.options.front();
 	}
 }
 
 auto gse::refresh_resolution_settings(window::data& d) -> void {
-	const auto resolutions = window::enumerate_resolutions(d.monitor.value);
+	const auto resolutions = window::enumerate_resolutions(selected_monitor_index(d));
 
 	d.resolution.options.clear();
-	d.resolution.options.emplace_back("Native");
+	d.resolution.options.emplace_back(native_resolution_option);
 	for (const auto& resolution : resolutions) {
 		d.resolution.options.push_back(std::format("{}", resolution));
 	}
 
-	if (d.resolution.value < 0 || d.resolution.value >= static_cast<int>(d.resolution.options.size())) {
-		d.resolution.value = 0;
+	if (!std::ranges::contains(d.resolution.options, d.resolution.value)) {
+		d.resolution.value = native_resolution_option;
 	}
 }
 
-auto gse::refresh_display_mode_settings(window::data& d) -> void {
-	d.display_mode.options = {
-		"Windowed",
-		"Borderless Fullscreen",
-		"Exclusive Fullscreen",
-	};
-
-	if (d.display_mode.value < 0 || d.display_mode.value >= static_cast<int>(d.display_mode.options.size())) {
-		d.display_mode.value = 0;
-	}
+auto gse::selected_monitor_index(const window::data& d) -> int {
+	const auto it = std::ranges::find(d.monitor.options, d.monitor.value);
+	return it == d.monitor.options.end() ? 0 : static_cast<int>(std::ranges::distance(d.monitor.options.begin(), it));
 }
 
-auto gse::refresh_present_mode_settings(window::data& d) -> void {
-	d.present_mode.options = {
-		"FIFO (VSync)",
-		"FIFO Relaxed",
-		"Mailbox",
-		"Immediate",
-	};
-
-	if (d.present_mode.value < 0 || d.present_mode.value >= static_cast<int>(d.present_mode.options.size())) {
-		d.present_mode.value = 0;
+auto gse::selected_resolution(const window::data& d, const int monitor_index) -> std::optional<resolution_info> {
+	if (d.resolution.value == native_resolution_option) {
+		return std::nullopt;
 	}
+	const auto resolutions = window::enumerate_resolutions(monitor_index);
+	const auto it = std::ranges::find_if(
+		resolutions,
+		[&](const resolution_info& candidate) {
+			return std::format("{}", candidate) == d.resolution.value;
+		}
+	);
+	return it == resolutions.end() ? std::nullopt : std::optional(*it);
 }
 
-auto gse::desired_present_mode_index(const window::data& d) -> int {
-	constexpr int mailbox_index = 2;
-	return d.attached ? mailbox_index : d.present_mode.value;
+auto gse::desired_present_mode(const window::data& d) -> gpu::present_mode {
+	return d.attached ? gpu::present_mode::mailbox : d.present_mode;
 }
 
 auto gse::apply_cursor_mode(window::data& d) -> void {
 	const bool want_capture = d.primary.focused
+		&& window_handle_visible(d.primary.handle)
 		&& !d.cursor_suppressed
 		&& (d.primary.cursor_captured || !d.mouse_visible);
 
@@ -292,22 +316,28 @@ auto gse::monitor_work_area(const int monitor_index) -> std::optional<rect_t<vec
 	);
 }
 
-auto gse::move_window_to_monitor(const window::data& d, const int monitor_index) -> void {
-	const auto work_area = monitor_work_area(monitor_index);
-	if (!work_area) {
-		return;
+auto gse::center_window_in_work_area(const window::data& d, const rect_t<vec2i>& work_area) -> void {
+	auto* handle = to_glfw_handle(d.primary.handle);
+	const bool maximized = glfwGetWindowAttrib(handle, glfw::maximized) != 0;
+	if (maximized) {
+		glfwRestoreWindow(handle);
 	}
 
-	auto* handle = to_glfw_handle(d.primary.handle);
 	int ww = 0;
 	int wh = 0;
 	glfwGetWindowSize(handle, &ww, &wh);
 
-	const vec2i origin = work_area->top_left();
-	const vec2i extent = work_area->size();
-	const int new_x = origin.x() + (extent.x() - ww) / 2;
-	const int new_y = origin.y() + (extent.y() - wh) / 2;
-	set_window_frame_rect(d, { new_x, new_y }, { ww, wh });
+	const vec2i origin = work_area.top_left();
+	const vec2i extent = work_area.size();
+	const int width = std::min(ww, extent.x());
+	const int height = std::min(wh, extent.y());
+	const int new_x = origin.x() + (extent.x() - width) / 2;
+	const int new_y = origin.y() + (extent.y() - height) / 2;
+	set_window_frame_rect(d, { new_x, new_y }, { width, height });
+
+	if (maximized) {
+		glfwMaximizeWindow(handle);
+	}
 }
 
 auto gse::monitor_index_for_window(const vec2i position, const vec2i size) -> int {
@@ -568,8 +598,9 @@ auto gse::record_window_geometry(window::data& d) -> void {
 		}
 	}
 
-	if (monitor_index >= 0 && monitor_index != d.monitor.value) {
-		d.monitor.value = monitor_index;
+	if (const int selected = selected_monitor_index(d);
+		monitor_index >= 0 && monitor_index != selected && selected == d.last_monitor_index) {
+		set_choice_index(d.monitor, static_cast<std::size_t>(monitor_index));
 		d.last_monitor_index = monitor_index;
 	}
 }
@@ -603,40 +634,52 @@ auto gse::apply_display_mode(window::data& d, const display_mode mode) -> void {
 		return;
 	}
 
+	apply_fullscreen_placement(d, selected_monitor_index(d));
+}
+
+auto gse::apply_fullscreen_placement(const window::data& d, const int monitor_index) -> void {
+	auto* handle = to_glfw_handle(d.primary.handle);
+
 	int monitor_count = 0;
 	GLFWmonitor** monitors = glfwGetMonitors(&monitor_count);
 	assert(monitor_count > 0, "Failed to get monitors!");
 
-	const int selected_monitor = std::clamp(d.monitor.value, 0, monitor_count - 1);
+	const int selected_monitor = std::clamp(monitor_index, 0, monitor_count - 1);
 	GLFWmonitor* target_monitor = monitors[selected_monitor];
 
 	int target_width = 0;
 	int target_height = 0;
 	int target_refresh = 0;
 
-	if (d.resolution.value == 0) {
+	if (const auto chosen = selected_resolution(d, selected_monitor)) {
+		target_width = chosen->width;
+		target_height = chosen->height;
+		target_refresh = chosen->refresh_rate;
+	}
+	else {
 		const GLFWvidmode* native_mode = glfwGetVideoMode(target_monitor);
 		target_width = native_mode->width;
 		target_height = native_mode->height;
 		target_refresh = native_mode->refreshRate;
 	}
-	else {
-		const auto resolutions = window::enumerate_resolutions(selected_monitor);
-
-		if (const int res_idx = d.resolution.value - 1; res_idx >= 0 && res_idx < static_cast<int>(resolutions.size())) {
-			target_width = resolutions[res_idx].width;
-			target_height = resolutions[res_idx].height;
-			target_refresh = resolutions[res_idx].refresh_rate;
-		}
-		else {
-			const GLFWvidmode* native_mode = glfwGetVideoMode(target_monitor);
-			target_width = native_mode->width;
-			target_height = native_mode->height;
-			target_refresh = native_mode->refreshRate;
-		}
-	}
 
 	glfwSetWindowMonitor(handle, target_monitor, 0, 0, target_width, target_height, target_refresh);
+}
+
+auto gse::place_window_on_monitor(const window::data& d, const int monitor_index) -> bool {
+	const auto work_area = monitor_work_area(monitor_index);
+	if (!work_area) {
+		return false;
+	}
+
+	if (d.current_display_mode == display_mode::windowed) {
+		center_window_in_work_area(d, *work_area);
+	}
+	else {
+		apply_fullscreen_placement(d, monitor_index);
+	}
+
+	return true;
 }
 
 auto gse::create_window(window::data& d) -> void {
@@ -663,13 +706,11 @@ auto gse::create_window(window::data& d) -> void {
 	glfwSetInputMode(handle, glfw::cursor, glfw::cursor_normal);
 
 	refresh_monitor_settings(d);
-	d.last_monitor_index = d.monitor.value;
+	d.last_monitor_index = selected_monitor_index(d);
 	refresh_resolution_settings(d);
-	refresh_display_mode_settings(d);
-	refresh_present_mode_settings(d);
 
 	d.primary.content_scale = window_handle_content_scale(d.primary.handle);
-	d.current_present_mode_index = desired_present_mode_index(d);
+	d.current_present_mode = desired_present_mode(d);
 
 	window::install_window_hook(d.primary, d.native_frame);
 
@@ -1106,7 +1147,7 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 			.handle = created->handle,
 			.position = created->position,
 			.size = created->size,
-			.present_mode_index = created->present_mode_index,
+			.present_mode = created->present_mode,
 			.for_menu = req.menu_name,
 		});
 	}
@@ -1217,15 +1258,6 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 		g_cursor_shape = desired_cursor;
 	}
 
-	if (d.monitor.value != d.last_monitor_index) {
-		const int old_monitor = d.last_monitor_index;
-		d.last_monitor_index = d.monitor.value;
-
-		if (d.current_display_mode == display_mode::windowed && old_monitor != d.monitor.value) {
-			move_window_to_monitor(d, d.monitor.value);
-		}
-	}
-
 	{
 		trace::scope_guard sg{ trace_id<"window::cursor_mode">() };
 		apply_cursor_mode(d);
@@ -1233,23 +1265,31 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 
 	if (d.primary.focused) {
 		trace::scope_guard sg{ trace_id<"window::modes">() };
-		const auto desired_display_mode = static_cast<display_mode>(d.display_mode.value);
-		if (d.current_display_mode != desired_display_mode) {
-			apply_display_mode(d, desired_display_mode);
+		if (d.current_display_mode != d.display_mode) {
+			apply_display_mode(d, d.display_mode);
 		}
 
-		if (const int desired_present_mode = desired_present_mode_index(d); d.current_present_mode_index != desired_present_mode) {
-			d.current_present_mode_index = desired_present_mode;
+		if (const gpu::present_mode desired = desired_present_mode(d); d.current_present_mode != desired) {
+			d.current_present_mode = desired;
 			d.primary.framebuffer_resized = true;
 		}
 	}
 
-	d.primary.present_mode_index = d.current_present_mode_index;
+	d.primary.present_mode = d.current_present_mode;
 	d.primary.attached = d.attached;
 
 	{
 		trace::scope_guard sg{ trace_id<"window::commands">() };
 		apply_commands(d);
+	}
+
+	if (const int selected = selected_monitor_index(d); selected != d.last_monitor_index) {
+		if (place_window_on_monitor(d, selected)) {
+			d.last_monitor_index = selected;
+		}
+		else {
+			set_choice_index(d.monitor, static_cast<std::size_t>(d.last_monitor_index));
+		}
 	}
 
 	{
@@ -1573,7 +1613,7 @@ namespace gse {
 				&& (raw.data.mouse.usFlags & mouse_move_absolute) == 0) {
 				state->surface->input_events.push(input::mouse_raw_moved{
 					.x_delta = static_cast<double>(raw.data.mouse.lLastX),
-					.y_delta = -static_cast<double>(raw.data.mouse.lLastY),
+					.y_delta = static_cast<double>(raw.data.mouse.lLastY),
 				});
 			}
 		}
@@ -1907,6 +1947,10 @@ auto gse::window_handle_minimized(const native_window_handle handle) -> bool {
 	int height = 0;
 	glfwGetFramebufferSize(glfw_handle, &width, &height);
 	return width == 0 || height == 0;
+}
+
+auto gse::window_handle_visible(const native_window_handle handle) -> bool {
+	return handle && glfwGetWindowAttrib(to_glfw_handle(handle), glfw::visible) != 0;
 }
 
 auto gse::window_handle_viewport(const native_window_handle handle) -> vec2i {

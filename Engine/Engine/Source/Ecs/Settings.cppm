@@ -15,7 +15,20 @@ export namespace gse::settings {
 		std::function<void(void*)> apply;
 	};
 
-	using change_request_writer = channel_write<change_request>;
+	enum class override_op : std::uint8_t {
+		release_override,
+		stage_value,
+		clear_staged
+	};
+
+	struct override_request {
+		override_op op = override_op::release_override;
+		std::string category;
+		std::string key;
+		std::string value;
+	};
+
+	using change_request_writer = channel_write<change_request, override_request>;
 
 	using draw_page_thunk = void (
 			*
@@ -56,7 +69,12 @@ export namespace gse::settings {
 		const void* settings_ptr
 	);
 
-	using settings_field_options_thunk = std::vector<std::string> (
+	struct settings_field_option {
+		std::string value;
+		std::string label;
+	};
+
+	using settings_field_options_thunk = std::vector<settings_field_option> (
 			*
 	)(
 		const void* settings_ptr
@@ -66,6 +84,7 @@ export namespace gse::settings {
 			*
 	)(
 		change_request_writer channels,
+		std::string_view key,
 		std::string_view value
 	);
 
@@ -104,7 +123,7 @@ export namespace gse::settings {
 		std::string description;
 		settings_field_widget widget = settings_field_widget::unsupported;
 		settings_field_range range;
-		std::vector<std::string> options;
+		std::vector<settings_field_option> options;
 		std::span<const std::string_view> units;
 		std::string_view default_unit;
 		format_settings_field_thunk format = nullptr;
@@ -114,14 +133,18 @@ export namespace gse::settings {
 		normalize_settings_field_thunk normalize = nullptr;
 		bool hot_reloadable = false;
 		bool restart_required = false;
-		bool choice_stores_option = false;
+	};
+
+	struct settings_key_info {
+		std::string key;
+		scope_kind scope = scope_kind::user;
 	};
 
 	struct register_settings_type {
 		std::string category;
 		id type_id;
 		void* settings_ptr = nullptr;
-		std::vector<std::string> keys;
+		std::vector<settings_key_info> keys;
 		std::vector<settings_field> fields;
 		write_settings_thunk write = nullptr;
 		read_settings_thunk read = nullptr;
@@ -175,14 +198,14 @@ export namespace gse::settings {
 	template <std::meta::info M, scope_kind Fallback>
 	consteval auto field_scope_of() -> scope_kind;
 
-	template <typename T>
+	template <typename T, scope_kind Inherited>
 	auto collect_settings_keys_with_prefix(
-		std::vector<std::string>& out,
+		std::vector<settings_key_info>& out,
 		std::string_view prefix
 	) -> void;
 
 	template <typename T>
-	auto collect_settings_keys() -> std::vector<std::string>;
+	auto collect_settings_keys() -> std::vector<settings_key_info>;
 
 	template <typename T>
 	consteval auto settings_key_exists(
@@ -199,6 +222,11 @@ export namespace gse::settings {
 	consteval auto field_widget_of() -> settings_field_widget;
 
 	consteval auto make_range_field_from_info(
+		std::meta::info range_type
+	) -> settings_field_range;
+
+	template <typename F>
+	consteval auto make_quantity_range_field(
 		std::meta::info range_type
 	) -> settings_field_range;
 
@@ -228,6 +256,57 @@ export namespace gse::settings {
 		std::string_view key,
 		std::string_view text
 	) -> void;
+
+	template <typename F>
+	auto warn_ordinal_field(
+		std::string_view category,
+		std::string_view key,
+		std::string_view text,
+		const F& parsed
+	) -> void;
+
+	auto pretty_label(
+		std::string_view raw
+	) -> std::string;
+}
+
+auto gse::settings::pretty_label(const std::string_view raw) -> std::string {
+	std::string result;
+	result.reserve(raw.size());
+	bool capitalize_next = true;
+	for (const char c : raw) {
+		if (c == '_') {
+			result.push_back(' ');
+			capitalize_next = true;
+		}
+		else if (capitalize_next) {
+			result.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
+			capitalize_next = false;
+		}
+		else {
+			result.push_back(c);
+		}
+	}
+	return result;
+}
+
+template <typename F>
+auto gse::settings::warn_ordinal_field(const std::string_view category, const std::string_view key, const std::string_view text, const F& parsed) -> void {
+	if constexpr (std::is_enum_v<F>) {
+		F by_name{};
+		if (enum_from_string(text, by_name)) {
+			return;
+		}
+		log::println(
+			log::level::warning,
+			log::category::general,
+			"setting '{}.{}' still uses the numeric form '{}'; it now reads and writes the name '{}'",
+			category,
+			key,
+			text,
+			enum_to_string(parsed)
+		);
+	}
 }
 
 template <typename F>
@@ -311,7 +390,10 @@ auto gse::settings::read_settings_with_prefix(const std::unordered_map<std::stri
 			}
 			else if (effective == filter) {
 				if (const auto it = cat_it->second.find(key); it != cat_it->second.end()) {
-					if (!meta::read_field(it->second, value.[:m:])) {
+					if (meta::read_field(it->second, value.[:m:])) {
+						warn_ordinal_field<F>(category, key, it->second, value.[:m:]);
+					}
+					else {
 						warn_unparsed_field<F>(category, key, it->second);
 					}
 				}
@@ -342,28 +424,29 @@ auto gse::settings::read_settings_for(const std::unordered_map<std::string, std:
 	);
 }
 
-template <typename T>
-auto gse::settings::collect_settings_keys_with_prefix(std::vector<std::string>& out, const std::string_view prefix) -> void {
+template <typename T, gse::settings::scope_kind Inherited>
+auto gse::settings::collect_settings_keys_with_prefix(std::vector<settings_key_info>& out, const std::string_view prefix) -> void {
 	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 		if constexpr (meta::find_describe(m) != std::meta::info{}) {
 			using F = [:std::meta::type_of(m):];
 			constexpr std::string_view name = meta::member_name(m);
+			constexpr scope_kind effective = field_scope_of<m, Inherited>();
 			std::string key = prefix.empty() ? std::string(name) : std::format("{}.{}", prefix, name);
 
 			if constexpr (std::is_class_v<F> && !is_scalar_settings_field<F>) {
-				collect_settings_keys_with_prefix<F>(out, key);
+				collect_settings_keys_with_prefix<F, effective>(out, key);
 			}
 			else {
-				out.push_back(std::move(key));
+				out.push_back({ .key = std::move(key), .scope = effective });
 			}
 		}
 	}
 }
 
 template <typename T>
-auto gse::settings::collect_settings_keys() -> std::vector<std::string> {
-	std::vector<std::string> out;
-	collect_settings_keys_with_prefix<T>(
+auto gse::settings::collect_settings_keys() -> std::vector<settings_key_info> {
+	std::vector<settings_key_info> out;
+	collect_settings_keys_with_prefix<T, scope_of<T>()>(
 		out,
 		{}
 	);
@@ -515,4 +598,20 @@ consteval auto gse::settings::make_range_field_from_info(const std::meta::info r
 		};
 	}
 	return {};
+}
+
+template <typename F>
+consteval auto gse::settings::make_quantity_range_field(const std::meta::info range_type) -> settings_field_range {
+	const auto targs = std::meta::template_arguments_of(range_type);
+	if (targs.size() < 2) {
+		return {};
+	}
+	if (std::meta::dealias(std::meta::type_of(targs[0])) != ^^F) {
+		return {};
+	}
+	return {
+		.enabled = true,
+		.min = static_cast<double>(static_cast<typename F::value_type>(std::meta::extract<F>(targs[0]))),
+		.max = static_cast<double>(static_cast<typename F::value_type>(std::meta::extract<F>(targs[1]))),
+	};
 }

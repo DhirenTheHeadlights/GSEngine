@@ -9,6 +9,7 @@ import gse.math;
 import gse.concurrency;
 import gse.ecs;
 import gse.meta;
+import gse.gpu_backend;
 
 export namespace gse {
 	struct ui_focus_request {
@@ -107,7 +108,7 @@ export namespace gse {
 		native_window_handle handle;
 		vec2i position;
 		vec2i size;
-		int present_mode_index = 0;
+		gpu::present_mode present_mode = gpu::present_mode::fifo;
 		std::string for_menu;
 	};
 
@@ -191,7 +192,7 @@ export namespace gse::window {
 		int chrome_resize_exclude_y0 = 0;
 		int chrome_resize_exclude_y1 = 0;
 		composition_probe last_composition;
-		[[= shared]] int present_mode_index = 0;
+		[[= shared]] gpu::present_mode present_mode = gpu::present_mode::fifo;
 		bool attached = false;
 		[[= shared]] task::concurrent_queue<input::event> input_events;
 	};
@@ -201,7 +202,7 @@ export namespace gse::window {
 			= settings::
 				describe<"Windowed, borderless fullscreen, or exclusive fullscreen on the selected monitor.">{}
 		]]
-		settings::choice<int> display_mode;
+		gse::display_mode display_mode = gse::display_mode::windowed;
 
 		[[
 			= settings::describe<"Show the system mouse cursor over the window.">{},
@@ -212,19 +213,19 @@ export namespace gse::window {
 		[[
 			= settings::describe<"Monitor that hosts the window in fullscreen mode.">{}
 		]]
-		settings::choice<int> monitor;
+		settings::choice monitor;
 
 		[[
 			= settings::describe<"Resolution and refresh rate used when fullscreen.">{}
 		]]
-		settings::choice<int> resolution;
+		settings::choice resolution;
 
 		[[
 			= settings::describe<"Vulkan present mode. FIFO is vsync (no tearing). Mailbox is low-latency "
 									  "vsync. Immediate has tearing "
 									  "but lowest latency. FIFO Relaxed is FIFO with tear-on-late-frame.">{}
 		]]
-		settings::choice<int> present_mode;
+		gpu::present_mode present_mode = gpu::present_mode::fifo;
 
 		[[
 			= settings::describe<"Position and size the window is restored to on launch.">{}
@@ -238,7 +239,7 @@ export namespace gse::window {
 		std::string title;
 
 		gse::display_mode current_display_mode = gse::display_mode::windowed;
-		[[= shared]] int current_present_mode_index = 0;
+		[[= shared]] gpu::present_mode current_present_mode = gpu::present_mode::fifo;
 		[[
 			= settings::describe<"Hide the cursor because another process hosts the rendered surface.">{},
 			= settings::app_scope{}

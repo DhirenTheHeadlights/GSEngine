@@ -72,6 +72,22 @@ auto gse::engine::destroy_attached_surface(gpu::device& device) -> void {
 	m_attached_surface_ready = false;
 }
 
+auto gse::engine::install_actions() -> void {
+	if (m_actions_revision == m_actions.revision()) {
+		return;
+	}
+
+	auto* actions_state = m_scheduler.try_state_of<actions::data>();
+	if (!actions_state) {
+		return;
+	}
+
+	m_actions_revision = m_actions.revision();
+	actions::adopt_declarations(*actions_state, m_actions);
+	actions::log_declared_bindings(*actions_state);
+	m_save.add(actions::settings_record(*actions_state, &settings::draw_controls_page));
+}
+
 auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	config::warm_up();
 
@@ -79,10 +95,20 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 
 	m_scheduler.set_registry(m_registry);
 
-	m_save.set_project_path(m_config.project_settings_path);
-	if (m_config.persist_settings) {
-		m_save.set_auto_save(true, config::user_config_dir() / std::format("{}.ini", config::executable_stem()));
+	m_save.set_paths({
+		.user = config::user_config_dir() / std::format("{}.ini", config::executable_stem()),
+		.project = m_config.project_settings_path,
+	});
+	log::println(
+		log::category::save_system,
+		"Settings paths: user={} project={}",
+		m_save.user_path().generic_display_string(),
+		m_save.project_path().empty() ? std::string("<none>") : m_save.project_path().generic_display_string()
+	);
+	if (m_config.load_settings) {
+		m_save.load();
 	}
+	m_save.set_auto_save(m_config.persist_settings);
 
 	m_save.pin<window::data, "title">(id().tag());
 	m_save.pin<gpu::context::data, "dark_background">(m_config.dark_background);
@@ -113,6 +139,9 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	m_scheduler.set_settings_register_hook([this](settings::register_settings_type entry) {
 		m_save.add(std::move(entry));
 	});
+	m_scheduler.set_actions_register_hook([this](std::vector<actions::registration> entries, std::vector<actions::axis_registration> axes) {
+		m_actions.add(std::move(entries), std::move(axes));
+	});
 	m_scheduler.register_external_resource<save::registry>(&m_save);
 	m_scheduler.register_external_resource<primitives::data>(&m_primitives);
 	m_scheduler.register_external_resource<engine_config>(&m_config);
@@ -120,6 +149,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	m_scheduler.register_external_resource<scheduler>(&m_scheduler);
 
 	m_scheduler.begin_staging();
+	system_manifest<^^save::override_system::run>{}.register_with(*this);
 	register_systems<^^input>(*this);
 	register_systems<^^actions>(*this);
 	system_manifest<^^log_settings::data, ^^log_settings::run>{}.register_with(*this);
@@ -223,8 +253,11 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 			);
 		}
 
+		install_actions();
+
 		m_scheduler.initialize();
 		m_scheduler.enter_running();
+		m_boot_tasks_done.store(true, std::memory_order_release);
 		m_loading.mark_finished();
 	}
 }
@@ -275,6 +308,19 @@ auto gse::engine::update() -> void {
 		}
 	}
 
+	install_actions();
+
+	if (!m_settings_audited && m_boot_tasks_done.load(std::memory_order_acquire) && m_scheduler.all_settled()) {
+		m_settings_audited = true;
+		m_save.audit_overrides();
+		if (m_config.render && m_config.simulate_world) {
+			m_save.audit_files();
+		}
+		if (m_config.dump_settings) {
+			std::cout << m_save.dump();
+		}
+	}
+
 	if (!m_loading.finished() && m_boot_tasks_done.load(std::memory_order_acquire) && m_scheduler.all_settled() && m_loading.rendered_once()) {
 		m_loading.mark_finished();
 		log::println(log::category::runtime, "boot: loading.mark_finished (all settled + rendered)");
@@ -299,7 +345,6 @@ auto gse::engine::render() -> void {
 				auto surface = gpu_state->device->create_shared_surface({
 					.extent = ext,
 					.format = format,
-					.usage = { gpu::image_flag::color_attachment, gpu::image_flag::sampled },
 				});
 				if (!surface) {
 					log::println(log::level::error, log::category::vulkan, "attached: create_shared_surface[{}] failed: {}", i, surface.error());

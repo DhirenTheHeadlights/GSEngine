@@ -174,7 +174,7 @@ auto gse::gui::settings_screen::draw_close_button(draw_context& ctx, const rect_
 		.extent = sty.icon_extent,
 	});
 
-	if (ctx.mouse_pressed_for(rect)) {
+	if (ctx.clicked_in_rect(rect)) {
 		n.pop();
 	}
 }
@@ -330,7 +330,7 @@ auto gse::gui::settings_screen::draw_scope_entry(draw_context& ctx, const rect_t
 		.clip_rect = dir_row,
 	});
 
-	if (ctx.mouse_pressed_for(rect)) {
+	if (ctx.clicked_in_rect(rect)) {
 		shell::reveal(path);
 	}
 }
@@ -510,7 +510,7 @@ auto gse::gui::settings_screen::draw_footer(builder& ui, const rect_t<vec2f>& re
 		{ sty.button_min_width, sty.button_height }
 	);
 	if (draw_footer_button(ui, apply_rect, "Apply", can_apply, true, ids::make("settings.footer.apply"))) {
-		m_panel_state.apply_all(m_channels, m_save_reg);
+		m_panel_state.apply_all(m_channels);
 	}
 	cursor_x -= sty.button_spacing;
 
@@ -520,6 +520,6 @@ auto gse::gui::settings_screen::draw_footer(builder& ui, const rect_t<vec2f>& re
 		{ sty.button_min_width, sty.button_height }
 	);
 	if (draw_footer_button(ui, discard_rect, "Discard", can_apply, false, ids::make("settings.footer.discard"))) {
-		m_panel_state.discard_all(m_save_reg);
+		m_panel_state.discard_all(m_channels);
 	}
 }
