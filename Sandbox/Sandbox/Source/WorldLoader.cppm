@@ -28,6 +28,7 @@ auto sandbox::world_loader_setup(gse::engine& e) -> gse::scene* {
 	gse::add_scene(w, reg, "ParityDomino", &parity_domino_scene_setup);
 	gse::add_scene(w, reg, "Pyramid", &pyramid_scene_setup);
 	gse::add_scene(w, reg, "Sky", &sky_scene_setup);
+	gse::add_scene(w, reg, "LightHall", &light_hall_scene_setup);
 
 	return gse::add_scene(w, reg, "Sandbox", &sandbox_scene_setup);
 }

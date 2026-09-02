@@ -82,6 +82,15 @@ namespace gse::ide::agent {
 		const analysis::json::value& event
 	) -> bool;
 
+	auto limit_reset_at(
+		const analysis::json::value& event
+	) -> std::int64_t;
+
+	auto usage_limited(
+		const analysis::json::value& event
+	) -> bool;
+
+
 	auto anchorable(
 		const analysis::json::value& event
 	) -> bool;

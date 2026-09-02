@@ -54,6 +54,11 @@ namespace gse::async {
 	) -> task<>;
 }
 
+auto gse::async::completed_marker() noexcept -> void* {
+	static char marker = 0;
+	return &marker;
+}
+
 auto gse::async::final_awaiter::await_ready() noexcept -> bool {
 	return false;
 }

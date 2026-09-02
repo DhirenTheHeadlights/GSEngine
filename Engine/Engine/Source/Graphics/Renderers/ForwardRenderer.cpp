@@ -9,6 +9,7 @@ import :depth_prepass_renderer;
 import :gi_probe_renderer;
 import :rt_shadow_renderer;
 import :light_culling_renderer;
+import :light_packing;
 import :cull_compute_renderer;
 import :skin_renderer;
 import :camera_system;
@@ -109,6 +110,18 @@ namespace gse::renderer::forward {
 	]] cloud_shadow_sampler {};
 
 	struct [[
+		= shaders::binding<0, 14>{},
+		= shaders::texture2d
+	]] sky_view_in {
+		using element = vec4f;
+	};
+
+	struct [[
+		= shaders::binding<0, 15>{},
+		= shaders::sampler_state
+	]] sky_view_sampler {};
+
+	struct [[
 		= shaders::binding<1, 5>{},
 		= shaders::ssbo_readonly
 	]] instance_data_buffer {
@@ -130,6 +143,8 @@ namespace gse::renderer::forward {
 		cloud::cloud_shadow_ubo,
 		cloud_shadow_in,
 		cloud_shadow_sampler,
+		sky_view_in,
+		sky_view_sampler,
 		shaders::meshlet::vertices_buffer,
 		shaders::meshlet::meshlets_buffer,
 		shaders::meshlet::meshlet_vertex_indices,
@@ -155,13 +170,17 @@ namespace gse::renderer::forward {
 		float gi_intensity;
 		vec2f gi_atlas_size;
 		std::int32_t gi_enabled;
+		vec3f sun_color;
+		irradiance sun_ambient;
+		irradiance shadow_cutoff;
+		std::uint32_t frame_counter;
 	};
 
 	using meshlet_entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/meshlet_geometry">,
 		gpu::types<shaders::common::shader_types, shaders::forward::shader_types>,
 		gpu::bindings<shader_binding_types>,
-		gpu::helpers<"Standard3D/meshlet_common", "Standard3D/gi_probe_sample">,
+		gpu::helpers<"Standard3D/meshlet_common", "Standard3D/gi_probe_sample", "Standard3D/light_eval", "Atmosphere/atmosphere_common">,
 		gpu::amplification_stage<"as_main">,
 		gpu::mesh_stage<"ms_main">,
 		gpu::fragment_stage<"fs_main">,
@@ -252,7 +271,7 @@ auto gse::renderer::forward::init(context& ctx, const shared_view<gpu::context::
 	return {};
 }
 
-auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<geometry_collector::render_data> geometry_in, shared_view<camera::data> cam_state, shared_view<geometry_collector::data> gc_r, shared_view<light_culling::data> lc_r, shared_view<atmosphere::data> atm_state, shared_view<cloud::data> cloud_state, shared_view<gi_probe::data> gi_state, read<directional_light_component> dir_lights, read<spot_light_component> spot_lights, read<point_light_component> point_lights) -> async::task<> {
+auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<geometry_collector::render_data> geometry_in, shared_view<camera::data> cam_state, shared_view<geometry_collector::data> gc_r, shared_view<light_culling::data> lc_r, shared_view<atmosphere::data> atm_state, shared_view<cloud::data> cloud_state, shared_view<gi_probe::data> gi_state, read<directional_light_component> dir_lights, read<spot_light_component> spot_lights, read<point_light_component> point_lights, read<physics::transform_component> transforms) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -293,93 +312,15 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 	};
 	d.camera_ubo_buffers[frame_index].host_write(camera);
 
-	auto& dir_chunk = dir_lights;
-	auto& spot_chunk = spot_lights;
-	auto& point_chunk = point_lights;
-
-	const std::size_t total_lights = std::min(dir_chunk.size() + spot_chunk.size() + point_chunk.size() + 1u,
+	const std::size_t total_lights = std::min(dir_lights.size() + spot_lights.size() + point_lights.size() + 1u,
 		max_lights);
 	auto& staging = d.light_staging;
 	staging.assign(
 		total_lights * sizeof(shaders::forward::light),
 		std::byte{ 0 }
 	);
-	auto* staging_lights = reinterpret_cast<shaders::forward::light*>(staging.data());
-	std::size_t light_count = 0;
-
-	if (light_count < max_lights) {
-		const auto sun_to_surface = -atm_state.sun_direction;
-		staging_lights[light_count] = {
-			.light_type = shaders::forward::light_type::directional,
-			.direction = view.transform_direction(sun_to_surface),
-			.world_direction = sun_to_surface,
-			.color = atm_state.sun_color,
-			.intensity = atm_state.sun_intensity,
-			.ambient_strength = atm_state.sun_ambient_strength,
-			.source_radius = atm_state.sun_source_radius,
-		};
-		++light_count;
-	}
-
-	for (const auto& comp : dir_chunk) {
-		if (light_count >= max_lights) {
-			break;
-		}
-		staging_lights[light_count] = {
-			.light_type = shaders::forward::light_type::directional,
-			.direction = view.transform_direction(comp.direction),
-			.world_direction = comp.direction,
-			.color = comp.color,
-			.intensity = comp.intensity,
-			.ambient_strength = comp.ambient_strength,
-			.source_radius = comp.source_radius,
-		};
-		++light_count;
-	}
-
-	for (const auto& comp : spot_chunk) {
-		if (light_count >= max_lights) {
-			break;
-		}
-		const float cut_off_cos = cos(comp.cut_off);
-		const float outer_cut_off_cos = cos(comp.outer_cut_off);
-		staging_lights[light_count] = {
-			.light_type = shaders::forward::light_type::spot,
-			.position = view.transform_point(comp.position),
-			.direction = view.transform_direction(comp.direction),
-			.world_position = comp.position,
-			.world_direction = comp.direction,
-			.color = comp.color,
-			.intensity = comp.intensity,
-			.constant = comp.constant,
-			.linear = comp.linear,
-			.quadratic = comp.quadratic,
-			.cut_off = cut_off_cos,
-			.outer_cut_off = outer_cut_off_cos,
-			.ambient_strength = comp.ambient_strength,
-			.source_radius = comp.source_radius,
-		};
-		++light_count;
-	}
-
-	for (const auto& comp : point_chunk) {
-		if (light_count >= max_lights) {
-			break;
-		}
-		staging_lights[light_count] = {
-			.light_type = shaders::forward::light_type::point,
-			.position = view.transform_point(comp.position),
-			.world_position = comp.position,
-			.color = comp.color,
-			.intensity = comp.intensity,
-			.constant = comp.constant,
-			.linear = comp.linear,
-			.quadratic = comp.quadratic,
-			.ambient_strength = comp.ambient_strength,
-			.source_radius = comp.source_radius,
-		};
-		++light_count;
-	}
+	const std::span staging_lights(reinterpret_cast<shaders::forward::light*>(staging.data()), total_lights);
+	const auto light_count = light_packing::pack(staging_lights, view, atm_state, dir_lights, spot_lights, point_lights, transforms);
 
 	if (light_count > 0) {
 		d.light_buffers[frame_index].host_write(staging.data(), light_count * sizeof(shaders::forward::light));
@@ -393,9 +334,9 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 	const int ao_quality_i = static_cast<int>(d.ao_quality);
 	const int reflection_quality_i = static_cast<int>(d.reflection_quality);
 
-	constexpr vec2f gi_atlas_size_v{
-		static_cast<float>(gi_probe::grid_dim.x() * gi_probe::probe_tile_size),
-		static_cast<float>(gi_probe::grid_dim.y() * gi_probe::grid_dim.z() * gi_probe::probe_tile_size),
+	const vec2f gi_atlas_size_v{
+		static_cast<float>(gi_state.atlas_grid_dim.x() * gi_probe::probe_tile_size),
+		static_cast<float>(gi_state.atlas_grid_dim.y() * gi_state.atlas_grid_dim.z() * gi_probe::probe_tile_size),
 	};
 	const bool gi_enabled = gi_state.quality != gi_probe::quality_level::off;
 
@@ -436,6 +377,11 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 	const auto cloud_shadow_sampler_slot = cloud_state.shadow_sampler.slot();
 	const auto cloud_shadow_ubo_slot = cloud_state.shadow_ubo_buffer.slot();
 
+	rec.sample_image(atm_state.sky_view_lut, gpu::pipeline_stage_flag::fragment_shader);
+	const auto sky_view_slot = atm_state.sky_view_lut.sampled_slot();
+	const auto sky_view_sampler_slot = atm_state.sky_view_sampler_bindless.slot();
+	++d.frame_counter;
+
 	for (std::size_t i = 0; i < normal_batches.size(); ++i) {
 		const auto& batch = normal_batches[i];
 		const auto& mesh = batch.key.resolve_mesh();
@@ -463,10 +409,14 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 				.reflection_quality = reflection_quality_i,
 				.gi_origin = gi_state.origin_world,
 				.gi_spacing = gi_state.spacing,
-				.gi_grid_dim = gi_probe::grid_dim,
+				.gi_grid_dim = gi_state.atlas_grid_dim,
 				.gi_intensity = gi_state.intensity,
 				.gi_atlas_size = gi_atlas_size_v,
 				.gi_enabled = gi_enabled ? 1 : 0,
+				.sun_color = atm_state.sun_color * atm_state.sun_transmittance,
+				.sun_ambient = atm_state.sun_ambient_strength * atm_state.sun_intensity,
+				.shadow_cutoff = d.shadow_cutoff,
+				.frame_counter = d.frame_counter,
 			},
 			{
 				.camera_ubo = camera_ubo_slot,
@@ -483,6 +433,8 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 				.cloud_shadow_ubo = cloud_shadow_ubo_slot,
 				.cloud_shadow_in = cloud_shadow_slot,
 				.cloud_shadow_sampler = cloud_shadow_sampler_slot,
+				.sky_view_in = sky_view_slot,
+				.sky_view_sampler = sky_view_sampler_slot,
 				.vertices_buffer = batch.deformed_vertices.valid() ? batch.deformed_vertices : ml.vertex_storage.slot(),
 				.meshlets_buffer = ml.descriptors.slot(),
 				.meshlet_vertex_indices = ml.vertices.slot(),

@@ -54,6 +54,11 @@ export namespace gse {
 			const task_context& ctx
 		) -> const T&;
 
+		template <typename T>
+		friend auto mutable_external_resource_ref(
+			task_context& ctx
+		) -> T&;
+
 		friend class scheduler;
 	};
 }

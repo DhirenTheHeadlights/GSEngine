@@ -7,27 +7,33 @@ import :enums;
 
 import gse.core;
 import gse.math;
+import gse.meta;
 
 export namespace gse::gpu {
 	enum class color_space : std::uint8_t {
 		srgb_nonlinear,
 	};
 
+	struct format_info {
+		std::uint32_t bytes_per_pixel = 0;
+		bool bgra = false;
+	};
+
 	enum class image_format : std::uint8_t {
-		d32_sfloat,
-		r8g8b8a8_srgb,
-		r8g8b8a8_unorm,
-		b8g8r8a8_srgb,
-		b8g8r8a8_unorm,
-		r8g8b8_srgb,
-		r8g8b8_unorm,
-		r8_unorm,
-		b10g11r11_ufloat,
-		r8g8_snorm,
-		r8g8_unorm,
-		r16g16b16a16_sfloat,
-		r16g16_sfloat,
-		undefined,
+		d32_sfloat [[= format_info{ .bytes_per_pixel = 4 }]],
+		r8g8b8a8_srgb [[= format_info{ .bytes_per_pixel = 4 }]],
+		r8g8b8a8_unorm [[= format_info{ .bytes_per_pixel = 4 }]],
+		b8g8r8a8_srgb [[= format_info{ .bytes_per_pixel = 4, .bgra = true }]],
+		b8g8r8a8_unorm [[= format_info{ .bytes_per_pixel = 4, .bgra = true }]],
+		r8g8b8_srgb [[= format_info{ .bytes_per_pixel = 3 }]],
+		r8g8b8_unorm [[= format_info{ .bytes_per_pixel = 3 }]],
+		r8_unorm [[= format_info{ .bytes_per_pixel = 1 }]],
+		b10g11r11_ufloat [[= format_info{ .bytes_per_pixel = 4 }]],
+		r8g8_snorm [[= format_info{ .bytes_per_pixel = 2 }]],
+		r8g8_unorm [[= format_info{ .bytes_per_pixel = 2 }]],
+		r16g16b16a16_sfloat [[= format_info{ .bytes_per_pixel = 8 }]],
+		r16g16_sfloat [[= format_info{ .bytes_per_pixel = 4 }]],
+		undefined [[= format_info{}]],
 	};
 
 	enum class image_view_type : std::uint8_t {
@@ -211,7 +217,7 @@ export namespace gse::gpu {
 	struct shared_surface_desc {
 		vec2u extent;
 		image_format format = image_format::r8g8b8a8_unorm;
-		image_usage usage{ image_flag::color_attachment, image_flag::sampled };
+		image_usage usage{ image_flag::color_attachment, image_flag::sampled, image_flag::transfer_src };
 	};
 
 	struct shared_surface {
@@ -224,10 +230,31 @@ export namespace gse::gpu {
 		void* handle = nullptr;
 	};
 
+	struct image_ref {
+		handle<gpu::image> image;
+		vec2u extent;
+		image_format format = image_format::undefined;
+	};
+
+	struct image_readback_layout {
+		device_size row_pitch = 0;
+		device_size size = 0;
+	};
+
 	[[nodiscard]]
 	auto image_aspect_for(
 		image_format f
 	) -> image_aspect_flags;
+
+	[[nodiscard]]
+	auto bytes_per_pixel(
+		image_format f
+	) -> std::uint32_t;
+
+	[[nodiscard]]
+	auto is_bgra(
+		image_format f
+	) -> bool;
 }
 
 auto gse::gpu::image_aspect_for(const image_format f) -> image_aspect_flags {
@@ -235,6 +262,14 @@ auto gse::gpu::image_aspect_for(const image_format f) -> image_aspect_flags {
 		return image_aspect_flag::depth;
 	}
 	return image_aspect_flag::color;
+}
+
+auto gse::gpu::bytes_per_pixel(const image_format f) -> std::uint32_t {
+	return annotation_from_enum(f, format_info{}).bytes_per_pixel;
+}
+
+auto gse::gpu::is_bgra(const image_format f) -> bool {
+	return annotation_from_enum(f, format_info{}).bgra;
 }
 
 gse::gpu::image::image(const gpu::handle<image> image, const gpu::handle<image_view> view, const image_format format, const vec3u extent, image_view_create_info view_info, const bindless_slot storage_slot, const bindless_slot sampled_slot)

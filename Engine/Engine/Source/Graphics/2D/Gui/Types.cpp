@@ -111,6 +111,21 @@ auto gse::gui::draw_context::clipboard() const -> std::string {
 	return window::clipboard_text();
 }
 
+auto gse::gui::draw_context::request_text_edit(const id widget, const text_edit_action action) const -> void {
+	if (pending_text_edit) {
+		*pending_text_edit = text_edit_request{ .widget = widget, .action = action };
+	}
+}
+
+auto gse::gui::draw_context::take_text_edit(const id widget) const -> text_edit_action {
+	if (!pending_text_edit || !pending_text_edit->has_value() || (*pending_text_edit)->widget != widget) {
+		return text_edit_action::none;
+	}
+	const text_edit_action action = (*pending_text_edit)->action;
+	pending_text_edit->reset();
+	return action;
+}
+
 auto gse::gui::draw_context::open_context_menu(context_menu_open request) const -> void {
 	if (!context_menu) {
 		return;
@@ -212,6 +227,18 @@ auto gse::gui::draw_context::mouse_released_for(const rectf& rect, const mouse_b
 
 auto gse::gui::draw_context::mouse_released(const mouse_button button) const -> bool {
 	return m_input.mouse_button_released(button);
+}
+
+auto gse::gui::draw_context::clicked_in_rect(const rectf& rect, const mouse_button button) const -> bool {
+	if (!hit_regions || !rect.contains(hit_regions->press_origin())) {
+		return false;
+	}
+	constexpr float click_slop = 3.f;
+	const vec2f travel = m_input.mouse_position() - hit_regions->press_origin();
+	if (std::abs(travel.x()) > click_slop || std::abs(travel.y()) > click_slop) {
+		return false;
+	}
+	return mouse_released_for(rect, button);
 }
 
 auto gse::gui::draw_context::mouse_pressed(const mouse_button button) const -> bool {

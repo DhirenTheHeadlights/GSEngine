@@ -22,6 +22,7 @@ export namespace gse::renderer::capture {
 		gpu::buffer staging;
 		std::uint32_t width = 0;
 		std::uint32_t height = 0;
+		gpu::device_size row_pitch = 0;
 		bool pending = false;
 	};
 
@@ -77,8 +78,13 @@ export namespace gse::renderer::capture {
 		]]
 		bitrate capture_bitrate = megabits_per_second(15.f);
 
+		[[= actions::bind<"Screenshot", key::f9>{}]]
 		actions::handle screenshot_action;
+
+		[[= actions::bind<"Save Clip", key::f10>{}]]
 		actions::handle save_clip_action;
+
+		[[= actions::bind<"Toggle Recording", key::r, key_modifier::ctrl, key_modifier::shift>{}]]
 		actions::handle toggle_recording_action;
 
 		gpu::shader_program convert_pipeline;
@@ -107,8 +113,7 @@ export namespace gse::renderer::capture {
 	auto init(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
-		data& d,
-		channel_write<actions::add_action_request> actions_out
+		data& d
 	) -> async::task<>;
 
 	[[= system_run<>{}]]

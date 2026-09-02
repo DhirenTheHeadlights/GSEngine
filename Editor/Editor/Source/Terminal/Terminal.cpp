@@ -195,7 +195,7 @@ auto gse::ide::terminal::append_lines(instance& inst, const std::span<const line
 			marker.line -= static_cast<std::uint32_t>(overflow);
 		}
 
-		const float dropped = static_cast<float>(overflow) * gui::draw::text_area_line_height(ctx);
+		const float dropped = static_cast<float>(overflow) * gui::text_area_line_height(ctx);
 		inst.view.scroll.y.offset = std::max(0.f, inst.view.scroll.y.offset - dropped);
 		inst.view.scroll.y.target = std::max(0.f, inst.view.scroll.y.target - dropped);
 	}
@@ -542,7 +542,11 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst
 		{ area.width(), std::max(0.f, area.height() - input_h) }
 	);
 
-	const gui::interaction::press tail_press = gui::draw::follow_tail_button(ui, log_rect, inst.view, inst.tail_id);
+	const gui::interaction::press tail_press = ui.draw<gui::follow_tail>({
+		.area = log_rect,
+		.state = inst.view,
+		.widget_id = inst.tail_id,
+	});
 
 	d.underlines.clear();
 	std::optional<link_hit> link;
@@ -550,7 +554,7 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst
 	const vec2f mouse = ctx.mouse_position();
 	const bool goto_ctrl = ctx.key_held(key::left_control) || ctx.key_held(key::right_control);
 	if ((goto_ctrl || !inst.dispatches.empty()) && ctx.hovers(log_rect) && !tail_press.hovered && !inst.buffer.lines.empty()) {
-		const gui::buffer_position hover = gui::draw::text_area_position_at(ctx, {
+		const gui::buffer_position hover = gui::text_area_position_at(ctx, {
 			.buffer = inst.buffer,
 			.state = inst.view,
 			.rect = log_rect,
@@ -581,26 +585,21 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst
 			.shape = cursor_shape::hand,
 		});
 	}
-	const bool acted = (link || offered) && ctx.mouse_pressed_for(log_rect);
+	const bool acted = (link || offered) && ctx.clicked_in_rect(log_rect);
 	const bool goto_click = acted && link.has_value();
 	const bool dispatch_click = acted && offered != nullptr;
 
-	gui::draw::text_area_in_rect(
-		ctx,
-		inst.log_id,
-		{
-			.buffer = inst.buffer,
-			.state = inst.view,
-			.spans = inst.spans,
-			.underlines = d.underlines,
-			.rect = log_rect,
-			.read_only = true,
-			.follow_tail = true,
-			.blink_interval = time{},
-		},
-		ui.hot_widget_id,
-		ui.focus_widget_id
-	);
+	ui.draw<gui::text_area>({
+		.buffer = inst.buffer,
+		.state = inst.view,
+		.widget_id = inst.log_id,
+		.spans = inst.spans,
+		.underlines = d.underlines,
+		.rect = log_rect,
+		.read_only = true,
+		.follow_tail = true,
+		.blink_interval = time{},
+	});
 
 	if (goto_click && link) {
 		channels.push<jump_to_request>({
@@ -657,12 +656,12 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst
 		{ input_rect.right() - input_h - pad, input_rect.top() },
 		{ input_h, input_h }
 	);
-	if (gui::draw::button_in_rect(ctx, {
+	if (ui.draw<gui::button>({
 		.rect = run_btn,
-		.glyph = gui::symbol::play(),
 		.key = "##terminal_run",
+		.glyph = gui::symbol::play(),
 		.enabled = !building,
-	}, ui.hot_widget_id, ui.active_widget_id)) {
+	})) {
 		channels.push<build_runner::build_request>({
 			.target = build_runner::build_target::game,
 			.run_after = true,
@@ -681,13 +680,13 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst
 		{ run_btn.left() - session_w - pad, input_rect.top() },
 		{ session_w, input_h }
 	);
-	if (gui::draw::button_in_rect(ctx, {
+	if (ui.draw<gui::button>({
+		.text = session_label,
 		.rect = session_btn,
-		.label = session_label,
-		.glyph = gui::symbol::play(),
 		.key = "##terminal_play_session",
+		.glyph = gui::symbol::play(),
 		.enabled = !building,
-	}, ui.hot_widget_id, ui.active_widget_id)) {
+	})) {
 		channels.push<build_runner::build_request>({
 			.target = build_runner::build_target::game,
 			.run_after = true,
@@ -695,19 +694,43 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst
 		});
 	}
 
+	const std::string_view detached_label = "Play Windowed";
+	const float detached_w = text_view->width(detached_label, ctx.style.font_size) + input_h + pad * 1.5f;
+	const rectf detached_btn = rectf::from_position_size(
+		{ session_btn.left() - detached_w - pad, input_rect.top() },
+		{ detached_w, input_h }
+	);
+	if (ui.draw<gui::button>({
+		.text = detached_label,
+		.rect = detached_btn,
+		.key = "##terminal_play_windowed",
+		.glyph = gui::symbol::play(),
+		.enabled = !building,
+	})) {
+		channels.push<build_runner::build_request>({
+			.target = build_runner::build_target::game,
+			.run_after = true,
+			.session = {
+				.clients = session_spec.clients,
+				.dedicated_server = session_spec.dedicated_server,
+				.attached = false,
+			},
+		});
+	}
+
 	const std::string_view build_label = building ? "Building..." : "Build Game";
 	const float build_w = text_view->width(build_label, ctx.style.font_size) + input_h + pad * 1.5f;
 	const rectf build_btn = rectf::from_position_size(
-		{ session_btn.left() - build_w, input_rect.top() },
+		{ detached_btn.left() - build_w, input_rect.top() },
 		{ build_w, input_h }
 	);
-	if (gui::draw::button_in_rect(ctx, {
+	if (ui.draw<gui::button>({
+		.text = build_label,
 		.rect = build_btn,
-		.label = build_label,
-		.glyph = gui::symbol::hammer(),
 		.key = "##terminal_build",
+		.glyph = gui::symbol::hammer(),
 		.enabled = !building,
-	}, ui.hot_widget_id, ui.active_widget_id)) {
+	})) {
 		channels.push<build_runner::build_request>({
 			.target = build_runner::build_target::game,
 		});
@@ -718,16 +741,13 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst
 		{ std::max(0.f, build_btn.left() - pad - input_rect.left() - prompt_width), input_h }
 	);
 
-	gui::draw::text_input_in_rect(
-		ctx,
-		inst.input_id,
-		inst.input,
-		inst.input_state,
-		input_box,
-		ui.hot_widget_id,
-		ui.focus_widget_id,
-		ctx.fonts.code
-	);
+	ui.draw<gui::text_input>({
+		.buffer = inst.input,
+		.state = inst.input_state,
+		.rect = input_box,
+		.widget_id = inst.input_id,
+		.font = ctx.fonts.code,
+	});
 
 	ctx.queue_sprite({
 		.rect = rectf::from_position_size({ input_rect.left(), input_rect.top() }, { input_rect.width(), ctx.style.accent_bar_width }),
@@ -747,7 +767,7 @@ auto gse::ide::terminal::draw_close_confirm(gui::builder& ui, data& d, const rec
 		return;
 	}
 
-	const gui::draw::confirm_result result = gui::draw::confirm_dialog(ui, {
+	const gui::confirm_result result = ui.draw<gui::confirm_dialog>({
 		.body = body,
 		.title = "Kill running process?",
 		.message = std::format("\"{}\" is still running.", closing->name),
@@ -755,14 +775,14 @@ auto gse::ide::terminal::draw_close_confirm(gui::builder& ui, data& d, const rec
 		.key = "##terminal_close",
 	});
 
-	if (result == gui::draw::confirm_result::confirmed) {
+	if (result == gui::confirm_result::confirmed) {
 		if (closing->runner) {
 			spawn::terminate_process(*closing->runner);
 		}
 		erase_instance(d, closing->instance_id);
 		d.pending_close.reset();
 	}
-	else if (result == gui::draw::confirm_result::cancelled) {
+	else if (result == gui::confirm_result::cancelled) {
 		d.pending_close.reset();
 	}
 }
@@ -817,7 +837,7 @@ auto gse::ide::terminal::draw_panel(gui::builder& ui, data& d, channel_write<age
 		});
 	}
 
-	gui::draw::panel_backdrop(ctx, {
+	ui.draw<gui::panel_backdrop>({
 		.rect = strip,
 		.background = sty.color_panel_alt,
 	});

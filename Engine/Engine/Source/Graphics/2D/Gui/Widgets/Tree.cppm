@@ -21,7 +21,7 @@ import :builder;
 import :interaction;
 import :symbols;
 
-export namespace gse::gui::draw {
+export namespace gse::gui {
 	struct tree_options {
 		float row_gap = 0.15f;
 		float indent_per_level = 15.f;
@@ -48,7 +48,7 @@ export namespace gse::gui::draw {
 
 		std::function<bool(const T&)> is_leaf;
 
-		std::function<void(const T&, const draw_context&, const rectf&, bool, bool, int)> custom_draw = nullptr;
+		std::function<void(const T&, builder&, const rectf&, bool, bool, int)> custom_draw = nullptr;
 
 		std::function<void(const T&, const draw_context&, vec2f)> on_context = nullptr;
 
@@ -56,15 +56,16 @@ export namespace gse::gui::draw {
 
 		std::function<vec4f(const T&)> label_color = nullptr;
 	};
+}
 
+namespace gse::gui::draw {
 	template <typename T>
 	auto tree(
-		const draw_context& ctx,
+		builder& ui,
 		std::span<const T> roots,
 		const tree_ops<T>& fns,
 		tree_options opt,
 		tree_selection* sel,
-		id& active_widget_id,
 		resource::handle<font> font = {}
 	) -> bool;
 }
@@ -75,13 +76,19 @@ export namespace gse::gui {
 		using result = bool;
 		struct params {
 			std::span<const T> roots;
-			const draw::tree_ops<T>& ops;
-			draw::tree_options options = {};
-			draw::tree_selection* selection = nullptr;
+			const tree_ops<T>& ops;
+			tree_options options = {};
+			tree_selection* selection = nullptr;
 			resource::handle<font> font{};
 		};
-		static auto draw(draw_context& ctx, params p, id&, id& active, id&) -> bool {
-			return draw::tree(ctx, p.roots, p.ops, p.options, p.selection, active, p.font);
+		static auto draw(draw_context& ctx, params p, id& hot, id& active, id& focus) -> bool {
+			builder ui{
+				.ctx = ctx,
+				.hot_widget_id = hot,
+				.active_widget_id = active,
+				.focus_widget_id = focus,
+			};
+			return draw::tree(ui, p.roots, p.ops, p.options, p.selection, p.font);
 		}
 	};
 }
@@ -102,20 +109,20 @@ namespace gse::gui::draw {
 
 	template <typename T>
 	auto tree_node(
-		const draw_context& ctx,
+		builder& ui,
 		const T& t,
 		const tree_ops<T>& ops,
 		const tree_options& opt,
 		tree_selection* sel,
 		std::uint64_t tree_scope,
 		int level,
-		id& active_widget_id,
 		const resource::handle<font>& fnt
 	) -> bool;
 }
 
 template <typename T>
-auto gse::gui::draw::tree(const draw_context& ctx, std::span<const T> roots, const tree_ops<T>& fns, tree_options opt, tree_selection* sel, id& active_widget_id, const resource::handle<font> font) -> bool {
+auto gse::gui::draw::tree(builder& ui, std::span<const T> roots, const tree_ops<T>& fns, tree_options opt, tree_selection* sel, const resource::handle<font> font) -> bool {
+	const draw_context& ctx = ui.ctx;
 	const auto fnt = font.valid() ? font : ctx.fonts.text;
 	if (!ctx.current_menu || !fnt.valid()) {
 		return false;
@@ -136,7 +143,7 @@ auto gse::gui::draw::tree(const draw_context& ctx, std::span<const T> roots, con
 	bool is_active = false;
 
 	for (const T& r : roots) {
-		is_active |= tree_node(ctx, r, fns, node_opt, sel, tree_scope, 0, active_widget_id, fnt);
+		is_active |= tree_node(ui, r, fns, node_opt, sel, tree_scope, 0, fnt);
 	}
 
 	if (opt.reveal_offset && reveal_row_top != missing_row) {
@@ -170,7 +177,9 @@ auto gse::gui::draw::tree_node_is_leaf(const T& t, const tree_ops<T>& ops) -> bo
 }
 
 template <typename T>
-auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_ops<T>& ops, const tree_options& opt, tree_selection* sel, std::uint64_t tree_scope, int level, id& active_widget_id, const resource::handle<font>& fnt) -> bool {
+auto gse::gui::draw::tree_node(builder& ui, const T& t, const tree_ops<T>& ops, const tree_options& opt, tree_selection* sel, std::uint64_t tree_scope, int level, const resource::handle<font>& fnt) -> bool {
+	const draw_context& ctx = ui.ctx;
+	id& active_widget_id = ui.active_widget_id;
 	const auto fnt_view = fnt.resolve();
 	const float row_height = fnt_view->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
 	const float gap = row_height * opt.row_gap;
@@ -289,7 +298,7 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 		});
 
 		if (ops.custom_draw) {
-			ops.custom_draw(t, ctx, row_rect, hovered, selected, level);
+			ops.custom_draw(t, ui, row_rect, hovered, selected, level);
 		}
 	}
 
@@ -333,7 +342,7 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 
 	if (is_open && !leaf && ops.children) {
 		for (const std::span<const T> kids = ops.children(t); const T& ch : kids) {
-			children_are_active |= tree_node(ctx, ch, ops, opt, sel, tree_scope, level + 1, active_widget_id, fnt);
+			children_are_active |= tree_node(ui, ch, ops, opt, sel, tree_scope, level + 1, fnt);
 		}
 	}
 

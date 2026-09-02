@@ -4,6 +4,7 @@ import std;
 
 import :light_culling_renderer;
 import :geometry_collector;
+import :light_packing;
 import :point_light;
 import :spot_light;
 import :directional_light;
@@ -68,7 +69,7 @@ namespace gse::renderer::light_culling {
 
 	using shader_binding_types = type_pack<depth_texture, culling_params, lights, light_index_list, tile_light_table, depth_sampler>;
 
-	using shader_types = type_pack<culling_params_data>;
+	using shader_types = type_pack<culling_params_data, light_culling_limits>;
 
 	using entry = gpu::compute_entry<
 		gpu::body_path<"Compute/light_culling">,
@@ -80,10 +81,6 @@ namespace gse::renderer::light_culling {
 }
 
 namespace gse::renderer::light_culling {
-	auto tile_count(const data& d) -> vec2u {
-		return { (d.current_width + tile_size - 1) / tile_size, (d.current_height + tile_size - 1) / tile_size };
-	}
-
 	auto update_depth_descriptor(const shared_view<gpu::context::data> gpu_s, data& d) -> void {
 		if (!d.depth_view.valid()) { d.depth_view = gpu_s.device->allocate_image_slot(); }
 		gpu_s.device->write_sampled_image(d.depth_view.slot(), gpu_s.render_graph->depth_image());
@@ -94,7 +91,7 @@ namespace gse::renderer::light_culling {
 		d.current_width = ext.x();
 		d.current_height = ext.y();
 
-		const auto tiles = tile_count(d);
+		const auto tiles = tile_count(d.current_width, d.current_height);
 		const std::uint32_t total_tiles = tiles.x() * tiles.y();
 		const std::uint32_t index_list_size = total_tiles * max_lights_per_tile * sizeof(std::uint32_t);
 		const std::uint32_t tile_table_size = total_tiles * 2 * sizeof(std::uint32_t);
@@ -123,6 +120,10 @@ namespace gse::renderer::light_culling {
 
 		update_depth_descriptor(gpu_s, d);
 	}
+}
+
+auto gse::renderer::light_culling::tile_count(const std::uint32_t width, const std::uint32_t height) -> vec2u {
+	return { (width + tile_size - 1) / tile_size, (height + tile_size - 1) / tile_size };
 }
 
 auto gse::renderer::light_culling::init(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, data& d) -> async::task<> {
@@ -172,7 +173,7 @@ auto gse::renderer::light_culling::init(context& ctx, const shared_view<gpu::con
 	return {};
 }
 
-auto gse::renderer::light_culling::frame(context& ctx, shared_view<gpu::context::data> gpu_s, const data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<geometry_collector::render_data> geometry_in, shared_view<camera::data> cam_state, shared_view<atmosphere::data> atm_state, read<directional_light_component> dir_lights, read<spot_light_component> spot_lights, read<point_light_component> point_lights) -> async::task<> {
+auto gse::renderer::light_culling::frame(context& ctx, shared_view<gpu::context::data> gpu_s, const data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<geometry_collector::render_data> geometry_in, shared_view<camera::data> cam_state, shared_view<atmosphere::data> atm_state, read<directional_light_component> dir_lights, read<spot_light_component> spot_lights, read<point_light_component> point_lights, read<physics::transform_component> transforms) -> async::task<> {
 	auto& graph = *gpu_s.render_graph;
 
 	if (!graph.frame_in_progress()) {
@@ -191,86 +192,10 @@ auto gse::renderer::light_culling::frame(context& ctx, shared_view<gpu::context:
 	const auto inv_proj = proj.inverse();
 	const auto extent = graph.extent();
 
-	auto& dir_chunk = dir_lights;
-	auto& spot_chunk = spot_lights;
-	auto& point_chunk = point_lights;
-
 	const auto& light_alloc = d.light_buffers[frame_index];
 
 	std::array<shaders::forward::light, max_lights> lights{};
-	std::size_t light_count = 0;
-
-	if (light_count < max_lights) {
-		const auto sun_to_surface = -atm_state.sun_direction;
-		lights[light_count] = {
-			.light_type = shaders::forward::light_type::directional,
-			.direction = view.transform_direction(sun_to_surface),
-			.world_direction = sun_to_surface,
-			.color = atm_state.sun_color,
-			.intensity = atm_state.sun_intensity,
-			.ambient_strength = atm_state.sun_ambient_strength,
-			.source_radius = atm_state.sun_source_radius,
-		};
-		++light_count;
-	}
-
-	for (const auto& comp : dir_chunk) {
-		if (light_count >= max_lights) {
-			break;
-		}
-		lights[light_count] = {
-			.light_type = shaders::forward::light_type::directional,
-			.direction = view.transform_direction(comp.direction),
-			.world_direction = comp.direction,
-			.color = comp.color,
-			.intensity = comp.intensity,
-			.ambient_strength = comp.ambient_strength,
-			.source_radius = comp.source_radius,
-		};
-		++light_count;
-	}
-
-	for (const auto& comp : spot_chunk) {
-		if (light_count >= max_lights) {
-			break;
-		}
-		lights[light_count] = {
-			.light_type = shaders::forward::light_type::spot,
-			.position = view.transform_point(comp.position),
-			.direction = view.transform_direction(comp.direction),
-			.world_position = comp.position,
-			.world_direction = comp.direction,
-			.color = comp.color,
-			.intensity = comp.intensity,
-			.constant = comp.constant,
-			.linear = comp.linear,
-			.quadratic = comp.quadratic,
-			.cut_off = cos(comp.cut_off),
-			.outer_cut_off = cos(comp.outer_cut_off),
-			.ambient_strength = comp.ambient_strength,
-			.source_radius = comp.source_radius,
-		};
-		++light_count;
-	}
-
-	for (const auto& comp : point_chunk) {
-		if (light_count >= max_lights) {
-			break;
-		}
-		lights[light_count] = {
-			.light_type = shaders::forward::light_type::point,
-			.position = view.transform_point(comp.position),
-			.world_position = comp.position,
-			.color = comp.color,
-			.intensity = comp.intensity,
-			.constant = comp.constant,
-			.linear = comp.linear,
-			.quadratic = comp.quadratic,
-			.ambient_strength = comp.ambient_strength,
-			.source_radius = comp.source_radius,
-		};
-		++light_count;
-	}
+	const auto light_count = light_packing::pack(lights, view, atm_state, dir_lights, spot_lights, point_lights, transforms);
 
 	if (light_count > 0) {
 		light_alloc.host_write(lights.data(), light_count * sizeof(shaders::forward::light));
@@ -284,7 +209,7 @@ auto gse::renderer::light_culling::frame(context& ctx, shared_view<gpu::context:
 	};
 	d.culling_params_buffers[frame_index].host_write(params);
 
-	const auto tiles = tile_count(d);
+	const auto tiles = tile_count(d.current_width, d.current_height);
 
 	auto rec = co_await gpu::pass<^^frame>(pass_out).pipeline(d.pipeline).after<^^depth_prepass::frame>();
 

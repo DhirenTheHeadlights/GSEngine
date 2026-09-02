@@ -17,9 +17,11 @@ public float2 gi_oct_encode(float3 n) {
     return n.xy;
 }
 
-public float3 sample_gi_irradiance(float3 world_pos, float3 world_normal, GiGridParams params, Texture2D<float4> atlas, SamplerState atlas_sampler) {
+public float3 sample_gi_irradiance(float3 world_pos, float3 world_normal, GiGridParams params, Texture2D<float4> atlas, SamplerState atlas_sampler, out float coverage) {
     float3 grid_uv = (world_pos - params.origin) / params.spacing;
     float3 max_index = float3(params.grid_dim) - 1.001;
+    float3 edge_cells = min(grid_uv, max_index - grid_uv);
+    coverage = saturate(min(min(edge_cells.x, edge_cells.y), edge_cells.z));
     grid_uv = clamp(grid_uv, float3(0.0, 0.0, 0.0), max_index);
     uint3 base = uint3(floor(grid_uv));
     float3 frac_uv = saturate(grid_uv - float3(base));

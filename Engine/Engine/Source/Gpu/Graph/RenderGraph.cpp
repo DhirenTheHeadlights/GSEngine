@@ -26,6 +26,16 @@ namespace gse::gpu {
 	constexpr pipeline_statistic_flags profile_stats_flags{ pipeline_statistic_flag::input_assembly_vertices,
 		pipeline_statistic_flag::input_assembly_primitives, pipeline_statistic_flag::clipping_invocations,
 		pipeline_statistic_flag::fragment_shader_invocations };
+
+	auto record_round_trace_id(const std::size_t round_index) -> id {
+		switch (round_index) {
+			case 0: return trace_id<"render_graph::record_round0">();
+			case 1: return trace_id<"render_graph::record_round1">();
+			case 2: return trace_id<"render_graph::record_round2">();
+			case 3: return trace_id<"render_graph::record_round3">();
+			default: return trace_id<"render_graph::record_round_tail">();
+		}
+	}
 }
 
 int gse::gpu::render_graph::s_live_count = 0;
@@ -219,6 +229,30 @@ auto gse::gpu::render_graph::read_profile_slot(gpu_profile_slot& slot) -> void {
 
 auto gse::gpu::render_graph::current_frame() const -> std::uint32_t {
 	return m_frame->current_frame();
+}
+
+auto gse::gpu::render_graph::current_target() const -> image_ref {
+	if (m_offscreen_target) {
+		const auto ext = m_offscreen_target->extent();
+		return {
+			.image = m_offscreen_target->handle(),
+			.extent = { ext.x(), ext.y() },
+			.format = m_offscreen_target->format(),
+		};
+	}
+	return {
+		.image = m_swapchain->image(m_frame->image_index()),
+		.extent = m_swapchain->extent(),
+		.format = m_swapchain->format(),
+	};
+}
+
+auto gse::gpu::render_graph::target_live(const id window) const -> bool {
+	if (!window.exists()) {
+		return m_offscreen_target != nullptr || m_frame->targets().front().acquired;
+	}
+	const present_target* t = m_frame->target(window);
+	return t != nullptr && t->acquired;
 }
 
 auto gse::gpu::render_graph::extent() const -> vec2u {
@@ -433,7 +467,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 	std::array<std::atomic<std::uint32_t>, queue_type_count> profile_next_slot{};
 	std::array<std::atomic<bool>, queue_type_count> profile_stats_issued{};
 
-	auto record_range = [&](const std::size_t start, const std::size_t end) {
+	auto record_range = [&](const std::size_t start, const std::size_t end, const id round_id) {
 		task::parallel_invoke_range(
 			start,
 			end,
@@ -444,7 +478,11 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 
 				const auto worker_idx = task::current_worker();
 				assert(worker_idx.has_value(), "graph::record_parallel: thread has no arena slot");
-				const auto body = m_device->acquire_worker_command_buffer(queue, *worker_idx, frame_idx);
+				command_buffer_handle body{};
+				{
+					trace::scope_guard acquire_sg{ trace_id<"record_pass::acquire">() };
+					body = m_device->acquire_worker_command_buffer(queue, *worker_idx, frame_idx);
+				}
 				assert(static_cast<bool>(body), "graph::record_parallel: worker command buffer acquire failed; the device is gone");
 
 				const auto* depth_target = pass.depth_output ? resolve_depth_target(*pass.depth_output) : nullptr;
@@ -509,6 +547,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 				}
 
 				const auto body_cmd = m_device->recorder(body);
+				trace::scope_guard commands_sg{ trace_id<"record_pass::commands">() };
 				body_cmd.begin();
 
 				const auto marker_domain = (queue == queue_type::graphics)
@@ -616,7 +655,10 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 						);
 					}
 				}
-				pass.record_handle.resume();
+				{
+					trace::scope_guard body_sg{ trace_id<"record_pass::body">() };
+					pass.record_handle.resume();
+				}
 
 				if (is_graphics_pass) {
 					body_cmd.end_rendering();
@@ -635,35 +677,41 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 
 				pass_bodies[pi] = body;
 			},
-			trace_id<"render_graph::record_passes">()
+			round_id
 		);
 	};
 
-	std::size_t round_start = 0;
-	while (true) {
-		pass_bodies.resize(passes.size());
-		record_range(round_start, passes.size());
+	{
+		trace::scope_guard record_sg{ trace_id<"render_graph::record_passes">() };
 
-		auto more = drain.drain_passes();
-		if (more.empty()) {
-			break;
+		std::size_t round_index = 0;
+		std::size_t round_start = 0;
+		while (true) {
+			pass_bodies.resize(passes.size());
+			record_range(round_start, passes.size(), record_round_trace_id(round_index));
+			++round_index;
+
+			auto more = drain.drain_passes();
+			if (more.empty()) {
+				break;
+			}
+
+			auto more_images = drain.drain_images();
+			auto more_buffers = drain.drain_buffers();
+			assert(
+				more_images.empty(),
+				"render_graph: round 2+ passes may not request new transient_image resources (option A); declare all "
+				"transients before the first co_await pass(...)"
+			);
+			assert(
+				more_buffers.empty(),
+				"render_graph: round 2+ passes may not request new transient_buffer resources (option A); declare all "
+				"transients before the first co_await pass(...)"
+			);
+
+			round_start = passes.size();
+			passes.insert(passes.end(), std::make_move_iterator(more.begin()), std::make_move_iterator(more.end()));
 		}
-
-		auto more_images = drain.drain_images();
-		auto more_buffers = drain.drain_buffers();
-		assert(
-			more_images.empty(),
-			"render_graph: round 2+ passes may not request new transient_image resources (option A); declare all "
-			"transients before the first co_await pass(...)"
-		);
-		assert(
-			more_buffers.empty(),
-			"render_graph: round 2+ passes may not request new transient_buffer resources (option A); declare all "
-			"transients before the first co_await pass(...)"
-		);
-
-		round_start = passes.size();
-		passes.insert(passes.end(), std::make_move_iterator(more.begin()), std::make_move_iterator(more.end()));
 	}
 
 	log_pass_graph(passes);
@@ -820,7 +868,21 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		for (std::size_t i = 0; i < passes.size(); ++i) {
 			for (std::size_t j = i + 1; j < passes.size(); ++j) {
 				if (passes[i].chain_id.exists() && passes[i].chain_id == passes[j].chain_id) {
-					add_edge(i, j, edge_kind::chain);
+					assert(
+						passes[i].chain_index != passes[j].chain_index,
+						"render_graph: passes '{}' and '{}' share chain '{}' and chain_index {}; every pass in a chain "
+						"needs a distinct index or their order is undefined",
+						passes[i].pass_type.tag(),
+						passes[j].pass_type.tag(),
+						passes[i].chain_id.tag(),
+						passes[i].chain_index
+					);
+					if (passes[i].chain_index < passes[j].chain_index) {
+						add_edge(i, j, edge_kind::chain);
+					}
+					else {
+						add_edge(j, i, edge_kind::chain);
+					}
 					continue;
 				}
 

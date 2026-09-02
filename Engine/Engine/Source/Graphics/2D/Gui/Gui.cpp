@@ -190,7 +190,7 @@ auto gse::gui::init(context& ctx, const shared_view<window::data> window_s, cons
 	d.primary.previous_scale_factor = scale_factor_for(d, d.primary, d.primary.previous_viewport_size.y());
 }
 
-auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, const shared_view<input::data> input_state, const save::registry& save_reg, const channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, popout_closed, menu_migrate_request, window_opened, window_closed, window_resized> requests_in, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> ui_out, data& d) -> async::task<> {
+auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, const shared_view<input::data> input_state, const channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, popout_closed, menu_migrate_request, window_opened, window_closed, window_resized> requests_in, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> ui_out, data& d) -> async::task<> {
 	const auto current_viewport_size = vec2f(gpu_s.render_graph->extent());
 	const auto window_size = vec2f(window::viewport(window_s));
 
@@ -236,9 +236,9 @@ auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const
 	d.text_pool_slot ^= 1;
 	d.text_pool_used = 0;
 
-	begin_viewport_frame(d, d.primary, window_s, current_viewport_size);
+	begin_viewport_frame(d, d.primary, window_s, current_viewport_size, input::current_state(input_state));
 	for (const auto& vp : d.secondaries) {
-		begin_viewport_frame(d, *vp, window_s, vp->frame_rect.size());
+		begin_viewport_frame(d, *vp, window_s, vp->frame_rect.size(), input::current_state(input_state));
 	}
 
 	if (d.ui_font.value != d.last_ui_font || d.code_font.value != d.last_code_font) {
@@ -298,9 +298,26 @@ auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const
 		stamp(d.text_commands, text_start);
 	};
 
+	auto select_text_in_viewport = [&d, &input_st](viewport_state& vp, const std::size_t text_start) {
+		update_text_selection({
+			.selection = vp.text_selection,
+			.input = input_st,
+			.layers = vp.input_layers_data,
+			.context_menu = vp.context_menu,
+			.fonts = d.fonts,
+			.style = vp.fstate.sty,
+			.blank_texture = d.blank_texture,
+			.texts = std::span(d.text_commands).subspan(text_start),
+			.sprites = d.sprite_commands,
+			.bounds = vp.frame_rect,
+			.gesture = vp.current_state,
+		});
+	};
+
 	const std::size_t primary_sprite_start = d.sprite_commands.size();
 	const std::size_t primary_text_start = d.text_commands.size();
 	update_viewport(d, d.primary, input_st, requests_in, ui_out);
+	select_text_in_viewport(d.primary, primary_text_start);
 	stamp_viewport(primary_sprite_start, primary_text_start, d.primary.window, d.primary.frame_rect);
 
 	for (std::size_t i = 0; i < d.secondaries.size(); ++i) {
@@ -308,6 +325,7 @@ auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const
 		const std::size_t sprite_start = d.sprite_commands.size();
 		const std::size_t text_start = d.text_commands.size();
 		update_viewport(d, vp, input_st, requests_in, ui_out);
+		select_text_in_viewport(vp, text_start);
 		stamp_viewport(sprite_start, text_start, vp.window, vp.frame_rect);
 	}
 

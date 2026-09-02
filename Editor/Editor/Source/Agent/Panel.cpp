@@ -129,16 +129,31 @@ auto gse::ide::agent::draw_session_info(const gui::draw_context& ctx, data& d, c
 	const float line_h = text_view->line_height(fs) * 1.35f;
 
 	const std::string link = link_label(d, *s);
-	const std::array<std::pair<std::string_view, std::string>, 8> rows = { {
+	std::vector<std::pair<std::string, std::string>> rows = {
 		{ "status", !link.empty() ? link : !s->info.failure.empty() ? s->info.failure : s->running ? "running" : "exited" },
-		{ "build", unbuilt_label(*s) },
+		{ "activity", status_label(d, *s) },
+		{ "my edits", exe_label(*s) },
 		{ "broke", blame_label(*s) },
 		{ "model", s->info.model.empty() ? "-" : s->info.model },
 		{ "session", s->info.agent_id.empty() ? "-" : s->info.agent_id },
 		{ "turns", std::format("{}", s->info.turns) },
 		{ "api time", std::format("{:.1f}s", s->info.api_time.as<seconds>()) },
 		{ "api equivalent", std::format("${:.4f}", s->info.cost) },
-	} };
+	};
+
+	if (const std::size_t asleep = hibernating_count(d); asleep > 0) {
+		rows.emplace_back("observers", std::format("{} chat(s) waiting for a build", asleep));
+	}
+
+	if (d.sessions.size() > 1) {
+		rows.emplace_back("all chats", "");
+		for (const session& other : d.sessions) {
+			rows.emplace_back(
+				other.name.empty() ? std::string("unnamed") : other.name,
+				other.stale ? status_label(d, other) + " \xC2\xB7 unbuilt" : status_label(d, other)
+			);
+		}
+	}
 
 	float label_w = 0.f;
 	float value_w = 0.f;
@@ -313,7 +328,7 @@ auto gse::ide::agent::draw_history(gui::builder& ui, data& d, const rectf& body)
 				.color = over ? sty.color_text : sty.color_text_secondary,
 				.clip_rect = clip,
 			});
-			if (over && c.mouse_pressed_for(row)) {
+			if (c.clicked_in_rect(row)) {
 				chosen = &chat;
 			}
 		}
@@ -322,6 +337,7 @@ auto gse::ide::agent::draw_history(gui::builder& ui, data& d, const rectf& body)
 	if (chosen) {
 		restore_chat(d, *chosen);
 		d.history_open = false;
+		d.overview_active = false;
 		return;
 	}
 
@@ -335,18 +351,298 @@ auto gse::ide::agent::session_tab_id(const std::uint32_t session_id) -> id {
 	return gui::ids::make(std::format("##agent_tab_{}", session_id));
 }
 
+auto gse::ide::agent::overview_tab_id() -> id {
+	return gui::ids::make("##agent_tab_overview");
+}
+
+auto gse::ide::agent::overview_task(const session& s) -> std::string {
+	if (s.hibernating && !s.wake_prompt.empty()) {
+		return "on wake: " + std::string(first_line(s.wake_prompt));
+	}
+
+	for (const transcript_row& row : s.rows | std::views::reverse) {
+		if (row.kind != row_kind::user) {
+			continue;
+		}
+		if (const std::string_view head = first_line(row.text); !head.empty() && !head.starts_with('<')) {
+			return std::string(head);
+		}
+	}
+	return {};
+}
+
+auto gse::ide::agent::draw_overview(gui::builder& ui, data& d, const rectf& area) -> void {
+	gui::draw_context& ctx = ui.ctx;
+	const gui::style& sty = ctx.style;
+	const auto text_view = ctx.fonts.text.resolve();
+	const float pad = sty.padding;
+	const float fs = sty.font_size;
+	const float line_h = text_view->line_height(fs) * 1.3f;
+	const float row_h = line_h * 3.f + pad;
+
+	if (d.sessions.empty()) {
+		constexpr std::string_view empty = "No agents yet - open a chat with the + tab";
+		ctx.queue_text({
+			.font = ctx.fonts.text,
+			.text = empty,
+			.position = {
+				area.center().x() - text_view->width(empty, fs) * 0.5f,
+				area.center().y() + text_view->vertical_center_offset(fs),
+			},
+			.scale = fs,
+			.color = sty.color_text_secondary,
+			.clip_rect = area,
+		});
+		return;
+	}
+
+	const rectf list = rectf::from_position_size(
+		{ area.left() + pad, area.top() - pad },
+		{ area.width() - pad * 2.f, std::max(0.f, area.height() - pad * 2.f) }
+	);
+	ctx.layout_cursor = { list.left(), list.top() };
+
+	std::uint32_t chosen = 0;
+	std::string cancelled;
+	std::string forced;
+	ui.scroll_region({
+		.id = "##agent_overview_list",
+		.size = list.size(),
+	}, [&](gui::builder& b) {
+		gui::draw_context& c = b.ctx;
+		const vec2f mouse = c.mouse_position();
+		const rectf clip = c.current_clip().value_or(list);
+
+		const auto next_row = [&](const float height) {
+			const rectf row = rectf::from_position_size(
+				{ list.left(), c.layout_cursor.y() },
+				{ list.width(), height }
+			);
+			c.layout_cursor.y() -= height;
+			return row;
+		};
+
+		const auto draw_build_row = [&](const queued_build& queued, const bool active) {
+			const rectf row = next_row(line_h * 2.f + pad * 1.5f);
+			if (!row.intersects(clip)) {
+				return;
+			}
+
+			c.queue_sprite({
+				.rect = row,
+				.color = sty.color_panel_alt,
+				.texture = c.blank_texture,
+				.clip_rect = clip,
+				.corner_radius = sty.corner_radius,
+			});
+
+			const std::string label = queue_label(queued);
+			const std::string elapsed = std::format("{:.0f:s}", system_clock::now<time>() - queued.requested);
+			const float text_left = row.left() + pad;
+			float baseline = row.top() - pad * 0.75f - line_h * 0.5f + text_view->vertical_center_offset(fs);
+
+			c.queue_text({
+				.font = c.fonts.text,
+				.text = label,
+				.position = { text_left, baseline },
+				.scale = fs,
+				.color = sty.color_text,
+				.clip_rect = clip,
+			});
+			c.queue_text({
+				.font = c.fonts.text,
+				.text = elapsed,
+				.position = { row.right() - pad - text_view->width(elapsed, fs), baseline },
+				.scale = fs,
+				.color = sty.color_text_secondary,
+				.clip_rect = clip,
+			});
+
+			const float controls_top = baseline - text_view->vertical_center_offset(fs) - line_h * 0.5f;
+			baseline -= line_h;
+
+			const std::string status = active ? std::string("building") : hold_label(d, queued);
+			c.queue_text({
+				.font = c.fonts.text,
+				.text = status,
+				.position = { text_left, baseline },
+				.scale = fs,
+				.color = active ? sty.color_folder : sty.color_warning,
+				.clip_rect = clip,
+			});
+
+			c.queue_sprite({
+				.rect = rectf::from_position_size({ row.left(), row.bottom() }, { row.width(), 1.f }),
+				.color = sty.color_separator,
+				.texture = c.blank_texture,
+				.clip_rect = clip,
+			});
+
+			if (active) {
+				return;
+			}
+
+			constexpr std::string_view cancel_text = "Cancel";
+			constexpr std::string_view force_text = "Build now";
+			const float cancel_w = text_view->width(cancel_text, fs) + pad * 2.f;
+			const float force_w = text_view->width(force_text, fs) + pad * 2.f;
+			const rectf cancel_rect = rectf::from_position_size({ row.right() - pad - cancel_w, controls_top }, { cancel_w, line_h });
+			const rectf force_rect = rectf::from_position_size({ cancel_rect.left() - pad * 0.5f - force_w, controls_top }, { force_w, line_h });
+
+			if (b.draw<gui::button>({
+				.text = force_text,
+				.rect = force_rect,
+				.key = std::format("##agent_queue_force_{}", queued.id),
+			})) {
+				forced = queued.id;
+			}
+			if (b.draw<gui::button>({
+				.text = cancel_text,
+				.rect = cancel_rect,
+				.key = std::format("##agent_queue_cancel_{}", queued.id),
+				.role = gui::button_role::danger,
+			})) {
+				cancelled = queued.id;
+			}
+		};
+
+		for (const queued_build& queued : d.inbox_active) {
+			draw_build_row(queued, true);
+		}
+		for (const queued_build& queued : d.inbox_queue) {
+			draw_build_row(queued, false);
+		}
+
+		for (const session& s : d.sessions) {
+			const std::string task = overview_task(s);
+
+			std::string footer = s.info.model;
+			if (s.stale || !s.blame.empty()) {
+				footer += footer.empty() ? exe_label(s) : " \xC2\xB7 " + exe_label(s);
+			}
+			if (!s.blame.empty()) {
+				footer += " \xC2\xB7 broke " + blame_label(s);
+			}
+
+			const float text_lines = 1.f + (task.empty() ? 0.f : 1.f) + (footer.empty() ? 0.f : 1.f);
+
+			const rectf row = next_row(text_lines * line_h + pad * 1.5f);
+			if (!row.intersects(clip)) {
+				continue;
+			}
+
+			const bool over = clip.contains(mouse) && c.hovers(row);
+			if (over || s.id == d.active) {
+				c.queue_sprite({
+					.rect = row,
+					.color = over ? sty.color_widget_hovered : sty.color_panel_alt,
+					.texture = c.blank_texture,
+					.clip_rect = clip,
+					.corner_radius = sty.corner_radius,
+				});
+			}
+
+			const std::string status = status_label(d, s);
+			const float status_w = text_view->width(status, fs);
+			const float text_left = row.left() + pad;
+			const float status_left = row.right() - pad - status_w;
+			float baseline = row.top() - pad * 0.75f - line_h * 0.5f + text_view->vertical_center_offset(fs);
+
+			const rectf body_clip = clip.intersection(rectf::from_position_size(
+				{ text_left, row.top() },
+				{ std::max(0.f, row.width() - pad * 2.f), row.height() }
+			));
+			const rectf name_clip = body_clip.intersection(rectf::from_position_size(
+				{ text_left, row.top() },
+				{ std::max(0.f, status_left - pad - text_left), row.height() }
+			));
+
+			c.queue_text({
+				.font = c.fonts.text,
+				.text = s.name.empty() ? std::string_view("unnamed") : std::string_view(s.name),
+				.position = { text_left, baseline },
+				.scale = fs,
+				.color = s.running ? sty.color_text : sty.color_text_secondary,
+				.clip_rect = name_clip,
+			});
+			c.queue_text({
+				.font = c.fonts.text,
+				.text = status,
+				.position = { status_left, baseline },
+				.scale = fs,
+				.color = sty.*style_of(state_of(d, s)).color,
+				.clip_rect = clip,
+			});
+
+			if (!task.empty()) {
+				baseline -= line_h;
+				c.queue_text({
+					.font = c.fonts.text,
+					.text = task,
+					.position = { text_left, baseline },
+					.scale = fs,
+					.color = sty.color_text_secondary,
+					.clip_rect = body_clip,
+				});
+			}
+			if (!footer.empty()) {
+				baseline -= line_h;
+				c.queue_text({
+					.font = c.fonts.text,
+					.text = footer,
+					.position = { text_left, baseline },
+					.scale = fs,
+					.color = !s.blame.empty() ? sty.color_error : s.stale ? sty.color_warning : sty.color_text_secondary,
+					.clip_rect = body_clip,
+				});
+			}
+
+			c.queue_sprite({
+				.rect = rectf::from_position_size({ row.left(), row.bottom() }, { row.width(), 1.f }),
+				.color = sty.color_separator,
+				.texture = c.blank_texture,
+				.clip_rect = clip,
+			});
+
+			if (c.clicked_in_rect(row)) {
+				chosen = s.id;
+			}
+		}
+	});
+
+	if (!cancelled.empty()) {
+		cancel_queued(d, cancelled);
+	}
+	if (!forced.empty()) {
+		force_queued(d, forced);
+	}
+
+	if (chosen != 0) {
+		d.active = chosen;
+		d.overview_active = false;
+	}
+}
+
 auto gse::ide::agent::draw_session_tabs(gui::builder& ui, data& d, const rectf& body) -> float {
 	const gui::draw_context& ctx = ui.ctx;
 	const gui::style& sty = ctx.style;
 	const float pad = sty.padding;
 
 	std::vector<gui::tab_desc> descs;
-	descs.reserve(d.sessions.size());
+	descs.reserve(d.sessions.size() + 1);
+	descs.push_back({
+		.tab_id = overview_tab_id(),
+		.caption = "Agents",
+		.dirty = hibernating_count(d) > 0,
+		.closeable = false,
+		.pinned = true,
+	});
 	for (const session& s : d.sessions) {
 		descs.push_back({
 			.tab_id = session_tab_id(s.id),
 			.caption = s.name,
-			.busy = s.think_clock.has_value(),
+			.dirty = s.hibernating || build_wait_for(d, s) != build_wait::none,
+			.busy = is_busy(s),
 			.warning = s.stale,
 			.error = !s.blame.empty() || !s.info.failure.empty(),
 			.dimmed = !s.running,
@@ -384,7 +680,7 @@ auto gse::ide::agent::draw_session_tabs(gui::builder& ui, data& d, const rectf& 
 	const gui::tab_strip_result tabs = gui::tab_strip(ctx, {
 		.area = tab_area,
 		.tabs = descs,
-		.active = session_tab_id(d.active),
+		.active = d.overview_active ? overview_tab_id() : session_tab_id(d.active),
 		.allow_reorder = true,
 		.show_add = true,
 		.renaming = d.renaming != 0 ? session_tab_id(d.renaming) : id{},
@@ -397,7 +693,11 @@ auto gse::ide::agent::draw_session_tabs(gui::builder& ui, data& d, const rectf& 
 		return found == d.sessions.end() ? nullptr : &*found;
 	};
 
-	if (session* activated = tabs.activated.exists() ? session_of(tabs.activated) : nullptr) {
+	if (tabs.activated.exists() && tabs.activated == overview_tab_id()) {
+		d.overview_active = true;
+	}
+	else if (session* activated = tabs.activated.exists() ? session_of(tabs.activated) : nullptr) {
+		d.overview_active = false;
 		const bool second_click = gui::interaction::register_click(d.tab_click, ctx.mouse_position()) >= 2;
 		if (second_click && activated->id == d.active) {
 			d.renaming = activated->id;
@@ -411,7 +711,8 @@ auto gse::ide::agent::draw_session_tabs(gui::builder& ui, data& d, const rectf& 
 	if (const auto from = tabs.reorder_id.exists() ? std::ranges::find_if(d.sessions, [&](const session& s) {
 		return session_tab_id(s.id) == tabs.reorder_id;
 	}) : d.sessions.end(); from != d.sessions.end()) {
-		const auto to = d.sessions.begin() + static_cast<std::ptrdiff_t>(std::min(tabs.reorder_to, d.sessions.size() - 1));
+		const std::size_t dropped_at = tabs.reorder_to > 0 ? tabs.reorder_to - 1 : 0;
+		const auto to = d.sessions.begin() + static_cast<std::ptrdiff_t>(std::min(dropped_at, d.sessions.size() - 1));
 		if (from < to) {
 			std::rotate(from, from + 1, to + 1);
 		}
@@ -426,21 +727,19 @@ auto gse::ide::agent::draw_session_tabs(gui::builder& ui, data& d, const rectf& 
 
 	if (tabs.add_requested) {
 		create_session(d, config::primary().project_root);
+		d.overview_active = false;
 	}
 
 	session* renaming = d.renaming != 0 && tabs.renaming_rect.width() > 0.f ? session_of(session_tab_id(d.renaming)) : nullptr;
 	if (renaming) {
 		const id input_id = gui::ids::make(std::format("##agent_name_{}", renaming->id));
-		gui::draw::text_input_in_rect(
-			ctx,
-			input_id,
-			renaming->name,
-			renaming->name_state,
-			tabs.renaming_rect,
-			ui.hot_widget_id,
-			ui.focus_widget_id,
-			ctx.fonts.text
-		);
+		ui.draw<gui::text_input>({
+			.buffer = renaming->name,
+			.state = renaming->name_state,
+			.rect = tabs.renaming_rect,
+			.widget_id = input_id,
+			.font = ctx.fonts.text,
+		});
 
 		if (ui.focus_widget_id != input_id) {
 			if (renaming->name.empty()) {
@@ -489,7 +788,7 @@ auto gse::ide::agent::draw_close_confirm(gui::builder& ui, data& d, const rectf&
 		return;
 	}
 
-	const gui::draw::confirm_result result = gui::draw::confirm_dialog(ui, {
+	const gui::confirm_result result = ui.draw<gui::confirm_dialog>({
 		.body = body,
 		.title = "Stop the agent and close the tab?",
 		.message = std::format("\"{}\" is still running, and its transcript will be discarded.", closing->name),
@@ -497,10 +796,10 @@ auto gse::ide::agent::draw_close_confirm(gui::builder& ui, data& d, const rectf&
 		.key = "##agent_close",
 	});
 
-	if (result == gui::draw::confirm_result::confirmed) {
+	if (result == gui::confirm_result::confirmed) {
 		erase_session(d, d.pending_close);
 	}
-	else if (result == gui::draw::confirm_result::cancelled) {
+	else if (result == gui::confirm_result::cancelled) {
 		d.pending_close = 0;
 	}
 }
@@ -545,9 +844,13 @@ auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, const rectf& ar
 		s->line_rows.push_back(0);
 	}
 
-	const gui::interaction::press tail_press = gui::draw::follow_tail_button(ui, area, s->view, gui::ids::make("##agent_follow_tail"));
+	const gui::interaction::press tail_press = ui.draw<gui::follow_tail>({
+		.area = area,
+		.state = s->view,
+		.name = "##agent_follow_tail",
+	});
 
-	const gui::buffer_position at = gui::draw::text_area_position_at(ctx, {
+	const gui::buffer_position at = gui::text_area_position_at(ctx, {
 		.buffer = s->buffer,
 		.state = s->view,
 		.rect = area,
@@ -574,26 +877,26 @@ auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, const rectf& ar
 		});
 	}
 
-	if (ctx.hovers(area) && ctx.mouse_pressed_for(area, mouse_button::button_2)) {
-		const auto row = s->line_rows[hovered];
-		const bool mine = row < s->rows.size() && s->rows[row].kind == row_kind::user;
-		if (const std::optional<std::uint32_t> anchor = mine ? rewind_anchor(*s, row) : std::nullopt; anchor) {
-			ctx.open_context_menu({
-				.position = mouse,
-				.items = {
-					{
-						.label = "Rewind to this prompt",
-						.action_id = 0,
-						.destructive = true,
-					},
+	const auto context_row = s->line_rows[hovered];
+	const bool context_mine = ctx.hovers(area) && context_row < s->rows.size() && s->rows[context_row].kind == row_kind::user;
+	const std::optional<std::uint32_t> rewind = context_mine ? rewind_anchor(*s, context_row) : std::nullopt;
+
+	if (rewind && ctx.mouse_pressed_for(area, mouse_button::button_2)) {
+		ctx.open_context_menu({
+			.position = mouse,
+			.items = {
+				{
+					.label = "Rewind to this prompt",
+					.action_id = 0,
+					.destructive = true,
 				},
-				.target = (static_cast<std::uint64_t>(s->id) << 32) | row,
-				.tag = agent_context_tag(),
-			});
-		}
+			},
+			.target = (static_cast<std::uint64_t>(s->id) << 32) | context_row,
+			.tag = agent_context_tag(),
+		});
 	}
 
-	if (ctx.mouse_pressed_for(area)) {
+	if (ctx.clicked_in_rect(area)) {
 		const auto group = std::ranges::find(s->groups, hovered, &group_marker::line);
 
 		if (group != s->groups.end() && group->rows > 1) {
@@ -613,24 +916,19 @@ auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, const rectf& ar
 		}
 	}
 
-	gui::draw::text_area_in_rect(
-		ctx,
-		s->log_id,
-		{
-			.buffer = s->buffer,
-			.state = s->view,
-			.spans = s->spans,
-			.underlines = underlines,
-			.blocks = s->blocks,
-			.rect = area,
-			.read_only = true,
-			.follow_tail = true,
-			.indent_width = transcript_tab_width,
-			.blink_interval = time{},
-		},
-		ui.hot_widget_id,
-		ui.focus_widget_id
-	);
+	ui.draw<gui::text_area>({
+		.buffer = s->buffer,
+		.state = s->view,
+		.widget_id = s->log_id,
+		.spans = s->spans,
+		.underlines = underlines,
+		.blocks = s->blocks,
+		.rect = area,
+		.read_only = true,
+		.follow_tail = true,
+		.indent_width = transcript_tab_width,
+		.blink_interval = time{},
+	});
 
 	draw_diff_bars(ctx, *s, area, advance);
 }
@@ -700,6 +998,50 @@ auto gse::ide::agent::draw_attachments(gui::builder& ui, session& s, const rectf
 	}
 }
 
+auto gse::ide::agent::draw_model_controls(gui::builder& ui, session& s, const rectf& model_rect, const rectf& effort_rect) -> void {
+	const gui::draw_context& ctx = ui.ctx;
+
+	const std::span<const model_option> catalogue = available_models();
+	std::vector<std::string_view> models;
+	models.reserve(catalogue.size() + 1);
+	models.emplace_back("default");
+	std::size_t current = 0;
+	for (const model_option& option : catalogue) {
+		if (option.value == s.model_id) {
+			current = models.size();
+		}
+		models.push_back(option.label);
+	}
+
+	const gui::dropdown_result picked = ui.draw<gui::dropdown<std::string_view>>({
+		.name = "##agent_model",
+		.current_index = current,
+		.options = models,
+		.state = s.model_dropdown,
+		.rect = model_rect,
+	});
+
+	const std::span<const agent_effort> levels = enum_values<agent_effort>();
+	auto level = static_cast<int>(s.requested_effort);
+	const std::string_view effort_text = s.requested_effort == agent_effort::inherit
+		? std::string_view("auto")
+		: enum_to_string(s.requested_effort);
+
+	ui.draw<gui::slider<int>>({
+		.name = "##agent_effort",
+		.value = level,
+		.min = 0,
+		.max = static_cast<int>(levels.size()) - 1,
+		.rect = effort_rect,
+		.value_label = effort_text,
+	});
+
+	if (picked.changed && picked.new_index < models.size()) {
+		s.model_id = picked.new_index == 0 ? std::string{} : catalogue[picked.new_index - 1].value;
+	}
+	s.requested_effort = static_cast<agent_effort>(std::clamp<int>(level, 0, static_cast<int>(levels.size()) - 1));
+}
+
 auto gse::ide::agent::draw_input(gui::builder& ui, session& s, const rectf& area) -> void {
 	const gui::draw_context& ctx = ui.ctx;
 	const gui::style& sty = ctx.style;
@@ -725,7 +1067,7 @@ auto gse::ide::agent::draw_input(gui::builder& ui, session& s, const rectf& area
 	const auto code_view = ctx.fonts.code.resolve();
 	constexpr std::string_view marker = ">";
 	const float marker_width = code_view->width(marker, sty.font_size) + pad;
-	const float line_h = gui::draw::text_area_line_height(ctx, ctx.fonts.code);
+	const float line_h = gui::text_area_line_height(ctx, ctx.fonts.code);
 	const float first_row_center = area.top() - pad - line_h * 0.5f;
 
 	ctx.queue_text({
@@ -742,25 +1084,53 @@ auto gse::ide::agent::draw_input(gui::builder& ui, session& s, const rectf& area
 		{ area.right() - pad - button_extent, first_row_center + button_extent * 0.5f },
 		{ button_extent, button_extent }
 	);
-	const rectf box = rectf::from_position_size(
-		{ area.left() + pad + marker_width, area.top() },
-		{ std::max(0.f, area.width() - pad * 3.f - marker_width - button_extent), area.height() }
+
+	const auto label_view = ctx.fonts.text.resolve();
+	float widest_model = label_view->width("default", sty.font_size);
+	for (const model_option& option : available_models()) {
+		widest_model = std::max(widest_model, label_view->width(option.label, sty.font_size));
+	}
+	float widest_effort = code_view->width("auto", sty.font_size);
+	for (const agent_effort level : enum_values<agent_effort>()) {
+		if (level != agent_effort::inherit) {
+			widest_effort = std::max(widest_effort, code_view->width(enum_to_string(level), sty.font_size));
+		}
+	}
+
+	const float model_width = widest_model + sty.font_size + pad * 3.f;
+	const float effort_width = widest_effort + pad * 2.f;
+	const float controls_width = model_width + effort_width + pad * 2.f;
+	const float text_minimum = sty.font_size * 12.f;
+	const bool show_controls = area.width() - pad * 3.f - marker_width - button_extent - controls_width >= text_minimum;
+
+	const rectf model_rect = rectf::from_position_size(
+		{ stop.left() - pad - model_width, first_row_center + button_extent * 0.5f },
+		{ model_width, button_extent }
 	);
-	gui::draw::text_area_in_rect(
-		ctx,
-		input_id,
-		{
-			.buffer = s.draft,
-			.state = s.draft_state,
-			.rect = box,
-			.consumes_image_paste = true,
-			.font = ctx.fonts.code,
-		},
-		ui.hot_widget_id,
-		ui.focus_widget_id
+	const rectf effort_rect = rectf::from_position_size(
+		{ model_rect.left() - pad - effort_width, first_row_center + button_extent * 0.5f },
+		{ effort_width, button_extent }
 	);
 
-	const bool busy = s.running && s.think_clock.has_value();
+	const float reserved = pad * 3.f + marker_width + button_extent + (show_controls ? controls_width : 0.f);
+	const rectf box = rectf::from_position_size(
+		{ area.left() + pad + marker_width, area.top() },
+		{ std::max(0.f, area.width() - reserved), area.height() }
+	);
+	ui.draw<gui::text_area>({
+		.buffer = s.draft,
+		.state = s.draft_state,
+		.widget_id = input_id,
+		.rect = box,
+		.consumes_image_paste = true,
+		.font = ctx.fonts.code,
+	});
+
+	const bool busy = is_busy(s);
+
+	if (show_controls) {
+		draw_model_controls(ui, s, model_rect, effort_rect);
+	}
 
 	if (gui::caption_button(ui, stop, "##agent_stop", gui::symbol::stop(), sty.color_tab_hovered, busy) && busy) {
 		interrupt_session(s);
@@ -848,15 +1218,17 @@ auto gse::ide::agent::draw_context_bar(const gui::draw_context& ctx, session& s,
 	}
 }
 
-auto gse::ide::agent::activity_label(const session& s) -> std::string {
+auto gse::ide::agent::activity_label(const data& d, const session& s) -> std::string {
 	const time subsecond_limit = seconds(10.f);
 	const time elapsed = s.think_clock->elapsed();
+	const build_wait wait = build_wait_for(d, s);
+	const std::string action = wait == build_wait::none ? s.action : status_label(d, s);
 	return elapsed < subsecond_limit
-		? std::format("{} \xC2\xB7 {:.1f:s}", s.action, elapsed)
-		: std::format("{} \xC2\xB7 {:.0f:s}", s.action, elapsed);
+		? std::format("{} \xC2\xB7 {:.1f:s}", action, elapsed)
+		: std::format("{} \xC2\xB7 {:.0f:s}", action, elapsed);
 }
 
-auto gse::ide::agent::draw_activity(const gui::draw_context& ctx, const session& s, const rectf& area) -> void {
+auto gse::ide::agent::draw_activity(const gui::draw_context& ctx, const data& d, const session& s, const rectf& area) -> void {
 	const gui::style& sty = ctx.style;
 	const auto text_view = ctx.fonts.text.resolve();
 	const float pad = sty.padding;
@@ -880,7 +1252,7 @@ auto gse::ide::agent::draw_activity(const gui::draw_context& ctx, const session&
 
 	ctx.queue_text({
 		.font = ctx.fonts.text,
-		.text = activity_label(s),
+		.text = activity_label(d, s),
 		.position = { spin.right() + pad * 0.5f, area.center().y() + text_view->vertical_center_offset(sty.font_size) },
 		.scale = sty.font_size,
 		.color = sty.color_text_secondary,
@@ -897,12 +1269,24 @@ auto gse::ide::agent::draw_panel(gui::builder& ui, data& d, const channel_write<
 	const gui::style& sty = ctx.style;
 	const rectf body = ctx.clip_stack.back();
 	const float strip_h = draw_session_tabs(ui, d, body);
+
+	if (d.overview_active) {
+		draw_overview(ui, d, rectf::from_position_size(
+			{ body.left(), body.top() - strip_h },
+			{ body.width(), std::max(0.f, body.height() - strip_h) }
+		));
+		draw_session_info(ctx, d, body);
+		draw_history(ui, d, body);
+		draw_close_confirm(ui, d, body);
+		return;
+	}
+
 	session* shown = active_session(d);
-	const float input_line_h = gui::draw::text_area_line_height(ctx, ctx.fonts.code);
+	const float input_line_h = gui::text_area_line_height(ctx, ctx.fonts.code);
 	const auto input_rows = static_cast<float>(std::clamp<std::size_t>(shown ? shown->draft.line_count() : 1, 1, max_input_rows));
 	const float input_h = std::max(sty.font_size * 2.f, input_rows * input_line_h + sty.padding * 2.f);
 	const float attachments_h = !shown || shown->attachments.empty() ? 0.f : sty.font_size * 4.5f;
-	const float activity_h = shown && shown->think_clock ? sty.font_size * 1.75f : 0.f;
+	const float activity_h = shown && is_busy(*shown) ? sty.font_size * 1.75f : 0.f;
 
 	const float context_h = std::max(2.f, std::round(3.f * sty.scale_factor));
 
@@ -925,7 +1309,7 @@ auto gse::ide::agent::draw_panel(gui::builder& ui, data& d, const channel_write<
 		draw_attachments(ui, *shown, attachments_area);
 	}
 	if (activity_h > 0.f) {
-		draw_activity(ctx, *shown, activity_area);
+		draw_activity(ctx, d, *shown, activity_area);
 	}
 	if (shown) {
 		draw_input(ui, *shown, input_area);

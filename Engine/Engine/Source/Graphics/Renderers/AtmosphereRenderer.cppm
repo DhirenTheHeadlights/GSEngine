@@ -85,11 +85,11 @@ export namespace gse::renderer::atmosphere {
 		angle sun_elevation = degrees(60.0f);
 
 		[[
-			= settings::describe<"Sun radiant intensity (W/m^2)">{},
+			= settings::describe<"Sun irradiance at the top of the atmosphere (W/m^2). 1361 is the solar constant.">{},
 			= shared,
 			= settings::hot_reloadable
 		]]
-		irradiance sun_intensity = watts_per_square_meter(1.6f);
+		irradiance sun_intensity = watts_per_square_meter(1361.f);
 
 		[[
 			= settings::describe<"Sun color tint applied to direct lighting and the sun disk">{},
@@ -114,12 +114,13 @@ export namespace gse::renderer::atmosphere {
 		angle sun_angular_radius = degrees(1.5f);
 
 		[[
-			= settings::describe<"Sun ambient term applied to surfaces not directly lit by the sun.">{},
+			= settings::describe<"Sky fill applied to surfaces not directly lit by the sun, as a fraction of the "
+									  "sun's transmitted irradiance.">{},
 			= settings::range<0.f, 1.f>{},
 			= shared,
 			= settings::hot_reloadable
 		]]
-		float sun_ambient_strength = 0.1f;
+		float sun_ambient_strength = 0.04f;
 
 		[[
 			= settings::describe<"Sun source radius for soft-shadow penumbra calculation.">{},
@@ -128,6 +129,8 @@ export namespace gse::renderer::atmosphere {
 		length sun_source_radius = meters(0.05f);
 
 		[[= shared]] vec3f sun_direction = { 0.0f, 1.0f, 0.0f };
+
+		[[= shared]] vec3f sun_transmittance = { 1.0f, 1.0f, 1.0f };
 
 		[[
 			= settings::describe<"Brightness of the procedural starfield. Stars are world-fixed, so they hold "
@@ -235,7 +238,7 @@ export namespace gse::renderer::atmosphere {
 
 		gpu::handle<gpu::sampler> lut_sampler;
 		[[= shared]] gpu::bindless_handle lut_sampler_bindless;
-		gpu::bindless_handle sky_view_sampler_bindless;
+		[[= shared]] gpu::bindless_handle sky_view_sampler_bindless;
 
 		[[= shared]] gpu::buffer atmosphere_ubo_buffer;
 

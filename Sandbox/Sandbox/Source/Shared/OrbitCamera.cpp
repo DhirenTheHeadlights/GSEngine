@@ -5,7 +5,7 @@ import gse;
 
 import :orbit_camera;
 
-auto sandbox::orbit_camera::attach(gse::context& ctx, data& d, const gse::channel_write<gse::actions::add_action_request, gse::actions::bind_axis2_request> actions_out, gse::write<component> orbits, gse::structural<gse::camera::follow_component> follows) -> gse::async::task<> {
+auto sandbox::orbit_camera::attach(gse::context& ctx, data& d, gse::write<component> orbits, gse::structural<gse::camera::follow_component> follows) -> gse::async::task<> {
 	for (const auto owner_id : orbits.drain(gse::component_event::added)) {
 		const auto* o = orbits.find(owner_id);
 		if (!o) {
@@ -32,33 +32,25 @@ auto sandbox::orbit_camera::attach(gse::context& ctx, data& d, const gse::channe
 			continue;
 		}
 
-		auto& b = d.bindings_by_owner[owner_id];
-
-		b.toggle = gse::actions::add<"Orbit_Toggle">(actions_out, gse::key::c);
-		b.yaw_left = gse::actions::add<"Orbit_Yaw_Left">(actions_out, gse::key::left);
-		b.yaw_right = gse::actions::add<"Orbit_Yaw_Right">(actions_out, gse::key::right);
-		b.pitch_up = gse::actions::add<"Orbit_Pitch_Up">(actions_out, gse::key::up);
-		b.pitch_down = gse::actions::add<"Orbit_Pitch_Down">(actions_out, gse::key::down);
+		d.bound_owners.insert(owner_id);
 	}
 
 	return {};
 }
 
-auto sandbox::orbit_camera::update(gse::context& ctx, data& d, const gse::shared_view<gse::actions::data> as, const gse::shared_view<gse::input::data> input_s, const gse::shared_view<gse::camera::data> cam_s, const gse::shared_view<gse::physics::data> phys_s, gse::write<component> orbits, gse::write<gse::camera::follow_component> follows, gse::read<gse::physics::transform_component> transforms, gse::read<gse::physics::collision_component> collisions, gse::read<gse::physics::motion_component> motions) -> gse::async::task<> {
+auto sandbox::orbit_camera::update(gse::context& ctx, data& d, const gse::shared_view<gse::actions::data> as, const gse::shared_view<gse::camera::data> cam_s, const gse::shared_view<gse::physics::data> phys_s, gse::write<component> orbits, gse::write<gse::camera::follow_component> follows, gse::read<gse::physics::transform_component> transforms, gse::read<gse::physics::collision_component> collisions, gse::read<gse::physics::motion_component> motions) -> gse::async::task<> {
 	const auto orbit_ids = orbits.owner_ids();
 
 	const auto& cs = gse::actions::current_state(as);
-	const auto& in = gse::input::current_state(input_s);
-	const float dt_seconds = gse::system_clock::dt() / gse::seconds(1.f);
+	const auto dt = gse::system_clock::dt();
 
 	for (std::size_t i = 0; i < orbits.size(); ++i) {
 		auto& o = orbits[i];
 		const auto owner_id = orbit_ids[i];
-		const auto binding_it = d.bindings_by_owner.find(owner_id);
-		if (binding_it == d.bindings_by_owner.end()) {
+		if (!d.bound_owners.contains(owner_id)) {
 			continue;
 		}
-		const auto& b = binding_it->second;
+		const auto& b = d.binds;
 
 		auto* cam_follow = follows.find(owner_id);
 		if (!cam_follow) {
@@ -74,11 +66,11 @@ auto sandbox::orbit_camera::update(gse::context& ctx, data& d, const gse::shared
 			continue;
 		}
 
-		const bool looking = !cam_s.ui_focus && (o.free_look || in.mouse_button_held(gse::mouse_button::button_3));
+		const bool looking = !cam_s.ui_focus && (o.free_look || gse::actions::held(b.free_look, cs, as));
 		if (looking) {
-			const auto delta = in.mouse_delta();
-			o.yaw -= gse::degrees(delta.x() * o.mouse_sensitivity);
-			o.pitch -= gse::degrees(delta.y() * o.mouse_sensitivity);
+			const auto delta = cs.axis2_v(static_cast<std::uint16_t>(b.look_axis_id.number()));
+			o.yaw -= delta.x() * o.mouse_sensitivity;
+			o.pitch -= delta.y() * o.mouse_sensitivity;
 		}
 		else {
 			const float yaw_axis = (gse::actions::held(b.yaw_left, cs, as)
@@ -93,24 +85,24 @@ auto sandbox::orbit_camera::update(gse::context& ctx, data& d, const gse::shared
 				(gse::actions::held(b.pitch_down, cs, as)
 					 ? 1.f
 					 : 0.f);
-			o.yaw += gse::degrees(yaw_axis * o.arrow_speed * dt_seconds);
-			o.pitch += gse::degrees(pitch_axis * o.arrow_speed * dt_seconds);
+			o.yaw += yaw_axis * o.arrow_speed * dt;
+			o.pitch += pitch_axis * o.arrow_speed * dt;
 		}
 
 		o.pitch = std::clamp(o.pitch, gse::degrees(-89.f), gse::degrees(89.f));
 
 		if (!cam_s.ui_focus) {
-			const auto scroll = in.scroll_delta();
+			const float zoom = cs.axis1(static_cast<std::uint16_t>(b.zoom_axis_id.number()));
 			if (o.stepped_views) {
-				if (scroll.y() > 0.f) {
+				if (zoom > 0.f) {
 					o.view_step = std::max(o.view_step - 1, 0);
 				}
-				else if (scroll.y() < 0.f) {
+				else if (zoom < 0.f) {
 					o.view_step = std::min(o.view_step + 1, static_cast<int>(o.view_steps.size()) - 1);
 				}
 			}
 			else {
-				o.distance -= gse::meters(scroll.y() * o.scroll_zoom_step);
+				o.distance -= zoom * o.scroll_zoom_step;
 			}
 		}
 
@@ -216,9 +208,9 @@ auto sandbox::orbit_camera::update(gse::context& ctx, data& d, const gse::shared
 	}
 
 	std::erase_if(
-		d.bindings_by_owner,
-		[&orbits](const auto& entry) {
-			return !orbits.find(entry.first);
+		d.bound_owners,
+		[&orbits](const gse::id owner_id) {
+			return !orbits.find(owner_id);
 		}
 	);
 

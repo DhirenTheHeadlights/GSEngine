@@ -199,7 +199,12 @@ auto gse::ide::search_screen::build(gui::builder& ui, gui::nav&) -> void {
 
 	const id input_id = gui::ids::make("##search_palette_input");
 	ui.focus_widget_id = input_id;
-	gui::draw::text_input_in_rect(ctx, input_id, m_driver.query, m_input, input_rect, ui.hot_widget_id, ui.focus_widget_id);
+	ui.draw<gui::text_input>({
+		.name = "##search_palette_input",
+		.buffer = m_driver.query,
+		.state = m_input,
+		.rect = input_rect,
+	});
 
 	if (m_driver.query.empty()) {
 		ctx.queue_text({
@@ -270,7 +275,7 @@ auto gse::ide::search_screen::build(gui::builder& ui, gui::nav&) -> void {
 			m_driver.selected = static_cast<int>(r.index);
 		}
 		draw_row(c, r.rect, m_driver.results[r.index], m_locations[r.index], m_driver.selected == static_cast<int>(r.index));
-		if (r.hovered && c.mouse_pressed_for(r.visible)) {
+		if (c.clicked_in_rect(r.visible)) {
 			m_channels.push<jump_to_request>(search::jump_target(m_driver.results[r.index]));
 			m_driver.accept();
 			m_dismiss = true;

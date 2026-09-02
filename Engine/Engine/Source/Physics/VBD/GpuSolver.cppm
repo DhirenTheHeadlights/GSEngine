@@ -166,6 +166,232 @@ export namespace gse::vbd {
 		auto latest_dispatch_complete() const -> bool;
 
 	private:
+		struct solve_plan;
+
+		using pass_channel = channel_write<gpu::render_pass_request>;
+
+		auto build_solve_plan(
+			solve_plan& out
+		) -> void;
+
+		auto stage_seed_state(
+			const solve_plan& p,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_apply_body_inputs(
+			const solve_plan& p,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_render_mirror(
+			const solve_plan& p,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_clear_state_buffers(
+			const solve_plan& p,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_collision_reset(
+			const solve_plan& p,
+			std::uint32_t sub,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_grid_build(
+			const solve_plan& p,
+			std::uint32_t sub,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_broad_phase(
+			const solve_plan& p,
+			std::uint32_t sub,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_prepare_indirect(
+			const solve_plan& p,
+			std::uint32_t sub,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_narrow_phase(
+			const solve_plan& p,
+			std::uint32_t sub,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_prepare_contact_indirect(
+			const solve_plan& p,
+			std::uint32_t sub,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_build_adjacency(
+			const solve_plan& p,
+			std::uint32_t sub,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_build_coloring(
+			const solve_plan& p,
+			std::uint32_t sub,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_apply_impulses(
+			const solve_plan& p,
+			std::uint32_t sub,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_predict(
+			const solve_plan& p,
+			std::uint32_t sub,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_freeze_jacobians(
+			const solve_plan& p,
+			std::uint32_t sub,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_solve_iterations(
+			const solve_plan& p,
+			std::uint32_t sub,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_derive_velocities(
+			const solve_plan& p,
+			std::uint32_t sub,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_apply_restitution(
+			const solve_plan& p,
+			std::uint32_t sub,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_prepare_color_indirect(
+			const solve_plan& p,
+			std::uint32_t sub,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_post_stabilize(
+			const solve_plan& p,
+			std::uint32_t sub,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_finalize(
+			const solve_plan& p,
+			std::uint32_t sub,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_update_sticking(
+			const solve_plan& p,
+			std::uint32_t sub,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_hash_state(
+			const solve_plan& p,
+			std::uint32_t substep,
+			std::uint32_t slot,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_hash_state_alt_body(
+			const solve_plan& p,
+			std::uint32_t substep,
+			std::uint32_t slot,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_hash_bodies(
+			const solve_plan& p,
+			std::uint32_t substep,
+			std::uint32_t slot,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_hash_bodies_other(
+			const solve_plan& p,
+			std::uint32_t substep,
+			std::uint32_t slot,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_hash_adjacency(
+			const solve_plan& p,
+			std::uint32_t substep,
+			std::uint32_t slot,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_hash_colors(
+			const solve_plan& p,
+			std::uint32_t substep,
+			std::uint32_t slot,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_hash_warm_inputs(
+			const solve_plan& p,
+			std::uint32_t substep,
+			std::uint32_t slot,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_state_copy(
+			const solve_plan& p,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_publish(
+			const solve_plan& p,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
 		struct compute_shaders {
 			gpu::shader_program predict_pipeline;
 			gpu::shader_program solve_color_pipeline;

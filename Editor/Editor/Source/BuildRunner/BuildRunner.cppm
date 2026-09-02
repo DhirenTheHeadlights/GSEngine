@@ -18,6 +18,7 @@ export namespace gse::ide::build_runner {
 	struct play_session {
 		std::uint8_t clients = 1;
 		bool dedicated_server = false;
+		bool attached = true;
 		std::uint16_t base_port = 9000;
 	};
 
@@ -28,6 +29,7 @@ export namespace gse::ide::build_runner {
 		bool run_after = false;
 		play_session session;
 		const config::worktree* tree = nullptr;
+		std::string inbox_id;
 	};
 
 	enum class stream_kind : std::uint8_t {
@@ -49,6 +51,8 @@ export namespace gse::ide::build_runner {
 		id key;
 		stream_kind kind = stream_kind::none;
 		std::vector<build_error> errors;
+		std::string inbox_id;
+		bool succeeded = false;
 	};
 
 	struct source_changed {
@@ -126,6 +130,7 @@ export namespace gse::ide::build_runner {
 		stream_kind kind = stream_kind::none;
 		std::vector<build_error> errors;
 		bool done = false;
+		bool succeeded = false;
 		bool game_launched = false;
 		std::uint32_t generation = 0;
 		std::filesystem::path graph_path;
@@ -161,7 +166,7 @@ export namespace gse::ide::build_runner {
 
 	struct [[= system_state<"Build Runner">{}]] data {
 		[[= shared]] bool building = false;
-		[[= shared]] bool building_game = false;
+		[[= shared]] bool building_session = false;
 		[[= shared]] std::uint32_t game_generation = 0;
 		[[= shared]] std::filesystem::path game_graph_path;
 		[[= shared]] std::array<attached_session, max_attached_instances> sessions{};
@@ -178,6 +183,7 @@ export namespace gse::ide::build_runner {
 		bool editor_image_missing = false;
 		bool editor_image_waiting = false;
 		time next_image_poll{};
+		std::string inbox_id;
 	};
 
 	[[= system_init{}]]
@@ -235,6 +241,8 @@ namespace gse::ide::build_runner {
 
 	auto analysis_busy_state() -> std::atomic<bool>&;
 
+	constexpr std::string_view backup_suffix = ".bak";
+	constexpr std::uint32_t max_backups = 64;
 	constexpr std::uint32_t source_state_magic = 0x47534253;
 	constexpr std::uint32_t source_state_version = 2;
 	constexpr std::uint32_t build_state_magic = 0x47534254;
@@ -349,7 +357,11 @@ namespace gse::ide::build_runner {
 		std::string_view target
 	) -> std::wstring;
 
-	auto backup_path(
+	auto sweep_backups(
+		const std::filesystem::path& executable
+	) -> std::size_t;
+
+	auto next_backup_path(
 		const std::filesystem::path& executable
 	) -> std::filesystem::path;
 
@@ -874,10 +886,41 @@ auto gse::ide::build_runner::build_command(const std::filesystem::path& build_di
 	return command;
 }
 
-auto gse::ide::build_runner::backup_path(const std::filesystem::path& executable) -> std::filesystem::path {
-	std::filesystem::path result = executable;
-	result += ".bak";
-	return result;
+auto gse::ide::build_runner::sweep_backups(const std::filesystem::path& executable) -> std::size_t {
+	const std::filesystem::path dir = executable.parent_path();
+	std::error_code ec;
+	if (dir.empty() || !std::filesystem::exists(dir, ec)) {
+		return 0;
+	}
+
+	const std::string prefix = executable.filename().generic_display_string() + ".";
+	std::size_t held = 0;
+	for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(dir, std::filesystem::directory_options::skip_permission_denied, ec)) {
+		const std::string name = entry.path().filename().generic_display_string();
+		if (!name.starts_with(prefix) || !name.ends_with(backup_suffix)) {
+			continue;
+		}
+		std::error_code remove_ec;
+		if (!std::filesystem::remove(entry.path(), remove_ec)) {
+			++held;
+		}
+	}
+	return held;
+}
+
+auto gse::ide::build_runner::next_backup_path(const std::filesystem::path& executable) -> std::filesystem::path {
+	std::error_code ec;
+	for (std::uint32_t index = 1; index <= max_backups; ++index) {
+		std::filesystem::path candidate = executable;
+		candidate += std::format(".{}{}", index, backup_suffix);
+		if (!std::filesystem::exists(candidate, ec)) {
+			return candidate;
+		}
+	}
+
+	std::filesystem::path exhausted = executable;
+	exhausted += std::format(".{}{}", max_backups, backup_suffix);
+	return exhausted;
 }
 
 auto gse::ide::build_runner::current_executable() -> std::filesystem::path {
@@ -1537,7 +1580,13 @@ auto gse::ide::build_runner::launch_play_session(build_completion& completion, s
 
 	const std::uint32_t clients = std::min<std::uint32_t>(std::max<std::uint32_t>(session.clients, 1), max_attached_instances);
 	for (std::uint32_t i = 0; i < clients; ++i) {
-		launch_game_attached(completion, stream, tree, generation, i, std::format("client {}", i + 1), connect_args);
+		auto label = std::format("client {}", i + 1);
+		if (session.attached) {
+			launch_game_attached(completion, stream, tree, generation, i, std::move(label), connect_args);
+		}
+		else {
+			launch_child(completion, stream, tree, std::move(label), connect_args);
+		}
 	}
 }
 
@@ -1561,22 +1610,19 @@ auto gse::ide::build_runner::build_game(
 	const std::filesystem::path compiler_bin = compiler_bin_dir(build_dir);
 
 	const std::filesystem::path& game_exe = tree.game_executable;
-	const std::filesystem::path backup = backup_path(game_exe);
+	const std::size_t still_running = sweep_backups(game_exe);
+	const std::filesystem::path backup = next_backup_path(game_exe);
 	std::error_code ec;
 	if (std::filesystem::exists(game_exe, ec)) {
-		ec.clear();
-		std::filesystem::remove(backup, ec);
-		if (ec) {
-			spawn::emit(stream, "could not delete the previous backup " + backup.generic_display_string() + ": " + ec.message());
-			spawn::emit(stream, "something still holds that file, usually a play session started from the .bak itself; end that process, then build again");
-			return;
+		if (still_running > 0) {
+			spawn::emit(stream, std::format("{} earlier build(s) are still running; they keep their own copy and are cleaned up once they exit", still_running));
 		}
 
 		ec.clear();
 		std::filesystem::rename(game_exe, backup, ec);
 		if (ec) {
 			spawn::emit(stream, "could not rename " + game_exe.generic_display_string() + " to " + backup.filename().generic_display_string() + ": " + ec.message());
-			spawn::emit(stream, "another process has the game executable open; look for a running play session, an attached debugger, or antivirus scanning it, then build again");
+			spawn::emit(stream, "something has the game executable locked for writing, usually an attached debugger or antivirus scanning it, then build again");
 			return;
 		}
 	}
@@ -1602,6 +1648,7 @@ auto gse::ide::build_runner::build_game(
 	{
 		std::lock_guard lock(completion.mutex);
 		completion.generation = next_generation;
+		completion.succeeded = true;
 	}
 
 	if (run_after && !st.stop_requested()) {
@@ -1626,23 +1673,17 @@ auto gse::ide::build_runner::rebuild_editor(const std::stop_token& st, build_com
 		return;
 	}
 
-	const std::filesystem::path backup = backup_path(editor_exe);
+	const std::size_t still_running = sweep_backups(editor_exe);
+	const std::filesystem::path backup = next_backup_path(editor_exe);
 	std::error_code ec;
-	if (std::filesystem::exists(backup, ec)) {
-		ec.clear();
-		std::filesystem::remove(backup, ec);
-		if (ec) {
-			spawn::emit(stream, "could not delete the previous backup " + backup.generic_display_string() + ": " + ec.message());
-			spawn::emit(stream, "something still holds that file, usually an editor started from the .bak itself; close it or end that process, then rebuild");
-			return;
-		}
+	if (still_running > 0) {
+		spawn::emit(stream, std::format("{} earlier editor image(s) are still mapped; they are cleaned up once those instances exit", still_running));
 	}
 
-	ec.clear();
 	std::filesystem::rename(editor_exe, backup, ec);
 	if (ec) {
 		spawn::emit(stream, "could not rename " + editor_exe.generic_display_string() + " to " + backup.filename().generic_display_string() + ": " + ec.message());
-		spawn::emit(stream, "another process has the editor executable open; look for a second editor instance, an attached debugger, or antivirus scanning it, then rebuild");
+		spawn::emit(stream, "something has the editor executable locked for writing, usually an attached debugger or antivirus scanning it, then rebuild");
 		return;
 	}
 
@@ -1663,6 +1704,11 @@ auto gse::ide::build_runner::rebuild_editor(const std::stop_token& st, build_com
 
 	if (st.stop_requested()) {
 		return;
+	}
+
+	{
+		std::lock_guard lock(completion.mutex);
+		completion.succeeded = true;
 	}
 
 	spawn::emit(stream, "rebuild succeeded; relaunching editor");
@@ -1701,14 +1747,13 @@ auto gse::ide::build_runner::build_worker(
 }
 
 auto gse::ide::build_runner::cleanup_backups() -> void {
-	std::error_code ec;
 	for (const config::worktree& tree : config::worktrees()) {
-		std::filesystem::remove(backup_path(tree.game_executable), ec);
+		(void)sweep_backups(tree.game_executable);
 	}
-	std::filesystem::remove(backup_path(config::editor_executable()), ec);
+	(void)sweep_backups(config::editor_executable());
 	const std::filesystem::path editor_exe = current_executable();
 	if (!editor_exe.empty()) {
-		std::filesystem::remove(backup_path(editor_exe), ec);
+		(void)sweep_backups(editor_exe);
 	}
 }
 
@@ -1750,6 +1795,7 @@ auto gse::ide::build_runner::start_build(const channel_write<attached_session_en
 	{
 		std::lock_guard lock(d.completion.mutex);
 		d.completion.done = false;
+		d.completion.succeeded = false;
 		d.completion.game_launched = false;
 		d.completion.generation = 0;
 		d.completion.graph_path.clear();
@@ -1762,7 +1808,8 @@ auto gse::ide::build_runner::start_build(const channel_write<attached_session_en
 	request_analysis_pause(true);
 
 	d.building = true;
-	d.building_game = request.target == build_target::game;
+	d.building_session = request.target == build_target::game && request.run_after && request.session.attached;
+	d.inbox_id = request.inbox_id;
 	d.active_stream = stream;
 	d.worker = std::jthread(build_worker, &d.completion, std::move(stream), request, d.game_generation + 1);
 }
@@ -1781,7 +1828,7 @@ auto gse::ide::build_runner::drain_completion(const channel_write<attached_sessi
 		d.worker.join();
 	}
 	d.building = false;
-	d.building_game = false;
+	d.building_session = false;
 	request_analysis_pause(false);
 
 	if (d.completion.generation != 0) {
@@ -1827,10 +1874,13 @@ auto gse::ide::build_runner::drain_completion(const channel_write<attached_sessi
 	}
 	d.completion.children.clear();
 	d.active_stream.reset();
+
 	events_out.push<build_finished>({
 		.key = d.completion.key,
 		.kind = d.completion.kind,
 		.errors = std::move(d.completion.errors),
+		.inbox_id = std::exchange(d.inbox_id, {}),
+		.succeeded = d.completion.succeeded,
 	});
 	d.completion.errors.clear();
 }

@@ -1,0 +1,172 @@
+#!/bin/sh
+set -eu
+
+target=game
+run=0
+tree=
+timeout=1800
+wait=30
+agent=
+
+usage() {
+	cat <<'EOF'
+gse-build - ask the running GSE editor to build, the same way its own build buttons do.
+
+usage: Tools/gse-build [--game|--editor] [--run] [--tree NAME] [--timeout SECONDS] [--wait SECONDS]
+
+  --game             build the game target (default)
+  --editor           rebuild the editor; the editor relaunches itself on success
+  --run              launch a play session after a successful game build
+  --tree NAME        build in a named worktree instead of the primary one
+  --timeout SECONDS  give up waiting after this long (default 1800)
+  --wait SECONDS     how long to hold the line before deferring (default 30)
+  --agent ID         claim errors for this agent session (injected automatically)
+
+exit codes:
+  0  build succeeded
+  1  build failed and at least one error is yours
+  2  bad usage, or the editor did not answer
+  3  deferred - another chat is still working; your request stays queued
+  4  build failed but none of the errors are yours
+
+The editor queues requests rather than refusing them, and one build answers every
+request for the same target, so several agents asking at once cost one compile.
+
+If another chat is still working, this does NOT block you. After --wait seconds it
+returns 3 and your request keeps its place in the queue. Do not sit and retry: end
+your turn with Tools/gse-hibernate --then "<what to do next>" and you will be woken
+when the build lands, or go do unrelated work and re-run this later to re-attach.
+
+Errors are split by who edited the file. Only act on the ones reported as yours;
+files another chat is working on are theirs to fix, even when they break your build.
+Exit 4 means nothing in the failure is yours - do not start fixing it.
+
+This is the only sanctioned way to build. Do not invoke cmake, ninja, or a compiler
+directly - the editor owns the build directory, the module cache, and the process
+handles, and a build started outside it corrupts them.
+EOF
+}
+
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--game) target=game ;;
+		--editor) target=editor ;;
+		--run) run=1 ;;
+		--tree)
+			shift
+			tree=${1:-}
+			;;
+		--timeout)
+			shift
+			timeout=${1:-1800}
+			;;
+		--wait)
+			shift
+			wait=${1:-30}
+			;;
+		--agent)
+			shift
+			agent=${1:-}
+			;;
+		-h|--help)
+			usage
+			exit 0
+			;;
+		*)
+			echo "gse-build: unknown option '$1'" >&2
+			usage >&2
+			exit 2
+			;;
+	esac
+	shift
+done
+
+if [ -z "$agent" ]; then
+	echo "gse-build: warning - no --agent argument, normally spliced in by the build-guard PreToolUse hook." >&2
+	echo "gse-build: without it the editor cannot tell that YOU are the requester, so your own turn counts as" >&2
+	echo "gse-build: a blocker and you will wait on yourself. Compile errors will also come back unowned." >&2
+	echo "gse-build: check with 'echo Tools/gse-build probe'; if nothing is spliced in, the hooks are not" >&2
+	echo "gse-build: registered for this directory and the direct-build guard is off as well." >&2
+fi
+
+state_root=${GSE_STATE_DIR:-${LOCALAPPDATA:-$HOME/AppData/Local}/GSE}
+inbox="$state_root/cache/agent-build"
+id="$$-$(date +%s)"
+request="$inbox/requests/$id.txt"
+result="$inbox/results/$id.txt"
+
+mkdir -p "$inbox/requests" "$inbox/results"
+rm -f "$result"
+
+{
+	echo "id $id"
+	echo "agent $agent"
+	echo "target $target"
+	echo "run $run"
+	echo "tree $tree"
+} > "$inbox/requests/$id.partial"
+mv "$inbox/requests/$id.partial" "$request"
+
+waited=0
+picked_up=0
+announced=
+while [ "$waited" -lt "$timeout" ]; do
+	if [ ! -e "$request" ] && [ "$picked_up" -eq 0 ]; then
+		picked_up=1
+		echo "gse-build: editor queued request $id ($target)" >&2
+	fi
+
+	body=$(cat "$result" 2>/dev/null || true)
+	if [ -n "$body" ]; then
+		status=$(printf '%s\n' "$body" | sed -n '2s/^status //p')
+
+		if [ "$status" = "waiting" ]; then
+			reason=$(printf '%s\n' "$body" | tail -n +4)
+			if [ "$reason" != "$announced" ]; then
+				announced=$reason
+				echo "gse-build: $reason" >&2
+			fi
+			if [ "$waited" -ge "$wait" ]; then
+				rm -f "$result"
+				echo "gse-build: deferring - your request keeps its place in the queue and builds when the tree is free." >&2
+				echo "gse-build: you are NOT blocked and nothing of yours is broken. End your turn with Tools/gse-hibernate --then \"<what to do next>\" to be woken with the result, or do unrelated work and re-run this later to re-attach." >&2
+				exit 3
+			fi
+		else
+			printf '%s\n' "$body" | tail -n +4
+			owned=$(printf '%s\n' "$body" | sed -n '3s/^owned //p')
+			rm -f "$result"
+			case "$status" in
+				ok)
+					exit 0
+					;;
+				failed)
+					if [ "${owned:-1}" -gt 0 ]; then
+						echo "gse-build: build failed" >&2
+						exit 1
+					fi
+					echo "gse-build: the build failed, but none of the errors are in files you edited - your own work is not implicated. Do not fix them; the chats that own them will." >&2
+					exit 4
+					;;
+				*)
+					echo "gse-build: the editor could not run this build ($status)" >&2
+					exit 2
+					;;
+			esac
+		fi
+	fi
+
+	if [ "$picked_up" -eq 0 ] && [ "$waited" -ge 10 ]; then
+		rm -f "$request"
+		echo "gse-build: no editor picked up the request within 10s - start the GSE editor and try again" >&2
+		exit 2
+	fi
+
+	sleep 1
+	waited=$((waited + 1))
+done
+
+rm -f "$request" "$result"
+
+echo "gse-build: timed out after ${timeout}s waiting for the editor to finish" >&2
+exit 2

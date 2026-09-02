@@ -60,6 +60,17 @@ auto gse::ide::agent::transcript_dir(const std::filesystem::path& cwd) -> std::f
 	return home / "projects" / mangled;
 }
 
+auto gse::ide::agent::first_line(const std::string_view text) -> std::string_view {
+	std::string_view head = text.substr(0, text.find_first_of("\r\n"));
+	while (!head.empty() && (head.front() == ' ' || head.front() == '\t')) {
+		head.remove_prefix(1);
+	}
+	while (!head.empty() && (head.back() == ' ' || head.back() == '\t')) {
+		head.remove_suffix(1);
+	}
+	return head;
+}
+
 auto gse::ide::agent::chat_summary(const std::filesystem::path& file) -> std::string {
 	std::ifstream in(file, std::ios::binary);
 	if (!in) {
@@ -84,14 +95,7 @@ auto gse::ide::agent::chat_summary(const std::filesystem::path& file) -> std::st
 			if (row.text.starts_with('<')) {
 				continue;
 			}
-			std::string_view head = std::string_view(row.text).substr(0, row.text.find_first_of("\r\n"));
-			while (!head.empty() && head.front() == ' ') {
-				head.remove_prefix(1);
-			}
-			while (!head.empty() && head.back() == ' ') {
-				head.remove_suffix(1);
-			}
-			if (!head.empty()) {
+			if (const std::string_view head = first_line(row.text); !head.empty()) {
 				return std::string(head);
 			}
 		}

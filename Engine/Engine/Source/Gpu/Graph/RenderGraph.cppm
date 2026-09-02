@@ -64,6 +64,7 @@ export namespace gse::gpu {
 		std::vector<resource_usage> writes;
 		std::vector<id> after_passes;
 		id chain_id;
+		std::uint32_t chain_index = 0;
 		bool early_signal = false;
 		std::vector<color_output_info> color_outputs;
 		std::optional<depth_output_info> depth_output;
@@ -127,6 +128,12 @@ export namespace gse::gpu {
 		) -> void;
 
 		[[nodiscard]] auto current_frame() const -> std::uint32_t;
+
+		[[nodiscard]] auto current_target() const -> image_ref;
+
+		[[nodiscard]] auto target_live(
+			id window = {}
+		) const -> bool;
 
 		[[nodiscard]] auto extent() const -> vec2u;
 

@@ -44,11 +44,12 @@ export namespace sandbox {
 	struct character_spawn_params {
 		[[
 			= gse::settings::describe<"Characters built by one spawn request, whether it came from F7 or the locomotion "
-									  "scenario. A single character measures close to the noise floor, so the scenario needs "
-									  "several before a regression threshold means anything.">{},
+									  "scenario. F7 wants the one character it possesses, so the locomotion scenario pins "
+									  "its own higher count instead: a single character measures close to the noise floor, "
+									  "and a regression threshold needs several before it means anything.">{},
 			= gse::settings::range<1, 32>{}
 		]]
-		int count = 8;
+		int count = 1;
 	};
 
 	struct pyramid_scene_params {
@@ -63,21 +64,34 @@ export namespace sandbox {
 
 	struct light_field_params {
 		[[
-			= gse::settings::describe<"How many point lights a light-field spawn builds. This is the dial that loads the "
-									  "tiled light culling pass.">{},
+			= gse::settings::describe<"How many clusters of point lights a light-field spawn builds. Clustering is what "
+									  "loads the tiled light culling pass unevenly, so neighbouring tiles hold wildly "
+									  "different light counts instead of all holding the same few.">{},
 			= gse::settings::range<1, 4096>{}
 		]]
-		int count = 384;
+		int clusters = 384;
 
 		[[
-			= gse::settings::describe<"Radius of the cylinder the lights are scattered through.">{}
+			= gse::settings::describe<"How many point lights sit in each cluster. One light per cluster scatters the "
+									  "field evenly; raising this concentrates the same budget into pockets.">{},
+			= gse::settings::range<1, 64>{}
+		]]
+		int lights_per_cluster = 1;
+
+		[[
+			= gse::settings::describe<"Radius of the cylinder the clusters are scattered through.">{}
 		]]
 		gse::length field_radius = gse::meters(46.f);
 
 		[[
-			= gse::settings::describe<"Height of the cylinder the lights are scattered through.">{}
+			= gse::settings::describe<"Height of the cylinder the clusters are scattered through.">{}
 		]]
 		gse::length field_height = gse::meters(34.f);
+
+		[[
+			= gse::settings::describe<"Radius of the sphere each cluster's lights are scattered through.">{}
+		]]
+		gse::length cluster_radius = gse::meters(5.f);
 
 		[[
 			= gse::settings::describe<"Radius of each emissive sphere standing in for a light.">{}
@@ -88,6 +102,34 @@ export namespace sandbox {
 			= gse::settings::describe<"Radiant intensity of each light.">{}
 		]]
 		gse::irradiance intensity = gse::watts_per_square_meter(26.f);
+
+		[[
+			= gse::settings::describe<"How far each light reaches before the culling pass cuts it off. Attenuation is "
+									  "solved back from this so the radius holds as intensity changes. This is the dial "
+									  "that must come down as density goes up: lights that all reach across the whole "
+									  "scene push every tile past the per-tile light cap, and the culling result then "
+									  "degrades into visible 16-pixel blocks.">{}
+		]]
+		gse::length falloff_radius = gse::meters(25.f);
+
+		[[
+			= gse::settings::describe<"How far each light drifts from where it spawned. Zero leaves the field static; "
+									  "any larger value makes the lights kinematic so the culling pass has to re-derive "
+									  "its tile lists every frame.">{}
+		]]
+		gse::length drift = gse::meters(0.f);
+
+		[[
+			= gse::settings::describe<"How fast each light travels around its drift cycle.">{}
+		]]
+		gse::angular_velocity drift_rate = gse::degrees_per_second(48.f);
+
+		[[
+			= gse::settings::describe<"Sun elevation held while the light hall is the active scene. The hall is a night "
+									  "scene, so this sits below the horizon and the field is what lights it.">{},
+			= gse::settings::range<-90.f, 90.f>{}
+		]]
+		gse::angle sun_elevation = gse::degrees(-9.f);
 	};
 
 	struct pyramid_strike_params {
@@ -955,32 +997,77 @@ auto sandbox::spawn_physics_stress(gse::scene& s, const stress_scene_params& par
 auto sandbox::spawn_light_field(gse::scene& s, const light_field_params& params) -> void {
 	constexpr float golden_angle = 137.50776f;
 	constexpr float golden_ratio_frac = 0.6180339f;
+	const auto inverse_reach = 1.f / params.falloff_radius;
+	const float reach_ratio = params.intensity / gse::renderer::light_culling::limits.cull_threshold;
+	const auto falloff_linear = inverse_reach * 2.f;
+	const auto falloff_quadratic = inverse_reach * inverse_reach * std::max(reach_ratio - 3.f, 1.f);
 
-	for (int i = 0; i < params.count; ++i) {
-		const auto index = static_cast<float>(i);
-		const auto theta = gse::degrees(golden_angle * index);
-		const auto radial = params.field_radius * std::sqrt((index + 0.5f) / static_cast<float>(params.count));
-		const auto height = params.field_height * (golden_ratio_frac * index - std::floor(golden_ratio_frac * index));
+	const bool drifting = params.drift > gse::meters(0.f);
+	int spawned = 0;
 
-		const auto hue = gse::degrees(360.f * (golden_ratio_frac * index * 3.f - std::floor(golden_ratio_frac * index * 3.f)));
+	for (int c = 0; c < params.clusters; ++c) {
+		const auto cluster_index = static_cast<float>(c);
+		const auto theta = gse::degrees(golden_angle * cluster_index);
+		const auto radial = params.field_radius * std::sqrt((cluster_index + 0.5f) / static_cast<float>(params.clusters));
+		const auto height = params.field_height * (golden_ratio_frac * cluster_index - std::floor(golden_ratio_frac * cluster_index));
+		const auto center = gse::vec3<gse::position>(radial * gse::sin(theta), height, radial * gse::cos(theta));
+
+		const auto hue = gse::degrees(360.f * (golden_ratio_frac * cluster_index * 3.f - std::floor(golden_ratio_frac * cluster_index * 3.f)));
 		const auto color = gse::vec3f(
 			0.55f + 0.45f * gse::sin(hue),
 			0.55f + 0.45f * gse::sin(hue + gse::degrees(120.f)),
 			0.55f + 0.45f * gse::sin(hue + gse::degrees(240.f))
 		);
 
-		auto light = sphere_light(
-			gse::vec3<gse::position>(radial * gse::sin(theta), height, radial * gse::cos(theta)),
-			params.source_radius
-		);
-		light.light.color = color;
-		light.light.intensity = params.intensity;
-		light.spec.material.base_color = color;
+		for (int i = 0; i < params.lights_per_cluster; ++i) {
+			const auto local_index = static_cast<float>(i);
+			const auto local_theta = gse::degrees(golden_angle * (local_index + cluster_index));
+			const auto local_radial = params.cluster_radius * std::sqrt((local_index + 0.5f) / static_cast<float>(params.lights_per_cluster));
+			const auto local_height = params.cluster_radius * (2.f * (golden_ratio_frac * local_index - std::floor(golden_ratio_frac * local_index)) - 1.f);
+			const auto origin = center + gse::vec3<gse::length>(
+				local_radial * gse::sin(local_theta),
+				local_height,
+				local_radial * gse::cos(local_theta)
+			);
 
-		s.spawn(std::format("FieldLight_{}", i), light);
+			auto light = sphere_light(origin, params.source_radius);
+			light.light.color = color;
+			light.light.intensity = params.intensity;
+			light.light.linear = falloff_linear;
+			light.light.quadratic = falloff_quadratic;
+			light.spec.material.base_color = color;
+			if (drifting) {
+				light.motion.body = gse::physics::kinematic_body{};
+			}
+
+			const auto light_id = s.spawn(std::format("FieldLight_{}", spawned), std::move(light));
+			++spawned;
+
+			if (drifting) {
+				s.registry().add_component<piston::component>(
+					light_id,
+					{
+						.center = origin,
+						.amplitude = gse::vec3<gse::length>(
+							params.drift * gse::sin(local_theta),
+							params.drift * 0.35f,
+							params.drift * gse::cos(local_theta)
+						),
+						.omega = params.drift_rate,
+						.phase = gse::degrees(golden_angle * static_cast<float>(spawned)),
+					}
+				);
+				s.registry().add_component<gse::physics::kinematic_target_component>(
+					light_id,
+					{
+						.position = origin,
+					}
+				);
+			}
+		}
 	}
 
-	gse::log::println("light field: {} lights across {:.1f:m} radius", params.count, params.field_radius);
+	gse::log::println("light field: {} lights in {} clusters across {:.1f:m} radius", spawned, params.clusters, params.field_radius);
 }
 
 auto sandbox::spawn_joint_test(gse::scene& s) -> void {

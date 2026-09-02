@@ -37,6 +37,7 @@ export namespace gse::renderer::bloom {
 		[[
 			= settings::
 				describe<"Bloom intensity. Additive scale applied when compositing bloom into the HDR target.">{},
+			= settings::range<0.f, 0.25f>{},
 			= shared
 		]]
 		float bloom_intensity = 0.04f;

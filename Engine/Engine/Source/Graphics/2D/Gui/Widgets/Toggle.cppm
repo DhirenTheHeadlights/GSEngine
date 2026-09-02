@@ -63,7 +63,7 @@ auto gse::gui::toggle::draw(const draw_context& ctx, const params& p, id& hot, i
 	}
 
 	bool toggled = false;
-	if (ctx.mouse_pressed_for(row_rect)) {
+	if (ctx.clicked_in_rect(row_rect)) {
 		p.value = !p.value;
 		toggled = true;
 	}

@@ -163,6 +163,10 @@ namespace gse {
 		std::vector<std::meta::info> entries
 	) -> std::size_t;
 
+	consteval auto unrecognized_manifest_entry(
+		std::vector<std::meta::info> entries
+	) -> std::meta::info;
+
 	consteval auto system_namespaces(
 		std::vector<std::meta::info> entries
 	) -> std::vector<std::meta::info>;
@@ -205,11 +209,12 @@ namespace gse::settings {
 	template <typename State, std::meta::info... Path>
 	auto annotated_field_options(
 		const void* settings_ptr
-	) -> std::vector<std::string>;
+	) -> std::vector<settings_field_option>;
 
 	template <typename State, std::meta::info... Path>
 	auto push_annotated_field_change(
-		channel_write<change_request> channels,
+		change_request_writer channels,
+		std::string_view key,
 		std::string_view raw
 	) -> bool;
 
@@ -229,7 +234,7 @@ namespace gse::settings {
 
 	template <typename State>
 	auto reset_annotated_defaults(
-		channel_write<change_request> channels
+		change_request_writer channels
 	) -> void;
 
 	template <typename State>
@@ -238,6 +243,35 @@ namespace gse::settings {
 		std::string_view category,
 		draw_page_thunk page
 	) -> register_settings_type;
+}
+
+export namespace gse::actions {
+	template <typename State>
+	consteval auto action_key_prefix() -> std::string_view;
+
+	template <typename Cur>
+	auto collect_actions_into(
+		Cur& obj,
+		std::string_view prefix,
+		std::vector<registration>& out
+	) -> void;
+
+	template <typename Cur>
+	auto collect_axes_into(
+		Cur& obj,
+		std::string_view prefix,
+		std::vector<axis_registration>& out
+	) -> void;
+
+	template <typename State>
+	auto collect_annotated_actions(
+		State& obj
+	) -> std::vector<registration>;
+
+	template <typename State>
+	auto collect_annotated_axes(
+		State& obj
+	) -> std::vector<axis_registration>;
 }
 
 template <std::meta::info FnInfo, typename State>
@@ -447,6 +481,8 @@ auto gse::make_annotated_system_node(settings::draw_page_thunk page_thunk) -> sy
 	node.component_reads = std::move(run_meta.component_reads);
 	node.component_writes = std::move(run_meta.component_writes);
 	node.component_structural = std::move(run_meta.component_structural);
+	node.resource_reads = std::move(run_meta.resource_reads);
+	node.resource_writes = std::move(run_meta.resource_writes);
 	node.entity_structural = run_meta.entity_structural;
 	node.init_state_deps = std::move(init_deps.required);
 	node.optional_init_state_deps = std::move(init_deps.optional);
@@ -522,6 +558,11 @@ auto gse::make_annotated_system_node(settings::draw_page_thunk page_thunk) -> sy
 		node.settings_record = settings::build_annotated_settings_record<state_t>(d->state, settings_category, page_thunk);
 	}
 
+	if constexpr (has_bind_fields<state_t>()) {
+		node.action_records = actions::collect_annotated_actions<state_t>(d->state);
+		node.axis_records = actions::collect_annotated_axes<state_t>(d->state);
+	}
+
 	return node;
 }
 
@@ -549,11 +590,15 @@ auto gse::settings::format_annotated_field(const void* settings_ptr) -> std::str
 }
 
 template <typename State, std::meta::info... Path>
-auto gse::settings::annotated_field_options(const void* settings_ptr) -> std::vector<std::string> {
+auto gse::settings::annotated_field_options(const void* settings_ptr) -> std::vector<settings_field_option> {
 	constexpr auto leaf = std::array{ Path... }[sizeof...(Path) - 1];
 	using F = [:std::meta::type_of(leaf):];
 	if constexpr (is_choice_v<F>) {
-		return resolve_settings_member<Path...>(*static_cast<const State*>(settings_ptr)).options;
+		std::vector<settings_field_option> out;
+		for (const auto& option : resolve_settings_member<Path...>(*static_cast<const State*>(settings_ptr)).options) {
+			out.push_back({ .value = option, .label = option });
+		}
+		return out;
 	}
 	else {
 		return {};
@@ -561,17 +606,13 @@ auto gse::settings::annotated_field_options(const void* settings_ptr) -> std::ve
 }
 
 template <typename State, std::meta::info... Path>
-auto gse::settings::push_annotated_field_change(const channel_write<change_request> channels, const std::string_view raw) -> bool {
+auto gse::settings::push_annotated_field_change(const change_request_writer channels, std::string_view, const std::string_view raw) -> bool {
 	constexpr auto leaf = std::array{ Path... }[sizeof...(Path) - 1];
 	using F = [:std::meta::type_of(leaf):];
 	if constexpr (is_choice_v<F>) {
-		typename F::value_type parsed{};
-		if (!parse(raw, parsed)) {
-			return false;
-		}
 		channels.push<change_request>({
 			.state_type = id_of<State>(),
-			.apply = [parsed](void* p) {
+			.apply = [parsed = std::string(raw)](void* p) {
 				resolve_settings_member<Path...>(*static_cast<State*>(p)).value = parsed;
 			},
 		});
@@ -608,11 +649,17 @@ auto gse::settings::make_annotated_field(std::string key) -> settings_field {
 	};
 	if constexpr (is_choice_v<F>) {
 		field.runtime_options = &annotated_field_options<State, Path...>;
-		field.choice_stores_option = std::same_as<typename F::value_type, std::string>;
 	}
 	if constexpr (std::is_enum_v<F>) {
 		template for (constexpr auto e : std::define_static_array(std::meta::enumerators_of(^^F))) {
-			field.options.emplace_back(std::meta::identifier_of(e));
+			constexpr std::string_view identifier = std::meta::identifier_of(e);
+			if constexpr (constexpr auto ann = first_annotation_of_type(e, ^^option_label); ann != std::meta::info{}) {
+				static constexpr option_label labelled = [:std::meta::constant_of(ann):];
+				field.options.push_back({ .value = std::string(identifier), .label = labelled.text });
+			}
+			else {
+				field.options.push_back({ .value = std::string(identifier), .label = pretty_label(identifier) });
+			}
 		}
 	}
 	if constexpr (is_dimensioned_field<F>) {
@@ -622,7 +669,12 @@ auto gse::settings::make_annotated_field(std::string key) -> settings_field {
 		field.normalize = &normalize_field_value<F>;
 	}
 	if constexpr (constexpr auto range_t = meta::find_range(leaf); range_t != std::meta::info{}) {
-		field.range = make_range_field_from_info(range_t);
+		if constexpr (is_dimensioned_field<F>) {
+			field.range = make_quantity_range_field<F>(range_t);
+		}
+		else {
+			field.range = make_range_field_from_info(range_t);
+		}
 	}
 	return field;
 }
@@ -656,7 +708,7 @@ auto gse::settings::collect_annotated_fields() -> std::vector<settings_field> {
 }
 
 template <typename State>
-auto gse::settings::reset_annotated_defaults(const channel_write<change_request> channels) -> void {
+auto gse::settings::reset_annotated_defaults(const change_request_writer channels) -> void {
 	channels.push<change_request>({
 		.state_type = id_of<State>(),
 		.apply = [](void* p) {
@@ -692,6 +744,162 @@ auto gse::settings::build_annotated_settings_record(State& obj, const std::strin
 	};
 }
 
+template <typename State>
+consteval auto gse::actions::action_key_prefix() -> std::string_view {
+	constexpr std::string_view qualified = meta::system_qualified_name<State>();
+	constexpr std::string_view suffix = "::data";
+	if constexpr (qualified.ends_with(suffix)) {
+		return qualified.substr(0, qualified.size() - suffix.size());
+	}
+	else {
+		return qualified;
+	}
+}
+
+template <typename Cur>
+auto gse::actions::collect_actions_into(Cur& obj, const std::string_view prefix, std::vector<registration>& out) -> void {
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^Cur, std::meta::access_context::unchecked()))) {
+		if constexpr (constexpr auto anno = meta::find_bind(m); anno != std::meta::info{}) {
+			using bind_t = [:anno:];
+			static_assert(meta::find_mouse_bind(m) == std::meta::info{}, "an action carries either bind or mouse_bind, not both");
+			registration entry{
+				.key = std::format("{}::{}", prefix, meta::member_name(m)),
+				.label = std::string(bind_t::label),
+				.bindings = { binding_spec{ .kind = binding_source::key, .code = bind_t::code, .mods = bind_t::mod_bits } },
+				.hidden = has_annotation<hidden>(m),
+				.handle_ptr = &obj.[:m:],
+			};
+			if constexpr (constexpr auto group_anno = meta::find_action_group(m); group_anno != std::meta::info{}) {
+				using group_t = [:group_anno:];
+				entry.group = std::string(group_t::value);
+			}
+			out.push_back(std::move(entry));
+		}
+		else if constexpr (constexpr auto mouse_anno = meta::find_mouse_bind(m); mouse_anno != std::meta::info{}) {
+			using bind_t = [:mouse_anno:];
+			registration entry{
+				.key = std::format("{}::{}", prefix, meta::member_name(m)),
+				.label = std::string(bind_t::label),
+				.bindings = { binding_spec{ .kind = binding_source::mouse_button, .code = bind_t::code, .mods = bind_t::mod_bits } },
+				.hidden = has_annotation<hidden>(m),
+				.handle_ptr = &obj.[:m:],
+			};
+			if constexpr (constexpr auto group_anno = meta::find_action_group(m); group_anno != std::meta::info{}) {
+				using group_t = [:group_anno:];
+				entry.group = std::string(group_t::value);
+			}
+			out.push_back(std::move(entry));
+		}
+		else if constexpr (has_annotation<set>(m)) {
+			collect_actions_into(obj.[:m:], prefix, out);
+		}
+	}
+}
+
+template <typename Cur>
+auto gse::actions::collect_axes_into(Cur& obj, const std::string_view prefix, std::vector<axis_registration>& out) -> void {
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^Cur, std::meta::access_context::unchecked()))) {
+		if constexpr (constexpr auto anno = meta::find_axis2(m); anno != std::meta::info{}) {
+			using axis_t = [:anno:];
+			static_assert(find_field_by_name<Cur>(axis_t::left) != std::meta::info{} && meta::is_action_member(find_field_by_name<Cur>(axis_t::left)), "axis2 'left' must name a sibling member carrying a bind or mouse_bind annotation");
+			static_assert(find_field_by_name<Cur>(axis_t::right) != std::meta::info{} && meta::is_action_member(find_field_by_name<Cur>(axis_t::right)), "axis2 'right' must name a sibling member carrying a bind or mouse_bind annotation");
+			static_assert(find_field_by_name<Cur>(axis_t::back) != std::meta::info{} && meta::is_action_member(find_field_by_name<Cur>(axis_t::back)), "axis2 'back' must name a sibling member carrying a bind or mouse_bind annotation");
+			static_assert(find_field_by_name<Cur>(axis_t::fwd) != std::meta::info{} && meta::is_action_member(find_field_by_name<Cur>(axis_t::fwd)), "axis2 'fwd' must name a sibling member carrying a bind or mouse_bind annotation");
+			axis_registration entry{
+				.key = std::format("{}::{}", prefix, meta::member_name(m)),
+				.label = std::string(axis_t::label),
+				.source = axis_source::digital,
+				.dimensions = 2,
+				.left = std::format("{}::{}", prefix, axis_t::left),
+				.right = std::format("{}::{}", prefix, axis_t::right),
+				.back = std::format("{}::{}", prefix, axis_t::back),
+				.fwd = std::format("{}::{}", prefix, axis_t::fwd),
+				.scale = axis_t::scale,
+				.hidden = has_annotation<hidden>(m),
+				.axis_id_ptr = &obj.[:m:],
+			};
+			if constexpr (constexpr auto group_anno = meta::find_action_group(m); group_anno != std::meta::info{}) {
+				using group_t = [:group_anno:];
+				entry.group = std::string(group_t::value);
+			}
+			out.push_back(std::move(entry));
+		}
+		else if constexpr (constexpr auto mouse_anno = meta::find_axis2_mouse(m); mouse_anno != std::meta::info{}) {
+			using axis_t = [:mouse_anno:];
+			axis_registration entry{
+				.key = std::format("{}::{}", prefix, meta::member_name(m)),
+				.label = std::string(axis_t::label),
+				.source = axis_source::mouse_delta,
+				.dimensions = 2,
+				.scale = axis_t::scale_x,
+				.scale_y = axis_t::scale_y,
+				.hidden = has_annotation<hidden>(m),
+				.axis_id_ptr = &obj.[:m:],
+			};
+			if constexpr (constexpr auto group_anno = meta::find_action_group(m); group_anno != std::meta::info{}) {
+				using group_t = [:group_anno:];
+				entry.group = std::string(group_t::value);
+			}
+			out.push_back(std::move(entry));
+		}
+		else if constexpr (constexpr auto one_anno = meta::find_axis1(m); one_anno != std::meta::info{}) {
+			using axis_t = [:one_anno:];
+			static_assert(find_field_by_name<Cur>(axis_t::neg) != std::meta::info{} && meta::is_action_member(find_field_by_name<Cur>(axis_t::neg)), "axis1 'neg' must name a sibling member carrying a bind or mouse_bind annotation");
+			static_assert(find_field_by_name<Cur>(axis_t::pos) != std::meta::info{} && meta::is_action_member(find_field_by_name<Cur>(axis_t::pos)), "axis1 'pos' must name a sibling member carrying a bind or mouse_bind annotation");
+			axis_registration entry{
+				.key = std::format("{}::{}", prefix, meta::member_name(m)),
+				.label = std::string(axis_t::label),
+				.source = axis_source::digital,
+				.dimensions = 1,
+				.neg = std::format("{}::{}", prefix, axis_t::neg),
+				.pos = std::format("{}::{}", prefix, axis_t::pos),
+				.scale = axis_t::scale,
+				.hidden = has_annotation<hidden>(m),
+				.axis_id_ptr = &obj.[:m:],
+			};
+			if constexpr (constexpr auto group_anno = meta::find_action_group(m); group_anno != std::meta::info{}) {
+				using group_t = [:group_anno:];
+				entry.group = std::string(group_t::value);
+			}
+			out.push_back(std::move(entry));
+		}
+		else if constexpr (constexpr auto scroll_anno = meta::find_axis1_scroll(m); scroll_anno != std::meta::info{}) {
+			using axis_t = [:scroll_anno:];
+			axis_registration entry{
+				.key = std::format("{}::{}", prefix, meta::member_name(m)),
+				.label = std::string(axis_t::label),
+				.source = axis_source::scroll,
+				.dimensions = 1,
+				.scale = axis_t::scale,
+				.hidden = has_annotation<hidden>(m),
+				.axis_id_ptr = &obj.[:m:],
+			};
+			if constexpr (constexpr auto group_anno = meta::find_action_group(m); group_anno != std::meta::info{}) {
+				using group_t = [:group_anno:];
+				entry.group = std::string(group_t::value);
+			}
+			out.push_back(std::move(entry));
+		}
+		else if constexpr (has_annotation<set>(m)) {
+			collect_axes_into(obj.[:m:], prefix, out);
+		}
+	}
+}
+
+template <typename State>
+auto gse::actions::collect_annotated_actions(State& obj) -> std::vector<registration> {
+	std::vector<registration> out;
+	collect_actions_into(obj, action_key_prefix<State>(), out);
+	return out;
+}
+
+template <typename State>
+auto gse::actions::collect_annotated_axes(State& obj) -> std::vector<axis_registration> {
+	std::vector<axis_registration> out;
+	collect_axes_into(obj, action_key_prefix<State>(), out);
+	return out;
+}
+
 consteval auto gse::is_system_state_entry(const std::meta::info entry) -> bool {
 	return meta::find_system_state_anno(entry) != std::meta::info{};
 }
@@ -714,6 +922,22 @@ consteval auto gse::hook_fns_in_namespace(const std::meta::info ns, std::vector<
 		}
 	}
 	return out;
+}
+
+consteval auto gse::unrecognized_manifest_entry(std::vector<std::meta::info> entries) -> std::meta::info {
+	for (const auto e : entries) {
+		if (is_system_state_entry(e)) {
+			continue;
+		}
+		if (meta::find_system_hook_anno(e) != std::meta::info{}) {
+			continue;
+		}
+		if (meta::find_page_for_anno(e) != std::meta::info{}) {
+			continue;
+		}
+		return e;
+	}
+	return std::meta::info{};
 }
 
 consteval auto gse::system_namespaces(std::vector<std::meta::info> entries) -> std::vector<std::meta::info> {
@@ -805,6 +1029,11 @@ auto gse::register_systems(R& registrar) -> void {
 template <std::meta::info... Entries>
 template <gse::system_node_registrar R>
 auto gse::system_manifest<Entries...>::register_with(R& registrar) const -> void {
+	static_assert(
+		unrecognized_manifest_entry(std::vector<std::meta::info>{ Entries... }) == std::meta::info{},
+		"system_manifest entry is neither a [[= gse::system_state]] struct, an annotated hook function, nor a settings page function. pass member reflections (^^ns::data, ^^ns::run), never the namespace itself — a namespace matches nothing and silently registers no systems"
+	);
+
 	template for (constexpr auto sys_ns : std::define_static_array(system_namespaces(std::vector<std::meta::info>{ Entries... }))) {
 		constexpr auto state_entry = state_entry_for_namespace(sys_ns, std::vector<std::meta::info>{ Entries... });
 		constexpr auto fns = std::define_static_array(hook_fns_in_namespace(sys_ns, std::vector<std::meta::info>{ Entries... }));

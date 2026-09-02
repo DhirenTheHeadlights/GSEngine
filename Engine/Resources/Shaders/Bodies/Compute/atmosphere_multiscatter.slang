@@ -3,6 +3,10 @@ static const int ms_ray_steps = 20;
 static const float two_pi = 6.28318530718;
 
 float3 sample_transmittance(float radius, float view_zenith_cos) {
+    if (ray_occluded_by_ground(radius, view_zenith_cos)) {
+        return float3(0.0, 0.0, 0.0);
+    }
+
     float2 uv = transmittance_r_mu_to_uv(radius, view_zenith_cos);
     return transmittance_in.SampleLevel(lut_sampler, uv, 0).rgb;
 }

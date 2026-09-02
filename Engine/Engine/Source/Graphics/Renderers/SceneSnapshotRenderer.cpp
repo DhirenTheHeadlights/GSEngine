@@ -27,7 +27,7 @@ namespace gse::renderer::scene_snapshot {
 		.address_w = gpu::sampler_address_mode::clamp_to_edge,
 	};
 
-	auto recreate_resources(const shared_view<gpu::context::data> gpu_s, data& d, const vec2u extent) -> void {
+	auto recreate_resources(const shared_view<gpu::context::data> gpu_s, data& d, const gpu::image_ref& target) -> void {
 		for (std::size_t i = 0; i < per_frame_resource<gpu::image>::frames_in_flight; ++i) {
 			if (d.slots[i].valid()) {
 				d.slots[i] = {};
@@ -37,8 +37,8 @@ namespace gse::renderer::scene_snapshot {
 		for (std::size_t i = 0; i < per_frame_resource<gpu::image>::frames_in_flight; ++i) {
 			d.snapshots[i] = gpu_s.device->create_image(
 				{
-					.size = extent,
-					.format = gpu_s.swapchain->format(),
+					.size = target.extent,
+					.format = target.format,
 					.usage = { gpu::image_flag::sampled, gpu::image_flag::transfer_dst },
 				}
 			);
@@ -46,15 +46,15 @@ namespace gse::renderer::scene_snapshot {
 			d.slots[i] = gpu_s.device->register_texture(d.snapshots[i], snapshot_sampler_desc);
 		}
 
-		d.current_extent = extent;
+		d.current_extent = target.extent;
 		d.ready = true;
 	}
 }
 
 auto gse::renderer::scene_snapshot::init(const shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
-	const auto initial_extent = gpu_s.render_graph->extent();
-	if (d.enabled && initial_extent.x() > 0 && initial_extent.y() > 0) {
-		recreate_resources(gpu_s, d, initial_extent);
+	const auto target = gpu_s.render_graph->current_target();
+	if (d.enabled && target.extent.x() > 0 && target.extent.y() > 0) {
+		recreate_resources(gpu_s, d, target);
 	}
 	return {};
 }
@@ -64,7 +64,7 @@ auto gse::renderer::scene_snapshot::run(context& ctx, const shared_view<gpu::con
 }
 
 auto gse::renderer::scene_snapshot::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out) -> async::task<> {
-	if (!gpu_s.render_graph->frame_in_progress()) {
+	if (!gpu_s.render_graph->frame_in_progress() || !gpu_s.render_graph->target_live()) {
 		co_return;
 	}
 
@@ -72,13 +72,13 @@ auto gse::renderer::scene_snapshot::frame(const context& ctx, shared_view<gpu::c
 		co_return;
 	}
 
-	const auto extent = gpu_s.render_graph->extent();
-	if (extent.x() == 0 || extent.y() == 0) {
+	const auto target = gpu_s.render_graph->current_target();
+	if (target.extent.x() == 0 || target.extent.y() == 0) {
 		co_return;
 	}
 
-	if (!d.ready || d.current_extent != extent) {
-		recreate_resources(gpu_s, d, extent);
+	if (!d.ready || d.current_extent != target.extent) {
+		recreate_resources(gpu_s, d, target);
 	}
 
 	const auto frame_index = gpu_s.render_graph->current_frame();
@@ -87,5 +87,5 @@ auto gse::renderer::scene_snapshot::frame(const context& ctx, shared_view<gpu::c
 		co_await gpu::pass<^^frame>(pass_out)
 		.after<^^forward::frame, ^^physics_debug::frame, ^^sdf_grid::frame, ^^world_text::frame, ^^tonemap::frame>();
 
-	rec.blit_swapchain_to_image(*gpu_s.swapchain, *gpu_s.frame, d.snapshots[frame_index], extent);
+	rec.blit_target_to_image(target, d.snapshots[frame_index], target.extent);
 }

@@ -247,6 +247,7 @@ auto gse::gui::scroll_axis_advance(const draw_context& ctx, const rectf& visible
 
 	if (ctx.hit_regions) {
 		ctx.hit_regions->register_resize_block(track_rect);
+		ctx.hit_regions->block_text_selection(track_rect);
 	}
 
 	const scroll_bar_result bar = update_scroll_bar(axis, {

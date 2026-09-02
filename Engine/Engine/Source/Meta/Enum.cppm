@@ -19,6 +19,13 @@ export namespace gse {
 
 	template <typename E>
 	requires std::is_enum_v<E>
+	auto enum_from_ordinal(
+		std::string_view text,
+		E& out
+	) -> bool;
+
+	template <typename E>
+	requires std::is_enum_v<E>
 	constexpr auto enum_values() -> std::span<const E>;
 }
 
@@ -60,6 +67,25 @@ requires std::is_enum_v<E>
 constexpr auto gse::enum_from_string(const std::string_view name, E& out) -> bool {
 	template for (constexpr auto v : std::define_static_array(std::meta::enumerators_of(^^E))) {
 		if (std::meta::identifier_of(v) == name) {
+			out = [:v:];
+			return true;
+		}
+	}
+	return false;
+}
+
+template <typename E>
+requires std::is_enum_v<E>
+auto gse::enum_from_ordinal(const std::string_view text, E& out) -> bool {
+	std::underlying_type_t<E> ordinal{};
+	const auto* first = text.data();
+	const auto* last = first + text.size();
+	const auto result = std::from_chars(first, last, ordinal);
+	if (result.ec != std::errc{} || result.ptr != last) {
+		return false;
+	}
+	template for (constexpr auto v : std::define_static_array(std::meta::enumerators_of(^^E))) {
+		if (static_cast<std::underlying_type_t<E>>([:v:]) == ordinal) {
 			out = [:v:];
 			return true;
 		}

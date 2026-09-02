@@ -15,6 +15,7 @@ import gse.math;
 
 import :types;
 import :font;
+import :input_layers;
 import :styles;
 import :ui_renderer;
 import :layout_ops;
@@ -165,6 +166,10 @@ auto gse::gui::column_header(const draw_context& ctx, const column_header_params
 			}
 		}
 
+		if (ctx.hit_regions) {
+			ctx.hit_regions->block_text_selection(grip);
+		}
+
 		const std::string_view caption = params.captions[i];
 		const bool active = params.active == i;
 		ctx.queue_text({
@@ -179,7 +184,7 @@ auto gse::gui::column_header(const draw_context& ctx, const column_header_params
 			.clip_rect = params.area,
 		});
 
-		if (state.resizing < 0 && !grip.contains(mouse) && ctx.mouse_pressed_for(cell)) {
+		if (state.resizing < 0 && !grip.contains(mouse) && ctx.clicked_in_rect(cell)) {
 			result.activated = true;
 			result.index = i;
 		}

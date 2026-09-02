@@ -12,7 +12,7 @@ public struct medium_split {
 };
 
 public medium_split sample_medium_split(float radius_km) {
-    float altitude = radius_km - atmosphere_ubo.bottom_radius;
+    float altitude = max(radius_km - atmosphere_ubo.bottom_radius, 0.0);
 
     float rayleigh_density = exp(-altitude / atmosphere_ubo.rayleigh_scale_height);
     float mie_density = exp(-altitude / atmosphere_ubo.mie_scale_height);
@@ -55,11 +55,16 @@ public float ray_to_top_distance(float radius, float view_zenith_cos) {
 }
 
 public float ray_to_ground_distance(float radius, float view_zenith_cos) {
-    float discriminant = radius * radius * (view_zenith_cos * view_zenith_cos - 1.0) + atmosphere_ubo.bottom_radius * atmosphere_ubo.bottom_radius;
+    float height_term = (radius - atmosphere_ubo.bottom_radius) * (radius + atmosphere_ubo.bottom_radius);
+    float discriminant = radius * radius * view_zenith_cos * view_zenith_cos - height_term;
     if (discriminant < 0.0 || view_zenith_cos >= 0.0) {
         return -1.0;
     }
-    return -radius * view_zenith_cos - sqrt(discriminant);
+    return max(height_term, 0.0) / (-radius * view_zenith_cos + sqrt(discriminant));
+}
+
+public bool ray_occluded_by_ground(float radius, float view_zenith_cos) {
+    return ray_to_ground_distance(radius, view_zenith_cos) >= 0.0;
 }
 
 public void transmittance_uv_to_r_mu(float2 uv, out float radius, out float view_zenith_cos) {
@@ -77,7 +82,7 @@ public void transmittance_uv_to_r_mu(float2 uv, out float radius, out float view
 
 public float2 transmittance_r_mu_to_uv(float radius, float view_zenith_cos) {
     float h = sqrt(atmosphere_ubo.top_radius * atmosphere_ubo.top_radius - atmosphere_ubo.bottom_radius * atmosphere_ubo.bottom_radius);
-    float rho = sqrt(max(radius * radius - atmosphere_ubo.bottom_radius * atmosphere_ubo.bottom_radius, 0.0));
+    float rho = sqrt(max((radius - atmosphere_ubo.bottom_radius) * (radius + atmosphere_ubo.bottom_radius), 0.0));
 
     float discriminant = radius * radius * (view_zenith_cos * view_zenith_cos - 1.0) + atmosphere_ubo.top_radius * atmosphere_ubo.top_radius;
     float d = max(-radius * view_zenith_cos + sqrt(max(discriminant, 0.0)), 0.0);

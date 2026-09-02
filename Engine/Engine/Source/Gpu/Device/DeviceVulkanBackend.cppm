@@ -141,6 +141,11 @@ export namespace gse::gpu {
 			const shared_surface& surface
 		) const -> void;
 
+		[[nodiscard]] auto readback_layout(
+			image_format format,
+			vec2u extent
+		) const -> image_readback_layout;
+
 		auto bind_image_memory(
 			gpu::handle<image> img,
 			device_memory mem,
@@ -550,6 +555,14 @@ auto gse::gpu::vulkan_device_backend::import_shared_surface(const shared_surface
 
 auto gse::gpu::vulkan_device_backend::destroy_shared_surface(const shared_surface& surface) const -> void {
 	device_config.destroy_shared_surface(surface);
+}
+
+auto gse::gpu::vulkan_device_backend::readback_layout(const image_format format, const vec2u extent) const -> image_readback_layout {
+	const device_size row_pitch = static_cast<device_size>(extent.x()) * bytes_per_pixel(format);
+	return {
+		.row_pitch = row_pitch,
+		.size = row_pitch * extent.y(),
+	};
 }
 
 auto gse::gpu::vulkan_device_backend::bind_image_memory(const gpu::handle<image> img, const device_memory mem, const device_size offset) const -> void {

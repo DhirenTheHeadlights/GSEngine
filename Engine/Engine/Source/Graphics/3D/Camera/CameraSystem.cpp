@@ -89,7 +89,7 @@ auto gse::camera::scripted_requester_id() -> id {
 	return find_or_generate_id("gse::camera::scripted");
 }
 
-auto gse::camera::run(context& ctx, data& d, const channel_read<ui_focus_request, viewport_update, camera_yaw_request, request> requests_in, read<follow_component> cameras) -> async::task<> {
+auto gse::camera::run(context& ctx, data& d, const channel_read<ui_focus_request, viewport_update, camera_yaw_request, request, jitter_request> requests_in, read<follow_component> cameras) -> async::task<> {
 	const time dt = system_clock::dt();
 
 	for (const auto& [focus] : requests_in.of<ui_focus_request>()) {
@@ -198,6 +198,16 @@ auto gse::camera::run(context& ctx, data& d, const channel_read<ui_focus_request
 	d.prev_jitter_ndc = d.jitter_ndc;
 	d.view_matrix = compute_view_matrix(d.current);
 	d.projection_matrix = compute_projection_matrix(d.current, d.viewport);
+
+	for (const auto& [enabled] : requests_in.of<jitter_request>()) {
+		d.jitter_enabled = enabled;
+	}
+
+	if (!d.jitter_enabled) {
+		d.jitter_ndc = vec2f{ 0.f, 0.f };
+		d.jitter_index = 1;
+		return {};
+	}
 
 	const float jitter_x = halton(2, d.jitter_index) - 0.5f;
 	const float jitter_y = halton(3, d.jitter_index) - 0.5f;

@@ -69,7 +69,9 @@ Above: four counter-rotating drums tumbling 13,824 dynamic bodies, solved entire
 
 ### Forward+ light culling
 
-<!-- <video src="PASTE_CLIP_URL_HERE" autoplay muted loop playsinline width="100%"></video> -->
+<video src="https://github.com/user-attachments/assets/e42468da-6613-4b96-8df1-b5c5988e29e9" autoplay muted loop playsinline width="100%"></video>
+
+Above: 364 physically scaled point lights drifting through the light hall at night, tile-culled per 16 px tile with ray-traced shadows, probe GI accumulated across frames, and histogram auto exposure metering the lamps.
 
 Bindless point/spot lights tile-culled on the compute queue; renderer dispatches via reflection-driven binding packs (`recording_context::dispatch<Entry>(pc, args, groups)`).
 

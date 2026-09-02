@@ -123,7 +123,7 @@ auto gse::ide::draw_filter_toggle(const gui::draw_context& ctx, const rectf& rec
 	const auto text_view = ctx.fonts.text.resolve();
 	const bool hovered = ctx.hovers(rect);
 
-	if (hovered && ctx.mouse_pressed_for(rect)) {
+	if (ctx.clicked_in_rect(rect)) {
 		enabled = !enabled;
 	}
 
@@ -273,7 +273,7 @@ auto gse::ide::draw_problems_panel(gui::builder& ui, const rectf& rect, problems
 		auto& c = b.ctx;
 		const problem_row& item = rows[r.index];
 
-		if (r.hovered && c.mouse_pressed_for(r.visible)) {
+		if (c.clicked_in_rect(r.visible)) {
 			const bool byte_columns = item.entry->rule.has_value();
 			channels.push<jump_to_request>({
 				.path = item.entry->file.empty() ? *item.path : item.entry->file,

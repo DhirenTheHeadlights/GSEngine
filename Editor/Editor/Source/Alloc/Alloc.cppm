@@ -87,7 +87,7 @@ auto gse::ide::draw_action(gui::draw_context& ctx, const rectf& rect, const std:
 		.clip_rect = rect,
 	});
 
-	return hovered && ctx.mouse_pressed_for(rect);
+	return ctx.clicked_in_rect(rect);
 }
 
 auto gse::ide::draw_alloc_header(gui::builder& ui, const rectf& row, alloc_view_state& state) -> void {

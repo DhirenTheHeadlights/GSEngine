@@ -16,6 +16,9 @@ export namespace gse {
 	template <typename T>
 	consteval auto has_describe_fields() -> bool;
 
+	template <typename T>
+	consteval auto has_bind_fields() -> bool;
+
 	struct system_node : non_copyable {
 		~system_node() = default;
 
@@ -80,6 +83,8 @@ export namespace gse {
 		std::vector<id> component_reads;
 		std::vector<id> component_writes;
 		std::vector<id> component_structural;
+		std::vector<id> resource_reads;
+		std::vector<id> resource_writes;
 		std::vector<id> shared_view_reads;
 		std::vector<id> channel_publishes;
 		std::vector<id> channel_consumes;
@@ -109,6 +114,8 @@ export namespace gse {
 		id trace_id;
 
 		std::optional<settings::register_settings_type> settings_record;
+		std::vector<actions::registration> action_records;
+		std::vector<actions::axis_registration> axis_records;
 
 		std::string system_name;
 		std::string display_name;
@@ -124,6 +131,17 @@ consteval auto gse::has_describe_fields() -> bool {
 	bool found = false;
 	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 		if constexpr (meta::find_describe(m) != std::meta::info{}) {
+			found = true;
+		}
+	}
+	return found;
+}
+
+template <typename T>
+consteval auto gse::has_bind_fields() -> bool {
+	bool found = false;
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+		if constexpr (meta::is_action_member(m) || meta::find_axis2(m) != std::meta::info{} || meta::find_axis2_mouse(m) != std::meta::info{} || meta::find_axis1(m) != std::meta::info{} || meta::find_axis1_scroll(m) != std::meta::info{} || has_annotation<actions::set>(m)) {
 			found = true;
 		}
 	}

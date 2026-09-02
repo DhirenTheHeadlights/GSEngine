@@ -143,7 +143,7 @@ auto gse::gui::rebuild_profile_tree(profile_tree& tree) -> void {
 	tree.roots.push_back(std::move(gpu_root));
 }
 
-auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
+auto gse::gui::profiler::draw(draw_context& ctx, id& hot, id& active, id& focus) -> void {
 	trace::thread_pause pause;
 
 	static profile_tree tree;
@@ -270,8 +270,8 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 
 	ctx.layout_cursor.y() -= (row_h + (row_h * 0.15f) + pad);
 
-	static draw::tree_selection selection;
-	static draw::tree_options options{
+	static tree_selection selection;
+	static tree_options options{
 		.indent_per_level = 15.f,
 		.extra_right_padding = total_cols_w,
 		.toggle_on_row_click = true,
@@ -281,7 +281,7 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 
 	const time_t<double> frame_span = tree.frame_span;
 
-	const draw::tree_ops<profile_row> ops{
+	const tree_ops<profile_row> ops{
 		.children = [](const profile_row& n) -> std::span<const profile_row> {
 			return n.children;
 		},
@@ -297,12 +297,13 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 		.custom_draw =
 			[=](
 		const profile_row& n,
-		const draw_context& draw_ctx,
+		builder& row_ui,
 		const rectf& row,
 		bool,
 		bool,
 		int
 	) {
+				const draw_context& draw_ctx = row_ui.ctx;
 				const bool has_cpu_timing = n.stop > n.start;
 				const time_t<double> duration = has_cpu_timing ? time_t<double>(n.stop - n.start) : time_t<double>{};
 				const time_t<double> self = has_cpu_timing ? time_t<double>(n.self) : time_t<double>{};
@@ -373,13 +374,18 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 
 	{
 		auto region = scroll_region(ctx, body_info);
+		builder tree_ui{
+			.ctx = ctx,
+			.hot_widget_id = hot,
+			.active_widget_id = active,
+			.focus_widget_id = focus,
+		};
 		interacting = draw::tree(
-			ctx,
+			tree_ui,
 			std::span<const profile_row>(tree.roots),
 			ops,
 			options,
-			&selection,
-			active
+			&selection
 		);
 	}
 }

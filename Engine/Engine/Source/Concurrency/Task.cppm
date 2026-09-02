@@ -614,8 +614,8 @@ auto gse::task::try_pop_local(const std::size_t worker_idx) -> std::optional<job
 		return std::optional<job_entry>{ std::move(entry) };
 	}
 
-	std::unique_lock lk(q.remote_mtx, std::try_to_lock);
-	if (!lk.owns_lock() || q.remote_entries.empty()) {
+	std::lock_guard lk(q.remote_mtx);
+	if (q.remote_entries.empty()) {
 		return std::nullopt;
 	}
 	entry = std::move(q.remote_entries.back());
@@ -742,7 +742,10 @@ auto gse::task::parallel_invoke_range(const std::size_t first, const std::size_t
 			id
 		);
 	}
-	g.wait();
+	{
+		trace::scope_guard wg{ trace_id<"task::fanout_wait">() };
+		g.wait();
+	}
 }
 
 auto gse::task::run_job(job_entry& entry) -> void {

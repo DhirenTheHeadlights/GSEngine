@@ -96,7 +96,6 @@ namespace gse::renderer::atmosphere {
 		mat4f inv_view_proj;
 		vec3f sun_direction;
 		atmosphere_length camera_altitude;
-		vec3<irradiance> sun_irradiance;
 	};
 
 	using transmittance_bindings = type_pack<atmosphere_ubo, transmittance_out>;
@@ -182,6 +181,11 @@ namespace gse::renderer::atmosphere {
 	) -> void;
 
 	auto compute_sun_direction(
+		angle elevation,
+		angle azimuth
+	) -> vec3f;
+
+	auto compute_sun_transmittance(
 		const data& d
 	) -> vec3f;
 
@@ -215,12 +219,56 @@ auto gse::renderer::atmosphere::recreate_ap_volume(const shared_view<gpu::contex
 	gpu::transition_image_to(*gpu_s.device, d.ap_volume);
 }
 
-auto gse::renderer::atmosphere::compute_sun_direction(const data& d) -> vec3f {
-	const float ce = cos(d.sun_elevation);
-	const float se = sin(d.sun_elevation);
-	const float ca = cos(d.sun_azimuth);
-	const float sa = sin(d.sun_azimuth);
+auto gse::renderer::atmosphere::compute_sun_direction(const angle elevation, const angle azimuth) -> vec3f {
+	const float ce = cos(elevation);
+	const float se = sin(elevation);
+	const float ca = cos(azimuth);
+	const float sa = sin(azimuth);
 	return normalize(vec3f{ ce * ca, se, ce * sa });
+}
+
+auto gse::renderer::atmosphere::compute_sun_transmittance(const data& d) -> vec3f {
+	const auto radius = quantity_cast<atmosphere_length>(d.bottom_radius + d.camera_altitude);
+	const float mu = d.sun_direction.y();
+
+	const float bottom_ratio = d.bottom_radius / radius;
+	if (mu < 0.f && mu * mu >= 1.f - bottom_ratio * bottom_ratio) {
+		return vec3f{};
+	}
+
+	const float top_ratio = d.top_radius / radius;
+	const auto t_max = radius * (std::sqrt(top_ratio * top_ratio - 1.f + mu * mu) - mu);
+
+	constexpr int steps = 40;
+	const auto dt = t_max / static_cast<float>(steps);
+	const float dt_km = dt / kilometers(1.f);
+
+	float rayleigh_depth_km = 0.f;
+	float mie_depth_km = 0.f;
+	float ozone_depth_km = 0.f;
+
+	for (int i = 0; i < steps; ++i) {
+		const auto t = dt * (static_cast<float>(i) + 0.5f);
+		const float s = t / radius;
+		const auto r_t = radius * std::sqrt(s * s + 2.f * s * mu + 1.f);
+		const auto altitude = r_t > d.bottom_radius ? quantity_cast<atmosphere_length>(r_t - d.bottom_radius) : atmosphere_length{};
+
+		rayleigh_depth_km += std::exp(-(altitude / d.rayleigh_scale_height)) * dt_km;
+		mie_depth_km += std::exp(-(altitude / d.mie_scale_height)) * dt_km;
+		const float ozone_offset = abs(quantity_cast<atmosphere_length>(altitude - d.ozone_peak_height)) / d.ozone_half_width;
+		ozone_depth_km += std::clamp(1.f - ozone_offset, 0.f, 1.f) * dt_km;
+	}
+
+	const float mie_extinction_km = quantity_cast<atmosphere_inverse_length>(d.mie_scattering + d.mie_absorption) / per_kilometer(1.f);
+	const auto tau = [&](const atmosphere_inverse_length rayleigh, const atmosphere_inverse_length ozone) -> float {
+		return rayleigh / per_kilometer(1.f) * rayleigh_depth_km + mie_extinction_km * mie_depth_km + ozone / per_kilometer(1.f) * ozone_depth_km;
+	};
+
+	return vec3f{
+		std::exp(-tau(d.rayleigh_scattering.x(), d.ozone_absorption.x())),
+		std::exp(-tau(d.rayleigh_scattering.y(), d.ozone_absorption.y())),
+		std::exp(-tau(d.rayleigh_scattering.z(), d.ozone_absorption.z())),
+	};
 }
 
 auto gse::renderer::atmosphere::build_atmosphere_data(const data& d) -> atmosphere_data {
@@ -321,9 +369,11 @@ auto gse::renderer::atmosphere::init(context& ctx, const shared_view<gpu::contex
 }
 
 auto gse::renderer::atmosphere::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<sun_request> sun_in, shared_view<camera::data> cam_state) -> async::task<> {
+	angle sun_elevation = d.sun_elevation;
+	angle sun_azimuth = d.sun_azimuth;
 	for (const auto& [elevation, azimuth] : sun_in.of<sun_request>()) {
-		d.sun_elevation = elevation;
-		d.sun_azimuth = azimuth;
+		sun_elevation = elevation;
+		sun_azimuth = azimuth;
 	}
 
 	if (!gpu_s.render_graph->frame_in_progress()) {
@@ -332,7 +382,8 @@ auto gse::renderer::atmosphere::frame(const context& ctx, shared_view<gpu::conte
 
 	const auto ext = gpu_s.render_graph->extent();
 
-	d.sun_direction = compute_sun_direction(d);
+	d.sun_direction = compute_sun_direction(sun_elevation, sun_azimuth);
+	d.sun_transmittance = compute_sun_transmittance(d);
 	const auto sun_irradiance = vec3<irradiance>{
 		d.sun_intensity * d.sun_color.x(),
 		d.sun_intensity * d.sun_color.y(),
@@ -416,7 +467,6 @@ auto gse::renderer::atmosphere::frame(const context& ctx, shared_view<gpu::conte
 			.inv_view_proj = inv_view_proj,
 			.sun_direction = d.sun_direction,
 			.camera_altitude = d.camera_altitude,
-			.sun_irradiance = sun_irradiance,
 		},
 		{
 			.transmittance_in = d.transmittance_lut.sampled_slot(),

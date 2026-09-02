@@ -278,7 +278,7 @@ auto gse::ide::project_screen::build(gui::builder& ui, gui::nav&) -> void {
 		),
 	});
 
-	if (listing && gui::draw::button_in_rect(ctx, "Open", "##project_open", open_rect, ui.hot_widget_id, ui.active_widget_id)) {
+	if (listing && ui.draw<gui::button>({ .text = "Open", .rect = open_rect, .key = "##project_open" })) {
 		m_channels.push<window_open_file_request>({
 			.title = "Open Project",
 			.filter_name = "GSE Project",
@@ -286,11 +286,11 @@ auto gse::ide::project_screen::build(gui::builder& ui, gui::nav&) -> void {
 		});
 	}
 
-	if (listing && project::current().valid && gui::draw::button_in_rect(ctx, "Engine", "##project_engine", engine_rect, ui.hot_widget_id, ui.active_widget_id)) {
+	if (listing && project::current().valid && ui.draw<gui::button>({ .text = "Engine", .rect = engine_rect, .key = "##project_engine" })) {
 		m_rebinding = true;
 	}
 
-	if (!m_creating && !m_rebinding && gui::draw::button_in_rect(ctx, "New Project", "##project_new", action_rect, ui.hot_widget_id, ui.active_widget_id)) {
+	if (!m_creating && !m_rebinding && ui.draw<gui::button>({ .text = "New Project", .rect = action_rect, .key = "##project_new" })) {
 		m_creating = true;
 		m_new_name.clear();
 		m_error.clear();
@@ -499,7 +499,12 @@ auto gse::ide::project_screen::build_create(gui::builder& ui) -> void {
 
 	const id input_id = gui::ids::make("##project_new_name");
 	ui.focus_widget_id = input_id;
-	gui::draw::text_input_in_rect(ctx, input_id, m_new_name, m_input, input_rect, ui.hot_widget_id, ui.focus_widget_id);
+	ui.draw<gui::text_input>({
+		.name = "##project_new_name",
+		.buffer = m_new_name,
+		.state = m_input,
+		.rect = input_rect,
+	});
 
 	if (m_new_name.empty()) {
 		ctx.queue_text({
@@ -564,7 +569,14 @@ auto gse::ide::project_screen::build_create(gui::builder& ui) -> void {
 
 	const bool valid = problem.empty();
 
-	if ((gui::draw::button_in_rect(ctx, "Create", "##project_create_confirm", create_rect, ui.hot_widget_id, ui.active_widget_id, valid) || submit) && valid) {
+	const bool create_pressed = ui.draw<gui::button>({
+		.text = "Create",
+		.rect = create_rect,
+		.key = "##project_create_confirm",
+		.enabled = valid,
+	});
+
+	if ((create_pressed || submit) && valid) {
 		const std::expected<std::filesystem::path, std::string> created = project::create(
 			m_new_name,
 			gse::config::projects_root(),
@@ -585,7 +597,7 @@ auto gse::ide::project_screen::build_create(gui::builder& ui) -> void {
 		return;
 	}
 
-	if (gui::draw::button_in_rect(ctx, "Cancel", "##project_create_cancel", cancel_rect, ui.hot_widget_id, ui.active_widget_id)) {
+	if (ui.draw<gui::button>({ .text = "Cancel", .rect = cancel_rect, .key = "##project_create_cancel" })) {
 		m_creating = false;
 	}
 }

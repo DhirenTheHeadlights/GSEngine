@@ -38,7 +38,7 @@ export namespace gse::gui {
 	};
 }
 
-export namespace gse::gui::draw {
+namespace gse::gui::draw {
 	auto dropdown(
 		const draw_context& ctx,
 		std::string_view name,
@@ -47,7 +47,8 @@ export namespace gse::gui::draw {
 		dropdown_state& state,
 		id& hot_widget_id,
 		id& active_widget_id,
-		const dropdown_config& config = {}
+		const dropdown_config& config = {},
+		resource::handle<font> font = {}
 	) -> dropdown_result;
 
 	auto dropdown(
@@ -112,20 +113,22 @@ export namespace gse::gui::draw {
 }
 
 export namespace gse::gui {
+	template <typename Option = std::string>
 	struct dropdown {
 		using result = dropdown_result;
 		struct params {
 			std::string_view name;
 			std::size_t& current_index;
-			std::span<const std::string> options;
+			std::span<const Option> options;
 			dropdown_state& state;
+			std::optional<rectf> rect{};
 			dropdown_config config = {};
 			resource::handle<font> font{};
 		};
 		static auto draw(const draw_context& ctx, const params& p, id& hot, id& active, id&) -> dropdown_result {
-			auto r = draw::dropdown(ctx, p.name, p.current_index, p.options, p.state, hot,
-									active,
-									p.config, p.font);
+			const dropdown_result r = p.rect
+				? draw::dropdown_in_rect(ctx, p.name, p.current_index, p.options, p.state, *p.rect, hot, active, p.config)
+				: draw::dropdown(ctx, p.name, p.current_index, p.options, p.state, hot, active, p.config, p.font);
 			if (r.changed) {
 				p.current_index = r.new_index;
 			}
@@ -163,7 +166,7 @@ namespace gse::gui::draw {
 	) -> dropdown_result;
 }
 
-auto gse::gui::draw::dropdown(const draw_context& ctx, const std::string_view name, const std::size_t current_index, const std::span<const std::string_view> options, dropdown_state& state, id& hot_widget_id, id& active_widget_id, const dropdown_config& config) -> dropdown_result {
+auto gse::gui::draw::dropdown(const draw_context& ctx, const std::string_view name, const std::size_t current_index, const std::span<const std::string_view> options, dropdown_state& state, id& hot_widget_id, id& active_widget_id, const dropdown_config& config, const resource::handle<font> font) -> dropdown_result {
 	return dropdown_impl(
 		ctx,
 		name,
@@ -177,7 +180,8 @@ auto gse::gui::draw::dropdown(const draw_context& ctx, const std::string_view na
 		state,
 		hot_widget_id,
 		active_widget_id,
-		config
+		config,
+		font
 	);
 }
 
@@ -338,16 +342,25 @@ auto gse::gui::draw::dropdown_impl_in_rect(const draw_context& ctx, const id dro
 
 	const float row_height = header_rect.height();
 	const std::size_t count = option_count();
-	const float max_option_width = header_rect.width();
+
+	float max_option_width = header_rect.width();
+	for (std::size_t i = 0; i < count; ++i) {
+		max_option_width = std::max(max_option_width, fnt_view->width(get_option(i), ctx.style.font_size) + ctx.style.padding * 2.f);
+	}
+
+	const auto place_list = [&ctx, &header_rect](const float width, const float height) {
+		const rectf& bounds = ctx.current_menu->rect;
+		const bool fits_below = header_rect.bottom() - height >= bounds.bottom();
+		const bool fits_above = header_rect.top() + height <= bounds.top();
+		const float top = !fits_below && fits_above ? header_rect.top() + height : header_rect.bottom();
+		return rectf::from_position_size({ header_rect.left(), top }, { width, height });
+	};
 
 	const std::size_t visible_count_early = std::min(count, config.max_visible_items);
 	const float visible_height_early = static_cast<float>(visible_count_early) * row_height;
 	const bool needs_scroll_early = count > config.max_visible_items;
 	const float list_width_early = needs_scroll_early ? max_option_width + config.scrollbar_width : max_option_width;
-	const rectf list_rect_early = rectf::from_position_size(
-		{ header_rect.left(), header_rect.bottom() },
-		{ list_width_early, visible_height_early }
-	);
+	const rectf list_rect_early = place_list(list_width_early, visible_height_early);
 
 	if (is_open && count > 0) {
 		ctx.register_hit_region(render_layer::modal, list_rect_early);
@@ -420,11 +433,7 @@ auto gse::gui::draw::dropdown_impl_in_rect(const draw_context& ctx, const id dro
 
 		const float list_width = needs_scroll ? max_option_width + config.scrollbar_width : max_option_width;
 
-		const rectf list_rect =
-			rectf::from_position_size(
-				{ header_rect.left(), header_rect.bottom() },
-				{ list_width, visible_height }
-			);
+		const rectf list_rect = place_list(list_width, visible_height);
 
 		const rectf content_area = needs_scroll
 			? rectf::from_position_size(

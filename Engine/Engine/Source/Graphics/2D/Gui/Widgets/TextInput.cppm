@@ -16,9 +16,11 @@ import gse.math;
 import :types;
 import :font;
 import :ids;
+import :input_layers;
 import :styles;
 import :builder;
 import :interaction;
+import :text_select;
 
 export namespace gse::gui {
 	struct text_input_state {
@@ -32,10 +34,11 @@ export namespace gse::gui {
 		interaction::click_state click;
 		int select_granularity = 0;
 		int select_origin = 0;
+		bool selecting = false;
 	};
 }
 
-export namespace gse::gui::draw {
+namespace gse::gui::draw {
 	auto text_input_in_rect(
 		const draw_context& ctx,
 		id widget_id,
@@ -65,9 +68,15 @@ export namespace gse::gui {
 			std::string_view name;
 			std::string& buffer;
 			text_input_state& state;
+			std::optional<rectf> rect{};
+			id widget_id{};
 			resource::handle<font> font{};
 		};
 		static auto draw(const draw_context& ctx, const params& p, id& hot, id&, id& focus) -> void {
+			if (p.rect) {
+				draw::text_input_in_rect(ctx, p.widget_id.exists() ? p.widget_id : ids::make(p.name), p.buffer, p.state, *p.rect, hot, focus, p.font);
+				return;
+			}
 			draw::text_input(ctx, std::string(p.name), p.buffer, p.state, hot, focus, p.font);
 		}
 	};
@@ -154,6 +163,10 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 		hot_widget_id = widget_id;
 	}
 
+	if (ctx.hit_regions) {
+		ctx.hit_regions->block_text_selection(box_rect);
+	}
+
 	if (ctx.mouse_pressed_for(box_rect)) {
 		focus_widget_id = widget_id;
 	}
@@ -234,8 +247,36 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			state.select_granularity = 0;
 		}
 
+		state.selecting = true;
 		state.last_blink = system_clock::now<time>();
 		state.blink_on = true;
+	}
+
+	if (state.selecting) {
+		if (ctx.mouse_held()) {
+			const float x_local = ctx.mouse_position().x() - box_rect.left();
+			const int current = std::clamp(pick_index_from_x(x_local), 0, static_cast<int>(buffer.size()));
+			if (state.select_granularity == 1) {
+				const auto [anchor_lo, anchor_hi] = word_bounds(buffer, state.select_origin);
+				const auto [current_lo, current_hi] = word_bounds(buffer, current);
+				if (current < state.select_origin) {
+					state.anchor = anchor_hi;
+					state.caret = current_lo;
+				}
+				else {
+					state.anchor = anchor_lo;
+					state.caret = current_hi;
+				}
+			}
+			else if (state.select_granularity == 0) {
+				state.caret = current;
+			}
+			state.last_blink = system_clock::now<time>();
+			state.blink_on = true;
+		}
+		else {
+			state.selecting = false;
+		}
 	}
 
 	auto has_sel = [](const text_input_state& s) -> bool {
@@ -245,6 +286,64 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 	auto sel_range = [](const text_input_state& s) -> std::pair<int, int> {
 		return s.caret < s.anchor ? std::pair{ s.caret, s.anchor } : std::pair{ s.anchor, s.caret };
 	};
+
+	if (ctx.mouse_pressed_for(box_rect, mouse_button::button_2)) {
+		focus_widget_id = widget_id;
+		const bool selection_now = has_sel(state);
+		ctx.open_context_menu({
+			.position = ctx.mouse_position(),
+			.items = {
+				{
+					.label = "Copy",
+					.action_id = static_cast<std::uint32_t>(text_edit_action::copy),
+					.enabled = selection_now,
+				},
+				{
+					.label = "Cut",
+					.action_id = static_cast<std::uint32_t>(text_edit_action::cut),
+					.enabled = selection_now,
+				},
+				{
+					.label = "Paste",
+					.action_id = static_cast<std::uint32_t>(text_edit_action::paste),
+					.enabled = !ctx.clipboard().empty(),
+				},
+			},
+			.target = widget_id,
+			.tag = text_edit_menu_tag(),
+		});
+	}
+
+	switch (ctx.take_text_edit(widget_id)) {
+		case text_edit_action::copy:
+			if (has_sel(state)) {
+				auto [a, b] = sel_range(state);
+				ctx.set_clipboard(buffer.substr(a, b - a));
+			}
+			break;
+		case text_edit_action::cut:
+			if (has_sel(state)) {
+				auto [a, b] = sel_range(state);
+				ctx.set_clipboard(buffer.substr(a, b - a));
+				buffer.erase(a, b - a);
+				state.caret = state.anchor = a;
+			}
+			break;
+		case text_edit_action::paste:
+			if (std::string paste = flatten_newlines(ctx.clipboard()); !paste.empty()) {
+				if (has_sel(state)) {
+					auto [a, b] = sel_range(state);
+					buffer.erase(a, b - a);
+					state.caret = state.anchor = a;
+				}
+				buffer.insert(state.caret, paste);
+				state.caret += static_cast<int>(paste.size());
+				state.anchor = state.caret;
+			}
+			break;
+		case text_edit_action::none:
+			break;
+	}
 
 	if (focused) {
 		const bool shift = ctx.key_held(key::left_shift) || ctx.key_held(key::right_shift);
@@ -414,26 +513,6 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 		}
 		else {
 			state.rpt_active = false;
-		}
-
-		if (hovered && ctx.mouse_held()) {
-			const float x_local = ctx.mouse_position().x() - box_rect.left();
-			const int current = std::clamp(pick_index_from_x(x_local), 0, static_cast<int>(buffer.size()));
-			if (state.select_granularity == 1) {
-				const auto [anchor_lo, anchor_hi] = word_bounds(buffer, state.select_origin);
-				const auto [current_lo, current_hi] = word_bounds(buffer, current);
-				if (current < state.select_origin) {
-					state.anchor = anchor_hi;
-					state.caret = current_lo;
-				}
-				else {
-					state.anchor = anchor_lo;
-					state.caret = current_hi;
-				}
-			}
-			else if (state.select_granularity == 0) {
-				state.caret = current;
-			}
 		}
 
 		const float caret_x = fnt_view->width(buffer.substr(0, state.caret), ctx.style.font_size);

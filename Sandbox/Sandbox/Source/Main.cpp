@@ -9,7 +9,6 @@ import sandbox;
 namespace sandbox::startup {
 	struct config {
 		gse::engine_config engine;
-		bool use_gpu_solver = false;
 		bool physics_parity = false;
 		std::size_t physics_parity_envs = 1;
 		std::string compare_states_a;
@@ -35,7 +34,8 @@ namespace sandbox::startup {
 	) -> void;
 
 	auto apply_scenario(
-		config& cfg
+		config& cfg,
+		std::span<const std::string> passed_flags
 	) -> bool;
 
 	using body_index = std::map<std::uint64_t, gse::state_dump_record>;
@@ -127,7 +127,7 @@ auto sandbox::startup::run_physics_parity(const config& cfg) -> void {
 			.title = "Sandbox Physics Parity",
 			.create_window = false,
 			.render = false,
-			.use_gpu_solver = cfg.use_gpu_solver,
+			.use_gpu_solver = cfg.engine.use_gpu_solver,
 			.persist_settings = false,
 		}
 	);
@@ -494,7 +494,7 @@ auto sandbox::startup::run_compare_states(const config& cfg) -> int {
 	return 0;
 }
 
-auto sandbox::startup::apply_scenario(config& cfg) -> bool {
+auto sandbox::startup::apply_scenario(config& cfg, const std::span<const std::string> passed_flags) -> bool {
 	const auto table = gse::scenario::registry<^^sandbox::scenarios>();
 	const auto* selected = gse::scenario::find(table, cfg.engine.bench.scenario);
 	if (!selected) {
@@ -519,15 +519,28 @@ auto sandbox::startup::apply_scenario(config& cfg) -> bool {
 	if (bench.frames == defaults.frames) {
 		bench.frames = selected->info.frames;
 	}
+
+	std::vector<std::string> owned;
+	const auto own = [&owned](const std::string_view flag) -> void {
+		owned.emplace_back(std::format("--engine-{}", flag));
+		owned.emplace_back(std::format("--no-engine-{}", flag));
+	};
+
 	if (selected->info.headless) {
 		cfg.engine.create_window = false;
 		cfg.engine.render = false;
+		own("create-window");
+		own("render");
 	}
 	if (selected->info.gpu_solver) {
 		cfg.engine.use_gpu_solver = true;
+		own("use-gpu-solver");
 	}
+	cfg.engine.video_encode = selected->info.video_encode;
+	own("video-encode");
 
 	std::vector<std::string> pinned;
+	pinned.push_back(std::format("Physics.use_gpu_solver={}", selected->info.gpu_solver));
 	for (const auto& s : selected->info.settings) {
 		if (s[0] != '\0') {
 			pinned.emplace_back(s);
@@ -535,13 +548,38 @@ auto sandbox::startup::apply_scenario(config& cfg) -> bool {
 	}
 	cfg.engine.setting.insert(cfg.engine.setting.begin(), pinned.begin(), pinned.end());
 
+	cfg.engine.load_settings = false;
 	cfg.engine.persist_settings = false;
+	own("load-settings");
+	own("persist-settings");
+
+	std::vector<std::string_view> conflicts;
+	for (const std::string& flag : passed_flags) {
+		if (std::ranges::contains(owned, flag)) {
+			conflicts.push_back(flag);
+		}
+	}
+
+	if (!conflicts.empty()) {
+		std::cerr << std::format(
+			"error: scenario '{}' owns these flags, so a scenario run would ignore them:\n",
+			std::string_view(selected->info.name)
+		);
+		for (const auto flag : conflicts) {
+			std::cerr << std::format("  {}\n", flag);
+		}
+		std::cerr <<
+			"a scenario run is hermetic: its gse::scenario::info annotation is the only source for them.\n"
+			"drop the flag, edit the annotation, or use --engine-setting Section.key=value, which a scenario does not own.\n";
+		return false;
+	}
 
 	return true;
 }
 
 auto main(int argc, char** argv) -> int {
-	auto cfg = gse::parse_args<sandbox::startup::config>(argc, argv);
+	std::vector<std::string> passed_flags;
+	auto cfg = gse::parse_args<sandbox::startup::config>(argc, argv, passed_flags);
 	if (!cfg.scan_states.empty()) {
 		return sandbox::startup::run_scan_states(cfg);
 	}
@@ -557,8 +595,12 @@ auto main(int argc, char** argv) -> int {
 			std::cerr << "--engine-bench-scenario and --physics-parity select different run modes; pick one\n";
 			return 1;
 		}
-		if (!sandbox::startup::apply_scenario(cfg)) {
+		if (!sandbox::startup::apply_scenario(cfg, passed_flags)) {
 			return 1;
+		}
+		const auto args = std::span(argv, static_cast<std::size_t>(argc));
+		if (std::ranges::contains(args, std::string_view("--engine-load-settings"), [](const char* a) { return std::string_view(a); })) {
+			cfg.engine.load_settings = true;
 		}
 	}
 	if (cfg.physics_parity) {

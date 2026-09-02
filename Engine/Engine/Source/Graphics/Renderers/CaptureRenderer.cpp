@@ -49,21 +49,7 @@ namespace gse::renderer::capture {
 	using entry = gpu::compute_entry<gpu::body_path<"Compute/rgba_to_nv12">, gpu::bindings<shader_binding_types>, gpu::threads<16, 16, 1>, gpu::push_constant<push_constants>, gpu::system_values<gpu::dispatch_thread_id>>;
 }
 
-auto gse::renderer::capture::init(context& ctx, const shared_view<gpu::context::data> gpu_s, data& d, const channel_write<actions::add_action_request> actions_out) -> async::task<> {
-	const auto register_action = [&](const std::string_view name, const key default_key, const key_modifiers default_modifiers = {}) -> actions::handle {
-		const id action_id = generate_id(name);
-		actions_out.push<actions::add_action_request>({
-			.name = std::string(name),
-			.default_combo = { .k = default_key, .mods = default_modifiers },
-			.action_id = action_id,
-		});
-		return actions::handle(action_id);
-	};
-
-	d.screenshot_action = register_action("Screenshot", key::f9);
-	d.save_clip_action = register_action("Save Clip", key::f10);
-	d.toggle_recording_action = register_action("Toggle Recording", key::r, { key_modifier::ctrl, key_modifier::shift });
-
+auto gse::renderer::capture::init(context& ctx, const shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
 	const auto ext = gpu_s.render_graph->extent();
 	auto encoder = gpu_s.device->make_video_encoder({
 		.extent = ext,
@@ -99,7 +85,7 @@ auto gse::renderer::capture::init(context& ctx, const shared_view<gpu::context::
 			d.rgba_captures[i] = gpu_s.device->create_image(
 				{
 					.size = ext,
-					.format = gpu::image_format::r8g8b8a8_unorm,
+					.format = gpu_s.render_graph->current_target().format,
 					.usage = { gpu::image_flag::sampled, gpu::image_flag::transfer_dst },
 				}
 			);
@@ -139,7 +125,7 @@ auto gse::renderer::capture::run(context& ctx, const shared_view<gpu::context::d
 auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<toggle_recording_request, save_clip_request, screenshot_request> capture_in) -> async::task<> {
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
-	auto& [staging, width, height, pending] = d.screenshots[frame_index];
+	auto& [staging, width, height, row_pitch, pending] = d.screenshots[frame_index];
 
 	if (pending && !d.write_in_progress->load()) {
 		pending = false;
@@ -147,11 +133,14 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 
 		const auto w = width;
 		const auto h = height;
-		const auto byte_count = static_cast<std::size_t>(w) * h * 4;
-		std::vector<std::byte> pixels(byte_count);
-		memcpy(pixels.data(), staging.host_read().data(), byte_count);
+		const auto dst_pitch = static_cast<std::size_t>(w) * 4;
+		std::vector<std::byte> pixels(dst_pitch * h);
+		const auto mapped = staging.host_read();
+		for (std::uint32_t row = 0; row < h; ++row) {
+			memcpy(pixels.data() + row * dst_pitch, mapped.data() + row * row_pitch, dst_pitch);
+		}
 
-		const bool needs_swizzle = gpu_s.swapchain->is_bgra();
+		const bool needs_swizzle = gpu::is_bgra(gpu_s.render_graph->current_target().format);
 		const auto timestamp = system_clock::timestamp_filename();
 
 		task::post_io(
@@ -194,7 +183,9 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 	}
 
 	const auto capture_pts = system_clock::content_now<time>();
-	const bool capture_due = d.encode_enabled && d.encode_active && d.encoder.valid() && gpu_s.render_graph->frame_in_progress() &&
+	const bool encode_wanted = d.encode_enabled || d.recording->active.load();
+	const bool capture_due = encode_wanted && d.encode_active && d.encoder.valid() &&
+		gpu_s.render_graph->frame_in_progress() && gpu_s.render_graph->target_live() &&
 		(!d.captured_once || capture_pts - d.last_capture_pts >= d.capture_interval);
 
 	d.encode_target = {};
@@ -394,23 +385,26 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 	}
 
 	if (!capture_in.of<screenshot_request>().empty() && !d.write_in_progress->load()) {
-		const auto ext = gpu_s.render_graph->extent();
+		const auto target = gpu_s.render_graph->current_target();
+		const auto layout = gpu_s.device->readback_layout(target.format, target.extent);
 
-		if (const auto needed = static_cast<std::size_t>(ext.x()) * ext.y() * 4; !staging.valid() || staging.size() < needed) {
+		if (!staging.valid() || staging.size() < layout.size) {
 			staging = gpu_s.device->create_buffer(
 				{
-					.size = needed,
+					.size = layout.size,
 					.usage = gpu::buffer_flag::transfer_dst,
+					.readback = true,
 				}
 			);
 		}
 
-		width = ext.x();
-		height = ext.y();
+		width = target.extent.x();
+		height = target.extent.y();
+		row_pitch = layout.row_pitch;
 		d.screenshot_requested = true;
 	}
 
-	if (!gpu_s.render_graph->frame_in_progress()) {
+	if (!gpu_s.render_graph->frame_in_progress() || !gpu_s.render_graph->target_live()) {
 		co_return;
 	}
 
@@ -431,16 +425,15 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 	auto rec = co_await gpu::pass<^^frame>(pass_out).pipeline(d.convert_pipeline).after<^^ui::frame>();
 
 	if (do_screenshot) {
-		rec.capture_swapchain(*gpu_s.swapchain, *gpu_s.frame, staging);
+		rec.copy_target_to_buffer(gpu_s.render_graph->current_target(), staging);
 		pending = true;
 		d.screenshot_requested = false;
 	}
 
 	if (do_encode) {
 		const auto capture_extent = d.rgba_captures[frame_index].extent();
-		rec.blit_swapchain_to_image(
-			*gpu_s.swapchain,
-			*gpu_s.frame,
+		rec.blit_target_to_image(
+			gpu_s.render_graph->current_target(),
 			d.rgba_captures[frame_index],
 			vec2u{ capture_extent.x(), capture_extent.y() }
 		);

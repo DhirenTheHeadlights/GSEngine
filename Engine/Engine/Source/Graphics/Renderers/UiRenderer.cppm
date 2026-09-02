@@ -86,7 +86,7 @@ namespace gse::renderer::ui {
 		gpu::bindless_slot image_slot = {};
 	};
 
-	export constexpr std::size_t max_quads_per_frame = 131072;
+	export constexpr std::size_t max_quads_per_frame = 65536;
 	export constexpr std::size_t max_batches_per_frame = 4096;
 	export constexpr std::size_t vertices_per_quad = 4;
 	export constexpr std::size_t indices_per_quad = 6;
@@ -172,6 +172,9 @@ export namespace gse::renderer::ui {
 		std::uint64_t frames_since_state_change = 0;
 		std::uint64_t published_frames = 0;
 		std::uint64_t recorded_frames = 0;
+		std::size_t peak_vertices = 0;
+		std::size_t peak_batches = 0;
+		std::size_t reported_peak_vertices = 0;
 	};
 
 	[[= system_init{}]]

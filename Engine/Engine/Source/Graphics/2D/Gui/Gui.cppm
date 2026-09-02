@@ -28,6 +28,7 @@ import :styles;
 import :builder;
 import :menu_stack;
 import :render_layer;
+import :text_select;
 
 namespace gse::gui {
 	struct frame_state {
@@ -68,6 +69,8 @@ export namespace gse::gui {
 		bool owns_keyboard = true;
 		input_layer input_layers_data;
 		context_menu_state context_menu;
+		text_selection_state text_selection;
+		std::optional<text_edit_request> pending_text_edit;
 		std::optional<menu> screen_surface;
 		bool manual_cursor = false;
 		std::vector<id> pending_popout_close_ids;
@@ -103,12 +106,12 @@ export namespace gse::gui {
 		[[
 			= settings::describe<"Font used for UI text: labels, menus, and controls.">{}
 		]]
-		settings::choice<std::string> ui_font;
+		settings::choice ui_font;
 
 		[[
 			= settings::describe<"Font used for code, terminals, and numeric readouts.">{}
 		]]
-		settings::choice<std::string> code_font;
+		settings::choice code_font;
 
 		[[
 			= settings::describe<"Show developer overlays (Test, Profiler, Physics Debug).">{},
@@ -177,7 +180,6 @@ export namespace gse::gui {
 		shared_view<gpu::context::data> gpu_s,
 		shared_view<asset::data> assets_s,
 		shared_view<input::data> input_state,
-		const save::registry& save_reg,
 		channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, popout_closed, menu_migrate_request, window_opened, window_closed, window_resized> requests_in,
 		channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> ui_out,
 		data& d

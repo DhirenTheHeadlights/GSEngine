@@ -37,8 +37,6 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto format() const -> image_format;
 
-		[[nodiscard]] auto is_bgra() const -> bool;
-
 		[[nodiscard]] auto present_mode() const -> present_mode;
 
 		auto set_present_mode(
@@ -156,10 +154,6 @@ auto gse::gpu::swap_chain::image_count() const -> std::uint32_t {
 
 auto gse::gpu::swap_chain::format() const -> image_format {
 	return m_info.format;
-}
-
-auto gse::gpu::swap_chain::is_bgra() const -> bool {
-	return m_info.format == image_format::b8g8r8a8_srgb || m_info.format == image_format::b8g8r8a8_unorm;
 }
 
 auto gse::gpu::swap_chain::present_mode() const -> gpu::present_mode {

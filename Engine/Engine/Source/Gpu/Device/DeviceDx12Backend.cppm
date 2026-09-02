@@ -139,6 +139,11 @@ export namespace gse::gpu {
 			const shared_surface& surface
 		) const -> void;
 
+		[[nodiscard]] auto readback_layout(
+			image_format format,
+			vec2u extent
+		) const -> image_readback_layout;
+
 		auto bind_image_memory(
 			gpu::handle<image> img,
 			device_memory mem,
@@ -548,6 +553,10 @@ auto gse::gpu::dx12_device_backend::import_shared_surface(const shared_surface_d
 
 auto gse::gpu::dx12_device_backend::destroy_shared_surface(const shared_surface& surface) const -> void {
 	device->destroy_shared_surface(surface);
+}
+
+auto gse::gpu::dx12_device_backend::readback_layout(const image_format format, const vec2u extent) const -> image_readback_layout {
+	return device->readback_layout(format, extent);
 }
 
 auto gse::gpu::dx12_device_backend::bind_image_memory(const gpu::handle<image> img, const device_memory mem, const device_size offset) const -> void {

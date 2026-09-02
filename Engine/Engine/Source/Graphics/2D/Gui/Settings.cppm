@@ -22,14 +22,12 @@ import :toggle_widget;
 import :slider_widget;
 import :dropdown_widget;
 import :section_widget;
+import :selectable_widget;
+import :text_widget;
 import :value_widget;
 import :text_input_widget;
 
 export namespace gse::settings {
-	auto pretty_label(
-		std::string_view raw
-	) -> std::string;
-
 	struct dimensioned_input_state {
 		gui::text_input_state input_state;
 		gui::dropdown_state dropdown_state;
@@ -58,6 +56,7 @@ export namespace gse::settings {
 		std::unordered_map<std::uint64_t, gui::text_input_state> input_states;
 		std::unordered_map<std::uint64_t, dimensioned_input_state> dimensioned_states;
 		std::unordered_map<id, pending_settings> pending_by_type;
+		std::uint64_t capturing_binding = 0;
 		bool restart_pending_applied = false;
 
 		[[nodiscard]] auto has_pending() const -> bool;
@@ -65,11 +64,10 @@ export namespace gse::settings {
 		[[nodiscard]] auto pending_restart_count() const -> std::size_t;
 		[[nodiscard]] auto needs_restart() const -> bool;
 		auto apply_all(
-			channel_write<change_request> channels,
-			const save::registry* save_reg = nullptr
+			change_request_writer channels
 		) -> void;
 		auto discard_all(
-			const save::registry* save_reg = nullptr
+			change_request_writer channels
 		) -> void;
 	};
 
@@ -91,7 +89,7 @@ export namespace gse::settings {
 		static constexpr auto value = Fn;
 	};
 
-	using panel_writer = channel_write<change_request, gui::popout_toggle>;
+	using panel_writer = channel_write<change_request, override_request, gui::popout_toggle>;
 
 	auto panel(
 		gui::builder& b,
@@ -101,10 +99,22 @@ export namespace gse::settings {
 		std::string_view category_filter = ""
 	) -> void;
 
+	auto capture_binding(
+		gui::builder& b,
+		binding& out
+	) -> bool;
+
+	auto draw_controls_page(
+		void* builder,
+		void* panel_state_ptr,
+		change_request_writer channels,
+		const void* entry_ptr
+	) -> void;
+
 	auto draw_fields_for_entry(
 		gui::builder& b,
 		panel_state& ps,
-		channel_write<change_request> channels,
+		change_request_writer channels,
 		const register_settings_type& entry,
 		bool hot_only = false,
 		const save::registry* save_reg = nullptr
@@ -153,6 +163,126 @@ auto gse::settings::field_widget_key(const register_settings_type& entry, const 
 	return hash_combine(stable_id(entry.category), stable_id(field.key));
 }
 
+auto gse::settings::capture_binding(gui::builder& b, binding& out) -> bool {
+	auto& ctx = b.ctx;
+
+	const key_modifiers mods = actions::held_modifiers_from([&ctx](const key k) { return ctx.key_held(k); });
+
+	for (const auto k : enum_values<key>()) {
+		if (k == key::unknown || is_modifier_key(k) || k == key::escape) {
+			continue;
+		}
+		if (ctx.key_pressed(k)) {
+			ctx.consume_key_press(k);
+			out = key_binding(k, mods);
+			return true;
+		}
+	}
+
+	for (const auto button : enum_values<mouse_button>()) {
+		if (button == mouse_button::button_1) {
+			continue;
+		}
+		if (ctx.mouse_pressed(button)) {
+			ctx.consume_press(button);
+			out = mouse_binding(button, mods);
+			return true;
+		}
+	}
+
+	return false;
+}
+
+auto gse::settings::draw_controls_page(void* builder, void* panel_state_ptr, const change_request_writer channels, const void* entry_ptr) -> void {
+	auto& b = *static_cast<gui::builder*>(builder);
+	auto& ps = *static_cast<panel_state*>(panel_state_ptr);
+	const auto& entry = *static_cast<const register_settings_type*>(entry_ptr);
+
+	if (!entry.settings_ptr) {
+		return;
+	}
+
+	const auto& d = *static_cast<const actions::data*>(entry.settings_ptr);
+	const auto all = actions::all_bindings(d);
+	auto& pending_type = ps.pending_by_type[entry.type_id];
+
+	std::string_view current_group;
+	bool any_visible = false;
+
+	for (const auto& info : all) {
+		if (info.hidden) {
+			continue;
+		}
+		any_visible = true;
+
+		if (info.group != current_group) {
+			current_group = info.group;
+			if (!current_group.empty()) {
+				b.draw<gui::section>({ .title = current_group });
+			}
+		}
+
+		const auto row_key = hash_combine(stable_id(entry.category), stable_id(info.name));
+		auto& pending = pending_type.fields[row_key];
+		const std::string live_value = bindings_to_config(info.current);
+		if (!pending.initialized) {
+			pending.value = live_value;
+			pending.initialized = true;
+		}
+
+		const bool capturing = ps.capturing_binding == row_key;
+
+		std::string shown;
+		if (capturing) {
+			shown = "press a key or mouse button, esc to cancel";
+		}
+		else {
+			std::vector<binding> staged;
+			if (bindings_from_config(pending.value, staged) && !staged.empty()) {
+				for (const auto& single : staged) {
+					if (!shown.empty()) {
+						shown += " / ";
+					}
+					shown += binding_to_string(single);
+				}
+			}
+			else {
+				shown = "unbound";
+			}
+		}
+
+		if (b.draw<gui::selectable>({
+				.text = info.label,
+				.detail = shown,
+				.key = info.name,
+				.selected = capturing,
+				.align = gui::selectable_align::left,
+			})) {
+			ps.capturing_binding = capturing ? 0 : row_key;
+		}
+
+		if (capturing) {
+			if (b.ctx.key_pressed(key::escape)) {
+				b.ctx.consume_key_press(key::escape);
+				ps.capturing_binding = 0;
+			}
+			else if (binding captured; capture_binding(b, captured)) {
+				pending.value = bindings_to_config({ &captured, 1 });
+				ps.capturing_binding = 0;
+			}
+		}
+
+		pending.modified = pending.value != live_value;
+		pending.push_change = &actions::push_binding_change;
+		pending.category = entry.category;
+		pending.key = info.name;
+	}
+
+	if (!any_visible) {
+		b.draw<gui::text>({ .content = "No rebindable actions registered." });
+	}
+}
+
 auto gse::settings::draw_field_control(gui::builder& b, panel_state& ps, const void* settings_ptr, const settings_field& field, pending_field& pending, const std::uint64_t field_key, const std::string_view display_label) -> void {
 	switch (field.widget) {
 		case settings_field_widget::boolean: {
@@ -165,51 +295,31 @@ auto gse::settings::draw_field_control(gui::builder& b, panel_state& ps, const v
 			pending.value = value ? "true" : "false";
 			break;
 		}
-		case settings_field_widget::choice: {
-			const auto options = field.runtime_options ? field.runtime_options(settings_ptr) : field.options;
+		case settings_field_widget::choice:
+		case settings_field_widget::enumeration: {
+			const std::vector<settings_field_option> runtime = field.runtime_options
+				? field.runtime_options(settings_ptr)
+				: std::vector<settings_field_option>{};
+			const std::vector<settings_field_option>& options = field.runtime_options ? runtime : field.options;
 			if (options.empty()) {
 				break;
 			}
-			std::size_t idx = 0;
-			if (field.choice_stores_option) {
-				const auto it = std::ranges::find(options, pending.value);
-				idx = it == options.end() ? 0 : static_cast<std::size_t>(std::ranges::distance(options.begin(), it));
-			}
-			else {
-				int parsed = 0;
-				parse(pending.value, parsed);
-				idx = parsed < 0 ? 0 : static_cast<std::size_t>(parsed);
-			}
-			if (idx >= options.size()) {
-				idx = 0;
+			const auto it = std::ranges::find(options, pending.value, &settings_field_option::value);
+			std::size_t idx = it == options.end() ? 0 : static_cast<std::size_t>(std::ranges::distance(options.begin(), it));
+			std::vector<std::string> labels;
+			labels.reserve(options.size());
+			for (const auto& option : options) {
+				labels.push_back(option.label);
 			}
 			auto& state = ps.dropdowns[field_key];
-			const auto r = b.draw<gui::dropdown>({
+			const auto r = b.draw<gui::dropdown<>>({
 				.name = display_label,
 				.current_index = idx,
-				.options = options,
+				.options = labels,
 				.state = state,
 			});
 			if (r.changed && idx < options.size()) {
-				pending.value = field.choice_stores_option ? options[idx] : std::format("{}", idx);
-			}
-			break;
-		}
-		case settings_field_widget::enumeration: {
-			if (field.options.empty()) {
-				break;
-			}
-			auto it = std::ranges::find(field.options, pending.value);
-			std::size_t idx = it == field.options.end() ? 0 : static_cast<std::size_t>(std::ranges::distance(field.options.begin(), it));
-			auto& state = ps.dropdowns[field_key];
-			const auto r = b.draw<gui::dropdown>({
-				.name = display_label,
-				.current_index = idx,
-				.options = field.options,
-				.state = state,
-			});
-			if (r.changed && idx < field.options.size()) {
-				pending.value = field.options[idx];
+				pending.value = options[idx].value;
 			}
 			break;
 		}
@@ -333,7 +443,23 @@ auto gse::settings::draw_dimensioned_field(gui::builder& b, dimensioned_input_st
 	});
 
 	const id input_id = gui::ids::make_from_key(hash_combine(field_key, stable_id("##Magnitude")));
-	gui::draw::text_input_in_rect(ctx, input_id, state.magnitude, state.input_state, value_rect, b.hot_widget_id, b.focus_widget_id);
+
+	float slider_min = 0.f;
+	float slider_max = 0.f;
+	const bool slider_bounds_ready = field.range.enabled
+		&& parse(field.convert_unit(std::format("{} {}", field.range.min, field.default_unit), state.unit), slider_min)
+		&& parse(field.convert_unit(std::format("{} {}", field.range.max, field.default_unit), state.unit), slider_max)
+		&& slider_max > slider_min;
+
+	if (slider_bounds_ready) {
+		float magnitude = 0.f;
+		parse(state.magnitude, magnitude);
+		gui::draw::slider_in_rect(ctx, value_rect, input_id, magnitude, slider_min, slider_max, b.hot_widget_id, b.active_widget_id, state.magnitude);
+		state.magnitude = std::format("{}", magnitude);
+	}
+	else {
+		gui::draw::text_input_in_rect(ctx, input_id, state.magnitude, state.input_state, value_rect, b.hot_widget_id, b.focus_widget_id);
+	}
 
 	const auto selected = std::ranges::find(field.units, state.unit);
 	const gui::dropdown_result picked = gui::draw::dropdown_in_rect_keyed(
@@ -404,7 +530,7 @@ auto gse::settings::draw_field_tooltip(gui::builder& b, const settings_field& fi
 	}
 }
 
-auto gse::settings::draw_fields_for_entry(gui::builder& b, panel_state& ps, const channel_write<change_request> channels, const register_settings_type& entry, const bool hot_only, const save::registry* save_reg) -> void {
+auto gse::settings::draw_fields_for_entry(gui::builder& b, panel_state& ps, const change_request_writer channels, const register_settings_type& entry, const bool hot_only, const save::registry* save_reg) -> void {
 	if (!entry.settings_ptr) {
 		return;
 	}
@@ -434,10 +560,12 @@ auto gse::settings::draw_fields_for_entry(gui::builder& b, panel_state& ps, cons
 
 		if (field.hot_reloadable && !field.restart_required) {
 			if (pending.modified && pending.push_change) {
-				pending.push_change(channels, pending.value);
-				if (save_reg) {
-					save_reg->release_override(pending.category, pending.key);
-				}
+				pending.push_change(channels, pending.key, pending.value);
+				channels.push<override_request>({
+					.op = override_op::release_override,
+					.category = pending.category,
+					.key = pending.key
+				});
 			}
 			pending.modified = false;
 		}
@@ -481,17 +609,26 @@ auto gse::settings::panel_state::needs_restart() const -> bool {
 	return restart_pending_applied;
 }
 
-auto gse::settings::panel_state::apply_all(const channel_write<change_request> channels, const save::registry* save_reg) -> void {
+auto gse::settings::panel_state::apply_all(const change_request_writer channels) -> void {
 	for (auto& entry : std::views::values(pending_by_type)) {
 		for (auto& field : std::views::values(entry.fields)) {
 			if (field.restart_required) {
-				if (save_reg && !field.category.empty()) {
+				if (!field.category.empty()) {
 					if (field.modified) {
-						save_reg->stage_value(field.category, field.key, field.value);
+						channels.push<override_request>({
+							.op = override_op::stage_value,
+							.category = field.category,
+							.key = field.key,
+							.value = field.value
+						});
 						restart_pending_applied = true;
 					}
 					else {
-						save_reg->clear_staged(field.category, field.key);
+						channels.push<override_request>({
+							.op = override_op::clear_staged,
+							.category = field.category,
+							.key = field.key
+						});
 					}
 				}
 				continue;
@@ -499,52 +636,39 @@ auto gse::settings::panel_state::apply_all(const channel_write<change_request> c
 			if (!field.modified || !field.push_change) {
 				continue;
 			}
-			field.push_change(channels, field.value);
-			if (save_reg && !field.category.empty()) {
-				save_reg->release_override(field.category, field.key);
+			field.push_change(channels, field.key, field.value);
+			if (!field.category.empty()) {
+				channels.push<override_request>({
+					.op = override_op::release_override,
+					.category = field.category,
+					.key = field.key
+				});
 			}
 		}
 	}
 }
 
-auto gse::settings::panel_state::discard_all(const save::registry* save_reg) -> void {
-	if (save_reg) {
-		for (const auto& entry : std::views::values(pending_by_type)) {
-			for (const auto& field : std::views::values(entry.fields)) {
-				if (field.restart_required && !field.category.empty()) {
-					save_reg->clear_staged(field.category, field.key);
-				}
+auto gse::settings::panel_state::discard_all(const change_request_writer channels) -> void {
+	for (const auto& entry : std::views::values(pending_by_type)) {
+		for (const auto& field : std::views::values(entry.fields)) {
+			if (field.restart_required && !field.category.empty()) {
+				channels.push<override_request>({
+					.op = override_op::clear_staged,
+					.category = field.category,
+					.key = field.key
+				});
 			}
 		}
 	}
 
 	pending_by_type.clear();
+	capturing_binding = 0;
 	input_buffers.clear();
 	input_states.clear();
 	for (auto& state : std::views::values(dimensioned_states)) {
 		state.initialized = false;
 		state.input_state = {};
 	}
-}
-
-auto gse::settings::pretty_label(const std::string_view raw) -> std::string {
-	std::string result;
-	result.reserve(raw.size());
-	bool capitalize_next = true;
-	for (const char c : raw) {
-		if (c == '_') {
-			result.push_back(' ');
-			capitalize_next = true;
-		}
-		else if (capitalize_next) {
-			result.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
-			capitalize_next = false;
-		}
-		else {
-			result.push_back(c);
-		}
-	}
-	return result;
 }
 
 auto gse::settings::panel(gui::builder& b, panel_state& ps, const panel_writer channels, const save::registry& save_reg, const std::string_view category_filter) -> void {

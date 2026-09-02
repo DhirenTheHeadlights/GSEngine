@@ -27,7 +27,7 @@ auto gse::gpu::context::init(const std::optional<shared_view<window::data>> wind
 		d.swapchain = swap_chain::create(
 			d.device->boot_surface(),
 			window::viewport(*window_s),
-			enum_from_annotation<present_mode_setting>((*window_s).current_present_mode_index, present_mode::fifo),
+			(*window_s).current_present_mode,
 			*d.device
 		);
 	}
@@ -52,7 +52,7 @@ auto gse::gpu::context::create_presentation(data& d, const window_opened& win) -
 	presentation->swapchain = swap_chain::create(
 		surface,
 		win.size,
-		enum_from_annotation<present_mode_setting>(win.present_mode_index, present_mode::fifo),
+		win.present_mode,
 		*d.device
 	);
 	window_presentation* raw = presentation.get();

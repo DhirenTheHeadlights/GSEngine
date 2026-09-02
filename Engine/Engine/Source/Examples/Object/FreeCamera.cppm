@@ -10,6 +10,7 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 import gse.graphics;
+import gse.meta;
 import gse.physics;
 import gse.os;
 import gse.assets;
@@ -23,21 +24,42 @@ export namespace gse::free_camera {
 		velocity speed = meters_per_second(100.f);
 		angle yaw = degrees(-90.f);
 		angle pitch = degrees(0.f);
-		float mouse_sensitivity = 0.1f;
+		angle mouse_sensitivity = degrees(0.1f);
 		length collision_radius = meters(0.25f);
 		length collision_skin = meters(0.05f);
 		bool collide_with_geometry = true;
 	};
 
 	struct bindings {
+		[[= actions::bind<"Free Camera Forward", key::w>{}]]
 		actions::handle forward;
+
+		[[= actions::bind<"Free Camera Left", key::a>{}]]
 		actions::handle left;
+
+		[[= actions::bind<"Free Camera Backward", key::s>{}]]
 		actions::handle back;
+
+		[[= actions::bind<"Free Camera Right", key::d>{}]]
 		actions::handle right;
+
+		[[= actions::bind<"Free Camera Up", key::space>{}]]
 		actions::handle up;
+
+		[[= actions::bind<"Free Camera Down", key::left_control>{}]]
 		actions::handle down;
+
+		[[= actions::bind<"Toggle Free Camera", key::f1>{}]]
 		actions::handle toggle;
+
+		[[= actions::axis2<"Free Camera Move", "left", "right", "back", "forward">{}]]
 		id move_axis_id;
+
+		[[= actions::axis2_mouse<"Free Camera Look">{}]]
+		id look_axis_id;
+	};
+
+	struct owner_state {
 		bool detached = false;
 	};
 
@@ -45,14 +67,14 @@ export namespace gse::free_camera {
 
 export namespace gse::free_camera::system {
 	struct [[= system_state<"FreeCamera">{}]] data {
-		std::unordered_map<id, bindings> bindings_by_owner;
+		[[= actions::set{}]] bindings binds;
+		std::unordered_map<id, owner_state> owners;
 	};
 
 	[[= system_run<>{}]]
 	auto attach(
 		context& ctx,
 		data& d,
-		channel_write<actions::add_action_request, actions::bind_axis2_request> actions_out,
 		write<component> cameras,
 		structural<camera::follow_component> follows
 	) -> async::task<>;
@@ -62,7 +84,6 @@ export namespace gse::free_camera::system {
 		context& ctx,
 		data& d,
 		shared_view<actions::data> as,
-		shared_view<input::data> input_s,
 		shared_view<camera::data> cam_s,
 		write<component> cameras,
 		write<camera::follow_component> follows,

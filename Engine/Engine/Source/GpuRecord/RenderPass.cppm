@@ -35,6 +35,7 @@ export namespace gse::gpu {
 		std::optional<depth_attachment> depth;
 		std::vector<id> after_deps;
 		id chain_id;
+		std::uint32_t chain_index = 0;
 		bool early_signal = false;
 		id target;
 	};
@@ -108,7 +109,9 @@ export namespace gse::gpu {
 		auto early_signal() && -> pass_builder&&;
 
 		template <typename Chain>
-		auto in_chain() && -> pass_builder&&;
+		auto in_chain(
+			std::uint32_t index
+		) && -> pass_builder&&;
 
 		template <typename... States>
 		auto after() && -> pass_builder&&;
@@ -174,8 +177,9 @@ auto gse::gpu::pass_builder::after() && -> pass_builder&& {
 }
 
 template <typename Chain>
-auto gse::gpu::pass_builder::in_chain() && -> pass_builder&& {
+auto gse::gpu::pass_builder::in_chain(const std::uint32_t index) && -> pass_builder&& {
 	m_desc.chain_id = trace_id<Chain>();
+	m_desc.chain_index = index;
 	return std::move(*this);
 }
 

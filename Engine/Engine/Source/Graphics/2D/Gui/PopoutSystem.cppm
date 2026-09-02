@@ -34,7 +34,7 @@ export namespace gse::gui::popout_system {
 		context& ctx,
 		data& d,
 		channel_read<popout_toggle> popout_in,
-		channel_write<popout_closed, settings::change_request, menu_content> popout_out,
+		channel_write<popout_closed, settings::change_request, settings::override_request, menu_content> popout_out,
 		shared_view<gui::data> gui_d,
 		const save::registry& save_reg
 	) -> async::task<>;
@@ -96,7 +96,7 @@ auto gse::gui::activate_popout(popout_system::data& d, const save::registry& sav
 	return &it->second;
 }
 
-auto gse::gui::popout_system::run(context& ctx, data& d, const channel_read<popout_toggle> popout_in, const channel_write<popout_closed, settings::change_request, menu_content> popout_out, const shared_view<gui::data> gui_d, const save::registry& save_reg) -> async::task<> {
+auto gse::gui::popout_system::run(context& ctx, data& d, const channel_read<popout_toggle> popout_in, const channel_write<popout_closed, settings::change_request, settings::override_request, menu_content> popout_out, const shared_view<gui::data> gui_d, const save::registry& save_reg) -> async::task<> {
 	for (const auto& req : popout_in.of<popout_toggle>()) {
 		auto it = d.popouts.find(req.category);
 		const bool was_active = it != d.popouts.end() && it->second.active;

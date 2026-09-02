@@ -3,6 +3,7 @@ export module gse.gpu_backend:enums;
 import std;
 
 import gse.core;
+import gse.meta;
 
 export namespace gse::gpu {
 	enum class backend_kind : std::uint8_t {
@@ -249,18 +250,11 @@ export namespace gse::gpu {
 
 	using memory_property_flags = flags<memory_property_flag>;
 
-	enum class present_mode_setting : int {
-		fifo = 0,
-		fifo_relaxed = 1,
+	enum class present_mode : std::uint8_t {
+		fifo [[= settings::option_label{ .text = "FIFO (VSync)" }]] = 0,
+		fifo_relaxed [[= settings::option_label{ .text = "FIFO Relaxed" }]] = 1,
 		mailbox = 2,
 		immediate = 3,
-	};
-
-	enum class present_mode : std::uint8_t {
-		immediate [[= present_mode_setting::immediate]],
-		mailbox [[= present_mode_setting::mailbox]],
-		fifo [[= present_mode_setting::fifo]],
-		fifo_relaxed [[= present_mode_setting::fifo_relaxed]],
 	};
 
 	enum class present_stage_flag : std::uint32_t {

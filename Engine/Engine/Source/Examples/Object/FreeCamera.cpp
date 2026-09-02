@@ -17,33 +17,13 @@ import gse.os;
 import gse.assets;
 import gse.gpu;
 
-auto gse::free_camera::system::attach(context& ctx, data& d, const channel_write<actions::add_action_request, actions::bind_axis2_request> actions_out, write<component> cameras, structural<camera::follow_component> follows) -> async::task<> {
+auto gse::free_camera::system::attach(context& ctx, data& d, write<component> cameras, structural<camera::follow_component> follows) -> async::task<> {
 	for (const auto owner_id : cameras.drain(component_event::added)) {
 		const auto* c = cameras.find(owner_id);
 		if (!c) {
 			continue;
 		}
-		auto& b = d.bindings_by_owner[owner_id];
-
-		b.forward = actions::add<"FreeCamera_Move_Forward">(actions_out, key::w);
-		b.left = actions::add<"FreeCamera_Move_Left">(actions_out, key::a);
-		b.back = actions::add<"FreeCamera_Move_Backward">(actions_out, key::s);
-		b.right = actions::add<"FreeCamera_Move_Right">(actions_out, key::d);
-		b.up = actions::add<"FreeCamera_Move_Up">(actions_out, key::space);
-		b.down = actions::add<"FreeCamera_Move_Down">(actions_out, key::left_control);
-		b.toggle = actions::add<"FreeCamera_Toggle">(actions_out, key::f1);
-
-		b.move_axis_id = actions::bind_axis2(
-			actions_out,
-			actions::pending_axis2_info{
-				.left = b.left,
-				.right = b.right,
-				.back = b.back,
-				.fwd = b.forward,
-				.scale = 1.f,
-			},
-			trace_id<"FreeCamera_Move">()
-		);
+		d.owners.try_emplace(owner_id);
 
 		const quat initial_orientation =
 			normalize(quat(vec3f(0.f, 1.f, 0.f), c->yaw) * quat(vec3f(1.f, 0.f, 0.f), c->pitch));
@@ -65,20 +45,20 @@ auto gse::free_camera::system::attach(context& ctx, data& d, const channel_write
 	return {};
 }
 
-auto gse::free_camera::system::update(context& ctx, data& d, const shared_view<actions::data> as, const shared_view<input::data> input_s, const shared_view<camera::data> cam_s, write<component> cameras, write<camera::follow_component> follows, read<physics::transform_component> transforms, read<physics::collision_component> collisions, read<physics::motion_component> motions) -> async::task<> {
+auto gse::free_camera::system::update(context& ctx, data& d, const shared_view<actions::data> as, const shared_view<camera::data> cam_s, write<component> cameras, write<camera::follow_component> follows, read<physics::transform_component> transforms, read<physics::collision_component> collisions, read<physics::motion_component> motions) -> async::task<> {
 	const auto camera_ids = cameras.owner_ids();
 
 	const auto& cs = actions::current_state(as);
-	const auto& in = input::current_state(input_s);
 
 	for (std::size_t i = 0; i < cameras.size(); ++i) {
 		auto& c = cameras[i];
 		const auto owner_id = camera_ids[i];
-		const auto binding_it = d.bindings_by_owner.find(owner_id);
-		if (binding_it == d.bindings_by_owner.end()) {
+		const auto owner_it = d.owners.find(owner_id);
+		if (owner_it == d.owners.end()) {
 			continue;
 		}
-		auto& b = binding_it->second;
+		auto& owner = owner_it->second;
+		const auto& b = d.binds;
 
 		auto* cam_follow = follows.find(owner_id);
 		if (!cam_follow) {
@@ -87,8 +67,8 @@ auto gse::free_camera::system::update(context& ctx, data& d, const shared_view<a
 
 		const bool f1_pressed = actions::pressed(b.toggle, cs, as);
 		if (f1_pressed) {
-			b.detached = !b.detached;
-			if (b.detached) {
+			owner.detached = !owner.detached;
+			if (owner.detached) {
 				if (const auto* active_follow = follows.find(cam_s.active_controller_entity); active_follow && cam_s.active_controller_entity != owner_id) {
 					cam_follow->position = active_follow->position + active_follow->offset;
 					cam_follow->orientation = active_follow->orientation;
@@ -105,9 +85,9 @@ auto gse::free_camera::system::update(context& ctx, data& d, const shared_view<a
 
 		const bool is_active_view = cam_s.active_controller_entity == owner_id;
 		if (is_active_view && !cam_s.ui_focus) {
-			const auto delta = in.mouse_delta();
-			c.yaw -= degrees(delta.x() * c.mouse_sensitivity);
-			c.pitch -= degrees(delta.y() * c.mouse_sensitivity);
+			const auto delta = cs.axis2_v(static_cast<std::uint16_t>(b.look_axis_id.number()));
+			c.yaw -= delta.x() * c.mouse_sensitivity;
+			c.pitch -= delta.y() * c.mouse_sensitivity;
 			c.pitch = std::clamp(c.pitch, degrees(-89.f), degrees(89.f));
 		}
 
@@ -212,7 +192,7 @@ auto gse::free_camera::system::update(context& ctx, data& d, const shared_view<a
 	}
 
 	std::erase_if(
-		d.bindings_by_owner,
+		d.owners,
 		[&cameras](const auto& entry) -> auto {
 			return !cameras.find(entry.first);
 		}

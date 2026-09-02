@@ -39,6 +39,22 @@ namespace sandbox::scenarios {
 		float progress
 	) -> gse::camera::target;
 
+	auto hall_target(
+		float progress
+	) -> gse::camera::target;
+
+	auto horizon_probe_target(
+		float progress
+	) -> gse::camera::target;
+
+	auto glare_probe_target(
+		float progress
+	) -> gse::camera::target;
+
+	auto pitch_probe(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
 	auto sunset_target(
 		float progress
 	) -> gse::camera::target;
@@ -75,6 +91,42 @@ auto sandbox::scenarios::lighting_target(const float progress) -> gse::camera::t
 		gse::meters(16.f),
 		gse::degrees(20.f) + gse::degrees(130.f) * progress
 	);
+}
+
+auto sandbox::scenarios::hall_target(const float progress) -> gse::camera::target {
+	const auto sweep = gse::degrees(360.f) * progress;
+	const auto yaw = gse::degrees(24.f) * gse::cos(sweep);
+	const auto pitch = gse::degrees(-3.f);
+
+	return {
+		.position = gse::vec3<gse::position>(
+			gse::meters(9.f) * gse::sin(sweep),
+			gse::meters(5.5f),
+			gse::meters(74.f) - gse::meters(110.f) * progress
+		),
+		.orientation = gse::from_axis_angle(gse::axis_y, yaw) * gse::from_axis_angle(gse::axis_x, pitch),
+	};
+}
+
+auto sandbox::scenarios::horizon_probe_target(const float progress) -> gse::camera::target {
+	const auto pitch = gse::degrees(45.f) - gse::degrees(105.f) * progress;
+
+	return {
+		.position = gse::vec3<gse::position>(gse::meters(0.f), gse::meters(4.f), gse::meters(70.f)),
+		.orientation = gse::from_axis_angle(gse::axis_x, pitch),
+		.fov = gse::degrees(70.f),
+	};
+}
+
+auto sandbox::scenarios::glare_probe_target(const float progress) -> gse::camera::target {
+	const int hold = std::min(static_cast<int>(progress * 3.f), 2);
+	const auto pitch = gse::degrees(-6.f) - gse::degrees(22.f) * static_cast<float>(hold);
+
+	return {
+		.position = gse::vec3<gse::position>(gse::meters(0.f), gse::meters(4.f), gse::meters(70.f)),
+		.orientation = gse::from_axis_angle(gse::axis_y, gse::degrees(-135.f)) * gse::from_axis_angle(gse::axis_x, pitch),
+		.fov = gse::degrees(70.f),
+	};
 }
 
 auto sandbox::scenarios::sky_target(const float progress) -> gse::camera::target {
@@ -301,6 +353,44 @@ auto sandbox::scenarios::solver_showcase(gse::scenario::context& ctx) -> gse::as
 	ctx.channels().push<gse::renderer::capture::toggle_recording_request>({});
 }
 
+auto sandbox::scenarios::sky_render_bench(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::uint64_t driven_frames = 700;
+	constexpr float fixed_progress = 0.35f;
+
+	const auto target = sky_target(fixed_progress);
+	const auto sun = sun_at(fixed_progress);
+
+	co_await gse::scenario::wait_settled(ctx);
+
+	for (std::uint64_t i = 0; i < driven_frames; ++i) {
+		ctx.channels().push<gse::camera::request>({
+			.target = target,
+			.priority = 100,
+			.blend_duration = {},
+		});
+		ctx.channels().push<gse::renderer::atmosphere::sun_request>(sun);
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+}
+
+auto sandbox::scenarios::light_hall_bench(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::uint64_t driven_frames = 700;
+	constexpr float fixed_progress = 0.25f;
+
+	const auto target = hall_target(fixed_progress);
+
+	co_await gse::scenario::wait_settled(ctx);
+
+	for (std::uint64_t i = 0; i < driven_frames; ++i) {
+		ctx.channels().push<gse::camera::request>({
+			.target = target,
+			.priority = 100,
+			.blend_duration = {},
+		});
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+}
+
 auto sandbox::scenarios::atmosphere_showcase(gse::scenario::context& ctx) -> gse::async::task<> {
 	constexpr std::uint64_t settle_frames = 60;
 	constexpr std::uint64_t record_frames = 600;
@@ -435,6 +525,87 @@ auto sandbox::scenarios::sunset_showcase(gse::scenario::context& ctx) -> gse::as
 	}
 
 	ctx.channels().push<gse::renderer::capture::toggle_recording_request>({});
+}
+
+auto sandbox::scenarios::light_hall_showcase(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::uint64_t settle_frames = 120;
+	constexpr std::uint64_t record_frames = 720;
+
+	co_await gse::scenario::wait_settled(ctx);
+
+	for (std::uint64_t i = 0; i < settle_frames; ++i) {
+		ctx.channels().push<gse::camera::request>({
+			.target = hall_target(0.f),
+			.priority = 100,
+			.blend_duration = {},
+		});
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+
+	ctx.channels().push<gse::renderer::capture::toggle_recording_request>({});
+
+	for (std::uint64_t i = 0; i < record_frames; ++i) {
+		ctx.channels().push<gse::camera::request>({
+			.target = hall_target(static_cast<float>(i) / static_cast<float>(record_frames - 1)),
+			.priority = 100,
+			.blend_duration = {},
+		});
+		if (i % 180 == 60) {
+			ctx.channels().push<gse::renderer::capture::screenshot_request>({});
+		}
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+
+	ctx.channels().push<gse::renderer::capture::toggle_recording_request>({});
+}
+
+auto sandbox::scenarios::sky_horizon_probe(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await pitch_probe(ctx);
+}
+
+auto sandbox::scenarios::hall_horizon_probe(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await pitch_probe(ctx);
+}
+
+auto sandbox::scenarios::pitch_probe(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::uint64_t settle_frames = 120;
+	constexpr std::uint64_t record_frames = 780;
+
+	co_await gse::scenario::wait_settled(ctx);
+
+	for (std::uint64_t i = 0; i < settle_frames; ++i) {
+		ctx.channels().push<gse::camera::request>({
+			.target = horizon_probe_target(0.f),
+			.priority = 100,
+			.blend_duration = {},
+		});
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+
+	for (std::uint64_t i = 0; i < record_frames; ++i) {
+		ctx.channels().push<gse::camera::request>({
+			.target = horizon_probe_target(static_cast<float>(i) / static_cast<float>(record_frames - 1)),
+			.priority = 100,
+			.blend_duration = {},
+		});
+		if (i % 180 == 0) {
+			ctx.channels().push<gse::renderer::capture::screenshot_request>({});
+		}
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+
+	constexpr std::uint64_t glare_frames = 180;
+	for (std::uint64_t i = 0; i < glare_frames; ++i) {
+		ctx.channels().push<gse::camera::request>({
+			.target = glare_probe_target(static_cast<float>(i) / static_cast<float>(glare_frames)),
+			.priority = 100,
+			.blend_duration = {},
+		});
+		if (i % 60 == 45) {
+			ctx.channels().push<gse::renderer::capture::screenshot_request>({});
+		}
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
 }
 
 auto sandbox::scenarios::lighting_showcase(gse::scenario::context& ctx) -> gse::async::task<> {

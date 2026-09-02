@@ -153,7 +153,11 @@ auto gse::renderer::taa::init(context& ctx, const shared_view<gpu::context::data
 	return {};
 }
 
-auto gse::renderer::taa::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out) -> async::task<> {
+auto gse::renderer::taa::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_write<camera::jitter_request> jitter_out) -> async::task<> {
+	jitter_out.push<camera::jitter_request>({
+		.enabled = d.taa_enabled,
+	});
+
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}

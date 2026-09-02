@@ -561,7 +561,7 @@ auto gse::ide::draw_pill(const gui::draw_context& ctx, const rectf& row, const f
 	draw_label(ctx, cell, { cell.left() + pad * 0.5f, cell.center().y() }, caption, active ? ctx.style.color_text : ctx.style.color_text_secondary);
 	return {
 		.next_left = left + w + pad * 0.25f,
-		.pressed = ctx.mouse_pressed_for(cell),
+		.pressed = ctx.clicked_in_rect(cell),
 	};
 }
 
@@ -604,16 +604,14 @@ auto gse::ide::draw_header(gui::builder& ui, const rectf& outer, profile_view_st
 		{ rect.right() - dropdown_w - pad * 0.5f, rect.top() },
 		{ dropdown_w, rect.height() }
 	);
-	const gui::dropdown_result picked = gui::draw::dropdown_in_rect(
-		ctx,
-		"profile.source",
-		static_cast<std::size_t>(state.source),
-		options,
-		state.source_dropdown,
-		dropdown_rect,
-		ui.hot_widget_id,
-		ui.active_widget_id
-	);
+	std::size_t source_index = static_cast<std::size_t>(state.source);
+	const gui::dropdown_result picked = ui.draw<gui::dropdown<std::string_view>>({
+		.name = "profile.source",
+		.current_index = source_index,
+		.options = options,
+		.state = state.source_dropdown,
+		.rect = dropdown_rect,
+	});
 	if (picked.changed) {
 		state.source = static_cast<profile_source>(picked.new_index);
 		state.pinned_generation = 0;
@@ -635,16 +633,14 @@ auto gse::ide::draw_header(gui::builder& ui, const rectf& outer, profile_view_st
 		{ dropdown_rect.left() - unit_w - pad * 0.5f, rect.top() },
 		{ unit_w, rect.height() }
 	);
-	const gui::dropdown_result unit_picked = gui::draw::dropdown_in_rect(
-		ctx,
-		"profile.unit",
-		current_unit == units.end() ? 0 : static_cast<std::size_t>(std::ranges::distance(units.begin(), current_unit)),
-		units,
-		state.unit_dropdown,
-		unit_rect,
-		ui.hot_widget_id,
-		ui.active_widget_id
-	);
+	std::size_t unit_index = current_unit == units.end() ? 0 : static_cast<std::size_t>(std::ranges::distance(units.begin(), current_unit));
+	const gui::dropdown_result unit_picked = ui.draw<gui::dropdown<std::string_view>>({
+		.name = "profile.unit",
+		.current_index = unit_index,
+		.options = units,
+		.state = state.unit_dropdown,
+		.rect = unit_rect,
+	});
 	if (unit_picked.changed && unit_picked.new_index < units.size()) {
 		state.time_unit = units[unit_picked.new_index];
 		state.columns = {};
@@ -694,6 +690,10 @@ auto gse::ide::draw_history_strip(const gui::draw_context& ctx, const rectf& rec
 	const auto count = static_cast<float>(visible);
 	const float column_w = std::max(1.f, rect.width() / count);
 	const bool dragging = ctx.mouse_held();
+
+	if (ctx.hit_regions) {
+		ctx.hit_regions->block_text_selection(rect);
+	}
 
 	if (ctx.mouse_pressed_for(rect, mouse_button::button_2)) {
 		state.pinned_generation = 0;
@@ -794,7 +794,7 @@ auto gse::ide::draw_flame(gui::draw_context& ctx, const rectf& rect, const captu
 				.texture = ctx.blank_texture,
 				.clip_rect = rect,
 			});
-			if (ctx.mouse_pressed_for(bar)) {
+			if (ctx.clicked_in_rect(bar)) {
 				state.selected = n.id;
 			}
 			if (w > bar_label_min_width) {
@@ -950,7 +950,7 @@ auto gse::ide::draw_row_section(const gui::draw_context& ctx, const rectf& rect,
 			draw_label(ctx, rect, { value_at(gui::column_cell(state.columns, line, column_index), text), center_y }, text, color);
 			++column_index;
 		}
-		if (ctx.mouse_pressed_for(line)) {
+		if (ctx.clicked_in_rect(line)) {
 			state.selected = row.id;
 		}
 		y -= row_h;
@@ -1151,7 +1151,7 @@ auto gse::ide::draw_detail(const gui::draw_context& ctx, const rectf& rect, cons
 	const std::string_view worst_value = format_into(buffer, "{:.2f:{}}", worst->span, state.time_unit);
 	draw_label(ctx, button, { button.left() + pad * 0.5f, button.center().y() }, "worst frame", ctx.style.color_text);
 	draw_label(ctx, button, { button.right() - code_view->width(worst_value, font_sz) - pad * 0.5f, button.center().y() }, worst_value, ctx.style.color_text_secondary);
-	if (ctx.mouse_pressed_for(button)) {
+	if (ctx.clicked_in_rect(button)) {
 		state.pinned_generation = worst->generation;
 	}
 }

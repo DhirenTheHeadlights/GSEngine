@@ -50,7 +50,7 @@ export namespace sandbox {
 	auto sphere_light(
 		const gse::vec3<gse::position>& position,
 		gse::length radius,
-		gse::sphere_lod lod = gse::sphere_lod::lo
+		gse::sphere_lod lod = gse::sphere_lod::mid
 	) -> sphere_light_archetype;
 
 	auto static_box(
@@ -100,7 +100,7 @@ export namespace sandbox {
 		const gse::vec3<gse::length>& collider_size,
 		gse::length visual_radius,
 		const gse::vec3f& base_color = gse::vec3f(0.08f, 0.08f, 0.09f),
-		float roughness = 0.45f,
+		float roughness = 0.85f,
 		float metallic = 0.0f
 	) -> cylinder_archetype;
 
@@ -225,10 +225,9 @@ auto sandbox::sphere_light(const gse::vec3<gse::position>& position, const gse::
 		.light = {
 			.color = gse::vec3f(1.f),
 			.intensity = gse::watts_per_square_meter(78.5f),
-			.position = position,
 			.constant = 1.0f,
 			.linear = gse::per_meter(0.09f),
-			.quadratic = 0.032f,
+			.quadratic = gse::per_meter(0.032f) * gse::per_meter(1.f),
 			.ambient_strength = 0.025f,
 		},
 	};

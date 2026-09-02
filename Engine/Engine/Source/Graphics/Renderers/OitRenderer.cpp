@@ -65,7 +65,7 @@ namespace gse::renderer::oit {
 		std::uint32_t first_instance;
 		irradiance sun_intensity;
 		vec3f sun_direction;
-		float sun_ambient;
+		irradiance sun_ambient;
 		vec3f sun_color;
 	};
 
@@ -284,8 +284,8 @@ auto gse::renderer::oit::frame(context& ctx, shared_view<gpu::context::data> gpu
 				.first_instance = batch.first_instance,
 				.sun_intensity = atm_state.sun_intensity,
 				.sun_direction = atm_state.sun_direction,
-				.sun_ambient = atm_state.sun_ambient_strength,
-				.sun_color = atm_state.sun_color,
+				.sun_ambient = atm_state.sun_ambient_strength * atm_state.sun_intensity,
+				.sun_color = atm_state.sun_color * atm_state.sun_transmittance,
 			},
 			{
 				.camera_ubo = camera_slot,

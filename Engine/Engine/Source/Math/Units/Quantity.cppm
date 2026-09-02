@@ -348,6 +348,21 @@ namespace gse::internal {
 	template <typename T>
 	constexpr bool dependent_false_v = false;
 
+	template <typename Tag, typename Override = typename base_unit_override<normalized_tag_t<Tag>>::type, bool IsGeneric = is_generic_tag_v<Tag>>
+	struct tag_canonical_unit {
+		using type = Override;
+	};
+
+	template <typename Tag>
+	struct tag_canonical_unit<Tag, void, false> {
+		using type = typename selected_unit<normalized_tag_t<Tag>>::type;
+	};
+
+	template <typename Tag>
+	struct tag_canonical_unit<Tag, void, true> {
+		using type = no_default_unit;
+	};
+
 	template <typename AncestorTag, typename DescendantTag>
 	consteval auto is_same_or_ancestor_tag() -> bool;
 
@@ -615,7 +630,7 @@ constexpr auto gse::internal::quantity<A, D, Tag, DefUnit>::from(A value) -> qua
 
 template <gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
 constexpr auto gse::internal::quantity<A, D, Tag, DefUnit>::canonical_storage_scale() -> float {
-	using can_type = std::conditional_t<std::is_same_v<typename base_unit_override<Tag>::type, void>, DefUnit, typename base_unit_override<Tag>::type>;
+	using can_type = typename tag_canonical_unit<Tag>::type;
 	using r = std::ratio_divide<typename can_type::conversion_ratio, typename DefUnit::conversion_ratio>;
 	return static_cast<float>(r::num) / static_cast<float>(r::den);
 }
@@ -1073,7 +1088,7 @@ export namespace gse::internal {
 	using common_quantity_t = decltype(common_quantity_fn<T1, T2>())::type;
 
 	template <typename Q>
-	using quantity_base_unit_t = std::conditional_t<std::is_same_v<typename base_unit_override<typename Q::quantity_tag>::type, void>, typename Q::default_unit, typename base_unit_override<typename Q::quantity_tag>::type>;
+	using quantity_base_unit_t = typename tag_canonical_unit<typename Q::quantity_tag>::type;
 }
 
 export namespace gse::internal {
@@ -1370,7 +1385,7 @@ export namespace gse {
 	template <internal::is_quantity Q>
 	constexpr auto sqrt(const Q& q) {
 		using result_d = decltype(internal::dim_sqrt(typename Q::dimension()));
-		return internal::generic_quantity<typename Q::value_type, result_d>(std::sqrt(internal::value_in<typename Q::default_unit>(q)));
+		return internal::generic_quantity<typename Q::value_type, result_d>(std::sqrt(internal::value_in<internal::quantity_base_unit_t<Q>>(q)));
 	}
 
 	template <internal::is_quantity Q>

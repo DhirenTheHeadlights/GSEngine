@@ -10,8 +10,18 @@ export namespace sandbox::scenarios {
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
 
-	[[= gse::scenario::info{ .name = "render_stress", .scene = "Sandbox", .settings = { "Dev Spawn.stress.tumbler_radial_cubes=6", "Dev Spawn.stress.tumbler_axial_cubes=12" } }]]
+	[[= gse::scenario::info{ .name = "render_stress", .scene = "Sandbox", .settings = { "Window.present_mode=immediate", "Dev Spawn.stress.tumbler_radial_cubes=6", "Dev Spawn.stress.tumbler_axial_cubes=12" } }]]
 	auto render_stress(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "sky_render_bench", .scene = "Sky", .warmup_frames = 0, .frames = 700, .settings = { "Window.present_mode=immediate", "Graphics.enabled=false", "Clouds.cloud_coverage=0.45", "Grid.fade_distance=14000 m", "Grid.show_labels=false", "Grid.minor_spacing=50 m", "Grid.major_spacing=500 m" } }]]
+	auto sky_render_bench(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "light_hall_bench", .scene = "LightHall", .warmup_frames = 0, .frames = 700, .settings = { "Window.present_mode=immediate", "Graphics.enabled=false", "Grid.enabled=false", "Dev Spawn.lights.clusters=26", "Dev Spawn.lights.lights_per_cluster=14", "Dev Spawn.lights.cluster_radius=4 m", "Dev Spawn.lights.field_radius=52 m", "Dev Spawn.lights.field_height=9 m", "Dev Spawn.lights.intensity=16 W/m^2", "Dev Spawn.lights.falloff_radius=36 m", "Dev Spawn.lights.drift=0 m" } }]]
+	auto light_hall_bench(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
 
@@ -20,42 +30,57 @@ export namespace sandbox::scenarios {
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
 
-	[[= gse::scenario::info{ .name = "record_clip", .scene = "Sandbox", .warmup_frames = 0, .frames = 420, .settings = { "Graphics.enabled=false" } }]]
+	[[= gse::scenario::info{ .name = "record_clip", .scene = "Sandbox", .video_encode = true, .warmup_frames = 0, .frames = 420, .settings = { "Window.present_mode=immediate", "Graphics.enabled=false" } }]]
 	auto record_clip(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
 
-	[[= gse::scenario::info{ .name = "solver_showcase", .scene = "Pyramid", .warmup_frames = 0, .frames = 780, .settings = { "Dev Spawn.pyramid.base_count=60", "Physics.velocity_sleep_threshold=0 m/s", "Graphics.enabled=false" } }]]
+	[[= gse::scenario::info{ .name = "solver_showcase", .scene = "Pyramid", .video_encode = true, .warmup_frames = 0, .frames = 780, .settings = { "Window.present_mode=immediate", "Dev Spawn.pyramid.base_count=60", "Physics.velocity_sleep_threshold=0 m/s", "Graphics.enabled=false" } }]]
 	auto solver_showcase(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
 
-	[[= gse::scenario::info{ .name = "atmosphere_showcase", .scene = "Sky", .warmup_frames = 0, .frames = 700, .settings = { "Graphics.enabled=false", "Clouds.cloud_coverage=0.45", "Grid.fade_distance=14000 m", "Grid.show_labels=false", "Grid.minor_spacing=50 m", "Grid.major_spacing=500 m" } }]]
+	[[= gse::scenario::info{ .name = "atmosphere_showcase", .scene = "Sky", .video_encode = true, .warmup_frames = 0, .frames = 700, .settings = { "Window.present_mode=immediate", "Graphics.enabled=false", "Clouds.cloud_coverage=0.45", "Grid.fade_distance=14000 m", "Grid.show_labels=false", "Grid.minor_spacing=50 m", "Grid.major_spacing=500 m" } }]]
 	auto atmosphere_showcase(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
 
-	[[= gse::scenario::info{ .name = "cloud_showcase", .scene = "Sky", .warmup_frames = 0, .frames = 1150, .settings = { "Graphics.enabled=false", "Clouds.cloud_coverage=0.50", "Clouds.weather_contrast=2.6", "Clouds.cloud_type=0.90", "Clouds.shadow_strength=1.0", "Grid.show_labels=false", "Grid.fade_distance=1200 m" } }]]
+	[[= gse::scenario::info{ .name = "cloud_showcase", .scene = "Sky", .video_encode = true, .warmup_frames = 0, .frames = 1150, .settings = { "Window.present_mode=immediate", "Graphics.enabled=false", "Clouds.cloud_coverage=0.50", "Clouds.weather_contrast=2.6", "Clouds.cloud_type=0.90", "Clouds.shadow_strength=1.0", "Grid.show_labels=false", "Grid.fade_distance=1200 m" } }]]
 	auto cloud_showcase(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
 
-	[[= gse::scenario::info{ .name = "tumbler_showcase", .scene = "Tumblers", .gpu_solver = true, .warmup_frames = 0, .frames = 1150, .settings = { "Graphics.enabled=false", "Clouds.cloud_coverage=0.40", "Clouds.weather_contrast=3.0", "Clouds.shadow_strength=1.0", "Grid.show_labels=false", "Grid.fade_distance=400 m" } }]]
+	[[= gse::scenario::info{ .name = "tumbler_showcase", .scene = "Tumblers", .gpu_solver = true, .video_encode = true, .warmup_frames = 0, .frames = 1150, .settings = { "Window.present_mode=immediate", "Graphics.enabled=false", "Clouds.cloud_coverage=0.40", "Clouds.weather_contrast=3.0", "Clouds.shadow_strength=1.0", "Grid.show_labels=false", "Grid.fade_distance=400 m" } }]]
 	auto tumbler_showcase(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
 
-	[[= gse::scenario::info{ .name = "sunset_showcase", .scene = "Sandbox", .warmup_frames = 0, .frames = 1700, .settings = { "Graphics.enabled=false", "Clouds.cloud_coverage=0.40", "Clouds.weather_contrast=3.0", "Clouds.cloud_type=0.85", "Clouds.shadow_strength=1.0", "Grid.fade_distance=2000 m", "Grid.show_labels=false" } }]]
+	[[= gse::scenario::info{ .name = "sunset_showcase", .scene = "Sandbox", .video_encode = true, .warmup_frames = 0, .frames = 1700, .settings = { "Window.present_mode=immediate", "Graphics.enabled=false", "Clouds.cloud_coverage=0.40", "Clouds.weather_contrast=3.0", "Clouds.cloud_type=0.85", "Clouds.shadow_strength=1.0", "Grid.fade_distance=2000 m", "Grid.show_labels=false" } }]]
 	auto sunset_showcase(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
 
-	[[= gse::scenario::info{ .name = "lighting_showcase", .scene = "Pyramid", .warmup_frames = 0, .frames = 660, .settings = { "Dev Spawn.pyramid.base_count=34", "Graphics.enabled=false", "Atmosphere.sun_elevation=-8 deg" } }]]
+	[[= gse::scenario::info{ .name = "lighting_showcase", .scene = "Pyramid", .video_encode = true, .warmup_frames = 0, .frames = 660, .settings = { "Window.present_mode=immediate", "Dev Spawn.pyramid.base_count=34", "Graphics.enabled=false", "Atmosphere.sun_elevation=-8 deg" } }]]
 	auto lighting_showcase(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
 
-	[[= gse::scenario::info{ .name = "locomotion", .scene = "Sandbox", .headless = true }]]
+	[[= gse::scenario::info{ .name = "light_hall_showcase", .scene = "LightHall", .video_encode = true, .warmup_frames = 0, .frames = 900, .settings = { "Window.present_mode=immediate", "Graphics.enabled=false", "Grid.enabled=false", "Dev Spawn.lights.clusters=26", "Dev Spawn.lights.lights_per_cluster=14", "Dev Spawn.lights.cluster_radius=4 m", "Dev Spawn.lights.field_radius=52 m", "Dev Spawn.lights.field_height=9 m", "Dev Spawn.lights.intensity=16 W/m^2", "Dev Spawn.lights.falloff_radius=36 m", "Dev Spawn.lights.drift=5 m" } }]]
+	auto light_hall_showcase(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "sky_horizon_probe", .scene = "Sky", .warmup_frames = 0, .frames = 1080, .settings = { "Window.present_mode=immediate", "Graphics.enabled=false", "Grid.enabled=false", "Clouds.cloud_coverage=0.45", "Graphics.reflection_quality=high", "Graphics.adaptation_time_bright=0.05 s", "Graphics.adaptation_time_dark=0.05 s" } }]]
+	auto sky_horizon_probe(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "hall_horizon_probe", .scene = "LightHall", .warmup_frames = 0, .frames = 1080, .settings = { "Window.present_mode=immediate", "Graphics.enabled=false", "Grid.enabled=false", "Dev Spawn.lights.clusters=26", "Dev Spawn.lights.lights_per_cluster=14", "Dev Spawn.lights.cluster_radius=4 m", "Dev Spawn.lights.field_radius=52 m", "Dev Spawn.lights.field_height=9 m", "Dev Spawn.lights.intensity=16 W/m^2", "Dev Spawn.lights.falloff_radius=36 m", "Dev Spawn.lights.drift=0 m", "Graphics.adaptation_time_bright=0.05 s", "Graphics.adaptation_time_dark=0.05 s" } }]]
+	auto hall_horizon_probe(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "locomotion", .scene = "Sandbox", .headless = true, .settings = { "Dev Spawn.characters.count=8" } }]]
 	auto locomotion(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;

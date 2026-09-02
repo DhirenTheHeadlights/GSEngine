@@ -16,11 +16,15 @@ import :panel;
 import :session;
 import :system;
 
-auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_request, dispatch_request, gui::context_menu_result, build_runner::build_finished, build_runner::source_changed> requests_in, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request, blame_offer> events_out, const shared_view<asset::data> assets_d) -> async::task<> {
+auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_request, dispatch_request, gui::context_menu_result, build_runner::build_finished, build_runner::source_changed> requests_in, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request, blame_offer, build_runner::build_request> events_out, const shared_view<asset::data> assets_d, const shared_view<build_runner::data> build_d) -> async::task<> {
 	if (!d.initialized) {
 		load_sessions(d);
 		adopt_inherited(d);
 		d.built = build_runner::build_times();
+		d.default_model.options.emplace_back();
+		for (const model_option& option : available_models()) {
+			d.default_model.options.push_back(option.value);
+		}
 		d.initialized = true;
 	}
 
@@ -88,7 +92,14 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 	for (const build_runner::build_finished& finished : requests_in.of<build_runner::build_finished>()) {
 		d.built = build_runner::build_times();
 		attribute_build_errors(d, finished, events_out);
+		if (!finished.inbox_id.empty()) {
+			publish_inbox_result(d, finished);
+		}
+		wake_observers(d, finished);
 	}
+
+	accept_hibernations(d);
+	poll_build_inbox(d, events_out, build_d.building);
 
 	for (const dispatch_request& request : requests_in.of<dispatch_request>()) {
 		if (request.session == 0) {
@@ -114,13 +125,26 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 }
 
 auto gse::ide::agent::shutdown(data& d) -> void {
+	const bool relaunching = app::relaunch_pending();
+
+	if (!relaunching) {
+		for (session& s : d.sessions) {
+			if (is_busy(s) && !s.retry.prompt.empty() && !s.retry.waiting) {
+				s.retry.waiting = true;
+				log::println(log::level::info, log::category::task, "agent: chat '{}' was mid-turn - holding it to resend on the next start", s.name);
+			}
+		}
+	}
+
 	save_sessions(d);
 	net::cancel(d.link);
 
-	const bool relaunching = app::relaunch_pending();
 	if (relaunching) {
 		app::drop_relaunch_arguments(std::wstring(handoff_option));
 	}
+
+	hand_off_builds(d, relaunching);
+
 	for (session& s : d.sessions) {
 		if (relaunching && hand_off_session(s)) {
 			continue;

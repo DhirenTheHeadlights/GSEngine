@@ -428,7 +428,12 @@ auto gse::ide::draw_search_bar(gui::builder& ui, quick_search_state& state, cons
 		.texture = ctx.blank_texture,
 		.corner_radius = sty.corner_radius,
 	});
-	gui::draw::text_input_in_rect(ctx, search_id, state.driver.query, state.input, search_rect, ui.hot_widget_id, ui.focus_widget_id);
+	ui.draw<gui::text_input>({
+		.name = id_key,
+		.buffer = state.driver.query,
+		.state = state.input,
+		.rect = search_rect,
+	});
 	const bool focused = ui.focus_widget_id == search_id;
 
 	if (state.driver.query.empty() && !focused) {
@@ -505,7 +510,7 @@ auto gse::ide::draw_search_bar(gui::builder& ui, quick_search_state& state, cons
 			.color = sty.color_text,
 			.clip_rect = row,
 		});
-		if (over && ctx.mouse_pressed_for(row)) {
+		if (ctx.clicked_in_rect(row)) {
 			channels.push<jump_to_request>(search::jump_target(r));
 			state.driver.accept();
 			ui.focus_widget_id = {};
@@ -631,10 +636,6 @@ namespace gse::ide {
 		return find_or_generate_id("tab_context");
 	}
 
-	auto editor_text_context_tag() -> id {
-		return find_or_generate_id("editor_text_context");
-	}
-
 	auto editor_menu(gui::viewport_state& vp, const std::string_view name) -> gui::menu& {
 		const id existing_id = find_or_generate_id(std::string(name));
 		if (gui::menu* existing = vp.menus.try_get(existing_id)) {
@@ -686,7 +687,7 @@ auto gse::ide::draw_explorer_panel(gui::builder& ui, workspace::data& ws, quick_
 	const rectf body = ctx.clip_stack.back();
 	const float pad = ctx.style.padding;
 	const float search_height = text_view->line_height(ctx.style.font_size) + pad * 0.8f;
-	const rectf panel = gui::draw::panel_backdrop(ctx, {
+	const rectf panel = ui.draw<gui::panel_backdrop>({
 		.rect = body,
 		.background = ctx.style.color_input_background,
 	});
@@ -726,7 +727,8 @@ auto gse::ide::draw_explorer_panel(gui::builder& ui, workspace::data& ws, quick_
 		const std::string_view label = scoped_label.empty()
 			? std::string_view("Initialize Git Repository")
 			: std::string_view(scoped_label);
-		if (gui::draw::button_in_rect(ui.ctx, label, "##git_init_" + rootless.generic_display_string(), init_rect, ui.hot_widget_id, ui.active_widget_id)) {
+		const std::string init_key = "##git_init_" + rootless.generic_display_string();
+		if (ui.draw<gui::button>({ .text = label, .rect = init_rect, .key = init_key })) {
 			channels.push<git_system::init_request>({ .root = rootless });
 		}
 		ctx.layout_cursor.y() -= row_height + pad;
@@ -764,7 +766,7 @@ auto gse::ide::draw_explorer_panel(gui::builder& ui, workspace::data& ws, quick_
 		open_paths.insert(std::move(key));
 	}
 
-	const gui::draw::tree_ops<fs_node> ops{
+	const gui::tree_ops<fs_node> ops{
 		.children = [&ws](const fs_node& n) -> std::span<const fs_node> {
 			if (n.is_dir && !n.loaded) {
 				workspace::request_children(ws, n.key);
@@ -783,10 +785,11 @@ auto gse::ide::draw_explorer_panel(gui::builder& ui, workspace::data& ws, quick_
 		.is_leaf = [](const fs_node& n) -> bool {
 			return !n.is_dir;
 		},
-		.custom_draw = [&ui, &ws, &name_action](const fs_node& n, const gui::draw_context& c, const rect_t<vec2f>& row_rect, bool, bool, int) {
+		.custom_draw = [&ui, &ws, &name_action](const fs_node& n, gui::builder& row_ui, const rect_t<vec2f>& row_rect, bool, bool, int) {
 			if (!ws.pending_name || ws.pending_name->key != n.key) {
 				return;
 			}
+			const gui::draw_context& c = row_ui.ctx;
 			auto& pending = *ws.pending_name;
 			const float row_height = row_rect.height();
 			const float arrow_w = c.style.font_size;
@@ -803,7 +806,13 @@ auto gse::ide::draw_explorer_panel(gui::builder& ui, workspace::data& ws, quick_
 				pending.input.anchor = 0;
 				pending.focus_requested = false;
 			}
-			gui::draw::text_input_in_rect(c, input_id, pending.name, pending.input, input_rect, ui.hot_widget_id, ui.focus_widget_id);
+			row_ui.draw<gui::text_input>({
+				.name = "explorer_name_input",
+				.buffer = pending.name,
+				.state = pending.input,
+				.rect = input_rect,
+				.widget_id = input_id,
+			});
 			if (c.key_pressed(key::escape)) {
 				name_action = explorer_name_action::cancel;
 			}

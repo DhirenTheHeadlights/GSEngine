@@ -68,6 +68,52 @@ export namespace gse {
 		return false;
 	}();
 
+	template <typename Arg, typename S>
+	constexpr bool is_external_resource_arg_v = [] consteval {
+		using U = dep_pointee_t<Arg>;
+		if constexpr (std::is_same_v<U, context>) {
+			return false;
+		}
+		else if constexpr (std::is_same_v<U, state_of_t<S>>) {
+			return false;
+		}
+		else if constexpr (is_shared_view_v<U>) {
+			return false;
+		}
+		else if constexpr (is_optional_shared_view_v<U>) {
+			return false;
+		}
+		else if constexpr (is_access_v<U>) {
+			return false;
+		}
+		else if constexpr (is_structural_v<U>) {
+			return false;
+		}
+		else if constexpr (is_entities_v<U>) {
+			return false;
+		}
+		else if constexpr (is_channel_read_v<U>) {
+			return false;
+		}
+		else if constexpr (is_channel_write_v<U>) {
+			return false;
+		}
+		else {
+			return !meta::has_system_state<U>() && !is_system_data_v<U>;
+		}
+	}();
+
+	template <typename Arg>
+	constexpr bool is_read_resource_arg_v = [] consteval {
+		using Bare = std::remove_cvref_t<Arg>;
+		if constexpr (std::is_pointer_v<Bare>) {
+			return std::is_const_v<std::remove_pointer_t<Bare>>;
+		}
+		else {
+			return std::is_const_v<std::remove_reference_t<Arg>>;
+		}
+	}();
+
 	template <auto MemberFn>
 	constexpr std::size_t arity_of = std::meta::parameters_of(MemberFn).size();
 
@@ -80,6 +126,8 @@ export namespace gse {
 		std::vector<id> component_reads;
 		std::vector<id> component_writes;
 		std::vector<id> component_structural;
+		std::vector<id> resource_reads;
+		std::vector<id> resource_writes;
 		bool entity_structural = false;
 	};
 
@@ -111,6 +159,11 @@ export namespace gse {
 	) -> void;
 
 	template <typename Arg, typename S>
+	auto append_arg_resource_access(
+		run_signature_metadata& out
+	) -> void;
+
+	template <typename Arg, typename S>
 	auto append_arg_run_metadata(
 		run_signature_metadata& out
 	) -> void;
@@ -129,6 +182,11 @@ export namespace gse {
 	auto external_resource_ref(
 		const task_context& ctx
 	) -> const T&;
+
+	template <typename T>
+	auto mutable_external_resource_ref(
+		task_context& ctx
+	) -> T&;
 
 	template <typename Arg, typename S>
 	auto resolve_run_arg(
@@ -158,6 +216,13 @@ auto gse::external_resource_ref(const task_context& ctx) -> const T& {
 	const void* p = ctx.resources_store.resources_ptr(id_of<T>());
 	assert(p != nullptr, "external resource not found; register it with register_external_resource");
 	return *static_cast<const T*>(p);
+}
+
+template <typename T>
+auto gse::mutable_external_resource_ref(task_context& ctx) -> T& {
+	void* p = ctx.resources_store.resources_ptr(id_of<T>());
+	assert(p != nullptr, "external resource not found; register it with register_external_resource");
+	return *static_cast<T*>(p);
 }
 
 template <typename Arg, typename S>
@@ -218,11 +283,12 @@ auto gse::resolve_run_arg(context& ctx, state_of_t<S>& state) -> decltype(auto) 
 			!is_system_data_v<Pointee>,
 			"cross-system state is private; use shared_view<X> ([[= gse::shared]] fields) or channels"
 		);
-		static_assert(
-			std::is_const_v<std::remove_pointer_t<U>>,
-			"external resources must be const"
-		);
-		return static_cast<const Pointee*>(ctx.resources_store.resources_ptr(id_of<Pointee>()));
+		if constexpr (is_read_resource_arg_v<Arg>) {
+			return static_cast<const Pointee*>(ctx.resources_store.resources_ptr(id_of<Pointee>()));
+		}
+		else {
+			return static_cast<Pointee*>(ctx.resources_store.resources_ptr(id_of<Pointee>()));
+		}
 	}
 	else {
 		static_assert(
@@ -230,10 +296,15 @@ auto gse::resolve_run_arg(context& ctx, state_of_t<S>& state) -> decltype(auto) 
 			"cross-system state is private; use shared_view<X> ([[= gse::shared]] fields) or channels"
 		);
 		static_assert(
-			std::is_const_v<std::remove_reference_t<Arg>>,
-			"external resources must be const"
+			std::is_reference_v<Arg>,
+			"external resources must be taken by reference: const T& to read it, T& to write it"
 		);
-		return external_resource_ref<U>(ctx);
+		if constexpr (is_read_resource_arg_v<Arg>) {
+			return external_resource_ref<U>(ctx);
+		}
+		else {
+			return mutable_external_resource_ref<U>(ctx);
+		}
 	}
 }
 
@@ -289,9 +360,24 @@ auto gse::append_arg_channel_ids(std::vector<id>& reads_out, std::vector<id>& wr
 }
 
 template <typename Arg, typename S>
+auto gse::append_arg_resource_access(run_signature_metadata& out) -> void {
+	if constexpr (is_external_resource_arg_v<Arg, S>) {
+		using U = dep_pointee_t<Arg>;
+		(void)trace_id<U>();
+		if constexpr (is_read_resource_arg_v<Arg>) {
+			out.resource_reads.push_back(id_of<U>());
+		}
+		else {
+			out.resource_writes.push_back(id_of<U>());
+		}
+	}
+}
+
+template <typename Arg, typename S>
 auto gse::append_arg_run_metadata(run_signature_metadata& out) -> void {
 	append_arg_state_dep<Arg, S>(out.state_deps);
 	append_arg_view_deps<Arg>(out.state_deps, out.optional_state_deps);
+	append_arg_resource_access<Arg, S>(out);
 
 	using ArgT = std::remove_cvref_t<Arg>;
 	if constexpr (is_access_v<ArgT> && is_read_access_v<ArgT>) {

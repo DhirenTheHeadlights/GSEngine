@@ -55,27 +55,42 @@ export namespace sandbox::dev_spawn {
 		]]
 		light_field_params lights;
 
+		[[= gse::actions::bind<"Spawn Stress Test", gse::key::f5>{}]]
+		[[= gse::actions::hidden{}]]
 		gse::actions::handle spawn_stress;
+
+		[[= gse::actions::bind<"Spawn Joints", gse::key::f6>{}]]
+		[[= gse::actions::hidden{}]]
 		gse::actions::handle spawn_joints;
+
+		[[= gse::actions::bind<"Spawn Character", gse::key::f7>{}]]
+		[[= gse::actions::hidden{}]]
 		gse::actions::handle spawn_character;
+
+		[[= gse::actions::bind<"Spawn Pyramid", gse::key::f9>{}]]
+		[[= gse::actions::hidden{}]]
 		gse::actions::handle spawn_pyramid;
+
+		[[= gse::actions::bind<"Ragdoll", gse::key::f8>{}]]
+		[[= gse::actions::hidden{}]]
 		gse::actions::handle ragdoll;
+
 		gse::id last_character;
 		gse::id possessed_character;
 		gse::id last_scene;
 		int pending_characters = 0;
 		bool character_warning_logged = false;
-		bool bound = false;
+		bool in_light_hall = false;
 	};
 
 	[[= gse::system_run<>{}]]
 	auto run(
 		gse::context& ctx,
 		data& state,
-		gse::channel_write<gse::actions::add_action_request, gse::actions::bind_axis2_request> actions_out,
 		gse::channel_read<spawn_stress_request, spawn_joints_request, spawn_character_request, spawn_pyramid_request, strike_pyramid_request, spawn_lights_request> spawn_in,
 		gse::channel_write<gse::animation::ragdoll_request> ragdoll_out,
 		gse::channel_write<gse::physics::impulse_request> impulse_out,
+		gse::channel_write<gse::renderer::atmosphere::sun_request> sun_out,
 		gse::shared_view<gse::actions::data> actions_d,
 		gse::shared_view<gse::world_system::data> world_d,
 		gse::shared_view<gse::asset::data> assets_d,
@@ -85,6 +100,7 @@ export namespace sandbox::dev_spawn {
 		gse::structural<gse::physics::collision_component>,
 		gse::structural<gse::primitive_box_spec>,
 		gse::structural<gse::primitive_sphere_spec>,
+		gse::structural<gse::point_light_component>,
 		gse::structural<gse::physics::joint_spec>,
 		gse::structural<gse::physics::muscle_component>,
 		gse::structural<gse::physics::joint_drive_component>,
@@ -113,10 +129,10 @@ auto sandbox::active_scene_ptr(const gse::shared_view<gse::world_system::data> w
 auto sandbox::dev_spawn::run(
 	gse::context& ctx,
 	data& state,
-	const gse::channel_write<gse::actions::add_action_request, gse::actions::bind_axis2_request> actions_out,
 	const gse::channel_read<spawn_stress_request, spawn_joints_request, spawn_character_request, spawn_pyramid_request, strike_pyramid_request, spawn_lights_request> spawn_in,
 	const gse::channel_write<gse::animation::ragdoll_request> ragdoll_out,
 	const gse::channel_write<gse::physics::impulse_request> impulse_out,
+	const gse::channel_write<gse::renderer::atmosphere::sun_request> sun_out,
 	const gse::shared_view<gse::actions::data> actions_d,
 	const gse::shared_view<gse::world_system::data> world_d,
 	const gse::shared_view<gse::asset::data> assets_d,
@@ -126,6 +142,7 @@ auto sandbox::dev_spawn::run(
 	gse::structural<gse::physics::collision_component>,
 	gse::structural<gse::primitive_box_spec>,
 	gse::structural<gse::primitive_sphere_spec>,
+	gse::structural<gse::point_light_component>,
 	gse::structural<gse::physics::joint_spec>,
 	gse::structural<gse::physics::muscle_component>,
 	gse::structural<gse::physics::joint_drive_component>,
@@ -139,15 +156,6 @@ auto sandbox::dev_spawn::run(
 	gse::structural<gse::skeleton_instance_component>,
 	gse::structural<gse::clip_player_component>
 ) -> gse::async::task<> {
-	if (!state.bound) {
-		state.spawn_stress = gse::actions::add<"Dev_Spawn_Stress">(actions_out, gse::key::f5);
-		state.spawn_joints = gse::actions::add<"Dev_Spawn_Joints">(actions_out, gse::key::f6);
-		state.spawn_character = gse::actions::add<"Dev_Spawn_Character">(actions_out, gse::key::f7);
-		state.ragdoll = gse::actions::add<"Dev_Ragdoll">(actions_out, gse::key::f8);
-		state.spawn_pyramid = gse::actions::add<"Dev_Spawn_Pyramid">(actions_out, gse::key::f9);
-		state.bound = true;
-	}
-
 	const auto& cs = gse::actions::current_state(actions_d);
 	auto* scene = active_scene_ptr(world_d);
 	std::optional<gse::scene::mutation_scope> scope;
@@ -169,8 +177,10 @@ auto sandbox::dev_spawn::run(
 	state.last_scene = active_scene_id;
 	if (entered_scene) {
 		state.possessed_character.reset();
+		state.in_light_hall = active_scene_id == gse::find_or_generate_id("LightHall");
 	}
 	const bool entered_pyramid_scene = entered_scene && active_scene_id == gse::find_or_generate_id("Pyramid");
+	const bool entered_light_hall_scene = entered_scene && state.in_light_hall;
 
 	if (scene != nullptr && (key_stress || req_stress)) {
 		spawn_physics_stress(*scene, state.stress);
@@ -178,8 +188,13 @@ auto sandbox::dev_spawn::run(
 	if (scene != nullptr && (key_pyramid || req_pyramid || entered_pyramid_scene)) {
 		spawn_pyramid(*scene, state.pyramid);
 	}
-	if (scene != nullptr && !spawn_in.of<spawn_lights_request>().empty()) {
+	if (scene != nullptr && (!spawn_in.of<spawn_lights_request>().empty() || entered_light_hall_scene)) {
 		spawn_light_field(*scene, state.lights);
+	}
+	if (state.in_light_hall) {
+		sun_out.push<gse::renderer::atmosphere::sun_request>({
+			.elevation = state.lights.sun_elevation,
+		});
 	}
 	if (scene != nullptr && !spawn_in.of<strike_pyramid_request>().empty()) {
 		const auto& strike = state.strike;

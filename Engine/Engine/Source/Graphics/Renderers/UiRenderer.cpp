@@ -36,7 +36,11 @@ namespace gse::renderer::ui {
 	};
 
 	auto note_record_state(data& d, const record_state state, const record_stats& stats) -> void {
-		const bool changed = state != d.last_record_state || stats.extent.x() != d.last_extent.x() || stats.extent.y() != d.last_extent.y();
+		d.peak_vertices = std::max(d.peak_vertices, stats.vertices);
+		d.peak_batches = std::max(d.peak_batches, stats.batches);
+
+		const bool peak_grew = d.peak_vertices > d.reported_peak_vertices + d.reported_peak_vertices / 4;
+		const bool changed = peak_grew || state != d.last_record_state || stats.extent.x() != d.last_extent.x() || stats.extent.y() != d.last_extent.y();
 		if (!changed) {
 			++d.frames_since_state_change;
 			return;
@@ -45,7 +49,7 @@ namespace gse::renderer::ui {
 		const record_state_info to = annotation_from_enum(state, record_state_info{});
 		log::println(
 			log::category::render,
-			"[ui] record state {} -> {} after {} frames: extent={}x{} batches={} verts={} indices={} dropped_quads={}/{} dropped_batches={}/{} published={} recorded={}",
+			"[ui] record state {} -> {} after {} frames: extent={}x{} batches={} verts={} indices={} peak_verts={}/{} peak_batches={}/{} dropped_quads={}/{} dropped_batches={}/{} published={} recorded={}",
 			from.label,
 			to.label,
 			d.frames_since_state_change,
@@ -54,6 +58,10 @@ namespace gse::renderer::ui {
 			stats.batches,
 			stats.vertices,
 			stats.indices,
+			d.peak_vertices,
+			max_vertices,
+			d.peak_batches,
+			max_batches_per_frame,
 			stats.dropped_quads,
 			max_quads_per_frame,
 			stats.dropped_batches,
@@ -63,6 +71,7 @@ namespace gse::renderer::ui {
 		);
 		d.last_record_state = state;
 		d.last_extent = stats.extent;
+		d.reported_peak_vertices = d.peak_vertices;
 		d.frames_since_state_change = 0;
 	}
 
@@ -481,6 +490,9 @@ auto gse::renderer::ui::frame(context& ctx, shared_view<gpu::context::data> gpu_
 	}
 
 	for (const id window : windows) {
+		if (!gpu_s.render_graph->target_live(window)) {
+			continue;
+		}
 		const auto ext = gpu_s.render_graph->extent(window);
 		if (ext.x() == 0 || ext.y() == 0) {
 			continue;

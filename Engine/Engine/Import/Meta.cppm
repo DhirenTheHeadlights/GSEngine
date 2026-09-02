@@ -11,6 +11,7 @@ export import :parse;
 export import :text;
 export import :scalar;
 export import :settings_anno;
+export import :actions_anno;
 export import :fields;
 export import :args;
 export import :type_name;

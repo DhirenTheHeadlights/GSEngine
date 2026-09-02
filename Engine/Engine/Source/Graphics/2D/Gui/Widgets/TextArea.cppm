@@ -21,21 +21,16 @@ import :styles;
 import :builder;
 import :text_buffer;
 import :font;
+import :input_layers;
 import :interaction;
 import :symbols;
+import :text_select;
 
 export namespace gse::gui {
 	struct text_edit_snapshot {
 		std::vector<std::string> lines;
 		buffer_position caret;
 		buffer_position anchor;
-	};
-
-	enum class text_edit_action : std::uint32_t {
-		none = 0,
-		copy,
-		cut,
-		paste,
 	};
 
 	struct text_area_state {
@@ -57,8 +52,6 @@ export namespace gse::gui {
 		float widest_line_px = 0.f;
 		std::vector<float> line_tops;
 		std::uint64_t metrics_sig = 0;
-		text_edit_action pending_action = text_edit_action::none;
-		id context_menu_tag{};
 	};
 
 	struct text_area_layout {
@@ -85,11 +78,13 @@ export namespace gse::gui {
 	};
 
 	struct text_area {
-		using result = void;
+		using result = bool;
 
 		struct params {
 			text_buffer& buffer;
 			text_area_state& state;
+			std::string_view name{};
+			id widget_id{};
 			std::span<const text_span> spans{};
 			std::span<const text_underline> underlines{};
 			std::span<const text_fade> fades{};
@@ -113,7 +108,7 @@ export namespace gse::gui {
 			id& hot,
 			id& active,
 			id& focus
-		) -> void;
+		) -> bool;
 	};
 }
 
@@ -131,7 +126,7 @@ export namespace gse::gui {
 	};
 }
 
-export namespace gse::gui::draw {
+namespace gse::gui::draw {
 	auto text_area_in_rect(
 		const draw_context& ctx,
 		id widget_id,
@@ -140,6 +135,15 @@ export namespace gse::gui::draw {
 		id& focus_widget_id
 	) -> bool;
 
+	auto follow_tail_button(
+		builder& b,
+		const rectf& area,
+		text_area_state& state,
+		id widget_id
+	) -> interaction::press;
+}
+
+export namespace gse::gui {
 	auto text_area_position_at(
 		const draw_context& ctx,
 		const text_area_geometry& geometry,
@@ -156,12 +160,25 @@ export namespace gse::gui::draw {
 		const text_area_geometry& geometry
 	) -> text_area_layout;
 
-	auto follow_tail_button(
-		builder& b,
-		const rectf& area,
-		text_area_state& state,
-		id widget_id
-	) -> interaction::press;
+	struct follow_tail {
+		using result = interaction::press;
+		struct params {
+			rectf area;
+			text_area_state& state;
+			std::string_view name = "##follow_tail";
+			id widget_id{};
+		};
+
+		static auto draw(draw_context& ctx, const params& p, id& hot, id& active, id& focus) -> interaction::press {
+			builder b{
+				.ctx = ctx,
+				.hot_widget_id = hot,
+				.active_widget_id = active,
+				.focus_widget_id = focus,
+			};
+			return draw::follow_tail_button(b, p.area, p.state, p.widget_id.exists() ? p.widget_id : ids::make(p.name));
+		}
+	};
 }
 
 namespace gse::gui {
@@ -527,41 +544,19 @@ auto gse::gui::text_area_layout::line_at(const float offset) const -> std::uint3
 	return std::min(static_cast<std::uint32_t>(std::distance(line_tops.begin(), std::prev(above))), last);
 }
 
-auto gse::gui::text_area::draw(const draw_context& ctx, const params& p, id& hot, id& active, id& focus) -> void {
+auto gse::gui::text_area::draw(const draw_context& ctx, const params& p, id& hot, id& active, id& focus) -> bool {
 	(void)active;
-	const rectf rect = p.rect.value_or(ctx.next_row(p.font.valid() ? p.font : ctx.fonts.code, 8.f));
-	draw::text_area_in_rect(
-		ctx,
-		ids::make_from_key(stable_id("##TextArea")),
-		{
-			.buffer = p.buffer,
-			.state = p.state,
-			.spans = p.spans,
-			.underlines = p.underlines,
-			.fades = p.fades,
-			.blocks = p.blocks,
-			.stops = p.stops,
-			.rect = rect,
-			.read_only = p.read_only,
-			.consumes_image_paste = p.consumes_image_paste,
-			.show_line_numbers = p.show_line_numbers,
-			.indent_width = p.indent_width,
-			.indent_with_spaces = p.indent_with_spaces,
-			.auto_indent = p.auto_indent,
-			.blink_interval = p.blink_interval,
-			.font = p.font,
-		},
-		hot,
-		focus
-	);
+	params resolved = p;
+	resolved.rect = p.rect.value_or(ctx.next_row(p.font.valid() ? p.font : ctx.fonts.code, 8.f));
+	return draw::text_area_in_rect(ctx, p.widget_id.exists() ? p.widget_id : ids::make(p.name), resolved, hot, focus);
 }
 
-auto gse::gui::draw::text_area_line_height(const draw_context& ctx, const resource::handle<font> font) -> float {
+auto gse::gui::text_area_line_height(const draw_context& ctx, const resource::handle<font> font) -> float {
 	const auto fnt = font.valid() ? font : ctx.fonts.code;
 	return fnt.resolve()->line_height(ctx.style.font_size) * 1.25f;
 }
 
-auto gse::gui::draw::text_area_layout_of(const draw_context& ctx, const text_area_geometry& geometry) -> text_area_layout {
+auto gse::gui::text_area_layout_of(const draw_context& ctx, const text_area_geometry& geometry) -> text_area_layout {
 	const text_buffer& buffer = geometry.buffer;
 	const auto fnt = geometry.font.valid() ? geometry.font : ctx.fonts.code;
 	const auto fnt_view = fnt.resolve();
@@ -590,7 +585,7 @@ auto gse::gui::draw::text_area_layout_of(const draw_context& ctx, const text_are
 	};
 }
 
-auto gse::gui::draw::text_area_position_at(const draw_context& ctx, const text_area_geometry& geometry, const vec2f mouse) -> buffer_position {
+auto gse::gui::text_area_position_at(const draw_context& ctx, const text_area_geometry& geometry, const vec2f mouse) -> buffer_position {
 	const text_buffer& buffer = geometry.buffer;
 	const auto fnt = geometry.font.valid() ? geometry.font : ctx.fonts.code;
 	const run_context style{
@@ -812,6 +807,10 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 		hot_widget_id = widget_id;
 	}
 
+	if (ctx.hit_regions) {
+		ctx.hit_regions->block_text_selection(text_hit_rect);
+	}
+
 	if (ctx.mouse_pressed_for(text_hit_rect)) {
 		focus_widget_id = widget_id;
 
@@ -877,7 +876,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 		}
 	}
 
-	if (state.context_menu_tag.exists() && ctx.mouse_pressed_for(text_hit_rect, mouse_button::button_2)) {
+	if (ctx.mouse_pressed_for(text_hit_rect, mouse_button::button_2)) {
 		focus_widget_id = widget_id;
 		const vec2f menu_pos = ctx.mouse_position();
 		const buffer_position click_pos = pick_position(menu_pos);
@@ -916,7 +915,8 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 		ctx.open_context_menu({
 			.position = menu_pos,
 			.items = std::move(items),
-			.tag = state.context_menu_tag,
+			.target = widget_id,
+			.tag = text_edit_menu_tag(),
 		});
 	}
 
@@ -1106,13 +1106,13 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 		state.anchor = state.caret;
 	};
 
-	if (state.pending_action != text_edit_action::none) {
-		if (state.pending_action == text_edit_action::copy) {
+	if (const text_edit_action pending_action = ctx.take_text_edit(widget_id); pending_action != text_edit_action::none) {
+		if (pending_action == text_edit_action::copy) {
 			if (has_selection()) {
 				ctx.set_clipboard(selection_string());
 			}
 		}
-		else if (state.pending_action == text_edit_action::cut) {
+		else if (pending_action == text_edit_action::cut) {
 			if (!read_only && has_selection()) {
 				ctx.set_clipboard(selection_string());
 				begin_edit(2);
@@ -1121,7 +1121,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 				caret_moved = true;
 			}
 		}
-		else if (state.pending_action == text_edit_action::paste) {
+		else if (pending_action == text_edit_action::paste) {
 			if (!read_only) {
 				if (std::string paste = ctx.clipboard(); !paste.empty()) {
 					begin_edit(1);
@@ -1141,7 +1141,6 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 			state.last_blink = system_clock::now<time>();
 			state.blink_on = true;
 		}
-		state.pending_action = text_edit_action::none;
 	}
 
 	if (focused) {

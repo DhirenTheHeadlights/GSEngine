@@ -1,7 +1,3 @@
-static const int shadow_march_steps = 16;
-static const float shadow_mean_detail_erosion = 0.5;
-static const float shadow_min_sun_elevation = 0.02;
-
 float shadow_sample_density(float3 world_pos_km, float height_fraction) {
     float2 weather_uv = (world_pos_km.xz + cloud_shadow_ubo.wind_offset.xz) * cloud_ubo.weather_scale;
     float4 weather = cloud_weather_in.SampleLevel(
@@ -21,7 +17,7 @@ float shadow_sample_density(float3 world_pos_km, float height_fraction) {
         return 0.0;
     }
 
-    return cloud_carve_density(base, shadow_mean_detail_erosion, cloud_ubo.detail_strength, cloud_ubo.density_multiplier);
+    return cloud_carve_density(base, mean_detail_erosion, cloud_ubo.detail_strength, cloud_ubo.density_multiplier);
 }
 
 void cloud_shadow_map(uint3 dispatch_id) {
@@ -32,7 +28,7 @@ void cloud_shadow_map(uint3 dispatch_id) {
     }
 
     float3 sun_dir = cloud_shadow_ubo.sun_direction;
-    if (sun_dir.y <= shadow_min_sun_elevation) {
+    if (sun_dir.y <= sin(shadow_min_sun_elevation)) {
         cloud_shadow_out[dispatch_id.xy] = float4(1.0, 0.0, 0.0, 0.0);
         return;
     }

@@ -68,6 +68,18 @@ namespace gse::ide::agent {
 		std::uint32_t session_id
 	) -> id;
 
+	auto overview_tab_id() -> id;
+
+	auto overview_task(
+		const session& s
+	) -> std::string;
+
+	auto draw_overview(
+		gui::builder& ui,
+		data& d,
+		const rectf& area
+	) -> void;
+
 	auto draw_session_tabs(
 		gui::builder& ui,
 		data& d,
@@ -93,6 +105,13 @@ namespace gse::ide::agent {
 		const rectf& area
 	) -> void;
 
+	auto draw_model_controls(
+		gui::builder& ui,
+		session& s,
+		const rectf& model_rect,
+		const rectf& effort_rect
+	) -> void;
+
 	auto draw_input(
 		gui::builder& ui,
 		session& s,
@@ -114,11 +133,13 @@ namespace gse::ide::agent {
 	) -> void;
 
 	auto activity_label(
+		const data& d,
 		const session& s
 	) -> std::string;
 
 	auto draw_activity(
 		const gui::draw_context& ctx,
+		const data& d,
 		const session& s,
 		const rectf& area
 	) -> void;

@@ -48,6 +48,10 @@ export namespace sandbox {
 		gse::scene& s
 	) -> void;
 
+	auto light_hall_scene_setup(
+		gse::scene& s
+	) -> void;
+
 	auto physics_parity_world_setup(
 		gse::engine& e,
 		std::size_t n_envs
@@ -321,6 +325,66 @@ auto sandbox::sky_scene_setup(gse::scene& s) -> void {
 			.speed = gse::meters_per_second(30.f),
 			.yaw = gse::degrees(0.f),
 			.pitch = gse::degrees(0.f),
+			.collide_with_geometry = false,
+		});
+}
+
+auto sandbox::light_hall_scene_setup(gse::scene& s) -> void {
+	constexpr auto floor_size = gse::vec3<gse::length>(gse::meters(1000.f), gse::meters(1.f), gse::meters(1000.f));
+	s.spawn(
+		"LightHallFloor",
+		static_disc_floor(
+			gse::vec3<gse::position>(gse::meters(0.f), gse::meters(-0.5f), gse::meters(0.f)),
+			floor_size,
+			gse::meters(1200.f)
+		)
+	);
+
+	s.spawn(
+		"LightHallMountains",
+		mountain_ring(
+			gse::meters(1200.f),
+			gse::meters(6000.f),
+			gse::meters(1030.f),
+			gse::vec3f(0.19f, 0.21f, 0.26f),
+			0.92f,
+			8821u
+		)
+	);
+
+	constexpr int columns = 7;
+	const auto spacing = gse::meters(16.f);
+	const auto pillar_width = gse::meters(3.f);
+	const auto span = spacing * (static_cast<float>(columns - 1) * 0.5f);
+
+	for (int x = 0; x < columns; ++x) {
+		for (int z = 0; z < columns; ++z) {
+			const auto height = gse::meters(24.f + 7.f * static_cast<float>((x * 3 + z * 5) % 4));
+			s.spawn(
+				std::format("HallPillar_{}_{}", x, z),
+				static_box(
+					gse::vec3<gse::position>(
+						spacing * static_cast<float>(x) - span,
+						height * 0.5f,
+						spacing * static_cast<float>(z) - span
+					),
+					gse::vec3<gse::length>(pillar_width, height, pillar_width),
+					gse::quat(1.f, 0.f, 0.f, 0.f),
+					gse::vec3f(0.09f, 0.09f, 0.10f),
+					0.65f,
+					0.0f
+				)
+			);
+		}
+	}
+
+	s.build("Light Hall Camera")
+		.with<gse::free_camera::component>({
+			.initial_position = gse::vec3<gse::position>(gse::meters(0.f), gse::meters(6.f), gse::meters(74.f)),
+			.priority = 60,
+			.speed = gse::meters_per_second(24.f),
+			.yaw = gse::degrees(0.f),
+			.pitch = gse::degrees(-4.f),
 			.collide_with_geometry = false,
 		});
 }

@@ -379,6 +379,8 @@ namespace gse::internal {
 }
 
 export namespace gse {
+	using inverse_area = decltype(std::declval<inverse_length>() * std::declval<inverse_length>());
+
 	template <internal::is_quantity Q>
 	requires internal::has_same_dimensions<typename Q::dimension, typename angle::dimension>
 	constexpr auto sin(const Q& a) -> typename Q::value_type {
