@@ -12,6 +12,8 @@ namespace gse::ide::agent {
 	constexpr std::wstring_view config_dir_name = L"CLAUDE_CONFIG_DIR";
 	constexpr std::wstring_view user_profile_name = L"USERPROFILE";
 	constexpr std::wstring_view handoff_option = L"--agent-handoff=";
+	constexpr std::string_view builtin_model_aliases[] = { "opus", "sonnet", "haiku", "fable" };
+	constexpr std::int64_t limit_backoff_seconds = 300;
 	constexpr std::uint32_t sessions_magic = 0x47534147;
 	constexpr std::uint32_t sessions_version = 5;
 	constexpr std::uint32_t first_schema_sessions_version = 3;
@@ -91,6 +93,10 @@ namespace gse::ide::agent {
 		session& s
 	) -> void;
 
+	auto restart_session(
+		session& s
+	) -> void;
+
 	auto close_session(
 		session& s
 	) -> void;
@@ -123,5 +129,13 @@ namespace gse::ide::agent {
 		std::wstring_view name
 	) -> std::filesystem::path;
 
+	auto unix_now() -> std::int64_t;
+
 	auto claude_home() -> std::filesystem::path;
+
+	auto claude_config_file() -> std::filesystem::path;
+
+	auto load_model_options() -> std::vector<model_option>;
+
+	auto available_models() -> std::span<const model_option>;
 }

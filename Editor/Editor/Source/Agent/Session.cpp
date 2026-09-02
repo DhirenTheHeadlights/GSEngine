@@ -211,6 +211,8 @@ auto gse::ide::agent::adopt_session(session& s, const handoff& adopted) -> bool 
 	s.output = adopted.output;
 	s.input = adopted.input;
 	s.running = true;
+	s.launched_model_id = s.model_id;
+	s.launched_effort = s.requested_effort;
 
 	for (void* handle : { s.process, s.job, s.output, s.input }) {
 		if (win32::valid_handle(handle)) {
@@ -256,6 +258,8 @@ auto gse::ide::agent::create_session(data& d, const std::filesystem::path& cwd) 
 		.name = std::format("Agent {}", session_id),
 		.cwd = cwd.empty() ? config::primary().project_root : cwd,
 		.hydrated = true,
+		.model_id = d.default_model.value,
+		.requested_effort = d.default_effort,
 	});
 	attach_runtime(d.sessions.back());
 	d.active = session_id;
@@ -264,6 +268,17 @@ auto gse::ide::agent::create_session(data& d, const std::filesystem::path& cwd) 
 
 auto gse::ide::agent::session_command(const session& s) -> std::wstring {
 	std::wstring command(agent_command.begin(), agent_command.end());
+
+	if (!s.model_id.empty()) {
+		command += L" --model ";
+		command.append(s.model_id.begin(), s.model_id.end());
+	}
+	if (s.requested_effort != agent_effort::inherit) {
+		const std::string_view level = enum_to_string(s.requested_effort);
+		command += L" --effort ";
+		command.append(level.begin(), level.end());
+	}
+
 	if (s.info.agent_id.empty()) {
 		return command;
 	}
@@ -286,6 +301,8 @@ auto gse::ide::agent::launch_session(session& s) -> bool {
 	s.input = child.input;
 	s.pending.clear();
 	s.running = true;
+	s.launched_model_id = s.model_id;
+	s.launched_effort = s.requested_effort;
 
 	if (!s.info.agent_id.empty()) {
 		append_row(s, {
@@ -308,6 +325,10 @@ auto gse::ide::agent::launch_session(session& s) -> bool {
 
 auto gse::ide::agent::append_row(session& s, transcript_row row) -> void {
 	hydrate_session(s);
+
+	if (row.kind == row_kind::retry && !s.rows.empty() && s.rows.back().kind == row_kind::retry) {
+		return;
+	}
 
 	if (row.kind == row_kind::tool && !row.file.empty() && !(row.added.empty() && row.removed.empty())) {
 		note_written_file(s, row.file);
@@ -332,12 +353,24 @@ auto gse::ide::agent::pump_session(session& s) -> void {
 			continue;
 		}
 		const std::string_view kind = string_at(*event, "type");
+		if (const std::int64_t resets = limit_reset_at(*event); resets > s.limited_until) {
+			s.limited_until = resets;
+		}
 		if (kind == "result") {
 			s.think_clock.reset();
 			s.recent_turn.emplace();
+			s.wrote_this_turn = false;
+			if (usage_limited(*event) && s.limited_until <= unix_now()) {
+				s.limited_until = unix_now() + limit_backoff_seconds;
+			}
 		}
-		else if (kind == "user") {
-			s.action = "thinking";
+		else {
+			if (!s.think_clock) {
+				s.think_clock.emplace();
+			}
+			if (kind == "user" || s.action.empty()) {
+				s.action = "thinking";
+			}
 		}
 
 		const std::string_view uuid = anchorable(*event) ? string_at(*event, "uuid") : std::string_view{};
@@ -374,6 +407,27 @@ auto gse::ide::agent::pump_session(session& s) -> void {
 		});
 		s.running = false;
 		s.think_clock.reset();
+		s.wrote_this_turn = false;
+	}
+}
+
+auto gse::ide::agent::restart_session(session& s) -> void {
+	if (s.running) {
+		spawn::terminate(s.process, s.job);
+		s.running = false;
+	}
+	close_session(s);
+	s.pending.clear();
+	s.think_clock.reset();
+	s.wrote_this_turn = false;
+	s.action.clear();
+
+	if (!launch_session(s)) {
+		append_row(s, {
+			.kind = row_kind::failure,
+			.text = "could not relaunch 'claude' with the new settings",
+			.detail = "the conversation is intact - press + to start a new chat, or reopen the panel",
+		});
 	}
 }
 
@@ -444,6 +498,10 @@ auto gse::ide::agent::request_close(data& d, const std::uint32_t session_id) -> 
 }
 
 auto gse::ide::agent::send_to_session(session& s, const std::string_view prompt, const std::span<const attachment> attachments) -> void {
+	const bool settings_stale = s.launched_model_id != s.model_id || s.launched_effort != s.requested_effort;
+	if (s.running && !s.think_clock && settings_stale) {
+		restart_session(s);
+	}
 	if (!s.running || !win32::valid_handle(s.input)) {
 		return;
 	}
@@ -525,6 +583,78 @@ auto gse::ide::agent::environment_path(const std::wstring_view name) -> std::fil
 	}
 
 	return value;
+}
+
+auto gse::ide::agent::load_model_options() -> std::vector<model_option> {
+	std::vector<model_option> out;
+	for (const std::string_view alias : builtin_model_aliases) {
+		out.push_back({
+			.value = std::string(alias),
+			.label = std::string(alias),
+		});
+	}
+
+	const std::filesystem::path file = claude_config_file();
+	std::ifstream in(file, std::ios::binary);
+	if (!in) {
+		log::println(log::level::warning, log::category::task, "agent: could not read '{}' - the model list is empty, so chats use the claude default", file);
+		return out;
+	}
+
+	const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+	const std::optional<analysis::json::value> root = analysis::json::parse(text);
+	if (!root) {
+		log::println(log::level::warning, log::category::task, "agent: '{}' is not valid json - the model list is empty", file);
+		return out;
+	}
+
+	const analysis::json::value* cached = root->find("additionalModelOptionsCache");
+	if (!cached || !cached->is_array()) {
+		log::println(log::level::info, log::category::task, "agent: '{}' has no cached model list yet - open the model picker in a terminal claude once to populate it", file);
+		return out;
+	}
+
+	for (const analysis::json::value& entry : cached->children) {
+		const analysis::json::value* id = entry.find("value");
+		if (!id || id->as_string().empty()) {
+			continue;
+		}
+		if (std::ranges::any_of(out, [id](const model_option& known) {
+			return known.value == id->as_string();
+		})) {
+			continue;
+		}
+
+		const analysis::json::value* described = entry.find("description");
+		const analysis::json::value* labelled = entry.find("label");
+		std::string_view label = described ? described->as_string() : std::string_view{};
+		label = label.substr(0, label.find(" \xC2\xB7 "));
+		if (label.empty() && labelled) {
+			label = labelled->as_string();
+		}
+
+		out.push_back({
+			.value = std::string(id->as_string()),
+			.label = label.empty() ? std::string(id->as_string()) : std::string(label),
+		});
+	}
+
+	log::println(log::level::info, log::category::task, "agent: {} model(s) available from '{}'", out.size(), file);
+	return out;
+}
+
+auto gse::ide::agent::available_models() -> std::span<const model_option> {
+	static const std::vector<model_option> cached = load_model_options();
+	return cached;
+}
+
+auto gse::ide::agent::unix_now() -> std::int64_t {
+	return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
+auto gse::ide::agent::claude_config_file() -> std::filesystem::path {
+	const std::filesystem::path home = claude_home();
+	return home.empty() ? std::filesystem::path{} : home.parent_path() / ".claude.json";
 }
 
 auto gse::ide::agent::claude_home() -> std::filesystem::path {

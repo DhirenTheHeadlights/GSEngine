@@ -1,0 +1,97 @@
+#!/bin/sh
+set -eu
+
+agent=
+prompt=
+
+usage() {
+	cat <<'EOF'
+gse-hibernate - sleep until your edits are in a build, then get woken to test them.
+
+usage: Tools/gse-hibernate --then "what to do once the build lands"
+
+  --then TEXT   the prompt the editor sends you when your edits are built
+  --agent ID    your agent session (injected automatically)
+
+Returns immediately. END YOUR TURN after calling this - do not poll, do not wait.
+The editor prompts you again once a build covers the files you edited, and tells
+you whether it passed. Your edits to editor sources wake on an editor rebuild;
+edits to project sources wake on a project build.
+
+Use this instead of Tools/gse-build when you do not need to trigger a build
+yourself - you are observing for one that is coming anyway. If nothing ever
+builds, you stay asleep; the editor shows how many chats are waiting.
+
+Only works for chats started in the editor's agent panel. A terminal session
+cannot be woken by the editor and will be told so.
+EOF
+}
+
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--then)
+			shift
+			prompt=${1:-}
+			;;
+		--agent)
+			shift
+			agent=${1:-}
+			;;
+		-h|--help)
+			usage
+			exit 0
+			;;
+		*)
+			echo "gse-hibernate: unknown option '$1'" >&2
+			usage >&2
+			exit 2
+			;;
+	esac
+	shift
+done
+
+if [ -z "$agent" ]; then
+	echo "gse-hibernate: no --agent argument. It is normally spliced in by the build-guard PreToolUse hook," >&2
+	echo "gse-hibernate: so the usual cause is that this session never loaded the hook, NOT that you are a" >&2
+	echo "gse-hibernate: terminal session. Do not conclude anything about your session kind from this." >&2
+	echo "gse-hibernate:" >&2
+	echo "gse-hibernate: check it with:  echo Tools/gse-build probe" >&2
+	echo "gse-hibernate: the echoed line should come back with '--agent <session-id>' spliced in. If it does" >&2
+	echo "gse-hibernate: not, the hooks are not registered for this session's directory - the direct-build" >&2
+	echo "gse-hibernate: guard is off too. Tell the user; that is a bigger problem than this message." >&2
+	exit 2
+fi
+
+state_root=${GSE_STATE_DIR:-${LOCALAPPDATA:-$HOME/AppData/Local}/GSE}
+inbox="$state_root/cache/agent-build"
+id="$$-$(date +%s)"
+result="$inbox/results/$id.txt"
+
+mkdir -p "$inbox/hibernate" "$inbox/results"
+rm -f "$result"
+
+{
+	echo "id $id"
+	echo "agent $agent"
+	echo "prompt"
+	printf '%s\n' "$prompt"
+} > "$inbox/hibernate/$id.partial"
+mv "$inbox/hibernate/$id.partial" "$inbox/hibernate/$id.txt"
+
+waited=0
+while [ "$waited" -lt 15 ]; do
+	if [ -e "$result" ]; then
+		status=$(sed -n '2s/^status //p' "$result")
+		tail -n +3 "$result"
+		rm -f "$result"
+		[ "$status" = "ok" ] && exit 0
+		echo "gse-hibernate: not hibernating - keep working normally" >&2
+		exit 1
+	fi
+	sleep 1
+	waited=$((waited + 1))
+done
+
+rm -f "$inbox/hibernate/$id.txt"
+echo "gse-hibernate: no editor answered within 15s - it is not running, so nothing would wake you" >&2
+exit 2

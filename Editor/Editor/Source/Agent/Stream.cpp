@@ -264,10 +264,14 @@ auto gse::ide::agent::summarize(const analysis::json::value& event, session_info
 		}
 		if (subtype == "api_retry") {
 			const analysis::json::value* status = event.find("error_status");
+			const std::int64_t code = status ? status->as_int() : 0;
+			const std::string_view reason = string_at(event, "error");
 			out.push_back({
-				.kind = row_kind::failure,
-				.text = std::format("retry {}", status ? status->as_int() : 0),
-				.detail = std::string(string_at(event, "error")),
+				.kind = row_kind::retry,
+				.text = code > 0
+					? std::format("the API returned {} - retrying", code)
+					: "cannot reach the API - retrying",
+				.detail = reason == "unknown" ? std::string{} : std::string(reason),
 			});
 			return out;
 		}
@@ -385,6 +389,33 @@ auto gse::ide::agent::turn_failed(const analysis::json::value& event) -> bool {
 	return error && error->boolean;
 }
 
+auto gse::ide::agent::limit_reset_at(const analysis::json::value& event) -> std::int64_t {
+	if (string_at(event, "type") != "rate_limit_event") {
+		return 0;
+	}
+
+	const analysis::json::value* info = event.find("rate_limit_info");
+	if (!info || string_at(*info, "status") != "rejected") {
+		return 0;
+	}
+
+	const analysis::json::value* resets = info->find("resetsAt");
+	return resets ? resets->as_int() : 0;
+}
+
+auto gse::ide::agent::usage_limited(const analysis::json::value& event) -> bool {
+	const analysis::json::value* status = event.find("api_error_status");
+	if (!status || status->as_int() != 429) {
+		return false;
+	}
+
+	std::string message(string_at(event, "result"));
+	std::ranges::transform(message, message.begin(), [](const unsigned char ch) {
+		return static_cast<char>(std::tolower(ch));
+	});
+	return message.contains("limit");
+}
+
 auto gse::ide::agent::retryable_failure(const analysis::json::value& event) -> bool {
 	if (!turn_failed(event)) {
 		return false;
@@ -392,7 +423,12 @@ auto gse::ide::agent::retryable_failure(const analysis::json::value& event) -> b
 
 	if (const analysis::json::value* status = event.find("api_error_status")) {
 		const std::int64_t code = status->as_int();
-		return code == 408 || code == 429 || code >= 500;
+		if (code == 408 || code == 429 || code >= 500) {
+			return true;
+		}
+		if (code > 0) {
+			return false;
+		}
 	}
 
 	static constexpr std::string_view transport[] = {

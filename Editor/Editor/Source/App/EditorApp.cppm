@@ -79,7 +79,7 @@ export namespace gse::ide {
 			context& ctx,
 			data& d,
 			channel_read<window_open_file_result, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, gui::context_menu_result, window_opened, window_closed, window_resized, window_moved, window_cursor_located> requests_in,
-			channel_write<gui::push_screen_request, settings::change_request, gui::popout_toggle, set_cursor_shape_request, jump_to_request, window_launcher_mode_request, window_open_file_request, build_runner::build_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, window_popout_request, window_close_request, window_locate_cursor_request, gui::menu_migrate_request, build_runner::stop_session_request> ui_out,
+			channel_write<gui::push_screen_request, settings::change_request, settings::override_request, gui::popout_toggle, set_cursor_shape_request, jump_to_request, window_launcher_mode_request, window_open_file_request, build_runner::build_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, window_popout_request, window_close_request, window_locate_cursor_request, gui::menu_migrate_request, build_runner::stop_session_request> ui_out,
 			shared_view<search_system::data> search_d,
 			shared_view<input::data> input_d,
 			shared_view<window::data> window_d,
@@ -1266,7 +1266,7 @@ auto gse::ide::forward_game_input(const input::state& input, const channel_write
 	}
 }
 
-auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_open_file_result, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, gui::context_menu_result, window_opened, window_closed, window_resized, window_moved, window_cursor_located> requests_in, const channel_write<gui::push_screen_request, settings::change_request, gui::popout_toggle, set_cursor_shape_request, jump_to_request, window_launcher_mode_request, window_open_file_request, build_runner::build_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, window_popout_request, window_close_request, window_locate_cursor_request, gui::menu_migrate_request, build_runner::stop_session_request> ui_out, const shared_view<search_system::data> search_d, const shared_view<input::data> input_d, const shared_view<window::data> window_d, const shared_view<build_runner::data> build_d, const save::registry& save_reg) -> async::task<> {
+auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_open_file_result, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, gui::context_menu_result, window_opened, window_closed, window_resized, window_moved, window_cursor_located> requests_in, const channel_write<gui::push_screen_request, settings::change_request, settings::override_request, gui::popout_toggle, set_cursor_shape_request, jump_to_request, window_launcher_mode_request, window_open_file_request, build_runner::build_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, window_popout_request, window_close_request, window_locate_cursor_request, gui::menu_migrate_request, build_runner::stop_session_request> ui_out, const shared_view<search_system::data> search_d, const shared_view<input::data> input_d, const shared_view<window::data> window_d, const shared_view<build_runner::data> build_d, const save::registry& save_reg) -> async::task<> {
 	if (!d.screen_pushed && search_d.index) {
 		ui_out.push<gui::push_screen_request>({
 			.factory = [channels = channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request>(ui_out), index = search_d.index] {
@@ -1319,7 +1319,7 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 	const bool session_live = std::ranges::any_of(build_d.sessions, [](const build_runner::attached_session& session) {
 		return session.generation != 0;
 	});
-	if (build_d.building_game || (!session_live && build_d.session_error.empty())) {
+	if (build_d.building_session || (!session_live && build_d.session_error.empty())) {
 		d.session_dismissed = false;
 	}
 	if (build_d.session_error.empty()) {
@@ -1336,12 +1336,12 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 		ui_out.push<build_runner::stop_session_request>({});
 	}
 
-	if (!d.session_dismissed && (session_live || build_d.building_game || !d.session_error.empty())) {
+	if (!d.session_dismissed && (session_live || build_d.building_session || !d.session_error.empty())) {
 		open_session_layout(d);
 	}
 	d.game_panel_open = contains_panel(primary_view(d).tree, find_or_generate_id(game_panel_name));
 
-	if (!session_live && !build_d.building_game && d.session_error.empty()) {
+	if (!session_live && !build_d.building_session && d.session_error.empty()) {
 		close_session_layout(d);
 	}
 
@@ -1659,7 +1659,7 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 		}
 		else {
 			const vec2f delta = input.mouse_delta();
-			d.ws.game_cursor += vec2f{ delta.x() * d.ws.game_input_scale.x(), -delta.y() * d.ws.game_input_scale.y() };
+			d.ws.game_cursor += vec2f{ delta.x() * d.ws.game_input_scale.x(), delta.y() * d.ws.game_input_scale.y() };
 		}
 		const bool release_chord = input.key_held(key::left_alt) || input.key_held(key::right_alt);
 		const bool releasing = release_chord && input.key_pressed(key::tab);
@@ -1786,7 +1786,7 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 	ui_out.push<gui::menu_content>({
 		.menu = std::string(game_panel_name),
 		.layer = render_layer::content,
-		.build = [state = &d.session_view, building = build_d.building_game, slots = viewport_d.instance_slots, extents = viewport_d.instance_extents, live = viewport_d.instance_live, session = build_d.session, server = build_d.server, error = build_d.session_error](gui::builder& b) {
+		.build = [state = &d.session_view, building = build_d.building_session, slots = viewport_d.instance_slots, extents = viewport_d.instance_extents, live = viewport_d.instance_live, session = build_d.session, server = build_d.server, error = build_d.session_error](gui::builder& b) {
 			draw_game_panel(b, b.ctx.clip_stack.back(), *state, building, slots, extents, live, session, server, error);
 		},
 	});
@@ -1820,12 +1820,6 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 			const id* target = std::get_if<id>(&res.target);
 			if (target && res.action_id < table.size() && table[res.action_id].run) {
 				table[res.action_id].run(d.ws, *target);
-			}
-		}
-		else if (res.tag == editor_text_context_tag()) {
-			const std::optional<id> active_document_id = workspace::active_document_id(d.ws);
-			if (const auto doc = active_document_id ? d.ws.documents.find(*active_document_id) : d.ws.documents.end(); doc != d.ws.documents.end()) {
-				doc->second.view.pending_action = static_cast<gui::text_edit_action>(res.action_id);
 			}
 		}
 	}

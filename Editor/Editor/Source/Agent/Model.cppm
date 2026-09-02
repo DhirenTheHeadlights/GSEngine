@@ -4,6 +4,7 @@ import std;
 import gse;
 
 import gse.ide.build;
+import gse.ide.config;
 import gse.ide.net;
 
 export namespace gse::ide::agent {
@@ -35,6 +36,10 @@ export namespace gse::ide::agent {
 		failure [[= row_style{
 			.prefix = "! ",
 			.color = &gui::style::color_error,
+		}]],
+		retry [[= row_style{
+			.prefix = "~ ",
+			.color = &gui::style::color_warning,
 		}]],
 	};
 
@@ -114,6 +119,100 @@ export namespace gse::ide::agent {
 		std::vector<std::string> notes;
 	};
 
+	enum class build_wait : std::uint8_t {
+		none,
+		queued,
+		building,
+	};
+
+	struct hold_style {
+		char label[64] = "";
+	};
+
+	enum class build_hold : std::uint8_t {
+		none,
+		building [[= hold_style{
+			.label = "the editor is already running a build",
+		}]],
+		editor_restart [[= hold_style{
+			.label = "the editor is rebuilding itself and will restart",
+		}]],
+		tree_busy [[= hold_style{
+			.label = "another chat is still working in this tree",
+		}]],
+	};
+
+	struct build_hold_state {
+		build_hold reason = build_hold::none;
+		std::uint32_t blocker = 0;
+	};
+
+	struct model_option {
+		std::string value;
+		std::string label;
+	};
+
+	enum class agent_effort : std::uint8_t {
+		inherit [[= settings::option_label{ .text = "Default" }]],
+		low,
+		medium,
+		high,
+		xhigh [[= settings::option_label{ .text = "X-High" }]],
+		max,
+	};
+
+	struct state_style {
+		char label[24] = "idle";
+		vec4f gui::style::* color = &gui::style::color_text_secondary;
+	};
+
+	enum class agent_state : std::uint8_t {
+		exited [[= state_style{
+			.label = "exited",
+			.color = &gui::style::color_text_disabled,
+		}]],
+		idle [[= state_style{
+			.label = "idle",
+			.color = &gui::style::color_text_secondary,
+		}]],
+		working [[= state_style{
+			.label = "working",
+			.color = &gui::style::color_accent,
+		}]],
+		editing [[= state_style{
+			.label = "editing files",
+			.color = &gui::style::color_added,
+		}]],
+		build_queued [[= state_style{
+			.label = "build queued",
+			.color = &gui::style::color_warning,
+		}]],
+		compiling [[= state_style{
+			.label = "compiling",
+			.color = &gui::style::color_folder,
+		}]],
+		hibernating [[= state_style{
+			.label = "hibernating",
+			.color = &gui::style::color_file,
+		}]],
+		rate_limited [[= state_style{
+			.label = "usage limit reached",
+			.color = &gui::style::color_warning,
+		}]],
+	};
+
+	struct queued_build {
+		std::string id;
+		std::string agent;
+		build_runner::build_target target = build_runner::build_target::game;
+		bool run = false;
+		bool forced = false;
+		const config::worktree* tree = nullptr;
+		time requested;
+		build_hold reported = build_hold::none;
+		std::uint32_t blocker = 0;
+	};
+
 	struct retry_state {
 		std::string prompt;
 		std::vector<std::filesystem::path> images;
@@ -166,20 +265,29 @@ export namespace gse::ide::agent {
 		[[= archive_skip{}]] std::vector<group_marker> groups;
 		[[= archive_skip{}]] std::vector<std::uint32_t> expanded_groups;
 		[[= archive_skip{}]] gse::id log_id;
+		bool hibernating = false;
+		std::string wake_prompt;
+		std::string model_id;
+		agent_effort requested_effort = agent_effort::inherit;
+		[[= archive_skip{}]] std::string launched_model_id;
+		[[= archive_skip{}]] agent_effort launched_effort = agent_effort::inherit;
+		[[= archive_skip{}]] gui::dropdown_state model_dropdown;
 		std::unordered_map<gse::id, std::int64_t> unbuilt;
 		std::unordered_map<gse::id, touched_source> touched;
 		std::vector<blamed_error> blame;
 		gse::id blame_build;
-		[[= archive_skip{}]] retry_state retry;
+		retry_state retry;
+		std::int64_t limited_until = 0;
 		[[= archive_skip{}]] bool running = false;
 		[[= archive_skip{}]] bool stale = false;
 		[[= archive_skip{}]] std::optional<clock> think_clock;
 		[[= archive_skip{}]] std::optional<clock> recent_turn;
+		[[= archive_skip{}]] bool wrote_this_turn = false;
 		[[= archive_skip{}]] std::string action;
 		[[= archive_skip{}]] std::uint32_t next_control = 0;
 	};
 
-	struct [[= system_state<"Agent">{}]] data {
+	struct [[= system_state<"Agent">{}, = settings::category<"Agent">{}]] data {
 		std::vector<session> sessions;
 		std::uint32_t next_id = 0;
 		std::uint32_t active = 0;
@@ -190,6 +298,16 @@ export namespace gse::ide::agent {
 		gui::tab_strip_state tab_strip;
 		rectf info_anchor;
 		bool info_open = false;
+		bool overview_active = true;
+		[[
+			= settings::describe<"Model new chats start on. Options come from the model list claude itself caches, so new releases appear without an editor update. Leave it empty to pass no --model flag.">{}
+		]]
+		settings::choice default_model;
+
+		[[
+			= settings::describe<"Reasoning effort new chats start on. 'Default' passes no --effort flag, so your global effortLevel setting applies.">{}
+		]]
+		agent_effort default_effort = agent_effort::inherit;
 		[[= archive_skip{}]] rectf history_anchor;
 		[[= archive_skip{}]] bool history_open = false;
 		[[= archive_skip{}]] std::vector<past_chat> history;
@@ -201,5 +319,9 @@ export namespace gse::ide::agent {
 		[[= archive_skip{}]] net::probe link;
 		[[= archive_skip{}]] std::optional<clock> link_clock;
 		[[= archive_skip{}]] std::uint32_t link_misses = 0;
+		[[= archive_skip{}]] time next_inbox_poll;
+		[[= archive_skip{}]] std::vector<queued_build> inbox_queue;
+		[[= archive_skip{}]] std::vector<queued_build> inbox_active;
+		[[= archive_skip{}]] time inbox_dispatch_deadline;
 	};
 }

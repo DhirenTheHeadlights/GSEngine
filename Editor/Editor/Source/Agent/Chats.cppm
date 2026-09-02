@@ -19,6 +19,10 @@ namespace gse::ide::agent {
 		const std::filesystem::path& cwd
 	) -> std::filesystem::path;
 
+	auto first_line(
+		std::string_view text
+	) -> std::string_view;
+
 	auto chat_summary(
 		const std::filesystem::path& file
 	) -> std::string;
