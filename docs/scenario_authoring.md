@@ -37,11 +37,21 @@ The body **must** live in the `.cpp`. A coroutine body in the partition interfac
 | `name` | Selects the scenario, and names the artifacts. |
 | `scene` | Activated before the settle gate. Empty means no scene, which measures an empty world. |
 | `headless` | `true` runs with no window or renderer. Only ever *forces* headless — a `false` here leaves the command line's choice alone. |
-| `gpu_solver` | `true` forces the GPU VBD solver. Same one-way rule. |
+| `gpu_solver` | Pins `Physics.use_gpu_solver` to this value in **both** directions, unlike `headless`. A `false` here is a positive assertion that the scenario runs on the CPU solver, not a shrug. |
 | `warmup_frames` | Discarded frames before measurement. Default 120. |
 | `frames` | Measured frames. Default 600. Also sizes the profiler's recording ring. |
 
 Every field is overridable on the command line. `apply_scenario` writes the annotation's value only where the parsed config still holds `bench_config`'s default, so an explicit `--engine-bench-frames 900` survives.
+
+## Scenario runs are hermetic
+
+A scenario run sets `load_settings = false`, so **neither ini is read** — not `%APPDATA%/GSE/<Exe>.ini`, not `<Project>/Config/settings.ini`. The run is code defaults plus the annotation's `settings` list plus any `--engine-setting` you pass. It also never writes an ini (`persist_settings = false`).
+
+This is not tidiness. A scenario is a measurement instrument, and a bench whose result depends on whatever the developer last tuned locally is not a baseline. The rule that follows: **whatever a scenario depends on, it must declare.** If a scenario needs a non-default value, it goes in `settings`, where it is visible in the file and in `--engine-dump-settings`.
+
+The failure this prevents, which cost a real debugging session: `parity_*_cpu` carried no `use_gpu_solver` setting and relied on the code default `false`. When scenarios briefly did read the ini, `Sandbox.ini`'s `use_gpu_solver = true` won, every CPU scenario silently ran on the GPU, and the CPU and GPU halves of the parity ladder returned the same hash — which the gate reads as agreement. A pairing that collapses looks exactly like a pairing that passes.
+
+To run a scenario against your local tuning, pass `--engine-load-settings`. The annotation's `settings` still outrank the ini, so the CPU/GPU pairing survives even then; you get your tuning for everything the scenario has not pinned.
 
 ## What a body may do
 

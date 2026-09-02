@@ -15,9 +15,10 @@ export namespace gse::scenario {
 		char scene[64] = "";
 		bool headless = false;
 		bool gpu_solver = false;
+		bool video_encode = false;
 		int warmup_frames = 120;
 		int frames = 600;
-		char settings[8][96] = {};
+		char settings[16][96] = {};
 	};
 
 	struct wait_gate {
