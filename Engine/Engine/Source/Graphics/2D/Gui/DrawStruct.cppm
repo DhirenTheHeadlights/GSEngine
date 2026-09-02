@@ -47,7 +47,7 @@ auto gse::gui::draw_struct(builder& b, T& value, settings::panel_state& state, c
 			else if constexpr (settings::is_choice_v<F>) {
 				auto& dd_state = state.dropdowns[field_key];
 				std::size_t idx = settings::choice_index(value.[:m:]);
-				const auto r = b.draw<dropdown>({
+				const auto r = b.draw<dropdown<>>({
 					.name = label,
 					.current_index = idx,
 					.options = value.[:m:]
@@ -85,7 +85,7 @@ auto gse::gui::draw_struct(builder& b, T& value, settings::panel_state& state, c
 					}
 				}
 
-				const auto r = b.draw<dropdown>({
+				const auto r = b.draw<dropdown<>>({
 					.name = label,
 					.current_index = idx,
 					.options = options,

@@ -284,20 +284,20 @@ auto gse::ide::draw_lint_panel(gui::builder& ui, const rectf& rect, lint_panel_s
 			return group.rule == *state.confirming;
 		});
 		const lint_rule_info info = annotation_from_enum<lint_rule_info>(*state.confirming, {});
-		const gui::draw::confirm_result result = gui::draw::confirm_dialog(ui, {
+		const gui::confirm_result result = ui.draw<gui::confirm_dialog>({
 			.body = rect,
 			.title = "Apply to whole project?",
 			.message = std::format("{} rewrites {} sites across {} files.", std::string_view(info.title), target->rows.size(), target->file_count),
 			.confirm_label = "Apply",
 			.key = "##lint_apply_confirm",
 		});
-		if (result == gui::draw::confirm_result::confirmed) {
+		if (result == gui::confirm_result::confirmed) {
 			channels.push<apply_lint_request>({
 				.files = edits_for_group(*state.snapshot, *target),
 			});
 			state.confirming.reset();
 		}
-		else if (result == gui::draw::confirm_result::cancelled) {
+		else if (result == gui::confirm_result::cancelled) {
 			state.confirming.reset();
 		}
 		return;
@@ -386,7 +386,7 @@ auto gse::ide::draw_lint_panel(gui::builder& ui, const rectf& rect, lint_panel_s
 
 		if (ref.site) {
 			const lint_row& item = group.rows[*ref.site];
-			if (r.hovered && c.mouse_pressed_for(r.visible)) {
+			if (c.clicked_in_rect(r.visible)) {
 				const search::lint_site& site = (*state.snapshot->sites)[item.site];
 				channels.push<jump_to_request>({
 					.path = site.path,
@@ -409,15 +409,15 @@ auto gse::ide::draw_lint_panel(gui::builder& ui, const rectf& rect, lint_panel_s
 
 		draw_lint_rule_row(c, r.rect, group, r.hovered && !over_apply, actionable ? apply_w + pad * 2.f : 0.f);
 
-		if (actionable && gui::draw::button_in_rect(c, {
+		if (actionable && b.draw<gui::button>({
+			.text = "Apply all",
 			.rect = apply_rect,
-			.label = "Apply all",
 			.key = std::format("##lint_apply_{}", enum_to_string(group.rule)),
 			.role = gui::button_role::danger,
-		}, b.hot_widget_id, b.active_widget_id)) {
+		})) {
 			state.confirming = group.rule;
 		}
-		if (r.hovered && !over_apply && c.mouse_pressed_for(r.visible)) {
+		if (!over_apply && c.clicked_in_rect(r.visible)) {
 			toggled = ref.group;
 		}
 	});

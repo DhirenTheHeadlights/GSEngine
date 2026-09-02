@@ -158,7 +158,7 @@ auto gse::gui::route_cursor(data& d, const vec2f mouse, const id focused_window,
 	}
 }
 
-auto gse::gui::begin_viewport_frame(data& d, viewport_state& vp, const shared_view<window::data> window_s, const vec2f viewport_size) -> void {
+auto gse::gui::begin_viewport_frame(data& d, viewport_state& vp, const shared_view<window::data> window_s, const vec2f viewport_size, const input::state& input_st) -> void {
 	vp.display_scale = window_s.primary.content_scale;
 	sync_monitor_scale(d, vp, window_s.primary.monitor_key);
 
@@ -233,7 +233,7 @@ auto gse::gui::begin_viewport_frame(data& d, viewport_state& vp, const shared_vi
 
 	vp.fstate = {};
 
-	vp.input_layers_data.begin_frame();
+	vp.input_layers_data.begin_frame(input_st.mouse_position(), input_st.mouse_button_pressed(mouse_button::button_1));
 
 	const style frame_sty = apply_scale(d, vp, d.style_override.value_or(style::from_theme(d.current_theme)), viewport_size.y());
 
@@ -373,6 +373,8 @@ auto gse::gui::update_viewport(data& d, viewport_state& vp, const input::state& 
 			}
 		}
 	}
+
+	vp.pending_text_edit.reset();
 
 	process_context_menu(d, vp, input_st, ui_out);
 

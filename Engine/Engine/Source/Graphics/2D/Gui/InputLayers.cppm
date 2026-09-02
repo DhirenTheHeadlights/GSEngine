@@ -21,13 +21,26 @@ namespace gse::gui {
 export namespace gse::gui {
 	class input_layer {
 	public:
-		auto begin_frame() -> void;
+		auto begin_frame(
+			vec2f mouse_position,
+			bool press_started
+		) -> void;
 
 		auto register_hit_region(
 			render_layer layer,
 			std::uint32_t z_order,
 			const rectf& rect
 		) -> void;
+
+		auto block_text_selection(
+			const rectf& rect
+		) -> void;
+
+		[[nodiscard]] auto text_selection_blocked_at(
+			vec2f position
+		) const -> bool;
+
+		[[nodiscard]] auto press_origin() const -> vec2f;
 
 		[[nodiscard]] auto input_available_at(
 			render_layer widget_layer,
@@ -91,6 +104,8 @@ export namespace gse::gui {
 
 		std::array<std::vector<hit_region>, k_layer_count> m_current_regions;
 		std::array<std::vector<hit_region>, k_layer_count> m_previous_regions;
+		std::vector<rectf> m_selection_blocks;
+		vec2f m_press_origin;
 		std::array<bool, k_button_count> m_press_consumed{};
 		std::array<bool, k_button_count> m_release_consumed{};
 		bool m_scroll_consumed = false;
@@ -109,17 +124,35 @@ constexpr auto gse::gui::mouse_button_index(const mouse_button button) -> std::s
 	return static_cast<std::size_t>(button);
 }
 
-auto gse::gui::input_layer::begin_frame() -> void {
+auto gse::gui::input_layer::begin_frame(const vec2f mouse_position, const bool press_started) -> void {
 	std::swap(m_current_regions, m_previous_regions);
 	for (auto& regions : m_current_regions) {
 		regions.clear();
 	}
 	m_resize_blocks.flip();
 	m_resize_blocks.write().clear();
+	m_selection_blocks.clear();
 	m_press_consumed.fill(false);
 	m_release_consumed.fill(false);
 	m_scroll_consumed = false;
 	m_consumed_keys.clear();
+	if (press_started) {
+		m_press_origin = mouse_position;
+	}
+}
+
+auto gse::gui::input_layer::block_text_selection(const rectf& rect) -> void {
+	m_selection_blocks.push_back(rect);
+}
+
+auto gse::gui::input_layer::text_selection_blocked_at(const vec2f position) const -> bool {
+	return std::ranges::any_of(m_selection_blocks, [position](const rectf& rect) {
+		return rect.contains(position);
+	});
+}
+
+auto gse::gui::input_layer::press_origin() const -> vec2f {
+	return m_press_origin;
 }
 
 auto gse::gui::input_layer::register_hit_region(const render_layer layer, const std::uint32_t z_order, const rectf& rect) -> void {

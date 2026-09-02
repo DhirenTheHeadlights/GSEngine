@@ -30,11 +30,22 @@ export namespace gse::gui {
 	};
 }
 
-export namespace gse::gui::draw {
+namespace gse::gui::draw {
 	auto marquee_text(
 		const draw_context& ctx,
 		const marquee_info& info
 	) -> void;
+}
+
+export namespace gse::gui {
+	struct marquee {
+		using result = void;
+		using params = marquee_info;
+
+		static auto draw(const draw_context& ctx, const params& p, id&, id&, id&) -> void {
+			draw::marquee_text(ctx, p);
+		}
+	};
 }
 
 auto gse::gui::draw::marquee_text(const draw_context& ctx, const marquee_info& info) -> void {

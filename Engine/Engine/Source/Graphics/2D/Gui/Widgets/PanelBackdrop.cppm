@@ -31,11 +31,22 @@ export namespace gse::gui {
 	};
 }
 
-export namespace gse::gui::draw {
+namespace gse::gui::draw {
 	auto panel_backdrop(
 		const draw_context& ctx,
 		const panel_backdrop_params& p
 	) -> rectf;
+}
+
+export namespace gse::gui {
+	struct panel_backdrop {
+		using result = rectf;
+		using params = panel_backdrop_params;
+
+		static auto draw(const draw_context& ctx, const params& p, id&, id&, id&) -> rectf {
+			return draw::panel_backdrop(ctx, p);
+		}
+	};
 }
 
 auto gse::gui::draw::panel_backdrop(const draw_context& ctx, const panel_backdrop_params& p) -> rectf {

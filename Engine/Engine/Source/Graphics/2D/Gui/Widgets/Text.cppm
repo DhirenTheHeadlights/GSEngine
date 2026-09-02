@@ -16,7 +16,7 @@ import :styles;
 import :builder;
 import :layout_ops;
 
-export namespace gse::gui::draw {
+export namespace gse::gui {
 	struct text_style {
 		std::optional<vec4f> color;
 		std::optional<float> size;
@@ -24,7 +24,9 @@ export namespace gse::gui::draw {
 		bool strong = false;
 		resource::handle<font> font{};
 	};
+}
 
+namespace gse::gui::draw {
 	auto text_in_rect(
 		const draw_context& ctx,
 		const rectf& rect,
@@ -45,9 +47,19 @@ export namespace gse::gui {
 		using result = void;
 		struct params {
 			std::string_view content;
+			std::optional<rectf> rect{};
+			text_style style{};
 			resource::handle<font> font{};
 		};
 		static auto draw(const draw_context& ctx, const params p, id&, id&, id&) -> void {
+			if (p.rect) {
+				text_style styling = p.style;
+				if (!styling.font.valid()) {
+					styling.font = p.font;
+				}
+				draw::text_in_rect(ctx, *p.rect, p.content, styling);
+				return;
+			}
 			draw::text(ctx, "", p.content, p.font);
 		}
 	};

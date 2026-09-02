@@ -60,7 +60,7 @@ export namespace gse::gui {
 	};
 }
 
-export namespace gse::gui::draw {
+namespace gse::gui::draw {
 	auto selectable(
 		const draw_context& ctx,
 		const selectable_info& info,

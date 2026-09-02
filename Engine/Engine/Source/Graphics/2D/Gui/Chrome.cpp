@@ -347,7 +347,10 @@ auto gse::gui::draw_menu_chrome(data& d, viewport_state& vp, const input::state&
 		});
 	}
 
-	if (is_popout(vp) && !current_menu.owner_id().exists()) {
+	const screen* top_screen = vp.menu_stack.top();
+	const bool screen_owns_caption = top_screen && top_screen->wants_chrome();
+
+	if (is_popout(vp) && !screen_owns_caption && !current_menu.owner_id().exists()) {
 		draw_window_caption_buttons(d, vp, input_state, current_menu, title_bar_rect, layer);
 	}
 
@@ -437,6 +440,7 @@ auto gse::gui::draw_tab_bar(data& d, viewport_state& vp, const input::state& inp
 		.hit_regions = &vp.input_layers_data,
 		.tooltip = &vp.tooltip,
 		.context_menu = &vp.context_menu,
+		.pending_text_edit = &vp.pending_text_edit,
 		.clip_stack = { title_bar_rect },
 	}, input_state };
 

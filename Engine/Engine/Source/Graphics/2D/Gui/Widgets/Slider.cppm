@@ -15,12 +15,26 @@ import gse.diag;
 import gse.ecs;
 import :types;
 import :ids;
+import :input_layers;
 import :styles;
 import :layout_ops;
 import :builder;
 import :interaction;
 
-export namespace gse::gui::draw {
+namespace gse::gui::draw {
+	template <is_arithmetic T>
+	auto slider_in_rect(
+		const draw_context& ctx,
+		const rectf& rect,
+		id widget_id,
+		T& value,
+		T min,
+		T max,
+		id& hot_widget_id,
+		id& active_widget_id,
+		std::string_view value_label = {}
+	) -> void;
+
 	template <is_arithmetic T>
 	auto slider(
 		const draw_context& ctx,
@@ -89,8 +103,14 @@ export namespace gse::gui {
 			T& value;
 			T min;
 			T max;
+			std::optional<rectf> rect{};
+			std::string_view value_label{};
 		};
 		static auto draw(draw_context& ctx, params p, id& hot, id& active, id&) -> void {
+			if (p.rect) {
+				draw::slider_in_rect(ctx, *p.rect, ids::make(p.name), p.value, p.min, p.max, hot, active, p.value_label);
+				return;
+			}
 			draw::slider(ctx, std::string(p.name), p.value, p.min, p.max, hot, active);
 		}
 	};
@@ -134,7 +154,8 @@ namespace gse::gui::draw {
 		T min,
 		T max,
 		id& hot_widget_id,
-		id active_widget_id
+		id active_widget_id,
+		std::string_view value_label = {}
 	) -> void;
 
 	template <typename T, std::size_t N>
@@ -147,6 +168,18 @@ namespace gse::gui::draw {
 		id& hot_widget_id,
 		id& active_widget_id
 	) -> void;
+}
+
+template <gse::is_arithmetic T>
+auto gse::gui::draw::slider_in_rect(const draw_context& ctx, const rectf& rect, const id widget_id, T& value, T min, T max, id& hot_widget_id, id& active_widget_id, const std::string_view value_label) -> void {
+	slider_box(ctx, rect, widget_id, value, min, max, hot_widget_id, active_widget_id, value_label);
+
+	if (ctx.hit_regions) {
+		ctx.hit_regions->block_text_selection(rect);
+	}
+
+	interaction::grab_active(active_widget_id, widget_id, hot_widget_id == widget_id && ctx.mouse_pressed_for(rect));
+	interaction::release_active(active_widget_id, widget_id, ctx.mouse_released());
 }
 
 template <gse::is_arithmetic T>
@@ -211,7 +244,7 @@ auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, ve
 }
 
 template <typename T>
-auto gse::gui::draw::slider_box(const draw_context& ctx, const rectf& rect, const id widget_id, T& value, T min, T max, id& hot_widget_id, const id active_widget_id) -> void {
+auto gse::gui::draw::slider_box(const draw_context& ctx, const rectf& rect, const id widget_id, T& value, T min, T max, id& hot_widget_id, const id active_widget_id, const std::string_view value_label) -> void {
 	using underlying = internal::vec_storage_type_t<T>;
 	auto& value_u = *reinterpret_cast<underlying*>(&value);
 	const underlying min_u = internal::to_storage(min);
@@ -268,7 +301,10 @@ auto gse::gui::draw::slider_box(const draw_context& ctx, const rectf& rect, cons
 
 	thread_local std::string value_str;
 	value_str.clear();
-	if constexpr (std::is_floating_point_v<underlying>) {
+	if (!value_label.empty()) {
+		value_str.assign(value_label);
+	}
+	else if constexpr (std::is_floating_point_v<underlying>) {
 		std::format_to(std::back_inserter(value_str), "{:.2f}", value_u);
 	}
 	else {
@@ -349,6 +385,10 @@ auto gse::gui::draw::slider_row(const draw_context& ctx, const std::string& name
 			return b == hot_widget_id;
 		}
 	);
+
+	if (ctx.hit_regions) {
+		ctx.hit_regions->block_text_selection(value_area);
+	}
 
 	interaction::grab_active(active_widget_id, hot_widget_id, hot_is_ours && ctx.mouse_pressed_for(value_area));
 

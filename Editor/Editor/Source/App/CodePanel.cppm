@@ -1629,23 +1629,23 @@ auto gse::ide::draw_document_prompt(gui::builder& ui, workspace::data& ws, const
 	const rectf cancel_button = rectf::from_position_size({ dialog.left() + pad, dialog.bottom() + pad + button_height }, { button_width, button_height });
 	const rectf secondary_button = rectf::from_position_size({ cancel_button.right() + pad, cancel_button.top() }, { button_width, button_height });
 	const rectf primary_button = rectf::from_position_size({ secondary_button.right() + pad, cancel_button.top() }, { button_width, button_height });
-	bool cancel = gui::draw::button_in_rect(ctx, {
+	bool cancel = ui.draw<gui::button>({
+		.text = "Cancel",
 		.rect = cancel_button,
-		.label = "Cancel",
 		.key = "##document_prompt_cancel",
-	}, ui.hot_widget_id, ui.active_widget_id);
-	const bool secondary = gui::draw::button_in_rect(ctx, {
+	});
+	const bool secondary = ui.draw<gui::button>({
+		.text = conflict ? "Reload Disk" : "Discard",
 		.rect = secondary_button,
-		.label = conflict ? "Reload Disk" : "Discard",
 		.key = "##document_prompt_secondary",
 		.role = conflict ? gui::button_role::standard : gui::button_role::danger,
-	}, ui.hot_widget_id, ui.active_widget_id);
-	const bool primary = gui::draw::button_in_rect(ctx, {
+	});
+	const bool primary = ui.draw<gui::button>({
+		.text = conflict ? "Overwrite Disk" : "Save",
 		.rect = primary_button,
-		.label = conflict ? "Overwrite Disk" : "Save",
 		.key = "##document_prompt_primary",
 		.role = conflict ? gui::button_role::danger : gui::button_role::accent,
-	}, ui.hot_widget_id, ui.active_widget_id);
+	});
 	if (ctx.key_pressed_for(key::escape)) {
 		ctx.consume_key_press(key::escape);
 		cancel = true;
@@ -2075,7 +2075,7 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 		: std::span<const gui::text_span>{};
 
 	auto position_at = [&](const vec2f at) -> gui::buffer_position {
-		return gui::draw::text_area_position_at(ctx, {
+		return gui::text_area_position_at(ctx, {
 			.buffer = doc.buffer,
 			.state = doc.view,
 			.rect = text_rect,
@@ -2505,47 +2505,35 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 	bool edited = false;
 	if (rendered_mode) {
 		refresh_rendered_view(ctx, doc, text_rect);
-		doc.rendered.view.context_menu_tag = editor_text_context_tag();
-		gui::draw::text_area_in_rect(
-			ctx,
-			text_id,
-			{
-				.buffer = doc.rendered.content.buffer,
-				.state = doc.rendered.view,
-				.spans = doc.rendered.content.spans,
-				.blocks = doc.rendered.content.blocks,
-				.stops = doc.rendered.content.stops,
-				.rect = text_rect,
-				.read_only = true,
-				.indent_width = display_tab_width,
-				.blink_interval = time{},
-				.font = ctx.fonts.text,
-			},
-			ui.hot_widget_id,
-			ui.focus_widget_id
-		);
+		ui.draw<gui::text_area>({
+			.buffer = doc.rendered.content.buffer,
+			.state = doc.rendered.view,
+			.widget_id = text_id,
+			.spans = doc.rendered.content.spans,
+			.blocks = doc.rendered.content.blocks,
+			.stops = doc.rendered.content.stops,
+			.rect = text_rect,
+			.read_only = true,
+			.indent_width = display_tab_width,
+			.blink_interval = time{},
+			.font = ctx.fonts.text,
+		});
 	}
 	else {
-		doc.view.context_menu_tag = editor_text_context_tag();
-		edited = gui::draw::text_area_in_rect(
-			ctx,
-			text_id,
-			{
-				.buffer = doc.buffer,
-				.state = doc.view,
-				.spans = doc_spans,
-				.underlines = underlines,
-				.fades = fades,
-				.rect = text_rect,
-				.show_line_numbers = config.show_line_numbers,
-				.indent_width = display_tab_width,
-				.indent_with_spaces = config.indent_with_spaces,
-				.auto_indent = true,
-				.blink_interval = config.caret_blink,
-			},
-			ui.hot_widget_id,
-			ui.focus_widget_id
-		);
+		edited = ui.draw<gui::text_area>({
+			.buffer = doc.buffer,
+			.state = doc.view,
+			.widget_id = text_id,
+			.spans = doc_spans,
+			.underlines = underlines,
+			.fades = fades,
+			.rect = text_rect,
+			.show_line_numbers = config.show_line_numbers,
+			.indent_width = display_tab_width,
+			.indent_with_spaces = config.indent_with_spaces,
+			.auto_indent = true,
+			.blink_interval = config.caret_blink,
+		});
 	}
 	if (edited) {
 		++doc.revision.value;

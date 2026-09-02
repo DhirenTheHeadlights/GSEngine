@@ -46,7 +46,7 @@ auto gse::ide::draw_scope_toggle(const gui::draw_context& ctx, const rectf& rect
 	const auto text_view = ctx.fonts.text.resolve();
 	const bool hovered = ctx.hovers(rect);
 
-	if (hovered && ctx.mouse_pressed_for(rect)) {
+	if (ctx.clicked_in_rect(rect)) {
 		enabled = !enabled;
 	}
 
@@ -139,7 +139,12 @@ auto gse::ide::draw_search_panel(gui::builder& ui, const rectf& rect, search_pan
 	});
 
 	const id query_id = gui::ids::make("##search_panel_query");
-	gui::draw::text_input_in_rect(ctx, query_id, state.driver.query, state.input, query_rect, ui.hot_widget_id, ui.focus_widget_id);
+	ui.draw<gui::text_input>({
+		.name = "##search_panel_query",
+		.buffer = state.driver.query,
+		.state = state.input,
+		.rect = query_rect,
+	});
 	const bool focused = ui.focus_widget_id == query_id;
 
 	if (state.driver.query.empty() && !focused) {
@@ -215,7 +220,7 @@ auto gse::ide::draw_search_panel(gui::builder& ui, const rectf& rect, search_pan
 		auto& c = b.ctx;
 		const search::result& entry = state.driver.results[r.index];
 
-		if (r.hovered && c.mouse_pressed_for(r.visible)) {
+		if (c.clicked_in_rect(r.visible)) {
 			state.driver.selected = static_cast<int>(r.index);
 			channels.push<jump_to_request>(search::jump_target(entry));
 		}

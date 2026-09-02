@@ -17,6 +17,7 @@ import gse.assert;
 import :types;
 import :styles;
 import :ids;
+import :input_layers;
 import :font;
 import :symbols;
 import :scroll_widget;
@@ -284,6 +285,10 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 	const bool available = ctx.input_available();
 	const bool pressed = ctx.mouse_pressed() && available;
 	const bool held = ctx.mouse_held();
+
+	if (ctx.hit_regions) {
+		ctx.hit_regions->block_text_selection(area);
+	}
 
 	const angle spin = symbol::spinner_rotation();
 	const float close_extent = sty.icon_extent;

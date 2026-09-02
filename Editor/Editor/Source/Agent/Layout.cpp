@@ -331,7 +331,7 @@ auto gse::ide::agent::draw_diff_bars(const gui::draw_context& ctx, session& s, c
 	}
 
 	constexpr gui::scroll_config bar = { .auto_hide_scrollbar = false };
-	const gui::text_area_layout geometry = gui::draw::text_area_layout_of(ctx, {
+	const gui::text_area_layout geometry = gui::text_area_layout_of(ctx, {
 		.buffer = s.buffer,
 		.state = s.view,
 		.rect = area,

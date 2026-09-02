@@ -38,7 +38,31 @@ import :interaction;
 import :symbols;
 import :checkbox_widget;
 import :tab_strip;
+import :text_select;
 import :widget_context;
+
+auto gse::gui::apply_builtin_menu_action(viewport_state& vp, const std::uint32_t action_id) -> bool {
+	const context_menu_state& cm = vp.context_menu;
+
+	if (cm.tag == text_copy_menu_tag()) {
+		if (static_cast<text_edit_action>(action_id) == text_edit_action::copy) {
+			window::set_clipboard_text(vp.text_selection.menu_text);
+		}
+		return true;
+	}
+
+	if (cm.tag == text_edit_menu_tag()) {
+		if (const id* widget = std::get_if<id>(&cm.target)) {
+			vp.pending_text_edit = text_edit_request{
+				.widget = *widget,
+				.action = static_cast<text_edit_action>(action_id),
+			};
+		}
+		return true;
+	}
+
+	return false;
+}
 
 auto gse::gui::draw_drag_ghost(data& d, viewport_state& vp) -> void {
 	if (!vp.active_drag_ghost || !d.fonts.text.valid()) {
@@ -325,11 +349,13 @@ auto gse::gui::process_context_menu(data& d, viewport_state& vp, const input::st
 		});
 
 		if (activated) {
-			channels.push<context_menu_result>({
-				.tag = cm.tag,
-				.action_id = it.action_id,
-				.target = cm.target,
-			});
+			if (!apply_builtin_menu_action(vp, it.action_id)) {
+				channels.push<context_menu_result>({
+					.tag = cm.tag,
+					.action_id = it.action_id,
+					.target = cm.target,
+				});
+			}
 			selected = true;
 		}
 

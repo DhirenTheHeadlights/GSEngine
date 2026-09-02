@@ -52,7 +52,8 @@ namespace gse::gui {
 		data& d,
 		viewport_state& vp,
 		shared_view<window::data> window_s,
-		vec2f viewport_size
+		vec2f viewport_size,
+		const input::state& input_st
 	) -> void;
 
 	auto update_viewport_interaction(

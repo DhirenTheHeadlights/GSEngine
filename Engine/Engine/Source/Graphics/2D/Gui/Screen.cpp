@@ -146,6 +146,7 @@ auto gse::gui::process_screen(data& d, viewport_state& vp, const input::state& i
 		.hit_regions = &vp.input_layers_data,
 		.tooltip = &vp.tooltip,
 		.context_menu = &vp.context_menu,
+		.pending_text_edit = &vp.pending_text_edit,
 		.clip_stack = { body_rect },
 	}, input_state };
 

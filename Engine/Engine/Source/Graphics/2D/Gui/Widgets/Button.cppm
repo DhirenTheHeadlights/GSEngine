@@ -20,7 +20,7 @@ import :builder;
 import :interaction;
 import :symbols;
 
-export namespace gse::gui::draw {
+namespace gse::gui::draw {
 	struct button_params {
 		rectf rect;
 		std::string_view label;
@@ -66,6 +66,9 @@ export namespace gse::gui {
 		using result = bool;
 		struct params {
 			std::string_view text;
+			std::optional<rectf> rect{};
+			std::string_view key{};
+			std::span<const symbol::stroke> glyph{};
 			bool enabled = true;
 			button_role role = button_role::standard;
 			resource::handle<font> font{};
@@ -194,6 +197,19 @@ auto gse::gui::draw::button_in_rect(const draw_context& ctx, const button_params
 auto gse::gui::button::draw(const draw_context& ctx, const params p, id& hot, id& active, id&) -> bool {
 	const auto fnt = p.font.valid() ? p.font : ctx.fonts.text;
 	const auto fnt_view = fnt.resolve();
+
+	if (p.rect) {
+		return draw::button_in_rect(ctx, {
+			.rect = *p.rect,
+			.label = p.text,
+			.glyph = p.glyph,
+			.key = p.key.empty() ? p.text : p.key,
+			.role = p.role,
+			.enabled = p.enabled,
+			.font = p.font,
+		}, hot, active);
+	}
+
 	if (!ctx.current_menu) {
 		return false;
 	}

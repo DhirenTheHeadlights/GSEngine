@@ -23,6 +23,11 @@ namespace gse::gui {
 		viewport_state& vp
 	) -> void;
 
+	[[nodiscard]] auto apply_builtin_menu_action(
+		viewport_state& vp,
+		std::uint32_t action_id
+	) -> bool;
+
 	auto process_context_menu(
 		data& d,
 		viewport_state& vp,

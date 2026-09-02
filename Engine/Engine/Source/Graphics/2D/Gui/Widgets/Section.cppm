@@ -113,7 +113,7 @@ auto gse::gui::section::draw(const draw_context& ctx, params p, id&, id&, id&) -
 			.clip_rect = action_rect,
 		});
 
-		if (ctx.mouse_pressed_for(action_rect)) {
+		if (ctx.clicked_in_rect(action_rect)) {
 			on_click();
 		}
 

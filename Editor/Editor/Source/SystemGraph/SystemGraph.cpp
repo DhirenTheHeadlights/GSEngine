@@ -105,7 +105,7 @@ namespace gse::ide {
 	) -> rectf;
 
 	auto draw_legend(
-		const gui::draw_context& ctx,
+		gui::builder& ui,
 		const rectf& area,
 		graph_data& gd
 	) -> void;
@@ -818,9 +818,9 @@ auto gse::ide::draw_graph(gui::builder& ui, const rectf& area, graph_data& gd, c
 		.label_scale = scale,
 	});
 
-	draw_legend(ctx, canvas, gd);
+	draw_legend(ui, canvas, gd);
 
-	gui::draw::panel_backdrop(ctx, {
+	ui.draw<gui::panel_backdrop>({
 		.rect = reset_rect,
 		.background = over_reset ? vec4f{ 0.18f, 0.20f, 0.26f, 0.95f } : vec4f{ 0.09f, 0.10f, 0.13f, 0.9f },
 		.clip = reset_rect,
@@ -834,11 +834,15 @@ auto gse::ide::draw_graph(gui::builder& ui, const rectf& area, graph_data& gd, c
 		.color = ctx.style.color_text,
 		.layer = render_layer::overlay,
 	});
-	if (over_reset && ctx.mouse_pressed_for(reset_rect)) {
+	if (ctx.clicked_in_rect(reset_rect)) {
 		gd.pan = { 0.f, 0.f };
 		gd.zoom = 1.f;
 		gd.isolated = std::nullopt;
 		gd.selected = std::nullopt;
+	}
+
+	if (ctx.hit_regions) {
+		ctx.hit_regions->block_text_selection(canvas);
 	}
 
 	if (over_area && ctx.mouse_pressed_for(canvas)) {
@@ -910,13 +914,14 @@ auto gse::ide::legend_bounds(const gui::draw_context& ctx, const rectf& area) ->
 	return rectf::from_position_size({ area.left() + pad, area.top() - pad }, { w, h });
 }
 
-auto gse::ide::draw_legend(const gui::draw_context& ctx, const rectf& area, graph_data& gd) -> void {
+auto gse::ide::draw_legend(gui::builder& ui, const rectf& area, graph_data& gd) -> void {
+	const gui::draw_context& ctx = ui.ctx;
 	const auto text_view = ctx.fonts.text.resolve();
 	const float pad = 10.f;
 	const float row_h = ctx.style.font_size + 8.f;
 	const float sw = 12.f;
 	const rectf panel = legend_bounds(ctx, area);
-	gui::draw::panel_backdrop(ctx, {
+	ui.draw<gui::panel_backdrop>({
 		.rect = panel,
 		.background = { 0.05f, 0.06f, 0.08f, 0.9f },
 		.clip = panel,
@@ -928,7 +933,7 @@ auto gse::ide::draw_legend(const gui::draw_context& ctx, const rectf& area, grap
 		const float ry = panel.top() - pad - static_cast<float>(i) * row_h;
 		const rectf row_rect = rectf::from_position_size({ panel.left() + pad * 0.5f, ry }, { panel.width() - pad, row_h });
 		const bool hovered = ctx.hovers(row_rect);
-		if (hovered && ctx.mouse_pressed_for(row_rect)) {
+		if (ctx.clicked_in_rect(row_rect)) {
 			gd.kind_visible[i] = !gd.kind_visible[i];
 		}
 		const bool on = gd.kind_visible[i];
@@ -978,7 +983,7 @@ auto gse::ide::draw_detail_panel(gui::builder& ui, const rectf& panel, graph_dat
 	const float pad = 12.f;
 	const float line_h = fs + 6.f;
 
-	gui::draw::panel_backdrop(ctx, {
+	ui.draw<gui::panel_backdrop>({
 		.rect = panel,
 		.background = { 0.06f, 0.07f, 0.10f, 0.97f },
 		.accent = gui::panel_accent{

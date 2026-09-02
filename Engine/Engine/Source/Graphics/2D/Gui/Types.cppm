@@ -271,6 +271,18 @@ export namespace gse::gui {
 		context_menu_target target;
 	};
 
+	enum class text_edit_action : std::uint32_t {
+		none,
+		copy,
+		cut,
+		paste
+	};
+
+	struct text_edit_request {
+		id widget;
+		text_edit_action action = text_edit_action::none;
+	};
+
 	struct draw_context_init {
 		menu* current_menu;
 		const style& style;
@@ -292,6 +304,7 @@ export namespace gse::gui {
 		class input_layer* hit_regions = nullptr;
 		tooltip_state* tooltip = nullptr;
 		context_menu_state* context_menu = nullptr;
+		std::optional<text_edit_request>* pending_text_edit = nullptr;
 		std::vector<rectf> clip_stack;
 	};
 
@@ -320,6 +333,7 @@ export namespace gse::gui {
 		class input_layer* hit_regions = nullptr;
 		tooltip_state* tooltip = nullptr;
 		context_menu_state* context_menu = nullptr;
+		std::optional<text_edit_request>* pending_text_edit = nullptr;
 		std::vector<rectf> clip_stack;
 
 		auto queue_sprite(
@@ -343,6 +357,15 @@ export namespace gse::gui {
 		) const -> void;
 
 		auto clipboard() const -> std::string;
+
+		auto request_text_edit(
+			id widget,
+			text_edit_action action
+		) const -> void;
+
+		[[nodiscard]] auto take_text_edit(
+			id widget
+		) const -> text_edit_action;
 
 		auto register_hit_region(
 			render_layer layer,
@@ -373,6 +396,12 @@ export namespace gse::gui {
 
 		[[nodiscard]]
 		auto mouse_released(
+			mouse_button button = mouse_button::button_1
+		) const -> bool;
+
+		[[nodiscard]]
+		auto clicked_in_rect(
+			const rectf& rect,
 			mouse_button button = mouse_button::button_1
 		) const -> bool;
 

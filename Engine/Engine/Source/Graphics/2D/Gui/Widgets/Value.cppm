@@ -14,7 +14,7 @@ import :types;
 import :styles;
 import :builder;
 
-export namespace gse::gui::draw {
+namespace gse::gui::draw {
 	template <is_arithmetic T>
 	auto value(
 		const draw_context& ctx,

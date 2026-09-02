@@ -20,7 +20,7 @@ import :styles;
 import :builder;
 import :button_widget;
 
-export namespace gse::gui::draw {
+export namespace gse::gui {
 	enum class confirm_result : std::uint8_t {
 		pending,
 		confirmed,
@@ -36,11 +36,30 @@ export namespace gse::gui::draw {
 		std::string_view key;
 		bool danger = true;
 	};
+}
 
+namespace gse::gui::draw {
 	auto confirm_dialog(
 		builder& ui,
 		const confirm_params& params
 	) -> confirm_result;
+}
+
+export namespace gse::gui {
+	struct confirm_dialog {
+		using result = confirm_result;
+		using params = confirm_params;
+
+		static auto draw(draw_context& ctx, const params& p, id& hot, id& active, id& focus) -> confirm_result {
+			builder ui{
+				.ctx = ctx,
+				.hot_widget_id = hot,
+				.active_widget_id = active,
+				.focus_widget_id = focus,
+			};
+			return draw::confirm_dialog(ui, p);
+		}
+	};
 }
 
 auto gse::gui::draw::confirm_dialog(builder& ui, const confirm_params& params) -> confirm_result {

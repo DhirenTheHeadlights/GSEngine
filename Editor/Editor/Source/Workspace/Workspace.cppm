@@ -135,7 +135,7 @@ export namespace gse::ide {
 			file_watcher watcher;
 
 			fs_node fs_root;
-			gui::draw::tree_selection explorer_selection;
+			gui::tree_selection explorer_selection;
 			std::unordered_set<std::uint64_t> explorer_selection_seen;
 			std::optional<pending_explorer_name> pending_name;
 			std::optional<std::filesystem::path> reveal_path;
