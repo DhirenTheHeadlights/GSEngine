@@ -113,7 +113,7 @@ auto gse::gpu::frame::recreate_resources(present_target& t) -> expected<void> {
 	const window::window_surface& win = *t.window;
 	swap_chain* const m_swapchain = t.swapchain;
 	const auto requested_size = window::viewport(win);
-	const auto requested_mode = enum_from_annotation<present_mode_setting>(win.present_mode_index, present_mode::fifo);
+	const auto requested_mode = win.present_mode;
 	const auto current_extent = m_swapchain->extent();
 	const auto current_mode = m_swapchain->present_mode();
 
@@ -167,7 +167,7 @@ auto gse::gpu::frame::recreate_surface(present_target& t, const std::string_view
 	log::println(log::level::warning, log::category::render, "{}, rebuilding surface and swapchain", reason);
 
 	const auto requested_size = window::viewport(win);
-	const auto requested_mode = enum_from_annotation<present_mode_setting>(win.present_mode_index, present_mode::fifo);
+	const auto requested_mode = win.present_mode;
 
 	m_swapchain->replace_surface(m_device->recreate_surface(win, m_swapchain->current_handle()));
 
@@ -201,26 +201,35 @@ auto gse::gpu::frame::begin() -> std::expected<frame_token, frame_status> {
 	swap_chain* const m_swapchain = primary.swapchain;
 	m_frame_in_progress = false;
 
-	const bool minimized_now = win && window::minimized(*win);
-	if (minimized_now != primary.minimized_last) {
-		log::println(
-			log::category::render,
-			"[swapchain] minimized {} -> {} after {} frames: swapchain_extent={}x{} viewport={}x{}",
-			primary.minimized_last,
-			minimized_now,
-			primary.minimized_frames,
-			m_swapchain ? m_swapchain->extent().x() : 0u,
-			m_swapchain ? m_swapchain->extent().y() : 0u,
-			win ? window::viewport(*win).x() : 0,
-			win ? window::viewport(*win).y() : 0
-		);
-		primary.restore_pending = !minimized_now;
-		primary.minimized_last = minimized_now;
-		primary.minimized_frames = 0;
+	bool any_present_target = false;
+	bool any_live_target = false;
+	for (present_target& t : m_targets) {
+		const bool minimized_now = t.window && window::minimized(*t.window);
+		if (minimized_now != t.minimized_last) {
+			log::println(
+				log::category::render,
+				"[swapchain] target {} minimized {} -> {} after {} frames: swapchain_extent={}x{} viewport={}x{}",
+				t.window_id,
+				t.minimized_last,
+				minimized_now,
+				t.minimized_frames,
+				t.swapchain ? t.swapchain->extent().x() : 0u,
+				t.swapchain ? t.swapchain->extent().y() : 0u,
+				t.window ? window::viewport(*t.window).x() : 0,
+				t.window ? window::viewport(*t.window).y() : 0
+			);
+			t.restore_pending = !minimized_now;
+			t.minimized_last = minimized_now;
+			t.minimized_frames = 0;
+		}
+		++t.minimized_frames;
+		if (t.swapchain) {
+			any_present_target = true;
+			any_live_target = any_live_target || !minimized_now;
+		}
 	}
-	++primary.minimized_frames;
 
-	if (minimized_now) {
+	if (any_present_target && !any_live_target) {
 		return std::unexpected(frame_status::minimized);
 	}
 
@@ -246,7 +255,7 @@ auto gse::gpu::frame::begin() -> std::expected<frame_token, frame_status> {
 		}
 	}
 
-	if (m_swapchain && !(win && win->attached)) {
+	if (m_swapchain && !primary.minimized_last && !(win && win->attached)) {
 		trace::scope_guard _{ trace_id<"begin_frame::present_feedback">() };
 		const auto refresh = m_swapchain->refresh_interval();
 		m_primary_pacer.observe(m_swapchain->past_presentation_timing(), refresh);
@@ -298,7 +307,7 @@ auto gse::gpu::frame::begin() -> std::expected<frame_token, frame_status> {
 
 	for (present_target& t : m_targets) {
 		t.acquired = false;
-		if (!t.swapchain) {
+		if (!t.swapchain || t.minimized_last) {
 			continue;
 		}
 

@@ -467,6 +467,12 @@ export namespace gse::gpu {
 			const shared_surface& surface
 		) const -> void;
 
+		[[nodiscard]]
+		auto readback_layout(
+			image_format format,
+			vec2u extent
+		) const -> image_readback_layout;
+
 		auto bind_image_memory(
 			gpu::handle<image> img,
 			device_memory mem,
@@ -530,7 +536,8 @@ export namespace gse::gpu {
 			const gpu_dispatch* dispatch,
 			const command_dispatch* commands,
 			image_format surface_format,
-			bool video_encode_enabled
+			bool video_encode_enabled,
+			bool pass_checkpoints_enabled
 		);
 
 		auto set_slot_resource(

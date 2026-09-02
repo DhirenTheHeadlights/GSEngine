@@ -29,5 +29,12 @@ export namespace gse::gpu {
 			= settings::app_scope{}
 		]]
 		bool video_encode = true;
+
+		[[
+			= settings::describe<"Write per-pass GPU checkpoints so a device loss can name the pass that hung. Costs "
+									  "three buffer fills per pass on the recording thread. Requires a restart.">{},
+			= settings::restart_required{}
+		]]
+		bool pass_checkpoints = false;
 	};
 }

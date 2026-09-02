@@ -168,15 +168,13 @@ export namespace gse::gpu {
 			const dependency_info& dep
 		) -> void;
 
-		auto capture_swapchain(
-			const swap_chain& swapchain,
-			const frame& frame,
+		auto copy_target_to_buffer(
+			const image_ref& src,
 			const buffer& dst
 		) -> void;
 
-		auto blit_swapchain_to_image(
-			const swap_chain& swapchain,
-			const frame& frame,
+		auto blit_target_to_image(
+			const image_ref& src,
 			const image& dst,
 			vec2u dst_extent
 		) -> void;

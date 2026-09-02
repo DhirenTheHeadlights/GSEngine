@@ -176,6 +176,7 @@ auto gse::gpu::to_pass_data(render_pass_request req) -> render_pass_data {
 		.primary_pipeline = req.desc.primary_pipeline,
 		.after_passes = std::move(req.desc.after_deps),
 		.chain_id = req.desc.chain_id,
+		.chain_index = req.desc.chain_index,
 		.early_signal = req.desc.early_signal,
 		.record_handle = req.record_handle,
 		.record_ctx_slot = req.record_ctx_slot,

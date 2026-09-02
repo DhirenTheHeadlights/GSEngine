@@ -569,12 +569,12 @@ auto gse::gpu::recording_context::pipeline_barrier(const dependency_info& dep) -
 	m_recorder.pipeline_barrier(dep);
 }
 
-auto gse::gpu::recording_context::capture_swapchain(const swap_chain& swapchain, const frame& frame, const buffer& dst) -> void {
+auto gse::gpu::recording_context::copy_target_to_buffer(const image_ref& src, const buffer& dst) -> void {
 	check_active();
 	flush_pending_barriers();
-	const auto ext = swapchain.extent();
+	const auto ext = src.extent;
 	const auto dst_buffer = dst.handle();
-	const auto gpu_image = swapchain.image(frame.image_index());
+	const auto gpu_image = src.image;
 
 	const image_barrier to_transfer{
 		.src_stages = pipeline_stage_flag::color_attachment_output,
@@ -616,11 +616,11 @@ auto gse::gpu::recording_context::capture_swapchain(const swap_chain& swapchain,
 	});
 }
 
-auto gse::gpu::recording_context::blit_swapchain_to_image(const swap_chain& swapchain, const frame& frame, const image& dst, const vec2u dst_extent) -> void {
+auto gse::gpu::recording_context::blit_target_to_image(const image_ref& src, const image& dst, const vec2u dst_extent) -> void {
 	check_active();
 	flush_pending_barriers();
-	const auto src_image = swapchain.image(frame.image_index());
-	const auto src_ext = swapchain.extent();
+	const auto src_image = src.image;
+	const auto src_ext = src.extent;
 
 	const image_barrier src_to_transfer{
 		.src_stages = pipeline_stage_flag::color_attachment_output,

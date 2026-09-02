@@ -52,7 +52,8 @@ auto gse::gpu::device::create(const std::optional<shared_view<window::data>> win
 				&device_dispatch_for<vulkan_device_backend>,
 				created->commands,
 				created->surface_format,
-				created->video_encode_enabled
+				created->video_encode_enabled,
+				device_cfg.pass_checkpoints
 			));
 
 			dev->m_transient = transient_executor<device>::create(
@@ -83,7 +84,8 @@ auto gse::gpu::device::create(const std::optional<shared_view<window::data>> win
 		&device_dispatch_for<dx12_device_backend>,
 		created.commands,
 		created.surface_format,
-		created.video_encode_enabled
+		created.video_encode_enabled,
+		device_cfg.pass_checkpoints
 	));
 
 	dev->m_transient = transient_executor<device>::create(
@@ -96,8 +98,12 @@ auto gse::gpu::device::create(const std::optional<shared_view<window::data>> win
 	return dev;
 }
 
-gse::gpu::device::device(std::unique_ptr<void, void (*)(void*)> backend, const gpu_dispatch* dispatch, const command_dispatch* commands, image_format surface_format, bool video_encode_enabled)
+gse::gpu::device::device(std::unique_ptr<void, void (*)(void*)> backend, const gpu_dispatch* dispatch, const command_dispatch* commands, image_format surface_format, bool video_encode_enabled, bool pass_checkpoints_enabled)
 	: m_backend(std::move(backend)), m_vt(dispatch), m_command_dispatch(commands), m_surface_format(surface_format), m_video_encode_enabled(video_encode_enabled) {
+	if (!pass_checkpoints_enabled) {
+		return;
+	}
+
 	constexpr std::size_t slot_count = pass_marker_ring_size * 4;
 	constexpr std::size_t buffer_size = slot_count * sizeof(std::uint32_t);
 	const std::array<std::uint32_t, slot_count> zeros{};
@@ -245,13 +251,26 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 
 		const auto count = std::min<std::uint64_t>(total, pass_marker_ring_size);
 		const auto first_seq = seq_next - count;
-		log::println(
-			log::level::error,
-			log::category::vulkan,
-			"Last {} pass markers for {} (record order, NOT GPU execution order; status from GPU checkpoint):",
-			count,
-			domain
-		);
+		if (ring.checkpoint_slots == nullptr) {
+			log::println(
+				log::level::error,
+				log::category::vulkan,
+				"Last {} pass markers for {} (record order, NOT GPU execution order). GPU checkpoints are OFF, so "
+				"every pass below reads as 'queued' and none can be blamed -- set Graphics.device_settings."
+				"pass_checkpoints and reproduce to find the pass that hung:",
+				count,
+				domain
+			);
+		}
+		else {
+			log::println(
+				log::level::error,
+				log::category::vulkan,
+				"Last {} pass markers for {} (record order, NOT GPU execution order; status from GPU checkpoint):",
+				count,
+				domain
+			);
+		}
 
 		std::vector<std::uint64_t> in_flight;
 
@@ -458,6 +477,10 @@ auto gse::gpu::device::import_shared_surface(const shared_surface_desc& desc, vo
 
 auto gse::gpu::device::destroy_shared_surface(const shared_surface& surface) const -> void {
 	m_vt->destroy_shared_surface(m_backend.get(), surface);
+}
+
+auto gse::gpu::device::readback_layout(const image_format format, const vec2u extent) const -> image_readback_layout {
+	return m_vt->readback_layout(m_backend.get(), format, extent);
 }
 
 auto gse::gpu::device::bind_image_memory(const gpu::handle<image> img, const device_memory mem, const device_size offset) const -> void {
