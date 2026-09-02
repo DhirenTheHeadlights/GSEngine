@@ -14,12 +14,19 @@ import :sandbox_scene;
 
 auto sandbox::client_system::init(gse::context& ctx, const gse::network::config& net_cfg, const gse::channel_write<gse::network::clear_providers_request, gse::network::add_provider_request, gse::network::refresh_servers_request> net_out) -> gse::async::task<> {
 	gse::system_manifest<
-		^^sandbox::orbit_camera,
-		^^sandbox::player,
-		^^sandbox::tumbler,
-		^^sandbox::piston,
-		^^sandbox::character_controller,
-		^^sandbox::sidearm
+		^^sandbox::orbit_camera::data,
+		^^sandbox::orbit_camera::attach,
+		^^sandbox::orbit_camera::update,
+		^^sandbox::player::data,
+		^^sandbox::player::run,
+		^^sandbox::tumbler::data,
+		^^sandbox::tumbler::run,
+		^^sandbox::piston::data,
+		^^sandbox::piston::run,
+		^^sandbox::character_controller::data,
+		^^sandbox::character_controller::run,
+		^^sandbox::sidearm::data,
+		^^sandbox::sidearm::run
 	>{}.register_with(ctx);
 	gse::register_systems<^^gse::free_camera::system>(ctx);
 

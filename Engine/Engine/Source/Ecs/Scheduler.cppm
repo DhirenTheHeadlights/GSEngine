@@ -4,6 +4,7 @@ import std;
 
 import gse.assert;
 import gse.core;
+import gse.meta;
 import gse.concurrency;
 import gse.time;
 import gse.math;
@@ -45,6 +46,10 @@ export namespace gse {
 
 		auto set_settings_register_hook(
 			std::function<void(settings::register_settings_type)> fn
+		) -> void;
+
+		auto set_actions_register_hook(
+			std::function<void(std::vector<actions::registration>, std::vector<actions::axis_registration>)> fn
 		) -> void;
 
 		[[nodiscard]] auto current_phase() const -> scheduler_phase;
@@ -212,6 +217,7 @@ export namespace gse {
 		mutable std::mutex m_hot_add_mutex;
 		registry* m_registry = nullptr;
 		std::function<void(settings::register_settings_type)> m_settings_register_hook;
+		std::function<void(std::vector<actions::registration>, std::vector<actions::axis_registration>)> m_actions_register_hook;
 		task_graph m_update_graph;
 		task_graph m_frame_graph;
 		access_guard m_guard;

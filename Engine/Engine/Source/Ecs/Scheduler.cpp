@@ -14,6 +14,7 @@ import :access_token;
 
 import gse.assert;
 import gse.core;
+import gse.meta;
 import gse.concurrency;
 import gse.time;
 import gse.math;
@@ -27,6 +28,10 @@ auto gse::scheduler::set_registry(registry& reg) -> void {
 
 auto gse::scheduler::set_settings_register_hook(std::function<void(settings::register_settings_type)> fn) -> void {
 	m_settings_register_hook = std::move(fn);
+}
+
+auto gse::scheduler::set_actions_register_hook(std::function<void(std::vector<actions::registration>, std::vector<actions::axis_registration>)> fn) -> void {
+	m_actions_register_hook = std::move(fn);
 }
 
 auto gse::scheduler::current_phase() const -> scheduler_phase {
@@ -381,6 +386,7 @@ auto gse::dep_path_exists(const std::vector<std::vector<component_dep>>& deps, c
 auto gse::scheduler::wire_component_deps() -> void {
 	std::unordered_map<id, std::vector<std::pair<std::size_t, id>>> writers;
 	std::unordered_map<id, std::vector<std::pair<std::size_t, id>>> structural_writers;
+	std::unordered_map<id, std::vector<std::pair<std::size_t, id>>> resource_writers;
 	std::vector<std::pair<std::size_t, id>> entity_structural_nodes;
 	std::unordered_map<id, std::size_t> state_to_index;
 	{
@@ -391,6 +397,9 @@ auto gse::scheduler::wire_component_deps() -> void {
 			}
 			for (const id s : node.component_structural) {
 				structural_writers[s].emplace_back(idx, node.state_id);
+			}
+			for (const id w : node.resource_writes) {
+				resource_writers[w].emplace_back(idx, node.state_id);
 			}
 			if (node.entity_structural) {
 				entity_structural_nodes.emplace_back(idx, node.state_id);
@@ -469,6 +478,24 @@ auto gse::scheduler::wire_component_deps() -> void {
 						continue;
 					}
 					add_dep(other_state, s, dep_kind::output);
+				}
+			}
+		}
+
+		for (const id r : node.resource_reads) {
+			if (const auto it = resource_writers.find(r); it != resource_writers.end()) {
+				for (const auto& [other_idx, other_state] : it->second) {
+					add_dep(other_state, r, other_idx > idx ? dep_kind::reordered_read : dep_kind::pinned);
+				}
+			}
+		}
+		for (const id w : node.resource_writes) {
+			if (const auto it = resource_writers.find(w); it != resource_writers.end()) {
+				for (const auto& [other_idx, other_state] : it->second) {
+					if (other_idx >= idx) {
+						continue;
+					}
+					add_dep(other_state, w, dep_kind::output);
 				}
 			}
 		}
@@ -1003,6 +1030,10 @@ auto gse::scheduler::register_node(system_node node) -> void* {
 		m_settings_register_hook(std::move(*node.settings_record));
 	}
 
+	if ((!node.action_records.empty() || !node.axis_records.empty()) && m_actions_register_hook) {
+		m_actions_register_hook(std::move(node.action_records), std::move(node.axis_records));
+	}
+
 	const auto node_idx = m_nodes.size();
 	m_node_index.emplace(state_id, node_idx);
 	if (state_type_id.exists() && state_type_id != state_id) {
@@ -1311,7 +1342,7 @@ auto gse::scheduler::sync_wait_or_dump(std::vector<async::task<>>&& tasks, const
 	auto seen_pulse = watchdog::dump_pulse();
 	int dump_count = 0;
 
-	while (!done_flag.load(std::memory_order_acquire)) {
+	while (!done_flag.load(std::memory_order_acquire) || !w.done()) {
 		if (!task::try_run_one()) {
 			std::this_thread::yield();
 		}
@@ -1321,9 +1352,6 @@ auto gse::scheduler::sync_wait_or_dump(std::vector<async::task<>>&& tasks, const
 			log_stall_state(phase, wait_clock.elapsed<float>(), dump_count);
 			log::flush();
 		}
-	}
-	while (!w.done()) {
-		std::this_thread::yield();
 	}
 }
 
