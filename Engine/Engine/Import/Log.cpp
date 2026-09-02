@@ -623,7 +623,9 @@ auto gse::log::logger::run() -> void {
 		if (flush_token != 0) {
 			{
 				std::lock_guard fl(m_flush_mutex);
-				m_flush_done.store(flush_token, std::memory_order_relaxed);
+				if (flush_token > m_flush_done.load(std::memory_order_relaxed)) {
+					m_flush_done.store(flush_token, std::memory_order_relaxed);
+				}
 			}
 			m_flushed.notify_all();
 		}

@@ -42,8 +42,10 @@ export namespace gse::async {
 		const checked_handle& tracked
 	) -> bool;
 
+	auto completed_marker() noexcept -> void*;
+
 	struct promise_base {
-		std::coroutine_handle<> m_continuation{ std::noop_coroutine() };
+		std::atomic<void*> m_continuation{ nullptr };
 		std::exception_ptr m_exception;
 		std::atomic<bool> m_started{ false };
 		std::atomic<bool> m_detached{ false };
@@ -213,11 +215,14 @@ namespace gse::async {
 
 template <typename P>
 auto gse::async::final_awaiter::await_suspend(std::coroutine_handle<P> h) noexcept -> std::coroutine_handle<> {
-	const std::coroutine_handle<> continuation = h.promise().m_continuation;
+	void* const previous = h.promise().m_continuation.exchange(completed_marker(), std::memory_order_acq_rel);
 	if (h.promise().m_detached.load(std::memory_order_acquire)) {
 		h.destroy();
 	}
-	return continuation ? continuation : std::noop_coroutine();
+	if (previous == nullptr || previous == completed_marker()) {
+		return std::noop_coroutine();
+	}
+	return std::coroutine_handle<>::from_address(previous);
 }
 
 template <typename Awaitable>
@@ -323,11 +328,16 @@ auto gse::async::task<T>::awaiter::await_ready() const noexcept -> bool {
 
 template <typename T>
 auto gse::async::task<T>::awaiter::await_suspend(std::coroutine_handle<> caller) noexcept -> std::coroutine_handle<> {
-	m_handle.promise().m_continuation = caller;
-	if (m_handle.promise().m_started.exchange(true, std::memory_order_acq_rel)) {
+	auto& promise = m_handle.promise();
+	if (!promise.m_started.exchange(true, std::memory_order_acq_rel)) {
+		promise.m_continuation.store(caller.address(), std::memory_order_release);
+		return m_handle;
+	}
+	void* expected = nullptr;
+	if (promise.m_continuation.compare_exchange_strong(expected, caller.address(), std::memory_order_acq_rel, std::memory_order_acquire)) {
 		return std::noop_coroutine();
 	}
-	return m_handle;
+	return caller;
 }
 
 template <typename T>
