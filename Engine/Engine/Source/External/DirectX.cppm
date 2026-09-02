@@ -403,6 +403,59 @@ export namespace gse::directx {
 		std::uint32_t layer_count
 	) -> void;
 
+	struct texture_footprint {
+		std::uint64_t row_pitch = 0;
+		std::uint64_t total_bytes = 0;
+	};
+
+	[[nodiscard]] auto subresource_footprint(
+		ID3D12Device* device,
+		DXGI_FORMAT format,
+		std::uint32_t width,
+		std::uint32_t height
+	) -> texture_footprint;
+
+	[[nodiscard]] auto copyable_textures(
+		ID3D12Resource* src,
+		ID3D12Resource* dst
+	) -> bool;
+
+	struct texture_region {
+		std::int32_t src_x = 0;
+		std::int32_t src_y = 0;
+		std::int32_t dst_x = 0;
+		std::int32_t dst_y = 0;
+		std::uint32_t width = 0;
+		std::uint32_t height = 0;
+		std::uint32_t src_subresource = 0;
+		std::uint32_t dst_subresource = 0;
+	};
+
+	auto copy_texture_region(
+		ID3D12GraphicsCommandList* list,
+		ID3D12Resource* src,
+		ID3D12Resource* dst,
+		const texture_region& region
+	) -> void;
+
+	auto copy_texture_to_buffer(
+		ID3D12Device* device,
+		ID3D12GraphicsCommandList* list,
+		ID3D12Resource* src,
+		ID3D12Resource* dst,
+		std::uint64_t dst_offset,
+		const texture_region& region
+	) -> void;
+
+	auto copy_buffer_to_texture(
+		ID3D12Device* device,
+		ID3D12GraphicsCommandList* list,
+		ID3D12Resource* src,
+		ID3D12Resource* dst,
+		std::uint64_t src_offset,
+		const texture_region& region
+	) -> void;
+
 	struct blas_triangles {
 		DXGI_FORMAT vertex_format;
 		std::uint64_t vertex_address;
@@ -1350,6 +1403,153 @@ auto gse::directx::texture_byte_size(ID3D12Device* device, ID3D12Resource* resou
 	std::uint64_t total_bytes = 0;
 	device->GetCopyableFootprints(&desc, 0, 1, 0, nullptr, nullptr, nullptr, &total_bytes);
 	return total_bytes;
+}
+
+auto gse::directx::subresource_footprint(ID3D12Device* device, const DXGI_FORMAT format, const std::uint32_t width, const std::uint32_t height) -> texture_footprint {
+	const D3D12_RESOURCE_DESC desc = {
+		.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+		.Alignment = 0,
+		.Width = width,
+		.Height = height,
+		.DepthOrArraySize = 1,
+		.MipLevels = 1,
+		.Format = format,
+		.SampleDesc = { .Count = 1, .Quality = 0 },
+		.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN,
+		.Flags = D3D12_RESOURCE_FLAG_NONE,
+	};
+
+	D3D12_PLACED_SUBRESOURCE_FOOTPRINT placed = {};
+	std::uint64_t total_bytes = 0;
+	device->GetCopyableFootprints(&desc, 0, 1, 0, &placed, nullptr, nullptr, &total_bytes);
+
+	return {
+		.row_pitch = placed.Footprint.RowPitch,
+		.total_bytes = total_bytes,
+	};
+}
+
+auto gse::directx::copyable_textures(ID3D12Resource* src, ID3D12Resource* dst) -> bool {
+	auto family = [](const DXGI_FORMAT f) -> DXGI_FORMAT {
+		switch (f) {
+			case DXGI_FORMAT_R8G8B8A8_UNORM:
+			case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
+			case DXGI_FORMAT_R8G8B8A8_TYPELESS:
+				return DXGI_FORMAT_R8G8B8A8_TYPELESS;
+			case DXGI_FORMAT_B8G8R8A8_UNORM:
+			case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
+			case DXGI_FORMAT_B8G8R8A8_TYPELESS:
+				return DXGI_FORMAT_B8G8R8A8_TYPELESS;
+			default:
+				return f;
+		}
+	};
+
+	D3D12_RESOURCE_DESC src_desc;
+	D3D12_RESOURCE_DESC dst_desc;
+	src->GetDesc(&src_desc);
+	dst->GetDesc(&dst_desc);
+	return family(src_desc.Format) == family(dst_desc.Format);
+}
+
+auto gse::directx::copy_texture_region(ID3D12GraphicsCommandList* list, ID3D12Resource* src, ID3D12Resource* dst, const texture_region& region) -> void {
+	const D3D12_TEXTURE_COPY_LOCATION source = {
+		.pResource = src,
+		.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
+		.SubresourceIndex = region.src_subresource,
+	};
+	const D3D12_TEXTURE_COPY_LOCATION destination = {
+		.pResource = dst,
+		.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
+		.SubresourceIndex = region.dst_subresource,
+	};
+	const D3D12_BOX box = {
+		.left = static_cast<UINT>(region.src_x),
+		.top = static_cast<UINT>(region.src_y),
+		.front = 0,
+		.right = static_cast<UINT>(region.src_x) + region.width,
+		.bottom = static_cast<UINT>(region.src_y) + region.height,
+		.back = 1,
+	};
+	list->CopyTextureRegion(
+		&destination,
+		static_cast<UINT>(region.dst_x),
+		static_cast<UINT>(region.dst_y),
+		0,
+		&source,
+		&box
+	);
+}
+
+auto gse::directx::copy_texture_to_buffer(ID3D12Device* device, ID3D12GraphicsCommandList* list, ID3D12Resource* src, ID3D12Resource* dst, const std::uint64_t dst_offset, const texture_region& region) -> void {
+	D3D12_RESOURCE_DESC src_desc;
+	src->GetDesc(&src_desc);
+
+	const auto footprint = subresource_footprint(device, src_desc.Format, region.width, region.height);
+
+	const D3D12_TEXTURE_COPY_LOCATION source = {
+		.pResource = src,
+		.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
+		.SubresourceIndex = region.src_subresource,
+	};
+	const D3D12_TEXTURE_COPY_LOCATION destination = {
+		.pResource = dst,
+		.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
+		.PlacedFootprint = {
+			.Offset = dst_offset,
+			.Footprint = {
+				.Format = src_desc.Format,
+				.Width = region.width,
+				.Height = region.height,
+				.Depth = 1,
+				.RowPitch = static_cast<UINT>(footprint.row_pitch),
+			},
+		},
+	};
+	const D3D12_BOX box = {
+		.left = static_cast<UINT>(region.src_x),
+		.top = static_cast<UINT>(region.src_y),
+		.front = 0,
+		.right = static_cast<UINT>(region.src_x) + region.width,
+		.bottom = static_cast<UINT>(region.src_y) + region.height,
+		.back = 1,
+	};
+	list->CopyTextureRegion(&destination, 0, 0, 0, &source, &box);
+}
+
+auto gse::directx::copy_buffer_to_texture(ID3D12Device* device, ID3D12GraphicsCommandList* list, ID3D12Resource* src, ID3D12Resource* dst, const std::uint64_t src_offset, const texture_region& region) -> void {
+	D3D12_RESOURCE_DESC dst_desc;
+	dst->GetDesc(&dst_desc);
+
+	const auto footprint = subresource_footprint(device, dst_desc.Format, region.width, region.height);
+
+	const D3D12_TEXTURE_COPY_LOCATION source = {
+		.pResource = src,
+		.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
+		.PlacedFootprint = {
+			.Offset = src_offset,
+			.Footprint = {
+				.Format = dst_desc.Format,
+				.Width = region.width,
+				.Height = region.height,
+				.Depth = 1,
+				.RowPitch = static_cast<UINT>(footprint.row_pitch),
+			},
+		},
+	};
+	const D3D12_TEXTURE_COPY_LOCATION destination = {
+		.pResource = dst,
+		.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
+		.SubresourceIndex = region.dst_subresource,
+	};
+	list->CopyTextureRegion(
+		&destination,
+		static_cast<UINT>(region.dst_x),
+		static_cast<UINT>(region.dst_y),
+		0,
+		&source,
+		nullptr
+	);
 }
 
 auto gse::directx::upload_texture(ID3D12Device* device, ID3D12CommandQueue* queue, ID3D12Fence* fence, void* wait_event, ID3D12Resource* texture, const void* const* layer_pointers, const std::uint32_t layer_count) -> void {

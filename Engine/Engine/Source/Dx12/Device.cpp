@@ -1185,6 +1185,14 @@ auto gse::dx12::device::destroy_shared_surface(const gpu::shared_surface& surfac
 	}
 }
 
+auto gse::dx12::device::readback_layout(const gpu::image_format format, const vec2u extent) const -> gpu::image_readback_layout {
+	const auto footprint = directx::subresource_footprint(m_device.get(), resource_format_of(format), extent.x(), extent.y());
+	return {
+		.row_pitch = footprint.row_pitch,
+		.size = footprint.total_bytes,
+	};
+}
+
 auto gse::dx12::device::allocate_aliased_memory(gpu::device_size, std::uint32_t) const -> gpu::device_memory {
 	const std::lock_guard lock(m_mutex);
 	return gpu::device_memory{ .value = ++m_aliased_counter };

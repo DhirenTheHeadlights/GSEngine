@@ -562,13 +562,121 @@ auto gse::dx12::commands::fill_buffer(const gpu::handle<gpu::buffer> dst, const 
 	}
 }
 
-auto gse::dx12::commands::copy_buffer_to_image(gpu::handle<gpu::buffer>, gpu::handle<gpu::image>, std::span<const gpu::buffer_image_copy_region>) const -> void {}
+auto gse::dx12::commands::copy_buffer_to_image(const gpu::handle<gpu::buffer> src, const gpu::handle<gpu::image> dst, const std::span<const gpu::buffer_image_copy_region> regions) const -> void {
+	auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(m_cmd);
+	auto* src_res = std::bit_cast<directx::ID3D12Resource*>(src);
+	auto* dst_res = std::bit_cast<directx::ID3D12Resource*>(dst);
+	if (!list || !src_res || !dst_res || !active_device) {
+		return;
+	}
+	for (const auto& region : regions) {
+		assert(region.buffer_row_length == 0, "dx12 copy_buffer_to_image sources the device row pitch; got buffer_row_length={}", region.buffer_row_length);
+		assert(region.image_subresource.base_array_layer == 0, "dx12 copy_buffer_to_image only implements array layer 0; got {}", region.image_subresource.base_array_layer);
+		directx::copy_buffer_to_texture(
+			active_device->raw_device(),
+			list,
+			src_res,
+			dst_res,
+			region.buffer_offset,
+			{
+				.dst_x = region.image_offset.x(),
+				.dst_y = region.image_offset.y(),
+				.width = region.image_extent.x(),
+				.height = region.image_extent.y(),
+				.dst_subresource = region.image_subresource.mip_level,
+			}
+		);
+	}
+}
 
-auto gse::dx12::commands::copy_image_to_buffer(gpu::handle<gpu::image>, gpu::handle<gpu::buffer>, std::span<const gpu::buffer_image_copy_region>) const -> void {}
+auto gse::dx12::commands::copy_image_to_buffer(const gpu::handle<gpu::image> src, const gpu::handle<gpu::buffer> dst, const std::span<const gpu::buffer_image_copy_region> regions) const -> void {
+	auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(m_cmd);
+	auto* src_res = std::bit_cast<directx::ID3D12Resource*>(src);
+	auto* dst_res = std::bit_cast<directx::ID3D12Resource*>(dst);
+	if (!list || !src_res || !dst_res || !active_device) {
+		return;
+	}
+	for (const auto& region : regions) {
+		assert(region.buffer_row_length == 0, "dx12 copy_image_to_buffer sources the device row pitch; got buffer_row_length={}", region.buffer_row_length);
+		assert(region.image_subresource.base_array_layer == 0, "dx12 copy_image_to_buffer only implements array layer 0; got {}", region.image_subresource.base_array_layer);
+		directx::copy_texture_to_buffer(
+			active_device->raw_device(),
+			list,
+			src_res,
+			dst_res,
+			region.buffer_offset,
+			{
+				.src_x = region.image_offset.x(),
+				.src_y = region.image_offset.y(),
+				.width = region.image_extent.x(),
+				.height = region.image_extent.y(),
+				.src_subresource = region.image_subresource.mip_level,
+			}
+		);
+	}
+}
 
-auto gse::dx12::commands::blit_image(gpu::handle<gpu::image>, gpu::handle<gpu::image>, const gpu::image_blit_region&, gpu::sampler_filter) const -> void {}
+auto gse::dx12::commands::blit_image(const gpu::handle<gpu::image> src, const gpu::handle<gpu::image> dst, const gpu::image_blit_region& region, gpu::sampler_filter) const -> void {
+	auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(m_cmd);
+	auto* src_res = std::bit_cast<directx::ID3D12Resource*>(src);
+	auto* dst_res = std::bit_cast<directx::ID3D12Resource*>(dst);
+	if (!list || !src_res || !dst_res) {
+		return;
+	}
 
-auto gse::dx12::commands::copy_image(gpu::handle<gpu::image>, gpu::handle<gpu::image>, const gpu::image_copy_region&) const -> void {}
+	const vec3i src_size = region.src_offsets[1] - region.src_offsets[0];
+	const vec3i dst_size = region.dst_offsets[1] - region.dst_offsets[0];
+	assert(
+		src_size == dst_size,
+		"dx12 blit_image cannot rescale; d3d12 copies are 1:1. Source {} destination {}: size the destination to the frame target",
+		src_size,
+		dst_size
+	);
+	assert(
+		directx::copyable_textures(src_res, dst_res),
+		"dx12 blit_image cannot convert formats; d3d12 copies stay within a format family. Give the destination the frame target's format"
+	);
+
+	directx::copy_texture_region(
+		list,
+		src_res,
+		dst_res,
+		{
+			.src_x = region.src_offsets[0].x(),
+			.src_y = region.src_offsets[0].y(),
+			.dst_x = region.dst_offsets[0].x(),
+			.dst_y = region.dst_offsets[0].y(),
+			.width = static_cast<std::uint32_t>(src_size.x()),
+			.height = static_cast<std::uint32_t>(src_size.y()),
+			.src_subresource = region.src_subresource.mip_level,
+			.dst_subresource = region.dst_subresource.mip_level,
+		}
+	);
+}
+
+auto gse::dx12::commands::copy_image(const gpu::handle<gpu::image> src, const gpu::handle<gpu::image> dst, const gpu::image_copy_region& region) const -> void {
+	auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(m_cmd);
+	auto* src_res = std::bit_cast<directx::ID3D12Resource*>(src);
+	auto* dst_res = std::bit_cast<directx::ID3D12Resource*>(dst);
+	if (!list || !src_res || !dst_res) {
+		return;
+	}
+	directx::copy_texture_region(
+		list,
+		src_res,
+		dst_res,
+		{
+			.src_x = region.src_offset.x(),
+			.src_y = region.src_offset.y(),
+			.dst_x = region.dst_offset.x(),
+			.dst_y = region.dst_offset.y(),
+			.width = region.extent.x(),
+			.height = region.extent.y(),
+			.src_subresource = region.src_subresource.mip_level,
+			.dst_subresource = region.dst_subresource.mip_level,
+		}
+	);
+}
 
 auto gse::dx12::commands::release_swapchain_image_to_present(gpu::handle<gpu::image>, gpu::pipeline_stage_flags, gpu::access_flags) const -> void {}
 

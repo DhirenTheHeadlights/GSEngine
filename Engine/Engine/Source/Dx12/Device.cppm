@@ -298,6 +298,11 @@ export namespace gse::dx12 {
 			const gpu::shared_surface& surface
 		) const -> void;
 
+		[[nodiscard]] auto readback_layout(
+			gpu::image_format format,
+			vec2u extent
+		) const -> gpu::image_readback_layout;
+
 		[[nodiscard]] auto allocate_aliased_memory(
 			gpu::device_size size,
 			std::uint32_t memory_type_index
