@@ -67,11 +67,12 @@ export namespace gse::shaders::forward {
 		irradiance intensity;
 		float constant;
 		inverse_length linear;
-		float quadratic;
+		inverse_area quadratic;
 		float cut_off;
 		float outer_cut_off;
 		float ambient_strength;
 		length source_radius;
+		length radius;
 	};
 
 	struct [[= shader_struct]] vertex {
@@ -94,7 +95,44 @@ export namespace gse::shaders::forward {
 		float cone_cutoff;
 	};
 
-	using shader_types = type_pack<light_type, material_data, light, vertex, meshlet_descriptor, meshlet_bounds>;
+	struct [[= shader_constant_block]] trace_quality_limits {
+		std::int32_t max_shadow_samples = 4;
+		std::int32_t max_ao_samples = 8;
+		std::int32_t max_reflection_samples = 2;
+
+		vec4<length> shadow_hard_distances = { meters(50.f), meters(40.f), meters(10.f), meters(30.f) };
+		vec4i shadow_hard_samples = { 1, 1, 1, 1 };
+		vec4<length> shadow_low_distances = { meters(100.f), meters(80.f), meters(20.f), meters(60.f) };
+		vec4i shadow_low_samples = { 1, 1, 1, 1 };
+		vec4<length> shadow_medium_distances = { meters(200.f), meters(150.f), meters(30.f), meters(100.f) };
+		vec4i shadow_medium_samples = { 2, 2, 1, 1 };
+		vec4<length> shadow_high_distances = { meters(500.f), meters(400.f), meters(50.f), meters(200.f) };
+		vec4i shadow_high_samples = { 4, 4, 2, 1 };
+
+		vec4<length> ao_low_distances = { meters(5.f), meters(4.f), meters(3.f), meters(4.f) };
+		vec4i ao_low_samples = { 1, 1, 1, 1 };
+		vec4<length> ao_medium_distances = { meters(10.f), meters(8.f), meters(5.f), meters(8.f) };
+		vec4i ao_medium_samples = { 2, 2, 1, 1 };
+		vec4<length> ao_high_distances = { meters(20.f), meters(15.f), meters(8.f), meters(15.f) };
+		vec4i ao_high_samples = { 4, 4, 2, 1 };
+		vec4<length> ao_ultra_distances = { meters(30.f), meters(25.f), meters(10.f), meters(20.f) };
+		vec4i ao_ultra_samples = { 8, 8, 4, 2 };
+
+		vec2<length> reflection_low_distances = { meters(100.f), meters(80.f) };
+		std::int32_t reflection_low_samples = 1;
+		float reflection_low_max_roughness = 0.1f;
+		vec2<length> reflection_medium_distances = { meters(200.f), meters(150.f) };
+		std::int32_t reflection_medium_samples = 1;
+		float reflection_medium_max_roughness = 0.3f;
+		vec2<length> reflection_high_distances = { meters(500.f), meters(400.f) };
+		std::int32_t reflection_high_samples = 2;
+		float reflection_high_max_roughness = 0.5f;
+
+		vec4f env_brdf_fit_c0 = { -1.f, -0.0275f, -0.572f, 0.022f };
+		vec4f env_brdf_fit_c1 = { 1.f, 0.0425f, 1.04f, -0.04f };
+	};
+
+	using shader_types = type_pack<light_type, material_data, light, vertex, meshlet_descriptor, meshlet_bounds, trace_quality_limits>;
 }
 
 export namespace gse::shaders::meshlet {

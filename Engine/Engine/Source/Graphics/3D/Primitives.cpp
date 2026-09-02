@@ -272,7 +272,9 @@ auto gse::primitives::build_cylinder_meshes(const std::uint32_t segments) -> std
 	meshes.push_back({
 		.vertices = std::move(vertices),
 		.indices = std::move(indices),
-		.material = {},
+		.material = {
+			.roughness = 0.85f,
+		},
 	});
 	return meshes;
 }

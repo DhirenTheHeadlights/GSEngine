@@ -1,9 +1,6 @@
 
-static const uint TILE_SIZE = 16;
-static const uint MAX_LIGHTS_PER_TILE = 64;
-
 groupshared uint tile_light_count;
-groupshared uint tile_light_indices[MAX_LIGHTS_PER_TILE];
+groupshared uint tile_light_indices[max_lights_per_tile];
 groupshared uint tile_depth_min;
 groupshared uint tile_depth_max;
 
@@ -27,8 +24,8 @@ float4 make_plane_from_rays(float3 a, float3 b) {
 }
 
 frustum build_tile_frustum(uint2 tile_id) {
-    uint2 pixel_min = tile_id * TILE_SIZE;
-    uint2 pixel_max = min(pixel_min + uint2(TILE_SIZE, TILE_SIZE), culling_params.screen_size);
+    uint2 pixel_min = tile_id * tile_size;
+    uint2 pixel_max = min(pixel_min + uint2(tile_size, tile_size), culling_params.screen_size);
 
     float3 top_left = normalize(reconstruct_view_position(screen_uv(float2(pixel_min.x, pixel_min.y)), 1.0));
     float3 top_right = normalize(reconstruct_view_position(screen_uv(float2(pixel_max.x, pixel_min.y)), 1.0));
@@ -58,27 +55,10 @@ bool sphere_inside_frustum(float3 center, float radius, frustum f, float z_near,
     return true;
 }
 
-float light_radius(light l) {
-    float max_channel = max(l.color.r, max(l.color.g, l.color.b)) * l.intensity;
-    float threshold = 0.01;
-    float a = l.quadratic;
-    float b = l.linear;
-    float c = l.constant - max_channel / threshold;
-
-    if (a < 1e-6) {
-        if (b > 1e-6) return -c / b;
-        return 100.0;
-    }
-
-    float discriminant = b * b - 4.0 * a * c;
-    if (discriminant < 0.0) return 100.0;
-    return (-b + sqrt(discriminant)) / (2.0 * a);
-}
-
 void light_culling(uint3 group_id, uint3 group_thread_id, uint group_index) {
-    uint2 tile_count = (culling_params.screen_size + TILE_SIZE - 1) / TILE_SIZE;
+    uint2 tile_count = (culling_params.screen_size + tile_size - 1) / tile_size;
     uint tile_index = group_id.y * tile_count.x + group_id.x;
-    uint2 pixel = group_id.xy * TILE_SIZE + group_thread_id.xy;
+    uint2 pixel = group_id.xy * tile_size + group_thread_id.xy;
 
     if (group_index == 0) {
         tile_light_count = 0;
@@ -107,19 +87,18 @@ void light_culling(uint3 group_id, uint3 group_thread_id, uint group_index) {
     float z_near = tile_depth_min == 0x7F7FFFFF ? 0.0 : asfloat(tile_depth_min);
     float z_far  = tile_depth_min == 0x7F7FFFFF ? 1e30 : asfloat(tile_depth_max);
 
-    for (uint i = group_index; i < culling_params.num_lights; i += TILE_SIZE * TILE_SIZE) {
+    for (uint i = group_index; i < culling_params.num_lights; i += tile_size * tile_size) {
         light l = lights[i];
         bool visible;
         if (l.light_type == light_type::directional) {
             visible = true;
         } else {
-            float radius = light_radius(l);
-            visible = sphere_inside_frustum(l.position, radius, tile_frustum, z_near, z_far);
+            visible = sphere_inside_frustum(l.position, l.radius, tile_frustum, z_near, z_far);
         }
         if (visible) {
             uint slot;
             InterlockedAdd(tile_light_count, 1, slot);
-            if (slot < MAX_LIGHTS_PER_TILE) {
+            if (slot < max_lights_per_tile) {
                 tile_light_indices[slot] = i;
             }
         }
@@ -127,14 +106,14 @@ void light_culling(uint3 group_id, uint3 group_thread_id, uint group_index) {
 
     GroupMemoryBarrierWithGroupSync();
 
-    uint count = min(tile_light_count, MAX_LIGHTS_PER_TILE);
-    uint list_offset = tile_index * MAX_LIGHTS_PER_TILE;
+    uint count = min(tile_light_count, max_lights_per_tile);
+    uint list_offset = tile_index * max_lights_per_tile;
 
     if (group_index == 0) {
         tile_light_table[tile_index] = uint2(list_offset, count);
     }
 
-    for (uint j = group_index; j < count; j += TILE_SIZE * TILE_SIZE) {
+    for (uint j = group_index; j < count; j += tile_size * tile_size) {
         light_index_list[list_offset + j] = tile_light_indices[j];
     }
 }

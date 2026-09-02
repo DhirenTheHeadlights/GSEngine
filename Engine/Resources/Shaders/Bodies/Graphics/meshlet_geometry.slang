@@ -78,20 +78,6 @@ void ms_main(
 
 static const float PI = 3.14159265;
 
-float attenuation_point(float3 light_pos, float3 frag_pos, float constant, float linear_k, float quadratic) {
-    float d = length(light_pos - frag_pos);
-    return 1.0 / (constant + linear_k * d + quadratic * d * d);
-}
-
-float spot_factor(float3 frag_to_light, float3 spot_dir, float cut_off, float outer_cut_off) {
-    float3 L = normalize(frag_to_light);
-    float3 D = normalize(spot_dir);
-    float cos_theta = dot(-L, D);
-    float eps = cut_off - outer_cut_off;
-    float t = saturate((cos_theta - outer_cut_off) / max(eps, 1e-4));
-    return t;
-}
-
 float distribution_ggx(float NdotH, float roughness) {
     float a = roughness * roughness;
     float a2 = a * a;
@@ -152,7 +138,6 @@ float interleaved_gradient_noise(float2 pixel) {
     return frac(52.9829189 * frac(dot(pixel, float2(0.06711056, 0.00583715))));
 }
 
-static const int MAX_SHADOW_SAMPLES = 4;
 static const float GOLDEN_ANGLE = 2.39996;
 
 struct shadow_config {
@@ -166,17 +151,28 @@ struct shadow_config {
     float mid_dist;
 };
 
-shadow_config get_shadow_config(int quality) {
-    switch (quality) {
-        case 1: return { 1, 50.0,  40.0,  1, 1, 1, 10.0, 30.0 };
-        case 2: return { 1, 100.0, 80.0,  1, 1, 1, 20.0, 60.0 };
-        case 3: return { 2, 200.0, 150.0, 2, 1, 1, 30.0, 100.0 };
-        case 4: return { 4, 500.0, 400.0, 4, 2, 1, 50.0, 200.0 };
-        default: return { 0, 0.0, 0.0, 0, 0, 0, 0.0, 0.0 };
-    }
+shadow_config make_trace_config(float4 distances, int4 samples) {
+    shadow_config cfg;
+    cfg.max_samples = samples.x;
+    cfg.near_samples = samples.y;
+    cfg.mid_samples = samples.z;
+    cfg.far_samples = samples.w;
+    cfg.max_range = distances.x;
+    cfg.fade_start = distances.y;
+    cfg.near_dist = distances.z;
+    cfg.mid_dist = distances.w;
+    return cfg;
 }
 
-static const int MAX_AO_SAMPLES = 8;
+shadow_config get_shadow_config(int quality) {
+    switch (quality) {
+        case 1: return make_trace_config(shadow_hard_distances, shadow_hard_samples);
+        case 2: return make_trace_config(shadow_low_distances, shadow_low_samples);
+        case 3: return make_trace_config(shadow_medium_distances, shadow_medium_samples);
+        case 4: return make_trace_config(shadow_high_distances, shadow_high_samples);
+        default: return make_trace_config(float4(0.0, 0.0, 0.0, 0.0), int4(0, 0, 0, 0));
+    }
+}
 
 struct ao_config {
     int max_samples;
@@ -189,13 +185,26 @@ struct ao_config {
     float mid_dist;
 };
 
+ao_config make_ao_config(float4 distances, int4 samples) {
+    ao_config cfg;
+    cfg.max_samples = samples.x;
+    cfg.near_samples = samples.y;
+    cfg.mid_samples = samples.z;
+    cfg.far_samples = samples.w;
+    cfg.max_range = distances.x;
+    cfg.fade_start = distances.y;
+    cfg.near_dist = distances.z;
+    cfg.mid_dist = distances.w;
+    return cfg;
+}
+
 ao_config get_ao_config(int quality) {
     switch (quality) {
-        case 1: return { 1, 5.0,  4.0,  1, 1, 1, 3.0, 4.0 };
-        case 2: return { 2, 10.0, 8.0,  2, 1, 1, 5.0, 8.0 };
-        case 3: return { 4, 20.0, 15.0, 4, 2, 1, 8.0, 15.0 };
-        case 4: return { 8, 30.0, 25.0, 8, 4, 2, 10.0, 20.0 };
-        default: return { 0, 0.0, 0.0, 0, 0, 0, 0.0, 0.0 };
+        case 1: return make_ao_config(ao_low_distances, ao_low_samples);
+        case 2: return make_ao_config(ao_medium_distances, ao_medium_samples);
+        case 3: return make_ao_config(ao_high_distances, ao_high_samples);
+        case 4: return make_ao_config(ao_ultra_distances, ao_ultra_samples);
+        default: return make_ao_config(float4(0.0, 0.0, 0.0, 0.0), int4(0, 0, 0, 0));
     }
 }
 
@@ -217,7 +226,7 @@ float trace_ao(float3 origin, float3 normal, float2 pixel, ao_config cfg, float 
     float occlusion = 0.0;
 
     [unroll]
-    for (int s = 0; s < MAX_AO_SAMPLES; ++s) {
+    for (int s = 0; s < max_ao_samples; ++s) {
         if (s >= sample_count) break;
         float r = sqrt((float(s) + 0.5) * inv_count);
         float z = sqrt(1.0 - r * r);
@@ -235,8 +244,6 @@ float trace_ao(float3 origin, float3 normal, float2 pixel, ao_config cfg, float 
     return occlusion;
 }
 
-static const int MAX_REFLECTION_SAMPLES = 2;
-
 struct reflection_config {
     int max_samples;
     float max_range;
@@ -244,13 +251,59 @@ struct reflection_config {
     float max_roughness;
 };
 
+reflection_config make_reflection_config(float2 distances, int samples, float max_roughness) {
+    reflection_config cfg;
+    cfg.max_samples = samples;
+    cfg.max_range = distances.x;
+    cfg.fade_start = distances.y;
+    cfg.max_roughness = max_roughness;
+    return cfg;
+}
+
 reflection_config get_reflection_config(int quality) {
     switch (quality) {
-        case 1: return { 1, 100.0, 80.0,  0.1 };
-        case 2: return { 1, 200.0, 150.0, 0.3 };
-        case 3: return { 2, 500.0, 400.0, 0.5 };
-        default: return { 0, 0.0, 0.0, 0.0 };
+        case 1: return make_reflection_config(reflection_low_distances, reflection_low_samples, reflection_low_max_roughness);
+        case 2: return make_reflection_config(reflection_medium_distances, reflection_medium_samples, reflection_medium_max_roughness);
+        case 3: return make_reflection_config(reflection_high_distances, reflection_high_samples, reflection_high_max_roughness);
+        default: return make_reflection_config(float2(0.0, 0.0), 0, 0.0);
     }
+}
+
+float3 env_brdf(float3 F0, float roughness, float NdotV) {
+    float4 r = roughness * env_brdf_fit_c0 + env_brdf_fit_c1;
+    float a004 = min(r.x * r.x, exp2(-9.28 * NdotV)) * r.x + r.y;
+    float2 ab = float2(-1.04, 1.04) * a004 + r.zw;
+    return F0 * ab.x + ab.y;
+}
+
+float3 sky_radiance_toward(float3 dir) {
+    float3 lookup = dir;
+    if (lookup.y < 0.0) {
+        lookup.y = 0.0;
+        lookup = normalize(lookup);
+    }
+    return sky_view_in.SampleLevel(sky_view_sampler, sky_view_dir_to_uv(lookup), 0).rgb * atmosphere_ubo.sun_irradiance;
+}
+
+float3 reflected_hit_radiance(float3 hit_pos, float3 approx_normal, material_data hit_mat) {
+    float3 incident = pc.sun_color * pc.sun_ambient;
+    light sun = lights_ssbo[0];
+    if (sun.light_type == light_type::directional) {
+        incident += sun.color * sun.intensity * max(dot(approx_normal, normalize(-sun.world_direction)), 0.0);
+    }
+    if (pc.gi_enabled != 0) {
+        GiGridParams gi_params;
+        gi_params.origin = pc.gi_origin;
+        gi_params.spacing = pc.gi_spacing;
+        gi_params.grid_dim = pc.gi_grid_dim;
+        gi_params.intensity = pc.gi_intensity;
+        gi_params.atlas_size = pc.gi_atlas_size;
+        float coverage;
+        float3 probe_irradiance = sample_gi_irradiance(hit_pos, approx_normal, gi_params, gi_atlas, gi_atlas_sampler, coverage);
+        float3 sky_fill = sky_radiance_toward(approx_normal) * saturate(approx_normal.y * 0.5 + 0.5);
+        incident += lerp(sky_fill, probe_irradiance, coverage);
+    }
+    return hit_mat.base_color * incident / PI;
 }
 
 float3 trace_reflection(float3 origin, float3 normal, float3 view_dir, float roughness, float2 pixel, reflection_config cfg, float view_dist, float3 F) {
@@ -261,20 +314,21 @@ float3 trace_reflection(float3 origin, float3 normal, float3 view_dir, float rou
 
     float3 reflection = float3(0.0);
     float inv_count = 1.0 / float(cfg.max_samples);
+    float frame_phase = float(pc.frame_counter % 64u);
 
     [unroll]
-    for (int s = 0; s < MAX_REFLECTION_SAMPLES; ++s) {
+    for (int s = 0; s < max_reflection_samples; ++s) {
         if (s >= cfg.max_samples) break;
 
         float3 dir = reflect_dir;
-        if (roughness > 0.01 && cfg.max_samples > 1) {
+        if (roughness > 0.01) {
             float3 up = abs(reflect_dir.y) < 0.999 ? float3(0, 1, 0) : float3(1, 0, 0);
             float3 tangent = normalize(cross(up, reflect_dir));
             float3 bitangent = cross(reflect_dir, tangent);
             float rotation = interleaved_gradient_noise(pixel) * 6.28318;
             float spread = roughness * roughness;
             float r = sqrt((float(s) + 0.5) * inv_count) * spread;
-            float theta = float(s) * GOLDEN_ANGLE + rotation;
+            float theta = (float(s) + frame_phase) * GOLDEN_ANGLE + rotation;
             dir = normalize(reflect_dir + (tangent * cos(theta) + bitangent * sin(theta)) * r);
         }
 
@@ -290,7 +344,11 @@ float3 trace_reflection(float3 origin, float3 normal, float3 view_dir, float rou
         if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT) {
             uint hit_mat_idx = q.CommittedInstanceID();
             material_data hit_mat = material_palette[hit_mat_idx];
-            reflection += hit_mat.base_color * 0.2;
+            float3 hit_pos = biased_origin + dir * q.CommittedRayT();
+            reflection += reflected_hit_radiance(hit_pos, -dir, hit_mat);
+        }
+        else {
+            reflection += sky_radiance_toward(dir);
         }
     }
     reflection *= inv_count;
@@ -350,7 +408,7 @@ float trace_shadow(float3 origin, float3 normal, float3 direction, float t_max, 
         shadow = 0.0;
 
         [unroll]
-        for (int s = 0; s < MAX_SHADOW_SAMPLES; ++s) {
+        for (int s = 0; s < max_shadow_samples; ++s) {
             if (s >= sample_count) break;
             float r = sqrt((float(s) + 0.5) * inv_count);
             float theta = float(s) * GOLDEN_ANGLE + rotation;
@@ -411,31 +469,17 @@ float4 fs_main(MeshOutput input) : SV_Target0 {
 
         float3 light_color = l.color;
         float light_intensity = l.intensity;
-        float light_ambient = l.ambient_strength;
 
-        float3 L = float3(0, 0, 0);
-        float attenuation = 1.0;
+        LightSample ls = evaluate_light(l, l.position, l.direction, pos_vs);
+        float3 L = ls.direction;
+        float attenuation = ls.attenuation;
         float3 shadow_dir_world = float3(0, 0, 0);
         float shadow_t_max = 1000.0;
 
         if (l.light_type == light_type::directional) {
-            L = normalize(-l.direction);
             shadow_dir_world = normalize(-l.world_direction);
         }
-        else if (l.light_type == light_type::point) {
-            float3 Lvec = l.position - pos_vs;
-            L = normalize(Lvec);
-            attenuation = attenuation_point(l.position, pos_vs, l.constant, l.linear, l.quadratic);
-            float3 to_light = l.world_position - pos_world;
-            float dist = length(to_light);
-            shadow_dir_world = to_light / max(dist, 1e-4);
-            shadow_t_max = dist - 1.0;
-        }
-        else if (l.light_type == light_type::spot) {
-            float3 Lvec = l.position - pos_vs;
-            L = normalize(Lvec);
-            attenuation = attenuation_point(l.position, pos_vs, l.constant, l.linear, l.quadratic);
-            attenuation *= spot_factor(Lvec, l.direction, l.cut_off, l.outer_cut_off);
+        else {
             float3 to_light = l.world_position - pos_world;
             float dist = length(to_light);
             shadow_dir_world = to_light / max(dist, 1e-4);
@@ -443,8 +487,10 @@ float4 fs_main(MeshOutput input) : SV_Target0 {
         }
 
         float NdotL = max(dot(normal_vs, L), 0.0);
+        bool shadow_worth_tracing = l.light_type == light_type::directional
+            || light_intensity * attenuation >= pc.shadow_cutoff;
         float shadow = 1.0;
-        if (scfg.max_samples > 0 && NdotL > 0.0) {
+        if (scfg.max_samples > 0 && NdotL > 0.0 && shadow_worth_tracing) {
             shadow = trace_shadow(pos_world, world_n, shadow_dir_world, shadow_t_max, l.source_radius, pixel, scfg, view_dist);
         }
         if (l.light_type == light_type::directional && NdotL > 0.0) {
@@ -454,15 +500,16 @@ float4 fs_main(MeshOutput input) : SV_Target0 {
         float3 F;
         float3 brdf = evaluate_pbr(normal_vs, V, L, base_color, mat.roughness, mat.metallic, F0, F);
         float3 Lo = brdf * light_color * light_intensity * attenuation;
-        float3 ambient = base_color * light_color * light_ambient * ao;
-        result += Lo * shadow + ambient;
+        result += Lo * shadow;
     }
+
+    result += base_color * pc.sun_color * pc.sun_ambient * ao;
 
     reflection_config rcfg = get_reflection_config(clamp(pc.reflection_quality, 0, 3));
     if (rcfg.max_samples > 0 && mat.roughness <= rcfg.max_roughness) {
         float3 world_V = normalize(cam_world - pos_world);
         float NdotV_world = max(dot(world_n, world_V), 0.0);
-        float3 F_refl = fresnel_schlick(NdotV_world, F0);
+        float3 F_refl = env_brdf(F0, mat.roughness, NdotV_world);
         result += trace_reflection(pos_world, world_n, world_V, mat.roughness, pixel, rcfg, view_dist, F_refl);
     }
 
@@ -473,13 +520,15 @@ float4 fs_main(MeshOutput input) : SV_Target0 {
         gi_params.grid_dim = pc.gi_grid_dim;
         gi_params.intensity = pc.gi_intensity;
         gi_params.atlas_size = pc.gi_atlas_size;
-        float3 gi_irradiance = sample_gi_irradiance(pos_world, world_n, gi_params, gi_atlas, gi_atlas_sampler);
-        result += base_color * (1.0 - mat.metallic) * gi_irradiance / PI;
+        float coverage;
+        float3 gi_irradiance = sample_gi_irradiance(pos_world, world_n, gi_params, gi_atlas, gi_atlas_sampler, coverage);
+        float3 sky_fill = sky_radiance_toward(world_n) * saturate(world_n.y * 0.5 + 0.5);
+        result += base_color * (1.0 - mat.metallic) * lerp(sky_fill, gi_irradiance, coverage) / PI;
     }
 
     float2 screen_uv = pixel / float2(pc.screen_size);
     float view_dist_km = view_dist * 0.001;
-    float slice = saturate(view_dist_km / atmosphere_ubo.max_view_distance);
+    float slice = sqrt(saturate(view_dist_km / atmosphere_ubo.max_view_distance));
     float4 ap = aerial_perspective_in.SampleLevel(ap_sampler, float3(screen_uv, slice), 0);
     float3 in_scatter = ap.rgb * atmosphere_ubo.sun_irradiance;
     float transmittance = ap.a;

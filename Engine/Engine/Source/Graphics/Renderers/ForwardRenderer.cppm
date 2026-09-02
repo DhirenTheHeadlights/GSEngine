@@ -30,6 +30,7 @@ import gse.gpu;
 import gse.save;
 import gse.meta;
 import gse.gpu_record;
+import gse.physics;
 
 export namespace gse::renderer::forward {
 	constexpr std::size_t max_lights = 1024;
@@ -65,6 +66,16 @@ export namespace gse::renderer::forward {
 		shadow_quality_level shadow_quality = shadow_quality_level::medium;
 
 		[[
+			= settings::describe<"Trace a shadow ray only for lights whose attenuated irradiance at the surface "
+									  "reaches this. Dimmer lights still light the surface, they are just left "
+									  "unshadowed, so the error is bounded by their own contribution. The trace runs "
+									  "once per light per pixel and dominates scenes with many lights. Zero shadows "
+									  "every light, which is the behaviour this setting replaced.">{},
+			= settings::range<watts_per_square_meter(0.f), watts_per_square_meter(1.f)>{}
+		]]
+		irradiance shadow_cutoff = watts_per_square_meter(0.1f);
+
+		[[
 			= settings::describe<"Screen-space ambient occlusion sample count and blur quality.">{}
 		]]
 		ao_quality_level ao_quality = ao_quality_level::medium;
@@ -87,6 +98,7 @@ export namespace gse::renderer::forward {
 		gpu::bindless_handle material_sampler;
 
 		linear_vector<std::byte> light_staging;
+		std::uint32_t frame_counter = 0;
 	};
 
 	[[= system_init{}]]
@@ -117,6 +129,7 @@ export namespace gse::renderer::forward {
 		shared_view<gi_probe::data> gi_state,
 		read<directional_light_component> dir_lights,
 		read<spot_light_component> spot_lights,
-		read<point_light_component> point_lights
+		read<point_light_component> point_lights,
+		read<physics::transform_component> transforms
 	) -> async::task<>;
 }

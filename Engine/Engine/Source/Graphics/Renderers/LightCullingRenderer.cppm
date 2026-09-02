@@ -19,15 +19,24 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 import gse.gpu_record;
+import gse.physics;
 
 export namespace gse::renderer::light_culling {
 	constexpr std::uint32_t tile_size = 16;
-	constexpr std::uint32_t max_lights_per_tile = 64;
+	constexpr std::uint32_t max_lights_per_tile = 512;
 	constexpr std::size_t max_lights = 1024;
 
+	struct [[= shaders::shader_constant_block]] light_culling_limits {
+		std::uint32_t tile_size = light_culling::tile_size;
+		std::uint32_t max_lights_per_tile = light_culling::max_lights_per_tile;
+		irradiance cull_threshold = watts_per_square_meter(0.01f);
+	};
+
+	constexpr light_culling_limits limits{};
+
 	struct [[= system_state<"LightCulling">{}]] data {
-		std::uint32_t current_width = 0;
-		std::uint32_t current_height = 0;
+		[[= shared]] std::uint32_t current_width = 0;
+		[[= shared]] std::uint32_t current_height = 0;
 
 		gpu::shader_program pipeline;
 
@@ -39,6 +48,11 @@ export namespace gse::renderer::light_culling {
 		gpu::bindless_handle depth_sampler;
 		gpu::bindless_handle depth_view;
 	};
+
+	auto tile_count(
+		std::uint32_t width,
+		std::uint32_t height
+	) -> vec2u;
 
 	[[= system_init{}]] auto init(
 		context& ctx,
@@ -57,6 +71,7 @@ export namespace gse::renderer::light_culling {
 		shared_view<atmosphere::data> atm_state,
 		read<directional_light_component> dir_lights,
 		read<spot_light_component> spot_lights,
-		read<point_light_component> point_lights
+		read<point_light_component> point_lights,
+		read<physics::transform_component> transforms
 	) -> async::task<>;
 }
