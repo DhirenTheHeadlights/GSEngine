@@ -30,9 +30,11 @@ void gi_probe_update(uint3 dispatch_id, uint3 group_id, uint3 group_thread_id) {
 
     float3 dir = fibonacci_sphere(ray_idx, 64u, pc.frame_counter);
 
-    float3 radiance = pc.sky_color;
+    float3 sky_radiance = sky_view_in.SampleLevel(sky_view_sampler, sky_view_dir_to_uv(dir), 0).rgb * atmosphere_ubo.sun_irradiance;
+
+    float3 radiance = sky_radiance;
     float3 probe_pos = pc.origin_world + float3(probe_coord) * pc.spacing;
-    RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_CULL_BACK_FACING_TRIANGLES> q;
+    RayQuery<RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_CULL_BACK_FACING_TRIANGLES> q;
     RayDesc r;
     r.Origin = probe_pos;
     r.TMin = 0.01;
@@ -45,10 +47,21 @@ void gi_probe_update(uint3 dispatch_id, uint3 group_id, uint3 group_thread_id) {
         uint mat_idx = q.CommittedInstanceID();
         material_data m = material_palette[mat_idx];
         float3 N = -dir;
-        float ndl = max(0.0, dot(N, -pc.sun_direction));
-        float sun_scale = pc.sun_intensity * 0.001;
-        radiance = m.base_color * pc.sun_color * sun_scale * ndl;
-        radiance += m.base_color * pc.sky_color * 0.1;
+        float3 hit_pos = probe_pos + dir * q.CommittedRayT();
+
+        float3 incident = float3(0.0, 0.0, 0.0);
+        for (uint li = 0; li < pc.light_count; ++li) {
+            light l = lights[li];
+            LightSample ls = evaluate_light(l, l.world_position, l.world_direction, hit_pos);
+            float ndl = max(0.0, dot(N, ls.direction));
+            if (ndl <= 0.0 || ls.attenuation <= 0.0) {
+                continue;
+            }
+            incident += l.color * l.intensity * ls.attenuation * ndl;
+        }
+
+        radiance = m.base_color * incident * (1.0 / pi);
+        radiance += m.base_color * sky_radiance * surface_sky_response;
     }
 
     s_dirs[ray_idx] = dir;
@@ -73,5 +86,6 @@ void gi_probe_update(uint3 dispatch_id, uint3 group_id, uint3 group_thread_id) {
         probe_coord.x * 8u + tx,
         (probe_coord.y * pc.grid_dim_uniform.z + probe_coord.z) * 8u + ty
     );
-    irradiance_atlas_out[atlas_xy] = float4(accum * pc.intensity, 1.0);
+    float3 previous = irradiance_atlas_out[atlas_xy].rgb;
+    irradiance_atlas_out[atlas_xy] = float4(lerp(previous, accum, temporal_blend), 1.0);
 }
