@@ -8,14 +8,17 @@ import gse.containers;
 import gse.diag;
 import gse.ecs;
 import gse.graphics;
+import gse.meta;
 import gse.os;
 import gse.time;
 import gse.math;
 
 export namespace gse::alloc_panel {
 	struct [[= system_state<"AllocPanel">{}]] data {
+		[[= actions::bind<"Toggle Allocation Panel", key::f10>{}]]
+		[[= actions::hidden{}]]
 		actions::handle toggle;
-		bool bound = false;
+
 		bool visible = false;
 		int top_rows = 15;
 		std::vector<alloc::site> sites;
@@ -28,7 +31,6 @@ export namespace gse::alloc_panel {
 	auto run(
 		context& ctx,
 		data& d,
-		channel_write<actions::add_action_request> actions_out,
 		channel_write<gui::menu_content> ui_out,
 		shared_view<actions::data> actions_d
 	) -> async::task<>;
@@ -148,12 +150,7 @@ auto gse::alloc_panel::build_panel(data& d, gui::builder& ui) -> void {
 	}
 }
 
-auto gse::alloc_panel::run(context& ctx, data& d, const channel_write<actions::add_action_request> actions_out, const channel_write<gui::menu_content> ui_out, const shared_view<actions::data> actions_d) -> async::task<> {
-	if (!d.bound) {
-		d.toggle = actions::add<"Diag_Alloc_Panel">(actions_out, key::f10);
-		d.bound = true;
-	}
-
+auto gse::alloc_panel::run(context& ctx, data& d, const channel_write<gui::menu_content> ui_out, const shared_view<actions::data> actions_d) -> async::task<> {
 	if (actions::pressed(d.toggle, actions::current_state(actions_d), actions_d)) {
 		d.visible = !d.visible;
 		if (d.visible) {

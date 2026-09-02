@@ -24,17 +24,6 @@ import gse.physics;
 import gse.math;
 import gse.save;
 
-auto gse::renderer::init(context& ctx, data& d, const channel_write<actions::add_action_request> actions_out) -> async::task<> {
-	const id dump_profile_id = generate_id("Dump Profile");
-	actions_out.push<actions::add_action_request>({
-		.name = "Dump Profile",
-		.default_combo = { .k = key::f11 },
-		.action_id = dump_profile_id
-	});
-	d.dump_profile_action = actions::handle(dump_profile_id);
-	return {};
-}
-
 auto gse::renderer::run(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<window::data> window_s, data& d, const channel_write<asset::hot_reload_request, camera::viewport_update> requests_out, const shared_view<actions::data> sys) -> async::task<> {
 	if (d.hot_reload_enabled != d.last_hot_reload_enabled) {
 		requests_out.push<asset::hot_reload_request>({

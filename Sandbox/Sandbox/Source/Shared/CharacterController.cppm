@@ -18,26 +18,35 @@ export namespace sandbox::character_controller {
 	};
 
 	struct bindings {
+		[[= gse::actions::bind<"Move Forward", gse::key::w>{}]]
 		gse::actions::handle forward;
+
+		[[= gse::actions::bind<"Move Backward", gse::key::s>{}]]
 		gse::actions::handle back;
+
+		[[= gse::actions::bind<"Move Left", gse::key::a>{}]]
 		gse::actions::handle left;
+
+		[[= gse::actions::bind<"Move Right", gse::key::d>{}]]
 		gse::actions::handle right;
+
+		[[= gse::actions::bind<"Walk", gse::key::left_shift>{}]]
 		gse::actions::handle walk;
+
+		[[= gse::actions::axis2<"Move", "left", "right", "back", "forward">{}]]
 		gse::id move_axis_id;
 	};
 }
 
 export namespace sandbox::character_controller {
 	struct [[= gse::system_state<"CharacterController">{}]] data {
-		bindings binds;
-		bool bound = false;
+		[[= gse::actions::set{}]] bindings binds;
 	};
 
 	[[= gse::system_run<>{}]]
 	auto run(
 		gse::context& ctx,
 		data& d,
-		gse::channel_write<gse::actions::add_action_request, gse::actions::bind_axis2_request> actions_out,
 		gse::shared_view<gse::actions::data> as,
 		gse::read<component> characters,
 		gse::read<orbit_camera::component> orbits,
@@ -48,30 +57,9 @@ export namespace sandbox::character_controller {
 	) -> gse::async::task<>;
 }
 
-auto sandbox::character_controller::run(gse::context& ctx, data& d, const gse::channel_write<gse::actions::add_action_request, gse::actions::bind_axis2_request> actions_out, const gse::shared_view<gse::actions::data> as, gse::read<component> characters, gse::read<orbit_camera::component> orbits, gse::read<gse::physics::motion_component> motions, gse::write<gse::clip_player_component> players, gse::write<gse::physics::motor_component> motors, gse::write<gse::physics::transform_component> transforms) -> gse::async::task<> {
+auto sandbox::character_controller::run(gse::context& ctx, data& d, const gse::shared_view<gse::actions::data> as, gse::read<component> characters, gse::read<orbit_camera::component> orbits, gse::read<gse::physics::motion_component> motions, gse::write<gse::clip_player_component> players, gse::write<gse::physics::motor_component> motors, gse::write<gse::physics::transform_component> transforms) -> gse::async::task<> {
 	const auto& cs = gse::actions::current_state(as);
 	const auto dt = gse::system_clock::dt();
-
-	if (!d.bound) {
-		d.binds.forward = gse::actions::add<"Character_Move_Forward">(actions_out, gse::key::w);
-		d.binds.left = gse::actions::add<"Character_Move_Left">(actions_out, gse::key::a);
-		d.binds.back = gse::actions::add<"Character_Move_Backward">(actions_out, gse::key::s);
-		d.binds.right = gse::actions::add<"Character_Move_Right">(actions_out, gse::key::d);
-		d.binds.walk = gse::actions::add<"Character_Walk">(actions_out, gse::key::left_shift);
-		d.binds.move_axis_id = gse::actions::bind_axis2(
-			actions_out,
-			gse::actions::pending_axis2_info{
-				.left = d.binds.left,
-				.right = d.binds.right,
-				.back = d.binds.back,
-				.fwd = d.binds.forward,
-				.scale = 1.f,
-			},
-			gse::trace_id<"Character_Move">()
-		);
-		d.bound = true;
-		return {};
-	}
 
 	const auto character_ids = characters.owner_ids();
 	for (std::size_t i = 0; i < characters.size(); ++i) {

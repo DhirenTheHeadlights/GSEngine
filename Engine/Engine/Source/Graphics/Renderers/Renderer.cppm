@@ -72,20 +72,16 @@ export namespace gse::renderer {
 		]]
 		int profile_warmup_frames = static_cast<int>(profile::default_warmup_frames);
 
+		[[= actions::bind<"Dump Profile", key::f11>{}]]
+		[[= actions::hidden{}]]
 		actions::handle dump_profile_action;
+
 		vec2f last_viewport{ 1920.f, 1080.f };
 		bool last_hot_reload_enabled = false;
 		bool last_profile_aggregator_enabled = true;
 		bool last_profile_frame_recording = false;
 		int last_profile_warmup_frames = static_cast<int>(profile::default_warmup_frames);
 	};
-
-	[[= system_init{}]]
-	auto init(
-		context& ctx,
-		data& d,
-		channel_write<actions::add_action_request> actions_out
-	) -> async::task<>;
 
 	[[= system_run<>{}]]
 	auto run(

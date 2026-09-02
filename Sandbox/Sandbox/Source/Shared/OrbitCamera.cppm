@@ -20,37 +20,55 @@ export namespace sandbox::orbit_camera {
 		bool stepped_views = false;
 		gse::length min_distance = gse::meters(1.5f);
 		gse::length max_distance = gse::meters(50.f);
-		int priority = 60;
+		int priority = 80;
 		bool active = false;
 		bool free_look = false;
-		float mouse_sensitivity = 0.25f;
-		float arrow_speed = 90.f;
-		float scroll_zoom_step = 0.5f;
+		gse::angle mouse_sensitivity = gse::degrees(0.25f);
+		decltype(gse::degrees(1.f) / gse::seconds(1.f)) arrow_speed = gse::degrees(90.f) / gse::seconds(1.f);
+		gse::length scroll_zoom_step = gse::meters(0.5f);
 		gse::length collision_radius = gse::meters(0.25f);
 		gse::length collision_skin = gse::meters(0.05f);
 		bool collide_with_geometry = true;
 	};
 
 	struct bindings {
+		[[= gse::actions::bind<"Toggle Orbit Camera", gse::key::c>{}]]
 		gse::actions::handle toggle;
+
+		[[= gse::actions::bind<"Orbit Yaw Left", gse::key::left>{}]]
 		gse::actions::handle yaw_left;
+
+		[[= gse::actions::bind<"Orbit Yaw Right", gse::key::right>{}]]
 		gse::actions::handle yaw_right;
+
+		[[= gse::actions::bind<"Orbit Pitch Up", gse::key::up>{}]]
 		gse::actions::handle pitch_up;
+
+		[[= gse::actions::bind<"Orbit Pitch Down", gse::key::down>{}]]
 		gse::actions::handle pitch_down;
+
+		[[= gse::actions::mouse_bind<"Orbit Free Look", gse::mouse_button::button_3>{}]]
+		gse::actions::handle free_look;
+
+		[[= gse::actions::axis2_mouse<"Orbit Look">{}]]
+		gse::id look_axis_id;
+
+		[[= gse::actions::axis1_scroll<"Orbit Zoom">{}]]
+		gse::id zoom_axis_id;
 	};
 
 }
 
 export namespace sandbox::orbit_camera {
 	struct [[= gse::system_state<"OrbitCamera">{}]] data {
-		std::unordered_map<gse::id, bindings> bindings_by_owner;
+		[[= gse::actions::set{}]] bindings binds;
+		std::unordered_set<gse::id> bound_owners;
 	};
 
 	[[= gse::system_run<>{}]]
 	auto attach(
 		gse::context& ctx,
 		data& d,
-		gse::channel_write<gse::actions::add_action_request, gse::actions::bind_axis2_request> actions_out,
 		gse::write<component> orbits,
 		gse::structural<gse::camera::follow_component> follows
 	) -> gse::async::task<>;
@@ -60,7 +78,6 @@ export namespace sandbox::orbit_camera {
 		gse::context& ctx,
 		data& d,
 		gse::shared_view<gse::actions::data> as,
-		gse::shared_view<gse::input::data> input_s,
 		gse::shared_view<gse::camera::data> cam_s,
 		gse::shared_view<gse::physics::data> phys_s,
 		gse::write<component> orbits,
