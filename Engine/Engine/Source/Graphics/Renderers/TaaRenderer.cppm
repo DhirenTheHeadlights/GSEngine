@@ -2,6 +2,7 @@ export module gse.graphics:taa_renderer;
 
 import std;
 
+import :camera_system;
 import :forward_renderer;
 
 import gse.gpu;
@@ -50,6 +51,7 @@ export namespace gse::renderer::taa {
 		const context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		data& d,
-		channel_write<gpu::render_pass_request> pass_out
+		channel_write<gpu::render_pass_request> pass_out,
+		channel_write<camera::jitter_request> jitter_out
 	) -> async::task<>;
 }
