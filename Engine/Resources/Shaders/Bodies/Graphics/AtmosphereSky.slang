@@ -13,6 +13,10 @@ VS_OUT vs_main(uint vid : SV_VertexID) {
 }
 
 float3 sample_transmittance_at(float radius, float view_zenith_cos) {
+    if (ray_occluded_by_ground(radius, view_zenith_cos)) {
+        return float3(0.0, 0.0, 0.0);
+    }
+
     float2 uv = transmittance_r_mu_to_uv(radius, view_zenith_cos);
     return transmittance_in.SampleLevel(lut_sampler, uv, 0).rgb;
 }
@@ -92,6 +96,7 @@ float4 fs_main(VS_OUT input) : SV_Target {
     float radius = atmosphere_ubo.bottom_radius + pc.camera_altitude;
     float view_zenith_cos = view_dir.y;
     float3 sun_transmittance_to_eye = sample_transmittance_at(radius, view_zenith_cos);
+    float3 sun_transmittance_to_volume = sample_transmittance_at(radius, pc.sun_direction.y);
 
     float mu = dot(view_dir, pc.sun_direction);
 
@@ -100,7 +105,7 @@ float4 fs_main(VS_OUT input) : SV_Target {
     float ph_m_excess = max(ph_m - baseline_phase, 0.0);
     const float mie_halo_strength = 25.0;
     float mie_inscatter_length = atmosphere_ubo.mie_scattering * atmosphere_ubo.mie_scale_height * mie_halo_strength;
-    total_radiance += pc.sun_irradiance * sun_transmittance_to_eye * ph_m_excess * mie_inscatter_length;
+    total_radiance += pc.sun_irradiance * sun_transmittance_to_eye * sun_transmittance_to_volume * ph_m_excess * mie_inscatter_length;
 
     if (mu > pc.sun_cos_radius) {
         float sin_disk_radius_sq = max(1.0 - pc.sun_cos_radius * pc.sun_cos_radius, 1e-6);
