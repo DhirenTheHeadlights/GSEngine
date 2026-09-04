@@ -10,6 +10,24 @@ import gse.win32;
 namespace gse::ide::terminal {
 	constexpr std::size_t max_lines = 8192;
 	constexpr std::size_t max_offers = 16;
+	constexpr float profile_picker_width = 210.f;
+	constexpr float profile_editor_min_width = 260.f;
+
+	constexpr std::string_view profile_label_name = "Name";
+	constexpr std::string_view profile_label_config = "Configuration";
+	constexpr std::string_view profile_label_clients = "Clients";
+	constexpr std::string_view profile_label_server = "Dedicated server";
+	constexpr std::string_view profile_label_attached = "Attached to the editor";
+	constexpr std::string_view profile_label_port = "Server port";
+
+	constexpr std::array<std::string_view, 6> profile_field_labels = {
+		profile_label_name,
+		profile_label_config,
+		profile_label_clients,
+		profile_label_server,
+		profile_label_attached,
+		profile_label_port,
+	};
 
 	struct link_hit {
 		std::filesystem::path path;
@@ -99,9 +117,55 @@ namespace gse::ide::terminal {
 		data& d,
 		instance& inst,
 		const rectf& area,
-		channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels,
+		channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels,
 		bool building
 	) -> void;
+
+	auto draw_build_row(
+		gui::builder& ui,
+		data& d,
+		const rectf& input_rect,
+		channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels,
+		bool building
+	) -> rectf;
+
+	auto draw_profile_editor(
+		gui::builder& ui,
+		data& d,
+		const rectf& anchor,
+		const rectf& opener,
+		channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels
+	) -> void;
+
+	auto sync_config_options(
+		data& d
+	) -> void;
+
+	auto config_option_index(
+		std::string_view config
+	) -> std::size_t;
+
+	auto config_for_option(
+		std::size_t index
+	) -> std::string;
+
+	struct editor_metrics {
+		float pad = 0.f;
+		float row_h = 0.f;
+		float advance = 0.f;
+	};
+
+	auto profile_editor_row(
+		const rectf& body,
+		const editor_metrics& metrics,
+		std::size_t index
+	) -> rectf;
+
+	auto profile_editor_field(
+		const gui::draw_context& ctx,
+		const rectf& row,
+		std::string_view label
+	) -> rectf;
 }
 
 auto gse::ide::terminal::level_color(const gui::style& sty, const log::level lvl) -> vec4f {
@@ -401,7 +465,7 @@ auto gse::ide::terminal::init(data& d) -> async::task<> {
 	return {};
 }
 
-auto gse::ide::terminal::run(context& ctx, data& d, const channel_read<build_runner::stream_opened, agent::blame_offer> stream_in, const channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> ui_out, const shared_view<build_runner::data> build_d) -> async::task<> {
+auto gse::ide::terminal::run(context& ctx, data& d, const channel_read<build_runner::stream_opened, agent::blame_offer> stream_in, const channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, gui::menu_content, jump_to_request, set_cursor_shape_request> ui_out, const shared_view<build_runner::data> build_d) -> async::task<> {
 	const auto opened_streams = stream_in.of<build_runner::stream_opened>();
 
 	for (const build_runner::stream_opened& opened : opened_streams) {
@@ -424,6 +488,13 @@ auto gse::ide::terminal::run(context& ctx, data& d, const channel_read<build_run
 	if (d.offers.size() > max_offers) {
 		d.offers.erase(d.offers.begin(), d.offers.begin() + static_cast<std::ptrdiff_t>(d.offers.size() - max_offers));
 	}
+	if (!d.editing_profiles) {
+		if (d.profiles != build_d.profiles) {
+			d.profiles = build_d.profiles;
+		}
+		d.active_profile = build_d.active_profile;
+	}
+
 	const bool building = build_d.building;
 	ui_out.push<gui::menu_content>({
 		.menu = std::string(panel_name),
@@ -469,7 +540,7 @@ auto gse::ide::terminal::run_command(command_runner& runner, const std::string& 
 	spawn::close_process(runner);
 }
 
-auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst, const rectf& area, channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels, const bool building) -> void {
+auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst, const rectf& area, channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels, const bool building) -> void {
 	const gui::draw_context& ctx = ui.ctx;
 	const auto text_view = ctx.fonts.text.resolve();
 	const auto code_view = ctx.fonts.code.resolve();
@@ -536,10 +607,11 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst
 
 	const float pad = ctx.style.padding;
 	const float input_h = inst.interactive ? code_view->line_height(ctx.style.font_size) + pad : 0.f;
+	const float accent_h = inst.interactive ? ctx.style.accent_bar_width : 0.f;
 
 	const rectf log_rect = rectf::from_position_size(
 		{ area.left(), area.top() },
-		{ area.width(), std::max(0.f, area.height() - input_h) }
+		{ area.width(), std::max(0.f, area.height() - input_h - accent_h) }
 	);
 
 	const gui::interaction::press tail_press = ui.draw<gui::follow_tail>({
@@ -652,93 +724,11 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst
 		.clip_rect = input_rect,
 	});
 
-	const rectf run_btn = rectf::from_position_size(
-		{ input_rect.right() - input_h - pad, input_rect.top() },
-		{ input_h, input_h }
-	);
-	if (ui.draw<gui::button>({
-		.rect = run_btn,
-		.key = "##terminal_run",
-		.glyph = gui::symbol::play(),
-		.enabled = !building,
-	})) {
-		channels.push<build_runner::build_request>({
-			.target = build_runner::build_target::game,
-			.run_after = true,
-		});
-	}
-
-	const build_runner::play_session session_spec{
-		.clients = 2,
-		.dedicated_server = true,
-	};
-	const std::string session_label = session_spec.dedicated_server
-		? std::format("Play {} + Server", session_spec.clients)
-		: std::format("Play {}", session_spec.clients);
-	const float session_w = text_view->width(session_label, ctx.style.font_size) + input_h + pad * 1.5f;
-	const rectf session_btn = rectf::from_position_size(
-		{ run_btn.left() - session_w - pad, input_rect.top() },
-		{ session_w, input_h }
-	);
-	if (ui.draw<gui::button>({
-		.text = session_label,
-		.rect = session_btn,
-		.key = "##terminal_play_session",
-		.glyph = gui::symbol::play(),
-		.enabled = !building,
-	})) {
-		channels.push<build_runner::build_request>({
-			.target = build_runner::build_target::game,
-			.run_after = true,
-			.session = session_spec,
-		});
-	}
-
-	const std::string_view detached_label = "Play Windowed";
-	const float detached_w = text_view->width(detached_label, ctx.style.font_size) + input_h + pad * 1.5f;
-	const rectf detached_btn = rectf::from_position_size(
-		{ session_btn.left() - detached_w - pad, input_rect.top() },
-		{ detached_w, input_h }
-	);
-	if (ui.draw<gui::button>({
-		.text = detached_label,
-		.rect = detached_btn,
-		.key = "##terminal_play_windowed",
-		.glyph = gui::symbol::play(),
-		.enabled = !building,
-	})) {
-		channels.push<build_runner::build_request>({
-			.target = build_runner::build_target::game,
-			.run_after = true,
-			.session = {
-				.clients = session_spec.clients,
-				.dedicated_server = session_spec.dedicated_server,
-				.attached = false,
-			},
-		});
-	}
-
-	const std::string_view build_label = building ? "Building..." : "Build Game";
-	const float build_w = text_view->width(build_label, ctx.style.font_size) + input_h + pad * 1.5f;
-	const rectf build_btn = rectf::from_position_size(
-		{ detached_btn.left() - build_w, input_rect.top() },
-		{ build_w, input_h }
-	);
-	if (ui.draw<gui::button>({
-		.text = build_label,
-		.rect = build_btn,
-		.key = "##terminal_build",
-		.glyph = gui::symbol::hammer(),
-		.enabled = !building,
-	})) {
-		channels.push<build_runner::build_request>({
-			.target = build_runner::build_target::game,
-		});
-	}
+	const rectf build_row = draw_build_row(ui, d, input_rect, channels, building);
 
 	const rectf input_box = rectf::from_position_size(
 		{ input_rect.left() + prompt_width, input_rect.top() },
-		{ std::max(0.f, build_btn.left() - pad - input_rect.left() - prompt_width), input_h }
+		{ std::max(0.f, build_row.left() - pad - input_rect.left() - prompt_width), input_h }
 	);
 
 	ui.draw<gui::text_input>({
@@ -750,13 +740,423 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst
 	});
 
 	ctx.queue_sprite({
-		.rect = rectf::from_position_size({ input_rect.left(), input_rect.top() }, { input_rect.width(), ctx.style.accent_bar_width }),
+		.rect = rectf::from_position_size({ input_rect.left(), input_rect.top() + accent_h }, { input_rect.width(), accent_h }),
 		.color = ctx.style.color_accent,
 		.texture = ctx.blank_texture,
 	});
 
 	if (ctx.mouse_pressed_for(input_rect)) {
 		ui.focus_widget_id = inst.input_id;
+	}
+}
+
+auto gse::ide::terminal::sync_config_options(data& d) -> void {
+	const std::span<const build_runner::build_config> configs = build_runner::build_configs();
+	if (d.config_options.size() == configs.size() + 1) {
+		return;
+	}
+
+	const std::string_view active = build_runner::active_build_config();
+	d.config_options.clear();
+	d.config_options.reserve(configs.size() + 1);
+	d.config_options.push_back(active.empty()
+		? std::string("Editor's configuration")
+		: std::format("Editor's configuration ({})", build_runner::build_config_label(active)));
+	for (const build_runner::build_config& option : configs) {
+		d.config_options.push_back(option.label);
+	}
+}
+
+auto gse::ide::terminal::config_option_index(const std::string_view config) -> std::size_t {
+	if (config.empty()) {
+		return 0;
+	}
+	const std::span<const build_runner::build_config> configs = build_runner::build_configs();
+	const auto found = std::ranges::find(configs, config, &build_runner::build_config::name);
+	return found != configs.end() ? static_cast<std::size_t>(std::ranges::distance(configs.begin(), found)) + 1 : 0;
+}
+
+auto gse::ide::terminal::config_for_option(const std::size_t index) -> std::string {
+	const std::span<const build_runner::build_config> configs = build_runner::build_configs();
+	if (index == 0 || index > configs.size()) {
+		return {};
+	}
+	return configs[index - 1].name;
+}
+
+auto gse::ide::terminal::profile_editor_row(const rectf& body, const editor_metrics& metrics, const std::size_t index) -> rectf {
+	return rectf::from_position_size(
+		{ body.left() + metrics.pad, body.top() - metrics.pad - metrics.advance * static_cast<float>(index) },
+		{ body.width() - metrics.pad * 2.f, metrics.row_h }
+	);
+}
+
+auto gse::ide::terminal::profile_editor_field(const gui::draw_context& ctx, const rectf& row, const std::string_view label) -> rectf {
+	const auto text_view = ctx.fonts.text.resolve();
+	const std::array<rectf, 2> cells = gui::layout::split_horizontal<2>(row, {
+		gui::layout::size_spec::ratio(ctx.style.label_column_ratio),
+		gui::layout::size_spec::flex(1.f),
+	}, 0.f);
+
+	ctx.queue_text({
+		.font = ctx.fonts.text,
+		.text = label,
+		.position = { cells[0].left(), cells[0].center().y() + text_view->vertical_center_offset(ctx.style.font_size) },
+		.scale = ctx.style.font_size,
+		.color = ctx.style.color_text,
+		.clip_rect = cells[0],
+	});
+
+	return cells[1];
+}
+
+auto gse::ide::terminal::draw_build_row(gui::builder& ui, data& d, const rectf& input_rect, const channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels, const bool building) -> rectf {
+	const gui::draw_context& ctx = ui.ctx;
+	const auto text_view = ctx.fonts.text.resolve();
+	const float pad = ctx.style.padding;
+	const float row_h = input_rect.height();
+
+	const build_runner::build_profile* active = build_runner::profile_for(d.profiles, d.active_profile);
+	const bool ready = !building && active != nullptr;
+
+	const rectf run_btn = rectf::from_position_size(
+		{ input_rect.right() - row_h - pad, input_rect.top() },
+		{ row_h, row_h }
+	);
+	if (ui.draw<gui::button>({
+		.rect = run_btn,
+		.key = "##terminal_run",
+		.glyph = gui::symbol::play(),
+		.enabled = ready,
+	})) {
+		channels.push<build_runner::build_request>(build_runner::request_for_profile(*active, true));
+	}
+
+	const std::string_view build_label = building ? "Building..." : "Build";
+	const float build_w = text_view->width(build_label, ctx.style.font_size) + row_h + pad * 1.5f;
+	const rectf build_btn = rectf::from_position_size(
+		{ run_btn.left() - build_w - pad, input_rect.top() },
+		{ build_w, row_h }
+	);
+	if (ui.draw<gui::button>({
+		.text = build_label,
+		.rect = build_btn,
+		.key = "##terminal_build",
+		.glyph = gui::symbol::hammer(),
+		.enabled = ready,
+	})) {
+		channels.push<build_runner::build_request>(build_runner::request_for_profile(*active, false));
+	}
+
+	d.profile_options.clear();
+	d.profile_options.reserve(d.profiles.size());
+	for (const build_runner::build_profile& profile : d.profiles) {
+		d.profile_options.push_back(build_runner::profile_label(profile));
+	}
+
+	float widest = 0.f;
+	for (const std::string& option : d.profile_options) {
+		widest = std::max(widest, text_view->width(option, ctx.style.font_size));
+	}
+
+	const rectf edit_btn = rectf::from_position_size(
+		{ build_btn.left() - row_h - pad, input_rect.top() },
+		{ row_h, row_h }
+	);
+	if (ui.draw<gui::button>({
+		.rect = edit_btn,
+		.key = "##terminal_profiles",
+		.glyph = gui::symbol::gear(),
+	})) {
+		d.editing_profiles = !d.editing_profiles;
+		d.editing_index = build_runner::profile_index(d.profiles, d.active_profile);
+		d.profile_name_state = {};
+		d.profile_dropdown.open_dropdown_id.reset();
+	}
+
+	const float picker_w = std::min(widest + ctx.style.icon_extent + pad * 3.f, profile_picker_width);
+	const rectf picker = rectf::from_position_size(
+		{ edit_btn.left() - picker_w - pad, input_rect.top() },
+		{ picker_w, row_h }
+	);
+
+	std::size_t selected = build_runner::profile_index(d.profiles, d.active_profile);
+	const gui::dropdown_result picked = ui.draw<gui::dropdown<>>({
+		.name = "terminal.profile",
+		.current_index = selected,
+		.options = d.profile_options,
+		.state = d.profile_dropdown,
+		.rect = picker,
+	});
+
+	if (picked.changed && picked.new_index < d.profiles.size()) {
+		d.active_profile = d.profiles[picked.new_index].name;
+		channels.push<build_runner::select_profile_request>({
+			.name = d.active_profile,
+		});
+	}
+
+	if (d.editing_profiles) {
+		draw_profile_editor(ui, d, picker, edit_btn, channels);
+	}
+
+	return picker;
+}
+
+auto gse::ide::terminal::draw_profile_editor(gui::builder& ui, data& d, const rectf& anchor, const rectf& opener, const channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels) -> void {
+	if (d.profiles.empty()) {
+		d.editing_profiles = false;
+		return;
+	}
+
+	const gui::draw_context& ctx = ui.ctx;
+	const auto text_view = ctx.fonts.text.resolve();
+	const float pad = ctx.style.padding;
+	const editor_metrics metrics{
+		.pad = pad,
+		.row_h = text_view->line_height(ctx.style.font_size) + pad * ctx.style.widget_height_padding,
+		.advance = text_view->line_height(ctx.style.font_size) + pad * ctx.style.widget_height_padding + pad,
+	};
+
+	sync_config_options(d);
+	d.editing_index = std::min(d.editing_index, d.profiles.size() - 1);
+	build_runner::build_profile& edited = d.profiles[d.editing_index];
+
+	const std::size_t form_rows = edited.session.dedicated_server ? 8 : 7;
+	const std::size_t rows = d.profiles.size() + form_rows;
+	const float height = metrics.advance * static_cast<float>(rows) + pad;
+
+	float widest_label = 0.f;
+	for (const std::string_view label : profile_field_labels) {
+		widest_label = std::max(widest_label, text_view->width(label, ctx.style.font_size));
+	}
+	const float label_driven = (widest_label + pad) / ctx.style.label_column_ratio + pad * 2.f;
+	const float width = std::max({ profile_editor_min_width, anchor.width(), label_driven });
+
+	const rectf body = rectf::from_position_size(
+		{ anchor.left(), anchor.top() + pad + height },
+		{ width, height }
+	);
+
+	const auto scope = ctx.scoped_layer(render_layer::modal);
+	ctx.register_hit_region(render_layer::modal, body);
+
+	ctx.queue_sprite({
+		.rect = body.inset({ -1.f, -1.f }),
+		.color = ctx.style.color_border,
+		.texture = ctx.blank_texture,
+	});
+	ctx.queue_sprite({
+		.rect = body,
+		.color = ctx.style.color_panel_alt,
+		.texture = ctx.blank_texture,
+	});
+
+	std::size_t row = 0;
+	const rectf title_row = profile_editor_row(body, metrics, row++);
+	ctx.queue_text({
+		.font = ctx.fonts.text,
+		.text = "Build Profiles",
+		.position = { title_row.left(), title_row.center().y() + text_view->vertical_center_offset(ctx.style.font_size) },
+		.scale = ctx.style.font_size,
+		.color = ctx.style.color_text_secondary,
+		.clip_rect = title_row,
+	});
+
+	const rectf close_btn = rectf::from_position_size(
+		{ title_row.right() - metrics.row_h, title_row.top() },
+		{ metrics.row_h, metrics.row_h }
+	);
+	if (ui.draw<gui::button>({
+		.rect = close_btn,
+		.key = "##profile_editor_close",
+		.glyph = gui::symbol::close(),
+	})) {
+		d.editing_profiles = false;
+	}
+
+	for (std::size_t i = 0; i < d.profiles.size(); ++i) {
+		const rectf entry = profile_editor_row(body, metrics, row++);
+		const gui::interaction::press pressed = gui::interaction::press_in_rect(
+			ctx,
+			ui.hot_widget_id,
+			ui.active_widget_id,
+			gui::ids::make_from_key(stable_id(std::format("##profile_row{}", i))),
+			entry
+		);
+		if (pressed.activated) {
+			d.editing_index = i;
+			d.profile_name_state = {};
+		}
+
+		if (i == d.editing_index || pressed.hovered) {
+			ctx.queue_sprite({
+				.rect = entry,
+				.color = i == d.editing_index ? ctx.style.color_accent_dim : ctx.style.color_widget_hovered,
+				.texture = ctx.blank_texture,
+			});
+		}
+		ctx.queue_text({
+			.font = ctx.fonts.text,
+			.text = build_runner::profile_label(d.profiles[i]),
+			.position = { entry.left() + pad, entry.center().y() + text_view->vertical_center_offset(ctx.style.font_size) },
+			.scale = ctx.style.font_size,
+			.color = d.profiles[i].name == d.active_profile ? ctx.style.color_accent : ctx.style.color_text,
+			.clip_rect = entry,
+		});
+	}
+
+	const rectf actions = profile_editor_row(body, metrics, row++);
+	const std::array<rectf, 3> action_cells = gui::layout::split_horizontal<3>(actions, {
+		gui::layout::size_spec::flex(1.f),
+		gui::layout::size_spec::flex(1.f),
+		gui::layout::size_spec::flex(1.f),
+	}, pad * 0.5f);
+
+	bool changed = false;
+	if (ui.draw<gui::button>({
+		.text = "New",
+		.rect = action_cells[0],
+		.key = "##profile_new",
+		.glyph = gui::symbol::plus(),
+	})) {
+		d.profiles.push_back({
+			.name = build_runner::unique_profile_name(d.profiles, "Profile"),
+		});
+		d.editing_index = d.profiles.size() - 1;
+		d.profile_name_state = {};
+		changed = true;
+	}
+	if (ui.draw<gui::button>({
+		.text = "Duplicate",
+		.rect = action_cells[1],
+		.key = "##profile_duplicate",
+	})) {
+		build_runner::build_profile copy = d.profiles[d.editing_index];
+		copy.name = build_runner::unique_profile_name(d.profiles, copy.name);
+		d.profiles.push_back(std::move(copy));
+		d.editing_index = d.profiles.size() - 1;
+		d.profile_name_state = {};
+		changed = true;
+	}
+	if (ui.draw<gui::button>({
+		.text = "Delete",
+		.rect = action_cells[2],
+		.key = "##profile_delete",
+		.glyph = gui::symbol::trash(),
+		.enabled = d.profiles.size() > 1,
+		.role = gui::button_role::danger,
+	})) {
+		const bool was_active = d.profiles[d.editing_index].name == d.active_profile;
+		d.profiles.erase(d.profiles.begin() + static_cast<std::ptrdiff_t>(d.editing_index));
+		d.editing_index = std::min(d.editing_index, d.profiles.size() - 1);
+		if (was_active) {
+			d.active_profile = d.profiles[d.editing_index].name;
+		}
+		d.profile_name_state = {};
+		changed = true;
+	}
+
+	if (changed) {
+		channels.push<build_runner::edit_profiles_request>({
+			.profiles = d.profiles,
+			.active = d.active_profile,
+		});
+		return;
+	}
+
+	const std::string previous_name = edited.name;
+	ui.draw<gui::text_input>({
+		.name = "terminal.profile.name",
+		.buffer = edited.name,
+		.state = d.profile_name_state,
+		.rect = profile_editor_field(ctx, profile_editor_row(body, metrics, row++), profile_label_name),
+	});
+	if (edited.name != previous_name) {
+		const build_runner::build_profile* clash = build_runner::profile_for(d.profiles, edited.name);
+		if (edited.name.empty() || (clash != nullptr && clash != &edited)) {
+			edited.name = previous_name;
+		}
+		else {
+			if (previous_name == d.active_profile) {
+				d.active_profile = edited.name;
+			}
+			changed = true;
+		}
+	}
+
+	std::size_t config_index = config_option_index(edited.config);
+	const gui::dropdown_result config_picked = ui.draw<gui::dropdown<>>({
+		.name = "terminal.profile.config",
+		.current_index = config_index,
+		.options = d.config_options,
+		.state = d.config_dropdown,
+		.rect = profile_editor_field(ctx, profile_editor_row(body, metrics, row++), profile_label_config),
+	});
+	if (config_picked.changed) {
+		edited.config = config_for_option(config_picked.new_index);
+		changed = true;
+	}
+
+	int clients = edited.session.clients;
+	const int previous_clients = clients;
+	const std::string clients_label = std::to_string(clients);
+	ui.draw<gui::slider<int>>({
+		.name = "terminal.profile.clients",
+		.value = clients,
+		.min = 1,
+		.max = build_runner::max_profile_clients,
+		.rect = profile_editor_field(ctx, profile_editor_row(body, metrics, row++), profile_label_clients),
+		.value_label = clients_label,
+	});
+	if (clients != previous_clients) {
+		edited.session.clients = static_cast<std::uint8_t>(clients);
+		changed = true;
+	}
+
+	changed |= ui.draw<gui::toggle>({
+		.name = profile_label_server,
+		.value = edited.session.dedicated_server,
+		.rect = profile_editor_row(body, metrics, row++),
+	});
+	changed |= ui.draw<gui::toggle>({
+		.name = profile_label_attached,
+		.value = edited.session.attached,
+		.rect = profile_editor_row(body, metrics, row++),
+	});
+
+	if (edited.session.dedicated_server) {
+		int port = edited.session.base_port;
+		const int previous_port = port;
+		const std::string port_label = std::to_string(port);
+		ui.draw<gui::slider<int>>({
+			.name = "terminal.profile.port",
+			.value = port,
+			.min = 1024,
+			.max = 65535,
+			.rect = profile_editor_field(ctx, profile_editor_row(body, metrics, row++), profile_label_port),
+			.value_label = port_label,
+		});
+		if (port != previous_port) {
+			edited.session.base_port = static_cast<std::uint16_t>(port);
+			changed = true;
+		}
+	}
+
+	if (changed) {
+		channels.push<build_runner::edit_profiles_request>({
+			.profiles = d.profiles,
+			.active = d.active_profile,
+		});
+	}
+
+	const std::array<rectf, 2> keep_open = { anchor, opener };
+	if (gui::interaction::dismissed_by_outside_press(ctx, {
+		.body = body,
+		.keep_open = keep_open,
+		.suppressed = d.config_dropdown.open_dropdown_id.exists(),
+	})) {
+		d.editing_profiles = false;
 	}
 }
 
@@ -787,7 +1187,7 @@ auto gse::ide::terminal::draw_close_confirm(gui::builder& ui, data& d, const rec
 	}
 }
 
-auto gse::ide::terminal::draw_panel(gui::builder& ui, data& d, channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels, const bool building) -> void {
+auto gse::ide::terminal::draw_panel(gui::builder& ui, data& d, channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels, const bool building) -> void {
 	const gui::draw_context& ctx = ui.ctx;
 	if (!d.sink || ctx.clip_stack.empty()) {
 		return;

@@ -4,6 +4,7 @@ set -eu
 target=game
 run=0
 tree=
+profile=
 timeout=1800
 wait=30
 agent=
@@ -12,11 +13,15 @@ usage() {
 	cat <<'EOF'
 gse-build - ask the running GSE editor to build, the same way its own build buttons do.
 
-usage: Tools/gse-build [--game|--editor] [--run] [--tree NAME] [--timeout SECONDS] [--wait SECONDS]
+usage: Tools/gse-build [--game|--editor] [--run] [--profile NAME] [--tree NAME] [--timeout SECONDS] [--wait SECONDS]
 
   --game             build the game target (default)
   --editor           rebuild the editor; the editor relaunches itself on success
   --run              launch a play session after a successful game build
+  --profile NAME     build with a named build profile from the editor's build row;
+                     this picks the build configuration and the play session shape.
+                     Omit it to build the editor's own configuration with a single
+                     attached client, independent of what the editor has selected.
   --tree NAME        build in a named worktree instead of the primary one
   --timeout SECONDS  give up waiting after this long (default 1800)
   --wait SECONDS     how long to hold the line before deferring (default 30)
@@ -30,7 +35,8 @@ exit codes:
   4  build failed but none of the errors are yours
 
 The editor queues requests rather than refusing them, and one build answers every
-request for the same target, so several agents asking at once cost one compile.
+request for the same target and profile, so several agents asking at once cost one
+compile.
 
 If another chat is still working, this does NOT block you. After --wait seconds it
 returns 3 and your request keeps its place in the queue. Do not sit and retry: end
@@ -52,6 +58,10 @@ while [ $# -gt 0 ]; do
 		--game) target=game ;;
 		--editor) target=editor ;;
 		--run) run=1 ;;
+		--profile)
+			shift
+			profile=${1:-}
+			;;
 		--tree)
 			shift
 			tree=${1:-}
@@ -104,6 +114,7 @@ rm -f "$result"
 	echo "target $target"
 	echo "run $run"
 	echo "tree $tree"
+	echo "profile $profile"
 } > "$inbox/requests/$id.partial"
 mv "$inbox/requests/$id.partial" "$request"
 

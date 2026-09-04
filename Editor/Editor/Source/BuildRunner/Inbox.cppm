@@ -17,6 +17,7 @@ export namespace gse::ide::build_inbox {
 		std::string agent;
 		std::string target;
 		std::string tree;
+		std::string profile;
 		bool run = false;
 	};
 

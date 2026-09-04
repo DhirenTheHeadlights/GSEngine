@@ -65,6 +65,7 @@ export namespace gse::ide {
 			cursor_shape frame_cursor = cursor_shape::arrow;
 			bool layout_dirty = false;
 			bool game_panel_open = false;
+			std::optional<dock_anchor> game_anchor;
 			std::string session_error;
 			bool session_dismissed = false;
 			std::vector<dock_popout> popout_queue;
@@ -150,6 +151,7 @@ namespace gse::ide {
 	constexpr std::string_view search_panel_name = "Search";
 	constexpr std::string_view lint_panel_name = "Lints";
 	constexpr std::string_view game_panel_name = "Game";
+	constexpr std::string_view game_anchor_section = "game panel";
 	constexpr std::string_view server_quadrant_name = "Server";
 	constexpr std::array<std::string_view, 3> client_quadrant_names{ "Client 1", "Client 2", "Client 3" };
 	constexpr float server_strip_ratio = 0.25f;
@@ -669,12 +671,23 @@ auto gse::ide::open_session_layout(editor_app::data& d) -> void {
 		return;
 	}
 
-	insert_panel(tree, {
-		.panel = game,
-		.target = any_leaf(tree),
-		.location = gui::dock::location::right,
-		.ratio = 0.5f,
-	});
+	const id anchored = d.game_anchor ? lowest_common_node(tree, d.game_anchor->panels) : id{};
+	if (anchored.exists()) {
+		insert_panel(tree, {
+			.panel = game,
+			.target = anchored,
+			.location = d.game_anchor->location,
+			.ratio = d.game_anchor->ratio,
+		});
+	}
+	else {
+		insert_panel(tree, {
+			.panel = game,
+			.target = any_leaf(tree),
+			.location = gui::dock::location::right,
+			.ratio = 0.5f,
+		});
+	}
 	activate_panel(tree, game);
 	d.layout_dirty = true;
 }
@@ -726,6 +739,36 @@ auto gse::ide::load_editor_layout(editor_app::data& d) -> void {
 	});
 
 	d.pending_restores.clear();
+	d.game_anchor.reset();
+	for (const layout_store::section& section : sections) {
+		if (section.name != game_anchor_section) {
+			continue;
+		}
+		const auto panels_it = section.values.find("panels");
+		if (panels_it == section.values.end()) {
+			break;
+		}
+		const auto panels = editor_panels();
+		dock_anchor anchor;
+		for (const auto& part : std::views::split(std::string_view(panels_it->second), ',')) {
+			const auto desc = std::ranges::find(panels, std::string_view(part), &panel_desc::name);
+			if (desc != panels.end()) {
+				anchor.panels.push_back(desc->id);
+			}
+		}
+		if (anchor.panels.empty()) {
+			break;
+		}
+		if (const auto it = section.values.find("location"); it != section.values.end()) {
+			enum_from_string(it->second, anchor.location);
+		}
+		if (const auto it = section.values.find("ratio"); it != section.values.end()) {
+			anchor.ratio = std::clamp(parse_layout_float(it->second, 0.5f), 0.05f, 0.95f);
+		}
+		d.game_anchor = anchor;
+		break;
+	}
+
 	if (!restored) {
 		return;
 	}
@@ -764,9 +807,24 @@ auto gse::ide::save_editor_layout(const editor_app::data& d) -> void {
 		windows.push_back(pending);
 	}
 
+	std::string anchor;
+	if (d.game_anchor) {
+		std::string names;
+		for (const id panel : d.game_anchor->panels) {
+			if (!names.empty()) {
+				names.push_back(',');
+			}
+			names.append(panel.tag());
+		}
+		anchor.append(std::format("\n[{}]\n", game_anchor_section));
+		anchor.append(std::format("panels = {}\n", names));
+		anchor.append(std::format("location = {}\n", enum_to_string(d.game_anchor->location)));
+		anchor.append(std::format("ratio = {}\n", d.game_anchor->ratio));
+	}
+
 	replace_layout_sections(
 		editor_layout_owner(),
-		serialize_tree(primary_view(d).tree, editor_panels(), primary_tree_sections()) + serialize_windows(windows, editor_panels())
+		serialize_tree(primary_view(d).tree, editor_panels(), primary_tree_sections()) + serialize_windows(windows, editor_panels()) + anchor
 	);
 }
 
@@ -1340,6 +1398,11 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 		open_session_layout(d);
 	}
 	d.game_panel_open = contains_panel(primary_view(d).tree, find_or_generate_id(game_panel_name));
+	if (d.game_panel_open) {
+		if (const auto anchor = anchor_of(primary_view(d).tree, find_or_generate_id(game_panel_name))) {
+			d.game_anchor = anchor;
+		}
+	}
 
 	if (!session_live && !build_d.building_session && d.session_error.empty()) {
 		close_session_layout(d);

@@ -149,6 +149,10 @@ namespace gse {
 		const window::data& d
 	) -> window::composition_probe;
 
+	auto cloak_window(
+		native_window_handle handle
+	) -> void;
+
 	auto plausible_restore_geometry(
 		const window::geometry& g
 	) -> bool;
@@ -478,6 +482,19 @@ auto gse::os_restore_geometry(const window::data& d) -> std::optional<window::ge
 #else
 	(void)d;
 	return std::nullopt;
+#endif
+}
+
+auto gse::cloak_window(const native_window_handle handle) -> void {
+#ifdef _WIN32
+	const auto hwnd = win32::hwnd_from_glfw_window(to_glfw_handle(handle));
+	if (hwnd == nullptr) {
+		return;
+	}
+	const int cloak = 1;
+	(void)win32::DwmSetWindowAttribute(hwnd, win32::dwmwa_cloak, &cloak, static_cast<win32::DWORD>(sizeof(cloak)));
+#else
+	(void)handle;
 #endif
 }
 
@@ -852,8 +869,11 @@ namespace gse::window {
 	std::optional<std::string> clipboard_pending;
 	bool clipboard_primed = false;
 	bool clipboard_was_focused = false;
+#ifdef _WIN32
+	win32::DWORD clipboard_sequence = 0;
+#endif
 
-	auto sync_clipboard(const bool focused) -> void {
+	auto sync_clipboard([[maybe_unused]] const bool focused) -> void {
 		std::optional<std::string> to_write;
 		{
 			const std::scoped_lock lock(clipboard_mutex);
@@ -865,13 +885,25 @@ namespace gse::window {
 			clipboard_cache = std::move(*to_write);
 		}
 
-		const bool gained_focus = focused && !clipboard_was_focused;
+#ifdef _WIN32
+		const win32::DWORD sequence = win32::GetClipboardSequenceNumber();
+		const bool source_changed = sequence != clipboard_sequence;
+#else
+		const bool source_changed = focused && !clipboard_was_focused;
 		clipboard_was_focused = focused;
-		if (clipboard_primed && !gained_focus) {
+#endif
+		if (clipboard_primed && !source_changed) {
 			return;
 		}
-		clipboard_primed = true;
+
 		const char* contents = glfwGetClipboardString(nullptr);
+#ifdef _WIN32
+		if (contents == nullptr && win32::IsClipboardFormatAvailable(win32::cf_unicodetext) != 0) {
+			return;
+		}
+		clipboard_sequence = sequence;
+#endif
+		clipboard_primed = true;
 		const std::scoped_lock lock(clipboard_mutex);
 		clipboard_cache.assign(contents ? contents : "");
 	}
@@ -1265,8 +1297,8 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 
 	if (d.primary.focused) {
 		trace::scope_guard sg{ trace_id<"window::modes">() };
-		if (d.current_display_mode != d.display_mode) {
-			apply_display_mode(d, d.display_mode);
+		if (const display_mode wanted = d.attached ? display_mode::windowed : d.display_mode; d.current_display_mode != wanted) {
+			apply_display_mode(d, wanted);
 		}
 
 		if (const gpu::present_mode desired = desired_present_mode(d); d.current_present_mode != desired) {
@@ -1535,6 +1567,9 @@ auto gse::window::apply_commands(data& d) -> void {
 			framebuffer.y()
 		);
 		d.primary.last_composition = composition;
+		if (d.attached && composition.visible && composition.cloaked == 0) {
+			cloak_window(d.primary.handle);
+		}
 	}
 
 	const int previous_monitor = monitor_index_for_window(d.primary.position, d.primary.size);

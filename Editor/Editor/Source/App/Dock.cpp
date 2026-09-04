@@ -46,6 +46,73 @@ auto gse::ide::contains_panel(const dock_tree& tree, const id panel) -> bool {
 	return find_leaf(tree, panel).exists();
 }
 
+auto gse::ide::anchor_of(const dock_tree& tree, const id panel) -> std::optional<dock_anchor> {
+	const id leaf_id = find_leaf(tree, panel);
+	if (!leaf_id.exists()) {
+		return std::nullopt;
+	}
+
+	const dock_node& leaf = *tree.nodes.try_get(leaf_id);
+	if (leaf.panels.size() > 1) {
+		dock_anchor anchor;
+		for (const id other : leaf.panels) {
+			if (other != panel) {
+				anchor.panels.push_back(other);
+			}
+		}
+		return anchor;
+	}
+
+	if (!leaf.parent.exists()) {
+		return std::nullopt;
+	}
+
+	const dock_node& split = *tree.nodes.try_get(leaf.parent);
+	const bool first = split.first == leaf_id;
+	const bool columns = split.axis == gui::layout::split_axis::columns;
+
+	std::vector<id> sibling_nodes;
+	collect_nodes(tree, first ? split.second : split.first, sibling_nodes);
+
+	dock_anchor anchor{
+		.location = columns
+			? (first ? gui::dock::location::left : gui::dock::location::right)
+			: (first ? gui::dock::location::top : gui::dock::location::bottom),
+		.ratio = first ? split.ratio : 1.f - split.ratio,
+	};
+	for (const id node_id : sibling_nodes) {
+		const dock_node& node = *tree.nodes.try_get(node_id);
+		anchor.panels.insert(anchor.panels.end(), node.panels.begin(), node.panels.end());
+	}
+	if (anchor.panels.empty()) {
+		return std::nullopt;
+	}
+	return anchor;
+}
+
+auto gse::ide::lowest_common_node(const dock_tree& tree, const std::span<const id> panels) -> id {
+	std::vector<id> chain;
+	for (const id panel : panels) {
+		const id leaf = find_leaf(tree, panel);
+		if (!leaf.exists()) {
+			continue;
+		}
+		if (chain.empty()) {
+			for (id node = leaf; node.exists(); node = tree.nodes.try_get(node)->parent) {
+				chain.push_back(node);
+			}
+			continue;
+		}
+		for (id node = leaf; node.exists(); node = tree.nodes.try_get(node)->parent) {
+			if (const auto it = std::ranges::find(chain, node); it != chain.end()) {
+				chain.erase(chain.begin(), it);
+				break;
+			}
+		}
+	}
+	return chain.empty() ? id{} : chain.front();
+}
+
 auto gse::ide::panel_count(const dock_tree& tree) -> std::size_t {
 	std::size_t total = 0;
 	for (const dock_node& node : tree.nodes.items()) {

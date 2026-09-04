@@ -62,6 +62,7 @@ export namespace gse::win32 {
 	using ::GetWindowPlacement;
 	using ::IsWindowVisible;
 	using ::DwmGetWindowAttribute;
+	using ::DwmSetWindowAttribute;
 	using ::WindowFromPoint;
 	using ::GetAncestor;
 	using ::ClientToScreen;
@@ -96,6 +97,7 @@ export namespace gse::win32 {
 	constexpr UINT sw_show_maximized = SW_SHOWMAXIMIZED;
 	constexpr UINT wpf_restore_to_maximized = WPF_RESTORETOMAXIMIZED;
 	constexpr DWORD dwmwa_cloaked = DWMWA_CLOAKED;
+	constexpr DWORD dwmwa_cloak = DWMWA_CLOAK;
 	constexpr UINT ga_root = GA_ROOT;
 	constexpr UINT wm_setcursor = WM_SETCURSOR;
 	constexpr UINT wm_mousemove = WM_MOUSEMOVE;
@@ -313,6 +315,7 @@ export namespace gse::win32 {
 	using ::BITMAPINFOHEADER;
 
 	using ::IsClipboardFormatAvailable;
+	using ::GetClipboardSequenceNumber;
 	using ::OpenClipboard;
 	using ::CloseClipboard;
 	using ::GetClipboardData;
@@ -324,6 +327,7 @@ export namespace gse::win32 {
 	constexpr UINT cf_dib = CF_DIB;
 	constexpr UINT cf_dibv5 = CF_DIBV5;
 	constexpr UINT cf_hdrop = CF_HDROP;
+	constexpr UINT cf_unicodetext = CF_UNICODETEXT;
 	constexpr DWORD bi_rgb = BI_RGB;
 	constexpr DWORD bi_bitfields = BI_BITFIELDS;
 	constexpr DWORD bitmap_info_header_size = sizeof(BITMAPINFOHEADER);

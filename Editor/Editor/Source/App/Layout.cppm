@@ -64,7 +64,7 @@ auto gse::ide::parse_layout_uint(const std::string& value, const std::uint32_t f
 
 auto gse::ide::editor_layout_owner() -> layout_store::owner {
 	return {
-		.names = { "editor", "dock" },
+		.names = { "editor", "dock", "game panel" },
 		.prefixes = { "dock node ", "dock window " },
 	};
 }

@@ -25,7 +25,7 @@ export namespace gse::ide::viewport {
 
 	struct retiring_session {
 		imported_session session;
-		std::uint32_t frames_remaining = gpu::max_frames_in_flight + 1;
+		std::uint64_t retire_at_frame = 0;
 	};
 
 	struct [[= system_state<"Viewport">{}]] data {

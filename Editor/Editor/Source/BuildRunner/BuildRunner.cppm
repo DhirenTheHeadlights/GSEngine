@@ -7,29 +7,30 @@ import gse.gpu;
 import gse.ide.config;
 import gse.win32;
 
+import :configs;
+import :profiles;
 import :spawn;
 
 export namespace gse::ide::build_runner {
-	enum class build_target : std::uint8_t {
-		game,
-		editor,
-	};
-
-	struct play_session {
-		std::uint8_t clients = 1;
-		bool dedicated_server = false;
-		bool attached = true;
-		std::uint16_t base_port = 9000;
-	};
-
 	struct stop_session_request {};
 
 	struct build_request {
 		build_target target = build_target::game;
 		bool run_after = false;
 		play_session session;
+		std::string config;
+		std::string profile;
 		const config::worktree* tree = nullptr;
 		std::string inbox_id;
+	};
+
+	struct select_profile_request {
+		std::string name;
+	};
+
+	struct edit_profiles_request {
+		std::vector<build_profile> profiles;
+		std::string active;
 	};
 
 	enum class stream_kind : std::uint8_t {
@@ -173,6 +174,8 @@ export namespace gse::ide::build_runner {
 		[[= shared]] std::string session_error;
 		[[= shared]] play_session session;
 		[[= shared]] server_status server;
+		[[= shared]] std::vector<build_profile> profiles;
+		[[= shared]] std::string active_profile;
 		build_completion completion;
 		std::shared_ptr<spawn::output_stream> active_stream;
 		std::jthread worker;
@@ -196,7 +199,7 @@ export namespace gse::ide::build_runner {
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		data& d,
-		channel_read<attached_surface_imported, attached_surface_rejected, build_request, stop_session_request, attached_input> requests_in,
+		channel_read<attached_surface_imported, attached_surface_rejected, build_request, stop_session_request, attached_input, select_profile_request, edit_profiles_request> requests_in,
 		channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out
 	) -> async::task<>;
 
@@ -204,6 +207,11 @@ export namespace gse::ide::build_runner {
 	auto shutdown(
 		data& d
 	) -> void;
+
+	auto request_for_profile(
+		const build_profile& profile,
+		bool run_after
+	) -> build_request;
 
 	auto request_analysis_pause(
 		bool paused
@@ -341,15 +349,45 @@ namespace gse::ide::build_runner {
 		const std::filesystem::path& build_dir
 	) -> std::filesystem::path;
 
+	auto retarget_build_path(
+		const std::filesystem::path& path,
+		const std::filesystem::path& from,
+		const std::filesystem::path& to
+	) -> std::filesystem::path;
+
+	auto worktree_for_config(
+		const config::worktree& tree,
+		std::string_view name
+	) -> config::worktree;
+
+	auto engine_build_dir_for_config(
+		const config::worktree& tree,
+		std::string_view name
+	) -> std::filesystem::path;
+
+	auto preset_configure_command(
+		const std::filesystem::path& engine_dir,
+		std::string_view name
+	) -> std::wstring;
+
 	auto configure_command(
 		const config::worktree& tree,
 		const std::filesystem::path& project_dir,
-		const std::filesystem::path& build_dir
+		const std::filesystem::path& build_dir,
+		const std::filesystem::path& inherit_from
 	) -> std::wstring;
+
+	auto ensure_engine_configured(
+		spawn::output_stream& stream,
+		const config::worktree& tree,
+		const std::filesystem::path& build_dir,
+		std::string_view name
+	) -> bool;
 
 	auto ensure_configured(
 		spawn::output_stream& stream,
-		const config::worktree& tree
+		const config::worktree& tree,
+		std::string_view name
 	) -> std::filesystem::path;
 
 	auto build_command(
@@ -459,8 +497,7 @@ namespace gse::ide::build_runner {
 		build_completion& completion,
 		spawn::output_stream& stream,
 		const config::worktree& tree,
-		bool run_after,
-		const play_session& session,
+		const build_request& request,
 		std::uint32_t next_generation
 	) -> void;
 
@@ -812,13 +849,89 @@ auto gse::ide::build_runner::compiler_bin_dir(const std::filesystem::path& build
 	return bin;
 }
 
-auto gse::ide::build_runner::configure_command(const config::worktree& tree, const std::filesystem::path& project_dir, const std::filesystem::path& build_dir) -> std::wstring {
-	const std::filesystem::path& editor_build = config::build_dir();
+auto gse::ide::build_runner::retarget_build_path(const std::filesystem::path& path, const std::filesystem::path& from, const std::filesystem::path& to) -> std::filesystem::path {
+	if (path == from) {
+		return to;
+	}
+	if (path.empty() || !is_inside(path, from)) {
+		return path;
+	}
+	return gse::config::generic(to / path.lexically_relative(from));
+}
 
+auto gse::ide::build_runner::worktree_for_config(const config::worktree& tree, const std::string_view name) -> config::worktree {
+	if (name.empty() || name == active_build_config()) {
+		return tree;
+	}
+
+	const build_config* selected = build_config_for(name);
+	if (selected == nullptr) {
+		return tree;
+	}
+
+	const std::filesystem::path& from = tree.project_build;
+	const std::filesystem::path to = gse::config::generic(from.parent_path() / selected->directory);
+	if (from.empty() || from == to) {
+		return tree;
+	}
+
+	config::worktree out = tree;
+	out.project_build = to;
+	out.project_output = retarget_build_path(tree.project_output, from, to);
+	out.project_compile_commands = retarget_build_path(tree.project_compile_commands, from, to);
+	out.game_executable = retarget_build_path(tree.game_executable, from, to);
+	return out;
+}
+
+auto gse::ide::build_runner::engine_build_dir_for_config(const config::worktree& tree, const std::string_view name) -> std::filesystem::path {
+	const std::filesystem::path& editor_build = config::build_dir();
+	if (name.empty() || name == active_build_config()) {
+		return editor_build;
+	}
+
+	const build_config* selected = build_config_for(name);
+	if (selected == nullptr) {
+		return editor_build;
+	}
+	if (selected->source_relative.empty()) {
+		return gse::config::generic(editor_build.parent_path() / selected->directory);
+	}
+	return gse::config::generic(tree.engine_root / selected->source_relative);
+}
+
+auto gse::ide::build_runner::preset_configure_command(const std::filesystem::path& engine_dir, const std::string_view name) -> std::wstring {
+	return L"cmd.exe /c cmake -S \"" + engine_dir.wstring() + L"\" --preset " + std::wstring(name.begin(), name.end());
+}
+
+auto gse::ide::build_runner::ensure_engine_configured(spawn::output_stream& stream, const config::worktree& tree, const std::filesystem::path& build_dir, const std::string_view name) -> bool {
+	if (!find_build_dir(build_dir).empty()) {
+		return true;
+	}
+
+	if (name.empty() || name == active_build_config()) {
+		spawn::emit(stream, "the editor's own build tree at " + build_dir.generic_display_string() + " is not configured");
+		return false;
+	}
+
+	if (build_config_for(name) == nullptr) {
+		spawn::emit(stream, "no build configuration named '" + std::string(name) + "' is defined in CMakePresets.json");
+		return false;
+	}
+
+	spawn::emit(stream, "configuring the " + std::string(name) + " build tree; the first build of a configuration compiles everything");
+	const std::filesystem::path compiler_bin = compiler_bin_dir(config::build_dir());
+	if (spawn::run_capture(stream, preset_configure_command(tree.engine_root, name), tree.engine_root.wstring(), compiler_bin) != 0) {
+		spawn::emit(stream, "configure failed");
+		return false;
+	}
+	return !find_build_dir(build_dir).empty();
+}
+
+auto gse::ide::build_runner::configure_command(const config::worktree& tree, const std::filesystem::path& project_dir, const std::filesystem::path& build_dir, const std::filesystem::path& inherit_from) -> std::wstring {
 	std::wstring command = L"cmd.exe /c cmake -G Ninja -S \"" + project_dir.wstring() + L"\" -B \"" + build_dir.wstring() + L"\"";
 	command += L" -DGSE_ENGINE_DIR=\"" + tree.engine_root.wstring() + L"\"";
 	command += L" -DVCPKG_MANIFEST_MODE=OFF";
-	command += L" -DVCPKG_INSTALLED_DIR=\"" + (editor_build / "vcpkg_installed").wstring() + L"\"";
+	command += L" -DVCPKG_INSTALLED_DIR=\"" + (inherit_from / "vcpkg_installed").wstring() + L"\"";
 
 	constexpr std::array<std::string_view, 7> inherited = {
 		"CMAKE_TOOLCHAIN_FILE",
@@ -831,7 +944,7 @@ auto gse::ide::build_runner::configure_command(const config::worktree& tree, con
 	};
 
 	for (const std::string_view key : inherited) {
-		const std::string value = cache_value(editor_build, key);
+		const std::string value = cache_value(inherit_from, key);
 		if (value.empty()) {
 			continue;
 		}
@@ -842,9 +955,13 @@ auto gse::ide::build_runner::configure_command(const config::worktree& tree, con
 	return command;
 }
 
-auto gse::ide::build_runner::ensure_configured(spawn::output_stream& stream, const config::worktree& tree) -> std::filesystem::path {
+auto gse::ide::build_runner::ensure_configured(spawn::output_stream& stream, const config::worktree& tree, const std::string_view name) -> std::filesystem::path {
 	const std::filesystem::path& build_dir = tree.project_build;
 	std::error_code ec;
+
+	if (is_inside(tree.project_root, tree.engine_root)) {
+		return ensure_engine_configured(stream, tree, build_dir, name) ? find_build_dir(build_dir) : std::filesystem::path{};
+	}
 
 	if (!find_build_dir(build_dir).empty()) {
 		const std::string bound = cache_value(build_dir, "GSE_ENGINE_DIR");
@@ -868,11 +985,16 @@ auto gse::ide::build_runner::ensure_configured(spawn::output_stream& stream, con
 		return {};
 	}
 
+	const std::filesystem::path engine_build = engine_build_dir_for_config(tree, name);
+	if (!ensure_engine_configured(stream, tree, engine_build, name)) {
+		return {};
+	}
+
 	spawn::emit(stream, "configuring " + project_dir.generic_display_string() + "...");
 	std::filesystem::create_directories(build_dir, ec);
 
-	const std::filesystem::path compiler_bin = compiler_bin_dir(config::build_dir());
-	if (spawn::run_capture(stream, configure_command(tree, project_dir, build_dir), project_dir.wstring(), compiler_bin) != 0) {
+	const std::filesystem::path compiler_bin = compiler_bin_dir(engine_build);
+	if (spawn::run_capture(stream, configure_command(tree, project_dir, build_dir, engine_build), project_dir.wstring(), compiler_bin) != 0) {
 		spawn::emit(stream, "configure failed");
 		return {};
 	}
@@ -1565,7 +1687,12 @@ auto gse::ide::build_runner::launch_child(build_completion& completion, spawn::o
 }
 
 auto gse::ide::build_runner::launch_play_session(build_completion& completion, spawn::output_stream& stream, const config::worktree& tree, const play_session& session, const std::uint32_t generation) -> void {
-	std::wstring connect_args;
+	const std::uint32_t clients = std::min<std::uint32_t>(std::max<std::uint32_t>(session.clients, 1), max_attached_instances);
+	const std::uint32_t processes = clients + (session.dedicated_server ? 1u : 0u) + 1u;
+	const std::uint32_t hardware = std::max<std::uint32_t>(2, std::thread::hardware_concurrency());
+	const std::wstring pool_args = L" --engine-worker-threads " + std::to_wstring(std::max<std::uint32_t>(2, hardware / processes));
+
+	std::wstring connect_args = pool_args;
 
 	if (session.dedicated_server) {
 		launch_child(
@@ -1573,12 +1700,11 @@ auto gse::ide::build_runner::launch_play_session(build_completion& completion, s
 			stream,
 			tree,
 			"server",
-			L" --engine-net-role dedicated --engine-net-listen-port " + std::to_wstring(session.base_port)
+			L" --engine-net-role dedicated --engine-net-listen-port " + std::to_wstring(session.base_port) + pool_args
 		);
-		connect_args = L" --engine-net-connect 127.0.0.1:" + std::to_wstring(session.base_port);
+		connect_args += L" --engine-net-connect 127.0.0.1:" + std::to_wstring(session.base_port);
 	}
 
-	const std::uint32_t clients = std::min<std::uint32_t>(std::max<std::uint32_t>(session.clients, 1), max_attached_instances);
 	for (std::uint32_t i = 0; i < clients; ++i) {
 		auto label = std::format("client {}", i + 1);
 		if (session.attached) {
@@ -1595,11 +1721,10 @@ auto gse::ide::build_runner::build_game(
 	build_completion& completion,
 	spawn::output_stream& stream,
 	const config::worktree& tree,
-	const bool run_after,
-	const play_session& session,
+	const build_request& request,
 	const std::uint32_t next_generation
 ) -> void {
-	const std::filesystem::path build_dir = ensure_configured(stream, tree);
+	const std::filesystem::path build_dir = ensure_configured(stream, tree, request.config);
 	if (build_dir.empty()) {
 		spawn::emit(stream, "configured build directory is unavailable");
 		return;
@@ -1651,8 +1776,8 @@ auto gse::ide::build_runner::build_game(
 		completion.succeeded = true;
 	}
 
-	if (run_after && !st.stop_requested()) {
-		launch_play_session(completion, stream, tree, session, next_generation);
+	if (request.run_after && !st.stop_requested()) {
+		launch_play_session(completion, stream, tree, request.session, next_generation);
 	}
 }
 
@@ -1723,21 +1848,28 @@ auto gse::ide::build_runner::build_worker(
 	const build_request request,
 	const std::uint32_t next_generation
 ) -> void {
-	const config::worktree& tree = request.tree ? *request.tree : config::primary();
+	const config::worktree& base = request.tree ? *request.tree : config::primary();
 	const bool editor = request.target == build_target::editor;
 	{
 		std::lock_guard lock(completion->mutex);
 		completion->key = editor
 			? build_key(config::primary(), config::editor_target)
-			: build_key(tree, tree.game_target);
+			: build_key(base, base.game_target);
 		completion->kind = editor ? stream_kind::build_editor : stream_kind::build_game;
 	}
 
-	if (request.target == build_target::editor) {
+	if (editor) {
+		if (!request.config.empty() && request.config != active_build_config()) {
+			spawn::emit(*stream, "the editor always rebuilds in the configuration it is running, so '" + request.config + "' was ignored");
+		}
 		rebuild_editor(st, *completion, *stream);
 	}
 	else {
-		build_game(st, *completion, *stream, tree, request.run_after, request.session, next_generation);
+		const config::worktree tree = worktree_for_config(base, request.config);
+		if (!request.config.empty() && request.config != active_build_config()) {
+			spawn::emit(*stream, "building in " + std::string(build_config_label(request.config)) + " (" + tree.project_build.generic_display_string() + ")");
+		}
+		build_game(st, *completion, *stream, tree, request, next_generation);
 	}
 
 	spawn::close_process(*stream);
@@ -1764,31 +1896,50 @@ auto gse::ide::build_runner::start_build(const channel_write<attached_session_en
 
 	d.session_error.clear();
 
+	build_request resolved = request;
+	std::string profile_note;
+	if (!resolved.profile.empty()) {
+		if (const build_profile* named = profile_for(d.profiles, resolved.profile)) {
+			resolved.config = named->config;
+			resolved.session = named->session;
+		}
+		else {
+			profile_note = "no build profile named '" + resolved.profile + "'; building with the editor's own configuration and one attached client";
+			log::println(log::level::warning, log::category::task, "{}", profile_note);
+		}
+	}
+
 	// Windows keeps the image mapped while the process lives, so the linker cannot
 	// overwrite the game exe until every running instance has actually exited.
-	if (request.target == build_target::game) {
+	if (resolved.target == build_target::game) {
 		if (const std::optional<std::uint32_t> ended = stop_games(d)) {
 			events_out.push<attached_session_ended>({
 				.generation = *ended,
 			});
 		}
-		if (request.run_after) {
-			d.session = request.session;
+		if (resolved.run_after) {
+			d.session = resolved.session;
 		}
 	}
 
-	std::string name = request.target == build_target::editor
+	std::string name = resolved.target == build_target::editor
 		? "Rebuild Editor"
-		: request.run_after ? "Build & Run" : "Build Game";
-	if (request.tree && request.tree != &config::primary()) {
-		name += " (" + request.tree->name + ")";
+		: resolved.run_after ? "Build & Run" : "Build Game";
+	if (resolved.target == build_target::game && !resolved.config.empty() && resolved.config != active_build_config()) {
+		name += " [" + std::string(build_config_label(resolved.config)) + "]";
+	}
+	if (resolved.tree && resolved.tree != &config::primary()) {
+		name += " (" + resolved.tree->name + ")";
 	}
 
 	auto stream = std::make_shared<spawn::output_stream>();
 	stream->running.store(true, std::memory_order_release);
+	if (!profile_note.empty()) {
+		spawn::emit(*stream, profile_note);
+	}
 	events_out.push<stream_opened>({
 		.name = name,
-		.kind = request.target == build_target::editor ? stream_kind::build_editor : stream_kind::build_game,
+		.kind = resolved.target == build_target::editor ? stream_kind::build_editor : stream_kind::build_game,
 		.stream = stream,
 	});
 
@@ -1808,10 +1959,10 @@ auto gse::ide::build_runner::start_build(const channel_write<attached_session_en
 	request_analysis_pause(true);
 
 	d.building = true;
-	d.building_session = request.target == build_target::game && request.run_after && request.session.attached;
-	d.inbox_id = request.inbox_id;
+	d.building_session = resolved.target == build_target::game && resolved.run_after && resolved.session.attached;
+	d.inbox_id = resolved.inbox_id;
 	d.active_stream = stream;
-	d.worker = std::jthread(build_worker, &d.completion, std::move(stream), request, d.game_generation + 1);
+	d.worker = std::jthread(build_worker, &d.completion, std::move(stream), std::move(resolved), d.game_generation + 1);
 }
 
 auto gse::ide::build_runner::drain_completion(const channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out, data& d) -> void {
@@ -2170,12 +2321,34 @@ auto gse::ide::build_runner::send_attached_pacing(data& d, const std::uint32_t i
 	write_pipe_message(d, instance, &message, sizeof(message));
 }
 
-auto gse::ide::build_runner::init(data&) -> async::task<> {
+auto gse::ide::build_runner::init(data& d) -> async::task<> {
 	cleanup_backups();
+	load_profiles(d.profiles, d.active_profile);
 	return {};
 }
 
-auto gse::ide::build_runner::run(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_read<attached_surface_imported, attached_surface_rejected, build_request, stop_session_request, attached_input> requests_in, const channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out) -> async::task<> {
+auto gse::ide::build_runner::request_for_profile(const build_profile& profile, const bool run_after) -> build_request {
+	return {
+		.target = build_target::game,
+		.run_after = run_after,
+		.session = profile.session,
+		.config = profile.config,
+	};
+}
+
+auto gse::ide::build_runner::run(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_read<attached_surface_imported, attached_surface_rejected, build_request, stop_session_request, attached_input, select_profile_request, edit_profiles_request> requests_in, const channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out) -> async::task<> {
+	for (const edit_profiles_request& edited : requests_in.of<edit_profiles_request>()) {
+		if (edited.profiles.empty()) {
+			continue;
+		}
+		d.profiles = edited.profiles;
+		d.active_profile = profile_for(d.profiles, edited.active) != nullptr ? edited.active : d.profiles.front().name;
+	}
+	for (const select_profile_request& selected : requests_in.of<select_profile_request>()) {
+		if (profile_for(d.profiles, selected.name) != nullptr) {
+			d.active_profile = selected.name;
+		}
+	}
 	for (const attached_surface_imported& imported : requests_in.of<attached_surface_imported>()) {
 		if (session_for(d, imported.generation, imported.instance)) {
 			d.sessions[imported.instance].status = attached_session_status::active;
@@ -2240,6 +2413,7 @@ auto gse::ide::build_runner::run(context& ctx, shared_view<gpu::context::data> g
 }
 
 auto gse::ide::build_runner::shutdown(data& d) -> void {
+	save_profiles(d.profiles, d.active_profile);
 	d.worker.request_stop();
 	if (d.active_stream) {
 		spawn::terminate_process(*d.active_stream);

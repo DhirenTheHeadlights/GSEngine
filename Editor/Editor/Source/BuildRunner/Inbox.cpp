@@ -143,6 +143,9 @@ auto gse::ide::build_inbox::read_request(const std::filesystem::path& path) -> s
 		else if (key == "tree") {
 			parsed.tree.assign(value);
 		}
+		else if (key == "profile") {
+			parsed.profile.assign(value);
+		}
 		else if (key == "run") {
 			parsed.run = value == "1" || value == "true";
 		}
@@ -203,6 +206,7 @@ auto gse::ide::build_inbox::restore(const request& pending) -> void {
 		out << "target " << pending.target << '\n';
 		out << "run " << (pending.run ? '1' : '0') << '\n';
 		out << "tree " << pending.tree << '\n';
+		out << "profile " << pending.profile << '\n';
 	}
 
 	std::filesystem::rename(staging, final_path, ec);

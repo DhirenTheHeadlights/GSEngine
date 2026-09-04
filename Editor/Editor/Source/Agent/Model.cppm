@@ -204,6 +204,7 @@ export namespace gse::ide::agent {
 	struct queued_build {
 		std::string id;
 		std::string agent;
+		std::string profile;
 		build_runner::build_target target = build_runner::build_target::game;
 		bool run = false;
 		bool forced = false;
@@ -323,5 +324,6 @@ export namespace gse::ide::agent {
 		[[= archive_skip{}]] std::vector<queued_build> inbox_queue;
 		[[= archive_skip{}]] std::vector<queued_build> inbox_active;
 		[[= archive_skip{}]] time inbox_dispatch_deadline;
+		[[= archive_skip{}]] bool inbox_started = false;
 	};
 }

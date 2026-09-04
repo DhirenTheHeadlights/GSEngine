@@ -210,8 +210,11 @@ auto gse::ide::agent::draw_session_info(const gui::draw_context& ctx, data& d, c
 
 	ctx.register_hit_region(render_layer::popup, panel);
 
-	const vec2f mouse = ctx.mouse_position();
-	if (ctx.mouse_pressed() && !panel.contains(mouse) && !d.info_anchor.contains(mouse)) {
+	const std::array<rectf, 1> keep_open = { d.info_anchor };
+	if (gui::interaction::dismissed_by_outside_press(ctx, {
+		.body = panel,
+		.keep_open = keep_open,
+	})) {
 		d.info_open = false;
 	}
 }

@@ -386,6 +386,7 @@ auto gse::ide::agent::accept_requests(data& d) -> void {
 		queued_build queued{
 			.id = std::move(incoming.id),
 			.agent = std::move(incoming.agent),
+			.profile = std::move(incoming.profile),
 			.requested = now,
 		};
 
@@ -423,7 +424,8 @@ auto gse::ide::agent::accept_requests(data& d) -> void {
 			return !existing.agent.empty() && existing.agent == queued.agent
 				&& existing.target == queued.target
 				&& existing.run == queued.run
-				&& existing.tree == queued.tree;
+				&& existing.tree == queued.tree
+				&& existing.profile == queued.profile;
 		};
 		if (const auto held = std::ranges::find_if(d.inbox_queue, same_slot); held != d.inbox_queue.end()) {
 			log::println(log::level::info, log::category::task, "build inbox: agent '{}' re-attached to its queued {} build ({} -> {})", queued.agent, incoming.target, held->id, queued.id);
@@ -537,6 +539,7 @@ auto gse::ide::agent::request_of(const queued_build& queued) -> build_inbox::req
 		.agent = queued.agent,
 		.target = queued.target == build_runner::build_target::editor ? "editor" : "game",
 		.tree = queued.tree ? queued.tree->name : std::string{},
+		.profile = queued.profile,
 		.run = queued.run,
 	};
 }
@@ -604,10 +607,13 @@ auto gse::ide::agent::hand_off_builds(data& d, const bool relaunching) -> void {
 auto gse::ide::agent::poll_build_inbox(data& d, const channel_write<build_runner::build_request> builds, const bool building) -> void {
 	const time now = system_clock::now<time>();
 
-	if (!d.inbox_active.empty() && !building && now >= d.inbox_dispatch_deadline) {
-		log::println(log::level::info, log::category::task, "build inbox: the editor took a different build, so {} request(s) go back in the queue", d.inbox_active.size());
-		d.inbox_queue.insert(d.inbox_queue.begin(), std::make_move_iterator(d.inbox_active.begin()), std::make_move_iterator(d.inbox_active.end()));
-		d.inbox_active.clear();
+	if (!d.inbox_active.empty()) {
+		d.inbox_started = d.inbox_started || building;
+		if (!d.inbox_started && !building && now >= d.inbox_dispatch_deadline) {
+			log::println(log::level::info, log::category::task, "build inbox: the editor took a different build, so {} request(s) go back in the queue", d.inbox_active.size());
+			d.inbox_queue.insert(d.inbox_queue.begin(), std::make_move_iterator(d.inbox_active.begin()), std::make_move_iterator(d.inbox_active.end()));
+			d.inbox_active.clear();
+		}
 	}
 
 	if (now < d.next_inbox_poll) {
@@ -653,11 +659,12 @@ auto gse::ide::agent::poll_build_inbox(data& d, const channel_write<build_runner
 	const build_runner::build_target target = head.target;
 	const bool run = head.run;
 	const config::worktree* tree = head.tree;
+	const std::string profile = head.profile;
 
 	std::vector<queued_build> group;
 	std::vector<queued_build> deferred;
 	for (queued_build& queued : d.inbox_queue) {
-		if (queued.target == target && queued.run == run && queued.tree == tree) {
+		if (queued.target == target && queued.run == run && queued.tree == tree && queued.profile == profile) {
 			group.push_back(std::move(queued));
 		}
 		else {
@@ -670,12 +677,14 @@ auto gse::ide::agent::poll_build_inbox(data& d, const channel_write<build_runner
 	builds.push<build_runner::build_request>({
 		.target = target,
 		.run_after = run,
+		.profile = profile,
 		.tree = tree,
 		.inbox_id = group.front().id,
 	});
 
 	d.inbox_active = std::move(group);
 	d.inbox_dispatch_deadline = now + seconds(5.f);
+	d.inbox_started = false;
 	d.inbox_queue = std::move(deferred);
 }
 
