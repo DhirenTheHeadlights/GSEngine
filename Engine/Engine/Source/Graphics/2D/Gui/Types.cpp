@@ -71,9 +71,8 @@ auto gse::gui::draw_context::queue_sprite(renderer::sprite_command cmd) const ->
 	if (cmd.z_order == 0) {
 		cmd.z_order = current_z_order;
 	}
-	if (!clip_stack.empty() && static_cast<std::uint8_t>(cmd.layer) <= static_cast<std::uint8_t>(render_layer::popup)) {
-		const rectf& clip = clip_stack.back();
-		cmd.clip_rect = cmd.clip_rect.has_value() ? cmd.clip_rect->intersection(clip) : clip;
+	if (const std::optional<rectf> clip = clip_for(cmd.layer)) {
+		cmd.clip_rect = cmd.clip_rect.has_value() ? cmd.clip_rect->intersection(*clip) : *clip;
 	}
 	sprites.push_back(std::move(cmd));
 }
@@ -96,9 +95,8 @@ auto gse::gui::draw_context::queue_text(renderer::text_command cmd) const -> voi
 	if (cmd.z_order == 0) {
 		cmd.z_order = current_z_order;
 	}
-	if (!clip_stack.empty() && static_cast<std::uint8_t>(cmd.layer) <= static_cast<std::uint8_t>(render_layer::popup)) {
-		const rectf& clip = clip_stack.back();
-		cmd.clip_rect = cmd.clip_rect.has_value() ? cmd.clip_rect->intersection(clip) : clip;
+	if (const std::optional<rectf> clip = clip_for(cmd.layer)) {
+		cmd.clip_rect = cmd.clip_rect.has_value() ? cmd.clip_rect->intersection(*clip) : *clip;
 	}
 	texts.push_back(std::move(cmd));
 }
@@ -145,6 +143,13 @@ auto gse::gui::draw_context::current_clip() const -> std::optional<rectf> {
 	return clip_stack.back();
 }
 
+auto gse::gui::draw_context::clip_for(const render_layer layer) const -> std::optional<rectf> {
+	if (static_cast<std::uint8_t>(layer) > static_cast<std::uint8_t>(render_layer::popup)) {
+		return std::nullopt;
+	}
+	return current_clip();
+}
+
 auto gse::gui::draw_context::register_hit_region(const render_layer layer, const rectf& rect) const -> void {
 	if (hit_regions) {
 		hit_regions->register_hit_region(layer, current_z_order, rect);
@@ -173,7 +178,7 @@ auto gse::gui::draw_context::hovers(const rectf& rect) const -> bool {
 	if (!rect.contains(input.mouse_position())) {
 		return false;
 	}
-	if (const std::optional<rectf> clip = current_clip(); clip && !clip->contains(input.mouse_position())) {
+	if (const std::optional<rectf> clip = clip_for(current_layer); clip && !clip->contains(input.mouse_position())) {
 		return false;
 	}
 	return input_available();
@@ -187,7 +192,7 @@ auto gse::gui::draw_context::mouse_pressed_for(const rectf& rect, const mouse_bu
 	if (!rect.contains(input.mouse_position())) {
 		return false;
 	}
-	if (const std::optional<rectf> clip = current_clip(); clip && !clip->contains(input.mouse_position())) {
+	if (const std::optional<rectf> clip = clip_for(current_layer); clip && !clip->contains(input.mouse_position())) {
 		return false;
 	}
 	if (!input_available()) {
@@ -210,7 +215,7 @@ auto gse::gui::draw_context::mouse_released_for(const rectf& rect, const mouse_b
 	if (!rect.contains(input.mouse_position())) {
 		return false;
 	}
-	if (const std::optional<rectf> clip = current_clip(); clip && !clip->contains(input.mouse_position())) {
+	if (const std::optional<rectf> clip = clip_for(current_layer); clip && !clip->contains(input.mouse_position())) {
 		return false;
 	}
 	if (!input_available()) {

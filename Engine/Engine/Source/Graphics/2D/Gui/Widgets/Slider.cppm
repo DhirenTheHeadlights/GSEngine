@@ -342,7 +342,7 @@ auto gse::gui::draw::slider_row(const draw_context& ctx, const std::string& name
 	const auto [label_rect, value_area] = lo::split_horizontal<2>(
 		row_rect,
 		{
-			spec::ratio(0.4f),
+			spec::ratio(ctx.style.label_column_ratio),
 			spec::flex(),
 		}
 	);

@@ -416,7 +416,7 @@ auto gse::settings::draw_dimensioned_field(gui::builder& b, dimensioned_input_st
 		widest_unit = std::max(widest_unit, text_view->width(unit, ctx.style.font_size));
 	}
 
-	const float label_width = content_rect.width() * 0.4f;
+	const float label_width = content_rect.width() * ctx.style.label_column_ratio;
 	const float unit_width = std::min(content_rect.width() * 0.25f, widest_unit + ctx.style.icon_extent + ctx.style.padding * 2.f);
 	const float value_width = std::max(0.f, content_rect.width() - label_width - unit_width - ctx.style.padding * 0.5f);
 

@@ -123,7 +123,7 @@ auto gse::gui::draw::text_input(const draw_context& ctx, const std::string& name
 		{ content_rect.width(), widget_height }
 	);
 
-	const float label_width = content_rect.width() * 0.4f;
+	const float label_width = content_rect.width() * ctx.style.label_column_ratio;
 
 	const rectf label_rect = rectf::from_position_size(
 		row_rect.top_left(),
@@ -419,7 +419,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			state.blink_on = true;
 		}
 
-		if (ctrl && ctx.key_pressed_for(key::v) && !window::clipboard_image_available()) {
+		if (ctrl && ctx.key_pressed_for(key::v)) {
 			std::string paste = flatten_newlines(ctx.clipboard());
 			if (!paste.empty()) {
 				if (has_sel(state)) {

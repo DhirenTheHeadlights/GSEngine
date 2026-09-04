@@ -131,7 +131,7 @@ auto gse::gui::checkbox::draw(const draw_context& ctx, const params& p, id& hot,
 		p.value = !p.value;
 	}
 
-	const float label_width = content_rect.width() * 0.4f;
+	const float label_width = content_rect.width() * ctx.style.label_column_ratio;
 
 	const rectf label_rect = rectf::from_position_size(
 		row_rect.top_left(),

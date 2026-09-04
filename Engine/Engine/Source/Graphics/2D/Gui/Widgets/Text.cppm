@@ -113,7 +113,7 @@ auto gse::gui::draw::text(const draw_context& ctx, const std::string_view name, 
 		{ content_rect.width(), widget_height }
 	);
 
-	const float label_width = name.empty() ? 0.f : content_rect.width() * 0.4f;
+	const float label_width = name.empty() ? 0.f : content_rect.width() * ctx.style.label_column_ratio;
 
 	const rectf label_rect = rectf::from_position_size(
 		row_rect.top_left(),

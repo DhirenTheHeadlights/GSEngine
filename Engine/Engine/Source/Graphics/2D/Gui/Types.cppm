@@ -475,6 +475,10 @@ export namespace gse::gui {
 
 		[[nodiscard]] auto current_clip() const -> std::optional<rectf>;
 
+		[[nodiscard]] auto clip_for(
+			render_layer layer
+		) const -> std::optional<rectf>;
+
 		[[nodiscard]] auto scoped_layer(
 			render_layer layer
 		) const -> layer_scope;

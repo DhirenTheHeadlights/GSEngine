@@ -289,7 +289,7 @@ auto gse::gui::draw::dropdown_impl(const draw_context& ctx, const std::string_vi
 	const float row_height = text_view->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
 	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
 
-	const float label_width = content_rect.width() * 0.4f;
+	const float label_width = content_rect.width() * ctx.style.label_column_ratio;
 
 	const rectf label_rect =
 		rectf::from_position_size(
@@ -437,9 +437,9 @@ auto gse::gui::draw::dropdown_impl_in_rect(const draw_context& ctx, const id dro
 
 		const rectf content_area = needs_scroll
 			? rectf::from_position_size(
-				  list_rect.top_left(),
-				  { max_option_width, visible_height }
-			  )
+				list_rect.top_left(),
+				{ max_option_width, visible_height }
+			)
 			: list_rect;
 
 		constexpr float border = 1.f;
@@ -527,11 +527,15 @@ auto gse::gui::draw::dropdown_impl_in_rect(const draw_context& ctx, const id dro
 			}
 		}
 
-		const bool still_open = state.open_dropdown_id == dropdown_id;
-		const bool raw_press = ctx.mouse_pressed();
-		if (still_open && !header_rect.contains(mouse_pos) && !list_rect.contains(mouse_pos) && !state.scroll.y.held && raw_press) {
-			state.open_dropdown_id.reset();
-		}
+	}
+
+	const std::array<rectf, 1> keep_open = { header_rect };
+	if (state.open_dropdown_id == dropdown_id && interaction::dismissed_by_outside_press(ctx, {
+		.body = list_rect_early,
+		.keep_open = keep_open,
+		.suppressed = state.scroll.y.held,
+	})) {
+		state.open_dropdown_id.reset();
 	}
 
 	return result;

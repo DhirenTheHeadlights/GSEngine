@@ -124,6 +124,7 @@ export namespace gse::gui {
 		[[= scaled]] float corner_radius_button = 6.f;
 		[[= scaled]] float corner_radius_input = 6.f;
 		float widget_height_padding = 0.7f;
+		float label_column_ratio = 0.4f;
 		[[= scaled]] float item_spacing = 4.f;
 		[[= scaled]] float section_spacing_above = 18.f;
 		[[= scaled]] float section_spacing_below = 10.f;

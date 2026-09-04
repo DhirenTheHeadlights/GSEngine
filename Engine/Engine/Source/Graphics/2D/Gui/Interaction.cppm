@@ -46,6 +46,17 @@ export namespace gse::gui::interaction {
 		const rectf& rect,
 		bool enabled = true
 	) -> press;
+
+	struct dismiss_info {
+		rectf body;
+		std::span<const rectf> keep_open{};
+		bool suppressed = false;
+	};
+
+	[[nodiscard]] auto dismissed_by_outside_press(
+		const draw_context& ctx,
+		const dismiss_info& info
+	) -> bool;
 }
 
 namespace gse::gui::interaction {
@@ -170,4 +181,17 @@ auto gse::gui::interaction::press_from(id& hot, id& active, const id widget, con
 
 auto gse::gui::interaction::press_in_rect(const draw_context& ctx, id& hot, id& active, const id widget, const rectf& rect, const bool enabled) -> press {
 	return press_from(hot, active, widget, ctx.hovers(rect), ctx.mouse_pressed_for(rect), ctx.mouse_released(), enabled);
+}
+
+auto gse::gui::interaction::dismissed_by_outside_press(const draw_context& ctx, const dismiss_info& info) -> bool {
+	if (info.suppressed || !ctx.mouse_pressed()) {
+		return false;
+	}
+	const vec2f position = ctx.mouse_position();
+	if (info.body.contains(position)) {
+		return false;
+	}
+	return !std::ranges::any_of(info.keep_open, [position](const rectf& rect) {
+		return rect.contains(position);
+	});
 }
