@@ -7,10 +7,11 @@ bool locked = body.locked != 0;
 bool sleeping = body.sleep_counter >= sleep_threshold;
 bool update_orient = body.update_orientation != 0;
 bool gravity = body.affected_by_gravity != 0;
+uint motor_base = (pc.substep / max(pc.substeps_per_tick, 1u)) * pc.motor_count;
 
 {
     for (uint mi = 0; mi < pc.motor_count; mi++) {
-        velocity_motor_constraint m = motor_data[mi];
+        velocity_motor_constraint m = motor_data[motor_base + mi];
         if (m.body_index == bi && sleeping && length(m.target_velocity.xyz) > 0.01) {
             body.sleep_counter = 0;
             sleeping = false;
@@ -152,7 +153,7 @@ if (update_orient) {
 body.angular_inertia_target = body.predicted_orientation;
 
 for (uint mi = 0; mi < pc.motor_count; mi++) {
-    velocity_motor_constraint m = motor_data[mi];
+    velocity_motor_constraint m = motor_data[motor_base + mi];
     if (m.body_index != bi) continue;
 
     float3 target = body.old_position + m.target_velocity * pc.dt;

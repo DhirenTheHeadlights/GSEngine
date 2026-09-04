@@ -87,6 +87,15 @@ export namespace gse::vbd {
 			std::span<const vec3<velocity>> velocities
 		) -> void;
 
+		auto seed_carried(
+			std::span<const vec3<velocity>> velocities,
+			std::span<const float> weights
+		) -> void;
+
+		auto previous_velocities() const -> std::span<const vec3<velocity>>;
+
+		auto accel_weights() const -> std::span<const float>;
+
 		auto add_contact_constraint(
 			const contact_constraint& c
 		) -> void;
@@ -270,6 +279,19 @@ auto gse::vbd::solver::begin_frame(const std::span<const body_state> bodies, con
 auto gse::vbd::solver::seed_previous_velocities(const std::span<const vec3<velocity>> velocities) -> void {
 	m_prev_velocity.assign(velocities.begin(), velocities.end());
 	m_accel_weight.assign(velocities.size(), 0.f);
+}
+
+auto gse::vbd::solver::seed_carried(const std::span<const vec3<velocity>> velocities, const std::span<const float> weights) -> void {
+	m_prev_velocity.assign(velocities.begin(), velocities.end());
+	m_accel_weight.assign(weights.begin(), weights.end());
+}
+
+auto gse::vbd::solver::previous_velocities() const -> std::span<const vec3<velocity>> {
+	return m_prev_velocity;
+}
+
+auto gse::vbd::solver::accel_weights() const -> std::span<const float> {
+	return m_accel_weight;
 }
 
 auto gse::vbd::solver::add_contact_constraint(const contact_constraint& c) -> void {

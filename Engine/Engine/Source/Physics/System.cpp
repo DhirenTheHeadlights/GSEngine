@@ -186,6 +186,26 @@ auto gse::physics::query_transform(const shared_view<data> d, const id entity_id
 	};
 }
 
+auto gse::physics::sim_transform(const transform_component& tc, const motion_component* mc, const interpolation_state& interpolation) -> transform_component {
+	if (!mc || interpolation.readback_age_steps <= 0 || !is_dynamic(*mc)) {
+		return tc;
+	}
+
+	const auto age = system_clock::fixed_dt() * static_cast<float>(interpolation.readback_age_steps);
+	return interpolated_transform(tc, mc, vec3<displacement>{}, -age);
+}
+
+auto gse::physics::render_lag(const interpolation_state& interpolation) -> time_t<float, seconds> {
+	if (!interpolation.advancing) {
+		return {};
+	}
+	return system_clock::fixed_lag();
+}
+
+auto gse::physics::render_transform(const transform_component& tc, const motion_component* mc, const interpolation_state& interpolation) -> transform_component {
+	return interpolated_transform(sim_transform(tc, mc, interpolation), mc, vec3<displacement>{}, render_lag(interpolation));
+}
+
 auto gse::physics::is_airborne(const shared_view<data> d, const id entity_id) -> bool {
 	const auto it = d.id_to_body_index.find(entity_id);
 	if (it == d.id_to_body_index.end() || it->second >= d.body_airborne.size()) {
@@ -507,14 +527,11 @@ auto gse::physics::build_joint_constraints(const std::span<joint_definition> def
 	}
 }
 
-auto gse::physics::build_motor_constraints(read<motor_component>& motor, write<motion_component>& motion, const std::flat_map<id, std::uint32_t>& id_to_body_index, const std::span<const std::uint8_t> body_airborne, const std::span<vbd::body_state> bodies, std::vector<vbd::velocity_motor_constraint>& out) -> void {
+auto gse::physics::build_motor_constraints(const std::span<const motor_input> motors, write<motion_component>& motion, const std::flat_map<id, std::uint32_t>& id_to_body_index, const std::span<const std::uint8_t> body_airborne, const std::span<vbd::body_state> bodies, std::vector<vbd::velocity_motor_constraint>& out) -> void {
 	out.clear();
-	out.reserve(motor.size());
+	out.reserve(motors.size());
 
-	const auto motor_ids = motor.owner_ids();
-	for (std::size_t i = 0; i < motor.size(); ++i) {
-		const auto eid = motor_ids[i];
-		const auto& mt = motor[i];
+	for (const auto& [eid, mt] : motors) {
 		const auto* mc = motion.find(eid);
 		if (!mc || !is_dynamic(*mc)) {
 			continue;
@@ -987,7 +1004,7 @@ auto gse::physics::prepare(context& ctx, data& d, const channel_write<interpolat
 		if (d.gpu_async_dispatch && gpu_solver_active(d)) {
 			effective_steps = d.gpu_solver.latest_dispatch_complete() ? 1 : 0;
 		}
-		d.sim_steps_this_frame = effective_steps;
+		d.interpolation.steps = effective_steps;
 		if (effective_steps > 0) {
 			apply_kinematic_targets(
 				targets,
@@ -999,7 +1016,7 @@ auto gse::physics::prepare(context& ctx, data& d, const channel_write<interpolat
 		}
 	}
 	else {
-		d.sim_steps_this_frame = 0;
+		d.interpolation.steps = 0;
 	}
 
 	const auto spec_owners = specs.owner_ids();
@@ -1049,13 +1066,10 @@ auto gse::physics::prepare(context& ctx, data& d, const channel_write<interpolat
 		d.gpu_joints_dirty = true;
 	}
 
-	d.gpu_readback_age_steps = gpu_solver_active(d) ? d.gpu_solver.readback_age_steps() : 0;
+	d.interpolation.advancing = d.update_phys;
+	d.interpolation.readback_age_steps = gpu_solver_active(d) ? d.gpu_solver.readback_age_steps() : 0;
 
-	interp_out.push<interpolation_state>({
-		.advancing = d.update_phys,
-		.steps = d.sim_steps_this_frame,
-		.readback_age_steps = d.gpu_readback_age_steps
-	});
+	interp_out.push<interpolation_state>(d.interpolation);
 
 	if (d.update_phys) {
 		d.vbd_solver.set_color_grain(static_cast<std::size_t>(std::max(d.color_chunk_grain, 1)));
@@ -1067,13 +1081,15 @@ auto gse::physics::prepare(context& ctx, data& d, const channel_write<interpolat
 }
 
 auto gse::physics::ensure_results(write<collision_component> collision, structural<collision_result_component> results) -> async::task<> {
-	for (const auto owner : collision.drain(component_event::added)) {
-		results.add(owner);
+	for (const auto owner : collision.owner_ids()) {
+		if (!results.contains(owner)) {
+			results.add(owner);
+		}
 	}
 	co_return;
 }
 
-auto gse::physics::integrate(context& ctx, data& d, const channel_read<impulse_request, reset_physics_request> requests_in, const channel_write<gpu_solver_frame_info, vbd::solver_upload> solver_out, write<transform_component> transform, write<motion_component> motion, read<motor_component> motor, write<collision_component> collision, write<collision_result_component> results, write<hull_definition> hull_definitions) -> async::task<> {
+auto gse::physics::integrate(context& ctx, data& d, const channel_read<impulse_request, reset_physics_request, rollback_request, rollback_history_request> requests_in, const channel_write<gpu_solver_frame_info, vbd::solver_upload> solver_out, write<transform_component> transform, write<motion_component> motion, read<motor_component> motor, write<collision_component> collision, write<collision_result_component> results, write<hull_definition> hull_definitions) -> async::task<> {
 	{
 		const auto definition_owners = hull_definitions.owner_ids();
 		for (std::size_t i = 0; i < hull_definitions.size(); ++i) {
@@ -1110,6 +1126,11 @@ auto gse::physics::integrate(context& ctx, data& d, const channel_read<impulse_r
 
 	const auto impulses = requests_in.of<impulse_request>();
 	const bool reset = !requests_in.of<reset_physics_request>().empty();
+	const auto rollbacks = requests_in.of<rollback_request>();
+	for (const auto& req : requests_in.of<rollback_history_request>()) {
+		d.rollback_history_floor = std::max(req.steps, 0);
+	}
+	const auto frame_inputs = gather_step_inputs(motor, transform, motion, impulses);
 
 	if (d.use_gpu_solver && !d.gpu_solver.buffers_created() && !d.gpu_unavailable_reported) {
 		d.gpu_unavailable_reported = true;
@@ -1130,10 +1151,10 @@ auto gse::physics::integrate(context& ctx, data& d, const channel_read<impulse_r
 			d,
 			transform,
 			motion,
-			motor,
 			collision,
 			results,
-			impulses,
+			frame_inputs,
+			rollbacks,
 			const_update_time,
 			solver_out,
 			reset
@@ -1141,13 +1162,22 @@ auto gse::physics::integrate(context& ctx, data& d, const channel_read<impulse_r
 	}
 	else {
 		trace::scope_guard sg{ trace_id<"physics::tick_cpu">() };
-		update_vbd(steps, d, transform, motion, motor, collision, results, impulses);
+		for (const auto& req : rollbacks) {
+			rollback(d, req, transform, motion, collision, results);
+		}
+		std::vector<step_inputs> per_step(static_cast<std::size_t>(std::max(steps, 0)), frame_inputs);
+		for (std::size_t s = 1; s < per_step.size(); ++s) {
+			per_step[s].impulses.clear();
+			per_step[s].kinematics.clear();
+		}
+		update_vbd(steps, d, transform, motion, collision, results, per_step);
+		d.observed_step = d.step_index;
 	}
 
 	co_return;
 }
 
-auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_component>& transform, write<motion_component>& motion, read<motor_component>& motor, write<collision_component>& collision, write<collision_result_component>& results, std::span<const impulse_request> impulses, const time_t<float, seconds> dt, const channel_write<gpu_solver_frame_info, vbd::solver_upload> channels, const bool reset) -> void {
+auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_component>& transform, write<motion_component>& motion, write<collision_component>& collision, write<collision_result_component>& results, const step_inputs& inputs, const std::span<const rollback_request> rollbacks, const time_t<float, seconds> dt, const channel_write<gpu_solver_frame_info, vbd::solver_upload> channels, const bool reset) -> void {
 	if (reset) {
 		d.sleep_counters.clear();
 		d.contact_cache.clear();
@@ -1158,6 +1188,16 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 	if (!reset) {
 		trace::scope_guard sg{ trace_id<"vbd_gpu::readback">() };
 		const auto solved = d.gpu_solver.read_body_states();
+
+		step_snapshot* observed = nullptr;
+		if (const auto tick = d.gpu_solver.readback_tick(); tick && !d.rollback_ring.empty()) {
+			auto& entry = d.rollback_ring[*tick % d.rollback_ring.size()];
+			if (entry.step == *tick) {
+				observed = &entry;
+				observed->bodies.clear();
+			}
+			d.observed_step = *tick;
+		}
 
 		if (!solved.empty()) {
 			const auto rb_motion_ids = motion.owner_ids();
@@ -1194,6 +1234,13 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 				d.sleep_counters[eid] = bs.sleep_counter;
 				if (i < d.body_sleeping.size()) {
 					d.body_sleeping[i] = bs.sleeping() ? 1 : 0;
+				}
+				if (observed) {
+					observed->bodies.push_back({
+						.owner = eid,
+						.transform = *tc,
+						.motion = mc,
+					});
 				}
 			}
 		}
@@ -1272,11 +1319,64 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 
 	int dispatch_steps = steps;
 	if (d.gpu_async_dispatch && !reset && steps > 0) {
-		dispatch_steps = d.sim_steps_this_frame;
+		dispatch_steps = d.interpolation.steps;
 	}
 
-	if (dispatch_steps <= 0) {
-		d.gpu_pending_impulses.insert(d.gpu_pending_impulses.end(), impulses.begin(), impulses.end());
+	std::optional<std::uint64_t> restore_tick;
+	int replay_ticks = 0;
+	const auto ring_history = static_cast<std::uint64_t>(d.gpu_solver.ring_history());
+	const auto history = history_steps(d);
+	if (history > 0 && d.rollback_ring.size() != history) {
+		d.rollback_ring.assign(history, {});
+	}
+	for (const auto& req : rollbacks) {
+		if (req.steps == 0 || ring_history == 0 || history == 0 || req.steps >= ring_history || req.steps >= history || req.steps > d.step_index) {
+			log::println(
+				log::level::warning,
+				log::category::physics,
+				"gpu rollback of {} step(s) refused: ring holds {} tick(s) and {} have been simulated",
+				req.steps,
+				ring_history,
+				d.step_index
+			);
+			continue;
+		}
+		const auto target = d.step_index - req.steps;
+		bool inputs_known = true;
+		for (std::uint64_t s = target + 1; s <= d.step_index; ++s) {
+			if (d.rollback_ring[s % history].step != s) {
+				inputs_known = false;
+				break;
+			}
+		}
+		if (!inputs_known) {
+			log::println(log::level::warning, log::category::physics, "gpu rollback to tick {} refused: the recorded inputs for the replay window are incomplete", target);
+			continue;
+		}
+		restore_tick = target;
+		replay_ticks = static_cast<int>(req.steps);
+		for (const auto& body : req.body_overrides) {
+			if (body.step != target) {
+				continue;
+			}
+			if (auto* tc = transform.find(body.owner)) {
+				*tc = body.transform;
+			}
+			if (auto* mc = motion.find(body.owner)) {
+				*mc = body.motion;
+				mc->reset_pending = 1;
+				d.sleep_counters[body.owner] = 0;
+				const auto index = static_cast<std::size_t>(mc - motion.data());
+				if (index < d.body_sleeping.size()) {
+					d.body_sleeping[index] = 0;
+				}
+			}
+		}
+		log::println(log::category::physics, "gpu rollback: restoring tick {} and replaying {} tick(s) with this frame's {} step(s)", *restore_tick, replay_ticks, dispatch_steps);
+	}
+
+	if (dispatch_steps <= 0 && replay_ticks == 0) {
+		d.gpu_pending_impulses.insert(d.gpu_pending_impulses.end(), inputs.impulses.begin(), inputs.impulses.end());
 		if (d.gpu_solver.body_count() > 0) {
 			channels.push<gpu_solver_frame_info>(gpu_solver_frame_info_of(d));
 		}
@@ -1284,11 +1384,11 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 	}
 
 	std::vector<impulse_request> merged_impulses;
-	std::span<const impulse_request> step_impulses = impulses;
+	std::span<const impulse_request> step_impulses = inputs.impulses;
 	if (!d.gpu_pending_impulses.empty()) {
-		merged_impulses.reserve(d.gpu_pending_impulses.size() + impulses.size());
+		merged_impulses.reserve(d.gpu_pending_impulses.size() + inputs.impulses.size());
 		merged_impulses.insert(merged_impulses.end(), d.gpu_pending_impulses.begin(), d.gpu_pending_impulses.end());
-		merged_impulses.insert(merged_impulses.end(), impulses.begin(), impulses.end());
+		merged_impulses.insert(merged_impulses.end(), inputs.impulses.begin(), inputs.impulses.end());
 		d.gpu_pending_impulses.clear();
 		step_impulses = std::span<const impulse_request>(merged_impulses.data(), merged_impulses.size());
 	}
@@ -1409,56 +1509,108 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 		}
 	}
 
+	const int total_ticks = std::max(dispatch_steps, 0) + replay_ticks;
+	const std::uint64_t first_tick = restore_tick ? *restore_tick : d.step_index;
+
+	std::vector<step_inputs> per_tick;
+	per_tick.reserve(static_cast<std::size_t>(total_ticks));
+	for (int t = 0; t < total_ticks; ++t) {
+		const std::uint64_t tick = first_tick + static_cast<std::uint64_t>(t) + 1;
+		if (t < replay_ticks) {
+			per_tick.push_back(d.rollback_ring[tick % history].inputs);
+			continue;
+		}
+		step_inputs frame = inputs;
+		if (t == replay_ticks) {
+			frame.impulses.assign(step_impulses.begin(), step_impulses.end());
+		}
+		else {
+			frame.impulses.clear();
+			frame.kinematics.clear();
+		}
+		per_tick.push_back(std::move(frame));
+		if (history > 0) {
+			auto& entry = d.rollback_ring[tick % history];
+			entry.step = tick;
+			entry.inputs = per_tick.back();
+		}
+	}
+	if (dispatch_steps <= 0) {
+		d.gpu_pending_impulses.assign(step_impulses.begin(), step_impulses.end());
+	}
+
 	std::vector<vbd::impulse_constraint> gpu_impulses;
+	std::vector<std::uint32_t> impulse_counts(per_tick.size(), 0u);
 	{
 		trace::scope_guard sg{ trace_id<"vbd_gpu::build_impulses">() };
-		assert(
-			step_impulses.size() <= vbd::limits.max_impulses,
-			"impulse count {} exceeds vbd::limits.max_impulses = {}",
-			step_impulses.size(),
-			vbd::limits.max_impulses
-		);
-		gpu_impulses.reserve(step_impulses.size());
-		for (const auto& req : step_impulses) {
-			const auto it = d.id_to_body_index.find(req.target);
-			if (it == d.id_to_body_index.end()) {
-				continue;
-			}
-			const auto* mc = motion.find(req.target);
-			if (!mc || !is_dynamic(*mc)) {
-				continue;
-			}
-			gpu_impulses.push_back(
-				vbd::impulse_constraint{
-					.body_index = it->second,
-					.delta_velocity = req.impulse / mass_of(*mc),
+		for (std::size_t t = 0; t < per_tick.size(); ++t) {
+			for (const auto& req : per_tick[t].impulses) {
+				const auto it = d.id_to_body_index.find(req.target);
+				if (it == d.id_to_body_index.end()) {
+					continue;
 				}
-			);
+				const auto* mc = motion.find(req.target);
+				if (!mc || !is_dynamic(*mc)) {
+					continue;
+				}
+				gpu_impulses.push_back(
+					vbd::impulse_constraint{
+						.body_index = it->second,
+						.delta_velocity = req.impulse / mass_of(*mc),
+					}
+				);
+				++impulse_counts[t];
+			}
 		}
 	}
 
 	std::vector<vbd::velocity_motor_constraint> motors;
+	std::uint32_t motors_per_tick = 0;
 	{
 		trace::scope_guard sg{ trace_id<"vbd_gpu::build_motors">() };
+		std::vector<vbd::velocity_motor_constraint> tick_motors;
+		bool uniform = true;
+		for (std::size_t t = 0; t < per_tick.size(); ++t) {
+			build_motor_constraints(per_tick[t].motors, motion, d.id_to_body_index, d.body_airborne, bodies, tick_motors);
+			if (t == 0) {
+				motors_per_tick = static_cast<std::uint32_t>(tick_motors.size());
+			}
+			else if (!std::ranges::equal(tick_motors, std::span(motors).first(motors_per_tick), {}, &vbd::velocity_motor_constraint::body_index, &vbd::velocity_motor_constraint::body_index)) {
+				uniform = false;
+				break;
+			}
+			motors.insert(motors.end(), tick_motors.begin(), tick_motors.end());
+		}
+		if (!uniform) {
+			log::println(log::level::warning, log::category::physics, "gpu replay: the motor set changed inside the replay window; every tick uses this frame's motors");
+			build_motor_constraints(inputs.motors, motion, d.id_to_body_index, d.body_airborne, bodies, tick_motors);
+			motors_per_tick = static_cast<std::uint32_t>(tick_motors.size());
+			motors.clear();
+			for (std::size_t t = 0; t < per_tick.size(); ++t) {
+				motors.insert(motors.end(), tick_motors.begin(), tick_motors.end());
+			}
+		}
 		assert(
-			motor.size() <= vbd::limits.max_motors,
-			"motor count {} exceeds vbd::limits.max_motors = {}",
-			motor.size(),
+			motors.size() <= vbd::limits.max_motors,
+			"per-tick motor count {} exceeds vbd::limits.max_motors = {}",
+			motors.size(),
 			vbd::limits.max_motors
 		);
-		build_motor_constraints(motor, motion, d.id_to_body_index, d.body_airborne, bodies, motors);
 
-		const auto motor_ids = motor.owner_ids();
-		for (std::size_t i = 0; i < motor.size(); ++i) {
-			const auto& mt = motor[i];
+		const std::size_t frame_tick = static_cast<std::size_t>(replay_ticks);
+		std::size_t wake_at = 0;
+		for (std::size_t t = 0; t <= frame_tick && t < impulse_counts.size(); ++t) {
+			wake_at += impulse_counts[t];
+		}
+		for (const auto& [owner, mt] : inputs.motors) {
 			if (magnitude(mt.velocity_drive_target) <= meters_per_second(.01f)) {
 				continue;
 			}
-			const auto* mc = motion.find(motor_ids[i]);
+			const auto* mc = motion.find(owner);
 			if (!mc || !is_dynamic(*mc)) {
 				continue;
 			}
-			const auto it = d.id_to_body_index.find(motor_ids[i]);
+			const auto it = d.id_to_body_index.find(owner);
 			if (it == d.id_to_body_index.end()) {
 				continue;
 			}
@@ -1466,13 +1618,21 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 			if (mt.requires_ground_contact && idx < d.body_airborne.size() && d.body_airborne[idx] != 0) {
 				continue;
 			}
-			if (idx < d.body_sleeping.size() && d.body_sleeping[idx] != 0) {
-				gpu_impulses.push_back({
+			if (idx < d.body_sleeping.size() && d.body_sleeping[idx] != 0 && frame_tick < impulse_counts.size()) {
+				gpu_impulses.insert(gpu_impulses.begin() + static_cast<std::ptrdiff_t>(wake_at), {
 					.body_index = idx,
 					.delta_velocity = {},
 				});
+				++impulse_counts[frame_tick];
+				++wake_at;
 			}
 		}
+		assert(
+			gpu_impulses.size() <= vbd::limits.max_impulses,
+			"impulse count {} exceeds vbd::limits.max_impulses = {}",
+			gpu_impulses.size(),
+			vbd::limits.max_impulses
+		);
 	}
 
 	std::vector<vbd::joint_constraint> gpu_joints;
@@ -1496,32 +1656,74 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 		d.gpu_uploaded_body_count = static_cast<std::uint32_t>(bodies.size());
 		d.gpu_uploaded_joint_count = static_cast<std::uint32_t>(gpu_joints.size());
 
+		d.step_index = first_tick + static_cast<std::uint64_t>(total_ticks);
+
 		channels.push<vbd::solver_upload>({
 			.bodies = std::move(bodies),
 			.motors = std::move(motors),
 			.joints = std::move(gpu_joints),
 			.impulses = std::move(gpu_impulses),
 			.solver_cfg = d.vbd_solver.config(),
-			.dt = dt * static_cast<float>(dispatch_steps),
-			.steps = dispatch_steps * std::max(d.physics_substeps, 1),
-			.ticks = dispatch_steps,
+			.dt = dt * static_cast<float>(total_ticks),
+			.steps = total_ticks * std::max(d.physics_substeps, 1),
+			.ticks = total_ticks,
 			.refresh_joints = refresh_joints || reset,
 			.force_reseed = reset,
+			.first_tick = first_tick,
+			.restore_tick = restore_tick,
+			.motors_per_tick = motors_per_tick,
+			.impulse_counts = std::move(impulse_counts),
 		});
 	}
 }
 
-auto gse::physics::update_vbd(const int steps, data& d, write<transform_component>& transform, write<motion_component>& motion, read<motor_component>& motor, write<collision_component>& collision, write<collision_result_component>& results, std::span<const impulse_request> impulses) -> void {
-	trace::scope_guard sg_update{ trace_id<"vbd_cpu::update">() };
+auto gse::physics::gather_step_inputs(read<motor_component>& motor, write<transform_component>& transform, write<motion_component>& motion, const std::span<const impulse_request> impulses) -> step_inputs {
+	step_inputs inputs;
 
-	const auto const_update_time = system_clock::constant_update_time();
-	const int substeps = std::max(d.physics_substeps, 1);
-	const auto sub_dt = const_update_time / static_cast<float>(substeps);
+	const auto motor_ids = motor.owner_ids();
+	inputs.motors.reserve(motor.size());
+	for (std::size_t i = 0; i < motor.size(); ++i) {
+		inputs.motors.push_back({
+			.owner = motor_ids[i],
+			.motor = motor[i],
+		});
+	}
 
-	d.body_airborne.resize(motion.size(), 1);
-	d.body_sleeping.resize(motion.size(), 0);
+	const auto motion_ids = motion.owner_ids();
+	for (std::size_t i = 0; i < motion.size(); ++i) {
+		const auto& mc = motion[i];
+		if (!is_kinematic(mc)) {
+			continue;
+		}
+		const auto* tc = transform.find(motion_ids[i]);
+		if (!tc) {
+			continue;
+		}
+		inputs.kinematics.push_back({
+			.owner = motion_ids[i],
+			.start = *tc,
+			.velocity = mc.current_velocity,
+			.angular_velocity = mc.angular_velocity,
+		});
+	}
 
-	for (const auto& req : impulses) {
+	inputs.impulses.assign(impulses.begin(), impulses.end());
+	return inputs;
+}
+
+auto gse::physics::apply_step_inputs(const step_inputs& inputs, data& d, write<transform_component>& transform, write<motion_component>& motion) -> void {
+	for (const auto& kinematic : inputs.kinematics) {
+		auto* mc = motion.find(kinematic.owner);
+		auto* tc = transform.find(kinematic.owner);
+		if (!mc || !tc || !is_kinematic(*mc)) {
+			continue;
+		}
+		*tc = kinematic.start;
+		mc->current_velocity = kinematic.velocity;
+		mc->angular_velocity = kinematic.angular_velocity;
+	}
+
+	for (const auto& req : inputs.impulses) {
 		auto* mc = motion.find(req.target);
 		if (!mc || !is_dynamic(*mc)) {
 			continue;
@@ -1533,27 +1735,225 @@ auto gse::physics::update_vbd(const int steps, data& d, write<transform_componen
 			d.body_sleeping[idx] = 0;
 		}
 	}
+}
 
-	{
-		bool all_asleep = true;
-		for (const motor_component& mt : motor) {
-			if (magnitude(mt.velocity_drive_target) > meters_per_second(.01f)) {
-				all_asleep = false;
-				break;
-			}
+auto gse::physics::step_all_asleep(const step_inputs& inputs, const data& d, write<motion_component>& motion) -> bool {
+	for (const auto& input : inputs.motors) {
+		if (magnitude(input.motor.velocity_drive_target) > meters_per_second(.01f)) {
+			return false;
 		}
-		const auto guard_motion_ids = motion.owner_ids();
-		for (std::size_t i = 0; all_asleep && i < motion.size(); ++i) {
-			if (!is_dynamic(motion[i])) {
-				continue;
-			}
-			const auto sc_it = d.sleep_counters.find(guard_motion_ids[i]);
-			all_asleep = sc_it != d.sleep_counters.end() && sc_it->second >= vbd::limits.sleep_threshold;
+	}
+
+	const auto motion_ids = motion.owner_ids();
+	for (std::size_t i = 0; i < motion.size(); ++i) {
+		if (!is_dynamic(motion[i])) {
+			continue;
 		}
-		if (all_asleep) {
-			trace::scope_guard sg_skip{ trace_id<"vbd_cpu::asleep_skip">() };
+		const auto it = d.sleep_counters.find(motion_ids[i]);
+		if (it == d.sleep_counters.end() || it->second < vbd::limits.sleep_threshold) {
+			return false;
+		}
+	}
+	return true;
+}
+
+auto gse::physics::history_steps(const data& d) -> std::size_t {
+	return static_cast<std::size_t>(std::max({ d.rollback_history_steps, d.rollback_history_floor, 0 }));
+}
+
+auto gse::physics::snapshot_step(data& d, write<transform_component>& transform, write<motion_component>& motion, const step_inputs& inputs) -> void {
+	const auto history = history_steps(d);
+	if (history == 0) {
+		if (!d.rollback_ring.empty()) {
+			d.rollback_ring.clear();
+		}
+		return;
+	}
+
+	trace::scope_guard sg{ trace_id<"physics::snapshot_step">() };
+
+	if (d.rollback_ring.size() != history) {
+		d.rollback_ring.assign(history, {});
+	}
+
+	auto& snap = d.rollback_ring[d.step_index % history];
+	snap.step = d.step_index;
+
+	const auto owners = motion.owner_ids();
+	snap.bodies.clear();
+	snap.bodies.reserve(motion.size());
+	for (std::size_t i = 0; i < motion.size(); ++i) {
+		if (const auto* tc = transform.find(owners[i])) {
+			snap.bodies.push_back({
+				.owner = owners[i],
+				.transform = *tc,
+				.motion = motion[i],
+			});
+		}
+	}
+
+	const auto previous = d.vbd_solver.previous_velocities();
+	const auto weights = d.vbd_solver.accel_weights();
+	const auto carried_count = std::min({ previous.size(), weights.size(), owners.size() });
+	snap.carried.clear();
+	snap.carried.reserve(carried_count);
+	for (std::size_t i = 0; i < carried_count; ++i) {
+		snap.carried.push_back({
+			.owner = owners[i],
+			.previous_velocity = previous[i],
+			.accel_weight = weights[i],
+		});
+	}
+
+	snap.sleep_counters = d.sleep_counters;
+	snap.joints = d.joints;
+	snap.contact_cache = d.contact_cache;
+	snap.inputs = inputs;
+}
+
+auto gse::physics::restore_step(data& d, const step_snapshot& snap, write<transform_component>& transform, write<motion_component>& motion) -> void {
+	trace::scope_guard sg{ trace_id<"physics::restore_step">() };
+
+	for (const auto& body : snap.bodies) {
+		if (auto* tc = transform.find(body.owner)) {
+			*tc = body.transform;
+		}
+		if (auto* mc = motion.find(body.owner)) {
+			*mc = body.motion;
+		}
+	}
+
+	d.sleep_counters = snap.sleep_counters;
+	d.joints = snap.joints;
+	d.contact_cache = snap.contact_cache;
+
+	std::vector<vec3<velocity>> previous(motion.size());
+	std::vector<float> weights(motion.size(), 0.f);
+	for (const auto& carried : snap.carried) {
+		const auto* mc = motion.find(carried.owner);
+		if (!mc) {
+			continue;
+		}
+		const auto index = static_cast<std::size_t>(mc - motion.data());
+		previous[index] = carried.previous_velocity;
+		weights[index] = carried.accel_weight;
+	}
+	d.vbd_solver.seed_carried(previous, weights);
+
+	d.step_index = snap.step;
+}
+
+auto gse::physics::rollback(data& d, const rollback_request& request, write<transform_component>& transform, write<motion_component>& motion, write<collision_component>& collision, write<collision_result_component>& results) -> void {
+	const auto steps = request.steps;
+	const auto history = static_cast<std::uint64_t>(history_steps(d));
+	if (steps == 0 || history == 0 || steps >= history || steps > d.step_index || d.rollback_ring.size() != history) {
+		log::println(
+			log::level::warning,
+			log::category::physics,
+			"rollback of {} step(s) refused: history holds {} step(s) and {} have been simulated",
+			steps,
+			history,
+			d.step_index
+		);
+		return;
+	}
+
+	const auto target = d.step_index - steps;
+	const auto& snap = d.rollback_ring[target % history];
+	if (snap.step != target) {
+		log::println(
+			log::level::warning,
+			log::category::physics,
+			"rollback to step {} refused: the ring slot holds step {}",
+			target,
+			snap.step
+		);
+		return;
+	}
+
+	for (const auto& override : request.overrides) {
+		if (override.step <= target || override.step > d.step_index) {
+			continue;
+		}
+		auto& entry = d.rollback_ring[override.step % history];
+		if (entry.step != override.step) {
+			continue;
+		}
+		if (const auto it = std::ranges::find(entry.inputs.motors, override.owner, &motor_input::owner); it != entry.inputs.motors.end()) {
+			it->motor = override.motor;
+		}
+		else {
+			entry.inputs.motors.push_back({
+				.owner = override.owner,
+				.motor = override.motor,
+			});
+		}
+	}
+
+	std::vector<step_inputs> replay;
+	replay.reserve(steps);
+	for (std::uint64_t s = target + 1; s <= d.step_index; ++s) {
+		const auto& entry = d.rollback_ring[s % history];
+		if (entry.step != s) {
+			log::println(
+				log::level::warning,
+				log::category::physics,
+				"rollback refused: the ring slot for step {} holds step {}",
+				s,
+				entry.step
+			);
 			return;
 		}
+		replay.push_back(entry.inputs);
+	}
+
+	const auto apply_body_overrides = [&](const std::uint64_t at) {
+		for (const auto& body : request.body_overrides) {
+			if (body.step != at) {
+				continue;
+			}
+			if (auto* tc = transform.find(body.owner)) {
+				*tc = body.transform;
+			}
+			if (auto* mc = motion.find(body.owner)) {
+				*mc = body.motion;
+				d.sleep_counters[body.owner] = 0;
+				const auto index = static_cast<std::size_t>(mc - motion.data());
+				if (index < d.body_sleeping.size()) {
+					d.body_sleeping[index] = 0;
+				}
+			}
+		}
+	};
+
+	trace::scope_guard sg{ trace_id<"physics::rollback">() };
+	restore_step(d, snap, transform, motion);
+	apply_body_overrides(target);
+	for (std::size_t i = 0; i < replay.size(); ++i) {
+		update_vbd(1, d, transform, motion, collision, results, std::span<const step_inputs>(replay.data() + i, 1));
+		apply_body_overrides(d.step_index);
+	}
+}
+
+auto gse::physics::update_vbd(const int steps, data& d, write<transform_component>& transform, write<motion_component>& motion, write<collision_component>& collision, write<collision_result_component>& results, const std::span<const step_inputs> per_step) -> void {
+	trace::scope_guard sg_update{ trace_id<"vbd_cpu::update">() };
+
+	const auto const_update_time = system_clock::constant_update_time();
+	const int substeps = std::max(d.physics_substeps, 1);
+	const auto sub_dt = const_update_time / static_cast<float>(substeps);
+
+	d.body_airborne.resize(motion.size(), 1);
+	d.body_sleeping.resize(motion.size(), 0);
+
+	if (per_step.size() < static_cast<std::size_t>(std::max(steps, 0))) {
+		log::println(
+			log::level::error,
+			log::category::physics,
+			"update_vbd asked for {} step(s) but was given inputs for {}; stepping none",
+			steps,
+			per_step.size()
+		);
+		return;
 	}
 
 	std::flat_set<std::pair<std::uint64_t, std::uint64_t>> jointed_pairs;
@@ -1599,6 +1999,18 @@ auto gse::physics::update_vbd(const int steps, data& d, write<transform_componen
 	for (int step = 0; step < total_substeps; ++step) {
 		trace::scope_guard sg_step{ trace_id<"vbd_cpu::substep">() };
 
+		const auto& in = per_step[static_cast<std::size_t>(step / substeps)];
+		if (step % substeps == 0) {
+			apply_step_inputs(in, d, transform, motion);
+			if (step_all_asleep(in, d, motion)) {
+				trace::scope_guard sg_skip{ trace_id<"vbd_cpu::asleep_skip">() };
+				step += substeps - 1;
+				++d.step_index;
+				snapshot_step(d, transform, motion, in);
+				continue;
+			}
+		}
+
 		build_body_states(view, d.sleep_counters, bodies, d.id_to_body_index, has_transform);
 
 		std::ranges::fill(
@@ -1634,7 +2046,7 @@ auto gse::physics::update_vbd(const int steps, data& d, write<transform_componen
 			broad_phase_chunks
 		);
 
-		build_motor_constraints(motor, motion, d.id_to_body_index, d.body_airborne, d.vbd_solver.body_states(), motor_constraints);
+		build_motor_constraints(in.motors, motion, d.id_to_body_index, d.body_airborne, d.vbd_solver.body_states(), motor_constraints);
 		for (const auto& constraint : motor_constraints) {
 			d.vbd_solver.add_motor_constraint(constraint);
 		}
@@ -1710,6 +2122,11 @@ auto gse::physics::update_vbd(const int steps, data& d, write<transform_componen
 			}
 
 		}
+
+		if ((step + 1) % substeps == 0) {
+			++d.step_index;
+			snapshot_step(d, transform, motion, in);
+		}
 	}
 }
 
@@ -1722,6 +2139,8 @@ auto gse::physics::frame(context& ctx, const std::optional<shared_view<gpu::cont
 		trace::scope_guard sg{ trace_id<"physics::frame::upload">() };
 		d.gpu_solver.upload(uploads[0]);
 	}
+
+	d.gpu_solver.ensure_ring(*gpu_s->device, static_cast<std::uint32_t>(history_steps(d)));
 
 	if (d.gpu_solver.pending_dispatch()) {
 		{

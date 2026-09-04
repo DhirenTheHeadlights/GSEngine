@@ -114,7 +114,7 @@ auto gse::physics::origin_from_com(const vec3<position>& com, const quat& orient
 }
 
 auto gse::physics::interpolated_transform(const transform_component& tc, const motion_component* mc, const vec3<displacement>& com_local, const time_t<float, seconds> lag) -> transform_component {
-	if (!mc || lag <= time_t<float, seconds>{}) {
+	if (!mc || lag == time_t<float, seconds>{}) {
 		return tc;
 	}
 

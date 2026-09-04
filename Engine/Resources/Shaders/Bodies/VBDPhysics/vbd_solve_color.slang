@@ -349,7 +349,7 @@ void solve_body(uint bi, bool live_jac) {
 
 
     if (has_motor) {
-        velocity_motor_constraint m = motor_data[motor_idx];
+        velocity_motor_constraint m = motor_data[(pc.substep / max(pc.substeps_per_tick, 1u)) * pc.motor_count + motor_idx];
         float alpha = max(m.compliance, 1e-6);
         float iw = body.mass / pc.h_squared;
         motor_stiffness = iw / alpha;

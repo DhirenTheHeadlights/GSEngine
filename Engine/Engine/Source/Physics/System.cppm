@@ -71,6 +71,69 @@ export namespace gse::physics {
 
 	struct reset_physics_request {};
 
+	struct motor_input {
+		id owner;
+		motor_component motor;
+	};
+
+	struct kinematic_input {
+		id owner;
+		transform_component start;
+		vec3<velocity> velocity;
+		vec3<angular_velocity> angular_velocity;
+	};
+
+	struct step_inputs {
+		std::vector<motor_input> motors;
+		std::vector<kinematic_input> kinematics;
+		std::vector<impulse_request> impulses;
+	};
+
+	struct motor_override {
+		std::uint64_t step = 0;
+		id owner;
+		motor_component motor;
+	};
+
+	struct body_snapshot {
+		id owner;
+		transform_component transform;
+		motion_component motion;
+	};
+
+	struct body_override {
+		std::uint64_t step = 0;
+		id owner;
+		transform_component transform;
+		motion_component motion;
+	};
+
+	struct rollback_request {
+		std::uint32_t steps = 0;
+		std::vector<body_override> body_overrides;
+		std::vector<motor_override> overrides;
+	};
+
+	struct rollback_history_request {
+		int steps = 0;
+	};
+
+	struct carried_body_state {
+		id owner;
+		vec3<velocity> previous_velocity;
+		float accel_weight = 0.f;
+	};
+
+	struct step_snapshot {
+		std::uint64_t step = 0;
+		std::vector<body_snapshot> bodies;
+		std::vector<carried_body_state> carried;
+		std::unordered_map<id, std::uint32_t> sleep_counters;
+		id_mapped_collection<joint_definition> joints;
+		vbd::contact_cache contact_cache;
+		step_inputs inputs;
+	};
+
 	struct transform_snapshot {
 		vec3<position> position;
 		quat orientation;
@@ -88,6 +151,22 @@ export namespace gse::physics {
 		int steps = 0;
 		int readback_age_steps = 0;
 	};
+
+	auto sim_transform(
+		const transform_component& tc,
+		const motion_component* mc,
+		const interpolation_state& interpolation
+	) -> transform_component;
+
+	auto render_lag(
+		const interpolation_state& interpolation
+	) -> time_t<float, seconds>;
+
+	auto render_transform(
+		const transform_component& tc,
+		const motion_component* mc,
+		const interpolation_state& interpolation
+	) -> transform_component;
 
 	struct [[= system_state<"Physics">{}, = settings::category<"Physics">{}, = deferred_system{}]] data {
 		[[= settings::describe<"Step the physics world each frame.">{}]] bool update_phys = true;
@@ -306,7 +385,18 @@ export namespace gse::physics {
 		]]
 		int broad_phase_chunks_per_worker = 8;
 
+		[[
+			= settings::describe<"Fixed steps of physics history kept for rollback. Zero keeps no history; the "
+									  "netcode and the rollback parity scenarios set it.">{},
+			= settings::range<0, 600>{}
+		]]
+		int rollback_history_steps = 0;
+
 		bool gpu_unavailable_reported = false;
+		int rollback_history_floor = 0;
+		[[= shared]] std::uint64_t step_index = 0;
+		[[= shared]] std::uint64_t observed_step = 0;
+		[[= shared]] std::vector<step_snapshot> rollback_ring;
 		id_mapped_collection<joint_definition> joints;
 		[[= shared]] std::vector<convex_hull> hulls;
 
@@ -319,8 +409,7 @@ export namespace gse::physics {
 		[[= shared]] std::flat_map<id, std::uint32_t> id_to_body_index;
 		std::flat_map<id, transform_component> kinematic_step_start;
 		std::vector<impulse_request> gpu_pending_impulses;
-		[[= shared]] int sim_steps_this_frame = 0;
-		[[= shared]] int gpu_readback_age_steps = 0;
+		[[= shared]] interpolation_state interpolation;
 		bool gpu_sweep_fold_bailed = false;
 		bool gpu_solve_fold_prev = false;
 		int gpu_sweep_retry_cooldown = 0;
@@ -411,7 +500,7 @@ export namespace gse::physics {
 	) -> void;
 
 	auto build_motor_constraints(
-		read<motor_component>& motor,
+		std::span<const motor_input> motors,
 		write<motion_component>& motion,
 		const std::flat_map<id, std::uint32_t>& id_to_body_index,
 		std::span<const std::uint8_t> body_airborne,
@@ -449,7 +538,7 @@ export namespace gse::physics {
 	auto integrate(
 		context& ctx,
 		data& d,
-		channel_read<impulse_request, reset_physics_request> requests_in,
+		channel_read<impulse_request, reset_physics_request, rollback_request, rollback_history_request> requests_in,
 		channel_write<gpu_solver_frame_info, vbd::solver_upload> solver_out,
 		write<transform_component> transform,
 		write<motion_component> motion,
@@ -534,15 +623,61 @@ export namespace gse::physics {
 		std::size_t chunks_per_worker
 	) -> void;
 
+	auto gather_step_inputs(
+		read<motor_component>& motor,
+		write<transform_component>& transform,
+		write<motion_component>& motion,
+		std::span<const impulse_request> impulses
+	) -> step_inputs;
+
+	auto apply_step_inputs(
+		const step_inputs& inputs,
+		data& d,
+		write<transform_component>& transform,
+		write<motion_component>& motion
+	) -> void;
+
+	auto step_all_asleep(
+		const step_inputs& inputs,
+		const data& d,
+		write<motion_component>& motion
+	) -> bool;
+
+	[[nodiscard]] auto history_steps(
+		const data& d
+	) -> std::size_t;
+
+	auto snapshot_step(
+		data& d,
+		write<transform_component>& transform,
+		write<motion_component>& motion,
+		const step_inputs& inputs
+	) -> void;
+
+	auto restore_step(
+		data& d,
+		const step_snapshot& snap,
+		write<transform_component>& transform,
+		write<motion_component>& motion
+	) -> void;
+
+	auto rollback(
+		data& d,
+		const rollback_request& request,
+		write<transform_component>& transform,
+		write<motion_component>& motion,
+		write<collision_component>& collision,
+		write<collision_result_component>& results
+	) -> void;
+
 	auto update_vbd(
 		int steps,
 		data& d,
 		write<transform_component>& transform,
 		write<motion_component>& motion,
-		read<motor_component>& motor,
 		write<collision_component>& collision,
 		write<collision_result_component>& results,
-		std::span<const impulse_request> impulses
+		std::span<const step_inputs> per_step
 	) -> void;
 
 	auto update_vbd_gpu(
@@ -550,10 +685,10 @@ export namespace gse::physics {
 		data& d,
 		write<transform_component>& transform,
 		write<motion_component>& motion,
-		read<motor_component>& motor,
 		write<collision_component>& collision,
 		write<collision_result_component>& results,
-		std::span<const impulse_request> impulses,
+		const step_inputs& inputs,
+		std::span<const rollback_request> rollbacks,
 		time_t<float, seconds> dt,
 		channel_write<gpu_solver_frame_info, vbd::solver_upload> channels,
 		bool reset

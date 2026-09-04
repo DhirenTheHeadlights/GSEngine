@@ -50,6 +50,8 @@ export namespace gse::vbd {
 	struct vbd_post_stabilize_stage {};
 	struct vbd_finalize_stage {};
 	struct vbd_state_copy_stage {};
+	struct vbd_ring_copy_stage {};
+	struct vbd_ring_restore_stage {};
 	struct vbd_hash_state_stage {};
 
 	struct solver_diagnostics {
@@ -87,6 +89,10 @@ export namespace gse::vbd {
 		int ticks = 1;
 		bool refresh_joints = false;
 		bool force_reseed = false;
+		std::uint64_t first_tick = 0;
+		std::optional<std::uint64_t> restore_tick;
+		std::uint32_t motors_per_tick = 0;
+		std::vector<std::uint32_t> impulse_counts;
 	};
 
 	class gpu_solver {
@@ -114,6 +120,13 @@ export namespace gse::vbd {
 		) -> void;
 
 		auto commit_upload() -> void;
+
+		auto ensure_ring(
+			gpu::device& device,
+			std::uint32_t history
+		) -> void;
+
+		auto ring_history() const -> std::uint32_t;
 
 		auto set_preserve_warm_starts(
 			bool preserve
@@ -163,12 +176,34 @@ export namespace gse::vbd {
 
 		auto readback_age_steps() const -> int;
 
+		auto readback_tick() const -> std::optional<std::uint64_t>;
+
 		auto latest_dispatch_complete() const -> bool;
 
 	private:
 		struct solve_plan;
+		struct per_frame_data;
+
+		static constexpr std::uint32_t ring_max_history = 64;
+		static constexpr std::uint32_t ring_body_capacity = 4096;
+		static constexpr std::uint32_t ring_contact_capacity = 16384;
 
 		using pass_channel = channel_write<gpu::render_pass_request>;
+
+		auto stage_ring_copy(
+			per_frame_data& f,
+			std::uint64_t tick,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_ring_restore(
+			per_frame_data& f,
+			per_frame_data& other,
+			std::uint64_t tick,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
 
 		auto build_solve_plan(
 			solve_plan& out
@@ -463,6 +498,7 @@ export namespace gse::vbd {
 		std::uint32_t m_ticks = 1;
 		std::uint64_t m_ticks_dispatched = 0;
 		std::array<std::uint64_t, 16> m_generation_ticks{};
+		std::array<std::uint64_t, 16> m_generation_end_tick{};
 		std::uint32_t m_recorded_ring = 0;
 		std::uint64_t m_recorded_frame = 0;
 
@@ -515,5 +551,25 @@ export namespace gse::vbd {
 		std::vector<std::uint32_t> m_upload_static_bodies;
 		std::vector<std::uint8_t> m_jointed_body_mask;
 		bool m_upload_joints_dirty = false;
+
+		struct ring_slot {
+			gpu::buffer bodies;
+			gpu::buffer joints;
+			gpu::buffer contacts;
+			gpu::buffer contact_counts;
+			gpu::buffer contact_offsets;
+			gpu::buffer contact_adjacency;
+			std::uint64_t tick = 0;
+			bool valid = false;
+		};
+
+		std::vector<std::uint32_t> m_impulse_counts;
+		std::vector<std::uint32_t> m_impulse_offsets;
+
+		std::vector<ring_slot> m_ring;
+		std::uint32_t m_ring_history = 0;
+		std::uint64_t m_first_tick = 0;
+		std::optional<std::uint64_t> m_restore_tick;
+		bool m_ring_overflow_reported = false;
 	};
 }

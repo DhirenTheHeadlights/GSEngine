@@ -40,192 +40,101 @@ namespace gse::vbd {
 		std::uint32_t apply_all_body_inputs;
 		std::uint32_t preserve_accel_weight;
 		std::uint32_t sweep_workgroups;
+		std::uint32_t substeps_per_tick;
+		std::uint32_t impulse_offset;
 	};
 
-	struct [[
-		= shaders::binding<0, 0>{},
-		= shaders::ssbo_readwrite
-	]] body_data {
+	struct [[= shaders::ssbo_readwrite]] body_data {
 		using element = body_state;
 	};
-	struct [[
-		= shaders::binding<0, 1>{},
-		= shaders::ssbo_readwrite
-	]] contact_data {
+	struct [[= shaders::ssbo_readwrite]] contact_data {
 		using element = contact_constraint;
 	};
-	struct [[
-		= shaders::binding<0, 2>{},
-		= shaders::ssbo_readonly
-	]] motor_data {
+	struct [[= shaders::ssbo_readonly]] motor_data {
 		using element = velocity_motor_constraint;
 	};
-	struct [[
-		= shaders::binding<0, 3>{},
-		= shaders::ssbo_readwrite
-	]] color_data {
+	struct [[= shaders::ssbo_readwrite]] color_data {
 		using element = std::uint32_t;
 	};
-	struct [[
-		= shaders::binding<0, 4>{},
-		= shaders::ssbo_readwrite
-	]] contact_offsets {
+	struct [[= shaders::ssbo_readwrite]] contact_offsets {
 		using element = std::uint32_t;
 	};
-	struct [[
-		= shaders::binding<0, 5>{},
-		= shaders::ssbo_readwrite
-	]] solve_state {
+	struct [[= shaders::ssbo_readwrite]] solve_state {
 		using element = vec4f;
 	};
-	struct [[
-		= shaders::binding<0, 6>{},
-		= shaders::ssbo_readwrite
-	]] collision_pairs {
+	struct [[= shaders::ssbo_readwrite]] collision_pairs {
 		using element = std::uint32_t;
 	};
-	struct [[
-		= shaders::binding<0, 7>{},
-		= shaders::ssbo_readwrite
-	]] collision_state {
+	struct [[= shaders::ssbo_readwrite]] collision_state {
 		using element = std::uint32_t;
 	};
-	struct [[
-		= shaders::binding<0, 8>{},
-		= shaders::ssbo_readonly
-	]] warm_starts {
+	struct [[= shaders::ssbo_readonly]] warm_starts {
 		using element = contact_constraint;
 	};
-	struct [[
-		= shaders::binding<0, 9>{},
-		= shaders::ssbo_readwrite
-	]] joint_data {
+	struct [[= shaders::ssbo_readwrite]] joint_data {
 		using element = joint_constraint;
 	};
-	struct [[
-		= shaders::binding<0, 10>{},
-		= shaders::ssbo_readwrite
-	]] contact_counts {
+	struct [[= shaders::ssbo_readwrite]] contact_counts {
 		using element = std::uint32_t;
 	};
-	struct [[
-		= shaders::binding<0, 11>{},
-		= shaders::ssbo_readwrite
-	]] contact_adjacency {
+	struct [[= shaders::ssbo_readwrite]] contact_adjacency {
 		using element = std::uint32_t;
 	};
-	struct [[
-		= shaders::binding<0, 12>{},
-		= shaders::ssbo_readwrite
-	]] motor_map {
+	struct [[= shaders::ssbo_readwrite]] motor_map {
 		using element = std::uint32_t;
 	};
-	struct [[
-		= shaders::binding<0, 13>{},
-		= shaders::ssbo_readwrite
-	]] joint_offsets {
+	struct [[= shaders::ssbo_readwrite]] joint_offsets {
 		using element = std::uint32_t;
 	};
-	struct [[
-		= shaders::binding<0, 14>{},
-		= shaders::ssbo_readwrite
-	]] joint_counts {
+	struct [[= shaders::ssbo_readwrite]] joint_counts {
 		using element = std::uint32_t;
 	};
-	struct [[
-		= shaders::binding<0, 15>{},
-		= shaders::ssbo_readwrite
-	]] joint_adjacency {
+	struct [[= shaders::ssbo_readwrite]] joint_adjacency {
 		using element = std::uint32_t;
 	};
-	struct [[
-		= shaders::binding<0, 16>{},
-		= shaders::ssbo_readwrite
-	]] grid_data {
+	struct [[= shaders::ssbo_readwrite]] grid_data {
 		using element = std::uint32_t;
 	};
-	struct [[
-		= shaders::binding<0, 17>{},
-		= shaders::ssbo_readwrite
-	]] indirect_args {
+	struct [[= shaders::ssbo_readwrite]] indirect_args {
 		using element = dispatch_args;
 	};
-	struct [[
-		= shaders::binding<0, 18>{},
-		= shaders::ssbo_readwrite
-	]] frozen_jacobians {
+	struct [[= shaders::ssbo_readwrite]] frozen_jacobians {
 		using element = frozen_jacobian;
 	};
-	struct [[
-		= shaders::binding<0, 19>{},
-		= shaders::ssbo_readwrite
-	]] solve_deltas {
+	struct [[= shaders::ssbo_readwrite]] solve_deltas {
 		using element = vec4f;
 	};
-	struct [[
-		= shaders::binding<0, 20>{},
-		= shaders::ssbo_readwrite
-	]] grounded_bits {
+	struct [[= shaders::ssbo_readwrite]] grounded_bits {
 		using element = std::uint32_t;
 	};
-	struct [[
-		= shaders::binding<0, 21>{},
-		= shaders::ssbo_readonly
-	]] impulse_data {
+	struct [[= shaders::ssbo_readonly]] impulse_data {
 		using element = impulse_constraint;
 	};
-	struct [[
-		= shaders::binding<0, 22>{},
-		= shaders::ssbo_readonly
-	]] solver_config_data {
+	struct [[= shaders::ssbo_readonly]] solver_config_data {
 		using element = solver_config;
 	};
-	struct [[
-		= shaders::binding<0, 23>{},
-		= shaders::ssbo_readonly
-	]] jointed_pairs_data {
+	struct [[= shaders::ssbo_readonly]] jointed_pairs_data {
 		using element = std::uint32_t;
 	};
-	struct [[
-		= shaders::binding<0, 24>{},
-		= shaders::ssbo_readonly
-	]] body_input_data {
+	struct [[= shaders::ssbo_readonly]] body_input_data {
 		using element = body_state;
 	};
-	struct [[
-		= shaders::binding<0, 25>{},
-		= shaders::ssbo_readwrite
-	]] jointless_color_data {
+	struct [[= shaders::ssbo_readwrite]] jointless_color_data {
 		using element = std::uint32_t;
 	};
-	struct [[
-		= shaders::binding<0, 26>{},
-		= shaders::ssbo_readwrite
-	]] jointless_indirect_args {
+	struct [[= shaders::ssbo_readwrite]] jointless_indirect_args {
 		using element = dispatch_args;
 	};
-	struct [[
-		= shaders::binding<0, 27>{},
-		= shaders::ssbo_readonly
-	]] island_data {
+	struct [[= shaders::ssbo_readonly]] island_data {
 		using element = std::uint32_t;
 	};
-	struct [[
-		= shaders::binding<0, 28>{},
-		= shaders::ssbo_readonly
-	]] body_env_data {
+	struct [[= shaders::ssbo_readonly]] body_env_data {
 		using element = std::uint32_t;
 	};
-	struct [[
-		= shaders::binding<0, 29>{},
-		= shaders::ssbo_readonly
-	]] static_bodies_data {
+	struct [[= shaders::ssbo_readonly]] static_bodies_data {
 		using element = std::uint32_t;
 	};
-	struct [[
-		= shaders::binding<0, 30>{},
-		= shaders::ssbo_readwrite
-	]] coloring_scratch {
+	struct [[= shaders::ssbo_readwrite]] coloring_scratch {
 		using element = std::uint32_t;
 	};
 
@@ -836,12 +745,27 @@ auto gse::vbd::gpu_solver::upload(const solver_upload& payload) -> void {
 		   limits.max_joints);
 
 	m_body_count = static_cast<std::uint32_t>(bodies.size());
-	m_motor_count = static_cast<std::uint32_t>(motors.size());
-	m_impulse_count = static_cast<std::uint32_t>(impulses.size());
 	m_steps = static_cast<std::uint32_t>(std::max(payload.steps, 1));
 	m_ticks = static_cast<std::uint32_t>(std::max(payload.ticks, 1));
+	m_motor_count = payload.motors_per_tick > 0 ? payload.motors_per_tick : static_cast<std::uint32_t>(motors.size());
+	m_impulse_count = static_cast<std::uint32_t>(impulses.size());
+	m_impulse_counts.assign(m_ticks, 0u);
+	m_impulse_offsets.assign(m_ticks, 0u);
+	if (payload.impulse_counts.size() == m_ticks) {
+		std::uint32_t offset = 0;
+		for (std::uint32_t t = 0; t < m_ticks; ++t) {
+			m_impulse_counts[t] = payload.impulse_counts[t];
+			m_impulse_offsets[t] = offset;
+			offset += payload.impulse_counts[t];
+		}
+	}
+	else {
+		m_impulse_counts[0] = m_impulse_count;
+	}
 	m_solver_cfg = payload.solver_cfg;
 	m_dt = payload.dt;
+	m_first_tick = payload.first_tick;
+	m_restore_tick = payload.restore_tick;
 
 	if (m_body_count == 0) {
 		m_pending_dispatch = false;
@@ -882,7 +806,7 @@ auto gse::vbd::gpu_solver::upload(const solver_upload& payload) -> void {
 	m_upload_static_bodies[0] = static_count;
 	m_grid_cell_size = max_extent * 4.0f;
 
-	m_upload_motors.assign(motors.begin(), motors.begin() + m_motor_count);
+	m_upload_motors.assign(motors.begin(), motors.end());
 
 	m_upload_motor_map.assign(limits.max_bodies, 0xFFFFFFFFu);
 	for (std::uint32_t mi = 0; mi < m_motor_count; ++mi) {
@@ -1220,6 +1144,14 @@ auto gse::vbd::gpu_solver::readback_age_steps() const -> int {
 	return static_cast<int>(m_ticks_dispatched - m_generation_ticks[served % m_generation_ticks.size()]);
 }
 
+auto gse::vbd::gpu_solver::readback_tick() const -> std::optional<std::uint64_t> {
+	const auto served = retired_generation();
+	if (served == 0 || m_dispatch_generation == 0 || m_dispatch_generation - served >= m_generation_end_tick.size()) {
+		return std::nullopt;
+	}
+	return m_generation_end_tick[served % m_generation_end_tick.size()];
+}
+
 auto gse::vbd::gpu_solver::latest_dispatch_complete() const -> bool {
 	if (m_dispatch_generation == 0 || retired_generation() == m_dispatch_generation) {
 		return true;
@@ -1304,6 +1236,9 @@ struct gse::vbd::gpu_solver::solve_plan {
 	std::uint32_t num_iterations = 0;
 	std::uint32_t adaptive_iterations = 0;
 	std::uint32_t substeps = 0;
+	std::uint32_t substeps_per_tick = 1;
+	std::vector<std::uint32_t> impulse_offsets;
+	std::vector<std::uint32_t> impulse_counts;
 	std::size_t joint_upload_size = 0;
 	float solve_alpha = 0.f;
 	bool apply_all_body_inputs = false;
@@ -1325,12 +1260,15 @@ struct gse::vbd::gpu_solver::solve_plan {
 };
 
 auto gse::vbd::gpu_solver::solve_plan::push_constants(const std::uint32_t color_offset, const std::uint32_t color_count, const std::uint32_t substep, const std::uint32_t iteration, const float current_alpha) const -> vbd_push_constants {
+	const std::uint32_t tick = substep / std::max(substeps_per_tick, 1u);
+	const std::uint32_t tick_impulses = tick < impulse_counts.size() ? impulse_counts[tick] : 0u;
+	const std::uint32_t tick_impulse_offset = tick < impulse_offsets.size() ? impulse_offsets[tick] : 0u;
 	return vbd_push_constants{
 		.body_count = body_count,
 		.contact_count = limits.max_contacts,
 		.motor_count = motor_count,
 		.joint_count = joint_count,
-		.impulse_count = impulse_count,
+		.impulse_count = tick_impulses,
 		.color_offset = color_offset,
 		.color_count = color_count,
 		.substep = substep,
@@ -1342,6 +1280,8 @@ auto gse::vbd::gpu_solver::solve_plan::push_constants(const std::uint32_t color_
 		.apply_all_body_inputs = apply_all_body_inputs ? 1u : 0u,
 		.preserve_accel_weight = (apply_all_body_inputs && preserve_warm_starts) ? 1u : 0u,
 		.sweep_workgroups = sweep_workgroups,
+		.substeps_per_tick = std::max(substeps_per_tick, 1u),
+		.impulse_offset = tick_impulse_offset,
 	};
 }
 
@@ -1431,6 +1371,9 @@ auto gse::vbd::gpu_solver::build_solve_plan(solve_plan& out) -> void {
 	out.num_iterations = m_solver_cfg.iterations;
 	out.adaptive_iterations = std::max(m_solver_cfg.iterations, m_solver_cfg.max_iterations);
 	out.substeps = total;
+	out.substeps_per_tick = std::max(total / std::max(m_ticks, 1u), 1u);
+	out.impulse_offsets = m_impulse_offsets;
+	out.impulse_counts = m_impulse_counts;
 	out.joint_upload_size = m_upload_joints.size() * sizeof(joint_constraint);
 	out.solve_alpha = m_solver_cfg.post_stabilize ? 1.f : m_solver_cfg.alpha;
 	out.apply_all_body_inputs = m_apply_all_body_inputs;
@@ -1735,15 +1678,18 @@ auto gse::vbd::gpu_solver::stage_build_coloring(const solve_plan& p, const std::
 }
 
 auto gse::vbd::gpu_solver::stage_apply_impulses(const solve_plan& p, const std::uint32_t sub, const std::uint32_t chain_index, const pass_channel pass_out) -> async::task<> {
+	const auto constants = p.push_constants(0u, 0u, sub, 0u, 0.f);
+	const std::uint32_t workgroups = (constants.impulse_count + limits.workgroup_size - 1) / limits.workgroup_size;
+
 	auto rec = co_await gpu::pass<vbd_apply_impulses_stage>(pass_out)
 		.on(gpu::queue_type::compute)
 		.in_chain<vbd_solve_chain>(chain_index)
 		.pipeline(m_compute.apply_impulses_pipeline);
 
 	rec.dispatch<apply_impulses_entry>(
-		p.push_constants(0u, 0u, sub, 0u, 0.f),
+		constants,
 		p.bindings,
-		vec3u{ p.impulse_workgroups, 1u, 1u }
+		vec3u{ workgroups, 1u, 1u }
 	);
 }
 
@@ -1986,6 +1932,7 @@ auto gse::vbd::gpu_solver::stage_publish(const solve_plan& p, const std::uint32_
 	++m_dispatch_generation;
 	m_ticks_dispatched += m_ticks;
 	m_generation_ticks[m_dispatch_generation % m_generation_ticks.size()] = m_ticks_dispatched;
+	m_generation_end_tick[m_dispatch_generation % m_generation_end_tick.size()] = m_first_tick + m_ticks;
 	constexpr std::size_t grounded_copy_size = limits.max_grounded_uints * sizeof(std::uint32_t);
 	constexpr std::size_t collision_state_copy_size = (limits.collision_state_header_uints + limits.max_narrow_phase_debug_records * limits.narrow_phase_debug_record_uints) * sizeof(std::uint32_t);
 	constexpr std::size_t adjacency_meta_copy_size = debug_adjacency_meta_count * sizeof(std::uint32_t);
@@ -2027,9 +1974,16 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx, const channel_write<gp
 		stages.push_back(stage_hash_bodies(p, spare_hash_substep, 14u, chain_seq++, pass_out));
 	}
 
+	if (m_restore_tick) {
+		stages.push_back(stage_ring_restore(*p.f, *p.other, *m_restore_tick, chain_seq++, pass_out));
+		m_restore_tick.reset();
+	}
+
 	stages.push_back(stage_apply_body_inputs(p, chain_seq++, pass_out));
 	stages.push_back(stage_render_mirror(p, chain_seq++, pass_out));
 	stages.push_back(stage_clear_state_buffers(p, chain_seq++, pass_out));
+
+	const std::uint32_t substeps_per_tick = std::max(p.substeps / std::max(m_ticks, 1u), 1u);
 
 	for (std::uint32_t sub = 0; sub < p.substeps; ++sub) {
 		stages.push_back(stage_collision_reset(p, sub, chain_seq++, pass_out));
@@ -2083,7 +2037,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx, const channel_write<gp
 			stages.push_back(stage_hash_colors(p, spare_hash_substep, 9u, chain_seq++, pass_out));
 		}
 
-		if (sub == 0 && p.impulse_count > 0) {
+		if (const std::uint32_t tick = sub / substeps_per_tick; sub % substeps_per_tick == 0 && tick < p.impulse_counts.size() && p.impulse_counts[tick] > 0) {
 			stages.push_back(stage_apply_impulses(p, sub, chain_seq++, pass_out));
 		}
 
@@ -2133,13 +2087,17 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx, const channel_write<gp
 		}
 
 		stages.push_back(stage_update_sticking(p, sub, chain_seq++, pass_out));
+
+		if (m_ring_history > 0 && (sub + 1) % substeps_per_tick == 0) {
+			stages.push_back(stage_ring_copy(*p.f, m_first_tick + (sub + 1) / substeps_per_tick, chain_seq++, pass_out));
+		}
 	}
 
 	if (p.diag_hashes) {
 		stages.push_back(stage_hash_bodies(p, spare_hash_substep, 11u, chain_seq++, pass_out));
 	}
 
-	co_await async::when_all(std::move(stages));
+	co_await async::when_all_inline(std::move(stages));
 
 	co_await stage_state_copy(p, chain_seq++, pass_out);
 
