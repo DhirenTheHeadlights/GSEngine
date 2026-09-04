@@ -24,50 +24,29 @@ import gse.log;
 import gse.time;
 
 namespace gse::renderer::bloom {
-	struct [[
-		= shaders::binding<0, 0>{},
-		= shaders::texture2d
-	]] bloom_in {
+	struct [[= shaders::texture2d]] bloom_in {
 		using element = vec4f;
 	};
 
-	struct [[
-		= shaders::binding<0, 1>{},
-		= shaders::storage_image
-	]] bloom_out {
+	struct [[= shaders::storage_image]] bloom_out {
 		using element = vec4f;
 	};
 
-	struct [[
-		= shaders::binding<0, 2>{},
-		= shaders::sampler_state
-	]] bloom_sampler {};
+	struct [[= shaders::sampler_state]] bloom_sampler {};
 
-	struct [[
-		= shaders::binding<0, 0>{},
-		= shaders::texture2d
-	]] bloom_up_in {
+	struct [[= shaders::texture2d]] bloom_up_in {
 		using element = vec4f;
 	};
 
-	struct [[
-		= shaders::binding<0, 1>{},
-		= shaders::texture2d
-	]] bloom_up_dn {
+	struct [[= shaders::texture2d]] bloom_up_dn {
 		using element = vec4f;
 	};
 
-	struct [[
-		= shaders::binding<0, 2>{},
-		= shaders::storage_image
-	]] bloom_up_out {
+	struct [[= shaders::storage_image]] bloom_up_out {
 		using element = vec4f;
 	};
 
-	struct [[
-		= shaders::binding<0, 3>{},
-		= shaders::sampler_state
-	]] bloom_up_sampler {};
+	struct [[= shaders::sampler_state]] bloom_up_sampler {};
 
 	struct [[= shaders::shader_struct]] downsample_push_constants {
 		std::uint32_t use_karis_average;
@@ -236,7 +215,6 @@ auto gse::renderer::bloom::frame(const context& ctx, shared_view<gpu::context::d
 	auto rec = co_await gpu::pass<^^downsample_pass>(pass_out)
 		.pipeline(d.downsample_pipeline)
 		.after<^^forward::frame, ^^atmosphere::sky_raster_pass, ^^physics_debug::frame, ^^sdf_grid::frame, ^^world_text::frame, ^^taa::frame>();
-	rec.sample_image(hdr, gpu::pipeline_stage_flag::compute_shader);
 
 	for (std::uint32_t i = 0; i < count; ++i) {
 		const auto source_slot = (i == 0) ? d.hdr_view.slot() : d.mips_down[i - 1].sampled_slot();
@@ -262,10 +240,6 @@ auto gse::renderer::bloom::frame(const context& ctx, shared_view<gpu::context::d
 	}
 
 	auto up_rec = co_await gpu::pass<^^upsample_pass>(pass_out).pipeline(d.upsample_pipeline).after<^^downsample_pass>();
-
-	for (std::uint32_t i = 0; i < count; ++i) {
-		up_rec.sample_image(d.mips_down[i], gpu::pipeline_stage_flag::compute_shader);
-	}
 
 	for (std::uint32_t i = count - 1; i-- > 0;) {
 		const auto up_source = (i + 1 == count - 1) ? d.mips_down[count - 1].sampled_slot() : d.mips_up[i + 1].sampled_slot();

@@ -14,20 +14,19 @@ import gse.gpu;
 import :pipeline_builder;
 
 namespace gse::gpu {
-	auto to_pipeline_stage(const stage_flag s) -> pipeline_stage_flag {
-		switch (s) {
-			case stage_flag::vertex:
-				return pipeline_stage_flag::vertex_shader;
-			case stage_flag::fragment:
-				return pipeline_stage_flag::fragment_shader;
-			case stage_flag::compute:
-				return pipeline_stage_flag::compute_shader;
-			case stage_flag::task:
-				return pipeline_stage_flag::task_shader;
-			case stage_flag::mesh:
-				return pipeline_stage_flag::mesh_shader;
-		}
-		return pipeline_stage_flag::all_commands;
+	auto assert_push_data_fits(const device& dev, const std::uint32_t push_constant_size, const std::uint32_t binding_args_size, const std::string_view body_path) -> void {
+		const auto limit = dev.max_push_data_size();
+		const auto total = push_constant_size + binding_args_size;
+		assert(
+			limit == 0 || total <= limit,
+			"{}: push constants ({} B) plus bindless descriptor indices ({} B) total {} B, over this device's push-data limit of {} B. "
+			"Move the largest push-constant member into a storage buffer binding, or drop a binding.",
+			body_path,
+			push_constant_size,
+			binding_args_size,
+			total,
+			limit
+		);
 	}
 
 	struct shader_param_decl {
@@ -762,12 +761,12 @@ auto gse::gpu::next_stage_for(const stage_flag current, const std::span<const st
 }
 
 auto gse::gpu::build_compute_program(device& dev, const compute_entry_pod& pod, const std::span<const std::byte> spec_data) -> shader_program {
-	assert(pod.build_family_sets_fn, "bindings missing on compute entry");
 	assert(
 		spec_data.empty() || spec_data.size() == pod.spec_data_size,
 		"spec_data size mismatch with entry's spec_constants<T>"
 	);
-	const auto family_sets = pod.build_family_sets_fn();
+	assert(pod.binding_args_size_fn, "bindings missing on entry");
+	assert_push_data_fits(dev, pod.push_constant_size, pod.binding_args_size_fn(), pod.body_path);
 
 	shader_compile_inputs inputs;
 	inputs.body_path = std::string(pod.body_path);
@@ -816,20 +815,6 @@ auto gse::gpu::build_compute_program(device& dev, const compute_entry_pod& pod, 
 		};
 	}
 
-	std::vector<binding_use> pack_bindings;
-	for (const auto& fs : family_sets) {
-		for (const auto& b : fs.bindings) {
-			pack_bindings.push_back({
-				.set = fs.set_index,
-				.slot = b.desc.binding,
-				.count = b.desc.count,
-				.access = b.desc.access,
-				.type = b.desc.type,
-				.stages = pipeline_stage_flag::compute_shader,
-			});
-		}
-	}
-
 	std::vector<specialization_entry> vk_spec_entries;
 	if (pod.build_spec_entries_fn && !spec_data.empty()) {
 		const auto entries = pod.build_spec_entries_fn();
@@ -858,7 +843,6 @@ auto gse::gpu::build_compute_program(device& dev, const compute_entry_pod& pod, 
 
 	const shader_program_create_info info{
 		.stages = std::span(&stage_info, 1),
-		.bindings = pack_bindings,
 		.push_offset_start = pod.push_constant_size,
 		.push_constant_range = push_range,
 		.state = {},
@@ -872,12 +856,12 @@ auto gse::gpu::build_compute_program(device& dev, const compute_entry_pod& pod, 
 auto gse::gpu::build_graphics_program(device& dev, const graphics_entry_pod& pod, const std::span<const std::byte> spec_data) -> shader_program {
 	assert(!pod.body_path.empty(), "body_path missing on graphics entry");
 	assert(pod.stage_count > 0, "graphics entry has no stages");
-	assert(pod.build_family_sets_fn, "bindings missing on graphics entry");
 	assert(
 		spec_data.empty() || spec_data.size() == pod.spec_data_size,
 		"spec_data size mismatch with entry's spec_constants<T>"
 	);
-	const auto family_sets = pod.build_family_sets_fn();
+	assert(pod.binding_args_size_fn, "bindings missing on entry");
+	assert_push_data_fits(dev, pod.push_constant_size, pod.binding_args_size_fn(), pod.body_path);
 
 	const std::string body_source = pod.body_source.empty() ? load_body_file(pod.body_path) : std::string(pod.body_source);
 	const auto parsed = parse_body_file(body_source);
@@ -903,25 +887,6 @@ auto gse::gpu::build_graphics_program(device& dev, const graphics_entry_pod& pod
 	for (auto& s : program.stages) {
 		if (s.kind == graphics_stage_kind::amplification || s.kind == graphics_stage_kind::mesh) {
 			is_mesh = true;
-		}
-	}
-
-	pipeline_stage_flags all_pipeline_stages{};
-	for (const auto s : all_stages) {
-		all_pipeline_stages |= to_pipeline_stage(s);
-	}
-
-	std::vector<binding_use> pack_bindings;
-	for (const auto& fs : family_sets) {
-		for (const auto& b : fs.bindings) {
-			pack_bindings.push_back({
-				.set = fs.set_index,
-				.slot = b.desc.binding,
-				.count = b.desc.count,
-				.access = b.desc.access,
-				.type = b.desc.type,
-				.stages = all_pipeline_stages,
-			});
 		}
 	}
 
@@ -978,7 +943,6 @@ auto gse::gpu::build_graphics_program(device& dev, const graphics_entry_pod& pod
 
 	const shader_program_create_info info{
 		.stages = stage_infos,
-		.bindings = pack_bindings,
 		.push_offset_start = pod.push_constant_size,
 		.push_constant_range = push_range,
 		.state = std::move(state),

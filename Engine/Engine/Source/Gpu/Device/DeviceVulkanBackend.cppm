@@ -416,9 +416,7 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto bindless_sampler_heap_binding() const -> bindless_heap_binding;
 
-		[[nodiscard]] auto create_sampler(
-			const sampler_desc& desc
-		) -> gpu::handle<sampler>;
+		[[nodiscard]] auto max_push_data_size() const -> std::uint32_t;
 
 		auto collect_garbage() -> void;
 
@@ -821,8 +819,8 @@ auto gse::gpu::vulkan_device_backend::bindless_sampler_heap_binding() const -> b
 	return device_config.bindless_sampler_heap_binding();
 }
 
-auto gse::gpu::vulkan_device_backend::create_sampler(const sampler_desc& desc) -> gpu::handle<sampler> {
-	return device_config.create_sampler(desc);
+auto gse::gpu::vulkan_device_backend::max_push_data_size() const -> std::uint32_t {
+	return static_cast<std::uint32_t>(device_config.descriptor_heap_properties().max_push_data_size);
 }
 
 auto gse::gpu::vulkan_device_backend::collect_garbage() -> void {

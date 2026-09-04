@@ -62,7 +62,7 @@ export namespace gse::renderer::cloud {
 		) const -> bool = default;
 	};
 
-	struct [[= shaders::binding<0, 5>{}]] cloud_ubo {
+	struct [[= shaders::uniform_block]] cloud_ubo {
 		using element = cloud_data;
 	};
 
@@ -81,7 +81,7 @@ export namespace gse::renderer::cloud {
 		) const -> bool = default;
 	};
 
-	struct [[= shaders::binding<0, 11>{}]] cloud_shadow_ubo {
+	struct [[= shaders::uniform_block]] cloud_shadow_ubo {
 		using element = cloud_shadow_data;
 	};
 

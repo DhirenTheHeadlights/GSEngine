@@ -30,42 +30,27 @@ namespace gse::renderer::light_culling {
 		std::uint32_t num_lights;
 	};
 
-	struct [[
-		= shaders::binding<0, 0>{},
-		= shaders::texture2d
-	]] depth_texture {
+	struct [[= shaders::texture2d]] depth_texture {
 		using element = vec4f;
 	};
 
-	struct [[= shaders::binding<0, 1>{}]] culling_params {
+	struct [[= shaders::uniform_block]] culling_params {
 		using element = culling_params_data;
 	};
 
-	struct [[
-		= shaders::binding<0, 2>{},
-		= shaders::ssbo_readonly
-	]] lights {
+	struct [[= shaders::ssbo_readonly]] lights {
 		using element = shaders::forward::light;
 	};
 
-	struct [[
-		= shaders::binding<0, 3>{},
-		= shaders::ssbo_readwrite
-	]] light_index_list {
+	struct [[= shaders::ssbo_readwrite]] light_index_list {
 		using element = std::uint32_t;
 	};
 
-	struct [[
-		= shaders::binding<0, 4>{},
-		= shaders::ssbo_readwrite
-	]] tile_light_table {
+	struct [[= shaders::ssbo_readwrite]] tile_light_table {
 		using element = vec2u;
 	};
 
-	struct [[
-		= shaders::binding<0, 5>{},
-		= shaders::sampler_state
-	]] depth_sampler {};
+	struct [[= shaders::sampler_state]] depth_sampler {};
 
 	using shader_binding_types = type_pack<depth_texture, culling_params, lights, light_index_list, tile_light_table, depth_sampler>;
 
@@ -212,8 +197,6 @@ auto gse::renderer::light_culling::frame(context& ctx, shared_view<gpu::context:
 	const auto tiles = tile_count(d.current_width, d.current_height);
 
 	auto rec = co_await gpu::pass<^^frame>(pass_out).pipeline(d.pipeline).after<^^depth_prepass::frame>();
-
-	rec.sample_image(gpu_s.render_graph->depth_image(), gpu::pipeline_stage_flag::compute_shader);
 
 	rec.dispatch<entry>(
 		{

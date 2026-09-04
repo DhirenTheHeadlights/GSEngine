@@ -747,11 +747,6 @@ auto gse::gpu::device::host_upload_image_layers(const gpu::handle<image> img, co
 }
 
 auto gse::gpu::device::create_buffer(const buffer_desc& desc, const std::string_view tag, const std::source_location& loc) -> buffer {
-	assert(
-		!(desc.bindless && desc.usage.test(buffer_flag::uniform)),
-		"bindless buffers must be usage=storage, not uniform: every shader binding reads the descriptor heap as a StructuredBuffer, " 
-		"so a uniform-usage bindless buffer writes a descriptor no shader can read (garbage matrices -> NaN -> GPU hang). Drop buffer_flag::uniform."
-	);
 	auto buf = m_vt->create_buffer(m_backend.get(), desc, tag, loc);
 	if (desc.bindless) {
 		set_slot_resource(buf.slot().index, resource_ref{
@@ -841,8 +836,8 @@ auto gse::gpu::device::bindless_sampler_heap_binding() const -> bindless_heap_bi
 	return m_vt->bindless_sampler_heap_binding(m_backend.get());
 }
 
-auto gse::gpu::device::create_sampler(const sampler_desc& desc) -> gpu::handle<sampler> {
-	return m_vt->create_sampler(m_backend.get(), desc);
+auto gse::gpu::device::max_push_data_size() const -> std::uint32_t {
+	return m_vt->max_push_data_size(m_backend.get());
 }
 
 auto gse::gpu::device::collect_garbage() -> void {

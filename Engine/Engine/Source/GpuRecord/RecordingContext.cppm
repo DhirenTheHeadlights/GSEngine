@@ -352,10 +352,9 @@ template <typename T>
 consteval auto gse::gpu::binding_access_contribution() -> access_flags {
 	constexpr auto dtype = descriptor_type_v<T>;
 	constexpr bool is_image = dtype == descriptor_type::sampled_image
-		|| dtype == descriptor_type::storage_image
-		|| dtype == descriptor_type::combined_image_sampler;
+		|| dtype == descriptor_type::storage_image;
 	constexpr bool is_buffer = dtype == descriptor_type::storage_buffer;
-	if constexpr ((is_image || is_buffer) && descriptor_count_v<T> == 1) {
+	if constexpr ((is_image || is_buffer) && !is_bindless_table_v<T>) {
 		if constexpr (descriptor_access_v<T> == descriptor_access::read_write) {
 			return access_flags{ access_flag::shader_storage_read, access_flag::shader_storage_write };
 		}
@@ -382,19 +381,11 @@ template <typename T, typename Args>
 auto gse::gpu::recording_context::register_one_bindless(const Args& args, const pipeline_stage_flags stages) -> void {
 	constexpr auto dtype = descriptor_type_v<T>;
 	constexpr bool is_image = dtype == descriptor_type::sampled_image
-		|| dtype == descriptor_type::storage_image
-		|| dtype == descriptor_type::combined_image_sampler;
+		|| dtype == descriptor_type::storage_image;
 	constexpr bool is_buffer = dtype == descriptor_type::storage_buffer;
-	if constexpr ((is_image || is_buffer) && descriptor_count_v<T> == 1) {
+	if constexpr ((is_image || is_buffer) && !is_bindless_table_v<T>) {
 		constexpr std::meta::info member = bindless_member_for<Args, T>();
-		std::uint32_t index;
-		if constexpr (dtype == descriptor_type::combined_image_sampler) {
-			index = args.[:member:].image.index;
-		}
-		else {
-			index = args.[:member:].index;
-		}
-		const resource_ref ref = m_device->resource_for_slot(index);
+		const resource_ref ref = m_device->resource_for_slot(args.[:member:].index);
 		if (ref.ptr) {
 			const auto access = (descriptor_access_v<T> == descriptor_access::read_write)
 				? access_flags{ access_flag::shader_storage_read, access_flag::shader_storage_write }

@@ -75,10 +75,7 @@ namespace gse::renderer::ui {
 		d.frames_since_state_change = 0;
 	}
 
-	struct [[
-		= shaders::binding<0, 0>{},
-		= shaders::ssbo_readonly
-	]] vertex_buffer {
+	struct [[= shaders::ssbo_readonly]] vertex_buffer {
 		using element = vertex;
 	};
 

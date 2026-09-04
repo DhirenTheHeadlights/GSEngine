@@ -32,24 +32,15 @@ namespace gse::renderer::physics_transform {
 		time_t<float, seconds> frame_delta;
 	};
 
-	struct [[
-		= shaders::binding<0, 0>{},
-		= shaders::ssbo_readonly
-	]] body_data {
+	struct [[= shaders::ssbo_readonly]] body_data {
 		using element = vbd::body_state;
 	};
 
-	struct [[
-		= shaders::binding<0, 1>{},
-		= shaders::ssbo_readonly
-	]] mapping_data {
+	struct [[= shaders::ssbo_readonly]] mapping_data {
 		using element = physics_mapping;
 	};
 
-	struct [[
-		= shaders::binding<0, 2>{},
-		= shaders::ssbo_readwrite
-	]] instance_data_buffer {
+	struct [[= shaders::ssbo_readwrite]] instance_data_buffer {
 		using element = shaders::common::instance_data;
 	};
 
@@ -122,10 +113,11 @@ auto gse::renderer::physics_transform::frame(context& ctx, shared_view<gpu::cont
 		co_return;
 	}
 
-	auto interpolation_lag = system_clock::fixed_lag();
-	if (const auto& interpolation = frame_in.of<physics::interpolation_state>(); !interpolation.empty() && !interpolation[0].advancing) {
-		interpolation_lag = time_t<float, seconds>{};
+	physics::interpolation_state interpolation;
+	if (const auto& published = frame_in.of<physics::interpolation_state>(); !published.empty()) {
+		interpolation = published[0];
 	}
+	const auto interpolation_lag = physics::render_lag(interpolation);
 
 	if (!d.body_views[frame_index].valid()) {
 		d.body_views[frame_index] = gpu_s.device->allocate_buffer_slot();

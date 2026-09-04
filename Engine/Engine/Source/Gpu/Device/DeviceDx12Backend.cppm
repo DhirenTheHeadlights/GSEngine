@@ -414,9 +414,7 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto bindless_sampler_heap_binding() const -> bindless_heap_binding;
 
-		[[nodiscard]] auto create_sampler(
-			const sampler_desc& desc
-		) -> gpu::handle<sampler>;
+		[[nodiscard]] auto max_push_data_size() const -> std::uint32_t;
 
 		auto collect_garbage() -> void;
 
@@ -811,8 +809,8 @@ auto gse::gpu::dx12_device_backend::bindless_sampler_heap_binding() const -> bin
 	return device->bindless_sampler_heap_binding();
 }
 
-auto gse::gpu::dx12_device_backend::create_sampler(const sampler_desc& desc) -> gpu::handle<sampler> {
-	return device->create_sampler(desc);
+auto gse::gpu::dx12_device_backend::max_push_data_size() const -> std::uint32_t {
+	return dx12::bindless_root_constant_count * 4;
 }
 
 auto gse::gpu::dx12_device_backend::collect_garbage() -> void {

@@ -395,9 +395,7 @@ export namespace gse::gpu {
 		auto bindless_sampler_heap_binding() const -> bindless_heap_binding;
 
 		[[nodiscard]]
-		auto create_sampler(
-			const sampler_desc& desc
-		) -> gpu::handle<sampler>;
+		auto max_push_data_size() const -> std::uint32_t;
 
 		auto collect_garbage() -> void;
 

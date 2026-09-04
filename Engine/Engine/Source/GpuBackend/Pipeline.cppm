@@ -73,23 +73,6 @@ export namespace gse::gpu {
 		float depth_bias_slope = 0.0f;
 	};
 
-	struct descriptor_binding_desc {
-		std::uint32_t binding = 0;
-		descriptor_type type = descriptor_type::uniform_buffer;
-		std::uint32_t count = 1;
-		stage_flags stages;
-		descriptor_access access = descriptor_access::read;
-	};
-
-	struct binding_use {
-		std::uint32_t set = 0;
-		std::uint32_t slot = 0;
-		std::uint32_t count = 1;
-		descriptor_access access = descriptor_access::read;
-		descriptor_type type = descriptor_type::storage_buffer;
-		pipeline_stage_flags stages = {};
-	};
-
 	struct viewport {
 		float x = 0.0f;
 		float y = 0.0f;
@@ -103,11 +86,6 @@ export namespace gse::gpu {
 		stage_flags stages;
 		std::uint32_t offset = 0;
 		std::uint32_t size = 0;
-	};
-
-	struct descriptor_address_info {
-		device_address address = 0;
-		device_size range = 0;
 	};
 
 	struct draw_indexed_indirect_command {

@@ -76,14 +76,6 @@ export namespace gse::vulkan {
 	) -> vk::IndexType;
 
 	auto to_vk(
-		gpu::bind_point p
-	) -> vk::PipelineBindPoint;
-
-	auto to_vk(
-		gpu::descriptor_type t
-	) -> vk::DescriptorType;
-
-	auto to_vk(
 		gpu::vertex_format f
 	) -> vk::Format;
 
@@ -466,36 +458,6 @@ auto gse::vulkan::to_vk(const gpu::index_type t) -> vk::IndexType {
 	std::unreachable();
 }
 
-auto gse::vulkan::to_vk(const gpu::bind_point p) -> vk::PipelineBindPoint {
-	switch (p) {
-		case gpu::bind_point::graphics:
-			return vk::PipelineBindPoint::eGraphics;
-		case gpu::bind_point::compute:
-			return vk::PipelineBindPoint::eCompute;
-	}
-	std::unreachable();
-}
-
-auto gse::vulkan::to_vk(const gpu::descriptor_type t) -> vk::DescriptorType {
-	switch (t) {
-		case gpu::descriptor_type::uniform_buffer:
-			return vk::DescriptorType::eUniformBuffer;
-		case gpu::descriptor_type::storage_buffer:
-			return vk::DescriptorType::eStorageBuffer;
-		case gpu::descriptor_type::combined_image_sampler:
-			return vk::DescriptorType::eCombinedImageSampler;
-		case gpu::descriptor_type::sampled_image:
-			return vk::DescriptorType::eSampledImage;
-		case gpu::descriptor_type::storage_image:
-			return vk::DescriptorType::eStorageImage;
-		case gpu::descriptor_type::sampler:
-			return vk::DescriptorType::eSampler;
-		case gpu::descriptor_type::acceleration_structure:
-			return vk::DescriptorType::eAccelerationStructureKHR;
-	}
-	std::unreachable();
-}
-
 auto gse::vulkan::to_vk(const gpu::vertex_format f) -> vk::Format {
 	switch (f) {
 		case gpu::vertex_format::r32_sfloat:
@@ -674,9 +636,6 @@ auto gse::vulkan::to_vk(const gpu::stage_flag s) -> vk::ShaderStageFlagBits {
 
 auto gse::vulkan::to_vk(const gpu::buffer_usage fls) -> vk::BufferUsageFlags {
 	vk::BufferUsageFlags result{};
-	if (fls.test(gpu::buffer_flag::uniform)) {
-		result |= vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress;
-	}
 	if (fls.test(gpu::buffer_flag::storage)) {
 		result |= vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress;
 	}

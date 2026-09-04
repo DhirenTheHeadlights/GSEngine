@@ -10,7 +10,6 @@ import gse.core;
 
 export namespace gse::gpu {
 	enum class buffer_flag : std::uint32_t {
-		uniform = 0x01,
 		storage = 0x02,
 		indirect = 0x04,
 		transfer_dst = 0x08,

@@ -26,10 +26,7 @@ namespace gse::renderer::world_text {
 		vec2f tex_coord;
 	};
 
-	struct [[
-		= shaders::binding<0, 1>{},
-		= shaders::ssbo_readonly
-	]] world_text_vertex_buffer {
+	struct [[= shaders::ssbo_readonly]] world_text_vertex_buffer {
 		using element = world_text_vertex;
 	};
 

@@ -36,21 +36,15 @@ namespace gse::renderer::cull_compute {
 		std::uint32_t indirect_stride;
 	};
 
-	struct [[= shaders::binding<0, 0>{}]] frustum_ubo {
+	struct [[= shaders::uniform_block]] frustum_ubo {
 		using element = frustum_data;
 	};
 
-	struct [[
-		= shaders::binding<0, 1>{},
-		= shaders::ssbo_readonly
-	]] batches {
+	struct [[= shaders::ssbo_readonly]] batches {
 		using element = batch_info;
 	};
 
-	struct [[
-		= shaders::binding<0, 2>{},
-		= shaders::rw_byte_address_buffer
-	]] indirect_commands {};
+	struct [[= shaders::rw_byte_address_buffer]] indirect_commands {};
 
 	using shader_binding_types = type_pack<frustum_ubo, batches, indirect_commands>;
 	using shader_types = type_pack<frustum_data, batch_info>;

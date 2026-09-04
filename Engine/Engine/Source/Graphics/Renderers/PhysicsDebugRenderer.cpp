@@ -24,31 +24,19 @@ import gse.assets;
 
 
 namespace gse::renderer::physics_debug {
-	struct [[
-		= shaders::binding<0, 1>{},
-		= shaders::ssbo_readonly
-	]] body_data {
+	struct [[= shaders::ssbo_readonly]] body_data {
 		using element = vbd::body_state;
 	};
 
-	struct [[
-		= shaders::binding<0, 2>{},
-		= shaders::ssbo_readonly
-	]] shape_instances {
+	struct [[= shaders::ssbo_readonly]] shape_instances {
 		using element = shape_instance;
 	};
 
-	struct [[
-		= shaders::binding<0, 3>{},
-		= shaders::ssbo_readonly
-	]] shape_vertex_buffer {
+	struct [[= shaders::ssbo_readonly]] shape_vertex_buffer {
 		using element = vec4f;
 	};
 
-	struct [[
-		= shaders::binding<0, 1>{},
-		= shaders::ssbo_readonly
-	]] line_vertex_buffer {
+	struct [[= shaders::ssbo_readonly]] line_vertex_buffer {
 		using element = debug_vertex;
 	};
 

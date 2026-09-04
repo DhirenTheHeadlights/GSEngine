@@ -28,22 +28,13 @@ namespace gse::renderer::rt_shadow {
 		std::uint32_t model_matrix_offset;
 	};
 
-	struct [[
-		= shaders::binding<0, 0>{},
-		= shaders::byte_address_buffer
-	]] source_instance_data {};
+	struct [[= shaders::byte_address_buffer]] source_instance_data {};
 
-	struct [[
-		= shaders::binding<0, 1>{},
-		= shaders::ssbo_readonly
-	]] index_mapping {
+	struct [[= shaders::ssbo_readonly]] index_mapping {
 		using element = std::uint32_t;
 	};
 
-	struct [[
-		= shaders::binding<0, 2>{},
-		= shaders::rw_byte_address_buffer
-	]] tlas_instances {};
+	struct [[= shaders::rw_byte_address_buffer]] tlas_instances {};
 
 	using shader_binding_types = type_pack<source_instance_data, index_mapping, tlas_instances>;
 

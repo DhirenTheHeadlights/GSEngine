@@ -1830,17 +1830,6 @@ auto gse::dx12::device::bindless_sampler_heap_binding() const -> gpu::bindless_h
 	return m_sampler_binding;
 }
 
-auto gse::dx12::device::create_sampler(const gpu::sampler_desc& desc) -> gpu::handle<gpu::sampler> {
-	const std::lock_guard lock(m_mutex);
-	const auto slot = m_sampler_pool.allocate();
-	const auto offset = m_sampler_pool.offset(slot);
-	write_sampler_at(offset, desc);
-	const directx::D3D12_GPU_DESCRIPTOR_HANDLE gpu_handle = {
-		.ptr = directx::descriptor_heap_gpu_start(m_sampler_heap.get()).ptr + offset,
-	};
-	return std::bit_cast<gpu::handle<gpu::sampler>>(gpu_handle.ptr);
-}
-
 auto gse::dx12::device::collect_garbage() -> void {}
 
 auto gse::dx12::device::root_signature() const -> directx::ID3D12RootSignature* {

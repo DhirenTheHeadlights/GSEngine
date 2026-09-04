@@ -1,5 +1,20 @@
 # Shader binding order removal + pre-bindless sweep
 
+> **Status 2026-09-03: all four phases applied, not yet compiled.** Two claims below were wrong when
+> written and are corrected here rather than in place. (1) `atmosphere_ubo`, `cloud_ubo` and
+> `cloud_shadow_ubo` do NOT declare members inline — all nine bare bindings already used
+> `using element =`, so `emit_slang_binding`'s no-`element` fallback branch was dead code and was
+> deleted outright instead of being merged. (2) The three `instance_data_buffer` redeclarations turned
+> out to be byte-identical (`ssbo_readonly` of `common::instance_data`) and collapsed into
+> `shaders::meshlet::instance_data_buffer`; `physics_transform`'s same-named binding is
+> `ssbo_readwrite` and correctly stayed local.
+>
+> Landed beyond the plan: pack order preserved the existing `(set, slot)` sort in every pack but
+> seven (five in `AtmosphereRenderer`, two in `CloudRenderer`), which were reordered so no designator
+> list had to move; `descriptor_count_of`/`bindless_texture_capacity` collapsed to
+> `is_bindless_table<T>`; `to_pipeline_stage` died with the family sets; `gpu::device::max_push_data_size()`
+> was added through the reflection-generated dispatch to back the Phase 3 guard.
+
 Goal: stop hand-numbering shader bindings. `shaders::binding<Set, Slot>` is a pre-bindless
 descriptor-set artifact whose only surviving job is to be a sort key, and the numbers are a global,
 unenforced namespace that has now produced the same misleading compile error three times. Replace the

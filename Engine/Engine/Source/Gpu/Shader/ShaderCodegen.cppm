@@ -102,6 +102,7 @@ export namespace gse::shaders {
 	struct texture2d_tag {};
 	struct texture3d_tag {};
 	struct sampler_state_tag {};
+	struct uniform_block_tag {};
 
 	constexpr shader_struct_tag shader_struct{};
 	constexpr shader_enum_tag shader_enum{};
@@ -117,18 +118,7 @@ export namespace gse::shaders {
 	constexpr texture2d_tag texture2d{};
 	constexpr texture3d_tag texture3d{};
 	constexpr sampler_state_tag sampler_state{};
-
-	constexpr std::uint32_t bindless_texture_capacity = 2048;
-
-	template <std::uint32_t Set, std::uint32_t Slot>
-	struct binding {
-		static constexpr std::uint32_t set = Set;
-		static constexpr std::uint32_t slot = Slot;
-	};
-
-	consteval auto find_binding_type(
-		std::meta::info m
-	) -> std::meta::info;
+	constexpr uniform_block_tag uniform_block{};
 
 	template <typename T>
 	struct slang_type;
@@ -148,7 +138,18 @@ export namespace gse::shaders {
 	concept is_shader_constant_block = has_annotation<shader_constant_block_tag>(^^T);
 
 	template <typename T>
-	concept is_shader_binding = find_binding_type(^^T) != std::meta::info{};
+	concept is_shader_binding = has_annotation<uniform_block_tag>(^^T)
+		|| has_annotation<sampler2d_array_tag>(^^T)
+		|| has_annotation<ssbo_readonly_tag>(^^T)
+		|| has_annotation<ssbo_readwrite_tag>(^^T)
+		|| has_annotation<tlas_tag>(^^T)
+		|| has_annotation<byte_address_buffer_tag>(^^T)
+		|| has_annotation<rw_byte_address_buffer_tag>(^^T)
+		|| has_annotation<storage_image_tag>(^^T)
+		|| has_annotation<storage_image_3d_tag>(^^T)
+		|| has_annotation<texture2d_tag>(^^T)
+		|| has_annotation<texture3d_tag>(^^T)
+		|| has_annotation<sampler_state_tag>(^^T);
 
 	template <typename T>
 	concept is_shader_user_type = is_shader_struct<T> || is_shader_enum<T> || is_shader_constant_block<T>;
@@ -180,37 +181,17 @@ export namespace gse::shaders {
 	template <typename T>
 	consteval auto push_constant_layout_is_portable() -> bool;
 
-	struct family_binding {
-		gpu::descriptor_binding_desc desc;
-	};
-
-	struct family_set {
-		std::uint32_t set_index = 0;
-		std::vector<family_binding> bindings;
-	};
-
 	template <is_shader_binding T>
 	consteval auto descriptor_type_of() -> gpu::descriptor_type;
 
 	template <is_shader_binding T>
-	consteval auto descriptor_count_of() -> std::uint32_t;
+	consteval auto is_bindless_table() -> bool;
 
 	template <is_shader_binding T>
 	consteval auto descriptor_access_of() -> gpu::descriptor_access;
 
 	template <typename Pack>
-	auto build_family_sets(
-		Pack pack
-	) -> std::vector<family_set>;
-
-	template <typename... Packs>
-	auto build_combined_family_sets() -> std::vector<family_set>;
-
-	template <typename Pack>
 	auto emit_pack_types() -> std::string;
-
-	template <typename Pack>
-	consteval auto sorted_pack_bindings() -> std::vector<std::meta::info>;
 
 	template <typename Pack>
 	auto emit_pack_bindings() -> std::string;
@@ -422,19 +403,8 @@ auto gse::shaders::build_spec_constant_entries() -> std::vector<spec_constant_en
 	return entries;
 }
 
-consteval auto gse::shaders::find_binding_type(const std::meta::info m) -> std::meta::info {
-	for (auto ann : std::meta::annotations_of(m)) {
-		const auto t = std::meta::dealias(std::meta::type_of(ann));
-		if (std::meta::has_template_arguments(t) && std::meta::template_of(t) == ^^binding) {
-			return t;
-		}
-	}
-	return std::meta::info{};
-}
-
 template <gse::shaders::is_shader_binding T>
 auto gse::shaders::emit_slang_binding() -> std::string {
-	using binding_t = [:find_binding_type(^^T):];
 	constexpr auto name = std::meta::identifier_of(^^T);
 	if constexpr (has_annotation<sampler2d_array_tag>(^^T)) {
 		return std::format("public struct {0}_table {{ public __subscript(uint i) -> Texture2D<float4> {{ get {{ return (Texture2D<float4>.Handle)i; }} }} }}\npublic {0}_table {0};\n", name);
@@ -512,32 +482,10 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 			slang_type<element_t>::name
 		);
 	}
-	else if constexpr (requires { typename T::element; }) {
+	else {
 		using element_t = typename T::element;
 		std::string out = std::format("public struct {}_ubo_data {{\n", name);
 		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^element_t, std::meta::access_context::unchecked()))) {
-			using member_t = [:std::meta::type_of(m):];
-			if constexpr (std::is_array_v<member_t>) {
-				using elem_t = std::remove_extent_t<member_t>;
-				constexpr auto extent = std::extent_v<member_t>;
-				out += std::format(
-					"    public {} {}[{}];\n",
-					slang_type<elem_t>::name,
-					std::meta::identifier_of(m),
-					extent
-				);
-			}
-			else {
-				out += std::format("    public {} {};\n", slang_type<member_t>::name, std::meta::identifier_of(m));
-			}
-		}
-		out += "};\n";
-		out += std::format("public uniform uint {0}_idx;\npublic property {0}_ubo_data {0} {{ get {{ return ((StructuredBuffer<{0}_ubo_data>.Handle){0}_idx)[0]; }} }}\n", name);
-		return out;
-	}
-	else {
-		std::string out = std::format("public struct {}_ubo_data {{\n", name);
-		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 			using member_t = [:std::meta::type_of(m):];
 			if constexpr (std::is_array_v<member_t>) {
 				using elem_t = std::remove_extent_t<member_t>;
@@ -619,13 +567,8 @@ consteval auto gse::shaders::descriptor_type_of() -> gpu::descriptor_type {
 }
 
 template <gse::shaders::is_shader_binding T>
-consteval auto gse::shaders::descriptor_count_of() -> std::uint32_t {
-	if constexpr (has_annotation<sampler2d_array_tag>(^^T)) {
-		return bindless_texture_capacity;
-	}
-	else {
-		return 1;
-	}
+consteval auto gse::shaders::is_bindless_table() -> bool {
+	return has_annotation<sampler2d_array_tag>(^^T);
 }
 
 template <gse::shaders::is_shader_binding T>
@@ -636,90 +579,6 @@ consteval auto gse::shaders::descriptor_access_of() -> gpu::descriptor_access {
 	else {
 		return gpu::descriptor_access::read;
 	}
-}
-
-namespace gse::shaders {
-	template <is_shader_binding T>
-	auto append_family_binding(std::vector<family_set>& sets) -> void {
-		using binding_t = [:find_binding_type(^^T):];
-		constexpr auto set_idx = binding_t::set;
-		constexpr auto slot_idx = binding_t::slot;
-		constexpr auto desc_type = descriptor_type_of<T>();
-		constexpr auto count = descriptor_count_of<T>();
-		constexpr auto access = descriptor_access_of<T>();
-		constexpr gpu::stage_flags all_stages{ gpu::stage_flag::vertex, gpu::stage_flag::fragment,
-			gpu::stage_flag::compute, gpu::stage_flag::task, gpu::stage_flag::mesh };
-
-		auto it = std::ranges::find_if(
-			sets,
-			[&](const family_set& s) {
-				return s.set_index == set_idx;
-			}
-		);
-		if (it == sets.end()) {
-			sets.push_back(family_set{
-				.set_index = set_idx
-			});
-			it = sets.end() - 1;
-		}
-		it->bindings.push_back(family_binding{
-			.desc = {
-				.binding = slot_idx,
-				.type = desc_type,
-				.count = count,
-				.stages = all_stages,
-				.access = access,
-			},
-		});
-	}
-}
-
-template <typename Pack>
-auto gse::shaders::build_family_sets(Pack) -> std::vector<family_set> {
-	std::vector<family_set> sets;
-	[&]<typename... Ts>(type_pack<Ts...>) {
-		(append_family_binding<Ts>(sets), ...);
-	}(Pack{});
-	std::ranges::sort(
-		sets,
-		{},
-		[](const family_set& s) {
-			return s.set_index;
-		}
-	);
-	return sets;
-}
-
-template <typename... Packs>
-auto gse::shaders::build_combined_family_sets() -> std::vector<family_set> {
-	std::vector<family_set> result;
-	auto merge_into = [&](std::vector<family_set> src) {
-		for (auto& s : src) {
-			auto it = std::ranges::find_if(
-				result,
-				[&](const family_set& d) {
-					return d.set_index == s.set_index;
-				}
-			);
-			if (it == result.end()) {
-				result.push_back(std::move(s));
-			}
-			else {
-				for (auto& b : s.bindings) {
-					it->bindings.push_back(std::move(b));
-				}
-			}
-		}
-	};
-	(merge_into(build_family_sets(Packs{})), ...);
-	std::ranges::sort(
-		result,
-		{},
-		[](const family_set& s) {
-			return s.set_index;
-		}
-	);
-	return result;
 }
 
 namespace gse::shaders {
@@ -757,43 +616,10 @@ auto gse::shaders::emit_pack_types() -> std::string {
 }
 
 template <typename Pack>
-consteval auto gse::shaders::sorted_pack_bindings() -> std::vector<std::meta::info> {
-	struct sortable {
-		std::meta::info t;
-		std::uint32_t set;
-		std::uint32_t slot;
-	};
-	std::vector<sortable> entries;
-	constexpr auto pack_types = []<typename... Ts>(type_pack<Ts...>) {
-		return std::array{ ^^Ts... };
-	}(Pack{});
-	for (const auto t : pack_types) {
-		const auto bt = find_binding_type(t);
-		const auto targs = std::meta::template_arguments_of(bt);
-		entries.push_back({ t, std::meta::extract<std::uint32_t>(targs[0]), std::meta::extract<std::uint32_t>(targs[1]) });
-	}
-	std::ranges::sort(
-		entries,
-		[](const sortable& a, const sortable& b) {
-			if (a.set != b.set) {
-				return a.set < b.set;
-			}
-			return a.slot < b.slot;
-		}
-	);
-	std::vector<std::meta::info> result;
-	for (const auto& e : entries) {
-		result.push_back(e.t);
-	}
-	return result;
-}
-
-template <typename Pack>
 auto gse::shaders::emit_pack_bindings() -> std::string {
 	std::string out;
-	template for (constexpr auto t : std::define_static_array(sorted_pack_bindings<Pack>())) {
-		using binding_t = [:t:];
-		emit_one_binding<binding_t>(out);
-	}
+	[&]<typename... Ts>(type_pack<Ts...>) {
+		(emit_one_binding<Ts>(out), ...);
+	}(Pack{});
 	return out;
 }

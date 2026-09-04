@@ -103,7 +103,6 @@ namespace gse::vulkan {
 				{ ^^gpu::acceleration_structure, ^^vk::raii::AccelerationStructureKHR },
 				{ ^^gpu::swap_chain_handle, ^^swap_chain_resources },
 				{ ^^gpu::handle<gpu::query_pool>, ^^vk::raii::QueryPool },
-				{ ^^gpu::handle<gpu::sampler>, ^^vk::raii::Sampler },
 				{ ^^gpu::handle<gpu::shader_object>, ^^vk::raii::ShaderEXT },
 				{ ^^gpu::handle<gpu::pipeline_layout>, ^^vk::raii::PipelineLayout },
 				{ ^^gpu::handle<gpu::descriptor_heap>, ^^descriptor_heap_resources },
@@ -240,11 +239,6 @@ export namespace gse::vulkan {
 		auto image_view(
 			gpu::handle<gpu::image> image
 		) const -> gpu::handle<gpu::image_view>;
-
-		[[nodiscard]]
-		auto create_sampler(
-			const gpu::sampler_desc& desc
-		) -> gpu::handle<gpu::sampler>;
 
 		[[nodiscard]]
 		auto create_shader_program(

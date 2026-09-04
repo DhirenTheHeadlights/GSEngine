@@ -30,17 +30,11 @@ namespace gse::renderer::capture {
 		std::uint32_t rgba_index;
 	};
 
-	struct [[
-		= shaders::binding<0, 1>{},
-		= shaders::storage_image
-	]] output_y {
+	struct [[= shaders::storage_image]] output_y {
 		using element = float;
 	};
 
-	struct [[
-		= shaders::binding<0, 2>{},
-		= shaders::storage_image
-	]] output_uv {
+	struct [[= shaders::storage_image]] output_uv {
 		using element = vec2f;
 	};
 

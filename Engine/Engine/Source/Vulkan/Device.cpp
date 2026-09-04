@@ -1137,8 +1137,7 @@ auto gse::vulkan::device::create_buffer(const vk::BufferCreateInfo& buffer_info,
 	assert(!desc.device_local || (!desc.data && !desc.readback), "a device-local buffer cannot carry init data or readback semantics");
 	const void* data = desc.data;
 	auto actual_buffer_info = buffer_info;
-	constexpr auto device_addressable_usage = vk::BufferUsageFlagBits::eUniformBuffer |
-		vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eIndirectBuffer |
+	constexpr auto device_addressable_usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eIndirectBuffer |
 		vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR |
 		vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
 		vk::BufferUsageFlagBits::eShaderDeviceAddress;
@@ -2103,20 +2102,13 @@ auto gse::vulkan::query_descriptor_heap_props(const physical_device& pd) -> gpu:
 	return {
 		.sampler_heap_alignment = dh.samplerHeapAlignment,
 		.resource_heap_alignment = dh.resourceHeapAlignment,
-		.max_sampler_heap_size = dh.maxSamplerHeapSize,
-		.max_resource_heap_size = dh.maxResourceHeapSize,
 		.min_sampler_heap_reserved_range = dh.minSamplerHeapReservedRange,
 		.min_resource_heap_reserved_range = dh.minResourceHeapReservedRange,
 		.sampler_descriptor_size = dh.samplerDescriptorSize,
 		.image_descriptor_size = dh.imageDescriptorSize,
 		.buffer_descriptor_size = dh.bufferDescriptorSize,
 		.acceleration_structure_descriptor_size = acceleration_structure_descriptor_size,
-		.sampler_descriptor_alignment = dh.samplerDescriptorAlignment,
-		.image_descriptor_alignment = dh.imageDescriptorAlignment,
-		.buffer_descriptor_alignment = dh.bufferDescriptorAlignment,
 		.max_push_data_size = dh.maxPushDataSize,
-		.max_embedded_samplers = dh.maxDescriptorHeapEmbeddedSamplers,
-		.sparse_descriptor_heaps = static_cast<bool>(dh.sparseDescriptorHeaps),
 	};
 }
 
@@ -2409,14 +2401,6 @@ auto gse::vulkan::device::memory_flag_preferences(const vk::BufferUsageFlags usa
 			mpf::eHostVisible | mpf::eHostCoherent | mpf::eDeviceLocal,
 			mpf::eHostVisible | mpf::eHostCoherent,
 			mpf::eDeviceLocal,
-		};
-	}
-
-	if (usage & vk::BufferUsageFlagBits::eUniformBuffer) {
-		return {
-			mpf::eHostVisible | mpf::eHostCoherent | mpf::eDeviceLocal,
-			mpf::eHostVisible | mpf::eHostCoherent,
-			mpf::eHostVisible,
 		};
 	}
 
@@ -2747,29 +2731,6 @@ auto gse::vulkan::device::query_pool_results(const gpu::handle<gpu::query_pool> 
 		vk::QueryResultFlagBits::e64 | vk::QueryResultFlagBits::eWait
 	);
 	return { status == vk::Result::eSuccess ? gpu::query_status::success : gpu::query_status::error, std::move(values) };
-}
-
-auto gse::vulkan::device::create_sampler(const gpu::sampler_desc& desc) -> gpu::handle<gpu::sampler> {
-	const vk::SamplerCreateInfo info{
-		.magFilter = to_vk(desc.mag),
-		.minFilter = to_vk(desc.min),
-		.mipmapMode = desc.min == gpu::sampler_filter::nearest ? vk::SamplerMipmapMode::eNearest : vk::SamplerMipmapMode::eLinear,
-		.addressModeU = to_vk(desc.address_u),
-		.addressModeV = to_vk(desc.address_v),
-		.addressModeW = to_vk(desc.address_w),
-		.mipLodBias = 0.0f,
-		.anisotropyEnable = desc.max_anisotropy > 0.0f ? vk::True : vk::False,
-		.maxAnisotropy = desc.max_anisotropy,
-		.compareEnable = desc.compare_enable ? vk::True : vk::False,
-		.compareOp = to_vk(desc.compare),
-		.minLod = desc.min_lod,
-		.maxLod = desc.max_lod,
-		.borderColor = to_vk(desc.border),
-		.unnormalizedCoordinates = vk::False,
-	};
-	auto [result, vk_sampler] = raii_device().createSampler(info);
-	assert(result == vk::Result::eSuccess, "failed to create sampler: {}", vk::to_string(result));
-	return adopt<gpu::handle<gpu::sampler>>(std::move(vk_sampler));
 }
 
 auto gse::vulkan::device::descriptor_heap_properties() const -> gpu::descriptor_heap_properties {

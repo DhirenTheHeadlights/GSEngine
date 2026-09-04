@@ -6,6 +6,8 @@ import gse.gpu_backend;
 import gse.directx;
 
 export namespace gse::dx12 {
+	constexpr std::uint32_t bindless_root_constant_count = 64;
+
 	class pipeline_layout final {
 	public:
 		pipeline_layout() = default;
@@ -40,6 +42,5 @@ auto gse::dx12::pipeline_layout::valid() const -> bool {
 }
 
 auto gse::dx12::create_bindless_pipeline_layout(directx::ID3D12Device* device) -> pipeline_layout {
-	constexpr std::uint32_t root_constant_count = 64;
-	return pipeline_layout(directx::create_bindless_root_signature(device, root_constant_count));
+	return pipeline_layout(directx::create_bindless_root_signature(device, bindless_root_constant_count));
 }

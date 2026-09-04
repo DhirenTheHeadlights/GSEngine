@@ -52,7 +52,7 @@ export namespace gse::renderer::atmosphere {
 		float star_fade;
 	};
 
-	struct [[= shaders::binding<0, 7>{}]] atmosphere_ubo {
+	struct [[= shaders::uniform_block]] atmosphere_ubo {
 		using element = atmosphere_data;
 	};
 
@@ -236,7 +236,6 @@ export namespace gse::renderer::atmosphere {
 		[[= shared]] gpu::image ap_volume;
 		vec3u ap_volume_extent{ 32, 32, 32 };
 
-		gpu::handle<gpu::sampler> lut_sampler;
 		[[= shared]] gpu::bindless_handle lut_sampler_bindless;
 		[[= shared]] gpu::bindless_handle sky_view_sampler_bindless;
 

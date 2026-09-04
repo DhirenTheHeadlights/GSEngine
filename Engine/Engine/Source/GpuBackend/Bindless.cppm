@@ -13,26 +13,18 @@ export namespace gse::gpu {
 	enum class image_descriptor_kind : std::uint8_t {
 		sampled,
 		storage,
-		texture,
 	};
 
 	struct descriptor_heap_properties {
 		device_size sampler_heap_alignment = 0;
 		device_size resource_heap_alignment = 0;
-		device_size max_sampler_heap_size = 0;
-		device_size max_resource_heap_size = 0;
 		device_size min_sampler_heap_reserved_range = 0;
 		device_size min_resource_heap_reserved_range = 0;
 		device_size sampler_descriptor_size = 0;
 		device_size image_descriptor_size = 0;
 		device_size buffer_descriptor_size = 0;
 		device_size acceleration_structure_descriptor_size = 0;
-		device_size sampler_descriptor_alignment = 0;
-		device_size image_descriptor_alignment = 0;
-		device_size buffer_descriptor_alignment = 0;
 		device_size max_push_data_size = 0;
-		std::uint32_t max_embedded_samplers = 0;
-		bool sparse_descriptor_heaps = false;
 	};
 
 	struct bindless_heap_binding {

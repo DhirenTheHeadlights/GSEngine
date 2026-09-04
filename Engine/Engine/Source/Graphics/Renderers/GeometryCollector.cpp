@@ -63,7 +63,7 @@ namespace gse::renderer::geometry_collector {
 		read<physics::motion_component>& motion,
 		const std::flat_map<id, std::uint32_t>& body_index_map,
 		std::unordered_map<id, std::vector<std::optional<spatial_matrix>>>& prev_model_matrices,
-		time_t<float, seconds> lag,
+		const physics::interpolation_state& interpolation,
 		std::vector<owned_render_queue_entry>& out,
 		std::vector<owned_render_queue_entry>& transparent_out
 	) -> void;
@@ -160,7 +160,7 @@ auto gse::renderer::geometry_collector::build_batches(render_data& data, std::ui
 	}
 }
 
-auto gse::renderer::geometry_collector::collect_static(write<render_component>& render, read<physics::transform_component>& transform, read<physics::motion_component>& motion, const std::flat_map<id, std::uint32_t>& body_index_map, std::unordered_map<id, std::vector<std::optional<spatial_matrix>>>& prev_model_matrices, const time_t<float, seconds> lag, std::vector<owned_render_queue_entry>& out, std::vector<owned_render_queue_entry>& transparent_out) -> void {
+auto gse::renderer::geometry_collector::collect_static(write<render_component>& render, read<physics::transform_component>& transform, read<physics::motion_component>& motion, const std::flat_map<id, std::uint32_t>& body_index_map, std::unordered_map<id, std::vector<std::optional<spatial_matrix>>>& prev_model_matrices, const physics::interpolation_state& interpolation, std::vector<owned_render_queue_entry>& out, std::vector<owned_render_queue_entry>& transparent_out) -> void {
 	const auto render_size = render.size();
 	const auto render_ids = render.owner_ids();
 	const bool transform_order_matches =
@@ -178,7 +178,7 @@ auto gse::renderer::geometry_collector::collect_static(write<render_component>& 
 			continue;
 		}
 
-		const auto render_tc = physics::interpolated_transform(*tc, motion.find(eid), vec3<displacement>{}, lag);
+		const auto render_tc = physics::render_transform(*tc, motion.find(eid), interpolation);
 
 		std::uint32_t body_index = owned_render_queue_entry::invalid_body_index;
 		if (const auto it = body_index_map.find(eid); it != body_index_map.end()) {
@@ -442,9 +442,9 @@ auto gse::renderer::geometry_collector::tick(context& ctx, data& d, const channe
 	data.view = view_matrix;
 	data.proj = proj_matrix;
 
-	auto lag = system_clock::fixed_lag();
-	if (const auto& interpolation = physics_in.of<physics::interpolation_state>(); !interpolation.empty() && !interpolation[0].advancing) {
-		lag = time_t<float, seconds>{};
+	physics::interpolation_state interpolation;
+	if (const auto& published = physics_in.of<physics::interpolation_state>(); !published.empty()) {
+		interpolation = published[0];
 	}
 
 	{
@@ -455,7 +455,7 @@ auto gse::renderer::geometry_collector::tick(context& ctx, data& d, const channe
 			motion,
 			phys_s.id_to_body_index,
 			d.prev_model_matrices,
-			lag,
+			interpolation,
 			data.render_queue,
 			data.transparent_queue
 		);

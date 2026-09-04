@@ -23,31 +23,19 @@ import gse.math;
 import gse.meta;
 
 namespace gse::renderer::taa {
-	struct [[
-		= shaders::binding<0, 0>{},
-		= shaders::texture2d
-	]] hdr_color {
+	struct [[= shaders::texture2d]] hdr_color {
 		using element = vec4f;
 	};
 
-	struct [[
-		= shaders::binding<0, 1>{},
-		= shaders::texture2d
-	]] velocity_color {
+	struct [[= shaders::texture2d]] velocity_color {
 		using element = vec4f;
 	};
 
-	struct [[
-		= shaders::binding<0, 2>{},
-		= shaders::texture2d
-	]] history_color {
+	struct [[= shaders::texture2d]] history_color {
 		using element = vec4f;
 	};
 
-	struct [[
-		= shaders::binding<0, 3>{},
-		= shaders::sampler_state
-	]] color_sampler {};
+	struct [[= shaders::sampler_state]] color_sampler {};
 
 	struct [[= shaders::shader_struct]] push_constants {
 		float blend_alpha;
@@ -188,12 +176,6 @@ auto gse::renderer::taa::frame(const context& ctx, shared_view<gpu::context::dat
 		))
 		.after<^^forward::frame, ^^atmosphere::sky_raster_pass, ^^cloud::cloud_composite_pass, ^^physics_debug::frame, ^^sdf_grid::frame, ^^world_text::frame, ^^depth_prepass::frame>();
 
-	rec.sample_image(hdr, gpu::pipeline_stage_flag::fragment_shader);
-	rec.sample_image(
-		gpu_s.render_graph->framebuffer_image<targets::velocity>(),
-		gpu::pipeline_stage_flag::fragment_shader
-	);
-	rec.sample_image(d.history[1u - frame_index], gpu::pipeline_stage_flag::fragment_shader);
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
 	rec.push_bindings<entry>(

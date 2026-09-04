@@ -480,10 +480,6 @@ export namespace gse::dx12 {
 
 		[[nodiscard]] auto bindless_sampler_heap_binding() const -> gpu::bindless_heap_binding;
 
-		[[nodiscard]] auto create_sampler(
-			const gpu::sampler_desc& desc
-		) -> gpu::handle<gpu::sampler>;
-
 		auto collect_garbage() -> void;
 
 		[[nodiscard]] auto root_signature() const -> directx::ID3D12RootSignature*;

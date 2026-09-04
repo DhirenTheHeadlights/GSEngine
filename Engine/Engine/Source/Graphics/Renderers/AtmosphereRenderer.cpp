@@ -20,62 +20,35 @@ import gse.meta;
 namespace gse::renderer::atmosphere {
 	using atmosphere_types = type_pack<atmosphere_data>;
 
-	struct [[
-		= shaders::binding<0, 0>{},
-		= shaders::storage_image
-	]] transmittance_out {
+	struct [[= shaders::storage_image]] transmittance_out {
 		using element = vec4f;
 	};
 
-	struct [[
-		= shaders::binding<0, 0>{},
-		= shaders::texture2d
-	]] transmittance_in {
+	struct [[= shaders::texture2d]] transmittance_in {
 		using element = vec4f;
 	};
 
-	struct [[
-		= shaders::binding<0, 1>{},
-		= shaders::storage_image
-	]] multiscatter_out {
+	struct [[= shaders::storage_image]] multiscatter_out {
 		using element = vec4f;
 	};
 
-	struct [[
-		= shaders::binding<0, 1>{},
-		= shaders::texture2d
-	]] multiscatter_in {
+	struct [[= shaders::texture2d]] multiscatter_in {
 		using element = vec4f;
 	};
 
-	struct [[
-		= shaders::binding<0, 2>{},
-		= shaders::storage_image
-	]] sky_view_out {
+	struct [[= shaders::storage_image]] sky_view_out {
 		using element = vec4f;
 	};
 
-	struct [[
-		= shaders::binding<0, 1>{},
-		= shaders::texture2d
-	]] sky_view_in {
+	struct [[= shaders::texture2d]] sky_view_in {
 		using element = vec4f;
 	};
 
-	struct [[
-		= shaders::binding<0, 3>{},
-		= shaders::sampler_state
-	]] lut_sampler {};
+	struct [[= shaders::sampler_state]] lut_sampler {};
 
-	struct [[
-		= shaders::binding<0, 2>{},
-		= shaders::sampler_state
-	]] sky_view_sampler {};
+	struct [[= shaders::sampler_state]] sky_view_sampler {};
 
-	struct [[
-		= shaders::binding<0, 2>{},
-		= shaders::storage_image_3d
-	]] ap_volume_out {
+	struct [[= shaders::storage_image_3d]] ap_volume_out {
 		using element = vec4f;
 	};
 
@@ -98,11 +71,11 @@ namespace gse::renderer::atmosphere {
 		atmosphere_length camera_altitude;
 	};
 
-	using transmittance_bindings = type_pack<atmosphere_ubo, transmittance_out>;
-	using multiscatter_bindings = type_pack<atmosphere_ubo, transmittance_in, lut_sampler, multiscatter_out>;
-	using sky_view_bindings = type_pack<atmosphere_ubo, transmittance_in, multiscatter_in, lut_sampler, sky_view_out>;
-	using sky_raster_bindings = type_pack<atmosphere_ubo, transmittance_in, sky_view_in, lut_sampler, sky_view_sampler>;
-	using ap_bindings = type_pack<atmosphere_ubo, transmittance_in, multiscatter_in, lut_sampler, ap_volume_out>;
+	using transmittance_bindings = type_pack<transmittance_out, atmosphere_ubo>;
+	using multiscatter_bindings = type_pack<transmittance_in, multiscatter_out, lut_sampler, atmosphere_ubo>;
+	using sky_view_bindings = type_pack<transmittance_in, multiscatter_in, sky_view_out, lut_sampler, atmosphere_ubo>;
+	using sky_raster_bindings = type_pack<transmittance_in, sky_view_in, sky_view_sampler, lut_sampler, atmosphere_ubo>;
+	using ap_bindings = type_pack<transmittance_in, multiscatter_in, ap_volume_out, lut_sampler, atmosphere_ubo>;
 
 	using transmittance_entry = gpu::compute_entry<
 		gpu::body_path<"Compute/atmosphere_transmittance">,
@@ -351,7 +324,6 @@ auto gse::renderer::atmosphere::init(context& ctx, const shared_view<gpu::contex
 		"atmosphere_ubo"
 	);
 
-	d.lut_sampler = gpu_s.device->create_sampler(lut_sampler_desc);
 	d.lut_sampler_bindless = gpu_s.device->register_sampler(lut_sampler_desc);
 	d.sky_view_sampler_bindless = gpu_s.device->register_sampler(sky_view_sampler_desc);
 

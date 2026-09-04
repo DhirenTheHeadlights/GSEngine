@@ -28,22 +28,12 @@ import gse.gpu_backend;
 import gse.meta;
 
 namespace gse::renderer::oit {
-	struct [[= shaders::binding<0, 0>{}]] camera_ubo {
+	struct [[= shaders::uniform_block]] camera_ubo {
 		using element = shaders::common::camera_data;
 	};
 
-	struct [[
-		= shaders::binding<0, 5>{},
-		= shaders::ssbo_readonly
-	]] material_palette {
+	struct [[= shaders::ssbo_readonly]] material_palette {
 		using element = shaders::forward::material_data;
-	};
-
-	struct [[
-		= shaders::binding<1, 5>{},
-		= shaders::ssbo_readonly
-	]] instance_data_buffer {
-		using element = shaders::common::instance_data;
 	};
 
 	using accum_binding_types = type_pack<
@@ -54,7 +44,7 @@ namespace gse::renderer::oit {
 		shaders::meshlet::meshlet_vertex_indices,
 		shaders::meshlet::meshlet_triangles,
 		shaders::meshlet::meshlet_bounds_buffer,
-		instance_data_buffer,
+		shaders::meshlet::instance_data_buffer,
 		shaders::bindless::textures,
 		shaders::bindless::textures_sampler
 	>;
@@ -84,24 +74,15 @@ namespace gse::renderer::oit {
 		gpu::depth<true, false, gpu::compare_op::less_or_equal>
 	>;
 
-	struct [[
-		= shaders::binding<0, 0>{},
-		= shaders::texture2d
-	]] oit_accum_in {
+	struct [[= shaders::texture2d]] oit_accum_in {
 		using element = vec4f;
 	};
 
-	struct [[
-		= shaders::binding<0, 1>{},
-		= shaders::texture2d
-	]] oit_reveal_in {
+	struct [[= shaders::texture2d]] oit_reveal_in {
 		using element = vec4f;
 	};
 
-	struct [[
-		= shaders::binding<0, 2>{},
-		= shaders::sampler_state
-	]] oit_sampler {};
+	struct [[= shaders::sampler_state]] oit_sampler {};
 
 	using composite_binding_types = type_pack<oit_accum_in, oit_reveal_in, oit_sampler>;
 
@@ -317,8 +298,6 @@ auto gse::renderer::oit::frame(context& ctx, shared_view<gpu::context::data> gpu
 		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
 		.after<^^accumulate_pass, ^^forward::frame, ^^atmosphere::sky_raster_pass, ^^cloud::cloud_composite_pass, ^^physics_debug::frame>();
 
-	composite_rec.sample_image(gpu_s.render_graph->framebuffer_image<targets::oit_accum>(), gpu::pipeline_stage_flag::fragment_shader);
-	composite_rec.sample_image(gpu_s.render_graph->framebuffer_image<targets::oit_reveal>(), gpu::pipeline_stage_flag::fragment_shader);
 	composite_rec.set_viewport(ext);
 	composite_rec.set_scissor(ext);
 

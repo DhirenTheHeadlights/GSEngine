@@ -117,11 +117,6 @@ export namespace gse::gpu {
 		uint32,
 	};
 
-	enum class bind_point : std::uint8_t {
-		graphics,
-		compute,
-	};
-
 	enum class queue_type : std::uint8_t {
 		graphics,
 		compute,
