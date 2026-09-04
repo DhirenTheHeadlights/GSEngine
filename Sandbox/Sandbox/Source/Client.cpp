@@ -8,6 +8,7 @@ import :client;
 import :character_controller;
 import :orbit_camera;
 import :piston;
+import :player_sync;
 import :sidearm;
 import :tumbler;
 import :sandbox_scene;
@@ -26,7 +27,9 @@ auto sandbox::client_system::init(gse::context& ctx, const gse::network::config&
 		^^sandbox::character_controller::data,
 		^^sandbox::character_controller::run,
 		^^sandbox::sidearm::data,
-		^^sandbox::sidearm::run
+		^^sandbox::sidearm::run,
+		^^sandbox::player_sync::data,
+		^^sandbox::player_sync::run
 	>{}.register_with(ctx);
 	gse::register_systems<^^gse::free_camera::system>(ctx);
 

@@ -247,6 +247,12 @@ export namespace gse::actions {
 
 		auto camera_yaw() const -> angle;
 
+		auto set_camera_pitch(
+			angle pitch
+		) -> void;
+
+		auto camera_pitch() const -> angle;
+
 	private:
 		auto ensure_axis1_capacity(
 			std::uint16_t id
@@ -264,6 +270,7 @@ export namespace gse::actions {
 		std::vector<float> m_axes1;
 		std::vector<axis> m_axes2;
 		angle m_camera_yaw;
+		angle m_camera_pitch;
 	};
 
 	inline thread_local angle g_context_camera_yaw{};
@@ -784,6 +791,14 @@ auto gse::actions::state::set_camera_yaw(const angle yaw) -> void {
 
 auto gse::actions::state::camera_yaw() const -> angle {
 	return m_camera_yaw;
+}
+
+auto gse::actions::state::set_camera_pitch(const angle pitch) -> void {
+	m_camera_pitch = pitch;
+}
+
+auto gse::actions::state::camera_pitch() const -> angle {
+	return m_camera_pitch;
 }
 
 auto gse::actions::registry::add(std::vector<registration> entries, std::vector<axis_registration> axes) -> void {

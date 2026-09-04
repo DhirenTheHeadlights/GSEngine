@@ -1145,10 +1145,22 @@ auto sandbox::spawn_character(gse::scene& s, const gse::id owner, const gse::res
 			},
 		})
 		.with<gse::physics::motor_component>({
-			.max_force = gse::newtons(12000.f),
+			.max_force = gse::newtons(3900.f),
 			.compliance = 0.02f,
 		})
 		.identify();
+
+	gse::log::println(
+		gse::log::category::general,
+		"character {}: proxy {} spawned at ({}, {}, {}) with radius {} and half height {}",
+		owner.tag(),
+		proxy_id.tag(),
+		proxy_center.x(),
+		proxy_center.y(),
+		proxy_center.z(),
+		proxy.radius,
+		proxy.half_height
+	);
 
 	gse::skeleton_instance_component instance{
 		.model = model,

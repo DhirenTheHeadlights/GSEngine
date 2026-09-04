@@ -11,6 +11,7 @@ import gse.containers;
 import gse.time;
 import gse.concurrency;
 import gse.diag;
+import gse.log;
 import gse.ecs;
 import gse.os;
 import gse.assets;
@@ -19,9 +20,14 @@ import gse.runtime;
 
 export namespace gse::server {
 	struct client_data {
+		static constexpr std::size_t max_pending_inputs = 4;
+
 		id controller_id;
 		actions::state latest_input;
 		std::uint32_t last_input_sequence = 0;
+		std::uint32_t applied_sequence = 0;
+		std::uint32_t stepped_sequence = 0;
+		std::vector<network::input_frame> pending_inputs;
 	};
 
 	template <typename MessagePack, typename... Components>
@@ -39,10 +45,13 @@ export namespace gse::server {
 
 		auto update(
 			const structural<player_controller>& controller_auth,
+			const structural<player_input>& input_auth,
 			const entities& ents,
 			channel_write<activate_scene_request> channels,
 			const network::inbound_channel_t<MessagePack>& messages_out,
 			shared_view<actions::data> actions_s,
+			shared_view<physics::data> phys_s,
+			write<player_input>& inputs,
 			write<Components>&... comps
 		) -> void;
 
@@ -74,6 +83,7 @@ export namespace gse::server {
 	private:
 		auto accept_connection(
 			const structural<player_controller>& controller_auth,
+			const structural<player_input>& input_auth,
 			const entities& ents,
 			const network::address& addr
 		) -> void;
@@ -88,6 +98,10 @@ export namespace gse::server {
 		std::unordered_set<network::address> m_pending_snapshots;
 		std::optional<id> m_host_entity;
 		std::optional<network::address> m_host_addr;
+		interval_timer<> m_health_timer{ seconds(2.f) };
+		std::uint32_t m_health_frames = 0;
+		std::uint64_t m_health_last_step = 0;
+		time m_health_longest_frame;
 	};
 }
 
@@ -143,9 +157,30 @@ auto gse::server::host<MessagePack, Components...>::apply_catalog(const world_sy
 }
 
 template <typename MessagePack, typename... Components>
-auto gse::server::host<MessagePack, Components...>::update(const structural<player_controller>& controller_auth, const entities& ents, const channel_write<activate_scene_request> channels, const network::inbound_channel_t<MessagePack>& messages_out, const shared_view<actions::data> actions_s, write<Components>&... comps) -> void {
+auto gse::server::host<MessagePack, Components...>::update(const structural<player_controller>& controller_auth, const structural<player_input>& input_auth, const entities& ents, const channel_write<activate_scene_request> channels, const network::inbound_channel_t<MessagePack>& messages_out, const shared_view<actions::data> actions_s, const shared_view<physics::data> phys_s, write<player_input>& inputs, write<Components>&... comps) -> void {
 	auto& controllers = std::get<write<player_controller>&>(std::tie(comps...));
 	const bool has_active_scene = m_active_scene.has_value();
+
+	++m_health_frames;
+	m_health_longest_frame = std::max(m_health_longest_frame, system_clock::dt<time>());
+	if (m_health_timer.tick()) {
+		std::size_t deepest_queue = 0;
+		for (const auto& cd : m_clients | std::views::values) {
+			deepest_queue = std::max(deepest_queue, cd.pending_inputs.size());
+		}
+		log::println(
+			log::category::network,
+			"server: {} frames and {} physics steps in the last window, longest frame {}, {} client(s), deepest input queue {}",
+			m_health_frames,
+			phys_s.step_index - m_health_last_step,
+			m_health_longest_frame,
+			m_clients.size(),
+			deepest_queue
+		);
+		m_health_frames = 0;
+		m_health_last_step = phys_s.step_index;
+		m_health_longest_frame = {};
+	}
 
 	if (!has_active_scene && !m_scene_ids.empty() && m_requested_scene != m_scene_ids.front()) {
 		m_requested_scene = m_scene_ids.front();
@@ -191,7 +226,7 @@ auto gse::server::host<MessagePack, Components...>::update(const structural<play
 					}
 
 					m_endpoint.ensure_peer(msg.from);
-					accept_connection(controller_auth, ents, msg.from);
+					accept_connection(controller_auth, input_auth, ents, msg.from);
 					std::println(
 						"Client [{}:{}] connected ({}/{})",
 						msg.from.ip,
@@ -219,7 +254,7 @@ auto gse::server::host<MessagePack, Components...>::update(const structural<play
 				m_clients.erase(client_it);
 			}
 
-			accept_connection(controller_auth, ents, msg.from);
+			accept_connection(controller_auth, input_auth, ents, msg.from);
 		})) {
 			return;
 		}
@@ -254,17 +289,28 @@ auto gse::server::host<MessagePack, Components...>::update(const structural<play
 				msg.id,
 				[&](const auto& m) {
 					auto& cd = m_clients[msg.from];
-					if (m.input_sequence <= cd.last_input_sequence) {
+					if (m.input_sequence > cd.last_input_sequence) {
+						cd.last_input_sequence = m.input_sequence;
+						network::apply_input_frame(cd.latest_input, m);
+					}
+					if (m.input_sequence <= cd.applied_sequence) {
 						return;
 					}
 
-					cd.last_input_sequence = m.input_sequence;
-					network::apply_input_frame(cd.latest_input, m);
+					const auto at = std::ranges::lower_bound(cd.pending_inputs, m.input_sequence, std::ranges::less{}, &network::input_frame::input_sequence);
+					if (at != cd.pending_inputs.end() && at->input_sequence == m.input_sequence) {
+						return;
+					}
+					cd.pending_inputs.insert(at, m);
+					if (cd.pending_inputs.size() > client_data::max_pending_inputs) {
+						cd.pending_inputs.erase(cd.pending_inputs.begin());
+					}
 				}
 			);
 
 		if (!handled) {
-			network::route_inbound<MessagePack>(stream, msg, messages_out);
+			const auto client_it = m_clients.find(msg.from);
+			network::route_inbound<MessagePack>(stream, msg, messages_out, client_it != m_clients.end() ? client_it->second.controller_id : id{});
 		}
 	});
 
@@ -317,6 +363,27 @@ auto gse::server::host<MessagePack, Components...>::update(const structural<play
 		}
 
 		network::replicate_deltas(send_all, m_endpoint.peers(), comps...);
+
+		const int stepped = phys_s.interpolation.steps;
+
+		for (auto& cd : m_clients | std::views::values) {
+			if (stepped > 0) {
+				cd.stepped_sequence = cd.applied_sequence;
+			}
+
+			auto* input = inputs.find(cd.controller_id);
+			if (input) {
+				input->acked_sequence = cd.stepped_sequence;
+				input->acked_step = phys_s.step_index;
+			}
+			for (int i = 0; i < stepped && input && !cd.pending_inputs.empty(); ++i) {
+				const auto& frame = cd.pending_inputs.front();
+				network::apply_input_frame(input->state, frame);
+				input->sequence = frame.input_sequence;
+				cd.applied_sequence = frame.input_sequence;
+				cd.pending_inputs.erase(cd.pending_inputs.begin());
+			}
+		}
 	}
 }
 
@@ -336,7 +403,7 @@ auto gse::server::host<MessagePack, Components...>::host_entity() const -> std::
 }
 
 template <typename MessagePack, typename... Components>
-auto gse::server::host<MessagePack, Components...>::accept_connection(const structural<player_controller>& controller_auth, const entities& ents, const network::address& addr) -> void {
+auto gse::server::host<MessagePack, Components...>::accept_connection(const structural<player_controller>& controller_auth, const structural<player_input>& input_auth, const entities& ents, const network::address& addr) -> void {
 	if (!m_active_scene.has_value()) {
 		return;
 	}
@@ -345,6 +412,7 @@ auto gse::server::host<MessagePack, Components...>::accept_connection(const stru
 	const auto controller_id = generate_id(controller_name);
 	ents.ensure_active(controller_id);
 	controller_auth.add(controller_id);
+	input_auth.add(controller_id);
 	m_clients.emplace(
 		addr,
 		client_data{

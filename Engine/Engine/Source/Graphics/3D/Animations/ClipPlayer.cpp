@@ -60,17 +60,15 @@ auto gse::animation::binding_for(data& d, const skinned_model& model, const clip
 auto gse::animation::run(context& ctx, data& d, const channel_read<physics::interpolation_state> interp_in, write<clip_player_component> players, read<skeleton_instance_component> skeletons, read<physics::transform_component> transforms, read<physics::motion_component> motions, write<physics::kinematic_target_component> targets) -> async::task<> {
 	trace::scope_guard sg{ trace_id<"animation::clip_player">() };
 
-	const auto& interpolation = interp_in.of<physics::interpolation_state>();
-	const int steps = interpolation.empty() ? system_clock::fixed_steps_this_frame() : interpolation[0].steps;
-	const int age_steps = interpolation.empty() ? 0 : interpolation[0].readback_age_steps;
-	const auto dt = system_clock::fixed_dt<time>() * static_cast<float>(steps);
+	physics::interpolation_state interpolation{
+		.steps = system_clock::fixed_steps_this_frame(),
+	};
+	if (const auto& published = interp_in.of<physics::interpolation_state>(); !published.empty()) {
+		interpolation = published[0];
+	}
+	const auto dt = system_clock::fixed_dt<time>() * static_cast<float>(interpolation.steps);
 	if (dt <= time{}) {
 		co_return;
-	}
-
-	auto lag = system_clock::fixed_lag();
-	if (!interpolation.empty() && !interpolation[0].advancing) {
-		lag = time_t<float, seconds>{};
 	}
 
 	const auto player_ids = players.owner_ids();
@@ -147,14 +145,10 @@ auto gse::animation::run(context& ctx, data& d, const channel_read<physics::inte
 			player.phase -= std::floor(player.phase);
 		}
 
-		const auto* proxy_motion = motions.find(skeleton->proxy);
-		auto proxy_render = physics::interpolated_transform(*proxy, proxy_motion, vec3<displacement>{}, lag);
-		if (age_steps > 0 && proxy_motion) {
-			proxy_render.position += proxy_motion->current_velocity * (system_clock::fixed_dt<time>() * static_cast<float>(age_steps));
-		}
+		const auto proxy_now = physics::sim_transform(*proxy, motions.find(skeleton->proxy), interpolation);
 		const joint_transform root{
-			.position = proxy_render.position - rotate_vector(proxy_render.orientation, model->proxy().center),
-			.orientation = proxy_render.orientation,
+			.position = proxy_now.position - rotate_vector(proxy_now.orientation, model->proxy().center),
+			.orientation = proxy_now.orientation,
 		};
 
 		std::array<joint_transform, skeleton_instance_component::max_bones> joints{};

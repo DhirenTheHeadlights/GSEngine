@@ -180,7 +180,9 @@ auto gse::network::udp_socket::send_data(const packet& packet, const address& ad
 		log::println(
 			log::level::error,
 			log::category::network,
-			"Socket sendto failed with error {}",
+			"Socket sendto to {}:{} failed with error {}",
+			address.ip,
+			address.port,
 			sockets::last_error()
 		);
 		return socket_state::error;

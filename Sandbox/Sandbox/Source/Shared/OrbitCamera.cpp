@@ -118,23 +118,12 @@ auto sandbox::orbit_camera::update(gse::context& ctx, data& d, const gse::shared
 			gse::quat(gse::vec3f(1.f, 0.f, 0.f), o.pitch)
 		);
 
-		gse::vec3<gse::position> target_pos;
-		if (auto snap = gse::physics::query_transform(phys_s, o.target)) {
-			target_pos = snap->position;
-		}
-		else if (const auto* tc = transforms.find(o.target)) {
-			target_pos = tc->position;
-		}
-		else {
+		const auto* target_tc = transforms.find(o.target);
+		if (!target_tc) {
 			continue;
 		}
 
-		if (phys_s.gpu_readback_age_steps > 0) {
-			if (const auto* target_motion = motions.find(o.target)) {
-				target_pos += target_motion->current_velocity * (gse::system_clock::fixed_dt<gse::time>() * static_cast<float>(phys_s.gpu_readback_age_steps));
-			}
-		}
-
+		auto target_pos = gse::physics::render_transform(*target_tc, motions.find(o.target), phys_s.interpolation).position;
 		target_pos += gse::vec3<gse::displacement>(gse::meters(0.f), o.pivot_height, gse::meters(0.f));
 
 		const gse::vec3f forward = gse::rotate_vector(orientation, gse::vec3f(0.f, 0.f, -1.f));

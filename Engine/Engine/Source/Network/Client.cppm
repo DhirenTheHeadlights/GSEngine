@@ -71,21 +71,7 @@ export namespace gse::network {
 			const std::function<void(inbound_message&)>& on_message
 		) -> void;
 
-		auto push_input(
-			const actions::state& s,
-			std::span<const std::uint16_t> axis1_ids,
-			std::span<const std::uint16_t> axis2_ids,
-			angle camera_yaw = {}
-		) -> void;
-
 	private:
-		struct input_snapshot {
-			actions::state state;
-			std::vector<std::uint16_t> axis1_ids;
-			std::vector<std::uint16_t> axis2_ids;
-			angle camera_yaw;
-		};
-
 		endpoint m_endpoint;
 		address m_server;
 		state m_state = state::disconnected;
@@ -95,12 +81,6 @@ export namespace gse::network {
 
 		clock m_connection_start_clock;
 		clock m_retry_clock;
-
-		std::uint32_t m_input_sequence = 0;
-		clock m_input_clock;
-
-		input_snapshot m_pending;
-		bool m_has_pending = false;
 	};
 }
 
@@ -154,21 +134,6 @@ auto gse::network::client::tick() -> void {
 		}
 	}
 
-	const time input_send_interval = milliseconds(16.f);
-
-	if (m_state == state::connected && m_has_pending && m_input_clock.elapsed() > input_send_interval) {
-		send(
-			extract_input_frame(
-				m_pending.state,
-				m_pending.axis1_ids,
-				m_pending.axis2_ids,
-				++m_input_sequence,
-				m_pending.camera_yaw
-			)
-		);
-		m_input_clock.reset();
-	}
-
 	m_endpoint.resend_reliable();
 }
 
@@ -189,14 +154,6 @@ auto gse::network::client::poll(const std::function<void(inbound_message&)>& on_
 
 		on_message(msg);
 	});
-}
-
-auto gse::network::client::push_input(const actions::state& s, std::span<const std::uint16_t> axis1_ids, std::span<const std::uint16_t> axis2_ids, const angle camera_yaw) -> void {
-	m_pending.state = s;
-	m_pending.axis1_ids.assign(axis1_ids.begin(), axis1_ids.end());
-	m_pending.axis2_ids.assign(axis2_ids.begin(), axis2_ids.end());
-	m_pending.camera_yaw = camera_yaw;
-	m_has_pending = true;
 }
 
 template <gse::network::is_network_message T>

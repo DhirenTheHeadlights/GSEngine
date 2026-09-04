@@ -3,7 +3,9 @@ export module sandbox:player_spawner;
 import std;
 import gse;
 
+import :character_controller;
 import :runtime_spawns;
+import :sidearm;
 
 export namespace sandbox::player_spawner {
 	struct [[= gse::system_state<"PlayerSpawner">{}]] data {
@@ -26,7 +28,9 @@ export namespace sandbox::player_spawner {
 		gse::structural<gse::physics::kinematic_target_component>,
 		gse::structural<gse::physics::joint_spec>,
 		gse::structural<gse::skeleton_instance_component>,
-		gse::structural<gse::clip_player_component>
+		gse::structural<gse::clip_player_component>,
+		gse::structural<character_controller::component>,
+		gse::structural<sidearm::component>
 	) -> gse::async::task<>;
 }
 
@@ -43,7 +47,9 @@ auto sandbox::player_spawner::run(
 	gse::structural<gse::physics::kinematic_target_component>,
 	gse::structural<gse::physics::joint_spec>,
 	gse::structural<gse::skeleton_instance_component>,
-	gse::structural<gse::clip_player_component>
+	gse::structural<gse::clip_player_component>,
+	gse::structural<character_controller::component>,
+	gse::structural<sidearm::component>
 ) -> gse::async::task<> {
 	for (const auto& catalog : spawn_in.of<gse::world_system::scene_catalog>()) {
 		d.scene = catalog.active_scene;
@@ -69,7 +75,13 @@ auto sandbox::player_spawner::run(
 			gse::meters(0.f)
 		);
 
-		if (spawn_character(*d.scene, owner, model, clips, origin).character.exists()) {
+		if (const auto rig = spawn_character(*d.scene, owner, model, clips, origin); rig.character.exists()) {
+			d.scene->build(rig.character)
+				.with<character_controller::component>({
+					.proxy = rig.proxy,
+					.clips = clips,
+				})
+				.with<sidearm::component>({});
 			++d.spawned;
 		}
 		else {

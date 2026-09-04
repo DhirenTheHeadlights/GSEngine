@@ -149,6 +149,9 @@ auto sandbox::player::run(gse::context& ctx, data& d, const gse::channel_read<gs
 	for (const auto& request : possess_in.of<gse::world_system::possess_player_request>()) {
 		d.pending_possession = request.entity;
 	}
+	if (d.pending_possession != world_d.local_controlled_entity) {
+		d.pending_possession = {};
+	}
 
 	auto* scene = world_d.active_scene_ptr;
 	if (!d.pending_possession.exists() || scene == nullptr) {

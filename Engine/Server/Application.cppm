@@ -30,7 +30,10 @@ export namespace gse::server {
 		network::inbound_channel_t<MessagePack> messages_out,
 		network::outbound_channel_t<MessagePack> messages_in,
 		shared_view<actions::data> actions_d,
+		shared_view<physics::data> phys_d,
 		structural<player_controller> controller_auth,
+		structural<player_input> input_auth,
+		write<player_input> inputs,
 		entities ents,
 		write<Components>... comps
 	) -> async::task<>;
@@ -70,7 +73,7 @@ auto gse::server::init(context& ctx, data<MessagePack, Components...>& d, const 
 }
 
 template <typename MessagePack, typename... Components>
-auto gse::server::run(context& ctx, data<MessagePack, Components...>& d, const channel_write<activate_scene_request> scene_out, const channel_read<world_system::scene_catalog> world_in, network::inbound_channel_t<MessagePack> messages_out, network::outbound_channel_t<MessagePack> messages_in, const shared_view<actions::data> actions_d, structural<player_controller> controller_auth, entities ents, write<Components>... comps) -> async::task<> {
+auto gse::server::run(context& ctx, data<MessagePack, Components...>& d, const channel_write<activate_scene_request> scene_out, const channel_read<world_system::scene_catalog> world_in, network::inbound_channel_t<MessagePack> messages_out, network::outbound_channel_t<MessagePack> messages_in, const shared_view<actions::data> actions_d, const shared_view<physics::data> phys_d, structural<player_controller> controller_auth, structural<player_input> input_auth, write<player_input> inputs, entities ents, write<Components>... comps) -> async::task<> {
 	if (!d.srv) {
 		return {};
 	}
@@ -91,7 +94,7 @@ auto gse::server::run(context& ctx, data<MessagePack, Components...>& d, const c
 		}
 	);
 
-	d.srv->update(controller_auth, ents, scene_out, messages_out, actions_d, comps...);
+	d.srv->update(controller_auth, input_auth, ents, scene_out, messages_out, actions_d, phys_d, inputs, comps...);
 
 	return {};
 }
@@ -156,7 +159,6 @@ auto gse::server_app_setup(engine& e, type_pack<Components...>, MessagePack) -> 
 	channels.push<ui_focus_request>({
 		.focus = true
 	});
-	e.world().networked = true;
 
 	system_manifest<
 		^^server::data<MessagePack, Components...>,

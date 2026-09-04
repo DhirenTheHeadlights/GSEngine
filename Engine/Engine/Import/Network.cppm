@@ -50,11 +50,6 @@ export namespace gse {
 	};
 
 	struct deactivate_active_scene_request {};
-
-	struct camera_yaw_request {
-		using result_type = angle;
-		channel_promise<angle> promise;
-	};
 }
 
 export namespace gse::network {
@@ -94,8 +89,6 @@ export namespace gse::network {
 		[[= shared]] std::vector<discovery_result> available_servers;
 		[[= shared]] std::uint8_t connected_players = 0;
 		[[= shared]] std::uint8_t connected_max_players = 0;
-		angle camera_yaw{};
-		std::optional<channel_future<angle>> camera_yaw_future;
 		std::unique_ptr<client> client_ptr;
 		std::vector<std::shared_ptr<discovery_provider>> providers;
 		std::vector<std::move_only_function<void(context&)>> deferred;
@@ -112,9 +105,8 @@ export namespace gse::network {
 		data& d,
 		const config& net_cfg,
 		outbound_channel_t<MessagePack, connect_request, disconnect_request, add_provider_request, clear_providers_request, refresh_servers_request, refresh_server_info_request, ping_request> requests_in,
-		channel_write<camera_yaw_request, set_networked_request, set_authoritative_request, set_local_controller_id_request, deactivate_active_scene_request, activate_scene_request> requests_out,
+		channel_write<set_networked_request, set_authoritative_request, set_local_controller_id_request, deactivate_active_scene_request, activate_scene_request> requests_out,
 		inbound_channel_t<MessagePack> messages_out,
-		shared_view<actions::data> actions_d,
 		entities ents,
 		structural<Components>... auths
 	) -> async::task<>;
@@ -130,14 +122,9 @@ auto gse::network::shutdown(data& d) -> void {
 }
 
 template <typename MessagePack, typename... Components>
-auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, data& d, const config& net_cfg, const outbound_channel_t<MessagePack, connect_request, disconnect_request, add_provider_request, clear_providers_request, refresh_servers_request, refresh_server_info_request, ping_request> requests_in, const channel_write<camera_yaw_request, set_networked_request, set_authoritative_request, set_local_controller_id_request, deactivate_active_scene_request, activate_scene_request> requests_out, const inbound_channel_t<MessagePack> messages_out, const shared_view<actions::data> actions_d, entities ents, structural<Components>... auths) -> async::task<> {
+auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, data& d, const config& net_cfg, const outbound_channel_t<MessagePack, connect_request, disconnect_request, add_provider_request, clear_providers_request, refresh_servers_request, refresh_server_info_request, ping_request> requests_in, const channel_write<set_networked_request, set_authoritative_request, set_local_controller_id_request, deactivate_active_scene_request, activate_scene_request> requests_out, const inbound_channel_t<MessagePack> messages_out, entities ents, structural<Components>... auths) -> async::task<> {
 	((void)auths, ...);
 	(ctx.template ensure_storage<Components>(), ...);
-
-	if (d.camera_yaw_future && d.camera_yaw_future->ready()) {
-		d.camera_yaw = d.camera_yaw_future->get();
-	}
-	d.camera_yaw_future = requests_out.push<camera_yaw_request>({});
 
 	if (!net_cfg.connect.empty() && !d.auto_connect_rejected) {
 		const bool retry_due = d.auto_connect_timer.tick();
@@ -344,15 +331,6 @@ auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, da
 		def(ctx);
 	}
 	d.deferred.clear();
-
-	if (d.client_ptr->current_state() == client::state::connected) {
-		d.client_ptr->push_input(
-			actions::current_state(actions_d),
-			actions::axis1_ids(actions_d),
-			actions::axis2_ids(actions_d),
-			d.camera_yaw
-			);
-	}
 
 	d.client_ptr->tick();
 	d.connection_state = d.client_ptr->current_state();
