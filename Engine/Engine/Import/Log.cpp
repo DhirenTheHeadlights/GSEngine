@@ -579,8 +579,18 @@ auto gse::log::logger::clear_backtrace() -> void {
 
 auto gse::log::logger::run() -> void {
 	std::vector<queued_record> batch;
+	bool unflushed = false;
 	for (;;) {
-		m_items.acquire();
+		if (!m_items.try_acquire_for(std::chrono::seconds(1))) {
+			if (unflushed) {
+				std::lock_guard sink_lock(m_sink_mutex);
+				for (auto& s : m_sinks) {
+					s->flush();
+				}
+				unflushed = false;
+			}
+			continue;
+		}
 		std::size_t pending = 1;
 		while (m_items.try_acquire()) {
 			++pending;
@@ -612,11 +622,15 @@ auto gse::log::logger::run() -> void {
 				if (process(qr)) {
 					needs_flush = true;
 				}
+				else {
+					unflushed = true;
+				}
 			}
 			if (needs_flush) {
 				for (auto& s : m_sinks) {
 					s->flush();
 				}
+				unflushed = false;
 			}
 		}
 

@@ -79,7 +79,9 @@ auto gse::asset::run(context& ctx, data& d, const channel_read<hot_reload_reques
 		d.hot_reload_enabled = request.enabled;
 	}
 
-	d.watcher.poll();
+	if (d.hot_reload_enabled) {
+		d.watcher.poll();
+	}
 	return {};
 }
 

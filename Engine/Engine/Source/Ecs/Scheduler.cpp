@@ -1350,9 +1350,16 @@ auto gse::scheduler::sync_wait_or_dump(std::vector<async::task<>>&& tasks, const
 			seen_pulse = pulse;
 			++dump_count;
 			log_stall_state(phase, wait_clock.elapsed<float>(), dump_count);
+			if (m_stall_probe) {
+				m_stall_probe();
+			}
 			log::flush();
 		}
 	}
+}
+
+auto gse::scheduler::set_stall_probe(std::function<void()> probe) -> void {
+	m_stall_probe = std::move(probe);
 }
 
 auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float> elapsed, const int dump_count) -> void {

@@ -30,7 +30,10 @@ export namespace gse {
 			physics::transform_component,
 			physics::motion_component,
 			physics::collision_component,
+			physics::motor_component,
+			physics::kinematic_target_component,
 			render_component,
+			primitive_sphere_spec,
 			skeleton_instance_component,
 			clip_player_component,
 			player_controller
@@ -68,6 +71,7 @@ export namespace gse {
 		bool attached = false;
 		std::string ipc_pipe_name;
 		std::uint32_t parent_pid = 0;
+		std::uint32_t worker_threads = 0;
 		std::string dump_system_graph_path;
 		std::vector<std::string> setting;
 		bench_config bench;

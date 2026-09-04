@@ -92,6 +92,10 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 	engine e(config);
 	log::println(log::level::info, "Starting GSEngine...");
 
+	const std::size_t worker_threads = config.worker_threads > 0
+		? std::max<std::size_t>(2, config.worker_threads)
+		: std::thread::hardware_concurrency();
+
 	task::start([&] {
 		e.initialize(setup);
 		trace::finalize_frame();
@@ -260,7 +264,7 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 		if (pacing.timer) {
 			win32::CloseHandle(pacing.timer);
 		}
-	});
+	}, worker_threads);
 
 	const time exit_budget = seconds(10.f);
 

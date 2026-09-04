@@ -146,6 +146,10 @@ export namespace gse {
 		requires is_same_frame_channel_v<T>
 		auto drain_channel() -> std::vector<T>;
 
+		auto set_stall_probe(
+			std::function<void()> probe
+		) -> void;
+
 	private:
 		auto register_node(
 			system_node node
@@ -218,6 +222,7 @@ export namespace gse {
 		registry* m_registry = nullptr;
 		std::function<void(settings::register_settings_type)> m_settings_register_hook;
 		std::function<void(std::vector<actions::registration>, std::vector<actions::axis_registration>)> m_actions_register_hook;
+		std::function<void()> m_stall_probe;
 		task_graph m_update_graph;
 		task_graph m_frame_graph;
 		access_guard m_guard;

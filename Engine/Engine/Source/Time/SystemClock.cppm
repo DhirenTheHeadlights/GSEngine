@@ -46,6 +46,10 @@ export namespace gse::system_clock {
 		std::optional<int> steps
 	) -> void;
 
+	auto set_display_snapping(
+		bool enabled
+	) -> void;
+
 	auto fps() -> std::uint32_t;
 
 	auto timestamp_filename() -> std::string;
@@ -68,6 +72,7 @@ namespace gse::system_clock {
 	internal_time fixed_accumulator{};
 	internal_time refresh_interval{};
 	internal_time snap_error{};
+	bool display_snapping = true;
 	std::optional<int> fixed_step_override;
 	std::optional<internal_time> external_display_interval;
 
@@ -197,6 +202,10 @@ auto gse::system_clock::snap_delta(const internal_time delta) -> internal_time {
 	const internal_time snap_tolerance = milliseconds(1.5);
 	const internal_time snap_error_limit = milliseconds(8.0);
 
+	if (!display_snapping) {
+		return delta;
+	}
+
 	const auto interval = display_interval();
 	if (interval <= internal_time{}) {
 		return delta;
@@ -214,8 +223,13 @@ auto gse::system_clock::snap_delta(const internal_time delta) -> internal_time {
 		break;
 	}
 
+	const auto repaid = delta + snap_error;
+	if (repaid < internal_time{}) {
+		snap_error = repaid;
+		return internal_time{};
+	}
 	snap_error = internal_time{};
-	return delta;
+	return repaid;
 }
 
 auto gse::system_clock::update_frame_rate(const internal_time elapsed) -> void {
@@ -273,6 +287,13 @@ auto gse::system_clock::set_fixed_step_override(const std::optional<int> steps) 
 
 auto gse::system_clock::submit_display_interval(const internal_time dt) -> void {
 	external_display_interval = dt;
+}
+
+auto gse::system_clock::set_display_snapping(const bool enabled) -> void {
+	display_snapping = enabled;
+	if (!enabled) {
+		snap_error = internal_time{};
+	}
 }
 
 auto gse::system_clock::submit_refresh_interval(const internal_time interval) -> void {

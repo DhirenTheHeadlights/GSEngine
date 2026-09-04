@@ -147,13 +147,30 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	m_scheduler.register_external_resource<engine_config>(&m_config);
 	m_scheduler.register_external_resource<network::config>(&m_config.net);
 	m_scheduler.register_external_resource<scheduler>(&m_scheduler);
+	m_scheduler.set_stall_probe([this] {
+		const auto late = m_scheduler.drain_channel<gpu::render_pass_request>();
+		if (late.empty()) {
+			return;
+		}
+		std::string names;
+		for (const auto& req : late) {
+			names += std::format("{}#{} ", req.desc.pass_name, req.desc.chain_index);
+		}
+		log::println(
+			log::level::error,
+			log::category::runtime,
+			"{} render pass request(s) were pushed after this frame's record round closed and can never record: {}",
+			late.size(),
+			names
+		);
+	});
 
 	m_scheduler.begin_staging();
 	system_manifest<^^save::override_system::run>{}.register_with(*this);
 	register_systems<^^input>(*this);
 	register_systems<^^actions>(*this);
 	system_manifest<^^log_settings::data, ^^log_settings::run>{}.register_with(*this);
-	system_manifest<^^world_system::data, ^^world_system::run, ^^world_system::shutdown>{}.register_with(*this);
+	system_manifest<^^world_system::data, ^^world_system::init, ^^world_system::run, ^^world_system::shutdown>{}.register_with(*this);
 	register_systems<^^window>(*this);
 	register_systems<^^gpu::context>(*this);
 	register_systems<^^asset>(*this);
@@ -171,6 +188,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	if (!m_config.render) {
 		disabled.insert(id_of<window::data>());
 		disabled.insert(id_of<audio::data>());
+		system_clock::set_display_snapping(false);
 	}
 	if (!m_config.simulate_world) {
 		disabled.insert(id_of<world_system::data>());

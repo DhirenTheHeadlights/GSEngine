@@ -181,6 +181,10 @@ export namespace gse::async {
 		std::vector<task<>> tasks
 	) -> task<>;
 
+	auto when_all_inline(
+		std::vector<task<>> tasks
+	) -> task<>;
+
 	auto sync_wait(
 		task<>&& t
 	) -> void;

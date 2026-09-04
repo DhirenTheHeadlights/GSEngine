@@ -31,6 +31,20 @@ namespace gse::async {
 		static auto await_resume() noexcept -> void;
 	};
 
+	struct suspend_and_start_inline {
+		std::coroutine_handle<>& target;
+		std::vector<task<>>& helpers;
+		std::atomic<int>& remaining;
+
+		static auto await_ready() noexcept -> bool;
+
+		auto await_suspend(
+			std::coroutine_handle<> h
+		) const noexcept -> std::coroutine_handle<>;
+
+		static auto await_resume() noexcept -> void;
+	};
+
 	struct symmetric_resume {
 		std::coroutine_handle<> handle;
 
@@ -50,6 +64,10 @@ namespace gse::async {
 	) -> task<>;
 
 	auto when_all_impl(
+		std::vector<task<>> tasks
+	) -> task<>;
+
+	auto when_all_inline_impl(
 		std::vector<task<>> tasks
 	) -> task<>;
 }
@@ -215,6 +233,48 @@ auto gse::async::suspend_and_capture::await_suspend(const std::coroutine_handle<
 auto gse::async::suspend_and_capture::await_resume() noexcept -> void {
 }
 
+auto gse::async::suspend_and_start_inline::await_ready() noexcept -> bool {
+	return false;
+}
+
+auto gse::async::suspend_and_start_inline::await_suspend(const std::coroutine_handle<> h) const noexcept -> std::coroutine_handle<> {
+	target = h;
+	if (helpers.empty()) {
+		return std::noop_coroutine();
+	}
+
+	remaining.fetch_add(1, std::memory_order_acq_rel);
+	for (std::size_t i = 0; i < helpers.size(); ++i) {
+		const checked_handle tracked = track_frame(helpers[i].consume_start_handle());
+		if (!tracked.handle) {
+			log::println(
+				log::level::error,
+				log::category::task,
+				"when_all_inline helper consume_start_handle returned empty handle (i={})",
+				i
+			);
+			remaining.fetch_sub(1, std::memory_order_acq_rel);
+			continue;
+		}
+		if (!resume_checked(tracked)) {
+			log::println(
+				log::level::error,
+				log::category::task,
+				"when_all_inline helper resume skipped: coroutine frame was destroyed before it started"
+			);
+			remaining.fetch_sub(1, std::memory_order_acq_rel);
+		}
+	}
+
+	if (remaining.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+		return h;
+	}
+	return std::noop_coroutine();
+}
+
+auto gse::async::suspend_and_start_inline::await_resume() noexcept -> void {
+}
+
 auto gse::async::symmetric_resume::await_ready() noexcept -> bool {
 	return false;
 }
@@ -301,6 +361,31 @@ auto gse::async::when_all_impl(std::vector<task<>> tasks) -> task<> {
 	if (state.has_exception.load(std::memory_order_acquire)) {
 		std::rethrow_exception(state.first_exception);
 	}
+}
+
+auto gse::async::when_all_inline_impl(std::vector<task<>> tasks) -> task<> {
+	if (tasks.empty()) {
+		co_return;
+	}
+
+	when_all_state state;
+	state.remaining.store(static_cast<int>(tasks.size()), std::memory_order_relaxed);
+
+	std::vector<task<>> helpers;
+	helpers.reserve(tasks.size());
+	for (auto& t : tasks) {
+		helpers.push_back(when_all_helper(std::move(t), &state));
+	}
+
+	co_await suspend_and_start_inline{ state.continuation, helpers, state.remaining };
+
+	if (state.has_exception.load(std::memory_order_acquire)) {
+		std::rethrow_exception(state.first_exception);
+	}
+}
+
+auto gse::async::when_all_inline(std::vector<task<>> tasks) -> task<> {
+	co_await when_all_inline_impl(std::move(tasks));
 }
 
 auto gse::async::when_all(task<> a, task<> b) -> task<> {
