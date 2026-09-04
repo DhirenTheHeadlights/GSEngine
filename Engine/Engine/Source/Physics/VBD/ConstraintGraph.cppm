@@ -48,6 +48,14 @@ export namespace gse::vbd {
 
 		auto body_colors() const -> std::span<const std::vector<std::uint32_t>>;
 
+		auto islands() const -> std::span<const std::vector<std::uint32_t>>;
+
+		auto is_jointed(
+			std::uint32_t body_idx
+		) const -> bool;
+
+		auto islands_contact_disjoint() const -> bool;
+
 		auto overflow_bodies() const -> std::span<const std::uint32_t>;
 
 		auto body_contact_indices(
@@ -59,6 +67,8 @@ export namespace gse::vbd {
 		) const -> std::span<const std::uint32_t>;
 
 	private:
+		static constexpr std::uint32_t no_island = std::numeric_limits<std::uint32_t>::max();
+
 		std::vector<contact_constraint> m_contacts;
 		std::vector<velocity_motor_constraint> m_motors;
 		std::vector<joint_constraint> m_joints;
@@ -68,6 +78,11 @@ export namespace gse::vbd {
 		std::vector<std::vector<std::uint32_t>> m_body_joints;
 		std::vector<std::vector<std::uint32_t>> m_adjacency;
 		std::vector<int> m_body_color_scratch;
+		std::vector<std::vector<std::uint32_t>> m_islands;
+		std::vector<std::uint8_t> m_body_jointed;
+		std::vector<std::uint32_t> m_island_parent;
+		std::vector<std::uint32_t> m_body_island;
+		bool m_islands_contact_disjoint = true;
 	};
 }
 
@@ -112,6 +127,10 @@ auto gse::vbd::constraint_graph::compute_coloring(const std::uint32_t num_bodies
 		v.clear();
 	}
 	m_body_colors.clear();
+	m_islands.clear();
+	m_body_jointed.assign(num_bodies, 0);
+	m_body_island.assign(num_bodies, no_island);
+	m_islands_contact_disjoint = true;
 	m_overflow_bodies.clear();
 
 	m_body_contacts.resize(num_bodies);
@@ -189,6 +208,68 @@ auto gse::vbd::constraint_graph::compute_coloring(const std::uint32_t num_bodies
 		}
 		m_body_colors[color].push_back(bi);
 	}
+
+	if (m_joints.empty()) {
+		return;
+	}
+
+	m_island_parent.resize(num_bodies);
+	std::ranges::iota(m_island_parent, 0u);
+
+	const auto find_root = [this](std::uint32_t x) {
+		while (m_island_parent[x] != x) {
+			m_island_parent[x] = m_island_parent[m_island_parent[x]];
+			x = m_island_parent[x];
+		}
+		return x;
+	};
+
+	for (const auto& j : m_joints) {
+		if (inactive[j.body_a] || inactive[j.body_b]) {
+			continue;
+		}
+		const auto ra = find_root(j.body_a);
+		const auto rb = find_root(j.body_b);
+		if (ra != rb) {
+			m_island_parent[std::max(ra, rb)] = std::min(ra, rb);
+		}
+	}
+
+	std::vector<std::uint32_t> root_to_island(num_bodies, no_island);
+	for (std::uint32_t bi = 0; bi < num_bodies; ++bi) {
+		if (inactive[bi] || m_body_joints[bi].empty()) {
+			continue;
+		}
+		m_body_jointed[bi] = 1;
+		const auto r = find_root(bi);
+		if (root_to_island[r] == no_island) {
+			root_to_island[r] = static_cast<std::uint32_t>(m_islands.size());
+			m_islands.emplace_back();
+		}
+		m_islands[root_to_island[r]].push_back(bi);
+		m_body_island[bi] = root_to_island[r];
+	}
+
+	for (const auto& c : m_contacts) {
+		const auto ia = m_body_island[c.body_a];
+		const auto ib = m_body_island[c.body_b];
+		if (ia != no_island && ib != no_island && ia != ib) {
+			m_islands_contact_disjoint = false;
+			break;
+		}
+	}
+}
+
+auto gse::vbd::constraint_graph::islands() const -> std::span<const std::vector<std::uint32_t>> {
+	return m_islands;
+}
+
+auto gse::vbd::constraint_graph::is_jointed(const std::uint32_t body_idx) const -> bool {
+	return body_idx < m_body_jointed.size() && m_body_jointed[body_idx] != 0;
+}
+
+auto gse::vbd::constraint_graph::islands_contact_disjoint() const -> bool {
+	return m_islands_contact_disjoint;
 }
 
 auto gse::vbd::constraint_graph::clear() -> void {
@@ -200,6 +281,10 @@ auto gse::vbd::constraint_graph::clear() -> void {
 	}
 	m_body_colors.clear();
 	m_overflow_bodies.clear();
+	m_islands.clear();
+	m_body_jointed.clear();
+	m_body_island.clear();
+	m_islands_contact_disjoint = true;
 }
 
 auto gse::vbd::constraint_graph::clear_joints() -> void {

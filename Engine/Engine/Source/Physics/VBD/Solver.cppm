@@ -685,6 +685,9 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 			if (body_color.size() < parallel_threshold) {
 				trace::scope_guard sg{ trace_id<"vbd::gs_color_serial">() };
 				for (const auto bi : body_color) {
+					if (m_graph.is_jointed(bi)) {
+						continue;
+					}
 					step_colored_body(bi, h_squared, dt, alpha);
 				}
 				continue;
@@ -694,10 +697,42 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 				body_color.size(),
 				color_grain,
 				[&, this](std::size_t k) {
-					step_colored_body(body_color[k], h_squared, dt, alpha);
+					const auto bi = body_color[k];
+					if (m_graph.is_jointed(bi)) {
+						return;
+					}
+					step_colored_body(bi, h_squared, dt, alpha);
 				},
 				trace_id<"vbd::gs_color_iter">()
 			);
+		}
+
+		if (const auto islands = m_graph.islands(); !islands.empty()) {
+			const auto sweep_island = [&, this](const std::vector<std::uint32_t>& island) {
+				for (const auto bi : island) {
+					step_colored_body(bi, h_squared, dt, alpha);
+				}
+				for (const auto bi : std::views::reverse(island)) {
+					step_colored_body(bi, h_squared, dt, alpha);
+				}
+			};
+
+			if (m_graph.islands_contact_disjoint()) {
+				task::coarse_parallel(
+					islands.size(),
+					1,
+					[&](std::size_t k) {
+						sweep_island(islands[k]);
+					},
+					trace_id<"vbd::gs_island_iter">()
+				);
+			}
+			else {
+				trace::scope_guard sg{ trace_id<"vbd::gs_island_serial">() };
+				for (const auto& island : islands) {
+					sweep_island(island);
+				}
+			}
 		}
 
 		if (!m_graph.overflow_bodies().empty()) {
@@ -1259,16 +1294,17 @@ auto gse::vbd::solver::perform_newton_step(const std::uint32_t body_idx, const t
 	const auto s_inv = s.inverse();
 
 	auto delta_theta = -(s_inv * (g_ang - h_tx * (h_xx_inv * g_lin)));
+
+	const auto ang_step = magnitude(delta_theta);
+	if (ang_step > m_config.max_angular_step) {
+		delta_theta *= (m_config.max_angular_step / ang_step);
+	}
+
 	auto delta_x = -(h_xx_inv * (g_lin + h_xt * delta_theta));
 
 	const auto lin_step = magnitude(delta_x);
-	const auto ang_step = magnitude(delta_theta);
-
 	if (lin_step > m_config.max_linear_step) {
 		delta_x *= (m_config.max_linear_step / lin_step);
-	}
-	if (ang_step > m_config.max_angular_step) {
-		delta_theta *= (m_config.max_angular_step / ang_step);
 	}
 
 	body.predicted_position += delta_x * omega;
