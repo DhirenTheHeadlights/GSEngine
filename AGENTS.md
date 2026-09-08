@@ -32,11 +32,17 @@ Sizing is derived, not typed: the label column of every labelled widget is `styl
 
 ## Logging System
 
-A logging system writes to `%LOCALAPPDATA%\GSE\logs\<exe>.log` (e.g. `Editor.log`, `GoonSquad.log`), cleared on each run, keeping the last 5. Assertions automatically log failures.
+A logging system writes to `%LOCALAPPDATA%\GSE\logs\<exe>.<pid>.log` (e.g. `Editor.13832.log`, `GoonSquad.4120.log`), one file per run, keeping the last few. Assertions automatically log failures.
 
-**To debug issues:** Read the log file instead of asking the user to paste console output.
+**To debug issues:** query the log with the `gse_log_query` tool (filters by level, category and regex, returns the last N matching lines of the newest run) instead of asking the user to paste console output or reading the whole file. Fall back to reading the file only when the tool is not available in your session.
 
 **Implementation:** `Engine/Engine/Import/Log.cppm` - read this file for the current API.
+
+## Building and Waiting (agents)
+
+Builds go through the running editor only. Use the `gse_build` tool (or `Tools/gse-build` in a shell); cmake, ninja and the compilers are deliberately not on your PATH. If the build is deferred because another chat is mid-work, call `gse_hibernate` (or `Tools/gse-hibernate --then "..."`) and end your turn: the editor wakes you with the result. Never poll with `sleep`; it is blocked. `gse_build_status` shows the queue.
+
+These tools come from `Tools/gse-mcp/server.mjs`, which the editor's agent panel loads automatically. A terminal session gets them with `claude --mcp-config Tools/gse-mcp/mcp.json` from the engine root. Design and roadmap: `plans/editor-agent-select-api.md`.
 
 ## Config Module
 
