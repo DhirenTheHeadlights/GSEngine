@@ -82,6 +82,10 @@ export namespace gse::ide::agent {
 		std::int64_t context_base = 0;
 		std::string failure;
 	};
+		[[= archive_skip{}]] std::int64_t tool_bytes = 0;
+		[[= archive_skip{}]] std::int64_t tool_peak = 0;
+		[[= archive_skip{}]] std::string tool_peak_name;
+		[[= archive_skip{}]] std::unordered_map<std::string, std::string> tool_names;
 
 	struct group_marker {
 		std::uint32_t row = 0;

@@ -262,6 +262,54 @@ auto gse::ide::agent::summarize(const analysis::json::value& event, session_info
 			info.model = std::string(string_at(event, "model"));
 			return out;
 		}
+auto gse::ide::agent::remember_tool_name(const analysis::json::value& block, session_info& info) -> void {
+	constexpr std::size_t max_pending_results = 512;
+	if (info.tool_names.size() > max_pending_results) {
+		info.tool_names.clear();
+	}
+	info.tool_names.insert_or_assign(std::string(string_at(block, "id")), std::string(string_at(block, "name")));
+}
+
+auto gse::ide::agent::record_tool_output(const analysis::json::value& message, session_info& info) -> void {
+	const analysis::json::value* content = message.find("content");
+	if (!content || !content->is_array()) {
+		return;
+	}
+
+	for (const analysis::json::value& block : content->children) {
+		if (string_at(block, "type") != "tool_result") {
+			continue;
+		}
+
+		const analysis::json::value* body = block.find("content");
+		std::int64_t bytes = 0;
+		if (body && body->type == analysis::json::value::kind::string) {
+			bytes = static_cast<std::int64_t>(body->as_string().size());
+		}
+		else if (body && body->is_array()) {
+			for (const analysis::json::value& part : body->children) {
+				bytes += static_cast<std::int64_t>(string_at(part, "text").size());
+			}
+		}
+		if (bytes <= 0) {
+			continue;
+		}
+
+		info.tool_bytes += bytes;
+
+		std::string name = "tool";
+		const auto found = info.tool_names.find(std::string(string_at(block, "tool_use_id")));
+		if (found != info.tool_names.end()) {
+			name = found->second;
+			info.tool_names.erase(found);
+		}
+		if (bytes > info.tool_peak) {
+			info.tool_peak = bytes;
+			info.tool_peak_name = std::move(name);
+		}
+	}
+}
+
 		if (subtype == "api_retry") {
 			const analysis::json::value* status = event.find("error_status");
 			const std::int64_t code = status ? status->as_int() : 0;
@@ -330,6 +378,10 @@ auto gse::ide::agent::summarize(const analysis::json::value& event, session_info
 					.text = std::string(string_at(block, "text")),
 				});
 			}
+		const analysis::json::value* message = event.find("message");
+		if (message) {
+			record_tool_output(*message, info);
+		}
 			else if (block_kind == "tool_use") {
 				out.push_back(tool_row(block));
 			}
@@ -352,6 +404,7 @@ auto gse::ide::agent::summarize(const analysis::json::value& event, session_info
 				? "the agent failed"
 				: std::string(result.substr(0, result.find('\n')));
 			info.failure = headline;
+				remember_tool_name(block, info);
 			out.push_back({
 				.kind = row_kind::failure,
 				.text = std::move(headline),

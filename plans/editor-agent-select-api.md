@@ -99,13 +99,51 @@ offline script, and so a chat that is dumping despite the tools shows up.
    every Nth row, or count/min/max/mean per field with the step at each extreme. Transcripts
    showed agents reaching these files only through `cd && grep -a | tail`, which this
    replaces. The data guard now covers the `train_/smoke_/parity_/play_` families; redirect
-   targets stay writable so the queue scripts keep working. `gse_scene_query` remains, and
-   is the first tool needing a pipe.
+   targets stay writable so the queue scripts keep working.
 4. **Done for logs 2026-09-07.** `~/.claude/hooks/data-guard.mjs` denies Read, Grep, Glob,
    Bash and PowerShell access to `%LOCALAPPDATA%\GSE\logs` in GSE trees and names
    `gse_log_query` plus the terminal opt-in. Deletes and heredoc bodies are exempt. Extend its
    `covered` table as trace and scene tools land. Tests: `~/.claude/hooks/tests/data-guard.sh`.
-5. Panel accounting.
+5. **Panel accounting done 2026-09-08.** Per-chat context size was already tracked and drawn
+   (`record_usage`, `draw_context_bar`), so the missing half was tool output: `record_tool_output`
+   sums `tool_result` bytes per chat and `remember_tool_name` attributes the largest single
+   result, shown in the info panel as `tool output: 1.2 MB · biggest 380 KB from Read`.
+   The counters are `archive_skip`, so they are live-session only and need no sessions-version
+   bump. A chat dumping despite the tools is now visible without the offline script.
+
+## Scene query: dropped, and why
+
+`gse_scene_query` was scoped as tool six, addressed to "grepping scene files" and expected to be
+the first tool needing a named pipe. Two findings killed it on 2026-09-08.
+
+**The editor holds no scene.** It is an IDE: `Editor/Editor/Source` has Analysis, Search,
+Navigation, Diagnostic and Viewport, and no scene, world or inspector. The ECS registry lives in
+the game process, which the editor launches as an attached child and talks to over the surface
+pipe, and it only exists during a play session. A scene query would therefore need an endpoint
+inside the engine runtime plus routing through the editor, not a pipe to the editor.
+
+**Nothing is asking for it.** `~/.claude/tools/tool-bytes.mjs` attributes every tool result in
+the local transcripts to a target class. Over 30 days, 29,747 results, 58.7 MB returned:
+
+| target | bytes | share |
+| --- | --- | --- |
+| source: engine C++ | 29.59 MB | 50% |
+| other bash | 5.70 MB | 10% |
+| docs/markdown | 5.18 MB | 9% |
+| grep over sources | 4.12 MB | 7% |
+| git history/diffs | 3.72 MB | 6% |
+| COVERED: gse logs | 2.02 MB | 3% |
+| COVERED: run traces | 0.49 MB | 1% |
+
+There is no scene-file traffic to replace. Half of everything is reading engine C++ source, at
+15,283 calls averaging 1.9 KB, which is agents reading files and `sed -n` slices to find symbols.
+
+**The tool that evidence argues for instead** is a symbol query over the code the editor already
+indexes: `Analysis/CompilationDatabase`, `Analysis/SymbolExtract`, `Search/Index` and clangd.
+"Give me the definition of `record_usage`" instead of reading 200 lines around a guess. That is
+the only remaining lever of the size the log and trace tools were. Scoping it needs a look at
+whether the index is queryable from disk or needs the editor endpoint that scene query would
+have introduced.
 
 ## Measurement
 

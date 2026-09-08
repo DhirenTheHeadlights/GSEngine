@@ -52,6 +52,16 @@ namespace gse::ide::agent {
 		session_info& info
 	) -> void;
 
+	auto record_tool_output(
+		const analysis::json::value& message,
+		session_info& info
+	) -> void;
+
+	auto remember_tool_name(
+		const analysis::json::value& block,
+		session_info& info
+	) -> void;
+
 	auto summarize(
 		const analysis::json::value& event,
 		session_info& info
