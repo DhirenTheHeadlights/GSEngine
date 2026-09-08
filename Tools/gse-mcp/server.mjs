@@ -329,7 +329,296 @@ const log_query = async (args) => {
 	}));
 };
 
+// --- trace query -----------------------------------------------------------------------
+//
+// Trace "dumps" under .gse/data are captured engine stdout: one log line per event, ANSI
+// colour codes around every line, units embedded in values ("0.0113 m", "(1.2 N, 3.4 N,
+// 5.6 N)"), and a different step key per line family. Lines come from many threads, so
+// file order is not step order. Files reach 90 MB, so this streams and keeps only what
+// the caller asked for.
+
+const strip_ansi = (line) => line.replace(/\x1b\[[0-9;]*m/g, '');
+
+const envelope = /^\[([^\]]*)\]\[([^\]]*)\]\[([^\]]*)\]\[([^\]]*)\] (.*)$/;
+
+const unit_suffix = /(-?\d(?:\.\d+)?(?:e[-+]?\d+)?) (?:m\/s|rad\/s|N\/m|m|N)\b/g;
+const number = /-?\d+(?:\.\d+)?(?:e[-+]?\d+)?/;
+
+// Every field a message carries, as name -> number. Tuples become name.x/.y/.z. Bare
+// "name number" pairs (the physics traces) and "name=number" pairs (the trainer) both
+// count; "shadow step 12" and "it 3" are fields like any other.
+const parse_fields = (message) => {
+	const text = message.replace(unit_suffix, '$1');
+	const fields = {};
+	const tuple = /([A-Za-z_][A-Za-z0-9_()]*)\s*=?\s*\(\s*(-?[\d.e+-]+)\s*,\s*(-?[\d.e+-]+)\s*,\s*(-?[\d.e+-]+)\s*\)/g;
+	let rest = text;
+	let match;
+	while ((match = tuple.exec(text)) !== null) {
+		const name = match[1];
+		fields[`${name}.x`] = Number(match[2]);
+		fields[`${name}.y`] = Number(match[3]);
+		fields[`${name}.z`] = Number(match[4]);
+		rest = rest.replace(match[0], ' ');
+	}
+	const scalar = new RegExp(`([A-Za-z_][A-Za-z0-9_()]*)\\s*[= ]\\s*(${number.source})(?![\\w.])`, 'g');
+	while ((match = scalar.exec(rest)) !== null) {
+		if (!(match[1] in fields)) {
+			fields[match[1]] = Number(match[2]);
+		}
+	}
+	return fields;
+};
+
+// The first words of a message up to its first number name its family: "shadow step",
+// "cpu dual it", "locomotion_train: amp total_steps", "parity_trace: step".
+const family_of = (message) => {
+	const head = /^([^\d=(]*?)(?=\s*[=:]?\s*-?\d|\s*\()/.exec(message);
+	return (head ? head[1] : message).trim().replace(/[:=]$/, '').trim().slice(0, 48);
+};
+
+const step_keys = ['step', 'gen', 'update', 'total_steps', 'ep', 'it', 'iteration'];
+
+const resolve_trace = (project, args) => {
+	const eval_dir = join(project, '.gse', 'data', 'eval');
+	if (args.file) {
+		const path = resolve(project, String(args.file));
+		return existsSync(path) ? [path] : [];
+	}
+	if (!args.run) {
+		return [];
+	}
+	const run = String(args.run).replace(/\.txt$/, '');
+	let names;
+	try {
+		names = readdirSync(eval_dir);
+	}
+	catch {
+		return [];
+	}
+	// A long run is rotated into name.part1.txt, name.part2.txt, ... with name.txt the live
+	// tail, so chronological order is the parts ascending and the base file last.
+	const part_number = (name) => Number(/\.part(\d+)\.txt$/.exec(name)?.[1] ?? Number.MAX_SAFE_INTEGER);
+	const parts = names
+		.filter((name) => name === `${run}.txt` || /\.part\d+\.txt$/.test(name) && name.startsWith(`${run}.part`))
+		.sort((a, b) => part_number(a) - part_number(b));
+	return parts.map((name) => join(eval_dir, name));
+};
+
+const list_traces = (project) => {
+	const eval_dir = join(project, '.gse', 'data', 'eval');
+	let names;
+	try {
+		names = readdirSync(eval_dir).filter((name) => name.endsWith('.txt'));
+	}
+	catch {
+		return [];
+	}
+	return names
+		.map((name) => {
+			const stat = statSync(join(eval_dir, name));
+			return { run: name.replace(/\.txt$/, ''), bytes: stat.size, modified: stat.mtimeMs };
+		})
+		.filter((entry) => entry.bytes > 2000)
+		.sort((a, b) => b.modified - a.modified)
+		.map((entry) => ({ ...entry, modified: new Date(entry.modified).toISOString() }));
+};
+
+const trace_query = async (args) => {
+	const project = args.project ? windows_path(args.project) : project_of(process.cwd());
+	if (!project) {
+		return text_result(header(project, { error: 'no .gseproj above the current directory; pass project.' }), true);
+	}
+	const files = resolve_trace(project, args);
+	if (files.length === 0) {
+		return text_result(header(project, {
+			error: args.run || args.file ? `no trace named '${args.run ?? args.file}'` : 'pass run (a name under .gse/data/eval) or file',
+			runs: list_traces(project).slice(0, 40),
+		}), true);
+	}
+
+	let pattern;
+	if (args.pattern) {
+		try {
+			pattern = new RegExp(String(args.pattern), 'i');
+		}
+		catch (error) {
+			return text_result(header(project, { error: `bad pattern: ${error.message}` }), true);
+		}
+	}
+	const family = args.family ? String(args.family).toLowerCase() : undefined;
+	const category = args.category ? String(args.category).toLowerCase() : undefined;
+	const step_key = args.step_key ? String(args.step_key) : undefined;
+	const step_from = args.step_from === undefined ? -Infinity : Number(args.step_from);
+	const step_to = args.step_to === undefined ? Infinity : Number(args.step_to);
+	const fields = Array.isArray(args.fields) ? args.fields.map(String) : undefined;
+	const tail = Math.max(1, Math.min(2000, Number(args.tail ?? 100)));
+	const every = Math.max(1, Number(args.every ?? 1));
+	const summary_only = Boolean(args.summary);
+	const raw = Boolean(args.raw);
+
+	const families = new Map();
+	const rows = [];
+	const stats = new Map();
+	let total_lines = 0;
+	let matched = 0;
+	let unparsed = 0;
+	let first_time;
+	let last_time;
+
+	const note_stats = (parsed) => {
+		for (const [name, value] of Object.entries(parsed)) {
+			if (!Number.isFinite(value)) {
+				continue;
+			}
+			const at = step_key ? parsed[step_key] : undefined;
+			let s = stats.get(name);
+			if (!s) {
+				s = { count: 0, min: value, max: value, sum: 0, min_at: at, max_at: at };
+				stats.set(name, s);
+			}
+			s.count += 1;
+			s.sum += value;
+			if (value < s.min) {
+				s.min = value;
+				s.min_at = at;
+			}
+			if (value > s.max) {
+				s.max = value;
+				s.max_at = at;
+			}
+		}
+	};
+
+	for (const path of files) {
+		const { createReadStream } = await import('node:fs');
+		const lines = createInterface({ input: createReadStream(path, { encoding: 'utf8' }), crlfDelay: Infinity });
+		for await (const raw_line of lines) {
+			total_lines += 1;
+			const line = strip_ansi(raw_line).trim();
+			if (!line || line.startsWith('===')) {
+				continue;
+			}
+			const env = envelope.exec(line);
+			const message = env ? env[5] : line;
+			const fam = family_of(message).toLowerCase();
+			families.set(fam, (families.get(fam) ?? 0) + 1);
+			if (env) {
+				first_time ??= env[1];
+				last_time = env[1];
+			}
+			if (summary_only) {
+				continue;
+			}
+			if (category && (!env || env[3].toLowerCase() !== category)) {
+				continue;
+			}
+			if (family && !fam.startsWith(family)) {
+				continue;
+			}
+			if (pattern && !pattern.test(message)) {
+				continue;
+			}
+			const parsed = parse_fields(message);
+			if (Object.keys(parsed).length === 0) {
+				unparsed += 1;
+				if (!raw) {
+					continue;
+				}
+			}
+			if (step_key) {
+				const step = parsed[step_key];
+				if (step === undefined || step < step_from || step > step_to) {
+					continue;
+				}
+			}
+			matched += 1;
+			if ((matched - 1) % every !== 0) {
+				continue;
+			}
+			note_stats(parsed);
+			const row = fields ? Object.fromEntries(fields.filter((name) => name in parsed).map((name) => [name, parsed[name]])) : parsed;
+			if (raw) {
+				row.line = message;
+			}
+			if (env) {
+				row.thread = env[4];
+			}
+			rows.push(row);
+			if (rows.length > tail) {
+				rows.shift();
+			}
+		}
+	}
+
+	const family_table = [...families].sort((a, b) => b[1] - a[1]).slice(0, 40).map(([name, count]) => ({ family: name, lines: count }));
+	if (summary_only) {
+		return text_result(header(project, {
+			files: files.map(windows_path),
+			total_lines,
+			first_time,
+			last_time,
+			families: family_table,
+			next: 'Query with family (prefix of a family name), optional pattern, step_key/step_from/step_to, fields, tail, every, or aggregate.',
+		}));
+	}
+
+	if (step_key && rows.length > 1) {
+		rows.sort((a, b) => (a[step_key] ?? 0) - (b[step_key] ?? 0));
+	}
+
+	const aggregates = args.aggregate
+		? Object.fromEntries([...stats]
+			.filter(([name]) => !fields || fields.includes(name))
+			.map(([name, s]) => [name, {
+				count: s.count,
+				min: s.min,
+				max: s.max,
+				mean: Number((s.sum / s.count).toPrecision(6)),
+				...(step_key ? { min_at: s.min_at, max_at: s.max_at } : {}),
+			}]))
+		: undefined;
+
+	return text_result(header(project, {
+		files: files.map(windows_path),
+		total_lines,
+		matched_lines: matched,
+		unparsed_skipped: unparsed,
+		returned_rows: rows.length,
+		truncated: rows.length < Math.ceil(matched / every),
+		hint: rows.length < Math.ceil(matched / every) ? 'Narrow with family/pattern/step range, thin with every, or ask for aggregate instead of rows.' : undefined,
+		families: family ? undefined : family_table.slice(0, 12),
+		aggregates,
+		rows: args.aggregate && !args.rows_with_aggregate ? undefined : rows,
+	}));
+};
+
 const tools = {
+	gse_trace_query: {
+		description:
+			'Query a captured run trace under .gse/data/eval (train_*, smoke_*, parity_*, play_* logs, incl. .partN continuations) without reading the file. Lines are parsed into numeric fields (tuples become name.x/.y/.z, units stripped). Call with summary=true first to see the line families in a run, then filter by family/pattern/step range, pick fields, thin with every, or request aggregate for min/max/mean per field. Replaces cd + grep + tail on these files.',
+		schema: {
+			type: 'object',
+			properties: {
+				run: { type: 'string', description: 'Trace name under .gse/data/eval without .txt, e.g. "train_ctrl_july_gpu_80m" or "smoke_shadow_trace_pass1". Spans .part1/.part2 files.' },
+				file: { type: 'string', description: 'Explicit path instead of run, relative to the project or absolute.' },
+				project: { type: 'string', description: 'Project directory; defaults to the nearest .gseproj above the current directory.' },
+				summary: { type: 'boolean', description: 'Only list the line families and counts in the trace.' },
+				family: { type: 'string', description: 'Prefix of a family name from summary, e.g. "shadow step", "cpu dual it", "gpu joint dual gen", "locomotion_train: amp", "parity_trace".' },
+				pattern: { type: 'string', description: 'Case-insensitive regex the message must match.' },
+				category: { type: 'string', description: 'Log category token, e.g. "physics", "general".' },
+				step_key: { type: 'string', description: 'Field that orders rows and bounds the range: step, gen, it, update, total_steps, ep. Rows are sorted by it.' },
+				step_from: { type: 'number' },
+				step_to: { type: 'number' },
+				fields: { type: 'array', items: { type: 'string' }, description: 'Only these fields in rows and aggregates, e.g. ["it","C","lambda","pen"].' },
+				tail: { type: 'number', description: 'Return at most the last N matching rows (default 100, max 2000).' },
+				every: { type: 'number', description: 'Keep every Nth matching row.' },
+				aggregate: { type: 'boolean', description: 'Return count/min/max/mean per numeric field over all matching rows (with the step at min/max when step_key is set) instead of rows.' },
+				rows_with_aggregate: { type: 'boolean', description: 'Return rows as well as aggregates.' },
+				raw: { type: 'boolean', description: 'Include the message text in each row and keep lines that parse to no fields.' },
+			},
+		},
+		run: trace_query,
+	},
 	gse_build: {
 		description:
 			'Ask the running GSE editor to build, the same way its own build buttons do. Blocks until the build finishes (or `wait` seconds if another chat is still working, then returns outcome "deferred" - call gse_hibernate and end your turn). Errors come back split by ownership: only act on the ones attributed to you. This is the only sanctioned way to build; cmake, ninja and compilers are not available to you.',
@@ -431,6 +720,16 @@ const handle = async (message) => {
 	}
 };
 
+// Calls run concurrently; a closed stdin means "no more requests", not "abandon the
+// ones in flight", so exit only once every started call has answered.
+let in_flight = 0;
+let closed = false;
+const maybe_exit = () => {
+	if (closed && in_flight === 0) {
+		process.exit(0);
+	}
+};
+
 const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
 input.on('line', (line) => {
 	if (!line.trim()) {
@@ -444,10 +743,19 @@ input.on('line', (line) => {
 		fail(null, -32700, 'parse error');
 		return;
 	}
-	handle(message).catch((error) => {
-		if (message.id !== undefined) {
-			fail(message.id, -32603, String(error?.message ?? error));
-		}
-	});
+	in_flight += 1;
+	handle(message)
+		.catch((error) => {
+			if (message.id !== undefined) {
+				fail(message.id, -32603, String(error?.message ?? error));
+			}
+		})
+		.finally(() => {
+			in_flight -= 1;
+			maybe_exit();
+		});
 });
-input.on('close', () => process.exit(0));
+input.on('close', () => {
+	closed = true;
+	maybe_exit();
+});

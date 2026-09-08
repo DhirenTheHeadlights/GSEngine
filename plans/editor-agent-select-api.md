@@ -90,7 +90,17 @@ offline script, and so a chat that is dumping despite the tools shows up.
    category filters, bounded by `tail` and `max_bytes`). Protocol verified with a scripted
    JSON-RPC session. The editor passes `--mcp-config` at launch.
 2. Measure with the usage script before and after on the HumanoidLocomotion chats.
-3. `gse_trace_query` and `gse_scene_query`; the latter is the first tool needing a pipe.
+3. **Trace query done 2026-09-08.** `gse_trace_query` streams a run's captured log
+   (`.gse/data/eval/<run>.txt` plus `.partN` continuations, oldest first) and parses every
+   line into numeric fields: ANSI stripped, unit suffixes removed, tuples split into
+   `.x/.y/.z`, both `key=value` and `key value` shapes. `summary=true` lists line families
+   and counts; queries filter by family prefix, regex, category and a per-family step key
+   (`step`, `gen`, `it`, `update`, `total_steps`, `ep`), then return a bounded tail of rows,
+   every Nth row, or count/min/max/mean per field with the step at each extreme. Transcripts
+   showed agents reaching these files only through `cd && grep -a | tail`, which this
+   replaces. The data guard now covers the `train_/smoke_/parity_/play_` families; redirect
+   targets stay writable so the queue scripts keep working. `gse_scene_query` remains, and
+   is the first tool needing a pipe.
 4. **Done for logs 2026-09-07.** `~/.claude/hooks/data-guard.mjs` denies Read, Grep, Glob,
    Bash and PowerShell access to `%LOCALAPPDATA%\GSE\logs` in GSE trees and names
    `gse_log_query` plus the terminal opt-in. Deletes and heredoc bodies are exempt. Extend its

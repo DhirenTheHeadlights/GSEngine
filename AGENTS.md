@@ -42,6 +42,8 @@ A logging system writes to `%LOCALAPPDATA%\GSE\logs\<exe>.<pid>.log` (e.g. `Edit
 
 Builds go through the running editor only. Use the `gse_build` tool (or `Tools/gse-build` in a shell); cmake, ninja and the compilers are deliberately not on your PATH. If the build is deferred because another chat is mid-work, call `gse_hibernate` (or `Tools/gse-hibernate --then "..."`) and end your turn: the editor wakes you with the result. Never poll with `sleep`; it is blocked. `gse_build_status` shows the queue.
 
+Captured run traces under a project's `.gse/data/eval` (`train_*`, `smoke_*`, `parity_*`, `play_*`) are queried with `gse_trace_query`: call it with `run` and `summary=true` to see the line families, then filter by family, regex or step range and ask for fields, a bounded tail, or aggregates. Do not `grep | tail` these files; they run to tens of megabytes.
+
 These tools come from `Tools/gse-mcp/server.mjs`, which the editor's agent panel loads automatically. A terminal session gets them with `claude --mcp-config Tools/gse-mcp/mcp.json` from the engine root. Design and roadmap: `plans/editor-agent-select-api.md`.
 
 ## Config Module
