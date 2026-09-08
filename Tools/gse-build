@@ -7,7 +7,11 @@ tree=
 profile=
 timeout=1800
 wait=30
-agent=
+# Claude Code exports the session id to every tool shell, so this survives any invocation
+# shape - wrapper scripts, xargs, PowerShell, subprocess - that the hook's text splice
+# cannot see through. --agent is still honoured for a caller that wants to override it.
+agent=${CLAUDE_CODE_SESSION_ID:-}
+probe=0
 
 usage() {
 	cat <<'EOF'
@@ -26,6 +30,8 @@ usage: Tools/gse-build [--game|--editor] [--run] [--profile NAME] [--tree NAME] 
   --timeout SECONDS  give up waiting after this long (default 1800)
   --wait SECONDS     how long to hold the line before deferring (default 30)
   --agent ID         claim errors for this agent session (injected automatically)
+  --probe            print the agent id this call received and exit without building;
+                     use it to check that the build-guard hook is splicing --agent in
 
 exit codes:
   0  build succeeded
@@ -78,6 +84,7 @@ while [ $# -gt 0 ]; do
 			shift
 			agent=${1:-}
 			;;
+		--probe) probe=1 ;;
 		-h|--help)
 			usage
 			exit 0
@@ -91,12 +98,28 @@ while [ $# -gt 0 ]; do
 	shift
 done
 
+if [ "$probe" = 1 ]; then
+	if [ -n "$agent" ]; then
+		if [ "$agent" = "${CLAUDE_CODE_SESSION_ID:-}" ]; then
+			source="from CLAUDE_CODE_SESSION_ID in the environment"
+		else
+			source="from --agent"
+		fi
+		echo "gse-build: agent $agent ($source) - builds and hibernates will be attributed to you."
+		exit 0
+	fi
+	echo "gse-build: no agent id reached this call: CLAUDE_CODE_SESSION_ID is unset in this shell and the" >&2
+	echo "gse-build: build-guard PreToolUse hook did not splice --agent in. Tell the user." >&2
+	exit 2
+fi
+
 if [ -z "$agent" ]; then
 	echo "gse-build: warning - no --agent argument, normally spliced in by the build-guard PreToolUse hook." >&2
 	echo "gse-build: without it the editor cannot tell that YOU are the requester, so your own turn counts as" >&2
 	echo "gse-build: a blocker and you will wait on yourself. Compile errors will also come back unowned." >&2
-	echo "gse-build: check with 'echo Tools/gse-build probe'; if nothing is spliced in, the hooks are not" >&2
-	echo "gse-build: registered for this directory and the direct-build guard is off as well." >&2
+	echo "gse-build: check with 'Tools/gse-build --probe' (an echo of the command does not exercise the hook)." >&2
+	echo "gse-build: If it reports no agent id, the hooks are not registered for this directory and the" >&2
+	echo "gse-build: direct-build guard is off as well." >&2
 fi
 
 state_root=${GSE_STATE_DIR:-${LOCALAPPDATA:-$HOME/AppData/Local}/GSE}

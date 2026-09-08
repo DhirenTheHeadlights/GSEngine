@@ -1,7 +1,9 @@
 #!/bin/sh
 set -eu
 
-agent=
+# Claude Code exports the session id to every tool shell; the --agent splice from the
+# build-guard hook is only a fallback for shells that lack it.
+agent=${CLAUDE_CODE_SESSION_ID:-}
 prompt=
 
 usage() {
@@ -55,10 +57,11 @@ if [ -z "$agent" ]; then
 	echo "gse-hibernate: so the usual cause is that this session never loaded the hook, NOT that you are a" >&2
 	echo "gse-hibernate: terminal session. Do not conclude anything about your session kind from this." >&2
 	echo "gse-hibernate:" >&2
-	echo "gse-hibernate: check it with:  echo Tools/gse-build probe" >&2
-	echo "gse-hibernate: the echoed line should come back with '--agent <session-id>' spliced in. If it does" >&2
-	echo "gse-hibernate: not, the hooks are not registered for this session's directory - the direct-build" >&2
-	echo "gse-hibernate: guard is off too. Tell the user; that is a bigger problem than this message." >&2
+	echo "gse-hibernate: check it with:  Tools/gse-build --probe   (run it the same way you ran this;" >&2
+	echo "gse-hibernate: an echo of the command line does not exercise the hook and always looks unspliced)." >&2
+	echo "gse-hibernate: If the probe reports no agent id, the hooks are not registered for this session's" >&2
+	echo "gse-hibernate: directory - the direct-build guard is off too. Tell the user; that is a bigger" >&2
+	echo "gse-hibernate: problem than this message." >&2
 	exit 2
 fi
 

@@ -8,6 +8,7 @@ import :model;
 namespace gse::ide::agent {
 	constexpr std::string_view agent_command = "claude -p --output-format stream-json --input-format stream-json --verbose --permission-mode auto";
 	constexpr std::wstring_view resume_option = L" --resume ";
+	constexpr std::string_view mcp_config_format = R"( --mcp-config "{{\"mcpServers\":{{\"gse\":{{\"command\":\"node\",\"args\":[\"{}\"]}}}}}}")";
 	constexpr std::wstring_view oauth_token_name = L"CLAUDE_CODE_OAUTH_TOKEN";
 	constexpr std::wstring_view config_dir_name = L"CLAUDE_CONFIG_DIR";
 	constexpr std::wstring_view user_profile_name = L"USERPROFILE";

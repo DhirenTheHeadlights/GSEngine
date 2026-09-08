@@ -279,6 +279,10 @@ auto gse::ide::agent::session_command(const session& s) -> std::wstring {
 		command.append(level.begin(), level.end());
 	}
 
+	const std::filesystem::path server = config::worktree_for(s.cwd).engine_root / "Tools" / "gse-mcp" / "server.mjs";
+	const std::string mcp = std::format(mcp_config_format, server.generic_display_string());
+	command.append(mcp.begin(), mcp.end());
+
 	if (s.info.agent_id.empty()) {
 		return command;
 	}
