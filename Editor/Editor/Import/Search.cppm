@@ -5,4 +5,5 @@ export import :fuzzy;
 export import :index;
 export import :engine;
 export import :query_driver;
+export import :agent_query;
 export import :search_system;

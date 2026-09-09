@@ -58,3 +58,23 @@ export namespace gse::ide::build_inbox {
 		std::string_view id
 	) -> void;
 }
+
+	struct symbol_query {
+		std::string id;
+		std::string agent;
+		std::string name;
+		std::filesystem::path file;
+		std::filesystem::path cwd;
+		std::filesystem::path project;
+		std::uint32_t sites = 0;
+		std::uint32_t lines = 0;
+		bool body = true;
+	};
+
+	auto queries_dir() -> std::filesystem::path;
+
+	auto peek_symbol_queries() -> std::vector<symbol_query>;
+
+	auto consume_symbol_query(
+		std::string_view id
+	) -> void;

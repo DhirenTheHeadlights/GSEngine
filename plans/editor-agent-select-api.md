@@ -145,6 +145,47 @@ the only remaining lever of the size the log and trace tools were. Scoping it ne
 whether the index is queryable from disk or needs the editor endpoint that scene query would
 have introduced.
 
+## Symbol query
+
+Built 2026-09-09 as tool six, in place of scene query.
+
+**The index is not queryable from disk.** `Search/Index.cpp` does cache per-translation-unit
+symbols under `config::cache_dir()/symbols/<hash>.bin`, but through the engine's reflection-driven
+`binary_writer`, versioned by `tu_cache_version` and `archive_format_epoch`. A node reader of that
+format would be coupled to a layout that changes whenever a reflected struct does. The live
+in-memory index in the running editor is the only sound source, so this is the tool that needed
+the editor endpoint scene query would have introduced.
+
+**It rides the file inbox rather than a new pipe.** `build_inbox` grows a `queries` directory and
+`peek_symbol_queries`/`consume_symbol_query`; answers go back through the existing
+`build_inbox::publish`, so `Tools/gse-mcp` reads them with the same `read_result` it already uses
+for builds. The search system owns the index, so it does the polling: `search_system::frame` calls
+`search::poll_agent_queries` every 100 ms, which is one `directory_iterator` over a usually-empty
+directory. Ownership is decided exactly as builds decide it — `config::owning_worktree(cwd)`, then
+`project` against `config::project_root()`.
+
+**What it answers.** `Search/AgentQuery.cpp`. A `name` (bare or qualified) is split on the last
+`::` and ranked through the index's own `selection_score`, so the tool and go-to-definition agree
+on what matches; every site comes back with kind, resolved type from `xref_at`, and its source
+text. A `file` returns that file's outline, filtered to the kinds worth outlining (everything but
+locals and parameters). Source text comes from the content index already in memory, sliced by
+`definition_extent`: from the definition line to the line at the same indent that closes it, or to
+the `;` of a wrapped declaration, capped by a line budget the earlier, better-ranked sites draw
+from first.
+
+**Not in the first cut.** References ("where is this used") would need a linear scan over every
+xref in the index on the frame thread, and grep over sources is only 7% of tool bytes against the
+50% spent reading source. It goes in when the measurement asks for it, on a worker if it does.
+
+**No guard.** Unlike logs and traces, source reads stay open: the index is empty while it builds,
+absent when no editor is running, and useless for free-text search. The tool has to win by being
+better, not by the alternative being closed.
+
+**Known duplication.** `peek_requests`, `peek_hibernations` and `peek_symbol_queries` now share a
+directory-walk-and-age-out skeleton three ways. It should collapse into one helper over
+`(dir, abandoned, parse)`; it was left alone because another session has `BuildRunner/Inbox.cpp`
+open, and a behaviour-preserving refactor of a file that is mid-edit lands in everyone's build.
+
 ## Measurement
 
 Baseline is captured: last 7 days, 12.5k turns, mean context 344k, tool bytes Bash 54% / Read

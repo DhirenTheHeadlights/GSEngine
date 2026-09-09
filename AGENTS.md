@@ -46,6 +46,12 @@ Captured run traces under a project's `.gse/data/eval` (`train_*`, `smoke_*`, `p
 
 These tools come from `Tools/gse-mcp/server.mjs`, which the editor's agent panel loads automatically. A terminal session gets them with `claude --mcp-config Tools/gse-mcp/mcp.json` from the engine root. Design and roadmap: `plans/editor-agent-select-api.md`.
 
+## Finding Code
+
+`gse_symbol_query` answers from the semantic index the editor already keeps for go-to-definition, so looking a symbol up costs one call instead of a grep plus a guessed `sed -n` slice. Pass `name` (bare or qualified) and you get every declaration and definition site — file, line, kind, resolved type — definitions first, each with its own source text sliced to the end of the definition. Pass `file` instead for that file's outline: the types, functions, members, enumerators and aliases it defines, with lines. Reading engine source to find a symbol was half of all tool output before this existed.
+
+It is an accelerator, not a gate. Reading and grepping source stays open, and you need it when no editor is running, when the answer comes back `indexing` because the index is still building, and whenever you are searching free text rather than a name.
+
 ## Config Module
 
 `gse.config` (in `Engine/Engine/Import/Config.cppm`) provides every engine path as a **function**, resolved at runtime — `resource_path()`, `root_dir()`, `user_config_dir()`, etc. Re-exported by `gse.utility`. Nothing is baked into the binary: paths come from a `gse.manifest` marker file found by walking up from the executable's directory (CMake writes one to the build root at configure time with `mode = dev` and `root = <source tree>`).

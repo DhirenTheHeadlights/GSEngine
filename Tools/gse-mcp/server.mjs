@@ -592,7 +592,132 @@ const trace_query = async (args) => {
 	}));
 };
 
+// The editor answers a symbol query out of the semantic index it already keeps for go-to-
+// definition, so a chat gets the definition itself instead of a guessed slice of a file.
+// The answer is one directive per line: sites/site/qualified/type/body, and body is followed
+// by that many source lines prefixed with '| '.
+const parse_answer = (body) => {
+	const matches = [];
+	const at = (index) => {
+		while (matches.length <= index) {
+			matches.push({ source: [] });
+		}
+		return matches[index];
+	};
+	const out = {};
+	let current;
+	for (const line of body.split('\n')) {
+		const space = line.indexOf(' ');
+		const key = space > 0 ? line.slice(0, space) : line;
+		const rest = space > 0 ? line.slice(space + 1) : '';
+		if (key === '|') {
+			current?.source.push(rest);
+			continue;
+		}
+		const [index, ...tail] = rest.split(' ');
+		switch (key) {
+			case 'error':
+				out.error = rest;
+				break;
+			case 'indexing':
+				out.indexing = rest === '1';
+				break;
+			case 'mode':
+				out.mode = rest;
+				break;
+			case 'sites':
+				out.returned = Number(index);
+				out.total = Number(tail[0]);
+				break;
+			case 'site':
+				current = at(Number(index));
+				current.kind = tail[0];
+				current.definition = tail[1] === 'definition';
+				current.line = Number(tail[2]);
+				current.column = Number(tail[3]);
+				current.file = tail.slice(4).join(' ');
+				break;
+			case 'qualified':
+				at(Number(index)).qualified = tail.join(' ');
+				break;
+			case 'type':
+				at(Number(index)).type = tail.join(' ');
+				break;
+			case 'body':
+				current = at(Number(index));
+				current.first_line = Number(tail[0]);
+				current.last_line = Number(tail[1]);
+				current.truncated = tail[2] === 'truncated';
+				break;
+		}
+	}
+	for (const match of matches) {
+		match.source = match.source.length > 0 ? match.source.join('\n') : undefined;
+	}
+	return matches.length > 0 ? { ...out, matches } : out;
+};
+
+const symbol_query = async (args) => {
+	const project = args.project ? windows_path(args.project) : project_of(process.cwd());
+	const name = String(args.name ?? '').trim();
+	const file = String(args.file ?? '').trim();
+	if (!name && !file) {
+		return text_result(header(project, { error: 'pass `name` for a symbol, or `file` for a file outline.' }), true);
+	}
+	const id = new_id();
+	const timeout = Math.min(60, Math.max(1, Number(args.timeout ?? 15)));
+
+	rmSync(join(inbox, 'results', `${id}.txt`), { force: true });
+	write_atomically(join(inbox, 'queries'), id, [
+		`id ${id}`,
+		`agent ${agent}`,
+		`name ${name}`,
+		`file ${file}`,
+		`cwd ${windows_path(process.cwd())}`,
+		`project ${project}`,
+		`sites ${Math.max(0, Math.trunc(Number(args.max_matches ?? 0)) || 0)}`,
+		`lines ${Math.max(0, Math.trunc(Number(args.max_lines ?? 0)) || 0)}`,
+		`body ${args.source === false ? 0 : 1}`,
+		'',
+	].join('\n'));
+
+	const deadline = Date.now() + timeout * 1000;
+	while (Date.now() < deadline) {
+		const result = read_result(id);
+		if (result) {
+			result.remove();
+			const answer = parse_answer(result.body);
+			return text_result(header(project, { query: name || file, ...answer }), Boolean(answer.error));
+		}
+		await sleep(50);
+	}
+	rmSync(join(inbox, 'queries', `${id}.txt`), { force: true });
+	return text_result(header(project, {
+		query: name || file,
+		outcome: 'no_editor',
+		error: `no editor answered within ${timeout}s - it is not running, or none is open on this project.`,
+		next: 'Fall back to Grep and Read for this lookup; source files are not restricted.',
+	}), true);
+};
+
 const tools = {
+	gse_symbol_query: {
+		description:
+			'Find code by name instead of grepping and reading files. Ask for a symbol (`name`, bare or qualified: "record_usage" or "gse::ide::agent::record_usage") and the editor answers from the semantic index behind its go-to-definition: every declaration and definition site with file, line, kind and resolved type, definitions first, each with its own source text sliced to the end of the definition. Ask for a `file` instead to get its outline - every type, function, member and alias it defines, with lines. Prefer this to Read + sed slices and to grepping for a definition; fall back to Grep for free text or when no editor is running.',
+		schema: {
+			type: 'object',
+			properties: {
+				name: { type: 'string', description: 'Symbol to look up. A trailing qualifier narrows it: "agent::record_usage" matches only that namespace or class.' },
+				file: { type: 'string', description: 'Outline this file instead of looking up a name. Relative paths resolve against your cwd, the project, then the engine root.' },
+				source: { type: 'boolean', description: 'Include the source text of each site (default true). Set false for just the locations.' },
+				max_matches: { type: 'number', description: 'Sites to return (default 20, max 200). total in the response says how many matched.' },
+				max_lines: { type: 'number', description: 'Total source lines across all sites (default 120, max 2000). Earlier, better-ranked sites take from it first; a site that runs out is marked truncated.' },
+				project: { type: 'string', description: 'Project directory; defaults to the nearest .gseproj above the current directory.' },
+				timeout: { type: 'number', description: 'Seconds to wait for the editor (default 15).' },
+			},
+		},
+		run: symbol_query,
+	},
 	gse_trace_query: {
 		description:
 			'Query a captured run trace under .gse/data/eval (train_*, smoke_*, parity_*, play_* logs, incl. .partN continuations) without reading the file. Lines are parsed into numeric fields (tuples become name.x/.y/.z, units stripped). Call with summary=true first to see the line families in a run, then filter by family/pattern/step range, pick fields, thin with every, or request aggregate for min/max/mean per field. Replaces cd + grep + tail on these files.',
@@ -687,7 +812,7 @@ const handle = async (message) => {
 			capabilities: { tools: {} },
 			serverInfo: { name: 'gse', version: '0.1.0' },
 			instructions:
-				'GSE editor tools. Build with gse_build (never cmake/ninja/compilers). If it returns "deferred", call gse_hibernate and end your turn. Read logs with gse_log_query, not by opening the file.',
+				'GSE editor tools. Build with gse_build (never cmake/ninja/compilers). If it returns "deferred", call gse_hibernate and end your turn. Read logs with gse_log_query, not by opening the file. Look code up with gse_symbol_query before reading a source file to find a symbol.',
 		});
 		return;
 	}

@@ -34,7 +34,7 @@ auto gse::ide::build_inbox::split_field(const std::string_view line) -> std::pai
 auto gse::ide::build_inbox::sanitize(const std::string_view text) -> std::string {
 	std::string out(text);
 	for (char& c : out) {
-		if (c == '\n' || c == '\r' || c == '\t') {
+		if (c == '\n' || c == '\r') {
 			c = ' ';
 		}
 	}
@@ -246,4 +246,89 @@ auto gse::ide::build_inbox::publish(const result& outcome) -> void {
 	if (ec) {
 		log::println(log::level::warning, log::category::task, "build inbox: could not publish '{}' ({})", final_path, ec.message());
 	}
+}
+
+auto gse::ide::build_inbox::queries_dir() -> std::filesystem::path {
+	return directory() / "queries";
+}
+
+auto gse::ide::build_inbox::consume_symbol_query(const std::string_view id) -> void {
+	std::error_code ec;
+	std::filesystem::remove(queries_dir() / (std::string(id) + ".txt"), ec);
+}
+
+auto gse::ide::build_inbox::peek_symbol_queries() -> std::vector<symbol_query> {
+	const std::filesystem::path dir = queries_dir();
+	std::error_code ec;
+	if (!std::filesystem::exists(dir, ec) || ec) {
+		return {};
+	}
+
+	const auto abandoned = std::chrono::seconds(60);
+
+	std::vector<symbol_query> out;
+	for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(dir, std::filesystem::directory_options::skip_permission_denied, ec)) {
+		if (entry.path().extension() != ".txt") {
+			continue;
+		}
+
+		std::error_code stamp_ec;
+		const std::filesystem::file_time_type stamp = std::filesystem::last_write_time(entry.path(), stamp_ec);
+		if (!stamp_ec && std::filesystem::file_time_type::clock::now() - stamp > abandoned) {
+			std::filesystem::remove(entry.path(), ec);
+			continue;
+		}
+
+		symbol_query parsed;
+		{
+			std::ifstream in(entry.path(), std::ios::binary);
+			std::string line;
+			while (in && std::getline(in, line)) {
+				if (!line.empty() && line.back() == '\r') {
+					line.pop_back();
+				}
+				const auto [key, value] = split_field(line);
+				if (key == "id") {
+					parsed.id.assign(value);
+				}
+				else if (key == "agent") {
+					parsed.agent.assign(value);
+				}
+				else if (key == "name") {
+					parsed.name.assign(value);
+				}
+				else if (key == "file") {
+					parsed.file.assign(value);
+				}
+				else if (key == "cwd") {
+					parsed.cwd.assign(value);
+				}
+				else if (key == "project") {
+					parsed.project.assign(value);
+				}
+				else if (key == "sites") {
+					std::from_chars(value.data(), value.data() + value.size(), parsed.sites);
+				}
+				else if (key == "lines") {
+					std::from_chars(value.data(), value.data() + value.size(), parsed.lines);
+				}
+				else if (key == "body") {
+					parsed.body = value == "1" || value == "true";
+				}
+			}
+		}
+
+		if (parsed.id.empty() || parsed.id != entry.path().stem().generic_display_string()) {
+			log::println(log::level::warning, log::category::task, "build inbox: '{}' is not a usable symbol query", entry.path());
+			std::filesystem::remove(entry.path(), ec);
+			continue;
+		}
+		if (parsed.name.empty() && parsed.file.empty()) {
+			log::println(log::level::warning, log::category::task, "build inbox: symbol query '{}' names neither a symbol nor a file", entry.path());
+			std::filesystem::remove(entry.path(), ec);
+			continue;
+		}
+		out.push_back(std::move(parsed));
+	}
+	return out;
 }

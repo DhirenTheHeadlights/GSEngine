@@ -6,6 +6,7 @@ import gse;
 import gse.ide.analysis;
 import gse.ide.config;
 import gse.ide.build;
+import :agent_query;
 
 import :index;
 import :search_system;
@@ -133,6 +134,10 @@ auto gse::ide::search_system::frame(const context& ctx, data& d, const channel_r
 	}
 	if (d.symbols_dirty && now - d.last_index_change > milliseconds(500.f) && !build_d.building && !d.index->building.load(std::memory_order_acquire)) {
 		d.symbols_dirty = false;
+	if (now >= d.next_query_poll) {
+		d.next_query_poll = now + milliseconds(100.f);
+		search::poll_agent_queries(*d.index);
+	}
 		search::request_symbol_build(*d.index);
 	}
 	return {};
