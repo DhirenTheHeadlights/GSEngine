@@ -16,6 +16,8 @@ export namespace gse::network {
 		std::string connect;
 		std::uint16_t listen_port = default_port;
 		std::uint8_t max_players = 8;
+		std::uint32_t simulated_latency_ms = 0;
+		std::uint32_t simulated_loss_permille = 0;
 	};
 
 	auto resolve_role(

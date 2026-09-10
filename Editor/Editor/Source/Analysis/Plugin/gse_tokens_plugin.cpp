@@ -9,6 +9,8 @@
 #include "hash-set.h"
 #include "hash-map.h"
 #include <stdarg.h>
+#include <dirent.h>
+#include <sys/stat.h>
 
 int plugin_is_GPL_compatible;
 
@@ -29,6 +31,14 @@ static char *g_src = nullptr;
 static long g_src_len = 0;
 static auto_vec<long> *g_src_lines = nullptr;
 static hash_map<tree, tree> *g_lexical_ns = nullptr;
+static hash_map<tree, auto_vec<tree> *> *g_name_sweep = nullptr;
+static hash_map<tree, auto_vec<tree> *> *g_name_precise = nullptr;
+static hash_set<tree> *g_name_local = nullptr;
+static hash_map<tree, auto_vec<tree> *> *g_name_files = nullptr;
+static hash_map<tree, tree> *g_unit_of_file = nullptr;
+static hash_set<tree> *g_file_identifiers = nullptr;
+
+static constexpr size_t module_name_capacity = 128;
 
 /* Per-line fprintf was half the plugin's index-mode cost (stream lock +
    format parse per call).  All token output goes through this buffer instead;
@@ -280,6 +290,18 @@ static bool main_file_under_root() {
 	return cached == 1;
 }
 
+static tree path_key(const char *path) {
+	if (!path) return NULL_TREE;
+	char buffer[4096];
+	size_t i = 0;
+	for (; path[i] && i + 1 < sizeof(buffer); ++i) {
+		const char c = path[i];
+		buffer[i] = c == 92 ? '/' : ascii_lower(c);
+	}
+	buffer[i] = 0;
+	return get_identifier(buffer);
+}
+
 static bool under_one_root(const char *file, const char *root, size_t root_len) {
 	for (size_t i = 0; i < root_len; ++i) {
 		char a = file[i];
@@ -451,6 +473,7 @@ static void emit(location_t loc, const char *kind, int len) {
 
 static void emit_at_name(location_t loc, const char *kind, tree id);
 static void emit_ref(location_t use_loc, tree decl, int len);
+static void note_decl_origin(tree decl);
 
 static void emit_decl(tree d, location_t loc) {
 	if (!d || !DECL_P(d) || DECL_ARTIFICIAL(d)) return;
@@ -674,6 +697,9 @@ static void emit_ref_at(const char *use_file, int use_line, int use_column, tree
 	tree id = DECL_NAME(decl);
 	if (!id || TREE_CODE(id) != IDENTIFIER_NODE) return;
 	const char *name = IDENTIFIER_POINTER(id);
+	if (use_file && main_input_filename && strcmp(use_file, main_input_filename) == 0) {
+		note_decl_origin(decl);
+	}
 	if (name[0] == '_' || name[0] == '.' || strchr(name, ' ')) return;
 	if (!use_file || use_line <= 0 || use_column <= 0 || !under_root_cached(use_file)) return;
 	expanded_location dx = expand_cached(DECL_SOURCE_LOCATION(decl));
@@ -1544,6 +1570,7 @@ static void emit_type_use_ref(const source_token &use, tree decl) {
 	if (name[0] == '.' || strchr(name, ' ')) {
 		return;
 	}
+	note_decl_origin(decl);
 	const int use_len = (int)(use.finish - use.start);
 	if (use_len <= 0) {
 		return;
@@ -1691,7 +1718,7 @@ static void scan_designators(int open_index, tree type) {
 		return;
 	}
 	const source_token &open = (*g_source_tokens)[open_index];
-	if (open.kind != source_token_kind::left_brace || open.pair <= open_index || open.pair - open_index > 256) {
+	if (open.kind != source_token_kind::left_brace || open.pair <= open_index || open.pair - open_index > 8192) {
 		return;
 	}
 	for (int index = open_index + 1; index < open.pair; ++index) {
@@ -1753,6 +1780,33 @@ static void scan_decl_designators(tree decl, tree init) {
 		if (kind == source_token_kind::left_brace) {
 			scan_designators(index, TREE_TYPE(ctor));
 			return;
+		}
+	}
+}
+
+static void scan_return_designators(tree decl, int open, int close) {
+	if (g_index_only || !decl || TREE_CODE(decl) != FUNCTION_DECL) {
+		return;
+	}
+	tree fntype = TREE_TYPE(decl);
+	if (!fntype || (TREE_CODE(fntype) != FUNCTION_TYPE && TREE_CODE(fntype) != METHOD_TYPE)) {
+		return;
+	}
+	tree returned = TREE_TYPE(fntype);
+	if (!returned || !RECORD_OR_UNION_TYPE_P(returned)) {
+		return;
+	}
+	for (int index = open + 1; index < close; ++index) {
+		if (!source_token_equals(index, "return")) {
+			continue;
+		}
+		int cursor = index + 1;
+		while (cursor < close && ((*g_source_tokens)[cursor].kind == source_token_kind::identifier
+			|| (*g_source_tokens)[cursor].kind == source_token_kind::scope)) {
+			++cursor;
+		}
+		if (cursor < close && (*g_source_tokens)[cursor].kind == source_token_kind::left_brace) {
+			scan_designators(cursor, returned);
 		}
 	}
 }
@@ -3165,6 +3219,42 @@ static void scan_preceding_annotations(int start) {
 	}
 }
 
+static void scan_enumerator_annotations(tree cst) {
+	if (g_index_only || !cst || TREE_CODE(cst) != CONST_DECL
+		|| !in_main_file(DECL_SOURCE_LOCATION(cst)) || !ensure_source_tokens()) {
+		return;
+	}
+	const int anchor = find_decl_anchor(cst);
+	if (anchor < 0 || !source_token_is_char(anchor + 1, '[') || !source_token_is_char(anchor + 2, '[')) {
+		return;
+	}
+	const int count = (int)g_source_tokens->length();
+	int depth = 0;
+	int close = -1;
+	for (int index = anchor + 1; index < count; ++index) {
+		if (source_token_is_char(index, '[')) {
+			++depth;
+		}
+		else if (source_token_is_char(index, ']') && --depth == 0) {
+			close = index;
+			break;
+		}
+	}
+	if (close < 0) {
+		return;
+	}
+	tree previous_scope = g_scope;
+	tree previous_class = g_class_context;
+	tree previous_function = g_function;
+	g_scope = enclosing_namespace(cst);
+	g_class_context = TYPE_P(DECL_CONTEXT(cst)) ? DECL_CONTEXT(cst) : NULL_TREE;
+	g_function = NULL_TREE;
+	scan_binding_type_qualifiers(anchor + 1, close, false);
+	g_function = previous_function;
+	g_class_context = previous_class;
+	g_scope = previous_scope;
+}
+
 static void push_template_parms(tree tmpl, auto_vec<tree, 32> *locals) {
 	if (!tmpl || TREE_CODE(tmpl) != TEMPLATE_DECL) {
 		return;
@@ -3224,7 +3314,51 @@ static bool body_has_template_for(int open, int close) {
 	return false;
 }
 
-static int qualified_declarator_end(int start, int finish) {
+static tree declared_function(tree decl) {
+	if (!decl) return NULL_TREE;
+	if (TREE_CODE(decl) == FUNCTION_DECL) return decl;
+	if (TREE_CODE(decl) == TEMPLATE_DECL) {
+		tree result = DECL_TEMPLATE_RESULT(decl);
+		if (result && TREE_CODE(result) == FUNCTION_DECL) return result;
+	}
+	return NULL_TREE;
+}
+
+static bool declarator_id_matches(int end, int anchor, tree decl) {
+	if (end == anchor) return true;
+	if (end < 0) return false;
+	tree fn = declared_function(decl);
+	if (!fn) return false;
+	if (DECL_OVERLOADED_OPERATOR_P(fn)) {
+		return source_token_equals(end, "operator");
+	}
+	if (DECL_DESTRUCTOR_P(fn)) {
+		return end > 0 && source_token_is_char(end - 1, '~');
+	}
+	if (DECL_CONSTRUCTOR_P(fn)) {
+		tree ctx = DECL_CONTEXT(fn);
+		tree owner = ctx && TYPE_P(ctx) ? TYPE_NAME(ctx) : NULL_TREE;
+		return owner && DECL_P(owner) && source_token_matches_identifier(end, DECL_NAME(owner));
+	}
+	return false;
+}
+
+static bool parameter_list_of_declarator(int name, int paren) {
+	if (paren <= name) return false;
+	if (source_token_is_char(name, '~')) ++name;
+	if (source_token_equals(name, "operator")) return true;
+	if (paren == name + 1) return true;
+	if ((*g_source_tokens)[name + 1].kind != source_token_kind::less) return false;
+	int depth = 0;
+	for (int index = name + 1; index < paren; ++index) {
+		const source_token_kind kind = (*g_source_tokens)[index].kind;
+		if (kind == source_token_kind::less) ++depth;
+		else if (kind == source_token_kind::greater) --depth;
+	}
+	return depth == 0 && (*g_source_tokens)[paren - 1].kind == source_token_kind::greater;
+}
+
+static int qualified_declarator_end(int start, int finish, int anchor, tree decl) {
 	int angle = 0;
 	int parens = 0;
 	int end = -1;
@@ -3245,6 +3379,9 @@ static int qualified_declarator_end(int start, int finish) {
 			}
 		}
 		else if (kind == source_token_kind::left_paren) {
+			if (parens == 0 && end >= 0 && parameter_list_of_declarator(end, index)) {
+				break;
+			}
 			++parens;
 		}
 		else if (kind == source_token_kind::right_paren) {
@@ -3258,6 +3395,9 @@ static int qualified_declarator_end(int start, int finish) {
 	}
 	if (end >= 0 && end < finish && source_token_is_char(end, '~')) {
 		++end;
+	}
+	if (!declarator_id_matches(end, anchor, decl)) {
+		return -1;
 	}
 	if (end >= 0 && end + 1 < finish && (*g_source_tokens)[end].kind == source_token_kind::identifier
 		&& !source_token_equals(end, "operator")
@@ -3328,7 +3468,7 @@ static void scan_declaration_type_qualifiers(tree decl, tree tmpl_override = NUL
 		}
 		push_template_parms(tmpl, &locals);
 	}
-	const int declarator_id = qualified_declarator_end(start, finish);
+	const int declarator_id = qualified_declarator_end(start, finish, anchor, decl);
 	const bool qualified_declarator = declarator_id > start;
 	if (qualified_declarator) {
 		g_scope = lexical_namespace_of(decl);
@@ -3350,9 +3490,11 @@ static void scan_declaration_type_qualifiers(tree decl, tree tmpl_override = NUL
 	g_class_context = declaration_class;
 	g_function = declaration_function;
 	if (TREE_CODE(decl) == FUNCTION_DECL && finish < (int)g_source_tokens->length()
-		&& (*g_source_tokens)[finish].kind == source_token_kind::left_brace && (*g_source_tokens)[finish].pair > finish
-		&& (tmpl || body_has_template_for(finish, (*g_source_tokens)[finish].pair))) {
-		scan_template_body(finish, (*g_source_tokens)[finish].pair);
+		&& (*g_source_tokens)[finish].kind == source_token_kind::left_brace && (*g_source_tokens)[finish].pair > finish) {
+		scan_return_designators(decl, finish, (*g_source_tokens)[finish].pair);
+		if (tmpl || body_has_template_for(finish, (*g_source_tokens)[finish].pair)) {
+			scan_template_body(finish, (*g_source_tokens)[finish].pair);
+		}
 	}
 	if (TREE_CODE(decl) == FUNCTION_DECL
 		|| (TREE_CODE(decl) == TEMPLATE_DECL && DECL_TEMPLATE_RESULT(decl) && TREE_CODE(DECL_TEMPLATE_RESULT(decl)) == FUNCTION_DECL)) {
@@ -3775,6 +3917,506 @@ static void emit_unused_locals() {
 	if (!g_unused_locals || !main_input_filename || placeholder_is_read()) return;
 	for (const unused_local &entry : *g_unused_locals) {
 		out_printf("GSEUNUSED\t%s\t%d\t%d\t%d\t%s\n", main_input_filename, entry.line, entry.column, entry.length, entry.name);
+	}
+}
+
+struct module_import {
+	int line = 0;
+	char name[module_name_capacity] = {};
+	bool exported = false;
+};
+
+static auto_vec<module_import> *g_module_imports = nullptr;
+static char g_current_module[module_name_capacity] = {};
+static bool g_module_scan_done = false;
+static bool g_current_module_exported = false;
+
+static bool token_text_is(const source_token &token, const char *text) {
+	const long length = token.finish - token.start;
+	if (length <= 0 || (size_t)length != strlen(text)) return false;
+	return strncmp(g_src + token.start, text, (size_t)length) == 0;
+}
+
+static bool token_starts_line(const source_token &token) {
+	for (long i = token.start - 1; i >= 0; --i) {
+		const char c = g_src[i];
+		if (c == '\n') return true;
+		if (c != ' ' && c != '\t' && c != '\r') return false;
+	}
+	return true;
+}
+
+static void copy_module_span(long start, long finish, char *out) {
+	size_t length = 0;
+	for (long i = start; i < finish && length + 1 < module_name_capacity; ++i) {
+		const char c = g_src[i];
+		if (c == ' ' || c == '\t' || c == '\r' || c == '\n') continue;
+		out[length++] = c;
+	}
+	out[length] = '\0';
+}
+
+static void copy_module_name(const char *from, char *out) {
+	size_t length = 0;
+	while (from[length] && length + 1 < module_name_capacity) {
+		out[length] = from[length];
+		++length;
+	}
+	out[length] = '\0';
+}
+
+static void primary_of(const char *name, char *out) {
+	size_t length = 0;
+	while (name[length] && name[length] != ':' && length + 1 < module_name_capacity) {
+		out[length] = name[length];
+		++length;
+	}
+	out[length] = '\0';
+}
+
+static void resolve_import(const char *spelling, char *out) {
+	if (spelling[0] != ':') {
+		copy_module_name(spelling, out);
+		return;
+	}
+	primary_of(g_current_module, out);
+	size_t length = strlen(out);
+	for (size_t i = 0; spelling[i] && length + 1 < module_name_capacity; ++i) {
+		out[length++] = spelling[i];
+	}
+	out[length] = '\0';
+}
+
+static hash_map<tree, auto_vec<tree> *> *g_reexports = nullptr;
+static hash_set<tree> *g_known_units = nullptr;
+static bool g_reexport_scan_done = false;
+
+static void add_reexport(tree from, tree to) {
+	bool existed = false;
+	auto_vec<tree> *&edges = g_reexports->get_or_insert(from, &existed);
+	if (!existed) edges = new auto_vec<tree>();
+	for (tree e : *edges) {
+		if (e == to) return;
+	}
+	edges->safe_push(to);
+}
+
+static bool line_prefix(const char *line, const char *end, const char *prefix, const char **rest) {
+	const size_t length = strlen(prefix);
+	if ((size_t)(end - line) < length || strncmp(line, prefix, length) != 0) return false;
+	*rest = line + length;
+	return true;
+}
+
+static void copy_directive_name(const char *from, const char *end, char *out) {
+	size_t length = 0;
+	for (const char *p = from; p < end && *p != ';' && length + 1 < module_name_capacity; ++p) {
+		if (*p == ' ' || *p == '\t' || *p == '\r') continue;
+		out[length++] = *p;
+	}
+	out[length] = '\0';
+}
+
+static void scan_unit_reexports(const char *path) {
+	FILE *f = fopen(path, "rb");
+	if (!f) return;
+	char buffer[16384];
+	const size_t read = fread(buffer, 1, sizeof(buffer) - 1, f);
+	fclose(f);
+	buffer[read] = '\0';
+	char current[module_name_capacity] = {};
+	const char *line = buffer;
+	while (*line) {
+		const char *end = strchr(line, '\n');
+		if (!end) end = line + strlen(line);
+		while (line < end && (*line == ' ' || *line == '\t' || *line == '\r')) ++line;
+		const char *rest = nullptr;
+		char name[module_name_capacity];
+		if (line == end || *line == '#') {
+		}
+		else if (line_prefix(line, end, "export module ", &rest) || line_prefix(line, end, "module ", &rest)) {
+			copy_directive_name(rest, end, name);
+			if (name[0] && !current[0]) {
+				copy_module_name(name, current);
+				g_known_units->add(get_identifier(current));
+				g_unit_of_file->put(path_key(path), get_identifier(current));
+			}
+		}
+		else if (line_prefix(line, end, "export import ", &rest)) {
+			copy_directive_name(rest, end, name);
+			if (name[0] && current[0] && name[0] != '<' && name[0] != '"') {
+				char full[module_name_capacity];
+				if (name[0] == ':') {
+					primary_of(current, full);
+					size_t length = strlen(full);
+					for (size_t i = 0; name[i] && length + 1 < module_name_capacity; ++i) full[length++] = name[i];
+					full[length] = '\0';
+				}
+				else {
+					copy_module_name(name, full);
+				}
+				add_reexport(get_identifier(current), get_identifier(full));
+			}
+		}
+		else if (line_prefix(line, end, "import ", &rest) || line_prefix(line, end, "module;", &rest)) {
+		}
+		else {
+			break;
+		}
+		line = *end ? end + 1 : end;
+	}
+}
+
+static bool skipped_scan_segment(const char *name) {
+	static const char *names[] = { "out", ".git", ".vs", ".vscode", ".claude", "vcpkg", "build", "node_modules", ".cache" };
+	for (const char *skip : names) {
+		if (strcmp(name, skip) == 0) return true;
+	}
+	return false;
+}
+
+static void scan_tree_for_units(const char *dir, int depth) {
+	if (depth > 32) return;
+	DIR *d = opendir(dir);
+	if (!d) return;
+	while (struct dirent *e = readdir(d)) {
+		const char *name = e->d_name;
+		if (name[0] == '.' && (name[1] == '\0' || (name[1] == '.' && name[2] == '\0'))) continue;
+		if (skipped_scan_segment(name)) continue;
+		char path[4096];
+		const int written = snprintf(path, sizeof(path), "%s/%s", dir, name);
+		if (written <= 0 || (size_t)written >= sizeof(path)) continue;
+		struct stat st;
+		if (stat(path, &st) != 0) continue;
+		if (S_ISDIR(st.st_mode)) {
+			scan_tree_for_units(path, depth + 1);
+			continue;
+		}
+		const size_t length = strlen(name);
+		if (length > 5 && strcmp(name + length - 5, ".cppm") == 0) {
+			scan_unit_reexports(path);
+		}
+	}
+	closedir(d);
+}
+
+static void ensure_reexport_graph() {
+	if (g_reexport_scan_done) return;
+	g_reexport_scan_done = true;
+	g_reexports = new hash_map<tree, auto_vec<tree> *>();
+	g_known_units = new hash_set<tree>();
+	g_unit_of_file = new hash_map<tree, tree>();
+	for (size_t i = 0; i < g_root_count; ++i) {
+		scan_tree_for_units(g_roots[i], 0);
+	}
+}
+
+static void collect_closure(tree unit, hash_set<tree> &out) {
+	if (out.add(unit)) return;
+	auto_vec<tree> **edges = g_reexports->get(unit);
+	if (!edges) return;
+	for (tree e : **edges) {
+		collect_closure(e, out);
+	}
+}
+
+static bool closure_contains(tree import_name, tree used, hash_set<tree> &visited) {
+	if (import_name == used) return true;
+	if (visited.add(import_name)) return false;
+	auto_vec<tree> **edges = g_reexports->get(import_name);
+	if (!edges) return false;
+	for (tree e : **edges) {
+		if (closure_contains(e, used, visited)) return true;
+	}
+	return false;
+}
+
+static void scan_module_declarations() {
+	if (g_module_scan_done) return;
+	g_module_scan_done = true;
+	if (!ensure_source_tokens()) return;
+	g_module_imports = new auto_vec<module_import>();
+	const unsigned count = g_source_tokens->length();
+	for (unsigned i = 0; i < count; ++i) {
+		const source_token &token = (*g_source_tokens)[i];
+		if (token.kind != source_token_kind::identifier) continue;
+		const bool is_import = token_text_is(token, "import");
+		if (!is_import && !token_text_is(token, "module")) continue;
+		bool exported = false;
+		if (!token_starts_line(token)) {
+			if (i == 0) continue;
+			const source_token &previous = (*g_source_tokens)[i - 1];
+			if (previous.kind != source_token_kind::identifier) continue;
+			if (!token_text_is(previous, "export") || !token_starts_line(previous)) continue;
+			exported = true;
+		}
+		unsigned end = i + 1;
+		while (end < count && (*g_source_tokens)[end].kind != source_token_kind::semicolon) ++end;
+		if (end >= count || end == i + 1) continue;
+		char name[module_name_capacity];
+		copy_module_span((*g_source_tokens)[i + 1].start, (*g_source_tokens)[end - 1].finish, name);
+		i = end;
+		if (!name[0] || name[0] == '<' || name[0] == '"') continue;
+		if (!is_import) {
+			if (!g_current_module[0]) {
+				copy_module_name(name, g_current_module);
+				g_current_module_exported = exported;
+			}
+			continue;
+		}
+		module_import entry;
+		entry.line = token.line;
+		entry.exported = exported;
+		copy_module_name(name, entry.name);
+		g_module_imports->safe_push(entry);
+	}
+}
+
+static void collect_file_names() {
+	if (g_file_identifiers) return;
+	g_file_identifiers = new hash_set<tree>();
+	if (!ensure_source_tokens()) return;
+	const int count = (int)g_source_tokens->length();
+	for (int i = 0; i < count; ++i) {
+		const bool statement_start = i == 0
+			|| (*g_source_tokens)[i - 1].kind == source_token_kind::semicolon
+			|| (*g_source_tokens)[i - 1].kind == source_token_kind::left_brace
+			|| (*g_source_tokens)[i - 1].kind == source_token_kind::right_brace;
+		if (statement_start && module_directive_at(i)) {
+			while (i + 1 < count && (*g_source_tokens)[i].kind != source_token_kind::semicolon) {
+				++i;
+			}
+			continue;
+		}
+		if (tree id = source_token_identifier(i)) {
+			g_file_identifiers->add(id);
+		}
+	}
+}
+
+static bool name_used_in_main_file(tree ns, tree name) {
+	if (!name || TREE_CODE(name) != IDENTIFIER_NODE) return false;
+	collect_file_names();
+	if (!g_file_identifiers->contains(name)) return false;
+	while (ns && TREE_CODE(ns) == NAMESPACE_DECL && ns != global_namespace) {
+		if (DECL_NAME(ns) && !DECL_NAMESPACE_INLINE_P(ns)) break;
+		ns = CP_DECL_CONTEXT(ns);
+	}
+	if (!ns || TREE_CODE(ns) != NAMESPACE_DECL || ns == global_namespace) return true;
+	tree scope = DECL_NAME(ns);
+	if (!scope || TREE_CODE(scope) != IDENTIFIER_NODE) return true;
+	return g_file_identifiers->contains(scope);
+}
+
+static bool importable_module_name(const char *name) {
+	if (!name || !*name) return false;
+	return name[0] != '<' && name[0] != '"' && name[0] != '.' && name[0] != '/';
+}
+
+static void add_name_module(hash_map<tree, auto_vec<tree> *> *map, tree name, tree module_id) {
+	bool existed = false;
+	auto_vec<tree> *&list = map->get_or_insert(name, &existed);
+	if (!existed) list = new auto_vec<tree>();
+	for (tree e : *list) {
+		if (e == module_id) return;
+	}
+	list->safe_push(module_id);
+}
+
+static void note_used_modules(tree name, unsigned base, unsigned span) {
+	if (!g_name_sweep || !name || !base) return;
+	for (; span; ++base, --span) {
+		const char *mod = module_name(base, true);
+		if (!importable_module_name(mod)) continue;
+		add_name_module(g_name_sweep, name, get_identifier(mod));
+	}
+}
+
+static void note_decl_origin(tree decl) {
+	if (!g_name_precise || !decl || !DECL_P(decl)) return;
+	tree id = DECL_NAME(decl);
+	if (!id || TREE_CODE(id) != IDENTIFIER_NODE) return;
+	const int index = get_originating_module(decl, false);
+	if (index <= 0) {
+		tree context = CP_DECL_CONTEXT(decl);
+		if (!context || TREE_CODE(context) != NAMESPACE_DECL) return;
+		const location_t where = DECL_SOURCE_LOCATION(decl);
+		if (in_main_file(where)) {
+			g_name_local->add(id);
+			return;
+		}
+		if (tree file = path_key(LOCATION_FILE(where))) {
+			add_name_module(g_name_files, id, file);
+		}
+		return;
+	}
+	const char *mod = module_name((unsigned)index, true);
+	if (!importable_module_name(mod)) return;
+	add_name_module(g_name_precise, id, get_identifier(mod));
+}
+
+static bool has_module(const auto_vec<tree> &list, tree module_id) {
+	for (tree e : list) {
+		if (e == module_id) return true;
+	}
+	return false;
+}
+
+static void push_unique_module(auto_vec<tree> &out, tree module_id) {
+	if (has_module(out, module_id)) return;
+	out.safe_push(module_id);
+}
+
+static void collect_used_modules(hash_set<tree> &reachable, auto_vec<tree> &firm, auto_vec<tree> &loose) {
+	hash_set<tree> settled;
+	for (hash_map<tree, auto_vec<tree> *>::iterator it = g_name_precise->begin(); it != g_name_precise->end(); ++it) {
+		bool any = false;
+		for (tree m : *(*it).second) {
+			if (!reachable.contains(m)) continue;
+			push_unique_module(firm, m);
+			any = true;
+		}
+		if (any) settled.add((*it).first);
+	}
+	for (hash_map<tree, auto_vec<tree> *>::iterator it = g_name_sweep->begin(); it != g_name_sweep->end(); ++it) {
+		const tree name = (*it).first;
+		if (settled.contains(name) || g_name_local->contains(name)) continue;
+		for (tree m : *(*it).second) {
+			if (reachable.contains(m)) push_unique_module(loose, m);
+		}
+	}
+}
+
+static void emit_unused_imports() {
+	if (!g_name_sweep || !main_input_filename || !main_file_under_root()) return;
+	scan_module_declarations();
+	if (!g_module_imports || g_module_imports->is_empty()) return;
+	ensure_reexport_graph();
+
+	for (hash_map<tree, auto_vec<tree> *>::iterator it = g_name_files->begin(); it != g_name_files->end(); ++it) {
+		auto_vec<tree> units;
+		for (tree file : *(*it).second) {
+			if (tree *unit = g_unit_of_file->get(file)) push_unique_module(units, *unit);
+		}
+		if (units.is_empty()) continue;
+		hash_map<tree, auto_vec<tree> *> *target = units.length() == 1 ? g_name_precise : g_name_sweep;
+		for (tree unit : units) {
+			add_name_module(target, (*it).first, unit);
+		}
+	}
+
+	char own[module_name_capacity];
+	primary_of(g_current_module, own);
+
+	const unsigned count = g_module_imports->length();
+	auto_vec<bool> contributes;
+	contributes.safe_grow_cleared(count);
+	hash_set<tree> reachable;
+	for (unsigned i = 0; i < count; ++i) {
+		const module_import &entry = (*g_module_imports)[i];
+		if (entry.exported) continue;
+		char full[module_name_capacity];
+		resolve_import(entry.name, full);
+		collect_closure(get_identifier(full), reachable);
+	}
+	FILE *dbg = nullptr;
+	if (strstr(main_input_filename, "Scheduler.cppm") && strstr(main_input_filename, "Ecs")) {
+		dbg = fopen("C:/Users/Dhiren/AppData/Local/Temp/gse_lint_debug.txt", "w");
+	}
+	if (dbg) {
+		fprintf(dbg, "FILE %s", main_input_filename);
+		fprintf(dbg, "REACHABLE:");
+		for (hash_set<tree>::iterator it = reachable.begin(); it != reachable.end(); ++it) fprintf(dbg, " %s", IDENTIFIER_POINTER(*it));
+		fprintf(dbg, "PRECISE:");
+		for (hash_map<tree, auto_vec<tree> *>::iterator it = g_name_precise->begin(); it != g_name_precise->end(); ++it) {
+			fprintf(dbg, " %s=[", IDENTIFIER_POINTER((*it).first));
+			for (tree m : *(*it).second) fprintf(dbg, "%s ", IDENTIFIER_POINTER(m));
+			fprintf(dbg, "]");
+		}
+		fprintf(dbg, "SWEEP:");
+		for (hash_map<tree, auto_vec<tree> *>::iterator it = g_name_sweep->begin(); it != g_name_sweep->end(); ++it) {
+			fprintf(dbg, " %s=[", IDENTIFIER_POINTER((*it).first));
+			for (tree m : *(*it).second) fprintf(dbg, "%s ", IDENTIFIER_POINTER(m));
+			fprintf(dbg, "]");
+		}
+		fprintf(dbg, "FILES:");
+		for (hash_map<tree, auto_vec<tree> *>::iterator it = g_name_files->begin(); it != g_name_files->end(); ++it) {
+			fprintf(dbg, " %s=[", IDENTIFIER_POINTER((*it).first));
+			for (tree f : *(*it).second) fprintf(dbg, "%s ", IDENTIFIER_POINTER(f));
+			fprintf(dbg, "]");
+		}
+		fprintf(dbg, "UNITMAP_SAMPLE:");
+		{ unsigned n = 0;
+			for (hash_map<tree, tree>::iterator it = g_unit_of_file->begin(); it != g_unit_of_file->end() && n < 6; ++it, ++n)
+				fprintf(dbg, " %s->%s", IDENTIFIER_POINTER((*it).first), IDENTIFIER_POINTER((*it).second)); }
+		fprintf(dbg, "LOCAL_HAS_registry=%d", g_name_local->contains(get_identifier("registry")) ? 1 : 0);
+		fclose(dbg);
+	}
+
+	auto_vec<tree> firm_modules;
+	auto_vec<tree> loose_modules;
+	collect_used_modules(reachable, firm_modules, loose_modules);
+	auto_vec<bool> contaminated;
+	contaminated.safe_grow_cleared(count);
+
+	for (unsigned i = 0; i < count; ++i) {
+		const module_import &entry = (*g_module_imports)[i];
+		if (entry.exported) continue;
+		char full[module_name_capacity];
+		resolve_import(entry.name, full);
+		const tree candidate = get_identifier(full);
+		for (tree used : firm_modules) {
+			hash_set<tree> visited;
+			if (!closure_contains(candidate, used, visited)) continue;
+			contributes[i] = true;
+			break;
+		}
+		for (tree used : loose_modules) {
+			hash_set<tree> visited;
+			if (!closure_contains(candidate, used, visited)) continue;
+			contributes[i] = true;
+			contaminated[i] = true;
+			break;
+		}
+	}
+
+	for (unsigned i = 0; i < count; ++i) {
+		const module_import &entry = (*g_module_imports)[i];
+		if (entry.exported) continue;
+		if (!contributes[i]) {
+			out_printf("GSEIMPORT\t%s\t%d\t%s\n", main_input_filename, entry.line, entry.name);
+			continue;
+		}
+		char full[module_name_capacity];
+		resolve_import(entry.name, full);
+		tree import_id = get_identifier(full);
+		if (contaminated[i]) continue;
+		auto_vec<tree> narrowed;
+		bool direct = false;
+		for (tree used : firm_modules) {
+			hash_set<tree> visited;
+			if (!closure_contains(import_id, used, visited)) continue;
+			char unit[module_name_capacity];
+			primary_of(IDENTIFIER_POINTER(used), unit);
+			if (strcmp(unit, full) == 0 || strcmp(unit, own) == 0) {
+				direct = true;
+				break;
+			}
+			unsigned at = 0;
+			bool present = false;
+			for (; at < narrowed.length(); ++at) {
+				const int order = strcmp(IDENTIFIER_POINTER(narrowed[at]), unit);
+				if (order == 0) present = true;
+				if (order >= 0) break;
+			}
+			if (!present) narrowed.safe_insert(at, get_identifier(unit));
+		}
+		if (direct || narrowed.is_empty()) continue;
+		out_printf("GSEIMPORT\t%s\t%d\t%s\t", main_input_filename, entry.line, entry.name);
+		for (unsigned n = 0; n < narrowed.length(); ++n) {
+			out_printf("%s%s", n ? " " : "", IDENTIFIER_POINTER(narrowed[n]));
+		}
+		out_printf("\n");
 	}
 }
 
@@ -4232,6 +4874,7 @@ static void on_pre_genericize(void *gcc_data, void *) {
 }
 
 static void process_decl(tree d);
+static void walk_annotations(tree decl);
 
 static void emit_type_members(tree type) {
 	if (!type || !TYPE_P(type)) return;
@@ -4247,6 +4890,8 @@ static void emit_type_members(tree type) {
 			if (cst && TREE_CODE(cst) == CONST_DECL) {
 				emit_sym(cst);
 				emit_decl(cst, DECL_SOURCE_LOCATION(cst));
+				scan_enumerator_annotations(cst);
+				walk_annotations(cst);
 			}
 		}
 	}
@@ -4428,6 +5073,23 @@ static void walk_template_bodies(tree decl) {
 	}
 }
 
+static void note_decl_file(tree name, tree decl) {
+	if (!decl || !DECL_P(decl)) return;
+	const location_t where = DECL_SOURCE_LOCATION(decl);
+	if (where == UNKNOWN_LOCATION || in_main_file(where)) return;
+	if (tree file = path_key(LOCATION_FILE(where))) {
+		add_name_module(g_name_files, name, file);
+	}
+}
+
+static void note_binding_files(tree name, tree slot_bind) {
+	if (!g_name_files || !name || TREE_CODE(name) != IDENTIFIER_NODE) return;
+	note_decl_file(name, MAYBE_STAT_TYPE(slot_bind));
+	for (ovl_iterator it(MAYBE_STAT_DECL(slot_bind)); it; ++it) {
+		note_decl_file(name, *it);
+	}
+}
+
 static void walk_ns(tree ns) {
 	if (!ns || TREE_CODE(ns) != NAMESPACE_DECL) return;
 	if (g_visited_ns && g_visited_ns->add(ns)) return;
@@ -4460,6 +5122,10 @@ static void walk_ns(tree ns) {
 					if (TREE_CODE(slot_bind) == NAMESPACE_DECL) {
 						walk_ns(slot_bind);
 						continue;
+					}
+					if (name_used_in_main_file(ns, BINDING_VECTOR_NAME(bind))) {
+						note_used_modules(BINDING_VECTOR_NAME(bind), cl.indices[s].base, cl.indices[s].span);
+						note_binding_files(BINDING_VECTOR_NAME(bind), slot_bind);
 					}
 					tree stype = MAYBE_STAT_TYPE(slot_bind);
 					if (stype && DECL_P(stype) && in_main_file(DECL_SOURCE_LOCATION(stype))) {
@@ -4544,6 +5210,7 @@ static void on_finish(void *, void *) {
 	emit_static_assert_names();
 	walk_ns(global_namespace);
 	emit_unused_locals();
+	emit_unused_imports();
 	if (g_out) {
 		out_str("GSEDONE\n");
 	}
@@ -4560,6 +5227,10 @@ int plugin_init(struct plugin_name_args *info, struct plugin_gcc_version *versio
 	g_visited_ns = new hash_set<tree>();
 	g_emitted = new hash_set<tree>();
 	g_emitted_defs = new hash_set<tree>();
+	g_name_sweep = new hash_map<tree, auto_vec<tree> *>();
+	g_name_precise = new hash_map<tree, auto_vec<tree> *>();
+	g_name_local = new hash_set<tree>();
+	g_name_files = new hash_map<tree, auto_vec<tree> *>();
 	for (int i = 0; i < info->argc; ++i) {
 		if (info->argv[i].key && strcmp(info->argv[i].key, "out") == 0 && info->argv[i].value) {
 			g_out = fopen(info->argv[i].value, "w");

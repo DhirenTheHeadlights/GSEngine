@@ -70,7 +70,7 @@ export namespace gse::ide::terminal {
 		std::string input;
 		gui::text_input_state input_state;
 		std::shared_ptr<command_runner> runner;
-		std::jthread worker;
+		task::thread worker;
 		std::vector<dispatch_marker> dispatches;
 		bool interactive = true;
 		build_runner::stream_kind kind = build_runner::stream_kind::none;

@@ -1,13 +1,12 @@
 export module gse.ide.app:chrome;
 
-import std;
 import gse;
-
-import gse.ide.workspace;
-import gse.ide.git;
 import gse.ide.build;
-import gse.ide.search;
+import gse.ide.git;
 import gse.ide.project;
+import gse.ide.search;
+import gse.ide.workspace;
+import std;
 
 import :search_screen;
 
@@ -473,7 +472,7 @@ auto gse::ide::draw_search_bar(gui::builder& ui, quick_search_state& state, cons
 		}
 	}
 
-	const auto layer = ctx.scoped_layer(render_layer::popup);
+	const auto _ = ctx.scoped_layer(render_layer::popup);
 	const float row_h = text_view->line_height(sty.font_size) + pad * 0.5f;
 	const rectf list_rect = rectf::from_position_size(
 		{ search_rect.left(), search_rect.bottom() - 2.f * sty.scale_factor },
@@ -560,7 +559,7 @@ namespace gse::ide::tab_menu {
 	[[= gui::context_action<"Close Others", "close">{}]]
 	auto close_others(workspace::data& w, id doc_id) -> void {
 		std::vector<id> ids;
-		for (const auto& [id, doc] : w.documents) {
+		for (const auto& [id, _] : w.documents) {
 			if (id != doc_id) {
 				ids.push_back(id);
 			}
@@ -589,7 +588,7 @@ namespace gse::ide::tab_menu {
 	[[= gui::context_action<"Close All", "bulk">{}]]
 	auto close_all(workspace::data& w, id) -> void {
 		std::vector<id> ids;
-		for (const auto& [id, doc] : w.documents) {
+		for (const auto& [id, _] : w.documents) {
 			ids.push_back(id);
 		}
 		for (const id id : ids) {

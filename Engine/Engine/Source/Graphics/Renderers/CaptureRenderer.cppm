@@ -31,11 +31,11 @@ export namespace gse::renderer::capture {
 	struct toggle_recording_request {};
 
 	struct recording_state {
-		std::thread thread;
 		std::mutex mutex;
-		std::condition_variable cv;
+		std::condition_variable drained;
 		std::queue<gpu::encoded_unit> queue;
-		bool running = false;
+		std::optional<mp4::live_muxer> muxer;
+		bool draining = false;
 		std::atomic<bool> active{ false };
 		std::filesystem::path path;
 		std::chrono::steady_clock::time_point last_toggle{};
@@ -138,5 +138,20 @@ export namespace gse::renderer::capture {
 	[[= system_shutdown{}]]
 	auto shutdown(
 		data& d
+	) -> void;
+}
+
+namespace gse::renderer::capture {
+	auto enqueue_unit(
+		recording_state& state,
+		gpu::encoded_unit unit
+	) -> void;
+
+	auto drain_recording(
+		recording_state& state
+	) -> void;
+
+	auto stop_recording(
+		recording_state& state
 	) -> void;
 }

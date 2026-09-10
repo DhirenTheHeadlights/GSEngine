@@ -1,11 +1,11 @@
 module gse.ide.terminal;
 
-import std;
 import gse;
 import gse.ide.build;
 import gse.ide.config;
 import gse.ide.navigation;
 import gse.win32;
+import std;
 
 namespace gse::ide::terminal {
 	constexpr std::size_t max_lines = 8192;
@@ -423,15 +423,19 @@ auto gse::ide::terminal::path_link_at(const std::string_view row, const std::uin
 gse::ide::terminal::ring_sink::~ring_sink() = default;
 
 auto gse::ide::terminal::ring_sink::push(const log::level lvl, std::string text) -> void {
-	std::lock_guard lock(m_mutex);
-	m_lines.push_back({
-		.seq = m_next++,
-		.lvl = lvl,
-		.text = std::move(text),
-	});
-	while (m_lines.size() > max_lines) {
-		m_lines.pop_front();
+	{
+		std::lock_guard _(m_mutex);
+		m_lines.push_back({
+			.seq = m_next++,
+			.lvl = lvl,
+			.text = std::move(text),
+		});
+		while (m_lines.size() > max_lines) {
+			m_lines.pop_front();
+		}
 	}
+
+	window::wake();
 }
 
 auto gse::ide::terminal::ring_sink::write(const log::record& rec) -> void {
@@ -445,7 +449,7 @@ auto gse::ide::terminal::ring_sink::write_raw(const std::string_view text) -> vo
 auto gse::ide::terminal::ring_sink::flush() -> void {}
 
 auto gse::ide::terminal::ring_sink::drain(std::uint64_t& cursor, std::vector<line>& out) -> void {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	for (const line& l : m_lines) {
 		if (l.seq >= cursor) {
 			out.push_back(l);
@@ -455,7 +459,7 @@ auto gse::ide::terminal::ring_sink::drain(std::uint64_t& cursor, std::vector<lin
 }
 
 auto gse::ide::terminal::ring_sink::sequence() -> std::uint64_t {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	return m_next;
 }
 
@@ -542,7 +546,7 @@ auto gse::ide::terminal::run_command(command_runner& runner, const std::string& 
 
 auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst, const rectf& area, channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels, const bool building) -> void {
 	const gui::draw_context& ctx = ui.ctx;
-	const auto text_view = ctx.fonts.text.resolve();
+	const auto _ = ctx.fonts.text.resolve();
 	const auto code_view = ctx.fonts.code.resolve();
 
 	d.fresh.clear();
@@ -550,7 +554,7 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst
 		d.sink->drain(inst.cursor, d.fresh);
 	}
 	if (inst.runner) {
-		std::lock_guard lock(inst.runner->mutex);
+		std::lock_guard _(inst.runner->mutex);
 		for (std::string& l : inst.runner->lines) {
 			d.fresh.push_back({
 				.seq = 0,
@@ -586,7 +590,7 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst
 			}
 			inst.runner->terminated.store(false, std::memory_order_release);
 			inst.runner->running.store(true, std::memory_order_release);
-			inst.worker = std::jthread([r = inst.runner, cmd = inst.input, cwd = config::project_root().wstring()] {
+			inst.worker = task::spawn(log::thread_role::terminal, [r = inst.runner, cmd = inst.input, cwd = config::project_root().wstring()](const std::stop_token&) {
 				run_command(*r, cmd, cwd);
 			});
 		}
@@ -938,7 +942,7 @@ auto gse::ide::terminal::draw_profile_editor(gui::builder& ui, data& d, const re
 		{ width, height }
 	);
 
-	const auto scope = ctx.scoped_layer(render_layer::modal);
+	const auto _ = ctx.scoped_layer(render_layer::modal);
 	ctx.register_hit_region(render_layer::modal, body);
 
 	ctx.queue_sprite({

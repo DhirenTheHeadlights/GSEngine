@@ -6,6 +6,7 @@ module gse.config;
 
 import std;
 
+import gse.assert;
 import gse.meta;
 import gse.win32;
 
@@ -93,9 +94,9 @@ namespace gse::config {
 auto gse::config::fatal(const std::string_view detail) -> void {
 	std::fputs("gse.config: ", stderr);
 	std::fwrite(detail.data(), 1, detail.size(), stderr);
-	std::fputs("\ngse.config: cannot resolve engine paths; aborting.\n", stderr);
+	std::fputs("\ngse.config: cannot resolve engine paths; exiting.\n", stderr);
 	std::fflush(stderr);
-	std::abort();
+	fatal_exit(3);
 }
 
 auto gse::config::trim(const std::string_view text) -> std::string_view {

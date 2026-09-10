@@ -1,7 +1,7 @@
 export module sandbox:player_spawner;
 
-import std;
 import gse;
+import std;
 
 import :character_controller;
 import :runtime_spawns;
@@ -62,7 +62,7 @@ auto sandbox::player_spawner::run(
 		return {};
 	}
 
-	const gse::scene::mutation_scope scope(*d.scene, ctx);
+	const gse::scene::mutation_scope _(*d.scene, ctx);
 	const auto model = character_model(assets_d);
 	const auto clips = character_clips(assets_d);
 	const auto spacing = gse::meters(2.f);

@@ -1,6 +1,5 @@
 export module gse.assets:append;
 
-import std;
 import gse.containers;
 
 namespace gse::assets {

@@ -1,16 +1,14 @@
 export module gse.graphics:asset_types;
 
-import std;
 
 import gse.assets;
 import gse.containers;
-import gse.gpu;
 
-import :texture;
+import :clip;
 import :font;
 import :model;
-import :clip;
 import :skinned_model;
+import :texture;
 
 export namespace gse::graphics {
 	using asset_types = type_pack<texture, font, model, clip_asset, skinned_model>;

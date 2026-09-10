@@ -1,9 +1,7 @@
 export module gse.dx12:bindless;
 
-import std;
-
-import gse.gpu_backend;
 import gse.core;
+import gse.gpu_backend;
 
 export namespace gse::dx12 {
 	struct descriptor_heap_properties {

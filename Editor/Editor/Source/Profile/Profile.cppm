@@ -8,12 +8,12 @@ export namespace gse::ide {
 		gse::id id;
 		std::string_view tag;
 		profile::sample_time per_frame;
+		profile::sample_time main_per_frame;
 		profile::sample_time ema;
 		profile::sample_time last;
 		profile::sample_time peak;
 		double calls_per_frame = 0.0;
 		std::uint64_t sample_count = 0;
-		std::uint32_t dominant_tid = 0;
 	};
 
 	struct view_label {
@@ -34,8 +34,13 @@ export namespace gse::ide {
 
 	enum class profile_column {
 		per_frame [[= view_label{ .text = "per/f", .dimensioned = true }]],
+		main_per_frame [[= view_label{
+			.text = "main/f",
+			.dimensioned = true,
+			.duration = &profile_row::main_per_frame,
+		}]],
 		ema [[= view_label{
-			.text = "avg",
+			.text = "EMA",
 			.dimensioned = true,
 			.duration = &profile_row::ema,
 		}]],
@@ -55,6 +60,7 @@ export namespace gse::ide {
 		std::uint64_t generation = 0;
 		time_t<std::uint64_t> origin;
 		time_t<double> span;
+		time_t<double> elapsed;
 	};
 
 	struct lane_buckets {
@@ -67,6 +73,7 @@ export namespace gse::ide {
 		profile_mode mode = profile_mode::flame;
 		profile_source source = profile_source::editor;
 		bool enabled = false;
+		bool export_requested = false;
 		std::uint64_t pinned_generation = 0;
 		std::uint64_t live_generation = 0;
 		interval_timer<> live_timer{ milliseconds(100.f) };
@@ -75,7 +82,6 @@ export namespace gse::ide {
 		profile_column sort_column = profile_column::per_frame;
 		bool sort_descending = true;
 		std::size_t strip_visible = 0;
-		std::size_t worker_offset = 0;
 		float detail_width = 0.f;
 		gui::layout::split_drag_state resizing_detail;
 		bool wants_resize_cursor = false;
@@ -103,6 +109,11 @@ export namespace gse::ide {
 		std::filesystem::path path;
 	};
 
+	struct profile_export_request {
+		std::filesystem::path path;
+		std::uint64_t pinned_generation = 0;
+	};
+
 	auto draw_profile_panel(
 		gui::builder& ui,
 		const rectf& rect,
@@ -127,7 +138,7 @@ export namespace gse::ide {
 		auto run(
 			context& ctx,
 			data& d,
-			channel_read<profile_capture_request, profile_report_request> requests_in
+			channel_read<profile_capture_request, profile_report_request, profile_export_request> requests_in
 		) -> async::task<>;
 	}
 }

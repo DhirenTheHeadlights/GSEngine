@@ -1,12 +1,9 @@
 module gse.ecs:context_impl;
 
-import std;
+import gse.assert;
+import gse.concurrency;
 
 import :context;
-
-import gse.assert;
-import gse.core;
-import gse.concurrency;
 
 auto gse::context::yield_tick() -> async::task<> {
 	assert(

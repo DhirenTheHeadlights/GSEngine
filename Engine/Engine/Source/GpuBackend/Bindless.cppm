@@ -1,11 +1,10 @@
 export module gse.gpu_backend:bindless;
 
+import gse.assert;
+import gse.core;
 import std;
 
 import :core;
-
-import gse.assert;
-import gse.core;
 
 export namespace gse::gpu {
 	struct descriptor_heap {};
@@ -94,7 +93,7 @@ auto gse::gpu::bindless_slot_pool::reset(const std::uint32_t capacity) -> void {
 }
 
 auto gse::gpu::bindless_slot_pool::allocate() -> bindless_slot {
-	std::lock_guard lock(mutex);
+	std::lock_guard _(mutex);
 	assert(!free_list.empty(), "bindless_slot_pool exhausted");
 	const auto index = free_list.back();
 	free_list.pop_back();
@@ -104,7 +103,7 @@ auto gse::gpu::bindless_slot_pool::allocate() -> bindless_slot {
 }
 
 auto gse::gpu::bindless_slot_pool::release(const bindless_slot slot) -> void {
-	std::lock_guard lock(mutex);
+	std::lock_guard _(mutex);
 	free_list.push_back(slot.index - static_cast<std::uint32_t>(base_index));
 }
 

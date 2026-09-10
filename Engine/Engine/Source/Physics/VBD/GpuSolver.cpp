@@ -1,23 +1,21 @@
 module gse.physics:vbd_gpu_solver_impl;
 
-import std;
-
-import :vbd_gpu_solver;
-import :vbd_constraints;
-import :vbd_solver;
-
-
 import gse.assert;
-import gse.core;
-import gse.containers;
-import gse.time;
+import gse.assets;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
-import gse.os;
-import gse.assets;
 import gse.gpu;
 import gse.gpu_record;
+import gse.os;
+import gse.time;
+import std;
+
+import :vbd_constraints;
+import :vbd_gpu_solver;
+import :vbd_solver;
 
 namespace gse::vbd {
 	constexpr std::size_t debug_contact_dump_count = 4096;
@@ -137,6 +135,9 @@ namespace gse::vbd {
 	struct [[= shaders::ssbo_readwrite]] coloring_scratch {
 		using element = std::uint32_t;
 	};
+	struct [[= shaders::ssbo_readonly]] joint_input_data {
+		using element = joint_constraint;
+	};
 
 	using shader_binding_types = type_pack<
 		body_data,
@@ -169,7 +170,8 @@ namespace gse::vbd {
 		island_data,
 		body_env_data,
 		static_bodies_data,
-		coloring_scratch
+		coloring_scratch,
+		joint_input_data
 	>;
 
 	template <fixed_string BodyPath>
@@ -209,6 +211,7 @@ namespace gse::vbd {
 	using update_sticking_entry = vbd_compute<"VBDPhysics/vbd_update_sticking">;
 	using apply_impulses_entry = vbd_compute<"VBDPhysics/vbd_apply_impulses">;
 	using apply_body_inputs_entry = vbd_compute<"VBDPhysics/vbd_apply_body_inputs">;
+	using apply_joint_inputs_entry = vbd_compute<"VBDPhysics/vbd_apply_joint_inputs">;
 	using collision_sort_adjacency_entry = vbd_compute<"VBDPhysics/collision_sort_adjacency">;
 	using collision_color_round_entry = vbd_compute<"VBDPhysics/collision_color_round">;
 	using collision_color_commit_entry = vbd_compute<"VBDPhysics/collision_color_commit">;
@@ -332,20 +335,20 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 	constexpr gpu::buffer_usage storage_src{ gpu::buffer_flag::storage, gpu::buffer_flag::transfer_src };
 	constexpr gpu::buffer_usage storage_dst{ gpu::buffer_flag::storage, gpu::buffer_flag::transfer_dst };
 	constexpr auto storage_src_dst = storage_src | gpu::buffer_flag::transfer_dst;
-	constexpr std::size_t color_buffer_size =
-		limits.max_colors * sizeof(std::uint32_t) * 2 + limits.max_bodies * sizeof(std::uint32_t);
-	constexpr std::size_t collision_pair_size =
-		sizeof(std::uint32_t) + limits.max_collision_pairs * 2 * sizeof(std::uint32_t);
+	const std::size_t color_buffer_size =
+		limits.max_colors * sizeof(std::uint32_t) * 2 + m_capacities.max_bodies * sizeof(std::uint32_t);
+	const std::size_t collision_pair_size =
+		sizeof(std::uint32_t) + m_capacities.max_collision_pairs * 2 * sizeof(std::uint32_t);
 	constexpr std::size_t collision_state_size =
 		(limits.collision_state_header_uints +
 		 limits.max_narrow_phase_debug_records * limits.narrow_phase_debug_record_uints) *
 		sizeof(std::uint32_t);
-	constexpr std::size_t joint_buffer_size = limits.max_joints * sizeof(joint_constraint);
+	const std::size_t joint_buffer_size = m_capacities.max_joints * sizeof(joint_constraint);
 
 	for (auto& f : m_frames) {
 		f.body_buffer = ctx.device->create_buffer(
 			{
-				.size = limits.max_bodies * sizeof(body_state),
+				.size = m_capacities.max_bodies * sizeof(body_state),
 				.stride = sizeof(body_state),
 				.usage = storage_src_dst,
 				.bindless = true,
@@ -355,11 +358,11 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 			"vbd.body"
 		);
 		f.body_alt_view = ctx.device->allocate_buffer_slot();
-		ctx.device->write_storage_buffer(f.body_alt_view.slot(), f.body_buffer, limits.max_bodies * sizeof(body_state));
+		ctx.device->write_storage_buffer(f.body_alt_view.slot(), f.body_buffer, m_capacities.max_bodies * sizeof(body_state));
 
 		f.contact_buffer = ctx.device->create_buffer(
 			{
-				.size = limits.max_contacts * sizeof(contact_constraint),
+				.size = m_capacities.max_contacts * sizeof(contact_constraint),
 				.stride = sizeof(contact_constraint),
 				.usage = storage_src_dst,
 				.bindless = true,
@@ -392,7 +395,7 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 
 		f.contact_offsets_buffer = ctx.device->create_buffer(
 			{
-				.size = limits.max_bodies * sizeof(std::uint32_t),
+				.size = m_capacities.max_bodies * sizeof(std::uint32_t),
 				.stride = sizeof(std::uint32_t),
 				.usage = storage_src_dst,
 				.bindless = true,
@@ -403,7 +406,7 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 		);
 		f.contact_counts_buffer = ctx.device->create_buffer(
 			{
-				.size = limits.max_bodies * sizeof(std::uint32_t),
+				.size = m_capacities.max_bodies * sizeof(std::uint32_t),
 				.stride = sizeof(std::uint32_t),
 				.usage = storage_src_dst,
 				.bindless = true,
@@ -414,7 +417,7 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 		);
 		f.contact_adjacency_buffer = ctx.device->create_buffer(
 			{
-				.size = limits.max_contacts * 2 * sizeof(std::uint32_t),
+				.size = m_capacities.max_contacts * 2 * sizeof(std::uint32_t),
 				.stride = sizeof(std::uint32_t),
 				.usage = storage_src_dst,
 				.bindless = true,
@@ -425,7 +428,7 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 		);
 		f.joint_offsets_buffer = ctx.device->create_buffer(
 			{
-				.size = limits.max_bodies * sizeof(std::uint32_t),
+				.size = m_capacities.max_bodies * sizeof(std::uint32_t),
 				.stride = sizeof(std::uint32_t),
 				.usage = gpu::buffer_flag::storage,
 				.bindless = true,
@@ -435,7 +438,7 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 		);
 		f.joint_counts_buffer = ctx.device->create_buffer(
 			{
-				.size = limits.max_bodies * sizeof(std::uint32_t),
+				.size = m_capacities.max_bodies * sizeof(std::uint32_t),
 				.stride = sizeof(std::uint32_t),
 				.usage = gpu::buffer_flag::storage,
 				.bindless = true,
@@ -445,7 +448,7 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 		);
 		f.joint_adjacency_buffer = ctx.device->create_buffer(
 			{
-				.size = limits.max_joints * 2 * sizeof(std::uint32_t),
+				.size = m_capacities.max_joints * 2 * sizeof(std::uint32_t),
 				.stride = sizeof(std::uint32_t),
 				.usage = gpu::buffer_flag::storage,
 				.bindless = true,
@@ -456,7 +459,7 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 
 		f.solve_state_buffer = ctx.device->create_buffer(
 			{
-				.size = limits.max_bodies * limits.solve_state_float4s_per_body * sizeof(float) * 4,
+				.size = m_capacities.max_bodies * limits.solve_state_float4s_per_body * sizeof(float) * 4,
 				.stride = sizeof(vec4f),
 				.usage = storage_dst,
 				.bindless = true,
@@ -491,7 +494,7 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 
 		f.warm_start_buffer = ctx.device->create_buffer(
 			{
-				.size = limits.max_contacts * sizeof(contact_constraint),
+				.size = m_capacities.max_contacts * sizeof(contact_constraint),
 				.stride = sizeof(contact_constraint),
 				.usage = storage_dst,
 				.bindless = true,
@@ -511,7 +514,7 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 			"vbd.joint"
 		);
 
-		constexpr std::size_t grid_buffer_size = (1 + limits.grid_table_size + limits.max_bodies * 8 * 2) * sizeof(std::uint32_t);
+		const std::size_t grid_buffer_size = (1 + m_capacities.grid_table_size + m_capacities.max_bodies * 8 * 2) * sizeof(std::uint32_t);
 		f.grid_buffer = ctx.device->create_buffer(
 			{
 				.size = grid_buffer_size,
@@ -553,7 +556,7 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 
 		f.frozen_jacobian_buffer = ctx.device->create_buffer(
 			{
-				.size = limits.max_contacts * sizeof(frozen_jacobian),
+				.size = m_capacities.max_contacts * sizeof(frozen_jacobian),
 				.stride = sizeof(frozen_jacobian),
 				.usage = storage_dst,
 				.bindless = true,
@@ -564,7 +567,7 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 
 		f.solve_deltas_buffer = ctx.device->create_buffer(
 			{
-				.size = limits.max_bodies * 2 * sizeof(float) * 4,
+				.size = m_capacities.max_bodies * 2 * sizeof(float) * 4,
 				.stride = sizeof(vec4f),
 				.usage = storage_dst,
 				.bindless = true,
@@ -575,7 +578,7 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 
 		f.grounded_buffer = ctx.device->create_buffer(
 			{
-				.size = limits.max_grounded_uints * sizeof(std::uint32_t),
+				.size = m_capacities.max_grounded_uints * sizeof(std::uint32_t),
 				.stride = sizeof(std::uint32_t),
 				.usage = storage_src_dst,
 				.bindless = true,
@@ -588,7 +591,7 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 
 		f.coloring_scratch_buffer = ctx.device->create_buffer(
 			{
-				.size = limits.max_bodies * 2 * sizeof(std::uint32_t),
+				.size = m_capacities.max_bodies * 2 * sizeof(std::uint32_t),
 				.stride = sizeof(std::uint32_t),
 				.usage = gpu::buffer_flag::storage,
 				.bindless = true,
@@ -599,7 +602,7 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 
 		f.render_body_buffer = ctx.device->create_buffer(
 			{
-				.size = limits.max_bodies * sizeof(body_state),
+				.size = m_capacities.max_bodies * sizeof(body_state),
 				.stride = sizeof(body_state),
 				.usage = storage_src_dst,
 				.bindless = true,
@@ -612,7 +615,7 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 
 	m_body_input_channel = ctx.render_graph->create_upload_channel(
 		{
-			.size = limits.max_bodies * sizeof(body_state),
+			.size = m_capacities.max_bodies * sizeof(body_state),
 			.stride = sizeof(body_state),
 			.usage = gpu::buffer_flag::storage,
 			.bindless = true
@@ -622,7 +625,7 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 
 	m_motor_channel = ctx.render_graph->create_upload_channel(
 		{
-			.size = limits.max_motors * sizeof(velocity_motor_constraint),
+			.size = m_capacities.max_motors * sizeof(velocity_motor_constraint),
 			.stride = sizeof(velocity_motor_constraint),
 			.usage = gpu::buffer_flag::storage,
 			.bindless = true
@@ -632,7 +635,7 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 
 	m_motor_map_channel = ctx.render_graph->create_upload_channel(
 		{
-			.size = limits.max_bodies * sizeof(std::uint32_t),
+			.size = m_capacities.max_bodies * sizeof(std::uint32_t),
 			.stride = sizeof(std::uint32_t),
 			.usage = gpu::buffer_flag::storage,
 			.bindless = true,
@@ -653,7 +656,7 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 
 	m_impulse_channel = ctx.render_graph->create_upload_channel(
 		{
-			.size = limits.max_impulses * sizeof(impulse_constraint),
+			.size = m_capacities.max_impulses * sizeof(impulse_constraint),
 			.stride = sizeof(impulse_constraint),
 			.usage = gpu::buffer_flag::storage,
 			.bindless = true
@@ -663,7 +666,7 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 
 	m_jointed_pairs_channel = ctx.render_graph->create_upload_channel(
 		{
-			.size = (1 + limits.max_joints * 2) * sizeof(std::uint32_t),
+			.size = (1 + m_capacities.max_joints * 2) * sizeof(std::uint32_t),
 			.stride = sizeof(std::uint32_t),
 			.usage = gpu::buffer_flag::storage,
 			.bindless = true
@@ -673,7 +676,7 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 
 	m_island_channel = ctx.render_graph->create_upload_channel(
 		{
-			.size = (1 + 2 * limits.max_islands + limits.max_bodies) * sizeof(std::uint32_t),
+			.size = (1 + 2 * m_capacities.max_islands + m_capacities.max_bodies) * sizeof(std::uint32_t),
 			.stride = sizeof(std::uint32_t),
 			.usage = gpu::buffer_flag::storage,
 			.bindless = true
@@ -683,7 +686,7 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 
 	m_body_env_channel = ctx.render_graph->create_upload_channel(
 		{
-			.size = limits.max_bodies * sizeof(std::uint32_t),
+			.size = m_capacities.max_bodies * sizeof(std::uint32_t),
 			.stride = sizeof(std::uint32_t),
 			.usage = gpu::buffer_flag::storage,
 			.bindless = true
@@ -693,7 +696,7 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 
 	m_static_bodies_channel = ctx.render_graph->create_upload_channel(
 		{
-			.size = (1 + limits.max_bodies) * sizeof(std::uint32_t),
+			.size = (1 + m_capacities.max_bodies) * sizeof(std::uint32_t),
 			.stride = sizeof(std::uint32_t),
 			.usage = gpu::buffer_flag::storage,
 			.bindless = true
@@ -705,22 +708,24 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 		{
 			.size = std::max<std::size_t>(joint_buffer_size, 16),
 			.stride = sizeof(joint_constraint),
-			.usage = storage_src
+			.usage = storage_src,
+			.bindless = true
 		},
 		"vbd.joint_upload"
 	);
 
-	m_snapshot_channel = ctx.render_graph->create_readback_channel(limits.max_bodies * sizeof(body_state), "vbd.snapshot");
-	m_grounded_channel = ctx.render_graph->create_readback_channel(limits.max_grounded_uints * sizeof(std::uint32_t), "vbd.grounded_readback");
-	m_collision_state_channel = ctx.render_graph->create_readback_channel(collision_state_size, "vbd.collision_state_readback");
-	m_contact_dump_channel = ctx.render_graph->create_readback_channel(debug_contact_dump_count * sizeof(contact_constraint), "vbd.contact_dump");
-	m_adjacency_meta_channel = ctx.render_graph->create_readback_channel(debug_adjacency_meta_count * 2 * sizeof(std::uint32_t), "vbd.adjacency_meta");
-	m_contact_adjacency_channel = ctx.render_graph->create_readback_channel(debug_adjacency_dump_count * sizeof(std::uint32_t), "vbd.contact_adjacency_dump");
+	const auto gate = m_sync_readback ? gpu::readback_gate::queue_fence : gpu::readback_gate::frames_in_flight;
+	m_snapshot_channel = ctx.render_graph->create_readback_channel(m_capacities.max_bodies * sizeof(body_state), "vbd.snapshot", gate, gpu::queue_type::compute);
+	m_grounded_channel = ctx.render_graph->create_readback_channel(m_capacities.max_grounded_uints * sizeof(std::uint32_t), "vbd.grounded_readback", gate, gpu::queue_type::compute);
+	m_collision_state_channel = ctx.render_graph->create_readback_channel(collision_state_size, "vbd.collision_state_readback", gate, gpu::queue_type::compute);
+	m_contact_dump_channel = ctx.render_graph->create_readback_channel(debug_contact_dump_count * sizeof(contact_constraint), "vbd.contact_dump", gate, gpu::queue_type::compute);
+	m_adjacency_meta_channel = ctx.render_graph->create_readback_channel(debug_adjacency_meta_count * 2 * sizeof(std::uint32_t), "vbd.adjacency_meta", gate, gpu::queue_type::compute);
+	m_contact_adjacency_channel = ctx.render_graph->create_readback_channel(debug_adjacency_dump_count * sizeof(std::uint32_t), "vbd.contact_adjacency_dump", gate, gpu::queue_type::compute);
 
-	m_upload_motors.reserve(limits.max_motors);
-	m_upload_joints.reserve(limits.max_joints);
-	m_upload_impulses.reserve(limits.max_impulses);
-	m_upload_motor_map.reserve(limits.max_bodies);
+	m_upload_motors.reserve(m_capacities.max_motors);
+	m_upload_joints.reserve(m_capacities.max_joints);
+	m_upload_impulses.reserve(m_capacities.max_impulses);
+	m_upload_motor_map.reserve(m_capacities.max_bodies);
 
 	m_buffers_created = true;
 	m_compute.device_local_seeded = false;
@@ -732,17 +737,17 @@ auto gse::vbd::gpu_solver::upload(const solver_upload& payload) -> void {
 	const std::span<const joint_constraint> joints = payload.joints;
 	const std::span<const impulse_constraint> impulses = payload.impulses;
 
-	assert(bodies.size() <= limits.max_bodies, "body count {} exceeds max_bodies {}", bodies.size(), limits.max_bodies);
-	assert(motors.size() <= limits.max_motors, "motor count {} exceeds max_motors {}", motors.size(),
-		   limits.max_motors);
+	assert(bodies.size() <= m_capacities.max_bodies, "body count {} exceeds max_bodies {}", bodies.size(), m_capacities.max_bodies);
+	assert(motors.size() <= m_capacities.max_motors, "motor count {} exceeds max_motors {}", motors.size(),
+		m_capacities.max_motors);
 	assert(
-		impulses.size() <= limits.max_impulses,
+		impulses.size() <= m_capacities.max_impulses,
 		"impulse count {} exceeds max_impulses {}",
 		impulses.size(),
-		limits.max_impulses
+		m_capacities.max_impulses
 	);
-	assert(joints.size() <= limits.max_joints, "joint count {} exceeds max_joints {}", joints.size(),
-		   limits.max_joints);
+	assert(joints.size() <= m_capacities.max_joints, "joint count {} exceeds max_joints {}", joints.size(),
+		m_capacities.max_joints);
 
 	m_body_count = static_cast<std::uint32_t>(bodies.size());
 	m_steps = static_cast<std::uint32_t>(std::max(payload.steps, 1));
@@ -787,44 +792,57 @@ auto gse::vbd::gpu_solver::upload(const solver_upload& payload) -> void {
 	}
 
 	m_apply_all_body_inputs = !m_body_buffers_seeded || m_seeded_body_count != m_body_count;
-	const bool upload_joint_buffer = payload.refresh_joints || !m_joint_buffers_seeded || m_seeded_body_count != m_body_count;
+	const bool resident_joints = m_joint_buffers_seeded && m_seeded_body_count == m_body_count;
+	const bool upload_joint_buffer = payload.refresh_joints || !resident_joints;
+	const auto previous_joint_count = m_joint_count;
 
-	m_body_input_channel.write_target().host_write(bodies.first(m_body_count));
-
-	displacement max_extent = meters(0.5f);
-	m_upload_static_bodies.assign(1 + limits.max_bodies, 0u);
-	std::uint32_t static_count = 0;
-	for (std::uint32_t i = 0; i < m_body_count; ++i) {
-		if (bodies[i].locked != 0) {
-			m_upload_static_bodies[1 + static_count] = i;
-			++static_count;
-			continue;
-		}
-		const auto& he = bodies[i].half_extents;
-		max_extent = std::max({ max_extent, he.x(), he.y(), he.z() });
+	{
+		trace::scope_guard _{ trace_id<"vbd_gpu::upload::body_write">() };
+		m_body_input_channel.write_target().host_write(bodies.first(m_body_count));
 	}
-	m_upload_static_bodies[0] = static_count;
-	m_grid_cell_size = max_extent * 4.0f;
 
-	m_upload_motors.assign(motors.begin(), motors.end());
+	{
+		trace::scope_guard _{ trace_id<"vbd_gpu::upload::static_scan">() };
+		displacement max_extent = meters(0.5f);
+		m_upload_static_bodies.assign(1 + m_capacities.max_bodies, 0u);
+		std::uint32_t static_count = 0;
+		for (std::uint32_t i = 0; i < m_body_count; ++i) {
+			if (bodies[i].locked != 0) {
+				m_upload_static_bodies[1 + static_count] = i;
+				++static_count;
+				continue;
+			}
+			const auto& he = bodies[i].half_extents;
+			max_extent = std::max({ max_extent, he.x(), he.y(), he.z() });
+		}
+		m_upload_static_bodies[0] = static_count;
+		m_grid_cell_size = max_extent * 4.0f;
+	}
 
-	m_upload_motor_map.assign(limits.max_bodies, 0xFFFFFFFFu);
-	for (std::uint32_t mi = 0; mi < m_motor_count; ++mi) {
-		assert(
-			motors[mi].body_index < m_body_count,
-			"Motor body index {} out of bounds (max {})",
-			motors[mi].body_index,
-			m_body_count
-		);
-		if (motors[mi].body_index < limits.max_bodies) {
-			m_upload_motor_map[motors[mi].body_index] = mi;
+	{
+		trace::scope_guard _{ trace_id<"vbd_gpu::upload::motor_map">() };
+		m_upload_motors.assign(motors.begin(), motors.end());
+
+		m_upload_motor_map.assign(m_capacities.max_bodies, 0xFFFFFFFFu);
+		for (std::uint32_t mi = 0; mi < m_motor_count; ++mi) {
+			assert(
+				motors[mi].body_index < m_body_count,
+				"Motor body index {} out of bounds (max {})",
+				motors[mi].body_index,
+				m_body_count
+			);
+			if (motors[mi].body_index < m_capacities.max_bodies) {
+				m_upload_motor_map[motors[mi].body_index] = mi;
+			}
 		}
 	}
 
 	m_upload_joints.clear();
 	m_upload_joints_dirty = false;
+	m_merge_joint_inputs = false;
 
 	if (upload_joint_buffer) {
+		trace::scope_guard _{ trace_id<"vbd_gpu::upload::joint_rebuild">() };
 		m_joint_count = 0;
 		m_island_count = 0;
 		m_jointed_body_mask.assign(m_body_count, 0);
@@ -836,23 +854,42 @@ auto gse::vbd::gpu_solver::upload(const solver_upload& payload) -> void {
 		const time_step sub_dt = payload.dt / static_cast<float>(std::max(m_steps, 1u));
 		const time_squared h_squared = sub_dt * sub_dt;
 
+		m_topology_key_next.clear();
 		for (std::size_t i = 0; i < joints.size(); ++i) {
 			const auto& j = joints[i];
 			if (j.body_a >= m_body_count || j.body_b >= m_body_count) {
 				continue;
 			}
-			auto& g = m_upload_joints[m_joint_count];
-			g = j;
-			warm_start_joint(g, bodies[j.body_a], bodies[j.body_b], h_squared, payload.solver_cfg);
-			compute_joint_c0(g, bodies[j.body_a], bodies[j.body_b]);
+			m_upload_joints[m_joint_count] = j;
 			m_jointed_body_mask[j.body_a] = 1;
 			m_jointed_body_mask[j.body_b] = 1;
+			m_topology_key_next.push_back((static_cast<std::uint64_t>(j.body_a) << 32) | j.body_b);
 			++m_joint_count;
 		}
+
+		task::coarse_parallel(
+			m_joint_count,
+			32,
+			[&, this](const std::size_t ji) {
+				auto& g = m_upload_joints[ji];
+				warm_start_joint(g, bodies[g.body_a], bodies[g.body_b], h_squared, payload.solver_cfg);
+				compute_joint_c0(g, bodies[g.body_a], bodies[g.body_b]);
+			},
+			trace_id<"vbd_gpu::upload::joint_math">()
+		);
 		m_upload_joints_dirty = true;
+		m_merge_joint_inputs = resident_joints && m_joint_count == previous_joint_count;
 		m_joint_buffers_seeded = true;
 
-		if (m_joint_count > 0) {
+		const bool topology_changed = m_topology_body_count != m_body_count || m_topology_key != m_topology_key_next;
+		if (topology_changed) {
+			m_topology_key = m_topology_key_next;
+			m_topology_body_count = m_body_count;
+			m_topology_island_count = 0;
+		}
+
+		if (m_joint_count > 0 && topology_changed) {
+			trace::scope_guard _{ trace_id<"vbd_gpu::upload::topology">() };
 			std::vector<std::pair<std::uint32_t, std::uint32_t>> jointed_pairs;
 			jointed_pairs.reserve(m_joint_count);
 			for (std::uint32_t i = 0; i < m_joint_count; ++i) {
@@ -889,7 +926,7 @@ auto gse::vbd::gpu_solver::upload(const solver_upload& payload) -> void {
 			}
 			std::vector<std::uint32_t> root_to_island(m_body_count, 0xFFFFFFFFu);
 			std::vector<std::vector<std::uint32_t>> island_bodies;
-			m_upload_body_env.assign(limits.max_bodies, 0xFFFFFFFFu);
+			m_upload_body_env.assign(m_capacities.max_bodies, 0xFFFFFFFFu);
 			for (std::uint32_t bi = 0; bi < m_body_count; ++bi) {
 				if (m_jointed_body_mask[bi] == 0) {
 					continue;
@@ -904,24 +941,28 @@ auto gse::vbd::gpu_solver::upload(const solver_upload& payload) -> void {
 			}
 			m_island_count = static_cast<std::uint32_t>(island_bodies.size());
 			assert(
-				m_island_count <= limits.max_islands,
+				m_island_count <= m_capacities.max_islands,
 				"island count {} exceeds max_islands {}",
 				m_island_count,
-				limits.max_islands
+				m_capacities.max_islands
 			);
 
-			constexpr std::uint32_t island_base = 1 + 2 * limits.max_islands;
-			m_upload_islands.assign(island_base + limits.max_bodies, 0u);
+			const std::uint32_t island_base = 1 + 2 * m_capacities.max_islands;
+			m_upload_islands.assign(island_base + m_capacities.max_bodies, 0u);
 			m_upload_islands[0] = m_island_count;
 			std::uint32_t flat = 0;
 			for (std::uint32_t i = 0; i < m_island_count; ++i) {
 				m_upload_islands[1 + i] = flat;
-				m_upload_islands[1 + limits.max_islands + i] = static_cast<std::uint32_t>(island_bodies[i].size());
+				m_upload_islands[1 + m_capacities.max_islands + i] = static_cast<std::uint32_t>(island_bodies[i].size());
 				for (const auto b : island_bodies[i]) {
 					m_upload_islands[island_base + flat] = b;
 					++flat;
 				}
 			}
+			m_topology_island_count = m_island_count;
+		}
+		else {
+			m_island_count = m_topology_island_count;
 		}
 	}
 
@@ -1039,7 +1080,7 @@ auto gse::vbd::gpu_solver::read_body_states() const -> std::span<const body_stat
 	if (!m_buffers_created) {
 		return {};
 	}
-	trace::scope_guard sg{ trace_id<"vbd_gpu::readback::map">() };
+	trace::scope_guard _{ trace_id<"vbd_gpu::readback::map">() };
 	const auto view = m_snapshot_channel.latest();
 	return std::span<const body_state>(
 		reinterpret_cast<const body_state*>(view.bytes.data()),
@@ -1162,11 +1203,25 @@ auto gse::vbd::gpu_solver::latest_dispatch_complete() const -> bool {
 	return m_frame->queue_fence_signaled(gpu::queue_type::compute, m_recorded_ring);
 }
 
-auto gse::vbd::gpu_solver::initialize_compute(context& ctx, const shared_view<gpu::context::data> gpu_s) -> async::task<> {
-	assert(gpu_s.device != nullptr, "gpu_solver::initialize_compute requires gpu::context to be initialized first");
+auto gse::vbd::gpu_solver::wait_for_latest_dispatch() const -> void {
+	if (!m_sync_readback || !m_buffers_created || m_dispatch_generation == 0 || retired_generation() == m_dispatch_generation) {
+		return;
+	}
+	trace::scope_guard _{ trace_id<"vbd_gpu::readback::wait">() };
+	m_frame->wait_queue_fence(gpu::queue_type::compute, m_recorded_ring);
+}
 
+auto gse::vbd::gpu_solver::initialize_compute(context& ctx, const shared_view<gpu::context::data> gpu_s, const vbd_capacities& capacities, const bool sync_readback) -> async::task<> {
+	assert(gpu_s.device != nullptr, "gpu_solver::initialize_compute requires gpu::context to be initialized first");
+	m_sync_readback = sync_readback;
+	m_capacities = capacities;
+	m_topology_key.clear();
+	m_topology_body_count = 0;
+	m_topology_island_count = 0;
+
+	const auto capacity_constants = shaders::emit_slang_constants(m_capacities);
 	const auto build = [&](const auto& pod) {
-		return gpu::build_compute_program(*gpu_s.device, pod);
+		return gpu::build_compute_program(*gpu_s.device, pod, {}, capacity_constants);
 	};
 
 	m_compute.predict_pipeline = build(predict_entry::pod);
@@ -1194,6 +1249,7 @@ auto gse::vbd::gpu_solver::initialize_compute(context& ctx, const shared_view<gp
 	m_compute.update_sticking_pipeline = build(update_sticking_entry::pod);
 	m_compute.apply_impulses_pipeline = build(apply_impulses_entry::pod);
 	m_compute.apply_body_inputs_pipeline = build(apply_body_inputs_entry::pod);
+	m_compute.apply_joint_inputs_pipeline = build(apply_joint_inputs_entry::pod);
 	m_compute.convergence_check_pipeline = build(convergence_check_entry::pod);
 	m_compute.hash_state_pipeline = build(hash_state_entry::pod);
 	m_compute.hash_warm_inputs_pipeline = build(hash_warm_inputs_entry::pod);
@@ -1205,6 +1261,10 @@ auto gse::vbd::gpu_solver::initialize_compute(context& ctx, const shared_view<gp
 
 	m_compute.initialized = true;
 	co_return;
+}
+
+auto gse::vbd::gpu_solver::capacities() const -> const vbd_capacities& {
+	return m_capacities;
 }
 
 namespace gse::vbd {
@@ -1220,6 +1280,7 @@ struct gse::vbd::gpu_solver::solve_plan {
 	time_squared h_squared{};
 	gap grid_cell_size{};
 	std::uint32_t body_count = 0;
+	std::uint32_t contact_capacity = 0;
 	std::uint32_t motor_count = 0;
 	std::uint32_t joint_count = 0;
 	std::uint32_t impulse_count = 0;
@@ -1248,6 +1309,7 @@ struct gse::vbd::gpu_solver::solve_plan {
 	bool post_stabilize = false;
 	bool diag_hashes = false;
 	bool upload_joints = false;
+	bool merge_joint_inputs = false;
 	bool seed_device_local = false;
 
 	[[nodiscard]] auto push_constants(
@@ -1265,7 +1327,7 @@ auto gse::vbd::gpu_solver::solve_plan::push_constants(const std::uint32_t color_
 	const std::uint32_t tick_impulse_offset = tick < impulse_offsets.size() ? impulse_offsets[tick] : 0u;
 	return vbd_push_constants{
 		.body_count = body_count,
-		.contact_count = limits.max_contacts,
+		.contact_count = contact_capacity,
 		.motor_count = motor_count,
 		.joint_count = joint_count,
 		.impulse_count = tick_impulses,
@@ -1321,6 +1383,7 @@ auto gse::vbd::gpu_solver::build_solve_plan(solve_plan& out) -> void {
 		.body_env_data = m_body_env_channel.current().slot(),
 		.static_bodies_data = m_static_bodies_channel.current().slot(),
 		.coloring_scratch = f.coloring_scratch_buffer.slot(),
+		.joint_input_data = m_joint_upload_channel.current().slot(),
 	};
 	auto jointless_bindings = bindings;
 	jointless_bindings.color_data = f.jointless_color_buffer.slot();
@@ -1352,6 +1415,7 @@ auto gse::vbd::gpu_solver::build_solve_plan(solve_plan& out) -> void {
 	out.h_squared = h_squared;
 	out.grid_cell_size = m_grid_cell_size;
 	out.body_count = m_body_count;
+	out.contact_capacity = m_capacities.max_contacts;
 	out.motor_count = m_motor_count;
 	out.joint_count = m_joint_count;
 	out.impulse_count = m_impulse_count;
@@ -1359,7 +1423,7 @@ auto gse::vbd::gpu_solver::build_solve_plan(solve_plan& out) -> void {
 	out.jointless_body_count = m_jointless_body_count;
 	out.body_workgroups = ceil_div(m_body_count, limits.workgroup_size);
 	out.reset_workgroups = ceil_div(
-		std::max({ m_body_count, limits.max_contacts, limits.grid_table_size }),
+		std::max({ m_body_count, m_capacities.max_contacts, m_capacities.grid_table_size }),
 		limits.workgroup_size
 	);
 	out.joint_workgroups = ceil_div(std::max(m_joint_count, 1u), limits.workgroup_size);
@@ -1383,6 +1447,7 @@ auto gse::vbd::gpu_solver::build_solve_plan(solve_plan& out) -> void {
 	out.post_stabilize = m_solver_cfg.post_stabilize;
 	out.diag_hashes = m_solver_cfg.trace_hashes != 0;
 	out.upload_joints = m_upload_joints_dirty && !m_upload_joints.empty();
+	out.merge_joint_inputs = out.upload_joints && m_merge_joint_inputs;
 	out.seed_device_local = !m_compute.device_local_seeded;
 	m_compute.device_local_seeded = true;
 }
@@ -1397,12 +1462,12 @@ auto gse::vbd::gpu_solver::stage_seed_state(const solve_plan& p, const std::uint
 
 	if (p.seed_device_local) {
 		for (auto& frame : m_frames) {
-			rec.fill_buffer(frame.body_buffer, 0, limits.max_bodies * sizeof(body_state));
-			rec.fill_buffer(frame.contact_buffer, 0, limits.max_contacts * sizeof(contact_constraint));
-			rec.fill_buffer(frame.warm_start_buffer, 0, limits.max_contacts * sizeof(contact_constraint));
-			rec.fill_buffer(frame.contact_counts_buffer, 0, limits.max_bodies * sizeof(std::uint32_t));
-			rec.fill_buffer(frame.contact_offsets_buffer, 0, limits.max_bodies * sizeof(std::uint32_t));
-			rec.fill_buffer(frame.contact_adjacency_buffer, 0, limits.max_contacts * 2 * sizeof(std::uint32_t));
+			rec.fill_buffer(frame.body_buffer, 0, m_capacities.max_bodies * sizeof(body_state));
+			rec.fill_buffer(frame.contact_buffer, 0, m_capacities.max_contacts * sizeof(contact_constraint));
+			rec.fill_buffer(frame.warm_start_buffer, 0, m_capacities.max_contacts * sizeof(contact_constraint));
+			rec.fill_buffer(frame.contact_counts_buffer, 0, m_capacities.max_bodies * sizeof(std::uint32_t));
+			rec.fill_buffer(frame.contact_offsets_buffer, 0, m_capacities.max_bodies * sizeof(std::uint32_t));
+			rec.fill_buffer(frame.contact_adjacency_buffer, 0, m_capacities.max_contacts * 2 * sizeof(std::uint32_t));
 		}
 	}
 
@@ -1493,15 +1558,28 @@ auto gse::vbd::gpu_solver::stage_apply_body_inputs(const solve_plan& p, const st
 	);
 }
 
+auto gse::vbd::gpu_solver::stage_apply_joint_inputs(const solve_plan& p, const std::uint32_t chain_index, const pass_channel pass_out) -> async::task<> {
+	auto rec = co_await gpu::pass<vbd_apply_joint_inputs_stage>(pass_out)
+		.on(gpu::queue_type::compute)
+		.in_chain<vbd_solve_chain>(chain_index)
+		.pipeline(m_compute.apply_joint_inputs_pipeline);
+
+	rec.dispatch<apply_joint_inputs_entry>(
+		p.push_constants(0u, 0u, 0u, 0u, 0.f),
+		p.bindings,
+		vec3u{ p.joint_workgroups, 1u, 1u }
+	);
+}
+
 auto gse::vbd::gpu_solver::stage_render_mirror(const solve_plan& p, const std::uint32_t chain_index, const pass_channel pass_out) -> async::task<> {
 	auto rec = co_await gpu::pass<vbd_render_mirror_stage>(pass_out).on(gpu::queue_type::compute).in_chain<vbd_solve_chain>(chain_index).early_signal();
 	rec.copy_buffer(p.f->body_buffer, p.f->render_body_buffer, p.body_count * sizeof(body_state));
 }
 
 auto gse::vbd::gpu_solver::stage_clear_state_buffers(const solve_plan& p, const std::uint32_t chain_index, const pass_channel pass_out) -> async::task<> {
-	constexpr std::size_t frozen_jacobian_clear_size = limits.max_contacts * sizeof(frozen_jacobian);
-	constexpr std::size_t solve_state_clear_size = limits.max_bodies * limits.solve_state_float4s_per_body * sizeof(float) * 4;
-	constexpr std::size_t solve_deltas_clear_size = limits.max_bodies * 2 * sizeof(float) * 4;
+	const std::size_t frozen_jacobian_clear_size = m_capacities.max_contacts * sizeof(frozen_jacobian);
+	const std::size_t solve_state_clear_size = m_capacities.max_bodies * limits.solve_state_float4s_per_body * sizeof(float) * 4;
+	const std::size_t solve_deltas_clear_size = m_capacities.max_bodies * 2 * sizeof(float) * 4;
 
 	auto& f = *p.f;
 	auto& other = *p.other;
@@ -1511,28 +1589,28 @@ auto gse::vbd::gpu_solver::stage_clear_state_buffers(const solve_plan& p, const 
 	rec.fill_buffer(f.solve_state_buffer, 0, solve_state_clear_size);
 	rec.fill_buffer(f.solve_deltas_buffer, 0, solve_deltas_clear_size);
 
-	if (p.upload_joints) {
+	if (p.upload_joints && !p.merge_joint_inputs) {
 		rec.copy_buffer(m_joint_upload_channel.current(), f.joint_buffer, p.joint_upload_size);
 	}
 
 	if (!p.apply_all_body_inputs || p.preserve_warm_starts) {
-		rec.copy_buffer(other.contact_buffer, f.warm_start_buffer, limits.max_contacts * sizeof(contact_constraint));
-		rec.copy_buffer(other.contact_counts_buffer, f.contact_counts_buffer, limits.max_bodies * sizeof(std::uint32_t));
-		rec.copy_buffer(other.contact_offsets_buffer, f.contact_offsets_buffer, limits.max_bodies * sizeof(std::uint32_t));
-		rec.copy_buffer(other.contact_adjacency_buffer, f.contact_adjacency_buffer, limits.max_contacts * 2 * sizeof(std::uint32_t));
+		rec.copy_buffer(other.contact_buffer, f.warm_start_buffer, m_capacities.max_contacts * sizeof(contact_constraint));
+		rec.copy_buffer(other.contact_counts_buffer, f.contact_counts_buffer, m_capacities.max_bodies * sizeof(std::uint32_t));
+		rec.copy_buffer(other.contact_offsets_buffer, f.contact_offsets_buffer, m_capacities.max_bodies * sizeof(std::uint32_t));
+		rec.copy_buffer(other.contact_adjacency_buffer, f.contact_adjacency_buffer, m_capacities.max_contacts * 2 * sizeof(std::uint32_t));
 	}
 
 	if (p.apply_all_body_inputs) {
-		rec.fill_buffer(f.contact_buffer, 0, limits.max_contacts * sizeof(contact_constraint));
-		rec.fill_buffer(f.contact_offsets_buffer, 0, limits.max_bodies * sizeof(std::uint32_t));
-		rec.fill_buffer(f.contact_counts_buffer, 0, limits.max_bodies * sizeof(std::uint32_t));
-		rec.fill_buffer(f.contact_adjacency_buffer, 0, limits.max_contacts * 2 * sizeof(std::uint32_t));
-		rec.fill_buffer(f.collision_pair_buffer, 0, sizeof(std::uint32_t) + limits.max_collision_pairs * 2 * sizeof(std::uint32_t));
+		rec.fill_buffer(f.contact_buffer, 0, m_capacities.max_contacts * sizeof(contact_constraint));
+		rec.fill_buffer(f.contact_offsets_buffer, 0, m_capacities.max_bodies * sizeof(std::uint32_t));
+		rec.fill_buffer(f.contact_counts_buffer, 0, m_capacities.max_bodies * sizeof(std::uint32_t));
+		rec.fill_buffer(f.contact_adjacency_buffer, 0, m_capacities.max_contacts * 2 * sizeof(std::uint32_t));
+		rec.fill_buffer(f.collision_pair_buffer, 0, sizeof(std::uint32_t) + m_capacities.max_collision_pairs * 2 * sizeof(std::uint32_t));
 		rec.fill_buffer(f.collision_state_buffer, 0, (limits.collision_state_header_uints + limits.max_narrow_phase_debug_records * limits.narrow_phase_debug_record_uints) * sizeof(std::uint32_t));
-		rec.fill_buffer(f.grid_buffer, 0, (1 + limits.grid_table_size + limits.max_bodies * 8 * 2) * sizeof(std::uint32_t));
-		rec.fill_buffer(f.grounded_buffer, 0, limits.max_grounded_uints * sizeof(std::uint32_t));
-		rec.fill_buffer(f.color_buffer, 0, limits.max_colors * sizeof(std::uint32_t) * 2 + limits.max_bodies * sizeof(std::uint32_t));
-		rec.fill_buffer(f.jointless_color_buffer, 0, limits.max_colors * sizeof(std::uint32_t) * 2 + limits.max_bodies * sizeof(std::uint32_t));
+		rec.fill_buffer(f.grid_buffer, 0, (1 + m_capacities.grid_table_size + m_capacities.max_bodies * 8 * 2) * sizeof(std::uint32_t));
+		rec.fill_buffer(f.grounded_buffer, 0, m_capacities.max_grounded_uints * sizeof(std::uint32_t));
+		rec.fill_buffer(f.color_buffer, 0, limits.max_colors * sizeof(std::uint32_t) * 2 + m_capacities.max_bodies * sizeof(std::uint32_t));
+		rec.fill_buffer(f.jointless_color_buffer, 0, limits.max_colors * sizeof(std::uint32_t) * 2 + m_capacities.max_bodies * sizeof(std::uint32_t));
 		rec.fill_buffer(f.indirect_dispatch_buffer, 0, (3 + limits.max_colors) * 3 * sizeof(std::uint32_t));
 		rec.fill_buffer(f.jointless_indirect_dispatch_buffer, 0, (2 + limits.max_colors) * 3 * sizeof(std::uint32_t));
 	}
@@ -1910,7 +1988,7 @@ auto gse::vbd::gpu_solver::stage_update_sticking(const solve_plan& p, const std:
 	rec.push_bindings<update_sticking_entry>(p.push_constants(0u, 0u, sub, p.num_iterations, 0.f), p.bindings);
 	rec.dispatch_indirect(f.indirect_dispatch_buffer, 3 * sizeof(std::uint32_t));
 
-	rec.copy_buffer(f.contact_buffer, f.warm_start_buffer, limits.max_contacts * sizeof(contact_constraint));
+	rec.copy_buffer(f.contact_buffer, f.warm_start_buffer, m_capacities.max_contacts * sizeof(contact_constraint));
 }
 
 auto gse::vbd::gpu_solver::stage_state_copy(const solve_plan& p, const std::uint32_t chain_index, const pass_channel pass_out) -> async::task<> {
@@ -1933,7 +2011,7 @@ auto gse::vbd::gpu_solver::stage_publish(const solve_plan& p, const std::uint32_
 	m_ticks_dispatched += m_ticks;
 	m_generation_ticks[m_dispatch_generation % m_generation_ticks.size()] = m_ticks_dispatched;
 	m_generation_end_tick[m_dispatch_generation % m_generation_end_tick.size()] = m_first_tick + m_ticks;
-	constexpr std::size_t grounded_copy_size = limits.max_grounded_uints * sizeof(std::uint32_t);
+	const std::size_t grounded_copy_size = m_capacities.max_grounded_uints * sizeof(std::uint32_t);
 	constexpr std::size_t collision_state_copy_size = (limits.collision_state_header_uints + limits.max_narrow_phase_debug_records * limits.narrow_phase_debug_record_uints) * sizeof(std::uint32_t);
 	constexpr std::size_t adjacency_meta_copy_size = debug_adjacency_meta_count * sizeof(std::uint32_t);
 	const std::size_t body_copy_size = p.body_count * sizeof(body_state);
@@ -1982,6 +2060,9 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx, const channel_write<gp
 	stages.push_back(stage_apply_body_inputs(p, chain_seq++, pass_out));
 	stages.push_back(stage_render_mirror(p, chain_seq++, pass_out));
 	stages.push_back(stage_clear_state_buffers(p, chain_seq++, pass_out));
+	if (p.merge_joint_inputs) {
+		stages.push_back(stage_apply_joint_inputs(p, chain_seq++, pass_out));
+	}
 
 	const std::uint32_t substeps_per_tick = std::max(p.substeps / std::max(m_ticks, 1u), 1u);
 

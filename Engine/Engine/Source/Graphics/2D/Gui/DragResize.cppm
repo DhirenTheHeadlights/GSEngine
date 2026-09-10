@@ -1,15 +1,12 @@
 export module gse.graphics:gui_drag_resize;
 
-import std;
-
-import gse.os;
-import gse.core;
 import gse.ecs;
 import gse.math;
+import gse.os;
 
 import :gui;
-import :types;
 import :styles;
+import :types;
 
 namespace gse::gui {
 	auto handle_idle_state(

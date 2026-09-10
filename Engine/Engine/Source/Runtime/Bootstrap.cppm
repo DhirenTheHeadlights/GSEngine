@@ -1,22 +1,23 @@
 export module gse.runtime:bootstrap;
 
-import std;
-
-import gse.core;
-import gse.math;
-import gse.containers;
-import gse.time;
+import gse.assert;
 import gse.concurrency;
+import gse.config;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
-import gse.introspection;
-import gse.os;
 import gse.gpu;
+import gse.introspection;
 import gse.log;
-import gse.stacktrace;
-import gse.win32;
-import gse.config;
+import gse.math;
+import gse.network;
+import gse.os;
 import gse.scenario;
+import gse.stacktrace;
+import gse.time;
+import gse.win32;
+import std;
 
 import :attached_link;
 import :bench;
@@ -80,7 +81,7 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 			);
 		}
 		log::flush();
-		std::abort();
+		fatal_exit(3);
 	});
 
 	should_shutdown.store(false, std::memory_order_relaxed);
@@ -95,6 +96,7 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 	const std::size_t worker_threads = config.worker_threads > 0
 		? std::max<std::size_t>(2, config.worker_threads)
 		: std::thread::hardware_concurrency();
+	const time exit_budget = seconds(10.f);
 
 	task::start([&] {
 		e.initialize(setup);
@@ -112,6 +114,9 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 		attached_pipe_reader pipe_reader{};
 		frame_pacing pacing{};
 		bench_state bench{};
+		const bool dedicated = !config.create_window
+			&& !config.bench.enabled
+			&& network::resolve_role(config.net) == network::session_role::dedicated;
 		if (!config.bench.enabled) {
 			profile::set_frame_recording(config.attached);
 		}
@@ -132,12 +137,16 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 		const auto loop_id = trace_id<"frame::loop">();
 		const auto pace_id = trace_id<"frame::pace">();
 		const auto poll_id = trace_id<"frame::poll_events">();
+		const auto wait_id = trace_id<"frame::wait_events">();
 		const auto sync_begin_id = trace_id<"frame::sync_begin">();
 		const auto sync_end_id = trace_id<"frame::sync_end">();
 		const auto finalize_id = trace_id<"frame::finalize_trace">();
 		const auto ingest_id = trace_id<"frame::ingest_profile">();
 		const auto update_id = trace_id<"engine::update">();
 		const auto render_id = trace_id<"engine::render">();
+
+		const bool reactive = config.create_window && config.cadence == loop_cadence::reactive;
+		const auto idle_timeout = milliseconds(250.f);
 
 		const auto slow_frame_window = seconds(5.f);
 		std::size_t slow_frames = 0;
@@ -148,46 +157,53 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 
 		while (!should_shutdown.load(std::memory_order_acquire)) {
 			{
-				trace::scope_guard sg{ loop_id };
-				watchdog::section watch{ loop_id, seconds(5.f) };
-				if (e.all_settled()) {
-					trace::scope_guard sg{ pace_id };
-					pace_frame(pacing);
+				trace::scope_guard _{ loop_id };
+				watchdog::section _{ loop_id, seconds(5.f) };
+				if (dedicated && e.all_settled()) {
+					trace::scope_guard _{ pace_id };
+					pace_dedicated(pacing);
 				}
 				if (config.create_window) {
+					if (reactive && e.all_settled() && !frame_demand::active()) {
+						trace::scope_guard _{ wait_id };
+						window::wait_events(idle_timeout);
+					}
+
 					{
-						trace::scope_guard sg{ poll_id };
+						trace::scope_guard _{ poll_id };
 						e.tick_window();
 					}
 
 					if (e.window_should_close()) {
 						shutdown();
 					}
+
+					frame_demand::consume_redraw();
 				}
 
 				if (editor_pipe) {
-					drain_editor_pipe(editor_pipe, pipe_reader, e, pacing);
+					drain_editor_pipe(editor_pipe, pipe_reader, e);
 				}
 
 				{
-					trace::scope_guard sg{ sync_begin_id };
+					trace::scope_guard _{ sync_begin_id };
 					frame_sync::begin();
 				}
 
 				{
-					trace::scope_guard sg{ e.id() };
+					trace::scope_guard _{ e.id() };
 					const auto update_begin = system_clock::now<time_t<double, seconds>>();
 					{
-						trace::scope_guard sg{ update_id };
-						watchdog::section watch{ update_id, seconds(3.f) };
+						trace::scope_guard _{ update_id };
+						watchdog::section _{ update_id, seconds(3.f) };
 						e.update();
 					}
 					const auto update_end = system_clock::now<time_t<double, seconds>>();
 
 					if (config.render) {
 						{
-							trace::scope_guard sg{ render_id };
-							watchdog::section watch{ render_id, seconds(3.f) };
+							trace::scope_guard _{ render_id };
+							watchdog::section _{ render_id, seconds(3.f) };
 							e.render();
 						}
 					}
@@ -240,17 +256,17 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 				}
 
 				{
-					trace::scope_guard sg{ sync_end_id };
+					trace::scope_guard _{ sync_end_id };
 					frame_sync::end();
 				}
 			}
 
 			{
-				trace::scope_guard sg{ finalize_id };
+				trace::scope_guard _{ finalize_id };
 				trace::finalize_frame();
 			}
 			{
-				trace::scope_guard sg{ ingest_id };
+				trace::scope_guard _{ ingest_id };
 				profile::ingest_frame();
 			}
 
@@ -264,22 +280,28 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 		if (pacing.timer) {
 			win32::CloseHandle(pacing.timer);
 		}
+
+		{
+			watchdog::section _{ trace_id<"exit::task_drain">(), exit_budget };
+			task::request_shutdown();
+			if (!task::wait_idle_for(exit_budget)) {
+				log::println(log::level::error, log::category::task, "exit: jobs still in flight after {::s}; shutting systems down anyway", exit_budget);
+			}
+		}
+
+		{
+			watchdog::section _{ trace_id<"exit::engine_shutdown">(), exit_budget };
+			e.shutdown();
+		}
 	}, worker_threads);
 
-	const time exit_budget = seconds(10.f);
-
 	{
-		watchdog::section watch{ trace_id<"exit::log_drain">(), exit_budget };
+		watchdog::section _{ trace_id<"exit::log_drain">(), exit_budget };
 		log::set_async(false);
 	}
 
 	{
-		watchdog::section watch{ trace_id<"exit::engine_shutdown">(), exit_budget };
-		e.shutdown();
-	}
-
-	{
-		watchdog::section watch{ trace_id<"exit::relaunch">(), exit_budget };
+		watchdog::section _{ trace_id<"exit::relaunch">(), exit_budget };
 		app::run_pending_relaunch();
 	}
 

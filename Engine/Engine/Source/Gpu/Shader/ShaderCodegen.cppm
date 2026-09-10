@@ -164,6 +164,11 @@ export namespace gse::shaders {
 	auto emit_slang_constants() -> std::string;
 
 	template <typename T>
+	auto emit_slang_constants(
+		const T& values
+	) -> std::string;
+
+	template <typename T>
 	auto emit_slang_specialization_constants() -> std::string;
 
 	struct spec_constant_entry {
@@ -354,15 +359,19 @@ auto gse::shaders::format_slang_literal(const T& v) -> std::string {
 
 template <gse::shaders::is_shader_constant_block T>
 auto gse::shaders::emit_slang_constants() -> std::string {
+	return emit_slang_constants(T{});
+}
+
+template <typename T>
+auto gse::shaders::emit_slang_constants(const T& values) -> std::string {
 	std::string out;
 	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 		using member_t = [:std::meta::type_of(m):];
-		constexpr member_t v = T{}.[:m:];
 		out += std::format(
 			"public static const {} {} = {};\n",
 			slang_type<member_t>::name,
 			std::meta::identifier_of(m),
-			format_slang_literal(v)
+			format_slang_literal(values.[:m:])
 		);
 	}
 	return out;

@@ -1,11 +1,11 @@
 export module gse.ide.build:build_runner;
 
-import std;
 import gse;
 import gse.config;
 import gse.gpu;
 import gse.ide.config;
 import gse.win32;
+import std;
 
 import :configs;
 import :profiles;
@@ -161,7 +161,6 @@ export namespace gse::ide::build_runner {
 		bool handshake_done = false;
 		std::size_t received = 0;
 		attached_surface_message message{};
-		time next_pacing_send{};
 		std::vector<char> pending_tail;
 	};
 
@@ -178,8 +177,10 @@ export namespace gse::ide::build_runner {
 		[[= shared]] std::string active_profile;
 		build_completion completion;
 		std::shared_ptr<spawn::output_stream> active_stream;
-		std::jthread worker;
+		task::thread worker;
 		std::vector<attached_game> games;
+		std::vector<attached_game> stopping;
+		time stopping_deadline;
 		std::array<surface_pipe, max_attached_instances> pipes{};
 		std::optional<std::filesystem::file_time_type> editor_image_time;
 		std::int64_t editor_image_reported = 0;
@@ -197,7 +198,6 @@ export namespace gse::ide::build_runner {
 	[[= system_run<>{}]]
 	auto run(
 		context& ctx,
-		shared_view<gpu::context::data> gpu_s,
 		data& d,
 		channel_read<attached_surface_imported, attached_surface_rejected, build_request, stop_session_request, attached_input, select_profile_request, edit_profiles_request> requests_in,
 		channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out
@@ -537,6 +537,11 @@ namespace gse::ide::build_runner {
 		data& d
 	) -> std::optional<std::uint32_t>;
 
+	auto poll_stopping_games(
+		data& d,
+		bool block_until_exit
+	) -> void;
+
 	auto close_surface_pipe(
 		data& d,
 		std::uint32_t instance
@@ -572,12 +577,6 @@ namespace gse::ide::build_runner {
 		data& d,
 		std::uint32_t instance,
 		const input::event& event
-	) -> void;
-
-	auto send_attached_pacing(
-		data& d,
-		std::uint32_t instance,
-		time_t<std::uint64_t> refresh
 	) -> void;
 }
 
@@ -617,19 +616,19 @@ auto gse::ide::build_runner::build_touches() -> build_touch_log& {
 
 auto gse::ide::build_runner::begin_build_touches() -> void {
 	build_touch_log& log = build_touches();
-	std::lock_guard lock(log.mutex);
+	std::lock_guard _(log.mutex);
 	log.stamps.clear();
 }
 
 auto gse::ide::build_runner::note_build_touch(const std::filesystem::path& file, const std::int64_t mtime) -> void {
 	build_touch_log& log = build_touches();
-	std::lock_guard lock(log.mutex);
+	std::lock_guard _(log.mutex);
 	log.stamps[config::path_id(file)] = mtime;
 }
 
 auto gse::ide::build_runner::is_build_touch(const std::filesystem::path& file, const std::int64_t mtime) -> bool {
 	build_touch_log& log = build_touches();
-	std::lock_guard lock(log.mutex);
+	std::lock_guard _(log.mutex);
 	const auto found = log.stamps.find(config::path_id(file));
 	return found != log.stamps.end() && found->second == mtime;
 }
@@ -1637,7 +1636,7 @@ auto gse::ide::build_runner::launch_game_attached(build_completion& completion, 
 
 	spawn::emit(stream, "launched " + label + " (pid " + std::to_string(game.pid) + ")");
 
-	std::lock_guard lock(completion.mutex);
+	std::lock_guard _(completion.mutex);
 	completion.game_launched = true;
 	if (instance == 0) {
 		completion.graph_path = graph_file;
@@ -1676,7 +1675,7 @@ auto gse::ide::build_runner::launch_child(build_completion& completion, spawn::o
 
 	spawn::emit(stream, "launched " + label + " (pid " + std::to_string(child.pid) + ")");
 
-	std::lock_guard lock(completion.mutex);
+	std::lock_guard _(completion.mutex);
 	completion.children.push_back({
 		.process = child.process,
 		.job = child.job,
@@ -1757,7 +1756,7 @@ auto gse::ide::build_runner::build_game(
 	if (outcome.code != 0) {
 		spawn::emit(stream, "build failed (exit " + std::to_string(outcome.code) + ")");
 		{
-			std::lock_guard lock(completion.mutex);
+			std::lock_guard _(completion.mutex);
 			completion.errors = std::move(outcome.errors);
 		}
 		if (std::filesystem::exists(backup, ec)) {
@@ -1771,7 +1770,7 @@ auto gse::ide::build_runner::build_game(
 	record_build_time(build_key(tree, tree.game_target), snapshot);
 	std::filesystem::remove(backup, ec);
 	{
-		std::lock_guard lock(completion.mutex);
+		std::lock_guard _(completion.mutex);
 		completion.generation = next_generation;
 		completion.succeeded = true;
 	}
@@ -1817,7 +1816,7 @@ auto gse::ide::build_runner::rebuild_editor(const std::stop_token& st, build_com
 	if (outcome.code != 0) {
 		spawn::emit(stream, "rebuild failed (exit " + std::to_string(outcome.code) + "); restoring previous editor");
 		{
-			std::lock_guard lock(completion.mutex);
+			std::lock_guard _(completion.mutex);
 			completion.errors = std::move(outcome.errors);
 		}
 		std::filesystem::remove(editor_exe, ec);
@@ -1832,7 +1831,7 @@ auto gse::ide::build_runner::rebuild_editor(const std::stop_token& st, build_com
 	}
 
 	{
-		std::lock_guard lock(completion.mutex);
+		std::lock_guard _(completion.mutex);
 		completion.succeeded = true;
 	}
 
@@ -1851,7 +1850,7 @@ auto gse::ide::build_runner::build_worker(
 	const config::worktree& base = request.tree ? *request.tree : config::primary();
 	const bool editor = request.target == build_target::editor;
 	{
-		std::lock_guard lock(completion->mutex);
+		std::lock_guard _(completion->mutex);
 		completion->key = editor
 			? build_key(config::primary(), config::editor_target)
 			: build_key(base, base.game_target);
@@ -1874,7 +1873,7 @@ auto gse::ide::build_runner::build_worker(
 
 	spawn::close_process(*stream);
 
-	std::lock_guard lock(completion->mutex);
+	std::lock_guard _(completion->mutex);
 	completion->done = true;
 }
 
@@ -1944,7 +1943,7 @@ auto gse::ide::build_runner::start_build(const channel_write<attached_session_en
 	});
 
 	{
-		std::lock_guard lock(d.completion.mutex);
+		std::lock_guard _(d.completion.mutex);
 		d.completion.done = false;
 		d.completion.succeeded = false;
 		d.completion.game_launched = false;
@@ -1962,7 +1961,12 @@ auto gse::ide::build_runner::start_build(const channel_write<attached_session_en
 	d.building_session = resolved.target == build_target::game && resolved.run_after && resolved.session.attached;
 	d.inbox_id = resolved.inbox_id;
 	d.active_stream = stream;
-	d.worker = std::jthread(build_worker, &d.completion, std::move(stream), std::move(resolved), d.game_generation + 1);
+	d.worker = task::spawn(
+		log::thread_role::build,
+		[completion = &d.completion, stream = std::move(stream), resolved = std::move(resolved), generation = d.game_generation + 1](const std::stop_token& st) mutable {
+			build_worker(st, completion, std::move(stream), std::move(resolved), generation);
+		}
+	);
 }
 
 auto gse::ide::build_runner::drain_completion(const channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out, data& d) -> void {
@@ -1970,7 +1974,7 @@ auto gse::ide::build_runner::drain_completion(const channel_write<attached_sessi
 		return;
 	}
 	{
-		std::lock_guard lock(d.completion.mutex);
+		std::lock_guard _(d.completion.mutex);
 		if (!d.completion.done) {
 			return;
 		}
@@ -2085,6 +2089,32 @@ auto gse::ide::build_runner::poll_games(const channel_write<attached_session_end
 	}
 }
 
+auto gse::ide::build_runner::poll_stopping_games(data& d, const bool block_until_exit) -> void {
+	if (d.stopping.empty()) {
+		return;
+	}
+
+	const bool expired = system_clock::now<time>() >= d.stopping_deadline;
+
+	std::erase_if(
+		d.stopping,
+		[&](attached_game& game) {
+			const win32::DWORD timeout = block_until_exit ? 5000 : 0;
+			if (!expired && win32::WaitForSingleObject(game.process, timeout) != win32::wait_object_0) {
+				return false;
+			}
+			if (game.output) {
+				spawn::pump_output(*game.stream, game.output, game.pending);
+				win32::CloseHandle(game.output);
+				game.output = nullptr;
+			}
+			spawn::close_process(*game.stream);
+			win32::CloseHandle(game.process);
+			return true;
+		}
+	);
+}
+
 auto gse::ide::build_runner::stop_games(data& d) -> std::optional<std::uint32_t> {
 	std::optional<std::uint32_t> ended;
 	for (const attached_session& session : d.sessions) {
@@ -2098,16 +2128,10 @@ auto gse::ide::build_runner::stop_games(data& d) -> std::optional<std::uint32_t>
 	});
 	for (attached_game& game : d.games) {
 		spawn::terminate_process(*game.stream);
-		win32::WaitForSingleObject(game.process, 5000);
-		if (game.output) {
-			spawn::pump_output(*game.stream, game.output, game.pending);
-			win32::CloseHandle(game.output);
-			game.output = nullptr;
-		}
-		spawn::close_process(*game.stream);
-		win32::CloseHandle(game.process);
+		d.stopping.push_back(std::move(game));
 	}
 	d.games.clear();
+	d.stopping_deadline = system_clock::now<time>() + seconds(5.f);
 	for (std::uint32_t instance = 0; instance < max_attached_instances; ++instance) {
 		close_surface_pipe(d, instance);
 	}
@@ -2310,17 +2334,6 @@ auto gse::ide::build_runner::send_attached_input(data& d, const std::uint32_t in
 	write_pipe_message(d, instance, &message, sizeof(message));
 }
 
-auto gse::ide::build_runner::send_attached_pacing(data& d, const std::uint32_t instance, const time_t<std::uint64_t> refresh) -> void {
-	if (refresh == time_t<std::uint64_t>{}) {
-		return;
-	}
-	const attached_pacing_message message{
-		.magic = attached_pacing_magic,
-		.refresh = refresh,
-	};
-	write_pipe_message(d, instance, &message, sizeof(message));
-}
-
 auto gse::ide::build_runner::init(data& d) -> async::task<> {
 	cleanup_backups();
 	load_profiles(d.profiles, d.active_profile);
@@ -2336,7 +2349,7 @@ auto gse::ide::build_runner::request_for_profile(const build_profile& profile, c
 	};
 }
 
-auto gse::ide::build_runner::run(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_read<attached_surface_imported, attached_surface_rejected, build_request, stop_session_request, attached_input, select_profile_request, edit_profiles_request> requests_in, const channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out) -> async::task<> {
+auto gse::ide::build_runner::run(context& ctx, data& d, const channel_read<attached_surface_imported, attached_surface_rejected, build_request, stop_session_request, attached_input, select_profile_request, edit_profiles_request> requests_in, const channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out) -> async::task<> {
 	for (const edit_profiles_request& edited : requests_in.of<edit_profiles_request>()) {
 		if (edited.profiles.empty()) {
 			continue;
@@ -2378,6 +2391,7 @@ auto gse::ide::build_runner::run(context& ctx, shared_view<gpu::context::data> g
 	}
 	drain_completion(events_out, d);
 	poll_games(events_out, d);
+	poll_stopping_games(d, false);
 	d.server = {
 		.running = d.session.dedicated_server && std::ranges::any_of(d.games, [](const attached_game& game) {
 			return !game.owns_pipe;
@@ -2390,16 +2404,6 @@ auto gse::ide::build_runner::run(context& ctx, shared_view<gpu::context::data> g
 	}
 	for (const attached_input& forwarded : requests_in.of<attached_input>()) {
 		send_attached_input(d, forwarded.instance, forwarded.event);
-	}
-	if (gpu_s.swapchain) {
-		const auto now = system_clock::now<time>();
-		for (std::uint32_t instance = 0; instance < max_attached_instances; ++instance) {
-			surface_pipe& pipe = d.pipes[instance];
-			if (pipe.handshake_done && now >= pipe.next_pacing_send) {
-				send_attached_pacing(d, instance, gpu_s.swapchain->refresh_interval());
-				pipe.next_pacing_send = now + seconds(1.f);
-			}
-		}
 	}
 	if (d.sessions[0].generation != 0 && !d.pipes[0].handle) {
 		if (const std::optional<std::uint32_t> ended = stop_games(d)) {
@@ -2422,4 +2426,5 @@ auto gse::ide::build_runner::shutdown(data& d) -> void {
 		d.worker.join();
 	}
 	(void)stop_games(d);
+	poll_stopping_games(d, true);
 }

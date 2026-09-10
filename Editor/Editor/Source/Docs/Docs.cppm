@@ -822,6 +822,7 @@ auto gse::ide::docs::cppref_index::load(const std::filesystem::path& file) -> vo
 	loaded = true;
 	std::ifstream in(file, std::ios::binary);
 	if (!in) {
+		log::println(log::level::warning, log::category::general, "cppref: no hover index at '{}' - every std:: hover falls back to the libstdc++ definition preview; rebuild it with 'python bootstrap.py --skip-submodules --skip-gcc --skip-ninja'", file.generic_display_string());
 		return;
 	}
 	std::string line;
@@ -862,6 +863,11 @@ auto gse::ide::docs::cppref_index::load(const std::filesystem::path& file) -> vo
 		}
 		entries.insert_or_assign(std::move(key), std::move(entry));
 	}
+	if (entries.empty()) {
+		log::println(log::level::warning, log::category::general, "cppref: hover index '{}' parsed to zero entries - every std:: hover falls back to the libstdc++ definition preview; delete it and rebuild with 'python bootstrap.py --skip-submodules --skip-gcc --skip-ninja'", file.generic_display_string());
+		return;
+	}
+	log::println(log::category::general, "cppref: loaded {} hover entries from '{}'", entries.size(), file.generic_display_string());
 }
 
 auto gse::ide::docs::cppref_index::find(std::string_view qualified) const -> std::optional<cppref_hit> {

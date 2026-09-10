@@ -1,11 +1,8 @@
 export module gse.time:interval_timer;
 
-import std;
-
 import gse.assert;
 import gse.math;
 
-import :clock;
 import :system_clock;
 
 export namespace gse {

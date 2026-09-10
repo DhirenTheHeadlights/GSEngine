@@ -216,12 +216,6 @@ export namespace gse::gpu {
 			access_flags access = {};
 		};
 
-		struct image_state_track {
-			image_aspect_flags aspects = {};
-			resource_state first = resource_state::undefined;
-			resource_state current = resource_state::undefined;
-		};
-
 		struct access_track {
 			pipeline_stage_flags stages = {};
 			access_flags access = {};
@@ -233,10 +227,7 @@ export namespace gse::gpu {
 		device* m_device = nullptr;
 		std::vector<touched_resource> m_touched;
 		std::unordered_map<const void*, access_track> m_last_access;
-		std::unordered_map<const void*, image_state_track> m_image_states;
 		std::vector<memory_barrier> m_pending_memory_barriers;
-		std::vector<buffer_barrier> m_pending_buffer_barriers;
-		std::vector<image_barrier> m_pending_image_barriers;
 		std::thread::id m_origin_thread;
 		pipeline_state_cache m_state_cache;
 		bool m_bindless_heaps_valid = false;
@@ -294,13 +285,6 @@ export namespace gse::gpu {
 		auto flush_pending_barriers() -> void;
 
 		[[nodiscard]] auto bound_shader_stages() const -> pipeline_stage_flags;
-
-		auto transition_image_for_binding(
-			const resource_ref& ref,
-			resource_state target,
-			pipeline_stage_flags stages,
-			access_flags access
-		) -> void;
 
 		template <typename Entry>
 		auto register_bindless_usage(
@@ -391,12 +375,6 @@ auto gse::gpu::recording_context::register_one_bindless(const Args& args, const 
 				? access_flags{ access_flag::shader_storage_read, access_flag::shader_storage_write }
 				: access_flags{ is_image ? access_flag::shader_sampled_read : access_flag::shader_storage_read };
 			note_touched(ref, stages, access);
-			if constexpr (is_image) {
-				constexpr auto target = dtype == descriptor_type::storage_image
-					? resource_state::storage_read_write
-					: resource_state::sampled;
-				transition_image_for_binding(ref, target, stages, access);
-			}
 		}
 	}
 }

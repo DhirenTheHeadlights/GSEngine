@@ -139,6 +139,24 @@ on the first try. `dispatch_compute` now fans the stage batch out with
 suspends. Plain `when_all` must stay posted: the scheduler fans every system task through it,
 and an inline start serialized the whole update phase (tried, measured, reverted).
 
+Bad-network results (2026-09-03 night). Tooling: `--engine-net-simulated-latency-ms` and
+`--engine-net-simulated-loss-permille` delay and drop received packets in the endpoint, and
+the real-time windowed scenarios `net_walk_cpu` / `net_walk_gpu` drive a connected client with
+synthetic W/A/S/D. Three protocol bugs fell out first: the 32-packet ack window was outrun by
+reliable replication bursts (fixed by flushing an ack packet every 16 received packets and
+after 30 ms idle), a repeated `connection_accepted` deactivated the client's scene and removed
+the character it had built into it (fixed by ignoring repeats and making `activate_scene`
+idempotent), and replication was unreliable (now reliable). Results on the CPU solver both
+ends: 50 ms one-way latency, no loss: one 1.2 cm correction replayed in 10 steps during a 20 s
+walk, positions match the server to 2e-4 m. With 2 percent loss: 4 to 6 corrections per two
+seconds while moving, max error 13 cm, replays 9 to 10 steps, converged to 2e-6 m at rest, ack
+lag 7 to 11 steps. The GPU pairings are blocked: a headless dedicated server on the GPU
+solver runs about 12 physics steps per wall second with 70 to 130 ms frames, and a GPU client
+against a CPU server corrects every frame because the solvers disagree, each correction
+replays a 24-tick batch that costs more than a frame, and the error runs away. `player_sync`
+now snaps instead of replaying more than 24 steps, which bounds a CPU spiral but cannot save
+the mixed-solver case.
+
 Netcode ownership (2026-09-03 night): the engine host is game-agnostic. It tags
 `player_input.acked_sequence` and `acked_step` and fills `received<T>::controller`; the
 Sandbox owns `player_state` (broadcast from the physics ring at the acked step, one per step

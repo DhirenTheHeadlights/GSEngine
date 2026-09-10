@@ -24,7 +24,9 @@ Date drafted: 2026-07-19.
 ## Diagnosis
 
 Audited six suspected drains. Only two are real; the rest are either already fine or
-minor. Recorded here so a cold session need not re-investigate.
+minor. Recorded here so a cold session need not re-investigate. A seventh, the task
+pool's idle spin, was measured and fixed on 2026-09-09; it was larger than either of
+the original two and this table previously cleared it.
 
 | Area | Verdict | Evidence |
 |------|---------|----------|
@@ -33,7 +35,8 @@ minor. Recorded here so a cold session need not re-investigate.
 | **Present mode** | OK default, Vulkan footgun | Default **FIFO/vsync** both backends (`Context.cpp:29`). DX12 hardwired `Present(1,0)` (`Dx12/Swapchain.cppm:141`) — cannot free-run. Vulkan honors the persisted setting (`Vulkan/Device.cpp:160`), so Mailbox/Immediate = uncapped. Either way a full frame presents every refresh while idle. |
 | **Timer resolution** | Clean | `timeBeginPeriod`/`timeEndPeriod`: zero occurrences. No global tick-rate inflation. |
 | **Analysis / diagnostics** | Fine | 500 ms debounce + single-flight, active-doc only (`EditorApp.cppm:1833`). Not per-keystroke. |
-| **Symbol / search index** | Fine | Event-driven, worker CV-blocked when idle (`Index.cppm:1061`), cache-incremental. Task pool parks on a semaphore. |
+| **Symbol / search index** | Fine | Event-driven, worker CV-blocked when idle (`Index.cppm:1061`), cache-incremental. |
+| **Task pool idle spin** | **Guzzle — was #1, fixed 2026-09-09** | `worker_loop` burned a fixed `hot_spin_yields = 200` `std::this_thread::yield()` calls before parking on its semaphore. `Scheduler.cpp` `start_frame_tasks` posts a group every frame, so all 15 workers woke, drained, spun and parked at the frame rate. Measured on an idle editor: roughly 0.6 of 16 cores and ~34k context switches/sec, about 70% of the process CPU and ~74% of the machine's non-idle switches. On a busy box the same spin cost 248k switches/sec, because `SwitchToThread` only switches when another thread is runnable. The prior row's "task pool parks on a semaphore" was true but hid the spin in front of the park. |
 | **File-watcher** | **Guzzle — #2** | Dedicated jthread: `sleep_for(500ms)` → full recursive `stat()` of the whole workspace tree, forever, even minimized (`SearchSystem.cppm:44-54`, `FileWatcher.cppm:211`). Polling, no OS notifications. |
 
 **Physics of it.** Even vsync-capped, an idle editor burns ~60 full CPU-update +
@@ -182,8 +185,11 @@ while (!should_shutdown.load(std::memory_order_acquire)) {
 
 ## Non-goals / already fine — do not "fix" these
 
-- Diagnostics/lint debounce, symbol-index CV-blocking, search task-pool semaphore
-  parking — all already power-friendly.
+- Diagnostics/lint debounce and symbol-index CV-blocking — both already power-friendly.
+- Task-pool semaphore parking was listed here as fine until 2026-09-09. The park itself
+  is fine; the 200-yield spin in front of it was not, and it outweighed both original
+  guzzles. See the diagnosis table. Do not re-clear a wait path by reading only the
+  blocking call at the end of it.
 - `timeBeginPeriod` — never set; leave it that way.
 - DX12 present path — already vsync-locked and cannot free-run.
 - The two-tier update/frame model and `frame_scheduler` — the scheduler is a work
@@ -191,6 +197,71 @@ while (!should_shutdown.load(std::memory_order_acquire)) {
 
 ## Status
 
-**Planned — not started (2026-07-19).** Suggested order: items 1 → 2 → 3 first (feel the
-idle win and shake out wake wiring), then 4 (unmask it), then 5 (cleanup). Suggested
-branch: continue on `editor` or a dedicated `power` branch off it.
+**Items 1–3 landed (2026-09-09).** Items 4 and 5 remain. Suggested branch: continue on
+`editor` or a dedicated `power` branch off it.
+
+Measured on the settled idle editor (300 s settle, 25–30 s sample, Ryzen 7 7800X3D):
+
+| Build | Cores | Switches/sec | GPU |
+|---|---|---|---|
+| Before either fix | 1.175 | ~35,000 | 4.2% |
+| + task-pool spin fix | 0.82 | 19,926 | — |
+| + reactive cadence (items 1–3) | **0.03** | **872** | **0.11%** |
+
+Per-worker switch rate fell from ~1,220/sec to ~35/sec, which is the ECS per-frame group
+post dropping from 144 Hz to the 4 Hz floor. The editor's own log corroborates the
+cadence directly: the previous continuous run recorded 96,717 presents in ~11.5 min
+(~140/sec); the reactive run went 237 → 600 presents over 89.7 s = **4.05 presents/sec**,
+i.e. exactly the 250 ms floor with no input.
+
+Two benign consequences worth knowing before item 4:
+
+- `present pacing degraded ... dt now driven by snapped CPU loop timing` now appears
+  within a minute of launch. At 4 fps there are too few presentation-feedback samples to
+  drive display timing, so `system_clock` falls back to snapped CPU deltas. Correct for a
+  dt-driven UI; do not "fix" it.
+- Startup `STALL [phase=init]` lines are **not** a reactive regression — they appear with
+  the same systems and timing (~2.9 s vs ~3.15 s) in the preceding continuous run.
+
+**One deliberate departure from the spec above: the loop always renders one frame after
+the wait returns, rather than looping back to block whenever demand is still clear.** The
+spec's shape (`if (!demand) continue;`) makes a missed wake indistinguishable from a
+hang — the failure mode the Risks section calls the highest risk. Rendering
+unconditionally after `wait_events(250 ms)` turns the same bug into a 4 fps floor: any
+producer that forgets to wake is at most 250 ms late, never stuck. That reduces the wake
+checklist from an acceptance gate to a latency optimisation, which is what made it safe
+to ship items 1–3 together without an interactive responsiveness pass. It costs 4 idle
+frames/sec against a theoretical 0.
+
+What landed, against the spec:
+
+- `loop_cadence` enum + `engine_config::cadence` (`Engine.cppm`), `reactive` opted into by
+  the editor only.
+- `window::wait_events(time)` / `window::wake()` (`Window.cppm` / `Window.cpp`). `wake()`
+  raises demand *and* posts, and no-ops the post before the window exists / after it is
+  torn down, guarded by `window::event_loop_live`.
+- `gse.os:frame_demand` — `request_redraw`, `request_frames(time)`, `request_interaction`,
+  `active`, `consume_redraw`. It lives in `gse.os`, not `gse.runtime`, because
+  `gse.os:window` cannot import `gse.runtime` without a cycle.
+- All 7 GLFW callbacks call `request_interaction()`, which holds demand for 150 ms rather
+  than requesting a single frame. This covers the spec's "animations must hold demand"
+  bullet generically — hover fades, smooth scroll, drag momentum and press animations all
+  get a full-rate window after the last input instead of each needing its own token.
+- The blocking branch is additionally gated on `e.all_settled()`, so startup never runs at
+  the idle floor while systems are still coming up.
+- Wake wiring: `terminal::ring_sink::push` (`Terminal.cpp`) covers every logged line, so
+  terminal output, build-runner output and agent output stream at full rate. The
+  remaining checklist entries (diagnostics, symbol/search index, git status, workspace
+  reload, IPC) are all polled from the update tier and land within the 250 ms floor;
+  they are worth waking only if they measure as perceptibly late.
+- Present mode needed no change: `window::data::present_mode` already defaults to `fifo`
+  and the editor's saved `Editor.ini` has `present_mode = fifo`. Only `d.attached` (the
+  game rendering into the editor) selects mailbox.
+
+**Task pool idle spin fixed (2026-09-09).** Independent of items 1–5 and already landed
+in `worker_loop`. The per-worker spin budget now halves on each failed spin, floored at
+`idle_spin_yields = 4`, and resets to `hot_spin_yields` when a spin finds work, so a hot
+pool keeps its full 200-yield latency window and an idle one stops burning for it. Item 1
+would also have hidden this in the editor by ending the per-frame wakeups, but the spin
+cost applies to every continuous-cadence game and training build too, where the loop must
+keep running. The two are complementary, not alternatives.

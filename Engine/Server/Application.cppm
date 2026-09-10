@@ -1,15 +1,15 @@
 export module gse.server;
 
-export import :server;
-
-import std;
 import gse;
 import gse.system_manifest;
+import std;
+
+export import :server;
 
 export namespace gse::server {
 	template <typename MessagePack, typename... Components>
 	struct [[= system_state<"Server">{}]] data {
-		[[= gse::shared]] std::optional<host<MessagePack, Components...>> srv;
+		[[= shared]] std::optional<host<MessagePack, Components...>> srv;
 	};
 
 	template <typename MessagePack, typename... Components>

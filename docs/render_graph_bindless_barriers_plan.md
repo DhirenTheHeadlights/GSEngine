@@ -151,12 +151,23 @@ paths. The AS→shader barrier (GiProbe) duplicated the post-barrier that
 the `note_touched` chokepoint (`RecordingContext.cpp`) rather than per-dispatch, so it covers
 every access path uniformly. A per-pass `m_last_access` map (`const void*` → `{stages, access}`,
 moved with the context like `m_touched`, fresh per pass) records the last access of each
-resource; on a re-access where either side writes, it emits one targeted `buffer_barrier` /
-`image_barrier` / `memory_barrier` (by `resource_ref::type`) before the command. Image barriers
-carry `prev_state = next_state = m_image_states[ptr].current`, which is the pre-transition state
-because `note_touched` runs before `transition_image_for_binding` — so the tracker emits pure
-sync and layout management stays with the existing transition path. Lookup is by pointer and at
-most one barrier is emitted per access, so emission order is command order, not hash-map order.
+resource; on a re-access where either side writes, it emits one `memory_barrier` before the
+command. Lookup is by pointer and at most one barrier is emitted per access, so emission order is
+command order, not hash-map order.
+
+  **Global barriers only (2026-09-06).** `buffer_barrier`, `image_barrier`, `resource_state`,
+  `state_of`, `transition_image_state` and the recorder's per-image state map are gone. Every
+  hazard, intra-pass and cross-pass, is a `memory_barrier` (stages + access, no resource). The
+  only per-resource operation left is `image_discard` (`dependency_info::image_discards`): a
+  transient alias's first use, the swapchain acquire, and image creation, where Vulkan needs
+  `UNDEFINED -> GENERAL` and DX12 needs a discard texture barrier. Resource identity is still
+  tracked (`m_last_access`, `latest_writes`) to *decide* whether a hazard exists; it is no longer
+  part of what gets emitted. Vulkan keeps every image in `GENERAL` (unified image layouts). DX12
+  uses enhanced barriers: images rest in `DIRECT_QUEUE_COMMON` (swapchain images in `COMMON`),
+  and `cmd_begin_rendering` / `cmd_end_rendering` bracket attachments with `RENDER_TARGET` /
+  `DEPTH_STENCIL_WRITE` layout barriers inside the backend. Images must not be touched from the
+  compute queue on DX12 (`DIRECT_QUEUE_COMMON` is direct-queue only); the backend asserts on a
+  compute-list image discard.
 
   Two supporting fixes were required and are part of this change:
 
@@ -171,7 +182,9 @@ most one barrier is emitted per access, so emission order is command order, not 
     *no* barrier at all, while the manual `rec.barrier` path (a `memory_barrier`) correctly
     became a global UAV barrier. Same-state write hazards on an `UNORDERED_ACCESS` resource now
     emit a per-resource `D3D12_RESOURCE_BARRIER_TYPE_UAV`. This is a standalone DX12 correctness
-    fix; it applies to the cross-pass path as well.
+    fix; it applies to the cross-pass path as well. (Superseded 2026-09-06: the legacy
+    `ResourceBarrier` path and its state maps were deleted with the move to enhanced barriers;
+    every memory barrier is now a `D3D12_GLOBAL_BARRIER`, so this class of bug has no mechanism.)
 
   **Intentional scope limit:** the intra-pass tracker skips hazards whose *destination* is a
   graphics stage, so repeated `push_bindings` across draws in one render pass do not emit a

@@ -1,10 +1,9 @@
 export module gse.ide.app:search_screen;
 
-import std;
 import gse;
-
-import gse.ide.workspace;
 import gse.ide.search;
+import gse.ide.workspace;
+import std;
 
 export namespace gse::ide {
 	class search_screen : public gui::screen {
@@ -186,7 +185,7 @@ auto gse::ide::search_screen::build(gui::builder& ui, gui::nav&) -> void {
 		return;
 	}
 
-	const auto scope = ctx.scoped_layer(render_layer::popup);
+	const auto _ = ctx.scoped_layer(render_layer::popup);
 	const auto& sty = ctx.style;
 	const rectf card = ctx.current_menu->rect;
 	const float pad = sty.padding;

@@ -169,7 +169,17 @@ Do not report preference-only churn. Call out missing tests when they leave mean
 
 ## Verification
 
-Agents must never invoke a build, configure, compilation, linking, or test command that can trigger a build in this repository. Verification is limited to non-build static inspection, focused diff checks, existing logs and artifacts, and reasoning from the source. State clearly when changes have not been compiled. The repository owner performs builds.
+Agents must never invoke a compiler, build system, or test runner directly — `cmake`, `ninja`, `make`, `msbuild`, `g++`, and single-file `-E`/`-fdeps` scans are all forbidden regardless of how narrow the invocation looks. The editor owns the build directory, the module cache, and the process handles; a build started outside it corrupts them. That ownership, not the cost of a compile, is the reason for the rule.
+
+The sanctioned path is `Tools/gse-build`, which asks the running editor to build exactly as its own Build button does. Prefer it to asking the owner whenever a claim needs a compile to stand. It is not licence to iterate blindly: static inspection remains the first line, and a build confirms a conclusion rather than replacing the reasoning that produced it.
+
+Reading another agent's build result is part of review, because a shared tree makes attribution ambiguous:
+
+- Errors come back split by who edited the file. Act only on the ones reported as yours. Files another chat is working on are theirs to fix even when they break your build, and repairing them silently overwrites work in progress.
+- A failure in which none of the errors are yours does not implicate your change. Report the state of the tree; do not start fixing it.
+- A deferred build means another chat is still editing and yours is queued, not that anything failed. Waiting, hibernating, or moving to unrelated work are all correct; re-running in a loop is not.
+
+State clearly when a change has not been compiled, and never assert a build status that was not observed. Verification otherwise remains non-build static inspection, focused diff checks, existing logs and artifacts, and reasoning from the source.
 
 Do not infer style compliance from a formatter, whitespace check, reference search, or successful static analysis. Directly audit the declarations, definitions, initializers, and file organization in every changed file against `docs/STYLEGUIDE.md`. Verify declarations and definitions independently instead of applying a declaration-layout rule to its definition or assuming their layouts should match.
 

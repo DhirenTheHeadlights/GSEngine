@@ -1,11 +1,5 @@
 export module gse.assets:resource_loader;
 
-import std;
-
-import gse.core;
-
-import :resource_handle;
-
 export namespace gse::resource {
 	class loader_base {
 	public:

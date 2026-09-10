@@ -172,6 +172,31 @@ auto gse::ide::agent::to_lines(const std::string_view text) -> std::vector<std::
 	return lines;
 }
 
+auto gse::ide::agent::file_lines(const std::filesystem::path& file) -> std::vector<std::string> {
+	std::vector<std::string> lines;
+	std::ifstream in(file);
+	std::string line;
+	while (std::getline(in, line)) {
+		lines.push_back(line);
+	}
+	return lines;
+}
+
+auto gse::ide::agent::locate_lines(const std::span<const std::string> haystack, const std::span<const std::string> needle) -> std::optional<std::uint32_t> {
+	if (needle.empty() || needle.size() > haystack.size()) {
+		return std::nullopt;
+	}
+	for (std::size_t start = 0; start + needle.size() <= haystack.size(); ++start) {
+		const bool matched = std::ranges::all_of(std::views::iota(std::size_t{ 0 }, needle.size()), [&](const std::size_t offset) {
+			return haystack[start + offset].find(needle[offset]) != std::string::npos;
+		});
+		if (matched) {
+			return static_cast<std::uint32_t>(start + 1);
+		}
+	}
+	return std::nullopt;
+}
+
 auto gse::ide::agent::tool_row(const analysis::json::value& block) -> transcript_row {
 	const std::string_view name = string_at(block, "name");
 	transcript_row row = {
@@ -237,31 +262,6 @@ auto gse::ide::agent::record_usage(const analysis::json::value& message, session
 	}
 }
 
-auto gse::ide::agent::summarize(const analysis::json::value& event, session_info& info) -> std::vector<transcript_row> {
-	std::vector<transcript_row> out;
-	const std::string_view kind = string_at(event, "type");
-
-	if (kind == "system") {
-		const std::string_view subtype = string_at(event, "subtype");
-		if (subtype == "thinking_tokens" || subtype == "post_turn_summary" || subtype == "hook_started") {
-			return out;
-		}
-		if (subtype == "hook_response") {
-			const analysis::json::value* code = event.find("exit_code");
-			if (code && code->as_int() != 0) {
-				out.push_back({
-					.kind = row_kind::failure,
-					.text = std::format("hook {} failed", string_at(event, "hook_name")),
-					.detail = std::string(string_at(event, "stderr")),
-				});
-			}
-			return out;
-		}
-		if (subtype == "init") {
-			info.agent_id = std::string(string_at(event, "session_id"));
-			info.model = std::string(string_at(event, "model"));
-			return out;
-		}
 auto gse::ide::agent::remember_tool_name(const analysis::json::value& block, session_info& info) -> void {
 	constexpr std::size_t max_pending_results = 512;
 	if (info.tool_names.size() > max_pending_results) {
@@ -310,6 +310,31 @@ auto gse::ide::agent::record_tool_output(const analysis::json::value& message, s
 	}
 }
 
+auto gse::ide::agent::summarize(const analysis::json::value& event, session_info& info) -> std::vector<transcript_row> {
+	std::vector<transcript_row> out;
+	const std::string_view kind = string_at(event, "type");
+
+	if (kind == "system") {
+		const std::string_view subtype = string_at(event, "subtype");
+		if (subtype == "thinking_tokens" || subtype == "post_turn_summary" || subtype == "hook_started") {
+			return out;
+		}
+		if (subtype == "hook_response") {
+			const analysis::json::value* code = event.find("exit_code");
+			if (code && code->as_int() != 0) {
+				out.push_back({
+					.kind = row_kind::failure,
+					.text = std::format("hook {} failed", string_at(event, "hook_name")),
+					.detail = std::string(string_at(event, "stderr")),
+				});
+			}
+			return out;
+		}
+		if (subtype == "init") {
+			info.agent_id = std::string(string_at(event, "session_id"));
+			info.model = std::string(string_at(event, "model"));
+			return out;
+		}
 		if (subtype == "api_retry") {
 			const analysis::json::value* status = event.find("error_status");
 			const std::int64_t code = status ? status->as_int() : 0;
@@ -323,10 +348,6 @@ auto gse::ide::agent::record_tool_output(const analysis::json::value& message, s
 			});
 			return out;
 		}
-		out.push_back({
-			.kind = row_kind::note,
-			.text = std::format("[{}]", subtype.empty() ? kind : subtype),
-		});
 		return out;
 	}
 
@@ -337,7 +358,7 @@ auto gse::ide::agent::record_tool_output(const analysis::json::value& message, s
 		}
 		const analysis::json::value* overage = info->find("isUsingOverage");
 		const std::string_view status = string_at(*info, "status");
-		if (status == "allowed" && !(overage && overage->boolean)) {
+		if (status.starts_with("allowed") && !(overage && overage->boolean)) {
 			return out;
 		}
 		out.push_back({
@@ -357,6 +378,10 @@ auto gse::ide::agent::record_tool_output(const analysis::json::value& message, s
 	}
 
 	if (kind == "user") {
+		const analysis::json::value* message = event.find("message");
+		if (message) {
+			record_tool_output(*message, info);
+		}
 		return out;
 	}
 
@@ -378,11 +403,8 @@ auto gse::ide::agent::record_tool_output(const analysis::json::value& message, s
 					.text = std::string(string_at(block, "text")),
 				});
 			}
-		const analysis::json::value* message = event.find("message");
-		if (message) {
-			record_tool_output(*message, info);
-		}
 			else if (block_kind == "tool_use") {
+				remember_tool_name(block, info);
 				out.push_back(tool_row(block));
 			}
 		}
@@ -404,7 +426,6 @@ auto gse::ide::agent::record_tool_output(const analysis::json::value& message, s
 				? "the agent failed"
 				: std::string(result.substr(0, result.find('\n')));
 			info.failure = headline;
-				remember_tool_name(block, info);
 			out.push_back({
 				.kind = row_kind::failure,
 				.text = std::move(headline),
@@ -430,10 +451,6 @@ auto gse::ide::agent::record_tool_output(const analysis::json::value& message, s
 		return out;
 	}
 
-	out.push_back({
-		.kind = row_kind::note,
-		.text = std::format("[{}]", kind),
-	});
 	return out;
 }
 
@@ -467,6 +484,31 @@ auto gse::ide::agent::usage_limited(const analysis::json::value& event) -> bool 
 		return static_cast<char>(std::tolower(ch));
 	});
 	return message.contains("limit");
+}
+
+auto gse::ide::agent::parse_timestamp(const std::string_view iso) -> std::int64_t {
+	std::array<int, 6> fields{};
+	std::size_t at = 0;
+	for (int& field : fields) {
+		const auto [end, ec] = std::from_chars(iso.data() + at, iso.data() + iso.size(), field);
+		if (ec != std::errc{}) {
+			return 0;
+		}
+		at = static_cast<std::size_t>(end - iso.data()) + 1;
+	}
+
+	const std::chrono::year_month_day date{
+		std::chrono::year(fields[0]),
+		std::chrono::month(static_cast<unsigned>(fields[1])),
+		std::chrono::day(static_cast<unsigned>(fields[2])),
+	};
+	if (!date.ok()) {
+		return 0;
+	}
+
+	const std::chrono::sys_days days = date;
+	return std::chrono::duration_cast<std::chrono::seconds>(days.time_since_epoch()).count()
+		+ fields[3] * 3600 + fields[4] * 60 + fields[5];
 }
 
 auto gse::ide::agent::retryable_failure(const analysis::json::value& event) -> bool {

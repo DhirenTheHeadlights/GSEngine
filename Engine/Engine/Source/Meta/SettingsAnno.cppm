@@ -79,7 +79,7 @@ auto gse::settings::set_choice_index(choice& c, const std::size_t index) -> void
 template <>
 struct std::formatter<gse::settings::choice> : formatter<std::string> {
 	auto format(const gse::settings::choice& c, auto& ctx) const {
-		return formatter<std::string>::format(c.value, ctx);
+		return formatter<string>::format(c.value, ctx);
 	}
 };
 

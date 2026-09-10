@@ -1,42 +1,40 @@
 module gse.graphics:gui_drag_resize_impl;
 
-import std;
-
-import gse.os;
-import gse.config;
 import gse.assets;
-import gse.gpu;
-import gse.core;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.config;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
+import gse.gpu;
 import gse.math;
 import gse.meta;
+import gse.os;
 import gse.save;
+import gse.time;
+import std;
 
-import :gui;
-import :gui_drag_resize;
-import :gui_chrome;
-
-import :types;
-import :layout;
-import :font;
-import :ui_renderer;
-import :texture;
+import :builder;
 import :cursor;
-import :save;
+import :font;
+import :gui;
+import :gui_chrome;
+import :gui_drag_resize;
 import :ids;
 import :input_layers;
-import :settings;
-import :styles;
-import :builder;
+import :interaction;
+import :layout;
 import :menu_stack;
 import :render_layer;
-import :interaction;
+import :save;
+import :settings;
+import :styles;
 import :symbols;
 import :tab_strip;
+import :texture;
+import :types;
+import :ui_renderer;
 import :widget_context;
 
 auto gse::gui::handle_idle_state(const font_set& fonts, viewport_state& vp, const input::state& input_state, vec2f mouse_position, const bool mouse_held, const style& style) -> state {
@@ -306,7 +304,7 @@ auto gse::gui::handle_idle_state(const font_set& fonts, viewport_state& vp, cons
 
 		if (mouse_held) {
 			if (std::holds_alternative<states::dragging>(hot_item->future_state)) {
-				const auto& [menu_id, offset] = std::get<states::dragging>(hot_item->future_state);
+				const auto& [menu_id, _] = std::get<states::dragging>(hot_item->future_state);
 				if (const menu* m = vp.menus.try_get(menu_id); m && m->docked_to != dock::location::none) {
 					layout::undock(vp.menus, m->id());
 				}

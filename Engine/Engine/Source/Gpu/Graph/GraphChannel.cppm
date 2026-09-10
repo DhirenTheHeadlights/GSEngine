@@ -14,6 +14,11 @@ export namespace gse::gpu {
 		std::uint64_t generation = 0;
 	};
 
+	enum class readback_gate : std::uint8_t {
+		frames_in_flight,
+		queue_fence
+	};
+
 	class readback_channel {
 	public:
 		readback_channel() = default;
@@ -22,7 +27,9 @@ export namespace gse::gpu {
 			device& dev,
 			const frame& frame,
 			std::size_t size,
-			std::string_view tag
+			std::string_view tag,
+			readback_gate gate = readback_gate::frames_in_flight,
+			queue_type queue = queue_type::graphics
 		);
 
 		[[nodiscard]] auto publish_target(
@@ -39,13 +46,20 @@ export namespace gse::gpu {
 			buffer staging;
 			std::uint64_t generation = 0;
 			std::uint64_t recorded_frame = 0;
+			std::uint32_t ring_slot = 0;
 			std::size_t recorded_bytes = 0;
 			bool recorded = false;
 		};
 
+		auto readable(
+			const version& v
+		) const -> bool;
+
 		std::array<version, version_count> m_versions;
 		const frame* m_frame = nullptr;
 		std::uint32_t m_cursor = 0;
+		readback_gate m_gate = readback_gate::frames_in_flight;
+		queue_type m_queue = queue_type::graphics;
 	};
 
 	class upload_channel {
@@ -79,7 +93,7 @@ export namespace gse::gpu {
 	};
 }
 
-gse::gpu::readback_channel::readback_channel(device& dev, const frame& frame, const std::size_t size, const std::string_view tag) : m_frame(&frame) {
+gse::gpu::readback_channel::readback_channel(device& dev, const frame& frame, const std::size_t size, const std::string_view tag, const readback_gate gate, const queue_type queue) : m_frame(&frame), m_gate(gate), m_queue(queue) {
 	for (auto& v : m_versions) {
 		v.staging = dev.create_buffer(
 			{
@@ -101,15 +115,27 @@ auto gse::gpu::readback_channel::publish_target(const std::uint64_t generation, 
 	m_cursor = (m_cursor + 1) % version_count;
 	v.generation = generation;
 	v.recorded_frame = m_frame->frame_count();
+	v.ring_slot = m_frame->current_frame();
 	v.recorded_bytes = bytes;
 	v.recorded = true;
 	return v.staging;
 }
 
+auto gse::gpu::readback_channel::readable(const version& v) const -> bool {
+	if (!v.recorded) {
+		return false;
+	}
+	if (m_gate == readback_gate::queue_fence) {
+		const bool submitted = m_frame->frame_count() > v.recorded_frame || !m_frame->frame_in_progress();
+		return submitted && m_frame->queue_fence_signaled(m_queue, v.ring_slot);
+	}
+	return m_frame->frame_count() >= v.recorded_frame + max_frames_in_flight;
+}
+
 auto gse::gpu::readback_channel::latest() const -> readback_view {
 	const version* newest = nullptr;
 	for (const auto& v : m_versions) {
-		if (!v.recorded || m_frame->frame_count() < v.recorded_frame + max_frames_in_flight) {
+		if (!readable(v)) {
 			continue;
 		}
 		if (!newest || v.generation > newest->generation) {

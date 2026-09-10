@@ -1,6 +1,5 @@
 export module gse.math:circle;
 
-import std;
 
 import gse.assert;
 

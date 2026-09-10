@@ -20,6 +20,78 @@ sync, swapchain, timestamps, VBD compute on the compute queue, meshlet
 pipeline, RT shadow BLAS/TLAS path up to the build itself. The steady-state
 two-queue frame loop is verified healthy by the queue-op ring (see below).
 
+**2026-09-06 — enhanced barriers, global barriers.** The legacy `ResourceBarrier`
+path is gone: `cmd_pipeline_barrier` emits `D3D12_GLOBAL_BARRIER` for every
+`memory_barrier` and a discard `D3D12_TEXTURE_BARRIER` for every
+`image_discard`; `m_resource_states` / `m_buffer_states` / `d3d12_state_of` /
+`strip_graphics_only_states` / `cmd_transition_acceleration_structure_inputs`
+were deleted with the agnostic `buffer_barrier` / `image_barrier` /
+`resource_state` types. Requirements and invariants:
+
+- `D3D12_FEATURE_D3D12_OPTIONS12.EnhancedBarriersSupported` is asserted at
+  device creation; `ID3D12GraphicsCommandList7::Barrier` and
+  `ID3D12Device10::CreateCommittedResource3` are used (Agility 616 has both).
+- Textures are created with `CreateCommittedResource3` in
+  `D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_COMMON` and rest there for their whole
+  life (UAV, SRV and copies are all legal in that layout on the direct
+  queue). Swapchain backbuffers rest in `COMMON` (== `PRESENT`); the device
+  keeps that set in `m_present_images`, registered by the swapchain via
+  `register_view` and dropped via `forget_present_image` on recreate.
+- `cmd_begin_rendering` transitions each attachment rest → `RENDER_TARGET` /
+  `DEPTH_STENCIL_WRITE` and `cmd_end_rendering` transitions back. The view
+  registry (`m_views`, `view_record`) carries the resource and rest layout
+  for that purpose. `cmd_release_swapchain_to_present` is now a no-op.
+- Stage/access mapping lives in `Conversions.cppm` (`barrier_sync_of`,
+  `barrier_access_of`). Graphics-only sync and access bits are stripped on
+  compute lists; an empty sync falls back to `SYNC_ALL`.
+- **Images must not be used on the compute queue** — `DIRECT_QUEUE_COMMON` is
+  direct-queue only. Today only buffers cross queues (VBD). The backend
+  asserts on a compute-list image discard.
+- The pre-2026-09-06 "bindless UAV bound as SRV" bug class (writable buffers
+  needing `writable = true` for a UAV) is unaffected by this change; that is
+  a descriptor issue, not a barrier issue.
+
+**2026-09-06 — root signatures are per pipeline.** The cloud raymarch hang
+(TDR at the first `cloud_resolve_pass` resolve, every DX12 run, any scene)
+was not a barrier problem: the single global root signature split its 64
+root-constant dwords into a fixed 32 push + 32 bindings, and the raymarch
+pushes 38 dwords, so its tail (extents, wind offset) never reached the shader
+and it marched on garbage. No fixed split fits every shader (one pass carries
+31 binding dwords), but every shader individually fits 64, exactly like
+Vulkan's 256 B push-data limit. So `root_signature_cache` (`Dx12/Pipeline.cppm`)
+now hands each `create_shader_program` a root signature sized to its own
+`push_offset_start` / `binding_args_size` (new field on
+`shader_program_create_info`, filled by the pipeline builder), cached by that
+pair. Compute PSOs remember theirs in `m_compute_layouts`, graphics templates
+in `gfx_template::root_signature`, and the list's root signature is set at
+`bind_shaders` time rather than at heap bind. Switching root signatures is
+free here: no descriptor tables, and every draw re-pushes after binding. The
+cache asserts when push + bindings exceed 64 dwords, the same limit
+`assert_push_data_fits` enforces from the agnostic side. Each block is padded
+to a 16-byte multiple so the root constants cover the shader's padded cbuffer.
+
+Two traps met while landing this, both worth remembering:
+
+- `push_data` used to set root constants on BOTH the compute and graphics
+  root signatures of a direct list on every push, which was harmless while
+  both signatures were set unconditionally at heap bind. With signatures set
+  at pipeline bind, the unbound one is null and
+  `SetGraphicsRoot32BitConstants` / `SetComputeRoot32BitConstants` then hangs
+  or faults inside `nvwgf2umx.dll` with no debug-layer message at all (the
+  process dies with 0xC0000005 and the engine's SEH handler never runs; under
+  a debugger it hangs in `engine::render` instead). `push_data` now pushes
+  only to the signatures whose pipeline kind is bound
+  (`compute_pso_bound` / `graphics_pso_bound`), and `reset_acquired_list`
+  clears both.
+- Descriptor heaps must be set before a root signature that uses the
+  directly-indexed flags, so both bind paths call `SetDescriptorHeaps` first.
+
+When a DX12 run dies with no `[SEH]` line and no validation message, suspect
+the driver: launch the exe under a Win32 debug loop (a ~50-line Python
+`ctypes` harness works; there is no gdb/cdb on this machine) and read the
+watchdog thread stacks, whose `nvwgf2umx.dll` frames sit directly above the
+engine call that misused the API.
+
 Two open problems, in priority order (re-prioritized 2026-07-22 per user):
 
 1. **Orientation + textures.**

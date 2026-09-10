@@ -1,10 +1,9 @@
 export module gse.ide.search_panel;
 
-import std;
 import gse;
-
-import gse.ide.search;
 import gse.ide.navigation;
+import gse.ide.search;
+import std;
 
 export namespace gse::ide {
 	struct search_panel_state {

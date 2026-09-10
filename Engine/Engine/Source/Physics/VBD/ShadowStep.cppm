@@ -12,7 +12,10 @@ import gse.log;
 import gse.gpu;
 import gse.gpu_record;
 
+import :joint_drive_component;
 import :motion_component;
+import :motor_component;
+import :muscle_component;
 import :collision_component;
 import :transform_component;
 import :system;
@@ -58,6 +61,7 @@ export namespace gse::physics::shadow_step {
 		bool buffers_ready = false;
 		bool conflict_reported = false;
 		std::vector<pending_step> pending;
+		std::vector<joint_definition> joints;
 		vbd::gpu_solver solver;
 	};
 
@@ -74,7 +78,10 @@ export namespace gse::physics::shadow_step {
 		shared_view<physics::data> phys,
 		read<transform_component> transform,
 		read<motion_component> motion,
-		read<collision_component> collision
+		read<collision_component> collision,
+		read<motor_component> motor,
+		read<joint_drive_component> drives,
+		read<muscle_component> muscles
 	) -> async::task<>;
 
 	[[= system_frame{}]]

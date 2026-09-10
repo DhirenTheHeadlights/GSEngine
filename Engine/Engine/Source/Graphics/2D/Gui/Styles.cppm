@@ -18,6 +18,7 @@ export namespace gse::gui {
 		forest,
 		frost,
 		high_contrast,
+		neutral,
 	};
 
 	struct style;
@@ -160,6 +161,7 @@ export namespace gse::gui {
 		static constexpr auto forest() -> style;
 		static constexpr auto frost() -> style;
 		static constexpr auto high_contrast() -> style;
+		static constexpr auto neutral() -> style;
 
 		static constexpr auto from_theme(
 			theme t
@@ -559,6 +561,61 @@ constexpr auto gse::gui::style::high_contrast() -> style {
 	};
 }
 
+constexpr auto gse::gui::style::neutral() -> style {
+	constexpr vec4f accent{ 0.66f, 0.70f, 0.74f, 1.0f };
+	constexpr vec4f accent_dim{ 0.66f, 0.70f, 0.74f, 0.30f };
+	return style{
+		.color_title_bar = { 0.13f, 0.13f, 0.14f, 1.0f },
+		.color_title_bar_inactive = { 0.09f, 0.09f, 0.10f, 1.0f },
+		.color_menu_body = { 0.11f, 0.11f, 0.12f, 0.15f },
+		.color_panel_alt = { 0.09f, 0.09f, 0.10f, 0.25f },
+		.color_border = { 0.30f, 0.31f, 0.33f, 1.0f },
+		.color_separator = { 0.22f, 0.23f, 0.25f, 1.0f },
+		.color_text = { 0.94f, 0.94f, 0.95f, 1.0f },
+		.color_text_secondary = { 0.66f, 0.67f, 0.70f, 1.0f },
+		.color_text_disabled = { 0.42f, 0.43f, 0.45f, 1.0f },
+		.color_section_header = { 0.94f, 0.94f, 0.95f, 1.0f },
+		.color_icon = { 0.72f, 0.73f, 0.76f, 1.0f },
+		.color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
+		.color_widget_background = { 0.17f, 0.17f, 0.19f, 0.35f },
+		.color_widget_hovered = { 0.26f, 0.27f, 0.29f, 1.0f },
+		.color_widget_active = accent,
+		.color_widget_selected = accent_dim,
+		.color_button_background = { 0.24f, 0.25f, 0.27f, 0.35f },
+		.color_button_hovered = { 0.36f, 0.37f, 0.40f, 1.0f },
+		.color_accent = accent,
+		.color_accent_dim = accent_dim,
+		.color_slider_fill = accent,
+		.color_toggle_on = accent,
+		.color_toggle_off = { 0.26f, 0.27f, 0.29f, 1.0f },
+		.color_handle = { 0.94f, 0.94f, 0.95f, 1.0f },
+		.color_handle_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
+		.color_input_background = { 0.08f, 0.08f, 0.09f, 0.35f },
+		.color_selection = { vec3f(accent), 0.40f },
+		.color_caret = { 0.94f, 0.94f, 0.95f, 1.0f },
+		.color_tab_background = { 0.10f, 0.10f, 0.11f, 0.35f },
+		.color_tab_hovered = { 0.18f, 0.18f, 0.20f, 1.0f },
+		.color_tab_active = { 0.24f, 0.25f, 0.27f, 1.0f },
+		.color_dock_preview = { vec3f(accent), 0.35f },
+		.color_dock_tab_active = { vec3f(accent), 0.6f },
+		.color_shadow = { 0.f, 0.f, 0.f, 0.40f },
+		.padding = 12.f,
+		.title_bar_height = 32.f,
+		.resize_border_thickness = 8.f,
+		.min_menu_size = { 200.f, 120.f },
+		.font_size = 16.f,
+		.font = {},
+		.corner_radius = 6.f,
+		.corner_radius_menu = 10.f,
+		.widget_height_padding = 0.7f,
+		.item_spacing = 4.f,
+		.section_spacing_above = 18.f,
+		.section_spacing_below = 10.f,
+		.section_header_size_mult = 1.30f,
+		.accent_bar_width = 3.f,
+	};
+}
+
 constexpr auto gse::gui::style::from_theme(const theme t) -> style {
 	switch (t) {
 		case theme::midnight:
@@ -573,6 +630,8 @@ constexpr auto gse::gui::style::from_theme(const theme t) -> style {
 			return frost();
 		case theme::high_contrast:
 			return high_contrast();
+		case theme::neutral:
+			return neutral();
 		default:
 			return midnight();
 	}

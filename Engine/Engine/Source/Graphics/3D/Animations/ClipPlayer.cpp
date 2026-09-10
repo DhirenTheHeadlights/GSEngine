@@ -1,22 +1,21 @@
 module gse.graphics:clip_player_impl;
 
-import std;
-
-import :clip_player;
-import :animation_components;
-import :blend_space;
-import :clip;
-import :skinned_model;
-
-import gse.core;
-import gse.containers;
+import gse.assets;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
 import gse.math;
-import gse.time;
-import gse.assets;
 import gse.physics;
+import gse.time;
+import std;
+
+import :animation_components;
+import :blend_space;
+import :clip;
+import :clip_player;
+import :skinned_model;
 
 namespace gse::animation {
 	struct active_layer {
@@ -58,7 +57,7 @@ auto gse::animation::binding_for(data& d, const skinned_model& model, const clip
 }
 
 auto gse::animation::run(context& ctx, data& d, const channel_read<physics::interpolation_state> interp_in, write<clip_player_component> players, read<skeleton_instance_component> skeletons, read<physics::transform_component> transforms, read<physics::motion_component> motions, write<physics::kinematic_target_component> targets) -> async::task<> {
-	trace::scope_guard sg{ trace_id<"animation::clip_player">() };
+	trace::scope_guard _{ trace_id<"animation::clip_player">() };
 
 	physics::interpolation_state interpolation{
 		.steps = system_clock::fixed_steps_this_frame(),

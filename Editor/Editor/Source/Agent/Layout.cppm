@@ -13,6 +13,8 @@ namespace gse::ide::agent {
 	constexpr std::size_t diff_min_side_columns = 40;
 	constexpr std::size_t diff_min_columns = 16;
 	constexpr std::size_t transcript_tab_width = 4;
+	constexpr std::uint32_t row_preview_lines = 8;
+	constexpr std::size_t group_summary_names = 3;
 
 	struct transcript_metrics {
 		const font& face;
@@ -154,9 +156,14 @@ namespace gse::ide::agent {
 		const transcript_metrics& metrics
 	) -> void;
 
-	auto command_row(
+	auto grouped_row(
 		const transcript_row& row
 	) -> bool;
+
+	auto group_summary(
+		const session& s,
+		const group_marker& group
+	) -> std::string;
 
 	auto chat_row(
 		const transcript_row& row
@@ -183,10 +190,15 @@ namespace gse::ide::agent {
 		std::uint32_t row
 	) -> bool;
 
-	auto toggle_group(
+	auto toggle_marker(
 		session& s,
-		std::size_t index
+		const group_marker& marker
 	) -> void;
+
+	auto marker_at(
+		const session& s,
+		std::uint32_t line
+	) -> const group_marker*;
 
 	auto truncate_transcript(
 		session& s,

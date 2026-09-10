@@ -1,16 +1,14 @@
 module gse.graphics:mp4_muxer_impl;
 
+import gse.core;
+import gse.gpu;
+import gse.log;
+import gse.math;
+import gse.time;
 import std;
 
-import :mp4_muxer;
 import :capture_ring;
-
-
-import gse.math;
-import gse.gpu;
-import gse.core;
-import gse.time;
-import gse.log;
+import :mp4_muxer;
 
 namespace gse::renderer::capture::mp4 {
 	constexpr std::uint32_t timescale = 1'000'000;
@@ -561,7 +559,7 @@ auto gse::renderer::capture::mp4::build_hvcc(const h265_parameter_sets& sets) ->
 }
 
 auto gse::renderer::capture::mp4::emit_ftyp(std::vector<std::byte>& out, const gpu::video_codec codec) -> void {
-	box_scope ftyp(out, fourcc('f', 't', 'y', 'p'));
+	box_scope _(out, fourcc('f', 't', 'y', 'p'));
 	push_fourcc(out, fourcc('i', 's', 'o', 'm'));
 	push_u32_be(out, 0x200);
 	push_fourcc(out, fourcc('i', 's', 'o', 'm'));
@@ -576,7 +574,7 @@ auto gse::renderer::capture::mp4::emit_ftyp(std::vector<std::byte>& out, const g
 }
 
 auto gse::renderer::capture::mp4::emit_mvhd(std::vector<std::byte>& out, const std::uint64_t duration) -> void {
-	box_scope mvhd(out, fourcc('m', 'v', 'h', 'd'));
+	box_scope _(out, fourcc('m', 'v', 'h', 'd'));
 	push_u32_be(out, 0x01000000);
 	push_u64_be(out, 0);
 	push_u64_be(out, 0);
@@ -603,7 +601,7 @@ auto gse::renderer::capture::mp4::emit_mvhd(std::vector<std::byte>& out, const s
 }
 
 auto gse::renderer::capture::mp4::emit_tkhd(std::vector<std::byte>& out, const std::uint64_t duration, const vec2u extent) -> void {
-	box_scope tkhd(out, fourcc('t', 'k', 'h', 'd'));
+	box_scope _(out, fourcc('t', 'k', 'h', 'd'));
 	push_u32_be(out, 0x01000007);
 	push_u64_be(out, 0);
 	push_u64_be(out, 0);
@@ -630,8 +628,8 @@ auto gse::renderer::capture::mp4::emit_tkhd(std::vector<std::byte>& out, const s
 }
 
 auto gse::renderer::capture::mp4::emit_elst(std::vector<std::byte>& out, const std::uint64_t duration, const std::int64_t media_start) -> void {
-	box_scope edts(out, fourcc('e', 'd', 't', 's'));
-	box_scope elst(out, fourcc('e', 'l', 's', 't'));
+	box_scope _(out, fourcc('e', 'd', 't', 's'));
+	box_scope _(out, fourcc('e', 'l', 's', 't'));
 	push_u32_be(out, 0x01000000);
 	push_u32_be(out, 1);
 	push_u64_be(out, duration);
@@ -641,7 +639,7 @@ auto gse::renderer::capture::mp4::emit_elst(std::vector<std::byte>& out, const s
 }
 
 auto gse::renderer::capture::mp4::emit_mdhd(std::vector<std::byte>& out, const std::uint64_t duration) -> void {
-	box_scope mdhd(out, fourcc('m', 'd', 'h', 'd'));
+	box_scope _(out, fourcc('m', 'd', 'h', 'd'));
 	push_u32_be(out, 0x01000000);
 	push_u64_be(out, 0);
 	push_u64_be(out, 0);
@@ -652,7 +650,7 @@ auto gse::renderer::capture::mp4::emit_mdhd(std::vector<std::byte>& out, const s
 }
 
 auto gse::renderer::capture::mp4::emit_hdlr(std::vector<std::byte>& out) -> void {
-	box_scope hdlr(out, fourcc('h', 'd', 'l', 'r'));
+	box_scope _(out, fourcc('h', 'd', 'l', 'r'));
 	push_u32_be(out, 0);
 	push_u32_be(out, 0);
 	push_fourcc(out, fourcc('v', 'i', 'd', 'e'));
@@ -667,7 +665,7 @@ auto gse::renderer::capture::mp4::emit_hdlr(std::vector<std::byte>& out) -> void
 }
 
 auto gse::renderer::capture::mp4::emit_vmhd(std::vector<std::byte>& out) -> void {
-	box_scope vmhd(out, fourcc('v', 'm', 'h', 'd'));
+	box_scope _(out, fourcc('v', 'm', 'h', 'd'));
 	push_u32_be(out, 0x00000001);
 	push_u16_be(out, 0);
 	push_u16_be(out, 0);
@@ -676,22 +674,22 @@ auto gse::renderer::capture::mp4::emit_vmhd(std::vector<std::byte>& out) -> void
 }
 
 auto gse::renderer::capture::mp4::emit_dinf(std::vector<std::byte>& out) -> void {
-	box_scope dinf(out, fourcc('d', 'i', 'n', 'f'));
-	box_scope dref(out, fourcc('d', 'r', 'e', 'f'));
+	box_scope _(out, fourcc('d', 'i', 'n', 'f'));
+	box_scope _(out, fourcc('d', 'r', 'e', 'f'));
 	push_u32_be(out, 0);
 	push_u32_be(out, 1);
-	box_scope url_(out, fourcc('u', 'r', 'l', ' '));
+	box_scope _(out, fourcc('u', 'r', 'l', ' '));
 	push_u32_be(out, 0x00000001);
 }
 
 auto gse::renderer::capture::mp4::emit_stsd(std::vector<std::byte>& out, const vec2u extent, const gpu::video_codec codec, std::span<const std::byte> codec_config) -> void {
-	box_scope stsd(out, fourcc('s', 't', 's', 'd'));
+	box_scope _(out, fourcc('s', 't', 's', 'd'));
 	push_u32_be(out, 0);
 	push_u32_be(out, 1);
 
 	const auto sample_entry_type = codec == gpu::video_codec::av1 ? fourcc('a', 'v', '0', '1') : fourcc('h', 'v', 'c', '1');
 
-	box_scope visual(out, sample_entry_type);
+	box_scope _(out, sample_entry_type);
 	for (int i = 0; i < 6; ++i) {
 		push_u8(out, 0);
 	}
@@ -714,12 +712,12 @@ auto gse::renderer::capture::mp4::emit_stsd(std::vector<std::byte>& out, const v
 	push_u16_be(out, 0xFFFF);
 
 	const auto config_type = codec == gpu::video_codec::av1 ? fourcc('a', 'v', '1', 'C') : fourcc('h', 'v', 'c', 'C');
-	box_scope config(out, config_type);
+	box_scope _(out, config_type);
 	push_bytes(out, codec_config);
 }
 
 auto gse::renderer::capture::mp4::emit_stts(std::vector<std::byte>& out, const std::vector<std::uint32_t>& sample_durations) -> void {
-	box_scope stts(out, fourcc('s', 't', 't', 's'));
+	box_scope _(out, fourcc('s', 't', 't', 's'));
 	push_u32_be(out, 0);
 
 	std::vector<std::pair<std::uint32_t, std::uint32_t>> runs;
@@ -749,7 +747,7 @@ auto gse::renderer::capture::mp4::emit_stss(std::vector<std::byte>& out, std::sp
 	if (keyframe_indices.empty()) {
 		return;
 	}
-	box_scope stss(out, fourcc('s', 't', 's', 's'));
+	box_scope _(out, fourcc('s', 't', 's', 's'));
 	push_u32_be(out, 0);
 	push_u32_be(out, static_cast<std::uint32_t>(keyframe_indices.size()));
 	for (const auto idx : keyframe_indices) {
@@ -758,7 +756,7 @@ auto gse::renderer::capture::mp4::emit_stss(std::vector<std::byte>& out, std::sp
 }
 
 auto gse::renderer::capture::mp4::emit_stsc(std::vector<std::byte>& out, const std::uint32_t sample_count) -> void {
-	box_scope stsc(out, fourcc('s', 't', 's', 'c'));
+	box_scope _(out, fourcc('s', 't', 's', 'c'));
 	push_u32_be(out, 0);
 	push_u32_be(out, 1);
 	push_u32_be(out, 1);
@@ -767,7 +765,7 @@ auto gse::renderer::capture::mp4::emit_stsc(std::vector<std::byte>& out, const s
 }
 
 auto gse::renderer::capture::mp4::emit_stsz(std::vector<std::byte>& out, std::span<const gpu::encoded_unit> units, std::span<const std::uint32_t> per_sample_prefix_bytes) -> void {
-	box_scope stsz(out, fourcc('s', 't', 's', 'z'));
+	box_scope _(out, fourcc('s', 't', 's', 'z'));
 	push_u32_be(out, 0);
 	push_u32_be(out, 0);
 	push_u32_be(out, static_cast<std::uint32_t>(units.size()));
@@ -791,7 +789,7 @@ auto gse::renderer::capture::mp4::sample_prefix_sizes(const gpu::video_codec cod
 }
 
 auto gse::renderer::capture::mp4::emit_co64(std::vector<std::byte>& out, const std::uint64_t mdat_payload_offset) -> void {
-	box_scope co64(out, fourcc('c', 'o', '6', '4'));
+	box_scope _(out, fourcc('c', 'o', '6', '4'));
 	push_u32_be(out, 0);
 	push_u32_be(out, 1);
 	push_u64_be(out, mdat_payload_offset);
@@ -868,22 +866,22 @@ auto gse::renderer::capture::mp4::mux(const std::span<const gpu::encoded_unit> u
 
 	std::vector<std::byte> moov_bytes;
 	{
-		box_scope moov(moov_bytes, fourcc('m', 'o', 'o', 'v'));
+		box_scope _(moov_bytes, fourcc('m', 'o', 'o', 'v'));
 		emit_mvhd(moov_bytes, media_duration);
 		{
-			box_scope trak(moov_bytes, fourcc('t', 'r', 'a', 'k'));
+			box_scope _(moov_bytes, fourcc('t', 'r', 'a', 'k'));
 			emit_tkhd(moov_bytes, media_duration, track.extent);
 			emit_elst(moov_bytes, media_duration, static_cast<std::int64_t>(first_pts_us));
 			{
-				box_scope mdia(moov_bytes, fourcc('m', 'd', 'i', 'a'));
+				box_scope _(moov_bytes, fourcc('m', 'd', 'i', 'a'));
 				emit_mdhd(moov_bytes, media_duration);
 				emit_hdlr(moov_bytes);
 				{
-					box_scope minf(moov_bytes, fourcc('m', 'i', 'n', 'f'));
+					box_scope _(moov_bytes, fourcc('m', 'i', 'n', 'f'));
 					emit_vmhd(moov_bytes);
 					emit_dinf(moov_bytes);
 					{
-						box_scope stbl(moov_bytes, fourcc('s', 't', 'b', 'l'));
+						box_scope _(moov_bytes, fourcc('s', 't', 'b', 'l'));
 						emit_stsd(moov_bytes, track.extent, track.codec, codec_config);
 						emit_stts(moov_bytes, sample_durations);
 						emit_stss(moov_bytes, units);
@@ -912,7 +910,7 @@ auto gse::renderer::capture::mp4::mux(const std::span<const gpu::encoded_unit> u
 	std::ofstream file(out, std::ios::binary);
 	if (!file) {
 		log::println(log::level::warning, log::category::render, "mp4::mux could not open output file {}",
-					 out.generic_display_string());
+			out.generic_display_string());
 		return false;
 	}
 
@@ -994,7 +992,7 @@ auto gse::renderer::capture::mp4::extract_codec_config(const gpu::video_codec co
 }
 
 auto gse::renderer::capture::mp4::emit_ftyp_fragmented(std::vector<std::byte>& out, const gpu::video_codec codec) -> void {
-	box_scope ftyp(out, fourcc('f', 't', 'y', 'p'));
+	box_scope _(out, fourcc('f', 't', 'y', 'p'));
 	push_fourcc(out, fourcc('i', 's', 'o', '6'));
 	push_u32_be(out, 0x200);
 	push_fourcc(out, fourcc('i', 's', 'o', 'm'));
@@ -1010,7 +1008,7 @@ auto gse::renderer::capture::mp4::emit_ftyp_fragmented(std::vector<std::byte>& o
 }
 
 auto gse::renderer::capture::mp4::emit_mvhd_unknown(std::vector<std::byte>& out, std::size_t& duration_offset_out) -> void {
-	box_scope mvhd(out, fourcc('m', 'v', 'h', 'd'));
+	box_scope _(out, fourcc('m', 'v', 'h', 'd'));
 	push_u32_be(out, 0x01000000);
 	push_u64_be(out, 0);
 	push_u64_be(out, 0);
@@ -1038,7 +1036,7 @@ auto gse::renderer::capture::mp4::emit_mvhd_unknown(std::vector<std::byte>& out,
 }
 
 auto gse::renderer::capture::mp4::emit_tkhd_unknown(std::vector<std::byte>& out, const vec2u extent, std::size_t& duration_offset_out) -> void {
-	box_scope tkhd(out, fourcc('t', 'k', 'h', 'd'));
+	box_scope _(out, fourcc('t', 'k', 'h', 'd'));
 	push_u32_be(out, 0x01000007);
 	push_u64_be(out, 0);
 	push_u64_be(out, 0);
@@ -1066,7 +1064,7 @@ auto gse::renderer::capture::mp4::emit_tkhd_unknown(std::vector<std::byte>& out,
 }
 
 auto gse::renderer::capture::mp4::emit_mdhd_unknown(std::vector<std::byte>& out, std::size_t& duration_offset_out) -> void {
-	box_scope mdhd(out, fourcc('m', 'd', 'h', 'd'));
+	box_scope _(out, fourcc('m', 'd', 'h', 'd'));
 	push_u32_be(out, 0x01000000);
 	push_u64_be(out, 0);
 	push_u64_be(out, 0);
@@ -1078,34 +1076,34 @@ auto gse::renderer::capture::mp4::emit_mdhd_unknown(std::vector<std::byte>& out,
 }
 
 auto gse::renderer::capture::mp4::emit_stbl_empty(std::vector<std::byte>& out, const vec2u extent, const gpu::video_codec codec, std::span<const std::byte> codec_config) -> void {
-	box_scope stbl(out, fourcc('s', 't', 'b', 'l'));
+	box_scope _(out, fourcc('s', 't', 'b', 'l'));
 	emit_stsd(out, extent, codec, codec_config);
 	{
-		box_scope stts(out, fourcc('s', 't', 't', 's'));
+		box_scope _(out, fourcc('s', 't', 't', 's'));
 		push_u32_be(out, 0);
 		push_u32_be(out, 0);
 	}
 	{
-		box_scope stsc(out, fourcc('s', 't', 's', 'c'));
+		box_scope _(out, fourcc('s', 't', 's', 'c'));
 		push_u32_be(out, 0);
 		push_u32_be(out, 0);
 	}
 	{
-		box_scope stsz(out, fourcc('s', 't', 's', 'z'));
+		box_scope _(out, fourcc('s', 't', 's', 'z'));
 		push_u32_be(out, 0);
 		push_u32_be(out, 0);
 		push_u32_be(out, 0);
 	}
 	{
-		box_scope stco(out, fourcc('s', 't', 'c', 'o'));
+		box_scope _(out, fourcc('s', 't', 'c', 'o'));
 		push_u32_be(out, 0);
 		push_u32_be(out, 0);
 	}
 }
 
 auto gse::renderer::capture::mp4::emit_mvex_trex(std::vector<std::byte>& out) -> void {
-	box_scope mvex(out, fourcc('m', 'v', 'e', 'x'));
-	box_scope trex(out, fourcc('t', 'r', 'e', 'x'));
+	box_scope _(out, fourcc('m', 'v', 'e', 'x'));
+	box_scope _(out, fourcc('t', 'r', 'e', 'x'));
 	push_u32_be(out, 0);
 	push_u32_be(out, 1);
 	push_u32_be(out, 1);
@@ -1115,26 +1113,26 @@ auto gse::renderer::capture::mp4::emit_mvex_trex(std::vector<std::byte>& out) ->
 }
 
 auto gse::renderer::capture::mp4::emit_fragment_moof(std::vector<std::byte>& out, const std::uint32_t sequence, const std::uint64_t base_decode_time, std::span<const gpu::encoded_unit> samples, std::span<const std::uint32_t> durations, std::span<const std::uint32_t> per_sample_prefix_bytes, std::size_t& trun_data_offset_field) -> void {
-	box_scope moof(out, fourcc('m', 'o', 'o', 'f'));
+	box_scope _(out, fourcc('m', 'o', 'o', 'f'));
 	{
-		box_scope mfhd(out, fourcc('m', 'f', 'h', 'd'));
+		box_scope _(out, fourcc('m', 'f', 'h', 'd'));
 		push_u32_be(out, 0);
 		push_u32_be(out, sequence);
 	}
 	{
-		box_scope traf(out, fourcc('t', 'r', 'a', 'f'));
+		box_scope _(out, fourcc('t', 'r', 'a', 'f'));
 		{
-			box_scope tfhd(out, fourcc('t', 'f', 'h', 'd'));
+			box_scope _(out, fourcc('t', 'f', 'h', 'd'));
 			push_u32_be(out, 0x00020000);
 			push_u32_be(out, 1);
 		}
 		{
-			box_scope tfdt(out, fourcc('t', 'f', 'd', 't'));
+			box_scope _(out, fourcc('t', 'f', 'd', 't'));
 			push_u32_be(out, 0x01000000);
 			push_u64_be(out, base_decode_time);
 		}
 		{
-			box_scope trun(out, fourcc('t', 'r', 'u', 'n'));
+			box_scope _(out, fourcc('t', 'r', 'u', 'n'));
 			push_u32_be(out, 0x00000701);
 			push_u32_be(out, static_cast<std::uint32_t>(samples.size()));
 			trun_data_offset_field = out.size();
@@ -1162,9 +1160,9 @@ auto gse::renderer::capture::mp4::live_muxer::open(const std::filesystem::path& 
 	m.m_file.open(path, std::ios::binary);
 	if (!m.m_file) {
 		log::println(log::level::warning,
-					 log::category::render,
-					 "live_muxer::open could not open file {}",
-					 path.generic_display_string());
+			log::category::render,
+			"live_muxer::open could not open file {}",
+			path.generic_display_string());
 		return std::nullopt;
 	}
 	m.m_path = path;
@@ -1265,17 +1263,17 @@ auto gse::renderer::capture::mp4::live_muxer::write_init(std::span<const std::by
 	std::size_t tkhd_dur_offset = 0;
 	std::size_t mdhd_dur_offset = 0;
 	{
-		box_scope moov(moov_bytes, fourcc('m', 'o', 'o', 'v'));
+		box_scope _(moov_bytes, fourcc('m', 'o', 'o', 'v'));
 		emit_mvhd_unknown(moov_bytes, mvhd_dur_offset);
 		{
-			box_scope trak(moov_bytes, fourcc('t', 'r', 'a', 'k'));
+			box_scope _(moov_bytes, fourcc('t', 'r', 'a', 'k'));
 			emit_tkhd_unknown(moov_bytes, m_track.extent, tkhd_dur_offset);
 			{
-				box_scope mdia(moov_bytes, fourcc('m', 'd', 'i', 'a'));
+				box_scope _(moov_bytes, fourcc('m', 'd', 'i', 'a'));
 				emit_mdhd_unknown(moov_bytes, mdhd_dur_offset);
 				emit_hdlr(moov_bytes);
 				{
-					box_scope minf(moov_bytes, fourcc('m', 'i', 'n', 'f'));
+					box_scope _(moov_bytes, fourcc('m', 'i', 'n', 'f'));
 					emit_vmhd(moov_bytes);
 					emit_dinf(moov_bytes);
 					emit_stbl_empty(moov_bytes, m_track.extent, m_track.codec, *codec_config);
@@ -1318,8 +1316,8 @@ auto gse::renderer::capture::mp4::live_muxer::flush_fragment() -> void {
 	std::vector<std::byte> moof_bytes;
 	std::size_t data_offset_field = 0;
 	emit_fragment_moof(moof_bytes, m_sequence, m_decode_time, m_pending, durations,
-					   prefix_sizes,
-					   data_offset_field);
+		prefix_sizes,
+		data_offset_field);
 
 	std::uint32_t mdat_payload_size = 0;
 	for (std::size_t i = 0; i < m_pending.size(); ++i) {

@@ -24,11 +24,11 @@ namespace gse::renderer::rt_shadow {
 
 	struct [[= shaders::shader_struct]] push_constants {
 		std::uint32_t count;
-		std::uint32_t instance_stride;
-		std::uint32_t model_matrix_offset;
 	};
 
-	struct [[= shaders::byte_address_buffer]] source_instance_data {};
+	struct [[= shaders::ssbo_readonly]] source_instance_data {
+		using element = shaders::common::instance_data;
+	};
 
 	struct [[= shaders::ssbo_readonly]] index_mapping {
 		using element = std::uint32_t;
@@ -38,7 +38,7 @@ namespace gse::renderer::rt_shadow {
 
 	using shader_binding_types = type_pack<source_instance_data, index_mapping, tlas_instances>;
 
-	using entry = gpu::compute_entry<gpu::body_path<"Compute/tlas_transform_update">, gpu::bindings<shader_binding_types>, gpu::threads<64>, gpu::push_constant<push_constants>, gpu::system_values<gpu::dispatch_thread_id>>;
+	using entry = gpu::compute_entry<gpu::body_path<"Compute/tlas_transform_update">, gpu::types<shaders::common::shader_types>, gpu::bindings<shader_binding_types>, gpu::threads<64>, gpu::push_constant<push_constants>, gpu::system_values<gpu::dispatch_thread_id>>;
 }
 
 auto gse::renderer::rt_shadow::init(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, data& d) -> async::task<> {
@@ -257,8 +257,6 @@ auto gse::renderer::rt_shadow::frame(context& ctx, shared_view<gpu::context::dat
 			rec.dispatch<entry>(
 				{
 					.count = instance_count,
-					.instance_stride = static_cast<std::uint32_t>(sizeof(shaders::common::instance_data)),
-					.model_matrix_offset = 0,
 				},
 				{
 					.source_instance_data = gc_r.instance_buffer[frame_index].slot(),

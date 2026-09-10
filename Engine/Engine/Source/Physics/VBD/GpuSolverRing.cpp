@@ -27,7 +27,7 @@ auto gse::vbd::gpu_solver::ensure_ring(gpu::device& device, const std::uint32_t 
 		ring_slot& slot = m_ring[i];
 		slot.bodies = device.create_buffer(
 			{
-				.size = ring_body_capacity * sizeof(body_state),
+				.size = m_capacities.ring_max_bodies * sizeof(body_state),
 				.stride = sizeof(body_state),
 				.usage = ring_usage,
 				.device_local = true
@@ -36,7 +36,7 @@ auto gse::vbd::gpu_solver::ensure_ring(gpu::device& device, const std::uint32_t 
 		);
 		slot.joints = device.create_buffer(
 			{
-				.size = limits.max_joints * sizeof(joint_constraint),
+				.size = m_capacities.max_joints * sizeof(joint_constraint),
 				.stride = sizeof(joint_constraint),
 				.usage = ring_usage,
 				.device_local = true
@@ -45,7 +45,7 @@ auto gse::vbd::gpu_solver::ensure_ring(gpu::device& device, const std::uint32_t 
 		);
 		slot.contacts = device.create_buffer(
 			{
-				.size = ring_contact_capacity * sizeof(contact_constraint),
+				.size = m_capacities.ring_max_contacts * sizeof(contact_constraint),
 				.stride = sizeof(contact_constraint),
 				.usage = ring_usage,
 				.device_local = true
@@ -54,7 +54,7 @@ auto gse::vbd::gpu_solver::ensure_ring(gpu::device& device, const std::uint32_t 
 		);
 		slot.contact_counts = device.create_buffer(
 			{
-				.size = ring_body_capacity * sizeof(std::uint32_t),
+				.size = m_capacities.ring_max_bodies * sizeof(std::uint32_t),
 				.stride = sizeof(std::uint32_t),
 				.usage = ring_usage,
 				.device_local = true
@@ -63,7 +63,7 @@ auto gse::vbd::gpu_solver::ensure_ring(gpu::device& device, const std::uint32_t 
 		);
 		slot.contact_offsets = device.create_buffer(
 			{
-				.size = ring_body_capacity * sizeof(std::uint32_t),
+				.size = m_capacities.ring_max_bodies * sizeof(std::uint32_t),
 				.stride = sizeof(std::uint32_t),
 				.usage = ring_usage,
 				.device_local = true
@@ -72,7 +72,7 @@ auto gse::vbd::gpu_solver::ensure_ring(gpu::device& device, const std::uint32_t 
 		);
 		slot.contact_adjacency = device.create_buffer(
 			{
-				.size = ring_contact_capacity * 2 * sizeof(std::uint32_t),
+				.size = m_capacities.ring_max_contacts * 2 * sizeof(std::uint32_t),
 				.stride = sizeof(std::uint32_t),
 				.usage = ring_usage,
 				.device_local = true
@@ -81,7 +81,7 @@ auto gse::vbd::gpu_solver::ensure_ring(gpu::device& device, const std::uint32_t 
 		);
 	}
 	m_ring_history = wanted;
-	log::println(log::category::physics, "vbd gpu rollback ring: {} slots, {} bodies and {} contacts per slot", wanted, ring_body_capacity, ring_contact_capacity);
+	log::println(log::category::physics, "vbd gpu rollback ring: {} slots, {} bodies and {} contacts per slot", wanted, m_capacities.ring_max_bodies, m_capacities.ring_max_contacts);
 }
 
 auto gse::vbd::gpu_solver::ring_history() const -> std::uint32_t {
@@ -92,10 +92,10 @@ auto gse::vbd::gpu_solver::stage_ring_copy(per_frame_data& f, const std::uint64_
 	if (m_ring_history == 0) {
 		co_return;
 	}
-	if (m_body_count > ring_body_capacity) {
+	if (m_body_count > m_capacities.ring_max_bodies) {
 		if (!m_ring_overflow_reported) {
 			m_ring_overflow_reported = true;
-			log::println(log::level::warning, log::category::physics, "vbd gpu rollback ring holds {} bodies per slot but the scene has {}; the ring is off for this scene", ring_body_capacity, m_body_count);
+			log::println(log::level::warning, log::category::physics, "vbd gpu rollback ring holds {} bodies per slot but the scene has {}; the ring is off for this scene", m_capacities.ring_max_bodies, m_body_count);
 		}
 		co_return;
 	}
@@ -107,10 +107,10 @@ auto gse::vbd::gpu_solver::stage_ring_copy(per_frame_data& f, const std::uint64_
 	if (m_joint_count > 0) {
 		rec.copy_buffer(f.joint_buffer, slot.joints, m_joint_count * sizeof(joint_constraint));
 	}
-	rec.copy_buffer(f.contact_buffer, slot.contacts, ring_contact_capacity * sizeof(contact_constraint));
+	rec.copy_buffer(f.contact_buffer, slot.contacts, m_capacities.ring_max_contacts * sizeof(contact_constraint));
 	rec.copy_buffer(f.contact_counts_buffer, slot.contact_counts, m_body_count * sizeof(std::uint32_t));
 	rec.copy_buffer(f.contact_offsets_buffer, slot.contact_offsets, m_body_count * sizeof(std::uint32_t));
-	rec.copy_buffer(f.contact_adjacency_buffer, slot.contact_adjacency, ring_contact_capacity * 2 * sizeof(std::uint32_t));
+	rec.copy_buffer(f.contact_adjacency_buffer, slot.contact_adjacency, m_capacities.ring_max_contacts * 2 * sizeof(std::uint32_t));
 
 	slot.tick = tick;
 	slot.valid = true;
@@ -134,8 +134,8 @@ auto gse::vbd::gpu_solver::stage_ring_restore(per_frame_data& f, per_frame_data&
 	if (m_joint_count > 0) {
 		rec.copy_buffer(slot.joints, f.joint_buffer, m_joint_count * sizeof(joint_constraint));
 	}
-	rec.copy_buffer(slot.contacts, other.contact_buffer, ring_contact_capacity * sizeof(contact_constraint));
+	rec.copy_buffer(slot.contacts, other.contact_buffer, m_capacities.ring_max_contacts * sizeof(contact_constraint));
 	rec.copy_buffer(slot.contact_counts, other.contact_counts_buffer, m_body_count * sizeof(std::uint32_t));
 	rec.copy_buffer(slot.contact_offsets, other.contact_offsets_buffer, m_body_count * sizeof(std::uint32_t));
-	rec.copy_buffer(slot.contact_adjacency, other.contact_adjacency_buffer, ring_contact_capacity * 2 * sizeof(std::uint32_t));
+	rec.copy_buffer(slot.contact_adjacency, other.contact_adjacency_buffer, m_capacities.ring_max_contacts * 2 * sizeof(std::uint32_t));
 }

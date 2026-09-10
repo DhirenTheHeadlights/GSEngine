@@ -1,9 +1,9 @@
 export module gse.dx12:command_pools;
 
-import std;
-import gse.gpu_backend;
 import gse.directx;
+import gse.gpu_backend;
 import gse.log;
+import std;
 
 import :device;
 
@@ -82,14 +82,14 @@ auto gse::dx12::command_pools::bind(device* owner) -> void {
 }
 
 auto gse::dx12::command_pools::reset_worker_command_pools(const std::uint32_t frame_index) -> void {
-	const std::lock_guard lock(m_mutex);
+	const std::lock_guard _(m_mutex);
 	for (auto& lists : m_worker_lists) {
 		lists[frame_index % lists.size()].used = 0;
 	}
 }
 
 auto gse::dx12::command_pools::acquire_worker_command_buffer(const gpu::queue_type queue_type, std::size_t, const std::uint32_t frame_index) -> gpu::command_buffer_handle {
-	const std::lock_guard lock(m_mutex);
+	const std::lock_guard _(m_mutex);
 	const bool compute = queue_type == gpu::queue_type::compute;
 	auto& lists = m_worker_lists[static_cast<std::size_t>(queue_type)];
 	auto& p = lists[frame_index % lists.size()];

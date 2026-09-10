@@ -163,7 +163,8 @@ export namespace gse::gpu {
 	auto build_compute_program(
 		device& dev,
 		const compute_entry_pod& pod,
-		std::span<const std::byte> spec_data = {}
+		std::span<const std::byte> spec_data = {},
+		std::string_view runtime_constants = {}
 	) -> shader_program;
 
 	enum class graphics_stage_kind : std::uint8_t {

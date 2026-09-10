@@ -1,12 +1,10 @@
 export module gse.network:registry_sync;
 
-import std;
-
-import :message;
-import :bitstream;
 
 import gse.core;
 import gse.ecs;
+
+import :message;
 
 export namespace gse::network {
 	template <typename T>

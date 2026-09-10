@@ -49,12 +49,19 @@ export namespace gse {
 		std::string summary_out;
 		std::string state_dump_out;
 		bool update_baseline = false;
+		bool real_time = false;
 		double regression_threshold = 1.10;
 		scenario::body_fn scenario_body = nullptr;
 	};
 
+	enum class loop_cadence {
+		continuous,
+		reactive
+	};
+
 	struct engine_config {
 		std::string title = "GSEngine Application";
+		loop_cadence cadence = loop_cadence::continuous;
 		bool create_window = true;
 		bool render = true;
 		bool dark_background = false;
@@ -97,13 +104,6 @@ export namespace gse {
 	struct attached_input_message {
 		std::uint32_t magic = 0;
 		input::event event;
-	};
-
-	constexpr std::uint32_t attached_pacing_magic = 0x47535333;
-
-	struct attached_pacing_message {
-		std::uint32_t magic = 0;
-		time_t<std::uint64_t> refresh{};
 	};
 
 	class engine : public identifiable {
@@ -186,6 +186,9 @@ export namespace gse {
 		gpu::handle<gpu::semaphore> m_attached_consumed_semaphore{};
 		attached_surface_message m_attached_message{};
 		std::uint64_t m_attached_counter = 0;
+		std::uint32_t m_attached_frames_presented = 0;
+		std::uint32_t m_attached_frames_skipped = 0;
+		interval_timer<> m_attached_report{ seconds(2.f) };
 		bool m_attached_surface_ready = false;
 		bool m_attached_surface_attempted = false;
 	};

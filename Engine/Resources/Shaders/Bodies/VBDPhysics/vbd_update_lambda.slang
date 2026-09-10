@@ -54,4 +54,12 @@ void vbd_update_lambda(uint3 dispatch_id) {
 
     contact_data[ci].lambda = lambda;
     contact_data[ci].penalty = penalty;
+
+    uint trace_body = solver_config_data[0].trace_body;
+    if (pc.substep == 0 && pc.iteration < iteration_trace_slots && (c.body_a == trace_body || c.body_b == trace_body)) {
+        uint base = state_iteration_trace_base_index + pc.iteration * iteration_trace_uints;
+        collision_state[base] = asuint(C.x);
+        collision_state[base + 1] = asuint(lambda.x);
+        collision_state[base + 2] = asuint(penalty.x);
+    }
 }

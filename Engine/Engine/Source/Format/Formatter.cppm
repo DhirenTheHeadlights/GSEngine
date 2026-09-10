@@ -24,6 +24,21 @@ export namespace gse::format {
 		std::vector<std::string>& lines,
 		std::span<const line_edit> edits
 	) -> std::size_t;
+
+	struct block_edit {
+		std::uint32_t first_line = 0;
+		std::uint32_t last_line = 0;
+		std::vector<std::string> replacement;
+	};
+
+	auto compute_imports(
+		std::span<const std::string> lines
+	) -> std::optional<block_edit>;
+
+	auto apply_block(
+		std::vector<std::string>& lines,
+		const block_edit& edit
+	) -> bool;
 }
 
 namespace gse::format {
@@ -99,6 +114,18 @@ namespace gse::format {
 	auto is_access_specifier(
 		std::span<const syntax::token> line_tokens
 	) -> bool;
+
+	struct import_line {
+		std::string text;
+		std::string name;
+		bool partition = false;
+	};
+
+	auto trimmed(std::string_view s) -> std::string_view;
+
+	auto parse_import(
+		std::string_view s
+	) -> std::optional<import_line>;
 }
 
 auto gse::format::is_opener(const char c) -> bool {
@@ -497,6 +524,124 @@ auto gse::format::compute(const std::span<const std::string> lines, const option
 	}
 
 	return edits;
+}
+
+auto gse::format::trimmed(const std::string_view s) -> std::string_view {
+	const auto first = s.find_first_not_of(" \t\r");
+	if (first == std::string_view::npos) {
+		return {};
+	}
+	return s.substr(first, s.find_last_not_of(" \t\r") - first + 1);
+}
+
+auto gse::format::parse_import(const std::string_view s) -> std::optional<import_line> {
+	std::string_view text = trimmed(s);
+	if (!text.ends_with(";")) {
+		return std::nullopt;
+	}
+	const bool exported = text.starts_with("export ");
+	if (exported) {
+		text = trimmed(text.substr(std::string_view("export ").size()));
+	}
+	if (!text.starts_with("import ")) {
+		return std::nullopt;
+	}
+	text.remove_suffix(1);
+	const std::string_view name = trimmed(text.substr(std::string_view("import ").size()));
+	if (name.empty()) {
+		return std::nullopt;
+	}
+	return import_line{
+		.text = (exported ? "export import " : "import ") + std::string(name) + ";",
+		.name = std::string(name),
+		.partition = name.front() == ':',
+	};
+}
+
+auto gse::format::compute_imports(const std::span<const std::string> lines) -> std::optional<block_edit> {
+	std::size_t first = lines.size();
+	std::size_t last = 0;
+	std::size_t module_line = lines.size();
+	std::vector<import_line> imports;
+
+	for (std::size_t index = 0; index < lines.size(); ++index) {
+		const std::string_view s = trimmed(lines[index]);
+		if (s.empty()) {
+			continue;
+		}
+		if (std::optional<import_line> parsed = parse_import(s)) {
+			if (imports.empty()) {
+				first = index;
+			}
+			last = index;
+			imports.push_back(std::move(*parsed));
+			continue;
+		}
+		if (!imports.empty()) {
+			break;
+		}
+		if (s.starts_with("module ") || s.starts_with("export module ") || s == "module;") {
+			module_line = index;
+			continue;
+		}
+		if (s.front() != '#') {
+			break;
+		}
+	}
+
+	if (imports.empty()) {
+		return std::nullopt;
+	}
+
+	std::vector<import_line> plain;
+	std::vector<import_line> partitions;
+	for (import_line& entry : imports) {
+		(entry.partition ? partitions : plain).push_back(std::move(entry));
+	}
+	const auto by_name = [](const import_line& a, const import_line& b) {
+		return a.name < b.name;
+	};
+	std::ranges::stable_sort(plain, by_name);
+	std::ranges::stable_sort(partitions, by_name);
+
+	std::vector<std::string> replacement;
+	replacement.reserve(plain.size() + partitions.size() + 1);
+	for (const import_line& entry : plain) {
+		replacement.push_back(entry.text);
+	}
+	if (!plain.empty() && !partitions.empty()) {
+		replacement.emplace_back();
+	}
+	for (const import_line& entry : partitions) {
+		replacement.push_back(entry.text);
+	}
+
+	if (module_line < first) {
+		const std::span<const std::string> gap = lines.subspan(module_line + 1, first - module_line - 1);
+		if (std::ranges::all_of(gap, [](const std::string& line) { return trimmed(line).empty(); })) {
+			first = module_line + 1;
+			replacement.insert(replacement.begin(), std::string());
+		}
+	}
+
+	if (replacement.size() == last - first + 1 && std::ranges::equal(replacement, lines.subspan(first, replacement.size()))) {
+		return std::nullopt;
+	}
+
+	return block_edit{
+		.first_line = static_cast<std::uint32_t>(first),
+		.last_line = static_cast<std::uint32_t>(last),
+		.replacement = std::move(replacement),
+	};
+}
+
+auto gse::format::apply_block(std::vector<std::string>& lines, const block_edit& edit) -> bool {
+	if (edit.first_line > edit.last_line || edit.last_line >= lines.size()) {
+		return false;
+	}
+	lines.erase(lines.begin() + edit.first_line, lines.begin() + edit.last_line + 1);
+	lines.insert(lines.begin() + edit.first_line, edit.replacement.begin(), edit.replacement.end());
+	return true;
 }
 
 auto gse::format::apply(std::vector<std::string>& lines, const std::span<const line_edit> edits) -> std::size_t {

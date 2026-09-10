@@ -21,6 +21,12 @@ import gse.runtime;
 export namespace gse::server {
 	struct client_data {
 		static constexpr std::size_t max_pending_inputs = 4;
+		static constexpr std::size_t max_stepped_history = 16;
+
+		struct stepped_point {
+			std::uint64_t step = 0;
+			std::uint32_t sequence = 0;
+		};
 
 		id controller_id;
 		actions::state latest_input;
@@ -28,6 +34,7 @@ export namespace gse::server {
 		std::uint32_t applied_sequence = 0;
 		std::uint32_t stepped_sequence = 0;
 		std::vector<network::input_frame> pending_inputs;
+		std::vector<stepped_point> stepped_history;
 	};
 
 	template <typename MessagePack, typename... Components>
@@ -369,12 +376,24 @@ auto gse::server::host<MessagePack, Components...>::update(const structural<play
 		for (auto& cd : m_clients | std::views::values) {
 			if (stepped > 0) {
 				cd.stepped_sequence = cd.applied_sequence;
+				cd.stepped_history.push_back({
+					.step = phys_s.step_index,
+					.sequence = cd.stepped_sequence,
+				});
+				if (cd.stepped_history.size() > client_data::max_stepped_history) {
+					cd.stepped_history.erase(cd.stepped_history.begin());
+				}
 			}
 
 			auto* input = inputs.find(cd.controller_id);
 			if (input) {
-				input->acked_sequence = cd.stepped_sequence;
-				input->acked_step = phys_s.step_index;
+				for (const auto& point : cd.stepped_history) {
+					if (point.step > phys_s.observed_step) {
+						break;
+					}
+					input->acked_sequence = point.sequence;
+					input->acked_step = point.step;
+				}
 			}
 			for (int i = 0; i < stepped && input && !cd.pending_inputs.empty(); ++i) {
 				const auto& frame = cd.pending_inputs.front();

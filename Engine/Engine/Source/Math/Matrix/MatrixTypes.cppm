@@ -1,7 +1,5 @@
 export module gse.math:matrix_types;
 
-import std;
-
 import :mixed_mat;
 import :units;
 

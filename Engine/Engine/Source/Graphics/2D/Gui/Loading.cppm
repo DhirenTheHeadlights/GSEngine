@@ -1,9 +1,8 @@
 export module gse.graphics:loading;
 
-import std;
-
 import gse.core;
 import gse.log;
+import std;
 
 export namespace gse::loading {
 	class state : public non_copyable, public non_movable {
@@ -45,12 +44,12 @@ export namespace gse::loading {
 }
 
 auto gse::loading::state::set_phase(std::string p) -> void {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	m_phase = std::move(p);
 }
 
 auto gse::loading::state::set_progress(const std::uint32_t done, const std::uint32_t total) -> void {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	const bool changed = done != m_done || total != m_total;
 	m_done = done;
 	m_total = total;
@@ -68,17 +67,17 @@ auto gse::loading::state::mark_rendered() -> void {
 }
 
 auto gse::loading::state::phase() const -> std::string {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	return m_phase;
 }
 
 auto gse::loading::state::done() const -> std::uint32_t {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	return m_done;
 }
 
 auto gse::loading::state::total() const -> std::uint32_t {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	return m_total;
 }
 

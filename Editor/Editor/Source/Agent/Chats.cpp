@@ -166,8 +166,10 @@ auto gse::ide::agent::restore_rows(session& s) -> bool {
 		}
 
 		const std::string_view kind = string_at(*event, "type");
+		const std::int64_t stamped = parse_timestamp(string_at(*event, "timestamp"));
 		if (kind == "user") {
 			for (transcript_row& row : user_rows(*event)) {
+				row.stamped = stamped;
 				s.rows.push_back(std::move(row));
 			}
 			continue;
@@ -182,6 +184,7 @@ auto gse::ide::agent::restore_rows(session& s) -> bool {
 		const std::string_view uuid = anchorable(*event) ? string_at(*event, "uuid") : std::string_view{};
 		for (transcript_row& row : summarize(*event, s.info)) {
 			row.uuid = uuid;
+			row.stamped = stamped;
 			s.rows.push_back(std::move(row));
 		}
 	}

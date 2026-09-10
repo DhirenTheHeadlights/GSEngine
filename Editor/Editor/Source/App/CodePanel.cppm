@@ -1,21 +1,20 @@
 export module gse.ide.app:code_panel;
 
-import std;
 import gse;
+import gse.format;
 import gse.gpu;
-
-import gse.ide.workspace;
+import gse.ide.analysis;
+import gse.ide.build;
+import gse.ide.config;
+import gse.ide.diagnostic;
+import gse.ide.docs;
 import gse.ide.git;
 import gse.ide.highlight;
-import gse.format;
-import gse.ide.build;
-import gse.ide.analysis;
-import gse.ide.diagnostic;
 import gse.ide.lint;
-import gse.ide.config;
-import gse.ide.search;
-import gse.ide.docs;
 import gse.ide.navigation;
+import gse.ide.search;
+import gse.ide.workspace;
+import std;
 
 import :chrome;
 
@@ -103,6 +102,11 @@ namespace gse::ide {
 	auto adjust_after_format(
 		gui::buffer_position& p,
 		std::span<const format::line_edit> edits
+	) -> void;
+
+	auto adjust_after_import_sort(
+		gui::buffer_position& p,
+		const format::block_edit& edit
 	) -> void;
 
 	auto apply_format(
@@ -828,7 +832,7 @@ auto gse::ide::draw_hover_panel(const gui::draw_context& ctx, const rectf& text_
 		h.scroll = std::clamp(h.scroll - wheel_y * code_line_h * 2.f, 0.f, max_scroll);
 		h.scroll_x = std::clamp(h.scroll_x - wheel_x * char_w * 4.f, 0.f, max_scroll_x);
 
-		const auto scope = ctx.scoped_layer(render_layer::popup);
+		const auto _ = ctx.scoped_layer(render_layer::popup);
 		ctx.queue_sprite({
 			.rect = rectf::from_position_size({ px + 4.f * sty.scale_factor, top_y - 4.f * sty.scale_factor }, { pw, ph }),
 			.color = sty.color_shadow,
@@ -984,10 +988,10 @@ auto gse::ide::draw_hover_panel(const gui::draw_context& ctx, const rectf& text_
 
 	const rectf panel = rectf::from_position_size({ px, top_y }, { pw, ph });
 	h.panel = panel;
-	const vec2f mouse = ctx.mouse_position();
+	const vec2f _ = ctx.mouse_position();
 	bool link_clicked = false;
 
-	const auto scope = ctx.scoped_layer(render_layer::popup);
+	const auto _ = ctx.scoped_layer(render_layer::popup);
 	ctx.queue_sprite({
 		.rect = rectf::from_position_size({ px + 4.f * sty.scale_factor, top_y - 4.f * sty.scale_factor }, { pw, ph }),
 		.color = sty.color_shadow,
@@ -1071,7 +1075,7 @@ auto gse::ide::draw_diagnostic_tooltip(const gui::draw_context& ctx, const rectf
 	}
 
 	const rectf panel = rectf::from_position_size({ px, top_y }, { pw, ph });
-	const auto scope = ctx.scoped_layer(render_layer::popup);
+	const auto _ = ctx.scoped_layer(render_layer::popup);
 	ctx.queue_sprite({
 		.rect = rectf::from_position_size({ px + 4.f * sty.scale_factor, top_y - 4.f * sty.scale_factor }, { pw, ph }),
 		.color = sty.color_shadow,
@@ -1143,20 +1147,44 @@ auto gse::ide::adjust_after_format(gui::buffer_position& p, const std::span<cons
 	}
 }
 
+auto gse::ide::adjust_after_import_sort(gui::buffer_position& p, const format::block_edit& edit) -> void {
+	if (p.line < edit.first_line) {
+		return;
+	}
+	if (p.line <= edit.last_line) {
+		p.line = edit.first_line;
+		p.column = 0;
+		return;
+	}
+	p.line = p.line - (edit.last_line - edit.first_line + 1) + static_cast<std::uint32_t>(edit.replacement.size());
+}
+
 auto gse::ide::apply_format(document& doc, const format::options& opts) -> void {
-	const std::vector<format::line_edit> edits = format::compute(doc.buffer.lines, opts);
-	if (edits.empty()) {
+	const std::optional<format::block_edit> imports = format::compute_imports(doc.buffer.lines);
+	std::vector<format::line_edit> edits = format::compute(doc.buffer.lines, opts);
+	if (!imports && edits.empty()) {
 		return;
 	}
 	doc.view.undo_stack.push_back({ doc.buffer.lines, doc.view.caret, doc.view.anchor });
 	doc.view.redo_stack.clear();
 	doc.view.last_edit_kind = format_edit_kind;
-	if (format::apply(doc.buffer.lines, edits) == 0) {
+
+	bool changed = false;
+	if (imports && format::apply_block(doc.buffer.lines, *imports)) {
+		adjust_after_import_sort(doc.view.caret, *imports);
+		adjust_after_import_sort(doc.view.anchor, *imports);
+		edits = format::compute(doc.buffer.lines, opts);
+		changed = true;
+	}
+	if (format::apply(doc.buffer.lines, edits) > 0) {
+		adjust_after_format(doc.view.caret, edits);
+		adjust_after_format(doc.view.anchor, edits);
+		changed = true;
+	}
+	if (!changed) {
 		doc.view.undo_stack.pop_back();
 		return;
 	}
-	adjust_after_format(doc.view.caret, edits);
-	adjust_after_format(doc.view.anchor, edits);
 	doc.view.caret = doc.buffer.clamp(doc.view.caret);
 	doc.view.anchor = doc.buffer.clamp(doc.view.anchor);
 	++doc.revision.value;
@@ -1218,6 +1246,11 @@ auto gse::ide::apply_diagnostics(workspace::data& ws, const std::shared_ptr<anal
 
 	doc.diagnostics = std::move(check->result);
 	doc.lint = std::move(check->lint);
+	if (doc.language == document_language::cpp) {
+		if (const std::optional<lint_finding> imports = lint::import_order_finding(doc.buffer.lines, doc.path.generic_display_string())) {
+			doc.lint.push_back(lint::as_diagnostic(*imports));
+		}
+	}
 	syntax_producer::set_semantic(
 		doc.syntax,
 		{
@@ -1496,7 +1529,7 @@ auto gse::ide::draw_quickfix_tooltip(const gui::draw_context& ctx, const rectf& 
 	}
 
 	const rectf panel = rectf::from_position_size({ px, top_y }, { pw, ph });
-	const auto scope = ctx.scoped_layer(render_layer::popup);
+	const auto _ = ctx.scoped_layer(render_layer::popup);
 	ctx.queue_sprite({
 		.rect = rectf::from_position_size({ px + 4.f * sty.scale_factor, top_y - 4.f * sty.scale_factor }, { pw, ph }),
 		.color = sty.color_shadow,
@@ -1580,7 +1613,7 @@ auto gse::ide::draw_document_prompt(gui::builder& ui, workspace::data& ws, const
 		? std::format("Choose which version of '{}' to keep.", document_it->second.tab_name)
 		: std::format("'{}' has unsaved changes.", document_it->second.tab_name);
 
-	const auto scope = ctx.scoped_layer(render_layer::modal);
+	const auto _ = ctx.scoped_layer(render_layer::modal);
 	ctx.register_hit_region(render_layer::modal, body);
 	ctx.queue_sprite({
 		.rect = body,

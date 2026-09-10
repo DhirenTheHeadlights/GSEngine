@@ -1,7 +1,5 @@
 export module gse.core:non_copyable;
 
-import std;
-
 export namespace gse {
 	class non_copyable {
 	public:

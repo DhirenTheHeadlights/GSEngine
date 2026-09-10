@@ -47,6 +47,18 @@ namespace gse::ide::agent {
 
 	auto agent_context_tag() -> id;
 
+	auto local_time_label(
+		std::int64_t unix_seconds
+	) -> std::string;
+
+	auto usage_label(
+		const usage_window& window
+	) -> std::string;
+
+	auto tool_output_label(
+		const session_info& info
+	) -> std::string;
+
 	auto draw_session_info(
 		const gui::draw_context& ctx,
 		data& d,

@@ -16,6 +16,10 @@ namespace sandbox::scenarios {
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
 
+	auto walk_pattern(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
 	auto orbit_at(
 		const gse::vec3<gse::position>& center,
 		gse::length radius,
@@ -320,6 +324,44 @@ auto sandbox::scenarios::rollback_impulse_replay_gpu(gse::scenario::context& ctx
 	ctx.channels().push<gse::physics::rollback_request>({
 		.steps = 20,
 	});
+}
+
+auto sandbox::scenarios::walk_pattern(gse::scenario::context& ctx) -> gse::async::task<> {
+	const auto press = [&ctx](const gse::key key) {
+		ctx.channels().push<gse::input::synthetic_input_request>({
+			.value = gse::input::key_pressed{ .key_code = key },
+		});
+	};
+	const auto release = [&ctx](const gse::key key) {
+		ctx.channels().push<gse::input::synthetic_input_request>({
+			.value = gse::input::key_released{ .key_code = key },
+		});
+	};
+
+	co_await gse::scenario::wait(ctx, gse::seconds(6.f));
+	press(gse::key::w);
+	co_await gse::scenario::wait(ctx, gse::seconds(4.f));
+	release(gse::key::w);
+	press(gse::key::a);
+	co_await gse::scenario::wait(ctx, gse::seconds(2.f));
+	release(gse::key::a);
+	press(gse::key::w);
+	press(gse::key::d);
+	co_await gse::scenario::wait(ctx, gse::seconds(3.f));
+	release(gse::key::w);
+	release(gse::key::d);
+	co_await gse::scenario::wait(ctx, gse::seconds(1.f));
+	press(gse::key::s);
+	co_await gse::scenario::wait(ctx, gse::seconds(3.f));
+	release(gse::key::s);
+}
+
+auto sandbox::scenarios::net_walk_cpu(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await walk_pattern(ctx);
+}
+
+auto sandbox::scenarios::net_walk_gpu(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await walk_pattern(ctx);
 }
 
 auto sandbox::scenarios::rollback_reference_character(gse::scenario::context& ctx) -> gse::async::task<> {

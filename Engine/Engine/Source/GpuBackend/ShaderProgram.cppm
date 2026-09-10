@@ -29,6 +29,7 @@ export namespace gse::gpu {
 	struct shader_program_create_info {
 		std::span<const shader_object_create_info> stages;
 		std::uint32_t push_offset_start = 0;
+		std::uint32_t binding_args_size = 0;
 		std::optional<gpu::push_constant_range> push_constant_range;
 		dynamic_pipeline_state state;
 		std::array<color_format, 8> color_targets{};

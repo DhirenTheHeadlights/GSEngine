@@ -16,7 +16,8 @@ namespace gse::ide::agent {
 
 	auto note_written_file(
 		session& s,
-		const std::filesystem::path& file
+		const std::filesystem::path& file,
+		std::span<const std::string> added
 	) -> void;
 
 	auto working_on_files(
@@ -77,10 +78,21 @@ namespace gse::ide::agent {
 		std::span<const std::filesystem::path> files
 	) -> session*;
 
+	auto hunk_owner(
+		data& d,
+		const std::filesystem::path& file,
+		std::uint32_t line
+	) -> session*;
+
+	struct blame_match {
+		session* owner = nullptr;
+		bool at_line = false;
+	};
+
 	auto blame_owner(
 		data& d,
 		const build_runner::build_error& error
-	) -> session*;
+	) -> blame_match;
 
 	auto attribute_build_errors(
 		data& d,
@@ -93,7 +105,20 @@ namespace gse::ide::agent {
 	auto blocker_for(
 		const data& d,
 		const queued_build& queued
-	) -> const session*;
+	) -> std::string;
+
+	auto active_elsewhere(
+		const data& d,
+		const queued_build& queued
+	) -> std::string;
+
+	auto refresh_presence(
+		data& d
+	) -> void;
+
+	auto retire_presence(
+		data& d
+	) -> void;
 
 	auto hold_for(
 		const data& d,
@@ -103,8 +128,13 @@ namespace gse::ide::agent {
 
 	auto blocker_name(
 		const data& d,
-		std::uint32_t blocker
-	) -> std::string_view;
+		std::string_view blocker
+	) -> std::string;
+
+	auto holding_builds(
+		const data& d,
+		const session& s
+	) -> std::size_t;
 
 	auto hold_message(
 		const build_hold_state& hold,

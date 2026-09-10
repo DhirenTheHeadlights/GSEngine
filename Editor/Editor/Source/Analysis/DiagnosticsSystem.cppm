@@ -25,7 +25,6 @@ export namespace gse::ide {
 	namespace diagnostics_system {
 		struct [[= system_state<"Diagnostics">{}]] data {
 			std::shared_ptr<analysis::diagnostics_check> pending;
-			std::jthread worker;
 		};
 
 		[[= system_run<>{}]]
@@ -35,6 +34,11 @@ export namespace gse::ide {
 			channel_read<analysis::diagnostics_request> requests_in,
 			channel_write<analysis::diagnostics_completed> completed_out
 		) -> async::task<>;
+
+		[[= system_shutdown{}]]
+		auto shutdown(
+			data& d
+		) -> void;
 	}
 }
 
@@ -60,7 +64,7 @@ auto gse::ide::diagnostics_system::run(context& ctx, data& d, const channel_read
 	d.pending = std::make_shared<analysis::diagnostics_check>();
 	d.pending->document_id = request->document_id;
 	d.pending->revision = request->revision;
-	d.worker = analysis::diagnostics_runner::start(
+	analysis::diagnostics_runner::start(
 		d.pending,
 		request->compile_commands,
 		request->file,
@@ -69,4 +73,10 @@ auto gse::ide::diagnostics_system::run(context& ctx, data& d, const channel_read
 		request->lint_hook
 	);
 	return {};
+}
+
+auto gse::ide::diagnostics_system::shutdown(data& d) -> void {
+	if (d.pending) {
+		d.pending->cancel.request_stop();
+	}
 }

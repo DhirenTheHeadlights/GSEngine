@@ -1,24 +1,22 @@
 module gse.vulkan:device_impl;
 
-import std;
-
-import :device;
-import :aftermath;
+import gse.assert;
+import gse.core;
 import gse.gpu_backend;
+import gse.log;
+import gse.math;
+import std;
+import vulkan;
+
+import :aftermath;
 import :commands;
+import :device;
 import :instance;
 import :physical_device;
 import :queues;
-import :types;
-import :sync;
 import :shader_object;
-
-import vulkan;
-
-import gse.assert;
-import gse.core;
-import gse.log;
-import gse.math;
+import :sync;
+import :types;
 
 namespace gse::vulkan {
 	template <typename Feat>
@@ -412,7 +410,7 @@ auto gse::vulkan::device::create_swap_chain(const gpu::surface surface, const ve
 	}
 
 	{
-		std::lock_guard lock(m_mutex);
+		std::lock_guard _(m_mutex);
 		m_owned.store(
 			handle.value,
 			swap_chain_resources{
@@ -433,7 +431,7 @@ auto gse::vulkan::device::destroy_swapchain(const gpu::swap_chain_handle swapcha
 	if (!swapchain) {
 		return;
 	}
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	m_owned.retire(swapchain, 0);
 	m_owned.collect(std::numeric_limits<std::uint64_t>::max());
 }
@@ -1231,7 +1229,7 @@ auto gse::vulkan::device::create_buffer(const vk::BufferCreateInfo& buffer_info,
 		: 0;
 	auto* const mapped = alloc.mapped();
 	{
-		std::lock_guard lock(m_mutex);
+		std::lock_guard _(m_mutex);
 		m_live_buffers.emplace(handle.value, live_buffer{ std::move(alloc), {}, actual_buffer_info.size, address, mapped });
 	}
 	return gpu::buffer(handle, actual_buffer_info.size, address, mapped);
@@ -1250,7 +1248,7 @@ auto gse::vulkan::device::create_buffer(const gpu::buffer_desc& desc, const std:
 	const auto slot = m_bindless->buffer_pool.allocate();
 	write_buffer_descriptor(m_bindless->resource_heap, m_bindless->buffer_pool.offset(slot), buf.device_address(), buf.size_bytes());
 	{
-		std::lock_guard lock(m_mutex);
+		std::lock_guard _(m_mutex);
 		m_live_buffers.at(buf.handle().value).slot = slot;
 	}
 	return gpu::buffer(buf.handle(), buf.size_bytes(), buf.device_address(), buf.mapped<std::byte>(), slot);
@@ -1358,7 +1356,7 @@ auto gse::vulkan::device::create_image(const vk::ImageCreateInfo& info, const gp
 	const auto img_handle = std::bit_cast<gpu::handle<gpu::image>>(vk_image);
 	const auto view_handle = std::bit_cast<gpu::handle<gpu::image_view>>(view);
 	{
-		std::lock_guard lock(m_mutex);
+		std::lock_guard _(m_mutex);
 		m_live_images.emplace(img_handle.value, live_image{ std::move(alloc), view_handle, {}, {}, format, vec3u{ info.extent.width, info.extent.height, info.extent.depth }, engine_view_info });
 	}
 	return gpu::image(
@@ -1463,7 +1461,7 @@ auto gse::vulkan::device::create_image(const gpu::image_desc& desc, const std::s
 		write_image_descriptor(m_bindless->resource_heap, m_bindless->image_pool.offset(sampled_slot), gpu::image_descriptor_kind::sampled, img);
 	}
 	{
-		std::lock_guard lock(m_mutex);
+		std::lock_guard _(m_mutex);
 		auto& li = m_live_images.at(img.handle().value);
 		li.storage_slot = storage_slot;
 		li.sampled_slot = sampled_slot;
@@ -1472,55 +1470,55 @@ auto gse::vulkan::device::create_image(const gpu::image_desc& desc, const std::s
 }
 
 auto gse::vulkan::device::buffer_slot(const gpu::handle<gpu::buffer> buffer) const -> gpu::bindless_slot {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	const auto it = m_live_buffers.find(buffer.value);
 	return it == m_live_buffers.end() ? gpu::bindless_slot{} : it->second.slot;
 }
 
 auto gse::vulkan::device::buffer_address(const gpu::handle<gpu::buffer> buffer) const -> gpu::device_address {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	const auto it = m_live_buffers.find(buffer.value);
 	return it == m_live_buffers.end() ? 0 : it->second.address;
 }
 
 auto gse::vulkan::device::buffer_size(const gpu::handle<gpu::buffer> buffer) const -> gpu::device_size {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	const auto it = m_live_buffers.find(buffer.value);
 	return it == m_live_buffers.end() ? 0 : it->second.size;
 }
 
 auto gse::vulkan::device::buffer_mapped(const gpu::handle<gpu::buffer> buffer) const -> std::byte* {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	const auto it = m_live_buffers.find(buffer.value);
 	return it == m_live_buffers.end() ? nullptr : it->second.mapped;
 }
 
 auto gse::vulkan::device::image_sampled_slot(const gpu::handle<gpu::image> image) const -> gpu::bindless_slot {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	const auto it = m_live_images.find(image.value);
 	return it == m_live_images.end() ? gpu::bindless_slot{} : it->second.sampled_slot;
 }
 
 auto gse::vulkan::device::image_storage_slot(const gpu::handle<gpu::image> image) const -> gpu::bindless_slot {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	const auto it = m_live_images.find(image.value);
 	return it == m_live_images.end() ? gpu::bindless_slot{} : it->second.storage_slot;
 }
 
 auto gse::vulkan::device::image_format_of(const gpu::handle<gpu::image> image) const -> gpu::image_format {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	const auto it = m_live_images.find(image.value);
 	return it == m_live_images.end() ? gpu::image_format::undefined : it->second.format;
 }
 
 auto gse::vulkan::device::image_extent(const gpu::handle<gpu::image> image) const -> vec3u {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	const auto it = m_live_images.find(image.value);
 	return it == m_live_images.end() ? vec3u{} : it->second.extent;
 }
 
 auto gse::vulkan::device::image_view(const gpu::handle<gpu::image> image) const -> gpu::handle<gpu::image_view> {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	const auto it = m_live_images.find(image.value);
 	return it == m_live_images.end() ? gpu::handle<gpu::image_view>{} : it->second.view;
 }
@@ -1536,7 +1534,7 @@ auto gse::vulkan::device::tracking_enabled() const -> bool {
 auto gse::vulkan::device::destroy_buffer(const gpu::handle<gpu::buffer> buffer) -> void {
 	gpu::allocation alloc;
 	{
-		std::lock_guard lock(m_mutex);
+		std::lock_guard _(m_mutex);
 		if (const auto it = m_live_buffers.find(buffer.value); it != m_live_buffers.end()) {
 			alloc = std::move(it->second.alloc);
 			if (m_bindless && it->second.slot.valid()) {
@@ -1550,27 +1548,27 @@ auto gse::vulkan::device::destroy_buffer(const gpu::handle<gpu::buffer> buffer) 
 }
 
 auto gse::vulkan::device::retire(const gpu::handle<gpu::buffer> buffer) -> void {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	m_retired_buffers.push_back({ buffer.value, m_resource_frame + gpu::max_frames_in_flight });
 }
 
 auto gse::vulkan::device::retire(const gpu::handle<gpu::image> image) -> void {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	m_retired_images.push_back({ image.value, m_resource_frame + gpu::max_frames_in_flight });
 }
 
 auto gse::vulkan::device::retire(const gpu::acceleration_structure acceleration_structure) -> void {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	m_owned.retire(acceleration_structure, m_resource_frame + gpu::max_frames_in_flight);
 }
 
 auto gse::vulkan::device::retire(const gpu::handle<gpu::semaphore> semaphore) -> void {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	m_owned.retire(semaphore, m_resource_frame + gpu::max_frames_in_flight);
 }
 
 auto gse::vulkan::device::retire(const gpu::handle<gpu::fence> fence) -> void {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	m_owned.retire(fence, m_resource_frame + gpu::max_frames_in_flight);
 }
 
@@ -1578,7 +1576,7 @@ auto gse::vulkan::device::collect_garbage() -> void {
 	std::vector<std::uint64_t> buffers;
 	std::vector<std::uint64_t> images;
 	{
-		std::lock_guard lock(m_mutex);
+		std::lock_guard _(m_mutex);
 		++m_resource_frame;
 		std::erase_if(m_retired_buffers, [&](const gpu::retired_resource& r) {
 			if (m_resource_frame >= r.retire_after) {
@@ -1614,7 +1612,7 @@ auto gse::vulkan::device::destroy_image(const gpu::handle<gpu::image> image) -> 
 	live_image li;
 	bool found = false;
 	{
-		std::lock_guard lock(m_mutex);
+		std::lock_guard _(m_mutex);
 		if (const auto it = m_live_images.find(image.value); it != m_live_images.end()) {
 			li = std::move(it->second);
 			found = true;
@@ -2043,7 +2041,7 @@ auto gse::vulkan::device::find_memory_type_index(const std::uint32_t type_bits, 
 }
 
 auto gse::vulkan::device::free_allocation(const gpu::allocation& alloc) -> void {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 
 	if (!alloc.owner()) {
 		return;
@@ -2068,7 +2066,7 @@ auto gse::vulkan::device::free_allocation(const gpu::allocation& alloc) -> void 
 
 	const auto* sub_to_free = alloc.owner();
 
-	for (auto& [memory_type_index, blocks] : m_pools | std::views::values) {
+	for (auto& [_, blocks] : m_pools | std::views::values) {
 		for (auto& block : blocks) {
 			for (auto it = block.allocations.begin(); it != block.allocations.end(); ++it) {
 				if (&*it == sub_to_free) {
@@ -2121,7 +2119,7 @@ gse::vulkan::device::device(class physical_device&& physical_device, vk::raii::D
 }
 
 auto gse::vulkan::device::allocate(const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties, const std::string_view tag, const std::source_location loc, const bool device_address) -> std::expected<gpu::allocation, std::string> {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 
 	if ((m_settings && m_settings->tracking_enabled)) {
 		assert(
@@ -2286,7 +2284,7 @@ auto gse::vulkan::device::allocate(const vk::MemoryRequirements& requirements, c
 }
 
 auto gse::vulkan::device::clean_up() -> void {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 
 	if (!*m_device) {
 		return;
@@ -2311,7 +2309,7 @@ auto gse::vulkan::device::clean_up() -> void {
 	m_live_images.clear();
 
 	std::uint32_t leaked_sub_allocations = 0;
-	for (const auto& [memory_type_index, blocks] : m_pools | std::views::values) {
+	for (const auto& [_, blocks] : m_pools | std::views::values) {
 		for (const auto& block : blocks) {
 			for (const auto& sub : block.allocations) {
 				if (sub.in_use) {
@@ -2372,7 +2370,7 @@ auto gse::vulkan::device::clean_up() -> void {
 
 	m_cleaned_up = true;
 
-	for (auto& [memory_type_index, blocks] : m_pools | std::views::values) {
+	for (auto& [_, blocks] : m_pools | std::views::values) {
 		for (auto& block : blocks) {
 			if (block.mapped) {
 				(*m_device).unmapMemory(block.memory);
@@ -2523,7 +2521,7 @@ auto gse::vulkan::device::query_tlas_build_sizes(const std::uint32_t max_instanc
 template <typename Frontend, typename Raii>
 auto gse::vulkan::device::adopt(Raii&& object) -> Frontend {
 	const auto handle = std::bit_cast<Frontend>(*object);
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	m_owned.store(handle.value, std::forward<Raii>(object));
 	return handle;
 }
@@ -2784,7 +2782,7 @@ auto gse::vulkan::device::create_descriptor_heap(const gpu::device_size size) ->
 	const auto address = (*m_device).getBufferAddress(vk::BufferDeviceAddressInfo{ .buffer = *vk_buffer });
 
 	const auto handle = std::bit_cast<gpu::handle<gpu::descriptor_heap>>(*vk_buffer);
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	m_owned.store(
 		handle.value,
 		descriptor_heap_resources{

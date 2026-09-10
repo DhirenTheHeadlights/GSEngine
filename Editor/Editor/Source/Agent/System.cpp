@@ -99,6 +99,7 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 	}
 
 	accept_hibernations(d);
+	refresh_presence(d);
 	poll_build_inbox(d, events_out, build_d.building);
 
 	for (const dispatch_request& request : requests_in.of<dispatch_request>()) {
@@ -112,6 +113,7 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 
 	refresh_stale(d);
 	service_link(d);
+	refresh_usage(d);
 
 	events_out.push<gui::menu_content>({
 		.menu = std::string(panel_name),
@@ -138,11 +140,13 @@ auto gse::ide::agent::shutdown(data& d) -> void {
 
 	save_sessions(d);
 	net::cancel(d.link);
+	d.usage_client.reset();
 
 	if (relaunching) {
 		app::drop_relaunch_arguments(std::wstring(handoff_option));
 	}
 
+	retire_presence(d);
 	hand_off_builds(d, relaunching);
 
 	for (session& s : d.sessions) {

@@ -1,13 +1,12 @@
 module gse.concurrency:async_task_impl;
 
+import gse.diag;
+import gse.log;
 import std;
 
 import :async_task;
 import :frame_arena;
 import :task;
-
-import gse.diag;
-import gse.log;
 
 
 namespace gse::async {
@@ -120,7 +119,7 @@ auto gse::async::track_frame(const std::coroutine_handle<> h) -> checked_handle 
 
 	const std::uint64_t generation = tracked_generation.fetch_add(1, std::memory_order_relaxed) + 1;
 	{
-		const std::lock_guard lock(tracked_frames_mutex);
+		const std::lock_guard _(tracked_frames_mutex);
 		tracked_frames.insert_or_assign(h.address(), generation);
 		tracked_frame_count.store(tracked_frames.size(), std::memory_order_release);
 		if (tracked_frames.size() > tracked_frame_warn_threshold && !tracked_frame_warned) {
@@ -144,7 +143,7 @@ auto gse::async::untrack_frame(void* frame) -> void {
 		return;
 	}
 
-	const std::lock_guard lock(tracked_frames_mutex);
+	const std::lock_guard _(tracked_frames_mutex);
 	if (tracked_frames.erase(frame) != 0) {
 		tracked_frame_count.store(tracked_frames.size(), std::memory_order_release);
 	}
@@ -156,7 +155,7 @@ auto gse::async::resume_checked(const checked_handle& tracked) -> bool {
 	}
 
 	{
-		const std::lock_guard lock(tracked_frames_mutex);
+		const std::lock_guard _(tracked_frames_mutex);
 		const auto it = tracked_frames.find(tracked.handle.address());
 		if (it == tracked_frames.end() || it->second != tracked.generation) {
 			return false;
@@ -438,7 +437,7 @@ auto gse::async::sync_wait(task<>&& t) -> void {
 	auto w = wrapper();
 	w.start();
 	{
-		trace::scope_guard sg{ trace_id<"sync_wait::acquire">() };
+		trace::scope_guard _{ trace_id<"sync_wait::acquire">() };
 		while (!done_flag.load(std::memory_order_acquire)) {
 			if (!gse::task::try_run_one()) {
 				std::this_thread::yield();

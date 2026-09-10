@@ -11,8 +11,7 @@ import gse.log;
 import gse.win32;
 
 namespace gse {
-	constexpr std::uint32_t pacing_window = 120;
-	constexpr int pacing_max_divisor = 4;
+	constexpr double dedicated_polls_per_step = 2.0;
 }
 
 auto gse::pace_wait(frame_pacing& pacing, const time_t<double, seconds> deadline) -> void {
@@ -36,89 +35,25 @@ auto gse::pace_wait(frame_pacing& pacing, const time_t<double, seconds> deadline
 	while (system_clock::now<time_t<double, seconds>>() < deadline) {
 		std::this_thread::yield();
 	}
-	pacing.last_wait = system_clock::now<time_t<double, seconds>>() - begin;
 }
 
-auto gse::pace_frame(frame_pacing& pacing) -> void {
-	if (pacing.refresh == time_t<std::uint64_t>{}) {
-		return;
-	}
-
-	const auto refresh = quantity_cast<time_t<double, seconds>>(time(pacing.refresh));
-	system_clock::submit_refresh_interval(quantity_cast<system_clock::internal_time>(refresh));
-
-	const auto target = refresh * static_cast<double>(pacing.divisor);
+auto gse::pace_dedicated(frame_pacing& pacing) -> void {
+	const auto period = system_clock::fixed_dt<time_t<double, seconds>>() / dedicated_polls_per_step;
 	const auto now = system_clock::now<time_t<double, seconds>>();
 
 	if (!pacing.deadline_valid) {
 		pacing.deadline_valid = true;
-		pacing.next_deadline = now + target;
-		pacing.last_entry = now;
-		pacing.last_wait = {};
-		pacing.ema_busy = target;
-		pacing.next_heartbeat = now + seconds(10.0);
-		pacing.allow_down_at = now;
-		pacing.last_down_at = {};
-		pacing.down_backoff = seconds(5.0);
-		log::println(log::category::general, "attached pacing: engaged at editor refresh {:.3f:ms}", refresh);
+		pacing.next_deadline = now + period;
+		log::println(log::category::general, "dedicated pacing: engaged at {:.3f:ms} per loop ({} polls per fixed step)", period, dedicated_polls_per_step);
 		return;
 	}
 
-	const double busy_alpha = 0.1;
-	const auto busy = now - pacing.last_entry - pacing.last_wait;
-	pacing.last_entry = now;
-	pacing.last_wait = {};
-	pacing.ema_busy = pacing.ema_busy * (1.0 - busy_alpha) + busy * busy_alpha;
-
-	++pacing.window_frames;
-	if (now > pacing.next_deadline) {
-		++pacing.window_misses;
-		pacing.next_deadline = now + target;
-		const auto miss_delta = busy > pacing.ema_busy * 2.0 ? time_t<double, seconds>(busy) : pacing.ema_busy;
-		system_clock::submit_display_interval(quantity_cast<system_clock::internal_time>(miss_delta));
-	}
-	else {
+	if (pacing.next_deadline > now) {
 		pace_wait(pacing, pacing.next_deadline);
-		pacing.next_deadline += target;
-		system_clock::submit_display_interval(quantity_cast<system_clock::internal_time>(target));
 	}
 
-	if (pacing.window_frames >= pacing_window) {
-		const double load = pacing.ema_busy * 1.1 / refresh;
-		auto desired = std::clamp(static_cast<int>(std::ceil(load)), 1, pacing_max_divisor);
-		if (pacing.window_misses * 4 > pacing.window_frames) {
-			desired = std::clamp(std::max(desired, pacing.divisor + 1), 1, pacing_max_divisor);
-		}
-		if (desired != pacing.divisor) {
-			if (desired != pacing.pending_divisor) {
-				log::println(log::category::general, "attached pacing: frame cost {:.3f:ms} suggests every {} refresh(es), confirming next window", pacing.ema_busy, desired);
-			}
-			else if (desired > pacing.divisor) {
-				pacing.divisor = desired;
-				if (now - pacing.last_down_at < seconds(6.0)) {
-					if (const auto doubled = time_t<double, seconds>(pacing.down_backoff * 2.0); doubled < seconds(60.0)) {
-						pacing.down_backoff = doubled;
-					}
-					else {
-						pacing.down_backoff = seconds(60.0);
-					}
-				}
-				pacing.allow_down_at = now + pacing.down_backoff;
-				log::println(log::category::general, "attached pacing: frame cost {:.3f:ms}, now pacing to every {} editor refresh(es) ({:.3f:ms} target)", pacing.ema_busy, desired, refresh * static_cast<double>(desired));
-			}
-			else if (now >= pacing.allow_down_at) {
-				pacing.divisor = desired;
-				pacing.last_down_at = now;
-				log::println(log::category::general, "attached pacing: frame cost {:.3f:ms}, probing every {} editor refresh(es) ({:.3f:ms} target)", pacing.ema_busy, desired, refresh * static_cast<double>(desired));
-			}
-		}
-		pacing.pending_divisor = desired;
-		pacing.window_frames = 0;
-		pacing.window_misses = 0;
-	}
-
-	if (now >= pacing.next_heartbeat) {
-		pacing.next_heartbeat = now + seconds(30.0);
-		log::println(log::category::general, "attached pacing: divisor={} frame cost {:.3f:ms} misses={}/{} in current window", pacing.divisor, pacing.ema_busy, pacing.window_misses, pacing.window_frames);
+	pacing.next_deadline += period;
+	if (const auto after = system_clock::now<time_t<double, seconds>>(); pacing.next_deadline < after) {
+		pacing.next_deadline = after + period;
 	}
 }

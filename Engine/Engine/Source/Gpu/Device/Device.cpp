@@ -1,26 +1,24 @@
 module gse.gpu:device_impl;
 
+import gse.assert;
+import gse.concurrency;
+import gse.core;
+import gse.ecs;
+import gse.gpu_backend;
+import gse.log;
+import gse.math;
+import gse.meta;
+import gse.os;
 import std;
 
+import :backend_state;
+import :command_dispatch;
 import :device;
+import :device_dx12_backend;
+import :device_vulkan_backend;
+import :image;
 import :video_backend;
 import :video_encoder;
-import :command_dispatch;
-import :device_vulkan_backend;
-import :device_dx12_backend;
-import :backend_state;
-import :image;
-
-import gse.gpu_backend;
-
-import gse.os;
-import gse.ecs;
-import gse.log;
-import gse.concurrency;
-import gse.meta;
-import gse.math;
-import gse.core;
-import gse.assert;
 
 namespace gse::gpu {
 	template <typename B>
@@ -234,7 +232,7 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 		return;
 	}
 
-	const auto aftermath_wait = make_scope_exit([this] {
+	const auto _ = make_scope_exit([this] {
 		m_vt->wait_for_crash_dump(m_backend.get());
 	});
 
@@ -752,7 +750,6 @@ auto gse::gpu::device::create_buffer(const buffer_desc& desc, const std::string_
 		set_slot_resource(buf.slot().index, resource_ref{
 			.ptr = std::bit_cast<const void*>(buf.handle()),
 			.type = resource_type::buffer,
-			.buffer_size = buf.size(),
 		});
 	}
 	return buf;
@@ -802,7 +799,6 @@ auto gse::gpu::device::write_storage_buffer(const bindless_slot slot, const buff
 	set_slot_resource(slot.index, resource_ref{
 		.ptr = std::bit_cast<const void*>(buf.handle()),
 		.type = resource_type::buffer,
-		.buffer_size = size,
 	});
 	m_vt->write_storage_buffer(m_backend.get(), slot, buf.device_address(), size);
 }

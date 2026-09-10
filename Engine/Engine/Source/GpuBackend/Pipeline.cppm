@@ -35,7 +35,6 @@ export namespace gse::gpu {
 		const void* ptr = nullptr;
 		resource_type type = resource_type::buffer;
 		image_aspect_flags aspects = {};
-		device_size buffer_size = 0;
 		const void* host_buffer = nullptr;
 	};
 

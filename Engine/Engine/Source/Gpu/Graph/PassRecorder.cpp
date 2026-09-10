@@ -247,10 +247,6 @@ auto gse::gpu::pass_recorder::pipeline_barrier(const dependency_info& dep) const
 	m_vt->pipeline_barrier(m_cmd, dep);
 }
 
-auto gse::gpu::pass_recorder::transition_image_state(const image_barrier& barrier) const -> void {
-	m_vt->transition_image_state(m_cmd, barrier);
-}
-
 auto gse::gpu::pass_recorder::build_acceleration_structures(const acceleration_structure_build_geometry_info& build_info, const std::span<const acceleration_structure_build_range_info* const> range_infos) const -> void {
 	m_vt->build_acceleration_structures(m_cmd, build_info, range_infos);
 }

@@ -29,6 +29,24 @@ export namespace gse::ide {
 			.message = "'{}' is never read, so it can be the placeholder '_'",
 			.fix_title = "Rename to '_'",
 		}]],
+		unused_import [[= lint_rule_info{
+			.title = "Unused import",
+			.description = "An imported module this file references no entity from.",
+			.message = "'{}' is imported but nothing from it is used",
+			.fix_title = "Remove unused import",
+		}]],
+		narrow_import [[= lint_rule_info{
+			.title = "Import can be narrowed",
+			.description = "An aggregate import where only some of the modules it re-exports are used, so those can be imported directly.",
+			.message = "'{}' can be narrowed to {}",
+			.fix_title = "Narrow import",
+		}]],
+		import_order [[= lint_rule_info{
+			.title = "Imports are not in canonical order",
+			.description = "Module imports precede partition imports, one blank line between them, each group alphabetical.",
+			.message = "imports are not in canonical order",
+			.fix_title = "Sort imports",
+		}]],
 	};
 
 	enum class severity {
@@ -122,6 +140,25 @@ auto gse::ide::fix_engine::rule_edits(const std::span<const diagnostic> diagnost
 	return out;
 }
 
+namespace gse::ide {
+	auto split_embedded_lines(
+		std::vector<std::string>& lines,
+		std::uint32_t index
+	) -> void;
+}
+
+auto gse::ide::split_embedded_lines(std::vector<std::string>& lines, const std::uint32_t index) -> void {
+	if (lines[index].find('\n') == std::string::npos) {
+		return;
+	}
+	std::vector<std::string> pieces;
+	for (const auto part : std::views::split(lines[index], '\n')) {
+		pieces.emplace_back(std::from_range, part);
+	}
+	lines[index] = std::move(pieces.front());
+	lines.insert(lines.begin() + index + 1, pieces.begin() + 1, pieces.end());
+}
+
 auto gse::ide::fix_engine::apply(std::vector<std::string>& lines, const std::span<const text_edit> edits) -> std::size_t {
 	std::vector<text_edit> ordered(edits.begin(), edits.end());
 	std::ranges::sort(ordered, [](const text_edit& a, const text_edit& b) {
@@ -130,6 +167,12 @@ auto gse::ide::fix_engine::apply(std::vector<std::string>& lines, const std::spa
 		}
 		return a.start_col > b.start_col;
 	});
+
+	const auto same_range = [](const text_edit& a, const text_edit& b) {
+		return a.line == b.line && a.end_line == b.end_line && a.start_col == b.start_col && a.end_col == b.end_col;
+	};
+	const auto duplicates = std::ranges::unique(ordered, same_range);
+	ordered.erase(duplicates.begin(), ordered.end());
 
 	std::size_t applied = 0;
 	std::uint32_t guard_line = 0;
@@ -157,11 +200,23 @@ auto gse::ide::fix_engine::apply(std::vector<std::string>& lines, const std::spa
 			row.replace(byte_start, byte_end - byte_start, edit.replacement);
 		}
 		else {
+			const bool whole_lines = edit.start_col == 0 && edit.end_col == 0;
+			if (whole_lines && edit.expected.empty()) {
+				continue;
+			}
+			bool present = edit.expected.empty();
+			for (std::uint32_t probe = edit.line; probe <= last_line && !present; ++probe) {
+				present = lines[probe].contains(edit.expected);
+			}
+			if (!present) {
+				continue;
+			}
 			const std::string& last = lines[last_line];
 			const std::uint32_t byte_end = display_to_byte(last, edit.end_col);
 			row = row.substr(0, byte_start) + edit.replacement + last.substr(byte_end);
 			lines.erase(lines.begin() + edit.line + 1, lines.begin() + last_line + 1);
 		}
+		split_embedded_lines(lines, edit.line);
 		guard_line = edit.line;
 		guard_col = edit.start_col;
 		has_guard = true;

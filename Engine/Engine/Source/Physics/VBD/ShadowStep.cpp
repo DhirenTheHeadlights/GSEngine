@@ -1,22 +1,24 @@
 module gse.physics:vbd_shadow_step_impl;
 
-import std;
-
-import gse.core;
-import gse.math;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
-import gse.log;
 import gse.gpu;
 import gse.gpu_record;
+import gse.log;
+import gse.math;
+import gse.time;
+import std;
 
-import :motion_component;
 import :collision_component;
-import :transform_component;
+import :joint_drive_component;
+import :motion_component;
+import :motor_component;
+import :muscle_component;
 import :system;
+import :transform_component;
 import :vbd_constraints;
 import :vbd_gpu_solver;
 import :vbd_shadow_step;
@@ -153,6 +155,59 @@ auto gse::physics::shadow_step::report_step(const data& d, const pending_step& r
 		"shadow step {} detail: every body follows",
 		record.step
 	);
+
+	for (std::uint32_t it = 0; it < vbd::limits.iteration_trace_slots; ++it) {
+		const auto base = vbd::limits.state_iteration_trace_base_index + it * vbd::limits.iteration_trace_uints;
+		if (base + 2 >= narrow_debug.size()) {
+			break;
+		}
+		const auto c = std::bit_cast<float>(narrow_debug[base]);
+		const auto lambda = std::bit_cast<float>(narrow_debug[base + 1]);
+		const auto penalty = std::bit_cast<float>(narrow_debug[base + 2]);
+		if (c == 0.f && lambda == 0.f && penalty == 0.f) {
+			break;
+		}
+		log::println(
+			log::category::physics,
+			"shadow gpu dual step {} it {}: C {:.7f} lambda {:.4f} pen {:.1f}",
+			record.step,
+			it,
+			c,
+			lambda,
+			penalty
+		);
+	}
+	for (std::uint32_t it = 0; it < vbd::limits.iteration_trace_slots; ++it) {
+		const auto base = vbd::limits.state_joint_trace_base_index + it * vbd::limits.joint_trace_uints;
+		if (base + 8 >= narrow_debug.size()) {
+			break;
+		}
+		std::array<float, 9> v{};
+		for (std::size_t k = 0; k < v.size(); ++k) {
+			v[k] = std::bit_cast<float>(narrow_debug[base + k]);
+		}
+		const bool empty_slot = std::ranges::all_of(v, [](const float x) {
+			return x == 0.f;
+		});
+		if (empty_slot) {
+			break;
+		}
+		log::println(
+			log::category::physics,
+			"shadow gpu joint dual step {} it {}: c ({:.7f}, {:.7f}, {:.7f}) lambda ({:.4f}, {:.4f}, {:.4f}) pen ({:.1f}, {:.1f}, {:.1f})",
+			record.step,
+			it,
+			v[0],
+			v[3],
+			v[6],
+			v[1],
+			v[4],
+			v[7],
+			v[2],
+			v[5],
+			v[8]
+		);
+	}
 
 	for (std::size_t i = 0; i < record.pre.size(); ++i) {
 		const auto& sample = record.pre[i];
@@ -339,20 +394,20 @@ auto gse::physics::shadow_step::init(context& ctx, const std::optional<shared_vi
 		co_return;
 	}
 
-	co_await d.solver.initialize_compute(ctx, *gpu_s);
+	co_await d.solver.initialize_compute(ctx, *gpu_s, {});
 	d.solver.set_preserve_warm_starts(true);
 	d.buffers_ready = d.solver.buffers_created();
 
 	log::println(
 		log::category::physics,
-		"shadow step: gpu solver ready ({}). The cpu solver drives the world; the gpu is re-seeded from its pre-step state every tick and its result is discarded. Joints, motors and impulses are not shadowed, and the device is stalled once per tick so this run's timings are not measurements",
+		"shadow step: gpu solver ready ({}). The cpu solver drives the world; the gpu is re-seeded from its pre-step state every tick with the same joints, drives and motors and its result is discarded. Impulses are not shadowed, and the device is stalled once per tick so this run's timings are not measurements",
 		d.buffers_ready
 	);
 
 	co_return;
 }
 
-auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> phys, read<transform_component> transform, read<motion_component> motion, read<collision_component> collision) -> async::task<> {
+auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> phys, read<transform_component> transform, read<motion_component> motion, read<collision_component> collision, read<motor_component> motor, read<joint_drive_component> drives, read<muscle_component> muscles) -> async::task<> {
 	if (!d.enabled || !d.buffers_ready || motion.empty()) {
 		co_return;
 	}
@@ -369,7 +424,7 @@ auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> ph
 		co_return;
 	}
 
-	trace::scope_guard sg{ trace_id<"vbd_shadow::capture">() };
+	trace::scope_guard _{ trace_id<"vbd_shadow::capture">() };
 
 	auto snapshot = capture_world(transform, motion);
 
@@ -408,18 +463,30 @@ auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> ph
 	build_body_states(view, phys.sleep_counters, bodies, id_to_body_index, has_transform);
 	build_body_bounds(view, id_to_body_index, has_transform, bodies);
 
+	const auto inputs = gather_step_inputs(motor, transform, motion, std::span<const impulse_request>{});
+	std::vector<vbd::velocity_motor_constraint> motors;
+	build_motor_constraints(inputs.motors, id_to_body_index, phys.body_airborne, bodies, motors);
+
+	copy_joints_with_inputs(phys, drives, muscles, d.joints);
+	std::vector<vbd::joint_constraint> joints;
+	build_joint_constraints(d.joints, id_to_body_index, bodies, joints);
+
 	const auto& cfg = phys.vbd_solver.config();
 
 	const auto dt = system_clock::fixed_dt();
 	const int substeps = std::max(phys.physics_substeps, 1);
+	const auto motor_count = static_cast<std::uint32_t>(motors.size());
 
 	d.solver.upload({
 		.bodies = std::move(bodies),
+		.motors = std::move(motors),
+		.joints = std::move(joints),
 		.solver_cfg = cfg,
 		.dt = dt * static_cast<float>(steps),
 		.steps = steps * substeps,
 		.refresh_joints = true,
 		.force_reseed = true,
+		.motors_per_tick = motor_count,
 	});
 
 	d.pending.push_back({
@@ -437,7 +504,7 @@ auto gse::physics::shadow_step::frame(context& ctx, const std::optional<shared_v
 	}
 
 	if (gpu_s->device) {
-		trace::scope_guard sg{ trace_id<"vbd_shadow::wait_idle">() };
+		trace::scope_guard _{ trace_id<"vbd_shadow::wait_idle">() };
 		gpu_s->device->wait_idle();
 	}
 

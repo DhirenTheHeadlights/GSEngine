@@ -231,8 +231,28 @@ auto gse::ide::agent::push_transcript_line(session& s, const gui::style& sty, co
 	}
 }
 
-auto gse::ide::agent::command_row(const transcript_row& row) -> bool {
-	return row.kind == row_kind::tool && (row.text == "Bash" || row.text == "PowerShell");
+auto gse::ide::agent::grouped_row(const transcript_row& row) -> bool {
+	return row.kind == row_kind::tool;
+}
+
+auto gse::ide::agent::group_summary(const session& s, const group_marker& group) -> std::string {
+	std::vector<std::string_view> names;
+	for (std::uint32_t i = group.row; i < group.row + group.rows; ++i) {
+		const std::string_view name = s.rows[i].text;
+		if (!name.empty() && std::ranges::find(names, name) == names.end()) {
+			names.push_back(name);
+		}
+	}
+
+	std::string out = std::format("{} tool uses", group.rows);
+	for (const auto [position, name] : std::views::enumerate(names | std::views::take(group_summary_names))) {
+		out += position == 0 ? ": " : ", ";
+		out += name;
+	}
+	if (names.size() > group_summary_names) {
+		out += ", ...";
+	}
+	return out;
 }
 
 auto gse::ide::agent::chat_row(const transcript_row& row) -> bool {
@@ -375,32 +395,13 @@ auto gse::ide::agent::draw_diff_bars(const gui::draw_context& ctx, session& s, c
 }
 
 auto gse::ide::agent::hunk_start_line(const transcript_row& row) -> std::uint32_t {
-	std::string_view needle;
-	if (!row.removed.empty()) {
-		needle = row.removed.front();
-	}
-	else if (!row.added.empty()) {
-		needle = row.added.front();
-	}
-
-	if (row.file.empty() || needle.empty()) {
+	if (row.file.empty()) {
 		return 1;
 	}
-
-	std::ifstream in(row.file);
-	if (!in) {
-		return 1;
-	}
-
-	std::string line;
-	std::uint32_t index = 1;
-	while (std::getline(in, line)) {
-		if (line.find(needle) != std::string::npos) {
-			return index;
-		}
-		++index;
-	}
-	return 1;
+	const std::vector<std::string> lines = file_lines(row.file);
+	return locate_lines(lines, row.removed)
+		.or_else([&] { return locate_lines(lines, row.added); })
+		.value_or(1);
 }
 
 auto gse::ide::agent::push_diff_line(session& s, const gui::style& sty, const std::uint32_t index, const diff_layout& layout, const std::span<const diff_cell> cells) -> void {
@@ -522,19 +523,32 @@ auto gse::ide::agent::push_diff(session& s, const gui::style& sty, transcript_ro
 	s.line_rows.push_back(index);
 }
 
-auto gse::ide::agent::toggle_group(session& s, const std::size_t index) -> void {
-	const group_marker group = s.groups[index];
+auto gse::ide::agent::marker_at(const session& s, const std::uint32_t line) -> const group_marker* {
+	if (const auto found = std::ranges::find(s.groups, line, &group_marker::toggle_line); found != s.groups.end()) {
+		return &*found;
+	}
+	if (const auto found = std::ranges::find(s.previews, line, &group_marker::toggle_line); found != s.previews.end()) {
+		return &*found;
+	}
+	return nullptr;
+}
 
-	if (const auto found = std::ranges::find(s.expanded_groups, group.row); found != s.expanded_groups.end()) {
+auto gse::ide::agent::toggle_marker(session& s, const group_marker& marker) -> void {
+	const std::uint32_t row = marker.row;
+	const std::uint32_t line = marker.line;
+
+	if (const auto found = std::ranges::find(s.expanded_groups, row); found != s.expanded_groups.end()) {
 		s.expanded_groups.erase(found);
 	}
 	else {
-		s.expanded_groups.push_back(group.row);
+		s.expanded_groups.push_back(row);
 	}
 
-	truncate_transcript(s, group.line);
-	s.groups.resize(index);
-	s.flushed_rows = group.row;
+	truncate_transcript(s, line);
+	std::erase_if(s.groups, [line](const group_marker& held) {
+		return held.line >= line;
+	});
+	s.flushed_rows = row;
 }
 
 auto gse::ide::agent::truncate_transcript(session& s, const std::uint32_t line) -> void {
@@ -549,6 +563,9 @@ auto gse::ide::agent::truncate_transcript(session& s, const std::uint32_t line) 
 	while (!s.links.empty() && s.links.back().last_line >= line) {
 		s.links.pop_back();
 	}
+	std::erase_if(s.previews, [line](const group_marker& held) {
+		return held.line >= line;
+	});
 	for (diff_view& view : s.diffs) {
 		if (view.line != unplaced_line && view.line >= line) {
 			view.line = unplaced_line;
@@ -558,6 +575,7 @@ auto gse::ide::agent::truncate_transcript(session& s, const std::uint32_t line) 
 
 auto gse::ide::agent::push_row(session& s, const gui::style& sty, transcript_row& row, const std::uint32_t index, const transcript_metrics& metrics) -> void {
 	const bool chat = chat_row(row);
+	const auto entered = static_cast<std::uint32_t>(s.buffer.lines.size());
 	if ((chat || after_bubble(s)) && !s.buffer.lines.empty()) {
 		s.buffer.lines.emplace_back();
 		s.line_rows.push_back(index);
@@ -594,6 +612,30 @@ auto gse::ide::agent::push_row(session& s, const gui::style& sty, transcript_row
 
 	push_diff(s, sty, row, index, metrics);
 
+	const bool edit = !row.added.empty() || !row.removed.empty();
+	const bool previewable = row.kind == row_kind::user || (row.kind == row_kind::tool && !edit);
+	if (previewable && s.buffer.lines.size() - opened > row_preview_lines) {
+		const bool expanded = group_expanded(s, index);
+		if (!expanded) {
+			truncate_transcript(s, opened + row_preview_lines);
+		}
+
+		const auto toggle = static_cast<std::uint32_t>(s.buffer.lines.size());
+		push_transcript_line(s, sty, {
+			.prefix = "",
+			.text = expanded ? "show less" : "show more",
+			.color = sty.color_accent,
+			.row = index,
+		}, metrics);
+
+		s.previews.push_back({
+			.row = index,
+			.line = entered,
+			.rows = 1,
+			.toggle_line = toggle,
+		});
+	}
+
 	if (chat && s.buffer.lines.size() > opened) {
 		s.blocks.push_back(chat_bubble(sty, row, opened, static_cast<std::uint32_t>(s.buffer.lines.size()) - 1));
 	}
@@ -610,6 +652,7 @@ auto gse::ide::agent::sync_transcript(session& s, const gui::style& sty, const t
 		s.links.clear();
 		s.line_rows.clear();
 		s.groups.clear();
+		s.previews.clear();
 		s.flushed_rows = 0;
 		for (diff_view& view : s.diffs) {
 			view.line = unplaced_line;
@@ -620,12 +663,12 @@ auto gse::ide::agent::sync_transcript(session& s, const gui::style& sty, const t
 		transcript_row& row = s.rows[s.flushed_rows];
 		const auto row_index = static_cast<std::uint32_t>(s.flushed_rows);
 
-		if (!command_row(row)) {
+		if (!grouped_row(row)) {
 			push_row(s, sty, row, row_index, metrics);
 			continue;
 		}
 
-		if (s.flushed_rows > 0 && !s.groups.empty() && command_row(s.rows[s.flushed_rows - 1])) {
+		if (s.flushed_rows > 0 && !s.groups.empty() && grouped_row(s.rows[s.flushed_rows - 1])) {
 			truncate_transcript(s, s.groups.back().line);
 		}
 		else {
@@ -648,10 +691,11 @@ auto gse::ide::agent::sync_transcript(session& s, const gui::style& sty, const t
 		}
 
 		const bool expanded = group_expanded(s, group.row);
+		group.toggle_line = group.line;
 
 		push_transcript_line(s, sty, {
 			.prefix = expanded ? "- " : "+ ",
-			.text = std::format("ran {} commands", group.rows),
+			.text = group_summary(s, group),
 			.color = sty.*style_of(row_kind::tool).color,
 			.row = group.row,
 		}, metrics);

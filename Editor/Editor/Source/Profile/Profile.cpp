@@ -1,7 +1,7 @@
 module gse.ide.profile;
 
-import std;
 import gse;
+import std;
 
 namespace gse::ide {
 	constexpr std::size_t max_history_frames = 600;
@@ -176,8 +176,21 @@ namespace gse::ide {
 		std::vector<profile_row>& out
 	) -> void;
 
+	auto collect_frame_rows(
+		const captured_frame& frame,
+		std::uint32_t main_tid,
+		std::vector<profile_row>& cpu_out,
+		std::vector<profile_row>& gpu_out
+	) -> void;
+
+	auto append_frame_breakdown(
+		const std::filesystem::path& path,
+		const captured_frame& frame
+	) -> void;
+
 	auto refresh_rows(
 		const profile::report_file& report,
+		const captured_frame* pinned,
 		profile_view_state& state
 	) -> void;
 
@@ -270,6 +283,7 @@ auto gse::ide::capture_frame(profile_system::data& d) -> void {
 	}
 	frame.origin = first;
 	frame.span = time_t<double>(last - first);
+	frame.elapsed = time_t<double>(view.elapsed);
 
 	d.frames.push_back(std::move(frame));
 
@@ -283,7 +297,31 @@ auto gse::ide::capture_frame(profile_system::data& d) -> void {
 	}
 }
 
-auto gse::ide::profile_system::run(context& ctx, data& d, const channel_read<profile_capture_request, profile_report_request> requests_in) -> async::task<> {
+auto gse::ide::profile_system::run(context& ctx, data& d, const channel_read<profile_capture_request, profile_report_request, profile_export_request> requests_in) -> async::task<> {
+	for (const profile_export_request& request : requests_in.of<profile_export_request>()) {
+		if (request.path.empty()) {
+			continue;
+		}
+		std::filesystem::path summary = request.path;
+		summary.replace_extension(".txt");
+		profile::dump(summary);
+		profile::dump_report(request.path);
+
+		const captured_frame* pinned = request.pinned_generation != 0
+			? frame_for(d.frames, request.pinned_generation)
+			: nullptr;
+		if (pinned) {
+			append_frame_breakdown(summary, *pinned);
+		}
+
+		log::println(
+			log::category::general,
+			"profile: wrote editor report to '{}' and '{}'{}",
+			summary,
+			request.path,
+			pinned ? " with the pinned frame breakdown" : ""
+		);
+	}
 	for (const profile_capture_request& request : requests_in.of<profile_capture_request>()) {
 		if (request.source != d.source) {
 			d.source = request.source;
@@ -328,6 +366,7 @@ auto gse::ide::adopt_recorded_frames(const profile::report_file& report, std::de
 		frame.generation = recorded.generation;
 		frame.origin = recorded.origin;
 		frame.span = recorded.span;
+		frame.elapsed = recorded.elapsed;
 		frame.children = recorded.children;
 		frame.roots = recorded.roots;
 		frame.nodes.reserve(recorded.nodes.size());
@@ -341,6 +380,7 @@ auto gse::ide::adopt_recorded_frames(const profile::report_file& report, std::de
 				.children_first = node.children_first,
 				.children_count = node.children_count,
 				.open = node.open,
+				.lexical = node.lexical,
 			});
 		}
 		out.push_back(std::move(frame));
@@ -619,7 +659,6 @@ auto gse::ide::draw_header(gui::builder& ui, const rectf& outer, profile_view_st
 		state.selected = {};
 		state.cpu_display.clear();
 		state.gpu_display.clear();
-		state.worker_offset = 0;
 	}
 
 	const std::span<const std::string_view> units = internal::unit_names<time_tag>();
@@ -650,8 +689,12 @@ auto gse::ide::draw_header(gui::builder& ui, const rectf& outer, profile_view_st
 	if (state.source != profile_source::editor) {
 		return;
 	}
-	if (draw_pill(ctx, rect, x + pad * 0.5f, state.enabled ? "stop" : "start", state.enabled).pressed) {
+	const pill_hit capture = draw_pill(ctx, rect, x + pad * 0.5f, state.enabled ? "stop" : "start", state.enabled);
+	if (capture.pressed) {
 		state.enabled = !state.enabled;
+	}
+	if (draw_pill(ctx, rect, capture.next_left, "export", false).pressed) {
+		state.export_requested = true;
 	}
 }
 
@@ -684,7 +727,7 @@ auto gse::ide::draw_history_strip(const gui::draw_context& ctx, const rectf& rec
 
 	time_t<double> peak = budget;
 	for (std::size_t i = first; i < frames.size(); ++i) {
-		peak = std::max(peak, frames[i].span);
+		peak = std::max(peak, frames[i].elapsed);
 	}
 
 	const auto count = static_cast<float>(visible);
@@ -703,13 +746,13 @@ auto gse::ide::draw_history_strip(const gui::draw_context& ctx, const rectf& rec
 		const captured_frame& frame = frames[i];
 		const float x = rect.left() + rect.width() * static_cast<float>(i - first) / count;
 		const rectf column = rectf::from_position_size({ x, rect.top() }, { column_w, rect.height() });
-		const auto ratio = static_cast<float>(frame.span / peak);
+		const auto ratio = static_cast<float>(frame.elapsed / peak);
 		const float h = std::max(1.f, rect.height() * std::clamp(ratio, 0.f, 1.f));
 		const rectf bar = rectf::from_position_size({ x, rect.bottom() + h }, { column_w, h });
 		const bool pinned = state.pinned_generation == frame.generation;
 		ctx.queue_sprite({
 			.rect = bar,
-			.color = pinned ? ctx.style.color_text : (frame.span > budget ? color_over_budget : ctx.style.color_accent),
+			.color = pinned ? ctx.style.color_text : (frame.elapsed > budget ? color_over_budget : ctx.style.color_accent),
 			.texture = ctx.blank_texture,
 			.clip_rect = rect,
 		});
@@ -736,8 +779,6 @@ auto gse::ide::body_scroll_region(gui::builder& ui, const rectf& body, const std
 }
 
 auto gse::ide::draw_flame(gui::draw_context& ctx, const rectf& rect, const captured_frame& frame, profile_view_state& state) -> void {
-	const auto code_view = ctx.fonts.code.resolve();
-	const float font_sz = ctx.style.font_size;
 	const float pad = ctx.style.padding;
 	const float row_h = row_height(ctx);
 	const time_t<double> total = frame.span;
@@ -967,12 +1008,12 @@ auto gse::ide::collect_live_rows(const profile::domain domain, std::vector<profi
 			.id = row.id,
 			.tag = row.id.tag(),
 			.per_frame = row.per_frame,
+			.main_per_frame = row.main_per_frame,
 			.ema = row.ema,
 			.last = row.last,
 			.peak = row.peak,
 			.calls_per_frame = row.calls_per_frame,
 			.sample_count = row.sample_count,
-			.dominant_tid = row.dominant_tid,
 		});
 	}
 }
@@ -985,17 +1026,102 @@ auto gse::ide::collect_report_rows(const std::span<const profile::report_record>
 			.id = generate_id(record.tag),
 			.tag = record.tag,
 			.per_frame = record.per_frame,
+			.main_per_frame = record.main_per_frame,
 			.ema = record.ema,
 			.last = record.last,
 			.peak = record.peak,
 			.calls_per_frame = record.calls_per_frame,
 			.sample_count = record.sample_count,
-			.dominant_tid = record.dominant_tid,
 		});
 	}
 }
 
-auto gse::ide::refresh_rows(const profile::report_file& report, profile_view_state& state) -> void {
+auto gse::ide::collect_frame_rows(const captured_frame& frame, const std::uint32_t main_tid, std::vector<profile_row>& cpu_out, std::vector<profile_row>& gpu_out) -> void {
+	cpu_out.clear();
+	gpu_out.clear();
+
+	std::unordered_map<id, std::size_t> cpu_seen;
+	std::unordered_map<id, std::size_t> gpu_seen;
+	cpu_seen.reserve(frame.nodes.size());
+
+	for (const trace::node& n : frame.nodes) {
+		if (!trace::profile_scope(n)) {
+			continue;
+		}
+		const bool is_gpu = n.trace_id >= trace::gpu_virtual_tid_min;
+		std::vector<profile_row>& out = is_gpu ? gpu_out : cpu_out;
+		std::unordered_map<id, std::size_t>& seen = is_gpu ? gpu_seen : cpu_seen;
+
+		const profile::sample_time self = time_t<double>(n.self);
+		const auto [at, inserted] = seen.try_emplace(n.id, out.size());
+		if (inserted) {
+			out.push_back({
+				.id = n.id,
+				.tag = n.id.tag(),
+				.per_frame = self,
+				.main_per_frame = !is_gpu && n.trace_id == main_tid ? self : profile::sample_time{},
+				.ema = self,
+				.last = self,
+				.peak = self,
+				.calls_per_frame = 1.0,
+				.sample_count = 1,
+			});
+			continue;
+		}
+
+		profile_row& row = out[at->second];
+		row.per_frame += self;
+		if (!is_gpu && n.trace_id == main_tid) {
+			row.main_per_frame += self;
+		}
+		row.ema = row.per_frame;
+		row.last = row.per_frame;
+		row.peak = std::max(row.peak, self);
+		row.calls_per_frame += 1.0;
+		++row.sample_count;
+	}
+}
+
+auto gse::ide::append_frame_breakdown(const std::filesystem::path& path, const captured_frame& frame) -> void {
+	std::vector<profile_row> cpu;
+	std::vector<profile_row> gpu;
+	collect_frame_rows(frame, trace::main_tid(), cpu, gpu);
+
+	std::ofstream out(path, std::ios::app);
+	if (!out) {
+		return;
+	}
+
+	const auto write_section = [&](const std::string_view title, std::vector<profile_row>& rows) {
+		if (rows.empty()) {
+			return;
+		}
+		std::ranges::sort(rows, std::ranges::greater{}, &profile_row::per_frame);
+		out << std::format("\n=== {} (generation {}, span {:.3f:ms}, {} spans) ===\n", title, frame.generation, frame.span, frame.nodes.size());
+		out << std::format("{:<78} {:>13} {:>8} {:>13}\n", "tag", "self", "calls", "worst call");
+		for (const profile_row& row : rows) {
+			out << std::format(
+				"{:<78} {:>13} {:>8.0f} {:>13}\n",
+				display_tag(row.tag),
+				std::format("{:.2f:us}", row.per_frame),
+				row.calls_per_frame,
+				std::format("{:.2f:us}", row.peak)
+			);
+		}
+	};
+
+	write_section("Pinned frame - CPU", cpu);
+	write_section("Pinned frame - GPU", gpu);
+}
+
+auto gse::ide::refresh_rows(const profile::report_file& report, const captured_frame* pinned, profile_view_state& state) -> void {
+	if (state.pinned_generation != 0 && pinned != nullptr) {
+		const std::uint32_t main_tid = state.source == profile_source::game ? report.main_tid : trace::main_tid();
+		collect_frame_rows(*pinned, main_tid, state.cpu_display, state.gpu_display);
+		state.live_frame_time = pinned->elapsed;
+		return;
+	}
+
 	if (state.source == profile_source::game) {
 		collect_report_rows(report.cpu, state.cpu_display);
 		collect_report_rows(report.gpu, state.gpu_display);
@@ -1005,8 +1131,7 @@ auto gse::ide::refresh_rows(const profile::report_file& report, profile_view_sta
 	else if (state.enabled) {
 		collect_live_rows(profile::domain::cpu, state.cpu_rows, state.cpu_display);
 		collect_live_rows(profile::domain::gpu, state.gpu_rows, state.gpu_display);
-		const auto fps = system_clock::fps();
-		state.live_frame_time = fps > 0 ? milliseconds(1000.0 / static_cast<double>(fps)) : profile::sample_time{};
+		state.live_frame_time = profile::mean_frame_time();
 		state.live_main_tid = trace::main_tid();
 	}
 	else {
@@ -1021,11 +1146,6 @@ auto gse::ide::refresh_rows(const profile::report_file& report, profile_view_sta
 	std::ranges::sort(state.cpu_display, by_column);
 	std::ranges::sort(state.gpu_display, by_column);
 
-	const std::uint32_t main_tid = state.live_main_tid;
-	const auto workers = std::ranges::stable_partition(state.cpu_display, [main_tid](const profile_row& row) {
-		return profile::on_main_thread(row.dominant_tid, main_tid);
-	});
-	state.worker_offset = static_cast<std::size_t>(std::ranges::distance(state.cpu_display.begin(), workers.begin()));
 }
 
 auto gse::ide::find_row(const profile_view_state& state, const id id) -> const profile_row* {
@@ -1039,10 +1159,7 @@ auto gse::ide::find_row(const profile_view_state& state, const id id) -> const p
 }
 
 auto gse::ide::draw_table(gui::draw_context& ctx, const rectf& rect, profile_view_state& state, const float scroll_x) -> float {
-	const std::size_t offset = std::min(state.worker_offset, state.cpu_display.size());
 	const std::span<const profile_row> all_cpu(state.cpu_display);
-	const std::span<const profile_row> main_rows = all_cpu.first(offset);
-	const std::span<const profile_row> worker_rows = all_cpu.subspan(offset);
 	const profile::sample_time frame_time = state.live_frame_time;
 
 	const float pad = ctx.style.padding;
@@ -1079,8 +1196,7 @@ auto gse::ide::draw_table(gui::draw_context& ctx, const rectf& rect, profile_vie
 	);
 
 	float y = ctx.layout_cursor.y();
-	y = draw_row_section(ctx, rect, content, y, "cpu - main thread (blocks the frame)", main_rows, frame_time, state);
-	y = draw_row_section(ctx, rect, content, y, "cpu - workers (parallel, can exceed 100%)", worker_rows, frame_time, state);
+	y = draw_row_section(ctx, rect, content, y, "cpu lexical scope self-time (parallel sum)", all_cpu, frame_time, state);
 	y = draw_row_section(ctx, rect, content, y, "gpu (per pass)", state.gpu_display, frame_time, state);
 	ctx.layout_cursor.y() = y;
 	return content_width;
@@ -1106,8 +1222,9 @@ auto gse::ide::draw_detail(const gui::draw_context& ctx, const rectf& rect, cons
 	if (focus.exists()) {
 		if (const profile_row* row = find_row(state, focus)) {
 			y = draw_stat(ctx, rect, y, "per/f", format_into(buffer, "{:.2f:{}}", row->per_frame, state.time_unit));
+			y = draw_stat(ctx, rect, y, "main/f", format_into(buffer, "{:.2f:{}}", row->main_per_frame, state.time_unit));
 			y = draw_stat(ctx, rect, y, "calls/f", format_into(buffer, "{:.2f}", row->calls_per_frame));
-			y = draw_stat(ctx, rect, y, "avg", format_into(buffer, "{:.2f:{}}", row->ema, state.time_unit));
+			y = draw_stat(ctx, rect, y, "EMA", format_into(buffer, "{:.2f:{}}", row->ema, state.time_unit));
 			y = draw_stat(ctx, rect, y, "peak", format_into(buffer, "{:.2f:{}}", row->peak, state.time_unit));
 			y = draw_stat(ctx, rect, y, "last", format_into(buffer, "{:.2f:{}}", row->last, state.time_unit));
 			y = draw_stat(ctx, rect, y, "hits", format_into(buffer, "{}", row->sample_count));
@@ -1218,9 +1335,10 @@ auto gse::ide::draw_profile_panel(gui::builder& ui, const rectf& rect, profile_v
 		state.live_generation = frames.back().generation;
 	}
 
-	refresh_rows(report, state);
-
 	const captured_frame* frame = frame_for(frames, state.pinned_generation != 0 ? state.pinned_generation : state.live_generation);
+
+	refresh_rows(report, frame, state);
+
 	const bool have_data = state.source == profile_source::editor || report_loaded;
 	if (have_data && state.mode == profile_mode::table) {
 		gui::scroll_handle region = body_scroll_region(ui, body_rect, "profile.table", row_h);

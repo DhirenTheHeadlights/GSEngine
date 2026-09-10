@@ -1,17 +1,16 @@
 export module gse.vulkan:queues;
 
+import gse.assert;
+import gse.core;
+import gse.gpu_backend;
+import gse.log;
+import gse.math;
 import std;
 import vulkan;
 
-import gse.gpu_backend;
-import :types;
 import :commands;
 import :physical_device;
-
-import gse.core;
-import gse.log;
-import gse.assert;
-import gse.math;
+import :types;
 
 export namespace gse::vulkan {
 	struct queue_family {
@@ -254,9 +253,9 @@ auto gse::vulkan::find_queue_families(const physical_device& device, const gpu::
 	const auto queue_families = vk_device.getQueueFamilyProperties();
 	for (std::uint32_t i = 0; i < queue_families.size(); i++) {
 		log::println(log::category::vulkan,
-					 "Queue family {}: flags = {}",
-					 i,
-					 vk::to_string(queue_families[i].queueFlags));
+			"Queue family {}: flags = {}",
+			i,
+			vk::to_string(queue_families[i].queueFlags));
 		if (queue_families[i].queueFlags & vk::QueueFlagBits::eGraphics) {
 			indices.graphics_family = i;
 		}
@@ -314,7 +313,7 @@ auto gse::vulkan::queue::submit(const gpu::queue_type queue, const gpu::submit_i
 }
 
 auto gse::vulkan::queue::submit_graphics(const gpu::submit_info& info, const gpu::handle<gpu::fence> signal_fence) -> gpu::result {
-	std::lock_guard lock(*m_mutex);
+	std::lock_guard _(*m_mutex);
 	submit_scratch scratch;
 	const auto vk_info = build_vk_submit_info(info, scratch);
 	const auto result = std::bit_cast<vk::Queue>(m_graphics).submit2(vk_info, std::bit_cast<vk::Fence>(signal_fence));
@@ -322,7 +321,7 @@ auto gse::vulkan::queue::submit_graphics(const gpu::submit_info& info, const gpu
 }
 
 auto gse::vulkan::queue::submit_compute(const gpu::submit_info& info, const gpu::handle<gpu::fence> signal_fence) -> gpu::result {
-	std::lock_guard lock(*m_mutex);
+	std::lock_guard _(*m_mutex);
 	submit_scratch scratch;
 	const auto vk_info = build_vk_submit_info(info, scratch);
 	const auto result = std::bit_cast<vk::Queue>(m_compute).submit2(vk_info, std::bit_cast<vk::Fence>(signal_fence));
@@ -330,7 +329,7 @@ auto gse::vulkan::queue::submit_compute(const gpu::submit_info& info, const gpu:
 }
 
 auto gse::vulkan::queue::submit_video_encode(const gpu::submit_info& info, const gpu::handle<gpu::fence> signal_fence) -> void {
-	std::lock_guard lock(*m_mutex);
+	std::lock_guard _(*m_mutex);
 	submit_scratch scratch;
 	const auto vk_info = build_vk_submit_info(info, scratch);
 	const auto result = std::bit_cast<vk::Queue>(m_video_encode).submit2(vk_info, std::bit_cast<vk::Fence>(signal_fence));
@@ -338,7 +337,7 @@ auto gse::vulkan::queue::submit_video_encode(const gpu::submit_info& info, const
 }
 
 auto gse::vulkan::queue::present(const gpu::present_info& info) -> gpu::result {
-	std::lock_guard lock(*m_mutex);
+	std::lock_guard _(*m_mutex);
 	present_scratch scratch;
 	const auto vk_info = build_vk_present_info(info, scratch);
 	auto vk_result = std::bit_cast<vk::Queue>(m_present).presentKHR(vk_info);

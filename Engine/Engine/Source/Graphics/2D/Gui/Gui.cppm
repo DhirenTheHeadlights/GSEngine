@@ -90,7 +90,8 @@ export namespace gse::gui {
 
 	struct [[= system_state<"Gui">{}, = settings::category<"UI">{}]] data {
 		[[
-			= settings::describe<"Color theme applied to all UI panels and widgets.">{}
+			= settings::describe<"Color theme applied to all UI panels and widgets.">{},
+			= settings::project_scope{}
 		]]
 		theme current_theme = theme::midnight;
 

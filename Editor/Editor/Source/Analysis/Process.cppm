@@ -1,10 +1,10 @@
 export module gse.ide.analysis:process;
 
-import std;
 import gse.core;
 import gse.math;
 import gse.win32;
 import gse.win32.environment;
+import std;
 
 export namespace gse::ide::analysis::process {
 	enum class run_error {
@@ -126,8 +126,8 @@ auto gse::ide::analysis::process::open_url(const std::string_view url) -> void {
 	};
 	win32::PROCESS_INFORMATION info{};
 	if (win32::CreateProcessW(nullptr, command.data(), nullptr, nullptr, 0, 0, nullptr, nullptr, &startup, &info)) {
-		const unique_handle child(info.hProcess);
-		const unique_handle main_thread(info.hThread);
+		const unique_handle _(info.hProcess);
+		const unique_handle _(info.hThread);
 	}
 }
 
@@ -163,7 +163,7 @@ auto gse::ide::analysis::process::run_capture_stderr(const std::string_view comm
 	if (!win32::InitializeProcThreadAttributeList(attributes, 1, 0, &attribute_size)) {
 		return std::unexpected(run_error::launch_failed);
 	}
-	const auto delete_attributes = make_scope_exit([attributes] {
+	const auto _ = make_scope_exit([attributes] {
 		win32::DeleteProcThreadAttributeList(attributes);
 	});
 	if (!win32::UpdateProcThreadAttribute(attributes, 0, win32::proc_thread_attribute_handle_list, inherited.data(), inherited.size() * sizeof(win32::HANDLE), nullptr, nullptr)) {

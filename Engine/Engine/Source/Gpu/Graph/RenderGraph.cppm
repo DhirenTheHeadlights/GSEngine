@@ -7,7 +7,7 @@ import :swap_chain;
 import :frame;
 import :transient_pool;
 import :image;
-import :pass_recorder;
+import :command_contract;
 import :graph_channel;
 
 import gse.gpu_backend;
@@ -152,7 +152,9 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto create_readback_channel(
 			std::size_t size,
-			std::string_view tag = {}
+			std::string_view tag = {},
+			readback_gate gate = readback_gate::frames_in_flight,
+			queue_type queue = queue_type::graphics
 		) const -> readback_channel;
 
 		[[nodiscard]] auto create_upload_channel(

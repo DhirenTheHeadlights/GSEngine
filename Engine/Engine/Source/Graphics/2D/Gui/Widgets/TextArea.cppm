@@ -1592,7 +1592,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 		}
 	}
 
-	if (focused && state.blink_on) {
+	if (focused && !read_only && state.blink_on) {
 		const std::string_view caret_line = buffer.line(state.caret.line);
 		const std::vector<float> caret_col_x = line_column_x(state.caret.line, caret_line);
 		const float caret_x = caret_col_x[std::min<std::size_t>(state.caret.column, caret_line.size())];

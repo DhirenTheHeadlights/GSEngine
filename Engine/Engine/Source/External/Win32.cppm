@@ -155,6 +155,7 @@ export namespace gse::win32 {
 	using ::GetCurrentProcess;
 	using ::GetCurrentProcessId;
 	using ::GetCurrentThread;
+	using ::SetThreadPriority;
 	using ::CloseHandle;
 	using ::SuspendThread;
 	using ::ResumeThread;
@@ -165,6 +166,8 @@ export namespace gse::win32 {
 	using ::GetModuleFileNameW;
 	using ::SHGetFolderPathW;
 	using ::AddVectoredExceptionHandler;
+	using ::IsDebuggerPresent;
+	using ::DebugBreak;
 	using ::GetLastError;
 	using ::CreateProcessW;
 	using ::TerminateProcess;
@@ -184,6 +187,8 @@ export namespace gse::win32 {
 	using ::SetHandleInformation;
 	using ::GetHandleInformation;
 	using ::WaitForSingleObject;
+	using ::CreateMutexW;
+	using ::ReleaseMutex;
 	using ::GetExitCodeProcess;
 	using ::MoveFileExW;
 	using ::GetEnvironmentStringsW;
@@ -206,6 +211,13 @@ export namespace gse::win32 {
 	using ::ShellExecuteW;
 	using ::VirtualQuery;
 	using ::MEMORY_BASIC_INFORMATION;
+	using ::OVERLAPPED;
+	using ::ULONG_PTR;
+	using ::FILE_NOTIFY_INFORMATION;
+	using ::ReadDirectoryChangesW;
+	using ::CreateIoCompletionPort;
+	using ::GetQueuedCompletionStatus;
+	using ::CancelIoEx;
 
 	constexpr DWORD mem_commit = MEM_COMMIT;
 	constexpr DWORD mem_reserve = MEM_RESERVE;
@@ -235,6 +247,7 @@ export namespace gse::win32 {
 	constexpr DWORD infinite = INFINITE;
 	constexpr DWORD wait_timeout = WAIT_TIMEOUT;
 	constexpr DWORD wait_object_0 = WAIT_OBJECT_0;
+	constexpr DWORD wait_abandoned = WAIT_ABANDONED;
 	constexpr DWORD create_waitable_timer_high_resolution = CREATE_WAITABLE_TIMER_HIGH_RESOLUTION;
 	constexpr DWORD timer_all_access = TIMER_ALL_ACCESS;
 	constexpr DWORD handle_flag_inherit = HANDLE_FLAG_INHERIT;
@@ -253,6 +266,16 @@ export namespace gse::win32 {
 	constexpr DWORD create_always = CREATE_ALWAYS;
 	constexpr DWORD file_share_read = FILE_SHARE_READ;
 	constexpr DWORD file_share_write = FILE_SHARE_WRITE;
+	constexpr DWORD file_share_delete = FILE_SHARE_DELETE;
+	constexpr DWORD file_list_directory = FILE_LIST_DIRECTORY;
+	constexpr DWORD file_flag_backup_semantics = FILE_FLAG_BACKUP_SEMANTICS;
+	constexpr DWORD file_flag_overlapped = FILE_FLAG_OVERLAPPED;
+	constexpr DWORD file_notify_change_file_name = FILE_NOTIFY_CHANGE_FILE_NAME;
+	constexpr DWORD file_notify_change_dir_name = FILE_NOTIFY_CHANGE_DIR_NAME;
+	constexpr DWORD file_notify_change_last_write = FILE_NOTIFY_CHANGE_LAST_WRITE;
+	constexpr DWORD file_notify_change_size = FILE_NOTIFY_CHANGE_SIZE;
+	constexpr DWORD file_action_removed = FILE_ACTION_REMOVED;
+	constexpr DWORD file_action_renamed_old_name = FILE_ACTION_RENAMED_OLD_NAME;
 	constexpr DWORD file_attribute_normal = FILE_ATTRIBUTE_NORMAL;
 	constexpr DWORD std_output_handle = STD_OUTPUT_HANDLE;
 	constexpr DWORD file_type_char = FILE_TYPE_CHAR;
@@ -309,6 +332,8 @@ export namespace gse::win32 {
 	constexpr DWORD thread_suspend_resume = THREAD_SUSPEND_RESUME;
 	constexpr DWORD thread_get_context = THREAD_GET_CONTEXT;
 	constexpr DWORD thread_query_information = THREAD_QUERY_INFORMATION;
+	constexpr int thread_priority_normal = THREAD_PRIORITY_NORMAL;
+	constexpr int thread_priority_below_normal = THREAD_PRIORITY_BELOW_NORMAL;
 
 	using ::HGLOBAL;
 	using ::HDROP;

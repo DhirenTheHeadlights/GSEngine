@@ -37,10 +37,11 @@ export namespace gse::log {
 		main,
 		worker,
 		io,
+		background,
 		watchdog,
-		capture,
-		http,
-		network
+		network,
+		build,
+		terminal
 	};
 
 	auto set_level(

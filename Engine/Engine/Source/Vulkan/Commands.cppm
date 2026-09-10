@@ -42,10 +42,6 @@ export namespace gse::vulkan {
 			const gpu::dependency_info& dep
 		) const -> void;
 
-		auto transition_image_state(
-			const gpu::image_barrier& barrier
-		) const -> void;
-
 		auto reset_query_pool(
 			gpu::handle<gpu::query_pool> pool,
 			std::uint32_t first_query,
@@ -390,7 +386,6 @@ namespace gse::vulkan {
 
 	struct dependency_scratch {
 		std::vector<vk::MemoryBarrier2> memory;
-		std::vector<vk::BufferMemoryBarrier2> buffer;
 		std::vector<vk::ImageMemoryBarrier2> image;
 	};
 
@@ -425,8 +420,6 @@ auto gse::vulkan::commands::pipeline_barrier(const gpu::dependency_info& dep) co
 	const auto vk_dep = build_vk_dependency_info(dep, scratch);
 	raw().pipelineBarrier2(vk_dep);
 }
-
-auto gse::vulkan::commands::transition_image_state(const gpu::image_barrier&) const -> void {}
 
 auto gse::vulkan::commands::bind_shaders(const std::span<const gpu::stage_flag> stages, const std::span<const gpu::handle<gpu::shader_object>> shaders) const -> void {
 	static thread_local std::vector<vk::ShaderStageFlagBits> vk_stages;
@@ -765,7 +758,6 @@ auto gse::vulkan::build_vk_rendering_info(const gpu::rendering_info& info, rende
 
 auto gse::vulkan::build_vk_dependency_info(const gpu::dependency_info& dep, dependency_scratch& scratch) -> vk::DependencyInfo {
 	scratch.memory.clear();
-	scratch.buffer.clear();
 	scratch.image.clear();
 	scratch.memory.reserve(dep.memory_barriers.size());
 	for (const auto& b : dep.memory_barriers) {
@@ -778,31 +770,15 @@ auto gse::vulkan::build_vk_dependency_info(const gpu::dependency_info& dep, depe
 			}
 		);
 	}
-	scratch.buffer.reserve(dep.buffer_barriers.size());
-	for (const auto& b : dep.buffer_barriers) {
-		scratch.buffer.push_back(
-			vk::BufferMemoryBarrier2{
-				.srcStageMask = to_vk(b.src_stages),
-				.srcAccessMask = to_vk(b.src_access),
-				.dstStageMask = to_vk(b.dst_stages),
-				.dstAccessMask = to_vk(b.dst_access),
-				.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-				.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-				.buffer = std::bit_cast<vk::Buffer>(b.buffer),
-				.offset = b.offset,
-				.size = b.size == 0 ? vk::WholeSize : b.size,
-			}
-		);
-	}
-	scratch.image.reserve(dep.image_barriers.size());
-	for (const auto& b : dep.image_barriers) {
+	scratch.image.reserve(dep.image_discards.size());
+	for (const auto& b : dep.image_discards) {
 		scratch.image.push_back(
 			vk::ImageMemoryBarrier2{
 				.srcStageMask = to_vk(b.src_stages),
 				.srcAccessMask = to_vk(b.src_access),
 				.dstStageMask = to_vk(b.dst_stages),
 				.dstAccessMask = to_vk(b.dst_access),
-				.oldLayout = b.discard_contents ? vk::ImageLayout::eUndefined : vk::ImageLayout::eGeneral,
+				.oldLayout = vk::ImageLayout::eUndefined,
 				.newLayout = vk::ImageLayout::eGeneral,
 				.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
 				.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
@@ -810,10 +786,10 @@ auto gse::vulkan::build_vk_dependency_info(const gpu::dependency_info& dep, depe
 				.subresourceRange =
 					vk::ImageSubresourceRange{
 						.aspectMask = to_vk(b.aspects),
-						.baseMipLevel = b.base_mip_level,
-						.levelCount = b.level_count,
-						.baseArrayLayer = b.base_array_layer,
-						.layerCount = b.layer_count,
+						.baseMipLevel = 0,
+						.levelCount = vk::RemainingMipLevels,
+						.baseArrayLayer = 0,
+						.layerCount = vk::RemainingArrayLayers,
 					},
 			}
 		);
@@ -821,8 +797,6 @@ auto gse::vulkan::build_vk_dependency_info(const gpu::dependency_info& dep, depe
 	return vk::DependencyInfo{
 		.memoryBarrierCount = static_cast<std::uint32_t>(scratch.memory.size()),
 		.pMemoryBarriers = scratch.memory.data(),
-		.bufferMemoryBarrierCount = static_cast<std::uint32_t>(scratch.buffer.size()),
-		.pBufferMemoryBarriers = scratch.buffer.data(),
 		.imageMemoryBarrierCount = static_cast<std::uint32_t>(scratch.image.size()),
 		.pImageMemoryBarriers = scratch.image.data(),
 	};

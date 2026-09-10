@@ -211,6 +211,12 @@ export namespace sandbox {
 		const gse::animation::locomotion_blend& clips
 	) -> void;
 
+	auto predicted_entity_name(
+		std::string_view kind,
+		gse::id owner,
+		std::uint32_t sequence
+	) -> std::string;
+
 	auto spawn_tumbler(
 		gse::scene& s,
 		int index,
@@ -1238,6 +1244,10 @@ auto sandbox::spawn_character(gse::scene& s, const gse::id owner, const gse::res
 			.identify(),
 		.proxy = proxy_id,
 	};
+}
+
+auto sandbox::predicted_entity_name(const std::string_view kind, const gse::id owner, const std::uint32_t sequence) -> std::string {
+	return std::format("{}_{}_{}", kind, owner.number(), sequence);
 }
 
 auto sandbox::possess_character(gse::scene& s, const character_rig& rig, const gse::animation::locomotion_blend& clips) -> void {

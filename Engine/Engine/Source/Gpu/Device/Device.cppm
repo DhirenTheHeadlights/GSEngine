@@ -3,7 +3,7 @@ export module gse.gpu:device;
 import std;
 
 import :video_encoder;
-import :pass_recorder;
+import :command_contract;
 
 import gse.gpu_backend;
 import gse.assert;

@@ -1,9 +1,8 @@
 export module gse.concurrency:manual_event;
 
-import std;
-
 import gse.core;
 import gse.log;
+import std;
 
 import :async_task;
 
@@ -42,12 +41,12 @@ export namespace gse::async {
 }
 
 auto gse::async::manual_event::awaiter::await_ready() const noexcept -> bool {
-	std::lock_guard lock(m_event->m_state);
+	std::lock_guard _(m_event->m_state);
 	return m_event->m_set;
 }
 
 auto gse::async::manual_event::awaiter::await_suspend(const std::coroutine_handle<> h) const noexcept -> bool {
-	std::lock_guard lock(m_event->m_state);
+	std::lock_guard _(m_event->m_state);
 	if (m_event->m_set) {
 		return false;
 	}
@@ -65,7 +64,7 @@ auto gse::async::manual_event::wait() -> awaiter {
 auto gse::async::manual_event::set() -> void {
 	std::vector<checked_handle> to_wake;
 	{
-		std::lock_guard lock(m_state);
+		std::lock_guard _(m_state);
 		if (m_set) {
 			return;
 		}
@@ -84,11 +83,11 @@ auto gse::async::manual_event::set() -> void {
 }
 
 auto gse::async::manual_event::reset() -> void {
-	std::lock_guard lock(m_state);
+	std::lock_guard _(m_state);
 	m_set = false;
 }
 
 auto gse::async::manual_event::is_set() const -> bool {
-	std::lock_guard lock(m_state);
+	std::lock_guard _(m_state);
 	return m_set;
 }

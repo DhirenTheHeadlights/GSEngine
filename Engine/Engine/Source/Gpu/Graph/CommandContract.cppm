@@ -297,10 +297,6 @@ export namespace gse::gpu {
 			const dependency_info& dep
 		) const -> void;
 
-		auto transition_image_state(
-			const image_barrier& barrier
-		) const -> void;
-
 		auto build_acceleration_structures(
 			const acceleration_structure_build_geometry_info& build_info,
 			std::span<const acceleration_structure_build_range_info* const> range_infos

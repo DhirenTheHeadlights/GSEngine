@@ -45,6 +45,7 @@ export namespace sandbox::character_controller {
 	};
 
 	[[= gse::system_run<>{}]]
+	[[= gse::runs_after_optional<^^orbit_camera::data>{}]]
 	auto run(
 		gse::context& ctx,
 		data& d,

@@ -6,16 +6,11 @@ void tlas_transform_update(uint3 dispatch_id) {
     }
 
     uint src_idx = index_mapping[tid];
-    uint src_byte = src_idx * pc.instance_stride + pc.model_matrix_offset;
+    float4x4 model = source_instance_data[src_idx].model_matrix;
 
-    float4 c0 = asfloat(source_instance_data.Load4(src_byte));
-    float4 c1 = asfloat(source_instance_data.Load4(src_byte + 16));
-    float4 c2 = asfloat(source_instance_data.Load4(src_byte + 32));
-    float4 c3 = asfloat(source_instance_data.Load4(src_byte + 48));
-
-    float4 row0 = float4(c0.x, c1.x, c2.x, c3.x);
-    float4 row1 = float4(c0.y, c1.y, c2.y, c3.y);
-    float4 row2 = float4(c0.z, c1.z, c2.z, c3.z);
+    float4 row0 = model[0];
+    float4 row1 = model[1];
+    float4 row2 = model[2];
 
     float3 lin0 = row0.xyz;
     float3 lin1 = row1.xyz;

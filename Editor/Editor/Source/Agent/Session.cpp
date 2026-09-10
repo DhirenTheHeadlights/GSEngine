@@ -16,9 +16,11 @@ import :session;
 import :stream;
 
 auto gse::ide::agent::agent_credentials() -> credentials {
-	std::array<wchar_t, 2> probe{};
-	if (win32::GetEnvironmentVariableW(oauth_token_name.data(), probe.data(), static_cast<win32::DWORD>(probe.size())) != 0) {
-		return { .token = true };
+	if (const std::wstring inherited = environment_value(oauth_token_name); !inherited.empty()) {
+		return {
+			.token_value = std::string(inherited.begin(), inherited.end()),
+			.token = true,
+		};
 	}
 
 	const std::wstring value = win32::user_environment_value(oauth_token_name);
@@ -28,6 +30,7 @@ auto gse::ide::agent::agent_credentials() -> credentials {
 
 	return {
 		.environment = win32::environment_with_variable(oauth_token_name, value),
+		.token_value = std::string(value.begin(), value.end()),
 		.token = true,
 	};
 }
@@ -335,7 +338,10 @@ auto gse::ide::agent::append_row(session& s, transcript_row row) -> void {
 	}
 
 	if (row.kind == row_kind::tool && !row.file.empty() && !(row.added.empty() && row.removed.empty())) {
-		note_written_file(s, row.file);
+		note_written_file(s, row.file, row.added);
+	}
+	if (row.stamped == 0) {
+		row.stamped = unix_now();
 	}
 	s.rows.push_back(std::move(row));
 }
@@ -368,7 +374,7 @@ auto gse::ide::agent::pump_session(session& s) -> void {
 				s.limited_until = unix_now() + limit_backoff_seconds;
 			}
 		}
-		else {
+		else if (kind == "assistant" || kind == "user") {
 			if (!s.think_clock) {
 				s.think_clock.emplace();
 			}
@@ -573,7 +579,7 @@ auto gse::ide::agent::active_session(data& d) -> session* {
 	return found != d.sessions.end() ? &*found : &d.sessions.back();
 }
 
-auto gse::ide::agent::environment_path(const std::wstring_view name) -> std::filesystem::path {
+auto gse::ide::agent::environment_value(const std::wstring_view name) -> std::wstring {
 	const win32::DWORD needed = win32::GetEnvironmentVariableW(name.data(), nullptr, 0);
 	if (needed == 0) {
 		return {};
@@ -582,11 +588,105 @@ auto gse::ide::agent::environment_path(const std::wstring_view name) -> std::fil
 	std::wstring value(needed, L'\0');
 	const win32::DWORD written = win32::GetEnvironmentVariableW(name.data(), value.data(), needed);
 	value.resize(written);
+	return value;
+}
+
+auto gse::ide::agent::environment_path(const std::wstring_view name) -> std::filesystem::path {
+	const std::wstring value = environment_value(name);
 	if (value.empty()) {
 		return {};
 	}
 
 	return value;
+}
+
+auto gse::ide::agent::refresh_usage(data& d) -> void {
+	if (d.usage_client && d.usage_ticket.exists()) {
+		for (http::completion& done : d.usage_client->poll()) {
+			if (done.ticket == d.usage_ticket) {
+				d.usage_ticket.reset();
+				apply_usage(d, done.value);
+			}
+		}
+		return;
+	}
+
+	if (!d.info_open || unix_now() - d.usage.fetched < usage_refresh_seconds) {
+		return;
+	}
+	d.usage.fetched = unix_now();
+
+	const credentials creds = agent_credentials();
+	if (creds.token_value.empty()) {
+		d.usage.windows.clear();
+		d.usage.error = "no CLAUDE_CODE_OAUTH_TOKEN";
+		return;
+	}
+
+	if (!d.usage_client) {
+		d.usage_client = std::make_unique<http::client>();
+	}
+
+	d.usage_ticket = d.usage_client->send({
+		.url = std::string(usage_url),
+		.headers = {
+			{ .name = "Authorization", .value = "Bearer " + creds.token_value },
+			{ .name = "anthropic-beta", .value = std::string(oauth_beta) },
+			{ .name = "Content-Type", .value = "application/json" },
+		},
+		.timeout = seconds(10.f),
+	});
+}
+
+auto gse::ide::agent::apply_usage(data& d, const http::result& result) -> void {
+	if (!result) {
+		d.usage.error = http::message(result.error());
+		return;
+	}
+	if (!result->ok()) {
+		d.usage.error = std::format("usage request returned {}", result->status);
+		return;
+	}
+
+	const std::optional<analysis::json::value> root = analysis::json::parse(result->body);
+	if (!root || !root->is_object()) {
+		d.usage.error = "usage response was not json";
+		return;
+	}
+
+	constexpr std::pair<std::string_view, std::string_view> windows[] = {
+		{ "five_hour", "session (5h)" },
+		{ "seven_day", "week (all models)" },
+		{ "seven_day_opus", "week (opus)" },
+		{ "seven_day_sonnet", "week (sonnet)" },
+	};
+
+	d.usage.windows.clear();
+	d.usage.error.clear();
+	for (const auto& [key, label] : windows) {
+		const analysis::json::value* window = root->find(key);
+		if (!window || !window->is_object()) {
+			continue;
+		}
+		const analysis::json::value* used = window->find("utilization");
+		const analysis::json::value* resets = window->find("resets_at");
+		if (!used || used->type != analysis::json::value::kind::number) {
+			continue;
+		}
+		d.usage.windows.push_back({
+			.label = std::string(label),
+			.utilization = used->number,
+			.resets_at = !resets
+				? 0
+				: resets->type == analysis::json::value::kind::number
+				? resets->as_int()
+				: parse_timestamp(resets->as_string()),
+		});
+	}
+
+	if (d.usage.windows.empty()) {
+		d.usage.error = "no usage windows reported";
+	}
 }
 
 auto gse::ide::agent::load_model_options() -> std::vector<model_option> {

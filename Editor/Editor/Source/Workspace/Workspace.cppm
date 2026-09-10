@@ -1,14 +1,13 @@
 export module gse.ide.workspace:workspace;
 
-import std;
 import gse;
-import gse.win32;
-
 import gse.ide.alloc;
 import gse.ide.docs;
 import gse.ide.highlight;
 import gse.ide.navigation;
 import gse.ide.profile;
+import gse.win32;
+import std;
 
 import :documents;
 
@@ -556,7 +555,7 @@ auto gse::ide::language_of(const std::filesystem::path& path) -> document_langua
 auto gse::ide::write_document_file(const std::filesystem::path& path, const std::span<const std::string> lines) -> std::expected<void, std::string> {
 	std::filesystem::path temporary = path;
 	temporary += std::format(".{}.tmp", win32::GetCurrentProcessId());
-	const auto remove_temporary = make_scope_exit([&] {
+	const auto _ = make_scope_exit([&] {
 		std::error_code ec;
 		std::filesystem::remove(temporary, ec);
 	});

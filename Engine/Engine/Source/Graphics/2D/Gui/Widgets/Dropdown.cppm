@@ -1,25 +1,25 @@
 export module gse.graphics:dropdown_widget;
 
-import std;
-
-import gse.os;
 import gse.assets;
-import gse.gpu;
-import gse.core;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
+import gse.gpu;
 import gse.math;
-import :types;
+import gse.os;
+import gse.time;
+import std;
+
+import :builder;
 import :font;
 import :ids;
-import :styles;
-import :builder;
-import :render_layer;
 import :interaction;
+import :render_layer;
+import :styles;
 import :symbols;
+import :types;
 
 export namespace gse::gui {
 	struct dropdown_state {
@@ -424,7 +424,7 @@ auto gse::gui::draw::dropdown_impl_in_rect(const draw_context& ctx, const id dro
 	});
 
 	if (is_open && count > 0) {
-		const auto modal_layer = ctx.scoped_layer(render_layer::modal);
+		const auto _ = ctx.scoped_layer(render_layer::modal);
 
 		const std::size_t visible_count = std::min(count, config.max_visible_items);
 		const float visible_height = static_cast<float>(visible_count) * row_height;

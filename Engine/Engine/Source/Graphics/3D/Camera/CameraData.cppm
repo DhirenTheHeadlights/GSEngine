@@ -1,12 +1,7 @@
 export module gse.graphics:camera_data;
 
-import gse.math;
 import gse.core;
-import gse.containers;
-import gse.time;
-import gse.concurrency;
-import gse.diag;
-import gse.ecs;
+import gse.math;
 
 export namespace gse::camera {
 	struct target {

@@ -23,6 +23,8 @@ __CRT_UUID_DECL(ID3D12Device2, 0x30baa41e, 0xb15b, 0x475c, 0xa0, 0xbb, 0x1a, 0xf
 __CRT_UUID_DECL(ID3D12GraphicsCommandList6, 0xc3827890, 0xe548, 0x4cfa, 0x96, 0xcf, 0x56, 0x89, 0xa9, 0x37, 0x0f, 0x80)
 __CRT_UUID_DECL(ID3D12Device5, 0x8b4f173b, 0x2fea, 0x4b80, 0x8f, 0x58, 0x43, 0x07, 0x19, 0x1a, 0xb9, 0x5d)
 __CRT_UUID_DECL(ID3D12GraphicsCommandList4, 0x8754318e, 0xd3a9, 0x4541, 0x98, 0xcf, 0x64, 0x5b, 0x50, 0xdc, 0x48, 0x74)
+__CRT_UUID_DECL(ID3D12GraphicsCommandList7, 0xdd171223, 0x8b61, 0x4769, 0x90, 0xe3, 0x16, 0x0c, 0xcd, 0xe4, 0xe2, 0xc1)
+__CRT_UUID_DECL(ID3D12Device10, 0x517f8718, 0xaa66, 0x49f9, 0xb0, 0x2b, 0xa7, 0xab, 0x89, 0xc0, 0x60, 0x31)
 __CRT_UUID_DECL(ID3D12QueryHeap, 0x0d9658ae, 0xed45, 0x469e, 0xa6, 0x1d, 0x97, 0x0e, 0xc5, 0x83, 0xca, 0xb4)
 __CRT_UUID_DECL(ID3D12DeviceRemovedExtendedDataSettings, 0x82bc481c, 0x6b9b, 0x4030, 0xae, 0xdb, 0x7e, 0xe3, 0xd1, 0xdf, 0x1e, 0x63)
 __CRT_UUID_DECL(ID3D12DeviceRemovedExtendedData, 0x98931d33, 0x5ae8, 0x4791, 0xaa, 0x3c, 0x1a, 0x73, 0xa2, 0x93, 0x4e, 0x71)
@@ -44,6 +46,8 @@ export namespace gse::directx {
 	using ::ID3D12Fence;
 	using ::ID3D12GraphicsCommandList;
 	using ::ID3D12GraphicsCommandList6;
+	using ::ID3D12GraphicsCommandList7;
+	using ::ID3D12Device10;
 	using ::ID3D12Resource;
 	using ::ID3D12QueryHeap;
 	using ::ID3D12PipelineState;
@@ -57,10 +61,14 @@ export namespace gse::directx {
 
 	using ::D3D12_CPU_DESCRIPTOR_HANDLE;
 	using ::D3D12_GPU_DESCRIPTOR_HANDLE;
-	using ::D3D12_RESOURCE_BARRIER;
+	using ::D3D12_BARRIER_SYNC;
+	using ::D3D12_BARRIER_ACCESS;
+	using ::D3D12_BARRIER_LAYOUT;
+	using ::D3D12_GLOBAL_BARRIER;
+	using ::D3D12_TEXTURE_BARRIER;
 	using ::D3D12_RESOURCE_DIMENSION;
 	using ::D3D12_RESOURCE_FLAGS;
-	using ::D3D12_RESOURCE_STATES;
+	using ::D3D12_HEAP_PROPERTIES;
 	using ::D3D12_AUTO_BREADCRUMB_OP;
 	using ::DXGI_FORMAT;
 
@@ -82,22 +90,44 @@ export namespace gse::directx {
 	constexpr DXGI_FORMAT format_r32g32b32_float = DXGI_FORMAT_R32G32B32_FLOAT;
 	constexpr DXGI_FORMAT format_r32_uint = DXGI_FORMAT_R32_UINT;
 
-	constexpr auto barrier_type_transition = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-	constexpr auto barrier_type_uav = D3D12_RESOURCE_BARRIER_TYPE_UAV;
-	constexpr auto barrier_type_aliasing = D3D12_RESOURCE_BARRIER_TYPE_ALIASING;
-	constexpr auto resource_state_common = D3D12_RESOURCE_STATE_COMMON;
-	constexpr auto resource_state_present = D3D12_RESOURCE_STATE_PRESENT;
-	constexpr auto resource_state_render_target = D3D12_RESOURCE_STATE_RENDER_TARGET;
-	constexpr auto resource_state_depth_write = D3D12_RESOURCE_STATE_DEPTH_WRITE;
-	constexpr auto resource_state_depth_read = D3D12_RESOURCE_STATE_DEPTH_READ;
-	constexpr auto resource_state_unordered_access = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-	constexpr auto resource_state_copy_dest = D3D12_RESOURCE_STATE_COPY_DEST;
-	constexpr auto resource_state_copy_source = D3D12_RESOURCE_STATE_COPY_SOURCE;
-	constexpr auto resource_state_shader_resource = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-	constexpr auto resource_state_non_pixel_shader_resource = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-	constexpr auto resource_state_raytracing_acceleration_structure = D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE;
-	constexpr auto resource_state_indirect_argument = D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT;
-	constexpr auto resource_barrier_all_subresources = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+	constexpr auto sync_none = D3D12_BARRIER_SYNC_NONE;
+	constexpr auto sync_all = D3D12_BARRIER_SYNC_ALL;
+	constexpr auto sync_draw = D3D12_BARRIER_SYNC_DRAW;
+	constexpr auto sync_index_input = D3D12_BARRIER_SYNC_INDEX_INPUT;
+	constexpr auto sync_vertex_shading = D3D12_BARRIER_SYNC_VERTEX_SHADING;
+	constexpr auto sync_pixel_shading = D3D12_BARRIER_SYNC_PIXEL_SHADING;
+	constexpr auto sync_depth_stencil = D3D12_BARRIER_SYNC_DEPTH_STENCIL;
+	constexpr auto sync_render_target = D3D12_BARRIER_SYNC_RENDER_TARGET;
+	constexpr auto sync_compute_shading = D3D12_BARRIER_SYNC_COMPUTE_SHADING;
+	constexpr auto sync_raytracing = D3D12_BARRIER_SYNC_RAYTRACING;
+	constexpr auto sync_copy = D3D12_BARRIER_SYNC_COPY;
+	constexpr auto sync_resolve = D3D12_BARRIER_SYNC_RESOLVE;
+	constexpr auto sync_execute_indirect = D3D12_BARRIER_SYNC_EXECUTE_INDIRECT;
+	constexpr auto sync_all_shading = D3D12_BARRIER_SYNC_ALL_SHADING;
+	constexpr auto sync_build_raytracing_acceleration_structure = D3D12_BARRIER_SYNC_BUILD_RAYTRACING_ACCELERATION_STRUCTURE;
+
+	constexpr auto access_common = D3D12_BARRIER_ACCESS_COMMON;
+	constexpr auto access_vertex_buffer = D3D12_BARRIER_ACCESS_VERTEX_BUFFER;
+	constexpr auto access_index_buffer = D3D12_BARRIER_ACCESS_INDEX_BUFFER;
+	constexpr auto access_render_target = D3D12_BARRIER_ACCESS_RENDER_TARGET;
+	constexpr auto access_unordered_access = D3D12_BARRIER_ACCESS_UNORDERED_ACCESS;
+	constexpr auto access_depth_stencil_write = D3D12_BARRIER_ACCESS_DEPTH_STENCIL_WRITE;
+	constexpr auto access_depth_stencil_read = D3D12_BARRIER_ACCESS_DEPTH_STENCIL_READ;
+	constexpr auto access_shader_resource = D3D12_BARRIER_ACCESS_SHADER_RESOURCE;
+	constexpr auto access_indirect_argument = D3D12_BARRIER_ACCESS_INDIRECT_ARGUMENT;
+	constexpr auto access_copy_dest = D3D12_BARRIER_ACCESS_COPY_DEST;
+	constexpr auto access_copy_source = D3D12_BARRIER_ACCESS_COPY_SOURCE;
+	constexpr auto access_raytracing_acceleration_structure_read = D3D12_BARRIER_ACCESS_RAYTRACING_ACCELERATION_STRUCTURE_READ;
+	constexpr auto access_raytracing_acceleration_structure_write = D3D12_BARRIER_ACCESS_RAYTRACING_ACCELERATION_STRUCTURE_WRITE;
+	constexpr auto access_no_access = D3D12_BARRIER_ACCESS_NO_ACCESS;
+
+	constexpr auto layout_undefined = D3D12_BARRIER_LAYOUT_UNDEFINED;
+	constexpr auto layout_common = D3D12_BARRIER_LAYOUT_COMMON;
+	constexpr auto layout_render_target = D3D12_BARRIER_LAYOUT_RENDER_TARGET;
+	constexpr auto layout_depth_stencil_write = D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE;
+	constexpr auto layout_direct_queue_common = D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_COMMON;
+	constexpr auto layout_copy_source = D3D12_BARRIER_LAYOUT_COPY_SOURCE;
+	constexpr auto layout_copy_dest = D3D12_BARRIER_LAYOUT_COPY_DEST;
 
 	constexpr auto dimension_texture_2d = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
 	constexpr auto dimension_texture_3d = D3D12_RESOURCE_DIMENSION_TEXTURE3D;
@@ -278,9 +308,34 @@ export namespace gse::directx {
 		ID3D12GraphicsCommandList* list
 	) -> bool;
 
-	[[nodiscard]] auto strip_graphics_only_states(
-		D3D12_RESOURCE_STATES state
-	) -> D3D12_RESOURCE_STATES;
+	[[nodiscard]] auto enhanced_barriers_supported(
+		ID3D12Device* device
+	) -> bool;
+
+	auto barrier(
+		ID3D12GraphicsCommandList* list,
+		const D3D12_GLOBAL_BARRIER* global_barriers,
+		std::uint32_t global_count,
+		const D3D12_TEXTURE_BARRIER* texture_barriers,
+		std::uint32_t texture_count
+	) -> void;
+
+	[[nodiscard]] auto texture_discard_barrier(
+		ID3D12Resource* resource,
+		D3D12_BARRIER_SYNC sync_after,
+		D3D12_BARRIER_ACCESS access_after,
+		D3D12_BARRIER_LAYOUT layout_after
+	) -> D3D12_TEXTURE_BARRIER;
+
+	[[nodiscard]] auto texture_layout_barrier(
+		ID3D12Resource* resource,
+		D3D12_BARRIER_SYNC sync_before,
+		D3D12_BARRIER_ACCESS access_before,
+		D3D12_BARRIER_LAYOUT layout_before,
+		D3D12_BARRIER_SYNC sync_after,
+		D3D12_BARRIER_ACCESS access_after,
+		D3D12_BARRIER_LAYOUT layout_after
+	) -> D3D12_TEXTURE_BARRIER;
 
 	[[nodiscard]] auto create_rtv_heap(
 		ID3D12Device* device,
@@ -335,6 +390,13 @@ export namespace gse::directx {
 		std::uint64_t value,
 		std::uint32_t timeout_ms
 	) -> bool;
+
+	[[nodiscard]] auto create_buffer_resource(
+		ID3D12Device* device,
+		const D3D12_HEAP_PROPERTIES& heap,
+		std::uint64_t size,
+		D3D12_RESOURCE_FLAGS flags
+	) -> com_ptr<ID3D12Resource>;
 
 	[[nodiscard]] auto create_upload_buffer(
 		ID3D12Device* device,
@@ -469,7 +531,7 @@ export namespace gse::directx {
 	[[nodiscard]] auto create_default_buffer(
 		ID3D12Device* device,
 		std::uint64_t size,
-		D3D12_RESOURCE_STATES initial_state
+		bool acceleration_structure = false
 	) -> com_ptr<ID3D12Resource>;
 
 	auto blas_prebuild_info(
@@ -618,7 +680,8 @@ export namespace gse::directx {
 
 	[[nodiscard]] auto create_bindless_root_signature(
 		ID3D12Device* device,
-		std::uint32_t num_root_constants
+		std::uint32_t push_constants,
+		std::uint32_t binding_constants
 	) -> com_ptr<ID3D12RootSignature>;
 
 	[[nodiscard]] auto create_gpu_upload_buffer(
@@ -1184,9 +1247,70 @@ auto gse::directx::is_compute_command_list(ID3D12GraphicsCommandList* list) -> b
 	return list && list->GetType() == D3D12_COMMAND_LIST_TYPE_COMPUTE;
 }
 
-auto gse::directx::strip_graphics_only_states(const D3D12_RESOURCE_STATES state) -> D3D12_RESOURCE_STATES {
-	constexpr int graphics_only = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-	return static_cast<D3D12_RESOURCE_STATES>(static_cast<int>(state) & ~graphics_only);
+auto gse::directx::enhanced_barriers_supported(ID3D12Device* device) -> bool {
+	D3D12_FEATURE_DATA_D3D12_OPTIONS12 options = {};
+	if (FAILED(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS12, &options, sizeof(options)))) {
+		return false;
+	}
+	return options.EnhancedBarriersSupported;
+}
+
+auto gse::directx::barrier(ID3D12GraphicsCommandList* list, const D3D12_GLOBAL_BARRIER* global_barriers, const std::uint32_t global_count, const D3D12_TEXTURE_BARRIER* texture_barriers, const std::uint32_t texture_count) -> void {
+	if (global_count == 0 && texture_count == 0) {
+		return;
+	}
+	com_ptr<ID3D12GraphicsCommandList7> list7;
+	list->QueryInterface(IID_PPV_ARGS(list7.put()));
+	if (!list7) {
+		return;
+	}
+	D3D12_BARRIER_GROUP groups[2] = {};
+	std::uint32_t group_count = 0;
+	if (global_count != 0) {
+		groups[group_count].Type = D3D12_BARRIER_TYPE_GLOBAL;
+		groups[group_count].NumBarriers = global_count;
+		groups[group_count].pGlobalBarriers = global_barriers;
+		++group_count;
+	}
+	if (texture_count != 0) {
+		groups[group_count].Type = D3D12_BARRIER_TYPE_TEXTURE;
+		groups[group_count].NumBarriers = texture_count;
+		groups[group_count].pTextureBarriers = texture_barriers;
+		++group_count;
+	}
+	list7->Barrier(group_count, groups);
+}
+
+auto gse::directx::texture_discard_barrier(ID3D12Resource* resource, const D3D12_BARRIER_SYNC sync_after, const D3D12_BARRIER_ACCESS access_after, const D3D12_BARRIER_LAYOUT layout_after) -> D3D12_TEXTURE_BARRIER {
+	return {
+		.SyncBefore = D3D12_BARRIER_SYNC_NONE,
+		.SyncAfter = sync_after,
+		.AccessBefore = D3D12_BARRIER_ACCESS_NO_ACCESS,
+		.AccessAfter = access_after,
+		.LayoutBefore = D3D12_BARRIER_LAYOUT_UNDEFINED,
+		.LayoutAfter = layout_after,
+		.pResource = resource,
+		.Subresources = {
+			.IndexOrFirstMipLevel = 0xffffffff,
+		},
+		.Flags = D3D12_TEXTURE_BARRIER_FLAG_DISCARD,
+	};
+}
+
+auto gse::directx::texture_layout_barrier(ID3D12Resource* resource, const D3D12_BARRIER_SYNC sync_before, const D3D12_BARRIER_ACCESS access_before, const D3D12_BARRIER_LAYOUT layout_before, const D3D12_BARRIER_SYNC sync_after, const D3D12_BARRIER_ACCESS access_after, const D3D12_BARRIER_LAYOUT layout_after) -> D3D12_TEXTURE_BARRIER {
+	return {
+		.SyncBefore = sync_before,
+		.SyncAfter = sync_after,
+		.AccessBefore = access_before,
+		.AccessAfter = access_after,
+		.LayoutBefore = layout_before,
+		.LayoutAfter = layout_after,
+		.pResource = resource,
+		.Subresources = {
+			.IndexOrFirstMipLevel = 0xffffffff,
+		},
+		.Flags = D3D12_TEXTURE_BARRIER_FLAG_NONE,
+	};
 }
 
 auto gse::directx::create_rtv_heap(ID3D12Device* device, const std::uint32_t descriptor_count) -> com_ptr<ID3D12DescriptorHeap> {
@@ -1295,7 +1419,11 @@ auto gse::directx::create_upload_buffer(ID3D12Device* device, const std::uint64_
 		.Type = D3D12_HEAP_TYPE_UPLOAD,
 	};
 
-	const D3D12_RESOURCE_DESC desc = {
+	return create_buffer_resource(device, heap, size, D3D12_RESOURCE_FLAG_NONE);
+}
+
+auto gse::directx::create_buffer_resource(ID3D12Device* device, const D3D12_HEAP_PROPERTIES& heap, const std::uint64_t size, const D3D12_RESOURCE_FLAGS flags) -> com_ptr<ID3D12Resource> {
+	const D3D12_RESOURCE_DESC1 desc = {
 		.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
 		.Width = size == 0 ? 1 : size,
 		.Height = 1,
@@ -1306,10 +1434,15 @@ auto gse::directx::create_upload_buffer(ID3D12Device* device, const std::uint64_
 			.Count = 1,
 		},
 		.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+		.Flags = flags,
 	};
 
+	com_ptr<ID3D12Device10> device10;
+	device->QueryInterface(IID_PPV_ARGS(device10.put()));
 	com_ptr<ID3D12Resource> resource;
-	device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(resource.put()));
+	if (device10) {
+		device10->CreateCommittedResource3(&heap, D3D12_HEAP_FLAG_NONE, &desc, D3D12_BARRIER_LAYOUT_UNDEFINED, nullptr, nullptr, 0, nullptr, IID_PPV_ARGS(resource.put()));
+	}
 	return resource;
 }
 
@@ -1328,7 +1461,7 @@ auto gse::directx::create_committed_texture(ID3D12Device* device, const D3D12_RE
 		.Type = D3D12_HEAP_TYPE_DEFAULT,
 	};
 
-	const D3D12_RESOURCE_DESC desc = {
+	const D3D12_RESOURCE_DESC1 desc = {
 		.Dimension = dimension,
 		.Width = width,
 		.Height = height,
@@ -1341,8 +1474,12 @@ auto gse::directx::create_committed_texture(ID3D12Device* device, const D3D12_RE
 		.Flags = flags,
 	};
 
+	com_ptr<ID3D12Device10> device10;
+	device->QueryInterface(IID_PPV_ARGS(device10.put()));
 	com_ptr<ID3D12Resource> resource;
-	device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(resource.put()));
+	if (device10) {
+		device10->CreateCommittedResource3(&heap, D3D12_HEAP_FLAG_NONE, &desc, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_COMMON, nullptr, nullptr, 0, nullptr, IID_PPV_ARGS(resource.put()));
+	}
 	return resource;
 }
 
@@ -1353,7 +1490,7 @@ auto gse::directx::create_shared_texture(ID3D12Device* device, const DXGI_FORMAT
 
 	const auto shared_flags = static_cast<D3D12_RESOURCE_FLAGS>(static_cast<int>(flags) | static_cast<int>(D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS));
 
-	const D3D12_RESOURCE_DESC desc = {
+	const D3D12_RESOURCE_DESC1 desc = {
 		.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
 		.Width = width,
 		.Height = height,
@@ -1366,8 +1503,12 @@ auto gse::directx::create_shared_texture(ID3D12Device* device, const DXGI_FORMAT
 		.Flags = shared_flags,
 	};
 
+	com_ptr<ID3D12Device10> device10;
+	device->QueryInterface(IID_PPV_ARGS(device10.put()));
 	com_ptr<ID3D12Resource> resource;
-	device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_SHARED, &desc, D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(resource.put()));
+	if (device10) {
+		device10->CreateCommittedResource3(&heap, D3D12_HEAP_FLAG_SHARED, &desc, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_COMMON, nullptr, nullptr, 0, nullptr, IID_PPV_ARGS(resource.put()));
+	}
 	return resource;
 }
 
@@ -1576,17 +1717,6 @@ auto gse::directx::upload_texture(ID3D12Device* device, ID3D12CommandQueue* queu
 	auto list = create_command_list(device, allocator.get());
 	list->Reset(allocator.get(), nullptr);
 
-	const D3D12_RESOURCE_BARRIER to_copy = {
-		.Type = barrier_type_transition,
-		.Transition = {
-			.pResource = texture,
-			.Subresource = resource_barrier_all_subresources,
-			.StateBefore = resource_state_common,
-			.StateAfter = resource_state_copy_dest,
-		},
-	};
-	list->ResourceBarrier(1, &to_copy);
-
 	std::uint64_t base = 0;
 	for (std::uint32_t layer = 0; layer < layer_count; ++layer) {
 		D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint = {};
@@ -1621,17 +1751,6 @@ auto gse::directx::upload_texture(ID3D12Device* device, ID3D12CommandQueue* queu
 
 	upload->Unmap(0, nullptr);
 
-	const D3D12_RESOURCE_BARRIER to_common = {
-		.Type = barrier_type_transition,
-		.Transition = {
-			.pResource = texture,
-			.Subresource = resource_barrier_all_subresources,
-			.StateBefore = resource_state_copy_dest,
-			.StateAfter = resource_state_common,
-		},
-	};
-	list->ResourceBarrier(1, &to_common);
-
 	list->Close();
 	ID3D12CommandList* lists[] = { list.get() };
 	queue->ExecuteCommandLists(1, lists);
@@ -1640,24 +1759,12 @@ auto gse::directx::upload_texture(ID3D12Device* device, ID3D12CommandQueue* queu
 	wait_fence(fence, target, wait_event);
 }
 
-auto gse::directx::create_default_buffer(ID3D12Device* device, const std::uint64_t size, const D3D12_RESOURCE_STATES initial_state) -> com_ptr<ID3D12Resource> {
+auto gse::directx::create_default_buffer(ID3D12Device* device, const std::uint64_t size, const bool acceleration_structure) -> com_ptr<ID3D12Resource> {
 	const D3D12_HEAP_PROPERTIES heap = {
 		.Type = D3D12_HEAP_TYPE_DEFAULT,
 	};
-	const D3D12_RESOURCE_DESC desc = {
-		.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
-		.Width = size == 0 ? 1 : size,
-		.Height = 1,
-		.DepthOrArraySize = 1,
-		.MipLevels = 1,
-		.Format = DXGI_FORMAT_UNKNOWN,
-		.SampleDesc = { .Count = 1 },
-		.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-		.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
-	};
-	com_ptr<ID3D12Resource> resource;
-	device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, initial_state, nullptr, IID_PPV_ARGS(resource.put()));
-	return resource;
+	const int flags = static_cast<int>(D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS) | (acceleration_structure ? static_cast<int>(D3D12_RESOURCE_FLAG_RAYTRACING_ACCELERATION_STRUCTURE) : 0);
+	return create_buffer_resource(device, heap, size, static_cast<D3D12_RESOURCE_FLAGS>(flags));
 }
 
 auto gse::directx::create_timestamp_query_heap(ID3D12Device* device, const std::uint32_t count) -> com_ptr<ID3D12QueryHeap> {
@@ -1675,19 +1782,7 @@ auto gse::directx::create_readback_buffer(ID3D12Device* device, const std::uint6
 	const D3D12_HEAP_PROPERTIES heap = {
 		.Type = D3D12_HEAP_TYPE_READBACK,
 	};
-	const D3D12_RESOURCE_DESC desc = {
-		.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
-		.Width = size == 0 ? 1 : size,
-		.Height = 1,
-		.DepthOrArraySize = 1,
-		.MipLevels = 1,
-		.Format = DXGI_FORMAT_UNKNOWN,
-		.SampleDesc = { .Count = 1 },
-		.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-	};
-	com_ptr<ID3D12Resource> resource;
-	device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(resource.put()));
-	return resource;
+	return create_buffer_resource(device, heap, size, D3D12_RESOURCE_FLAG_NONE);
 }
 
 auto gse::directx::resolve_timestamp_query(ID3D12GraphicsCommandList* list, ID3D12QueryHeap* heap, ID3D12Resource* readback, const std::uint32_t index) -> void {
@@ -1962,9 +2057,7 @@ auto gse::directx::create_sampler_descriptor(ID3D12Device* device, const sampler
 	device->CreateSampler(&desc, handle);
 }
 
-auto gse::directx::create_bindless_root_signature(ID3D12Device* device, const std::uint32_t num_root_constants) -> com_ptr<ID3D12RootSignature> {
-	const std::uint32_t push_constants = 32;
-	const std::uint32_t binding_constants = num_root_constants > push_constants ? num_root_constants - push_constants : num_root_constants;
+auto gse::directx::create_bindless_root_signature(ID3D12Device* device, const std::uint32_t push_constants, const std::uint32_t binding_constants) -> com_ptr<ID3D12RootSignature> {
 	const D3D12_ROOT_PARAMETER params[2] = {
 		{
 			.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
@@ -2042,24 +2135,7 @@ auto gse::directx::create_gpu_upload_buffer(ID3D12Device* device, const std::uin
 		.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
 		.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
 	};
-
-	const D3D12_RESOURCE_DESC desc = {
-		.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
-		.Width = size == 0 ? 1 : size,
-		.Height = 1,
-		.DepthOrArraySize = 1,
-		.MipLevels = 1,
-		.Format = DXGI_FORMAT_UNKNOWN,
-		.SampleDesc = {
-			.Count = 1,
-		},
-		.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-		.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
-	};
-
-	com_ptr<ID3D12Resource> resource;
-	device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(resource.put()));
-	return resource;
+	return create_buffer_resource(device, heap, size, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 }
 
 auto gse::directx::supports_unordered_access(ID3D12Resource* resource) -> bool {

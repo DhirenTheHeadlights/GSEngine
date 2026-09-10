@@ -90,11 +90,17 @@ export namespace gse::network {
 		[[= shared]] std::uint8_t connected_players = 0;
 		[[= shared]] std::uint8_t connected_max_players = 0;
 		std::unique_ptr<client> client_ptr;
+		id accepted_controller{};
 		std::vector<std::shared_ptr<discovery_provider>> providers;
 		std::vector<std::move_only_function<void(context&)>> deferred;
 		bool auto_connect_pending = true;
 		bool auto_connect_rejected = false;
 		interval_timer<> auto_connect_timer{ seconds(2.f) };
+		interval_timer<> stats_timer{ seconds(2.f) };
+		std::uint32_t stat_messages = 0;
+		std::uint32_t stat_upserts = 0;
+		std::uint32_t stat_removes = 0;
+		std::unordered_map<std::string_view, std::uint32_t> stat_upserts_by_type;
 	};
 
 	template <typename MessagePack, typename... Components>
@@ -238,11 +244,14 @@ auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, da
 
 	d.client_ptr->poll([&ctx, &d, &assets_d, &ents, requests_out, messages_out](inbound_message& msg) {
 		read_bitstream stream(msg.payload);
+		++d.stat_messages;
 
 		const bool is_component = match_and_apply_components<type_pack<Components...>>(
 			stream,
 			msg.id,
 			[&]<typename T>(const component_upsert<T>& m) {
+				++d.stat_upserts;
+				++d.stat_upserts_by_type[type_tag<T>()];
 				d.deferred.push_back([entity = m.owner_id, payload = m.data, assets_d, ents](context& ctx) {
 					ents.ensure_active(entity);
 					auto* c = ctx.add_component<T>(entity);
@@ -251,6 +260,7 @@ auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, da
 				});
 			},
 			[&]<typename T>(const component_remove<T>& m) {
+				++d.stat_removes;
 				if (!m.owner_id.exists()) {
 					return;
 				}
@@ -262,6 +272,9 @@ auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, da
 					}
 					else {
 						ctx.remove_component<T>(entity);
+						if (ents.exists(entity) && !ents.has_components(entity)) {
+							ents.remove(entity);
+						}
 					}
 				});
 			}
@@ -275,6 +288,10 @@ auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, da
 			stream,
 			msg.id,
 			[&](const auto& m) {
+				if (m.controller_id == d.accepted_controller) {
+					return;
+				}
+				d.accepted_controller = m.controller_id;
 				requests_out.push<set_networked_request>({
 					.value = true,
 				});
@@ -334,6 +351,26 @@ auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, da
 
 	d.client_ptr->tick();
 	d.connection_state = d.client_ptr->current_state();
+
+	if (d.stats_timer.tick() && d.connection_state == client::state::connected) {
+		std::string by_type;
+		for (const auto& [name, count] : d.stat_upserts_by_type) {
+			by_type += std::format("{} {}, ", name, count);
+		}
+		log::println(
+			log::category::network,
+			"client net: {} messages, {} component upserts ({}) {} component removes in the last window, {} packets dropped at the socket so far",
+			d.stat_messages,
+			d.stat_upserts,
+			by_type,
+			d.stat_removes,
+			d.client_ptr->dropped()
+		);
+		d.stat_messages = 0;
+		d.stat_upserts = 0;
+		d.stat_removes = 0;
+		d.stat_upserts_by_type.clear();
+	}
 
 	return {};
 }

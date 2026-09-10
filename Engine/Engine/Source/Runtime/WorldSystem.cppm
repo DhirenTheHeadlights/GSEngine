@@ -174,6 +174,9 @@ auto gse::current_scene(world_system::data& d) -> scene* {
 }
 
 auto gse::activate_scene(world_system::data& d, const id& scene_id) -> void {
+	if (d.active_scene == scene_id) {
+		return;
+	}
 	if (d.active_scene.has_value()) {
 		if (auto* old_scene = find_scene(d, d.active_scene.value())) {
 			old_scene->set_active(false);
@@ -230,11 +233,23 @@ auto gse::update_player_controllers(world_system::data& d, write<player_controll
 	const auto target = mine ? mine->controlled_entity_id : id{};
 
 	if (d.local_controlled_entity != target) {
+		if (d.local_controlled_entity.exists()) {
+			log::println(
+				log::level::warning,
+				log::category::network,
+				"world: lost possession of {}: controller {} {}, target {}",
+				d.local_controlled_entity.number(),
+				d.local_controller_id.number(),
+				mine ? "present" : "missing",
+				target.number()
+			);
+		}
 		d.local_controlled_entity = {};
 	}
 
 	if (target.exists() && !d.local_controlled_entity.exists() && ents.exists(target)) {
 		d.local_controlled_entity = target;
+		log::println(log::category::network, "world: possessing {} through controller {}", target.number(), d.local_controller_id.number());
 		player_out.push<world_system::possess_player_request>({
 			.entity = target,
 		});

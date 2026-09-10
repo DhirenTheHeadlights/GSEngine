@@ -72,15 +72,82 @@ export namespace gse::network {
 
 		auto resend_reliable() -> void;
 
+		static auto set_simulation(
+			std::uint32_t latency_ms,
+			std::uint32_t loss_permille
+		) -> void;
+
+		auto dropped() const -> std::uint64_t;
+
 	private:
+		struct delayed_packet {
+			time_t<std::uint64_t, milliseconds> due;
+			raw_packet packet;
+		};
+
 		auto start_thread() -> void;
+
+		auto take_incoming(
+			raw_packet& out
+		) -> bool;
+
+		auto send_ack(
+			const address& to,
+			remote_peer& peer,
+			time_t<std::uint64_t, milliseconds> now
+		) -> void;
 
 		udp_socket m_socket;
 		std::unordered_map<address, remote_peer> m_peers;
 		spsc_ring_buffer<raw_packet, 1024> m_incoming;
 		mpsc_ring_buffer<raw_packet, 1024> m_outgoing;
-		std::jthread m_thread;
+		std::deque<delayed_packet> m_delayed;
+		std::minstd_rand m_loss_rng{ 0x5eedu };
+		std::atomic<std::uint64_t> m_dropped{ 0 };
+		task::thread m_thread;
 	};
+}
+
+auto gse::network::endpoint::dropped() const -> std::uint64_t {
+	return m_dropped.load(std::memory_order_relaxed);
+}
+
+namespace gse::network {
+	std::uint32_t simulated_latency_ms = 0;
+	std::uint32_t simulated_loss_permille = 0;
+}
+
+auto gse::network::endpoint::set_simulation(const std::uint32_t latency_ms, const std::uint32_t loss_permille) -> void {
+	simulated_latency_ms = latency_ms;
+	simulated_loss_permille = loss_permille;
+	if (latency_ms > 0 || loss_permille > 0) {
+		log::println(log::category::network, "network simulation: {} ms one-way latency, {} permille loss on every received packet", latency_ms, loss_permille);
+	}
+}
+
+auto gse::network::endpoint::take_incoming(raw_packet& out) -> bool {
+	if (simulated_latency_ms == 0 && simulated_loss_permille == 0) {
+		return m_incoming.pop(out);
+	}
+
+	const auto now = system_clock::now<time_t<std::uint64_t, milliseconds>>();
+	raw_packet arrived;
+	while (m_incoming.pop(arrived)) {
+		if (simulated_loss_permille > 0 && std::uniform_int_distribution<std::uint32_t>(0, 999)(m_loss_rng) < simulated_loss_permille) {
+			continue;
+		}
+		m_delayed.push_back({
+			.due = now + milliseconds(std::uint64_t{ simulated_latency_ms }),
+			.packet = arrived,
+		});
+	}
+
+	if (m_delayed.empty() || m_delayed.front().due > now) {
+		return false;
+	}
+	out = m_delayed.front().packet;
+	m_delayed.pop_front();
+	return true;
 }
 
 gse::network::endpoint::endpoint() = default;
@@ -112,9 +179,7 @@ auto gse::network::endpoint::local_address() const -> std::optional<address> {
 }
 
 auto gse::network::endpoint::start_thread() -> void {
-	m_thread = std::jthread([this](const std::stop_token& st) {
-		log::name_thread(log::thread_role::network);
-
+	m_thread = task::spawn(log::thread_role::network, [this](const std::stop_token& st) {
 		const time_t<std::uint32_t> max_sleep = milliseconds(4);
 		std::array<std::byte, max_packet_size> buffer;
 
@@ -127,6 +192,7 @@ auto gse::network::endpoint::start_thread() -> void {
 				pkt.size = received->bytes_read;
 				std::memcpy(pkt.buffer.data(), buffer.data(), received->bytes_read);
 				if (!m_incoming.push(pkt)) {
+					m_dropped.fetch_add(1, std::memory_order_relaxed);
 					break;
 				}
 			}
@@ -163,7 +229,7 @@ auto gse::network::endpoint::poll(const std::function<void(inbound_message&)>& o
 	constexpr std::size_t max_packets_per_poll = 256;
 
 	raw_packet pkt;
-	for (std::size_t processed = 0; processed < max_packets_per_poll && m_incoming.pop(pkt); ++processed) {
+	for (std::size_t processed = 0; processed < max_packets_per_poll && take_incoming(pkt); ++processed) {
 		const std::span data(pkt.buffer.data(), pkt.size);
 		read_bitstream stream(data);
 
@@ -173,6 +239,15 @@ auto gse::network::endpoint::poll(const std::function<void(inbound_message&)>& o
 		if (auto* peer = find_peer(pkt.peer)) {
 			peer->process_acks(header.ack, header.ack_bits);
 			peer->ingest_packet_sequence(header.sequence);
+			if (id != 0) {
+				peer->note_received();
+				if (const auto now = system_clock::now<time_t<std::uint64_t, milliseconds>>(); peer->ack_owed_since(now, milliseconds(std::uint64_t{ 30 }))) {
+					send_ack(pkt.peer, *peer, now);
+				}
+			}
+		}
+		if (id == 0) {
+			continue;
 		}
 
 		const auto remaining = stream.remaining_bytes();
@@ -215,9 +290,34 @@ auto gse::network::endpoint::resend_reliable() -> void {
 			m_outgoing.push(pkt);
 
 			msg->sent_time = system_clock::now<time_t<std::uint64_t, milliseconds>>();
+			peer.note_sent(msg->sent_time);
 			++msg->send_count;
 		}
 	}
+
+	const time_t<std::uint64_t, milliseconds> ack_idle = milliseconds(std::uint64_t{ 30 });
+	const auto now = system_clock::now<time_t<std::uint64_t, milliseconds>>();
+	for (auto& [addr, peer] : m_peers) {
+		if (peer.ack_owed_since(now, ack_idle)) {
+			send_ack(addr, peer, now);
+		}
+	}
+}
+
+auto gse::network::endpoint::send_ack(const address& to, remote_peer& peer, const time_t<std::uint64_t, milliseconds> now) -> void {
+	raw_packet pkt;
+	pkt.peer = to;
+	const packet_header header{
+		.sequence = ++peer.sequence(),
+		.ack = peer.remote_ack_sequence(),
+		.ack_bits = peer.remote_ack_bitfield()
+	};
+	write_bitstream stream(pkt.buffer);
+	stream.write(header);
+	stream.write(std::uint64_t{ 0 });
+	pkt.size = stream.bytes_written();
+	m_outgoing.push(pkt);
+	peer.note_sent(now);
 }
 
 template <gse::network::is_network_message T>
@@ -246,4 +346,7 @@ auto gse::network::endpoint::send(const T& msg, const address& to, const bool re
 	}
 
 	m_outgoing.push(pkt);
+	if (peer) {
+		peer->note_sent(system_clock::now<time_t<std::uint64_t, milliseconds>>());
+	}
 }

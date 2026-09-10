@@ -4,12 +4,11 @@ module;
 
 module gse.log;
 
-import std;
-
 import gse.config;
 import gse.meta;
 import gse.moodycamel;
 import gse.win32;
+import std;
 
 namespace gse::log {
 	auto log_file_path() -> std::filesystem::path;
@@ -447,7 +446,7 @@ gse::log::logger::~logger() {
 	logger_alive.store(false, std::memory_order_relaxed);
 	set_async(false);
 
-	std::lock_guard lock(m_sink_mutex);
+	std::lock_guard _(m_sink_mutex);
 	queued_record qr;
 	while (m_queue.try_dequeue(qr)) {
 		if (qr.type == queued_record::kind::log) {
@@ -568,12 +567,12 @@ auto gse::log::logger::dump_backtrace_locked() -> void {
 }
 
 auto gse::log::logger::dump_backtrace() -> void {
-	std::lock_guard sink_lock(m_sink_mutex);
+	std::lock_guard _(m_sink_mutex);
 	dump_backtrace_locked();
 }
 
 auto gse::log::logger::clear_backtrace() -> void {
-	std::lock_guard sink_lock(m_sink_mutex);
+	std::lock_guard _(m_sink_mutex);
 	m_backtrace.clear();
 }
 
@@ -583,7 +582,7 @@ auto gse::log::logger::run() -> void {
 	for (;;) {
 		if (!m_items.try_acquire_for(std::chrono::seconds(1))) {
 			if (unflushed) {
-				std::lock_guard sink_lock(m_sink_mutex);
+				std::lock_guard _(m_sink_mutex);
 				for (auto& s : m_sinks) {
 					s->flush();
 				}
@@ -608,7 +607,7 @@ auto gse::log::logger::run() -> void {
 		std::uint64_t flush_token = 0;
 		bool terminate = false;
 		{
-			std::lock_guard sink_lock(m_sink_mutex);
+			std::lock_guard _(m_sink_mutex);
 			for (const auto& qr : batch) {
 				if (qr.type == queued_record::kind::terminate) {
 					terminate = true;
@@ -636,7 +635,7 @@ auto gse::log::logger::run() -> void {
 
 		if (flush_token != 0) {
 			{
-				std::lock_guard fl(m_flush_mutex);
+				std::lock_guard _(m_flush_mutex);
 				if (flush_token > m_flush_done.load(std::memory_order_relaxed)) {
 					m_flush_done.store(flush_token, std::memory_order_relaxed);
 				}
@@ -666,7 +665,7 @@ auto gse::log::logger::write_line(const level lvl, const category cat, const std
 
 	if (lvl == level::fatal) {
 		flush();
-		std::lock_guard sink_lock(m_sink_mutex);
+		std::lock_guard _(m_sink_mutex);
 		dump_backtrace_locked();
 		const record rec{
 			.lvl = lvl,
@@ -682,7 +681,7 @@ auto gse::log::logger::write_line(const level lvl, const category cat, const std
 		for (auto& s : m_sinks) {
 			s->flush();
 		}
-		std::terminate();
+		return;
 	}
 
 	if (m_async.load(std::memory_order_acquire)) {
@@ -709,7 +708,7 @@ auto gse::log::logger::write_line(const level lvl, const category cat, const std
 			.prefix = std::string(prefix),
 			.message = std::move(message),
 		};
-		std::lock_guard sink_lock(m_sink_mutex);
+		std::lock_guard _(m_sink_mutex);
 		if (process(qr)) {
 			for (auto& s : m_sinks) {
 				s->flush();
@@ -718,7 +717,7 @@ auto gse::log::logger::write_line(const level lvl, const category cat, const std
 		return;
 	}
 
-	std::lock_guard sink_lock(m_sink_mutex);
+	std::lock_guard _(m_sink_mutex);
 	const record rec{
 		.lvl = lvl,
 		.cat = cat,
@@ -736,7 +735,7 @@ auto gse::log::logger::write_line(const level lvl, const category cat, const std
 }
 
 auto gse::log::logger::add_sink(std::unique_ptr<sink> s) -> sink* {
-	std::lock_guard lock(m_sink_mutex);
+	std::lock_guard _(m_sink_mutex);
 	return m_sinks.emplace_back(std::move(s)).get();
 }
 
@@ -763,7 +762,7 @@ auto gse::log::logger::set_async(const bool enabled) -> void {
 		m_worker.join();
 	}
 
-	std::lock_guard sink_lock(m_sink_mutex);
+	std::lock_guard _(m_sink_mutex);
 	queued_record qr;
 	while (m_queue.try_dequeue(qr)) {
 		if (qr.type == queued_record::kind::log) {
@@ -784,7 +783,7 @@ auto gse::log::logger::set_async(const bool enabled) -> void {
 
 auto gse::log::logger::flush() -> void {
 	if (!m_async.load(std::memory_order_acquire)) {
-		std::lock_guard sink_lock(m_sink_mutex);
+		std::lock_guard _(m_sink_mutex);
 		for (auto& s : m_sinks) {
 			s->flush();
 		}

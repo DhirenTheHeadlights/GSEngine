@@ -1,11 +1,10 @@
 module gse.ide.agent:panel_impl;
 
-import std;
 import gse;
-import gse.win32;
-
 import gse.ide.config;
 import gse.ide.navigation;
+import gse.win32;
+import std;
 
 import :blame;
 import :chats;
@@ -111,6 +110,49 @@ auto gse::ide::agent::agent_context_tag() -> id {
 	return find_or_generate_id("agent_transcript_context");
 }
 
+auto gse::ide::agent::local_time_label(const std::int64_t unix_seconds) -> std::string {
+	const std::time_t stamp = unix_seconds;
+	const std::tm* local = std::localtime(&stamp);
+	if (!local) {
+		return {};
+	}
+
+	std::array<char, 32> out{};
+	const std::size_t written = std::strftime(out.data(), out.size(), "%Y-%m-%d %H:%M:%S", local);
+	return std::string(out.data(), written);
+}
+
+auto gse::ide::agent::usage_label(const usage_window& window) -> std::string {
+	const std::int64_t remaining = window.resets_at - unix_now();
+	if (remaining <= 0) {
+		return std::format("{:.0f}%", window.utilization);
+	}
+	return remaining >= 3600
+		? std::format("{:.0f}% \xC2\xB7 resets in {}h {}m", window.utilization, remaining / 3600, remaining % 3600 / 60)
+		: std::format("{:.0f}% \xC2\xB7 resets in {}m", window.utilization, remaining / 60);
+}
+
+auto gse::ide::agent::tool_output_label(const session_info& info) -> std::string {
+	if (info.tool_bytes <= 0) {
+		return "-";
+	}
+
+	const auto size_label = [](const std::int64_t bytes) {
+		if (bytes >= 1024 * 1024) {
+			return std::format("{:.1f} MB", static_cast<double>(bytes) / (1024.0 * 1024.0));
+		}
+		if (bytes >= 1024) {
+			return std::format("{:.0f} KB", static_cast<double>(bytes) / 1024.0);
+		}
+		return std::format("{} B", bytes);
+	};
+
+	if (info.tool_peak <= 0) {
+		return size_label(info.tool_bytes);
+	}
+	return std::format("{} \xC2\xB7 biggest {} from {}", size_label(info.tool_bytes), size_label(info.tool_peak), info.tool_peak_name);
+}
+
 auto gse::ide::agent::draw_session_info(const gui::draw_context& ctx, data& d, const rectf& body) -> void {
 	if (!d.info_open) {
 		return;
@@ -139,10 +181,16 @@ auto gse::ide::agent::draw_session_info(const gui::draw_context& ctx, data& d, c
 		{ "turns", std::format("{}", s->info.turns) },
 		{ "api time", std::format("{:.1f}s", s->info.api_time.as<seconds>()) },
 		{ "api equivalent", std::format("${:.4f}", s->info.cost) },
+		{ "tool output", tool_output_label(s->info) },
 	};
 
 	if (const std::size_t asleep = hibernating_count(d); asleep > 0) {
 		rows.emplace_back("observers", std::format("{} chat(s) waiting for a build", asleep));
+	}
+
+	rows.emplace_back("account usage", d.usage.windows.empty() && d.usage.error.empty() ? "fetching..." : d.usage.error);
+	for (const usage_window& window : d.usage.windows) {
+		rows.emplace_back(window.label, usage_label(window));
 	}
 
 	if (d.sessions.size() > 1) {
@@ -173,7 +221,7 @@ auto gse::ide::agent::draw_session_info(const gui::draw_context& ctx, data& d, c
 	const float top_y = std::min(body.top(), d.info_anchor.bottom() - pad * 0.5f);
 
 	const rectf panel = rectf::from_position_size({ px, top_y }, { pw, ph });
-	const auto scope = ctx.scoped_layer(render_layer::popup);
+	const auto _ = ctx.scoped_layer(render_layer::popup);
 
 	ctx.queue_sprite({
 		.rect = rectf::from_position_size({ px + 4.f * sty.scale_factor, top_y - 4.f * sty.scale_factor }, { pw, ph }),
@@ -258,7 +306,7 @@ auto gse::ide::agent::draw_history(gui::builder& ui, data& d, const rectf& body)
 	const float top_y = std::min(body.top(), d.history_anchor.bottom() - pad * 0.5f);
 
 	const rectf panel = rectf::from_position_size({ px, top_y }, { pw, ph });
-	const auto scope = ctx.scoped_layer(render_layer::popup);
+	const auto _ = ctx.scoped_layer(render_layer::popup);
 
 	ctx.queue_sprite({
 		.rect = rectf::from_position_size({ px + 4.f * sty.scale_factor, top_y - 4.f * sty.scale_factor }, { pw, ph }),
@@ -381,7 +429,7 @@ auto gse::ide::agent::draw_overview(gui::builder& ui, data& d, const rectf& area
 	const float pad = sty.padding;
 	const float fs = sty.font_size;
 	const float line_h = text_view->line_height(fs) * 1.3f;
-	const float row_h = line_h * 3.f + pad;
+	const float _ = line_h * 3.f + pad;
 
 	if (d.sessions.empty()) {
 		constexpr std::string_view empty = "No agents yet - open a chat with the + tab";
@@ -865,15 +913,16 @@ auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, const rectf& ar
 	const std::string_view hovered_text = s->buffer.line(hovered);
 	const link_marker* hit = ctx.hovers(area) && !tail_press.hovered && at.column < hovered_text.size() ? link_at(*s, hovered) : nullptr;
 	const std::optional<std::uint32_t> link = hit ? std::optional(hit->row) : std::nullopt;
+	const group_marker* toggle = ctx.hovers(area) && !tail_press.hovered ? marker_at(*s, hovered) : nullptr;
 
 	std::vector<gui::text_underline> underlines;
-	if (link) {
+	if (link || toggle) {
 		const std::size_t start = hovered_text.find_first_not_of(' ');
 		underlines.push_back({
 			.line = hovered,
 			.start_col = static_cast<std::uint32_t>(start == std::string_view::npos ? 0 : start),
 			.end_col = static_cast<std::uint32_t>(hovered_text.size()),
-			.color = sty.color_file,
+			.color = link ? sty.color_file : sty.color_accent,
 		});
 		jump_out.push<set_cursor_shape_request>({
 			.shape = cursor_shape::hand,
@@ -881,6 +930,9 @@ auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, const rectf& ar
 	}
 
 	const auto context_row = s->line_rows[hovered];
+	if (ctx.hovers(area) && !tail_press.hovered && context_row < s->rows.size() && !hovered_text.empty() && s->rows[context_row].stamped > 0) {
+		ctx.set_tooltip(gui::ids::make(std::format("##agent_row_{}_{}", s->id, context_row)), local_time_label(s->rows[context_row].stamped));
+	}
 	const bool context_mine = ctx.hovers(area) && context_row < s->rows.size() && s->rows[context_row].kind == row_kind::user;
 	const std::optional<std::uint32_t> rewind = context_mine ? rewind_anchor(*s, context_row) : std::nullopt;
 
@@ -900,10 +952,8 @@ auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, const rectf& ar
 	}
 
 	if (ctx.clicked_in_rect(area)) {
-		const auto group = std::ranges::find(s->groups, hovered, &group_marker::line);
-
-		if (group != s->groups.end() && group->rows > 1) {
-			toggle_group(*s, static_cast<std::size_t>(std::distance(s->groups.begin(), group)));
+		if (toggle) {
+			toggle_marker(*s, *toggle);
 			sync_transcript(*s, sty, metrics);
 		}
 		else if (link) {

@@ -76,6 +76,7 @@ rm -f "$result"
 {
 	echo "id $id"
 	echo "agent $agent"
+	echo "cwd $(pwd -W 2>/dev/null || pwd)"
 	echo "prompt"
 	printf '%s\n' "$prompt"
 } > "$inbox/hibernate/$id.partial"
@@ -85,7 +86,7 @@ waited=0
 while [ "$waited" -lt 15 ]; do
 	if [ -e "$result" ]; then
 		status=$(sed -n '2s/^status //p' "$result")
-		tail -n +3 "$result"
+		tail -n +4 "$result"
 		rm -f "$result"
 		[ "$status" = "ok" ] && exit 0
 		echo "gse-hibernate: not hibernating - keep working normally" >&2

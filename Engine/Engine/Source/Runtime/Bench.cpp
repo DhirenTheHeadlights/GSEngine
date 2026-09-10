@@ -1,5 +1,16 @@
 module gse.runtime:bench_impl;
 
+import gse.concurrency;
+import gse.config;
+import gse.containers;
+import gse.core;
+import gse.diag;
+import gse.ecs;
+import gse.fs;
+import gse.log;
+import gse.physics;
+import gse.scenario;
+import gse.time;
 import std;
 
 import :bench;
@@ -7,18 +18,6 @@ import :engine;
 import :scene;
 import :state_dump;
 import :world_system;
-
-import gse.core;
-import gse.containers;
-import gse.time;
-import gse.concurrency;
-import gse.diag;
-import gse.ecs;
-import gse.physics;
-import gse.log;
-import gse.config;
-import gse.fs;
-import gse.scenario;
 
 namespace gse {
 	constexpr int bench_settle_frame_limit = 6000;
@@ -193,7 +192,9 @@ auto gse::compare_against_baseline(const bench_config& config, const std::filesy
 }
 
 auto gse::begin_bench(const bench_config& config) -> void {
-	system_clock::set_fixed_step_override(1);
+	if (!config.real_time) {
+		system_clock::set_fixed_step_override(1);
+	}
 	profile::set_enabled(true);
 	profile::set_frame_recording(true);
 	profile::set_recording_capacity(static_cast<std::size_t>(std::max(config.frames, 1)));
@@ -263,7 +264,7 @@ auto gse::step_bench(const bench_config& config, bench_state& state, engine& e) 
 				if (!config.state_dump_out.empty()) {
 					state.state_dump.open(config.state_dump_out, std::ios::binary | std::ios::trunc);
 					if (state.state_dump) {
-						binary_writer header(state.state_dump, state_dump_magic, state_dump_version);
+						binary_writer _(state.state_dump, state_dump_magic, state_dump_version);
 						log::println(log::category::general, "bench: recording per-frame world state to {}", config.state_dump_out);
 					}
 					else {

@@ -61,6 +61,8 @@ export namespace gse::network {
 
 		auto current_state() const -> state;
 
+		auto dropped() const -> std::uint64_t;
+
 		template <is_network_message T>
 		auto send(
 			const T& msg,
@@ -139,6 +141,10 @@ auto gse::network::client::tick() -> void {
 
 auto gse::network::client::current_state() const -> state {
 	return m_state;
+}
+
+auto gse::network::client::dropped() const -> std::uint64_t {
+	return m_endpoint.dropped();
 }
 
 auto gse::network::client::poll(const std::function<void(inbound_message&)>& on_message) -> void {

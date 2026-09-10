@@ -37,6 +37,10 @@ export namespace gse::ide::config {
 
 	auto primary() -> const worktree&;
 
+	auto owning_worktree(
+		const std::filesystem::path& file
+	) -> const worktree*;
+
 	auto worktree_for(
 		const std::filesystem::path& file
 	) -> const worktree&;

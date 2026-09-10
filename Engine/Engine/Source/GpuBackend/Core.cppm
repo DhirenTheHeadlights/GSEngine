@@ -134,7 +134,7 @@ template <typename T>
 auto gse::gpu::must(expected<T> value, const std::source_location loc) -> T {
 	if (!value) {
 		assert(false, "gpu operation failed (result {}) at {}:{}", static_cast<std::int32_t>(value.error()), loc.file_name(), loc.line());
-		std::abort();
+		fatal_exit(3);
 	}
 	return std::move(*value);
 }

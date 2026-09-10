@@ -1,8 +1,8 @@
 export module gse.ide.git:git_status;
 
-import std;
 import gse;
 import gse.ide.analysis;
+import std;
 
 export namespace gse::ide::git {
 	struct file_status_info {
@@ -240,7 +240,7 @@ auto gse::ide::git::read_file_text(const std::filesystem::path& path) -> std::ex
 
 auto gse::ide::git::query_status(const std::filesystem::path& repo_root) -> repository_result {
 	const std::filesystem::path out_path = analysis::process::temporary_path("git_status", "txt");
-	const auto remove_output = make_scope_exit([&out_path] {
+	const auto _ = make_scope_exit([&out_path] {
 		std::error_code ec;
 		std::filesystem::remove(out_path, ec);
 	});
@@ -285,7 +285,7 @@ auto gse::ide::git::query_status(const std::filesystem::path& repo_root) -> repo
 
 auto gse::ide::git::initialize(const std::filesystem::path& root) -> std::expected<void, std::string> {
 	const std::filesystem::path out_path = analysis::process::temporary_path("git_init", "txt");
-	const auto remove_output = make_scope_exit([&out_path] {
+	const auto _ = make_scope_exit([&out_path] {
 		std::error_code ec;
 		std::filesystem::remove(out_path, ec);
 	});
@@ -315,10 +315,10 @@ auto gse::ide::git::initialize(const std::filesystem::path& root) -> std::expect
 
 auto gse::ide::git::init_runner::start(const std::shared_ptr<init_check>& check, std::filesystem::path root) -> void {
 	check->root = root;
-	std::thread([check, root = std::move(root)] {
+	task::post_background([check, root = std::move(root)] {
 		check->result = initialize(root);
 		check->done.store(true, std::memory_order_release);
-	}).detach();
+	}, trace_id<"git::init">());
 }
 
 auto gse::ide::git::status_map::status_of(const std::filesystem::path& path) const -> file_status {
@@ -397,11 +397,11 @@ auto gse::ide::git::find_repo_root(const std::filesystem::path& start) -> repo_d
 }
 
 auto gse::ide::git::status_runner::start(const std::shared_ptr<status_check>& check, std::vector<std::filesystem::path> repo_roots) -> void {
-	std::thread([check, repo_roots = std::move(repo_roots)] {
+	task::post_background([check, repo_roots = std::move(repo_roots)] {
 		check->results.reserve(repo_roots.size());
 		for (const std::filesystem::path& repo_root : repo_roots) {
 			check->results.push_back(query_status(repo_root));
 		}
 		check->done.store(true, std::memory_order_release);
-	}).detach();
+	}, trace_id<"git::status">());
 }

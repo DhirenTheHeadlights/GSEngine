@@ -1,21 +1,20 @@
 export module gse.os:actions;
 
-import std;
-
-import gse.core;
-import gse.meta;
-import gse.containers;
-import gse.time;
+import gse.assert;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
-import gse.math;
-import gse.assert;
 import gse.log;
+import gse.math;
+import gse.meta;
+import gse.time;
+import std;
 
 import :input;
-import :keys;
 import :input_state;
+import :keys;
 
 export namespace gse {
 	enum struct key_modifier : std::uint8_t {
@@ -989,7 +988,7 @@ auto gse::actions::push_binding_change(const settings::change_request_writer cha
 auto gse::actions::settings_record(data& d, const settings::draw_page_thunk page) -> settings::register_settings_type {
 	std::vector<settings::settings_key_info> keys;
 	keys.reserve(d.pending_actions.size());
-	for (const auto& [defaults, action_id] : d.pending_actions) {
+	for (const auto& [_, action_id] : d.pending_actions) {
 		keys.push_back({ .key = std::string(action_id.tag()), .scope = settings::scope_kind::user });
 	}
 

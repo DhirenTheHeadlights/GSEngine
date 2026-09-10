@@ -84,6 +84,10 @@ export namespace gse {
 			id owner
 		) const -> bool;
 
+		auto has_components(
+			id owner
+		) const -> bool;
+
 		template <typename T>
 		auto add_component(
 			id owner,
@@ -144,6 +148,7 @@ export namespace gse {
 			std::unique_ptr<void, void (*)(void*)> storage{ nullptr, nullptr };
 			bool (*activate_pending)(void*, id) = nullptr;
 			void (*remove_owner)(void*, id) = nullptr;
+			bool (*contains)(void*, id) = nullptr;
 		};
 
 		template <typename T>
@@ -298,6 +303,15 @@ auto gse::registry::active(const id owner) const -> bool {
 	return m_active.contains(owner);
 }
 
+auto gse::registry::has_components(const id owner) const -> bool {
+	for (const auto& slot : std::views::values(m_storages)) {
+		if (slot.storage && slot.contains(slot.storage.get(), owner)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 template <typename T>
 auto gse::registry::storage() -> component_storage<T>& {
 	const auto type_idx = id_of<T>();
@@ -314,6 +328,9 @@ auto gse::registry::storage() -> component_storage<T>& {
 		};
 		slot.remove_owner = +[](void* ptr, const id owner) {
 			static_cast<component_storage<T>*>(ptr)->remove_owner(owner);
+		};
+		slot.contains = +[](void* ptr, const id owner) {
+			return static_cast<component_storage<T>*>(ptr)->try_get(owner) != nullptr;
 		};
 	}
 

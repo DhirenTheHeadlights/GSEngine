@@ -402,16 +402,16 @@ export namespace gse::ide::search {
 		std::atomic<std::uint64_t> symbol_generation = 0;
 		mutable std::shared_mutex mutex;
 		std::mutex build_mutex;
-		std::condition_variable build_cv;
+		std::condition_variable build_idle;
 		bool build_requested = false;
-		bool build_stop = false;
+		bool build_scheduled = false;
+		std::stop_source stop;
 		std::optional<file_build_result> completed_files;
 		std::optional<symbol_index> completed_symbols;
 		std::unordered_map<file_id, symbol_overlay> symbol_overlays;
 		std::unordered_set<file_id> pending_symbol_files;
 		std::shared_ptr<const search_snapshot> current_search_snapshot;
 		std::string reported_partial_index;
-		std::jthread build_worker;
 
 		~index_state();
 
@@ -513,7 +513,7 @@ namespace gse::ide::search {
 	};
 
 	constexpr std::uint32_t tu_cache_magic = 0x47535455;
-	constexpr std::uint32_t tu_cache_version = 13;
+	constexpr std::uint32_t tu_cache_version = 14;
 
 	using analysis::interned_file_cache;
 	using indexed_path_cache = std::unordered_map<std::string, bool, transparent_hash, transparent_equal>;
@@ -526,11 +526,6 @@ namespace gse::ide::search {
 	) -> void;
 
 	auto build_symbols(
-		index_state& index,
-		std::stop_token stop
-	) -> void;
-
-	auto start_symbol_worker(
 		index_state& index
 	) -> void;
 
@@ -783,6 +778,10 @@ namespace gse::ide::search {
 		std::uint32_t line
 	) -> std::string;
 
+	auto index_cancelled(
+		const index_state& index
+	) -> bool;
+
 	auto begin_index_phase(
 		index_state& index,
 		index_phase phase,
@@ -795,8 +794,7 @@ namespace gse::ide::search {
 
 	auto run_symbol_batch(
 		const symbol_batch_request& request,
-		index_state& index,
-		std::stop_token stop
+		index_state& index
 	) -> std::vector<analysis::tu_symbols>;
 
 	using analysis::intern_cached;
@@ -861,9 +859,8 @@ namespace gse::ide::search {
 		file_fingerprint_cache& file_fingerprints
 	) -> bool;
 
-	auto symbol_worker_loop(
-		std::stop_token stop,
-		index_state* index
+	auto symbol_build_job(
+		index_state& index
 	) -> void;
 
 	auto apply_symbol_overlay(

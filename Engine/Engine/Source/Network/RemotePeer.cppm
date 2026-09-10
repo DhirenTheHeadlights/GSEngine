@@ -47,15 +47,45 @@ export namespace gse::network {
 			time_t<std::uint64_t, milliseconds> retry_interval
 		) -> std::vector<pending_reliable_message*>;
 
+		auto note_received() -> void;
+
+		auto note_sent(
+			time_t<std::uint64_t, milliseconds> now
+		) -> void;
+
+		auto ack_owed_since(
+			time_t<std::uint64_t, milliseconds> now,
+			time_t<std::uint64_t, milliseconds> idle
+		) const -> bool;
+
 	private:
 		address m_address;
 
 		std::uint32_t m_sequence = 0;
 		std::uint32_t m_remote_ack_sequence = 0;
 		std::uint32_t m_remote_ack_bitfield = 0;
+		bool m_ack_owed = false;
+		std::uint32_t m_received_since_send = 0;
+		time_t<std::uint64_t, milliseconds> m_last_send = {};
 
 		std::vector<pending_reliable_message> m_pending_reliable;
 	};
+}
+
+auto gse::network::remote_peer::note_received() -> void {
+	m_ack_owed = true;
+	++m_received_since_send;
+}
+
+auto gse::network::remote_peer::note_sent(const time_t<std::uint64_t, milliseconds> now) -> void {
+	m_ack_owed = false;
+	m_received_since_send = 0;
+	m_last_send = now;
+}
+
+auto gse::network::remote_peer::ack_owed_since(const time_t<std::uint64_t, milliseconds> now, const time_t<std::uint64_t, milliseconds> idle) const -> bool {
+	constexpr std::uint32_t ack_window_fill = 16;
+	return m_ack_owed && (m_received_since_send >= ack_window_fill || now - m_last_send >= idle);
 }
 
 gse::network::remote_peer::remote_peer(const address& addr) : m_address(addr) {

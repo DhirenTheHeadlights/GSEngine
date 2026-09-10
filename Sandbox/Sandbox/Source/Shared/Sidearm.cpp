@@ -4,6 +4,7 @@ import std;
 import gse;
 
 import :sidearm;
+import :runtime_spawns;
 
 auto sandbox::sidearm::run(gse::context& ctx, data& d, const gse::shared_view<gse::actions::data> as, const gse::shared_view<gse::camera::data> cam_s, const gse::shared_view<gse::physics::data> phys_s, const gse::shared_view<gse::world_system::data> world_d, const gse::channel_read<gse::network::received<fire_request>> fire_in, const gse::channel_write<gse::network::send_request<fire_request>> fire_out, gse::read<character_controller::component> characters, gse::read<orbit_camera::component> orbits, gse::read<gse::player_controller> controllers, gse::write<component> sidearms, gse::structural<gse::physics::transform_component> round_transforms, gse::structural<gse::physics::motion_component>, gse::structural<gse::physics::collision_component>, gse::structural<gse::primitive_sphere_spec>) -> gse::async::task<> {
 	auto* scene = world_d.active_scene_ptr;
@@ -62,7 +63,7 @@ auto sandbox::sidearm::run(gse::context& ctx, data& d, const gse::shared_view<gs
 		const auto muzzle_offset = rise + sideways + reach;
 		const gse::vec3<gse::velocity> launch = forward * s.muzzle_speed;
 
-		const auto round = scene->build(std::format("Round_{}_{}", owner.number(), shot))
+		const auto round = scene->build(predicted_entity_name("Round", owner, shot))
 			.with<gse::physics::transform_component>({
 				.position = snapshot->position + muzzle_offset,
 			})

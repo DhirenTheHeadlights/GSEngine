@@ -1,16 +1,16 @@
 export module sandbox;
 
-import gse;
 
+export import :character_controller;
 export import :client;
 export import :client_ui;
 export import :crosshair_system;
 export import :dev_spawn_system;
 export import :entity_builders;
+export import :game_systems;
 export import :main_menu_screen;
 export import :net_setup;
 export import :network_screen;
-export import :character_controller;
 export import :orbit_camera;
 export import :pause_menu_system;
 export import :piston;
@@ -18,9 +18,12 @@ export import :player_spawner;
 export import :player_state;
 export import :player_state_broadcast;
 export import :player_sync;
+export import :role;
 export import :runtime_spawns;
 export import :sandbox_scene;
-export import :sidearm;
 export import :scenarios;
+export import :sidearm;
+export import :startup;
+export import :state_dump_tools;
 export import :tumbler;
 export import :world_loader;

@@ -1,7 +1,7 @@
 export module gse.ide.alloc;
 
-import std;
 import gse;
+import std;
 
 export namespace gse::ide {
 	struct alloc_view_state {
@@ -217,7 +217,7 @@ auto gse::ide::draw_alloc_panel(gui::builder& ui, const rectf& rect, alloc_view_
 	);
 
 	if (state.sites.empty()) {
-		const auto text_view = ctx.fonts.text.resolve();
+		const auto _ = ctx.fonts.text.resolve();
 		ctx.queue_text({
 			.font = ctx.fonts.text,
 			.text = alloc::enabled() ? "No sampled allocations yet." : "Sampling is paused.",

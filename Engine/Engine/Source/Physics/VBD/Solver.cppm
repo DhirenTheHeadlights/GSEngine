@@ -1,17 +1,18 @@
 export module gse.physics:vbd_solver;
 
+import gse.concurrency;
+import gse.containers;
+import gse.core;
+import gse.diag;
+import gse.log;
+import gse.math;
 import std;
 
-import gse.core;
-import gse.math;
-import gse.containers;
-import gse.concurrency;
-import gse.diag;
-import :vbd_constraints;
-import :vbd_constraint_graph;
-import :vbd_contact_cache;
-import :motion_component;
 import :contact_manifold;
+import :motion_component;
+import :vbd_constraint_graph;
+import :vbd_constraints;
+import :vbd_contact_cache;
 
 export namespace gse::vbd {
 	using time_step = time_t<float, seconds>;
@@ -59,6 +60,7 @@ export namespace gse::vbd {
 		std::uint32_t use_solve_fold = 0;
 		std::uint32_t color_cap = 0;
 		std::uint32_t sweep_workgroups = 0;
+		std::uint32_t trace_body = 0xFFFFFFFFu;
 	};
 
 	class solver {
@@ -173,11 +175,13 @@ export namespace gse::vbd {
 		) -> void;
 
 		auto update_dual(
-			float alpha
+			float alpha,
+			int iteration
 		) -> step_delta;
 
 		auto update_joint_dual(
-			time_squared h_squared
+			time_squared h_squared,
+			int iteration
 		) -> step_delta;
 
 		auto build_islands(
@@ -271,7 +275,7 @@ auto gse::vbd::solver::begin_frame(const std::span<const body_state> bodies, con
 	m_graph.clear();
 
 	{
-		trace::scope_guard sg{ trace_id<"vbd_cpu::cache_advance">() };
+		trace::scope_guard _{ trace_id<"vbd_cpu::cache_advance">() };
 		cache.advance();
 	}
 }
@@ -307,7 +311,7 @@ auto gse::vbd::solver::add_joint_constraint(const joint_constraint& j) -> void {
 }
 
 auto gse::vbd::solver::solve(const time_step dt) -> void {
-	trace::scope_guard sg_solve{ trace_id<"vbd::solve">() };
+	trace::scope_guard _{ trace_id<"vbd::solve">() };
 
 	const auto num_bodies = static_cast<std::uint32_t>(m_bodies.size());
 	const time_squared h_squared = dt * dt;
@@ -315,7 +319,7 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 	m_graph.sort_contacts_canonical();
 
 	{
-		trace::scope_guard sg{ trace_id<"vbd::coloring">() };
+		trace::scope_guard _{ trace_id<"vbd::coloring">() };
 		m_body_inactive.resize(num_bodies);
 		for (std::uint32_t i = 0; i < num_bodies; ++i) {
 			m_body_inactive[i] = static_cast<std::uint8_t>(m_bodies[i].locked || m_bodies[i].sleeping());
@@ -589,7 +593,7 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 	}
 
 	{
-		trace::scope_guard sg{ trace_id<"vbd::islands">() };
+		trace::scope_guard _{ trace_id<"vbd::islands">() };
 		build_islands(num_bodies);
 	}
 
@@ -683,7 +687,7 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 
 		for (const auto& body_color : m_graph.body_colors()) {
 			if (body_color.size() < parallel_threshold) {
-				trace::scope_guard sg{ trace_id<"vbd::gs_color_serial">() };
+				trace::scope_guard _{ trace_id<"vbd::gs_color_serial">() };
 				for (const auto bi : body_color) {
 					if (m_graph.is_jointed(bi)) {
 						continue;
@@ -728,7 +732,7 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 				);
 			}
 			else {
-				trace::scope_guard sg{ trace_id<"vbd::gs_island_serial">() };
+				trace::scope_guard _{ trace_id<"vbd::gs_island_serial">() };
 				for (const auto& island : islands) {
 					sweep_island(island);
 				}
@@ -736,7 +740,7 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		}
 
 		if (!m_graph.overflow_bodies().empty()) {
-			trace::scope_guard sg{ trace_id<"vbd::gs_overflow_serial">() };
+			trace::scope_guard _{ trace_id<"vbd::gs_overflow_serial">() };
 			for (const auto bi : m_graph.overflow_bodies()) {
 				step_colored_body(bi, h_squared, dt, alpha);
 			}
@@ -815,7 +819,7 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 	bool sweep_forward = true;
 
 	auto solve_iteration_ordered = [&](const float alpha) {
-		trace::scope_guard sg{ trace_id<"vbd::ordered_sweep">() };
+		trace::scope_guard _{ trace_id<"vbd::ordered_sweep">() };
 		if (sweep_forward) {
 			for (const auto bi : m_sweep_order) {
 				step_colored_body(bi, h_squared, dt, alpha);
@@ -842,7 +846,7 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 	};
 
 	{
-		trace::scope_guard sg{ trace_id<"vbd::iterations">() };
+		trace::scope_guard _{ trace_id<"vbd::iterations">() };
 		const int max_iterations = std::max(num_iterations, static_cast<int>(m_config.max_iterations));
 		length linear_threshold = m_config.convergence_threshold_linear;
 		angle angular_threshold = m_config.convergence_threshold_angular;
@@ -864,8 +868,8 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		};
 		for (int it = 0; it < max_iterations; ++it) {
 			solve_iteration(solve_alpha);
-			const auto contact_delta = update_dual(solve_alpha);
-			const auto joint_delta = update_joint_dual(h_squared);
+			const auto contact_delta = update_dual(solve_alpha, it);
+			const auto joint_delta = update_joint_dual(h_squared, it);
 			if (it + 1 < num_iterations) {
 				continue;
 			}
@@ -956,7 +960,7 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 	}
 
 	if (m_config.post_stabilize) {
-		trace::scope_guard sg{ trace_id<"vbd::post_stabilize">() };
+		trace::scope_guard _{ trace_id<"vbd::post_stabilize">() };
 		solve_iteration(0.0f);
 	}
 
@@ -1042,7 +1046,7 @@ auto gse::vbd::solver::build_islands(const std::uint32_t num_bodies) -> void {
 
 auto gse::vbd::solver::end_frame(std::vector<body_state>& bodies, contact_cache& cache) -> void {
 	{
-		trace::scope_guard sg{ trace_id<"vbd_cpu::end_frame::store">() };
+		trace::scope_guard _{ trace_id<"vbd_cpu::end_frame::store">() };
 		cache.reserve(m_graph.contact_constraints().size());
 
 		for (const auto& c : m_graph.contact_constraints()) {
@@ -1080,7 +1084,7 @@ auto gse::vbd::solver::end_frame(std::vector<body_state>& bodies, contact_cache&
 	}
 
 	{
-		trace::scope_guard sg{ trace_id<"vbd_cpu::end_frame::bodies_copy">() };
+		trace::scope_guard _{ trace_id<"vbd_cpu::end_frame::bodies_copy">() };
 		bodies.assign(m_bodies.begin(), m_bodies.end());
 	}
 }
@@ -1317,8 +1321,30 @@ auto gse::vbd::solver::perform_newton_step(const std::uint32_t body_idx, const t
 	return { lin_step, ang_step };
 }
 
-auto gse::vbd::solver::update_dual(const float alpha) -> step_delta {
+auto gse::vbd::solver::update_dual(const float alpha, const int iteration) -> step_delta {
 	auto& contacts = m_graph.contact_constraints();
+	if (m_config.trace_body != 0xFFFFFFFFu) {
+		for (const auto k : m_active_contacts) {
+			const auto& con = contacts[k];
+			if (con.body_a != m_config.trace_body && con.body_b != m_config.trace_body) {
+				continue;
+			}
+			const auto& body_a = m_bodies[con.body_a];
+			const auto& body_b = m_bodies[con.body_b];
+			const vec3<predicted_position> p_a = body_a.predicted_position + rotate_vector(body_a.predicted_orientation, con.local_anchor_a);
+			const vec3<predicted_position> p_b = body_b.predicted_position + rotate_vector(body_b.predicted_orientation, con.local_anchor_b);
+			const gap c = dot(con.normal, p_a - p_b) + m_config.collision_margin - con.c0[0] * alpha;
+			log::println(
+				log::category::physics,
+				"cpu dual it {} ci {}: C {:.7f} lambda {:.4f} pen {:.1f}",
+				iteration,
+				k,
+				c,
+				con.lambda[0],
+				con.penalty[0]
+			);
+		}
+	}
 	const auto worker_count = std::max<std::size_t>(1, task::thread_count());
 	std::inplace_vector<length, 64> per_worker_max;
 	for (std::size_t i = 0; i < worker_count; ++i) {
@@ -1698,8 +1724,32 @@ auto gse::vbd::solver::accumulate_joint_drive(const joint_constraint& constraint
 	m_solve_state[body_idx].angular_hessian += outer_product(j_drive, j_drive) * hessian_stiffness;
 }
 
-auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> step_delta {
+auto gse::vbd::solver::update_joint_dual(const time_squared h_squared, const int iteration) -> step_delta {
 	auto& joints = m_graph.joint_constraints();
+	if (m_config.trace_body != 0xFFFFFFFFu) {
+		for (std::size_t ji = 0; ji < joints.size(); ++ji) {
+			const auto& j = joints[ji];
+			if (j.body_a != m_config.trace_body && j.body_b != m_config.trace_body) {
+				continue;
+			}
+			const auto& body_a = m_bodies[j.body_a];
+			const auto& body_b = m_bodies[j.body_b];
+			const vec3<predicted_position> p_a = body_a.predicted_position + rotate_vector(body_a.predicted_orientation, j.local_anchor_a);
+			const vec3<predicted_position> p_b = body_b.predicted_position + rotate_vector(body_b.predicted_orientation, j.local_anchor_b);
+			const vec3<displacement> d = p_a - p_b;
+			log::println(
+				log::category::physics,
+				"cpu joint dual it {} ji {} type {}: d {:.7f} c0 {:.7f} lambda {:.4f} pen {:.1f}",
+				iteration,
+				ji,
+				static_cast<int>(j.type),
+				d,
+				j.pos_c0,
+				j.pos_lambda,
+				j.pos_penalty
+			);
+		}
+	}
 	const auto worker_count = std::max<std::size_t>(1, task::thread_count());
 	std::inplace_vector<step_delta, 64> per_worker_max;
 	for (std::size_t i = 0; i < worker_count; ++i) {

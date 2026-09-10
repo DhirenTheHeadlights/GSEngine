@@ -9,25 +9,35 @@ import :contact_manifold;
 import :motion_component;
 
 export namespace gse::vbd {
-	struct [[= shaders::shader_constant_block]] vbd_limits {
+	struct vbd_capacities {
 		std::uint32_t max_bodies = 20480;
 		std::uint32_t max_contacts = 262144;
 		std::uint32_t max_collision_pairs = 262144;
-		std::uint32_t max_colors = 16;
 		std::uint32_t max_joints = 8192;
 		std::uint32_t max_islands = 512;
 		std::uint32_t max_impulses = 4096;
-		std::uint32_t max_motors = 1024;
+		std::uint32_t max_motors = 4096;
+		std::uint32_t grid_table_size = 32768;
+		std::uint32_t ring_max_bodies = 4096;
+		std::uint32_t ring_max_contacts = 16384;
 		std::uint32_t max_contact_adjacency = max_contacts * 2;
 		std::uint32_t max_joint_adjacency = max_joints * 2;
 		std::uint32_t max_grounded_uints = (max_bodies + 31) / 32;
-		std::uint32_t grid_table_size = 32768;
 		std::uint32_t grid_max_entries = max_bodies * 8;
+	};
+
+	struct [[= shaders::shader_constant_block]] vbd_limits {
+		std::uint32_t max_colors = 16;
 		std::uint32_t workgroup_size = 64;
 		std::uint32_t adjacency_workgroup_size = 1024;
 		std::uint32_t coloring_rounds = 32;
 		std::uint32_t sleep_threshold = 60;
-		std::uint32_t collision_state_header_uints = 81;
+		std::uint32_t iteration_trace_slots = 64;
+		std::uint32_t iteration_trace_uints = 3;
+		std::uint32_t joint_trace_uints = 9;
+		std::uint32_t state_iteration_trace_base_index = 81;
+		std::uint32_t state_joint_trace_base_index = 81 + 64 * 3;
+		std::uint32_t collision_state_header_uints = 81 + 64 * 3 + 64 * 9;
 		std::uint32_t solve_state_float4s_per_body = 11;
 		std::uint32_t state_contact_count_index = 0;
 		std::uint32_t state_max_used_color_index = 1;

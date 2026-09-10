@@ -1,12 +1,12 @@
 export module gse.ide.search:engine;
 
-import std;
 import gse;
 import gse.ide.analysis;
+import std;
 
-import :types;
-import :index;
 import :fuzzy;
+import :index;
+import :types;
 
 namespace gse::ide::search {
 	struct query_buffer {
@@ -243,7 +243,7 @@ auto gse::ide::search::scan_content(const search_snapshot& snapshot, const std::
 			std::vector<result> local;
 			local.reserve(max_hits_per_file);
 			scan_blob(entry.blob, entry.line_starts, q_lower, entry.path, local, cancelled);
-			std::lock_guard lock(result_mutex);
+			std::lock_guard _(result_mutex);
 			for (result& match : local) {
 				if (out.accepts(key_of(match))) {
 					out.add_accepted(std::move(match));

@@ -1,29 +1,28 @@
 export module gse.graphics:settings_screen;
 
-import std;
-
-import gse.core;
-import gse.math;
-import gse.os;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
+import gse.math;
+import gse.os;
 import gse.save;
 import gse.shell;
+import gse.time;
+import std;
 
-import :types;
-import :ids;
 import :builder;
+import :ids;
 import :interaction;
-import :menu_stack;
-import :styles;
 import :layout_ops;
+import :menu_stack;
 import :nav_item_widget;
-import :settings;
 import :render_layer;
+import :settings;
+import :styles;
 import :symbols;
+import :types;
 
 export namespace gse::gui {
 	struct settings_screen_config {
@@ -276,7 +275,7 @@ auto gse::gui::settings_screen::build(builder& ui, nav& n) -> void {
 	});
 
 	{
-		auto scope = lo::within(ctx, sidebar);
+		auto _ = lo::within(ctx, sidebar);
 		lo::skip(ctx, sty.padding);
 		for (const auto& cat : m_categories) {
 			const bool selected = m_selected_category == cat;
@@ -291,7 +290,7 @@ auto gse::gui::settings_screen::build(builder& ui, nav& n) -> void {
 	}
 
 	{
-		auto scope = lo::within(ctx, content);
+		auto _ = lo::within(ctx, content);
 		lo::skip(ctx, sty.padding * 0.5f);
 		settings::panel(ui, m_panel_state, m_channels, *m_save_reg, m_selected_category);
 	}

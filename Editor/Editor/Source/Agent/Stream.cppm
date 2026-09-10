@@ -76,6 +76,15 @@ namespace gse::ide::agent {
 		std::string_view text
 	) -> std::vector<std::string>;
 
+	auto file_lines(
+		const std::filesystem::path& file
+	) -> std::vector<std::string>;
+
+	auto locate_lines(
+		std::span<const std::string> haystack,
+		std::span<const std::string> needle
+	) -> std::optional<std::uint32_t>;
+
 	auto tool_row(
 		const analysis::json::value& block
 	) -> transcript_row;
@@ -100,6 +109,9 @@ namespace gse::ide::agent {
 		const analysis::json::value& event
 	) -> bool;
 
+	auto parse_timestamp(
+		std::string_view iso
+	) -> std::int64_t;
 
 	auto anchorable(
 		const analysis::json::value& event

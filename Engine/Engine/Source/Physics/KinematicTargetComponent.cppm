@@ -1,9 +1,5 @@
 export module gse.physics:kinematic_target_component;
 
-import std;
-
-import gse.core;
-import gse.containers;
 import gse.ecs;
 import gse.math;
 

@@ -29,6 +29,7 @@ export namespace gse::vbd {
 	struct vbd_solve_chain {};
 
 	struct vbd_apply_body_inputs_stage {};
+	struct vbd_apply_joint_inputs_stage {};
 	struct vbd_render_mirror_stage {};
 	struct vbd_clear_state_buffers_stage {};
 	struct vbd_collision_reset_stage {};
@@ -103,8 +104,14 @@ export namespace gse::vbd {
 
 		auto initialize_compute(
 			context& ctx,
-			shared_view<gpu::context::data> gpu_s
+			shared_view<gpu::context::data> gpu_s,
+			const vbd_capacities& capacities,
+			bool sync_readback = false
 		) -> async::task<>;
+
+		auto capacities() const -> const vbd_capacities&;
+
+		auto wait_for_latest_dispatch() const -> void;
 
 		auto dispatch_compute(
 			context& ctx,
@@ -185,8 +192,6 @@ export namespace gse::vbd {
 		struct per_frame_data;
 
 		static constexpr std::uint32_t ring_max_history = 64;
-		static constexpr std::uint32_t ring_body_capacity = 4096;
-		static constexpr std::uint32_t ring_contact_capacity = 16384;
 
 		using pass_channel = channel_write<gpu::render_pass_request>;
 
@@ -216,6 +221,12 @@ export namespace gse::vbd {
 		) -> async::task<>;
 
 		auto stage_apply_body_inputs(
+			const solve_plan& p,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_apply_joint_inputs(
 			const solve_plan& p,
 			std::uint32_t chain_index,
 			pass_channel pass_out
@@ -454,6 +465,7 @@ export namespace gse::vbd {
 			gpu::shader_program update_sticking_pipeline;
 			gpu::shader_program apply_impulses_pipeline;
 			gpu::shader_program apply_body_inputs_pipeline;
+			gpu::shader_program apply_joint_inputs_pipeline;
 			gpu::shader_program hash_state_pipeline;
 			gpu::shader_program hash_warm_inputs_pipeline;
 			gpu::shader_program hash_adjacency_pipeline;
@@ -500,6 +512,8 @@ export namespace gse::vbd {
 		std::array<std::uint64_t, 16> m_generation_ticks{};
 		std::array<std::uint64_t, 16> m_generation_end_tick{};
 		std::uint32_t m_recorded_ring = 0;
+		bool m_sync_readback = false;
+		vbd_capacities m_capacities{};
 		std::uint64_t m_recorded_frame = 0;
 
 		gpu::upload_channel m_body_input_channel;
@@ -525,6 +539,7 @@ export namespace gse::vbd {
 		bool m_body_buffers_seeded = false;
 		std::uint32_t m_seeded_body_count = 0;
 		bool m_joint_buffers_seeded = false;
+		bool m_merge_joint_inputs = false;
 		bool m_apply_all_body_inputs = false;
 		bool m_preserve_warm_starts = false;
 
@@ -550,6 +565,10 @@ export namespace gse::vbd {
 		std::vector<std::uint32_t> m_upload_body_env;
 		std::vector<std::uint32_t> m_upload_static_bodies;
 		std::vector<std::uint8_t> m_jointed_body_mask;
+		std::vector<std::uint64_t> m_topology_key;
+		std::vector<std::uint64_t> m_topology_key_next;
+		std::uint32_t m_topology_body_count = 0;
+		std::uint32_t m_topology_island_count = 0;
 		bool m_upload_joints_dirty = false;
 
 		struct ring_slot {
