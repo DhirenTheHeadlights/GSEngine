@@ -92,18 +92,19 @@ GCC and Ninja are not on that list — `bootstrap.py` installs both.
 git clone <repo>
 cd GSEngine
 python bootstrap.py
-cmake --preset x64-mingw-gcc-Release
-cmake --build --preset x64-mingw-gcc-Release
 ```
 
 `bootstrap.py` does everything the build needs:
 
 * initializes submodules recursively
 * downloads the latest `gcc-trunk-v*` release into `~/.gcc-trunk/<tag>/` and points the `~/.gcc-trunk/current` junction at it
-* installs Ninja into `~/.gcc-trunk/ninja/`
+* installs Ninja into `~/.gcc-trunk/ninja/`, falling back to `winget install Ninja-build.Ninja` when the direct download is unreachable
 * builds the cppreference hover index used by the editor
+* configures `x64-mingw-gcc-Release` and builds the `Editor` target into `out/build/x64-mingw-gcc-Release/Editor/Editor.exe`
 
-The CMake presets resolve the compiler and Ninja through `~/.gcc-trunk/current`, so no `MINGW_ROOT` or `PATH` edit is required. Re-run `python bootstrap.py` to pick up a newer toolchain release; `--force` reinstalls, `--tag gcc-trunk-vN` pins a specific one, and `--skip-gcc`/`--skip-ninja`/`--skip-cppref` narrow the run.
+The build step refuses to start when CMake, the gcc-trunk toolchain, or `VULKAN_SDK` is missing, and names which one. A build directory whose cached compiler or Ninja path no longer exists — a tree copied from another machine, or a renamed user profile — is removed and reconfigured instead of failing.
+
+The CMake presets resolve the compiler and Ninja through `~/.gcc-trunk/current`, so no `MINGW_ROOT` or `PATH` edit is required. Re-run `python bootstrap.py` to pick up a newer toolchain release; `--force` reinstalls, `--tag gcc-trunk-vN` pins a specific one, `--preset <name>` targets a different configuration, and `--skip-gcc`/`--skip-ninja`/`--skip-cppref`/`--skip-build` narrow the run.
 
 A toolchain bump invalidates every previously built module BMI, so reconfigure from a clean build directory after one.
 

@@ -13,6 +13,7 @@
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/Engine/External/vcpkg/scripts/buildsystems/vcpkg.cmake",
         "VCPKG_TARGET_TRIPLET": "x64-mingw-static",
+        "VCPKG_HOST_TRIPLET": "x64-mingw-static-release",
         "VCPKG_OVERLAY_PORTS": "${sourceDir}/vcpkg-overlays/ports",
         "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/vcpkg-overlays/triplets",
         "CMAKE_C_COMPILER": "$env{USERPROFILE}/.gcc-trunk/current/bin/gcc.exe",

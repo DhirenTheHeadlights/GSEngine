@@ -1,5 +1,7 @@
 import argparse
+import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -12,6 +14,12 @@ REPO_ROOT = Path(__file__).resolve().parent
 NINJA_VERSION = "v1.13.2"
 NINJA_URL = f"https://github.com/ninja-build/ninja/releases/download/{NINJA_VERSION}/ninja-win.zip"
 NINJA_DIR = Path.home() / ".gcc-trunk" / "ninja"
+NINJA_WINGET_ID = "Ninja-build.Ninja"
+
+GCC_BIN = Path.home() / ".gcc-trunk" / "current" / "bin"
+DEFAULT_PRESET = "x64-mingw-gcc-Release"
+EDITOR_TARGET = "Editor"
+STALE_CACHE_KEYS = ("CMAKE_MAKE_PROGRAM:FILEPATH", "CMAKE_C_COMPILER:FILEPATH", "CMAKE_CXX_COMPILER:FILEPATH")
 
 CPPREF_VERSION = "20250209"
 CPPREF_URL = f"https://github.com/PeterFeicht/cppreference-doc/releases/download/v{CPPREF_VERSION}/cppreference-doc-{CPPREF_VERSION}.tar.xz"
@@ -36,12 +44,7 @@ def update_vcpkg():
     run(["git", "pull", "origin", "master"], cwd=REPO_ROOT / "Engine" / "External" / "vcpkg")
 
 
-def ensure_ninja(force=False):
-    ninja_exe = NINJA_DIR / "ninja.exe"
-    if ninja_exe.exists() and not force:
-        print(f"Ninja already installed: {ninja_exe}")
-        return
-    NINJA_DIR.mkdir(parents=True, exist_ok=True)
+def download_ninja(ninja_exe: Path) -> bool:
     print(f"Downloading Ninja {NINJA_VERSION} from {NINJA_URL}")
     try:
         with tempfile.TemporaryDirectory() as tmp:
@@ -51,10 +54,52 @@ def ensure_ninja(force=False):
             with zipfile.ZipFile(zip_path) as archive:
                 archive.extract("ninja.exe", NINJA_DIR)
     except Exception as exc:
-        raise SystemExit(f"Failed to install Ninja: {exc}")
+        print(f"Direct Ninja download failed: {exc}")
+        return False
+    return ninja_exe.exists()
+
+
+def winget_install_ninja() -> None:
+    winget = shutil.which("winget")
+    if winget is None:
+        print("winget is not available on this machine")
+        return
+    print(f"Installing Ninja via winget ({NINJA_WINGET_ID})")
+    subprocess.run([
+        winget, "install", "--id", NINJA_WINGET_ID, "--exact", "--source", "winget",
+        "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity",
+    ])
+
+
+def locate_ninja() -> Path | None:
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        packages = Path(local_app_data) / "Microsoft" / "WinGet" / "Packages"
+        for candidate in sorted(packages.glob(f"{NINJA_WINGET_ID}_*/ninja.exe")):
+            return candidate
+    on_path = shutil.which("ninja")
+    if on_path:
+        return Path(on_path)
+    return None
+
+
+def ensure_ninja(force=False):
+    ninja_exe = NINJA_DIR / "ninja.exe"
+    if ninja_exe.exists() and not force:
+        print(f"Ninja already installed: {ninja_exe}")
+        return
+    NINJA_DIR.mkdir(parents=True, exist_ok=True)
+    if download_ninja(ninja_exe):
+        print(f"Installed Ninja: {ninja_exe}")
+        return
+    winget_install_ninja()
+    found = locate_ninja()
+    if found is None:
+        raise SystemExit(f"Could not install Ninja: the direct download failed and winget produced no ninja.exe. Place one at {ninja_exe} manually.")
+    shutil.copy2(found, ninja_exe)
     if not ninja_exe.exists():
         raise SystemExit(f"Ninja install did not produce {ninja_exe}")
-    print(f"Installed Ninja: {ninja_exe}")
+    print(f"Installed Ninja from {found}: {ninja_exe}")
 
 
 def ensure_cppref_index(force=False):
@@ -77,12 +122,70 @@ def ensure_cppref_index(force=False):
     print(f"Built cppreference hover index: {CPPREF_INDEX}")
 
 
+def stale_cache_reason(build_dir: Path) -> str | None:
+    cache = build_dir / "CMakeCache.txt"
+    if not cache.exists():
+        return None
+    for line in cache.read_text(errors="replace").splitlines():
+        for key in STALE_CACHE_KEYS:
+            prefix = key + "="
+            if line.startswith(prefix):
+                value = line[len(prefix):].strip()
+                if value and not Path(value).exists():
+                    return f"{key.split(':')[0]} is cached as {value}, which does not exist on this machine"
+    return None
+
+
+def _clear_readonly(func, path, _exc) -> None:
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
+def toolchain_env() -> dict:
+    env = dict(os.environ)
+    env["PATH"] = os.pathsep.join([str(GCC_BIN), str(NINJA_DIR), env.get("PATH", "")])
+    return env
+
+
+def build_editor(preset: str) -> None:
+    cmake = shutil.which("cmake")
+    if cmake is None:
+        raise SystemExit("cmake was not found on PATH. Install CMake 3.28 or newer, then re-open the shell and re-run this script.")
+    compiler = GCC_BIN / "g++.exe"
+    if not compiler.exists():
+        raise SystemExit(f"The gcc-trunk toolchain is missing: {compiler} does not exist. Re-run this script without --skip-gcc.")
+    vulkan_sdk = os.environ.get("VULKAN_SDK")
+    if not vulkan_sdk or not Path(vulkan_sdk).is_dir():
+        raise SystemExit("VULKAN_SDK is not set to an existing directory. Install the Vulkan SDK 1.4 or newer from https://vulkan.lunarg.com/sdk/home, then re-open the shell and re-run this script.")
+    print(f"Vulkan SDK: {vulkan_sdk}")
+
+    build_dir = REPO_ROOT / "out" / "build" / preset
+    reason = stale_cache_reason(build_dir)
+    if reason is not None:
+        print(f"Removing unusable build directory {build_dir}")
+        print(f"  reason: {reason}")
+        shutil.rmtree(build_dir, onexc=_clear_readonly)
+
+    env = toolchain_env()
+    print("\nConfiguring. The first run installs the vcpkg dependency tree and takes 30-60 minutes.")
+    run([cmake, "--preset", preset], cwd=REPO_ROOT, env=env)
+    print(f"\nBuilding target {EDITOR_TARGET}.")
+    run([cmake, "--build", "--preset", preset, "--target", EDITOR_TARGET], cwd=REPO_ROOT, env=env)
+
+    editor_exe = build_dir / "Editor" / f"{EDITOR_TARGET}.exe"
+    if not editor_exe.exists():
+        raise SystemExit(f"The build reported success but {editor_exe} is missing.")
+    print(f"\nEditor built: {editor_exe}")
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Full environment bootstrap: submodules + native-Windows GCC trunk toolchain")
+    parser = argparse.ArgumentParser(description="Full environment bootstrap: submodules, native-Windows GCC trunk toolchain, and an editor build")
     parser.add_argument("--skip-submodules", action="store_true", help="Skip git submodule init/update")
     parser.add_argument("--skip-gcc", action="store_true", help="Skip GCC trunk toolchain install")
     parser.add_argument("--skip-ninja", action="store_true", help="Skip Ninja install")
     parser.add_argument("--skip-cppref", action="store_true", help="Skip cppreference hover-index build")
+    parser.add_argument("--skip-build", action="store_true", help="Skip the CMake configure and editor build")
+    parser.add_argument("--preset", default=DEFAULT_PRESET, help=f"CMake preset to configure and build (default: {DEFAULT_PRESET})")
     parser.add_argument("--update-vcpkg", action="store_true", help="Pull latest vcpkg master after submodule init")
     parser.add_argument("--tag", default=None, help="gcc-trunk release tag (default: latest gcc-trunk-v* release)")
     parser.add_argument("--sha256", default=None, help="Expected SHA256 of the toolchain zip")
@@ -113,8 +216,13 @@ def main():
     if not args.skip_cppref:
         ensure_cppref_index(force=args.force)
 
-    print("\nBootstrap complete. CMake configure will auto-install vcpkg deps from vcpkg.json.")
-    print("Configure with: cmake --preset x64-mingw-gcc-Release")
+    if args.skip_build:
+        print("\nBootstrap complete. CMake configure will auto-install vcpkg deps from vcpkg.json.")
+        print(f"Configure with: cmake --preset {args.preset}")
+        return
+
+    build_editor(args.preset)
+    print("\nBootstrap complete.")
 
 
 if __name__ == "__main__":
