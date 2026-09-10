@@ -50,6 +50,8 @@ These tools come from `Tools/gse-mcp/server.mjs`, which the editor's agent panel
 
 `gse_symbol_query` answers from the semantic index the editor already keeps for go-to-definition, so looking a symbol up costs one call instead of a grep plus a guessed `sed -n` slice. Pass `name` (bare or qualified) and you get every declaration and definition site — file, line, kind, resolved type — definitions first, each with its own source text sliced to the end of the definition. Pass `file` instead for that file's outline: the types, functions, members, enumerators and aliases it defines, with lines. Reading engine source to find a symbol was half of all tool output before this existed.
 
+Add `references: true` to a `name` for the other direction: every place the symbol is *used*, one source line each, sorted by file and line, with the declaration sites themselves left out. These are the compiler's own cross-references, so they follow aliases and skip the name where it appears in a comment, a string, or on an unrelated same-named symbol — distinctions `grep -rn` cannot make. `total` is the true count even when `max_matches` caps the list, so it also answers "is this still used anywhere".
+
 It is an accelerator, not a gate. Reading and grepping source stays open, and you need it when no editor is running, when the answer comes back `indexing` because the index is still building, and whenever you are searching free text rather than a name.
 
 ## Config Module

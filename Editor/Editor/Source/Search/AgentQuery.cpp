@@ -51,35 +51,71 @@ auto gse::ide::search::is_outline_kind(const analysis::symbol_kind kind) -> bool
 	return kind != analysis::symbol_kind::parameter && kind != analysis::symbol_kind::variable;
 }
 
-auto gse::ide::search::named_sites(const index_state& index, const std::string_view name, const std::size_t limit) -> std::expected<query_sites, lookup_error> {
+auto gse::ide::search::describe_role(const site_role role) -> std::string_view {
+	switch (role) {
+		case site_role::definition:
+			return "definition";
+		case site_role::declaration:
+			return "declaration";
+		case site_role::reference:
+			return "reference";
+	}
+	return "declaration";
+}
+
+auto gse::ide::search::query_mode(const build_inbox::symbol_query& query) -> std::string_view {
+	if (query.name.empty()) {
+		return "file";
+	}
+	return query.refs ? "refs" : "name";
+}
+
+auto gse::ide::search::ranked_matches(const symbol_index& symbols, const std::string_view name) -> std::expected<std::vector<ranked_symbol>, lookup_failure> {
 	const auto [qualifier, leaf] = split_qualifier(name);
 	const std::string needle = qualifier + leaf;
 	const std::string suffix = "::" + needle;
 
-	std::shared_lock _(index.mutex);
-	if (!index.symbols_ready.load(std::memory_order_acquire)) {
-		return unexpected_lookup(lookup_failure::index_building, std::string(name));
-	}
-	const auto candidates = index.symbols.symbols_by_name.find(leaf);
-	if (candidates == index.symbols.symbols_by_name.end()) {
-		return unexpected_lookup(lookup_failure::symbol_not_found, std::string(name));
+	const auto candidates = symbols.symbols_by_name.find(leaf);
+	if (candidates == symbols.symbols_by_name.end()) {
+		return std::unexpected(lookup_failure::symbol_not_found);
 	}
 
 	std::vector<ranked_symbol> ranked;
 	for (const std::uint32_t id : candidates->second) {
-		const symbol_entry& candidate = index.symbols.symbols[id];
+		const symbol_entry& candidate = symbols.symbols[id];
 		if (const std::optional<int> score = selection_score(candidate, needle, suffix, !qualifier.empty(), std::nullopt, symbol_selection_mode::definition)) {
 			ranked.push_back({ .score = *score, .symbol = &candidate });
 		}
 	}
 	if (ranked.empty()) {
-		return unexpected_lookup(qualifier.empty() ? lookup_failure::definition_not_found : lookup_failure::qualified_symbol_not_found, std::string(name));
+		return std::unexpected(qualifier.empty() ? lookup_failure::definition_not_found : lookup_failure::qualified_symbol_not_found);
 	}
 	std::ranges::stable_sort(ranked, std::ranges::greater{}, &ranked_symbol::score);
+	return ranked;
+}
+
+auto gse::ide::search::matching_anchor(const std::span<const ranked_symbol> anchors, const file_id file, const std::uint32_t line, const std::uint32_t column) -> const symbol_entry* {
+	for (const ranked_symbol& anchor : anchors) {
+		if (anchor.symbol->file == file && anchor.symbol->line == line && anchor.symbol->column == column) {
+			return anchor.symbol;
+		}
+	}
+	return nullptr;
+}
+
+auto gse::ide::search::named_sites(const index_state& index, const std::string_view name, const std::size_t limit) -> std::expected<query_sites, lookup_error> {
+	std::shared_lock _(index.mutex);
+	if (!index.symbols_ready.load(std::memory_order_acquire)) {
+		return unexpected_lookup(lookup_failure::index_building, std::string(name));
+	}
+	const std::expected<std::vector<ranked_symbol>, lookup_failure> ranked = ranked_matches(index.symbols, name);
+	if (!ranked) {
+		return unexpected_lookup(ranked.error(), std::string(name));
+	}
 
 	query_sites out;
-	out.total = ranked.size();
-	for (const ranked_symbol& match : ranked) {
+	out.total = ranked->size();
+	for (const ranked_symbol& match : *ranked) {
 		if (out.shown.size() >= limit) {
 			break;
 		}
@@ -89,7 +125,7 @@ auto gse::ide::search::named_sites(const index_state& index, const std::string_v
 			.kind = match.symbol->kind,
 			.line = match.symbol->line,
 			.column = match.symbol->column,
-			.is_definition = match.symbol->is_definition,
+			.role = match.symbol->is_definition ? site_role::definition : site_role::declaration,
 		};
 		if (const xref_entry* reference = xref_at(index.symbols, match.symbol->file, match.symbol->line, match.symbol->column)) {
 			site.type = reference->type;
@@ -97,6 +133,63 @@ auto gse::ide::search::named_sites(const index_state& index, const std::string_v
 		out.shown.push_back(std::move(site));
 	}
 	return out;
+}
+
+auto gse::ide::search::reference_sites(const index_state& index, const std::string_view name, const std::size_t limit) -> std::expected<query_sites, lookup_error> {
+	std::shared_lock _(index.mutex);
+	if (!index.symbols_ready.load(std::memory_order_acquire)) {
+		return unexpected_lookup(lookup_failure::index_building, std::string(name));
+	}
+	const std::expected<std::vector<ranked_symbol>, lookup_failure> anchors = ranked_matches(index.symbols, name);
+	if (!anchors) {
+		return unexpected_lookup(anchors.error(), std::string(name));
+	}
+
+	std::vector<query_site> found;
+	for (const auto& [file, refs] : index.symbols.xrefs) {
+		for (const xref_entry& ref : refs) {
+			const symbol_entry* target = matching_anchor(*anchors, ref.def_file, ref.def_line, ref.def_column);
+			if (!target || matching_anchor(*anchors, file, ref.line, ref.column)) {
+				continue;
+			}
+			found.push_back({
+				.path = index.symbols.path_for(file),
+				.qualified = target->qualified,
+				.type = ref.type,
+				.kind = target->kind,
+				.line = ref.line,
+				.column = ref.column,
+				.role = site_role::reference,
+			});
+		}
+	}
+	std::ranges::sort(found, [](const query_site& lhs, const query_site& rhs) {
+		return std::tie(lhs.path, lhs.line, lhs.column) < std::tie(rhs.path, rhs.line, rhs.column);
+	});
+	const auto repeated = std::ranges::unique(found, [](const query_site& lhs, const query_site& rhs) {
+		return lhs.path == rhs.path && lhs.line == rhs.line && lhs.column == rhs.column;
+	});
+	found.erase(repeated.begin(), repeated.end());
+
+	query_sites out;
+	out.total = found.size();
+	for (query_site& site : found) {
+		if (out.shown.size() >= limit) {
+			break;
+		}
+		out.shown.push_back(std::move(site));
+	}
+	return out;
+}
+
+auto gse::ide::search::resolve_sites(const index_state& index, const build_inbox::symbol_query& query, const std::size_t limit) -> std::expected<query_sites, lookup_error> {
+	if (query.name.empty()) {
+		return outline_sites(index, query_file(query), limit);
+	}
+	if (query.refs) {
+		return reference_sites(index, query.name, limit);
+	}
+	return named_sites(index, query.name, limit);
 }
 
 auto gse::ide::search::outline_sites(const index_state& index, const std::filesystem::path& file, const std::size_t limit) -> std::expected<query_sites, lookup_error> {
@@ -127,7 +220,7 @@ auto gse::ide::search::outline_sites(const index_state& index, const std::filesy
 			.kind = symbol.kind,
 			.line = symbol.line,
 			.column = symbol.column,
-			.is_definition = symbol.is_definition,
+			.role = symbol.is_definition ? site_role::definition : site_role::declaration,
 		});
 	}
 	return out;
@@ -183,9 +276,7 @@ auto gse::ide::search::answer_query(const index_state& index, const build_inbox:
 	const std::uint32_t line_budget = query.lines > 0 ? std::min(query.lines, most_lines) : 120;
 	const bool outline = query.name.empty();
 
-	const std::expected<query_sites, lookup_error> found = outline
-		? outline_sites(index, query_file(query), site_limit)
-		: named_sites(index, query.name, site_limit);
+	const std::expected<query_sites, lookup_error> found = resolve_sites(index, query, site_limit);
 	if (!found) {
 		return {
 			std::format("error {}", describe(found.error())),
@@ -194,12 +285,12 @@ auto gse::ide::search::answer_query(const index_state& index, const build_inbox:
 	}
 
 	std::vector<std::string> out;
-	out.push_back(std::format("mode {}", outline ? "file" : "name"));
+	out.push_back(std::format("mode {}", query_mode(query)));
 	out.push_back(std::format("sites {} {}", found->shown.size(), found->total));
 
 	std::uint32_t remaining = outline || !query.body ? 0 : line_budget;
 	for (const auto [position, site] : std::views::enumerate(found->shown)) {
-		out.push_back(std::format("site {} {} {} {} {} {}", position, site.kind, site.is_definition ? "definition" : "declaration", site.line + 1, site.column + 1, site.path.generic_display_string()));
+		out.push_back(std::format("site {} {} {} {} {} {}", position, site.kind, describe_role(site.role), site.line + 1, site.column + 1, site.path.generic_display_string()));
 		if (!site.qualified.empty()) {
 			out.push_back(std::format("qualified {} {}", position, site.qualified));
 		}
@@ -213,7 +304,9 @@ auto gse::ide::search::answer_query(const index_state& index, const build_inbox:
 		if (!source || source->line_starts.empty() || site.line >= source->line_starts.size()) {
 			continue;
 		}
-		const source_extent extent = definition_extent(*source, site.line, remaining);
+		const source_extent extent = query.refs
+			? source_extent{ .last = site.line, .complete = true }
+			: definition_extent(*source, site.line, remaining);
 		out.push_back(std::format("body {} {} {} {}", position, site.line + 1, extent.last + 1, extent.complete ? "complete" : "truncated"));
 		for (std::uint32_t line = site.line; line <= extent.last; ++line) {
 			out.push_back(std::format("| {}", line_at(source->blob, source->line_starts, line)));

@@ -57,7 +57,6 @@ export namespace gse::ide::build_inbox {
 	auto withdraw(
 		std::string_view id
 	) -> void;
-}
 
 	struct symbol_query {
 		std::string id;
@@ -69,6 +68,7 @@ export namespace gse::ide::build_inbox {
 		std::uint32_t sites = 0;
 		std::uint32_t lines = 0;
 		bool body = true;
+		bool refs = false;
 	};
 
 	auto queries_dir() -> std::filesystem::path;
@@ -78,3 +78,4 @@ export namespace gse::ide::build_inbox {
 	auto consume_symbol_query(
 		std::string_view id
 	) -> void;
+}

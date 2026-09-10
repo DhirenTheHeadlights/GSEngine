@@ -332,3 +332,6 @@ auto gse::ide::build_inbox::peek_symbol_queries() -> std::vector<symbol_query> {
 	}
 	return out;
 }
+				else if (key == "refs") {
+					parsed.refs = value == "1" || value == "true";
+				}

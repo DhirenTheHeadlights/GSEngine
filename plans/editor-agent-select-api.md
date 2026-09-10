@@ -173,9 +173,20 @@ locals and parameters). Source text comes from the content index already in memo
 the `;` of a wrapped declaration, capped by a line budget the earlier, better-ranked sites draw
 from first.
 
-**Not in the first cut.** References ("where is this used") would need a linear scan over every
-xref in the index on the frame thread, and grep over sources is only 7% of tool bytes against the
-50% spent reading source. It goes in when the measurement asks for it, on a worker if it does.
+**References, added 2026-09-10.** `references: true` on a `name` returns use sites instead of
+declaration sites. The measurement asked for it: two days after the first cut, Bash was 57% of all
+tool calls and 47% of those were grep, so "where is this used" was the biggest remaining reason to
+shell out. The feared cost did not appear. The scan is linear over all 1.22 M xrefs, matching each
+`def_file`/`def_line`/`def_column` against the resolved anchors, and lands at ~300 ms inside the
+existing 100 ms poll on the frame thread, so no worker was needed.
+
+Two things this gets right that grep cannot: uses resolve through aliases, and the name in a
+comment, a string or on an unrelated same-named symbol is not a use. The index emits more than one
+xref per token — one resolving to the declaration, one to the definition — so results are
+deduplicated by (file, line, column); without that every count came back exactly doubled, which the
+first live run caught by disagreeing with grep on `split_field` (8 against 4). A symbol with no uses
+is an empty result, not a lookup failure: "nothing calls this" is an answer worth having, and
+`lookup_failure` has no value for it that would not be a lie.
 
 **No guard.** Unlike logs and traces, source reads stay open: the index is empty while it builds,
 absent when no editor is running, and useless for free-text search. The tool has to win by being

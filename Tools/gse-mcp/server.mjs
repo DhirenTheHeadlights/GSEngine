@@ -632,7 +632,7 @@ const parse_answer = (body) => {
 			case 'site':
 				current = at(Number(index));
 				current.kind = tail[0];
-				current.definition = tail[1] === 'definition';
+				current.role = tail[1];
 				current.line = Number(tail[2]);
 				current.column = Number(tail[3]);
 				current.file = tail.slice(4).join(' ');
@@ -661,8 +661,12 @@ const symbol_query = async (args) => {
 	const project = args.project ? windows_path(args.project) : project_of(process.cwd());
 	const name = String(args.name ?? '').trim();
 	const file = String(args.file ?? '').trim();
+	const refs = args.references === true;
 	if (!name && !file) {
 		return text_result(header(project, { error: 'pass `name` for a symbol, or `file` for a file outline.' }), true);
+	}
+	if (refs && !name) {
+		return text_result(header(project, { error: 'references needs a `name`; a file outline has nothing to find uses of.' }), true);
 	}
 	const id = new_id();
 	const timeout = Math.min(60, Math.max(1, Number(args.timeout ?? 15)));
@@ -678,6 +682,7 @@ const symbol_query = async (args) => {
 		`sites ${Math.max(0, Math.trunc(Number(args.max_matches ?? 0)) || 0)}`,
 		`lines ${Math.max(0, Math.trunc(Number(args.max_lines ?? 0)) || 0)}`,
 		`body ${args.source === false ? 0 : 1}`,
+		`refs ${refs ? 1 : 0}`,
 		'',
 	].join('\n'));
 
@@ -703,12 +708,13 @@ const symbol_query = async (args) => {
 const tools = {
 	gse_symbol_query: {
 		description:
-			'Find code by name instead of grepping and reading files. Ask for a symbol (`name`, bare or qualified: "record_usage" or "gse::ide::agent::record_usage") and the editor answers from the semantic index behind its go-to-definition: every declaration and definition site with file, line, kind and resolved type, definitions first, each with its own source text sliced to the end of the definition. Ask for a `file` instead to get its outline - every type, function, member and alias it defines, with lines. Prefer this to Read + sed slices and to grepping for a definition; fall back to Grep for free text or when no editor is running.',
+			'Find code by name instead of grepping and reading files. Ask for a symbol (`name`, bare or qualified: "record_usage" or "gse::ide::agent::record_usage") and the editor answers from the semantic index behind its go-to-definition: every declaration and definition site with file, line, kind and resolved type, definitions first, each with its own source text sliced to the end of the definition. Add `references: true` for every place that symbol is USED instead - resolved by the compiler, so it finds uses through aliases and skips matching text in comments, strings and unrelated same-named symbols, which is what grep cannot do. Ask for a `file` instead to get its outline - every type, function, member and alias it defines, with lines. Prefer this to Read + sed slices, to grepping for a definition, and to grepping for callers; fall back to Grep for free text or when no editor is running.',
 		schema: {
 			type: 'object',
 			properties: {
 				name: { type: 'string', description: 'Symbol to look up. A trailing qualifier narrows it: "agent::record_usage" matches only that namespace or class.' },
 				file: { type: 'string', description: 'Outline this file instead of looking up a name. Relative paths resolve against your cwd, the project, then the engine root.' },
+				references: { type: 'boolean', description: 'With `name`: return where the symbol is used rather than where it is defined, one source line each, sorted by file and line. total is the full count even when max_matches caps the list. The declaration sites themselves are excluded - ask without this flag for those.' },
 				source: { type: 'boolean', description: 'Include the source text of each site (default true). Set false for just the locations.' },
 				max_matches: { type: 'number', description: 'Sites to return (default 20, max 200). total in the response says how many matched.' },
 				max_lines: { type: 'number', description: 'Total source lines across all sites (default 120, max 2000). Earlier, better-ranked sites take from it first; a site that runs out is marked truncated.' },

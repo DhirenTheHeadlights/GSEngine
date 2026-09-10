@@ -17,6 +17,12 @@ export namespace gse::ide::search {
 }
 
 namespace gse::ide::search {
+	enum class site_role {
+		definition,
+		declaration,
+		reference,
+	};
+
 	struct query_site {
 		std::filesystem::path path;
 		std::string qualified;
@@ -24,7 +30,7 @@ namespace gse::ide::search {
 		analysis::symbol_kind kind = analysis::symbol_kind::type;
 		std::uint32_t line = 0;
 		std::uint32_t column = 0;
-		bool is_definition = true;
+		site_role role = site_role::definition;
 	};
 
 	struct query_sites {
@@ -58,9 +64,41 @@ namespace gse::ide::search {
 		analysis::symbol_kind kind
 	) -> bool;
 
+	auto describe_role(
+		site_role role
+	) -> std::string_view;
+
+	auto query_mode(
+		const build_inbox::symbol_query& query
+	) -> std::string_view;
+
+	auto ranked_matches(
+		const symbol_index& symbols,
+		std::string_view name
+	) -> std::expected<std::vector<ranked_symbol>, lookup_failure>;
+
+	auto matching_anchor(
+		std::span<const ranked_symbol> anchors,
+		file_id file,
+		std::uint32_t line,
+		std::uint32_t column
+	) -> const symbol_entry*;
+
 	auto named_sites(
 		const index_state& index,
 		std::string_view name,
+		std::size_t limit
+	) -> std::expected<query_sites, lookup_error>;
+
+	auto reference_sites(
+		const index_state& index,
+		std::string_view name,
+		std::size_t limit
+	) -> std::expected<query_sites, lookup_error>;
+
+	auto resolve_sites(
+		const index_state& index,
+		const build_inbox::symbol_query& query,
 		std::size_t limit
 	) -> std::expected<query_sites, lookup_error>;
 
