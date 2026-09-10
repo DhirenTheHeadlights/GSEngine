@@ -54,6 +54,10 @@ Add `references: true` to a `name` for the other direction: every place the symb
 
 It is an accelerator, not a gate. Reading and grepping source stays open, and you need it when no editor is running, when the answer comes back `indexing` because the index is still building, and whenever you are searching free text rather than a name.
 
+## Reporting a Gap
+
+`gse_report_gap` records that these tools did not cover something you needed. Pass `need` (what you were trying to find or do, one line) and `tried` (what you used instead). It returns immediately, blocks nothing and expects no answer — it is a note for the editor UI and the humans reading it, so the need shows up as a gap to close rather than vanishing into a shell pipeline nobody can see. Call it when you fall back to Grep, Read or a shell because no `gse_*` tool fits. Do not call it when a tool exists and merely returned nothing, or when the editor simply is not running; neither is a gap.
+
 ## Config Module
 
 `gse.config` (in `Engine/Engine/Import/Config.cppm`) provides every engine path as a **function**, resolved at runtime — `resource_path()`, `root_dir()`, `user_config_dir()`, etc. Re-exported by `gse.utility`. Nothing is baked into the binary: paths come from a `gse.manifest` marker file found by walking up from the executable's directory (CMake writes one to the build root at configure time with `mode = dev` and `root = <source tree>`).

@@ -188,9 +188,25 @@ first live run caught by disagreeing with grep on `split_field` (8 against 4). A
 is an empty result, not a lookup failure: "nothing calls this" is an answer worth having, and
 `lookup_failure` has no value for it that would not be a lie.
 
-**No guard.** Unlike logs and traces, source reads stay open: the index is empty while it builds,
-absent when no editor is running, and useless for free-text search. The tool has to win by being
-better, not by the alternative being closed.
+**No guard, revised 2026-09-10.** The original reasoning was that the tool should win on merit. The
+measurement says merit is not what moves agents: the two categories with a guard collapsed (gse logs
+to 14 bash calls, traces to 5% at ~1 KB mean) and the one without stayed at 29% of all tool bytes.
+Availability changed nothing; refusal changed everything.
+
+What that argues for is *not* closing source. The reason to route a lookup through a tool is no
+longer context cost, it is legibility: as the number of concurrent chats grows, the panel can
+attribute, count and display `gse_symbol_query name=X references=true`, and can never show what
+`cd Engine && grep -rn foo | head -40` was after. So the guard to add is narrow — deny Bash and
+PowerShell reaching source, leave Read, Grep and Glob open, since Edit requires a prior Read and
+free-text search is still grep's job. It must exempt `git` and script invocations, which pipe
+through grep legitimately and are how commits get made.
+
+**Gaps, added 2026-09-10.** A guard without an escape valve produces silent workarounds, which is
+the failure it was meant to fix. `gse_report_gap` takes `need` and `tried`, writes
+`cache/agent-build/gaps/<id>.txt` and returns in ~6 ms: no editor round trip, nothing to wait on,
+and it works when no editor is running at all. The denial message names it, so a chat that the tools
+genuinely do not serve leaves a record instead of a pipeline. Reading `gaps/` into the panel is the
+remaining piece.
 
 **Known duplication.** `peek_requests`, `peek_hibernations` and `peek_symbol_queries` now share a
 directory-walk-and-age-out skeleton three ways. It should collapse into one helper over

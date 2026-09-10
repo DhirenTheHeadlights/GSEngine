@@ -705,7 +705,50 @@ const symbol_query = async (args) => {
 	}), true);
 };
 
+// A gap is the select API admitting it did not cover something. It is recorded rather than
+// worked around silently, so the editor can show what chats are reaching for that no tool
+// serves, instead of that need disappearing into an untyped shell command.
+const report_gap = async (args) => {
+	const project = args.project ? windows_path(args.project) : project_of(process.cwd());
+	const need = String(args.need ?? '').trim();
+	if (!need) {
+		return text_result(header(project, { error: 'pass `need`: what you were trying to find or do.' }), true);
+	}
+	const id = new_id();
+	write_atomically(join(inbox, 'gaps'), id, [
+		`id ${id}`,
+		`agent ${agent}`,
+		`need ${need.replace(/[\r\n\t]+/g, ' ')}`,
+		`tried ${String(args.tried ?? '').trim().replace(/[\r\n\t]+/g, ' ')}`,
+		`cwd ${windows_path(process.cwd())}`,
+		`project ${project}`,
+		`at ${new Date().toISOString()}`,
+		'',
+	].join('\n'));
+
+	return text_result(header(project, {
+		id,
+		outcome: 'recorded',
+		need,
+		next: 'Recorded. Carry on with Grep or Read - this does not block you and needs no answer.',
+	}));
+};
+
 const tools = {
+	gse_report_gap: {
+		description:
+			'Record that the GSE tools did not cover something you needed, then carry on. Call it when a lookup falls back to Grep, Read or a shell because no gse_* tool fits - not for a tool that exists and merely returned nothing, and not for an editor that is not running. Returns immediately: it is a note for the humans and the editor UI, not a request, so nothing waits on it and no answer comes back. `need` is what you were trying to find or do in one line; `tried` is what you used instead.',
+		schema: {
+			type: 'object',
+			properties: {
+				need: { type: 'string', description: 'What you were trying to find or do, in one line.' },
+				tried: { type: 'string', description: 'What you fell back to, e.g. "grep -rn over Engine/Source".' },
+				project: { type: 'string', description: 'Project directory; defaults to the nearest .gseproj above the current directory.' },
+			},
+			required: ['need'],
+		},
+		run: report_gap,
+	},
 	gse_symbol_query: {
 		description:
 			'Find code by name instead of grepping and reading files. Ask for a symbol (`name`, bare or qualified: "record_usage" or "gse::ide::agent::record_usage") and the editor answers from the semantic index behind its go-to-definition: every declaration and definition site with file, line, kind and resolved type, definitions first, each with its own source text sliced to the end of the definition. Add `references: true` for every place that symbol is USED instead - resolved by the compiler, so it finds uses through aliases and skips matching text in comments, strings and unrelated same-named symbols, which is what grep cannot do. Ask for a `file` instead to get its outline - every type, function, member and alias it defines, with lines. Prefer this to Read + sed slices, to grepping for a definition, and to grepping for callers; fall back to Grep for free text or when no editor is running.',
