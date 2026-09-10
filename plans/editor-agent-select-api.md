@@ -208,10 +208,34 @@ and it works when no editor is running at all. The denial message names it, so a
 genuinely do not serve leaves a record instead of a pipeline. Reading `gaps/` into the panel is the
 remaining piece.
 
-**Known duplication.** `peek_requests`, `peek_hibernations` and `peek_symbol_queries` now share a
-directory-walk-and-age-out skeleton three ways. It should collapse into one helper over
-`(dir, abandoned, parse)`; it was left alone because another session has `BuildRunner/Inbox.cpp`
-open, and a behaviour-preserving refactor of a file that is mid-edit lands in everyone's build.
+**Gap record, verified 2026-09-10.** A gap written through the real inbox lands as `key value` lines
+terminated with LF, which `split_field` reads correctly because it splits on the first space only.
+The writer maps `[\r\n\t]+` to a space in both `need` and `tried`, so neither can inject a line that
+parses as a bogus key. This is the opposite of the fix `sanitize` needed for returned source, where a
+tab is indentation and has to survive; the two are different formats and both are now right.
+
+**Gaps are peeked, not taken.** The consumer that reads `gaps/` must not drain it the way
+`take_presence` and the request path do. A request is a work item and is consumed once served; a gap
+is a record of what the API does not cover, and its value is in accumulating. Draining on read loses
+it to the next editor restart, and the age-out that retires an abandoned request is wrong here too,
+because a gap from last week is still a valid data point. It should persist until something dismisses
+it deliberately.
+
+**Panel seam is occupied.** The display half is deferred, not forgotten. Every one of the 14 files in
+`Editor/Editor/Source/Agent` is uncommitted-modified by another session, 703 added lines; the poll
+site that would call a `peek_gaps` is `Agent/Blame.cpp`, which carries 203 of them and was still
+indexing when queried, so it is changing live. That session is adding `presence` -
+`publish_presence`, `clear_presence`, `take_presence` - which is the same agent-visibility surface
+gaps belong on. Landing a parallel gap indicator beside a panel that is being restructured for
+exactly this buys a merge conflict and a second thing to reconcile. Adding `peek_gaps` to `Inbox`
+alone was also rejected: nothing would call it, and dead code in a file mid-refactor is the worst of
+both. The record is durable on disk meanwhile, so nothing is lost by waiting.
+
+**Known duplication.** `peek_requests`, `peek_hibernations` and `peek_symbol_queries` shared a
+directory-walk-and-age-out skeleton three ways. The other session has since converted
+`take_requests` and `take_hibernations` to the same peek-and-consume pair this plan introduced for
+symbol queries, so the pattern is now general and the collapse into one helper over
+`(dir, abandoned, parse)` is theirs to make in the file they already hold.
 
 ## Measurement
 
