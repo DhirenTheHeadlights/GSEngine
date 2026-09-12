@@ -671,10 +671,14 @@ auto gse::vulkan::device::create(const instance& instance_data, gpu::device_sett
 	require_extension(vk::EXTRobustness2ExtensionName);
 	require_extension(vk::KHRUnifiedImageLayoutsExtensionName);
 	require_extension(vk::EXTHostImageCopyExtensionName);
-	require_extension(vk::EXTSwapchainMaintenance1ExtensionName);
-	require_extension(vk::EXTPresentTimingExtensionName);
-	require_extension(vk::KHRPresentId2ExtensionName);
 	require_extension(vk::KHRCalibratedTimestampsExtensionName);
+
+	const bool presenting = static_cast<bool>(instance_data.surface());
+	if (presenting) {
+		require_extension(vk::EXTSwapchainMaintenance1ExtensionName);
+		require_extension(vk::EXTPresentTimingExtensionName);
+		require_extension(vk::KHRPresentId2ExtensionName);
+	}
 
 	const bool video_encode_extensions_available =
 		cfg.video_encode &&
@@ -738,9 +742,11 @@ auto gse::vulkan::device::create(const instance& instance_data, gpu::device_sett
 	require(robustness2_query.robustBufferAccess2, vk::EXTRobustness2ExtensionName);
 	require(unified_layouts_query.unifiedImageLayouts, vk::KHRUnifiedImageLayoutsExtensionName);
 	require(host_image_copy_query.hostImageCopy, vk::EXTHostImageCopyExtensionName);
-	require(swapchain_maintenance1_query.swapchainMaintenance1, vk::EXTSwapchainMaintenance1ExtensionName);
-	require(present_timing_query.presentTiming && present_timing_query.presentAtRelativeTime, vk::EXTPresentTimingExtensionName);
-	require(present_id2_query.presentId2, vk::KHRPresentId2ExtensionName);
+	if (presenting) {
+		require(swapchain_maintenance1_query.swapchainMaintenance1, vk::EXTSwapchainMaintenance1ExtensionName);
+		require(present_timing_query.presentTiming && present_timing_query.presentAtRelativeTime, vk::EXTPresentTimingExtensionName);
+		require(present_id2_query.presentId2, vk::KHRPresentId2ExtensionName);
+	}
 
 	if (!missing_requirements.empty()) {
 		for (const auto requirement : missing_requirements) {
@@ -842,18 +848,28 @@ auto gse::vulkan::device::create(const instance& instance_data, gpu::device_sett
 		.pNext = &unified_layouts_features,
 		.hostImageCopy = vk::True,
 	};
-	vk::PhysicalDeviceSwapchainMaintenance1FeaturesEXT swapchain_maintenance1_features{
-		.pNext = &host_image_copy_features,
-		.swapchainMaintenance1 = vk::True,
+	optional_feature<vk::PhysicalDeviceSwapchainMaintenance1FeaturesEXT> swapchain_maintenance1{
+		.features = {
+			.swapchainMaintenance1 = vk::True,
+		},
+		.extension_name = vk::EXTSwapchainMaintenance1ExtensionName,
+		.supported = presenting,
 	};
-	vk::PhysicalDevicePresentId2FeaturesKHR present_id2_features{
-		.pNext = &swapchain_maintenance1_features,
-		.presentId2 = vk::True,
+	optional_feature<vk::PhysicalDevicePresentId2FeaturesKHR> present_id2{
+		.features = {
+			.presentId2 = vk::True,
+		},
+		.extension_name = vk::KHRPresentId2ExtensionName,
+		.supported = presenting,
 	};
-	vk::PhysicalDevicePresentTimingFeaturesEXT present_timing_features{
-		.pNext = &present_id2_features,
-		.presentTiming = vk::True,
-		.presentAtRelativeTime = vk::True,
+	optional_feature<vk::PhysicalDevicePresentTimingFeaturesEXT> present_timing{
+		.features = {
+			.presentTiming = vk::True,
+			.presentAtRelativeTime = vk::True,
+		},
+		.extension_name = vk::EXTPresentTimingExtensionName,
+		.log_no = "Headless device: presentation extensions not enabled",
+		.supported = presenting,
 	};
 
 	optional_feature<vk::PhysicalDeviceFaultFeaturesEXT> fault{
@@ -873,7 +889,6 @@ auto gse::vulkan::device::create(const instance& instance_data, gpu::device_sett
 	};
 
 	std::vector device_extensions = {
-		vk::KHRSwapchainExtensionName,
 		vk::KHRSynchronization2ExtensionName,
 		vk::KHRDynamicRenderingExtensionName,
 		vk::KHRMaintenance5ExtensionName,
@@ -893,18 +908,19 @@ auto gse::vulkan::device::create(const instance& instance_data, gpu::device_sett
 		vk::EXTRobustness2ExtensionName,
 		vk::KHRUnifiedImageLayoutsExtensionName,
 		vk::EXTHostImageCopyExtensionName,
-		vk::EXTSwapchainMaintenance1ExtensionName,
-		vk::KHRPresentId2ExtensionName,
-		vk::EXTPresentTimingExtensionName,
 	};
 
-	void* chain_head = &present_timing_features;
+	void* chain_head = &host_image_copy_features;
 	auto process = [&](auto&... features) {
 		((chain_head = features.attach(chain_head)), ...);
 		(features.register_ext(device_extensions), ...);
 		(features.log(), ...);
 	};
-	process(fault, av1_encode);
+	process(swapchain_maintenance1, present_id2, present_timing, fault, av1_encode);
+
+	if (presenting) {
+		device_extensions.push_back(vk::KHRSwapchainExtensionName);
+	}
 
 	for (const auto* aftermath_ext : aftermath_tracker.required_device_extensions()) {
 		if (supports_extension(aftermath_ext)) {
