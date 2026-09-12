@@ -51,6 +51,21 @@ export namespace gse::gpu::context {
 		]]
 		gpu::device_settings device_settings;
 
+		[[
+			= settings::describe<"Record GPU timestamp queries around each render pass for the profiler.">{}
+		]]
+		bool gpu_timestamps_enabled = true;
+
+		[[
+			= settings::describe<"Collect pipeline statistics (invocations, primitives) per pass. Has measurable overhead.">{}
+		]]
+		bool gpu_pipeline_stats_enabled = false;
+
+		[[
+			= settings::describe<"Record intra-pass GPU timestamp marks for passes that place them. Adds one query per mark.">{}
+		]]
+		bool gpu_intra_pass_marks_enabled = false;
+
 		[[= stable_shared]] std::unique_ptr<gpu::device> device;
 		[[= stable_shared]] std::unique_ptr<swap_chain> swapchain;
 		[[= stable_shared]] std::unique_ptr<gpu::frame> frame;

@@ -78,6 +78,21 @@ export namespace gse::gpu {
 		access_flags access;
 	};
 
+	struct gpu_profile_mark {
+		std::uint32_t pass_slot = 0;
+		std::uint32_t query = 0;
+		id label;
+	};
+
+	struct pass_mark_cursor {
+		handle<query_pool> pool;
+		gpu_profile_mark* marks = nullptr;
+		std::atomic<std::uint32_t>* next = nullptr;
+		std::uint32_t pass_slot = 0;
+		std::uint32_t capacity = 0;
+		std::uint32_t query_base = 0;
+	};
+
 	struct recording_context_init {
 		pass_recorder recorder;
 		render_pass_data* pass = nullptr;
@@ -85,6 +100,7 @@ export namespace gse::gpu {
 		gpu::device* device = nullptr;
 		const shader_program* primary = nullptr;
 		std::vector<rec_touch> touches;
+		pass_mark_cursor marks;
 	};
 
 	struct frame_request_drain {
@@ -115,6 +131,10 @@ export namespace gse::gpu {
 		) -> void;
 
 		auto set_gpu_pipeline_stats_enabled(
+			bool enabled
+		) -> void;
+
+		auto set_gpu_intra_pass_marks_enabled(
 			bool enabled
 		) -> void;
 
@@ -188,22 +208,36 @@ export namespace gse::gpu {
 	private:
 		static constexpr std::uint32_t max_profiled_passes = 128;
 		static constexpr std::uint32_t stats_per_pass = 4;
+		static constexpr std::uint32_t mark_query_base = 1 + max_profiled_passes * 2;
+		static constexpr std::uint32_t initial_mark_capacity = 1024;
+		static constexpr std::uint32_t max_mark_capacity = 1u << 14;
 
 		struct gpu_profile_slot {
 			handle<query_pool> timestamp_pool;
 			handle<query_pool> stats_pool;
 			std::vector<id> pass_types;
 			std::vector<queue_type> pass_queues;
+			std::vector<gpu_profile_mark> marks;
+			std::vector<std::uint32_t> mark_order;
 			std::uint32_t pass_count = 0;
+			std::uint32_t mark_count = 0;
+			std::uint32_t mark_capacity = 0;
 			bool stats_issued = false;
 			time_t<std::uint64_t> cpu_ref{};
 			std::uint64_t frame_counter = 0;
 			bool results_valid = false;
 		};
 
+		static auto profile_key(
+			std::uint64_t frame,
+			queue_type queue,
+			std::uint32_t index
+		) -> std::uint64_t;
+
 		auto ensure_profile_pools(
 			gpu_profile_slot& slot,
-			bool allow_stats
+			bool allow_stats,
+			std::uint32_t mark_capacity
 		) const -> void;
 
 		auto read_profile_slot(
@@ -247,6 +281,8 @@ export namespace gse::gpu {
 		};
 		std::atomic<bool> m_gpu_timestamps_enabled{ true };
 		std::atomic<bool> m_gpu_pipeline_stats_enabled{ false };
+		std::atomic<bool> m_gpu_intra_pass_marks_enabled{ false };
+		std::uint32_t m_mark_capacity = 0;
 		time_t<double> m_timestamp_period_per_tick = nanoseconds(1.0);
 		std::uint64_t m_frames_submitted = 0;
 		std::array<queue_state, queue_type_count> m_queue_states;

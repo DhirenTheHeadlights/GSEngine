@@ -1588,6 +1588,11 @@ auto gse::vulkan::device::retire(const gpu::handle<gpu::fence> fence) -> void {
 	m_owned.retire(fence, m_resource_frame + gpu::max_frames_in_flight);
 }
 
+auto gse::vulkan::device::retire(const gpu::handle<gpu::query_pool> pool) -> void {
+	std::lock_guard _(m_mutex);
+	m_owned.retire(pool, m_resource_frame + gpu::max_frames_in_flight);
+}
+
 auto gse::vulkan::device::collect_garbage() -> void {
 	std::vector<std::uint64_t> buffers;
 	std::vector<std::uint64_t> images;

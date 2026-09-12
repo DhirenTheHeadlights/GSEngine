@@ -1334,6 +1334,14 @@ auto gse::dx12::device::retire_fence(const gpu::handle<gpu::fence> fence) -> voi
 	}
 }
 
+auto gse::dx12::device::retire_query_pool(const gpu::handle<gpu::query_pool> pool) -> void {
+	const auto* raw = std::bit_cast<timestamp_query_pool*>(pool);
+	const std::lock_guard _(m_mutex);
+	std::erase_if(m_query_pools, [raw](const std::unique_ptr<timestamp_query_pool>& p) {
+		return p.get() == raw;
+	});
+}
+
 auto gse::dx12::device::semaphore_counter_value(const gpu::handle<gpu::semaphore> semaphore) const -> std::uint64_t {
 	auto* sp = std::bit_cast<sync_point*>(semaphore);
 	return sp && sp->fence ? sp->fence->GetCompletedValue() : 0;

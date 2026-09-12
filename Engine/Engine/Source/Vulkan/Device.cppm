@@ -360,6 +360,10 @@ export namespace gse::vulkan {
 			gpu::handle<gpu::fence> fence
 		) -> void;
 
+		auto retire(
+			gpu::handle<gpu::query_pool> pool
+		) -> void;
+
 		auto collect_garbage() -> void;
 
 		[[nodiscard]]

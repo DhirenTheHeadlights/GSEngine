@@ -129,6 +129,12 @@ auto gse::gpu::context::run(gse::context& ctx, data& d, const channel_read<gpu_r
 		destroy_presentation(d, req.id);
 	}
 
+	if (d.render_graph) {
+		d.render_graph->set_gpu_timestamps_enabled(d.gpu_timestamps_enabled);
+		d.render_graph->set_gpu_pipeline_stats_enabled(d.gpu_pipeline_stats_enabled);
+		d.render_graph->set_gpu_intra_pass_marks_enabled(d.gpu_intra_pass_marks_enabled);
+	}
+
 	return {};
 }
 

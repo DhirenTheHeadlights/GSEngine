@@ -245,6 +245,10 @@ export namespace gse::gpu {
 			gpu::handle<fence> fence
 		) -> void;
 
+		auto retire_query_pool(
+			gpu::handle<query_pool> pool
+		) -> void;
+
 		[[nodiscard]] auto semaphore_counter_value(
 			gpu::handle<semaphore> semaphore
 		) const -> std::uint64_t;
@@ -653,6 +657,10 @@ auto gse::gpu::vulkan_device_backend::retire_semaphore(const gpu::handle<semapho
 
 auto gse::gpu::vulkan_device_backend::retire_fence(const gpu::handle<fence> fence) -> void {
 	device_config.retire(fence);
+}
+
+auto gse::gpu::vulkan_device_backend::retire_query_pool(const gpu::handle<query_pool> pool) -> void {
+	device_config.retire(pool);
 }
 
 auto gse::gpu::vulkan_device_backend::semaphore_counter_value(const gpu::handle<semaphore> semaphore) const -> std::uint64_t {

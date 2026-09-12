@@ -1224,6 +1224,17 @@ auto gse::vbd::gpu_solver::initialize_compute(context& ctx, const shared_view<gp
 		return gpu::build_compute_program(*gpu_s.device, pod, {}, capacity_constants);
 	};
 
+	for (std::uint32_t color = 0; color < limits.max_colors; ++color) {
+		m_solve_marks.color[color] = find_or_generate_id(std::format("vbd::solve::color[{}]", color));
+	}
+	m_solve_marks.sweep = find_or_generate_id("vbd::solve::sweep");
+	m_solve_marks.island = find_or_generate_id("vbd::solve::island");
+	m_solve_marks.jacobi = find_or_generate_id("vbd::solve::jacobi");
+	m_solve_marks.apply_jacobi = find_or_generate_id("vbd::solve::apply_jacobi");
+	m_solve_marks.update_lambda = find_or_generate_id("vbd::solve::update_lambda");
+	m_solve_marks.joint_lambda = find_or_generate_id("vbd::solve::joint_lambda");
+	m_solve_marks.convergence = find_or_generate_id("vbd::solve::convergence");
+
 	m_compute.predict_pipeline = build(predict_entry::pod);
 	m_compute.solve_color_pipeline = build(solve_color_entry::pod);
 	m_compute.solve_sweep_pipeline = build(solve_sweep_entry::pod);
@@ -1809,9 +1820,11 @@ auto gse::vbd::gpu_solver::stage_solve_iterations(const solve_plan& p, const std
 		auto color_pc = p.push_constants(0u, limits.max_colors, sub, it, p.solve_alpha);
 
 		if (p.use_jacobi) {
+			rec.mark(m_solve_marks.jacobi);
 			rec.push_bindings<solve_color_entry>(color_pc, bindings);
 			rec.dispatch(p.body_workgroups, 1, 1);
 
+			rec.mark(m_solve_marks.apply_jacobi);
 			rec.bind(m_compute.apply_jacobi_pipeline);
 			rec.push_bindings<apply_jacobi_entry>(p.push_constants(0u, 0u, sub, it, p.solve_alpha), bindings);
 			rec.dispatch(p.body_workgroups, 1, 1);
@@ -1820,6 +1833,7 @@ auto gse::vbd::gpu_solver::stage_solve_iterations(const solve_plan& p, const std
 			if (p.jointless_body_count > 0) {
 				if (p.use_solve_fold) {
 					color_pc.color_count = p.color_launch_bound;
+					rec.mark(m_solve_marks.sweep);
 					rec.bind(m_compute.solve_sweep_pipeline);
 					rec.push_bindings<solve_sweep_entry>(color_pc, jointless_bindings);
 					rec.dispatch(p.sweep_workgroups, 1u, 1u);
@@ -1828,6 +1842,7 @@ auto gse::vbd::gpu_solver::stage_solve_iterations(const solve_plan& p, const std
 				else {
 					for (std::uint32_t color = 0; color < p.color_launch_bound; ++color) {
 						color_pc.color_offset = color;
+						rec.mark(m_solve_marks.color[color]);
 						rec.push_bindings<solve_color_entry>(color_pc, jointless_bindings);
 						rec.dispatch_indirect(f.jointless_indirect_dispatch_buffer, (2 + color) * 3 * sizeof(std::uint32_t));
 					}
@@ -1835,11 +1850,13 @@ auto gse::vbd::gpu_solver::stage_solve_iterations(const solve_plan& p, const std
 				color_pc.color_count = 0u;
 			}
 			color_pc.color_offset = 0xFFFFFFFFu;
+			rec.mark(m_solve_marks.island);
 			rec.push_bindings<solve_color_entry>(color_pc, bindings);
 			rec.dispatch(std::max(p.island_count, 1u), 1u, 1u);
 		}
 		else if (p.use_solve_fold) {
 			color_pc.color_count = p.color_launch_bound;
+			rec.mark(m_solve_marks.sweep);
 			rec.bind(m_compute.solve_sweep_pipeline);
 			rec.push_bindings<solve_sweep_entry>(color_pc, bindings);
 			rec.dispatch(p.sweep_workgroups, 1u, 1u);
@@ -1847,20 +1864,24 @@ auto gse::vbd::gpu_solver::stage_solve_iterations(const solve_plan& p, const std
 		else {
 			for (std::uint32_t color = 0; color < p.color_launch_bound; ++color) {
 				color_pc.color_offset = color;
+				rec.mark(m_solve_marks.color[color]);
 				rec.push_bindings<solve_color_entry>(color_pc, bindings);
 				rec.dispatch_indirect(f.indirect_dispatch_buffer, (2 + color) * 3 * sizeof(std::uint32_t));
 			}
 		}
 
+		rec.mark(m_solve_marks.update_lambda);
 		rec.bind(m_compute.update_lambda_pipeline);
 		rec.push_bindings<update_lambda_entry>(p.push_constants(0u, 0u, sub, it, p.solve_alpha), bindings);
 		rec.dispatch_indirect(f.indirect_dispatch_buffer, 3 * sizeof(std::uint32_t));
 		if (p.joint_count > 0) {
+			rec.mark(m_solve_marks.joint_lambda);
 			rec.bind(m_compute.update_joint_lambda_pipeline);
 			rec.push_bindings<update_joint_lambda_entry>(p.push_constants(0u, 0u, sub, it, p.solve_alpha), bindings);
 			rec.dispatch(p.joint_workgroups, 1, 1);
 		}
 
+		rec.mark(m_solve_marks.convergence);
 		rec.bind(m_compute.convergence_check_pipeline);
 		rec.push_bindings<convergence_check_entry>(p.push_constants(it, p.num_iterations, sub, it, p.solve_alpha), bindings);
 		rec.dispatch(1, 1, 1);

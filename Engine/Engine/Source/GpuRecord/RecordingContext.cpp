@@ -35,6 +35,7 @@ gse::gpu::recording_context::recording_context(pass_recorder rec, render_pass_da
 
 gse::gpu::recording_context::recording_context(recording_context_init&& init)
 	: recording_context(std::move(init.recorder), init.pass, init.transient_pool, init.device) {
+	m_marks = init.marks;
 	if (init.primary) {
 		bind(*init.primary);
 	}
@@ -44,7 +45,7 @@ gse::gpu::recording_context::recording_context(recording_context_init&& init)
 }
 
 gse::gpu::recording_context::recording_context(recording_context&& other) noexcept
-	: m_recorder(other.m_recorder), m_pass(other.m_pass), m_transient_pool(other.m_transient_pool), m_device(other.m_device), m_touched(std::move(other.m_touched)), m_last_access(std::move(other.m_last_access)), m_pending_memory_barriers(std::move(other.m_pending_memory_barriers)), m_origin_thread(other.m_origin_thread), m_state_cache(other.m_state_cache), m_bindless_heaps_valid(other.m_bindless_heaps_valid), m_bound_is_compute(other.m_bound_is_compute), m_last_binding_bytes(other.m_last_binding_bytes), m_last_binding_pack(other.m_last_binding_pack), m_last_binding_stages(other.m_last_binding_stages), m_companion_stages(other.m_companion_stages), m_companion_access(other.m_companion_access), m_binding_repeat_valid(other.m_binding_repeat_valid), m_binding_companion_armed(other.m_binding_companion_armed) {
+	: m_recorder(other.m_recorder), m_pass(other.m_pass), m_transient_pool(other.m_transient_pool), m_device(other.m_device), m_touched(std::move(other.m_touched)), m_last_access(std::move(other.m_last_access)), m_pending_memory_barriers(std::move(other.m_pending_memory_barriers)), m_origin_thread(other.m_origin_thread), m_state_cache(other.m_state_cache), m_bindless_heaps_valid(other.m_bindless_heaps_valid), m_bound_is_compute(other.m_bound_is_compute), m_last_binding_bytes(other.m_last_binding_bytes), m_last_binding_pack(other.m_last_binding_pack), m_last_binding_stages(other.m_last_binding_stages), m_companion_stages(other.m_companion_stages), m_companion_access(other.m_companion_access), m_binding_repeat_valid(other.m_binding_repeat_valid), m_binding_companion_armed(other.m_binding_companion_armed), m_marks(other.m_marks) {
 	if (tl_active_recording_context == &other) {
 		tl_active_recording_context = this;
 	}
@@ -93,6 +94,7 @@ auto gse::gpu::recording_context::operator=(recording_context&& other) noexcept 
 		m_companion_access = other.m_companion_access;
 		m_binding_repeat_valid = other.m_binding_repeat_valid;
 		m_binding_companion_armed = other.m_binding_companion_armed;
+		m_marks = other.m_marks;
 		if (tl_active_recording_context == &other) {
 			tl_active_recording_context = this;
 		}
@@ -456,6 +458,24 @@ auto gse::gpu::recording_context::pipeline_barrier(const dependency_info& dep) -
 	check_active();
 	flush_pending_barriers();
 	m_recorder.pipeline_barrier(dep);
+}
+
+auto gse::gpu::recording_context::mark(const id label) const -> void {
+	if (m_marks.next == nullptr) {
+		return;
+	}
+	const auto index = m_marks.next->fetch_add(1, std::memory_order_relaxed);
+	if (index >= m_marks.capacity) {
+		return;
+	}
+	check_active();
+	const auto query = m_marks.query_base + index;
+	m_marks.marks[index] = {
+		.pass_slot = m_marks.pass_slot,
+		.query = query,
+		.label = label,
+	};
+	m_recorder.write_timestamp(pipeline_stage_flag::all_commands, m_marks.pool, query);
 }
 
 auto gse::gpu::recording_context::copy_target_to_buffer(const image_ref& src, const buffer& dst) -> void {

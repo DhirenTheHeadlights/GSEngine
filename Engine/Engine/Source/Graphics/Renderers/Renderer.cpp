@@ -32,8 +32,6 @@ auto gse::renderer::run(context& ctx, const shared_view<gpu::context::data> gpu_
 		d.last_hot_reload_enabled = d.hot_reload_enabled;
 	}
 
-	gpu_s.render_graph->set_gpu_timestamps_enabled(d.gpu_timestamps_enabled);
-	gpu_s.render_graph->set_gpu_pipeline_stats_enabled(d.gpu_pipeline_stats_enabled);
 	if (d.profile_aggregator_enabled != d.last_profile_aggregator_enabled) {
 		profile::set_enabled(d.profile_aggregator_enabled);
 		d.last_profile_aggregator_enabled = d.profile_aggregator_enabled;

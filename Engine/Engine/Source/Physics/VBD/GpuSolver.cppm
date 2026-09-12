@@ -476,6 +476,17 @@ export namespace gse::vbd {
 			bool device_local_seeded = false;
 		} m_compute;
 
+		struct solve_marks {
+			std::array<id, limits.max_colors> color{};
+			id sweep;
+			id island;
+			id jacobi;
+			id apply_jacobi;
+			id update_lambda;
+			id joint_lambda;
+			id convergence;
+		} m_solve_marks;
+
 		struct per_frame_data {
 			gpu::buffer body_buffer;
 			gpu::bindless_handle body_alt_view;

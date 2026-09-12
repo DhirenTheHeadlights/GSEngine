@@ -43,16 +43,6 @@ export namespace gse::renderer {
 		bool hot_reload_enabled = false;
 
 		[[
-			= settings::describe<"Record GPU timestamp queries around each render pass for the profiler.">{}
-		]]
-		bool gpu_timestamps_enabled = true;
-
-		[[
-			= settings::describe<"Collect pipeline statistics (invocations, primitives) per pass. Has measurable overhead.">{}
-		]]
-		bool gpu_pipeline_stats_enabled = false;
-
-		[[
 			= settings::describe<"Aggregate per-frame profiler samples into rolling averages for the HUD.">{}
 		]]
 		bool profile_aggregator_enabled = true;

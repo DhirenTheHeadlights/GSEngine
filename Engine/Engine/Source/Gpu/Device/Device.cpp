@@ -664,6 +664,10 @@ auto gse::gpu::device::retire(const gpu::handle<fence> fence) -> void {
 	m_vt->retire_fence(m_backend.get(), fence);
 }
 
+auto gse::gpu::device::retire(const gpu::handle<query_pool> pool) -> void {
+	m_vt->retire_query_pool(m_backend.get(), pool);
+}
+
 auto gse::gpu::device::semaphore_counter_value(const gpu::handle<semaphore> semaphore) const -> std::uint64_t {
 	return m_vt->semaphore_counter_value(m_backend.get(), semaphore);
 }

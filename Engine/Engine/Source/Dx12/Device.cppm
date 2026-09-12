@@ -379,6 +379,10 @@ export namespace gse::dx12 {
 			gpu::handle<gpu::fence> fence
 		) -> void;
 
+		auto retire_query_pool(
+			gpu::handle<gpu::query_pool> pool
+		) -> void;
+
 		[[nodiscard]] auto semaphore_counter_value(
 			gpu::handle<gpu::semaphore> semaphore
 		) const -> std::uint64_t;

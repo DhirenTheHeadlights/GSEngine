@@ -187,6 +187,10 @@ export namespace gse::gpu {
 			gpu::handle<fence> fence
 		) -> void;
 
+		auto retire(
+			gpu::handle<query_pool> pool
+		) -> void;
+
 		[[nodiscard]]
 		auto semaphore_counter_value(
 			gpu::handle<semaphore> semaphore

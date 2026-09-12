@@ -168,6 +168,10 @@ export namespace gse::gpu {
 			const dependency_info& dep
 		) -> void;
 
+		auto mark(
+			id label
+		) const -> void;
+
 		auto copy_target_to_buffer(
 			const image_ref& src,
 			const buffer& dst
@@ -241,6 +245,7 @@ export namespace gse::gpu {
 		access_flags m_companion_access{};
 		bool m_binding_repeat_valid = false;
 		bool m_binding_companion_armed = false;
+		pass_mark_cursor m_marks;
 
 		recording_context(
 			pass_recorder rec,

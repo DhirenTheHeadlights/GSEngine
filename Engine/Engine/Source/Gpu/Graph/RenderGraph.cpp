@@ -134,6 +134,14 @@ auto gse::gpu::render_graph::set_gpu_pipeline_stats_enabled(const bool enabled) 
 	m_gpu_pipeline_stats_enabled.store(enabled, std::memory_order_relaxed);
 }
 
+auto gse::gpu::render_graph::set_gpu_intra_pass_marks_enabled(const bool enabled) -> void {
+	m_gpu_intra_pass_marks_enabled.store(enabled, std::memory_order_relaxed);
+}
+
+auto gse::gpu::render_graph::profile_key(const std::uint64_t frame, const queue_type queue, const std::uint32_t index) -> std::uint64_t {
+	return (frame << 16) | (static_cast<std::uint64_t>(queue) << 14) | index;
+}
+
 auto gse::gpu::render_graph::set_swapchain_clear(const color_clear value, const load_op op) -> void {
 	m_swapchain_clear = value;
 	m_swapchain_load = op;
@@ -143,9 +151,16 @@ auto gse::gpu::render_graph::set_offscreen_target(const image* target) -> void {
 	m_offscreen_target = target;
 }
 
-auto gse::gpu::render_graph::ensure_profile_pools(gpu_profile_slot& slot, const bool allow_stats) const -> void {
+auto gse::gpu::render_graph::ensure_profile_pools(gpu_profile_slot& slot, const bool allow_stats, const std::uint32_t mark_capacity) const -> void {
+	if (slot.timestamp_pool && slot.mark_capacity != mark_capacity) {
+		m_device->retire(slot.timestamp_pool);
+		slot.timestamp_pool = {};
+	}
 	if (!slot.timestamp_pool) {
-		slot.timestamp_pool = m_device->create_timestamp_query_pool(max_profiled_passes * 2 + 1);
+		slot.timestamp_pool = m_device->create_timestamp_query_pool(mark_query_base + mark_capacity);
+		slot.mark_capacity = mark_capacity;
+		slot.marks.resize(mark_capacity);
+		slot.mark_order.resize(mark_capacity);
 	}
 	if (allow_stats && !slot.stats_pool) {
 		slot.stats_pool = m_device->create_pipeline_stats_query_pool(max_profiled_passes, profile_stats_flags);
@@ -181,13 +196,46 @@ auto gse::gpu::render_graph::read_profile_slot(gpu_profile_slot& slot) -> void {
 		const auto end = static_cast<double>(timestamps[2 + i * 2]) * period + offset;
 		const auto gpu_id = slot.pass_types[i];
 		const auto queue = slot.pass_queues[i];
-		const std::uint64_t key = (slot.frame_counter << 16) | (static_cast<std::uint64_t>(queue) << 14) | i;
+		const auto key = profile_key(slot.frame_counter, queue, i);
 		const auto tid = queue_tids[static_cast<std::size_t>(queue)];
 
 		trace::begin_async_at(gpu_id, key, tid, time_t<std::uint64_t>(start));
 		trace::end_async_at(gpu_id, key, tid, time_t<std::uint64_t>(end));
 
 		profile::ingest_gpu_sample(gpu_id, end - start);
+	}
+
+	if (slot.mark_count > 0) {
+		const auto [mark_status, mark_times] =
+			m_device->query_pool_results(slot.timestamp_pool, mark_query_base, slot.mark_count, sizeof(std::uint64_t));
+
+		if (mark_status == query_status::success) {
+			const auto order = std::span(slot.mark_order).first(slot.mark_count);
+			std::iota(order.begin(), order.end(), 0u);
+			std::ranges::sort(order, [&](const std::uint32_t a, const std::uint32_t b) {
+				const auto& ma = slot.marks[a];
+				const auto& mb = slot.marks[b];
+				return ma.pass_slot != mb.pass_slot ? ma.pass_slot < mb.pass_slot : ma.query < mb.query;
+			});
+
+			for (std::size_t k = 0; k < order.size(); ++k) {
+				const auto index = order[k];
+				const auto& m = slot.marks[index];
+				const bool last_in_pass = k + 1 == order.size() || slot.marks[order[k + 1]].pass_slot != m.pass_slot;
+				const auto start = static_cast<double>(mark_times[index]) * period + offset;
+				const auto end = last_in_pass
+					? static_cast<double>(timestamps[2 + m.pass_slot * 2]) * period + offset
+					: static_cast<double>(mark_times[order[k + 1]]) * period + offset;
+				const auto queue = slot.pass_queues[m.pass_slot];
+				const auto key = profile_key(slot.frame_counter, queue, max_profiled_passes + index);
+				const auto tid = queue_tids[static_cast<std::size_t>(queue)];
+
+				trace::begin_async_at(m.label, key, tid, time_t<std::uint64_t>(start));
+				trace::end_async_at(m.label, key, tid, time_t<std::uint64_t>(end));
+
+				profile::ingest_gpu_sample(m.label, end - start);
+			}
+		}
 	}
 
 	if (slot.stats_issued) {
@@ -396,6 +444,13 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 
 	const bool timestamps_enabled = m_gpu_timestamps_enabled.load(std::memory_order_relaxed);
 	const bool stats_enabled = m_gpu_pipeline_stats_enabled.load(std::memory_order_relaxed);
+	const bool marks_enabled = timestamps_enabled && m_gpu_intra_pass_marks_enabled.load(std::memory_order_relaxed);
+	if (!marks_enabled) {
+		m_mark_capacity = 0;
+	}
+	else if (m_mark_capacity == 0) {
+		m_mark_capacity = initial_mark_capacity;
+	}
 
 	if (m_frames_submitted >= per_frame_resource<gpu_profile_slot>::frames_in_flight) {
 		for (auto& slots : m_profile_slots) {
@@ -411,6 +466,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		s.pass_types.resize(max_profiled_passes);
 		s.pass_queues.resize(max_profiled_passes);
 		s.pass_count = 0;
+		s.mark_count = 0;
 		s.stats_issued = false;
 		s.results_valid = false;
 	};
@@ -421,7 +477,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 	if (timestamps_enabled) {
 		for (std::size_t qi = 0; qi < queue_type_count; ++qi) {
 			const bool with_stats = qi == static_cast<std::size_t>(queue_type::graphics) && stats_enabled;
-			ensure_profile_pools(m_profile_slots[qi][frame_idx], with_stats);
+			ensure_profile_pools(m_profile_slots[qi][frame_idx], with_stats, m_mark_capacity);
 		}
 	}
 
@@ -472,6 +528,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 
 	std::vector<command_buffer_handle> pass_bodies;
 	std::array<std::atomic<std::uint32_t>, queue_type_count> profile_next_slot{};
+	std::array<std::atomic<std::uint32_t>, queue_type_count> profile_next_mark{};
 	std::array<std::atomic<bool>, queue_type_count> profile_stats_issued{};
 
 	auto record_range = [&](const std::size_t start, const std::size_t end, const id round_id) {
@@ -612,6 +669,17 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 				rec_init.device = m_device;
 				rec_init.primary = pass.primary_pipeline;
 				rec_init.touches.clear();
+				rec_init.marks = {};
+				if (profile != nullptr && profile->mark_capacity > 0) {
+					rec_init.marks = pass_mark_cursor{
+						.pool = profile->timestamp_pool,
+						.marks = profile->marks.data(),
+						.next = std::addressof(profile_next_mark[static_cast<std::size_t>(queue)]),
+						.pass_slot = profile_slot,
+						.capacity = profile->mark_capacity,
+						.query_base = mark_query_base,
+					};
+				}
 				const auto note = [&](const resource_ref ref, const pipeline_stage_flags stages, const access_flags access) {
 					rec_init.touches.push_back({ ref, stages, access });
 				};
@@ -728,6 +796,34 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			auto& slot = m_profile_slots[qi][frame_idx];
 			slot.pass_count = std::min(profile_next_slot[qi].load(std::memory_order_relaxed), max_profiled_passes);
 			slot.stats_issued = profile_stats_issued[qi].load(std::memory_order_relaxed);
+			const auto marks_requested = profile_next_mark[qi].load(std::memory_order_relaxed);
+			slot.mark_count = std::min(marks_requested, slot.mark_capacity);
+			if (marks_requested > slot.mark_capacity && slot.mark_capacity > 0) {
+				const auto grown = std::min(std::bit_ceil(marks_requested), max_mark_capacity);
+				if (grown > m_mark_capacity) {
+					m_mark_capacity = grown;
+					log::println(
+						log::level::info,
+						log::category::render,
+						"gpu profile: {} intra-pass marks requested on queue {} ({} dropped this frame); mark budget grows to {}",
+						marks_requested,
+						qi,
+						marks_requested - slot.mark_capacity,
+						grown
+					);
+				}
+				else if (slot.mark_capacity == max_mark_capacity) {
+					log::println(
+						log::level::warning,
+						log::category::render,
+						"gpu profile: {} intra-pass marks requested on queue {} exceed the {} mark ceiling; {} dropped",
+						marks_requested,
+						qi,
+						max_mark_capacity,
+						marks_requested - slot.mark_capacity
+					);
+				}
+			}
 		}
 	}
 
@@ -751,7 +847,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			const auto profile_begin = m_device->acquire_worker_command_buffer(q, 0, frame_idx);
 			const auto pcmd = m_device->recorder(profile_begin);
 			pcmd.begin();
-			pcmd.reset_query_pool(slot.timestamp_pool, 0, max_profiled_passes * 2 + 1);
+			pcmd.reset_query_pool(slot.timestamp_pool, 0, mark_query_base + slot.mark_capacity);
 			if (with_stats) {
 				pcmd.reset_query_pool(slot.stats_pool, 0, max_profiled_passes);
 			}
@@ -1319,6 +1415,9 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			const auto pcmd = m_device->recorder(profile_end);
 			pcmd.begin();
 			pcmd.resolve_query_pool(slot.timestamp_pool, 0, slot.pass_count * 2 + 1);
+			if (slot.mark_count > 0) {
+				pcmd.resolve_query_pool(slot.timestamp_pool, mark_query_base, slot.mark_count);
+			}
 			if (slot.stats_issued) {
 				pcmd.resolve_query_pool(slot.stats_pool, 0, slot.pass_count);
 			}
