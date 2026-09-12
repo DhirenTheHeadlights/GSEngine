@@ -712,11 +712,18 @@ export namespace gse::directx {
 		std::uint64_t size
 	) -> com_ptr<ID3D12Resource>;
 
-	auto resolve_timestamp_query(
+	auto end_timestamp_query(
+		ID3D12GraphicsCommandList* list,
+		ID3D12QueryHeap* heap,
+		std::uint32_t index
+	) -> void;
+
+	auto resolve_timestamp_queries(
 		ID3D12GraphicsCommandList* list,
 		ID3D12QueryHeap* heap,
 		ID3D12Resource* readback,
-		std::uint32_t index
+		std::uint32_t first_query,
+		std::uint32_t query_count
 	) -> void;
 
 	[[nodiscard]] auto timestamp_frequency(
@@ -1785,9 +1792,12 @@ auto gse::directx::create_readback_buffer(ID3D12Device* device, const std::uint6
 	return create_buffer_resource(device, heap, size, D3D12_RESOURCE_FLAG_NONE);
 }
 
-auto gse::directx::resolve_timestamp_query(ID3D12GraphicsCommandList* list, ID3D12QueryHeap* heap, ID3D12Resource* readback, const std::uint32_t index) -> void {
+auto gse::directx::end_timestamp_query(ID3D12GraphicsCommandList* list, ID3D12QueryHeap* heap, const std::uint32_t index) -> void {
 	list->EndQuery(heap, D3D12_QUERY_TYPE_TIMESTAMP, index);
-	list->ResolveQueryData(heap, D3D12_QUERY_TYPE_TIMESTAMP, index, 1, readback, static_cast<std::uint64_t>(index) * sizeof(std::uint64_t));
+}
+
+auto gse::directx::resolve_timestamp_queries(ID3D12GraphicsCommandList* list, ID3D12QueryHeap* heap, ID3D12Resource* readback, const std::uint32_t first_query, const std::uint32_t query_count) -> void {
+	list->ResolveQueryData(heap, D3D12_QUERY_TYPE_TIMESTAMP, first_query, query_count, readback, static_cast<std::uint64_t>(first_query) * sizeof(std::uint64_t));
 }
 
 auto gse::directx::timestamp_frequency(ID3D12CommandQueue* queue) -> std::uint64_t {

@@ -60,6 +60,12 @@ export namespace gse::dx12 {
 			std::uint32_t query_index
 		) const -> void;
 
+		auto resolve_query_pool(
+			gpu::handle<gpu::query_pool> pool,
+			std::uint32_t first_query,
+			std::uint32_t query_count
+		) const -> void;
+
 		auto bind_shaders(
 			std::span<const gpu::stage_flag> stages,
 			std::span<const gpu::handle<gpu::shader_object>> shaders
@@ -364,6 +370,12 @@ auto gse::dx12::commands::write_timestamp(gpu::pipeline_stage_flags, const gpu::
 auto gse::dx12::commands::begin_query(gpu::handle<gpu::query_pool>, std::uint32_t) const -> void {}
 
 auto gse::dx12::commands::end_query(gpu::handle<gpu::query_pool>, std::uint32_t) const -> void {}
+
+auto gse::dx12::commands::resolve_query_pool(const gpu::handle<gpu::query_pool> pool, const std::uint32_t first_query, const std::uint32_t query_count) const -> void {
+	if (active_device) {
+		active_device->cmd_resolve_query_pool(m_cmd, pool, first_query, query_count);
+	}
+}
 
 auto gse::dx12::commands::bind_shaders(const std::span<const gpu::stage_flag> stages, const std::span<const gpu::handle<gpu::shader_object>> shaders) const -> void {
 	auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(m_cmd);

@@ -2679,12 +2679,26 @@ auto gse::vulkan::device::wait_semaphore(const gpu::handle<gpu::semaphore> semap
 	);
 }
 
-auto gse::vulkan::device::create_timestamp_query_pool(const std::uint32_t capacity, const std::string_view label) -> gpu::handle<gpu::query_pool> {
-	auto [result, pool] = raii_device().createQueryPool({
-		.queryType = vk::QueryType::eTimestamp,
-		.queryCount = capacity,
+auto gse::vulkan::device::create_query_pool(const vk::QueryPoolCreateInfo& info, const std::uint32_t result_stride, const std::string_view label) -> gpu::handle<gpu::query_pool> {
+	auto [pool_result, pool] = raii_device().createQueryPool(info);
+	assert(pool_result == vk::Result::eSuccess, "failed to create query pool: {}", vk::to_string(pool_result));
+	const vk::DeviceSize size = static_cast<vk::DeviceSize>(info.queryCount) * result_stride;
+	auto [buffer_result, readback] = raii_device().createBuffer({
+		.size = size,
+		.usage = vk::BufferUsageFlagBits::eTransferDst,
 	});
-	assert(result == vk::Result::eSuccess, "failed to create timestamp query pool: {}", vk::to_string(result));
+	assert(buffer_result == vk::Result::eSuccess, "failed to create query readback buffer: {}", vk::to_string(buffer_result));
+	const auto reqs = (*m_device).getBufferMemoryRequirements(*readback);
+	const auto memory_type_index = find_memory_type_index(reqs.memoryTypeBits, { gpu::memory_property_flag::host_visible, gpu::memory_property_flag::host_coherent });
+	auto [memory_result, memory] = raii_device().allocateMemory({
+		.allocationSize = reqs.size,
+		.memoryTypeIndex = memory_type_index,
+	});
+	assert(memory_result == vk::Result::eSuccess, "failed to allocate query readback memory: {}", vk::to_string(memory_result));
+	const auto bind_result = (*m_device).bindBufferMemory(*readback, *memory, 0);
+	assert(bind_result == vk::Result::eSuccess, "failed to bind query readback memory: {}", vk::to_string(bind_result));
+	auto [map_result, mapped] = (*m_device).mapMemory(*memory, 0, size, {});
+	assert(map_result == vk::Result::eSuccess, "failed to map query readback memory: {}", vk::to_string(map_result));
 	if (!label.empty()) {
 		const std::string name{ label };
 		(void)raii_device().setDebugUtilsObjectNameEXT({
@@ -2692,43 +2706,59 @@ auto gse::vulkan::device::create_timestamp_query_pool(const std::uint32_t capaci
 			.objectHandle = std::bit_cast<std::uint64_t>(*pool),
 			.pObjectName = name.c_str(),
 		});
+		(void)raii_device().setDebugUtilsObjectNameEXT({
+			.objectType = vk::ObjectType::eBuffer,
+			.objectHandle = std::bit_cast<std::uint64_t>(*readback),
+			.pObjectName = name.c_str(),
+		});
 	}
-	return adopt<gpu::handle<gpu::query_pool>>(std::move(pool));
+	auto resources = std::make_unique<query_pool_resources>(query_pool_resources{
+		.pool = std::move(pool),
+		.readback = std::move(readback),
+		.memory = std::move(memory),
+		.mapped = static_cast<std::byte*>(mapped),
+		.capacity = info.queryCount,
+		.result_stride = result_stride,
+	});
+	const auto handle = std::bit_cast<gpu::handle<gpu::query_pool>>(resources.get());
+	std::lock_guard _(m_mutex);
+	m_owned.store(handle.value, std::move(resources));
+	return handle;
+}
+
+auto gse::vulkan::device::create_timestamp_query_pool(const std::uint32_t capacity, const std::string_view label) -> gpu::handle<gpu::query_pool> {
+	return create_query_pool(
+		{
+			.queryType = vk::QueryType::eTimestamp,
+			.queryCount = capacity,
+		},
+		sizeof(std::uint64_t),
+		label
+	);
 }
 
 auto gse::vulkan::device::create_pipeline_stats_query_pool(const std::uint32_t capacity, const gpu::pipeline_statistic_flags statistics, const std::string_view label) -> gpu::handle<gpu::query_pool> {
-	auto [result, pool] = raii_device().createQueryPool({
-		.queryType = vk::QueryType::ePipelineStatistics,
-		.queryCount = capacity,
-		.pipelineStatistics = to_vk(statistics),
-	});
-	assert(result == vk::Result::eSuccess, "failed to create pipeline stats query pool: {}", vk::to_string(result));
-	if (!label.empty()) {
-		const std::string name{ label };
-		(void)raii_device().setDebugUtilsObjectNameEXT({
-			.objectType = vk::ObjectType::eQueryPool,
-			.objectHandle = std::bit_cast<std::uint64_t>(*pool),
-			.pObjectName = name.c_str(),
-		});
-	}
-	return adopt<gpu::handle<gpu::query_pool>>(std::move(pool));
+	const auto statistic_count = static_cast<std::uint32_t>(std::popcount(static_cast<std::uint32_t>(to_vk(statistics))));
+	return create_query_pool(
+		{
+			.queryType = vk::QueryType::ePipelineStatistics,
+			.queryCount = capacity,
+			.pipelineStatistics = to_vk(statistics),
+		},
+		statistic_count * sizeof(std::uint64_t),
+		label
+	);
 }
 
-auto gse::vulkan::device::query_pool_results(const gpu::handle<gpu::query_pool> pool, const std::uint32_t first_query, const std::uint32_t query_count, const std::uint64_t stride) const -> std::pair<gpu::query_status, std::vector<std::uint64_t>> {
-	const auto* vk_pool = m_owned.find(pool);
-	if (!vk_pool) {
+auto gse::vulkan::device::query_pool_results(const gpu::handle<gpu::query_pool> pool, const std::uint32_t first_query, const std::uint32_t query_count, std::uint64_t) const -> std::pair<gpu::query_status, std::vector<std::uint64_t>> {
+	const auto* resources = m_owned.find(pool);
+	if (!resources || first_query + query_count > (*resources)->capacity) {
 		return { gpu::query_status::error, {} };
 	}
-	const std::size_t group_count = stride > 0 ? std::max<std::size_t>(stride / sizeof(std::uint64_t), 1) : 1;
-	const std::size_t element_count = static_cast<std::size_t>(query_count) * group_count;
-	auto [status, values] = vk_pool->getResults<std::uint64_t>(
-		first_query,
-		query_count,
-		element_count * sizeof(std::uint64_t),
-		stride,
-		vk::QueryResultFlagBits::e64 | vk::QueryResultFlagBits::eWait
-	);
-	return { status == vk::Result::eSuccess ? gpu::query_status::success : gpu::query_status::error, std::move(values) };
+	const auto& r = **resources;
+	std::vector<std::uint64_t> values(static_cast<std::size_t>(query_count) * (r.result_stride / sizeof(std::uint64_t)));
+	std::memcpy(values.data(), r.mapped + static_cast<std::size_t>(first_query) * r.result_stride, values.size() * sizeof(std::uint64_t));
+	return { gpu::query_status::success, std::move(values) };
 }
 
 auto gse::vulkan::device::descriptor_heap_properties() const -> gpu::descriptor_heap_properties {

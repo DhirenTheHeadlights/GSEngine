@@ -165,6 +165,13 @@ export namespace gse::dx12 {
 			std::uint32_t index
 		) -> void;
 
+		auto cmd_resolve_query_pool(
+			gpu::command_buffer_handle cmd,
+			gpu::handle<gpu::query_pool> pool,
+			std::uint32_t first_query,
+			std::uint32_t query_count
+		) -> void;
+
 		auto cmd_release_swapchain_to_present(
 			gpu::command_buffer_handle cmd,
 			gpu::handle<gpu::image> img,

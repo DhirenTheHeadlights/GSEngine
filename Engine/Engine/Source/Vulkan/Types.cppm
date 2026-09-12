@@ -226,6 +226,15 @@ export namespace gse::vulkan {
 	auto from_vk(
 		const vk::SurfaceCapabilitiesKHR& caps
 	) -> gpu::surface_capabilities;
+
+	struct query_pool_resources {
+		vk::raii::QueryPool pool = nullptr;
+		vk::raii::Buffer readback = nullptr;
+		vk::raii::DeviceMemory memory = nullptr;
+		std::byte* mapped = nullptr;
+		std::uint32_t capacity = 0;
+		std::uint32_t result_stride = 0;
+	};
 }
 
 auto gse::vulkan::to_vk(const gpu::cull_mode m) -> vk::CullModeFlagBits {

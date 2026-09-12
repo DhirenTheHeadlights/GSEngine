@@ -56,6 +56,12 @@ export namespace gse::gpu {
 			std::uint32_t query_index
 		) const -> void;
 
+		auto resolve_query_pool(
+			handle<query_pool> pool,
+			std::uint32_t first_query,
+			std::uint32_t query_count
+		) const -> void;
+
 		auto release_swapchain_image_to_present(
 			handle<image> img,
 			pipeline_stage_flags src_stages,

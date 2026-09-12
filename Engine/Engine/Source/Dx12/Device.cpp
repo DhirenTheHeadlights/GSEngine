@@ -419,10 +419,19 @@ auto gse::dx12::device::timestamp_period() const -> float {
 auto gse::dx12::device::cmd_write_timestamp(const gpu::command_buffer_handle cmd, const gpu::handle<gpu::query_pool> pool_handle, const std::uint32_t index) -> void {
 	auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(cmd);
 	auto* pool = std::bit_cast<timestamp_query_pool*>(pool_handle);
-	if (!list || !pool || !pool->heap || !pool->readback || index >= pool->capacity) {
+	if (!list || !pool || !pool->heap || index >= pool->capacity) {
 		return;
 	}
-	directx::resolve_timestamp_query(list, pool->heap.get(), pool->readback.get(), index);
+	directx::end_timestamp_query(list, pool->heap.get(), index);
+}
+
+auto gse::dx12::device::cmd_resolve_query_pool(const gpu::command_buffer_handle cmd, const gpu::handle<gpu::query_pool> pool_handle, const std::uint32_t first_query, const std::uint32_t query_count) -> void {
+	auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(cmd);
+	auto* pool = std::bit_cast<timestamp_query_pool*>(pool_handle);
+	if (!list || !pool || !pool->heap || !pool->readback || query_count == 0 || first_query + query_count > pool->capacity) {
+		return;
+	}
+	directx::resolve_timestamp_queries(list, pool->heap.get(), pool->readback.get(), first_query, query_count);
 }
 
 auto gse::dx12::device::record_buffer_fill_u32(gpu::command_buffer_handle, gpu::handle<gpu::buffer>, gpu::device_size, std::uint32_t) -> void {}

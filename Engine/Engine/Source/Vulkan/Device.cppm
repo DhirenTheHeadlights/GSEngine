@@ -102,7 +102,7 @@ namespace gse::vulkan {
 				{ ^^gpu::handle<gpu::fence>, ^^vk::raii::Fence },
 				{ ^^gpu::acceleration_structure, ^^vk::raii::AccelerationStructureKHR },
 				{ ^^gpu::swap_chain_handle, ^^swap_chain_resources },
-				{ ^^gpu::handle<gpu::query_pool>, ^^vk::raii::QueryPool },
+				{ ^^gpu::handle<gpu::query_pool>, ^^std::unique_ptr<query_pool_resources> },
 				{ ^^gpu::handle<gpu::shader_object>, ^^vk::raii::ShaderEXT },
 				{ ^^gpu::handle<gpu::pipeline_layout>, ^^vk::raii::PipelineLayout },
 				{ ^^gpu::handle<gpu::descriptor_heap>, ^^descriptor_heap_resources },
@@ -630,6 +630,12 @@ export namespace gse::vulkan {
 		) const -> std::pair<gpu::query_status, std::vector<std::uint64_t>>;
 
 	private:
+		auto create_query_pool(
+			const vk::QueryPoolCreateInfo& info,
+			std::uint32_t result_stride,
+			std::string_view label
+		) -> gpu::handle<gpu::query_pool>;
+
 		device(
 			class physical_device&& physical_device,
 			vk::raii::Device&& device,

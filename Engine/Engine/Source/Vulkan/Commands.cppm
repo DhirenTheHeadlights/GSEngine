@@ -64,6 +64,12 @@ export namespace gse::vulkan {
 			std::uint32_t query_index
 		) const -> void;
 
+		auto resolve_query_pool(
+			gpu::handle<gpu::query_pool> pool,
+			std::uint32_t first_query,
+			std::uint32_t query_count
+		) const -> void;
+
 		auto bind_shaders(
 			std::span<const gpu::stage_flag> stages,
 			std::span<const gpu::handle<gpu::shader_object>> shaders
@@ -357,24 +363,47 @@ auto gse::vulkan::commands::reset() const -> void {
 	assert(result == vk::Result::eSuccess, "failed to reset command buffer: {}", vk::to_string(result));
 }
 
+namespace gse::vulkan {
+	auto query_pool_of(
+		gpu::handle<gpu::query_pool> pool
+	) -> const query_pool_resources&;
+}
+
+auto gse::vulkan::query_pool_of(const gpu::handle<gpu::query_pool> pool) -> const query_pool_resources& {
+	return *std::bit_cast<const query_pool_resources*>(pool);
+}
+
 auto gse::vulkan::commands::reset_query_pool(const gpu::handle<gpu::query_pool> pool, const std::uint32_t first_query, const std::uint32_t query_count) const -> void {
-	raw().resetQueryPool(std::bit_cast<vk::QueryPool>(pool), first_query, query_count);
+	raw().resetQueryPool(*query_pool_of(pool).pool, first_query, query_count);
 }
 
 auto gse::vulkan::commands::write_timestamp(const gpu::pipeline_stage_flags stage, const gpu::handle<gpu::query_pool> pool, const std::uint32_t query_index) const -> void {
-	raw().writeTimestamp2(to_vk(stage), std::bit_cast<vk::QueryPool>(pool), query_index);
+	raw().writeTimestamp2(to_vk(stage), *query_pool_of(pool).pool, query_index);
 }
 
 auto gse::vulkan::commands::begin_query(const gpu::handle<gpu::query_pool> pool, const std::uint32_t query_index) const -> void {
 	raw().beginQuery(
-		std::bit_cast<vk::QueryPool>(pool),
+		*query_pool_of(pool).pool,
 		query_index,
 		{}
 	);
 }
 
 auto gse::vulkan::commands::end_query(const gpu::handle<gpu::query_pool> pool, const std::uint32_t query_index) const -> void {
-	raw().endQuery(std::bit_cast<vk::QueryPool>(pool), query_index);
+	raw().endQuery(*query_pool_of(pool).pool, query_index);
+}
+
+auto gse::vulkan::commands::resolve_query_pool(const gpu::handle<gpu::query_pool> pool, const std::uint32_t first_query, const std::uint32_t query_count) const -> void {
+	const auto& r = query_pool_of(pool);
+	raw().copyQueryPoolResults(
+		*r.pool,
+		first_query,
+		query_count,
+		*r.readback,
+		static_cast<vk::DeviceSize>(first_query) * r.result_stride,
+		r.result_stride,
+		vk::QueryResultFlagBits::e64 | vk::QueryResultFlagBits::eWait
+	);
 }
 
 namespace gse::vulkan {

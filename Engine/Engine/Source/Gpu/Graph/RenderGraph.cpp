@@ -1312,9 +1312,19 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 	if (timestamps_enabled) {
 		for (std::size_t qi = 0; qi < queue_type_count; ++qi) {
 			auto& slot = m_profile_slots[qi][frame_idx];
-			if (slot.pass_count > 0) {
-				slot.results_valid = true;
+			if (slot.pass_count == 0) {
+				continue;
 			}
+			const auto profile_end = m_device->acquire_worker_command_buffer(static_cast<queue_type>(qi), 0, frame_idx);
+			const auto pcmd = m_device->recorder(profile_end);
+			pcmd.begin();
+			pcmd.resolve_query_pool(slot.timestamp_pool, 0, slot.pass_count * 2 + 1);
+			if (slot.stats_issued) {
+				pcmd.resolve_query_pool(slot.stats_pool, 0, slot.pass_count);
+			}
+			pcmd.end();
+			queue_submit_order[qi].push_back(profile_end);
+			slot.results_valid = true;
 		}
 	}
 

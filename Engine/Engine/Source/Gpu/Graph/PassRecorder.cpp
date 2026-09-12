@@ -55,6 +55,10 @@ auto gse::gpu::pass_recorder::end_query(const handle<query_pool> pool, const std
 	m_vt->end_query(m_cmd, pool, query_index);
 }
 
+auto gse::gpu::pass_recorder::resolve_query_pool(const handle<query_pool> pool, const std::uint32_t first_query, const std::uint32_t query_count) const -> void {
+	m_vt->resolve_query_pool(m_cmd, pool, first_query, query_count);
+}
+
 auto gse::gpu::pass_recorder::release_swapchain_image_to_present(const handle<image> img, const pipeline_stage_flags src_stages, const access_flags src_access) const -> void {
 	m_vt->release_swapchain_image_to_present(m_cmd, img, src_stages, src_access);
 }
