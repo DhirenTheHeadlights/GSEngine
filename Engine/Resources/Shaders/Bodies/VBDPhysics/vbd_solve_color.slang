@@ -1,6 +1,173 @@
 
 static const float fx_scale = 4194304.0;
 static const float fx_inv_scale = 1.0 / 4194304.0;
+static const uint island_span = workgroup_size * 2;
+
+groupshared uint gs_island_index[workgroup_size];
+groupshared uint gs_island_slot[island_span];
+groupshared uint gs_island_min;
+groupshared uint gs_island_level[workgroup_size];
+groupshared uint gs_island_changed;
+groupshared uint gs_island_max_level;
+
+struct body_view {
+    float3 predicted_position;
+    float4 predicted_orientation;
+    float4 old_orientation;
+    float3 velocity;
+    float3 angular_velocity;
+};
+
+struct other_view {
+    float3 predicted_position;
+    float4 predicted_orientation;
+    float mass;
+    uint locked;
+};
+
+struct self_view {
+    float3 predicted_position;
+    float4 predicted_orientation;
+    float3 inertia_target;
+    float4 angular_inertia_target;
+    float3 motor_target;
+    mat3 inv_inertia;
+    float mass;
+    uint locked;
+    uint update_orientation;
+    uint sleep_counter;
+};
+
+body_view load_body_view(uint bi) {
+    body_view v;
+    v.predicted_position = body_data[bi].predicted_position;
+    v.predicted_orientation = body_data[bi].predicted_orientation;
+    v.old_orientation = body_data[bi].old_orientation;
+    v.velocity = body_data[bi].velocity;
+    v.angular_velocity = body_data[bi].angular_velocity;
+    return v;
+}
+
+other_view load_other_view(uint bi) {
+    other_view v;
+    v.predicted_position = body_data[bi].predicted_position;
+    v.predicted_orientation = body_data[bi].predicted_orientation;
+    v.mass = body_data[bi].mass;
+    v.locked = body_data[bi].locked;
+    return v;
+}
+
+self_view load_self_view(uint bi) {
+    self_view v;
+    v.predicted_position = body_data[bi].predicted_position;
+    v.predicted_orientation = body_data[bi].predicted_orientation;
+    v.inertia_target = body_data[bi].inertia_target;
+    v.angular_inertia_target = body_data[bi].angular_inertia_target;
+    v.motor_target = body_data[bi].motor_target;
+    v.inv_inertia = body_data[bi].inv_inertia;
+    v.mass = body_data[bi].mass;
+    v.locked = body_data[bi].locked;
+    v.update_orientation = body_data[bi].update_orientation;
+    v.sleep_counter = body_data[bi].sleep_counter;
+    return v;
+}
+
+uint island_position(uint bi, uint count) {
+    uint span = bi - gs_island_min;
+    if (span < island_span) return gs_island_slot[span];
+    for (uint k = 0; k < count; k++) {
+        if (gs_island_index[k] == bi) return k;
+    }
+    return 0xFFFFFFFFu;
+}
+
+void island_mask_add(inout uint2 mask, uint p) {
+    if (p < 32) mask.x |= 1u << p;
+    else mask.y |= 1u << (p - 32);
+}
+
+void island_neighbour_masks(uint bi, uint self, uint count, out uint2 lower, out uint2 upper) {
+    lower = uint2(0, 0);
+    upper = uint2(0, 0);
+
+    uint contact_offset = contact_offsets[bi];
+    uint contact_count = contact_counts[bi];
+    for (uint ci_idx = 0; ci_idx < contact_count; ci_idx++) {
+        uint ci = safe_load_uint(contact_adjacency, contact_offset + ci_idx, max_contact_adjacency);
+        if (ci >= max_contacts) continue;
+        contact_constraint c = contact_data[ci];
+        uint other = (c.body_a == bi) ? c.body_b : c.body_a;
+        uint p = island_position(other, count);
+        if (p == 0xFFFFFFFFu || p == self) continue;
+        if (p < self) island_mask_add(lower, p);
+        else island_mask_add(upper, p);
+    }
+
+    uint joint_offset = joint_offsets[bi];
+    uint joint_count_for_body = joint_counts[bi];
+    for (uint ji_idx = 0; ji_idx < joint_count_for_body; ji_idx++) {
+        uint ji = safe_load_uint(joint_adjacency, joint_offset + ji_idx, max_joint_adjacency);
+        if (ji >= max_joints) continue;
+        joint_constraint j = joint_data[ji];
+        uint other = (j.body_a == bi) ? j.body_b : j.body_a;
+        uint p = island_position(other, count);
+        if (p == 0xFFFFFFFFu || p == self) continue;
+        if (p < self) island_mask_add(lower, p);
+        else island_mask_add(upper, p);
+    }
+}
+
+uint island_mask_level(uint2 mask) {
+    uint level = 0;
+    uint m = mask.x;
+    while (m != 0) {
+        uint p = firstbitlow(m);
+        m &= m - 1;
+        level = max(level, gs_island_level[p] + 1);
+    }
+    m = mask.y;
+    while (m != 0) {
+        uint p = firstbitlow(m);
+        m &= m - 1;
+        level = max(level, gs_island_level[32 + p] + 1);
+    }
+    return level;
+}
+
+uint island_levels(uint2 mask, uint lane, uint count) {
+    gs_island_level[lane] = 0;
+    if (lane == 0) {
+        gs_island_changed = 0;
+        gs_island_max_level = 0;
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    uint level = 0;
+    for (uint iter = 0; iter < count; iter++) {
+        uint next = island_mask_level(mask);
+        GroupMemoryBarrierWithGroupSync();
+        if (next != level) {
+            level = next;
+            gs_island_level[lane] = level;
+            gs_island_changed = 1;
+        }
+        GroupMemoryBarrierWithGroupSync();
+        bool done = gs_island_changed == 0;
+        GroupMemoryBarrierWithGroupSync();
+        if (lane == 0) gs_island_changed = 0;
+        if (done) break;
+    }
+    InterlockedMax(gs_island_max_level, level);
+    GroupMemoryBarrierWithGroupSync();
+    return level;
+}
+
+void island_sweep(uint bi, bool valid, uint level, uint max_level) {
+    for (uint l = 0; l <= max_level; l++) {
+        if (valid && level == l) solve_body(bi, true);
+        AllMemoryBarrierWithGroupSync();
+    }
+}
 
 int64_t fx_encode(float v) {
     return int64_t(round(v * fx_scale));
@@ -52,7 +219,7 @@ void accumulate_geometric_stiffness(float3 r, float3 dir, float abs_force, inout
 }
 
 void accumulate_joint_drive(
-    joint_constraint j, body_state body_a, body_state body_b,
+    joint_constraint j, body_view body_a, body_view body_b,
     float3 axis_world, float theta_axis, int axis_index, float sign,
     inout float3 ang_grad, inout mat3 ang_hess
 ) {
@@ -79,8 +246,8 @@ void accumulate_joint_for_body(
     inout float3 ang_grad, inout mat3 ang_hess,
     inout mat3 hess_xt
 ) {
-    body_state body_a = body_data[j.body_a];
-    body_state body_b = body_data[j.body_b];
+    body_view body_a = load_body_view(j.body_a);
+    body_view body_b = load_body_view(j.body_b);
     bool is_a = (j.body_a == bi);
     float sign = is_a ? 1.0 : -1.0;
 
@@ -301,7 +468,7 @@ void accumulate_joint_for_body(
 }
 
 void solve_body(uint bi, bool live_jac) {
-    body_state body = body_data[bi];
+    self_view body = load_self_view(bi);
 
     bool locked = body.locked != 0;
     bool sleeping = body.sleep_counter >= sleep_threshold;
@@ -375,7 +542,7 @@ void solve_body(uint bi, bool live_jac) {
 
         bool is_a = (c.body_a == bi);
         uint other_idx = is_a ? c.body_b : c.body_a;
-        body_state other = body_data[other_idx];
+        other_view other = load_other_view(other_idx);
 
         frozen_jacobian fj = frozen_jacobians[ci];
         float3 world_r_a;
@@ -523,7 +690,7 @@ void solve_body(uint bi, bool live_jac) {
             solve_deltas[bi * 2] = float4(delta_x * solver_config_data[0].jacobi_omega, 0);
         } else {
             body.predicted_position.xyz += delta_x;
-            body_data[bi] = body;
+            body_data[bi].predicted_position = body.predicted_position;
         }
         return;
     }
@@ -598,7 +765,8 @@ void solve_body(uint bi, bool live_jac) {
         body.predicted_orientation = quat_normalize(quat_mul(delta_q, body.predicted_orientation));
     }
 
-    body_data[bi] = body;
+    body_data[bi].predicted_position = body.predicted_position;
+    body_data[bi].predicted_orientation = body.predicted_orientation;
 }
 
 void vbd_solve_color(uint3 dispatch_id) {
@@ -626,17 +794,49 @@ void vbd_solve_color(uint3 dispatch_id) {
         }
 
         uint island_count = island_data[0];
-        if (env < island_count && lane == 0) {
+        if (env < island_count) {
             uint base = 1 + 2 * max_islands;
             uint offset = island_data[1 + env];
             uint count = island_data[1 + max_islands + env];
-            for (uint k = 0; k < count; k++) {
-                uint bi = island_data[base + offset + k];
-                if (bi < pc.body_count) solve_body(bi, true);
+
+            if (count <= workgroup_size) {
+                uint bi = lane < count ? island_data[base + offset + lane] : 0xFFFFFFFFu;
+                bool valid = bi < pc.body_count;
+
+                if (lane == 0) gs_island_min = 0xFFFFFFFFu;
+                gs_island_index[lane] = bi;
+                for (uint k = lane; k < island_span; k += workgroup_size) {
+                    gs_island_slot[k] = 0xFFFFFFFFu;
+                }
+                GroupMemoryBarrierWithGroupSync();
+                if (valid) InterlockedMin(gs_island_min, bi);
+                GroupMemoryBarrierWithGroupSync();
+                if (valid && bi - gs_island_min < island_span) {
+                    gs_island_slot[bi - gs_island_min] = lane;
+                }
+                GroupMemoryBarrierWithGroupSync();
+
+                uint2 lower = uint2(0, 0);
+                uint2 upper = uint2(0, 0);
+                if (valid) island_neighbour_masks(bi, lane, count, lower, upper);
+
+                uint forward = island_levels(lower, lane, count);
+                uint forward_max = gs_island_max_level;
+                island_sweep(bi, valid, forward, forward_max);
+
+                uint backward = island_levels(upper, lane, count);
+                uint backward_max = gs_island_max_level;
+                island_sweep(bi, valid, backward, backward_max);
             }
-            for (uint k = count; k > 0; k--) {
-                uint bi = island_data[base + offset + k - 1];
-                if (bi < pc.body_count) solve_body(bi, true);
+            else if (lane == 0) {
+                for (uint k = 0; k < count; k++) {
+                    uint bi = island_data[base + offset + k];
+                    if (bi < pc.body_count) solve_body(bi, true);
+                }
+                for (uint k = count; k > 0; k--) {
+                    uint bi = island_data[base + offset + k - 1];
+                    if (bi < pc.body_count) solve_body(bi, true);
+                }
             }
         }
 
