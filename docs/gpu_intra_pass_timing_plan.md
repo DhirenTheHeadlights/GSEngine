@@ -13,11 +13,16 @@
   `2D6CBD4A…` unchanged (two runs), sync 100-update hash `E53FB027…` unchanged, 10-update hash
   identical to the last pre-change exe. Per-pass GPU table intact: solve stage 13.07 ms vs
   13.04 ms before, frame 17.4 vs 17.1 ms (noise). No device-removed or DRED output.
-- **Caveat that changes how the gate reads:** every locomotion run on the owner's box falls
-  back to DX12 (`vulkan: required capability not supported: VK_EXT_swapchain_maintenance1`,
-  `VK_EXT_present_timing`, `VK_KHR_present_id2`; NVIDIA 596.99). So the hashes above are DX12
-  gates. The Vulkan path compiles but has **not executed** on this machine; it needs either a
-  driver with those extensions or the requirement relaxed before stage 2 can claim parity.
+- **Gate 1 was a DX12 gate; Vulkan gate added 2026-09-12.** Headless runs used to fall back to
+  DX12: the headless instance is created without `VK_KHR_surface`, so the presentation features
+  (`VK_EXT_swapchain_maintenance1`, `VK_EXT_present_timing`, `VK_KHR_present_id2`) query as
+  unsupported and `device::create` failed its unconditional `require`. Commit `6c3c5832` makes
+  those three extensions, their feature structs and `VK_KHR_swapchain` conditional on
+  `instance_data.surface()` (`optional_feature` entries with `supported = presenting`). With
+  that, the same trainer runs on Vulkan: async 100-update hash `CFFD7326…` (two runs), sync
+  `83974765…`; per-pass GPU table populated through `copyQueryPoolResults` (solve stage
+  14.84 ms, predict 1.25 ms, 15 rows). Vulkan and DX12 hashes differ by design (different
+  shader compilers), so each backend keeps its own reference.
 - Stages 2 and 3 (marks, solver call sites) not started.
 
 ## Why now
