@@ -25,7 +25,7 @@ export namespace gse::gpu {
 
 export namespace gse::gpu::context {
 	constexpr std::string_view default_gpu_perf_metrics =
-		"tpc__warps_active_shader_cs_queue_sync_realtime.avg.pct_of_peak_sustained_elapsed,"
+		"tpc__warps_active_shader_cs_realtime.avg.pct_of_peak_sustained_elapsed,"
 		"sm__inst_executed_realtime.avg.per_cycle_active,"
 		"sm__pipe_fma_cycles_active_realtime.avg.pct_of_peak_sustained_elapsed,"
 		"lts__t_sectors_realtime.sum.per_second,"

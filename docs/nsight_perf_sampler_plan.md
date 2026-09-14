@@ -333,9 +333,11 @@ step count with exit 0:
   residue from the graphics queue. The first two measurement runs above read the sync variant and
   understated warp occupancy by 9x.
 
-Still untaken: the four reference hashes at 409600 steps on both backends, a fresh setting-off vs
-setting-on parity arm now that sessions actually start, and the `trace.json` counter track on the
-GPU stats virtual thread.
+Gates taken 2026-09-14: the default reference hashes at 409600 steps reproduce on both backends
+(Vulkan `AC3D5339…`, DX12 `F838905F…`) for the pre-change tree, the island-entry tree and the
+reverted tree alike, and the setting-off vs setting-on arm is recorded under "The sampler cannot
+answer stall reasons" below. Still untaken: the two opt-out reference hashes, and the
+`trace.json` counter track on the GPU stats virtual thread.
 
 ## What the instrument must answer
 
@@ -406,6 +408,51 @@ throughput, so a faster island solve only converts into steps/s once that chain 
 One limit on how far to read these: the sampler is device-wide and attributed by time window, so a
 row includes anything else running on the GPU in that window. That is acceptable in the headless
 trainer where the solve dominates, but these are not single-kernel numbers under a mixed workload.
+
+### The sampler cannot answer stall reasons
+
+The section above set out to measure "SM throughput, warps active, and the top stall reason". The
+third is not obtainable from this instrument. Probing sixteen candidate spellings on the RTX 5090
+(GB202), every `smsp__`-prefixed name was rejected by `ToMetricEvalRequest`, as were
+`sm__warp_issue_stalled_barrier_realtime` and `sm__throughput_realtime`; the periodic sampler's
+realtime metric set has no stall-reason counter at all. What does resolve is the `tpc__` and `sm__`
+occupancy and traffic family: `tpc__warps_active_shader_cs_realtime`,
+`tpc__sm_rf_registers_allocated_shader_cs_realtime`, `tpc__warps_active_realtime` and
+`sm__warps_active_realtime`. A stall breakdown therefore needs the Stage 2 Range Profiler below;
+the occupancy-limiter ratios are as far as Stage 1 reaches. Note that a rejected metric is dropped
+with a warning and the session continues on the survivors, so a run can silently measure fewer
+metrics than it asked for — read the `sampling N metrics` line to confirm N.
+
+The sampler does not perturb results. At 409600 steps, 1024 envs, 15 workers, counters off and
+counters on at 100 µs both reproduce `AC3D5339…` on Vulkan and `F838905F…` on DX12, so a counter
+run and a gate run are directly comparable and the setting is safe to leave on for measurement.
+
+`default_gpu_perf_metrics` in `Gpu/Context.cppm` led with the `queue_sync` warps-active variant,
+so every run that did not override the setting inherited the 9x understatement described above.
+It now names the unqualified `tpc__warps_active_shader_cs_realtime`, which is the sum over both
+queues and is correct whichever queue the work is on. Verified to resolve on this device.
+
+### The register-pressure vector did not move
+
+Two attacks on the 25.4 % register ceiling were measured and neither moved it. Narrowing the live
+state in `solve_body` (dropping the `self_view` struct load for per-field loads, and deleting the
+dead `chk_*` checksum accumulators and the three unused `int64_t[9]` fixed-point hessians) left the
+RF-to-warp ratio at 3.89-3.94 against a 3.9367 baseline. Giving the island path its own
+`vbd_solve_island` entry so the compiler could specialise it left the ratio at 3.9374-3.9375,
+indistinguishable from baseline. The specialisation premise was false on inspection: `solve_islands`
+still reaches `solve_body(bi, false)` on the jointless colour path, so `live_jac` is not a
+compile-time constant in the island entry either, and register allocation takes the maximum over
+all paths regardless. The dedicated entry was reverted; the state-narrowing was kept because it is
+worth +2.9 % on throughput for a different reason (it stops loading `frozen_jacobians[ci]` on the
+live-Jacobian path and deletes dead accumulators), bit-identical on both backends.
+
+A third hypothesis, that the per-level `AllMemoryBarrierWithGroupSync` in `island_sweep` costs a
+device-scope fence in the hottest loop, is also refuted. Groupshared is provably read-only during
+the sweep, so the barrier can legally weaken to `DeviceMemoryBarrierWithGroupSync`; as a diagnostic
+it was also weakened all the way to `GroupMemoryBarrierWithGroupSync`, which is not sufficient under
+the HLSL model but is on a single-warp workgroup on this hardware. Island time over the three:
+24.81 ms (all-memory), 24.08 ms (device), 25.08 ms (group). The cheapest possible fence is if
+anything the slowest, so the barrier is not where the time goes.
 
 ## Stage 2 (not planned, noted for later)
 

@@ -450,7 +450,6 @@ export namespace gse::vbd {
 		struct compute_shaders {
 			gpu::shader_program predict_pipeline;
 			gpu::shader_program solve_color_pipeline;
-			gpu::shader_program solve_island_pipeline;
 			gpu::shader_program solve_sweep_pipeline;
 			gpu::shader_program update_lambda_pipeline;
 			gpu::shader_program derive_velocities_pipeline;

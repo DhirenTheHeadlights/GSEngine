@@ -979,122 +979,122 @@ void fold_collect(uint bi, uint island) {
 
 void solve_islands(uint3 dispatch_id) {
     uint idx = dispatch_id.x;
-        uint env = idx / workgroup_size;
-        uint lane = idx % workgroup_size;
+    uint env = idx / workgroup_size;
+    uint lane = idx % workgroup_size;
 
-        if (env == 0) {
-            uint seq_colors = min(collision_state[state_max_used_color_index], pc.color_count);
-            for (uint color = 0; color < seq_colors; color++) {
-                uint count = color_data[max_colors + color];
-                uint offset = color_data[color];
-                for (uint k = lane; k < count; k += workgroup_size) {
-                    uint bi = color_data[max_colors * 2 + offset + k];
-                    if (bi < pc.body_count && joint_counts[bi] == 0) {
-                        solve_body(bi, false);
-                    }
+    if (env == 0) {
+        uint seq_colors = min(collision_state[state_max_used_color_index], pc.color_count);
+        for (uint color = 0; color < seq_colors; color++) {
+            uint count = color_data[max_colors + color];
+            uint offset = color_data[color];
+            for (uint k = lane; k < count; k += workgroup_size) {
+                uint bi = color_data[max_colors * 2 + offset + k];
+                if (bi < pc.body_count && joint_counts[bi] == 0) {
+                    solve_body(bi, false);
                 }
-                AllMemoryBarrierWithGroupSync();
-            }
-        }
-
-        uint island_count = island_data[0];
-        if (env < island_count) {
-            uint base = 1 + 2 * max_islands;
-            uint offset = island_data[1 + env];
-            uint count = island_data[1 + max_islands + env];
-
-            if (count <= workgroup_size) {
-                uint bi = lane < count ? island_data[base + offset + lane] : 0xFFFFFFFFu;
-                bool valid = bi < pc.body_count;
-
-                uint forward;
-                uint forward_max;
-                uint backward;
-                uint backward_max;
-                if (pc.iteration == 0) {
-                    if (lane == 0) gs_island_min = 0xFFFFFFFFu;
-                    gs_island_index[lane] = bi;
-                    for (uint k = lane; k < island_span; k += workgroup_size) {
-                        gs_island_slot[k] = 0xFFFFFFFFu;
-                    }
-                    GroupMemoryBarrierWithGroupSync();
-                    if (valid) InterlockedMin(gs_island_min, bi);
-                    GroupMemoryBarrierWithGroupSync();
-                    if (valid && bi - gs_island_min < island_span) {
-                        gs_island_slot[bi - gs_island_min] = lane;
-                    }
-                    GroupMemoryBarrierWithGroupSync();
-
-                    uint2 lower = uint2(0, 0);
-                    uint2 upper = uint2(0, 0);
-                    if (valid) island_neighbour_masks(bi, lane, count, lower, upper);
-
-                    forward = island_levels(lower, lane, count);
-                    forward_max = gs_island_max_level;
-                    GroupMemoryBarrierWithGroupSync();
-                    backward = island_levels(upper, lane, count);
-                    backward_max = gs_island_max_level;
-                    if (valid) solve_deltas[bi * 2] = asfloat(uint4(forward, forward_max, backward, backward_max));
-                }
-                else {
-                    uint4 head = asuint(solve_deltas[island_data[base + offset] * 2]);
-                    uint4 own = valid ? asuint(solve_deltas[bi * 2]) : head;
-                    forward = own.x;
-                    forward_max = head.y;
-                    backward = own.z;
-                    backward_max = head.w;
-                }
-                island_sweep(bi, valid, forward, forward_max);
-                island_sweep(bi, valid, backward, backward_max);
-            }
-            else if (lane == 0) {
-                for (uint k = 0; k < count; k++) {
-                    uint bi = island_data[base + offset + k];
-                    if (bi < pc.body_count) solve_body(bi, true);
-                }
-                for (uint k = count; k > 0; k--) {
-                    uint bi = island_data[base + offset + k - 1];
-                    if (bi < pc.body_count) solve_body(bi, true);
-                }
-            }
-
-            if (pc.fold_lambda != 0) {
-                if (lane == 0) gs_fold_count = 0;
-                AllMemoryBarrierWithGroupSync();
-                for (uint k = lane; k < count; k += workgroup_size) {
-                    uint bi = island_data[base + offset + k];
-                    if (bi < pc.body_count) fold_collect(bi, env);
-                }
-                AllMemoryBarrierWithGroupSync();
-                uint items = min(gs_fold_count, fold_items_max);
-                for (uint k = lane; k < items; k += workgroup_size) {
-                    fold_item(gs_fold_items[k]);
-                }
-            }
-        }
-
-        if (pc.lambda_pass != 0) {
-            AllMemoryBarrierWithGroupSync();
-            if (lane == 0) {
-                uint arrived;
-                InterlockedAdd(collision_state[state_lambda_arrive_index], 1, arrived);
-                gs_lambda_last = arrived + 1 == max(island_count, 1u) ? 1u : 0u;
             }
             AllMemoryBarrierWithGroupSync();
-            if (gs_lambda_last != 0) {
-                uint unowned = min(unowned_contacts[0], max_contacts);
-                for (uint k = lane; k < unowned; k += workgroup_size) {
-                    update_contact_lambda(unowned_contacts[1 + k]);
+        }
+    }
+
+    uint island_count = island_data[0];
+    if (env < island_count) {
+        uint base = 1 + 2 * max_islands;
+        uint offset = island_data[1 + env];
+        uint count = island_data[1 + max_islands + env];
+
+        if (count <= workgroup_size) {
+            uint bi = lane < count ? island_data[base + offset + lane] : 0xFFFFFFFFu;
+            bool valid = bi < pc.body_count;
+
+            uint forward;
+            uint forward_max;
+            uint backward;
+            uint backward_max;
+            if (pc.iteration == 0) {
+                if (lane == 0) gs_island_min = 0xFFFFFFFFu;
+                gs_island_index[lane] = bi;
+                for (uint k = lane; k < island_span; k += workgroup_size) {
+                    gs_island_slot[k] = 0xFFFFFFFFu;
                 }
-                AllMemoryBarrierWithGroupSync();
-                if (lane == 0) fold_convergence_check(pc.lambda_pass == 2);
+                GroupMemoryBarrierWithGroupSync();
+                if (valid) InterlockedMin(gs_island_min, bi);
+                GroupMemoryBarrierWithGroupSync();
+                if (valid && bi - gs_island_min < island_span) {
+                    gs_island_slot[bi - gs_island_min] = lane;
+                }
+                GroupMemoryBarrierWithGroupSync();
+
+                uint2 lower = uint2(0, 0);
+                uint2 upper = uint2(0, 0);
+                if (valid) island_neighbour_masks(bi, lane, count, lower, upper);
+
+                forward = island_levels(lower, lane, count);
+                forward_max = gs_island_max_level;
+                GroupMemoryBarrierWithGroupSync();
+                backward = island_levels(upper, lane, count);
+                backward_max = gs_island_max_level;
+                if (valid) solve_deltas[bi * 2] = asfloat(uint4(forward, forward_max, backward, backward_max));
+            }
+            else {
+                uint4 head = asuint(solve_deltas[island_data[base + offset] * 2]);
+                uint4 own = valid ? asuint(solve_deltas[bi * 2]) : head;
+                forward = own.x;
+                forward_max = head.y;
+                backward = own.z;
+                backward_max = head.w;
+            }
+            island_sweep(bi, valid, forward, forward_max);
+            island_sweep(bi, valid, backward, backward_max);
+        }
+        else if (lane == 0) {
+            for (uint k = 0; k < count; k++) {
+                uint bi = island_data[base + offset + k];
+                if (bi < pc.body_count) solve_body(bi, true);
+            }
+            for (uint k = count; k > 0; k--) {
+                uint bi = island_data[base + offset + k - 1];
+                if (bi < pc.body_count) solve_body(bi, true);
             }
         }
 
-        if (idx == 0 && pc.fold_lambda == 0) {
-            collision_state[state_convergence_max_delta_index] = 0;
-            collision_state[state_convergence_max_angular_delta_index] = 0;
+        if (pc.fold_lambda != 0) {
+            if (lane == 0) gs_fold_count = 0;
+            AllMemoryBarrierWithGroupSync();
+            for (uint k = lane; k < count; k += workgroup_size) {
+                uint bi = island_data[base + offset + k];
+                if (bi < pc.body_count) fold_collect(bi, env);
+            }
+            AllMemoryBarrierWithGroupSync();
+            uint items = min(gs_fold_count, fold_items_max);
+            for (uint k = lane; k < items; k += workgroup_size) {
+                fold_item(gs_fold_items[k]);
+            }
         }
+    }
+
+    if (pc.lambda_pass != 0) {
+        AllMemoryBarrierWithGroupSync();
+        if (lane == 0) {
+            uint arrived;
+            InterlockedAdd(collision_state[state_lambda_arrive_index], 1, arrived);
+            gs_lambda_last = arrived + 1 == max(island_count, 1u) ? 1u : 0u;
+        }
+        AllMemoryBarrierWithGroupSync();
+        if (gs_lambda_last != 0) {
+            uint unowned = min(unowned_contacts[0], max_contacts);
+            for (uint k = lane; k < unowned; k += workgroup_size) {
+                update_contact_lambda(unowned_contacts[1 + k]);
+            }
+            AllMemoryBarrierWithGroupSync();
+            if (lane == 0) fold_convergence_check(pc.lambda_pass == 2);
+        }
+    }
+
+    if (idx == 0 && pc.fold_lambda == 0) {
+        collision_state[state_convergence_max_delta_index] = 0;
+        collision_state[state_convergence_max_angular_delta_index] = 0;
+    }
 }
 
 void vbd_solve_color(uint3 dispatch_id) {
