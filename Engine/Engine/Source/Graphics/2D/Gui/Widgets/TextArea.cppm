@@ -40,8 +40,7 @@ export namespace gse::gui {
 		bool tail_pinned = true;
 		deadline_timer blink;
 		bool blink_on = true;
-		bool rpt_active = false;
-		time rpt_next{};
+		deadline_timer repeat;
 		std::vector<text_edit_snapshot> undo_stack;
 		std::vector<text_edit_snapshot> redo_stack;
 		int last_edit_kind = 0;
@@ -644,6 +643,8 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 	const bool indent_with_spaces = params.indent_with_spaces;
 	const bool auto_indent = params.auto_indent;
 	const time blink_interval = params.blink_interval;
+	constexpr time repeat_delay = milliseconds(400.f);
+	constexpr time repeat_interval = milliseconds(33.f);
 	const resource::handle<font> font = params.font;
 	const auto fnt = font.valid() ? font : ctx.fonts.code;
 	const auto fnt_view = fnt.resolve();
@@ -1360,7 +1361,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 				changed = true;
 				modified = true;
 			}
-			if (ctx.key_pressed_for(key::backspace)) {
+			auto do_backspace = [&] {
 				if (has_selection()) {
 					begin_edit(2);
 					delete_selection();
@@ -1375,8 +1376,9 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 					changed = true;
 					modified = true;
 				}
-			}
-			if (ctx.key_pressed_for(key::del)) {
+			};
+
+			auto do_delete = [&] {
 				if (has_selection()) {
 					begin_edit(2);
 					delete_selection();
@@ -1389,6 +1391,31 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 					changed = true;
 					modified = true;
 				}
+			};
+
+			if (ctx.key_pressed_for(key::backspace)) {
+				do_backspace();
+				state.repeat.arm(repeat_delay);
+			}
+
+			if (ctx.key_pressed_for(key::del)) {
+				do_delete();
+				state.repeat.arm(repeat_delay);
+			}
+
+			if (state.repeat.armed() && (ctx.key_held(key::backspace) || ctx.key_held(key::del))) {
+				if (state.repeat.due()) {
+					if (ctx.key_held(key::backspace)) {
+						do_backspace();
+					}
+					if (ctx.key_held(key::del)) {
+						do_delete();
+					}
+					state.repeat.arm(repeat_interval);
+				}
+			}
+			else {
+				state.repeat.disarm();
 			}
 		}
 
