@@ -161,6 +161,11 @@ auto gse::server::host<MessagePack, Components...>::draw_dashboard(const shared_
 		if (win32::GetConsoleMode(out, &mode)) {
 			win32::SetConsoleMode(out, mode | win32::enable_virtual_terminal_processing);
 		}
+		const auto in = win32::GetStdHandle(win32::std_input_handle);
+		win32::DWORD in_mode = 0;
+		if (win32::GetConsoleMode(in, &in_mode)) {
+			win32::SetConsoleMode(in, (in_mode & ~win32::enable_quick_edit_mode) | win32::enable_extended_flags);
+		}
 		std::print("\x1b[?25l\x1b[2J");
 		m_dashboard_started = true;
 	}

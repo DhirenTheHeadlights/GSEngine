@@ -71,6 +71,7 @@ auto sandbox::startup::run_physics_parity(const config& cfg) -> void {
 			.render = false,
 			.use_gpu_solver = cfg.engine.use_gpu_solver,
 			.persist_settings = false,
+			.author_baked_assets = false,
 		}
 	);
 	gse::system_clock::set_fixed_step_override(std::nullopt);
@@ -133,8 +134,10 @@ auto sandbox::startup::apply_scenario(config& cfg, const std::span<const std::st
 
 	cfg.engine.load_settings = false;
 	cfg.engine.persist_settings = false;
+	cfg.engine.author_baked_assets = false;
 	own("load-settings");
 	own("persist-settings");
+	own("author-baked-assets");
 
 	std::vector<std::string_view> conflicts;
 	for (const std::string& flag : passed_flags) {

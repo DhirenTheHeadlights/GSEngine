@@ -282,6 +282,9 @@ export namespace gse::win32 {
 	constexpr DWORD std_output_handle = STD_OUTPUT_HANDLE;
 	constexpr DWORD file_type_char = FILE_TYPE_CHAR;
 	constexpr DWORD enable_virtual_terminal_processing = ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+	constexpr DWORD std_input_handle = STD_INPUT_HANDLE;
+	constexpr DWORD enable_quick_edit_mode = ENABLE_QUICK_EDIT_MODE;
+	constexpr DWORD enable_extended_flags = ENABLE_EXTENDED_FLAGS;
 	constexpr DWORD error_pipe_connected = ERROR_PIPE_CONNECTED;
 	constexpr DWORD error_pipe_listening = ERROR_PIPE_LISTENING;
 	constexpr DWORD error_no_data = ERROR_NO_DATA;

@@ -73,6 +73,7 @@ export namespace gse {
 		bool scale_ui_with_resolution = true;
 		bool load_settings = true;
 		bool persist_settings = true;
+		bool author_baked_assets = true;
 		bool dump_settings = false;
 		bool trace = true;
 		std::filesystem::path gui_layout_path;

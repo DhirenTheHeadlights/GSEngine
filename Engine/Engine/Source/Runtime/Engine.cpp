@@ -264,7 +264,12 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 
 		asset::system_for<game_assets> assets{ asset_state };
 		assets.register_loaders();
-		assets.install_stale_checks();
+		if (m_config.author_baked_assets) {
+			assets.install_recompile_fns();
+		}
+		else {
+			assets.install_stale_checks();
+		}
 		if (auto discovered = assets.discover_baked(); !discovered) {
 			assert(false, "Asset discovery failed: {}", discovered.error().detail);
 		}
