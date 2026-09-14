@@ -9,6 +9,7 @@ import gse.diag;
 import gse.ecs;
 import gse.gpu;
 import gse.gpu_record;
+import gse.log;
 import gse.os;
 import gse.time;
 import std;
@@ -223,6 +224,16 @@ namespace gse::vbd {
 		gpu::types<shader_types>,
 		gpu::bindings<shader_binding_types>,
 		gpu::helpers<"VBDPhysics/vbd_shared", "Bodies/VBDPhysics/vbd_update_lambda">,
+		gpu::threads<limits.workgroup_size>,
+		gpu::push_constant<vbd_push_constants>,
+		gpu::system_values<gpu::dispatch_thread_id>
+	>;
+
+	using solve_island_entry = gpu::compute_entry<
+		gpu::body_path<"VBDPhysics/vbd_solve_island">,
+		gpu::types<shader_types>,
+		gpu::bindings<shader_binding_types>,
+		gpu::helpers<"VBDPhysics/vbd_shared", "Bodies/VBDPhysics/vbd_update_lambda", "Bodies/VBDPhysics/vbd_solve_color">,
 		gpu::threads<limits.workgroup_size>,
 		gpu::push_constant<vbd_push_constants>,
 		gpu::system_values<gpu::dispatch_thread_id>
@@ -1121,6 +1132,19 @@ auto gse::vbd::gpu_solver::upload(const solver_upload& payload) -> void {
 				}
 			}
 			m_topology_island_count = m_island_count;
+			std::uint32_t largest_island = 0;
+			for (const auto& bodies : island_bodies) {
+				largest_island = std::max(largest_island, static_cast<std::uint32_t>(bodies.size()));
+			}
+			log::println(
+				log::category::physics,
+				"vbd topology: {} islands over {} jointed bodies of {} bodies, {} joints, largest island {} bodies",
+				m_island_count,
+				flat,
+				m_body_count,
+				m_joint_count,
+				largest_island
+			);
 		}
 		else {
 			m_island_count = m_topology_island_count;
@@ -1413,6 +1437,7 @@ auto gse::vbd::gpu_solver::initialize_compute(context& ctx, const shared_view<gp
 
 	m_compute.predict_pipeline = build(predict_entry::pod);
 	m_compute.solve_color_pipeline = build(solve_color_entry::pod);
+	m_compute.solve_island_pipeline = build(solve_island_entry::pod);
 	m_compute.solve_sweep_pipeline = build(solve_sweep_entry::pod);
 	m_compute.update_lambda_pipeline = build(update_lambda_entry::pod);
 	m_compute.derive_velocities_pipeline = build(derive_velocities_entry::pod);
@@ -2056,7 +2081,8 @@ auto gse::vbd::gpu_solver::stage_solve_iterations(const solve_plan& p, const std
 				color_pc.lambda_pass = it + 1 >= p.num_iterations ? 2u : 1u;
 			}
 			rec.mark(m_solve_marks.island);
-			rec.push_bindings<solve_color_entry>(color_pc, bindings);
+			rec.bind(m_compute.solve_island_pipeline);
+			rec.push_bindings<solve_island_entry>(color_pc, bindings);
 			rec.dispatch(std::max(p.island_count, 1u), 1u, 1u);
 		}
 		else if (p.use_solve_fold) {
@@ -2181,7 +2207,8 @@ auto gse::vbd::gpu_solver::stage_post_stabilize(const solve_plan& p, const std::
 			color_pc.color_count = 0u;
 		}
 		color_pc.color_offset = 0xFFFFFFFFu;
-		rec.push_bindings<solve_color_entry>(color_pc, bindings);
+		rec.bind(m_compute.solve_island_pipeline);
+		rec.push_bindings<solve_island_entry>(color_pc, bindings);
 		rec.dispatch(std::max(p.island_count, 1u), 1u, 1u);
 	}
 	else if (p.use_solve_fold) {
