@@ -1,36 +1,32 @@
 export module gse.graphics:forward_renderer;
 
+import gse.assets;
+import gse.concurrency;
+import gse.containers;
+import gse.core;
+import gse.diag;
+import gse.ecs;
+import gse.gpu;
+import gse.gpu_record;
+import gse.math;
+import gse.meta;
+import gse.os;
+import gse.physics;
+import gse.save;
+import gse.time;
 import std;
 
 import :atmosphere_renderer;
-import :cloud_renderer;
-import :geometry_collector;
-import :depth_prepass_renderer;
-import :gi_probe_renderer;
-import :rt_shadow_renderer;
-import :light_culling_renderer;
-import :cull_compute_renderer;
 import :camera_system;
-import :texture;
-import :point_light;
-import :spot_light;
+import :cloud_renderer;
 import :directional_light;
-import :settings;
-
-import gse.math;
-import gse.core;
-import gse.containers;
-import gse.time;
-import gse.concurrency;
-import gse.diag;
-import gse.ecs;
-import gse.os;
-import gse.assets;
-import gse.gpu;
-import gse.save;
-import gse.meta;
-import gse.gpu_record;
-import gse.physics;
+import :geometry_collector;
+import :gi_probe_renderer;
+import :light_culling_renderer;
+import :point_light;
+import :rt_shadow_renderer;
+import :spot_light;
+import :texture;
 
 export namespace gse::renderer::forward {
 	constexpr std::size_t max_lights = 1024;

@@ -45,7 +45,7 @@ gse::gpu::recording_context::recording_context(recording_context_init&& init)
 }
 
 gse::gpu::recording_context::recording_context(recording_context&& other) noexcept
-	: m_recorder(other.m_recorder), m_pass(other.m_pass), m_transient_pool(other.m_transient_pool), m_device(other.m_device), m_touched(std::move(other.m_touched)), m_last_access(std::move(other.m_last_access)), m_pending_memory_barriers(std::move(other.m_pending_memory_barriers)), m_origin_thread(other.m_origin_thread), m_state_cache(other.m_state_cache), m_bindless_heaps_valid(other.m_bindless_heaps_valid), m_bound_is_compute(other.m_bound_is_compute), m_last_binding_bytes(other.m_last_binding_bytes), m_last_binding_pack(other.m_last_binding_pack), m_last_binding_stages(other.m_last_binding_stages), m_companion_stages(other.m_companion_stages), m_companion_access(other.m_companion_access), m_binding_repeat_valid(other.m_binding_repeat_valid), m_binding_companion_armed(other.m_binding_companion_armed), m_marks(other.m_marks) {
+	: m_recorder(other.m_recorder), m_pass(other.m_pass), m_transient_pool(other.m_transient_pool), m_device(other.m_device), m_touched(std::move(other.m_touched)), m_last_access(std::move(other.m_last_access)), m_pending_memory_barriers(std::move(other.m_pending_memory_barriers)), m_access_generation(other.m_access_generation), m_repeat_barrier_pending(other.m_repeat_barrier_pending), m_origin_thread(other.m_origin_thread), m_state_cache(other.m_state_cache), m_bindless_heaps_valid(other.m_bindless_heaps_valid), m_bound_is_compute(other.m_bound_is_compute), m_last_binding_bytes(other.m_last_binding_bytes), m_last_binding_pack(other.m_last_binding_pack), m_last_binding_stages(other.m_last_binding_stages), m_companion_stages(other.m_companion_stages), m_companion_access(other.m_companion_access), m_binding_repeat_valid(other.m_binding_repeat_valid), m_binding_companion_armed(other.m_binding_companion_armed), m_marks(other.m_marks) {
 	if (tl_active_recording_context == &other) {
 		tl_active_recording_context = this;
 	}
@@ -83,6 +83,8 @@ auto gse::gpu::recording_context::operator=(recording_context&& other) noexcept 
 		m_touched = std::move(other.m_touched);
 		m_last_access = std::move(other.m_last_access);
 		m_pending_memory_barriers = std::move(other.m_pending_memory_barriers);
+		m_access_generation = other.m_access_generation;
+		m_repeat_barrier_pending = other.m_repeat_barrier_pending;
 		m_origin_thread = other.m_origin_thread;
 		m_state_cache = other.m_state_cache;
 		m_bindless_heaps_valid = other.m_bindless_heaps_valid;
@@ -286,11 +288,23 @@ auto gse::gpu::recording_context::emit_intra_pass_barrier(const resource_ref& re
 
 	const auto it = m_last_access.find(ref.ptr);
 	if (it == m_last_access.end()) {
-		m_last_access.emplace(ref.ptr, access_track{ .stages = stages, .access = access });
+		m_last_access.emplace(ref.ptr, access_track{ .stages = stages, .access = access, .generation = m_access_generation });
 		return true;
 	}
 
 	auto& prev = it->second;
+	prev.generation = m_access_generation;
+	if (prev.covered) {
+		prev.covered = false;
+		const bool stages_ordered = (stages.bits() & ~prev.stages.bits()) == 0;
+		const bool access_visible = (access.bits() & ~prev.access.bits()) == 0 || (access & write_mask).bits() != 0;
+		if (stages_ordered && access_visible) {
+			prev.stages = stages;
+			prev.access = access;
+			return false;
+		}
+		prev.access = { access_flag::memory_read, access_flag::memory_write };
+	}
 	const bool hazard = (prev.access & write_mask).bits() != 0 || (access & write_mask).bits() != 0;
 	if (!hazard || (stages & graphics_mask).bits() != 0) {
 		const auto prev_stages = prev.stages.bits();
@@ -336,6 +350,7 @@ auto gse::gpu::recording_context::note_bindings_repeat(const pipeline_stage_flag
 	}
 
 	m_binding_companion_armed = false;
+	m_repeat_barrier_pending = true;
 
 	pipeline_stage_flags cycle_stages = stages;
 	cycle_stages |= m_companion_stages;
@@ -359,6 +374,9 @@ auto gse::gpu::recording_context::note_bindings_repeat(const pipeline_stage_flag
 }
 
 auto gse::gpu::recording_context::flush_pending_barriers() -> void {
+	const auto dispatch_generation = m_access_generation++;
+	const bool repeat_barrier = m_repeat_barrier_pending;
+	m_repeat_barrier_pending = false;
 	if (m_pending_memory_barriers.empty()) {
 		return;
 	}
@@ -367,7 +385,47 @@ auto gse::gpu::recording_context::flush_pending_barriers() -> void {
 			.memory_barriers = m_pending_memory_barriers,
 		});
 	}
+	if (!repeat_barrier) {
+		cover_barrier_sources(dispatch_generation);
+	}
 	m_pending_memory_barriers.clear();
+}
+
+auto gse::gpu::recording_context::cover_barrier_sources(const std::uint64_t dispatch_generation) -> void {
+	constexpr access_flags write_mask{ access_flag::shader_write, access_flag::shader_storage_write,
+		access_flag::color_attachment_write, access_flag::depth_stencil_attachment_write,
+		access_flag::transfer_write, access_flag::host_write, access_flag::memory_write,
+		access_flag::acceleration_structure_write };
+
+	pipeline_stage_flags src_stages{};
+	access_flags src_access{};
+	pipeline_stage_flags dst_stages{};
+	access_flags dst_access{};
+	for (const auto& pending : m_pending_memory_barriers) {
+		src_stages |= pending.src_stages;
+		src_access |= pending.src_access;
+		dst_stages |= pending.dst_stages;
+		dst_access |= pending.dst_access;
+	}
+
+	const auto covered_access = access_flags::from_bits(dst_access.bits() & ~write_mask.bits());
+	if (covered_access.bits() == 0) {
+		return;
+	}
+
+	for (auto& [ptr, track] : m_last_access) {
+		if (track.generation == dispatch_generation) {
+			continue;
+		}
+		const bool stages_covered = (track.stages.bits() & ~src_stages.bits()) == 0;
+		const bool access_covered = (track.access.bits() & ~src_access.bits()) == 0;
+		if (!stages_covered || !access_covered) {
+			continue;
+		}
+		track.stages = dst_stages;
+		track.access = covered_access;
+		track.covered = true;
+	}
 }
 
 auto gse::gpu::recording_context::finalize_pass() -> void {

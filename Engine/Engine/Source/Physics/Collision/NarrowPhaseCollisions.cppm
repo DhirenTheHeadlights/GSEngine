@@ -11,7 +11,6 @@ import gse.time;
 import std;
 
 import :bounding_box;
-import :collision_component;
 import :contact_manifold;
 import :convex_hull;
 import :hull_collision;

@@ -12,7 +12,6 @@ import gse.os;
 import gse.time;
 import std;
 
-import :builder;
 import :font;
 import :ids;
 import :interaction;

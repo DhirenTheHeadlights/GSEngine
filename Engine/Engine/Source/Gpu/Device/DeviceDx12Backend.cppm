@@ -256,6 +256,12 @@ export namespace gse::gpu {
 			std::uint64_t value
 		) const -> void;
 
+		[[nodiscard]] auto wait_semaphore_for(
+			gpu::handle<semaphore> semaphore,
+			std::uint64_t value,
+			time timeout
+		) const -> bool;
+
 		[[nodiscard]] auto create_timestamp_query_pool(
 			std::uint32_t capacity,
 			std::string_view label
@@ -663,6 +669,10 @@ auto gse::gpu::dx12_device_backend::semaphore_counter_value(const gpu::handle<se
 
 auto gse::gpu::dx12_device_backend::wait_semaphore(const gpu::handle<semaphore> semaphore, const std::uint64_t value) const -> void {
 	device->wait_semaphore(semaphore, value);
+}
+
+auto gse::gpu::dx12_device_backend::wait_semaphore_for(const gpu::handle<semaphore> semaphore, const std::uint64_t value, const time timeout) const -> bool {
+	return device->wait_semaphore_for(semaphore, value, timeout);
 }
 
 auto gse::gpu::dx12_device_backend::create_timestamp_query_pool(const std::uint32_t capacity, const std::string_view label) -> gpu::handle<query_pool> {

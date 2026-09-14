@@ -1,20 +1,12 @@
 export module gse.graphics:cull_compute_renderer;
 
-import std;
+import gse.assets;
+import gse.concurrency;
+import gse.ecs;
+import gse.gpu;
+import gse.gpu_record;
 
 import :geometry_collector;
-import :camera_system;
-import gse.os;
-import gse.assets;
-import gse.gpu;
-import gse.math;
-import gse.core;
-import gse.containers;
-import gse.time;
-import gse.concurrency;
-import gse.diag;
-import gse.ecs;
-import gse.gpu_record;
 
 export namespace gse::renderer::cull_compute {
 	struct [[= system_state<"CullCompute">{}]] data {

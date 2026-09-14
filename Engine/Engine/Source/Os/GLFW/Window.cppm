@@ -304,7 +304,7 @@ export namespace gse::window {
 		time timeout
 	) -> void;
 
-	auto wake() -> void;
+	auto post_wake() -> void;
 
 	auto clipboard_text() -> std::string;
 

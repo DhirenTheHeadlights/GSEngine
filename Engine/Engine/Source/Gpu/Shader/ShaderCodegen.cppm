@@ -94,6 +94,7 @@ export namespace gse::shaders {
 	struct sampler2d_array_tag {};
 	struct ssbo_readonly_tag {};
 	struct ssbo_readwrite_tag {};
+	struct ssbo_read_use_tag {};
 	struct tlas_tag {};
 	struct byte_address_buffer_tag {};
 	struct rw_byte_address_buffer_tag {};
@@ -110,6 +111,7 @@ export namespace gse::shaders {
 	constexpr sampler2d_array_tag sampler2d_array{};
 	constexpr ssbo_readonly_tag ssbo_readonly{};
 	constexpr ssbo_readwrite_tag ssbo_readwrite{};
+	constexpr ssbo_read_use_tag ssbo_read_use{};
 	constexpr tlas_tag tlas{};
 	constexpr byte_address_buffer_tag byte_address_buffer{};
 	constexpr rw_byte_address_buffer_tag rw_byte_address_buffer{};
@@ -582,7 +584,10 @@ consteval auto gse::shaders::is_bindless_table() -> bool {
 
 template <gse::shaders::is_shader_binding T>
 consteval auto gse::shaders::descriptor_access_of() -> gpu::descriptor_access {
-	if constexpr (has_annotation<ssbo_readwrite_tag>(^^T) || has_annotation<rw_byte_address_buffer_tag>(^^T) || has_annotation<storage_image_tag>(^^T) || has_annotation<storage_image_3d_tag>(^^T)) {
+	if constexpr (has_annotation<ssbo_read_use_tag>(^^T)) {
+		return gpu::descriptor_access::read;
+	}
+	else if constexpr (has_annotation<ssbo_readwrite_tag>(^^T) || has_annotation<rw_byte_address_buffer_tag>(^^T) || has_annotation<storage_image_tag>(^^T) || has_annotation<storage_image_3d_tag>(^^T)) {
 		return gpu::descriptor_access::read_write;
 	}
 	else {

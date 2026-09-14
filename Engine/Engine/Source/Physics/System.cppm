@@ -1,37 +1,33 @@
 export module gse.physics:system;
 
-import std;
-
-import gse.core;
-import gse.containers;
 import gse.concurrency;
-import gse.ecs;
-import gse.time;
+import gse.containers;
+import gse.core;
 import gse.diag;
-import gse.save;
-import gse.log;
+import gse.ecs;
 import gse.gpu;
-
-import gse.math;
-import gse.meta;
 import gse.gpu;
 import gse.gpu_record;
+import gse.log;
+import gse.math;
+import gse.meta;
+import gse.save;
+import gse.time;
+import std;
 
-import :narrow_phase_collision;
+import :collision_component;
+import :convex_hull;
 import :joint_drive_component;
 import :joint_spec;
 import :kinematic_target_component;
 import :motion_component;
 import :motor_component;
 import :muscle_component;
-import :collision_component;
-import :convex_hull;
 import :transform_component;
-import :contact_manifold;
 import :vbd_constraints;
 import :vbd_contact_cache;
-import :vbd_solver;
 import :vbd_gpu_solver;
+import :vbd_solver;
 
 export namespace gse::physics {
 	struct joint_definition {
@@ -124,11 +120,85 @@ export namespace gse::physics {
 		float accel_weight = 0.f;
 	};
 
+	class sleep_counter_table {
+	public:
+		auto clear() -> void {
+			m_ids.clear();
+			m_values.clear();
+			m_index.clear();
+		}
+
+		auto set(const id owner, const std::uint32_t value) -> void {
+			m_values[slot(owner)] = value;
+		}
+
+		[[nodiscard]] auto get(const id owner) const -> std::uint32_t {
+			const auto it = m_index.find(owner);
+			return it == m_index.end() ? 0u : m_values[it->second];
+		}
+
+		[[nodiscard]] auto view(const std::span<const id> owners) const -> std::optional<std::span<const std::uint32_t>> {
+			if (!prefix_matches(owners)) {
+				return std::nullopt;
+			}
+			return std::span<const std::uint32_t>(m_values).first(owners.size());
+		}
+
+		auto aligned(const std::span<const id> owners) -> std::span<std::uint32_t> {
+			if (!prefix_matches(owners)) {
+				rekey(owners);
+			}
+			return std::span<std::uint32_t>(m_values).first(owners.size());
+		}
+
+	private:
+		[[nodiscard]] auto prefix_matches(const std::span<const id> owners) const -> bool {
+			return m_ids.size() >= owners.size() && std::ranges::equal(std::span<const id>(m_ids).first(owners.size()), owners);
+		}
+
+		auto slot(const id owner) -> std::size_t {
+			const auto it = m_index.find(owner);
+			if (it != m_index.end()) {
+				return it->second;
+			}
+			m_ids.push_back(owner);
+			m_values.push_back(0u);
+			m_index.emplace(owner, m_ids.size() - 1);
+			return m_ids.size() - 1;
+		}
+
+		auto rekey(const std::span<const id> owners) -> void {
+			std::vector<id> ids(owners.begin(), owners.end());
+			std::vector<std::uint32_t> values(owners.size());
+			std::unordered_map<id, std::size_t> index;
+			index.reserve(owners.size() + m_ids.size());
+			for (std::size_t i = 0; i < owners.size(); ++i) {
+				values[i] = get(owners[i]);
+				index.emplace(owners[i], i);
+			}
+			for (std::size_t i = 0; i < m_ids.size(); ++i) {
+				if (index.contains(m_ids[i])) {
+					continue;
+				}
+				index.emplace(m_ids[i], ids.size());
+				ids.push_back(m_ids[i]);
+				values.push_back(m_values[i]);
+			}
+			m_ids = std::move(ids);
+			m_values = std::move(values);
+			m_index = std::move(index);
+		}
+
+		std::vector<id> m_ids;
+		std::vector<std::uint32_t> m_values;
+		std::unordered_map<id, std::size_t> m_index;
+	};
+
 	struct step_snapshot {
 		std::uint64_t step = 0;
 		std::vector<body_snapshot> bodies;
 		std::vector<carried_body_state> carried;
-		std::unordered_map<id, std::uint32_t> sleep_counters;
+		sleep_counter_table sleep_counters;
 		id_mapped_collection<joint_definition> joints;
 		vbd::contact_cache contact_cache;
 		step_inputs inputs;
@@ -534,13 +604,17 @@ export namespace gse::physics {
 		[[= shared]] std::uint64_t observed_step = 0;
 		[[= shared]] std::vector<step_snapshot> rollback_ring;
 		[[= shared]] id_mapped_collection<joint_definition> joints;
+		bool joint_rest_orientations_pending = true;
+		std::vector<id> results_ensured_owners;
 		[[= shared]] std::uint64_t joints_generation = 1;
+		[[= shared]] std::uint64_t joint_inputs_generation = 1;
 		[[= shared]] std::vector<convex_hull> hulls;
 
 		[[= shared]] vbd::solver vbd_solver;
 		vbd::contact_cache contact_cache;
-		[[= shared]] std::unordered_map<id, std::uint32_t> sleep_counters;
+		[[= shared]] sleep_counter_table sleep_counters;
 		[[= shared]] std::flat_map<id, std::uint32_t> id_to_body_index;
+		std::vector<std::pair<id, std::uint32_t>> id_to_body_index_entries;
 		std::flat_map<id, transform_component> kinematic_step_start;
 		std::vector<impulse_request> gpu_pending_impulses;
 		std::unordered_map<id, std::uint64_t> gpu_reset_ticks;
@@ -563,13 +637,29 @@ export namespace gse::physics {
 	};
 
 	namespace gpu_upload {
+		struct upload_scratch {
+			std::vector<vbd::body_state> bodies;
+			std::vector<mass_properties> body_props;
+			std::vector<vbd::velocity_motor_constraint> motors;
+			std::vector<vbd::joint_constraint> joints;
+			std::vector<vbd::joint_drive_input> joint_inputs;
+			std::vector<vbd::impulse_constraint> impulses;
+		};
+
 		struct [[= system_state<"Physics GPU Upload">{}, = deferred_system{}]] data {
 			std::uint64_t built_generation = 0;
 			std::uint64_t uploaded_joints_generation = 0;
+			std::uint64_t uploaded_joint_inputs_generation = 0;
 			std::uint32_t uploaded_body_count = 0;
 			std::uint32_t uploaded_joint_count = 0;
+			bool force_full_joints = false;
 			std::vector<joint_definition> joints;
+			std::vector<std::uint32_t> joint_slots;
+			std::vector<std::pair<id, std::uint32_t>> joint_body_index_entries;
 			std::flat_map<id, std::uint32_t> body_index;
+			std::vector<std::pair<id, std::uint32_t>> body_index_entries;
+			std::array<upload_scratch, 3> scratch;
+			std::size_t scratch_slot = 0;
 		};
 
 		[[= system_run<>{}]]
@@ -644,9 +734,10 @@ export namespace gse::physics {
 
 	auto build_body_states(
 		const body_build_view& view,
-		const std::unordered_map<id, std::uint32_t>& sleep_counters,
+		const sleep_counter_table& sleep_counters,
 		std::vector<vbd::body_state>& bodies,
 		std::flat_map<id, std::uint32_t>& id_to_body_index,
+		std::vector<std::pair<id, std::uint32_t>>& id_to_body_index_entries,
 		std::vector<std::uint8_t>& has_transform
 	) -> void;
 
@@ -661,7 +752,8 @@ export namespace gse::physics {
 		std::span<joint_definition> definitions,
 		const std::flat_map<id, std::uint32_t>& id_to_body_index,
 		std::span<const vbd::body_state> bodies,
-		std::vector<vbd::joint_constraint>& out
+		std::vector<vbd::joint_constraint>& out,
+		std::vector<std::uint32_t>* definition_slots = nullptr
 	) -> void;
 
 	auto build_motor_constraints(
@@ -711,6 +803,8 @@ export namespace gse::physics {
 
 	[[= system_run<1>{}]]
 	auto ensure_results(
+		context& ctx,
+		data& d,
 		write<collision_component> collision,
 		structural<collision_result_component> results
 	) -> async::task<>;

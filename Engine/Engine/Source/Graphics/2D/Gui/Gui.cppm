@@ -1,34 +1,31 @@
 export module gse.graphics:gui;
 
-import std;
-
-import gse.os;
-import gse.config;
 import gse.assets;
-import gse.gpu;
-import gse.core;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.config;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
+import gse.gpu;
 import gse.math;
 import gse.meta;
+import gse.os;
 import gse.save;
+import gse.time;
+import std;
 
-import :settings;
-import :types;
-import :font;
-import :ui_renderer;
-import :texture;
-import :save;
+import :builder;
 import :ids;
 import :input_layers;
-import :styles;
-import :builder;
 import :menu_stack;
 import :render_layer;
+import :save;
+import :styles;
 import :text_select;
+import :texture;
+import :types;
+import :ui_renderer;
 
 namespace gse::gui {
 	struct frame_state {
@@ -152,6 +149,8 @@ export namespace gse::gui {
 
 		std::vector<renderer::sprite_command> sprite_commands;
 		std::vector<renderer::text_command> text_commands;
+		std::vector<renderer::sprite_command> previous_sprite_commands;
+		std::vector<renderer::text_command> previous_text_commands;
 		per_frame_resource<std::deque<std::string>> text_pools;
 		std::size_t text_pool_slot = 0;
 		std::size_t text_pool_used = 0;

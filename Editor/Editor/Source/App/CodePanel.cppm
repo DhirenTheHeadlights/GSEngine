@@ -70,6 +70,7 @@ namespace gse::ide {
 
 	constexpr int quickfix_edit_kind = 0x5149;
 	constexpr int format_edit_kind = 0x464d;
+	constexpr time hover_reveal_delay = milliseconds(350.f);
 
 	struct quickfix_layout {
 		rectf panel;
@@ -2300,9 +2301,9 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 				hv.line = hp.line;
 				hv.column = static_cast<std::uint32_t>(a);
 				hv.ident = std::string(ident);
-				hv.since = system_clock::now<time>();
+				hv.reveal.arm(hover_reveal_delay);
 			}
-			else if (!hv.resolved && system_clock::now<time>() - hv.since > milliseconds(350)) {
+			else if (!hv.resolved && hv.reveal.due()) {
 				hv.resolved = true;
 				std::string qualified;
 				std::string sym_kind;
@@ -2434,9 +2435,9 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 				child.line = hit->line;
 				child.column = hit->start_col;
 				child.ident = ident;
-				child.since = system_clock::now<time>();
+				child.reveal.arm(hover_reveal_delay);
 			}
-			else if (!child.resolved && system_clock::now<time>() - child.since > milliseconds(350)) {
+			else if (!child.resolved && child.reveal.due()) {
 				child.resolved = true;
 				resolve_hover_card(child, ident, row_text, hit->start_col, !hit->member_access, index, ws.cppref, {}, {});
 				child.kind_color = ctx.style.color_text_secondary;

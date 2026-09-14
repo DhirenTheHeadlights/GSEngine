@@ -1,12 +1,10 @@
 export module gse.physics:vbd_constraints;
 
-import std;
-
-import gse.math;
 import gse.gpu;
-
+import gse.math;
+import std;
 import :contact_manifold;
-import :motion_component;
+
 
 export namespace gse::vbd {
 	struct vbd_capacities {
@@ -28,7 +26,7 @@ export namespace gse::vbd {
 
 	struct [[= shaders::shader_constant_block]] vbd_limits {
 		std::uint32_t max_colors = 16;
-		std::uint32_t workgroup_size = 64;
+		std::uint32_t workgroup_size = 32;
 		std::uint32_t adjacency_workgroup_size = 1024;
 		std::uint32_t coloring_rounds = 32;
 		std::uint32_t sleep_threshold = 60;
@@ -63,6 +61,7 @@ export namespace gse::vbd {
 		std::uint32_t state_sweep_arrive_index = 3;
 		std::uint32_t state_sweep_phase_index = 53;
 		std::uint32_t state_sweep_bail_index = 58;
+		std::uint32_t state_lambda_arrive_index = 54;
 		std::uint32_t state_color_population_base_index = 59;
 		std::uint32_t state_max_speed_index = 75;
 		std::uint32_t state_max_angular_speed_index = 76;
@@ -198,6 +197,14 @@ export namespace gse::vbd {
 		force max_force = newtons(0.f);
 
 		vec3<angle> drive_target = {};
+		vec3<angular_stiffness> drive_stiffness = {};
+		float drive_damping = 0.f;
+		torque drive_max_torque = {};
+	};
+
+	struct [[= shaders::shader_struct]] joint_drive_input {
+		vec3<angle> drive_target = {};
+		float activation = 0.f;
 		vec3<angular_stiffness> drive_stiffness = {};
 		float drive_damping = 0.f;
 		torque drive_max_torque = {};

@@ -63,8 +63,11 @@ auto gse::ide::search_system::init(data& d) -> async::task<> {
 		d.watcher.watch_directory(
 			path,
 			[&d](const std::filesystem::path& changed) {
-				std::lock_guard _(d.watcher_changes_mutex);
-				d.watcher_changes.push_back(changed);
+				{
+					std::lock_guard _(d.watcher_changes_mutex);
+					d.watcher_changes.push_back(changed);
+				}
+				frame_demand::request_redraw();
 			},
 			{},
 			true,

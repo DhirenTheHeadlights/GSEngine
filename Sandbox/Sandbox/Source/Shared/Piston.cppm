@@ -1,7 +1,11 @@
 export module sandbox:piston;
 
+import gse.concurrency;
+import gse.ecs;
+import gse.math;
+import gse.physics;
+import gse.time;
 import std;
-import gse;
 
 export namespace sandbox::piston {
 	struct component {

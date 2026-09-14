@@ -225,6 +225,10 @@ auto gse::skinned_model::load(asset::load_ctx& ctx) -> async::task<asset_result>
 		m_meshes.emplace_back(std::move(vertices), std::move(baked_mesh.indices.storage), mat);
 	}
 
+	if (!ctx.assets.gpu_available) {
+		co_return asset_result{};
+	}
+
 	auto& gpu_s = co_await gpu::on_gpu(ctx.channels);
 	for (auto& mesh : m_meshes) {
 		mesh.initialize(gpu_s);

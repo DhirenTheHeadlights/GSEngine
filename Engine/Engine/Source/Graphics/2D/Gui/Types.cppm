@@ -51,7 +51,7 @@ export namespace gse::gui {
 		std::string text;
 		id widget_id;
 		id pending_widget_id;
-		time hover_time{};
+		deadline_timer show;
 		vec2f position;
 		bool visible = false;
 

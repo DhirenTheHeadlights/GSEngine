@@ -1,11 +1,10 @@
 export module gse.ide.terminal:terminal_panel;
 
-import std;
 import gse;
 import gse.ide.agent;
 import gse.ide.build;
 import gse.ide.navigation;
-import gse.win32;
+import std;
 
 export namespace gse::ide::terminal {
 	constexpr std::string_view panel_name = "Terminal";

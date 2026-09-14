@@ -5,6 +5,7 @@ target=game
 run=0
 tree=
 profile=
+config=
 project=
 timeout=1800
 wait=30
@@ -18,7 +19,7 @@ usage() {
 	cat <<'EOF'
 gse-build - ask the running GSE editor to build, the same way its own build buttons do.
 
-usage: Tools/gse-build [--game|--editor] [--run] [--profile NAME] [--tree NAME] [--timeout SECONDS] [--wait SECONDS]
+usage: Tools/gse-build [--game|--editor] [--run] [--profile NAME] [--config NAME] [--tree NAME] [--timeout SECONDS] [--wait SECONDS]
 
   --game             build the game target (default)
   --editor           rebuild the editor; the editor relaunches itself on success
@@ -27,6 +28,11 @@ usage: Tools/gse-build [--game|--editor] [--run] [--profile NAME] [--tree NAME] 
                      this picks the build configuration and the play session shape.
                      Omit it to build the editor's own configuration with a single
                      attached client, independent of what the editor has selected.
+  --config NAME      build with a named configurePreset from CMakePresets.json, without
+                     needing a build profile row for it. Each configuration gets its own
+                     build tree, so the first build of one compiles everything. Ignored
+                     for --editor, which always rebuilds in the configuration it runs.
+                     --profile wins if both are given.
   --tree NAME        build in a named worktree instead of the one you are in
   --project DIR      address the editor that has this project open; defaults to the
                      nearest directory above you that holds a .gseproj file. When
@@ -51,7 +57,7 @@ build defaults to the worktree you are standing in; --editor always rebuilds the
 running editor. If no editor has this project open, nothing picks the request up.
 
 The editor queues requests rather than refusing them, and one build answers every
-request for the same target and profile, so several agents asking at once cost one
+request for the same target, profile and configuration, so several agents asking at once cost one
 compile.
 
 If another chat is still working, this does NOT block you. After --wait seconds it
@@ -77,6 +83,10 @@ while [ $# -gt 0 ]; do
 		--profile)
 			shift
 			profile=${1:-}
+			;;
+		--config)
+			shift
+			config=${1:-}
 			;;
 		--tree)
 			shift
@@ -172,6 +182,7 @@ rm -f "$result"
 	echo "run $run"
 	echo "tree $tree"
 	echo "profile $profile"
+	echo "config $config"
 	echo "cwd $(pwd -W 2>/dev/null || pwd)"
 	echo "project $project"
 } > "$inbox/requests/$id.partial"

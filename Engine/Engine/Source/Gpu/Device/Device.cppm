@@ -202,6 +202,13 @@ export namespace gse::gpu {
 		) const -> void;
 
 		[[nodiscard]]
+		auto wait_semaphore_for(
+			gpu::handle<semaphore> semaphore,
+			std::uint64_t value,
+			time timeout
+		) const -> bool;
+
+		[[nodiscard]]
 		auto create_timestamp_query_pool(
 			std::uint32_t capacity,
 			std::string_view label = {}

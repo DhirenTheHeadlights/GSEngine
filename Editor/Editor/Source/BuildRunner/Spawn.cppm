@@ -127,11 +127,14 @@ auto gse::ide::spawn::flush_lines(output_stream& stream, std::string& pending) -
 }
 
 auto gse::ide::spawn::emit(output_stream& stream, std::string text) -> void {
-	std::lock_guard _(stream.mutex);
-	if (stream.recording) {
-		stream.transcript.push_back(text);
+	{
+		std::lock_guard _(stream.mutex);
+		if (stream.recording) {
+			stream.transcript.push_back(text);
+		}
+		stream.lines.push_back(std::move(text));
 	}
-	stream.lines.push_back(std::move(text));
+	frame_demand::request_redraw();
 }
 
 auto gse::ide::spawn::begin_transcript(output_stream& stream) -> void {

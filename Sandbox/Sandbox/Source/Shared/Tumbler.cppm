@@ -1,7 +1,11 @@
 export module sandbox:tumbler;
 
+import gse.concurrency;
+import gse.ecs;
+import gse.math;
+import gse.physics;
+import gse.time;
 import std;
-import gse;
 
 export namespace sandbox::tumbler {
 	struct component {

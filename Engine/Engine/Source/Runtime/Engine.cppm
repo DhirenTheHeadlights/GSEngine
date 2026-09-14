@@ -64,6 +64,7 @@ export namespace gse {
 		loop_cadence cadence = loop_cadence::continuous;
 		bool create_window = true;
 		bool render = true;
+		bool gpu = true;
 		bool dark_background = false;
 		bool video_encode = true;
 		bool simulate_world = true;
@@ -73,6 +74,7 @@ export namespace gse {
 		bool load_settings = true;
 		bool persist_settings = true;
 		bool dump_settings = false;
+		bool trace = true;
 		std::filesystem::path gui_layout_path;
 		std::filesystem::path project_settings_path;
 		bool attached = false;

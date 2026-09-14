@@ -212,6 +212,7 @@ export namespace gse::ide::agent {
 		std::string id;
 		std::string agent;
 		std::string profile;
+		std::string config;
 		std::filesystem::path cwd;
 		std::filesystem::path project;
 		build_runner::build_target target = build_runner::build_target::game;

@@ -532,6 +532,7 @@ auto gse::ide::agent::accept_requests(data& d) -> void {
 			.id = std::move(incoming.id),
 			.agent = std::move(incoming.agent),
 			.profile = std::move(incoming.profile),
+			.config = std::move(incoming.config),
 			.cwd = std::move(incoming.cwd),
 			.project = std::move(incoming.project),
 			.requested = now,
@@ -570,7 +571,8 @@ auto gse::ide::agent::accept_requests(data& d) -> void {
 				&& existing.target == queued.target
 				&& existing.run == queued.run
 				&& existing.tree == queued.tree
-				&& existing.profile == queued.profile;
+				&& existing.profile == queued.profile
+				&& existing.config == queued.config;
 		};
 		if (const auto held = std::ranges::find_if(d.inbox_queue, same_slot); held != d.inbox_queue.end()) {
 			log::println(log::level::info, log::category::task, "build inbox: agent '{}' re-attached to its queued {} build ({} -> {})", queued.agent, incoming.target, held->id, queued.id);
@@ -690,6 +692,7 @@ auto gse::ide::agent::request_of(const queued_build& queued) -> build_inbox::req
 		.target = queued.target == build_runner::build_target::editor ? "editor" : "game",
 		.tree = queued.tree ? queued.tree->name : std::string{},
 		.profile = queued.profile,
+		.config = queued.config,
 		.cwd = queued.cwd,
 		.project = queued.project,
 		.run = queued.run,
@@ -812,11 +815,12 @@ auto gse::ide::agent::poll_build_inbox(data& d, const channel_write<build_runner
 	const bool run = head.run;
 	const config::worktree* tree = head.tree;
 	const std::string profile = head.profile;
+	const std::string config = head.config;
 
 	std::vector<queued_build> group;
 	std::vector<queued_build> deferred;
 	for (queued_build& queued : d.inbox_queue) {
-		if (queued.target == target && queued.run == run && queued.tree == tree && queued.profile == profile) {
+		if (queued.target == target && queued.run == run && queued.tree == tree && queued.profile == profile && queued.config == config) {
 			group.push_back(std::move(queued));
 		}
 		else {
@@ -829,6 +833,7 @@ auto gse::ide::agent::poll_build_inbox(data& d, const channel_write<build_runner
 	builds.push<build_runner::build_request>({
 		.target = target,
 		.run_after = run,
+		.config = config,
 		.profile = profile,
 		.tree = tree,
 		.inbox_id = group.front().id,

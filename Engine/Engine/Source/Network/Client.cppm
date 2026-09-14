@@ -1,32 +1,24 @@
 export module gse.network:client;
 
-import std;
-
 import gse.assert;
-import gse.log;
-import gse.core;
-import gse.containers;
-import gse.time;
+import gse.assets;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
+import gse.gpu;
+import gse.log;
 import gse.math;
 import gse.os;
-import gse.assets;
-import gse.gpu;
+import gse.time;
+import std;
 
-import :actions;
-import :socket;
-import :endpoint;
-import :remote_peer;
-import :message;
-import :packet_header;
 import :bitstream;
 import :connection;
-import :ping_pong;
-import :notify_scene_change;
-import :input_frame;
-import :server_info;
+import :endpoint;
+import :message;
+import :socket;
 
 export namespace gse::network {
 	class client : public non_copyable {

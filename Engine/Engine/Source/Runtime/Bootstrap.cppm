@@ -23,7 +23,6 @@ import :attached_link;
 import :bench;
 import :engine;
 import :frame_pacing;
-import :world_system;
 
 export namespace gse {
 	using app_setup_fn = std::function<void(engine&)>;
@@ -101,6 +100,7 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 	task::start([&] {
 		e.initialize(setup);
 		trace::finalize_frame();
+		trace::set_enabled(config.trace);
 
 		watchdog::start();
 
@@ -146,7 +146,7 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 		const auto render_id = trace_id<"engine::render">();
 
 		const bool reactive = config.create_window && config.cadence == loop_cadence::reactive;
-		const auto idle_timeout = milliseconds(250.f);
+		const auto idle_floor = seconds(1.f);
 
 		const auto slow_frame_window = seconds(5.f);
 		std::size_t slow_frames = 0;
@@ -154,6 +154,10 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 		time_t<double, seconds> slow_frame_worst_update{};
 		time_t<double, seconds> slow_frame_worst_render{};
 		interval_timer<> slow_frame_report{ slow_frame_window };
+
+		if (reactive) {
+			frame_demand::install_waker(window::post_wake);
+		}
 
 		while (!should_shutdown.load(std::memory_order_acquire)) {
 			{
@@ -166,7 +170,7 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 				if (config.create_window) {
 					if (reactive && e.all_settled() && !frame_demand::active()) {
 						trace::scope_guard _{ wait_id };
-						window::wait_events(idle_timeout);
+						window::wait_events(frame_demand::wait_budget(idle_floor));
 					}
 
 					{
@@ -276,6 +280,8 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 				}
 			}
 		}
+
+		frame_demand::clear_waker();
 
 		if (pacing.timer) {
 			win32::CloseHandle(pacing.timer);

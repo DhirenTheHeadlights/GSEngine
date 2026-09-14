@@ -5,6 +5,7 @@ import gse.diag;
 import gse.log;
 import gse.math;
 import gse.stacktrace;
+import gse.time;
 import std;
 
 import :work_stealing_queue;
@@ -262,6 +263,7 @@ namespace gse::task {
 		std::uint64_t async_key = 0;
 		bool async_trace = false;
 		bool counts_in_flight = false;
+		bool wakes = false;
 		group* gp = nullptr;
 	};
 
@@ -921,6 +923,9 @@ auto gse::task::run_job(job_entry& entry) -> void {
 			entry.gp->m_counter.fetch_sub(1, std::memory_order_acq_rel);
 			entry.gp->m_inflight_notifies.fetch_sub(1, std::memory_order_release);
 		}
+		if (entry.wakes) {
+			frame_demand::request_redraw();
+		}
 	});
 
 	if (entry.async_trace) {
@@ -1074,6 +1079,7 @@ auto gse::task::submit_async(job j, const id trace_id, const std::uint64_t paren
 			.async_key = key,
 			.async_trace = true,
 			.counts_in_flight = true,
+			.wakes = true,
 			.gp = nullptr,
 		}
 	);
@@ -1107,6 +1113,7 @@ auto gse::task::submit_async_to_lane(blocking_lane& lane, job j, const id trace_
 			.async_key = key,
 			.async_trace = true,
 			.counts_in_flight = true,
+			.wakes = true,
 			.gp = nullptr,
 		}
 	);

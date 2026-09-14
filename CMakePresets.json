@@ -60,9 +60,11 @@
       "inherits": "x64-mingw-gcc-base",
       "binaryDir": "${sourceDir}/out/build/x64-mingw-gcc-Profile",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "VCPKG_TARGET_TRIPLET": "x64-mingw-static-release",
-        "CMAKE_CXX_FLAGS_INIT": "-ftime-report"
+        "CMAKE_CXX_FLAGS_RELWITHDEBINFO": "-O2 -g1 -DNDEBUG",
+        "CMAKE_C_FLAGS_RELWITHDEBINFO": "-O2 -g1 -DNDEBUG",
+        "CMAKE_CXX_COMPILER_LAUNCHER": "python;${sourceDir}/Tools/TimeReport/time_report.py"
       }
     },
     {

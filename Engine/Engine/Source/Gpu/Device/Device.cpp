@@ -16,8 +16,6 @@ import :command_dispatch;
 import :device;
 import :device_dx12_backend;
 import :device_vulkan_backend;
-import :image;
-import :video_backend;
 import :video_encoder;
 
 namespace gse::gpu {
@@ -69,8 +67,8 @@ auto gse::gpu::device::create(const std::optional<shared_view<window::data>> win
 		backend = backend_kind::dx12;
 	}
 
-	active_backend = backend_kind::dx12;
 	auto created = create_dx12_device_backend(win, validation_layers_enabled, device_cfg);
+	active_backend = backend_kind::dx12;
 
 	std::unique_ptr<void, void (*)(void*)> backend_ptr(
 		created.backend.release(),
@@ -674,6 +672,10 @@ auto gse::gpu::device::semaphore_counter_value(const gpu::handle<semaphore> sema
 
 auto gse::gpu::device::wait_semaphore(const gpu::handle<semaphore> semaphore, const std::uint64_t value) const -> void {
 	m_vt->wait_semaphore(m_backend.get(), semaphore, value);
+}
+
+auto gse::gpu::device::wait_semaphore_for(const gpu::handle<semaphore> semaphore, const std::uint64_t value, const time timeout) const -> bool {
+	return m_vt->wait_semaphore_for(m_backend.get(), semaphore, value, timeout);
 }
 
 auto gse::gpu::device::create_timestamp_query_pool(const std::uint32_t capacity, const std::string_view label) -> gpu::handle<query_pool> {

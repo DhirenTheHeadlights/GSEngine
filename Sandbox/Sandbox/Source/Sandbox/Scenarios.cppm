@@ -1,6 +1,5 @@
 export module sandbox:scenarios;
 
-import std;
 import gse;
 import gse.scenario;
 

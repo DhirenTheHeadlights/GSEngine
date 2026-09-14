@@ -1,15 +1,11 @@
 export module gse.graphics:atmosphere_renderer;
 
-import std;
-
-import gse.gpu;
-import gse.core;
-import gse.containers;
 import gse.concurrency;
 import gse.ecs;
-import gse.meta;
-import gse.math;
+import gse.gpu;
 import gse.gpu_record;
+import gse.math;
+import gse.meta;
 
 import :camera_system;
 

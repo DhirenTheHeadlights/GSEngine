@@ -18,9 +18,9 @@ import std;
 import :capture_renderer;
 import :capture_ring;
 import :mp4_muxer;
-import :settings;
 import :shared_shaders;
 import :ui_renderer;
+import :settings;
 
 namespace gse::renderer::capture {
 	struct [[= shaders::shader_struct]] push_constants {

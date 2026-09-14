@@ -1,20 +1,18 @@
 module gse.gpu:context_impl;
 
+import gse.concurrency;
+import gse.core;
+import gse.diag;
+import gse.log;
+import gse.os;
+import gse.save;
 import std;
 
 import :context;
 import :device;
-import :swap_chain;
 import :frame;
-import :transient_pool;
 import :render_graph;
-
-import gse.os;
-import gse.core;
-import gse.concurrency;
-import gse.diag;
-import gse.log;
-import gse.save;
+import :swap_chain;
 
 auto gse::gpu::context::init(const std::optional<shared_view<window::data>> window_s, const save::registry* save_reg, data& d) -> async::task<> {
 	const auto requested_backend = d.backend;

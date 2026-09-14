@@ -1,25 +1,23 @@
 export module gse.graphics:slider_widget;
 
-import std;
-
-import gse.os;
 import gse.assets;
-import gse.gpu;
-import gse.math;
-import gse.core;
-import gse.meta;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
-import :types;
+import gse.gpu;
+import gse.math;
+import gse.meta;
+import gse.os;
+import gse.time;
+import std;
+
 import :ids;
-import :input_layers;
-import :styles;
-import :layout_ops;
-import :builder;
 import :interaction;
+import :layout_ops;
+import :styles;
+import :types;
 
 namespace gse::gui::draw {
 	template <is_arithmetic T>

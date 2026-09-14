@@ -1353,6 +1353,14 @@ auto gse::dx12::device::wait_semaphore(const gpu::handle<gpu::semaphore> semapho
 	}
 }
 
+auto gse::dx12::device::wait_semaphore_for(const gpu::handle<gpu::semaphore> semaphore, const std::uint64_t value, const time timeout) const -> bool {
+	auto* sp = std::bit_cast<sync_point*>(semaphore);
+	if (!sp || !sp->fence) {
+		return false;
+	}
+	return directx::wait_fence_for(sp->fence.get(), value, static_cast<std::uint32_t>(std::max(0.f, timeout.as<milliseconds>())));
+}
+
 auto gse::dx12::device::create_timestamp_query_pool(const std::uint32_t capacity, const std::string_view label) -> gpu::handle<gpu::query_pool> {
 	const std::lock_guard _(m_mutex);
 	auto pool = std::make_unique<timestamp_query_pool>();

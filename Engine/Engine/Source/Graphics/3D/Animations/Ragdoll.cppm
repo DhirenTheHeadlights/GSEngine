@@ -1,19 +1,17 @@
 export module gse.graphics:ragdoll;
 
-import std;
-
-import :animation_components;
-import :skinned_model;
-
-import gse.core;
-import gse.containers;
+import gse.assets;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
 import gse.math;
 import gse.meta;
-import gse.assets;
 import gse.physics;
+import std;
+
+import :animation_components;
 
 export namespace gse::animation {
 	struct ragdoll_request {

@@ -1,43 +1,39 @@
 module gse.graphics:gui_chrome_impl;
 
-import std;
-
-import gse.os;
-import gse.config;
 import gse.assets;
-import gse.gpu;
-import gse.core;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.config;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
+import gse.gpu;
 import gse.math;
 import gse.meta;
+import gse.os;
 import gse.save;
+import gse.time;
+import std;
 
+import :builder;
+import :cursor;
+import :font;
 import :gui;
 import :gui_chrome;
 import :gui_menu;
 import :gui_scale;
-
-import :types;
-import :layout;
-import :font;
-import :ui_renderer;
-import :texture;
-import :cursor;
-import :save;
 import :ids;
 import :input_layers;
-import :settings;
-import :styles;
-import :builder;
+import :interaction;
+import :layout;
 import :menu_stack;
 import :render_layer;
-import :interaction;
+import :styles;
 import :symbols;
 import :tab_strip;
+import :texture;
+import :types;
+import :ui_renderer;
 import :widget_context;
 
 auto gse::gui::has_side_accent(const menu& m) -> bool {

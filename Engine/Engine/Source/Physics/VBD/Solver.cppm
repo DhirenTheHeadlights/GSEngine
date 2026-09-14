@@ -9,10 +9,10 @@ import gse.math;
 import std;
 
 import :contact_manifold;
-import :motion_component;
 import :vbd_constraint_graph;
 import :vbd_constraints;
 import :vbd_contact_cache;
+import :motion_component;
 
 export namespace gse::vbd {
 	using time_step = time_t<float, seconds>;

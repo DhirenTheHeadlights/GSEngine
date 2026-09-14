@@ -1,27 +1,26 @@
 export module gse.graphics:checkbox_widget;
 
-import std;
-
-import gse.os;
 import gse.assets;
-import gse.gpu;
-import gse.core;
-import gse.meta;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
+import gse.gpu;
 import gse.math;
-import :types;
+import gse.meta;
+import gse.os;
+import gse.time;
+import std;
+
 import :font;
 import :ids;
-import :styles;
-import :builder;
 import :interaction;
 import :render_layer;
+import :styles;
 import :symbols;
 import :texture;
+import :types;
 import :ui_renderer;
 
 export namespace gse::gui {

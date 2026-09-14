@@ -18,6 +18,7 @@ export namespace gse::ide::build_inbox {
 		std::string target;
 		std::string tree;
 		std::string profile;
+		std::string config;
 		std::filesystem::path cwd;
 		std::filesystem::path project;
 		bool run = false;

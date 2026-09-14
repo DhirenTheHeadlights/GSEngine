@@ -446,8 +446,7 @@ auto gse::ide::draw_search_bar(gui::builder& ui, quick_search_state& state, cons
 		});
 	}
 
-	const time now = system_clock::now<time>();
-	state.driver.update(now, index, search::options{
+	state.driver.update(index, search::options{
 		.max_results = 8,
 	});
 

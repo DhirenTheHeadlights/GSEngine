@@ -1,26 +1,24 @@
 export module gse.graphics:tab_strip;
 
-import std;
-
-import gse.os;
+import gse.assert;
 import gse.assets;
-import gse.gpu;
-import gse.core;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
+import gse.gpu;
 import gse.math;
-import gse.assert;
+import gse.os;
+import gse.time;
+import std;
 
-import :types;
-import :styles;
-import :ids;
-import :input_layers;
 import :font;
-import :symbols;
+import :input_layers;
 import :scroll_widget;
+import :styles;
+import :symbols;
+import :types;
 import :ui_renderer;
 
 export namespace gse::gui {

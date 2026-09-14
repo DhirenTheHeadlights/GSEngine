@@ -1,26 +1,25 @@
 module gse.graphics:physics_debug_renderer_impl;
 
-import std;
-
-import :physics_debug_renderer;
-import :forward_renderer;
-import :camera_system;
-import :cloud_renderer;
-import :render_targets;
-import :sdf_grid_renderer;
-import :settings;
-import :world_text_renderer;
-
-import gse.physics;
-import gse.math;
-import gse.core;
-import gse.containers;
+import gse.assets;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.ecs;
-import gse.save;
 import gse.gpu;
 import gse.gpu_record;
-import gse.assets;
+import gse.math;
+import gse.physics;
+import gse.save;
+import std;
+
+import :camera_system;
+import :cloud_renderer;
+import :forward_renderer;
+import :physics_debug_renderer;
+import :render_targets;
+import :sdf_grid_renderer;
+import :world_text_renderer;
+import :settings;
 
 
 namespace gse::renderer::physics_debug {

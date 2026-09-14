@@ -3988,17 +3988,24 @@ static void resolve_import(const char *spelling, char *out) {
 }
 
 static hash_map<tree, auto_vec<tree> *> *g_reexports = nullptr;
+static hash_map<tree, auto_vec<tree> *> *g_plain_imports = nullptr;
 static hash_set<tree> *g_known_units = nullptr;
 static bool g_reexport_scan_done = false;
 
-static void add_reexport(tree from, tree to) {
+static void add_unit_edge(hash_map<tree, auto_vec<tree> *> *graph, tree from, tree to) {
 	bool existed = false;
-	auto_vec<tree> *&edges = g_reexports->get_or_insert(from, &existed);
+	auto_vec<tree> *&edges = graph->get_or_insert(from, &existed);
 	if (!existed) edges = new auto_vec<tree>();
 	for (tree e : *edges) {
 		if (e == to) return;
 	}
 	edges->safe_push(to);
+}
+
+static bool is_own_unit(const char *name, const char *own) {
+	const size_t length = strlen(own);
+	if (strncmp(name, own, length) != 0) return false;
+	return name[length] == '\0' || name[length] == ':';
 }
 
 static bool line_prefix(const char *line, const char *end, const char *prefix, const char **rest) {
@@ -4015,6 +4022,19 @@ static void copy_directive_name(const char *from, const char *end, char *out) {
 		out[length++] = *p;
 	}
 	out[length] = '\0';
+}
+
+static bool resolve_unit_spelling(const char *name, const char *current, char *full) {
+	if (!name[0] || !current[0] || name[0] == '<' || name[0] == '"') return false;
+	if (name[0] != ':') {
+		copy_module_name(name, full);
+		return true;
+	}
+	primary_of(current, full);
+	size_t length = strlen(full);
+	for (size_t i = 0; name[i] && length + 1 < module_name_capacity; ++i) full[length++] = name[i];
+	full[length] = '\0';
+	return true;
 }
 
 static void scan_unit_reexports(const char *path) {
@@ -4044,21 +4064,19 @@ static void scan_unit_reexports(const char *path) {
 		}
 		else if (line_prefix(line, end, "export import ", &rest)) {
 			copy_directive_name(rest, end, name);
-			if (name[0] && current[0] && name[0] != '<' && name[0] != '"') {
-				char full[module_name_capacity];
-				if (name[0] == ':') {
-					primary_of(current, full);
-					size_t length = strlen(full);
-					for (size_t i = 0; name[i] && length + 1 < module_name_capacity; ++i) full[length++] = name[i];
-					full[length] = '\0';
-				}
-				else {
-					copy_module_name(name, full);
-				}
-				add_reexport(get_identifier(current), get_identifier(full));
+			char full[module_name_capacity];
+			if (resolve_unit_spelling(name, current, full)) {
+				add_unit_edge(g_reexports, get_identifier(current), get_identifier(full));
 			}
 		}
-		else if (line_prefix(line, end, "import ", &rest) || line_prefix(line, end, "module;", &rest)) {
+		else if (line_prefix(line, end, "import ", &rest)) {
+			copy_directive_name(rest, end, name);
+			char full[module_name_capacity];
+			if (resolve_unit_spelling(name, current, full)) {
+				add_unit_edge(g_plain_imports, get_identifier(current), get_identifier(full));
+			}
+		}
+		else if (line_prefix(line, end, "module;", &rest)) {
 		}
 		else {
 			break;
@@ -4104,6 +4122,7 @@ static void ensure_reexport_graph() {
 	if (g_reexport_scan_done) return;
 	g_reexport_scan_done = true;
 	g_reexports = new hash_map<tree, auto_vec<tree> *>();
+	g_plain_imports = new hash_map<tree, auto_vec<tree> *>();
 	g_known_units = new hash_set<tree>();
 	g_unit_of_file = new hash_map<tree, tree>();
 	for (size_t i = 0; i < g_root_count; ++i) {
@@ -4111,22 +4130,33 @@ static void ensure_reexport_graph() {
 	}
 }
 
-static void collect_closure(tree unit, hash_set<tree> &out) {
+static auto_vec<tree> **unit_plain_edges(tree unit, const char *own) {
+	if (!is_own_unit(IDENTIFIER_POINTER(unit), own)) return nullptr;
+	return g_plain_imports->get(unit);
+}
+
+static void collect_closure(tree unit, hash_set<tree> &out, const char *own) {
 	if (out.add(unit)) return;
-	auto_vec<tree> **edges = g_reexports->get(unit);
-	if (!edges) return;
-	for (tree e : **edges) {
-		collect_closure(e, out);
+	if (auto_vec<tree> **edges = g_reexports->get(unit)) {
+		for (tree e : **edges) collect_closure(e, out, own);
+	}
+	if (auto_vec<tree> **edges = unit_plain_edges(unit, own)) {
+		for (tree e : **edges) collect_closure(e, out, own);
 	}
 }
 
-static bool closure_contains(tree import_name, tree used, hash_set<tree> &visited) {
+static bool closure_contains(tree import_name, tree used, hash_set<tree> &visited, const char *own) {
 	if (import_name == used) return true;
 	if (visited.add(import_name)) return false;
-	auto_vec<tree> **edges = g_reexports->get(import_name);
-	if (!edges) return false;
-	for (tree e : **edges) {
-		if (closure_contains(e, used, visited)) return true;
+	if (auto_vec<tree> **edges = g_reexports->get(import_name)) {
+		for (tree e : **edges) {
+			if (closure_contains(e, used, visited, own)) return true;
+		}
+	}
+	if (auto_vec<tree> **edges = unit_plain_edges(import_name, own)) {
+		for (tree e : **edges) {
+			if (closure_contains(e, used, visited, own)) return true;
+		}
 	}
 	return false;
 }
@@ -4223,6 +4253,26 @@ static void add_name_module(hash_map<tree, auto_vec<tree> *> *map, tree name, tr
 	list->safe_push(module_id);
 }
 
+static void note_name_file(tree name, location_t where) {
+	if (where == UNKNOWN_LOCATION || in_main_file(where)) return;
+	if (tree file = path_key(LOCATION_FILE(where))) {
+		add_name_module(g_name_files, name, file);
+	}
+}
+
+static void note_definition_files(tree name, tree decl) {
+	if (!g_name_files || !name || TREE_CODE(name) != IDENTIFIER_NODE) return;
+	if (!decl || !DECL_P(decl)) return;
+	note_name_file(name, DECL_SOURCE_LOCATION(decl));
+	tree inner = TREE_CODE(decl) == TEMPLATE_DECL ? DECL_TEMPLATE_RESULT(decl) : decl;
+	if (!inner || TREE_CODE(inner) != TYPE_DECL) return;
+	tree type = TREE_TYPE(inner);
+	if (!type || !CLASS_TYPE_P(type) || !COMPLETE_TYPE_P(type)) return;
+	for (tree member = TYPE_FIELDS(type); member; member = DECL_CHAIN(member)) {
+		if (DECL_P(member)) note_name_file(name, DECL_SOURCE_LOCATION(member));
+	}
+}
+
 static void note_used_modules(tree name, unsigned base, unsigned span) {
 	if (!g_name_sweep || !name || !base) return;
 	for (; span; ++base, --span) {
@@ -4245,9 +4295,7 @@ static void note_decl_origin(tree decl) {
 			g_name_local->add(id);
 			return;
 		}
-		if (tree file = path_key(LOCATION_FILE(where))) {
-			add_name_module(g_name_files, id, file);
-		}
+		note_definition_files(id, decl);
 		return;
 	}
 	const char *mod = module_name((unsigned)index, true);
@@ -4267,22 +4315,34 @@ static void push_unique_module(auto_vec<tree> &out, tree module_id) {
 	out.safe_push(module_id);
 }
 
-static void collect_used_modules(hash_set<tree> &reachable, auto_vec<tree> &firm, auto_vec<tree> &loose) {
+static bool is_own_partition(tree module_id, const char *own) {
+	const char *name = IDENTIFIER_POINTER(module_id);
+	const size_t length = strlen(own);
+	return strncmp(name, own, length) == 0 && name[length] == ':';
+}
+
+static void collect_used_modules(hash_set<tree> &reachable, auto_vec<tree> &firm, auto_vec<tree> &loose, const char *own) {
 	hash_set<tree> settled;
 	for (hash_map<tree, auto_vec<tree> *>::iterator it = g_name_precise->begin(); it != g_name_precise->end(); ++it) {
-		bool any = false;
+		bool external = false;
 		for (tree m : *(*it).second) {
 			if (!reachable.contains(m)) continue;
+			if (is_own_partition(m, own)) {
+				push_unique_module(loose, m);
+				continue;
+			}
 			push_unique_module(firm, m);
-			any = true;
+			external = true;
 		}
-		if (any) settled.add((*it).first);
+		if (external) settled.add((*it).first);
 	}
 	for (hash_map<tree, auto_vec<tree> *>::iterator it = g_name_sweep->begin(); it != g_name_sweep->end(); ++it) {
 		const tree name = (*it).first;
-		if (settled.contains(name) || g_name_local->contains(name)) continue;
+		const bool suppressed = settled.contains(name) || g_name_local->contains(name);
 		for (tree m : *(*it).second) {
-			if (reachable.contains(m)) push_unique_module(loose, m);
+			if (!reachable.contains(m)) continue;
+			if (suppressed && !is_own_partition(m, own)) continue;
+			push_unique_module(loose, m);
 		}
 	}
 }
@@ -4317,45 +4377,11 @@ static void emit_unused_imports() {
 		if (entry.exported) continue;
 		char full[module_name_capacity];
 		resolve_import(entry.name, full);
-		collect_closure(get_identifier(full), reachable);
+		collect_closure(get_identifier(full), reachable, own);
 	}
-	FILE *dbg = nullptr;
-	if (strstr(main_input_filename, "Scheduler.cppm") && strstr(main_input_filename, "Ecs")) {
-		dbg = fopen("C:/Users/Dhiren/AppData/Local/Temp/gse_lint_debug.txt", "w");
-	}
-	if (dbg) {
-		fprintf(dbg, "FILE %s", main_input_filename);
-		fprintf(dbg, "REACHABLE:");
-		for (hash_set<tree>::iterator it = reachable.begin(); it != reachable.end(); ++it) fprintf(dbg, " %s", IDENTIFIER_POINTER(*it));
-		fprintf(dbg, "PRECISE:");
-		for (hash_map<tree, auto_vec<tree> *>::iterator it = g_name_precise->begin(); it != g_name_precise->end(); ++it) {
-			fprintf(dbg, " %s=[", IDENTIFIER_POINTER((*it).first));
-			for (tree m : *(*it).second) fprintf(dbg, "%s ", IDENTIFIER_POINTER(m));
-			fprintf(dbg, "]");
-		}
-		fprintf(dbg, "SWEEP:");
-		for (hash_map<tree, auto_vec<tree> *>::iterator it = g_name_sweep->begin(); it != g_name_sweep->end(); ++it) {
-			fprintf(dbg, " %s=[", IDENTIFIER_POINTER((*it).first));
-			for (tree m : *(*it).second) fprintf(dbg, "%s ", IDENTIFIER_POINTER(m));
-			fprintf(dbg, "]");
-		}
-		fprintf(dbg, "FILES:");
-		for (hash_map<tree, auto_vec<tree> *>::iterator it = g_name_files->begin(); it != g_name_files->end(); ++it) {
-			fprintf(dbg, " %s=[", IDENTIFIER_POINTER((*it).first));
-			for (tree f : *(*it).second) fprintf(dbg, "%s ", IDENTIFIER_POINTER(f));
-			fprintf(dbg, "]");
-		}
-		fprintf(dbg, "UNITMAP_SAMPLE:");
-		{ unsigned n = 0;
-			for (hash_map<tree, tree>::iterator it = g_unit_of_file->begin(); it != g_unit_of_file->end() && n < 6; ++it, ++n)
-				fprintf(dbg, " %s->%s", IDENTIFIER_POINTER((*it).first), IDENTIFIER_POINTER((*it).second)); }
-		fprintf(dbg, "LOCAL_HAS_registry=%d", g_name_local->contains(get_identifier("registry")) ? 1 : 0);
-		fclose(dbg);
-	}
-
 	auto_vec<tree> firm_modules;
 	auto_vec<tree> loose_modules;
-	collect_used_modules(reachable, firm_modules, loose_modules);
+	collect_used_modules(reachable, firm_modules, loose_modules, own);
 	auto_vec<bool> contaminated;
 	contaminated.safe_grow_cleared(count);
 
@@ -4367,13 +4393,13 @@ static void emit_unused_imports() {
 		const tree candidate = get_identifier(full);
 		for (tree used : firm_modules) {
 			hash_set<tree> visited;
-			if (!closure_contains(candidate, used, visited)) continue;
+			if (!closure_contains(candidate, used, visited, own)) continue;
 			contributes[i] = true;
 			break;
 		}
 		for (tree used : loose_modules) {
 			hash_set<tree> visited;
-			if (!closure_contains(candidate, used, visited)) continue;
+			if (!closure_contains(candidate, used, visited, own)) continue;
 			contributes[i] = true;
 			contaminated[i] = true;
 			break;
@@ -4390,12 +4416,12 @@ static void emit_unused_imports() {
 		char full[module_name_capacity];
 		resolve_import(entry.name, full);
 		tree import_id = get_identifier(full);
-		if (contaminated[i]) continue;
+		if (contaminated[i] || is_own_unit(full, own)) continue;
 		auto_vec<tree> narrowed;
 		bool direct = false;
 		for (tree used : firm_modules) {
 			hash_set<tree> visited;
-			if (!closure_contains(import_id, used, visited)) continue;
+			if (!closure_contains(import_id, used, visited, own)) continue;
 			char unit[module_name_capacity];
 			primary_of(IDENTIFIER_POINTER(used), unit);
 			if (strcmp(unit, full) == 0 || strcmp(unit, own) == 0) {
@@ -5073,20 +5099,11 @@ static void walk_template_bodies(tree decl) {
 	}
 }
 
-static void note_decl_file(tree name, tree decl) {
-	if (!decl || !DECL_P(decl)) return;
-	const location_t where = DECL_SOURCE_LOCATION(decl);
-	if (where == UNKNOWN_LOCATION || in_main_file(where)) return;
-	if (tree file = path_key(LOCATION_FILE(where))) {
-		add_name_module(g_name_files, name, file);
-	}
-}
-
 static void note_binding_files(tree name, tree slot_bind) {
 	if (!g_name_files || !name || TREE_CODE(name) != IDENTIFIER_NODE) return;
-	note_decl_file(name, MAYBE_STAT_TYPE(slot_bind));
+	note_definition_files(name, MAYBE_STAT_TYPE(slot_bind));
 	for (ovl_iterator it(MAYBE_STAT_DECL(slot_bind)); it; ++it) {
-		note_decl_file(name, *it);
+		note_definition_files(name, *it);
 	}
 }
 

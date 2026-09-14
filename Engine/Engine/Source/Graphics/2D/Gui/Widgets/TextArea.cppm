@@ -38,7 +38,7 @@ export namespace gse::gui {
 		buffer_position anchor;
 		scroll_state scroll{};
 		bool tail_pinned = true;
-		time last_blink{};
+		deadline_timer blink;
 		bool blink_on = true;
 		bool rpt_active = false;
 		time rpt_next{};
@@ -832,7 +832,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 		}
 
 		state.selecting = true;
-		state.last_blink = system_clock::now<time>();
+		state.blink.arm(blink_interval);
 		state.blink_on = true;
 		state.last_edit_kind = 0;
 	}
@@ -868,7 +868,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 					state.caret = current_hi;
 				}
 			}
-			state.last_blink = system_clock::now<time>();
+			state.blink.arm(blink_interval);
 			state.blink_on = true;
 		}
 		else {
@@ -891,7 +891,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 		if (!had_selection || before_lo || after_hi) {
 			state.caret = click_pos;
 			state.anchor = click_pos;
-			state.last_blink = system_clock::now<time>();
+			state.blink.arm(blink_interval);
 			state.blink_on = true;
 		}
 		const bool selection_now = state.anchor != state.caret;
@@ -1138,7 +1138,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 		if (modified) {
 			state.caret = buffer.clamp(state.caret);
 			state.anchor = buffer.clamp(state.anchor);
-			state.last_blink = system_clock::now<time>();
+			state.blink.arm(blink_interval);
 			state.blink_on = true;
 		}
 	}
@@ -1395,7 +1395,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 		if (changed) {
 			state.caret = buffer.clamp(state.caret);
 			state.anchor = buffer.clamp(state.anchor);
-			state.last_blink = system_clock::now<time>();
+			state.blink.arm(blink_interval);
 			state.blink_on = true;
 			caret_moved = true;
 		}
@@ -1404,11 +1404,12 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 	if (blink_interval <= time{}) {
 		state.blink_on = true;
 	}
-	else if (focused) {
-		if (const auto now = system_clock::now<time>(); now - state.last_blink > blink_interval) {
-			state.last_blink = now;
-			state.blink_on = !state.blink_on;
-		}
+	else if (!state.blink.armed()) {
+		state.blink.arm(blink_interval);
+	}
+	else if (focused && state.blink.due()) {
+		state.blink.arm(blink_interval);
+		state.blink_on = !state.blink_on;
 	}
 
 	refresh_metrics(buffer, state, spans, stops, style, line_h);

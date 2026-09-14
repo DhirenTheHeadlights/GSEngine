@@ -1,16 +1,15 @@
 export module gse.graphics:layout;
 
-import std;
-
-import gse.core;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
 import gse.math;
+import gse.time;
+import std;
+
 import :types;
-import :styles;
 
 export namespace gse::gui::layout {
 	auto dock(

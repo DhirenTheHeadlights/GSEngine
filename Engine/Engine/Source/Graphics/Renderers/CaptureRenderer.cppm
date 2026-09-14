@@ -1,21 +1,20 @@
 export module gse.graphics:capture_renderer;
 
+import gse.assets;
+import gse.concurrency;
+import gse.core;
+import gse.ecs;
+import gse.gpu;
+import gse.gpu_record;
+import gse.math;
+import gse.meta;
+import gse.os;
+import gse.time;
 import std;
 
-import gse.os;
-import gse.assets;
-import gse.gpu;
-import gse.core;
-import gse.concurrency;
-import gse.ecs;
-import gse.math;
-import gse.time;
-import gse.meta;
-import gse.gpu_record;
-
-import :ui_renderer;
 import :capture_ring;
 import :mp4_muxer;
+import :ui_renderer;
 
 export namespace gse::renderer::capture {
 	struct pending_screenshot {

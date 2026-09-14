@@ -1,39 +1,36 @@
 module gse.graphics:forward_renderer_impl;
 
-import std;
-
-import :forward_renderer;
-import :atmosphere_renderer;
-import :geometry_collector;
-import :depth_prepass_renderer;
-import :gi_probe_renderer;
-import :rt_shadow_renderer;
-import :light_culling_renderer;
-import :light_packing;
-import :cull_compute_renderer;
-import :skin_renderer;
-import :camera_system;
-import :render_targets;
-import :texture;
-import :point_light;
-import :spot_light;
-import :directional_light;
-import :settings;
-
-
-import gse.math;
-import gse.core;
-import gse.containers;
-import gse.time;
+import gse.assets;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
-import gse.os;
-import gse.assets;
 import gse.gpu;
 import gse.gpu_record;
-import gse.save;
+import gse.math;
 import gse.meta;
+import gse.os;
+import gse.save;
+import gse.time;
+import std;
+
+import :atmosphere_renderer;
+import :camera_system;
+import :depth_prepass_renderer;
+import :directional_light;
+import :forward_renderer;
+import :geometry_collector;
+import :gi_probe_renderer;
+import :light_culling_renderer;
+import :light_packing;
+import :point_light;
+import :render_targets;
+import :rt_shadow_renderer;
+import :skin_renderer;
+import :spot_light;
+import :texture;
+import :settings;
 
 namespace gse::renderer::forward {
 	struct [[= shaders::uniform_block]] camera_ubo {

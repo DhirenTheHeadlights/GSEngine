@@ -445,6 +445,7 @@ auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> ph
 	std::vector<vbd::body_state> bodies;
 	std::vector<std::uint8_t> has_transform;
 	std::flat_map<id, std::uint32_t> id_to_body_index;
+	std::vector<std::pair<id, std::uint32_t>> id_to_body_index_entries;
 
 	body_build_view view{
 		.motion_owners = motion.owner_ids(),
@@ -460,7 +461,7 @@ auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> ph
 	build_mass_properties(view, body_props);
 	view.mass_props = body_props;
 
-	build_body_states(view, phys.sleep_counters, bodies, id_to_body_index, has_transform);
+	build_body_states(view, phys.sleep_counters, bodies, id_to_body_index, id_to_body_index_entries, has_transform);
 	build_body_bounds(view, id_to_body_index, has_transform, bodies);
 
 	const auto inputs = gather_step_inputs(motor, transform, motion, std::span<const impulse_request>{});

@@ -408,7 +408,12 @@ auto gse::gui::symbol::draw(std::vector<renderer::sprite_command>& out, resource
 auto gse::gui::symbol::spinner_rotation() -> angle {
 	constexpr angular_velocity spin_rate = radians_per_second(9.6f);
 	constexpr angle full_rotation = degrees(360.f);
-	return fmod(spin_rate * system_clock::now(), full_rotation);
+	const angle step = degrees(15.f);
+	const auto period = step / spin_rate;
+	const auto now = system_clock::now<time_t<double, seconds>>();
+	const double steps = std::floor(now / period);
+	frame_demand::request_frame_at(now + period * (steps + 1.0));
+	return fmod(step * steps, full_rotation);
 }
 
 auto gse::gui::symbol::spinner(const draw_context& ctx, const rect_t<vec2f>& box, const angle rotation, const paint& p) -> void {

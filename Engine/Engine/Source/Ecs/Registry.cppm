@@ -1,10 +1,9 @@
 export module gse.ecs:registry;
 
-import std;
-
 import gse.assert;
-import gse.core;
 import gse.concurrency;
+import gse.core;
+import std;
 
 import :access_token;
 import :component;

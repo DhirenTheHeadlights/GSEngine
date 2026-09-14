@@ -33,7 +33,7 @@ export namespace gse::ide {
 		std::uint32_t line = 0;
 		std::uint32_t column = 0;
 		std::string ident;
-		time since{};
+		deadline_timer reveal;
 		bool resolved = false;
 		bool has_card = false;
 		bool pending = false;

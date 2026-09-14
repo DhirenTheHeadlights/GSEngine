@@ -1,25 +1,22 @@
 export module gse.gpu:context;
 
+import gse.concurrency;
+import gse.containers;
+import gse.core;
+import gse.diag;
+import gse.ecs;
+import gse.gpu_backend;
+import gse.log;
+import gse.meta;
+import gse.os;
+import gse.save;
+import gse.time;
 import std;
 
 import :device;
-import :swap_chain;
 import :frame;
-import :transient_pool;
 import :render_graph;
-
-import gse.gpu_backend;
-import gse.os;
-
-import gse.log;
-import gse.core;
-import gse.containers;
-import gse.time;
-import gse.concurrency;
-import gse.diag;
-import gse.ecs;
-import gse.meta;
-import gse.save;
+import :swap_chain;
 
 export namespace gse::gpu {
 	struct gpu_resume_request;

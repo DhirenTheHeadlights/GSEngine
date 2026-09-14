@@ -1,31 +1,29 @@
 export module gse.graphics:settings;
 
-import std;
-
-import gse.os;
 import gse.assets;
-import gse.math;
-import gse.meta;
-import gse.core;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
+import gse.math;
+import gse.meta;
+import gse.os;
 import gse.save;
+import gse.time;
+import std;
 
-import :types;
-import :ids;
 import :builder;
-import :menu_stack;
-import :toggle_widget;
-import :slider_widget;
 import :dropdown_widget;
+import :ids;
+import :menu_stack;
 import :section_widget;
 import :selectable_widget;
-import :text_widget;
-import :value_widget;
+import :slider_widget;
 import :text_input_widget;
+import :text_widget;
+import :toggle_widget;
+import :types;
 
 export namespace gse::settings {
 	struct dimensioned_input_state {
@@ -252,12 +250,12 @@ auto gse::settings::draw_controls_page(void* builder, void* panel_state_ptr, con
 		}
 
 		if (b.draw<gui::selectable>({
-				.text = info.label,
-				.detail = shown,
-				.key = info.name,
-				.selected = capturing,
-				.align = gui::selectable_align::left,
-			})) {
+			.text = info.label,
+			.detail = shown,
+			.key = info.name,
+			.selected = capturing,
+			.align = gui::selectable_align::left,
+		})) {
 			ps.capturing_binding = capturing ? 0 : row_key;
 		}
 

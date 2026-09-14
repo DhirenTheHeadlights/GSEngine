@@ -3,8 +3,8 @@ export module gse.ecs:access_token;
 import gse.assert;
 import gse.core;
 import std;
-
 import :component;
+
 
 export namespace gse {
 	enum class access_mode : std::uint8_t {

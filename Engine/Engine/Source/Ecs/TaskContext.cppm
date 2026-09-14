@@ -1,11 +1,9 @@
 export module gse.ecs:task_context;
 
-import std;
-
 import gse.assert;
-import gse.core;
 import gse.concurrency;
-import gse.diag;
+import gse.core;
+import std;
 
 import :registries;
 import :task_graph;

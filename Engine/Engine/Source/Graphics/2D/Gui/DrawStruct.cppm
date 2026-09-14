@@ -1,17 +1,15 @@
 export module gse.graphics:draw_struct;
 
-import std;
-
-import gse.meta;
 import gse.core;
 import gse.math;
+import gse.meta;
+import std;
 
-import :types;
 import :builder;
-import :toggle_widget;
-import :slider_widget;
 import :dropdown_widget;
 import :settings;
+import :slider_widget;
+import :toggle_widget;
 
 export namespace gse::gui {
 	template <typename T>

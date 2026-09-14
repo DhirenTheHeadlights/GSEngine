@@ -1,6 +1,5 @@
 export module sandbox:crosshair_system;
 
-import std;
 import gse;
 
 export namespace sandbox::crosshair {

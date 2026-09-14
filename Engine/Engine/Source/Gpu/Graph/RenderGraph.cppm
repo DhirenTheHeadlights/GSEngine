@@ -1,25 +1,23 @@
 export module gse.gpu:render_graph;
 
-import std;
-
-import :device;
-import :swap_chain;
-import :frame;
-import :transient_pool;
-import :image;
-import :command_contract;
-import :graph_channel;
-
-import gse.gpu_backend;
 import gse.assert;
-import gse.core;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
+import gse.gpu_backend;
 import gse.log;
 import gse.math;
 import gse.meta;
+import gse.time;
+import std;
+
+import :command_contract;
+import :device;
+import :frame;
+import :graph_channel;
+import :swap_chain;
+import :transient_pool;
 
 export namespace gse::gpu {
 	class render_graph;

@@ -1,13 +1,12 @@
 export module gse.physics:hull_collision;
 
+import gse.math;
 import std;
 
-import :bounding_box;
 import :contact_manifold;
 import :convex_hull;
+import :bounding_box;
 import :transform_component;
-
-import gse.math;
 
 export namespace gse::physics {
 	struct polytope {

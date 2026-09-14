@@ -24,12 +24,13 @@ export namespace gse::vbd {
 		std::uint32_t z;
 	};
 
-	using shader_types = type_pack<vbd_limits, joint_type, solver_config, body_state, contact_constraint, velocity_motor_constraint, joint_constraint, impulse_constraint, frozen_jacobian, dispatch_args>;
+	using shader_types = type_pack<vbd_limits, joint_type, solver_config, body_state, contact_constraint, velocity_motor_constraint, joint_constraint, joint_drive_input, impulse_constraint, frozen_jacobian, dispatch_args>;
 
 	struct vbd_solve_chain {};
 
 	struct vbd_apply_body_inputs_stage {};
 	struct vbd_apply_joint_inputs_stage {};
+	struct vbd_apply_joint_drive_inputs_stage {};
 	struct vbd_render_mirror_stage {};
 	struct vbd_clear_state_buffers_stage {};
 	struct vbd_collision_reset_stage {};
@@ -80,10 +81,11 @@ export namespace gse::vbd {
 	};
 
 	struct solver_upload {
-		std::vector<body_state> bodies;
-		std::vector<velocity_motor_constraint> motors;
-		std::vector<joint_constraint> joints;
-		std::vector<impulse_constraint> impulses;
+		std::span<const body_state> bodies;
+		std::span<const velocity_motor_constraint> motors;
+		std::span<const joint_constraint> joints;
+		std::span<const joint_drive_input> joint_inputs;
+		std::span<const impulse_constraint> impulses;
 		solver_config solver_cfg;
 		time_step dt{};
 		int steps = 1;
@@ -227,6 +229,12 @@ export namespace gse::vbd {
 		) -> async::task<>;
 
 		auto stage_apply_joint_inputs(
+			const solve_plan& p,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_apply_joint_drive_inputs(
 			const solve_plan& p,
 			std::uint32_t chain_index,
 			pass_channel pass_out
@@ -420,6 +428,7 @@ export namespace gse::vbd {
 
 		auto stage_hash_warm_inputs(
 			const solve_plan& p,
+			std::uint32_t sub,
 			std::uint32_t substep,
 			std::uint32_t slot,
 			std::uint32_t chain_index,
@@ -466,6 +475,7 @@ export namespace gse::vbd {
 			gpu::shader_program apply_impulses_pipeline;
 			gpu::shader_program apply_body_inputs_pipeline;
 			gpu::shader_program apply_joint_inputs_pipeline;
+			gpu::shader_program apply_joint_drive_inputs_pipeline;
 			gpu::shader_program hash_state_pipeline;
 			gpu::shader_program hash_warm_inputs_pipeline;
 			gpu::shader_program hash_adjacency_pipeline;
@@ -509,6 +519,7 @@ export namespace gse::vbd {
 			gpu::buffer jointless_indirect_dispatch_buffer;
 			gpu::buffer frozen_jacobian_buffer;
 			gpu::buffer solve_deltas_buffer;
+			gpu::buffer unowned_contact_buffer;
 			gpu::buffer grounded_buffer;
 			gpu::buffer coloring_scratch_buffer;
 			gpu::buffer render_body_buffer;
@@ -536,7 +547,9 @@ export namespace gse::vbd {
 		gpu::upload_channel m_island_channel;
 		gpu::upload_channel m_body_env_channel;
 		gpu::upload_channel m_static_bodies_channel;
+		gpu::upload_channel m_body_input_index_channel;
 		gpu::upload_channel m_joint_upload_channel;
+		gpu::upload_channel m_joint_drive_input_channel;
 
 		gpu::readback_channel m_snapshot_channel;
 		gpu::readback_channel m_grounded_channel;
@@ -569,18 +582,28 @@ export namespace gse::vbd {
 
 		std::vector<velocity_motor_constraint> m_upload_motors;
 		std::vector<joint_constraint> m_upload_joints;
+		std::vector<joint_drive_input> m_upload_joint_inputs;
+		std::vector<std::uint32_t> m_joint_slots;
 		std::vector<impulse_constraint> m_upload_impulses;
 		std::vector<std::uint32_t> m_upload_motor_map;
 		std::vector<std::uint32_t> m_upload_jointed_pairs;
 		std::vector<std::uint32_t> m_upload_islands;
 		std::vector<std::uint32_t> m_upload_body_env;
 		std::vector<std::uint32_t> m_upload_static_bodies;
+		std::vector<std::uint32_t> m_upload_body_input_indices;
+		struct body_scan_chunk {
+			std::vector<std::uint32_t> statics;
+			std::vector<std::uint32_t> inputs;
+			displacement max_extent;
+		};
+		std::vector<body_scan_chunk> m_body_scan;
 		std::vector<std::uint8_t> m_jointed_body_mask;
 		std::vector<std::uint64_t> m_topology_key;
 		std::vector<std::uint64_t> m_topology_key_next;
 		std::uint32_t m_topology_body_count = 0;
 		std::uint32_t m_topology_island_count = 0;
 		bool m_upload_joints_dirty = false;
+		bool m_upload_joint_inputs_dirty = false;
 
 		struct ring_slot {
 			gpu::buffer bodies;

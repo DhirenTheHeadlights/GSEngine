@@ -27,7 +27,6 @@ import std;
 
 import :engine;
 import :log_settings;
-import :scene;
 import :world_system;
 
 gse::engine::engine(const engine_config& config)
@@ -191,6 +190,10 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 		disabled.insert(id_of<audio::data>());
 		system_clock::set_display_snapping(false);
 	}
+	if (!m_config.gpu) {
+		disabled.insert(id_of<gpu::context::data>());
+		log::println(log::category::runtime, "gpu disabled by config: no device will be created, graphics assets load CPU-side only, and every system that requires a device is dropped");
+	}
 	if (!m_config.simulate_world) {
 		disabled.insert(id_of<world_system::data>());
 		disabled.insert(id_of<physics::data>());
@@ -285,7 +288,9 @@ auto gse::engine::update() -> void {
 	system_clock::update();
 	m_scheduler.update();
 
-	if (!m_config.render && (m_config.use_gpu_solver || m_headless_gpu)) {
+	const auto* physics_state = m_scheduler.try_state_of<physics::data>();
+	const bool gpu_solver = physics_state && physics_state->use_gpu_solver;
+	if (!m_config.render && (gpu_solver || m_headless_gpu)) {
 		if (auto* gpu_state = m_scheduler.try_state_of<gpu::context::data>()) {
 			if (gpu::context::begin_frame(*gpu_state, nullptr)) {
 				m_scheduler.render(

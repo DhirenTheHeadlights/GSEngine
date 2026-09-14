@@ -1,25 +1,22 @@
 export module gse.ecs:scheduler;
 
-import std;
-
 import gse.assert;
-import gse.core;
-import gse.meta;
 import gse.concurrency;
-import gse.time;
-import gse.math;
+import gse.core;
 import gse.diag;
 import gse.introspection;
+import gse.math;
+import gse.meta;
+import gse.time;
+import std;
 
-import :registries;
+import :access_token;
 import :context;
+import :registries;
+import :registry;
 import :settings;
 import :system_node;
-import :system_dispatch;
-import :registry;
 import :task_graph;
-import :traits;
-import :access_token;
 
 namespace gse {
 	enum class wait_phase : std::uint8_t {
@@ -292,4 +289,3 @@ requires gse::is_same_frame_channel_v<T>
 auto gse::scheduler::drain_channel() -> std::vector<T> {
 	return m_channels_store.template drain<T>();
 }
-

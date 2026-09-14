@@ -1,45 +1,39 @@
 module gse.graphics:gui_overlay_impl;
 
-import std;
-
-import gse.os;
-import gse.config;
 import gse.assets;
-import gse.gpu;
-import gse.core;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.config;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
+import gse.gpu;
 import gse.math;
 import gse.meta;
+import gse.os;
 import gse.save;
+import gse.time;
+import std;
 
+import :builder;
+import :checkbox_widget;
+import :cursor;
+import :font;
 import :gui;
 import :gui_overlay;
 import :gui_scale;
-
-import :types;
-import :layout;
-import :font;
-import :ui_renderer;
-import :texture;
-import :cursor;
-import :save;
 import :ids;
-import :input_layers;
-import :settings;
-import :styles;
-import :builder;
+import :interaction;
 import :menu_stack;
 import :render_layer;
-import :interaction;
+import :styles;
 import :symbols;
-import :checkbox_widget;
 import :tab_strip;
 import :text_select;
-import :widget_context;
+import :texture;
+import :types;
+import :ui_renderer;
+import :settings;
 
 auto gse::gui::apply_builtin_menu_action(viewport_state& vp, const std::uint32_t action_id) -> bool {
 	const context_menu_state& cm = vp.context_menu;
@@ -124,21 +118,18 @@ auto gse::gui::draw_drag_ghost(data& d, viewport_state& vp) -> void {
 
 auto gse::gui::update_tooltip(data& d, viewport_state& vp) -> void {
 	if (vp.tooltip.pending_widget_id.exists()) {
-		if (vp.tooltip.pending_widget_id == vp.tooltip.widget_id) {
-			vp.tooltip.hover_time += system_clock::dt<time>();
-		}
-		else {
+		if (vp.tooltip.pending_widget_id != vp.tooltip.widget_id) {
 			vp.tooltip.widget_id = vp.tooltip.pending_widget_id;
-			vp.tooltip.hover_time = time{};
+			vp.tooltip.show.arm(tooltip_state::show_delay);
 		}
 	}
 	else {
 		vp.tooltip.widget_id.reset();
-		vp.tooltip.hover_time = time{};
+		vp.tooltip.show.disarm();
 		vp.tooltip.text.clear();
 	}
 
-	if (vp.tooltip.widget_id.exists() && vp.tooltip.hover_time >= tooltip_state::show_delay && !vp.tooltip.text.empty() && d.fonts.text.valid()) {
+	if (vp.tooltip.widget_id.exists() && vp.tooltip.show.due() && !vp.tooltip.text.empty() && d.fonts.text.valid()) {
 		const float padding = vp.fstate.sty.padding;
 		const float font_size = vp.fstate.sty.font_size;
 		const auto text_view = d.fonts.text.resolve();

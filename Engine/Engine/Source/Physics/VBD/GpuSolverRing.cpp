@@ -135,6 +135,7 @@ auto gse::vbd::gpu_solver::stage_ring_restore(per_frame_data& f, per_frame_data&
 		rec.copy_buffer(slot.joints, f.joint_buffer, m_joint_count * sizeof(joint_constraint));
 	}
 	rec.copy_buffer(slot.contacts, other.contact_buffer, m_capacities.ring_max_contacts * sizeof(contact_constraint));
+	rec.copy_buffer(slot.contacts, other.warm_start_buffer, m_capacities.ring_max_contacts * sizeof(contact_constraint));
 	rec.copy_buffer(slot.contact_counts, other.contact_counts_buffer, m_body_count * sizeof(std::uint32_t));
 	rec.copy_buffer(slot.contact_offsets, other.contact_offsets_buffer, m_body_count * sizeof(std::uint32_t));
 	rec.copy_buffer(slot.contact_adjacency, other.contact_adjacency_buffer, m_capacities.ring_max_contacts * 2 * sizeof(std::uint32_t));

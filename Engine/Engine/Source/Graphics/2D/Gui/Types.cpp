@@ -1,21 +1,18 @@
 module gse.graphics:types_impl;
 
-import std;
-
-import :types;
-import :font;
-import :texture;
-import :ui_renderer;
-import :styles;
-import :scroll_widget;
-import :render_layer;
-
-
+import gse.core;
 import gse.math;
 import gse.os;
-import gse.core;
 import gse.time;
-import gse.glfw;
+import std;
+
+import :font;
+import :render_layer;
+import :scroll_widget;
+import :styles;
+import :texture;
+import :types;
+import :ui_renderer;
 
 gse::gui::menu::menu(std::string_view tag, const menu_data& data)
 	: identifiable(tag), identifiable_owned(data.parent_id), rect(data.rect), dock_split_ratio(data.dock_split_ratio), docked_to(data.docked_to) {
@@ -383,7 +380,13 @@ auto gse::gui::draw_context::animated_color(const id& widget_id, const vec4f tar
 
 	const float dt = system_clock::dt<time>().as<seconds>();
 	const float t = std::clamp(speed * dt, 0.f, 1.f);
-	it->second = it->second + (target - it->second) * t;
+	const vec4f remaining = target - it->second;
+	const float settle = 1.f / 512.f;
+	if (std::abs(remaining.x()) < settle && std::abs(remaining.y()) < settle && std::abs(remaining.z()) < settle && std::abs(remaining.w()) < settle) {
+		it->second = target;
+		return target;
+	}
+	it->second = it->second + remaining * t;
 	return it->second;
 }
 

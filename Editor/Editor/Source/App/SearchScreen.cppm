@@ -216,8 +216,7 @@ auto gse::ide::search_screen::build(gui::builder& ui, gui::nav&) -> void {
 		});
 	}
 
-	const time now = system_clock::now<time>();
-	if (m_driver.update(now, m_index, search::options{})) {
+	if (m_driver.update(m_index, search::options{})) {
 		m_driver.selected = 0;
 		m_locations.clear();
 		m_locations.reserve(m_driver.results.size());

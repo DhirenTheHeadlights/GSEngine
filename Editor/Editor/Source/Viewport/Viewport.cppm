@@ -21,6 +21,7 @@ export namespace gse::ide::viewport {
 		gpu::handle<gpu::semaphore> produced_semaphore{};
 		gpu::handle<gpu::semaphore> consumed_semaphore{};
 		std::uint64_t released_value = 0;
+		task::thread produced_waiter;
 	};
 
 	struct retiring_session {

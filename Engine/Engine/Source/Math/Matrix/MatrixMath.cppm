@@ -2,16 +2,15 @@ export module gse.math:matrix_math;
 
 import std;
 
-import :vector;
-import :vector_math;
-import :units;
 import :matrix;
-import :mixed_mat;
 import :matrix_types;
+import :mixed_mat;
 import :quat;
-import :dimension;
 import :quat_math;
 import :simd;
+import :units;
+import :vector;
+import :vector_math;
 
 export namespace gse {
 	template <typename T, internal::is_quantity QPos, internal::is_quantity QTgt>

@@ -8,17 +8,13 @@ import gse.ecs;
 import gse.glfw;
 import gse.log;
 import gse.math;
+import gse.time;
 import gse.win32;
 import std;
 
-import :frame_demand;
 import :input_events;
 import :keys;
 import :window;
-
-namespace gse::window {
-	std::atomic<bool> event_loop_live = false;
-}
 
 namespace gse {
 	auto to_glfw_handle(
@@ -736,8 +732,6 @@ auto gse::create_window(window::data& d) -> void {
 	window::install_window_hook(d.primary, d.native_frame);
 
 	restore_window_geometry(d);
-
-	window::event_loop_live.store(true, std::memory_order_release);
 }
 
 auto gse::attach_surface_callbacks(GLFWwindow* handle, window::window_surface& surface) -> void {
@@ -746,7 +740,7 @@ auto gse::attach_surface_callbacks(GLFWwindow* handle, window::window_surface& s
 	glfwSetKeyCallback(
 		handle,
 		[](GLFWwindow* w, const int key, int, const int action, int) {
-			frame_demand::request_interaction();
+			frame_demand::request_redraw();
 			auto* self = static_cast<window::window_surface*>(glfwGetWindowUserPointer(w));
 			if (!self) {
 				return;
@@ -771,7 +765,7 @@ auto gse::attach_surface_callbacks(GLFWwindow* handle, window::window_surface& s
 	glfwSetMouseButtonCallback(
 		handle,
 		[](GLFWwindow* w, const int button, const int action, int) {
-			frame_demand::request_interaction();
+			frame_demand::request_redraw();
 			auto* self = static_cast<window::window_surface*>(glfwGetWindowUserPointer(w));
 			if (!self) {
 				return;
@@ -798,7 +792,7 @@ auto gse::attach_surface_callbacks(GLFWwindow* handle, window::window_surface& s
 	glfwSetCursorPosCallback(
 		handle,
 		[](GLFWwindow* w, double xpos, double ypos) {
-			frame_demand::request_interaction();
+			frame_demand::request_redraw();
 			auto* self = static_cast<window::window_surface*>(glfwGetWindowUserPointer(w));
 			if (!self) {
 				return;
@@ -835,7 +829,7 @@ auto gse::attach_surface_callbacks(GLFWwindow* handle, window::window_surface& s
 	glfwSetScrollCallback(
 		handle,
 		[](GLFWwindow* w, const double xoffset, const double yoffset) {
-			frame_demand::request_interaction();
+			frame_demand::request_redraw();
 			if (auto* self = static_cast<window::window_surface*>(glfwGetWindowUserPointer(w))) {
 				self->input_events.push(input::mouse_scrolled{ xoffset, yoffset });
 			}
@@ -845,7 +839,7 @@ auto gse::attach_surface_callbacks(GLFWwindow* handle, window::window_surface& s
 	glfwSetCharCallback(
 		handle,
 		[](GLFWwindow* w, const unsigned int codepoint) {
-			frame_demand::request_interaction();
+			frame_demand::request_redraw();
 			if (auto* self = static_cast<window::window_surface*>(glfwGetWindowUserPointer(w))) {
 				self->input_events.push(input::text_entered{ codepoint });
 			}
@@ -855,7 +849,7 @@ auto gse::attach_surface_callbacks(GLFWwindow* handle, window::window_surface& s
 	glfwSetWindowFocusCallback(
 		handle,
 		[](GLFWwindow* w, const int focused) {
-			frame_demand::request_interaction();
+			frame_demand::request_redraw();
 			auto* self = static_cast<window::window_surface*>(glfwGetWindowUserPointer(w));
 			if (!self) {
 				return;
@@ -867,7 +861,7 @@ auto gse::attach_surface_callbacks(GLFWwindow* handle, window::window_surface& s
 	glfwSetFramebufferSizeCallback(
 		handle,
 		[](GLFWwindow* w, const int, const int) {
-			frame_demand::request_interaction();
+			frame_demand::request_redraw();
 			if (auto* self = static_cast<window::window_surface*>(glfwGetWindowUserPointer(w))) {
 				self->framebuffer_resized = true;
 			}
@@ -1471,8 +1465,6 @@ auto gse::window::prompt_for_file(data& d) -> std::filesystem::path {
 }
 
 auto gse::window::shutdown(data& d) -> void {
-	event_loop_live.store(false, std::memory_order_release);
-
 	for (const auto& surface : d.secondaries) {
 		if (surface->handle) {
 			glfwDestroyWindow(to_glfw_handle(surface->handle));
@@ -1495,11 +1487,8 @@ auto gse::window::wait_events(const time timeout) -> void {
 	glfwWaitEventsTimeout(timeout.as<seconds>());
 }
 
-auto gse::window::wake() -> void {
-	frame_demand::request_redraw();
-	if (event_loop_live.load(std::memory_order_acquire)) {
-		glfwPostEmptyEvent();
-	}
+auto gse::window::post_wake() -> void {
+	glfwPostEmptyEvent();
 }
 
 auto gse::window::apply_commands(data& d) -> void {

@@ -435,7 +435,7 @@ auto gse::ide::terminal::ring_sink::push(const log::level lvl, std::string text)
 		}
 	}
 
-	window::wake();
+	frame_demand::request_redraw();
 }
 
 auto gse::ide::terminal::ring_sink::write(const log::record& rec) -> void {

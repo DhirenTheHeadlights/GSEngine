@@ -5,17 +5,18 @@ import gse.core;
 import gse.gpu_backend;
 import gse.log;
 import gse.math;
+import gse.win32;
 import std;
 import vulkan;
 
 import :aftermath;
+import :bindless_mapping;
 import :commands;
 import :device;
 import :instance;
 import :physical_device;
 import :queues;
 import :shader_object;
-import :sync;
 import :types;
 
 namespace gse::vulkan {
@@ -2698,6 +2699,19 @@ auto gse::vulkan::device::wait_semaphore(const gpu::handle<gpu::semaphore> semap
 		},
 		std::numeric_limits<std::uint64_t>::max()
 	);
+}
+
+auto gse::vulkan::device::wait_semaphore_for(const gpu::handle<gpu::semaphore> semaphore, const std::uint64_t value, const time timeout) const -> bool {
+	const auto vk_semaphore = std::bit_cast<vk::Semaphore>(semaphore);
+	const auto result = raii_device().waitSemaphores(
+		vk::SemaphoreWaitInfo{
+			.semaphoreCount = 1,
+			.pSemaphores = &vk_semaphore,
+			.pValues = &value,
+		},
+		static_cast<std::uint64_t>(std::max(0.f, static_cast<float>(timeout)))
+	);
+	return result == vk::Result::eSuccess;
 }
 
 auto gse::vulkan::device::create_query_pool(const vk::QueryPoolCreateInfo& info, const std::uint32_t result_stride, const std::string_view label) -> gpu::handle<gpu::query_pool> {

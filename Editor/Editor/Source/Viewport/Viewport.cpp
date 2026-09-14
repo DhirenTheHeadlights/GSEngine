@@ -17,6 +17,13 @@ namespace gse::ide::viewport {
 
 	constexpr vec2u viewport_extent{ 1280, 720 };
 
+	constexpr time produced_wait_slice = milliseconds(100.f);
+
+	auto watch_produced_semaphore(
+		gpu::device& device,
+		gpu::handle<gpu::semaphore> semaphore
+	) -> task::thread;
+
 	auto destroy_imported_session(
 		gpu::device& device,
 		imported_session& session
@@ -36,7 +43,23 @@ namespace gse::ide::viewport {
 	) -> void;
 }
 
+auto gse::ide::viewport::watch_produced_semaphore(gpu::device& device, const gpu::handle<gpu::semaphore> semaphore) -> task::thread {
+	return task::spawn(log::thread_role::background, [&device, semaphore](const std::stop_token& st) {
+		std::uint64_t seen = device.semaphore_counter_value(semaphore);
+		while (!st.stop_requested()) {
+			if (device.wait_semaphore_for(semaphore, seen + 1, produced_wait_slice)) {
+				seen = device.semaphore_counter_value(semaphore);
+				frame_demand::request_redraw();
+			}
+		}
+	});
+}
+
 auto gse::ide::viewport::destroy_imported_session(gpu::device& device, imported_session& session) -> void {
+	if (session.produced_waiter.joinable()) {
+		session.produced_waiter.request_stop();
+		session.produced_waiter.join();
+	}
 	for (gpu::bindless_handle& slot : session.slots) {
 		slot = {};
 	}
@@ -248,6 +271,7 @@ auto gse::ide::viewport::frame(const context& ctx, const shared_view<gpu::contex
 			if (pending.instance == 0) {
 				d.extent = pending.message->extent;
 			}
+			imported.produced_waiter = watch_produced_semaphore(*gpu_s.device, imported.produced_semaphore);
 			d.imported.push_back(std::move(imported));
 			surface_out.push<build_runner::attached_surface_imported>({
 				.generation = pending.generation,

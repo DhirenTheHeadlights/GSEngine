@@ -1,11 +1,9 @@
 module gse.gpu:pass_recorder_impl;
 
-import std;
-
-import :command_dispatch;
-
 import gse.gpu_backend;
 import gse.math;
+import std;
+import :command_dispatch;
 
 gse::gpu::pass_recorder::pass_recorder(const command_buffer_handle cmd, const command_dispatch* dispatch)
 	: m_cmd(cmd), m_vt(dispatch) {

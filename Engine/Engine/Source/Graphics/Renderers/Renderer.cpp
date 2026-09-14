@@ -1,28 +1,24 @@
 module gse.graphics:renderer_impl;
 
-import std;
-
-import :renderer;
-import :camera_system;
-import :font;
-import :model;
-import :texture;
-import :settings;
-
-
-import gse.log;
-import gse.core;
-import gse.time;
+import gse.assets;
+import gse.audio;
 import gse.concurrency;
+import gse.core;
 import gse.diag;
 import gse.ecs;
-import gse.os;
-import gse.assets;
 import gse.gpu;
-import gse.audio;
-import gse.physics;
+import gse.log;
 import gse.math;
+import gse.os;
+import gse.physics;
 import gse.save;
+import gse.time;
+import std;
+
+import :camera_system;
+import :model;
+import :renderer;
+import :texture;
 
 auto gse::renderer::run(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<window::data> window_s, data& d, const channel_write<asset::hot_reload_request, camera::viewport_update> requests_out, const shared_view<actions::data> sys) -> async::task<> {
 	if (d.hot_reload_enabled != d.last_hot_reload_enabled) {

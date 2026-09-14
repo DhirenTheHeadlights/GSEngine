@@ -21,21 +21,17 @@ import :font;
 import :gui;
 import :gui_frame;
 import :gui_scale;
-import :ids;
-import :input_layers;
 import :interaction;
 import :layout;
 import :menu_stack;
 import :render_layer;
 import :save;
-import :settings;
 import :styles;
 import :symbols;
 import :tab_strip;
 import :texture;
 import :types;
 import :ui_renderer;
-import :widget_context;
 
 auto gse::gui::is_popout(const viewport_state& vp) -> bool {
 	return vp.window.exists();
@@ -393,13 +389,20 @@ auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const
 		sort_by_layer(d.text_commands);
 	}
 
-	for (auto& cmd : d.sprite_commands) {
-		ui_out.push<renderer::sprite_command>(std::move(cmd));
+	if (d.sprite_commands != d.previous_sprite_commands || d.text_commands != d.previous_text_commands) {
+		frame_demand::request_redraw();
 	}
 
-	for (auto& cmd : d.text_commands) {
-		ui_out.push<renderer::text_command>(std::move(cmd));
+	for (const auto& cmd : d.sprite_commands) {
+		ui_out.push<renderer::sprite_command>(cmd);
 	}
+
+	for (const auto& cmd : d.text_commands) {
+		ui_out.push<renderer::text_command>(cmd);
+	}
+
+	std::swap(d.sprite_commands, d.previous_sprite_commands);
+	std::swap(d.text_commands, d.previous_text_commands);
 
 	d.primary.fstate = {};
 	for (const auto& vp : d.secondaries) {

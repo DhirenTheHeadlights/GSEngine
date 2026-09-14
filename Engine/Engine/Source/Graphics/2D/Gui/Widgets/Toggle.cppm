@@ -1,23 +1,22 @@
 export module gse.graphics:toggle_widget;
 
-import std;
-
-import gse.os;
 import gse.assets;
-import gse.gpu;
-import gse.core;
-import gse.meta;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
+import gse.gpu;
 import gse.math;
-import :types;
+import gse.meta;
+import gse.os;
+import gse.time;
+import std;
+
 import :font;
 import :ids;
 import :styles;
-import :builder;
+import :types;
 
 export namespace gse::gui {
 	struct toggle {

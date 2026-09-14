@@ -237,6 +237,9 @@ auto gse::ide::build_inbox::read_request(const std::filesystem::path& path) -> s
 		else if (key == "profile") {
 			parsed.profile.assign(value);
 		}
+		else if (key == "config") {
+			parsed.config.assign(value);
+		}
 		else if (key == "cwd") {
 			parsed.cwd.assign(value);
 		}
@@ -315,6 +318,7 @@ auto gse::ide::build_inbox::restore(const request& pending) -> void {
 		out << "run " << (pending.run ? '1' : '0') << '\n';
 		out << "tree " << pending.tree << '\n';
 		out << "profile " << pending.profile << '\n';
+		out << "config " << pending.config << '\n';
 		out << "cwd " << pending.cwd.generic_display_string() << '\n';
 		out << "project " << pending.project.generic_display_string() << '\n';
 	}

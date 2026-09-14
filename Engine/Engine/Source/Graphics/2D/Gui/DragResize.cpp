@@ -15,27 +15,16 @@ import gse.save;
 import gse.time;
 import std;
 
-import :builder;
 import :cursor;
-import :font;
 import :gui;
 import :gui_chrome;
 import :gui_drag_resize;
-import :ids;
 import :input_layers;
-import :interaction;
 import :layout;
 import :menu_stack;
-import :render_layer;
-import :save;
-import :settings;
 import :styles;
-import :symbols;
-import :tab_strip;
 import :texture;
 import :types;
-import :ui_renderer;
-import :widget_context;
 
 auto gse::gui::handle_idle_state(const font_set& fonts, viewport_state& vp, const input::state& input_state, vec2f mouse_position, const bool mouse_held, const style& style) -> state {
 	if (vp.menu_stack.captures_input() || vp.active_widget_id.exists()) {

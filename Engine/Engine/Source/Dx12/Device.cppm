@@ -1,18 +1,15 @@
 export module gse.dx12:device;
 
-import std;
-
-import gse.gpu_backend;
 import gse.core;
-import gse.os;
+import gse.directx;
 import gse.ecs;
+import gse.gpu_backend;
+import gse.log;
 import gse.math;
 import gse.meta;
-import gse.win32;
-import gse.directx;
-import gse.log;
+import gse.os;
+import std;
 
-import :conversions;
 import :pipeline;
 
 namespace gse::dx12 {
@@ -391,6 +388,12 @@ export namespace gse::dx12 {
 			gpu::handle<gpu::semaphore> semaphore,
 			std::uint64_t value
 		) const -> void;
+
+		[[nodiscard]] auto wait_semaphore_for(
+			gpu::handle<gpu::semaphore> semaphore,
+			std::uint64_t value,
+			time timeout
+		) const -> bool;
 
 		[[nodiscard]] auto create_timestamp_query_pool(
 			std::uint32_t capacity,

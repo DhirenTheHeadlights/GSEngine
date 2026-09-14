@@ -1797,23 +1797,6 @@ auto gse::ide::search::build_symbols(index_state& idx) -> void {
 		std::unordered_set<file_id>(std::from_range, local.lints | std::views::transform(&lint_entry::file)).size()
 	);
 
-	for (const lint_entry& entry : local.lints) {
-		if (entry.rule != lint_rule::unused_import && entry.rule != lint_rule::narrow_import) {
-			continue;
-		}
-		std::string replacement = entry.edit.replacement;
-		std::ranges::replace(replacement, '\n', ' ');
-		log::println(
-			log::level::info,
-			log::category::general,
-			"[lintdump] {}	{}	{}	{}",
-			local.path_for(entry.file).generic_display_string(),
-			entry.edit.line + 1,
-			entry.edit.expected,
-			replacement
-		);
-	}
-
 	{
 		std::lock_guard _(idx.build_mutex);
 		idx.completed_symbols.emplace(std::move(local));

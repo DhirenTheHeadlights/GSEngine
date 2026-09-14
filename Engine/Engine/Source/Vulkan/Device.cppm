@@ -1,27 +1,23 @@
 export module gse.vulkan:device;
 
+import gse.assert;
+import gse.concurrency;
+import gse.containers;
+import gse.core;
+import gse.diag;
+import gse.gpu_backend;
+import gse.log;
+import gse.meta;
+import gse.time;
 import std;
 import vulkan;
 
 import :aftermath;
-import gse.gpu_backend;
 import :commands;
 import :instance;
 import :physical_device;
 import :queues;
 import :types;
-import :shader_object;
-import :bindless_mapping;
-
-import gse.assert;
-import gse.core;
-import gse.containers;
-import gse.time;
-import gse.concurrency;
-import gse.diag;
-import gse.meta;
-import gse.log;
-import gse.win32;
 
 namespace gse::vulkan {
 	class transient_command_pool final : public non_copyable {
@@ -611,6 +607,13 @@ export namespace gse::vulkan {
 			gpu::handle<gpu::semaphore> semaphore,
 			std::uint64_t value
 		) const -> void;
+
+		[[nodiscard]]
+		auto wait_semaphore_for(
+			gpu::handle<gpu::semaphore> semaphore,
+			std::uint64_t value,
+			time timeout
+		) const -> bool;
 
 		[[nodiscard]]
 		auto create_timestamp_query_pool(

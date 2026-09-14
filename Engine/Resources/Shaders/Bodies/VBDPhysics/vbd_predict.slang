@@ -8,11 +8,13 @@ bool sleeping = body.sleep_counter >= sleep_threshold;
 bool update_orient = body.update_orientation != 0;
 bool gravity = body.affected_by_gravity != 0;
 uint motor_base = (pc.substep / max(pc.substeps_per_tick, 1u)) * pc.motor_count;
+uint motor_idx = motor_map[bi];
+bool has_motor = motor_idx != 0xFFFFFFFF && motor_idx < pc.motor_count;
 
 {
-    for (uint mi = 0; mi < pc.motor_count; mi++) {
-        velocity_motor_constraint m = motor_data[motor_base + mi];
-        if (m.body_index == bi && sleeping && length(m.target_velocity.xyz) > 0.01) {
+    if (has_motor && sleeping) {
+        velocity_motor_constraint m = motor_data[motor_base + motor_idx];
+        if (length(m.target_velocity.xyz) > 0.01) {
             body.sleep_counter = 0;
             sleeping = false;
         }
@@ -152,10 +154,8 @@ if (update_orient) {
 
 body.angular_inertia_target = body.predicted_orientation;
 
-for (uint mi = 0; mi < pc.motor_count; mi++) {
-    velocity_motor_constraint m = motor_data[motor_base + mi];
-    if (m.body_index != bi) continue;
-
+if (has_motor) {
+    velocity_motor_constraint m = motor_data[motor_base + motor_idx];
     float3 target = body.old_position + m.target_velocity * pc.dt;
     if (m.horizontal_only != 0) {
         body.motor_target.x = target.x;

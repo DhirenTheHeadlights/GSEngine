@@ -1,17 +1,15 @@
 module gse.graphics:font_impl;
 
+import gse.assets;
+import gse.concurrency;
+import gse.config;
+import gse.core;
+import gse.gpu;
+import gse.math;
 import std;
 
 import :font;
 import :texture;
-
-import gse.math;
-import gse.gpu;
-import gse.core;
-import gse.assets;
-import gse.concurrency;
-import gse.config;
-import gse.freetype;
 
 namespace gse {
 	auto decode_utf8(

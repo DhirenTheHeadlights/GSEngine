@@ -23,7 +23,31 @@
   `83974765…`; per-pass GPU table populated through `copyQueryPoolResults` (solve stage
   14.84 ms, predict 1.25 ms, 15 rows). Vulkan and DX12 hashes differ by design (different
   shader compilers), so each backend keeps its own reference.
-- Stages 2 and 3 (marks, solver call sites) not started.
+- **Stages 2 and 3 (marks, solver call sites) — landed 2026-09-12, commit `69a2c60d`.**
+  `recording_context::mark(id)` writes a `gpu_profile_mark` through a per-queue atomic cursor
+  and one `write_timestamp(all_commands)`; marks live in the pool at
+  `mark_query_base = 1 + 2 × max_profiled_passes`; the budget starts at 1024 and grows by
+  `bit_ceil` to 16384 (pool retired with `device::retire(handle<query_pool>)` on both backends
+  and recreated when the slot recycles; an info line reports the growth, a warning the
+  ceiling). Segment = mark to the next mark in the same pass, or to the pass end. Rows are
+  keyed `profile_key(frame, queue, max_profiled_passes + i)`. The solver places one mark per
+  dispatch group (`vbd::solve::color[c]`, `sweep`, `island`, `jacobi`, `apply_jacobi`,
+  `update_lambda`, `joint_lambda`, `convergence`).
+- **Settings moved.** `Graphics.gpu_timestamps_enabled`, `Graphics.gpu_pipeline_stats_enabled`
+  and the new `Graphics.gpu_intra_pass_marks_enabled` live on `gpu::context::data`, not the
+  renderer: the renderer system is only registered for windowed runs, so a headless trainer
+  could never reach them. `--engine-setting Graphics.gpu_intra_pass_marks_enabled=true` turns
+  marks on; `--engine-setting Graphics.backend=dx12` selects DX12 headless.
+- **Gate 2/3 results (1024 envs, 100 updates):** marks off and on leave the state hash
+  unchanged on Vulkan (`CFFD7326…`) and DX12 (`2D6CBD4A…`); mark rows appear on both and sum
+  to the parent pass; instrument cost 14.88 vs 14.79 ms on the solve pass (~0.6 %); growth path
+  verified with a 64-mark test build (64 → 512, no device loss).
+- **What the instrument said:** `vbd::solve::island` was 13.28 of 14.88 ms (89 %), 80
+  dispatches per frame at 166 µs average; `joint_lambda` 0.86, `update_lambda` 0.40,
+  `convergence` 0.33. The island path solved each island serially on one lane. Replacing that
+  with a dependency wavefront (bodies whose lower-index neighbours are done solve together,
+  same sequential result) cut the island row to 9.31 ms and raised trainer throughput 29 %
+  with the hash unchanged on both backends — the first result the instrument paid for.
 
 ## Why now
 

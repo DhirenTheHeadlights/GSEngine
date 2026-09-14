@@ -52,6 +52,10 @@ export namespace gse::gpu {
 		[[nodiscard]] auto valid() const -> bool {
 			return index != invalid_index;
 		}
+
+		auto operator==(
+			const bindless_slot&
+		) const -> bool = default;
 	};
 
 	enum class result : std::int32_t {

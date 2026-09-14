@@ -17,9 +17,9 @@ import :registries;
 import :registry;
 import :scheduler;
 import :settings;
-import :system_dispatch;
 import :system_node;
 import :task_graph;
+import :system_dispatch;
 
 auto gse::scheduler::set_registry(registry& reg) -> void {
 	m_registry = &reg;
@@ -1097,6 +1097,7 @@ auto gse::scheduler::add_system_node(system_node node) -> void {
 
 	std::lock_guard _(m_hot_add_mutex);
 	m_hot_add_queue.push_back(std::move(node));
+	frame_demand::request_redraw();
 }
 
 auto gse::scheduler::begin_staging() -> void {
@@ -1279,6 +1280,7 @@ auto gse::scheduler::queue_system_node(system_node node) -> void {
 
 	std::lock_guard _(m_hot_add_mutex);
 	m_hot_add_queue.push_back(std::move(node));
+	frame_demand::request_redraw();
 }
 
 auto gse::context::add_system_node(system_node node) -> void {

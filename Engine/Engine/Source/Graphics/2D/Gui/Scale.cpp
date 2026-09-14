@@ -1,42 +1,32 @@
 module gse.graphics:gui_scale_impl;
 
-import std;
-
-import gse.os;
-import gse.config;
 import gse.assets;
-import gse.gpu;
-import gse.core;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.config;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
+import gse.gpu;
 import gse.math;
 import gse.meta;
+import gse.os;
 import gse.save;
+import gse.time;
+import std;
 
+import :cursor;
+import :font;
 import :gui;
 import :gui_scale;
-
-import :types;
-import :layout;
-import :font;
-import :ui_renderer;
-import :texture;
-import :cursor;
-import :save;
-import :ids;
-import :input_layers;
-import :settings;
-import :styles;
-import :builder;
-import :menu_stack;
-import :render_layer;
 import :interaction;
+import :save;
+import :styles;
 import :symbols;
 import :tab_strip;
-import :widget_context;
+import :texture;
+import :types;
+import :ui_renderer;
 
 auto gse::gui::intern_text(data& d, const std::string_view text) -> std::string_view {
 	std::deque<std::string>& pool = d.text_pools[d.text_pool_slot];

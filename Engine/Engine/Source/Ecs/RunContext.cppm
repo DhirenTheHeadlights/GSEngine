@@ -1,14 +1,12 @@
 export module gse.ecs:context;
 
+import gse.assert;
+import gse.concurrency;
+import gse.core;
+import gse.diag;
 import std;
 
-import gse.assert;
-import gse.core;
-import gse.concurrency;
-import gse.diag;
-
 import :access_token;
-import :component;
 import :registries;
 import :registry;
 import :task_context;

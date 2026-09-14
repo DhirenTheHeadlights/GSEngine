@@ -1,22 +1,20 @@
 export module gse.graphics:clip_player;
 
-import std;
-
-import :animation_components;
-import :blend_space;
-import :clip;
-import :skinned_model;
-
-import gse.core;
-import gse.containers;
+import gse.assets;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
 import gse.math;
 import gse.meta;
-import gse.time;
-import gse.assets;
 import gse.physics;
+import gse.time;
+import std;
+
+import :animation_components;
+import :clip;
+import :skinned_model;
 
 export namespace gse::animation {
 	struct joint_transform {

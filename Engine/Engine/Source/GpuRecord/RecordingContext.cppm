@@ -223,6 +223,8 @@ export namespace gse::gpu {
 		struct access_track {
 			pipeline_stage_flags stages = {};
 			access_flags access = {};
+			std::uint64_t generation = 0;
+			bool covered = false;
 		};
 
 		pass_recorder m_recorder;
@@ -232,6 +234,8 @@ export namespace gse::gpu {
 		std::vector<touched_resource> m_touched;
 		std::unordered_map<const void*, access_track> m_last_access;
 		std::vector<memory_barrier> m_pending_memory_barriers;
+		std::uint64_t m_access_generation = 0;
+		bool m_repeat_barrier_pending = false;
 		std::thread::id m_origin_thread;
 		pipeline_state_cache m_state_cache;
 		bool m_bindless_heaps_valid = false;
@@ -288,6 +292,10 @@ export namespace gse::gpu {
 		) -> void;
 
 		auto flush_pending_barriers() -> void;
+
+		auto cover_barrier_sources(
+			std::uint64_t dispatch_generation
+		) -> void;
 
 		[[nodiscard]] auto bound_shader_stages() const -> pipeline_stage_flags;
 

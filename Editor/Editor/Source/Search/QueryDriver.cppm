@@ -27,7 +27,6 @@ export namespace gse::ide::search {
 		int selected = -1;
 
 		auto update(
-			time now,
 			const index_state* index,
 			const options& opts
 		) -> bool;
@@ -39,16 +38,17 @@ export namespace gse::ide::search {
 
 		std::string m_last_query;
 		options m_last_options;
-		time m_changed_at{};
 		std::shared_ptr<query_buffer> m_pending;
 		std::uint64_t m_last_index_generation = 0;
 		std::uint64_t m_active_request_id = 0;
 		bool m_dirty = false;
-		bool m_debounce = false;
+		deadline_timer m_debounce;
 	};
 }
 
 namespace gse::ide::search {
+	constexpr time debounce_delay = milliseconds(120.f);
+
 	auto same_options(
 		const options& lhs,
 		const options& rhs
@@ -89,7 +89,7 @@ auto gse::ide::search::query_driver::cancel_pending() -> void {
 	}
 }
 
-auto gse::ide::search::query_driver::update(const time now, const index_state* index, const options& opts) -> bool {
+auto gse::ide::search::query_driver::update(const index_state* index, const options& opts) -> bool {
 	const std::shared_ptr<const search_snapshot> snapshot = index ? index->query_snapshot() : nullptr;
 	const std::uint64_t index_generation = snapshot ? generation_of(*snapshot, opts) : 0;
 	const bool query_changed = query != m_last_query;
@@ -102,9 +102,13 @@ auto gse::ide::search::query_driver::update(const time now, const index_state* i
 		m_last_query = query;
 		m_last_options = opts;
 		m_last_index_generation = index_generation;
-		m_changed_at = now;
 		m_dirty = !query.empty() && snapshot != nullptr;
-		m_debounce = query_changed;
+		if (query_changed) {
+			m_debounce.arm(debounce_delay);
+		}
+		else {
+			m_debounce.disarm();
+		}
 		selected = -1;
 		if (!results.empty()) {
 			results.clear();
@@ -117,9 +121,9 @@ auto gse::ide::search::query_driver::update(const time now, const index_state* i
 		return visible_changed;
 	}
 
-	if (m_dirty && (!m_debounce || now - m_changed_at > milliseconds(120))) {
+	if (m_dirty && (!m_debounce.armed() || m_debounce.due())) {
 		m_dirty = false;
-		m_debounce = false;
+		m_debounce.disarm();
 		++m_active_request_id;
 		m_pending = std::make_shared<query_buffer>();
 		m_pending->request_id = m_active_request_id;
@@ -138,7 +142,7 @@ auto gse::ide::search::query_driver::update(const time now, const index_state* i
 		if (current && completed->index_generation != current_generation) {
 			m_last_index_generation = current_generation;
 			m_dirty = true;
-			m_debounce = false;
+			m_debounce.disarm();
 		}
 		return visible_changed;
 	}
@@ -155,5 +159,5 @@ auto gse::ide::search::query_driver::accept() -> void {
 	results.clear();
 	selected = -1;
 	m_dirty = false;
-	m_debounce = false;
+	m_debounce.disarm();
 }

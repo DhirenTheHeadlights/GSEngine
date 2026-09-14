@@ -40,6 +40,10 @@ export namespace gse::renderer {
 		bool sample_scene_snapshot = false;
 		gpu::bindless_slot image_slot = {};
 		id window;
+
+		auto operator==(
+			const sprite_command&
+		) const -> bool = default;
 	};
 
 	struct text_command {
@@ -52,6 +56,10 @@ export namespace gse::renderer {
 		render_layer layer = render_layer::content;
 		std::uint32_t z_order = 0;
 		id window;
+
+		auto operator==(
+			const text_command&
+		) const -> bool = default;
 	};
 }
 
