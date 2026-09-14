@@ -49,6 +49,8 @@ export namespace gse::network {
 			time retry = seconds(1.f)
 		) -> bool;
 
+		auto disconnect() -> void;
+
 		auto tick() -> void;
 
 		auto current_state() const -> state;
@@ -92,7 +94,9 @@ gse::network::client::client(const address& listen, const address& server) : m_s
 	m_endpoint.ensure_peer(server);
 }
 
-gse::network::client::~client() = default;
+gse::network::client::~client() {
+	disconnect();
+}
 
 auto gse::network::client::connect(const time timeout, const time retry) -> bool {
 	if (m_state != state::disconnected) {
@@ -116,6 +120,16 @@ auto gse::network::client::connect(const time timeout, const time retry) -> bool
 	send(connection_request{});
 
 	return true;
+}
+
+auto gse::network::client::disconnect() -> void {
+	if (m_state == state::disconnected) {
+		return;
+	}
+
+	log::println(log::category::network, "Client disconnecting from {}:{}", m_server.ip, m_server.port);
+	send(disconnect_notice{});
+	m_state = state::disconnected;
 }
 
 auto gse::network::client::tick() -> void {

@@ -57,6 +57,14 @@ export namespace gse::network {
 			const address& addr
 		) -> remote_peer*;
 
+		auto remove_peer(
+			const address& addr
+		) -> void;
+
+		auto silent_peers(
+			time_t<std::uint64_t, milliseconds> deadline
+		) const -> std::vector<address>;
+
 		auto peers() const -> const std::unordered_map<address, remote_peer>&;
 
 		template <is_network_message T>
@@ -90,6 +98,8 @@ export namespace gse::network {
 		auto take_incoming(
 			raw_packet& out
 		) -> bool;
+
+		auto flush_outgoing() -> void;
 
 		auto send_ack(
 			const address& to,
@@ -197,16 +207,22 @@ auto gse::network::endpoint::start_thread() -> void {
 				}
 			}
 
-			raw_packet out;
-			while (m_outgoing.pop(out)) {
-				const packet wire{
-					.data = reinterpret_cast<std::uint8_t*>(out.buffer.data()),
-					.size = out.size
-				};
-				(void)m_socket.send_data(wire, out.peer);
-			}
+			flush_outgoing();
 		}
+
+		flush_outgoing();
 	});
+}
+
+auto gse::network::endpoint::flush_outgoing() -> void {
+	raw_packet out;
+	while (m_outgoing.pop(out)) {
+		const packet wire{
+			.data = reinterpret_cast<std::uint8_t*>(out.buffer.data()),
+			.size = out.size
+		};
+		(void)m_socket.send_data(wire, out.peer);
+	}
 }
 
 auto gse::network::endpoint::ensure_peer(const address& addr) -> remote_peer& {
@@ -219,6 +235,22 @@ auto gse::network::endpoint::ensure_peer(const address& addr) -> remote_peer& {
 auto gse::network::endpoint::find_peer(const address& addr) -> remote_peer* {
 	const auto it = m_peers.find(addr);
 	return it == m_peers.end() ? nullptr : &it->second;
+}
+
+auto gse::network::endpoint::remove_peer(const address& addr) -> void {
+	m_peers.erase(addr);
+}
+
+auto gse::network::endpoint::silent_peers(const time_t<std::uint64_t, milliseconds> deadline) const -> std::vector<address> {
+	const auto now = system_clock::now<time_t<std::uint64_t, milliseconds>>();
+
+	std::vector<address> out;
+	for (const auto& [addr, peer] : m_peers) {
+		if (now >= peer.last_traffic() + deadline) {
+			out.push_back(addr);
+		}
+	}
+	return out;
 }
 
 auto gse::network::endpoint::peers() const -> const std::unordered_map<address, remote_peer>& {
@@ -237,11 +269,13 @@ auto gse::network::endpoint::poll(const std::function<void(inbound_message&)>& o
 		const auto id = stream.read<std::uint64_t>();
 
 		if (auto* peer = find_peer(pkt.peer)) {
+			const auto now = system_clock::now<time_t<std::uint64_t, milliseconds>>();
+			peer->note_traffic(now);
 			peer->process_acks(header.ack, header.ack_bits);
 			peer->ingest_packet_sequence(header.sequence);
 			if (id != 0) {
 				peer->note_received();
-				if (const auto now = system_clock::now<time_t<std::uint64_t, milliseconds>>(); peer->ack_owed_since(now, milliseconds(std::uint64_t{ 30 }))) {
+				if (peer->ack_owed_since(now, milliseconds(std::uint64_t{ 30 }))) {
 					send_ack(pkt.peer, *peer, now);
 				}
 			}

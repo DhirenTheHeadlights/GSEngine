@@ -98,6 +98,12 @@ export namespace gse::server {
 			const network::address& addr
 		) -> void;
 
+		auto drop_client(
+			write<player_controller>& controllers,
+			const entities& ents,
+			const network::address& addr
+		) -> void;
+
 		auto draw_dashboard(
 			const shared_view<physics::data>& phys_s
 		) -> void;
@@ -331,20 +337,20 @@ auto gse::server::host<MessagePack, Components...>::update(const structural<play
 		}
 
 		if (network::try_decode<network::connection_request>(stream, msg.id, [&](const auto&) {
-			if (auto client_it = m_clients.find(msg.from); client_it != m_clients.end()) {
+			if (m_clients.contains(msg.from)) {
 				log::println(log::category::network, "Client [{}:{}] reconnecting", msg.from.ip, msg.from.port);
-				if (has_active_scene) {
-					if (const auto* pc = controllers.find(client_it->second.controller_id)) {
-						if (pc->controlled_entity_id.exists()) {
-							ents.remove(pc->controlled_entity_id);
-						}
-					}
-					ents.remove(client_it->second.controller_id);
-				}
-				m_clients.erase(client_it);
+				drop_client(controllers, ents, msg.from);
 			}
 
 			accept_connection(controller_auth, input_auth, ents, msg.from);
+		})) {
+			return;
+		}
+
+		if (network::try_decode<network::disconnect_notice>(stream, msg.id, [&](const auto&) {
+			drop_client(controllers, ents, msg.from);
+			m_endpoint.remove_peer(msg.from);
+			log::println(log::category::network, "Client [{}:{}] disconnected ({}/{})", msg.from.ip, msg.from.port, m_clients.size(), m_config.max_players);
 		})) {
 			return;
 		}
@@ -378,7 +384,12 @@ auto gse::server::host<MessagePack, Components...>::update(const structural<play
 				stream,
 				msg.id,
 				[&](const auto& m) {
-					auto& cd = m_clients[msg.from];
+					const auto client_it = m_clients.find(msg.from);
+					if (client_it == m_clients.end()) {
+						return;
+					}
+
+					auto& cd = client_it->second;
 					if (m.input_sequence > cd.last_input_sequence) {
 						cd.last_input_sequence = m.input_sequence;
 						network::apply_input_frame(cd.latest_input, m);
@@ -403,6 +414,13 @@ auto gse::server::host<MessagePack, Components...>::update(const structural<play
 			network::route_inbound<MessagePack>(stream, msg, messages_out, client_it != m_clients.end() ? client_it->second.controller_id : id{});
 		}
 	});
+
+	const auto client_timeout = milliseconds(std::uint64_t{ 10000 });
+	for (const auto& addr : m_endpoint.silent_peers(client_timeout)) {
+		drop_client(controllers, ents, addr);
+		m_endpoint.remove_peer(addr);
+		log::println(log::level::warning, log::category::network, "Client [{}:{}] timed out ({}/{})", addr.ip, addr.port, m_clients.size(), m_config.max_players);
+	}
 
 	std::optional<id> scene_requested_id;
 
@@ -502,6 +520,31 @@ auto gse::server::host<MessagePack, Components...>::clients() const -> const std
 template <typename MessagePack, typename... Components>
 auto gse::server::host<MessagePack, Components...>::host_entity() const -> std::optional<id> {
 	return m_host_entity;
+}
+
+template <typename MessagePack, typename... Components>
+auto gse::server::host<MessagePack, Components...>::drop_client(write<player_controller>& controllers, const entities& ents, const network::address& addr) -> void {
+	const auto it = m_clients.find(addr);
+	if (it == m_clients.end()) {
+		return;
+	}
+
+	if (m_active_scene.has_value()) {
+		if (const auto* pc = controllers.find(it->second.controller_id)) {
+			if (pc->controlled_entity_id.exists()) {
+				ents.remove(pc->controlled_entity_id);
+			}
+		}
+		ents.remove(it->second.controller_id);
+	}
+
+	m_clients.erase(it);
+	m_pending_snapshots.erase(addr);
+
+	if (m_host_addr == addr) {
+		m_host_addr.reset();
+		m_host_entity.reset();
+	}
 }
 
 template <typename MessagePack, typename... Components>

@@ -10,4 +10,6 @@ export namespace gse::network {
 	struct [[= network_message{}]] connection_accepted {
 		id controller_id{};
 	};
+
+	struct [[= network_message{}]] disconnect_notice {};
 }
