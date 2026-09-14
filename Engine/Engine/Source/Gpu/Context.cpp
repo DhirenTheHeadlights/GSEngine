@@ -133,6 +133,14 @@ auto gse::gpu::context::run(gse::context& ctx, data& d, const channel_read<gpu_r
 		d.render_graph->set_gpu_intra_pass_marks_enabled(d.gpu_intra_pass_marks_enabled);
 	}
 
+	d.device->set_perf_metrics({
+		.enabled = d.gpu_perf_metrics_enabled && d.gpu_timestamps_enabled,
+		.metrics = d.gpu_perf_metrics,
+		.device_index = d.gpu_perf_metrics_device,
+		.sampling_interval = d.gpu_perf_metrics_interval,
+		.lock_clocks = d.gpu_perf_metrics_lock_clocks,
+	});
+
 	return {};
 }
 

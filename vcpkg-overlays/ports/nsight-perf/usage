@@ -1,0 +1,20 @@
+nsight-perf provides an imported INTERFACE target:
+
+    find_package(unofficial-nsight-perf CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE unofficial::nsight-perf::nsight-perf)
+
+There is no import library. The SDK ships a shim header
+(windows-desktop-x64/nvperf_grfx_host_impl.h) that loads nvperf_grfx_host.dll with
+LoadLibrary/GetProcAddress, so exactly one translation unit includes that header and
+the DLL is found next to the executable at run time.
+
+The SDK itself is not redistributed by this port. Set the NSIGHT_PERF_SDK environment
+variable to the extracted SDK root before running vcpkg; the port locates nvperf_host.h,
+the NvPerfUtility headers and nvperf_grfx_host.dll anywhere beneath it, so the package
+layout does not matter. The variable must also be listed in VCPKG_ENV_PASSTHROUGH in the
+triplet, or the port cannot see it. With the variable unset the port installs an empty
+stub and the engine builds without hardware counter support.
+
+Sampling counters also needs run-time permission: NVIDIA Control Panel >
+Developer > Manage GPU Performance Counters > allow all users, or an elevated process.
+Otherwise the driver returns ERR_NVGPUCTRPERM.

@@ -8,6 +8,7 @@ import gse.gpu_backend;
 import gse.log;
 import gse.math;
 import gse.meta;
+import gse.nsight_perf;
 import gse.os;
 import std;
 
@@ -19,6 +20,12 @@ import :device_vulkan_backend;
 import :video_encoder;
 
 namespace gse::gpu {
+	constexpr std::size_t max_perf_metrics = 32;
+
+	auto trimmed_metric_name(
+		std::string_view field
+	) -> std::string_view;
+
 	template <typename B>
 	auto device_backend_delete(void* self) -> void {
 		delete static_cast<B*>(self);
@@ -30,6 +37,15 @@ namespace gse::gpu {
 
 	template <typename B>
 	constexpr gpu_dispatch device_dispatch_for = meta::build_dispatch<gpu_dispatch, vulkan_device_backend, meta::pointer_receiver<B>>();
+}
+
+auto gse::gpu::trimmed_metric_name(const std::string_view field) -> std::string_view {
+	constexpr std::string_view blanks = " \t";
+	const auto first = field.find_first_not_of(blanks);
+	if (first == std::string_view::npos) {
+		return {};
+	}
+	return field.substr(first, field.find_last_not_of(blanks) - first + 1);
 }
 
 auto gse::gpu::device::create(const std::optional<shared_view<window::data>> win, const bool validation_layers_enabled, backend_kind& backend, device_settings& device_cfg) -> std::unique_ptr<device> {
@@ -124,6 +140,7 @@ gse::gpu::device::device(std::unique_ptr<void, void (*)(void*)> backend, const g
 }
 
 gse::gpu::device::~device() {
+	nsight_perf::end_session();
 	log::println(log::category::runtime, "Destroying Device");
 }
 
@@ -145,6 +162,36 @@ auto gse::gpu::device::wait_idle() const -> void {
 
 auto gse::gpu::device::timestamp_period() const -> float {
 	return m_vt->timestamp_period(m_backend.get());
+}
+
+auto gse::gpu::device::set_perf_metrics(const perf_metrics_config& config) -> void {
+	if (config == m_perf_metrics) {
+		return;
+	}
+	m_perf_metrics = config;
+
+	nsight_perf::end_session();
+	if (!config.enabled) {
+		return;
+	}
+
+	std::array<std::string_view, max_perf_metrics> fields;
+	const auto count = split_fields(m_perf_metrics.metrics, ',', fields);
+
+	std::vector<std::string_view> names;
+	names.reserve(count);
+	for (const std::string_view field : std::span(fields).first(count)) {
+		if (const std::string_view name = trimmed_metric_name(field); !name.empty()) {
+			names.push_back(name);
+		}
+	}
+
+	nsight_perf::begin_session({
+		.device_index = m_perf_metrics.device_index,
+		.metrics = names,
+		.sampling_interval = m_perf_metrics.sampling_interval,
+		.lock_clocks_to_rated_tdp = m_perf_metrics.lock_clocks,
+	});
 }
 
 auto gse::gpu::device::begin_pass_marker(const command_buffer_handle cmd, const pass_marker_domain domain, const pass_marker marker, const std::string_view name) -> pass_marker_handle {

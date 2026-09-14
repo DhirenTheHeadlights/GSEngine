@@ -9,6 +9,7 @@ import gse.gpu_backend;
 import gse.log;
 import gse.math;
 import gse.meta;
+import gse.nsight_perf;
 import gse.time;
 import std;
 
@@ -226,11 +227,28 @@ export namespace gse::gpu {
 			bool results_valid = false;
 		};
 
+		struct perf_frame {
+			nsight_perf::sample_window samples;
+			std::span<const std::string> metrics;
+			time_t<double> sampler_to_cpu;
+			time_t<double> interval;
+			bool active = false;
+		};
+
 		static auto profile_key(
 			std::uint64_t frame,
 			queue_type queue,
 			std::uint32_t index
 		) -> std::uint64_t;
+
+		auto open_perf_frame() -> perf_frame;
+
+		auto ingest_perf_metrics(
+			const perf_frame& perf,
+			id row_id,
+			time_t<double> start,
+			time_t<double> end
+		) -> void;
 
 		auto ensure_profile_pools(
 			gpu_profile_slot& slot,
@@ -239,7 +257,8 @@ export namespace gse::gpu {
 		) const -> void;
 
 		auto read_profile_slot(
-			gpu_profile_slot& slot
+			gpu_profile_slot& slot,
+			const perf_frame& perf
 		) -> void;
 
 		auto log_pass_graph(
@@ -292,6 +311,10 @@ export namespace gse::gpu {
 		std::set<std::pair<std::size_t, std::size_t>> m_warned_queue_cycles;
 		std::set<std::pair<std::size_t, std::size_t>> m_warned_dropped_waits;
 		std::unordered_map<id, std::array<id, stats_per_pass>> m_stat_ids;
+		std::unordered_map<id, std::vector<id>> m_perf_metric_ids;
+		std::vector<double> m_perf_metric_means;
+		std::vector<std::size_t> m_perf_metric_counts;
+		std::uint64_t m_perf_session_generation = 0;
 		color_clear m_swapchain_clear{};
 		load_op m_swapchain_load = load_op::clear;
 		const image* m_offscreen_target = nullptr;

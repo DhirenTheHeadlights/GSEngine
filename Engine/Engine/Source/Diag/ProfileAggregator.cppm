@@ -63,6 +63,16 @@ export namespace gse::profile {
 		sample_time duration
 	) -> void;
 
+	auto set_gpu_metric_names(
+		std::span<const std::string> names
+	) -> void;
+
+	auto ingest_gpu_metrics(
+		id pass_id,
+		std::span<const double> values,
+		std::uint64_t samples
+	) -> void;
+
 	auto lookup(
 		id id,
 		domain domain
@@ -242,6 +252,12 @@ namespace gse::profile {
 
 	constexpr double spike_ratio = 4.0;
 
+	struct metric_entry {
+		std::vector<double> totals;
+		std::uint64_t samples = 0;
+		std::uint64_t rows = 0;
+	};
+
 	struct dag_visit {
 		std::uint32_t index = 0;
 		int depth = 0;
@@ -254,6 +270,8 @@ namespace gse::profile {
 
 	inline std::shared_mutex state_mutex;
 	inline std::array<std::flat_map<id, entry>, 2> entries;
+	inline std::vector<std::string> gpu_metric_names;
+	inline std::flat_map<id, metric_entry> gpu_metric_entries;
 	inline std::atomic ema_alpha{ 0.1 };
 	inline std::atomic is_enabled{ true };
 	inline std::atomic<std::uint64_t> frame_count{ 0 };
@@ -302,6 +320,10 @@ namespace gse::profile {
 		std::string_view title,
 		std::span<const report_entry> rows,
 		sample_time frame_time
+	) -> void;
+
+	auto write_gpu_metrics(
+		std::ofstream& out
 	) -> void;
 
 	auto write_thread_breakdown(

@@ -26,6 +26,7 @@ export namespace gse::log {
 		vulkan_memory,
 		dx12,
 		dx12_validation,
+		gpu_perf,
 		assets,
 		task,
 		save_system,

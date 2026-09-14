@@ -51,9 +51,6 @@ if(ENGINE_PLAIN_IMPLS)
     target_sources(Engine PRIVATE ${ENGINE_PLAIN_IMPLS})
 endif()
 
-set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/Diag/Trace.cpp"
-    PROPERTIES COMPILE_OPTIONS "-fconstexpr-ops-limit=20000")
-
 target_sources(Engine
     PUBLIC
         FILE_SET gse_modules_public TYPE CXX_MODULES
@@ -69,6 +66,7 @@ find_package(Freetype CONFIG REQUIRED)
 find_package(msdfgen CONFIG REQUIRED)
 find_package(Vulkan)
 find_package(unofficial-nsight-aftermath CONFIG QUIET)
+find_package(unofficial-nsight-perf CONFIG QUIET)
 
 add_library(VulkanModule STATIC)
 target_sources(VulkanModule PUBLIC
@@ -141,6 +139,14 @@ if(TARGET unofficial::nsight-aftermath::nsight-aftermath)
     message(STATUS "Nsight Aftermath SDK found; GPU crash dumps enabled")
 else()
     message(STATUS "Nsight Aftermath SDK not found; GPU crash dumps disabled (enable with vcpkg feature 'aftermath' and NSIGHT_AFTERMATH_SDK env var)")
+endif()
+
+if(TARGET unofficial::nsight-perf::nsight-perf)
+    target_link_libraries(Engine PRIVATE unofficial::nsight-perf::nsight-perf)
+    target_compile_definitions(Engine PRIVATE GSE_HAVE_NSIGHT_PERF=1)
+    message(STATUS "Nsight Perf SDK found; GPU hardware counters available (Graphics.gpu_perf_metrics_enabled)")
+else()
+    message(STATUS "Nsight Perf SDK not found; GPU hardware counters disabled (supply it with the NSIGHT_PERF_SDK env var)")
 endif()
 
 # DirectX 12 Agility SDK: fetch a pinned D3D12 runtime so mesh shaders / SM6.6 bindless behave

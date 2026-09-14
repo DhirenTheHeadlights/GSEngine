@@ -1,0 +1,8 @@
+{
+  "name": "nsight-perf",
+  "version-string": "2025.5.0",
+  "description": "NVIDIA Nsight Perf SDK (in-process GPU hardware counter sampling). User-supplied via the NSIGHT_PERF_SDK environment variable, since the SDK is gated behind NVIDIA's developer portal.",
+  "homepage": "https://developer.nvidia.com/nsight-perf-sdk",
+  "license": null,
+  "supports": "windows & x64"
+}

@@ -167,7 +167,98 @@ auto gse::gpu::render_graph::ensure_profile_pools(gpu_profile_slot& slot, const 
 	}
 }
 
-auto gse::gpu::render_graph::read_profile_slot(gpu_profile_slot& slot) -> void {
+auto gse::gpu::render_graph::open_perf_frame() -> perf_frame {
+	const auto session = nsight_perf::info();
+	if (session.status != nsight_perf::session_status::running) {
+		return {};
+	}
+
+	if (session.generation != m_perf_session_generation) {
+		m_perf_session_generation = session.generation;
+		m_perf_metric_ids.clear();
+		profile::set_gpu_metric_names(session.metrics);
+	}
+
+	const auto gpu_now = nsight_perf::gpu_timestamp();
+	if (!gpu_now) {
+		return {};
+	}
+	const auto sampler_to_cpu = time_t<double>(system_clock::now<trace::tick_step>()) - time_t<double>(*gpu_now);
+
+	return {
+		.samples = nsight_perf::decode(),
+		.metrics = session.metrics,
+		.sampler_to_cpu = sampler_to_cpu,
+		.interval = time_t<double>(session.sampling_interval),
+		.active = true,
+	};
+}
+
+auto gse::gpu::render_graph::ingest_perf_metrics(const perf_frame& perf, const id row_id, const time_t<double> start, const time_t<double> end) -> void {
+	if (!perf.active || end - start < perf.interval * 2.0) {
+		return;
+	}
+
+	const auto in_sampler_domain = [](const time_t<std::uint64_t> stamp) {
+		return time_t<double>(stamp);
+	};
+	const auto first = std::ranges::lower_bound(perf.samples.times, start - perf.sampler_to_cpu, {}, in_sampler_domain);
+	const auto last = std::ranges::lower_bound(perf.samples.times, end - perf.sampler_to_cpu, {}, in_sampler_domain);
+	const auto count = static_cast<std::size_t>(last - first);
+	if (count == 0) {
+		return;
+	}
+
+	const auto metric_count = perf.metrics.size();
+	const auto base = static_cast<std::size_t>(first - perf.samples.times.begin()) * metric_count;
+
+	m_perf_metric_means.assign(metric_count, 0.0);
+	m_perf_metric_counts.assign(metric_count, 0);
+	for (std::size_t s = 0; s < count; ++s) {
+		const auto sampled = perf.samples.values.subspan(base + s * metric_count, metric_count);
+		for (std::size_t m = 0; m < metric_count; ++m) {
+			if (!std::isfinite(sampled[m])) {
+				continue;
+			}
+			m_perf_metric_means[m] += sampled[m];
+			++m_perf_metric_counts[m];
+		}
+	}
+
+	std::size_t contributing = 0;
+	for (std::size_t m = 0; m < metric_count; ++m) {
+		const auto valid = m_perf_metric_counts[m];
+		m_perf_metric_means[m] = valid > 0 ? m_perf_metric_means[m] / static_cast<double>(valid) : 0.0;
+		contributing = std::max(contributing, valid);
+	}
+	if (contributing == 0) {
+		return;
+	}
+
+	auto cached = m_perf_metric_ids.find(row_id);
+	if (cached == m_perf_metric_ids.end()) {
+		const auto row_name = std::string(row_id.tag());
+		std::vector<id> metric_ids;
+		metric_ids.reserve(metric_count);
+		for (const auto& metric : perf.metrics) {
+			metric_ids.push_back(find_or_generate_id(row_name + ":" + metric));
+		}
+		cached = m_perf_metric_ids.emplace(row_id, std::move(metric_ids)).first;
+	}
+
+	for (std::size_t m = 0; m < metric_count; ++m) {
+		trace::counter_at(
+			cached->second[m],
+			m_perf_metric_means[m],
+			trace::gpu_stats_virtual_tid,
+			time_t<std::uint64_t>(start)
+		);
+	}
+
+	profile::ingest_gpu_metrics(row_id, m_perf_metric_means, contributing);
+}
+
+auto gse::gpu::render_graph::read_profile_slot(gpu_profile_slot& slot, const perf_frame& perf) -> void {
 	if (!slot.results_valid || slot.pass_count == 0) {
 		return;
 	}
@@ -203,6 +294,7 @@ auto gse::gpu::render_graph::read_profile_slot(gpu_profile_slot& slot) -> void {
 		trace::end_async_at(gpu_id, key, tid, time_t<std::uint64_t>(end));
 
 		profile::ingest_gpu_sample(gpu_id, end - start);
+		ingest_perf_metrics(perf, gpu_id, start, end);
 	}
 
 	if (slot.mark_count > 0) {
@@ -234,6 +326,7 @@ auto gse::gpu::render_graph::read_profile_slot(gpu_profile_slot& slot) -> void {
 				trace::end_async_at(m.label, key, tid, time_t<std::uint64_t>(end));
 
 				profile::ingest_gpu_sample(m.label, end - start);
+				ingest_perf_metrics(perf, m.label, start, end);
 			}
 		}
 	}
@@ -453,8 +546,9 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 	}
 
 	if (m_frames_submitted >= per_frame_resource<gpu_profile_slot>::frames_in_flight) {
+		const auto perf = open_perf_frame();
 		for (auto& slots : m_profile_slots) {
-			read_profile_slot(slots[frame_idx]);
+			read_profile_slot(slots[frame_idx], perf);
 		}
 	}
 

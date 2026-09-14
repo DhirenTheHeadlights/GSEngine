@@ -210,6 +210,34 @@ auto gse::profile::ingest_gpu_sample(const id pass_id, const sample_time duratio
 	update_entry(storage_for(domain::gpu), pass_id, duration, 0, frame_index, false);
 }
 
+auto gse::profile::set_gpu_metric_names(const std::span<const std::string> names) -> void {
+	std::unique_lock _(state_mutex);
+	if (std::ranges::equal(gpu_metric_names, names)) {
+		return;
+	}
+	gpu_metric_names.assign(names.begin(), names.end());
+	gpu_metric_entries.clear();
+}
+
+auto gse::profile::ingest_gpu_metrics(const id pass_id, const std::span<const double> values, const std::uint64_t samples) -> void {
+	if (!is_enabled.load(std::memory_order_relaxed) || warming_up()) {
+		return;
+	}
+
+	std::unique_lock _(state_mutex);
+	if (values.size() != gpu_metric_names.size()) {
+		return;
+	}
+
+	auto& target = gpu_metric_entries[pass_id];
+	target.totals.resize(values.size());
+	for (std::size_t i = 0; i < values.size(); ++i) {
+		target.totals[i] += values[i];
+	}
+	target.samples += samples;
+	++target.rows;
+}
+
 auto gse::profile::lookup(const id id, const domain domain) -> std::optional<row> {
 	std::shared_lock _(state_mutex);
 	const auto& source = storage_for(domain);
@@ -291,6 +319,7 @@ auto gse::profile::reset() -> void {
 		for (auto& map : entries) {
 			map.clear();
 		}
+		gpu_metric_entries.clear();
 		frame_count.store(0, std::memory_order_relaxed);
 		frame_total = {};
 		warmup_remaining.store(0, std::memory_order_relaxed);
@@ -400,6 +429,55 @@ auto gse::profile::write_section(std::ofstream& out, const std::string_view titl
 			r.total,
 			r.calls_per_frame
 		);
+	}
+
+	out << '\n';
+}
+
+auto gse::profile::write_gpu_metrics(std::ofstream& out) -> void {
+	std::shared_lock _(state_mutex);
+	if (gpu_metric_entries.empty()) {
+		return;
+	}
+
+	std::size_t pass_width = std::string_view("pass").size();
+	for (const auto& pass : std::views::keys(gpu_metric_entries)) {
+		pass_width = std::max(pass_width, pass.tag().size());
+	}
+
+	std::size_t metric_width = std::string_view("metric").size();
+	for (const auto& name : gpu_metric_names) {
+		metric_width = std::max(metric_width, name.size());
+	}
+
+	const auto header = std::format(
+		"{:<{}} {:<{}} {:>14} {:>12}",
+		"pass",
+		pass_width,
+		"metric",
+		metric_width,
+		"value",
+		"samples"
+	);
+
+	out << "--- GPU hardware counters (mean over sampled passes) ---\n";
+	out << "value is the mean of the per-pass sample averages; samples is how many hardware samples backed them. "
+		   "A pass shorter than two sampling periods is never sampled and has no row here.\n";
+	out << header << '\n';
+	out << std::string(header.size(), '-') << '\n';
+
+	for (const auto& [pass, metrics] : gpu_metric_entries) {
+		for (std::size_t i = 0; i < metrics.totals.size(); ++i) {
+			out << std::format(
+				"{:<{}} {:<{}} {:>14.3f} {:>12}\n",
+				pass.tag(),
+				pass_width,
+				gpu_metric_names[i],
+				metric_width,
+				metrics.totals[i] / static_cast<double>(metrics.rows),
+				metrics.samples
+			);
+		}
 	}
 
 	out << '\n';
@@ -561,6 +639,7 @@ auto gse::profile::dump(const std::filesystem::path& path) -> void {
 
 	write_section(out, "CPU lexical scope self-time (parallel sum)", cpu_rows, frame_time);
 	write_section(out, "GPU (per-pass time)", gpu_rows, frame_time);
+	write_gpu_metrics(out);
 
 	write_thread_breakdown(out, threaded_src);
 	write_dag(out);

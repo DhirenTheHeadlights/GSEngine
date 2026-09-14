@@ -42,6 +42,22 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto timestamp_period() const -> float;
 
+		struct perf_metrics_config {
+			bool enabled = false;
+			std::string metrics;
+			std::uint32_t device_index = 0;
+			time sampling_interval;
+			bool lock_clocks = false;
+
+			auto operator==(
+				const perf_metrics_config&
+			) const -> bool = default;
+		};
+
+		auto set_perf_metrics(
+			const perf_metrics_config& config
+		) -> void;
+
 		auto report_device_lost(
 			std::string_view operation
 		) -> void;
@@ -561,6 +577,7 @@ export namespace gse::gpu {
 		image_format m_surface_format;
 		std::atomic<bool> m_device_lost_reported = false;
 		bool m_video_encode_enabled = false;
+		perf_metrics_config m_perf_metrics;
 
 		std::vector<resource_ref> m_slot_resources;
 
