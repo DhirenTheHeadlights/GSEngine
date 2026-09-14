@@ -84,8 +84,21 @@ export namespace gse::network {
 		std::uint32_t sequence = 0;
 	};
 
-	struct [[= system_state<"Network">{}]] data {
+	struct remember_server_request {
+		std::string entry;
+	};
+
+	struct forget_server_request {
+		std::string entry;
+	};
+
+	struct [[= system_state<"Network">{}, = settings::category<"Network">{}]] data {
+		[[= settings::describe<"Servers remembered by the Network screen, comma separated host:port entries.">{}]]
+		std::string saved_servers;
+		std::string saved_servers_seen;
+		std::shared_ptr<wan_directory_provider> saved_provider;
 		[[= shared]] client::state connection_state = client::state::disconnected;
+		[[= shared]] std::string connection_status;
 		[[= shared]] std::vector<discovery_result> available_servers;
 		[[= shared]] std::uint8_t connected_players = 0;
 		[[= shared]] std::uint8_t connected_max_players = 0;
@@ -110,7 +123,7 @@ export namespace gse::network {
 		shared_view<asset::data> assets_d,
 		data& d,
 		const config& net_cfg,
-		outbound_channel_t<MessagePack, connect_request, disconnect_request, add_provider_request, clear_providers_request, refresh_servers_request, refresh_server_info_request, ping_request> requests_in,
+		outbound_channel_t<MessagePack, connect_request, disconnect_request, add_provider_request, clear_providers_request, refresh_servers_request, refresh_server_info_request, ping_request, remember_server_request, forget_server_request> requests_in,
 		channel_write<set_networked_request, set_authoritative_request, set_local_controller_id_request, deactivate_active_scene_request, activate_scene_request> requests_out,
 		inbound_channel_t<MessagePack> messages_out,
 		entities ents,
@@ -127,8 +140,46 @@ auto gse::network::shutdown(data& d) -> void {
 	d.client_ptr.reset();
 }
 
+namespace gse::network {
+	auto saved_server_entries(
+		std::string_view csv
+	) -> std::vector<std::string>;
+
+	auto join_saved_servers(
+		std::span<const std::string> entries
+	) -> std::string;
+}
+
+auto gse::network::saved_server_entries(const std::string_view csv) -> std::vector<std::string> {
+	std::vector<std::string> out;
+	for (const auto part : csv | std::views::split(',')) {
+		std::string_view entry(part.begin(), part.end());
+		while (!entry.empty() && entry.front() == ' ') {
+			entry.remove_prefix(1);
+		}
+		while (!entry.empty() && entry.back() == ' ') {
+			entry.remove_suffix(1);
+		}
+		if (!entry.empty()) {
+			out.emplace_back(entry);
+		}
+	}
+	return out;
+}
+
+auto gse::network::join_saved_servers(const std::span<const std::string> entries) -> std::string {
+	std::string out;
+	for (const auto& entry : entries) {
+		if (!out.empty()) {
+			out += ',';
+		}
+		out += entry;
+	}
+	return out;
+}
+
 template <typename MessagePack, typename... Components>
-auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, data& d, const config& net_cfg, const outbound_channel_t<MessagePack, connect_request, disconnect_request, add_provider_request, clear_providers_request, refresh_servers_request, refresh_server_info_request, ping_request> requests_in, const channel_write<set_networked_request, set_authoritative_request, set_local_controller_id_request, deactivate_active_scene_request, activate_scene_request> requests_out, const inbound_channel_t<MessagePack> messages_out, entities ents, structural<Components>... auths) -> async::task<> {
+auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, data& d, const config& net_cfg, const outbound_channel_t<MessagePack, connect_request, disconnect_request, add_provider_request, clear_providers_request, refresh_servers_request, refresh_server_info_request, ping_request, remember_server_request, forget_server_request> requests_in, const channel_write<set_networked_request, set_authoritative_request, set_local_controller_id_request, deactivate_active_scene_request, activate_scene_request> requests_out, const inbound_channel_t<MessagePack> messages_out, entities ents, structural<Components>... auths) -> async::task<> {
 	((void)auths, ...);
 	(ctx.template ensure_storage<Components>(), ...);
 
@@ -139,7 +190,9 @@ auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, da
 		if (idle && (d.auto_connect_pending || retry_due)) {
 			d.auto_connect_pending = false;
 
-			if (const auto addr = parse_address(net_cfg.connect, default_port)) {
+			const auto parsed = parse_address(net_cfg.connect, default_port);
+			const auto addr = parsed ? resolve_address(*parsed) : std::nullopt;
+			if (addr) {
 				const time timeout = seconds(5.f);
 				const time retry = seconds(1.f);
 
@@ -149,20 +202,32 @@ auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, da
 							.ip = "0.0.0.0",
 							.port = 0,
 						},
-							*addr
-						);
+						*addr
+					);
 				}
-				d.client_ptr->connect(timeout, retry);
+				if (d.client_ptr->connect(timeout, retry)) {
+					d.connection_status = std::format("Connecting to {}:{}...", addr->ip, addr->port);
+				}
 			}
 			else {
 				d.auto_connect_rejected = true;
-				log::println(
-					log::level::error,
-					log::category::network,
-					"net connect target '{}' is not a valid address: {}",
-					net_cfg.connect,
-					addr.error()
+				if (parsed) {
+					log::println(
+						log::level::error,
+						log::category::network,
+						"net connect target '{}' could not be resolved",
+						net_cfg.connect
 					);
+				}
+				else {
+					log::println(
+						log::level::error,
+						log::category::network,
+						"net connect target '{}' is not a valid address: {}",
+						net_cfg.connect,
+						parsed.error()
+					);
+				}
 			}
 		}
 	}
@@ -175,11 +240,17 @@ auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, da
 			});
 			d.client_ptr = std::make_unique<client>(bind, req.options.addr);
 		}
-		req.promise.fulfill(d.client_ptr->connect(req.options.timeout, req.options.retry));
+		const bool started = d.client_ptr->connect(req.options.timeout, req.options.retry);
+		if (started) {
+			const auto& target = d.client_ptr->server_address();
+			d.connection_status = std::format("Connecting to {}:{}...", target.ip, target.port);
+		}
+		req.promise.fulfill(started);
 	}
 
 	for (const auto& _ : requests_in.template of<disconnect_request>()) {
 		d.client_ptr.reset();
+		d.connection_status = "Disconnected";
 	}
 
 	for (const auto& _ : requests_in.template of<clear_providers_request>()) {
@@ -191,11 +262,47 @@ auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, da
 		d.providers.emplace_back(req.provider);
 	}
 
+	for (const auto& req : requests_in.template of<remember_server_request>()) {
+		const auto parsed = parse_address(req.entry, default_port);
+		if (!parsed) {
+			log::println(log::level::warning, log::category::network, "cannot remember server '{}': {}", req.entry, parsed.error());
+			continue;
+		}
+		auto entries = saved_server_entries(d.saved_servers);
+		const std::string entry = std::format("{}:{}", parsed->ip, parsed->port);
+		if (std::ranges::find(entries, entry) == entries.end()) {
+			entries.push_back(entry);
+			d.saved_servers = join_saved_servers(entries);
+		}
+	}
+
+	for (const auto& req : requests_in.template of<forget_server_request>()) {
+		auto entries = saved_server_entries(d.saved_servers);
+		if (std::erase(entries, req.entry) > 0) {
+			d.saved_servers = join_saved_servers(entries);
+		}
+	}
+
+	if (d.saved_servers != d.saved_servers_seen) {
+		d.saved_servers_seen = d.saved_servers;
+		std::vector<discovery_result> seed;
+		for (const auto& entry : saved_server_entries(d.saved_servers)) {
+			if (const auto parsed = parse_address(entry, default_port)) {
+				seed.push_back({
+					.addr = *parsed,
+					.name = entry,
+					.max_players = net_cfg.max_players,
+				});
+			}
+		}
+		d.saved_provider = seed.empty() ? nullptr : std::make_shared<wan_directory_provider>(std::move(seed));
+	}
+
 	for (const auto& req : requests_in.template of<refresh_servers_request>()) {
 		std::unordered_map<address, discovery_result> dedup;
-		for (const auto& p : d.providers) {
-			p->refresh(req.timeout);
-			for (const auto& result : p->results()) {
+		const auto gather = [&](discovery_provider& p) {
+			p.refresh(req.timeout);
+			for (const auto& result : p.results()) {
 				if (auto it = dedup.find(result.addr); it == dedup.end()) {
 					dedup.emplace(result.addr, result);
 				}
@@ -203,6 +310,12 @@ auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, da
 					it->second = result;
 				}
 			}
+		};
+		for (const auto& p : d.providers) {
+			gather(*p);
+		}
+		if (d.saved_provider) {
+			gather(*d.saved_provider);
 		}
 		d.available_servers.clear();
 		d.available_servers.reserve(dedup.size());
@@ -315,7 +428,7 @@ auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, da
 						requests_out.push<activate_scene_request>({
 							.scene_id = m.scene_id,
 						});
-						std::println("Switched to scene: {}", m.scene_id);
+						log::println(log::category::network, "Server switched us to scene {}", m.scene_id);
 						d.client_ptr->send(pong{
 							.sequence = 0,
 						});
@@ -350,9 +463,21 @@ auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, da
 	d.deferred.clear();
 
 	d.client_ptr->tick();
+	const client::state previous_state = d.connection_state;
 	d.connection_state = d.client_ptr->current_state();
 
+	if (previous_state != d.connection_state) {
+		const auto& target = d.client_ptr->server_address();
+		if (d.connection_state == client::state::connected) {
+			d.connection_status = std::format("Connected to {}:{}", target.ip, target.port);
+		}
+		else if (previous_state == client::state::connecting) {
+			d.connection_status = std::format("Connection to {}:{} timed out: no reply from the server", target.ip, target.port);
+		}
+	}
+
 	if (d.stats_timer.tick() && d.connection_state == client::state::connected) {
+		d.client_ptr->send(server_info_request{});
 		std::string by_type;
 		for (const auto& [name, count] : d.stat_upserts_by_type) {
 			by_type += std::format("{} {}, ", name, count);

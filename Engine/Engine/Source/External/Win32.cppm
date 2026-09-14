@@ -208,6 +208,8 @@ export namespace gse::win32 {
 	using ::PeekNamedPipe;
 	using ::GetStdHandle;
 	using ::GetFileType;
+	using ::GetConsoleMode;
+	using ::SetConsoleMode;
 	using ::ShellExecuteW;
 	using ::VirtualQuery;
 	using ::MEMORY_BASIC_INFORMATION;
@@ -279,6 +281,7 @@ export namespace gse::win32 {
 	constexpr DWORD file_attribute_normal = FILE_ATTRIBUTE_NORMAL;
 	constexpr DWORD std_output_handle = STD_OUTPUT_HANDLE;
 	constexpr DWORD file_type_char = FILE_TYPE_CHAR;
+	constexpr DWORD enable_virtual_terminal_processing = ENABLE_VIRTUAL_TERMINAL_PROCESSING;
 	constexpr DWORD error_pipe_connected = ERROR_PIPE_CONNECTED;
 	constexpr DWORD error_pipe_listening = ERROR_PIPE_LISTENING;
 	constexpr DWORD error_no_data = ERROR_NO_DATA;

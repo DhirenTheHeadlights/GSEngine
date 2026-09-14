@@ -314,25 +314,27 @@ auto gse::gpu::recording_context::emit_intra_pass_barrier(const resource_ref& re
 		return prev.stages.bits() != prev_stages || prev.access.bits() != prev_access;
 	}
 
-	if (m_pending_memory_barriers.empty()) {
-		m_pending_memory_barriers.push_back({
-			.src_stages = prev.stages,
-			.src_access = prev.access,
-			.dst_stages = stages,
-			.dst_access = access,
-		});
-	}
-	else {
-		auto& pending = m_pending_memory_barriers.front();
-		pending.src_stages |= prev.stages;
-		pending.src_access |= prev.access;
-		pending.dst_stages |= stages;
-		pending.dst_access |= access;
-	}
+	merge_pending_barrier(prev.stages, prev.access, stages, access);
 
 	prev.stages = stages;
 	prev.access = access;
 	return true;
+}
+
+auto gse::gpu::recording_context::merge_pending_barrier(const pipeline_stage_flags src_stages, const access_flags src_access, const pipeline_stage_flags dst_stages, const access_flags dst_access) -> void {
+	for (auto& pending : m_pending_memory_barriers) {
+		if (pending.src_stages.bits() == src_stages.bits() && pending.dst_stages.bits() == dst_stages.bits()) {
+			pending.src_access |= src_access;
+			pending.dst_access |= dst_access;
+			return;
+		}
+	}
+	m_pending_memory_barriers.push_back({
+		.src_stages = src_stages,
+		.src_access = src_access,
+		.dst_stages = dst_stages,
+		.dst_access = dst_access,
+	});
 }
 
 auto gse::gpu::recording_context::note_bindings_repeat(const pipeline_stage_flags stages, const access_flags access) -> void {
@@ -357,20 +359,7 @@ auto gse::gpu::recording_context::note_bindings_repeat(const pipeline_stage_flag
 	access_flags cycle_access = access;
 	cycle_access |= m_companion_access;
 
-	for (auto& pending : m_pending_memory_barriers) {
-		pending.src_stages |= cycle_stages;
-		pending.src_access |= cycle_access;
-		pending.dst_stages |= cycle_stages;
-		pending.dst_access |= cycle_access;
-		return;
-	}
-
-	m_pending_memory_barriers.push_back({
-		.src_stages = cycle_stages,
-		.src_access = cycle_access,
-		.dst_stages = cycle_stages,
-		.dst_access = cycle_access,
-	});
+	merge_pending_barrier(cycle_stages, cycle_access, cycle_stages, cycle_access);
 }
 
 auto gse::gpu::recording_context::flush_pending_barriers() -> void {

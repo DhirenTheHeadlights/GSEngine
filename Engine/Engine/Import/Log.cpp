@@ -51,6 +51,8 @@ namespace gse::log {
 
 	std::atomic<bool> color_enabled = true;
 
+	std::atomic<bool> console_enabled = true;
+
 	std::atomic<bool> logger_alive = false;
 
 	thread_local thread_role t_thread_role = thread_role::unknown;
@@ -353,6 +355,9 @@ auto gse::log::console_output() -> bool {
 }
 
 auto gse::log::console_sink::write(const record& rec) -> void {
+	if (!console_enabled.load(std::memory_order_relaxed)) {
+		return;
+	}
 	auto& os = should_flush(rec.lvl) ? static_cast<std::ostream&>(std::cerr) : static_cast<std::ostream&>(std::cout);
 	const auto line = format_line(rec);
 	if (color_enabled.load(std::memory_order_relaxed)) {
@@ -367,6 +372,9 @@ auto gse::log::console_sink::write(const record& rec) -> void {
 }
 
 auto gse::log::console_sink::write_raw(const std::string_view text) -> void {
+	if (!console_enabled.load(std::memory_order_relaxed)) {
+		return;
+	}
 	std::print(std::cout, "{}\n", text);
 	if (!console_output()) {
 		std::cout.flush();
@@ -847,4 +855,8 @@ auto gse::log::backtrace_active() -> bool {
 
 auto gse::log::set_color(const bool enabled) -> void {
 	color_enabled.store(enabled, std::memory_order_relaxed);
+}
+
+auto gse::log::set_console_output(const bool enabled) -> void {
+	console_enabled.store(enabled, std::memory_order_relaxed);
 }

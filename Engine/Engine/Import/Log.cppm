@@ -183,6 +183,10 @@ export namespace gse::log {
 		bool enabled
 	) -> void;
 
+	auto set_console_output(
+		bool enabled
+	) -> void;
+
 	template <typename... Args>
 	auto println(
 		std::format_string<Args...> fmt,

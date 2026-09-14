@@ -10,13 +10,14 @@ export namespace sandbox::pause_menu {
 		bool manual_cursor = false;
 		bool initial_push_done = false;
 		bool last_scene_active = false;
+		gse::network::client::state last_connection_state = gse::network::client::state::disconnected;
 	};
 
 	[[= gse::system_run<>{}]]
 	auto run(
 		gse::context& ctx,
 		data& d,
-		gse::channel_write<gse::activate_scene_request, gse::deactivate_active_scene_request, gse::gui::push_screen_request, gse::gui::pop_screen_request, gse::gui::set_manual_cursor_request, gse::network::connect_request, gse::network::refresh_servers_request, gse::network::refresh_server_info_request, gse::network::ping_request, gse::settings::change_request, gse::settings::override_request, gse::gui::popout_toggle> ui_out,
+		gse::channel_write<gse::activate_scene_request, gse::deactivate_active_scene_request, gse::gui::push_screen_request, gse::gui::pop_screen_request, gse::gui::clear_screens_request, gse::gui::set_manual_cursor_request, gse::network::connect_request, gse::network::refresh_servers_request, gse::network::refresh_server_info_request, gse::network::ping_request, gse::network::remember_server_request, gse::network::forget_server_request, gse::settings::change_request, gse::settings::override_request, gse::gui::popout_toggle> ui_out,
 		gse::shared_view<gse::input::data> input_d,
 		gse::shared_view<gse::gui::data> gui_d,
 		gse::shared_view<gse::world_system::data> world_d,
@@ -26,7 +27,7 @@ export namespace sandbox::pause_menu {
 	) -> gse::async::task<>;
 }
 
-auto sandbox::pause_menu::run(gse::context& ctx, data& d, const gse::channel_write<gse::activate_scene_request, gse::deactivate_active_scene_request, gse::gui::push_screen_request, gse::gui::pop_screen_request, gse::gui::set_manual_cursor_request, gse::network::connect_request, gse::network::refresh_servers_request, gse::network::refresh_server_info_request, gse::network::ping_request, gse::settings::change_request, gse::settings::override_request, gse::gui::popout_toggle> ui_out, const gse::shared_view<gse::input::data> input_d, const gse::shared_view<gse::gui::data> gui_d, const gse::shared_view<gse::world_system::data> world_d, const gse::shared_view<gse::network::data> net_d, const gse::network::config& net_cfg, const gse::save::registry& save_reg) -> gse::async::task<> {
+auto sandbox::pause_menu::run(gse::context& ctx, data& d, const gse::channel_write<gse::activate_scene_request, gse::deactivate_active_scene_request, gse::gui::push_screen_request, gse::gui::pop_screen_request, gse::gui::clear_screens_request, gse::gui::set_manual_cursor_request, gse::network::connect_request, gse::network::refresh_servers_request, gse::network::refresh_server_info_request, gse::network::ping_request, gse::network::remember_server_request, gse::network::forget_server_request, gse::settings::change_request, gse::settings::override_request, gse::gui::popout_toggle> ui_out, const gse::shared_view<gse::input::data> input_d, const gse::shared_view<gse::gui::data> gui_d, const gse::shared_view<gse::world_system::data> world_d, const gse::shared_view<gse::network::data> net_d, const gse::network::config& net_cfg, const gse::save::registry& save_reg) -> gse::async::task<> {
 	const auto push_main_menu = [&] {
 		ui_out.push<gse::gui::push_screen_request>({
 			.factory = [world_d, net_d, &save_reg, channels = ui_out] {
@@ -39,7 +40,13 @@ auto sandbox::pause_menu::run(gse::context& ctx, data& d, const gse::channel_wri
 	const auto* top = gui_d.primary.menu_stack.top();
 	const bool blocks = top != nullptr && !top->dismissable();
 	const bool scene_active = world_d.active_scene.has_value();
-	const bool server_owns_scene = !net_cfg.connect.empty();
+	const bool connected = net_d.connection_state == gse::network::client::state::connected;
+	const bool server_owns_scene = !net_cfg.connect.empty() || connected;
+
+	if (connected && d.last_connection_state != net_d.connection_state && top != nullptr) {
+		ui_out.push<gse::gui::clear_screens_request>({});
+	}
+	d.last_connection_state = net_d.connection_state;
 
 	if (!blocks && top == nullptr && !server_owns_scene) {
 		if (!d.initial_push_done && !scene_active) {

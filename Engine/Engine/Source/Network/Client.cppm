@@ -53,6 +53,8 @@ export namespace gse::network {
 
 		auto current_state() const -> state;
 
+		auto server_address() const -> const address&;
+
 		auto dropped() const -> std::uint64_t;
 
 		template <is_network_message T>
@@ -133,6 +135,10 @@ auto gse::network::client::tick() -> void {
 
 auto gse::network::client::current_state() const -> state {
 	return m_state;
+}
+
+auto gse::network::client::server_address() const -> const address& {
+	return m_server;
 }
 
 auto gse::network::client::dropped() const -> std::uint64_t {

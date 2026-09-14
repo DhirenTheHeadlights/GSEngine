@@ -59,6 +59,9 @@ export {
 	using ::inet_pton;
 	using ::htons;
 	using ::ntohs;
+	using ::addrinfo;
+	using ::getaddrinfo;
+	using ::freeaddrinfo;
 }
 
 export namespace gse::sockets {

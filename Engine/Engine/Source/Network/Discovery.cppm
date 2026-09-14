@@ -118,7 +118,10 @@ auto gse::network::wan_directory_provider::query_servers_async(time timeout) -> 
 		.size = request_stream.bytes_written()
 	};
 
-	for (const auto& server : local_copy) {
+	for (auto& server : local_copy) {
+		if (const auto resolved = resolve_address(server.addr)) {
+			server.addr = *resolved;
+		}
 		socket.send_data(request_pkt, server.addr);
 	}
 
@@ -126,7 +129,7 @@ auto gse::network::wan_directory_provider::query_servers_async(time timeout) -> 
 	clock timeout_clock;
 	std::array<std::byte, 256> recv_buffer;
 
-	while (timeout_clock.elapsed() < timeout) {
+	while (timeout_clock.elapsed() < timeout && responses.size() < local_copy.size()) {
 		if (socket.wait_readable(milliseconds(10)) != wait_result::ready) {
 			continue;
 		}

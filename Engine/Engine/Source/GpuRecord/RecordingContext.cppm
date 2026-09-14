@@ -297,6 +297,13 @@ export namespace gse::gpu {
 			std::uint64_t dispatch_generation
 		) -> void;
 
+		auto merge_pending_barrier(
+			pipeline_stage_flags src_stages,
+			access_flags src_access,
+			pipeline_stage_flags dst_stages,
+			access_flags dst_access
+		) -> void;
+
 		[[nodiscard]] auto bound_shader_stages() const -> pipeline_stage_flags;
 
 		template <typename Entry>

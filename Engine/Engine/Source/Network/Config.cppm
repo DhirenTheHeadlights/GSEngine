@@ -18,6 +18,7 @@ export namespace gse::network {
 		std::uint8_t max_players = 8;
 		std::uint32_t simulated_latency_ms = 0;
 		std::uint32_t simulated_loss_permille = 0;
+		bool dashboard = true;
 	};
 
 	auto resolve_role(

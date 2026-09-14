@@ -111,3 +111,34 @@ reads and `RWStructuredBuffer` reads return the same data.
   the access and emits nothing, because the covering barrier already ordered every earlier
   command against those stages. Any other touch falls back to a hazard against
   `memory_read | memory_write` at the covering stages.
+- `gpuchain28` removed the device on DX12 (`DXGI_ERROR_INVALID_CALL` after the first
+  `ExecuteCommandLists`, every update fell back to the CPU, hash `5CCD4230…`). The debug layer
+  named it: a global barrier with `SyncBefore = COMPUTE_SHADING` and `AccessBefore` containing
+  `COPY_DEST`. The tracker OR-merged every hazard of a dispatch into one pending barrier, so a
+  copy-stage source and a compute-stage source shared one DX12 global barrier, and DX12 requires
+  every access bit to be valid for every sync bit. `gpuchain29` merges pending barriers only when
+  both stage sets match (`merge_pending_barrier`, the rule the render graph's cross-pass
+  coalescing already used) and passes the DX12 debug layer, the Vulkan validation layer, and both
+  gates (`AC3D5339…` / `F838905F…`). It was still neutral at 8192 (−1.3 %, `chain_ms` unchanged).
+- A temporary per-pass counter showed why: 292 flushes and 223 barriers per minibatch pass at
+  1024 envs, so only the critic `train_sample` went barrier-free. Both nets bind the shared
+  rollout buffer, and the write entries declared it read-write, so the critic `weight_grad` was a
+  write-after-write hazard against the actor's. No `Nn` kernel that uses the write entry writes
+  `nn_inputs` (only `nn_gae`, `nn_adv_norm`, `nn_style_reward` do), so `gpuchain30` gives the
+  write entries `nn_write_bindings` with the read-tagged `nn_inputs`. Barriers fell to 158.
+
+## Result (2026-09-14, `gpuchain30`)
+
+- Gates: Vulkan `AC3D5339…`, DX12 `F838905F…`, opt-in kernel reference `91950805…`, 8192-env
+  hash `D47B9290…` (120 updates) identical to `gpuchain26` on every arm. DX12 debug layer and
+  Vulkan validation layer both clean (only startup best-practice warnings).
+- Interleaved A/B at 8192 envs, 15 workers, 120 updates, Compilers 0: `gpuchain26` 221.1k ±4.6k,
+  `gpuchain30` 223.9k ±0.7k steps/s, +1.3 %, inside noise. `chain_ms` stayed ~106 (frame
+  granular) and the GPU-sharing tick stayed 51 ms. Marks profile: `nn_chain_stage` 17.4 → 18.3 ms
+  per frame, `nn::train_sample` and `nn::weight_grad` unchanged at ~35 µs per dispatch.
+- Verdict: the barriers are gone (223 → 158 per minibatch pass) but the GPU does not run the
+  actor and critic dispatches concurrently, so the latency floor stands. Either the driver
+  serialises consecutive dispatches that change push constants, or a 256-WG dispatch already
+  saturates the front end. The engine change is kept as validated groundwork (fewer barriers,
+  DX12-correct barrier merging); the throughput lever is closed. The next chain lever must
+  shorten the dependency chain itself (fewer, larger dispatches), not the barriers between them.

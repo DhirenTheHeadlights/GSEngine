@@ -120,6 +120,9 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 		if (!config.bench.enabled) {
 			profile::set_frame_recording(config.attached);
 		}
+		if (dedicated && config.net.dashboard) {
+			log::set_console_output(false);
+		}
 
 		if (config.attached && !config.ipc_pipe_name.empty()) {
 			const std::wstring pipe(config.ipc_pipe_name.begin(), config.ipc_pipe_name.end());

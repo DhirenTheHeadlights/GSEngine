@@ -51,6 +51,9 @@ if(ENGINE_PLAIN_IMPLS)
     target_sources(Engine PRIVATE ${ENGINE_PLAIN_IMPLS})
 endif()
 
+set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/Diag/Trace.cpp"
+    PROPERTIES COMPILE_OPTIONS "-fconstexpr-ops-limit=20000")
+
 target_sources(Engine
     PUBLIC
         FILE_SET gse_modules_public TYPE CXX_MODULES

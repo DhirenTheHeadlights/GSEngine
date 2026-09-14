@@ -14,6 +14,7 @@ import gse.diag;
 import gse.log;
 import gse.ecs;
 import gse.os;
+import gse.win32;
 import gse.assets;
 import gse.gpu;
 import gse.runtime;
@@ -43,6 +44,8 @@ export namespace gse::server {
 		explicit host(
 			network::config cfg
 		);
+
+		~host();
 
 		auto initialize() -> void;
 
@@ -95,6 +98,10 @@ export namespace gse::server {
 			const network::address& addr
 		) -> void;
 
+		auto draw_dashboard(
+			const shared_view<physics::data>& phys_s
+		) -> void;
+
 		network::config m_config;
 		network::endpoint m_endpoint;
 		std::vector<id> m_scene_ids;
@@ -109,6 +116,12 @@ export namespace gse::server {
 		std::uint32_t m_health_frames = 0;
 		std::uint64_t m_health_last_step = 0;
 		time m_health_longest_frame;
+		std::uint32_t m_window_frames = 0;
+		std::uint64_t m_window_steps = 0;
+		time m_window_longest_frame;
+		clock m_uptime;
+		std::uint16_t m_port = 0;
+		bool m_dashboard_started = false;
 	};
 }
 
@@ -117,18 +130,74 @@ gse::server::host<MessagePack, Components...>::host(network::config cfg) : m_con
 }
 
 template <typename MessagePack, typename... Components>
+gse::server::host<MessagePack, Components...>::~host() {
+	if (m_dashboard_started) {
+		std::print("\x1b[?25h\x1b[0m\n");
+		std::cout.flush();
+	}
+}
+
+template <typename MessagePack, typename... Components>
 auto gse::server::host<MessagePack, Components...>::initialize() -> void {
 	if (!m_endpoint.bind(network::address{
 		.ip = "0.0.0.0",
 		.port = m_config.listen_port
 		})) {
-		std::println(std::cerr, "Server: Failed to bind socket to port {}", m_config.listen_port);
+		log::println(log::level::error, log::category::network, "Server: Failed to bind socket to port {}", m_config.listen_port);
 		return;
 	}
 
 	if (const auto local = m_endpoint.local_address()) {
-		std::println("Server: Listening on port {}", local->port);
+		m_port = local->port;
+		log::println(log::category::network, "Server: Listening on port {}", local->port);
 	}
+}
+
+template <typename MessagePack, typename... Components>
+auto gse::server::host<MessagePack, Components...>::draw_dashboard(const shared_view<physics::data>& phys_s) -> void {
+	if (!m_dashboard_started) {
+		const auto out = win32::GetStdHandle(win32::std_output_handle);
+		win32::DWORD mode = 0;
+		if (win32::GetConsoleMode(out, &mode)) {
+			win32::SetConsoleMode(out, mode | win32::enable_virtual_terminal_processing);
+		}
+		std::print("\x1b[?25l\x1b[2J");
+		m_dashboard_started = true;
+	}
+
+	const auto up = static_cast<std::uint64_t>(m_uptime.elapsed<double>().as<seconds>());
+	std::string frame;
+	frame += "\x1b[H";
+	frame += std::format("\x1b[1mGSEngine dedicated server\x1b[0m   up {:02}:{:02}:{:02}   port {}\x1b[K\n", up / 3600, (up / 60) % 60, up % 60, m_port);
+	if (m_active_scene) {
+		frame += std::format("scene {}   clients {}/{}   physics step {}\x1b[K\n", *m_active_scene, m_clients.size(), m_config.max_players, phys_s.step_index);
+	}
+	else {
+		frame += std::format("scene <none>   clients {}/{}   physics step {}\x1b[K\n", m_clients.size(), m_config.max_players, phys_s.step_index);
+	}
+	frame += std::format("last 2 s: {} frames, {} physics steps, longest frame {:.1f} ms   socket drops {}\x1b[K\n", m_window_frames, m_window_steps, m_window_longest_frame.as<milliseconds>(), m_endpoint.dropped());
+	frame += "\x1b[K\n";
+	frame += std::format("\x1b[1m{:<22} {:>12} {:>6} {:>10} {:>10}\x1b[0m\x1b[K\n", "client", "controller", "queue", "last seq", "applied");
+	if (m_clients.empty()) {
+		frame += "  (no clients connected)\x1b[K\n";
+	}
+	for (const auto& [addr, cd] : m_clients) {
+		const bool is_host = m_host_addr == addr;
+		frame += std::format(
+			"{:<22} {:>12} {:>6} {:>10} {:>10}{}\x1b[K\n",
+			std::format("{}:{}", addr.ip, addr.port),
+			cd.controller_id.number(),
+			cd.pending_inputs.size(),
+			cd.last_input_sequence,
+			cd.applied_sequence,
+			is_host ? "  host" : ""
+		);
+	}
+	frame += "\x1b[K\n";
+	frame += "\x1b[90mVerbose output is in the log file. Ctrl+C to stop.\x1b[0m\x1b[K\n";
+	frame += "\x1b[J";
+	std::print("{}", frame);
+	std::cout.flush();
 }
 
 template <typename MessagePack, typename... Components>
@@ -184,9 +253,15 @@ auto gse::server::host<MessagePack, Components...>::update(const structural<play
 			m_clients.size(),
 			deepest_queue
 		);
+		m_window_frames = m_health_frames;
+		m_window_steps = phys_s.step_index - m_health_last_step;
+		m_window_longest_frame = m_health_longest_frame;
 		m_health_frames = 0;
 		m_health_last_step = phys_s.step_index;
 		m_health_longest_frame = {};
+		if (m_config.dashboard) {
+			draw_dashboard(phys_s);
+		}
 	}
 
 	if (!has_active_scene && !m_scene_ids.empty() && m_requested_scene != m_scene_ids.front()) {
@@ -222,7 +297,9 @@ auto gse::server::host<MessagePack, Components...>::update(const structural<play
 
 					const std::uint8_t max_players = m_config.max_players;
 					if (m_clients.size() >= max_players) {
-						std::println(
+						log::println(
+							log::level::warning,
+							log::category::network,
 							"Client [{}:{}] failed to connect (server full: {}/{})",
 							msg.from.ip,
 							msg.from.port,
@@ -234,7 +311,8 @@ auto gse::server::host<MessagePack, Components...>::update(const structural<play
 
 					m_endpoint.ensure_peer(msg.from);
 					accept_connection(controller_auth, input_auth, ents, msg.from);
-					std::println(
+					log::println(
+						log::category::network,
 						"Client [{}:{}] connected ({}/{})",
 						msg.from.ip,
 						msg.from.port,
@@ -249,7 +327,7 @@ auto gse::server::host<MessagePack, Components...>::update(const structural<play
 
 		if (network::try_decode<network::connection_request>(stream, msg.id, [&](const auto&) {
 			if (auto client_it = m_clients.find(msg.from); client_it != m_clients.end()) {
-				std::println("Client [{}:{}] reconnecting", msg.from.ip, msg.from.port);
+				log::println(log::category::network, "Client [{}:{}] reconnecting", msg.from.ip, msg.from.port);
 				if (has_active_scene) {
 					if (const auto* pc = controllers.find(client_it->second.controller_id)) {
 						if (pc->controlled_entity_id.exists()) {
