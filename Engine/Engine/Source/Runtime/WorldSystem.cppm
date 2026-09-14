@@ -185,6 +185,10 @@ auto gse::activate_scene(world_system::data& d, const id& scene_id) -> void {
 	if (auto* new_scene = find_scene(d, scene_id)) {
 		new_scene->set_active(true);
 		d.active_scene = new_scene->id();
+		log::println(log::category::runtime, "world: activated scene {} with {} entities (networked {}, authoritative {})", scene_id, new_scene->entities().size(), d.networked, d.authoritative);
+	}
+	else {
+		log::println(log::level::warning, log::category::runtime, "world: activate scene {} requested but no scene with that id is registered", scene_id);
 	}
 }
 
@@ -193,6 +197,7 @@ auto gse::deactivate_active_scene(world_system::data& d) -> void {
 		if (auto* old_scene = find_scene(d, d.active_scene.value())) {
 			old_scene->set_active(false);
 		}
+		log::println(log::category::runtime, "world: deactivated scene {}", d.active_scene.value());
 	}
 	d.active_scene = std::nullopt;
 }
@@ -208,7 +213,7 @@ auto gse::update_player_controllers(world_system::data& d, write<player_controll
 	};
 
 	if (!d.networked) {
-		if (!d.local_player_spawned) {
+		if (!d.local_player_spawned && d.active_scene.has_value()) {
 			d.local_controlled_entity = spawn();
 			d.local_player_spawned = true;
 			player_out.push<world_system::possess_player_request>({

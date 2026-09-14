@@ -16,6 +16,7 @@ import gse.ecs;
 import gse.os;
 import gse.assets;
 import gse.gpu;
+import gse.log;
 
 auto gse::camera::position(const data& d) -> vec3<gse::position> {
 	return d.current.position;
@@ -159,6 +160,7 @@ auto gse::camera::run(context& ctx, data& d, const channel_read<ui_focus_request
 		}
 		d.active_controller_entity = best_controller;
 		d.active_priority = highest_priority;
+		log::println(log::category::render, "camera: now following {} at priority {} from {} ({} follow components, viewport {})", best_controller, highest_priority, best_target.position, cameras.size(), d.viewport);
 	}
 	else if (best_controller.exists()) {
 		if (d.blending) {

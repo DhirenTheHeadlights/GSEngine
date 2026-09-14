@@ -21,7 +21,7 @@ export namespace sandbox {
 	private:
 		gse::shared_view<gse::network::data> m_net;
 		gse::channel_write<gse::network::connect_request, gse::network::refresh_servers_request, gse::network::refresh_server_info_request, gse::network::ping_request, gse::network::remember_server_request, gse::network::forget_server_request> m_channels;
-		int m_selected = -1;
+		gse::network::address m_selected;
 		std::string m_entry;
 		gse::gui::text_input_state m_entry_state;
 		std::uint32_t m_ping_seq = 0;
@@ -82,24 +82,24 @@ auto sandbox::network_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> 
 		.content = std::format("Found: {}", list.size()),
 	});
 
-	for (std::size_t idx = 0; idx < list.size(); ++idx) {
-		const auto& sv = list[idx];
-		const bool picked = (m_selected == static_cast<int>(idx));
+	for (const auto& sv : list) {
 		if (ui.draw<gse::gui::selectable>({
 				.text = std::format("{}  {}:{}  {}/{}  v{}", sv.name, sv.addr.ip, sv.addr.port, sv.players, sv.max_players, sv.build),
-				.selected = picked,
+				.key = std::format("{}:{}", sv.addr.ip, sv.addr.port),
+				.selected = sv.addr == m_selected,
 			})) {
-			m_selected = static_cast<int>(idx);
+			m_selected = sv.addr;
 		}
 	}
 
+	const auto picked = std::ranges::find(list, m_selected, &gse::network::discovery_result::addr);
+
 	if (ui.draw<gse::gui::button>({
 			.text = "Connect",
-		}) && m_selected >= 0 && m_selected < static_cast<int>(list.size())) {
-		const auto& pick = list[static_cast<std::size_t>(m_selected)];
+		}) && picked != list.end()) {
 		m_channels.push<gse::network::connect_request>({
 			.options = {
-				.addr = pick.addr,
+				.addr = picked->addr,
 				.local_bind = gse::network::address{
 					.ip = "0.0.0.0",
 					.port = 0
@@ -112,11 +112,11 @@ auto sandbox::network_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> 
 
 	if (ui.draw<gse::gui::button>({
 			.text = "Forget",
-		}) && m_selected >= 0 && m_selected < static_cast<int>(list.size())) {
+		}) && picked != list.end()) {
 		m_channels.push<gse::network::forget_server_request>({
-			.entry = list[static_cast<std::size_t>(m_selected)].name,
+			.entry = picked->name,
 		});
-		m_selected = -1;
+		m_selected = {};
 	}
 
 	if (ui.draw<gse::gui::button>({

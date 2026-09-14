@@ -104,6 +104,7 @@ export namespace gse::network {
 		[[= shared]] std::uint8_t connected_max_players = 0;
 		std::unique_ptr<client> client_ptr;
 		id accepted_controller{};
+		id announced_scene{};
 		std::vector<std::shared_ptr<discovery_provider>> providers;
 		std::vector<std::move_only_function<void(context&)>> deferred;
 		bool auto_connect_pending = true;
@@ -233,12 +234,14 @@ auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, da
 	}
 
 	for (const auto& req : requests_in.template of<connect_request>()) {
-		if (!d.client_ptr) {
+		if (!d.client_ptr || d.client_ptr->server_address() != req.options.addr) {
 			const address bind = req.options.local_bind.value_or(address{
 				.ip = "0.0.0.0",
 				.port = 0,
 			});
 			d.client_ptr = std::make_unique<client>(bind, req.options.addr);
+			d.accepted_controller = {};
+			d.announced_scene = {};
 		}
 		const bool started = d.client_ptr->connect(req.options.timeout, req.options.retry);
 		if (started) {
@@ -250,6 +253,8 @@ auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, da
 
 	for (const auto& _ : requests_in.template of<disconnect_request>()) {
 		d.client_ptr.reset();
+		d.accepted_controller = {};
+		d.announced_scene = {};
 		d.connection_status = "Disconnected";
 	}
 
@@ -428,7 +433,10 @@ auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, da
 						requests_out.push<activate_scene_request>({
 							.scene_id = m.scene_id,
 						});
-						log::println(log::category::network, "Server switched us to scene {}", m.scene_id);
+						if (m.scene_id != d.announced_scene) {
+							d.announced_scene = m.scene_id;
+							log::println(log::category::network, "Server switched us to scene {}", m.scene_id);
+						}
 						d.client_ptr->send(pong{
 							.sequence = 0,
 						});

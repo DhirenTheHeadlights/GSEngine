@@ -289,6 +289,7 @@ auto gse::network::endpoint::resend_reliable() -> void {
 			pkt.size = stream.bytes_written();
 			m_outgoing.push(pkt);
 
+			msg->sequence = header.sequence;
 			msg->sent_time = system_clock::now<time_t<std::uint64_t, milliseconds>>();
 			peer.note_sent(msg->sent_time);
 			++msg->send_count;
