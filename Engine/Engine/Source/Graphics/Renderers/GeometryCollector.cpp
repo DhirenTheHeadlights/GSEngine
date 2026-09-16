@@ -408,6 +408,7 @@ auto gse::renderer::geometry_collector::initialize(context& ctx, const shared_vi
 		d.transparent_indirect_commands_buffer[i] = gpu_s.device->create_buffer(
 			{
 				.size = normal_indirect_buffer_size,
+				.stride = sizeof(gpu::draw_mesh_tasks_indirect_command),
 				.usage = { gpu::buffer_flag::indirect, gpu::buffer_flag::storage, gpu::buffer_flag::transfer_dst },
 				.bindless = true
 			},

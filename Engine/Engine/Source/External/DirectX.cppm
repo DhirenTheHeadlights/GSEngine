@@ -1838,21 +1838,40 @@ auto gse::directx::blas_prebuild_info(ID3D12Device* device, const blas_triangles
 }
 
 auto gse::directx::tlas_prebuild_info(ID3D12Device* device, const std::uint32_t max_instances, std::uint64_t* out_acceleration_structure_size, std::uint64_t* out_build_scratch_size, std::uint64_t* out_update_scratch_size) -> void {
-	D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs = {};
-	inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
-	inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
-	inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_BUILD | D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE;
-	inputs.NumDescs = max_instances;
+	*out_acceleration_structure_size = 0;
+	*out_build_scratch_size = 0;
+	*out_update_scratch_size = 0;
 
 	com_ptr<ID3D12Device5> device5;
 	device->QueryInterface(IID_PPV_ARGS(device5.put()));
-	D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO info = {};
-	if (device5) {
-		device5->GetRaytracingAccelerationStructurePrebuildInfo(&inputs, &info);
+	if (!device5) {
+		return;
 	}
-	*out_acceleration_structure_size = info.ResultDataMaxSizeInBytes;
-	*out_build_scratch_size = info.ScratchDataSizeInBytes;
-	*out_update_scratch_size = info.UpdateScratchDataSizeInBytes;
+
+	const D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS flag_sets[] = {
+		D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_BUILD,
+		D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_BUILD | D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE,
+	};
+
+	for (const auto flags : flag_sets) {
+		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs = {};
+		inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
+		inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
+		inputs.Flags = flags;
+		inputs.NumDescs = max_instances;
+
+		D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO info = {};
+		device5->GetRaytracingAccelerationStructurePrebuildInfo(&inputs, &info);
+		if (info.ResultDataMaxSizeInBytes > *out_acceleration_structure_size) {
+			*out_acceleration_structure_size = info.ResultDataMaxSizeInBytes;
+		}
+		if (info.ScratchDataSizeInBytes > *out_build_scratch_size) {
+			*out_build_scratch_size = info.ScratchDataSizeInBytes;
+		}
+		if (info.UpdateScratchDataSizeInBytes > *out_update_scratch_size) {
+			*out_update_scratch_size = info.UpdateScratchDataSizeInBytes;
+		}
+	}
 }
 
 auto gse::directx::build_blas(ID3D12GraphicsCommandList* list, const std::uint64_t dst_address, const std::uint64_t scratch_address, const blas_triangles& triangles) -> void {
