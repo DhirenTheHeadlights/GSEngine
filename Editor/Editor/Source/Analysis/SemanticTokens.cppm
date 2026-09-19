@@ -1,7 +1,8 @@
 export module gse.ide.analysis:semantic_tokens;
 
+import gse.log;
+import gse.meta;
 import std;
-import gse;
 
 export namespace gse::ide::analysis {
 	struct semantic_kind_info {

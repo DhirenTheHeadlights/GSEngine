@@ -39,7 +39,8 @@ namespace gse::renderer::ui {
 		d.peak_vertices = std::max(d.peak_vertices, stats.vertices);
 		d.peak_batches = std::max(d.peak_batches, stats.batches);
 
-		const bool peak_grew = d.peak_vertices > d.reported_peak_vertices + d.reported_peak_vertices / 4;
+		const bool near_budget = d.peak_vertices * 2 > max_vertices;
+		const bool peak_grew = near_budget && d.peak_vertices > d.reported_peak_vertices + d.reported_peak_vertices / 4;
 		const bool changed = peak_grew || state != d.last_record_state || stats.extent.x() != d.last_extent.x() || stats.extent.y() != d.last_extent.y();
 		if (!changed) {
 			++d.frames_since_state_change;

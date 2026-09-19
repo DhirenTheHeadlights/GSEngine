@@ -139,27 +139,27 @@ auto gse::gpu::buffer::operator=(buffer&& other) noexcept -> buffer& {
 	return *this;
 }
 
-auto gse::gpu::buffer::handle() const -> gpu::handle<buffer> {
+inline auto gse::gpu::buffer::handle() const -> gpu::handle<buffer> {
 	return m_buffer;
 }
 
-auto gse::gpu::buffer::size_bytes() const -> device_size {
+inline auto gse::gpu::buffer::size_bytes() const -> device_size {
 	return m_size;
 }
 
-auto gse::gpu::buffer::size() const -> device_size {
+inline auto gse::gpu::buffer::size() const -> device_size {
 	return m_size;
 }
 
-auto gse::gpu::buffer::device_address() const -> gpu::device_address {
+inline auto gse::gpu::buffer::device_address() const -> gpu::device_address {
 	return m_address;
 }
 
-auto gse::gpu::buffer::slot() const -> bindless_slot {
+inline auto gse::gpu::buffer::slot() const -> bindless_slot {
 	return m_slot;
 }
 
-auto gse::gpu::buffer::valid() const -> bool {
+inline auto gse::gpu::buffer::valid() const -> bool {
 	return static_cast<bool>(m_buffer);
 }
 

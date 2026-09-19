@@ -1,6 +1,7 @@
 export module gse.ide.analysis:symbol_index_builder;
 
-import gse;
+import gse.core;
+import gse.meta;
 import std;
 
 import :compilation_database;

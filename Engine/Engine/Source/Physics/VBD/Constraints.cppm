@@ -208,6 +208,7 @@ export namespace gse::vbd {
 		vec3<angular_stiffness> drive_stiffness = {};
 		float drive_damping = 0.f;
 		torque drive_max_torque = {};
+		std::uint32_t device_target = 0;
 	};
 
 	struct [[= shaders::shader_struct]] body_state {
@@ -252,13 +253,13 @@ export namespace gse::vbd {
 	};
 }
 
-auto gse::vbd::body_state::inverse_mass() const -> gse::inverse_mass {
+inline auto gse::vbd::body_state::inverse_mass() const -> gse::inverse_mass {
 	if (locked) {
 		return gse::inverse_mass{ 0.f };
 	}
 	return 1.f / mass;
 }
 
-auto gse::vbd::body_state::sleeping() const -> bool {
+inline auto gse::vbd::body_state::sleeping() const -> bool {
 	return sleep_counter >= limits.sleep_threshold;
 }

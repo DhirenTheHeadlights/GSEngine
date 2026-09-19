@@ -83,7 +83,6 @@ auto gse::engine::install_actions() -> void {
 
 	m_actions_revision = m_actions.revision();
 	actions::adopt_declarations(*actions_state, m_actions);
-	actions::log_declared_bindings(*actions_state);
 	m_save.add(actions::settings_record(*actions_state, &settings::draw_controls_page));
 }
 
@@ -338,6 +337,13 @@ auto gse::engine::update() -> void {
 	}
 
 	install_actions();
+
+	if (!m_actions_logged && m_boot_tasks_done.load(std::memory_order_acquire) && m_scheduler.all_settled()) {
+		m_actions_logged = true;
+		if (auto* actions_state = m_scheduler.try_state_of<actions::data>()) {
+			actions::log_declared_bindings(*actions_state);
+		}
+	}
 
 	if (!m_settings_audited && m_boot_tasks_done.load(std::memory_order_acquire) && m_scheduler.all_settled()) {
 		m_settings_audited = true;

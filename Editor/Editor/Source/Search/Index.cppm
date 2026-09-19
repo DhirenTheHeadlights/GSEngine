@@ -1,9 +1,11 @@
 export module gse.ide.search:index;
 
-import std;
-import gse;
+import gse.core;
 import gse.ide.analysis;
 import gse.ide.diagnostic;
+import gse.math;
+import gse.meta;
+import std;
 
 import :types;
 

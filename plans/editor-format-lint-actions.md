@@ -13,7 +13,7 @@ Chosen behaviour (agreed up front): new rules *plus* a toggle each; the lint but
 
 | Piece | Location |
 |---|---|
-| Formatter | `Editor/Editor/Source/Format/Formatter.cppm` — `gse.ide.format:formatter`, 516 lines, pure |
+| Formatter | `Engine/Engine/Source/Format/Formatter.cppm` — `gse.format`, pure |
 | `compute` / `apply` | Formatter.cppm:289 / :502 |
 | Linter | `Editor/Editor/Source/Lint/Lint.cppm` — 58 lines, 2 rules |
 | Status bar | `Editor/Editor/Source/App/CodePanel.cppm:2082-2189` |
@@ -190,7 +190,7 @@ Consuming it anyway would mean the same file formats differently depending on wh
 
 1. **Byte vs display columns.** `format::edit` and `ide::text_edit` look nearly identical and mean different things. They must never be routed into each other's `apply`.
 2. **R4's two-phase requirement.** Single-pass integration corrupts inserted-line indentation.
-3. **Indent regression during P0.** The eligibility and anchor rules were hard-won against false positives. The original work validated them with a Python twin (`format_sim.py`) sweeping all 394 engine + editor files at 0 idempotence failures. Rebuild that twin from `plans/editor-auto-format.md` and re-sweep after P0 and after each rule, or regressions land unnoticed.
+3. **Indent regression during P0.** The eligibility and anchor rules were hard-won against false positives. The original work validated them with a Python twin (`format_sim.py`) sweeping all 394 engine + editor files at 0 idempotence failures. Rebuild that twin against the current `gse.format` rules and re-sweep after P0 and after each rule, or regressions land unnoticed.
 4. **Caret/anchor remap.** Wrong math means the caret jumps on every save — silent and constant. Multi-line and split cases both need covering.
 5. **Idempotence across composed rules.** `compute(apply(compute(x)))` must be empty for every combination of toggles, not just all-on.
 

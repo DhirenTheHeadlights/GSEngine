@@ -47,7 +47,6 @@ auto gse::renderer::rt_shadow::init(context& ctx, const shared_view<gpu::context
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::tlas>::frames_in_flight; ++i) {
 		d.tlas_per_frame[i] = gpu::build_tlas(*gpu_s.device, geometry_collector::data::max_instances);
-		log::println(log::category::render, "RT shadow: tlas[{}] device_addr=0x{:x} instance_buf_addr=0x{:x}", i, d.tlas_per_frame[i].device_address(), d.tlas_per_frame[i].instance_buffer().device_address());
 		d.tlas_ptrs[i] = &d.tlas_per_frame[i];
 		d.instances[i].reserve(geometry_collector::data::max_instances);
 	}
@@ -106,8 +105,8 @@ auto gse::renderer::rt_shadow::frame(context& ctx, shared_view<gpu::context::dat
 			max_index = std::max(max_index, idx);
 		}
 		const bool indices_out_of_range = !mesh_indices.empty() && max_index >= vertex_count;
-		log::println(log::category::render, "rt_shadow: BLAS build verts={} gpu_indices={} cpu_indices={} max_index={} oob={}", vertex_count, index_count, mesh_indices.size(), max_index, indices_out_of_range);
 		if (indices_out_of_range) {
+			log::println(log::level::warning, log::category::render, "rt_shadow: BLAS skipped, index out of range: verts={} gpu_indices={} cpu_indices={} max_index={}", vertex_count, index_count, mesh_indices.size(), max_index);
 			continue;
 		}
 

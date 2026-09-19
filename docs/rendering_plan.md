@@ -5,8 +5,7 @@ Single source of truth for the rendering pipeline. Lifetime tracker of what ship
 For workstream-specific deep dives, see:
 - [restir_plan.md](restir_plan.md) — phased ReSTIR (DI → GI → PT) rollout
 - [native_capture.md](native_capture.md) — Vulkan Video screenshot/clip system (shipped, kept as design record)
-- [extension_adoption_plan.md](extension_adoption_plan.md) — Vulkan extension audit
-- [vulkan_extensions.md](vulkan_extensions.md) — target hardware capability dump
+- [water_physics_plan.md](water_physics_plan.md) — fluid simulation and rendering (parked, design record only)
 
 ---
 

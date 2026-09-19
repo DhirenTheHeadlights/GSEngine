@@ -52,8 +52,7 @@ this box reads SM counters for Vulkan or DX12 compute in a headless process:
 - Nsight Graphics delimits captures on Present. The headless trainer never presents
   (`Headless device: presentation extensions not enabled`), so GPU Trace produced nothing.
   The windowed trainer would work but adds a render pass to every frame.
-- The engine's own timestamps and marks (`docs/gpu_intra_pass_timing_plan.md`) give per-dispatch
-  time, not why the time is spent.
+- The engine's own timestamps and marks give per-dispatch time, not why the time is spent.
 
 The Nsight Perf SDK reads the same hardware counters in-process from any NVIDIA GPU, with no
 window, no external tool, and no CUDA. It is the profiling analogue of the Aftermath crash-dump

@@ -1,0 +1,9 @@
+public static const uint loco_obs_dim = 30;
+public static const uint loco_act_dim = 10;
+public static const uint loco_prev_stride = 24;
+public static const uint loco_prev_valid = 6;
+public static const uint loco_prev_action = 8;
+public static const uint loco_act_slot_stride = 8;
+public static const uint loco_act_slot_valid = 6;
+public static const uint loco_reward_stride = 8;
+public static const uint loco_reward_done = 7;

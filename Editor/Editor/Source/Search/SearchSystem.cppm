@@ -1,11 +1,14 @@
 export module gse.ide.search:search_system;
 
-import std;
-import gse;
-
+import gse.concurrency;
+import gse.ecs;
+import gse.fs;
 import gse.ide.analysis;
-import gse.ide.config;
 import gse.ide.build;
+import gse.ide.config;
+import gse.math;
+import gse.time;
+import std;
 
 import :index;
 

@@ -363,7 +363,7 @@ auto gse::component_lock::operator=(component_lock&& other) noexcept -> componen
 	return *this;
 }
 
-gse::component_lock::~component_lock() {
+inline gse::component_lock::~component_lock() {
 	release();
 }
 

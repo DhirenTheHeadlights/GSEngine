@@ -1,6 +1,8 @@
 export module gse.ide.highlight:markdown_render;
 
-import gse;
+import gse.graphics;
+import gse.math;
+import gse.meta;
 import gse.syntax;
 import std;
 

@@ -131,6 +131,7 @@ auto gse::gpu::context::run(gse::context& ctx, data& d, const channel_read<gpu_r
 		d.render_graph->set_gpu_timestamps_enabled(d.gpu_timestamps_enabled);
 		d.render_graph->set_gpu_pipeline_stats_enabled(d.gpu_pipeline_stats_enabled);
 		d.render_graph->set_gpu_intra_pass_marks_enabled(d.gpu_intra_pass_marks_enabled);
+		d.render_graph->set_log_render_graph(d.log_render_graph);
 	}
 
 	d.device->set_perf_metrics({

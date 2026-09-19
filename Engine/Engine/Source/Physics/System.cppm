@@ -383,6 +383,15 @@ export namespace gse::physics {
 		bool gpu_sync_readback = false;
 
 		[[
+			= settings::describe<"Deliver the solver upload on the same-frame channel so the dispatch happens in the "
+									  "frame that produced it, instead of a next-frame channel that costs the control loop "
+									  "a tick. Implied by gpu_sync_readback.">{},
+			= settings::restart_required{},
+			= shared
+		]]
+		bool gpu_same_frame_upload = false;
+
+		[[
 			= settings::describe<"Fold the GPU solver's per-colour Gauss-Seidel dispatches into one sweep dispatch "
 									  "per iteration, sequencing colours inside the kernel with a device-scope barrier. "
 									  "Bit-identical to the unfolded loop and gate-validated on both backends. The barrier "
@@ -416,31 +425,32 @@ export namespace gse::physics {
 		int gpu_sweep_workgroups = 0;
 
 		[[
-			= settings::describe<"Number of constraint solver iterations per substep. Higher values reduce "
-									  "jitter at the cost of frame time.">{},
-			= settings::range<1, 40>{},
+			= settings::describe<"Constraint solver iterations per substep. With adaptive_solver_iterations off "
+									  "both solvers run exactly this many every substep; with it on this is the cap "
+									  "and either solver may stop as early as the first iteration. Higher values "
+									  "reduce jitter at the cost of frame time.">{},
+			= settings::range<1, 64>{},
 			= shared
 		]]
 		int solver_iterations = 15;
 
 		[[
-			= settings::describe<"Upper bound on adaptive solver iterations per substep. Past solver_iterations "
-									  "the solver keeps iterating only while the worst violation is above the "
-									  "convergence thresholds and still shrinking.">{},
-			= settings::range<1, 64>{},
+			= settings::describe<"Stop iterating as soon as the worst violation falls below the convergence "
+									  "thresholds or stops shrinking, checked from the first iteration with no "
+									  "lower bound. Off runs a fixed solver_iterations every substep.">{},
 			= shared
 		]]
-		int max_solver_iterations = 40;
+		bool adaptive_solver_iterations = false;
 
 		[[
-			= settings::describe<"Worst contact violation below which the adaptive iteration loop stops at the "
-									  "solver_iterations floor.">{}
+			= settings::describe<"Worst contact violation below which adaptive_solver_iterations stops the "
+									  "loop.">{}
 		]]
 		length convergence_threshold_linear = meters(1e-4f);
 
 		[[
-			= settings::describe<"Worst joint angular violation below which the adaptive iteration loop stops at "
-									  "the solver_iterations floor.">{}
+			= settings::describe<"Worst joint angular violation below which adaptive_solver_iterations stops the "
+									  "loop.">{}
 		]]
 		angle convergence_threshold_angular = radians(1e-3f);
 
@@ -539,6 +549,14 @@ export namespace gse::physics {
 			= shared
 		]]
 		bool trace_hashes = false;
+
+		[[
+			= settings::describe<"Log the age in ticks of the gpu body snapshot the solver served each step. The control "
+									  "loop is act -> dispatch -> readback -> observe, so this age is the loop length the "
+									  "policy actually faces, and one extra tick of it costs most of a locomotion policy.">{},
+			= shared
+		]]
+		bool trace_readback_age = false;
 
 		[[
 			= settings::describe<"Relaxation factor for the Jacobi solver. Lower values are more stable; "
@@ -655,6 +673,8 @@ export namespace gse::physics {
 			bool force_full_joints = false;
 			std::vector<joint_definition> joints;
 			std::vector<std::uint32_t> joint_slots;
+			[[= shared]] std::flat_map<id, std::uint32_t> joint_gpu_slots;
+			[[= shared]] std::uint64_t joint_gpu_slots_generation = 0;
 			std::vector<std::pair<id, std::uint32_t>> joint_body_index_entries;
 			std::flat_map<id, std::uint32_t> body_index;
 			std::vector<std::pair<id, std::uint32_t>> body_index_entries;

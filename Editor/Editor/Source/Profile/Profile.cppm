@@ -1,7 +1,14 @@
 export module gse.ide.profile;
 
+import gse.concurrency;
+import gse.core;
+import gse.diag;
+import gse.ecs;
+import gse.graphics;
+import gse.math;
+import gse.os;
+import gse.time;
 import std;
-import gse;
 
 export namespace gse::ide {
 	struct profile_row {

@@ -137,6 +137,10 @@ export namespace gse::gpu {
 			bool enabled
 		) -> void;
 
+		auto set_log_render_graph(
+			bool enabled
+		) -> void;
+
 		auto set_swapchain_clear(
 			color_clear value,
 			load_op op = load_op::clear
@@ -222,7 +226,8 @@ export namespace gse::gpu {
 			std::uint32_t mark_count = 0;
 			std::uint32_t mark_capacity = 0;
 			bool stats_issued = false;
-			time_t<std::uint64_t> cpu_ref{};
+			time_t<std::uint64_t> recorded_at{};
+			std::optional<timestamp_calibration> calibration;
 			std::uint64_t frame_counter = 0;
 			bool results_valid = false;
 		};
@@ -299,6 +304,7 @@ export namespace gse::gpu {
 		std::atomic<bool> m_gpu_timestamps_enabled{ true };
 		std::atomic<bool> m_gpu_pipeline_stats_enabled{ false };
 		std::atomic<bool> m_gpu_intra_pass_marks_enabled{ false };
+		std::atomic<bool> m_log_render_graph{ false };
 		std::uint32_t m_mark_capacity = 0;
 		time_t<double> m_timestamp_period_per_tick = nanoseconds(1.0);
 		std::uint64_t m_frames_submitted = 0;

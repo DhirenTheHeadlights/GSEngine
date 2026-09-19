@@ -42,17 +42,17 @@ A raw calibrated host counter is not comparable to anything on the trace timelin
 `gse.time` grows a rebase entry point, or you sample `system_clock::now` and the calibrated host
 value together and keep only the difference. This is required plumbing, not a detail.
 
-**The fix is currently unobservable, and that reorders the phases.** `trace::absorb_events`
+**The trace fix must precede visual validation.** `trace::absorb_events`
 (`Diag/Trace.cpp:355-395`) materialises spans from `event_type::begin` and `event_type::end` only;
 every other type falls through a `continue`. The render graph emits GPU spans as
 `begin_async_at` / `end_async_at` (`RenderGraph.cpp:202-203`, `:233-234`), so no `trace::node`
 with a GPU virtual tid is ever produced. `git log -S "async_begin"` over `Diag/Trace.cpp` returns
 one commit, meaning the consuming branch never existed.
 
-The other sink is offset-invariant: `profile::ingest_gpu_sample` (`Diag/ProfileAggregator.cpp:202-211`)
-takes a duration only, and that is what feeds the editor's live GPU table
-(`Editor/Editor/Source/Profile/Profile.cpp:1132-1133`, rendered at `:1200`). So changing the
-anchor cannot move a single number the editor shows today.
+The editor's live GPU table is offset-invariant: `profile::ingest_gpu_sample`
+(`Diag/ProfileAggregator.cpp:202-211`) takes a duration only. Nsight sample association in
+`RenderGraph.cpp::ingest_perf_metrics` does use the offset, so the assigned per-pass metrics can
+change even before GPU spans appear in the flame graph.
 
 Teaching `absorb_events` to close async pairs by tid and key is a prerequisite. Without it there
 is no way to verify the change, and no reason to make it.
@@ -114,10 +114,10 @@ device-loss forensics with no timing. Present timing (`Vulkan/Device.cpp:466-516
 `Gpu/Device/PresentPacer.cppm:47-80`) only differences consecutive samples, so it is
 domain-agnostic and never reaches the trace timeline.
 
-**`docs/gpu_intra_pass_timing_plan.md` does not cover this.** It describes query 0 at `:77-78` as
-"the CPU to GPU reference stamp" and its open questions at `:322-331` do not mention the anchor.
-Its accuracy gate at `:299-302` is "children sum to within a few percent of the parent", which is
-duration-based and blind to offset error. This work is unscoped relative to that plan.
+**The shipped intra-pass timing work does not cover this.** It treats query 0 as the CPU to GPU
+reference stamp and never raises the anchor as an open question. Its accuracy gate is "children
+sum to within a few percent of the parent", which is duration-based and blind to offset error.
+This work is unscoped relative to it.
 
 **No diagnostic exists that could fail on misalignment.** There is no test directory.
 `gse_trace_query` (`Tools/gse-mcp/server.mjs:332-435`) parses text log files, not span timelines,
@@ -130,7 +130,8 @@ part of the scope.
 ### Phase 1: make GPU spans observable
 
 Teach `absorb_events` (`Diag/Trace.cpp:355-395`) to close `async_begin` and `async_end` pairs by
-tid and key into `trace::node`s, the way it already does for begin and end. Add the negative-start
+event id and key into `trace::node`s, the way it already does for begin and end. CPU task async
+spans can end on a different thread, so tid alone cannot identify the pair. Add the negative-start
 guard before the `time_t<std::uint64_t>` narrowing at `RenderGraph.cpp:202,203,233,234,267`, and a
 `end >= start` check in `read_profile_slot` mirroring the encoder's.
 
@@ -164,6 +165,6 @@ where the GPU actually encoded.
 
 If nobody is going to do phase 1, delete the require at `Vulkan/Device.cpp:675` and the enable at
 `:897`. Nothing calls the extension, the editor's GPU numbers are duration-based and unaffected,
-and it is one fewer hard device requirement on machines that cannot meet it. See
-[headless-no-gpu-device.md](headless-no-gpu-device.md) for the machine that prompted this. Leaving
-it required and unused is the one option with no upside.
+and it is one fewer hard device requirement on machines that cannot meet it. A machine that could
+not meet it is what prompted this, and is also why `--no-engine-gpu` exists. Leaving it required
+and unused is the one option with no upside.

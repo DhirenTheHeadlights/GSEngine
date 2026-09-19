@@ -179,6 +179,10 @@ export namespace gse::vbd {
 
 		auto render_body_buffer() const -> const gpu::buffer&;
 
+		auto solve_body_buffer() const -> const gpu::buffer&;
+
+		auto solve_joint_buffer() const -> const gpu::buffer&;
+
 		auto dispatch_generation() const -> std::uint64_t;
 
 		auto retired_generation() const -> std::uint64_t;
@@ -186,6 +190,8 @@ export namespace gse::vbd {
 		auto readback_age_steps() const -> int;
 
 		auto readback_tick() const -> std::optional<std::uint64_t>;
+
+		auto dispatched_tick() const -> std::uint64_t;
 
 		auto latest_dispatch_complete() const -> bool;
 

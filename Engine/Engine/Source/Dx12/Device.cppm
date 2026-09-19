@@ -128,6 +128,10 @@ export namespace gse::dx12 {
 
 		[[nodiscard]] auto timestamp_period() const -> float;
 
+		[[nodiscard]] auto calibrated_timestamp(
+			gpu::queue_type queue
+		) const -> std::optional<gpu::timestamp_calibration>;
+
 		auto record_buffer_fill_u32(
 			gpu::command_buffer_handle cmd,
 			gpu::handle<gpu::buffer> buf,

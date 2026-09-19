@@ -44,7 +44,7 @@ export namespace sandbox::player_sync {
 		std::optional<gse::animation::locomotion_blend> clips;
 		correction_stats stats;
 		gse::interval_timer<> report_timer{ gse::seconds(2.f) };
-		gse::interval_timer<> identity_timer{ gse::seconds(2.f) };
+		std::size_t last_identity_hash = 0;
 		std::vector<player_state> deferred;
 		std::unordered_map<gse::id, remote_track> remotes;
 		double playback_step = 0.0;
@@ -128,18 +128,20 @@ auto sandbox::player_sync::run(gse::context& ctx, data& d, const gse::channel_re
 	const auto local_character = world_d.local_controlled_entity;
 	const auto* local_skeleton = local_character.exists() ? skeletons.find(local_character) : nullptr;
 	const auto local_proxy = local_skeleton ? local_skeleton->proxy : gse::id{};
-	if (d.identity_timer.tick()) {
-		gse::log::println(
-			gse::log::category::network,
-			"player_sync: character {} skeleton {} proxy {} transform {} motion {} motor {} controller {}",
+	{
+		const auto identity = std::format(
+			"player_sync: character {} skeleton {} proxy {} transform {} motion {} motor {}",
 			local_character.number(),
 			local_skeleton ? "present" : "missing",
 			local_proxy.number(),
 			transforms.find(local_proxy) ? "present" : "missing",
 			motions.find(local_proxy) ? "present" : "missing",
-			motors.find(local_proxy) ? "present" : "missing",
-			controller_d.sequence
+			motors.find(local_proxy) ? "present" : "missing"
 		);
+		if (const auto hash = std::hash<std::string_view>{}(identity); hash != d.last_identity_hash) {
+			d.last_identity_hash = hash;
+			gse::log::println(gse::log::category::network, "{} controller {}", identity, controller_d.sequence);
+		}
 	}
 
 	const auto history = phys_d.rollback_ring.size();

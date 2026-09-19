@@ -1,7 +1,9 @@
 export module gse.ide.analysis:diagnostics_system;
 
+import gse.concurrency;
+import gse.core;
+import gse.ecs;
 import std;
-import gse;
 
 import :diagnostics_runner;
 

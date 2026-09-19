@@ -212,6 +212,7 @@ export namespace gse {
 		state_registry m_states;
 		std::unordered_map<id, std::vector<id>> m_state_deps;
 		std::unordered_set<id> m_external_resources;
+		std::unordered_set<std::size_t> m_logged_cycle_warnings;
 		resource_registry m_resources_store;
 		channel_registry m_channels_store;
 		std::vector<system_node> m_hot_add_queue;

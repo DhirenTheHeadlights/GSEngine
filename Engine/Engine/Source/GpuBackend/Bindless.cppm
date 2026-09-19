@@ -140,10 +140,10 @@ auto gse::gpu::bindless_handle::operator=(bindless_handle&& other) noexcept -> b
 	return *this;
 }
 
-auto gse::gpu::bindless_handle::slot() const -> bindless_slot {
+inline auto gse::gpu::bindless_handle::slot() const -> bindless_slot {
 	return m_slot;
 }
 
-auto gse::gpu::bindless_handle::valid() const -> bool {
+inline auto gse::gpu::bindless_handle::valid() const -> bool {
 	return m_pool != nullptr;
 }

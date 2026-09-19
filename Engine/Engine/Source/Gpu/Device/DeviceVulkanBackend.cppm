@@ -31,6 +31,10 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto timestamp_period() const -> float;
 
+		[[nodiscard]] auto calibrated_timestamp(
+			queue_type queue
+		) const -> std::optional<timestamp_calibration>;
+
 		auto wait_for_crash_dump() -> void;
 
 		[[nodiscard]] auto fault_enabled() const -> bool;
@@ -463,6 +467,10 @@ auto gse::gpu::vulkan_device_backend::wait_idle() const -> void {
 
 auto gse::gpu::vulkan_device_backend::timestamp_period() const -> float {
 	return device_config.timestamp_period();
+}
+
+auto gse::gpu::vulkan_device_backend::calibrated_timestamp(const queue_type queue) const -> std::optional<timestamp_calibration> {
+	return device_config.calibrated_timestamp(queue);
 }
 
 auto gse::gpu::vulkan_device_backend::wait_for_crash_dump() -> void {

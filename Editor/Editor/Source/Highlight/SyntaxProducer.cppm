@@ -1,8 +1,13 @@
 export module gse.ide.highlight:syntax_producer;
 
-import gse;
+import gse.concurrency;
+import gse.core;
+import gse.graphics;
 import gse.ide.analysis;
 import gse.ide.diagnostic;
+import gse.log;
+import gse.math;
+import gse.meta;
 import gse.syntax;
 import std;
 

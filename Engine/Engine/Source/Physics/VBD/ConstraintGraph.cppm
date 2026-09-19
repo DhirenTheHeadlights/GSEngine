@@ -291,46 +291,46 @@ auto gse::vbd::constraint_graph::clear_joints() -> void {
 	m_joints.clear();
 }
 
-auto gse::vbd::constraint_graph::contact_constraints() -> std::vector<contact_constraint>& {
+inline auto gse::vbd::constraint_graph::contact_constraints() -> std::vector<contact_constraint>& {
 	return m_contacts;
 }
 
-auto gse::vbd::constraint_graph::contact_constraints() const -> std::span<const contact_constraint> {
+inline auto gse::vbd::constraint_graph::contact_constraints() const -> std::span<const contact_constraint> {
 	return m_contacts;
 }
 
-auto gse::vbd::constraint_graph::motor_constraints() -> std::vector<velocity_motor_constraint>& {
+inline auto gse::vbd::constraint_graph::motor_constraints() -> std::vector<velocity_motor_constraint>& {
 	return m_motors;
 }
 
-auto gse::vbd::constraint_graph::motor_constraints() const -> std::span<const velocity_motor_constraint> {
+inline auto gse::vbd::constraint_graph::motor_constraints() const -> std::span<const velocity_motor_constraint> {
 	return m_motors;
 }
 
-auto gse::vbd::constraint_graph::joint_constraints() -> std::vector<joint_constraint>& {
+inline auto gse::vbd::constraint_graph::joint_constraints() -> std::vector<joint_constraint>& {
 	return m_joints;
 }
 
-auto gse::vbd::constraint_graph::joint_constraints() const -> std::span<const joint_constraint> {
+inline auto gse::vbd::constraint_graph::joint_constraints() const -> std::span<const joint_constraint> {
 	return m_joints;
 }
 
-auto gse::vbd::constraint_graph::body_colors() const -> std::span<const std::vector<std::uint32_t>> {
+inline auto gse::vbd::constraint_graph::body_colors() const -> std::span<const std::vector<std::uint32_t>> {
 	return m_body_colors;
 }
 
-auto gse::vbd::constraint_graph::overflow_bodies() const -> std::span<const std::uint32_t> {
+inline auto gse::vbd::constraint_graph::overflow_bodies() const -> std::span<const std::uint32_t> {
 	return m_overflow_bodies;
 }
 
-auto gse::vbd::constraint_graph::body_contact_indices(const std::uint32_t body_idx) const -> std::span<const std::uint32_t> {
+inline auto gse::vbd::constraint_graph::body_contact_indices(const std::uint32_t body_idx) const -> std::span<const std::uint32_t> {
 	if (body_idx >= m_body_contacts.size()) {
 		return {};
 	}
 	return m_body_contacts[body_idx];
 }
 
-auto gse::vbd::constraint_graph::body_joint_indices(const std::uint32_t body_idx) const -> std::span<const std::uint32_t> {
+inline auto gse::vbd::constraint_graph::body_joint_indices(const std::uint32_t body_idx) const -> std::span<const std::uint32_t> {
 	if (body_idx >= m_body_joints.size()) {
 		return {};
 	}

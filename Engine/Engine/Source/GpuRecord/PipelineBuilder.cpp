@@ -236,7 +236,26 @@ auto gse::gpu::log_slang_diagnostics(slang::IBlob* diagnostics) -> void {
 	}
 	const std::string message(static_cast<const char*>(diagnostics->getBufferPointer()), diagnostics->getBufferSize());
 	const bool fatal = message.contains("error") || message.contains("fatal");
-	log::println(fatal ? log::level::error : log::level::warning, log::category::assets, "{}", message);
+	if (fatal) {
+		log::println(log::level::error, log::category::assets, "{}", message);
+		return;
+	}
+
+	std::string kept;
+	for (const auto line : std::views::split(std::string_view(message), '\n')) {
+		const std::string_view text(line.begin(), line.end());
+		if (text.contains("E41012")) {
+			continue;
+		}
+		if (!kept.empty()) {
+			kept += '\n';
+		}
+		kept += text;
+	}
+	if (kept.find_first_not_of(" \t\r\n") == std::string::npos) {
+		return;
+	}
+	log::println(log::level::warning, log::category::assets, "{}", kept);
 }
 
 auto gse::gpu::parse_body_file(const std::string_view body_source) -> parsed_body {

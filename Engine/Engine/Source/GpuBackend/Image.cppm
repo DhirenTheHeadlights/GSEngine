@@ -276,34 +276,34 @@ gse::gpu::image::image(const gpu::handle<image> image, const gpu::handle<image_v
 	: m_image(image), m_view(view), m_format(format), m_extent(extent), m_view_info(view_info), m_storage_slot(storage_slot), m_sampled_slot(sampled_slot) {
 }
 
-auto gse::gpu::image::handle() const -> gpu::handle<image> {
+inline auto gse::gpu::image::handle() const -> gpu::handle<image> {
 	return m_image;
 }
 
-auto gse::gpu::image::view() const -> gpu::handle<image_view> {
+inline auto gse::gpu::image::view() const -> gpu::handle<image_view> {
 	return m_view;
 }
 
-auto gse::gpu::image::format() const -> image_format {
+inline auto gse::gpu::image::format() const -> image_format {
 	return m_format;
 }
 
-auto gse::gpu::image::extent() const -> vec3u {
+inline auto gse::gpu::image::extent() const -> vec3u {
 	return m_extent;
 }
 
-auto gse::gpu::image::view_create_info() const -> const image_view_create_info& {
+inline auto gse::gpu::image::view_create_info() const -> const image_view_create_info& {
 	return m_view_info;
 }
 
-auto gse::gpu::image::storage_slot() const -> bindless_slot {
+inline auto gse::gpu::image::storage_slot() const -> bindless_slot {
 	return m_storage_slot;
 }
 
-auto gse::gpu::image::sampled_slot() const -> bindless_slot {
+inline auto gse::gpu::image::sampled_slot() const -> bindless_slot {
 	return m_sampled_slot;
 }
 
-auto gse::gpu::image::valid() const -> bool {
+inline auto gse::gpu::image::valid() const -> bool {
 	return static_cast<bool>(m_image);
 }

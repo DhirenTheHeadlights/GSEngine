@@ -1,6 +1,12 @@
 export module gse.ide.alloc;
 
-import gse;
+import gse.core;
+import gse.diag;
+import gse.fs;
+import gse.graphics;
+import gse.log;
+import gse.math;
+import gse.time;
 import std;
 
 export namespace gse::ide {
@@ -20,12 +26,6 @@ export namespace gse::ide {
 }
 
 namespace gse::ide {
-	constexpr double bytes_per_megabyte = 1024.0 * 1024.0;
-
-	auto megabytes_of(
-		std::int64_t bytes
-	) -> double;
-
 	auto refresh_alloc_sites(
 		alloc_view_state& state
 	) -> void;
@@ -50,14 +50,10 @@ namespace gse::ide {
 	) -> bool;
 }
 
-auto gse::ide::megabytes_of(const std::int64_t bytes) -> double {
-	return static_cast<double>(bytes) / bytes_per_megabyte;
-}
-
 auto gse::ide::refresh_alloc_sites(alloc_view_state& state) -> void {
 	state.usage = alloc::address_space_usage();
 	alloc::snapshot(state.sites);
-	std::ranges::sort(state.sites, std::ranges::greater{}, &alloc::site::live_bytes);
+	std::ranges::sort(state.sites, std::ranges::greater{}, &alloc::site::live);
 
 	for (const auto& entry : state.sites | std::views::take(state.top_rows)) {
 		if (!state.labels.contains(entry.pc)) {
@@ -128,10 +124,10 @@ auto gse::ide::draw_alloc_header(gui::builder& ui, const rectf& row, alloc_view_
 	ctx.queue_text({
 		.font = ctx.fonts.text,
 		.text = std::format(
-			"process   {:.1f} MB private   {:.1f} MB image   {:.1f} MB mapped",
-			megabytes_of(state.usage.private_committed),
-			megabytes_of(state.usage.image),
-			megabytes_of(state.usage.mapped)
+			"process   {:.1f:MiB} private   {:.1f:MiB} image   {:.1f:MiB} mapped",
+			state.usage.private_committed,
+			state.usage.image,
+			state.usage.mapped
 		),
 		.position = { row.left() + pad, row.top() - line_h },
 		.scale = sty.font_size,
@@ -142,11 +138,11 @@ auto gse::ide::draw_alloc_header(gui::builder& ui, const rectf& row, alloc_view_
 	ctx.queue_text({
 		.font = ctx.fonts.text,
 		.text = std::format(
-			"tracked   {:.1f} MB estimated live   {} samples   {} evicted   1 per {} KB",
-			megabytes_of(alloc::estimated_live_bytes()),
+			"tracked   {:.1f:MiB} estimated live   {} samples   {} evicted   1 per {:.0f:KiB}",
+			alloc::estimated_live(),
 			alloc::live_samples(),
 			alloc::evicted_samples(),
-			alloc::sample_interval() / 1024
+			alloc::sample_interval()
 		),
 		.position = { row.left() + pad, row.top() - line_h * 2.f - pad * 0.5f },
 		.scale = sty.font_size,
@@ -162,7 +158,7 @@ auto gse::ide::draw_alloc_row(gui::draw_context& ctx, const rectf& row, const al
 	const float fs = sty.font_size;
 	const float baseline = row.center().y() + code_view->vertical_center_offset(fs);
 
-	const std::string live = std::format("{:>10.2f} MB", megabytes_of(entry.live_bytes));
+	const std::string live = std::format("{:>10.2f:MiB}", entry.live);
 	ctx.queue_text({
 		.font = ctx.fonts.code,
 		.text = live,
@@ -172,14 +168,14 @@ auto gse::ide::draw_alloc_row(gui::draw_context& ctx, const rectf& row, const al
 		.clip_rect = row,
 	});
 
-	const std::string growth = std::format("{:>+10.2f} MB", megabytes_of(entry.since_mark_bytes));
+	const std::string growth = std::format("{:>+10.2f:MiB}", entry.since_mark);
 	const float growth_x = row.left() + pad + code_view->width(live, fs) + pad * 2.f;
 	ctx.queue_text({
 		.font = ctx.fonts.code,
 		.text = growth,
 		.position = { growth_x, baseline },
 		.scale = fs,
-		.color = entry.since_mark_bytes > 0 ? sty.color_accent : sty.color_text_secondary,
+		.color = entry.since_mark > byte_count(0) ? sty.color_accent : sty.color_text_secondary,
 		.clip_rect = row,
 	});
 

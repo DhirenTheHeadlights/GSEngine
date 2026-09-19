@@ -164,6 +164,10 @@ auto gse::gpu::device::timestamp_period() const -> float {
 	return m_vt->timestamp_period(m_backend.get());
 }
 
+auto gse::gpu::device::calibrated_timestamp(const queue_type queue) const -> std::optional<timestamp_calibration> {
+	return m_vt->calibrated_timestamp(m_backend.get(), queue);
+}
+
 auto gse::gpu::device::set_perf_metrics(const perf_metrics_config& config) -> void {
 	if (config == m_perf_metrics) {
 		return;
@@ -800,6 +804,16 @@ auto gse::gpu::device::host_upload_image_layers(const gpu::handle<image> img, co
 auto gse::gpu::device::create_buffer(const buffer_desc& desc, const std::string_view tag, const std::source_location& loc) -> buffer {
 	auto buf = m_vt->create_buffer(m_backend.get(), desc, tag, loc);
 	if (desc.bindless) {
+		assert(
+			buf.slot().valid(),
+			"'{}' ({} B) asked for a bindless slot and the backend had none left, so nothing can reach it: "
+			"shader writes through this binding and copies that name it are both discarded with no further diagnostic. "
+			"Raise the bindless buffer heap size or release a buffer. Created at {}:{}.",
+			tag,
+			desc.size,
+			loc.file_name(),
+			loc.line()
+		);
 		set_slot_resource(buf.slot().index, resource_ref{
 			.ptr = std::bit_cast<const void*>(buf.handle()),
 			.type = resource_type::buffer,

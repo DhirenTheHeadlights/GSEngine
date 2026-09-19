@@ -251,11 +251,15 @@ auto gse::vulkan::find_queue_families(const physical_device& device, const gpu::
 	const auto vk_device = std::bit_cast<vk::PhysicalDevice>(device.handle());
 	queue_family indices;
 	const auto queue_families = vk_device.getQueueFamilyProperties();
+	static std::atomic<bool> families_logged{ false };
+	const bool log_families = !families_logged.exchange(true, std::memory_order_relaxed);
 	for (std::uint32_t i = 0; i < queue_families.size(); i++) {
-		log::println(log::category::vulkan,
-			"Queue family {}: flags = {}",
-			i,
-			vk::to_string(queue_families[i].queueFlags));
+		if (log_families) {
+			log::println(log::category::vulkan,
+				"Queue family {}: flags = {}",
+				i,
+				vk::to_string(queue_families[i].queueFlags));
+		}
 		if (queue_families[i].queueFlags & vk::QueueFlagBits::eGraphics) {
 			indices.graphics_family = i;
 		}

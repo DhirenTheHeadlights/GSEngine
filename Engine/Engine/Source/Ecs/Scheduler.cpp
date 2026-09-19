@@ -384,6 +384,13 @@ auto gse::dep_path_exists(const std::vector<std::vector<component_dep>>& deps, c
 }
 
 auto gse::scheduler::wire_component_deps() -> void {
+	const auto warn_once = [this](const std::string& message) {
+		if (!m_logged_cycle_warnings.insert(std::hash<std::string_view>{}(message)).second) {
+			return;
+		}
+		log::println(log::level::warning, log::category::runtime, "{}", message);
+	};
+
 	std::unordered_map<id, std::vector<std::pair<std::size_t, id>>> writers;
 	std::unordered_map<id, std::vector<std::pair<std::size_t, id>>> structural_writers;
 	std::unordered_map<id, std::vector<std::pair<std::size_t, id>>> resource_writers;
@@ -556,14 +563,12 @@ auto gse::scheduler::wire_component_deps() -> void {
 					continue;
 				}
 				if (target == dep_kind::output) {
-					log::println(
-						log::level::warning,
-						log::category::runtime,
+					warn_once(std::format(
 						"scheduler: {} and {} both write {} and ordering them closes a cycle. dropping the write ordering — if both actually mutate it, one needs an explicit ordering annotation",
 						m_nodes[from].state_id,
 						m_nodes[to].state_id,
 						edge->via
-					);
+					));
 				}
 				else if (target == dep_kind::structural) {
 					dropped.push_back({
@@ -573,9 +578,7 @@ auto gse::scheduler::wire_component_deps() -> void {
 					});
 				}
 				else if (target == dep_kind::pinned) {
-					log::println(
-						log::level::warning,
-						log::category::runtime,
+					warn_once(std::format(
 						"scheduler: {} reads {} written by {}, but an explicit runs_after in the same cycle asks for the opposite order. honouring the annotation — {} now reads {} from before {} runs",
 						m_nodes[from].state_id,
 						edge->via,
@@ -583,17 +586,15 @@ auto gse::scheduler::wire_component_deps() -> void {
 						m_nodes[from].state_id,
 						edge->via,
 						m_nodes[to].state_id
-					);
+					));
 				}
 				else {
-					log::println(
-						log::level::warning,
-						log::category::runtime,
+					warn_once(std::format(
 						"scheduler: cyclic data dependency; {} reads {} written by {}, but that ordering closes a cycle. falling back to registration order — add an explicit ordering annotation to make this deterministic",
 						m_nodes[from].state_id,
 						edge->via,
 						m_nodes[to].state_id
-					);
+					));
 				}
 				list.erase(edge);
 				demoted = true;
@@ -612,14 +613,12 @@ auto gse::scheduler::wire_component_deps() -> void {
 	for (const auto& [accessor, structural_writer, via] : dropped) {
 		if (dep_path_exists(deps, state_to_index, accessor, structural_writer)
 			|| dep_path_exists(deps, state_to_index, structural_writer, accessor)) {
-			log::println(
-				log::level::warning,
-				log::category::runtime,
+			warn_once(std::format(
 				"scheduler: {} accesses {} while {} adds or removes it, and ordering them that way closes a cycle. they stay serialised by the reverse path, so the access sees the state from before the structural change",
 				m_nodes[accessor].state_id,
 				via,
 				m_nodes[structural_writer].state_id
-			);
+			));
 			continue;
 		}
 

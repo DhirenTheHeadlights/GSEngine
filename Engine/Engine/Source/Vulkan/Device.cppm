@@ -150,6 +150,10 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto timestamp_period() const -> float;
 
+		[[nodiscard]] auto calibrated_timestamp(
+			gpu::queue_type queue
+		) const -> std::optional<gpu::timestamp_calibration>;
+
 		[[nodiscard]] auto queue_family(
 			gpu::queue_type queue
 		) const -> std::uint32_t;

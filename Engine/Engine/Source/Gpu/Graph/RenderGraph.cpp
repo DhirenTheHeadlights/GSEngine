@@ -138,6 +138,10 @@ auto gse::gpu::render_graph::set_gpu_intra_pass_marks_enabled(const bool enabled
 	m_gpu_intra_pass_marks_enabled.store(enabled, std::memory_order_relaxed);
 }
 
+auto gse::gpu::render_graph::set_log_render_graph(const bool enabled) -> void {
+	m_log_render_graph.store(enabled, std::memory_order_relaxed);
+}
+
 auto gse::gpu::render_graph::profile_key(const std::uint64_t frame, const queue_type queue, const std::uint32_t index) -> std::uint64_t {
 	return (frame << 16) | (static_cast<std::uint64_t>(queue) << 14) | index;
 }
@@ -273,8 +277,29 @@ auto gse::gpu::render_graph::read_profile_slot(gpu_profile_slot& slot, const per
 	}
 
 	const auto period = m_timestamp_period_per_tick;
-	const auto gpu_ref = static_cast<double>(timestamps[0]) * period;
-	const auto offset = time_t<double>(slot.cpu_ref) - gpu_ref;
+	const auto mask = slot.calibration ? slot.calibration->valid_bits_mask : ~std::uint64_t{ 0 };
+	const auto calibrated_cpu_ref = slot.calibration
+		? system_clock::from_query_performance_counter(slot.calibration->host_ticks)
+		: time_t<double>{};
+	const auto calibrated_gpu_ref = slot.calibration ? slot.calibration->gpu_ticks & mask : 0;
+	const auto query_ref_delta = ((timestamps[0] & mask) - calibrated_gpu_ref) & mask;
+	const bool aligned = slot.calibration &&
+		calibrated_cpu_ref + static_cast<double>(query_ref_delta) * period + milliseconds(1.0) >= time_t<double>(slot.recorded_at);
+	if (slot.calibration && !aligned) {
+		static std::atomic<bool> reported{ false };
+		if (!reported.exchange(true, std::memory_order_relaxed)) {
+			log::println(log::level::warning, log::category::render, "GPU timestamp calibration precedes command recording; suppressing aligned GPU spans");
+		}
+	}
+	const auto stamp_to_cpu = [&](const std::uint64_t ticks) {
+		return calibrated_cpu_ref + static_cast<double>(((ticks & mask) - calibrated_gpu_ref) & mask) * period;
+	};
+	const auto span_between = [&](const std::uint64_t start, const std::uint64_t end) -> std::optional<time_t<double>> {
+		if (!slot.calibration && end < start) {
+			return std::nullopt;
+		}
+		return static_cast<double>(((end & mask) - (start & mask)) & mask) * period;
+	};
 
 	static constexpr std::array<std::uint32_t, queue_type_count> queue_tids{
 		trace::gpu_virtual_tid,
@@ -283,17 +308,26 @@ auto gse::gpu::render_graph::read_profile_slot(gpu_profile_slot& slot, const per
 	};
 
 	for (std::uint32_t i = 0; i < slot.pass_count; ++i) {
-		const auto start = static_cast<double>(timestamps[1 + i * 2]) * period + offset;
-		const auto end = static_cast<double>(timestamps[2 + i * 2]) * period + offset;
+		const auto span = span_between(timestamps[1 + i * 2], timestamps[2 + i * 2]);
+		if (!span) {
+			continue;
+		}
 		const auto gpu_id = slot.pass_types[i];
+		profile::ingest_gpu_sample(gpu_id, *span);
+		if (!aligned) {
+			continue;
+		}
+		const auto start = stamp_to_cpu(timestamps[1 + i * 2]);
+		if (start < time_t<double>{}) {
+			continue;
+		}
+		const auto end = start + *span;
 		const auto queue = slot.pass_queues[i];
 		const auto key = profile_key(slot.frame_counter, queue, i);
 		const auto tid = queue_tids[static_cast<std::size_t>(queue)];
 
 		trace::begin_async_at(gpu_id, key, tid, time_t<std::uint64_t>(start));
 		trace::end_async_at(gpu_id, key, tid, time_t<std::uint64_t>(end));
-
-		profile::ingest_gpu_sample(gpu_id, end - start);
 		ingest_perf_metrics(perf, gpu_id, start, end);
 	}
 
@@ -314,24 +348,32 @@ auto gse::gpu::render_graph::read_profile_slot(gpu_profile_slot& slot, const per
 				const auto index = order[k];
 				const auto& m = slot.marks[index];
 				const bool last_in_pass = k + 1 == order.size() || slot.marks[order[k + 1]].pass_slot != m.pass_slot;
-				const auto start = static_cast<double>(mark_times[index]) * period + offset;
-				const auto end = last_in_pass
-					? static_cast<double>(timestamps[2 + m.pass_slot * 2]) * period + offset
-					: static_cast<double>(mark_times[order[k + 1]]) * period + offset;
+				const auto end_ticks = last_in_pass ? timestamps[2 + m.pass_slot * 2] : mark_times[order[k + 1]];
+				const auto span = span_between(mark_times[index], end_ticks);
+				if (!span) {
+					continue;
+				}
+				profile::ingest_gpu_sample(m.label, *span);
+				if (!aligned) {
+					continue;
+				}
+				const auto start = stamp_to_cpu(mark_times[index]);
+				if (start < time_t<double>{}) {
+					continue;
+				}
+				const auto end = start + *span;
 				const auto queue = slot.pass_queues[m.pass_slot];
 				const auto key = profile_key(slot.frame_counter, queue, max_profiled_passes + index);
 				const auto tid = queue_tids[static_cast<std::size_t>(queue)];
 
 				trace::begin_async_at(m.label, key, tid, time_t<std::uint64_t>(start));
 				trace::end_async_at(m.label, key, tid, time_t<std::uint64_t>(end));
-
-				profile::ingest_gpu_sample(m.label, end - start);
 				ingest_perf_metrics(perf, m.label, start, end);
 			}
 		}
 	}
 
-	if (slot.stats_issued) {
+	if (slot.stats_issued && aligned) {
 		const auto [stats_status, stats] =
 			m_device->query_pool_results(slot.stats_pool, 0, slot.pass_count, sizeof(std::uint64_t) * stats_per_pass);
 
@@ -341,7 +383,10 @@ auto gse::gpu::render_graph::read_profile_slot(gpu_profile_slot& slot, const per
 				":clip_invocs",
 				":fs_invocs" };
 			for (std::uint32_t i = 0; i < slot.pass_count; ++i) {
-				const auto start = static_cast<double>(timestamps[1 + i * 2]) * period + offset;
+				const auto start = stamp_to_cpu(timestamps[1 + i * 2]);
+				if (start < time_t<double>{}) {
+					continue;
+				}
 				auto cache_it = m_stat_ids.find(slot.pass_types[i]);
 				if (cache_it == m_stat_ids.end()) {
 					const auto pass_name = std::string(slot.pass_types[i].tag());
@@ -412,7 +457,7 @@ auto gse::gpu::render_graph::frame_in_progress() const -> bool {
 }
 
 auto gse::gpu::render_graph::log_pass_graph(const std::span<const render_pass_data> passes) -> void {
-	if (!m_graph_report.tick()) {
+	if (!m_log_render_graph.load(std::memory_order_relaxed) || !m_graph_report.tick()) {
 		return;
 	}
 
@@ -562,6 +607,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		s.pass_count = 0;
 		s.mark_count = 0;
 		s.stats_issued = false;
+		s.calibration.reset();
 		s.results_valid = false;
 	};
 	for (auto& slots : m_profile_slots) {
@@ -945,7 +991,8 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			if (with_stats) {
 				pcmd.reset_query_pool(slot.stats_pool, 0, max_profiled_passes);
 			}
-			slot.cpu_ref = system_clock::now<trace::tick_step>();
+			slot.calibration = m_device->calibrated_timestamp(q);
+			slot.recorded_at = system_clock::now<trace::tick_step>();
 			slot.frame_counter = m_frames_submitted;
 			pcmd.write_timestamp(pipeline_stage_flag::all_commands, slot.timestamp_pool, 0);
 			pcmd.end();

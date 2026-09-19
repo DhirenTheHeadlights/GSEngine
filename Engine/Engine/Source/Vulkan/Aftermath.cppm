@@ -374,11 +374,4 @@ auto gse::vulkan::aftermath::register_spirv(std::span<const std::uint32_t> spirv
 	if (out) {
 		out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
 	}
-
-	log::println(
-		log::category::vulkan,
-		"Aftermath shader registered: {} ({} bytes)",
-		filename,
-		bytes.size()
-	);
 }

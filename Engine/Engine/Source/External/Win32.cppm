@@ -25,6 +25,10 @@ export module gse.win32;
 
 #ifdef _WIN32
 export namespace gse::win32 {
+	[[nodiscard]] auto performance_counter_frequency() -> unsigned long long;
+
+	[[nodiscard]] auto performance_counter() -> unsigned long long;
+
 	using ::HWND;
 	using ::WNDPROC;
 	using ::LRESULT;
@@ -418,5 +422,15 @@ export namespace gse::win32 {
 
 		return GetOpenFileNameW(&ofn) != 0;
 	}
+}
+
+auto gse::win32::performance_counter_frequency() -> unsigned long long {
+	LARGE_INTEGER frequency{};
+	return QueryPerformanceFrequency(&frequency) && frequency.QuadPart > 0 ? static_cast<unsigned long long>(frequency.QuadPart) : 0;
+}
+
+auto gse::win32::performance_counter() -> unsigned long long {
+	LARGE_INTEGER counter{};
+	return QueryPerformanceCounter(&counter) && counter.QuadPart > 0 ? static_cast<unsigned long long>(counter.QuadPart) : 0;
 }
 #endif

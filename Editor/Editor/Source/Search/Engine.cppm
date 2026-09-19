@@ -1,7 +1,9 @@
 export module gse.ide.search:engine;
 
-import gse;
+import gse.concurrency;
+import gse.core;
 import gse.ide.analysis;
+import gse.meta;
 import std;
 
 import :fuzzy;

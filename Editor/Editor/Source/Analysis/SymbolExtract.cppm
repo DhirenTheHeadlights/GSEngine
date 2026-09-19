@@ -1,6 +1,8 @@
 export module gse.ide.analysis:symbol_extract;
 
-import gse;
+import gse.core;
+import gse.log;
+import gse.meta;
 import std;
 
 import :semantic_tokens;

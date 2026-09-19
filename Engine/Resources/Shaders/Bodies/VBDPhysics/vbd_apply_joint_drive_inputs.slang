@@ -5,7 +5,9 @@ void vbd_apply_joint_drive_inputs(uint3 dispatch_id) {
     joint_drive_input input = joint_drive_input_data[ji];
     joint_constraint resident = joint_data[ji];
 
-    resident.drive_target = input.drive_target;
+    if (input.device_target == 0) {
+        resident.drive_target = input.drive_target;
+    }
     resident.activation = input.activation;
     resident.drive_stiffness = input.drive_stiffness;
     resident.drive_damping = input.drive_damping;

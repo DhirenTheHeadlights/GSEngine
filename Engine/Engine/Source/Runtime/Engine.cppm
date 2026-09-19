@@ -180,6 +180,7 @@ export namespace gse {
 		std::uint32_t m_boot_init_baseline_settled = 0;
 		bool m_boot_init_baseline_captured = false;
 		bool m_settings_audited = false;
+		bool m_actions_logged = false;
 		std::uint32_t m_frames_since_rendered = 0;
 		bool m_window_shown = false;
 		bool m_headless_gpu = false;

@@ -133,21 +133,21 @@ auto gse::ide::agent::usage_label(const usage_window& window) -> std::string {
 }
 
 auto gse::ide::agent::tool_output_label(const session_info& info) -> std::string {
-	if (info.tool_bytes <= 0) {
+	if (info.tool_bytes <= byte_count(0)) {
 		return "-";
 	}
 
-	const auto size_label = [](const std::int64_t bytes) {
-		if (bytes >= 1024 * 1024) {
-			return std::format("{:.1f} MB", static_cast<double>(bytes) / (1024.0 * 1024.0));
+	const auto size_label = [](const byte_count size) {
+		if (size >= mebibytes(1.0)) {
+			return std::format("{:.1f:MiB}", size);
 		}
-		if (bytes >= 1024) {
-			return std::format("{:.0f} KB", static_cast<double>(bytes) / 1024.0);
+		if (size >= kibibytes(1.0)) {
+			return std::format("{:.0f:KiB}", size);
 		}
-		return std::format("{} B", bytes);
+		return std::format("{:.0f:B}", size);
 	};
 
-	if (info.tool_peak <= 0) {
+	if (info.tool_peak <= byte_count(0)) {
 		return size_label(info.tool_bytes);
 	}
 	return std::format("{} \xC2\xB7 biggest {} from {}", size_label(info.tool_bytes), size_label(info.tool_peak), info.tool_peak_name);

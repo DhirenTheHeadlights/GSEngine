@@ -72,6 +72,12 @@ export namespace gse::gpu::context {
 		bool gpu_intra_pass_marks_enabled = false;
 
 		[[
+			= settings::describe<"Dump every render graph pass with its reads, writes and attachments to the log whenever "
+								  "the graph changes shape. Verbose: one block per pass.">{}
+		]]
+		bool log_render_graph = false;
+
+		[[
 			= settings::describe<"Sample NVIDIA GPU hardware counters (SM throughput, warp occupancy, stall reasons) and "
 								  "attribute them to render graph passes and marks. Needs the Nsight Perf SDK at build time, "
 								  "GPU timestamps at run time, and performance counter permission from the driver.">{}

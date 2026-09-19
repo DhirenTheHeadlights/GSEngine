@@ -1349,6 +1349,14 @@ auto gse::vbd::gpu_solver::render_body_buffer() const -> const gpu::buffer& {
 	return m_frames[1 - m_dispatch_slot].render_body_buffer;
 }
 
+auto gse::vbd::gpu_solver::solve_body_buffer() const -> const gpu::buffer& {
+	return m_frames[m_dispatch_slot].body_buffer;
+}
+
+auto gse::vbd::gpu_solver::solve_joint_buffer() const -> const gpu::buffer& {
+	return m_frames[m_dispatch_slot].joint_buffer;
+}
+
 auto gse::vbd::gpu_solver::dispatch_generation() const -> std::uint64_t {
 	return m_dispatch_generation;
 }
@@ -1374,6 +1382,13 @@ auto gse::vbd::gpu_solver::readback_tick() const -> std::optional<std::uint64_t>
 		return std::nullopt;
 	}
 	return m_generation_end_tick[served % m_generation_end_tick.size()];
+}
+
+auto gse::vbd::gpu_solver::dispatched_tick() const -> std::uint64_t {
+	if (m_dispatch_generation == 0) {
+		return 0;
+	}
+	return m_generation_end_tick[m_dispatch_generation % m_generation_end_tick.size()];
 }
 
 auto gse::vbd::gpu_solver::latest_dispatch_complete() const -> bool {
@@ -1499,13 +1514,13 @@ struct gse::vbd::gpu_solver::solve_plan {
 	std::uint32_t color_cap = 0;
 	std::uint32_t color_launch_bound = 0;
 	std::uint32_t num_iterations = 0;
-	std::uint32_t adaptive_iterations = 0;
 	std::uint32_t substeps = 0;
 	std::uint32_t substeps_per_tick = 1;
 	std::vector<std::uint32_t> impulse_offsets;
 	std::vector<std::uint32_t> impulse_counts;
 	std::size_t joint_upload_size = 0;
 	float solve_alpha = 0.f;
+	bool adaptive = false;
 	bool apply_all_body_inputs = false;
 	bool preserve_warm_starts = false;
 	bool use_jacobi = false;
@@ -1649,7 +1664,7 @@ auto gse::vbd::gpu_solver::build_solve_plan(solve_plan& out) -> void {
 	out.color_cap = color_cap;
 	out.color_launch_bound = color_launch_bound;
 	out.num_iterations = m_solver_cfg.iterations;
-	out.adaptive_iterations = std::max(m_solver_cfg.iterations, m_solver_cfg.max_iterations);
+	out.adaptive = m_solver_cfg.adaptive != 0;
 	out.substeps = total;
 	out.substeps_per_tick = std::max(total / std::max(m_ticks, 1u), 1u);
 	out.impulse_offsets = m_impulse_offsets;
@@ -2030,7 +2045,7 @@ auto gse::vbd::gpu_solver::stage_solve_iterations(const solve_plan& p, const std
 	const bool fold_lambda = p.joint_count > 0 && !p.use_jacobi;
 	const bool island_lambda = fold_lambda && p.jointless_body_count == 0;
 
-	for (std::uint32_t it = 0; it < p.adaptive_iterations; ++it) {
+	for (std::uint32_t it = 0; it < p.num_iterations; ++it) {
 		rec.bind(m_compute.solve_color_pipeline);
 		auto color_pc = p.push_constants(0u, limits.max_colors, sub, it, p.solve_alpha);
 
@@ -2067,7 +2082,7 @@ auto gse::vbd::gpu_solver::stage_solve_iterations(const solve_plan& p, const std
 			color_pc.color_offset = 0xFFFFFFFFu;
 			color_pc.fold_lambda = 1u;
 			if (island_lambda) {
-				color_pc.lambda_pass = it + 1 >= p.num_iterations ? 2u : 1u;
+				color_pc.lambda_pass = p.adaptive ? 2u : 1u;
 			}
 			rec.mark(m_solve_marks.island);
 			rec.push_bindings<solve_color_entry>(color_pc, bindings);
@@ -2108,9 +2123,13 @@ auto gse::vbd::gpu_solver::stage_solve_iterations(const solve_plan& p, const std
 			rec.dispatch(p.joint_workgroups, 1, 1);
 		}
 
+		if (!p.adaptive) {
+			continue;
+		}
+
 		rec.mark(m_solve_marks.convergence);
 		rec.bind(m_compute.convergence_check_pipeline);
-		rec.push_bindings<convergence_check_entry>(p.push_constants(it, p.num_iterations, sub, it, p.solve_alpha), bindings);
+		rec.push_bindings<convergence_check_entry>(p.push_constants(0u, 1u, sub, it, p.solve_alpha), bindings);
 		rec.dispatch(1, 1, 1);
 	}
 }

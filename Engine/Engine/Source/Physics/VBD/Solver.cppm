@@ -45,7 +45,7 @@ export namespace gse::vbd {
 		angle convergence_threshold_angular = radians(1e-3f);
 		float convergence_speed_scale = 0.f;
 		std::uint32_t min_iterations = 4;
-		std::uint32_t max_iterations = 40;
+		std::uint32_t adaptive = 0;
 		float linear_damping = 0.f;
 		float angular_damping = 0.01f;
 		std::uint32_t use_jacobi = 0;

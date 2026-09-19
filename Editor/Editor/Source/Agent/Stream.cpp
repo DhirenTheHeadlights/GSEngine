@@ -282,20 +282,20 @@ auto gse::ide::agent::record_tool_output(const analysis::json::value& message, s
 		}
 
 		const analysis::json::value* body = block.find("content");
-		std::int64_t bytes = 0;
+		byte_count size;
 		if (body && body->type == analysis::json::value::kind::string) {
-			bytes = static_cast<std::int64_t>(body->as_string().size());
+			size = byte_count(body->as_string().size());
 		}
 		else if (body && body->is_array()) {
 			for (const analysis::json::value& part : body->children) {
-				bytes += static_cast<std::int64_t>(string_at(part, "text").size());
+				size += byte_count(string_at(part, "text").size());
 			}
 		}
-		if (bytes <= 0) {
+		if (size <= byte_count(0)) {
 			continue;
 		}
 
-		info.tool_bytes += bytes;
+		info.tool_bytes += size;
 
 		std::string name = "tool";
 		const auto found = info.tool_names.find(std::string(string_at(block, "tool_use_id")));
@@ -303,8 +303,8 @@ auto gse::ide::agent::record_tool_output(const analysis::json::value& message, s
 			name = found->second;
 			info.tool_names.erase(found);
 		}
-		if (bytes > info.tool_peak) {
-			info.tool_peak = bytes;
+		if (size > info.tool_peak) {
+			info.tool_peak = size;
 			info.tool_peak_name = std::move(name);
 		}
 	}

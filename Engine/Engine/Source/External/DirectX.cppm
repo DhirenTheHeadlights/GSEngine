@@ -730,6 +730,16 @@ export namespace gse::directx {
 		ID3D12CommandQueue* queue
 	) -> std::uint64_t;
 
+	struct clock_calibration {
+		std::uint64_t gpu_ticks = 0;
+		std::uint64_t host_ticks = 0;
+		bool valid = false;
+	};
+
+	[[nodiscard]] auto calibrate_clock(
+		ID3D12CommandQueue* queue
+	) -> clock_calibration;
+
 	[[nodiscard]] auto supports_unordered_access(
 		ID3D12Resource* resource
 	) -> bool;
@@ -1806,6 +1816,15 @@ auto gse::directx::timestamp_frequency(ID3D12CommandQueue* queue) -> std::uint64
 		return 0;
 	}
 	return frequency;
+}
+
+auto gse::directx::calibrate_clock(ID3D12CommandQueue* queue) -> clock_calibration {
+	clock_calibration result;
+	if (FAILED(queue->GetClockCalibration(&result.gpu_ticks, &result.host_ticks))) {
+		return result;
+	}
+	result.valid = true;
+	return result;
 }
 
 auto gse::directx::blas_prebuild_info(ID3D12Device* device, const blas_triangles& triangles, std::uint64_t* out_acceleration_structure_size, std::uint64_t* out_scratch_size) -> void {

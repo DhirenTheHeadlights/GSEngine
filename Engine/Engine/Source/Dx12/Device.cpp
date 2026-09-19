@@ -416,6 +416,18 @@ auto gse::dx12::device::timestamp_period() const -> float {
 	return static_cast<float>(1.0e9 / static_cast<double>(frequency));
 }
 
+auto gse::dx12::device::calibrated_timestamp(const gpu::queue_type queue) const -> std::optional<gpu::timestamp_calibration> {
+	const auto sample = directx::calibrate_clock(command_queue(queue));
+	if (!sample.valid) {
+		return std::nullopt;
+	}
+	return gpu::timestamp_calibration{
+		.gpu_ticks = sample.gpu_ticks,
+		.host_ticks = sample.host_ticks,
+		.valid_bits_mask = ~std::uint64_t{ 0 }
+	};
+}
+
 auto gse::dx12::device::cmd_write_timestamp(const gpu::command_buffer_handle cmd, const gpu::handle<gpu::query_pool> pool_handle, const std::uint32_t index) -> void {
 	auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(cmd);
 	auto* pool = std::bit_cast<timestamp_query_pool*>(pool_handle);

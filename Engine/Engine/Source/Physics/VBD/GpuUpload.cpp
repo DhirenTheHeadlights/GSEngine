@@ -245,6 +245,20 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 				});
 			}
 		}
+		{
+			trace::scope_guard _{ trace_id<"vbd_gpu::build_joints::slot_map">() };
+			constexpr auto unresolved = std::numeric_limits<std::uint32_t>::max();
+			std::vector<std::pair<id, std::uint32_t>> slot_entries;
+			slot_entries.reserve(d.joint_slots.size());
+			for (std::size_t i = 0; i < d.joint_slots.size(); ++i) {
+				if (d.joint_slots[i] != unresolved) {
+					slot_entries.emplace_back(owners[i], d.joint_slots[i]);
+				}
+			}
+			d.joint_gpu_slots.clear();
+			d.joint_gpu_slots.insert(slot_entries.begin(), slot_entries.end());
+			++d.joint_gpu_slots_generation;
+		}
 		d.force_full_joints = !rest_orientations.empty();
 		d.joint_body_index_entries = d.body_index_entries;
 		d.uploaded_joint_count = static_cast<std::uint32_t>(gpu_joints.size());
@@ -283,6 +297,7 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 						input.drive_stiffness = drive->stiffness;
 						input.drive_damping = drive->damping;
 						input.drive_max_torque = drive->max_torque;
+						input.device_target = drive->device_target ? 1u : 0u;
 					}
 					else {
 						input.drive_stiffness = {};
@@ -317,7 +332,7 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 			.motors_per_tick = motors_per_tick,
 			.impulse_counts = std::move(impulse_counts),
 		};
-		if (phys.gpu_sync_readback) {
+		if (phys.gpu_sync_readback || phys.gpu_same_frame_upload) {
 			out.push<gpu_upload_payload>({
 				.upload = std::move(upload),
 			});

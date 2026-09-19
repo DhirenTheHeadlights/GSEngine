@@ -192,7 +192,7 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 
 		if (auto unit = d.encoder.take_bitstream()) {
 			const bool was_keyframe = unit->keyframe;
-			const auto byte_count = unit->bytes.size();
+			const byte_count emitted(unit->bytes.size());
 
 			if (d.recording->active.load()) {
 				enqueue_unit(*d.recording, {
@@ -207,8 +207,8 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 				d.first_ring_push_logged = true;
 				log::println(
 					log::category::render,
-					"First clip ring push: {} bytes, keyframe={}",
-					byte_count,
+					"First clip ring push: {:.0f:B}, keyframe={}",
+					emitted,
 					was_keyframe
 				);
 			}

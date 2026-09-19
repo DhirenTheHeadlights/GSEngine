@@ -345,9 +345,13 @@ export namespace gse::inline quantities {
 	constexpr internal::unit<data_size_tag, std::ratio<8'000>, "kB"> kilobytes;
 	constexpr internal::unit<data_size_tag, std::ratio<8'000'000>, "MB"> megabytes;
 	constexpr internal::unit<data_size_tag, std::ratio<8'000'000'000>, "GB"> gigabytes;
+	constexpr internal::unit<data_size_tag, std::ratio<8'192>, "KiB"> kibibytes;
+	constexpr internal::unit<data_size_tag, std::ratio<8'388'608>, "MiB"> mebibytes;
+	constexpr internal::unit<data_size_tag, std::ratio<8'589'934'592>, "GiB"> gibibytes;
 
 	template <typename T = float, auto... U> using data_size_t = internal::quantity_t<data_size_tag, T, U...>;
 	using data_size = data_size_t<>;
+	using byte_count = data_size_t<double, bytes>;
 
 	struct [[= internal::quantity_root<^^internal::dimi<0, -1, 0, 0, 1>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "b/s">]] bitrate_tag {};
 
@@ -508,5 +512,20 @@ namespace gse::internal {
 	);
 	static_assert(
 		std::same_as<unit_list_t<force_tag>, unit_set<std::remove_cvref_t<decltype(newtons)>, std::remove_cvref_t<decltype(pounds_force)>>>
+	);
+	static_assert(
+		!std::same_as<tag_canonical_unit_t<time_tag>, time::default_unit>
+	);
+	static_assert(
+		time(gse::sqrt(meters(9.81f) / meters_per_second_squared(9.81f))).as<seconds>() > 0.999f &&
+		time(gse::sqrt(meters(9.81f) / meters_per_second_squared(9.81f))).as<seconds>() < 1.001f
+	);
+	static_assert(
+		gse::sqrt(meters(9.81f) / meters_per_second_squared(9.81f)) > seconds(0.5f) &&
+		gse::sqrt(meters(9.81f) / meters_per_second_squared(9.81f)) < seconds(2.f)
+	);
+	static_assert(
+		time(1.f / per_second(4.f)).as<seconds>() > 0.249f &&
+		time(1.f / per_second(4.f)).as<seconds>() < 0.251f
 	);
 }

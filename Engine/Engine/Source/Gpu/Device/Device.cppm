@@ -42,6 +42,10 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto timestamp_period() const -> float;
 
+		[[nodiscard]] auto calibrated_timestamp(
+			queue_type queue
+		) const -> std::optional<timestamp_calibration>;
+
 		struct perf_metrics_config {
 			bool enabled = false;
 			std::string metrics;

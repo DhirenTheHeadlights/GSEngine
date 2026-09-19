@@ -270,8 +270,10 @@ auto gse::gpu::frame::begin() -> std::expected<frame_token, frame_status> {
 
 		if (m_primary_pacer.healthy() != pacing_last_healthy) {
 			pacing_last_healthy = m_primary_pacer.healthy();
-			++pacing_transitions;
-			if (pacing_transitions <= pacing_transition_log_limit) {
+			if (present_total >= pacing_health_check_frame) {
+				++pacing_transitions;
+			}
+			if (present_total >= pacing_health_check_frame && pacing_transitions <= pacing_transition_log_limit) {
 				log::println(
 					log::category::render,
 					"present pacing {} after {} presents (samples_seen={} samples_used={}): dt now driven by {}{}",

@@ -10,5 +10,6 @@ export namespace gse::physics {
 		[[= networked]] float damping = 0.f;
 		[[= networked]] torque max_torque = newton_meters(0.f);
 		[[= networked]] bool enabled = true;
+		[[= networked]] bool device_target = false;
 	};
 }

@@ -1,7 +1,12 @@
 export module gse.ide.analysis:diagnostics_runner;
 
-import gse;
+import gse.concurrency;
+import gse.core;
 import gse.ide.diagnostic;
+import gse.log;
+import gse.math;
+import gse.meta;
+import gse.time;
 import std;
 
 import :compilation_database;

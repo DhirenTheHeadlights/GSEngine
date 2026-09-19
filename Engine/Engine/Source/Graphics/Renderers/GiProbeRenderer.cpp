@@ -154,16 +154,6 @@ auto gse::renderer::gi_probe::init(context& ctx, const shared_view<gpu::context:
 			}
 		);
 	}
-	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-		log::println(
-			log::category::render,
-			"gi_probe: material frame={} slot={} address=0x{:x} bytes={}",
-			i,
-			gc_state.material_palette_buffers[i].slot().index,
-			gc_state.material_palette_buffers[i].device_address(),
-			gc_state.material_palette_buffers[i].size()
-		);
-	}
 
 	gpu::context::on_swap_chain_recreate(
 		gpu_s,

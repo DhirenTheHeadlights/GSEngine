@@ -185,12 +185,16 @@ auto gse::vulkan::device::create_swap_chain(const gpu::surface surface, const ve
 				return "Unknown";
 		}
 	};
-	log::println(
-		log::category::vulkan,
-		"Present mode: requested {}, granted {}",
-		mode_name(requested_present_mode),
-		mode_name(present_mode)
-	);
+	const auto present_key = (static_cast<std::int64_t>(requested_present_mode) << 32) | static_cast<std::uint32_t>(present_mode);
+	static std::atomic<std::int64_t> last_present_key{ -1 };
+	if (last_present_key.exchange(present_key, std::memory_order_relaxed) != present_key) {
+		log::println(
+			log::category::vulkan,
+			"Present mode: requested {}, granted {}",
+			mode_name(requested_present_mode),
+			mode_name(present_mode)
+		);
+	}
 
 	vk::Extent2D extent;
 	if (vk_capabilities.currentExtent.width != std::numeric_limits<std::uint32_t>::max()) {
@@ -219,13 +223,16 @@ auto gse::vulkan::device::create_swap_chain(const gpu::surface surface, const ve
 		image_count = vk_capabilities.maxImageCount;
 	}
 
-	log::println(
-		log::category::vulkan,
-		"Swapchain image count: requested {}, min {}, max {}",
-		image_count,
-		vk_capabilities.minImageCount,
-		vk_capabilities.maxImageCount
-	);
+	static std::atomic<std::uint32_t> last_image_count{ 0 };
+	if (last_image_count.exchange(image_count, std::memory_order_relaxed) != image_count) {
+		log::println(
+			log::category::vulkan,
+			"Swapchain image count: requested {}, min {}, max {}",
+			image_count,
+			vk_capabilities.minImageCount,
+			vk_capabilities.maxImageCount
+		);
+	}
 
 	vk::SwapchainCreateInfoKHR create_info{
 		.flags = vk::SwapchainCreateFlagBitsKHR::ePresentTimingEXT | vk::SwapchainCreateFlagBitsKHR::ePresentId2,
@@ -1081,6 +1088,31 @@ auto gse::vulkan::device::wait_idle() const -> void {
 
 auto gse::vulkan::device::timestamp_period() const -> float {
 	return m_physical_device.timestamp_period();
+}
+
+auto gse::vulkan::device::calibrated_timestamp(const gpu::queue_type queue) const -> std::optional<gpu::timestamp_calibration> {
+	const auto valid_bits = m_physical_device.timestamp_valid_bits(queue_family(queue));
+	if (valid_bits == 0) {
+		return std::nullopt;
+	}
+	const auto domains = m_physical_device.calibrateable_time_domains();
+	if (!std::ranges::contains(domains, vk::TimeDomainKHR::eDevice) ||
+		!std::ranges::contains(domains, vk::TimeDomainKHR::eQueryPerformanceCounter)) {
+		return std::nullopt;
+	}
+	const std::array infos{
+		vk::CalibratedTimestampInfoKHR{ .timeDomain = vk::TimeDomainKHR::eDevice },
+		vk::CalibratedTimestampInfoKHR{ .timeDomain = vk::TimeDomainKHR::eQueryPerformanceCounter }
+	};
+	const auto [result, values] = m_device.getCalibratedTimestampsKHR(infos);
+	if (result != vk::Result::eSuccess || values.first.size() != infos.size()) {
+		return std::nullopt;
+	}
+	return gpu::timestamp_calibration{
+		.gpu_ticks = values.first[0],
+		.host_ticks = values.first[1],
+		.valid_bits_mask = valid_bits >= 64 ? ~std::uint64_t{ 0 } : (std::uint64_t{ 1 } << valid_bits) - 1
+	};
 }
 
 auto gse::vulkan::device::query_fault_counts(gpu::device_fault_counts& counts) const -> gpu::result {

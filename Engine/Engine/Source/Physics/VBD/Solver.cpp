@@ -610,10 +610,10 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 
 	{
 		trace::scope_guard _{ trace_id<"vbd::iterations">() };
-		const int max_iterations = std::max(num_iterations, static_cast<int>(m_config.max_iterations));
+		const bool adaptive = m_config.adaptive != 0;
 		length linear_threshold = m_config.convergence_threshold_linear;
 		angle angular_threshold = m_config.convergence_threshold_angular;
-		if (m_config.convergence_speed_scale > 0.f) {
+		if (adaptive && m_config.convergence_speed_scale > 0.f) {
 			velocity max_speed{};
 			angular_velocity max_angular_speed{};
 			for (const auto& body : m_bodies) {
@@ -629,11 +629,22 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 			.linear = meters(std::numeric_limits<float>::max()),
 			.angular = radians(std::numeric_limits<float>::max())
 		};
-		for (int it = 0; it < max_iterations; ++it) {
+		for (int it = 0; it < num_iterations; ++it) {
 			solve_iteration(solve_alpha);
 			const auto contact_delta = update_dual(solve_alpha, it);
 			const auto joint_delta = update_joint_dual(h_squared, it);
-			if (it + 1 < num_iterations) {
+			if (m_config.trace_body != 0xFFFFFFFFu) {
+				log::println(
+					log::category::physics,
+					"cpu residual it {}: contact_lin {:.9f} contact_ang {:.9f} joint_lin {:.9f} joint_ang {:.9f}",
+					it,
+					contact_delta.linear,
+					contact_delta.angular,
+					joint_delta.linear,
+					joint_delta.angular
+				);
+			}
+			if (!adaptive) {
 				continue;
 			}
 			const length linear = std::max(contact_delta.linear, joint_delta.linear);

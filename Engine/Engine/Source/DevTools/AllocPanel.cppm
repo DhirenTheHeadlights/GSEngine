@@ -37,10 +37,6 @@ export namespace gse::alloc_panel {
 }
 
 namespace gse::alloc_panel {
-	auto megabytes_of(
-		std::int64_t bytes
-	) -> double;
-
 	auto refresh(
 		data& d
 	) -> void;
@@ -51,15 +47,10 @@ namespace gse::alloc_panel {
 	) -> void;
 }
 
-auto gse::alloc_panel::megabytes_of(const std::int64_t bytes) -> double {
-	constexpr double bytes_per_megabyte = 1024.0 * 1024.0;
-	return static_cast<double>(bytes) / bytes_per_megabyte;
-}
-
 auto gse::alloc_panel::refresh(data& d) -> void {
 	d.usage = alloc::address_space_usage();
 	alloc::snapshot(d.sites);
-	std::ranges::sort(d.sites, std::ranges::greater{}, &alloc::site::live_bytes);
+	std::ranges::sort(d.sites, std::ranges::greater{}, &alloc::site::live);
 
 	for (const auto& row : d.sites | std::views::take(d.top_rows)) {
 		if (!d.labels.contains(row.pc)) {
@@ -69,19 +60,19 @@ auto gse::alloc_panel::refresh(data& d) -> void {
 }
 
 auto gse::alloc_panel::build_panel(data& d, gui::builder& ui) -> void {
-	ui.draw<gui::value<double>>({
-		.name = "Process private (MB)",
-		.val = megabytes_of(d.usage.private_committed),
+	ui.draw<gui::quantity_value<byte_count, mebibytes>>({
+		.name = "Process private",
+		.val = d.usage.private_committed,
 	});
 
-	ui.draw<gui::value<double>>({
-		.name = "Process image (MB)",
-		.val = megabytes_of(d.usage.image),
+	ui.draw<gui::quantity_value<byte_count, mebibytes>>({
+		.name = "Process image",
+		.val = d.usage.image,
 	});
 
-	ui.draw<gui::value<double>>({
-		.name = "Estimated live (MB)",
-		.val = megabytes_of(alloc::estimated_live_bytes()),
+	ui.draw<gui::quantity_value<byte_count, mebibytes>>({
+		.name = "Estimated live",
+		.val = alloc::estimated_live(),
 	});
 
 	ui.draw<gui::value<std::int64_t>>({
@@ -141,9 +132,9 @@ auto gse::alloc_panel::build_panel(data& d, gui::builder& ui) -> void {
 	for (const auto& row : d.sites | std::views::take(d.top_rows)) {
 		ui.draw<gui::text>({
 			.content = std::format(
-				"{:>9.2f} MB {:>+9.2f} MB  {}",
-				megabytes_of(row.live_bytes),
-				megabytes_of(row.since_mark_bytes),
+				"{:>9.2f:MiB} {:>+9.2f:MiB}  {}",
+				row.live,
+				row.since_mark,
 				d.labels.at(row.pc)
 			),
 		});

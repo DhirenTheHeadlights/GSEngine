@@ -1,7 +1,8 @@
 export module gse.ide.docs;
 
+import gse.core;
+import gse.log;
 import std;
-import gse;
 
 export namespace gse::ide::docs {
 	struct doc_card {

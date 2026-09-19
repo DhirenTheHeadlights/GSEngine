@@ -1,7 +1,9 @@
 export module gse.ide.search:query_driver;
 
+import gse.core;
+import gse.math;
+import gse.time;
 import std;
-import gse;
 
 import :types;
 import :index;

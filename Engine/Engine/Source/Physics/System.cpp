@@ -327,7 +327,7 @@ auto gse::physics::solver_config_from_settings(const data& d) -> vbd::solver_con
 		.convergence_threshold_linear = d.convergence_threshold_linear,
 		.convergence_threshold_angular = d.convergence_threshold_angular,
 		.convergence_speed_scale = d.convergence_speed_scale,
-		.max_iterations = static_cast<std::uint32_t>(d.max_solver_iterations),
+		.adaptive = d.adaptive_solver_iterations ? 1u : 0u,
 		.use_jacobi = d.use_jacobi,
 		.jacobi_omega = d.jacobi_omega,
 		.trace_hashes = d.trace_hashes,
@@ -1282,6 +1282,18 @@ auto gse::physics::prepare(context& ctx, data& d, const channel_write<interpolat
 	d.interpolation.advancing = d.update_phys;
 	d.interpolation.readback_age_steps = gpu_solver_active(d) ? d.gpu_solver.readback_age_steps() : 0;
 
+	if (d.trace_readback_age && gpu_solver_active(d)) {
+		log::println(
+			log::category::physics,
+			"gpu readback age: step={} age={} dispatch_gen={} served_gen={} sync={}",
+			d.step_index,
+			d.interpolation.readback_age_steps,
+			d.gpu_solver.dispatch_generation(),
+			d.gpu_solver.retired_generation(),
+			d.gpu_sync_readback
+		);
+	}
+
 	interp_out.push<interpolation_state>(d.interpolation);
 
 	if (d.update_phys) {
@@ -1413,10 +1425,6 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 			d.gpu_reset_ticks.clear();
 			d.gpu_sweep_fold_bailed = false;
 		}
-
-		if (d.gpu_plan.active) {
-			record_consumed_resets(d, transform, motion);
-		}
 	}
 
 	if (!reset) {
@@ -1428,14 +1436,27 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 		const auto solved = d.gpu_solver.read_body_states();
 		const auto readback = d.gpu_solver.readback_tick();
 
+		if (d.trace_readback_age) {
+			log::println(
+				log::category::physics,
+				"gpu readback serve: step={} age={} dispatch_gen={} served_gen={}",
+				d.step_index,
+				d.gpu_solver.readback_age_steps(),
+				d.gpu_solver.dispatch_generation(),
+				d.gpu_solver.retired_generation()
+			);
+		}
+
 		step_snapshot* observed = nullptr;
-		if (readback && !d.rollback_ring.empty()) {
-			auto& entry = d.rollback_ring[*readback % d.rollback_ring.size()];
-			if (entry.step == *readback) {
-				observed = &entry;
-				observed->bodies.clear();
-			}
+		if (readback) {
 			d.observed_step = *readback;
+			if (!d.rollback_ring.empty()) {
+				auto& entry = d.rollback_ring[*readback % d.rollback_ring.size()];
+				if (entry.step == *readback) {
+					observed = &entry;
+					observed->bodies.clear();
+				}
+			}
 		}
 
 		if (!solved.empty()) {
@@ -1798,6 +1819,8 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 	plan.first_tick = first_tick;
 	plan.restore_tick = restore_tick;
 	++plan.generation;
+
+	record_consumed_resets(d, transform, motion);
 }
 
 auto gse::physics::apply_step_inputs(const step_inputs& inputs, data& d, write<transform_component>& transform, write<motion_component>& motion) -> void {

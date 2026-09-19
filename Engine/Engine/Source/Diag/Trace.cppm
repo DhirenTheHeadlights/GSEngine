@@ -335,6 +335,7 @@ namespace gse::trace {
 	inline triple_buffer<frame_storage> frames;
 	inline build_scratch scratch;
 	inline std::unordered_map<std::uint64_t, span_info> open_spans;
+	inline std::map<std::pair<id, std::uint64_t>, std::uint64_t> open_async_spans;
 	inline std::vector<frame_span> closed_spans;
 	inline std::uint64_t build_frame_index = 0;
 	inline std::uint64_t published_generation = 0;

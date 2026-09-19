@@ -16,6 +16,7 @@ auto gse::trace::start(const config& cfg) -> void {
 
 	frames = frame_storage{};
 	open_spans.clear();
+	open_async_spans.clear();
 	closed_spans.clear();
 	build_frame_index = 0;
 	published_generation = 0;
@@ -356,6 +357,24 @@ auto gse::trace::absorb_events(const std::span<const event> events) -> void {
 	closed_spans.clear();
 
 	for (const auto& e : events) {
+		if (e.type == event_type::async_begin) {
+			const auto eid = allocate_span_eid();
+			open_async_spans.insert_or_assign({ e.id, e.key }, eid);
+			open_spans.insert_or_assign(
+				eid,
+				span_info{
+					.id = e.id,
+					.tid = static_cast<std::uint32_t>(e.tid),
+					.t0 = e.ts,
+					.t1 = {},
+					.parent = e.parent_eid,
+					.opened_frame = build_frame_index,
+					.lexical = false
+				}
+			);
+			continue;
+		}
+
 		if (e.type == event_type::begin) {
 			open_spans.insert_or_assign(
 				e.eid,
@@ -372,11 +391,21 @@ auto gse::trace::absorb_events(const std::span<const event> events) -> void {
 			continue;
 		}
 
-		if (e.type != event_type::end) {
+		if (e.type != event_type::end && e.type != event_type::async_end) {
 			continue;
 		}
 
-		const auto it = open_spans.find(e.eid);
+		auto eid = e.eid;
+		if (e.type == event_type::async_end) {
+			const auto async_it = open_async_spans.find({ e.id, e.key });
+			if (async_it == open_async_spans.end()) {
+				continue;
+			}
+			eid = async_it->second;
+			open_async_spans.erase(async_it);
+		}
+
+		const auto it = open_spans.find(eid);
 		if (it == open_spans.end()) {
 			continue;
 		}
@@ -385,7 +414,7 @@ auto gse::trace::absorb_events(const std::span<const event> events) -> void {
 		info.t1 = std::max(e.ts, info.t0);
 
 		closed_spans.push_back({
-			.eid = e.eid,
+			.eid = eid,
 			.info = info,
 			.open = false
 		});
@@ -403,6 +432,9 @@ auto gse::trace::evict_stale_open_spans() -> void {
 	);
 
 	abandoned_span_count.fetch_add(erased, std::memory_order_relaxed);
+	std::erase_if(open_async_spans, [](const auto& entry) {
+		return !open_spans.contains(entry.second);
+	});
 }
 
 auto gse::trace::collect_frame_spans(std::vector<frame_span>& out) -> void {

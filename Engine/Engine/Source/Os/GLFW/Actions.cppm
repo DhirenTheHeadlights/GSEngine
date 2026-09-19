@@ -1017,7 +1017,7 @@ auto gse::actions::log_declared_bindings(const data& d) -> void {
 	log::println(
 		log::level::info,
 		log::category::general,
-		"actions: {} declared before first tick",
+		"actions: {} declared",
 		all.size()
 	);
 

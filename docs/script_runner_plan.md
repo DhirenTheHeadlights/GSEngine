@@ -298,8 +298,8 @@ Engine/Engine/Source/Scenario/
                            this hardware. It is available, and the capture triggers
                            are already channel messages a scenario can push, so a
                            scenario records by pushing toggle_recording_request.
-                           See scenario_capture_scope.md item 3; that item also
-                           records what would bring this file back.
+                           It comes back only if a per-frame lockstep image
+                           sequence is ever needed that encode cannot supply.
 Engine/Engine/Source/Runtime/
     Bootstrap.cppm       — DONE: begin/step/finish_bench, bench_world_ready and
                            drive_scenario. The scenario driver lives here because it
@@ -478,9 +478,9 @@ Prime suspects if it ever regresses: unseeded RNG, and system execution order un
 
 ### Phase 3 — Camera and capture
 
-**Rescoped 2026-08-13 — see [scenario_capture_scope.md](scenario_capture_scope.md), which is the authoritative version.** The original list here was camera path asset format, in-editor keyframe authoring, playback awaitable, lockstep frame dump, and `ffmpeg` invocation. Half of it is gone: the last two are superseded now that video encode is validated on this hardware and the capture triggers turned out to already be channel messages, and the first two are deferred because a scenario body can interpolate keyframes and push a `camera::request` per frame without an asset type.
+**Rescoped 2026-08-13, then delivered.** The original list here was camera path asset format, in-editor keyframe authoring, playback awaitable, lockstep frame dump, and `ffmpeg` invocation. Half of it is gone: the last two are superseded now that video encode is validated on this hardware and the capture triggers turned out to already be channel messages, and the first two are deferred because a scenario body can interpolate keyframes and push a `camera::request` per frame without an asset type.
 
-What remains is the windowed boot gate, a consumer for `camera::request`, and two small per-clip additions — a sun-arc driver and a light-spawn request.
+What remained was the windowed boot gate, a consumer for `camera::request`, and two small per-clip additions — a sun-arc driver and a light-spawn request. All four shipped: `camera::scripted_requester_id`, `sun_request` consumed in `AtmosphereRenderer.cpp`, `spawn_lights_request` in `DevSpawnSystem.cppm`, and the boot-gate latch in `Runtime/Bench.cpp`.
 
 **Deliverable:** every README clip is reproducible from one command. This is the forcing function for the whole plan.
 
@@ -503,7 +503,7 @@ Two constraints on the spawn, both already paid for once:
 
 2. **Determinism may not hold on first attempt.** ~~Unseeded RNG is the likely first offender.~~ **Closed 2026-08-06 by the Phase 2 gate**, which passed on the first attempt and across two different builds of the binary. No tolerance was needed and the `-0.0` hazard never fired. This covers the CPU solver only.
 
-3. **GPU nondeterminism — not a risk, a known property. Scenarios are CPU-solver only.** The GPU VBD solver is known to be non-deterministic; that is established, documented in `docs/LOCOMOTION.md` and the physics work that preceded it, and not something this plan re-litigates. No scenario declares the GPU solver, and `--engine-use-gpu-solver` alongside a scenario produces a world state that does not reproduce, so it is not a valid way to run one. If a GPU throughput number is ever wanted, it is a timing measurement with no determinism claim attached, and it needs its own framing rather than borrowing this harness's.
+3. **GPU nondeterminism — not a risk, a known property. Scenarios are CPU-solver only.** The GPU VBD solver is known to be non-deterministic; that is established, documented in `docs/solver_plan.md` and `docs/nvidia_determinism_report.md`, and not something this plan re-litigates. No scenario declares the GPU solver, and `--engine-use-gpu-solver` alongside a scenario produces a world state that does not reproduce, so it is not a valid way to run one. If a GPU throughput number is ever wanted, it is a timing measurement with no determinism claim attached, and it needs its own framing rather than borrowing this harness's.
 
 4. **Reflection sweep across module boundaries.** ~~`members_of` has previously ICE'd on namespaces outside the same module partition.~~ **Addressed by construction in Phase 1, pending a build.** The ICE is narrow: it fires when the scanned namespace's members live in a partition of the module being compiled *and* the scan is instantiated from an impl unit of that same module. `registry<^^Ns>` takes the namespace as a template parameter the way `register_systems<^^ns>` does, and the only caller is `Sandbox/Main.cpp` — a plain TU that imports `sandbox`, which is the cross-module case proven to scan fine. A scenario namespace declared inside the *engine* would reintroduce the hazard; D13 already forbids that for a different reason.
 
