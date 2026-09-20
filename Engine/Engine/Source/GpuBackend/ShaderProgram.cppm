@@ -28,8 +28,8 @@ export namespace gse::gpu {
 
 	struct shader_program_create_info {
 		std::span<const shader_object_create_info> stages;
-		std::span<const binding_use> bindings;
 		std::uint32_t push_offset_start = 0;
+		std::uint32_t binding_args_size = 0;
 		std::optional<gpu::push_constant_range> push_constant_range;
 		dynamic_pipeline_state state;
 		std::array<color_format, 8> color_targets{};
@@ -73,8 +73,6 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto is_mesh() const -> bool;
 
-		[[nodiscard]] auto bind_point() const -> bind_point;
-
 		[[nodiscard]] auto valid() const -> bool;
 
 	private:
@@ -113,10 +111,6 @@ auto gse::gpu::shader_program::is_compute() const -> bool {
 
 auto gse::gpu::shader_program::is_mesh() const -> bool {
 	return m_is_mesh;
-}
-
-auto gse::gpu::shader_program::bind_point() const -> gpu::bind_point {
-	return m_is_compute ? gpu::bind_point::compute : gpu::bind_point::graphics;
 }
 
 auto gse::gpu::shader_program::valid() const -> bool {

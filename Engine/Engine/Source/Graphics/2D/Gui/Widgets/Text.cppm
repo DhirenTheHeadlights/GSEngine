@@ -1,20 +1,19 @@
 export module gse.graphics:text_widget;
 
-import std;
-
 import gse.assets;
-import gse.core;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
 import gse.math;
-import :types;
+import gse.time;
+import std;
+
 import :font;
-import :styles;
-import :builder;
 import :layout_ops;
+import :styles;
+import :types;
 
 export namespace gse::gui {
 	struct text_style {
@@ -113,7 +112,7 @@ auto gse::gui::draw::text(const draw_context& ctx, const std::string_view name, 
 		{ content_rect.width(), widget_height }
 	);
 
-	const float label_width = name.empty() ? 0.f : content_rect.width() * 0.4f;
+	const float label_width = name.empty() ? 0.f : content_rect.width() * ctx.style.label_column_ratio;
 
 	const rectf label_rect = rectf::from_position_size(
 		row_rect.top_left(),

@@ -86,7 +86,7 @@ export namespace gse::vulkan {
 			gpu::bindless_handle uv_plane_slot;
 			time capture_pts{};
 			time last_pts{};
-			trace::tick_step cpu_ref{};
+			std::optional<gpu::timestamp_calibration> calibration;
 			std::uint64_t timestamp_frame = 0;
 			bool captured = false;
 			bool last_was_keyframe = false;
@@ -1279,7 +1279,7 @@ auto gse::vulkan::video_encoder::encode_capture(per_frame& slot) -> void {
 
 	slot.last_pts = pts;
 	slot.last_was_keyframe = is_keyframe;
-	slot.cpu_ref = system_clock::now<trace::tick_step>();
+	slot.calibration = timestamps_supported() ? m_device->calibrated_timestamp(gpu::queue_type::video_encode) : std::nullopt;
 	slot.timestamp_frame = m_frame_number;
 
 	const gpu::command_buffer_submit_info cmd_submit{
@@ -1409,16 +1409,22 @@ auto gse::vulkan::video_encoder::publish_encode_timestamps(per_frame& slot) -> v
 	}
 
 	const auto span = static_cast<double>(end_ticks - begin_ticks) * m_timestamp_period_per_tick;
-	const auto begin = time_t<double>(slot.cpu_ref);
-	const auto end = begin + span;
-
 	const auto encode_id = trace_id<"video::encode">();
+	profile::ingest_gpu_sample(encode_id, span);
+	if (!slot.calibration) {
+		return;
+	}
+	const auto begin = system_clock::from_query_performance_counter(slot.calibration->host_ticks)
+		+ static_cast<double>((begin_ticks - (slot.calibration->gpu_ticks & m_timestamp_ticks_mask)) & m_timestamp_ticks_mask) * m_timestamp_period_per_tick;
+	const auto end = begin + span;
+	if (begin < time_t<double>{}) {
+		return;
+	}
+
 	const auto key = (slot.timestamp_frame << 16) | (static_cast<std::uint64_t>(gpu::queue_type::video_encode) << 14);
 
 	trace::begin_async_at(encode_id, key, trace::gpu_video_encode_virtual_tid, time_t<std::uint64_t>(begin));
 	trace::end_async_at(encode_id, key, trace::gpu_video_encode_virtual_tid, time_t<std::uint64_t>(end));
-
-	profile::ingest_gpu_sample(encode_id, span);
 }
 
 auto gse::vulkan::video_encoder::valid() const -> bool {

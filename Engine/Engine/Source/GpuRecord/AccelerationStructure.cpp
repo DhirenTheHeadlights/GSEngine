@@ -172,20 +172,15 @@ auto gse::gpu::build_tlas_in_place(device& device, tlas& t, const std::uint32_t 
 			.dst_stages = pipeline_stage_flag::acceleration_structure_build,
 			.dst_access = access_flag::acceleration_structure_read,
 		},
-	};
-	const std::array instance_barriers{
-		buffer_barrier{
+		memory_barrier{
 			.src_stages = pipeline_stage_flag::compute_shader,
 			.src_access = access_flag::shader_storage_write,
 			.dst_stages = pipeline_stage_flag::acceleration_structure_build,
 			.dst_access = access_flag::shader_read,
-			.buffer = t.instance_buffer().handle(),
-			.size = whole_size,
 		},
 	};
 	rec.pipeline_barrier(dependency_info{
 		.memory_barriers = pre_barriers,
-		.buffer_barriers = instance_barriers,
 	});
 	t.instance_buffer().clear_host_dirty();
 

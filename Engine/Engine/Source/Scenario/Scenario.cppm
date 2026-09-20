@@ -16,6 +16,7 @@ export namespace gse::scenario {
 		bool headless = false;
 		bool gpu_solver = false;
 		bool video_encode = false;
+		bool real_time = false;
 		int warmup_frames = 120;
 		int frames = 600;
 		char settings[16][96] = {};

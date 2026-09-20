@@ -1,18 +1,10 @@
 export module gse.graphics:material;
 
-import std;
+import gse.assets;
+import gse.core;
+import gse.math;
 
 import :texture;
-
-import gse.math;
-import gse.core;
-import gse.containers;
-import gse.time;
-import gse.concurrency;
-import gse.diag;
-import gse.ecs;
-import gse.os;
-import gse.assets;
 
 export namespace gse {
 	struct material {

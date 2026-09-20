@@ -1,33 +1,32 @@
 module gse.gpu_record:pipeline_builder_impl;
 
-import std;
-import gse.meta;
 import gse.assert;
-import gse.log;
-import gse.core;
 import gse.config;
-import gse.slang;
-import gse.math;
-
-import gse.gpu_backend;
+import gse.core;
 import gse.gpu;
+import gse.gpu_backend;
+import gse.log;
+import gse.math;
+import gse.meta;
+import gse.slang;
+import std;
+
 import :pipeline_builder;
 
 namespace gse::gpu {
-	auto to_pipeline_stage(const stage_flag s) -> pipeline_stage_flag {
-		switch (s) {
-			case stage_flag::vertex:
-				return pipeline_stage_flag::vertex_shader;
-			case stage_flag::fragment:
-				return pipeline_stage_flag::fragment_shader;
-			case stage_flag::compute:
-				return pipeline_stage_flag::compute_shader;
-			case stage_flag::task:
-				return pipeline_stage_flag::task_shader;
-			case stage_flag::mesh:
-				return pipeline_stage_flag::mesh_shader;
-		}
-		return pipeline_stage_flag::all_commands;
+	auto assert_push_data_fits(const device& dev, const std::uint32_t push_constant_size, const std::uint32_t binding_args_size, const std::string_view body_path) -> void {
+		const auto limit = dev.max_push_data_size();
+		const auto total = push_constant_size + binding_args_size;
+		assert(
+			limit == 0 || total <= limit,
+			"{}: push constants ({} B) plus bindless descriptor indices ({} B) total {} B, over this device's push-data limit of {} B. "
+			"Move the largest push-constant member into a storage buffer binding, or drop a binding.",
+			body_path,
+			push_constant_size,
+			binding_args_size,
+			total,
+			limit
+		);
 	}
 
 	struct shader_param_decl {
@@ -44,6 +43,7 @@ namespace gse::gpu {
 		std::uint32_t threads_z = 1;
 		std::string body_path;
 		std::string inline_source;
+		std::string runtime_constants;
 		std::vector<std::string> helper_paths;
 		std::vector<std::string> call_names;
 		std::uint32_t push_constant_size = 0;
@@ -82,6 +82,10 @@ namespace gse::gpu {
 	auto parse_body_file(
 		std::string_view body_source
 	) -> parsed_body;
+
+	auto read_shader_source(
+		const std::filesystem::path& full_path
+	) -> std::string;
 
 	auto load_body_file(
 		std::string_view body_path
@@ -232,7 +236,26 @@ auto gse::gpu::log_slang_diagnostics(slang::IBlob* diagnostics) -> void {
 	}
 	const std::string message(static_cast<const char*>(diagnostics->getBufferPointer()), diagnostics->getBufferSize());
 	const bool fatal = message.contains("error") || message.contains("fatal");
-	log::println(fatal ? log::level::error : log::level::warning, log::category::assets, "{}", message);
+	if (fatal) {
+		log::println(log::level::error, log::category::assets, "{}", message);
+		return;
+	}
+
+	std::string kept;
+	for (const auto line : std::views::split(std::string_view(message), '\n')) {
+		const std::string_view text(line.begin(), line.end());
+		if (text.contains("E41012")) {
+			continue;
+		}
+		if (!kept.empty()) {
+			kept += '\n';
+		}
+		kept += text;
+	}
+	if (kept.find_first_not_of(" \t\r\n") == std::string::npos) {
+		return;
+	}
+	log::println(log::level::warning, log::category::assets, "{}", kept);
 }
 
 auto gse::gpu::parse_body_file(const std::string_view body_source) -> parsed_body {
@@ -272,24 +295,33 @@ auto gse::gpu::parse_body_file(const std::string_view body_source) -> parsed_bod
 
 
 
-auto gse::gpu::load_body_file(const std::string_view body_path) -> std::string {
-	const auto full_path = config::resource_path() / "Shaders" / "Bodies" / (std::string(body_path) + ".slang");
+auto gse::gpu::read_shader_source(const std::filesystem::path& full_path) -> std::string {
 	std::ifstream in(full_path, std::ios::binary);
-	assert(in.is_open(), "Failed to open shader body: {}", full_path.generic_display_string());
+	assert(in.is_open(), "Failed to open shader source: {}", full_path.generic_display_string());
 
 	std::ostringstream ss;
 	ss << in.rdbuf();
-	return ss.str();
+	std::string source = ss.str();
+
+	constexpr std::string_view utf8_bom = "\xEF\xBB\xBF";
+	if (source.starts_with(utf8_bom)) {
+		log::println(
+			log::level::warning,
+			log::category::assets,
+			"stripped a UTF-8 byte order mark from shader source: {}",
+			full_path.generic_display_string()
+		);
+		source.erase(0, utf8_bom.size());
+	}
+	return source;
+}
+
+auto gse::gpu::load_body_file(const std::string_view body_path) -> std::string {
+	return read_shader_source(config::resource_path() / "Shaders" / "Bodies" / (std::string(body_path) + ".slang"));
 }
 
 auto gse::gpu::load_helper_file(const std::string_view helper_path) -> std::string {
-	const auto full_path = config::resource_path() / "Shaders" / (std::string(helper_path) + ".slang");
-	std::ifstream in(full_path, std::ios::binary);
-	assert(in.is_open(), "Failed to open shader helper: {}", full_path.generic_display_string());
-
-	std::ostringstream ss;
-	ss << in.rdbuf();
-	return ss.str();
+	return read_shader_source(config::resource_path() / "Shaders" / (std::string(helper_path) + ".slang"));
 }
 
 auto gse::gpu::inline_helpers(const std::vector<std::string>& helper_paths) -> std::string {
@@ -314,6 +346,11 @@ auto gse::gpu::build_compute_wrapper_source(const shader_compile_inputs& inputs,
 
 	if (inputs.emit_types) {
 		out.append(inputs.emit_types());
+		out.push_back('\n');
+	}
+
+	if (!inputs.runtime_constants.empty()) {
+		out.append(inputs.runtime_constants);
 		out.push_back('\n');
 	}
 
@@ -450,7 +487,7 @@ auto gse::gpu::strip_unused_ray_tracing_extension(std::vector<std::uint32_t>& sp
 }
 
 auto gse::gpu::compile_compute_spirv(const shader_compile_inputs& inputs, const std::string_view wrapper_source) -> std::vector<std::uint32_t> {
-	const std::lock_guard compile_lock(g_slang_compile_mutex);
+	const std::lock_guard _(g_slang_compile_mutex);
 	auto owned = make_slang_session();
 	auto* session = owned.session.get();
 	assert(session, "Slang session not available");
@@ -580,7 +617,7 @@ auto gse::gpu::build_graphics_wrapper_source(const graphics_entry_pod& pod, cons
 }
 
 auto gse::gpu::compile_graphics_program(const graphics_entry_pod& pod, const std::string_view wrapper_source) -> compiled_graphics_program {
-	const std::lock_guard compile_lock(g_slang_compile_mutex);
+	const std::lock_guard _(g_slang_compile_mutex);
 	auto owned = make_slang_session();
 	auto* session = owned.session.get();
 	assert(session, "Slang session not available");
@@ -761,17 +798,18 @@ auto gse::gpu::next_stage_for(const stage_flag current, const std::span<const st
 	return result;
 }
 
-auto gse::gpu::build_compute_program(device& dev, const compute_entry_pod& pod, const std::span<const std::byte> spec_data) -> shader_program {
-	assert(pod.build_family_sets_fn, "bindings missing on compute entry");
+auto gse::gpu::build_compute_program(device& dev, const compute_entry_pod& pod, const std::span<const std::byte> spec_data, const std::string_view runtime_constants) -> shader_program {
 	assert(
 		spec_data.empty() || spec_data.size() == pod.spec_data_size,
 		"spec_data size mismatch with entry's spec_constants<T>"
 	);
-	const auto family_sets = pod.build_family_sets_fn();
+	assert(pod.binding_args_size_fn, "bindings missing on entry");
+	assert_push_data_fits(dev, pod.push_constant_size, pod.binding_args_size_fn(), pod.body_path);
 
 	shader_compile_inputs inputs;
 	inputs.body_path = std::string(pod.body_path);
 	inputs.inline_source = std::string(pod.body_source);
+	inputs.runtime_constants = std::string(runtime_constants);
 	inputs.threads_x = pod.threads_x;
 	inputs.threads_y = pod.threads_y;
 	inputs.threads_z = pod.threads_z;
@@ -816,20 +854,6 @@ auto gse::gpu::build_compute_program(device& dev, const compute_entry_pod& pod, 
 		};
 	}
 
-	std::vector<binding_use> pack_bindings;
-	for (const auto& fs : family_sets) {
-		for (const auto& b : fs.bindings) {
-			pack_bindings.push_back({
-				.set = fs.set_index,
-				.slot = b.desc.binding,
-				.count = b.desc.count,
-				.access = b.desc.access,
-				.type = b.desc.type,
-				.stages = pipeline_stage_flag::compute_shader,
-			});
-		}
-	}
-
 	std::vector<specialization_entry> vk_spec_entries;
 	if (pod.build_spec_entries_fn && !spec_data.empty()) {
 		const auto entries = pod.build_spec_entries_fn();
@@ -858,8 +882,8 @@ auto gse::gpu::build_compute_program(device& dev, const compute_entry_pod& pod, 
 
 	const shader_program_create_info info{
 		.stages = std::span(&stage_info, 1),
-		.bindings = pack_bindings,
 		.push_offset_start = pod.push_constant_size,
+		.binding_args_size = pod.binding_args_size_fn(),
 		.push_constant_range = push_range,
 		.state = {},
 		.is_compute = true,
@@ -872,12 +896,12 @@ auto gse::gpu::build_compute_program(device& dev, const compute_entry_pod& pod, 
 auto gse::gpu::build_graphics_program(device& dev, const graphics_entry_pod& pod, const std::span<const std::byte> spec_data) -> shader_program {
 	assert(!pod.body_path.empty(), "body_path missing on graphics entry");
 	assert(pod.stage_count > 0, "graphics entry has no stages");
-	assert(pod.build_family_sets_fn, "bindings missing on graphics entry");
 	assert(
 		spec_data.empty() || spec_data.size() == pod.spec_data_size,
 		"spec_data size mismatch with entry's spec_constants<T>"
 	);
-	const auto family_sets = pod.build_family_sets_fn();
+	assert(pod.binding_args_size_fn, "bindings missing on entry");
+	assert_push_data_fits(dev, pod.push_constant_size, pod.binding_args_size_fn(), pod.body_path);
 
 	const std::string body_source = pod.body_source.empty() ? load_body_file(pod.body_path) : std::string(pod.body_source);
 	const auto parsed = parse_body_file(body_source);
@@ -903,25 +927,6 @@ auto gse::gpu::build_graphics_program(device& dev, const graphics_entry_pod& pod
 	for (auto& s : program.stages) {
 		if (s.kind == graphics_stage_kind::amplification || s.kind == graphics_stage_kind::mesh) {
 			is_mesh = true;
-		}
-	}
-
-	pipeline_stage_flags all_pipeline_stages{};
-	for (const auto s : all_stages) {
-		all_pipeline_stages |= to_pipeline_stage(s);
-	}
-
-	std::vector<binding_use> pack_bindings;
-	for (const auto& fs : family_sets) {
-		for (const auto& b : fs.bindings) {
-			pack_bindings.push_back({
-				.set = fs.set_index,
-				.slot = b.desc.binding,
-				.count = b.desc.count,
-				.access = b.desc.access,
-				.type = b.desc.type,
-				.stages = all_pipeline_stages,
-			});
 		}
 	}
 
@@ -978,8 +983,8 @@ auto gse::gpu::build_graphics_program(device& dev, const graphics_entry_pod& pod
 
 	const shader_program_create_info info{
 		.stages = stage_infos,
-		.bindings = pack_bindings,
 		.push_offset_start = pod.push_constant_size,
+		.binding_args_size = pod.binding_args_size_fn(),
 		.push_constant_range = push_range,
 		.state = std::move(state),
 		.color_targets = color_targets,
@@ -991,4 +996,3 @@ auto gse::gpu::build_graphics_program(device& dev, const graphics_entry_pod& pod
 
 	return dev.create_shader_program(info);
 }
-

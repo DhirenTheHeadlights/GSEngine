@@ -170,6 +170,28 @@ namespace gse::internal {
 	constexpr auto cexpr_llround(const long double x) -> long long {
 		return x >= 0 ? static_cast<long long>(x + 0.5L) : static_cast<long long>(x - 0.5L);
 	}
+
+	template <is_ratio FromRatio, is_ratio ToRatio, is_arithmetic V>
+	constexpr auto scaled_by_ratio(V value) -> V {
+		if constexpr (std::ratio_equal_v<FromRatio, ToRatio>) {
+			return value;
+		}
+		else {
+			using compute = std::conditional_t<std::is_integral_v<V>, long double, double>;
+
+			const auto v = static_cast<compute>(value);
+			const auto num = static_cast<compute>(FromRatio::num) * static_cast<compute>(ToRatio::den);
+			const auto den = static_cast<compute>(FromRatio::den) * static_cast<compute>(ToRatio::num);
+			const auto out = v * num / den;
+
+			if constexpr (std::is_integral_v<V>) {
+				return static_cast<V>(cexpr_llround(out));
+			}
+			else {
+				return static_cast<V>(out);
+			}
+		}
+	}
 }
 
 consteval auto gse::internal::quantity_spec_type_of(std::meta::info tag_info) -> std::meta::info {
@@ -362,6 +384,17 @@ namespace gse::internal {
 	struct tag_canonical_unit<Tag, void, true> {
 		using type = no_default_unit;
 	};
+
+	template <typename Tag>
+	using tag_canonical_unit_t = typename tag_canonical_unit<Tag>::type;
+
+	template <typename Tag, typename PeerTag, typename DefUnit>
+	using storage_unit_t = std::conditional_t<is_generic_tag_v<Tag>, tag_canonical_unit_t<PeerTag>, DefUnit>;
+
+	template <typename FromUnit, typename ToUnit, is_arithmetic V>
+	constexpr auto rescaled(
+		V value
+	) -> V;
 
 	template <typename AncestorTag, typename DescendantTag>
 	consteval auto is_same_or_ancestor_tag() -> bool;
@@ -571,6 +604,11 @@ consteval auto gse::internal::is_same_or_ancestor_tag() -> bool {
 	}
 }
 
+template <typename FromUnit, typename ToUnit, gse::internal::is_arithmetic V>
+constexpr auto gse::internal::rescaled(V value) -> V {
+	return scaled_by_ratio<typename FromUnit::conversion_ratio, typename ToUnit::conversion_ratio>(value);
+}
+
 template <gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
 constexpr gse::internal::quantity<A, D, Tag, DefUnit>::quantity(A value) : m_val(value) {
 }
@@ -579,7 +617,7 @@ template <gse::internal::is_arithmetic A, gse::internal::is_dimension D, typenam
 template <gse::internal::is_arithmetic T2, gse::internal::is_dimension D2, typename Tag2, typename Unit2>
 requires gse::internal::has_same_dimensions<D, D2> && gse::internal::same_unit_family_v<Tag, Tag2>
 constexpr gse::internal::quantity<A, D, Tag, DefUnit>::quantity(const quantity<T2, D2, Tag2, Unit2>& other)
-	: m_val(static_cast<A>(value_in<DefUnit>(other))) {
+	: m_val(static_cast<A>(rescaled<storage_unit_t<Tag2, Tag, Unit2>, storage_unit_t<Tag, Tag2, DefUnit>>(static_cast<T2>(other)))) {
 }
 
 template <gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
@@ -641,7 +679,7 @@ requires gse::internal::has_same_dimensions<D, D2> && gse::internal::same_unit_f
 constexpr auto gse::internal::quantity<A, D, Tag, DefUnit>::operator<=>(const quantity<T2, D2, Tag2, Unit2>& other) const {
 	using common_t = std::common_type_t<A, T2>;
 	const auto lhs = static_cast<common_t>(m_val);
-	const auto rhs = static_cast<common_t>(value_in<DefUnit>(other));
+	const auto rhs = rescaled<storage_unit_t<Tag2, Tag, Unit2>, storage_unit_t<Tag, Tag2, DefUnit>>(static_cast<common_t>(static_cast<T2>(other)));
 	return lhs <=> rhs;
 }
 
@@ -655,25 +693,7 @@ constexpr auto gse::internal::quantity<A, D, Tag, DefUnit>::operator==(const qua
 template <gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
 template <gse::internal::is_unit UnitType>
 constexpr auto gse::internal::quantity<A, D, Tag, DefUnit>::converted_value(A value) const -> A {
-	using u = UnitType;
-	using def = DefUnit;
-
-	using r_u = u::conversion_ratio;
-	using r_d = def::conversion_ratio;
-
-	const auto v = static_cast<long double>(value);
-
-	const long double num = static_cast<long double>(r_u::num) * static_cast<long double>(r_d::den);
-	const long double den = static_cast<long double>(r_u::den) * static_cast<long double>(r_d::num);
-
-	long double out = v * num / den;
-
-	if constexpr (std::is_integral_v<A>) {
-		return static_cast<A>(cexpr_llround(out));
-	}
-	else {
-		return static_cast<A>(out);
-	}
+	return scaled_by_ratio<typename UnitType::conversion_ratio, typename DefUnit::conversion_ratio>(value);
 }
 
 namespace gse::internal {
@@ -748,27 +768,7 @@ namespace gse::internal {
 template <typename TargetUnit, gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
 requires gse::internal::is_unit<TargetUnit>
 constexpr auto gse::internal::value_in(const quantity<A, D, Tag, DefUnit>& q) -> A {
-	if constexpr (std::same_as<TargetUnit, DefUnit>) {
-		return static_cast<A>(q);
-	}
-	else {
-		using r_u = typename TargetUnit::conversion_ratio;
-		using r_d = typename DefUnit::conversion_ratio;
-
-		const long double v = static_cast<long double>(static_cast<A>(q));
-
-		const long double num = static_cast<long double>(r_d::num) * static_cast<long double>(r_u::den);
-		const long double den = static_cast<long double>(r_d::den) * static_cast<long double>(r_u::num);
-
-		long double out = v * num / den;
-
-		if constexpr (std::is_integral_v<A>) {
-			return static_cast<A>(cexpr_llround(out));
-		}
-		else {
-			return static_cast<A>(out);
-		}
-	}
+	return scaled_by_ratio<typename DefUnit::conversion_ratio, typename TargetUnit::conversion_ratio>(static_cast<A>(q));
 }
 
 consteval auto gse::internal::collect_root_tags(std::meta::info ns) -> std::vector<std::meta::info> {
@@ -955,6 +955,107 @@ struct std::formatter<gse::internal::quantity<A, Dim, Tag, Unit>, CharT> {
 
 		return it;
 	}
+};
+
+template <typename A, typename Dim, typename Tag, typename Unit>
+struct std::atomic<gse::internal::quantity<A, Dim, Tag, Unit>> {
+	using value_type = gse::internal::quantity<A, Dim, Tag, Unit>;
+	using difference_type = value_type;
+
+	static constexpr bool is_always_lock_free = ::std::atomic<A>::is_always_lock_free;
+
+	constexpr atomic() noexcept = default;
+
+	constexpr atomic(const value_type desired) noexcept
+		: m_raw(static_cast<A>(desired)) {
+	}
+
+	atomic(const atomic&) = delete;
+	auto operator=(const atomic&) -> atomic& = delete;
+
+	auto operator=(const value_type desired) noexcept -> value_type {
+		store(desired);
+		return desired;
+	}
+
+	operator value_type() const noexcept {
+		return load();
+	}
+
+	[[nodiscard]] auto is_lock_free() const noexcept -> bool {
+		return m_raw.is_lock_free();
+	}
+
+	auto store(const value_type desired, const memory_order order = memory_order_seq_cst) noexcept -> void {
+		m_raw.store(static_cast<A>(desired), order);
+	}
+
+	[[nodiscard]] auto load(const memory_order order = memory_order_seq_cst) const noexcept -> value_type {
+		return value_type(m_raw.load(order));
+	}
+
+	auto exchange(const value_type desired, const memory_order order = memory_order_seq_cst) noexcept -> value_type {
+		return value_type(m_raw.exchange(static_cast<A>(desired), order));
+	}
+
+	auto compare_exchange_weak(value_type& expected, const value_type desired, const memory_order success, const memory_order failure) noexcept -> bool {
+		A raw = static_cast<A>(expected);
+		const bool exchanged = m_raw.compare_exchange_weak(raw, static_cast<A>(desired), success, failure);
+		expected = value_type(raw);
+		return exchanged;
+	}
+
+	auto compare_exchange_weak(value_type& expected, const value_type desired, const memory_order order = memory_order_seq_cst) noexcept -> bool {
+		A raw = static_cast<A>(expected);
+		const bool exchanged = m_raw.compare_exchange_weak(raw, static_cast<A>(desired), order);
+		expected = value_type(raw);
+		return exchanged;
+	}
+
+	auto compare_exchange_strong(value_type& expected, const value_type desired, const memory_order success, const memory_order failure) noexcept -> bool {
+		A raw = static_cast<A>(expected);
+		const bool exchanged = m_raw.compare_exchange_strong(raw, static_cast<A>(desired), success, failure);
+		expected = value_type(raw);
+		return exchanged;
+	}
+
+	auto compare_exchange_strong(value_type& expected, const value_type desired, const memory_order order = memory_order_seq_cst) noexcept -> bool {
+		A raw = static_cast<A>(expected);
+		const bool exchanged = m_raw.compare_exchange_strong(raw, static_cast<A>(desired), order);
+		expected = value_type(raw);
+		return exchanged;
+	}
+
+	auto fetch_add(const difference_type arg, const memory_order order = memory_order_seq_cst) noexcept -> value_type {
+		return value_type(m_raw.fetch_add(static_cast<A>(arg), order));
+	}
+
+	auto fetch_sub(const difference_type arg, const memory_order order = memory_order_seq_cst) noexcept -> value_type {
+		return value_type(m_raw.fetch_sub(static_cast<A>(arg), order));
+	}
+
+	auto operator+=(const difference_type arg) noexcept -> value_type {
+		return value_type(m_raw.fetch_add(static_cast<A>(arg)) + static_cast<A>(arg));
+	}
+
+	auto operator-=(const difference_type arg) noexcept -> value_type {
+		return value_type(m_raw.fetch_sub(static_cast<A>(arg)) - static_cast<A>(arg));
+	}
+
+	auto wait(const value_type old, const memory_order order = memory_order_seq_cst) const noexcept -> void {
+		m_raw.wait(static_cast<A>(old), order);
+	}
+
+	auto notify_one() noexcept -> void {
+		m_raw.notify_one();
+	}
+
+	auto notify_all() noexcept -> void {
+		m_raw.notify_all();
+	}
+
+private:
+	::std::atomic<A> m_raw;
 };
 
 export template <typename A, typename Dim, typename Tag, typename Unit>
@@ -1337,10 +1438,10 @@ constexpr auto gse::quantity_cast(const FromQuantity& q) -> ToQuantity {
 	using to_unit = ToQuantity::default_unit;
 	using to_val = ToQuantity::value_type;
 
-	const long double value_in_to_unit = static_cast<long double>(internal::value_in<to_unit>(q));
+	const auto value_in_to_unit = internal::value_in<to_unit>(q);
 
 	if constexpr (std::is_integral_v<to_val>) {
-		return ToQuantity::template from<to_unit>(static_cast<to_val>(internal::cexpr_llround(value_in_to_unit)));
+		return ToQuantity::template from<to_unit>(static_cast<to_val>(internal::cexpr_llround(static_cast<long double>(value_in_to_unit))));
 	}
 	else {
 		return ToQuantity::template from<to_unit>(static_cast<to_val>(value_in_to_unit));

@@ -35,6 +35,7 @@ gse::gpu::recording_context::recording_context(pass_recorder rec, render_pass_da
 
 gse::gpu::recording_context::recording_context(recording_context_init&& init)
 	: recording_context(std::move(init.recorder), init.pass, init.transient_pool, init.device) {
+	m_marks = init.marks;
 	if (init.primary) {
 		bind(*init.primary);
 	}
@@ -44,7 +45,7 @@ gse::gpu::recording_context::recording_context(recording_context_init&& init)
 }
 
 gse::gpu::recording_context::recording_context(recording_context&& other) noexcept
-	: m_recorder(other.m_recorder), m_pass(other.m_pass), m_transient_pool(other.m_transient_pool), m_device(other.m_device), m_touched(std::move(other.m_touched)), m_last_access(std::move(other.m_last_access)), m_image_states(std::move(other.m_image_states)), m_pending_memory_barriers(std::move(other.m_pending_memory_barriers)), m_pending_buffer_barriers(std::move(other.m_pending_buffer_barriers)), m_pending_image_barriers(std::move(other.m_pending_image_barriers)), m_origin_thread(other.m_origin_thread), m_state_cache(other.m_state_cache), m_bindless_heaps_valid(other.m_bindless_heaps_valid), m_bound_is_compute(other.m_bound_is_compute), m_last_binding_bytes(other.m_last_binding_bytes), m_last_binding_pack(other.m_last_binding_pack), m_last_binding_stages(other.m_last_binding_stages), m_companion_stages(other.m_companion_stages), m_companion_access(other.m_companion_access), m_binding_repeat_valid(other.m_binding_repeat_valid), m_binding_companion_armed(other.m_binding_companion_armed) {
+	: m_recorder(other.m_recorder), m_pass(other.m_pass), m_transient_pool(other.m_transient_pool), m_device(other.m_device), m_touched(std::move(other.m_touched)), m_last_access(std::move(other.m_last_access)), m_pending_memory_barriers(std::move(other.m_pending_memory_barriers)), m_access_generation(other.m_access_generation), m_repeat_barrier_pending(other.m_repeat_barrier_pending), m_origin_thread(other.m_origin_thread), m_state_cache(other.m_state_cache), m_bindless_heaps_valid(other.m_bindless_heaps_valid), m_bound_is_compute(other.m_bound_is_compute), m_last_binding_bytes(other.m_last_binding_bytes), m_last_binding_pack(other.m_last_binding_pack), m_last_binding_stages(other.m_last_binding_stages), m_companion_stages(other.m_companion_stages), m_companion_access(other.m_companion_access), m_binding_repeat_valid(other.m_binding_repeat_valid), m_binding_companion_armed(other.m_binding_companion_armed), m_marks(other.m_marks) {
 	if (tl_active_recording_context == &other) {
 		tl_active_recording_context = this;
 	}
@@ -81,10 +82,9 @@ auto gse::gpu::recording_context::operator=(recording_context&& other) noexcept 
 		m_device = other.m_device;
 		m_touched = std::move(other.m_touched);
 		m_last_access = std::move(other.m_last_access);
-		m_image_states = std::move(other.m_image_states);
 		m_pending_memory_barriers = std::move(other.m_pending_memory_barriers);
-		m_pending_buffer_barriers = std::move(other.m_pending_buffer_barriers);
-		m_pending_image_barriers = std::move(other.m_pending_image_barriers);
+		m_access_generation = other.m_access_generation;
+		m_repeat_barrier_pending = other.m_repeat_barrier_pending;
 		m_origin_thread = other.m_origin_thread;
 		m_state_cache = other.m_state_cache;
 		m_bindless_heaps_valid = other.m_bindless_heaps_valid;
@@ -96,6 +96,7 @@ auto gse::gpu::recording_context::operator=(recording_context&& other) noexcept 
 		m_companion_access = other.m_companion_access;
 		m_binding_repeat_valid = other.m_binding_repeat_valid;
 		m_binding_companion_armed = other.m_binding_companion_armed;
+		m_marks = other.m_marks;
 		if (tl_active_recording_context == &other) {
 			tl_active_recording_context = this;
 		}
@@ -212,7 +213,6 @@ auto gse::gpu::recording_context::sample_image(const image& img, const pipeline_
 		.aspects = image_aspect_for(img.format()),
 	};
 	note_touched(ref, stages, access_flag::shader_sampled_read);
-	transition_image_for_binding(ref, resource_state::sampled, stages, access_flag::shader_sampled_read);
 }
 
 auto gse::gpu::recording_context::note_touched(const resource_ref ref, const pipeline_stage_flags stages, const access_flags access) -> void {
@@ -288,11 +288,23 @@ auto gse::gpu::recording_context::emit_intra_pass_barrier(const resource_ref& re
 
 	const auto it = m_last_access.find(ref.ptr);
 	if (it == m_last_access.end()) {
-		m_last_access.emplace(ref.ptr, access_track{ .stages = stages, .access = access });
+		m_last_access.emplace(ref.ptr, access_track{ .stages = stages, .access = access, .generation = m_access_generation });
 		return true;
 	}
 
 	auto& prev = it->second;
+	prev.generation = m_access_generation;
+	if (prev.covered) {
+		prev.covered = false;
+		const bool stages_ordered = (stages.bits() & ~prev.stages.bits()) == 0;
+		const bool access_visible = (access.bits() & ~prev.access.bits()) == 0 || (access & write_mask).bits() != 0;
+		if (stages_ordered && access_visible) {
+			prev.stages = stages;
+			prev.access = access;
+			return false;
+		}
+		prev.access = { access_flag::memory_read, access_flag::memory_write };
+	}
 	const bool hazard = (prev.access & write_mask).bits() != 0 || (access & write_mask).bits() != 0;
 	if (!hazard || (stages & graphics_mask).bits() != 0) {
 		const auto prev_stages = prev.stages.bits();
@@ -302,82 +314,27 @@ auto gse::gpu::recording_context::emit_intra_pass_barrier(const resource_ref& re
 		return prev.stages.bits() != prev_stages || prev.access.bits() != prev_access;
 	}
 
-	if (ref.type == resource_type::buffer) {
-		const auto handle = std::bit_cast<gpu::handle<buffer>>(ref.ptr);
-		bool merged = false;
-		for (auto& pending : m_pending_buffer_barriers) {
-			if (pending.buffer.value == handle.value) {
-				pending.src_stages |= prev.stages;
-				pending.src_access |= prev.access;
-				pending.dst_stages |= stages;
-				pending.dst_access |= access;
-				merged = true;
-				break;
-			}
-		}
-		if (!merged) {
-			m_pending_buffer_barriers.push_back({
-				.src_stages = prev.stages,
-				.src_access = prev.access,
-				.dst_stages = stages,
-				.dst_access = access,
-				.buffer = handle,
-				.offset = 0,
-				.size = ref.buffer_size,
-			});
-		}
-	}
-	else if (ref.type == resource_type::image) {
-		const auto tracked = m_image_states.find(ref.ptr);
-		const auto state = tracked != m_image_states.end() ? tracked->second.current : resource_state::undefined;
-		const auto handle = std::bit_cast<gpu::handle<image>>(ref.ptr);
-		bool merged = false;
-		for (auto& pending : m_pending_image_barriers) {
-			if (pending.image.value == handle.value && pending.prev_state == state && pending.next_state == state) {
-				pending.src_stages |= prev.stages;
-				pending.src_access |= prev.access;
-				pending.dst_stages |= stages;
-				pending.dst_access |= access;
-				merged = true;
-				break;
-			}
-		}
-		if (!merged) {
-			m_pending_image_barriers.push_back({
-				.src_stages = prev.stages,
-				.src_access = prev.access,
-				.dst_stages = stages,
-				.dst_access = access,
-				.prev_state = state,
-				.next_state = state,
-				.image = handle,
-				.aspects = ref.aspects,
-			});
-		}
-	}
-	else {
-		bool merged = false;
-		for (auto& pending : m_pending_memory_barriers) {
-			pending.src_stages |= prev.stages;
-			pending.src_access |= prev.access;
-			pending.dst_stages |= stages;
-			pending.dst_access |= access;
-			merged = true;
-			break;
-		}
-		if (!merged) {
-			m_pending_memory_barriers.push_back({
-				.src_stages = prev.stages,
-				.src_access = prev.access,
-				.dst_stages = stages,
-				.dst_access = access,
-			});
-		}
-	}
+	merge_pending_barrier(prev.stages, prev.access, stages, access);
 
 	prev.stages = stages;
 	prev.access = access;
 	return true;
+}
+
+auto gse::gpu::recording_context::merge_pending_barrier(const pipeline_stage_flags src_stages, const access_flags src_access, const pipeline_stage_flags dst_stages, const access_flags dst_access) -> void {
+	for (auto& pending : m_pending_memory_barriers) {
+		if (pending.src_stages.bits() == src_stages.bits() && pending.dst_stages.bits() == dst_stages.bits()) {
+			pending.src_access |= src_access;
+			pending.dst_access |= dst_access;
+			return;
+		}
+	}
+	m_pending_memory_barriers.push_back({
+		.src_stages = src_stages,
+		.src_access = src_access,
+		.dst_stages = dst_stages,
+		.dst_access = dst_access,
+	});
 }
 
 auto gse::gpu::recording_context::note_bindings_repeat(const pipeline_stage_flags stages, const access_flags access) -> void {
@@ -395,70 +352,69 @@ auto gse::gpu::recording_context::note_bindings_repeat(const pipeline_stage_flag
 	}
 
 	m_binding_companion_armed = false;
+	m_repeat_barrier_pending = true;
 
 	pipeline_stage_flags cycle_stages = stages;
 	cycle_stages |= m_companion_stages;
 	access_flags cycle_access = access;
 	cycle_access |= m_companion_access;
 
-	for (auto& pending : m_pending_memory_barriers) {
-		pending.src_stages |= cycle_stages;
-		pending.src_access |= cycle_access;
-		pending.dst_stages |= cycle_stages;
-		pending.dst_access |= cycle_access;
-		return;
-	}
-
-	m_pending_memory_barriers.push_back({
-		.src_stages = cycle_stages,
-		.src_access = cycle_access,
-		.dst_stages = cycle_stages,
-		.dst_access = cycle_access,
-	});
+	merge_pending_barrier(cycle_stages, cycle_access, cycle_stages, cycle_access);
 }
 
 auto gse::gpu::recording_context::flush_pending_barriers() -> void {
-	if (m_pending_memory_barriers.empty() && m_pending_buffer_barriers.empty() && m_pending_image_barriers.empty()) {
+	const auto dispatch_generation = m_access_generation++;
+	const bool repeat_barrier = m_repeat_barrier_pending;
+	m_repeat_barrier_pending = false;
+	if (m_pending_memory_barriers.empty()) {
 		return;
 	}
 	if (m_recorder.valid()) {
 		m_recorder.pipeline_barrier(dependency_info{
 			.memory_barriers = m_pending_memory_barriers,
-			.buffer_barriers = m_pending_buffer_barriers,
-			.image_barriers = m_pending_image_barriers,
 		});
 	}
+	if (!repeat_barrier) {
+		cover_barrier_sources(dispatch_generation);
+	}
 	m_pending_memory_barriers.clear();
-	m_pending_buffer_barriers.clear();
-	m_pending_image_barriers.clear();
 }
 
-auto gse::gpu::recording_context::transition_image_for_binding(const resource_ref& ref, const resource_state target, const pipeline_stage_flags stages, const access_flags access) -> void {
-	if (ref.type != resource_type::image || !ref.ptr) {
+auto gse::gpu::recording_context::cover_barrier_sources(const std::uint64_t dispatch_generation) -> void {
+	constexpr access_flags write_mask{ access_flag::shader_write, access_flag::shader_storage_write,
+		access_flag::color_attachment_write, access_flag::depth_stencil_attachment_write,
+		access_flag::transfer_write, access_flag::host_write, access_flag::memory_write,
+		access_flag::acceleration_structure_write };
+
+	pipeline_stage_flags src_stages{};
+	access_flags src_access{};
+	pipeline_stage_flags dst_stages{};
+	access_flags dst_access{};
+	for (const auto& pending : m_pending_memory_barriers) {
+		src_stages |= pending.src_stages;
+		src_access |= pending.src_access;
+		dst_stages |= pending.dst_stages;
+		dst_access |= pending.dst_access;
+	}
+
+	const auto covered_access = access_flags::from_bits(dst_access.bits() & ~write_mask.bits());
+	if (covered_access.bits() == 0) {
 		return;
 	}
-	const auto it = m_image_states.find(ref.ptr);
-	if (it == m_image_states.end()) {
-		invalidate_binding_repeat();
-		m_image_states.emplace(ref.ptr, image_state_track{ .aspects = ref.aspects, .first = target, .current = target });
-		return;
+
+	for (auto& [ptr, track] : m_last_access) {
+		if (track.generation == dispatch_generation) {
+			continue;
+		}
+		const bool stages_covered = (track.stages.bits() & ~src_stages.bits()) == 0;
+		const bool access_covered = (track.access.bits() & ~src_access.bits()) == 0;
+		if (!stages_covered || !access_covered) {
+			continue;
+		}
+		track.stages = dst_stages;
+		track.access = covered_access;
+		track.covered = true;
 	}
-	if (it->second.current == target) {
-		return;
-	}
-	invalidate_binding_repeat();
-	const image_barrier barrier{
-		.src_stages = stages,
-		.dst_stages = stages,
-		.dst_access = access,
-		.prev_state = it->second.current,
-		.next_state = target,
-		.image = std::bit_cast<handle<image>>(ref.ptr),
-		.aspects = it->second.aspects,
-	};
-	flush_pending_barriers();
-	m_recorder.transition_image_state(barrier);
-	it->second.current = target;
 }
 
 auto gse::gpu::recording_context::finalize_pass() -> void {
@@ -467,21 +423,6 @@ auto gse::gpu::recording_context::finalize_pass() -> void {
 	}
 
 	flush_pending_barriers();
-
-	if (m_recorder.valid()) {
-		for (const auto& [ptr, track] : m_image_states) {
-			if (track.current == track.first) {
-				continue;
-			}
-			const image_barrier barrier{
-				.prev_state = track.current,
-				.next_state = track.first,
-				.image = std::bit_cast<handle<image>>(ptr),
-				.aspects = track.aspects,
-			};
-			m_recorder.transition_image_state(barrier);
-		}
-	}
 
 	constexpr access_flags write_mask{ access_flag::shader_write, access_flag::shader_storage_write,
 		access_flag::color_attachment_write, access_flag::depth_stencil_attachment_write,
@@ -505,7 +446,6 @@ auto gse::gpu::recording_context::copy_buffer(const buffer& src, const buffer& d
 		{
 			.ptr = std::bit_cast<const void*>(src.handle()),
 			.type = resource_type::buffer,
-			.buffer_size = src.size(),
 			.host_buffer = std::addressof(src),
 		},
 		pipeline_stage_flag::copy,
@@ -515,7 +455,6 @@ auto gse::gpu::recording_context::copy_buffer(const buffer& src, const buffer& d
 		{
 			.ptr = std::bit_cast<const void*>(dst.handle()),
 			.type = resource_type::buffer,
-			.buffer_size = dst.size(),
 			.host_buffer = std::addressof(dst),
 		},
 		pipeline_stage_flag::copy,
@@ -539,7 +478,6 @@ auto gse::gpu::recording_context::fill_buffer(const buffer& dst, const std::size
 		{
 			.ptr = std::bit_cast<const void*>(dst.handle()),
 			.type = resource_type::buffer,
-			.buffer_size = dst.size(),
 			.host_buffer = std::addressof(dst),
 		},
 		pipeline_stage_flag::clear,
@@ -569,6 +507,24 @@ auto gse::gpu::recording_context::pipeline_barrier(const dependency_info& dep) -
 	m_recorder.pipeline_barrier(dep);
 }
 
+auto gse::gpu::recording_context::mark(const id label) const -> void {
+	if (m_marks.next == nullptr) {
+		return;
+	}
+	const auto index = m_marks.next->fetch_add(1, std::memory_order_relaxed);
+	if (index >= m_marks.capacity) {
+		return;
+	}
+	check_active();
+	const auto query = m_marks.query_base + index;
+	m_marks.marks[index] = {
+		.pass_slot = m_marks.pass_slot,
+		.query = query,
+		.label = label,
+	};
+	m_recorder.write_timestamp(pipeline_stage_flag::all_commands, m_marks.pool, query);
+}
+
 auto gse::gpu::recording_context::copy_target_to_buffer(const image_ref& src, const buffer& dst) -> void {
 	check_active();
 	flush_pending_barriers();
@@ -576,16 +532,14 @@ auto gse::gpu::recording_context::copy_target_to_buffer(const image_ref& src, co
 	const auto dst_buffer = dst.handle();
 	const auto gpu_image = src.image;
 
-	const image_barrier to_transfer{
+	const memory_barrier to_transfer{
 		.src_stages = pipeline_stage_flag::color_attachment_output,
 		.src_access = access_flag::color_attachment_write,
 		.dst_stages = pipeline_stage_flag::transfer,
 		.dst_access = access_flag::transfer_read,
-		.image = gpu_image,
-		.aspects = image_aspect_flag::color,
 	};
 	m_recorder.pipeline_barrier(dependency_info{
-		.image_barriers = std::span(&to_transfer, 1)
+		.memory_barriers = std::span(&to_transfer, 1)
 	});
 
 	const buffer_image_copy_region gpu_region{
@@ -603,16 +557,14 @@ auto gse::gpu::recording_context::copy_target_to_buffer(const image_ref& src, co
 	};
 	m_recorder.copy_image_to_buffer(gpu_image, dst_buffer, std::span(&gpu_region, 1));
 
-	const image_barrier back_to_color{
+	const memory_barrier back_to_color{
 		.src_stages = pipeline_stage_flag::transfer,
 		.src_access = access_flag::transfer_read,
 		.dst_stages = pipeline_stage_flag::color_attachment_output,
 		.dst_access = { access_flag::color_attachment_write, access_flag::color_attachment_read },
-		.image = gpu_image,
-		.aspects = image_aspect_flag::color,
 	};
 	m_recorder.pipeline_barrier(dependency_info{
-		.image_barriers = std::span(&back_to_color, 1)
+		.memory_barriers = std::span(&back_to_color, 1)
 	});
 }
 
@@ -622,28 +574,25 @@ auto gse::gpu::recording_context::blit_target_to_image(const image_ref& src, con
 	const auto src_image = src.image;
 	const auto src_ext = src.extent;
 
-	const image_barrier src_to_transfer{
+	const memory_barrier src_to_transfer{
 		.src_stages = pipeline_stage_flag::color_attachment_output,
 		.src_access = access_flag::color_attachment_write,
 		.dst_stages = pipeline_stage_flag::transfer,
 		.dst_access = access_flag::transfer_read,
-		.image = src_image,
-		.aspects = image_aspect_flag::color,
 	};
 
-	const image_barrier dst_to_transfer{
+	const image_discard dst_to_transfer{
 		.src_stages = {},
 		.src_access = {},
 		.dst_stages = pipeline_stage_flag::transfer,
 		.dst_access = access_flag::transfer_write,
-		.discard_contents = true,
 		.image = dst.handle(),
 		.aspects = image_aspect_flag::color,
 	};
 
-	const std::array pre_barriers = { src_to_transfer, dst_to_transfer };
 	m_recorder.pipeline_barrier(dependency_info{
-		.image_barriers = pre_barriers
+		.memory_barriers = std::span(&src_to_transfer, 1),
+		.image_discards = std::span(&dst_to_transfer, 1),
 	});
 
 	const image_blit_region gpu_region{
@@ -670,27 +619,22 @@ auto gse::gpu::recording_context::blit_target_to_image(const image_ref& src, con
 	};
 	m_recorder.blit_image(src_image, dst.handle(), gpu_region, sampler_filter::nearest);
 
-	const image_barrier src_back{
-		.src_stages = pipeline_stage_flag::transfer,
-		.src_access = access_flag::transfer_read,
-		.dst_stages = pipeline_stage_flag::color_attachment_output,
-		.dst_access = { access_flag::color_attachment_write, access_flag::color_attachment_read },
-		.image = src_image,
-		.aspects = image_aspect_flag::color,
+	const std::array post_barriers = {
+		memory_barrier{
+			.src_stages = pipeline_stage_flag::transfer,
+			.src_access = access_flag::transfer_read,
+			.dst_stages = pipeline_stage_flag::color_attachment_output,
+			.dst_access = { access_flag::color_attachment_write, access_flag::color_attachment_read },
+		},
+		memory_barrier{
+			.src_stages = pipeline_stage_flag::transfer,
+			.src_access = access_flag::transfer_write,
+			.dst_stages = { pipeline_stage_flag::compute_shader, pipeline_stage_flag::fragment_shader },
+			.dst_access = access_flag::shader_sampled_read,
+		},
 	};
-
-	const image_barrier dst_to_read{
-		.src_stages = pipeline_stage_flag::transfer,
-		.src_access = access_flag::transfer_write,
-		.dst_stages = { pipeline_stage_flag::compute_shader, pipeline_stage_flag::fragment_shader },
-		.dst_access = access_flag::shader_sampled_read,
-		.image = dst.handle(),
-		.aspects = image_aspect_flag::color,
-	};
-
-	const std::array post_barriers = { src_back, dst_to_read };
 	m_recorder.pipeline_barrier(dependency_info{
-		.image_barriers = post_barriers
+		.memory_barriers = post_barriers
 	});
 }
 
@@ -757,7 +701,6 @@ auto gse::gpu::recording_context::dispatch_indirect(const buffer& buf, const std
 		{
 			.ptr = std::bit_cast<const void*>(buf.handle()),
 			.type = resource_type::buffer,
-			.buffer_size = buf.size(),
 			.host_buffer = std::addressof(buf),
 		},
 		pipeline_stage_flag::draw_indirect,
@@ -773,7 +716,6 @@ auto gse::gpu::recording_context::draw_indirect(const buffer& buf, const std::si
 		{
 			.ptr = std::bit_cast<const void*>(buf.handle()),
 			.type = resource_type::buffer,
-			.buffer_size = buf.size(),
 			.host_buffer = std::addressof(buf),
 		},
 		pipeline_stage_flag::draw_indirect,
@@ -789,7 +731,6 @@ auto gse::gpu::recording_context::draw_mesh_tasks_indirect(const buffer& buf, co
 		{
 			.ptr = std::bit_cast<const void*>(buf.handle()),
 			.type = resource_type::buffer,
-			.buffer_size = buf.size(),
 			.host_buffer = std::addressof(buf),
 		},
 		pipeline_stage_flag::draw_indirect,
@@ -805,7 +746,6 @@ auto gse::gpu::recording_context::bind_index(const buffer& buf, const index_type
 		{
 			.ptr = std::bit_cast<const void*>(buf.handle()),
 			.type = resource_type::buffer,
-			.buffer_size = buf.size(),
 			.host_buffer = std::addressof(buf),
 		},
 		pipeline_stage_flag::index_input,

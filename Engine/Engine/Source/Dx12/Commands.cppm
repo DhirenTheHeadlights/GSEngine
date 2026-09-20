@@ -38,10 +38,6 @@ export namespace gse::dx12 {
 			const gpu::dependency_info& dep
 		) const -> void;
 
-		auto transition_image_state(
-			const gpu::image_barrier& barrier
-		) const -> void;
-
 		auto reset_query_pool(
 			gpu::handle<gpu::query_pool> pool,
 			std::uint32_t first_query,
@@ -62,6 +58,12 @@ export namespace gse::dx12 {
 		auto end_query(
 			gpu::handle<gpu::query_pool> pool,
 			std::uint32_t query_index
+		) const -> void;
+
+		auto resolve_query_pool(
+			gpu::handle<gpu::query_pool> pool,
+			std::uint32_t first_query,
+			std::uint32_t query_count
 		) const -> void;
 
 		auto bind_shaders(
@@ -345,16 +347,16 @@ auto gse::dx12::commands::begin_rendering(const gpu::rendering_info& info) const
 	}
 }
 
-auto gse::dx12::commands::end_rendering() const -> void {}
+auto gse::dx12::commands::end_rendering() const -> void {
+	if (active_device) {
+		active_device->cmd_end_rendering(m_cmd);
+	}
+}
 
 auto gse::dx12::commands::pipeline_barrier(const gpu::dependency_info& dep) const -> void {
 	if (active_device) {
 		active_device->cmd_pipeline_barrier(m_cmd, dep);
 	}
-}
-
-auto gse::dx12::commands::transition_image_state(const gpu::image_barrier& barrier) const -> void {
-	pipeline_barrier(gpu::dependency_info{ .image_barriers = std::span(&barrier, 1) });
 }
 
 auto gse::dx12::commands::reset_query_pool(gpu::handle<gpu::query_pool>, std::uint32_t, std::uint32_t) const -> void {}
@@ -368,6 +370,12 @@ auto gse::dx12::commands::write_timestamp(gpu::pipeline_stage_flags, const gpu::
 auto gse::dx12::commands::begin_query(gpu::handle<gpu::query_pool>, std::uint32_t) const -> void {}
 
 auto gse::dx12::commands::end_query(gpu::handle<gpu::query_pool>, std::uint32_t) const -> void {}
+
+auto gse::dx12::commands::resolve_query_pool(const gpu::handle<gpu::query_pool> pool, const std::uint32_t first_query, const std::uint32_t query_count) const -> void {
+	if (active_device) {
+		active_device->cmd_resolve_query_pool(m_cmd, pool, first_query, query_count);
+	}
+}
 
 auto gse::dx12::commands::bind_shaders(const std::span<const gpu::stage_flag> stages, const std::span<const gpu::handle<gpu::shader_object>> shaders) const -> void {
 	auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(m_cmd);
@@ -401,11 +409,6 @@ auto gse::dx12::commands::bind_resource_heap(gpu::device_address, gpu::device_si
 	}
 	directx::ID3D12DescriptorHeap* heaps[]{ active_device->resource_heap(), active_device->sampler_heap() };
 	list->SetDescriptorHeaps(2, heaps);
-	auto* root = active_device->root_signature();
-	list->SetComputeRootSignature(root);
-	if (!directx::is_compute_command_list(list)) {
-		list->SetGraphicsRootSignature(root);
-	}
 }
 
 auto gse::dx12::commands::bind_sampler_heap(gpu::device_address, gpu::device_size, gpu::device_size, gpu::device_size) const -> void {}
@@ -415,22 +418,20 @@ auto gse::dx12::commands::push_data(const std::uint32_t offset, const std::span<
 	if (!list || data.empty()) {
 		return;
 	}
-	const auto num_values = static_cast<std::uint32_t>(data.size() / 4);
-	const auto push_size = active_device ? active_device->list_push_size(m_cmd) : 0;
-	const bool compute_list = directx::is_compute_command_list(list);
-	if (offset < push_size) {
-		const auto dest_offset = offset / 4;
-		list->SetComputeRoot32BitConstants(1, num_values, data.data(), dest_offset);
-		if (!compute_list) {
-			list->SetGraphicsRoot32BitConstants(1, num_values, data.data(), dest_offset);
-		}
+	if (!active_device) {
+		return;
 	}
-	else {
-		const auto dest_offset = (offset - push_size) / 4;
-		list->SetComputeRoot32BitConstants(0, num_values, data.data(), dest_offset);
-		if (!compute_list) {
-			list->SetGraphicsRoot32BitConstants(0, num_values, data.data(), dest_offset);
-		}
+	const auto num_values = static_cast<std::uint32_t>(data.size() / 4);
+	const auto push_size = active_device->list_push_size(m_cmd);
+	const bool compute_bound = active_device->compute_pso_bound(m_cmd);
+	const bool graphics_bound = !directx::is_compute_command_list(list) && active_device->graphics_pso_bound(m_cmd);
+	const std::uint32_t parameter = offset < push_size ? 1 : 0;
+	const auto dest_offset = (offset < push_size ? offset : offset - push_size) / 4;
+	if (compute_bound) {
+		list->SetComputeRoot32BitConstants(parameter, num_values, data.data(), dest_offset);
+	}
+	if (graphics_bound) {
+		list->SetGraphicsRoot32BitConstants(parameter, num_values, data.data(), dest_offset);
 	}
 }
 
@@ -589,6 +590,38 @@ auto gse::dx12::commands::copy_buffer_to_image(const gpu::handle<gpu::buffer> sr
 	}
 }
 
+namespace gse::dx12 {
+	auto present_copy_enter(directx::ID3D12GraphicsCommandList* list, directx::ID3D12Resource* resource, const bool as_source) -> bool {
+		if (!active_device || !active_device->is_present_image(resource)) {
+			return false;
+		}
+		const auto b = directx::texture_layout_barrier(
+			resource,
+			directx::sync_all,
+			directx::access_common,
+			directx::layout_common,
+			directx::sync_copy,
+			as_source ? directx::access_copy_source : directx::access_copy_dest,
+			as_source ? directx::layout_copy_source : directx::layout_copy_dest
+		);
+		directx::barrier(list, nullptr, 0, &b, 1);
+		return true;
+	}
+
+	auto present_copy_leave(directx::ID3D12GraphicsCommandList* list, directx::ID3D12Resource* resource, const bool as_source) -> void {
+		const auto b = directx::texture_layout_barrier(
+			resource,
+			directx::sync_copy,
+			as_source ? directx::access_copy_source : directx::access_copy_dest,
+			as_source ? directx::layout_copy_source : directx::layout_copy_dest,
+			directx::sync_all,
+			directx::access_common,
+			directx::layout_common
+		);
+		directx::barrier(list, nullptr, 0, &b, 1);
+	}
+}
+
 auto gse::dx12::commands::copy_image_to_buffer(const gpu::handle<gpu::image> src, const gpu::handle<gpu::buffer> dst, const std::span<const gpu::buffer_image_copy_region> regions) const -> void {
 	auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(m_cmd);
 	auto* src_res = std::bit_cast<directx::ID3D12Resource*>(src);
@@ -596,6 +629,7 @@ auto gse::dx12::commands::copy_image_to_buffer(const gpu::handle<gpu::image> src
 	if (!list || !src_res || !dst_res || !active_device) {
 		return;
 	}
+	const bool src_present = present_copy_enter(list, src_res, true);
 	for (const auto& region : regions) {
 		assert(region.buffer_row_length == 0, "dx12 copy_image_to_buffer sources the device row pitch; got buffer_row_length={}", region.buffer_row_length);
 		assert(region.image_subresource.base_array_layer == 0, "dx12 copy_image_to_buffer only implements array layer 0; got {}", region.image_subresource.base_array_layer);
@@ -613,6 +647,9 @@ auto gse::dx12::commands::copy_image_to_buffer(const gpu::handle<gpu::image> src
 				.src_subresource = region.image_subresource.mip_level,
 			}
 		);
+	}
+	if (src_present) {
+		present_copy_leave(list, src_res, true);
 	}
 }
 
@@ -637,6 +674,8 @@ auto gse::dx12::commands::blit_image(const gpu::handle<gpu::image> src, const gp
 		"dx12 blit_image cannot convert formats; d3d12 copies stay within a format family. Give the destination the frame target's format"
 	);
 
+	const bool src_present = present_copy_enter(list, src_res, true);
+	const bool dst_present = present_copy_enter(list, dst_res, false);
 	directx::copy_texture_region(
 		list,
 		src_res,
@@ -652,6 +691,12 @@ auto gse::dx12::commands::blit_image(const gpu::handle<gpu::image> src, const gp
 			.dst_subresource = region.dst_subresource.mip_level,
 		}
 	);
+	if (src_present) {
+		present_copy_leave(list, src_res, true);
+	}
+	if (dst_present) {
+		present_copy_leave(list, dst_res, false);
+	}
 }
 
 auto gse::dx12::commands::copy_image(const gpu::handle<gpu::image> src, const gpu::handle<gpu::image> dst, const gpu::image_copy_region& region) const -> void {
@@ -661,6 +706,8 @@ auto gse::dx12::commands::copy_image(const gpu::handle<gpu::image> src, const gp
 	if (!list || !src_res || !dst_res) {
 		return;
 	}
+	const bool src_present = present_copy_enter(list, src_res, true);
+	const bool dst_present = present_copy_enter(list, dst_res, false);
 	directx::copy_texture_region(
 		list,
 		src_res,
@@ -676,6 +723,12 @@ auto gse::dx12::commands::copy_image(const gpu::handle<gpu::image> src, const gp
 			.dst_subresource = region.dst_subresource.mip_level,
 		}
 	);
+	if (src_present) {
+		present_copy_leave(list, src_res, true);
+	}
+	if (dst_present) {
+		present_copy_leave(list, dst_res, false);
+	}
 }
 
 auto gse::dx12::commands::release_swapchain_image_to_present(gpu::handle<gpu::image>, gpu::pipeline_stage_flags, gpu::access_flags) const -> void {}
@@ -707,10 +760,6 @@ auto gse::dx12::commands::build_acceleration_structures(const gpu::acceleration_
 	const auto dst = geometry_info.dst.value;
 	const auto scratch = geometry_info.scratch_address;
 	if (geometry_info.type == gpu::acceleration_structure_type::bottom_level) {
-		if (active_device) {
-			const std::array inputs{ geometry.triangles.vertex_data, geometry.triangles.index_data };
-			active_device->cmd_transition_acceleration_structure_inputs(m_cmd, inputs);
-		}
 		const directx::blas_triangles triangles{
 			.vertex_format = directx::format_r32g32b32_float,
 			.vertex_address = geometry.triangles.vertex_data,
@@ -723,10 +772,6 @@ auto gse::dx12::commands::build_acceleration_structures(const gpu::acceleration_
 		directx::build_blas(list, dst, scratch, triangles);
 	}
 	else {
-		if (active_device) {
-			const std::array inputs{ geometry.instances.data };
-			active_device->cmd_transition_acceleration_structure_inputs(m_cmd, inputs);
-		}
 		const bool allow_update = geometry_info.flags.test(gpu::build_acceleration_structure_flag::allow_update);
 		directx::build_tlas(list, dst, scratch, geometry.instances.data, range_infos[0]->primitive_count, allow_update);
 	}

@@ -1,10 +1,7 @@
 export module gse.graphics:point_light;
 
-import std;
 
 import gse.math;
-import gse.core;
-import gse.ecs;
 
 export namespace gse {
 	struct point_light_component {

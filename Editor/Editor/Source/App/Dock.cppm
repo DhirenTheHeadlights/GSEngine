@@ -112,9 +112,25 @@ export namespace gse::ide {
 		bool adopt_new_panels = false;
 	};
 
+	struct dock_anchor {
+		std::vector<id> panels;
+		gui::dock::location location = gui::dock::location::center;
+		float ratio = 0.5f;
+	};
+
 	[[nodiscard]] auto is_leaf(
 		const dock_node& node
 	) -> bool;
+
+	[[nodiscard]] auto anchor_of(
+		const dock_tree& tree,
+		id panel
+	) -> std::optional<dock_anchor>;
+
+	[[nodiscard]] auto lowest_common_node(
+		const dock_tree& tree,
+		std::span<const id> panels
+	) -> id;
 
 	[[nodiscard]] auto find_leaf(
 		const dock_tree& tree,

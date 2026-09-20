@@ -1,13 +1,12 @@
 module gse.diag:trace_impl;
 
+import gse.containers;
+import gse.core;
+import gse.math;
+import gse.time;
 import std;
 
 import :trace;
-
-import gse.core;
-import gse.containers;
-import gse.time;
-import gse.math;
 
 auto gse::trace::start(const config& cfg) -> void {
 	global_config = cfg;
@@ -17,9 +16,11 @@ auto gse::trace::start(const config& cfg) -> void {
 
 	frames = frame_storage{};
 	open_spans.clear();
+	open_async_spans.clear();
 	closed_spans.clear();
 	build_frame_index = 0;
 	published_generation = 0;
+	frame_boundary = system_clock::now<tick_step>();
 
 	register_virtual_thread(gpu_virtual_tid, "GPU");
 	register_virtual_thread(gpu_stats_virtual_tid, "GPU Stats");
@@ -135,12 +136,12 @@ auto gse::trace::counter_at(const id id, const double value, const std::uint32_t
 }
 
 auto gse::trace::register_virtual_thread(const std::uint32_t tid, const std::string_view name) -> void {
-	std::unique_lock lk(virtual_thread_mutex);
+	std::unique_lock _(virtual_thread_mutex);
 	virtual_thread_names[tid] = std::string(name);
 }
 
 auto gse::trace::virtual_thread_name(const std::uint32_t tid) -> std::optional<std::string> {
-	std::shared_lock lk(virtual_thread_mutex);
+	std::shared_lock _(virtual_thread_mutex);
 	if (const auto it = virtual_thread_names.find(tid); it != virtual_thread_names.end()) {
 		return it->second;
 	}
@@ -157,21 +158,22 @@ auto gse::trace::main_tid() -> std::uint32_t {
 }
 
 auto gse::trace::mark_hidden(const id id) -> void {
-	std::unique_lock lk(hidden_ids_mutex);
+	std::unique_lock _(hidden_ids_mutex);
 	hidden_ids.insert(id);
 }
 
 auto gse::trace::is_hidden(const id id) -> bool {
-	std::shared_lock lk(hidden_ids_mutex);
+	std::shared_lock _(hidden_ids_mutex);
 	return hidden_ids.contains(id);
 }
 
 auto gse::trace::hidden_ids_snapshot() -> std::unordered_set<id> {
-	std::shared_lock lk(hidden_ids_mutex);
+	std::shared_lock _(hidden_ids_mutex);
 	return hidden_ids;
 }
 
 auto gse::trace::finalize_frame() -> void {
+	const auto boundary = system_clock::now<tick_step>();
 	++build_frame_index;
 
 	drain_events(scratch.merged);
@@ -179,6 +181,8 @@ auto gse::trace::finalize_frame() -> void {
 	evict_stale_open_spans();
 
 	build_frame(frames.write());
+	frames.write().elapsed = boundary - frame_boundary;
+	frame_boundary = boundary;
 	frames.flip();
 }
 
@@ -188,13 +192,14 @@ auto gse::trace::view() -> frame_view {
 		.nodes = std::span(fs.nodes),
 		.children = std::span(fs.children),
 		.roots = std::span(fs.roots),
-		.generation = fs.generation
+		.generation = fs.generation,
+		.elapsed = fs.elapsed,
 	};
 }
 
 auto gse::trace::dropped_events() -> std::uint64_t {
 	auto& reg = registry();
-	std::lock_guard lock(reg.mutex);
+	std::lock_guard _(reg.mutex);
 
 	std::uint64_t total = 0;
 	for (const auto* tb : reg.buffers) {
@@ -274,7 +279,7 @@ gse::trace::thread_buffer::~thread_buffer() {
 	}
 
 	auto& reg = registry();
-	std::lock_guard lock(reg.mutex);
+	std::lock_guard _(reg.mutex);
 	std::erase(reg.buffers, this);
 }
 
@@ -290,7 +295,7 @@ auto gse::trace::ensure_tls_registered() -> bool {
 	tls.events.ensure_storage();
 
 	auto& reg = registry();
-	std::lock_guard lock(reg.mutex);
+	std::lock_guard _(reg.mutex);
 	reg.buffers.push_back(&tls);
 	tls.registered = true;
 	return true;
@@ -331,7 +336,7 @@ auto gse::trace::drain_events(std::vector<event>& out) -> void {
 
 	{
 		auto& reg = registry();
-		std::lock_guard lock(reg.mutex);
+		std::lock_guard _(reg.mutex);
 		for (auto* tb : reg.buffers) {
 			tb->events.drain_to(out);
 		}
@@ -352,6 +357,24 @@ auto gse::trace::absorb_events(const std::span<const event> events) -> void {
 	closed_spans.clear();
 
 	for (const auto& e : events) {
+		if (e.type == event_type::async_begin) {
+			const auto eid = allocate_span_eid();
+			open_async_spans.insert_or_assign({ e.id, e.key }, eid);
+			open_spans.insert_or_assign(
+				eid,
+				span_info{
+					.id = e.id,
+					.tid = static_cast<std::uint32_t>(e.tid),
+					.t0 = e.ts,
+					.t1 = {},
+					.parent = e.parent_eid,
+					.opened_frame = build_frame_index,
+					.lexical = false
+				}
+			);
+			continue;
+		}
+
 		if (e.type == event_type::begin) {
 			open_spans.insert_or_assign(
 				e.eid,
@@ -368,11 +391,21 @@ auto gse::trace::absorb_events(const std::span<const event> events) -> void {
 			continue;
 		}
 
-		if (e.type != event_type::end) {
+		if (e.type != event_type::end && e.type != event_type::async_end) {
 			continue;
 		}
 
-		const auto it = open_spans.find(e.eid);
+		auto eid = e.eid;
+		if (e.type == event_type::async_end) {
+			const auto async_it = open_async_spans.find({ e.id, e.key });
+			if (async_it == open_async_spans.end()) {
+				continue;
+			}
+			eid = async_it->second;
+			open_async_spans.erase(async_it);
+		}
+
+		const auto it = open_spans.find(eid);
 		if (it == open_spans.end()) {
 			continue;
 		}
@@ -381,7 +414,7 @@ auto gse::trace::absorb_events(const std::span<const event> events) -> void {
 		info.t1 = std::max(e.ts, info.t0);
 
 		closed_spans.push_back({
-			.eid = e.eid,
+			.eid = eid,
 			.info = info,
 			.open = false
 		});
@@ -399,6 +432,9 @@ auto gse::trace::evict_stale_open_spans() -> void {
 	);
 
 	abandoned_span_count.fetch_add(erased, std::memory_order_relaxed);
+	std::erase_if(open_async_spans, [](const auto& entry) {
+		return !open_spans.contains(entry.second);
+	});
 }
 
 auto gse::trace::collect_frame_spans(std::vector<frame_span>& out) -> void {

@@ -1,43 +1,37 @@
 module gse.graphics:gui_impl;
 
-import std;
-
-import gse.os;
-import gse.config;
 import gse.assets;
-import gse.gpu;
-import gse.core;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.config;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
+import gse.gpu;
 import gse.math;
 import gse.meta;
+import gse.os;
 import gse.save;
+import gse.time;
+import std;
 
+import :builder;
+import :cursor;
+import :font;
 import :gui;
 import :gui_frame;
 import :gui_scale;
-
-import :types;
+import :interaction;
 import :layout;
-import :font;
-import :ui_renderer;
-import :texture;
-import :cursor;
-import :save;
-import :ids;
-import :input_layers;
-import :settings;
-import :styles;
-import :builder;
 import :menu_stack;
 import :render_layer;
-import :interaction;
+import :save;
+import :styles;
 import :symbols;
 import :tab_strip;
-import :widget_context;
+import :texture;
+import :types;
+import :ui_renderer;
 
 auto gse::gui::is_popout(const viewport_state& vp) -> bool {
 	return vp.window.exists();
@@ -272,10 +266,10 @@ auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const
 			target->menu_stack.push_factory(req.factory);
 		}
 	}
-	for ([[maybe_unused]] const auto& req : requests_in.of<pop_screen_request>()) {
+	for ([[maybe_unused]] const auto& _ : requests_in.of<pop_screen_request>()) {
 		d.primary.menu_stack.pop();
 	}
-	for ([[maybe_unused]] const auto& req : requests_in.of<clear_screens_request>()) {
+	for ([[maybe_unused]] const auto& _ : requests_in.of<clear_screens_request>()) {
 		d.primary.menu_stack.clear();
 	}
 	for (const auto& req : requests_in.of<set_manual_cursor_request>()) {
@@ -395,13 +389,20 @@ auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const
 		sort_by_layer(d.text_commands);
 	}
 
-	for (auto& cmd : d.sprite_commands) {
-		ui_out.push<renderer::sprite_command>(std::move(cmd));
+	if (d.sprite_commands != d.previous_sprite_commands || d.text_commands != d.previous_text_commands) {
+		frame_demand::request_redraw();
 	}
 
-	for (auto& cmd : d.text_commands) {
-		ui_out.push<renderer::text_command>(std::move(cmd));
+	for (const auto& cmd : d.sprite_commands) {
+		ui_out.push<renderer::sprite_command>(cmd);
 	}
+
+	for (const auto& cmd : d.text_commands) {
+		ui_out.push<renderer::text_command>(cmd);
+	}
+
+	std::swap(d.sprite_commands, d.previous_sprite_commands);
+	std::swap(d.text_commands, d.previous_text_commands);
 
 	d.primary.fstate = {};
 	for (const auto& vp : d.secondaries) {

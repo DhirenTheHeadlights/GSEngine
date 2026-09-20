@@ -51,7 +51,7 @@ export namespace gse::gui {
 		std::string text;
 		id widget_id;
 		id pending_widget_id;
-		time hover_time{};
+		deadline_timer show;
 		vec2f position;
 		bool visible = false;
 
@@ -474,6 +474,10 @@ export namespace gse::gui {
 		) const -> vec4f;
 
 		[[nodiscard]] auto current_clip() const -> std::optional<rectf>;
+
+		[[nodiscard]] auto clip_for(
+			render_layer layer
+		) const -> std::optional<rectf>;
 
 		[[nodiscard]] auto scoped_layer(
 			render_layer layer

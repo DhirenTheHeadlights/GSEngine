@@ -119,9 +119,11 @@ auto gse::model::load(asset::load_ctx& ctx) -> async::task<asset_result> {
 		}
 	}
 
-	auto& gpu_s = co_await gpu::on_gpu(ctx.channels);
-	for (auto& mesh : m_meshes) {
-		mesh.initialize(gpu_s);
+	if (ctx.assets.gpu_available) {
+		auto& gpu_s = co_await gpu::on_gpu(ctx.channels);
+		for (auto& mesh : m_meshes) {
+			mesh.initialize(gpu_s);
+		}
 	}
 
 	vec3<length> sum;

@@ -1,42 +1,33 @@
 module gse.graphics:gui_screen_impl;
 
-import std;
-
-import gse.os;
-import gse.config;
 import gse.assets;
-import gse.gpu;
-import gse.core;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.config;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
+import gse.gpu;
 import gse.math;
 import gse.meta;
+import gse.os;
 import gse.save;
+import gse.time;
+import std;
 
+import :builder;
 import :gui;
-import :gui_screen;
 import :gui_chrome;
-
-import :types;
-import :layout;
-import :font;
-import :ui_renderer;
-import :texture;
-import :cursor;
-import :save;
+import :gui_screen;
 import :ids;
 import :input_layers;
-import :settings;
-import :styles;
-import :builder;
 import :menu_stack;
 import :render_layer;
-import :interaction;
+import :styles;
 import :symbols;
-import :tab_strip;
+import :texture;
+import :types;
+import :ui_renderer;
 import :widget_context;
 
 auto gse::gui::draw_screen_caption(builder& b, viewport_state& vp, screen& top, const rectf& bar_rect, const rectf& full_rect) -> void {
@@ -124,7 +115,7 @@ auto gse::gui::process_screen(data& d, viewport_state& vp, const input::state& i
 	const rectf content_rect = body_rect.inset({ sty.padding, sty.padding });
 	vec2f layout_cursor = content_rect.top_left();
 
-	ids::scope screen_scope(vp.screen_surface->id().number());
+	ids::scope _(vp.screen_surface->id().number());
 
 	widget_context ctx{ {
 		.current_menu = &*vp.screen_surface,

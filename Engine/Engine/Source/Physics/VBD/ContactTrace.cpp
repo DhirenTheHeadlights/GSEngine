@@ -87,6 +87,62 @@ auto gse::physics::contact_trace::run(data& d, const shared_view<physics::data> 
 		diag.attempted_contacts
 	);
 
+	if (phys.gpu_solver.solver_cfg().trace_body == body_index) {
+		const auto state = phys.gpu_solver.read_narrow_phase_debug();
+		for (std::uint32_t it = 0; it < vbd::limits.iteration_trace_slots; ++it) {
+			const auto base = vbd::limits.state_iteration_trace_base_index + it * vbd::limits.iteration_trace_uints;
+			if (base + 2 >= state.size()) {
+				break;
+			}
+			const auto c = std::bit_cast<float>(state[base]);
+			const auto lambda = std::bit_cast<float>(state[base + 1]);
+			const auto penalty = std::bit_cast<float>(state[base + 2]);
+			if (c == 0.f && lambda == 0.f && penalty == 0.f) {
+				break;
+			}
+			log::println(
+				log::category::physics,
+				"gpu dual gen {} it {}: C {:.7f} lambda {:.4f} pen {:.1f}",
+				generation,
+				it,
+				c,
+				lambda,
+				penalty
+			);
+		}
+		for (std::uint32_t it = 0; it < vbd::limits.iteration_trace_slots; ++it) {
+			const auto base = vbd::limits.state_joint_trace_base_index + it * vbd::limits.joint_trace_uints;
+			if (base + 8 >= state.size()) {
+				break;
+			}
+			std::array<float, 9> v{};
+			for (std::size_t k = 0; k < v.size(); ++k) {
+				v[k] = std::bit_cast<float>(state[base + k]);
+			}
+			const bool empty_slot = std::ranges::all_of(v, [](const float x) {
+				return x == 0.f;
+			});
+			if (empty_slot) {
+				break;
+			}
+			log::println(
+				log::category::physics,
+				"gpu joint dual gen {} it {}: c ({:.7f}, {:.7f}, {:.7f}) lambda ({:.4f}, {:.4f}, {:.4f}) pen ({:.1f}, {:.1f}, {:.1f})",
+				generation,
+				it,
+				v[0],
+				v[3],
+				v[6],
+				v[1],
+				v[4],
+				v[7],
+				v[2],
+				v[5],
+				v[8]
+			);
+		}
+	}
+
 	const auto narrow_debug = phys.gpu_solver.read_narrow_phase_debug();
 	if (narrow_debug.size() >= vbd::limits.collision_state_header_uints) {
 		const auto* hashes = narrow_debug.data() + vbd::limits.state_pass_hash_base_index;

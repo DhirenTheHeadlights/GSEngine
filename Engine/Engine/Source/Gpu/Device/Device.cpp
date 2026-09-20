@@ -1,28 +1,31 @@
 module gse.gpu:device_impl;
 
+import gse.assert;
+import gse.concurrency;
+import gse.core;
+import gse.ecs;
+import gse.gpu_backend;
+import gse.log;
+import gse.math;
+import gse.meta;
+import gse.nsight_perf;
+import gse.os;
 import std;
 
-import :device;
-import :video_backend;
-import :video_encoder;
-import :command_dispatch;
-import :device_vulkan_backend;
-import :device_dx12_backend;
 import :backend_state;
-import :image;
-
-import gse.gpu_backend;
-
-import gse.os;
-import gse.ecs;
-import gse.log;
-import gse.concurrency;
-import gse.meta;
-import gse.math;
-import gse.core;
-import gse.assert;
+import :command_dispatch;
+import :device;
+import :device_dx12_backend;
+import :device_vulkan_backend;
+import :video_encoder;
 
 namespace gse::gpu {
+	constexpr std::size_t max_perf_metrics = 32;
+
+	auto trimmed_metric_name(
+		std::string_view field
+	) -> std::string_view;
+
 	template <typename B>
 	auto device_backend_delete(void* self) -> void {
 		delete static_cast<B*>(self);
@@ -34,6 +37,15 @@ namespace gse::gpu {
 
 	template <typename B>
 	constexpr gpu_dispatch device_dispatch_for = meta::build_dispatch<gpu_dispatch, vulkan_device_backend, meta::pointer_receiver<B>>();
+}
+
+auto gse::gpu::trimmed_metric_name(const std::string_view field) -> std::string_view {
+	constexpr std::string_view blanks = " \t";
+	const auto first = field.find_first_not_of(blanks);
+	if (first == std::string_view::npos) {
+		return {};
+	}
+	return field.substr(first, field.find_last_not_of(blanks) - first + 1);
 }
 
 auto gse::gpu::device::create(const std::optional<shared_view<window::data>> win, const bool validation_layers_enabled, backend_kind& backend, device_settings& device_cfg) -> std::unique_ptr<device> {
@@ -71,8 +83,8 @@ auto gse::gpu::device::create(const std::optional<shared_view<window::data>> win
 		backend = backend_kind::dx12;
 	}
 
-	active_backend = backend_kind::dx12;
 	auto created = create_dx12_device_backend(win, validation_layers_enabled, device_cfg);
+	active_backend = backend_kind::dx12;
 
 	std::unique_ptr<void, void (*)(void*)> backend_ptr(
 		created.backend.release(),
@@ -128,6 +140,7 @@ gse::gpu::device::device(std::unique_ptr<void, void (*)(void*)> backend, const g
 }
 
 gse::gpu::device::~device() {
+	nsight_perf::end_session();
 	log::println(log::category::runtime, "Destroying Device");
 }
 
@@ -149,6 +162,40 @@ auto gse::gpu::device::wait_idle() const -> void {
 
 auto gse::gpu::device::timestamp_period() const -> float {
 	return m_vt->timestamp_period(m_backend.get());
+}
+
+auto gse::gpu::device::calibrated_timestamp(const queue_type queue) const -> std::optional<timestamp_calibration> {
+	return m_vt->calibrated_timestamp(m_backend.get(), queue);
+}
+
+auto gse::gpu::device::set_perf_metrics(const perf_metrics_config& config) -> void {
+	if (config == m_perf_metrics) {
+		return;
+	}
+	m_perf_metrics = config;
+
+	nsight_perf::end_session();
+	if (!config.enabled) {
+		return;
+	}
+
+	std::array<std::string_view, max_perf_metrics> fields;
+	const auto count = split_fields(m_perf_metrics.metrics, ',', fields);
+
+	std::vector<std::string_view> names;
+	names.reserve(count);
+	for (const std::string_view field : std::span(fields).first(count)) {
+		if (const std::string_view name = trimmed_metric_name(field); !name.empty()) {
+			names.push_back(name);
+		}
+	}
+
+	nsight_perf::begin_session({
+		.device_index = m_perf_metrics.device_index,
+		.metrics = names,
+		.sampling_interval = m_perf_metrics.sampling_interval,
+		.lock_clocks_to_rated_tdp = m_perf_metrics.lock_clocks,
+	});
 }
 
 auto gse::gpu::device::begin_pass_marker(const command_buffer_handle cmd, const pass_marker_domain domain, const pass_marker marker, const std::string_view name) -> pass_marker_handle {
@@ -234,7 +281,7 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 		return;
 	}
 
-	const auto aftermath_wait = make_scope_exit([this] {
+	const auto _ = make_scope_exit([this] {
 		m_vt->wait_for_crash_dump(m_backend.get());
 	});
 
@@ -666,12 +713,20 @@ auto gse::gpu::device::retire(const gpu::handle<fence> fence) -> void {
 	m_vt->retire_fence(m_backend.get(), fence);
 }
 
+auto gse::gpu::device::retire(const gpu::handle<query_pool> pool) -> void {
+	m_vt->retire_query_pool(m_backend.get(), pool);
+}
+
 auto gse::gpu::device::semaphore_counter_value(const gpu::handle<semaphore> semaphore) const -> std::uint64_t {
 	return m_vt->semaphore_counter_value(m_backend.get(), semaphore);
 }
 
 auto gse::gpu::device::wait_semaphore(const gpu::handle<semaphore> semaphore, const std::uint64_t value) const -> void {
 	m_vt->wait_semaphore(m_backend.get(), semaphore, value);
+}
+
+auto gse::gpu::device::wait_semaphore_for(const gpu::handle<semaphore> semaphore, const std::uint64_t value, const time timeout) const -> bool {
+	return m_vt->wait_semaphore_for(m_backend.get(), semaphore, value, timeout);
 }
 
 auto gse::gpu::device::create_timestamp_query_pool(const std::uint32_t capacity, const std::string_view label) -> gpu::handle<query_pool> {
@@ -747,17 +802,21 @@ auto gse::gpu::device::host_upload_image_layers(const gpu::handle<image> img, co
 }
 
 auto gse::gpu::device::create_buffer(const buffer_desc& desc, const std::string_view tag, const std::source_location& loc) -> buffer {
-	assert(
-		!(desc.bindless && desc.usage.test(buffer_flag::uniform)),
-		"bindless buffers must be usage=storage, not uniform: every shader binding reads the descriptor heap as a StructuredBuffer, " 
-		"so a uniform-usage bindless buffer writes a descriptor no shader can read (garbage matrices -> NaN -> GPU hang). Drop buffer_flag::uniform."
-	);
 	auto buf = m_vt->create_buffer(m_backend.get(), desc, tag, loc);
 	if (desc.bindless) {
+		assert(
+			buf.slot().valid(),
+			"'{}' ({} B) asked for a bindless slot and the backend had none left, so nothing can reach it: "
+			"shader writes through this binding and copies that name it are both discarded with no further diagnostic. "
+			"Raise the bindless buffer heap size or release a buffer. Created at {}:{}.",
+			tag,
+			desc.size,
+			loc.file_name(),
+			loc.line()
+		);
 		set_slot_resource(buf.slot().index, resource_ref{
 			.ptr = std::bit_cast<const void*>(buf.handle()),
 			.type = resource_type::buffer,
-			.buffer_size = buf.size(),
 		});
 	}
 	return buf;
@@ -807,7 +866,6 @@ auto gse::gpu::device::write_storage_buffer(const bindless_slot slot, const buff
 	set_slot_resource(slot.index, resource_ref{
 		.ptr = std::bit_cast<const void*>(buf.handle()),
 		.type = resource_type::buffer,
-		.buffer_size = size,
 	});
 	m_vt->write_storage_buffer(m_backend.get(), slot, buf.device_address(), size);
 }
@@ -841,8 +899,8 @@ auto gse::gpu::device::bindless_sampler_heap_binding() const -> bindless_heap_bi
 	return m_vt->bindless_sampler_heap_binding(m_backend.get());
 }
 
-auto gse::gpu::device::create_sampler(const sampler_desc& desc) -> gpu::handle<sampler> {
-	return m_vt->create_sampler(m_backend.get(), desc);
+auto gse::gpu::device::max_push_data_size() const -> std::uint32_t {
+	return m_vt->max_push_data_size(m_backend.get());
 }
 
 auto gse::gpu::device::collect_garbage() -> void {

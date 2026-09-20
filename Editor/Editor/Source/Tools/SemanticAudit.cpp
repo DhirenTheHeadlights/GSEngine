@@ -1,7 +1,6 @@
-import std;
-
 import gse;
 import gse.ide.analysis;
+import std;
 
 namespace gse::ide::audit {
 	using analysis::identifier_context;
@@ -419,7 +418,7 @@ auto gse::ide::audit::audit_file(const std::filesystem::path& path, const analys
 }
 
 auto gse::ide::audit::sweep(const options& opts, const std::span<const analysis::compilation_entry* const> selected) -> sweep_result {
-	const std::size_t jobs = opts.jobs != 0 ? opts.jobs : std::max<std::size_t>(1, std::thread::hardware_concurrency() / 2);
+	const std::size_t jobs = opts.jobs != 0 ? opts.jobs : task::background_thread_count();
 	std::println("auditing {} translation units across {} jobs", selected.size(), jobs);
 
 	const std::array<std::filesystem::path, 1> roots{
@@ -436,10 +435,10 @@ auto gse::ide::audit::sweep(const options& opts, const std::span<const analysis:
 	sweep_result result;
 
 	{
-		std::vector<std::jthread> workers;
+		task::group workers(trace_id<"audit::sweep">(), task::lane::background);
 		for (std::size_t w = 0; w < jobs; ++w) {
-			workers.emplace_back([&] {
-				for (;;) {
+			workers.post([&] {
+				while (true) {
 					const std::size_t index = next.fetch_add(1, std::memory_order_relaxed);
 					if (index >= selected.size()) {
 						return;
@@ -461,7 +460,7 @@ auto gse::ide::audit::sweep(const options& opts, const std::span<const analysis:
 						audited = audit_file(entry.file, analysed);
 					}
 
-					const std::lock_guard held(guard);
+					const std::lock_guard _(guard);
 					if (failure.empty()) {
 						++result.counted.files;
 						result.counted.identifiers += audited.identifiers;
@@ -589,7 +588,9 @@ auto main(int argc, char** argv) -> int {
 		return 1;
 	}
 
-	const audit::sweep_result result = audit::sweep(opts, selected);
+	const audit::sweep_result result = gse::task::start([&] {
+		return audit::sweep(opts, selected);
+	});
 	audit::write_report(opts, result);
 	std::println(
 		"{} misses over {} identifiers in {} files -> {}",

@@ -66,6 +66,10 @@ export namespace gse {
 			const rect_t& other
 		) const -> rect_t;
 
+		constexpr auto operator==(
+			const rect_t&
+		) const -> bool = default;
+
 	private:
 		T m_min;
 		T m_max;

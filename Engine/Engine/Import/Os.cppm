@@ -8,4 +8,5 @@ export import :input_state;
 export import :image_loader;
 export import :actions;
 export import :player_controller;
+export import :player_input;
 export import :app;

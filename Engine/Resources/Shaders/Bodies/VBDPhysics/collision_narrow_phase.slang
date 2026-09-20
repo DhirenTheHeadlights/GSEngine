@@ -1303,17 +1303,10 @@ void record_narrow_phase_debug(
     collision_state[base + 7] = (contacts.reference_face & 0xFFu) | ((contacts.incident_face & 0xFFu) << 8);
 }
 
-bool warm_start_lookup(uint ba, uint bb, uint feature_hi, uint feature_lo, out contact_constraint result) {
+uint warm_start_matches(uint ba, uint bb, uint64_t feature_key, uint adjacency_body, out contact_constraint result) {
     result = (contact_constraint)0;
-
-    if (pc.apply_all_body_inputs != 0 && pc.preserve_accel_weight == 0) {
-        return false;
-    }
-
-    uint64_t feature_key = ((uint64_t)feature_hi << 32) | (uint64_t)feature_lo;
-
-    uint offset = contact_offsets[ba];
-    uint count = contact_counts[ba];
+    uint offset = contact_offsets[adjacency_body];
+    uint count = contact_counts[adjacency_body];
     uint matches = 0;
     for (uint k = 0; k < count; k++) {
         uint slot = offset + k;
@@ -1331,6 +1324,26 @@ bool warm_start_lookup(uint ba, uint bb, uint feature_hi, uint feature_lo, out c
             }
             matches++;
         }
+    }
+
+    return matches;
+}
+
+bool warm_start_lookup(uint ba, uint bb, uint feature_hi, uint feature_lo, out contact_constraint result) {
+    result = (contact_constraint)0;
+    if (pc.apply_all_body_inputs != 0 && pc.preserve_accel_weight == 0) {
+        return false;
+    }
+
+    uint64_t feature_key = ((uint64_t)feature_hi << 32) | (uint64_t)feature_lo;
+    bool complete_a = contact_offsets[ba] <= max_contact_adjacency
+        && contact_counts[ba] <= max_contact_adjacency - contact_offsets[ba];
+    bool complete_b = contact_offsets[bb] <= max_contact_adjacency
+        && contact_counts[bb] <= max_contact_adjacency - contact_offsets[bb];
+    uint adjacency_body = complete_a && complete_b && contact_counts[bb] < contact_counts[ba] ? bb : ba;
+    uint matches = warm_start_matches(ba, bb, feature_key, adjacency_body, result);
+    if (adjacency_body != ba && matches > 1) {
+        matches = warm_start_matches(ba, bb, feature_key, ba, result);
     }
 
     if (matches > 0) {

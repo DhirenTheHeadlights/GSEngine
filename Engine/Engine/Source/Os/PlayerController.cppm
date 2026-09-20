@@ -1,7 +1,5 @@
 export module gse.os:player_controller;
 
-import std;
-
 import gse.core;
 import gse.ecs;
 

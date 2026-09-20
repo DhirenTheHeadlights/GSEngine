@@ -1,25 +1,24 @@
 export module gse.graphics:selectable_widget;
 
-import std;
-
-import gse.os;
 import gse.assets;
-import gse.gpu;
-import gse.core;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
+import gse.gpu;
 import gse.math;
-import :types;
+import gse.os;
+import gse.time;
+import std;
+
+import :column_header_widget;
 import :font;
 import :ids;
-import :styles;
-import :builder;
 import :interaction;
-import :column_header_widget;
 import :marquee_widget;
+import :styles;
+import :types;
 
 export namespace gse::gui {
 	enum class selectable_align : std::uint8_t {

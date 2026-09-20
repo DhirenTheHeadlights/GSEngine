@@ -1,26 +1,25 @@
 export module gse.graphics:profiler_overlay;
 
-import std;
-
-import gse.os;
 import gse.assets;
-import gse.gpu;
-import gse.core;
-import gse.containers;
-import gse.meta;
-import gse.time;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
+import gse.gpu;
 import gse.math;
+import gse.meta;
+import gse.os;
+import gse.time;
+import std;
 
-import :types;
+import :builder;
+import :cursor;
 import :ids;
 import :styles;
 import :text_widget;
 import :tree_widget;
-import :cursor;
-import :builder;
+import :types;
 
 export namespace gse::gui {
 	struct profiler {
@@ -96,7 +95,7 @@ auto gse::gui::rebuild_profile_tree(profile_tree& tree) -> void {
 
 	tree.roots.clear();
 	tree.generation = fv.generation;
-	tree.frame_span = {};
+	tree.frame_span = time_t<double>(fv.elapsed);
 
 	collect_visible_rows(fv, fv.roots, hidden, tree.roots);
 
@@ -106,23 +105,6 @@ auto gse::gui::rebuild_profile_tree(profile_tree& tree) -> void {
 			return (a.stop - a.start) > (b.stop - b.start);
 		}
 	);
-
-	if (!fv.roots.empty()) {
-		auto frame_start = fv.nodes[fv.roots.front()].start;
-		auto frame_end = fv.nodes[fv.roots.front()].stop;
-
-		for (const auto index : fv.roots) {
-			const auto& n = fv.nodes[index];
-			if (n.start < frame_start) {
-				frame_start = n.start;
-			}
-			if (n.stop > frame_end) {
-				frame_end = n.stop;
-			}
-		}
-
-		tree.frame_span = frame_end - frame_start;
-	}
 
 	static const id gpu_root_id = trace_id<"GPU">();
 
@@ -144,7 +126,7 @@ auto gse::gui::rebuild_profile_tree(profile_tree& tree) -> void {
 }
 
 auto gse::gui::profiler::draw(draw_context& ctx, id& hot, id& active, id& focus) -> void {
-	trace::thread_pause pause;
+	trace::thread_pause _;
 
 	static profile_tree tree;
 	static interval_timer refresh(milliseconds(100.f));
@@ -261,7 +243,7 @@ auto gse::gui::profiler::draw(draw_context& ctx, id& hot, id& active, id& focus)
 
 	draw_header_item(format_into(heading_buffer, "Duration ({})", time_unit), draw_x_dur, w_dur);
 	draw_header_item(format_into(heading_buffer, "Self ({})", time_unit), draw_x_self, w_self);
-	draw_header_item(format_into(heading_buffer, "Avg ({})", time_unit), draw_x_avg, w_avg);
+	draw_header_item(format_into(heading_buffer, "EMA ({})", time_unit), draw_x_avg, w_avg);
 	draw_header_item(format_into(heading_buffer, "Peak ({})", time_unit), draw_x_peak, w_peak);
 	draw_header_item("% Frame", draw_x_frame, w_frame);
 
@@ -296,12 +278,12 @@ auto gse::gui::profiler::draw(draw_context& ctx, id& hot, id& active, id& focus)
 		},
 		.custom_draw =
 			[=](
-		const profile_row& n,
-		builder& row_ui,
-		const rectf& row,
-		bool,
-		bool,
-		int
+				const profile_row& n,
+				builder& row_ui,
+				const rectf& row,
+				bool,
+				bool,
+				int
 	) {
 				const draw_context& draw_ctx = row_ui.ctx;
 				const bool has_cpu_timing = n.stop > n.start;
@@ -357,7 +339,7 @@ auto gse::gui::profiler::draw(draw_context& ctx, id& hot, id& active, id& focus)
 			}
 	};
 
-	ids::scope tree_scope("gui.tree.profiler");
+	ids::scope _("gui.tree.profiler");
 
 	const scroll_region_info body_info{
 		.id = "gui.profiler.body",
@@ -373,7 +355,7 @@ auto gse::gui::profiler::draw(draw_context& ctx, id& hot, id& active, id& focus)
 	};
 
 	{
-		auto region = scroll_region(ctx, body_info);
+		auto _ = scroll_region(ctx, body_info);
 		builder tree_ui{
 			.ctx = ctx,
 			.hot_widget_id = hot,

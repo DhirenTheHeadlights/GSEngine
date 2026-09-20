@@ -33,64 +33,37 @@ namespace gse::renderer::tonemap {
 		float middle_grey = 0.18f;
 	};
 
-	struct [[
-		= shaders::binding<0, 0>{},
-		= shaders::texture2d
-	]] hdr_color {
+	struct [[= shaders::texture2d]] hdr_color {
 		using element = vec4f;
 	};
 
-	struct [[
-		= shaders::binding<0, 1>{},
-		= shaders::texture2d
-	]] bloom_color {
+	struct [[= shaders::texture2d]] bloom_color {
 		using element = vec4f;
 	};
 
-	struct [[
-		= shaders::binding<0, 2>{},
-		= shaders::texture2d
-	]] velocity_color {
+	struct [[= shaders::texture2d]] velocity_color {
 		using element = vec4f;
 	};
 
-	struct [[
-		= shaders::binding<0, 3>{},
-		= shaders::sampler_state
-	]] color_sampler {};
+	struct [[= shaders::sampler_state]] color_sampler {};
 
-	struct [[
-		= shaders::binding<0, 4>{},
-		= shaders::ssbo_readonly
-	]] exposure_in {
+	struct [[= shaders::ssbo_readonly]] exposure_in {
 		using element = float;
 	};
 
-	struct [[
-		= shaders::binding<0, 0>{},
-		= shaders::texture2d
-	]] histogram_source {
+	struct [[= shaders::texture2d]] histogram_source {
 		using element = vec4f;
 	};
 
-	struct [[
-		= shaders::binding<0, 1>{},
-		= shaders::ssbo_readwrite
-	]] histogram_out {
+	struct [[= shaders::ssbo_readwrite]] histogram_out {
 		using element = std::uint32_t;
 	};
 
-	struct [[
-		= shaders::binding<0, 0>{},
-		= shaders::ssbo_readwrite
-	]] histogram_in {
+	struct [[= shaders::ssbo_readwrite]] histogram_in {
 		using element = std::uint32_t;
 	};
 
-	struct [[
-		= shaders::binding<0, 1>{},
-		= shaders::ssbo_readwrite
-	]] exposure_out {
+	struct [[= shaders::ssbo_readwrite]] exposure_out {
 		using element = float;
 	};
 
@@ -259,7 +232,6 @@ auto gse::renderer::tonemap::frame(const context& ctx, shared_view<gpu::context:
 		auto histogram_rec = co_await gpu::pass<^^histogram_pass>(pass_out)
 			.pipeline(d.histogram_pipeline)
 			.after<^^forward::frame, ^^atmosphere::sky_raster_pass, ^^physics_debug::frame, ^^sdf_grid::frame, ^^world_text::frame, ^^taa::frame>();
-		histogram_rec.sample_image(hdr, gpu::pipeline_stage_flag::compute_shader);
 		histogram_rec.dispatch<histogram_entry>(
 			{
 				.histogram_source = d.hdr_view.slot(),
@@ -299,16 +271,6 @@ auto gse::renderer::tonemap::frame(const context& ctx, shared_view<gpu::context:
 		.color(gpu::load_color())
 		.after<^^forward::frame, ^^physics_debug::frame, ^^sdf_grid::frame, ^^world_text::frame, ^^bloom::downsample_pass, ^^bloom::upsample_pass, ^^depth_prepass::frame, ^^taa::frame, ^^exposure_pass>();
 
-	rec.sample_image(hdr, gpu::pipeline_stage_flag::fragment_shader);
-	if (bloom_active) {
-		rec.sample_image(bloom_state.mips_up[0], gpu::pipeline_stage_flag::fragment_shader);
-	}
-	if (d.show_velocity) {
-		rec.sample_image(
-			gpu_s.render_graph->framebuffer_image<targets::velocity>(),
-			gpu::pipeline_stage_flag::fragment_shader
-		);
-	}
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
 	rec.push_bindings<entry>(

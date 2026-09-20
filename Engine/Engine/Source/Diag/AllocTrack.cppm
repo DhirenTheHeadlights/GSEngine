@@ -2,12 +2,14 @@ export module gse.diag:alloc_track;
 
 import std;
 
+import gse.math;
+
 export namespace gse::alloc {
 	struct site {
 		std::uint64_t pc;
-		std::int64_t live_bytes;
+		byte_count live;
 		std::int64_t live_samples;
-		std::int64_t since_mark_bytes;
+		byte_count since_mark;
 	};
 
 	auto allocate(
@@ -37,21 +39,21 @@ export namespace gse::alloc {
 	auto enabled() -> bool;
 
 	auto set_sample_interval(
-		std::size_t bytes
+		byte_count interval
 	) -> void;
 
-	auto sample_interval() -> std::size_t;
+	auto sample_interval() -> byte_count;
 
 	struct address_space {
-		std::int64_t private_committed;
-		std::int64_t image;
-		std::int64_t mapped;
-		std::int64_t reserved;
+		byte_count private_committed;
+		byte_count image;
+		byte_count mapped;
+		byte_count reserved;
 	};
 
 	auto address_space_usage() -> address_space;
 
-	auto estimated_live_bytes() -> std::int64_t;
+	auto estimated_live() -> byte_count;
 
 	auto live_samples() -> std::int64_t;
 

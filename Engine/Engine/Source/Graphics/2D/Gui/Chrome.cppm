@@ -1,16 +1,15 @@
 export module gse.graphics:gui_chrome;
 
-import std;
-
 import gse.core;
 import gse.ecs;
 import gse.math;
+import std;
 
-import :gui;
-import :types;
-import :styles;
 import :builder;
+import :gui;
 import :render_layer;
+import :styles;
+import :types;
 import :symbols;
 
 namespace gse::gui {

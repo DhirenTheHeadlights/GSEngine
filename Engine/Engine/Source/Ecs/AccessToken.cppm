@@ -1,11 +1,10 @@
 export module gse.ecs:access_token;
 
-import std;
-
 import gse.assert;
 import gse.core;
-
+import std;
 import :component;
+
 
 export namespace gse {
 	enum class access_mode : std::uint8_t {
@@ -265,6 +264,10 @@ export namespace gse {
 			id owner
 		) const -> bool;
 
+		[[nodiscard]] auto has_components(
+			id owner
+		) const -> bool;
+
 		auto ensure_active(
 			id owner
 		) const -> void;
@@ -286,12 +289,12 @@ export namespace gse {
 
 auto gse::access_guard::slot_for(const id type) -> slot& {
 	{
-		std::shared_lock lock(m_map_mutex);
+		std::shared_lock _(m_map_mutex);
 		if (const auto it = m_slots.find(type); it != m_slots.end()) {
 			return *it->second;
 		}
 	}
-	std::unique_lock lock(m_map_mutex);
+	std::unique_lock _(m_map_mutex);
 	if (const auto it = m_slots.find(type); it != m_slots.end()) {
 		return *it->second;
 	}
@@ -360,7 +363,7 @@ auto gse::component_lock::operator=(component_lock&& other) noexcept -> componen
 	return *this;
 }
 
-gse::component_lock::~component_lock() {
+inline gse::component_lock::~component_lock() {
 	release();
 }
 

@@ -12,6 +12,10 @@ groupshared uint gs_coloring_conflicts;
 static const uint max_waves_per_group = adjacency_workgroup_size / 32;
 groupshared uint gs_wave_color_count[max_waves_per_group * max_colors];
 groupshared uint gs_wave_color_base[max_waves_per_group * max_colors];
+groupshared uint gs_jointless_running;
+groupshared uint gs_jointless_fill;
+groupshared uint gs_wave_jointless_count[max_waves_per_group];
+groupshared uint gs_wave_jointless_base[max_waves_per_group];
 
 uint live_color_of(uint bi) {
     return coloring_scratch[bi] & 0xFFu;
@@ -189,24 +193,63 @@ if (tid < max_colors) {
 AllMemoryBarrierWithGroupSync();
 
 if (tid == 0) {
-    uint running = 0;
-    for (uint c = 0; c < max_colors; c++) {
-        uint count = 0;
-        uint full_offset = gs_color_offset[c];
-        uint full_count = gs_color_count[c];
-        jointless_color_data[c] = running;
-        for (uint k = 0; k < full_count; k++) {
-            uint bi = color_data[max_colors * 2 + full_offset + k];
-            if (bi < body_count && joint_counts[bi] == 0) {
-                jointless_color_data[max_colors * 2 + running + count] = bi;
-                count++;
+    gs_jointless_running = 0;
+}
+AllMemoryBarrierWithGroupSync();
+
+for (uint cj = 0; cj < max_colors; cj++) {
+    uint full_offset = gs_color_offset[cj];
+    uint full_count = gs_color_count[cj];
+
+    if (tid == 0) {
+        gs_jointless_fill = 0;
+    }
+    AllMemoryBarrierWithGroupSync();
+
+    for (uint kb = 0; kb < full_count; kb += adjacency_workgroup_size) {
+        uint k = kb + tid;
+        bool active = k < full_count;
+        uint bi = color_data[max_colors * 2 + full_offset + (active ? k : 0u)];
+        bool mine = false;
+        if (active && bi < body_count) {
+            mine = joint_counts[bi] == 0;
+        }
+
+        uint prefix = WavePrefixCountBits(mine);
+        uint total = WaveActiveCountBits(mine);
+        if (WaveIsFirstLane()) {
+            gs_wave_jointless_count[wave_index] = total;
+        }
+        AllMemoryBarrierWithGroupSync();
+
+        if (tid == 0) {
+            uint running = gs_jointless_fill;
+            for (uint w = 0; w < wave_count; w++) {
+                gs_wave_jointless_base[w] = running;
+                running += gs_wave_jointless_count[w];
+            }
+            gs_jointless_fill = running;
+        }
+        AllMemoryBarrierWithGroupSync();
+
+        if (mine) {
+            uint pos = gs_jointless_running + gs_wave_jointless_base[wave_index] + prefix;
+            if (pos < max_bodies) {
+                jointless_color_data[max_colors * 2 + pos] = bi;
             }
         }
-        jointless_color_data[max_colors + c] = count;
-        jointless_indirect_args[2 + c].x = (count + workgroup_size - 1) / workgroup_size;
-        jointless_indirect_args[2 + c].y = 1;
-        jointless_indirect_args[2 + c].z = 1;
-        running += count;
+        AllMemoryBarrierWithGroupSync();
     }
+
+    if (tid == 0) {
+        uint count = gs_jointless_fill;
+        jointless_color_data[cj] = gs_jointless_running;
+        jointless_color_data[max_colors + cj] = count;
+        jointless_indirect_args[2 + cj].x = (count + workgroup_size - 1) / workgroup_size;
+        jointless_indirect_args[2 + cj].y = 1;
+        jointless_indirect_args[2 + cj].z = 1;
+        gs_jointless_running += count;
+    }
+    AllMemoryBarrierWithGroupSync();
 }
 }

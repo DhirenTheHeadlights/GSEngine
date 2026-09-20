@@ -1,20 +1,18 @@
 module gse.gpu:context_impl;
 
+import gse.concurrency;
+import gse.core;
+import gse.diag;
+import gse.log;
+import gse.os;
+import gse.save;
 import std;
 
 import :context;
 import :device;
-import :swap_chain;
 import :frame;
-import :transient_pool;
 import :render_graph;
-
-import gse.os;
-import gse.core;
-import gse.concurrency;
-import gse.diag;
-import gse.log;
-import gse.save;
+import :swap_chain;
 
 auto gse::gpu::context::init(const std::optional<shared_view<window::data>> window_s, const save::registry* save_reg, data& d) -> async::task<> {
 	const auto requested_backend = d.backend;
@@ -128,6 +126,21 @@ auto gse::gpu::context::run(gse::context& ctx, data& d, const channel_read<gpu_r
 	for (const auto& req : resume_in.of<window_closed>()) {
 		destroy_presentation(d, req.id);
 	}
+
+	if (d.render_graph) {
+		d.render_graph->set_gpu_timestamps_enabled(d.gpu_timestamps_enabled);
+		d.render_graph->set_gpu_pipeline_stats_enabled(d.gpu_pipeline_stats_enabled);
+		d.render_graph->set_gpu_intra_pass_marks_enabled(d.gpu_intra_pass_marks_enabled);
+		d.render_graph->set_log_render_graph(d.log_render_graph);
+	}
+
+	d.device->set_perf_metrics({
+		.enabled = d.gpu_perf_metrics_enabled && d.gpu_timestamps_enabled,
+		.metrics = d.gpu_perf_metrics,
+		.device_index = d.gpu_perf_metrics_device,
+		.sampling_interval = d.gpu_perf_metrics_interval,
+		.lock_clocks = d.gpu_perf_metrics_lock_clocks,
+	});
 
 	return {};
 }

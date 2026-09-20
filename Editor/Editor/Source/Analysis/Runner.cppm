@@ -1,12 +1,17 @@
 export module gse.ide.analysis:diagnostics_runner;
 
-import std;
-import gse;
+import gse.concurrency;
+import gse.core;
 import gse.ide.diagnostic;
+import gse.log;
+import gse.math;
+import gse.meta;
+import gse.time;
+import std;
 
-import :process;
 import :compilation_database;
 import :gcc_diagnostics;
+import :process;
 import :semantic_tokens;
 import :symbol_extract;
 
@@ -82,6 +87,7 @@ export namespace gse::ide::analysis {
 
 	struct diagnostics_check {
 		std::atomic<bool> done = false;
+		std::stop_source cancel;
 		id document_id;
 		document_revision revision;
 		std::vector<diagnostic> result;
@@ -89,6 +95,7 @@ export namespace gse::ide::analysis {
 		std::vector<qualified_use> quals;
 		std::vector<qualified_use> template_args;
 		std::vector<unused_local> unused_locals;
+		std::vector<narrowable_import> narrowable_imports;
 		std::vector<semantic_token> tokens;
 		std::vector<symbol_token> symbols;
 		std::vector<symbol_ref> refs;
@@ -108,7 +115,7 @@ export namespace gse::ide::analysis {
 			const std::filesystem::path& plugin_dll,
 			std::span<const std::filesystem::path> workspace_roots,
 			void (*lint_hook)(diagnostics_check&)
-		) -> std::jthread;
+		) -> void;
 	};
 }
 
@@ -177,11 +184,12 @@ auto gse::ide::analysis::normalize_diagnostic_files(const std::span<diagnostic> 
 	}
 }
 
-auto gse::ide::analysis::diagnostics_runner::start(const std::shared_ptr<diagnostics_check>& check, const std::filesystem::path& compile_commands, const std::filesystem::path& file, const std::filesystem::path& plugin_dll, const std::span<const std::filesystem::path> workspace_roots, void (*lint_hook)(diagnostics_check&)) -> std::jthread {
+auto gse::ide::analysis::diagnostics_runner::start(const std::shared_ptr<diagnostics_check>& check, const std::filesystem::path& compile_commands, const std::filesystem::path& file, const std::filesystem::path& plugin_dll, const std::span<const std::filesystem::path> workspace_roots, void (*lint_hook)(diagnostics_check&)) -> void {
 	std::vector<std::filesystem::path> roots(workspace_roots.begin(), workspace_roots.end());
-	return std::jthread([check, compile_commands, file, plugin_dll, roots = std::move(roots), lint_hook](const std::stop_token& stop) {
+	task::post_background([check, compile_commands, file, plugin_dll, roots = std::move(roots), lint_hook] {
+		const std::stop_token stop = check->cancel.get_token();
 		const time started = system_clock::now<time>();
-		const auto publish = make_scope_exit([check, started] {
+		const auto _ = make_scope_exit([check, started] {
 			check->duration = system_clock::now<time>() - started;
 			check->done.store(true, std::memory_order_release);
 		});
@@ -211,14 +219,14 @@ auto gse::ide::analysis::diagnostics_runner::start(const std::shared_ptr<diagnos
 		}
 		else {
 			const std::filesystem::path sarif_temp = process::temporary_path("diagnostics", "sarif");
-			const auto remove_sarif = make_scope_exit([&sarif_temp] {
+			const auto _ = make_scope_exit([&sarif_temp] {
 				std::error_code ec;
 				std::filesystem::remove(sarif_temp, ec);
 			});
 
 			std::string command_line = entry->command.command_line;
 			std::filesystem::path token_temp;
-			const auto remove_tokens = make_scope_exit([&token_temp] {
+			const auto _ = make_scope_exit([&token_temp] {
 				if (!token_temp.empty()) {
 					std::error_code ec;
 					std::filesystem::remove(token_temp, ec);
@@ -276,6 +284,7 @@ auto gse::ide::analysis::diagnostics_runner::start(const std::shared_ptr<diagnos
 				check->quals = std::move(symbols.quals);
 				check->template_args = std::move(symbols.template_args);
 				check->unused_locals = std::move(symbols.unused_locals);
+				check->narrowable_imports = std::move(symbols.narrowable_imports);
 				check->files = std::move(symbols.files);
 				check->symbols_complete = symbols.complete;
 			}
@@ -300,5 +309,5 @@ auto gse::ide::analysis::diagnostics_runner::start(const std::shared_ptr<diagnos
 			normalize_diagnostic_files(check->result, entry->command.directory);
 			normalize_diagnostic_files(check->lint, entry->command.directory);
 		}
-	});
+	}, trace_id<"analysis::diagnostics">());
 }

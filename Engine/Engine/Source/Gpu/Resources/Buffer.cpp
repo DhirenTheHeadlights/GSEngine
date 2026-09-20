@@ -6,7 +6,7 @@ import :buffer;
 import :gpu_task;
 import :sync_token;
 import :device;
-import :pass_recorder;
+import :command_contract;
 
 auto gse::gpu::upload_to_buffers(device& dev, const std::span<const buffer_upload> uploads) -> sync_token {
 	if (uploads.empty()) {

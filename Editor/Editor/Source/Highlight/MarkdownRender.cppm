@@ -1,9 +1,11 @@
 export module gse.ide.highlight:markdown_render;
 
-import std;
-import gse;
-
+import gse.graphics;
+import gse.math;
+import gse.meta;
 import gse.syntax;
+import std;
+
 import :markdown;
 
 export namespace gse::ide::markdown {
@@ -364,10 +366,10 @@ auto gse::ide::markdown::render_document(const std::string_view source, const th
 		const std::uint32_t index = emit(rendered.text);
 		const display_style base = info.shape == block::heading
 			? display_style{
-				.color = look.sty.color_section_header,
-				.face = gui::text_face::text_strong,
-				.scale = heading_scale(info.heading_level),
-			}
+			.color = look.sty.color_section_header,
+			.face = gui::text_face::text_strong,
+			.scale = heading_scale(info.heading_level),
+		}
 			: display_style{
 				.color = info.quoted ? look.sty.color_text_secondary : look.sty.color_text,
 				.face = gui::text_face::text,

@@ -4,23 +4,45 @@ set -eu
 target=game
 run=0
 tree=
+profile=
+config=
+project=
 timeout=1800
 wait=30
-agent=
+# Claude Code exports the session id to every tool shell, so this survives any invocation
+# shape - wrapper scripts, xargs, PowerShell, subprocess - that the hook's text splice
+# cannot see through. --agent is still honoured for a caller that wants to override it.
+agent=${CLAUDE_CODE_SESSION_ID:-}
+probe=0
 
 usage() {
 	cat <<'EOF'
 gse-build - ask the running GSE editor to build, the same way its own build buttons do.
 
-usage: Tools/gse-build [--game|--editor] [--run] [--tree NAME] [--timeout SECONDS] [--wait SECONDS]
+usage: Tools/gse-build [--game|--editor] [--run] [--profile NAME] [--config NAME] [--tree NAME] [--timeout SECONDS] [--wait SECONDS]
 
   --game             build the game target (default)
   --editor           rebuild the editor; the editor relaunches itself on success
   --run              launch a play session after a successful game build
-  --tree NAME        build in a named worktree instead of the primary one
+  --profile NAME     build with a named build profile from the editor's build row;
+                     this picks the build configuration and the play session shape.
+                     Omit it to build the editor's own configuration with a single
+                     attached client, independent of what the editor has selected.
+  --config NAME      build with a named configurePreset from CMakePresets.json, without
+                     needing a build profile row for it. Each configuration gets its own
+                     build tree, so the first build of one compiles everything. Ignored
+                     for --editor, which always rebuilds in the configuration it runs.
+                     --profile wins if both are given.
+  --tree NAME        build in a named worktree instead of the one you are in
+  --project DIR      address the editor that has this project open; defaults to the
+                     nearest directory above you that holds a .gseproj file. When
+                     several editors share one engine tree, only the one with this
+                     project open answers.
   --timeout SECONDS  give up waiting after this long (default 1800)
   --wait SECONDS     how long to hold the line before deferring (default 30)
   --agent ID         claim errors for this agent session (injected automatically)
+  --probe            print the agent id this call received and exit without building;
+                     use it to check that the build-guard hook is splicing --agent in
 
 exit codes:
   0  build succeeded
@@ -29,8 +51,14 @@ exit codes:
   3  deferred - another chat is still working; your request stays queued
   4  build failed but none of the errors are yours
 
+The request is addressed to whichever editor owns the directory you run this from, so
+several editors open on different projects never steal each other's builds. A game
+build defaults to the worktree you are standing in; --editor always rebuilds the
+running editor. If no editor has this project open, nothing picks the request up.
+
 The editor queues requests rather than refusing them, and one build answers every
-request for the same target, so several agents asking at once cost one compile.
+request for the same target, profile and configuration, so several agents asking at once cost one
+compile.
 
 If another chat is still working, this does NOT block you. After --wait seconds it
 returns 3 and your request keeps its place in the queue. Do not sit and retry: end
@@ -52,9 +80,21 @@ while [ $# -gt 0 ]; do
 		--game) target=game ;;
 		--editor) target=editor ;;
 		--run) run=1 ;;
+		--profile)
+			shift
+			profile=${1:-}
+			;;
+		--config)
+			shift
+			config=${1:-}
+			;;
 		--tree)
 			shift
 			tree=${1:-}
+			;;
+		--project)
+			shift
+			project=${1:-}
 			;;
 		--timeout)
 			shift
@@ -68,6 +108,7 @@ while [ $# -gt 0 ]; do
 			shift
 			agent=${1:-}
 			;;
+		--probe) probe=1 ;;
 		-h|--help)
 			usage
 			exit 0
@@ -81,12 +122,48 @@ while [ $# -gt 0 ]; do
 	shift
 done
 
+if [ "$probe" = 1 ]; then
+	if [ -n "$agent" ]; then
+		if [ "$agent" = "${CLAUDE_CODE_SESSION_ID:-}" ]; then
+			source="from CLAUDE_CODE_SESSION_ID in the environment"
+		else
+			source="from --agent"
+		fi
+		echo "gse-build: agent $agent ($source) - builds and hibernates will be attributed to you."
+		exit 0
+	fi
+	echo "gse-build: no agent id reached this call: CLAUDE_CODE_SESSION_ID is unset in this shell and the" >&2
+	echo "gse-build: build-guard PreToolUse hook did not splice --agent in. Tell the user." >&2
+	exit 2
+fi
+
 if [ -z "$agent" ]; then
 	echo "gse-build: warning - no --agent argument, normally spliced in by the build-guard PreToolUse hook." >&2
 	echo "gse-build: without it the editor cannot tell that YOU are the requester, so your own turn counts as" >&2
 	echo "gse-build: a blocker and you will wait on yourself. Compile errors will also come back unowned." >&2
-	echo "gse-build: check with 'echo Tools/gse-build probe'; if nothing is spliced in, the hooks are not" >&2
-	echo "gse-build: registered for this directory and the direct-build guard is off as well." >&2
+	echo "gse-build: check with 'Tools/gse-build --probe' (an echo of the command does not exercise the hook)." >&2
+	echo "gse-build: If it reports no agent id, the hooks are not registered for this directory and the" >&2
+	echo "gse-build: direct-build guard is off as well." >&2
+fi
+
+if [ -z "$project" ]; then
+	dir=$(pwd)
+	while [ -n "$dir" ]; do
+		for manifest in "$dir"/*.gseproj; do
+			if [ -e "$manifest" ]; then
+				project=$dir
+				break 2
+			fi
+		done
+		parent=${dir%/*}
+		if [ "$parent" = "$dir" ]; then
+			break
+		fi
+		dir=$parent
+	done
+fi
+if [ -n "$project" ]; then
+	project=$(cd "$project" && (pwd -W 2>/dev/null || pwd))
 fi
 
 state_root=${GSE_STATE_DIR:-${LOCALAPPDATA:-$HOME/AppData/Local}/GSE}
@@ -104,6 +181,10 @@ rm -f "$result"
 	echo "target $target"
 	echo "run $run"
 	echo "tree $tree"
+	echo "profile $profile"
+	echo "config $config"
+	echo "cwd $(pwd -W 2>/dev/null || pwd)"
+	echo "project $project"
 } > "$inbox/requests/$id.partial"
 mv "$inbox/requests/$id.partial" "$request"
 
@@ -145,7 +226,7 @@ while [ "$waited" -lt "$timeout" ]; do
 						echo "gse-build: build failed" >&2
 						exit 1
 					fi
-					echo "gse-build: the build failed, but none of the errors are in files you edited - your own work is not implicated. Do not fix them; the chats that own them will." >&2
+					echo "gse-build: the build failed, but none of the errors are attributed to you. Read the split above before acting: errors owned by another chat are theirs to fix, and unattributed ones are most likely another editor instance mid-refactor." >&2
 					exit 4
 					;;
 				*)

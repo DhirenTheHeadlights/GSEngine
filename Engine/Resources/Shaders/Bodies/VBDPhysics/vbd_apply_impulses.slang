@@ -3,7 +3,7 @@ void vbd_apply_impulses(uint3 dispatch_id) {
     uint ii = dispatch_id.x;
     if (ii >= pc.impulse_count) return;
 
-    impulse_constraint imp = impulse_data[ii];
+    impulse_constraint imp = impulse_data[pc.impulse_offset + ii];
     if (imp.body_index >= pc.body_count) return;
 
     body_state body = body_data[imp.body_index];

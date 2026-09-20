@@ -1,33 +1,31 @@
 module gse.graphics:geometry_collector_impl;
 
+import gse.assets;
+import gse.concurrency;
+import gse.containers;
+import gse.core;
+import gse.diag;
+import gse.ecs;
+import gse.gpu;
+import gse.math;
+import gse.meta;
+import gse.os;
+import gse.physics;
+import gse.time;
 import std;
 
-import :geometry_collector;
 import :animation_components;
 import :camera_system;
+import :geometry_collector;
+import :material;
 import :mesh;
 import :model;
-import :render_component;
-import :material;
 import :primitive_resolver;
+import :render_component;
+import :shared_shaders;
 import :skin_renderer;
 import :skinned_model;
 import :texture;
-import :shared_shaders;
-
-
-import gse.math;
-import gse.core;
-import gse.containers;
-import gse.time;
-import gse.concurrency;
-import gse.diag;
-import gse.ecs;
-import gse.os;
-import gse.assets;
-import gse.gpu;
-import gse.physics;
-import gse.meta;
 
 
 namespace gse::renderer::geometry_collector {
@@ -63,7 +61,7 @@ namespace gse::renderer::geometry_collector {
 		read<physics::motion_component>& motion,
 		const std::flat_map<id, std::uint32_t>& body_index_map,
 		std::unordered_map<id, std::vector<std::optional<spatial_matrix>>>& prev_model_matrices,
-		time_t<float, seconds> lag,
+		const physics::interpolation_state& interpolation,
 		std::vector<owned_render_queue_entry>& out,
 		std::vector<owned_render_queue_entry>& transparent_out
 	) -> void;
@@ -160,7 +158,7 @@ auto gse::renderer::geometry_collector::build_batches(render_data& data, std::ui
 	}
 }
 
-auto gse::renderer::geometry_collector::collect_static(write<render_component>& render, read<physics::transform_component>& transform, read<physics::motion_component>& motion, const std::flat_map<id, std::uint32_t>& body_index_map, std::unordered_map<id, std::vector<std::optional<spatial_matrix>>>& prev_model_matrices, const time_t<float, seconds> lag, std::vector<owned_render_queue_entry>& out, std::vector<owned_render_queue_entry>& transparent_out) -> void {
+auto gse::renderer::geometry_collector::collect_static(write<render_component>& render, read<physics::transform_component>& transform, read<physics::motion_component>& motion, const std::flat_map<id, std::uint32_t>& body_index_map, std::unordered_map<id, std::vector<std::optional<spatial_matrix>>>& prev_model_matrices, const physics::interpolation_state& interpolation, std::vector<owned_render_queue_entry>& out, std::vector<owned_render_queue_entry>& transparent_out) -> void {
 	const auto render_size = render.size();
 	const auto render_ids = render.owner_ids();
 	const bool transform_order_matches =
@@ -178,7 +176,7 @@ auto gse::renderer::geometry_collector::collect_static(write<render_component>& 
 			continue;
 		}
 
-		const auto render_tc = physics::interpolated_transform(*tc, motion.find(eid), vec3<displacement>{}, lag);
+		const auto render_tc = physics::render_transform(*tc, motion.find(eid), interpolation);
 
 		std::uint32_t body_index = owned_render_queue_entry::invalid_body_index;
 		if (const auto it = body_index_map.find(eid); it != body_index_map.end()) {
@@ -262,7 +260,7 @@ auto gse::renderer::geometry_collector::collect_skinned(read<skeleton_instance_c
 }
 
 auto gse::renderer::geometry_collector::sort_queues(std::vector<owned_render_queue_entry>& out) -> void {
-	trace::scope_guard sg{ trace_id<"geom_collect::sort">() };
+	trace::scope_guard _{ trace_id<"geom_collect::sort">() };
 	std::ranges::sort(
 		out,
 		[](const owned_render_queue_entry& a, const owned_render_queue_entry& b) {
@@ -293,7 +291,7 @@ auto gse::renderer::geometry_collector::sort_queues(std::vector<owned_render_que
 }
 
 auto gse::renderer::geometry_collector::build_queue_batches(render_data& data, std::uint32_t& global_instance_offset, const std::vector<owned_render_queue_entry>& queue, std::inplace_vector<normal_instance_batch, render_data::max_batches>& batches) -> void {
-	trace::scope_guard sg{ trace_id<"geom_collect::batch">() };
+	trace::scope_guard _{ trace_id<"geom_collect::batch">() };
 	build_batches(
 		data,
 		global_instance_offset,
@@ -410,6 +408,7 @@ auto gse::renderer::geometry_collector::initialize(context& ctx, const shared_vi
 		d.transparent_indirect_commands_buffer[i] = gpu_s.device->create_buffer(
 			{
 				.size = normal_indirect_buffer_size,
+				.stride = sizeof(gpu::draw_mesh_tasks_indirect_command),
 				.usage = { gpu::buffer_flag::indirect, gpu::buffer_flag::storage, gpu::buffer_flag::transfer_dst },
 				.bindless = true
 			},
@@ -442,20 +441,20 @@ auto gse::renderer::geometry_collector::tick(context& ctx, data& d, const channe
 	data.view = view_matrix;
 	data.proj = proj_matrix;
 
-	auto lag = system_clock::fixed_lag();
-	if (const auto& interpolation = physics_in.of<physics::interpolation_state>(); !interpolation.empty() && !interpolation[0].advancing) {
-		lag = time_t<float, seconds>{};
+	physics::interpolation_state interpolation;
+	if (const auto& published = physics_in.of<physics::interpolation_state>(); !published.empty()) {
+		interpolation = published[0];
 	}
 
 	{
-		trace::scope_guard sg{ trace_id<"geom_collect::collect">() };
+		trace::scope_guard _{ trace_id<"geom_collect::collect">() };
 		collect_static(
 			render,
 			transform,
 			motion,
 			phys_s.id_to_body_index,
 			d.prev_model_matrices,
-			lag,
+			interpolation,
 			data.render_queue,
 			data.transparent_queue
 		);

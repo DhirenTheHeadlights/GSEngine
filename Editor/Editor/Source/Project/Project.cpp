@@ -6,6 +6,7 @@ import gse.config;
 import gse.fs;
 import gse.log;
 import gse.math;
+import gse.os;
 import gse.win32;
 
 namespace gse::ide::project {
@@ -25,6 +26,18 @@ namespace gse::ide::project {
 	) -> bool;
 
 	auto command_line_manifest() -> std::filesystem::path;
+
+	auto hold_name(
+		const std::filesystem::path& manifest_file
+	) -> std::wstring;
+
+	auto acquire_hold(
+		const std::filesystem::path& manifest_file,
+		std::uint32_t wait_ms
+	) -> void*;
+
+	constexpr std::uint32_t relaunch_wait_ms = 3000;
+	void* process_hold = nullptr;
 
 	auto recent_path() -> std::filesystem::path;
 
@@ -669,6 +682,14 @@ auto gse::ide::project::resolve() -> manifest {
 	for (const auto& [index, candidate] : std::views::enumerate(candidates)) {
 		if (manifest found = load(candidate); found.valid) {
 			found.requested = index == 0;
+			if (found.requested) {
+				process_hold = acquire_hold(found.file, relaunch_wait_ms);
+				if (!process_hold) {
+					log::println(log::level::warning, log::category::general, "[project] '{}' is already open in another editor; skipping it", found.name);
+					continue;
+				}
+			}
+			app::pin_relaunch_argument(L"\"" + found.file.wstring() + L"\"");
 			log::println(log::level::info, log::category::general, "[project] opened '{}' at {}", found.name, found.root.generic_display_string());
 			if (!found.engine_problem.empty()) {
 				log::println(log::level::error, log::category::general, "[project] engine binding failed: {} - falling back to the editor's own engine; fix the [engine] section of {}", found.engine_problem, found.file.generic_display_string());
@@ -678,6 +699,46 @@ auto gse::ide::project::resolve() -> manifest {
 	}
 
 	log::println(log::level::warning, log::category::general, "[project] no .gseproj resolved; falling back to repository roots");
+	return {};
+}
+
+auto gse::ide::project::hold_name(const std::filesystem::path& manifest_file) -> std::wstring {
+	const std::size_t hash = std::hash<std::string>{}(config::generic(manifest_file).generic_native_encoded_string());
+	return L"Local\\gse-project-" + std::to_wstring(hash);
+}
+
+auto gse::ide::project::acquire_hold(const std::filesystem::path& manifest_file, const std::uint32_t wait_ms) -> void* {
+	void* handle = win32::CreateMutexW(nullptr, 0, hold_name(manifest_file).c_str());
+	if (!win32::valid_handle(handle)) {
+		return nullptr;
+	}
+	const win32::DWORD waited = win32::WaitForSingleObject(handle, wait_ms);
+	if (waited == win32::wait_object_0 || waited == win32::wait_abandoned) {
+		return handle;
+	}
+	win32::CloseHandle(handle);
+	return nullptr;
+}
+
+auto gse::ide::project::held_elsewhere(const std::filesystem::path& manifest_file) -> bool {
+	void* handle = acquire_hold(manifest_file, 0);
+	if (!handle) {
+		return true;
+	}
+	win32::ReleaseMutex(handle);
+	win32::CloseHandle(handle);
+	return false;
+}
+
+auto gse::ide::project::theme_name(const std::filesystem::path& root) -> std::string {
+	for (const layout_store::section& section : layout_store::parse_sections(read_file(config::project_settings_path_for(root)))) {
+		if (section.name != "UI") {
+			continue;
+		}
+		if (const auto entry = section.values.find("current_theme"); entry != section.values.end()) {
+			return entry->second;
+		}
+	}
 	return {};
 }
 

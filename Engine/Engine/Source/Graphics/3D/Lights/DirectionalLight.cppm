@@ -1,10 +1,6 @@
 export module gse.graphics:directional_light;
 
-import std;
-
 import gse.math;
-import gse.core;
-import gse.ecs;
 
 export namespace gse {
 	struct directional_light_component {

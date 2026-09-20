@@ -1,24 +1,23 @@
 export module gse.graphics:column_header_widget;
 
-import std;
-
-import gse.os;
 import gse.assets;
-import gse.gpu;
-import gse.core;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
+import gse.gpu;
 import gse.math;
+import gse.os;
+import gse.time;
+import std;
 
-import :types;
 import :font;
 import :input_layers;
-import :styles;
-import :ui_renderer;
 import :layout_ops;
+import :styles;
+import :types;
+import :ui_renderer;
 
 export namespace gse::gui {
 	struct column_state {
@@ -133,7 +132,7 @@ auto gse::gui::column_header(const draw_context& ctx, const column_header_params
 
 	const style& sty = ctx.style;
 	const float fs = sty.font_size;
-	const float pad = sty.padding;
+	const float _ = sty.padding;
 	const vec2f mouse = ctx.mouse_position();
 	const bool held = ctx.mouse_held();
 

@@ -1,25 +1,22 @@
 export module gse.ecs:scheduler;
 
-import std;
-
 import gse.assert;
-import gse.core;
-import gse.meta;
 import gse.concurrency;
-import gse.time;
-import gse.math;
+import gse.core;
 import gse.diag;
 import gse.introspection;
+import gse.math;
+import gse.meta;
+import gse.time;
+import std;
 
-import :registries;
+import :access_token;
 import :context;
+import :registries;
+import :registry;
 import :settings;
 import :system_node;
-import :system_dispatch;
-import :registry;
 import :task_graph;
-import :traits;
-import :access_token;
 
 namespace gse {
 	enum class wait_phase : std::uint8_t {
@@ -146,6 +143,10 @@ export namespace gse {
 		requires is_same_frame_channel_v<T>
 		auto drain_channel() -> std::vector<T>;
 
+		auto set_stall_probe(
+			std::function<void()> probe
+		) -> void;
+
 	private:
 		auto register_node(
 			system_node node
@@ -211,6 +212,7 @@ export namespace gse {
 		state_registry m_states;
 		std::unordered_map<id, std::vector<id>> m_state_deps;
 		std::unordered_set<id> m_external_resources;
+		std::unordered_set<std::size_t> m_logged_cycle_warnings;
 		resource_registry m_resources_store;
 		channel_registry m_channels_store;
 		std::vector<system_node> m_hot_add_queue;
@@ -218,6 +220,7 @@ export namespace gse {
 		registry* m_registry = nullptr;
 		std::function<void(settings::register_settings_type)> m_settings_register_hook;
 		std::function<void(std::vector<actions::registration>, std::vector<actions::axis_registration>)> m_actions_register_hook;
+		std::function<void()> m_stall_probe;
 		task_graph m_update_graph;
 		task_graph m_frame_graph;
 		access_guard m_guard;
@@ -287,4 +290,3 @@ requires gse::is_same_frame_channel_v<T>
 auto gse::scheduler::drain_channel() -> std::vector<T> {
 	return m_channels_store.template drain<T>();
 }
-

@@ -1,13 +1,14 @@
 export module gse.ide.analysis:symbol_index_builder;
 
+import gse.core;
+import gse.meta;
 import std;
-import gse;
 
-import :process;
 import :compilation_database;
+import :gcc_diagnostics;
+import :process;
 import :semantic_tokens;
 import :symbol_extract;
-import :gcc_diagnostics;
 
 export namespace gse::ide::analysis {
 	struct symbol_index_failure_info {
@@ -184,7 +185,7 @@ auto gse::ide::analysis::run_plugin(const compilation_entry& entry, const symbol
 	const std::filesystem::path token_temp = process::temporary_path("symbols", "txt");
 	const std::filesystem::path sarif_temp = process::temporary_path("symbols", "sarif");
 	const std::filesystem::path dependency_temp = process::temporary_path("symbols", "d");
-	const auto remove_temporary_files = make_scope_exit([&] {
+	const auto _ = make_scope_exit([&] {
 		std::error_code ec;
 		std::filesystem::remove(token_temp, ec);
 		std::filesystem::remove(sarif_temp, ec);

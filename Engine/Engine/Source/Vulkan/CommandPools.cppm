@@ -1,17 +1,15 @@
 export module gse.vulkan:command_pools;
 
-import std;
-import vulkan;
-
-import gse.gpu_backend;
-import :types;
-import :device;
-import :sync;
-
 import gse.assert;
 import gse.concurrency;
 import gse.core;
+import gse.gpu_backend;
 import gse.log;
+import std;
+import vulkan;
+
+import :device;
+import :types;
 
 export namespace gse::vulkan {
 	class command : public non_copyable {

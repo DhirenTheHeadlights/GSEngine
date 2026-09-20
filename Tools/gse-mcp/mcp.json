@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "gse": {
+      "command": "node",
+      "args": ["Tools/gse-mcp/server.mjs"]
+    }
+  }
+}

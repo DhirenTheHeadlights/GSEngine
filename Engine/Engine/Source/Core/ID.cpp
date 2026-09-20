@@ -1,8 +1,7 @@
 module gse.core;
 
-import std;
-
 import gse.assert;
+import std;
 
 namespace gse {
 	using uuid = std::uint64_t;
@@ -143,7 +142,7 @@ auto gse::grow_if_needed(id_registry_data& registry) -> void {
 
 auto gse::intern(const uuid number, std::string tag, const bool require_unique) -> id {
 	auto& registry = id_registry();
-	std::lock_guard lock(registry.write_mutex);
+	std::lock_guard _(registry.write_mutex);
 
 	if (const std::string* existing = lookup(current_table(), number)) {
 		assert(!require_unique, "ID number {} already exists", number);

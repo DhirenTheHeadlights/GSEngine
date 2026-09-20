@@ -1,27 +1,25 @@
 export module gse.graphics:scroll_widget;
 
-import std;
-
-import gse.os;
 import gse.assets;
-import gse.gpu;
-import gse.core;
-import gse.meta;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
+import gse.gpu;
 import gse.math;
+import gse.meta;
+import gse.os;
+import gse.time;
+import std;
 
-import :font;
-import :texture;
-import :ui_renderer;
-import :styles;
-import :types;
+import :cursor;
 import :ids;
 import :input_layers;
-import :cursor;
+import :styles;
+import :texture;
+import :types;
+import :ui_renderer;
 
 namespace gse::gui {
 	auto auto_scroll_delta(

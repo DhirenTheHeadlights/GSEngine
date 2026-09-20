@@ -44,11 +44,23 @@ void vbd_update_joint_lambda(uint3 dispatch_id) {
     }
     else if (j.type == joint_type::fixed || j.type == joint_type::hinge || j.type == joint_type::ball || j.type == joint_type::universal) {
         float3 dirs[3] = { float3(1, 0, 0), float3(0, 1, 0), float3(0, 0, 1) };
+        float3 c_rows = float3(0, 0, 0);
         for (int k = 0; k < 3; k++) {
             float c = dot(dirs[k], d) - j.pos_c0[k];
+            c_rows[k] = c;
             j.pos_lambda[k] = j.pos_penalty[k] * c + j.pos_lambda[k];
             j.pos_penalty[k] = min(j.pos_penalty[k] + solver_config_data[0].beta * abs(c), solver_config_data[0].penalty_max);
             InterlockedMax(collision_state[state_convergence_max_delta_index], asuint(abs(c)));
+        }
+
+        uint trace_body = solver_config_data[0].trace_body;
+        if (pc.substep == 0 && pc.iteration < iteration_trace_slots && (j.body_a == trace_body || j.body_b == trace_body)) {
+            uint base = state_joint_trace_base_index + pc.iteration * joint_trace_uints;
+            for (int k = 0; k < 3; k++) {
+                collision_state[base + k * 3] = asuint(c_rows[k]);
+                collision_state[base + k * 3 + 1] = asuint(j.pos_lambda[k]);
+                collision_state[base + k * 3 + 2] = asuint(j.pos_penalty[k]);
+            }
         }
 
         if (j.type != joint_type::ball) {

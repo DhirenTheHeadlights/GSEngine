@@ -1,15 +1,17 @@
 export module gse.ide.lint;
 
-import std;
 import gse;
-import gse.ide.diagnostic;
+import gse.format;
 import gse.ide.analysis;
+import gse.ide.diagnostic;
+import std;
 
 export namespace gse::ide::lint {
 	struct records {
 		std::span<const analysis::qualified_use> quals;
 		std::span<const analysis::qualified_use> template_args;
 		std::span<const analysis::unused_local> unused_locals;
+		std::span<const analysis::narrowable_import> narrowable_imports;
 	};
 
 	auto findings(
@@ -33,6 +35,39 @@ export namespace gse::ide::lint {
 	auto analyze_check(
 		analysis::diagnostics_check& check
 	) -> void;
+
+	auto import_order_finding(
+		std::span<const std::string> lines,
+		std::string_view file
+	) -> std::optional<lint_finding>;
+}
+
+auto gse::ide::lint::import_order_finding(const std::span<const std::string> lines, const std::string_view file) -> std::optional<lint_finding> {
+	const std::optional<format::block_edit> block = format::compute_imports(lines);
+	if (!block || block->last_line + 1 >= lines.size()) {
+		return std::nullopt;
+	}
+	std::string replacement;
+	for (const std::string& line : block->replacement) {
+		replacement += line;
+		replacement += '\n';
+	}
+	const auto anchor = std::ranges::find_if(
+		lines.subspan(block->first_line, block->last_line - block->first_line + 1),
+		[](const std::string& line) { return !line.empty(); }
+	);
+	return lint_finding{
+		.file = std::string(file),
+		.rule = lint_rule::import_order,
+		.edit = {
+			.line = block->first_line,
+			.end_line = block->last_line + 1,
+			.start_col = 0,
+			.end_col = 0,
+			.expected = *anchor,
+			.replacement = std::move(replacement),
+		},
+	};
 }
 
 namespace gse::ide::lint {
@@ -62,7 +97,7 @@ auto gse::ide::lint::edit_from(const analysis::qualified_use& use) -> std::optio
 
 auto gse::ide::lint::findings(const records emitted) -> std::vector<lint_finding> {
 	std::vector<lint_finding> out;
-	out.reserve(emitted.quals.size() + emitted.template_args.size() + emitted.unused_locals.size());
+	out.reserve(emitted.quals.size() + emitted.template_args.size() + emitted.unused_locals.size() + emitted.narrowable_imports.size());
 
 	const auto add_uses = [&out](const std::span<const analysis::qualified_use> uses, const lint_rule rule) {
 		for (const analysis::qualified_use& use : uses) {
@@ -96,12 +131,49 @@ auto gse::ide::lint::findings(const records emitted) -> std::vector<lint_finding
 			},
 		});
 	}
+
+	for (const analysis::narrowable_import& entry : emitted.narrowable_imports) {
+		if (entry.line == 0 || entry.imported.empty()) {
+			continue;
+		}
+		std::string replacement;
+		for (const std::string& name : entry.replacements) {
+			replacement += "import " + name + ";\n";
+		}
+		out.push_back({
+			.file = entry.file,
+			.rule = entry.replacements.empty() ? lint_rule::unused_import : lint_rule::narrow_import,
+			.edit = {
+				.line = entry.line - 1,
+				.end_line = entry.line,
+				.start_col = 0,
+				.end_col = 0,
+				.expected = entry.imported,
+				.replacement = std::move(replacement),
+			},
+		});
+	}
 	return out;
 }
 
 auto gse::ide::lint::message_for(const lint_rule rule, const text_edit& edit) -> std::string {
 	const lint_rule_info info = annotation_from_enum<lint_rule_info>(rule, {});
-	return std::vformat(info.message, std::make_format_args(edit.expected));
+	std::string modules;
+	for (const auto part : std::views::split(std::string_view(edit.replacement), '\n')) {
+		std::string_view line(part);
+		if (line.starts_with("import ")) {
+			line.remove_prefix(7);
+		}
+		if (line.ends_with(';')) {
+			line.remove_suffix(1);
+		}
+		if (line.empty()) {
+			continue;
+		}
+		modules += modules.empty() ? "" : ", ";
+		modules += line;
+	}
+	return std::vformat(info.message, std::make_format_args(edit.expected, modules));
 }
 
 auto gse::ide::lint::fix_title_for(const lint_rule rule, const text_edit& edit) -> std::string {
@@ -133,6 +205,7 @@ auto gse::ide::lint::analyze_check(analysis::diagnostics_check& check) -> void {
 		.quals = check.quals,
 		.template_args = check.template_args,
 		.unused_locals = check.unused_locals,
+		.narrowable_imports = check.narrowable_imports,
 	});
 
 	std::unordered_set<std::uint64_t> seen;

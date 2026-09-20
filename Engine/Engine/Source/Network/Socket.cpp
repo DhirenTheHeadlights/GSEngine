@@ -81,6 +81,30 @@ namespace gse::network {
 	}
 }
 
+auto gse::network::resolve_address(const address& addr) -> std::optional<address> {
+	::in_addr literal{};
+	if (::inet_pton(sockets::af_inet, addr.ip.c_str(), &literal) == 1) {
+		return addr;
+	}
+
+	ensure_initialized();
+	const ::addrinfo hints{
+		.ai_family = sockets::af_inet,
+		.ai_socktype = sockets::sock_dgram,
+	};
+	::addrinfo* found = nullptr;
+	if (::getaddrinfo(addr.ip.c_str(), nullptr, &hints, &found) != 0 || !found) {
+		log::println(log::level::warning, log::category::network, "could not resolve host '{}'", addr.ip);
+		return std::nullopt;
+	}
+	const address resolved = sockaddr_to_address(*reinterpret_cast<const ::sockaddr_in*>(found->ai_addr));
+	::freeaddrinfo(found);
+	return address{
+		.ip = resolved.ip,
+		.port = addr.port,
+	};
+}
+
 gse::network::udp_socket::udp_socket() {
 	ensure_initialized();
 	const native_socket s = ::socket(sockets::af_inet, sockets::sock_dgram, sockets::ipproto_udp);
@@ -180,7 +204,9 @@ auto gse::network::udp_socket::send_data(const packet& packet, const address& ad
 		log::println(
 			log::level::error,
 			log::category::network,
-			"Socket sendto failed with error {}",
+			"Socket sendto to {}:{} failed with error {}",
+			address.ip,
+			address.port,
 			sockets::last_error()
 		);
 		return socket_state::error;

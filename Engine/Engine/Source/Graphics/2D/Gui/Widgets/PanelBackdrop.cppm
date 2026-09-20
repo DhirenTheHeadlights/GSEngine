@@ -1,19 +1,16 @@
 export module gse.graphics:panel_backdrop;
 
-import std;
-
-import gse.core;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
 import gse.math;
+import gse.time;
+import std;
 
-import :types;
-import :styles;
-import :builder;
 import :render_layer;
+import :types;
 
 export namespace gse::gui {
 	struct panel_accent {

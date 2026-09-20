@@ -1,6 +1,6 @@
 # Arbitrary collision shapes — scope
 
-Status: scoped, not started. Written 2026-08-13, immediately after the shape-derived inertia tensor landed (`docs/solver_plan.md` § inertia). Read that section first — this document assumes it.
+Status: partly built. Written 2026-08-13, immediately after the shape-derived inertia tensor landed (`docs/solver_plan.md` § inertia). Read that section first — this document assumes it. Capsules, the convex-hull types and the `ParityShapes` scenarios landed; rung 3c is not started and rung 3f is parked. The GPU hull guard marked REQUIRED BEFORE ANY HULL IS SPAWNED is still absent from `Physics/System.cpp`.
 
 ## Decisions taken
 

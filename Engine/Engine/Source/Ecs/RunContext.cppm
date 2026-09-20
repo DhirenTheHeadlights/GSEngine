@@ -1,14 +1,12 @@
 export module gse.ecs:context;
 
+import gse.assert;
+import gse.concurrency;
+import gse.core;
+import gse.diag;
 import std;
 
-import gse.assert;
-import gse.core;
-import gse.concurrency;
-import gse.diag;
-
 import :access_token;
-import :component;
 import :registries;
 import :registry;
 import :task_context;
@@ -80,6 +78,10 @@ export namespace gse {
 		auto make_structural() -> structural<T>;
 
 		auto make_entities() -> entities;
+
+		template <typename T>
+		requires is_same_frame_channel_v<T>
+		auto drain_channel() -> std::vector<T>;
 
 	private:
 		scheduler& m_sched;
@@ -167,6 +169,12 @@ auto gse::context::make_entities() -> entities {
 	return entities(&m_reg);
 }
 
+template <typename T>
+requires gse::is_same_frame_channel_v<T>
+auto gse::context::drain_channel() -> std::vector<T> {
+	return channels_store.template drain<T>();
+}
+
 gse::entities::entities(registry* reg) : m_reg(reg) {
 }
 
@@ -180,6 +188,10 @@ auto gse::entities::exists(const id owner) const -> bool {
 
 auto gse::entities::active(const id owner) const -> bool {
 	return m_reg->active(owner);
+}
+
+auto gse::entities::has_components(const id owner) const -> bool {
+	return m_reg->has_components(owner);
 }
 
 auto gse::entities::ensure_active(const id owner) const -> void {

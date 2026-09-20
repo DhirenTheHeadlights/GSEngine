@@ -1,9 +1,10 @@
 export module gse.ide.highlight:markdown;
 
-import std;
-import gse;
-
+import gse.graphics;
+import gse.math;
+import gse.meta;
 import gse.syntax;
+import std;
 
 export namespace gse::ide::markdown {
 	struct face_set {

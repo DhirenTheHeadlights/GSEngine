@@ -9,6 +9,10 @@
     "shader-slang",
     "nsight-aftermath",
     {
+      "name": "nsight-perf",
+      "platform": "windows"
+    },
+    {
       "name": "directx-headers",
       "platform": "windows"
     },

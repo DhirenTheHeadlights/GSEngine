@@ -14,6 +14,7 @@ export namespace gse::network {
 	template <is_network_message T>
 	struct received {
 		address from;
+		id controller{};
 		T message;
 	};
 
@@ -50,7 +51,8 @@ export namespace gse::network {
 	auto route_inbound(
 		read_bitstream& s,
 		const inbound_message& msg,
-		const inbound_channel_t<Pack>& out
+		const inbound_channel_t<Pack>& out,
+		id controller = {}
 	) -> bool;
 
 	template <typename Pack, typename Requests, typename Sink>
@@ -61,7 +63,7 @@ export namespace gse::network {
 }
 
 template <typename Pack>
-auto gse::network::route_inbound(read_bitstream& s, const inbound_message& msg, const inbound_channel_t<Pack>& out) -> bool {
+auto gse::network::route_inbound(read_bitstream& s, const inbound_message& msg, const inbound_channel_t<Pack>& out, const id controller) -> bool {
 	return [&]<typename... Messages>(type_pack<Messages...>) {
 		return (
 			try_decode<Messages>(
@@ -70,6 +72,7 @@ auto gse::network::route_inbound(read_bitstream& s, const inbound_message& msg, 
 				[&](const Messages& decoded) {
 					out.template push<received<Messages>>({
 						.from = msg.from,
+						.controller = controller,
 						.message = decoded,
 					});
 				}

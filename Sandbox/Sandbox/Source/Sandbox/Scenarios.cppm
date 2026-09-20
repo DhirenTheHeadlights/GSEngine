@@ -1,6 +1,5 @@
 export module sandbox:scenarios;
 
-import std;
 import gse;
 import gse.scenario;
 
@@ -92,6 +91,76 @@ export namespace sandbox::scenarios {
 
 	[[= gse::scenario::info{ .name = "pyramid_gpu", .scene = "Pyramid", .headless = true, .gpu_solver = true, .warmup_frames = 0 }]]
 	auto pyramid_gpu(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "rollback_reference", .scene = "Pyramid", .headless = true, .gpu_solver = false, .warmup_frames = 0, .frames = 120, .settings = { "Dev Spawn.pyramid.base_count=20", "Physics.rollback_history_steps=90" } }]]
+	auto rollback_reference(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "rollback_replay", .scene = "Pyramid", .headless = true, .gpu_solver = false, .warmup_frames = 0, .frames = 120, .settings = { "Dev Spawn.pyramid.base_count=20", "Physics.rollback_history_steps=90" } }]]
+	auto rollback_replay(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "rollback_reference_gpu", .scene = "Pyramid", .headless = true, .gpu_solver = true, .warmup_frames = 0, .frames = 120, .settings = { "Dev Spawn.pyramid.base_count=20", "Physics.rollback_history_steps=30" } }]]
+	auto rollback_reference_gpu(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "rollback_replay_gpu", .scene = "Pyramid", .headless = true, .gpu_solver = true, .warmup_frames = 0, .frames = 120, .settings = { "Dev Spawn.pyramid.base_count=20", "Physics.rollback_history_steps=30" } }]]
+	auto rollback_replay_gpu(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "rollback_impulse_reference", .scene = "Pyramid", .headless = true, .gpu_solver = false, .warmup_frames = 0, .frames = 120, .settings = { "Dev Spawn.pyramid.base_count=20", "Physics.rollback_history_steps=90" } }]]
+	auto rollback_impulse_reference(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "rollback_impulse_replay", .scene = "Pyramid", .headless = true, .gpu_solver = false, .warmup_frames = 0, .frames = 120, .settings = { "Dev Spawn.pyramid.base_count=20", "Physics.rollback_history_steps=90" } }]]
+	auto rollback_impulse_replay(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "rollback_impulse_reference_gpu", .scene = "Pyramid", .headless = true, .gpu_solver = true, .warmup_frames = 0, .frames = 120, .settings = { "Dev Spawn.pyramid.base_count=20", "Physics.rollback_history_steps=30" } }]]
+	auto rollback_impulse_reference_gpu(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "rollback_impulse_replay_gpu", .scene = "Pyramid", .headless = true, .gpu_solver = true, .warmup_frames = 0, .frames = 120, .settings = { "Dev Spawn.pyramid.base_count=20", "Physics.rollback_history_steps=30" } }]]
+	auto rollback_impulse_replay_gpu(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "net_walk_cpu", .headless = false, .gpu_solver = false, .real_time = true, .warmup_frames = 0, .frames = 2400 }]]
+	auto net_walk_cpu(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "net_walk_gpu", .headless = false, .gpu_solver = true, .real_time = true, .warmup_frames = 0, .frames = 2400 }]]
+	auto net_walk_gpu(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "rollback_reference_character", .scene = "Sandbox", .headless = true, .gpu_solver = false, .warmup_frames = 0, .frames = 600, .settings = { "Dev Spawn.characters.count=2", "Physics.rollback_history_steps=90" } }]]
+	auto rollback_reference_character(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "rollback_replay_character", .scene = "Sandbox", .headless = true, .gpu_solver = false, .warmup_frames = 0, .frames = 600, .settings = { "Dev Spawn.characters.count=2", "Physics.rollback_history_steps=90" } }]]
+	auto rollback_replay_character(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "rollback_reference_stress", .scene = "Sandbox", .headless = true, .gpu_solver = false, .warmup_frames = 0, .frames = 240, .settings = { "Dev Spawn.stress.tumbler_radial_cubes=6", "Dev Spawn.stress.tumbler_axial_cubes=12", "Physics.rollback_history_steps=90" } }]]
+	auto rollback_reference_stress(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "rollback_replay_stress", .scene = "Sandbox", .headless = true, .gpu_solver = false, .warmup_frames = 0, .frames = 240, .settings = { "Dev Spawn.stress.tumbler_radial_cubes=6", "Dev Spawn.stress.tumbler_axial_cubes=12", "Physics.rollback_history_steps=90" } }]]
+	auto rollback_replay_stress(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
 

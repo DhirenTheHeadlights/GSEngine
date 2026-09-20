@@ -1,10 +1,10 @@
 export module gse.assets:asset_format;
 
-import std;
-import gse.meta;
 import gse.containers;
 import gse.diag;
 import gse.log;
+import gse.meta;
+import std;
 
 #ifdef _WIN32
 import gse.win32;

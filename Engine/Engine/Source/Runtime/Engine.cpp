@@ -1,34 +1,33 @@
 module gse.runtime:engine_impl;
 
+import gse.assert;
+import gse.assets;
+import gse.audio;
+import gse.concurrency;
+import gse.config;
+import gse.containers;
+import gse.core;
+import gse.diag;
+import gse.ecs;
+import gse.fs;
+import gse.gpu;
+import gse.gpu_record;
+import gse.graphics;
+import gse.introspection;
+import gse.log;
+import gse.meta;
+import gse.network;
+import gse.os;
+import gse.physics;
+import gse.save;
+import gse.system_manifest;
+import gse.time;
+import gse.win32;
 import std;
 
 import :engine;
 import :log_settings;
-import :scene;
 import :world_system;
-
-import gse.core;
-import gse.containers;
-import gse.time;
-import gse.concurrency;
-import gse.diag;
-import gse.meta;
-import gse.ecs;
-import gse.introspection;
-import gse.system_manifest;
-import gse.network;
-import gse.graphics;
-import gse.audio;
-import gse.physics;
-import gse.os;
-import gse.assets;
-import gse.gpu;
-import gse.gpu_record;
-import gse.log;
-import gse.save;
-import gse.config;
-import gse.fs;
-import gse.win32;
 
 gse::engine::engine(const engine_config& config)
 	: identifiable(config.title), m_config(config) {
@@ -84,7 +83,6 @@ auto gse::engine::install_actions() -> void {
 
 	m_actions_revision = m_actions.revision();
 	actions::adopt_declarations(*actions_state, m_actions);
-	actions::log_declared_bindings(*actions_state);
 	m_save.add(actions::settings_record(*actions_state, &settings::draw_controls_page));
 }
 
@@ -147,13 +145,31 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	m_scheduler.register_external_resource<engine_config>(&m_config);
 	m_scheduler.register_external_resource<network::config>(&m_config.net);
 	m_scheduler.register_external_resource<scheduler>(&m_scheduler);
+	network::endpoint::set_simulation(m_config.net.simulated_latency_ms, m_config.net.simulated_loss_permille);
+	m_scheduler.set_stall_probe([this] {
+		const auto late = m_scheduler.drain_channel<gpu::render_pass_request>();
+		if (late.empty()) {
+			return;
+		}
+		std::string names;
+		for (const auto& req : late) {
+			names += std::format("{}#{} ", req.desc.pass_name, req.desc.chain_index);
+		}
+		log::println(
+			log::level::error,
+			log::category::runtime,
+			"{} render pass request(s) were pushed after this frame's record round closed and can never record: {}",
+			late.size(),
+			names
+		);
+	});
 
 	m_scheduler.begin_staging();
 	system_manifest<^^save::override_system::run>{}.register_with(*this);
 	register_systems<^^input>(*this);
 	register_systems<^^actions>(*this);
 	system_manifest<^^log_settings::data, ^^log_settings::run>{}.register_with(*this);
-	system_manifest<^^world_system::data, ^^world_system::run, ^^world_system::shutdown>{}.register_with(*this);
+	system_manifest<^^world_system::data, ^^world_system::init, ^^world_system::run, ^^world_system::shutdown>{}.register_with(*this);
 	register_systems<^^window>(*this);
 	register_systems<^^gpu::context>(*this);
 	register_systems<^^asset>(*this);
@@ -171,6 +187,11 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	if (!m_config.render) {
 		disabled.insert(id_of<window::data>());
 		disabled.insert(id_of<audio::data>());
+		system_clock::set_display_snapping(false);
+	}
+	if (!m_config.gpu) {
+		disabled.insert(id_of<gpu::context::data>());
+		log::println(log::category::runtime, "gpu disabled by config: no device will be created, graphics assets load CPU-side only, and every system that requires a device is dropped");
 	}
 	if (!m_config.simulate_world) {
 		disabled.insert(id_of<world_system::data>());
@@ -242,7 +263,12 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 
 		asset::system_for<game_assets> assets{ asset_state };
 		assets.register_loaders();
-		assets.install_stale_checks();
+		if (m_config.author_baked_assets) {
+			assets.install_recompile_fns();
+		}
+		else {
+			assets.install_stale_checks();
+		}
 		if (auto discovered = assets.discover_baked(); !discovered) {
 			assert(false, "Asset discovery failed: {}", discovered.error().detail);
 		}
@@ -266,7 +292,9 @@ auto gse::engine::update() -> void {
 	system_clock::update();
 	m_scheduler.update();
 
-	if (!m_config.render && (m_config.use_gpu_solver || m_headless_gpu)) {
+	const auto* physics_state = m_scheduler.try_state_of<physics::data>();
+	const bool gpu_solver = physics_state && physics_state->use_gpu_solver;
+	if (!m_config.render && (gpu_solver || m_headless_gpu)) {
 		if (auto* gpu_state = m_scheduler.try_state_of<gpu::context::data>()) {
 			if (gpu::context::begin_frame(*gpu_state, nullptr)) {
 				m_scheduler.render(
@@ -309,6 +337,13 @@ auto gse::engine::update() -> void {
 	}
 
 	install_actions();
+
+	if (!m_actions_logged && m_boot_tasks_done.load(std::memory_order_acquire) && m_scheduler.all_settled()) {
+		m_actions_logged = true;
+		if (auto* actions_state = m_scheduler.try_state_of<actions::data>()) {
+			actions::log_declared_bindings(*actions_state);
+		}
+	}
 
 	if (!m_settings_audited && m_boot_tasks_done.load(std::memory_order_acquire) && m_scheduler.all_settled()) {
 		m_settings_audited = true;
@@ -398,30 +433,54 @@ auto gse::engine::render() -> void {
 		}
 	}
 
-	if (m_attached_surface_ready && gpu_state && gpu_state->render_graph) {
-		const std::uint64_t counter = ++m_attached_counter;
-		const std::size_t slot = static_cast<std::size_t>(counter % attached_ring_size);
+	bool attached_slot_starved = false;
+
+	if (m_attached_surface_ready && gpu_state && gpu_state->render_graph && gpu_state->device) {
+		const std::uint64_t counter = m_attached_counter + 1;
 		if (counter > attached_ring_size) {
-			gpu_state->render_graph->add_graphics_wait({
-				.semaphore = m_attached_consumed_semaphore,
-				.value = counter - attached_ring_size,
+			const auto released = counter - attached_ring_size;
+			attached_slot_starved = gpu_state->device->semaphore_counter_value(m_attached_consumed_semaphore) < released;
+		}
+		if (!attached_slot_starved) {
+			m_attached_counter = counter;
+			const std::size_t slot = static_cast<std::size_t>(counter % attached_ring_size);
+			if (counter > attached_ring_size) {
+				gpu_state->render_graph->add_graphics_wait({
+					.semaphore = m_attached_consumed_semaphore,
+					.value = counter - attached_ring_size,
+					.stages = gpu::pipeline_stage_flag::all_commands,
+				});
+			}
+			gpu_state->render_graph->set_offscreen_target(&m_attached_surface_images[slot]);
+			gpu_state->render_graph->add_graphics_signal({
+				.semaphore = m_attached_produced_semaphore,
+				.value = counter,
 				.stages = gpu::pipeline_stage_flag::all_commands,
 			});
+			++m_attached_frames_presented;
 		}
-		gpu_state->render_graph->set_offscreen_target(&m_attached_surface_images[slot]);
-		gpu_state->render_graph->add_graphics_signal({
-			.semaphore = m_attached_produced_semaphore,
-			.value = counter,
-			.stages = gpu::pipeline_stage_flag::all_commands,
-		});
+		else {
+			++m_attached_frames_skipped;
+		}
 	}
 
-	if (gpu_state) {
+	if (m_attached_report.tick() && m_attached_frames_presented + m_attached_frames_skipped > 0) {
+		log::println(
+			log::category::runtime,
+			"attached surface: {} frames handed to the editor, {} skipped waiting on a free slot in the last window",
+			m_attached_frames_presented,
+			m_attached_frames_skipped
+		);
+		m_attached_frames_presented = 0;
+		m_attached_frames_skipped = 0;
+	}
+
+	if (gpu_state && !attached_slot_starved) {
 		auto& window_state = m_scheduler.state<window::data>();
 		const clock fence_timer;
 		std::expected<gpu::frame_token, gpu::frame_status> result;
 		{
-			trace::scope_guard sg{ trace_id<"render::begin_frame">() };
+			trace::scope_guard _{ trace_id<"render::begin_frame">() };
 			gpu::context::sync_present_targets(*gpu_state, window_state);
 			result = gpu::context::begin_frame(*gpu_state, &window_state.primary);
 		}
@@ -438,7 +497,7 @@ auto gse::engine::render() -> void {
 				log::category::vulkan,
 				"Device lost during begin_frame Ã¢â‚¬â€ terminating"
 			);
-			std::abort();
+			fatal_exit(3);
 		}
 
 	}
@@ -449,7 +508,7 @@ auto gse::engine::render() -> void {
 			if (gpu_state) {
 				gpu_state->scheduler.flush();
 				{
-					trace::scope_guard sg{ trace_id<"render::graph_execute">() };
+					trace::scope_guard _{ trace_id<"render::graph_execute">() };
 					gpu::context::execute_frame(*gpu_state, m_scheduler);
 				}
 			}
@@ -458,11 +517,11 @@ auto gse::engine::render() -> void {
 
 	if (frame_ok && gpu_state) {
 		{
-			trace::scope_guard sg{ trace_id<"render::end_frame">() };
+			trace::scope_guard _{ trace_id<"render::end_frame">() };
 			auto& window_state = m_scheduler.state<window::data>();
 			gpu::context::end_frame(*gpu_state);
 			if (asset_state) {
-				trace::scope_guard sg{ trace_id<"end_frame::finalize_reloads">() };
+				trace::scope_guard _{ trace_id<"end_frame::finalize_reloads">() };
 				for (const auto& l : std::views::values(asset_state->resource_loaders)) {
 					l->finalize_reloads();
 				}
@@ -545,37 +604,37 @@ auto gse::engine::shutdown() -> void {
 	const time phase_budget = seconds(10.f);
 
 	{
-		watchdog::section watch{ trace_id<"shutdown::profile_dump">(), phase_budget };
+		watchdog::section _{ trace_id<"shutdown::profile_dump">(), phase_budget };
 		profile::dump();
 		profile::dump_chrome_trace();
 		profile::dump_report();
 	}
 
 	{
-		watchdog::section watch{ trace_id<"shutdown::save">(), phase_budget };
+		watchdog::section _{ trace_id<"shutdown::save">(), phase_budget };
 		m_save.save_now();
 		m_save.set_auto_save(false);
 	}
 
 	if (auto* gpu_state = m_scheduler.try_state_of<gpu::context::data>()) {
-		watchdog::section watch{ trace_id<"shutdown::gpu_wait_idle">(), phase_budget };
+		watchdog::section _{ trace_id<"shutdown::gpu_wait_idle">(), phase_budget };
 		gpu::context::wait_idle(*gpu_state);
 		destroy_attached_surface(*gpu_state->device);
 	}
 
 	{
-		watchdog::section watch{ trace_id<"shutdown::systems">(), phase_budget };
+		watchdog::section _{ trace_id<"shutdown::systems">(), phase_budget };
 		m_scheduler.enter_shutdown();
 		m_scheduler.shutdown();
 	}
 
 	{
-		watchdog::section watch{ trace_id<"shutdown::layout_flush">(), phase_budget };
+		watchdog::section _{ trace_id<"shutdown::layout_flush">(), phase_budget };
 		layout_store::flush();
 	}
 
 	{
-		watchdog::section watch{ trace_id<"shutdown::scheduler_clear">(), phase_budget };
+		watchdog::section _{ trace_id<"shutdown::scheduler_clear">(), phase_budget };
 		m_scheduler.clear();
 	}
 }

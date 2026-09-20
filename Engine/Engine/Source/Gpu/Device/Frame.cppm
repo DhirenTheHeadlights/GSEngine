@@ -72,6 +72,11 @@ export namespace gse::gpu {
 			std::uint32_t ring_slot
 		) const -> bool;
 
+		auto wait_queue_fence(
+			queue_type queue,
+			std::uint32_t ring_slot
+		) const -> result;
+
 		[[nodiscard]] auto image_index() const -> std::uint32_t;
 
 		[[nodiscard]]

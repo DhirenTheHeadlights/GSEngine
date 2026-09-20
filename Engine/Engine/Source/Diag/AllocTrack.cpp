@@ -5,6 +5,7 @@ import std;
 import :alloc_track;
 
 import gse.log;
+import gse.math;
 import gse.win32;
 
 namespace gse::alloc {
@@ -14,30 +15,34 @@ namespace gse::alloc {
 	constexpr std::size_t default_interval = 256u * 1024u;
 	constexpr std::size_t default_alignment = __STDCPP_DEFAULT_NEW_ALIGNMENT__;
 
+	using tracked_bytes = data_size_t<std::int64_t, bytes>;
+
+	static_assert(std::atomic<tracked_bytes>::is_always_lock_free);
+
 	struct site_slot {
 		std::atomic<std::uint64_t> pc;
-		std::atomic<std::int64_t> live_bytes;
+		std::atomic<tracked_bytes> live;
 		std::atomic<std::int64_t> live_samples;
-		std::atomic<std::int64_t> mark_bytes;
+		std::atomic<tracked_bytes> mark;
 	};
 
 	struct sample_entry {
 		std::atomic<std::uintptr_t> key;
-		std::atomic<std::int64_t> weight;
+		std::atomic<tracked_bytes> weight;
 		std::atomic<std::uint32_t> slot;
 	};
 
 	site_slot slots[site_capacity] = {};
 
 	std::atomic<sample_entry*> samples{ nullptr };
-	std::atomic<std::int64_t> total_bytes{ 0 };
+	std::atomic<tracked_bytes> total_bytes{ tracked_bytes(0) };
 	std::atomic<std::int64_t> total_samples{ 0 };
 	std::atomic<std::int64_t> total_evicted{ 0 };
-	std::atomic<std::size_t> interval_bytes{ default_interval };
+	std::atomic<tracked_bytes> interval_bytes{ tracked_bytes(default_interval) };
 	std::atomic<std::uint64_t> seed_source{ 0x243f6a8885a308d3ull };
 	std::atomic<bool> tracking{ false };
 
-	thread_local std::int64_t sample_countdown = 0;
+	thread_local tracked_bytes sample_countdown;
 	thread_local std::uint64_t rng_state = 0;
 
 	auto mix(
@@ -48,7 +53,7 @@ namespace gse::alloc {
 		std::uint64_t pc
 	) -> std::uint32_t;
 
-	auto next_countdown() -> std::int64_t;
+	auto next_countdown() -> tracked_bytes;
 
 	auto should_sample(
 		std::size_t size
@@ -56,7 +61,7 @@ namespace gse::alloc {
 
 	auto credit(
 		std::uint32_t site,
-		std::int64_t bytes,
+		tracked_bytes amount,
 		std::int64_t count
 	) -> void;
 
@@ -69,10 +74,6 @@ namespace gse::alloc {
 	auto forget(
 		void* block
 	) -> void;
-
-	auto megabytes_of(
-		std::int64_t bytes
-	) -> double;
 }
 
 auto gse::alloc::mix(std::uint64_t value) -> std::uint64_t {
@@ -107,7 +108,7 @@ auto gse::alloc::slot_for(const std::uint64_t pc) -> std::uint32_t {
 	return 0;
 }
 
-auto gse::alloc::next_countdown() -> std::int64_t {
+auto gse::alloc::next_countdown() -> tracked_bytes {
 	if (rng_state == 0) {
 		rng_state = seed_source.fetch_add(0x9e3779b97f4a7c15ull, std::memory_order_relaxed) | 1ull;
 	}
@@ -117,17 +118,17 @@ auto gse::alloc::next_countdown() -> std::int64_t {
 	rng_state ^= rng_state << 17;
 
 	const double uniform = static_cast<double>(rng_state >> 11) * 0x1p-53;
-	const auto interval = static_cast<double>(interval_bytes.load(std::memory_order_relaxed));
-	return static_cast<std::int64_t>(-interval * std::log(1.0 - uniform)) + 1;
+	const double interval = static_cast<std::int64_t>(interval_bytes.load(std::memory_order_relaxed));
+	return tracked_bytes(static_cast<std::int64_t>(-interval * std::log(1.0 - uniform)) + 1);
 }
 
 auto gse::alloc::should_sample(const std::size_t size) -> bool {
-	if (interval_bytes.load(std::memory_order_relaxed) == 0) {
+	if (interval_bytes.load(std::memory_order_relaxed) == tracked_bytes(0)) {
 		return true;
 	}
 
-	sample_countdown -= static_cast<std::int64_t>(size);
-	if (sample_countdown > 0) {
+	sample_countdown -= tracked_bytes(size);
+	if (sample_countdown > tracked_bytes(0)) {
 		return false;
 	}
 
@@ -135,12 +136,12 @@ auto gse::alloc::should_sample(const std::size_t size) -> bool {
 	return true;
 }
 
-auto gse::alloc::credit(const std::uint32_t site, const std::int64_t bytes, const std::int64_t count) -> void {
-	total_bytes.fetch_add(bytes, std::memory_order_relaxed);
+auto gse::alloc::credit(const std::uint32_t site, const tracked_bytes amount, const std::int64_t count) -> void {
+	total_bytes.fetch_add(amount, std::memory_order_relaxed);
 	total_samples.fetch_add(count, std::memory_order_relaxed);
 
 	if (site != 0) {
-		slots[site].live_bytes.fetch_add(bytes, std::memory_order_relaxed);
+		slots[site].live.fetch_add(amount, std::memory_order_relaxed);
 		slots[site].live_samples.fetch_add(count, std::memory_order_relaxed);
 	}
 }
@@ -155,8 +156,7 @@ auto gse::alloc::remember(void* block, const std::size_t size, const void* site_
 		return;
 	}
 
-	const auto interval = static_cast<std::int64_t>(interval_bytes.load(std::memory_order_relaxed));
-	const std::int64_t weight = std::max(static_cast<std::int64_t>(size), interval);
+	const tracked_bytes weight = std::max(tracked_bytes(size), interval_bytes.load(std::memory_order_relaxed));
 	const auto key = reinterpret_cast<std::uintptr_t>(block);
 	auto& entry = table[static_cast<std::size_t>(mix(key)) & (sample_capacity - 1)];
 
@@ -184,7 +184,7 @@ auto gse::alloc::forget(void* block) -> void {
 		return;
 	}
 
-	const std::int64_t weight = entry.weight.load(std::memory_order_relaxed);
+	const tracked_bytes weight = entry.weight.load(std::memory_order_relaxed);
 	const std::uint32_t site = entry.slot.load(std::memory_order_acquire);
 
 	std::uintptr_t expected = key;
@@ -267,11 +267,11 @@ auto gse::alloc::enabled() -> bool {
 	return tracking.load(std::memory_order_relaxed);
 }
 
-auto gse::alloc::set_sample_interval(const std::size_t bytes) -> void {
-	interval_bytes.store(bytes, std::memory_order_relaxed);
+auto gse::alloc::set_sample_interval(const byte_count interval) -> void {
+	interval_bytes.store(interval, std::memory_order_relaxed);
 }
 
-auto gse::alloc::sample_interval() -> std::size_t {
+auto gse::alloc::sample_interval() -> byte_count {
 	return interval_bytes.load(std::memory_order_relaxed);
 }
 
@@ -283,7 +283,7 @@ auto gse::alloc::address_space_usage() -> address_space {
 	MEMORY_BASIC_INFORMATION region{};
 
 	for (std::uintptr_t at = 0; VirtualQuery(reinterpret_cast<const void*>(at), &region, sizeof(region)) == sizeof(region); at += region.RegionSize) {
-		const auto size = static_cast<std::int64_t>(region.RegionSize);
+		const byte_count size(region.RegionSize);
 
 		if (region.State == mem_reserve) {
 			usage.reserved += size;
@@ -313,7 +313,7 @@ auto gse::alloc::address_space_usage() -> address_space {
 }
 #endif
 
-auto gse::alloc::estimated_live_bytes() -> std::int64_t {
+auto gse::alloc::estimated_live() -> byte_count {
 	return total_bytes.load(std::memory_order_relaxed);
 }
 
@@ -327,7 +327,7 @@ auto gse::alloc::evicted_samples() -> std::int64_t {
 
 auto gse::alloc::mark() -> void {
 	for (auto& slot : slots) {
-		slot.mark_bytes.store(slot.live_bytes.load(std::memory_order_relaxed), std::memory_order_relaxed);
+		slot.mark.store(slot.live.load(std::memory_order_relaxed), std::memory_order_relaxed);
 	}
 }
 
@@ -340,19 +340,19 @@ auto gse::alloc::snapshot(std::vector<site>& out) -> void {
 			continue;
 		}
 
-		const std::int64_t bytes = slot.live_bytes.load(std::memory_order_relaxed);
+		const tracked_bytes live = slot.live.load(std::memory_order_relaxed);
 		const std::int64_t count = slot.live_samples.load(std::memory_order_relaxed);
-		const std::int64_t since = bytes - slot.mark_bytes.load(std::memory_order_relaxed);
+		const tracked_bytes since = live - slot.mark.load(std::memory_order_relaxed);
 
-		if (count == 0 && since == 0) {
+		if (count == 0 && since == tracked_bytes(0)) {
 			continue;
 		}
 
 		out.push_back({
 			.pc = pc,
-			.live_bytes = bytes,
+			.live = live,
 			.live_samples = count,
-			.since_mark_bytes = since,
+			.since_mark = since,
 		});
 	}
 }
@@ -388,36 +388,32 @@ auto gse::alloc::label_of(const std::uint64_t pc) -> std::string {
 }
 #endif
 
-auto gse::alloc::megabytes_of(const std::int64_t bytes) -> double {
-	return static_cast<double>(bytes) / (1024.0 * 1024.0);
-}
-
 auto gse::alloc::log_report(const int top_rows) -> void {
 	std::vector<site> sites;
 	snapshot(sites);
-	std::ranges::sort(sites, std::ranges::greater{}, &site::live_bytes);
+	std::ranges::sort(sites, std::ranges::greater{}, &site::live);
 
 	const address_space usage = address_space_usage();
 
 	log::println(
 		log::level::info,
 		log::category::general,
-		"[alloc] process {:.1f} MB private, {:.1f} MB image, {:.1f} MB mapped, {:.1f} MB reserved",
-		megabytes_of(usage.private_committed),
-		megabytes_of(usage.image),
-		megabytes_of(usage.mapped),
-		megabytes_of(usage.reserved)
+		"[alloc] process {:.1f:MiB} private, {:.1f:MiB} image, {:.1f:MiB} mapped, {:.1f:MiB} reserved",
+		usage.private_committed,
+		usage.image,
+		usage.mapped,
+		usage.reserved
 	);
 
 	log::println(
 		log::level::info,
 		log::category::general,
-		"[alloc] tracked {:.1f} MB estimated live across {} samples, {} sites, {} evicted, 1 per {} KB{}",
-		megabytes_of(estimated_live_bytes()),
+		"[alloc] tracked {:.1f:MiB} estimated live across {} samples, {} sites, {} evicted, 1 per {:.0f:KiB}{}",
+		estimated_live(),
 		live_samples(),
 		sites.size(),
 		evicted_samples(),
-		sample_interval() / 1024,
+		sample_interval(),
 		enabled() ? "" : " (sampling paused)"
 	);
 
@@ -425,10 +421,10 @@ auto gse::alloc::log_report(const int top_rows) -> void {
 		log::println(
 			log::level::info,
 			log::category::general,
-			"  #{:>3} {:>10.2f} MB live {:>+10.2f} MB since mark {:>8} smp  {}",
+			"  #{:>3} {:>10.2f:MiB} live {:>+10.2f:MiB} since mark {:>8} smp  {}",
 			index,
-			megabytes_of(row.live_bytes),
-			megabytes_of(row.since_mark_bytes),
+			row.live,
+			row.since_mark,
 			row.live_samples,
 			label_of(row.pc)
 		);

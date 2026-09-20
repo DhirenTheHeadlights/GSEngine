@@ -35,6 +35,10 @@ export namespace gse::network {
 		std::uint16_t fallback_port = 0
 	) -> std::expected<address, address_error>;
 
+	auto resolve_address(
+		const address& addr
+	) -> std::optional<address>;
+
 	enum struct socket_state {
 		ready,
 		sending,

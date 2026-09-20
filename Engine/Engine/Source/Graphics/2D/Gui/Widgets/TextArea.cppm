@@ -38,10 +38,9 @@ export namespace gse::gui {
 		buffer_position anchor;
 		scroll_state scroll{};
 		bool tail_pinned = true;
-		time last_blink{};
+		deadline_timer blink;
 		bool blink_on = true;
-		bool rpt_active = false;
-		time rpt_next{};
+		deadline_timer repeat;
 		std::vector<text_edit_snapshot> undo_stack;
 		std::vector<text_edit_snapshot> redo_stack;
 		int last_edit_kind = 0;
@@ -644,6 +643,8 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 	const bool indent_with_spaces = params.indent_with_spaces;
 	const bool auto_indent = params.auto_indent;
 	const time blink_interval = params.blink_interval;
+	constexpr time repeat_delay = milliseconds(400.f);
+	constexpr time repeat_interval = milliseconds(33.f);
 	const resource::handle<font> font = params.font;
 	const auto fnt = font.valid() ? font : ctx.fonts.code;
 	const auto fnt_view = fnt.resolve();
@@ -832,7 +833,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 		}
 
 		state.selecting = true;
-		state.last_blink = system_clock::now<time>();
+		state.blink.arm(blink_interval);
 		state.blink_on = true;
 		state.last_edit_kind = 0;
 	}
@@ -868,7 +869,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 					state.caret = current_hi;
 				}
 			}
-			state.last_blink = system_clock::now<time>();
+			state.blink.arm(blink_interval);
 			state.blink_on = true;
 		}
 		else {
@@ -891,7 +892,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 		if (!had_selection || before_lo || after_hi) {
 			state.caret = click_pos;
 			state.anchor = click_pos;
-			state.last_blink = system_clock::now<time>();
+			state.blink.arm(blink_interval);
 			state.blink_on = true;
 		}
 		const bool selection_now = state.anchor != state.caret;
@@ -1138,7 +1139,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 		if (modified) {
 			state.caret = buffer.clamp(state.caret);
 			state.anchor = buffer.clamp(state.anchor);
-			state.last_blink = system_clock::now<time>();
+			state.blink.arm(blink_interval);
 			state.blink_on = true;
 		}
 	}
@@ -1360,7 +1361,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 				changed = true;
 				modified = true;
 			}
-			if (ctx.key_pressed_for(key::backspace)) {
+			auto do_backspace = [&] {
 				if (has_selection()) {
 					begin_edit(2);
 					delete_selection();
@@ -1375,8 +1376,9 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 					changed = true;
 					modified = true;
 				}
-			}
-			if (ctx.key_pressed_for(key::del)) {
+			};
+
+			auto do_delete = [&] {
 				if (has_selection()) {
 					begin_edit(2);
 					delete_selection();
@@ -1389,13 +1391,38 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 					changed = true;
 					modified = true;
 				}
+			};
+
+			if (ctx.key_pressed_for(key::backspace)) {
+				do_backspace();
+				state.repeat.arm(repeat_delay);
+			}
+
+			if (ctx.key_pressed_for(key::del)) {
+				do_delete();
+				state.repeat.arm(repeat_delay);
+			}
+
+			if (state.repeat.armed() && (ctx.key_held(key::backspace) || ctx.key_held(key::del))) {
+				if (state.repeat.due()) {
+					if (ctx.key_held(key::backspace)) {
+						do_backspace();
+					}
+					if (ctx.key_held(key::del)) {
+						do_delete();
+					}
+					state.repeat.arm(repeat_interval);
+				}
+			}
+			else {
+				state.repeat.disarm();
 			}
 		}
 
 		if (changed) {
 			state.caret = buffer.clamp(state.caret);
 			state.anchor = buffer.clamp(state.anchor);
-			state.last_blink = system_clock::now<time>();
+			state.blink.arm(blink_interval);
 			state.blink_on = true;
 			caret_moved = true;
 		}
@@ -1404,11 +1431,12 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 	if (blink_interval <= time{}) {
 		state.blink_on = true;
 	}
-	else if (focused) {
-		if (const auto now = system_clock::now<time>(); now - state.last_blink > blink_interval) {
-			state.last_blink = now;
-			state.blink_on = !state.blink_on;
-		}
+	else if (!state.blink.armed()) {
+		state.blink.arm(blink_interval);
+	}
+	else if (focused && state.blink.due()) {
+		state.blink.arm(blink_interval);
+		state.blink_on = !state.blink_on;
 	}
 
 	refresh_metrics(buffer, state, spans, stops, style, line_h);
@@ -1592,7 +1620,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 		}
 	}
 
-	if (focused && state.blink_on) {
+	if (focused && !read_only && state.blink_on) {
 		const std::string_view caret_line = buffer.line(state.caret.line);
 		const std::vector<float> caret_col_x = line_column_x(state.caret.line, caret_line);
 		const float caret_x = caret_col_x[std::min<std::size_t>(state.caret.column, caret_line.size())];

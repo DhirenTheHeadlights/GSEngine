@@ -1,9 +1,8 @@
 export module gse.ecs:component;
 
-import std;
-
 import gse.core;
 import gse.meta;
+import std;
 
 export namespace gse {
 	struct networked_tag {};

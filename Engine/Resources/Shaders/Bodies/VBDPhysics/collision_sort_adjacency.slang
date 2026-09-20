@@ -20,6 +20,24 @@ void collision_sort_adjacency(uint3 dispatch_id) {
     uint body_count = pc.body_count;
     uint num_joints = min(pc.joint_count, max_joints);
 
+    uint num_contacts = min(collision_state[state_contact_count_index], max_contacts);
+    uint thread_count = ((max(body_count, num_joints) + workgroup_size - 1) / workgroup_size) * workgroup_size;
+    for (uint ci = idx; ci < num_contacts; ci += thread_count) {
+        uint body_a = contact_data[ci].body_a;
+        uint body_b = contact_data[ci].body_b;
+        if (body_a >= body_count || body_b >= body_count) continue;
+        uint island_a = body_env_data[body_a];
+        uint island_b = body_env_data[body_b];
+        bool locked_a = body_data[body_a].locked != 0;
+        bool locked_b = body_data[body_b].locked != 0;
+        bool a_owner = island_a != 0xFFFFFFFFu && !locked_a && (island_a == island_b || locked_b);
+        bool b_owner = island_b != 0xFFFFFFFFu && !locked_b && (island_a == island_b || locked_a);
+        if (a_owner || b_owner) continue;
+        uint slot;
+        InterlockedAdd(unowned_contacts[0], 1, slot);
+        if (slot < max_contacts) unowned_contacts[1 + slot] = ci;
+    }
+
     if (idx < body_count && body_data[idx].locked == 0) {
         uint coff = contact_offsets[idx];
         uint ccnt = min(contact_counts[idx], max_contact_adjacency - coff);

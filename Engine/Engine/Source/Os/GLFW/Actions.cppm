@@ -1,21 +1,20 @@
 export module gse.os:actions;
 
-import std;
-
-import gse.core;
-import gse.meta;
-import gse.containers;
-import gse.time;
+import gse.assert;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
-import gse.math;
-import gse.assert;
 import gse.log;
+import gse.math;
+import gse.meta;
+import gse.time;
+import std;
 
 import :input;
-import :keys;
 import :input_state;
+import :keys;
 
 export namespace gse {
 	enum struct key_modifier : std::uint8_t {
@@ -247,6 +246,12 @@ export namespace gse::actions {
 
 		auto camera_yaw() const -> angle;
 
+		auto set_camera_pitch(
+			angle pitch
+		) -> void;
+
+		auto camera_pitch() const -> angle;
+
 	private:
 		auto ensure_axis1_capacity(
 			std::uint16_t id
@@ -264,6 +269,7 @@ export namespace gse::actions {
 		std::vector<float> m_axes1;
 		std::vector<axis> m_axes2;
 		angle m_camera_yaw;
+		angle m_camera_pitch;
 	};
 
 	inline thread_local angle g_context_camera_yaw{};
@@ -786,6 +792,14 @@ auto gse::actions::state::camera_yaw() const -> angle {
 	return m_camera_yaw;
 }
 
+auto gse::actions::state::set_camera_pitch(const angle pitch) -> void {
+	m_camera_pitch = pitch;
+}
+
+auto gse::actions::state::camera_pitch() const -> angle {
+	return m_camera_pitch;
+}
+
 auto gse::actions::registry::add(std::vector<registration> entries, std::vector<axis_registration> axes) -> void {
 	m_entries.insert(m_entries.end(), std::make_move_iterator(entries.begin()), std::make_move_iterator(entries.end()));
 	m_axes.insert(m_axes.end(), std::make_move_iterator(axes.begin()), std::make_move_iterator(axes.end()));
@@ -974,7 +988,7 @@ auto gse::actions::push_binding_change(const settings::change_request_writer cha
 auto gse::actions::settings_record(data& d, const settings::draw_page_thunk page) -> settings::register_settings_type {
 	std::vector<settings::settings_key_info> keys;
 	keys.reserve(d.pending_actions.size());
-	for (const auto& [defaults, action_id] : d.pending_actions) {
+	for (const auto& [_, action_id] : d.pending_actions) {
 		keys.push_back({ .key = std::string(action_id.tag()), .scope = settings::scope_kind::user });
 	}
 
@@ -1003,7 +1017,7 @@ auto gse::actions::log_declared_bindings(const data& d) -> void {
 	log::println(
 		log::level::info,
 		log::category::general,
-		"actions: {} declared before first tick",
+		"actions: {} declared",
 		all.size()
 	);
 

@@ -1,11 +1,10 @@
 export module gse.gpu_backend:video;
 
+import gse.math;
+import gse.time;
 import std;
 
 import :bindless;
-
-import gse.math;
-import gse.time;
 
 export namespace gse::gpu {
 	enum class video_codec : std::uint8_t {

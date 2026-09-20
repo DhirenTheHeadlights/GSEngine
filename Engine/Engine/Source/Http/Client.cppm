@@ -14,17 +14,12 @@ export namespace gse::http {
 
 	class client : public non_copyable {
 	public:
-		static constexpr std::size_t default_worker_count = 2;
+		static constexpr std::size_t max_concurrent_requests = 2;
 
 		client();
 
 		explicit client(
 			std::string_view user_agent
-		);
-
-		client(
-			std::string_view user_agent,
-			std::size_t worker_count
 		);
 
 		~client();

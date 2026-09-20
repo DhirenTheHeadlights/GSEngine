@@ -1,15 +1,12 @@
 export module gse.graphics:primitive_resolver;
 
-import std;
-
-import :primitives;
-import :primitive_specs;
-import :render_component;
-
 import gse.assets;
 import gse.concurrency;
-import gse.core;
 import gse.ecs;
+
+import :primitive_specs;
+import :primitives;
+import :render_component;
 
 export namespace gse::primitive_resolver {
 	struct [[= system_state<"PrimitiveResolver">{}]] data {};

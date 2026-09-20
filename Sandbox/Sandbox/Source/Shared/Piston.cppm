@@ -1,7 +1,11 @@
 export module sandbox:piston;
 
+import gse.concurrency;
+import gse.ecs;
+import gse.math;
+import gse.physics;
+import gse.time;
 import std;
-import gse;
 
 export namespace sandbox::piston {
 	struct component {
@@ -18,15 +22,15 @@ export namespace sandbox::piston {
 	[[= gse::system_run<>{}]]
 	auto run(
 		gse::context& ctx,
+		gse::shared_view<gse::physics::data> phys,
 		gse::write<component> pistons,
 		gse::write<gse::physics::kinematic_target_component> targets
 	) -> gse::async::task<>;
 }
 
-auto sandbox::piston::run(gse::context& ctx, gse::write<component> pistons, gse::write<gse::physics::kinematic_target_component> targets) -> gse::async::task<> {
-	const int steps = gse::system_clock::fixed_steps_this_frame();
+auto sandbox::piston::run(gse::context& ctx, const gse::shared_view<gse::physics::data> phys, gse::write<component> pistons, gse::write<gse::physics::kinematic_target_component> targets) -> gse::async::task<> {
 	const auto step_dt = gse::system_clock::fixed_dt<gse::time>();
-	const float frame_step_count = static_cast<float>(steps);
+	const float frame_step_count = static_cast<float>(phys.interpolation.steps);
 
 	const auto piston_ids = pistons.owner_ids();
 	for (std::size_t i = 0; i < pistons.size(); ++i) {

@@ -12,6 +12,14 @@ namespace sandbox::scenarios {
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
 
+	auto push_pyramid_impulses(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	auto walk_pattern(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
 	auto orbit_at(
 		const gse::vec3<gse::position>& center,
 		gse::length radius,
@@ -254,6 +262,132 @@ auto sandbox::scenarios::pyramid_cpu(gse::scenario::context& ctx) -> gse::async:
 
 auto sandbox::scenarios::pyramid_gpu(gse::scenario::context& ctx) -> gse::async::task<> {
 	co_await gse::scenario::wait_settled(ctx);
+}
+
+auto sandbox::scenarios::rollback_reference(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+}
+
+auto sandbox::scenarios::rollback_replay(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+	co_await gse::scenario::wait_frames(ctx, 70);
+	ctx.channels().push<gse::physics::rollback_request>({
+		.steps = 60,
+	});
+}
+
+auto sandbox::scenarios::rollback_reference_gpu(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+}
+
+auto sandbox::scenarios::rollback_replay_gpu(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+	co_await gse::scenario::wait_frames(ctx, 70);
+	ctx.channels().push<gse::physics::rollback_request>({
+		.steps = 20,
+	});
+}
+
+auto sandbox::scenarios::push_pyramid_impulses(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+	co_await gse::scenario::wait_frames(ctx, 50);
+	ctx.channels().push<gse::physics::impulse_request>({
+		.target = gse::find_or_generate_id("PyramidBlock_0_0"),
+		.impulse = gse::vec3<gse::impulse>(gse::newton_seconds(60.f), gse::newton_seconds(240.f), gse::newton_seconds(0.f)),
+	});
+	co_await gse::scenario::wait_frames(ctx, 10);
+	ctx.channels().push<gse::physics::impulse_request>({
+		.target = gse::find_or_generate_id("PyramidBlock_1_0"),
+		.impulse = gse::vec3<gse::impulse>(gse::newton_seconds(0.f), gse::newton_seconds(200.f), gse::newton_seconds(80.f)),
+	});
+}
+
+auto sandbox::scenarios::rollback_impulse_reference(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await push_pyramid_impulses(ctx);
+}
+
+auto sandbox::scenarios::rollback_impulse_replay(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await push_pyramid_impulses(ctx);
+	co_await gse::scenario::wait_frames(ctx, 15);
+	ctx.channels().push<gse::physics::rollback_request>({
+		.steps = 20,
+	});
+}
+
+auto sandbox::scenarios::rollback_impulse_reference_gpu(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await push_pyramid_impulses(ctx);
+}
+
+auto sandbox::scenarios::rollback_impulse_replay_gpu(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await push_pyramid_impulses(ctx);
+	co_await gse::scenario::wait_frames(ctx, 15);
+	ctx.channels().push<gse::physics::rollback_request>({
+		.steps = 20,
+	});
+}
+
+auto sandbox::scenarios::walk_pattern(gse::scenario::context& ctx) -> gse::async::task<> {
+	const auto press = [&ctx](const gse::key key) {
+		ctx.channels().push<gse::input::synthetic_input_request>({
+			.value = gse::input::key_pressed{ .key_code = key },
+		});
+	};
+	const auto release = [&ctx](const gse::key key) {
+		ctx.channels().push<gse::input::synthetic_input_request>({
+			.value = gse::input::key_released{ .key_code = key },
+		});
+	};
+
+	co_await gse::scenario::wait(ctx, gse::seconds(6.f));
+	press(gse::key::w);
+	co_await gse::scenario::wait(ctx, gse::seconds(4.f));
+	release(gse::key::w);
+	press(gse::key::a);
+	co_await gse::scenario::wait(ctx, gse::seconds(2.f));
+	release(gse::key::a);
+	press(gse::key::w);
+	press(gse::key::d);
+	co_await gse::scenario::wait(ctx, gse::seconds(3.f));
+	release(gse::key::w);
+	release(gse::key::d);
+	co_await gse::scenario::wait(ctx, gse::seconds(1.f));
+	press(gse::key::s);
+	co_await gse::scenario::wait(ctx, gse::seconds(3.f));
+	release(gse::key::s);
+}
+
+auto sandbox::scenarios::net_walk_cpu(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await walk_pattern(ctx);
+}
+
+auto sandbox::scenarios::net_walk_gpu(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await walk_pattern(ctx);
+}
+
+auto sandbox::scenarios::rollback_reference_character(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+	ctx.channels().push<spawn_character_request>({});
+}
+
+auto sandbox::scenarios::rollback_replay_character(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+	ctx.channels().push<spawn_character_request>({});
+	co_await gse::scenario::wait_frames(ctx, 360);
+	ctx.channels().push<gse::physics::rollback_request>({
+		.steps = 30,
+	});
+}
+
+auto sandbox::scenarios::rollback_reference_stress(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await build_stress_workload(ctx);
+}
+
+auto sandbox::scenarios::rollback_replay_stress(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await build_stress_workload(ctx);
+	co_await gse::scenario::wait_frames(ctx, 150);
+	ctx.channels().push<gse::physics::rollback_request>({
+		.steps = 60,
+	});
 }
 
 auto sandbox::scenarios::pyramid16k_cpu(gse::scenario::context& ctx) -> gse::async::task<> {

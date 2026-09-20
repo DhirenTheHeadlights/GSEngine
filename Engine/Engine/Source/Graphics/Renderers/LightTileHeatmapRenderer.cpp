@@ -16,10 +16,7 @@ import gse.math;
 import gse.meta;
 
 namespace gse::renderer::light_tile_heatmap {
-	struct [[
-		= shaders::binding<0, 0>{},
-		= shaders::ssbo_readonly
-	]] tile_light_table {
+	struct [[= shaders::ssbo_readonly]] tile_light_table {
 		using element = vec2u;
 	};
 

@@ -1,11 +1,10 @@
 export module gse.gpu_backend:frame_resource_bin;
 
+import gse.core;
 import std;
 
 import :enums;
 import :sync;
-
-import gse.core;
 
 export namespace gse::gpu {
 	class frame_resource_bin final : public non_copyable {
@@ -77,7 +76,7 @@ auto gse::gpu::frame_resource_bin::retain(const queue_id queue, const std::uint6
 }
 
 auto gse::gpu::frame_resource_bin::retain(const queue_id queue, const std::uint64_t until_value, std::unique_ptr<retained_base> resource) -> void {
-	std::lock_guard lock(*m_mutex);
+	std::lock_guard _(*m_mutex);
 	m_slots.push_back({
 		.m_queue = queue,
 		.m_until_value = until_value,
@@ -97,7 +96,7 @@ auto gse::gpu::frame_resource_bin::drain(std::span<const queue_progress> progres
 
 	std::vector<slot> retired;
 	{
-		std::lock_guard lock(*m_mutex);
+		std::lock_guard _(*m_mutex);
 		for (auto it = m_slots.begin(); it != m_slots.end();) {
 			if (it->m_until_value <= reached(it->m_queue)) {
 				retired.push_back(std::move(*it));
@@ -111,11 +110,11 @@ auto gse::gpu::frame_resource_bin::drain(std::span<const queue_progress> progres
 }
 
 auto gse::gpu::frame_resource_bin::wait_idle_clear() -> void {
-	std::lock_guard lock(*m_mutex);
+	std::lock_guard _(*m_mutex);
 	m_slots.clear();
 }
 
 auto gse::gpu::frame_resource_bin::pending_count() const -> std::size_t {
-	std::lock_guard lock(*m_mutex);
+	std::lock_guard _(*m_mutex);
 	return m_slots.size();
 }

@@ -1,17 +1,12 @@
 export module gse.graphics:light_tile_heatmap_renderer;
 
-import std;
-
-import :light_culling_renderer;
-
-import gse.gpu;
-import gse.core;
-import gse.containers;
 import gse.concurrency;
 import gse.ecs;
-import gse.math;
-import gse.meta;
+import gse.gpu;
 import gse.gpu_record;
+import gse.meta;
+
+import :light_culling_renderer;
 
 export namespace gse::renderer::light_tile_heatmap {
 	struct [[= system_state<"LightTileHeatmap">{}, = settings::category<"Light Culling">{}]] data {

@@ -1,28 +1,26 @@
 module gse.graphics:capture_renderer_impl;
 
+import gse.assets;
+import gse.concurrency;
+import gse.config;
+import gse.core;
+import gse.diag;
+import gse.ecs;
+import gse.gpu;
+import gse.gpu_record;
+import gse.log;
+import gse.math;
+import gse.os;
+import gse.save;
+import gse.time;
 import std;
 
 import :capture_renderer;
-import :ui_renderer;
 import :capture_ring;
 import :mp4_muxer;
-import :settings;
 import :shared_shaders;
-
-
-import gse.os;
-import gse.assets;
-import gse.config;
-import gse.gpu;
-import gse.gpu_record;
-import gse.core;
-import gse.concurrency;
-import gse.diag;
-import gse.ecs;
-import gse.math;
-import gse.log;
-import gse.save;
-import gse.time;
+import :ui_renderer;
+import :settings;
 
 namespace gse::renderer::capture {
 	struct [[= shaders::shader_struct]] push_constants {
@@ -30,17 +28,11 @@ namespace gse::renderer::capture {
 		std::uint32_t rgba_index;
 	};
 
-	struct [[
-		= shaders::binding<0, 1>{},
-		= shaders::storage_image
-	]] output_y {
+	struct [[= shaders::storage_image]] output_y {
 		using element = float;
 	};
 
-	struct [[
-		= shaders::binding<0, 2>{},
-		= shaders::storage_image
-	]] output_uv {
+	struct [[= shaders::storage_image]] output_uv {
 		using element = vec2f;
 	};
 
@@ -200,19 +192,14 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 
 		if (auto unit = d.encoder.take_bitstream()) {
 			const bool was_keyframe = unit->keyframe;
-			const auto byte_count = unit->bytes.size();
+			const byte_count emitted(unit->bytes.size());
 
 			if (d.recording->active.load()) {
-				gpu::encoded_unit copy{
+				enqueue_unit(*d.recording, {
 					.bytes = unit->bytes,
 					.pts = unit->pts,
 					.keyframe = unit->keyframe
-				};
-				{
-					std::lock_guard lock(d.recording->mutex);
-					d.recording->queue.push(std::move(copy));
-				}
-				d.recording->cv.notify_one();
+				});
 			}
 
 			d.clip_ring.push(std::move(*unit));
@@ -220,8 +207,8 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 				d.first_ring_push_logged = true;
 				log::println(
 					log::category::render,
-					"First clip ring push: {} bytes, keyframe={}",
-					byte_count,
+					"First clip ring push: {:.0f:B}, keyframe={}",
+					emitted,
 					was_keyframe
 				);
 			}
@@ -248,15 +235,7 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 		}
 		else if (d.recording->active.load()) {
 			d.recording->last_toggle = now;
-			d.recording->active.store(false);
-			{
-				std::lock_guard lock(d.recording->mutex);
-				d.recording->running = false;
-			}
-			d.recording->cv.notify_all();
-			if (d.recording->thread.joinable()) {
-				d.recording->thread.join();
-			}
+			stop_recording(*d.recording);
 			log::println(log::category::render, "Recording stopped: {}", d.recording->path.generic_display_string());
 		}
 		else if (d.encoder.stream_header().empty()) {
@@ -287,34 +266,11 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 			else {
 				d.recording->path = path;
 				{
-					std::lock_guard lock(d.recording->mutex);
+					std::lock_guard _(d.recording->mutex);
 					std::queue<gpu::encoded_unit> empty;
 					std::swap(d.recording->queue, empty);
-					d.recording->running = true;
+					d.recording->muxer.emplace(std::move(*live));
 				}
-				d.recording->thread = std::thread([muxer = std::move(*live), state = d.recording.get()] mutable {
-					log::name_thread(log::thread_role::capture);
-					while (true) {
-						std::unique_lock lock(state->mutex);
-						state->cv.wait(
-							lock,
-							[&] {
-								return !state->queue.empty() || !state->running;
-							}
-						);
-						while (!state->queue.empty()) {
-							auto unit = std::move(state->queue.front());
-							state->queue.pop();
-							lock.unlock();
-							muxer.append(std::move(unit));
-							lock.lock();
-						}
-						if (!state->running) {
-							break;
-						}
-					}
-					muxer.close();
-				});
 				d.recording->active.store(true);
 				log::println(log::category::render, "Recording started: {}", path.generic_display_string());
 			}
@@ -457,14 +413,44 @@ auto gse::renderer::capture::shutdown(data& d) -> void {
 	if (!d.recording->active.load()) {
 		return;
 	}
-	d.recording->active.store(false);
-	{
-		std::lock_guard lock(d.recording->mutex);
-		d.recording->running = false;
-	}
-	d.recording->cv.notify_all();
-	if (d.recording->thread.joinable()) {
-		d.recording->thread.join();
-	}
+	stop_recording(*d.recording);
 	log::println(log::category::render, "Recording stopped on shutdown: {}", d.recording->path.generic_display_string());
+}
+
+auto gse::renderer::capture::enqueue_unit(recording_state& state, gpu::encoded_unit unit) -> void {
+	std::lock_guard _(state.mutex);
+	state.queue.push(std::move(unit));
+	if (state.draining) {
+		return;
+	}
+	state.draining = true;
+	task::post_io(
+		[&state] {
+			drain_recording(state);
+		},
+		trace_id<"capture::mux">()
+	);
+}
+
+auto gse::renderer::capture::drain_recording(recording_state& state) -> void {
+	std::unique_lock lock(state.mutex);
+	while (!state.queue.empty()) {
+		auto unit = std::move(state.queue.front());
+		state.queue.pop();
+		lock.unlock();
+		state.muxer->append(std::move(unit));
+		lock.lock();
+	}
+	state.draining = false;
+	state.drained.notify_all();
+}
+
+auto gse::renderer::capture::stop_recording(recording_state& state) -> void {
+	state.active.store(false);
+	std::unique_lock lock(state.mutex);
+	state.drained.wait(lock, [&state] {
+		return !state.draining;
+	});
+	state.muxer->close();
+	state.muxer.reset();
 }

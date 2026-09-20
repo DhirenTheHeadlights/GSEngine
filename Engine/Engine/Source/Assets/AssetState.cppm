@@ -22,6 +22,7 @@ export namespace gse::asset {
 		std::function<void()> enable_hot_reload_fn;
 		std::function<void()> disable_hot_reload_fn;
 		bool hot_reload_enabled = false;
+		bool gpu_available = false;
 		channel_write<gpu::gpu_resume_request> channels;
 	};
 
@@ -33,6 +34,7 @@ export namespace gse::asset {
 	[[= system_init{}]]
 	auto init(
 		context& ctx,
+		std::optional<shared_view<gpu::context::data>> gpu_s,
 		data& d,
 		channel_write<gpu::gpu_resume_request> gpu_out
 	) -> async::task<>;
@@ -50,8 +52,12 @@ export namespace gse::asset {
 	) -> void;
 }
 
-auto gse::asset::init(context& ctx, data& d, const channel_write<gpu::gpu_resume_request> gpu_out) -> async::task<> {
+auto gse::asset::init(context& ctx, const std::optional<shared_view<gpu::context::data>> gpu_s, data& d, const channel_write<gpu::gpu_resume_request> gpu_out) -> async::task<> {
+	d.gpu_available = gpu_s.has_value();
 	d.channels = gpu_out;
+	if (!d.gpu_available) {
+		log::println(log::category::assets, "no gpu context: textures, models and skinned models will load without device resources");
+	}
 	return {};
 }
 
@@ -79,7 +85,9 @@ auto gse::asset::run(context& ctx, data& d, const channel_read<hot_reload_reques
 		d.hot_reload_enabled = request.enabled;
 	}
 
-	d.watcher.poll();
+	if (d.hot_reload_enabled) {
+		d.watcher.poll();
+	}
 	return {};
 }
 

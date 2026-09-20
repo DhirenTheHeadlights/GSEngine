@@ -29,6 +29,7 @@ auto main() -> int {
 			.title = gse::ide::project::current().valid
 				? std::format("{} - GSEditor", gse::ide::project::current().name)
 				: std::string("GSEditor"),
+			.cadence = gse::loop_cadence::reactive,
 			.dark_background = true,
 			.video_encode = false,
 			.simulate_world = false,

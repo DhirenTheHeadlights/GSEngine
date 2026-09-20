@@ -48,6 +48,7 @@ export namespace gse::ide::agent {
 		std::string text;
 		std::string detail;
 		std::string uuid;
+		std::int64_t stamped = 0;
 		std::filesystem::path file;
 		std::vector<std::string> removed;
 		std::vector<std::string> added;
@@ -81,12 +82,19 @@ export namespace gse::ide::agent {
 		std::int64_t context_used = 0;
 		std::int64_t context_base = 0;
 		std::string failure;
+		[[= archive_skip{}]] byte_count tool_bytes;
+		[[= archive_skip{}]] byte_count tool_peak;
+		[[= archive_skip{}]] std::string tool_peak_name;
+		[[= archive_skip{}]] std::unordered_map<std::string, std::string> tool_names;
 	};
+
+	constexpr std::uint32_t unplaced_line = ~0u;
 
 	struct group_marker {
 		std::uint32_t row = 0;
 		std::uint32_t line = 0;
 		std::uint32_t rows = 0;
+		std::uint32_t toggle_line = unplaced_line;
 	};
 
 	struct link_marker {
@@ -94,8 +102,6 @@ export namespace gse::ide::agent {
 		std::uint32_t last_line = 0;
 		std::uint32_t row = 0;
 	};
-
-	constexpr std::uint32_t unplaced_line = ~0u;
 
 	struct diff_view {
 		std::uint32_t row = 0;
@@ -110,6 +116,7 @@ export namespace gse::ide::agent {
 		id build_key;
 		std::int64_t mtime = 0;
 		bool wrote = false;
+		std::vector<std::vector<std::string>> hunks;
 	};
 
 	struct blamed_error {
@@ -144,7 +151,7 @@ export namespace gse::ide::agent {
 
 	struct build_hold_state {
 		build_hold reason = build_hold::none;
-		std::uint32_t blocker = 0;
+		std::string blocker;
 	};
 
 	struct model_option {
@@ -204,13 +211,17 @@ export namespace gse::ide::agent {
 	struct queued_build {
 		std::string id;
 		std::string agent;
+		std::string profile;
+		std::string config;
+		std::filesystem::path cwd;
+		std::filesystem::path project;
 		build_runner::build_target target = build_runner::build_target::game;
 		bool run = false;
 		bool forced = false;
 		const config::worktree* tree = nullptr;
 		time requested;
 		build_hold reported = build_hold::none;
-		std::uint32_t blocker = 0;
+		std::string blocker;
 	};
 
 	struct retry_state {
@@ -224,6 +235,18 @@ export namespace gse::ide::agent {
 		std::filesystem::path path;
 		vec2u size;
 		resource::handle<texture> preview;
+	};
+
+	struct usage_window {
+		std::string label;
+		double utilization = 0.0;
+		std::int64_t resets_at = 0;
+	};
+
+	struct account_usage {
+		std::vector<usage_window> windows;
+		std::string error;
+		std::int64_t fetched = 0;
 	};
 
 	struct past_chat {
@@ -263,6 +286,7 @@ export namespace gse::ide::agent {
 		[[= archive_skip{}]] std::vector<link_marker> links;
 		[[= archive_skip{}]] std::vector<std::uint32_t> line_rows;
 		[[= archive_skip{}]] std::vector<group_marker> groups;
+		[[= archive_skip{}]] std::vector<group_marker> previews;
 		[[= archive_skip{}]] std::vector<std::uint32_t> expanded_groups;
 		[[= archive_skip{}]] gse::id log_id;
 		bool hibernating = false;
@@ -283,6 +307,7 @@ export namespace gse::ide::agent {
 		[[= archive_skip{}]] std::optional<clock> think_clock;
 		[[= archive_skip{}]] std::optional<clock> recent_turn;
 		[[= archive_skip{}]] bool wrote_this_turn = false;
+		[[= archive_skip{}]] bool published_presence = false;
 		[[= archive_skip{}]] std::string action;
 		[[= archive_skip{}]] std::uint32_t next_control = 0;
 	};
@@ -316,12 +341,18 @@ export namespace gse::ide::agent {
 		std::vector<blamed_error> unclaimed;
 		id unclaimed_build;
 		[[= archive_skip{}]] std::unordered_map<id, std::int64_t> built;
+		[[= archive_skip{}]] std::unique_ptr<http::client> usage_client;
+		[[= archive_skip{}]] id usage_ticket;
+		[[= archive_skip{}]] account_usage usage;
 		[[= archive_skip{}]] net::probe link;
 		[[= archive_skip{}]] std::optional<clock> link_clock;
 		[[= archive_skip{}]] std::uint32_t link_misses = 0;
 		[[= archive_skip{}]] time next_inbox_poll;
+		[[= archive_skip{}]] std::vector<build_inbox::presence> presence;
+		[[= archive_skip{}]] time next_presence_write;
 		[[= archive_skip{}]] std::vector<queued_build> inbox_queue;
 		[[= archive_skip{}]] std::vector<queued_build> inbox_active;
 		[[= archive_skip{}]] time inbox_dispatch_deadline;
+		[[= archive_skip{}]] bool inbox_started = false;
 	};
 }

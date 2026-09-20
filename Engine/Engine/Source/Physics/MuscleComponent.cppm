@@ -1,10 +1,7 @@
 export module gse.physics:muscle_component;
 
-import std;
 
-import gse.core;
 import gse.ecs;
-import gse.math;
 
 export namespace gse::physics {
 	struct muscle_component {

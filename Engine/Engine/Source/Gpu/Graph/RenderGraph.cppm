@@ -1,25 +1,24 @@
 export module gse.gpu:render_graph;
 
-import std;
-
-import :device;
-import :swap_chain;
-import :frame;
-import :transient_pool;
-import :image;
-import :pass_recorder;
-import :graph_channel;
-
-import gse.gpu_backend;
 import gse.assert;
-import gse.core;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
+import gse.gpu_backend;
 import gse.log;
 import gse.math;
 import gse.meta;
+import gse.nsight_perf;
+import gse.time;
+import std;
+
+import :command_contract;
+import :device;
+import :frame;
+import :graph_channel;
+import :swap_chain;
+import :transient_pool;
 
 export namespace gse::gpu {
 	class render_graph;
@@ -78,6 +77,21 @@ export namespace gse::gpu {
 		access_flags access;
 	};
 
+	struct gpu_profile_mark {
+		std::uint32_t pass_slot = 0;
+		std::uint32_t query = 0;
+		id label;
+	};
+
+	struct pass_mark_cursor {
+		handle<query_pool> pool;
+		gpu_profile_mark* marks = nullptr;
+		std::atomic<std::uint32_t>* next = nullptr;
+		std::uint32_t pass_slot = 0;
+		std::uint32_t capacity = 0;
+		std::uint32_t query_base = 0;
+	};
+
 	struct recording_context_init {
 		pass_recorder recorder;
 		render_pass_data* pass = nullptr;
@@ -85,6 +99,7 @@ export namespace gse::gpu {
 		gpu::device* device = nullptr;
 		const shader_program* primary = nullptr;
 		std::vector<rec_touch> touches;
+		pass_mark_cursor marks;
 	};
 
 	struct frame_request_drain {
@@ -115,6 +130,14 @@ export namespace gse::gpu {
 		) -> void;
 
 		auto set_gpu_pipeline_stats_enabled(
+			bool enabled
+		) -> void;
+
+		auto set_gpu_intra_pass_marks_enabled(
+			bool enabled
+		) -> void;
+
+		auto set_log_render_graph(
 			bool enabled
 		) -> void;
 
@@ -152,7 +175,9 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto create_readback_channel(
 			std::size_t size,
-			std::string_view tag = {}
+			std::string_view tag = {},
+			readback_gate gate = readback_gate::frames_in_flight,
+			queue_type queue = queue_type::graphics
 		) const -> readback_channel;
 
 		[[nodiscard]] auto create_upload_channel(
@@ -186,26 +211,59 @@ export namespace gse::gpu {
 	private:
 		static constexpr std::uint32_t max_profiled_passes = 128;
 		static constexpr std::uint32_t stats_per_pass = 4;
+		static constexpr std::uint32_t mark_query_base = 1 + max_profiled_passes * 2;
+		static constexpr std::uint32_t initial_mark_capacity = 1024;
+		static constexpr std::uint32_t max_mark_capacity = 1u << 14;
 
 		struct gpu_profile_slot {
 			handle<query_pool> timestamp_pool;
 			handle<query_pool> stats_pool;
 			std::vector<id> pass_types;
 			std::vector<queue_type> pass_queues;
+			std::vector<gpu_profile_mark> marks;
+			std::vector<std::uint32_t> mark_order;
 			std::uint32_t pass_count = 0;
+			std::uint32_t mark_count = 0;
+			std::uint32_t mark_capacity = 0;
 			bool stats_issued = false;
-			time_t<std::uint64_t> cpu_ref{};
+			time_t<std::uint64_t> recorded_at{};
+			std::optional<timestamp_calibration> calibration;
 			std::uint64_t frame_counter = 0;
 			bool results_valid = false;
 		};
 
+		struct perf_frame {
+			nsight_perf::sample_window samples;
+			std::span<const std::string> metrics;
+			time_t<double> sampler_to_cpu;
+			time_t<double> interval;
+			bool active = false;
+		};
+
+		static auto profile_key(
+			std::uint64_t frame,
+			queue_type queue,
+			std::uint32_t index
+		) -> std::uint64_t;
+
+		auto open_perf_frame() -> perf_frame;
+
+		auto ingest_perf_metrics(
+			const perf_frame& perf,
+			id row_id,
+			time_t<double> start,
+			time_t<double> end
+		) -> void;
+
 		auto ensure_profile_pools(
 			gpu_profile_slot& slot,
-			bool allow_stats
+			bool allow_stats,
+			std::uint32_t mark_capacity
 		) const -> void;
 
 		auto read_profile_slot(
-			gpu_profile_slot& slot
+			gpu_profile_slot& slot,
+			const perf_frame& perf
 		) -> void;
 
 		auto log_pass_graph(
@@ -245,6 +303,9 @@ export namespace gse::gpu {
 		};
 		std::atomic<bool> m_gpu_timestamps_enabled{ true };
 		std::atomic<bool> m_gpu_pipeline_stats_enabled{ false };
+		std::atomic<bool> m_gpu_intra_pass_marks_enabled{ false };
+		std::atomic<bool> m_log_render_graph{ false };
+		std::uint32_t m_mark_capacity = 0;
 		time_t<double> m_timestamp_period_per_tick = nanoseconds(1.0);
 		std::uint64_t m_frames_submitted = 0;
 		std::array<queue_state, queue_type_count> m_queue_states;
@@ -256,6 +317,10 @@ export namespace gse::gpu {
 		std::set<std::pair<std::size_t, std::size_t>> m_warned_queue_cycles;
 		std::set<std::pair<std::size_t, std::size_t>> m_warned_dropped_waits;
 		std::unordered_map<id, std::array<id, stats_per_pass>> m_stat_ids;
+		std::unordered_map<id, std::vector<id>> m_perf_metric_ids;
+		std::vector<double> m_perf_metric_means;
+		std::vector<std::size_t> m_perf_metric_counts;
+		std::uint64_t m_perf_session_generation = 0;
 		color_clear m_swapchain_clear{};
 		load_op m_swapchain_load = load_op::clear;
 		const image* m_offscreen_target = nullptr;

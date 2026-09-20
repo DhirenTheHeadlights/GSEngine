@@ -1,24 +1,24 @@
 export module gse.graphics:button_widget;
 
-import std;
-
-import gse.os;
 import gse.assets;
-import gse.gpu;
-import gse.core;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
+import gse.gpu;
 import gse.math;
-import :types;
+import gse.os;
+import gse.time;
+import std;
+
+import :builder;
 import :font;
 import :ids;
-import :styles;
-import :builder;
 import :interaction;
+import :styles;
 import :symbols;
+import :types;
 
 namespace gse::gui::draw {
 	struct button_params {
@@ -84,7 +84,7 @@ auto gse::gui::draw::button(const draw_context& ctx, const std::string_view name
 		return false;
 	}
 
-	const id widget_id = ids::make(name);
+	const id _ = ids::make(name);
 
 	const float widget_height = fnt_view->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
 	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
@@ -124,7 +124,7 @@ auto gse::gui::draw::button_in_rect(const draw_context& ctx, const std::string_v
 
 	const float text_width = fnt_view->width(label, ctx.style.font_size);
 	const vec2f text_pos = { button_rect.center().x() - text_width / 2.f,
-							 button_rect.center().y() + fnt_view->vertical_center_offset(ctx.style.font_size) };
+		button_rect.center().y() + fnt_view->vertical_center_offset(ctx.style.font_size) };
 
 	ctx.queue_text({
 		.font = fnt,

@@ -1,26 +1,25 @@
 module gse.gpu:render_graph_impl;
 
-import std;
-
-import :render_graph;
-import :device;
-import :swap_chain;
-import :frame;
-import :transient_pool;
-import :image;
-import :pass_recorder;
-import :graph_channel;
-
-import gse.gpu_backend;
 import gse.assert;
-import gse.core;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
+import gse.gpu_backend;
 import gse.log;
 import gse.math;
 import gse.meta;
+import gse.time;
+import std;
+
+import :command_contract;
+import :device;
+import :frame;
+import :graph_channel;
+import :image;
+import :render_graph;
+import :swap_chain;
+import :transient_pool;
 
 namespace gse::gpu {
 	constexpr pipeline_statistic_flags profile_stats_flags{ pipeline_statistic_flag::input_assembly_vertices,
@@ -95,8 +94,8 @@ auto gse::gpu::render_graph::register_framebuffer_image(const id name, const fra
 	return slot->img;
 }
 
-auto gse::gpu::render_graph::create_readback_channel(const std::size_t size, const std::string_view tag) const -> readback_channel {
-	return readback_channel(*m_device, *m_frame, size, tag);
+auto gse::gpu::render_graph::create_readback_channel(const std::size_t size, const std::string_view tag, const readback_gate gate, const queue_type queue) const -> readback_channel {
+	return readback_channel(*m_device, *m_frame, size, tag, gate, queue);
 }
 
 auto gse::gpu::render_graph::create_upload_channel(const buffer_desc& desc, const std::string_view tag) const -> upload_channel {
@@ -135,6 +134,18 @@ auto gse::gpu::render_graph::set_gpu_pipeline_stats_enabled(const bool enabled) 
 	m_gpu_pipeline_stats_enabled.store(enabled, std::memory_order_relaxed);
 }
 
+auto gse::gpu::render_graph::set_gpu_intra_pass_marks_enabled(const bool enabled) -> void {
+	m_gpu_intra_pass_marks_enabled.store(enabled, std::memory_order_relaxed);
+}
+
+auto gse::gpu::render_graph::set_log_render_graph(const bool enabled) -> void {
+	m_log_render_graph.store(enabled, std::memory_order_relaxed);
+}
+
+auto gse::gpu::render_graph::profile_key(const std::uint64_t frame, const queue_type queue, const std::uint32_t index) -> std::uint64_t {
+	return (frame << 16) | (static_cast<std::uint64_t>(queue) << 14) | index;
+}
+
 auto gse::gpu::render_graph::set_swapchain_clear(const color_clear value, const load_op op) -> void {
 	m_swapchain_clear = value;
 	m_swapchain_load = op;
@@ -144,16 +155,114 @@ auto gse::gpu::render_graph::set_offscreen_target(const image* target) -> void {
 	m_offscreen_target = target;
 }
 
-auto gse::gpu::render_graph::ensure_profile_pools(gpu_profile_slot& slot, const bool allow_stats) const -> void {
+auto gse::gpu::render_graph::ensure_profile_pools(gpu_profile_slot& slot, const bool allow_stats, const std::uint32_t mark_capacity) const -> void {
+	if (slot.timestamp_pool && slot.mark_capacity != mark_capacity) {
+		m_device->retire(slot.timestamp_pool);
+		slot.timestamp_pool = {};
+	}
 	if (!slot.timestamp_pool) {
-		slot.timestamp_pool = m_device->create_timestamp_query_pool(max_profiled_passes * 2 + 1);
+		slot.timestamp_pool = m_device->create_timestamp_query_pool(mark_query_base + mark_capacity);
+		slot.mark_capacity = mark_capacity;
+		slot.marks.resize(mark_capacity);
+		slot.mark_order.resize(mark_capacity);
 	}
 	if (allow_stats && !slot.stats_pool) {
 		slot.stats_pool = m_device->create_pipeline_stats_query_pool(max_profiled_passes, profile_stats_flags);
 	}
 }
 
-auto gse::gpu::render_graph::read_profile_slot(gpu_profile_slot& slot) -> void {
+auto gse::gpu::render_graph::open_perf_frame() -> perf_frame {
+	const auto session = nsight_perf::info();
+	if (session.status != nsight_perf::session_status::running) {
+		return {};
+	}
+
+	if (session.generation != m_perf_session_generation) {
+		m_perf_session_generation = session.generation;
+		m_perf_metric_ids.clear();
+		profile::set_gpu_metric_names(session.metrics);
+	}
+
+	const auto gpu_now = nsight_perf::gpu_timestamp();
+	if (!gpu_now) {
+		return {};
+	}
+	const auto sampler_to_cpu = time_t<double>(system_clock::now<trace::tick_step>()) - time_t<double>(*gpu_now);
+
+	return {
+		.samples = nsight_perf::decode(),
+		.metrics = session.metrics,
+		.sampler_to_cpu = sampler_to_cpu,
+		.interval = time_t<double>(session.sampling_interval),
+		.active = true,
+	};
+}
+
+auto gse::gpu::render_graph::ingest_perf_metrics(const perf_frame& perf, const id row_id, const time_t<double> start, const time_t<double> end) -> void {
+	if (!perf.active || end - start < perf.interval * 2.0) {
+		return;
+	}
+
+	const auto in_sampler_domain = [](const time_t<std::uint64_t> stamp) {
+		return time_t<double>(stamp);
+	};
+	const auto first = std::ranges::lower_bound(perf.samples.times, start - perf.sampler_to_cpu, {}, in_sampler_domain);
+	const auto last = std::ranges::lower_bound(perf.samples.times, end - perf.sampler_to_cpu, {}, in_sampler_domain);
+	const auto count = static_cast<std::size_t>(last - first);
+	if (count == 0) {
+		return;
+	}
+
+	const auto metric_count = perf.metrics.size();
+	const auto base = static_cast<std::size_t>(first - perf.samples.times.begin()) * metric_count;
+
+	m_perf_metric_means.assign(metric_count, 0.0);
+	m_perf_metric_counts.assign(metric_count, 0);
+	for (std::size_t s = 0; s < count; ++s) {
+		const auto sampled = perf.samples.values.subspan(base + s * metric_count, metric_count);
+		for (std::size_t m = 0; m < metric_count; ++m) {
+			if (!std::isfinite(sampled[m])) {
+				continue;
+			}
+			m_perf_metric_means[m] += sampled[m];
+			++m_perf_metric_counts[m];
+		}
+	}
+
+	std::size_t contributing = 0;
+	for (std::size_t m = 0; m < metric_count; ++m) {
+		const auto valid = m_perf_metric_counts[m];
+		m_perf_metric_means[m] = valid > 0 ? m_perf_metric_means[m] / static_cast<double>(valid) : 0.0;
+		contributing = std::max(contributing, valid);
+	}
+	if (contributing == 0) {
+		return;
+	}
+
+	auto cached = m_perf_metric_ids.find(row_id);
+	if (cached == m_perf_metric_ids.end()) {
+		const auto row_name = std::string(row_id.tag());
+		std::vector<id> metric_ids;
+		metric_ids.reserve(metric_count);
+		for (const auto& metric : perf.metrics) {
+			metric_ids.push_back(find_or_generate_id(row_name + ":" + metric));
+		}
+		cached = m_perf_metric_ids.emplace(row_id, std::move(metric_ids)).first;
+	}
+
+	for (std::size_t m = 0; m < metric_count; ++m) {
+		trace::counter_at(
+			cached->second[m],
+			m_perf_metric_means[m],
+			trace::gpu_stats_virtual_tid,
+			time_t<std::uint64_t>(start)
+		);
+	}
+
+	profile::ingest_gpu_metrics(row_id, m_perf_metric_means, contributing);
+}
+
+auto gse::gpu::render_graph::read_profile_slot(gpu_profile_slot& slot, const perf_frame& perf) -> void {
 	if (!slot.results_valid || slot.pass_count == 0) {
 		return;
 	}
@@ -168,8 +277,29 @@ auto gse::gpu::render_graph::read_profile_slot(gpu_profile_slot& slot) -> void {
 	}
 
 	const auto period = m_timestamp_period_per_tick;
-	const auto gpu_ref = static_cast<double>(timestamps[0]) * period;
-	const auto offset = time_t<double>(slot.cpu_ref) - gpu_ref;
+	const auto mask = slot.calibration ? slot.calibration->valid_bits_mask : ~std::uint64_t{ 0 };
+	const auto calibrated_cpu_ref = slot.calibration
+		? system_clock::from_query_performance_counter(slot.calibration->host_ticks)
+		: time_t<double>{};
+	const auto calibrated_gpu_ref = slot.calibration ? slot.calibration->gpu_ticks & mask : 0;
+	const auto query_ref_delta = ((timestamps[0] & mask) - calibrated_gpu_ref) & mask;
+	const bool aligned = slot.calibration &&
+		calibrated_cpu_ref + static_cast<double>(query_ref_delta) * period + milliseconds(1.0) >= time_t<double>(slot.recorded_at);
+	if (slot.calibration && !aligned) {
+		static std::atomic<bool> reported{ false };
+		if (!reported.exchange(true, std::memory_order_relaxed)) {
+			log::println(log::level::warning, log::category::render, "GPU timestamp calibration precedes command recording; suppressing aligned GPU spans");
+		}
+	}
+	const auto stamp_to_cpu = [&](const std::uint64_t ticks) {
+		return calibrated_cpu_ref + static_cast<double>(((ticks & mask) - calibrated_gpu_ref) & mask) * period;
+	};
+	const auto span_between = [&](const std::uint64_t start, const std::uint64_t end) -> std::optional<time_t<double>> {
+		if (!slot.calibration && end < start) {
+			return std::nullopt;
+		}
+		return static_cast<double>(((end & mask) - (start & mask)) & mask) * period;
+	};
 
 	static constexpr std::array<std::uint32_t, queue_type_count> queue_tids{
 		trace::gpu_virtual_tid,
@@ -178,20 +308,72 @@ auto gse::gpu::render_graph::read_profile_slot(gpu_profile_slot& slot) -> void {
 	};
 
 	for (std::uint32_t i = 0; i < slot.pass_count; ++i) {
-		const auto start = static_cast<double>(timestamps[1 + i * 2]) * period + offset;
-		const auto end = static_cast<double>(timestamps[2 + i * 2]) * period + offset;
+		const auto span = span_between(timestamps[1 + i * 2], timestamps[2 + i * 2]);
+		if (!span) {
+			continue;
+		}
 		const auto gpu_id = slot.pass_types[i];
+		profile::ingest_gpu_sample(gpu_id, *span);
+		if (!aligned) {
+			continue;
+		}
+		const auto start = stamp_to_cpu(timestamps[1 + i * 2]);
+		if (start < time_t<double>{}) {
+			continue;
+		}
+		const auto end = start + *span;
 		const auto queue = slot.pass_queues[i];
-		const std::uint64_t key = (slot.frame_counter << 16) | (static_cast<std::uint64_t>(queue) << 14) | i;
+		const auto key = profile_key(slot.frame_counter, queue, i);
 		const auto tid = queue_tids[static_cast<std::size_t>(queue)];
 
 		trace::begin_async_at(gpu_id, key, tid, time_t<std::uint64_t>(start));
 		trace::end_async_at(gpu_id, key, tid, time_t<std::uint64_t>(end));
-
-		profile::ingest_gpu_sample(gpu_id, end - start);
+		ingest_perf_metrics(perf, gpu_id, start, end);
 	}
 
-	if (slot.stats_issued) {
+	if (slot.mark_count > 0) {
+		const auto [mark_status, mark_times] =
+			m_device->query_pool_results(slot.timestamp_pool, mark_query_base, slot.mark_count, sizeof(std::uint64_t));
+
+		if (mark_status == query_status::success) {
+			const auto order = std::span(slot.mark_order).first(slot.mark_count);
+			std::iota(order.begin(), order.end(), 0u);
+			std::ranges::sort(order, [&](const std::uint32_t a, const std::uint32_t b) {
+				const auto& ma = slot.marks[a];
+				const auto& mb = slot.marks[b];
+				return ma.pass_slot != mb.pass_slot ? ma.pass_slot < mb.pass_slot : ma.query < mb.query;
+			});
+
+			for (std::size_t k = 0; k < order.size(); ++k) {
+				const auto index = order[k];
+				const auto& m = slot.marks[index];
+				const bool last_in_pass = k + 1 == order.size() || slot.marks[order[k + 1]].pass_slot != m.pass_slot;
+				const auto end_ticks = last_in_pass ? timestamps[2 + m.pass_slot * 2] : mark_times[order[k + 1]];
+				const auto span = span_between(mark_times[index], end_ticks);
+				if (!span) {
+					continue;
+				}
+				profile::ingest_gpu_sample(m.label, *span);
+				if (!aligned) {
+					continue;
+				}
+				const auto start = stamp_to_cpu(mark_times[index]);
+				if (start < time_t<double>{}) {
+					continue;
+				}
+				const auto end = start + *span;
+				const auto queue = slot.pass_queues[m.pass_slot];
+				const auto key = profile_key(slot.frame_counter, queue, max_profiled_passes + index);
+				const auto tid = queue_tids[static_cast<std::size_t>(queue)];
+
+				trace::begin_async_at(m.label, key, tid, time_t<std::uint64_t>(start));
+				trace::end_async_at(m.label, key, tid, time_t<std::uint64_t>(end));
+				ingest_perf_metrics(perf, m.label, start, end);
+			}
+		}
+	}
+
+	if (slot.stats_issued && aligned) {
 		const auto [stats_status, stats] =
 			m_device->query_pool_results(slot.stats_pool, 0, slot.pass_count, sizeof(std::uint64_t) * stats_per_pass);
 
@@ -201,7 +383,10 @@ auto gse::gpu::render_graph::read_profile_slot(gpu_profile_slot& slot) -> void {
 				":clip_invocs",
 				":fs_invocs" };
 			for (std::uint32_t i = 0; i < slot.pass_count; ++i) {
-				const auto start = static_cast<double>(timestamps[1 + i * 2]) * period + offset;
+				const auto start = stamp_to_cpu(timestamps[1 + i * 2]);
+				if (start < time_t<double>{}) {
+					continue;
+				}
 				auto cache_it = m_stat_ids.find(slot.pass_types[i]);
 				if (cache_it == m_stat_ids.end()) {
 					const auto pass_name = std::string(slot.pass_types[i].tag());
@@ -272,7 +457,7 @@ auto gse::gpu::render_graph::frame_in_progress() const -> bool {
 }
 
 auto gse::gpu::render_graph::log_pass_graph(const std::span<const render_pass_data> passes) -> void {
-	if (!m_graph_report.tick()) {
+	if (!m_log_render_graph.load(std::memory_order_relaxed) || !m_graph_report.tick()) {
 		return;
 	}
 
@@ -306,7 +491,7 @@ auto gse::gpu::render_graph::log_pass_graph(const std::span<const render_pass_da
 			}
 		}
 		if (foreign != 0) {
-			line += std::format(" (+{} non-target)", foreign);
+			line += std::format("{}(+{} non-target)", line.empty() ? "" : " ", foreign);
 		}
 		if (line.empty()) {
 			line = "-";
@@ -339,19 +524,27 @@ auto gse::gpu::render_graph::log_pass_graph(const std::span<const render_pass_da
 		return outputs;
 	};
 
+	std::vector<std::string> entries;
+	entries.reserve(passes.size());
+
 	for (const auto& p : passes) {
 		const bool presents = std::ranges::any_of(p.color_outputs, [](const color_output_info& c) { return c.is_swapchain; });
 		const auto reads = describe(p.reads);
 		const auto writes = describe(p.writes);
 		const auto attachments = describe_outputs(p);
-		report += std::format(
+		entries.push_back(std::format(
 			"\n[graph]   {}{}\n            reads:  {}\n            writes: {}\n            outputs: {}",
 			p.pass_name,
 			presents ? "  [SWAPCHAIN]" : "",
 			reads,
 			writes,
 			attachments
-		);
+		));
+	}
+
+	std::ranges::sort(entries);
+	for (const auto& entry : entries) {
+		report += entry;
 	}
 
 	const std::size_t report_hash = std::hash<std::string_view>{}(report);
@@ -389,14 +582,22 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 
 	const bool timestamps_enabled = m_gpu_timestamps_enabled.load(std::memory_order_relaxed);
 	const bool stats_enabled = m_gpu_pipeline_stats_enabled.load(std::memory_order_relaxed);
+	const bool marks_enabled = timestamps_enabled && m_gpu_intra_pass_marks_enabled.load(std::memory_order_relaxed);
+	if (!marks_enabled) {
+		m_mark_capacity = 0;
+	}
+	else if (m_mark_capacity == 0) {
+		m_mark_capacity = initial_mark_capacity;
+	}
 
 	if (m_frames_submitted >= per_frame_resource<gpu_profile_slot>::frames_in_flight) {
+		const auto perf = open_perf_frame();
 		for (auto& slots : m_profile_slots) {
-			read_profile_slot(slots[frame_idx]);
+			read_profile_slot(slots[frame_idx], perf);
 		}
 	}
 
-	auto bump_frames = make_scope_exit([this] {
+	auto _ = make_scope_exit([this] {
 		++m_frames_submitted;
 	});
 
@@ -404,7 +605,9 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		s.pass_types.resize(max_profiled_passes);
 		s.pass_queues.resize(max_profiled_passes);
 		s.pass_count = 0;
+		s.mark_count = 0;
 		s.stats_issued = false;
+		s.calibration.reset();
 		s.results_valid = false;
 	};
 	for (auto& slots : m_profile_slots) {
@@ -414,7 +617,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 	if (timestamps_enabled) {
 		for (std::size_t qi = 0; qi < queue_type_count; ++qi) {
 			const bool with_stats = qi == static_cast<std::size_t>(queue_type::graphics) && stats_enabled;
-			ensure_profile_pools(m_profile_slots[qi][frame_idx], with_stats);
+			ensure_profile_pools(m_profile_slots[qi][frame_idx], with_stats, m_mark_capacity);
 		}
 	}
 
@@ -465,6 +668,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 
 	std::vector<command_buffer_handle> pass_bodies;
 	std::array<std::atomic<std::uint32_t>, queue_type_count> profile_next_slot{};
+	std::array<std::atomic<std::uint32_t>, queue_type_count> profile_next_mark{};
 	std::array<std::atomic<bool>, queue_type_count> profile_stats_issued{};
 
 	auto record_range = [&](const std::size_t start, const std::size_t end, const id round_id) {
@@ -480,7 +684,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 				assert(worker_idx.has_value(), "graph::record_parallel: thread has no arena slot");
 				command_buffer_handle body{};
 				{
-					trace::scope_guard acquire_sg{ trace_id<"record_pass::acquire">() };
+					trace::scope_guard _{ trace_id<"record_pass::acquire">() };
 					body = m_device->acquire_worker_command_buffer(queue, *worker_idx, frame_idx);
 				}
 				assert(static_cast<bool>(body), "graph::record_parallel: worker command buffer acquire failed; the device is gone");
@@ -547,7 +751,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 				}
 
 				const auto body_cmd = m_device->recorder(body);
-				trace::scope_guard commands_sg{ trace_id<"record_pass::commands">() };
+				trace::scope_guard _{ trace_id<"record_pass::commands">() };
 				body_cmd.begin();
 
 				const auto marker_domain = (queue == queue_type::graphics)
@@ -605,6 +809,17 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 				rec_init.device = m_device;
 				rec_init.primary = pass.primary_pipeline;
 				rec_init.touches.clear();
+				rec_init.marks = {};
+				if (profile != nullptr && profile->mark_capacity > 0) {
+					rec_init.marks = pass_mark_cursor{
+						.pool = profile->timestamp_pool,
+						.marks = profile->marks.data(),
+						.next = std::addressof(profile_next_mark[static_cast<std::size_t>(queue)]),
+						.pass_slot = profile_slot,
+						.capacity = profile->mark_capacity,
+						.query_base = mark_query_base,
+					};
+				}
 				const auto note = [&](const resource_ref ref, const pipeline_stage_flags stages, const access_flags access) {
 					rec_init.touches.push_back({ ref, stages, access });
 				};
@@ -656,7 +871,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 					}
 				}
 				{
-					trace::scope_guard body_sg{ trace_id<"record_pass::body">() };
+					trace::scope_guard _{ trace_id<"record_pass::body">() };
 					pass.record_handle.resume();
 				}
 
@@ -682,7 +897,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 	};
 
 	{
-		trace::scope_guard record_sg{ trace_id<"render_graph::record_passes">() };
+		trace::scope_guard _{ trace_id<"render_graph::record_passes">() };
 
 		std::size_t round_index = 0;
 		std::size_t round_start = 0;
@@ -721,6 +936,34 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			auto& slot = m_profile_slots[qi][frame_idx];
 			slot.pass_count = std::min(profile_next_slot[qi].load(std::memory_order_relaxed), max_profiled_passes);
 			slot.stats_issued = profile_stats_issued[qi].load(std::memory_order_relaxed);
+			const auto marks_requested = profile_next_mark[qi].load(std::memory_order_relaxed);
+			slot.mark_count = std::min(marks_requested, slot.mark_capacity);
+			if (marks_requested > slot.mark_capacity && slot.mark_capacity > 0) {
+				const auto grown = std::min(std::bit_ceil(marks_requested), max_mark_capacity);
+				if (grown > m_mark_capacity) {
+					m_mark_capacity = grown;
+					log::println(
+						log::level::info,
+						log::category::render,
+						"gpu profile: {} intra-pass marks requested on queue {} ({} dropped this frame); mark budget grows to {}",
+						marks_requested,
+						qi,
+						marks_requested - slot.mark_capacity,
+						grown
+					);
+				}
+				else if (slot.mark_capacity == max_mark_capacity) {
+					log::println(
+						log::level::warning,
+						log::category::render,
+						"gpu profile: {} intra-pass marks requested on queue {} exceed the {} mark ceiling; {} dropped",
+						marks_requested,
+						qi,
+						max_mark_capacity,
+						marks_requested - slot.mark_capacity
+					);
+				}
+			}
 		}
 	}
 
@@ -744,11 +987,12 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			const auto profile_begin = m_device->acquire_worker_command_buffer(q, 0, frame_idx);
 			const auto pcmd = m_device->recorder(profile_begin);
 			pcmd.begin();
-			pcmd.reset_query_pool(slot.timestamp_pool, 0, max_profiled_passes * 2 + 1);
+			pcmd.reset_query_pool(slot.timestamp_pool, 0, mark_query_base + slot.mark_capacity);
 			if (with_stats) {
 				pcmd.reset_query_pool(slot.stats_pool, 0, max_profiled_passes);
 			}
-			slot.cpu_ref = system_clock::now<trace::tick_step>();
+			slot.calibration = m_device->calibrated_timestamp(q);
+			slot.recorded_at = system_clock::now<trace::tick_step>();
 			slot.frame_counter = m_frames_submitted;
 			pcmd.write_timestamp(pipeline_stage_flag::all_commands, slot.timestamp_pool, 0);
 			pcmd.end();
@@ -757,7 +1001,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 	}
 
 	{
-		trace::scope_guard sg{ trace_id<"graph::plan">() };
+		trace::scope_guard _{ trace_id<"graph::plan">() };
 		std::unordered_map<id, std::size_t> type_to_index;
 		for (std::size_t i = 0; i < passes.size(); ++i) {
 			type_to_index[passes[i].pass_type] = i;
@@ -1091,7 +1335,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 	std::array<std::vector<queue_segment>, queue_type_count> queue_segment_cuts{};
 
 	{
-		trace::scope_guard sg{ trace_id<"graph::record_replay">() };
+		trace::scope_guard _{ trace_id<"graph::record_replay">() };
 
 		auto access_has_write = [](const access_flags a) -> bool {
 			using ac = access_flag;
@@ -1102,54 +1346,24 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		};
 
 		auto append_barrier_for_resource = [&](
-			const resource_ref& resource,
 			const pipeline_stage_flags src_stages,
 			const access_flags src_access,
 			const pipeline_stage_flags dst_stages,
 			const access_flags dst_access,
-			std::vector<memory_barrier>& memory_out,
-			std::vector<buffer_barrier>& buffer_out,
-			std::vector<image_barrier>& image_out
+			std::vector<memory_barrier>& memory_out
 		) {
 			if (!access_has_write(src_access) && !access_has_write(dst_access) && src_stages.bits() == dst_stages.bits()) {
 				return;
 			}
-			if (resource.type == resource_type::buffer) {
-				buffer_out.push_back({
-					.src_stages = src_stages,
-					.src_access = src_access,
-					.dst_stages = dst_stages,
-					.dst_access = dst_access,
-					.buffer = std::bit_cast<handle<buffer>>(resource.ptr),
-					.offset = 0,
-					.size = resource.buffer_size,
-				});
-			}
-			else if (resource.type == resource_type::image) {
-				image_out.push_back({
-					.src_stages = src_stages,
-					.src_access = src_access,
-					.dst_stages = dst_stages,
-					.dst_access = dst_access,
-					.image = std::bit_cast<handle<image>>(resource.ptr),
-					.aspects = resource.aspects,
-					.base_mip_level = 0,
-					.level_count = 1,
-					.base_array_layer = 0,
-					.layer_count = 1,
-				});
-			}
-			else {
-				memory_out.push_back({
-					.src_stages = src_stages,
-					.src_access = src_access,
-					.dst_stages = dst_stages,
-					.dst_access = dst_access,
-				});
-			}
+			memory_out.push_back({
+				.src_stages = src_stages,
+				.src_access = src_access,
+				.dst_stages = dst_stages,
+				.dst_access = dst_access,
+			});
 		};
 
-		auto append_host_dirty_barriers = [&](const render_pass_data& p, std::vector<buffer_barrier>& out) {
+		auto append_host_dirty_barriers = [&](const render_pass_data& p, std::vector<memory_barrier>& out) {
 			auto walk = [&](const std::vector<resource_usage>& list) {
 				for (const auto& [resource, stage, access] : list) {
 					if (resource.type != resource_type::buffer || !resource.host_buffer) {
@@ -1164,9 +1378,6 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 						.src_access = access_flag::host_write,
 						.dst_stages = stage,
 						.dst_access = access,
-						.buffer = buf->handle(),
-						.offset = 0,
-						.size = buf->size(),
 					});
 					buf->clear_host_dirty();
 				}
@@ -1187,9 +1398,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		auto append_prev_pass_barriers = [&](
 			const render_pass_data& cur,
 			const queue_type cur_queue,
-			std::vector<memory_barrier>& memory_out,
-			std::vector<buffer_barrier>& buffer_out,
-			std::vector<image_barrier>& image_out
+			std::vector<memory_barrier>& memory_out
 		) {
 			auto& latest = latest_writes[static_cast<std::size_t>(cur_queue)];
 			auto& reads = reads_since_write[static_cast<std::size_t>(cur_queue)];
@@ -1200,28 +1409,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 				}
 				if (const auto it = latest.find(cur_resource.ptr); it != latest.end()) {
 					const auto& prev = it->second;
-					append_barrier_for_resource(
-						prev.resource,
-						prev.stages,
-						prev.access,
-						cur_stage,
-						cur_access,
-						memory_out,
-						buffer_out,
-						image_out
-					);
-				}
-				else if (cur_resource.type == resource_type::image) {
-					append_barrier_for_resource(
-						cur_resource,
-						{},
-						{},
-						cur_stage,
-						cur_access,
-						memory_out,
-						buffer_out,
-						image_out
-					);
+					append_barrier_for_resource(prev.stages, prev.access, cur_stage, cur_access, memory_out);
 				}
 			}
 
@@ -1232,44 +1420,17 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 				bool had_prev = false;
 				if (const auto it = latest.find(cur_resource.ptr); it != latest.end()) {
 					const auto& prev = it->second;
-					append_barrier_for_resource(
-						prev.resource,
-						prev.stages,
-						prev.access,
-						cur_stage,
-						cur_access,
-						memory_out,
-						buffer_out,
-						image_out
-					);
+					append_barrier_for_resource(prev.stages, prev.access, cur_stage, cur_access, memory_out);
 					had_prev = true;
 				}
 				if (const auto it = reads.find(cur_resource.ptr); it != reads.end()) {
 					for (const auto& prev_read : it->second) {
-						append_barrier_for_resource(
-							prev_read.resource,
-							prev_read.stages,
-							{},
-							cur_stage,
-							cur_access,
-							memory_out,
-							buffer_out,
-							image_out
-						);
+						append_barrier_for_resource(prev_read.stages, {}, cur_stage, cur_access, memory_out);
 					}
 					had_prev = true;
 				}
 				if (!had_prev) {
-					append_barrier_for_resource(
-						cur_resource,
-						cur_stage,
-						{},
-						cur_stage,
-						cur_access,
-						memory_out,
-						buffer_out,
-						image_out
-					);
+					append_barrier_for_resource(cur_stage, {}, cur_stage, cur_access, memory_out);
 				}
 			}
 
@@ -1288,7 +1449,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			}
 		};
 
-		std::vector<std::vector<image_barrier>> alias_barriers_for_sorted(sorted.size());
+		std::vector<std::vector<image_discard>> alias_barriers_for_sorted(sorted.size());
 		{
 			const auto transient_infos = m_transient_pool.transient_images();
 			for (const auto& info : transient_infos) {
@@ -1322,13 +1483,8 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 					.src_access = access_flag::memory_write,
 					.dst_stages = first_stages,
 					.dst_access = first_access,
-					.discard_contents = true,
 					.image = info.resource->handle(),
 					.aspects = info.aspects,
-					.base_mip_level = 0,
-					.level_count = 1,
-					.base_array_layer = 0,
-					.layer_count = 1,
 				});
 			}
 		}
@@ -1339,11 +1495,10 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			const auto queue = pass_queue(pass_idx);
 
 			std::vector<memory_barrier> memory_barriers;
-			std::vector<buffer_barrier> buffer_barriers;
-			std::vector<image_barrier> image_barriers = std::move(alias_barriers_for_sorted[si]);
+			std::vector<image_discard> image_discards = std::move(alias_barriers_for_sorted[si]);
 
-			append_host_dirty_barriers(pass, buffer_barriers);
-			append_prev_pass_barriers(pass, queue, memory_barriers, buffer_barriers, image_barriers);
+			append_host_dirty_barriers(pass, memory_barriers);
+			append_prev_pass_barriers(pass, queue, memory_barriers);
 
 			{
 				std::vector<memory_barrier> coalesced;
@@ -1365,56 +1520,15 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 				memory_barriers = std::move(coalesced);
 			}
 
-			{
-				std::vector<buffer_barrier> coalesced;
-				coalesced.reserve(buffer_barriers.size());
-				for (const auto& b : buffer_barriers) {
-					bool merged = false;
-					for (auto& o : coalesced) {
-						if (o.buffer.value == b.buffer.value && o.offset == b.offset && o.size == b.size && o.src_stages.bits() == b.src_stages.bits() && o.dst_stages.bits() == b.dst_stages.bits()) {
-							o.src_access |= b.src_access;
-							o.dst_access |= b.dst_access;
-							merged = true;
-							break;
-						}
-					}
-					if (!merged) {
-						coalesced.push_back(b);
-					}
-				}
-				buffer_barriers = std::move(coalesced);
-			}
-
-			{
-				std::vector<image_barrier> coalesced;
-				coalesced.reserve(image_barriers.size());
-				for (const auto& b : image_barriers) {
-					bool merged = false;
-					for (auto& o : coalesced) {
-						if (o.image.value == b.image.value && o.aspects.bits() == b.aspects.bits() && o.base_mip_level == b.base_mip_level && o.level_count == b.level_count && o.base_array_layer == b.base_array_layer && o.layer_count == b.layer_count && o.src_stages.bits() == b.src_stages.bits() && o.dst_stages.bits() == b.dst_stages.bits()) {
-							o.src_access |= b.src_access;
-							o.dst_access |= b.dst_access;
-							merged = true;
-							break;
-						}
-					}
-					if (!merged) {
-						coalesced.push_back(b);
-					}
-				}
-				image_barriers = std::move(coalesced);
-			}
-
 			const auto queue_index = static_cast<std::size_t>(queue);
-			if (!memory_barriers.empty() || !buffer_barriers.empty() || !image_barriers.empty()) {
+			if (!memory_barriers.empty() || !image_discards.empty()) {
 				const auto transition = m_device->acquire_worker_command_buffer(queue, 0, frame_idx);
 				const auto tcmd = m_device->recorder(transition);
 				tcmd.begin();
 				tcmd.pipeline_barrier(
 					dependency_info{
 						.memory_barriers = memory_barriers,
-						.buffer_barriers = buffer_barriers,
-						.image_barriers = image_barriers,
+						.image_discards = image_discards,
 					}
 				);
 				tcmd.end();
@@ -1435,9 +1549,22 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 	if (timestamps_enabled) {
 		for (std::size_t qi = 0; qi < queue_type_count; ++qi) {
 			auto& slot = m_profile_slots[qi][frame_idx];
-			if (slot.pass_count > 0) {
-				slot.results_valid = true;
+			if (slot.pass_count == 0) {
+				continue;
 			}
+			const auto profile_end = m_device->acquire_worker_command_buffer(static_cast<queue_type>(qi), 0, frame_idx);
+			const auto pcmd = m_device->recorder(profile_end);
+			pcmd.begin();
+			pcmd.resolve_query_pool(slot.timestamp_pool, 0, slot.pass_count * 2 + 1);
+			if (slot.mark_count > 0) {
+				pcmd.resolve_query_pool(slot.timestamp_pool, mark_query_base, slot.mark_count);
+			}
+			if (slot.stats_issued) {
+				pcmd.resolve_query_pool(slot.stats_pool, 0, slot.pass_count);
+			}
+			pcmd.end();
+			queue_submit_order[qi].push_back(profile_end);
+			slot.results_valid = true;
 		}
 	}
 
@@ -1551,18 +1678,14 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			.secondary_command_buffers = false,
 		});
 		clear_rec.end_rendering();
-		const image_barrier clear_sync{
+		const memory_barrier clear_sync{
 			.src_stages = pipeline_stage_flag::color_attachment_output,
 			.src_access = access_flag::color_attachment_write,
 			.dst_stages = pipeline_stage_flag::color_attachment_output,
 			.dst_access = { access_flag::color_attachment_write, access_flag::color_attachment_read },
-			.prev_state = resource_state::color_target,
-			.next_state = resource_state::color_target,
-			.image = t.swapchain->image(t.image_index),
-			.aspects = image_aspect_flag::color,
 		};
 		clear_rec.pipeline_barrier(dependency_info{
-			.image_barriers = std::span(&clear_sync, 1),
+			.memory_barriers = std::span(&clear_sync, 1),
 		});
 		clear_rec.end();
 		queue_submit_order[graphics_qi].insert(queue_submit_order[graphics_qi].begin(), clear_cmd);

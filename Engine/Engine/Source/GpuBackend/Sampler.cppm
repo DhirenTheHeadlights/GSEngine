@@ -5,8 +5,6 @@ import std;
 import :enums;
 
 export namespace gse::gpu {
-	struct sampler {};
-
 	enum class sampler_filter : std::uint8_t {
 		nearest,
 		linear,

@@ -1,11 +1,7 @@
 export module gse.graphics:spot_light;
 
-import std;
 
 import gse.math;
-import gse.core;
-import gse.ecs;
-import :gui;
 
 export namespace gse {
 	struct spot_light_component {

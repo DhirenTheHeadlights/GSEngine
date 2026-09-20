@@ -1,6 +1,13 @@
 void vbd_apply_body_inputs(uint3 dispatch_id) {
     uint bi = dispatch_id.x;
-    if (bi >= pc.body_count) return;
+    if (pc.apply_all_body_inputs != 0) {
+        if (bi >= pc.body_count) return;
+    }
+    else {
+        uint input_count = body_input_index_data[0];
+        if (bi >= input_count) return;
+        bi = body_input_index_data[1 + bi];
+    }
 
     body_state input = body_input_data[bi];
     if (pc.apply_all_body_inputs != 0 || input.locked != 0 || input.reset_pending != 0) {

@@ -1,18 +1,16 @@
 export module gse.graphics:value_widget;
 
-import std;
-
-import gse.math;
-import gse.core;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
+import gse.math;
+import gse.time;
+import std;
 
-import :types;
 import :styles;
-import :builder;
+import :types;
 
 namespace gse::gui::draw {
 	template <is_arithmetic T>
@@ -204,7 +202,7 @@ auto gse::gui::draw::value_row(const draw_context& ctx, const std::string& name,
 		{ content_rect.width(), widget_height }
 	);
 
-	const float label_width = content_rect.width() * 0.4f;
+	const float label_width = content_rect.width() * ctx.style.label_column_ratio;
 
 	const rectf label_rect = rectf::from_position_size(
 		row_rect.top_left(),

@@ -1,6 +1,8 @@
 export module sandbox:client;
 
-import gse;
+import gse.concurrency;
+import gse.ecs;
+import gse.network;
 
 export namespace sandbox::client_system {
 	[[= gse::system_init{}]]

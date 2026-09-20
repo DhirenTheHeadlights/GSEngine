@@ -1,6 +1,150 @@
 
 static const float fx_scale = 4194304.0;
 static const float fx_inv_scale = 1.0 / 4194304.0;
+static const uint island_mask_bits = 64;
+static const uint island_span = island_mask_bits * 2;
+
+groupshared uint gs_island_index[island_mask_bits];
+groupshared uint gs_island_slot[island_span];
+groupshared uint gs_island_min;
+groupshared uint gs_island_level[island_mask_bits];
+groupshared uint gs_island_changed;
+groupshared uint gs_island_max_level;
+static const uint fold_items_max = island_mask_bits * 4;
+groupshared uint gs_fold_count;
+groupshared uint gs_fold_items[fold_items_max];
+groupshared uint gs_lambda_last;
+
+struct body_view {
+    float3 predicted_position;
+    float4 predicted_orientation;
+    float4 old_orientation;
+    float3 velocity;
+    float3 angular_velocity;
+};
+
+struct other_view {
+    float3 predicted_position;
+    float4 predicted_orientation;
+    float mass;
+    uint locked;
+};
+
+body_view load_body_view(uint bi) {
+    body_view v;
+    v.predicted_position = body_data[bi].predicted_position;
+    v.predicted_orientation = body_data[bi].predicted_orientation;
+    v.old_orientation = body_data[bi].old_orientation;
+    v.velocity = body_data[bi].velocity;
+    v.angular_velocity = body_data[bi].angular_velocity;
+    return v;
+}
+
+other_view load_other_view(uint bi) {
+    other_view v;
+    v.predicted_position = body_data[bi].predicted_position;
+    v.predicted_orientation = body_data[bi].predicted_orientation;
+    v.mass = body_data[bi].mass;
+    v.locked = body_data[bi].locked;
+    return v;
+}
+
+uint island_position(uint bi, uint count) {
+    uint span = bi - gs_island_min;
+    if (span < island_span) return gs_island_slot[span];
+    for (uint k = 0; k < count; k++) {
+        if (gs_island_index[k] == bi) return k;
+    }
+    return 0xFFFFFFFFu;
+}
+
+void island_mask_add(inout uint2 mask, uint p) {
+    if (p < 32) mask.x |= 1u << p;
+    else mask.y |= 1u << (p - 32);
+}
+
+void island_neighbour_masks(uint bi, uint self, uint count, out uint2 lower, out uint2 upper) {
+    lower = uint2(0, 0);
+    upper = uint2(0, 0);
+
+    uint contact_offset = contact_offsets[bi];
+    uint contact_count = contact_counts[bi];
+    for (uint ci_idx = 0; ci_idx < contact_count; ci_idx++) {
+        uint ci = safe_load_uint(contact_adjacency, contact_offset + ci_idx, max_contact_adjacency);
+        if (ci >= max_contacts) continue;
+        contact_constraint c = contact_data[ci];
+        uint other = (c.body_a == bi) ? c.body_b : c.body_a;
+        uint p = island_position(other, count);
+        if (p == 0xFFFFFFFFu || p == self) continue;
+        if (p < self) island_mask_add(lower, p);
+        else island_mask_add(upper, p);
+    }
+
+    uint joint_offset = joint_offsets[bi];
+    uint joint_count_for_body = joint_counts[bi];
+    for (uint ji_idx = 0; ji_idx < joint_count_for_body; ji_idx++) {
+        uint ji = safe_load_uint(joint_adjacency, joint_offset + ji_idx, max_joint_adjacency);
+        if (ji >= max_joints) continue;
+        joint_constraint j = joint_data[ji];
+        uint other = (j.body_a == bi) ? j.body_b : j.body_a;
+        uint p = island_position(other, count);
+        if (p == 0xFFFFFFFFu || p == self) continue;
+        if (p < self) island_mask_add(lower, p);
+        else island_mask_add(upper, p);
+    }
+}
+
+uint island_mask_level(uint2 mask) {
+    uint level = 0;
+    uint m = mask.x;
+    while (m != 0) {
+        uint p = firstbitlow(m);
+        m &= m - 1;
+        level = max(level, gs_island_level[p] + 1);
+    }
+    m = mask.y;
+    while (m != 0) {
+        uint p = firstbitlow(m);
+        m &= m - 1;
+        level = max(level, gs_island_level[32 + p] + 1);
+    }
+    return level;
+}
+
+uint island_levels(uint2 mask, uint lane, uint count) {
+    gs_island_level[lane] = 0;
+    if (lane == 0) {
+        gs_island_changed = 0;
+        gs_island_max_level = 0;
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    uint level = 0;
+    for (uint iter = 0; iter < count; iter++) {
+        uint next = island_mask_level(mask);
+        GroupMemoryBarrierWithGroupSync();
+        if (next != level) {
+            level = next;
+            gs_island_level[lane] = level;
+            gs_island_changed = 1;
+        }
+        GroupMemoryBarrierWithGroupSync();
+        bool done = gs_island_changed == 0;
+        GroupMemoryBarrierWithGroupSync();
+        if (lane == 0) gs_island_changed = 0;
+        if (done) break;
+    }
+    InterlockedMax(gs_island_max_level, level);
+    GroupMemoryBarrierWithGroupSync();
+    return level;
+}
+
+void island_sweep(uint bi, bool valid, uint level, uint max_level) {
+    for (uint l = 0; l <= max_level; l++) {
+        if (valid && level == l) solve_body(bi, true);
+        AllMemoryBarrierWithGroupSync();
+    }
+}
 
 int64_t fx_encode(float v) {
     return int64_t(round(v * fx_scale));
@@ -52,7 +196,7 @@ void accumulate_geometric_stiffness(float3 r, float3 dir, float abs_force, inout
 }
 
 void accumulate_joint_drive(
-    joint_constraint j, body_state body_a, body_state body_b,
+    joint_constraint j, body_view body_a, body_view body_b,
     float3 axis_world, float theta_axis, int axis_index, float sign,
     inout float3 ang_grad, inout mat3 ang_hess
 ) {
@@ -79,8 +223,8 @@ void accumulate_joint_for_body(
     inout float3 ang_grad, inout mat3 ang_hess,
     inout mat3 hess_xt
 ) {
-    body_state body_a = body_data[j.body_a];
-    body_state body_b = body_data[j.body_b];
+    body_view body_a = load_body_view(j.body_a);
+    body_view body_b = load_body_view(j.body_b);
     bool is_a = (j.body_a == bi);
     float sign = is_a ? 1.0 : -1.0;
 
@@ -301,16 +445,18 @@ void accumulate_joint_for_body(
 }
 
 void solve_body(uint bi, bool live_jac) {
-    body_state body = body_data[bi];
-
-    bool locked = body.locked != 0;
-    bool sleeping = body.sleep_counter >= sleep_threshold;
-    bool update_orient = body.update_orientation != 0;
+    bool locked = body_data[bi].locked != 0;
+    bool sleeping = body_data[bi].sleep_counter >= sleep_threshold;
+    bool update_orient = body_data[bi].update_orientation != 0;
 
     if (locked || sleeping) return;
 
-    float inv_mass_val = (body.mass > 1e-10) ? (1.0 / body.mass) : 0.0;
+    float body_mass = body_data[bi].mass;
+    float inv_mass_val = (body_mass > 1e-10) ? (1.0 / body_mass) : 0.0;
     if (inv_mass_val < 1e-10) return;
+
+    float3 predicted_position = body_data[bi].predicted_position;
+    float4 predicted_orientation = body_data[bi].predicted_orientation;
 
     float3 grad = float3(0, 0, 0);
     mat3 hess = mat3_identity(0);
@@ -319,19 +465,8 @@ void solve_body(uint bi, bool live_jac) {
     mat3 hess_xt = mat3_identity(0);
     bool has_cross_terms = false;
 
-    float3 chk_ang_seq = float3(0, 0, 0);
-    float3 chk_ang_even = float3(0, 0, 0);
-    float3 chk_ang_odd = float3(0, 0, 0);
-    float3 chk_lin_seq = float3(0, 0, 0);
-    float3 chk_lin_even = float3(0, 0, 0);
-    float3 chk_lin_odd = float3(0, 0, 0);
-    uint chk_terms = 0;
-
     int64_t fx_grad[3] = { 0, 0, 0 };
     int64_t fx_ang_grad[3] = { 0, 0, 0 };
-    int64_t fx_hess[9] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-    int64_t fx_ang_hess[9] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-    int64_t fx_hess_xt[9] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 
     uint contact_offset = contact_offsets[bi];
     uint contact_count = contact_counts[bi];
@@ -342,20 +477,14 @@ void solve_body(uint bi, bool live_jac) {
     float motor_grad_before = 0.0;
     float motor_stiffness = 0.0;
     bool motor_horizontal_only = false;
-
-
-
-
-
-
     if (has_motor) {
-        velocity_motor_constraint m = motor_data[motor_idx];
+        velocity_motor_constraint m = motor_data[(pc.substep / max(pc.substeps_per_tick, 1u)) * pc.motor_count + motor_idx];
         float alpha = max(m.compliance, 1e-6);
-        float iw = body.mass / pc.h_squared;
+        float iw = body_mass / pc.h_squared;
         motor_stiffness = iw / alpha;
         motor_horizontal_only = m.horizontal_only != 0;
 
-        float3 diff = body.predicted_position.xyz - body.motor_target.xyz;
+        float3 diff = predicted_position - body_data[bi].motor_target.xyz;
         if (motor_horizontal_only) diff.y = 0.0;
 
         motor_grad = diff * motor_stiffness;
@@ -375,23 +504,22 @@ void solve_body(uint bi, bool live_jac) {
 
         bool is_a = (c.body_a == bi);
         uint other_idx = is_a ? c.body_b : c.body_a;
-        body_state other = body_data[other_idx];
+        other_view other = load_other_view(other_idx);
 
-        frozen_jacobian fj = frozen_jacobians[ci];
         float3 world_r_a;
         float3 world_r_b;
         if (live_jac) {
-            float4 q_a = is_a ? body.predicted_orientation : other.predicted_orientation;
-            float4 q_b = is_a ? other.predicted_orientation : body.predicted_orientation;
+            float4 q_a = is_a ? predicted_orientation : other.predicted_orientation;
+            float4 q_b = is_a ? other.predicted_orientation : predicted_orientation;
             world_r_a = rotate_vector(q_a, c.local_anchor_a.xyz);
             world_r_b = rotate_vector(q_b, c.local_anchor_b.xyz);
         } else {
-            world_r_a = fj.world_r_a;
-            world_r_b = fj.world_r_b;
+            world_r_a = frozen_jacobians[ci].world_r_a;
+            world_r_b = frozen_jacobians[ci].world_r_b;
         }
 
-        float3 pos_a = is_a ? body.predicted_position.xyz : other.predicted_position.xyz;
-        float3 pos_b = is_a ? other.predicted_position.xyz : body.predicted_position.xyz;
+        float3 pos_a = is_a ? predicted_position : other.predicted_position.xyz;
+        float3 pos_b = is_a ? other.predicted_position.xyz : predicted_position;
         float3 p_a = pos_a + world_r_a;
         float3 p_b = pos_b + world_r_b;
 
@@ -411,7 +539,6 @@ void solve_body(uint bi, bool live_jac) {
 
         float sign = is_a ? 1.0 : -1.0;
         float3 dirs[3] = { c.normal.xyz, c.tangent_u.xyz, c.tangent_v.xyz };
-        float3x3 J_ang_frozen = is_a ? fj.j_ang_a : fj.j_ang_b;
         float3 my_r = is_a ? world_r_a : world_r_b;
 
         for (uint row = 0; row < 3; row++) {
@@ -419,15 +546,16 @@ void solve_body(uint bi, bool live_jac) {
             if (abs(force[row]) < 1e-12 && c.penalty[row] < 1e-6) continue;
 
             float3 J_lin = dirs[row] * sign;
-            float3 J_ang = (live_jac ? cross(my_r, dirs[row]) : J_ang_frozen[row]) * sign;
+            float3 J_ang;
+            if (live_jac) {
+                J_ang = cross(my_r, dirs[row]);
+            } else {
+                J_ang = is_a ? frozen_jacobians[ci].j_ang_a[row] : frozen_jacobians[ci].j_ang_b[row];
+            }
+            J_ang *= sign;
 
             fx_add_vec3(fx_grad, J_lin * force[row]);
             hess = mat3_add(hess, mat3_scale(outer_product3(J_lin, J_lin), c.penalty[row]));
-
-            float3 chk_lin_term = J_lin * force[row];
-            chk_lin_seq += chk_lin_term;
-            if ((chk_terms & 1u) == 0u) chk_lin_even += chk_lin_term;
-            else chk_lin_odd += chk_lin_term;
 
             if (update_orient) {
                 fx_add_vec3(fx_ang_grad, J_ang * force[row]);
@@ -435,19 +563,13 @@ void solve_body(uint bi, bool live_jac) {
                 hess_xt = mat3_add(hess_xt, mat3_scale(outer_product3(J_lin, J_ang), c.penalty[row]));
                 has_cross_terms = true;
 
-                float3 chk_ang_term = J_ang * force[row];
-                chk_ang_seq += chk_ang_term;
-                if ((chk_terms & 1u) == 0u) chk_ang_even += chk_ang_term;
-                else chk_ang_odd += chk_ang_term;
             }
-
-            chk_terms++;
         }
 
         if (has_motor) {
             bool blocking_body =
                 (other.locked != 0) ||
-                (other.mass >= body.mass);
+                (other.mass >= body_mass);
             if (blocking_body) {
                 float normal_gap = dot(c.normal.xyz, d) + solver_config_data[0].collision_margin;
                 if (normal_gap < 0.0 || c.lambda.x < -1e-3) {
@@ -501,8 +623,8 @@ void solve_body(uint bi, bool live_jac) {
         if (update_orient) has_cross_terms = true;
     }
 
-    float inertia_weight = body.mass / pc.h_squared;
-    float3 x_diff = body.predicted_position.xyz - body.inertia_target.xyz;
+    float inertia_weight = body_mass / pc.h_squared;
+    float3 x_diff = predicted_position - body_data[bi].inertia_target.xyz;
     float3 g_lin = x_diff * inertia_weight + grad;
 
     mat3 h_xx = mat3_add(mat3_identity(inertia_weight), hess);
@@ -522,13 +644,13 @@ void solve_body(uint bi, bool live_jac) {
         if (solver_config_data[0].use_jacobi != 0) {
             solve_deltas[bi * 2] = float4(delta_x * solver_config_data[0].jacobi_omega, 0);
         } else {
-            body.predicted_position.xyz += delta_x;
-            body_data[bi] = body;
+            predicted_position += delta_x;
+            body_data[bi].predicted_position = predicted_position;
         }
         return;
     }
 
-    float4 q_rel = quat_mul(body.predicted_orientation, quat_conjugate(body.angular_inertia_target));
+    float4 q_rel = quat_mul(predicted_orientation, quat_conjugate(body_data[bi].angular_inertia_target));
     float q_s = q_rel.x;
     float3 q_v = q_rel.yzw;
     if (q_s < 0.0) { q_s = -q_s; q_v = -q_v; }
@@ -542,7 +664,7 @@ void solve_body(uint bi, bool live_jac) {
         theta_diff = q_v * 2.0;
     }
 
-    mat3 i_mat = mat3_inverse(body.inv_inertia);
+    mat3 i_mat = mat3_inverse(body_data[bi].inv_inertia);
     float ang_scale = 1.0 / pc.h_squared;
 
     float3 g_ang = mat3_mul_vec(i_mat, theta_diff) * ang_scale + ang_grad;
@@ -586,7 +708,7 @@ void solve_body(uint bi, bool live_jac) {
         return;
     }
 
-    body.predicted_position.xyz += delta_x;
+    predicted_position += delta_x;
 
     float angle = length(delta_theta);
     if (angle > 1e-7) {
@@ -595,41 +717,337 @@ void solve_body(uint bi, bool live_jac) {
         float sh = sin(half_angle);
         float ch = cos(half_angle);
         float4 delta_q = float4(ch, sh * axis.x, sh * axis.y, sh * axis.z);
-        body.predicted_orientation = quat_normalize(quat_mul(delta_q, body.predicted_orientation));
+        predicted_orientation = quat_normalize(quat_mul(delta_q, predicted_orientation));
     }
 
-    body_data[bi] = body;
+    body_data[bi].predicted_position = predicted_position;
+    body_data[bi].predicted_orientation = predicted_orientation;
 }
 
-void vbd_solve_color(uint3 dispatch_id) {
-    uint idx = dispatch_id.x;
+void fold_contact_lambda(uint ci) {
+    contact_constraint c = contact_data[ci];
+    body_state body_a = body_data[c.body_a];
+    body_state body_b = body_data[c.body_b];
 
-    if (collision_state[state_converged_flag_index] != 0) return;
+    float3 world_r_a = rotate_vector(body_a.predicted_orientation, c.local_anchor_a.xyz);
+    float3 world_r_b = rotate_vector(body_b.predicted_orientation, c.local_anchor_b.xyz);
 
-    if (pc.color_offset == 0xFFFFFFFFu) {
-        uint env = idx / workgroup_size;
-        uint lane = idx % workgroup_size;
+    float3 p_a = body_a.predicted_position.xyz + world_r_a;
+    float3 p_b = body_b.predicted_position.xyz + world_r_b;
+    float3 d = p_a - p_b;
 
-        if (env == 0) {
-            uint seq_colors = min(collision_state[state_max_used_color_index], pc.color_count);
-            for (uint color = 0; color < seq_colors; color++) {
-                uint count = color_data[max_colors + color];
-                uint offset = color_data[color];
-                for (uint k = lane; k < count; k += workgroup_size) {
-                    uint bi = color_data[max_colors * 2 + offset + k];
-                    if (bi < pc.body_count && joint_counts[bi] == 0) {
-                        solve_body(bi, false);
-                    }
-                }
-                AllMemoryBarrierWithGroupSync();
+    float3 Cn = float3(
+        dot(c.normal.xyz, d) + solver_config_data[0].collision_margin,
+        dot(c.tangent_u.xyz, d),
+        dot(c.tangent_v.xyz, d)
+    );
+    float3 C = Cn - c.c0.xyz * pc.current_alpha;
+
+    float3 lambda = c.lambda;
+    float3 penalty = c.penalty;
+
+    lambda.x = min(penalty.x * C.x + lambda.x, 0.0);
+
+    float friction_bound = abs(lambda.x) * c.friction_coeff;
+    lambda.y = clamp(penalty.y * C.y + lambda.y, -friction_bound, friction_bound);
+    lambda.z = clamp(penalty.z * C.z + lambda.z, -friction_bound, friction_bound);
+
+    if (lambda.x < 0.0) {
+        penalty.x = min(penalty.x + solver_config_data[0].beta * abs(C.x), solver_config_data[0].penalty_max);
+        InterlockedMax(collision_state[state_convergence_max_delta_index], asuint(abs(C.x)));
+    }
+
+    if (friction_bound > 1e-10) {
+        if (abs(lambda.y) < friction_bound) {
+            penalty.y = min(penalty.y + solver_config_data[0].beta * abs(C.y), solver_config_data[0].penalty_max);
+        }
+        if (abs(lambda.z) < friction_bound) {
+            penalty.z = min(penalty.z + solver_config_data[0].beta * abs(C.z), solver_config_data[0].penalty_max);
+        }
+    }
+
+    contact_data[ci].lambda = lambda;
+    contact_data[ci].penalty = penalty;
+
+    uint trace_body = solver_config_data[0].trace_body;
+    if (pc.substep == 0 && pc.iteration < iteration_trace_slots && (c.body_a == trace_body || c.body_b == trace_body)) {
+        uint base = state_iteration_trace_base_index + pc.iteration * iteration_trace_uints;
+        collision_state[base] = asuint(C.x);
+        collision_state[base + 1] = asuint(lambda.x);
+        collision_state[base + 2] = asuint(penalty.x);
+    }
+}
+
+void fold_joint_lambda(uint ji) {
+    if (ji >= pc.joint_count) return;
+
+    joint_constraint j = joint_data[ji];
+    body_state body_a = body_data[j.body_a];
+    body_state body_b = body_data[j.body_b];
+
+    bool a_locked = body_a.locked != 0;
+    bool b_locked = body_b.locked != 0;
+    bool a_sleeping = body_a.sleep_counter >= sleep_threshold;
+    bool b_sleeping = body_b.sleep_counter >= sleep_threshold;
+    if ((a_locked || a_sleeping) && (b_locked || b_sleeping)) return;
+
+    float3 r_aw = rotate_vector(body_a.predicted_orientation, j.local_anchor_a.xyz);
+    float3 r_bw = rotate_vector(body_b.predicted_orientation, j.local_anchor_b.xyz);
+    float3 p_a = body_a.predicted_position.xyz + r_aw;
+    float3 p_b = body_b.predicted_position.xyz + r_bw;
+    float3 d = p_a - p_b;
+
+    if (j.type == joint_type::distance) {
+        float c = (length(d) - j.target_distance) - j.pos_c0.x;
+        j.pos_lambda.x = j.pos_penalty.x * c + j.pos_lambda.x;
+        float penalty_cap = solver_config_data[0].penalty_max;
+        if (j.compliance > 0.0) {
+            penalty_cap = min(1.0 / max(j.compliance * pc.h_squared, 1e-10), solver_config_data[0].penalty_max);
+        }
+        j.pos_penalty.x = min(j.pos_penalty.x + solver_config_data[0].beta * abs(c), penalty_cap);
+        InterlockedMax(collision_state[state_convergence_max_delta_index], asuint(abs(c)));
+    }
+    else if (j.type == joint_type::muscle) {
+        float stretch = length(d) - j.target_distance;
+        float c = max(stretch, 0.0) - j.pos_c0.x;
+        j.pos_lambda.x = max(j.pos_penalty.x * c + j.pos_lambda.x, 0.0);
+        float penalty_cap = solver_config_data[0].penalty_max;
+        if (j.compliance > 0.0) {
+            penalty_cap = min(1.0 / max(j.compliance * pc.h_squared, 1e-10), solver_config_data[0].penalty_max);
+        }
+        j.pos_penalty.x = min(j.pos_penalty.x + solver_config_data[0].beta * abs(c), penalty_cap);
+        InterlockedMax(collision_state[state_convergence_max_delta_index], asuint(abs(c)));
+    }
+    else if (j.type == joint_type::fixed || j.type == joint_type::hinge || j.type == joint_type::ball || j.type == joint_type::universal) {
+        float3 dirs[3] = { float3(1, 0, 0), float3(0, 1, 0), float3(0, 0, 1) };
+        float3 c_rows = float3(0, 0, 0);
+        for (int k = 0; k < 3; k++) {
+            float c = dot(dirs[k], d) - j.pos_c0[k];
+            c_rows[k] = c;
+            j.pos_lambda[k] = j.pos_penalty[k] * c + j.pos_lambda[k];
+            j.pos_penalty[k] = min(j.pos_penalty[k] + solver_config_data[0].beta * abs(c), solver_config_data[0].penalty_max);
+            InterlockedMax(collision_state[state_convergence_max_delta_index], asuint(abs(c)));
+        }
+
+        uint trace_body = solver_config_data[0].trace_body;
+        if (pc.substep == 0 && pc.iteration < iteration_trace_slots && (j.body_a == trace_body || j.body_b == trace_body)) {
+            uint base = state_joint_trace_base_index + pc.iteration * joint_trace_uints;
+            for (int k = 0; k < 3; k++) {
+                collision_state[base + k * 3] = asuint(c_rows[k]);
+                collision_state[base + k * 3 + 1] = asuint(j.pos_lambda[k]);
+                collision_state[base + k * 3 + 2] = asuint(j.pos_penalty[k]);
             }
         }
 
-        uint island_count = island_data[0];
-        if (env < island_count && lane == 0) {
-            uint base = 1 + 2 * max_islands;
-            uint offset = island_data[1 + env];
-            uint count = island_data[1 + max_islands + env];
+        if (j.type != joint_type::ball) {
+            float4 q_error = quat_mul(body_b.predicted_orientation, quat_mul(quat_conjugate(body_a.predicted_orientation), quat_conjugate(j.rest_orientation)));
+            float3 theta = to_axis_angle(q_error);
+
+            if (j.type == joint_type::fixed) {
+                for (int k = 0; k < 3; k++) {
+                    float c_ang = theta[k] - j.ang_c0[k];
+                    j.ang_lambda[k] = j.ang_penalty[k] * c_ang + j.ang_lambda[k];
+                    j.ang_penalty[k] = min(j.ang_penalty[k] + solver_config_data[0].ang_beta * abs(c_ang), solver_config_data[0].ang_penalty_max);
+                    InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c_ang)));
+                }
+            }
+            else if (j.type == joint_type::universal) {
+                float3 axis_a = rotate_vector(body_a.predicted_orientation, j.local_axis_a.xyz);
+                float c_twist = dot(axis_a, theta) - j.ang_c0.x;
+                j.ang_lambda.x = j.ang_penalty.x * c_twist + j.ang_lambda.x;
+                j.ang_penalty.x = min(j.ang_penalty.x + solver_config_data[0].ang_beta * abs(c_twist), solver_config_data[0].ang_penalty_max);
+                InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c_twist)));
+            }
+            else {
+                float3 axis_a = rotate_vector(body_a.predicted_orientation, j.local_axis_a.xyz);
+                float3 axis_b = rotate_vector(body_b.predicted_orientation, j.local_axis_b.xyz);
+                float3 swing_error = cross(axis_a, axis_b);
+
+                float3 perp_u = cross(axis_a, float3(0, 1, 0));
+                if (length(perp_u) < 1e-6) perp_u = cross(axis_a, float3(1, 0, 0));
+                perp_u = normalize(perp_u);
+                float3 perp_v = normalize(cross(axis_a, perp_u));
+
+                float c_u = dot(perp_u, swing_error) - j.ang_c0.x;
+                float c_v = dot(perp_v, swing_error) - j.ang_c0.y;
+
+                j.ang_lambda.x = j.ang_penalty.x * c_u + j.ang_lambda.x;
+                j.ang_penalty.x = min(j.ang_penalty.x + solver_config_data[0].ang_beta * abs(c_u), solver_config_data[0].ang_penalty_max);
+                InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c_u)));
+
+                j.ang_lambda.y = j.ang_penalty.y * c_v + j.ang_lambda.y;
+                j.ang_penalty.y = min(j.ang_penalty.y + solver_config_data[0].ang_beta * abs(c_v), solver_config_data[0].ang_penalty_max);
+                InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c_v)));
+
+                if (j.limits_enabled != 0) {
+                    float twist = dot(axis_a, theta);
+
+                    if (twist < j.limit_lower) {
+                        float c_limit = (twist - j.limit_lower) - j.limit_c0;
+                        j.limit_lambda = clamp(j.limit_penalty * c_limit + j.limit_lambda, -50000.0, 0.0);
+                        j.limit_penalty = min(j.limit_penalty + solver_config_data[0].ang_beta * abs(c_limit), 50000.0);
+                        InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c_limit)));
+                    }
+                    else if (twist > j.limit_upper) {
+                        float c_limit = (twist - j.limit_upper) - j.limit_c0;
+                        j.limit_lambda = clamp(j.limit_penalty * c_limit + j.limit_lambda, 0.0, 50000.0);
+                        j.limit_penalty = min(j.limit_penalty + solver_config_data[0].ang_beta * abs(c_limit), 50000.0);
+                        InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c_limit)));
+                    }
+                }
+            }
+        }
+    }
+    else if (j.type == joint_type::slider) {
+        float3 axis_w = normalize(rotate_vector(body_a.predicted_orientation, j.local_axis_a.xyz));
+        float3 perp0 = cross(axis_w, float3(0, 1, 0));
+        if (length(perp0) < 1e-6) perp0 = cross(axis_w, float3(1, 0, 0));
+        perp0 = normalize(perp0);
+        float3 perp1 = normalize(cross(axis_w, perp0));
+
+        float3 perps[2] = { perp0, perp1 };
+        for (int k = 0; k < 2; k++) {
+            float c = dot(perps[k], d) - j.pos_c0[k];
+            j.pos_lambda[k] = j.pos_penalty[k] * c + j.pos_lambda[k];
+            j.pos_penalty[k] = min(j.pos_penalty[k] + solver_config_data[0].beta * abs(c), solver_config_data[0].penalty_max);
+            InterlockedMax(collision_state[state_convergence_max_delta_index], asuint(abs(c)));
+        }
+
+        float4 q_error = quat_mul(body_b.predicted_orientation, quat_mul(quat_conjugate(body_a.predicted_orientation), quat_conjugate(j.rest_orientation)));
+        float3 theta = to_axis_angle(q_error);
+
+        for (int k = 0; k < 3; k++) {
+            float c_ang = theta[k] - j.ang_c0[k];
+            j.ang_lambda[k] = j.ang_penalty[k] * c_ang + j.ang_lambda[k];
+            j.ang_penalty[k] = min(j.ang_penalty[k] + solver_config_data[0].ang_beta * abs(c_ang), solver_config_data[0].ang_penalty_max);
+            InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c_ang)));
+        }
+    }
+
+    if (ji == 0) {
+        collision_state[state_joint_lambda_index] = asuint(abs(j.pos_lambda[0]));
+        collision_state[state_joint_penalty_index] = asuint(abs(j.pos_penalty[0]));
+        collision_state[state_joint_c0_index] = asuint(abs(j.pos_c0[0]));
+        collision_state[state_joint_c_index] = asuint(length(d));
+    }
+
+    joint_data[ji] = j;
+}
+
+bool island_owns_contact(uint ci, uint bi, uint island) {
+    uint body_a = contact_data[ci].body_a;
+    uint body_b = contact_data[ci].body_b;
+    uint other = body_a == bi ? body_b : body_a;
+    if (other >= pc.body_count) return false;
+    if (body_data[other].locked != 0) return true;
+    return body_env_data[other] == island && bi < other;
+}
+
+void fold_item(uint item) {
+    if ((item & 0x80000000u) != 0) fold_contact_lambda(item & 0x7FFFFFFFu);
+    else fold_joint_lambda(item);
+}
+
+void fold_push(uint item) {
+    uint slot;
+    InterlockedAdd(gs_fold_count, 1, slot);
+    if (slot < fold_items_max) gs_fold_items[slot] = item;
+    else fold_item(item);
+}
+
+void fold_collect(uint bi, uint island) {
+    uint joint_offset = joint_offsets[bi];
+    uint joint_count_for_body = joint_counts[bi];
+    for (uint ji_idx = 0; ji_idx < joint_count_for_body; ji_idx++) {
+        uint ji = safe_load_uint(joint_adjacency, joint_offset + ji_idx, max_joint_adjacency);
+        if (ji >= max_joints) continue;
+        if (joint_data[ji].body_a != bi) continue;
+        fold_push(ji);
+    }
+
+    if (body_data[bi].locked != 0) return;
+
+    uint contact_offset = contact_offsets[bi];
+    uint contact_count = contact_counts[bi];
+    for (uint ci_idx = 0; ci_idx < contact_count; ci_idx++) {
+        uint ci = safe_load_uint(contact_adjacency, contact_offset + ci_idx, max_contact_adjacency);
+        if (ci >= max_contacts) continue;
+        if (!island_owns_contact(ci, bi, island)) continue;
+        fold_push(ci | 0x80000000u);
+    }
+}
+
+void solve_islands(uint3 dispatch_id) {
+    uint idx = dispatch_id.x;
+    uint env = idx / workgroup_size;
+    uint lane = idx % workgroup_size;
+
+    if (env == 0) {
+        uint seq_colors = min(collision_state[state_max_used_color_index], pc.color_count);
+        for (uint color = 0; color < seq_colors; color++) {
+            uint count = color_data[max_colors + color];
+            uint offset = color_data[color];
+            for (uint k = lane; k < count; k += workgroup_size) {
+                uint bi = color_data[max_colors * 2 + offset + k];
+                if (bi < pc.body_count && joint_counts[bi] == 0) {
+                    solve_body(bi, false);
+                }
+            }
+            AllMemoryBarrierWithGroupSync();
+        }
+    }
+
+    uint island_count = island_data[0];
+    if (env < island_count) {
+        uint base = 1 + 2 * max_islands;
+        uint offset = island_data[1 + env];
+        uint count = island_data[1 + max_islands + env];
+
+        if (count <= workgroup_size) {
+            uint bi = lane < count ? island_data[base + offset + lane] : 0xFFFFFFFFu;
+            bool valid = bi < pc.body_count;
+
+            uint forward;
+            uint forward_max;
+            uint backward;
+            uint backward_max;
+            if (pc.iteration == 0) {
+                if (lane == 0) gs_island_min = 0xFFFFFFFFu;
+                gs_island_index[lane] = bi;
+                for (uint k = lane; k < island_span; k += workgroup_size) {
+                    gs_island_slot[k] = 0xFFFFFFFFu;
+                }
+                GroupMemoryBarrierWithGroupSync();
+                if (valid) InterlockedMin(gs_island_min, bi);
+                GroupMemoryBarrierWithGroupSync();
+                if (valid && bi - gs_island_min < island_span) {
+                    gs_island_slot[bi - gs_island_min] = lane;
+                }
+                GroupMemoryBarrierWithGroupSync();
+
+                uint2 lower = uint2(0, 0);
+                uint2 upper = uint2(0, 0);
+                if (valid) island_neighbour_masks(bi, lane, count, lower, upper);
+
+                forward = island_levels(lower, lane, count);
+                forward_max = gs_island_max_level;
+                GroupMemoryBarrierWithGroupSync();
+                backward = island_levels(upper, lane, count);
+                backward_max = gs_island_max_level;
+                if (valid) solve_deltas[bi * 2] = asfloat(uint4(forward, forward_max, backward, backward_max));
+            }
+            else {
+                uint4 head = asuint(solve_deltas[island_data[base + offset] * 2]);
+                uint4 own = valid ? asuint(solve_deltas[bi * 2]) : head;
+                forward = own.x;
+                forward_max = head.y;
+                backward = own.z;
+                backward_max = head.w;
+            }
+            island_sweep(bi, valid, forward, forward_max);
+            island_sweep(bi, valid, backward, backward_max);
+        }
+        else if (lane == 0) {
             for (uint k = 0; k < count; k++) {
                 uint bi = island_data[base + offset + k];
                 if (bi < pc.body_count) solve_body(bi, true);
@@ -640,10 +1058,52 @@ void vbd_solve_color(uint3 dispatch_id) {
             }
         }
 
-        if (idx == 0) {
-            collision_state[state_convergence_max_delta_index] = 0;
-            collision_state[state_convergence_max_angular_delta_index] = 0;
+        if (pc.fold_lambda != 0) {
+            if (lane == 0) gs_fold_count = 0;
+            AllMemoryBarrierWithGroupSync();
+            for (uint k = lane; k < count; k += workgroup_size) {
+                uint bi = island_data[base + offset + k];
+                if (bi < pc.body_count) fold_collect(bi, env);
+            }
+            AllMemoryBarrierWithGroupSync();
+            uint items = min(gs_fold_count, fold_items_max);
+            for (uint k = lane; k < items; k += workgroup_size) {
+                fold_item(gs_fold_items[k]);
+            }
         }
+    }
+
+    if (pc.lambda_pass != 0) {
+        AllMemoryBarrierWithGroupSync();
+        if (lane == 0) {
+            uint arrived;
+            InterlockedAdd(collision_state[state_lambda_arrive_index], 1, arrived);
+            gs_lambda_last = arrived + 1 == max(island_count, 1u) ? 1u : 0u;
+        }
+        AllMemoryBarrierWithGroupSync();
+        if (gs_lambda_last != 0) {
+            uint unowned = min(unowned_contacts[0], max_contacts);
+            for (uint k = lane; k < unowned; k += workgroup_size) {
+                update_contact_lambda(unowned_contacts[1 + k]);
+            }
+            AllMemoryBarrierWithGroupSync();
+            if (lane == 0) fold_convergence_check(pc.lambda_pass == 2);
+        }
+    }
+
+    if (idx == 0 && pc.fold_lambda == 0) {
+        collision_state[state_convergence_max_delta_index] = 0;
+        collision_state[state_convergence_max_angular_delta_index] = 0;
+    }
+}
+
+void vbd_solve_color(uint3 dispatch_id) {
+    uint idx = dispatch_id.x;
+
+    if (collision_state[state_converged_flag_index] != 0) return;
+
+    if (pc.color_offset == 0xFFFFFFFFu) {
+        solve_islands(dispatch_id);
         return;
     }
 

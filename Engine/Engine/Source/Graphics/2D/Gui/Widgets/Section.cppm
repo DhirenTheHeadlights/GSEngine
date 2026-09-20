@@ -1,20 +1,19 @@
 export module gse.graphics:section_widget;
 
-import std;
-
 import gse.assets;
-import gse.core;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
 import gse.math;
-import :types;
+import gse.time;
+import std;
+
 import :font;
-import :styles;
 import :layout_ops;
-import :builder;
+import :styles;
+import :types;
 
 export namespace gse::gui {
 	struct section {

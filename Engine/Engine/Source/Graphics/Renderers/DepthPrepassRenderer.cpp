@@ -24,25 +24,15 @@ import gse.ecs;
 import gse.math;
 
 namespace gse::renderer::depth_prepass::meshlet {
-	struct [[= shaders::binding<0, 0>{}]] camera_ubo {
+	struct [[= shaders::uniform_block]] camera_ubo {
 		using element = shaders::common::camera_data;
 	};
 
-	struct [[
-		= shaders::binding<1, 5>{},
-		= shaders::ssbo_readonly
-	]] instance_data_buffer {
-		using element = shaders::common::instance_data;
-	};
-
-	struct [[
-		= shaders::binding<1, 6>{},
-		= shaders::ssbo_readonly
-	]] prev_vertices_buffer {
+	struct [[= shaders::ssbo_readonly]] prev_vertices_buffer {
 		using element = shaders::forward::vertex;
 	};
 
-	using shader_binding_types = type_pack<camera_ubo, shaders::meshlet::vertices_buffer, shaders::meshlet::meshlets_buffer, shaders::meshlet::meshlet_vertex_indices, shaders::meshlet::meshlet_triangles, shaders::meshlet::meshlet_bounds_buffer, instance_data_buffer, prev_vertices_buffer>;
+	using shader_binding_types = type_pack<camera_ubo, shaders::meshlet::vertices_buffer, shaders::meshlet::meshlets_buffer, shaders::meshlet::meshlet_vertex_indices, shaders::meshlet::meshlet_triangles, shaders::meshlet::meshlet_bounds_buffer, shaders::meshlet::instance_data_buffer, prev_vertices_buffer>;
 
 	struct [[= shaders::shader_struct]] push_constants {
 		std::uint32_t meshlet_offset;

@@ -1,13 +1,11 @@
 export module gse.graphics:render_component;
 
-import std;
-
-import :mesh;
-import :model;
-
 import gse.core;
 import gse.ecs;
 import gse.math;
+import std;
+
+import :model;
 
 export namespace gse {
 	struct render_component {

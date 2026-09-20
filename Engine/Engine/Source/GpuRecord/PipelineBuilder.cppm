@@ -14,11 +14,6 @@ import gse.math;
 import gse.containers;
 
 export namespace gse::gpu {
-	struct combined_sampler_arg {
-		bindless_slot image;
-		bindless_slot sampler;
-	};
-
 	struct acceleration_structure_arg {
 		std::uint32_t address_lo = 0;
 		std::uint32_t address_hi = 0;
@@ -37,7 +32,7 @@ export namespace gse::gpu {
 	constexpr auto descriptor_type_v = shaders::descriptor_type_of<T>();
 
 	template <typename T>
-	constexpr auto descriptor_count_v = shaders::descriptor_count_of<T>();
+	constexpr auto is_bindless_table_v = shaders::is_bindless_table<T>();
 
 	template <typename T>
 	constexpr auto descriptor_access_v = shaders::descriptor_access_of<T>();
@@ -62,45 +57,23 @@ export namespace gse::gpu {
 		struct type;
 
 		consteval {
-			struct sortable {
-				std::meta::info t;
-				std::uint32_t set;
-				std::uint32_t slot;
-			};
-			std::vector<sortable> entries;
 			constexpr auto pack_types = []<typename... Ts>(type_pack<Ts...>) {
 				return std::array{ ^^Ts... };
 			}(Pack{});
+			std::vector<std::meta::info> members;
 			for (const auto t : pack_types) {
-				const auto count = std::meta::extract<std::uint32_t>(std::meta::substitute(
-					^^descriptor_count_v,
+				const auto is_table = std::meta::extract<bool>(std::meta::substitute(
+					^^is_bindless_table_v,
 					{
 						t }
 				));
-				if (count > 1) {
+				if (is_table) {
 					continue;
 				}
-				const auto bt = shaders::find_binding_type(t);
-				const auto targs = std::meta::template_arguments_of(bt);
-				const auto set = std::meta::extract<std::uint32_t>(targs[0]);
-				const auto slot = std::meta::extract<std::uint32_t>(targs[1]);
-				entries.push_back({ t, set, slot });
-			}
-			std::ranges::sort(
-				entries,
-				[](const sortable& a, const sortable& b) {
-					if (a.set != b.set) {
-						return a.set < b.set;
-					}
-					return a.slot < b.slot;
-				}
-			);
-			std::vector<std::meta::info> members;
-			for (const auto& e : entries) {
 				members.push_back(std::meta::data_member_spec(
-					binding_arg_type(e.t),
+					binding_arg_type(t),
 					{
-						.name = std::meta::identifier_of(e.t),
+						.name = std::meta::identifier_of(t),
 					}
 				));
 			}
@@ -181,8 +154,8 @@ export namespace gse::gpu {
 		std::vector<shaders::spec_constant_entry> (
 			*build_spec_entries_fn
 		)() = nullptr;
-		std::vector<shaders::family_set> (
-			*build_family_sets_fn
+		std::uint32_t (
+			*binding_args_size_fn
 		)() = nullptr;
 	};
 
@@ -190,7 +163,8 @@ export namespace gse::gpu {
 	auto build_compute_program(
 		device& dev,
 		const compute_entry_pod& pod,
-		std::span<const std::byte> spec_data = {}
+		std::span<const std::byte> spec_data = {},
+		std::string_view runtime_constants = {}
 	) -> shader_program;
 
 	enum class graphics_stage_kind : std::uint8_t {
@@ -241,8 +215,8 @@ export namespace gse::gpu {
 		std::vector<shaders::spec_constant_entry> (
 			*build_spec_entries_fn
 		)() = nullptr;
-		std::vector<shaders::family_set> (
-			*build_family_sets_fn
+		std::uint32_t (
+			*binding_args_size_fn
 		)() = nullptr;
 	};
 
@@ -449,9 +423,9 @@ export namespace gse::gpu {
 						}(Spec{});
 						return out;
 					};
-					e.build_family_sets_fn = +[]() -> std::vector<shaders::family_set> {
-						return []<typename... Packs>(bindings<Packs...>) {
-							return shaders::build_combined_family_sets<Packs...>();
+					e.binding_args_size_fn = +[]() -> std::uint32_t {
+						return []<typename Pack, typename... Rest>(bindings<Pack, Rest...>) {
+							return static_cast<std::uint32_t>(sizeof(binding_args<Pack>));
 						}(Spec{});
 					};
 				}
@@ -673,9 +647,9 @@ export namespace gse::gpu {
 						}(Spec{});
 						return out;
 					};
-					e.build_family_sets_fn = +[]() -> std::vector<shaders::family_set> {
-						return []<typename... Packs>(bindings<Packs...>) {
-							return shaders::build_combined_family_sets<Packs...>();
+					e.binding_args_size_fn = +[]() -> std::uint32_t {
+						return []<typename Pack, typename... Rest>(bindings<Pack, Rest...>) {
+							return static_cast<std::uint32_t>(sizeof(binding_args<Pack>));
 						}(Spec{});
 					};
 				}
@@ -709,9 +683,6 @@ consteval auto gse::gpu::binding_arg_type(const std::meta::info t) -> std::meta:
 		{
 			t }
 	));
-	if (dt == descriptor_type::combined_image_sampler) {
-		return ^^combined_sampler_arg;
-	}
 	if (dt == descriptor_type::acceleration_structure) {
 		return ^^acceleration_structure_arg;
 	}
@@ -720,7 +691,7 @@ consteval auto gse::gpu::binding_arg_type(const std::meta::info t) -> std::meta:
 
 template <typename T>
 consteval auto gse::gpu::binding_arg_is_flat() -> bool {
-	if constexpr (descriptor_count_v<T> > 1) {
+	if constexpr (is_bindless_table_v<T>) {
 		return true;
 	}
 	else {

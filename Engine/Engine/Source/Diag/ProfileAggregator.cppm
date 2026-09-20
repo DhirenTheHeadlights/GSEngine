@@ -28,6 +28,7 @@ export namespace gse::profile {
 
 	struct report_entry {
 		id id;
+		sample_time total;
 		sample_time per_frame;
 		sample_time ema;
 		sample_time last;
@@ -51,18 +52,25 @@ export namespace gse::profile {
 		domain domain
 	) -> std::optional<report_entry>;
 
-	auto on_main_thread(
-		std::uint32_t dominant_tid,
-		std::uint32_t main_tid
-	) -> bool;
-
 	auto frames_profiled() -> std::uint64_t;
+
+	auto mean_frame_time() -> sample_time;
 
 	auto ingest_frame() -> void;
 
 	auto ingest_gpu_sample(
 		id pass_id,
 		sample_time duration
+	) -> void;
+
+	auto set_gpu_metric_names(
+		std::span<const std::string> names
+	) -> void;
+
+	auto ingest_gpu_metrics(
+		id pass_id,
+		std::span<const double> values,
+		std::uint64_t samples
 	) -> void;
 
 	auto lookup(
@@ -119,7 +127,7 @@ export namespace gse::profile {
 	) -> void;
 
 	constexpr std::uint32_t report_magic = 0x47535250;
-	constexpr std::uint32_t report_version = 3;
+	constexpr std::uint32_t report_version = 4;
 
 	struct report_record {
 		std::string tag;
@@ -144,6 +152,7 @@ export namespace gse::profile {
 		std::uint32_t children_first = 0;
 		std::uint32_t children_count = 0;
 		bool open = false;
+		bool lexical = false;
 	};
 
 	struct report_frame {
@@ -153,6 +162,7 @@ export namespace gse::profile {
 		std::uint64_t generation = 0;
 		time_t<std::uint64_t> origin;
 		sample_time span;
+		sample_time elapsed;
 	};
 
 	struct report_file {
@@ -229,6 +239,7 @@ namespace gse::profile {
 
 	struct entry {
 		id id;
+		sample_time total;
 		sample_time ema;
 		sample_time last;
 		sample_time peak;
@@ -240,6 +251,12 @@ namespace gse::profile {
 	};
 
 	constexpr double spike_ratio = 4.0;
+
+	struct metric_entry {
+		std::vector<double> totals;
+		std::uint64_t samples = 0;
+		std::uint64_t rows = 0;
+	};
 
 	struct dag_visit {
 		std::uint32_t index = 0;
@@ -253,9 +270,12 @@ namespace gse::profile {
 
 	inline std::shared_mutex state_mutex;
 	inline std::array<std::flat_map<id, entry>, 2> entries;
+	inline std::vector<std::string> gpu_metric_names;
+	inline std::flat_map<id, metric_entry> gpu_metric_entries;
 	inline std::atomic ema_alpha{ 0.1 };
 	inline std::atomic is_enabled{ true };
 	inline std::atomic<std::uint64_t> frame_count{ 0 };
+	inline sample_time frame_total;
 	inline std::atomic<std::uint64_t> last_generation{ 0 };
 	inline std::atomic<std::uint64_t> warmup_target{ default_warmup_frames };
 	inline std::atomic<std::uint64_t> warmup_remaining{ default_warmup_frames };
@@ -302,9 +322,13 @@ namespace gse::profile {
 		sample_time frame_time
 	) -> void;
 
+	auto write_gpu_metrics(
+		std::ofstream& out
+	) -> void;
+
 	auto write_thread_breakdown(
 		std::ofstream& out,
-		std::span<const entry> worker_src
+		std::span<const entry> threaded_src
 	) -> void;
 
 	auto write_dag(

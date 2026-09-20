@@ -1,11 +1,11 @@
 module gse.http:client_impl;
 
-import std;
-
+import gse.concurrency;
 import gse.core;
 import gse.log;
 import gse.math;
 import gse.winhttp;
+import std;
 
 import :client;
 import :request;
@@ -56,37 +56,19 @@ namespace gse::http {
 }
 
 struct gse::http::client::session {
-	struct pending {
-		id ticket;
-		request req;
-	};
-
 	winhttp::handle handle = nullptr;
 	std::mutex mutex;
-	std::condition_variable_any ready;
-	std::condition_variable drained;
-	std::deque<pending> queue;
 	std::vector<completion> completed;
-	std::size_t active = 0;
 	std::atomic<std::uint64_t> next{ 1 };
 	std::atomic<std::size_t> outstanding{ 0 };
 	std::atomic<bool> abandoned{ false };
-	std::vector<std::jthread> workers;
 
-	~session();
-
-	auto start(
-		std::size_t worker_count
-	) -> void;
-
-	auto pump(
-		const std::stop_token& stop
-	) -> void;
-
-	auto finish(
+	auto run(
 		id ticket,
-		result value
+		const request& req
 	) -> void;
+
+	auto abandon() -> void;
 };
 
 gse::http::scoped_handle::scoped_handle(const winhttp::handle raw) : value(raw) {}
@@ -290,81 +272,16 @@ auto gse::http::perform(winhttp::handle, const request&, const std::atomic<bool>
 
 #endif
 
-gse::http::client::session::~session() {
+auto gse::http::client::session::run(const id ticket, const request& req) -> void {
+	winhttp::handle session_handle = nullptr;
 	{
-		std::lock_guard lock(mutex);
-		abandoned.store(true, std::memory_order_release);
-		outstanding.fetch_sub(queue.size(), std::memory_order_relaxed);
-		queue.clear();
-
-#ifdef _WIN32
-		if (handle) {
-			::WinHttpCloseHandle(handle);
-		}
-#endif
+		std::lock_guard _(mutex);
+		session_handle = handle;
 	}
-
-	for (auto& worker : workers) {
-		worker.request_stop();
-	}
-	ready.notify_all();
-
-	{
-		std::unique_lock lock(mutex);
-		drained.wait(lock, [this] {
-			return active == 0;
-		});
-		handle = nullptr;
-	}
-
-	workers.clear();
-}
-
-auto gse::http::client::session::start(const std::size_t worker_count) -> void {
-	workers.reserve(worker_count);
-	for (std::size_t i = 0; i < worker_count; ++i) {
-		workers.emplace_back([this, i](std::stop_token stop) {
-			log::name_thread(log::thread_role::http, i);
-			pump(stop);
-		});
-	}
-}
-
-auto gse::http::client::session::pump(const std::stop_token& stop) -> void {
-	while (!stop.stop_requested()) {
-		pending job;
-
-		{
-			std::unique_lock lock(mutex);
-			ready.wait(lock, stop, [this] {
-				return !queue.empty();
-			});
-
-			if (abandoned.load(std::memory_order_acquire) || queue.empty()) {
-				return;
-			}
-
-			job = std::move(queue.front());
-			queue.pop_front();
-			++active;
-		}
-
-		result value = perform(handle, job.req, abandoned);
-
-		{
-			std::lock_guard lock(mutex);
-			--active;
-		}
-		drained.notify_all();
-
-		finish(job.ticket, std::move(value));
-	}
-}
-
-auto gse::http::client::session::finish(const id ticket, result value) -> void {
+	result value = perform(session_handle, req, abandoned);
 	outstanding.fetch_sub(1, std::memory_order_relaxed);
 
-	std::lock_guard lock(mutex);
+	std::lock_guard _(mutex);
 	if (abandoned.load(std::memory_order_acquire)) {
 		return;
 	}
@@ -374,11 +291,20 @@ auto gse::http::client::session::finish(const id ticket, result value) -> void {
 	});
 }
 
-gse::http::client::client() : client("GSEngine", default_worker_count) {}
+auto gse::http::client::session::abandon() -> void {
+	std::lock_guard _(mutex);
+	abandoned.store(true, std::memory_order_release);
+#ifdef _WIN32
+	if (handle) {
+		::WinHttpCloseHandle(handle);
+	}
+#endif
+	handle = nullptr;
+}
 
-gse::http::client::client(const std::string_view user_agent) : client(user_agent, default_worker_count) {}
+gse::http::client::client() : client("GSEngine") {}
 
-gse::http::client::client(const std::string_view user_agent, const std::size_t worker_count) : m_session(std::make_shared<session>()) {
+gse::http::client::client(const std::string_view user_agent) : m_session(std::make_shared<session>()) {
 #ifdef _WIN32
 	const std::wstring agent = widen(user_agent);
 	m_session->handle = ::WinHttpOpen(agent.c_str(), winhttp::access_type_automatic_proxy, nullptr, nullptr, 0);
@@ -389,15 +315,17 @@ gse::http::client::client(const std::string_view user_agent, const std::size_t w
 	(void)user_agent;
 	log::println(log::level::warning, log::category::http, "no http backend on this platform; every request will fail");
 #endif
-
-	m_session->start(std::max<std::size_t>(1, worker_count));
 }
 
 gse::http::client::client(client&& other) noexcept = default;
 
 auto gse::http::client::operator=(client&& other) noexcept -> client& = default;
 
-gse::http::client::~client() = default;
+gse::http::client::~client() {
+	if (m_session) {
+		m_session->abandon();
+	}
+}
 
 auto gse::http::client::send(request req) -> id {
 	if (!m_session) {
@@ -405,26 +333,15 @@ auto gse::http::client::send(request req) -> id {
 	}
 
 	const id ticket = generate_temp_id(m_session->next.fetch_add(1, std::memory_order_relaxed));
-
-	{
-		std::lock_guard lock(m_session->mutex);
-		if (m_session->abandoned.load(std::memory_order_acquire)) {
-			return {};
-		}
-		m_session->queue.push_back({
-			.ticket = ticket,
-			.req = std::move(req),
-		});
-	}
-
 	m_session->outstanding.fetch_add(1, std::memory_order_relaxed);
-	m_session->ready.notify_one();
+	task::post_io(
+		[session = m_session, ticket, req = std::move(req)] {
+			session->run(ticket, req);
+		},
+		trace_id<"http::request">()
+	);
 
 	return ticket;
-}
-
-auto gse::http::client::capacity() const -> std::size_t {
-	return m_session ? m_session->workers.size() : 0;
 }
 
 auto gse::http::client::poll() -> std::vector<completion> {
@@ -433,13 +350,17 @@ auto gse::http::client::poll() -> std::vector<completion> {
 	}
 
 	std::vector<completion> out;
-	std::lock_guard lock(m_session->mutex);
+	std::lock_guard _(m_session->mutex);
 	out.swap(m_session->completed);
 	return out;
 }
 
 auto gse::http::client::in_flight() const -> std::size_t {
 	return m_session ? m_session->outstanding.load(std::memory_order_relaxed) : 0;
+}
+
+auto gse::http::client::capacity() const -> std::size_t {
+	return m_session ? max_concurrent_requests : 0;
 }
 
 auto gse::http::client::valid() const -> bool {

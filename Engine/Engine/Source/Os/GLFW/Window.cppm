@@ -112,6 +112,10 @@ export namespace gse {
 		std::string for_menu;
 	};
 
+	struct window_popout_failed {
+		std::string for_menu;
+	};
+
 	struct window_closed {
 		id id;
 	};
@@ -281,6 +285,7 @@ export namespace gse::window {
 		[[= shared]] id cursor_window;
 		[[= shared]] window_surface primary;
 		std::vector<std::unique_ptr<window_surface>> secondaries;
+		std::uint32_t housekeeping_frame = 0;
 	};
 
 	auto tick(
@@ -294,6 +299,12 @@ export namespace gse::window {
 	) -> void;
 
 	auto poll_events() -> void;
+
+	auto wait_events(
+		time timeout
+	) -> void;
+
+	auto post_wake() -> void;
 
 	auto clipboard_text() -> std::string;
 

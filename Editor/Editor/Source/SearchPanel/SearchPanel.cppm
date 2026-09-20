@@ -1,10 +1,9 @@
 export module gse.ide.search_panel;
 
-import std;
 import gse;
-
-import gse.ide.search;
 import gse.ide.navigation;
+import gse.ide.search;
+import std;
 
 export namespace gse::ide {
 	struct search_panel_state {
@@ -172,8 +171,7 @@ auto gse::ide::draw_search_panel(gui::builder& ui, const rectf& rect, search_pan
 		x += w + pad * 0.5f;
 	}
 
-	const time now = system_clock::now<time>();
-	state.driver.update(now, index, search::options{
+	state.driver.update(index, search::options{
 		.max_results = 400,
 		.include_content = state.include_content,
 		.include_symbols = state.include_symbols,

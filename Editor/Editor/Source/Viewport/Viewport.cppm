@@ -21,11 +21,12 @@ export namespace gse::ide::viewport {
 		gpu::handle<gpu::semaphore> produced_semaphore{};
 		gpu::handle<gpu::semaphore> consumed_semaphore{};
 		std::uint64_t released_value = 0;
+		task::thread produced_waiter;
 	};
 
 	struct retiring_session {
 		imported_session session;
-		std::uint32_t frames_remaining = gpu::max_frames_in_flight + 1;
+		std::uint64_t retire_at_frame = 0;
 	};
 
 	struct [[= system_state<"Viewport">{}]] data {

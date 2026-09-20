@@ -1,7 +1,7 @@
 export module gse.ide.analysis:compilation_database;
 
+import gse.core;
 import std;
-import gse;
 
 export namespace gse::ide::analysis {
 	struct check_command {

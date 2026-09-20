@@ -1,15 +1,15 @@
 module gse.ide.agent:blame_impl;
 
-import std;
 import gse;
-
 import gse.ide.build;
 import gse.ide.config;
 import gse.ide.net;
+import std;
 
 import :blame;
 import :model;
 import :session;
+import :stream;
 
 auto gse::ide::agent::note_source_change(session& s, const std::filesystem::path& file, const std::int64_t mtime) -> id {
 	id touched_id;
@@ -29,11 +29,14 @@ auto gse::ide::agent::note_source_change(session& s, const std::filesystem::path
 	return touched_id;
 }
 
-auto gse::ide::agent::note_written_file(session& s, const std::filesystem::path& file) -> void {
+auto gse::ide::agent::note_written_file(session& s, const std::filesystem::path& file, const std::span<const std::string> added) -> void {
 	const auto requested = static_cast<std::int64_t>(std::filesystem::file_time_type::clock::now().time_since_epoch().count());
 	const auto touch = s.touched.find(note_source_change(s, file, requested));
 	if (touch != s.touched.end()) {
 		touch->second.wrote = true;
+		if (!added.empty()) {
+			touch->second.hunks.emplace_back(added.begin(), added.end());
+		}
 	}
 	s.wrote_this_turn = true;
 }
@@ -128,7 +131,20 @@ auto gse::ide::agent::status_label(const data& d, const session& s) -> std::stri
 			out += std::format(" behind '{}'", blocker_name(d, queued->blocker));
 		}
 	}
+	if (const std::size_t held = holding_builds(d, s); held > 0) {
+		out += std::format(" \xC2\xB7 holding {} build{}", held, held == 1 ? "" : "s");
+	}
 	return out;
+}
+
+auto gse::ide::agent::holding_builds(const data& d, const session& s) -> std::size_t {
+	if (s.info.agent_id.empty()) {
+		return 0;
+	}
+
+	return static_cast<std::size_t>(std::ranges::count_if(d.inbox_queue, [&s](const queued_build& queued) {
+		return queued.reported == build_hold::tree_busy && queued.blocker == s.info.agent_id;
+	}));
 }
 
 auto gse::ide::agent::exe_label(const session& s) -> std::string {
@@ -216,11 +232,39 @@ auto gse::ide::agent::touch_owner(data& d, const std::span<const std::filesystem
 	return owner;
 }
 
-auto gse::ide::agent::blame_owner(data& d, const build_runner::build_error& error) -> session* {
-	if (session* direct = touch_owner(d, std::span(&error.file, 1))) {
-		return direct;
+auto gse::ide::agent::hunk_owner(data& d, const std::filesystem::path& file, const std::uint32_t line) -> session* {
+	const id key = config::path_id(file);
+	std::vector<std::string> lines;
+	session* owner = nullptr;
+	std::int64_t latest = 0;
+	for (session& s : d.sessions) {
+		const auto touch = s.touched.find(key);
+		if (touch == s.touched.end() || touch->second.hunks.empty()) {
+			continue;
+		}
+		if (lines.empty()) {
+			lines = file_lines(file);
+		}
+		for (const std::vector<std::string>& hunk : touch->second.hunks) {
+			const std::optional<std::uint32_t> start = locate_lines(lines, hunk);
+			const bool covers = start && line >= *start && line < *start + hunk.size();
+			if (covers && (!owner || touch->second.mtime > latest)) {
+				owner = &s;
+				latest = touch->second.mtime;
+			}
+		}
 	}
-	return touch_owner(d, error.related);
+	return owner;
+}
+
+auto gse::ide::agent::blame_owner(data& d, const build_runner::build_error& error) -> blame_match {
+	if (session* exact = hunk_owner(d, error.file, error.line)) {
+		return { .owner = exact, .at_line = true };
+	}
+	if (session* direct = touch_owner(d, std::span(&error.file, 1))) {
+		return { .owner = direct };
+	}
+	return {};
 }
 
 auto gse::ide::agent::attribute_build_errors(data& d, const build_runner::build_finished& finished, const channel_write<blame_offer> offers) -> void {
@@ -240,7 +284,7 @@ auto gse::ide::agent::attribute_build_errors(data& d, const build_runner::build_
 	std::vector<blame_offer> grouped;
 
 	for (const build_runner::build_error& error : finished.errors) {
-		session* owner = blame_owner(d, error);
+		session* owner = blame_owner(d, error).owner;
 		std::vector<blamed_error>& claim = owner ? owner->blame : d.unclaimed;
 		if (claim.size() >= blame_limit) {
 			continue;
@@ -289,7 +333,7 @@ auto gse::ide::agent::build_patience() -> time {
 	return seconds(120.f);
 }
 
-auto gse::ide::agent::blocker_for(const data& d, const queued_build& queued) -> const session* {
+auto gse::ide::agent::blocker_for(const data& d, const queued_build& queued) -> std::string {
 	const config::worktree& tree = queued.tree ? *queued.tree : config::primary();
 
 	for (const session& s : d.sessions) {
@@ -302,9 +346,84 @@ auto gse::ide::agent::blocker_for(const data& d, const queued_build& queued) -> 
 		if (config::worktree_for(s.cwd).name != tree.name) {
 			continue;
 		}
-		return &s;
+		return s.info.agent_id.empty() ? std::format("chat {}", s.id) : s.info.agent_id;
 	}
-	return nullptr;
+
+	const auto known_here = [&d](const build_inbox::presence& active) {
+		return std::ranges::any_of(d.sessions, [&active](const session& s) {
+			return s.info.agent_id == active.agent;
+		});
+	};
+	for (const build_inbox::presence& active : d.presence) {
+		if (active.agent == queued.agent || active.tree != tree.name || known_here(active)) {
+			continue;
+		}
+		return active.agent;
+	}
+	return {};
+}
+
+auto gse::ide::agent::active_elsewhere(const data& d, const queued_build& queued) -> std::string {
+	const config::worktree& tree = queued.tree ? *queued.tree : config::primary();
+
+	std::vector<std::string_view> names;
+	for (const build_inbox::presence& active : d.presence) {
+		const bool here = std::ranges::any_of(d.sessions, [&active](const session& s) {
+			return s.info.agent_id == active.agent;
+		});
+		if (here || active.tree != tree.name) {
+			continue;
+		}
+		names.push_back(active.name.empty() ? std::string_view("unnamed") : std::string_view(active.name));
+	}
+	if (names.empty()) {
+		return {};
+	}
+
+	std::string out = "another editor is mid-edit in this tree: ";
+	for (const auto [position, name] : std::views::enumerate(names)) {
+		out += position == 0 ? "" : ", ";
+		out += name;
+	}
+	return out;
+}
+
+auto gse::ide::agent::refresh_presence(data& d) -> void {
+	const time now = system_clock::now<time>();
+	const bool heartbeat = now >= d.next_presence_write;
+	if (heartbeat) {
+		d.next_presence_write = now + seconds(5.f);
+	}
+
+	for (session& s : d.sessions) {
+		const bool announce = mid_write(s) && !s.info.agent_id.empty();
+		if (!announce) {
+			if (s.published_presence) {
+				s.published_presence = false;
+				build_inbox::clear_presence(s.info.agent_id);
+			}
+			continue;
+		}
+		if (!s.published_presence || heartbeat) {
+			s.published_presence = true;
+			build_inbox::publish_presence({
+				.agent = s.info.agent_id,
+				.name = s.name,
+				.tree = config::worktree_for(s.cwd).name,
+			});
+		}
+	}
+
+	d.presence = build_inbox::take_presence();
+}
+
+auto gse::ide::agent::retire_presence(data& d) -> void {
+	for (session& s : d.sessions) {
+		if (s.published_presence) {
+			s.published_presence = false;
+			build_inbox::clear_presence(s.info.agent_id);
+		}
+	}
 }
 
 auto gse::ide::agent::hold_for(const data& d, const queued_build& queued, const bool building) -> build_hold_state {
@@ -320,18 +439,31 @@ auto gse::ide::agent::hold_for(const data& d, const queued_build& queued, const 
 	if (queued.forced || system_clock::now<time>() >= queued.requested + build_patience()) {
 		return {};
 	}
-	if (const session* blocker = blocker_for(d, queued)) {
+	if (std::string blocker = blocker_for(d, queued); !blocker.empty()) {
 		return {
 			.reason = build_hold::tree_busy,
-			.blocker = blocker->id,
+			.blocker = std::move(blocker),
 		};
 	}
 	return {};
 }
 
-auto gse::ide::agent::blocker_name(const data& d, const std::uint32_t blocker) -> std::string_view {
-	const auto found = std::ranges::find(d.sessions, blocker, &session::id);
-	return found == d.sessions.end() || found->name.empty() ? std::string_view("unnamed") : std::string_view(found->name);
+auto gse::ide::agent::blocker_name(const data& d, const std::string_view blocker) -> std::string {
+	if (blocker.empty()) {
+		return {};
+	}
+
+	for (const session& s : d.sessions) {
+		if (s.info.agent_id == blocker) {
+			return s.name.empty() ? "unnamed" : s.name;
+		}
+	}
+	for (const build_inbox::presence& active : d.presence) {
+		if (active.agent == blocker) {
+			return std::format("{} (another editor)", active.name.empty() ? "unnamed" : active.name);
+		}
+	}
+	return std::string(blocker);
 }
 
 auto gse::ide::agent::hold_message(const build_hold_state& hold, const std::string_view blocker) -> std::string {
@@ -382,10 +514,27 @@ auto gse::ide::agent::queue_label(const queued_build& queued) -> std::string {
 auto gse::ide::agent::accept_requests(data& d) -> void {
 	const time now = system_clock::now<time>();
 
-	for (build_inbox::request& incoming : build_inbox::take_requests()) {
+	for (build_inbox::request& incoming : build_inbox::peek_requests()) {
+		const config::worktree* origin = incoming.cwd.empty() ? &config::primary() : config::owning_worktree(incoming.cwd);
+		if (!origin) {
+			continue;
+		}
+		if (!incoming.project.empty()) {
+			std::error_code ec;
+			const bool same_project = std::filesystem::equivalent(incoming.project, config::project_root(), ec);
+			if (ec || !same_project) {
+				continue;
+			}
+		}
+		build_inbox::consume_request(incoming.id);
+
 		queued_build queued{
 			.id = std::move(incoming.id),
 			.agent = std::move(incoming.agent),
+			.profile = std::move(incoming.profile),
+			.config = std::move(incoming.config),
+			.cwd = std::move(incoming.cwd),
+			.project = std::move(incoming.project),
 			.requested = now,
 		};
 
@@ -401,15 +550,12 @@ auto gse::ide::agent::accept_requests(data& d) -> void {
 			continue;
 		}
 		queued.run = incoming.run;
+		queued.tree = queued.target == build_runner::build_target::editor ? nullptr : origin;
 
 		if (!incoming.tree.empty()) {
-			for (const config::worktree& candidate : config::worktrees()) {
-				if (candidate.name == incoming.tree) {
-					queued.tree = &candidate;
-					break;
-				}
-			}
-			if (!queued.tree) {
+			const std::span<const config::worktree> trees = config::worktrees();
+			const auto named = std::ranges::find(trees, incoming.tree, &config::worktree::name);
+			if (named == trees.end()) {
 				build_inbox::publish({
 					.id = queued.id,
 					.outcome = build_inbox::status::rejected,
@@ -417,19 +563,22 @@ auto gse::ide::agent::accept_requests(data& d) -> void {
 				});
 				continue;
 			}
+			queued.tree = &*named;
 		}
 
 		const auto same_slot = [&queued](const queued_build& existing) {
 			return !existing.agent.empty() && existing.agent == queued.agent
 				&& existing.target == queued.target
 				&& existing.run == queued.run
-				&& existing.tree == queued.tree;
+				&& existing.tree == queued.tree
+				&& existing.profile == queued.profile
+				&& existing.config == queued.config;
 		};
 		if (const auto held = std::ranges::find_if(d.inbox_queue, same_slot); held != d.inbox_queue.end()) {
 			log::println(log::level::info, log::category::task, "build inbox: agent '{}' re-attached to its queued {} build ({} -> {})", queued.agent, incoming.target, held->id, queued.id);
 			held->id = std::move(queued.id);
 			held->reported = build_hold::none;
-			held->blocker = 0;
+			held->blocker.clear();
 			continue;
 		}
 
@@ -457,7 +606,12 @@ auto gse::ide::agent::report_hold(queued_build& queued, const build_hold_state& 
 }
 
 auto gse::ide::agent::accept_hibernations(data& d) -> void {
-	for (build_inbox::hibernate_request& incoming : build_inbox::take_hibernations()) {
+	for (build_inbox::hibernate_request& incoming : build_inbox::peek_hibernations()) {
+		if (!incoming.cwd.empty() && !config::owning_worktree(incoming.cwd)) {
+			continue;
+		}
+		build_inbox::consume_hibernation(incoming.id);
+
 		const auto found = std::ranges::find_if(d.sessions, [&incoming](const session& s) {
 			return s.info.agent_id == incoming.agent;
 		});
@@ -510,12 +664,12 @@ auto gse::ide::agent::wake_observers(data& d, const build_runner::build_finished
 			? "The build you were waiting on succeeded and your edits are in the current binaries."
 			: "The build you were waiting on failed.";
 		if (!finished.succeeded && !s.blame.empty()) {
-			lead += " These errors are in files you edited:\n" + blame_prompt({}, s.blame);
+			lead += " These errors land on lines you wrote:\n" + blame_prompt({}, s.blame);
 			s.blame.clear();
 			s.blame_build = {};
 		}
 		else if (!finished.succeeded) {
-			lead += " None of the errors are in files you edited, so do not try to fix them - report that and stop.";
+			lead += " None of the errors land on lines you wrote, so do not try to fix them - report that and stop.";
 		}
 
 		if (!s.running && !launch_session(s)) {
@@ -537,6 +691,10 @@ auto gse::ide::agent::request_of(const queued_build& queued) -> build_inbox::req
 		.agent = queued.agent,
 		.target = queued.target == build_runner::build_target::editor ? "editor" : "game",
 		.tree = queued.tree ? queued.tree->name : std::string{},
+		.profile = queued.profile,
+		.config = queued.config,
+		.cwd = queued.cwd,
+		.project = queued.project,
 		.run = queued.run,
 	};
 }
@@ -604,10 +762,13 @@ auto gse::ide::agent::hand_off_builds(data& d, const bool relaunching) -> void {
 auto gse::ide::agent::poll_build_inbox(data& d, const channel_write<build_runner::build_request> builds, const bool building) -> void {
 	const time now = system_clock::now<time>();
 
-	if (!d.inbox_active.empty() && !building && now >= d.inbox_dispatch_deadline) {
-		log::println(log::level::info, log::category::task, "build inbox: the editor took a different build, so {} request(s) go back in the queue", d.inbox_active.size());
-		d.inbox_queue.insert(d.inbox_queue.begin(), std::make_move_iterator(d.inbox_active.begin()), std::make_move_iterator(d.inbox_active.end()));
-		d.inbox_active.clear();
+	if (!d.inbox_active.empty()) {
+		d.inbox_started = d.inbox_started || building;
+		if (!d.inbox_started && !building && now >= d.inbox_dispatch_deadline) {
+			log::println(log::level::info, log::category::task, "build inbox: the editor took a different build, so {} request(s) go back in the queue", d.inbox_active.size());
+			d.inbox_queue.insert(d.inbox_queue.begin(), std::make_move_iterator(d.inbox_active.begin()), std::make_move_iterator(d.inbox_active.end()));
+			d.inbox_active.clear();
+		}
 	}
 
 	if (now < d.next_inbox_poll) {
@@ -653,11 +814,13 @@ auto gse::ide::agent::poll_build_inbox(data& d, const channel_write<build_runner
 	const build_runner::build_target target = head.target;
 	const bool run = head.run;
 	const config::worktree* tree = head.tree;
+	const std::string profile = head.profile;
+	const std::string config = head.config;
 
 	std::vector<queued_build> group;
 	std::vector<queued_build> deferred;
 	for (queued_build& queued : d.inbox_queue) {
-		if (queued.target == target && queued.run == run && queued.tree == tree) {
+		if (queued.target == target && queued.run == run && queued.tree == tree && queued.profile == profile && queued.config == config) {
 			group.push_back(std::move(queued));
 		}
 		else {
@@ -670,12 +833,15 @@ auto gse::ide::agent::poll_build_inbox(data& d, const channel_write<build_runner
 	builds.push<build_runner::build_request>({
 		.target = target,
 		.run_after = run,
+		.config = config,
+		.profile = profile,
 		.tree = tree,
 		.inbox_id = group.front().id,
 	});
 
 	d.inbox_active = std::move(group);
 	d.inbox_dispatch_deadline = now + seconds(5.f);
+	d.inbox_started = false;
 	d.inbox_queue = std::move(deferred);
 }
 
@@ -684,7 +850,7 @@ auto gse::ide::agent::publish_inbox_result(data& d, const build_runner::build_fi
 		return;
 	}
 
-	std::vector<const session*> owners;
+	std::vector<blame_match> owners;
 	owners.reserve(finished.errors.size());
 	for (const build_runner::build_error& error : finished.errors) {
 		owners.push_back(blame_owner(d, error));
@@ -702,12 +868,14 @@ auto gse::ide::agent::publish_inbox_result(data& d, const build_runner::build_fi
 
 		std::vector<std::string> mine;
 		std::vector<std::string> theirs;
+		std::vector<std::string> unattributed;
 		std::uint32_t owned = 0;
 		for (std::size_t index = 0; index < finished.errors.size(); ++index) {
 			const build_runner::build_error& error = finished.errors[index];
-			const session* owner = owners[index];
-			const bool is_mine = !owner || (!waiter.agent.empty() && owner->info.agent_id == waiter.agent);
-			std::vector<std::string>& into = is_mine ? mine : theirs;
+			const blame_match& match = owners[index];
+			const session* owner = match.owner;
+			const bool is_mine = owner && !waiter.agent.empty() && owner->info.agent_id == waiter.agent;
+			std::vector<std::string>& into = is_mine ? mine : owner ? theirs : unattributed;
 			owned += is_mine ? 1 : 0;
 
 			into.push_back(std::format("{}:{}: {}", error.file.generic_display_string(), error.line, error.message));
@@ -720,13 +888,16 @@ auto gse::ide::agent::publish_inbox_result(data& d, const build_runner::build_fi
 					? std::format("  related {} - chat '{}' is editing it", related.generic_display_string(), touching->name)
 					: "  related " + related.generic_display_string());
 			}
-			if (!is_mine) {
-				theirs.push_back(std::format("  ^ chat '{}' owns this", owner->name.empty() ? std::string("unnamed") : owner->name));
+			if (owner && !is_mine) {
+				const std::string_view owner_name = owner->name.empty() ? "unnamed" : owner->name;
+				theirs.push_back(match.at_line
+					? std::format("  ^ chat '{}' wrote this line", owner_name)
+					: std::format("  ^ chat '{}' edited this file, but not this line", owner_name));
 			}
 		}
 
 		outcome.owned = owned;
-		if (mine.empty() && theirs.empty()) {
+		if (mine.empty() && theirs.empty() && unattributed.empty()) {
 			outcome.lines.emplace_back("the build failed without a parseable diagnostic; open the build stream in the editor terminal");
 		}
 		if (!mine.empty()) {
@@ -735,9 +906,20 @@ auto gse::ide::agent::publish_inbox_result(data& d, const build_runner::build_fi
 		}
 		if (!theirs.empty()) {
 			outcome.lines.emplace_back(mine.empty()
-				? "none of these errors are in files you edited - your own work is not implicated, and fixing them is not your job:"
+				? "none of these errors land on lines you wrote - your own work is not implicated, and fixing them is not your job:"
 				: "errors owned by other chats - do not act on these:");
 			outcome.lines.insert(outcome.lines.end(), theirs.begin(), theirs.end());
+		}
+		if (!unattributed.empty()) {
+			outcome.lines.emplace_back(mine.empty()
+				? "errors nobody in this editor edited - another editor instance or a hand edit owns them. Check whether they relate to your change before touching anything:"
+				: "errors nobody in this editor edited - likely another editor instance; do not assume they are yours:");
+			outcome.lines.insert(outcome.lines.end(), unattributed.begin(), unattributed.end());
+
+			const std::string elsewhere = active_elsewhere(d, waiter);
+			if (!elsewhere.empty()) {
+				outcome.lines.push_back("  " + elsewhere);
+			}
 		}
 		build_inbox::publish(outcome);
 	}

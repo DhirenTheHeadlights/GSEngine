@@ -1,13 +1,11 @@
 module gse.ide.graph;
 
-import std;
-
 import gse;
 import gse.graph;
-
-import gse.ide.search;
 import gse.ide.analysis;
 import gse.ide.navigation;
+import gse.ide.search;
+import std;
 
 namespace gse::ide {
 	constexpr vec4f category_palette[] = {
@@ -245,10 +243,10 @@ auto gse::ide::collect_relations(const graph_data& gd, const std::uint64_t id) -
 				.qualified = peer->name,
 				.target = has_file
 					? std::optional{ search::location{
-						.path = peer->file,
-						.line = peer->line,
-						.column = peer->column,
-					} }
+					.path = peer->file,
+					.line = peer->line,
+					.column = peer->column,
+				} }
 					: std::nullopt,
 				.linkable = has_file,
 			});
@@ -995,10 +993,10 @@ auto gse::ide::draw_detail_panel(gui::builder& ui, const rectf& panel, graph_dat
 		.layer = render_layer::overlay,
 	});
 
-	const gui::layer_scope detail_layer = ctx.scoped_layer(render_layer::overlay);
-	const gui::layout::within_scope detail_area = gui::layout::within(ctx, panel);
-	const gui::ids::scope detail_id_scope(*gd.selected);
-	const gui::scroll_handle detail_view = gui::scroll_region(ctx, {
+	const gui::layer_scope _ = ctx.scoped_layer(render_layer::overlay);
+	const gui::layout::within_scope _ = gui::layout::within(ctx, panel);
+	const gui::ids::scope _(*gd.selected);
+	const gui::scroll_handle _ = gui::scroll_region(ctx, {
 		.id = "graph_detail",
 	});
 	gui::layout::skip(ctx, pad);

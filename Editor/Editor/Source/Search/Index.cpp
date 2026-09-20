@@ -1,14 +1,14 @@
 module gse.ide.search:index_impl;
 
-import std;
 import gse;
-import gse.win32;
 import gse.ide.analysis;
 import gse.ide.diagnostic;
 import gse.ide.lint;
+import gse.win32;
+import std;
 
-import :types;
 import :index;
+import :types;
 
 auto gse::ide::search::unexpected_lookup(const lookup_failure reason, std::string subject) -> std::unexpected<lookup_error> {
 	return std::unexpected(lookup_error{
@@ -632,6 +632,10 @@ auto gse::ide::search::params_on_line(const symbol_index& index, const file_id f
 	return out.empty() ? "(none)" : out;
 }
 
+auto gse::ide::search::index_cancelled(const index_state& idx) -> bool {
+	return idx.cancel.load(std::memory_order_acquire) || idx.stop.stop_requested() || task::shutting_down();
+}
+
 auto gse::ide::search::begin_index_phase(index_state& idx, const index_phase phase, const std::size_t total) -> void {
 	log_index_phase_completion(idx);
 	idx.progress_total.store(total, std::memory_order_relaxed);
@@ -653,19 +657,21 @@ auto gse::ide::search::end_index_progress(index_state& idx) -> void {
 	idx.progress_done.store(0, std::memory_order_relaxed);
 	idx.phase_started.store(time_t<double>{}, std::memory_order_relaxed);
 	idx.phase.store(index_phase::idle, std::memory_order_release);
+	idx.building.store(false, std::memory_order_release);
 }
 
-auto gse::ide::search::run_symbol_batch(const symbol_batch_request& request, index_state& idx, const std::stop_token stop) -> std::vector<analysis::tu_symbols> {
+auto gse::ide::search::run_symbol_batch(const symbol_batch_request& request, index_state& idx) -> std::vector<analysis::tu_symbols> {
 	const auto& [list, plugin_dll, roots, workers, compile_phase] = request;
 	std::vector<analysis::tu_symbols> out(list.size());
 	const std::size_t n = std::min(workers, list.size());
+	const std::stop_token stop = idx.stop.get_token();
 	auto run_parallel = [&](auto&& fn) {
 		std::atomic<std::size_t> next = 0;
-		std::vector<std::thread> pool;
+		task::group pool(trace_id<"symidx::batch">(), task::lane::background);
 		for (std::size_t worker = 0; worker < n; ++worker) {
-			pool.emplace_back([&] {
+			pool.post([&] {
 				while (true) {
-					if (idx.cancel.load(std::memory_order_acquire)) {
+					if (index_cancelled(idx)) {
 						break;
 					}
 					const std::size_t i = next.fetch_add(1, std::memory_order_relaxed);
@@ -677,9 +683,7 @@ auto gse::ide::search::run_symbol_batch(const symbol_batch_request& request, ind
 				}
 			});
 		}
-		for (std::thread& thread : pool) {
-			thread.join();
-		}
+		pool.wait();
 	};
 
 	begin_index_phase(idx, index_phase::checking_modules, list.size());
@@ -690,7 +694,7 @@ auto gse::ide::search::run_symbol_batch(const symbol_batch_request& request, ind
 			out[i].failure_detail = module_graph.error();
 		}
 	});
-	if (idx.cancel.load(std::memory_order_acquire)) {
+	if (index_cancelled(idx)) {
 		return out;
 	}
 
@@ -777,7 +781,7 @@ auto gse::ide::search::report_lookup_failure(const index_state& index, const loo
 	const std::uint64_t generation = index.generation.load(std::memory_order_acquire);
 	const std::string path = probe.file.generic_display_string();
 
-	std::shared_lock lock(index.mutex);
+	std::shared_lock _(index.mutex);
 	const file_id fid = canonical_path_id(probe.file).second;
 	const index_phase phase = index.phase.load(std::memory_order_acquire);
 	const index_phase_info info = annotation_from_enum<index_phase_info>(phase, {});
@@ -821,7 +825,7 @@ auto gse::ide::search::report_lookup_failure(const index_state& index, const loo
 }
 
 auto gse::ide::search::index_state::definition_at(const std::filesystem::path& file, const std::uint32_t line, const std::uint32_t column) const -> std::expected<location, lookup_error> {
-	std::shared_lock lock(mutex);
+	std::shared_lock _(mutex);
 	const file_id fid = canonical_path_id(file).second;
 	if (!symbols_ready.load(std::memory_order_acquire) || pending_symbol_files.contains(fid)) {
 		return unexpected_lookup(lookup_failure::index_building, file.generic_display_string());
@@ -859,7 +863,7 @@ auto gse::ide::search::index_state::definition_at(const std::filesystem::path& f
 }
 
 auto gse::ide::search::index_state::symbol_at(const std::filesystem::path& file, const std::uint32_t line, const std::uint32_t column) const -> std::expected<hover_hit, lookup_error> {
-	std::shared_lock lock(mutex);
+	std::shared_lock _(mutex);
 	const file_id fid = canonical_path_id(file).second;
 	if (!symbols_ready.load(std::memory_order_acquire) || pending_symbol_files.contains(fid)) {
 		return unexpected_lookup(lookup_failure::index_building, file.generic_display_string());
@@ -915,7 +919,7 @@ auto gse::ide::search::index_state::symbol_at(const std::filesystem::path& file,
 }
 
 auto gse::ide::search::index_state::symbol_definition(const std::string_view name, const std::string_view qualifier, const std::filesystem::path& click_file) const -> std::expected<location, lookup_error> {
-	std::shared_lock lock(mutex);
+	std::shared_lock _(mutex);
 	if (!symbols_ready.load(std::memory_order_acquire)) {
 		return unexpected_lookup(lookup_failure::index_building, std::string(name));
 	}
@@ -957,7 +961,7 @@ auto gse::ide::search::index_state::module_definition(const std::string_view nam
 	}
 	std::string target(name);
 	const file_id file_identity = canonical_path_id(click_file).second;
-	std::shared_lock lock(mutex);
+	std::shared_lock _(mutex);
 	if (!files.loaded.load(std::memory_order_acquire)) {
 		return unexpected_lookup(lookup_failure::index_building, target);
 	}
@@ -1003,7 +1007,7 @@ auto gse::ide::search::index_state::module_definition(const std::string_view nam
 }
 
 auto gse::ide::search::index_state::declaration_of(const std::string_view name, const std::string_view qualifier) const -> std::expected<hover_hit, lookup_error> {
-	std::shared_lock lock(mutex);
+	std::shared_lock _(mutex);
 	if (!symbols_ready.load(std::memory_order_acquire)) {
 		return unexpected_lookup(lookup_failure::index_building, std::string(name));
 	}
@@ -1058,7 +1062,7 @@ auto gse::ide::search::index_state::declaration_of(const std::string_view name, 
 }
 
 auto gse::ide::search::index_state::semantic_kind_of(const std::string_view name) const -> std::expected<analysis::semantic_kind, lookup_error> {
-	std::shared_lock lock(mutex);
+	std::shared_lock _(mutex);
 	if (!symbols_ready.load(std::memory_order_acquire)) {
 		return unexpected_lookup(lookup_failure::index_building, std::string(name));
 	}
@@ -1077,7 +1081,7 @@ auto gse::ide::search::index_state::semantic_kind_of(const std::string_view name
 }
 
 auto gse::ide::search::index_state::semantic_tokens_in(const std::filesystem::path& file, const std::uint32_t line_begin, const std::uint32_t line_end) const -> std::vector<positioned_kind> {
-	std::shared_lock lock(mutex);
+	std::shared_lock _(mutex);
 	std::vector<positioned_kind> out;
 	const file_id fid = canonical_path_id(file).second;
 	if (!symbols.files.contains(fid)) {
@@ -1221,7 +1225,7 @@ auto gse::ide::search::build_files_and_content(index_state& idx, const std::span
 	}
 	rebuild_module_lookups(module_defs);
 	{
-		std::lock_guard lock(idx.build_mutex);
+		std::lock_guard _(idx.build_mutex);
 		idx.completed_files.emplace();
 		idx.completed_files->modules = std::move(module_defs);
 		idx.completed_files->files = std::move(files);
@@ -1266,7 +1270,7 @@ auto gse::ide::search::update_file(index_state& idx, const std::filesystem::path
 		}
 	}
 
-	std::unique_lock lock(idx.mutex);
+	std::unique_lock _(idx.mutex);
 	if (regular && is_symbol_source(resolved)) {
 		idx.pending_symbol_files.insert(file_identity);
 	}
@@ -1436,7 +1440,7 @@ auto gse::ide::search::save_tu_cache(const std::filesystem::path& path, const an
 	}
 	std::filesystem::path temporary = path;
 	temporary += std::format(".{}.tmp", win32::GetCurrentProcessId());
-	const auto remove_temporary = make_scope_exit([&] {
+	const auto _ = make_scope_exit([&] {
 		std::error_code remove_ec;
 		std::filesystem::remove(temporary, remove_ec);
 	});
@@ -1490,19 +1494,18 @@ auto gse::ide::search::load_tu_cache(const std::filesystem::path& path, const an
 	return static_cast<bool>(in) && out.set.complete;
 }
 
-auto gse::ide::search::symbol_worker_loop(const std::stop_token stop, index_state* idx) -> void {
+auto gse::ide::search::symbol_build_job(index_state& idx) -> void {
 	while (true) {
 		{
-			std::unique_lock lock(idx->build_mutex);
-			while (!idx->build_requested && !idx->build_stop) {
-				idx->build_cv.wait(lock);
-			}
-			if (idx->build_stop) {
+			std::lock_guard _(idx.build_mutex);
+			if (!idx.build_requested) {
+				idx.build_scheduled = false;
+				idx.build_idle.notify_all();
 				return;
 			}
-			idx->build_requested = false;
+			idx.build_requested = false;
 		}
-		build_symbols(*idx, stop);
+		build_symbols(idx);
 	}
 }
 
@@ -1522,40 +1525,40 @@ gse::ide::search::index_state::index_state() : current_search_snapshot(std::make
 })) {}
 
 gse::ide::search::index_state::~index_state() {
-	cancel.store(true, std::memory_order_release);
-	{
-		std::lock_guard lock(build_mutex);
-		build_stop = true;
-	}
-	build_cv.notify_all();
+	stop.request_stop();
+	std::unique_lock lock(build_mutex);
+	build_requested = false;
+	build_idle.wait(lock, [this] {
+		return !build_scheduled;
+	});
 }
 
 auto gse::ide::search::index_state::query_snapshot() const -> std::shared_ptr<const search_snapshot> {
-	std::shared_lock lock(mutex);
+	std::shared_lock _(mutex);
 	return current_search_snapshot;
 }
 
-auto gse::ide::search::start_symbol_worker(index_state& idx) -> void {
-	idx.build_worker = std::jthread(symbol_worker_loop, &idx);
-}
-
 auto gse::ide::search::request_symbol_build(index_state& idx) -> void {
-	{
-		std::lock_guard lock(idx.build_mutex);
-		idx.build_requested = true;
+	std::lock_guard _(idx.build_mutex);
+	idx.build_requested = true;
+	if (idx.build_scheduled) {
+		return;
 	}
-	idx.build_cv.notify_one();
+	idx.build_scheduled = true;
+	task::post_background(
+		[&idx] {
+			symbol_build_job(idx);
+		},
+		trace_id<"symidx::build">()
+	);
 }
 
-auto gse::ide::search::build_symbols(index_state& idx, std::stop_token stop) -> void {
+auto gse::ide::search::build_symbols(index_state& idx) -> void {
 	if (idx.compile_commands.empty() || idx.plugin_dll.empty()) {
 		idx.symbols_ready.store(true, std::memory_order_release);
 		return;
 	}
-	bool expected = false;
-	if (!idx.building.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
-		return;
-	}
+	idx.building.store(true, std::memory_order_release);
 	begin_index_phase(idx, index_phase::loading_database, idx.compile_commands.size());
 
 	std::vector<std::pair<std::filesystem::path, std::shared_ptr<const analysis::compilation_database>>> databases;
@@ -1572,12 +1575,11 @@ auto gse::ide::search::build_symbols(index_state& idx, std::stop_token stop) -> 
 	if (databases.empty()) {
 		idx.symbols_ready.store(true, std::memory_order_release);
 		end_index_progress(idx);
-		idx.building.store(false, std::memory_order_release);
 		return;
 	}
 
 	std::size_t entry_count = 0;
-	for (const auto& [path, database] : databases) {
+	for (const auto& [_, database] : databases) {
 		entry_count += database->entries.size();
 	}
 
@@ -1617,7 +1619,7 @@ auto gse::ide::search::build_symbols(index_state& idx, std::stop_token stop) -> 
 		idx.progress_done.fetch_add(1, std::memory_order_relaxed);
 	}
 
-	const std::size_t round0 = std::max<std::size_t>(2, task::thread_count() / 2);
+	const std::size_t round0 = task::background_thread_count();
 	std::size_t compiled = 0;
 	std::vector<std::filesystem::path> root_paths;
 	root_paths.reserve(idx.roots.size());
@@ -1632,17 +1634,19 @@ auto gse::ide::search::build_symbols(index_state& idx, std::stop_token stop) -> 
 				.workers = round == 0 ? round0 : 1,
 				.phase = round == 0 ? index_phase::compiling : index_phase::retrying,
 			},
-			idx,
-			stop
+			idx
 		);
-		if (idx.cancel.load(std::memory_order_acquire)) {
+		if (index_cancelled(idx)) {
 			end_index_progress(idx);
-			idx.building.store(false, std::memory_order_release);
 			return;
 		}
 		begin_index_phase(idx, index_phase::saving_results, results.size());
 		std::vector<const analysis::compilation_entry*> next_round;
 		for (std::size_t i = 0; i < results.size(); ++i) {
+			if (index_cancelled(idx)) {
+				end_index_progress(idx);
+				return;
+			}
 			analysis::tu_symbols& result = results[i];
 			if (result.failure == analysis::symbol_index_failure::none && result.set.complete) {
 				if (const std::expected<void, std::string> saved = save_tu_cache(tu_cache_path(idx, *pending[i]), *pending[i], idx.plugin_dll, result, file_fingerprints); !saved) {
@@ -1752,6 +1756,7 @@ auto gse::ide::search::build_symbols(index_state& idx, std::stop_token stop) -> 
 			.quals = tu.set.quals,
 			.template_args = tu.set.template_args,
 			.unused_locals = tu.set.unused_locals,
+			.narrowable_imports = tu.set.narrowable_imports,
 		})) {
 			if (!indexed_cached(idx.roots, finding.file, indexed_paths)) {
 				continue;
@@ -1768,7 +1773,7 @@ auto gse::ide::search::build_symbols(index_state& idx, std::stop_token stop) -> 
 	build_symbol_lookups(local, &idx.progress_done);
 	begin_index_phase(idx, index_phase::sorting_locations, local.symbols_by_file.size() + local.xrefs.size());
 	sort_symbol_locations(local, &idx.progress_done);
-	for (auto& [path, failure, reason] : build_failures) {
+	for (auto& [path, _, reason] : build_failures) {
 		const file_id file = local.file_for(path);
 		local.failures.emplace(file, std::move(reason));
 	}
@@ -1776,7 +1781,7 @@ auto gse::ide::search::build_symbols(index_state& idx, std::stop_token stop) -> 
 	log::println(
 		log::level::info,
 		log::category::general,
-		"[symidx] {} TUs, {} cached, {} compiled, {} failed, {} symbols, {} references, {} semantic tokens, {} files, {} indexed paths",
+		"[symidx] {} TUs, {} cached, {} compiled, {} failed, {} symbols, {} references, {} semantic tokens, {} files, {} indexed paths, {} lints ({} unused imports, {} narrowable) in {} files",
 		tus.size(),
 		cached,
 		compiled,
@@ -1785,11 +1790,15 @@ auto gse::ide::search::build_symbols(index_state& idx, std::stop_token stop) -> 
 		reference_count,
 		semantic_token_count,
 		local.files.size(),
-		indexed_files.size()
+		indexed_files.size(),
+		local.lints.size(),
+		std::ranges::count(local.lints, lint_rule::unused_import, &lint_entry::rule),
+		std::ranges::count(local.lints, lint_rule::narrow_import, &lint_entry::rule),
+		std::unordered_set<file_id>(std::from_range, local.lints | std::views::transform(&lint_entry::file)).size()
 	);
 
 	{
-		std::lock_guard lock(idx.build_mutex);
+		std::lock_guard _(idx.build_mutex);
 		idx.completed_symbols.emplace(std::move(local));
 	}
 	begin_index_phase(idx, index_phase::publishing, 1);
@@ -1872,7 +1881,7 @@ auto gse::ide::search::apply_symbol_overlay(symbol_index& index, const symbol_ov
 }
 
 auto gse::ide::search::index_state::merge_file_symbols(const std::filesystem::path& file, const std::span<const analysis::symbol_token> syms, const std::span<const analysis::symbol_ref> refs, const std::span<const analysis::param_token> params, const std::unordered_map<file_id, std::filesystem::path>& files) -> void {
-	std::unique_lock lock(mutex);
+	std::unique_lock _(mutex);
 	const auto [canonical, fid] = canonical_path_id(file);
 	symbol_overlay& overlay = symbol_overlays[fid];
 	overlay = build_symbol_overlay(canonical, fid, syms, refs, params, files);
@@ -1885,7 +1894,7 @@ auto gse::ide::search::index_state::merge_file_symbols(const std::filesystem::pa
 auto gse::ide::search::publish_file_build(index_state& idx) -> void {
 	std::optional<file_build_result> completed;
 	{
-		std::lock_guard lock(idx.build_mutex);
+		std::lock_guard _(idx.build_mutex);
 		if (!idx.completed_files) {
 			return;
 		}
@@ -1894,7 +1903,7 @@ auto gse::ide::search::publish_file_build(index_state& idx) -> void {
 	}
 
 	{
-		std::unique_lock lock(idx.mutex);
+		std::unique_lock _(idx.mutex);
 		idx.modules = std::move(completed->modules);
 		idx.files.entries = std::move(completed->files);
 		idx.content.entries = std::move(completed->content);
@@ -1908,7 +1917,7 @@ auto gse::ide::search::publish_file_build(index_state& idx) -> void {
 auto gse::ide::search::publish_symbol_build(index_state& idx) -> void {
 	std::optional<symbol_index> completed;
 	{
-		std::lock_guard lock(idx.build_mutex);
+		std::lock_guard _(idx.build_mutex);
 		if (idx.completed_symbols) {
 			completed.emplace(std::move(*idx.completed_symbols));
 			idx.completed_symbols.reset();
@@ -1919,7 +1928,7 @@ auto gse::ide::search::publish_symbol_build(index_state& idx) -> void {
 	}
 
 	{
-		std::unique_lock lock(idx.mutex);
+		std::unique_lock _(idx.mutex);
 		if (!idx.symbol_overlays.empty()) {
 			for (const symbol_overlay& overlay : idx.symbol_overlays | std::views::values) {
 				apply_symbol_overlay(*completed, overlay, false);
@@ -1934,5 +1943,4 @@ auto gse::ide::search::publish_symbol_build(index_state& idx) -> void {
 	idx.symbols_ready.store(true, std::memory_order_release);
 	idx.progress_done.store(1, std::memory_order_release);
 	end_index_progress(idx);
-	idx.building.store(false, std::memory_order_release);
 }

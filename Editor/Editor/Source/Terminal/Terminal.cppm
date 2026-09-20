@@ -1,11 +1,10 @@
 export module gse.ide.terminal:terminal_panel;
 
-import std;
 import gse;
 import gse.ide.agent;
 import gse.ide.build;
 import gse.ide.navigation;
-import gse.win32;
+import std;
 
 export namespace gse::ide::terminal {
 	constexpr std::string_view panel_name = "Terminal";
@@ -70,7 +69,7 @@ export namespace gse::ide::terminal {
 		std::string input;
 		gui::text_input_state input_state;
 		std::shared_ptr<command_runner> runner;
-		std::jthread worker;
+		task::thread worker;
 		std::vector<dispatch_marker> dispatches;
 		bool interactive = true;
 		build_runner::stream_kind kind = build_runner::stream_kind::none;
@@ -91,6 +90,15 @@ export namespace gse::ide::terminal {
 		float strip_width = 140.f;
 		gui::layout::split_drag_state resizing_strip;
 		std::optional<id> pending_close;
+		std::vector<build_runner::build_profile> profiles;
+		std::string active_profile;
+		std::vector<std::string> profile_options;
+		std::vector<std::string> config_options;
+		gui::dropdown_state profile_dropdown;
+		gui::dropdown_state config_dropdown;
+		gui::text_input_state profile_name_state;
+		std::size_t editing_index = 0;
+		bool editing_profiles = false;
 	};
 
 	[[= system_init{}]]
@@ -103,7 +111,7 @@ export namespace gse::ide::terminal {
 		context& ctx,
 		data& d,
 		channel_read<build_runner::stream_opened, agent::blame_offer> stream_in,
-		channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> ui_out,
+		channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, gui::menu_content, jump_to_request, set_cursor_shape_request> ui_out,
 		shared_view<build_runner::data> build_d
 	) -> async::task<>;
 
@@ -119,7 +127,7 @@ export namespace gse::ide::terminal {
 	auto draw_panel(
 		gui::builder& ui,
 		data& d,
-		channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels,
+		channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels,
 		bool building
 	) -> void;
 }

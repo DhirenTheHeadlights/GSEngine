@@ -1,29 +1,28 @@
 export module gse.graphics:settings_screen;
 
-import std;
-
-import gse.core;
-import gse.math;
-import gse.os;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
+import gse.math;
+import gse.os;
 import gse.save;
 import gse.shell;
+import gse.time;
+import std;
 
-import :types;
-import :ids;
 import :builder;
+import :ids;
 import :interaction;
-import :menu_stack;
-import :styles;
 import :layout_ops;
+import :menu_stack;
 import :nav_item_widget;
-import :settings;
 import :render_layer;
+import :settings;
+import :styles;
 import :symbols;
+import :types;
 
 export namespace gse::gui {
 	struct settings_screen_config {
@@ -76,6 +75,10 @@ export namespace gse::gui {
 			const rect_t<vec2f>& rect
 		) -> void;
 
+		auto scope_paths_height(
+			const style& sty
+		) const -> float;
+
 		auto draw_scope_paths(
 			draw_context& ctx,
 			const rect_t<vec2f>& rect
@@ -114,6 +117,7 @@ export namespace gse::gui {
 		footer_status_cache m_footer_status;
 
 		static constexpr float backdrop_alpha = 0.55f;
+		static constexpr float scope_line_scale = 1.15f;
 	};
 }
 
@@ -275,23 +279,40 @@ auto gse::gui::settings_screen::build(builder& ui, nav& n) -> void {
 		.texture = ctx.blank_texture,
 	});
 
-	{
-		auto scope = lo::within(ctx, sidebar);
-		lo::skip(ctx, sty.padding);
-		for (const auto& cat : m_categories) {
-			const bool selected = m_selected_category == cat;
-			if (ui.draw<nav_item>({
-				.text = cat,
-				.selected = selected,
-			})) {
-				m_selected_category = cat;
-			}
+	const auto [category_band, scope_band] = lo::split_vertical<2>(
+		sidebar,
+		{
+			spec::flex(),
+			spec::px(scope_paths_height(sty)),
 		}
-		draw_scope_paths(ctx, sidebar);
-	}
+	);
 
 	{
-		auto scope = lo::within(ctx, content);
+		const rect_t<vec2f> list_rect = lo::inset_per_side(category_band, sty.padding, 0.f, 0.f, 0.f);
+		auto _ = lo::within(ctx, list_rect);
+		ui.scroll_region(
+			{
+				.id = "settings.categories",
+				.size = list_rect.size(),
+			},
+			[&](builder& sub) {
+				for (const auto& cat : m_categories) {
+					const bool selected = m_selected_category == cat;
+					if (sub.draw<nav_item>({
+						.text = cat,
+						.selected = selected,
+					})) {
+						m_selected_category = cat;
+					}
+				}
+			}
+		);
+	}
+
+	draw_scope_paths(ctx, scope_band);
+
+	{
+		auto _ = lo::within(ctx, content);
 		lo::skip(ctx, sty.padding * 0.5f);
 		settings::panel(ui, m_panel_state, m_channels, *m_save_reg, m_selected_category);
 	}
@@ -303,9 +324,39 @@ auto gse::gui::settings_screen::draw_scope_entry(draw_context& ctx, const rect_t
 	const auto& sty = ctx.style;
 	namespace lo = gse::gui::layout;
 
+	const id entry_id = ids::make(label);
+	const bool hovered = ctx.hovers(rect);
+
+	vec4f background = sty.color_widget_hovered;
+	background.w() *= hovered ? 0.55f : 0.f;
+	ctx.queue_sprite({
+		.rect = rect,
+		.color = ctx.animated_color(entry_id, background),
+		.texture = ctx.blank_texture,
+		.corner_radius = sty.corner_radius,
+	});
+
+	const auto [icon_column, text_column] = lo::split_horizontal<2>(
+		rect,
+		{
+			lo::size_spec::px(sty.icon_extent + sty.padding * 0.75f),
+			lo::size_spec::flex(),
+		}
+	);
+
+	symbol::draw(
+		ctx,
+		symbol::folder(),
+		lo::align_in(icon_column, { sty.icon_extent, sty.icon_extent }, lo::halign::center, lo::valign::center),
+		{
+			.color = hovered ? sty.color_icon_hovered : sty.color_folder,
+			.extent = sty.icon_extent,
+		}
+	);
+
 	const float line_size = sty.font_size * 0.85f;
 	const auto [name_row, dir_row] = lo::split_vertical<2>(
-		rect,
+		text_column,
 		{
 			lo::size_spec::flex(),
 			lo::size_spec::flex(),
@@ -317,22 +368,50 @@ auto gse::gui::settings_screen::draw_scope_entry(draw_context& ctx, const rect_t
 		.text = std::format("{}  {}", label, path.filename().generic_display_string()),
 		.position = { name_row.left(), name_row.center().y() + ctx.fonts.text.resolve()->vertical_center_offset(line_size) },
 		.scale = line_size,
-		.color = sty.color_text_secondary,
+		.color = hovered ? sty.color_text : sty.color_text_secondary,
 		.clip_rect = name_row,
 	});
 
+	const float dir_size = line_size * 0.9f;
+	const std::string dir_text = path.parent_path().generic_display_string();
+	const vec4f link_color = hovered ? sty.color_accent : sty.color_text_disabled;
+	const auto code_view = ctx.fonts.code.resolve();
+	const float dir_top = dir_row.center().y() + code_view->vertical_center_offset(dir_size);
+
 	ctx.queue_text({
 		.font = ctx.fonts.code,
-		.text = path.parent_path().generic_display_string(),
-		.position = { dir_row.left(), dir_row.center().y() + ctx.fonts.code.resolve()->vertical_center_offset(line_size * 0.9f) },
-		.scale = line_size * 0.9f,
-		.color = sty.color_text_disabled,
+		.text = dir_text,
+		.position = { dir_row.left(), dir_top },
+		.scale = dir_size,
+		.color = link_color,
 		.clip_rect = dir_row,
 	});
+
+	ctx.queue_sprite({
+		.rect = rect_t<vec2f>::from_position_size(
+			{ dir_row.left(), dir_top - code_view->ascender_height(dir_size) - dir_size * 0.28f },
+			{ std::min(code_view->width(dir_text, dir_size), dir_row.width()), sty.separator_thickness }
+		),
+		.color = link_color,
+		.texture = ctx.blank_texture,
+		.clip_rect = dir_row,
+	});
+
+	if (hovered) {
+		ctx.set_tooltip(entry_id, std::format("{}\nClick to reveal in file browser", path.generic_display_string()));
+	}
 
 	if (ctx.clicked_in_rect(rect)) {
 		shell::reveal(path);
 	}
+}
+
+auto gse::gui::settings_screen::scope_paths_height(const style& sty) const -> float {
+	const int scopes = static_cast<int>(!m_save_reg->user_path().empty()) + static_cast<int>(!m_save_reg->project_path().empty());
+	if (scopes == 0) {
+		return 0.f;
+	}
+	return sty.font_size * scope_line_scale * (1.f + 2.f * static_cast<float>(scopes)) + sty.padding * 2.f;
 }
 
 auto gse::gui::settings_screen::draw_scope_paths(draw_context& ctx, const rect_t<vec2f>& rect) const -> void {
@@ -345,20 +424,19 @@ auto gse::gui::settings_screen::draw_scope_paths(draw_context& ctx, const rect_t
 		return;
 	}
 
-	const float line_height = sty.font_size * 1.15f;
-	const std::size_t scopes = static_cast<std::size_t>(!user.empty()) + static_cast<std::size_t>(!project.empty());
-	const float block_height = line_height * (1.f + 2.f * static_cast<float>(scopes));
+	const ids::scope _("settings.scope");
+	const float line_height = sty.font_size * scope_line_scale;
 
 	const rect_t<vec2f> block = lo::inset_per_side(
-		lo::align_in(rect, { rect.width(), block_height + sty.padding }, lo::halign::start, lo::valign::bottom),
-		sty.padding * 0.5f,
+		rect,
 		sty.padding,
 		sty.padding * 0.5f,
-		sty.padding * 1.5f
+		sty.padding,
+		sty.padding * 0.5f
 	);
 
 	const rect_t<vec2f> separator = rect_t<vec2f>::from_position_size(
-		{ block.left(), block.top() },
+		{ block.left(), rect.top() },
 		{ block.width(), sty.separator_thickness }
 	);
 	ctx.queue_sprite({

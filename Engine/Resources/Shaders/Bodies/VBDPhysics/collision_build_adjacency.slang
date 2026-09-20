@@ -1,5 +1,7 @@
 
 static const uint ELEMS_PER_THREAD = (max_bodies + adjacency_workgroup_size - 1) / adjacency_workgroup_size;
+groupshared uint gs_scan_c[adjacency_workgroup_size];
+groupshared uint gs_scan_j[adjacency_workgroup_size];
 
 void collision_build_adjacency(uint3 dispatch_id, uint3 group_thread_id) {
     uint tid = group_thread_id.x;
@@ -18,6 +20,7 @@ for (uint k0 = 0; k0 < ELEMS_PER_THREAD; k0++) {
 for (uint gi = tid; gi < (body_count + 31u) / 32u; gi += adjacency_workgroup_size) {
     grounded_bits[gi] = 0;
 }
+if (tid == 0) unowned_contacts[0] = 0;
 AllMemoryBarrierWithGroupSync();
 
 for (uint ci = tid; ci < num_contacts; ci += adjacency_workgroup_size) {
@@ -45,46 +48,43 @@ for (uint ji = tid; ji < num_joints; ji += adjacency_workgroup_size) {
 }
 AllMemoryBarrierWithGroupSync();
 
+uint lane_first = tid * ELEMS_PER_THREAD;
+uint cv[ELEMS_PER_THREAD];
+uint jv[ELEMS_PER_THREAD];
+uint lane_c = 0;
+uint lane_j = 0;
 [unroll]
 for (uint k1 = 0; k1 < ELEMS_PER_THREAD; k1++) {
-    uint bi = tid + k1 * adjacency_workgroup_size;
-    if (bi < body_count) {
-        contact_offsets[bi] = contact_counts[bi];
-        joint_offsets[bi] = joint_counts[bi];
-    }
+    uint bi = lane_first + k1;
+    bool valid = bi < body_count;
+    uint c = valid ? contact_counts[bi] : 0u;
+    uint j = valid ? joint_counts[bi] : 0u;
+    cv[k1] = lane_c;
+    jv[k1] = lane_j;
+    lane_c += c;
+    lane_j += j;
 }
-AllMemoryBarrierWithGroupSync();
+gs_scan_c[tid] = lane_c;
+gs_scan_j[tid] = lane_j;
+GroupMemoryBarrierWithGroupSync();
 
-for (uint stride = 1; stride < body_count; stride <<= 1) {
-    uint cv[ELEMS_PER_THREAD];
-    uint jv[ELEMS_PER_THREAD];
-    [unroll]
-    for (uint kr = 0; kr < ELEMS_PER_THREAD; kr++) {
-        uint bi = tid + kr * adjacency_workgroup_size;
-        bool valid = bi < body_count && bi >= stride;
-        cv[kr] = valid ? contact_offsets[bi - stride] : 0u;
-        jv[kr] = valid ? joint_offsets[bi - stride] : 0u;
-    }
-    AllMemoryBarrierWithGroupSync();
-    [unroll]
-    for (uint kw = 0; kw < ELEMS_PER_THREAD; kw++) {
-        uint bi = tid + kw * adjacency_workgroup_size;
-        if (bi < body_count) {
-            contact_offsets[bi] += cv[kw];
-            joint_offsets[bi] += jv[kw];
-        }
-    }
-    AllMemoryBarrierWithGroupSync();
+for (uint stride = 1; stride < adjacency_workgroup_size; stride <<= 1) {
+    uint add_c = tid >= stride ? gs_scan_c[tid - stride] : 0u;
+    uint add_j = tid >= stride ? gs_scan_j[tid - stride] : 0u;
+    GroupMemoryBarrierWithGroupSync();
+    gs_scan_c[tid] += add_c;
+    gs_scan_j[tid] += add_j;
+    GroupMemoryBarrierWithGroupSync();
 }
 
+uint base_c = tid > 0 ? gs_scan_c[tid - 1] : 0u;
+uint base_j = tid > 0 ? gs_scan_j[tid - 1] : 0u;
 [unroll]
 for (uint k2 = 0; k2 < ELEMS_PER_THREAD; k2++) {
-    uint bi = tid + k2 * adjacency_workgroup_size;
+    uint bi = lane_first + k2;
     if (bi < body_count) {
-        uint cs = contact_offsets[bi] - contact_counts[bi];
-        uint js = joint_offsets[bi] - joint_counts[bi];
-        contact_offsets[bi] = min(cs, max_contact_adjacency);
-        joint_offsets[bi] = min(js, max_joint_adjacency);
+        contact_offsets[bi] = min(base_c + cv[k2], max_contact_adjacency);
+        joint_offsets[bi] = min(base_j + jv[k2], max_joint_adjacency);
         contact_counts[bi] = 0;
         joint_counts[bi] = 0;
     }

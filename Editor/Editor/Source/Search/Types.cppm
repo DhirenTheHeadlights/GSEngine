@@ -1,11 +1,11 @@
 export module gse.ide.search:types;
 
-import std;
-
-import gse;
-
+import gse.core;
+import gse.graphics;
 import gse.ide.analysis;
 import gse.ide.navigation;
+import gse.math;
+import std;
 
 export namespace gse::ide::search {
 	struct domain_info {

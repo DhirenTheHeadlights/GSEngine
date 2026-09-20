@@ -1,23 +1,13 @@
 export module gse.graphics:depth_prepass_renderer;
 
-import std;
-
-import :geometry_collector;
-import :cull_compute_renderer;
-import :physics_transform_renderer;
-import :camera_system;
-
-import gse.os;
 import gse.assets;
-import gse.gpu;
-import gse.core;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
-import gse.diag;
 import gse.ecs;
-import gse.math;
+import gse.gpu;
 import gse.gpu_record;
+
+import :camera_system;
+import :geometry_collector;
 
 export namespace gse::renderer::depth_prepass {
 	struct [[= system_state<"DepthPrepass">{}]] data {

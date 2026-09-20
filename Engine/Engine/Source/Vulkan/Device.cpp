@@ -1,24 +1,23 @@
 module gse.vulkan:device_impl;
 
-import std;
-
-import :device;
-import :aftermath;
+import gse.assert;
+import gse.core;
 import gse.gpu_backend;
+import gse.log;
+import gse.math;
+import gse.win32;
+import std;
+import vulkan;
+
+import :aftermath;
+import :bindless_mapping;
 import :commands;
+import :device;
 import :instance;
 import :physical_device;
 import :queues;
-import :types;
-import :sync;
 import :shader_object;
-
-import vulkan;
-
-import gse.assert;
-import gse.core;
-import gse.log;
-import gse.math;
+import :types;
 
 namespace gse::vulkan {
 	template <typename Feat>
@@ -186,12 +185,16 @@ auto gse::vulkan::device::create_swap_chain(const gpu::surface surface, const ve
 				return "Unknown";
 		}
 	};
-	log::println(
-		log::category::vulkan,
-		"Present mode: requested {}, granted {}",
-		mode_name(requested_present_mode),
-		mode_name(present_mode)
-	);
+	const auto present_key = (static_cast<std::int64_t>(requested_present_mode) << 32) | static_cast<std::uint32_t>(present_mode);
+	static std::atomic<std::int64_t> last_present_key{ -1 };
+	if (last_present_key.exchange(present_key, std::memory_order_relaxed) != present_key) {
+		log::println(
+			log::category::vulkan,
+			"Present mode: requested {}, granted {}",
+			mode_name(requested_present_mode),
+			mode_name(present_mode)
+		);
+	}
 
 	vk::Extent2D extent;
 	if (vk_capabilities.currentExtent.width != std::numeric_limits<std::uint32_t>::max()) {
@@ -220,13 +223,16 @@ auto gse::vulkan::device::create_swap_chain(const gpu::surface surface, const ve
 		image_count = vk_capabilities.maxImageCount;
 	}
 
-	log::println(
-		log::category::vulkan,
-		"Swapchain image count: requested {}, min {}, max {}",
-		image_count,
-		vk_capabilities.minImageCount,
-		vk_capabilities.maxImageCount
-	);
+	static std::atomic<std::uint32_t> last_image_count{ 0 };
+	if (last_image_count.exchange(image_count, std::memory_order_relaxed) != image_count) {
+		log::println(
+			log::category::vulkan,
+			"Swapchain image count: requested {}, min {}, max {}",
+			image_count,
+			vk_capabilities.minImageCount,
+			vk_capabilities.maxImageCount
+		);
+	}
 
 	vk::SwapchainCreateInfoKHR create_info{
 		.flags = vk::SwapchainCreateFlagBitsKHR::ePresentTimingEXT | vk::SwapchainCreateFlagBitsKHR::ePresentId2,
@@ -412,7 +418,7 @@ auto gse::vulkan::device::create_swap_chain(const gpu::surface surface, const ve
 	}
 
 	{
-		std::lock_guard lock(m_mutex);
+		std::lock_guard _(m_mutex);
 		m_owned.store(
 			handle.value,
 			swap_chain_resources{
@@ -433,7 +439,7 @@ auto gse::vulkan::device::destroy_swapchain(const gpu::swap_chain_handle swapcha
 	if (!swapchain) {
 		return;
 	}
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	m_owned.retire(swapchain, 0);
 	m_owned.collect(std::numeric_limits<std::uint64_t>::max());
 }
@@ -673,10 +679,14 @@ auto gse::vulkan::device::create(const instance& instance_data, gpu::device_sett
 	require_extension(vk::EXTRobustness2ExtensionName);
 	require_extension(vk::KHRUnifiedImageLayoutsExtensionName);
 	require_extension(vk::EXTHostImageCopyExtensionName);
-	require_extension(vk::EXTSwapchainMaintenance1ExtensionName);
-	require_extension(vk::EXTPresentTimingExtensionName);
-	require_extension(vk::KHRPresentId2ExtensionName);
 	require_extension(vk::KHRCalibratedTimestampsExtensionName);
+
+	const bool presenting = static_cast<bool>(instance_data.surface());
+	if (presenting) {
+		require_extension(vk::EXTSwapchainMaintenance1ExtensionName);
+		require_extension(vk::EXTPresentTimingExtensionName);
+		require_extension(vk::KHRPresentId2ExtensionName);
+	}
 
 	const bool video_encode_extensions_available =
 		cfg.video_encode &&
@@ -740,9 +750,11 @@ auto gse::vulkan::device::create(const instance& instance_data, gpu::device_sett
 	require(robustness2_query.robustBufferAccess2, vk::EXTRobustness2ExtensionName);
 	require(unified_layouts_query.unifiedImageLayouts, vk::KHRUnifiedImageLayoutsExtensionName);
 	require(host_image_copy_query.hostImageCopy, vk::EXTHostImageCopyExtensionName);
-	require(swapchain_maintenance1_query.swapchainMaintenance1, vk::EXTSwapchainMaintenance1ExtensionName);
-	require(present_timing_query.presentTiming && present_timing_query.presentAtRelativeTime, vk::EXTPresentTimingExtensionName);
-	require(present_id2_query.presentId2, vk::KHRPresentId2ExtensionName);
+	if (presenting) {
+		require(swapchain_maintenance1_query.swapchainMaintenance1, vk::EXTSwapchainMaintenance1ExtensionName);
+		require(present_timing_query.presentTiming && present_timing_query.presentAtRelativeTime, vk::EXTPresentTimingExtensionName);
+		require(present_id2_query.presentId2, vk::KHRPresentId2ExtensionName);
+	}
 
 	if (!missing_requirements.empty()) {
 		for (const auto requirement : missing_requirements) {
@@ -844,18 +856,28 @@ auto gse::vulkan::device::create(const instance& instance_data, gpu::device_sett
 		.pNext = &unified_layouts_features,
 		.hostImageCopy = vk::True,
 	};
-	vk::PhysicalDeviceSwapchainMaintenance1FeaturesEXT swapchain_maintenance1_features{
-		.pNext = &host_image_copy_features,
-		.swapchainMaintenance1 = vk::True,
+	optional_feature<vk::PhysicalDeviceSwapchainMaintenance1FeaturesEXT> swapchain_maintenance1{
+		.features = {
+			.swapchainMaintenance1 = vk::True,
+		},
+		.extension_name = vk::EXTSwapchainMaintenance1ExtensionName,
+		.supported = presenting,
 	};
-	vk::PhysicalDevicePresentId2FeaturesKHR present_id2_features{
-		.pNext = &swapchain_maintenance1_features,
-		.presentId2 = vk::True,
+	optional_feature<vk::PhysicalDevicePresentId2FeaturesKHR> present_id2{
+		.features = {
+			.presentId2 = vk::True,
+		},
+		.extension_name = vk::KHRPresentId2ExtensionName,
+		.supported = presenting,
 	};
-	vk::PhysicalDevicePresentTimingFeaturesEXT present_timing_features{
-		.pNext = &present_id2_features,
-		.presentTiming = vk::True,
-		.presentAtRelativeTime = vk::True,
+	optional_feature<vk::PhysicalDevicePresentTimingFeaturesEXT> present_timing{
+		.features = {
+			.presentTiming = vk::True,
+			.presentAtRelativeTime = vk::True,
+		},
+		.extension_name = vk::EXTPresentTimingExtensionName,
+		.log_no = "Headless device: presentation extensions not enabled",
+		.supported = presenting,
 	};
 
 	optional_feature<vk::PhysicalDeviceFaultFeaturesEXT> fault{
@@ -875,7 +897,6 @@ auto gse::vulkan::device::create(const instance& instance_data, gpu::device_sett
 	};
 
 	std::vector device_extensions = {
-		vk::KHRSwapchainExtensionName,
 		vk::KHRSynchronization2ExtensionName,
 		vk::KHRDynamicRenderingExtensionName,
 		vk::KHRMaintenance5ExtensionName,
@@ -895,18 +916,19 @@ auto gse::vulkan::device::create(const instance& instance_data, gpu::device_sett
 		vk::EXTRobustness2ExtensionName,
 		vk::KHRUnifiedImageLayoutsExtensionName,
 		vk::EXTHostImageCopyExtensionName,
-		vk::EXTSwapchainMaintenance1ExtensionName,
-		vk::KHRPresentId2ExtensionName,
-		vk::EXTPresentTimingExtensionName,
 	};
 
-	void* chain_head = &present_timing_features;
+	void* chain_head = &host_image_copy_features;
 	auto process = [&](auto&... features) {
 		((chain_head = features.attach(chain_head)), ...);
 		(features.register_ext(device_extensions), ...);
 		(features.log(), ...);
 	};
-	process(fault, av1_encode);
+	process(swapchain_maintenance1, present_id2, present_timing, fault, av1_encode);
+
+	if (presenting) {
+		device_extensions.push_back(vk::KHRSwapchainExtensionName);
+	}
 
 	for (const auto* aftermath_ext : aftermath_tracker.required_device_extensions()) {
 		if (supports_extension(aftermath_ext)) {
@@ -1068,6 +1090,31 @@ auto gse::vulkan::device::timestamp_period() const -> float {
 	return m_physical_device.timestamp_period();
 }
 
+auto gse::vulkan::device::calibrated_timestamp(const gpu::queue_type queue) const -> std::optional<gpu::timestamp_calibration> {
+	const auto valid_bits = m_physical_device.timestamp_valid_bits(queue_family(queue));
+	if (valid_bits == 0) {
+		return std::nullopt;
+	}
+	const auto domains = m_physical_device.calibrateable_time_domains();
+	if (!std::ranges::contains(domains, vk::TimeDomainKHR::eDevice) ||
+		!std::ranges::contains(domains, vk::TimeDomainKHR::eQueryPerformanceCounter)) {
+		return std::nullopt;
+	}
+	const std::array infos{
+		vk::CalibratedTimestampInfoKHR{ .timeDomain = vk::TimeDomainKHR::eDevice },
+		vk::CalibratedTimestampInfoKHR{ .timeDomain = vk::TimeDomainKHR::eQueryPerformanceCounter }
+	};
+	const auto [result, values] = m_device.getCalibratedTimestampsKHR(infos);
+	if (result != vk::Result::eSuccess || values.first.size() != infos.size()) {
+		return std::nullopt;
+	}
+	return gpu::timestamp_calibration{
+		.gpu_ticks = values.first[0],
+		.host_ticks = values.first[1],
+		.valid_bits_mask = valid_bits >= 64 ? ~std::uint64_t{ 0 } : (std::uint64_t{ 1 } << valid_bits) - 1
+	};
+}
+
 auto gse::vulkan::device::query_fault_counts(gpu::device_fault_counts& counts) const -> gpu::result {
 	vk::DeviceFaultCountsEXT vk_counts{};
 	const auto vk_result = m_device.getFaultInfoEXT(&vk_counts, nullptr);
@@ -1137,8 +1184,7 @@ auto gse::vulkan::device::create_buffer(const vk::BufferCreateInfo& buffer_info,
 	assert(!desc.device_local || (!desc.data && !desc.readback), "a device-local buffer cannot carry init data or readback semantics");
 	const void* data = desc.data;
 	auto actual_buffer_info = buffer_info;
-	constexpr auto device_addressable_usage = vk::BufferUsageFlagBits::eUniformBuffer |
-		vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eIndirectBuffer |
+	constexpr auto device_addressable_usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eIndirectBuffer |
 		vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR |
 		vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
 		vk::BufferUsageFlagBits::eShaderDeviceAddress;
@@ -1232,7 +1278,7 @@ auto gse::vulkan::device::create_buffer(const vk::BufferCreateInfo& buffer_info,
 		: 0;
 	auto* const mapped = alloc.mapped();
 	{
-		std::lock_guard lock(m_mutex);
+		std::lock_guard _(m_mutex);
 		m_live_buffers.emplace(handle.value, live_buffer{ std::move(alloc), {}, actual_buffer_info.size, address, mapped });
 	}
 	return gpu::buffer(handle, actual_buffer_info.size, address, mapped);
@@ -1251,7 +1297,7 @@ auto gse::vulkan::device::create_buffer(const gpu::buffer_desc& desc, const std:
 	const auto slot = m_bindless->buffer_pool.allocate();
 	write_buffer_descriptor(m_bindless->resource_heap, m_bindless->buffer_pool.offset(slot), buf.device_address(), buf.size_bytes());
 	{
-		std::lock_guard lock(m_mutex);
+		std::lock_guard _(m_mutex);
 		m_live_buffers.at(buf.handle().value).slot = slot;
 	}
 	return gpu::buffer(buf.handle(), buf.size_bytes(), buf.device_address(), buf.mapped<std::byte>(), slot);
@@ -1359,7 +1405,7 @@ auto gse::vulkan::device::create_image(const vk::ImageCreateInfo& info, const gp
 	const auto img_handle = std::bit_cast<gpu::handle<gpu::image>>(vk_image);
 	const auto view_handle = std::bit_cast<gpu::handle<gpu::image_view>>(view);
 	{
-		std::lock_guard lock(m_mutex);
+		std::lock_guard _(m_mutex);
 		m_live_images.emplace(img_handle.value, live_image{ std::move(alloc), view_handle, {}, {}, format, vec3u{ info.extent.width, info.extent.height, info.extent.depth }, engine_view_info });
 	}
 	return gpu::image(
@@ -1464,7 +1510,7 @@ auto gse::vulkan::device::create_image(const gpu::image_desc& desc, const std::s
 		write_image_descriptor(m_bindless->resource_heap, m_bindless->image_pool.offset(sampled_slot), gpu::image_descriptor_kind::sampled, img);
 	}
 	{
-		std::lock_guard lock(m_mutex);
+		std::lock_guard _(m_mutex);
 		auto& li = m_live_images.at(img.handle().value);
 		li.storage_slot = storage_slot;
 		li.sampled_slot = sampled_slot;
@@ -1473,55 +1519,55 @@ auto gse::vulkan::device::create_image(const gpu::image_desc& desc, const std::s
 }
 
 auto gse::vulkan::device::buffer_slot(const gpu::handle<gpu::buffer> buffer) const -> gpu::bindless_slot {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	const auto it = m_live_buffers.find(buffer.value);
 	return it == m_live_buffers.end() ? gpu::bindless_slot{} : it->second.slot;
 }
 
 auto gse::vulkan::device::buffer_address(const gpu::handle<gpu::buffer> buffer) const -> gpu::device_address {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	const auto it = m_live_buffers.find(buffer.value);
 	return it == m_live_buffers.end() ? 0 : it->second.address;
 }
 
 auto gse::vulkan::device::buffer_size(const gpu::handle<gpu::buffer> buffer) const -> gpu::device_size {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	const auto it = m_live_buffers.find(buffer.value);
 	return it == m_live_buffers.end() ? 0 : it->second.size;
 }
 
 auto gse::vulkan::device::buffer_mapped(const gpu::handle<gpu::buffer> buffer) const -> std::byte* {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	const auto it = m_live_buffers.find(buffer.value);
 	return it == m_live_buffers.end() ? nullptr : it->second.mapped;
 }
 
 auto gse::vulkan::device::image_sampled_slot(const gpu::handle<gpu::image> image) const -> gpu::bindless_slot {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	const auto it = m_live_images.find(image.value);
 	return it == m_live_images.end() ? gpu::bindless_slot{} : it->second.sampled_slot;
 }
 
 auto gse::vulkan::device::image_storage_slot(const gpu::handle<gpu::image> image) const -> gpu::bindless_slot {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	const auto it = m_live_images.find(image.value);
 	return it == m_live_images.end() ? gpu::bindless_slot{} : it->second.storage_slot;
 }
 
 auto gse::vulkan::device::image_format_of(const gpu::handle<gpu::image> image) const -> gpu::image_format {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	const auto it = m_live_images.find(image.value);
 	return it == m_live_images.end() ? gpu::image_format::undefined : it->second.format;
 }
 
 auto gse::vulkan::device::image_extent(const gpu::handle<gpu::image> image) const -> vec3u {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	const auto it = m_live_images.find(image.value);
 	return it == m_live_images.end() ? vec3u{} : it->second.extent;
 }
 
 auto gse::vulkan::device::image_view(const gpu::handle<gpu::image> image) const -> gpu::handle<gpu::image_view> {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	const auto it = m_live_images.find(image.value);
 	return it == m_live_images.end() ? gpu::handle<gpu::image_view>{} : it->second.view;
 }
@@ -1537,7 +1583,7 @@ auto gse::vulkan::device::tracking_enabled() const -> bool {
 auto gse::vulkan::device::destroy_buffer(const gpu::handle<gpu::buffer> buffer) -> void {
 	gpu::allocation alloc;
 	{
-		std::lock_guard lock(m_mutex);
+		std::lock_guard _(m_mutex);
 		if (const auto it = m_live_buffers.find(buffer.value); it != m_live_buffers.end()) {
 			alloc = std::move(it->second.alloc);
 			if (m_bindless && it->second.slot.valid()) {
@@ -1551,35 +1597,40 @@ auto gse::vulkan::device::destroy_buffer(const gpu::handle<gpu::buffer> buffer) 
 }
 
 auto gse::vulkan::device::retire(const gpu::handle<gpu::buffer> buffer) -> void {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	m_retired_buffers.push_back({ buffer.value, m_resource_frame + gpu::max_frames_in_flight });
 }
 
 auto gse::vulkan::device::retire(const gpu::handle<gpu::image> image) -> void {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	m_retired_images.push_back({ image.value, m_resource_frame + gpu::max_frames_in_flight });
 }
 
 auto gse::vulkan::device::retire(const gpu::acceleration_structure acceleration_structure) -> void {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	m_owned.retire(acceleration_structure, m_resource_frame + gpu::max_frames_in_flight);
 }
 
 auto gse::vulkan::device::retire(const gpu::handle<gpu::semaphore> semaphore) -> void {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	m_owned.retire(semaphore, m_resource_frame + gpu::max_frames_in_flight);
 }
 
 auto gse::vulkan::device::retire(const gpu::handle<gpu::fence> fence) -> void {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	m_owned.retire(fence, m_resource_frame + gpu::max_frames_in_flight);
+}
+
+auto gse::vulkan::device::retire(const gpu::handle<gpu::query_pool> pool) -> void {
+	std::lock_guard _(m_mutex);
+	m_owned.retire(pool, m_resource_frame + gpu::max_frames_in_flight);
 }
 
 auto gse::vulkan::device::collect_garbage() -> void {
 	std::vector<std::uint64_t> buffers;
 	std::vector<std::uint64_t> images;
 	{
-		std::lock_guard lock(m_mutex);
+		std::lock_guard _(m_mutex);
 		++m_resource_frame;
 		std::erase_if(m_retired_buffers, [&](const gpu::retired_resource& r) {
 			if (m_resource_frame >= r.retire_after) {
@@ -1615,7 +1666,7 @@ auto gse::vulkan::device::destroy_image(const gpu::handle<gpu::image> image) -> 
 	live_image li;
 	bool found = false;
 	{
-		std::lock_guard lock(m_mutex);
+		std::lock_guard _(m_mutex);
 		if (const auto it = m_live_images.find(image.value); it != m_live_images.end()) {
 			li = std::move(it->second);
 			found = true;
@@ -2044,7 +2095,7 @@ auto gse::vulkan::device::find_memory_type_index(const std::uint32_t type_bits, 
 }
 
 auto gse::vulkan::device::free_allocation(const gpu::allocation& alloc) -> void {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 
 	if (!alloc.owner()) {
 		return;
@@ -2069,7 +2120,7 @@ auto gse::vulkan::device::free_allocation(const gpu::allocation& alloc) -> void 
 
 	const auto* sub_to_free = alloc.owner();
 
-	for (auto& [memory_type_index, blocks] : m_pools | std::views::values) {
+	for (auto& [_, blocks] : m_pools | std::views::values) {
 		for (auto& block : blocks) {
 			for (auto it = block.allocations.begin(); it != block.allocations.end(); ++it) {
 				if (&*it == sub_to_free) {
@@ -2103,20 +2154,13 @@ auto gse::vulkan::query_descriptor_heap_props(const physical_device& pd) -> gpu:
 	return {
 		.sampler_heap_alignment = dh.samplerHeapAlignment,
 		.resource_heap_alignment = dh.resourceHeapAlignment,
-		.max_sampler_heap_size = dh.maxSamplerHeapSize,
-		.max_resource_heap_size = dh.maxResourceHeapSize,
 		.min_sampler_heap_reserved_range = dh.minSamplerHeapReservedRange,
 		.min_resource_heap_reserved_range = dh.minResourceHeapReservedRange,
 		.sampler_descriptor_size = dh.samplerDescriptorSize,
 		.image_descriptor_size = dh.imageDescriptorSize,
 		.buffer_descriptor_size = dh.bufferDescriptorSize,
 		.acceleration_structure_descriptor_size = acceleration_structure_descriptor_size,
-		.sampler_descriptor_alignment = dh.samplerDescriptorAlignment,
-		.image_descriptor_alignment = dh.imageDescriptorAlignment,
-		.buffer_descriptor_alignment = dh.bufferDescriptorAlignment,
 		.max_push_data_size = dh.maxPushDataSize,
-		.max_embedded_samplers = dh.maxDescriptorHeapEmbeddedSamplers,
-		.sparse_descriptor_heaps = static_cast<bool>(dh.sparseDescriptorHeaps),
 	};
 }
 
@@ -2129,7 +2173,7 @@ gse::vulkan::device::device(class physical_device&& physical_device, vk::raii::D
 }
 
 auto gse::vulkan::device::allocate(const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties, const std::string_view tag, const std::source_location loc, const bool device_address) -> std::expected<gpu::allocation, std::string> {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 
 	if ((m_settings && m_settings->tracking_enabled)) {
 		assert(
@@ -2294,7 +2338,7 @@ auto gse::vulkan::device::allocate(const vk::MemoryRequirements& requirements, c
 }
 
 auto gse::vulkan::device::clean_up() -> void {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 
 	if (!*m_device) {
 		return;
@@ -2319,7 +2363,7 @@ auto gse::vulkan::device::clean_up() -> void {
 	m_live_images.clear();
 
 	std::uint32_t leaked_sub_allocations = 0;
-	for (const auto& [memory_type_index, blocks] : m_pools | std::views::values) {
+	for (const auto& [_, blocks] : m_pools | std::views::values) {
 		for (const auto& block : blocks) {
 			for (const auto& sub : block.allocations) {
 				if (sub.in_use) {
@@ -2380,7 +2424,7 @@ auto gse::vulkan::device::clean_up() -> void {
 
 	m_cleaned_up = true;
 
-	for (auto& [memory_type_index, blocks] : m_pools | std::views::values) {
+	for (auto& [_, blocks] : m_pools | std::views::values) {
 		for (auto& block : blocks) {
 			if (block.mapped) {
 				(*m_device).unmapMemory(block.memory);
@@ -2409,14 +2453,6 @@ auto gse::vulkan::device::memory_flag_preferences(const vk::BufferUsageFlags usa
 			mpf::eHostVisible | mpf::eHostCoherent | mpf::eDeviceLocal,
 			mpf::eHostVisible | mpf::eHostCoherent,
 			mpf::eDeviceLocal,
-		};
-	}
-
-	if (usage & vk::BufferUsageFlagBits::eUniformBuffer) {
-		return {
-			mpf::eHostVisible | mpf::eHostCoherent | mpf::eDeviceLocal,
-			mpf::eHostVisible | mpf::eHostCoherent,
-			mpf::eHostVisible,
 		};
 	}
 
@@ -2539,7 +2575,7 @@ auto gse::vulkan::device::query_tlas_build_sizes(const std::uint32_t max_instanc
 template <typename Frontend, typename Raii>
 auto gse::vulkan::device::adopt(Raii&& object) -> Frontend {
 	const auto handle = std::bit_cast<Frontend>(*object);
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	m_owned.store(handle.value, std::forward<Raii>(object));
 	return handle;
 }
@@ -2697,12 +2733,39 @@ auto gse::vulkan::device::wait_semaphore(const gpu::handle<gpu::semaphore> semap
 	);
 }
 
-auto gse::vulkan::device::create_timestamp_query_pool(const std::uint32_t capacity, const std::string_view label) -> gpu::handle<gpu::query_pool> {
-	auto [result, pool] = raii_device().createQueryPool({
-		.queryType = vk::QueryType::eTimestamp,
-		.queryCount = capacity,
+auto gse::vulkan::device::wait_semaphore_for(const gpu::handle<gpu::semaphore> semaphore, const std::uint64_t value, const time timeout) const -> bool {
+	const auto vk_semaphore = std::bit_cast<vk::Semaphore>(semaphore);
+	const auto result = raii_device().waitSemaphores(
+		vk::SemaphoreWaitInfo{
+			.semaphoreCount = 1,
+			.pSemaphores = &vk_semaphore,
+			.pValues = &value,
+		},
+		static_cast<std::uint64_t>(std::max(0.f, static_cast<float>(timeout)))
+	);
+	return result == vk::Result::eSuccess;
+}
+
+auto gse::vulkan::device::create_query_pool(const vk::QueryPoolCreateInfo& info, const std::uint32_t result_stride, const std::string_view label) -> gpu::handle<gpu::query_pool> {
+	auto [pool_result, pool] = raii_device().createQueryPool(info);
+	assert(pool_result == vk::Result::eSuccess, "failed to create query pool: {}", vk::to_string(pool_result));
+	const vk::DeviceSize size = static_cast<vk::DeviceSize>(info.queryCount) * result_stride;
+	auto [buffer_result, readback] = raii_device().createBuffer({
+		.size = size,
+		.usage = vk::BufferUsageFlagBits::eTransferDst,
 	});
-	assert(result == vk::Result::eSuccess, "failed to create timestamp query pool: {}", vk::to_string(result));
+	assert(buffer_result == vk::Result::eSuccess, "failed to create query readback buffer: {}", vk::to_string(buffer_result));
+	const auto reqs = (*m_device).getBufferMemoryRequirements(*readback);
+	const auto memory_type_index = find_memory_type_index(reqs.memoryTypeBits, { gpu::memory_property_flag::host_visible, gpu::memory_property_flag::host_coherent });
+	auto [memory_result, memory] = raii_device().allocateMemory({
+		.allocationSize = reqs.size,
+		.memoryTypeIndex = memory_type_index,
+	});
+	assert(memory_result == vk::Result::eSuccess, "failed to allocate query readback memory: {}", vk::to_string(memory_result));
+	const auto bind_result = (*m_device).bindBufferMemory(*readback, *memory, 0);
+	assert(bind_result == vk::Result::eSuccess, "failed to bind query readback memory: {}", vk::to_string(bind_result));
+	auto [map_result, mapped] = (*m_device).mapMemory(*memory, 0, size, {});
+	assert(map_result == vk::Result::eSuccess, "failed to map query readback memory: {}", vk::to_string(map_result));
 	if (!label.empty()) {
 		const std::string name{ label };
 		(void)raii_device().setDebugUtilsObjectNameEXT({
@@ -2710,66 +2773,59 @@ auto gse::vulkan::device::create_timestamp_query_pool(const std::uint32_t capaci
 			.objectHandle = std::bit_cast<std::uint64_t>(*pool),
 			.pObjectName = name.c_str(),
 		});
+		(void)raii_device().setDebugUtilsObjectNameEXT({
+			.objectType = vk::ObjectType::eBuffer,
+			.objectHandle = std::bit_cast<std::uint64_t>(*readback),
+			.pObjectName = name.c_str(),
+		});
 	}
-	return adopt<gpu::handle<gpu::query_pool>>(std::move(pool));
+	auto resources = std::make_unique<query_pool_resources>(query_pool_resources{
+		.pool = std::move(pool),
+		.readback = std::move(readback),
+		.memory = std::move(memory),
+		.mapped = static_cast<std::byte*>(mapped),
+		.capacity = info.queryCount,
+		.result_stride = result_stride,
+	});
+	const auto handle = std::bit_cast<gpu::handle<gpu::query_pool>>(resources.get());
+	std::lock_guard _(m_mutex);
+	m_owned.store(handle.value, std::move(resources));
+	return handle;
+}
+
+auto gse::vulkan::device::create_timestamp_query_pool(const std::uint32_t capacity, const std::string_view label) -> gpu::handle<gpu::query_pool> {
+	return create_query_pool(
+		{
+			.queryType = vk::QueryType::eTimestamp,
+			.queryCount = capacity,
+		},
+		sizeof(std::uint64_t),
+		label
+	);
 }
 
 auto gse::vulkan::device::create_pipeline_stats_query_pool(const std::uint32_t capacity, const gpu::pipeline_statistic_flags statistics, const std::string_view label) -> gpu::handle<gpu::query_pool> {
-	auto [result, pool] = raii_device().createQueryPool({
-		.queryType = vk::QueryType::ePipelineStatistics,
-		.queryCount = capacity,
-		.pipelineStatistics = to_vk(statistics),
-	});
-	assert(result == vk::Result::eSuccess, "failed to create pipeline stats query pool: {}", vk::to_string(result));
-	if (!label.empty()) {
-		const std::string name{ label };
-		(void)raii_device().setDebugUtilsObjectNameEXT({
-			.objectType = vk::ObjectType::eQueryPool,
-			.objectHandle = std::bit_cast<std::uint64_t>(*pool),
-			.pObjectName = name.c_str(),
-		});
-	}
-	return adopt<gpu::handle<gpu::query_pool>>(std::move(pool));
+	const auto statistic_count = static_cast<std::uint32_t>(std::popcount(static_cast<std::uint32_t>(to_vk(statistics))));
+	return create_query_pool(
+		{
+			.queryType = vk::QueryType::ePipelineStatistics,
+			.queryCount = capacity,
+			.pipelineStatistics = to_vk(statistics),
+		},
+		statistic_count * sizeof(std::uint64_t),
+		label
+	);
 }
 
-auto gse::vulkan::device::query_pool_results(const gpu::handle<gpu::query_pool> pool, const std::uint32_t first_query, const std::uint32_t query_count, const std::uint64_t stride) const -> std::pair<gpu::query_status, std::vector<std::uint64_t>> {
-	const auto* vk_pool = m_owned.find(pool);
-	if (!vk_pool) {
+auto gse::vulkan::device::query_pool_results(const gpu::handle<gpu::query_pool> pool, const std::uint32_t first_query, const std::uint32_t query_count, std::uint64_t) const -> std::pair<gpu::query_status, std::vector<std::uint64_t>> {
+	const auto* resources = m_owned.find(pool);
+	if (!resources || first_query + query_count > (*resources)->capacity) {
 		return { gpu::query_status::error, {} };
 	}
-	const std::size_t group_count = stride > 0 ? std::max<std::size_t>(stride / sizeof(std::uint64_t), 1) : 1;
-	const std::size_t element_count = static_cast<std::size_t>(query_count) * group_count;
-	auto [status, values] = vk_pool->getResults<std::uint64_t>(
-		first_query,
-		query_count,
-		element_count * sizeof(std::uint64_t),
-		stride,
-		vk::QueryResultFlagBits::e64 | vk::QueryResultFlagBits::eWait
-	);
-	return { status == vk::Result::eSuccess ? gpu::query_status::success : gpu::query_status::error, std::move(values) };
-}
-
-auto gse::vulkan::device::create_sampler(const gpu::sampler_desc& desc) -> gpu::handle<gpu::sampler> {
-	const vk::SamplerCreateInfo info{
-		.magFilter = to_vk(desc.mag),
-		.minFilter = to_vk(desc.min),
-		.mipmapMode = desc.min == gpu::sampler_filter::nearest ? vk::SamplerMipmapMode::eNearest : vk::SamplerMipmapMode::eLinear,
-		.addressModeU = to_vk(desc.address_u),
-		.addressModeV = to_vk(desc.address_v),
-		.addressModeW = to_vk(desc.address_w),
-		.mipLodBias = 0.0f,
-		.anisotropyEnable = desc.max_anisotropy > 0.0f ? vk::True : vk::False,
-		.maxAnisotropy = desc.max_anisotropy,
-		.compareEnable = desc.compare_enable ? vk::True : vk::False,
-		.compareOp = to_vk(desc.compare),
-		.minLod = desc.min_lod,
-		.maxLod = desc.max_lod,
-		.borderColor = to_vk(desc.border),
-		.unnormalizedCoordinates = vk::False,
-	};
-	auto [result, vk_sampler] = raii_device().createSampler(info);
-	assert(result == vk::Result::eSuccess, "failed to create sampler: {}", vk::to_string(result));
-	return adopt<gpu::handle<gpu::sampler>>(std::move(vk_sampler));
+	const auto& r = **resources;
+	std::vector<std::uint64_t> values(static_cast<std::size_t>(query_count) * (r.result_stride / sizeof(std::uint64_t)));
+	std::memcpy(values.data(), r.mapped + static_cast<std::size_t>(first_query) * r.result_stride, values.size() * sizeof(std::uint64_t));
+	return { gpu::query_status::success, std::move(values) };
 }
 
 auto gse::vulkan::device::descriptor_heap_properties() const -> gpu::descriptor_heap_properties {
@@ -2823,7 +2879,7 @@ auto gse::vulkan::device::create_descriptor_heap(const gpu::device_size size) ->
 	const auto address = (*m_device).getBufferAddress(vk::BufferDeviceAddressInfo{ .buffer = *vk_buffer });
 
 	const auto handle = std::bit_cast<gpu::handle<gpu::descriptor_heap>>(*vk_buffer);
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	m_owned.store(
 		handle.value,
 		descriptor_heap_resources{

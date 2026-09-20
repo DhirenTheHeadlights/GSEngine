@@ -1,8 +1,9 @@
 export module gse.ide.config:config_system;
 
-import std;
 import gse;
-
+import gse.ecs;
+import gse.math;
+import gse.meta;
 export namespace gse::ide::config_system {
 	struct [[
 		= system_state<"EditorConfig">{},

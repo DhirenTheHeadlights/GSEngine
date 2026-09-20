@@ -31,6 +31,10 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto timestamp_period() const -> float;
 
+		[[nodiscard]] auto calibrated_timestamp(
+			queue_type queue
+		) const -> std::optional<timestamp_calibration>;
+
 		auto wait_for_crash_dump() -> void;
 
 		[[nodiscard]] auto fault_enabled() const -> bool;
@@ -245,6 +249,10 @@ export namespace gse::gpu {
 			gpu::handle<fence> fence
 		) -> void;
 
+		auto retire_query_pool(
+			gpu::handle<query_pool> pool
+		) -> void;
+
 		[[nodiscard]] auto semaphore_counter_value(
 			gpu::handle<semaphore> semaphore
 		) const -> std::uint64_t;
@@ -253,6 +261,12 @@ export namespace gse::gpu {
 			gpu::handle<semaphore> semaphore,
 			std::uint64_t value
 		) const -> void;
+
+		[[nodiscard]] auto wait_semaphore_for(
+			gpu::handle<semaphore> semaphore,
+			std::uint64_t value,
+			time timeout
+		) const -> bool;
 
 		[[nodiscard]] auto create_timestamp_query_pool(
 			std::uint32_t capacity,
@@ -416,9 +430,7 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto bindless_sampler_heap_binding() const -> bindless_heap_binding;
 
-		[[nodiscard]] auto create_sampler(
-			const sampler_desc& desc
-		) -> gpu::handle<sampler>;
+		[[nodiscard]] auto max_push_data_size() const -> std::uint32_t;
 
 		auto collect_garbage() -> void;
 
@@ -455,6 +467,10 @@ auto gse::gpu::vulkan_device_backend::wait_idle() const -> void {
 
 auto gse::gpu::vulkan_device_backend::timestamp_period() const -> float {
 	return device_config.timestamp_period();
+}
+
+auto gse::gpu::vulkan_device_backend::calibrated_timestamp(const queue_type queue) const -> std::optional<timestamp_calibration> {
+	return device_config.calibrated_timestamp(queue);
 }
 
 auto gse::gpu::vulkan_device_backend::wait_for_crash_dump() -> void {
@@ -657,12 +673,20 @@ auto gse::gpu::vulkan_device_backend::retire_fence(const gpu::handle<fence> fenc
 	device_config.retire(fence);
 }
 
+auto gse::gpu::vulkan_device_backend::retire_query_pool(const gpu::handle<query_pool> pool) -> void {
+	device_config.retire(pool);
+}
+
 auto gse::gpu::vulkan_device_backend::semaphore_counter_value(const gpu::handle<semaphore> semaphore) const -> std::uint64_t {
 	return device_config.semaphore_counter_value(semaphore);
 }
 
 auto gse::gpu::vulkan_device_backend::wait_semaphore(const gpu::handle<semaphore> semaphore, const std::uint64_t value) const -> void {
 	device_config.wait_semaphore(semaphore, value);
+}
+
+auto gse::gpu::vulkan_device_backend::wait_semaphore_for(const gpu::handle<semaphore> semaphore, const std::uint64_t value, const time timeout) const -> bool {
+	return device_config.wait_semaphore_for(semaphore, value, timeout);
 }
 
 auto gse::gpu::vulkan_device_backend::create_timestamp_query_pool(const std::uint32_t capacity, const std::string_view label) -> gpu::handle<query_pool> {
@@ -821,8 +845,8 @@ auto gse::gpu::vulkan_device_backend::bindless_sampler_heap_binding() const -> b
 	return device_config.bindless_sampler_heap_binding();
 }
 
-auto gse::gpu::vulkan_device_backend::create_sampler(const sampler_desc& desc) -> gpu::handle<sampler> {
-	return device_config.create_sampler(desc);
+auto gse::gpu::vulkan_device_backend::max_push_data_size() const -> std::uint32_t {
+	return static_cast<std::uint32_t>(device_config.descriptor_heap_properties().max_push_data_size);
 }
 
 auto gse::gpu::vulkan_device_backend::collect_garbage() -> void {

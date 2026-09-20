@@ -1,9 +1,5 @@
 export module gse.physics:transform_component;
 
-import std;
-
-import gse.core;
-import gse.containers;
 import gse.ecs;
 import gse.math;
 

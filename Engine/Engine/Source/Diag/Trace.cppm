@@ -178,11 +178,20 @@ export namespace gse::trace {
 		std::span<const std::uint32_t> children;
 		std::span<const std::uint32_t> roots;
 		std::uint64_t generation = 0;
+		time_t<std::uint64_t> elapsed;
 
 		[[nodiscard]] auto child_indices(
 			const node& n
 		) const -> std::span<const std::uint32_t>;
 	};
+
+	auto cpu_scope(
+		const auto& node
+	) -> bool;
+
+	auto profile_scope(
+		const auto& node
+	) -> bool;
 
 	auto finalize_frame() -> void;
 
@@ -302,6 +311,7 @@ namespace gse::trace {
 		std::vector<std::uint32_t> children;
 		std::vector<std::uint32_t> roots;
 		std::uint64_t generation = 0;
+		time_t<std::uint64_t> elapsed;
 	};
 
 	constexpr std::uint64_t max_open_span_frames = 240;
@@ -325,9 +335,11 @@ namespace gse::trace {
 	inline triple_buffer<frame_storage> frames;
 	inline build_scratch scratch;
 	inline std::unordered_map<std::uint64_t, span_info> open_spans;
+	inline std::map<std::pair<id, std::uint64_t>, std::uint64_t> open_async_spans;
 	inline std::vector<frame_span> closed_spans;
 	inline std::uint64_t build_frame_index = 0;
 	inline std::uint64_t published_generation = 0;
+	inline time_t<std::uint64_t> frame_boundary;
 
 	inline std::shared_mutex hidden_ids_mutex;
 	inline std::unordered_set<id> hidden_ids;
@@ -384,9 +396,15 @@ namespace gse::trace {
 }
 
 consteval auto gse::trace::strip_function_signature(const std::string_view fn) -> std::string_view {
+	constexpr std::string_view anonymous = "(anonymous namespace)::";
+
 	std::string_view name = fn;
 
-	if (const auto lp = name.find('('); lp != std::string_view::npos) {
+	std::size_t lp = name.find('(');
+	while (lp != std::string_view::npos && name.substr(lp).starts_with(anonymous)) {
+		lp = name.find('(', lp + anonymous.size());
+	}
+	if (lp != std::string_view::npos) {
 		name = name.substr(0, lp);
 	}
 
@@ -414,6 +432,10 @@ consteval auto gse::trace::strip_function_signature(const std::string_view fn) -
 		name = name.substr(last_sp + 1);
 	}
 
+	if (name.starts_with(anonymous)) {
+		name.remove_prefix(anonymous.size());
+	}
+
 	return name;
 }
 
@@ -421,7 +443,15 @@ consteval auto gse::trace::current_loc_tag(const std::source_location loc) -> fi
 	fixed_string<max_loc_tag_length> out{};
 	std::size_t at = 0;
 
-	for (const char c : strip_function_signature(loc.function_name())) {
+	std::string_view name = strip_function_signature(loc.function_name());
+	if (name.empty()) {
+		name = loc.file_name();
+		if (const auto slash = name.find_last_of("/\\"); slash != std::string_view::npos) {
+			name.remove_prefix(slash + 1);
+		}
+	}
+
+	for (const char c : name) {
 		if (at + 1 >= max_loc_tag_length) {
 			break;
 		}
@@ -446,6 +476,14 @@ consteval auto gse::trace::current_loc_tag(const std::source_location loc) -> fi
 	}
 
 	return out;
+}
+
+auto gse::trace::cpu_scope(const auto& node) -> bool {
+	return profile_scope(node) && node.trace_id < gpu_virtual_tid_min;
+}
+
+auto gse::trace::profile_scope(const auto& node) -> bool {
+	return !node.open && (node.lexical || node.trace_id >= gpu_virtual_tid_min);
 }
 
 auto gse::trace::frame_view::child_indices(const node& n) const -> std::span<const std::uint32_t> {

@@ -1,11 +1,10 @@
 export module gse.ecs:task_graph;
 
-import std;
-
 import gse.concurrency;
-import gse.core;
 import gse.containers;
+import gse.core;
 import gse.log;
+import std;
 
 export namespace gse {
 	class task_graph {
@@ -45,7 +44,7 @@ export namespace gse {
 }
 
 auto gse::task_graph::clear() -> void {
-	std::shared_lock lock(m_states_mutex);
+	std::shared_lock _(m_states_mutex);
 	for (auto& slot : std::views::values(m_states)) {
 		slot->ready.store(false, std::memory_order_relaxed);
 		std::lock_guard waiter_lock(slot->waiter_lock);
@@ -55,13 +54,13 @@ auto gse::task_graph::clear() -> void {
 
 auto gse::task_graph::get_or_create_slot(const id state_type) -> state_slot* {
 	{
-		std::shared_lock lock(m_states_mutex);
+		std::shared_lock _(m_states_mutex);
 		if (const auto it = m_states.find(state_type); it != m_states.end()) {
 			return it->second.get();
 		}
 	}
 
-	std::unique_lock lock(m_states_mutex);
+	std::unique_lock _(m_states_mutex);
 	if (const auto it = m_states.find(state_type); it != m_states.end()) {
 		return it->second.get();
 	}
@@ -77,7 +76,7 @@ auto gse::task_graph::notify_state_ready(const id state_type) -> void {
 
 	std::vector<async::checked_handle> handles;
 	{
-		std::lock_guard lock(slot->waiter_lock);
+		std::lock_guard _(slot->waiter_lock);
 		handles = std::move(slot->waiters);
 	}
 
@@ -99,7 +98,7 @@ auto gse::task_graph::reset_state(const id state_type) -> void {
 
 	std::vector<async::checked_handle> stale;
 	{
-		std::lock_guard lock(slot->waiter_lock);
+		std::lock_guard _(slot->waiter_lock);
 		stale = std::move(slot->waiters);
 	}
 
@@ -136,7 +135,7 @@ auto gse::task_graph::wait_state_ready(const id state_type) -> async::task<> {
 			const async::checked_handle tracked = async::track_frame(h);
 			bool ready_now = false;
 			{
-				std::lock_guard lock(slot->waiter_lock);
+				std::lock_guard _(slot->waiter_lock);
 				if (slot->ready.load(std::memory_order_acquire)) {
 					ready_now = true;
 				}

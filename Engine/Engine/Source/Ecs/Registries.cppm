@@ -1,10 +1,9 @@
 export module gse.ecs:registries;
 
-import std;
-
 import gse.assert;
-import gse.core;
 import gse.concurrency;
+import gse.core;
+import std;
 
 export namespace gse {
 	class state_registry {
@@ -306,7 +305,7 @@ auto gse::channel_registry::drain() -> std::vector<T> {
 }
 
 auto gse::channel_registry::flip_all() -> void {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	for (const auto& ch : std::views::values(m_channels)) {
 		ch->flip();
 	}
@@ -317,7 +316,7 @@ auto gse::channel_registry::make_writer() -> channel_writer {
 }
 
 auto gse::channel_registry::clear() -> void {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard _(m_mutex);
 	m_channels.clear();
 }
 

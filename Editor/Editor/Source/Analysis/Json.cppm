@@ -165,7 +165,7 @@ namespace gse::ide::analysis::json {
 				++i;
 			}
 			double d = 0.0;
-			const auto [ptr, ec] = std::from_chars(s.data() + start, s.data() + i, d);
+			const auto [_, ec] = std::from_chars(s.data() + start, s.data() + i, d);
 			if (ec != std::errc{}) {
 				return false;
 			}

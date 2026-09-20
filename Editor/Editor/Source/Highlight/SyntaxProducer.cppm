@@ -1,11 +1,15 @@
 export module gse.ide.highlight:syntax_producer;
 
-import std;
-import gse;
+import gse.concurrency;
+import gse.core;
+import gse.graphics;
 import gse.ide.analysis;
 import gse.ide.diagnostic;
-
+import gse.log;
+import gse.math;
+import gse.meta;
 import gse.syntax;
+import std;
 
 import :language;
 import :markdown;
@@ -279,12 +283,12 @@ auto gse::ide::syntax_producer::rebuild(data& d, const gui::text_buffer& buffer,
 		: nullptr;
 	d.pending = job;
 
-	std::thread([job, snapshot = std::move(snapshot), sem, language] {
+	task::post_io([job, snapshot = std::move(snapshot), sem, language] {
 		job->spans = language == document_language::markdown
 			? markdown::spans(snapshot)
 			: producer::compute(snapshot, sem.get(), nullptr);
 		job->done.store(true, std::memory_order_release);
-	}).detach();
+	}, trace_id<"highlight::spans">());
 }
 
 auto gse::ide::syntax_producer::poll(data& d, const document_revision revision) -> void {

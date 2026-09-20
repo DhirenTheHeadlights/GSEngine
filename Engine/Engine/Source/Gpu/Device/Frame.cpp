@@ -97,6 +97,10 @@ auto gse::gpu::frame::queue_fence_signaled(const queue_type queue, const std::ui
 	return m_device->wait_for_fence(m_fences.in_flight(queue, ring_slot), 0) == result::success;
 }
 
+auto gse::gpu::frame::wait_queue_fence(const queue_type queue, const std::uint32_t ring_slot) const -> result {
+	return m_device->wait_for_fence(m_fences.in_flight(queue, ring_slot));
+}
+
 auto gse::gpu::frame::image_index() const -> std::uint32_t {
 	return m_targets.front().image_index;
 }
@@ -266,8 +270,10 @@ auto gse::gpu::frame::begin() -> std::expected<frame_token, frame_status> {
 
 		if (m_primary_pacer.healthy() != pacing_last_healthy) {
 			pacing_last_healthy = m_primary_pacer.healthy();
-			++pacing_transitions;
-			if (pacing_transitions <= pacing_transition_log_limit) {
+			if (present_total >= pacing_health_check_frame) {
+				++pacing_transitions;
+			}
+			if (present_total >= pacing_health_check_frame && pacing_transitions <= pacing_transition_log_limit) {
 				log::println(
 					log::category::render,
 					"present pacing {} after {} presents (samples_seen={} samples_used={}): dt now driven by {}{}",
@@ -400,17 +406,16 @@ auto gse::gpu::frame::begin() -> std::expected<frame_token, frame_status> {
 		if (!t.acquired) {
 			continue;
 		}
-		const image_barrier acquire_barrier{
+		const image_discard acquire_barrier{
 			.src_stages = pipeline_stage_flag::top_of_pipe,
 			.src_access = {},
 			.dst_stages = pipeline_stage_flag::color_attachment_output,
 			.dst_access = { access_flag::color_attachment_write, access_flag::color_attachment_read },
-			.discard_contents = true,
 			.image = t.swapchain->image(t.image_index),
 			.aspects = image_aspect_flag::color,
 		};
 		m_device->cmd_pipeline_barrier(cmd_main, dependency_info{
-			.image_barriers = std::span(&acquire_barrier, 1)
+			.image_discards = std::span(&acquire_barrier, 1)
 		});
 	}
 

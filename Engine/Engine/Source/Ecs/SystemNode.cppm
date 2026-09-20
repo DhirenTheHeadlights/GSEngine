@@ -1,16 +1,14 @@
 export module gse.ecs:system_node;
 
+import gse.concurrency;
+import gse.core;
+import gse.meta;
 import std;
 
-import gse.core;
-import gse.concurrency;
-import gse.meta;
-
-import :registries;
 import :context;
+import :registries;
 import :registry;
 import :settings;
-import :traits;
 
 export namespace gse {
 	template <typename T>

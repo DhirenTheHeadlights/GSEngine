@@ -1,10 +1,9 @@
 export module gse.ide.app:project_screen;
 
-import std;
 import gse;
-
 import gse.ide.git;
 import gse.ide.project;
+import std;
 
 export namespace gse::ide {
 	class project_screen : public gui::screen {
@@ -51,7 +50,10 @@ export namespace gse::ide {
 			std::string location;
 			vec4f accent;
 			bool current = false;
+			bool elsewhere = false;
 		};
+
+		auto refresh_elsewhere() -> void;
 
 		auto activate(
 			const entry& item
@@ -100,6 +102,8 @@ export namespace gse::ide {
 		bool m_rebinding = false;
 		bool m_forced = false;
 		std::string m_engine_problem;
+		std::string m_notice;
+		clock m_probe;
 	};
 }
 
@@ -115,15 +119,18 @@ gse::ide::project_screen::project_screen(channel_write<window_launcher_mode_requ
 		if (current) {
 			m_selected = static_cast<int>(m_entries.size());
 		}
+		gui::theme t = gui::theme::midnight;
+		enum_from_string(project::theme_name(found.root), t);
 		m_entries.push_back({
 			.manifest = path,
 			.key = path.generic_display_string(),
 			.name = found.name,
 			.location = found.root.generic_display_string(),
-			.accent = found.accent,
+			.accent = gui::style::from_theme(t).color_accent,
 			.current = current
 		});
 	}
+	refresh_elsewhere();
 
 	for (project::engine_entry& candidate : project::engines()) {
 		const bool current = active.valid && candidate.path == active.engine;
@@ -219,7 +226,19 @@ auto gse::ide::project_screen::open(const std::filesystem::path& manifest) -> vo
 	shutdown();
 }
 
+auto gse::ide::project_screen::refresh_elsewhere() -> void {
+	for (entry& item : m_entries) {
+		item.elsewhere = !item.current && project::held_elsewhere(item.manifest);
+	}
+	m_probe.reset();
+}
+
 auto gse::ide::project_screen::activate(const entry& item) -> void {
+	if (item.elsewhere) {
+		m_notice = std::format("'{}' is already open in another editor", item.name);
+		return;
+	}
+	m_notice.clear();
 	m_dismiss = true;
 	if (item.current) {
 		return;
@@ -234,7 +253,7 @@ auto gse::ide::project_screen::build(gui::builder& ui, gui::nav&) -> void {
 		return;
 	}
 
-	const auto scope = ctx.scoped_layer(render_layer::popup);
+	const auto _ = ctx.scoped_layer(render_layer::popup);
 	const gui::style& sty = ctx.style;
 	const rectf card = ctx.current_menu->rect;
 	const float pad = sty.padding;
@@ -324,6 +343,9 @@ auto gse::ide::project_screen::build(gui::builder& ui, gui::nav&) -> void {
 	}
 	else {
 		body += row_stride * static_cast<float>(std::max<std::size_t>(m_entries.size(), 1u));
+		if (!m_notice.empty()) {
+			body += line + pad;
+		}
 	}
 
 	m_content_height = (m_hub ? sty.title_bar_height : 0.f) + pad + header.height() + pad + body + pad;
@@ -453,6 +475,10 @@ auto gse::ide::project_screen::build_list(gui::builder& ui) -> void {
 		}
 	}
 
+	if (m_probe.elapsed() >= seconds(1.f)) {
+		refresh_elsewhere();
+	}
+
 	float widest_name = 0.f;
 	for (const entry& item : m_entries) {
 		widest_name = std::max(widest_name, text_view->width(item.name, ctx.style.font_size));
@@ -474,6 +500,22 @@ auto gse::ide::project_screen::build_list(gui::builder& ui) -> void {
 		}
 	}
 
+	if (m_notice.empty()) {
+		return;
+	}
+	const gui::style& sty = ctx.style;
+	const rectf card = ctx.current_menu->rect;
+	ctx.queue_text({
+		.font = ctx.fonts.text,
+		.text = m_notice,
+		.position = { card.left() + sty.padding, ctx.layout_cursor.y() - text_view->line_height(sty.font_size) * 0.5f },
+		.scale = sty.font_size,
+		.color = sty.color_error,
+		.clip_rect = rectf::from_position_size(
+			{ card.left() + sty.padding, ctx.layout_cursor.y() },
+			{ card.width() - sty.padding * 2.f, text_view->line_height(sty.font_size) + sty.padding }
+		),
+	});
 }
 
 auto gse::ide::project_screen::build_create(gui::builder& ui) -> void {

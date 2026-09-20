@@ -1,20 +1,18 @@
 export module gse.os:input;
 
-import std;
-
-import gse.math;
-import gse.meta;
-import gse.core;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
 import gse.log;
+import gse.math;
+import gse.meta;
+import gse.time;
+import std;
 
-import :keys;
-import :input_state;
 import :input_events;
+import :input_state;
 import :window;
 
 namespace gse::detail {

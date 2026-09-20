@@ -6,9 +6,8 @@ module;
 
 export module gse.os:app;
 
-import std;
-
 import gse.win32;
+import std;
 
 export namespace gse::app {
 	auto relaunch_on_exit(
@@ -20,6 +19,10 @@ export namespace gse::app {
 	auto relaunch_self_on_exit() -> void;
 
 	auto relaunch_pending() -> bool;
+
+	auto pin_relaunch_argument(
+		std::wstring argument
+	) -> void;
 
 	auto add_relaunch_handoff(
 		std::span<void* const> handles,
@@ -43,10 +46,11 @@ namespace gse::app {
 	std::vector<void*> relaunch_handles;
 	std::vector<std::wstring> relaunch_handoff_arguments;
 	std::vector<std::wstring> relaunch_dropped_prefixes;
+	std::vector<std::wstring> relaunch_pinned_arguments;
 }
 
 auto gse::app::relaunch_on_exit(std::filesystem::path executable, std::filesystem::path working_dir, std::vector<std::filesystem::path> arguments) -> void {
-	std::lock_guard lock(relaunch_mutex);
+	std::lock_guard _(relaunch_mutex);
 	relaunch_executable = std::move(executable);
 	relaunch_working_dir = std::move(working_dir);
 	relaunch_arguments = std::move(arguments);
@@ -58,7 +62,7 @@ auto gse::app::relaunch_on_exit(std::filesystem::path executable, std::filesyste
 }
 
 auto gse::app::relaunch_self_on_exit() -> void {
-	std::lock_guard lock(relaunch_mutex);
+	std::lock_guard _(relaunch_mutex);
 	relaunch_executable.clear();
 	relaunch_working_dir.clear();
 	relaunch_arguments.clear();
@@ -70,12 +74,19 @@ auto gse::app::relaunch_self_on_exit() -> void {
 }
 
 auto gse::app::relaunch_pending() -> bool {
-	std::lock_guard lock(relaunch_mutex);
+	std::lock_guard _(relaunch_mutex);
 	return relaunch_queued;
 }
 
+auto gse::app::pin_relaunch_argument(std::wstring argument) -> void {
+	std::lock_guard _(relaunch_mutex);
+	if (std::ranges::find(relaunch_pinned_arguments, argument) == relaunch_pinned_arguments.end()) {
+		relaunch_pinned_arguments.push_back(std::move(argument));
+	}
+}
+
 auto gse::app::add_relaunch_handoff(const std::span<void* const> handles, std::wstring argument) -> void {
-	std::lock_guard lock(relaunch_mutex);
+	std::lock_guard _(relaunch_mutex);
 	if (!relaunch_queued) {
 		return;
 	}
@@ -84,7 +95,7 @@ auto gse::app::add_relaunch_handoff(const std::span<void* const> handles, std::w
 }
 
 auto gse::app::drop_relaunch_arguments(std::wstring prefix) -> void {
-	std::lock_guard lock(relaunch_mutex);
+	std::lock_guard _(relaunch_mutex);
 	if (!relaunch_queued || prefix.empty()) {
 		return;
 	}
@@ -100,9 +111,10 @@ auto gse::app::run_pending_relaunch() -> void {
 	std::vector<void*> handles;
 	std::vector<std::wstring> handoff_arguments;
 	std::vector<std::wstring> dropped_prefixes;
+	std::vector<std::wstring> pinned_arguments;
 	bool self = false;
 	{
-		std::lock_guard lock(relaunch_mutex);
+		std::lock_guard _(relaunch_mutex);
 		if (!relaunch_queued) {
 			return;
 		}
@@ -114,6 +126,7 @@ auto gse::app::run_pending_relaunch() -> void {
 		handles = std::move(relaunch_handles);
 		handoff_arguments = std::move(relaunch_handoff_arguments);
 		dropped_prefixes = std::move(relaunch_dropped_prefixes);
+		pinned_arguments = relaunch_pinned_arguments;
 	}
 
 #ifdef _WIN32
@@ -159,6 +172,11 @@ auto gse::app::run_pending_relaunch() -> void {
 				at = begin;
 			}
 		}
+		for (const std::wstring& argument : pinned_arguments) {
+			if (line.find(argument) == std::wstring::npos) {
+				line += L" " + argument;
+			}
+		}
 		for (const std::wstring& argument : handoff_arguments) {
 			line += L" " + argument;
 		}
@@ -185,6 +203,11 @@ auto gse::app::run_pending_relaunch() -> void {
 	std::wstring command = L"\"" + executable.wstring() + L"\"";
 	for (const std::filesystem::path& argument : arguments) {
 		command += L" \"" + argument.wstring() + L"\"";
+	}
+	if (arguments.empty()) {
+		for (const std::wstring& argument : pinned_arguments) {
+			command += L" " + argument;
+		}
 	}
 	for (const std::wstring& argument : handoff_arguments) {
 		command += L" " + argument;

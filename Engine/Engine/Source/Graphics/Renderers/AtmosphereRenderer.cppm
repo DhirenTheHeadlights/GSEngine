@@ -1,15 +1,11 @@
 export module gse.graphics:atmosphere_renderer;
 
-import std;
-
-import gse.gpu;
-import gse.core;
-import gse.containers;
 import gse.concurrency;
 import gse.ecs;
-import gse.meta;
-import gse.math;
+import gse.gpu;
 import gse.gpu_record;
+import gse.math;
+import gse.meta;
 
 import :camera_system;
 
@@ -52,7 +48,7 @@ export namespace gse::renderer::atmosphere {
 		float star_fade;
 	};
 
-	struct [[= shaders::binding<0, 7>{}]] atmosphere_ubo {
+	struct [[= shaders::uniform_block]] atmosphere_ubo {
 		using element = atmosphere_data;
 	};
 
@@ -236,7 +232,6 @@ export namespace gse::renderer::atmosphere {
 		[[= shared]] gpu::image ap_volume;
 		vec3u ap_volume_extent{ 32, 32, 32 };
 
-		gpu::handle<gpu::sampler> lut_sampler;
 		[[= shared]] gpu::bindless_handle lut_sampler_bindless;
 		[[= shared]] gpu::bindless_handle sky_view_sampler_bindless;
 

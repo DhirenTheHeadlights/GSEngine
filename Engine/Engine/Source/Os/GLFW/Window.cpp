@@ -1,21 +1,20 @@
 module gse.os:window_impl;
 
+import gse.assert;
+import gse.concurrency;
+import gse.core;
+import gse.diag;
+import gse.ecs;
+import gse.glfw;
+import gse.log;
+import gse.math;
+import gse.time;
+import gse.win32;
 import std;
 
-import :window;
-import :keys;
 import :input_events;
-
-import gse.glfw;
-import gse.win32;
-
-import gse.assert;
-import gse.math;
-import gse.core;
-import gse.concurrency;
-import gse.diag;
-import gse.log;
-import gse.ecs;
+import :keys;
+import :window;
 
 namespace gse {
 	auto to_glfw_handle(
@@ -149,6 +148,10 @@ namespace gse {
 		const window::data& d
 	) -> window::composition_probe;
 
+	auto cloak_window(
+		native_window_handle handle
+	) -> void;
+
 	auto plausible_restore_geometry(
 		const window::geometry& g
 	) -> bool;
@@ -167,6 +170,7 @@ namespace gse {
 
 	constexpr vec2i default_window_size{ 1920, 1080 };
 	constexpr vec2i minimum_restore_size{ 320, 240 };
+	constexpr std::uint32_t housekeeping_interval_frames = 8;
 
 	auto to_input_key(
 		int glfw_key
@@ -481,6 +485,19 @@ auto gse::os_restore_geometry(const window::data& d) -> std::optional<window::ge
 #endif
 }
 
+auto gse::cloak_window(const native_window_handle handle) -> void {
+#ifdef _WIN32
+	const auto hwnd = win32::hwnd_from_glfw_window(to_glfw_handle(handle));
+	if (hwnd == nullptr) {
+		return;
+	}
+	const int cloak = 1;
+	(void)win32::DwmSetWindowAttribute(hwnd, win32::dwmwa_cloak, &cloak, static_cast<win32::DWORD>(sizeof(cloak)));
+#else
+	(void)handle;
+#endif
+}
+
 auto gse::probe_composition(const window::data& d) -> window::composition_probe {
 #ifdef _WIN32
 	const auto hwnd = win32::hwnd_from_glfw_window(to_glfw_handle(d.primary.handle));
@@ -723,6 +740,7 @@ auto gse::attach_surface_callbacks(GLFWwindow* handle, window::window_surface& s
 	glfwSetKeyCallback(
 		handle,
 		[](GLFWwindow* w, const int key, int, const int action, int) {
+			frame_demand::request_redraw();
 			auto* self = static_cast<window::window_surface*>(glfwGetWindowUserPointer(w));
 			if (!self) {
 				return;
@@ -747,6 +765,7 @@ auto gse::attach_surface_callbacks(GLFWwindow* handle, window::window_surface& s
 	glfwSetMouseButtonCallback(
 		handle,
 		[](GLFWwindow* w, const int button, const int action, int) {
+			frame_demand::request_redraw();
 			auto* self = static_cast<window::window_surface*>(glfwGetWindowUserPointer(w));
 			if (!self) {
 				return;
@@ -773,6 +792,7 @@ auto gse::attach_surface_callbacks(GLFWwindow* handle, window::window_surface& s
 	glfwSetCursorPosCallback(
 		handle,
 		[](GLFWwindow* w, double xpos, double ypos) {
+			frame_demand::request_redraw();
 			auto* self = static_cast<window::window_surface*>(glfwGetWindowUserPointer(w));
 			if (!self) {
 				return;
@@ -809,6 +829,7 @@ auto gse::attach_surface_callbacks(GLFWwindow* handle, window::window_surface& s
 	glfwSetScrollCallback(
 		handle,
 		[](GLFWwindow* w, const double xoffset, const double yoffset) {
+			frame_demand::request_redraw();
 			if (auto* self = static_cast<window::window_surface*>(glfwGetWindowUserPointer(w))) {
 				self->input_events.push(input::mouse_scrolled{ xoffset, yoffset });
 			}
@@ -818,6 +839,7 @@ auto gse::attach_surface_callbacks(GLFWwindow* handle, window::window_surface& s
 	glfwSetCharCallback(
 		handle,
 		[](GLFWwindow* w, const unsigned int codepoint) {
+			frame_demand::request_redraw();
 			if (auto* self = static_cast<window::window_surface*>(glfwGetWindowUserPointer(w))) {
 				self->input_events.push(input::text_entered{ codepoint });
 			}
@@ -827,6 +849,7 @@ auto gse::attach_surface_callbacks(GLFWwindow* handle, window::window_surface& s
 	glfwSetWindowFocusCallback(
 		handle,
 		[](GLFWwindow* w, const int focused) {
+			frame_demand::request_redraw();
 			auto* self = static_cast<window::window_surface*>(glfwGetWindowUserPointer(w));
 			if (!self) {
 				return;
@@ -838,6 +861,7 @@ auto gse::attach_surface_callbacks(GLFWwindow* handle, window::window_surface& s
 	glfwSetFramebufferSizeCallback(
 		handle,
 		[](GLFWwindow* w, const int, const int) {
+			frame_demand::request_redraw();
 			if (auto* self = static_cast<window::window_surface*>(glfwGetWindowUserPointer(w))) {
 				self->framebuffer_resized = true;
 			}
@@ -852,33 +876,48 @@ namespace gse::window {
 	std::optional<std::string> clipboard_pending;
 	bool clipboard_primed = false;
 	bool clipboard_was_focused = false;
+#ifdef _WIN32
+	win32::DWORD clipboard_sequence = 0;
+#endif
 
-	auto sync_clipboard(const bool focused) -> void {
+	auto sync_clipboard([[maybe_unused]] const bool focused) -> void {
 		std::optional<std::string> to_write;
 		{
-			const std::scoped_lock lock(clipboard_mutex);
+			const std::scoped_lock _(clipboard_mutex);
 			to_write = std::exchange(clipboard_pending, std::nullopt);
 		}
 		if (to_write) {
 			glfwSetClipboardString(nullptr, to_write->c_str());
-			const std::scoped_lock lock(clipboard_mutex);
+			const std::scoped_lock _(clipboard_mutex);
 			clipboard_cache = std::move(*to_write);
 		}
 
-		const bool gained_focus = focused && !clipboard_was_focused;
+#ifdef _WIN32
+		const win32::DWORD sequence = win32::GetClipboardSequenceNumber();
+		const bool source_changed = sequence != clipboard_sequence;
+#else
+		const bool source_changed = focused && !clipboard_was_focused;
 		clipboard_was_focused = focused;
-		if (clipboard_primed && !gained_focus) {
+#endif
+		if (clipboard_primed && !source_changed) {
 			return;
 		}
-		clipboard_primed = true;
+
 		const char* contents = glfwGetClipboardString(nullptr);
-		const std::scoped_lock lock(clipboard_mutex);
+#ifdef _WIN32
+		if (contents == nullptr && win32::IsClipboardFormatAvailable(win32::cf_unicodetext) != 0) {
+			return;
+		}
+		clipboard_sequence = sequence;
+#endif
+		clipboard_primed = true;
+		const std::scoped_lock _(clipboard_mutex);
 		clipboard_cache.assign(contents ? contents : "");
 	}
 }
 
 auto gse::window::clipboard_text() -> std::string {
-	const std::scoped_lock lock(clipboard_mutex);
+	const std::scoped_lock _(clipboard_mutex);
 	if (clipboard_pending) {
 		return *clipboard_pending;
 	}
@@ -886,7 +925,7 @@ auto gse::window::clipboard_text() -> std::string {
 }
 
 auto gse::window::set_clipboard_text(std::string text) -> void {
-	const std::scoped_lock lock(clipboard_mutex);
+	const std::scoped_lock _(clipboard_mutex);
 	clipboard_pending = std::move(text);
 }
 
@@ -1034,7 +1073,7 @@ namespace gse::window {
 		}
 		win32::CloseClipboard();
 
-		const std::scoped_lock lock(clipboard_image_mutex);
+		const std::scoped_lock _(clipboard_image_mutex);
 		clipboard_image_ready = std::move(found);
 	}
 #else
@@ -1052,7 +1091,7 @@ auto gse::window::request_clipboard_image() -> void {
 }
 
 auto gse::window::take_clipboard_image() -> std::optional<clipboard_image> {
-	const std::scoped_lock lock(clipboard_image_mutex);
+	const std::scoped_lock _(clipboard_image_mutex);
 	return std::exchange(clipboard_image_ready, std::nullopt);
 }
 
@@ -1108,19 +1147,21 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 	}
 
 	{
-		trace::scope_guard sg{ trace_id<"window::poll">() };
+		trace::scope_guard _{ trace_id<"window::poll">() };
 		poll_events();
 	}
 
-	{
-		trace::scope_guard sg{ trace_id<"window::clipboard">() };
-		sync_clipboard(d.primary.focused);
-		sync_clipboard_image();
-	}
+	if (++d.housekeeping_frame % housekeeping_interval_frames == 0) {
+		{
+			trace::scope_guard _{ trace_id<"window::clipboard">() };
+			sync_clipboard(d.primary.focused);
+			sync_clipboard_image();
+		}
 
-	{
-		trace::scope_guard sg{ trace_id<"window::content_scale">() };
-		d.primary.content_scale = window_handle_content_scale(d.primary.handle);
+		{
+			trace::scope_guard _{ trace_id<"window::content_scale">() };
+			d.primary.content_scale = window_handle_content_scale(d.primary.handle);
+		}
 	}
 
 	for (const auto& [focus] : sched.read_channel<ui_focus_request>()) {
@@ -1139,6 +1180,7 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 			.use_position = true,
 		});
 		if (!created) {
+			sched.make_channel_writer().push<window_popout_failed>({ .for_menu = req.menu_name });
 			continue;
 		}
 
@@ -1259,14 +1301,14 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 	}
 
 	{
-		trace::scope_guard sg{ trace_id<"window::cursor_mode">() };
+		trace::scope_guard _{ trace_id<"window::cursor_mode">() };
 		apply_cursor_mode(d);
 	}
 
 	if (d.primary.focused) {
-		trace::scope_guard sg{ trace_id<"window::modes">() };
-		if (d.current_display_mode != d.display_mode) {
-			apply_display_mode(d, d.display_mode);
+		trace::scope_guard _{ trace_id<"window::modes">() };
+		if (const display_mode wanted = d.attached ? display_mode::windowed : d.display_mode; d.current_display_mode != wanted) {
+			apply_display_mode(d, wanted);
 		}
 
 		if (const gpu::present_mode desired = desired_present_mode(d); d.current_present_mode != desired) {
@@ -1279,7 +1321,7 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 	d.primary.attached = d.attached;
 
 	{
-		trace::scope_guard sg{ trace_id<"window::commands">() };
+		trace::scope_guard _{ trace_id<"window::commands">() };
 		apply_commands(d);
 	}
 
@@ -1293,7 +1335,7 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 	}
 
 	{
-		trace::scope_guard sg{ trace_id<"window::monitor_scan">() };
+		trace::scope_guard _{ trace_id<"window::monitor_scan">() };
 		if (const int monitor_index = monitor_index_for_window(d.primary.position, d.primary.size); monitor_index != d.current_monitor_index) {
 			d.current_monitor_index = monitor_index;
 			d.primary.monitor_key = monitor_key_for_index(monitor_index);
@@ -1308,7 +1350,7 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 	}
 
 	{
-		trace::scope_guard sg{ trace_id<"window::focus">() };
+		trace::scope_guard _{ trace_id<"window::focus">() };
 		const window_surface* focused = &d.primary;
 		for (const auto& surface : d.secondaries) {
 			if (surface->handle && surface->focused) {
@@ -1358,7 +1400,7 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 	}
 
 	{
-		trace::scope_guard sg{ trace_id<"window::secondaries">() };
+		trace::scope_guard _{ trace_id<"window::secondaries">() };
 		for (std::size_t i = d.secondaries.size(); i-- > 0;) {
 			if (close_requested(*d.secondaries[i])) {
 				sched.make_channel_writer().push<window_closed>({ .id = d.secondaries[i]->id });
@@ -1439,6 +1481,14 @@ auto gse::window::shutdown(data& d) -> void {
 
 auto gse::window::poll_events() -> void {
 	glfwPollEvents();
+}
+
+auto gse::window::wait_events(const time timeout) -> void {
+	glfwWaitEventsTimeout(timeout.as<seconds>());
+}
+
+auto gse::window::post_wake() -> void {
+	glfwPostEmptyEvent();
 }
 
 auto gse::window::apply_commands(data& d) -> void {
@@ -1535,6 +1585,9 @@ auto gse::window::apply_commands(data& d) -> void {
 			framebuffer.y()
 		);
 		d.primary.last_composition = composition;
+		if (d.attached && composition.visible && composition.cloaked == 0) {
+			cloak_window(d.primary.handle);
+		}
 	}
 
 	const int previous_monitor = monitor_index_for_window(d.primary.position, d.primary.size);
@@ -1862,6 +1915,17 @@ auto gse::window::create_secondary(data& d, const secondary_window_desc& desc) -
 		nullptr
 	);
 	if (!handle) {
+		const char* description = nullptr;
+		const int code = glfwGetError(&description);
+		log::println(
+			log::level::error,
+			log::category::render,
+			"[window] could not create the secondary window '{}' at {}: glfw error {} ({})",
+			desc.title,
+			desc.size,
+			code,
+			description ? description : "no description"
+		);
 		return nullptr;
 	}
 

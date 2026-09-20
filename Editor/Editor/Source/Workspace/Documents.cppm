@@ -1,11 +1,14 @@
 export module gse.ide.workspace:documents;
 
-import std;
-import gse;
-
+import gse.core;
+import gse.graphics;
 import gse.ide.analysis;
-import gse.ide.highlight;
 import gse.ide.diagnostic;
+import gse.ide.highlight;
+import gse.math;
+import gse.meta;
+import gse.time;
+import std;
 
 export namespace gse::ide {
 	enum class document_persistence {

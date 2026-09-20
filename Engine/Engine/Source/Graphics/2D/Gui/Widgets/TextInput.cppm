@@ -1,36 +1,34 @@
 export module gse.graphics:text_input_widget;
 
-import std;
-
-import gse.os;
 import gse.assets;
-import gse.gpu;
-import gse.core;
-import gse.meta;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
+import gse.gpu;
 import gse.math;
-import :types;
+import gse.meta;
+import gse.os;
+import gse.time;
+import std;
+
 import :font;
 import :ids;
 import :input_layers;
-import :styles;
-import :builder;
 import :interaction;
+import :styles;
 import :text_select;
+import :types;
 
 export namespace gse::gui {
 	struct text_input_state {
 		int caret = 0;
 		int anchor = 0;
 		float scroll_x = 0.f;
-		time last_blink{};
+		deadline_timer blink;
 		bool blink_on = true;
-		bool rpt_active = false;
-		time rpt_next{};
+		deadline_timer repeat;
 		interaction::click_state click;
 		int select_granularity = 0;
 		int select_origin = 0;
@@ -123,7 +121,7 @@ auto gse::gui::draw::text_input(const draw_context& ctx, const std::string& name
 		{ content_rect.width(), widget_height }
 	);
 
-	const float label_width = content_rect.width() * 0.4f;
+	const float label_width = content_rect.width() * ctx.style.label_column_ratio;
 
 	const rectf label_rect = rectf::from_position_size(
 		row_rect.top_left(),
@@ -154,6 +152,9 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 	const auto fnt_view = fnt.resolve();
 	constexpr float text_padding = 5.f;
 	constexpr float caret_extent = 2.f;
+	constexpr time blink_interval = milliseconds(500.f);
+	constexpr time repeat_delay = milliseconds(400.f);
+	constexpr time repeat_interval = milliseconds(33.f);
 	state.caret = std::clamp(state.caret, 0, static_cast<int>(buffer.size()));
 	state.anchor = std::clamp(state.anchor, 0, static_cast<int>(buffer.size()));
 
@@ -248,7 +249,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 		}
 
 		state.selecting = true;
-		state.last_blink = system_clock::now<time>();
+		state.blink.arm(blink_interval);
 		state.blink_on = true;
 	}
 
@@ -271,7 +272,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			else if (state.select_granularity == 0) {
 				state.caret = current;
 			}
-			state.last_blink = system_clock::now<time>();
+			state.blink.arm(blink_interval);
 			state.blink_on = true;
 		}
 		else {
@@ -359,7 +360,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			buffer.insert(state.caret, entered);
 			state.caret += static_cast<int>(entered.size());
 			state.anchor = state.caret;
-			state.last_blink = system_clock::now<time>();
+			state.blink.arm(blink_interval);
 			state.blink_on = true;
 		}
 
@@ -371,7 +372,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			else {
 				state.caret = state.anchor = new_i;
 			}
-			state.last_blink = system_clock::now<time>();
+			state.blink.arm(blink_interval);
 			state.blink_on = true;
 		};
 
@@ -406,7 +407,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			state.anchor = 0;
 			state.caret = static_cast<int>(buffer.size());
 			state.select_granularity = 0;
-			state.last_blink = system_clock::now<time>();
+			state.blink.arm(blink_interval);
 			state.blink_on = true;
 		}
 
@@ -415,11 +416,11 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			ctx.set_clipboard(buffer.substr(a, b - a));
 			buffer.erase(a, b - a);
 			state.caret = state.anchor = a;
-			state.last_blink = system_clock::now<time>();
+			state.blink.arm(blink_interval);
 			state.blink_on = true;
 		}
 
-		if (ctrl && ctx.key_pressed_for(key::v) && !window::clipboard_image_available()) {
+		if (ctrl && ctx.key_pressed_for(key::v)) {
 			std::string paste = flatten_newlines(ctx.clipboard());
 			if (!paste.empty()) {
 				if (has_sel(state)) {
@@ -430,7 +431,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 				buffer.insert(state.caret, paste);
 				state.caret += static_cast<int>(paste.size());
 				state.anchor = state.caret;
-				state.last_blink = system_clock::now<time>();
+				state.blink.arm(blink_interval);
 				state.blink_on = true;
 			}
 		}
@@ -467,7 +468,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 				--state.caret;
 				state.anchor = state.caret;
 			}
-			state.last_blink = system_clock::now<time>();
+			state.blink.arm(blink_interval);
 			state.blink_on = true;
 		};
 
@@ -484,35 +485,33 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			else if (state.caret < static_cast<int>(buffer.size())) {
 				buffer.erase(state.caret, 1);
 			}
-			state.last_blink = system_clock::now<time>();
+			state.blink.arm(blink_interval);
 			state.blink_on = true;
 		};
 
 		if (ctx.key_pressed_for(key::backspace)) {
 			do_backspace();
-			state.rpt_active = true;
-			state.rpt_next = system_clock::now<time>() + milliseconds(400);
+			state.repeat.arm(repeat_delay);
 		}
 
 		if (ctx.key_pressed_for(key::del)) {
 			do_delete();
-			state.rpt_active = true;
-			state.rpt_next = system_clock::now<time>() + milliseconds(400);
+			state.repeat.arm(repeat_delay);
 		}
 
-		if (state.rpt_active && (ctx.key_held(key::backspace) || ctx.key_held(key::del))) {
-			if (const auto t = system_clock::now<time>(); t >= state.rpt_next) {
+		if (state.repeat.armed() && (ctx.key_held(key::backspace) || ctx.key_held(key::del))) {
+			if (state.repeat.due()) {
 				if (ctx.key_held(key::backspace)) {
 					do_backspace();
 				}
 				if (ctx.key_held(key::del)) {
 					do_delete();
 				}
-				state.rpt_next = t + milliseconds(33);
+				state.repeat.arm(repeat_interval);
 			}
 		}
 		else {
-			state.rpt_active = false;
+			state.repeat.disarm();
 		}
 
 		const float caret_x = fnt_view->width(buffer.substr(0, state.caret), ctx.style.font_size);
@@ -529,8 +528,11 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			state.scroll_x = 0.f;
 		}
 
-		if (const auto t = system_clock::now<time>(); t - state.last_blink > milliseconds(500)) {
-			state.last_blink = t;
+		if (!state.blink.armed()) {
+			state.blink.arm(blink_interval);
+		}
+		else if (state.blink.due()) {
+			state.blink.arm(blink_interval);
 			state.blink_on = !state.blink_on;
 		}
 
@@ -548,7 +550,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 
 	const rectf clip_rect = box_rect.inset({ text_padding, 0.f });
 	const vec2f text_pos = { box_rect.left() + text_padding,
-							 box_rect.center().y() + fnt_view->vertical_center_offset(ctx.style.font_size) };
+		box_rect.center().y() + fnt_view->vertical_center_offset(ctx.style.font_size) };
 
 	if (focused && has_sel(state)) {
 		auto [a, b] = sel_range(state);
@@ -558,7 +560,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 		const rectf sel_rect = rectf::from_position_size(
 			{ text_pos.x() + ax, box_rect.top() - (box_rect.height() - ctx.style.font_size) / 2.f },
 			{ std::max(1.f, bx - ax),
-			  ctx.style.font_size }
+				ctx.style.font_size }
 		);
 
 		ctx.queue_sprite({

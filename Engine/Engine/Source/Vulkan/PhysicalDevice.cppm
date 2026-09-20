@@ -35,6 +35,12 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto timestamp_period() const -> float;
 
+		[[nodiscard]] auto timestamp_valid_bits(
+			std::uint32_t family
+		) const -> std::uint32_t;
+
+		[[nodiscard]] auto calibrateable_time_domains() const -> std::vector<vk::TimeDomainKHR>;
+
 		[[nodiscard]] auto memory_properties() const -> vk::PhysicalDeviceMemoryProperties;
 
 		[[nodiscard]] auto scratch_offset_alignment() const -> gpu::device_size;
@@ -66,6 +72,16 @@ auto gse::vulkan::physical_device::is_discrete() const -> bool {
 
 auto gse::vulkan::physical_device::timestamp_period() const -> float {
 	return m_physical_device.getProperties().limits.timestampPeriod;
+}
+
+auto gse::vulkan::physical_device::timestamp_valid_bits(const std::uint32_t family) const -> std::uint32_t {
+	const auto properties = m_physical_device.getQueueFamilyProperties();
+	return family < properties.size() ? properties[family].timestampValidBits : 0;
+}
+
+auto gse::vulkan::physical_device::calibrateable_time_domains() const -> std::vector<vk::TimeDomainKHR> {
+	const auto [result, domains] = m_physical_device.getCalibrateableTimeDomainsKHR();
+	return result == vk::Result::eSuccess ? domains : std::vector<vk::TimeDomainKHR>{};
 }
 
 auto gse::vulkan::physical_device::memory_properties() const -> vk::PhysicalDeviceMemoryProperties {

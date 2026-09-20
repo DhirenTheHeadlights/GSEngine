@@ -1,19 +1,13 @@
 export module gse.graphics:oit_renderer;
 
-import std;
-
-import :geometry_collector;
-import :camera_system;
-import :atmosphere_renderer;
-
-import gse.math;
-import gse.core;
-import gse.containers;
 import gse.concurrency;
 import gse.ecs;
 import gse.gpu;
-import gse.meta;
 import gse.gpu_record;
+
+import :atmosphere_renderer;
+import :camera_system;
+import :geometry_collector;
 
 export namespace gse::renderer::oit {
 	struct accumulate_pass {};

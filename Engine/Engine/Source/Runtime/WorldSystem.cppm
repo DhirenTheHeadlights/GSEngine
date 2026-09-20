@@ -9,6 +9,7 @@ import gse.ecs;
 import gse.log;
 import gse.network;
 import gse.os;
+import gse.physics;
 
 import :scene;
 
@@ -49,10 +50,10 @@ export namespace gse::world_system {
 		[[= shared]] std::vector<trigger> triggers;
 		[[= shared]] std::optional<id> active_scene;
 		[[= shared]] scene* active_scene_ptr = nullptr;
-		bool networked = false;
-		bool authoritative = true;
+		[[= shared]] bool networked = false;
+		[[= shared]] bool authoritative = true;
 		std::optional<id> client_id;
-		id local_controlled_entity{};
+		[[= shared]] id local_controlled_entity{};
 		id local_controller_id{};
 
 		std::uint32_t next_player = 0;
@@ -64,12 +65,19 @@ export namespace gse::world_system {
 		scene* published_active_scene = nullptr;
 	};
 
+	[[= system_init{}]]
+	auto init(
+		context& ctx,
+		data& d,
+		const network::config& net_cfg
+	) -> async::task<>;
+
 	[[= system_run<>{}]]
 	auto run(
 		context& ctx,
 		data& d,
 		channel_read<set_networked_request, set_authoritative_request, set_local_controller_id_request, deactivate_active_scene_request, activate_scene_request> requests_in,
-		channel_write<spawn_player_request, possess_player_request, scene_catalog> player_out,
+		channel_write<spawn_player_request, possess_player_request, scene_catalog, physics::rollback_history_request> player_out,
 		shared_view<actions::data> actions_d,
 		write<player_controller> controllers,
 		entities ents
@@ -123,6 +131,8 @@ export namespace gse {
 }
 
 namespace gse {
+	constexpr int networked_history_steps = 120;
+
 	auto update_player_controllers(
 		world_system::data& d,
 		write<player_controller>& controllers,
@@ -164,6 +174,9 @@ auto gse::current_scene(world_system::data& d) -> scene* {
 }
 
 auto gse::activate_scene(world_system::data& d, const id& scene_id) -> void {
+	if (d.active_scene == scene_id) {
+		return;
+	}
 	if (d.active_scene.has_value()) {
 		if (auto* old_scene = find_scene(d, d.active_scene.value())) {
 			old_scene->set_active(false);
@@ -172,6 +185,10 @@ auto gse::activate_scene(world_system::data& d, const id& scene_id) -> void {
 	if (auto* new_scene = find_scene(d, scene_id)) {
 		new_scene->set_active(true);
 		d.active_scene = new_scene->id();
+		log::println(log::category::runtime, "world: activated scene {} with {} entities (networked {}, authoritative {})", scene_id, new_scene->entities().size(), d.networked, d.authoritative);
+	}
+	else {
+		log::println(log::level::warning, log::category::runtime, "world: activate scene {} requested but no scene with that id is registered", scene_id);
 	}
 }
 
@@ -180,6 +197,7 @@ auto gse::deactivate_active_scene(world_system::data& d) -> void {
 		if (auto* old_scene = find_scene(d, d.active_scene.value())) {
 			old_scene->set_active(false);
 		}
+		log::println(log::category::runtime, "world: deactivated scene {}", d.active_scene.value());
 	}
 	d.active_scene = std::nullopt;
 }
@@ -195,7 +213,7 @@ auto gse::update_player_controllers(world_system::data& d, write<player_controll
 	};
 
 	if (!d.networked) {
-		if (!d.local_player_spawned) {
+		if (!d.local_player_spawned && d.active_scene.has_value()) {
 			d.local_controlled_entity = spawn();
 			d.local_player_spawned = true;
 			player_out.push<world_system::possess_player_request>({
@@ -219,25 +237,47 @@ auto gse::update_player_controllers(world_system::data& d, write<player_controll
 	const auto* mine = d.local_controller_id.exists() ? controllers.find(d.local_controller_id) : nullptr;
 	const auto target = mine ? mine->controlled_entity_id : id{};
 
-	if (d.local_controlled_entity.exists() && d.local_controlled_entity != target) {
-		if (ents.exists(d.local_controlled_entity)) {
-			ents.remove(d.local_controlled_entity);
+	if (d.local_controlled_entity != target) {
+		if (d.local_controlled_entity.exists()) {
+			log::println(
+				log::level::warning,
+				log::category::network,
+				"world: lost possession of {}: controller {} {}, target {}",
+				d.local_controlled_entity.number(),
+				d.local_controller_id.number(),
+				mine ? "present" : "missing",
+				target.number()
+			);
 		}
 		d.local_controlled_entity = {};
 	}
 
 	if (target.exists() && !d.local_controlled_entity.exists() && ents.exists(target)) {
 		d.local_controlled_entity = target;
+		log::println(log::category::network, "world: possessing {} through controller {}", target.number(), d.local_controller_id.number());
 		player_out.push<world_system::possess_player_request>({
 			.entity = target,
 		});
 	}
 }
 
-auto gse::world_system::run(context& ctx, data& d, const channel_read<set_networked_request, set_authoritative_request, set_local_controller_id_request, deactivate_active_scene_request, activate_scene_request> requests_in, const channel_write<spawn_player_request, possess_player_request, scene_catalog> player_out, const shared_view<actions::data> actions_d, write<player_controller> controllers, entities ents) -> async::task<> {
+auto gse::world_system::init(context& ctx, data& d, const network::config& net_cfg) -> async::task<> {
+	const auto role = network::resolve_role(net_cfg);
+	d.networked = role != network::session_role::offline;
+	d.authoritative = role != network::session_role::client;
+	return {};
+}
+
+auto gse::world_system::run(context& ctx, data& d, const channel_read<set_networked_request, set_authoritative_request, set_local_controller_id_request, deactivate_active_scene_request, activate_scene_request> requests_in, const channel_write<spawn_player_request, possess_player_request, scene_catalog, physics::rollback_history_request> player_out, const shared_view<actions::data> actions_d, write<player_controller> controllers, entities ents) -> async::task<> {
 	for (const auto& r : requests_in.of<set_networked_request>()) {
+		if (r.value && !d.networked) {
+			d.local_controlled_entity = {};
+		}
 		d.networked = r.value;
 	}
+	player_out.push<physics::rollback_history_request>({
+		.steps = d.networked ? networked_history_steps : 0,
+	});
 	for (const auto& r : requests_in.of<set_authoritative_request>()) {
 		d.authoritative = r.value;
 	}

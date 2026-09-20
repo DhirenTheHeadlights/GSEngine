@@ -6,6 +6,12 @@ import gse.core;
 import gse.meta;
 
 export namespace gse::gpu {
+	struct timestamp_calibration {
+		std::uint64_t gpu_ticks = 0;
+		std::uint64_t host_ticks = 0;
+		std::uint64_t valid_bits_mask = 0;
+	};
+
 	enum class backend_kind : std::uint8_t {
 		vulkan,
 		dx12,
@@ -115,11 +121,6 @@ export namespace gse::gpu {
 	enum class index_type : std::uint8_t {
 		uint16,
 		uint32,
-	};
-
-	enum class bind_point : std::uint8_t {
-		graphics,
-		compute,
 	};
 
 	enum class queue_type : std::uint8_t {

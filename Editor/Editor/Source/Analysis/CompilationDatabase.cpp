@@ -1,7 +1,7 @@
 module gse.ide.analysis:compilation_database_impl;
 
-import std;
 import gse;
+import std;
 
 import :compilation_database;
 import :json;
@@ -284,7 +284,7 @@ auto gse::ide::analysis::load_dyndep(const std::filesystem::path& path, const st
 	}
 	const id path_id = generate_temp_id(path);
 	{
-		std::lock_guard lock(dyndep_cache_mutex);
+		std::lock_guard _(dyndep_cache_mutex);
 		if (const auto found = dyndep_cache.find(path_id); found != dyndep_cache.end() && found->second.modified == modified && found->second.size == size) {
 			return found->second.graph;
 		}
@@ -297,7 +297,7 @@ auto gse::ide::analysis::load_dyndep(const std::filesystem::path& path, const st
 	stream << in.rdbuf();
 	std::shared_ptr<dyndep_graph> graph = parse_dyndep(stream.str(), directory);
 	{
-		std::lock_guard lock(dyndep_cache_mutex);
+		std::lock_guard _(dyndep_cache_mutex);
 		dyndep_cache[path_id] = {
 			.modified = modified,
 			.size = size,
@@ -319,7 +319,7 @@ auto gse::ide::analysis::validate_module(const std::filesystem::path& module, co
 	if (!visiting.insert(module_id).second) {
 		return {};
 	}
-	const auto erase_visiting = make_scope_exit([&] {
+	const auto _ = make_scope_exit([&] {
 		visiting.erase(module_id);
 	});
 	const std::shared_ptr<const dyndep_graph> graph = load_dyndep(dyndep_path(module, directory), directory);
@@ -457,7 +457,7 @@ auto gse::ide::analysis::load_compilation_database(const std::filesystem::path& 
 	}
 
 	{
-		std::lock_guard lock(compilation_database_cache_mutex);
+		std::lock_guard _(compilation_database_cache_mutex);
 		if (const auto it = compilation_database_cache.find(database_id); it != compilation_database_cache.end() && it->second.modified == modified && it->second.size == size) {
 			return it->second.database;
 		}
@@ -475,7 +475,7 @@ auto gse::ide::analysis::load_compilation_database(const std::filesystem::path& 
 	}
 
 	{
-		std::lock_guard lock(compilation_database_cache_mutex);
+		std::lock_guard _(compilation_database_cache_mutex);
 		compilation_database_cache[database_id] = {
 			.modified = modified,
 			.size = size,

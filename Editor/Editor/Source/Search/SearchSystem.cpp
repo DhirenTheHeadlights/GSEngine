@@ -1,12 +1,12 @@
 module gse.ide.search:search_system_impl;
 
-import std;
 import gse;
-
 import gse.ide.analysis;
-import gse.ide.config;
 import gse.ide.build;
+import gse.ide.config;
+import std;
 
+import :agent_query;
 import :index;
 import :search_system;
 
@@ -17,7 +17,7 @@ namespace gse::ide::search_system {
 }
 
 auto gse::ide::search_system::poll_watcher(data& d) -> void {
-	const auto finish = make_scope_exit([&] {
+	const auto _ = make_scope_exit([&] {
 		d.next_watcher_poll.store(system_clock::now<time>() + milliseconds(500.f), std::memory_order_release);
 		d.watcher_polling.store(false, std::memory_order_release);
 	});
@@ -63,8 +63,11 @@ auto gse::ide::search_system::init(data& d) -> async::task<> {
 		d.watcher.watch_directory(
 			path,
 			[&d](const std::filesystem::path& changed) {
-				std::lock_guard lock(d.watcher_changes_mutex);
-				d.watcher_changes.push_back(changed);
+				{
+					std::lock_guard _(d.watcher_changes_mutex);
+					d.watcher_changes.push_back(changed);
+				}
+				frame_demand::request_redraw();
 			},
 			{},
 			true,
@@ -74,7 +77,6 @@ auto gse::ide::search_system::init(data& d) -> async::task<> {
 		);
 	}
 
-	search::start_symbol_worker(*d.index);
 	search::request_symbol_build(*d.index);
 	task::post([index = d.index.get()] {
 		search::build_files_and_content(*index, index->roots);
@@ -96,7 +98,7 @@ auto gse::ide::search_system::frame(const context& ctx, data& d, const channel_r
 	}
 	std::vector<std::filesystem::path> watcher_changes;
 	{
-		std::lock_guard lock(d.watcher_changes_mutex);
+		std::lock_guard _(d.watcher_changes_mutex);
 		watcher_changes.swap(d.watcher_changes);
 	}
 	for (const std::filesystem::path& path : watcher_changes) {
@@ -134,6 +136,10 @@ auto gse::ide::search_system::frame(const context& ctx, data& d, const channel_r
 	if (d.symbols_dirty && now - d.last_index_change > milliseconds(500.f) && !build_d.building && !d.index->building.load(std::memory_order_acquire)) {
 		d.symbols_dirty = false;
 		search::request_symbol_build(*d.index);
+	}
+	if (now >= d.next_query_poll) {
+		d.next_query_poll = now + milliseconds(100.f);
+		search::poll_agent_queries(*d.index);
 	}
 	return {};
 }

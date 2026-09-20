@@ -3,6 +3,10 @@ export module gse.assert;
 import std;
 
 export namespace gse {
+	[[noreturn]] auto fatal_exit(
+		int code
+	) noexcept -> void;
+
 	template <typename... Args>
 	struct fmt_loc {
 		std::format_string<Args...> fmt;

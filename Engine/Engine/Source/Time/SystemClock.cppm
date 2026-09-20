@@ -3,6 +3,7 @@ export module gse.time:system_clock;
 import std;
 import gse.math;
 import gse.log;
+import gse.win32;
 
 import :clock;
 
@@ -26,6 +27,10 @@ export namespace gse::system_clock {
 	template <is_quantity Q = default_time>
 	auto now() -> Q;
 
+	auto from_query_performance_counter(
+		std::uint64_t ticks
+	) -> time_t<double>;
+
 	template <is_quantity Q = default_time>
 	auto content_now() -> Q;
 
@@ -44,6 +49,10 @@ export namespace gse::system_clock {
 
 	auto set_fixed_step_override(
 		std::optional<int> steps
+	) -> void;
+
+	auto set_display_snapping(
+		bool enabled
 	) -> void;
 
 	auto fps() -> std::uint32_t;
@@ -68,6 +77,7 @@ namespace gse::system_clock {
 	internal_time fixed_accumulator{};
 	internal_time refresh_interval{};
 	internal_time snap_error{};
+	bool display_snapping = true;
 	std::optional<int> fixed_step_override;
 	std::optional<internal_time> external_display_interval;
 
@@ -197,6 +207,10 @@ auto gse::system_clock::snap_delta(const internal_time delta) -> internal_time {
 	const internal_time snap_tolerance = milliseconds(1.5);
 	const internal_time snap_error_limit = milliseconds(8.0);
 
+	if (!display_snapping) {
+		return delta;
+	}
+
 	const auto interval = display_interval();
 	if (interval <= internal_time{}) {
 		return delta;
@@ -214,8 +228,13 @@ auto gse::system_clock::snap_delta(const internal_time delta) -> internal_time {
 		break;
 	}
 
+	const auto repaid = delta + snap_error;
+	if (repaid < internal_time{}) {
+		snap_error = repaid;
+		return internal_time{};
+	}
 	snap_error = internal_time{};
-	return delta;
+	return repaid;
 }
 
 auto gse::system_clock::update_frame_rate(const internal_time elapsed) -> void {
@@ -237,6 +256,19 @@ auto gse::system_clock::dt() -> Q {
 template <gse::is_quantity Q>
 auto gse::system_clock::now() -> Q {
 	return quantity_cast<Q>(main_clock.elapsed<double>());
+}
+
+auto gse::system_clock::from_query_performance_counter(const std::uint64_t ticks) -> time_t<double> {
+	const auto before = now<time_t<double>>();
+	const auto current = win32::performance_counter();
+	const auto after = now<time_t<double>>();
+	static const auto frequency = win32::performance_counter_frequency();
+	if (current == 0 || frequency == 0) {
+		return after;
+	}
+	const auto midpoint = before + (after - before) * 0.5;
+	const auto delta_ns = (static_cast<double>(ticks) - static_cast<double>(current)) * (1.0e9 / static_cast<double>(frequency));
+	return midpoint + nanoseconds(delta_ns);
 }
 
 template <gse::is_quantity Q>
@@ -273,6 +305,13 @@ auto gse::system_clock::set_fixed_step_override(const std::optional<int> steps) 
 
 auto gse::system_clock::submit_display_interval(const internal_time dt) -> void {
 	external_display_interval = dt;
+}
+
+auto gse::system_clock::set_display_snapping(const bool enabled) -> void {
+	display_snapping = enabled;
+	if (!enabled) {
+		snap_error = internal_time{};
+	}
 }
 
 auto gse::system_clock::submit_refresh_interval(const internal_time interval) -> void {

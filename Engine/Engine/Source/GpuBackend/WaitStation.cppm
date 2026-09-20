@@ -1,8 +1,7 @@
 export module gse.gpu_backend:wait_station;
 
-import std;
-
 import gse.core;
+import std;
 
 export namespace gse::gpu {
 	class wait_station final : public non_copyable {
@@ -46,8 +45,8 @@ export namespace gse::gpu {
 
 gse::gpu::wait_station::wait_station(wait_station&& other) noexcept
 	: m_progress(other.m_progress.load(std::memory_order_relaxed)),
-	  m_waiters(std::move(other.m_waiters)),
-	  m_mutex(std::move(other.m_mutex)) {
+m_waiters(std::move(other.m_waiters)),
+m_mutex(std::move(other.m_mutex)) {
 }
 
 auto gse::gpu::wait_station::operator=(wait_station&& other) noexcept -> wait_station& {
@@ -68,7 +67,7 @@ auto gse::gpu::wait_station::reached(const std::uint64_t value) const -> bool {
 }
 
 auto gse::gpu::wait_station::park(const std::uint64_t value, std::coroutine_handle<> handle) -> void {
-	std::lock_guard lock(*m_mutex);
+	std::lock_guard _(*m_mutex);
 	m_waiters.push_back({
 		.value = value,
 		.handle = handle,
@@ -78,7 +77,7 @@ auto gse::gpu::wait_station::park(const std::uint64_t value, std::coroutine_hand
 auto gse::gpu::wait_station::advance(const std::uint64_t reached_value) -> void {
 	std::vector<std::coroutine_handle<>> ready;
 	{
-		std::lock_guard lock(*m_mutex);
+		std::lock_guard _(*m_mutex);
 		const auto current = m_progress.load(std::memory_order_relaxed);
 		if (reached_value > current) {
 			m_progress.store(reached_value, std::memory_order_release);

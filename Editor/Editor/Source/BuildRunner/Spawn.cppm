@@ -1,9 +1,9 @@
 export module gse.ide.build:spawn;
 
-import std;
 import gse;
 import gse.win32;
 import gse.win32.environment;
+import std;
 
 export namespace gse::ide::spawn {
 	struct output_stream {
@@ -127,27 +127,30 @@ auto gse::ide::spawn::flush_lines(output_stream& stream, std::string& pending) -
 }
 
 auto gse::ide::spawn::emit(output_stream& stream, std::string text) -> void {
-	std::lock_guard lock(stream.mutex);
-	if (stream.recording) {
-		stream.transcript.push_back(text);
+	{
+		std::lock_guard _(stream.mutex);
+		if (stream.recording) {
+			stream.transcript.push_back(text);
+		}
+		stream.lines.push_back(std::move(text));
 	}
-	stream.lines.push_back(std::move(text));
+	frame_demand::request_redraw();
 }
 
 auto gse::ide::spawn::begin_transcript(output_stream& stream) -> void {
-	std::lock_guard lock(stream.mutex);
+	std::lock_guard _(stream.mutex);
 	stream.transcript.clear();
 	stream.recording = true;
 }
 
 auto gse::ide::spawn::take_transcript(output_stream& stream) -> std::vector<std::string> {
-	std::lock_guard lock(stream.mutex);
+	std::lock_guard _(stream.mutex);
 	stream.recording = false;
 	return std::move(stream.transcript);
 }
 
 auto gse::ide::spawn::attach_process(output_stream& stream, void* process, void* job) -> void {
-	std::lock_guard lock(stream.mutex);
+	std::lock_guard _(stream.mutex);
 	stream.process = process;
 	if (win32::valid_handle(stream.job)) {
 		win32::CloseHandle(stream.job);
@@ -156,7 +159,7 @@ auto gse::ide::spawn::attach_process(output_stream& stream, void* process, void*
 }
 
 auto gse::ide::spawn::close_process(output_stream& stream) -> void {
-	std::lock_guard lock(stream.mutex);
+	std::lock_guard _(stream.mutex);
 	stream.process = nullptr;
 	if (win32::valid_handle(stream.job)) {
 		win32::CloseHandle(stream.job);
@@ -166,7 +169,7 @@ auto gse::ide::spawn::close_process(output_stream& stream) -> void {
 }
 
 auto gse::ide::spawn::terminate_process(output_stream& stream) -> void {
-	std::lock_guard lock(stream.mutex);
+	std::lock_guard _(stream.mutex);
 	stream.terminated.store(true, std::memory_order_release);
 	terminate(stream.process, stream.job);
 }
@@ -197,7 +200,7 @@ auto gse::ide::spawn::run_capture(
 		emit(stream, "failed to create output pipe");
 		return -1;
 	}
-	const auto close_read = make_scope_exit([read_end] {
+	const auto _ = make_scope_exit([read_end] {
 		win32::CloseHandle(read_end);
 	});
 	win32::SetHandleInformation(read_end, win32::handle_flag_inherit, 0);
@@ -216,7 +219,7 @@ auto gse::ide::spawn::run_capture(
 		emit(stream, "failed to prepare process attributes");
 		return -1;
 	}
-	const auto delete_attribute_list = make_scope_exit([attribute_list] {
+	const auto _ = make_scope_exit([attribute_list] {
 		win32::DeleteProcThreadAttributeList(attribute_list);
 	});
 	if (!win32::UpdateProcThreadAttribute(attribute_list, 0, win32::proc_thread_attribute_handle_list, &write_end, sizeof(write_end), nullptr, nullptr)) {
@@ -300,7 +303,7 @@ auto gse::ide::spawn::run_capture(
 	win32::DWORD code = 0;
 	win32::GetExitCodeProcess(process.hProcess, &code);
 	{
-		std::lock_guard lock(stream.mutex);
+		std::lock_guard _(stream.mutex);
 		stream.process = nullptr;
 	}
 	win32::CloseHandle(process.hProcess);
@@ -332,10 +335,10 @@ auto gse::ide::spawn::launch_streamed(const std::wstring& command_line, const st
 	win32::SetHandleInformation(input_write, win32::handle_flag_inherit, 0);
 
 	bool adopted = false;
-	const auto close_input_read = make_scope_exit([input_read] {
+	const auto _ = make_scope_exit([input_read] {
 		win32::CloseHandle(input_read);
 	});
-	const auto close_input_write = make_scope_exit([&adopted, input_write] {
+	const auto _ = make_scope_exit([&adopted, input_write] {
 		if (!adopted) {
 			win32::CloseHandle(input_write);
 		}
@@ -355,7 +358,7 @@ auto gse::ide::spawn::launch_streamed(const std::wstring& command_line, const st
 		win32::CloseHandle(write_end);
 		return {};
 	}
-	const auto delete_attribute_list = make_scope_exit([attribute_list] {
+	const auto _ = make_scope_exit([attribute_list] {
 		win32::DeleteProcThreadAttributeList(attribute_list);
 	});
 	void* inherited[2] = { write_end, input_read };

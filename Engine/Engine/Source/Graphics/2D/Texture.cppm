@@ -65,7 +65,7 @@ export namespace gse {
 		[[nodiscard]] auto bindless_slot() const -> gpu::bindless_slot;
 
 	private:
-		auto create_vulkan_resources(
+		auto create_device_resources(
 			gpu::context::data& context,
 			profile texture_profile
 		) -> void;

@@ -1,14 +1,13 @@
 export module gse.vulkan:aftermath;
 
-import std;
-import vulkan;
-
 import gse.aftermath;
 import gse.config;
 import gse.core;
 import gse.log;
 import gse.math;
 import gse.time;
+import std;
+import vulkan;
 
 export namespace gse::vulkan {
 	class aftermath final : public non_copyable {
@@ -242,8 +241,8 @@ auto gse::vulkan::on_gpu_crash_dump(const void* data, std::uint32_t size) -> voi
 auto gse::vulkan::on_shader_debug_info(const void* data, std::uint32_t size) -> void {
 	const auto stem = dumps.last_dump_stem.empty()
 		? std::format(
-			  "gse_{}_shaderdebug",
-			  system_clock::timestamp_filename()
+			"gse_{}_shaderdebug",
+			system_clock::timestamp_filename()
 		  )
 		: dumps.last_dump_stem + "_shaderdebug";
 	write_dump_to_disk(dumps.shader_directory, stem, ".nvdbg", data, size);
@@ -362,7 +361,7 @@ auto gse::vulkan::aftermath::register_spirv(std::span<const std::uint32_t> spirv
 		? std::format("{:016X}.spv", *aftermath_hash)
 		: std::format("{:016x}.spv", std::hash<std::string_view>{}(std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size())));
 
-	const std::lock_guard lock(shader_registry_mutex);
+	const std::lock_guard _(shader_registry_mutex);
 
 	std::error_code ec;
 	std::filesystem::create_directories(dumps.shader_directory, ec);
@@ -375,11 +374,4 @@ auto gse::vulkan::aftermath::register_spirv(std::span<const std::uint32_t> spirv
 	if (out) {
 		out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
 	}
-
-	log::println(
-		log::category::vulkan,
-		"Aftermath shader registered: {} ({} bytes)",
-		filename,
-		bytes.size()
-	);
 }

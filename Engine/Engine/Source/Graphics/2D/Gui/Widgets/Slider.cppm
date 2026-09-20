@@ -1,25 +1,23 @@
 export module gse.graphics:slider_widget;
 
-import std;
-
-import gse.os;
 import gse.assets;
-import gse.gpu;
-import gse.math;
-import gse.core;
-import gse.meta;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
-import :types;
+import gse.gpu;
+import gse.math;
+import gse.meta;
+import gse.os;
+import gse.time;
+import std;
+
 import :ids;
-import :input_layers;
-import :styles;
-import :layout_ops;
-import :builder;
 import :interaction;
+import :layout_ops;
+import :styles;
+import :types;
 
 namespace gse::gui::draw {
 	template <is_arithmetic T>
@@ -342,7 +340,7 @@ auto gse::gui::draw::slider_row(const draw_context& ctx, const std::string& name
 	const auto [label_rect, value_area] = lo::split_horizontal<2>(
 		row_rect,
 		{
-			spec::ratio(0.4f),
+			spec::ratio(ctx.style.label_column_ratio),
 			spec::flex(),
 		}
 	);

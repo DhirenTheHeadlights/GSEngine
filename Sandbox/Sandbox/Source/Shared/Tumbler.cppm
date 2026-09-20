@@ -1,7 +1,11 @@
 export module sandbox:tumbler;
 
+import gse.concurrency;
+import gse.ecs;
+import gse.math;
+import gse.physics;
+import gse.time;
 import std;
-import gse;
 
 export namespace sandbox::tumbler {
 	struct component {
@@ -28,7 +32,7 @@ export namespace sandbox::tumbler {
 
 auto sandbox::tumbler::run(gse::context& ctx, data& d, const gse::shared_view<gse::physics::data> phys, gse::write<component> tumblers, gse::write<gse::physics::kinematic_target_component> targets) -> gse::async::task<> {
 	const auto step_dt = gse::system_clock::fixed_dt<gse::time>();
-	const float frame_step_count = static_cast<float>(phys.sim_steps_this_frame);
+	const float frame_step_count = static_cast<float>(phys.interpolation.steps);
 
 	const auto tumbler_ids = tumblers.owner_ids();
 	for (std::size_t i = 0; i < tumblers.size(); ++i) {

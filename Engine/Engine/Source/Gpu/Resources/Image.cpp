@@ -6,7 +6,7 @@ import :image;
 import :gpu_task;
 import :sync_token;
 import :device;
-import :pass_recorder;
+import :command_contract;
 
 import gse.concurrency;
 import gse.math;
@@ -25,18 +25,17 @@ auto gse::gpu::transition_image_to(device& dev, image& img) -> sync_token {
 		? access_flags{ access_flag::depth_stencil_attachment_write, access_flag::depth_stencil_attachment_read }
 		: access_flags{ access_flag::shader_read };
 
-	const image_barrier barrier{
+	const image_discard barrier{
 		.src_stages = pipeline_stage_flag::top_of_pipe,
 		.src_access = {},
 		.dst_stages = dst_stages,
 		.dst_access = dst_access,
-		.discard_contents = true,
 		.image = img.handle(),
 		.aspects = aspect,
 	};
 
 	const dependency_info dep{
-		.image_barriers = std::span(&barrier, 1)
+		.image_discards = std::span(&barrier, 1)
 	};
 	dev.recorder(cmd.handle()).pipeline_barrier(dep);
 

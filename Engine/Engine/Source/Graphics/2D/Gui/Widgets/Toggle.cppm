@@ -1,23 +1,22 @@
 export module gse.graphics:toggle_widget;
 
-import std;
-
-import gse.os;
 import gse.assets;
-import gse.gpu;
-import gse.core;
-import gse.meta;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
+import gse.gpu;
 import gse.math;
-import :types;
+import gse.meta;
+import gse.os;
+import gse.time;
+import std;
+
 import :font;
 import :ids;
 import :styles;
-import :builder;
+import :types;
 
 export namespace gse::gui {
 	struct toggle {
@@ -25,6 +24,7 @@ export namespace gse::gui {
 		struct params {
 			std::string_view name;
 			bool& value;
+			std::optional<rectf> rect{};
 			resource::handle<font> font{};
 		};
 		static auto draw(
@@ -37,24 +37,48 @@ export namespace gse::gui {
 	};
 }
 
-auto gse::gui::toggle::draw(const draw_context& ctx, const params& p, id& hot, id& active, id&) -> bool {
-	const auto fnt = p.font.valid() ? p.font : ctx.fonts.text;
-	const auto fnt_view = fnt.resolve();
+namespace gse::gui {
+	auto toggle_in_rect(
+		const draw_context& ctx,
+		const rectf& row_rect,
+		const toggle::params& p,
+		id& hot
+	) -> bool;
+}
+
+auto gse::gui::toggle::draw(const draw_context& ctx, const params& p, id& hot, id&, id&) -> bool {
+	if (p.rect) {
+		return toggle_in_rect(ctx, *p.rect, p, hot);
+	}
+
 	if (!ctx.current_menu) {
 		return false;
 	}
 
-	const std::uint64_t name_key = stable_id(p.name);
-	const id widget_id = ids::make_from_key(name_key);
-
+	const auto fnt = p.font.valid() ? p.font : ctx.fonts.text;
 	const float widget_height =
-		fnt_view->line_height(ctx.style.font_size) + ctx.style.padding * ctx.style.widget_height_padding;
+		fnt.resolve()->line_height(ctx.style.font_size) + ctx.style.padding * ctx.style.widget_height_padding;
 	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
 
 	const rectf row_rect = rectf::from_position_size(
 		{ content_rect.left(), ctx.layout_cursor.y() },
 		{ content_rect.width(), widget_height }
 	);
+
+	const bool toggled = toggle_in_rect(ctx, row_rect, p, hot);
+
+	ctx.layout_cursor.y() -= widget_height + ctx.style.padding + ctx.style.item_spacing;
+
+	return toggled;
+}
+
+auto gse::gui::toggle_in_rect(const draw_context& ctx, const rectf& row_rect, const toggle::params& p, id& hot) -> bool {
+	const auto fnt = p.font.valid() ? p.font : ctx.fonts.text;
+	const auto fnt_view = fnt.resolve();
+
+	const std::uint64_t name_key = stable_id(p.name);
+	const id widget_id = ids::make_from_key(name_key);
+	const float widget_height = row_rect.height();
 
 	const bool hovered = ctx.hovers(row_rect);
 
@@ -68,7 +92,7 @@ auto gse::gui::toggle::draw(const draw_context& ctx, const params& p, id& hot, i
 		toggled = true;
 	}
 
-	const float label_width = content_rect.width() * 0.4f;
+	const float label_width = row_rect.width() * ctx.style.label_column_ratio;
 
 	const rectf label_rect = rectf::from_position_size(
 		row_rect.top_left(),
@@ -124,8 +148,6 @@ auto gse::gui::toggle::draw(const draw_context& ctx, const params& p, id& hot, i
 		.texture = ctx.blank_texture,
 		.corner_radius = knob_size / 2.f
 	});
-
-	ctx.layout_cursor.y() -= widget_height + ctx.style.padding + ctx.style.item_spacing;
 
 	return toggled;
 }

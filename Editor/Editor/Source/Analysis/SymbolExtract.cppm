@@ -1,7 +1,9 @@
 export module gse.ide.analysis:symbol_extract;
 
+import gse.core;
+import gse.log;
+import gse.meta;
 import std;
-import gse;
 
 import :semantic_tokens;
 
@@ -98,6 +100,13 @@ export namespace gse::ide::analysis {
 		std::string name;
 	};
 
+	struct narrowable_import {
+		std::string file;
+		std::uint32_t line = 0;
+		std::string imported;
+		std::vector<std::string> replacements;
+	};
+
 	struct symbol_set {
 		std::vector<symbol_token> symbols;
 		std::vector<symbol_ref> refs;
@@ -105,6 +114,7 @@ export namespace gse::ide::analysis {
 		std::vector<qualified_use> template_args;
 		std::vector<param_token> params;
 		std::vector<unused_local> unused_locals;
+		std::vector<narrowable_import> narrowable_imports;
 		std::unordered_map<file_id, std::filesystem::path> files;
 		bool complete = false;
 	};
@@ -124,7 +134,7 @@ constexpr auto gse::ide::analysis::is_type_kind(const symbol_kind kind) -> bool 
 }
 
 constexpr auto gse::ide::analysis::to_semantic_kind(const symbol_kind kind) -> semantic_kind {
-	return annotation_from_enum<semantic_kind>(kind, semantic_kind::variable);
+	return annotation_from_enum(kind, semantic_kind::variable);
 }
 
 namespace gse::ide::analysis {
@@ -314,6 +324,34 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 			}
 			++discarded;
 			report_discarded_record(main_file, line, "a GSEUNUSED record has an empty name or a non-numeric position", discarded);
+			continue;
+		}
+
+		if (line.starts_with("GSEIMPORT\t")) {
+			std::array<std::string_view, 5> fields;
+			const std::size_t count = split_fields(line, '\t', fields);
+			if (count < 4) {
+				++discarded;
+				report_discarded_record(main_file, line, "a GSEIMPORT record carries fewer than the 4 required fields", discarded);
+				continue;
+			}
+			std::uint32_t ln = 0;
+			if (fields[3].empty() || !gse::parse(fields[2], ln) || ln == 0) {
+				++discarded;
+				report_discarded_record(main_file, line, "a GSEIMPORT record has an empty module name or a non-numeric line", discarded);
+				continue;
+			}
+			narrowable_import entry{
+				.file = std::string(fields[1]),
+				.line = ln,
+				.imported = std::string(fields[3]),
+			};
+			for (const auto part : std::views::split(fields[4], ' ')) {
+				if (const std::string_view name(part); !name.empty()) {
+					entry.replacements.emplace_back(name);
+				}
+			}
+			out.narrowable_imports.push_back(std::move(entry));
 			continue;
 		}
 

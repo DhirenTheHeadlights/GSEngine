@@ -1,17 +1,12 @@
 export module gse.graphics:gui_screen;
 
-import std;
-
-import gse.os;
-import gse.core;
-import gse.ecs;
 import gse.math;
+import gse.os;
 
-import :gui;
-import :types;
 import :builder;
+import :gui;
 import :menu_stack;
-import :ui_renderer;
+import :types;
 
 namespace gse::gui {
 	auto draw_screen_caption(

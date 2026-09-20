@@ -1,6 +1,5 @@
 export module gse.gpu_backend:device_settings;
 
-import std;
 
 import gse.meta;
 

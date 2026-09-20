@@ -1,26 +1,25 @@
 module gse.ecs:scheduler_impl;
 
+import gse.assert;
+import gse.concurrency;
+import gse.core;
+import gse.diag;
+import gse.introspection;
+import gse.log;
+import gse.math;
+import gse.meta;
+import gse.time;
 import std;
 
-import :scheduler;
-import :registries;
+import :access_token;
 import :context;
+import :registries;
+import :registry;
+import :scheduler;
 import :settings;
 import :system_node;
-import :system_dispatch;
-import :registry;
 import :task_graph;
-import :access_token;
-
-import gse.assert;
-import gse.core;
-import gse.meta;
-import gse.concurrency;
-import gse.time;
-import gse.math;
-import gse.diag;
-import gse.log;
-import gse.introspection;
+import :system_dispatch;
 
 auto gse::scheduler::set_registry(registry& reg) -> void {
 	m_registry = &reg;
@@ -256,6 +255,7 @@ auto gse::scheduler::snapshot_all_states() -> void {
 
 namespace gse {
 	enum class dep_kind : std::uint8_t {
+		declared,
 		pinned,
 		structural,
 		reordered_read,
@@ -304,7 +304,7 @@ namespace gse {
 }
 
 auto gse::scheduler::run_node_frame(context& ctx, system_node& node) -> async::task<> {
-	trace::open_span span(node.frame_wall_id, 0);
+	trace::open_span _(node.frame_wall_id, 0);
 
 	for (const id& dep : node.frame_state_deps) {
 		co_await ctx.after_id(dep);
@@ -384,6 +384,13 @@ auto gse::dep_path_exists(const std::vector<std::vector<component_dep>>& deps, c
 }
 
 auto gse::scheduler::wire_component_deps() -> void {
+	const auto warn_once = [this](const std::string& message) {
+		if (!m_logged_cycle_warnings.insert(std::hash<std::string_view>{}(message)).second) {
+			return;
+		}
+		log::println(log::level::warning, log::category::runtime, "{}", message);
+	};
+
 	std::unordered_map<id, std::vector<std::pair<std::size_t, id>>> writers;
 	std::unordered_map<id, std::vector<std::pair<std::size_t, id>>> structural_writers;
 	std::unordered_map<id, std::vector<std::pair<std::size_t, id>>> resource_writers;
@@ -417,7 +424,7 @@ auto gse::scheduler::wire_component_deps() -> void {
 				deps[idx].push_back({
 					.state = dep,
 					.via = {},
-					.kind = dep_kind::pinned,
+					.kind = dep_kind::declared,
 				});
 			}
 			++idx;
@@ -529,8 +536,24 @@ auto gse::scheduler::wire_component_deps() -> void {
 			break;
 		}
 
+		const auto edge_between = [&](const std::size_t from, const std::size_t to) {
+			return std::ranges::find(deps[from], m_nodes[to].state_id, &component_dep::state);
+		};
+
+		bool declared_in_cycle = false;
+		for (std::size_t i = 0; i < cycle.size(); ++i) {
+			const auto edge = edge_between(cycle[i], cycle[(i + 1) % cycle.size()]);
+			if (edge != deps[cycle[i]].end() && edge->kind == dep_kind::declared) {
+				declared_in_cycle = true;
+				break;
+			}
+		}
+
 		bool demoted = false;
-		for (const auto target : { dep_kind::output, dep_kind::reordered_read, dep_kind::structural }) {
+		for (const auto target : { dep_kind::output, dep_kind::reordered_read, dep_kind::structural, dep_kind::pinned }) {
+			if (target == dep_kind::pinned && !declared_in_cycle) {
+				break;
+			}
 			for (std::size_t i = 0; i < cycle.size(); ++i) {
 				const auto from = cycle[i];
 				const auto to = cycle[(i + 1) % cycle.size()];
@@ -540,14 +563,12 @@ auto gse::scheduler::wire_component_deps() -> void {
 					continue;
 				}
 				if (target == dep_kind::output) {
-					log::println(
-						log::level::warning,
-						log::category::runtime,
+					warn_once(std::format(
 						"scheduler: {} and {} both write {} and ordering them closes a cycle. dropping the write ordering — if both actually mutate it, one needs an explicit ordering annotation",
 						m_nodes[from].state_id,
 						m_nodes[to].state_id,
 						edge->via
-					);
+					));
 				}
 				else if (target == dep_kind::structural) {
 					dropped.push_back({
@@ -556,15 +577,24 @@ auto gse::scheduler::wire_component_deps() -> void {
 						.via = edge->via,
 					});
 				}
+				else if (target == dep_kind::pinned) {
+					warn_once(std::format(
+						"scheduler: {} reads {} written by {}, but an explicit runs_after in the same cycle asks for the opposite order. honouring the annotation — {} now reads {} from before {} runs",
+						m_nodes[from].state_id,
+						edge->via,
+						m_nodes[to].state_id,
+						m_nodes[from].state_id,
+						edge->via,
+						m_nodes[to].state_id
+					));
+				}
 				else {
-					log::println(
-						log::level::warning,
-						log::category::runtime,
+					warn_once(std::format(
 						"scheduler: cyclic data dependency; {} reads {} written by {}, but that ordering closes a cycle. falling back to registration order — add an explicit ordering annotation to make this deterministic",
 						m_nodes[from].state_id,
 						edge->via,
 						m_nodes[to].state_id
-					);
+					));
 				}
 				list.erase(edge);
 				demoted = true;
@@ -583,14 +613,12 @@ auto gse::scheduler::wire_component_deps() -> void {
 	for (const auto& [accessor, structural_writer, via] : dropped) {
 		if (dep_path_exists(deps, state_to_index, accessor, structural_writer)
 			|| dep_path_exists(deps, state_to_index, structural_writer, accessor)) {
-			log::println(
-				log::level::warning,
-				log::category::runtime,
+			warn_once(std::format(
 				"scheduler: {} accesses {} while {} adds or removes it, and ordering them that way closes a cycle. they stay serialised by the reverse path, so the access sees the state from before the structural change",
 				m_nodes[accessor].state_id,
 				via,
 				m_nodes[structural_writer].state_id
-			);
+			));
 			continue;
 		}
 
@@ -721,7 +749,7 @@ auto gse::scheduler::initialize() -> void {
 
 auto gse::scheduler::all_settled() const -> bool {
 	{
-		std::lock_guard lock(m_hot_add_mutex);
+		std::lock_guard _(m_hot_add_mutex);
 		if (!m_hot_add_queue.empty()) {
 			return false;
 		}
@@ -740,7 +768,7 @@ auto gse::scheduler::all_settled() const -> bool {
 auto gse::scheduler::settle_progress() const -> settle_stats {
 	settle_stats stats{};
 	{
-		std::lock_guard lock(m_hot_add_mutex);
+		std::lock_guard _(m_hot_add_mutex);
 		for (const auto& node : m_hot_add_queue) {
 			if (node.invoke_run_fn || node.invoke_init_fn) {
 				++stats.total;
@@ -893,7 +921,7 @@ auto gse::scheduler::check_closed_dep_graph() -> void {
 }
 
 auto gse::scheduler::dispatch_run_systems() -> void {
-	trace::scope_guard sg{ trace_id<"scheduler::dispatch_run_systems">() };
+	trace::scope_guard _{ trace_id<"scheduler::dispatch_run_systems">() };
 
 	const auto dispatchable = dispatchable_nodes();
 
@@ -929,7 +957,7 @@ auto gse::scheduler::dispatch_run_systems() -> void {
 	std::vector<async::task<>> tasks;
 	tasks.reserve(m_nodes.size());
 	{
-		trace::scope_guard sg_dispatch{ trace_id<"sched::run_dispatch">() };
+		trace::scope_guard _{ trace_id<"sched::run_dispatch">() };
 		std::size_t idx = 0;
 		for (auto& node : m_nodes) {
 			if (!node.invoke_run_fn || !dispatchable[idx]) {
@@ -944,15 +972,15 @@ auto gse::scheduler::dispatch_run_systems() -> void {
 		}
 	}
 	{
-		trace::scope_guard sg_wait{ trace_id<"sched::run_wait">() };
+		trace::scope_guard _{ trace_id<"sched::run_wait">() };
 		sync_wait_or_dump(std::move(tasks), wait_phase::update);
 	}
 }
 
 auto gse::scheduler::update() -> void {
-	trace::scope_guard sg{ trace_id<"scheduler::update">() };
+	trace::scope_guard _{ trace_id<"scheduler::update">() };
 	{
-		trace::scope_guard sg_drain{ trace_id<"sched::drain_hot_add">() };
+		trace::scope_guard _{ trace_id<"sched::drain_hot_add">() };
 		drain_hot_add_queue();
 	}
 	if (!m_dep_graph_checked) {
@@ -963,7 +991,7 @@ auto gse::scheduler::update() -> void {
 		m_dep_graph_checked = true;
 	}
 	{
-		trace::scope_guard sg_apply{ trace_id<"sched::apply_settings">() };
+		trace::scope_guard _{ trace_id<"sched::apply_settings">() };
 		for (auto& node : m_nodes) {
 			if (node.invoke_apply_settings_fn) {
 				node.invoke_apply_settings_fn(node.data.get(), m_channels_store);
@@ -973,13 +1001,13 @@ auto gse::scheduler::update() -> void {
 	advance_inits();
 	dispatch_run_systems();
 	{
-		trace::scope_guard sg_snap{ trace_id<"sched::snapshot_all">() };
+		trace::scope_guard _{ trace_id<"sched::snapshot_all">() };
 		snapshot_all_states();
 	}
 }
 
 auto gse::scheduler::tick(const bool frame_ok, const std::function<void()>& in_frame) -> void {
-	trace::scope_guard sg{ trace_id<"scheduler::tick">() };
+	trace::scope_guard _{ trace_id<"scheduler::tick">() };
 	if (!m_initialized) {
 		initialize();
 	}
@@ -990,7 +1018,7 @@ auto gse::scheduler::tick(const bool frame_ok, const std::function<void()>& in_f
 auto gse::scheduler::drain_hot_add_queue() -> void {
 	std::vector<system_node> drained;
 	{
-		std::lock_guard lock(m_hot_add_mutex);
+		std::lock_guard _(m_hot_add_mutex);
 		drained.swap(m_hot_add_queue);
 	}
 	if (drained.empty()) {
@@ -1066,8 +1094,9 @@ auto gse::scheduler::add_system_node(system_node node) -> void {
 		return;
 	}
 
-	std::lock_guard lock(m_hot_add_mutex);
+	std::lock_guard _(m_hot_add_mutex);
 	m_hot_add_queue.push_back(std::move(node));
+	frame_demand::request_redraw();
 }
 
 auto gse::scheduler::begin_staging() -> void {
@@ -1248,8 +1277,9 @@ auto gse::scheduler::queue_system_node(system_node node) -> void {
 	assert(m_registry != nullptr, "scheduler::set_registry must be called before queue_system_node");
 	assert(m_phase != scheduler_phase::shutdown, "scheduler::queue_system_node called during shutdown");
 
-	std::lock_guard lock(m_hot_add_mutex);
+	std::lock_guard _(m_hot_add_mutex);
 	m_hot_add_queue.push_back(std::move(node));
+	frame_demand::request_redraw();
 }
 
 auto gse::context::add_system_node(system_node node) -> void {
@@ -1258,7 +1288,7 @@ auto gse::context::add_system_node(system_node node) -> void {
 
 auto gse::scheduler::advance_one_init_system(system_node& node) -> async::task<> {
 	node.init_in_flight = true;
-	auto in_flight_guard = make_scope_exit([&node] {
+	auto _ = make_scope_exit([&node] {
 		node.init_in_flight = false;
 	});
 
@@ -1297,7 +1327,7 @@ auto gse::scheduler::advance_one_init_system(system_node& node) -> async::task<>
 }
 
 auto gse::scheduler::run_node_update(context& ctx, system_node& node) -> async::task<> {
-	trace::open_span span(node.update_wall_id, 0);
+	trace::open_span _(node.update_wall_id, 0);
 
 	for (const id& dep : node.run_state_deps) {
 		co_await m_update_graph.wait_state_ready(dep);
@@ -1336,7 +1366,7 @@ auto gse::scheduler::sync_wait_or_dump(std::vector<async::task<>>&& tasks, const
 	w.start();
 
 	const auto [section_id, budget] = wait_section_for(phase);
-	watchdog::section watch{ section_id, budget };
+	watchdog::section _{ section_id, budget };
 
 	clock wait_clock;
 	auto seen_pulse = watchdog::dump_pulse();
@@ -1350,9 +1380,16 @@ auto gse::scheduler::sync_wait_or_dump(std::vector<async::task<>>&& tasks, const
 			seen_pulse = pulse;
 			++dump_count;
 			log_stall_state(phase, wait_clock.elapsed<float>(), dump_count);
+			if (m_stall_probe) {
+				m_stall_probe();
+			}
 			log::flush();
 		}
 	}
+}
+
+auto gse::scheduler::set_stall_probe(std::function<void()> probe) -> void {
+	m_stall_probe = std::move(probe);
 }
 
 auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float> elapsed, const int dump_count) -> void {
@@ -1468,7 +1505,7 @@ auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in
 		return;
 	}
 
-	trace::scope_guard sg{ trace_id<"scheduler::render">() };
+	trace::scope_guard _{ trace_id<"scheduler::render">() };
 	auto writer = m_channels_store.make_writer();
 
 	context f_ctx(*this, m_states, m_resources_store, m_channels_store, writer, m_frame_graph, *m_registry, m_guard, nullptr, nullptr, false);
@@ -1502,7 +1539,7 @@ auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in
 	}
 
 	if (!tasks.empty()) {
-		trace::scope_guard sg2{ trace_id<"scheduler::start_frame_tasks">() };
+		trace::scope_guard _{ trace_id<"scheduler::start_frame_tasks">() };
 		task::group group(trace_id<"scheduler::start_frame_tasks">());
 		for (std::size_t i = 0; i < tasks.size(); ++i) {
 			group.post(

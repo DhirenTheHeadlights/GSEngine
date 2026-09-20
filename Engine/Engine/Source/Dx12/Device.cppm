@@ -1,18 +1,15 @@
 export module gse.dx12:device;
 
-import std;
-
-import gse.gpu_backend;
 import gse.core;
-import gse.os;
+import gse.directx;
 import gse.ecs;
+import gse.gpu_backend;
+import gse.log;
 import gse.math;
 import gse.meta;
-import gse.win32;
-import gse.directx;
-import gse.log;
+import gse.os;
+import std;
 
-import :conversions;
 import :pipeline;
 
 namespace gse::dx12 {
@@ -54,11 +51,25 @@ namespace gse::dx12 {
 		gpu::dynamic_pipeline_state state;
 		bool is_mesh = false;
 		std::uint32_t push_size = 0;
+		directx::ID3D12RootSignature* root_signature = nullptr;
+	};
+
+	struct compute_pso_layout {
+		std::uint32_t push_size = 0;
+		directx::ID3D12RootSignature* root_signature = nullptr;
+	};
+
+	struct view_record {
+		directx::DXGI_FORMAT format = directx::format_unknown;
+		directx::ID3D12Resource* resource = nullptr;
+		directx::D3D12_BARRIER_LAYOUT rest_layout = directx::layout_direct_queue_common;
 	};
 
 	struct graphics_pass_state {
 		std::uint32_t rtv_count = 0;
 		std::array<directx::DXGI_FORMAT, 8> rtv_formats{};
+		std::array<view_record, 8> rtv_views{};
+		view_record dsv_view;
 		directx::DXGI_FORMAT dsv_format = directx::format_unknown;
 		const gfx_template* pending = nullptr;
 		std::uint32_t push_size = 0;
@@ -117,6 +128,10 @@ export namespace gse::dx12 {
 
 		[[nodiscard]] auto timestamp_period() const -> float;
 
+		[[nodiscard]] auto calibrated_timestamp(
+			gpu::queue_type queue
+		) const -> std::optional<gpu::timestamp_calibration>;
+
 		auto record_buffer_fill_u32(
 			gpu::command_buffer_handle cmd,
 			gpu::handle<gpu::buffer> buf,
@@ -141,15 +156,21 @@ export namespace gse::dx12 {
 			const gpu::dependency_info& dep
 		) -> void;
 
-		auto cmd_transition_acceleration_structure_inputs(
-			gpu::command_buffer_handle cmd,
-			std::span<const gpu::device_address> addresses
+		auto cmd_end_rendering(
+			gpu::command_buffer_handle cmd
 		) -> void;
 
 		auto cmd_write_timestamp(
 			gpu::command_buffer_handle cmd,
 			gpu::handle<gpu::query_pool> pool,
 			std::uint32_t index
+		) -> void;
+
+		auto cmd_resolve_query_pool(
+			gpu::command_buffer_handle cmd,
+			gpu::handle<gpu::query_pool> pool,
+			std::uint32_t first_query,
+			std::uint32_t query_count
 		) -> void;
 
 		auto cmd_release_swapchain_to_present(
@@ -188,6 +209,10 @@ export namespace gse::dx12 {
 		) -> std::uint32_t;
 
 		[[nodiscard]] auto compute_pso_bound(
+			gpu::command_buffer_handle cmd
+		) -> bool;
+
+		[[nodiscard]] auto graphics_pso_bound(
 			gpu::command_buffer_handle cmd
 		) -> bool;
 
@@ -355,6 +380,10 @@ export namespace gse::dx12 {
 			gpu::handle<gpu::fence> fence
 		) -> void;
 
+		auto retire_query_pool(
+			gpu::handle<gpu::query_pool> pool
+		) -> void;
+
 		[[nodiscard]] auto semaphore_counter_value(
 			gpu::handle<gpu::semaphore> semaphore
 		) const -> std::uint64_t;
@@ -363,6 +392,12 @@ export namespace gse::dx12 {
 			gpu::handle<gpu::semaphore> semaphore,
 			std::uint64_t value
 		) const -> void;
+
+		[[nodiscard]] auto wait_semaphore_for(
+			gpu::handle<gpu::semaphore> semaphore,
+			std::uint64_t value,
+			time timeout
+		) const -> bool;
 
 		[[nodiscard]] auto create_timestamp_query_pool(
 			std::uint32_t capacity,
@@ -480,13 +515,7 @@ export namespace gse::dx12 {
 
 		[[nodiscard]] auto bindless_sampler_heap_binding() const -> gpu::bindless_heap_binding;
 
-		[[nodiscard]] auto create_sampler(
-			const gpu::sampler_desc& desc
-		) -> gpu::handle<gpu::sampler>;
-
 		auto collect_garbage() -> void;
-
-		[[nodiscard]] auto root_signature() const -> directx::ID3D12RootSignature*;
 
 		[[nodiscard]] auto resource_heap() const -> directx::ID3D12DescriptorHeap*;
 
@@ -526,10 +555,18 @@ export namespace gse::dx12 {
 
 		[[nodiscard]] auto hwnd() const -> void*;
 
-		auto register_view_format(
+		auto register_view(
 			std::size_t descriptor_ptr,
-			directx::DXGI_FORMAT format
+			const view_record& record
 		) -> void;
+
+		auto forget_present_image(
+			directx::ID3D12Resource* resource
+		) -> void;
+
+		[[nodiscard]] auto is_present_image(
+			directx::ID3D12Resource* resource
+		) const -> bool;
 
 	private:
 		auto init_bindless() -> void;
@@ -566,9 +603,13 @@ export namespace gse::dx12 {
 			const gfx_template* tmpl
 		) -> void;
 
-		[[nodiscard]] auto view_format(
+		[[nodiscard]] auto view(
 			std::size_t descriptor_ptr
-		) const -> directx::DXGI_FORMAT;
+		) const -> view_record;
+
+		[[nodiscard]] auto rest_layout(
+			directx::ID3D12Resource* resource
+		) const -> directx::D3D12_BARRIER_LAYOUT;
 
 		directx::com_ptr<directx::IDXGIFactory4> m_factory;
 		directx::com_ptr<directx::ID3D12Device> m_device;
@@ -586,10 +627,9 @@ export namespace gse::dx12 {
 		std::vector<directx::com_ptr<directx::ID3D12PipelineState>> m_owned_psos;
 		std::deque<gfx_template> m_gfx_templates;
 		std::vector<graphics_pso_entry> m_graphics_psos;
-		mutable std::map<std::size_t, directx::DXGI_FORMAT> m_view_format;
-		std::unordered_map<directx::ID3D12PipelineState*, std::uint32_t> m_pso_push_size;
-		std::unordered_map<directx::ID3D12Resource*, directx::D3D12_RESOURCE_STATES> m_resource_states;
-		std::unordered_map<directx::ID3D12Resource*, directx::D3D12_RESOURCE_STATES> m_buffer_states;
+		mutable std::map<std::size_t, view_record> m_views;
+		std::unordered_set<directx::ID3D12Resource*> m_present_images;
+		std::unordered_map<directx::ID3D12PipelineState*, compute_pso_layout> m_compute_layouts;
 
 		struct live_buffer {
 			gpu::bindless_slot slot;
@@ -624,7 +664,7 @@ export namespace gse::dx12 {
 		gpu::bindless_heap_binding m_sampler_binding;
 		std::uint32_t m_cbv_srv_uav_size = 0;
 		std::uint32_t m_sampler_size = 0;
-		pipeline_layout m_pipeline_layout;
+		root_signature_cache m_root_signatures;
 		bool m_gpu_upload_supported = false;
 		bool m_validation_enabled = false;
 		std::atomic<bool> m_dred_dumped{ false };

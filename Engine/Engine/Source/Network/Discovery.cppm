@@ -1,20 +1,19 @@
 export module gse.network:discovery;
 
-import std;
-
-import :socket;
-import :bitstream;
-import :packet_header;
-import :message;
-import :server_info;
-
-import gse.math;
-import gse.core;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
+import gse.math;
+import gse.time;
+import std;
+
+import :bitstream;
+import :message;
+import :packet_header;
+import :server_info;
+import :socket;
 
 export namespace gse::network {
 	struct discovery_result {
@@ -81,16 +80,16 @@ auto gse::network::wan_directory_provider::refresh(time timeout) -> void {
 		return;
 	}
 
-	std::thread([this, timeout] {
+	task::post_io([this, timeout] {
 		query_servers_async(timeout);
 		m_querying.store(false);
-	}).detach();
+	}, trace_id<"network::discovery">());
 }
 
 auto gse::network::wan_directory_provider::query_servers_async(time timeout) -> void {
 	std::vector<discovery_result> local_copy;
 	{
-		std::lock_guard lock(m_mutex);
+		std::lock_guard _(m_mutex);
 		local_copy = m_seed;
 	}
 
@@ -119,7 +118,10 @@ auto gse::network::wan_directory_provider::query_servers_async(time timeout) -> 
 		.size = request_stream.bytes_written()
 	};
 
-	for (const auto& server : local_copy) {
+	for (auto& server : local_copy) {
+		if (const auto resolved = resolve_address(server.addr)) {
+			server.addr = *resolved;
+		}
 		socket.send_data(request_pkt, server.addr);
 	}
 
@@ -127,7 +129,7 @@ auto gse::network::wan_directory_provider::query_servers_async(time timeout) -> 
 	clock timeout_clock;
 	std::array<std::byte, 256> recv_buffer;
 
-	while (timeout_clock.elapsed() < timeout) {
+	while (timeout_clock.elapsed() < timeout && responses.size() < local_copy.size()) {
 		if (socket.wait_readable(milliseconds(10)) != wait_result::ready) {
 			continue;
 		}
@@ -157,7 +159,7 @@ auto gse::network::wan_directory_provider::query_servers_async(time timeout) -> 
 	}
 
 	{
-		std::lock_guard lock(m_mutex);
+		std::lock_guard _(m_mutex);
 		m_pending = std::move(local_copy);
 	}
 	m_has_pending.store(true, std::memory_order_release);
@@ -165,7 +167,7 @@ auto gse::network::wan_directory_provider::query_servers_async(time timeout) -> 
 
 auto gse::network::wan_directory_provider::results() -> std::span<const discovery_result> {
 	if (m_has_pending.load(std::memory_order_acquire)) {
-		std::lock_guard lock(m_mutex);
+		std::lock_guard _(m_mutex);
 		m_published = std::move(m_pending);
 		m_has_pending.store(false, std::memory_order_release);
 	}

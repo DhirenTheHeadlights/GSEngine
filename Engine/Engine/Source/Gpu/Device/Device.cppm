@@ -3,7 +3,7 @@ export module gse.gpu:device;
 import std;
 
 import :video_encoder;
-import :pass_recorder;
+import :command_contract;
 
 import gse.gpu_backend;
 import gse.assert;
@@ -41,6 +41,26 @@ export namespace gse::gpu {
 		auto wait_idle() const -> void;
 
 		[[nodiscard]] auto timestamp_period() const -> float;
+
+		[[nodiscard]] auto calibrated_timestamp(
+			queue_type queue
+		) const -> std::optional<timestamp_calibration>;
+
+		struct perf_metrics_config {
+			bool enabled = false;
+			std::string metrics;
+			std::uint32_t device_index = 0;
+			time sampling_interval;
+			bool lock_clocks = false;
+
+			auto operator==(
+				const perf_metrics_config&
+			) const -> bool = default;
+		};
+
+		auto set_perf_metrics(
+			const perf_metrics_config& config
+		) -> void;
 
 		auto report_device_lost(
 			std::string_view operation
@@ -187,6 +207,10 @@ export namespace gse::gpu {
 			gpu::handle<fence> fence
 		) -> void;
 
+		auto retire(
+			gpu::handle<query_pool> pool
+		) -> void;
+
 		[[nodiscard]]
 		auto semaphore_counter_value(
 			gpu::handle<semaphore> semaphore
@@ -196,6 +220,13 @@ export namespace gse::gpu {
 			gpu::handle<semaphore> semaphore,
 			std::uint64_t value
 		) const -> void;
+
+		[[nodiscard]]
+		auto wait_semaphore_for(
+			gpu::handle<semaphore> semaphore,
+			std::uint64_t value,
+			time timeout
+		) const -> bool;
 
 		[[nodiscard]]
 		auto create_timestamp_query_pool(
@@ -395,9 +426,7 @@ export namespace gse::gpu {
 		auto bindless_sampler_heap_binding() const -> bindless_heap_binding;
 
 		[[nodiscard]]
-		auto create_sampler(
-			const sampler_desc& desc
-		) -> gpu::handle<sampler>;
+		auto max_push_data_size() const -> std::uint32_t;
 
 		auto collect_garbage() -> void;
 
@@ -552,6 +581,7 @@ export namespace gse::gpu {
 		image_format m_surface_format;
 		std::atomic<bool> m_device_lost_reported = false;
 		bool m_video_encode_enabled = false;
+		perf_metrics_config m_perf_metrics;
 
 		std::vector<resource_ref> m_slot_resources;
 

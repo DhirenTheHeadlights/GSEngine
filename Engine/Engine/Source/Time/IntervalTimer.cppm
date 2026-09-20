@@ -1,11 +1,9 @@
 export module gse.time:interval_timer;
 
-import std;
-
 import gse.assert;
 import gse.math;
 
-import :clock;
+import :frame_demand;
 import :system_clock;
 
 export namespace gse {
@@ -42,6 +40,7 @@ auto gse::interval_timer<T>::tick(const time_t<T> dt) -> bool {
 		m_accumulated -= m_interval;
 		return true;
 	}
+	frame_demand::request_frame_at(system_clock::now<time_t<double, seconds>>() + (m_interval - m_accumulated));
 	return false;
 }
 

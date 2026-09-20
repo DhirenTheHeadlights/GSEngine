@@ -7,15 +7,9 @@ import gse.gpu;
 import gse.math;
 
 export namespace gse::shaders::bindless {
-	struct [[
-		= binding<2, 0>{},
-		= sampler2d_array
-	]] textures {};
+	struct [[= sampler2d_array]] textures {};
 
-	struct [[
-		= binding<2, 1>{},
-		= sampler_state
-	]] textures_sampler {};
+	struct [[= sampler_state]] textures_sampler {};
 
 	constexpr std::uint32_t invalid_index = std::numeric_limits<std::uint32_t>::max();
 }
@@ -136,51 +130,31 @@ export namespace gse::shaders::forward {
 }
 
 export namespace gse::shaders::meshlet {
-	struct [[
-		= binding<1, 0>{},
-		= ssbo_readonly
-	]] vertices_buffer {
+	struct [[= ssbo_readonly]] vertices_buffer {
 		using element = forward::vertex;
 	};
 
-	struct [[
-		= binding<1, 1>{},
-		= ssbo_readonly
-	]] meshlets_buffer {
+	struct [[= ssbo_readonly]] meshlets_buffer {
 		using element = forward::meshlet_descriptor;
 	};
 
-	struct [[
-		= binding<1, 2>{},
-		= ssbo_readonly
-	]] meshlet_vertex_indices {
+	struct [[= ssbo_readonly]] meshlet_vertex_indices {
 		using element = std::uint32_t;
 	};
 
-	struct [[
-		= binding<1, 3>{},
-		= byte_address_buffer
-	]] meshlet_triangles {};
+	struct [[= byte_address_buffer]] meshlet_triangles {};
 
-	struct [[
-		= binding<1, 4>{},
-		= ssbo_readonly
-	]] meshlet_bounds_buffer {
+	struct [[= ssbo_readonly]] meshlet_bounds_buffer {
 		using element = forward::meshlet_bounds;
+	};
+
+	struct [[= ssbo_readonly]] instance_data_buffer {
+		using element = common::instance_data;
 	};
 }
 
 export namespace gse::shaders::standard_3d {
-	struct [[= binding<0, 0>{}]] camera_ubo {
+	struct [[= uniform_block]] camera_ubo {
 		using element = common::camera_data;
 	};
-
-	struct [[
-		= binding<1, 4>{},
-		= ssbo_readonly
-	]] instance_data_buffer {
-		using element = common::instance_data;
-	};
-
-	using shader_binding_types = type_pack<camera_ubo, instance_data_buffer, bindless::textures>;
 }

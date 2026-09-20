@@ -1,24 +1,22 @@
 module gse.graphics:world_text_renderer_impl;
 
-import std;
-
-import :world_text_renderer;
-import :sdf_grid_renderer;
-import :forward_renderer;
-import :camera_system;
-import :gui;
-import :font;
-import :render_targets;
-
-
+import gse.concurrency;
+import gse.containers;
+import gse.core;
+import gse.ecs;
 import gse.gpu;
 import gse.gpu_record;
-import gse.core;
-import gse.containers;
-import gse.concurrency;
-import gse.ecs;
 import gse.math;
 import gse.meta;
+import std;
+
+import :camera_system;
+import :font;
+import :gui;
+import :render_targets;
+import :sdf_grid_renderer;
+import :world_text_renderer;
+import :forward_renderer;
 
 namespace gse::renderer::world_text {
 	struct [[= shaders::shader_struct]] world_text_vertex {
@@ -26,10 +24,7 @@ namespace gse::renderer::world_text {
 		vec2f tex_coord;
 	};
 
-	struct [[
-		= shaders::binding<0, 1>{},
-		= shaders::ssbo_readonly
-	]] world_text_vertex_buffer {
+	struct [[= shaders::ssbo_readonly]] world_text_vertex_buffer {
 		using element = world_text_vertex;
 	};
 

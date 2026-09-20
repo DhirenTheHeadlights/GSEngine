@@ -4,7 +4,6 @@ import std;
 
 import :primitive_math_shared;
 import :units;
-import :vector;
 import :vector_math;
 
 export namespace gse {

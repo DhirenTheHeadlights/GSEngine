@@ -3,7 +3,6 @@ export module gse.ecs:traits;
 import std;
 
 import :access_token;
-import :component;
 
 export namespace gse {
 	template <typename S>

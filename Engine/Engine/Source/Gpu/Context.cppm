@@ -1,31 +1,36 @@
 export module gse.gpu:context;
 
+import gse.concurrency;
+import gse.containers;
+import gse.core;
+import gse.diag;
+import gse.ecs;
+import gse.gpu_backend;
+import gse.log;
+import gse.math;
+import gse.meta;
+import gse.os;
+import gse.save;
+import gse.time;
 import std;
 
 import :device;
-import :swap_chain;
 import :frame;
-import :transient_pool;
 import :render_graph;
-
-import gse.gpu_backend;
-import gse.os;
-
-import gse.log;
-import gse.core;
-import gse.containers;
-import gse.time;
-import gse.concurrency;
-import gse.diag;
-import gse.ecs;
-import gse.meta;
-import gse.save;
+import :swap_chain;
 
 export namespace gse::gpu {
 	struct gpu_resume_request;
 }
 
 export namespace gse::gpu::context {
+	constexpr std::string_view default_gpu_perf_metrics =
+		"tpc__warps_active_shader_cs_realtime.avg.pct_of_peak_sustained_elapsed,"
+		"sm__inst_executed_realtime.avg.per_cycle_active,"
+		"sm__pipe_fma_cycles_active_realtime.avg.pct_of_peak_sustained_elapsed,"
+		"lts__t_sectors_realtime.sum.per_second,"
+		"dram__bytes.sum.per_second";
+
 	struct window_presentation {
 		id window;
 		gpu::surface surface;
@@ -50,6 +55,59 @@ export namespace gse::gpu::context {
 			= settings::describe<"Vulkan device tracking and naming options.">{}
 		]]
 		gpu::device_settings device_settings;
+
+		[[
+			= settings::describe<"Record GPU timestamp queries around each render pass for the profiler.">{}
+		]]
+		bool gpu_timestamps_enabled = true;
+
+		[[
+			= settings::describe<"Collect pipeline statistics (invocations, primitives) per pass. Has measurable overhead.">{}
+		]]
+		bool gpu_pipeline_stats_enabled = false;
+
+		[[
+			= settings::describe<"Record intra-pass GPU timestamp marks for passes that place them. Adds one query per mark.">{}
+		]]
+		bool gpu_intra_pass_marks_enabled = false;
+
+		[[
+			= settings::describe<"Dump every render graph pass with its reads, writes and attachments to the log whenever "
+								  "the graph changes shape. Verbose: one block per pass.">{}
+		]]
+		bool log_render_graph = false;
+
+		[[
+			= settings::describe<"Sample NVIDIA GPU hardware counters (SM throughput, warp occupancy, stall reasons) and "
+								  "attribute them to render graph passes and marks. Needs the Nsight Perf SDK at build time, "
+								  "GPU timestamps at run time, and performance counter permission from the driver.">{}
+		]]
+		bool gpu_perf_metrics_enabled = false;
+
+		[[
+			= settings::describe<"Comma separated Nsight Perf metric names to sample. The set must fit a single "
+								  "configuration pass; the periodic sampler cannot replay, so an oversized set is refused "
+								  "whole rather than trimmed.">{}
+		]]
+		std::string gpu_perf_metrics{ default_gpu_perf_metrics };
+
+		[[
+			= settings::describe<"Index of the NVIDIA device to sample, for machines holding more than one.">{}
+		]]
+		std::uint32_t gpu_perf_metrics_device = 0;
+
+		[[
+			= settings::describe<"Hardware counter sampling period. Shorter periods resolve shorter dispatches and cost "
+								  "more decode work; a pass shorter than two periods gets no row.">{}
+		]]
+		time gpu_perf_metrics_interval = microseconds(10.f);
+
+		[[
+			= settings::describe<"Lock GPU clocks to rated TDP while sampling. Makes stall ratios repeatable but moves "
+								  "every microsecond figure away from the profile tables the rest of the work is measured "
+								  "against.">{}
+		]]
+		bool gpu_perf_metrics_lock_clocks = false;
 
 		[[= stable_shared]] std::unique_ptr<gpu::device> device;
 		[[= stable_shared]] std::unique_ptr<swap_chain> swapchain;

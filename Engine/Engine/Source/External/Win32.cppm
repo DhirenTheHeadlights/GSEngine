@@ -25,6 +25,10 @@ export module gse.win32;
 
 #ifdef _WIN32
 export namespace gse::win32 {
+	[[nodiscard]] auto performance_counter_frequency() -> unsigned long long;
+
+	[[nodiscard]] auto performance_counter() -> unsigned long long;
+
 	using ::HWND;
 	using ::WNDPROC;
 	using ::LRESULT;
@@ -62,6 +66,7 @@ export namespace gse::win32 {
 	using ::GetWindowPlacement;
 	using ::IsWindowVisible;
 	using ::DwmGetWindowAttribute;
+	using ::DwmSetWindowAttribute;
 	using ::WindowFromPoint;
 	using ::GetAncestor;
 	using ::ClientToScreen;
@@ -96,6 +101,7 @@ export namespace gse::win32 {
 	constexpr UINT sw_show_maximized = SW_SHOWMAXIMIZED;
 	constexpr UINT wpf_restore_to_maximized = WPF_RESTORETOMAXIMIZED;
 	constexpr DWORD dwmwa_cloaked = DWMWA_CLOAKED;
+	constexpr DWORD dwmwa_cloak = DWMWA_CLOAK;
 	constexpr UINT ga_root = GA_ROOT;
 	constexpr UINT wm_setcursor = WM_SETCURSOR;
 	constexpr UINT wm_mousemove = WM_MOUSEMOVE;
@@ -153,6 +159,7 @@ export namespace gse::win32 {
 	using ::GetCurrentProcess;
 	using ::GetCurrentProcessId;
 	using ::GetCurrentThread;
+	using ::SetThreadPriority;
 	using ::CloseHandle;
 	using ::SuspendThread;
 	using ::ResumeThread;
@@ -163,6 +170,8 @@ export namespace gse::win32 {
 	using ::GetModuleFileNameW;
 	using ::SHGetFolderPathW;
 	using ::AddVectoredExceptionHandler;
+	using ::IsDebuggerPresent;
+	using ::DebugBreak;
 	using ::GetLastError;
 	using ::CreateProcessW;
 	using ::TerminateProcess;
@@ -182,6 +191,8 @@ export namespace gse::win32 {
 	using ::SetHandleInformation;
 	using ::GetHandleInformation;
 	using ::WaitForSingleObject;
+	using ::CreateMutexW;
+	using ::ReleaseMutex;
 	using ::GetExitCodeProcess;
 	using ::MoveFileExW;
 	using ::GetEnvironmentStringsW;
@@ -201,9 +212,18 @@ export namespace gse::win32 {
 	using ::PeekNamedPipe;
 	using ::GetStdHandle;
 	using ::GetFileType;
+	using ::GetConsoleMode;
+	using ::SetConsoleMode;
 	using ::ShellExecuteW;
 	using ::VirtualQuery;
 	using ::MEMORY_BASIC_INFORMATION;
+	using ::OVERLAPPED;
+	using ::ULONG_PTR;
+	using ::FILE_NOTIFY_INFORMATION;
+	using ::ReadDirectoryChangesW;
+	using ::CreateIoCompletionPort;
+	using ::GetQueuedCompletionStatus;
+	using ::CancelIoEx;
 
 	constexpr DWORD mem_commit = MEM_COMMIT;
 	constexpr DWORD mem_reserve = MEM_RESERVE;
@@ -233,6 +253,7 @@ export namespace gse::win32 {
 	constexpr DWORD infinite = INFINITE;
 	constexpr DWORD wait_timeout = WAIT_TIMEOUT;
 	constexpr DWORD wait_object_0 = WAIT_OBJECT_0;
+	constexpr DWORD wait_abandoned = WAIT_ABANDONED;
 	constexpr DWORD create_waitable_timer_high_resolution = CREATE_WAITABLE_TIMER_HIGH_RESOLUTION;
 	constexpr DWORD timer_all_access = TIMER_ALL_ACCESS;
 	constexpr DWORD handle_flag_inherit = HANDLE_FLAG_INHERIT;
@@ -251,9 +272,23 @@ export namespace gse::win32 {
 	constexpr DWORD create_always = CREATE_ALWAYS;
 	constexpr DWORD file_share_read = FILE_SHARE_READ;
 	constexpr DWORD file_share_write = FILE_SHARE_WRITE;
+	constexpr DWORD file_share_delete = FILE_SHARE_DELETE;
+	constexpr DWORD file_list_directory = FILE_LIST_DIRECTORY;
+	constexpr DWORD file_flag_backup_semantics = FILE_FLAG_BACKUP_SEMANTICS;
+	constexpr DWORD file_flag_overlapped = FILE_FLAG_OVERLAPPED;
+	constexpr DWORD file_notify_change_file_name = FILE_NOTIFY_CHANGE_FILE_NAME;
+	constexpr DWORD file_notify_change_dir_name = FILE_NOTIFY_CHANGE_DIR_NAME;
+	constexpr DWORD file_notify_change_last_write = FILE_NOTIFY_CHANGE_LAST_WRITE;
+	constexpr DWORD file_notify_change_size = FILE_NOTIFY_CHANGE_SIZE;
+	constexpr DWORD file_action_removed = FILE_ACTION_REMOVED;
+	constexpr DWORD file_action_renamed_old_name = FILE_ACTION_RENAMED_OLD_NAME;
 	constexpr DWORD file_attribute_normal = FILE_ATTRIBUTE_NORMAL;
 	constexpr DWORD std_output_handle = STD_OUTPUT_HANDLE;
 	constexpr DWORD file_type_char = FILE_TYPE_CHAR;
+	constexpr DWORD enable_virtual_terminal_processing = ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+	constexpr DWORD std_input_handle = STD_INPUT_HANDLE;
+	constexpr DWORD enable_quick_edit_mode = ENABLE_QUICK_EDIT_MODE;
+	constexpr DWORD enable_extended_flags = ENABLE_EXTENDED_FLAGS;
 	constexpr DWORD error_pipe_connected = ERROR_PIPE_CONNECTED;
 	constexpr DWORD error_pipe_listening = ERROR_PIPE_LISTENING;
 	constexpr DWORD error_no_data = ERROR_NO_DATA;
@@ -307,12 +342,15 @@ export namespace gse::win32 {
 	constexpr DWORD thread_suspend_resume = THREAD_SUSPEND_RESUME;
 	constexpr DWORD thread_get_context = THREAD_GET_CONTEXT;
 	constexpr DWORD thread_query_information = THREAD_QUERY_INFORMATION;
+	constexpr int thread_priority_normal = THREAD_PRIORITY_NORMAL;
+	constexpr int thread_priority_below_normal = THREAD_PRIORITY_BELOW_NORMAL;
 
 	using ::HGLOBAL;
 	using ::HDROP;
 	using ::BITMAPINFOHEADER;
 
 	using ::IsClipboardFormatAvailable;
+	using ::GetClipboardSequenceNumber;
 	using ::OpenClipboard;
 	using ::CloseClipboard;
 	using ::GetClipboardData;
@@ -324,6 +362,7 @@ export namespace gse::win32 {
 	constexpr UINT cf_dib = CF_DIB;
 	constexpr UINT cf_dibv5 = CF_DIBV5;
 	constexpr UINT cf_hdrop = CF_HDROP;
+	constexpr UINT cf_unicodetext = CF_UNICODETEXT;
 	constexpr DWORD bi_rgb = BI_RGB;
 	constexpr DWORD bi_bitfields = BI_BITFIELDS;
 	constexpr DWORD bitmap_info_header_size = sizeof(BITMAPINFOHEADER);
@@ -383,5 +422,15 @@ export namespace gse::win32 {
 
 		return GetOpenFileNameW(&ofn) != 0;
 	}
+}
+
+auto gse::win32::performance_counter_frequency() -> unsigned long long {
+	LARGE_INTEGER frequency{};
+	return QueryPerformanceFrequency(&frequency) && frequency.QuadPart > 0 ? static_cast<unsigned long long>(frequency.QuadPart) : 0;
+}
+
+auto gse::win32::performance_counter() -> unsigned long long {
+	LARGE_INTEGER counter{};
+	return QueryPerformanceCounter(&counter) && counter.QuadPart > 0 ? static_cast<unsigned long long>(counter.QuadPart) : 0;
 }
 #endif

@@ -1,16 +1,14 @@
 export module gse.gpu:buffer;
 
+import gse.containers;
+import gse.core;
+import gse.diag;
+import gse.gpu_backend;
+import gse.time;
 import std;
 
-import :gpu_task;
-import :sync_token;
 import :device;
-
-import gse.gpu_backend;
-import gse.core;
-import gse.containers;
-import gse.time;
-import gse.diag;
+import :sync_token;
 
 export namespace gse::gpu {
 	struct buffer_upload {

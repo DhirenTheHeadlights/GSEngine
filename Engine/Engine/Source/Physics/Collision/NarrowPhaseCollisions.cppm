@@ -1,22 +1,20 @@
 export module gse.physics:narrow_phase_collision;
 
+import gse.concurrency;
+import gse.containers;
+import gse.core;
+import gse.diag;
+import gse.ecs;
+import gse.math;
+import gse.meta;
+import gse.time;
 import std;
 
 import :bounding_box;
-import :collision_component;
 import :contact_manifold;
 import :convex_hull;
 import :hull_collision;
 import :transform_component;
-
-import gse.math;
-import gse.core;
-import gse.containers;
-import gse.time;
-import gse.concurrency;
-import gse.diag;
-import gse.ecs;
-import gse.meta;
 
 export namespace gse::narrow_phase_collision {
 	struct sat_result {
@@ -1328,7 +1326,7 @@ auto gse::narrow_phase_collision::sphere_sphere_speculative(const vec3<position>
 }
 
 auto gse::narrow_phase_collision::box_sphere_speculative(const bounding_box& bb, const vec3<position>& center, const length radius, const length margin) -> std::optional<sat_result> {
-	const auto [closest, normal, signed_dist] = query_obb(bb, center);
+	const auto [_, normal, signed_dist] = query_obb(bb, center);
 	const separation separation = radius - signed_dist;
 
 	if (separation < -margin) {
@@ -1369,7 +1367,7 @@ auto gse::narrow_phase_collision::capsule_capsule_speculative(const bounding_box
 
 auto gse::narrow_phase_collision::box_capsule_speculative(const bounding_box& bb, const bounding_box& cap_bb, const length half_h, const length radius, const length margin) -> std::optional<sat_result> {
 	const auto [seg_start, seg_end] = capsule_endpoints(cap_bb, half_h);
-	const auto [seg_pt, obb_result] = segment_obb_query(bb, seg_start, seg_end);
+	const auto [_, obb_result] = segment_obb_query(bb, seg_start, seg_end);
 
 	const separation separation = radius - obb_result.signed_distance;
 
@@ -1436,7 +1434,7 @@ auto gse::narrow_phase_collision::box_sphere_manifold(const bounding_box& bb, co
 	manifold.tangent_u = tu;
 	manifold.tangent_v = tv;
 
-	const auto [closest, obb_normal, signed_dist] = query_obb(bb, center);
+	const auto [closest, _, _] = query_obb(bb, center);
 	const auto box_face = classify_box_face(bb, normal);
 
 	if (const auto face_normals = bb.face_normals(); dot(normal, face_normals[box_face]) > 0.9f) {

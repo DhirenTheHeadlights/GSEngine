@@ -1,132 +1,83 @@
 module gse.graphics:forward_renderer_impl;
 
-import std;
-
-import :forward_renderer;
-import :atmosphere_renderer;
-import :geometry_collector;
-import :depth_prepass_renderer;
-import :gi_probe_renderer;
-import :rt_shadow_renderer;
-import :light_culling_renderer;
-import :light_packing;
-import :cull_compute_renderer;
-import :skin_renderer;
-import :camera_system;
-import :render_targets;
-import :texture;
-import :point_light;
-import :spot_light;
-import :directional_light;
-import :settings;
-
-
-import gse.math;
-import gse.core;
-import gse.containers;
-import gse.time;
+import gse.assets;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
-import gse.os;
-import gse.assets;
 import gse.gpu;
 import gse.gpu_record;
-import gse.save;
+import gse.math;
 import gse.meta;
+import gse.os;
+import gse.save;
+import gse.time;
+import std;
+
+import :atmosphere_renderer;
+import :camera_system;
+import :depth_prepass_renderer;
+import :directional_light;
+import :forward_renderer;
+import :geometry_collector;
+import :gi_probe_renderer;
+import :light_culling_renderer;
+import :light_packing;
+import :point_light;
+import :render_targets;
+import :rt_shadow_renderer;
+import :skin_renderer;
+import :spot_light;
+import :texture;
+import :settings;
 
 namespace gse::renderer::forward {
-	struct [[= shaders::binding<0, 0>{}]] camera_ubo {
+	struct [[= shaders::uniform_block]] camera_ubo {
 		using element = shaders::common::camera_data;
 	};
 
-	struct [[
-		= shaders::binding<0, 1>{},
-		= shaders::ssbo_readonly
-	]] lights_ssbo {
+	struct [[= shaders::ssbo_readonly]] lights_ssbo {
 		using element = shaders::forward::light;
 	};
 
-	struct [[
-		= shaders::binding<0, 2>{},
-		= shaders::tlas
-	]] scene_tlas {};
+	struct [[= shaders::tlas]] scene_tlas {};
 
-	struct [[
-		= shaders::binding<0, 3>{},
-		= shaders::ssbo_readwrite
-	]] light_index_list {
+	struct [[= shaders::ssbo_readwrite]] light_index_list {
 		using element = std::uint32_t;
 	};
 
-	struct [[
-		= shaders::binding<0, 4>{},
-		= shaders::ssbo_readwrite
-	]] tile_light_table {
+	struct [[= shaders::ssbo_readwrite]] tile_light_table {
 		using element = vec2u;
 	};
 
-	struct [[
-		= shaders::binding<0, 5>{},
-		= shaders::ssbo_readonly
-	]] material_palette {
+	struct [[= shaders::ssbo_readonly]] material_palette {
 		using element = shaders::forward::material_data;
 	};
 
-	struct [[
-		= shaders::binding<0, 6>{},
-		= shaders::texture3d
-	]] aerial_perspective_in {
+	struct [[= shaders::texture3d]] aerial_perspective_in {
 		using element = vec4f;
 	};
 
-	struct [[
-		= shaders::binding<0, 8>{},
-		= shaders::texture2d
-	]] gi_atlas {
+	struct [[= shaders::texture2d]] gi_atlas {
 		using element = vec4f;
 	};
 
-	struct [[
-		= shaders::binding<0, 9>{},
-		= shaders::sampler_state
-	]] ap_sampler {};
+	struct [[= shaders::sampler_state]] ap_sampler {};
 
-	struct [[
-		= shaders::binding<0, 10>{},
-		= shaders::sampler_state
-	]] gi_atlas_sampler {};
+	struct [[= shaders::sampler_state]] gi_atlas_sampler {};
 
-	struct [[
-		= shaders::binding<0, 12>{},
-		= shaders::texture2d
-	]] cloud_shadow_in {
+	struct [[= shaders::texture2d]] cloud_shadow_in {
 		using element = vec4f;
 	};
 
-	struct [[
-		= shaders::binding<0, 13>{},
-		= shaders::sampler_state
-	]] cloud_shadow_sampler {};
+	struct [[= shaders::sampler_state]] cloud_shadow_sampler {};
 
-	struct [[
-		= shaders::binding<0, 14>{},
-		= shaders::texture2d
-	]] sky_view_in {
+	struct [[= shaders::texture2d]] sky_view_in {
 		using element = vec4f;
 	};
 
-	struct [[
-		= shaders::binding<0, 15>{},
-		= shaders::sampler_state
-	]] sky_view_sampler {};
-
-	struct [[
-		= shaders::binding<1, 5>{},
-		= shaders::ssbo_readonly
-	]] instance_data_buffer {
-		using element = shaders::common::instance_data;
-	};
+	struct [[= shaders::sampler_state]] sky_view_sampler {};
 
 	using shader_binding_types = type_pack<
 		camera_ubo,
@@ -150,7 +101,7 @@ namespace gse::renderer::forward {
 		shaders::meshlet::meshlet_vertex_indices,
 		shaders::meshlet::meshlet_triangles,
 		shaders::meshlet::meshlet_bounds_buffer,
-		instance_data_buffer,
+		shaders::meshlet::instance_data_buffer,
 		shaders::bindless::textures,
 		shaders::bindless::textures_sampler
 	>;
@@ -353,8 +304,6 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
 
-	rec.sample_image(gi_state.irradiance_atlas, gpu::pipeline_stage_flag::fragment_shader);
-
 	if (normal_batches.empty()) {
 		co_return;
 	}
@@ -377,7 +326,6 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 	const auto cloud_shadow_sampler_slot = cloud_state.shadow_sampler.slot();
 	const auto cloud_shadow_ubo_slot = cloud_state.shadow_ubo_buffer.slot();
 
-	rec.sample_image(atm_state.sky_view_lut, gpu::pipeline_stage_flag::fragment_shader);
 	const auto sky_view_slot = atm_state.sky_view_lut.sampled_slot();
 	const auto sky_view_sampler_slot = atm_state.sky_view_sampler_bindless.slot();
 	++d.frame_counter;

@@ -1,10 +1,13 @@
 export module gse.ide.agent:system;
 
-import std;
-import gse;
-
+import gse.assets;
+import gse.concurrency;
+import gse.ecs;
+import gse.graphics;
 import gse.ide.build;
 import gse.ide.navigation;
+import gse.os;
+import gse.runtime;
 
 import :model;
 

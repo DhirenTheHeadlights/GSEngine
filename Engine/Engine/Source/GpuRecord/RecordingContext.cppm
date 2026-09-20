@@ -168,6 +168,10 @@ export namespace gse::gpu {
 			const dependency_info& dep
 		) -> void;
 
+		auto mark(
+			id label
+		) const -> void;
+
 		auto copy_target_to_buffer(
 			const image_ref& src,
 			const buffer& dst
@@ -216,15 +220,11 @@ export namespace gse::gpu {
 			access_flags access = {};
 		};
 
-		struct image_state_track {
-			image_aspect_flags aspects = {};
-			resource_state first = resource_state::undefined;
-			resource_state current = resource_state::undefined;
-		};
-
 		struct access_track {
 			pipeline_stage_flags stages = {};
 			access_flags access = {};
+			std::uint64_t generation = 0;
+			bool covered = false;
 		};
 
 		pass_recorder m_recorder;
@@ -233,10 +233,9 @@ export namespace gse::gpu {
 		device* m_device = nullptr;
 		std::vector<touched_resource> m_touched;
 		std::unordered_map<const void*, access_track> m_last_access;
-		std::unordered_map<const void*, image_state_track> m_image_states;
 		std::vector<memory_barrier> m_pending_memory_barriers;
-		std::vector<buffer_barrier> m_pending_buffer_barriers;
-		std::vector<image_barrier> m_pending_image_barriers;
+		std::uint64_t m_access_generation = 0;
+		bool m_repeat_barrier_pending = false;
 		std::thread::id m_origin_thread;
 		pipeline_state_cache m_state_cache;
 		bool m_bindless_heaps_valid = false;
@@ -250,6 +249,7 @@ export namespace gse::gpu {
 		access_flags m_companion_access{};
 		bool m_binding_repeat_valid = false;
 		bool m_binding_companion_armed = false;
+		pass_mark_cursor m_marks;
 
 		recording_context(
 			pass_recorder rec,
@@ -293,14 +293,18 @@ export namespace gse::gpu {
 
 		auto flush_pending_barriers() -> void;
 
-		[[nodiscard]] auto bound_shader_stages() const -> pipeline_stage_flags;
-
-		auto transition_image_for_binding(
-			const resource_ref& ref,
-			resource_state target,
-			pipeline_stage_flags stages,
-			access_flags access
+		auto cover_barrier_sources(
+			std::uint64_t dispatch_generation
 		) -> void;
+
+		auto merge_pending_barrier(
+			pipeline_stage_flags src_stages,
+			access_flags src_access,
+			pipeline_stage_flags dst_stages,
+			access_flags dst_access
+		) -> void;
+
+		[[nodiscard]] auto bound_shader_stages() const -> pipeline_stage_flags;
 
 		template <typename Entry>
 		auto register_bindless_usage(
@@ -352,10 +356,9 @@ template <typename T>
 consteval auto gse::gpu::binding_access_contribution() -> access_flags {
 	constexpr auto dtype = descriptor_type_v<T>;
 	constexpr bool is_image = dtype == descriptor_type::sampled_image
-		|| dtype == descriptor_type::storage_image
-		|| dtype == descriptor_type::combined_image_sampler;
+		|| dtype == descriptor_type::storage_image;
 	constexpr bool is_buffer = dtype == descriptor_type::storage_buffer;
-	if constexpr ((is_image || is_buffer) && descriptor_count_v<T> == 1) {
+	if constexpr ((is_image || is_buffer) && !is_bindless_table_v<T>) {
 		if constexpr (descriptor_access_v<T> == descriptor_access::read_write) {
 			return access_flags{ access_flag::shader_storage_read, access_flag::shader_storage_write };
 		}
@@ -382,30 +385,16 @@ template <typename T, typename Args>
 auto gse::gpu::recording_context::register_one_bindless(const Args& args, const pipeline_stage_flags stages) -> void {
 	constexpr auto dtype = descriptor_type_v<T>;
 	constexpr bool is_image = dtype == descriptor_type::sampled_image
-		|| dtype == descriptor_type::storage_image
-		|| dtype == descriptor_type::combined_image_sampler;
+		|| dtype == descriptor_type::storage_image;
 	constexpr bool is_buffer = dtype == descriptor_type::storage_buffer;
-	if constexpr ((is_image || is_buffer) && descriptor_count_v<T> == 1) {
+	if constexpr ((is_image || is_buffer) && !is_bindless_table_v<T>) {
 		constexpr std::meta::info member = bindless_member_for<Args, T>();
-		std::uint32_t index;
-		if constexpr (dtype == descriptor_type::combined_image_sampler) {
-			index = args.[:member:].image.index;
-		}
-		else {
-			index = args.[:member:].index;
-		}
-		const resource_ref ref = m_device->resource_for_slot(index);
+		const resource_ref ref = m_device->resource_for_slot(args.[:member:].index);
 		if (ref.ptr) {
 			const auto access = (descriptor_access_v<T> == descriptor_access::read_write)
 				? access_flags{ access_flag::shader_storage_read, access_flag::shader_storage_write }
 				: access_flags{ is_image ? access_flag::shader_sampled_read : access_flag::shader_storage_read };
 			note_touched(ref, stages, access);
-			if constexpr (is_image) {
-				constexpr auto target = dtype == descriptor_type::storage_image
-					? resource_state::storage_read_write
-					: resource_state::sampled;
-				transition_image_for_binding(ref, target, stages, access);
-			}
 		}
 	}
 }

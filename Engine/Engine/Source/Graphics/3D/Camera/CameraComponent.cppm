@@ -1,11 +1,6 @@
 export module gse.graphics:camera_component;
 
-import std;
-
 import gse.math;
-import gse.core;
-import gse.time;
-import gse.ecs;
 
 export namespace gse::camera {
 	struct follow_component {

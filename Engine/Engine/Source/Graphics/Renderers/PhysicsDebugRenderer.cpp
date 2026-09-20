@@ -1,54 +1,41 @@
 module gse.graphics:physics_debug_renderer_impl;
 
-import std;
-
-import :physics_debug_renderer;
-import :forward_renderer;
-import :camera_system;
-import :cloud_renderer;
-import :render_targets;
-import :sdf_grid_renderer;
-import :settings;
-import :world_text_renderer;
-
-import gse.physics;
-import gse.math;
-import gse.core;
-import gse.containers;
+import gse.assets;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.ecs;
-import gse.save;
 import gse.gpu;
 import gse.gpu_record;
-import gse.assets;
+import gse.math;
+import gse.physics;
+import gse.save;
+import std;
+
+import :camera_system;
+import :cloud_renderer;
+import :forward_renderer;
+import :physics_debug_renderer;
+import :render_targets;
+import :sdf_grid_renderer;
+import :world_text_renderer;
+import :settings;
 
 
 namespace gse::renderer::physics_debug {
-	struct [[
-		= shaders::binding<0, 1>{},
-		= shaders::ssbo_readonly
-	]] body_data {
+	struct [[= shaders::ssbo_readonly]] body_data {
 		using element = vbd::body_state;
 	};
 
-	struct [[
-		= shaders::binding<0, 2>{},
-		= shaders::ssbo_readonly
-	]] shape_instances {
+	struct [[= shaders::ssbo_readonly]] shape_instances {
 		using element = shape_instance;
 	};
 
-	struct [[
-		= shaders::binding<0, 3>{},
-		= shaders::ssbo_readonly
-	]] shape_vertex_buffer {
+	struct [[= shaders::ssbo_readonly]] shape_vertex_buffer {
 		using element = vec4f;
 	};
 
-	struct [[
-		= shaders::binding<0, 1>{},
-		= shaders::ssbo_readonly
-	]] line_vertex_buffer {
+	struct [[= shaders::ssbo_readonly]] line_vertex_buffer {
 		using element = debug_vertex;
 	};
 

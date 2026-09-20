@@ -1,8 +1,5 @@
 export module gse.physics:motor_component;
 
-import std;
-
-import gse.core;
 import gse.ecs;
 import gse.math;
 

@@ -1,19 +1,17 @@
 export module gse.assets:asset_system;
 
-import std;
-import gse.core;
-import gse.config;
-import gse.log;
-import gse.containers;
-import gse.concurrency;
-import gse.fs;
-import gse.meta;
 import gse.assert;
+import gse.concurrency;
+import gse.config;
+import gse.containers;
+import gse.core;
+import gse.fs;
+import gse.log;
+import gse.meta;
+import std;
 
 import :asset_format;
 import :catalog;
-import :resource_handle;
-import :resource_loader;
 import :registry;
 
 export namespace gse::asset {

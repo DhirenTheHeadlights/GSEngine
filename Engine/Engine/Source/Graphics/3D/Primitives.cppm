@@ -1,12 +1,8 @@
 export module gse.graphics:primitives;
 
-import std;
+import gse.assets;
 
 import :model;
-
-import gse.assets;
-import gse.core;
-import gse.math;
 
 export namespace gse::primitives {
 	struct data {

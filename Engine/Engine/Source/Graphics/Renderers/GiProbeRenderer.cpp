@@ -42,41 +42,23 @@ namespace gse::renderer::gi_probe {
 		float temporal_blend = 0.0625f;
 	};
 
-	struct [[
-		= shaders::binding<0, 0>{},
-		= shaders::tlas
-	]] scene_tlas {};
+	struct [[= shaders::tlas]] scene_tlas {};
 
-	struct [[
-		= shaders::binding<0, 1>{},
-		= shaders::storage_image
-	]] irradiance_atlas_out {
+	struct [[= shaders::storage_image]] irradiance_atlas_out {
 		using element = vec4f;
 	};
 
-	struct [[
-		= shaders::binding<0, 2>{},
-		= shaders::ssbo_readonly
-	]] material_palette {
+	struct [[= shaders::ssbo_readonly]] material_palette {
 		using element = shaders::forward::material_data;
 	};
 
-	struct [[
-		= shaders::binding<0, 3>{},
-		= shaders::texture2d
-	]] sky_view_in {
+	struct [[= shaders::texture2d]] sky_view_in {
 		using element = vec4f;
 	};
 
-	struct [[
-		= shaders::binding<0, 4>{},
-		= shaders::sampler_state
-	]] sky_view_sampler {};
+	struct [[= shaders::sampler_state]] sky_view_sampler {};
 
-	struct [[
-		= shaders::binding<0, 5>{},
-		= shaders::ssbo_readonly
-	]] lights {
+	struct [[= shaders::ssbo_readonly]] lights {
 		using element = shaders::forward::light;
 	};
 
@@ -172,16 +154,6 @@ auto gse::renderer::gi_probe::init(context& ctx, const shared_view<gpu::context:
 			}
 		);
 	}
-	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-		log::println(
-			log::category::render,
-			"gi_probe: material frame={} slot={} address=0x{:x} bytes={}",
-			i,
-			gc_state.material_palette_buffers[i].slot().index,
-			gc_state.material_palette_buffers[i].device_address(),
-			gc_state.material_palette_buffers[i].size()
-		);
-	}
 
 	gpu::context::on_swap_chain_recreate(
 		gpu_s,
@@ -234,8 +206,6 @@ auto gse::renderer::gi_probe::frame(context& ctx, shared_view<gpu::context::data
 	}
 
 	auto rec = co_await gpu::pass<^^frame>(pass_out).pipeline(d.update_pipeline).after<^^rt_shadow::frame, ^^atmosphere::sky_view_pass>();
-
-	rec.sample_image(atm_state.sky_view_lut, gpu::pipeline_stage_flag::compute_shader);
 
 	rec.dispatch<entry>(
 		{

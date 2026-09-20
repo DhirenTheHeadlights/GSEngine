@@ -24,11 +24,13 @@ export namespace gse::vbd {
 		std::uint32_t z;
 	};
 
-	using shader_types = type_pack<vbd_limits, joint_type, solver_config, body_state, contact_constraint, velocity_motor_constraint, joint_constraint, impulse_constraint, frozen_jacobian, dispatch_args>;
+	using shader_types = type_pack<vbd_limits, joint_type, solver_config, body_state, contact_constraint, velocity_motor_constraint, joint_constraint, joint_drive_input, impulse_constraint, frozen_jacobian, dispatch_args>;
 
 	struct vbd_solve_chain {};
 
 	struct vbd_apply_body_inputs_stage {};
+	struct vbd_apply_joint_inputs_stage {};
+	struct vbd_apply_joint_drive_inputs_stage {};
 	struct vbd_render_mirror_stage {};
 	struct vbd_clear_state_buffers_stage {};
 	struct vbd_collision_reset_stage {};
@@ -50,6 +52,8 @@ export namespace gse::vbd {
 	struct vbd_post_stabilize_stage {};
 	struct vbd_finalize_stage {};
 	struct vbd_state_copy_stage {};
+	struct vbd_ring_copy_stage {};
+	struct vbd_ring_restore_stage {};
 	struct vbd_hash_state_stage {};
 
 	struct solver_diagnostics {
@@ -77,16 +81,21 @@ export namespace gse::vbd {
 	};
 
 	struct solver_upload {
-		std::vector<body_state> bodies;
-		std::vector<velocity_motor_constraint> motors;
-		std::vector<joint_constraint> joints;
-		std::vector<impulse_constraint> impulses;
+		std::span<const body_state> bodies;
+		std::span<const velocity_motor_constraint> motors;
+		std::span<const joint_constraint> joints;
+		std::span<const joint_drive_input> joint_inputs;
+		std::span<const impulse_constraint> impulses;
 		solver_config solver_cfg;
 		time_step dt{};
 		int steps = 1;
 		int ticks = 1;
 		bool refresh_joints = false;
 		bool force_reseed = false;
+		std::uint64_t first_tick = 0;
+		std::optional<std::uint64_t> restore_tick;
+		std::uint32_t motors_per_tick = 0;
+		std::vector<std::uint32_t> impulse_counts;
 	};
 
 	class gpu_solver {
@@ -97,8 +106,14 @@ export namespace gse::vbd {
 
 		auto initialize_compute(
 			context& ctx,
-			shared_view<gpu::context::data> gpu_s
+			shared_view<gpu::context::data> gpu_s,
+			const vbd_capacities& capacities,
+			bool sync_readback = false
 		) -> async::task<>;
+
+		auto capacities() const -> const vbd_capacities&;
+
+		auto wait_for_latest_dispatch() const -> void;
 
 		auto dispatch_compute(
 			context& ctx,
@@ -114,6 +129,13 @@ export namespace gse::vbd {
 		) -> void;
 
 		auto commit_upload() -> void;
+
+		auto ensure_ring(
+			gpu::device& device,
+			std::uint32_t history
+		) -> void;
+
+		auto ring_history() const -> std::uint32_t;
 
 		auto set_preserve_warm_starts(
 			bool preserve
@@ -157,18 +179,44 @@ export namespace gse::vbd {
 
 		auto render_body_buffer() const -> const gpu::buffer&;
 
+		auto solve_body_buffer() const -> const gpu::buffer&;
+
+		auto solve_joint_buffer() const -> const gpu::buffer&;
+
 		auto dispatch_generation() const -> std::uint64_t;
 
 		auto retired_generation() const -> std::uint64_t;
 
 		auto readback_age_steps() const -> int;
 
+		auto readback_tick() const -> std::optional<std::uint64_t>;
+
+		auto dispatched_tick() const -> std::uint64_t;
+
 		auto latest_dispatch_complete() const -> bool;
 
 	private:
 		struct solve_plan;
+		struct per_frame_data;
+
+		static constexpr std::uint32_t ring_max_history = 64;
 
 		using pass_channel = channel_write<gpu::render_pass_request>;
+
+		auto stage_ring_copy(
+			per_frame_data& f,
+			std::uint64_t tick,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_ring_restore(
+			per_frame_data& f,
+			per_frame_data& other,
+			std::uint64_t tick,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
 
 		auto build_solve_plan(
 			solve_plan& out
@@ -181,6 +229,18 @@ export namespace gse::vbd {
 		) -> async::task<>;
 
 		auto stage_apply_body_inputs(
+			const solve_plan& p,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_apply_joint_inputs(
+			const solve_plan& p,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_apply_joint_drive_inputs(
 			const solve_plan& p,
 			std::uint32_t chain_index,
 			pass_channel pass_out
@@ -374,6 +434,7 @@ export namespace gse::vbd {
 
 		auto stage_hash_warm_inputs(
 			const solve_plan& p,
+			std::uint32_t sub,
 			std::uint32_t substep,
 			std::uint32_t slot,
 			std::uint32_t chain_index,
@@ -419,6 +480,8 @@ export namespace gse::vbd {
 			gpu::shader_program update_sticking_pipeline;
 			gpu::shader_program apply_impulses_pipeline;
 			gpu::shader_program apply_body_inputs_pipeline;
+			gpu::shader_program apply_joint_inputs_pipeline;
+			gpu::shader_program apply_joint_drive_inputs_pipeline;
 			gpu::shader_program hash_state_pipeline;
 			gpu::shader_program hash_warm_inputs_pipeline;
 			gpu::shader_program hash_adjacency_pipeline;
@@ -428,6 +491,17 @@ export namespace gse::vbd {
 			bool initialized = false;
 			bool device_local_seeded = false;
 		} m_compute;
+
+		struct solve_marks {
+			std::array<id, limits.max_colors> color{};
+			id sweep;
+			id island;
+			id jacobi;
+			id apply_jacobi;
+			id update_lambda;
+			id joint_lambda;
+			id convergence;
+		} m_solve_marks;
 
 		struct per_frame_data {
 			gpu::buffer body_buffer;
@@ -451,6 +525,7 @@ export namespace gse::vbd {
 			gpu::buffer jointless_indirect_dispatch_buffer;
 			gpu::buffer frozen_jacobian_buffer;
 			gpu::buffer solve_deltas_buffer;
+			gpu::buffer unowned_contact_buffer;
 			gpu::buffer grounded_buffer;
 			gpu::buffer coloring_scratch_buffer;
 			gpu::buffer render_body_buffer;
@@ -463,7 +538,10 @@ export namespace gse::vbd {
 		std::uint32_t m_ticks = 1;
 		std::uint64_t m_ticks_dispatched = 0;
 		std::array<std::uint64_t, 16> m_generation_ticks{};
+		std::array<std::uint64_t, 16> m_generation_end_tick{};
 		std::uint32_t m_recorded_ring = 0;
+		bool m_sync_readback = false;
+		vbd_capacities m_capacities{};
 		std::uint64_t m_recorded_frame = 0;
 
 		gpu::upload_channel m_body_input_channel;
@@ -475,7 +553,9 @@ export namespace gse::vbd {
 		gpu::upload_channel m_island_channel;
 		gpu::upload_channel m_body_env_channel;
 		gpu::upload_channel m_static_bodies_channel;
+		gpu::upload_channel m_body_input_index_channel;
 		gpu::upload_channel m_joint_upload_channel;
+		gpu::upload_channel m_joint_drive_input_channel;
 
 		gpu::readback_channel m_snapshot_channel;
 		gpu::readback_channel m_grounded_channel;
@@ -489,6 +569,7 @@ export namespace gse::vbd {
 		bool m_body_buffers_seeded = false;
 		std::uint32_t m_seeded_body_count = 0;
 		bool m_joint_buffers_seeded = false;
+		bool m_merge_joint_inputs = false;
 		bool m_apply_all_body_inputs = false;
 		bool m_preserve_warm_starts = false;
 
@@ -507,13 +588,47 @@ export namespace gse::vbd {
 
 		std::vector<velocity_motor_constraint> m_upload_motors;
 		std::vector<joint_constraint> m_upload_joints;
+		std::vector<joint_drive_input> m_upload_joint_inputs;
+		std::vector<std::uint32_t> m_joint_slots;
 		std::vector<impulse_constraint> m_upload_impulses;
 		std::vector<std::uint32_t> m_upload_motor_map;
 		std::vector<std::uint32_t> m_upload_jointed_pairs;
 		std::vector<std::uint32_t> m_upload_islands;
 		std::vector<std::uint32_t> m_upload_body_env;
 		std::vector<std::uint32_t> m_upload_static_bodies;
+		std::vector<std::uint32_t> m_upload_body_input_indices;
+		struct body_scan_chunk {
+			std::vector<std::uint32_t> statics;
+			std::vector<std::uint32_t> inputs;
+			displacement max_extent;
+		};
+		std::vector<body_scan_chunk> m_body_scan;
 		std::vector<std::uint8_t> m_jointed_body_mask;
+		std::vector<std::uint64_t> m_topology_key;
+		std::vector<std::uint64_t> m_topology_key_next;
+		std::uint32_t m_topology_body_count = 0;
+		std::uint32_t m_topology_island_count = 0;
 		bool m_upload_joints_dirty = false;
+		bool m_upload_joint_inputs_dirty = false;
+
+		struct ring_slot {
+			gpu::buffer bodies;
+			gpu::buffer joints;
+			gpu::buffer contacts;
+			gpu::buffer contact_counts;
+			gpu::buffer contact_offsets;
+			gpu::buffer contact_adjacency;
+			std::uint64_t tick = 0;
+			bool valid = false;
+		};
+
+		std::vector<std::uint32_t> m_impulse_counts;
+		std::vector<std::uint32_t> m_impulse_offsets;
+
+		std::vector<ring_slot> m_ring;
+		std::uint32_t m_ring_history = 0;
+		std::uint64_t m_first_tick = 0;
+		std::optional<std::uint64_t> m_restore_tick;
+		bool m_ring_overflow_reported = false;
 	};
 }

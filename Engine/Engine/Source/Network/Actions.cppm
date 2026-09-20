@@ -14,7 +14,8 @@ export namespace gse::network {
 		std::span<const std::uint16_t> axes1_ids,
 		std::span<const std::uint16_t> axes2_ids,
 		std::uint32_t input_sequence,
-		angle camera_yaw = {}
+		angle camera_yaw = {},
+		angle camera_pitch = {}
 	) -> input_frame;
 
 	auto apply_input_frame(
@@ -23,7 +24,7 @@ export namespace gse::network {
 	) -> void;
 }
 
-auto gse::network::extract_input_frame(const actions::state& state, const std::span<const std::uint16_t> axes1_ids, const std::span<const std::uint16_t> axes2_ids, const std::uint32_t input_sequence, const angle camera_yaw) -> input_frame {
+auto gse::network::extract_input_frame(const actions::state& state, const std::span<const std::uint16_t> axes1_ids, const std::span<const std::uint16_t> axes2_ids, const std::uint32_t input_sequence, const angle camera_yaw, const angle camera_pitch) -> input_frame {
 	const auto& pm = state.pressed_mask();
 	const auto& rm = state.released_mask();
 	const auto& hm = state.held_mask();
@@ -63,6 +64,7 @@ auto gse::network::extract_input_frame(const actions::state& state, const std::s
 		.input_sequence = input_sequence,
 		.client_time = system_clock::now<time_t<std::uint32_t, milliseconds>>(),
 		.camera_yaw = static_cast<float>(camera_yaw),
+		.camera_pitch = static_cast<float>(camera_pitch),
 		.pressed = pad(pm.words()),
 		.released = pad(rm.words()),
 		.held = pad(hm.words()),
@@ -91,4 +93,5 @@ auto gse::network::apply_input_frame(actions::state& target, const input_frame& 
 	}
 
 	target.set_camera_yaw(radians(m.camera_yaw));
+	target.set_camera_pitch(radians(m.camera_pitch));
 }

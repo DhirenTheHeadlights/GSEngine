@@ -1,19 +1,17 @@
 export module gse.ecs:system_dispatch;
 
+import gse.concurrency;
+import gse.core;
+import gse.diag;
 import std;
 
-import gse.core;
-import gse.concurrency;
-import gse.diag;
-
-import :registries;
 import :access_token;
-import :traits;
 import :context;
+import :registries;
 import :settings;
-import :system_node;
 import :shared_view;
 import :system_anno;
+import :traits;
 
 export namespace gse {
 	template <typename T>

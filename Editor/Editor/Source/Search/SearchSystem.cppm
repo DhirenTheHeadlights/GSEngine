@@ -1,11 +1,14 @@
 export module gse.ide.search:search_system;
 
-import std;
-import gse;
-
+import gse.concurrency;
+import gse.ecs;
+import gse.fs;
 import gse.ide.analysis;
-import gse.ide.config;
 import gse.ide.build;
+import gse.ide.config;
+import gse.math;
+import gse.time;
+import std;
 
 import :index;
 
@@ -14,6 +17,7 @@ export namespace gse::ide::search_system {
 		[[= stable_shared]] std::unique_ptr<search::index_state> index;
 		file_watcher watcher;
 		time last_index_change{};
+		time next_query_poll{};
 		bool symbols_dirty = false;
 		std::atomic<bool> watcher_polling = false;
 		std::atomic<time> next_watcher_poll{};

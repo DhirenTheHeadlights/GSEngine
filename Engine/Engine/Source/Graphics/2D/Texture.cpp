@@ -48,8 +48,10 @@ auto gse::texture::load(asset::load_ctx& ctx) -> async::task<asset_result> {
 		m_profile = baked->profile;
 	}
 
-	auto& gpu_s = co_await gpu::on_gpu(ctx.channels);
-	create_vulkan_resources(gpu_s, m_profile);
+	if (ctx.assets.gpu_available) {
+		auto& gpu_s = co_await gpu::on_gpu(ctx.channels);
+		create_device_resources(gpu_s, m_profile);
+	}
 	co_return asset_result{};
 }
 
@@ -65,7 +67,7 @@ auto gse::texture::bindless_slot() const -> gpu::bindless_slot {
 	return m_bindless_slot.slot();
 }
 
-auto gse::texture::create_vulkan_resources(gpu::context::data& context, const profile texture_profile) -> void {
+auto gse::texture::create_device_resources(gpu::context::data& context, const profile texture_profile) -> void {
 	const auto width = m_image_data.size.x();
 	const auto height = m_image_data.size.y();
 	const auto channels = m_image_data.channels;

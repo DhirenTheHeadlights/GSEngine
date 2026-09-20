@@ -1,8 +1,8 @@
 export module gse.ide.analysis:gcc_diagnostics;
 
-import std;
-import gse;
 import gse.ide.diagnostic;
+import gse.meta;
+import std;
 
 import :json;
 

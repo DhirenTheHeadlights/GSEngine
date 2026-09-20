@@ -1,8 +1,8 @@
 export module gse.ide.git:git_system;
 
-import std;
 import gse;
 import gse.ide.config;
+import std;
 
 import :git_status;
 
@@ -20,6 +20,8 @@ export namespace gse::ide::git_system {
 		std::vector<std::filesystem::path> rootless;
 		git::status_snapshot status;
 		clock refresh_clock;
+		file_watcher repo_watcher;
+		std::vector<std::filesystem::path> watched_repos;
 		bool refresh_requested = true;
 	};
 
@@ -135,10 +137,13 @@ auto gse::ide::git_system::run(context& ctx, data& d, const channel_read<init_re
 		}
 	}
 
-	for ([[maybe_unused]] const refresh_request& request : requests_in.of<refresh_request>()) {
+	for ([[maybe_unused]] const refresh_request& _ : requests_in.of<refresh_request>()) {
 		d.refresh_requested = true;
 	}
-	if (d.refresh_clock.elapsed() >= seconds(2.f)) {
+	if (d.repo_watcher.poll() > 0) {
+		d.refresh_requested = true;
+	}
+	if (d.refresh_clock.elapsed() >= seconds(30.f)) {
 		d.refresh_requested = true;
 	}
 
@@ -147,6 +152,18 @@ auto gse::ide::git_system::run(context& ctx, data& d, const channel_read<init_re
 		const bool rootless_changed = found.rootless != d.rootless;
 		d.rootless = std::move(found.rootless);
 		d.repo_roots = std::move(found.repositories);
+
+		if (d.watched_repos != d.repo_roots) {
+			d.repo_watcher.clear();
+			d.watched_repos = d.repo_roots;
+			for (const std::filesystem::path& root : d.watched_repos) {
+				for (const std::string_view name : { "HEAD", "index" }) {
+					d.repo_watcher.watch(root / ".git" / name, [&d](const std::filesystem::path&) {
+						d.refresh_requested = true;
+					});
+				}
+			}
+		}
 
 		const bool cleared = d.repo_roots.empty() && d.status && !d.status->empty();
 		if (cleared) {

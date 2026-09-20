@@ -61,6 +61,9 @@ auto gse::dx12::swapchain::bind(device* owner) -> void {
 auto gse::dx12::swapchain::create(const vec2i framebuffer_size, gpu::present_mode, gpu::swap_chain_handle) -> gpu::swap_chain_info {
 	m_owner->wait_idle();
 
+	for (const auto& backbuffer : m_backbuffers) {
+		m_owner->forget_present_image(backbuffer.get());
+	}
 	m_backbuffers.clear();
 	m_rtv_heap.reset();
 	m_swapchain.reset();
@@ -98,7 +101,11 @@ auto gse::dx12::swapchain::create(const vec2i framebuffer_size, gpu::present_mod
 		auto rtv = directx::descriptor_heap_cpu_start(m_rtv_heap.get());
 		rtv.ptr += static_cast<std::size_t>(i) * m_rtv_size;
 		directx::create_render_target_view(m_owner->raw_device(), m_backbuffers[i].get(), rtv);
-		m_owner->register_view_format(rtv.ptr, dxgi_format_of(m_surface_fmt));
+		m_owner->register_view(rtv.ptr, {
+			.format = dxgi_format_of(m_surface_fmt),
+			.resource = m_backbuffers[i].get(),
+			.rest_layout = directx::layout_common,
+		});
 		out.images.push_back(std::bit_cast<gpu::handle<gpu::image>>(m_backbuffers[i].get()));
 		out.image_views.push_back(std::bit_cast<gpu::handle<gpu::image_view>>(rtv.ptr));
 	}

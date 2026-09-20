@@ -1,19 +1,18 @@
 export module gse.network:replication;
 
-import std;
-
-import gse.core;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
-import :registry_sync;
-import :socket;
-import :message;
+import gse.time;
+import std;
+
 import :bitstream;
-import :packet_header;
+import :message;
+import :registry_sync;
 import :remote_peer;
+import :socket;
 
 export namespace gse::network {
 	template <typename T, access_mode M>

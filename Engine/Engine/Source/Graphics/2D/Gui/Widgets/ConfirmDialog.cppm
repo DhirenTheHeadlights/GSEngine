@@ -1,24 +1,23 @@
 export module gse.graphics:confirm_dialog;
 
-import std;
-
-import gse.os;
 import gse.assets;
-import gse.gpu;
-import gse.core;
-import gse.containers;
-import gse.time;
 import gse.concurrency;
+import gse.containers;
+import gse.core;
 import gse.diag;
 import gse.ecs;
+import gse.gpu;
 import gse.math;
+import gse.os;
+import gse.time;
+import std;
 
-import :types;
+import :builder;
+import :button_widget;
 import :font;
 import :render_layer;
 import :styles;
-import :builder;
-import :button_widget;
+import :types;
 
 export namespace gse::gui {
 	enum class confirm_result : std::uint8_t {
@@ -75,7 +74,7 @@ auto gse::gui::draw::confirm_dialog(builder& ui, const confirm_params& params) -
 	const float line_h = text_view->line_height(fs) * 1.25f;
 	const float btn_h = text_view->line_height(fs) + pad;
 
-	const auto scope = ctx.scoped_layer(render_layer::modal);
+	const auto _ = ctx.scoped_layer(render_layer::modal);
 	ctx.register_hit_region(render_layer::modal, params.body);
 	ctx.queue_sprite({
 		.rect = params.body,

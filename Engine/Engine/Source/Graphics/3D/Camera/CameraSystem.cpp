@@ -16,6 +16,7 @@ import gse.ecs;
 import gse.os;
 import gse.assets;
 import gse.gpu;
+import gse.log;
 
 auto gse::camera::position(const data& d) -> vec3<gse::position> {
 	return d.current.position;
@@ -89,7 +90,7 @@ auto gse::camera::scripted_requester_id() -> id {
 	return find_or_generate_id("gse::camera::scripted");
 }
 
-auto gse::camera::run(context& ctx, data& d, const channel_read<ui_focus_request, viewport_update, camera_yaw_request, request, jitter_request> requests_in, read<follow_component> cameras) -> async::task<> {
+auto gse::camera::run(context& ctx, data& d, const channel_read<ui_focus_request, viewport_update, request, jitter_request> requests_in, read<follow_component> cameras) -> async::task<> {
 	const time dt = system_clock::dt();
 
 	for (const auto& [focus] : requests_in.of<ui_focus_request>()) {
@@ -159,6 +160,7 @@ auto gse::camera::run(context& ctx, data& d, const channel_read<ui_focus_request
 		}
 		d.active_controller_entity = best_controller;
 		d.active_priority = highest_priority;
+		log::println(log::category::render, "camera: now following {} at priority {} from {} ({} follow components, viewport {})", best_controller, highest_priority, best_target.position, cameras.size(), d.viewport);
 	}
 	else if (best_controller.exists()) {
 		if (d.blending) {
@@ -189,9 +191,6 @@ auto gse::camera::run(context& ctx, data& d, const channel_read<ui_focus_request
 
 	const vec3f forward = rotate_vector(d.current.orientation, vec3f(0.f, 0.f, -1.f));
 	d.yaw = radians(std::atan2(-forward.x(), -forward.z()));
-	for (const auto& req : requests_in.of<camera_yaw_request>()) {
-		req.promise.fulfill(d.yaw);
-	}
 
 	d.prev_view_matrix = d.view_matrix;
 	d.prev_projection_matrix = d.projection_matrix;

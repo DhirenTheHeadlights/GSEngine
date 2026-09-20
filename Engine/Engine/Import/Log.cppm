@@ -26,6 +26,7 @@ export namespace gse::log {
 		vulkan_memory,
 		dx12,
 		dx12_validation,
+		gpu_perf,
 		assets,
 		task,
 		save_system,
@@ -37,10 +38,11 @@ export namespace gse::log {
 		main,
 		worker,
 		io,
+		background,
 		watchdog,
-		capture,
-		http,
-		network
+		network,
+		build,
+		terminal
 	};
 
 	auto set_level(
@@ -179,6 +181,10 @@ export namespace gse::log {
 	auto backtrace_active() -> bool;
 
 	auto set_color(
+		bool enabled
+	) -> void;
+
+	auto set_console_output(
 		bool enabled
 	) -> void;
 

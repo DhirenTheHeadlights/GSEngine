@@ -7,6 +7,7 @@ import gse.math;
 import gse.time;
 
 import :profile_aggregator;
+import :trace;
 
 export namespace gse::profile {
 	struct tag_percentiles {
@@ -90,40 +91,6 @@ namespace gse::profile {
 		std::vector<sample_time>& scratch,
 		std::vector<std::vector<sample_time>>& by_tag
 	) -> void;
-
-	auto frame_duration(
-		const report_frame& frame
-	) -> sample_time;
-}
-
-auto gse::profile::frame_duration(const report_frame& frame) -> sample_time {
-	time_t<std::uint64_t> first{};
-	time_t<std::uint64_t> last{};
-	bool any = false;
-
-	for (const auto root : frame.roots) {
-		if (root >= frame.nodes.size()) {
-			continue;
-		}
-		const report_node& node = frame.nodes[root];
-		if (node.open) {
-			continue;
-		}
-		if (!any) {
-			first = node.start;
-			last = node.stop;
-			any = true;
-			continue;
-		}
-		if (node.start < first) {
-			first = node.start;
-		}
-		if (node.stop > last) {
-			last = node.stop;
-		}
-	}
-
-	return any ? sample_time(last - first) : sample_time{};
 }
 
 auto gse::profile::percentile_of(const std::span<const sample_time> sorted, const double fraction) -> sample_time {
@@ -139,16 +106,14 @@ auto gse::profile::accumulate_frame(const report_frame& frame, std::vector<sampl
 	std::ranges::fill(scratch, sample_time{});
 
 	for (const report_node& node : frame.nodes) {
-		if (node.open || node.tag >= scratch.size()) {
+		if (!trace::profile_scope(node) || node.tag >= scratch.size()) {
 			continue;
 		}
 		scratch[node.tag] += sample_time(node.self);
 	}
 
 	for (std::size_t tag = 0; tag < scratch.size(); ++tag) {
-		if (scratch[tag] > sample_time{}) {
-			by_tag[tag].push_back(scratch[tag]);
-		}
+		by_tag[tag].push_back(scratch[tag]);
 	}
 }
 
@@ -170,7 +135,7 @@ auto gse::profile::summarize(const report_file& file) -> run_summary {
 
 	for (const report_frame& frame : file.recorded) {
 		accumulate_frame(frame, scratch, by_tag);
-		frame_spans.push_back(frame_duration(frame));
+		frame_spans.push_back(frame.elapsed);
 	}
 
 	std::ranges::sort(frame_spans);
@@ -179,7 +144,10 @@ auto gse::profile::summarize(const report_file& file) -> run_summary {
 	rows.reserve(file.tags.size());
 	for (std::size_t tag = 0; tag < file.tags.size(); ++tag) {
 		std::vector<sample_time>& samples = by_tag[tag];
-		if (samples.empty()) {
+		const auto frames_present = std::ranges::count_if(samples, [](const sample_time value) {
+			return value > sample_time{};
+		});
+		if (frames_present == 0) {
 			continue;
 		}
 		std::ranges::sort(samples);
@@ -189,7 +157,7 @@ auto gse::profile::summarize(const report_file& file) -> run_summary {
 			.p95 = percentile_of(samples, 0.95),
 			.p99 = percentile_of(samples, 0.99),
 			.peak = samples.back(),
-			.frames_present = samples.size(),
+			.frames_present = static_cast<std::uint64_t>(frames_present),
 		});
 	}
 

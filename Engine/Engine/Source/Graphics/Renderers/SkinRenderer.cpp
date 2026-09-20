@@ -26,17 +26,11 @@ namespace gse::renderer::skin {
 		std::uint32_t bone_count;
 	};
 
-	struct [[
-		= shaders::binding<0, 0>{},
-		= shaders::ssbo_readonly
-	]] bone_data {
+	struct [[= shaders::ssbo_readonly]] bone_data {
 		using element = rig_bone_binding;
 	};
 
-	struct [[
-		= shaders::binding<0, 1>{},
-		= shaders::ssbo_readwrite
-	]] palette_out {
+	struct [[= shaders::ssbo_readwrite]] palette_out {
 		using element = skin_matrix;
 	};
 
@@ -59,31 +53,19 @@ namespace gse::renderer::skin {
 		std::uint32_t bone_count;
 	};
 
-	struct [[
-		= shaders::binding<0, 0>{},
-		= shaders::ssbo_readonly
-	]] palette_data {
+	struct [[= shaders::ssbo_readonly]] palette_data {
 		using element = skin_matrix;
 	};
 
-	struct [[
-		= shaders::binding<0, 1>{},
-		= shaders::ssbo_readonly
-	]] bind_vertices {
+	struct [[= shaders::ssbo_readonly]] bind_vertices {
 		using element = shaders::forward::vertex;
 	};
 
-	struct [[
-		= shaders::binding<0, 2>{},
-		= shaders::ssbo_readonly
-	]] influence_data {
+	struct [[= shaders::ssbo_readonly]] influence_data {
 		using element = skin_influence;
 	};
 
-	struct [[
-		= shaders::binding<0, 3>{},
-		= shaders::ssbo_readwrite
-	]] deformed_vertices {
+	struct [[= shaders::ssbo_readwrite]] deformed_vertices {
 		using element = shaders::forward::vertex;
 	};
 
@@ -112,9 +94,9 @@ auto gse::renderer::skin::collect(context& ctx, data& d, const channel_read<phys
 	d.bone_bindings.clear();
 	d.bounds.clear();
 
-	auto lag = system_clock::fixed_lag();
-	if (const auto& interpolation = interp_in.of<physics::interpolation_state>(); !interpolation.empty() && !interpolation[0].advancing) {
-		lag = time_t<float, seconds>{};
+	physics::interpolation_state interpolation;
+	if (const auto& published = interp_in.of<physics::interpolation_state>(); !published.empty()) {
+		interpolation = published[0];
 	}
 
 	const auto owners = skeletons.owner_ids();
@@ -145,7 +127,7 @@ auto gse::renderer::skin::collect(context& ctx, data& d, const channel_read<phys
 				: nullptr;
 
 			const auto render_tc = bone_tc != nullptr
-				? physics::interpolated_transform(*bone_tc, motions.find(skeleton.bones[slot]), vec3<displacement>{}, lag)
+				? physics::render_transform(*bone_tc, motions.find(skeleton.bones[slot]), interpolation)
 				: physics::transform_component{};
 
 			d.bone_bindings.push_back({

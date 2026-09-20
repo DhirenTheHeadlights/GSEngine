@@ -17,6 +17,13 @@ namespace gse::ide::viewport {
 
 	constexpr vec2u viewport_extent{ 1280, 720 };
 
+	constexpr time produced_wait_slice = milliseconds(100.f);
+
+	auto watch_produced_semaphore(
+		gpu::device& device,
+		gpu::handle<gpu::semaphore> semaphore
+	) -> task::thread;
+
 	auto destroy_imported_session(
 		gpu::device& device,
 		imported_session& session
@@ -24,16 +31,35 @@ namespace gse::ide::viewport {
 
 	auto reset_session(
 		data& d,
-		std::uint32_t generation
+		std::uint32_t generation,
+		std::uint32_t instance,
+		std::uint64_t frame_count
 	) -> void;
 
 	auto collect_retiring_sessions(
 		gpu::device& device,
+		std::uint64_t frame_count,
 		data& d
 	) -> void;
 }
 
+auto gse::ide::viewport::watch_produced_semaphore(gpu::device& device, const gpu::handle<gpu::semaphore> semaphore) -> task::thread {
+	return task::spawn(log::thread_role::background, [&device, semaphore](const std::stop_token& st) {
+		std::uint64_t seen = device.semaphore_counter_value(semaphore);
+		while (!st.stop_requested()) {
+			if (device.wait_semaphore_for(semaphore, seen + 1, produced_wait_slice)) {
+				seen = device.semaphore_counter_value(semaphore);
+				frame_demand::request_redraw();
+			}
+		}
+	});
+}
+
 auto gse::ide::viewport::destroy_imported_session(gpu::device& device, imported_session& session) -> void {
+	if (session.produced_waiter.joinable()) {
+		session.produced_waiter.request_stop();
+		session.produced_waiter.join();
+	}
 	for (gpu::bindless_handle& slot : session.slots) {
 		slot = {};
 	}
@@ -51,12 +77,13 @@ auto gse::ide::viewport::destroy_imported_session(gpu::device& device, imported_
 	session = imported_session{};
 }
 
-auto gse::ide::viewport::reset_session(data& d, const std::uint32_t generation) -> void {
-	std::erase_if(d.pending, [generation](const pending_session& p) {
-		return p.generation == generation;
-	});
+auto gse::ide::viewport::reset_session(data& d, const std::uint32_t generation, const std::uint32_t instance, const std::uint64_t frame_count) -> void {
+	const auto same = [generation, instance](const auto& e) {
+		return e.generation == generation && e.instance == instance;
+	};
+	std::erase_if(d.pending, same);
 	for (imported_session& session : d.imported) {
-		if (session.generation != generation) {
+		if (!same(session)) {
 			continue;
 		}
 		if (session.instance < build_runner::max_attached_instances) {
@@ -65,20 +92,19 @@ auto gse::ide::viewport::reset_session(data& d, const std::uint32_t generation) 
 		}
 		d.retiring.push_back({
 			.session = std::move(session),
+			.retire_at_frame = frame_count + gpu::max_frames_in_flight + 1,
 		});
 	}
-	std::erase_if(d.imported, [generation](const imported_session& session) {
-		return session.generation == generation;
-	});
+	std::erase_if(d.imported, same);
 	if (d.imported.empty()) {
 		d.display_slot = d.slots[0].slot();
 		d.extent = viewport_extent;
 	}
 }
 
-auto gse::ide::viewport::collect_retiring_sessions(gpu::device& device, data& d) -> void {
+auto gse::ide::viewport::collect_retiring_sessions(gpu::device& device, const std::uint64_t frame_count, data& d) -> void {
 	std::erase_if(d.retiring, [&](retiring_session& retiring) {
-		if (--retiring.frames_remaining > 0) {
+		if (frame_count < retiring.retire_at_frame) {
 			return false;
 		}
 		destroy_imported_session(device, retiring.session);
@@ -106,8 +132,10 @@ auto gse::ide::viewport::init(const shared_view<gpu::context::data> gpu_s, data&
 }
 
 auto gse::ide::viewport::frame(const context& ctx, const shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<build_runner::attached_session_ended, build_runner::attached_surface_ready> surface_in, const channel_write<build_runner::attached_surface_rejected, build_runner::attached_surface_imported> surface_out, const shared_view<build_runner::data> build_d) -> async::task<> {
+	const std::uint64_t frame_count = gpu_s.frame->frame_count();
+
 	for (const build_runner::attached_session_ended& ended : surface_in.of<build_runner::attached_session_ended>()) {
-		reset_session(d, ended.generation);
+		reset_session(d, ended.generation, ended.instance, frame_count);
 	}
 
 	std::erase_if(d.pending, [&build_d](const pending_session& p) {
@@ -115,7 +143,7 @@ auto gse::ide::viewport::frame(const context& ctx, const shared_view<gpu::contex
 	});
 	for (const imported_session& session : d.imported) {
 		if (!build_runner::session_for(build_d, session.generation, session.instance)) {
-			reset_session(d, session.generation);
+			reset_session(d, session.generation, session.instance, frame_count);
 			break;
 		}
 	}
@@ -169,7 +197,7 @@ auto gse::ide::viewport::frame(const context& ctx, const shared_view<gpu::contex
 	if (!d.ready || !gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
-	collect_retiring_sessions(*gpu_s.device, d);
+	collect_retiring_sessions(*gpu_s.device, frame_count, d);
 
 	while (!d.pending.empty()) {
 		const pending_session pending = std::move(d.pending.front());
@@ -243,6 +271,7 @@ auto gse::ide::viewport::frame(const context& ctx, const shared_view<gpu::contex
 			if (pending.instance == 0) {
 				d.extent = pending.message->extent;
 			}
+			imported.produced_waiter = watch_produced_semaphore(*gpu_s.device, imported.produced_semaphore);
 			d.imported.push_back(std::move(imported));
 			surface_out.push<build_runner::attached_surface_imported>({
 				.generation = pending.generation,
@@ -253,6 +282,7 @@ auto gse::ide::viewport::frame(const context& ctx, const shared_view<gpu::contex
 		else {
 			d.retiring.push_back({
 				.session = std::move(imported),
+				.retire_at_frame = frame_count + gpu::max_frames_in_flight + 1,
 			});
 			surface_out.push<build_runner::attached_surface_rejected>({
 				.generation = pending.generation,

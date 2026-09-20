@@ -18,5 +18,7 @@ void vbd_update_sticking(uint3 dispatch_id) {
         tangential_gap < solver_config_data[0].stick_threshold &&
         tangential_lambda < friction_bound;
 
-    contact_data[ci].sticking = sticking ? 1u : 0u;
+    c.sticking = sticking ? 1u : 0u;
+    contact_data[ci].sticking = c.sticking;
+    warm_starts[ci] = c;
 }

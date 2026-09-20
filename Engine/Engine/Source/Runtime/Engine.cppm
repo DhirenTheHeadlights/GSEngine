@@ -30,7 +30,10 @@ export namespace gse {
 			physics::transform_component,
 			physics::motion_component,
 			physics::collision_component,
+			physics::motor_component,
+			physics::kinematic_target_component,
 			render_component,
+			primitive_sphere_spec,
 			skeleton_instance_component,
 			clip_player_component,
 			player_controller
@@ -46,14 +49,22 @@ export namespace gse {
 		std::string summary_out;
 		std::string state_dump_out;
 		bool update_baseline = false;
+		bool real_time = false;
 		double regression_threshold = 1.10;
 		scenario::body_fn scenario_body = nullptr;
 	};
 
+	enum class loop_cadence {
+		continuous,
+		reactive
+	};
+
 	struct engine_config {
 		std::string title = "GSEngine Application";
+		loop_cadence cadence = loop_cadence::continuous;
 		bool create_window = true;
 		bool render = true;
+		bool gpu = true;
 		bool dark_background = false;
 		bool video_encode = true;
 		bool simulate_world = true;
@@ -62,12 +73,15 @@ export namespace gse {
 		bool scale_ui_with_resolution = true;
 		bool load_settings = true;
 		bool persist_settings = true;
+		bool author_baked_assets = true;
 		bool dump_settings = false;
+		bool trace = true;
 		std::filesystem::path gui_layout_path;
 		std::filesystem::path project_settings_path;
 		bool attached = false;
 		std::string ipc_pipe_name;
 		std::uint32_t parent_pid = 0;
+		std::uint32_t worker_threads = 0;
 		std::string dump_system_graph_path;
 		std::vector<std::string> setting;
 		bench_config bench;
@@ -93,13 +107,6 @@ export namespace gse {
 	struct attached_input_message {
 		std::uint32_t magic = 0;
 		input::event event;
-	};
-
-	constexpr std::uint32_t attached_pacing_magic = 0x47535333;
-
-	struct attached_pacing_message {
-		std::uint32_t magic = 0;
-		time_t<std::uint64_t> refresh{};
 	};
 
 	class engine : public identifiable {
@@ -173,6 +180,7 @@ export namespace gse {
 		std::uint32_t m_boot_init_baseline_settled = 0;
 		bool m_boot_init_baseline_captured = false;
 		bool m_settings_audited = false;
+		bool m_actions_logged = false;
 		std::uint32_t m_frames_since_rendered = 0;
 		bool m_window_shown = false;
 		bool m_headless_gpu = false;
@@ -182,6 +190,9 @@ export namespace gse {
 		gpu::handle<gpu::semaphore> m_attached_consumed_semaphore{};
 		attached_surface_message m_attached_message{};
 		std::uint64_t m_attached_counter = 0;
+		std::uint32_t m_attached_frames_presented = 0;
+		std::uint32_t m_attached_frames_skipped = 0;
+		interval_timer<> m_attached_report{ seconds(2.f) };
 		bool m_attached_surface_ready = false;
 		bool m_attached_surface_attempted = false;
 	};

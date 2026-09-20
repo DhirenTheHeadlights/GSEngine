@@ -208,12 +208,17 @@ auto gse::ide::config::primary() -> const worktree& {
 	return worktrees().front();
 }
 
-auto gse::ide::config::worktree_for(const std::filesystem::path& file) -> const worktree& {
+auto gse::ide::config::owning_worktree(const std::filesystem::path& file) -> const worktree* {
 	const std::span<const worktree> trees = worktrees();
 	const auto owner = std::ranges::find_if(trees, [&file](const worktree& tree) {
 		return is_inside(file, tree.project_root) || is_inside(file, tree.engine_root);
 	});
-	return owner != trees.end() ? *owner : primary();
+	return owner != trees.end() ? &*owner : nullptr;
+}
+
+auto gse::ide::config::worktree_for(const std::filesystem::path& file) -> const worktree& {
+	const worktree* owner = owning_worktree(file);
+	return owner ? *owner : primary();
 }
 
 auto gse::ide::config::canonical_path(const std::filesystem::path& file) -> std::filesystem::path {

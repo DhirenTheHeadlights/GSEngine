@@ -8,12 +8,16 @@ import :model;
 namespace gse::ide::agent {
 	constexpr std::string_view agent_command = "claude -p --output-format stream-json --input-format stream-json --verbose --permission-mode auto";
 	constexpr std::wstring_view resume_option = L" --resume ";
+	constexpr std::string_view mcp_config_format = R"( --mcp-config "{{\"mcpServers\":{{\"gse\":{{\"command\":\"node\",\"args\":[\"{}\"]}}}}}}")";
 	constexpr std::wstring_view oauth_token_name = L"CLAUDE_CODE_OAUTH_TOKEN";
 	constexpr std::wstring_view config_dir_name = L"CLAUDE_CONFIG_DIR";
 	constexpr std::wstring_view user_profile_name = L"USERPROFILE";
 	constexpr std::wstring_view handoff_option = L"--agent-handoff=";
 	constexpr std::string_view builtin_model_aliases[] = { "opus", "sonnet", "haiku", "fable" };
 	constexpr std::int64_t limit_backoff_seconds = 300;
+	constexpr std::string_view usage_url = "https://api.anthropic.com/api/oauth/usage";
+	constexpr std::string_view oauth_beta = "oauth-2025-04-20";
+	constexpr std::int64_t usage_refresh_seconds = 60;
 	constexpr std::uint32_t sessions_magic = 0x47534147;
 	constexpr std::uint32_t sessions_version = 5;
 	constexpr std::uint32_t first_schema_sessions_version = 3;
@@ -29,6 +33,7 @@ namespace gse::ide::agent {
 
 	struct credentials {
 		std::vector<wchar_t> environment;
+		std::string token_value;
 		bool token = false;
 	};
 
@@ -125,9 +130,22 @@ namespace gse::ide::agent {
 		data& d
 	) -> session*;
 
+	auto environment_value(
+		std::wstring_view name
+	) -> std::wstring;
+
 	auto environment_path(
 		std::wstring_view name
 	) -> std::filesystem::path;
+
+	auto refresh_usage(
+		data& d
+	) -> void;
+
+	auto apply_usage(
+		data& d,
+		const http::result& result
+	) -> void;
 
 	auto unix_now() -> std::int64_t;
 

@@ -1,27 +1,23 @@
 export module gse.vulkan:device;
 
+import gse.assert;
+import gse.concurrency;
+import gse.containers;
+import gse.core;
+import gse.diag;
+import gse.gpu_backend;
+import gse.log;
+import gse.meta;
+import gse.time;
 import std;
 import vulkan;
 
 import :aftermath;
-import gse.gpu_backend;
 import :commands;
 import :instance;
 import :physical_device;
 import :queues;
 import :types;
-import :shader_object;
-import :bindless_mapping;
-
-import gse.assert;
-import gse.core;
-import gse.containers;
-import gse.time;
-import gse.concurrency;
-import gse.diag;
-import gse.meta;
-import gse.log;
-import gse.win32;
 
 namespace gse::vulkan {
 	class transient_command_pool final : public non_copyable {
@@ -102,8 +98,7 @@ namespace gse::vulkan {
 				{ ^^gpu::handle<gpu::fence>, ^^vk::raii::Fence },
 				{ ^^gpu::acceleration_structure, ^^vk::raii::AccelerationStructureKHR },
 				{ ^^gpu::swap_chain_handle, ^^swap_chain_resources },
-				{ ^^gpu::handle<gpu::query_pool>, ^^vk::raii::QueryPool },
-				{ ^^gpu::handle<gpu::sampler>, ^^vk::raii::Sampler },
+				{ ^^gpu::handle<gpu::query_pool>, ^^std::unique_ptr<query_pool_resources> },
 				{ ^^gpu::handle<gpu::shader_object>, ^^vk::raii::ShaderEXT },
 				{ ^^gpu::handle<gpu::pipeline_layout>, ^^vk::raii::PipelineLayout },
 				{ ^^gpu::handle<gpu::descriptor_heap>, ^^descriptor_heap_resources },
@@ -154,6 +149,10 @@ export namespace gse::vulkan {
 		auto wait_idle() const -> void;
 
 		[[nodiscard]] auto timestamp_period() const -> float;
+
+		[[nodiscard]] auto calibrated_timestamp(
+			gpu::queue_type queue
+		) const -> std::optional<gpu::timestamp_calibration>;
 
 		[[nodiscard]] auto queue_family(
 			gpu::queue_type queue
@@ -240,11 +239,6 @@ export namespace gse::vulkan {
 		auto image_view(
 			gpu::handle<gpu::image> image
 		) const -> gpu::handle<gpu::image_view>;
-
-		[[nodiscard]]
-		auto create_sampler(
-			const gpu::sampler_desc& desc
-		) -> gpu::handle<gpu::sampler>;
 
 		[[nodiscard]]
 		auto create_shader_program(
@@ -364,6 +358,10 @@ export namespace gse::vulkan {
 
 		auto retire(
 			gpu::handle<gpu::fence> fence
+		) -> void;
+
+		auto retire(
+			gpu::handle<gpu::query_pool> pool
 		) -> void;
 
 		auto collect_garbage() -> void;
@@ -615,6 +613,13 @@ export namespace gse::vulkan {
 		) const -> void;
 
 		[[nodiscard]]
+		auto wait_semaphore_for(
+			gpu::handle<gpu::semaphore> semaphore,
+			std::uint64_t value,
+			time timeout
+		) const -> bool;
+
+		[[nodiscard]]
 		auto create_timestamp_query_pool(
 			std::uint32_t capacity,
 			std::string_view label = {}
@@ -636,6 +641,12 @@ export namespace gse::vulkan {
 		) const -> std::pair<gpu::query_status, std::vector<std::uint64_t>>;
 
 	private:
+		auto create_query_pool(
+			const vk::QueryPoolCreateInfo& info,
+			std::uint32_t result_stride,
+			std::string_view label
+		) -> gpu::handle<gpu::query_pool>;
+
 		device(
 			class physical_device&& physical_device,
 			vk::raii::Device&& device,
