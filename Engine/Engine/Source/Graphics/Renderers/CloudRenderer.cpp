@@ -38,7 +38,7 @@ namespace gse::renderer::cloud {
 		float light_march_min_transmittance = 0.1f;
 		float light_march_opaque_optical_depth = 3.f;
 		float mean_detail_erosion = 0.5f;
-		float scene_far_depth = 1.f - 1e-5f;
+		float scene_background_depth = 1e-5f;
 	};
 
 	using cloud_types = type_pack<cloud_limits, cloud_data, atmosphere::atmosphere_data>;
@@ -185,7 +185,7 @@ namespace gse::renderer::cloud {
 		gpu::rasterization<gpu::polygon_mode::fill, gpu::cull_mode::none>,
 		gpu::color_targets<gpu::color_format::hdr>,
 		gpu::blend<gpu::blend_preset::alpha>,
-		gpu::depth<true, false, gpu::compare_op::less_or_equal>
+		gpu::depth<true, false, gpu::compare_op::greater_or_equal>
 	>;
 
 	constexpr gpu::sampler_desc noise_sampler_desc{

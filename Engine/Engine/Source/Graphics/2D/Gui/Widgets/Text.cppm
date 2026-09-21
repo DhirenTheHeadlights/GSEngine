@@ -13,6 +13,7 @@ import std;
 import :font;
 import :layout_ops;
 import :styles;
+import :text_buffer;
 import :types;
 
 export namespace gse::gui {
@@ -21,6 +22,7 @@ export namespace gse::gui {
 		std::optional<float> size;
 		layout::halign align = layout::halign::start;
 		bool strong = false;
+		bool emphasis = false;
 		resource::handle<font> font{};
 	};
 }
@@ -69,8 +71,7 @@ auto gse::gui::draw::text_in_rect(const draw_context& ctx, const rectf& rect, co
 		return;
 	}
 
-	const auto preferred = styling.strong && ctx.fonts.text_strong.valid() ? ctx.fonts.text_strong : ctx.fonts.text;
-	const auto fnt = styling.font.valid() ? styling.font : preferred;
+	const auto fnt = ctx.fonts.face_or(styling.font, styling.strong ? text_face::text_strong : (styling.emphasis ? text_face::text_emphasis : text_face::text));
 	const auto fnt_view = fnt.resolve();
 	if (!fnt_view) {
 		return;
@@ -98,7 +99,7 @@ auto gse::gui::draw::text_in_rect(const draw_context& ctx, const rectf& rect, co
 }
 
 auto gse::gui::draw::text(const draw_context& ctx, const std::string_view name, const std::string_view text, const resource::handle<font> font) -> void {
-	const auto fnt = font.valid() ? font : ctx.fonts.text;
+	const auto fnt = ctx.fonts.face_or(font);
 	const auto fnt_view = fnt.resolve();
 	if (!ctx.current_menu) {
 		return;

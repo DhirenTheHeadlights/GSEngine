@@ -59,7 +59,7 @@ export namespace gse::gpu {
 	struct depth_state {
 		bool test = true;
 		bool write = true;
-		compare_op compare = compare_op::less;
+		compare_op compare = compare_op::greater;
 	};
 
 	struct rasterization_state {
@@ -106,7 +106,7 @@ export namespace gse::gpu {
 	};
 
 	struct depth_clear {
-		float depth = 1.0f;
+		float depth = 0.0f;
 	};
 
 	struct dynamic_pipeline_state {

@@ -148,7 +148,7 @@ auto gse::gui::draw::text_input(const draw_context& ctx, const std::string& name
 }
 
 auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget_id, std::string& buffer, text_input_state& state, const rectf& box_rect, id& hot_widget_id, id& focus_widget_id, const resource::handle<font> font) -> void {
-	const auto fnt = font.valid() ? font : ctx.fonts.text;
+	const auto fnt = ctx.fonts.face_or(font);
 	const auto fnt_view = fnt.resolve();
 	constexpr float text_padding = 5.f;
 	constexpr float caret_extent = 2.f;

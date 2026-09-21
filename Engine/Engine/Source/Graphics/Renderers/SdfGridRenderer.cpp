@@ -46,7 +46,7 @@ namespace gse::renderer::sdf_grid {
 		gpu::push_constant<push_constants>,
 		gpu::rasterization<gpu::polygon_mode::fill, gpu::cull_mode::none>,
 		gpu::color_targets<gpu::color_format::hdr, gpu::color_format::hdr>,
-		gpu::depth<true, true, gpu::compare_op::less_or_equal>,
+		gpu::depth<true, true, gpu::compare_op::greater_or_equal>,
 		gpu::blend<gpu::blend_preset::alpha>
 	>;
 }

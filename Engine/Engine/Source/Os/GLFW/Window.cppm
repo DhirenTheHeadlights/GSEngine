@@ -32,6 +32,15 @@ export namespace gse {
 		id window;
 	};
 
+	struct window_focus_request {
+		id window;
+	};
+
+	struct window_resize_request {
+		id window;
+		vec2i size{ 0, 0 };
+	};
+
 	struct window_open_file_request {
 		std::string title;
 		std::string filter_name;
@@ -271,6 +280,8 @@ export namespace gse::window {
 		bool cmd_launcher_pending = false;
 		bool cmd_launcher_active = false;
 		vec2i cmd_launcher_size{ 0, 0 };
+		bool cmd_resize_pending = false;
+		vec2i cmd_resize_size{ 0, 0 };
 		vec2i launcher_saved_position{ 0, 0 };
 		vec2i launcher_saved_size{ 0, 0 };
 		bool launcher_saved_maximized = false;

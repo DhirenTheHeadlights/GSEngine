@@ -68,12 +68,9 @@ export namespace gse::gui::symbol {
 		const paint& p = {}
 	) -> void;
 
-	auto spinner_rotation() -> angle;
-
 	auto spinner(
 		const draw_context& ctx,
 		const rect_t<vec2f>& box,
-		angle rotation,
 		const paint& p = {}
 	) -> void;
 
@@ -114,6 +111,14 @@ namespace gse::gui::symbol {
 		const rect_t<vec2f>& box,
 		const paint& p
 	) -> float;
+
+	auto visible(
+		const draw_context& ctx,
+		const rect_t<vec2f>& box,
+		const paint& p
+	) -> bool;
+
+	auto spinner_rotation() -> angle;
 }
 
 constexpr auto gse::gui::symbol::segment(const vec2f from, const vec2f to) -> stroke {
@@ -405,6 +410,14 @@ auto gse::gui::symbol::draw(std::vector<renderer::sprite_command>& out, resource
 	}
 }
 
+auto gse::gui::symbol::visible(const draw_context& ctx, const rect_t<vec2f>& box, const paint& p) -> bool {
+	std::optional<rect_t<vec2f>> clip = ctx.clip_for(p.layer);
+	if (p.clip_rect) {
+		clip = clip ? clip->intersection(*p.clip_rect) : p.clip_rect;
+	}
+	return !clip || clip->intersects(box);
+}
+
 auto gse::gui::symbol::spinner_rotation() -> angle {
 	constexpr angular_velocity spin_rate = radians_per_second(9.6f);
 	constexpr angle full_rotation = degrees(360.f);
@@ -416,9 +429,12 @@ auto gse::gui::symbol::spinner_rotation() -> angle {
 	return fmod(step * steps, full_rotation);
 }
 
-auto gse::gui::symbol::spinner(const draw_context& ctx, const rect_t<vec2f>& box, const angle rotation, const paint& p) -> void {
+auto gse::gui::symbol::spinner(const draw_context& ctx, const rect_t<vec2f>& box, const paint& p) -> void {
+	if (!visible(ctx, box, p)) {
+		return;
+	}
 	constexpr float radius = 0.34f;
 	const angle sweep = degrees(270.f);
-	const std::array<stroke, 1> strokes{ arc({ 0.5f, 0.5f }, radius, rotation, sweep) };
+	const std::array<stroke, 1> strokes{ arc({ 0.5f, 0.5f }, radius, spinner_rotation(), sweep) };
 	draw(ctx, strokes, box, p);
 }

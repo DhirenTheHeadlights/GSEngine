@@ -542,7 +542,7 @@ gse::vulkan::device::~device() {
 }
 
 gse::vulkan::device::device(device&& other) noexcept
-	: m_physical_device(std::move(other.m_physical_device)), m_device(std::move(other.m_device)), m_fault_enabled(other.m_fault_enabled), m_vendor_binary_fault_enabled(other.m_vendor_binary_fault_enabled), m_queue_families(other.m_queue_families), m_pools(std::move(other.m_pools)), m_live_allocation_count(other.m_live_allocation_count.load()), m_next_allocation_id(other.m_next_allocation_id.load()), m_cleaned_up(other.m_cleaned_up), m_settings(other.m_settings), m_live_allocations(std::move(other.m_live_allocations)) {
+	: m_physical_device(std::move(other.m_physical_device)), m_device(std::move(other.m_device)), m_fault_enabled(other.m_fault_enabled), m_vendor_binary_fault_enabled(other.m_vendor_binary_fault_enabled), m_calibrated_timestamps_enabled(other.m_calibrated_timestamps_enabled), m_timestamp_valid_masks(other.m_timestamp_valid_masks), m_queue_families(other.m_queue_families), m_pools(std::move(other.m_pools)), m_live_allocation_count(other.m_live_allocation_count.load()), m_next_allocation_id(other.m_next_allocation_id.load()), m_cleaned_up(other.m_cleaned_up), m_settings(other.m_settings), m_live_allocations(std::move(other.m_live_allocations)) {
 }
 
 auto gse::vulkan::device::operator=(device&& other) noexcept -> device& {
@@ -552,6 +552,8 @@ auto gse::vulkan::device::operator=(device&& other) noexcept -> device& {
 		m_device = std::move(other.m_device);
 		m_fault_enabled = other.m_fault_enabled;
 		m_vendor_binary_fault_enabled = other.m_vendor_binary_fault_enabled;
+		m_calibrated_timestamps_enabled = other.m_calibrated_timestamps_enabled;
+		m_timestamp_valid_masks = other.m_timestamp_valid_masks;
 		m_queue_families = other.m_queue_families;
 		m_pools = std::move(other.m_pools);
 		m_live_allocation_count = other.m_live_allocation_count.load();
@@ -679,7 +681,6 @@ auto gse::vulkan::device::create(const instance& instance_data, gpu::device_sett
 	require_extension(vk::EXTRobustness2ExtensionName);
 	require_extension(vk::KHRUnifiedImageLayoutsExtensionName);
 	require_extension(vk::EXTHostImageCopyExtensionName);
-	require_extension(vk::KHRCalibratedTimestampsExtensionName);
 
 	const bool presenting = static_cast<bool>(instance_data.surface());
 	if (presenting) {
@@ -746,6 +747,7 @@ auto gse::vulkan::device::create(const instance& instance_data, gpu::device_sett
 	const bool device_fault_supported = supports_extension(vk::EXTDeviceFaultExtensionName) && fault_query.deviceFault;
 	const bool device_fault_vendor_binary_supported = device_fault_supported && fault_query.deviceFaultVendorBinary;
 	const bool av1_encode_supported = video_encode_extensions_available && supports_extension(vk::KHRVideoEncodeAv1ExtensionName);
+	const bool calibrated_timestamps_supported = supports_extension(vk::KHRCalibratedTimestampsExtensionName);
 
 	require(robustness2_query.robustBufferAccess2, vk::EXTRobustness2ExtensionName);
 	require(unified_layouts_query.unifiedImageLayouts, vk::KHRUnifiedImageLayoutsExtensionName);
@@ -901,7 +903,6 @@ auto gse::vulkan::device::create(const instance& instance_data, gpu::device_sett
 		vk::KHRDynamicRenderingExtensionName,
 		vk::KHRMaintenance5ExtensionName,
 		vk::KHRMaintenance6ExtensionName,
-		vk::KHRCalibratedTimestampsExtensionName,
 		vk::EXTPageableDeviceLocalMemoryExtensionName,
 		vk::EXTMemoryPriorityExtensionName,
 		vk::EXTMeshShaderExtensionName,
@@ -945,6 +946,13 @@ auto gse::vulkan::device::create(const instance& instance_data, gpu::device_sett
 		if (supports_extension(vk::KHRVideoEncodeH265ExtensionName)) {
 			device_extensions.push_back(vk::KHRVideoEncodeH265ExtensionName);
 		}
+	}
+
+	if (calibrated_timestamps_supported) {
+		device_extensions.push_back(vk::KHRCalibratedTimestampsExtensionName);
+	}
+	else {
+		log::println(log::level::warning, log::category::vulkan, "Calibrated timestamps unsupported: GPU spans will not be aligned to the CPU timeline");
 	}
 
 	const bool external_memory_supported = supports_extension("VK_KHR_external_memory") && supports_extension("VK_KHR_external_memory_win32");
@@ -1018,6 +1026,7 @@ auto gse::vulkan::device::create(const instance& instance_data, gpu::device_sett
 		cfg,
 		device_fault_supported,
 		device_fault_vendor_binary_supported,
+		calibrated_timestamps_supported,
 		families.graphics_family.value(),
 		families.compute_family.value(),
 		instance_data.surface()
@@ -1091,13 +1100,8 @@ auto gse::vulkan::device::timestamp_period() const -> float {
 }
 
 auto gse::vulkan::device::calibrated_timestamp(const gpu::queue_type queue) const -> std::optional<gpu::timestamp_calibration> {
-	const auto valid_bits = m_physical_device.timestamp_valid_bits(queue_family(queue));
-	if (valid_bits == 0) {
-		return std::nullopt;
-	}
-	const auto domains = m_physical_device.calibrateable_time_domains();
-	if (!std::ranges::contains(domains, vk::TimeDomainKHR::eDevice) ||
-		!std::ranges::contains(domains, vk::TimeDomainKHR::eQueryPerformanceCounter)) {
+	const auto mask = m_timestamp_valid_masks[static_cast<std::size_t>(queue)];
+	if (!m_calibrated_timestamps_enabled || mask == 0) {
 		return std::nullopt;
 	}
 	const std::array infos{
@@ -1111,7 +1115,7 @@ auto gse::vulkan::device::calibrated_timestamp(const gpu::queue_type queue) cons
 	return gpu::timestamp_calibration{
 		.gpu_ticks = values.first[0],
 		.host_ticks = values.first[1],
-		.valid_bits_mask = valid_bits >= 64 ? ~std::uint64_t{ 0 } : (std::uint64_t{ 1 } << valid_bits) - 1
+		.valid_bits_mask = mask
 	};
 }
 
@@ -2164,12 +2168,25 @@ auto gse::vulkan::query_descriptor_heap_props(const physical_device& pd) -> gpu:
 	};
 }
 
-gse::vulkan::device::device(class physical_device&& physical_device, vk::raii::Device&& device, gpu::device_settings& cfg, const bool device_fault_enabled, const bool device_fault_vendor_binary_enabled, const std::uint32_t graphics_family, const std::uint32_t compute_family, const gpu::surface surface)
+gse::vulkan::device::device(class physical_device&& physical_device, vk::raii::Device&& device, gpu::device_settings& cfg, const bool device_fault_enabled, const bool device_fault_vendor_binary_enabled, const bool calibrated_timestamps_enabled, const std::uint32_t graphics_family, const std::uint32_t compute_family, const gpu::surface surface)
 	: m_physical_device(std::move(physical_device)), m_device(std::move(device)), m_fault_enabled(device_fault_enabled), m_vendor_binary_fault_enabled(device_fault_vendor_binary_enabled), m_settings(&cfg) {
 	m_queue_families[static_cast<std::size_t>(gpu::queue_type::graphics)] = graphics_family;
 	m_queue_families[static_cast<std::size_t>(gpu::queue_type::compute)] = compute_family;
 	m_queue_families[static_cast<std::size_t>(gpu::queue_type::video_encode)] = graphics_family;
 	m_descriptor_heap_props = query_descriptor_heap_props(m_physical_device);
+	for (std::size_t i = 0; i < gpu::queue_type_count; ++i) {
+		const auto valid_bits = m_physical_device.timestamp_valid_bits(m_queue_families[i]);
+		m_timestamp_valid_masks[i] = valid_bits == 0 ? 0 : valid_bits >= 64 ? ~std::uint64_t{ 0 } : (std::uint64_t{ 1 } << valid_bits) - 1;
+	}
+	if (calibrated_timestamps_enabled) {
+		const auto domains = m_physical_device.calibrateable_time_domains();
+		m_calibrated_timestamps_enabled =
+			std::ranges::contains(domains, vk::TimeDomainKHR::eDevice) &&
+			std::ranges::contains(domains, vk::TimeDomainKHR::eQueryPerformanceCounter);
+		if (!m_calibrated_timestamps_enabled) {
+			log::println(log::level::warning, log::category::vulkan, "Calibrated timestamps lack a device + QPC domain pair: GPU spans will not be aligned to the CPU timeline");
+		}
+	}
 }
 
 auto gse::vulkan::device::allocate(const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties, const std::string_view tag, const std::source_location loc, const bool device_address) -> std::expected<gpu::allocation, std::string> {

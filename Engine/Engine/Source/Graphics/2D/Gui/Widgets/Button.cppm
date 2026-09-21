@@ -78,7 +78,7 @@ export namespace gse::gui {
 }
 
 auto gse::gui::draw::button(const draw_context& ctx, const std::string_view name, id& hot_widget_id, id& active_widget_id, const bool enabled, const resource::handle<font> font, const button_role role) -> bool {
-	const auto fnt = font.valid() ? font : ctx.fonts.text;
+	const auto fnt = ctx.fonts.face_or(font);
 	const auto fnt_view = fnt.resolve();
 	if (!ctx.current_menu) {
 		return false;
@@ -100,7 +100,7 @@ auto gse::gui::draw::button(const draw_context& ctx, const std::string_view name
 }
 
 auto gse::gui::draw::button_in_rect(const draw_context& ctx, const std::string_view label, const std::string_view key, const rectf& button_rect, id& hot_widget_id, id& active_widget_id, const bool enabled, const resource::handle<font> font, const button_role role) -> bool {
-	const auto fnt = font.valid() ? font : ctx.fonts.text;
+	const auto fnt = ctx.fonts.face_or(font);
 	const auto fnt_view = fnt.resolve();
 	const id widget_id = ids::make(key.empty() ? label : key);
 
@@ -140,7 +140,7 @@ auto gse::gui::draw::button_in_rect(const draw_context& ctx, const std::string_v
 
 auto gse::gui::draw::button_in_rect(const draw_context& ctx, const button_params& params, id& hot_widget_id, id& active_widget_id) -> bool {
 	const style& sty = ctx.style;
-	const auto fnt = params.font.valid() ? params.font : ctx.fonts.text;
+	const auto fnt = ctx.fonts.face_or(params.font);
 	const auto fnt_view = fnt.resolve();
 	const id widget_id = ids::make(params.key.empty() ? params.label : params.key);
 
@@ -195,7 +195,7 @@ auto gse::gui::draw::button_in_rect(const draw_context& ctx, const button_params
 }
 
 auto gse::gui::button::draw(const draw_context& ctx, const params p, id& hot, id& active, id&) -> bool {
-	const auto fnt = p.font.valid() ? p.font : ctx.fonts.text;
+	const auto fnt = ctx.fonts.face_or(p.font);
 	const auto fnt_view = fnt.resolve();
 
 	if (p.rect) {

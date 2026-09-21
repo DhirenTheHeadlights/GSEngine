@@ -8,7 +8,7 @@ VS_OUT vs_main(uint vid : SV_VertexID) {
     float2 p = float2((vid << 1) & 2, vid & 2);
     VS_OUT o;
     o.uv = p;
-    o.clip_pos = float4(p * 2.0 - 1.0, 1.0, 1.0);
+    o.clip_pos = float4(p * 2.0 - 1.0, 0.0, 1.0);
     return o;
 }
 

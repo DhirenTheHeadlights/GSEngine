@@ -469,7 +469,7 @@ auto gse::ide::terminal::init(data& d) -> async::task<> {
 	return {};
 }
 
-auto gse::ide::terminal::run(context& ctx, data& d, const channel_read<build_runner::stream_opened, agent::blame_offer> stream_in, const channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, gui::menu_content, jump_to_request, set_cursor_shape_request> ui_out, const shared_view<build_runner::data> build_d) -> async::task<> {
+auto gse::ide::terminal::run(context& ctx, data& d, const channel_read<build_runner::stream_opened, build_runner::attached_fatal_reported, agent::blame_offer> stream_in, const channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, gui::menu_content, jump_to_request, set_cursor_shape_request> ui_out, const shared_view<build_runner::data> build_d) -> async::task<> {
 	const auto opened_streams = stream_in.of<build_runner::stream_opened>();
 
 	for (const build_runner::stream_opened& opened : opened_streams) {
@@ -482,8 +482,20 @@ auto gse::ide::terminal::run(context& ctx, data& d, const channel_read<build_run
 		inst.runner = opened.stream;
 		inst.interactive = false;
 		inst.kind = opened.kind;
+		inst.attached_instance = opened.attached_instance;
 		d.active = inst.instance_id;
 		d.instances.push_back(std::move(inst));
+	}
+
+	for (const build_runner::attached_fatal_reported& fatal : stream_in.of<build_runner::attached_fatal_reported>()) {
+		const auto tab = std::ranges::find_if(d.instances, [&fatal](const instance& inst) {
+			return inst.attached_instance == fatal.instance;
+		});
+		if (tab == d.instances.end()) {
+			continue;
+		}
+		tab->fatal = fatal;
+		d.active = tab->instance_id;
 	}
 
 	for (const agent::blame_offer& offer : stream_in.of<agent::blame_offer>()) {
@@ -612,10 +624,62 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst
 	const float pad = ctx.style.padding;
 	const float input_h = inst.interactive ? code_view->line_height(ctx.style.font_size) + pad : 0.f;
 	const float accent_h = inst.interactive ? ctx.style.accent_bar_width : 0.f;
+	const float line_h = code_view->line_height(ctx.style.font_size);
+	const float text_width = std::max(0.f, area.width() - pad * 2.f);
+	const std::vector<std::string_view> comment_lines = inst.fatal
+		? code_view->wrap(inst.fatal->comment, text_width, ctx.style.font_size)
+		: std::vector<std::string_view>{};
+	const float banner_h = inst.fatal ? line_h * static_cast<float>(comment_lines.size() + 2) + pad * 2.f : 0.f;
+
+	if (inst.fatal) {
+		const rectf banner = rectf::from_position_size(
+			{ area.left(), area.top() },
+			{ area.width(), banner_h }
+		);
+		ui.draw<gui::panel_backdrop>({
+			.rect = banner,
+			.background = ctx.style.color_panel_alt,
+		});
+
+		const float text_x = banner.left() + pad;
+		const float center = code_view->vertical_center_offset(ctx.style.font_size);
+		float row_y = banner.top() - pad - line_h;
+
+		ctx.queue_text({
+			.font = ctx.fonts.code,
+			.text = ctx.intern(std::format("Assertion failed in {}", inst.fatal->function)),
+			.position = { text_x, row_y + center },
+			.scale = ctx.style.font_size,
+			.color = ctx.style.color_error,
+			.clip_rect = banner,
+		});
+		row_y -= line_h;
+
+		for (const std::string_view comment_line : comment_lines) {
+			ctx.queue_text({
+				.font = ctx.fonts.code,
+				.text = comment_line,
+				.position = { text_x, row_y + center },
+				.scale = ctx.style.font_size,
+				.color = ctx.style.color_text,
+				.clip_rect = banner,
+			});
+			row_y -= line_h;
+		}
+
+		ctx.queue_text({
+			.font = ctx.fonts.code,
+			.text = ctx.intern(std::format("{}:{}", inst.fatal->file, inst.fatal->line)),
+			.position = { text_x, row_y + center },
+			.scale = ctx.style.font_size,
+			.color = ctx.style.color_text_secondary,
+			.clip_rect = banner,
+		});
+	}
 
 	const rectf log_rect = rectf::from_position_size(
-		{ area.left(), area.top() },
-		{ area.width(), std::max(0.f, area.height() - input_h - accent_h) }
+		{ area.left(), area.top() - banner_h },
+		{ area.width(), std::max(0.f, area.height() - banner_h - input_h - accent_h) }
 	);
 
 	const gui::interaction::press tail_press = ui.draw<gui::follow_tail>({

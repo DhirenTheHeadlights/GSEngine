@@ -65,6 +65,7 @@ export namespace gse::ide::build_runner {
 		std::string name;
 		stream_kind kind = stream_kind::none;
 		std::shared_ptr<spawn::output_stream> stream;
+		std::optional<std::uint32_t> attached_instance;
 	};
 
 	constexpr std::uint32_t max_attached_instances = 4;
@@ -79,6 +80,7 @@ export namespace gse::ide::build_runner {
 	struct attached_surface_ready {
 		std::uint32_t generation = 0;
 		std::uint32_t instance = 0;
+		std::uint32_t revision = 0;
 		std::shared_ptr<const attached_surface_message> message;
 	};
 
@@ -98,9 +100,23 @@ export namespace gse::ide::build_runner {
 		std::uint32_t instance = 0;
 	};
 
+	struct attached_fatal_reported {
+		std::uint32_t generation = 0;
+		std::uint32_t instance = 0;
+		std::string file;
+		std::uint32_t line = 0;
+		std::string function;
+		std::string comment;
+	};
+
 	struct attached_input {
 		std::uint32_t instance = 0;
 		input::event event;
+	};
+
+	struct attached_resize {
+		std::uint32_t instance = 0;
+		vec2u extent{ 0, 0 };
 	};
 
 	enum class attached_session_status : std::uint8_t {
@@ -160,7 +176,9 @@ export namespace gse::ide::build_runner {
 		bool connected = false;
 		bool handshake_done = false;
 		std::size_t received = 0;
-		attached_surface_message message{};
+		std::size_t expected = sizeof(std::uint32_t);
+		bool have_magic = false;
+		std::array<char, std::max(sizeof(attached_surface_message), sizeof(attached_fatal_message))> bytes{};
 		std::vector<char> pending_tail;
 	};
 
@@ -199,8 +217,8 @@ export namespace gse::ide::build_runner {
 	auto run(
 		context& ctx,
 		data& d,
-		channel_read<attached_surface_imported, attached_surface_rejected, build_request, stop_session_request, attached_input, select_profile_request, edit_profiles_request> requests_in,
-		channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out
+		channel_read<attached_surface_imported, attached_surface_rejected, build_request, stop_session_request, attached_input, attached_resize, select_profile_request, edit_profiles_request> requests_in,
+		channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready, attached_fatal_reported> events_out
 	) -> async::task<>;
 
 	[[= system_shutdown{}]]
@@ -518,18 +536,18 @@ namespace gse::ide::build_runner {
 	auto cleanup_backups() -> void;
 
 	auto start_build(
-		channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out,
+		channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready, attached_fatal_reported> events_out,
 		data& d,
 		const build_request& request
 	) -> void;
 
 	auto drain_completion(
-		channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out,
+		channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready, attached_fatal_reported> events_out,
 		data& d
 	) -> void;
 
 	auto poll_games(
-		channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out,
+		channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready, attached_fatal_reported> events_out,
 		data& d
 	) -> void;
 
@@ -556,7 +574,7 @@ namespace gse::ide::build_runner {
 	) -> std::shared_ptr<const attached_surface_message>;
 
 	auto poll_surface_pipe(
-		channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out,
+		channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready, attached_fatal_reported> events_out,
 		data& d,
 		std::uint32_t instance
 	) -> void;
@@ -577,6 +595,12 @@ namespace gse::ide::build_runner {
 		data& d,
 		std::uint32_t instance,
 		const input::event& event
+	) -> void;
+
+	auto send_attached_resize(
+		data& d,
+		std::uint32_t instance,
+		vec2u extent
 	) -> void;
 }
 
@@ -1888,7 +1912,7 @@ auto gse::ide::build_runner::cleanup_backups() -> void {
 	}
 }
 
-auto gse::ide::build_runner::start_build(const channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out, data& d, const build_request& request) -> void {
+auto gse::ide::build_runner::start_build(const channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready, attached_fatal_reported> events_out, data& d, const build_request& request) -> void {
 	if (d.building) {
 		return;
 	}
@@ -1969,7 +1993,7 @@ auto gse::ide::build_runner::start_build(const channel_write<attached_session_en
 	);
 }
 
-auto gse::ide::build_runner::drain_completion(const channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out, data& d) -> void {
+auto gse::ide::build_runner::drain_completion(const channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready, attached_fatal_reported> events_out, data& d) -> void {
 	if (!d.building) {
 		return;
 	}
@@ -2016,6 +2040,7 @@ auto gse::ide::build_runner::drain_completion(const channel_write<attached_sessi
 			.name = std::format("{} {}", child.label, child.pid),
 			.kind = stream_kind::game,
 			.stream = child_stream,
+			.attached_instance = child.instance,
 		});
 
 		d.games.push_back({
@@ -2040,7 +2065,7 @@ auto gse::ide::build_runner::drain_completion(const channel_write<attached_sessi
 	d.completion.errors.clear();
 }
 
-auto gse::ide::build_runner::poll_games(const channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out, data& d) -> void {
+auto gse::ide::build_runner::poll_games(const channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready, attached_fatal_reported> events_out, data& d) -> void {
 	for (std::size_t i = 0; i < d.games.size();) {
 		attached_game& game = d.games[i];
 		if (game.output && !spawn::pump_output(*game.stream, game.output, game.pending)) {
@@ -2064,6 +2089,7 @@ auto gse::ide::build_runner::poll_games(const channel_write<attached_session_end
 		const std::uint32_t instance = game.instance;
 
 		if (owned_pipe) {
+			poll_surface_pipe(events_out, d, instance);
 			close_surface_pipe(d, instance);
 			if (session_for(d, generation, instance)) {
 				d.sessions[instance] = {};
@@ -2152,8 +2178,9 @@ auto gse::ide::build_runner::close_surface_pipe(data& d, const std::uint32_t ins
 	pipe.connected = false;
 	pipe.handshake_done = false;
 	pipe.received = 0;
+	pipe.expected = sizeof(std::uint32_t);
+	pipe.have_magic = false;
 	pipe.generation = 0;
-	pipe.message = {};
 	pipe.pending_tail.clear();
 }
 
@@ -2230,9 +2257,9 @@ auto gse::ide::build_runner::own_surface_message(attached_surface_message messag
 	};
 }
 
-auto gse::ide::build_runner::poll_surface_pipe(const channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out, data& d, const std::uint32_t instance) -> void {
+auto gse::ide::build_runner::poll_surface_pipe(const channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready, attached_fatal_reported> events_out, data& d, const std::uint32_t instance) -> void {
 	surface_pipe& pipe = d.pipes[instance];
-	if (!pipe.handle || pipe.handshake_done) {
+	if (!pipe.handle) {
 		return;
 	}
 
@@ -2256,39 +2283,76 @@ auto gse::ide::build_runner::poll_surface_pipe(const channel_write<attached_sess
 	}
 
 	win32::DWORD available = 0;
-	if (!win32::PeekNamedPipe(pipe.handle, nullptr, 0, nullptr, &available, nullptr)) {
-		close_surface_pipe(d, instance);
-		return;
-	}
-	if (available == 0) {
-		return;
-	}
-
-	auto* bytes = reinterpret_cast<char*>(&pipe.message);
-	win32::DWORD read = 0;
-	if (!win32::ReadFile(pipe.handle, bytes + pipe.received, static_cast<win32::DWORD>(sizeof(attached_surface_message) - pipe.received), &read, nullptr)) {
-		if (win32::GetLastError() != win32::error_no_data) {
-			close_surface_pipe(d, instance);
+	while (win32::PeekNamedPipe(pipe.handle, nullptr, 0, nullptr, &available, nullptr) && available > 0) {
+		win32::DWORD read = 0;
+		const auto remaining = static_cast<win32::DWORD>(pipe.expected - pipe.received);
+		if (!win32::ReadFile(pipe.handle, pipe.bytes.data() + pipe.received, remaining, &read, nullptr)) {
+			if (win32::GetLastError() != win32::error_no_data) {
+				close_surface_pipe(d, instance);
+			}
+			return;
 		}
-		return;
-	}
-	pipe.received += read;
-	if (pipe.received < sizeof(attached_surface_message)) {
-		return;
-	}
+		if (read == 0) {
+			return;
+		}
+		pipe.received += read;
+		if (pipe.received < pipe.expected) {
+			continue;
+		}
 
-	pipe.received = 0;
-	if (pipe.message.magic == attached_surface_magic && import_surface_handles(pipe.message)) {
-		events_out.push<attached_surface_ready>({
-			.generation = pipe.generation,
-			.instance = instance,
-			.message = own_surface_message(std::move(pipe.message)),
-		});
-		pipe.message = {};
-		pipe.handshake_done = true;
-		return;
+		std::uint32_t magic = 0;
+		std::memcpy(&magic, pipe.bytes.data(), sizeof(magic));
+
+		if (!pipe.have_magic) {
+			std::size_t total = 0;
+			if (magic == attached_surface_magic) {
+				total = sizeof(attached_surface_message);
+			}
+			else if (magic == attached_fatal_magic) {
+				total = sizeof(attached_fatal_message);
+			}
+			if (total == 0) {
+				log::println(log::level::warning, log::category::general, "attached pipe: unknown message magic {:#x} from instance {}; closing pipe", magic, instance);
+				close_surface_pipe(d, instance);
+				return;
+			}
+			pipe.have_magic = true;
+			pipe.expected = total;
+			continue;
+		}
+
+		if (magic == attached_surface_magic) {
+			attached_surface_message surface{};
+			std::memcpy(&surface, pipe.bytes.data(), sizeof(surface));
+			if (!import_surface_handles(surface)) {
+				close_surface_pipe(d, instance);
+				return;
+			}
+			events_out.push<attached_surface_ready>({
+				.generation = pipe.generation,
+				.instance = instance,
+				.revision = surface.revision,
+				.message = own_surface_message(std::move(surface)),
+			});
+			pipe.handshake_done = true;
+		}
+		else {
+			attached_fatal_message fatal{};
+			std::memcpy(&fatal, pipe.bytes.data(), sizeof(fatal));
+			events_out.push<attached_fatal_reported>({
+				.generation = pipe.generation,
+				.instance = instance,
+				.file = fatal.file,
+				.line = fatal.line,
+				.function = fatal.function,
+				.comment = fatal.comment,
+			});
+		}
+
+		pipe.received = 0;
+		pipe.expected = sizeof(std::uint32_t);
+		pipe.have_magic = false;
 	}
-	close_surface_pipe(d, instance);
 }
 
 auto gse::ide::build_runner::flush_pipe_tail(data& d, const std::uint32_t instance) -> void {
@@ -2334,6 +2398,14 @@ auto gse::ide::build_runner::send_attached_input(data& d, const std::uint32_t in
 	write_pipe_message(d, instance, &message, sizeof(message));
 }
 
+auto gse::ide::build_runner::send_attached_resize(data& d, const std::uint32_t instance, const vec2u extent) -> void {
+	const attached_resize_message message{
+		.magic = attached_resize_magic,
+		.extent = extent,
+	};
+	write_pipe_message(d, instance, &message, sizeof(message));
+}
+
 auto gse::ide::build_runner::init(data& d) -> async::task<> {
 	cleanup_backups();
 	load_profiles(d.profiles, d.active_profile);
@@ -2349,7 +2421,7 @@ auto gse::ide::build_runner::request_for_profile(const build_profile& profile, c
 	};
 }
 
-auto gse::ide::build_runner::run(context& ctx, data& d, const channel_read<attached_surface_imported, attached_surface_rejected, build_request, stop_session_request, attached_input, select_profile_request, edit_profiles_request> requests_in, const channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready> events_out) -> async::task<> {
+auto gse::ide::build_runner::run(context& ctx, data& d, const channel_read<attached_surface_imported, attached_surface_rejected, build_request, stop_session_request, attached_input, attached_resize, select_profile_request, edit_profiles_request> requests_in, const channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready, attached_fatal_reported> events_out) -> async::task<> {
 	for (const edit_profiles_request& edited : requests_in.of<edit_profiles_request>()) {
 		if (edited.profiles.empty()) {
 			continue;
@@ -2404,6 +2476,10 @@ auto gse::ide::build_runner::run(context& ctx, data& d, const channel_read<attac
 	}
 	for (const attached_input& forwarded : requests_in.of<attached_input>()) {
 		send_attached_input(d, forwarded.instance, forwarded.event);
+	}
+
+	for (const attached_resize& resized : requests_in.of<attached_resize>()) {
+		send_attached_resize(d, resized.instance, resized.extent);
 	}
 	if (d.sessions[0].generation != 0 && !d.pipes[0].handle) {
 		if (const std::optional<std::uint32_t> ended = stop_games(d)) {

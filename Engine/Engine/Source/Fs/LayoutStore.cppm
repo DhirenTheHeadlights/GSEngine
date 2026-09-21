@@ -316,11 +316,11 @@ auto gse::layout_store::apply(std::string& content, const owner& sections, const
 	}
 
 	if (!block.empty()) {
-		if (!kept.empty() && kept.back() != '\n') {
-			kept.push_back('\n');
+		while (!kept.empty() && (kept.back() == '\n' || kept.back() == '\r')) {
+			kept.pop_back();
 		}
 		if (!kept.empty()) {
-			kept.push_back('\n');
+			kept.append("\n\n");
 		}
 		kept.append(block);
 		if (kept.back() != '\n') {

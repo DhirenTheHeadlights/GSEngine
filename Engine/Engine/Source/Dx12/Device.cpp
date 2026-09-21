@@ -99,7 +99,7 @@ auto gse::dx12::build_graphics_pipeline_desc(const gfx_template& tmpl, const gra
 		.ms_size = tmpl.mesh.size(),
 		.fill_mode = fill_of(s.polygon),
 		.cull_mode = cull_of(s.cull),
-		.front_counter_clockwise = s.front != gpu::front_face::counter_clockwise,
+		.front_counter_clockwise = s.front == gpu::front_face::counter_clockwise,
 		.depth_clip_enable = !s.depth_clamp_enable,
 		.depth_bias = static_cast<std::int32_t>(s.depth_bias_constant),
 		.depth_bias_clamp = s.depth_bias_clamp,
@@ -446,7 +446,14 @@ auto gse::dx12::device::cmd_resolve_query_pool(const gpu::command_buffer_handle 
 	directx::resolve_timestamp_queries(list, pool->heap.get(), pool->readback.get(), first_query, query_count);
 }
 
-auto gse::dx12::device::record_buffer_fill_u32(gpu::command_buffer_handle, gpu::handle<gpu::buffer>, gpu::device_size, std::uint32_t) -> void {}
+auto gse::dx12::device::record_buffer_fill_u32(const gpu::command_buffer_handle cmd, const gpu::handle<gpu::buffer> buf, const gpu::device_size offset, const std::uint32_t value) -> void {
+	auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(cmd);
+	auto* resource = std::bit_cast<directx::ID3D12Resource*>(buf);
+	if (!list || !resource) {
+		return;
+	}
+	directx::write_buffer_immediate(list, directx::gpu_address(resource) + offset, value);
+}
 
 auto gse::dx12::device::cmd_reset(const gpu::command_buffer_handle cmd) -> void {
 	auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(cmd);
@@ -538,6 +545,9 @@ auto gse::dx12::device::cmd_pipeline_barrier(const gpu::command_buffer_handle cm
 }
 
 auto gse::dx12::device::rest_layout(directx::ID3D12Resource* resource) const -> directx::D3D12_BARRIER_LAYOUT {
+	if (directx::allows_simultaneous_access(resource)) {
+		return directx::layout_common;
+	}
 	const std::lock_guard _(m_mutex);
 	return m_present_images.contains(resource) ? directx::layout_common : directx::layout_direct_queue_common;
 }
@@ -1038,15 +1048,16 @@ auto gse::dx12::device::create_image_view(const gpu::handle<gpu::image> img, con
 	}
 	const std::lock_guard _(m_mutex);
 	const auto format = dxgi_format_of(info.format);
+	const auto rest = directx::allows_simultaneous_access(resource) ? directx::layout_common : directx::layout_direct_queue_common;
 	if (info.aspects.test(gpu::image_aspect_flag::depth)) {
 		const auto handle = directx::offset_cpu_handle(directx::descriptor_heap_cpu_start(m_dsv_view_heap.get()), m_dsv_view_next++, m_dsv_size);
 		directx::create_depth_stencil_view(m_device.get(), resource, format, handle);
-		m_views[handle.ptr] = { .format = format, .resource = resource };
+		m_views[handle.ptr] = { .format = format, .resource = resource, .rest_layout = rest };
 		return std::bit_cast<gpu::handle<gpu::image_view>>(handle.ptr);
 	}
 	const auto handle = directx::offset_cpu_handle(directx::descriptor_heap_cpu_start(m_rtv_view_heap.get()), m_rtv_view_next++, m_rtv_size);
 	directx::create_render_target_view(m_device.get(), resource, handle);
-	m_views[handle.ptr] = { .format = format, .resource = resource };
+	m_views[handle.ptr] = { .format = format, .resource = resource, .rest_layout = rest };
 	return std::bit_cast<gpu::handle<gpu::image_view>>(handle.ptr);
 }
 

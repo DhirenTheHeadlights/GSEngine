@@ -455,6 +455,10 @@ export namespace gse::directx {
 		ID3D12Resource* resource
 	) -> std::uint64_t;
 
+	[[nodiscard]] auto allows_simultaneous_access(
+		ID3D12Resource* resource
+	) -> bool;
+
 	auto upload_texture(
 		ID3D12Device* device,
 		ID3D12CommandQueue* queue,
@@ -876,6 +880,12 @@ export namespace gse::directx {
 		std::uint64_t gpu_address,
 		std::uint32_t size_bytes,
 		bool format_32bit
+	) -> void;
+
+	auto write_buffer_immediate(
+		ID3D12GraphicsCommandList* list,
+		std::uint64_t gpu_address,
+		std::uint32_t value
 	) -> void;
 
 	[[nodiscard]] auto resource_byte_width(
@@ -1524,7 +1534,7 @@ auto gse::directx::create_shared_texture(ID3D12Device* device, const DXGI_FORMAT
 	device->QueryInterface(IID_PPV_ARGS(device10.put()));
 	com_ptr<ID3D12Resource> resource;
 	if (device10) {
-		device10->CreateCommittedResource3(&heap, D3D12_HEAP_FLAG_SHARED, &desc, D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_COMMON, nullptr, nullptr, 0, nullptr, IID_PPV_ARGS(resource.put()));
+		device10->CreateCommittedResource3(&heap, D3D12_HEAP_FLAG_SHARED, &desc, D3D12_BARRIER_LAYOUT_COMMON, nullptr, nullptr, 0, nullptr, IID_PPV_ARGS(resource.put()));
 	}
 	return resource;
 }
@@ -1561,6 +1571,12 @@ auto gse::directx::texture_byte_size(ID3D12Device* device, ID3D12Resource* resou
 	std::uint64_t total_bytes = 0;
 	device->GetCopyableFootprints(&desc, 0, 1, 0, nullptr, nullptr, nullptr, &total_bytes);
 	return total_bytes;
+}
+
+auto gse::directx::allows_simultaneous_access(ID3D12Resource* resource) -> bool {
+	D3D12_RESOURCE_DESC desc;
+	resource->GetDesc(&desc);
+	return (static_cast<int>(desc.Flags) & static_cast<int>(D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS)) != 0;
 }
 
 auto gse::directx::subresource_footprint(ID3D12Device* device, const DXGI_FORMAT format, const std::uint32_t width, const std::uint32_t height) -> texture_footprint {
@@ -2460,6 +2476,19 @@ auto gse::directx::set_index_buffer(ID3D12GraphicsCommandList* list, const std::
 		.Format = format_32bit ? DXGI_FORMAT_R32_UINT : DXGI_FORMAT_R16_UINT,
 	};
 	list->IASetIndexBuffer(&view);
+}
+
+auto gse::directx::write_buffer_immediate(ID3D12GraphicsCommandList* list, const std::uint64_t gpu_address, const std::uint32_t value) -> void {
+	com_ptr<ID3D12GraphicsCommandList6> list6;
+	list->QueryInterface(IID_PPV_ARGS(list6.put()));
+	if (!list6) {
+		return;
+	}
+	const D3D12_WRITEBUFFERIMMEDIATE_PARAMETER parameter = {
+		.Dest = gpu_address,
+		.Value = value,
+	};
+	list6->WriteBufferImmediate(1, &parameter, nullptr);
 }
 
 auto gse::directx::resource_byte_width(ID3D12Resource* resource) -> std::uint64_t {

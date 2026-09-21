@@ -12,15 +12,33 @@ auto gse::ide::agent::style_of(const row_kind kind) -> row_style {
 	return annotation_from_enum<row_style>(kind, {});
 }
 
+auto gse::ide::agent::family_of(const gui::text_face face) -> markdown::family {
+	switch (face) {
+		case gui::text_face::text:
+		case gui::text_face::text_strong:
+		case gui::text_face::text_emphasis:
+			return markdown::family::proportional;
+		default:
+			return markdown::family::monospace;
+	}
+}
+
+auto gse::ide::agent::verbatim_detail(const transcript_row& row) -> bool {
+	return row.kind == row_kind::tool || row.kind == row_kind::failure || !row.file.empty();
+}
+
 auto gse::ide::agent::line_base_style(const gui::style& sty, const markdown::line_info& info, const vec4f& fallback) -> markdown::display_style {
 	if (info.shape == markdown::block::heading) {
 		return {
 			.color = sty.color_section_header,
-			.face = gui::text_face::code_strong,
+			.face = gui::text_face::text_strong,
 			.scale = markdown::heading_scale(info.heading_level),
 		};
 	}
-	return markdown::style_of(markdown::base_tone(info), markdown::family::monospace, sty, fallback);
+
+	const bool fixed = markdown::verbatim(info.shape) || info.shape == markdown::block::table_row;
+	const markdown::family group = fixed ? markdown::family::monospace : markdown::family::proportional;
+	return markdown::style_of(markdown::base_tone(info), group, sty, fallback);
 }
 
 auto gse::ide::agent::table_extent(const std::span<const std::string> lines, const std::size_t first) -> std::size_t {
@@ -88,9 +106,88 @@ auto gse::ide::agent::align_table(const std::span<const std::string> rows) -> st
 	return out;
 }
 
-auto gse::ide::agent::push_markup_line(session& s, const gui::style& sty, const markup_line& parsed, const transcript_metrics& metrics, transcript_cursor& cursor) -> void {
+auto gse::ide::agent::trailing_blank(const session& s) -> bool {
+	return s.buffer.lines.empty() || markdown::trim(s.buffer.lines.back()).empty();
+}
+
+auto gse::ide::agent::push_gap(session& s, const transcript_cursor& cursor) -> void {
+	if (trailing_blank(s)) {
+		return;
+	}
+	s.buffer.lines.emplace_back();
+	s.line_rows.push_back(cursor.row);
+}
+
+auto gse::ide::agent::code_fence_language(const std::string_view line) -> std::string_view {
+	const std::optional<markdown::fence_marker> marker = markdown::fence_at(line);
+	if (!marker) {
+		return {};
+	}
+	return markdown::trim(markdown::trim(line).substr(marker->length));
+}
+
+auto gse::ide::agent::highlighted_language(const std::string_view tag) -> bool {
+	constexpr std::array known{
+		std::string_view("c"),
+		std::string_view("cc"),
+		std::string_view("cpp"),
+		std::string_view("c++"),
+		std::string_view("cxx"),
+		std::string_view("h"),
+		std::string_view("hpp"),
+		std::string_view("hxx"),
+		std::string_view("cppm"),
+		std::string_view("ixx"),
+		std::string_view("slang"),
+		std::string_view("hlsl"),
+		std::string_view("glsl"),
+	};
+
+	std::string folded;
+	folded.reserve(tag.size());
+	for (const char c : tag) {
+		folded.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+	}
+	return std::ranges::find(known, folded) != known.end();
+}
+
+auto gse::ide::agent::style_runs(const std::span<const markdown::rendered_run> runs, const gui::style& sty, const markdown::display_style& base, std::vector<markup_run>& out) -> void {
+	const markdown::family group = family_of(base.face);
+	out.clear();
+	out.reserve(runs.size());
+	for (const markdown::rendered_run& run : runs) {
+		const markdown::display_style shown = markdown::style_of(run.tone, group, sty, base.color);
+		out.push_back({
+			.start = run.start,
+			.end = run.end,
+			.color = shown.color,
+			.face = shown.face,
+		});
+	}
+}
+
+auto gse::ide::agent::highlight_runs(const std::span<const gui::text_span> spans, const std::uint32_t line, std::vector<markup_run>& out) -> void {
+	const auto found = std::ranges::equal_range(spans, line, {}, &gui::text_span::line);
+	out.clear();
+	out.reserve(found.size());
+	for (const gui::text_span& span : found) {
+		out.push_back({
+			.start = span.start_col,
+			.end = span.end_col,
+			.color = span.color,
+			.face = gui::text_face::code,
+		});
+	}
+}
+
+auto gse::ide::agent::push_markup_line(session& s, const markup_line& parsed, const transcript_metrics& metrics, transcript_cursor& cursor) -> void {
+	const bool mixed = std::ranges::any_of(parsed.runs, [](const markup_run& run) {
+		return family_of(run.face) == markdown::family::monospace;
+	});
+	const bool proportional = family_of(parsed.base.face) == markdown::family::proportional;
+	const font& face = proportional && !mixed ? metrics.body : metrics.face;
 	const std::vector<std::string_view> wrapped = cursor.wrap
-		? metrics.face.wrap(parsed.text, cursor.available, metrics.scale * parsed.base.scale)
+		? face.wrap(parsed.text, cursor.available, metrics.scale * parsed.base.scale)
 		: std::vector<std::string_view>{ parsed.text };
 
 	for (std::string_view segment : wrapped) {
@@ -117,7 +214,7 @@ auto gse::ide::agent::push_markup_line(session& s, const gui::style& sty, const 
 		}
 
 		std::size_t written = offset;
-		for (const markdown::rendered_run& run : parsed.runs) {
+		for (const markup_run& run : parsed.runs) {
 			if (run.end <= written) {
 				continue;
 			}
@@ -139,13 +236,12 @@ auto gse::ide::agent::push_markup_line(session& s, const gui::style& sty, const 
 					.scale = parsed.base.scale,
 				});
 			}
-			const markdown::display_style shown = markdown::style_of(run.tone, markdown::family::monospace, sty, parsed.base.color);
 			s.spans.push_back({
 				.line = index,
 				.start_col = column + static_cast<std::uint32_t>(from - offset),
 				.end_col = column + static_cast<std::uint32_t>(to - offset),
-				.color = shown.color,
-				.face = shown.face,
+				.color = run.color,
+				.face = run.face,
 				.scale = parsed.base.scale,
 			});
 			written = to;
@@ -186,9 +282,12 @@ auto gse::ide::agent::push_transcript_line(session& s, const gui::style& sty, co
 
 	if (!line.markdown) {
 		for (const std::string& row : sources) {
-			push_markup_line(s, sty, {
+			push_markup_line(s, {
 				.text = row,
-				.base = { .color = line.color },
+				.base = {
+					.color = line.color,
+					.face = line.face,
+				},
 			}, metrics, cursor);
 		}
 		return;
@@ -198,9 +297,15 @@ auto gse::ide::agent::push_transcript_line(session& s, const gui::style& sty, co
 	const std::vector<markdown::line_info> classified = markdown::classify(views);
 
 	std::vector<markdown::run> scratch;
+	std::vector<markup_run> tinted;
 	markdown::rendered_line rendered;
+	std::optional<std::string_view> fence;
 
 	for (std::size_t i = 0; i < sources.size(); ++i) {
+		if (classified[i].shape == markdown::block::blank && trailing_blank(s)) {
+			continue;
+		}
+
 		if (!markdown::verbatim(classified[i].shape)) {
 			if (const std::size_t last = table_extent(sources, i); last > i) {
 				const std::vector<std::string> aligned = align_table(std::span(sources).subspan(i, last - i + 1));
@@ -210,7 +315,7 @@ auto gse::ide::agent::push_transcript_line(session& s, const gui::style& sty, co
 				if (widest != aligned.end() && metrics.face.width(*widest, metrics.scale) <= cursor.available) {
 					cursor.wrap = false;
 					for (const std::string& row : aligned) {
-						push_markup_line(s, sty, {
+						push_markup_line(s, {
 							.text = row,
 							.base = { .color = line.color },
 						}, metrics, cursor);
@@ -222,35 +327,86 @@ auto gse::ide::agent::push_transcript_line(session& s, const gui::style& sty, co
 			}
 		}
 
+		if (classified[i].shape == markdown::block::fence) {
+			if (i + 1 < sources.size()) {
+				push_gap(s, cursor);
+			}
+			fence = fence ? std::nullopt : std::optional(code_fence_language(views[i]));
+			continue;
+		}
+
+		if (classified[i].shape == markdown::block::code && fence && highlighted_language(*fence)) {
+			std::size_t last = i;
+			while (last + 1 < sources.size() && classified[last + 1].shape == markdown::block::code) {
+				++last;
+			}
+			push_code_block(s, std::span(sources).subspan(i, last - i + 1), {
+				.color = sty.color_text,
+				.face = gui::text_face::code,
+			}, metrics, cursor);
+			i = last;
+			continue;
+		}
+
+		const markdown::display_style base = line_base_style(sty, classified[i], line.color);
 		markdown::render_line(views[i], classified[i], scratch, rendered);
-		push_markup_line(s, sty, {
+		style_runs(rendered.runs, sty, base, tinted);
+		push_markup_line(s, {
 			.text = rendered.text,
-			.runs = rendered.runs,
-			.base = line_base_style(sty, classified[i], line.color),
+			.runs = tinted,
+			.base = base,
 		}, metrics, cursor);
 	}
 }
 
-auto gse::ide::agent::grouped_row(const transcript_row& row) -> bool {
-	return row.kind == row_kind::tool;
+auto gse::ide::agent::push_code_block(session& s, const std::span<const std::string> body, const markdown::display_style& base, const transcript_metrics& metrics, transcript_cursor& cursor) -> void {
+	std::string source;
+	for (const auto [index, row] : std::views::enumerate(body)) {
+		if (index > 0) {
+			source.push_back('\n');
+		}
+		source += row;
+	}
+
+	const std::vector<gui::text_span> spans = syntax_producer::highlight(source, nullptr, nullptr);
+	std::vector<markup_run> tinted;
+
+	for (const auto [index, row] : std::views::enumerate(body)) {
+		highlight_runs(spans, static_cast<std::uint32_t>(index), tinted);
+		push_markup_line(s, {
+			.text = row,
+			.runs = tinted,
+			.base = base,
+		}, metrics, cursor);
+	}
 }
 
-auto gse::ide::agent::group_summary(const session& s, const group_marker& group) -> std::string {
-	std::vector<std::string_view> names;
-	for (std::uint32_t i = group.row; i < group.row + group.rows; ++i) {
-		const std::string_view name = s.rows[i].text;
-		if (!name.empty() && std::ranges::find(names, name) == names.end()) {
-			names.push_back(name);
-		}
+auto gse::ide::agent::quiet_tool(const transcript_row& row) -> bool {
+	if (row.kind != row_kind::tool) {
+		return false;
 	}
+	return row.added.empty() && row.removed.empty() && !row.text.starts_with(mcp_tool_prefix);
+}
 
-	std::string out = std::format("{} tool uses", group.rows);
-	for (const auto [position, name] : std::views::enumerate(names | std::views::take(group_summary_names))) {
-		out += position == 0 ? ": " : ", ";
-		out += name;
-	}
-	if (names.size() > group_summary_names) {
-		out += ", ...";
+auto gse::ide::agent::grouped_row(const transcript_row& row) -> bool {
+	return quiet_tool(row);
+}
+
+auto gse::ide::agent::group_summary(const group_marker& group) -> std::string {
+	return std::format("used {} tool{}", group.rows, group.rows == 1 ? "" : "s");
+}
+
+auto gse::ide::agent::group_detail(const session& s, const group_marker& group) -> std::string {
+	std::string out;
+	for (std::uint32_t i = group.row; i < group.row + group.rows && i < s.rows.size(); ++i) {
+		if (i - group.row == group_detail_rows) {
+			out += std::format("\n+{} more", group.rows - group_detail_rows);
+			break;
+		}
+		if (!out.empty()) {
+			out.push_back('\n');
+		}
+		out += tool_action(s.rows[i]);
 	}
 	return out;
 }
@@ -523,9 +679,14 @@ auto gse::ide::agent::push_diff(session& s, const gui::style& sty, transcript_ro
 	s.line_rows.push_back(index);
 }
 
+auto gse::ide::agent::group_at(const session& s, const std::uint32_t line) -> const group_marker* {
+	const auto found = std::ranges::find(s.groups, line, &group_marker::toggle_line);
+	return found == s.groups.end() ? nullptr : &*found;
+}
+
 auto gse::ide::agent::marker_at(const session& s, const std::uint32_t line) -> const group_marker* {
-	if (const auto found = std::ranges::find(s.groups, line, &group_marker::toggle_line); found != s.groups.end()) {
-		return &*found;
+	if (const group_marker* group = group_at(s, line)) {
+		return group;
 	}
 	if (const auto found = std::ranges::find(s.previews, line, &group_marker::toggle_line); found != s.previews.end()) {
 		return &*found;
@@ -543,6 +704,12 @@ auto gse::ide::agent::toggle_marker(session& s, const group_marker& marker) -> v
 	else {
 		s.expanded_groups.push_back(row);
 	}
+
+	if (line < s.view.line_tops.size()) {
+		s.view.scroll.y.offset = s.view.line_tops[line];
+		s.view.scroll.y.target = s.view.scroll.y.offset;
+	}
+	s.view.tail_pinned = false;
 
 	truncate_transcript(s, line);
 	std::erase_if(s.groups, [line](const group_marker& held) {
@@ -588,6 +755,7 @@ auto gse::ide::agent::push_row(session& s, const gui::style& sty, transcript_row
 		.prefix = look.prefix,
 		.text = row.text,
 		.color = sty.*look.color,
+		.face = gui::text_face::text,
 		.row = index,
 		.wrap_width = row.kind == row_kind::user ? metrics.width * chat_wrap_fraction : 0.f,
 		.markdown = row.kind == row_kind::text,
@@ -598,6 +766,7 @@ auto gse::ide::agent::push_row(session& s, const gui::style& sty, transcript_row
 			.prefix = "    ",
 			.text = row.detail,
 			.color = row.file.empty() ? sty.color_text_secondary : sty.color_file,
+			.face = verbatim_detail(row) ? gui::text_face::code : gui::text_face::text,
 			.row = index,
 		}, metrics);
 	}
@@ -625,6 +794,7 @@ auto gse::ide::agent::push_row(session& s, const gui::style& sty, transcript_row
 			.prefix = "",
 			.text = expanded ? "show less" : "show more",
 			.color = sty.color_accent,
+			.face = gui::text_face::text,
 			.row = index,
 		}, metrics);
 
@@ -685,18 +855,14 @@ auto gse::ide::agent::sync_transcript(session& s, const gui::style& sty, const t
 		group_marker& group = s.groups.back();
 		group.rows = row_index - group.row + 1;
 
-		if (group.rows == 1) {
-			push_row(s, sty, row, row_index, metrics);
-			continue;
-		}
-
 		const bool expanded = group_expanded(s, group.row);
 		group.toggle_line = group.line;
 
 		push_transcript_line(s, sty, {
 			.prefix = expanded ? "- " : "+ ",
-			.text = group_summary(s, group),
+			.text = group_summary(group),
 			.color = sty.*style_of(row_kind::tool).color,
+			.face = gui::text_face::text,
 			.row = group.row,
 		}, metrics);
 

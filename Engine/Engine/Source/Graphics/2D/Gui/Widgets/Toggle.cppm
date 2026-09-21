@@ -55,7 +55,7 @@ auto gse::gui::toggle::draw(const draw_context& ctx, const params& p, id& hot, i
 		return false;
 	}
 
-	const auto fnt = p.font.valid() ? p.font : ctx.fonts.text;
+	const auto fnt = ctx.fonts.face_or(p.font);
 	const float widget_height =
 		fnt.resolve()->line_height(ctx.style.font_size) + ctx.style.padding * ctx.style.widget_height_padding;
 	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
@@ -73,7 +73,7 @@ auto gse::gui::toggle::draw(const draw_context& ctx, const params& p, id& hot, i
 }
 
 auto gse::gui::toggle_in_rect(const draw_context& ctx, const rectf& row_rect, const toggle::params& p, id& hot) -> bool {
-	const auto fnt = p.font.valid() ? p.font : ctx.fonts.text;
+	const auto fnt = ctx.fonts.face_or(p.font);
 	const auto fnt_view = fnt.resolve();
 
 	const std::uint64_t name_key = stable_id(p.name);

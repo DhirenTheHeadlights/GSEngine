@@ -446,7 +446,7 @@ auto gse::renderer::ui::run(context& ctx, const shared_view<gpu::context::data> 
 	return {};
 }
 
-auto gse::renderer::ui::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, shared_view<scene_snapshot::data> snapshot_s) -> async::task<> {
+auto gse::renderer::ui::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const std::optional<shared_view<scene_snapshot::data>> snapshot_s) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		note_record_state(d, record_state::skipped_no_frame, { .extent = gpu_s.render_graph->extent() });
 		co_return;
@@ -512,10 +512,10 @@ auto gse::renderer::ui::frame(context& ctx, shared_view<gpu::context::data> gpu_
 			height > 0 ? 1.0f / static_cast<float>(height) : 0.0f };
 
 		const std::uint32_t snapshot_idx = [&]() -> std::uint32_t {
-			if (!snapshot_s.ready) {
+			if (!snapshot_s || !snapshot_s->ready) {
 				return shaders::bindless::invalid_index;
 			}
-			const auto& slot = snapshot_s.slots[frame_index];
+			const auto& slot = snapshot_s->slots[frame_index];
 			return slot.valid() ? slot.slot().index : shaders::bindless::invalid_index;
 		}();
 
@@ -549,7 +549,7 @@ auto gse::renderer::ui::frame(context& ctx, shared_view<gpu::context::data> gpu_
 			.after<^^forward::frame, ^^scene_snapshot::frame, ^^physics_debug::frame, ^^sdf_grid::frame, ^^tonemap::frame, ^^world_text::frame>();
 
 		if (snapshot_idx != shaders::bindless::invalid_index) {
-			rec.sample_image(snapshot_s.snapshots[frame_index], gpu::pipeline_stage_flag::fragment_shader);
+			rec.sample_image(snapshot_s->snapshots[frame_index], gpu::pipeline_stage_flag::fragment_shader);
 		}
 
 		rec.bind_index(index_buffer);

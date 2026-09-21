@@ -45,6 +45,71 @@ auto gse::engine::all_settled() const -> bool {
 	return m_scheduler.all_settled();
 }
 
+auto gse::engine::create_attached_surface(gpu::context::data& gpu_state, const vec2u extent) -> void {
+	m_attached_counter = 0;
+	m_attached_produced_semaphore = gpu_state.device->create_exportable_semaphore();
+	m_attached_consumed_semaphore = gpu_state.device->create_exportable_semaphore();
+	const auto produced_semaphore_handle = gpu_state.device->export_semaphore_handle(m_attached_produced_semaphore);
+	const auto consumed_semaphore_handle = gpu_state.device->export_semaphore_handle(m_attached_consumed_semaphore);
+	const gpu::image_format format = gpu_state.swapchain->format();
+	bool ok = produced_semaphore_handle.has_value() && consumed_semaphore_handle.has_value();
+	for (std::size_t i = 0; ok && i < attached_ring_size; ++i) {
+		auto surface = gpu_state.device->create_shared_surface({
+			.extent = extent,
+			.format = format,
+		});
+		if (!surface) {
+			log::println(log::level::error, log::category::vulkan, "attached: create_shared_surface[{}] failed: {}", i, surface.error());
+			ok = false;
+			break;
+		}
+		m_attached_surfaces[i] = *surface;
+		const gpu::image_view_create_info view_info{
+			.format = format,
+			.view_type = gpu::image_view_type::e2d,
+			.aspects = gpu::image_aspect_flags(gpu::image_aspect_flag::color),
+			.level_count = 1,
+			.layer_count = 1,
+		};
+		m_attached_surface_images[i] = gpu::image(
+			m_attached_surfaces[i].image,
+			m_attached_surfaces[i].view,
+			format,
+			{ extent.x(), extent.y(), 1 },
+			view_info
+		);
+	}
+	if (ok) {
+		m_attached_message = {
+			.magic = attached_surface_magic,
+			.revision = ++m_attached_revision,
+			.extent = extent,
+			.format = format,
+			.backend = gpu::active_backend,
+			.surface_handles = { m_attached_surfaces[0].handle, m_attached_surfaces[1].handle, m_attached_surfaces[2].handle },
+			.produced_semaphore_handle = *produced_semaphore_handle,
+			.consumed_semaphore_handle = *consumed_semaphore_handle,
+		};
+		m_attached_surface_ready = true;
+		log::println(log::category::vulkan, "attached: created {}-surface ring at {}x{} on {} (revision {})", attached_ring_size, extent.x(), extent.y(), gpu::active_backend, m_attached_revision);
+	}
+	else {
+		if (!produced_semaphore_handle) {
+			log::println(log::level::error, log::category::vulkan, "attached: export produced semaphore failed: {}", produced_semaphore_handle.error());
+		}
+		else if (!consumed_semaphore_handle) {
+			log::println(log::level::error, log::category::vulkan, "attached: export consumed semaphore failed: {}", consumed_semaphore_handle.error());
+		}
+		if (produced_semaphore_handle) {
+			win32::CloseHandle(*produced_semaphore_handle);
+		}
+		if (consumed_semaphore_handle) {
+			win32::CloseHandle(*consumed_semaphore_handle);
+		}
+		destroy_attached_surface(*gpu_state.device);
+	}
+}
+
 auto gse::engine::destroy_attached_surface(gpu::device& device) -> void {
 	for (std::size_t i = 0; i < attached_ring_size; ++i) {
 		m_attached_surface_images[i] = {};
@@ -198,6 +263,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 		disabled.insert(id_of<physics::data>());
 		disabled.insert(id_of<camera::data>());
 		disabled.insert(id_of<audio::data>());
+		disabled.insert(id_of<renderer::scene_snapshot::data>());
 	}
 	m_scheduler.resolve_activation(disabled);
 
@@ -290,6 +356,14 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 
 auto gse::engine::update() -> void {
 	system_clock::update();
+
+	if (m_config.attached && m_attached_requested_extent.x() > 0 && m_attached_requested_extent.y() > 0) {
+		m_scheduler.make_channel_writer().push<window_resize_request>({
+			.size = { static_cast<int>(m_attached_requested_extent.x()), static_cast<int>(m_attached_requested_extent.y()) },
+		});
+		m_attached_requested_extent = {};
+	}
+
 	m_scheduler.update();
 
 	const auto* physics_state = m_scheduler.try_state_of<physics::data>();
@@ -367,68 +441,17 @@ auto gse::engine::render() -> void {
 	auto* gpu_state = m_scheduler.try_state_of<gpu::context::data>();
 	auto* asset_state = m_scheduler.try_state_of<asset::data>();
 
-	if (m_config.attached && !m_attached_surface_attempted && gpu_state && gpu_state->device && gpu_state->render_graph && gpu_state->swapchain) {
+	if (m_config.attached && gpu_state && gpu_state->device && gpu_state->render_graph && gpu_state->swapchain) {
 		if (const auto ext = gpu_state->render_graph->extent(); ext.x() > 0 && ext.y() > 0) {
-			m_attached_surface_attempted = true;
-			m_attached_produced_semaphore = gpu_state->device->create_exportable_semaphore();
-			m_attached_consumed_semaphore = gpu_state->device->create_exportable_semaphore();
-			const auto produced_semaphore_handle = gpu_state->device->export_semaphore_handle(m_attached_produced_semaphore);
-			const auto consumed_semaphore_handle = gpu_state->device->export_semaphore_handle(m_attached_consumed_semaphore);
-			const gpu::image_format format = gpu_state->swapchain->format();
-			bool ok = produced_semaphore_handle.has_value() && consumed_semaphore_handle.has_value();
-			for (std::size_t i = 0; ok && i < attached_ring_size; ++i) {
-				auto surface = gpu_state->device->create_shared_surface({
-					.extent = ext,
-					.format = format,
-				});
-				if (!surface) {
-					log::println(log::level::error, log::category::vulkan, "attached: create_shared_surface[{}] failed: {}", i, surface.error());
-					ok = false;
-					break;
-				}
-				m_attached_surfaces[i] = *surface;
-				const gpu::image_view_create_info view_info{
-					.format = format,
-					.view_type = gpu::image_view_type::e2d,
-					.aspects = gpu::image_aspect_flags(gpu::image_aspect_flag::color),
-					.level_count = 1,
-					.layer_count = 1,
-				};
-				m_attached_surface_images[i] = gpu::image(
-					m_attached_surfaces[i].image,
-					m_attached_surfaces[i].view,
-					format,
-					{ ext.x(), ext.y(), 1 },
-					view_info
-				);
+			if (!m_attached_surface_attempted) {
+				m_attached_surface_attempted = true;
+				create_attached_surface(*gpu_state, ext);
 			}
-			if (ok) {
-				m_attached_message = {
-					.magic = attached_surface_magic,
-					.extent = ext,
-					.format = format,
-					.backend = gpu::active_backend,
-					.surface_handles = { m_attached_surfaces[0].handle, m_attached_surfaces[1].handle, m_attached_surfaces[2].handle },
-					.produced_semaphore_handle = *produced_semaphore_handle,
-					.consumed_semaphore_handle = *consumed_semaphore_handle,
-				};
-				m_attached_surface_ready = true;
-				log::println(log::category::vulkan, "attached: created {}-surface ring at {}x{} on {}", attached_ring_size, ext.x(), ext.y(), gpu::active_backend);
-			}
-			else {
-				if (!produced_semaphore_handle) {
-					log::println(log::level::error, log::category::vulkan, "attached: export produced semaphore failed: {}", produced_semaphore_handle.error());
-				}
-				else if (!consumed_semaphore_handle) {
-					log::println(log::level::error, log::category::vulkan, "attached: export consumed semaphore failed: {}", consumed_semaphore_handle.error());
-				}
-				if (produced_semaphore_handle) {
-					win32::CloseHandle(*produced_semaphore_handle);
-				}
-				if (consumed_semaphore_handle) {
-					win32::CloseHandle(*consumed_semaphore_handle);
-				}
+			else if (m_attached_surface_ready && ext != m_attached_message.extent) {
+				gpu_state->device->wait_idle();
+				gpu_state->render_graph->set_offscreen_target(nullptr);
 				destroy_attached_surface(*gpu_state->device);
+				create_attached_surface(*gpu_state, ext);
 			}
 		}
 	}
@@ -598,6 +621,10 @@ auto gse::engine::push_attached_input(const input::event& event) -> void {
 		}
 	}
 	window_state->primary.input_events.push(event);
+}
+
+auto gse::engine::push_attached_resize(const vec2u extent) -> void {
+	m_attached_requested_extent = extent;
 }
 
 auto gse::engine::shutdown() -> void {

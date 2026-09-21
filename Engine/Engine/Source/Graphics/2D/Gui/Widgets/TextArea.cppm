@@ -331,9 +331,8 @@ auto gse::gui::build_runs(const std::string_view line, const std::span<const tex
 		if (b <= a) {
 			return;
 		}
-		const bool inherited = which == text_face::inherit;
-		resource::handle<font> handle = inherited ? style.inherited : style.fonts.face(which, style.inherited);
-		std::shared_ptr<const font> view = inherited ? style.base_view : handle.resolve();
+		resource::handle<font> handle = style.fonts.face(which, style.inherited);
+		std::shared_ptr<const font> view = which == text_face::inherit ? style.base_view : handle.resolve();
 		out.push_back({
 			.start = a,
 			.end = b,
@@ -546,18 +545,18 @@ auto gse::gui::text_area_layout::line_at(const float offset) const -> std::uint3
 auto gse::gui::text_area::draw(const draw_context& ctx, const params& p, id& hot, id& active, id& focus) -> bool {
 	(void)active;
 	params resolved = p;
-	resolved.rect = p.rect.value_or(ctx.next_row(p.font.valid() ? p.font : ctx.fonts.code, 8.f));
+	resolved.rect = p.rect.value_or(ctx.next_row(ctx.fonts.face_or(p.font, text_face::code), 8.f));
 	return draw::text_area_in_rect(ctx, p.widget_id.exists() ? p.widget_id : ids::make(p.name), resolved, hot, focus);
 }
 
 auto gse::gui::text_area_line_height(const draw_context& ctx, const resource::handle<font> font) -> float {
-	const auto fnt = font.valid() ? font : ctx.fonts.code;
+	const auto fnt = ctx.fonts.face_or(font, text_face::code);
 	return fnt.resolve()->line_height(ctx.style.font_size) * 1.25f;
 }
 
 auto gse::gui::text_area_layout_of(const draw_context& ctx, const text_area_geometry& geometry) -> text_area_layout {
 	const text_buffer& buffer = geometry.buffer;
-	const auto fnt = geometry.font.valid() ? geometry.font : ctx.fonts.code;
+	const auto fnt = ctx.fonts.face_or(geometry.font, text_face::code);
 	const auto fnt_view = fnt.resolve();
 	const float scale = ctx.style.font_size;
 	const float pad = ctx.style.padding;
@@ -586,7 +585,7 @@ auto gse::gui::text_area_layout_of(const draw_context& ctx, const text_area_geom
 
 auto gse::gui::text_area_position_at(const draw_context& ctx, const text_area_geometry& geometry, const vec2f mouse) -> buffer_position {
 	const text_buffer& buffer = geometry.buffer;
-	const auto fnt = geometry.font.valid() ? geometry.font : ctx.fonts.code;
+	const auto fnt = ctx.fonts.face_or(geometry.font, text_face::code);
 	const run_context style{
 		.fonts = ctx.fonts,
 		.inherited = fnt,
@@ -646,7 +645,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 	constexpr time repeat_delay = milliseconds(400.f);
 	constexpr time repeat_interval = milliseconds(33.f);
 	const resource::handle<font> font = params.font;
-	const auto fnt = font.valid() ? font : ctx.fonts.code;
+	const auto fnt = ctx.fonts.face_or(font, text_face::code);
 	const auto fnt_view = fnt.resolve();
 
 	bool modified = false;

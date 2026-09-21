@@ -16,8 +16,8 @@ float3 sample_multiscatter_at(float radius, float mu_sun) {
 
 float3 reconstruct_view_ray(float2 screen_uv, out float3 origin) {
     float2 ndc = screen_uv * 2.0 - 1.0;
-    float4 wn = mul(pc.inv_view_proj, float4(ndc, 0.0, 1.0));
-    float4 wf = mul(pc.inv_view_proj, float4(ndc, 1.0, 1.0));
+    float4 wn = mul(pc.inv_view_proj, float4(ndc, 1.0, 1.0));
+    float4 wf = mul(pc.inv_view_proj, float4(ndc, 0.0, 1.0));
     origin = wn.xyz / wn.w;
     float3 rt = wf.xyz / wf.w;
     return normalize(rt - origin);

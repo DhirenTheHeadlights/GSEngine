@@ -2,7 +2,7 @@
 
 A scenario is a named C++ coroutine that drives the engine through a fixed sequence of world events on a fixed-step clock, then exits with a `.gsprof`, a percentile summary, and a world-state hash. Frame *N* holds the same simulated world every run, so anything measured at frame *N* is comparable across runs, builds, and configurations.
 
-This document is the operating manual. The design rationale is in [script_runner_plan.md](script_runner_plan.md); the traps section there is worth reading once before authoring.
+This document is the operating manual. Read the traps at the end once before authoring.
 
 ## Adding one
 
@@ -140,7 +140,7 @@ ctx.channels().push<gse::renderer::capture::toggle_recording_request>({});
 
 Under a scenario the encoder stamps presentation timestamps from *content* time, not wall time, so every frame is exactly 1/60 s apart and the clip is constant-rate 60 fps no matter how slowly it rendered. Verify a clip with `ffmpeg -v error -i <file> -f null -` and require zero output — a file playing in a desktop player proves nothing, as VLC and Windows Media Player both happily played a file that decoded zero frames in dav1d.
 
-**A tripped assert does not terminate the process.** It logs `[fatal]` and hangs forever. Always run under an external timeout, and read `%LOCALAPPDATA%/GSE/logs/Sandbox.log` when a run produces no summary line.
+**A tripped assert does not terminate the process.** It logs `[fatal]` and hangs forever. Always run under an external timeout, and read the newest `%LOCALAPPDATA%/GSE/logs/Sandbox.<pid>.<stamp>.log` when a run produces no summary line.
 
 **Headless has a narrower asset loader set than render** — `model` only. Anything needing `skinned_model` or `clip_asset`, such as character spawning, asserts headless. This is a known open gap; see the trap entry in the plan for two corrections that were tried and were both worse than the gap.
 
@@ -187,3 +187,22 @@ The intended shape for a CPU-versus-GPU comparison is a declared pair, so each g
 Both should `co_await` one shared workload coroutine declared in the implementation partition, so the only difference between them is the declared configuration. A copied body drifts the first time either changes, and then the comparison is measuring the wrong thing. The helper is invisible to the sweep because it carries no annotation.
 
 Note before relying on a GPU hash: the GPU VBD solver is known non-deterministic, so a `gpu_solver` scenario reproduces its timings but not its world state.
+
+## Traps already paid for
+
+Each of these cost a build-and-run cycle. Do not rediscover them.
+
+- **Negative boolean flags read backwards.** `build_arg_flag` prefixes the *fully qualified* name, so headless is `--no-engine-create-window`, never `--engine-no-create-window`. The natural spelling silently does nothing.
+- **`all_settled()` is not "the world exists."** It reports scheduler quiescence and goes true long before scene content spawns. The gate requires `all_settled() && world_populated()`. Both the settling phase and `wait_settled` route through `bench_world_ready`, so there is one copy of that predicate — do not re-spell it at a third call site.
+- **`world_loader_setup` registers a scene; it does not activate one.** Nothing in a headless or bench run activates it, so without `--engine-bench-scene` the registry stays empty and every measurement is of nothing.
+- **Headless disables `gui::data` and `window::data`.** Any app-side system reading them must be registered behind the render flag or the closed-graph assert fires at boot.
+- **`report_frame::span` is not the frame duration.** It spans from the earliest node start, including long-lived open spans. Frame percentiles derive from the frame's root node instead (`profile::frame_duration`).
+- **Entity identity is the hash of the name, so a spawn helper with fixed names can only ever build one instance.** `registry::create(name)` is FNV over the string. Spawning a helper that uses `"Character"` eight times puts every character on the same ids, each stomping the last; `count=1` and `count=2` then produce identical world hashes. Any spawn helper called more than once needs an index in its names, as `spawn_tumbler` does.
+- **`wait_settled` does not cover asset residency.** It waits for scheduler quiescence and a populated world, neither of which implies a queued asset has resolved. A scenario that pushes a spawn the instant the world settles can get a silent no-op and then measure an empty scene with a perfectly valid deterministic hash. Compare against a no-scenario run of the same scene: an identical hash means nothing spawned.
+- **Headless and render register the same asset pack.** Render adds `install_recompile_fns`, headless adds `install_stale_checks`, which fails the load rather than baking. Do not narrow the headless loader set: `gse::material` holds a `handle<texture>` and both model types gate readiness on `textures_ready()`, so a pack with models but no textures cannot load.
+- **A renderer setting can overwrite a programmatic one.** Any per-frame `set_*` pushed from system state clobbers a scenario's `begin_bench`. Push only on change.
+- **A windowed scenario cannot run unattended.** Render-mode world systems are deferred behind `rendered_once()`, so the window must present a frame before the scene populates, and roughly half of back-to-back unattended runs never do. The click that makes it boot is also real input into a scripted run, so the hash is not a baseline. Headless has no such gate.
+- **A windowed scenario accepts real input.** Do not touch the window during a measurement.
+- **A valid hash does not mean valid timings.** World state keys off frame index, not wall time, so a run contaminated by a background compile hashes identically to a quiet one. Confirm no build is running before recording a baseline; `tasklist | grep -E "cc1plus|ninja"` settles it.
+- **A scenario body cannot live in the partition interface.** The annotated declaration stays in `Scenarios.cppm`; the coroutine body goes in `Scenarios.cpp`.
+- **A tripped assert does not terminate the process.** It logs `[fatal]` and hangs. Any unattended run needs an external timeout.

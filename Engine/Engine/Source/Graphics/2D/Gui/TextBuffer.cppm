@@ -19,6 +19,7 @@ export namespace gse::gui {
 		text_emphasis,
 		code,
 		code_strong,
+		code_emphasis,
 	};
 
 	struct text_span {

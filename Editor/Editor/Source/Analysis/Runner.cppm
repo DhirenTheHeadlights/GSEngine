@@ -1,6 +1,5 @@
 export module gse.ide.analysis:diagnostics_runner;
 
-import gse.concurrency;
 import gse.core;
 import gse.ide.diagnostic;
 import gse.log;
@@ -85,12 +84,10 @@ export namespace gse::ide::analysis {
 		const diagnostics_status_info& info
 	) -> vec4f;
 
-	struct diagnostics_check {
-		std::atomic<bool> done = false;
-		std::stop_source cancel;
+	struct diagnostics_result {
 		id document_id;
 		document_revision revision;
-		std::vector<diagnostic> result;
+		std::vector<diagnostic> diagnostics;
 		std::vector<diagnostic> lint;
 		std::vector<qualified_use> quals;
 		std::vector<qualified_use> template_args;
@@ -107,16 +104,20 @@ export namespace gse::ide::analysis {
 		time duration;
 	};
 
-	struct diagnostics_runner {
-		static auto start(
-			const std::shared_ptr<diagnostics_check>& check,
-			const std::filesystem::path& compile_commands,
-			const std::filesystem::path& file,
-			const std::filesystem::path& plugin_dll,
-			std::span<const std::filesystem::path> workspace_roots,
-			void (*lint_hook)(diagnostics_check&)
-		) -> void;
+	struct diagnostics_request {
+		id document_id;
+		document_revision revision;
+		std::filesystem::path compile_commands;
+		std::filesystem::path file;
+		std::filesystem::path plugin;
+		std::vector<std::filesystem::path> workspace_roots;
+		void (*lint_hook)(diagnostics_result&) = nullptr;
 	};
+
+	auto run_diagnostics(
+		const diagnostics_request& request,
+		const std::stop_token& stop
+	) -> diagnostics_result;
 }
 
 namespace gse::ide::analysis {
@@ -184,130 +185,128 @@ auto gse::ide::analysis::normalize_diagnostic_files(const std::span<diagnostic> 
 	}
 }
 
-auto gse::ide::analysis::diagnostics_runner::start(const std::shared_ptr<diagnostics_check>& check, const std::filesystem::path& compile_commands, const std::filesystem::path& file, const std::filesystem::path& plugin_dll, const std::span<const std::filesystem::path> workspace_roots, void (*lint_hook)(diagnostics_check&)) -> void {
-	std::vector<std::filesystem::path> roots(workspace_roots.begin(), workspace_roots.end());
-	task::post_background([check, compile_commands, file, plugin_dll, roots = std::move(roots), lint_hook] {
-		const std::stop_token stop = check->cancel.get_token();
-		const time started = system_clock::now<time>();
-		const auto _ = make_scope_exit([check, started] {
-			check->duration = system_clock::now<time>() - started;
-			check->done.store(true, std::memory_order_release);
+auto gse::ide::analysis::run_diagnostics(const diagnostics_request& request, const std::stop_token& stop) -> diagnostics_result {
+	const time started = system_clock::now<time>();
+	diagnostics_result out{
+		.document_id = request.document_id,
+		.revision = request.revision,
+	};
+	auto read_file = [](const std::filesystem::path& path) -> std::string {
+		std::ifstream in(path, std::ios::binary);
+		if (!in) {
+			return {};
+		}
+		std::ostringstream stream;
+		stream << in.rdbuf();
+		return stream.str();
+	};
+
+	const std::shared_ptr<const compilation_database> database = load_compilation_database(request.compile_commands);
+	const compilation_entry* entry = database ? database->find(request.file) : nullptr;
+	if (!database) {
+		out.status = diagnostics_status::database_unavailable;
+		out.failure_output = std::format("Looked for {}", request.compile_commands.generic_display_string());
+	}
+	else if (!entry) {
+		out.status = diagnostics_status::entry_unavailable;
+		out.failure_output = std::format("{} has no entry in {}", request.file.generic_display_string(), request.compile_commands.filename().generic_display_string());
+	}
+	else if (const std::expected<void, std::string> module_graph = validate_module_graph(*entry); !module_graph) {
+		out.status = diagnostics_status::module_unavailable;
+		out.failure_output = module_graph.error();
+	}
+	else {
+		const std::filesystem::path sarif_temp = process::temporary_path("diagnostics", "sarif");
+		const auto _ = make_scope_exit([&sarif_temp] {
+			std::error_code ec;
+			std::filesystem::remove(sarif_temp, ec);
 		});
-		auto read_file = [](const std::filesystem::path& path) -> std::string {
-			std::ifstream in(path, std::ios::binary);
-			if (!in) {
-				return {};
-			}
-			std::ostringstream stream;
-			stream << in.rdbuf();
-			return stream.str();
-		};
 
-		const std::shared_ptr<const compilation_database> database = load_compilation_database(compile_commands);
-		const compilation_entry* entry = database ? database->find(file) : nullptr;
-		if (!database) {
-			check->status = diagnostics_status::database_unavailable;
-			check->failure_output = std::format("Looked for {}", compile_commands.generic_display_string());
-		}
-		else if (!entry) {
-			check->status = diagnostics_status::entry_unavailable;
-			check->failure_output = std::format("{} has no entry in {}", file.generic_display_string(), compile_commands.filename().generic_display_string());
-		}
-		else if (const std::expected<void, std::string> module_graph = validate_module_graph(*entry); !module_graph) {
-			check->status = diagnostics_status::module_unavailable;
-			check->failure_output = module_graph.error();
-		}
-		else {
-			const std::filesystem::path sarif_temp = process::temporary_path("diagnostics", "sarif");
-			const auto _ = make_scope_exit([&sarif_temp] {
-				std::error_code ec;
-				std::filesystem::remove(sarif_temp, ec);
-			});
-
-			std::string command_line = entry->command.command_line;
-			std::filesystem::path token_temp;
-			const auto _ = make_scope_exit([&token_temp] {
-				if (!token_temp.empty()) {
-					std::error_code ec;
-					std::filesystem::remove(token_temp, ec);
-				}
-			});
-			std::error_code plugin_ec;
-			const bool plugin_missing = plugin_dll.empty() || !std::filesystem::exists(plugin_dll, plugin_ec);
-			if (!plugin_missing) {
-				token_temp = process::temporary_path("tokens", "txt");
-				command_line += " -fplugin=\"" + plugin_dll.generic_native_encoded_string() + "\"";
-				command_line += " -fplugin-arg-gse_tokens-out=\"" + token_temp.generic_native_encoded_string() + "\"";
-				for (const std::filesystem::path& root : roots) {
-					command_line += " -fplugin-arg-gse_tokens-root=\"" + root.generic_native_encoded_string() + "\"";
-				}
-			}
-
-			const process::run_outcome run = process::run_capture_stderr(command_line, entry->command.directory, sarif_temp, stop);
-
-			const std::string sarif = read_file(sarif_temp);
-			check->result = gcc_diagnostics::parse_sarif(sarif);
-
-			if (!run && run.error() == process::run_error::cancelled) {
-				check->status = diagnostics_status::cancelled;
-			}
-			else if (!run) {
-				check->status = run.error() == process::run_error::timed_out ? diagnostics_status::timed_out : diagnostics_status::launch_failed;
-			}
-			else if (gcc_diagnostics::is_module_unavailable(check->result)) {
-				check->status = diagnostics_status::module_unavailable;
-			}
-			else if (*run != 0 && !gcc_diagnostics::has_error(check->result)) {
-				check->status = diagnostics_status::compiler_failed;
-			}
-			else if (plugin_missing) {
-				check->status = diagnostics_status::plugin_unavailable;
-			}
-
-			if (check->status == diagnostics_status::plugin_unavailable) {
-				check->failure_output = plugin_dll.empty()
-					? std::string("No token plugin path is configured.")
-					: std::format("Looked for {}", plugin_dll.generic_display_string());
-			}
-			else if (check->status != diagnostics_status::success) {
-				check->failure_output = failure_detail(check->result, sarif, run);
-			}
-
+		std::string command_line = entry->command.command_line;
+		std::filesystem::path token_temp;
+		const auto _ = make_scope_exit([&token_temp] {
 			if (!token_temp.empty()) {
-				const std::string token_text = read_file(token_temp);
-				check->tokens = semantic_tokens::parse(token_text);
-
-				symbol_set symbols = symbol_tokens::parse(token_text, file.generic_native_encoded_string());
-				check->symbols = std::move(symbols.symbols);
-				check->refs = std::move(symbols.refs);
-				check->params = std::move(symbols.params);
-				check->quals = std::move(symbols.quals);
-				check->template_args = std::move(symbols.template_args);
-				check->unused_locals = std::move(symbols.unused_locals);
-				check->narrowable_imports = std::move(symbols.narrowable_imports);
-				check->files = std::move(symbols.files);
-				check->symbols_complete = symbols.complete;
+				std::error_code ec;
+				std::filesystem::remove(token_temp, ec);
+			}
+		});
+		std::error_code plugin_ec;
+		const bool plugin_missing = request.plugin.empty() || !std::filesystem::exists(request.plugin, plugin_ec);
+		if (!plugin_missing) {
+			token_temp = process::temporary_path("tokens", "txt");
+			command_line += " -fplugin=\"" + request.plugin.generic_native_encoded_string() + "\"";
+			command_line += " -fplugin-arg-gse_tokens-out=\"" + token_temp.generic_native_encoded_string() + "\"";
+			for (const std::filesystem::path& root : request.workspace_roots) {
+				command_line += " -fplugin-arg-gse_tokens-root=\"" + root.generic_native_encoded_string() + "\"";
 			}
 		}
 
-		if (check->status != diagnostics_status::success) {
-			const diagnostics_status_info info = status_info(check->status);
-			log::println(
-				info.routine ? log::level::warning : log::level::error,
-				log::category::task,
-				"analysis: {} on {}:\n{}",
-				std::string_view(info.label),
-				file.filename().generic_display_string(),
-				check->failure_output
-			);
+		const process::run_outcome run = process::run_capture_stderr(command_line, entry->command.directory, sarif_temp, stop);
+
+		const std::string sarif = read_file(sarif_temp);
+		out.diagnostics = gcc_diagnostics::parse_sarif(sarif);
+
+		if (!run && run.error() == process::run_error::cancelled) {
+			out.status = diagnostics_status::cancelled;
+		}
+		else if (!run) {
+			out.status = run.error() == process::run_error::timed_out ? diagnostics_status::timed_out : diagnostics_status::launch_failed;
+		}
+		else if (gcc_diagnostics::is_module_unavailable(out.diagnostics)) {
+			out.status = diagnostics_status::module_unavailable;
+		}
+		else if (*run != 0 && !gcc_diagnostics::has_error(out.diagnostics)) {
+			out.status = diagnostics_status::compiler_failed;
+		}
+		else if (plugin_missing) {
+			out.status = diagnostics_status::plugin_unavailable;
 		}
 
-		if (lint_hook) {
-			lint_hook(*check);
+		if (out.status == diagnostics_status::plugin_unavailable) {
+			out.failure_output = request.plugin.empty()
+				? std::string("No token plugin path is configured.")
+				: std::format("Looked for {}", request.plugin.generic_display_string());
 		}
-		if (entry) {
-			normalize_diagnostic_files(check->result, entry->command.directory);
-			normalize_diagnostic_files(check->lint, entry->command.directory);
+		else if (out.status != diagnostics_status::success) {
+			out.failure_output = failure_detail(out.diagnostics, sarif, run);
 		}
-	}, trace_id<"analysis::diagnostics">());
+
+		if (!token_temp.empty()) {
+			const std::string token_text = read_file(token_temp);
+			out.tokens = semantic_tokens::parse(token_text);
+
+			symbol_set symbols = symbol_tokens::parse(token_text, request.file.generic_native_encoded_string());
+			out.symbols = std::move(symbols.symbols);
+			out.refs = std::move(symbols.refs);
+			out.params = std::move(symbols.params);
+			out.quals = std::move(symbols.quals);
+			out.template_args = std::move(symbols.template_args);
+			out.unused_locals = std::move(symbols.unused_locals);
+			out.narrowable_imports = std::move(symbols.narrowable_imports);
+			out.files = std::move(symbols.files);
+			out.symbols_complete = symbols.complete;
+		}
+	}
+
+	if (out.status != diagnostics_status::success) {
+		const diagnostics_status_info info = status_info(out.status);
+		log::println(
+			info.routine ? log::level::warning : log::level::error,
+			log::category::task,
+			"analysis: {} on {}:\n{}",
+			std::string_view(info.label),
+			request.file.filename().generic_display_string(),
+			out.failure_output
+		);
+	}
+
+	if (request.lint_hook) {
+		request.lint_hook(out);
+	}
+	if (entry) {
+		normalize_diagnostic_files(out.diagnostics, entry->command.directory);
+		normalize_diagnostic_files(out.lint, entry->command.directory);
+	}
+	out.duration = system_clock::now<time>() - started;
+	return out;
 }

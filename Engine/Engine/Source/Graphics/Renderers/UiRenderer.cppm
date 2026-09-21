@@ -206,6 +206,6 @@ export namespace gse::renderer::ui {
 		shared_view<gpu::context::data> gpu_s,
 		data& d,
 		channel_write<gpu::render_pass_request> pass_out,
-		shared_view<scene_snapshot::data> snapshot_s
+		std::optional<shared_view<scene_snapshot::data>> snapshot_s
 	) -> async::task<>;
 }

@@ -137,7 +137,7 @@ namespace gse::renderer::forward {
 		gpu::fragment_stage<"fs_main">,
 		gpu::push_constant<meshlet_push_constants>,
 		gpu::color_targets<gpu::color_format::hdr>,
-		gpu::depth<true, false, gpu::compare_op::less_or_equal>
+		gpu::depth<true, false, gpu::compare_op::greater_or_equal>
 	>;
 
 	auto rebind_tlas_views(
@@ -238,7 +238,7 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 				)
 			)
 			.depth(gpu::clear_depth(gpu::depth_clear{
-				.depth = 1.0f
+				.depth = 0.0f
 			}));
 		rec.set_viewport(ext);
 		rec.set_scissor(ext);

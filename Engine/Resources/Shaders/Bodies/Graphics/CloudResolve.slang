@@ -15,8 +15,8 @@ VS_OUT vs_main(uint vid : SV_VertexID) {
 static const float history_transmittance_tolerance = 0.15;
 
 float3 world_ray_from_ndc(float2 ndc) {
-    float4 near_point = mul(pc.inv_view_proj, float4(ndc, 0.0, 1.0));
-    float4 far_point = mul(pc.inv_view_proj, float4(ndc, 1.0, 1.0));
+    float4 near_point = mul(pc.inv_view_proj, float4(ndc, 1.0, 1.0));
+    float4 far_point = mul(pc.inv_view_proj, float4(ndc, 0.0, 1.0));
     return normalize(far_point.xyz / far_point.w - near_point.xyz / near_point.w);
 }
 

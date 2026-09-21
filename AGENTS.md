@@ -32,7 +32,7 @@ Sizing is derived, not typed: the label column of every labelled widget is `styl
 
 ## Logging System
 
-A logging system writes to `%LOCALAPPDATA%\GSE\logs\<exe>.<pid>.log` (e.g. `Editor.13832.log`, `GoonSquad.4120.log`), one file per run, keeping the last few. Assertions automatically log failures.
+A logging system writes to `%LOCALAPPDATA%\GSE\logs\<exe>.<pid>.<stamp>.log` (e.g. `Editor.13832.20260916_152751.log`, `GoonSquad.4120.20260916_154210.log`), one file per run, keeping the last 40. The launch stamp is the unique run key — Windows reuses pids, and without it a relaunch can truncate the log of the run that just crashed. Assertions automatically log failures.
 
 **To debug issues:** query the log with the `gse_log_query` tool (filters by level, category and regex, returns the last N matching lines of the newest run) instead of asking the user to paste console output or reading the whole file. Fall back to reading the file only when the tool is not available in your session.
 
@@ -44,7 +44,7 @@ Builds go through the running editor only. Use the `gse_build` tool (or `Tools/g
 
 Captured run traces under a project's `.gse/data/eval` (`train_*`, `smoke_*`, `parity_*`, `play_*`) are queried with `gse_trace_query`: call it with `run` and `summary=true` to see the line families, then filter by family, regex or step range and ask for fields, a bounded tail, or aggregates. Do not `grep | tail` these files; they run to tens of megabytes.
 
-These tools come from `Tools/gse-mcp/server.mjs`, which the editor's agent panel loads automatically. A terminal session gets them with `claude --mcp-config Tools/gse-mcp/mcp.json` from the engine root. Design and roadmap: `plans/editor-agent-select-api.md`.
+These tools come from `Tools/gse-mcp/server.mjs`, which the editor's agent panel loads automatically. A terminal session gets them with `claude --mcp-config Tools/gse-mcp/mcp.json` from the engine root. Gap reports are written for humans and never read back by the agent; the editor panel does not yet display them.
 
 ## Finding Code
 

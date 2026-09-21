@@ -7,6 +7,7 @@ export import :frame_arena;
 export import :frame_scheduler;
 export import :manual_event;
 export import :mpsc_ring_buffer;
+export import :pending;
 export import :per_frame_resource;
 export import :spsc_ring_buffer;
 export import :task;

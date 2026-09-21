@@ -141,7 +141,7 @@ namespace gse::ide {
 
 	auto apply_diagnostics(
 		workspace::data& ws,
-		const std::shared_ptr<analysis::diagnostics_check>& check,
+		const analysis::diagnostics_result& result,
 		channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, set_cursor_shape_request, search::index_merge_request> channels
 	) -> void;
 
@@ -1220,19 +1220,19 @@ auto gse::ide::format_and_save(workspace::data& ws, const format_save_request& r
 	return document_save_result::unchanged;
 }
 
-auto gse::ide::apply_diagnostics(workspace::data& ws, const std::shared_ptr<analysis::diagnostics_check>& check, channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, set_cursor_shape_request, search::index_merge_request> channels) -> void {
-	const auto pending = ws.documents.find(check->document_id);
+auto gse::ide::apply_diagnostics(workspace::data& ws, const analysis::diagnostics_result& result, channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, set_cursor_shape_request, search::index_merge_request> channels) -> void {
+	const auto pending = ws.documents.find(result.document_id);
 	if (pending == ws.documents.end()) {
 		return;
 	}
 
 	document& doc = pending->second;
-	if (doc.revision != check->revision) {
+	if (doc.revision != result.revision) {
 		return;
 	}
-	doc.analysis_status = check->status;
-	doc.analysis_detail = std::move(check->failure_output);
-	doc.analysis_duration = check->duration;
+	doc.analysis_status = result.status;
+	doc.analysis_detail = result.failure_output;
+	doc.analysis_duration = result.duration;
 	if (doc.analysis_status == analysis::diagnostics_status::cancelled) {
 		doc.diag_dirty = true;
 		return;
@@ -1245,8 +1245,8 @@ auto gse::ide::apply_diagnostics(workspace::data& ws, const std::shared_ptr<anal
 		return;
 	}
 
-	doc.diagnostics = std::move(check->result);
-	doc.lint = std::move(check->lint);
+	doc.diagnostics = result.diagnostics;
+	doc.lint = result.lint;
 	if (doc.language == document_language::cpp) {
 		if (const std::optional<lint_finding> imports = lint::import_order_finding(doc.buffer.lines, doc.path.generic_display_string())) {
 			doc.lint.push_back(lint::as_diagnostic(*imports));
@@ -1255,7 +1255,7 @@ auto gse::ide::apply_diagnostics(workspace::data& ws, const std::shared_ptr<anal
 	syntax_producer::set_semantic(
 		doc.syntax,
 		{
-			.tokens = check->tokens,
+			.tokens = result.tokens,
 			.buffer = doc.buffer,
 			.revision = doc.revision,
 			.source_path = doc.path.generic_display_string(),
@@ -1263,13 +1263,13 @@ auto gse::ide::apply_diagnostics(workspace::data& ws, const std::shared_ptr<anal
 	);
 	doc.highlight_dirty = true;
 
-	if (check->symbols_complete) {
+	if (result.symbols_complete) {
 		channels.push<search::index_merge_request>({
 			.path = doc.path,
-			.symbols = std::move(check->symbols),
-			.refs = std::move(check->refs),
-			.params = std::move(check->params),
-			.files = check->files,
+			.symbols = result.symbols,
+			.refs = result.refs,
+			.params = result.params,
+			.files = result.files,
 		});
 	}
 
@@ -1381,11 +1381,8 @@ auto gse::ide::audit_semantic_coverage(const document& doc, const search::index_
 
 auto gse::ide::update_diagnostics(context& ctx, const channel_read<analysis::diagnostics_completed, build_runner::build_finished> diag_in, const channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, set_cursor_shape_request, search::index_merge_request> code_out, workspace::data& ws, const shared_view<config_system::data> config, const bool building) -> void {
 	for (const analysis::diagnostics_completed& completed : diag_in.of<analysis::diagnostics_completed>()) {
-		if (!completed.check) {
-			continue;
-		}
-		apply_diagnostics(ws, completed.check, code_out);
-		if (ws.diagnostics_pending == completed.check->document_id) {
+		apply_diagnostics(ws, *completed.result, code_out);
+		if (ws.diagnostics_pending == completed.result->document_id) {
 			ws.diagnostics_pending.reset();
 		}
 	}
@@ -1472,7 +1469,7 @@ auto gse::ide::update_diagnostics(context& ctx, const channel_read<analysis::dia
 		.file = doc.path,
 		.plugin = config::token_plugin(),
 		.workspace_roots = ide::config::analysis_roots(),
-		.lint_hook = &lint::analyze_check,
+		.lint_hook = &lint::analyze_result,
 	});
 	ws.diagnostics_pending = candidate->first;
 	ws.diagnostics_clock.reset();
@@ -1917,7 +1914,7 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 				{ status_rect.left() + pad, status_rect.center().y() + glyph_size * 0.5f },
 				{ glyph_size, glyph_size }
 			);
-			gui::symbol::spinner(ctx, spin_rect, gui::symbol::spinner_rotation(), {
+			gui::symbol::spinner(ctx, spin_rect, {
 				.color = ctx.style.color_text_secondary,
 				.extent = ctx.style.icon_extent,
 				.clip_rect = spin_rect,
@@ -2019,7 +2016,7 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 
 	syntax_producer::poll(doc.syntax, doc.revision);
 
-	if (doc.language != document_language::plain && doc.highlight_dirty && !doc.syntax.pending
+	if (doc.language != document_language::plain && doc.highlight_dirty && !doc.syntax.pending.active()
 		&& (!doc.edit_clock || doc.edit_clock->elapsed() > milliseconds(120))) {
 		syntax_producer::rebuild(doc.syntax, doc.buffer, doc.revision, doc.language);
 		doc.highlight_dirty = false;

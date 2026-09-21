@@ -488,6 +488,16 @@ auto gse::ide::project::bind_engine(const std::filesystem::path& manifest_file, 
 	layout_store::flush();
 }
 
+auto gse::ide::project::pin_engine_commit(const std::string_view commit) -> void {
+	const manifest& active = current();
+	std::string block = "[engine]\n";
+	if (!active.engine_name.empty()) {
+		block += std::format("name = {}\n", active.engine_name);
+	}
+	block += std::format("source = {}\ncommit = {}\n", active.engine.generic_native_encoded_string(), commit);
+	layout_store::submit(active.file, { .names = { "engine" } }, std::move(block));
+}
+
 auto gse::ide::project::recent() -> std::vector<std::filesystem::path> {
 	std::vector<std::filesystem::path> entries;
 	for (const layout_store::section& section : layout_store::parse_sections(read_file(recent_path()))) {
@@ -622,6 +632,9 @@ auto gse::ide::project::load(const std::filesystem::path& file) -> manifest {
 			if (const auto entry = section.values.find("source"); entry != section.values.end()) {
 				const std::filesystem::path declared(entry->second);
 				out.engine = declared.is_absolute() ? declared : out.root / declared;
+			}
+			if (const auto entry = section.values.find("commit"); entry != section.values.end()) {
+				out.engine_commit = entry->second;
 			}
 		}
 		else if (section.name == "targets") {

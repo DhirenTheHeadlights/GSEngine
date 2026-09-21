@@ -330,7 +330,7 @@ auto gse::gui::draw::dropdown_impl(const draw_context& ctx, const std::string_vi
 }
 
 auto gse::gui::draw::dropdown_impl_in_rect(const draw_context& ctx, const id dropdown_id, const std::size_t current_index, const std::function<std::size_t()>& option_count, const std::function<std::string_view(std::size_t)>& get_option, dropdown_state& state, const rectf& header_rect, id& hot_widget_id, id& active_widget_id, const dropdown_config& config, const resource::handle<font> font) -> dropdown_result {
-	const auto fnt = font.valid() ? font : ctx.fonts.text;
+	const auto fnt = ctx.fonts.face_or(font);
 	const auto fnt_view = fnt.resolve();
 	if (!ctx.current_menu) {
 		return {};

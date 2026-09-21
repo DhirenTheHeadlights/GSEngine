@@ -41,24 +41,30 @@ auto gse::gui::font_set::named(const std::string_view name) const -> resource::h
 }
 
 auto gse::gui::font_set::face(const text_face which, const resource::handle<font> inherited) const -> resource::handle<font> {
-	auto pick = [](const resource::handle<font>& preferred, const resource::handle<font>& fallback) -> resource::handle<font> {
-		return preferred.valid() ? preferred : fallback;
-	};
+	const resource::handle<font> chosen = [this, which] {
+		switch (which) {
+			case text_face::text:
+				return text;
+			case text_face::text_strong:
+				return text_strong;
+			case text_face::text_emphasis:
+				return text_emphasis;
+			case text_face::code:
+				return code;
+			case text_face::code_strong:
+				return code_strong;
+			case text_face::code_emphasis:
+				return code_emphasis;
+			default:
+				return resource::handle<font>{};
+		}
+	}();
 
-	switch (which) {
-		case text_face::text:
-			return pick(text, inherited);
-		case text_face::text_strong:
-			return pick(text_strong, pick(text, inherited));
-		case text_face::text_emphasis:
-			return pick(text_emphasis, pick(text, inherited));
-		case text_face::code:
-			return pick(code, inherited);
-		case text_face::code_strong:
-			return pick(code_strong, pick(code, inherited));
-		default:
-			return inherited;
-	}
+	return chosen.valid() ? chosen : inherited;
+}
+
+auto gse::gui::font_set::face_or(const resource::handle<font> requested, const text_face fallback) const -> resource::handle<font> {
+	return requested.valid() ? requested : face(fallback, text);
 }
 
 auto gse::gui::draw_context::queue_sprite(renderer::sprite_command cmd) const -> void {

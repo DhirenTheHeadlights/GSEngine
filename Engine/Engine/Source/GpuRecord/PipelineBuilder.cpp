@@ -166,6 +166,7 @@ auto gse::gpu::make_slang_session() -> owned_slang_session {
 	slang::TargetDesc target{
 		.format = use_dxil ? slang_dxil : slang_spirv,
 		.profile = global->findProfile(use_dxil ? "sm_6_6" : "spirv_1_5"),
+		.floatingPointMode = use_dxil ? slang_floating_point_mode_precise : slang_floating_point_mode_default,
 		.forceGLSLScalarBufferLayout = !use_dxil,
 	};
 

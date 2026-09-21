@@ -270,7 +270,7 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 		"tab strip requires a valid ID for every tab"
 	);
 
-	const resource::handle<font>& fnt = params.font.valid() ? params.font : ctx.fonts.text;
+	const resource::handle<font> fnt = ctx.fonts.face_or(params.font);
 	const auto fnt_view = fnt.resolve();
 	if (!fnt.valid()) {
 		return result;
@@ -288,7 +288,6 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 		ctx.hit_regions->block_text_selection(area);
 	}
 
-	const angle spin = symbol::spinner_rotation();
 	const float close_extent = sty.icon_extent;
 	const float dirty_extent = fnt_view->width("*", fs);
 	const float dot_extent = warning_extent(sty);
@@ -346,7 +345,7 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 		}
 		const bool close_hovered = tab_area.contains(mouse) && ctx.hovers(close_rect);
 		if (tab.busy && !(tab.closeable && close_hovered)) {
-			symbol::spinner(ctx, close_rect, spin, {
+			symbol::spinner(ctx, close_rect, {
 				.color = sty.color_text_secondary,
 				.extent = sty.icon_extent,
 				.clip_rect = visible,

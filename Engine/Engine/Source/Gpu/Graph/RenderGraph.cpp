@@ -283,12 +283,20 @@ auto gse::gpu::render_graph::read_profile_slot(gpu_profile_slot& slot, const per
 		: time_t<double>{};
 	const auto calibrated_gpu_ref = slot.calibration ? slot.calibration->gpu_ticks & mask : 0;
 	const auto query_ref_delta = ((timestamps[0] & mask) - calibrated_gpu_ref) & mask;
-	const bool aligned = slot.calibration &&
-		calibrated_cpu_ref + static_cast<double>(query_ref_delta) * period + milliseconds(1.0) >= time_t<double>(slot.recorded_at);
+	const auto calibrated_query_ref = calibrated_cpu_ref + static_cast<double>(query_ref_delta) * period;
+	const bool aligned = slot.calibration && calibrated_query_ref + milliseconds(1.0) >= time_t<double>(slot.recorded_at);
 	if (slot.calibration && !aligned) {
-		static std::atomic<bool> reported{ false };
-		if (!reported.exchange(true, std::memory_order_relaxed)) {
-			log::println(log::level::warning, log::category::render, "GPU timestamp calibration precedes command recording; suppressing aligned GPU spans");
+		static std::atomic<std::uint32_t> reported{ 0 };
+		const auto count = reported.fetch_add(1, std::memory_order_relaxed) + 1;
+		if (count <= 3 || (count & (count - 1)) == 0) {
+			log::println(
+				log::level::warning,
+				log::category::render,
+				"GPU timestamp calibration places query 0 {:.3f} ms before command recording (frame {}, occurrence {}); suppressing aligned GPU spans for this slot",
+				(time_t<double>(slot.recorded_at) - calibrated_query_ref).as<milliseconds>(),
+				slot.frame_counter,
+				count
+			);
 		}
 	}
 	const auto stamp_to_cpu = [&](const std::uint64_t ticks) {
@@ -1316,7 +1324,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 				log::println(
 					log::level::error,
 					log::category::render,
-					"render_graph: cyclic cross-queue dependency between '{}' and '{}'; frame-granular sync cannot express this -- one direction is dropped (races) and the device may hang. See docs/render_graph_cross_queue_batching_plan.md",
+					"render_graph: cyclic cross-queue dependency between '{}' and '{}'; frame-granular sync cannot express this -- one direction is dropped (races) and the device may hang. Break the cycle with pass ordering or move one side onto the other queue",
 					queue_label(a),
 					queue_label(b)
 				);

@@ -1,6 +1,6 @@
 # Adding a Game Mechanic
 
-A mechanic is a component, a system that declares what it touches, and (when the server must know about it) a message. This document is the recipe, with the sidearm as the worked example. The design behind the netcode is in [../plans/deterministic-rollback.md](../plans/deterministic-rollback.md).
+A mechanic is a component, a system that declares what it touches, and (when the server must know about it) a message. This document is the recipe, with the sidearm as the worked example. The netcode is deterministic rollback over the solver's snapshot ring; see `rollback_request` in `Physics/System.cppm` and the `player_sync` log lines for the replay contract.
 
 ## The pieces
 

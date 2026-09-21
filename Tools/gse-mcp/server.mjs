@@ -257,20 +257,27 @@ const log_query = async (args) => {
 	catch {
 		return text_result(header(project, { error: `no logs directory at ${windows_path(logs_dir)}` }), true);
 	}
-	// Logs are one file per process, <exe>.<pid>.log, kept for the last few runs. The
-	// newest for an executable is the run the chat almost always means.
+	// Logs are one file per run, <exe>.<pid>.<stamp>.log, kept for the last 40. Windows
+	// reuses pids, so the stamp is the unique run key. The newest for an executable is
+	// the run the chat almost always means.
 	const exe = String(args.exe ?? 'Editor');
 	const runs = names
 		.filter((name) => name.toLowerCase().startsWith(`${exe.toLowerCase()}.`))
-		.map((name) => ({ name, pid: name.split('.')[1], modified: statSync(join(logs_dir, name)).mtimeMs }))
+		.map((name) => {
+			const parts = name.slice(0, -'.log'.length).split('.');
+			return { name, pid: parts[1], run: parts[2], modified: statSync(join(logs_dir, name)).mtimeMs };
+		})
 		.sort((a, b) => b.modified - a.modified);
 	if (runs.length === 0) {
 		const exes = [...new Set(names.map((name) => name.split('.')[0]))].sort();
 		return text_result(header(project, { error: `no log for '${exe}'`, available_exes: exes }), true);
 	}
-	const run = args.pid ? runs.find((r) => r.pid === String(args.pid)) : runs[0];
+	const wanted = args.run ?? args.pid;
+	const run = wanted !== undefined
+		? runs.find((r) => r.run === String(wanted) || r.pid === String(wanted))
+		: runs[0];
 	if (!run) {
-		return text_result(header(project, { error: `no ${exe} log for pid ${args.pid}`, runs: runs.map((r) => ({ pid: r.pid, modified: new Date(r.modified).toISOString() })) }), true);
+		return text_result(header(project, { error: `no ${exe} log for run '${wanted}'`, runs: runs.map((r) => ({ run: r.run, pid: r.pid, modified: new Date(r.modified).toISOString() })) }), true);
 	}
 	const path = join(logs_dir, run.name);
 	const text = readFileSync(path, 'utf8');
@@ -317,8 +324,9 @@ const log_query = async (args) => {
 
 	return text_result(header(project, {
 		log: windows_path(path),
+		run: run.run,
 		pid: run.pid,
-		other_runs: runs.filter((r) => r !== run).slice(0, 4).map((r) => ({ pid: r.pid, modified: new Date(r.modified).toISOString() })),
+		other_runs: runs.filter((r) => r !== run).slice(0, 4).map((r) => ({ run: r.run, pid: r.pid, modified: new Date(r.modified).toISOString() })),
 		modified: new Date(run.modified).toISOString(),
 		total_lines: total,
 		matched_lines: matched,
@@ -827,12 +835,13 @@ const tools = {
 	},
 	gse_log_query: {
 		description:
-			'Query a GSE log (Editor.log, or a game exe log) with filters, returning at most `tail` matching lines. Use instead of reading the log file: logs are cleared each run and can be large.',
+			'Query a GSE log (the editor, or a game exe) with filters, returning at most `tail` matching lines. Use instead of reading the log file: each run writes its own file and they can be large.',
 		schema: {
 			type: 'object',
 			properties: {
-				exe: { type: 'string', description: 'Executable stem, e.g. "Editor" (default) or "HumanoidLocomotion". The newest run is used unless pid is given.' },
-				pid: { type: 'string', description: 'Pick a specific run by process id; other_runs in a response lists the alternatives.' },
+				exe: { type: 'string', description: 'Executable stem, e.g. "Editor" (default) or "HumanoidLocomotion". The newest run is used unless run or pid is given.' },
+				run: { type: 'string', description: 'Pick a specific run by its launch stamp, e.g. "20260916_152751"; other_runs in a response lists the alternatives. This is the unique run key — prefer it over pid.' },
+				pid: { type: 'string', description: 'Pick a specific run by process id. Windows reuses pids, so this can match several runs; the newest wins. Use run to disambiguate.' },
 				pattern: { type: 'string', description: 'Case-insensitive regular expression a line must match.' },
 				level: { type: 'string', description: 'Level token a line must contain, e.g. "error", "warning".' },
 				category: { type: 'string', description: 'Category token a line must contain, e.g. "task", "physics".' },

@@ -108,7 +108,7 @@ auto gse::ide::markdown::style_of(const kind tone, const family group, const gui
 	const face_set faces{
 		.body = mono ? gui::text_face::code : gui::text_face::text,
 		.strong = mono ? gui::text_face::code_strong : gui::text_face::text_strong,
-		.slanted = mono ? gui::text_face::code : gui::text_face::text_emphasis,
+		.slanted = mono ? gui::text_face::code_emphasis : gui::text_face::text_emphasis,
 	};
 	const kind_info info = annotation_from_enum<kind_info>(tone, {});
 

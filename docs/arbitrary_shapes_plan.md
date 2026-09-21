@@ -1,6 +1,6 @@
 # Arbitrary collision shapes — scope
 
-Status: partly built. Written 2026-08-13, immediately after the shape-derived inertia tensor landed (`docs/solver_plan.md` § inertia). Read that section first — this document assumes it. Capsules, the convex-hull types and the `ParityShapes` scenarios landed; rung 3c is not started and rung 3f is parked. The GPU hull guard marked REQUIRED BEFORE ANY HULL IS SPAWNED is still absent from `Physics/System.cpp`.
+Status: partly built. Written 2026-08-13, immediately after the shape-derived inertia tensor landed; this document assumes the solver carries a shape-derived inertia tensor. Capsules, the convex-hull types and the `ParityShapes` scenarios landed; rung 3c is not started and rung 3f is parked. The GPU hull guard asserts `hulls.empty()` on upload in `Physics/VBD/GpuUpload.cpp`.
 
 ## Decisions taken
 
@@ -10,7 +10,7 @@ Status: partly built. Written 2026-08-13, immediately after the shape-derived in
 | GPU non-box shapes | **Fix it** — shape kind + params on the GPU body, branch the narrow phase. |
 | Hull rung scope | **Reserve the compound seam**, ship one hull per body in phase one. |
 | Sequencing | COM offset first and alone → GPU shape kind → convex hull → decomposition deferred. |
-| Gyroscopic term | Still dropped. Unrelated to this program; see solver_plan. |
+| Gyroscopic term | Still dropped. Unrelated to this program. |
 
 Not decided: whether convex decomposition is ever built, and what the hull vertex cap is (64 is the working assumption and the number the rest of this document is costed against).
 
@@ -69,7 +69,7 @@ The first version of this rung hung the GPU on DX12 (`DEVICE_HUNG`, DRED naming 
 
 **Not proven, and worth saying:** the exact faulting construct was not isolated — the fix removes the whole class rather than bisecting within it. Two facts were established along the way and are worth keeping: the pyramid hanging *rules out* the sphere/capsule math, since that scene never reaches it; and `warm_start_lookup`'s `for (uint k = 0; k < count; k++)` cannot be the spinner despite looking like the obvious candidate, because it breaks on `slot >= max_contact_adjacency` and so terminates immediately even on a garbage count.
 
-**`ParityShapes` closes the coverage gap** — added the same day, since the harness structurally could not catch the original defect and could not have confirmed the fix. Sixteen bodies in six well-separated groups, one per shape pair, so a divergence localizes to a single narrow-phase path. Details and the reasoning behind the geometry are in `docs/solver_plan.md`; the short version is that every group is a stable cradle or flat rest rather than a balanced stack, because a baseline scene must not amplify ULP noise into a false alarm, and the box-capsule support is widened so the capsule endpoints do not land on the support's face edges. New builders in `EntityBuilders.cppm`: `capsule`, `static_sphere`, `static_capsule`, all returning the renamed `collider_archetype` (was `static_collider_archetype`, which had no callers) since a physics-only body needs no render primitive — there is no capsule render spec in the engine.
+**`ParityShapes` closes the coverage gap** — added the same day, since the harness structurally could not catch the original defect and could not have confirmed the fix. Sixteen bodies in six well-separated groups, one per shape pair, so a divergence localizes to a single narrow-phase path. Every group is a stable cradle or flat rest rather than a balanced stack, because a baseline scene must not amplify ULP noise into a false alarm, and the box-capsule support is widened so the capsule endpoints do not land on the support's face edges. New builders in `EntityBuilders.cppm`: `capsule`, `static_sphere`, `static_capsule`, all returning the renamed `collider_archetype` (was `static_collider_archetype`, which had no callers) since a physics-only body needs no render primitive — there is no capsule render spec in the engine.
 
 The gate entry is `report`/`report` for now. It runs and prints, so a regression is visible, but it asserts nothing: promoting it to `require` before a first round would be encoding a number nobody has measured.
 

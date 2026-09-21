@@ -119,9 +119,9 @@ constexpr auto gse::perspective(const angle_t<T> fov, const T aspect, length_t<T
 
 	result[0][0] = T(1) / (aspect * tan_half_fov_y);
 	result[1][1] = T(-1) / tan_half_fov_y;
-	result[2][2] = far / (near - far);
+	result[2][2] = near / range;
 	result[2][3] = T(-1);
-	result[3][2] = -(far / range) * internal::to_storage(near);
+	result[3][2] = (far / range) * internal::to_storage(near);
 
 	return projection_matrix(result);
 }

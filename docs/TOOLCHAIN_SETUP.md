@@ -20,8 +20,8 @@ cmake --build --preset x64-mingw-gcc-Release
 
 1. Resolves the latest `gcc-trunk-v*` GitHub release.
 2. Downloads `gcc-trunk-windows-x64.zip` and extracts it to `~/.gcc-trunk/<tag>`.
-3. With `--persist`, sets the `MINGW_ROOT` user env var (which the CMake presets read
-   as `$env{MINGW_ROOT}/bin/g++.exe`).
+3. With `--persist`, sets the user env vars; the CMake presets resolve the compiler as
+   `$env{USERPROFILE}/.gcc-trunk/current/bin/g++.exe` and prepend that `bin` to PATH.
 
 Pin a specific build with `--tag gcc-trunk-v3`, verify integrity with
 `--sha256 <hash>` (printed in each release body), reinstall with `--force`.

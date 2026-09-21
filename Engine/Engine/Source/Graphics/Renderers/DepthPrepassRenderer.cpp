@@ -51,7 +51,7 @@ namespace gse::renderer::depth_prepass::meshlet {
 		gpu::mesh_stage<"ms_main">,
 		gpu::fragment_stage<"fs_main">,
 		gpu::push_constant<push_constants>,
-		gpu::depth<true, true, gpu::compare_op::less>,
+		gpu::depth<true, true, gpu::compare_op::greater>,
 		gpu::color_targets<gpu::color_format::hdr>
 	>;
 }
@@ -114,7 +114,7 @@ auto gse::renderer::depth_prepass::frame(context& ctx, shared_view<gpu::context:
 				gpu_s.render_graph->framebuffer_image<targets::velocity>()
 			)
 		)
-		.depth(gpu::clear_depth(gpu::depth_clear{ 1.0f }))
+		.depth(gpu::clear_depth(gpu::depth_clear{ 0.0f }))
 		.after<^^cull_compute::frame, ^^physics_transform::frame, ^^skin::deform_pass>();
 
 	rec.set_viewport(ext);

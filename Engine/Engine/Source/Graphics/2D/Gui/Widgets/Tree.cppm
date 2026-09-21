@@ -123,7 +123,7 @@ namespace gse::gui::draw {
 template <typename T>
 auto gse::gui::draw::tree(builder& ui, std::span<const T> roots, const tree_ops<T>& fns, tree_options opt, tree_selection* sel, const resource::handle<font> font) -> bool {
 	const draw_context& ctx = ui.ctx;
-	const auto fnt = font.valid() ? font : ctx.fonts.text;
+	const auto fnt = ctx.fonts.face_or(font);
 	if (!ctx.current_menu || !fnt.valid()) {
 		return false;
 	}

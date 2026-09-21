@@ -27,8 +27,7 @@ export namespace gse::ide {
 
 		using name_kinds = std::unordered_map<std::string_view, analysis::semantic_kind>;
 
-		struct highlight_job {
-			std::atomic<bool> done = false;
+		struct highlight_result {
 			std::vector<gui::text_span> spans;
 			document_revision revision;
 		};
@@ -37,7 +36,7 @@ export namespace gse::ide {
 			std::vector<gui::text_span> spans;
 			document_revision spans_revision;
 			std::shared_ptr<const semantic_data> semantic;
-			std::shared_ptr<highlight_job> pending;
+			task::pending<highlight_result> pending;
 
 			auto current_spans(
 				document_revision revision
@@ -273,31 +272,24 @@ auto gse::ide::syntax_producer::data::current_semantic(const document_revision r
 }
 
 auto gse::ide::syntax_producer::rebuild(data& d, const gui::text_buffer& buffer, const document_revision revision, const document_language language) -> void {
-	auto job = std::make_shared<highlight_job>();
-	job->revision = revision;
-
-	std::string snapshot = buffer.text();
-
 	std::shared_ptr<const semantic_data> sem = d.semantic && d.semantic->revision == revision
 		? d.semantic
 		: nullptr;
-	d.pending = job;
 
-	task::post_io([job, snapshot = std::move(snapshot), sem, language] {
-		job->spans = language == document_language::markdown
-			? markdown::spans(snapshot)
-			: producer::compute(snapshot, sem.get(), nullptr);
-		job->done.store(true, std::memory_order_release);
-	}, trace_id<"highlight::spans">());
+	d.pending.start([snapshot = buffer.text(), sem = std::move(sem), revision, language] {
+		return highlight_result{
+			.spans = language == document_language::markdown
+				? markdown::spans(snapshot)
+				: producer::compute(snapshot, sem.get(), nullptr),
+			.revision = revision,
+		};
+	}, trace_id<"highlight::spans">(), task::lane::io);
 }
 
 auto gse::ide::syntax_producer::poll(data& d, const document_revision revision) -> void {
-	if (d.pending && d.pending->done.load(std::memory_order_acquire)) {
-		if (d.pending->revision == revision) {
-			d.spans = std::move(d.pending->spans);
-			d.spans_revision = revision;
-		}
-		d.pending.reset();
+	if (std::optional<highlight_result> finished = d.pending.take(); finished && finished->revision == revision) {
+		d.spans = std::move(finished->spans);
+		d.spans_revision = revision;
 	}
 }
 

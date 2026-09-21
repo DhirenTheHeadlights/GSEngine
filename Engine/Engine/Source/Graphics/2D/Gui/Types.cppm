@@ -199,6 +199,7 @@ export namespace gse::gui {
 		resource::handle<font> text_emphasis;
 		resource::handle<font> code;
 		resource::handle<font> code_strong;
+		resource::handle<font> code_emphasis;
 		std::unordered_map<std::string, resource::handle<font>> registry;
 
 		[[nodiscard]] auto named(
@@ -208,6 +209,11 @@ export namespace gse::gui {
 		[[nodiscard]] auto face(
 			text_face which,
 			resource::handle<font> inherited
+		) const -> resource::handle<font>;
+
+		[[nodiscard]] auto face_or(
+			resource::handle<font> requested,
+			text_face fallback = text_face::text
 		) const -> resource::handle<font>;
 	};
 

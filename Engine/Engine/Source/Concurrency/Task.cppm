@@ -14,20 +14,6 @@ export namespace gse {
 	using job = std::move_only_function<void()>;
 }
 
-namespace gse::task {
-	template <typename F>
-	using first_arg_t = typename [:std::meta::type_of(std::meta::parameters_of(^^std::remove_cvref_t<F>::operator())[0]):];
-
-	using parallel_for_fn = std::move_only_function<void(std::size_t)>;
-
-	auto parallel_for_impl(
-		std::size_t first,
-		std::size_t last,
-		parallel_for_fn func,
-		id id
-	) -> void;
-}
-
 export namespace gse::task {
 	class group;
 
@@ -116,14 +102,6 @@ export namespace gse::task {
 		id id = trace_id<trace::current_loc_tag()>()
 	) -> void;
 
-	template <typename F>
-	auto parallel_for(
-		first_arg_t<F> first,
-		first_arg_t<F> last,
-		F&& func,
-		id id = trace_id<trace::current_loc_tag()>()
-	) -> void;
-
 	auto thread_count() -> std::size_t;
 
 	auto current_worker() noexcept -> std::optional<std::size_t>;
@@ -167,13 +145,6 @@ export namespace gse::task {
 
 		auto post(
 			job j,
-			id id = trace_id<trace::current_loc_tag()>()
-		) -> void;
-
-		template <std::input_iterator It>
-		auto post_range(
-			It first,
-			It last,
 			id id = trace_id<trace::current_loc_tag()>()
 		) -> void;
 
@@ -314,7 +285,6 @@ namespace gse::task {
 	inline thread_local bool t_is_main_thread = false;
 	inline thread_local blocking_lane* t_lane = nullptr;
 
-	inline constexpr std::size_t coalesce_threshold = 64;
 	inline constexpr std::size_t min_chunks_per_worker = 4;
 	inline constexpr std::size_t hot_spin_yields = 200;
 	constexpr std::size_t idle_spin_yields = 4;
@@ -390,11 +360,6 @@ namespace gse::task {
 	auto async_key_for(
 		const void* p
 	) -> std::uint64_t;
-
-	auto compute_chunk_size(
-		std::size_t n,
-		std::size_t workers
-	) -> std::size_t;
 
 	auto try_pop_local(
 		std::size_t worker_idx
@@ -614,59 +579,6 @@ auto gse::task::post_range(It first, It last, const id id) -> void {
 	work_available.release(static_cast<std::ptrdiff_t>(count));
 }
 
-auto gse::task::parallel_for_impl(const std::size_t first, const std::size_t last, parallel_for_fn func, const id id) -> void {
-	if (last <= first) {
-		return;
-	}
-
-	const std::size_t n = last - first;
-
-	{
-		trace::scope_guard _{ id };
-		if (n <= coalesce_threshold) {
-			for (std::size_t i = first; i < last; ++i) {
-				func(i);
-			}
-			return;
-		}
-
-		const std::size_t workers = std::max<std::size_t>(1, worker_count_value.load(std::memory_order_acquire));
-		const std::size_t chunk = compute_chunk_size(n, workers);
-
-		group g(id);
-		for (std::size_t chunk_start = first; chunk_start < last; chunk_start += chunk) {
-			const std::size_t chunk_stop = std::min(chunk_start + chunk, last);
-			g.post(
-				[chunk_start, chunk_stop, &func] {
-					for (std::size_t i = chunk_start; i < chunk_stop; ++i) {
-						func(i);
-					}
-				},
-				id
-			);
-		}
-		g.wait();
-	}
-}
-
-template <typename F>
-auto gse::task::parallel_for(first_arg_t<F> first, first_arg_t<F> last, F&& func, const id id) -> void {
-	using index = first_arg_t<F>;
-
-	if (last <= first) {
-		return;
-	}
-
-	parallel_for_impl(
-		static_cast<std::size_t>(first),
-		static_cast<std::size_t>(last),
-		parallel_for_fn([f = std::forward<F>(func)](std::size_t i) mutable {
-			f(static_cast<index>(i));
-		}),
-		id
-	);
-}
-
 template <typename Fn>
 auto gse::task::coarse_parallel(const std::size_t n, const std::size_t min_chunk_items, Fn&& fn, const id label) -> void {
 	if (n == 0) {
@@ -700,13 +612,6 @@ auto gse::task::coarse_parallel(const std::size_t n, const std::size_t min_chunk
 			},
 			label
 		);
-	}
-}
-
-template <std::input_iterator It>
-auto gse::task::group::post_range(It first, It last, const id id) -> void {
-	for (; first != last; ++first) {
-		this->post(std::move(*first), id);
 	}
 }
 
@@ -1250,12 +1155,4 @@ auto gse::task::async_key_for(const void* p) -> std::uint64_t {
 	}
 
 	return k;
-}
-
-auto gse::task::compute_chunk_size(const std::size_t n, const std::size_t workers) -> std::size_t {
-	const std::size_t target_chunks = workers * min_chunks_per_worker;
-	if (target_chunks == 0) {
-		return n;
-	}
-	return std::max<std::size_t>(1, (n + target_chunks - 1) / target_chunks);
 }

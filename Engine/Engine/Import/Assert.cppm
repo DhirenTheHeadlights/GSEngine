@@ -7,6 +7,15 @@ export namespace gse {
 		int code
 	) noexcept -> void;
 
+	using fatal_reporter = auto (*)(
+		const std::source_location& loc,
+		std::string_view comment
+	) -> void;
+
+	auto install_fatal_reporter(
+		fatal_reporter reporter
+	) -> void;
+
 	template <typename... Args>
 	struct fmt_loc {
 		std::format_string<Args...> fmt;

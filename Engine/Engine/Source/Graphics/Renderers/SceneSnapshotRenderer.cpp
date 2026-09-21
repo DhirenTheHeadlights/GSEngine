@@ -53,7 +53,7 @@ namespace gse::renderer::scene_snapshot {
 
 auto gse::renderer::scene_snapshot::init(const shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
 	const auto target = gpu_s.render_graph->current_target();
-	if (d.enabled && target.extent.x() > 0 && target.extent.y() > 0) {
+	if (target.extent.x() > 0 && target.extent.y() > 0) {
 		recreate_resources(gpu_s, d, target);
 	}
 	return {};
@@ -65,10 +65,6 @@ auto gse::renderer::scene_snapshot::run(context& ctx, const shared_view<gpu::con
 
 auto gse::renderer::scene_snapshot::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress() || !gpu_s.render_graph->target_live()) {
-		co_return;
-	}
-
-	if (!d.enabled) {
 		co_return;
 	}
 

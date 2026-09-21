@@ -86,6 +86,7 @@ export namespace gse::ide {
 		int m_selected = 0;
 		bool m_creating = false;
 		bool m_init_git = true;
+		bool m_engine_worktree = true;
 		int m_template = 0;
 		std::string m_new_name;
 		std::string m_error;
@@ -596,6 +597,11 @@ auto gse::ide::project_screen::build_create(gui::builder& ui) -> void {
 		.value = m_init_git,
 	});
 
+	ui.draw<gui::toggle>({
+		.name = "Create Engine Worktree",
+		.value = m_engine_worktree,
+	});
+
 	const bool submit = ctx.key_pressed(key::enter) || ctx.key_pressed(key::kp_enter);
 
 	const float action_h = text_view->line_height(sty.font_size) + pad;
@@ -632,6 +638,24 @@ auto gse::ide::project_screen::build_create(gui::builder& ui) -> void {
 		if (m_init_git) {
 			if (const std::expected<void, std::string> repo = git::initialize(created->parent_path()); !repo) {
 				log::println(log::level::error, log::category::general, "git init failed: {}", repo.error());
+			}
+		}
+		if (m_engine_worktree) {
+			const std::filesystem::path engine = gse::config::root_dir();
+			const std::filesystem::path worktree = engine.parent_path() / (engine.filename().native_encoded_string() + "-" + m_new_name);
+			const std::expected<void, std::string> added = git::add_worktree({
+				.repository = engine,
+				.destination = worktree,
+				.branch = "project/" + m_new_name,
+			});
+			if (added) {
+				project::bind_engine(*created, {
+					.name = project::ensure_engine_registered(worktree),
+					.path = worktree,
+				});
+			}
+			else {
+				log::println(log::level::error, log::category::general, "engine worktree creation failed, project stays bound to the editor's engine: {}", added.error());
 			}
 		}
 		m_dismiss = true;

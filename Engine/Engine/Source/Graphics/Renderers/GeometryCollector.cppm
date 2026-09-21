@@ -87,7 +87,7 @@ export namespace gse::renderer {
 		planes[1] = { at(c0, r3) - at(c0, r0), at(c1, r3) - at(c1, r0), at(c2, r3) - at(c2, r0), at(c3, r3) - at(c3, r0) };
 		planes[2] = { at(c0, r3) + at(c0, r1), at(c1, r3) + at(c1, r1), at(c2, r3) + at(c2, r1), at(c3, r3) + at(c3, r1) };
 		planes[3] = { at(c0, r3) - at(c0, r1), at(c1, r3) - at(c1, r1), at(c2, r3) - at(c2, r1), at(c3, r3) - at(c3, r1) };
-		planes[4] = { at(c0, r3) + at(c0, r2), at(c1, r3) + at(c1, r2), at(c2, r3) + at(c2, r2), at(c3, r3) + at(c3, r2) };
+		planes[4] = { at(c0, r2), at(c1, r2), at(c2, r2), at(c3, r2) };
 		planes[5] = { at(c0, r3) - at(c0, r2), at(c1, r3) - at(c1, r2), at(c2, r3) - at(c2, r2), at(c3, r3) - at(c3, r2) };
 
 		for (auto& plane : planes) {

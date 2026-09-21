@@ -8,7 +8,7 @@ VS_OUT vs_main(uint vid : SV_VertexID) {
     float2 p = float2((vid << 1) & 2, vid & 2);
     VS_OUT o;
     o.ndc = p * 2.0 - 1.0;
-    o.clip_pos = float4(o.ndc, 1.0, 1.0);
+    o.clip_pos = float4(o.ndc, 0.0, 1.0);
     return o;
 }
 
@@ -27,8 +27,8 @@ float3 sample_sky_view_at(float3 view_dir) {
 }
 
 float3 reconstruct_world_ray(float2 ndc) {
-    float4 wn = mul(pc.inv_view_proj, float4(ndc, 0.0, 1.0));
-    float4 wf = mul(pc.inv_view_proj, float4(ndc, 1.0, 1.0));
+    float4 wn = mul(pc.inv_view_proj, float4(ndc, 1.0, 1.0));
+    float4 wf = mul(pc.inv_view_proj, float4(ndc, 0.0, 1.0));
     float3 ro = wn.xyz / wn.w;
     float3 rt = wf.xyz / wf.w;
     return normalize(rt - ro);

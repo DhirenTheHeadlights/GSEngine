@@ -14,10 +14,12 @@ namespace gse::ide::agent {
 	constexpr std::size_t diff_min_columns = 16;
 	constexpr std::size_t transcript_tab_width = 4;
 	constexpr std::uint32_t row_preview_lines = 8;
-	constexpr std::size_t group_summary_names = 3;
+	constexpr std::uint32_t group_detail_rows = 12;
+	constexpr std::string_view mcp_tool_prefix = "mcp__";
 
 	struct transcript_metrics {
 		const font& face;
+		const font& body;
 		float width = 0.f;
 		float scale = 0.f;
 	};
@@ -28,9 +30,16 @@ namespace gse::ide::agent {
 		std::size_t offset = 0;
 	};
 
+	struct markup_run {
+		std::size_t start = 0;
+		std::size_t end = 0;
+		vec4f color;
+		gui::text_face face = gui::text_face::inherit;
+	};
+
 	struct markup_line {
 		std::string text;
-		std::span<const markdown::rendered_run> runs{};
+		std::span<const markup_run> runs{};
 		markdown::display_style base;
 	};
 
@@ -48,6 +57,7 @@ namespace gse::ide::agent {
 		std::string_view prefix;
 		std::string_view text;
 		vec4f color;
+		gui::text_face face = gui::text_face::inherit;
 		std::uint32_t row = 0;
 		float wrap_width = 0.f;
 		bool markdown = false;
@@ -62,6 +72,14 @@ namespace gse::ide::agent {
 	auto style_of(
 		row_kind kind
 	) -> row_style;
+
+	auto family_of(
+		gui::text_face face
+	) -> markdown::family;
+
+	auto verbatim_detail(
+		const transcript_row& row
+	) -> bool;
 
 	auto line_base_style(
 		const gui::style& sty,
@@ -78,10 +96,47 @@ namespace gse::ide::agent {
 		std::span<const std::string> rows
 	) -> std::vector<std::string>;
 
+	auto trailing_blank(
+		const session& s
+	) -> bool;
+
+	auto push_gap(
+		session& s,
+		const transcript_cursor& cursor
+	) -> void;
+
+	auto code_fence_language(
+		std::string_view line
+	) -> std::string_view;
+
+	auto highlighted_language(
+		std::string_view tag
+	) -> bool;
+
+	auto style_runs(
+		std::span<const markdown::rendered_run> runs,
+		const gui::style& sty,
+		const markdown::display_style& base,
+		std::vector<markup_run>& out
+	) -> void;
+
+	auto highlight_runs(
+		std::span<const gui::text_span> spans,
+		std::uint32_t line,
+		std::vector<markup_run>& out
+	) -> void;
+
 	auto push_markup_line(
 		session& s,
-		const gui::style& sty,
 		const markup_line& parsed,
+		const transcript_metrics& metrics,
+		transcript_cursor& cursor
+	) -> void;
+
+	auto push_code_block(
+		session& s,
+		std::span<const std::string> body,
+		const markdown::display_style& base,
 		const transcript_metrics& metrics,
 		transcript_cursor& cursor
 	) -> void;
@@ -156,14 +211,27 @@ namespace gse::ide::agent {
 		const transcript_metrics& metrics
 	) -> void;
 
+	auto quiet_tool(
+		const transcript_row& row
+	) -> bool;
+
 	auto grouped_row(
 		const transcript_row& row
 	) -> bool;
 
 	auto group_summary(
+		const group_marker& group
+	) -> std::string;
+
+	auto group_detail(
 		const session& s,
 		const group_marker& group
 	) -> std::string;
+
+	auto group_at(
+		const session& s,
+		std::uint32_t line
+	) -> const group_marker*;
 
 	auto chat_row(
 		const transcript_row& row

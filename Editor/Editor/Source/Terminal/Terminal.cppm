@@ -73,6 +73,8 @@ export namespace gse::ide::terminal {
 		std::vector<dispatch_marker> dispatches;
 		bool interactive = true;
 		build_runner::stream_kind kind = build_runner::stream_kind::none;
+		std::optional<std::uint32_t> attached_instance;
+		std::optional<build_runner::attached_fatal_reported> fatal;
 	};
 
 	struct [[= system_state<"Terminal">{}]] data {
@@ -110,7 +112,7 @@ export namespace gse::ide::terminal {
 	auto run(
 		context& ctx,
 		data& d,
-		channel_read<build_runner::stream_opened, agent::blame_offer> stream_in,
+		channel_read<build_runner::stream_opened, build_runner::attached_fatal_reported, agent::blame_offer> stream_in,
 		channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, gui::menu_content, jump_to_request, set_cursor_shape_request> ui_out,
 		shared_view<build_runner::data> build_d
 	) -> async::task<>;

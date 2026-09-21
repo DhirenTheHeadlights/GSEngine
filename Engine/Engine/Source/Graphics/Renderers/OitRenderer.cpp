@@ -71,7 +71,7 @@ namespace gse::renderer::oit {
 		gpu::rasterization<gpu::polygon_mode::fill, gpu::cull_mode::none>,
 		gpu::color_targets<gpu::color_format::hdr, gpu::color_format::hdr>,
 		gpu::blend<gpu::blend_preset::none>,
-		gpu::depth<true, false, gpu::compare_op::less_or_equal>
+		gpu::depth<true, false, gpu::compare_op::greater_or_equal>
 	>;
 
 	struct [[= shaders::texture2d]] oit_accum_in {

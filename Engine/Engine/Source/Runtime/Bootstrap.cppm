@@ -109,7 +109,7 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 		log::set_async(true);
 
 		win32::HANDLE editor_pipe = nullptr;
-		bool surface_announced = false;
+		std::uint32_t announced_revision = 0;
 		bool graph_dumped = false;
 		attached_pipe_reader pipe_reader{};
 		frame_pacing pacing{};
@@ -128,6 +128,8 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 			const std::wstring pipe(config.ipc_pipe_name.begin(), config.ipc_pipe_name.end());
 			editor_pipe = win32::CreateFileW(pipe.c_str(), win32::generic_write | win32::generic_read, 0, nullptr, win32::open_existing, 0, nullptr);
 			if (win32::valid_handle(editor_pipe)) {
+				set_fatal_pipe(editor_pipe);
+				install_fatal_reporter(&report_fatal_to_editor);
 				log::println(log::level::info, log::category::general, "attached to editor via {} (pid {})", config.ipc_pipe_name, win32::GetCurrentProcessId());
 			}
 			else {
@@ -241,13 +243,13 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 					slow_frame_worst_render = {};
 				}
 
-				if (editor_pipe && !surface_announced && e.attached_surface_ready()) {
+				if (editor_pipe && e.attached_surface_ready() && e.attached_message().revision != announced_revision) {
 					attached_surface_message msg = e.attached_message();
 					msg.pid = win32::GetCurrentProcessId();
 					win32::DWORD written = 0;
 					win32::WriteFile(editor_pipe, &msg, sizeof(msg), &written, nullptr);
-					surface_announced = true;
-					log::println(log::category::general, "announced shared surface ring to editor: {}x{}", msg.extent.x(), msg.extent.y());
+					announced_revision = msg.revision;
+					log::println(log::category::general, "announced shared surface ring to editor: {}x{} (revision {})", msg.extent.x(), msg.extent.y(), msg.revision);
 				}
 
 				if (!graph_dumped && !config.dump_system_graph_path.empty() && e.all_settled()) {

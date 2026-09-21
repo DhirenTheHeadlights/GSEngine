@@ -7,7 +7,13 @@ import gse.stacktrace;
 import gse.win32;
 
 namespace gse {
+	std::atomic<fatal_reporter> installed_fatal_reporter = nullptr;
+
 	auto arm_fatal_report_watchdog() -> void;
+}
+
+auto gse::install_fatal_reporter(const fatal_reporter reporter) -> void {
+	installed_fatal_reporter.store(reporter, std::memory_order_release);
 }
 
 auto gse::arm_fatal_report_watchdog() -> void {
@@ -27,6 +33,10 @@ auto gse::fatal_exit(const int code) noexcept -> void {
 
 auto gse::assert_fail(const std::source_location loc, const std::string_view comment) noexcept -> void {
 	arm_fatal_report_watchdog();
+
+	if (const fatal_reporter reporter = installed_fatal_reporter.load(std::memory_order_acquire)) {
+		reporter(loc, comment);
+	}
 
 	log::println(
 		log::level::fatal,

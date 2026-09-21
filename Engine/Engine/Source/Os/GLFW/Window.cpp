@@ -1230,6 +1230,23 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 		}
 	}
 
+	for (const auto& req : sched.read_channel<window_focus_request>()) {
+		if (const window_surface* surface = find_surface(d, req.window); surface && surface->handle) {
+			glfwFocusWindow(to_glfw_handle(surface->handle));
+		}
+	}
+
+	for (const auto& req : sched.read_channel<window_resize_request>()) {
+		window_surface* surface = find_surface(d, req.window);
+		if (surface == &d.primary) {
+			d.cmd_resize_pending = true;
+			d.cmd_resize_size = req.size;
+		}
+		else if (surface && surface->handle) {
+			glfwSetWindowSize(to_glfw_handle(surface->handle), std::max(1, req.size.x()), std::max(1, req.size.y()));
+		}
+	}
+
 	for (const auto& req : sched.read_channel<window_open_file_request>()) {
 		d.cmd_open_file = true;
 		d.cmd_open_file_title = req.title;
@@ -1516,6 +1533,11 @@ auto gse::window::apply_commands(data& d) -> void {
 			glfwMaximizeWindow(handle);
 		}
 		d.cmd_toggle_maximize = false;
+	}
+
+	if (d.cmd_resize_pending) {
+		glfwSetWindowSize(handle, std::max(1, d.cmd_resize_size.x()), std::max(1, d.cmd_resize_size.y()));
+		d.cmd_resize_pending = false;
 	}
 
 	if (d.cmd_launcher_pending) {

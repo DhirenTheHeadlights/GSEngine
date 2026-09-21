@@ -38,7 +38,7 @@ export namespace gse::gui {
 }
 
 auto gse::gui::section::draw(const draw_context& ctx, params p, id&, id&, id&) -> void {
-	const auto fnt = p.font.valid() ? p.font : ctx.fonts.text;
+	const auto fnt = ctx.fonts.face_or(p.font);
 	const auto fnt_view = fnt.resolve();
 	if (!ctx.current_menu) {
 		return;

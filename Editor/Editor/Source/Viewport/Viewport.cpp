@@ -41,16 +41,32 @@ namespace gse::ide::viewport {
 		std::uint64_t frame_count,
 		data& d
 	) -> void;
+
+	auto retire_superseded(
+		data& d,
+		const imported_session& current,
+		std::uint64_t frame_count
+	) -> void;
 }
 
 auto gse::ide::viewport::watch_produced_semaphore(gpu::device& device, const gpu::handle<gpu::semaphore> semaphore) -> task::thread {
 	return task::spawn(log::thread_role::background, [&device, semaphore](const std::stop_token& st) {
 		std::uint64_t seen = device.semaphore_counter_value(semaphore);
 		while (!st.stop_requested()) {
-			if (device.wait_semaphore_for(semaphore, seen + 1, produced_wait_slice)) {
-				seen = device.semaphore_counter_value(semaphore);
-				frame_demand::request_redraw();
+			if (seen == std::numeric_limits<std::uint64_t>::max()) {
+				log::println(log::level::warning, log::category::render, "Editor viewport: the game's shared fence reads as removed; stopping the produced-frame watcher");
+				return;
 			}
+			if (!device.wait_semaphore_for(semaphore, seen + 1, produced_wait_slice)) {
+				continue;
+			}
+			const std::uint64_t current = device.semaphore_counter_value(semaphore);
+			if (current <= seen) {
+				log::println(log::level::warning, log::category::render, "Editor viewport: the game's shared fence signalled without advancing past {}; stopping the produced-frame watcher", seen);
+				return;
+			}
+			seen = current;
+			frame_demand::request_redraw();
 		}
 	});
 }
@@ -100,6 +116,22 @@ auto gse::ide::viewport::reset_session(data& d, const std::uint32_t generation, 
 		d.display_slot = d.slots[0].slot();
 		d.extent = viewport_extent;
 	}
+}
+
+auto gse::ide::viewport::retire_superseded(data& d, const imported_session& current, const std::uint64_t frame_count) -> void {
+	const auto superseded = [&current](const imported_session& session) {
+		return session.generation == current.generation && session.instance == current.instance && session.revision != current.revision;
+	};
+	for (imported_session& session : d.imported) {
+		if (!superseded(session)) {
+			continue;
+		}
+		d.retiring.push_back({
+			.session = std::move(session),
+			.retire_at_frame = frame_count + gpu::max_frames_in_flight + 1,
+		});
+	}
+	std::erase_if(d.imported, superseded);
 }
 
 auto gse::ide::viewport::collect_retiring_sessions(gpu::device& device, const std::uint64_t frame_count, data& d) -> void {
@@ -161,7 +193,7 @@ auto gse::ide::viewport::frame(const context& ctx, const shared_view<gpu::contex
 			continue;
 		}
 		const auto same = [&ready](const auto& e) {
-			return e.generation == ready.generation && e.instance == ready.instance;
+			return e.generation == ready.generation && e.instance == ready.instance && e.revision == ready.revision;
 		};
 		if (std::ranges::any_of(d.pending, same) || std::ranges::any_of(d.imported, same)) {
 			continue;
@@ -189,6 +221,7 @@ auto gse::ide::viewport::frame(const context& ctx, const shared_view<gpu::contex
 			d.pending.push_back(pending_session{
 				.generation = ready.generation,
 				.instance = ready.instance,
+				.revision = ready.revision,
 				.message = ready.message,
 			});
 		}
@@ -209,6 +242,7 @@ auto gse::ide::viewport::frame(const context& ctx, const shared_view<gpu::contex
 		imported_session imported{
 			.generation = pending.generation,
 			.instance = pending.instance,
+			.revision = pending.revision,
 		};
 		bool ok = true;
 		std::string failure;
@@ -272,6 +306,7 @@ auto gse::ide::viewport::frame(const context& ctx, const shared_view<gpu::contex
 				d.extent = pending.message->extent;
 			}
 			imported.produced_waiter = watch_produced_semaphore(*gpu_s.device, imported.produced_semaphore);
+			retire_superseded(d, imported, frame_count);
 			d.imported.push_back(std::move(imported));
 			surface_out.push<build_runner::attached_surface_imported>({
 				.generation = pending.generation,

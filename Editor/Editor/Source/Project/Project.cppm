@@ -16,6 +16,7 @@ export namespace gse::ide::project {
 		std::string name;
 		std::string engine_version;
 		std::string engine_name;
+		std::string engine_commit;
 		std::string engine_problem;
 		std::map<std::string, std::string> targets;
 		std::filesystem::path file;
@@ -37,6 +38,10 @@ export namespace gse::ide::project {
 	auto bind_engine(
 		const std::filesystem::path& manifest_file,
 		const engine_entry& engine
+	) -> void;
+
+	auto pin_engine_commit(
+		std::string_view commit
 	) -> void;
 
 	auto accent() -> vec4f;

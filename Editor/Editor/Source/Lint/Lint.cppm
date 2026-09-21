@@ -32,8 +32,8 @@ export namespace gse::ide::lint {
 		const lint_finding& finding
 	) -> diagnostic;
 
-	auto analyze_check(
-		analysis::diagnostics_check& check
+	auto analyze_result(
+		analysis::diagnostics_result& result
 	) -> void;
 
 	auto import_order_finding(
@@ -198,23 +198,23 @@ auto gse::ide::lint::as_diagnostic(const lint_finding& finding) -> diagnostic {
 	};
 }
 
-auto gse::ide::lint::analyze_check(analysis::diagnostics_check& check) -> void {
-	check.lint.clear();
+auto gse::ide::lint::analyze_result(analysis::diagnostics_result& result) -> void {
+	result.lint.clear();
 
 	const std::vector<lint_finding> found = findings({
-		.quals = check.quals,
-		.template_args = check.template_args,
-		.unused_locals = check.unused_locals,
-		.narrowable_imports = check.narrowable_imports,
+		.quals = result.quals,
+		.template_args = result.template_args,
+		.unused_locals = result.unused_locals,
+		.narrowable_imports = result.narrowable_imports,
 	});
 
 	std::unordered_set<std::uint64_t> seen;
-	check.lint.reserve(found.size());
+	result.lint.reserve(found.size());
 	for (const lint_finding& finding : found) {
 		const std::uint64_t key = (static_cast<std::uint64_t>(finding.edit.line) << 32) | finding.edit.start_col;
 		if (!seen.insert(key).second) {
 			continue;
 		}
-		check.lint.push_back(as_diagnostic(finding));
+		result.lint.push_back(as_diagnostic(finding));
 	}
 }

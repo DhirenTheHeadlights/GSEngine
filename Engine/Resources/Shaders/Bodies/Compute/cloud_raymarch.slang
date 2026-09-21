@@ -1,6 +1,6 @@
 float3 reconstruct_world_ray(float2 ndc) {
-    float4 wn = mul(pc.inv_view_proj, float4(ndc, 0.0, 1.0));
-    float4 wf = mul(pc.inv_view_proj, float4(ndc, 1.0, 1.0));
+    float4 wn = mul(pc.inv_view_proj, float4(ndc, 1.0, 1.0));
+    float4 wf = mul(pc.inv_view_proj, float4(ndc, 0.0, 1.0));
     float3 ro = wn.xyz / wn.w;
     float3 rt = wf.xyz / wf.w;
     return normalize(rt - ro);
@@ -76,7 +76,7 @@ bool scene_occludes_footprint(float2 screen_uv, float2 texel) {
     float d10 = scene_depth_in.SampleLevel(scene_depth_sampler, screen_uv + float2(corner.x, -corner.y), 0).r;
     float d01 = scene_depth_in.SampleLevel(scene_depth_sampler, screen_uv + float2(-corner.x, corner.y), 0).r;
     float d11 = scene_depth_in.SampleLevel(scene_depth_sampler, screen_uv + float2(corner.x, corner.y), 0).r;
-    return max(max(d00, d10), max(d01, d11)) < scene_far_depth;
+    return min(min(d00, d10), min(d01, d11)) > scene_background_depth;
 }
 
 float sample_light_transmittance(float3 world_pos_km, float3 sun_dir, float layer_thickness_km) {

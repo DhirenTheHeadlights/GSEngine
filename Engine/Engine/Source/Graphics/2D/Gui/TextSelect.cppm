@@ -138,8 +138,7 @@ auto gse::gui::row_contains(const rectf& rect, const float y) -> bool {
 }
 
 auto gse::gui::face_for(const renderer::text_command& cmd, const font_set& fonts) -> std::shared_ptr<const font> {
-	const resource::handle<font> handle = cmd.font.valid() ? cmd.font : fonts.text;
-	return handle.resolve();
+	return fonts.face_or(cmd.font).resolve();
 }
 
 auto gse::gui::lay_out_runs(const std::span<const renderer::text_command> texts, const font_set& fonts, const render_layer layer, std::vector<laid_run>& out) -> void {

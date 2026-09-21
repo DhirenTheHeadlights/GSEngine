@@ -94,6 +94,7 @@ export namespace gse {
 	struct attached_surface_message {
 		std::uint32_t magic = 0;
 		std::uint32_t pid = 0;
+		std::uint32_t revision = 0;
 		vec2u extent{ 0, 0 };
 		gpu::image_format format = gpu::image_format::r8g8b8a8_unorm;
 		gpu::backend_kind backend = gpu::backend_kind::vulkan;
@@ -107,6 +108,24 @@ export namespace gse {
 	struct attached_input_message {
 		std::uint32_t magic = 0;
 		input::event event;
+	};
+
+	constexpr std::uint32_t attached_resize_magic = 0x47535336;
+
+	struct attached_resize_message {
+		std::uint32_t magic = 0;
+		vec2u extent{ 0, 0 };
+	};
+
+	constexpr std::uint32_t attached_fatal_magic = 0x47535335;
+	constexpr std::size_t attached_fatal_field = 256;
+
+	struct attached_fatal_message {
+		std::uint32_t magic = 0;
+		std::uint32_t line = 0;
+		char file[attached_fatal_field] = {};
+		char function[attached_fatal_field] = {};
+		char comment[attached_fatal_field] = {};
 	};
 
 	class engine : public identifiable {
@@ -147,6 +166,10 @@ export namespace gse {
 			const input::event& event
 		) -> void;
 
+		auto push_attached_resize(
+			vec2u extent
+		) -> void;
+
 		[[nodiscard]] auto snapshot_graph() const -> introspection::system_graph;
 
 		[[nodiscard]] auto all_settled() const -> bool;
@@ -161,6 +184,11 @@ export namespace gse {
 		) -> void;
 
 	private:
+		auto create_attached_surface(
+			gpu::context::data& gpu_state,
+			vec2u extent
+		) -> void;
+
 		auto destroy_attached_surface(
 			gpu::device& device
 		) -> void;
@@ -193,6 +221,8 @@ export namespace gse {
 		std::uint32_t m_attached_frames_presented = 0;
 		std::uint32_t m_attached_frames_skipped = 0;
 		interval_timer<> m_attached_report{ seconds(2.f) };
+		std::uint32_t m_attached_revision = 0;
+		vec2u m_attached_requested_extent{ 0, 0 };
 		bool m_attached_surface_ready = false;
 		bool m_attached_surface_attempted = false;
 	};

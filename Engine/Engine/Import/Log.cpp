@@ -7,6 +7,7 @@ module gse.log;
 import gse.config;
 import gse.meta;
 import gse.moodycamel;
+import gse.time;
 import gse.win32;
 import std;
 
@@ -181,13 +182,13 @@ namespace gse::log {
 }
 
 auto gse::log::log_file_path() -> std::filesystem::path {
-	return config::logs_dir() / std::format("{}.{}.log", config::executable_stem(), win32::GetCurrentProcessId());
+	return config::logs_dir() / std::format("{}.{}.{}.log", config::executable_stem(), win32::GetCurrentProcessId(), system_clock::timestamp_filename());
 }
 
 auto gse::log::timestamp_string() -> std::string {
 	using namespace std::chrono;
 
-	const auto now = system_clock::now();
+	const auto now = std::chrono::system_clock::now();
 	const auto utc_ms = floor<milliseconds>(now);
 	const auto utc_seconds = floor<seconds>(utc_ms);
 	const auto millis = duration_cast<milliseconds>(utc_ms - utc_seconds);

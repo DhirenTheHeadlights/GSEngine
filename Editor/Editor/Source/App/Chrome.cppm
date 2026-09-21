@@ -13,10 +13,6 @@ import :search_screen;
 namespace gse::ide {
 	auto rebuild_glyph() -> std::span<const gui::symbol::stroke>;
 
-	auto git_status_color(
-		git::file_status status
-	) -> vec4f;
-
 	struct toggle_settings_request {};
 
 	struct toggle_project_switcher_request {};
@@ -96,7 +92,7 @@ namespace gse::ide {
 		gui::builder& ui,
 		quick_search_state& state,
 		const search::index_state* index,
-		channel_write<build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels,
+		channel_write<build_runner::build_request, git_system::action_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels,
 		const rectf& search_rect,
 		std::string_view id_key
 	) -> void;
@@ -106,7 +102,7 @@ namespace gse::ide {
 		workspace::data& ws,
 		quick_search_state& search,
 		const search::index_state* index,
-		channel_write<build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels,
+		channel_write<build_runner::build_request, git_system::action_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels,
 		const git::status_map* git_status,
 		std::span<const std::filesystem::path> git_rootless
 	) -> void;
@@ -386,7 +382,7 @@ auto gse::ide::editor_screen::draw_caption(gui::builder& ui, const rectf& area) 
 	float sx = status_rect.left() + pad;
 	if (spinning) {
 		const rectf spin_rect = rectf::from_position_size({ sx, status_rect.center().y() + spin_w * 0.5f }, { spin_w, spin_w });
-		gui::symbol::spinner(ctx, spin_rect, gui::symbol::spinner_rotation(), {
+		gui::symbol::spinner(ctx, spin_rect, {
 			.color = pill_fg,
 			.extent = sty.icon_extent,
 			.clip_rect = status_rect,
@@ -408,7 +404,7 @@ auto gse::ide::editor_screen::draw_caption(gui::builder& ui, const rectf& area) 
 	return controls_width;
 }
 
-auto gse::ide::draw_search_bar(gui::builder& ui, quick_search_state& state, const search::index_state* index, channel_write<build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels, const rectf& search_rect, const std::string_view id_key) -> void {
+auto gse::ide::draw_search_bar(gui::builder& ui, quick_search_state& state, const search::index_state* index, channel_write<build_runner::build_request, git_system::action_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels, const rectf& search_rect, const std::string_view id_key) -> void {
 	const auto& ctx = ui.ctx;
 	const auto& sty = ctx.style;
 	const auto text_view = ctx.fonts.text.resolve();
@@ -671,11 +667,7 @@ auto gse::ide::explorer_menu_items(const workspace::data& w, const fs_node& n) -
 	return items;
 }
 
-auto gse::ide::git_status_color(const git::file_status status) -> vec4f {
-	return annotation_from_enum<git::file_status_info>(status, {}).color;
-}
-
-auto gse::ide::draw_explorer_panel(gui::builder& ui, workspace::data& ws, quick_search_state& search, const search::index_state* index, channel_write<build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels, const git::status_map* git_status, const std::span<const std::filesystem::path> git_rootless) -> void {
+auto gse::ide::draw_explorer_panel(gui::builder& ui, workspace::data& ws, quick_search_state& search, const search::index_state* index, channel_write<build_runner::build_request, git_system::action_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels, const git::status_map* git_status, const std::span<const std::filesystem::path> git_rootless) -> void {
 	const auto& ctx = ui.ctx;
 	if (ctx.clip_stack.empty()) {
 		return;
@@ -727,7 +719,10 @@ auto gse::ide::draw_explorer_panel(gui::builder& ui, workspace::data& ws, quick_
 			: std::string_view(scoped_label);
 		const std::string init_key = "##git_init_" + rootless.generic_display_string();
 		if (ui.draw<gui::button>({ .text = label, .rect = init_rect, .key = init_key })) {
-			channels.push<git_system::init_request>({ .root = rootless });
+			channels.push<git_system::action_request>({
+				.root = rootless,
+				.kind = git_system::action::initialize,
+			});
 		}
 		ctx.layout_cursor.y() -= row_height + pad;
 	}
@@ -849,10 +844,10 @@ auto gse::ide::draw_explorer_panel(gui::builder& ui, workspace::data& ws, quick_
 				return base;
 			}
 			if (n.is_dir) {
-				return git_status->dir_has_changes(n.path) ? lerp(git_status_color(git::file_status::modified), base, 0.5f) : base;
+				return git_status->dir_has_changes(n.path) ? lerp(git::status_color(git::file_status::modified), base, 0.5f) : base;
 			}
 			if (const git::file_status status = git_status->status_of(n.path); status != git::file_status::none) {
-				return git_status_color(status);
+				return git::status_color(status);
 			}
 			return base;
 		},

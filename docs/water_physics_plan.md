@@ -60,7 +60,7 @@ entirely new.
 |---|---|---|
 | Compute pass recording | `gpu::pass<Stage>(ctx).on(compute).in_chain<>()`, `RenderGraph.cppm` | Mirror VBD solver shape directly. |
 | Typed dispatch | `rec.dispatch<Entry>(pc, bindings, groups)`, `rec.dispatch_indirect(...)` | `GpuSolver.cpp` |
-| Automatic barriers | `recording_context::emit_intra_pass_barrier` + `append_prev_pass_barriers` | There is no manual barrier API — `rec.barrier`/`gpu::barrier_scope` were deleted 2026-07-28. Barriers are derived from bindless access; see `render_graph_bindless_barriers_plan.md`. |
+| Automatic barriers | `recording_context::emit_intra_pass_barrier` + `append_prev_pass_barriers` | There is no manual barrier API — `rec.barrier`/`gpu::barrier_scope` were deleted 2026-07-28. Barriers are derived from bindless access. |
 | Bindless buffers + readback | `create_buffer({.bindless=true})`, `.slot()`, double-buffered `host_read()` | Same pattern VBD uses. |
 | **Headless compute submit** | `physics::frame()` gates on `use_gpu_solver`, awaits `dispatch_compute()`, `System.cpp:1325` | Landed in Stage 3.0d (2026-06-16). The PBF prove-out rides this exact path. |
 | Spatial-hash grid build | VBD broad phase `collision_grid_build_pipeline` | Neighbor-grid concept already lives in the codebase. |

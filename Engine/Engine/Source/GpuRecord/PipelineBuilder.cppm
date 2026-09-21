@@ -495,7 +495,7 @@ export namespace gse::gpu {
 		static constexpr cull_mode cull = Cull;
 	};
 
-	template <bool Test = true, bool Write = true, compare_op Op = compare_op::less>
+	template <bool Test = true, bool Write = true, compare_op Op = compare_op::greater>
 	struct depth {
 		static constexpr bool test = Test;
 		static constexpr bool write = Write;

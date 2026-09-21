@@ -51,8 +51,8 @@ float density_fade(float2 footprint, float spacing, float half_px) {
 
 [shader("fragment")]
 FS_OUT fs_main(VS_OUT input) {
-    float4 wn = mul(camera_ubo.inv_view_proj, float4(input.ndc, 0.0, 1.0));
-    float4 wf = mul(camera_ubo.inv_view_proj, float4(input.ndc, 1.0, 1.0));
+    float4 wn = mul(camera_ubo.inv_view_proj, float4(input.ndc, 1.0, 1.0));
+    float4 wf = mul(camera_ubo.inv_view_proj, float4(input.ndc, 0.0, 1.0));
     float3 ro = wn.xyz / wn.w;
     float3 rt = wf.xyz / wf.w;
     float3 rd = normalize(rt - ro);
@@ -105,6 +105,6 @@ FS_OUT fs_main(VS_OUT input) {
     FS_OUT o;
     o.color = float4(col, final_alpha);
     o.velocity = float4(motion, 0.0, final_alpha);
-    o.depth = max(curr_clip.z / curr_clip.w - depth_bias, 0.0);
+    o.depth = min(curr_clip.z / curr_clip.w + depth_bias, 1.0);
     return o;
 }

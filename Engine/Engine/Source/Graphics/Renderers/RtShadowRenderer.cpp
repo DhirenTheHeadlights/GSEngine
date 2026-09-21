@@ -20,7 +20,7 @@ import gse.math;
 import gse.log;
 
 namespace gse::renderer::rt_shadow {
-	constexpr bool use_gpu_tlas_transform_update = true;
+	constexpr bool use_gpu_tlas_transform_update = false;
 
 	struct [[= shaders::shader_struct]] push_constants {
 		std::uint32_t count;

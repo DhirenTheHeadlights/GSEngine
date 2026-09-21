@@ -882,9 +882,11 @@ auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, const rectf& ar
 	}
 
 	const auto code_view = ctx.fonts.code.resolve();
+	const auto body_view = ctx.fonts.text.resolve();
 	const float advance = code_view->width("0", sty.font_size);
 	const transcript_metrics metrics = {
 		.face = *code_view,
+		.body = *body_view,
 		.width = std::max(0.f, area.width() - pad * 2.f - gui::scroll_config{}.scrollbar_width),
 		.scale = sty.font_size,
 	};
@@ -930,7 +932,10 @@ auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, const rectf& ar
 	}
 
 	const auto context_row = s->line_rows[hovered];
-	if (ctx.hovers(area) && !tail_press.hovered && context_row < s->rows.size() && !hovered_text.empty() && s->rows[context_row].stamped > 0) {
+	if (const group_marker* group = toggle ? group_at(*s, hovered) : nullptr) {
+		ctx.set_tooltip(gui::ids::make(std::format("##agent_group_{}_{}", s->id, group->row)), group_detail(*s, *group));
+	}
+	else if (ctx.hovers(area) && !tail_press.hovered && context_row < s->rows.size() && !hovered_text.empty() && s->rows[context_row].stamped > 0) {
 		ctx.set_tooltip(gui::ids::make(std::format("##agent_row_{}_{}", s->id, context_row)), local_time_label(s->rows[context_row].stamped));
 	}
 	const bool context_mine = ctx.hovers(area) && context_row < s->rows.size() && s->rows[context_row].kind == row_kind::user;
@@ -1118,15 +1123,16 @@ auto gse::ide::agent::draw_input(gui::builder& ui, session& s, const rectf& area
 	});
 
 	const auto code_view = ctx.fonts.code.resolve();
+	const auto text_view = ctx.fonts.text.resolve();
 	constexpr std::string_view marker = ">";
-	const float marker_width = code_view->width(marker, sty.font_size) + pad;
-	const float line_h = gui::text_area_line_height(ctx, ctx.fonts.code);
+	const float marker_width = text_view->width(marker, sty.font_size) + pad;
+	const float line_h = gui::text_area_line_height(ctx, ctx.fonts.text);
 	const float first_row_center = area.top() - pad - line_h * 0.5f;
 
 	ctx.queue_text({
-		.font = ctx.fonts.code,
+		.font = ctx.fonts.text,
 		.text = marker,
-		.position = { area.left() + pad, first_row_center + code_view->vertical_center_offset(sty.font_size) },
+		.position = { area.left() + pad, first_row_center + text_view->vertical_center_offset(sty.font_size) },
 		.scale = sty.font_size,
 		.color = sty.color_accent,
 		.clip_rect = area,
@@ -1138,10 +1144,9 @@ auto gse::ide::agent::draw_input(gui::builder& ui, session& s, const rectf& area
 		{ button_extent, button_extent }
 	);
 
-	const auto label_view = ctx.fonts.text.resolve();
-	float widest_model = label_view->width("default", sty.font_size);
+	float widest_model = text_view->width("default", sty.font_size);
 	for (const model_option& option : available_models()) {
-		widest_model = std::max(widest_model, label_view->width(option.label, sty.font_size));
+		widest_model = std::max(widest_model, text_view->width(option.label, sty.font_size));
 	}
 	float widest_effort = code_view->width("auto", sty.font_size);
 	for (const agent_effort level : enum_values<agent_effort>()) {
@@ -1176,7 +1181,7 @@ auto gse::ide::agent::draw_input(gui::builder& ui, session& s, const rectf& area
 		.widget_id = input_id,
 		.rect = box,
 		.consumes_image_paste = true,
-		.font = ctx.fonts.code,
+		.font = ctx.fonts.text,
 	});
 
 	const bool busy = is_busy(s);
@@ -1297,7 +1302,7 @@ auto gse::ide::agent::draw_activity(const gui::draw_context& ctx, const data& d,
 		{ area.left() + pad, area.center().y() + spin_extent * 0.5f },
 		{ spin_extent, spin_extent }
 	);
-	gui::symbol::spinner(ctx, spin, gui::symbol::spinner_rotation(), {
+	gui::symbol::spinner(ctx, spin, {
 		.color = sty.color_accent,
 		.extent = sty.icon_extent,
 		.clip_rect = area,
@@ -1335,7 +1340,7 @@ auto gse::ide::agent::draw_panel(gui::builder& ui, data& d, const channel_write<
 	}
 
 	session* shown = active_session(d);
-	const float input_line_h = gui::text_area_line_height(ctx, ctx.fonts.code);
+	const float input_line_h = gui::text_area_line_height(ctx, ctx.fonts.text);
 	const auto input_rows = static_cast<float>(std::clamp<std::size_t>(shown ? shown->draft.line_count() : 1, 1, max_input_rows));
 	const float input_h = std::max(sty.font_size * 2.f, input_rows * input_line_h + sty.padding * 2.f);
 	const float attachments_h = !shown || shown->attachments.empty() ? 0.f : sty.font_size * 4.5f;

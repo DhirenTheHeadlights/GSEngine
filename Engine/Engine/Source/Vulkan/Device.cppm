@@ -653,6 +653,7 @@ export namespace gse::vulkan {
 			gpu::device_settings& cfg,
 			bool device_fault_enabled,
 			bool device_fault_vendor_binary_enabled,
+			bool calibrated_timestamps_enabled,
 			std::uint32_t graphics_family,
 			std::uint32_t compute_family,
 			gpu::surface surface
@@ -749,6 +750,8 @@ export namespace gse::vulkan {
 		vk::raii::Device m_device;
 		bool m_fault_enabled = false;
 		bool m_vendor_binary_fault_enabled = false;
+		bool m_calibrated_timestamps_enabled = false;
+		std::array<std::uint64_t, gpu::queue_type_count> m_timestamp_valid_masks{};
 		std::array<std::uint32_t, gpu::queue_type_count> m_queue_families{};
 
 		std::unordered_map<pool_key, pool, pool_key_hash> m_pools;

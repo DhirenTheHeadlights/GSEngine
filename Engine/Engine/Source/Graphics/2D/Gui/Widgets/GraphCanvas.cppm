@@ -56,7 +56,7 @@ export namespace gse::gui {
 }
 
 auto gse::gui::graph_canvas::draw(const draw_context& ctx, params p, id& hot, id& active, id&) -> result {
-	const auto fnt = p.font.valid() ? p.font : ctx.fonts.text;
+	const auto fnt = ctx.fonts.face_or(p.font);
 	const auto fnt_view = fnt.resolve();
 	const rectf clip = p.area;
 

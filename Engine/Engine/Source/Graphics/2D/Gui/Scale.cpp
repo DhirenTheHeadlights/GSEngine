@@ -105,6 +105,11 @@ auto gse::gui::assign_faces(font_set& fonts, const shared_view<asset::data> asse
 		return loaded;
 	};
 
+	auto face_or = [&available, &load](const std::string_view base, const std::span<const std::string_view> suffixes, const resource::handle<font> fallback) -> resource::handle<font> {
+		const resource::handle<font> found = load(variant_of(available, base, suffixes));
+		return found.valid() ? found : fallback;
+	};
+
 	constexpr std::array strong_suffixes{
 		std::string_view("-SemiBold"),
 		std::string_view("-Bold"),
@@ -116,12 +121,13 @@ auto gse::gui::assign_faces(font_set& fonts, const shared_view<asset::data> asse
 
 	if (font_available(available, ui_name)) {
 		fonts.text = load(ui_name);
-		fonts.text_strong = load(variant_of(available, ui_name, strong_suffixes));
-		fonts.text_emphasis = load(variant_of(available, ui_name, emphasis_suffixes));
+		fonts.text_strong = face_or(ui_name, strong_suffixes, fonts.text);
+		fonts.text_emphasis = face_or(ui_name, emphasis_suffixes, fonts.text);
 	}
 	if (font_available(available, code_name)) {
 		fonts.code = load(code_name);
-		fonts.code_strong = load(variant_of(available, code_name, strong_suffixes));
+		fonts.code_strong = face_or(code_name, strong_suffixes, fonts.code);
+		fonts.code_emphasis = face_or(code_name, emphasis_suffixes, fonts.code);
 	}
 }
 

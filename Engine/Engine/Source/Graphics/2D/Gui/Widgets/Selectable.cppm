@@ -73,7 +73,7 @@ auto gse::gui::selectable::draw(const draw_context& ctx, const params& p, id& ho
 }
 
 auto gse::gui::draw::selectable(const draw_context& ctx, const selectable_info& info, id& hot_widget_id, id& active_widget_id) -> bool {
-	const auto fnt = info.font.valid() ? info.font : ctx.fonts.text;
+	const auto fnt = ctx.fonts.face_or(info.font);
 	const auto fnt_view = fnt.resolve();
 	if (!ctx.current_menu) {
 		return false;
