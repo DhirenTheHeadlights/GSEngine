@@ -117,7 +117,7 @@ namespace gse::ide::terminal {
 		data& d,
 		instance& inst,
 		const rectf& area,
-		channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels,
+		channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, package_sdk::request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels,
 		bool building
 	) -> void;
 
@@ -125,7 +125,7 @@ namespace gse::ide::terminal {
 		gui::builder& ui,
 		data& d,
 		const rectf& input_rect,
-		channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels,
+		channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, package_sdk::request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels,
 		bool building
 	) -> rectf;
 
@@ -134,7 +134,7 @@ namespace gse::ide::terminal {
 		data& d,
 		const rectf& anchor,
 		const rectf& opener,
-		channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels
+		channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, package_sdk::request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels
 	) -> void;
 
 	auto sync_config_options(
@@ -469,7 +469,7 @@ auto gse::ide::terminal::init(data& d) -> async::task<> {
 	return {};
 }
 
-auto gse::ide::terminal::run(context& ctx, data& d, const channel_read<build_runner::stream_opened, build_runner::attached_fatal_reported, agent::blame_offer> stream_in, const channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, gui::menu_content, jump_to_request, set_cursor_shape_request> ui_out, const shared_view<build_runner::data> build_d) -> async::task<> {
+auto gse::ide::terminal::run(context& ctx, data& d, const channel_read<build_runner::stream_opened, build_runner::attached_fatal_reported, agent::blame_offer> stream_in, const channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, package_sdk::request, gui::menu_content, jump_to_request, set_cursor_shape_request> ui_out, const shared_view<build_runner::data> build_d) -> async::task<> {
 	const auto opened_streams = stream_in.of<build_runner::stream_opened>();
 
 	for (const build_runner::stream_opened& opened : opened_streams) {
@@ -556,7 +556,7 @@ auto gse::ide::terminal::run_command(command_runner& runner, const std::string& 
 	spawn::close_process(runner);
 }
 
-auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst, const rectf& area, channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels, const bool building) -> void {
+auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst, const rectf& area, channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, package_sdk::request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels, const bool building) -> void {
 	const gui::draw_context& ctx = ui.ctx;
 	const auto _ = ctx.fonts.text.resolve();
 	const auto code_view = ctx.fonts.code.resolve();
@@ -878,7 +878,7 @@ auto gse::ide::terminal::profile_editor_field(const gui::draw_context& ctx, cons
 	return cells[1];
 }
 
-auto gse::ide::terminal::draw_build_row(gui::builder& ui, data& d, const rectf& input_rect, const channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels, const bool building) -> rectf {
+auto gse::ide::terminal::draw_build_row(gui::builder& ui, data& d, const rectf& input_rect, const channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, package_sdk::request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels, const bool building) -> rectf {
 	const gui::draw_context& ctx = ui.ctx;
 	const auto text_view = ctx.fonts.text.resolve();
 	const float pad = ctx.style.padding;
@@ -942,9 +942,24 @@ auto gse::ide::terminal::draw_build_row(gui::builder& ui, data& d, const rectf& 
 		d.profile_dropdown.open_dropdown_id.reset();
 	}
 
+	const std::string_view package_label = "Package SDK";
+	const float package_w = text_view->width(package_label, ctx.style.font_size) + pad * 2.f;
+	const rectf package_btn = rectf::from_position_size(
+		{ edit_btn.left() - package_w - pad, input_rect.top() },
+		{ package_w, row_h }
+	);
+	if (ui.draw<gui::button>({
+		.text = package_label,
+		.rect = package_btn,
+		.key = "##terminal_package_sdk",
+		.enabled = !building,
+	})) {
+		channels.push<package_sdk::request>({});
+	}
+
 	const float picker_w = std::min(widest + ctx.style.icon_extent + pad * 3.f, profile_picker_width);
 	const rectf picker = rectf::from_position_size(
-		{ edit_btn.left() - picker_w - pad, input_rect.top() },
+		{ package_btn.left() - picker_w - pad, input_rect.top() },
 		{ picker_w, row_h }
 	);
 
@@ -971,7 +986,7 @@ auto gse::ide::terminal::draw_build_row(gui::builder& ui, data& d, const rectf& 
 	return picker;
 }
 
-auto gse::ide::terminal::draw_profile_editor(gui::builder& ui, data& d, const rectf& anchor, const rectf& opener, const channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels) -> void {
+auto gse::ide::terminal::draw_profile_editor(gui::builder& ui, data& d, const rectf& anchor, const rectf& opener, const channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, package_sdk::request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels) -> void {
 	if (d.profiles.empty()) {
 		d.editing_profiles = false;
 		return;
@@ -1255,7 +1270,7 @@ auto gse::ide::terminal::draw_close_confirm(gui::builder& ui, data& d, const rec
 	}
 }
 
-auto gse::ide::terminal::draw_panel(gui::builder& ui, data& d, channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels, const bool building) -> void {
+auto gse::ide::terminal::draw_panel(gui::builder& ui, data& d, channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, package_sdk::request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels, const bool building) -> void {
 	const gui::draw_context& ctx = ui.ctx;
 	if (!d.sink || ctx.clip_stack.empty()) {
 		return;

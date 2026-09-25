@@ -466,7 +466,7 @@ auto gse::nsight_perf::start_sdk_session(const session_settings& settings) -> se
 	}
 
 	const auto interval_ns =
-		static_cast<std::uint32_t>(std::max(1.f, static_cast<float>(settings.sampling_interval)));
+		static_cast<std::uint32_t>(std::max(nanoseconds(1.f), settings.sampling_interval).as<nanoseconds>());
 	if (!sdk.sampler.IsTriggerSupported(NVPW_GPU_PERIODIC_SAMPLER_TRIGGER_SOURCE_GPU_TIME_INTERVAL) &&
 		!sdk.sampler.IsTriggerSupported(NVPW_GPU_PERIODIC_SAMPLER_TRIGGER_SOURCE_GPU_SYSCLK_INTERVAL)) {
 		return session_status::unsupported_gpu;

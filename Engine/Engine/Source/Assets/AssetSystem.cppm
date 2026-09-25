@@ -67,6 +67,9 @@ export namespace gse::asset {
 	};
 
 	template <typename T>
+	auto bake_missing_built_ins() -> void;
+
+	template <typename T>
 	auto collect_missing_built_ins(
 		std::vector<missing_built_in>& out
 	) -> void;
@@ -180,6 +183,24 @@ auto gse::asset::needs_recompile(const std::filesystem::path& src, const std::fi
 }
 
 template <typename T>
+auto gse::asset::bake_missing_built_ins() -> void {
+	if constexpr (has_compile_path<T>) {
+		constexpr auto fmt = format_of<typename T::baked>();
+		for (const std::string_view file : fmt.built_ins) {
+			const std::filesystem::path source_file(file);
+			const auto baked = config::baked_resource_path() / fmt.baked_dir / (source_file.stem().native_encoded_string() + std::string(fmt.baked_ext));
+			const auto source = config::resource_path() / fmt.source_dir / source_file;
+			if (std::filesystem::exists(baked) || !std::filesystem::exists(source)) {
+				continue;
+			}
+			if (const auto baked_now = bake_to_disk<T>(source, baked); !baked_now) {
+				log::println(log::level::error, log::category::assets, "Built-in {} failed to bake: {}", source_file.generic_display_string(), baked_now.error().detail);
+			}
+		}
+	}
+}
+
+template <typename T>
 auto gse::asset::collect_missing_built_ins(std::vector<missing_built_in>& out) -> void {
 	if constexpr (requires { typename T::baked; }) {
 		constexpr auto fmt = format_of<typename T::baked>();
@@ -210,6 +231,7 @@ auto gse::asset::collect_missing_built_ins(std::vector<missing_built_in>& out) -
 
 template <typename... Ts>
 auto gse::asset::system<Ts...>::verify_built_ins() -> void {
+	(bake_missing_built_ins<Ts>(), ...);
 	std::vector<missing_built_in> missing;
 	(collect_missing_built_ins<Ts>(missing), ...);
 

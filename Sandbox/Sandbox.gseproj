@@ -5,9 +5,10 @@ source = Sandbox
 assets = Assets
 art = Art
 
-[engine]
-name = GSEngine
-source = ..
-
 [targets]
 game = Sandbox
+
+[engine]
+name = GSEngine
+source = C:/Users/Dhiren/source/repos/DhirenTheHeadlights/GSEngine
+commit = 7f1618ebd75f3f07463e6cffecd095d7563bd25d

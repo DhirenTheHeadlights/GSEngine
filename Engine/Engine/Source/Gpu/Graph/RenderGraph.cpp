@@ -126,6 +126,10 @@ auto gse::gpu::render_graph::take_graphics_buffers() -> std::vector<command_buff
 	return std::move(m_pending_graphics_buffers);
 }
 
+auto gse::gpu::render_graph::take_graphics_leading_buffers() -> std::vector<command_buffer_handle> {
+	return std::move(m_pending_graphics_leading_buffers);
+}
+
 auto gse::gpu::render_graph::set_gpu_timestamps_enabled(const bool enabled) -> void {
 	m_gpu_timestamps_enabled.store(enabled, std::memory_order_relaxed);
 }
@@ -569,6 +573,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 	m_pending_aux_submissions.clear();
 	m_pending_graphics_extra_waits.clear();
 	m_pending_graphics_buffers.clear();
+	m_pending_graphics_leading_buffers.clear();
 
 	if (!m_frame->frame_in_progress()) {
 		return;
@@ -599,6 +604,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 	}
 
 	if (m_frames_submitted >= per_frame_resource<gpu_profile_slot>::frames_in_flight) {
+		trace::scope_guard _{ trace_id<"render_graph::read_profile_slots">() };
 		const auto perf = open_perf_frame();
 		for (auto& slots : m_profile_slots) {
 			read_profile_slot(slots[frame_idx], perf);
@@ -982,6 +988,8 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 	}
 
 	std::vector<std::size_t> sorted;
+	std::size_t leading_pass_count = 0;
+	std::size_t graphics_leading_end = 0;
 	std::array<std::vector<command_buffer_handle>, queue_type_count> queue_submit_order;
 
 	if (timestamps_enabled) {
@@ -1241,6 +1249,45 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			}
 
 			assert(false, "render_graph: cyclic pass dependency graph:\n  {}", cycle_str);
+		}
+
+		const bool other_queue_has_work = std::ranges::any_of(std::views::iota(std::size_t{ 0 }, queue_type_count), [&](const std::size_t qi) {
+			return qi != static_cast<std::size_t>(queue_type::graphics) && queue_has_work[qi];
+		});
+
+		if (other_queue_has_work) {
+			auto touches_image = [](const std::vector<resource_usage>& usages) -> bool {
+				return std::ranges::any_of(usages, [](const resource_usage& u) {
+					return u.resource.type == resource_type::image;
+				});
+			};
+
+			std::vector<std::uint8_t> blocked(n, 0);
+			std::vector<std::uint8_t> leading(n, 0);
+			for (const auto pi : sorted) {
+				const auto& p = passes[pi];
+				const bool eligible = !blocked[pi]
+					&& pass_queue(pi) == queue_type::graphics
+					&& p.color_outputs.empty()
+					&& !p.depth_output
+					&& !touches_image(p.reads)
+					&& !touches_image(p.writes)
+					&& std::ranges::all_of(adj[pi], [&](const edge& e) {
+						return pass_queue(e.to) == queue_type::graphics;
+					});
+				if (!eligible) {
+					for (const auto& e : adj[pi]) {
+						blocked[e.to] = 1;
+					}
+					continue;
+				}
+				leading[pi] = 1;
+				++leading_pass_count;
+			}
+
+			std::ranges::stable_partition(sorted, [&](const std::size_t pi) {
+				return leading[pi] != 0;
+			});
 		}
 	}
 
@@ -1545,6 +1592,10 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 
 			queue_submit_order[queue_index].push_back(pass_bodies[pass_idx]);
 
+			if (si + 1 == leading_pass_count) {
+				graphics_leading_end = queue_submit_order[queue_index].size();
+			}
+
 			if (pass.early_signal && queue != queue_type::graphics) {
 				queue_segment_cuts[queue_index].push_back({
 					.buffer_end = queue_submit_order[queue_index].size(),
@@ -1696,8 +1747,11 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			.memory_barriers = std::span(&clear_sync, 1),
 		});
 		clear_rec.end();
-		queue_submit_order[graphics_qi].insert(queue_submit_order[graphics_qi].begin(), clear_cmd);
+		queue_submit_order[graphics_qi].insert(queue_submit_order[graphics_qi].begin() + static_cast<std::ptrdiff_t>(graphics_leading_end), clear_cmd);
 	}
+	const auto leading_split = queue_submit_order[graphics_qi].begin() + static_cast<std::ptrdiff_t>(graphics_leading_end);
+	m_pending_graphics_leading_buffers.assign(queue_submit_order[graphics_qi].begin(), leading_split);
+	queue_submit_order[graphics_qi].erase(queue_submit_order[graphics_qi].begin(), leading_split);
 	m_pending_graphics_buffers = std::move(queue_submit_order[graphics_qi]);
 	for (std::size_t producer = 0; producer < queue_type_count; ++producer) {
 		if (producer == graphics_qi) {

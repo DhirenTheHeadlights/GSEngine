@@ -35,6 +35,11 @@ export namespace gse::trace {
 
 	auto current_eid() -> std::uint64_t;
 
+	enum struct span_kind : std::uint8_t {
+		work,
+		wait
+	};
+
 	class open_span : non_copyable {
 	public:
 		open_span() = default;
@@ -76,6 +81,11 @@ export namespace gse::trace {
 			std::uint64_t parent
 		);
 
+		scope_guard(
+			id id,
+			span_kind kind
+		);
+
 		~scope_guard();
 
 	private:
@@ -88,6 +98,7 @@ export namespace gse::trace {
 		std::uint64_t m_eid = 0;
 		std::size_t m_depth = 0;
 		std::uint32_t m_tid = 0;
+		span_kind m_kind = span_kind::work;
 	};
 
 	auto begin_async(
@@ -171,6 +182,7 @@ export namespace gse::trace {
 		std::uint32_t children_count = 0;
 		bool open = false;
 		bool lexical = false;
+		span_kind kind = span_kind::work;
 	};
 
 	struct frame_view {
@@ -179,6 +191,7 @@ export namespace gse::trace {
 		std::span<const std::uint32_t> roots;
 		std::uint64_t generation = 0;
 		time_t<std::uint64_t> elapsed;
+		time_t<std::uint64_t> boundary;
 
 		[[nodiscard]] auto child_indices(
 			const node& n
@@ -235,6 +248,7 @@ namespace gse::trace {
 		double value = 0.0;
 		std::uint64_t key = 0;
 		bool lexical = false;
+		span_kind kind = span_kind::work;
 	};
 
 	class scsp_events {
@@ -285,6 +299,7 @@ namespace gse::trace {
 		std::uint64_t parent = 0;
 		std::uint64_t opened_frame = 0;
 		bool lexical = false;
+		span_kind kind = span_kind::work;
 	};
 
 	struct frame_span {
@@ -312,6 +327,7 @@ namespace gse::trace {
 		std::vector<std::uint32_t> roots;
 		std::uint64_t generation = 0;
 		time_t<std::uint64_t> elapsed;
+		time_t<std::uint64_t> boundary;
 	};
 
 	constexpr std::uint64_t max_open_span_frames = 240;

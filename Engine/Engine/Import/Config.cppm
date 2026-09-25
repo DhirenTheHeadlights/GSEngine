@@ -22,6 +22,11 @@ export namespace gse::config {
 		const std::filesystem::path& value
 	) -> std::filesystem::path;
 
+	auto manifest_value(
+		std::string_view text,
+		std::string_view key
+	) -> std::string;
+
 	auto root_dir() -> const std::filesystem::path&;
 
 	auto build_root() -> const std::filesystem::path&;

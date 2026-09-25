@@ -117,7 +117,7 @@ export namespace gse {
 	template <typename T>
 	constexpr auto inverse(
 		const quat_t<T>& q
-	) -> quat_t<T>;
+	) -> quat_t<T> pre(norm_squared(q) != T(0));
 
 	template <typename T>
 	constexpr auto dot(
@@ -159,9 +159,9 @@ export namespace gse {
 	template <internal::is_quantity Q>
 	constexpr auto from_axis_angle_vector(const vec3<Q>& aa) -> quat_t<typename Q::value_type> {
 		using T = typename Q::value_type;
-		const T ax = static_cast<T>(angle_t<T>(aa.x()));
-		const T ay = static_cast<T>(angle_t<T>(aa.y()));
-		const T az = static_cast<T>(angle_t<T>(aa.z()));
+		const T ax = angle_t<T>(aa.x()).template as<radians>();
+		const T ay = angle_t<T>(aa.y()).template as<radians>();
+		const T az = angle_t<T>(aa.z()).template as<radians>();
 		const T angle_sq = ax * ax + ay * ay + az * az;
 
 		if (angle_sq < T(1e-14)) {

@@ -179,15 +179,19 @@ auto gse::gpu::context::end_frame(data& d) -> void {
 	auto graphics_waits = d.render_graph->take_graphics_extra_waits();
 	auto graphics_buffers = d.render_graph->take_graphics_buffers();
 	auto graphics_signals = d.render_graph->take_graphics_extra_signals();
+	auto graphics_leading_buffers = d.render_graph->take_graphics_leading_buffers();
+	std::vector<semaphore_submit_info> graphics_leading_waits;
 
 	auto& transient_graphics = d.device->transient().queue(queue_id::graphics);
 	if (const auto transient_value = transient_graphics.pending_value(); transient_value > 0) {
-		graphics_waits.push_back({
+		const semaphore_submit_info transient_wait{
 			.semaphore = transient_graphics.timeline_handle(),
 			.value = transient_value,
 			.stages = pipeline_stage_flag::all_commands,
-		});
+		};
+		graphics_waits.push_back(transient_wait);
+		graphics_leading_waits.push_back(transient_wait);
 	}
 
-	d.frame->end(aux_subs, graphics_waits, graphics_buffers, graphics_signals);
+	d.frame->end(aux_subs, graphics_waits, graphics_buffers, graphics_signals, graphics_leading_buffers, graphics_leading_waits);
 }

@@ -518,11 +518,7 @@ auto gse::ide::agent::send_to_session(session& s, const std::string_view prompt,
 
 	s.info.failure.clear();
 	s.retry.waiting = false;
-	s.retry.prompt = std::string(prompt);
-	s.retry.images.clear();
-	for (const attachment& image : attachments) {
-		s.retry.images.push_back(image.path);
-	}
+	s.retry.held = true;
 
 	append_row(s, {
 		.kind = row_kind::user,
@@ -721,6 +717,10 @@ auto gse::ide::agent::load_model_options() -> std::vector<model_option> {
 	for (const analysis::json::value& entry : cached->children) {
 		const analysis::json::value* id = entry.find("value");
 		if (!id || id->as_string().empty()) {
+			continue;
+		}
+		const analysis::json::value* disabled = entry.find("disabled");
+		if (disabled && disabled->type == analysis::json::value::kind::boolean && disabled->boolean) {
 			continue;
 		}
 		if (std::ranges::any_of(out, [id](const model_option& known) {

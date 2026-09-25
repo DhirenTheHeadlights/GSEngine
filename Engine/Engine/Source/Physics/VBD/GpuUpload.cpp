@@ -62,6 +62,12 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 	d.scratch_slot = (d.scratch_slot + 1) % d.scratch.size();
 	auto& bodies = slot.bodies;
 	std::vector<std::uint8_t> has_transform;
+	slot.body_scan.resize(motion.size());
+	auto scan_fill = physics::body_scan_fill{
+		.entries = slot.body_scan,
+		.sparse = !plan.reset && phys.gpu_solver.accepts_sparse_bodies(static_cast<std::uint32_t>(motion.size())),
+	};
+	bool refresh_joints = false;
 	{
 		trace::scope_guard _{ trace_id<"vbd_gpu::build_bodies">() };
 		assert(
@@ -89,11 +95,17 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 
 		{
 			trace::scope_guard _{ trace_id<"vbd_gpu::build_bodies::states">() };
-			build_body_states(view, phys.sleep_counters, bodies, d.body_index, d.body_index_entries, has_transform);
+			build_body_states(view, phys.sleep_counters, bodies, d.body_index, d.body_index_entries, has_transform, scan_fill);
+			refresh_joints = plan.reset || d.force_full_joints || phys.joints_generation != d.uploaded_joints_generation || d.uploaded_body_count != bodies.size() ||
+				d.joint_slots.size() != phys.joints.size() || d.joint_body_index_entries != d.body_index_entries;
+			if (refresh_joints && scan_fill.sparse) {
+				scan_fill.sparse = false;
+				build_body_states(view, phys.sleep_counters, bodies, d.body_index, d.body_index_entries, has_transform, scan_fill);
+			}
 		}
 		{
 			trace::scope_guard _{ trace_id<"vbd_gpu::build_bodies::bounds">() };
-			build_body_bounds(view, d.body_index, has_transform, bodies);
+			build_body_bounds(view, d.body_index, has_transform, bodies, scan_fill);
 		}
 	}
 
@@ -139,9 +151,15 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 	{
 		trace::scope_guard _{ trace_id<"vbd_gpu::build_motors">() };
 		std::vector<vbd::velocity_motor_constraint> tick_motors;
+		d.motor_body_slots.resize(frame_inputs.motors.size(), std::numeric_limits<std::uint32_t>::max());
+		const physics::body_slot_cache motor_slots{
+			.body_owners = motion.owner_ids(),
+			.has_transform = has_transform,
+			.slots = d.motor_body_slots,
+		};
 		bool uniform = true;
 		for (std::size_t t = 0; t < per_tick.size(); ++t) {
-			build_motor_constraints(per_tick[t].motors, d.body_index, phys.body_airborne, bodies, tick_motors);
+			build_motor_constraints(per_tick[t].motors, d.body_index, phys.body_airborne, bodies, tick_motors, motor_slots, scan_fill);
 			if (t == 0) {
 				motors_per_tick = static_cast<std::uint32_t>(tick_motors.size());
 			}
@@ -153,7 +171,7 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 		}
 		if (!uniform) {
 			log::println(log::level::warning, log::category::physics, "gpu replay: the motor set changed inside the replay window; every tick uses this frame's motors");
-			build_motor_constraints(frame_inputs.motors, d.body_index, phys.body_airborne, bodies, tick_motors);
+			build_motor_constraints(frame_inputs.motors, d.body_index, phys.body_airborne, bodies, tick_motors, motor_slots, scan_fill);
 			motors_per_tick = static_cast<std::uint32_t>(tick_motors.size());
 			motors.clear();
 			for (std::size_t t = 0; t < per_tick.size(); ++t) {
@@ -171,23 +189,42 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 		for (std::size_t t = 0; t <= replay && t < impulse_counts.size(); ++t) {
 			wake_at += impulse_counts[t];
 		}
-		for (const auto& [owner, mt] : frame_inputs.motors) {
-			if (magnitude(mt.velocity_drive_target) <= meters_per_second(.01f)) {
-				continue;
-			}
-			const auto* mc = motion.find(owner);
-			if (!mc || !is_dynamic(*mc)) {
-				continue;
-			}
-			const auto it = d.body_index.find(owner);
-			if (it == d.body_index.end()) {
-				continue;
-			}
-			const auto idx = it->second;
-			if (mt.requires_ground_contact && idx < phys.body_airborne.size() && phys.body_airborne[idx] != 0) {
-				continue;
-			}
-			if (idx < phys.body_sleeping.size() && phys.body_sleeping[idx] != 0 && replay < impulse_counts.size()) {
+		if (replay < impulse_counts.size()) {
+			constexpr auto no_wake = std::numeric_limits<std::uint32_t>::max();
+			std::vector<std::uint32_t> wake_bodies(frame_inputs.motors.size(), no_wake);
+			d.wake_body_slots.resize(frame_inputs.motors.size(), no_wake);
+			const physics::body_slot_cache wake_slots{
+				.body_owners = motion.owner_ids(),
+				.has_transform = has_transform,
+				.slots = d.wake_body_slots,
+			};
+			const auto* motion_data = motion.data();
+			task::coarse_parallel(
+				frame_inputs.motors.size(),
+				64,
+				[&](const std::size_t i) {
+					const auto& [owner, mt] = frame_inputs.motors[i];
+					if (magnitude(mt.velocity_drive_target) <= meters_per_second(.01f)) {
+						return;
+					}
+					const auto slot = resolve_body_slot(d.body_index, wake_slots, i, owner);
+					if (!slot || !is_dynamic(motion_data[*slot])) {
+						return;
+					}
+					const auto idx = *slot;
+					if (mt.requires_ground_contact && idx < phys.body_airborne.size() && phys.body_airborne[idx] != 0) {
+						return;
+					}
+					if (idx < phys.body_sleeping.size() && phys.body_sleeping[idx] != 0) {
+						wake_bodies[i] = idx;
+					}
+				},
+				trace_id<"vbd_gpu::build_motors::wake_scan">()
+			);
+			for (const auto idx : wake_bodies) {
+				if (idx == no_wake) {
+					continue;
+				}
 				gpu_impulses.insert(gpu_impulses.begin() + static_cast<std::ptrdiff_t>(wake_at), {
 					.body_index = idx,
 					.delta_velocity = {},
@@ -208,8 +245,6 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 	auto& gpu_joint_inputs = slot.joint_inputs;
 	gpu_joint_inputs.clear();
 	std::vector<joint_rest_orientation> rest_orientations;
-	const bool refresh_joints = plan.reset || d.force_full_joints || phys.joints_generation != d.uploaded_joints_generation || d.uploaded_body_count != bodies.size() ||
-		d.joint_slots.size() != phys.joints.size() || d.joint_body_index_entries != d.body_index_entries;
 	const bool refresh_joint_inputs = phys.joint_inputs_generation != d.uploaded_joint_inputs_generation;
 	if (refresh_joints) {
 		trace::scope_guard _{ trace_id<"vbd_gpu::build_joints">() };
@@ -272,41 +307,94 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 		const auto* definition_data = definitions.data();
 		const auto* slot_data = d.joint_slots.data();
 		auto* input_data = gpu_joint_inputs.data();
-		task::coarse_parallel(
-			definitions.size(),
-			64,
-			[definition_data, slot_data, input_data, owners, &drives, &muscles](const std::size_t i) {
-				const auto slot_index = slot_data[i];
-				if (slot_index == unresolved) {
-					return;
+		const auto drives_aligned = std::ranges::equal(drives.owner_ids(), owners);
+		const auto muscles_aligned = std::ranges::equal(muscles.owner_ids(), owners);
+		const auto no_muscles = muscles.size() == 0;
+		const auto* drive_data = drives.data();
+		const auto drive_count = drives.size();
+		const auto write_input = [definition_data, slot_data, input_data, owners, muscles_aligned, no_muscles, &muscles](const std::size_t i, const joint_drive_component* drive) {
+			const auto slot_index = slot_data[i];
+			if (slot_index == unresolved) {
+				return;
+			}
+			const auto& jd = definition_data[i];
+			auto input = vbd::joint_drive_input{
+				.drive_target = jd.drive_target,
+				.activation = jd.activation,
+				.drive_stiffness = jd.drive_stiffness,
+				.drive_damping = jd.drive_damping,
+				.drive_max_torque = jd.drive_max_torque,
+			};
+			if (const auto* muscle = no_muscles ? nullptr : muscles_aligned ? std::addressof(muscles[i]) : muscles.find(owners[i])) {
+				input.activation = muscle->activation;
+			}
+			if (drive) {
+				if (drive->enabled) {
+					input.drive_target = drive->target;
+					input.drive_stiffness = drive->stiffness;
+					input.drive_damping = drive->damping;
+					input.drive_max_torque = drive->max_torque;
+					input.device_target = drive->device_target ? 1u : 0u;
 				}
-				const auto& jd = definition_data[i];
-				auto input = vbd::joint_drive_input{
-					.drive_target = jd.drive_target,
-					.activation = jd.activation,
-					.drive_stiffness = jd.drive_stiffness,
-					.drive_damping = jd.drive_damping,
-					.drive_max_torque = jd.drive_max_torque,
-				};
-				if (const auto* muscle = muscles.find(owners[i])) {
-					input.activation = muscle->activation;
+				else {
+					input.drive_stiffness = {};
 				}
-				if (const auto* drive = drives.find(owners[i])) {
-					if (drive->enabled) {
-						input.drive_target = drive->target;
-						input.drive_stiffness = drive->stiffness;
-						input.drive_damping = drive->damping;
-						input.drive_max_torque = drive->max_torque;
-						input.device_target = drive->device_target ? 1u : 0u;
-					}
-					else {
-						input.drive_stiffness = {};
-					}
-				}
-				input_data[slot_index] = input;
-			},
-			trace_id<"vbd_gpu::build_joint_inputs::records">()
-		);
+			}
+			input_data[slot_index] = input;
+		};
+
+		if (drives_aligned) {
+			task::coarse_parallel(
+				definitions.size(),
+				64,
+				[&write_input, &drives](const std::size_t i) {
+					write_input(i, std::addressof(drives[i]));
+				},
+				trace_id<"vbd_gpu::build_joint_inputs::records">()
+			);
+		}
+		else {
+			constexpr auto no_drive = std::numeric_limits<std::uint32_t>::max();
+			std::atomic<bool> drive_slots_stale = d.joint_drive_slots.size() != definitions.size() || d.joint_drive_count != drive_count;
+			if (!drive_slots_stale.load(std::memory_order_relaxed)) {
+				const auto* drive_slots = d.joint_drive_slots.data();
+				task::coarse_parallel(
+					definitions.size(),
+					64,
+					[&write_input, &drives, &drive_slots_stale, drive_slots, drive_data, drive_count, owners](const std::size_t i) {
+						const auto drive_slot = drive_slots[i];
+						if (drive_slot == no_drive) {
+							write_input(i, nullptr);
+							return;
+						}
+						if (drive_slot < drive_count && drives.owner_id_at(drive_slot) == owners[i]) {
+							write_input(i, drive_data + drive_slot);
+							return;
+						}
+						drive_slots_stale.store(true, std::memory_order_relaxed);
+						write_input(i, drives.find(owners[i]));
+					},
+					trace_id<"vbd_gpu::build_joint_inputs::records">()
+				);
+			}
+			if (drive_slots_stale.load(std::memory_order_relaxed)) {
+				d.joint_drive_slots.assign(definitions.size(), no_drive);
+				auto* drive_slots = d.joint_drive_slots.data();
+				task::coarse_parallel(
+					definitions.size(),
+					64,
+					[&write_input, &drives, drive_slots, drive_data, owners](const std::size_t i) {
+						const auto* drive = drives.find(owners[i]);
+						if (drive) {
+							drive_slots[i] = static_cast<std::uint32_t>(drive - drive_data);
+						}
+						write_input(i, drive);
+					},
+					trace_id<"vbd_gpu::build_joint_inputs::records">()
+				);
+				d.joint_drive_count = static_cast<std::size_t>(std::ranges::count_if(d.joint_drive_slots, [](const std::uint32_t s) { return s != no_drive; }));
+			}
+		}
 	}
 
 	{
@@ -317,6 +405,7 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 
 		auto upload = vbd::solver_upload{
 			.bodies = bodies,
+			.body_scan = slot.body_scan,
 			.motors = motors,
 			.joints = refresh_joints ? std::span<const vbd::joint_constraint>(gpu_joints) : std::span<const vbd::joint_constraint>{},
 			.joint_inputs = gpu_joint_inputs,
@@ -327,9 +416,11 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 			.ticks = plan.total_ticks,
 			.refresh_joints = refresh_joints,
 			.force_reseed = plan.reset,
+			.bodies_complete = !scan_fill.sparse,
 			.first_tick = plan.first_tick,
 			.restore_tick = plan.restore_tick,
 			.motors_per_tick = motors_per_tick,
+			.island_pack_min_islands = static_cast<std::uint32_t>(phys.gpu_island_pack_min_islands),
 			.impulse_counts = std::move(impulse_counts),
 		};
 		if (phys.gpu_sync_readback || phys.gpu_same_frame_upload) {

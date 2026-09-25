@@ -10,6 +10,12 @@ import gse.log;
 import :frame_arena;
 import :task;
 
+namespace gse::async {
+	struct suspend_and_capture;
+
+	struct suspend_and_start_inline;
+}
+
 export namespace gse::async {
 	template <typename T = void>
 	class task;
@@ -137,8 +143,6 @@ export namespace gse::async {
 
 		auto start() -> void;
 
-		auto consume_start_handle() -> std::coroutine_handle<>;
-
 		auto done() const -> bool;
 
 		struct awaiter {
@@ -156,6 +160,11 @@ export namespace gse::async {
 		auto operator co_await() noexcept -> awaiter;
 
 	private:
+		friend struct suspend_and_capture;
+		friend struct suspend_and_start_inline;
+
+		auto consume_start_handle() -> std::coroutine_handle<>;
+
 		handle_type m_handle{};
 	};
 

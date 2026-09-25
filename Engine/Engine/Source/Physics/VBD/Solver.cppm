@@ -61,6 +61,10 @@ export namespace gse::vbd {
 		std::uint32_t color_cap = 0;
 		std::uint32_t sweep_workgroups = 0;
 		std::uint32_t trace_body = 0xFFFFFFFFu;
+		std::uint32_t trace_island_convergence = 0;
+		std::uint32_t island_colored_sweep = 0;
+		std::uint32_t island_pack = 0;
+		std::uint32_t islands_per_workgroup = 1;
 	};
 
 	class solver {
@@ -97,6 +101,8 @@ export namespace gse::vbd {
 		auto previous_velocities() const -> std::span<const vec3<velocity>>;
 
 		auto accel_weights() const -> std::span<const float>;
+
+		auto convergence_counts() const -> std::span<const std::uint32_t>;
 
 		auto add_contact_constraint(
 			const contact_constraint& c
@@ -212,6 +218,7 @@ export namespace gse::vbd {
 		std::vector<float> m_accel_weight;
 
 		std::vector<frozen_jacobian> m_frozen_jacobians;
+		std::array<std::uint32_t, limits.island_convergence_count> m_convergence_counts{};
 	};
 }
 

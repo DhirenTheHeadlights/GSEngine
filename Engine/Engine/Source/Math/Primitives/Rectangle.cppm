@@ -2,8 +2,6 @@ export module gse.math:rectangle;
 
 import std;
 
-import gse.assert;
-
 import :primitive_math_shared;
 
 export namespace gse {
@@ -25,7 +23,7 @@ export namespace gse {
 		static constexpr auto from_position_size(
 			const T& top_left,
 			const T& size
-		) -> rect_t;
+		) -> rect_t pre(size.x() >= 0 && size.y() >= 0);
 		static constexpr auto bounding_box(
 			const rect_t& a,
 			const rect_t& b
@@ -79,13 +77,11 @@ export namespace gse {
 template <gse::is_vec2 T>
 constexpr gse::rect_t<T>::rect_t(const min_max_params& p)
 	: m_min(std::min(p.min.x(), p.max.x()), std::min(p.min.y(), p.max.y())), m_max(std::max(p.min.x(), p.max.x()), std::max(p.min.y(), p.max.y())) {
-	assert(m_min.x() <= m_max.x() && m_min.y() <= m_max.y(), "Rectangle invariant failed after construction");
+	contract_assert(m_min.x() <= m_max.x() && m_min.y() <= m_max.y());
 }
 
 template <gse::is_vec2 T>
 constexpr auto gse::rect_t<T>::from_position_size(const T& top_left, const T& size) -> rect_t {
-	assert(size.x() >= 0 && size.y() >= 0, "Rectangle size cannot be negative.");
-
 	const auto bottom_left = T{ top_left.x(), top_left.y() - size.y() };
 	const auto top_right = T{ top_left.x() + size.x(), top_left.y() };
 

@@ -38,6 +38,7 @@ export namespace gse::ide::build_runner {
 		build_game,
 		build_editor,
 		game,
+		package_sdk,
 	};
 
 	struct build_error {
@@ -204,6 +205,7 @@ export namespace gse::ide::build_runner {
 		std::int64_t editor_image_reported = 0;
 		bool editor_image_missing = false;
 		bool editor_image_waiting = false;
+		time editor_image_seen{};
 		time next_image_poll{};
 		std::string inbox_id;
 	};
@@ -395,6 +397,20 @@ namespace gse::ide::build_runner {
 		const std::filesystem::path& inherit_from
 	) -> std::wstring;
 
+	auto sdk_configure_command(
+		const config::worktree& tree,
+		const std::filesystem::path& build_dir
+	) -> std::wstring;
+
+	auto sdk_toolchain_bin(
+		const config::worktree& tree
+	) -> std::expected<std::filesystem::path, std::string>;
+
+	auto ensure_sdk_configured(
+		spawn::output_stream& stream,
+		const config::worktree& tree
+	) -> std::filesystem::path;
+
 	auto ensure_engine_configured(
 		spawn::output_stream& stream,
 		const config::worktree& tree,
@@ -425,6 +441,19 @@ namespace gse::ide::build_runner {
 
 	auto image_readable(
 		const std::filesystem::path& file
+	) -> bool;
+
+	auto image_ready_marker(
+		const std::filesystem::path& executable
+	) -> std::filesystem::path;
+
+	auto mark_image_ready(
+		const std::filesystem::path& executable
+	) -> void;
+
+	auto image_marked_ready(
+		const std::filesystem::path& executable,
+		std::int64_t stamp
 	) -> bool;
 
 	auto watch_editor_image(
@@ -978,9 +1007,75 @@ auto gse::ide::build_runner::configure_command(const config::worktree& tree, con
 	return command;
 }
 
+auto gse::ide::build_runner::sdk_configure_command(const config::worktree& tree, const std::filesystem::path& build_dir) -> std::wstring {
+	std::wstring command = L"cmd.exe /c cmake -G Ninja -S \"" + tree.project_root.wstring() + L"\" -B \"" + build_dir.wstring() + L"\"";
+	command += L" -DGSE_SDK_DIR=\"" + tree.engine_root.wstring() + L"\"";
+	return command;
+}
+
+auto gse::ide::build_runner::sdk_toolchain_bin(const config::worktree& tree) -> std::expected<std::filesystem::path, std::string> {
+	const std::string required = gse::config::manifest_value(fs::read_text(tree.engine_root / "gse.manifest"), "toolchain");
+	if (required.empty()) {
+		return std::unexpected("the SDK image's gse.manifest names no toolchain");
+	}
+	const std::filesystem::path editor_bin = compiler_bin_dir(config::build_dir());
+	const auto resolved = fs::resolve_links(editor_bin);
+	if (!resolved) {
+		return std::unexpected(resolved.error());
+	}
+	const std::string installed = resolved->parent_path().filename().generic_native_encoded_string();
+	if (installed != required) {
+		return std::unexpected(std::format("the SDK was built with toolchain '{}' but this editor runs '{}'; BMIs do not survive a compiler change, so install that release before building against this image", required, installed));
+	}
+	return *resolved;
+}
+
+auto gse::ide::build_runner::ensure_sdk_configured(spawn::output_stream& stream, const config::worktree& tree) -> std::filesystem::path {
+	const std::filesystem::path& build_dir = tree.project_build;
+	std::error_code ec;
+
+	const auto compiler_bin = sdk_toolchain_bin(tree);
+	if (!compiler_bin) {
+		spawn::emit(stream, compiler_bin.error());
+		return {};
+	}
+
+	if (!find_build_dir(build_dir).empty()) {
+		const std::string bound = cache_value(build_dir, "GSE_SDK_DIR");
+		const std::string expected = tree.engine_root.generic_native_encoded_string();
+		if (bound == expected) {
+			return build_dir;
+		}
+		spawn::emit(stream, "build tree was configured against " + (bound.empty() ? std::string("a source engine tree") : bound));
+		spawn::emit(stream, "project now binds the SDK image " + expected + "; removing the stale build tree...");
+		std::filesystem::remove_all(build_dir, ec);
+		if (ec) {
+			spawn::emit(stream, "could not remove " + build_dir.generic_display_string() + "; delete it and build again");
+			return {};
+		}
+		ec.clear();
+	}
+
+	if (!std::filesystem::exists(tree.project_root / "CMakeLists.txt", ec)) {
+		return {};
+	}
+
+	spawn::emit(stream, "configuring " + tree.project_root.generic_display_string() + " against the SDK image " + tree.engine_root.generic_display_string() + "...");
+	std::filesystem::create_directories(build_dir, ec);
+	if (spawn::run_capture(stream, sdk_configure_command(tree, build_dir), tree.project_root.wstring(), *compiler_bin) != 0) {
+		spawn::emit(stream, "configure failed");
+		return {};
+	}
+	return find_build_dir(build_dir);
+}
+
 auto gse::ide::build_runner::ensure_configured(spawn::output_stream& stream, const config::worktree& tree, const std::string_view name) -> std::filesystem::path {
 	const std::filesystem::path& build_dir = tree.project_build;
 	std::error_code ec;
+
+	if (tree.installed) {
+		return ensure_sdk_configured(stream, tree);
+	}
 
 	if (is_inside(tree.project_root, tree.engine_root)) {
 		return ensure_engine_configured(stream, tree, build_dir, name) ? find_build_dir(build_dir) : std::filesystem::path{};
@@ -1129,6 +1224,7 @@ auto gse::ide::build_runner::watch_editor_image(data& d) -> void {
 	if (d.editor_image_reported != stamp_ticks) {
 		d.editor_image_reported = stamp_ticks;
 		d.editor_image_waiting = false;
+		d.editor_image_seen = now;
 		log::println(
 			log::level::info,
 			log::category::general,
@@ -1143,16 +1239,19 @@ auto gse::ide::build_runner::watch_editor_image(data& d) -> void {
 		return;
 	}
 
+	const time unmarked_settle = seconds(30.f);
 	const bool readable = image_readable(editor_exe);
-	if (!readable || d.building || d.sessions[0].generation != 0 || app::relaunch_pending()) {
+	const bool settled = image_marked_ready(editor_exe, stamp_ticks) || now - d.editor_image_seen >= unmarked_settle;
+	if (!readable || !settled || d.building || d.sessions[0].generation != 0 || app::relaunch_pending()) {
 		if (!d.editor_image_waiting) {
 			d.editor_image_waiting = true;
 			log::println(
 				log::level::info,
 				log::category::general,
-				"editor watch: holding the restart of '{}' (readable {}, building {}, session {}, relaunching {})",
+				"editor watch: holding the restart of '{}' (readable {}, settled {}, building {}, session {}, relaunching {})",
 				editor_exe,
 				readable,
+				settled,
 				d.building,
 				d.sessions[0].generation != 0,
 				app::relaunch_pending()
@@ -1173,6 +1272,28 @@ auto gse::ide::build_runner::image_readable(const std::filesystem::path& file) -
 	}
 	win32::CloseHandle(handle);
 	return true;
+}
+
+auto gse::ide::build_runner::image_ready_marker(const std::filesystem::path& executable) -> std::filesystem::path {
+	std::filesystem::path marker = executable;
+	marker += ".ready";
+	return marker;
+}
+
+auto gse::ide::build_runner::mark_image_ready(const std::filesystem::path& executable) -> void {
+	std::error_code ec;
+	const std::filesystem::file_time_type stamp = std::filesystem::last_write_time(executable, ec);
+	if (ec) {
+		return;
+	}
+	std::ofstream file(image_ready_marker(executable), std::ios::trunc);
+	file << static_cast<std::int64_t>(stamp.time_since_epoch().count());
+}
+
+auto gse::ide::build_runner::image_marked_ready(const std::filesystem::path& executable, const std::int64_t stamp) -> bool {
+	std::ifstream file(image_ready_marker(executable));
+	std::int64_t marked = 0;
+	return file >> marked && marked == stamp;
 }
 
 auto gse::ide::build_runner::collect_module_write_conflicts(
@@ -1860,6 +1981,7 @@ auto gse::ide::build_runner::rebuild_editor(const std::stop_token& st, build_com
 	}
 
 	spawn::emit(stream, "rebuild succeeded; relaunching editor");
+	mark_image_ready(editor_exe);
 	app::relaunch_on_exit(editor_exe, gse::config::root_dir());
 	gse::shutdown();
 }

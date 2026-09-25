@@ -12,6 +12,19 @@ namespace gse {
 	auto arm_fatal_report_watchdog() -> void;
 }
 
+extern "C++" auto handle_contract_violation(const std::contracts::contract_violation& violation) -> void {
+	gse::assert_fail(violation.location(), violation.comment());
+}
+
+extern "C++" auto tu_has_violation(
+	const std::contracts::contract_violation& violation,
+	std::uint16_t semantic
+) -> void asm("_Z18__tu_has_violationRK33__builtin_contract_violation_typet");
+
+extern "C++" auto tu_has_violation(const std::contracts::contract_violation& violation, std::uint16_t) -> void {
+	handle_contract_violation(violation);
+}
+
 auto gse::install_fatal_reporter(const fatal_reporter reporter) -> void {
 	installed_fatal_reporter.store(reporter, std::memory_order_release);
 }

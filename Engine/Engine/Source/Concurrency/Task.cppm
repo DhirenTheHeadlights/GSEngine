@@ -397,6 +397,10 @@ gse::task::group::~group() noexcept {
 }
 
 auto gse::task::group::wait() const -> void {
+	if (m_counter.load(std::memory_order_acquire) == 0) {
+		return;
+	}
+	trace::scope_guard _{ trace_id<"task::fanout_wait">(), trace::span_kind::wait };
 	while (m_counter.load(std::memory_order_acquire) > 0) {
 		if (t_lane) {
 			if (auto entry = try_pop_lane(*t_lane)) {
@@ -809,10 +813,7 @@ auto gse::task::parallel_invoke_range(const std::size_t first, const std::size_t
 			id
 		);
 	}
-	{
-		trace::scope_guard _{ trace_id<"task::fanout_wait">() };
-		g.wait();
-	}
+	g.wait();
 }
 
 auto gse::task::run_job(job_entry& entry) -> void {

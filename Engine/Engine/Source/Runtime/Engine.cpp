@@ -27,6 +27,7 @@ import std;
 
 import :engine;
 import :log_settings;
+import :profile_settings;
 import :world_system;
 
 gse::engine::engine(const engine_config& config)
@@ -234,6 +235,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	register_systems<^^input>(*this);
 	register_systems<^^actions>(*this);
 	system_manifest<^^log_settings::data, ^^log_settings::run>{}.register_with(*this);
+	system_manifest<^^profile_settings::data, ^^profile_settings::run>{}.register_with(*this);
 	system_manifest<^^world_system::data, ^^world_system::init, ^^world_system::run, ^^world_system::shutdown>{}.register_with(*this);
 	register_systems<^^window>(*this);
 	register_systems<^^gpu::context>(*this);
@@ -272,6 +274,9 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	using game_assets = assets::append<graphics::asset_types, audio::asset_types>;
 
 	if (m_config.render) {
+		if (auto* window_state = m_scheduler.try_state_of<window::data>()) {
+			window_state->launch_launcher_size = m_config.launcher_size;
+		}
 		tick_window();
 
 		asset::system_for<game_assets> assets{ asset_state };

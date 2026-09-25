@@ -52,10 +52,10 @@ bool restitution_gate(uint ci) {
 
 static const uint restitution_ci_bits = firstbithigh(max_contacts - 1) + 1;
 static const uint restitution_ci_mask = (1u << restitution_ci_bits) - 1;
-static const uint restitution_local_island_bits = 28 - restitution_ci_bits;
+static const uint restitution_local_island_bits = 30 - restitution_ci_bits;
 static const uint restitution_local_island_mask = (1u << restitution_local_island_bits) - 1;
 static const uint restitution_island_limit = 1u << 20;
-static const uint restitution_body_bits = 18;
+static const uint restitution_body_bits = 20;
 
 uint restitution_island(uint ci) {
     uint body_a = contact_data[ci].body_a;
@@ -84,10 +84,10 @@ void restitution_gather(uint ci, uint local_island) {
         restitution_keys_hi[slot] =
             ((uint64_t)contact_data[ci].body_a << (64 - restitution_body_bits)) |
             ((uint64_t)contact_data[ci].body_b << (64 - 2 * restitution_body_bits)) |
-            ((uint64_t)(contact_data[ci].replayed & 0xFFu) << 20) |
-            (uint64_t)(feature_rank >> 4);
+            ((uint64_t)(contact_data[ci].replayed & 0x3u) << 22) |
+            (uint64_t)(feature_rank >> 2);
         restitution_keys_lo[slot] =
-            ((feature_rank & 0xFu) << 28) |
+            ((feature_rank & 0x3u) << 30) |
             (local_island << restitution_ci_bits) |
             ci;
     }

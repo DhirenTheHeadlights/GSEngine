@@ -609,7 +609,7 @@ auto gse::ide::resolve_hover_card(hover_state& h, const std::string_view ident, 
 			};
 			return has_word("auto") || has_word("decltype");
 		};
-		if (!has_decl || head_hides_type(h.body)) {
+		if (!has_decl || ident == "auto" || head_hides_type(h.body)) {
 			std::vector<gui::text_span> spans = syntax_producer::highlight(type, nullptr, nullptr);
 			std::string body = std::move(type);
 			if (has_decl) {
@@ -2316,7 +2316,21 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 				}) : nullptr;
 				const bool attribute_word = token_kind && *token_kind == analysis::semantic_kind::attribute;
 				const bool language_word = syntax_producer::is_language_word(ident);
-				if (language_word || attribute_word) {
+				std::optional<search::hover_hit> deduced;
+				if (index && ident == "auto") {
+					if (std::expected<search::hover_hit, search::lookup_error> hit = index->symbol_at(doc.path, hp.line, static_cast<std::uint32_t>(a)); hit && !hit->type.empty()) {
+						deduced = std::move(*hit);
+					}
+				}
+				if (deduced) {
+					qualified = std::move(deduced->qualified);
+					sym_kind = std::move(deduced->kind);
+					type = std::move(deduced->type);
+					def = deduced->def;
+					lookup_issues = std::move(deduced->issues);
+					declaration_fallback = false;
+				}
+				else if (language_word || attribute_word) {
 					qualified = ident;
 					declaration_fallback = false;
 				}

@@ -70,6 +70,7 @@ export namespace gse {
 		bool simulate_world = true;
 		bool use_gpu_solver = false;
 		bool custom_chrome = false;
+		vec2i launcher_size{ 0, 0 };
 		bool scale_ui_with_resolution = true;
 		bool load_settings = true;
 		bool persist_settings = true;

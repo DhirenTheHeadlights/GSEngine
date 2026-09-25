@@ -341,7 +341,7 @@ namespace gse::shaders {
 template <typename T>
 auto gse::shaders::format_slang_literal(const T& v) -> std::string {
 	if constexpr (internal::is_quantity<T>) {
-		return format_slang_literal(static_cast<typename T::value_type>(v));
+		return format_slang_literal(v.template as<typename T::default_unit>());
 	}
 	else if constexpr (is_vec<T>) {
 		std::string out = std::format("{}(", slang_type<T>::name);

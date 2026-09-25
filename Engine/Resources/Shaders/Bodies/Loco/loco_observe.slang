@@ -1,7 +1,11 @@
-float loco_hinge_angle_about_x(float4 parent, float4 child) {
+float loco_hinge_angle_about(float4 parent, float4 child, float3 axis_local) {
     float3 theta = to_axis_angle(quat_mul(child, quat_conjugate(parent)));
-    float3 axis_world = rotate_vector(parent, float3(1, 0, 0));
+    float3 axis_world = rotate_vector(parent, axis_local);
     return dot(axis_world, theta);
+}
+
+float loco_hinge_angle_about_x(float4 parent, float4 child) {
+    return loco_hinge_angle_about(parent, child, float3(1, 0, 0));
 }
 
 float loco_excess_past_edge(float value, float lo, float hi) {
@@ -175,6 +179,8 @@ void loco_observe(uint3 dispatch_id) {
 
     float pelvis_pitch = asin(clamp(pelvis_forward.y, -1.0, 1.0));
     float pelvis_pitch_rate = dot(pelvis_right, pelvis.angular_velocity.xyz);
+    float pelvis_roll = asin(clamp(pelvis_right.y, -1.0, 1.0));
+    float pelvis_roll_rate = dot(pelvis_forward, pelvis.angular_velocity.xyz);
 
     float heading_error = 0.0;
     if (env.has_heading != 0) {
@@ -214,6 +220,12 @@ void loco_observe(uint3 dispatch_id) {
     loco_obs_data[base + 27] = heading_error;
     loco_obs_data[base + 28] = sin(env.phase * 6.28318530717958647692);
     loco_obs_data[base + 29] = cos(env.phase * 6.28318530717958647692);
+    loco_obs_data[base + 30] = pelvis_roll;
+    loco_obs_data[base + 31] = pelvis_roll_rate;
+    loco_obs_data[base + 32] = loco_hinge_angle_about(pelvis_q, thigh_l_q, float3(0, 1, 0));
+    loco_obs_data[base + 33] = loco_hinge_angle_about(pelvis_q, thigh_l_q, float3(0, 0, 1));
+    loco_obs_data[base + 34] = loco_hinge_angle_about(pelvis_q, thigh_r_q, float3(0, 1, 0));
+    loco_obs_data[base + 35] = loco_hinge_angle_about(pelvis_q, thigh_r_q, float3(0, 0, 1));
 
     for (uint a = 0; a < pc.act_dim; ++a) {
         loco_obs_data[base + pc.obs_dim + a] = loco_act_data[e * pc.act_dim + a];
@@ -239,6 +251,7 @@ void loco_observe(uint3 dispatch_id) {
     float stability = upright * height;
 
     float energy = 0.0;
+    float hold = 0.0;
     float smooth = 0.0;
     for (uint k = 0; k < pc.act_count; ++k) {
         float a = loco_act_data[e * pc.act_count + k];
@@ -248,20 +261,94 @@ void loco_observe(uint3 dispatch_id) {
     }
     float inv_act = 1.0 / float(pc.act_count);
 
+    float hip_yaw_rate_l = 0.0;
+    float hip_roll_rate_l = 0.0;
+    float hip_yaw_rate_r = 0.0;
+    float hip_roll_rate_r = 0.0;
+    if (prev_valid && pc.dt > 0.0) {
+        hip_yaw_rate_l = (loco_obs_data[base + 32] - loco_prev_data[pbase + 18]) * inv_dt;
+        hip_roll_rate_l = (loco_obs_data[base + 33] - loco_prev_data[pbase + 19]) * inv_dt;
+        hip_yaw_rate_r = (loco_obs_data[base + 34] - loco_prev_data[pbase + 20]) * inv_dt;
+        hip_roll_rate_r = (loco_obs_data[base + 35] - loco_prev_data[pbase + 21]) * inv_dt;
+    }
+
+    if (pc.energy_effort != 0 || pc.energy_power != 0) {
+        float angles[10] = {
+            loco_obs_data[base + 6], loco_obs_data[base + 32], loco_obs_data[base + 33], loco_obs_data[base + 7], loco_obs_data[base + 8],
+            loco_obs_data[base + 9], loco_obs_data[base + 34], loco_obs_data[base + 35], loco_obs_data[base + 10], loco_obs_data[base + 11],
+        };
+        float rates[10] = {
+            hip_rate_l, hip_yaw_rate_l, hip_roll_rate_l, knee_rate_l, ankle_rate_l,
+            hip_rate_r, hip_yaw_rate_r, hip_roll_rate_r, knee_rate_r, ankle_rate_r,
+        };
+        float saturation[10] = {
+            pc.sat_hip_pitch, pc.sat_hip_yaw, pc.sat_hip_roll, pc.sat_knee, pc.sat_ankle,
+            pc.sat_hip_pitch, pc.sat_hip_yaw, pc.sat_hip_roll, pc.sat_knee, pc.sat_ankle,
+        };
+        float max_torque[10] = {
+            pc.max_hip, pc.max_hip, pc.max_hip, pc.max_knee, pc.max_ankle,
+            pc.max_hip, pc.max_hip, pc.max_hip, pc.max_knee, pc.max_ankle,
+        };
+        energy = 0.0;
+        for (uint k = 0; k < 10; ++k) {
+            float load = (angles[k] - loco_act_data[e * pc.act_count + k]) / saturation[k];
+            if (pc.energy_power != 0) {
+                float clamped = clamp(load, -1.0, 1.0);
+                energy += max_torque[k] * abs(clamped) * abs(rates[k]) / pc.power_reference;
+                hold += clamped * clamped;
+                if (k == 2 || k == 7) {
+                    float passive = max((abs(angles[k]) - pc.hip_roll_limit) / pc.hip_roll_limit, 0.0);
+                    hold += passive * passive;
+                }
+            }
+            else {
+                energy += load * load;
+            }
+        }
+    }
+
+    float slip = 0.0;
+    if (grounded_l) {
+        float2 v = float2(foot_l.velocity.x, foot_l.velocity.z) / pc.slip_reference;
+        slip += dot(v, v);
+    }
+    if (grounded_r) {
+        float2 v = float2(foot_r.velocity.x, foot_r.velocity.z) / pc.slip_reference;
+        slip += dot(v, v);
+    }
+
+    float pose = 0.0;
+    if (env.has_pose != 0) {
+        float d_hip_l = loco_obs_data[base + 6] - env.ref_hip_l;
+        float d_knee_l = loco_obs_data[base + 7] - env.ref_knee_l;
+        float d_ankle_l = loco_obs_data[base + 8] - env.ref_ankle_l;
+        float d_hip_r = loco_obs_data[base + 9] - env.ref_hip_r;
+        float d_knee_r = loco_obs_data[base + 10] - env.ref_knee_r;
+        float d_ankle_r = loco_obs_data[base + 11] - env.ref_ankle_r;
+        float sq = d_hip_l * d_hip_l + d_knee_l * d_knee_l + d_ankle_l * d_ankle_l + d_hip_r * d_hip_r + d_knee_r * d_knee_r + d_ankle_r * d_ankle_r;
+        pose = exp(-sq / (6.0 * pc.pose_tolerance * pc.pose_tolerance));
+    }
+
     if (pc.write_prev != 0) {
         for (uint k = 0; k < pc.act_count; ++k) {
             loco_prev_data[pbase + loco_prev_action + k] = loco_act_data[e * pc.act_count + k];
         }
+        loco_prev_data[pbase + 18] = loco_obs_data[base + 32];
+        loco_prev_data[pbase + 19] = loco_obs_data[base + 33];
+        loco_prev_data[pbase + 20] = loco_obs_data[base + 34];
+        loco_prev_data[pbase + 21] = loco_obs_data[base + 35];
     }
 
-    loco_obs_data[rbase + 0] = pc.r_alive;
-    loco_obs_data[rbase + 1] = pc.r_upright * upright;
-    loco_obs_data[rbase + 2] = pc.r_height * height;
-    loco_obs_data[rbase + 3] = stability * pc.r_track * track;
-    loco_obs_data[rbase + 4] = stability * pc.r_heading * heading;
-    loco_obs_data[rbase + 5] = -pc.r_energy * energy * inv_act;
-    loco_obs_data[rbase + 6] = -pc.r_smooth * smooth * inv_act;
     bool fallen = pelvis_pos.y < pc.fall_height || upright < pc.fall_upright;
     bool timeout = pc.max_steps != 0 && env.episode_steps >= pc.max_steps;
+
+    loco_obs_data[rbase + 0] = pc.r_alive - (fallen ? pc.r_fall : 0.0);
+    loco_obs_data[rbase + 1] = pc.r_upright * upright;
+    loco_obs_data[rbase + 2] = pc.r_height * height;
+    loco_obs_data[rbase + 3] = stability * (pc.r_track * track + pc.r_progress * min(forward_speed, pc.progress_cap));
+    loco_obs_data[rbase + 4] = stability * pc.r_heading * heading;
+    loco_obs_data[rbase + 5] = -(pc.r_energy * energy + pc.r_hold * hold) * inv_act - pc.r_slip * slip;
+    loco_obs_data[rbase + 6] = -pc.r_smooth * smooth * inv_act;
+    loco_obs_data[rbase + 7] = pc.r_pose * pose;
     loco_obs_data[rbase + loco_reward_done] = (fallen || timeout) ? 1.0 : 0.0;
 }

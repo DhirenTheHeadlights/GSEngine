@@ -58,11 +58,6 @@ namespace gse::config {
 		const std::filesystem::path& path
 	) -> std::string;
 
-	auto manifest_value(
-		std::string_view text,
-		std::string_view key
-	) -> std::string;
-
 	auto known_folder(
 		int csidl
 	) -> std::filesystem::path;
@@ -200,7 +195,7 @@ auto gse::config::resolve() -> resolved {
 	enum_from_string(mode_text, active);
 
 	const std::filesystem::path build = manifest.parent_path();
-	const std::filesystem::path root = active == run_mode::installed || root_text.empty() ? build : std::filesystem::path(root_text);
+	const std::filesystem::path root = root_text.empty() ? build : std::filesystem::path(root_text);
 
 	std::filesystem::path config_root = env_path("GSE_USER_DIR");
 	if (config_root.empty()) {

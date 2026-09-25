@@ -63,8 +63,8 @@ auto gse::network::extract_input_frame(const actions::state& state, const std::s
 	return input_frame{
 		.input_sequence = input_sequence,
 		.client_time = system_clock::now<time_t<std::uint32_t, milliseconds>>(),
-		.camera_yaw = static_cast<float>(camera_yaw),
-		.camera_pitch = static_cast<float>(camera_pitch),
+		.camera_yaw = camera_yaw,
+		.camera_pitch = camera_pitch,
 		.pressed = pad(pm.words()),
 		.released = pad(rm.words()),
 		.held = pad(hm.words()),
@@ -92,6 +92,6 @@ auto gse::network::apply_input_frame(actions::state& target, const input_frame& 
 		);
 	}
 
-	target.set_camera_yaw(radians(m.camera_yaw));
-	target.set_camera_pitch(radians(m.camera_pitch));
+	target.set_camera_yaw(m.camera_yaw);
+	target.set_camera_pitch(m.camera_pitch);
 }

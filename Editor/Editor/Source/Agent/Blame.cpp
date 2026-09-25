@@ -995,7 +995,7 @@ auto gse::ide::agent::blame_prompt(const std::string_view lead, const std::span<
 }
 
 auto gse::ide::agent::arm_retry(session& s) -> void {
-	if (s.retry.prompt.empty()) {
+	if (!s.retry.held) {
 		return;
 	}
 
@@ -1026,21 +1026,12 @@ auto gse::ide::agent::resume_waiting(data& d) -> void {
 			continue;
 		}
 
-		const std::string prompt = s.retry.prompt;
-		std::vector<attachment> images;
-		images.reserve(s.retry.images.size());
-		for (const std::filesystem::path& file : s.retry.images) {
-			images.push_back({
-				.path = file,
-			});
-		}
-
 		append_row(s, {
 			.kind = row_kind::note,
-			.text = std::format("retrying the interrupted turn (attempt {})", s.retry.attempts + 1),
+			.text = std::format("continuing the interrupted turn (attempt {})", s.retry.attempts + 1),
 		});
 		s.retry.waiting = false;
-		send_to_session(s, prompt, images);
+		send_to_session(s, "continue", {});
 	}
 }
 

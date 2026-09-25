@@ -74,6 +74,7 @@ export namespace gse::ide {
 		struct engine_choice {
 			project::engine_entry entry;
 			std::string location;
+			std::string sdk_version;
 			bool current = false;
 		};
 
@@ -142,6 +143,19 @@ gse::ide::project_screen::project_screen(channel_write<window_launcher_mode_requ
 		m_engines.push_back({
 			.entry = std::move(candidate),
 			.location = std::move(location),
+			.current = current
+		});
+	}
+
+	for (project::sdk_entry& candidate : project::sdks()) {
+		const bool current = active.valid && candidate.version == active.sdk_version;
+		if (current) {
+			m_engine_selected = static_cast<int>(m_engines.size());
+		}
+		m_engines.push_back({
+			.entry = { .name = std::format("SDK {}", candidate.version), .path = candidate.image },
+			.location = candidate.image.generic_display_string(),
+			.sdk_version = std::move(candidate.version),
 			.current = current
 		});
 	}
@@ -447,7 +461,12 @@ auto gse::ide::project_screen::build_rebind(gui::builder& ui) -> void {
 				m_rebinding = false;
 				return;
 			}
-			project::bind_engine(active.file, item.entry);
+			if (item.sdk_version.empty()) {
+				project::bind_engine(active.file, item.entry);
+			}
+			else {
+				project::bind_sdk(active.file, item.sdk_version);
+			}
 			m_dismiss = true;
 			open(active.file);
 			return;

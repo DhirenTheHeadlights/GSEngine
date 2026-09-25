@@ -61,6 +61,10 @@ auto gse::vbd::solver::accel_weights() const -> std::span<const float> {
 	return m_accel_weight;
 }
 
+auto gse::vbd::solver::convergence_counts() const -> std::span<const std::uint32_t> {
+	return m_convergence_counts;
+}
+
 auto gse::vbd::solver::add_contact_constraint(const contact_constraint& c) -> void {
 	m_graph.add_contact(c);
 }
@@ -611,9 +615,13 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 	{
 		trace::scope_guard _{ trace_id<"vbd::iterations">() };
 		const bool adaptive = m_config.adaptive != 0;
+		const bool trace_convergence = m_config.trace_island_convergence != 0;
+		if (trace_convergence) {
+			m_convergence_counts.fill(0);
+		}
 		length linear_threshold = m_config.convergence_threshold_linear;
 		angle angular_threshold = m_config.convergence_threshold_angular;
-		if (adaptive && m_config.convergence_speed_scale > 0.f) {
+		if ((adaptive || trace_convergence) && m_config.convergence_speed_scale > 0.f) {
 			velocity max_speed{};
 			angular_velocity max_angular_speed{};
 			for (const auto& body : m_bodies) {
@@ -644,11 +652,18 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 					joint_delta.angular
 				);
 			}
+			const length linear = std::max(contact_delta.linear, joint_delta.linear);
+			const angle angular = std::max(contact_delta.angular, joint_delta.angular);
+			if (trace_convergence) {
+				const auto slot = std::min<std::uint32_t>(static_cast<std::uint32_t>(it), limits.iteration_trace_slots - 1);
+				++m_convergence_counts[slot];
+				if (linear < linear_threshold && angular < angular_threshold) {
+					++m_convergence_counts[limits.iteration_trace_slots + slot];
+				}
+			}
 			if (!adaptive) {
 				continue;
 			}
-			const length linear = std::max(contact_delta.linear, joint_delta.linear);
-			const angle angular = std::max(contact_delta.angular, joint_delta.angular);
 			if (linear < linear_threshold && angular < angular_threshold) {
 				break;
 			}

@@ -394,7 +394,7 @@ auto gse::physics::shadow_step::init(context& ctx, const std::optional<shared_vi
 		co_return;
 	}
 
-	co_await d.solver.initialize_compute(ctx, *gpu_s, {});
+	co_await d.solver.initialize_compute(ctx, *gpu_s, {}, false, true);
 	d.solver.set_preserve_warm_starts(true);
 	d.buffers_ready = d.solver.buffers_created();
 
@@ -488,6 +488,7 @@ auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> ph
 		.refresh_joints = true,
 		.force_reseed = true,
 		.motors_per_tick = motor_count,
+		.island_pack_min_islands = static_cast<std::uint32_t>(phys.gpu_island_pack_min_islands),
 	});
 
 	d.pending.push_back({
@@ -505,12 +506,12 @@ auto gse::physics::shadow_step::frame(context& ctx, const std::optional<shared_v
 	}
 
 	if (gpu_s->device) {
-		trace::scope_guard _{ trace_id<"vbd_shadow::wait_idle">() };
+		trace::scope_guard _{ trace_id<"vbd_shadow::wait_idle">(), trace::span_kind::wait };
 		gpu_s->device->wait_idle();
 	}
 
 	d.solver.commit_upload();
-	co_await d.solver.dispatch_compute(ctx, pass_out);
+	co_await d.solver.dispatch_compute(ctx, pass_out, false);
 
 	if (!d.pending.empty() && d.pending.back().generation == 0) {
 		d.pending.back().generation = d.solver.dispatch_generation();

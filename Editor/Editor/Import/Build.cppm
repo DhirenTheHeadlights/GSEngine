@@ -5,3 +5,4 @@ export import :inbox;
 export import :configs;
 export import :profiles;
 export import :build_runner;
+export import :package_sdk;

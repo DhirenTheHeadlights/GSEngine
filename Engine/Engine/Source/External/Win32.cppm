@@ -3,6 +3,7 @@ module;
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
+#define _WIN32_WINNT 0x0A00
 #include <Windows.h>
 #include <windowsx.h>
 #include <dbghelp.h>
@@ -11,6 +12,7 @@ module;
 #include <shellapi.h>
 #include <commdlg.h>
 #include <dwmapi.h>
+#include <compressapi.h>
 #endif
 
 #define GLFW_INCLUDE_NONE
@@ -28,6 +30,41 @@ export namespace gse::win32 {
 	[[nodiscard]] auto performance_counter_frequency() -> unsigned long long;
 
 	[[nodiscard]] auto performance_counter() -> unsigned long long;
+
+	[[nodiscard]] auto compressed_size_bound(
+		const void* input,
+		std::size_t input_size
+	) -> std::size_t;
+
+	[[nodiscard]] auto compress_lzms(
+		const void* input,
+		std::size_t input_size,
+		void* output,
+		std::size_t output_capacity,
+		std::size_t* written
+	) -> bool;
+
+	[[nodiscard]] auto decompress_lzms(
+		const void* input,
+		std::size_t input_size,
+		void* output,
+		std::size_t output_size
+	) -> bool;
+
+	auto write_user_registry_string(
+		const wchar_t* subkey,
+		const wchar_t* name,
+		const wchar_t* value
+	) -> bool;
+
+	auto delete_user_registry_key(
+		const wchar_t* subkey
+	) -> bool;
+
+	auto show_error_box(
+		const wchar_t* title,
+		const wchar_t* text
+	) -> void;
 
 	using ::HWND;
 	using ::WNDPROC;
@@ -208,6 +245,7 @@ export namespace gse::win32 {
 	using ::ConnectNamedPipe;
 	using ::DisconnectNamedPipe;
 	using ::CreateFileW;
+	using ::GetFinalPathNameByHandleW;
 	using ::WriteFile;
 	using ::PeekNamedPipe;
 	using ::GetStdHandle;
@@ -432,5 +470,63 @@ auto gse::win32::performance_counter_frequency() -> unsigned long long {
 auto gse::win32::performance_counter() -> unsigned long long {
 	LARGE_INTEGER counter{};
 	return QueryPerformanceCounter(&counter) && counter.QuadPart > 0 ? static_cast<unsigned long long>(counter.QuadPart) : 0;
+}
+
+auto gse::win32::compressed_size_bound(const void* input, const std::size_t input_size) -> std::size_t {
+	COMPRESSOR_HANDLE compressor = nullptr;
+	if (!CreateCompressor(COMPRESS_ALGORITHM_LZMS, nullptr, &compressor)) {
+		return 0;
+	}
+	SIZE_T needed = 0;
+	Compress(compressor, const_cast<void*>(input), input_size, nullptr, 0, &needed);
+	CloseCompressor(compressor);
+	return needed;
+}
+
+auto gse::win32::compress_lzms(const void* input, const std::size_t input_size, void* output, const std::size_t output_capacity, std::size_t* written) -> bool {
+	COMPRESSOR_HANDLE compressor = nullptr;
+	if (!CreateCompressor(COMPRESS_ALGORITHM_LZMS, nullptr, &compressor)) {
+		return false;
+	}
+	SIZE_T produced = 0;
+	const BOOL ok = Compress(compressor, const_cast<void*>(input), input_size, output, output_capacity, &produced);
+	CloseCompressor(compressor);
+	*written = produced;
+	return ok != 0;
+}
+
+auto gse::win32::decompress_lzms(const void* input, const std::size_t input_size, void* output, const std::size_t output_size) -> bool {
+	DECOMPRESSOR_HANDLE decompressor = nullptr;
+	if (!CreateDecompressor(COMPRESS_ALGORITHM_LZMS, nullptr, &decompressor)) {
+		return false;
+	}
+	SIZE_T produced = 0;
+	const BOOL ok = Decompress(decompressor, const_cast<void*>(input), input_size, output, output_size, &produced);
+	CloseDecompressor(decompressor);
+	return ok != 0 && produced == output_size;
+}
+
+auto gse::win32::write_user_registry_string(const wchar_t* subkey, const wchar_t* name, const wchar_t* value) -> bool {
+	HKEY key = nullptr;
+	if (RegCreateKeyExW(HKEY_CURRENT_USER, subkey, 0, nullptr, REG_OPTION_NON_VOLATILE, KEY_WRITE, nullptr, &key, nullptr) != ERROR_SUCCESS) {
+		return false;
+	}
+	std::size_t length = 0;
+	while (value[length] != L'\0') {
+		++length;
+	}
+	const DWORD bytes = static_cast<DWORD>((length + 1) * sizeof(wchar_t));
+	const LSTATUS status = RegSetValueExW(key, name, 0, REG_SZ, reinterpret_cast<const BYTE*>(value), bytes);
+	RegCloseKey(key);
+	return status == ERROR_SUCCESS;
+}
+
+auto gse::win32::delete_user_registry_key(const wchar_t* subkey) -> bool {
+	const LSTATUS status = RegDeleteTreeW(HKEY_CURRENT_USER, subkey);
+	return status == ERROR_SUCCESS || status == ERROR_FILE_NOT_FOUND;
+}
+
+auto gse::win32::show_error_box(const wchar_t* title, const wchar_t* text) -> void {
+	MessageBoxW(nullptr, text, title, MB_OK | MB_ICONERROR);
 }
 #endif

@@ -6,6 +6,7 @@ module;
 
 export module gse.os:app;
 
+import gse.log;
 import gse.win32;
 import std;
 
@@ -47,7 +48,52 @@ namespace gse::app {
 	std::vector<std::wstring> relaunch_handoff_arguments;
 	std::vector<std::wstring> relaunch_dropped_prefixes;
 	std::vector<std::wstring> relaunch_pinned_arguments;
+
+#ifdef _WIN32
+	constexpr int relaunch_attempts = 20;
+	constexpr auto relaunch_retry_delay = std::chrono::milliseconds(250);
+
+	auto launch_process(
+		const std::filesystem::path& display,
+		const wchar_t* application,
+		std::vector<wchar_t>& command,
+		const wchar_t* working,
+		win32::LPPROC_THREAD_ATTRIBUTE_LIST attribute_list
+	) -> void;
+#endif
 }
+
+#ifdef _WIN32
+auto gse::app::launch_process(const std::filesystem::path& display, const wchar_t* application, std::vector<wchar_t>& command, const wchar_t* working, const win32::LPPROC_THREAD_ATTRIBUTE_LIST attribute_list) -> void {
+	using namespace gse::win32;
+
+	STARTUPINFOEXW startup{
+		.StartupInfo = {
+			.cb = static_cast<DWORD>(attribute_list != nullptr ? sizeof(STARTUPINFOEXW) : sizeof(STARTUPINFOW)),
+		},
+		.lpAttributeList = attribute_list,
+	};
+	const int inherit = attribute_list != nullptr ? 1 : 0;
+	const DWORD creation_flags = attribute_list != nullptr ? extended_startupinfo_present : 0u;
+
+	DWORD error = 0;
+	for (int attempt = 0; attempt < relaunch_attempts; ++attempt) {
+		PROCESS_INFORMATION process{};
+		if (CreateProcessW(application, command.data(), nullptr, nullptr, inherit, creation_flags, nullptr, working, &startup.StartupInfo, &process)) {
+			CloseHandle(process.hProcess);
+			CloseHandle(process.hThread);
+			if (attempt > 0) {
+				log::println(log::level::warning, log::category::general, "relaunch: started '{}' on attempt {} (last win32 error {})", display.generic_display_string(), attempt + 1, error);
+			}
+			return;
+		}
+		error = GetLastError();
+		std::this_thread::sleep_for(relaunch_retry_delay);
+	}
+
+	log::println(log::level::error, log::category::general, "relaunch: could not start '{}' after {} attempts (win32 error {})", display.generic_display_string(), relaunch_attempts, error);
+}
+#endif
 
 auto gse::app::relaunch_on_exit(std::filesystem::path executable, std::filesystem::path working_dir, std::vector<std::filesystem::path> arguments) -> void {
 	std::lock_guard _(relaunch_mutex);
@@ -152,10 +198,6 @@ auto gse::app::run_pending_relaunch() -> void {
 		}
 	}
 
-	const int inherit = attribute_list != nullptr ? 1 : 0;
-	const DWORD creation_flags = attribute_list != nullptr ? extended_startupinfo_present : 0u;
-	const auto startup_size = static_cast<DWORD>(attribute_list != nullptr ? sizeof(STARTUPINFOEXW) : sizeof(STARTUPINFOW));
-
 	if (self) {
 		wchar_t path[max_path]{};
 		const DWORD length = GetModuleFileNameW(nullptr, path, max_path);
@@ -183,17 +225,7 @@ auto gse::app::run_pending_relaunch() -> void {
 		std::vector<wchar_t> self_command(line.begin(), line.end());
 		self_command.push_back(0);
 
-		STARTUPINFOEXW self_startup{
-			.StartupInfo = {
-				.cb = startup_size,
-			},
-			.lpAttributeList = attribute_list,
-		};
-		PROCESS_INFORMATION self_process{};
-		if (CreateProcessW(path, self_command.data(), nullptr, nullptr, inherit, creation_flags, nullptr, nullptr, &self_startup.StartupInfo, &self_process)) {
-			CloseHandle(self_process.hProcess);
-			CloseHandle(self_process.hThread);
-		}
+		launch_process(path, path, self_command, nullptr, attribute_list);
 		if (attribute_list != nullptr) {
 			DeleteProcThreadAttributeList(attribute_list);
 		}
@@ -217,17 +249,7 @@ auto gse::app::run_pending_relaunch() -> void {
 
 	const std::wstring working = working_dir.wstring();
 
-	STARTUPINFOEXW startup{
-		.StartupInfo = {
-			.cb = startup_size,
-		},
-		.lpAttributeList = attribute_list,
-	};
-	PROCESS_INFORMATION process{};
-	if (CreateProcessW(nullptr, command_buffer.data(), nullptr, nullptr, inherit, creation_flags, nullptr, working.empty() ? nullptr : working.c_str(), &startup.StartupInfo, &process)) {
-		CloseHandle(process.hProcess);
-		CloseHandle(process.hThread);
-	}
+	launch_process(executable, nullptr, command_buffer, working.empty() ? nullptr : working.c_str(), attribute_list);
 	if (attribute_list != nullptr) {
 		DeleteProcThreadAttributeList(attribute_list);
 	}

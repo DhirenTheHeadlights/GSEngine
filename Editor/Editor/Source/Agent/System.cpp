@@ -131,7 +131,7 @@ auto gse::ide::agent::shutdown(data& d) -> void {
 
 	if (!relaunching) {
 		for (session& s : d.sessions) {
-			if (is_busy(s) && !s.retry.prompt.empty() && !s.retry.waiting) {
+			if (is_busy(s) && s.retry.held && !s.retry.waiting) {
 				s.retry.waiting = true;
 				log::println(log::level::info, log::category::task, "agent: chat '{}' was mid-turn - holding it to resend on the next start", s.name);
 			}

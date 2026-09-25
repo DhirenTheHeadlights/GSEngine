@@ -48,6 +48,17 @@ namespace gse::physics {
 		write<motion_component>& motion
 	) -> void;
 
+	template <typename Flagged>
+	auto flagged_indices(
+		std::size_t count,
+		Flagged flagged,
+		id trace
+	) -> std::vector<std::uint32_t>;
+
+	auto reset_pending_indices(
+		write<motion_component>& motion
+	) -> std::vector<std::uint32_t>;
+
 	auto trace_body_index(
 		const data& d
 	) -> std::uint32_t;
@@ -55,6 +66,19 @@ namespace gse::physics {
 	auto initialize_joint_rest_orientations(
 		data& d,
 		write<transform_component>& transform
+	) -> void;
+
+	auto trace_island_convergence(
+		data& d
+	) -> void;
+
+	auto accumulate_island_convergence(
+		data& d,
+		std::span<const std::uint32_t> counts
+	) -> void;
+
+	auto report_island_convergence(
+		data& d
 	) -> void;
 }
 
@@ -191,13 +215,57 @@ auto gse::physics::absorb_upload_report(data& d, const gpu_upload_report& report
 }
 
 auto gse::physics::record_consumed_resets(data& d, write<transform_component>& transform, write<motion_component>& motion) -> void {
+	trace::scope_guard _{ trace_id<"physics::record_consumed_resets">() };
 	const auto consumed_tick = d.gpu_plan.first_tick + static_cast<std::uint64_t>(d.gpu_plan.total_ticks);
 	const auto owners = motion.owner_ids();
-	for (std::size_t i = 0; i < motion.size(); ++i) {
-		if (motion[i].reset_pending != 0 && transform.find(owners[i])) {
-			d.gpu_reset_ticks.try_emplace(owners[i], consumed_tick);
-		}
+	const auto* motion_data = motion.data();
+	const auto& reset_ticks = d.gpu_reset_ticks;
+	const auto unrecorded = flagged_indices(
+		motion.size(),
+		[motion_data, owners, &reset_ticks, &transform](const std::size_t i) {
+			return motion_data[i].reset_pending != 0 && !reset_ticks.contains(owners[i]) && transform.find(owners[i]);
+		},
+		trace_id<"physics::record_consumed_resets::scan">()
+	);
+	for (const auto i : unrecorded) {
+		d.gpu_reset_ticks.try_emplace(owners[i], consumed_tick);
 	}
+}
+
+template <typename Flagged>
+auto gse::physics::flagged_indices(const std::size_t count, Flagged flagged, const id trace) -> std::vector<std::uint32_t> {
+	constexpr std::size_t chunk = 4096;
+	const auto chunk_count = (count + chunk - 1) / chunk;
+	std::vector<std::vector<std::uint32_t>> found(chunk_count);
+	task::coarse_parallel(
+		chunk_count,
+		1,
+		[&found, &flagged, count](const std::size_t c) {
+			const auto end = std::min(count, (c + 1) * chunk);
+			for (auto i = c * chunk; i < end; ++i) {
+				if (flagged(i)) {
+					found[c].push_back(static_cast<std::uint32_t>(i));
+				}
+			}
+		},
+		trace
+	);
+	std::vector<std::uint32_t> indices;
+	for (const auto& part : found) {
+		indices.insert(indices.end(), part.begin(), part.end());
+	}
+	return indices;
+}
+
+auto gse::physics::reset_pending_indices(write<motion_component>& motion) -> std::vector<std::uint32_t> {
+	const auto* motion_data = motion.data();
+	return flagged_indices(
+		motion.size(),
+		[motion_data](const std::size_t i) {
+			return motion_data[i].reset_pending != 0;
+		},
+		trace_id<"physics::reset_pending_scan">()
+	);
 }
 
 auto gse::physics::initialize_joint_rest_orientations(data& d, write<transform_component>& transform) -> void {
@@ -335,7 +403,58 @@ auto gse::physics::solver_config_from_settings(const data& d) -> vbd::solver_con
 		.color_cap = static_cast<std::uint32_t>(d.gpu_color_cap < 0 ? d.gpu_color_cap_resolved : d.gpu_color_cap),
 		.sweep_workgroups = static_cast<std::uint32_t>(d.gpu_sweep_workgroups),
 		.trace_body = trace_body_index(d),
+		.trace_island_convergence = d.trace_island_convergence ? 1u : 0u,
+		.island_colored_sweep = d.gpu_island_colored_sweep ? 1u : 0u,
+		.island_pack = d.gpu_island_pack ? 1u : 0u,
 	};
+}
+
+auto gse::physics::trace_island_convergence(data& d) -> void {
+	const auto generation = d.gpu_solver.retired_generation();
+	if (generation == 0 || generation == d.island_convergence_generation) {
+		return;
+	}
+	d.island_convergence_generation = generation;
+	accumulate_island_convergence(d, d.gpu_solver.read_narrow_phase_debug().subspan(vbd::limits.state_island_convergence_base_index, vbd::limits.island_convergence_count));
+	report_island_convergence(d);
+}
+
+auto gse::physics::accumulate_island_convergence(data& d, const std::span<const std::uint32_t> counts) -> void {
+	std::ranges::transform(d.island_convergence_totals, counts, d.island_convergence_totals.begin(), std::plus{});
+}
+
+auto gse::physics::report_island_convergence(data& d) -> void {
+	if (++d.island_convergence_samples < d.trace_island_convergence_ticks) {
+		return;
+	}
+
+	const std::span<const std::uint64_t> totals = d.island_convergence_totals;
+	const auto slots = vbd::limits.iteration_trace_slots;
+	std::string fractions;
+	double expected_iterations = 0.0;
+	double previous_fraction = 0.0;
+	std::size_t iterations = 0;
+	const auto sampled = [](const auto& pair) {
+		return std::get<0>(pair) > 0;
+	};
+	for (const auto [counted, under] : std::views::zip(totals.first(slots), totals.subspan(slots)) | std::views::take_while(sampled)) {
+		const double fraction = static_cast<double>(under) / static_cast<double>(counted);
+		expected_iterations += 1.0 - previous_fraction;
+		previous_fraction = fraction;
+		fractions += std::format("{}{:.3f}", iterations == 0 ? "" : " ", fraction);
+		++iterations;
+	}
+	log::println(
+		log::category::physics,
+		"island convergence: ticks={} island_iterations={} under_tolerance_by_iteration=[{}] early_out_mean_iterations={:.2f} of {}",
+		d.island_convergence_samples,
+		totals.front(),
+		fractions,
+		expected_iterations,
+		iterations
+	);
+	d.island_convergence_totals.fill(0);
+	d.island_convergence_samples = 0;
 }
 
 auto gse::physics::trace_body_index(const data& d) -> std::uint32_t {
@@ -414,8 +533,18 @@ auto gse::physics::build_mass_properties(const body_build_view& view, std::vecto
 	}
 }
 
-auto gse::physics::build_body_states(const body_build_view& view, const sleep_counter_table& sleep_counters, std::vector<vbd::body_state>& bodies, std::flat_map<id, std::uint32_t>& id_to_body_index, std::vector<std::pair<id, std::uint32_t>>& id_to_body_index_entries, std::vector<std::uint8_t>& has_transform) -> void {
+auto gse::physics::body_scan_fill::active(const std::size_t body_count) const -> bool {
+	return entries.size() == body_count;
+}
+
+auto gse::physics::body_scan_fill::filled(const std::size_t body_index) const -> bool {
+	return !sparse || entries[body_index].locked != 0 || entries[body_index].reset_pending != 0;
+}
+
+auto gse::physics::build_body_states(const body_build_view& view, const sleep_counter_table& sleep_counters, std::vector<vbd::body_state>& bodies, std::flat_map<id, std::uint32_t>& id_to_body_index, std::vector<std::pair<id, std::uint32_t>>& id_to_body_index_entries, std::vector<std::uint8_t>& has_transform, const body_scan_fill& scan) -> void {
 	const auto body_count = view.motions.size();
+	const bool write_scan = scan.active(body_count);
+	const bool sparse = write_scan && scan.sparse;
 	assert(
 		view.mass_props.size() == body_count,
 		"body_build_view carries {} mass properties for {} bodies; call build_mass_properties first",
@@ -442,6 +571,7 @@ auto gse::physics::build_body_states(const body_build_view& view, const sleep_co
 	}
 
 	const auto sleep_view = sleep_counters.view(view.motion_owners);
+	std::atomic<bool> index_differs = false;
 
 	task::parallel_invoke_range(
 		0,
@@ -457,21 +587,37 @@ auto gse::physics::build_body_states(const body_build_view& view, const sleep_co
 				tc = std::addressof(view.transforms[ti->second]);
 			}
 			if (!tc) {
+				index_differs.store(true, std::memory_order_relaxed);
 				bodies[i] = {
 					.locked = 1u,
 					.update_orientation = 0u,
 					.affected_by_gravity = 0u,
 				};
+				if (write_scan) {
+					scan.entries[i] = { .locked = 1u };
+				}
 				return;
 			}
 			id_to_body_index_staging[i] = { eid, static_cast<std::uint32_t>(i) };
 			has_transform[i] = 1;
-
-			const auto sc = sleep_view ? (*sleep_view)[i] : sleep_counters.get(eid);
+			if (i >= id_to_body_index_entries.size() || id_to_body_index_entries[i] != id_to_body_index_staging[i]) {
+				index_differs.store(true, std::memory_order_relaxed);
+			}
 
 			const auto* dyn = std::get_if<dynamic_body>(&mc.body);
-			const bool is_static_body = std::holds_alternative<static_body>(mc.body);
 			const bool locked = dyn == nullptr;
+			if (write_scan) {
+				scan.entries[i] = {
+					.locked = locked ? 1u : 0u,
+					.reset_pending = mc.reset_pending,
+				};
+			}
+			if (sparse && !locked && mc.reset_pending == 0) {
+				return;
+			}
+
+			const auto sc = sleep_view ? (*sleep_view)[i] : sleep_counters.get(eid);
+			const bool is_static_body = std::holds_alternative<static_body>(mc.body);
 			const auto& props = view.mass_props[i];
 			const auto com = com_from_origin(tc->position, tc->orientation, props.centroid);
 			const auto inv_inertia = inv_inertial_tensor(props.inv_inertia_body, tc->orientation);
@@ -502,6 +648,24 @@ auto gse::physics::build_body_states(const body_build_view& view, const sleep_co
 		trace_id<"physics::body_states_fill">()
 	);
 
+	if (!index_differs.load(std::memory_order_relaxed) && id_to_body_index_entries.size() == body_count && id_to_body_index.size() == body_count) {
+		return;
+	}
+
+	std::size_t kept = 0;
+	bool unchanged = id_to_body_index.size() == id_to_body_index_entries.size();
+	for (std::size_t i = 0; i < body_count && unchanged; ++i) {
+		if (has_transform[i] == 0) {
+			continue;
+		}
+		unchanged = kept < id_to_body_index_entries.size() && id_to_body_index_entries[kept] == id_to_body_index_staging[i];
+		++kept;
+	}
+	if (unchanged && kept == id_to_body_index_entries.size()) {
+		return;
+	}
+
+	trace::scope_guard _{ trace_id<"physics::body_index_rebuild">() };
 	std::vector<std::pair<id, std::uint32_t>> entries;
 	entries.reserve(body_count);
 	for (std::size_t i = 0; i < body_count; ++i) {
@@ -509,22 +673,89 @@ auto gse::physics::build_body_states(const body_build_view& view, const sleep_co
 			entries.push_back(id_to_body_index_staging[i]);
 		}
 	}
-
-	if (entries == id_to_body_index_entries && id_to_body_index.size() == entries.size()) {
-		return;
-	}
-
-	trace::scope_guard _{ trace_id<"physics::body_index_rebuild">() };
 	id_to_body_index.clear();
 	id_to_body_index.insert(entries.begin(), entries.end());
 	id_to_body_index_entries = std::move(entries);
 }
 
-auto gse::physics::build_body_bounds(const body_build_view& view, const std::flat_map<id, std::uint32_t>& id_to_body_index, const std::span<const std::uint8_t> has_transform, const std::span<vbd::body_state> bodies) -> void {
-	for (auto& b : bodies) {
-		b.aabb_min = vec3<position>(position(1e30f));
-		b.aabb_max = vec3<position>(position(-1e30f));
+auto gse::physics::build_body_bounds(const body_build_view& view, const std::flat_map<id, std::uint32_t>& id_to_body_index, const std::span<const std::uint8_t> has_transform, const std::span<vbd::body_state> bodies, const body_scan_fill& scan) -> void {
+	const bool write_scan = scan.active(bodies.size());
+	const bool sparse = write_scan && scan.sparse;
+	const auto shape_bounds = [&view](const collision_component& cc, const transform_component& tc, vec3<displacement>& shape_params) {
+		bounding_box bb;
+		match(cc.shape)
+			.if_is([&](const box_shape& s) {
+				bb = bounding_box(tc, s);
+			})
+			.else_if_is([&](const sphere_shape& s) {
+				bb = bounding_box(tc, s);
+				shape_params = vec3<displacement>(s.radius, displacement{}, displacement{});
+			})
+			.else_if_is([&](const capsule_shape& s) {
+				bb = bounding_box(tc, s);
+				shape_params = vec3<displacement>(s.radius, s.half_height, displacement{});
+			})
+			.else_if_is([&](const hull_shape&) {
+				if (const auto* hull = resolve_hull(cc.shape, view.hulls)) {
+					bb = bounding_box(tc, *hull);
+				}
+			});
+		return bb;
+	};
+	const auto write_bounds = [&](const std::size_t index, const collision_component& cc) {
+		vec3<displacement> shape_params;
+		if (sparse && !scan.filled(index)) {
+			const auto he = shape_bounds(cc, transform_component{}, shape_params).half_extents();
+			scan.entries[index].max_half_extent = std::max({ he.x(), he.y(), he.z() });
+			return;
+		}
+		auto& b = bodies[index];
+		const transform_component body_tc{
+			.position = origin_from_com(b.position, b.orientation, b.com_local),
+			.orientation = b.orientation,
+		};
+		const auto bb = shape_bounds(cc, body_tc, shape_params);
+		const auto [max, min] = bb.aabb();
+		b.shape_kind = static_cast<std::uint32_t>(cc.shape.index());
+		b.shape_params = shape_params;
+		b.half_extents = bb.half_extents();
+		b.aabb_min = min;
+		b.aabb_max = max;
+		if (write_scan) {
+			scan.entries[index].max_half_extent = std::max({ b.half_extents.x(), b.half_extents.y(), b.half_extents.z() });
+		}
+	};
+	const auto reset_bounds = [&](const std::size_t index) {
+		if (sparse && !scan.filled(index)) {
+			return;
+		}
+		bodies[index].aabb_min = vec3<position>(position(1e30f));
+		bodies[index].aabb_max = vec3<position>(position(-1e30f));
+	};
+
+	if (std::ranges::equal(view.collision_owners, view.motion_owners)) {
+		task::parallel_invoke_range(
+			0,
+			bodies.size(),
+			[&](std::size_t i) {
+				reset_bounds(i);
+				if (const auto& cc = view.collisions[i]; cc.resolve_collisions && has_transform[i] != 0) {
+					write_bounds(i, cc);
+				}
+			},
+			trace::untraced
+		);
+		return;
 	}
+
+	task::parallel_invoke_range(
+		0,
+		bodies.size(),
+		[&](std::size_t i) {
+			reset_bounds(i);
+		},
+		trace::untraced
+	);
 
 	task::parallel_invoke_range(
 		0,
@@ -538,37 +769,7 @@ auto gse::physics::build_body_bounds(const body_build_view& view, const std::fla
 			if (it == id_to_body_index.end() || has_transform[it->second] == 0) {
 				return;
 			}
-
-			auto& b = bodies[it->second];
-			const transform_component body_tc{
-				.position = origin_from_com(b.position, b.orientation, b.com_local),
-				.orientation = b.orientation,
-			};
-			bounding_box bb;
-			vec3<displacement> shape_params;
-			match(cc.shape)
-				.if_is([&](const box_shape& s) {
-					bb = bounding_box(body_tc, s);
-				})
-				.else_if_is([&](const sphere_shape& s) {
-					bb = bounding_box(body_tc, s);
-					shape_params = vec3<displacement>(s.radius, displacement{}, displacement{});
-				})
-				.else_if_is([&](const capsule_shape& s) {
-					bb = bounding_box(body_tc, s);
-					shape_params = vec3<displacement>(s.radius, s.half_height, displacement{});
-				})
-				.else_if_is([&](const hull_shape&) {
-					if (const auto* hull = resolve_hull(cc.shape, view.hulls)) {
-						bb = bounding_box(body_tc, *hull);
-					}
-				});
-			const auto [max, min] = bb.aabb();
-			b.shape_kind = static_cast<std::uint32_t>(cc.shape.index());
-			b.shape_params = shape_params;
-			b.half_extents = bb.half_extents();
-			b.aabb_min = min;
-			b.aabb_max = max;
+			write_bounds(it->second, cc);
 		},
 		trace::untraced
 	);
@@ -686,24 +887,42 @@ auto gse::physics::apply_muscle_activation(joint_definition& jd, const muscle_co
 	return true;
 }
 
-auto gse::physics::build_motor_constraints(const std::span<const motor_input> motors, const std::flat_map<id, std::uint32_t>& id_to_body_index, const std::span<const std::uint8_t> body_airborne, const std::span<vbd::body_state> bodies, std::vector<vbd::velocity_motor_constraint>& out) -> void {
+auto gse::physics::resolve_body_slot(const std::flat_map<id, std::uint32_t>& id_to_body_index, const body_slot_cache& cache, const std::size_t i, const id owner) -> std::optional<std::uint32_t> {
+	const bool cached = i < cache.slots.size();
+	if (cached) {
+		if (const auto slot = cache.slots[i]; slot < cache.body_owners.size() && slot < cache.has_transform.size() && cache.body_owners[slot] == owner && cache.has_transform[slot] != 0) {
+			return slot;
+		}
+	}
+	const auto it = id_to_body_index.find(owner);
+	if (it == id_to_body_index.end()) {
+		return std::nullopt;
+	}
+	if (cached) {
+		cache.slots[i] = it->second;
+	}
+	return it->second;
+}
+
+auto gse::physics::build_motor_constraints(const std::span<const motor_input> motors, const std::flat_map<id, std::uint32_t>& id_to_body_index, const std::span<const std::uint8_t> body_airborne, const std::span<vbd::body_state> bodies, std::vector<vbd::velocity_motor_constraint>& out, const body_slot_cache& cache, const body_scan_fill& scan) -> void {
 	out.clear();
 
 	constexpr auto unresolved = std::numeric_limits<std::uint32_t>::max();
 	std::vector<std::uint32_t> resolved(motors.size(), unresolved);
 	auto* resolved_data = resolved.data();
 	const auto* motor_data = motors.data();
+	const bool scan_active = scan.active(bodies.size());
 	task::coarse_parallel(
 		motors.size(),
 		64,
-		[motor_data, resolved_data, &id_to_body_index, bodies, body_airborne](const std::size_t i) {
+		[motor_data, resolved_data, &id_to_body_index, &cache, &scan, scan_active, bodies, body_airborne](const std::size_t i) {
 			const auto& [eid, mt] = motor_data[i];
-			const auto it = id_to_body_index.find(eid);
-			if (it == id_to_body_index.end()) {
+			const auto slot = resolve_body_slot(id_to_body_index, cache, i, eid);
+			if (!slot) {
 				return;
 			}
-			const auto idx = it->second;
-			if (bodies[idx].locked != 0u) {
+			const auto idx = *slot;
+			if ((scan_active ? scan.entries[idx].locked : bodies[idx].locked) != 0u) {
 				return;
 			}
 			if (mt.requires_ground_contact && idx < body_airborne.size() && body_airborne[idx] != 0) {
@@ -734,7 +953,7 @@ auto gse::physics::build_motor_constraints(const std::span<const motor_input> mo
 	task::coarse_parallel(
 		chunk_count,
 		1,
-		[motor_data, resolved_data, offsets_data, out_data, bodies, motor_count](const std::size_t c) {
+		[motor_data, resolved_data, offsets_data, out_data, bodies, motor_count, &scan, scan_active](const std::size_t c) {
 			const auto begin = c * chunk;
 			const auto end = std::min(motor_count, begin + chunk);
 			auto cursor = offsets_data[c];
@@ -745,7 +964,7 @@ auto gse::physics::build_motor_constraints(const std::span<const motor_input> mo
 				}
 				const auto& mt = motor_data[i].motor;
 
-				if (bodies[idx].sleeping() && magnitude(mt.velocity_drive_target) > meters_per_second(.01f)) {
+				if ((!scan_active || scan.filled(idx)) && bodies[idx].sleeping() && magnitude(mt.velocity_drive_target) > meters_per_second(.01f)) {
 					bodies[idx].sleep_counter = 0;
 				}
 
@@ -1164,7 +1383,7 @@ auto gse::physics::init(context& ctx, const std::optional<shared_view<gpu::conte
 	d.vbd_solver.set_ordered_sweep(d.use_ordered_sweep);
 
 	if (gpu_s && d.use_gpu_solver) {
-		co_await d.gpu_solver.initialize_compute(ctx, *gpu_s, capacities_from_settings(d), d.gpu_sync_readback);
+		co_await d.gpu_solver.initialize_compute(ctx, *gpu_s, capacities_from_settings(d), d.gpu_sync_readback, d.gpu_full_snapshot);
 	}
 
 	co_return;
@@ -1224,11 +1443,16 @@ auto gse::physics::prepare(context& ctx, data& d, const channel_write<interpolat
 	{
 		trace::scope_guard _{ trace_id<"physics::prepare::specs">() };
 		const auto spec_owners = specs.owner_ids();
-		for (std::size_t i = 0; i < specs.size(); ++i) {
+		const auto* spec_data = specs.data();
+		const auto unresolved = flagged_indices(
+			specs.size(),
+			[spec_data](const std::size_t i) {
+				return !spec_data[i].resolved;
+			},
+			trace_id<"physics::prepare::specs::scan">()
+		);
+		for (const auto i : unresolved) {
 			auto& spec = specs[i];
-			if (spec.resolved) {
-				continue;
-			}
 			const auto def = make_joint_definition(spec.entity_a, spec.entity_b, spec.config);
 			if (auto* existing = d.joints.try_get(spec_owners[i])) {
 				*existing = def;
@@ -1252,7 +1476,7 @@ auto gse::physics::prepare(context& ctx, data& d, const channel_write<interpolat
 			if (!jd) {
 				return;
 			}
-			if (apply_muscle_activation(*jd, muscles[i])) {
+			if (apply_muscle_activation(*jd, muscles[i]) && !joints_changed.load(std::memory_order_relaxed)) {
 				joints_changed.store(true, std::memory_order_relaxed);
 			}
 		},
@@ -1260,16 +1484,29 @@ auto gse::physics::prepare(context& ctx, data& d, const channel_write<interpolat
 	);
 
 	const auto drive_owners = drives.owner_ids();
+	const auto joint_ids = d.joints.ids();
+	const auto joint_items = d.joints.items();
+	const auto joints_aligned = std::ranges::equal(drive_owners, joint_ids);
+	d.drive_joint_slots.resize(drives.size(), std::numeric_limits<std::uint32_t>::max());
+	auto* drive_joint_slots = d.drive_joint_slots.data();
 	task::coarse_parallel(
 		drives.size(),
 		64,
 		[&](const std::size_t i) {
-			auto* jd = d.joints.try_get(drive_owners[i]);
+			auto* jd = joints_aligned ? std::addressof(joint_items[i]) : nullptr;
+			if (!joints_aligned) {
+				if (const auto slot = drive_joint_slots[i]; slot < joint_ids.size() && joint_ids[slot] == drive_owners[i]) {
+					jd = std::addressof(joint_items[slot]);
+				}
+				else if ((jd = d.joints.try_get(drive_owners[i]))) {
+					drive_joint_slots[i] = static_cast<std::uint32_t>(jd - joint_items.data());
+				}
+			}
 			if (!jd) {
 				return;
 			}
 			apply_joint_drive(*jd, drives[i]);
-			if (drives[i].enabled) {
+			if (drives[i].enabled && !joints_changed.load(std::memory_order_relaxed)) {
 				joints_changed.store(true, std::memory_order_relaxed);
 			}
 		},
@@ -1363,6 +1600,11 @@ auto gse::physics::integrate(context& ctx, data& d, const channel_read<impulse_r
 	}
 	const auto frame_inputs = [&] {
 		trace::scope_guard _{ trace_id<"physics::gather_step_inputs">() };
+		if (gpu_solver_active(d)) {
+			return step_inputs{
+				.impulses = std::vector<impulse_request>(impulses.begin(), impulses.end())
+			};
+		}
 		return gather_step_inputs(motor, transform, motion, impulses);
 	}();
 
@@ -1430,10 +1672,10 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 	if (!reset) {
 		trace::scope_guard _{ trace_id<"vbd_gpu::readback">() };
 		{
-			trace::scope_guard _wait{ trace_id<"vbd_gpu::rb_wait">() };
+			trace::scope_guard _wait{ trace_id<"vbd_gpu::rb_wait">(), trace::span_kind::wait };
 			d.gpu_solver.wait_for_latest_dispatch();
 		}
-		const auto solved = d.gpu_solver.read_body_states();
+		const auto solved = d.gpu_solver.read_body_snapshots();
 		const auto readback = d.gpu_solver.readback_tick();
 
 		if (d.trace_readback_age) {
@@ -1475,11 +1717,8 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 			}
 			std::vector<std::uint8_t> rb_applied(motion.size(), 0);
 			std::vector<std::uint32_t> rb_sleep(motion.size(), 0);
-			for (std::size_t i = 0; i < motion.size(); ++i) {
+			for (const auto i : reset_pending_indices(motion)) {
 				auto& mc = motion[i];
-				if (mc.reset_pending == 0) {
-					continue;
-				}
 				const auto consumed = d.gpu_reset_ticks.find(rb_motion_ids[i]);
 				if (consumed == d.gpu_reset_ticks.end() || !readback || *readback < consumed->second) {
 					rb_applied[i] = 2;
@@ -1553,6 +1792,9 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 
 		const auto diag = d.gpu_solver.diagnostics();
 		d.gpu_solver.set_color_launch_hint(diag.max_used_color);
+		if (d.trace_island_convergence) {
+			trace_island_convergence(d);
+		}
 
 		constexpr int color_cap_dwell_frames = 30;
 		constexpr std::uint32_t color_pop_floor = 128;
@@ -2168,6 +2410,12 @@ auto gse::physics::update_vbd(const int steps, data& d, write<transform_componen
 		}
 
 		d.vbd_solver.solve(sub_dt);
+		if (d.trace_island_convergence) {
+			accumulate_island_convergence(d, d.vbd_solver.convergence_counts());
+			if ((step + 1) % substeps == 0) {
+				report_island_convergence(d);
+			}
+		}
 
 		{
 			std::uint32_t ji = 0;
@@ -2262,7 +2510,7 @@ auto gse::physics::frame(context& ctx, const std::optional<shared_view<gpu::cont
 			trace::scope_guard _{ trace_id<"physics::frame::commit_upload">() };
 			d.gpu_solver.commit_upload();
 		}
-		co_await d.gpu_solver.dispatch_compute(ctx, pass_out);
+		co_await d.gpu_solver.dispatch_compute(ctx, pass_out, gpu_s->swapchain != nullptr);
 	}
 
 	frame_out.push<gpu_solver_frame_info>(gpu_solver_frame_info_of(d));

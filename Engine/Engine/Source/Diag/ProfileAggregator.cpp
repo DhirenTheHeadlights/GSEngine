@@ -9,6 +9,7 @@ import gse.time;
 import gse.win32;
 import std;
 
+import :frame_analysis;
 import :profile_aggregator;
 import :trace;
 
@@ -157,6 +158,7 @@ auto gse::profile::record_frame(const trace::frame_view& view) -> void {
 	report_frame frame;
 	frame.generation = view.generation;
 	frame.elapsed = sample_time(view.elapsed);
+	frame.boundary = view.boundary;
 	frame.children.assign(view.children.begin(), view.children.end());
 	frame.roots.assign(view.roots.begin(), view.roots.end());
 	frame.nodes.reserve(view.nodes.size());
@@ -178,6 +180,7 @@ auto gse::profile::record_frame(const trace::frame_view& view) -> void {
 			.children_count = n.children_count,
 			.open = n.open,
 			.lexical = n.lexical,
+			.kind = n.kind,
 		});
 		if (n.start < first) {
 			first = n.start;
@@ -601,6 +604,12 @@ auto gse::profile::dump(const std::filesystem::path& path) -> void {
 	const auto cpu_top = cpu_top_row != cpu_rows.end() ? cpu_top_row->main_per_frame : sample_time{};
 	const auto gpu_top = gpu_rows.empty() ? sample_time{} : gpu_rows.front().per_frame;
 
+	if (!frame_recording()) {
+		record_frame(trace::view());
+	}
+	const report_file file = build_report_file();
+	const frame_analysis analysis = analyze_frames(file);
+
 	out << std::format("=== Profile dump ({}) ===\n", system_clock::timestamp_filename());
 	out << std::format(
 		"measured mean frame: {:.2f:ms} ({:.2f} fps)    main-thread scoped self: {:.2f:ms}    main-thread top: {:.2f:ms}    GPU top: {:.2f:ms}    "
@@ -620,6 +629,7 @@ auto gse::profile::dump(const std::filesystem::path& path) -> void {
 		warmup_frames(),
 		warming_up() ? "  (STILL WARMING UP - rows below are empty or partial)" : ""
 	);
+	write_path_verdict(out, analysis);
 	out << "per/f = accumulated sample duration / counted frames; avg = total / samples. % frame uses measured wall time over those frames.\n"
 		   "The CPU table contains lexical scope self-time only, including blocking inside a scope; it is not CPU utilization. Coroutine lifetimes remain in the timeline.\n"
 		   "Rows can span multiple threads. CPU and GPU overlap, so their totals must not be added to infer a frame breakdown or an unmeasured remainder.\n";
@@ -637,12 +647,15 @@ auto gse::profile::dump(const std::filesystem::path& path) -> void {
 		spike_ratio
 	);
 
+	write_frame_analysis(out, file, analysis);
 	write_section(out, "CPU lexical scope self-time (parallel sum)", cpu_rows, frame_time);
 	write_section(out, "GPU (per-pass time)", gpu_rows, frame_time);
 	write_gpu_metrics(out);
 
 	write_thread_breakdown(out, threaded_src);
-	write_dag(out);
+	if (analysis.frames > 0) {
+		write_dag(out, file.recorded[analysis.dag_frame], file.tags, analysis.dag_path, file.main_tid);
+	}
 }
 
 auto gse::profile::write_thread_breakdown(std::ofstream& out, const std::span<const entry> threaded_src) -> void {
@@ -730,19 +743,19 @@ auto gse::profile::write_thread_breakdown(std::ofstream& out, const std::span<co
 	out << '\n';
 }
 
-auto gse::profile::flatten_dag(const trace::frame_view& fv, std::vector<dag_visit>& out) -> void {
+auto gse::profile::flatten_dag(const report_frame& frame, std::vector<dag_visit>& out) -> void {
 	out.clear();
 
-	std::vector<std::uint32_t> ordered_roots(fv.roots.begin(), fv.roots.end());
+	std::vector<std::uint32_t> ordered_roots(frame.roots.begin(), frame.roots.end());
 	std::ranges::sort(
 		ordered_roots,
-		[&fv](const std::uint32_t a, const std::uint32_t b) {
-			return fv.nodes[a].start < fv.nodes[b].start;
+		[&frame](const std::uint32_t a, const std::uint32_t b) {
+			return frame.nodes[a].start < frame.nodes[b].start;
 		}
 	);
 
 	std::vector<dag_visit> stack;
-	stack.reserve(fv.nodes.size());
+	stack.reserve(frame.nodes.size());
 
 	for (const auto r : std::views::reverse(ordered_roots)) {
 		stack.push_back({
@@ -760,7 +773,8 @@ auto gse::profile::flatten_dag(const trace::frame_view& fv, std::vector<dag_visi
 			continue;
 		}
 
-		for (const auto ci : std::views::reverse(fv.child_indices(fv.nodes[visit.index]))) {
+		const report_node& parent = frame.nodes[visit.index];
+		for (const auto ci : std::views::reverse(std::span(frame.children).subspan(parent.children_first, parent.children_count))) {
 			stack.push_back({
 				.index = ci,
 				.depth = visit.depth + 1
@@ -769,44 +783,24 @@ auto gse::profile::flatten_dag(const trace::frame_view& fv, std::vector<dag_visi
 	}
 }
 
-auto gse::profile::write_dag(std::ofstream& out) -> void {
-	const auto fv = trace::view();
-	if (fv.roots.empty()) {
-		return;
-	}
-
-	auto tmin = fv.nodes[fv.roots.front()].start;
-	auto tmax = fv.nodes[fv.roots.front()].stop;
-
-	for (const auto r : fv.roots) {
-		const auto& n = fv.nodes[r];
-		if (n.start < tmin) {
-			tmin = n.start;
-		}
-		if (n.stop > tmax) {
-			tmax = n.stop;
-		}
-	}
-
-	if (tmax <= tmin) {
-		return;
-	}
+auto gse::profile::write_dag(std::ofstream& out, const report_frame& frame, const std::span<const std::string> tags, const std::span<const std::uint32_t> critical, const std::uint32_t main_tid) -> void {
+	const interval window = window_of(frame);
 
 	std::vector<dag_visit> visits;
-	flatten_dag(fv, visits);
+	flatten_dag(frame, visits);
 
-	const auto total_range = sample_time(tmax - tmin);
+	const auto total_range = sample_time(window.stop - window.start);
 	const sample_time min_span = microseconds(5.0);
-	const auto main_tid = trace::main_tid();
 
 	std::size_t name_width = 0;
 	for (const auto& v : visits) {
-		name_width = std::max(name_width, static_cast<std::size_t>(v.depth) * 2 + fv.nodes[v.index].id.tag().size());
+		name_width = std::max(name_width, static_cast<std::size_t>(v.depth) * 2 + tags[frame.nodes[v.index].tag].size());
 	}
 
-	out << "--- Frame DAG (absolute timeline; bars at same column = parallel) ---\n";
+	out << "--- Frame DAG (median recorded frame; bars at same column = parallel) ---\n";
 	out << std::format(
-		"total range: {:.2f:us} across {} columns ({:.2f:us} per column).  '#' = main thread, '=' = worker.\n\n",
+		"frame {}: {:.2f:us} across {} columns ({:.2f:us} per column).  '#' = main thread, '=' = worker, '*' = on the critical path.\n\n",
+		frame.generation,
 		total_range,
 		dag_bar_width,
 		total_range / static_cast<double>(dag_bar_width)
@@ -815,8 +809,9 @@ auto gse::profile::write_dag(std::ofstream& out) -> void {
 	std::string bar;
 
 	for (const auto& v : visits) {
-		const auto& n = fv.nodes[v.index];
-		if (n.stop <= n.start) {
+		const auto& n = frame.nodes[v.index];
+		const interval span = clip(n, window);
+		if (span.stop <= span.start) {
 			continue;
 		}
 
@@ -825,24 +820,23 @@ auto gse::profile::write_dag(std::ofstream& out) -> void {
 			continue;
 		}
 
-		const auto offset = sample_time(n.start - tmin);
-
-		std::size_t col_start = static_cast<std::size_t>(offset / total_range * static_cast<double>(dag_bar_width));
-		std::size_t col_end = static_cast<std::size_t>((offset + duration) / total_range * static_cast<double>(dag_bar_width));
+		std::size_t col_start = static_cast<std::size_t>(sample_time(span.start - window.start) / total_range * static_cast<double>(dag_bar_width));
+		std::size_t col_end = static_cast<std::size_t>(sample_time(span.stop - window.start) / total_range * static_cast<double>(dag_bar_width));
 		col_start = std::min(col_start, dag_bar_width - 1);
 		col_end = std::min(col_end, dag_bar_width);
 		if (col_end <= col_start) {
 			col_end = col_start + 1;
 		}
 
-		const char fill = (main_tid != 0 && n.trace_id != main_tid) ? '=' : '#';
+		const char fill = n.trace_id != main_tid ? '=' : '#';
 		bar.assign(dag_bar_width, ' ');
 		for (std::size_t i = col_start; i < col_end; ++i) {
 			bar[i] = fill;
 		}
 
-		const std::string label = std::format("{}{}", std::string(static_cast<std::size_t>(v.depth) * 2, ' '), n.id.tag());
-		out << std::format("|{}| {:>10.2f:us}  tid:{:<3}  {:<{}}\n", bar, duration, n.trace_id, label, name_width);
+		const char mark = std::ranges::binary_search(critical, v.index) ? '*' : ' ';
+		const std::string label = std::format("{}{}", std::string(static_cast<std::size_t>(v.depth) * 2, ' '), tags[n.tag]);
+		out << std::format("|{}| {:>10.2f:us} {} tid:{:<3}  {:<{}}\n", bar, duration, mark, n.trace_id, label, name_width);
 	}
 }
 

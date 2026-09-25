@@ -27,15 +27,20 @@ export namespace gse::vbd {
 	struct [[= shaders::shader_constant_block]] vbd_limits {
 		std::uint32_t max_colors = 16;
 		std::uint32_t workgroup_size = 32;
+		std::uint32_t island_slots = 96;
+		std::uint32_t island_pack_max = 8;
 		std::uint32_t adjacency_workgroup_size = 1024;
 		std::uint32_t coloring_rounds = 32;
 		std::uint32_t sleep_threshold = 60;
 		std::uint32_t iteration_trace_slots = 64;
 		std::uint32_t iteration_trace_uints = 3;
 		std::uint32_t joint_trace_uints = 9;
+		std::uint32_t island_convergence_uints = 2;
 		std::uint32_t state_iteration_trace_base_index = 81;
 		std::uint32_t state_joint_trace_base_index = 81 + 64 * 3;
-		std::uint32_t collision_state_header_uints = 81 + 64 * 3 + 64 * 9;
+		std::uint32_t state_island_convergence_base_index = state_joint_trace_base_index + iteration_trace_slots * joint_trace_uints;
+		std::uint32_t island_convergence_count = iteration_trace_slots * island_convergence_uints;
+		std::uint32_t collision_state_header_uints = state_island_convergence_base_index + island_convergence_count;
 		std::uint32_t solve_state_float4s_per_body = 11;
 		std::uint32_t state_contact_count_index = 0;
 		std::uint32_t state_max_used_color_index = 1;
@@ -251,6 +256,24 @@ export namespace gse::vbd {
 		auto inverse_mass() const -> inverse_mass;
 		auto sleeping() const -> bool;
 	};
+
+	struct body_scan_entry {
+		std::uint32_t locked = 0;
+		std::uint32_t reset_pending = 0;
+		displacement max_half_extent;
+	};
+
+	struct [[= shaders::shader_struct]] body_snapshot {
+		vec3<position> position;
+		std::uint32_t sleep_counter = 0;
+		vec3<velocity> velocity;
+		float accel_weight = 0.f;
+		quat orientation;
+		vec3<angular_velocity> angular_velocity;
+		vec3<displacement> com_local;
+
+		auto sleeping() const -> bool;
+	};
 }
 
 inline auto gse::vbd::body_state::inverse_mass() const -> gse::inverse_mass {
@@ -261,5 +284,9 @@ inline auto gse::vbd::body_state::inverse_mass() const -> gse::inverse_mass {
 }
 
 inline auto gse::vbd::body_state::sleeping() const -> bool {
+	return sleep_counter >= limits.sleep_threshold;
+}
+
+inline auto gse::vbd::body_snapshot::sleeping() const -> bool {
 	return sleep_counter >= limits.sleep_threshold;
 }

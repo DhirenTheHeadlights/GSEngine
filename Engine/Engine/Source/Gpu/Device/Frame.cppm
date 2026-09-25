@@ -92,7 +92,9 @@ export namespace gse::gpu {
 			std::span<const queue_submission> aux_submissions = {},
 			std::span<const semaphore_submit_info> extra_graphics_waits = {},
 			std::span<const command_buffer_handle> graphics_buffers = {},
-			std::span<const semaphore_submit_info> extra_graphics_signals = {}
+			std::span<const semaphore_submit_info> extra_graphics_signals = {},
+			std::span<const command_buffer_handle> graphics_leading_buffers = {},
+			std::span<const semaphore_submit_info> graphics_leading_waits = {}
 		) -> void;
 
 	private:

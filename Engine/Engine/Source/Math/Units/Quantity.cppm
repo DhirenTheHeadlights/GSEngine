@@ -545,8 +545,6 @@ namespace gse::internal {
 		requires valid_unit_for_quantity<UnitType, quantity>
 		constexpr auto as() const -> ArithmeticType;
 
-		constexpr explicit operator ArithmeticType() const noexcept;
-
 		template <auto UnitObj>
 		requires is_unit<decltype(UnitObj)> &&
 			valid_unit_for_quantity<decltype(UnitObj), quantity>
@@ -617,7 +615,7 @@ template <gse::internal::is_arithmetic A, gse::internal::is_dimension D, typenam
 template <gse::internal::is_arithmetic T2, gse::internal::is_dimension D2, typename Tag2, typename Unit2>
 requires gse::internal::has_same_dimensions<D, D2> && gse::internal::same_unit_family_v<Tag, Tag2>
 constexpr gse::internal::quantity<A, D, Tag, DefUnit>::quantity(const quantity<T2, D2, Tag2, Unit2>& other)
-	: m_val(static_cast<A>(rescaled<storage_unit_t<Tag2, Tag, Unit2>, storage_unit_t<Tag, Tag2, DefUnit>>(static_cast<T2>(other)))) {
+	: m_val(static_cast<A>(rescaled<storage_unit_t<Tag2, Tag, Unit2>, storage_unit_t<Tag, Tag2, DefUnit>>(other.m_val))) {
 }
 
 template <gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
@@ -638,16 +636,7 @@ template <gse::internal::is_arithmetic A, gse::internal::is_dimension D, typenam
 template <gse::internal::is_unit UnitType>
 requires gse::internal::valid_unit_for_quantity<UnitType, gse::internal::quantity<A, D, Tag, DefUnit>>
 constexpr auto gse::internal::quantity<A, D, Tag, DefUnit>::as() const -> A {
-	static_assert(
-		!std::same_as<UnitType, DefUnit>,
-		"as<DefaultUnit>() is an identity strip; use static_cast<value_type>(q) for the raw scalar"
-	);
 	return value_in<UnitType>(*this);
-}
-
-template <gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
-constexpr gse::internal::quantity<A, D, Tag, DefUnit>::operator A() const noexcept {
-	return m_val;
 }
 
 template <gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
@@ -679,7 +668,7 @@ requires gse::internal::has_same_dimensions<D, D2> && gse::internal::same_unit_f
 constexpr auto gse::internal::quantity<A, D, Tag, DefUnit>::operator<=>(const quantity<T2, D2, Tag2, Unit2>& other) const {
 	using common_t = std::common_type_t<A, T2>;
 	const auto lhs = static_cast<common_t>(m_val);
-	const auto rhs = rescaled<storage_unit_t<Tag2, Tag, Unit2>, storage_unit_t<Tag, Tag2, DefUnit>>(static_cast<common_t>(static_cast<T2>(other)));
+	const auto rhs = rescaled<storage_unit_t<Tag2, Tag, Unit2>, storage_unit_t<Tag, Tag2, DefUnit>>(static_cast<common_t>(other.m_val));
 	return lhs <=> rhs;
 }
 
@@ -768,7 +757,7 @@ namespace gse::internal {
 template <typename TargetUnit, gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
 requires gse::internal::is_unit<TargetUnit>
 constexpr auto gse::internal::value_in(const quantity<A, D, Tag, DefUnit>& q) -> A {
-	return scaled_by_ratio<typename DefUnit::conversion_ratio, typename TargetUnit::conversion_ratio>(static_cast<A>(q));
+	return scaled_by_ratio<typename DefUnit::conversion_ratio, typename TargetUnit::conversion_ratio>(q.m_val);
 }
 
 consteval auto gse::internal::collect_root_tags(std::meta::info ns) -> std::vector<std::meta::info> {
@@ -967,7 +956,7 @@ struct std::atomic<gse::internal::quantity<A, Dim, Tag, Unit>> {
 	constexpr atomic() noexcept = default;
 
 	constexpr atomic(const value_type desired) noexcept
-		: m_raw(static_cast<A>(desired)) {
+		: m_raw(desired.m_val) {
 	}
 
 	atomic(const atomic&) = delete;
@@ -987,7 +976,7 @@ struct std::atomic<gse::internal::quantity<A, Dim, Tag, Unit>> {
 	}
 
 	auto store(const value_type desired, const memory_order order = memory_order_seq_cst) noexcept -> void {
-		m_raw.store(static_cast<A>(desired), order);
+		m_raw.store(desired.m_val, order);
 	}
 
 	[[nodiscard]] auto load(const memory_order order = memory_order_seq_cst) const noexcept -> value_type {
@@ -995,55 +984,55 @@ struct std::atomic<gse::internal::quantity<A, Dim, Tag, Unit>> {
 	}
 
 	auto exchange(const value_type desired, const memory_order order = memory_order_seq_cst) noexcept -> value_type {
-		return value_type(m_raw.exchange(static_cast<A>(desired), order));
+		return value_type(m_raw.exchange(desired.m_val, order));
 	}
 
 	auto compare_exchange_weak(value_type& expected, const value_type desired, const memory_order success, const memory_order failure) noexcept -> bool {
-		A raw = static_cast<A>(expected);
-		const bool exchanged = m_raw.compare_exchange_weak(raw, static_cast<A>(desired), success, failure);
+		A raw = expected.m_val;
+		const bool exchanged = m_raw.compare_exchange_weak(raw, desired.m_val, success, failure);
 		expected = value_type(raw);
 		return exchanged;
 	}
 
 	auto compare_exchange_weak(value_type& expected, const value_type desired, const memory_order order = memory_order_seq_cst) noexcept -> bool {
-		A raw = static_cast<A>(expected);
-		const bool exchanged = m_raw.compare_exchange_weak(raw, static_cast<A>(desired), order);
+		A raw = expected.m_val;
+		const bool exchanged = m_raw.compare_exchange_weak(raw, desired.m_val, order);
 		expected = value_type(raw);
 		return exchanged;
 	}
 
 	auto compare_exchange_strong(value_type& expected, const value_type desired, const memory_order success, const memory_order failure) noexcept -> bool {
-		A raw = static_cast<A>(expected);
-		const bool exchanged = m_raw.compare_exchange_strong(raw, static_cast<A>(desired), success, failure);
+		A raw = expected.m_val;
+		const bool exchanged = m_raw.compare_exchange_strong(raw, desired.m_val, success, failure);
 		expected = value_type(raw);
 		return exchanged;
 	}
 
 	auto compare_exchange_strong(value_type& expected, const value_type desired, const memory_order order = memory_order_seq_cst) noexcept -> bool {
-		A raw = static_cast<A>(expected);
-		const bool exchanged = m_raw.compare_exchange_strong(raw, static_cast<A>(desired), order);
+		A raw = expected.m_val;
+		const bool exchanged = m_raw.compare_exchange_strong(raw, desired.m_val, order);
 		expected = value_type(raw);
 		return exchanged;
 	}
 
 	auto fetch_add(const difference_type arg, const memory_order order = memory_order_seq_cst) noexcept -> value_type {
-		return value_type(m_raw.fetch_add(static_cast<A>(arg), order));
+		return value_type(m_raw.fetch_add(arg.m_val, order));
 	}
 
 	auto fetch_sub(const difference_type arg, const memory_order order = memory_order_seq_cst) noexcept -> value_type {
-		return value_type(m_raw.fetch_sub(static_cast<A>(arg), order));
+		return value_type(m_raw.fetch_sub(arg.m_val, order));
 	}
 
 	auto operator+=(const difference_type arg) noexcept -> value_type {
-		return value_type(m_raw.fetch_add(static_cast<A>(arg)) + static_cast<A>(arg));
+		return value_type(m_raw.fetch_add(arg.m_val) + arg.m_val);
 	}
 
 	auto operator-=(const difference_type arg) noexcept -> value_type {
-		return value_type(m_raw.fetch_sub(static_cast<A>(arg)) - static_cast<A>(arg));
+		return value_type(m_raw.fetch_sub(arg.m_val) - arg.m_val);
 	}
 
 	auto wait(const value_type old, const memory_order order = memory_order_seq_cst) const noexcept -> void {
-		m_raw.wait(static_cast<A>(old), order);
+		m_raw.wait(old.m_val, order);
 	}
 
 	auto notify_one() noexcept -> void {
@@ -1429,7 +1418,7 @@ export namespace gse {
 	constexpr auto fmod(
 		const Q1& a,
 		const Q2& b
-	) -> Q1;
+	) -> Q1 pre(internal::value_in<typename Q1::default_unit>(b) != 0);
 }
 
 template <typename ToQuantity, typename FromQuantity>
@@ -1484,7 +1473,7 @@ export namespace gse {
 	}
 
 	template <internal::is_quantity Q>
-	constexpr auto sqrt(const Q& q) {
+	constexpr auto sqrt(const Q& q) pre(internal::value_in<internal::quantity_base_unit_t<Q>>(q) >= 0) {
 		using result_d = decltype(internal::dim_sqrt(typename Q::dimension()));
 		return internal::generic_quantity<typename Q::value_type, result_d>(std::sqrt(internal::value_in<internal::quantity_base_unit_t<Q>>(q)));
 	}

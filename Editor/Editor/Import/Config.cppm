@@ -12,6 +12,7 @@ export namespace gse::ide::config {
 		std::string name;
 		std::string game_target;
 		bool has_manifest = false;
+		bool installed = false;
 		std::filesystem::path engine_root;
 		std::filesystem::path engine_source;
 		std::filesystem::path project_root;

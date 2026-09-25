@@ -611,7 +611,7 @@ consteval auto gse::settings::make_quantity_range_field(const std::meta::info ra
 	}
 	return {
 		.enabled = true,
-		.min = static_cast<double>(static_cast<typename F::value_type>(std::meta::extract<F>(targs[0]))),
-		.max = static_cast<double>(static_cast<typename F::value_type>(std::meta::extract<F>(targs[1]))),
+		.min = static_cast<double>(std::meta::extract<F>(targs[0]).template as<typename F::default_unit>()),
+		.max = static_cast<double>(std::meta::extract<F>(targs[1]).template as<typename F::default_unit>()),
 	};
 }

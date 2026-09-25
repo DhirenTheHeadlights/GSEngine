@@ -48,7 +48,7 @@ auto gse::physics::contact_trace::run(data& d, const shared_view<physics::data> 
 	}
 	const auto body_index = it->second;
 
-	const auto bodies = phys.gpu_solver.read_body_states();
+	const auto bodies = phys.gpu_solver.read_body_snapshots();
 	if (body_index >= bodies.size()) {
 		co_return;
 	}

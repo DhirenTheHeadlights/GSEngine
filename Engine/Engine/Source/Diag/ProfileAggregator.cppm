@@ -127,7 +127,7 @@ export namespace gse::profile {
 	) -> void;
 
 	constexpr std::uint32_t report_magic = 0x47535250;
-	constexpr std::uint32_t report_version = 4;
+	constexpr std::uint32_t report_version = 5;
 
 	struct report_record {
 		std::string tag;
@@ -153,6 +153,7 @@ export namespace gse::profile {
 		std::uint32_t children_count = 0;
 		bool open = false;
 		bool lexical = false;
+		trace::span_kind kind = trace::span_kind::work;
 	};
 
 	struct report_frame {
@@ -163,6 +164,7 @@ export namespace gse::profile {
 		time_t<std::uint64_t> origin;
 		sample_time span;
 		sample_time elapsed;
+		time_t<std::uint64_t> boundary;
 	};
 
 	struct report_file {
@@ -332,11 +334,15 @@ namespace gse::profile {
 	) -> void;
 
 	auto write_dag(
-		std::ofstream& out
+		std::ofstream& out,
+		const report_frame& frame,
+		std::span<const std::string> tags,
+		std::span<const std::uint32_t> critical,
+		std::uint32_t main_tid
 	) -> void;
 
 	auto flatten_dag(
-		const trace::frame_view& fv,
+		const report_frame& frame,
 		std::vector<dag_visit>& out
 	) -> void;
 

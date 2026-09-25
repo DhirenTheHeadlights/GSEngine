@@ -113,7 +113,7 @@ export namespace gse::ide::terminal {
 		context& ctx,
 		data& d,
 		channel_read<build_runner::stream_opened, build_runner::attached_fatal_reported, agent::blame_offer> stream_in,
-		channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, gui::menu_content, jump_to_request, set_cursor_shape_request> ui_out,
+		channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, package_sdk::request, gui::menu_content, jump_to_request, set_cursor_shape_request> ui_out,
 		shared_view<build_runner::data> build_d
 	) -> async::task<>;
 
@@ -129,7 +129,7 @@ export namespace gse::ide::terminal {
 	auto draw_panel(
 		gui::builder& ui,
 		data& d,
-		channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels,
+		channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, package_sdk::request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels,
 		bool building
 	) -> void;
 }

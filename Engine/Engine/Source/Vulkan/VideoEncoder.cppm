@@ -703,8 +703,8 @@ auto gse::vulkan::video_encoder::record_rate_control(per_frame& slot, const bool
 
 	const vk::VideoEncodeRateControlLayerInfoKHR layer{
 		.pNext = m_codec == gpu::video_codec::av1 ? static_cast<const void*>(&av1_layer) : &h265_layer,
-		.averageBitrate = static_cast<std::uint64_t>(m_average_bitrate),
-		.maxBitrate = static_cast<std::uint64_t>(m_peak_bitrate),
+		.averageBitrate = m_average_bitrate.as<bits_per_second>(),
+		.maxBitrate = m_peak_bitrate.as<bits_per_second>(),
 		.frameRateNumerator = m_frame_rate_numerator,
 		.frameRateDenominator = m_frame_rate_denominator
 	};

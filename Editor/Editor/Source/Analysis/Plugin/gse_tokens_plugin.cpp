@@ -474,6 +474,7 @@ static void emit(location_t loc, const char *kind, int len) {
 static void emit_at_name(location_t loc, const char *kind, tree id);
 static void emit_ref(location_t use_loc, tree decl, int len);
 static void note_decl_origin(tree decl);
+static void emit_auto_ref(tree decl);
 
 static void emit_decl(tree d, location_t loc) {
 	if (!d || !DECL_P(d) || DECL_ARTIFICIAL(d)) return;
@@ -485,6 +486,9 @@ static void emit_decl(tree d, location_t loc) {
 	}
 	emit_at_name(loc, kind_of(d), DECL_NAME(d));
 	emit_ref(loc, d, ident_len(d));
+	if (loc == DECL_SOURCE_LOCATION(d)) {
+		emit_auto_ref(d);
+	}
 }
 
 static bool source_spelled_name(tree id) {
@@ -1173,6 +1177,98 @@ static bool locate_name(location_t loc, const char *name, int len, int *out_line
 	*out_line = xl.line;
 	*out_col = best + 1;
 	return true;
+}
+
+static bool source_word_is(const char *line, int start, int len, const char *word) {
+	return len == (int)strlen(word) && strncmp(line + start, word, len) == 0;
+}
+
+static bool auto_keyword_column(tree decl, int *out_line, int *out_col) {
+	tree id = DECL_NAME(decl);
+	if (!id || TREE_CODE(id) != IDENTIFIER_NODE || IDENTIFIER_LENGTH(id) <= 0) {
+		return false;
+	}
+	expanded_location xl;
+	if (!expand_main(DECL_SOURCE_LOCATION(decl), &xl) || xl.line <= 0 || xl.column <= 0) {
+		return false;
+	}
+	const char *line = nullptr;
+	int n = 0;
+	if (!source_line(xl.line, &line, &n)) {
+		return false;
+	}
+	int i = name_byte_column(xl.file, xl.line, xl.column, IDENTIFIER_POINTER(id), (int)IDENTIFIER_LENGTH(id)) - 1;
+	if (i < 0 || i > n) {
+		return false;
+	}
+	while (true) {
+		while (i > 0 && (line[i - 1] == ' ' || line[i - 1] == '\t' || line[i - 1] == '&' || line[i - 1] == '*')) {
+			--i;
+		}
+		int start = i;
+		while (start > 0 && source_identifier_continue(line[start - 1])) {
+			--start;
+		}
+		const int len = i - start;
+		if (source_word_is(line, start, len, "auto")) {
+			*out_line = xl.line;
+			*out_col = start + 1;
+			return true;
+		}
+		if (len == 0 || !(source_word_is(line, start, len, "const") || source_word_is(line, start, len, "volatile"))) {
+			return false;
+		}
+		i = start;
+	}
+}
+
+static tree named_type_decl(tree type) {
+	while (type && (TYPE_PTR_P(type) || TYPE_REF_P(type) || TREE_CODE(type) == ARRAY_TYPE)) {
+		type = TREE_TYPE(type);
+	}
+	if (!type || !TYPE_P(type)) {
+		return NULL_TREE;
+	}
+	tree name = TYPE_NAME(TYPE_MAIN_VARIANT(type));
+	if (!name || TREE_CODE(name) != TYPE_DECL || !source_spelled_name(DECL_NAME(name))) {
+		return NULL_TREE;
+	}
+	return name;
+}
+
+static void emit_auto_ref(tree decl) {
+	if (!decl || TREE_CODE(decl) != VAR_DECL || DECL_ARTIFICIAL(decl)) {
+		return;
+	}
+	tree type = TREE_TYPE(decl);
+	if (!type || !TYPE_P(type) || type_uses_auto(type)) {
+		return;
+	}
+	int line = 0;
+	int col = 0;
+	if (!auto_keyword_column(decl, &line, &col)) {
+		return;
+	}
+	tree target = named_type_decl(type);
+	expanded_location dx = target ? expand_cached(DECL_SOURCE_LOCATION(target)) : expanded_location{};
+	if (!dx.file || dx.line <= 0 || dx.column <= 0) {
+		target = decl;
+		dx = expand_cached(DECL_SOURCE_LOCATION(decl));
+	}
+	if (!dx.file || dx.line <= 0 || dx.column <= 0) {
+		return;
+	}
+	tree target_id = DECL_NAME(target);
+	const char *target_name = IDENTIFIER_POINTER(target_id);
+	const int def_col = name_byte_column(dx.file, dx.line, dx.column, target_name, (int)IDENTIFIER_LENGTH(target_id));
+	out_printf("GSEREF\t%s\t%d\t%d\t4\tauto\t%s\t%d\t%d\t", main_input_filename, line, col, dx.file, dx.line, def_col);
+	print_qualified_prefix(target);
+	out_str(target_name);
+	out_str("\t\t");
+	if (const char *s = type_as_string(type, TFF_SCOPE)) {
+		out_str_sanitized(s);
+	}
+	out_char('\n');
 }
 
 static void emit_at_name(location_t loc, const char *kind, tree id) {

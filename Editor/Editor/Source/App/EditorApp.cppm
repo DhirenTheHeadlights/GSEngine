@@ -1521,13 +1521,21 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 		d.layout_dirty = true;
 	}
 
+	std::vector<id> minimized;
 	for (const auto& req : requests_in.of<window_resized>()) {
+		if (req.size.x() <= 0 || req.size.y() <= 0) {
+			minimized.push_back(req.id);
+			continue;
+		}
 		if (dock_view* view = find_view(d, req.id)) {
 			view->window_size = req.size;
 		}
 	}
 
 	for (const auto& req : requests_in.of<window_moved>()) {
+		if (std::ranges::contains(minimized, req.id)) {
+			continue;
+		}
 		if (dock_view* view = find_view(d, req.id)) {
 			view->window_position = req.position;
 		}
@@ -1851,7 +1859,7 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 		d.git_action_error = update.action_error;
 	}
 	for (const build_runner::build_finished& finished : requests_in.of<build_runner::build_finished>()) {
-		if (finished.kind != build_runner::stream_kind::build_game || !finished.succeeded || !project::current().valid || !d.git_status) {
+		if (finished.kind != build_runner::stream_kind::build_game || !finished.succeeded || !project::current().valid || !project::current().sdk_version.empty() || !d.git_status) {
 			continue;
 		}
 		const git::repository_snapshot engine = d.git_status->find(config::engine_root());

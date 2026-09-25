@@ -167,6 +167,51 @@ const build = async (args) => {
 	return text_result(header(project, { id, outcome: 'timeout', timeout }), true);
 };
 
+const package_sdk = async (args) => {
+	const project = args.project ? windows_path(args.project) : project_of(process.cwd());
+	const id = new_id();
+	const timeout = Math.max(1, Number(args.timeout ?? 900));
+
+	rmSync(join(inbox, 'results', `${id}.txt`), { force: true });
+	write_atomically(join(inbox, 'package'), id, [
+		`id ${id}`,
+		`agent ${agent}`,
+		`cwd ${windows_path(process.cwd())}`,
+		`project ${project}`,
+		'',
+	].join('\n'));
+
+	const request_path = join(inbox, 'package', `${id}.txt`);
+	for (let waited = 0; waited < timeout; waited += 1) {
+		const result = read_result(id);
+		if (result) {
+			result.remove();
+			const image = result.status === 'ok' ? result.body.replace(/^image /, '') : undefined;
+			return text_result(header(project, {
+				id,
+				outcome: result.status === 'ok' ? 'succeeded' : result.status,
+				image,
+				report: result.status === 'ok' ? undefined : result.body,
+				next: result.status === 'ok'
+					? 'The image is staged and verified. The editor\'s Package SDK tab holds the full transcript; gse_log_query with pattern "sdk" shows the summary lines.'
+					: undefined,
+			}), result.status !== 'ok');
+		}
+		if (waited >= 10 && existsSync(request_path)) {
+			rmSync(request_path, { force: true });
+			return text_result(header(project, {
+				id,
+				outcome: 'no_editor',
+				error: 'no editor picked up the request within 10s - it is not running or has no editor open on this project.',
+			}), true);
+		}
+		await sleep(1000);
+	}
+	rmSync(request_path, { force: true });
+	rmSync(join(inbox, 'results', `${id}.txt`), { force: true });
+	return text_result(header(project, { id, outcome: 'timeout', timeout }), true);
+};
+
 const parse_request = (path) => {
 	const entry = { id: basename(path, '.txt') };
 	try {
@@ -817,6 +862,18 @@ const tools = {
 			},
 		},
 		run: build,
+	},
+	gse_package_sdk: {
+		description:
+			'Ask the running GSE editor to stage and verify the engine SDK image from its current build tree, the same as the "Package SDK" button. Blocks until the image is ready or the verify step fails; the full transcript lands in the editor\'s Package SDK tab. Refused while a build or another packaging run is in progress.',
+		schema: {
+			type: 'object',
+			properties: {
+				project: { type: 'string', description: 'Directory holding the .gseproj to address. Defaults to the nearest one above the current directory.' },
+				timeout: { type: 'number', description: 'Seconds before giving up (default 900).' },
+			},
+		},
+		run: package_sdk,
 	},
 	gse_build_status: {
 		description: 'What is queued in the editor build inbox and whether you are hibernating. Use instead of polling file timestamps.',

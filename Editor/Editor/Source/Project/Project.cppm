@@ -10,6 +10,11 @@ export namespace gse::ide::project {
 		std::filesystem::path path;
 	};
 
+	struct sdk_entry {
+		std::string version;
+		std::filesystem::path image;
+	};
+
 	struct manifest {
 		bool valid = false;
 		bool requested = false;
@@ -18,6 +23,8 @@ export namespace gse::ide::project {
 		std::string engine_name;
 		std::string engine_commit;
 		std::string engine_problem;
+		std::string sdk_version;
+		std::filesystem::path sdk;
 		std::map<std::string, std::string> targets;
 		std::filesystem::path file;
 		std::filesystem::path root;
@@ -43,6 +50,26 @@ export namespace gse::ide::project {
 	auto pin_engine_commit(
 		std::string_view commit
 	) -> void;
+
+	auto is_sdk_image(
+		const std::filesystem::path& path
+	) -> bool;
+
+	auto sdk_for_version(
+		std::string_view version
+	) -> std::filesystem::path;
+
+	auto register_sdk(
+		std::string_view version,
+		const std::filesystem::path& image
+	) -> void;
+
+	auto bind_sdk(
+		const std::filesystem::path& manifest_file,
+		std::string_view version
+	) -> void;
+
+	auto sdks() -> std::vector<sdk_entry>;
 
 	auto accent() -> vec4f;
 

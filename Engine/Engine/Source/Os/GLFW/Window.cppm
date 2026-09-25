@@ -280,6 +280,7 @@ export namespace gse::window {
 		bool cmd_launcher_pending = false;
 		bool cmd_launcher_active = false;
 		vec2i cmd_launcher_size{ 0, 0 };
+		vec2i launch_launcher_size{ 0, 0 };
 		bool cmd_resize_pending = false;
 		vec2i cmd_resize_size{ 0, 0 };
 		vec2i launcher_saved_position{ 0, 0 };

@@ -106,7 +106,7 @@ auto sandbox::sidearm::run(gse::context& ctx, data& d, const gse::shared_view<gs
 		if (!s || received.message.shot <= s->fired_seen || s->cooldown > gse::time{}) {
 			continue;
 		}
-		fire(pc->controlled_entity_id, *s, received.message.shot, gse::radians(received.message.yaw), gse::radians(received.message.pitch));
+		fire(pc->controlled_entity_id, *s, received.message.shot, received.message.yaw, received.message.pitch);
 	}
 
 	const auto& local_state = gse::actions::current_state(as);
@@ -127,8 +127,8 @@ auto sandbox::sidearm::run(gse::context& ctx, data& d, const gse::shared_view<gs
 		fire_out.push<gse::network::send_request<fire_request>>({
 			.message = {
 				.shot = d.shot,
-				.yaw = static_cast<float>(orbit->yaw),
-				.pitch = static_cast<float>(orbit->pitch),
+				.yaw = orbit->yaw,
+				.pitch = orbit->pitch,
 			},
 			.reliable = true,
 		});

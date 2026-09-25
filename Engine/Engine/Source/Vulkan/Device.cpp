@@ -2758,7 +2758,7 @@ auto gse::vulkan::device::wait_semaphore_for(const gpu::handle<gpu::semaphore> s
 			.pSemaphores = &vk_semaphore,
 			.pValues = &value,
 		},
-		static_cast<std::uint64_t>(std::max(0.f, static_cast<float>(timeout)))
+		static_cast<std::uint64_t>(std::max(time{}, timeout).as<nanoseconds>())
 	);
 	return result == vk::Result::eSuccess;
 }

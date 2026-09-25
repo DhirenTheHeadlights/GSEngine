@@ -108,4 +108,19 @@ export namespace gse::ide::build_inbox {
 	auto consume_symbol_query(
 		std::string_view id
 	) -> void;
+
+	struct package_request {
+		std::string id;
+		std::string agent;
+		std::filesystem::path cwd;
+		std::filesystem::path project;
+	};
+
+	auto packages_dir() -> std::filesystem::path;
+
+	auto peek_package_requests() -> std::vector<package_request>;
+
+	auto consume_package_request(
+		std::string_view id
+	) -> void;
 }

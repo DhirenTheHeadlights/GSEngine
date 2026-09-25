@@ -238,7 +238,7 @@ auto gse::gpu::frame::begin() -> std::expected<frame_token, frame_status> {
 	}
 
 	{
-		trace::scope_guard _{ trace_id<"begin_frame::wait_fence">() };
+		trace::scope_guard _{ trace_id<"begin_frame::wait_fence">(), trace::span_kind::wait };
 		for (std::size_t i = 0; i < queue_type_count; ++i) {
 			const auto queue = static_cast<queue_type>(i);
 			const auto queue_tag = queue == queue_type::graphics
@@ -246,7 +246,7 @@ auto gse::gpu::frame::begin() -> std::expected<frame_token, frame_status> {
 				: queue == queue_type::compute
 					? trace_id<"begin_frame::wait_fence::compute">()
 					: trace_id<"begin_frame::wait_fence::video_encode">();
-			trace::scope_guard _{ queue_tag };
+			trace::scope_guard _{ queue_tag, trace::span_kind::wait };
 			const auto fence_result =
 				m_device->wait_for_fence(
 					m_fences.in_flight(queue, m_current_frame)
@@ -402,23 +402,6 @@ auto gse::gpu::frame::begin() -> std::expected<frame_token, frame_status> {
 	m_device->cmd_reset(cmd_main);
 	m_device->cmd_begin(cmd_main);
 
-	for (const present_target& t : m_targets) {
-		if (!t.acquired) {
-			continue;
-		}
-		const image_discard acquire_barrier{
-			.src_stages = pipeline_stage_flag::top_of_pipe,
-			.src_access = {},
-			.dst_stages = pipeline_stage_flag::color_attachment_output,
-			.dst_access = { access_flag::color_attachment_write, access_flag::color_attachment_read },
-			.image = t.swapchain->image(t.image_index),
-			.aspects = image_aspect_flag::color,
-		};
-		m_device->cmd_pipeline_barrier(cmd_main, dependency_info{
-			.image_discards = std::span(&acquire_barrier, 1)
-		});
-	}
-
 	const std::array transient_visibility_barriers{
 		memory_barrier{
 			.src_stages = pipeline_stage_flag::acceleration_structure_build,
@@ -456,11 +439,36 @@ auto gse::gpu::frame::begin() -> std::expected<frame_token, frame_status> {
 	};
 }
 
-auto gse::gpu::frame::end(std::span<const queue_submission> aux_submissions, std::span<const semaphore_submit_info> extra_graphics_waits, std::span<const command_buffer_handle> graphics_buffers, std::span<const semaphore_submit_info> extra_graphics_signals) -> void {
+auto gse::gpu::frame::end(std::span<const queue_submission> aux_submissions, std::span<const semaphore_submit_info> extra_graphics_waits, std::span<const command_buffer_handle> graphics_buffers, std::span<const semaphore_submit_info> extra_graphics_signals, std::span<const command_buffer_handle> graphics_leading_buffers, std::span<const semaphore_submit_info> graphics_leading_waits) -> void {
 	const auto graphics_begin = command_buffer_handle{ m_command_buffers[static_cast<std::size_t>(queue_type::graphics)] };
 	{
 		trace::scope_guard _{ trace_id<"end_frame::cmd_end">() };
 		m_device->cmd_end(graphics_begin);
+	}
+
+	std::optional<command_buffer_handle> graphics_acquire;
+	for (const present_target& t : m_targets) {
+		if (!t.acquired) {
+			continue;
+		}
+		if (!graphics_acquire) {
+			graphics_acquire = m_device->acquire_worker_command_buffer(queue_type::graphics, 0, m_current_frame);
+			m_device->cmd_begin(*graphics_acquire);
+		}
+		const image_discard acquire_barrier{
+			.src_stages = pipeline_stage_flag::top_of_pipe,
+			.src_access = {},
+			.dst_stages = pipeline_stage_flag::color_attachment_output,
+			.dst_access = { access_flag::color_attachment_write, access_flag::color_attachment_read },
+			.image = t.swapchain->image(t.image_index),
+			.aspects = image_aspect_flag::color,
+		};
+		m_device->cmd_pipeline_barrier(*graphics_acquire, dependency_info{
+			.image_discards = std::span(&acquire_barrier, 1)
+		});
+	}
+	if (graphics_acquire) {
+		m_device->cmd_end(*graphics_acquire);
 	}
 
 	const auto graphics_end = m_device->acquire_worker_command_buffer(queue_type::graphics, 0, m_current_frame);
@@ -554,11 +562,32 @@ auto gse::gpu::frame::end(std::span<const queue_submission> aux_submissions, std
 		main_signals.push_back(s);
 	}
 
+	const bool split_graphics = !graphics_leading_buffers.empty();
+	if (split_graphics) {
+		trace::scope_guard _{ trace_id<"end_frame::submit_leading">() };
+		std::vector<command_buffer_submit_info> cmd_infos;
+		cmd_infos.reserve(1 + graphics_leading_buffers.size());
+		cmd_infos.push_back({ .command_buffer = graphics_begin });
+		for (const auto cb : graphics_leading_buffers) {
+			cmd_infos.push_back({ .command_buffer = cb });
+		}
+		const submit_info submit{
+			.wait_semaphores = graphics_leading_waits,
+			.command_buffers = cmd_infos,
+		};
+		m_device->submit(queue_type::graphics, submit, handle<fence>{});
+	}
+
 	{
 		trace::scope_guard _{ trace_id<"end_frame::submit">() };
 		std::vector<command_buffer_submit_info> cmd_infos;
-		cmd_infos.reserve(2 + graphics_buffers.size());
-		cmd_infos.push_back({ .command_buffer = graphics_begin });
+		cmd_infos.reserve(3 + graphics_buffers.size());
+		if (!split_graphics) {
+			cmd_infos.push_back({ .command_buffer = graphics_begin });
+		}
+		if (graphics_acquire) {
+			cmd_infos.push_back({ .command_buffer = *graphics_acquire });
+		}
 		for (const auto cb : graphics_buffers) {
 			cmd_infos.push_back({ .command_buffer = cb });
 		}

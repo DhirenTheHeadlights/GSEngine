@@ -387,7 +387,7 @@ auto gse::renderer::physics_debug::prepare(context& ctx, data& d, const shared_v
 
 	const bool use_snapshot = physics::gpu_solver_active(ps) && ps.gpu_solver.body_count() > 0;
 	if (use_snapshot) {
-		const auto snapshot_states = ps.gpu_solver.read_body_states();
+		const auto snapshot_states = ps.gpu_solver.read_body_snapshots();
 		if (!snapshot_states.empty()) {
 			d.cpu_body_staging.resize(snapshot_states.size());
 			for (std::size_t i = 0; i < snapshot_states.size(); ++i) {

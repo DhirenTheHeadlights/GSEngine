@@ -225,8 +225,7 @@ export namespace gse::ide::agent {
 	};
 
 	struct retry_state {
-		std::string prompt;
-		std::vector<std::filesystem::path> images;
+		bool held = false;
 		std::uint32_t attempts = 0;
 		bool waiting = false;
 	};

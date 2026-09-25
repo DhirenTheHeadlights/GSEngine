@@ -208,6 +208,8 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto take_graphics_buffers() -> std::vector<command_buffer_handle>;
 
+		[[nodiscard]] auto take_graphics_leading_buffers() -> std::vector<command_buffer_handle>;
+
 	private:
 		static constexpr std::uint32_t max_profiled_passes = 128;
 		static constexpr std::uint32_t stats_per_pass = 4;
@@ -313,6 +315,7 @@ export namespace gse::gpu {
 		std::vector<semaphore_submit_info> m_pending_graphics_extra_waits;
 		std::vector<semaphore_submit_info> m_pending_graphics_extra_signals;
 		std::vector<command_buffer_handle> m_pending_graphics_buffers;
+		std::vector<command_buffer_handle> m_pending_graphics_leading_buffers;
 		std::set<std::pair<id, id>> m_warned_ambiguous_pairs;
 		std::set<std::pair<std::size_t, std::size_t>> m_warned_queue_cycles;
 		std::set<std::pair<std::size_t, std::size_t>> m_warned_dropped_waits;

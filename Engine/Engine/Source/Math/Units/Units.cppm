@@ -404,24 +404,26 @@ export namespace gse {
 	}
 
 	template <std::floating_point T>
-	constexpr auto asin(const T v) -> angle_t<T> {
+	constexpr auto asin(const T v) -> angle_t<T> pre(v >= T(-1) && v <= T(1)) {
 		return radians(std::asin(v));
 	}
 
 	template <internal::is_quantity Q>
 	requires internal::has_same_dimensions<typename Q::dimension, internal::dimensionless>
-	constexpr auto asin(const Q& q) -> angle_t<typename Q::value_type> {
+	constexpr auto asin(const Q& q) -> angle_t<typename Q::value_type>
+		pre(internal::value_in<typename Q::default_unit>(q) >= -1 && internal::value_in<typename Q::default_unit>(q) <= 1) {
 		return radians(std::asin(internal::value_in<typename Q::default_unit>(q)));
 	}
 
 	template <std::floating_point T>
-	constexpr auto acos(const T v) -> angle_t<T> {
+	constexpr auto acos(const T v) -> angle_t<T> pre(v >= T(-1) && v <= T(1)) {
 		return radians(std::acos(v));
 	}
 
 	template <internal::is_quantity Q>
 	requires internal::has_same_dimensions<typename Q::dimension, internal::dimensionless>
-	constexpr auto acos(const Q& q) -> angle_t<typename Q::value_type> {
+	constexpr auto acos(const Q& q) -> angle_t<typename Q::value_type>
+		pre(internal::value_in<typename Q::default_unit>(q) >= -1 && internal::value_in<typename Q::default_unit>(q) <= 1) {
 		return radians(std::acos(internal::value_in<typename Q::default_unit>(q)));
 	}
 
@@ -452,6 +454,14 @@ export namespace gse {
 				static_cast<common_type>(internal::value_in<reference_unit>(x))
 			)
 		);
+	}
+
+	template <internal::is_quantity Q>
+	requires internal::has_same_dimensions<typename Q::dimension, typename angle::dimension>
+	constexpr auto wrap_angle(const Q& a) -> Q {
+		using value_type = typename Q::value_type;
+		const Q full_turn = radians(static_cast<value_type>(2) * std::numbers::pi_v<value_type>);
+		return Q(a - full_turn * std::round(a / full_turn));
 	}
 }
 
@@ -527,5 +537,10 @@ namespace gse::internal {
 	static_assert(
 		time(1.f / per_second(4.f)).as<seconds>() > 0.249f &&
 		time(1.f / per_second(4.f)).as<seconds>() < 0.251f
+	);
+	static_assert(
+		gse::abs(wrap_angle(radians(7.f)) - radians(7.f - 2.f * std::numbers::pi_v<float>)) < radians(1e-5f) &&
+		gse::abs(wrap_angle(radians(-4.f)) - radians(2.f * std::numbers::pi_v<float> - 4.f)) < radians(1e-5f) &&
+		gse::abs(wrap_angle(radians(1.f)) - radians(1.f)) < radians(1e-6f)
 	);
 }

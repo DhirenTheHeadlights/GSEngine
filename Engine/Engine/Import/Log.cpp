@@ -56,6 +56,8 @@ namespace gse::log {
 
 	std::atomic<bool> logger_alive = false;
 
+	std::atomic<bool> logger_retired = false;
+
 	thread_local thread_role t_thread_role = thread_role::unknown;
 
 	thread_local std::size_t t_thread_index = no_thread_index;
@@ -178,7 +180,12 @@ namespace gse::log {
 		std::thread m_worker;
 	};
 
-	logger instance;
+	auto instance() -> logger&;
+}
+
+auto gse::log::instance() -> logger& {
+	static logger active;
+	return active;
 }
 
 auto gse::log::log_file_path() -> std::filesystem::path {
@@ -452,6 +459,7 @@ gse::log::logger::logger() {
 }
 
 gse::log::logger::~logger() {
+	logger_retired.store(true, std::memory_order_relaxed);
 	logger_alive.store(false, std::memory_order_relaxed);
 	set_async(false);
 
@@ -813,28 +821,31 @@ auto gse::log::logger::flush() -> void {
 }
 
 auto gse::log::write_line(const level lvl, const category cat, const std::string_view extra_prefix, const std::string_view fmt, std::format_args args) -> void {
-	if (!logger_alive.load(std::memory_order_relaxed)) {
+	if (logger_retired.load(std::memory_order_relaxed)) {
 		const auto message = std::vformat(fmt, args);
 		std::fputs(message.c_str(), stderr);
 		std::fputc('\n', stderr);
 		return;
 	}
-	instance.write_line(lvl, cat, extra_prefix, fmt, args);
+	instance().write_line(lvl, cat, extra_prefix, fmt, args);
 }
 
 auto gse::log::add_sink(std::unique_ptr<sink> s) -> sink* {
-	return instance.add_sink(std::move(s));
+	return instance().add_sink(std::move(s));
 }
 
 auto gse::log::set_async(const bool enabled) -> void {
-	instance.set_async(enabled);
+	if (logger_retired.load(std::memory_order_relaxed)) {
+		return;
+	}
+	instance().set_async(enabled);
 }
 
 auto gse::log::flush() -> void {
 	if (!logger_alive.load(std::memory_order_relaxed)) {
 		return;
 	}
-	instance.flush();
+	instance().flush();
 }
 
 auto gse::log::enable_backtrace(const std::size_t size) -> void {
@@ -843,11 +854,15 @@ auto gse::log::enable_backtrace(const std::size_t size) -> void {
 
 auto gse::log::disable_backtrace() -> void {
 	backtrace_size.store(0, std::memory_order_relaxed);
-	instance.clear_backtrace();
+	if (logger_alive.load(std::memory_order_relaxed)) {
+		instance().clear_backtrace();
+	}
 }
 
 auto gse::log::dump_backtrace() -> void {
-	instance.dump_backtrace();
+	if (logger_alive.load(std::memory_order_relaxed)) {
+		instance().dump_backtrace();
+	}
 }
 
 auto gse::log::backtrace_active() -> bool {

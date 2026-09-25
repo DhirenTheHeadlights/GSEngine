@@ -199,7 +199,7 @@ export namespace gse {
 		constexpr decltype(auto) operator[](
 			this auto& self,
 			std::size_t index
-		);
+		) pre(index < N);
 
 		template <typename E>
 		requires std::is_enum_v<E>

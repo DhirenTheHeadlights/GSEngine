@@ -351,7 +351,7 @@ const float fov = 90.f;
 
 Numeric type can be specified via `time_t<T>`, `length_t<T>`, etc. when `float` is not appropriate (e.g. `time_t<std::uint32_t>`).
 
-Unit types are layout-compatible with their underlying arithmetic type and pass through math and GPU push constants directly. `.as<Unit>()` is for converting between units (e.g. `time.as<milliseconds>()` from ns-stored time); identity strip via `.as<DefaultUnit>()` is a compile error. When you genuinely need the raw scalar at a foreign-API boundary, write `static_cast<value_type>(q)`.
+Unit types are layout-compatible with their underlying arithmetic type and pass through math and GPU push constants directly. `.as<Unit>()` is the only exit to a raw scalar and it always names the unit (e.g. `time.as<milliseconds>()` from ns-stored time, `timeout.as<nanoseconds>()` for a driver call). There is no conversion operator: `static_cast<float>(q)` does not compile, so every strip is greppable and states its unit. Wire and file structs carry the quantity type itself; do not flatten to `float` at a message boundary.
 
 ### Stay in the Unit Type
 

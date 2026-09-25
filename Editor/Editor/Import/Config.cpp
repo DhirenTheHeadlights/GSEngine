@@ -92,7 +92,8 @@ auto gse::ide::config::resolve_primary_worktree() -> worktree {
 	const std::filesystem::path& build = gse::config::build_root();
 
 	const project::manifest& active = project::current();
-	const std::filesystem::path engine_root = active.valid && !active.engine.empty() ? active.engine : root;
+	const bool installed = active.valid && !active.sdk.empty();
+	const std::filesystem::path engine_root = installed ? active.sdk : active.valid && !active.engine.empty() ? active.engine : root;
 	const std::filesystem::path project_root = active.valid ? active.root : root;
 	const std::filesystem::path project_source = active.valid ? active.source : root / "Game" / "Game";
 	const std::filesystem::path project_assets = active.valid ? active.assets : gse::config::project_assets_path();
@@ -108,8 +109,9 @@ auto gse::ide::config::resolve_primary_worktree() -> worktree {
 		.name = active.valid ? active.name : root.filename().native_encoded_string(),
 		.game_target = game,
 		.has_manifest = active.valid,
+		.installed = installed,
 		.engine_root = gse::config::generic(engine_root),
-		.engine_source = gse::config::generic(engine_root / "Engine" / "Engine"),
+		.engine_source = gse::config::generic(installed ? engine_root / "Engine" / "Source" : engine_root / "Engine" / "Engine"),
 		.project_root = gse::config::generic(project_root),
 		.project_source = gse::config::generic(project_source),
 		.project_assets = gse::config::generic(project_assets),
@@ -174,6 +176,7 @@ auto gse::ide::config::retarget_worktree(const worktree& source, const std::file
 		.name = root.filename().native_encoded_string(),
 		.game_target = source.game_target,
 		.has_manifest = source.has_manifest,
+		.installed = source.installed,
 		.engine_root = gse::config::generic(root),
 		.engine_source = retarget(source.engine_source, from, root),
 		.project_root = retarget(source.project_root, from, root),

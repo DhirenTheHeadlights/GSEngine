@@ -17,6 +17,10 @@ export namespace gse::win32 {
 	auto user_environment_value(
 		std::wstring_view name
 	) -> std::wstring;
+
+	auto widen(
+		std::string_view text
+	) -> std::wstring;
 }
 
 namespace gse::win32 {
@@ -189,5 +193,18 @@ auto gse::win32::user_environment_value(const std::wstring_view name) -> std::ws
 	std::vector<wchar_t> expanded(environment_value_capacity);
 	const DWORD written = ExpandEnvironmentStringsW(value.c_str(), expanded.data(), static_cast<DWORD>(expanded.size()));
 	return written > 0 && written <= expanded.size() ? std::wstring(expanded.data()) : value;
+}
+
+auto gse::win32::widen(const std::string_view text) -> std::wstring {
+	if (text.empty()) {
+		return {};
+	}
+	const int length = MultiByteToWideChar(cp_utf8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0);
+	if (length <= 0) {
+		return {};
+	}
+	std::wstring wide(static_cast<std::size_t>(length), L'\0');
+	MultiByteToWideChar(cp_utf8, 0, text.data(), static_cast<int>(text.size()), wide.data(), length);
+	return wide;
 }
 #endif

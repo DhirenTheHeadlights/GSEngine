@@ -173,7 +173,7 @@ export namespace gse {
 		const V1& a,
 		const V2& b,
 		std::size_t index
-	) -> bool;
+	) -> bool pre(index < V1::extent);
 
 	template <is_vec V>
 	constexpr auto rotate(
@@ -181,7 +181,7 @@ export namespace gse {
 		angle_t<typename V::storage_type> angle,
 		std::size_t i = 0,
 		std::size_t j = 1
-	) -> V;
+	) -> V pre(i < V::extent && j < V::extent && i != j);
 
 	template <is_vec V>
 	requires(V::extent == 3)
@@ -461,10 +461,6 @@ constexpr auto gse::pow(const vec<T, N>& v, T exponent) -> vec<T, N> {
 template <gse::is_vec V1, gse::is_vec V2>
 requires(V1::extent == V2::extent)
 constexpr auto gse::epsilon_equal_index(const V1& a, const V2& b, std::size_t index) -> bool {
-	if (index >= V1::extent) {
-		throw std::out_of_range("Index out of range in epsilon_equal_index");
-	}
-
 	using storage_type = V1::storage_type;
 
 	const storage_type val_a = a.as_storage_span()[index];
@@ -477,10 +473,6 @@ constexpr auto gse::epsilon_equal_index(const V1& a, const V2& b, std::size_t in
 template <gse::is_vec V>
 constexpr auto gse::rotate(const V& v, angle_t<typename V::storage_type> angle, std::size_t i, std::size_t j) -> V {
 	using storage_type = V::storage_type;
-	if (i >= V::extent || j >= V::extent || i == j) {
-		return v;
-	}
-
 	V result = v;
 
 	const storage_type cos_theta = cos(angle);

@@ -9,8 +9,8 @@ import :orbit_camera;
 export namespace sandbox::sidearm {
 	struct [[= gse::network::network_message{}]] fire_request {
 		std::uint32_t shot = 0;
-		float yaw = 0.f;
-		float pitch = 0.f;
+		gse::angle yaw = {};
+		gse::angle pitch = {};
 	};
 
 	struct component {

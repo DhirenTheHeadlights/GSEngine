@@ -33,7 +33,9 @@ endif()
 
 function(gse_configure_compiler)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        add_compile_options(-freflection -mavx2 -Wno-changes-meaning -Wno-error=changes-meaning)
+        add_compile_options(-freflection -fcontracts -mavx2 -Wno-changes-meaning -Wno-error=changes-meaning)
+        add_compile_options($<$<CONFIG:Release>:-fcontract-evaluation-semantic=ignore>)
+        add_link_options(-fcontracts)
     endif()
 endfunction()
 

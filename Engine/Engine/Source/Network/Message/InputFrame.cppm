@@ -21,8 +21,8 @@ export namespace gse::network {
 	struct [[= network_message{}]] input_frame {
 		std::uint32_t input_sequence = 0;
 		time_t<std::uint32_t, milliseconds> client_time = {};
-		float camera_yaw = 0.f;
-		float camera_pitch = 0.f;
+		angle camera_yaw = {};
+		angle camera_pitch = {};
 		std::vector<std::uint64_t> pressed;
 		std::vector<std::uint64_t> released;
 		std::vector<std::uint64_t> held;

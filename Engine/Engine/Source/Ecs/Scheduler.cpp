@@ -17,6 +17,7 @@ import :registries;
 import :registry;
 import :scheduler;
 import :settings;
+import :system_anno;
 import :system_node;
 import :task_graph;
 import :system_dispatch;
@@ -301,6 +302,25 @@ namespace gse {
 		co_await std::move(inner);
 		on_complete();
 	}
+
+	auto run_hook(
+		const system_node& node,
+		system_hook hook,
+		auto (*invoke)(context&, void*) -> async::task<>,
+		context& ctx
+	) -> async::task<>;
+}
+
+auto gse::run_hook(const system_node& node, const system_hook hook, auto (*invoke)(context&, void*) -> async::task<>, context& ctx) -> async::task<> {
+	try {
+		co_await invoke(ctx, node.data.get());
+	}
+	catch (const std::exception& e) {
+		assert(false, "system {} threw from {}(): {}", node.system_name, hook, e.what());
+	}
+	catch (...) {
+		assert(false, "system {} threw a non-std::exception from {}()", node.system_name, hook);
+	}
 }
 
 auto gse::scheduler::run_node_frame(context& ctx, system_node& node) -> async::task<> {
@@ -309,7 +329,7 @@ auto gse::scheduler::run_node_frame(context& ctx, system_node& node) -> async::t
 	for (const id& dep : node.frame_state_deps) {
 		co_await ctx.after_id(dep);
 	}
-	co_await node.invoke_frame_fn(ctx, node.data.get());
+	co_await run_hook(node, system_hook::frame, node.invoke_frame_fn, ctx);
 	ctx.notify_ready_by_id(node.state_id);
 }
 
@@ -972,7 +992,7 @@ auto gse::scheduler::dispatch_run_systems() -> void {
 		}
 	}
 	{
-		trace::scope_guard _{ trace_id<"sched::run_wait">() };
+		trace::scope_guard _{ trace_id<"sched::run_wait">(), trace::span_kind::wait };
 		sync_wait_or_dump(std::move(tasks), wait_phase::update);
 	}
 }
@@ -1311,7 +1331,7 @@ auto gse::scheduler::advance_one_init_system(system_node& node) -> async::task<>
 	if (!node.init_launched) {
 		node.init_launched = true;
 		node.init_task = wrap_run_task(
-			node.invoke_init_fn(*node.init_ctx, node.data.get()),
+			run_hook(node, system_hook::init, node.invoke_init_fn, *node.init_ctx),
 			[&node] {
 				node.init_done = true;
 				node.paused_event->set();
@@ -1333,7 +1353,7 @@ auto gse::scheduler::run_node_update(context& ctx, system_node& node) -> async::
 		co_await m_update_graph.wait_state_ready(dep);
 	}
 
-	co_await node.invoke_run_fn(ctx, node.data.get());
+	co_await run_hook(node, system_hook::run, node.invoke_run_fn, ctx);
 	node.ran_once = true;
 
 	m_update_graph.notify_state_ready(node.state_id);

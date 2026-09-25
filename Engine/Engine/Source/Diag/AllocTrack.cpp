@@ -118,8 +118,8 @@ auto gse::alloc::next_countdown() -> tracked_bytes {
 	rng_state ^= rng_state << 17;
 
 	const double uniform = static_cast<double>(rng_state >> 11) * 0x1p-53;
-	const double interval = static_cast<std::int64_t>(interval_bytes.load(std::memory_order_relaxed));
-	return tracked_bytes(static_cast<std::int64_t>(-interval * std::log(1.0 - uniform)) + 1);
+	const data_size_t<double, bytes> interval = interval_bytes.load(std::memory_order_relaxed);
+	return tracked_bytes(-interval * std::log(1.0 - uniform)) + tracked_bytes(1);
 }
 
 auto gse::alloc::should_sample(const std::size_t size) -> bool {

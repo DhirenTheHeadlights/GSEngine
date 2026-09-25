@@ -311,7 +311,7 @@ export namespace gse::physics {
 			= settings::describe<"Most joints the GPU solver can hold. Sized once at startup and baked into the "
 									  "solver's shaders, so this requires a restart.">{},
 			= settings::restart_required{},
-			= settings::range<16, 262144>{}
+			= settings::range<16, 1048576>{}
 		]]
 		int gpu_max_joints = 8192;
 
@@ -390,6 +390,41 @@ export namespace gse::physics {
 			= shared
 		]]
 		bool gpu_same_frame_upload = false;
+
+		[[
+			= settings::describe<"Read the GPU solver's full per-body state back to the host every tick, not only the "
+									  "slim pose and velocity snapshot the simulation consumes. Debug and parity tools that "
+									  "inspect solver internals need it; it multiplies the per-tick readback about five times.">{},
+			= settings::restart_required{},
+			= shared
+		]]
+		bool gpu_full_snapshot = false;
+
+		[[
+			= settings::describe<"Solve each gpu island with a coloured Gauss-Seidel sweep: bodies that share no "
+									  "constraint are solved together, so a sweep takes one round per colour instead of "
+									  "one per dependency level. Changes the solve order, so results differ from the "
+									  "ordered sweep.">{},
+			= shared
+		]]
+		bool gpu_island_colored_sweep = true;
+
+		[[
+			= settings::describe<"Pack several small gpu islands into one solve workgroup and give each lane the next "
+									  "body of the current colour step, so a step keeps most lanes busy. Each island keeps "
+									  "its colours and solve order, so results are unchanged.">{},
+			= shared
+		]]
+		bool gpu_island_pack = true;
+
+		[[
+			= settings::describe<"Fewest gpu islands at which island packing turns on. Packing divides the solve "
+									  "workgroup count, so below this count the packed dispatch leaves the device "
+									  "underfilled and runs slower than one island per workgroup.">{},
+			= settings::range<0, 1048576>{},
+			= shared
+		]]
+		int gpu_island_pack_min_islands = 2048;
 
 		[[
 			= settings::describe<"Fold the GPU solver's per-colour Gauss-Seidel dispatches into one sweep dispatch "
@@ -559,6 +594,21 @@ export namespace gse::physics {
 		bool trace_readback_age = false;
 
 		[[
+			= settings::describe<"Count, for every gpu island solve iteration, how many islands already meet the "
+									  "adaptive convergence tolerance on their own constraints, and log the running "
+									  "histogram. Measures what a per-island early-out could skip; the solve itself runs "
+									  "every iteration either way.">{},
+			= shared
+		]]
+		bool trace_island_convergence = false;
+
+		[[
+			= settings::describe<"Ticks of gpu island convergence counts summed into each trace_island_convergence line.">{},
+			= settings::range<1, 100000>{}
+		]]
+		int trace_island_convergence_ticks = 600;
+
+		[[
 			= settings::describe<"Relaxation factor for the Jacobi solver. Lower values are more stable; "
 									  "higher values converge faster.">{},
 			= settings::range<0.1f, 1.0f>{},
@@ -624,6 +674,7 @@ export namespace gse::physics {
 		[[= shared]] id_mapped_collection<joint_definition> joints;
 		bool joint_rest_orientations_pending = true;
 		std::vector<id> results_ensured_owners;
+		std::vector<std::uint32_t> drive_joint_slots;
 		[[= shared]] std::uint64_t joints_generation = 1;
 		[[= shared]] std::uint64_t joint_inputs_generation = 1;
 		[[= shared]] std::vector<convex_hull> hulls;
@@ -646,6 +697,9 @@ export namespace gse::physics {
 		int gpu_color_cap_resolved = 0;
 		int gpu_color_cap_dwell = 0;
 		int gpu_color_cap_min = 0;
+		std::array<std::uint64_t, vbd::limits.island_convergence_count> island_convergence_totals{};
+		std::uint64_t island_convergence_generation = 0;
+		int island_convergence_samples = 0;
 
 		[[= shared]] std::vector<std::uint8_t> body_airborne;
 		[[= shared]] std::vector<std::uint8_t> body_sleeping;
@@ -657,6 +711,7 @@ export namespace gse::physics {
 	namespace gpu_upload {
 		struct upload_scratch {
 			std::vector<vbd::body_state> bodies;
+			std::vector<vbd::body_scan_entry> body_scan;
 			std::vector<mass_properties> body_props;
 			std::vector<vbd::velocity_motor_constraint> motors;
 			std::vector<vbd::joint_constraint> joints;
@@ -673,11 +728,15 @@ export namespace gse::physics {
 			bool force_full_joints = false;
 			std::vector<joint_definition> joints;
 			std::vector<std::uint32_t> joint_slots;
+			std::vector<std::uint32_t> joint_drive_slots;
+			std::size_t joint_drive_count = 0;
 			[[= shared]] std::flat_map<id, std::uint32_t> joint_gpu_slots;
 			[[= shared]] std::uint64_t joint_gpu_slots_generation = 0;
 			std::vector<std::pair<id, std::uint32_t>> joint_body_index_entries;
 			std::flat_map<id, std::uint32_t> body_index;
 			std::vector<std::pair<id, std::uint32_t>> body_index_entries;
+			std::vector<std::uint32_t> motor_body_slots;
+			std::vector<std::uint32_t> wake_body_slots;
 			std::array<upload_scratch, 3> scratch;
 			std::size_t scratch_slot = 0;
 		};
@@ -752,20 +811,30 @@ export namespace gse::physics {
 		std::vector<mass_properties>& out
 	) -> void;
 
+	struct body_scan_fill {
+		std::span<vbd::body_scan_entry> entries;
+		bool sparse = false;
+
+		auto active(std::size_t body_count) const -> bool;
+		auto filled(std::size_t body_index) const -> bool;
+	};
+
 	auto build_body_states(
 		const body_build_view& view,
 		const sleep_counter_table& sleep_counters,
 		std::vector<vbd::body_state>& bodies,
 		std::flat_map<id, std::uint32_t>& id_to_body_index,
 		std::vector<std::pair<id, std::uint32_t>>& id_to_body_index_entries,
-		std::vector<std::uint8_t>& has_transform
+		std::vector<std::uint8_t>& has_transform,
+		const body_scan_fill& scan = {}
 	) -> void;
 
 	auto build_body_bounds(
 		const body_build_view& view,
 		const std::flat_map<id, std::uint32_t>& id_to_body_index,
 		std::span<const std::uint8_t> has_transform,
-		std::span<vbd::body_state> bodies
+		std::span<vbd::body_state> bodies,
+		const body_scan_fill& scan = {}
 	) -> void;
 
 	auto build_joint_constraints(
@@ -776,12 +845,27 @@ export namespace gse::physics {
 		std::vector<std::uint32_t>* definition_slots = nullptr
 	) -> void;
 
+	struct body_slot_cache {
+		std::span<const id> body_owners;
+		std::span<const std::uint8_t> has_transform;
+		std::span<std::uint32_t> slots;
+	};
+
+	auto resolve_body_slot(
+		const std::flat_map<id, std::uint32_t>& id_to_body_index,
+		const body_slot_cache& cache,
+		std::size_t i,
+		id owner
+	) -> std::optional<std::uint32_t>;
+
 	auto build_motor_constraints(
 		std::span<const motor_input> motors,
 		const std::flat_map<id, std::uint32_t>& id_to_body_index,
 		std::span<const std::uint8_t> body_airborne,
 		std::span<vbd::body_state> bodies,
-		std::vector<vbd::velocity_motor_constraint>& out
+		std::vector<vbd::velocity_motor_constraint>& out,
+		const body_slot_cache& cache = {},
+		const body_scan_fill& scan = {}
 	) -> void;
 
 	auto apply_joint_drive(

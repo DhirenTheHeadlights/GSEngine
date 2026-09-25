@@ -184,6 +184,10 @@ namespace gse {
 		window::data& d
 	) -> void;
 
+	auto apply_launcher_mode(
+		window::data& d
+	) -> void;
+
 	auto attach_surface_callbacks(
 		GLFWwindow* handle,
 		window::window_surface& surface
@@ -732,6 +736,55 @@ auto gse::create_window(window::data& d) -> void {
 	window::install_window_hook(d.primary, d.native_frame);
 
 	restore_window_geometry(d);
+
+	if (d.launch_launcher_size.x() > 0 && d.launch_launcher_size.y() > 0 && d.current_display_mode == display_mode::windowed) {
+		d.cmd_launcher_active = true;
+		d.cmd_launcher_size = {
+			static_cast<int>(static_cast<float>(d.launch_launcher_size.x()) * d.primary.content_scale),
+			static_cast<int>(static_cast<float>(d.launch_launcher_size.y()) * d.primary.content_scale),
+		};
+		apply_launcher_mode(d);
+	}
+}
+
+auto gse::apply_launcher_mode(window::data& d) -> void {
+	auto* handle = to_glfw_handle(d.primary.handle);
+	if (d.cmd_launcher_active) {
+		const bool was_maximized = glfwGetWindowAttrib(handle, glfw::maximized) != 0 || std::exchange(d.restore_maximized, false);
+		if (glfwGetWindowAttrib(handle, glfw::maximized) != 0) {
+			glfwRestoreWindow(handle);
+		}
+
+		int cur_x = 0;
+		int cur_y = 0;
+		int cur_w = 0;
+		int cur_h = 0;
+		glfwGetWindowPos(handle, &cur_x, &cur_y);
+		glfwGetWindowSize(handle, &cur_w, &cur_h);
+
+		if (d.launcher_saved_size.x() <= 0) {
+			d.launcher_saved_position = { cur_x, cur_y };
+			d.launcher_saved_size = { cur_w, cur_h };
+			d.launcher_saved_maximized = was_maximized;
+		}
+
+		const int width = std::max(1, d.cmd_launcher_size.x());
+		const int height = std::max(1, d.cmd_launcher_size.y());
+		set_window_frame_rect(
+			d,
+			{ cur_x + (cur_w - width) / 2, cur_y + (cur_h - height) / 2 },
+			{ width, height }
+		);
+	}
+	else if (d.launcher_saved_size.x() > 0) {
+		set_window_frame_rect(d, d.launcher_saved_position, d.launcher_saved_size);
+		if (d.launcher_saved_maximized) {
+			glfwMaximizeWindow(handle);
+		}
+		d.launcher_saved_size = { 0, 0 };
+		d.launcher_saved_maximized = false;
+	}
+	d.cmd_launcher_pending = false;
 }
 
 auto gse::attach_surface_callbacks(GLFWwindow* handle, window::window_surface& surface) -> void {
@@ -1541,42 +1594,7 @@ auto gse::window::apply_commands(data& d) -> void {
 	}
 
 	if (d.cmd_launcher_pending) {
-		if (d.cmd_launcher_active) {
-			const bool was_maximized = glfwGetWindowAttrib(handle, glfw::maximized) != 0;
-			if (was_maximized) {
-				glfwRestoreWindow(handle);
-			}
-
-			int cur_x = 0;
-			int cur_y = 0;
-			int cur_w = 0;
-			int cur_h = 0;
-			glfwGetWindowPos(handle, &cur_x, &cur_y);
-			glfwGetWindowSize(handle, &cur_w, &cur_h);
-
-			if (d.launcher_saved_size.x() <= 0) {
-				d.launcher_saved_position = { cur_x, cur_y };
-				d.launcher_saved_size = { cur_w, cur_h };
-				d.launcher_saved_maximized = was_maximized;
-			}
-
-			const int width = std::max(1, d.cmd_launcher_size.x());
-			const int height = std::max(1, d.cmd_launcher_size.y());
-			set_window_frame_rect(
-				d,
-				{ cur_x + (cur_w - width) / 2, cur_y + (cur_h - height) / 2 },
-				{ width, height }
-			);
-		}
-		else if (d.launcher_saved_size.x() > 0) {
-			set_window_frame_rect(d, d.launcher_saved_position, d.launcher_saved_size);
-			if (d.launcher_saved_maximized) {
-				glfwMaximizeWindow(handle);
-			}
-			d.launcher_saved_size = { 0, 0 };
-			d.launcher_saved_maximized = false;
-		}
-		d.cmd_launcher_pending = false;
+		apply_launcher_mode(d);
 	}
 
 	int win_x = 0;

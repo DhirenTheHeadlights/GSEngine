@@ -92,15 +92,7 @@ auto gse::async::promise_base::final_suspend() noexcept -> final_awaiter {
 }
 
 auto gse::async::promise_base::unhandled_exception() -> void {
-	try {
-		throw;
-	}
-	catch (const std::exception& e) {
-		log::println(log::level::error, log::category::task, "Coroutine exception: {}", e.what());
-	}
-	catch (...) {
-		log::println(log::level::error, log::category::task, "Coroutine exception (unknown type)");
-	}
+	m_exception = std::current_exception();
 }
 
 auto gse::async::promise_base::operator new(const std::size_t size) -> void* {
@@ -437,7 +429,7 @@ auto gse::async::sync_wait(task<>&& t) -> void {
 	auto w = wrapper();
 	w.start();
 	{
-		trace::scope_guard _{ trace_id<"sync_wait::acquire">() };
+		trace::scope_guard _{ trace_id<"sync_wait::acquire">(), trace::span_kind::wait };
 		while (!done_flag.load(std::memory_order_acquire)) {
 			if (!gse::task::try_run_one()) {
 				std::this_thread::yield();

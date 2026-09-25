@@ -39,97 +39,97 @@ export namespace gse::simd {
 		const span auto& lhs,
 		const span auto& rhs,
 		span auto result
-	) -> void;
+	) -> void pre(rhs.size() == lhs.size() && result.size() == lhs.size());
 
 	auto sub(
 		const span auto& lhs,
 		const span auto& rhs,
 		span auto result
-	) -> void;
+	) -> void pre(rhs.size() == lhs.size() && result.size() == lhs.size());
 
 	auto mul(
 		const span auto& lhs,
 		const span auto& rhs,
 		span auto result
-	) -> void;
+	) -> void pre(rhs.size() == lhs.size() && result.size() == lhs.size());
 
 	auto div(
 		const span auto& lhs,
 		const span auto& rhs,
 		span auto result
-	) -> void;
+	) -> void pre(rhs.size() == lhs.size() && result.size() == lhs.size());
 
 	auto dot(
 		const span auto& lhs,
 		const span auto& rhs,
 		simd_val auto& result
-	) -> void;
+	) -> void pre(rhs.size() == lhs.size());
 
 	auto abs(
 		const span auto& v,
 		span auto result
-	) -> void;
+	) -> void pre(result.size() == v.size());
 
 	auto min(
 		const span auto& lhs,
 		const span auto& rhs,
 		span auto result
-	) -> void;
+	) -> void pre(rhs.size() == lhs.size() && result.size() == lhs.size());
 
 	auto max(
 		const span auto& lhs,
 		const span auto& rhs,
 		span auto result
-	) -> void;
+	) -> void pre(rhs.size() == lhs.size() && result.size() == lhs.size());
 
 	auto clamp(
 		const span auto& v,
 		const span auto& min_v,
 		const span auto& max_v,
 		span auto result
-	) -> void;
+	) -> void pre(min_v.size() == v.size() && max_v.size() == v.size() && result.size() == v.size());
 
 	auto mul_mat4(
 		const float* lhs,
 		const float* rhs,
 		float* result
-	) -> void;
+	) -> void pre(lhs != nullptr && rhs != nullptr && result != nullptr);
 
 	auto add_s(
 		const span auto& lhs,
 		const simd_val auto& scalar,
 		span auto result
-	) -> void;
+	) -> void pre(result.size() == lhs.size());
 
 	auto sub_s(
 		const span auto& lhs,
 		const simd_val auto& scalar,
 		span auto result
-	) -> void;
+	) -> void pre(result.size() == lhs.size());
 
 	auto mul_s(
 		const span auto& lhs,
 		const simd_val auto& scalar,
 		span auto result
-	) -> void;
+	) -> void pre(result.size() == lhs.size());
 
 	auto div_s(
 		const span auto& lhs,
 		const simd_val auto& scalar,
 		span auto result
-	) -> void;
+	) -> void pre(result.size() == lhs.size());
 
 	auto min_s(
 		const span auto& lhs,
 		const simd_val auto& scalar,
 		span auto result
-	) -> void;
+	) -> void pre(result.size() == lhs.size());
 
 	auto max_s(
 		const span auto& lhs,
 		const simd_val auto& scalar,
 		span auto result
-	) -> void;
+	) -> void pre(result.size() == lhs.size());
 }
 
 auto gse::simd::add(const span auto& lhs, const span auto& rhs, span auto result) -> void {

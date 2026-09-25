@@ -1,7 +1,7 @@
 static const uint nn_hidden = 128;
 static const uint nn_max_in = 64;
 static const uint nn_max_out = 16;
-static const uint nn_max_samples = 65536;
+static const uint nn_max_samples = 262144;
 static const uint nn_max_minibatch = 512;
 static const uint nn_max_params = nn_max_in * nn_hidden + nn_hidden + nn_hidden * nn_hidden + nn_hidden + nn_max_out * nn_hidden + nn_max_out + nn_max_out;
 static const uint nn_state_extra = 4;
