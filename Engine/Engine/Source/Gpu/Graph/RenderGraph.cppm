@@ -250,6 +250,8 @@ export namespace gse::gpu {
 
 		auto open_perf_frame() -> perf_frame;
 
+		auto prune_perf_samples() -> void;
+
 		auto ingest_perf_metrics(
 			const perf_frame& perf,
 			id row_id,
@@ -323,6 +325,9 @@ export namespace gse::gpu {
 		std::unordered_map<id, std::vector<id>> m_perf_metric_ids;
 		std::vector<double> m_perf_metric_means;
 		std::vector<std::size_t> m_perf_metric_counts;
+		std::vector<time_t<std::uint64_t>> m_perf_sample_times;
+		std::vector<double> m_perf_sample_values;
+		std::optional<time_t<double>> m_perf_read_floor;
 		std::uint64_t m_perf_session_generation = 0;
 		color_clear m_swapchain_clear{};
 		load_op m_swapchain_load = load_op::clear;
