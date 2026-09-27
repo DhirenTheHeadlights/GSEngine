@@ -799,12 +799,12 @@ void solve_body(uint bi, bool live_jac) {
 }
 
 void note_linear_residual(float c) {
-    InterlockedMax(collision_state[state_convergence_max_delta_index], asuint(abs(c)));
+    if (solver_config_data[0].adaptive != 0) InterlockedMax(collision_state[state_convergence_max_delta_index], asuint(abs(c)));
     if (solver_config_data[0].trace_island_convergence != 0) InterlockedMax(gs_island_linear_residual, asuint(abs(c)));
 }
 
 void note_angular_residual(float c) {
-    InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c)));
+    if (solver_config_data[0].adaptive != 0) InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c)));
     if (solver_config_data[0].trace_island_convergence != 0) InterlockedMax(gs_island_angular_residual, asuint(abs(c)));
 }
 
