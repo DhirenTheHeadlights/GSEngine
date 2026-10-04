@@ -131,7 +131,8 @@ export namespace gse::task {
 		std::size_t n,
 		std::size_t min_chunk_items,
 		Fn&& fn,
-		id label = trace_id<trace::current_loc_tag()>()
+		id label = trace_id<trace::current_loc_tag()>(),
+		lane target = lane::worker
 	) -> void;
 
 	class group : non_copyable, non_movable {
@@ -584,7 +585,7 @@ auto gse::task::post_range(It first, It last, const id id) -> void {
 }
 
 template <typename Fn>
-auto gse::task::coarse_parallel(const std::size_t n, const std::size_t min_chunk_items, Fn&& fn, const id label) -> void {
+auto gse::task::coarse_parallel(const std::size_t n, const std::size_t min_chunk_items, Fn&& fn, const id label, const lane target) -> void {
 	if (n == 0) {
 		return;
 	}
@@ -594,7 +595,7 @@ auto gse::task::coarse_parallel(const std::size_t n, const std::size_t min_chunk
 		}
 		return;
 	}
-	const auto workers = std::max<std::size_t>(1, thread_count());
+	const auto workers = target == lane::background ? background_thread_count() : std::max<std::size_t>(1, thread_count());
 	const auto max_chunks = std::max<std::size_t>(1, n / min_chunk_items);
 	const auto chunk_count = std::min(workers * 2, max_chunks);
 	if (chunk_count <= 1) {
@@ -605,7 +606,7 @@ auto gse::task::coarse_parallel(const std::size_t n, const std::size_t min_chunk
 	}
 	const auto chunk = (n + chunk_count - 1) / chunk_count;
 
-	group g{ label };
+	group g{ label, target };
 	for (std::size_t start = 0; start < n; start += chunk) {
 		const auto end = std::min(start + chunk, n);
 		g.post(

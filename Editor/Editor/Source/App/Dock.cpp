@@ -23,6 +23,17 @@ auto gse::ide::any_leaf(const dock_tree& tree) -> id {
 	return {};
 }
 
+auto gse::ide::first_leaf(const dock_tree& tree, const id node) -> id {
+	id current = node;
+	while (const dock_node* n = tree.nodes.try_get(current)) {
+		if (is_leaf(*n)) {
+			return current;
+		}
+		current = n->first;
+	}
+	return {};
+}
+
 auto gse::ide::make_node(dock_tree& tree) -> id {
 	std::uint64_t next = 1;
 	for (const id existing : tree.nodes.ids()) {
@@ -209,7 +220,7 @@ auto gse::ide::insert_panel(dock_tree& tree, const dock_insert& what) -> void {
 	const id anchor = tree.nodes.contains(what.target) ? what.target : tree.root;
 
 	if (what.location == gui::dock::location::center || what.location == gui::dock::location::none) {
-		const id host = is_leaf(*tree.nodes.try_get(anchor)) ? anchor : any_leaf(tree);
+		const id host = first_leaf(tree, anchor);
 		dock_node* leaf = tree.nodes.try_get(host);
 		leaf->panels.push_back(what.panel);
 		leaf->active_panel = static_cast<std::uint32_t>(leaf->panels.size() - 1);
@@ -731,6 +742,65 @@ auto gse::ide::deserialize_windows(const std::span<const layout_store::section> 
 			.position = { read_int(*section, "x", 0), read_int(*section, "y", 0) },
 			.size = size,
 		});
+	}
+	return out;
+}
+
+auto gse::ide::serialize_anchors(const std::unordered_map<id, dock_anchor>& anchors, const std::span<const panel_desc> panels) -> std::string {
+	std::string out;
+	for (const panel_desc& desc : panels) {
+		const auto it = anchors.find(desc.id);
+		if (it == anchors.end()) {
+			continue;
+		}
+		std::string names;
+		for (const id panel : it->second.panels) {
+			if (!names.empty()) {
+				names.push_back(',');
+			}
+			names.append(panel.tag());
+		}
+		out.push_back('\n');
+		out.append(std::format("[{}{}]\n", dock_anchor_section_prefix, desc.name));
+		out.append(std::format("panels = {}\n", names));
+		out.append(std::format("location = {}\n", enum_to_string(it->second.location)));
+		out.append(std::format("ratio = {}\n", it->second.ratio));
+	}
+	return out;
+}
+
+auto gse::ide::deserialize_anchors(const std::span<const layout_store::section> sections, const std::span<const panel_desc> panels) -> std::unordered_map<id, dock_anchor> {
+	std::unordered_map<id, dock_anchor> out;
+	for (const layout_store::section& section : sections) {
+		if (!section.name.starts_with(dock_anchor_section_prefix)) {
+			continue;
+		}
+		const std::string_view name = std::string_view(section.name).substr(dock_anchor_section_prefix.size());
+		const auto owner = std::ranges::find(panels, name, &panel_desc::name);
+		const auto names = section.values.find("panels");
+		if (owner == panels.end() || names == section.values.end()) {
+			continue;
+		}
+
+		dock_anchor anchor;
+		for (const auto& part : std::views::split(std::string_view(names->second), ',')) {
+			if (const auto desc = std::ranges::find(panels, std::string_view(part), &panel_desc::name); desc != panels.end()) {
+				anchor.panels.push_back(desc->id);
+			}
+		}
+		if (anchor.panels.empty()) {
+			continue;
+		}
+		if (const auto it = section.values.find("location"); it != section.values.end()) {
+			enum_from_string(it->second, anchor.location);
+		}
+		if (const auto it = section.values.find("ratio"); it != section.values.end()) {
+			float ratio = 0.5f;
+			if (std::from_chars(it->second.data(), it->second.data() + it->second.size(), ratio).ec == std::errc{}) {
+				anchor.ratio = std::clamp(ratio, 0.05f, 0.95f);
+			}
+		}
+		out.emplace(owner->id, std::move(anchor));
 	}
 	return out;
 }

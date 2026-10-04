@@ -41,31 +41,10 @@ auto gse::ide::agent::sessions_path() -> std::filesystem::path {
 }
 
 auto gse::ide::agent::save_sessions(const data& d) -> void {
-	const std::filesystem::path path = sessions_path();
-	std::error_code ec;
-	std::filesystem::create_directories(path.parent_path(), ec);
-	if (ec) {
-		log::println(log::level::error, log::category::task, "agent: could not create '{}': {}", path.parent_path().generic_display_string(), ec.message());
-		return;
-	}
-
-	std::filesystem::path temporary = path;
-	temporary += ".tmp";
-	{
-		std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
-		if (!out) {
-			log::println(log::level::error, log::category::task, "agent: could not open '{}'", temporary.generic_display_string());
-			return;
-		}
-		binary_writer writer(out, sessions_magic, sessions_version);
-		writer & d.sessions & d.active & d.chat_names;
-	}
-
-	std::filesystem::rename(temporary, path, ec);
-	if (ec) {
-		log::println(log::level::error, log::category::task, "agent: could not replace '{}': {}", path.generic_display_string(), ec.message());
-		std::filesystem::remove(temporary, ec);
-	}
+	std::ostringstream out(std::ios::binary);
+	binary_writer writer(out, sessions_magic, sessions_version);
+	writer & d.sessions & d.active & d.chat_names;
+	layout_store::replace(sessions_path(), std::move(out).str());
 }
 
 auto gse::ide::agent::load_sessions(data& d) -> void {

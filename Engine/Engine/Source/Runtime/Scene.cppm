@@ -59,11 +59,7 @@ export namespace gse {
 		};
 
 		using init_fn = std::move_only_function<void(gse::id, registry&)>;
-		using setup_fn = void (
-				*
-		)(
-			scene&
-		);
+		using setup_fn = std::function<void(scene&)>;
 
 		class builder {
 		public:
@@ -278,7 +274,7 @@ auto gse::scene::spawn(const std::string& name, Archetype&& archetype) -> gse::i
 }
 
 auto gse::scene::set_setup(setup_fn setup) -> void {
-	m_setup = setup;
+	m_setup = std::move(setup);
 }
 
 auto gse::scene::set_active(const bool is_active) -> void {

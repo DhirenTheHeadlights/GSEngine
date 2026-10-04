@@ -1590,8 +1590,22 @@ auto gse::scheduler::shutdown() -> void {
 
 	while (!m_nodes.empty()) {
 		auto& node = m_nodes.back();
+		persist_node(node);
 		node.invoke_shutdown_fn(node.data.get());
 		m_nodes.pop_back();
+	}
+}
+
+auto gse::scheduler::persist() const -> void {
+	trace::scope_guard _{ trace_id<"scheduler::persist">() };
+	for (const system_node& node : m_nodes) {
+		persist_node(node);
+	}
+}
+
+auto gse::scheduler::persist_node(const system_node& node) -> void {
+	if (node.invoke_persist_fn && node.init_done && node.ran_once) {
+		node.invoke_persist_fn(node.data.get());
 	}
 }
 

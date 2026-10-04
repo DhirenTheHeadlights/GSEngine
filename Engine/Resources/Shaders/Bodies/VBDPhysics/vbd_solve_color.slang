@@ -98,6 +98,18 @@ void island_neighbour_masks(uint bi, uint self, uint count, uint lo, uint hi, ou
     uint joint_count_for_body = joint_counts[bi];
     for (uint ji_idx = 0; ji_idx < joint_count_for_body; ji_idx++) {
         uint ji = safe_load_uint(joint_adjacency, joint_offset + ji_idx, max_joint_adjacency);
+        if ((ji & muscle_adjacency_tag) != 0) {
+            muscle_constraint m = muscle_data[ji & ~muscle_adjacency_tag];
+            for (uint k = 0; k < m.path_count; k++) {
+                uint other = muscle_path_data[m.path_first + k].body;
+                if (other == bi) continue;
+                uint p = island_position(other, count);
+                if (p < lo || p >= hi || p == self) continue;
+                if (p < self) island_mask_add(lower, p, lo);
+                else island_mask_add(upper, p, lo);
+            }
+            continue;
+        }
         if (ji >= max_joints) continue;
         joint_constraint j = joint_data[ji];
         uint other = (j.body_a == bi) ? j.body_b : j.body_a;
@@ -291,6 +303,127 @@ void accumulate_joint_drive(
     ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(jd, jd), hessian_stiffness));
 }
 
+float2 muscle_tension(muscle_constraint j, float path, float previous_path, float dt) {
+    float tendon_free = path - j.tendon_slack_length;
+    if (tendon_free <= 0.0 || j.optimal_fiber_length <= 0.0 || j.max_force <= 0.0) {
+        return float2(0.0, 0.0);
+    }
+
+    float thickness = j.optimal_fiber_length * sin(j.pennation_at_optimal);
+    float fiber = sqrt(tendon_free * tendon_free + thickness * thickness);
+    float cos_pennation = tendon_free / fiber;
+    float sin_pennation = thickness / fiber;
+    float fiber_ratio = fiber / j.optimal_fiber_length;
+    float fiber_velocity = (path - previous_path) / dt * cos_pennation;
+    float velocity_ratio = fiber_velocity / j.max_contraction_velocity;
+
+    float active = 0.0;
+    float active_slope = 0.0;
+    for (int i = 0; i < 3; i++) {
+        float width = active_width[i] + active_width_slope[i] * fiber_ratio;
+        float offset = (fiber_ratio - active_center[i]) / width;
+        float term = active_height[i] * exp(-0.5 * offset * offset);
+        active += term;
+        active_slope -= term * offset * (1.0 - offset * active_width_slope[i]) / width;
+    }
+
+    float passive = 0.0;
+    float passive_slope = 0.0;
+    if (fiber_ratio > passive_zero_ratio) {
+        float rate = passive_shape / passive_strain;
+        float scale = 1.0 / (exp(passive_shape) - 1.0);
+        float growth = exp(rate * (fiber_ratio - 1.0));
+        passive = (growth - exp(rate * (passive_zero_ratio - 1.0))) * scale;
+        passive_slope = rate * growth * scale;
+    }
+
+    float velocity_arg = velocity_shape[1] * velocity_ratio + velocity_shape[2];
+    float velocity_root = sqrt(velocity_arg * velocity_arg + 1.0);
+    float velocity_asinh = sign(velocity_arg) * log(abs(velocity_arg) + velocity_root);
+    float force_velocity = velocity_shape[0] * velocity_asinh + velocity_shape[3];
+    float force_velocity_slope = velocity_shape[0] * velocity_shape[1] / velocity_root;
+    if (force_velocity < 0.0) {
+        force_velocity = 0.0;
+        force_velocity_slope = 0.0;
+    }
+
+    float fiber_force = j.activation * active * force_velocity + passive;
+    float length_slope = j.activation * active_slope * force_velocity + passive_slope;
+    float velocity_slope = j.activation * active * force_velocity_slope;
+
+    float path_stiffness = j.max_force * (
+        cos_pennation * cos_pennation * (length_slope / j.optimal_fiber_length + velocity_slope / (j.max_contraction_velocity * dt)) +
+        fiber_force * sin_pennation * sin_pennation / fiber
+    );
+
+    return float2(j.max_force * fiber_force * cos_pennation, max(path_stiffness, 0.0));
+}
+
+float3 muscle_point(muscle_path_point p) {
+    body_view b = load_body_view(p.body);
+    return b.predicted_position.xyz + rotate_vector(b.predicted_orientation, p.local_point.xyz);
+}
+
+void accumulate_muscle_for_body(
+    uint bi, uint mi, bool update_orient,
+    inout float3 grad, inout mat3 hess,
+    inout float3 ang_grad, inout mat3 ang_hess,
+    inout mat3 hess_xt
+) {
+    muscle_constraint m = muscle_data[mi];
+    float path = 0.0;
+    for (uint k = 0; k + 1 < m.path_count; k++) {
+        path += length(muscle_point(muscle_path_data[m.path_first + k + 1]) - muscle_point(muscle_path_data[m.path_first + k]));
+    }
+    float2 response = muscle_tension(m, path, m.path_length_start, pc.dt);
+    float tension = response.x;
+    float path_stiffness = response.y;
+    if (tension <= 0.0 && path_stiffness <= 0.0) return;
+
+    float4 orientation = load_body_view(bi).predicted_orientation;
+    float3 g_lin = float3(0, 0, 0);
+    float3 g_ang = float3(0, 0, 0);
+    for (uint k = 0; k < m.path_count; k++) {
+        muscle_path_point pk = muscle_path_data[m.path_first + k];
+        if (pk.body != bi) continue;
+        float3 p = muscle_point(pk);
+        float3 g = float3(0, 0, 0);
+        if (k > 0) {
+            float3 d = p - muscle_point(muscle_path_data[m.path_first + k - 1]);
+            if (length(d) > 1e-7) g += normalize(d);
+        }
+        if (k + 1 < m.path_count) {
+            float3 d = muscle_point(muscle_path_data[m.path_first + k + 1]) - p;
+            if (length(d) > 1e-7) g -= normalize(d);
+        }
+        float3 r = rotate_vector(orientation, pk.local_point.xyz);
+        g_lin += g;
+        g_ang += cross(r, g);
+    }
+
+    grad += g_lin * tension;
+    hess = mat3_add(hess, mat3_scale(outer_product3(g_lin, g_lin), path_stiffness));
+    if (!update_orient) return;
+    ang_grad += g_ang * tension;
+    ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(g_ang, g_ang), path_stiffness));
+    hess_xt = mat3_add(hess_xt, mat3_scale(outer_product3(g_lin, g_ang), path_stiffness));
+
+    for (uint k = 0; k < m.path_count; k++) {
+        muscle_path_point pk = muscle_path_data[m.path_first + k];
+        if (pk.body != bi) continue;
+        float3 p = muscle_point(pk);
+        float3 r = rotate_vector(orientation, pk.local_point.xyz);
+        if (k > 0) {
+            float3 d = p - muscle_point(muscle_path_data[m.path_first + k - 1]);
+            if (length(d) > 1e-7) accumulate_geometric_stiffness(r, normalize(d), abs(tension), ang_hess);
+        }
+        if (k + 1 < m.path_count) {
+            float3 d = p - muscle_point(muscle_path_data[m.path_first + k + 1]);
+            if (length(d) > 1e-7) accumulate_geometric_stiffness(r, normalize(d), abs(tension), ang_hess);
+        }
+    }
+}
+
 void accumulate_joint_for_body(
     uint bi, joint_constraint j, bool update_orient,
     inout float3 grad, inout mat3 hess,
@@ -332,39 +465,6 @@ void accumulate_joint_for_body(
             ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(j_ang, j_ang), j.pos_penalty.x));
             hess_xt = mat3_add(hess_xt, mat3_scale(outer_product3(j_lin, j_ang), j.pos_penalty.x));
             accumulate_geometric_stiffness(r, d_hat, abs(f), ang_hess);
-        }
-    }
-    else if (j.type == joint_type::muscle) {
-        float d_mag = length(d);
-        if (d_mag > 1e-7) {
-            float3 d_hat = d / d_mag;
-            float active_target = j.target_distance * (1.0 - 0.45 * j.activation);
-            float active_err = max(d_mag - active_target, 0.0);
-            float passive_err = max(d_mag - j.target_distance, 0.0);
-            float active_k = 200000.0 * j.activation;
-            float passive_k = j.pos_penalty.x;
-            float fi = active_k * active_err + passive_k * passive_err + j.pos_lambda.x;
-            if (j.damping > 0.0) {
-                float3 vel_a = body_a.velocity.xyz + cross(body_a.angular_velocity.xyz, r_aw);
-                float3 vel_b = body_b.velocity.xyz + cross(body_b.angular_velocity.xyz, r_bw);
-                float v_rel = dot(d_hat, vel_a - vel_b);
-                fi += (active_k + passive_k) * v_rel * pc.dt * j.damping;
-            }
-            fi = max(fi, 0.0);
-            if (j.max_force > 0.0) {
-                fi = min(fi, j.max_force);
-            }
-            float total_k = (active_err > 0.0 ? active_k : 0.0) + (passive_err > 0.0 ? passive_k : 0.0);
-            float3 j_lin = d_hat * sign;
-            float3 j_ang = cross(r, d_hat) * sign;
-            grad += j_lin * fi;
-            hess = mat3_add(hess, mat3_scale(outer_product3(j_lin, j_lin), total_k));
-            if (update_orient) {
-                ang_grad += j_ang * fi;
-                ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(j_ang, j_ang), total_k));
-                hess_xt = mat3_add(hess_xt, mat3_scale(outer_product3(j_lin, j_ang), total_k));
-                accumulate_geometric_stiffness(r, d_hat, abs(fi), ang_hess);
-            }
         }
     }
     else if (j.type == joint_type::fixed || j.type == joint_type::hinge || j.type == joint_type::ball || j.type == joint_type::universal) {
@@ -690,6 +790,11 @@ void solve_body(uint bi, bool live_jac) {
 
     for (uint ji_idx = 0; ji_idx < joint_count_for_body; ji_idx++) {
         uint ji = safe_load_uint(joint_adjacency, joint_offset + ji_idx, max_joint_adjacency);
+        if ((ji & muscle_adjacency_tag) != 0) {
+            accumulate_muscle_for_body(bi, ji & ~muscle_adjacency_tag, update_orient, grad, hess, ang_grad, ang_hess, hess_xt);
+            if (update_orient) has_cross_terms = true;
+            continue;
+        }
         if (ji >= max_joints) continue;
         joint_constraint j = joint_data[ji];
         if (j.body_a >= pc.body_count || j.body_b >= pc.body_count) continue;
@@ -799,12 +904,12 @@ void solve_body(uint bi, bool live_jac) {
 }
 
 void note_linear_residual(float c) {
-    InterlockedMax(collision_state[state_convergence_max_delta_index], asuint(abs(c)));
+    if (solver_config_data[0].adaptive != 0) InterlockedMax(collision_state[state_convergence_max_delta_index], asuint(abs(c)));
     if (solver_config_data[0].trace_island_convergence != 0) InterlockedMax(gs_island_linear_residual, asuint(abs(c)));
 }
 
 void note_angular_residual(float c) {
-    InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c)));
+    if (solver_config_data[0].adaptive != 0) InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c)));
     if (solver_config_data[0].trace_island_convergence != 0) InterlockedMax(gs_island_angular_residual, asuint(abs(c)));
 }
 
@@ -899,17 +1004,6 @@ void fold_joint_lambda(uint ji) {
     if (j.type == joint_type::distance) {
         float c = (length(d) - j.target_distance) - j.pos_c0.x;
         j.pos_lambda.x = j.pos_penalty.x * c + j.pos_lambda.x;
-        float penalty_cap = solver_config_data[0].penalty_max;
-        if (j.compliance > 0.0) {
-            penalty_cap = min(1.0 / max(j.compliance * pc.h_squared, 1e-10), solver_config_data[0].penalty_max);
-        }
-        j.pos_penalty.x = min(j.pos_penalty.x + solver_config_data[0].beta * abs(c), penalty_cap);
-        note_linear_residual(c);
-    }
-    else if (j.type == joint_type::muscle) {
-        float stretch = length(d) - j.target_distance;
-        float c = max(stretch, 0.0) - j.pos_c0.x;
-        j.pos_lambda.x = max(j.pos_penalty.x * c + j.pos_lambda.x, 0.0);
         float penalty_cap = solver_config_data[0].penalty_max;
         if (j.compliance > 0.0) {
             penalty_cap = min(1.0 / max(j.compliance * pc.h_squared, 1e-10), solver_config_data[0].penalty_max);

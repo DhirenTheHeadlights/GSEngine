@@ -184,6 +184,8 @@ auto gse::gpu::render_graph::open_perf_frame() -> perf_frame {
 	if (session.generation != m_perf_session_generation) {
 		m_perf_session_generation = session.generation;
 		m_perf_metric_ids.clear();
+		m_perf_sample_times.clear();
+		m_perf_sample_values.clear();
 		profile::set_gpu_metric_names(session.metrics);
 	}
 
@@ -193,8 +195,16 @@ auto gse::gpu::render_graph::open_perf_frame() -> perf_frame {
 	}
 	const auto sampler_to_cpu = time_t<double>(system_clock::now<trace::tick_step>()) - time_t<double>(*gpu_now);
 
+	const auto decoded = nsight_perf::decode();
+	m_perf_sample_times.insert(m_perf_sample_times.end(), decoded.times.begin(), decoded.times.end());
+	m_perf_sample_values.insert(m_perf_sample_values.end(), decoded.values.begin(), decoded.values.end());
+	m_perf_read_floor.reset();
+
 	return {
-		.samples = nsight_perf::decode(),
+		.samples = {
+			.times = m_perf_sample_times,
+			.values = m_perf_sample_values,
+		},
 		.metrics = session.metrics,
 		.sampler_to_cpu = sampler_to_cpu,
 		.interval = time_t<double>(session.sampling_interval),
@@ -202,8 +212,32 @@ auto gse::gpu::render_graph::open_perf_frame() -> perf_frame {
 	};
 }
 
+auto gse::gpu::render_graph::prune_perf_samples() -> void {
+	if (!m_perf_read_floor) {
+		m_perf_sample_times.clear();
+		m_perf_sample_values.clear();
+		return;
+	}
+	const auto floor = *m_perf_read_floor;
+	const auto kept_from = std::ranges::lower_bound(m_perf_sample_times, floor, {}, [](const time_t<std::uint64_t> stamp) {
+		return time_t<double>(stamp);
+	});
+	const auto dropped = static_cast<std::size_t>(kept_from - m_perf_sample_times.begin());
+	if (dropped == 0) {
+		return;
+	}
+	const auto metric_count = m_perf_sample_values.size() / m_perf_sample_times.size();
+	m_perf_sample_times.erase(m_perf_sample_times.begin(), kept_from);
+	m_perf_sample_values.erase(m_perf_sample_values.begin(), m_perf_sample_values.begin() + static_cast<std::ptrdiff_t>(dropped * metric_count));
+}
+
 auto gse::gpu::render_graph::ingest_perf_metrics(const perf_frame& perf, const id row_id, const time_t<double> start, const time_t<double> end) -> void {
-	if (!perf.active || end - start < perf.interval * 2.0) {
+	if (!perf.active) {
+		return;
+	}
+	const auto sampler_start = start - perf.sampler_to_cpu;
+	m_perf_read_floor = m_perf_read_floor ? std::min(*m_perf_read_floor, sampler_start) : sampler_start;
+	if (end - start < perf.interval * 2.0) {
 		return;
 	}
 
@@ -608,6 +642,9 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		const auto perf = open_perf_frame();
 		for (auto& slots : m_profile_slots) {
 			read_profile_slot(slots[frame_idx], perf);
+		}
+		if (perf.active) {
+			prune_perf_samples();
 		}
 	}
 

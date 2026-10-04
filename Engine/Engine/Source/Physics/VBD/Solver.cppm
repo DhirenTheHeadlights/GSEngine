@@ -65,6 +65,7 @@ export namespace gse::vbd {
 		std::uint32_t island_colored_sweep = 0;
 		std::uint32_t island_pack = 0;
 		std::uint32_t islands_per_workgroup = 1;
+		std::uint32_t muscle_count = 0;
 	};
 
 	class solver {
@@ -114,6 +115,11 @@ export namespace gse::vbd {
 
 		auto add_joint_constraint(
 			const joint_constraint& j
+		) -> void;
+
+		auto add_muscle_constraint(
+			const muscle_constraint& m,
+			std::span<const muscle_path_point> path
 		) -> void;
 
 		auto solve(
@@ -169,6 +175,12 @@ export namespace gse::vbd {
 			time_squared h_squared,
 			time_step dt,
 			float alpha
+		) -> void;
+
+		auto accumulate_muscle(
+			const muscle_constraint& constraint,
+			std::uint32_t body_idx,
+			time_step dt
 		) -> void;
 
 		auto accumulate_joint_drive(
@@ -227,6 +239,8 @@ auto gse::vbd::solver::graph(this auto&& self) -> auto& {
 }
 
 export namespace gse::vbd {
+	auto gravity_magnitude() -> acceleration;
+
 	auto contact_effective_mass(
 		const body_state& body_a,
 		const body_state& body_b,
@@ -248,6 +262,44 @@ export namespace gse::vbd {
 		const body_state& body_a,
 		const body_state& body_b
 	) -> void;
+
+	struct muscle_response {
+		force tension;
+		stiffness path_stiffness;
+	};
+
+	auto muscle_tension(
+		const muscle_constraint& m,
+		length path,
+		length previous_path,
+		time_step dt
+	) -> muscle_response;
+
+	auto advance_muscle_activation(
+		muscle_constraint& m,
+		time_step dt
+	) -> void;
+
+	struct muscle_body_gradient {
+		vec3f linear;
+		vec3<angular_jacobian> angular;
+	};
+
+	auto muscle_path_length(
+		std::span<const muscle_path_point> path,
+		std::span<const body_state> bodies
+	) -> length;
+
+	auto muscle_start_path_length(
+		std::span<const muscle_path_point> path,
+		std::span<const body_state> bodies
+	) -> length;
+
+	auto muscle_length_gradient(
+		std::span<const muscle_path_point> path,
+		std::span<const body_state> bodies,
+		std::uint32_t body_idx
+	) -> muscle_body_gradient;
 }
 
 namespace gse::vbd {

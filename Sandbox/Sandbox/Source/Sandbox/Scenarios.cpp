@@ -836,6 +836,10 @@ auto sandbox::scenarios::parity_hull_pile_cpu(gse::scenario::context& ctx) -> gs
 	co_await gse::scenario::wait_settled(ctx);
 }
 
+auto sandbox::scenarios::parity_hull_pile_gpu(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+}
+
 auto sandbox::scenarios::parity_pile_gpu(gse::scenario::context& ctx) -> gse::async::task<> {
 	co_await gse::scenario::wait_settled(ctx);
 }

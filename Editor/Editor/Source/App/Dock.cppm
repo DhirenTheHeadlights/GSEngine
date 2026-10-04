@@ -235,11 +235,22 @@ export namespace gse::ide {
 		std::span<const layout_store::section> sections,
 		std::span<const panel_desc> panels
 	) -> std::vector<dock_window_layout>;
+
+	[[nodiscard]] auto serialize_anchors(
+		const std::unordered_map<id, dock_anchor>& anchors,
+		std::span<const panel_desc> panels
+	) -> std::string;
+
+	[[nodiscard]] auto deserialize_anchors(
+		std::span<const layout_store::section> sections,
+		std::span<const panel_desc> panels
+	) -> std::unordered_map<id, dock_anchor>;
 }
 
 namespace gse::ide {
 	constexpr std::string_view dock_node_section_prefix = "dock node ";
 	constexpr std::string_view dock_window_section_prefix = "dock window ";
+	constexpr std::string_view dock_anchor_section_prefix = "dock anchor ";
 
 	auto make_node(
 		dock_tree& tree
@@ -303,6 +314,11 @@ namespace gse::ide {
 
 	[[nodiscard]] auto any_leaf(
 		const dock_tree& tree
+	) -> id;
+
+	[[nodiscard]] auto first_leaf(
+		const dock_tree& tree,
+		id node
 	) -> id;
 
 	auto collect_nodes(

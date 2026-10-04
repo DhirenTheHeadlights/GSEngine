@@ -225,6 +225,11 @@ export namespace gse::ide::build_runner {
 		channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready, attached_fatal_reported> events_out
 	) -> async::task<>;
 
+	[[= system_persist{}]]
+	auto persist(
+		const data& d
+	) -> void;
+
 	[[= system_shutdown{}]]
 	auto shutdown(
 		data& d
@@ -2640,8 +2645,11 @@ auto gse::ide::build_runner::run(context& ctx, data& d, const channel_read<attac
 	return {};
 }
 
-auto gse::ide::build_runner::shutdown(data& d) -> void {
+auto gse::ide::build_runner::persist(const data& d) -> void {
 	save_profiles(d.profiles, d.active_profile);
+}
+
+auto gse::ide::build_runner::shutdown(data& d) -> void {
 	d.worker.request_stop();
 	if (d.active_stream) {
 		spawn::terminate_process(*d.active_stream);

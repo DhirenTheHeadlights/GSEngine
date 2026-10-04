@@ -17,6 +17,10 @@ import gse.assert;
 import gse.log;
 import gse.ecs;
 import gse.os;
+import gse.win32;
+import gse.win32.environment;
+import gse.json;
+import gse.fs;
 
 export namespace gse::vulkan {
 	class instance : public non_copyable {
@@ -76,10 +80,54 @@ export namespace gse::vulkan {
 }
 
 namespace gse::vulkan {
+	constexpr auto implicit_layer_registry_key = L"SOFTWARE\\Khronos\\Vulkan\\ImplicitLayers";
+
 	auto create_window_surface(
 		vk::Instance instance,
 		native_window_handle handle
 	) -> vk::SurfaceKHR;
+
+	auto suppress_injected_layers() -> void;
+
+	auto suppress_if_always_on(
+		const json::value& layer,
+		const std::filesystem::path& manifest
+	) -> void;
+}
+
+auto gse::vulkan::suppress_injected_layers() -> void {
+	for (const std::wstring& manifest : win32::registry_value_names(implicit_layer_registry_key)) {
+		const auto root = json::parse(fs::read_text(manifest));
+		if (!root) {
+			continue;
+		}
+		if (const json::value* layer = root->find("layer")) {
+			suppress_if_always_on(*layer, manifest);
+		}
+		if (const json::value* layers = root->find("layers")) {
+			for (const json::value& layer : layers->elements()) {
+				suppress_if_always_on(layer, manifest);
+			}
+		}
+	}
+}
+
+auto gse::vulkan::suppress_if_always_on(const json::value& layer, const std::filesystem::path& manifest) -> void {
+	const json::value* disable = layer.find("disable_environment");
+	if (!disable || disable->empty() || layer.contains("enable_environment")) {
+		return;
+	}
+	for (const std::string& variable : disable->keys()) {
+		const json::value* setting = disable->find(variable);
+		win32::SetEnvironmentVariableW(win32::widen(variable).c_str(), win32::widen(setting ? setting->text("1") : "1").c_str());
+	}
+	const json::value* name = layer.find("name");
+	log::println(
+		log::category::vulkan,
+		"Suppressed always-on implicit layer '{}' from {}",
+		name ? name->text() : std::string_view("unnamed"),
+		manifest.generic_display_string()
+	);
 }
 
 gse::vulkan::instance::instance(vk::raii::Context&& context, vk::raii::Instance&& instance, vk::raii::DebugUtilsMessengerEXT&& debug_messenger)
@@ -145,6 +193,7 @@ auto gse::vulkan::instance::destroy_owned_surface(const gpu::surface surface) co
 }
 
 auto gse::vulkan::instance::create(const std::span<const char* const> required_extensions, const bool enable_validation) -> instance {
+	suppress_injected_layers();
 	vk::detail::defaultDispatchLoaderDynamic.init();
 
 	std::vector<const char*> validation_layers;

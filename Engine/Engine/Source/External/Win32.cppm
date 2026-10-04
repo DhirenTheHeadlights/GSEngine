@@ -238,7 +238,12 @@ export namespace gse::win32 {
 	using ::GetEnvironmentStringsW;
 	using ::FreeEnvironmentStringsW;
 	using ::GetEnvironmentVariableW;
+	using ::SetEnvironmentVariableW;
 	using ::ExpandEnvironmentStringsW;
+	using ::HKEY;
+	using ::RegQueryInfoKeyW;
+	using ::RegEnumValueW;
+	using ::RegCloseKey;
 	using ::MultiByteToWideChar;
 	using ::LARGE_INTEGER;
 	using ::LONGLONG;
@@ -334,6 +339,7 @@ export namespace gse::win32 {
 	constexpr DWORD error_pipe_listening = ERROR_PIPE_LISTENING;
 	constexpr DWORD error_no_data = ERROR_NO_DATA;
 	constexpr DWORD error_broken_pipe = ERROR_BROKEN_PIPE;
+	constexpr LONG error_success = ERROR_SUCCESS;
 	constexpr int sw_show_normal = SW_SHOWNORMAL;
 
 	constexpr LONG exception_continue_search = EXCEPTION_CONTINUE_SEARCH;
@@ -437,6 +443,14 @@ export namespace gse::win32 {
 		const DWORD count = size / static_cast<DWORD>(sizeof(wchar_t));
 		out_value[count < out_capacity ? count : out_capacity - 1] = L'\0';
 		return out_value[0] != L'\0';
+	}
+
+	auto open_registry_key(const bool local_machine, const wchar_t* subkey) -> HKEY {
+		HKEY key = nullptr;
+		if (RegOpenKeyExW(local_machine ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER, subkey, 0, KEY_READ, &key) != ERROR_SUCCESS) {
+			return nullptr;
+		}
+		return key;
 	}
 
 	auto open_file_dialog(

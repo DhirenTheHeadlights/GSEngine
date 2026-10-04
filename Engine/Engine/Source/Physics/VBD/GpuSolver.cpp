@@ -176,6 +176,18 @@ namespace gse::vbd {
 	struct [[= shaders::ssbo_readonly]] joint_drive_input_index_data {
 		using element = std::uint32_t;
 	};
+	struct [[= shaders::ssbo_readwrite]] muscle_data {
+		using element = muscle_constraint;
+	};
+	struct [[= shaders::ssbo_readonly]] muscle_path_data {
+		using element = muscle_path_point;
+	};
+	struct [[= shaders::ssbo_readonly]] muscle_excitation_data {
+		using element = float;
+	};
+	struct [[= shaders::ssbo_readonly]] hull_data {
+		using element = std::uint32_t;
+	};
 
 	using shader_binding_types = type_pack<
 		body_data,
@@ -213,7 +225,11 @@ namespace gse::vbd {
 		joint_drive_input_data,
 		unowned_contacts,
 		body_input_index_data,
-		joint_drive_input_index_data
+		joint_drive_input_index_data,
+		muscle_data,
+		muscle_path_data,
+		muscle_excitation_data,
+		hull_data
 	>;
 
 	template <fixed_string BodyPath>
@@ -407,7 +423,10 @@ namespace gse::vbd {
 }
 
 auto gse::vbd::joint_drive_input_changed(const joint_drive_input& applied, const joint_drive_input& next) -> bool {
-	if (next.device_target != applied.device_target || next.activation != applied.activation || next.drive_stiffness != applied.drive_stiffness || next.drive_damping != applied.drive_damping || next.drive_max_torque != applied.drive_max_torque) {
+	if (next.device_target != applied.device_target || next.device_stiffness != applied.device_stiffness || next.drive_damping != applied.drive_damping || next.drive_max_torque != applied.drive_max_torque) {
+		return true;
+	}
+	if (next.device_stiffness == 0 && next.drive_stiffness != applied.drive_stiffness) {
 		return true;
 	}
 	return next.device_target == 0 && next.drive_target != applied.drive_target;
@@ -451,6 +470,44 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 			.writable = true
 		},
 		"vbd.joint"
+	);
+
+	m_muscle_buffer = ctx.device->create_buffer(
+		{
+			.size = std::max<std::size_t>(m_capacities.max_muscles * sizeof(muscle_constraint), 16),
+			.stride = sizeof(muscle_constraint),
+			.usage = storage_src_dst,
+			.bindless = true,
+			.writable = true
+		},
+		"vbd.muscle"
+	);
+	m_muscle_path_buffer = ctx.device->create_buffer(
+		{
+			.size = std::max<std::size_t>(m_capacities.max_muscle_points * sizeof(muscle_path_point), 16),
+			.stride = sizeof(muscle_path_point),
+			.usage = storage_dst,
+			.bindless = true
+		},
+		"vbd.muscle_path"
+	);
+	m_muscle_excitation_buffer = ctx.device->create_buffer(
+		{
+			.size = std::max<std::size_t>(m_capacities.max_muscles * sizeof(float), 16),
+			.stride = sizeof(float),
+			.usage = storage_dst,
+			.bindless = true
+		},
+		"vbd.muscle_excitation"
+	);
+	m_hull_buffer = ctx.device->create_buffer(
+		{
+			.size = std::max<std::size_t>(m_capacities.max_hull_uints * sizeof(std::uint32_t), 16),
+			.stride = sizeof(std::uint32_t),
+			.usage = storage_dst,
+			.bindless = true
+		},
+		"vbd.hull"
 	);
 
 	for (auto& f : m_frames) {
@@ -542,7 +599,7 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 		);
 		f.joint_adjacency_buffer = ctx.device->create_buffer(
 			{
-				.size = m_capacities.max_joints * 2 * sizeof(std::uint32_t),
+				.size = m_capacities.max_joint_adjacency * sizeof(std::uint32_t),
 				.stride = sizeof(std::uint32_t),
 				.usage = gpu::buffer_flag::storage,
 				.bindless = true,
@@ -851,6 +908,46 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 		"vbd.joint_drive_input_indices"
 	);
 
+	m_muscle_upload_channel = ctx.render_graph->create_upload_channel(
+		{
+			.size = std::max<std::size_t>(m_capacities.max_muscles * sizeof(muscle_constraint), 16),
+			.stride = sizeof(muscle_constraint),
+			.usage = storage_src,
+			.bindless = true
+		},
+		"vbd.muscle_upload"
+	);
+
+	m_muscle_path_upload_channel = ctx.render_graph->create_upload_channel(
+		{
+			.size = std::max<std::size_t>(m_capacities.max_muscle_points * sizeof(muscle_path_point), 16),
+			.stride = sizeof(muscle_path_point),
+			.usage = storage_src,
+			.bindless = true
+		},
+		"vbd.muscle_path_upload"
+	);
+
+	m_muscle_excitation_upload_channel = ctx.render_graph->create_upload_channel(
+		{
+			.size = std::max<std::size_t>(m_capacities.max_muscles * sizeof(float), 16),
+			.stride = sizeof(float),
+			.usage = storage_src,
+			.bindless = true
+		},
+		"vbd.muscle_excitation_upload"
+	);
+
+	m_hull_upload_channel = ctx.render_graph->create_upload_channel(
+		{
+			.size = std::max<std::size_t>(m_capacities.max_hull_uints * sizeof(std::uint32_t), 16),
+			.stride = sizeof(std::uint32_t),
+			.usage = storage_src,
+			.bindless = true
+		},
+		"vbd.hull_upload"
+	);
+
 	const auto gate = m_sync_readback ? gpu::readback_gate::queue_fence : gpu::readback_gate::frames_in_flight;
 	if (m_full_snapshot) {
 		m_snapshot_channel = ctx.render_graph->create_readback_channel(m_capacities.max_bodies * sizeof(body_state), "vbd.snapshot", gate, gpu::queue_type::compute);
@@ -919,6 +1016,7 @@ auto gse::vbd::gpu_solver::upload(const solver_upload& payload) -> void {
 		m_joint_buffers_seeded = false;
 		m_seeded_body_count = 0;
 		m_joint_count = 0;
+		m_muscle_count = 0;
 		m_jointless_body_count = 0;
 		m_impulse_count = 0;
 		m_apply_all_body_inputs = false;
@@ -1052,7 +1150,26 @@ auto gse::vbd::gpu_solver::upload(const solver_upload& payload) -> void {
 	m_upload_joints_dirty = false;
 	m_upload_joint_inputs_dirty = false;
 	m_merge_joint_inputs = false;
+	m_upload_muscles_dirty = false;
+	m_upload_muscle_excitations_dirty = false;
 	constexpr auto unresolved = std::numeric_limits<std::uint32_t>::max();
+
+	if (!payload.muscle_excitations.empty()) {
+		m_upload_muscle_excitations.assign(payload.muscle_excitations.begin(), payload.muscle_excitations.end());
+		m_upload_muscle_excitations_dirty = true;
+	}
+
+	if (payload.hull_generation != m_uploaded_hull_generation) {
+		assert(
+			payload.hull_data.size() <= m_capacities.max_hull_uints,
+			"{} packed hull words exceed max_hull_uints {}",
+			payload.hull_data.size(),
+			m_capacities.max_hull_uints
+		);
+		m_upload_hull_data.assign(payload.hull_data.begin(), payload.hull_data.end());
+		m_upload_hulls_dirty = !m_upload_hull_data.empty();
+		m_uploaded_hull_generation = payload.hull_generation;
+	}
 
 	if (!upload_joint_buffer) {
 		m_upload_joints.clear();
@@ -1134,6 +1251,27 @@ auto gse::vbd::gpu_solver::upload(const solver_upload& payload) -> void {
 			m_topology_key_next.push_back((static_cast<std::uint64_t>(j.body_a) << 32) | j.body_b);
 			++m_joint_count;
 		}
+		assert(
+			payload.muscles.size() <= m_capacities.max_muscles && payload.muscle_points.size() <= m_capacities.max_muscle_points,
+			"{} muscles with {} path points exceed max_muscles {} or max_muscle_points {}",
+			payload.muscles.size(),
+			payload.muscle_points.size(),
+			m_capacities.max_muscles,
+			m_capacities.max_muscle_points
+		);
+		m_upload_muscles.assign(payload.muscles.begin(), payload.muscles.end());
+		m_upload_muscle_points.assign(payload.muscle_points.begin(), payload.muscle_points.end());
+		m_muscle_count = static_cast<std::uint32_t>(m_upload_muscles.size());
+		for (const auto& m : m_upload_muscles) {
+			m_topology_key_next.push_back((std::uint64_t{ 0xFFFFFFFFu } << 32) | m.path_count);
+			for (std::uint32_t k = 0; k < m.path_count; ++k) {
+				const auto body = m_upload_muscle_points[m.path_first + k].body;
+				assert(body < m_body_count, "muscle path body {} out of bounds (body count {})", body, m_body_count);
+				m_jointed_body_mask[body] = 1;
+				m_topology_key_next.push_back(body);
+			}
+		}
+		m_upload_muscles_dirty = m_muscle_count > 0;
 		const auto* joint_data = joints.data();
 		const auto* slot_data = m_joint_slots.data();
 		auto* upload_data = m_upload_joints.data();
@@ -1173,7 +1311,7 @@ auto gse::vbd::gpu_solver::upload(const solver_upload& payload) -> void {
 			m_topology_largest_island = 0;
 		}
 
-		if (m_joint_count > 0 && topology_changed) {
+		if ((m_joint_count > 0 || m_muscle_count > 0) && topology_changed) {
 			trace::scope_guard _{ trace_id<"vbd_gpu::upload::topology">() };
 			std::vector<std::pair<std::uint32_t, std::uint32_t>> jointed_pairs;
 			jointed_pairs.reserve(m_joint_count);
@@ -1207,6 +1345,15 @@ auto gse::vbd::gpu_solver::upload(const solver_upload& payload) -> void {
 				const auto rb = find_root(m_upload_joints[i].body_b);
 				if (ra != rb) {
 					parent[std::max(ra, rb)] = std::min(ra, rb);
+				}
+			}
+			for (const auto& m : m_upload_muscles) {
+				for (std::uint32_t k = 1; k < m.path_count; ++k) {
+					const auto ra = find_root(m_upload_muscle_points[m.path_first].body);
+					const auto rb = find_root(m_upload_muscle_points[m.path_first + k].body);
+					if (ra != rb) {
+						parent[std::max(ra, rb)] = std::min(ra, rb);
+					}
 				}
 			}
 			std::vector<std::uint32_t> root_to_island(m_body_count, 0xFFFFFFFFu);
@@ -1252,11 +1399,12 @@ auto gse::vbd::gpu_solver::upload(const solver_upload& payload) -> void {
 			m_topology_largest_island = largest_island;
 			log::println(
 				log::category::physics,
-				"vbd topology: {} islands over {} jointed bodies of {} bodies, {} joints, largest island {} bodies",
+				"vbd topology: {} islands over {} jointed bodies of {} bodies, {} joints, {} muscles, largest island {} bodies",
 				m_island_count,
 				flat,
 				m_body_count,
 				m_joint_count,
+				m_muscle_count,
 				largest_island
 			);
 		}
@@ -1264,6 +1412,8 @@ auto gse::vbd::gpu_solver::upload(const solver_upload& payload) -> void {
 			m_island_count = m_topology_island_count;
 		}
 	}
+
+	m_solver_cfg.muscle_count = m_muscle_count;
 
 	const bool pack_islands = m_solver_cfg.island_pack != 0
 		&& m_solver_cfg.trace_island_convergence == 0
@@ -1325,6 +1475,19 @@ auto gse::vbd::gpu_solver::commit_upload() -> void {
 	if (m_upload_joint_inputs_dirty && !m_upload_joint_inputs.empty()) {
 		parallel_host_write<joint_drive_input>(m_joint_drive_input_channel.write_target(), std::span<const joint_drive_input>(m_upload_joint_inputs), trace_id<"vbd_gpu::upload::joint_input_write">());
 		m_joint_drive_input_index_channel.write_target().host_write(m_upload_joint_input_indices);
+	}
+
+	if (m_upload_muscles_dirty) {
+		m_muscle_upload_channel.write_target().host_write(m_upload_muscles);
+		m_muscle_path_upload_channel.write_target().host_write(m_upload_muscle_points);
+	}
+
+	if (m_upload_muscle_excitations_dirty) {
+		m_muscle_excitation_upload_channel.write_target().host_write(m_upload_muscle_excitations);
+	}
+
+	if (m_upload_hulls_dirty) {
+		m_hull_upload_channel.write_target().host_write(m_upload_hull_data);
 	}
 
 	if (!m_upload_impulses.empty()) {
@@ -1678,6 +1841,10 @@ struct gse::vbd::gpu_solver::solve_plan {
 	std::vector<std::uint32_t> impulse_offsets;
 	std::vector<std::uint32_t> impulse_counts;
 	std::size_t joint_upload_size = 0;
+	std::size_t muscle_upload_size = 0;
+	std::size_t muscle_path_upload_size = 0;
+	std::size_t muscle_excitation_upload_size = 0;
+	std::size_t hull_upload_size = 0;
 	float solve_alpha = 0.f;
 	bool adaptive = false;
 	bool apply_all_body_inputs = false;
@@ -1769,6 +1936,10 @@ auto gse::vbd::gpu_solver::build_solve_plan(solve_plan& out) -> void {
 		.unowned_contacts = f.unowned_contact_buffer.slot(),
 		.body_input_index_data = m_body_input_index_channel.current().slot(),
 		.joint_drive_input_index_data = m_joint_drive_input_index_channel.current().slot(),
+		.muscle_data = m_muscle_buffer.slot(),
+		.muscle_path_data = m_muscle_path_buffer.slot(),
+		.muscle_excitation_data = m_muscle_excitation_buffer.slot(),
+		.hull_data = m_hull_buffer.slot(),
 	};
 	auto jointless_bindings = bindings;
 	jointless_bindings.color_data = f.jointless_color_buffer.slot();
@@ -1820,7 +1991,7 @@ auto gse::vbd::gpu_solver::build_solve_plan(solve_plan& out) -> void {
 	);
 	out.joint_workgroups = ceil_div(std::max(m_joint_count, 1u), limits.workgroup_size);
 	out.joint_drive_input_workgroups = ceil_div(std::max(static_cast<std::uint32_t>(m_upload_joint_inputs.size()), 1u), limits.workgroup_size);
-	out.adjacency_workgroups = ceil_div(std::max(m_body_count, m_joint_count), limits.workgroup_size);
+	out.adjacency_workgroups = ceil_div(std::max({ m_body_count, m_joint_count, m_muscle_count }), limits.workgroup_size);
 	out.impulse_workgroups = ceil_div(m_impulse_count, limits.workgroup_size);
 	out.sweep_workgroups = sweep_workgroups;
 	out.color_cap = color_cap;
@@ -1842,6 +2013,11 @@ auto gse::vbd::gpu_solver::build_solve_plan(solve_plan& out) -> void {
 	out.upload_joints = m_upload_joints_dirty && !m_upload_joints.empty();
 	out.merge_joint_inputs = out.upload_joints && m_merge_joint_inputs;
 	out.apply_joint_drive_inputs = m_upload_joint_inputs_dirty && !m_upload_joint_inputs.empty();
+	out.muscle_upload_size = m_upload_muscles_dirty ? m_upload_muscles.size() * sizeof(muscle_constraint) : 0;
+	out.muscle_path_upload_size = m_upload_muscles_dirty ? m_upload_muscle_points.size() * sizeof(muscle_path_point) : 0;
+	out.muscle_excitation_upload_size = m_upload_muscle_excitations_dirty ? m_upload_muscle_excitations.size() * sizeof(float) : 0;
+	out.hull_upload_size = m_upload_hulls_dirty ? m_upload_hull_data.size() * sizeof(std::uint32_t) : 0;
+	m_upload_hulls_dirty = false;
 	out.seed_device_local = !m_compute.device_local_seeded;
 	m_compute.device_local_seeded = true;
 }
@@ -1996,6 +2172,19 @@ auto gse::vbd::gpu_solver::stage_clear_state_buffers(const solve_plan& p, const 
 
 	if (p.upload_joints && !p.merge_joint_inputs) {
 		rec.copy_buffer(m_joint_upload_channel.current(), m_joint_buffer, p.joint_upload_size);
+	}
+
+	if (p.muscle_upload_size > 0) {
+		rec.copy_buffer(m_muscle_upload_channel.current(), m_muscle_buffer, p.muscle_upload_size);
+		rec.copy_buffer(m_muscle_path_upload_channel.current(), m_muscle_path_buffer, p.muscle_path_upload_size);
+	}
+
+	if (p.muscle_excitation_upload_size > 0) {
+		rec.copy_buffer(m_muscle_excitation_upload_channel.current(), m_muscle_excitation_buffer, p.muscle_excitation_upload_size);
+	}
+
+	if (p.hull_upload_size > 0) {
+		rec.copy_buffer(m_hull_upload_channel.current(), m_hull_buffer, p.hull_upload_size);
 	}
 
 	if (!p.apply_all_body_inputs || p.preserve_warm_starts) {

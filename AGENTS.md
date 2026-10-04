@@ -60,6 +60,12 @@ It is an accelerator, not a gate. Reading and grepping source stays open, and yo
 
 `gse_report_gap` records that these tools did not cover something you needed. Pass `need` (what you were trying to find or do, one line) and `tried` (what you used instead). It returns immediately, blocks nothing and expects no answer — it is a note for the editor UI and the humans reading it, so the need shows up as a gap to close rather than vanishing into a shell pipeline nobody can see. Call it when you fall back to Grep, Read or a shell because no `gse_*` tool fits. Do not call it when a tool exists and merely returned nothing, or when the editor simply is not running; neither is a gap.
 
+## Deleting Files
+
+Delete with `gse_delete_file`, not `rm`, `del` or `Remove-Item`. It takes one `file_path` inside the project or engine tree and only deletes clean, committed files, so `git checkout` can always bring one back; untracked, ignored and modified files are refused, as are directories, links, `out/` and `.git/`. It shows up in the agent panel with the path. The editor's source watcher counts a removed build source as an unbuilt edit of the chats working in that tree, the same way it counts a write, so hibernation wakes on the build that covers it. Create files with Write; there is no create tool, because Write already records the new file and its lines against your chat and the `CONFIGURE_DEPENDS` globs pick it up on the next build.
+
+Blame is still per file. Deleting a module breaks its importers, and those errors land in files you did not edit, so they come back unattributed. When the response names a `module`, remove its imports before you build.
+
 ## Config Module
 
 `gse.config` (in `Engine/Engine/Import/Config.cppm`) provides every engine path as a **function**, resolved at runtime — `resource_path()`, `root_dir()`, `user_config_dir()`, etc. Re-exported by `gse.utility`. Nothing is baked into the binary: paths come from a `gse.manifest` marker file found by walking up from the executable's directory (CMake writes one to the build root at configure time with `mode = dev` and `root = <source tree>`).

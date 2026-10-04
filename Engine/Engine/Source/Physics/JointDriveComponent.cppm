@@ -11,5 +11,6 @@ export namespace gse::physics {
 		[[= networked]] torque max_torque = newton_meters(0.f);
 		[[= networked]] bool enabled = true;
 		[[= networked]] bool device_target = false;
+		[[= networked]] bool device_stiffness = false;
 	};
 }

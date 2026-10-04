@@ -21,6 +21,11 @@ export namespace gse::ide::agent {
 		shared_view<build_runner::data> build_d
 	) -> async::task<>;
 
+	[[= system_persist{}]]
+	auto persist(
+		const data& d
+	) -> void;
+
 	[[= system_shutdown{}]]
 	auto shutdown(
 		data& d

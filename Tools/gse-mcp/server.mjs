@@ -9,10 +9,12 @@
 //
 // No dependencies beyond node. Protocol: JSON-RPC 2.0, one message per line, MCP 2025-06-18.
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
+import { fileURLToPath } from 'node:url';
 
 const state_root = process.env.GSE_STATE_DIR
 	?? join(process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'), 'GSE');
@@ -24,6 +26,8 @@ const logs_dir = join(state_root, 'logs');
 const agent = process.env.GSE_AGENT_ID ?? process.env.CLAUDE_CODE_SESSION_ID ?? '';
 
 const windows_path = (path) => resolve(path).replaceAll('\\', '/');
+
+const engine_root = windows_path(fileURLToPath(new URL('../..', import.meta.url)));
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
@@ -844,7 +848,85 @@ const report_gap = async (args) => {
 	}));
 };
 
+const owned_by_tree = ['out', '.git'];
+
+const inside = (root, path) => {
+	const rel = relative(root, path);
+	return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel) ? rel.replaceAll('\\', '/') : undefined;
+};
+
+const delete_file = async (args) => {
+	const project = args.project ? windows_path(args.project) : project_of(process.cwd());
+	const requested = String(args.file_path ?? '').trim();
+	if (!requested) {
+		return text_result(header(project, { error: 'pass `file_path`: the file to delete.' }), true);
+	}
+	const path = windows_path(requested);
+	const roots = [project, engine_root].filter(Boolean);
+	const rel = roots.map((root) => inside(root, path)).find((found) => found !== undefined);
+	if (rel === undefined) {
+		return text_result(header(project, { file_path: path, error: 'outside the project and the engine tree; this tool only deletes source-tree files.', roots }), true);
+	}
+	if (owned_by_tree.includes(rel.split('/')[0])) {
+		return text_result(header(project, { file_path: path, error: `'${rel.split('/')[0]}/' is owned by the editor or git, not by chats.` }), true);
+	}
+
+	let stat;
+	try {
+		stat = lstatSync(path);
+	}
+	catch {
+		return text_result(header(project, { file_path: path, error: 'no such file.' }), true);
+	}
+	if (!stat.isFile()) {
+		return text_result(header(project, { file_path: path, error: 'not a regular file; directories and links are not deleted by this tool.' }), true);
+	}
+
+	let git_state;
+	try {
+		git_state = execFileSync('git', ['status', '--porcelain', '--ignored', '--', basename(path)], { cwd: dirname(path), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+	}
+	catch (error) {
+		return text_result(header(project, { file_path: path, error: `git could not vouch for this file, so a delete would not be recoverable: ${String(error?.stderr ?? error?.message ?? error).trim()}` }), true);
+	}
+	if (git_state) {
+		return text_result(header(project, {
+			file_path: path,
+			git_status: git_state.slice(0, 2),
+			error: 'only clean, committed files are deleted: this one is untracked, ignored, or has uncommitted changes, so git could not bring it back. Ask the user to delete it.',
+		}), true);
+	}
+
+	const text = readFileSync(path, 'utf8');
+	const declared = /^\s*(?:export\s+)?module\s+([\w.:]+)\s*;/m.exec(text)?.[1];
+	rmSync(path);
+
+	return text_result(header(project, {
+		file_path: path,
+		outcome: 'deleted',
+		bytes: stat.size,
+		lines: text.split('\n').length,
+		module: declared,
+		next: declared
+			? `It declared module '${declared}'. Remove every import of it before building: an importer you did not edit fails as an error that is not attributed to you.`
+			: undefined,
+	}));
+};
+
 const tools = {
+	gse_delete_file: {
+		description:
+			'Delete one file from the project or engine source tree. Use this instead of rm, del or Remove-Item: the deletion shows in the editor\'s agent panel with the file path, and the editor counts it as an unbuilt edit of the chats working in that tree, so gse_hibernate wakes on the build that covers it. Build errors in files that imported it are still blamed per file and will not come back as yours. Only deletes clean, committed files, so every delete is recoverable with git checkout: untracked, ignored and modified files are refused, as are directories, links, anything under out/ or .git/, and paths outside the project and engine roots. Creating a file needs no tool - use Write. If the file declared a C++ module, the response names it: remove its imports before you build.',
+		schema: {
+			type: 'object',
+			properties: {
+				file_path: { type: 'string', description: 'The file to delete, absolute or relative to your cwd.' },
+				project: { type: 'string', description: 'Project directory; defaults to the nearest .gseproj above the current directory.' },
+			},
+			required: ['file_path'],
+		},
+		run: delete_file,
+	},
 	gse_report_gap: {
 		description:
 			'Record that your tools did not cover something you needed, then carry on. Two kinds. `kind: "lookup"` (the default) is when a lookup falls back to Grep, Read or a shell because no gse_* tool fits - not for a tool that exists and merely returned nothing. `kind: "capability"` is when the phase you are in withheld something the task genuinely needed: you could not run the exe to observe a failure, could not build to check a claim, could not edit to test a hypothesis. That is how the owner learns which restrictions are costing them evidence. Returns immediately and grants nothing - it is a note for the humans, not a request, so nothing waits on it and no answer comes back. Do not use it to argue for an exception or to stall: record it, continue with what the phase does allow, and say in your phase summary what you could not determine.',
@@ -1017,7 +1099,7 @@ const handle = async (message) => {
 			capabilities: { tools: {} },
 			serverInfo: { name: 'gse', version: '0.1.0' },
 			instructions:
-				'GSE editor tools. Build with gse_build (never cmake/ninja/compilers). If it returns "deferred", call gse_hibernate and end your turn. Read logs with gse_log_query, not by opening the file. Look code up with gse_symbol_query before reading a source file to find a symbol. If your system prompt names a current phase, end that phase with gse_phase_done rather than simply stopping.',
+				'GSE editor tools. Build with gse_build (never cmake/ninja/compilers). If it returns "deferred", call gse_hibernate and end your turn. Read logs with gse_log_query, not by opening the file. Look code up with gse_symbol_query before reading a source file to find a symbol. Delete files with gse_delete_file, not a shell. If your system prompt names a current phase, end that phase with gse_phase_done rather than simply stopping.',
 		});
 		return;
 	}
