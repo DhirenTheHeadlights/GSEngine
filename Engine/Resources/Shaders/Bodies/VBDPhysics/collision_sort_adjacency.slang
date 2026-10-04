@@ -19,9 +19,10 @@ void collision_sort_adjacency(uint3 dispatch_id) {
     uint idx = dispatch_id.x;
     uint body_count = pc.body_count;
     uint num_joints = min(pc.joint_count, max_joints);
+    uint num_muscles = min(solver_config_data[0].muscle_count, max_muscles);
 
     uint num_contacts = min(collision_state[state_contact_count_index], max_contacts);
-    uint thread_count = ((max(body_count, num_joints) + workgroup_size - 1) / workgroup_size) * workgroup_size;
+    uint thread_count = ((max(max(body_count, num_joints), num_muscles) + workgroup_size - 1) / workgroup_size) * workgroup_size;
     for (uint ci = idx; ci < num_contacts; ci += thread_count) {
         uint body_a = contact_data[ci].body_a;
         uint body_b = contact_data[ci].body_b;
@@ -64,22 +65,48 @@ void collision_sort_adjacency(uint3 dispatch_id) {
         uint jcnt = min(joint_counts[idx], max_joint_adjacency - joff);
         for (uint ja = 1u; ja < jcnt; ja++) {
             uint ji_a = joint_adjacency[joff + ja];
-            joint_constraint jca = joint_data[ji_a];
+            bool muscle_a = (ji_a & muscle_adjacency_tag) != 0;
+            joint_constraint jca = joint_data[muscle_a ? 0u : ji_a];
             uint joa = (jca.body_a == idx) ? jca.body_b : jca.body_a;
             float3 jka = (jca.body_a == idx) ? jca.local_anchor_a.xyz : jca.local_anchor_b.xyz;
             uint jb = ja;
             while (jb > 0u) {
                 uint ji_p = joint_adjacency[joff + jb - 1u];
-                joint_constraint jcp = joint_data[ji_p];
+                bool muscle_p = (ji_p & muscle_adjacency_tag) != 0;
+                joint_constraint jcp = joint_data[muscle_p ? 0u : ji_p];
                 uint jop = (jcp.body_a == idx) ? jcp.body_b : jcp.body_a;
                 float3 jkp = (jcp.body_a == idx) ? jcp.local_anchor_a.xyz : jcp.local_anchor_b.xyz;
-                bool jgt = (jop > joa) || (jop == joa && (jkp.x > jka.x || (jkp.x == jka.x && (jkp.y > jka.y || (jkp.y == jka.y && (jkp.z > jka.z || (jkp.z == jka.z && ji_p > ji_a)))))));
+                bool jgt = (muscle_a || muscle_p)
+                    ? (muscle_p && (!muscle_a || ji_p > ji_a))
+                    : ((jop > joa) || (jop == joa && (jkp.x > jka.x || (jkp.x == jka.x && (jkp.y > jka.y || (jkp.y == jka.y && (jkp.z > jka.z || (jkp.z == jka.z && ji_p > ji_a))))))));
                 if (!jgt) break;
                 joint_adjacency[joff + jb] = ji_p;
                 jb--;
             }
             joint_adjacency[joff + jb] = ji_a;
         }
+    }
+
+    if (idx < num_muscles) {
+        muscle_constraint m = muscle_data[idx];
+        float target = saturate(muscle_excitation_data[idx]);
+        float recruitment = 0.5 + 1.5 * m.activation;
+        float lag = target > m.activation ? activation_time * recruitment : deactivation_time / recruitment;
+        m.excitation = muscle_excitation_data[idx];
+        m.activation = target + (m.activation - target) * exp(-pc.dt / lag);
+        float path = 0.0;
+        for (uint k = 0; k + 1 < m.path_count; k++) {
+            muscle_path_point from = muscle_path_data[m.path_first + k];
+            muscle_path_point to = muscle_path_data[m.path_first + k + 1];
+            body_state from_body = body_data[from.body];
+            body_state to_body = body_data[to.body];
+            path += length(
+                (to_body.position.xyz + rotate_vector(to_body.orientation, to.local_point.xyz)) -
+                (from_body.position.xyz + rotate_vector(from_body.orientation, from.local_point.xyz))
+            );
+        }
+        m.path_length_start = path;
+        muscle_data[idx] = m;
     }
 
     if (idx < num_joints) {
@@ -101,12 +128,12 @@ void collision_sort_adjacency(uint3 dispatch_id) {
             if (j.limits_enabled != 0) j.limit_lambda *= wgamma;
 
             int num_pos_rows = 3;
-            if (j.type == joint_type::distance || j.type == joint_type::muscle) num_pos_rows = 1;
+            if (j.type == joint_type::distance) num_pos_rows = 1;
             else if (j.type == joint_type::slider) num_pos_rows = 2;
 
             for (int wk = 0; wk < num_pos_rows; wk++) {
                 float3 wdir;
-                if (j.type == joint_type::distance || j.type == joint_type::muscle) {
+                if (j.type == joint_type::distance) {
                     wdir = (length(d) > 1e-7) ? normalize(d) : float3(0, 1, 0);
                 }
                 else if (j.type == joint_type::slider) {
@@ -126,7 +153,7 @@ void collision_sort_adjacency(uint3 dispatch_id) {
             }
 
             int num_ang_rows = 3;
-            if (j.type == joint_type::distance || j.type == joint_type::muscle || j.type == joint_type::ball) num_ang_rows = 0;
+            if (j.type == joint_type::distance || j.type == joint_type::ball) num_ang_rows = 0;
             else if (j.type == joint_type::hinge) num_ang_rows = 2;
             else if (j.type == joint_type::universal) num_ang_rows = 1;
 

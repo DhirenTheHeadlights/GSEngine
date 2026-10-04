@@ -65,6 +65,11 @@ namespace gse {
 		void* data_ptr
 	) -> void;
 
+	template <std::meta::info FnInfo, typename State>
+	auto invoke_annotated_persist(
+		const void* data_ptr
+	) -> void;
+
 	template <typename State>
 	auto invoke_annotated_snapshot(
 		void* data_ptr
@@ -293,6 +298,12 @@ auto gse::invoke_annotated_shutdown(void* data_ptr) -> void {
 	[:FnInfo:](d.state);
 }
 
+template <std::meta::info FnInfo, typename State>
+auto gse::invoke_annotated_persist(const void* data_ptr) -> void {
+	const auto& d = *static_cast<const annotated_system_data<State>*>(data_ptr);
+	[:FnInfo:](d.state);
+}
+
 template <typename State>
 auto gse::invoke_annotated_snapshot(void* data_ptr) -> void {
 	auto& d = *static_cast<annotated_system_data<State>*>(data_ptr);
@@ -367,6 +378,9 @@ auto gse::wire_annotated_fn(system_node& node, run_signature_metadata& run_meta,
 		node.has_frame = true;
 		auto deps = extract_fn_frame_deps<FnInfo, State>();
 		frame_deps.insert(frame_deps.end(), deps.begin(), deps.end());
+	}
+	else if constexpr (hook == system_hook::persist) {
+		node.invoke_persist_fn = &invoke_annotated_persist<FnInfo, State>;
 	}
 	else {
 		node.invoke_shutdown_fn = &invoke_annotated_shutdown<FnInfo, State>;

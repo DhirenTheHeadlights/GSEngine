@@ -80,6 +80,8 @@ export namespace gse {
 			const std::function<void()>& in_frame = {}
 		) -> void;
 
+		auto persist() const -> void;
+
 		auto shutdown() -> void;
 
 		auto clear() -> void;
@@ -148,6 +150,10 @@ export namespace gse {
 		) -> void;
 
 	private:
+		static auto persist_node(
+			const system_node& node
+		) -> void;
+
 		auto register_node(
 			system_node node
 		) -> void*;

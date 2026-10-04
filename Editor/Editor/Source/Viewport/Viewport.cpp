@@ -126,6 +126,17 @@ auto gse::ide::viewport::retire_superseded(data& d, const imported_session& curr
 		if (!superseded(session)) {
 			continue;
 		}
+		const auto owned = [&session](const gpu::bindless_slot slot) {
+			return std::ranges::any_of(session.slots, [slot](const gpu::bindless_handle& handle) {
+				return handle.slot() == slot;
+			});
+		};
+		if (owned(d.display_slot)) {
+			d.display_slot = d.slots[0].slot();
+		}
+		if (session.instance < build_runner::max_attached_instances && owned(d.instance_slots[session.instance])) {
+			d.instance_slots[session.instance] = {};
+		}
 		d.retiring.push_back({
 			.session = std::move(session),
 			.retire_at_frame = frame_count + gpu::max_frames_in_flight + 1,

@@ -9,6 +9,7 @@ import gse.core;
 import gse.concurrency;
 import gse.ecs;
 import gse.assert;
+import gse.fs;
 
 export namespace gse::save {
 	enum class value_provenance : std::uint8_t {
@@ -670,9 +671,17 @@ auto gse::save::registry::parse(const std::string_view text) -> doc {
 }
 
 auto gse::save::registry::emit(const doc& d) -> std::string {
+	std::map<std::string_view, std::map<std::string_view, std::string_view>> ordered;
+	for (const auto& [section, entries] : d) {
+		auto& keys = ordered[section];
+		for (const auto& [key, value] : entries) {
+			keys.emplace(key, value);
+		}
+	}
+
 	std::string out;
 	bool first = true;
-	for (const auto& [section, entries] : d) {
+	for (const auto& [section, entries] : ordered) {
 		if (!first) {
 			out.push_back('\n');
 		}
@@ -750,14 +759,7 @@ auto gse::save::registry::save_to_file(const std::filesystem::path& path, const 
 		}
 	}
 
-	std::error_code ec;
-	std::filesystem::create_directories(path.parent_path(), ec);
-
-	std::ofstream file(path);
-	if (!file) {
-		return false;
-	}
-	file << emit(d);
+	layout_store::replace(path, emit(d));
 	return true;
 }
 

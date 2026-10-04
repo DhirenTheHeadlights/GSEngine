@@ -20,7 +20,18 @@ import :transform_component;
 import :vbd_constraints;
 import :vbd_gpu_solver;
 
-auto gse::physics::copy_joints_with_inputs(const shared_view<data> phys, read<joint_drive_component>& drives, read<muscle_component>& muscles, std::vector<joint_definition>& out) -> void {
+auto gse::physics::copy_muscles_with_inputs(const shared_view<data> phys, read<muscle_component>& muscles, std::vector<muscle_definition>& out) -> void {
+	const auto owners = phys.muscles.ids();
+	const auto definitions = phys.muscles.items();
+	out.assign(definitions.begin(), definitions.end());
+	for (std::size_t i = 0; i < out.size(); ++i) {
+		if (const auto* muscle = muscles.find(owners[i])) {
+			apply_muscle_excitation(out[i], *muscle);
+		}
+	}
+}
+
+auto gse::physics::copy_joints_with_inputs(const shared_view<data> phys, read<joint_drive_component>& drives, std::vector<joint_definition>& out) -> void {
 	const auto owners = phys.joints.ids();
 	const auto definitions = phys.joints.items();
 	if (out.size() != definitions.size()) {
@@ -39,10 +50,7 @@ auto gse::physics::copy_joints_with_inputs(const shared_view<data> phys, read<jo
 	task::coarse_parallel(
 		out.size(),
 		64,
-		[out_data, owners, &drives, &muscles](const std::size_t i) {
-			if (const auto* muscle = muscles.find(owners[i])) {
-				apply_muscle_activation(out_data[i], *muscle);
-			}
+		[out_data, owners, &drives](const std::size_t i) {
 			if (const auto* drive = drives.find(owners[i])) {
 				apply_joint_drive(out_data[i], *drive);
 			}
@@ -70,11 +78,13 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 	bool refresh_joints = false;
 	{
 		trace::scope_guard _{ trace_id<"vbd_gpu::build_bodies">() };
-		assert(
-			phys.hulls.empty(),
-			"the gpu solver has no hull narrow phase, but {} convex hulls are registered; run hull scenes on the cpu solver",
-			phys.hulls.size()
-		);
+		if (phys.hulls.size() != d.packed_hull_count) {
+			trace::scope_guard _{ trace_id<"vbd_gpu::build_bodies::pack_hulls">() };
+			pack_gpu_hulls(phys.hulls, d.hull_data, d.hull_offsets);
+			d.packed_hull_count = phys.hulls.size();
+			++d.hull_generation;
+		}
+		slot.hull_data.assign(d.hull_data.begin(), d.hull_data.end());
 
 		body_build_view view{
 			.motion_owners = motion.owner_ids(),
@@ -84,6 +94,7 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 			.collision_owners = collision.owner_ids(),
 			.collisions = { collision.data(), collision.size() },
 			.hulls = phys.hulls,
+			.hull_offsets = d.hull_offsets,
 		};
 
 		auto& body_props = slot.body_props;
@@ -97,7 +108,8 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 			trace::scope_guard _{ trace_id<"vbd_gpu::build_bodies::states">() };
 			build_body_states(view, phys.sleep_counters, bodies, d.body_index, d.body_index_entries, has_transform, scan_fill);
 			refresh_joints = plan.reset || d.force_full_joints || phys.joints_generation != d.uploaded_joints_generation || d.uploaded_body_count != bodies.size() ||
-				d.joint_slots.size() != phys.joints.size() || d.joint_body_index_entries != d.body_index_entries;
+				d.joint_slots.size() != phys.joints.size() || d.joint_body_index_entries != d.body_index_entries ||
+				phys.muscles_generation != d.uploaded_muscles_generation || d.muscle_slots.size() != phys.muscles.size();
 			if (refresh_joints && scan_fill.sparse) {
 				scan_fill.sparse = false;
 				build_body_states(view, phys.sleep_counters, bodies, d.body_index, d.body_index_entries, has_transform, scan_fill);
@@ -244,6 +256,10 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 	auto& gpu_joints = slot.joints;
 	auto& gpu_joint_inputs = slot.joint_inputs;
 	gpu_joint_inputs.clear();
+	auto& gpu_muscles = slot.muscles;
+	auto& gpu_muscle_points = slot.muscle_points;
+	auto& gpu_muscle_excitations = slot.muscle_excitations;
+	gpu_muscle_excitations.clear();
 	std::vector<joint_rest_orientation> rest_orientations;
 	const bool refresh_joint_inputs = phys.joint_inputs_generation != d.uploaded_joint_inputs_generation;
 	if (refresh_joints) {
@@ -256,7 +272,25 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 		);
 		{
 			trace::scope_guard _{ trace_id<"vbd_gpu::build_joints::copy_inputs">() };
-			copy_joints_with_inputs(phys, drives, muscles, d.joints);
+			copy_joints_with_inputs(phys, drives, d.joints);
+		}
+		{
+			trace::scope_guard _{ trace_id<"vbd_gpu::build_muscles">() };
+			copy_muscles_with_inputs(phys, muscles, d.muscles);
+			build_muscle_constraints(d.muscles, d.body_index, gpu_muscles, gpu_muscle_points, &d.muscle_slots);
+			assert(
+				gpu_muscles.size() <= phys.gpu_solver.capacities().max_muscles && gpu_muscle_points.size() <= phys.gpu_solver.capacities().max_muscle_points,
+				"{} muscles with {} path points exceed Physics.gpu_max_muscles = {} or Physics.gpu_max_muscle_points = {}",
+				gpu_muscles.size(),
+				gpu_muscle_points.size(),
+				phys.gpu_solver.capacities().max_muscles,
+				phys.gpu_solver.capacities().max_muscle_points
+			);
+			gpu_muscle_excitations.resize(gpu_muscles.size());
+			for (std::size_t i = 0; i < gpu_muscles.size(); ++i) {
+				gpu_muscle_excitations[i] = gpu_muscles[i].excitation;
+			}
+			d.uploaded_muscle_count = static_cast<std::uint32_t>(gpu_muscles.size());
 		}
 		std::vector<std::size_t> uninitialized;
 		{
@@ -308,11 +342,9 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 		const auto* slot_data = d.joint_slots.data();
 		auto* input_data = gpu_joint_inputs.data();
 		const auto drives_aligned = std::ranges::equal(drives.owner_ids(), owners);
-		const auto muscles_aligned = std::ranges::equal(muscles.owner_ids(), owners);
-		const auto no_muscles = muscles.size() == 0;
 		const auto* drive_data = drives.data();
 		const auto drive_count = drives.size();
-		const auto write_input = [definition_data, slot_data, input_data, owners, muscles_aligned, no_muscles, &muscles](const std::size_t i, const joint_drive_component* drive) {
+		const auto write_input = [definition_data, slot_data, input_data](const std::size_t i, const joint_drive_component* drive) {
 			const auto slot_index = slot_data[i];
 			if (slot_index == unresolved) {
 				return;
@@ -320,14 +352,10 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 			const auto& jd = definition_data[i];
 			auto input = vbd::joint_drive_input{
 				.drive_target = jd.drive_target,
-				.activation = jd.activation,
 				.drive_stiffness = jd.drive_stiffness,
 				.drive_damping = jd.drive_damping,
 				.drive_max_torque = jd.drive_max_torque,
 			};
-			if (const auto* muscle = no_muscles ? nullptr : muscles_aligned ? std::addressof(muscles[i]) : muscles.find(owners[i])) {
-				input.activation = muscle->activation;
-			}
 			if (drive) {
 				if (drive->enabled) {
 					input.drive_target = drive->target;
@@ -335,6 +363,7 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 					input.drive_damping = drive->damping;
 					input.drive_max_torque = drive->max_torque;
 					input.device_target = drive->device_target ? 1u : 0u;
+					input.device_stiffness = drive->device_stiffness ? 1u : 0u;
 				}
 				else {
 					input.drive_stiffness = {};
@@ -397,10 +426,28 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 		}
 	}
 
+	if (!refresh_joints && phys.muscle_inputs_generation != d.uploaded_muscle_inputs_generation && d.uploaded_muscle_count > 0) {
+		trace::scope_guard _{ trace_id<"vbd_gpu::build_muscle_inputs">() };
+		constexpr auto unresolved = std::numeric_limits<std::uint32_t>::max();
+		gpu_muscle_excitations.resize(d.uploaded_muscle_count);
+		const auto owners = phys.muscles.ids();
+		const auto definitions = phys.muscles.items();
+		for (std::size_t i = 0; i < definitions.size() && i < d.muscle_slots.size(); ++i) {
+			const auto slot_index = d.muscle_slots[i];
+			if (slot_index == unresolved) {
+				continue;
+			}
+			const auto* muscle = muscles.find(owners[i]);
+			gpu_muscle_excitations[slot_index] = muscle ? muscle->excitation : definitions[i].excitation;
+		}
+	}
+
 	{
 		trace::scope_guard _{ trace_id<"vbd_gpu::upload">() };
 		d.uploaded_joints_generation = phys.joints_generation;
 		d.uploaded_joint_inputs_generation = phys.joint_inputs_generation;
+		d.uploaded_muscles_generation = phys.muscles_generation;
+		d.uploaded_muscle_inputs_generation = phys.muscle_inputs_generation;
 		d.uploaded_body_count = static_cast<std::uint32_t>(bodies.size());
 
 		auto upload = vbd::solver_upload{
@@ -409,6 +456,11 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 			.motors = motors,
 			.joints = refresh_joints ? std::span<const vbd::joint_constraint>(gpu_joints) : std::span<const vbd::joint_constraint>{},
 			.joint_inputs = gpu_joint_inputs,
+			.muscles = refresh_joints ? std::span<const vbd::muscle_constraint>(gpu_muscles) : std::span<const vbd::muscle_constraint>{},
+			.muscle_points = refresh_joints ? std::span<const vbd::muscle_path_point>(gpu_muscle_points) : std::span<const vbd::muscle_path_point>{},
+			.muscle_excitations = gpu_muscle_excitations,
+			.hull_data = slot.hull_data,
+			.hull_generation = d.hull_generation,
 			.impulses = gpu_impulses,
 			.solver_cfg = phys.vbd_solver.config(),
 			.dt = system_clock::fixed_dt() * static_cast<float>(plan.total_ticks),

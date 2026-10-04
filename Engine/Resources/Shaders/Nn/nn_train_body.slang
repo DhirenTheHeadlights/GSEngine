@@ -1,5 +1,3 @@
-static const uint nn_train_tile = 4;
-static const uint nn_grad_tile = 16;
 static const uint nn_grad_tile_area = nn_grad_tile * nn_grad_tile;
 
 groupshared float gs_x[nn_train_tile * nn_max_in];
@@ -7,6 +5,7 @@ groupshared float gs_a1[nn_train_tile * nn_hidden];
 groupshared float gs_a2[nn_train_tile * nn_hidden];
 groupshared float gs_out[nn_train_tile * nn_max_out];
 groupshared float gs_od[nn_train_tile * nn_max_out];
+groupshared float gs_mirror[nn_train_tile * nn_max_out];
 groupshared float gs_h2p[nn_train_tile * nn_hidden];
 groupshared float gs_loss[nn_reduce_width];
 groupshared float gs_d[nn_grad_tile_area];
@@ -33,18 +32,23 @@ uint nn_grad_groups(uint in_dim, uint out_dim) {
     return w1 + w2 + w3 + vectors + 1;
 }
 
-void nn_train_tile_net(RWStructuredBuffer<float> state, RWStructuredBuffer<float> scratch, uint tile, uint j, uint out_dim, uint param_count, uint mode, uint target_offset) {
-    uint s0 = tile * nn_train_tile;
-    uint live = min(nn_train_tile, pc.sample_count - s0);
-    uint base = pc.sample_base + s0;
+void nn_train_tile_forward(RWStructuredBuffer<float> state, RWStructuredBuffer<float> scratch, uint j, uint live, uint base, uint out_dim, uint param_count, bool mirrored, out float a1[nn_train_tile], out float a2[nn_train_tile]) {
     uint in_dim = pc.in_dim;
     uint w1t = nn_w1t_off(param_count);
     uint w2t = nn_w2t_off(param_count, in_dim);
     uint w3t = nn_w3t_off(param_count, in_dim);
+    bool store = !mirrored;
 
     if (j < in_dim) {
+        uint source = j;
+        float sign = 1.0;
+        if (mirrored) {
+            float code = nn_inputs[pc.mirror_offset + j];
+            source = nn_mirror_source(code);
+            sign = nn_mirror_sign(code);
+        }
         for (uint t = 0; t < nn_train_tile; ++t) {
-            gs_x[t * nn_max_in + j] = t < live ? nn_inputs[pc.input_offset + (base + t) * in_dim + j] : 0.0;
+            gs_x[t * nn_max_in + j] = t < live ? sign * nn_inputs[pc.input_offset + (base + t) * in_dim + source] : 0.0;
         }
     }
     GroupMemoryBarrierWithGroupSync();
@@ -60,11 +64,10 @@ void nn_train_tile_net(RWStructuredBuffer<float> state, RWStructuredBuffer<float
             acc[t] += w * gs_x[t * nn_max_in + i];
         }
     }
-    float a1[nn_train_tile];
     for (uint t = 0; t < nn_train_tile; ++t) {
         a1[t] = tanh(acc[t]);
         gs_a1[t * nn_hidden + j] = a1[t];
-        if (t < live) {
+        if (store && t < live) {
             scratch[nn_h1_off + (base + t) * nn_hidden + j] = a1[t];
         }
     }
@@ -80,11 +83,10 @@ void nn_train_tile_net(RWStructuredBuffer<float> state, RWStructuredBuffer<float
             acc[t] += w * gs_a1[t * nn_hidden + k];
         }
     }
-    float a2[nn_train_tile];
     for (uint t = 0; t < nn_train_tile; ++t) {
         a2[t] = tanh(acc[t]);
         gs_a2[t * nn_hidden + j] = a2[t];
-        if (t < live) {
+        if (store && t < live) {
             scratch[nn_h2_off + (base + t) * nn_hidden + j] = a2[t];
         }
     }
@@ -103,12 +105,36 @@ void nn_train_tile_net(RWStructuredBuffer<float> state, RWStructuredBuffer<float
         }
         for (uint t = 0; t < nn_train_tile; ++t) {
             gs_out[t * nn_max_out + j] = acc[t];
-            if (t < live) {
+            if (store && t < live) {
                 scratch[nn_out_off + (base + t) * out_dim + j] = acc[t];
             }
         }
     }
     GroupMemoryBarrierWithGroupSync();
+}
+
+void nn_train_tile_net(RWStructuredBuffer<float> state, RWStructuredBuffer<float> scratch, uint tile, uint j, uint out_dim, uint param_count, uint mode, uint target_offset) {
+    uint s0 = tile * nn_train_tile;
+    uint live = min(nn_train_tile, pc.sample_count - s0);
+    uint base = pc.sample_base + s0;
+    uint in_dim = pc.in_dim;
+    bool symmetric = mode == 0 && pc.symmetry_coeff != 0.0;
+
+    float a1[nn_train_tile];
+    float a2[nn_train_tile];
+    if (symmetric) {
+        nn_train_tile_forward(state, scratch, j, live, base, out_dim, param_count, true, a1, a2);
+        if (j < out_dim) {
+            float code = nn_inputs[pc.mirror_offset + in_dim + j];
+            uint source = nn_mirror_source(code);
+            float sign = nn_mirror_sign(code);
+            for (uint t = 0; t < nn_train_tile; ++t) {
+                gs_mirror[t * nn_max_out + j] = sign * gs_out[t * nn_max_out + source];
+            }
+        }
+        GroupMemoryBarrierWithGroupSync();
+    }
+    nn_train_tile_forward(state, scratch, j, live, base, out_dim, param_count, false, a1, a2);
 
     if (j < live) {
         uint t = j;
@@ -132,17 +158,23 @@ void nn_train_tile_net(RWStructuredBuffer<float> state, RWStructuredBuffer<float
             float clipped = clamp(ratio, 1.0 - pc.clip_eps, 1.0 + pc.clip_eps);
             bool not_clipped = (adv >= 0.0) ? (ratio < 1.0 + pc.clip_eps) : (ratio > 1.0 - pc.clip_eps);
             float d_logp = not_clipped ? -ratio * adv : 0.0;
-            scratch[nn_sample_loss_off + s] = (not_clipped ? -ratio * adv : -clipped * adv) - pc.entropy_coeff * entropy;
+            float sample_loss = (not_clipped ? -ratio * adv : -clipped * adv) - pc.entropy_coeff * entropy;
             for (uint i = 0; i < out_dim; ++i) {
                 float ls = state[ls_off + i];
                 float sigma = exp(ls);
                 float centered = nn_inputs[act_row + i] - gs_out[row + i];
                 float diff = centered / sigma;
                 float od = d_logp * centered / (sigma * sigma);
+                if (symmetric) {
+                    float gap = gs_out[row + i] - gs_mirror[row + i];
+                    sample_loss += pc.symmetry_coeff * gap * gap;
+                    od += 2.0 * pc.symmetry_coeff * gap;
+                }
                 gs_od[row + i] = od;
                 scratch[nn_out_delta_off + s * out_dim + i] = od;
                 scratch[nn_ls_terms_off + s * out_dim + i] = d_logp * (diff * diff - 1.0) - pc.entropy_coeff;
             }
+            scratch[nn_sample_loss_off + s] = sample_loss;
         }
         else {
             float err = gs_out[row] - nn_inputs[target_offset + sample];

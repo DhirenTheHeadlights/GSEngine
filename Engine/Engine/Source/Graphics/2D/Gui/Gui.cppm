@@ -140,7 +140,6 @@ export namespace gse::gui {
 			= settings::app_scope{}
 		]]
 		std::filesystem::path file_path = config::user_config_dir() / "gui_layout.ini";
-		clock save_clock;
 
 		draw_context* context = nullptr;
 
@@ -161,8 +160,6 @@ export namespace gse::gui {
 
 		[[= shared]] viewport_state primary{ .adopts_unclaimed_content = true };
 		std::vector<std::unique_ptr<viewport_state>> secondaries;
-
-		static constexpr time update_interval = seconds(30.f);
 	};
 
 	[[= system_init{}]]
@@ -185,12 +182,9 @@ export namespace gse::gui {
 		data& d
 	) -> async::task<>;
 
-	auto shutdown(
-		data& d
-	) -> void;
-
-	auto save(
-		data& d
+	[[= system_persist{}]]
+	auto persist(
+		const data& d
 	) -> void;
 }
 

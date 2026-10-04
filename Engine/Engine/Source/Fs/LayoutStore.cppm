@@ -22,6 +22,11 @@ export namespace gse::layout_store {
 		std::string block
 	) -> void;
 
+	auto replace(
+		const std::filesystem::path& path,
+		std::string content
+	) -> void;
+
 	auto read(
 		const std::filesystem::path& path
 	) -> std::string;
@@ -52,9 +57,11 @@ namespace gse::layout_store {
 		std::string block;
 	};
 
+	using file_content = std::variant<std::vector<pending_block>, std::string>;
+
 	struct file_state {
 		bool needs_write = false;
-		std::vector<pending_block> blocks;
+		file_content content;
 	};
 
 	class store : non_copyable, non_movable {
@@ -69,6 +76,11 @@ namespace gse::layout_store {
 			std::string block
 		) -> void;
 
+		auto replace(
+			const std::filesystem::path& path,
+			std::string content
+		) -> void;
+
 		auto read(
 			const std::filesystem::path& path
 		) -> std::string;
@@ -76,6 +88,10 @@ namespace gse::layout_store {
 		auto flush() -> void;
 
 	private:
+		auto schedule(
+			file_state& state
+		) -> void;
+
 		auto write_pending() -> void;
 
 		auto next_dirty() const -> std::filesystem::path;
@@ -110,12 +126,16 @@ namespace gse::layout_store {
 
 	auto merged(
 		const std::filesystem::path& path,
-		std::span<const pending_block> blocks
+		const file_content& content
 	) -> std::string;
 }
 
 auto gse::layout_store::submit(const std::filesystem::path& path, owner sections, std::string block) -> void {
 	instance().submit(path, std::move(sections), std::move(block));
+}
+
+auto gse::layout_store::replace(const std::filesystem::path& path, std::string content) -> void {
+	instance().replace(path, std::move(content));
 }
 
 auto gse::layout_store::read(const std::filesystem::path& path) -> std::string {
@@ -131,15 +151,33 @@ gse::layout_store::store::~store() = default;
 auto gse::layout_store::store::submit(const std::filesystem::path& path, owner sections, std::string block) -> void {
 	std::lock_guard _(m_mutex);
 	file_state& state = m_files[path];
-	if (const auto existing = std::ranges::find(state.blocks, sections, &pending_block::sections); existing != state.blocks.end()) {
+	std::vector<pending_block>& blocks = std::get<std::vector<pending_block>>(state.content);
+	if (const auto existing = std::ranges::find(blocks, sections, &pending_block::sections); existing != blocks.end()) {
+		if (existing->block == block) {
+			return;
+		}
 		existing->block = std::move(block);
 	}
 	else {
-		state.blocks.push_back({
+		blocks.push_back({
 			.sections = std::move(sections),
 			.block = std::move(block),
 		});
 	}
+	schedule(state);
+}
+
+auto gse::layout_store::store::replace(const std::filesystem::path& path, std::string content) -> void {
+	std::lock_guard _(m_mutex);
+	file_state& state = m_files[path];
+	if (const std::string* current = std::get_if<std::string>(&state.content); current && *current == content) {
+		return;
+	}
+	state.content = std::move(content);
+	schedule(state);
+}
+
+auto gse::layout_store::store::schedule(file_state& state) -> void {
 	state.needs_write = true;
 	if (m_scheduled) {
 		return;
@@ -154,14 +192,14 @@ auto gse::layout_store::store::submit(const std::filesystem::path& path, owner s
 }
 
 auto gse::layout_store::store::read(const std::filesystem::path& path) -> std::string {
-	std::vector<pending_block> blocks;
+	file_content content;
 	{
 		std::lock_guard _(m_mutex);
 		if (const auto it = m_files.find(path); it != m_files.end()) {
-			blocks = it->second.blocks;
+			content = it->second.content;
 		}
 	}
-	return merged(path, blocks);
+	return merged(path, content);
 }
 
 auto gse::layout_store::store::flush() -> void {
@@ -194,10 +232,10 @@ auto gse::layout_store::store::write_pending() -> void {
 
 		file_state& state = m_files.at(path);
 		state.needs_write = false;
-		const std::vector<pending_block> blocks = state.blocks;
+		const file_content content = state.content;
 
 		lock.unlock();
-		write_disk(path, merged(path, blocks));
+		write_disk(path, merged(path, content));
 		lock.lock();
 	}
 }
@@ -211,12 +249,15 @@ auto gse::layout_store::store::next_dirty() const -> std::filesystem::path {
 	return {};
 }
 
-auto gse::layout_store::merged(const std::filesystem::path& path, const std::span<const pending_block> blocks) -> std::string {
-	std::string content = read_disk(path);
-	for (const auto& [sections, block] : blocks) {
-		apply(content, sections, block);
+auto gse::layout_store::merged(const std::filesystem::path& path, const file_content& content) -> std::string {
+	if (const std::string* whole = std::get_if<std::string>(&content)) {
+		return *whole;
 	}
-	return content;
+	std::string merged_content = read_disk(path);
+	for (const auto& [sections, block] : std::get<std::vector<pending_block>>(content)) {
+		apply(merged_content, sections, block);
+	}
+	return merged_content;
 }
 
 auto gse::layout_store::instance() -> store& {
@@ -361,7 +402,7 @@ auto gse::layout_store::write_disk(const std::filesystem::path& path, const std:
 	});
 
 	{
-		std::ofstream file(temp, std::ios::trunc);
+		std::ofstream file(temp, std::ios::binary | std::ios::trunc);
 		if (!file) {
 			log::println(log::level::error, "layout_store: failed to open {} for write", temp.generic_display_string());
 			return;

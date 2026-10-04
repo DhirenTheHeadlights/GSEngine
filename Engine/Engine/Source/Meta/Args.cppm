@@ -3,6 +3,7 @@ export module gse.meta:args;
 import std;
 
 import :annotations;
+import :enums;
 import :parse;
 import :settings_anno;
 
@@ -288,6 +289,12 @@ auto gse::try_match_arg(Config& cfg, const std::string_view prefix, const int ar
 							argv[i + 1],
 							arg_value_hint<F>()
 						);
+						if constexpr (std::is_enum_v<F>) {
+							std::cerr << "valid names:\n";
+							for (const auto value : enum_values<F>()) {
+								std::cerr << std::format("  {}\n", enum_to_string(value));
+							}
+						}
 						outcome = arg_match::bad_value;
 					}
 				}

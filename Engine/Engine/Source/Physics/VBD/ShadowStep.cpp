@@ -468,9 +468,18 @@ auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> ph
 	std::vector<vbd::velocity_motor_constraint> motors;
 	build_motor_constraints(inputs.motors, id_to_body_index, phys.body_airborne, bodies, motors);
 
-	copy_joints_with_inputs(phys, drives, muscles, d.joints);
+	copy_joints_with_inputs(phys, drives, d.joints);
 	std::vector<vbd::joint_constraint> joints;
 	build_joint_constraints(d.joints, id_to_body_index, bodies, joints);
+
+	copy_muscles_with_inputs(phys, muscles, d.muscles);
+	std::vector<vbd::muscle_constraint> muscle_constraints;
+	std::vector<vbd::muscle_path_point> muscle_points;
+	build_muscle_constraints(d.muscles, id_to_body_index, muscle_constraints, muscle_points);
+	std::vector<float> muscle_excitations(muscle_constraints.size());
+	for (std::size_t i = 0; i < muscle_constraints.size(); ++i) {
+		muscle_excitations[i] = muscle_constraints[i].excitation;
+	}
 
 	const auto& cfg = phys.vbd_solver.config();
 
@@ -482,6 +491,9 @@ auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> ph
 		.bodies = std::move(bodies),
 		.motors = std::move(motors),
 		.joints = std::move(joints),
+		.muscles = std::move(muscle_constraints),
+		.muscle_points = std::move(muscle_points),
+		.muscle_excitations = std::move(muscle_excitations),
 		.solver_cfg = cfg,
 		.dt = dt * static_cast<float>(steps),
 		.steps = steps * substeps,

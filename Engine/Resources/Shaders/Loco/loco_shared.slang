@@ -1,9 +1,3 @@
-public static const uint loco_obs_dim = 30;
-public static const uint loco_act_dim = 10;
-public static const uint loco_prev_stride = 24;
-public static const uint loco_prev_valid = 6;
-public static const uint loco_prev_action = 8;
-public static const uint loco_act_slot_stride = 8;
-public static const uint loco_act_slot_valid = 6;
-public static const uint loco_reward_stride = 9;
-public static const uint loco_reward_done = 8;
+public float loco_relative_stiffness(float a) {
+    return clamp(loco_stiffness_base * exp(a), loco_stiffness_min, loco_stiffness_max) / loco_stiffness_base;
+}

@@ -47,6 +47,20 @@ bool has_motor = motor_idx != 0xFFFFFFFF && motor_idx < pc.motor_count;
             uint jc = joint_counts[bi];
             for (uint k = 0; k < jc; k++) {
                 uint ji = safe_load_uint(joint_adjacency, j_off + k, max_joint_adjacency);
+                if ((ji & muscle_adjacency_tag) != 0) {
+                    muscle_constraint m = muscle_data[ji & ~muscle_adjacency_tag];
+                    for (uint p = 0; p < m.path_count && sleeping; p++) {
+                        uint other = muscle_path_data[m.path_first + p].body;
+                        if (other == bi || other >= pc.body_count) continue;
+                        body_state other_body = body_data[other];
+                        if (other_body.locked == 0 && other_body.sleep_counter < sleep_threshold && length(other_body.velocity.xyz) > wake_thresh) {
+                            body.sleep_counter = 0;
+                            sleeping = false;
+                        }
+                    }
+                    if (!sleeping) break;
+                    continue;
+                }
                 if (ji >= max_joints) continue;
                 joint_constraint jnt = joint_data[ji];
                 uint other = (jnt.body_a == bi) ? jnt.body_b : jnt.body_a;

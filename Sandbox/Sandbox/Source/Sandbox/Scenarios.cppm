@@ -254,6 +254,11 @@ export namespace sandbox::scenarios {
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
 
+	[[= gse::scenario::info{ .name = "parity_hull_pile_gpu", .scene = "ParityHullPile", .headless = true, .gpu_solver = true, .warmup_frames = 0 }]]
+	auto parity_hull_pile_gpu(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
 	[[= gse::scenario::info{ .name = "parity_nojoints_gpu", .scene = "Sandbox", .headless = true, .gpu_solver = true, .warmup_frames = 0 }]]
 	auto parity_nojoints_gpu(
 		gse::scenario::context& ctx

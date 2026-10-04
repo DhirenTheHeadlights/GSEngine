@@ -27,6 +27,11 @@ export namespace gse {
 			const evaluation_context&
 		) = nullptr;
 	};
+
+	struct set_scene_setup_request {
+		id scene_id;
+		scene::setup_fn setup;
+	};
 }
 
 export namespace gse::world_system {
@@ -76,7 +81,7 @@ export namespace gse::world_system {
 	auto run(
 		context& ctx,
 		data& d,
-		channel_read<set_networked_request, set_authoritative_request, set_local_controller_id_request, deactivate_active_scene_request, activate_scene_request> requests_in,
+		channel_read<set_networked_request, set_authoritative_request, set_local_controller_id_request, set_scene_setup_request, deactivate_active_scene_request, activate_scene_request> requests_in,
 		channel_write<spawn_player_request, possess_player_request, scene_catalog, physics::rollback_history_request> player_out,
 		shared_view<actions::data> actions_d,
 		write<player_controller> controllers,
@@ -152,7 +157,7 @@ auto gse::director::when(const trigger& trigger) -> director& {
 auto gse::add_scene(world_system::data& d, registry& reg, std::string_view name, scene::setup_fn setup) -> scene* {
 	auto new_scene = std::make_unique<scene>(reg, name);
 	if (setup) {
-		new_scene->set_setup(setup);
+		new_scene->set_setup(std::move(setup));
 	}
 	auto* scene_ptr = new_scene.get();
 	d.scenes[scene_ptr->id()] = std::move(new_scene);
@@ -268,7 +273,7 @@ auto gse::world_system::init(context& ctx, data& d, const network::config& net_c
 	return {};
 }
 
-auto gse::world_system::run(context& ctx, data& d, const channel_read<set_networked_request, set_authoritative_request, set_local_controller_id_request, deactivate_active_scene_request, activate_scene_request> requests_in, const channel_write<spawn_player_request, possess_player_request, scene_catalog, physics::rollback_history_request> player_out, const shared_view<actions::data> actions_d, write<player_controller> controllers, entities ents) -> async::task<> {
+auto gse::world_system::run(context& ctx, data& d, const channel_read<set_networked_request, set_authoritative_request, set_local_controller_id_request, set_scene_setup_request, deactivate_active_scene_request, activate_scene_request> requests_in, const channel_write<spawn_player_request, possess_player_request, scene_catalog, physics::rollback_history_request> player_out, const shared_view<actions::data> actions_d, write<player_controller> controllers, entities ents) -> async::task<> {
 	for (const auto& r : requests_in.of<set_networked_request>()) {
 		if (r.value && !d.networked) {
 			d.local_controlled_entity = {};
@@ -283,6 +288,14 @@ auto gse::world_system::run(context& ctx, data& d, const channel_read<set_networ
 	}
 	for (const auto& r : requests_in.of<set_local_controller_id_request>()) {
 		d.local_controller_id = r.controller_id;
+	}
+	for (const auto& r : requests_in.of<set_scene_setup_request>()) {
+		if (auto* target = find_scene(d, r.scene_id)) {
+			target->set_setup(r.setup);
+		}
+		else {
+			log::println(log::level::warning, log::category::runtime, "world: setup for scene {} requested but no scene with that id is registered", r.scene_id);
+		}
 	}
 	if (!requests_in.of<deactivate_active_scene_request>().empty()) {
 		deactivate_active_scene(d);

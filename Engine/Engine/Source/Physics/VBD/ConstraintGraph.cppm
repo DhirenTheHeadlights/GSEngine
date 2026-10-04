@@ -23,6 +23,11 @@ export namespace gse::vbd {
 			std::uint32_t index
 		) -> void;
 
+		auto add_muscle(
+			const muscle_constraint& m,
+			std::span<const muscle_path_point> path
+		) -> std::uint32_t;
+
 		auto sort_contacts_canonical() -> void;
 
 		auto compute_coloring(
@@ -46,6 +51,14 @@ export namespace gse::vbd {
 
 		auto joint_constraints() const -> std::span<const joint_constraint>;
 
+		auto muscle_constraints() -> std::vector<muscle_constraint>&;
+
+		auto muscle_constraints() const -> std::span<const muscle_constraint>;
+
+		auto muscle_path(
+			const muscle_constraint& m
+		) const -> std::span<const muscle_path_point>;
+
 		auto body_colors() const -> std::span<const std::vector<std::uint32_t>>;
 
 		auto islands() const -> std::span<const std::vector<std::uint32_t>>;
@@ -66,12 +79,23 @@ export namespace gse::vbd {
 			std::uint32_t body_idx
 		) const -> std::span<const std::uint32_t>;
 
+		auto body_muscle_indices(
+			std::uint32_t body_idx
+		) const -> std::span<const std::uint32_t>;
+
 	private:
 		static constexpr std::uint32_t no_island = std::numeric_limits<std::uint32_t>::max();
+
+		auto muscle_bodies(
+			const muscle_constraint& m
+		) const -> std::vector<std::uint32_t>;
 
 		std::vector<contact_constraint> m_contacts;
 		std::vector<velocity_motor_constraint> m_motors;
 		std::vector<joint_constraint> m_joints;
+		std::vector<muscle_constraint> m_muscles;
+		std::vector<muscle_path_point> m_muscle_points;
+		std::vector<std::vector<std::uint32_t>> m_body_muscles;
 		std::inplace_vector<std::vector<std::uint32_t>, 64> m_body_colors;
 		std::vector<std::uint32_t> m_overflow_bodies;
 		std::vector<std::vector<std::uint32_t>> m_body_contacts;
@@ -110,6 +134,25 @@ auto gse::vbd::constraint_graph::remove_joint(const std::uint32_t index) -> void
 	}
 }
 
+auto gse::vbd::constraint_graph::add_muscle(const muscle_constraint& m, const std::span<const muscle_path_point> path) -> std::uint32_t {
+	const auto idx = static_cast<std::uint32_t>(m_muscles.size());
+	auto& added = m_muscles.emplace_back(m);
+	added.path_first = static_cast<std::uint32_t>(m_muscle_points.size());
+	added.path_count = static_cast<std::uint32_t>(path.size());
+	m_muscle_points.insert(m_muscle_points.end(), path.begin(), path.end());
+	return idx;
+}
+
+auto gse::vbd::constraint_graph::muscle_bodies(const muscle_constraint& m) const -> std::vector<std::uint32_t> {
+	std::vector<std::uint32_t> bodies;
+	for (const auto& point : std::span(m_muscle_points).subspan(m.path_first, m.path_count)) {
+		if (!std::ranges::contains(bodies, point.body)) {
+			bodies.push_back(point.body);
+		}
+	}
+	return bodies;
+}
+
 auto gse::vbd::constraint_graph::sort_contacts_canonical() -> void {
 	std::ranges::sort(m_contacts, [](const contact_constraint& a, const contact_constraint& b) {
 		if (a.body_a != b.body_a) {
@@ -135,14 +178,16 @@ auto gse::vbd::constraint_graph::compute_coloring(const std::uint32_t num_bodies
 
 	m_body_contacts.resize(num_bodies);
 	m_body_joints.resize(num_bodies);
+	m_body_muscles.resize(num_bodies);
 	m_adjacency.resize(num_bodies);
 	for (std::uint32_t i = 0; i < num_bodies; ++i) {
 		m_body_contacts[i].clear();
 		m_body_joints[i].clear();
+		m_body_muscles[i].clear();
 		m_adjacency[i].clear();
 	}
 
-	if (m_contacts.empty() && m_joints.empty()) {
+	if (m_contacts.empty() && m_joints.empty() && m_muscles.empty()) {
 		return;
 	}
 
@@ -154,6 +199,15 @@ auto gse::vbd::constraint_graph::compute_coloring(const std::uint32_t num_bodies
 	for (std::uint32_t i = 0; i < m_joints.size(); ++i) {
 		m_body_joints[m_joints[i].body_a].push_back(i);
 		m_body_joints[m_joints[i].body_b].push_back(i);
+	}
+
+	std::vector<std::vector<std::uint32_t>> muscle_body_sets;
+	muscle_body_sets.reserve(m_muscles.size());
+	for (std::uint32_t i = 0; i < m_muscles.size(); ++i) {
+		const auto& bodies = muscle_body_sets.emplace_back(muscle_bodies(m_muscles[i]));
+		for (const auto bi : bodies) {
+			m_body_muscles[bi].push_back(i);
+		}
 	}
 
 	for (const auto& c : m_contacts) {
@@ -170,6 +224,18 @@ auto gse::vbd::constraint_graph::compute_coloring(const std::uint32_t num_bodies
 		m_adjacency[j.body_a].push_back(j.body_b);
 		m_adjacency[j.body_b].push_back(j.body_a);
 	}
+	for (const auto& bodies : muscle_body_sets) {
+		if (std::ranges::any_of(bodies, [&](const std::uint32_t bi) { return inactive[bi] != 0; })) {
+			continue;
+		}
+		for (const auto a : bodies) {
+			for (const auto b : bodies) {
+				if (a != b) {
+					m_adjacency[a].push_back(b);
+				}
+			}
+		}
+	}
 	for (auto& adj : m_adjacency) {
 		std::ranges::sort(adj);
 		adj.erase(std::ranges::unique(adj).begin(), adj.end());
@@ -180,7 +246,7 @@ auto gse::vbd::constraint_graph::compute_coloring(const std::uint32_t num_bodies
 	const auto max_colors = static_cast<int>(m_body_colors.max_size());
 
 	for (std::uint32_t bi = 0; bi < num_bodies; ++bi) {
-		if (inactive[bi] || (m_body_contacts[bi].empty() && m_body_joints[bi].empty())) {
+		if (inactive[bi] || (m_body_contacts[bi].empty() && m_body_joints[bi].empty() && m_body_muscles[bi].empty())) {
 			continue;
 		}
 
@@ -209,7 +275,7 @@ auto gse::vbd::constraint_graph::compute_coloring(const std::uint32_t num_bodies
 		m_body_colors[color].push_back(bi);
 	}
 
-	if (m_joints.empty()) {
+	if (m_joints.empty() && m_muscles.empty()) {
 		return;
 	}
 
@@ -234,10 +300,22 @@ auto gse::vbd::constraint_graph::compute_coloring(const std::uint32_t num_bodies
 			m_island_parent[std::max(ra, rb)] = std::min(ra, rb);
 		}
 	}
+	for (const auto& bodies : muscle_body_sets) {
+		if (std::ranges::any_of(bodies, [&](const std::uint32_t bi) { return inactive[bi] != 0; })) {
+			continue;
+		}
+		for (const auto bi : bodies) {
+			const auto ra = find_root(bodies.front());
+			const auto rb = find_root(bi);
+			if (ra != rb) {
+				m_island_parent[std::max(ra, rb)] = std::min(ra, rb);
+			}
+		}
+	}
 
 	std::vector<std::uint32_t> root_to_island(num_bodies, no_island);
 	for (std::uint32_t bi = 0; bi < num_bodies; ++bi) {
-		if (inactive[bi] || m_body_joints[bi].empty()) {
+		if (inactive[bi] || (m_body_joints[bi].empty() && m_body_muscles[bi].empty())) {
 			continue;
 		}
 		m_body_jointed[bi] = 1;
@@ -276,6 +354,8 @@ auto gse::vbd::constraint_graph::clear() -> void {
 	m_contacts.clear();
 	m_motors.clear();
 	m_joints.clear();
+	m_muscles.clear();
+	m_muscle_points.clear();
 	for (auto& v : m_body_colors) {
 		v.clear();
 	}
@@ -289,6 +369,8 @@ auto gse::vbd::constraint_graph::clear() -> void {
 
 auto gse::vbd::constraint_graph::clear_joints() -> void {
 	m_joints.clear();
+	m_muscles.clear();
+	m_muscle_points.clear();
 }
 
 inline auto gse::vbd::constraint_graph::contact_constraints() -> std::vector<contact_constraint>& {
@@ -315,6 +397,18 @@ inline auto gse::vbd::constraint_graph::joint_constraints() const -> std::span<c
 	return m_joints;
 }
 
+inline auto gse::vbd::constraint_graph::muscle_constraints() -> std::vector<muscle_constraint>& {
+	return m_muscles;
+}
+
+inline auto gse::vbd::constraint_graph::muscle_constraints() const -> std::span<const muscle_constraint> {
+	return m_muscles;
+}
+
+inline auto gse::vbd::constraint_graph::muscle_path(const muscle_constraint& m) const -> std::span<const muscle_path_point> {
+	return std::span(m_muscle_points).subspan(m.path_first, m.path_count);
+}
+
 inline auto gse::vbd::constraint_graph::body_colors() const -> std::span<const std::vector<std::uint32_t>> {
 	return m_body_colors;
 }
@@ -335,4 +429,11 @@ inline auto gse::vbd::constraint_graph::body_joint_indices(const std::uint32_t b
 		return {};
 	}
 	return m_body_joints[body_idx];
+}
+
+inline auto gse::vbd::constraint_graph::body_muscle_indices(const std::uint32_t body_idx) const -> std::span<const std::uint32_t> {
+	if (body_idx >= m_body_muscles.size()) {
+		return {};
+	}
+	return m_body_muscles[body_idx];
 }

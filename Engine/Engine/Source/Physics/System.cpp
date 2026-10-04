@@ -15,6 +15,7 @@ import std;
 
 import :collision_component;
 import :contact_manifold;
+import :hull_collision;
 import :joint_drive_component;
 import :joint_spec;
 import :motion_component;
@@ -32,6 +33,10 @@ namespace gse::physics {
 		id b,
 		const joint_config& config
 	) -> joint_definition;
+
+	auto make_muscle_definition(
+		const muscle_spec& spec
+	) -> muscle_definition;
 
 	auto clear_runtime_state(
 		data& d
@@ -135,19 +140,6 @@ auto gse::physics::make_joint_definition(const id a, const id b, const joint_con
 				.damping = cfg.damping,
 			};
 		})
-		.else_if_is([&](const muscle_joint& cfg) {
-			result = {
-				.entity_a = a,
-				.entity_b = b,
-				.type = vbd::joint_type::muscle,
-				.local_anchor_a = cfg.anchor_a,
-				.local_anchor_b = cfg.anchor_b,
-				.target_distance = cfg.rest_length,
-				.compliance = cfg.compliance,
-				.damping = cfg.damping,
-				.max_force = cfg.max_force,
-			};
-		})
 		.else_if_is([&](const ball_joint& cfg) {
 			result = {
 				.entity_a = a,
@@ -174,9 +166,11 @@ auto gse::physics::make_joint_definition(const id a, const id b, const joint_con
 
 auto gse::physics::clear_runtime_state(data& d) -> void {
 	d.joints.clear();
+	d.muscles.clear();
 	d.contact_cache.clear();
 	d.sleep_counters.clear();
 	++d.joints_generation;
+	++d.muscles_generation;
 	d.id_to_body_index.clear();
 	d.id_to_body_index_entries.clear();
 	d.kinematic_step_start.clear();
@@ -372,6 +366,8 @@ auto gse::physics::capacities_from_settings(const data& d) -> vbd::vbd_capacitie
 		.max_islands = static_cast<std::uint32_t>(d.gpu_max_islands),
 		.max_impulses = static_cast<std::uint32_t>(d.gpu_max_impulses),
 		.max_motors = static_cast<std::uint32_t>(d.gpu_max_motors),
+		.max_muscles = static_cast<std::uint32_t>(d.gpu_max_muscles),
+		.max_muscle_points = static_cast<std::uint32_t>(d.gpu_max_muscle_points),
 		.grid_table_size = static_cast<std::uint32_t>(d.gpu_grid_table_size),
 		.ring_max_bodies = static_cast<std::uint32_t>(d.gpu_ring_max_bodies),
 		.ring_max_contacts = static_cast<std::uint32_t>(d.gpu_ring_max_contacts),
@@ -681,7 +677,7 @@ auto gse::physics::build_body_states(const body_build_view& view, const sleep_co
 auto gse::physics::build_body_bounds(const body_build_view& view, const std::flat_map<id, std::uint32_t>& id_to_body_index, const std::span<const std::uint8_t> has_transform, const std::span<vbd::body_state> bodies, const body_scan_fill& scan) -> void {
 	const bool write_scan = scan.active(bodies.size());
 	const bool sparse = write_scan && scan.sparse;
-	const auto shape_bounds = [&view](const collision_component& cc, const transform_component& tc, vec3<displacement>& shape_params) {
+	const auto shape_bounds = [&view](const collision_component& cc, const transform_component& tc, vec3<displacement>& shape_params, std::uint32_t& hull_offset) {
 		bounding_box bb;
 		match(cc.shape)
 			.if_is([&](const box_shape& s) {
@@ -695,17 +691,21 @@ auto gse::physics::build_body_bounds(const body_build_view& view, const std::fla
 				bb = bounding_box(tc, s);
 				shape_params = vec3<displacement>(s.radius, s.half_height, displacement{});
 			})
-			.else_if_is([&](const hull_shape&) {
+			.else_if_is([&](const hull_shape& s) {
 				if (const auto* hull = resolve_hull(cc.shape, view.hulls)) {
 					bb = bounding_box(tc, *hull);
+				}
+				if (s.index < view.hull_offsets.size()) {
+					hull_offset = view.hull_offsets[s.index];
 				}
 			});
 		return bb;
 	};
 	const auto write_bounds = [&](const std::size_t index, const collision_component& cc) {
 		vec3<displacement> shape_params;
+		std::uint32_t hull_offset = 0;
 		if (sparse && !scan.filled(index)) {
-			const auto he = shape_bounds(cc, transform_component{}, shape_params).half_extents();
+			const auto he = shape_bounds(cc, transform_component{}, shape_params, hull_offset).half_extents();
 			scan.entries[index].max_half_extent = std::max({ he.x(), he.y(), he.z() });
 			return;
 		}
@@ -714,10 +714,11 @@ auto gse::physics::build_body_bounds(const body_build_view& view, const std::fla
 			.position = origin_from_com(b.position, b.orientation, b.com_local),
 			.orientation = b.orientation,
 		};
-		const auto bb = shape_bounds(cc, body_tc, shape_params);
+		const auto bb = shape_bounds(cc, body_tc, shape_params, hull_offset);
 		const auto [max, min] = bb.aabb();
 		b.shape_kind = static_cast<std::uint32_t>(cc.shape.index());
 		b.shape_params = shape_params;
+		b.hull_offset = hull_offset;
 		b.half_extents = bb.half_extents();
 		b.aabb_min = min;
 		b.aabb_max = max;
@@ -856,8 +857,6 @@ auto gse::physics::build_joint_constraints(const std::span<joint_definition> def
 				.limit_lambda = jd.limit_lambda,
 				.limit_penalty = jd.limit_penalty,
 				.soft_ang_stiffness = jd.soft_ang_stiffness,
-				.activation = jd.activation,
-				.max_force = jd.max_force,
 				.drive_target = jd.drive_target,
 				.drive_stiffness = jd.drive_stiffness,
 				.drive_damping = jd.drive_damping,
@@ -866,6 +865,167 @@ auto gse::physics::build_joint_constraints(const std::span<joint_definition> def
 		},
 		trace_id<"physics::write_joint_constraints">()
 	);
+}
+
+auto gse::physics::make_muscle_definition(const muscle_spec& spec) -> muscle_definition {
+	const auto& p = spec.properties;
+	return {
+		.path = spec.path,
+		.path_count = std::min<std::uint32_t>(spec.path_count, max_muscle_path_points),
+		.max_force = p.max_isometric_force,
+		.optimal_fiber_length = p.optimal_fiber_length,
+		.tendon_slack_length = p.tendon_slack_length,
+		.pennation_at_optimal = p.pennation_at_optimal,
+		.max_contraction_velocity = p.optimal_fiber_length * p.max_contraction_rate,
+	};
+}
+
+auto gse::physics::build_muscle_constraints(const std::span<const muscle_definition> definitions, const std::flat_map<id, std::uint32_t>& id_to_body_index, std::vector<vbd::muscle_constraint>& out, std::vector<vbd::muscle_path_point>& out_points, std::vector<std::uint32_t>* definition_slots) -> void {
+	constexpr auto unresolved = std::numeric_limits<std::uint32_t>::max();
+	out.clear();
+	out_points.clear();
+	if (definition_slots) {
+		definition_slots->assign(definitions.size(), unresolved);
+	}
+	std::array<std::uint32_t, max_muscle_path_points> bodies{};
+	for (std::size_t i = 0; i < definitions.size(); ++i) {
+		const auto& md = definitions[i];
+		if (md.path_count < 2) {
+			continue;
+		}
+		const auto path = std::span(md.path).first(md.path_count);
+		std::size_t resolved = 0;
+		for (; resolved < path.size(); ++resolved) {
+			const auto it = id_to_body_index.find(path[resolved].entity);
+			if (it == id_to_body_index.end()) {
+				break;
+			}
+			bodies[resolved] = it->second;
+		}
+		if (resolved != path.size()) {
+			continue;
+		}
+		if (definition_slots) {
+			(*definition_slots)[i] = static_cast<std::uint32_t>(out.size());
+		}
+		out.push_back({
+			.path_first = static_cast<std::uint32_t>(out_points.size()),
+			.path_count = md.path_count,
+			.excitation = md.excitation,
+			.activation = md.activation,
+			.max_force = md.max_force,
+			.optimal_fiber_length = md.optimal_fiber_length,
+			.tendon_slack_length = md.tendon_slack_length,
+			.pennation_at_optimal = md.pennation_at_optimal,
+			.max_contraction_velocity = md.max_contraction_velocity,
+		});
+		for (std::size_t k = 0; k < path.size(); ++k) {
+			out_points.push_back({
+				.body = bodies[k],
+				.local_point = path[k].local_point,
+			});
+		}
+	}
+}
+
+auto gse::physics::pack_gpu_hulls(const std::span<const convex_hull> hulls, std::vector<std::uint32_t>& out_data, std::vector<std::uint32_t>& out_offsets) -> void {
+	using vbd::limits;
+	out_data.clear();
+	out_offsets.assign(hulls.size(), 0u);
+	std::map<std::vector<std::uint32_t>, std::uint32_t> interned;
+	std::vector<std::uint32_t> words;
+	std::vector<std::uint32_t> axes;
+	std::vector<std::uint32_t> directions;
+	std::vector<vec3f> kept;
+	const auto parallel_to_kept = [&kept](const vec3f& axis) {
+		return std::ranges::any_of(kept, [&axis](const vec3f& k) {
+			return std::abs(dot(k, axis)) > parallel_axis_threshold;
+		});
+	};
+	for (std::size_t i = 0; i < hulls.size(); ++i) {
+		const auto& hull = hulls[i];
+		const auto vertex_count = static_cast<std::uint32_t>(hull.vertices.size());
+		const auto face_count = static_cast<std::uint32_t>(hull.face_normals.size());
+		const auto edge_count = static_cast<std::uint32_t>(hull.edge_a.size());
+
+		axes.clear();
+		kept.clear();
+		for (std::uint32_t f = 0; f < face_count; ++f) {
+			const auto& n = hull.face_normals[f];
+			if (const float len = magnitude(n); len >= 1e-6f && !parallel_to_kept(n / len)) {
+				kept.push_back(n / len);
+				axes.push_back(f);
+			}
+		}
+		directions.clear();
+		kept.clear();
+		for (std::uint32_t e = 0; e < edge_count; ++e) {
+			const auto lo = hull.edge_a[e];
+			const auto hi = hull.edge_b[e];
+			if (lo >= vertex_count || hi >= vertex_count) {
+				continue;
+			}
+			const auto delta = hull.vertices[hi] - hull.vertices[lo];
+			if (magnitude(delta) <= meters(1e-6f)) {
+				continue;
+			}
+			if (const auto direction = normalize(delta); !parallel_to_kept(direction)) {
+				kept.push_back(direction);
+				directions.push_back(e);
+			}
+		}
+
+		const auto vertices_at = limits.hull_header_uints;
+		const auto planes_at = vertices_at + vertex_count * 4;
+		const auto faces_at = planes_at + face_count * 4;
+		const auto loops_at = faces_at + face_count;
+		const auto edges_at = loops_at + static_cast<std::uint32_t>((hull.face_loop.size() + 3) / 4);
+		const auto axes_at = edges_at + edge_count;
+		const auto directions_at = axes_at + static_cast<std::uint32_t>(axes.size());
+
+		words.assign(directions_at + directions.size(), 0u);
+		words[limits.hull_axis_count_index] = static_cast<std::uint32_t>(axes.size());
+		words[limits.hull_axes_index] = axes_at;
+		words[limits.hull_direction_count_index] = static_cast<std::uint32_t>(directions.size());
+		words[limits.hull_directions_index] = directions_at;
+		std::ranges::copy(axes, words.begin() + axes_at);
+		std::ranges::copy(directions, words.begin() + directions_at);
+		words[limits.hull_vertex_count_index] = vertex_count;
+		words[limits.hull_face_count_index] = face_count;
+		words[limits.hull_edge_count_index] = edge_count;
+		words[limits.hull_vertices_index] = vertices_at;
+		words[limits.hull_planes_index] = planes_at;
+		words[limits.hull_faces_index] = faces_at;
+		words[limits.hull_loops_index] = loops_at;
+		words[limits.hull_edges_index] = edges_at;
+
+		for (std::uint32_t v = 0; v < vertex_count; ++v) {
+			const auto& p = hull.vertices[v];
+			words[vertices_at + v * 4 + 0] = std::bit_cast<std::uint32_t>(p.x().as<meters>());
+			words[vertices_at + v * 4 + 1] = std::bit_cast<std::uint32_t>(p.y().as<meters>());
+			words[vertices_at + v * 4 + 2] = std::bit_cast<std::uint32_t>(p.z().as<meters>());
+		}
+		for (std::uint32_t f = 0; f < face_count; ++f) {
+			const auto& n = hull.face_normals[f];
+			words[planes_at + f * 4 + 0] = std::bit_cast<std::uint32_t>(n.x());
+			words[planes_at + f * 4 + 1] = std::bit_cast<std::uint32_t>(n.y());
+			words[planes_at + f * 4 + 2] = std::bit_cast<std::uint32_t>(n.z());
+			words[planes_at + f * 4 + 3] = std::bit_cast<std::uint32_t>(hull.face_offsets[f].as<meters>());
+			words[faces_at + f] = static_cast<std::uint32_t>(hull.face_first[f]) | static_cast<std::uint32_t>(hull.face_count[f]) << 8;
+		}
+		for (std::size_t k = 0; k < hull.face_loop.size(); ++k) {
+			words[loops_at + k / 4] |= static_cast<std::uint32_t>(hull.face_loop[k]) << (8 * (k % 4));
+		}
+		for (std::uint32_t e = 0; e < edge_count; ++e) {
+			words[edges_at + e] = static_cast<std::uint32_t>(hull.edge_a[e]) | static_cast<std::uint32_t>(hull.edge_b[e]) << 8;
+		}
+
+		const auto [it, inserted] = interned.try_emplace(words, static_cast<std::uint32_t>(out_data.size()));
+		if (inserted) {
+			out_data.insert(out_data.end(), words.begin(), words.end());
+		}
+		out_offsets[i] = it->second;
+	}
 }
 
 auto gse::physics::apply_joint_drive(joint_definition& jd, const joint_drive_component& drive) -> void {
@@ -879,11 +1039,11 @@ auto gse::physics::apply_joint_drive(joint_definition& jd, const joint_drive_com
 	jd.drive_max_torque = drive.max_torque;
 }
 
-auto gse::physics::apply_muscle_activation(joint_definition& jd, const muscle_component& muscle) -> bool {
-	if (jd.activation == muscle.activation) {
+auto gse::physics::apply_muscle_excitation(muscle_definition& md, const muscle_component& muscle) -> bool {
+	if (md.excitation == muscle.excitation) {
 		return false;
 	}
-	jd.activation = muscle.activation;
+	md.excitation = muscle.excitation;
 	return true;
 }
 
@@ -1419,7 +1579,7 @@ auto gse::physics::apply_kinematic_targets(read<kinematic_target_component>& tar
 	}
 }
 
-auto gse::physics::prepare(context& ctx, data& d, const channel_write<interpolation_state> interp_out, write<joint_spec> specs, read<muscle_component> muscles, read<joint_drive_component> drives, read<kinematic_target_component> targets, write<transform_component> transform, write<motion_component> motion) -> async::task<> {
+auto gse::physics::prepare(context& ctx, data& d, const channel_write<interpolation_state> interp_out, write<joint_spec> specs, write<muscle_spec> muscle_specs, read<muscle_component> muscles, read<joint_drive_component> drives, read<kinematic_target_component> targets, write<transform_component> transform, write<motion_component> motion) -> async::task<> {
 	if (const int steps = system_clock::fixed_steps_this_frame(); steps > 0 && d.update_phys) {
 		int effective_steps = steps;
 		if (d.gpu_async_dispatch && gpu_solver_active(d)) {
@@ -1466,23 +1626,47 @@ auto gse::physics::prepare(context& ctx, data& d, const channel_write<interpolat
 		}
 	}
 
-	std::atomic<bool> joints_changed = false;
+	{
+		trace::scope_guard _{ trace_id<"physics::prepare::muscle_specs">() };
+		const auto spec_owners = muscle_specs.owner_ids();
+		for (std::size_t i = 0; i < muscle_specs.size(); ++i) {
+			auto& spec = muscle_specs[i];
+			if (spec.resolved) {
+				continue;
+			}
+			const auto def = make_muscle_definition(spec);
+			if (auto* existing = d.muscles.try_get(spec_owners[i])) {
+				*existing = def;
+			}
+			else {
+				d.muscles.add(spec_owners[i], def);
+			}
+			++d.muscles_generation;
+			spec.resolved = true;
+		}
+	}
+
+	std::atomic<bool> muscles_changed = false;
 	const auto muscle_owners = muscles.owner_ids();
 	task::coarse_parallel(
 		muscles.size(),
 		64,
 		[&](const std::size_t i) {
-			auto* jd = d.joints.try_get(muscle_owners[i]);
-			if (!jd) {
+			auto* md = d.muscles.try_get(muscle_owners[i]);
+			if (!md) {
 				return;
 			}
-			if (apply_muscle_activation(*jd, muscles[i]) && !joints_changed.load(std::memory_order_relaxed)) {
-				joints_changed.store(true, std::memory_order_relaxed);
+			if (apply_muscle_excitation(*md, muscles[i]) && !muscles_changed.load(std::memory_order_relaxed)) {
+				muscles_changed.store(true, std::memory_order_relaxed);
 			}
 		},
 		trace_id<"physics::prepare::muscles">()
 	);
+	if (muscles_changed.load(std::memory_order_relaxed)) {
+		++d.muscle_inputs_generation;
+	}
 
+	std::atomic<bool> joints_changed = false;
 	const auto drive_owners = drives.owner_ids();
 	const auto joint_ids = d.joints.ids();
 	const auto joint_items = d.joints.items();
@@ -2160,6 +2344,7 @@ auto gse::physics::snapshot_step(data& d, write<transform_component>& transform,
 
 	snap.sleep_counters = d.sleep_counters;
 	snap.joints = d.joints;
+	snap.muscles = d.muscles;
 	snap.contact_cache = d.contact_cache;
 	snap.inputs = inputs;
 }
@@ -2178,6 +2363,7 @@ auto gse::physics::restore_step(data& d, const step_snapshot& snap, write<transf
 
 	d.sleep_counters = snap.sleep_counters;
 	d.joints = snap.joints;
+	d.muscles = snap.muscles;
 	d.contact_cache = snap.contact_cache;
 
 	std::vector<vec3<velocity>> previous(motion.size());
@@ -2330,6 +2516,9 @@ auto gse::physics::update_vbd(const int steps, data& d, write<transform_componen
 	std::vector<candidate_pair> pair_candidates;
 	std::vector<vbd::velocity_motor_constraint> motor_constraints;
 	std::vector<vbd::joint_constraint> joint_constraints;
+	std::vector<vbd::muscle_constraint> muscle_constraints;
+	std::vector<vbd::muscle_path_point> muscle_points;
+	std::vector<std::uint32_t> muscle_slots;
 	std::vector<vbd::body_state> bodies;
 	std::vector<vbd::body_state> result_bodies;
 	std::vector<std::uint8_t> has_transform;
@@ -2409,6 +2598,11 @@ auto gse::physics::update_vbd(const int steps, data& d, write<transform_componen
 			d.vbd_solver.add_joint_constraint(constraint);
 		}
 
+		build_muscle_constraints(d.muscles.items(), d.id_to_body_index, muscle_constraints, muscle_points, &muscle_slots);
+		for (const auto& constraint : muscle_constraints) {
+			d.vbd_solver.add_muscle_constraint(constraint, std::span(muscle_points).subspan(constraint.path_first, constraint.path_count));
+		}
+
 		d.vbd_solver.solve(sub_dt);
 		if (d.trace_island_convergence) {
 			accumulate_island_convergence(d, d.vbd_solver.convergence_counts());
@@ -2436,6 +2630,16 @@ auto gse::physics::update_vbd(const int steps, data& d, write<transform_componen
 					jd.limit_penalty = sj.limit_penalty;
 				}
 				++ji;
+			}
+		}
+
+		{
+			const auto& solved_muscles = d.vbd_solver.graph().muscle_constraints();
+			const auto muscle_items = d.muscles.items();
+			for (std::size_t i = 0; i < muscle_items.size() && i < muscle_slots.size(); ++i) {
+				if (const auto slot = muscle_slots[i]; slot < solved_muscles.size()) {
+					muscle_items[i].activation = solved_muscles[slot].activation;
+				}
 			}
 		}
 

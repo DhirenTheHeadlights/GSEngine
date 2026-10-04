@@ -57,7 +57,7 @@ auto gse::gui::resolve_rect(const loaded_menu_data& data, const vec2f viewport_s
 	return rectf::from_position_size(position, size);
 }
 
-auto gse::gui::save(id_mapped_collection<menu>& menus, const std::filesystem::path& file_path, const vec2f viewport_size, const float scale_factor) -> void {
+auto gse::gui::save(const id_mapped_collection<menu>& menus, const std::filesystem::path& file_path, const vec2f viewport_size, const float scale_factor) -> void {
 	if (viewport_size.x() <= 0.f || viewport_size.y() <= 0.f || scale_factor <= 0.f) {
 		return;
 	}
@@ -90,8 +90,7 @@ auto gse::gui::save(id_mapped_collection<menu>& menus, const std::filesystem::pa
 auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection<menu>& default_menus, const vec2f viewport_size, const float scale_factor) -> id_mapped_collection<menu> {
 	const std::string content = layout_store::read(file_path);
 	if (content.empty()) {
-		id_mapped_collection<menu> menus_to_save = default_menus;
-		save(menus_to_save, file_path, viewport_size, scale_factor);
+		save(default_menus, file_path, viewport_size, scale_factor);
 		return default_menus;
 	}
 

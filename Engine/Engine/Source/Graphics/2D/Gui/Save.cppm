@@ -31,7 +31,7 @@ export namespace gse::gui {
 	};
 
 	auto save(
-		id_mapped_collection<menu>& menus,
+		const id_mapped_collection<menu>& menus,
 		const std::filesystem::path& file_path,
 		vec2f viewport_size,
 		float scale_factor

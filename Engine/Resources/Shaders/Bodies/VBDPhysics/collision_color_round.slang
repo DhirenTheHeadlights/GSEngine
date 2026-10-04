@@ -60,6 +60,25 @@ void collision_color_round(uint3 dispatch_id) {
         uint idx = j_off + k;
         if (idx >= max_joint_adjacency) break;
         uint ji = joint_adjacency[idx];
+        if ((ji & muscle_adjacency_tag) != 0) {
+            muscle_constraint m = muscle_data[ji & ~muscle_adjacency_tag];
+            for (uint p = 0; p < m.path_count; p++) {
+                uint other = muscle_path_data[m.path_first + p].body;
+                if (other == bi || other >= pc.body_count) continue;
+                if (body_data[other].locked != 0) continue;
+                uint other_color = coloring_scratch[other] & 0xFFu;
+                if (other_color == 0xFFu) {
+                    uint other_priority = round_body_priority(other);
+                    if (other_priority > my_priority ||
+                        (other_priority == my_priority && other < bi)) {
+                        blocked = true;
+                    }
+                } else if (other_color < max_colors) {
+                    neighbor_colors |= (1u << other_color);
+                }
+            }
+            continue;
+        }
         if (ji >= num_joints) continue;
         joint_constraint j = joint_data[ji];
         uint other = (j.body_a == bi) ? j.body_b : j.body_a;

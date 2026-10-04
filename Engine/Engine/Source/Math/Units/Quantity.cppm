@@ -1322,7 +1322,10 @@ constexpr auto gse::internal::operator*(const Q1& lhs, const Q2& rhs) {
 	using result_v = std::common_type_t<typename Q1::value_type, typename Q2::value_type>;
 	using result_d = decltype(typename Q1::dimension() * typename Q2::dimension());
 	const auto product = value_in<quantity_base_unit_t<Q1>>(lhs) * value_in<quantity_base_unit_t<Q2>>(rhs);
-	if constexpr (dimension_to_tag<result_d>::found) {
+	if constexpr (std::same_as<result_d, dimensionless>) {
+		return product;
+	}
+	else if constexpr (dimension_to_tag<result_d>::found) {
 		using found_tag = typename dimension_to_tag<result_d>::tag;
 		using result_t = typename quantity_traits<found_tag>::template type<result_v>;
 		return result_t::template from<quantity_base_unit_t<result_t>>(product);
@@ -1372,7 +1375,15 @@ template <gse::internal::is_arithmetic S, gse::internal::is_quantity Q>
 constexpr auto gse::internal::operator/(const S& lhs, const Q& rhs) {
 	using result_v = Q::value_type;
 	using result_d = decltype(dimensionless{} / typename Q::dimension());
-	return generic_quantity<result_v, result_d>(static_cast<result_v>(lhs) / value_in<quantity_base_unit_t<Q>>(rhs));
+	const auto quotient = static_cast<result_v>(lhs) / value_in<quantity_base_unit_t<Q>>(rhs);
+	if constexpr (dimension_to_tag<result_d>::found) {
+		using found_tag = typename dimension_to_tag<result_d>::tag;
+		using result_t = typename quantity_traits<found_tag>::template type<result_v>;
+		return result_t::template from<quantity_base_unit_t<result_t>>(quotient);
+	}
+	else {
+		return generic_quantity<result_v, result_d>(quotient);
+	}
 }
 
 template <gse::internal::is_quantity Q1, gse::internal::is_quantity Q2>

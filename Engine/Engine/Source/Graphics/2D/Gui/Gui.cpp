@@ -246,11 +246,6 @@ auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const
 		update_viewport_interaction(d, *vp, window_s, input_state);
 	}
 
-	if (d.save_clock.elapsed() > data::update_interval) {
-		save(d);
-		d.save_clock.reset();
-	}
-
 	if (!d.primary.fstate.active) {
 		d.primary.fstate = {};
 		for (const auto& vp : d.secondaries) {
@@ -412,11 +407,7 @@ auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const
 	co_return;
 }
 
-auto gse::gui::shutdown(data& d) -> void {
-	save(d);
-}
-
-auto gse::gui::save(data& d) -> void {
+auto gse::gui::persist(const data& d) -> void {
 	save(d.primary.menus, d.file_path, d.primary.previous_viewport_size, scale_factor_for(d, d.primary, d.primary.previous_viewport_size.y()));
 	save_ui_scales(d.ui_scale_by_monitor, d.file_path);
 }

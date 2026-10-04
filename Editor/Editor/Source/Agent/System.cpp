@@ -126,6 +126,10 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 	return {};
 }
 
+auto gse::ide::agent::persist(const data& d) -> void {
+	save_sessions(d);
+}
+
 auto gse::ide::agent::shutdown(data& d) -> void {
 	const bool relaunching = app::relaunch_pending();
 
