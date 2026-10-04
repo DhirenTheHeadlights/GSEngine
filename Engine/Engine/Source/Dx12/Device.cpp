@@ -462,6 +462,7 @@ auto gse::dx12::device::cmd_reset(const gpu::command_buffer_handle cmd) -> void 
 			if (f.list.get() == list) {
 				f.allocator->Reset();
 				list->Reset(f.allocator.get(), nullptr);
+				reset_acquired_list(list);
 				return;
 			}
 		}
@@ -471,7 +472,7 @@ auto gse::dx12::device::cmd_reset(const gpu::command_buffer_handle cmd) -> void 
 auto gse::dx12::device::cmd_begin(gpu::command_buffer_handle) -> void {}
 
 auto gse::dx12::device::cmd_end(const gpu::command_buffer_handle cmd) -> void {
-	std::bit_cast<directx::ID3D12GraphicsCommandList*>(cmd)->Close();
+	close_list(std::bit_cast<directx::ID3D12GraphicsCommandList*>(cmd));
 }
 
 auto gse::dx12::device::cmd_pipeline_barrier(const gpu::command_buffer_handle cmd, const gpu::dependency_info& dep) -> void {
@@ -1206,6 +1207,36 @@ auto gse::dx12::device::reset_acquired_list(directx::ID3D12GraphicsCommandList* 
 	state.compute_pso_bound = false;
 	state.pending = nullptr;
 	state.resolved_pso = nullptr;
+	state.push_size = 0;
+	const std::lock_guard _(m_unclosed_mutex);
+	m_unclosed_lists.erase(list);
+}
+
+auto gse::dx12::device::close_list(directx::ID3D12GraphicsCommandList* list) -> void {
+	if (!list) {
+		return;
+	}
+	long hr = 0;
+	if (directx::close_command_list(list, hr)) {
+		return;
+	}
+	log::println(
+		log::level::error,
+		log::category::dx12,
+		"Close() FAILED on list {} hr=0x{:08x} removed=0x{:08x}; it recorded an invalid command and will not be "
+		"submitted. Enable Graphics.validation_layers_enabled to have the debug layer name the offending command",
+		static_cast<void*>(list),
+		static_cast<std::uint32_t>(hr),
+		static_cast<std::uint32_t>(m_device->GetDeviceRemovedReason())
+	);
+	drain_validation_messages();
+	const std::lock_guard _(m_unclosed_mutex);
+	m_unclosed_lists.insert(list);
+}
+
+auto gse::dx12::device::list_unclosed(directx::ID3D12GraphicsCommandList* list) const -> bool {
+	const std::lock_guard _(m_unclosed_mutex);
+	return m_unclosed_lists.contains(list);
 }
 
 auto gse::dx12::device::create_shader_program(const gpu::shader_program_create_info& info) -> gpu::shader_program {

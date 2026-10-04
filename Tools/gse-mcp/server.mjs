@@ -88,28 +88,33 @@ const text_result = (payload, is_error = false) => ({
 
 // --- tools -----------------------------------------------------------------------------
 
-const build = async (args) => {
+const build = async (args, run_only = false) => {
 	const project = args.project ? windows_path(args.project) : project_of(process.cwd());
 	if (!agent) {
 		return text_result(header(project, {
-			error: 'no agent id: CLAUDE_CODE_SESSION_ID is not set in this server\'s environment, so the editor could not attribute the build.',
+			error: 'no agent id: CLAUDE_CODE_SESSION_ID is not set in this server\'s environment, so the editor could not attribute the request.',
 		}), true);
 	}
 	const id = new_id();
-	const target = args.target === 'editor' ? 'editor' : 'game';
+	const target = run_only ? 'game' : args.target === 'editor' ? 'editor' : 'game';
 	const timeout = Math.max(1, Number(args.timeout ?? 1800));
-	const wait = Math.max(1, Number(args.wait ?? 30));
+	const wait = Math.max(1, Number(args.wait ?? (run_only ? 600 : 30)));
+	const settings = (Array.isArray(args.settings) ? args.settings : [])
+		.map((assignment) => String(assignment).replace(/[\r\n\t]+/g, ' ').trim())
+		.filter((assignment) => assignment.includes('=') && assignment.indexOf('.') < assignment.indexOf('='));
 
 	rmSync(join(inbox, 'results', `${id}.txt`), { force: true });
 	write_atomically(join(inbox, 'requests'), id, [
 		`id ${id}`,
 		`agent ${agent}`,
 		`target ${target}`,
-		`run ${args.run ? 1 : 0}`,
+		`run ${run_only || args.run ? 1 : 0}`,
+		`run_only ${run_only ? 1 : 0}`,
 		`tree ${args.tree ?? ''}`,
 		`profile ${args.profile ?? ''}`,
 		`cwd ${windows_path(process.cwd())}`,
 		`project ${project}`,
+		...settings.map((assignment) => `setting ${assignment}`),
 		'',
 	].join('\n'));
 
@@ -131,13 +136,16 @@ const build = async (args) => {
 						target,
 						outcome: 'deferred',
 						reason,
-						next: 'Your request keeps its place in the queue. Do not poll. Call gse_hibernate with what to do next and end your turn; the editor wakes you with the result.',
+						next: run_only
+							? 'A build is in flight, so your run keeps its place in the queue and will start the new executable once that build lands. Do not poll. Call gse_hibernate with what to do next and end your turn.'
+							: 'Your request keeps its place in the queue. Do not poll. Call gse_hibernate with what to do next and end your turn; the editor wakes you with the result.',
 					}));
 				}
 			}
 			else {
 				result.remove();
-				const outcome = result.status === 'ok' ? 'succeeded'
+				const ok = run_only ? 'launched' : 'succeeded';
+				const outcome = result.status === 'ok' ? ok
 					: result.status === 'failed' ? (result.owned > 0 ? 'failed_yours' : 'failed_not_yours')
 					: `editor_refused:${result.status}`;
 				return text_result(header(project, {
@@ -148,8 +156,10 @@ const build = async (args) => {
 					report: result.body,
 					next: outcome === 'failed_not_yours'
 						? 'None of the errors are attributed to you. Errors owned by another chat are theirs; unattributed ones are most likely another editor instance mid-refactor. Do not start fixing them.'
+						: outcome === 'launched'
+						? 'The game was started. It writes its own log - read it with gse_log_query (exe is the game target, newest run) rather than waiting here.'
 						: undefined,
-				}), outcome !== 'succeeded');
+				}), outcome !== ok);
 			}
 		}
 		if (!picked_up && waited >= 10) {
@@ -291,6 +301,48 @@ const hibernate = async (args) => {
 	}
 	rmSync(join(inbox, 'hibernate', `${id}.txt`), { force: true });
 	return text_result(header(project, { outcome: 'no_editor', error: 'no editor answered within 15s - it is not running, so nothing would wake you.' }), true);
+};
+
+const phase_done = async (args) => {
+	const project = project_of(process.cwd());
+	if (!agent) {
+		return text_result(header(project, { error: 'no agent id in this server\'s environment; the editor cannot move this chat between phases.' }), true);
+	}
+	const summary = String(args.summary ?? '').trim();
+	if (!summary) {
+		return text_result(header(project, { error: '`summary` is required: what this phase concluded.' }), true);
+	}
+	const findings = Math.max(0, Math.floor(Number(args.findings ?? 0)) || 0);
+
+	const id = new_id();
+	rmSync(join(inbox, 'results', `${id}.txt`), { force: true });
+	write_atomically(join(inbox, 'phases'), id, [
+		`id ${id}`,
+		`agent ${agent}`,
+		`cwd ${windows_path(process.cwd())}`,
+		`findings ${findings}`,
+		'summary',
+		summary,
+		'',
+	].join('\n'));
+
+	for (let waited = 0; waited < 15; waited += 1) {
+		const result = read_result(id);
+		if (result) {
+			result.remove();
+			if (result.status === 'ok') {
+				return text_result(header(project, {
+					outcome: 'reported',
+					instruction: 'END YOUR TURN NOW. Do not keep working and do not call this again. The editor decides what happens next and restarts this chat in the next phase.',
+					editor_said: result.body,
+				}));
+			}
+			return text_result(header(project, { outcome: 'refused', editor_said: result.body, next: 'This chat has no phases - keep working normally.' }), true);
+		}
+		await sleep(1000);
+	}
+	rmSync(join(inbox, 'phases', `${id}.txt`), { force: true });
+	return text_result(header(project, { outcome: 'no_editor', error: 'no editor answered within 15s - it is not running, so nothing would advance the phase.' }), true);
 };
 
 const log_query = async (args) => {
@@ -767,10 +819,12 @@ const report_gap = async (args) => {
 	if (!need) {
 		return text_result(header(project, { error: 'pass `need`: what you were trying to find or do.' }), true);
 	}
+	const kind = args.kind === 'capability' ? 'capability' : 'lookup';
 	const id = new_id();
 	write_atomically(join(inbox, 'gaps'), id, [
 		`id ${id}`,
 		`agent ${agent}`,
+		`kind ${kind}`,
 		`need ${need.replace(/[\r\n\t]+/g, ' ')}`,
 		`tried ${String(args.tried ?? '').trim().replace(/[\r\n\t]+/g, ' ')}`,
 		`cwd ${windows_path(process.cwd())}`,
@@ -782,20 +836,24 @@ const report_gap = async (args) => {
 	return text_result(header(project, {
 		id,
 		outcome: 'recorded',
+		kind,
 		need,
-		next: 'Recorded. Carry on with Grep or Read - this does not block you and needs no answer.',
+		next: kind === 'capability'
+			? 'Recorded for the humans. This does not grant the capability and nothing will answer it - continue with what the phase does allow, and say in your phase summary what you could not determine.'
+			: 'Recorded. Carry on with Grep or Read - this does not block you and needs no answer.',
 	}));
 };
 
 const tools = {
 	gse_report_gap: {
 		description:
-			'Record that the GSE tools did not cover something you needed, then carry on. Call it when a lookup falls back to Grep, Read or a shell because no gse_* tool fits - not for a tool that exists and merely returned nothing, and not for an editor that is not running. Returns immediately: it is a note for the humans and the editor UI, not a request, so nothing waits on it and no answer comes back. `need` is what you were trying to find or do in one line; `tried` is what you used instead.',
+			'Record that your tools did not cover something you needed, then carry on. Two kinds. `kind: "lookup"` (the default) is when a lookup falls back to Grep, Read or a shell because no gse_* tool fits - not for a tool that exists and merely returned nothing. `kind: "capability"` is when the phase you are in withheld something the task genuinely needed: you could not run the exe to observe a failure, could not build to check a claim, could not edit to test a hypothesis. That is how the owner learns which restrictions are costing them evidence. Returns immediately and grants nothing - it is a note for the humans, not a request, so nothing waits on it and no answer comes back. Do not use it to argue for an exception or to stall: record it, continue with what the phase does allow, and say in your phase summary what you could not determine.',
 		schema: {
 			type: 'object',
 			properties: {
 				need: { type: 'string', description: 'What you were trying to find or do, in one line.' },
-				tried: { type: 'string', description: 'What you fell back to, e.g. "grep -rn over Engine/Source".' },
+				tried: { type: 'string', description: 'What you fell back to, e.g. "grep -rn over Engine/Source", or "reasoned from the existing log instead of reproducing".' },
+				kind: { type: 'string', description: '"lookup" (default) for a missing query tool, "capability" for something this phase denied you.' },
 				project: { type: 'string', description: 'Project directory; defaults to the nearest .gseproj above the current directory.' },
 			},
 			required: ['need'],
@@ -890,6 +948,38 @@ const tools = {
 		},
 		run: hibernate,
 	},
+	gse_run: {
+		description:
+			'Launch the existing game executable through the editor, without building it. Use it to observe real behaviour - a crash, a log, a startup failure - rather than reasoning about it from source. It does NOT build: whatever is on disk is what runs, so if you have edited since the last build, call gse_build first or you will be watching stale code. If a build is already in flight your run waits for it and then starts the new executable, so you never race a half-written binary. `settings` applies setting overrides to this run only, as command-line arguments - nothing is written to the ini and the next run is unaffected, so this is how you turn on a diagnostic like validation for one reproduction. Returns once the game has been started, not when it exits; the game writes its own log, so read it afterwards with gse_log_query rather than waiting here. Only the game can be launched - the editor is the process answering you.',
+		schema: {
+			type: 'object',
+			properties: {
+				settings: {
+					type: 'array',
+					items: { type: 'string' },
+					description: 'Setting overrides for this run only, each "Section.key=value", e.g. "Graphics.validation_layers_enabled=true". Applied in memory; the ini is never touched. Entries not in Section.key=value form are dropped.',
+				},
+				tree: { type: 'string', description: 'Worktree name to run; defaults to the one owning your working directory.' },
+				project: { type: 'string', description: 'Project directory; defaults to the nearest .gseproj above the current directory.' },
+				wait: { type: 'number', description: 'Seconds to wait for an in-flight build before giving up and returning "deferred" (default 600).' },
+				timeout: { type: 'number', description: 'Seconds to wait for the editor overall (default 1800).' },
+			},
+		},
+		run: (args) => build(args, true),
+	},
+	gse_phase_done: {
+		description:
+			'Report that the current phase of your task is finished, and let the editor decide what follows. Call it as the last thing you do in a phase, then END YOUR TURN - the editor restarts this chat in the next phase, or holds for the owner\'s approval. Do not call it repeatedly within one turn, but if you are still in the same phase on a later turn you may report again with an updated summary; the owner approves through the editor, not through chat, so asking them to approve is not something you can do on their behalf. Scoping ends when the plan is agreed and nothing is left to decide; applying ends when the change is complete; reviewing ends when you have read the whole diff, and `findings` is how many real defects you found (0 settles the task, anything else sends it back to be fixed). Only chats started from the editor agent panel have phases.',
+		schema: {
+			type: 'object',
+			properties: {
+				summary: { type: 'string', description: 'What this phase concluded, for the owner and for the next phase. The plan when scoping, what changed when applying, the findings when reviewing.' },
+				findings: { type: 'number', description: 'Reviewing only: how many real defects you found. Omit or 0 means the change is sound and the task is settled.' },
+			},
+			required: ['summary'],
+		},
+		run: phase_done,
+	},
 	gse_log_query: {
 		description:
 			'Query a GSE log (the editor, or a game exe) with filters, returning at most `tail` matching lines. Use instead of reading the log file: each run writes its own file and they can be large.',
@@ -927,7 +1017,7 @@ const handle = async (message) => {
 			capabilities: { tools: {} },
 			serverInfo: { name: 'gse', version: '0.1.0' },
 			instructions:
-				'GSE editor tools. Build with gse_build (never cmake/ninja/compilers). If it returns "deferred", call gse_hibernate and end your turn. Read logs with gse_log_query, not by opening the file. Look code up with gse_symbol_query before reading a source file to find a symbol.',
+				'GSE editor tools. Build with gse_build (never cmake/ninja/compilers). If it returns "deferred", call gse_hibernate and end your turn. Read logs with gse_log_query, not by opening the file. Look code up with gse_symbol_query before reading a source file to find a symbol. If your system prompt names a current phase, end that phase with gse_phase_done rather than simply stopping.',
 		});
 		return;
 	}

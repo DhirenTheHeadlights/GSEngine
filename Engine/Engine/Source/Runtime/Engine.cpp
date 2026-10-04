@@ -522,8 +522,8 @@ auto gse::engine::render() -> void {
 		if (!result && result.error() == gpu::frame_status::device_lost) {
 			log::println(
 				log::level::error,
-				log::category::vulkan,
-				"Device lost during begin_frame Ã¢â‚¬â€ terminating"
+				log::category::render,
+				"Device lost during begin_frame - terminating"
 			);
 			fatal_exit(3);
 		}

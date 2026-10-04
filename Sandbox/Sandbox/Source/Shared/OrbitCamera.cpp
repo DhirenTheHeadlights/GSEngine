@@ -21,7 +21,7 @@ auto sandbox::orbit_camera::attach(gse::context& ctx, data& d, gse::write<compon
 			{
 				.offset = gse::vec3<gse::length>(gse::meters(0.f)),
 				.priority = o->priority,
-				.blend_in_duration = gse::milliseconds(300),
+				.blend_in_duration = gse::milliseconds(300.f),
 				.active = o->active,
 				.use_entity_position = false,
 				.orientation = initial_orientation,

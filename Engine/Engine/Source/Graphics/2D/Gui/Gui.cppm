@@ -68,6 +68,7 @@ export namespace gse::gui {
 		context_menu_state context_menu;
 		text_selection_state text_selection;
 		std::optional<text_edit_request> pending_text_edit;
+		image_paste_state image_paste;
 		std::optional<menu> screen_surface;
 		bool manual_cursor = false;
 		std::vector<id> pending_popout_close_ids;
@@ -198,4 +199,18 @@ namespace gse::gui {
 	[[nodiscard]] auto is_popout(
 		const viewport_state& vp
 	) -> bool;
+
+	struct widget_context_info {
+		menu& current_menu;
+		vec2f& layout_cursor;
+		rectf clip;
+	};
+
+	[[nodiscard]] auto widget_context_init(
+		data& d,
+		viewport_state& vp,
+		render_layer layer,
+		std::uint32_t z_order,
+		const widget_context_info& info
+	) -> draw_context_init;
 }

@@ -221,7 +221,7 @@ auto gse::ide::agent::restore_chat(data& d, const past_chat& chat) -> void {
 
 	const auto named = d.chat_names.find(chat.agent_id);
 
-	session& restored = create_session(d, config::primary().project_root);
+	session& restored = create_session(d, config::primary().project_root, task_phase::apply);
 	restored.name = named != d.chat_names.end() && !named->second.empty()
 		? named->second
 		: chat_title(chat.summary);

@@ -130,7 +130,7 @@ auto gse::network::wan_directory_provider::query_servers_async(time timeout) -> 
 	std::array<std::byte, 256> recv_buffer;
 
 	while (timeout_clock.elapsed() < timeout && responses.size() < local_copy.size()) {
-		if (socket.wait_readable(milliseconds(10)) != wait_result::ready) {
+		if (socket.wait_readable(milliseconds(10.f)) != wait_result::ready) {
 			continue;
 		}
 

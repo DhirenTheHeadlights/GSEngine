@@ -30,7 +30,24 @@ auto gse::gui::dock::space::select(const vec2f point) -> location {
 	return hot;
 }
 
-gse::gui::draw_context::draw_context(draw_context_init init, const input::state& input) : current_menu(init.current_menu), style(init.style), fonts(init.fonts), blank_texture(init.blank_texture), layout_cursor(init.layout_cursor), sprites(init.sprites), texts(init.texts), text_pool(init.text_pool), text_pool_used(init.text_pool_used), widget_anim_colors(init.widget_anim_colors), widget_scrolls(init.widget_scrolls), widget_tree_open(init.widget_tree_open), current_layer(init.current_layer), current_z_order(init.current_z_order), input_layer(init.input_layer), input_suppressed(init.input_suppressed), owns_keyboard(init.owns_keyboard), hit_regions(init.hit_regions), tooltip(init.tooltip), context_menu(init.context_menu), clip_stack(std::move(init.clip_stack)), m_input(input) {}
+gse::gui::draw_context::draw_context(draw_context_init init, const input::state& input) : draw_context_init(std::move(init)), m_input(input) {}
+
+auto gse::gui::image_attachments::remove(const std::size_t index) -> void {
+	items.erase(items.begin() + static_cast<std::ptrdiff_t>(index));
+	if (viewing == index) {
+		viewing.reset();
+	}
+	else if (viewing && *viewing > index) {
+		--*viewing;
+	}
+}
+
+auto gse::gui::image_attachments::take_items() -> std::vector<image_attachment> {
+	std::vector<image_attachment> taken = std::move(items);
+	items.clear();
+	viewing.reset();
+	return taken;
+}
 
 auto gse::gui::font_set::named(const std::string_view name) const -> resource::handle<font> {
 	const auto it = registry.find(std::string(name));
@@ -125,6 +142,20 @@ auto gse::gui::draw_context::take_text_edit(const id widget) const -> text_edit_
 	const text_edit_action action = (*pending_text_edit)->action;
 	pending_text_edit->reset();
 	return action;
+}
+
+auto gse::gui::draw_context::request_image_paste(const id widget) const -> void {
+	image_paste.ready.reset();
+	image_paste.target = widget;
+	window::request_clipboard_image();
+}
+
+auto gse::gui::draw_context::take_image_paste(const id widget) const -> std::optional<image_attachment> {
+	if (!image_paste.ready || image_paste.target != widget) {
+		return std::nullopt;
+	}
+	image_paste.target = {};
+	return std::exchange(image_paste.ready, std::nullopt);
 }
 
 auto gse::gui::draw_context::open_context_menu(context_menu_open request) const -> void {

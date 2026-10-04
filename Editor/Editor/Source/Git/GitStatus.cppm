@@ -1,7 +1,6 @@
 export module gse.ide.git:git_status;
 
 import gse;
-import gse.ide.analysis;
 import std;
 
 export namespace gse::ide::git {
@@ -375,16 +374,22 @@ auto gse::ide::git::read_file_text(const std::filesystem::path& path) -> std::ex
 }
 
 auto gse::ide::git::capture(const std::string_view command_line, const std::filesystem::path& repo_root) -> std::expected<std::string, std::string> {
-	const std::filesystem::path out_path = analysis::process::temporary_path("git_capture", "txt");
+	const std::filesystem::path out_path = process::temporary_path("git_capture", "txt");
 	const auto _ = make_scope_exit([&out_path] {
 		std::error_code ec;
 		std::filesystem::remove(out_path, ec);
 	});
-	const analysis::process::run_outcome run = analysis::process::run_capture_stderr(command_line, repo_root, out_path);
+	const time git_limit = seconds(60.f);
+	const process::run_outcome run = process::run_capture({
+		.command_line = command_line,
+		.working_dir = repo_root,
+		.output_path = out_path,
+		.limit = git_limit,
+	});
 	std::expected<std::string, std::string> output = read_file_text(out_path);
 
 	if (!run) {
-		return std::unexpected(run.error() == analysis::process::run_error::timed_out
+		return std::unexpected(run.error() == process::run_error::timed_out
 			? std::format("{} timed out", command_line)
 			: std::format("{} could not be launched", command_line));
 	}
@@ -483,7 +488,7 @@ auto gse::ide::git::query_status(const std::filesystem::path& repo_root) -> repo
 }
 
 auto gse::ide::git::run_steps(const command& request) -> std::expected<void, std::string> {
-	const std::filesystem::path out_path = analysis::process::temporary_path("git_command", "txt");
+	const std::filesystem::path out_path = process::temporary_path("git_command", "txt");
 	const auto _ = make_scope_exit([&request, &out_path] {
 		std::error_code ec;
 		std::filesystem::remove(out_path, ec);
@@ -492,10 +497,16 @@ auto gse::ide::git::run_steps(const command& request) -> std::expected<void, std
 		}
 	});
 
+	const time git_limit = seconds(60.f);
 	for (const std::string& step : request.steps) {
-		const analysis::process::run_outcome run = analysis::process::run_capture_stderr(step, request.root, out_path);
+		const process::run_outcome run = process::run_capture({
+			.command_line = step,
+			.working_dir = request.root,
+			.output_path = out_path,
+			.limit = git_limit,
+		});
 		if (!run) {
-			return std::unexpected(run.error() == analysis::process::run_error::timed_out
+			return std::unexpected(run.error() == process::run_error::timed_out
 				? std::format("{} timed out", step)
 				: std::format("{} could not be launched, is git on PATH?", step));
 		}

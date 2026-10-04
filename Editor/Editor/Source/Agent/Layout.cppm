@@ -18,6 +18,7 @@ namespace gse::ide::agent {
 	constexpr std::string_view mcp_tool_prefix = "mcp__";
 
 	struct transcript_metrics {
+		const gui::font_set& fonts;
 		const font& face;
 		const font& body;
 		float width = 0.f;
@@ -92,9 +93,13 @@ namespace gse::ide::agent {
 		std::size_t first
 	) -> std::size_t;
 
-	auto align_table(
-		std::span<const std::string> rows
-	) -> std::vector<std::string>;
+	auto push_table(
+		session& s,
+		const gui::style& sty,
+		std::span<const std::string_view> rows,
+		const transcript_metrics& metrics,
+		transcript_cursor& cursor
+	) -> void;
 
 	auto trailing_blank(
 		const session& s

@@ -787,6 +787,31 @@ auto gse::apply_launcher_mode(window::data& d) -> void {
 	d.cmd_launcher_pending = false;
 }
 
+namespace gse::window {
+	std::function<void()> resize_pump;
+	bool modal_resize_active = false;
+	bool resize_pump_running = false;
+
+	auto run_resize_pump() -> void;
+}
+
+auto gse::window::run_resize_pump() -> void {
+	if (!modal_resize_active || !resize_pump || resize_pump_running) {
+		return;
+	}
+	resize_pump_running = true;
+	resize_pump();
+	resize_pump_running = false;
+}
+
+auto gse::window::install_resize_pump(std::function<void()> pump) -> void {
+	resize_pump = std::move(pump);
+}
+
+auto gse::window::set_modal_resize_active(const bool active) -> void {
+	modal_resize_active = active;
+}
+
 auto gse::attach_surface_callbacks(GLFWwindow* handle, window::window_surface& surface) -> void {
 	glfwSetWindowUserPointer(handle, &surface);
 
@@ -918,6 +943,7 @@ auto gse::attach_surface_callbacks(GLFWwindow* handle, window::window_surface& s
 			if (auto* self = static_cast<window::window_surface*>(glfwGetWindowUserPointer(w))) {
 				self->framebuffer_resized = true;
 			}
+			window::run_resize_pump();
 		}
 	);
 
@@ -1141,6 +1167,10 @@ auto gse::window::clipboard_image_available() -> bool {
 
 auto gse::window::request_clipboard_image() -> void {
 	clipboard_image_wanted.store(true, std::memory_order_release);
+}
+
+auto gse::window::clipboard_image_pending() -> bool {
+	return clipboard_image_wanted.load(std::memory_order_acquire);
 }
 
 auto gse::window::take_clipboard_image() -> std::optional<clipboard_image> {
@@ -1683,6 +1713,14 @@ namespace gse {
 		auto* state = static_cast<window_hook_state*>(GetPropW(hwnd, window_hook_prop));
 		if (state == nullptr) {
 			return DefWindowProcW(hwnd, msg, wparam, lparam);
+		}
+
+		if (msg == wm_entersizemove) {
+			window::set_modal_resize_active(true);
+		}
+
+		if (msg == wm_exitsizemove) {
+			window::set_modal_resize_active(false);
 		}
 
 		if (msg == wm_setcursor && state->captured && low_word(lparam) == ht_client) {

@@ -130,9 +130,7 @@ auto gse::dx12::command_pools::acquire_worker_command_buffer(const gpu::queue_ty
 auto gse::dx12::command_pools::begin_one_time_commands(gpu::command_buffer_handle) -> void {}
 
 auto gse::dx12::command_pools::end_commands(const gpu::command_buffer_handle cmd) -> void {
-	if (auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(cmd)) {
-		list->Close();
-	}
+	m_owner->close_list(std::bit_cast<directx::ID3D12GraphicsCommandList*>(cmd));
 }
 
 auto gse::dx12::command_pools::create_transient_command_pool(const bool compute) -> gpu::transient_pool_handle {
@@ -159,6 +157,7 @@ auto gse::dx12::command_pools::allocate_transient_primary(const gpu::transient_p
 		return {};
 	}
 	e.list->Reset(e.allocator.get(), nullptr);
+	m_owner->reset_acquired_list(e.list.get());
 	return std::bit_cast<gpu::command_buffer_handle>(e.list.get());
 }
 

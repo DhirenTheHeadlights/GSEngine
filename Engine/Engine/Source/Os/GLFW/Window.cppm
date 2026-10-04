@@ -316,6 +316,14 @@ export namespace gse::window {
 		time timeout
 	) -> void;
 
+	auto install_resize_pump(
+		std::function<void()> pump
+	) -> void;
+
+	auto set_modal_resize_active(
+		bool active
+	) -> void;
+
 	auto post_wake() -> void;
 
 	auto clipboard_text() -> std::string;
@@ -333,6 +341,8 @@ export namespace gse::window {
 	auto clipboard_image_available() -> bool;
 
 	auto request_clipboard_image() -> void;
+
+	auto clipboard_image_pending() -> bool;
 
 	auto take_clipboard_image() -> std::optional<clipboard_image>;
 

@@ -4,6 +4,8 @@ import gse;
 import gse.config;
 import gse.scenario;
 import gse.system_manifest;
+import gse.test;
+import gse.tests;
 import sandbox;
 
 namespace sandbox::startup {
@@ -166,6 +168,14 @@ auto sandbox::startup::apply_scenario(config& cfg, const std::span<const std::st
 auto main(int argc, char** argv) -> int {
 	std::vector<std::string> passed_flags;
 	auto cfg = gse::parse_args<sandbox::startup::config>(argc, argv, passed_flags);
+	if (gse::test::requested(cfg.engine.test)) {
+		const std::array tables = { gse::test::registry<^^gse::tests>() };
+		return gse::test::run({
+			.tables = tables,
+			.options = cfg.engine.test,
+			.flag_prefix = "--engine-test",
+		});
+	}
 	if (!cfg.scan_states.empty()) {
 		return sandbox::startup::run_scan_states(cfg);
 	}

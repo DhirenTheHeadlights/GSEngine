@@ -84,43 +84,30 @@ auto gse::ide::agent::read_file_bytes(const std::filesystem::path& path) -> std:
 	return bytes;
 }
 
-auto gse::ide::agent::lowered_extension(const std::filesystem::path& path) -> std::string {
-	std::string extension = path.extension().display_string();
-	std::ranges::transform(extension, extension.begin(), [](const char ch) {
-		return static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-	});
-	return extension;
-}
-
-auto gse::ide::agent::sendable_encoding(const std::filesystem::path& path) -> bool {
-	const std::string extension = lowered_extension(path);
-	return extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".gif" || extension == ".webp";
-}
-
-auto gse::ide::agent::media_type_for(const std::filesystem::path& path) -> std::string_view {
-	const std::string extension = lowered_extension(path);
-	if (extension == ".jpg" || extension == ".jpeg") {
-		return "image/jpeg";
-	}
-	if (extension == ".gif") {
-		return "image/gif";
-	}
-	if (extension == ".webp") {
-		return "image/webp";
+auto gse::ide::agent::media_type_for(const gui::image_encoding encoding) -> std::string_view {
+	switch (encoding) {
+		case gui::image_encoding::png:
+			return "image/png";
+		case gui::image_encoding::jpeg:
+			return "image/jpeg";
+		case gui::image_encoding::gif:
+			return "image/gif";
+		case gui::image_encoding::webp:
+			return "image/webp";
 	}
 	return "image/png";
 }
 
-auto gse::ide::agent::user_message(const std::string_view prompt, const std::span<const attachment> attachments) -> std::string {
+auto gse::ide::agent::user_message(const std::string_view prompt, const std::span<const gui::image_attachment> attachments) -> std::string {
 	std::string out = R"({"type":"user","message":{"role":"user","content":[)";
 
-	for (const attachment& a : attachments) {
+	for (const gui::image_attachment& a : attachments) {
 		const std::string encoded = encode_base64(read_file_bytes(a.path));
 		if (encoded.empty()) {
 			continue;
 		}
 		out += R"({"type":"image","source":{"type":"base64","media_type":")";
-		out += media_type_for(a.path);
+		out += media_type_for(a.encoding);
 		out += R"(","data":")";
 		out += encoded;
 		out += R"("}},)";

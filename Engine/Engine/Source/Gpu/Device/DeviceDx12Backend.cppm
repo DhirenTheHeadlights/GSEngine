@@ -93,11 +93,11 @@ export namespace gse::gpu {
 			std::uint32_t frame_index
 		) const -> command_buffer_handle;
 
-		auto submit(
+		[[nodiscard]] auto submit(
 			queue_type queue_type,
 			const submit_info& info,
 			gpu::handle<fence> signal_fence
-		) -> void;
+		) -> result;
 
 		[[nodiscard]] auto present(
 			const present_info& info
@@ -527,8 +527,8 @@ auto gse::gpu::dx12_device_backend::frame_command_buffer(const queue_type queue_
 	return device->frame_command_buffer(queue_type, frame_index);
 }
 
-auto gse::gpu::dx12_device_backend::submit(const queue_type queue_type, const submit_info& info, const gpu::handle<fence> signal_fence) -> void {
-	queue.submit(queue_type, info, signal_fence);
+auto gse::gpu::dx12_device_backend::submit(const queue_type queue_type, const submit_info& info, const gpu::handle<fence> signal_fence) -> result {
+	return queue.submit(queue_type, info, signal_fence);
 }
 
 auto gse::gpu::dx12_device_backend::present(const present_info& info) -> result {

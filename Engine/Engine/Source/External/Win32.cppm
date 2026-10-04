@@ -140,6 +140,8 @@ export namespace gse::win32 {
 	constexpr DWORD dwmwa_cloaked = DWMWA_CLOAKED;
 	constexpr DWORD dwmwa_cloak = DWMWA_CLOAK;
 	constexpr UINT ga_root = GA_ROOT;
+	constexpr UINT wm_entersizemove = WM_ENTERSIZEMOVE;
+	constexpr UINT wm_exitsizemove = WM_EXITSIZEMOVE;
 	constexpr UINT wm_setcursor = WM_SETCURSOR;
 	constexpr UINT wm_mousemove = WM_MOUSEMOVE;
 	constexpr UINT wm_input = WM_INPUT;
@@ -201,6 +203,7 @@ export namespace gse::win32 {
 	using ::SuspendThread;
 	using ::ResumeThread;
 	using ::GetThreadContext;
+	using ::RtlCaptureContext;
 	using ::RtlLookupFunctionEntry;
 	using ::RtlVirtualUnwind;
 	using ::GetModuleHandleExW;

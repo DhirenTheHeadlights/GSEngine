@@ -21,6 +21,7 @@ import :font;
 import :gui;
 import :gui_frame;
 import :gui_scale;
+import :image_attachments;
 import :interaction;
 import :layout;
 import :menu_stack;
@@ -35,6 +36,34 @@ import :ui_renderer;
 
 auto gse::gui::is_popout(const viewport_state& vp) -> bool {
 	return vp.window.exists();
+}
+
+auto gse::gui::widget_context_init(data& d, viewport_state& vp, const render_layer layer, const std::uint32_t z_order, const widget_context_info& info) -> draw_context_init {
+	return {
+		.current_menu = &info.current_menu,
+		.style = vp.fstate.sty,
+		.fonts = d.fonts,
+		.blank_texture = d.blank_texture,
+		.layout_cursor = info.layout_cursor,
+		.sprites = d.sprite_commands,
+		.texts = d.text_commands,
+		.text_pool = d.text_pools[d.text_pool_slot],
+		.text_pool_used = d.text_pool_used,
+		.widget_anim_colors = d.widget_anim_colors,
+		.widget_scrolls = d.widget_scrolls,
+		.widget_tree_open = d.widget_tree_open,
+		.current_layer = layer,
+		.current_z_order = z_order,
+		.input_layer = vp.input_layer_render,
+		.input_suppressed = vp.input_suppressed,
+		.owns_keyboard = vp.owns_keyboard,
+		.hit_regions = &vp.input_layers_data,
+		.tooltip = &vp.tooltip,
+		.context_menu = &vp.context_menu,
+		.pending_text_edit = &vp.pending_text_edit,
+		.image_paste = vp.image_paste,
+		.clip_stack = { info.clip },
+	};
 }
 
 auto gse::gui::init(context& ctx, const shared_view<window::data> window_s, const shared_view<asset::data> assets_s, data& d) -> async::task<> {
@@ -244,6 +273,11 @@ auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const
 	update_viewport_interaction(d, d.primary, window_s, input_state);
 	for (const auto& vp : d.secondaries) {
 		update_viewport_interaction(d, *vp, window_s, input_state);
+	}
+
+	resolve_image_paste(d.primary.image_paste, assets_s);
+	for (const auto& vp : d.secondaries) {
+		resolve_image_paste(vp->image_paste, assets_s);
 	}
 
 	if (d.save_clock.elapsed() > data::update_interval) {

@@ -245,6 +245,11 @@ export namespace gse::directx {
 		std::size_t length
 	) -> void;
 
+	[[nodiscard]] auto close_command_list(
+		ID3D12GraphicsCommandList* list,
+		long& out_hr
+	) -> bool;
+
 	auto disable_debug_break(
 		ID3D12Device* device
 	) -> void;
@@ -999,6 +1004,12 @@ auto gse::directx::set_object_name(ID3D12Object* object, const char* name, const
 	object->SetName(wide);
 }
 
+auto gse::directx::close_command_list(ID3D12GraphicsCommandList* list, long& out_hr) -> bool {
+	const HRESULT hr = list->Close();
+	out_hr = static_cast<long>(hr);
+	return SUCCEEDED(hr);
+}
+
 auto gse::directx::disable_debug_break(ID3D12Device* device) -> void {
 	ID3D12InfoQueue* queue = nullptr;
 	if (!device || FAILED(device->QueryInterface(IID_PPV_ARGS(&queue))) || !queue) {
@@ -1315,7 +1326,7 @@ auto gse::directx::texture_discard_barrier(ID3D12Resource* resource, const D3D12
 		.AccessBefore = D3D12_BARRIER_ACCESS_NO_ACCESS,
 		.AccessAfter = access_after,
 		.LayoutBefore = D3D12_BARRIER_LAYOUT_UNDEFINED,
-		.LayoutAfter = layout_after,
+		.LayoutAfter = allows_simultaneous_access(resource) ? D3D12_BARRIER_LAYOUT_COMMON : layout_after,
 		.pResource = resource,
 		.Subresources = {
 			.IndexOrFirstMipLevel = 0xffffffff,
@@ -1325,13 +1336,14 @@ auto gse::directx::texture_discard_barrier(ID3D12Resource* resource, const D3D12
 }
 
 auto gse::directx::texture_layout_barrier(ID3D12Resource* resource, const D3D12_BARRIER_SYNC sync_before, const D3D12_BARRIER_ACCESS access_before, const D3D12_BARRIER_LAYOUT layout_before, const D3D12_BARRIER_SYNC sync_after, const D3D12_BARRIER_ACCESS access_after, const D3D12_BARRIER_LAYOUT layout_after) -> D3D12_TEXTURE_BARRIER {
+	const bool shared = allows_simultaneous_access(resource);
 	return {
 		.SyncBefore = sync_before,
 		.SyncAfter = sync_after,
 		.AccessBefore = access_before,
 		.AccessAfter = access_after,
-		.LayoutBefore = layout_before,
-		.LayoutAfter = layout_after,
+		.LayoutBefore = shared ? D3D12_BARRIER_LAYOUT_COMMON : layout_before,
+		.LayoutAfter = shared ? D3D12_BARRIER_LAYOUT_COMMON : layout_after,
 		.pResource = resource,
 		.Subresources = {
 			.IndexOrFirstMipLevel = 0xffffffff,

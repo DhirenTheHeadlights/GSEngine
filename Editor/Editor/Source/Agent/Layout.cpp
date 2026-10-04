@@ -62,48 +62,49 @@ auto gse::ide::agent::table_extent(const std::span<const std::string> lines, con
 	return last;
 }
 
-auto gse::ide::agent::align_table(const std::span<const std::string> rows) -> std::vector<std::string> {
-	std::vector<std::vector<std::string>> cells;
-	cells.reserve(rows.size());
-	std::size_t columns = 0;
-	for (const std::string& row : rows) {
-		markdown::table_row parsed = markdown::split_cells(row);
-		if (parsed.ambiguous) {
-			return {};
-		}
-		columns = std::max(columns, parsed.cells.size());
-		cells.push_back(std::move(parsed.cells));
-	}
+auto gse::ide::agent::push_table(session& s, const gui::style& sty, const std::span<const std::string_view> rows, const transcript_metrics& metrics, transcript_cursor& cursor) -> void {
+	const markdown::theme look{
+		.fonts = metrics.fonts,
+		.sty = sty,
+		.font_size = metrics.scale,
+		.content_width = cursor.available,
+	};
+	const markdown::table_plan plan = markdown::plan_table(rows, look, markdown::family::monospace);
 
-	std::vector<std::size_t> widths(columns, 0);
-	for (std::size_t r = 0; r < cells.size(); ++r) {
-		if (r == 1) {
-			continue;
-		}
-		for (std::size_t c = 0; c < cells[r].size(); ++c) {
-			widths[c] = std::max(widths[c], cells[r][c].size());
-		}
-	}
+	std::vector<markup_run> tinted;
+	const markdown::display_style base = markdown::style_of(markdown::kind::body, markdown::family::monospace, sty, cursor.prefix_color);
 
-	std::vector<std::string> out;
-	out.reserve(rows.size());
-	for (std::size_t r = 0; r < cells.size(); ++r) {
-		std::string text = "|";
-		for (std::size_t c = 0; c < columns; ++c) {
-			if (r == 1) {
-				text.append(widths[c] + 2, '-');
-			}
-			else {
-				const std::string_view cell = c < cells[r].size() ? std::string_view(cells[r][c]) : std::string_view{};
-				text += ' ';
-				text += cell;
-				text.append(widths[c] - cell.size() + 1, ' ');
-			}
-			text += '|';
+	for (const auto [index, row] : std::views::enumerate(plan.rows)) {
+		style_runs(row.text.runs, sty, base, tinted);
+		const auto line = static_cast<std::uint32_t>(s.buffer.lines.size());
+		const auto column = static_cast<std::uint32_t>(cursor.indent.size());
+
+		push_markup_line(s, {
+			.text = row.text.text,
+			.runs = tinted,
+			.base = base,
+		}, metrics, cursor);
+
+		const float origin = metrics.face.width(s.buffer.line(line).substr(0, column), metrics.scale);
+		for (const auto [c, start] : std::views::enumerate(row.starts)) {
+			s.stops.push_back({
+				.line = line,
+				.column = column + start,
+				.x = origin + plan.column_x[c],
+			});
 		}
-		out.push_back(std::move(text));
+
+		if (plan.header_rows > 0 && static_cast<std::size_t>(index) + 1 == plan.header_rows) {
+			s.rules.push_back({
+				.line = line,
+				.x0 = origin,
+				.x1 = origin + plan.width,
+				.y = 1.f,
+				.thickness = markdown::rule_thickness,
+				.color = sty.color_border,
+			});
+		}
 	}
-	return out;
 }
 
 auto gse::ide::agent::trailing_blank(const session& s) -> bool {
@@ -308,22 +309,11 @@ auto gse::ide::agent::push_transcript_line(session& s, const gui::style& sty, co
 
 		if (!markdown::verbatim(classified[i].shape)) {
 			if (const std::size_t last = table_extent(sources, i); last > i) {
-				const std::vector<std::string> aligned = align_table(std::span(sources).subspan(i, last - i + 1));
-				const auto widest = std::ranges::max_element(aligned, {}, [&metrics](const std::string& row) {
-					return metrics.face.width(row, metrics.scale);
-				});
-				if (widest != aligned.end() && metrics.face.width(*widest, metrics.scale) <= cursor.available) {
-					cursor.wrap = false;
-					for (const std::string& row : aligned) {
-						push_markup_line(s, {
-							.text = row,
-							.base = { .color = line.color },
-						}, metrics, cursor);
-					}
-					cursor.wrap = true;
-					i = last;
-					continue;
-				}
+				cursor.wrap = false;
+				push_table(s, sty, std::span(views).subspan(i, last - i + 1), metrics, cursor);
+				cursor.wrap = true;
+				i = last;
+				continue;
 			}
 		}
 
@@ -512,6 +502,7 @@ auto gse::ide::agent::draw_diff_bars(const gui::draw_context& ctx, session& s, c
 		.state = s.view,
 		.rect = area,
 		.spans = s.spans,
+		.stops = s.stops,
 		.blocks = s.blocks,
 		.indent_width = transcript_tab_width,
 	});
@@ -724,6 +715,12 @@ auto gse::ide::agent::truncate_transcript(session& s, const std::uint32_t line) 
 	while (!s.spans.empty() && s.spans.back().line >= line) {
 		s.spans.pop_back();
 	}
+	while (!s.stops.empty() && s.stops.back().line >= line) {
+		s.stops.pop_back();
+	}
+	while (!s.rules.empty() && s.rules.back().line >= line) {
+		s.rules.pop_back();
+	}
 	while (!s.blocks.empty() && s.blocks.back().last_line >= line) {
 		s.blocks.pop_back();
 	}
@@ -818,6 +815,8 @@ auto gse::ide::agent::sync_transcript(session& s, const gui::style& sty, const t
 		s.style_key = key;
 		s.buffer.lines.clear();
 		s.spans.clear();
+		s.stops.clear();
+		s.rules.clear();
 		s.blocks.clear();
 		s.links.clear();
 		s.line_rows.clear();

@@ -39,12 +39,6 @@ namespace gse::ide::agent {
 		std::string_view text
 	) -> void;
 
-	auto attach_image(
-		data& d,
-		shared_view<asset::data> assets,
-		window::clipboard_image pasted
-	) -> void;
-
 	auto agent_context_tag() -> id;
 
 	auto local_time_label(
@@ -104,6 +98,12 @@ namespace gse::ide::agent {
 		const rectf& body
 	) -> void;
 
+	auto draw_new_chat_prompt(
+		gui::builder& ui,
+		data& d,
+		const rectf& body
+	) -> void;
+
 	auto draw_transcript(
 		gui::builder& ui,
 		data& d,
@@ -111,9 +111,16 @@ namespace gse::ide::agent {
 		channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out
 	) -> void;
 
-	auto draw_attachments(
-		gui::builder& ui,
-		session& s,
+	auto draw_phase_pipeline(
+		const gui::draw_context& ctx,
+		const session& s,
+		const rectf& area,
+		const rectf& clip
+	) -> float;
+
+	auto draw_phase(
+		const gui::draw_context& ctx,
+		const session& s,
 		const rectf& area
 	) -> void;
 
@@ -124,10 +131,15 @@ namespace gse::ide::agent {
 		const rectf& effort_rect
 	) -> void;
 
+	struct input_layout {
+		rectf area;
+		rectf body;
+	};
+
 	auto draw_input(
 		gui::builder& ui,
 		session& s,
-		const rectf& area
+		const input_layout& layout
 	) -> void;
 
 	auto context_window_for(

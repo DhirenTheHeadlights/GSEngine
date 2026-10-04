@@ -331,7 +331,17 @@ template <typename QuantityTagType, gse::internal::is_ratio ConversionRatio, gse
 template <typename T>
 constexpr auto gse::internal::unit<QuantityTagType, ConversionRatio, UnitName>::operator()(T value) const noexcept {
 	using quantity_template = quantity_traits<QuantityTagType>;
-	return quantity_template::template type<T>::template from<unit>(value);
+	using result_type = typename quantity_template::template type<T>;
+	using scale = std::ratio_divide<ConversionRatio, typename result_type::default_unit::conversion_ratio>;
+	constexpr bool scales_exactly = scale::den == 1 && (scale::num == 1 || sizeof(T) >= sizeof(std::int64_t));
+	static_assert(
+		!std::is_integral_v<T> || scales_exactly,
+		"converting this unit into storage scales the value, and the integer type given cannot absorb it: "
+		"a scale below 1 truncates (centimeters(5) is 0 m, degrees(90) is 1 rad) and a scale above 1 needs "
+		"64 bits (seconds(5) overflows int nanoseconds). Pass a floating-point value, widen the integer "
+		"(milliseconds(std::uint64_t{ 5 })), or name the storage unit with quantity_t<T, unit>::from<unit>()."
+	);
+	return result_type::template from<unit>(value);
 }
 
 namespace gse::internal {
@@ -556,6 +566,13 @@ namespace gse::internal {
 			ArithmeticType value
 		) -> quantity;
 
+		template <auto UnitObj>
+		requires is_unit<decltype(UnitObj)> &&
+			valid_unit_for_quantity<decltype(UnitObj), quantity>
+		constexpr static auto from(
+			ArithmeticType value
+		) -> quantity;
+
 		constexpr static auto canonical_storage_scale() -> float;
 
 		template <is_arithmetic T2, is_dimension Dim2, typename Tag2, typename Unit2>
@@ -653,6 +670,13 @@ constexpr auto gse::internal::quantity<A, D, Tag, DefUnit>::from(A value) -> qua
 	quantity result;
 	result.m_val = result.template converted_value<UnitType>(value);
 	return result;
+}
+
+template <gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
+template <auto UnitObj>
+requires gse::internal::is_unit<decltype(UnitObj)> && gse::internal::valid_unit_for_quantity<decltype(UnitObj), gse::internal::quantity<A, D, Tag, DefUnit>>
+constexpr auto gse::internal::quantity<A, D, Tag, DefUnit>::from(A value) -> quantity {
+	return from<decltype(UnitObj)>(value);
 }
 
 template <gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>

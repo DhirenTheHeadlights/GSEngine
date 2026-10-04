@@ -37,34 +37,6 @@ auto gse::clean_symbol(std::string symbol) -> std::string {
 	return symbol;
 }
 
-auto gse::capture_stacktrace(const std::size_t skip_frames) -> std::string {
-	const auto trace = std::stacktrace::current(skip_frames);
-
-	constexpr std::array<std::string_view, 8> noise = {
-		"gse::assert_format_message",
-		"gse::assert<",
-		"gse::assert_fail",
-		"gse::capture_stacktrace",
-		"register_frame_ctor",
-		"mainCRTStartup",
-		"BaseThreadInitThunk",
-		"RtlUserThreadStart",
-	};
-
-	std::string out;
-	out.reserve(trace.size() * 64);
-	std::size_t shown = 0;
-	for (const auto& entry : trace) {
-		const std::string frame = clean_symbol(std::to_string(entry));
-		if (std::ranges::any_of(noise, [&frame](const std::string_view n) { return frame.find(n) != std::string::npos; })) {
-			continue;
-		}
-		out += std::format("  #{:>2} {}\n", shown, frame);
-		++shown;
-	}
-	return out;
-}
-
 #ifdef _WIN32
 namespace gse {
 	using namespace gse::win32;
@@ -123,6 +95,31 @@ namespace gse {
 		return std::format("{}+0x{:x}", module_name, module_offset);
 	}
 
+	auto step_context(CONTEXT& context) -> bool {
+		DWORD64 image_base = 0;
+		const auto function_entry = context.Rip != 0
+			? RtlLookupFunctionEntry(context.Rip, &image_base, nullptr)
+			: nullptr;
+
+		if (function_entry != nullptr) {
+			PVOID handler_data = nullptr;
+			DWORD64 establisher_frame = 0;
+			RtlVirtualUnwind(unw_flag_nhandler, image_base, context.Rip, function_entry, &context, &handler_data, &establisher_frame, nullptr);
+			return context.Rip != 0;
+		}
+
+		if (context.Rsp == 0) {
+			return false;
+		}
+		const auto return_address = *reinterpret_cast<const DWORD64*>(context.Rsp);
+		context.Rsp += sizeof(DWORD64);
+		if (return_address == 0) {
+			return false;
+		}
+		context.Rip = return_address;
+		return true;
+	}
+
 	auto log_context_stacktrace(CONTEXT context) -> void {
 		std::size_t count = 0;
 
@@ -138,30 +135,9 @@ namespace gse {
 			log::flush();
 			++count;
 
-			DWORD64 image_base = 0;
-			const auto function_entry = context.Rip != 0
-				? RtlLookupFunctionEntry(context.Rip, &image_base, nullptr)
-				: nullptr;
-
-			if (function_entry != nullptr) {
-				PVOID handler_data = nullptr;
-				DWORD64 establisher_frame = 0;
-				RtlVirtualUnwind(unw_flag_nhandler, image_base, context.Rip, function_entry, &context, &handler_data, &establisher_frame, nullptr);
-				if (context.Rip == 0) {
-					break;
-				}
-				continue;
-			}
-
-			if (context.Rsp == 0) {
+			if (!step_context(context)) {
 				break;
 			}
-			const auto return_address = *reinterpret_cast<const DWORD64*>(context.Rsp);
-			context.Rsp += sizeof(DWORD64);
-			if (return_address == 0) {
-				break;
-			}
-			context.Rip = return_address;
 		}
 	}
 
@@ -214,6 +190,55 @@ namespace gse {
 	}
 }
 #endif
+
+auto gse::capture_stacktrace(const std::size_t skip_frames) -> std::string {
+#ifdef _WIN32
+	CONTEXT context{};
+	RtlCaptureContext(&context);
+
+	std::string out;
+	std::size_t walked = 0;
+	std::size_t shown = 0;
+	while (walked < max_trace_frames && context.Rip != 0) {
+		if (walked >= skip_frames) {
+			out += std::format("  #{:>2} {}\n", shown, module_frame(context.Rip));
+			++shown;
+		}
+		++walked;
+
+		if (!step_context(context)) {
+			break;
+		}
+	}
+	return out;
+#else
+	const auto trace = std::stacktrace::current(skip_frames);
+
+	constexpr std::array<std::string_view, 8> noise = {
+		"gse::assert_format_message",
+		"gse::assert<",
+		"gse::assert_fail",
+		"gse::capture_stacktrace",
+		"register_frame_ctor",
+		"mainCRTStartup",
+		"BaseThreadInitThunk",
+		"RtlUserThreadStart",
+	};
+
+	std::string out;
+	out.reserve(trace.size() * 64);
+	std::size_t shown = 0;
+	for (const auto& entry : trace) {
+		const std::string frame = clean_symbol(std::to_string(entry));
+		if (std::ranges::any_of(noise, [&frame](const std::string_view n) { return frame.find(n) != std::string::npos; })) {
+			continue;
+		}
+		out += std::format("  #{:>2} {}\n", shown, frame);
+		++shown;
+	}
+	return out;
+#endif
+}
 
 auto gse::install_crash_handlers() -> void {
 #ifdef _WIN32

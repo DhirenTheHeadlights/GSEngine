@@ -415,30 +415,11 @@ auto gse::gui::draw_tab_bar(data& d, viewport_state& vp, const input::state& inp
 	}
 
 	vec2f dummy_cursor{};
-	widget_context ctx{ {
-		.current_menu = &current_menu,
-		.style = sty,
-		.fonts = d.fonts,
-		.blank_texture = d.blank_texture,
+	widget_context ctx{ widget_context_init(d, vp, layer, current_menu.z_order, {
+		.current_menu = current_menu,
 		.layout_cursor = dummy_cursor,
-		.sprites = d.sprite_commands,
-		.texts = d.text_commands,
-		.text_pool = d.text_pools[d.text_pool_slot],
-		.text_pool_used = d.text_pool_used,
-		.widget_anim_colors = d.widget_anim_colors,
-		.widget_scrolls = d.widget_scrolls,
-		.widget_tree_open = d.widget_tree_open,
-		.current_layer = layer,
-		.current_z_order = current_menu.z_order,
-		.input_layer = vp.input_layer_render,
-		.input_suppressed = vp.input_suppressed,
-		.owns_keyboard = vp.owns_keyboard,
-		.hit_regions = &vp.input_layers_data,
-		.tooltip = &vp.tooltip,
-		.context_menu = &vp.context_menu,
-		.pending_text_edit = &vp.pending_text_edit,
-		.clip_stack = { title_bar_rect },
-	}, input_state };
+		.clip = title_bar_rect,
+	}), input_state };
 
 	const tab_strip_result tabs = tab_strip(ctx, {
 		.area = title_bar_rect,
@@ -532,20 +513,16 @@ auto gse::gui::caption_button(builder& b, const rectf& rect, const std::string& 
 
 	const auto btn = interaction::press_in_rect(ctx, b.hot_widget_id, b.active_widget_id, widget_id, rect, enabled);
 
-	ctx.queue_sprite({
+	draw_icon_button(ctx, {
 		.rect = rect,
-		.color = btn.color({
+		.glyph = glyph,
+		.background = btn.color({
 			.idle = ctx.style.color_input_background,
 			.hot = hover_color,
 			.active = hover_color,
 			.disabled = ctx.style.color_input_background,
 		}),
-		.texture = ctx.blank_texture,
-	});
-
-	symbol::draw(ctx, glyph, rect, {
-		.color = enabled ? ctx.style.color_text : ctx.style.color_text_disabled,
-		.extent = std::min(ctx.style.icon_extent, std::min(rect.width(), rect.height())),
+		.icon = enabled ? ctx.style.color_text : ctx.style.color_text_disabled,
 	});
 
 	return btn.activated;

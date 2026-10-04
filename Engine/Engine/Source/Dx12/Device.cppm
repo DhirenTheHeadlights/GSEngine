@@ -529,6 +529,14 @@ export namespace gse::dx12 {
 			directx::ID3D12GraphicsCommandList* list
 		) -> void;
 
+		auto close_list(
+			directx::ID3D12GraphicsCommandList* list
+		) -> void;
+
+		[[nodiscard]] auto list_unclosed(
+			directx::ID3D12GraphicsCommandList* list
+		) const -> bool;
+
 		[[nodiscard]] auto graphics_queue() const -> directx::ID3D12CommandQueue*;
 
 		[[nodiscard]] auto command_queue(
@@ -630,6 +638,8 @@ export namespace gse::dx12 {
 		mutable std::map<std::size_t, view_record> m_views;
 		std::unordered_set<directx::ID3D12Resource*> m_present_images;
 		std::unordered_map<directx::ID3D12PipelineState*, compute_pso_layout> m_compute_layouts;
+		std::unordered_set<directx::ID3D12GraphicsCommandList*> m_unclosed_lists;
+		mutable std::mutex m_unclosed_mutex;
 
 		struct live_buffer {
 			gpu::bindless_slot slot;

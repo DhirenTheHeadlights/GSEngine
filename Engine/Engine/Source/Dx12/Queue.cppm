@@ -14,11 +14,11 @@ export namespace gse::dx12 {
 			device* owner
 		) -> void;
 
-		auto submit(
+		[[nodiscard]] auto submit(
 			gpu::queue_type queue_type,
 			const gpu::submit_info& info,
 			gpu::handle<gpu::fence> signal_fence
-		) -> void;
+		) -> gpu::result;
 
 		[[nodiscard]] auto wait_for_fence(
 			gpu::handle<gpu::fence> f
@@ -37,7 +37,8 @@ auto gse::dx12::queue::bind(device* owner) -> void {
 	m_owner = owner;
 }
 
-auto gse::dx12::queue::submit(const gpu::queue_type queue_type, const gpu::submit_info& info, const gpu::handle<gpu::fence> signal_fence) -> void {
+auto gse::dx12::queue::submit(const gpu::queue_type queue_type, const gpu::submit_info& info, const gpu::handle<gpu::fence> signal_fence) -> gpu::result {
+	auto result = gpu::result::success;
 	auto* target_queue = m_owner->command_queue(queue_type);
 	for (const auto& w : info.wait_semaphores) {
 		if (auto* sp = std::bit_cast<sync_point*>(w.semaphore); sp && sp->fence) {
@@ -48,7 +49,16 @@ auto gse::dx12::queue::submit(const gpu::queue_type queue_type, const gpu::submi
 	}
 	std::vector<directx::ID3D12CommandList*> lists;
 	for (const auto& cb : info.command_buffers) {
-		if (auto* list = std::bit_cast<directx::ID3D12CommandList*>(cb.command_buffer)) {
+		if (auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(cb.command_buffer)) {
+			if (m_owner->list_unclosed(list)) {
+				log::println(
+					log::level::error,
+					log::category::dx12,
+					"dropping list {} from this submit: it failed to close, and executing it would remove the device",
+					static_cast<void*>(list)
+				);
+				continue;
+			}
 			lists.push_back(list);
 		}
 	}
@@ -63,6 +73,7 @@ auto gse::dx12::queue::submit(const gpu::queue_type queue_type, const gpu::submi
 		if (const auto r = m_owner->raw_device()->GetDeviceRemovedReason(); r != 0) {
 			log::println(log::level::error, log::category::dx12, "post-ExecuteCommandLists removed=0x{:08x} lists={}", static_cast<std::uint32_t>(r), lists.size());
 			m_owner->dump_dred_once();
+			result = gpu::result::error_device_lost;
 		}
 	}
 	for (const auto& s : info.signal_semaphores) {
@@ -84,6 +95,7 @@ auto gse::dx12::queue::submit(const gpu::queue_type queue_type, const gpu::submi
 		m_owner->record_queue_op(queue_op_kind::signal, queue_type, sp->fence.get(), value, 0);
 		target_queue->Signal(sp->fence.get(), value);
 	}
+	return result;
 }
 
 auto gse::dx12::queue::wait_for_fence(const gpu::handle<gpu::fence> f) const -> gpu::result {

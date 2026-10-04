@@ -334,8 +334,8 @@ auto gse::dx12::commands::valid() const -> bool {
 auto gse::dx12::commands::begin() const -> void {}
 
 auto gse::dx12::commands::end() const -> void {
-	if (auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(m_cmd)) {
-		list->Close();
+	if (active_device) {
+		active_device->close_list(std::bit_cast<directx::ID3D12GraphicsCommandList*>(m_cmd));
 	}
 }
 

@@ -285,7 +285,7 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 		m_vt->wait_for_crash_dump(m_backend.get());
 	});
 
-	log::println(log::level::error, log::category::vulkan, "Vulkan device lost during {}", operation);
+	log::println(log::level::error, log::category::render, "GPU device lost during {}", operation);
 
 	for (std::size_t di = 0; di < pass_marker_domain_count; ++di) {
 		auto& ring = m_pass_marker_rings[di];
@@ -301,7 +301,7 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 		if (ring.checkpoint_slots == nullptr) {
 			log::println(
 				log::level::error,
-				log::category::vulkan,
+				log::category::render,
 				"Last {} pass markers for {} (record order, NOT GPU execution order). GPU checkpoints are OFF, so "
 				"every pass below reads as 'queued' and none can be blamed -- set Graphics.device_settings."
 				"pass_checkpoints and reproduce to find the pass that hung:",
@@ -312,7 +312,7 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 		else {
 			log::println(
 				log::level::error,
-				log::category::vulkan,
+				log::category::render,
 				"Last {} pass markers for {} (record order, NOT GPU execution order; status from GPU checkpoint):",
 				count,
 				domain
@@ -472,7 +472,9 @@ auto gse::gpu::device::frame_command_buffer(const queue_type queue, const std::u
 }
 
 auto gse::gpu::device::submit(const queue_type queue, const submit_info& info, const gpu::handle<fence> signal_fence) -> void {
-	m_vt->submit(m_backend.get(), queue, info, signal_fence);
+	if (m_vt->submit(m_backend.get(), queue, info, signal_fence) == result::error_device_lost) {
+		report_device_lost(std::format("submit ({} command buffers on the {} queue)", info.command_buffers.size(), queue));
+	}
 }
 
 auto gse::gpu::device::present(const present_info& info) -> result {
@@ -805,7 +807,7 @@ auto gse::gpu::device::create_buffer(const buffer_desc& desc, const std::string_
 	auto buf = m_vt->create_buffer(m_backend.get(), desc, tag, loc);
 	if (desc.bindless) {
 		assert(
-			buf.slot().valid(),
+			buf.slot().valid() || m_device_lost_reported.load(std::memory_order_relaxed),
 			"'{}' ({} B) asked for a bindless slot and the backend had none left, so nothing can reach it: "
 			"shader writes through this binding and copies that name it are both discarded with no further diagnostic. "
 			"Raise the bindless buffer heap size or release a buffer. Created at {}:{}.",

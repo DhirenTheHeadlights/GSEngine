@@ -106,10 +106,10 @@ auto gse::ide::agent::state_of(const data& d, const session& s) -> agent_state {
 	if (!s.running) {
 		return agent_state::exited;
 	}
-	if (!s.think_clock) {
-		return agent_state::idle;
+	if (s.think_clock) {
+		return s.wrote_this_turn ? agent_state::editing : agent_state::working;
 	}
-	return s.wrote_this_turn ? agent_state::editing : agent_state::working;
+	return s.gate ? agent_state::awaiting_approval : agent_state::idle;
 }
 
 auto gse::ide::agent::style_of(const agent_state state) -> state_style {
@@ -535,6 +535,7 @@ auto gse::ide::agent::accept_requests(data& d) -> void {
 			.config = std::move(incoming.config),
 			.cwd = std::move(incoming.cwd),
 			.project = std::move(incoming.project),
+			.settings = std::move(incoming.settings),
 			.requested = now,
 		};
 
@@ -549,8 +550,18 @@ auto gse::ide::agent::accept_requests(data& d) -> void {
 			});
 			continue;
 		}
-		queued.run = incoming.run;
+		queued.run_only = incoming.run_only;
+		queued.run = incoming.run || incoming.run_only;
 		queued.tree = queued.target == build_runner::build_target::editor ? nullptr : origin;
+
+		if (queued.run_only && queued.target == build_runner::build_target::editor) {
+			build_inbox::publish({
+				.id = queued.id,
+				.outcome = build_inbox::status::rejected,
+				.lines = { "the editor cannot be launched as a run target - it is the process answering you" },
+			});
+			continue;
+		}
 
 		if (!incoming.tree.empty()) {
 			const std::span<const config::worktree> trees = config::worktrees();
@@ -570,6 +581,8 @@ auto gse::ide::agent::accept_requests(data& d) -> void {
 			return !existing.agent.empty() && existing.agent == queued.agent
 				&& existing.target == queued.target
 				&& existing.run == queued.run
+				&& existing.run_only == queued.run_only
+				&& existing.settings == queued.settings
 				&& existing.tree == queued.tree
 				&& existing.profile == queued.profile
 				&& existing.config == queued.config;
@@ -695,7 +708,9 @@ auto gse::ide::agent::request_of(const queued_build& queued) -> build_inbox::req
 		.config = queued.config,
 		.cwd = queued.cwd,
 		.project = queued.project,
+		.settings = queued.settings,
 		.run = queued.run,
+		.run_only = queued.run_only,
 	};
 }
 
@@ -813,14 +828,16 @@ auto gse::ide::agent::poll_build_inbox(data& d, const channel_write<build_runner
 
 	const build_runner::build_target target = head.target;
 	const bool run = head.run;
+	const bool run_only = head.run_only;
 	const config::worktree* tree = head.tree;
 	const std::string profile = head.profile;
 	const std::string config = head.config;
+	const std::vector<std::string> settings = head.settings;
 
 	std::vector<queued_build> group;
 	std::vector<queued_build> deferred;
 	for (queued_build& queued : d.inbox_queue) {
-		if (queued.target == target && queued.run == run && queued.tree == tree && queued.profile == profile && queued.config == config) {
+		if (queued.target == target && queued.run == run && queued.run_only == run_only && queued.tree == tree && queued.profile == profile && queued.config == config && queued.settings == settings) {
 			group.push_back(std::move(queued));
 		}
 		else {
@@ -833,6 +850,8 @@ auto gse::ide::agent::poll_build_inbox(data& d, const channel_write<build_runner
 	builds.push<build_runner::build_request>({
 		.target = target,
 		.run_after = run,
+		.skip_build = run_only,
+		.settings = settings,
 		.config = config,
 		.profile = profile,
 		.tree = tree,
@@ -953,7 +972,7 @@ auto gse::ide::agent::fix_unclaimed(data& d) -> void {
 	}
 
 	const blamed_error& first = d.unclaimed.front();
-	session& started = create_session(d, config::worktree_for(first.file).project_root);
+	session& started = create_session(d, config::worktree_for(first.file).project_root, task_phase::apply);
 	started.name = std::format("fix {}", first.file.filename().generic_display_string());
 
 	if (!launch_session(started)) {

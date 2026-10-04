@@ -44,6 +44,15 @@ export namespace gse::gui {
 		vec4f color{ 1.f, 0.f, 0.f, 1.f };
 	};
 
+	struct text_rule {
+		std::uint32_t line = 0;
+		float x0 = 0.f;
+		float x1 = 0.f;
+		float y = 0.5f;
+		float thickness = 1.f;
+		vec4f color{ 1.f, 1.f, 1.f, 1.f };
+	};
+
 	struct text_fade {
 		std::uint32_t line = 0;
 		std::uint32_t start_col = 0;

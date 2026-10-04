@@ -202,3 +202,21 @@ target_sources(EngineServer
             "${CMAKE_CURRENT_SOURCE_DIR}/Server/Server.cppm"
 )
 target_link_libraries(EngineServer PUBLIC Engine)
+
+add_executable(GSETests "${CMAKE_CURRENT_SOURCE_DIR}/Tests/Main.cpp")
+target_link_libraries(GSETests PRIVATE Engine)
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND WIN32)
+    target_link_options(GSETests PRIVATE "-Wl,--allow-multiple-definition")
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    get_filename_component(_gcc_bin_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    get_filename_component(_gcc_root "${_gcc_bin_dir}" DIRECTORY)
+    set_target_properties(GSETests PROPERTIES
+        BUILD_RPATH "${_gcc_root}/lib64"
+        INSTALL_RPATH "${_gcc_root}/lib64"
+    )
+endif()
+
+gse_copy_runtime_deps(GSETests)

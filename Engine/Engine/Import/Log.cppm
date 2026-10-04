@@ -30,7 +30,8 @@ export namespace gse::log {
 		assets,
 		task,
 		save_system,
-		physics
+		physics,
+		test
 	};
 
 	enum class thread_role : std::uint8_t {

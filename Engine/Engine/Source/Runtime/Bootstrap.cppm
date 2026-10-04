@@ -164,6 +164,17 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 			frame_demand::install_waker(window::post_wake);
 		}
 
+		if (config.create_window && config.render) {
+			window::install_resize_pump([&e] {
+				for (int pass = 0; pass < 2; ++pass) {
+					frame_sync::begin();
+					e.update();
+					e.render();
+					frame_sync::end();
+				}
+			});
+		}
+
 		while (!should_shutdown.load(std::memory_order_acquire)) {
 			{
 				trace::scope_guard _{ loop_id };
@@ -287,6 +298,7 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 		}
 
 		frame_demand::clear_waker();
+		window::install_resize_pump({});
 
 		if (pacing.timer) {
 			win32::CloseHandle(pacing.timer);

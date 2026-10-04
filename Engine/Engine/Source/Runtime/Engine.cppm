@@ -20,6 +20,7 @@ import gse.log;
 import gse.save;
 import gse.config;
 import gse.scenario;
+import gse.test;
 
 import :scene;
 import :world_system;
@@ -86,6 +87,7 @@ export namespace gse {
 		std::string dump_system_graph_path;
 		std::vector<std::string> setting;
 		bench_config bench;
+		test::config test;
 		network::config net;
 	};
 

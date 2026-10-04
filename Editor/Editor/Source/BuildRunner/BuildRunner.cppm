@@ -17,6 +17,8 @@ export namespace gse::ide::build_runner {
 	struct build_request {
 		build_target target = build_target::game;
 		bool run_after = false;
+		bool skip_build = false;
+		std::vector<std::string> settings;
 		play_session session;
 		std::string config;
 		std::string profile;
@@ -536,7 +538,8 @@ namespace gse::ide::build_runner {
 		spawn::output_stream& stream,
 		const config::worktree& tree,
 		const play_session& session,
-		std::uint32_t generation
+		std::uint32_t generation,
+		std::span<const std::string> settings
 	) -> void;
 
 	auto build_game(
@@ -1830,11 +1833,15 @@ auto gse::ide::build_runner::launch_child(build_completion& completion, spawn::o
 	});
 }
 
-auto gse::ide::build_runner::launch_play_session(build_completion& completion, spawn::output_stream& stream, const config::worktree& tree, const play_session& session, const std::uint32_t generation) -> void {
+auto gse::ide::build_runner::launch_play_session(build_completion& completion, spawn::output_stream& stream, const config::worktree& tree, const play_session& session, const std::uint32_t generation, const std::span<const std::string> settings) -> void {
 	const std::uint32_t clients = std::min<std::uint32_t>(std::max<std::uint32_t>(session.clients, 1), max_attached_instances);
 	const std::uint32_t processes = clients + (session.dedicated_server ? 1u : 0u) + 1u;
 	const std::uint32_t hardware = std::max<std::uint32_t>(2, std::thread::hardware_concurrency());
-	const std::wstring pool_args = L" --engine-worker-threads " + std::to_wstring(std::max<std::uint32_t>(2, hardware / processes));
+	std::wstring pool_args = L" --engine-worker-threads " + std::to_wstring(std::max<std::uint32_t>(2, hardware / processes));
+
+	for (const std::string& assignment : settings) {
+		pool_args += L" --engine-setting \"" + std::wstring(assignment.begin(), assignment.end()) + L"\"";
+	}
 
 	std::wstring connect_args = pool_args;
 
@@ -1868,6 +1875,25 @@ auto gse::ide::build_runner::build_game(
 	const build_request& request,
 	const std::uint32_t next_generation
 ) -> void {
+	if (request.skip_build) {
+		std::error_code exists_ec;
+		if (!std::filesystem::exists(tree.game_executable, exists_ec)) {
+			spawn::emit(stream, "no " + tree.game_target + " executable at " + tree.game_executable.generic_display_string() + " - build it before asking for a run");
+			return;
+		}
+
+		spawn::emit(stream, "running the existing " + tree.game_target + " without building");
+		{
+			std::lock_guard _(completion.mutex);
+			completion.generation = next_generation;
+			completion.succeeded = true;
+		}
+		if (!st.stop_requested()) {
+			launch_play_session(completion, stream, tree, request.session, next_generation, request.settings);
+		}
+		return;
+	}
+
 	const std::filesystem::path build_dir = ensure_configured(stream, tree, request.config);
 	if (build_dir.empty()) {
 		spawn::emit(stream, "configured build directory is unavailable");
@@ -1921,7 +1947,7 @@ auto gse::ide::build_runner::build_game(
 	}
 
 	if (request.run_after && !st.stop_requested()) {
-		launch_play_session(completion, stream, tree, request.session, next_generation);
+		launch_play_session(completion, stream, tree, request.session, next_generation, request.settings);
 	}
 }
 

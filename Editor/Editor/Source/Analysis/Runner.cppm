@@ -5,12 +5,12 @@ import gse.ide.diagnostic;
 import gse.log;
 import gse.math;
 import gse.meta;
+import gse.process;
 import gse.time;
 import std;
 
 import :compilation_database;
 import :gcc_diagnostics;
-import :process;
 import :semantic_tokens;
 import :symbol_extract;
 
@@ -241,7 +241,14 @@ auto gse::ide::analysis::run_diagnostics(const diagnostics_request& request, con
 			}
 		}
 
-		const process::run_outcome run = process::run_capture_stderr(command_line, entry->command.directory, sarif_temp, stop);
+		const time compile_limit = seconds(60.f);
+		const process::run_outcome run = process::run_capture({
+			.command_line = command_line,
+			.working_dir = entry->command.directory,
+			.output_path = sarif_temp,
+			.limit = compile_limit,
+			.cancel = stop,
+		});
 
 		const std::string sarif = read_file(sarif_temp);
 		out.diagnostics = gcc_diagnostics::parse_sarif(sarif);

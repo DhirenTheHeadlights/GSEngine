@@ -21,7 +21,9 @@ export namespace gse::ide::build_inbox {
 		std::string config;
 		std::filesystem::path cwd;
 		std::filesystem::path project;
+		std::vector<std::string> settings;
 		bool run = false;
+		bool run_only = false;
 	};
 
 	struct result {
@@ -121,6 +123,22 @@ export namespace gse::ide::build_inbox {
 	auto peek_package_requests() -> std::vector<package_request>;
 
 	auto consume_package_request(
+		std::string_view id
+	) -> void;
+
+	struct phase_report {
+		std::string id;
+		std::string agent;
+		std::string summary;
+		std::uint32_t findings = 0;
+		std::filesystem::path cwd;
+	};
+
+	auto phases_dir() -> std::filesystem::path;
+
+	auto peek_phase_reports() -> std::vector<phase_report>;
+
+	auto consume_phase_report(
 		std::string_view id
 	) -> void;
 }

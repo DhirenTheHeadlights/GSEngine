@@ -20,21 +20,13 @@ namespace gse::ide::agent {
 		const std::filesystem::path& path
 	) -> std::vector<std::byte>;
 
-	auto lowered_extension(
-		const std::filesystem::path& path
-	) -> std::string;
-
-	auto sendable_encoding(
-		const std::filesystem::path& path
-	) -> bool;
-
 	auto media_type_for(
-		const std::filesystem::path& path
+		gui::image_encoding encoding
 	) -> std::string_view;
 
 	auto user_message(
 		std::string_view prompt,
-		std::span<const attachment> attachments
+		std::span<const gui::image_attachment> attachments
 	) -> std::string;
 
 	auto string_at(

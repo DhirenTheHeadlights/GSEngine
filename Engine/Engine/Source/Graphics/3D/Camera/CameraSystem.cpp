@@ -118,7 +118,7 @@ auto gse::camera::run(context& ctx, data& d, const channel_read<ui_focus_request
 	int highest_priority = -1;
 	id best_controller{};
 	target best_target{};
-	time best_blend_duration = milliseconds(300);
+	time best_blend_duration = milliseconds(300.f);
 
 	const auto camera_ids = cameras.owner_ids();
 	for (std::size_t i = 0; i < cameras.size(); ++i) {

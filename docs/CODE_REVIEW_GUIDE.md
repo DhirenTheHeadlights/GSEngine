@@ -109,6 +109,16 @@ An existing call site is not an API contract. Some predate the helper or the bug
 
 Enumerator *names* are already reflected: `enum_to_string` and `enum_from_string` derive them, and the global formatter prints them. Annotations carry metadata the identifier cannot — display text that differs from the identifier, colours, policies. An annotation whose payload merely restates the enumerator's own spelling is machinery with nothing in it: delete the annotation and call the name helper. This is the same defect as a hand-rolled read, one layer earlier — the search stopped at the first mechanism that worked instead of the one that already existed.
 
+## The Backend Seam
+
+Backend identity must not leak upward. Code above the backend implementations does not branch on which backend is active: a runtime test on it puts every backend's knowledge in the frontend, defeats the dispatch it was given, and rots silently the moment a third path appears.
+
+When two backends need different behaviour, declare the operation on *both* backend structs with identical signatures and call it through the device. The dispatch table is reflection-built, so a matching member on each backend is the entire wiring — there is no vtable to register, no enum to extend, and no switch to update. Each backend converts to its own API's types at its own edge, so the frontend carries the engine's own type end to end and neither encoding is visible above the seam.
+
+The accepted exception is a build-target choice rather than a runtime behaviour switch: selecting shader bytecode for the backend being compiled against. Reporting the backend — logging it, formatting it, handing it to a diagnostic — is not a branch on it and is always fine. Anything else that reads the active backend to decide what to *do* is the defect.
+
+Ask first whether the difference should exist at all. A backend branch in the frontend is usually the symptom of a frontend type that leaked a backend representation — a single field silently meaning one API's handle on one backend and the engine's own enum on the other. Dispatching that better preserves the dual meaning; deleting it removes the branch, the dispatch, and the class of bug together. Chase the leaked representation before reaching for polymorphism, and prefer killing the dual meaning over routing it.
+
 ## Parameter Objects
 
 When a function signature is long and the meaning of each argument is not obvious at the call site, group the cohesive operation inputs into a named aggregate and pass it with designated initialization. This is especially important for adjacent booleans, numeric values, IDs, or parameters of the same type, where positional calls conceal intent and permit valid-looking argument swaps. Field names should make the call self-documenting and defaults should represent safe, unsurprising behavior.
@@ -124,6 +134,8 @@ The aggregate must describe one cohesive operation rather than become a catch-al
 - Does a switch or parallel table map every enumerator to fixed metadata such as a color, label, priority, capability, or policy? Put that metadata on the enumerators as annotations and derive the lookup with the existing reflection helpers.
 - Does the change call `std::meta` directly where a `gse.meta` helper exists, or spell `std::define_static_array(std::meta::annotations_of(...))` anywhere at all? Both are defects regardless of whether the result is currently correct.
 - Is an annotation payload carried as a template parameter, forcing each enumerator to a distinct type and putting `annotation_from_enum` out of reach? Use one concrete aggregate with fixed-size `char` arrays.
+- Does any code above the backend implementations branch on which backend is active? Put the operation on both backend structs and dispatch through the device; shader bytecode selection is the only accepted read, and logging the backend is not a branch.
+- Is that branch there because a frontend type carries a backend representation — one field meaning a backend handle on one path and the engine's own type on the other? Delete the dual meaning instead of dispatching it.
 - Does each mutation happen through the owning system, with other systems acting as producers through channels?
 - Does any deferred callback, task, or channel payload retain a raw pointer or reference obtained from a shared view? Retain an immutable owning snapshot instead.
 - Is a shared owning pointer stable for the entire published lifetime? Use `stable_shared` only for write-once `unique_ptr` resources; publish replaceable generations as `shared_ptr<const T>` snapshots or through a producer-consumer channel.

@@ -45,6 +45,6 @@ export namespace gse::ide::config_system {
 
 		[[= settings::describe<"Caret blink interval (0 disables blinking).">{},
 			= shared]]
-		time caret_blink = milliseconds(500);
+		time caret_blink = milliseconds(500.f);
 	};
 }

@@ -29,6 +29,10 @@ export namespace gse::ide::agent {
 			.prefix = "- ",
 			.color = &gui::style::color_accent_dim,
 		}]],
+		phase [[= row_style{
+			.prefix = "# ",
+			.color = &gui::style::color_folder,
+		}]],
 		denial [[= row_style{
 			.prefix = "x ",
 			.color = &gui::style::color_warning,
@@ -202,10 +206,72 @@ export namespace gse::ide::agent {
 			.label = "hibernating",
 			.color = &gui::style::color_file,
 		}]],
+		awaiting_approval [[= state_style{
+			.label = "waiting for approval",
+			.color = &gui::style::color_folder,
+		}]],
 		rate_limited [[= state_style{
 			.label = "usage limit reached",
 			.color = &gui::style::color_warning,
 		}]],
+	};
+
+	struct phase_policy {
+		char label[24] = "";
+		char enter_label[24] = "";
+		char opening[96] = "";
+		vec4f gui::style::* color = &gui::style::color_text_secondary;
+		bool read_only = false;
+		bool fresh_context = false;
+		bool side_thread = false;
+		bool gated = false;
+	};
+
+	enum class task_phase : std::uint8_t {
+		scope [[= phase_policy{
+			.label = "scoping",
+			.color = &gui::style::color_folder,
+			.read_only = true,
+			.fresh_context = true,
+			.gated = true,
+		}]],
+		apply [[= phase_policy{
+			.label = "applying",
+			.enter_label = "Start applying",
+			.opening = "The scope is approved. Implement it now, following your phase instructions.",
+			.color = &gui::style::color_added,
+		}]],
+		review [[= phase_policy{
+			.label = "reviewing",
+			.opening = "Review the change now, following your phase instructions.",
+			.color = &gui::style::color_accent,
+			.read_only = true,
+			.fresh_context = true,
+			.side_thread = true,
+		}]],
+		revise [[= phase_policy{
+			.label = "revising",
+			.opening = "Address the review findings now, following your phase instructions.",
+			.color = &gui::style::color_warning,
+		}]],
+		settled [[= phase_policy{
+			.label = "settled",
+			.color = &gui::style::color_text_disabled,
+		}]],
+	};
+
+	struct phase_run {
+		task_phase phase = task_phase::scope;
+		std::string agent_id;
+		std::uint32_t first_row = 0;
+		std::int64_t started = 0;
+	};
+
+	struct phase_gate {
+		task_phase from = task_phase::scope;
+		std::string summary;
+		std::string note;
+		std::uint32_t findings = 0;
 	};
 
 	struct queued_build {
@@ -215,8 +281,10 @@ export namespace gse::ide::agent {
 		std::string config;
 		std::filesystem::path cwd;
 		std::filesystem::path project;
+		std::vector<std::string> settings;
 		build_runner::build_target target = build_runner::build_target::game;
 		bool run = false;
+		bool run_only = false;
 		bool forced = false;
 		const config::worktree* tree = nullptr;
 		time requested;
@@ -228,12 +296,6 @@ export namespace gse::ide::agent {
 		bool held = false;
 		std::uint32_t attempts = 0;
 		bool waiting = false;
-	};
-
-	struct attachment {
-		std::filesystem::path path;
-		vec2u size;
-		resource::handle<texture> preview;
 	};
 
 	struct usage_window {
@@ -278,9 +340,11 @@ export namespace gse::ide::agent {
 		[[= archive_skip{}]] gui::text_area_state view;
 		gui::text_buffer draft;
 		[[= archive_skip{}]] gui::text_area_state draft_state;
-		[[= archive_skip{}]] std::vector<attachment> attachments;
+		[[= archive_skip{}]] gui::image_attachments attachments;
 		[[= archive_skip{}]] gui::text_input_state name_state;
 		[[= archive_skip{}]] std::vector<gui::text_span> spans;
+		[[= archive_skip{}]] std::vector<gui::text_stop> stops;
+		[[= archive_skip{}]] std::vector<gui::text_rule> rules;
 		[[= archive_skip{}]] std::vector<gui::text_block> blocks;
 		[[= archive_skip{}]] std::vector<link_marker> links;
 		[[= archive_skip{}]] std::vector<std::uint32_t> line_rows;
@@ -290,6 +354,9 @@ export namespace gse::ide::agent {
 		[[= archive_skip{}]] gse::id log_id;
 		bool hibernating = false;
 		std::string wake_prompt;
+		std::vector<phase_run> runs;
+		std::optional<phase_gate> gate;
+		std::optional<phase_gate> pending_transition;
 		std::string model_id;
 		agent_effort requested_effort = agent_effort::inherit;
 		[[= archive_skip{}]] std::string launched_model_id;
@@ -317,7 +384,9 @@ export namespace gse::ide::agent {
 		std::uint32_t active = 0;
 		std::uint32_t renaming = 0;
 		std::uint32_t pending_close = 0;
-		std::uint32_t next_attachment = 0;
+		[[= archive_skip{}]] bool naming_new_chat = false;
+		[[= archive_skip{}]] std::string new_chat_name;
+		[[= archive_skip{}]] gui::text_input_state new_chat_name_state;
 		gui::interaction::click_state tab_click;
 		gui::tab_strip_state tab_strip;
 		rectf info_anchor;

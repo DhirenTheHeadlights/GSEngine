@@ -13,10 +13,11 @@ import :blame;
 import :chats;
 import :model;
 import :panel;
+import :phase;
 import :session;
 import :system;
 
-auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_request, dispatch_request, gui::context_menu_result, build_runner::build_finished, build_runner::source_changed> requests_in, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request, blame_offer, build_runner::build_request> events_out, const shared_view<asset::data> assets_d, const shared_view<build_runner::data> build_d) -> async::task<> {
+auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_request, dispatch_request, gui::context_menu_result, build_runner::build_finished, build_runner::source_changed> requests_in, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request, blame_offer, build_runner::build_request> events_out, const shared_view<build_runner::data> build_d) -> async::task<> {
 	if (!d.initialized) {
 		load_sessions(d);
 		adopt_inherited(d);
@@ -29,7 +30,7 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 	}
 
 	if (d.sessions.empty()) {
-		create_session(d, config::primary().project_root);
+		create_session(d, config::primary().project_root, task_phase::scope);
 	}
 
 	for (session& s : d.sessions) {
@@ -42,12 +43,8 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 		hydrate_session(*shown);
 	}
 
-	if (std::optional<window::clipboard_image> pasted = window::take_clipboard_image()) {
-		attach_image(d, assets_d, std::move(*pasted));
-	}
-
 	for (const start_request& request : requests_in.of<start_request>()) {
-		session& started = create_session(d, request.cwd);
+		session& started = create_session(d, request.cwd, task_phase::apply);
 		if (!launch_session(started)) {
 			log::println(log::level::error, log::category::task, "agent: failed to launch 'claude' - is it on PATH?");
 			d.sessions.pop_back();
@@ -99,6 +96,15 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 	}
 
 	accept_hibernations(d);
+
+	bool phase_changed = accept_phase_reports(d);
+	for (session& s : d.sessions) {
+		phase_changed = service_phase(s) || phase_changed;
+	}
+	if (phase_changed) {
+		save_sessions(d);
+	}
+
 	refresh_presence(d);
 	poll_build_inbox(d, events_out, build_d.building);
 

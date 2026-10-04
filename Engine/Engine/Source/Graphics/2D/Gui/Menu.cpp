@@ -201,30 +201,11 @@ auto gse::gui::process_menu(data& d, viewport_state& vp, const input::state& inp
 
 	ids::scope _(current_menu.id().number());
 
-	widget_context ctx{ {
-		.current_menu = &current_menu,
-		.style = sty,
-		.fonts = d.fonts,
-		.blank_texture = d.blank_texture,
+	widget_context ctx{ widget_context_init(d, vp, layer, menu_z, {
+		.current_menu = current_menu,
 		.layout_cursor = layout_cursor,
-		.sprites = d.sprite_commands,
-		.texts = d.text_commands,
-		.text_pool = d.text_pools[d.text_pool_slot],
-		.text_pool_used = d.text_pool_used,
-		.widget_anim_colors = d.widget_anim_colors,
-		.widget_scrolls = d.widget_scrolls,
-		.widget_tree_open = d.widget_tree_open,
-		.current_layer = layer,
-		.current_z_order = menu_z,
-		.input_layer = vp.input_layer_render,
-		.input_suppressed = vp.input_suppressed,
-		.owns_keyboard = vp.owns_keyboard,
-		.hit_regions = &vp.input_layers_data,
-		.tooltip = &vp.tooltip,
-		.context_menu = &vp.context_menu,
-		.pending_text_edit = &vp.pending_text_edit,
-		.clip_stack = { body_rect },
-	}, input_state };
+		.clip = body_rect,
+	}), input_state };
 
 	vp.hot_widget_id = {};
 	d.context = &ctx;

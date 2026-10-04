@@ -1,7 +1,6 @@
 export module gse.ide.git:git_system;
 
 import gse;
-import gse.ide.analysis;
 import gse.ide.config;
 import std;
 
@@ -173,7 +172,7 @@ auto gse::ide::git_system::build_commit(const action_inputs&, const action_reque
 	if (request.paths.empty()) {
 		return std::nullopt;
 	}
-	const std::filesystem::path scratch = analysis::process::temporary_path("git_commit", "txt");
+	const std::filesystem::path scratch = process::temporary_path("git_commit", "txt");
 	std::ofstream out(scratch, std::ios::binary);
 	out << request.message;
 	if (!out) {

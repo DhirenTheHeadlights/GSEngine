@@ -7,6 +7,7 @@ import :model;
 
 namespace gse::ide::agent {
 	constexpr std::string_view agent_command = "claude -p --output-format stream-json --input-format stream-json --verbose --permission-mode auto";
+	constexpr std::string_view read_only_denied_tools = R"( --disallowed-tools "Bash Edit Write NotebookEdit Agent mcp__gse__gse_build mcp__gse__gse_package_sdk")";
 	constexpr std::wstring_view resume_option = L" --resume ";
 	constexpr std::string_view mcp_config_format = R"( --mcp-config "{{\"mcpServers\":{{\"gse\":{{\"command\":\"node\",\"args\":[\"{}\"]}}}}}}")";
 	constexpr std::wstring_view oauth_token_name = L"CLAUDE_CODE_OAUTH_TOKEN";
@@ -19,7 +20,7 @@ namespace gse::ide::agent {
 	constexpr std::string_view oauth_beta = "oauth-2025-04-20";
 	constexpr std::int64_t usage_refresh_seconds = 60;
 	constexpr std::uint32_t sessions_magic = 0x47534147;
-	constexpr std::uint32_t sessions_version = 5;
+	constexpr std::uint32_t sessions_version = 6;
 	constexpr std::uint32_t first_schema_sessions_version = 3;
 	constexpr std::uint32_t chat_names_sessions_version = 5;
 
@@ -78,11 +79,13 @@ namespace gse::ide::agent {
 
 	auto create_session(
 		data& d,
-		const std::filesystem::path& cwd
+		const std::filesystem::path& cwd,
+		task_phase starting
 	) -> session&;
 
 	auto session_command(
-		const session& s
+		const session& s,
+		const std::filesystem::path& prompt
 	) -> std::wstring;
 
 	auto launch_session(
@@ -99,6 +102,10 @@ namespace gse::ide::agent {
 	) -> void;
 
 	auto restart_session(
+		session& s
+	) -> void;
+
+	auto stop_session(
 		session& s
 	) -> void;
 
@@ -119,7 +126,7 @@ namespace gse::ide::agent {
 	auto send_to_session(
 		session& s,
 		std::string_view prompt,
-		std::span<const attachment> attachments
+		std::span<const gui::image_attachment> attachments
 	) -> void;
 
 	auto interrupt_session(

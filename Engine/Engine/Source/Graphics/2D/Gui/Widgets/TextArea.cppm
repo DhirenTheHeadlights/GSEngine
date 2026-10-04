@@ -17,6 +17,7 @@ import gse.assert;
 
 import :types;
 import :ids;
+import :image_attachments;
 import :styles;
 import :builder;
 import :text_buffer;
@@ -89,15 +90,16 @@ export namespace gse::gui {
 			std::span<const text_fade> fades{};
 			std::span<const text_block> blocks{};
 			std::span<const text_stop> stops{};
+			std::span<const text_rule> rules{};
 			std::optional<rectf> rect{};
 			bool read_only = false;
-			bool consumes_image_paste = false;
+			std::optional<image_strip_params> images{};
 			bool follow_tail = false;
 			bool show_line_numbers = false;
 			std::size_t indent_width = 4;
 			bool indent_with_spaces = false;
 			bool auto_indent = false;
-			time blink_interval = milliseconds(500);
+			time blink_interval = milliseconds(500.f);
 			resource::handle<font> font{};
 		};
 
@@ -131,6 +133,7 @@ namespace gse::gui::draw {
 		id widget_id,
 		const text_area::params& params,
 		id& hot_widget_id,
+		id& active_widget_id,
 		id& focus_widget_id
 	) -> bool;
 
@@ -432,6 +435,9 @@ auto gse::gui::metrics_signature(const text_buffer& buffer, const std::span<cons
 	seed = hash_combine(seed, tab_width);
 	seed = hash_combine(seed, spans.size());
 	seed = hash_combine(seed, stops.size());
+	for (const text_stop& stop : stops) {
+		seed = hash_combine(seed, std::bit_cast<std::uint32_t>(stop.x));
+	}
 	seed = hash_combine(seed, std::bit_cast<std::uint32_t>(scale));
 	for (std::size_t i = 0; i < buffer.line_count(); ++i) {
 		seed = hash_combine(seed, buffer.line(i).size());
@@ -543,10 +549,9 @@ auto gse::gui::text_area_layout::line_at(const float offset) const -> std::uint3
 }
 
 auto gse::gui::text_area::draw(const draw_context& ctx, const params& p, id& hot, id& active, id& focus) -> bool {
-	(void)active;
 	params resolved = p;
 	resolved.rect = p.rect.value_or(ctx.next_row(ctx.fonts.face_or(p.font, text_face::code), 8.f));
-	return draw::text_area_in_rect(ctx, p.widget_id.exists() ? p.widget_id : ids::make(p.name), resolved, hot, focus);
+	return draw::text_area_in_rect(ctx, p.widget_id.exists() ? p.widget_id : ids::make(p.name), resolved, hot, active, focus);
 }
 
 auto gse::gui::text_area_line_height(const draw_context& ctx, const resource::handle<font> font) -> float {
@@ -624,8 +629,9 @@ auto gse::gui::text_area_position_at(const draw_context& ctx, const text_area_ge
 	});
 }
 
-auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_id, const text_area::params& params, id& hot_widget_id, id& focus_widget_id) -> bool {
+auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_id, const text_area::params& params, id& hot_widget_id, id& active_widget_id, id& focus_widget_id) -> bool {
 	assert(params.rect.has_value(), "text_area_in_rect requires a rect");
+
 	text_buffer& buffer = params.buffer;
 	text_area_state& state = params.state;
 	const std::span<const text_span> spans = params.spans;
@@ -633,9 +639,10 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 	const std::span<const text_fade> fades = params.fades;
 	const std::span<const text_block> blocks = params.blocks;
 	const std::span<const text_stop> stops = params.stops;
-	const rectf& rect = *params.rect;
+	const std::span<const text_rule> rules = params.rules;
+	const rectf rect = *params.rect;
 	const bool read_only = params.read_only;
-	const bool image_paste = params.consumes_image_paste && window::clipboard_image_available();
+	const bool image_paste = params.images && window::clipboard_image_available();
 	const bool follow_tail = params.follow_tail;
 	const bool show_line_numbers = params.show_line_numbers;
 	const std::size_t indent_width = params.indent_width;
@@ -909,7 +916,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 			{
 				.label = "Paste",
 				.action_id = static_cast<std::uint32_t>(text_edit_action::paste),
-				.enabled = !read_only && !ctx.clipboard().empty(),
+				.enabled = !read_only && (!ctx.clipboard().empty() || image_paste),
 			},
 		};
 		ctx.open_context_menu({
@@ -920,7 +927,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 		});
 	}
 
-	const bool focused = (focus_widget_id == widget_id);
+	const bool focused = (focus_widget_id == widget_id) && !(params.images && params.images->attachments.viewing);
 
 	auto begin_edit = [&](const int kind) {
 		if (state.last_edit_kind != kind || state.undo_stack.empty()) {
@@ -945,6 +952,23 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 		buffer.erase(lo, hi);
 		state.caret = lo;
 		state.anchor = lo;
+	};
+	auto paste_now = [&]() -> bool {
+		std::string paste = ctx.clipboard();
+		if (params.images && (image_paste || paste.empty())) {
+			ctx.request_image_paste(widget_id);
+			return false;
+		}
+		if (paste.empty()) {
+			return false;
+		}
+		begin_edit(1);
+		if (has_selection()) {
+			delete_selection();
+		}
+		state.caret = buffer.insert(state.caret, paste);
+		state.anchor = state.caret;
+		return true;
 	};
 	auto selection_string = [&]() -> std::string {
 		const auto [a, b] = normalized_sel();
@@ -1122,17 +1146,9 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 			}
 		}
 		else if (pending_action == text_edit_action::paste) {
-			if (!read_only) {
-				if (std::string paste = ctx.clipboard(); !paste.empty()) {
-					begin_edit(1);
-					if (has_selection()) {
-						delete_selection();
-					}
-					state.caret = buffer.insert(state.caret, paste);
-					state.anchor = state.caret;
-					modified = true;
-					caret_moved = true;
-				}
+			if (!read_only && paste_now()) {
+				modified = true;
+				caret_moved = true;
 			}
 		}
 		if (modified) {
@@ -1289,18 +1305,9 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 				changed = true;
 				modified = true;
 			}
-			if (ctrl && !image_paste && ctx.key_pressed_for(key::v)) {
-				std::string paste = ctx.clipboard();
-				if (!paste.empty()) {
-					begin_edit(1);
-					if (has_selection()) {
-						delete_selection();
-					}
-					state.caret = buffer.insert(state.caret, paste);
-					state.anchor = state.caret;
-					changed = true;
-					modified = true;
-				}
+			if (ctrl && ctx.key_pressed_for(key::v) && paste_now()) {
+				changed = true;
+				modified = true;
 			}
 
 			const bool shift = ctx.key_held(key::left_shift) || ctx.key_held(key::right_shift);
@@ -1617,6 +1624,24 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 				.clip_rect = content_clip,
 			});
 		}
+
+		for (const text_rule& r : rules) {
+			if (r.line != line_no) {
+				continue;
+			}
+			const float x0 = origin + r.x0;
+			const float x1 = origin + r.x1;
+			const float weight = std::max(1.f, std::round(r.thickness * ctx.style.scale_factor));
+			ctx.queue_sprite({
+				.rect = rectf::from_position_size(
+					{ x0, line_center + row_height * (0.5f - r.y) + weight * 0.5f },
+					{ std::max(x1 - x0, weight), weight }
+				),
+				.color = r.color,
+				.texture = ctx.blank_texture,
+				.clip_rect = content_clip,
+			});
+		}
 	}
 
 	if (focused && !read_only && state.blink_on) {
@@ -1674,6 +1699,13 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 
 	if (follow_tail) {
 		state.tail_pinned = state.scroll.y.target >= tail_scroll - 1.f;
+	}
+
+	if (params.images) {
+		draw_image_attachments(ctx, hot_widget_id, active_widget_id, *params.images, widget_id);
+		if (std::optional<image_attachment> pasted = ctx.take_image_paste(widget_id)) {
+			params.images->attachments.items.push_back(std::move(*pasted));
+		}
 	}
 
 	return modified;

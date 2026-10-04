@@ -7,9 +7,12 @@ The master record of what GSE verifies, how each check runs, and where the gaps 
 | Tier | Check | Where | How it runs | Verdict | Automated |
 |---|---|---|---|---|---|
 | Compile | `static_assert` blocks | `Math/Units/Units.cppm:468`, `Ecs/SystemManifest.cppm`, `Graphics/AssetTypes.cppm`, `Ecs/SharedView.cppm`, `Json/Value.cppm`, `Syntax/Lexer.cppm` and others | every compile | compile error | yes |
+| Compile | Lossy integer unit construction | `Math/Units/Quantity.cppm`, `internal::unit::operator()` | every compile | `static_assert`; names the remedy | yes |
 | Compile | Semantic token contract | `Editor/Tests/SemanticContract.cpp`, `Editor/Tests/CheckSemanticContract.cmake` | custom command on `gse_tokens_plugin` | build error | yes, every editor build |
 | Runtime | Math contracts (`pre`, `contract_assert`) | `gse.math`: vec/mat indexing, inverse, asin/acos, sqrt, fmod, look_at, perspective, orthographic, SIMD spans, rect/circle | Debug and RelWithDebInfo; `ignore` in Release | `assert_fail` exits 3 | only when a run hits one |
 | Runtime | `gse::assert` | everywhere | any run | logs `[Assertion Failure]`, exits 3 | only when a run hits one |
+| Unit | Units, vector/matrix/quaternion math, binary archive, bitstream and packet sequencing, ring buffers and work stealing | `Math/Tests/Units.cppm`, `Math/Tests/Math.cppm`, `Containers/Tests/Archive.cppm`, `Network/Tests/Net.cppm`, `Concurrency/Tests/Concurrency.cppm` | `Sandbox.exe --engine-test-all`, `--engine-test-tags units,math,archive,net,concurrency` | non-zero exit, `[error]` lines under the `test` category | yes, once wired to CI |
+| Violation | Math `pre` / `contract_assert` reporting | `Math/Tests/Contracts.cppm` | the same run re-launches the exe with `--engine-test-only <name>` per test | passes only when the child exits 3 and its report names the predicate | yes, once wired to CI |
 | Scenario | 60 annotated scenarios | `Sandbox/Source/Sandbox/Scenarios.cppm` | `Sandbox.exe --engine-bench-scenario <name>` | logs p50/p95/p99 and a world-state hash | no |
 | Scenario | Perf baseline | `Runtime/Bench.cpp:147` | `--engine-bench-update-baseline`, then a normal run | logs `REGRESSED` | no; the process still exits 0 |
 | Gate | CPU/GPU parity + determinism | `scripts/parity_gate.py` | `python scripts/parity_gate.py [--backend both]` | exits 1 on a `require` failure | no |
@@ -22,174 +25,97 @@ The master record of what GSE verifies, how each check runs, and where the gaps 
 
 ## Gaps
 
-- **No unit tier.** Nothing runs a function and compares its result. No `add_test` exists and no framework is vendored.
-- **Scenarios cannot fail.** `main` returns 0 after a baseline regression, a settle-cap abort or a stale coroutine. These only log at error level.
-- **Scenarios cannot observe.** `scenario::context` exposes `frame()` and `channels()`, so a scenario can push input but cannot read world state. `wait_until` is not built.
-- **Rollback pairs are never compared.** For each `rollback_reference` / `rollback_replay` pair, a matching hash is the pass condition, but nothing checks it.
-- **Contract violations are untested.** No test exercises a `pre` and checks that it is reported through `assert_fail`.
+- **No CI runs the tests.** Nothing invokes the suite, so a red test is only seen by whoever thinks to run it. This is the single change that would make every row below worth more.
+- **The unit tier covers `gse.math`, the binary archive, the network bitstream and the concurrent queues.** Nothing in the priority list below is written yet.
+- **The queue tests are soak tests, not proofs.** A publish-before-write or a lost steal is detected only if the interleaving happens to occur, so they are worth running under `--engine-test-repeat`; passing once says less than passing a hundred times.
+- **The violation tier has never run.** Contracts are `ignore` in Release, which is the configuration the editor's build row produces, so all eight report as skipped. They need a RelWithDebInfo run to mean anything.
+- **Scenarios can neither fail nor observe.** `main` returns 0 after a baseline regression, a settle-cap abort or a stale coroutine, and `scenario::context` exposes only `frame()` and `channels()`, so a scenario can push input but cannot read world state. See Verdict plumbing.
+- **Rollback pairs are never compared.** For each `rollback_reference` / `rollback_replay` pair, a matching hash is the pass condition, but nothing checks it. This is priority A item 1.
+- **Most math contracts still have no violation test.** `Contracts.cppm` covers eight predicates. `acos`, `orthographic`, `epsilon_equal_index`, `rotate`, the sixteen SIMD span contracts and `Circle.cppm` are untested. `rect_t`'s unconditionally-true `contract_assert` was deleted rather than tested.
 - **Stale docs.** `scenario_authoring.md:143,208` says a tripped assert hangs. It now exits 3.
 
-## Proposed framework: `gse.test`
+## Framework: `gse.test`
 
-This is a proposal and nothing below is built. It reuses what the engine already does: registration by reflection over annotated functions (the same shape as `gse.scenario` and the system manifest), argument parsing through `parse_args`, and failure reporting through `gse.log`. There are no macros and no DSL. A test is a plain function.
+Built. `Engine/Engine/Source/Test/Test.cppm` plus `Runner.cpp`. It reuses what the engine already does: registration by reflection over annotated functions (the same shape as `gse.scenario` and the system manifest), argument parsing through `parse_args`, and failure reporting through `gse.log` under the `test` category. There are no macros and no DSL. A test is a plain function taking `test::context&` and returning `void`, declared in a `Tests/` folder beside the code it covers. The test name comes from `identifier_of`, so it is never typed twice.
 
-Settled decisions:
-- **No exceptions.** Every check returns `bool`, and a test stops early with `if (!ctx.expect(...)) return;`. Code under test that returns `std::expected` is checked with `expect_value`, which prints the error when the check fails.
-- **Tests live next to their module**, in a `Tests/` folder beside the source: `Engine/Engine/Source/Math/Tests/`, `Editor/Editor/Source/Lint/Tests/`, `Sandbox/Sandbox/Source/Tests/`.
-- **Engine, editor and game all run tests** through one runner function. Each executable sweeps its own test namespaces.
+- `test::unit{ .tags, .needs_gpu, .isolated }` marks an in-process test; `test::violation{ .expect }` marks one that must end in a contract or `gse::assert` failure whose comment contains `.expect`.
+- Checks return `bool` so a test can stop early with `if (!ctx.expect(...)) return;`: `expect`, `expect_eq`, `expect_near`, `expect_value`, `expect_error`. Each is constrained on `std::formattable`, so quantities, vectors and matrices print through their own formatters and `expect_near` never strips units.
+- `test::registry<^^Ns>()` sweeps a namespace tree with `members_of`. There is no static-init registration, and the sweep must happen in the executable's own TU.
+- `test::run({ .tables, .options, .flag_prefix })` returns 0 on a pass and 1 on any failure. `test::config` is reflected into flags by `parse_args`: `filter`, `tags`, `only`, `list`, `repeat`.
+- A violation test and an `.isolated` test run out of process: the runner re-launches its own executable with `<prefix>-only <name>` through `gse::process::run_capture` and reads the child's captured output. A violation passes when the child exits 3 and that output names the predicate. In Release, where contracts are `ignore`, violation tests report as skipped.
+- A `.needs_gpu` test reports as skipped; nothing hands the runner a device yet.
 
-### Declaring tests
+`seed` is not implemented. Nothing randomises yet, so there is nothing for it to seed.
 
-A test module exports a namespace of annotated functions. The test name comes from `identifier_of`, so it is never typed twice.
+### Hooks
 
-```cpp
-export module gse.tests.math;
+`test::config` is a nested member of `engine_config`, so every executable that parses it gets `--engine-test-*` for free. `main` calls `test::run` and returns its code before the engine starts a window whenever `test::requested(config)` is true. Engine test modules are gathered by the `gse.tests` umbrella, so a consumer imports one module and sweeps `^^gse::tests`.
 
-import std;
+`GSETests` exists for the same sweep with no game attached, but the editor's build row only ever builds the game target, so nothing an agent can invoke compiles it. Until the build row can name it, `Sandbox.exe --engine-test-all` is the way the suite actually runs.
 
-import gse.math;
-import gse.test;
+| Executable | Sweeps | Invoked as | State |
+|---|---|---|---|
+| `Sandbox.exe` | `^^gse::tests` | `Sandbox.exe --engine-test-all`, `--engine-test-filter units` | built, and the only one the editor's build row produces |
+| `GSETests` | `^^gse::tests` | `GSETests --test-all` | target exists, never built |
+| `Editor.exe` | `^^gse::tests`, `^^gse::editor::tests` | `Editor.exe --engine-test-filter lint` | not wired |
 
-export namespace gse::tests::math {
-	[[= test::unit{}]] auto vec_dot_is_commutative(
-		test::context& ctx
-	) -> void;
 
-	[[= test::unit{ .tags = "units" }]] auto sqrt_of_area_is_length(
-		test::context& ctx
-	) -> void;
+## What is worth testing here
 
-	[[= test::violation{ .expect = "index < N" }]] auto vec_index_out_of_range(
-		test::context& ctx
-	) -> void;
-}
+Running the game is already a dense test of every reachable path with an observable symptom, and that covers most defects. A test earns its place only by reaching something the game does not:
 
-auto gse::tests::math::vec_dot_is_commutative(test::context& ctx) -> void {
-	const vec3f a{ 1.f, 2.f, 3.f };
-	const vec3f b{ 4.f, 5.f, 6.f };
-	ctx.expect_eq(dot(a, b), dot(b, a));
-}
+- **Silent wrongness.** The run succeeds and a value is quietly wrong. Determinism divergence, a mis-scaled conversion, a serialized field that reads back as something else.
+- **Counters that need years to wrap.** The ack bitfield desync needs 2^32 packets. No amount of playing reaches it.
+- **Failure paths.** The happy path runs every launch and the error path never, until a user's file is truncated or their JSON is malformed.
+- **Hostile interleavings.** A frame picks one thread ordering. It does not pick the adversarial one.
 
-auto gse::tests::math::sqrt_of_area_is_length(test::context& ctx) -> void {
-	const auto area = meters(3.f) * meters(3.f);
-	if (!ctx.expect(area > decltype(area){})) {
-		return;
-	}
-	ctx.expect_near(sqrt(area), meters(3.f), meters(1e-6f));
-}
+Before writing a test, check whether something stronger can state the same rule, because a test only fires when someone runs it:
 
-auto gse::tests::math::vec_index_out_of_range(test::context&) -> void {
-	vec3f v;
-	std::ignore = v[3];
-}
-```
+1. **Compile time.** The lossy-integer `static_assert` in `unit::operator()` retired a runtime test outright: it covers every call site that will ever exist and cannot be skipped. Prefer this always.
+2. **A contract.** `pre` and `contract_assert` check on every real run, including the game, not only under the runner.
+3. **One shared authority.** `sequence_more_recent` removed a whole bug class by leaving only one place where sequences are compared. A helper that makes the defect unwritable beats a test that detects it.
+4. **A test**, when none of the above can express it.
 
-### Pieces
-
-- **Annotations.**
-  - `test::unit{ .tags, .needs_gpu, .isolated }` marks an in-process test.
-  - `test::violation{ .expect }` marks a test that must end in a contract or `gse::assert` failure whose comment contains `.expect`.
-- **Checks.** Each check returns `bool` and, on failure, records the caller's `source_location` plus a message.
-  - `expect(cond)`
-  - `expect_eq(actual, expected)` prints both values through their `std::formatter`, so quantities, vectors and matrices print with their units.
-  - `expect_near(actual, expected, tolerance)` takes quantities as they are and never strips units.
-  - `expect_value(std::expected<T, E>)` fails and prints the error when the expected holds one.
-  - `expect_error(std::expected<T, E>)` fails when the expected holds a value.
-- **Registry.** `test::registry<^^Ns>()` sweeps a namespace recursively with `members_of`, the same way `scenario::registry` does. There is no static-init registration.
-- **Runner.** `test::run(tables, config) -> int` takes one or more registry spans. It returns 0 on a pass and 1 on any failure, and logs under a `test` category so `gse_log_query` can filter a run. Its flags come from a reflected `test::config` parsed by `parse_args`: `filter`, `tags`, `list`, `only`, `repeat`, `seed`.
-- **Out-of-process tests.**
-  - `assert_fail` ends in `_Exit(3)`, which is what production wants, so the runner never suppresses it.
-  - For violation tests and `.isolated` tests, the runner re-launches its own executable with `--test-only <name>`.
-  - A violation test passes when the child exits 3 and the child's log holds `.expect`.
-- **Headless by default.** A test with `.needs_gpu` gets a device, or is reported as skipped when there is none.
-
-### Hooking in the editor and the game
-
-Every sweep happens in the executable's own TU, as the Sandbox scenario sweep already does, since a namespace sweep cannot move into a module.
-
-| Executable | Sweeps | Invoked as |
-|---|---|---|
-| `GSETests` | `^^gse::tests` | `GSETests --test-filter math` |
-| `Editor.exe` | `^^gse::tests`, `^^gse::editor::tests` | `Editor.exe --test-filter lint` |
-| `Sandbox.exe` | `^^gse::tests`, `^^sandbox::tests` | `Sandbox.exe --engine-test-filter net` |
-
-`test::config` is a nested member of each executable's argument config. When any test flag is present, `main` calls `test::run` and returns its code before the engine starts a window. `GSETests` exists so engine tests build and run without the editor or a game.
-
-### Scenario tier
-
-Scenarios stay the integration tier and gain a verdict.
-
-- `scenario::context` gets the same `expect` family plus read-only world access. That also makes `wait_until(ctx, predicate)` possible.
-- `finish_bench` returns a status. `main` returns non-zero on a failed expectation, a settle-cap abort or a baseline regression.
-- `scenario::info` gets `.compare_with = "rollback_reference"`, which runs the paired scenario and requires equal world-state hashes. This covers the rollback pairs and the CPU/GPU identity half of `parity_gate.py`.
-- `parity_gate.py` keeps its positional and cascade checks until those move into scenarios as `expect_near` on state records.
+Tests also cost build time on a tree that is already critical-path bound, so fewer and sharper beats thorough.
 
 ## Priority list
 
-Order is by value per cost. The first criterion is whether the code has already broken once. The second is whether it runs headless with no GPU. Each item names the tier and the module whose `Tests/` folder it belongs in.
+### A: silent, and found late
 
-### P0: pure code, past regressions, runs anywhere
+1. **Rollback pairs** (scenario tier, `.compare_with`). Each `rollback_replay*` must match its reference hash. The pass condition already exists and nothing checks it, which makes this the largest unguarded correctness property in the engine.
+2. **CPU/GPU identity and run-to-run determinism** (scenario tier). The same scenario twice, and CPU against GPU, must produce one world-state hash. Retires the identity half of `parity_gate.py`.
+3. **State dump** (`Runtime/StateDump`). Write/read round trip, and a version mismatch is rejected rather than misread.
+4. **Settings scope split** (`Save`). A `project_scope` field lands in the project file and everything else in the user ini, both round-tripping against a temp root. Gets this wrong and a user's project silently loses settings.
+5. **Archive across a schema change** (`Containers/Archive`). Extends the existing round trip: a field added, removed and `archive_skip`ed still reads, and `skipped_fields()` reports it.
 
-1. **Units** (`Math/Units`, unit tier).
-   - Conversions round-trip.
-   - Dimension products hold at runtime as well as in the `static_assert`s.
-   - Integer-literal time does not wrap (`seconds(5)`).
-   - Mixed-unit multiply lands at the right scale.
-   - asin/acos/sqrt/fmod domain contracts.
-2. **Math contracts** (`Math`, violation tier). One test per `pre` and `contract_assert`: vec/mat indexing, matrix and quaternion inverse, look_at, perspective, orthographic, the SIMD span sizes, rect and circle. These also prove the `__tu_has_violation` bridge still routes to `assert_fail`.
-3. **Vector, matrix and quaternion math** (`Math`, unit tier).
-   - Inverse times the original is identity.
-   - Quaternion to matrix agrees with the direct matrix.
-   - The degenerate-input policy for normalize, project and angle_between (they return zero) is pinned.
-4. **Binary archive** (`Containers/Archive`, unit tier). Reflected structs round-trip, `archive_skip` is honoured, and a truncated payload is rejected rather than read.
-5. **Bitstream and packet header** (`Network`, unit tier). Bit-exact round trips, quantized fields, and a header sequence that wraps.
-6. **Ring buffers and the work-stealing queue** (`Concurrency`, unit tier, `.repeat` for stress).
-   - MPSC publish-after-write is the regression.
-   - Also SPSC order and steal/pop exclusivity.
-   - Threads come from `task::spawn`, never `std::thread`.
-7. **`parse_args`** (`Meta/Args`). Flag naming, `--no-` negation, clamp annotations, nested groups. Unknown-flag and bad-value exits run as isolated tests.
-8. **JSON** (`Json`, unit tier). Parse/write round trip, reflected structs, and malformed input returning an error rather than asserting.
-9. **Lexer and classifier** (`Syntax`, unit tier). Token kinds and `splice_position`. The editor's highlighting depends on them.
-10. **ID, slot map and flags** (`Core`, `Containers`, unit tier). Generation reuse, stale-handle rejection, and flag set algebra.
+### B: unreachable by playing
 
-### P1: engine logic, headless
+1. **ID and slot map** (`Core`, `Containers`). Generation reuse and stale-handle rejection. A stale handle that resolves is silent and arbitrarily delayed.
+2. **Reliable channel and peer liveness** (`Network`, loopback). A resend rebinds the sequence, a silent peer is reaped, a goodbye tears the peer down.
+3. **Malformed input returns an error** (`Json`, `Syntax`). Parsers must reject bad input rather than assert or read past the end.
+4. **Scheduler graph** (`Ecs`). Declared dependencies outrank derived ones — the cycle that used to assert — and an external resource has exactly one writer.
 
-1. **Scheduler graph** (`Ecs`, unit tier).
-   - Edges are derived from access.
-   - Declared dependencies outrank derived ones, which is the cycle that used to assert.
-   - An external resource has exactly one writer.
-2. **Settings scope split** (`Save`, unit tier). A `project_scope` field lands in the project file and everything else in the user ini. Both round-trip through `SaveSystem` against a temp root.
-3. **State dump** (`Runtime/StateDump`, unit tier). Write/read round trip, and a version mismatch is rejected.
-4. **Reliable channel and peer liveness** (`Network`, unit tier over a loopback endpoint).
-   - A resend rebinds the sequence.
-   - A silent peer is reaped.
-   - A goodbye tears the peer down.
-5. **Scenario verdicts** (scenario tier). The CPU pyramid and CPU parity scenarios give the same hash across two runs.
-6. **Rollback pairs** (scenario tier, `.compare_with`). Each `rollback_replay*` matches its reference hash.
+### C: cheap, narrow, keep if the cost stays low
 
-### P2: editor
+1. **GUI interaction policy** (engine GUI, headless `draw_context`). `clip_for(layer)` above and below `popup`, and `dismissed_by_outside_press` with `keep_open` and `suppressed`. Worth it despite the game exercising these, because the symptom of getting them wrong points at rendering rather than input.
+2. **`parse_args` exit paths only** (`Meta/Args`, isolated tier). Unknown flag and bad value exit 2. Kept mostly because they exercise the out-of-process runner without needing contracts enabled.
+3. **Build output parsing** (`Editor/BuildRunner`). SARIF display columns versus byte columns.
+4. **Markdown formatter idempotence** (`Editor`). `format(format(x))` equals `format(x)`.
+5. **Lint rules on fixture sources** (`Editor/Lint`).
 
-1. **Lint rules** (`Editor/Lint`, unit tier on fixture sources). Unused import following `[module.import]/7`, narrowable imports, redundant qualifiers in out-of-line scope, and unused-name placeholders.
-2. **Build output parsing** (`Editor/BuildRunner`, unit tier). SARIF display columns versus byte columns, and the inbox queue order.
-3. **GUI interaction policy** (engine GUI, unit tier on a headless `draw_context`).
-   - `clip_for(layer)` above and below `popup`.
-   - `dismissed_by_outside_press` with `keep_open` and `suppressed`.
-   - A press consumed by the first drawer.
-   - Font wrap honouring newlines.
-4. **Markdown format** (`Editor`, unit tier). The formatter is idempotent: format(format(x)) equals format(x).
+### Deliberately not tested
 
-### P3: GPU and game
+- **`parse_args` flag naming, `--no-` negation, nested groups.** Every editor and sandbox launch parses them; a break is immediate and loud.
+- **Common lexer token kinds.** The editor repaints them continuously.
+- **Further math identities.** Anything the renderer would scream about on frame one is already covered by running it. The existing math tests stay; no more are worth adding.
+- **Sandbox gameplay and `net_walk_*` with expectations.** The game is its own harness for these.
+- **Anything a `static_assert`, a contract, or a shared helper can state instead.** See the hierarchy above.
 
-1. **CPU/GPU identity** through `.compare_with`, retiring the identity checks in `parity_gate.py`.
-2. **Positional and cascade parity** moved from `parity_gate.py` into scenario `expect_near`.
-3. **Perf baselines** as scenario failures instead of log lines.
-4. **Sandbox gameplay and networking** (`sandbox::tests`, `net_walk_*` with expectations).
+## Verdict plumbing
 
-## Phases
+Independent of which tests exist, the checks below report into a log instead of failing a run. Fixing that is worth more than any new test, because an unread verdict is not a check:
 
-1. Build the `gse.test` module, `test::run` and `GSETests`, with P0 items 1–3 as the first consumers.
-2. Add the rest of P0, then the editor and Sandbox hooks.
-3. Scenario verdicts, `wait_until`, and P1 items 5–6.
-4. The rest of P1, then P2.
-5. P3 and a build-and-test CI workflow.
-
+1. Scenarios cannot fail. `finish_bench` returns a status, and `main` returns non-zero on a failed expectation, a settle-cap abort or a baseline regression.
+2. `scenario::context` gains the `expect` family and read-only world access, which also makes `wait_until(ctx, predicate)` possible. Priority A items 1 and 2 cannot be written until this exists.
+3. `scenario::info` gains `.compare_with = "rollback_reference"`, running the paired scenario and requiring equal world-state hashes. `parity_gate.py` keeps its positional and cascade checks until those move into scenarios as `expect_near` on state records.
+4. A build-and-test CI workflow, so a red test is seen without someone remembering to look.

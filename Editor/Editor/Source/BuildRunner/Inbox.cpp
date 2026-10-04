@@ -249,6 +249,12 @@ auto gse::ide::build_inbox::read_request(const std::filesystem::path& path) -> s
 		else if (key == "run") {
 			parsed.run = value == "1" || value == "true";
 		}
+		else if (key == "run_only") {
+			parsed.run_only = value == "1" || value == "true";
+		}
+		else if (key == "setting" && !value.empty()) {
+			parsed.settings.emplace_back(value);
+		}
 	}
 
 	if (parsed.id != path.stem().generic_display_string()) {
@@ -316,11 +322,15 @@ auto gse::ide::build_inbox::restore(const request& pending) -> void {
 		out << "agent " << pending.agent << '\n';
 		out << "target " << pending.target << '\n';
 		out << "run " << (pending.run ? '1' : '0') << '\n';
+		out << "run_only " << (pending.run_only ? '1' : '0') << '\n';
 		out << "tree " << pending.tree << '\n';
 		out << "profile " << pending.profile << '\n';
 		out << "config " << pending.config << '\n';
 		out << "cwd " << pending.cwd.generic_display_string() << '\n';
 		out << "project " << pending.project.generic_display_string() << '\n';
+		for (const std::string& assignment : pending.settings) {
+			out << "setting " << sanitize(assignment) << '\n';
+		}
 	}
 
 	std::filesystem::rename(staging, final_path, ec);
@@ -507,6 +517,84 @@ auto gse::ide::build_inbox::peek_package_requests() -> std::vector<package_reque
 
 		if (parsed.id.empty() || parsed.id != entry.path().stem().generic_display_string()) {
 			log::println(log::level::warning, log::category::task, "build inbox: '{}' is not a usable package request", entry.path());
+			std::filesystem::remove(entry.path(), ec);
+			continue;
+		}
+		out.push_back(std::move(parsed));
+	}
+	return out;
+}
+
+auto gse::ide::build_inbox::phases_dir() -> std::filesystem::path {
+	return directory() / "phases";
+}
+
+auto gse::ide::build_inbox::consume_phase_report(const std::string_view id) -> void {
+	std::error_code ec;
+	std::filesystem::remove(phases_dir() / (std::string(id) + ".txt"), ec);
+}
+
+auto gse::ide::build_inbox::peek_phase_reports() -> std::vector<phase_report> {
+	const std::filesystem::path dir = phases_dir();
+	std::error_code ec;
+	if (!std::filesystem::exists(dir, ec) || ec) {
+		return {};
+	}
+
+	const auto abandoned = std::chrono::minutes(5);
+
+	std::vector<phase_report> out;
+	for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(dir, std::filesystem::directory_options::skip_permission_denied, ec)) {
+		if (entry.path().extension() != ".txt") {
+			continue;
+		}
+
+		std::error_code stamp_ec;
+		const std::filesystem::file_time_type stamp = std::filesystem::last_write_time(entry.path(), stamp_ec);
+		if (!stamp_ec && std::filesystem::file_time_type::clock::now() - stamp > abandoned) {
+			log::println(log::level::warning, log::category::task, "build inbox: dropping '{}' - no editor claimed it, so no project here owns that chat", entry.path());
+			std::filesystem::remove(entry.path(), ec);
+			continue;
+		}
+
+		phase_report parsed;
+		bool in_summary = false;
+		{
+			std::ifstream in(entry.path(), std::ios::binary);
+			std::string line;
+			while (in && std::getline(in, line)) {
+				if (!line.empty() && line.back() == '\r') {
+					line.pop_back();
+				}
+				if (in_summary) {
+					if (!parsed.summary.empty()) {
+						parsed.summary += '\n';
+					}
+					parsed.summary += line;
+					continue;
+				}
+				if (line == "summary") {
+					in_summary = true;
+					continue;
+				}
+				const auto [key, value] = split_field(line);
+				if (key == "id") {
+					parsed.id.assign(value);
+				}
+				else if (key == "agent") {
+					parsed.agent.assign(value);
+				}
+				else if (key == "cwd") {
+					parsed.cwd.assign(value);
+				}
+				else if (key == "findings") {
+					std::from_chars(value.data(), value.data() + value.size(), parsed.findings);
+				}
+			}
+		}
+
+		if (parsed.id.empty() || parsed.agent.empty() || parsed.id != entry.path().stem().generic_display_string()) {
+			log::println(log::level::warning, log::category::task, "build inbox: '{}' is not a usable phase report", entry.path());
 			std::filesystem::remove(entry.path(), ec);
 			continue;
 		}
