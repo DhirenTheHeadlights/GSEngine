@@ -9,6 +9,7 @@ export namespace gse {
 		init,
 		run,
 		frame,
+		persist,
 		shutdown,
 	};
 
@@ -35,6 +36,8 @@ export namespace gse {
 	};
 
 	struct system_frame {};
+
+	struct system_persist {};
 
 	struct system_shutdown {};
 
@@ -107,7 +110,7 @@ export namespace gse::meta {
 consteval auto gse::meta::find_system_hook_anno(const std::meta::info fn) -> std::meta::info {
 	for (const auto ann : std::meta::annotations_of(fn)) {
 		const auto t = std::meta::remove_cvref(std::meta::dealias(std::meta::type_of(ann)));
-		if (t == ^^system_init || t == ^^system_frame || t == ^^system_shutdown) {
+		if (t == ^^system_init || t == ^^system_frame || t == ^^system_persist || t == ^^system_shutdown) {
 			return t;
 		}
 		if (std::meta::has_template_arguments(t) && std::meta::template_of(t) == ^^system_run) {
@@ -135,6 +138,9 @@ consteval auto gse::meta::hook_kind_of(const std::meta::info hook_anno_type) -> 
 	}
 	if (hook_anno_type == ^^system_frame) {
 		return system_hook::frame;
+	}
+	if (hook_anno_type == ^^system_persist) {
+		return system_hook::persist;
 	}
 	if (hook_anno_type == ^^system_shutdown) {
 		return system_hook::shutdown;

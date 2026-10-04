@@ -33,15 +33,6 @@ export namespace gse::physics {
 		float damping = 0.5f;
 	};
 
-	struct muscle_joint {
-		vec3<displacement> anchor_a;
-		vec3<displacement> anchor_b;
-		length rest_length;
-		inverse_mass compliance = per_kilograms(0.001f);
-		float damping = 2.5f;
-		force max_force = newtons(3200.f);
-	};
-
 	struct ball_joint {
 		vec3<displacement> anchor_a;
 		vec3<displacement> anchor_b;
@@ -54,7 +45,7 @@ export namespace gse::physics {
 		vec3f twist_axis = { 0.f, 1.f, 0.f };
 	};
 
-	using joint_config = std::variant<fixed_joint, distance_joint, hinge_joint, slider_joint, spring_joint, muscle_joint, ball_joint, universal_joint>;
+	using joint_config = std::variant<fixed_joint, distance_joint, hinge_joint, slider_joint, spring_joint, ball_joint, universal_joint>;
 
 	struct joint_spec {
 		[[= networked]] id entity_a;

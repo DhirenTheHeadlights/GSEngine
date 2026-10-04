@@ -66,16 +66,14 @@ export namespace gse::ide {
 			std::optional<vec2f> pending_panels_menu;
 			id panels_menu_window;
 			cursor_shape frame_cursor = cursor_shape::arrow;
-			bool layout_dirty = false;
 			bool game_panel_open = false;
-			std::optional<dock_anchor> game_anchor;
+			std::unordered_map<id, dock_anchor> anchors;
 			std::string session_error;
 			bool session_dismissed = false;
 			std::vector<dock_popout> popout_queue;
 			std::vector<dock_window_layout> pending_restores;
 			std::vector<pending_popout> pending_popouts;
 			std::vector<id> pending_window_closes;
-			clock save_clock;
 		};
 
 		[[= system_run<>{}]]
@@ -91,9 +89,9 @@ export namespace gse::ide {
 			const save::registry& save_reg
 		) -> async::task<>;
 
-		[[= system_shutdown{}]]
-		auto shutdown(
-			data& d
+		[[= system_persist{}]]
+		auto persist(
+			const data& d
 		) -> void;
 	}
 
@@ -122,7 +120,6 @@ export namespace gse::ide {
 			profile_source profile_source_sent = profile_source::editor;
 			bool game_input_forwarding = false;
 			session_view_state session_view;
-			clock save_clock;
 		};
 
 		[[= system_run<>{}]]
@@ -140,6 +137,11 @@ export namespace gse::ide {
 			shared_view<window::data> window_d,
 			shared_view<profile_system::data> profile_d
 		) -> async::task<>;
+
+		[[= system_persist{}]]
+		auto persist(
+			const data& d
+		) -> void;
 
 		[[= system_shutdown{}]]
 		auto shutdown(
@@ -159,11 +161,9 @@ namespace gse::ide {
 	constexpr std::string_view lint_panel_name = "Lints";
 	constexpr std::string_view source_control_panel_name = "Source Control";
 	constexpr std::string_view game_panel_name = "Game";
-	constexpr std::string_view game_anchor_section = "game panel";
 	constexpr std::string_view server_quadrant_name = "Server";
 	constexpr std::array<std::string_view, 3> client_quadrant_names{ "Client 1", "Client 2", "Client 3" };
 	constexpr float server_strip_ratio = 0.25f;
-	constexpr time editor_layout_save_interval = seconds(30.f);
 	constexpr time system_graph_retry_interval = milliseconds(100.f);
 	constexpr std::uint32_t system_graph_max_attempts = 100;
 
@@ -186,6 +186,18 @@ namespace gse::ide {
 		std::span<const panel_desc> panels,
 		bool resettable
 	) -> std::vector<gui::menu_item>;
+
+	auto close_panel(
+		editor_app::data& d,
+		dock_view& v,
+		id panel
+	) -> void;
+
+	auto reopen_panel(
+		editor_app::data& d,
+		dock_view& fallback,
+		const dock_insert& otherwise
+	) -> void;
 
 	auto toggle_panel(
 		editor_app::data& d,
@@ -690,41 +702,19 @@ auto gse::ide::build_session_tree(const build_runner::play_session& session) -> 
 }
 
 auto gse::ide::open_session_layout(editor_app::data& d) -> void {
-	dock_tree& tree = primary_view(d).tree;
-	const id game = find_or_generate_id(game_panel_name);
-	if (contains_panel(tree, game)) {
-		return;
-	}
-
-	const id anchored = d.game_anchor ? lowest_common_node(tree, d.game_anchor->panels) : id{};
-	if (anchored.exists()) {
-		insert_panel(tree, {
-			.panel = game,
-			.target = anchored,
-			.location = d.game_anchor->location,
-			.ratio = d.game_anchor->ratio,
-		});
-	}
-	else {
-		insert_panel(tree, {
-			.panel = game,
-			.target = any_leaf(tree),
-			.location = gui::dock::location::right,
-			.ratio = 0.5f,
-		});
-	}
-	activate_panel(tree, game);
-	d.layout_dirty = true;
+	reopen_panel(d, primary_view(d), {
+		.panel = find_or_generate_id(game_panel_name),
+		.target = any_leaf(primary_view(d).tree),
+		.location = gui::dock::location::right,
+		.ratio = 0.5f,
+	});
 }
 
 auto gse::ide::close_session_layout(editor_app::data& d) -> void {
-	dock_tree& tree = primary_view(d).tree;
-	const id game = find_or_generate_id(game_panel_name);
-	if (!contains_panel(tree, game)) {
-		return;
+	dock_view& primary = primary_view(d);
+	if (const id game = find_or_generate_id(game_panel_name); contains_panel(primary.tree, game)) {
+		close_panel(d, primary, game);
 	}
-	remove_panel(tree, game);
-	d.layout_dirty = true;
 }
 
 
@@ -764,35 +754,7 @@ auto gse::ide::load_editor_layout(editor_app::data& d) -> void {
 	});
 
 	d.pending_restores.clear();
-	d.game_anchor.reset();
-	for (const layout_store::section& section : sections) {
-		if (section.name != game_anchor_section) {
-			continue;
-		}
-		const auto panels_it = section.values.find("panels");
-		if (panels_it == section.values.end()) {
-			break;
-		}
-		const auto panels = editor_panels();
-		dock_anchor anchor;
-		for (const auto& part : std::views::split(std::string_view(panels_it->second), ',')) {
-			const auto desc = std::ranges::find(panels, std::string_view(part), &panel_desc::name);
-			if (desc != panels.end()) {
-				anchor.panels.push_back(desc->id);
-			}
-		}
-		if (anchor.panels.empty()) {
-			break;
-		}
-		if (const auto it = section.values.find("location"); it != section.values.end()) {
-			enum_from_string(it->second, anchor.location);
-		}
-		if (const auto it = section.values.find("ratio"); it != section.values.end()) {
-			anchor.ratio = std::clamp(parse_layout_float(it->second, 0.5f), 0.05f, 0.95f);
-		}
-		d.game_anchor = anchor;
-		break;
-	}
+	d.anchors = deserialize_anchors(sections, editor_panels());
 
 	if (!restored) {
 		return;
@@ -832,24 +794,9 @@ auto gse::ide::save_editor_layout(const editor_app::data& d) -> void {
 		windows.push_back(pending);
 	}
 
-	std::string anchor;
-	if (d.game_anchor) {
-		std::string names;
-		for (const id panel : d.game_anchor->panels) {
-			if (!names.empty()) {
-				names.push_back(',');
-			}
-			names.append(panel.tag());
-		}
-		anchor.append(std::format("\n[{}]\n", game_anchor_section));
-		anchor.append(std::format("panels = {}\n", names));
-		anchor.append(std::format("location = {}\n", enum_to_string(d.game_anchor->location)));
-		anchor.append(std::format("ratio = {}\n", d.game_anchor->ratio));
-	}
-
 	replace_layout_sections(
 		editor_layout_owner(),
-		serialize_tree(primary_view(d).tree, editor_panels(), primary_tree_sections()) + serialize_windows(windows, editor_panels()) + anchor
+		serialize_tree(primary_view(d).tree, editor_panels(), primary_tree_sections()) + serialize_windows(windows, editor_panels()) + serialize_anchors(d.anchors, editor_panels())
 	);
 }
 
@@ -910,25 +857,55 @@ auto gse::ide::panels_menu_items(const dock_tree& tree, const std::span<const pa
 	return items;
 }
 
-auto gse::ide::toggle_panel(editor_app::data& d, dock_view& v, const id panel) -> void {
-	if (contains_panel(v.tree, panel)) {
-		if (panel_count(v.tree) <= 1 && !is_popout(v)) {
-			return;
-		}
-		remove_panel(v.tree, panel);
-		if (is_popout(v) && panel_count(v.tree) == 0) {
-			d.pending_window_closes.push_back(v.window);
+auto gse::ide::close_panel(editor_app::data& d, dock_view& v, const id panel) -> void {
+	if (const std::optional<dock_anchor> anchor = anchor_of(v.tree, panel)) {
+		d.anchors.insert_or_assign(panel, *anchor);
+	}
+	remove_panel(v.tree, panel);
+	if (is_popout(v) && panel_count(v.tree) == 0) {
+		d.pending_window_closes.push_back(v.window);
+	}
+}
+
+auto gse::ide::reopen_panel(editor_app::data& d, dock_view& fallback, const dock_insert& otherwise) -> void {
+	const id panel = otherwise.panel;
+	if (std::ranges::any_of(d.views, [panel](const dock_view& v) {
+		return contains_panel(v.tree, panel);
+	})) {
+		return;
+	}
+
+	const auto remembered = d.anchors.find(panel);
+	if (const std::optional<dock_anchor> anchor = remembered != d.anchors.end() ? std::optional(remembered->second) : anchor_of(default_editor_tree(), panel)) {
+		for (dock_view& v : d.views) {
+			if (const id target = lowest_common_node(v.tree, anchor->panels); target.exists()) {
+				insert_panel(v.tree, {
+					.panel = panel,
+					.target = target,
+					.location = anchor->location,
+					.ratio = anchor->ratio,
+				});
+				activate_panel(v.tree, panel);
+				return;
+			}
 		}
 	}
-	else {
-		insert_panel(v.tree, {
+
+	insert_panel(fallback.tree, otherwise);
+	activate_panel(fallback.tree, panel);
+}
+
+auto gse::ide::toggle_panel(editor_app::data& d, dock_view& v, const id panel) -> void {
+	if (!contains_panel(v.tree, panel)) {
+		reopen_panel(d, v, {
 			.panel = panel,
 			.target = any_leaf(v.tree),
 			.location = gui::dock::location::center,
 		});
-		activate_panel(v.tree, panel);
 	}
-	d.layout_dirty = true;
+	else if (panel_count(v.tree) > 1 || is_popout(v)) {
+		close_panel(d, v, panel);
+	}
 }
 
 auto gse::ide::apply_pending_panel_close(gui::viewport_state& vp, editor_app::data& d, dock_view& v) -> void {
@@ -949,15 +926,9 @@ auto gse::ide::apply_pending_panel_close(gui::viewport_state& vp, editor_app::da
 	}
 
 	vp.pending_tab_close.reset();
-	if (panel_count(v.tree) <= 1 && !is_popout(v)) {
-		return;
+	if (panel_count(v.tree) > 1 || is_popout(v)) {
+		close_panel(d, v, *panel);
 	}
-
-	remove_panel(v.tree, *panel);
-	if (is_popout(v) && panel_count(v.tree) == 0) {
-		d.pending_window_closes.push_back(v.window);
-	}
-	d.layout_dirty = true;
 }
 
 auto gse::ide::detach_panel_to_window(gui::viewport_state& vp, editor_app::data& d, dock_popout where) -> void {
@@ -1043,8 +1014,6 @@ auto gse::ide::apply_dock_landing(editor_app::data& d, dock_view& from, const do
 			d.pending_window_closes.push_back(from.window);
 		}
 	}
-
-	d.layout_dirty = true;
 }
 
 auto gse::ide::sync_dock_menus(gui::viewport_state& vp, editor_app::data& d, dock_view& v) -> void {
@@ -1175,7 +1144,6 @@ auto gse::ide::update_dock_interaction(gui::data& s, gui::viewport_state& vp, ed
 			v.tree.maximized = node->panels[node->active_panel];
 		}
 		v.layout = resolve(v.tree, v.frame, metrics, panels);
-		d.layout_dirty = true;
 	}
 
 	if (d.pending_panels_menu && d.panels_menu_window == v.window) {
@@ -1234,7 +1202,7 @@ auto gse::ide::update_dock_interaction(gui::data& s, gui::viewport_state& vp, ed
 		else if (d.drag->torn && !d.cursor_window && panel_count(v.tree) > carried.size()) {
 			dock_tree detached;
 			for (const id panel : carried) {
-				remove_panel(v.tree, panel);
+				close_panel(d, v, panel);
 				insert_panel(detached, { .panel = panel });
 			}
 			activate_panel(detached, d.drag->panel);
@@ -1247,7 +1215,6 @@ auto gse::ide::update_dock_interaction(gui::data& s, gui::viewport_state& vp, ed
 					static_cast<int>(std::max(v.frame.height() * 0.5f, 320.f)),
 				},
 			});
-			d.layout_dirty = true;
 		}
 
 		v.layout = resolve(v.tree, v.frame, metrics, panels);
@@ -1413,7 +1380,6 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 			return {};
 		}
 		load_editor_layout(d);
-		d.save_clock.reset();
 		d.initialized = true;
 	}
 
@@ -1441,11 +1407,6 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 		open_session_layout(d);
 	}
 	d.game_panel_open = contains_panel(primary_view(d).tree, find_or_generate_id(game_panel_name));
-	if (d.game_panel_open) {
-		if (const auto anchor = anchor_of(primary_view(d).tree, find_or_generate_id(game_panel_name))) {
-			d.game_anchor = anchor;
-		}
-	}
 
 	if (!session_live && !build_d.building_session && d.session_error.empty()) {
 		close_session_layout(d);
@@ -1489,7 +1450,6 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 				return std::ranges::find(opened, panel) != opened.end();
 			});
 		});
-		d.layout_dirty = true;
 	}
 
 	for (const auto& req : requests_in.of<window_popout_failed>()) {
@@ -1508,17 +1468,12 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 			std::erase_if(d.pending_restores, [panel](const dock_window_layout& pending) {
 				return contains_panel(pending.tree, panel);
 			});
-			if (contains_panel(primary_view(d).tree, panel)) {
-				continue;
-			}
-			insert_panel(primary_view(d).tree, {
+			reopen_panel(d, primary_view(d), {
 				.panel = panel,
 				.target = {},
 				.location = gui::dock::location::center,
 			});
-			activate_panel(primary_view(d).tree, panel);
 		}
-		d.layout_dirty = true;
 	}
 
 	std::vector<id> minimized;
@@ -1572,14 +1527,12 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 		const std::vector<id> orphans = panels_of(view->tree);
 		d.views.erase(view);
 		for (const id panel : orphans) {
-			insert_panel(primary_view(d).tree, {
+			reopen_panel(d, primary_view(d), {
 				.panel = panel,
 				.target = {},
 				.location = gui::dock::location::center,
 			});
-			activate_panel(primary_view(d).tree, panel);
 		}
-		d.layout_dirty = true;
 	}
 
 	for (const auto& req : requests_in.of<open_panels_menu_request>()) {
@@ -1598,7 +1551,6 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 		}
 		if (res.action_id == reset_layout_action) {
 			scope->tree = default_editor_tree();
-			d.layout_dirty = true;
 		}
 		else if (res.action_id < registry.size()) {
 			toggle_panel(d, *scope, registry[res.action_id].id);
@@ -1616,7 +1568,6 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 		}
 		else {
 			activate_panel(host.tree, code);
-			d.layout_dirty = true;
 		}
 		ui_out.push<window_focus_request>({
 			.window = host.window,
@@ -1700,12 +1651,6 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 		ui_out.push<set_cursor_shape_request>({ .shape = d.frame_cursor });
 	}
 
-	if (d.layout_dirty || d.save_clock.elapsed() > editor_layout_save_interval) {
-		save_editor_layout(d);
-		d.layout_dirty = false;
-		d.save_clock.reset();
-	}
-
 	return {};
 }
 
@@ -1727,7 +1672,6 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 		if (!d.ws.cppref.loaded) {
 			d.ws.cppref.load(config::cppref_index());
 		}
-		d.save_clock.reset();
 		d.initialized = true;
 	}
 
@@ -2036,25 +1980,23 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 		}
 	}
 
-	if (d.save_clock.elapsed() > editor_layout_save_interval) {
-		save_workspace_layout(d.ws);
-		d.save_clock.reset();
-	}
-
 	return {};
 }
 
-auto gse::ide::editor_app::shutdown(data& d) -> void {
+auto gse::ide::editor_app::persist(const data& d) -> void {
 	if (!d.initialized) {
 		return;
 	}
 	save_editor_layout(d);
 }
 
-auto gse::ide::workspace_system::shutdown(data& d) -> void {
-	workspace::save_dirty_documents(d.ws);
+auto gse::ide::workspace_system::persist(const data& d) -> void {
 	if (!d.initialized) {
 		return;
 	}
 	save_workspace_layout(d.ws);
+}
+
+auto gse::ide::workspace_system::shutdown(data& d) -> void {
+	workspace::save_dirty_documents(d.ws);
 }

@@ -371,6 +371,12 @@ auto gse::engine::update() -> void {
 
 	m_scheduler.update();
 
+	if (const time persist_interval = seconds(1.f); m_persist_clock.elapsed() > persist_interval) {
+		m_scheduler.persist();
+		m_save.save_now();
+		m_persist_clock.reset();
+	}
+
 	const auto* physics_state = m_scheduler.try_state_of<physics::data>();
 	const bool gpu_solver = physics_state && physics_state->use_gpu_solver;
 	if (!m_config.render && (gpu_solver || m_headless_gpu)) {

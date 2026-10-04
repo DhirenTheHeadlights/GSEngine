@@ -43,6 +43,15 @@ auto gse::vbd::gpu_solver::ensure_ring(gpu::device& device, const std::uint32_t 
 			},
 			"vbd.ring.joints"
 		);
+		slot.muscles = device.create_buffer(
+			{
+				.size = std::max<std::size_t>(m_capacities.max_muscles * sizeof(muscle_constraint), 16),
+				.stride = sizeof(muscle_constraint),
+				.usage = ring_usage,
+				.device_local = true
+			},
+			"vbd.ring.muscles"
+		);
 		slot.contacts = device.create_buffer(
 			{
 				.size = m_capacities.ring_max_contacts * sizeof(contact_constraint),
@@ -107,6 +116,9 @@ auto gse::vbd::gpu_solver::stage_ring_copy(per_frame_data& f, const std::uint64_
 	if (m_joint_count > 0) {
 		rec.copy_buffer(m_joint_buffer, slot.joints, m_joint_count * sizeof(joint_constraint));
 	}
+	if (m_muscle_count > 0) {
+		rec.copy_buffer(m_muscle_buffer, slot.muscles, m_muscle_count * sizeof(muscle_constraint));
+	}
 	rec.copy_buffer(f.contact_buffer, slot.contacts, m_capacities.ring_max_contacts * sizeof(contact_constraint));
 	rec.copy_buffer(f.contact_counts_buffer, slot.contact_counts, m_body_count * sizeof(std::uint32_t));
 	rec.copy_buffer(f.contact_offsets_buffer, slot.contact_offsets, m_body_count * sizeof(std::uint32_t));
@@ -133,6 +145,9 @@ auto gse::vbd::gpu_solver::stage_ring_restore(per_frame_data& f, per_frame_data&
 	rec.copy_buffer(slot.bodies, m_body_buffer, m_body_count * sizeof(body_state));
 	if (m_joint_count > 0) {
 		rec.copy_buffer(slot.joints, m_joint_buffer, m_joint_count * sizeof(joint_constraint));
+	}
+	if (m_muscle_count > 0) {
+		rec.copy_buffer(slot.muscles, m_muscle_buffer, m_muscle_count * sizeof(muscle_constraint));
 	}
 	rec.copy_buffer(slot.contacts, other.contact_buffer, m_capacities.ring_max_contacts * sizeof(contact_constraint));
 	rec.copy_buffer(slot.contacts, other.warm_start_buffer, m_capacities.ring_max_contacts * sizeof(contact_constraint));

@@ -24,7 +24,7 @@ export namespace gse::vbd {
 		std::uint32_t z;
 	};
 
-	using shader_types = type_pack<vbd_limits, joint_type, solver_config, body_state, contact_constraint, velocity_motor_constraint, joint_constraint, joint_drive_input, impulse_constraint, frozen_jacobian, dispatch_args>;
+	using shader_types = type_pack<vbd_limits, muscle_curves, joint_type, solver_config, body_state, contact_constraint, velocity_motor_constraint, joint_constraint, joint_drive_input, muscle_constraint, muscle_path_point, impulse_constraint, frozen_jacobian, dispatch_args>;
 
 	struct vbd_solve_chain {};
 
@@ -87,6 +87,11 @@ export namespace gse::vbd {
 		std::span<const velocity_motor_constraint> motors;
 		std::span<const joint_constraint> joints;
 		std::span<const joint_drive_input> joint_inputs;
+		std::span<const muscle_constraint> muscles;
+		std::span<const muscle_path_point> muscle_points;
+		std::span<const float> muscle_excitations;
+		std::span<const std::uint32_t> hull_data;
+		std::uint64_t hull_generation = 0;
 		std::span<const impulse_constraint> impulses;
 		solver_config solver_cfg;
 		time_step dt{};
@@ -548,6 +553,10 @@ export namespace gse::vbd {
 		gpu::buffer m_body_buffer;
 		gpu::bindless_handle m_body_alt_view;
 		gpu::buffer m_joint_buffer;
+		gpu::buffer m_muscle_buffer;
+		gpu::buffer m_muscle_path_buffer;
+		gpu::buffer m_muscle_excitation_buffer;
+		gpu::buffer m_hull_buffer;
 		per_frame_resource<per_frame_data> m_frames{ per_frame_data{}, per_frame_data{} };
 		const gpu::frame* m_frame = nullptr;
 		std::uint32_t m_dispatch_slot = 0;
@@ -575,6 +584,10 @@ export namespace gse::vbd {
 		gpu::upload_channel m_joint_upload_channel;
 		gpu::upload_channel m_joint_drive_input_channel;
 		gpu::upload_channel m_joint_drive_input_index_channel;
+		gpu::upload_channel m_muscle_upload_channel;
+		gpu::upload_channel m_muscle_path_upload_channel;
+		gpu::upload_channel m_muscle_excitation_upload_channel;
+		gpu::upload_channel m_hull_upload_channel;
 
 		gpu::readback_channel m_snapshot_channel;
 		gpu::readback_channel m_body_snapshot_channel;
@@ -597,6 +610,7 @@ export namespace gse::vbd {
 		std::uint32_t m_body_count = 0;
 		std::uint32_t m_motor_count = 0;
 		std::uint32_t m_joint_count = 0;
+		std::uint32_t m_muscle_count = 0;
 		std::uint32_t m_color_launch_hint = 0;
 		std::uint32_t m_island_count = 0;
 		std::uint32_t m_jointless_body_count = 0;
@@ -615,6 +629,11 @@ export namespace gse::vbd {
 		std::vector<joint_drive_input> m_applied_joint_inputs;
 		std::vector<std::vector<std::uint32_t>> m_joint_input_scan;
 		std::vector<std::uint32_t> m_joint_slots;
+		std::vector<muscle_constraint> m_upload_muscles;
+		std::vector<muscle_path_point> m_upload_muscle_points;
+		std::vector<float> m_upload_muscle_excitations;
+		std::vector<std::uint32_t> m_upload_hull_data;
+		std::uint64_t m_uploaded_hull_generation = 0;
 		std::vector<impulse_constraint> m_upload_impulses;
 		std::vector<std::uint32_t> m_upload_motor_map;
 		std::vector<std::uint32_t> m_upload_jointed_pairs;
@@ -636,10 +655,14 @@ export namespace gse::vbd {
 		std::uint32_t m_topology_largest_island = 0;
 		bool m_upload_joints_dirty = false;
 		bool m_upload_joint_inputs_dirty = false;
+		bool m_upload_muscles_dirty = false;
+		bool m_upload_muscle_excitations_dirty = false;
+		bool m_upload_hulls_dirty = false;
 
 		struct ring_slot {
 			gpu::buffer bodies;
 			gpu::buffer joints;
+			gpu::buffer muscles;
 			gpu::buffer contacts;
 			gpu::buffer contact_counts;
 			gpu::buffer contact_offsets;

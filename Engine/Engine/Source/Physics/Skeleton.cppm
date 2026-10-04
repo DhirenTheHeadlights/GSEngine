@@ -5,6 +5,7 @@ import std;
 import :bounding_box;
 import :convex_hull;
 import :joint_spec;
+import :muscle_component;
 
 import gse.math;
 import gse.meta;
@@ -27,13 +28,14 @@ export namespace gse::physics {
 		joint_config config;
 	};
 
+	struct muscle_point {
+		std::uint16_t bone = no_bone;
+		vec3<displacement> local_point;
+	};
+
 	struct muscle {
-		std::uint16_t bone_a = no_bone;
-		std::uint16_t bone_b = no_bone;
-		vec3<displacement> anchor_a;
-		vec3<displacement> anchor_b;
-		length rest_length;
-		force max_force = newtons(3200.f);
+		std::vector<muscle_point> path;
+		muscle_properties properties;
 	};
 
 	struct skeleton {

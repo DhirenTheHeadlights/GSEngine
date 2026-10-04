@@ -37,6 +37,11 @@ export namespace gse {
 		)(
 			void*
 		) = nullptr;
+		void (
+			*invoke_persist_fn
+		)(
+			const void*
+		) = nullptr;
 		auto (
 			*invoke_run_fn
 		)(

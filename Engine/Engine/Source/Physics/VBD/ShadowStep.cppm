@@ -62,6 +62,7 @@ export namespace gse::physics::shadow_step {
 		bool conflict_reported = false;
 		std::vector<pending_step> pending;
 		std::vector<joint_definition> joints;
+		std::vector<muscle_definition> muscles;
 		vbd::gpu_solver solver;
 	};
 

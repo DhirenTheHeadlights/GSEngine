@@ -109,13 +109,12 @@ auto gse::ide::search_system::frame(const context& ctx, data& d, const channel_r
 		}
 		if (build_runner::is_build_source(path)) {
 			std::error_code time_ec;
-			const std::filesystem::file_time_type mtime = std::filesystem::last_write_time(path, time_ec);
-			if (!time_ec) {
-				events_out.push<build_runner::source_changed>({
-					.path = path,
-					.mtime = static_cast<std::int64_t>(mtime.time_since_epoch().count()),
-				});
-			}
+			const std::filesystem::file_time_type written = std::filesystem::last_write_time(path, time_ec);
+			const std::filesystem::file_time_type mtime = time_ec ? std::filesystem::file_time_type::clock::now() : written;
+			events_out.push<build_runner::source_changed>({
+				.path = path,
+				.mtime = static_cast<std::int64_t>(mtime.time_since_epoch().count()),
+			});
 		}
 	}
 	for (const auto& req : requests_in.of<search::index_file_update_request>()) {

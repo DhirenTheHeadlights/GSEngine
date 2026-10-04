@@ -314,6 +314,20 @@ export namespace gse::inline quantities {
 	template <typename T = float, auto... U> using angular_stiffness_t = internal::quantity_t<angular_stiffness_tag, T, U...>;
 	using angular_stiffness = angular_stiffness_t<>;
 
+	struct [[= internal::quantity_root<^^internal::dimi<0, 0, 0, -1>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "1/rad">]] inverse_angle_tag {};
+
+	constexpr internal::unit<inverse_angle_tag, std::ratio<1>, "1/rad"> per_radian;
+
+	template <typename T = float, auto... U> using inverse_angle_t = internal::quantity_t<inverse_angle_tag, T, U...>;
+	using inverse_angle = inverse_angle_t<>;
+
+	struct [[= internal::quantity_root<^^internal::dimi<0, 1, 0, -1>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "s/rad">]] inverse_angular_velocity_tag {};
+
+	constexpr internal::unit<inverse_angular_velocity_tag, std::ratio<1>, "s/rad"> seconds_per_radian;
+
+	template <typename T = float, auto... U> using inverse_angular_velocity_t = internal::quantity_t<inverse_angular_velocity_tag, T, U...>;
+	using inverse_angular_velocity = inverse_angular_velocity_t<>;
+
 	struct [[= internal::quantity_root<^^internal::dimi<1, 0, 0, -1>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "m/rad">]] angular_jacobian_tag {};
 
 	constexpr internal::unit<angular_jacobian_tag, std::ratio<1>, "m/rad"> meters_per_radian;

@@ -59,6 +59,10 @@ export namespace gse {
 		binding b
 	) -> std::string;
 
+	auto bindings_to_string(
+		std::span<const binding> list
+	) -> std::string;
+
 	auto key_binding(
 		key k,
 		key_modifiers mods = {}
@@ -126,6 +130,7 @@ export namespace gse::actions {
 		std::string label;
 		std::string group;
 		bool hidden = false;
+		std::vector<binding> bound;
 
 	private:
 		std::uint16_t m_bit_index{};
@@ -404,6 +409,7 @@ export namespace gse::actions {
 		bindings resolved;
 		[[= shared]] std::vector<std::uint16_t> axis1_ids_cache;
 		[[= shared]] std::vector<std::uint16_t> axis2_ids_cache;
+		[[= shared]] std::uint64_t binding_revision = 0;
 	};
 
 	auto adopt_declarations(
@@ -467,6 +473,11 @@ export namespace gse::actions {
 		shared_view<data> d,
 		id action_id
 	) -> const description*;
+
+	auto binding_text(
+		shared_view<data> d,
+		handle h
+	) -> std::string;
 
 	auto rebinds_map(
 		data& d
@@ -1148,11 +1159,16 @@ auto gse::actions::description_of(const shared_view<data> d, const id action_id)
 	return d.descriptions.try_get(action_id);
 }
 
+auto gse::actions::binding_text(const shared_view<data> d, const handle h) -> std::string {
+	const auto* desc = description_of(d, h.id());
+	return bindings_to_string(desc ? std::span<const binding>(desc->bound) : std::span<const binding>());
+}
+
 auto gse::actions::finalize_bindings(data& d) -> void {
 	d.resolved = {};
 
 	for (const auto& [defaults, action_id] : d.pending_actions) {
-		const auto* desc = d.descriptions.try_get(action_id);
+		auto* desc = d.descriptions.try_get(action_id);
 		if (!desc) {
 			continue;
 		}
@@ -1161,7 +1177,9 @@ auto gse::actions::finalize_bindings(data& d) -> void {
 		for (const auto& source : active) {
 			d.resolved.to_action.push_back({ .source = source, .action = desc->bit_index() });
 		}
+		desc->bound = active;
 	}
+	++d.binding_revision;
 
 	const auto bit_of = [&d](const handle h) -> std::uint16_t {
 		const auto* desc = d.descriptions.try_get(h.id());
@@ -1611,6 +1629,20 @@ auto gse::binding_to_string(const binding b) -> std::string {
 		return combo_to_string({ .k = b.k, .mods = b.mods });
 	}
 	return actions::modifier_prefix(b.mods) + std::string(mouse_button_to_string(b.button));
+}
+
+auto gse::bindings_to_string(const std::span<const binding> list) -> std::string {
+	if (list.empty()) {
+		return "unbound";
+	}
+	std::string text;
+	for (const auto& single : list) {
+		if (!text.empty()) {
+			text += " / ";
+		}
+		text += binding_to_string(single);
+	}
+	return text;
 }
 
 auto gse::key_binding(const key k, const key_modifiers mods) -> binding {

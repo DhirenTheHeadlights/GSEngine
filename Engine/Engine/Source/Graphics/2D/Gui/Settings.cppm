@@ -234,19 +234,11 @@ auto gse::settings::draw_controls_page(void* builder, void* panel_state_ptr, con
 		if (capturing) {
 			shown = "press a key or mouse button, esc to cancel";
 		}
+		else if (std::vector<binding> staged; bindings_from_config(pending.value, staged)) {
+			shown = bindings_to_string(staged);
+		}
 		else {
-			std::vector<binding> staged;
-			if (bindings_from_config(pending.value, staged) && !staged.empty()) {
-				for (const auto& single : staged) {
-					if (!shown.empty()) {
-						shown += " / ";
-					}
-					shown += binding_to_string(single);
-				}
-			}
-			else {
-				shown = "unbound";
-			}
+			shown = "unbound";
 		}
 
 		if (b.draw<gui::selectable>({

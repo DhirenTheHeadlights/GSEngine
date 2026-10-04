@@ -7,6 +7,8 @@ import gse.ide.workspace;
 import gse.ide.config;
 import gse.ide.profile;
 
+import :dock;
+
 namespace gse::ide {
 	auto editor_layout_path() -> std::filesystem::path;
 
@@ -65,7 +67,11 @@ auto gse::ide::parse_layout_uint(const std::string& value, const std::uint32_t f
 auto gse::ide::editor_layout_owner() -> layout_store::owner {
 	return {
 		.names = { "editor", "dock", "game panel" },
-		.prefixes = { "dock node ", "dock window " },
+		.prefixes = {
+			std::string(dock_node_section_prefix),
+			std::string(dock_window_section_prefix),
+			std::string(dock_anchor_section_prefix),
+		},
 	};
 }
 

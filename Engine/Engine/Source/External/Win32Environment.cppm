@@ -21,6 +21,10 @@ export namespace gse::win32 {
 	auto widen(
 		std::string_view text
 	) -> std::wstring;
+
+	auto registry_value_names(
+		const wchar_t* subkey
+	) -> std::vector<std::wstring>;
 }
 
 namespace gse::win32 {
@@ -206,5 +210,28 @@ auto gse::win32::widen(const std::string_view text) -> std::wstring {
 	std::wstring wide(static_cast<std::size_t>(length), L'\0');
 	MultiByteToWideChar(cp_utf8, 0, text.data(), static_cast<int>(text.size()), wide.data(), length);
 	return wide;
+}
+
+auto gse::win32::registry_value_names(const wchar_t* subkey) -> std::vector<std::wstring> {
+	std::vector<std::wstring> names;
+	for (const bool local_machine : { true, false }) {
+		const HKEY key = open_registry_key(local_machine, subkey);
+		if (!key) {
+			continue;
+		}
+		DWORD count = 0;
+		DWORD longest = 0;
+		if (RegQueryInfoKeyW(key, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &count, &longest, nullptr, nullptr, nullptr) == error_success) {
+			std::wstring name(longest + 1, L'\0');
+			for (DWORD i = 0; i < count; ++i) {
+				DWORD length = longest + 1;
+				if (RegEnumValueW(key, i, name.data(), &length, nullptr, nullptr, nullptr, nullptr) == error_success) {
+					names.emplace_back(name.data(), length);
+				}
+			}
+		}
+		RegCloseKey(key);
+	}
+	return names;
 }
 #endif

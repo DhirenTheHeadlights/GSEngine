@@ -206,6 +206,7 @@ export namespace gse {
 		std::function<void()> m_deferred_boot;
 		std::atomic<bool> m_boot_tasks_done = false;
 		std::size_t m_actions_revision = 0;
+		clock m_persist_clock;
 		std::uint32_t m_boot_init_baseline_settled = 0;
 		bool m_boot_init_baseline_captured = false;
 		bool m_settings_audited = false;

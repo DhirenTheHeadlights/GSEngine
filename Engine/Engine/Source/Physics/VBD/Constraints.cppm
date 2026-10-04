@@ -15,11 +15,14 @@ export namespace gse::vbd {
 		std::uint32_t max_islands = 512;
 		std::uint32_t max_impulses = 4096;
 		std::uint32_t max_motors = 4096;
+		std::uint32_t max_muscles = 8192;
+		std::uint32_t max_muscle_points = 32768;
+		std::uint32_t max_hull_uints = 65536;
 		std::uint32_t grid_table_size = 32768;
 		std::uint32_t ring_max_bodies = 4096;
 		std::uint32_t ring_max_contacts = 16384;
 		std::uint32_t max_contact_adjacency = max_contacts * 2;
-		std::uint32_t max_joint_adjacency = max_joints * 2;
+		std::uint32_t max_joint_adjacency = max_joints * 2 + max_muscle_points;
 		std::uint32_t max_grounded_uints = (max_bodies + 31) / 32;
 		std::uint32_t grid_max_entries = max_bodies * 8;
 	};
@@ -93,9 +96,40 @@ export namespace gse::vbd {
 		std::uint32_t capsule_barrel_index = 6;
 		std::uint32_t capsule_cap_a_index = 7;
 		std::uint32_t capsule_cap_b_index = 8;
+		std::uint32_t shape_hull = 3;
+		std::uint32_t hull_surface_index = 9;
+		std::uint32_t hull_header_uints = 12;
+		std::uint32_t hull_vertex_count_index = 0;
+		std::uint32_t hull_face_count_index = 1;
+		std::uint32_t hull_edge_count_index = 2;
+		std::uint32_t hull_vertices_index = 3;
+		std::uint32_t hull_planes_index = 4;
+		std::uint32_t hull_faces_index = 5;
+		std::uint32_t hull_loops_index = 6;
+		std::uint32_t hull_edges_index = 7;
+		std::uint32_t hull_axis_count_index = 8;
+		std::uint32_t hull_axes_index = 9;
+		std::uint32_t hull_direction_count_index = 10;
+		std::uint32_t hull_directions_index = 11;
+		std::uint32_t muscle_adjacency_tag = 0x80000000u;
 	};
 
 	constexpr vbd_limits limits{};
+
+	struct [[= shaders::shader_constant_block]] muscle_curves {
+		vec3f active_height = { 0.814483478343008f, 0.433004984392647f, 0.1f };
+		vec3f active_center = { 1.05503342897057f, 0.716775413397760f, 1.f };
+		vec3f active_width = { 0.162384573599574f, -0.0299471169706956f, 0.353553390593274f };
+		vec3f active_width_slope = { 0.0633034484654646f, 0.200356847296188f, 0.f };
+		float passive_shape = 4.f;
+		float passive_strain = 0.6f;
+		float passive_zero_ratio = 0.2f;
+		vec4f velocity_shape = { -0.318323436899127f, -8.149156043475250f, -0.374121508647863f, 0.885644059915004f };
+		time_t<float, seconds> activation_time = milliseconds(15.f);
+		time_t<float, seconds> deactivation_time = milliseconds(60.f);
+	};
+
+	constexpr muscle_curves muscle{};
 
 	struct body_solve_state {
 		vec3<force> gradient = {};
@@ -110,7 +144,6 @@ export namespace gse::vbd {
 		fixed,
 		hinge,
 		slider,
-		muscle,
 		ball,
 		universal
 	};
@@ -198,22 +231,37 @@ export namespace gse::vbd {
 
 		vec3<angular_stiffness> soft_ang_stiffness = {};
 
-		float activation = 0.f;
-		force max_force = newtons(0.f);
-
 		vec3<angle> drive_target = {};
 		vec3<angular_stiffness> drive_stiffness = {};
 		float drive_damping = 0.f;
 		torque drive_max_torque = {};
 	};
 
+	struct [[= shaders::shader_struct]] muscle_path_point {
+		std::uint32_t body = 0;
+		vec3<lever_arm> local_point = {};
+	};
+
+	struct [[= shaders::shader_struct]] muscle_constraint {
+		std::uint32_t path_first = 0;
+		std::uint32_t path_count = 0;
+		float excitation = 0.f;
+		float activation = 0.f;
+		force max_force = {};
+		length optimal_fiber_length = {};
+		length tendon_slack_length = {};
+		angle pennation_at_optimal = {};
+		velocity max_contraction_velocity = {};
+		length path_length_start = {};
+	};
+
 	struct [[= shaders::shader_struct]] joint_drive_input {
 		vec3<angle> drive_target = {};
-		float activation = 0.f;
 		vec3<angular_stiffness> drive_stiffness = {};
 		float drive_damping = 0.f;
 		torque drive_max_torque = {};
 		std::uint32_t device_target = 0;
+		std::uint32_t device_stiffness = 0;
 	};
 
 	struct [[= shaders::shader_struct]] body_state {
@@ -252,6 +300,7 @@ export namespace gse::vbd {
 		vec3<gse::position> aabb_max;
 
 		std::uint32_t reset_pending = 0;
+		std::uint32_t hull_offset = 0;
 
 		auto inverse_mass() const -> inverse_mass;
 		auto sleeping() const -> bool;

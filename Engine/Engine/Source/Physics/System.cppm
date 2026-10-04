@@ -56,13 +56,22 @@ export namespace gse::physics {
 
 		vec3<angular_stiffness> soft_ang_stiffness = {};
 
-		float activation = 0.f;
-		force max_force = newtons(0.f);
-
 		vec3<angle> drive_target = {};
 		vec3<angular_stiffness> drive_stiffness = {};
 		float drive_damping = 0.f;
 		torque drive_max_torque = {};
+	};
+
+	struct muscle_definition {
+		std::array<muscle_attachment, max_muscle_path_points> path{};
+		std::uint32_t path_count = 0;
+		force max_force = {};
+		length optimal_fiber_length = {};
+		length tendon_slack_length = {};
+		angle pennation_at_optimal = {};
+		velocity max_contraction_velocity = {};
+		float excitation = 0.f;
+		float activation = 0.f;
 	};
 
 	struct reset_physics_request {};
@@ -200,6 +209,7 @@ export namespace gse::physics {
 		std::vector<carried_body_state> carried;
 		sleep_counter_table sleep_counters;
 		id_mapped_collection<joint_definition> joints;
+		id_mapped_collection<muscle_definition> muscles;
 		vbd::contact_cache contact_cache;
 		step_inputs inputs;
 	};
@@ -338,6 +348,22 @@ export namespace gse::physics {
 			= settings::range<16, 262144>{}
 		]]
 		int gpu_max_motors = 4096;
+
+		[[
+			= settings::describe<"Most muscles the GPU solver can hold. Sized once at startup and baked into the "
+									  "solver's shaders, so this requires a restart.">{},
+			= settings::restart_required{},
+			= settings::range<16, 1048576>{}
+		]]
+		int gpu_max_muscles = 8192;
+
+		[[
+			= settings::describe<"Most muscle path points the GPU solver can hold, summed over every muscle. Sized "
+									  "once at startup and baked into the solver's shaders, so this requires a restart.">{},
+			= settings::restart_required{},
+			= settings::range<32, 8388608>{}
+		]]
+		int gpu_max_muscle_points = 32768;
 
 		[[
 			= settings::describe<"Cells in the GPU solver's broad-phase hash grid. Sized once at startup and "
@@ -677,6 +703,9 @@ export namespace gse::physics {
 		std::vector<std::uint32_t> drive_joint_slots;
 		[[= shared]] std::uint64_t joints_generation = 1;
 		[[= shared]] std::uint64_t joint_inputs_generation = 1;
+		[[= shared]] id_mapped_collection<muscle_definition> muscles;
+		[[= shared]] std::uint64_t muscles_generation = 1;
+		[[= shared]] std::uint64_t muscle_inputs_generation = 1;
 		[[= shared]] std::vector<convex_hull> hulls;
 
 		[[= shared]] vbd::solver vbd_solver;
@@ -716,6 +745,10 @@ export namespace gse::physics {
 			std::vector<vbd::velocity_motor_constraint> motors;
 			std::vector<vbd::joint_constraint> joints;
 			std::vector<vbd::joint_drive_input> joint_inputs;
+			std::vector<vbd::muscle_constraint> muscles;
+			std::vector<vbd::muscle_path_point> muscle_points;
+			std::vector<float> muscle_excitations;
+			std::vector<std::uint32_t> hull_data;
 			std::vector<vbd::impulse_constraint> impulses;
 		};
 
@@ -723,6 +756,15 @@ export namespace gse::physics {
 			std::uint64_t built_generation = 0;
 			std::uint64_t uploaded_joints_generation = 0;
 			std::uint64_t uploaded_joint_inputs_generation = 0;
+			std::uint64_t uploaded_muscles_generation = 0;
+			std::uint64_t uploaded_muscle_inputs_generation = 0;
+			std::vector<muscle_definition> muscles;
+			std::vector<std::uint32_t> muscle_slots;
+			std::uint32_t uploaded_muscle_count = 0;
+			std::vector<std::uint32_t> hull_data;
+			std::vector<std::uint32_t> hull_offsets;
+			std::size_t packed_hull_count = 0;
+			std::uint64_t hull_generation = 0;
 			std::uint32_t uploaded_body_count = 0;
 			std::uint32_t uploaded_joint_count = 0;
 			bool force_full_joints = false;
@@ -778,6 +820,7 @@ export namespace gse::physics {
 		std::span<const id> collision_owners;
 		std::span<const collision_component> collisions;
 		std::span<const convex_hull> hulls;
+		std::span<const std::uint32_t> hull_offsets;
 		std::span<const mass_properties> mass_props;
 	};
 
@@ -873,16 +916,35 @@ export namespace gse::physics {
 		const joint_drive_component& drive
 	) -> void;
 
-	auto apply_muscle_activation(
-		joint_definition& jd,
+	auto apply_muscle_excitation(
+		muscle_definition& md,
 		const muscle_component& muscle
 	) -> bool;
 
 	auto copy_joints_with_inputs(
 		shared_view<data> phys,
 		read<joint_drive_component>& drives,
-		read<muscle_component>& muscles,
 		std::vector<joint_definition>& out
+	) -> void;
+
+	auto copy_muscles_with_inputs(
+		shared_view<data> phys,
+		read<muscle_component>& muscles,
+		std::vector<muscle_definition>& out
+	) -> void;
+
+	auto build_muscle_constraints(
+		std::span<const muscle_definition> definitions,
+		const std::flat_map<id, std::uint32_t>& id_to_body_index,
+		std::vector<vbd::muscle_constraint>& out,
+		std::vector<vbd::muscle_path_point>& out_points,
+		std::vector<std::uint32_t>* definition_slots = nullptr
+	) -> void;
+
+	auto pack_gpu_hulls(
+		std::span<const convex_hull> hulls,
+		std::vector<std::uint32_t>& out_data,
+		std::vector<std::uint32_t>& out_offsets
 	) -> void;
 
 	[[= system_init{}]]
@@ -898,6 +960,7 @@ export namespace gse::physics {
 		data& d,
 		channel_write<interpolation_state> interp_out,
 		write<joint_spec> specs,
+		write<muscle_spec> muscle_specs,
 		read<muscle_component> muscles,
 		read<joint_drive_component> drives,
 		read<kinematic_target_component> targets,
