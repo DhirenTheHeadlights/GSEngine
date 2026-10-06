@@ -327,7 +327,7 @@ export namespace gse::vbd {
 
 inline auto gse::vbd::body_state::inverse_mass() const -> gse::inverse_mass {
 	if (locked) {
-		return gse::inverse_mass{ 0.f };
+		return gse::inverse_mass{};
 	}
 	return 1.f / mass;
 }

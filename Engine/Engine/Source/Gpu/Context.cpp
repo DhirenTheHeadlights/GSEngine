@@ -14,7 +14,7 @@ import :frame;
 import :render_graph;
 import :swap_chain;
 
-auto gse::gpu::context::init(const std::optional<shared_view<window::data>> window_s, const save::registry* save_reg, data& d) -> async::task<> {
+auto gse::gpu::context::init(const std::optional<shared_view<window::data>> window_s, save::registry* const save_reg, data& d) -> async::task<> {
 	const auto requested_backend = d.backend;
 	d.device = device::create(window_s, d.validation_layers_enabled, d.backend, d.device_settings);
 	if (save_reg && d.backend != requested_backend) {
@@ -24,7 +24,7 @@ auto gse::gpu::context::init(const std::optional<shared_view<window::data>> wind
 	if (window_s) {
 		d.swapchain = swap_chain::create(
 			d.device->boot_surface(),
-			window::viewport(*window_s),
+			window::viewport(window_s->primary.handle),
 			(*window_s).current_present_mode,
 			*d.device
 		);
@@ -163,6 +163,10 @@ auto gse::gpu::context::shutdown(data& d) -> void {
 	d.frame.reset();
 	d.swapchain.reset();
 	d.device.reset();
+}
+
+auto gse::gpu::context::apply_pending_resizes(data& d) -> void {
+	d.frame->apply_pending_resizes();
 }
 
 auto gse::gpu::context::begin_frame(data& d, window::window_surface* window_s) -> std::expected<frame_token, frame_status> {

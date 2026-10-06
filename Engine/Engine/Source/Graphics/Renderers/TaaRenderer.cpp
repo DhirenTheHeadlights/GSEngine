@@ -40,7 +40,9 @@ namespace gse::renderer::taa {
 	struct [[= shaders::shader_struct]] push_constants {
 		float blend_alpha;
 		std::uint32_t taa_enabled;
-		vec2f inv_extent;
+		vec2f inv_allocated_extent;
+		vec2f screen_uv_scale;
+		vec2f screen_uv_max;
 	};
 
 	using shader_binding_types = type_pack<hdr_color, velocity_color, history_color, color_sampler>;
@@ -48,6 +50,7 @@ namespace gse::renderer::taa {
 	using entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/Taa">,
 		gpu::bindings<shader_binding_types>,
+		gpu::helpers<"Screen/screen_pass", "Screen/screen_target">,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
 		gpu::push_constant<push_constants>,
@@ -69,7 +72,15 @@ namespace gse::renderer::taa {
 }
 
 auto gse::renderer::taa::recreate_history(const shared_view<gpu::context::data> gpu_s, data& d) -> void {
-	const auto extent = gpu_s.render_graph->extent();
+	const auto extent = gpu_s.render_graph->allocated_extent();
+	const auto active = gpu_s.render_graph->extent();
+	if (active != d.history_active_extent) {
+		d.history_active_extent = active;
+		d.frames_since_history_invalid = 0;
+	}
+	if (d.history.front().handle() && d.history.front().extent() == extent) {
+		return;
+	}
 	d.frames_since_history_invalid = 0;
 	if (extent.x() == 0 || extent.y() == 0) {
 		for (auto& image : d.history) {
@@ -161,6 +172,7 @@ auto gse::renderer::taa::frame(const context& ctx, shared_view<gpu::context::dat
 	}
 
 	const auto ext = gpu_s.render_graph->extent();
+	const auto allocated = gpu_s.render_graph->allocated_extent();
 	const bool history_ready = d.taa_enabled && d.frames_since_history_invalid >= 2;
 	++d.frames_since_history_invalid;
 
@@ -182,7 +194,9 @@ auto gse::renderer::taa::frame(const context& ctx, shared_view<gpu::context::dat
 		{
 			.blend_alpha = d.blend_alpha,
 			.taa_enabled = history_ready ? 1u : 0u,
-			.inv_extent = vec2f{ 1.0f / static_cast<float>(ext.x()), 1.0f / static_cast<float>(ext.y()) },
+			.inv_allocated_extent = vec2f{ 1.0f / static_cast<float>(allocated.x()), 1.0f / static_cast<float>(allocated.y()) },
+			.screen_uv_scale = gpu_s.render_graph->screen_uv_scale(),
+			.screen_uv_max = gpu_s.render_graph->screen_uv_max(),
 		},
 		{
 			.hdr_color = d.hdr_view.slot(),

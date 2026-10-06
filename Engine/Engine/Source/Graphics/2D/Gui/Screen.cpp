@@ -119,6 +119,7 @@ auto gse::gui::process_screen(data& d, viewport_state& vp, const input::state& i
 
 	widget_context ctx{ widget_context_init(d, vp, render_layer::popup, 0, {
 		.current_menu = *vp.screen_surface,
+		.style = vp.fstate.sty,
 		.layout_cursor = layout_cursor,
 		.clip = body_rect,
 	}), input_state };

@@ -71,8 +71,8 @@ namespace gse::camera {
 	auto apply_jitter(projection_matrix& proj, const vec2f& jitter_ndc) -> void {
 		using elem_x = projection_matrix::element_t<2, 0>;
 		using elem_y = projection_matrix::element_t<2, 1>;
-		proj.set<2, 0>(proj.at<2, 0>() + elem_x(jitter_ndc.x()));
-		proj.set<2, 1>(proj.at<2, 1>() + elem_y(jitter_ndc.y()));
+		proj.set<2, 0>(proj.at<2, 0>() + internal::from_storage<elem_x>(jitter_ndc.x()));
+		proj.set<2, 1>(proj.at<2, 1>() + internal::from_storage<elem_y>(jitter_ndc.y()));
 	}
 }
 

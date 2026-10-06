@@ -82,6 +82,7 @@ export namespace gse::gui {
 		float smooth_factor = 0.15f;
 		bool auto_hide_scrollbar = true;
 		bool smooth_scrolling = true;
+		bool middle_click_auto_scroll = true;
 	};
 
 	struct scroll_bar_input {
@@ -217,6 +218,9 @@ export namespace gse::gui {
 		) const -> resource::handle<font>;
 	};
 
+	inline constexpr float min_menu_zoom = 0.5f;
+	inline constexpr float max_menu_zoom = 3.f;
+
 	struct menu : identifiable, identifiable_owned {
 		explicit menu(
 			std::string_view tag,
@@ -237,6 +241,7 @@ export namespace gse::gui {
 		std::uint32_t active_tab_index = 0;
 		bool tabs_closeable = true;
 		tab_strip_state tab_bar;
+		float zoom = 1.f;
 		std::uint32_t z_order = 0;
 		bool was_begun_this_frame = false;
 		bool was_visible_last_frame = false;
@@ -462,12 +467,17 @@ export namespace gse::gui {
 		) const -> bool;
 
 		[[nodiscard]] auto scroll_delta_for(
-			const rectf& rect
+			const rectf& rect,
+			scroll_axes axes = all_scroll_axes
 		) const -> vec2f;
 
-		auto consume_scroll() const -> void;
+		auto consume_scroll(
+			scroll_axes axes = all_scroll_axes
+		) const -> void;
 
-		[[nodiscard]] auto is_scroll_consumed() const -> bool;
+		[[nodiscard]] auto is_scroll_consumed(
+			scroll_axes axes = all_scroll_axes
+		) const -> bool;
 
 		[[nodiscard]] auto key_pressed_for(
 			key k

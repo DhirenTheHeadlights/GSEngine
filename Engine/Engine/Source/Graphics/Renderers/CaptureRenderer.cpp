@@ -192,7 +192,7 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 
 		if (auto unit = d.encoder.take_bitstream()) {
 			const bool was_keyframe = unit->keyframe;
-			const byte_count emitted(unit->bytes.size());
+			const auto emitted = byte_count::from<gse::bytes>(unit->bytes.size());
 
 			if (d.recording->active.load()) {
 				enqueue_unit(*d.recording, {

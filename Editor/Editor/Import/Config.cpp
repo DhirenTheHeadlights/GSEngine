@@ -56,6 +56,7 @@ namespace gse::ide::config {
 
 	auto append_worktree_roots(
 		const worktree& tree,
+		bool counts_loc,
 		std::vector<browse_root>& out
 	) -> void;
 
@@ -237,13 +238,14 @@ auto gse::ide::config::path_id(const std::filesystem::path& file) -> id {
 	return generate_temp_id(canonical_path(file));
 }
 
-auto gse::ide::config::append_worktree_roots(const worktree& tree, std::vector<browse_root>& out) -> void {
+auto gse::ide::config::append_worktree_roots(const worktree& tree, const bool counts_loc, std::vector<browse_root>& out) -> void {
 	if (!tree.has_manifest) {
 		out.push_back({
 			.path = tree.project_root,
 			.name = tree.name,
 			.compile_commands = editor_compile_commands(),
-			.is_project = false
+			.is_project = false,
+			.counts_loc = counts_loc
 		});
 		return;
 	}
@@ -252,13 +254,15 @@ auto gse::ide::config::append_worktree_roots(const worktree& tree, std::vector<b
 		.path = tree.project_root,
 		.name = tree.name,
 		.compile_commands = tree.project_compile_commands,
-		.is_project = true
+		.is_project = true,
+		.counts_loc = counts_loc
 	});
 	out.push_back({
 		.path = gse::config::generic(tree.engine_root / "Engine"),
 		.name = "Engine",
 		.compile_commands = editor_compile_commands(),
-		.is_project = false
+		.is_project = false,
+		.counts_loc = counts_loc
 	});
 }
 
@@ -290,8 +294,8 @@ auto gse::ide::config::append_fixed_roots(const worktree& tree, std::vector<brow
 
 auto gse::ide::config::resolve_browse_roots() -> std::vector<browse_root> {
 	std::vector<browse_root> roots;
-	for (const worktree& tree : worktrees()) {
-		append_worktree_roots(tree, roots);
+	for (const auto& [index, tree] : std::views::enumerate(worktrees())) {
+		append_worktree_roots(tree, index == 0, roots);
 	}
 	append_fixed_roots(primary(), roots);
 	return roots;

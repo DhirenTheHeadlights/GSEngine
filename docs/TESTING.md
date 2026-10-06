@@ -15,10 +15,10 @@ The master record of what GSE verifies, how each check runs, and where the gaps 
 | Violation | Math `pre` / `contract_assert` reporting | `Math/Tests/Contracts.cppm` | the same run re-launches the exe with `--engine-test-only <name>` per test | passes only when the child exits 3 and its report names the predicate | yes, once wired to CI |
 | Scenario | 60 annotated scenarios | `Sandbox/Source/Sandbox/Scenarios.cppm` | `Sandbox.exe --engine-bench-scenario <name>` | logs p50/p95/p99 and a world-state hash | no |
 | Scenario | Perf baseline | `Runtime/Bench.cpp:147` | `--engine-bench-update-baseline`, then a normal run | logs `REGRESSED` | no; the process still exits 0 |
-| Gate | CPU/GPU parity + determinism | `scripts/parity_gate.py` | `python scripts/parity_gate.py [--backend both]` | exits 1 on a `require` failure | no |
-| Gate | Stress invariants | `scripts/stress_battery.py` | manual, on state dumps | exits 1 on a jointed failure | no |
+| Gate | CPU/GPU parity + determinism | `Tools/parity_gate.py` | `python Tools/parity_gate.py [--backend both]` | exits 1 on a `require` failure | no |
+| Gate | Stress invariants | `Tools/stress_battery.py` | manual, on state dumps | exits 1 on a jointed failure | no |
 | Data | State dump scan/compare | `Startup/StateDumpTools.cpp` | `--scan-states`, `--compare-states-a/-b` | prints the divergence | no |
-| Data | Divergence sweep | `scripts/divergence_sweep.py` | manual | report only | no |
+| Data | Divergence sweep | `Tools/divergence_sweep.py` | manual | report only | no |
 | Tool | Semantic audit | `Editor/Source/Tools/SemanticAudit.cpp` | `SemanticAudit --db ... --plugin ...` | exits 1 on failure | no |
 | Tool | Time report self-test | `Tools/TimeReport/time_report_check.py` | manual | exits 1 on failure | no |
 | CI | GCC trunk toolchain | `.github/workflows/build-gcc-trunk.yml` | weekly | toolchain only, never builds the engine | yes |

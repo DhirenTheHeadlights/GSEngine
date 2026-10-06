@@ -19,6 +19,15 @@ namespace gse::gui {
 }
 
 export namespace gse::gui {
+	enum class scroll_axis_kind : std::uint8_t {
+		horizontal = 1 << 0,
+		vertical = 1 << 1,
+	};
+
+	using scroll_axes = flags<scroll_axis_kind>;
+
+	constexpr scroll_axes all_scroll_axes{ scroll_axis_kind::horizontal, scroll_axis_kind::vertical };
+
 	class input_layer {
 	public:
 		auto begin_frame(
@@ -64,9 +73,11 @@ export namespace gse::gui {
 			mouse_button button
 		) const -> bool;
 
-		auto consume_scroll() -> void;
+		auto consume_scroll(
+			scroll_axes axes
+		) -> void;
 
-		[[nodiscard]] auto is_scroll_consumed() const -> bool;
+		[[nodiscard]] auto consumed_scroll_axes() const -> scroll_axes;
 
 		auto consume_key_press(
 			key k
@@ -108,7 +119,7 @@ export namespace gse::gui {
 		vec2f m_press_origin;
 		std::array<bool, k_button_count> m_press_consumed{};
 		std::array<bool, k_button_count> m_release_consumed{};
-		bool m_scroll_consumed = false;
+		scroll_axes m_scroll_consumed;
 		std::unordered_set<int> m_consumed_keys;
 		double_buffer<std::vector<rectf>> m_resize_blocks;
 	};
@@ -134,7 +145,7 @@ auto gse::gui::input_layer::begin_frame(const vec2f mouse_position, const bool p
 	m_selection_blocks.clear();
 	m_press_consumed.fill(false);
 	m_release_consumed.fill(false);
-	m_scroll_consumed = false;
+	m_scroll_consumed = {};
 	m_consumed_keys.clear();
 	if (press_started) {
 		m_press_origin = mouse_position;
@@ -243,11 +254,11 @@ auto gse::gui::input_layer::is_release_consumed(const mouse_button button) const
 	return false;
 }
 
-auto gse::gui::input_layer::consume_scroll() -> void {
-	m_scroll_consumed = true;
+auto gse::gui::input_layer::consume_scroll(const scroll_axes axes) -> void {
+	m_scroll_consumed |= axes;
 }
 
-auto gse::gui::input_layer::is_scroll_consumed() const -> bool {
+auto gse::gui::input_layer::consumed_scroll_axes() const -> scroll_axes {
 	return m_scroll_consumed;
 }
 

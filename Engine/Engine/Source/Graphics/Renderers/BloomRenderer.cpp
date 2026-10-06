@@ -49,19 +49,29 @@ namespace gse::renderer::bloom {
 	struct [[= shaders::sampler_state]] bloom_up_sampler {};
 
 	struct [[= shaders::shader_struct]] downsample_push_constants {
+		vec2u dst_active_extent;
+		vec2f inv_src_allocated_extent;
+		vec2f src_uv_scale;
+		vec2f src_uv_max;
 		std::uint32_t use_karis_average;
 	};
 
 	struct [[= shaders::shader_struct]] upsample_push_constants {
+		vec2u dst_active_extent;
+		vec2f inv_src_allocated_extent;
+		vec2f src_uv_scale;
+		vec2f src_uv_max;
+		vec2f dn_uv_scale;
+		vec2f dn_uv_max;
 		float radius;
 	};
 
 	using downsample_bindings = type_pack<bloom_in, bloom_out, bloom_sampler>;
 	using upsample_bindings = type_pack<bloom_up_in, bloom_up_dn, bloom_up_out, bloom_up_sampler>;
 
-	using downsample_entry = gpu::compute_entry<gpu::body_path<"Compute/bloom_downsample">, gpu::bindings<downsample_bindings>, gpu::push_constant<downsample_push_constants>, gpu::threads<8, 8, 1>, gpu::system_values<gpu::dispatch_thread_id>>;
+	using downsample_entry = gpu::compute_entry<gpu::body_path<"Compute/bloom_downsample">, gpu::bindings<downsample_bindings>, gpu::helpers<"Screen/screen_target">, gpu::push_constant<downsample_push_constants>, gpu::threads<8, 8, 1>, gpu::system_values<gpu::dispatch_thread_id>>;
 
-	using upsample_entry = gpu::compute_entry<gpu::body_path<"Compute/bloom_upsample">, gpu::bindings<upsample_bindings>, gpu::push_constant<upsample_push_constants>, gpu::threads<8, 8, 1>, gpu::system_values<gpu::dispatch_thread_id>>;
+	using upsample_entry = gpu::compute_entry<gpu::body_path<"Compute/bloom_upsample">, gpu::bindings<upsample_bindings>, gpu::helpers<"Screen/screen_target">, gpu::push_constant<upsample_push_constants>, gpu::threads<8, 8, 1>, gpu::system_values<gpu::dispatch_thread_id>>;
 
 	auto mips_for_quality(
 		quality_level q
@@ -119,16 +129,24 @@ auto gse::renderer::bloom::compute_mip_chain(const vec2u screen_extent, const qu
 
 auto gse::renderer::bloom::recreate_mip_chain(const shared_view<gpu::context::data> gpu_s, data& d) -> void {
 	const auto [count, extents] = compute_mip_chain(gpu_s.render_graph->extent(), d.bloom_quality);
-	d.active_mip_count = count;
+	const auto [allocated_count, allocated_extents] = compute_mip_chain(gpu_s.render_graph->allocated_extent(), d.bloom_quality);
+	const auto previous_allocated_extents = d.mip_allocated_extents;
+	const auto previous_count = d.active_mip_count;
+	d.active_mip_count = std::min(count, allocated_count);
 	d.mip_extents = extents;
+	d.mip_allocated_extents = allocated_extents;
+
+	if (d.active_mip_count == previous_count && allocated_extents == previous_allocated_extents) {
+		return;
+	}
 
 	for (std::uint32_t i = 0; i < max_mip_count; ++i) {
 		d.mips_down[i] = {};
 		d.mips_up[i] = {};
-		if (i < count) {
+		if (i < d.active_mip_count) {
 			d.mips_down[i] = gpu_s.device->create_image(
 				{
-					.size = extents[i],
+					.size = allocated_extents[i],
 					.format = gpu::image_format::r16g16b16a16_sfloat,
 					.usage = { gpu::image_flag::storage, gpu::image_flag::sampled },
 					.bindless = true
@@ -138,7 +156,7 @@ auto gse::renderer::bloom::recreate_mip_chain(const shared_view<gpu::context::da
 			gpu::transition_image_to(*gpu_s.device, d.mips_down[i]);
 			d.mips_up[i] = gpu_s.device->create_image(
 				{
-					.size = extents[i],
+					.size = allocated_extents[i],
 					.format = gpu::image_format::r16g16b16a16_sfloat,
 					.usage = { gpu::image_flag::storage, gpu::image_flag::sampled },
 					.bindless = true
@@ -202,6 +220,13 @@ auto gse::renderer::bloom::frame(const context& ctx, shared_view<gpu::context::d
 		co_return;
 	}
 
+	const auto level_extents = [&d, gpu_s](const std::uint32_t level) -> std::pair<vec2u, vec2u> {
+		if (level == 0) {
+			return { gpu_s.render_graph->extent(), gpu_s.render_graph->allocated_extent() };
+		}
+		return { d.mip_extents[level - 1], d.mip_allocated_extents[level - 1] };
+	};
+
 	auto& hdr = gpu_s.render_graph->framebuffer_image<targets::post_taa_color>();
 	if (!hdr.handle()) {
 		co_return;
@@ -218,8 +243,13 @@ auto gse::renderer::bloom::frame(const context& ctx, shared_view<gpu::context::d
 
 	for (std::uint32_t i = 0; i < count; ++i) {
 		const auto source_slot = (i == 0) ? d.hdr_view.slot() : d.mips_down[i - 1].sampled_slot();
+		const auto [source_active, source_allocated] = level_extents(i);
 		rec.dispatch<downsample_entry>(
 			{
+				.dst_active_extent = d.mip_extents[i],
+				.inv_src_allocated_extent = vec2f{ 1.0f / static_cast<float>(source_allocated.x()), 1.0f / static_cast<float>(source_allocated.y()) },
+				.src_uv_scale = gpu::screen_uv_scale_for(source_active, source_allocated),
+				.src_uv_max = gpu::screen_uv_max_for(source_active, source_allocated),
 				.use_karis_average = i == 0 ? 1u : 0u
 			},
 			{
@@ -243,8 +273,16 @@ auto gse::renderer::bloom::frame(const context& ctx, shared_view<gpu::context::d
 
 	for (std::uint32_t i = count - 1; i-- > 0;) {
 		const auto up_source = (i + 1 == count - 1) ? d.mips_down[count - 1].sampled_slot() : d.mips_up[i + 1].sampled_slot();
+		const auto [source_active, source_allocated] = level_extents(i + 2);
+		const auto [dn_active, dn_allocated] = level_extents(i + 1);
 		up_rec.dispatch<upsample_entry>(
 			{
+				.dst_active_extent = d.mip_extents[i],
+				.inv_src_allocated_extent = vec2f{ 1.0f / static_cast<float>(source_allocated.x()), 1.0f / static_cast<float>(source_allocated.y()) },
+				.src_uv_scale = gpu::screen_uv_scale_for(source_active, source_allocated),
+				.src_uv_max = gpu::screen_uv_max_for(source_active, source_allocated),
+				.dn_uv_scale = gpu::screen_uv_scale_for(dn_active, dn_allocated),
+				.dn_uv_max = gpu::screen_uv_max_for(dn_active, dn_allocated),
 				.radius = d.bloom_radius
 			},
 			{

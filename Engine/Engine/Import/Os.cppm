@@ -1,6 +1,7 @@
 export module gse.os;
 
 export import :window;
+export import :clipboard;
 export import :keys;
 export import :input;
 export import :input_events;

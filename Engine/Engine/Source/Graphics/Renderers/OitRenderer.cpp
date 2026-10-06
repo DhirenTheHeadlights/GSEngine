@@ -86,11 +86,18 @@ namespace gse::renderer::oit {
 
 	using composite_binding_types = type_pack<oit_accum_in, oit_reveal_in, oit_sampler>;
 
+	struct [[= shaders::shader_struct]] composite_push_constants {
+		vec2f screen_uv_scale;
+		vec2f screen_uv_max;
+	};
+
 	using composite_entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/OitComposite">,
 		gpu::bindings<composite_binding_types>,
+		gpu::helpers<"Screen/screen_pass", "Screen/screen_target">,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
+		gpu::push_constant<composite_push_constants>,
 		gpu::rasterization<gpu::polygon_mode::fill, gpu::cull_mode::none>,
 		gpu::depth<false, false>,
 		gpu::depth_target<gpu::depth_format::none>,
@@ -301,10 +308,16 @@ auto gse::renderer::oit::frame(context& ctx, shared_view<gpu::context::data> gpu
 	composite_rec.set_viewport(ext);
 	composite_rec.set_scissor(ext);
 
-	composite_rec.push_bindings<composite_entry>({
-		.oit_accum_in = d.accum_view.slot(),
-		.oit_reveal_in = d.reveal_view.slot(),
-		.oit_sampler = d.sampler.slot(),
-	});
+	composite_rec.push_bindings<composite_entry>(
+		{
+			.screen_uv_scale = gpu_s.render_graph->screen_uv_scale(),
+			.screen_uv_max = gpu_s.render_graph->screen_uv_max(),
+		},
+		{
+			.oit_accum_in = d.accum_view.slot(),
+			.oit_reveal_in = d.reveal_view.slot(),
+			.oit_sampler = d.sampler.slot(),
+		}
+	);
 	composite_rec.draw(3);
 }

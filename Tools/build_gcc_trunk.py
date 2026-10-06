@@ -1,5 +1,5 @@
 """Build the native-Windows GCC trunk toolchain from an official weekly snapshot,
-using the vendored MSYS2 mingw-w64-gcc recipe (scripts/gcc-toolchain/recipe).
+using the vendored MSYS2 mingw-w64-gcc recipe (Tools/gcc-toolchain/recipe).
 
 Drives MSYS2 (makepkg + pacman) via `bash -lc`, then hands the resulting mingw64
 prefix to package_gcc_toolchain.py to produce dist/gcc-trunk-windows-x64.zip.
@@ -9,7 +9,7 @@ The vendored recipe carries MSYS2's Windows patch stack — a plain configure/ma
 of GCC trunk does NOT build on native Windows, which is why this goes through
 makepkg rather than configuring GCC directly.
 
-    python scripts/build_gcc_trunk.py --snapshot 20260601 --msys-root C:/msys64
+    python Tools/build_gcc_trunk.py --snapshot 20260601 --msys-root C:/msys64
 """
 import argparse
 import re
@@ -86,7 +86,7 @@ def main() -> None:
     p = argparse.ArgumentParser(description="Build the GCC trunk toolchain via the vendored MSYS2 recipe")
     p.add_argument("--snapshot", required=True, help="GCC weekly snapshot date, e.g. 20260601")
     p.add_argument("--msys-root", type=Path, default=REPO_ROOT / "msys64", help="MSYS2 root (default <repo>/msys64)")
-    p.add_argument("--recipe", type=Path, default=REPO_ROOT / "scripts" / "gcc-toolchain" / "recipe")
+    p.add_argument("--recipe", type=Path, default=REPO_ROOT / "Tools" / "gcc-toolchain" / "recipe")
     p.add_argument("--src-cache", type=Path, default=REPO_ROOT / ".gcc-src-cache",
                    help="Dir of cached gcc-<ver>-<snapshot>.tar(.xz) tarballs, used when GCC "
                         "has pruned the snapshot from its server (also checks <repo>/.gcc-build)")
@@ -119,7 +119,7 @@ def main() -> None:
     # Stage the relocatable toolchain + zip it (shared with local relocation).
     print("\n== packaging toolchain ==")
     rc = subprocess.run(
-        [sys.executable, str(REPO_ROOT / "scripts" / "package_gcc_toolchain.py"),
+        [sys.executable, str(REPO_ROOT / "Tools" / "package_gcc_toolchain.py"),
          "--msys-root", str(msys_root),
          "--stage", str(args.out.parent / "gcc-trunk"),
          "--out", str(args.out)],

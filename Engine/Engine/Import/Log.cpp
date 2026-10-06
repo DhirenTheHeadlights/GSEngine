@@ -9,6 +9,7 @@ import gse.meta;
 import gse.moodycamel;
 import gse.time;
 import gse.win32;
+import gse.win32.environment;
 import std;
 
 namespace gse::log {
@@ -21,6 +22,8 @@ namespace gse::log {
 	auto current_thread_tag() -> std::uint64_t;
 
 	auto thread_display() -> std::string;
+
+	auto describe_os_thread() -> void;
 
 	auto should_flush(
 		level lvl
@@ -238,14 +241,22 @@ auto gse::log::enabled(const level lvl, const category cat) -> bool {
 	return lvl >= category_levels[static_cast<std::size_t>(cat)].load(std::memory_order_relaxed);
 }
 
+auto gse::log::describe_os_thread() -> void {
+	win32::SetThreadDescription(win32::GetCurrentThread(), win32::widen(thread_display()).c_str());
+}
+
 auto gse::log::name_thread(const thread_role role) -> void {
-	t_thread_role = role;
-	t_thread_index = no_thread_index;
+	name_thread(role, no_thread_index);
 }
 
 auto gse::log::name_thread(const thread_role role, const std::size_t index) -> void {
 	t_thread_role = role;
 	t_thread_index = index;
+	describe_os_thread();
+}
+
+auto gse::log::current_thread_role() -> thread_role {
+	return t_thread_role;
 }
 
 gse::log::sampler::sampler(const std::uint64_t every) : m_mode(mode::count), m_every(every == 0 ? 1 : every) {}

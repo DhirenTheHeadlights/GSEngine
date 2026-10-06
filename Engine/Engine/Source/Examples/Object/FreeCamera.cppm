@@ -18,7 +18,7 @@ import gse.gpu;
 
 export namespace gse::free_camera {
 	struct component {
-		vec3<position> initial_position = vec3<position>(0.f, 0.f, 5.f);
+		vec3<position> initial_position = vec3<position>(meters(0.f, 0.f, 5.f));
 		int priority = 10;
 		int detached_priority = 100;
 		velocity speed = meters_per_second(100.f);

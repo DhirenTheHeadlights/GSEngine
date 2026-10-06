@@ -642,7 +642,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 	const std::span<const text_rule> rules = params.rules;
 	const rectf rect = *params.rect;
 	const bool read_only = params.read_only;
-	const bool image_paste = params.images && window::clipboard_image_available();
+	const bool image_paste = params.images && clipboard::image_available();
 	const bool follow_tail = params.follow_tail;
 	const bool show_line_numbers = params.show_line_numbers;
 	const std::size_t indent_width = params.indent_width;

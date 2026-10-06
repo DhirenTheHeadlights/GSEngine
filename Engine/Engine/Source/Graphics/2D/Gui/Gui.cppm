@@ -196,6 +196,7 @@ namespace gse::gui {
 
 	struct widget_context_info {
 		menu& current_menu;
+		const style& style;
 		vec2f& layout_cursor;
 		rectf clip;
 	};

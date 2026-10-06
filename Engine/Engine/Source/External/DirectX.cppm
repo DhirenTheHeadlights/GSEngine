@@ -129,6 +129,8 @@ export namespace gse::directx {
 	constexpr auto layout_copy_source = D3D12_BARRIER_LAYOUT_COPY_SOURCE;
 	constexpr auto layout_copy_dest = D3D12_BARRIER_LAYOUT_COPY_DEST;
 
+	constexpr auto present_allow_tearing = DXGI_PRESENT_ALLOW_TEARING;
+
 	constexpr auto dimension_texture_2d = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
 	constexpr auto dimension_texture_3d = D3D12_RESOURCE_DIMENSION_TEXTURE3D;
 	constexpr auto resource_flag_none = D3D12_RESOURCE_FLAG_NONE;
@@ -351,6 +353,10 @@ export namespace gse::directx {
 		ID3D12Device* device
 	) -> std::uint32_t;
 
+	[[nodiscard]] auto tearing_supported(
+		IDXGIFactory4* factory
+	) -> bool;
+
 	[[nodiscard]] auto create_swapchain(
 		IDXGIFactory4* factory,
 		ID3D12CommandQueue* queue,
@@ -358,8 +364,18 @@ export namespace gse::directx {
 		std::uint32_t width,
 		std::uint32_t height,
 		std::uint32_t buffer_count,
-		DXGI_FORMAT format
+		DXGI_FORMAT format,
+		bool allow_tearing
 	) -> com_ptr<IDXGISwapChain3>;
+
+	[[nodiscard]] auto resize_swapchain_buffers(
+		IDXGISwapChain3* swapchain,
+		std::uint32_t width,
+		std::uint32_t height,
+		std::uint32_t buffer_count,
+		DXGI_FORMAT format,
+		bool allow_tearing
+	) -> bool;
 
 	[[nodiscard]] auto swapchain_buffer(
 		IDXGISwapChain3* swapchain,
@@ -1366,7 +1382,19 @@ auto gse::directx::rtv_descriptor_size(ID3D12Device* device) -> std::uint32_t {
 	return device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 }
 
-auto gse::directx::create_swapchain(IDXGIFactory4* factory, ID3D12CommandQueue* queue, void* hwnd, const std::uint32_t width, const std::uint32_t height, const std::uint32_t buffer_count, const DXGI_FORMAT format) -> com_ptr<IDXGISwapChain3> {
+auto gse::directx::tearing_supported(IDXGIFactory4* factory) -> bool {
+	com_ptr<IDXGIFactory5> factory5;
+	if (FAILED(factory->QueryInterface(IID_PPV_ARGS(factory5.put())))) {
+		return false;
+	}
+	BOOL allowed = FALSE;
+	if (FAILED(factory5->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &allowed, sizeof(allowed)))) {
+		return false;
+	}
+	return allowed != FALSE;
+}
+
+auto gse::directx::create_swapchain(IDXGIFactory4* factory, ID3D12CommandQueue* queue, void* hwnd, const std::uint32_t width, const std::uint32_t height, const std::uint32_t buffer_count, const DXGI_FORMAT format, const bool allow_tearing) -> com_ptr<IDXGISwapChain3> {
 	const DXGI_SWAP_CHAIN_DESC1 desc = {
 		.Width = width,
 		.Height = height,
@@ -1377,6 +1405,7 @@ auto gse::directx::create_swapchain(IDXGIFactory4* factory, ID3D12CommandQueue* 
 		.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT,
 		.BufferCount = buffer_count,
 		.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD,
+		.Flags = allow_tearing ? static_cast<UINT>(DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING) : 0u,
 	};
 
 	IDXGISwapChain1* sc1 = nullptr;
@@ -1388,6 +1417,11 @@ auto gse::directx::create_swapchain(IDXGIFactory4* factory, ID3D12CommandQueue* 
 		sc1->Release();
 	}
 	return swapchain;
+}
+
+auto gse::directx::resize_swapchain_buffers(IDXGISwapChain3* swapchain, const std::uint32_t width, const std::uint32_t height, const std::uint32_t buffer_count, const DXGI_FORMAT format, const bool allow_tearing) -> bool {
+	const UINT flags = allow_tearing ? static_cast<UINT>(DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING) : 0u;
+	return SUCCEEDED(swapchain->ResizeBuffers(buffer_count, width, height, format, flags));
 }
 
 auto gse::directx::swapchain_buffer(IDXGISwapChain3* swapchain, const std::uint32_t index) -> com_ptr<ID3D12Resource> {

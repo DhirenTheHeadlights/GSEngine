@@ -46,6 +46,10 @@ auto gse::engine::all_settled() const -> bool {
 	return m_scheduler.all_settled();
 }
 
+auto gse::engine::frame_presented() const -> bool {
+	return m_frame_presented;
+}
+
 auto gse::engine::create_attached_surface(gpu::context::data& gpu_state, const vec2u extent) -> void {
 	m_attached_counter = 0;
 	m_attached_produced_semaphore = gpu_state.device->create_exportable_semaphore();
@@ -447,6 +451,14 @@ auto gse::engine::update() -> void {
 	}
 }
 
+auto gse::engine::apply_pending_resizes() -> void {
+	auto* gpu_state = m_scheduler.try_state_of<gpu::context::data>();
+	if (!gpu_state || !gpu_state->frame) {
+		return;
+	}
+	gpu::context::apply_pending_resizes(*gpu_state);
+}
+
 auto gse::engine::render() -> void {
 	bool frame_ok = false;
 	auto* gpu_state = m_scheduler.try_state_of<gpu::context::data>();
@@ -536,6 +548,8 @@ auto gse::engine::render() -> void {
 
 	}
 
+	m_frame_presented = frame_ok;
+
 	m_scheduler.render(
 		frame_ok,
 		[this, gpu_state] {
@@ -607,7 +621,7 @@ auto gse::engine::push_attached_input(const input::event& event) -> void {
 		return;
 	}
 	if (window_state->primary.ui_focus) {
-		const auto dims = window::viewport(*window_state);
+		const auto dims = window::viewport(window_state->primary.handle);
 		auto to_surface = [dims](const double x, const double y) {
 			return std::pair{
 				std::clamp(x, 0.0, static_cast<double>(dims.x())),
@@ -691,7 +705,7 @@ auto gse::engine::world() -> world_system::data& {
 
 auto gse::engine::window_should_close() -> bool {
 	auto* window_state = m_scheduler.try_state_of<window::data>();
-	return window_state && !window::is_open(*window_state);
+	return window_state && window_state->primary.should_close;
 }
 
 auto gse::engine::tick_window() -> void {

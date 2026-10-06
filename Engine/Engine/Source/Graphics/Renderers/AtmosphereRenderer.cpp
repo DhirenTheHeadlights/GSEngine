@@ -109,7 +109,7 @@ namespace gse::renderer::atmosphere {
 		gpu::body_path<"Graphics/AtmosphereSky">,
 		gpu::types<atmosphere_types>,
 		gpu::bindings<sky_raster_bindings>,
-		gpu::helpers<"Atmosphere/atmosphere_common">,
+		gpu::helpers<"Atmosphere/atmosphere_common", "Screen/screen_pass">,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
 		gpu::push_constant<sky_raster_push_constants>,

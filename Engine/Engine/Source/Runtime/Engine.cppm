@@ -84,6 +84,7 @@ export namespace gse {
 		std::string ipc_pipe_name;
 		std::uint32_t parent_pid = 0;
 		std::uint32_t worker_threads = 0;
+		time exit_after{};
 		std::string dump_system_graph_path;
 		std::vector<std::string> setting;
 		bench_config bench;
@@ -159,6 +160,8 @@ export namespace gse {
 
 		auto tick_window() -> void;
 
+		auto apply_pending_resizes() -> void;
+
 		auto attached_surface_ready() const -> bool;
 
 		auto abandon_attach() -> void;
@@ -176,6 +179,8 @@ export namespace gse {
 		[[nodiscard]] auto snapshot_graph() const -> introspection::system_graph;
 
 		[[nodiscard]] auto all_settled() const -> bool;
+
+		[[nodiscard]] auto frame_presented() const -> bool;
 
 		auto add_system_node(
 			system_node node
@@ -216,6 +221,7 @@ export namespace gse {
 		std::uint32_t m_frames_since_rendered = 0;
 		bool m_window_shown = false;
 		bool m_headless_gpu = false;
+		bool m_frame_presented = false;
 		std::array<gpu::shared_surface, attached_ring_size> m_attached_surfaces{};
 		std::array<gpu::image, attached_ring_size> m_attached_surface_images;
 		gpu::handle<gpu::semaphore> m_attached_produced_semaphore{};

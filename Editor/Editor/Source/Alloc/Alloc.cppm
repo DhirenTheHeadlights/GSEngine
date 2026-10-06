@@ -175,7 +175,7 @@ auto gse::ide::draw_alloc_row(gui::draw_context& ctx, const rectf& row, const al
 		.text = growth,
 		.position = { growth_x, baseline },
 		.scale = fs,
-		.color = entry.since_mark > byte_count(0) ? sty.color_accent : sty.color_text_secondary,
+		.color = entry.since_mark > bytes(0.) ? sty.color_accent : sty.color_text_secondary,
 		.clip_rect = row,
 	});
 

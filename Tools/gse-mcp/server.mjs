@@ -4,7 +4,7 @@
 // --mcp-config pointing at mcp.json next to this file). Each tool returns a bounded, shaped
 // payload so a chat never has to dump a log or poll a file to learn something the editor
 // already knows. Build and hibernate ride the existing file inbox in
-// %LOCALAPPDATA%\GSE\cache\agent-build, exactly as Tools/gse-build and Tools/gse-hibernate
+// %LOCALAPPDATA%\GSE\cache\agent-build, exactly as the retired Tools/gse-build and Tools/gse-hibernate shell tools
 // do, so the editor needs no new endpoint for them.
 //
 // No dependencies beyond node. Protocol: JSON-RPC 2.0, one message per line, MCP 2025-06-18.
@@ -106,6 +106,15 @@ const build = async (args, run_only = false) => {
 	const settings = (Array.isArray(args.settings) ? args.settings : [])
 		.map((assignment) => String(assignment).replace(/[\r\n\t]+/g, ' ').trim())
 		.filter((assignment) => assignment.includes('=') && assignment.indexOf('.') < assignment.indexOf('='));
+	const scenario = String(args.scenario ?? '').replace(/[\r\n\t"]+/g, '').trim();
+	const seconds = Number(args.seconds ?? 0);
+	const launching = run_only || Boolean(args.run);
+
+	if (launching && !scenario && !(seconds > 0)) {
+		return text_result(header(project, {
+			error: 'a run needs a bound. Pass scenario: "<name>" - a scenario drives the world through a scripted sequence and exits on its own, which is what makes a run worth watching. The catalogue is Sandbox/Sandbox/Source/Sandbox/Scenarios.cppm. If you genuinely need the plain game (a boot crash, or a bug that only shows under the owner\'s settings - a scenario reads neither ini), pass seconds: N instead.',
+		}), true);
+	}
 
 	rmSync(join(inbox, 'results', `${id}.txt`), { force: true });
 	write_atomically(join(inbox, 'requests'), id, [
@@ -118,6 +127,8 @@ const build = async (args, run_only = false) => {
 		`profile ${args.profile ?? ''}`,
 		`cwd ${windows_path(process.cwd())}`,
 		`project ${project}`,
+		...(scenario ? [`scenario ${scenario}`] : []),
+		...(!scenario && seconds > 0 ? [`exit_after ${seconds} s`] : []),
 		...settings.map((assignment) => `setting ${assignment}`),
 		'',
 	].join('\n'));
@@ -259,12 +270,12 @@ const build_status = async (args) => {
 		yours: r.agent === agent,
 		mine_or_other: r.agent === agent ? 'yours' : 'another chat',
 	}));
-	const hibernating = list(join(inbox, 'hibernate')).map((r) => ({ id: r.id, yours: r.agent === agent }));
+	const hibernate_requests = list(join(inbox, 'hibernate')).map((r) => ({ id: r.id, yours: r.agent === agent }));
 	return text_result(header(project, {
 		queued_requests: queued,
-		hibernating_chats: hibernating.length,
-		you_are_hibernating: hibernating.some((h) => h.yours),
-		note: 'Requests disappear from the queue when the editor picks them up. A build in progress is visible in the editor; its result comes back to the requester, or wakes hibernating chats whose edited files it covered.',
+		pending_hibernate_requests: hibernate_requests.length,
+		your_hibernate_request_pending: hibernate_requests.some((h) => h.yours),
+		note: 'Requests disappear from the queue when the editor picks them up. A build in progress is visible in the editor; its result comes back to the requester, or wakes hibernating chats whose edited files it covered. The hibernate counts are UNDELIVERED REQUESTS only: a hibernation the editor has already accepted lives in the editor, so 0 pending does not mean nobody is asleep - the agents panel is where that shows.',
 	}));
 };
 
@@ -304,7 +315,7 @@ const hibernate = async (args) => {
 		await sleep(1000);
 	}
 	rmSync(join(inbox, 'hibernate', `${id}.txt`), { force: true });
-	return text_result(header(project, { outcome: 'no_editor', error: 'no editor answered within 15s - it is not running, so nothing would wake you.' }), true);
+	return text_result(header(project, { outcome: 'no_editor', error: 'no editor claimed this within 15s - either no editor is open on this project, or this chat was not started from the editor agent panel, so no editor owns it. Nothing would wake you; keep working normally.' }), true);
 };
 
 const phase_done = async (args) => {
@@ -346,7 +357,7 @@ const phase_done = async (args) => {
 		await sleep(1000);
 	}
 	rmSync(join(inbox, 'phases', `${id}.txt`), { force: true });
-	return text_result(header(project, { outcome: 'no_editor', error: 'no editor answered within 15s - it is not running, so nothing would advance the phase.' }), true);
+	return text_result(header(project, { outcome: 'no_editor', error: 'no editor claimed this within 15s - either no editor is open on this project, or this chat was not started from the editor agent panel, so it has no phases. Keep working normally.' }), true);
 };
 
 const log_query = async (args) => {
@@ -993,7 +1004,9 @@ const tools = {
 			type: 'object',
 			properties: {
 				target: { type: 'string', enum: ['game', 'editor'], description: 'game (default) builds the project; editor rebuilds the running editor, which relaunches itself.' },
-				run: { type: 'boolean', description: 'Launch a play session after a successful game build.' },
+				run: { type: 'boolean', description: 'Launch a play session after a successful game build. Like gse_run, it must be bounded: pass scenario, or seconds for a free run.' },
+				scenario: { type: 'string', description: 'With run: the scenario to launch afterwards. See gse_run.' },
+				seconds: { type: 'number', description: 'With run: bound a free run to this long. See gse_run.' },
 				profile: { type: 'string', description: 'Named build profile from the editor build row. Omit to build the editor\'s own configuration.' },
 				tree: { type: 'string', description: 'Build in a named worktree instead of the one you are in.' },
 				project: { type: 'string', description: 'Directory holding the .gseproj to address. Defaults to the nearest one above the current directory.' },
@@ -1016,7 +1029,7 @@ const tools = {
 		run: package_sdk,
 	},
 	gse_build_status: {
-		description: 'What is queued in the editor build inbox and whether you are hibernating. Use instead of polling file timestamps.',
+		description: 'What is queued in the editor build inbox, and whether a hibernate request of yours is still undelivered. Use instead of polling file timestamps. It cannot see a hibernation the editor has already accepted - that state lives in the editor.',
 		schema: { type: 'object', properties: { project: { type: 'string' } } },
 		run: build_status,
 	},
@@ -1032,14 +1045,16 @@ const tools = {
 	},
 	gse_run: {
 		description:
-			'Launch the existing game executable through the editor, without building it. Use it to observe real behaviour - a crash, a log, a startup failure - rather than reasoning about it from source. It does NOT build: whatever is on disk is what runs, so if you have edited since the last build, call gse_build first or you will be watching stale code. If a build is already in flight your run waits for it and then starts the new executable, so you never race a half-written binary. `settings` applies setting overrides to this run only, as command-line arguments - nothing is written to the ini and the next run is unaffected, so this is how you turn on a diagnostic like validation for one reproduction. Returns once the game has been started, not when it exits; the game writes its own log, so read it afterwards with gse_log_query rather than waiting here. Only the game can be launched - the editor is the process answering you.',
+			'Launch the existing game executable through the editor, without building it. Use it to observe real behaviour - a crash, a log, a startup failure - rather than reasoning about it from source. Every run must be bounded, so pass either `scenario` or `seconds`. A scenario is the form to reach for: it is a named script that settles the world, drives it through a fixed sequence on a fixed-step clock, and exits on its own with a profile, a percentile summary and a world-state hash - a launch with nobody at the keyboard otherwise just sits in an empty scene until something kills it. Read Sandbox/Sandbox/Source/Sandbox/Scenarios.cppm for the catalogue; a scenario run is hermetic, so it reads neither ini. `seconds` is the escape hatch for the two things a scenario cannot do: a crash during boot, and a bug that only appears under the owner\'s saved settings. It does NOT build: whatever is on disk is what runs, so if you have edited since the last build, call gse_build first or you will be watching stale code. If a build is already in flight your run waits for it and then starts the new executable, so you never race a half-written binary. `settings` applies setting overrides to this run only, as command-line arguments - nothing is written to the ini and the next run is unaffected, so this is how you turn on a diagnostic like validation for one reproduction. Returns once the game has been started, not when it exits; the game writes its own log, so read it afterwards with gse_log_query rather than waiting here. Only the game can be launched - the editor is the process answering you.',
 		schema: {
 			type: 'object',
 			properties: {
+				scenario: { type: 'string', description: 'Name of a scenario to run, e.g. "physics_stress" or "solver_showcase". The catalogue is the annotated declarations in Sandbox/Sandbox/Source/Sandbox/Scenarios.cppm. The scenario owns the scene, the frame budget and the solver, and ends the run itself. A name that is not in the catalogue exits immediately and writes no log, so take it from the file rather than guessing.' },
+				seconds: { type: 'number', description: 'Run the plain game this long, then shut it down cleanly. Only for what a scenario cannot reach: a boot crash, or a bug that needs the owner\'s saved settings. Ignored when scenario is given.' },
 				settings: {
 					type: 'array',
 					items: { type: 'string' },
-					description: 'Setting overrides for this run only, each "Section.key=value", e.g. "Graphics.validation_layers_enabled=true". Applied in memory; the ini is never touched. Entries not in Section.key=value form are dropped.',
+					description: 'Setting overrides for this run only, each "Section.key=value", e.g. "Graphics.validation_layers_enabled=true". Applied in memory; the ini is never touched. Entries not in Section.key=value form are dropped. A scenario pins its own declared settings ahead of these.',
 				},
 				tree: { type: 'string', description: 'Worktree name to run; defaults to the one owning your working directory.' },
 				project: { type: 'string', description: 'Project directory; defaults to the nearest .gseproj above the current directory.' },

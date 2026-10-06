@@ -22,18 +22,18 @@ export namespace gse {
 
 	private:
 		time_t<T> m_interval;
-		time_t<T> m_accumulated = time_t<T>(0);
+		time_t<T> m_accumulated = time_t<T>{};
 	};
 }
 
 template <typename T>
 gse::interval_timer<T>::interval_timer(const time_t<T> interval) : m_interval(interval) {
-	assert(m_interval >= time_t<T>(0), "Interval must be non-negative");
+	assert(m_interval >= time_t<T>{}, "Interval must be non-negative");
 }
 
 template <typename T>
 auto gse::interval_timer<T>::tick(const time_t<T> dt) -> bool {
-	assert(dt >= time_t<T>(0), "Delta time must be non-negative");
+	assert(dt >= time_t<T>{}, "Delta time must be non-negative");
 
 	m_accumulated += dt;
 	if (m_accumulated >= m_interval) {

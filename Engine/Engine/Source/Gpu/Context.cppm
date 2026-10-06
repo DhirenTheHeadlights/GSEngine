@@ -127,7 +127,7 @@ export namespace gse::gpu::context {
 
 	[[= system_init{}]] auto init(
 		std::optional<shared_view<window::data>> window_s,
-		const save::registry* save_reg,
+		save::registry* save_reg,
 		data& d
 	) -> async::task<>;
 
@@ -138,6 +138,10 @@ export namespace gse::gpu::context {
 	) -> async::task<>;
 
 	[[= system_shutdown{}]] auto shutdown(
+		data& d
+	) -> void;
+
+	auto apply_pending_resizes(
 		data& d
 	) -> void;
 

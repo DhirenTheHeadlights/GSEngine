@@ -319,7 +319,9 @@ export namespace gse::renderer::cloud {
 		[[= shared]] gpu::buffer shadow_ubo_buffer;
 
 		vec2u cloud_target_extent{ 0, 0 };
+		vec2u cloud_target_allocated_extent{ 0, 0 };
 		vec2u cloud_resolve_extent{ 0, 0 };
+		vec2u cloud_resolve_allocated_extent{ 0, 0 };
 		mat4f prev_view_proj{};
 		std::uint32_t frames_since_history_invalid = 0;
 		std::uint32_t frame_counter = 0;

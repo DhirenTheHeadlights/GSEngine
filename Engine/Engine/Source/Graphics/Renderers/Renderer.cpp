@@ -34,7 +34,7 @@ auto gse::renderer::run(context& ctx, const shared_view<gpu::context::data> gpu_
 		log::println(log::category::render, "Profile dumped");
 	}
 
-	const auto window_size = window::viewport(window_s);
+	const auto window_size = window::viewport(window_s.primary.handle);
 	const auto new_viewport = vec2f(static_cast<float>(window_size.x()), static_cast<float>(window_size.y()));
 
 	if (new_viewport.x() > 0.f && new_viewport.y() > 0.f && (new_viewport.x() != d.last_viewport.x() || new_viewport.y() != d.last_viewport.y())) {

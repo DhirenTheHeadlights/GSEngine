@@ -78,13 +78,6 @@ export namespace gse {
 		cursor_shape shape = cursor_shape::arrow;
 	};
 
-	struct monitor_info {
-		std::string name;
-		int width = 0;
-		int height = 0;
-		int refresh_rate = 0;
-	};
-
 	struct resolution_info {
 		int width = 0;
 		int height = 0;
@@ -194,6 +187,11 @@ export namespace gse::window {
 		[[= shared]] bool focused = true;
 		[[= shared]] bool shown = false;
 		bool framebuffer_resized = false;
+		[[= shared]] bool should_close = false;
+		bool custom_frame = false;
+		bool cursor_capture_active = false;
+		std::uint8_t mouse_button_mask = 0;
+		std::uint32_t pending_high_surrogate = 0;
 		[[= shared]] bool ui_focus = false;
 		[[= shared]] bool cursor_captured = false;
 		[[= shared]] float content_scale = 1.f;
@@ -265,27 +263,13 @@ export namespace gse::window {
 		]]
 		bool attached = false;
 
-		bool decorated = true;
 		[[= shared]] bool current_cursor_captured = false;
 		bool restore_maximized = false;
 		int last_monitor_index = 0;
 		int current_monitor_index = -1;
-		bool cmd_minimize = false;
-		bool cmd_toggle_maximize = false;
-		bool cmd_close = false;
-		bool cmd_open_file = false;
-		std::string cmd_open_file_title;
-		std::string cmd_open_file_filter_name;
-		std::string cmd_open_file_filter_pattern;
-		bool cmd_launcher_pending = false;
-		bool cmd_launcher_active = false;
-		vec2i cmd_launcher_size{ 0, 0 };
+		bool launcher_active = false;
 		vec2i launch_launcher_size{ 0, 0 };
-		bool cmd_resize_pending = false;
-		vec2i cmd_resize_size{ 0, 0 };
-		vec2i launcher_saved_position{ 0, 0 };
-		vec2i launcher_saved_size{ 0, 0 };
-		bool launcher_saved_maximized = false;
+		std::optional<geometry> launcher_restore;
 
 		[[
 			= settings::describe<"Keep the OS window frame instead of drawing application chrome inside the client area.">{},
@@ -310,8 +294,6 @@ export namespace gse::window {
 		data& d
 	) -> void;
 
-	auto poll_events() -> void;
-
 	auto wait_events(
 		time timeout
 	) -> void;
@@ -320,143 +302,26 @@ export namespace gse::window {
 		std::function<void()> pump
 	) -> void;
 
-	auto set_modal_resize_active(
-		bool active
-	) -> void;
-
 	auto post_wake() -> void;
-
-	auto clipboard_text() -> std::string;
-
-	auto set_clipboard_text(
-		std::string text
-	) -> void;
-
-	struct clipboard_image {
-		std::filesystem::path path;
-		vec2u size;
-		std::vector<std::byte> pixels;
-	};
-
-	auto clipboard_image_available() -> bool;
-
-	auto request_clipboard_image() -> void;
-
-	auto clipboard_image_pending() -> bool;
-
-	auto take_clipboard_image() -> std::optional<clipboard_image>;
-
-	auto prompt_for_file(
-		data& d
-	) -> std::filesystem::path;
-
-	auto apply_commands(
-		data& d
-	) -> void;
-
-	auto install_window_hook(
-		window_surface& surface,
-		bool custom_frame
-	) -> void;
-
-	struct secondary_window_desc {
-		std::string title;
-		vec2i size{ 800, 600 };
-		vec2i position{ 0, 0 };
-		bool use_position = false;
-	};
-
-	[[nodiscard]] auto create_secondary(
-		data& d,
-		const secondary_window_desc& desc
-	) -> window_surface*;
-
-	auto destroy_secondary(
-		data& d,
-		window_surface* surface
-	) -> void;
 
 	[[nodiscard]] auto find_surface(
 		data& d,
 		id id
 	) -> window_surface*;
 
-	[[nodiscard]] auto close_requested(
-		const window_surface& s
-	) -> bool;
-
-	[[nodiscard]] auto is_open(
-		const data& d
-	) -> bool;
-
-	[[nodiscard]] auto is_open(
-		shared_view<data> d
-	) -> bool;
-
 	[[nodiscard]] auto minimized(
-		const data& d
+		native_window_handle handle
 	) -> bool;
 
-	[[nodiscard]] auto minimized(
-		shared_view<data> d
-	) -> bool;
-
-	[[nodiscard]] auto minimized(
-		const window_surface& s
-	) -> bool;
-
-	[[nodiscard]] auto raw_handle(
-		const window_surface& s
-	) -> native_window_handle;
+	[[nodiscard]] auto viewport(
+		native_window_handle handle
+	) -> vec2i;
 
 	[[nodiscard]] auto frame_buffer_resized(
 		window_surface& s
 	) -> bool;
 
-	[[nodiscard]] auto viewport(
-		const data& d
-	) -> vec2i;
-
-	[[nodiscard]] auto viewport(
-		shared_view<data> d
-	) -> vec2i;
-
-	[[nodiscard]] auto viewport(
-		const window_surface& s
-	) -> vec2i;
-
-	[[nodiscard]] auto frame_rect(
-		const window_surface& s
-	) -> rect_t<vec2i>;
-
-	[[nodiscard]] auto frame_buffer_resized(
-		data& d
-	) -> bool;
-
-	[[nodiscard]] auto raw_handle(
-		const data& d
-	) -> native_window_handle;
-
-	[[nodiscard]] auto raw_handle(
-		shared_view<data> d
-	) -> native_window_handle;
-
 	auto show(
 		data& d
 	) -> void;
-
-	auto set_ui_focus(
-		data& d,
-		bool focus
-	) -> void;
-
-	[[nodiscard]] auto ui_focus(
-		shared_view<data> d
-	) -> bool;
-
-	[[nodiscard]] auto enumerate_monitors() -> std::vector<monitor_info>;
-
-	[[nodiscard]] auto enumerate_resolutions(
-		int monitor_index
-	) -> std::vector<resolution_info>;
 }

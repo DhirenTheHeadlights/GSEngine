@@ -378,6 +378,7 @@ export namespace gse::ide::search {
 		std::string name;
 		std::filesystem::path compile_commands;
 		bool is_project = false;
+		bool counts_loc = true;
 	};
 
 	struct index_state {
@@ -568,7 +569,8 @@ namespace gse::ide::search {
 	) -> std::unexpected<lookup_error>;
 
 	auto is_skipped_dir(
-		std::string_view name
+		std::string_view name,
+		bool at_root
 	) -> bool;
 
 	auto is_binary_ext(

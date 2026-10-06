@@ -41,7 +41,7 @@ auto gse::gui::is_popout(const viewport_state& vp) -> bool {
 auto gse::gui::widget_context_init(data& d, viewport_state& vp, const render_layer layer, const std::uint32_t z_order, const widget_context_info& info) -> draw_context_init {
 	return {
 		.current_menu = &info.current_menu,
-		.style = vp.fstate.sty,
+		.style = info.style,
 		.fonts = d.fonts,
 		.blank_texture = d.blank_texture,
 		.layout_cursor = info.layout_cursor,
@@ -126,7 +126,7 @@ auto gse::gui::init(context& ctx, const shared_view<window::data> window_s, cons
 	d.ui_scale_by_monitor = load_ui_scales(d.file_path);
 	sync_monitor_scale(d, d.primary, window_s.primary.monitor_key);
 
-	const auto viewport_size = vec2f(window::viewport(window_s));
+	const auto viewport_size = vec2f(window::viewport(window_s.primary.handle));
 	d.primary.frame_rect = rectf::from_position_size({ 0.f, viewport_size.y() }, viewport_size);
 	d.primary.menus = load(d.file_path, d.primary.menus, viewport_size, scale_factor_for(d, d.primary, viewport_size.y()));
 
@@ -209,13 +209,13 @@ auto gse::gui::init(context& ctx, const shared_view<window::data> window_s, cons
 		d.primary.visible_menu_ids_last_frame.push_back(m.id());
 	}
 
-	d.primary.previous_viewport_size = vec2f(window::viewport(window_s));
+	d.primary.previous_viewport_size = vec2f(window::viewport(window_s.primary.handle));
 	d.primary.previous_scale_factor = scale_factor_for(d, d.primary, d.primary.previous_viewport_size.y());
 }
 
 auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, const shared_view<input::data> input_state, const channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, popout_closed, menu_migrate_request, window_opened, window_closed, window_resized> requests_in, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> ui_out, data& d) -> async::task<> {
 	const auto current_viewport_size = vec2f(gpu_s.render_graph->extent());
-	const auto window_size = vec2f(window::viewport(window_s));
+	const auto window_size = vec2f(window::viewport(window_s.primary.handle));
 
 	d.primary.frame_rect = rectf::from_position_size({ 0.f, window_size.y() }, window_size);
 	for (const auto& req : requests_in.of<window_opened>()) {

@@ -21,6 +21,7 @@ import :font;
 import :gui;
 import :gui_chrome;
 import :gui_menu;
+import :gui_scale;
 import :ids;
 import :input_layers;
 import :interaction;
@@ -112,6 +113,35 @@ auto gse::gui::calculate_display_rect(viewport_state& vp, const menu& m) -> rect
 	return display_rect;
 }
 
+auto gse::gui::update_menu_zoom(viewport_state& vp, menu& m, const input::state& input_state, const rectf& display_rect, const render_layer layer, const std::uint32_t menu_z) -> void {
+	constexpr float zoom_step = 1.1f;
+
+	if (vp.input_suppressed || !vp.owns_keyboard) {
+		return;
+	}
+
+	if (!input_state.key_held(key::left_control) && !input_state.key_held(key::right_control)) {
+		return;
+	}
+
+	const vec2f mouse_position = input_state.mouse_position();
+	if (!display_rect.contains(mouse_position)) {
+		return;
+	}
+
+	if (!vp.input_layers_data.input_available_at(layer, menu_z, mouse_position) || vp.input_layers_data.consumed_scroll_axes().test(scroll_axis_kind::vertical)) {
+		return;
+	}
+
+	const float notches = input_state.scroll_delta().y();
+	if (notches == 0.f) {
+		return;
+	}
+
+	m.zoom = std::clamp(m.zoom * std::pow(zoom_step, notches), min_menu_zoom, max_menu_zoom);
+	vp.input_layers_data.consume_scroll(scroll_axis_kind::vertical);
+}
+
 auto gse::gui::process_menu(data& d, viewport_state& vp, const input::state& input_state, const std::string& name, const render_layer layer, const std::function<void(builder&)>& build) -> void {
 	if (!vp.fstate.active) {
 		return;
@@ -176,6 +206,8 @@ auto gse::gui::process_menu(data& d, viewport_state& vp, const input::state& inp
 		current_menu.z_order = vp.next_z_order++;
 	}
 
+	update_menu_zoom(vp, current_menu, input_state, display_rect, layer, menu_z);
+
 	const float top_inset = menu_chrome_height(d.fonts, current_menu, vp.fstate.sty, display_rect.width());
 	const float body_height = std::max(0.f, display_rect.height() - top_inset);
 	const float accent_gutter = has_side_accent(current_menu) ? accent_bar_extent(sty) : 0.f;
@@ -196,13 +228,15 @@ auto gse::gui::process_menu(data& d, viewport_state& vp, const input::state& inp
 		.sample_scene_snapshot = true
 	});
 
-	const rectf content_rect = body_rect.inset({ sty.padding, sty.padding });
+	const style content_sty = scale_style(sty, current_menu.zoom);
+	const rectf content_rect = body_rect.inset({ content_sty.padding, content_sty.padding });
 	vec2f layout_cursor = content_rect.top_left();
 
 	ids::scope _(current_menu.id().number());
 
 	widget_context ctx{ widget_context_init(d, vp, layer, menu_z, {
 		.current_menu = current_menu,
+		.style = content_sty,
 		.layout_cursor = layout_cursor,
 		.clip = body_rect,
 	}), input_state };

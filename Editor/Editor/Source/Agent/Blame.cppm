@@ -28,7 +28,15 @@ namespace gse::ide::agent {
 		const session& s
 	) -> bool;
 
-	auto mid_write(
+	auto edit_settle() -> time;
+
+	auto editing_tree(
+		const session& s
+	) -> bool;
+
+	auto blocks_builds(
+		const data& d,
+		const queued_build& queued,
 		const session& s
 	) -> bool;
 
@@ -64,6 +72,15 @@ namespace gse::ide::agent {
 		data& d,
 		const build_runner::source_changed& change
 	) -> void;
+
+	auto refresh_build_times(
+		data& d
+	) -> void;
+
+	auto built_through(
+		const data& d,
+		id key
+	) -> std::int64_t;
 
 	auto refresh_stale(
 		data& d
@@ -181,11 +198,30 @@ namespace gse::ide::agent {
 
 	auto accept_hibernations(
 		data& d
+	) -> bool;
+
+	auto claimed_session(
+		data& d,
+		std::string_view agent,
+		const std::filesystem::path& cwd
+	) -> session*;
+
+	auto wake_session(
+		session& s,
+		std::string_view lead
 	) -> void;
 
 	auto wake_observers(
 		data& d,
 		const build_runner::build_finished& finished
+	) -> void;
+
+	auto wake_covered(
+		data& d
+	) -> void;
+
+	auto resume_interrupted(
+		data& d
 	) -> void;
 
 	auto hibernating_count(
@@ -196,7 +232,7 @@ namespace gse::ide::agent {
 		data& d,
 		channel_write<build_runner::build_request> builds,
 		bool building
-	) -> void;
+	) -> bool;
 
 	auto publish_inbox_result(
 		data& d,

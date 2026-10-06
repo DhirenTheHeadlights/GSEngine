@@ -44,6 +44,7 @@ export namespace gse::ide::git {
 		file_status state = file_status::none;
 		int added = 0;
 		int deleted = 0;
+		bool needs_stage = true;
 	};
 
 	struct repository_status {
@@ -121,6 +122,11 @@ export namespace gse::ide::git {
 		const std::filesystem::path& start
 	) -> repo_discovery;
 
+	auto capture(
+		std::string_view command_line,
+		const std::filesystem::path& repo_root
+	) -> std::expected<std::string, std::string>;
+
 	auto git_dir_of(
 		const std::filesystem::path& root
 	) -> std::filesystem::path;
@@ -128,7 +134,7 @@ export namespace gse::ide::git {
 	struct command {
 		std::filesystem::path root;
 		std::vector<std::string> steps;
-		std::filesystem::path scratch;
+		std::vector<std::filesystem::path> scratch;
 	};
 
 	struct command_result {
@@ -178,7 +184,8 @@ namespace gse::ide::git {
 	auto add_change(
 		repository_status& status,
 		std::string_view relative,
-		file_status state
+		file_status state,
+		bool needs_stage
 	) -> void;
 
 	auto mark_ancestors(
@@ -193,11 +200,6 @@ namespace gse::ide::git {
 
 	auto read_file_text(
 		const std::filesystem::path& path
-	) -> std::expected<std::string, std::string>;
-
-	auto capture(
-		std::string_view command_line,
-		const std::filesystem::path& repo_root
 	) -> std::expected<std::string, std::string>;
 
 	auto apply_numstat(
@@ -269,7 +271,7 @@ auto gse::ide::git::parse_header(repository_status& status, const std::string_vi
 	}
 }
 
-auto gse::ide::git::add_change(repository_status& status, const std::string_view relative, const file_status state) -> void {
+auto gse::ide::git::add_change(repository_status& status, const std::string_view relative, const file_status state, const bool needs_stage) -> void {
 	std::filesystem::path relative_path(relative);
 	const std::filesystem::path full = status.root / relative_path;
 	status.entries[generate_temp_id(full)] = state;
@@ -277,6 +279,7 @@ auto gse::ide::git::add_change(repository_status& status, const std::string_view
 	status.changes.push_back({
 		.relative = std::move(relative_path),
 		.state = state,
+		.needs_stage = needs_stage,
 	});
 }
 
@@ -314,6 +317,7 @@ auto gse::ide::git::parse_status(const std::string_view text, const std::filesys
 
 		std::string_view path;
 		file_status file_state = file_status::none;
+		bool needs_stage = true;
 		switch (record.front()) {
 			case '#':
 				parse_header(status, record);
@@ -321,10 +325,12 @@ auto gse::ide::git::parse_status(const std::string_view text, const std::filesys
 			case '1':
 				path = after_fields(record, 8);
 				file_state = classify(record[2], record[3]);
+				needs_stage = record[3] != '.';
 				break;
 			case '2':
 				path = after_fields(record, 9);
 				file_state = classify(record[2], record[3]);
+				needs_stage = record[3] != '.';
 				break;
 			case 'u':
 				path = after_fields(record, 10);
@@ -340,7 +346,7 @@ auto gse::ide::git::parse_status(const std::string_view text, const std::filesys
 		if (path.empty()) {
 			return std::unexpected("git status returned an empty path");
 		}
-		add_change(status, path, file_state);
+		add_change(status, path, file_state, needs_stage);
 
 		if (record.front() == '2') {
 			const std::size_t original_nul = text.find('\0', i);
@@ -492,8 +498,8 @@ auto gse::ide::git::run_steps(const command& request) -> std::expected<void, std
 	const auto _ = make_scope_exit([&request, &out_path] {
 		std::error_code ec;
 		std::filesystem::remove(out_path, ec);
-		if (!request.scratch.empty()) {
-			std::filesystem::remove(request.scratch, ec);
+		for (const std::filesystem::path& scratch : request.scratch) {
+			std::filesystem::remove(scratch, ec);
 		}
 	});
 

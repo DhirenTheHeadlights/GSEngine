@@ -32,6 +32,7 @@ export namespace gse::ide::config {
 		std::filesystem::path compile_commands;
 		bool is_project = false;
 		bool analyzable = true;
+		bool counts_loc = true;
 	};
 
 	auto worktrees() -> std::span<const worktree>;

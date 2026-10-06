@@ -175,26 +175,16 @@ shadow_config get_shadow_config(int quality) {
 }
 
 struct ao_config {
-    int max_samples;
+    int samples;
     float max_range;
     float fade_start;
-    int near_samples;
-    int mid_samples;
-    int far_samples;
-    float near_dist;
-    float mid_dist;
 };
 
 ao_config make_ao_config(float4 distances, int4 samples) {
     ao_config cfg;
-    cfg.max_samples = samples.x;
-    cfg.near_samples = samples.y;
-    cfg.mid_samples = samples.z;
-    cfg.far_samples = samples.w;
+    cfg.samples = samples.y;
     cfg.max_range = distances.x;
     cfg.fade_start = distances.y;
-    cfg.near_dist = distances.z;
-    cfg.mid_dist = distances.w;
     return cfg;
 }
 
@@ -211,10 +201,6 @@ ao_config get_ao_config(int quality) {
 float trace_ao(float3 origin, float3 normal, float2 pixel, ao_config cfg, float view_dist) {
     if (view_dist > cfg.max_range) return 1.0;
 
-    int sample_count = cfg.near_samples;
-    if (view_dist > cfg.mid_dist) sample_count = cfg.far_samples;
-    else if (view_dist > cfg.near_dist) sample_count = cfg.mid_samples;
-
     float3 biased_origin = origin + normal * 0.05;
 
     float3 up = abs(normal.y) < 0.999 ? float3(0, 1, 0) : float3(1, 0, 0);
@@ -222,15 +208,16 @@ float trace_ao(float3 origin, float3 normal, float2 pixel, ao_config cfg, float 
     float3 bitangent = cross(normal, tangent);
 
     float rotation = interleaved_gradient_noise(pixel) * 6.28318;
-    float inv_count = 1.0 / float(sample_count);
+    float frame_phase = float(pc.frame_counter % 64u);
+    float inv_count = 1.0 / float(cfg.samples);
     float occlusion = 0.0;
 
     [unroll]
     for (int s = 0; s < max_ao_samples; ++s) {
-        if (s >= sample_count) break;
+        if (s >= cfg.samples) break;
         float r = sqrt((float(s) + 0.5) * inv_count);
         float z = sqrt(1.0 - r * r);
-        float theta = float(s) * GOLDEN_ANGLE + rotation;
+        float theta = (float(s) + frame_phase) * GOLDEN_ANGLE + rotation;
         float3 local_dir = float3(r * cos(theta), r * sin(theta), z);
         float3 world_dir = tangent * local_dir.x + bitangent * local_dir.y + normal * local_dir.z;
         occlusion += trace_shadow_ray(biased_origin, normalize(world_dir), cfg.max_range);
@@ -459,7 +446,7 @@ float4 fs_main(MeshOutput input) : SV_Target0 {
 
     ao_config aocfg = get_ao_config(clamp(pc.ao_quality, 0, 4));
     float ao = 1.0;
-    if (aocfg.max_samples > 0) {
+    if (aocfg.samples > 0) {
         ao = trace_ao(pos_world, world_n, pixel, aocfg, view_dist);
     }
 

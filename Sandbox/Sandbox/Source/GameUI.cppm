@@ -51,7 +51,7 @@ auto sandbox::client_ui::push_crosshair(gse::context& ctx, const gse::channel_wr
 		return;
 	}
 
-	const auto viewport = gse::vec2f(gse::window::viewport(window_d));
+	const auto viewport = gse::vec2f(gse::window::viewport(window_d.primary.handle));
 	const gse::vec2f center = { viewport.x() * 0.5f, viewport.y() * 0.5f };
 	const gse::vec4f color = { crosshair_d.color_r, crosshair_d.color_g, crosshair_d.color_b, crosshair_d.opacity };
 	const gse::vec4f outline_color = { 0.f, 0.f, 0.f, crosshair_d.outline_opacity };
@@ -117,7 +117,7 @@ auto sandbox::client_ui::push_recording_indicator(gse::context& ctx, const gse::
 		return;
 	}
 
-	const auto viewport = gse::vec2f(gse::window::viewport(window_d));
+	const auto viewport = gse::vec2f(gse::window::viewport(window_d.primary.handle));
 	const float dot_size = 28.f;
 	const float margin = 24.f;
 	const gse::vec2f top_left{ viewport.x() - margin - dot_size, viewport.y() - margin };

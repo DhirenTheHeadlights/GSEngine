@@ -145,7 +145,7 @@ auto sandbox::orbit_camera::update(gse::context& ctx, data& d, const gse::shared
 					continue;
 				}
 				const gse::physics::box_shape inflated{
-					.size = shape->size + gse::vec3<gse::displacement>(inflation, inflation, inflation)
+					.size = shape->size + gse::vec3<gse::displacement>(inflation)
 				};
 				body(gse::bounding_box(*col_tc, inflated));
 			}

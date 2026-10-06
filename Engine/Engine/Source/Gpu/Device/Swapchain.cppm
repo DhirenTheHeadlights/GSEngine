@@ -15,6 +15,22 @@ import gse.math;
 import gse.log;
 
 export namespace gse::gpu {
+	constexpr std::uint32_t screen_allocation_granularity = 256;
+
+	[[nodiscard]] auto screen_allocation_for(
+		vec2u active
+	) -> vec2u;
+
+	[[nodiscard]] auto screen_uv_scale_for(
+		vec2u active,
+		vec2u allocated
+	) -> vec2f;
+
+	[[nodiscard]] auto screen_uv_max_for(
+		vec2u active,
+		vec2u allocated
+	) -> vec2f;
+
 	class swap_chain final : public non_copyable {
 	public:
 		[[nodiscard]]
@@ -244,9 +260,11 @@ auto gse::gpu::swap_chain::recreate(const vec2i framebuffer_size, const gpu::pre
 		return std::unexpected(info.error());
 	}
 
-	m_depth_image = {};
 	m_info = std::move(*info);
-	m_depth_image = create_swapchain_depth(*m_device, m_info.extent);
+	if (!m_depth_image.handle() || m_depth_image.extent() != screen_allocation_for(m_info.extent)) {
+		m_depth_image = {};
+		m_depth_image = create_swapchain_depth(*m_device, m_info.extent);
+	}
 	return {};
 }
 
@@ -268,10 +286,41 @@ auto gse::gpu::swap_chain::current_handle() const -> swap_chain_handle {
 	return m_info.handle;
 }
 
+auto gse::gpu::screen_allocation_for(const vec2u active) -> vec2u {
+	const auto round_up = [](const std::uint32_t value) -> std::uint32_t {
+		if (value == 0) {
+			return 0;
+		}
+		return ((value + screen_allocation_granularity - 1) / screen_allocation_granularity) * screen_allocation_granularity;
+	};
+	return vec2u{ round_up(active.x()), round_up(active.y()) };
+}
+
+auto gse::gpu::screen_uv_scale_for(const vec2u active, const vec2u allocated) -> vec2f {
+	if (allocated.x() == 0 || allocated.y() == 0) {
+		return vec2f{ 1.f, 1.f };
+	}
+	return vec2f{
+		static_cast<float>(active.x()) / static_cast<float>(allocated.x()),
+		static_cast<float>(active.y()) / static_cast<float>(allocated.y()),
+	};
+}
+
+auto gse::gpu::screen_uv_max_for(const vec2u active, const vec2u allocated) -> vec2f {
+	if (allocated.x() == 0 || allocated.y() == 0) {
+		return vec2f{ 1.f, 1.f };
+	}
+	const auto scale = screen_uv_scale_for(active, allocated);
+	return vec2f{
+		scale.x() - 0.5f / static_cast<float>(allocated.x()),
+		scale.y() - 0.5f / static_cast<float>(allocated.y()),
+	};
+}
+
 auto gse::gpu::create_swapchain_depth(device& dev, const vec2u extent) -> image {
 	auto img = dev.create_image(
 		image_desc{
-			.size = extent,
+			.size = screen_allocation_for(extent),
 			.format = image_format::d32_sfloat,
 			.usage = { image_flag::depth_attachment, image_flag::sampled },
 		},

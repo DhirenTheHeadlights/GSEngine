@@ -721,7 +721,7 @@ auto gse::gpu::vulkan_device_backend::recreate_surface(const window::window_surf
 	device_config.wait_idle();
 	device_config.destroy_swapchain(current_swapchain);
 	instance.destroy_surface();
-	instance.create_surface(win);
+	instance.create_surface(win.handle);
 	return instance.surface();
 }
 
@@ -866,7 +866,7 @@ auto gse::gpu::create_vulkan_device_backend(const std::optional<shared_view<wind
 
 	auto instance = vulkan::instance::create(win ? vulkan::instance::required_window_extensions() : std::span<const char* const>{}, validation_layers_enabled);
 	if (win) {
-		instance.create_surface(*win);
+		instance.create_surface(win->primary.handle);
 	}
 
 	auto created = vulkan::device::create(instance, cfg, aftermath_tracker);

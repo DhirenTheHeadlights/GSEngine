@@ -122,11 +122,11 @@ auto gse::gui::draw_context::queue_text(renderer::text_command cmd) const -> voi
 }
 
 auto gse::gui::draw_context::set_clipboard(const std::string& text) const -> void {
-	window::set_clipboard_text(text);
+	clipboard::set_text(text);
 }
 
 auto gse::gui::draw_context::clipboard() const -> std::string {
-	return window::clipboard_text();
+	return clipboard::text();
 }
 
 auto gse::gui::draw_context::request_text_edit(const id widget, const text_edit_action action) const -> void {
@@ -147,7 +147,7 @@ auto gse::gui::draw_context::take_text_edit(const id widget) const -> text_edit_
 auto gse::gui::draw_context::request_image_paste(const id widget) const -> void {
 	image_paste.ready.reset();
 	image_paste.target = widget;
-	window::request_clipboard_image();
+	clipboard::request_image();
 }
 
 auto gse::gui::draw_context::take_image_paste(const id widget) const -> std::optional<image_attachment> {
@@ -325,7 +325,7 @@ auto gse::gui::draw_context::is_press_consumed(const mouse_button button) const 
 	return hit_regions && hit_regions->is_press_consumed(button);
 }
 
-auto gse::gui::draw_context::scroll_delta_for(const rectf& rect) const -> vec2f {
+auto gse::gui::draw_context::scroll_delta_for(const rectf& rect, const scroll_axes axes) const -> vec2f {
 	const input::state& input = m_input;
 	if (!rect.contains(input.mouse_position())) {
 		return {};
@@ -333,27 +333,34 @@ auto gse::gui::draw_context::scroll_delta_for(const rectf& rect) const -> vec2f 
 	if (!input_available()) {
 		return {};
 	}
-	if (hit_regions && hit_regions->is_scroll_consumed()) {
-		return {};
+	const scroll_axes consumed = hit_regions ? hit_regions->consumed_scroll_axes() : scroll_axes{};
+	const vec2f raw = input.scroll_delta();
+
+	vec2f delta{};
+	scroll_axes taken;
+	if (axes.test(scroll_axis_kind::horizontal) && !consumed.test(scroll_axis_kind::horizontal) && raw.x() != 0.f) {
+		delta.x() = raw.x();
+		taken.set(scroll_axis_kind::horizontal);
 	}
-	const vec2f delta = input.scroll_delta();
-	if (delta.x() == 0.f && delta.y() == 0.f) {
-		return delta;
+	if (axes.test(scroll_axis_kind::vertical) && !consumed.test(scroll_axis_kind::vertical) && raw.y() != 0.f) {
+		delta.y() = raw.y();
+		taken.set(scroll_axis_kind::vertical);
 	}
-	if (hit_regions) {
-		hit_regions->consume_scroll();
+
+	if (hit_regions && taken) {
+		hit_regions->consume_scroll(taken);
 	}
 	return delta;
 }
 
-auto gse::gui::draw_context::consume_scroll() const -> void {
+auto gse::gui::draw_context::consume_scroll(const scroll_axes axes) const -> void {
 	if (hit_regions) {
-		hit_regions->consume_scroll();
+		hit_regions->consume_scroll(axes);
 	}
 }
 
-auto gse::gui::draw_context::is_scroll_consumed() const -> bool {
-	return hit_regions && hit_regions->is_scroll_consumed();
+auto gse::gui::draw_context::is_scroll_consumed(const scroll_axes axes) const -> bool {
+	return hit_regions && (hit_regions->consumed_scroll_axes() & axes).bits() == axes.bits();
 }
 
 auto gse::gui::draw_context::key_pressed_for(const key k) const -> bool {

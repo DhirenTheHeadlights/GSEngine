@@ -14,11 +14,17 @@ import :spawn;
 export namespace gse::ide::build_runner {
 	struct stop_session_request {};
 
+	struct run_bounds {
+		std::string scenario;
+		time exit_after{};
+	};
+
 	struct build_request {
 		build_target target = build_target::game;
 		bool run_after = false;
 		bool skip_build = false;
 		std::vector<std::string> settings;
+		run_bounds bounds;
 		play_session session;
 		std::string config;
 		std::string profile;
@@ -544,7 +550,8 @@ namespace gse::ide::build_runner {
 		const config::worktree& tree,
 		const play_session& session,
 		std::uint32_t generation,
-		std::span<const std::string> settings
+		std::span<const std::string> settings,
+		const run_bounds& bounds
 	) -> void;
 
 	auto build_game(
@@ -1045,6 +1052,7 @@ auto gse::ide::build_runner::ensure_sdk_configured(spawn::output_stream& stream,
 	const auto compiler_bin = sdk_toolchain_bin(tree);
 	if (!compiler_bin) {
 		spawn::emit(stream, compiler_bin.error());
+		log::println(log::level::error, log::category::task, "sdk build refused for {}: {}", tree.project_root.generic_display_string(), compiler_bin.error());
 		return {};
 	}
 
@@ -1838,9 +1846,11 @@ auto gse::ide::build_runner::launch_child(build_completion& completion, spawn::o
 	});
 }
 
-auto gse::ide::build_runner::launch_play_session(build_completion& completion, spawn::output_stream& stream, const config::worktree& tree, const play_session& session, const std::uint32_t generation, const std::span<const std::string> settings) -> void {
-	const std::uint32_t clients = std::min<std::uint32_t>(std::max<std::uint32_t>(session.clients, 1), max_attached_instances);
-	const std::uint32_t processes = clients + (session.dedicated_server ? 1u : 0u) + 1u;
+auto gse::ide::build_runner::launch_play_session(build_completion& completion, spawn::output_stream& stream, const config::worktree& tree, const play_session& session, const std::uint32_t generation, const std::span<const std::string> settings, const run_bounds& bounds) -> void {
+	const bool scripted = !bounds.scenario.empty();
+	const bool dedicated_server = session.dedicated_server && !scripted;
+	const std::uint32_t clients = scripted ? 1u : std::min<std::uint32_t>(std::max<std::uint32_t>(session.clients, 1), max_attached_instances);
+	const std::uint32_t processes = clients + (dedicated_server ? 1u : 0u) + 1u;
 	const std::uint32_t hardware = std::max<std::uint32_t>(2, std::thread::hardware_concurrency());
 	std::wstring pool_args = L" --engine-worker-threads " + std::to_wstring(std::max<std::uint32_t>(2, hardware / processes));
 
@@ -1848,9 +1858,17 @@ auto gse::ide::build_runner::launch_play_session(build_completion& completion, s
 		pool_args += L" --engine-setting \"" + std::wstring(assignment.begin(), assignment.end()) + L"\"";
 	}
 
+	if (scripted) {
+		pool_args += L" --engine-bench-scenario \"" + std::wstring(bounds.scenario.begin(), bounds.scenario.end()) + L"\"";
+	}
+	else if (bounds.exit_after > time{}) {
+		const std::string bound = std::format("{::s}", bounds.exit_after);
+		pool_args += L" --engine-exit-after \"" + std::wstring(bound.begin(), bound.end()) + L"\"";
+	}
+
 	std::wstring connect_args = pool_args;
 
-	if (session.dedicated_server) {
+	if (dedicated_server) {
 		launch_child(
 			completion,
 			stream,
@@ -1894,7 +1912,7 @@ auto gse::ide::build_runner::build_game(
 			completion.succeeded = true;
 		}
 		if (!st.stop_requested()) {
-			launch_play_session(completion, stream, tree, request.session, next_generation, request.settings);
+			launch_play_session(completion, stream, tree, request.session, next_generation, request.settings, request.bounds);
 		}
 		return;
 	}
@@ -1952,7 +1970,7 @@ auto gse::ide::build_runner::build_game(
 	}
 
 	if (request.run_after && !st.stop_requested()) {
-		launch_play_session(completion, stream, tree, request.session, next_generation, request.settings);
+		launch_play_session(completion, stream, tree, request.session, next_generation, request.settings, request.bounds);
 	}
 }
 

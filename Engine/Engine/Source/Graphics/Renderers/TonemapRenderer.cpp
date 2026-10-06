@@ -72,6 +72,10 @@ namespace gse::renderer::tonemap {
 		float bloom_intensity;
 		std::uint32_t show_velocity;
 		std::uint32_t auto_exposure;
+		vec2f hdr_uv_scale;
+		vec2f hdr_uv_max;
+		vec2f bloom_uv_scale;
+		vec2f bloom_uv_max;
 	};
 
 	struct [[= shaders::shader_struct]] exposure_push_constants {
@@ -94,6 +98,7 @@ namespace gse::renderer::tonemap {
 	using entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/Tonemap">,
 		gpu::bindings<shader_binding_types>,
+		gpu::helpers<"Screen/screen_pass", "Screen/screen_target">,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
 		gpu::push_constant<push_constants>,
@@ -102,10 +107,15 @@ namespace gse::renderer::tonemap {
 		gpu::depth_target<gpu::depth_format::none>
 	>;
 
+	struct [[= shaders::shader_struct]] histogram_push_constants {
+		vec2u active_extent;
+	};
+
 	using histogram_entry = gpu::compute_entry<
 		gpu::body_path<"Compute/exposure_histogram">,
 		gpu::types<exposure_types>,
 		gpu::bindings<histogram_binding_types>,
+		gpu::push_constant<histogram_push_constants>,
 		gpu::threads<16, 16, 1>,
 		gpu::system_values<gpu::dispatch_thread_id, gpu::group_index>
 	>;
@@ -234,6 +244,9 @@ auto gse::renderer::tonemap::frame(const context& ctx, shared_view<gpu::context:
 			.after<^^forward::frame, ^^atmosphere::sky_raster_pass, ^^physics_debug::frame, ^^sdf_grid::frame, ^^world_text::frame, ^^taa::frame>();
 		histogram_rec.dispatch<histogram_entry>(
 			{
+				.active_extent = ext,
+			},
+			{
 				.histogram_source = d.hdr_view.slot(),
 				.histogram_out = d.histogram_buffers[frame_index].slot(),
 			},
@@ -265,6 +278,8 @@ auto gse::renderer::tonemap::frame(const context& ctx, shared_view<gpu::context:
 	const bool bloom_active = bloom_state.bloom_quality != bloom::quality_level::off && bloom_state.active_mip_count > 0;
 
 	const auto bloom_slot = bloom_active ? bloom_state.mips_up[0].sampled_slot() : d.hdr_view.slot();
+	const auto bloom_active_extent = bloom_active ? bloom_state.mip_extents[0] : gpu_s.render_graph->extent();
+	const auto bloom_allocated_extent = bloom_active ? bloom_state.mip_allocated_extents[0] : gpu_s.render_graph->allocated_extent();
 
 	auto rec = co_await gpu::pass<^^frame>(pass_out)
 		.pipeline(d.pipeline)
@@ -279,6 +294,10 @@ auto gse::renderer::tonemap::frame(const context& ctx, shared_view<gpu::context:
 			.bloom_intensity = bloom_active ? bloom_state.bloom_intensity : 0.0f,
 			.show_velocity = d.show_velocity ? 1u : 0u,
 			.auto_exposure = d.auto_exposure ? 1u : 0u,
+			.hdr_uv_scale = gpu_s.render_graph->screen_uv_scale(),
+			.hdr_uv_max = gpu_s.render_graph->screen_uv_max(),
+			.bloom_uv_scale = gpu::screen_uv_scale_for(bloom_active_extent, bloom_allocated_extent),
+			.bloom_uv_max = gpu::screen_uv_max_for(bloom_active_extent, bloom_allocated_extent),
 		},
 		{
 			.hdr_color = d.hdr_view.slot(),

@@ -121,6 +121,9 @@ namespace gse::renderer::cloud {
 		vec2f subpixel_offset;
 		vec2f full_extent;
 		vec3<atmosphere_length> wind_offset;
+		std::uint32_t target_divisor;
+		vec2f depth_uv_scale;
+		vec2f depth_uv_max;
 	};
 
 	struct [[= shaders::shader_struct]] cloud_resolve_push_constants {
@@ -130,6 +133,15 @@ namespace gse::renderer::cloud {
 		vec2u block_offset;
 		std::int32_t divisor;
 		std::int32_t history_valid;
+		vec2f low_uv_scale;
+		vec2f low_uv_max;
+		vec2f history_uv_scale;
+		vec2f history_uv_max;
+	};
+
+	struct [[= shaders::shader_struct]] cloud_composite_push_constants {
+		vec2f screen_uv_scale;
+		vec2f screen_uv_max;
 	};
 
 	using shape_bake_bindings = type_pack<cloud_shape_out>;
@@ -150,7 +162,7 @@ namespace gse::renderer::cloud {
 		gpu::body_path<"Compute/cloud_raymarch">,
 		gpu::types<cloud_types>,
 		gpu::bindings<raymarch_bindings>,
-		gpu::helpers<"Atmosphere/atmosphere_common", "Clouds/cloud_common">,
+		gpu::helpers<"Atmosphere/atmosphere_common", "Clouds/cloud_common", "Screen/screen_target">,
 		gpu::push_constant<cloud_push_constants>,
 		gpu::threads<8, 8, 1>,
 		gpu::system_values<gpu::dispatch_thread_id>
@@ -159,6 +171,7 @@ namespace gse::renderer::cloud {
 	using resolve_entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/CloudResolve">,
 		gpu::bindings<resolve_bindings>,
+		gpu::helpers<"Screen/screen_pass", "Screen/screen_target">,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
 		gpu::push_constant<cloud_resolve_push_constants>,
@@ -180,8 +193,10 @@ namespace gse::renderer::cloud {
 	using composite_entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/CloudComposite">,
 		gpu::bindings<composite_bindings>,
+		gpu::helpers<"Screen/screen_pass", "Screen/screen_target">,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
+		gpu::push_constant<cloud_composite_push_constants>,
 		gpu::rasterization<gpu::polygon_mode::fill, gpu::cull_mode::none>,
 		gpu::color_targets<gpu::color_format::hdr>,
 		gpu::blend<gpu::blend_preset::alpha>,
@@ -277,11 +292,27 @@ auto gse::renderer::cloud::compute_cloud_target_extent(const vec2u screen_extent
 }
 
 auto gse::renderer::cloud::recreate_cloud_target(const shared_view<gpu::context::data> gpu_s, data& d) -> void {
+	const auto previous_target_allocated = d.cloud_target_allocated_extent;
+	const auto previous_resolve_allocated = d.cloud_resolve_allocated_extent;
+	const auto previous_resolve_active = d.cloud_resolve_extent;
 	d.applied_target_divisor = std::max(d.target_divisor, 1);
 	d.cloud_target_extent = compute_cloud_target_extent(gpu_s.render_graph->extent(), d.applied_target_divisor);
+	d.cloud_target_allocated_extent = compute_cloud_target_extent(gpu_s.render_graph->allocated_extent(), d.applied_target_divisor);
+	d.cloud_resolve_extent = gpu_s.render_graph->extent();
+	d.cloud_resolve_allocated_extent = gpu_s.render_graph->allocated_extent();
+
+	if (d.cloud_resolve_extent != previous_resolve_active) {
+		d.frames_since_history_invalid = 0;
+	}
+
+	if (d.cloud_target.handle() && d.cloud_target_allocated_extent == previous_target_allocated && d.cloud_resolve_allocated_extent == previous_resolve_allocated) {
+		update_depth_descriptor(gpu_s, d);
+		return;
+	}
+
 	d.cloud_target = gpu_s.device->create_image(
 		{
-			.size = d.cloud_target_extent,
+			.size = d.cloud_target_allocated_extent,
 			.format = gpu::image_format::r16g16b16a16_sfloat,
 			.usage = { gpu::image_flag::storage, gpu::image_flag::sampled },
 			.bindless = true,
@@ -290,12 +321,11 @@ auto gse::renderer::cloud::recreate_cloud_target(const shared_view<gpu::context:
 	);
 	gpu::transition_image_to(*gpu_s.device, d.cloud_target);
 
-	d.cloud_resolve_extent = gpu_s.render_graph->extent();
 	d.frames_since_history_invalid = 0;
 	for (std::size_t i = 0; i < d.cloud_resolve.frames_in_flight; ++i) {
 		d.cloud_resolve[i] = gpu_s.device->create_image(
 			{
-				.size = d.cloud_resolve_extent,
+				.size = d.cloud_resolve_allocated_extent,
 				.format = gpu::image_format::r16g16b16a16_sfloat,
 				.usage = { gpu::image_flag::color_attachment, gpu::image_flag::sampled },
 			},
@@ -620,6 +650,9 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 				static_cast<float>(resolve_extent.y()),
 			},
 			.wind_offset = d.wind_offset,
+			.target_divisor = divisor,
+			.depth_uv_scale = gpu_s.render_graph->screen_uv_scale(),
+			.depth_uv_max = gpu_s.render_graph->screen_uv_max(),
 		},
 		{
 			.transmittance_in = atm_state.transmittance_lut.sampled_slot(),
@@ -657,6 +690,10 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 			.block_offset = block_offset,
 			.divisor = static_cast<std::int32_t>(divisor),
 			.history_valid = history_ready ? 1 : 0,
+			.low_uv_scale = gpu::screen_uv_scale_for(d.cloud_target_extent, d.cloud_target_allocated_extent),
+			.low_uv_max = gpu::screen_uv_max_for(d.cloud_target_extent, d.cloud_target_allocated_extent),
+			.history_uv_scale = gpu::screen_uv_scale_for(d.cloud_resolve_extent, d.cloud_resolve_allocated_extent),
+			.history_uv_max = gpu::screen_uv_max_for(d.cloud_resolve_extent, d.cloud_resolve_allocated_extent),
 		},
 		{
 			.resolve_low_in = d.cloud_target.sampled_slot(),
@@ -677,9 +714,15 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 
 	composite_rec.set_viewport(ext);
 	composite_rec.set_scissor(ext);
-	composite_rec.push_bindings<composite_entry>({
-		.cloud_in = d.cloud_resolve_views[history_index].slot(),
-		.cloud_composite_sampler = d.composite_sampler.slot(),
-	});
+	composite_rec.push_bindings<composite_entry>(
+		{
+			.screen_uv_scale = gpu::screen_uv_scale_for(d.cloud_resolve_extent, d.cloud_resolve_allocated_extent),
+			.screen_uv_max = gpu::screen_uv_max_for(d.cloud_resolve_extent, d.cloud_resolve_allocated_extent),
+		},
+		{
+			.cloud_in = d.cloud_resolve_views[history_index].slot(),
+			.cloud_composite_sampler = d.composite_sampler.slot(),
+		}
+	);
 	composite_rec.draw(3);
 }

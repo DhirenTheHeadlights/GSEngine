@@ -61,6 +61,11 @@ namespace gse::gui {
 }
 
 export namespace gse::gui {
+	auto scale_style(
+		style sty,
+		float factor
+	) -> style;
+
 	auto apply_scale(
 		const data& d,
 		const viewport_state& vp,

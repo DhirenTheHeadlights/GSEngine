@@ -26,6 +26,8 @@ namespace gse::renderer::light_culling {
 	struct [[= shaders::shader_struct]] culling_params_data {
 		projection_matrix projection;
 		inverse_projection_matrix inv_proj;
+		vec2f depth_uv_scale;
+		vec2f depth_uv_max;
 		vec2u screen_size;
 		std::uint32_t num_lights;
 	};
@@ -60,6 +62,7 @@ namespace gse::renderer::light_culling {
 		gpu::body_path<"Compute/light_culling">,
 		gpu::types<shaders::forward::shader_types, shader_types>,
 		gpu::bindings<shader_binding_types>,
+		gpu::helpers<"Screen/screen_target">,
 		gpu::threads<16, 16, 1>,
 		gpu::system_values<gpu::group_id, gpu::group_thread_id, gpu::group_index>
 	>;
@@ -189,6 +192,8 @@ auto gse::renderer::light_culling::frame(context& ctx, shared_view<gpu::context:
 	const culling_params_data params{
 		.projection = proj,
 		.inv_proj = inv_proj,
+		.depth_uv_scale = graph.screen_uv_scale(),
+		.depth_uv_max = graph.screen_uv_max(),
 		.screen_size = vec2u{ extent.x(), extent.y() },
 		.num_lights = static_cast<std::uint32_t>(light_count),
 	};

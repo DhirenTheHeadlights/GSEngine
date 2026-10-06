@@ -730,8 +730,8 @@ auto gse::physics::build_body_bounds(const body_build_view& view, const std::fla
 		if (sparse && !scan.filled(index)) {
 			return;
 		}
-		bodies[index].aabb_min = vec3<position>(position(1e30f));
-		bodies[index].aabb_max = vec3<position>(position(-1e30f));
+		bodies[index].aabb_min = vec3<position>(meters(1e30f));
+		bodies[index].aabb_max = vec3<position>(meters(-1e30f));
 	};
 
 	if (std::ranges::equal(view.collision_owners, view.motion_owners)) {
@@ -1485,7 +1485,7 @@ auto gse::physics::add_scene_contacts_to_solver(vbd::solver& solver, vbd::contac
 										.tangent_v = manifold.tangent_v,
 										.local_anchor_a = local_r_a,
 										.local_anchor_b = local_r_b,
-										.c0 = { separation, 0.f, 0.f },
+										.c0 = { separation, gap{}, gap{} },
 										.friction_coeff = cfg.friction_coefficient,
 										.restitution = pair_restitution,
 										.penalty_floor = penalty_floor,

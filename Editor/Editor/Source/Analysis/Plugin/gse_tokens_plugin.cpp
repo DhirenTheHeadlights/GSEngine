@@ -248,22 +248,22 @@ static bool same_file_as_main(const char *file) {
 	return result;
 }
 
-static bool skipped_path_segment(const char *segment, size_t length) {
+static bool segment_equals(const char *segment, size_t length, const char *name) {
+	if (strlen(name) != length) return false;
+	for (size_t i = 0; i < length; ++i) {
+		if (ascii_lower(segment[i]) != name[i]) return false;
+	}
+	return true;
+}
+
+static bool skipped_path_segment(const char *segment, size_t length, bool at_root) {
 	static const char *names[] = {
-		"out", ".git", ".vs", ".vscode", ".claude", "external", "vcpkg",
+		"out", ".git", ".vs", ".vscode", ".claude", "vcpkg",
 		".gcc-ci-build", "build", "node_modules", ".cache"
 	};
+	if (at_root && segment_equals(segment, length, "external")) return true;
 	for (const char *name : names) {
-		const size_t name_length = strlen(name);
-		if (name_length != length) continue;
-		bool equal = true;
-		for (size_t i = 0; i < length; ++i) {
-			if (ascii_lower(segment[i]) != name[i]) {
-				equal = false;
-				break;
-			}
-		}
-		if (equal) return true;
+		if (segment_equals(segment, length, name)) return true;
 	}
 	return false;
 }
@@ -315,11 +315,13 @@ static bool under_one_root(const char *file, const char *root, size_t root_len) 
 		return false;
 	}
 	const char *segment = file + root_len;
+	bool at_root = true;
 	while (*segment) {
 		while (*segment == '/' || *segment == '\\') ++segment;
 		const char *end = segment;
 		while (*end && *end != '/' && *end != '\\') ++end;
-		if (skipped_path_segment(segment, (size_t)(end - segment))) return false;
+		if (skipped_path_segment(segment, (size_t)(end - segment), at_root)) return false;
+		at_root = false;
 		segment = end;
 	}
 	return true;

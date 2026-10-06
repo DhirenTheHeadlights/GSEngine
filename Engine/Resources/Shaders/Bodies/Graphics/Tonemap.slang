@@ -1,15 +1,6 @@
-struct VS_OUT {
-    float4 clip_pos : SV_Position;
-    float2 uv       : TEXCOORD0;
-};
-
 [shader("vertex")]
-VS_OUT vs_main(uint vid : SV_VertexID) {
-    float2 p = float2((vid << 1) & 2, vid & 2);
-    VS_OUT o;
-    o.uv = p;
-    o.clip_pos = float4(p * 2.0 - 1.0, 0.0, 1.0);
-    return o;
+screen_vs_out vs_main(uint vid : SV_VertexID) {
+    return screen_pass_vertex(vid, screen_depth_far);
 }
 
 float3 agx_default_contrast_approx(float3 x) {
@@ -73,14 +64,16 @@ float3 visualize_velocity(float2 v) {
 }
 
 [shader("fragment")]
-float4 fs_main(VS_OUT input) : SV_Target {
+float4 fs_main(screen_vs_out input) : SV_Target {
+    float2 hdr_uv = screen_target_uv(input.uv, pc.hdr_uv_scale, pc.hdr_uv_max);
+
     if (pc.show_velocity != 0) {
-        float2 v = velocity_color.Sample(color_sampler, input.uv).rg;
+        float2 v = velocity_color.Sample(color_sampler, hdr_uv).rg;
         return float4(visualize_velocity(v), 1.0);
     }
 
-    float3 hdr = hdr_color.Sample(color_sampler, input.uv).rgb;
-    float3 bloom = bloom_color.Sample(color_sampler, input.uv).rgb;
+    float3 hdr = hdr_color.Sample(color_sampler, hdr_uv).rgb;
+    float3 bloom = bloom_color.Sample(color_sampler, screen_target_uv(input.uv, pc.bloom_uv_scale, pc.bloom_uv_max)).rgb;
     float3 combined = hdr + bloom * pc.bloom_intensity;
     float exposure = pc.auto_exposure != 0 ? exposure_in[0] : pc.exposure;
     float3 exposed = combined * exposure;

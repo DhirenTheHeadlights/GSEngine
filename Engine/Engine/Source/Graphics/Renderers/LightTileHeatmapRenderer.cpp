@@ -32,6 +32,7 @@ namespace gse::renderer::light_tile_heatmap {
 	using entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/LightTileHeatmap">,
 		gpu::bindings<shader_binding_types>,
+		gpu::helpers<"Screen/screen_pass">,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
 		gpu::push_constant<push_constants>,

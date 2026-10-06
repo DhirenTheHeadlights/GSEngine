@@ -8,7 +8,9 @@ import gse.ide.build;
 import gse.ide.config;
 
 import :chats;
+import :layout;
 import :model;
+import :phase;
 import :session;
 import :stream;
 
@@ -170,6 +172,7 @@ auto gse::ide::agent::restore_rows(session& s) -> bool {
 		if (kind == "user") {
 			for (transcript_row& row : user_rows(*event)) {
 				row.stamped = stamped;
+				row.agent = s.info.agent_id;
 				s.rows.push_back(std::move(row));
 			}
 			continue;
@@ -185,6 +188,7 @@ auto gse::ide::agent::restore_rows(session& s) -> bool {
 		for (transcript_row& row : summarize(*event, s.info)) {
 			row.uuid = uuid;
 			row.stamped = stamped;
+			row.agent = s.info.agent_id;
 			s.rows.push_back(std::move(row));
 		}
 	}
@@ -200,6 +204,28 @@ auto gse::ide::agent::hydrate_session(session& s) -> void {
 	s.hydrated = true;
 	if (s.info.agent_id.empty() || !s.rows.empty()) {
 		return;
+	}
+
+	for (const phase_run& run : s.runs) {
+		if (run.summary.empty()) {
+			continue;
+		}
+		const phase_policy policy = policy_of(run.phase);
+		s.rows.push_back({
+			.kind = row_kind::phase,
+			.text = run.findings > 0
+				? std::format("{} reported {} finding(s)", std::string_view(policy.label), run.findings)
+				: std::format("{} reported done", std::string_view(policy.label)),
+			.detail = run.summary,
+			.phase = run.phase,
+			.stamped = run.started,
+		});
+	}
+
+	for (transcript_row& edit : read_changes(s)) {
+		if (edit.agent != s.info.agent_id) {
+			s.rows.push_back(std::move(edit));
+		}
 	}
 
 	if (!restore_rows(s)) {
@@ -423,28 +449,25 @@ auto gse::ide::agent::rewind_session(session& s, const std::uint32_t row) -> boo
 	s.action.clear();
 
 	s.rows.resize(*anchor + 1);
-	std::erase_if(s.diffs, [cut = *anchor](const diff_view& view) {
-		return view.row > cut;
-	});
 	std::erase_if(s.expanded_groups, [cut = *anchor](const std::uint32_t group) {
 		return group > cut;
 	});
 
-	s.buffer.lines.clear();
-	s.spans.clear();
-	s.blocks.clear();
-	s.links.clear();
-	s.line_rows.clear();
-	s.groups.clear();
-	s.flushed_rows = 0;
-	s.wrap_width = 0.f;
-	for (diff_view& view : s.diffs) {
-		view.line = unplaced_line;
+	for (transcript_view* v : views_of(s)) {
+		std::erase_if(v->diffs, [cut = *anchor](const diff_view& view) {
+			return view.row > cut;
+		});
+		reset_view(*v);
+		v->wrap_width = 0.f;
 	}
 
 	s.info.agent_id = forked;
 	s.info.failure.clear();
 	s.retry = {};
+
+	for (transcript_row& row : s.rows) {
+		row.agent = forked;
+	}
 
 	if (!launch_session(s)) {
 		append_row(s, {

@@ -8,6 +8,7 @@ import gse.ide.search;
 import gse.ide.workspace;
 import std;
 
+import :dock;
 import :search_screen;
 
 namespace gse::ide {
@@ -22,16 +23,35 @@ namespace gse::ide {
 		id window;
 	};
 
+	struct shelf_toggle_request {
+		id panel;
+	};
+
+	struct shelf_view {
+		std::vector<dock_shelf_entry> entries;
+		std::optional<id> open;
+	};
+
 	struct quick_search_state {
 		search::query_driver driver;
 		gui::text_input_state input;
 	};
 
+	auto draw_shelf_strips(
+		gui::builder& ui,
+		const rectf& frame,
+		const shelf_view& shelf,
+		std::span<const panel_desc> panels,
+		channel_write<shelf_toggle_request> channels
+	) -> void;
+
 	class editor_screen : public gui::screen {
 	public:
 		editor_screen(
-			channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request> channels,
+			channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, shelf_toggle_request> channels,
 			const search::index_state* index,
+			const shelf_view* shelf,
+			std::span<const panel_desc> panels,
 			id window
 		);
 
@@ -66,8 +86,10 @@ namespace gse::ide {
 	private:
 		[[nodiscard]] auto is_popout() const -> bool;
 
-		channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request> m_channels;
+		channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, shelf_toggle_request> m_channels;
 		const search::index_state* m_index = nullptr;
+		const shelf_view* m_shelf = nullptr;
+		std::span<const panel_desc> m_panels;
 		id m_window;
 		std::optional<std::string> m_loc_label;
 		std::string m_loc_tooltip;
@@ -113,8 +135,8 @@ namespace gse::ide {
 	) -> std::vector<gui::menu_item>;
 }
 
-gse::ide::editor_screen::editor_screen(channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request> channels, const search::index_state* index, const id window)
-	: m_channels(std::move(channels)), m_index(index), m_window(window) {
+gse::ide::editor_screen::editor_screen(channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, shelf_toggle_request> channels, const search::index_state* index, const shelf_view* shelf, const std::span<const panel_desc> panels, const id window)
+	: m_channels(std::move(channels)), m_index(index), m_shelf(shelf), m_panels(panels), m_window(window) {
 }
 
 auto gse::ide::editor_screen::is_popout() const -> bool {
@@ -221,6 +243,80 @@ auto gse::ide::editor_screen::build(gui::builder& ui, gui::nav& n) -> void {
 
 	if (control_held && shift_held && ctx.key_pressed(key::p)) {
 		m_channels.push<toggle_project_switcher_request>({});
+	}
+
+	draw_shelf_strips(ui, ctx.clip_stack.back(), *m_shelf, m_panels, m_channels);
+}
+
+auto gse::ide::draw_shelf_strips(gui::builder& ui, const rectf& frame, const shelf_view& shelf, const std::span<const panel_desc> panels, const channel_write<shelf_toggle_request> channels) -> void {
+	if (shelf.entries.empty()) {
+		return;
+	}
+
+	const auto& ctx = ui.ctx;
+	const auto& sty = ctx.style;
+	const auto text_view = ctx.fonts.text.resolve();
+	const dock_shelf_bands bands = shelf_bands(frame, shelf.entries, shelf_band_thickness(sty));
+	const float inset = sty.padding * 0.5f;
+
+	for (const gui::panel_edge edge : { gui::panel_edge::left, gui::panel_edge::right, gui::panel_edge::top, gui::panel_edge::bottom }) {
+		if (!bands.occupied(edge)) {
+			continue;
+		}
+
+		const rectf band = bands.of(edge);
+		ctx.queue_sprite({
+			.rect = band,
+			.color = sty.color_tab_background,
+			.texture = ctx.blank_texture,
+			.clip_rect = band,
+		});
+
+		const bool stacked = edge == gui::panel_edge::left || edge == gui::panel_edge::right;
+		float cursor = stacked ? band.top() - inset : band.left() + inset;
+
+		for (const dock_shelf_entry& entry : shelf.entries) {
+			if (entry.edge != edge) {
+				continue;
+			}
+			const panel_desc* desc = panel_desc_for(panels, entry.panel);
+			if (!desc) {
+				continue;
+			}
+
+			const std::string_view initial = desc->glyph ? std::string_view() : std::string_view(desc->name).substr(0, 1);
+			const std::string_view label = stacked ? initial : desc->name;
+			const float side = band.width() - inset * 2.f;
+			const rectf tab = stacked
+				? rectf::from_position_size({ band.left() + inset, cursor }, { side, side })
+				: rectf::from_position_size(
+					{ cursor, band.top() - inset },
+					{
+						sty.padding * 2.f + (desc->glyph ? band.height() : 0.f) + text_view->width(label, sty.font_size),
+						band.height() - inset * 2.f,
+					}
+				);
+
+			if (stacked ? tab.bottom() < band.bottom() : tab.right() > band.right()) {
+				break;
+			}
+
+			const bool open = shelf.open && *shelf.open == entry.panel;
+			if (ui.draw<gui::button>({
+				.text = label,
+				.rect = tab,
+				.key = desc->name,
+				.glyph = desc->glyph ? desc->glyph() : std::span<const gui::symbol::stroke>{},
+				.role = open ? gui::button_role::accent : gui::button_role::standard,
+			})) {
+				channels.push<shelf_toggle_request>({ .panel = entry.panel });
+			}
+			if (stacked && ctx.hovers(tab)) {
+				ctx.set_tooltip(gui::ids::make(desc->name), desc->name);
+			}
+
+			cursor = stacked ? tab.bottom() - inset : tab.right() + inset;
+		}
 	}
 }
 
@@ -535,7 +631,7 @@ namespace gse::ide::explorer_menu {
 
 	[[= gui::context_action<"Copy Path", "path">{}]]
 	auto copy_path(workspace::data&, const fs_node& n) -> void {
-		window::set_clipboard_text(n.path.generic_display_string());
+		clipboard::set_text(n.path.generic_display_string());
 	}
 
 	[[= gui::context_action<"Delete", "danger", gui::symbol::trash>{}]]
@@ -576,7 +672,7 @@ namespace gse::ide::tab_menu {
 	[[= gui::context_action<"Copy Path", "path">{}]]
 	auto copy_path(workspace::data& w, id doc_id) -> void {
 		if (const auto it = w.documents.find(doc_id); it != w.documents.end()) {
-			window::set_clipboard_text(it->second.path.generic_display_string());
+			clipboard::set_text(it->second.path.generic_display_string());
 		}
 	}
 

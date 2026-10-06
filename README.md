@@ -127,7 +127,6 @@ vcpkg's manifest mode (`vcpkg.json`) auto-installs dependencies when CMake confi
 
 Listed in `vcpkg.json` and auto-installed at configure time:
 
-* [GLFW3](https://www.glfw.org/) — windowing/input
 * [libpng](http://www.libpng.org/pub/png/libpng.html) — PNG decode
 * [libjpeg-turbo](https://libjpeg-turbo.org/) — JPEG decode
 * [miniaudio](https://github.com/mackron/miniaudio) — audio

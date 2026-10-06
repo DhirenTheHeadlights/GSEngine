@@ -72,10 +72,10 @@ float sample_cloud_density_shape_only(float3 world_pos_km, float height_fraction
 
 bool scene_occludes_footprint(float2 screen_uv, float2 texel) {
     float2 corner = texel * 0.5;
-    float d00 = scene_depth_in.SampleLevel(scene_depth_sampler, screen_uv + float2(-corner.x, -corner.y), 0).r;
-    float d10 = scene_depth_in.SampleLevel(scene_depth_sampler, screen_uv + float2(corner.x, -corner.y), 0).r;
-    float d01 = scene_depth_in.SampleLevel(scene_depth_sampler, screen_uv + float2(-corner.x, corner.y), 0).r;
-    float d11 = scene_depth_in.SampleLevel(scene_depth_sampler, screen_uv + float2(corner.x, corner.y), 0).r;
+    float d00 = scene_depth_in.SampleLevel(scene_depth_sampler, screen_target_uv(screen_uv + float2(-corner.x, -corner.y), pc.depth_uv_scale, pc.depth_uv_max), 0).r;
+    float d10 = scene_depth_in.SampleLevel(scene_depth_sampler, screen_target_uv(screen_uv + float2(corner.x, -corner.y), pc.depth_uv_scale, pc.depth_uv_max), 0).r;
+    float d01 = scene_depth_in.SampleLevel(scene_depth_sampler, screen_target_uv(screen_uv + float2(-corner.x, corner.y), pc.depth_uv_scale, pc.depth_uv_max), 0).r;
+    float d11 = scene_depth_in.SampleLevel(scene_depth_sampler, screen_target_uv(screen_uv + float2(corner.x, corner.y), pc.depth_uv_scale, pc.depth_uv_max), 0).r;
     return min(min(d00, d10), min(d01, d11)) > scene_background_depth;
 }
 
@@ -97,8 +97,7 @@ float sample_light_transmittance(float3 world_pos_km, float3 sun_dir, float laye
 }
 
 void cloud_raymarch(uint3 dispatch_id) {
-    uint2 size;
-    cloud_out.GetDimensions(size.x, size.y);
+    uint2 size = max(uint2(pc.full_extent) / pc.target_divisor, uint2(1, 1));
     if (dispatch_id.x >= size.x || dispatch_id.y >= size.y) {
         return;
     }

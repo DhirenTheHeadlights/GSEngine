@@ -37,6 +37,15 @@ namespace gse::gui {
 		const menu& m
 	) -> rectf;
 
+	auto update_menu_zoom(
+		viewport_state& vp,
+		menu& m,
+		const input::state& input_state,
+		const rectf& display_rect,
+		render_layer layer,
+		std::uint32_t menu_z
+	) -> void;
+
 	auto process_menu(
 		data& d,
 		viewport_state& vp,

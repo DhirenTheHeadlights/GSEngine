@@ -417,6 +417,7 @@ auto gse::gui::draw_tab_bar(data& d, viewport_state& vp, const input::state& inp
 	vec2f dummy_cursor{};
 	widget_context ctx{ widget_context_init(d, vp, layer, current_menu.z_order, {
 		.current_menu = current_menu,
+		.style = vp.fstate.sty,
 		.layout_cursor = dummy_cursor,
 		.clip = title_bar_rect,
 	}), input_state };

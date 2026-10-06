@@ -183,7 +183,7 @@ Do not report preference-only churn. Call out missing tests when they leave mean
 
 Agents must never invoke a compiler, build system, or test runner directly — `cmake`, `ninja`, `make`, `msbuild`, `g++`, and single-file `-E`/`-fdeps` scans are all forbidden regardless of how narrow the invocation looks. The editor owns the build directory, the module cache, and the process handles; a build started outside it corrupts them. That ownership, not the cost of a compile, is the reason for the rule.
 
-The sanctioned path is `Tools/gse-build`, which asks the running editor to build exactly as its own Build button does. Prefer it to asking the owner whenever a claim needs a compile to stand. It is not licence to iterate blindly: static inspection remains the first line, and a build confirms a conclusion rather than replacing the reasoning that produced it.
+The sanctioned path is the `gse_build` tool, which asks the running editor to build exactly as its own Build button does. Prefer it to asking the owner whenever a claim needs a compile to stand. It is not licence to iterate blindly: static inspection remains the first line, and a build confirms a conclusion rather than replacing the reasoning that produced it.
 
 Reading another agent's build result is part of review, because a shared tree makes attribution ambiguous:
 

@@ -311,7 +311,7 @@ auto gse::ide::spawn::run_capture(
 }
 
 auto gse::ide::spawn::launch_streamed(const std::wstring& command_line, const std::wstring& working_dir, const std::span<const wchar_t> environment) -> launched {
-	constexpr win32::DWORD output_buffer_bytes = 4u * 1024u * 1024u;
+	constexpr win32::DWORD pipe_buffer_bytes = 4u * 1024u * 1024u;
 
 	win32::SECURITY_ATTRIBUTES attributes{
 		.nLength = sizeof(win32::SECURITY_ATTRIBUTES),
@@ -320,14 +320,14 @@ auto gse::ide::spawn::launch_streamed(const std::wstring& command_line, const st
 
 	void* read_end = nullptr;
 	void* write_end = nullptr;
-	if (!win32::CreatePipe(&read_end, &write_end, &attributes, output_buffer_bytes)) {
+	if (!win32::CreatePipe(&read_end, &write_end, &attributes, pipe_buffer_bytes)) {
 		return {};
 	}
 	win32::SetHandleInformation(read_end, win32::handle_flag_inherit, 0);
 
 	void* input_read = nullptr;
 	void* input_write = nullptr;
-	if (!win32::CreatePipe(&input_read, &input_write, &attributes, 0)) {
+	if (!win32::CreatePipe(&input_read, &input_write, &attributes, pipe_buffer_bytes)) {
 		win32::CloseHandle(read_end);
 		win32::CloseHandle(write_end);
 		return {};

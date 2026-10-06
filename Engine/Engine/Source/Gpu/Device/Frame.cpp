@@ -113,10 +113,10 @@ auto gse::gpu::frame::frame_in_progress() const -> bool {
 	return m_frame_in_progress;
 }
 
-auto gse::gpu::frame::recreate_resources(present_target& t) -> expected<void> {
+auto gse::gpu::frame::recreate_resources(present_target& t, const recreate_cause cause) -> expected<void> {
 	const window::window_surface& win = *t.window;
 	swap_chain* const m_swapchain = t.swapchain;
-	const auto requested_size = window::viewport(win);
+	const auto requested_size = window::viewport(win.handle);
 	const auto requested_mode = win.present_mode;
 	const auto current_extent = m_swapchain->extent();
 	const auto current_mode = m_swapchain->present_mode();
@@ -124,14 +124,16 @@ auto gse::gpu::frame::recreate_resources(present_target& t) -> expected<void> {
 	const bool size_unchanged = current_extent.x() == static_cast<std::uint32_t>(requested_size.x()) &&
 		current_extent.y() == static_cast<std::uint32_t>(requested_size.y());
 
-	if (size_unchanged && current_mode != requested_mode) {
-		log::println(
-			log::category::render,
-			"[swapchain] present-mode-only change at {}x{}, no recreate",
-			current_extent.x(),
-			current_extent.y()
-		);
-		m_swapchain->set_present_mode(requested_mode);
+	if (cause == recreate_cause::window_resize && size_unchanged) {
+		if (current_mode != requested_mode) {
+			log::println(
+				log::category::render,
+				"[swapchain] present-mode-only change at {}x{}, no recreate",
+				current_extent.x(),
+				current_extent.y()
+			);
+			m_swapchain->set_present_mode(requested_mode);
+		}
 		return {};
 	}
 
@@ -152,7 +154,7 @@ auto gse::gpu::frame::recreate_resources(present_target& t) -> expected<void> {
 		current_extent.y(),
 		granted_extent.x(),
 		granted_extent.y(),
-		window::minimized(win),
+		window::minimized(win.handle),
 		win.position.x(),
 		win.position.y(),
 		m_frame_count
@@ -161,7 +163,6 @@ auto gse::gpu::frame::recreate_resources(present_target& t) -> expected<void> {
 	t.sync = create_sync_objects(*m_device, *m_swapchain);
 	m_swapchain->notify_recreated();
 	t.present_ids_in_flight.fill(0);
-	m_device->wait_idle();
 	return {};
 }
 
@@ -170,7 +171,7 @@ auto gse::gpu::frame::recreate_surface(present_target& t, const std::string_view
 	swap_chain* const m_swapchain = t.swapchain;
 	log::println(log::level::warning, log::category::render, "{}, rebuilding surface and swapchain", reason);
 
-	const auto requested_size = window::viewport(win);
+	const auto requested_size = window::viewport(win.handle);
 	const auto requested_mode = win.present_mode;
 
 	m_swapchain->replace_surface(m_device->recreate_surface(win, m_swapchain->current_handle()));
@@ -188,7 +189,7 @@ auto gse::gpu::frame::recreate_surface(present_target& t, const std::string_view
 		requested_size.y(),
 		granted_extent.x(),
 		granted_extent.y(),
-		window::minimized(win),
+		window::minimized(win.handle),
 		m_frame_count
 	);
 
@@ -197,6 +198,21 @@ auto gse::gpu::frame::recreate_surface(present_target& t, const std::string_view
 	t.present_ids_in_flight.fill(0);
 	m_device->wait_idle();
 	return {};
+}
+
+auto gse::gpu::frame::apply_pending_resizes() -> void {
+	trace::scope_guard _{ trace_id<"frame::apply_resizes">() };
+	for (present_target& t : m_targets) {
+		if (!t.swapchain || !t.window || window::minimized(t.window->handle)) {
+			continue;
+		}
+		if (!t.swapchain->current_handle() || t.restore_pending) {
+			continue;
+		}
+		if (window::frame_buffer_resized(*t.window)) {
+			(void)recreate_resources(t, recreate_cause::window_resize);
+		}
+	}
 }
 
 auto gse::gpu::frame::begin() -> std::expected<frame_token, frame_status> {
@@ -208,7 +224,7 @@ auto gse::gpu::frame::begin() -> std::expected<frame_token, frame_status> {
 	bool any_present_target = false;
 	bool any_live_target = false;
 	for (present_target& t : m_targets) {
-		const bool minimized_now = t.window && window::minimized(*t.window);
+		const bool minimized_now = t.window && window::minimized(t.window->handle);
 		if (minimized_now != t.minimized_last) {
 			log::println(
 				log::category::render,
@@ -219,8 +235,8 @@ auto gse::gpu::frame::begin() -> std::expected<frame_token, frame_status> {
 				t.minimized_frames,
 				t.swapchain ? t.swapchain->extent().x() : 0u,
 				t.swapchain ? t.swapchain->extent().y() : 0u,
-				t.window ? window::viewport(*t.window).x() : 0,
-				t.window ? window::viewport(*t.window).y() : 0
+				t.window ? window::viewport(t.window->handle).x() : 0,
+				t.window ? window::viewport(t.window->handle).y() : 0
 			);
 			t.restore_pending = !minimized_now;
 			t.minimized_last = minimized_now;
@@ -337,14 +353,6 @@ auto gse::gpu::frame::begin() -> std::expected<frame_token, frame_status> {
 			continue;
 		}
 
-		if (window::frame_buffer_resized(*t.window)) {
-			(void)recreate_resources(t);
-			if (is_primary) {
-				return std::unexpected(frame_status::swapchain_out_of_date);
-			}
-			continue;
-		}
-
 		result acquire_status = result::error_unknown;
 		std::uint32_t acquired_image_index = 0;
 		{
@@ -368,7 +376,7 @@ auto gse::gpu::frame::begin() -> std::expected<frame_token, frame_status> {
 		}
 
 		if (acquire_status != result::success && acquire_status != result::suboptimal_khr) {
-			(void)recreate_resources(t);
+			(void)recreate_resources(t, recreate_cause::swapchain_invalid);
 			if (is_primary) {
 				return std::unexpected(frame_status::swapchain_out_of_date);
 			}
@@ -631,12 +639,12 @@ auto gse::gpu::frame::end(std::span<const queue_submission> aux_submissions, std
 			(void)recreate_surface(t, "surface lost on present");
 		}
 		else if (present_result == result::error_out_of_date_khr || present_result == result::suboptimal_khr) {
-			(void)recreate_resources(t);
+			(void)recreate_resources(t, recreate_cause::swapchain_invalid);
 			t.present_ids_in_flight.fill(0);
 		}
 		else if (present_result != result::success) {
 			log::println(log::level::error, log::category::render, "present failed ({}), rebuilding swapchain", std::to_underlying(present_result));
-			(void)recreate_resources(t);
+			(void)recreate_resources(t, recreate_cause::swapchain_invalid);
 			t.present_ids_in_flight.fill(0);
 		}
 		else {

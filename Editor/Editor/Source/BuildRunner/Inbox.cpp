@@ -252,6 +252,12 @@ auto gse::ide::build_inbox::read_request(const std::filesystem::path& path) -> s
 		else if (key == "run_only") {
 			parsed.run_only = value == "1" || value == "true";
 		}
+		else if (key == "scenario") {
+			parsed.scenario.assign(value);
+		}
+		else if (key == "exit_after") {
+			parse(value, parsed.exit_after);
+		}
 		else if (key == "setting" && !value.empty()) {
 			parsed.settings.emplace_back(value);
 		}
@@ -328,6 +334,12 @@ auto gse::ide::build_inbox::restore(const request& pending) -> void {
 		out << "config " << pending.config << '\n';
 		out << "cwd " << pending.cwd.generic_display_string() << '\n';
 		out << "project " << pending.project.generic_display_string() << '\n';
+		if (!pending.scenario.empty()) {
+			out << "scenario " << sanitize(pending.scenario) << '\n';
+		}
+		if (pending.exit_after > time{}) {
+			out << std::format("exit_after {::s}\n", pending.exit_after);
+		}
 		for (const std::string& assignment : pending.settings) {
 			out << "setting " << sanitize(assignment) << '\n';
 		}

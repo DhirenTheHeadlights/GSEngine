@@ -124,7 +124,7 @@ jobs:
       - name: Build + package GCC ${{ needs.resolve.outputs.snapshot }}
         shell: pwsh
         run: |
-          python scripts/build_gcc_trunk.py `
+          python Tools/build_gcc_trunk.py `
             --snapshot ${{ needs.resolve.outputs.snapshot }} `
             --msys-root "${{ steps.msys2.outputs.msys2-location }}" `
             --jobs 4
@@ -177,7 +177,7 @@ jobs:
             ## Install
 
             ```
-            python scripts/install_gcc_trunk.py --tag ${{ needs.resolve.outputs.tag }} --sha256 ${{ steps.hash.outputs.sha256 }} --persist
+            python Tools/install_gcc_trunk.py --tag ${{ needs.resolve.outputs.tag }} --sha256 ${{ steps.hash.outputs.sha256 }} --persist
             ```
 
             Then configure as usual — `MINGW_ROOT` is set to the extracted toolchain:

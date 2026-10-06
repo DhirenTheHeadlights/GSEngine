@@ -22,6 +22,8 @@ export namespace gse::ide::build_inbox {
 		std::filesystem::path cwd;
 		std::filesystem::path project;
 		std::vector<std::string> settings;
+		std::string scenario;
+		time exit_after{};
 		bool run = false;
 		bool run_only = false;
 	};

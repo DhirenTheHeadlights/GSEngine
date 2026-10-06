@@ -113,7 +113,19 @@ namespace gse::ide::agent {
 		const analysis::json::value& event
 	) -> std::vector<transcript_row>;
 
+	auto tool_subject(
+		const transcript_row& row
+	) -> std::string;
+
 	auto tool_action(
+		const transcript_row& row
+	) -> std::string;
+
+	auto tool_kind_of(
+		std::string_view name
+	) -> tool_kind;
+
+	auto action_phrase(
 		const transcript_row& row
 	) -> std::string;
 }

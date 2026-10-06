@@ -34,6 +34,7 @@ export namespace gse::renderer::taa {
 		gpu::bindless_handle velocity_view;
 		std::array<gpu::bindless_handle, 2> history_views;
 		std::uint32_t frames_since_history_invalid = 0;
+		vec2u history_active_extent{ 0, 0 };
 
 		[[= shared]] std::array<gpu::image, 2> history;
 	};

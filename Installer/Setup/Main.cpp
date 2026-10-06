@@ -31,11 +31,7 @@ auto setup::own_executable() -> std::filesystem::path {
 }
 
 auto setup::stage_directory(const gse::sdk::pack_table& table) -> std::expected<std::filesystem::path, std::string> {
-	const char* local = std::getenv("LOCALAPPDATA");
-	if (local == nullptr || *local == '\0') {
-		return std::unexpected("LOCALAPPDATA is not set");
-	}
-	return std::filesystem::path(local) / "GSE" / "cache" / "installer" / table.version / table.preset;
+	return gse::sdk::extraction_dir(table.version, table.preset);
 }
 
 auto setup::launch(const std::filesystem::path& executable, const std::filesystem::path& payload) -> std::expected<void, std::string> {

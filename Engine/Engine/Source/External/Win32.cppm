@@ -3,7 +3,6 @@ module;
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
-#define _WIN32_WINNT 0x0A00
 #include <Windows.h>
 #include <windowsx.h>
 #include <dbghelp.h>
@@ -13,14 +12,6 @@ module;
 #include <commdlg.h>
 #include <dwmapi.h>
 #include <compressapi.h>
-#endif
-
-#define GLFW_INCLUDE_NONE
-#include <GLFW/glfw3.h>
-
-#ifdef _WIN32
-#define GLFW_EXPOSE_NATIVE_WIN32
-#include <GLFW/glfw3native.h>
 #endif
 
 export module gse.win32;
@@ -66,6 +57,19 @@ export namespace gse::win32 {
 		const wchar_t* text
 	) -> void;
 
+	auto enable_per_monitor_dpi_awareness() -> bool;
+
+	[[nodiscard]] auto dpi_for_window(
+		::HWND window
+	) -> unsigned int;
+
+	auto adjust_window_rect_for_dpi(
+		::RECT* rect,
+		::DWORD style,
+		::DWORD ex_style,
+		unsigned int dpi
+	) -> void;
+
 	using ::HWND;
 	using ::WNDPROC;
 	using ::LRESULT;
@@ -85,13 +89,9 @@ export namespace gse::win32 {
 	using ::RAWINPUTDEVICE;
 	using ::USHORT;
 
-	using ::glfwGetWin32Window;
 	using ::DefWindowProcW;
-	using ::CallWindowProcW;
 	using ::SetWindowLongPtrW;
 	using ::SetWindowPos;
-	using ::GetPropW;
-	using ::SetPropW;
 	using ::IsZoomed;
 	using ::IsIconic;
 	using ::MonitorFromWindow;
@@ -99,6 +99,7 @@ export namespace gse::win32 {
 	using ::GetMonitorInfoW;
 	using ::ScreenToClient;
 	using ::GetClientRect;
+	using ::GetWindowRect;
 	using ::WINDOWPLACEMENT;
 	using ::GetWindowPlacement;
 	using ::IsWindowVisible;
@@ -128,7 +129,6 @@ export namespace gse::win32 {
 	constexpr LRESULT ht_bottom_right = HTBOTTOMRIGHT;
 	constexpr LRESULT ht_caption = HTCAPTION;
 	constexpr LRESULT ht_client = HTCLIENT;
-	constexpr int gwlp_wndproc = GWLP_WNDPROC;
 	constexpr UINT swp_frame_changed = SWP_FRAMECHANGED;
 	constexpr UINT swp_no_move = SWP_NOMOVE;
 	constexpr UINT swp_no_size = SWP_NOSIZE;
@@ -139,6 +139,9 @@ export namespace gse::win32 {
 	constexpr UINT wpf_restore_to_maximized = WPF_RESTORETOMAXIMIZED;
 	constexpr DWORD dwmwa_cloaked = DWMWA_CLOAKED;
 	constexpr DWORD dwmwa_cloak = DWMWA_CLOAK;
+	constexpr DWORD dwmwa_use_immersive_dark_mode = DWMWA_USE_IMMERSIVE_DARK_MODE;
+	constexpr DWORD dwmwa_window_corner_preference = DWMWA_WINDOW_CORNER_PREFERENCE;
+	constexpr DWORD dwmwcp_round = DWMWCP_ROUND;
 	constexpr UINT ga_root = GA_ROOT;
 	constexpr UINT wm_entersizemove = WM_ENTERSIZEMOVE;
 	constexpr UINT wm_exitsizemove = WM_EXITSIZEMOVE;
@@ -152,6 +155,178 @@ export namespace gse::win32 {
 	constexpr USHORT hid_usage_page_generic = 0x01;
 	constexpr USHORT hid_usage_generic_mouse = 0x02;
 	constexpr UINT raw_input_header_size = sizeof(RAWINPUTHEADER);
+
+	using ::MSG;
+	using ::WNDCLASSEXW;
+	using ::MONITORINFOEXW;
+	using ::DEVMODEW;
+	using ::CREATESTRUCTW;
+	using ::HDC;
+	using ::MONITORENUMPROC;
+
+	using ::GetModuleHandleW;
+	using ::RegisterClassExW;
+	using ::CreateWindowExW;
+	using ::DestroyWindow;
+	using ::ShowWindow;
+	using ::PeekMessageW;
+	using ::TranslateMessage;
+	using ::DispatchMessageW;
+	using ::MsgWaitForMultipleObjectsEx;
+	using ::PostThreadMessageW;
+	using ::GetWindowLongPtrW;
+	using ::SetCursorPos;
+	using ::SetCapture;
+	using ::ReleaseCapture;
+	using ::SetForegroundWindow;
+	using ::MapVirtualKeyW;
+	using ::EnumDisplayMonitors;
+	using ::EnumDisplaySettingsW;
+	using ::ChangeDisplaySettingsExW;
+	using ::EmptyClipboard;
+	using ::SetClipboardData;
+	using ::GlobalAlloc;
+	using ::WideCharToMultiByte;
+
+	constexpr UINT cs_hredraw = CS_HREDRAW;
+	constexpr UINT cs_vredraw = CS_VREDRAW;
+	constexpr DWORD ws_overlappedwindow = WS_OVERLAPPEDWINDOW;
+	constexpr DWORD ws_popup = WS_POPUP;
+	constexpr DWORD ws_clipsiblings = WS_CLIPSIBLINGS;
+	constexpr DWORD ws_clipchildren = WS_CLIPCHILDREN;
+	constexpr DWORD ws_visible = WS_VISIBLE;
+	constexpr int cw_usedefault = CW_USEDEFAULT;
+	constexpr UINT sw_show = SW_SHOW;
+	constexpr UINT sw_minimize = SW_MINIMIZE;
+	constexpr UINT sw_restore = SW_RESTORE;
+	constexpr UINT pm_remove = PM_REMOVE;
+	constexpr DWORD qs_allinput = QS_ALLINPUT;
+	constexpr DWORD mwmo_inputavailable = MWMO_INPUTAVAILABLE;
+	constexpr int gwlp_userdata = GWLP_USERDATA;
+	constexpr int gwl_style = GWL_STYLE;
+	constexpr int gwl_exstyle = GWL_EXSTYLE;
+	constexpr DWORD monitorinfof_primary = MONITORINFOF_PRIMARY;
+	constexpr DWORD enum_current_settings = ENUM_CURRENT_SETTINGS;
+	constexpr DWORD cds_fullscreen = CDS_FULLSCREEN;
+	constexpr LONG disp_change_successful = DISP_CHANGE_SUCCESSFUL;
+	constexpr UINT mapvk_vsc_to_vk_ex = MAPVK_VSC_TO_VK_EX;
+	constexpr DWORD dm_pelswidth = DM_PELSWIDTH;
+	constexpr DWORD dm_pelsheight = DM_PELSHEIGHT;
+	constexpr DWORD dm_displayfrequency = DM_DISPLAYFREQUENCY;
+	constexpr DWORD dm_bitsperpel = DM_BITSPERPEL;
+	constexpr UINT gmem_moveable = GMEM_MOVEABLE;
+	constexpr int wheel_delta = WHEEL_DELTA;
+
+	constexpr UINT wm_nccreate = WM_NCCREATE;
+	constexpr UINT wm_destroy = WM_DESTROY;
+	constexpr UINT wm_close = WM_CLOSE;
+	constexpr UINT wm_size = WM_SIZE;
+	constexpr UINT wm_setfocus = WM_SETFOCUS;
+	constexpr UINT wm_killfocus = WM_KILLFOCUS;
+	constexpr UINT wm_keydown = WM_KEYDOWN;
+	constexpr UINT wm_keyup = WM_KEYUP;
+	constexpr UINT wm_syskeydown = WM_SYSKEYDOWN;
+	constexpr UINT wm_syskeyup = WM_SYSKEYUP;
+	constexpr UINT wm_char = WM_CHAR;
+	constexpr UINT wm_syschar = WM_SYSCHAR;
+	constexpr UINT wm_lbuttondown = WM_LBUTTONDOWN;
+	constexpr UINT wm_lbuttonup = WM_LBUTTONUP;
+	constexpr UINT wm_rbuttondown = WM_RBUTTONDOWN;
+	constexpr UINT wm_rbuttonup = WM_RBUTTONUP;
+	constexpr UINT wm_mbuttondown = WM_MBUTTONDOWN;
+	constexpr UINT wm_mbuttonup = WM_MBUTTONUP;
+	constexpr UINT wm_xbuttondown = WM_XBUTTONDOWN;
+	constexpr UINT wm_xbuttonup = WM_XBUTTONUP;
+	constexpr UINT wm_mousewheel = WM_MOUSEWHEEL;
+	constexpr UINT wm_mousehwheel = WM_MOUSEHWHEEL;
+	constexpr UINT wm_dpichanged = WM_DPICHANGED;
+	constexpr UINT wm_erasebkgnd = WM_ERASEBKGND;
+	constexpr UINT wm_null = WM_NULL;
+	constexpr UINT wm_syscommand = WM_SYSCOMMAND;
+	constexpr UINT wm_displaychange = WM_DISPLAYCHANGE;
+	constexpr WPARAM sc_keymenu = SC_KEYMENU;
+	constexpr int xbutton1 = XBUTTON1;
+
+	constexpr int vk_space = VK_SPACE;
+	constexpr int vk_oem_7 = VK_OEM_7;
+	constexpr int vk_oem_comma = VK_OEM_COMMA;
+	constexpr int vk_oem_minus = VK_OEM_MINUS;
+	constexpr int vk_oem_period = VK_OEM_PERIOD;
+	constexpr int vk_oem_2 = VK_OEM_2;
+	constexpr int vk_oem_1 = VK_OEM_1;
+	constexpr int vk_oem_plus = VK_OEM_PLUS;
+	constexpr int vk_oem_4 = VK_OEM_4;
+	constexpr int vk_oem_5 = VK_OEM_5;
+	constexpr int vk_oem_6 = VK_OEM_6;
+	constexpr int vk_oem_3 = VK_OEM_3;
+	constexpr int vk_oem_102 = VK_OEM_102;
+	constexpr int vk_escape = VK_ESCAPE;
+	constexpr int vk_return = VK_RETURN;
+	constexpr int vk_tab = VK_TAB;
+	constexpr int vk_back = VK_BACK;
+	constexpr int vk_insert = VK_INSERT;
+	constexpr int vk_delete = VK_DELETE;
+	constexpr int vk_right = VK_RIGHT;
+	constexpr int vk_left = VK_LEFT;
+	constexpr int vk_down = VK_DOWN;
+	constexpr int vk_up = VK_UP;
+	constexpr int vk_prior = VK_PRIOR;
+	constexpr int vk_next = VK_NEXT;
+	constexpr int vk_home = VK_HOME;
+	constexpr int vk_end = VK_END;
+	constexpr int vk_capital = VK_CAPITAL;
+	constexpr int vk_scroll = VK_SCROLL;
+	constexpr int vk_numlock = VK_NUMLOCK;
+	constexpr int vk_snapshot = VK_SNAPSHOT;
+	constexpr int vk_pause = VK_PAUSE;
+	constexpr int vk_f1 = VK_F1;
+	constexpr int vk_f24 = VK_F24;
+	constexpr int vk_numpad0 = VK_NUMPAD0;
+	constexpr int vk_numpad9 = VK_NUMPAD9;
+	constexpr int vk_decimal = VK_DECIMAL;
+	constexpr int vk_divide = VK_DIVIDE;
+	constexpr int vk_multiply = VK_MULTIPLY;
+	constexpr int vk_subtract = VK_SUBTRACT;
+	constexpr int vk_add = VK_ADD;
+	constexpr int vk_shift = VK_SHIFT;
+	constexpr int vk_control = VK_CONTROL;
+	constexpr int vk_menu = VK_MENU;
+	constexpr int vk_lshift = VK_LSHIFT;
+	constexpr int vk_rshift = VK_RSHIFT;
+	constexpr int vk_lcontrol = VK_LCONTROL;
+	constexpr int vk_rcontrol = VK_RCONTROL;
+	constexpr int vk_lmenu = VK_LMENU;
+	constexpr int vk_rmenu = VK_RMENU;
+	constexpr int vk_lwin = VK_LWIN;
+	constexpr int vk_rwin = VK_RWIN;
+	constexpr int vk_apps = VK_APPS;
+
+	constexpr int ocr_normal = 32512;
+	constexpr int ocr_sizenwse = 32642;
+	constexpr int ocr_sizenesw = 32643;
+	constexpr int ocr_sizewe = 32644;
+	constexpr int ocr_sizens = 32645;
+	constexpr int ocr_hand = 32649;
+
+	auto load_standard_cursor(int id) -> HCURSOR {
+		return LoadCursorW(nullptr, MAKEINTRESOURCEW(id));
+	}
+
+	auto wheel_delta_of(WPARAM wparam) -> int {
+		return GET_WHEEL_DELTA_WPARAM(wparam);
+	}
+
+	auto xbutton_of(WPARAM wparam) -> int {
+		return GET_XBUTTON_WPARAM(wparam);
+	}
+
+	auto extended_key(LPARAM lparam) -> bool {
+		return (lparam & 0x01000000) != 0;
+	}
+
+	auto scancode_of(LPARAM lparam) -> UINT {
+		return static_cast<UINT>((lparam >> 16) & 0xFF);
+	}
 
 	auto get_x_lparam(LPARAM lparam) -> int {
 		return GET_X_LPARAM(lparam);
@@ -167,10 +342,6 @@ export namespace gse::win32 {
 
 	auto make_lparam(int low, int high) -> LPARAM {
 		return MAKELPARAM(low, high);
-	}
-
-	auto hwnd_from_glfw_window(void* glfw_window) -> HWND {
-		return glfwGetWin32Window(static_cast<::GLFWwindow*>(glfw_window));
 	}
 
 	using ::HANDLE;
@@ -199,6 +370,7 @@ export namespace gse::win32 {
 	using ::GetCurrentProcessId;
 	using ::GetCurrentThread;
 	using ::SetThreadPriority;
+	using ::SetThreadDescription;
 	using ::CloseHandle;
 	using ::SuspendThread;
 	using ::ResumeThread;
@@ -208,7 +380,8 @@ export namespace gse::win32 {
 	using ::RtlVirtualUnwind;
 	using ::GetModuleHandleExW;
 	using ::GetModuleFileNameW;
-	using ::SHGetFolderPathW;
+	using ::SHGetKnownFolderPath;
+	using ::CoTaskMemFree;
 	using ::AddVectoredExceptionHandler;
 	using ::IsDebuggerPresent;
 	using ::DebugBreak;
@@ -270,6 +443,10 @@ export namespace gse::win32 {
 	using ::CreateIoCompletionPort;
 	using ::GetQueuedCompletionStatus;
 	using ::CancelIoEx;
+	using ::GUID;
+	using ::FOLDERID_RoamingAppData;
+	using ::FOLDERID_LocalAppData;
+	using ::FOLDERID_Profile;
 
 	constexpr DWORD mem_commit = MEM_COMMIT;
 	constexpr DWORD mem_reserve = MEM_RESERVE;
@@ -284,10 +461,7 @@ export namespace gse::win32 {
 	constexpr DWORD get_module_handle_ex_flag_from_address = GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS;
 	constexpr DWORD get_module_handle_ex_flag_unchanged_refcount = GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT;
 	constexpr int max_path = MAX_PATH;
-	constexpr int csidl_appdata = CSIDL_APPDATA;
-	constexpr int csidl_profile = CSIDL_PROFILE;
-	constexpr int csidl_local_appdata = CSIDL_LOCAL_APPDATA;
-	constexpr int shgfp_type_current = SHGFP_TYPE_CURRENT;
+	constexpr DWORD kf_flag_default = KF_FLAG_DEFAULT;
 	constexpr DWORD startf_use_std_handles = STARTF_USESTDHANDLES;
 	constexpr DWORD create_no_window = CREATE_NO_WINDOW;
 	constexpr DWORD create_unicode_environment = CREATE_UNICODE_ENVIRONMENT;
@@ -404,6 +578,7 @@ export namespace gse::win32 {
 	using ::GlobalLock;
 	using ::GlobalUnlock;
 	using ::GlobalSize;
+	using ::GlobalFree;
 	using ::DragQueryFileW;
 
 	constexpr UINT cf_dib = CF_DIB;
@@ -545,5 +720,19 @@ auto gse::win32::delete_user_registry_key(const wchar_t* subkey) -> bool {
 
 auto gse::win32::show_error_box(const wchar_t* title, const wchar_t* text) -> void {
 	MessageBoxW(nullptr, text, title, MB_OK | MB_ICONERROR);
+}
+
+auto gse::win32::enable_per_monitor_dpi_awareness() -> bool {
+	return SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) != 0;
+}
+
+auto gse::win32::dpi_for_window(const HWND window) -> unsigned int {
+	constexpr unsigned int fallback_dpi = USER_DEFAULT_SCREEN_DPI;
+	const UINT dpi = GetDpiForWindow(window);
+	return dpi != 0 ? dpi : fallback_dpi;
+}
+
+auto gse::win32::adjust_window_rect_for_dpi(RECT* rect, const DWORD style, const DWORD ex_style, const unsigned int dpi) -> void {
+	AdjustWindowRectExForDpi(rect, style, FALSE, ex_style, dpi);
 }
 #endif

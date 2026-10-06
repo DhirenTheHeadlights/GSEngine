@@ -86,7 +86,7 @@ auto gse::ide::agent::usage_label(const usage_window& window) -> std::string {
 }
 
 auto gse::ide::agent::tool_output_label(const session_info& info) -> std::string {
-	if (info.tool_bytes <= byte_count(0)) {
+	if (info.tool_bytes <= bytes(0.)) {
 		return "-";
 	}
 
@@ -100,7 +100,7 @@ auto gse::ide::agent::tool_output_label(const session_info& info) -> std::string
 		return std::format("{:.0f:B}", size);
 	};
 
-	if (info.tool_peak <= byte_count(0)) {
+	if (info.tool_peak <= bytes(0.)) {
 		return size_label(info.tool_bytes);
 	}
 	return std::format("{} \xC2\xB7 biggest {} from {}", size_label(info.tool_bytes), size_label(info.tool_peak), info.tool_peak_name);
@@ -519,6 +519,7 @@ auto gse::ide::agent::draw_overview(gui::builder& ui, data& d, const rectf& area
 
 		for (const session& s : d.sessions) {
 			const std::string task = overview_task(s);
+			const bool busy = is_busy(s) && build_wait_for(d, s) == build_wait::none;
 
 			std::string footer = s.info.model;
 			if (s.stale || !s.blame.empty()) {
@@ -528,7 +529,7 @@ auto gse::ide::agent::draw_overview(gui::builder& ui, data& d, const rectf& area
 				footer += " \xC2\xB7 broke " + blame_label(s);
 			}
 
-			const float text_lines = 2.f + (task.empty() ? 0.f : 1.f) + (footer.empty() ? 0.f : 1.f);
+			const float text_lines = 2.f + (busy || !task.empty() ? 1.f : 0.f) + (footer.empty() ? 0.f : 1.f);
 
 			const rectf row = next_row(text_lines * line_h + pad * 1.5f);
 			if (!row.intersects(clip)) {
@@ -584,7 +585,14 @@ auto gse::ide::agent::draw_overview(gui::builder& ui, data& d, const rectf& area
 				{ std::max(0.f, row.width() - pad * 2.f), line_h }
 			), body_clip);
 
-			if (!task.empty()) {
+			if (busy) {
+				baseline -= line_h;
+				draw_activity_line(c, d, s, rectf::from_position_size(
+					{ text_left, baseline - text_view->vertical_center_offset(fs) + line_h * 0.5f },
+					{ std::max(0.f, row.width() - pad * 2.f), line_h }
+				), body_clip);
+			}
+			else if (!task.empty()) {
 				baseline -= line_h;
 				c.queue_text({
 					.font = c.fonts.text,
@@ -844,29 +852,38 @@ auto gse::ide::agent::draw_new_chat_prompt(gui::builder& ui, data& d, const rect
 	d.new_chat_name_state = {};
 }
 
-auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, const rectf& area, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out) -> void {
+auto gse::ide::agent::draw_transcript_hint(const gui::draw_context& ctx, const std::string& hint, const rectf& area) -> void {
+	const gui::style& sty = ctx.style;
+	const float pad = sty.padding;
+
+	float y = area.top() - pad - sty.font_size;
+	for (const std::string_view line : ctx.fonts.text.resolve()->wrap(hint, area.width() - pad * 2.f, sty.font_size)) {
+		ctx.queue_text({
+			.font = ctx.fonts.text,
+			.text = line,
+			.position = { area.left() + pad, y },
+			.scale = sty.font_size,
+			.color = sty.color_text_secondary,
+			.clip_rect = area,
+		});
+		y -= sty.font_size * 1.45f;
+	}
+}
+
+auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, transcript_view& v, const rectf& area, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out) -> void {
 	const gui::draw_context& ctx = ui.ctx;
 	const vec2f mouse = ctx.mouse_position();
 	const gui::style& sty = ctx.style;
 	const float pad = sty.padding;
 
 	session* s = active_session(d);
-	if (!s || s->rows.empty()) {
-		float y = area.top() - pad - sty.font_size;
-		const std::string hint = s
-			? "Type a prompt below to start claude in " + s->cwd.generic_display_string() + "."
-			: "No agents yet. Type a prompt below, or press + to add a session, in " + config::primary().name + ".";
-		for (const std::string_view line : ctx.fonts.text.resolve()->wrap(hint, area.width() - pad * 2.f, sty.font_size)) {
-			ctx.queue_text({
-				.font = ctx.fonts.text,
-				.text = line,
-				.position = { area.left() + pad, y },
-				.scale = sty.font_size,
-				.color = sty.color_text_secondary,
-				.clip_rect = area,
-			});
-			y -= sty.font_size * 1.45f;
-		}
+	if (!s) {
+		return;
+	}
+	if (!std::ranges::any_of(s->rows, [&](const transcript_row& row) { return shows(v.filter, row); })) {
+		draw_transcript_hint(ctx, v.filter == row_filter::changes
+			? std::string("No file edits yet.")
+			: "Type a prompt below to start claude in " + s->cwd.generic_display_string() + ".", area);
 		return;
 	}
 
@@ -880,33 +897,33 @@ auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, const rectf& ar
 		.width = std::max(0.f, area.width() - pad * 2.f - gui::scroll_config{}.scrollbar_width),
 		.scale = sty.font_size,
 	};
-	sync_transcript(*s, sty, metrics);
+	sync_transcript(*s, v, sty, metrics);
 
-	if (s->buffer.lines.empty()) {
-		s->buffer.lines.emplace_back();
-		s->line_rows.push_back(0);
+	if (v.buffer.lines.empty()) {
+		v.buffer.lines.emplace_back();
+		v.line_rows.push_back(0);
 	}
 
 	const gui::interaction::press tail_press = ui.draw<gui::follow_tail>({
 		.area = area,
-		.state = s->view,
-		.name = "##agent_follow_tail",
+		.state = v.state,
+		.widget_id = generate_temp_id(hash_combine(v.log_id.number(), stable_id("agent_follow_tail"))),
 	});
 
 	const gui::buffer_position at = gui::text_area_position_at(ctx, {
-		.buffer = s->buffer,
-		.state = s->view,
+		.buffer = v.buffer,
+		.state = v.state,
 		.rect = area,
-		.spans = s->spans,
-		.stops = s->stops,
-		.blocks = s->blocks,
+		.spans = v.spans,
+		.stops = v.stops,
+		.blocks = v.blocks,
 		.indent_width = transcript_tab_width,
 	}, mouse);
-	const auto hovered = static_cast<std::uint32_t>(std::min<std::size_t>(at.line, s->line_rows.size() - 1));
-	const std::string_view hovered_text = s->buffer.line(hovered);
-	const link_marker* hit = ctx.hovers(area) && !tail_press.hovered && at.column < hovered_text.size() ? link_at(*s, hovered) : nullptr;
+	const auto hovered = static_cast<std::uint32_t>(std::min<std::size_t>(at.line, v.line_rows.size() - 1));
+	const std::string_view hovered_text = v.buffer.line(hovered);
+	const link_marker* hit = ctx.hovers(area) && !tail_press.hovered && at.column < hovered_text.size() ? link_at(v, hovered) : nullptr;
 	const std::optional<std::uint32_t> link = hit ? std::optional(hit->row) : std::nullopt;
-	const group_marker* toggle = ctx.hovers(area) && !tail_press.hovered ? marker_at(*s, hovered) : nullptr;
+	const group_marker* toggle = ctx.hovers(area) && !tail_press.hovered ? marker_at(v, hovered) : nullptr;
 
 	std::vector<gui::text_underline> underlines;
 	if (link || toggle) {
@@ -922,8 +939,8 @@ auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, const rectf& ar
 		});
 	}
 
-	const auto context_row = s->line_rows[hovered];
-	if (const group_marker* group = toggle ? group_at(*s, hovered) : nullptr) {
+	const auto context_row = v.line_rows[hovered];
+	if (const group_marker* group = toggle ? group_at(v, hovered) : nullptr) {
 		ctx.set_tooltip(gui::ids::make(std::format("##agent_group_{}_{}", s->id, group->row)), group_detail(*s, *group));
 	}
 	else if (ctx.hovers(area) && !tail_press.hovered && context_row < s->rows.size() && !hovered_text.empty() && s->rows[context_row].stamped > 0) {
@@ -949,8 +966,8 @@ auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, const rectf& ar
 
 	if (ctx.clicked_in_rect(area)) {
 		if (toggle) {
-			toggle_marker(*s, *toggle);
-			sync_transcript(*s, sty, metrics);
+			toggle_marker(*s, v, *toggle);
+			sync_transcript(*s, v, sty, metrics);
 		}
 		else if (link) {
 			const transcript_row& owner = s->rows[std::min<std::size_t>(*link, s->rows.size() - 1)];
@@ -965,15 +982,17 @@ auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, const rectf& ar
 		}
 	}
 
+	const std::optional<std::uint32_t> stale_diff = update_diff_scroll(ctx, v, area, advance);
+
 	ui.draw<gui::text_area>({
-		.buffer = s->buffer,
-		.state = s->view,
-		.widget_id = s->log_id,
-		.spans = s->spans,
+		.buffer = v.buffer,
+		.state = v.state,
+		.widget_id = v.log_id,
+		.spans = v.spans,
 		.underlines = underlines,
-		.blocks = s->blocks,
-		.stops = s->stops,
-		.rules = s->rules,
+		.blocks = v.blocks,
+		.stops = v.stops,
+		.rules = v.rules,
 		.rect = area,
 		.read_only = true,
 		.follow_tail = true,
@@ -981,7 +1000,9 @@ auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, const rectf& ar
 		.blink_interval = time{},
 	});
 
-	draw_diff_bars(ctx, *s, area, advance);
+	if (stale_diff) {
+		relayout_from(v, *stale_diff);
+	}
 }
 
 auto gse::ide::agent::draw_model_controls(gui::builder& ui, session& s, const rectf& model_rect, const rectf& effort_rect) -> void {
@@ -1151,6 +1172,10 @@ auto gse::ide::agent::draw_input(gui::builder& ui, session& s, const input_layou
 	const std::vector<gui::image_attachment> attachments = s.attachments.take_items();
 	reset_input(s);
 
+	if (current_phase(s) == task_phase::settled) {
+		restart_task(s);
+	}
+
 	if (!s.running && !launch_session(s)) {
 		append_row(s, {
 			.kind = row_kind::failure,
@@ -1235,26 +1260,20 @@ auto gse::ide::agent::activity_label(const data& d, const session& s) -> std::st
 		: std::format("{} \xC2\xB7 {:.0f:s}", action, elapsed);
 }
 
-auto gse::ide::agent::draw_activity(const gui::draw_context& ctx, const data& d, const session& s, const rectf& area) -> void {
+auto gse::ide::agent::draw_activity_line(const gui::draw_context& ctx, const data& d, const session& s, const rectf& area, const rectf& clip) -> void {
 	const gui::style& sty = ctx.style;
 	const auto text_view = ctx.fonts.text.resolve();
 	const float pad = sty.padding;
 	const float spin_extent = sty.font_size;
 
-	ctx.queue_sprite({
-		.rect = area,
-		.color = sty.color_panel_alt,
-		.texture = ctx.blank_texture,
-	});
-
 	const rectf spin = rectf::from_position_size(
-		{ area.left() + pad, area.center().y() + spin_extent * 0.5f },
+		{ area.left(), area.center().y() + spin_extent * 0.5f },
 		{ spin_extent, spin_extent }
 	);
 	gui::symbol::spinner(ctx, spin, {
 		.color = sty.color_accent,
 		.extent = sty.icon_extent,
-		.clip_rect = area,
+		.clip_rect = clip,
 	});
 
 	ctx.queue_text({
@@ -1263,8 +1282,24 @@ auto gse::ide::agent::draw_activity(const gui::draw_context& ctx, const data& d,
 		.position = { spin.right() + pad * 0.5f, area.center().y() + text_view->vertical_center_offset(sty.font_size) },
 		.scale = sty.font_size,
 		.color = sty.color_text_secondary,
-		.clip_rect = area,
+		.clip_rect = clip,
 	});
+}
+
+auto gse::ide::agent::draw_activity(const gui::draw_context& ctx, const data& d, const session& s, const rectf& area) -> void {
+	const gui::style& sty = ctx.style;
+	const float pad = sty.padding;
+
+	ctx.queue_sprite({
+		.rect = area,
+		.color = sty.color_panel_alt,
+		.texture = ctx.blank_texture,
+	});
+
+	draw_activity_line(ctx, d, s, rectf::from_position_size(
+		{ area.left() + pad, area.top() },
+		{ std::max(0.f, area.width() - pad), area.height() }
+	), area);
 }
 
 auto gse::ide::agent::draw_phase_pipeline(const gui::draw_context& ctx, const session& s, const rectf& area, const rectf& clip) -> float {
@@ -1322,7 +1357,8 @@ auto gse::ide::agent::draw_phase_pipeline(const gui::draw_context& ctx, const se
 	return x - area.left();
 }
 
-auto gse::ide::agent::draw_phase(const gui::draw_context& ctx, const session& s, const rectf& area) -> void {
+auto gse::ide::agent::draw_phase(gui::builder& ui, session& s, const rectf& area) -> void {
+	const gui::draw_context& ctx = ui.ctx;
 	const gui::style& sty = ctx.style;
 	const auto text_view = ctx.fonts.text.resolve();
 	const float pad = sty.padding;
@@ -1334,27 +1370,73 @@ auto gse::ide::agent::draw_phase(const gui::draw_context& ctx, const session& s,
 		.texture = ctx.blank_texture,
 	});
 
+	const float reserved = draw_view_toggles(ui, s, area);
 	const rectf pipeline = rectf::from_position_size(
 		{ area.left() + pad, area.top() },
-		{ std::max(0.f, area.width() - pad * 2.f), area.height() }
+		{ std::max(0.f, area.width() - pad - reserved), area.height() }
 	);
-	const float used = draw_phase_pipeline(ctx, s, pipeline, area);
+	const float used = draw_phase_pipeline(ctx, s, pipeline, pipeline);
 
-	if (!s.gate || s.pending_transition) {
+	const std::string waiting = s.pending_transition
+		? std::format("approved \xC2\xB7 finishing the turn before {}", std::string_view(policy_of(next_phase(s, s.pending_transition->findings)).label))
+		: s.gate
+		? s.gate->findings > 0
+			? std::format("reported {} finding(s)", s.gate->findings)
+			: std::string("reported done")
+		: std::string{};
+	if (waiting.empty()) {
 		return;
 	}
 
-	const std::string waiting = s.gate->findings > 0
-		? std::format("reported {} finding(s)", s.gate->findings)
-		: std::string("reported done");
 	ctx.queue_text({
 		.font = ctx.fonts.text,
 		.text = waiting,
 		.position = { pipeline.left() + used + pad * 2.f, area.center().y() + text_view->vertical_center_offset(fs) },
 		.scale = fs,
 		.color = sty.color_text_secondary,
-		.clip_rect = area,
+		.clip_rect = pipeline,
 	});
+}
+
+auto gse::ide::agent::shown_view(session& s) -> transcript_view& {
+	return s.mode == transcript_mode::digest ? s.digest : s.full;
+}
+
+auto gse::ide::agent::draw_view_toggles(gui::builder& ui, session& s, const rectf& area) -> float {
+	const gui::style& sty = ui.ctx.style;
+	const float pad = sty.padding;
+	const auto text_view = ui.ctx.fonts.text.resolve();
+
+	constexpr std::string_view diffs_label = "Diffs";
+	const std::string_view mode_label = s.mode == transcript_mode::digest ? "Summary" : "Transcript";
+
+	const float diffs_w = text_view->width(diffs_label, sty.font_size) + pad * 2.f;
+	const float mode_w = text_view->width("Transcript", sty.font_size) + pad * 2.f;
+	const float height = std::min(area.height(), sty.font_size * 1.4f);
+	const float top = area.center().y() + height * 0.5f;
+
+	const rectf diffs = rectf::from_position_size({ area.right() - pad - diffs_w, top }, { diffs_w, height });
+	const rectf mode = rectf::from_position_size({ diffs.left() - pad * 0.5f - mode_w, top }, { mode_w, height });
+
+	if (ui.draw<gui::button>({
+		.text = mode_label,
+		.rect = mode,
+		.key = std::format("##agent_view_mode_{}", s.id),
+		.role = s.mode == transcript_mode::digest ? gui::button_role::accent : gui::button_role::ghost,
+	})) {
+		s.mode = s.mode == transcript_mode::digest ? transcript_mode::transcript : transcript_mode::digest;
+	}
+
+	if (ui.draw<gui::button>({
+		.text = diffs_label,
+		.rect = diffs,
+		.key = std::format("##agent_view_diffs_{}", s.id),
+		.role = s.changes_open ? gui::button_role::accent : gui::button_role::ghost,
+	})) {
+		s.changes_open = !s.changes_open;
+	}
+
+	return area.right() - mode.left() + pad;
 }
 
 auto gse::ide::agent::draw_panel(gui::builder& ui, data& d, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out) -> void {
@@ -1408,11 +1490,49 @@ auto gse::ide::agent::draw_panel(gui::builder& ui, data& d, const channel_write<
 		draw_activity(ctx, d, *shown, activity_area);
 	}
 	if (shown) {
-		draw_phase(ctx, *shown, phase_area);
+		draw_phase(ui, *shown, phase_area);
 		draw_input(ui, *shown, { .area = input_area, .body = body });
 		draw_context_bar(ctx, *shown, context_area);
 	}
-	draw_transcript(ui, d, transcript, jump_out);
+
+	if (!shown) {
+		draw_transcript_hint(ctx, "No agents yet. Type a prompt below, or press + to add a session, in " + config::primary().name + ".", transcript);
+	}
+	else if (!shown->changes_open) {
+		draw_transcript(ui, d, shown_view(*shown), transcript, jump_out);
+	}
+	else {
+		const vec2f mouse = ctx.mouse_position();
+		const float minimum = sty.font_size * 14.f;
+		const float divider_thickness = std::max(6.f, sty.resize_border_thickness) * 2.f;
+		const bool blocked = ctx.hit_regions && ctx.hit_regions->is_resize_blocked(mouse);
+		const gui::layout::split_result split = gui::layout::update_split({
+			.container = transcript,
+			.axis = gui::layout::split_axis::columns,
+			.ratio = shown->changes_ratio,
+			.min_first = minimum,
+			.min_second = minimum,
+			.divider_thickness = divider_thickness,
+		}, {
+			.mouse = mouse,
+			.pressed = ctx.mouse_pressed(mouse_button::button_1) && ctx.input_available(),
+			.held = ctx.mouse_held(mouse_button::button_1),
+			.blocked = blocked,
+		}, shown->changes_drag);
+
+		if (shown->changes_drag.dragging && transcript.width() >= minimum * 2.f + divider_thickness) {
+			shown->changes_ratio = split.ratio;
+		}
+
+		if ((split.divider.contains(mouse) && !blocked) || shown->changes_drag.dragging) {
+			jump_out.push<set_cursor_shape_request>({
+				.shape = cursor_shape::resize_ew,
+			});
+		}
+
+		draw_transcript(ui, d, shown_view(*shown), split.first, jump_out);
+		draw_transcript(ui, d, shown->changes, split.second, jump_out);
+	}
 	draw_session_info(ctx, d, body);
 	draw_history(ui, d, body);
 	draw_close_confirm(ui, d, body);

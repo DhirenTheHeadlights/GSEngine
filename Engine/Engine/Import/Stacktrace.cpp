@@ -193,6 +193,8 @@ namespace gse {
 
 auto gse::capture_stacktrace(const std::size_t skip_frames) -> std::string {
 #ifdef _WIN32
+	using namespace gse::win32;
+
 	CONTEXT context{};
 	RtlCaptureContext(&context);
 

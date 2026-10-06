@@ -98,6 +98,8 @@ export namespace gse::log {
 		std::size_t index
 	) -> void;
 
+	auto current_thread_role() -> thread_role;
+
 	struct record {
 		level lvl;
 		category cat;

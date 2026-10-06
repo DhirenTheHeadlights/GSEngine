@@ -16,8 +16,8 @@ export namespace gse::ide::agent {
 	auto run(
 		context& ctx,
 		data& d,
-		channel_read<start_request, dispatch_request, gui::context_menu_result, build_runner::build_finished, build_runner::source_changed> requests_in,
-		channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request, blame_offer, build_runner::build_request> events_out,
+		channel_read<start_request, dispatch_request, draft_request, gui::context_menu_result, build_runner::build_finished, build_runner::source_changed> requests_in,
+		channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request, blame_offer, draft_ready, build_runner::build_request> events_out,
 		shared_view<build_runner::data> build_d
 	) -> async::task<>;
 

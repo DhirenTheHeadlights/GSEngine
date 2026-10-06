@@ -164,6 +164,12 @@ export namespace gse::gpu {
 			id window
 		) const -> vec2u;
 
+		[[nodiscard]] auto allocated_extent() const -> vec2u;
+
+		[[nodiscard]] auto screen_uv_scale() const -> vec2f;
+
+		[[nodiscard]] auto screen_uv_max() const -> vec2f;
+
 		[[nodiscard]] auto depth_image(
 			this auto& self
 		) -> auto&;
@@ -280,6 +286,10 @@ export namespace gse::gpu {
 			const framebuffer_image_desc& desc,
 			std::string_view tag
 		) -> image;
+
+		[[nodiscard]] auto screen_allocated(
+			const image* img
+		) const -> bool;
 
 		struct registered_image {
 			framebuffer_image_desc desc;

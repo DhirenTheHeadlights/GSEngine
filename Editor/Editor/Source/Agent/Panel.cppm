@@ -104,12 +104,29 @@ namespace gse::ide::agent {
 		const rectf& body
 	) -> void;
 
+	auto draw_transcript_hint(
+		const gui::draw_context& ctx,
+		const std::string& hint,
+		const rectf& area
+	) -> void;
+
 	auto draw_transcript(
 		gui::builder& ui,
 		data& d,
+		transcript_view& v,
 		const rectf& area,
 		channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out
 	) -> void;
+
+	auto shown_view(
+		session& s
+	) -> transcript_view&;
+
+	auto draw_view_toggles(
+		gui::builder& ui,
+		session& s,
+		const rectf& area
+	) -> float;
 
 	auto draw_phase_pipeline(
 		const gui::draw_context& ctx,
@@ -119,8 +136,8 @@ namespace gse::ide::agent {
 	) -> float;
 
 	auto draw_phase(
-		const gui::draw_context& ctx,
-		const session& s,
+		gui::builder& ui,
+		session& s,
 		const rectf& area
 	) -> void;
 
@@ -160,6 +177,14 @@ namespace gse::ide::agent {
 		const data& d,
 		const session& s
 	) -> std::string;
+
+	auto draw_activity_line(
+		const gui::draw_context& ctx,
+		const data& d,
+		const session& s,
+		const rectf& area,
+		const rectf& clip
+	) -> void;
 
 	auto draw_activity(
 		const gui::draw_context& ctx,

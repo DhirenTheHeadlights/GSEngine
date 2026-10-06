@@ -20,7 +20,7 @@ namespace gse::ide::agent {
 	constexpr std::string_view oauth_beta = "oauth-2025-04-20";
 	constexpr std::int64_t usage_refresh_seconds = 60;
 	constexpr std::uint32_t sessions_magic = 0x47534147;
-	constexpr std::uint32_t sessions_version = 6;
+	constexpr std::uint32_t sessions_version = 8;
 	constexpr std::uint32_t first_schema_sessions_version = 3;
 	constexpr std::uint32_t chat_names_sessions_version = 5;
 

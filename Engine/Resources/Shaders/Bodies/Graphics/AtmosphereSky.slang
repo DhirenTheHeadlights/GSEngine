@@ -1,15 +1,6 @@
-struct VS_OUT {
-    float4 clip_pos : SV_Position;
-    float2 ndc      : TEXCOORD0;
-};
-
 [shader("vertex")]
-VS_OUT vs_main(uint vid : SV_VertexID) {
-    float2 p = float2((vid << 1) & 2, vid & 2);
-    VS_OUT o;
-    o.ndc = p * 2.0 - 1.0;
-    o.clip_pos = float4(o.ndc, 0.0, 1.0);
-    return o;
+screen_vs_out vs_main(uint vid : SV_VertexID) {
+    return screen_pass_vertex(vid, screen_depth_far);
 }
 
 float3 sample_transmittance_at(float radius, float view_zenith_cos) {
@@ -74,8 +65,8 @@ float3 star_field(float3 dir, float pixel_angle) {
 }
 
 [shader("fragment")]
-float4 fs_main(VS_OUT input) : SV_Target {
-    float3 view_dir = reconstruct_world_ray(input.ndc);
+float4 fs_main(screen_vs_out input) : SV_Target {
+    float3 view_dir = reconstruct_world_ray(screen_ndc(input.uv));
 
     float3 lookup_dir = view_dir;
     if (lookup_dir.y < 0.0) {

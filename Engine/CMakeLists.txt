@@ -58,7 +58,6 @@ target_sources(Engine
         FILES "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Import/Engine.cppm"
 )
 
-find_package(glfw3 CONFIG REQUIRED)
 find_package(PNG REQUIRED)
 find_package(JPEG REQUIRED)
 find_path(miniaudio_INCLUDE_DIR "miniaudio.h")
@@ -116,7 +115,6 @@ else()
 endif()
 
 target_link_libraries(Engine PUBLIC
-    glfw
     Freetype::Freetype
     msdfgen::msdfgen
     VulkanModule
@@ -125,11 +123,15 @@ target_link_libraries(Engine PUBLIC
     MiniaudioImpl
 )
 
+if(WIN32)
+    target_compile_definitions(Engine PUBLIC _WIN32_WINNT=0x0A00 WINVER=0x0A00)
+endif()
+
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_link_libraries(Engine PUBLIC stdc++exp)
     if(WIN32)
         find_package(directx-headers CONFIG REQUIRED)
-        target_link_libraries(Engine PUBLIC ws2_32 winhttp dbghelp shell32 advapi32 dwmapi cabinet d3d12 dxgi dxguid Microsoft::DirectX-Headers)
+        target_link_libraries(Engine PUBLIC ws2_32 winhttp dbghelp shell32 advapi32 ole32 uuid dwmapi cabinet d3d12 dxgi dxguid Microsoft::DirectX-Headers)
     endif()
 endif()
 

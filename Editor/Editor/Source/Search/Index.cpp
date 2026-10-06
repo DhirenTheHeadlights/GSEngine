@@ -17,8 +17,11 @@ auto gse::ide::search::unexpected_lookup(const lookup_failure reason, std::strin
 	});
 }
 
-auto gse::ide::search::is_skipped_dir(const std::string_view name) -> bool {
-	return name == "out" || name == ".git" || name == ".vs" || name == ".vscode" || name == ".claude" || name == ".idea" || name == "external" || name == "vcpkg" || name == ".gcc-build" || name == ".gcc-ci-build" || name == "msys64" || name == "build" || name == "node_modules" || name == ".cache";
+auto gse::ide::search::is_skipped_dir(const std::string_view name, const bool at_root) -> bool {
+	if (at_root && name == "external") {
+		return true;
+	}
+	return name == "out" || name == ".git" || name == ".vs" || name == ".vscode" || name == ".claude" || name == ".idea" || name == "vcpkg" || name == ".gcc-build" || name == ".gcc-ci-build" || name == "msys64" || name == "build" || name == "node_modules" || name == ".cache";
 }
 
 auto gse::ide::search::is_binary_ext(const std::string_view ext) -> bool {
@@ -64,6 +67,9 @@ auto gse::ide::search::loc_language_of(const std::string_view ext) -> std::optio
 }
 
 auto gse::ide::search::classify_loc(const index_root& owner, const std::filesystem::path& path) -> std::optional<loc_bucket> {
+	if (!owner.counts_loc) {
+		return std::nullopt;
+	}
 	const std::optional<loc_language> language = loc_language_of(to_lower(path.extension().native_encoded_string()));
 	if (!language) {
 		return std::nullopt;
@@ -717,8 +723,8 @@ auto gse::ide::search::is_indexed_path(const std::filesystem::path& root, const 
 	if (relative.empty() || *relative.begin() == "..") {
 		return false;
 	}
-	for (const std::filesystem::path& part : relative) {
-		if (is_skipped_dir(to_lower(part.native_encoded_string()))) {
+	for (const auto& [depth, part] : std::views::enumerate(relative)) {
+		if (is_skipped_dir(to_lower(part.native_encoded_string()), depth == 0)) {
 			return false;
 		}
 	}
@@ -1159,7 +1165,7 @@ auto gse::ide::search::build_files_and_content(index_state& idx, const std::span
 			const std::filesystem::directory_entry& entry = *it;
 			std::error_code type_ec;
 			if (entry.is_directory(type_ec)) {
-				if (is_skipped_dir(to_lower(entry.path().filename().native_encoded_string()))) {
+				if (is_skipped_dir(to_lower(entry.path().filename().native_encoded_string()), it.depth() == 0)) {
 					it.disable_recursion_pending();
 				}
 				continue;

@@ -45,6 +45,7 @@ auto gse::shutdown() -> void {
 
 auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 	install_crash_handlers();
+	win32::enable_per_monitor_dpi_awareness();
 
 	std::set_terminate([] {
 		const auto stack = capture_stacktrace(1);
@@ -166,14 +167,29 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 
 		if (config.create_window && config.render) {
 			window::install_resize_pump([&e] {
-				for (int pass = 0; pass < 2; ++pass) {
-					frame_sync::begin();
-					e.update();
-					e.render();
-					frame_sync::end();
-				}
+				const auto step_begin = system_clock::now<time_t<double, seconds>>();
+				e.apply_pending_resizes();
+				const auto recreate_end = system_clock::now<time_t<double, seconds>>();
+				frame_sync::begin();
+				e.update();
+				const auto update_end = system_clock::now<time_t<double, seconds>>();
+				e.render();
+				frame_sync::end();
+				const auto step_end = system_clock::now<time_t<double, seconds>>();
+
+				log::println(
+					log::category::render,
+					"[resize] step recreate={:.2f:ms} update={:.2f:ms} render={:.2f:ms} total={:.2f:ms} presented={}",
+					time_t<double, seconds>(recreate_end - step_begin),
+					time_t<double, seconds>(update_end - recreate_end),
+					time_t<double, seconds>(step_end - update_end),
+					time_t<double, seconds>(step_end - step_begin),
+					e.frame_presented()
+				);
 			});
 		}
+
+		const auto exit_deadline = system_clock::now<time_t<double, seconds>>() + config.exit_after;
 
 		while (!should_shutdown.load(std::memory_order_acquire)) {
 			{
@@ -203,6 +219,10 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 
 				if (editor_pipe) {
 					drain_editor_pipe(editor_pipe, pipe_reader, e);
+				}
+
+				if (config.render) {
+					e.apply_pending_resizes();
 				}
 
 				{
@@ -294,6 +314,10 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 				if (step_bench(config.bench, bench, e)) {
 					shutdown();
 				}
+			}
+			else if (config.exit_after > time{} && system_clock::now<time_t<double, seconds>>() >= exit_deadline) {
+				log::println(log::category::runtime, "exit: the {::s} run bound elapsed", config.exit_after);
+				shutdown();
 			}
 		}
 

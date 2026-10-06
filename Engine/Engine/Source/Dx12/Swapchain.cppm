@@ -51,35 +51,88 @@ export namespace gse::dx12 {
 		std::uint32_t m_rtv_size = 0;
 		vec2u m_extent;
 		gpu::image_format m_surface_fmt = gpu::image_format::b8g8r8a8_unorm;
+		bool m_allow_tearing = false;
 	};
+}
+
+namespace gse::dx12 {
+	struct present_cadence {
+		std::uint32_t sync_interval = 1;
+		std::uint32_t flags = 0;
+	};
+
+	[[nodiscard]] auto present_cadence_of(
+		gpu::present_mode mode,
+		bool allow_tearing
+	) -> present_cadence;
+}
+
+auto gse::dx12::present_cadence_of(const gpu::present_mode mode, const bool allow_tearing) -> present_cadence {
+	switch (mode) {
+	case gpu::present_mode::fifo:
+	case gpu::present_mode::fifo_relaxed:
+		return {
+			.sync_interval = 1,
+			.flags = 0,
+		};
+	case gpu::present_mode::mailbox:
+		return {
+			.sync_interval = 0,
+			.flags = 0,
+		};
+	case gpu::present_mode::immediate:
+		return {
+			.sync_interval = 0,
+			.flags = allow_tearing ? static_cast<std::uint32_t>(directx::present_allow_tearing) : 0u,
+		};
+	}
+	return {};
 }
 
 auto gse::dx12::swapchain::bind(device* owner) -> void {
 	m_owner = owner;
 }
 
-auto gse::dx12::swapchain::create(const vec2i framebuffer_size, gpu::present_mode, gpu::swap_chain_handle) -> gpu::swap_chain_info {
+auto gse::dx12::swapchain::create(const vec2i framebuffer_size, const gpu::present_mode mode, const gpu::swap_chain_handle old_handle) -> gpu::swap_chain_info {
 	m_owner->wait_idle();
 
 	for (const auto& backbuffer : m_backbuffers) {
 		m_owner->forget_present_image(backbuffer.get());
 	}
 	m_backbuffers.clear();
-	m_rtv_heap.reset();
-	m_swapchain.reset();
+
+	const bool resize_in_place = m_swapchain
+		&& m_rtv_heap
+		&& old_handle == std::bit_cast<gpu::swap_chain_handle>(m_swapchain.get());
 
 	m_image_count = 3;
 	m_extent = vec2u{ static_cast<std::uint32_t>(framebuffer_size.x()), static_cast<std::uint32_t>(framebuffer_size.y()) };
+	m_allow_tearing = directx::tearing_supported(m_owner->factory());
 
-	log::println(log::category::dx12, "create_swapchain begin {}x{} hwnd={} queue={} factory={}", m_extent.x(), m_extent.y(), m_owner->hwnd(), static_cast<void*>(m_owner->graphics_queue()), static_cast<void*>(m_owner->factory()));
+	if (resize_in_place) {
+		log::println(log::level::debug, log::category::dx12, "resize_swapchain_buffers {}x{} swapchain={} mode={} tearing={}", m_extent.x(), m_extent.y(), static_cast<void*>(m_swapchain.get()), mode, m_allow_tearing);
+		if (!directx::resize_swapchain_buffers(m_swapchain.get(), m_extent.x(), m_extent.y(), m_image_count, dxgi_format_of(m_surface_fmt), m_allow_tearing)) {
+			log::println(log::level::warning, log::category::dx12, "ResizeBuffers failed at {}x{}, rebuilding the swapchain", m_extent.x(), m_extent.y());
+			m_rtv_heap.reset();
+			m_swapchain.reset();
+		}
+	}
+	else {
+		m_rtv_heap.reset();
+		m_swapchain.reset();
+	}
 
-	m_swapchain = directx::create_swapchain(m_owner->factory(), m_owner->graphics_queue(), m_owner->hwnd(), m_extent.x(), m_extent.y(), m_image_count, dxgi_format_of(m_surface_fmt));
-	log::println(log::category::dx12, "swapchain={}", static_cast<void*>(m_swapchain.get()));
+	if (!m_swapchain) {
+		log::println(log::level::debug, log::category::dx12, "create_swapchain begin {}x{} hwnd={} queue={} factory={} mode={} tearing={}", m_extent.x(), m_extent.y(), m_owner->hwnd(), static_cast<void*>(m_owner->graphics_queue()), static_cast<void*>(m_owner->factory()), mode, m_allow_tearing);
+		m_swapchain = directx::create_swapchain(m_owner->factory(), m_owner->graphics_queue(), m_owner->hwnd(), m_extent.x(), m_extent.y(), m_image_count, dxgi_format_of(m_surface_fmt), m_allow_tearing);
+		log::println(log::level::debug, log::category::dx12, "swapchain={}", static_cast<void*>(m_swapchain.get()));
+	}
 
 	gpu::swap_chain_info out = {
 		.handle = std::bit_cast<gpu::swap_chain_handle>(m_swapchain.get()),
 		.extent = m_extent,
 		.format = m_surface_fmt,
+		.present_mode = mode,
 	};
 
 	if (!m_swapchain) {
@@ -87,14 +140,16 @@ auto gse::dx12::swapchain::create(const vec2i framebuffer_size, gpu::present_mod
 		return out;
 	}
 
-	m_rtv_heap = directx::create_rtv_heap(m_owner->raw_device(), m_image_count);
-	m_rtv_size = directx::rtv_descriptor_size(m_owner->raw_device());
-	log::println(log::category::dx12, "rtv_heap={} rtv_size={}", static_cast<void*>(m_rtv_heap.get()), m_rtv_size);
+	if (!m_rtv_heap) {
+		m_rtv_heap = directx::create_rtv_heap(m_owner->raw_device(), m_image_count);
+		m_rtv_size = directx::rtv_descriptor_size(m_owner->raw_device());
+		log::println(log::level::debug, log::category::dx12, "rtv_heap={} rtv_size={}", static_cast<void*>(m_rtv_heap.get()), m_rtv_size);
+	}
 
 	m_backbuffers.resize(m_image_count);
 	for (std::uint32_t i = 0; i < m_image_count; ++i) {
 		m_backbuffers[i] = directx::swapchain_buffer(m_swapchain.get(), i);
-		log::println(log::category::dx12, "backbuffer[{}]={}", i, static_cast<void*>(m_backbuffers[i].get()));
+		log::println(log::level::debug, log::category::dx12, "backbuffer[{}]={}", i, static_cast<void*>(m_backbuffers[i].get()));
 		if (!m_backbuffers[i] || !m_rtv_heap) {
 			continue;
 		}
@@ -110,7 +165,7 @@ auto gse::dx12::swapchain::create(const vec2i framebuffer_size, gpu::present_mod
 		out.image_views.push_back(std::bit_cast<gpu::handle<gpu::image_view>>(rtv.ptr));
 	}
 
-	log::println(log::category::dx12, "create_swapchain end images={}", out.images.size());
+	log::println(log::level::debug, log::category::dx12, "create_swapchain end images={}", out.images.size());
 
 	return out;
 }
@@ -159,7 +214,8 @@ auto gse::dx12::swapchain::present(const gpu::present_info& info) -> gpu::result
 		}
 	}
 	if (m_swapchain) {
-		m_swapchain->Present(1, 0);
+		const auto cadence = present_cadence_of(info.present_modes.front(), m_allow_tearing);
+		m_swapchain->Present(cadence.sync_interval, cadence.flags);
 	}
 	return gpu::result::success;
 }

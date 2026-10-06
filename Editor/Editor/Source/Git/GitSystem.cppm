@@ -58,6 +58,9 @@ export namespace gse::ide::git_system {
 		task::pending<std::vector<git::repository_result>> status_query;
 		task::pending<git::command_result> action;
 		std::string action_error;
+		std::filesystem::path action_error_root;
+		git_system::action action_error_kind = git_system::action::initialize;
+		git_system::action pending_kind = git_system::action::initialize;
 		std::vector<std::filesystem::path> repo_roots;
 		std::vector<std::filesystem::path> rootless;
 		git::status_snapshot status;
@@ -168,29 +171,51 @@ auto gse::ide::git_system::build_initialize(const action_inputs& inputs, const a
 	return git::init_command(request.root);
 }
 
-auto gse::ide::git_system::build_commit(const action_inputs&, const action_request& request) -> std::optional<git::command> {
+auto gse::ide::git_system::build_commit(const action_inputs& inputs, const action_request& request) -> std::optional<git::command> {
 	if (request.paths.empty()) {
 		return std::nullopt;
 	}
-	const std::filesystem::path scratch = process::temporary_path("git_commit", "txt");
-	std::ofstream out(scratch, std::ios::binary);
-	out << request.message;
-	if (!out) {
+	std::unordered_set<std::string> already_staged;
+	if (const git::repository_snapshot repository = inputs.status->find(request.root)) {
+		for (const git::change& change : repository->changes) {
+			if (!change.needs_stage) {
+				already_staged.insert(change.relative.generic_display_string());
+			}
+		}
+	}
+	std::string pathspecs;
+	for (const std::filesystem::path& path : request.paths) {
+		std::string relative = path.generic_display_string();
+		if (already_staged.contains(relative)) {
+			continue;
+		}
+		pathspecs += relative;
+		pathspecs.push_back('\0');
+	}
+
+	const std::filesystem::path message_path = process::temporary_path("git_commit", "txt");
+	std::ofstream message_out(message_path, std::ios::binary);
+	message_out << request.message;
+	message_out.close();
+	if (!message_out) {
 		return std::nullopt;
 	}
 	git::command command{
 		.root = request.root,
-		.scratch = scratch,
+		.scratch = { message_path },
 	};
-	constexpr std::size_t paths_per_step = 64;
-	for (std::size_t start = 0; start < request.paths.size(); start += paths_per_step) {
-		std::string step = "git add -A --";
-		for (const std::filesystem::path& path : std::span(request.paths).subspan(start, std::min(paths_per_step, request.paths.size() - start))) {
-			step += std::format(" \"{}\"", path.generic_display_string());
+	if (!pathspecs.empty()) {
+		const std::filesystem::path pathspec_path = process::temporary_path("git_pathspec", "txt");
+		std::ofstream pathspec_out(pathspec_path, std::ios::binary);
+		pathspec_out.write(pathspecs.data(), static_cast<std::streamsize>(pathspecs.size()));
+		pathspec_out.close();
+		if (!pathspec_out) {
+			return std::nullopt;
 		}
-		command.steps.push_back(std::move(step));
+		command.scratch.push_back(pathspec_path);
+		command.steps.push_back(std::format("git add -A --pathspec-from-file=\"{}\" --pathspec-file-nul", pathspec_path.generic_display_string()));
 	}
-	command.steps.push_back(std::format("git commit -F \"{}\"", scratch.generic_display_string()));
+	command.steps.push_back(std::format("git commit -F \"{}\"", message_path.generic_display_string()));
 	return command;
 }
 
@@ -215,6 +240,8 @@ auto gse::ide::git_system::run(context& ctx, data& d, const channel_read<action_
 	if (std::optional<git::command_result> finished = d.action.take()) {
 		if (!finished->outcome) {
 			d.action_error = std::move(finished->outcome.error());
+			d.action_error_root = finished->root;
+			d.action_error_kind = d.pending_kind;
 			log::println(
 				log::level::error,
 				log::category::task,
@@ -222,6 +249,9 @@ auto gse::ide::git_system::run(context& ctx, data& d, const channel_read<action_
 				finished->root,
 				d.action_error
 			);
+		}
+		else if (d.action_error_root == finished->root && d.action_error_kind == d.pending_kind) {
+			d.action_error.clear();
 		}
 		d.refresh_requested = true;
 		publish(d, status_out);
@@ -238,7 +268,7 @@ auto gse::ide::git_system::run(context& ctx, data& d, const channel_read<action_
 		if (!command) {
 			continue;
 		}
-		d.action_error.clear();
+		d.pending_kind = request.kind;
 		d.action.start([job = std::move(*command)]() mutable {
 			return git::run_command(std::move(job));
 		}, trace_id<"git::command">(), task::lane::background);

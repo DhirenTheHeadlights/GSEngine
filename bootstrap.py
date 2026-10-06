@@ -208,7 +208,7 @@ def main():
             gcc_args.append("--persist")
         if args.force:
             gcc_args.append("--force")
-        run([sys.executable, str(REPO_ROOT / "scripts" / "install_gcc_trunk.py"), *gcc_args])
+        run([sys.executable, str(REPO_ROOT / "Tools" / "install_gcc_trunk.py"), *gcc_args])
 
     if not args.skip_ninja:
         ensure_ninja(force=args.force)

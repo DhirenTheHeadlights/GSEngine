@@ -33,6 +33,16 @@ export namespace gse::internal {
 	}
 
 	template <typename T>
+	constexpr auto from_storage(const vec_storage_type_t<T>& raw) -> T {
+		if constexpr (std::is_arithmetic_v<T>) {
+			return raw;
+		}
+		else {
+			return T::template from<typename T::default_unit>(raw);
+		}
+	}
+
+	template <typename T>
 	constexpr float vec_unit_scale_v = []() consteval {
 		if constexpr (requires {
 			{ T::canonical_storage_scale() } -> std::convertible_to<float>; }) {
@@ -188,6 +198,7 @@ export namespace gse {
 		requires(M > N);
 
 		template <internal::is_vec_element T2>
+		requires std::is_constructible_v<T, const T2&>
 		constexpr vec(
 			const vec<T2, N>& other
 		);
@@ -430,6 +441,7 @@ requires(M > N)
 
 template <gse::internal::is_vec_element T, std::size_t N>
 template <gse::internal::is_vec_element T2>
+requires std::is_constructible_v<T, const T2&>
 constexpr gse::vec<T, N>::vec(const vec<T2, N>& other) {
 	for (std::size_t i = 0; i < N; ++i) {
 		this->data[i] = static_cast<T>(other[i]);

@@ -393,7 +393,7 @@ auto gse::gui::update_text_selection(const text_selection_frame& frame) -> void 
 	const bool ctrl = frame.input.key_held(key::left_control) || frame.input.key_held(key::right_control);
 	if (ctrl && frame.input.key_pressed(key::c) && !frame.layers.is_key_press_consumed(key::c)) {
 		frame.layers.consume_key_press(key::c);
-		window::set_clipboard_text(selection_text(state));
+		clipboard::set_text(selection_text(state));
 	}
 
 	if (right_pressed && !frame.context_menu.open) {

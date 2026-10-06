@@ -71,6 +71,7 @@ auto gse::ide::editor_layout_owner() -> layout_store::owner {
 			std::string(dock_node_section_prefix),
 			std::string(dock_window_section_prefix),
 			std::string(dock_anchor_section_prefix),
+			std::string(dock_shelf_section_prefix),
 		},
 	};
 }

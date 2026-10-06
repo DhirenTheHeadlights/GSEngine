@@ -3,6 +3,7 @@ export module gse.ide.source_control;
 import std;
 import gse;
 
+import gse.ide.agent;
 import gse.ide.git;
 import gse.ide.navigation;
 
@@ -11,7 +12,10 @@ export namespace gse::ide {
 		std::string key;
 		std::string commit_key;
 		std::string push_key;
+		std::string draft_key;
 		std::string message;
+		std::string draft_status;
+		bool drafting = false;
 		gui::text_input_state input;
 	};
 
@@ -28,12 +32,22 @@ export namespace gse::ide {
 		std::string_view engine_pin;
 	};
 
+	[[nodiscard]] auto edit_for(
+		source_control_state& state,
+		const std::filesystem::path& root
+	) -> repository_edit&;
+
+	auto apply_draft(
+		source_control_state& state,
+		const agent::draft_ready& drafted
+	) -> void;
+
 	auto draw_source_control_panel(
 		gui::builder& ui,
 		const rectf& rect,
 		source_control_state& state,
 		const source_control_inputs& inputs,
-		channel_write<git_system::action_request, jump_to_request> channels
+		channel_write<git_system::action_request, agent::draft_request, jump_to_request> channels
 	) -> void;
 }
 
@@ -48,7 +62,7 @@ namespace gse::ide {
 		const source_control_inputs& inputs;
 		const git::repository_status& repository;
 		const git::change* change = nullptr;
-		channel_write<git_system::action_request, jump_to_request> channels;
+		channel_write<git_system::action_request, agent::draft_request, jump_to_request> channels;
 	};
 
 	auto draw_header_row(
@@ -88,11 +102,6 @@ namespace gse::ide {
 	[[nodiscard]] auto collect_rows(
 		const git::status_map& status
 	) -> std::vector<source_control_row>;
-
-	[[nodiscard]] auto edit_for(
-		source_control_state& state,
-		const git::repository_status& repository
-	) -> repository_edit&;
 
 	[[nodiscard]] auto change_id(
 		const git::repository_status& repository,
@@ -150,18 +159,31 @@ auto gse::ide::collect_rows(const git::status_map& status) -> std::vector<source
 	return rows;
 }
 
-auto gse::ide::edit_for(source_control_state& state, const git::repository_status& repository) -> repository_edit& {
-	const id root_id = generate_temp_id(repository.root);
+auto gse::ide::edit_for(source_control_state& state, const std::filesystem::path& root) -> repository_edit& {
+	const id root_id = generate_temp_id(root);
 	const auto found = state.edits.find(root_id);
 	if (found != state.edits.end()) {
 		return found->second;
 	}
-	const std::string root_key = repository.root.generic_display_string();
+	const std::string root_key = root.generic_display_string();
 	return state.edits.emplace(root_id, repository_edit{
 		.key = "##source_control_message_" + root_key,
 		.commit_key = "##source_control_commit_" + root_key,
 		.push_key = "##source_control_push_" + root_key,
+		.draft_key = "##source_control_draft_" + root_key,
 	}).first->second;
+}
+
+auto gse::ide::apply_draft(source_control_state& state, const agent::draft_ready& drafted) -> void {
+	repository_edit& edit = edit_for(state, drafted.root);
+	edit.drafting = false;
+	if (!drafted.failure.empty()) {
+		edit.draft_status = "draft failed: " + drafted.failure;
+		return;
+	}
+	edit.draft_status.clear();
+	edit.message = drafted.message;
+	edit.input = {};
 }
 
 auto gse::ide::change_id(const git::repository_status& repository, const git::change& change) -> id {
@@ -288,11 +310,12 @@ auto gse::ide::draw_controls_row(const row_context& row) -> void {
 	const float control_h = std::max(0.f, row.rect.height() - pad * 0.5f);
 	const float top = row.rect.top() - pad * 0.25f;
 	const git::repository_status& repository = row.repository;
-	repository_edit& edit = edit_for(row.state, repository);
+	repository_edit& edit = edit_for(row.state, repository.root);
 
 	const rectf push_rect = rectf::from_position_size({ row.rect.right() - pad - button_w, top }, { button_w, control_h });
 	const rectf commit_rect = rectf::from_position_size({ push_rect.left() - pad * 0.5f - button_w, top }, { button_w, control_h });
-	const rectf input_rect = rectf::from_position_size({ row.rect.left() + pad, top }, { std::max(0.f, commit_rect.left() - pad - row.rect.left() - pad), control_h });
+	const rectf draft_rect = rectf::from_position_size({ commit_rect.left() - pad * 0.5f - button_w, top }, { button_w, control_h });
+	const rectf input_rect = rectf::from_position_size({ row.rect.left() + pad, top }, { std::max(0.f, draft_rect.left() - pad - row.rect.left() - pad), control_h });
 
 	ui.draw<gui::text_input>({
 		.name = edit.key,
@@ -301,17 +324,41 @@ auto gse::ide::draw_controls_row(const row_context& row) -> void {
 		.rect = input_rect,
 	});
 	if (edit.message.empty()) {
+		const bool failed = !edit.draft_status.empty();
 		ctx.queue_text({
 			.font = ctx.fonts.text,
-			.text = "Commit message",
+			.text = edit.drafting ? "Drafting a commit message..." : failed ? edit.draft_status : "Commit message",
 			.position = { input_rect.left() + pad, input_rect.center().y() + text_view->vertical_center_offset(sty.font_size) },
 			.scale = sty.font_size,
-			.color = sty.color_text_secondary,
+			.color = failed ? sty.color_error : sty.color_text_secondary,
 			.clip_rect = input_rect,
 		});
 	}
 
 	std::vector<std::filesystem::path> paths = selected_paths(row.state, repository);
+	const bool can_draft = !row.inputs.busy && !edit.drafting && !paths.empty();
+	if (ui.draw<gui::button>({ .text = "Draft", .rect = draft_rect, .key = edit.draft_key, .enabled = can_draft })) {
+		edit.drafting = true;
+		edit.draft_status.clear();
+		std::vector<agent::draft_file> files;
+		for (const git::change& change : repository.changes) {
+			if (!row.state.selected.contains(change_id(repository, change))) {
+				continue;
+			}
+			files.push_back({
+				.relative = change.relative,
+				.code = annotation_from_enum<git::file_status_info>(change.state, {}).code,
+				.added = change.added,
+				.deleted = change.deleted,
+			});
+		}
+		row.channels.push<agent::draft_request>({
+			.root = repository.root,
+			.branch = repository.branch,
+			.files = std::move(files),
+		});
+	}
+
 	const bool can_commit = !row.inputs.busy && !edit.message.empty() && !paths.empty();
 	if (ui.draw<gui::button>({ .text = "Commit", .rect = commit_rect, .key = edit.commit_key, .enabled = can_commit })) {
 		select_all(row.state, repository, false);
@@ -322,6 +369,7 @@ auto gse::ide::draw_controls_row(const row_context& row) -> void {
 			.paths = std::move(paths),
 		});
 		edit.message.clear();
+		edit.draft_status.clear();
 		edit.input = {};
 	}
 
@@ -405,7 +453,7 @@ auto gse::ide::draw_change_row(const row_context& row) -> void {
 	});
 }
 
-auto gse::ide::draw_source_control_panel(gui::builder& ui, const rectf& rect, source_control_state& state, const source_control_inputs& inputs, const channel_write<git_system::action_request, jump_to_request> channels) -> void {
+auto gse::ide::draw_source_control_panel(gui::builder& ui, const rectf& rect, source_control_state& state, const source_control_inputs& inputs, const channel_write<git_system::action_request, agent::draft_request, jump_to_request> channels) -> void {
 	auto& ctx = ui.ctx;
 	const auto& sty = ctx.style;
 	const auto text_view = ctx.fonts.text.resolve();
