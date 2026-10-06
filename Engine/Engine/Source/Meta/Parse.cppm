@@ -31,11 +31,14 @@ struct gse::parser<std::string> {
 	) -> bool;
 };
 
-template <>
-struct gse::parser<std::vector<std::string>> {
+export template <typename T>
+requires requires(std::string_view raw, T& out) {
+	{ gse::parser<T>::parse(raw, out) } -> std::same_as<bool>;
+}
+struct gse::parser<std::vector<T>> {
 	static auto parse(
 		std::string_view raw,
-		std::vector<std::string>& out
+		std::vector<T>& out
 	) -> bool;
 };
 
@@ -87,8 +90,16 @@ auto gse::parser<std::string>::parse(const std::string_view raw, std::string& ou
 	return true;
 }
 
-auto gse::parser<std::vector<std::string>>::parse(const std::string_view raw, std::vector<std::string>& out) -> bool {
-	out.emplace_back(raw);
+template <typename T>
+requires requires(std::string_view raw, T& out) {
+	{ gse::parser<T>::parse(raw, out) } -> std::same_as<bool>;
+}
+auto gse::parser<std::vector<T>>::parse(const std::string_view raw, std::vector<T>& out) -> bool {
+	T element{};
+	if (!parser<T>::parse(raw, element)) {
+		return false;
+	}
+	out.push_back(std::move(element));
 	return true;
 }
 

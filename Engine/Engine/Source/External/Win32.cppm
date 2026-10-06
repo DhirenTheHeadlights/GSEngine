@@ -267,7 +267,10 @@ export namespace gse::win32 {
 	using ::CreateIoCompletionPort;
 	using ::GetQueuedCompletionStatus;
 	using ::CancelIoEx;
+	using ::GlobalMemoryStatusEx;
+	using ::MEMORYSTATUSEX;
 
+	constexpr DWORD open_always = OPEN_ALWAYS;
 	constexpr DWORD mem_commit = MEM_COMMIT;
 	constexpr DWORD mem_reserve = MEM_RESERVE;
 	constexpr DWORD mem_image = MEM_IMAGE;

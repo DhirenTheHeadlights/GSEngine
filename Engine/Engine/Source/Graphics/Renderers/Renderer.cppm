@@ -34,7 +34,6 @@ export namespace gse::renderer {
 	auto run(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
-		shared_view<window::data> window_s,
 		data& d,
 		channel_write<asset::hot_reload_request, camera::viewport_update> requests_out,
 		shared_view<actions::data> sys

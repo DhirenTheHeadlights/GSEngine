@@ -384,6 +384,7 @@ auto gse::physics::solver_config_from_settings(const data& d) -> vbd::solver_con
 		.penalty_max = d.penalty_max,
 		.collision_margin = d.collision_margin,
 		.stick_threshold = d.stick_threshold,
+		.friction_coefficient = d.friction_coefficient,
 		.velocity_sleep_threshold = d.velocity_sleep_threshold,
 		.angular_sleep_threshold = d.angular_sleep_threshold,
 		.speculative_margin = d.speculative_margin,
@@ -1666,37 +1667,71 @@ auto gse::physics::prepare(context& ctx, data& d, const channel_write<interpolat
 		++d.muscle_inputs_generation;
 	}
 
-	std::atomic<bool> joints_changed = false;
 	const auto drive_owners = drives.owner_ids();
 	const auto joint_ids = d.joints.ids();
 	const auto joint_items = d.joints.items();
 	const auto joints_aligned = std::ranges::equal(drive_owners, joint_ids);
+	const bool apply_all = d.applied_drives.size() != drives.size() || d.drive_change_marks.size() != joint_items.size() || d.applied_drives_joints_generation != d.joints_generation;
+	if (apply_all) {
+		d.applied_drives.resize(drives.size());
+		d.applied_drive_owners.resize(drives.size());
+		d.applied_drives_joints_generation = d.joints_generation;
+		d.drive_change_marks.assign(joint_items.size(), 0);
+		d.drive_changes.clear();
+		d.drive_changes_full = true;
+	}
 	d.drive_joint_slots.resize(drives.size(), std::numeric_limits<std::uint32_t>::max());
-	auto* drive_joint_slots = d.drive_joint_slots.data();
+	constexpr std::size_t drive_scan_chunk = 4096;
+	d.drive_change_scan.resize((drives.size() + drive_scan_chunk - 1) / drive_scan_chunk);
+	std::atomic<bool> drives_changed = false;
+	std::atomic<bool> owners_changed = false;
 	task::coarse_parallel(
-		drives.size(),
-		64,
-		[&](const std::size_t i) {
-			auto* jd = joints_aligned ? std::addressof(joint_items[i]) : nullptr;
-			if (!joints_aligned) {
-				if (const auto slot = drive_joint_slots[i]; slot < joint_ids.size() && joint_ids[slot] == drive_owners[i]) {
-					jd = std::addressof(joint_items[slot]);
+		d.drive_change_scan.size(),
+		1,
+		[&](const std::size_t c) {
+			auto& changes = d.drive_change_scan[c];
+			changes.clear();
+			const auto end = std::min(drives.size(), (c + 1) * drive_scan_chunk);
+			for (auto i = c * drive_scan_chunk; i < end; ++i) {
+				auto* jd = joints_aligned ? std::addressof(joint_items[i]) : nullptr;
+				if (!joints_aligned) {
+					if (const auto slot = d.drive_joint_slots[i]; slot < joint_ids.size() && joint_ids[slot] == drive_owners[i]) {
+						jd = std::addressof(joint_items[slot]);
+					}
+					else if ((jd = d.joints.try_get(drive_owners[i]))) {
+						d.drive_joint_slots[i] = static_cast<std::uint32_t>(jd - joint_items.data());
+					}
 				}
-				else if ((jd = d.joints.try_get(drive_owners[i]))) {
-					drive_joint_slots[i] = static_cast<std::uint32_t>(jd - joint_items.data());
+				if (!jd) {
+					continue;
 				}
-			}
-			if (!jd) {
-				return;
-			}
-			apply_joint_drive(*jd, drives[i]);
-			if (drives[i].enabled && !joints_changed.load(std::memory_order_relaxed)) {
-				joints_changed.store(true, std::memory_order_relaxed);
+				const bool owner_kept = d.applied_drive_owners[i] == drive_owners[i];
+				if (!apply_all && owner_kept && d.applied_drives[i] == drives[i]) {
+					continue;
+				}
+				apply_joint_drive(*jd, drives[i]);
+				d.applied_drives[i] = drives[i];
+				d.applied_drive_owners[i] = drive_owners[i];
+				drives_changed.store(true, std::memory_order_relaxed);
+				if (!owner_kept) {
+					owners_changed.store(true, std::memory_order_relaxed);
+				}
+				const auto joint = static_cast<std::uint32_t>(jd - joint_items.data());
+				if (d.drive_change_marks[joint] == 0) {
+					d.drive_change_marks[joint] = 1;
+					changes.push_back({ .joint = joint, .drive = static_cast<std::uint32_t>(i) });
+				}
 			}
 		},
 		trace_id<"physics::prepare::drives">()
 	);
-	if (joints_changed.load(std::memory_order_relaxed)) {
+	for (const auto& changes : d.drive_change_scan) {
+		d.drive_changes.insert(d.drive_changes.end(), changes.begin(), changes.end());
+	}
+	if (owners_changed.load(std::memory_order_relaxed)) {
+		d.drive_changes_full = true;
+	}
+	if (drives_changed.load(std::memory_order_relaxed)) {
 		++d.joint_inputs_generation;
 	}
 
@@ -2244,6 +2279,15 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 	plan.total_ticks = total_ticks;
 	plan.first_tick = first_tick;
 	plan.restore_tick = restore_tick;
+	plan.joint_drive_changes.swap(d.drive_changes);
+	d.drive_changes.clear();
+	for (const auto& change : plan.joint_drive_changes) {
+		d.drive_change_marks[change.joint] = 0;
+	}
+	plan.full_joint_inputs = std::exchange(d.drive_changes_full, false) || restore_tick.has_value();
+	if (restore_tick) {
+		++d.joint_inputs_generation;
+	}
 	++plan.generation;
 
 	record_consumed_resets(d, transform, motion);
@@ -2714,7 +2758,7 @@ auto gse::physics::frame(context& ctx, const std::optional<shared_view<gpu::cont
 			trace::scope_guard _{ trace_id<"physics::frame::commit_upload">() };
 			d.gpu_solver.commit_upload();
 		}
-		co_await d.gpu_solver.dispatch_compute(ctx, pass_out, gpu_s->swapchain != nullptr);
+		co_await d.gpu_solver.dispatch_compute(ctx, pass_out, gpu_s->render_graph->has_output());
 	}
 
 	frame_out.push<gpu_solver_frame_info>(gpu_solver_frame_info_of(d));

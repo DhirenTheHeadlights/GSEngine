@@ -1223,8 +1223,8 @@ auto gse::scheduler::resolve_activation(const std::unordered_set<id>& disabled_r
 			if (inactive.contains(n.state_id)) {
 				continue;
 			}
-			const bool starved = std::ranges::any_of(n.channel_consumes, [&](const id ch) {
-				return !has_active_producer(ch);
+			const bool starved = !n.channel_consumes.empty() && std::ranges::none_of(n.channel_consumes, [&](const id ch) {
+				return has_active_producer(ch);
 			});
 			if (!starved) {
 				continue;

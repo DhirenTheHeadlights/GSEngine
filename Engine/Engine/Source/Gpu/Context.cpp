@@ -32,10 +32,13 @@ auto gse::gpu::context::init(const std::optional<shared_view<window::data>> wind
 
 	d.frame = frame::create(*d.device, d.swapchain.get());
 	d.render_graph = std::make_unique<render_graph>(*d.device, *d.frame);
-	if (d.swapchain) {
-		d.render_graph->set_swapchain_clear(
-			d.dark_background ? color_clear{ .r = 0.05f, .g = 0.05f, .b = 0.06f, .a = 1.0f } : color_clear{}
-		);
+	d.render_graph->set_output_clear(
+		d.dark_background ? color_clear{ .r = 0.05f, .g = 0.05f, .b = 0.06f, .a = 1.0f } : color_clear{}
+	);
+	if (!window_s && d.offscreen) {
+		if (auto created = d.render_graph->set_offscreen_output({ .extent = { d.offscreen_width, d.offscreen_height } }); !created) {
+			log::println(log::level::error, log::category::render, "offscreen output creation failed: {}", created.error());
+		}
 	}
 
 	return {};
@@ -101,10 +104,6 @@ auto gse::gpu::context::find_presentation(data& d, const id window) -> window_pr
 		return held->window == window;
 	});
 	return it == d.secondaries.end() ? nullptr : it->get();
-}
-
-auto gse::gpu::context::on_swap_chain_recreate(const shared_view<data> d, swap_chain_recreate_callback callback) -> void {
-	d.swapchain->on_recreate(std::move(callback));
 }
 
 auto gse::gpu::context::wait_idle(const data& d) -> void {

@@ -190,8 +190,16 @@ export namespace gse {
 			vec2u extent
 		) -> void;
 
-		auto destroy_attached_surface(
-			gpu::device& device
+		auto close_attached_handles() -> void;
+
+		auto boot_immediately(
+			const setup_fn& app_setup
+		) -> void;
+
+		[[nodiscard]] auto windowless_render() const -> bool;
+
+		auto reveal_window(
+			window::data& window_state
 		) -> void;
 
 		auto install_actions() -> void;
@@ -214,12 +222,7 @@ export namespace gse {
 		std::uint32_t m_frames_since_rendered = 0;
 		bool m_window_shown = false;
 		bool m_headless_gpu = false;
-		std::array<gpu::shared_surface, attached_ring_size> m_attached_surfaces{};
-		std::array<gpu::image, attached_ring_size> m_attached_surface_images;
-		gpu::handle<gpu::semaphore> m_attached_produced_semaphore{};
-		gpu::handle<gpu::semaphore> m_attached_consumed_semaphore{};
 		attached_surface_message m_attached_message{};
-		std::uint64_t m_attached_counter = 0;
 		std::uint32_t m_attached_frames_presented = 0;
 		std::uint32_t m_attached_frames_skipped = 0;
 		interval_timer<> m_attached_report{ seconds(2.f) };

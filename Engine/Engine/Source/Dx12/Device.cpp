@@ -136,7 +136,7 @@ auto gse::dx12::build_graphics_pipeline_desc(const gfx_template& tmpl, const gra
 	return desc;
 }
 
-gse::dx12::device::device(const shared_view<window::data> win, const bool enable_validation, gpu::device_settings& cfg) {
+gse::dx12::device::device(const std::optional<shared_view<window::data>> win,const bool enable_validation, gpu::device_settings& cfg) {
 	m_validation_enabled = enable_validation;
 	log::println(log::category::dx12, "ctor begin");
 
@@ -164,7 +164,9 @@ gse::dx12::device::device(const shared_view<window::data> win, const bool enable
 	constexpr std::string_view compute_queue_name = "gse.compute_queue";
 	directx::set_object_name(m_graphics_queue.get(), graphics_queue_name.data(), graphics_queue_name.size());
 	directx::set_object_name(m_compute_queue.get(), compute_queue_name.data(), compute_queue_name.size());
-	m_hwnd = win32::hwnd_from_glfw_window(window::raw_handle(win).value);
+	if (win) {
+		m_hwnd = win32::hwnd_from_glfw_window(window::raw_handle(*win).value);
+	}
 	log::println(log::category::dx12, "queue={} hwnd={}", static_cast<void*>(m_graphics_queue.get()), m_hwnd);
 
 	m_idle_fence = directx::create_fence(m_device.get(), 0);

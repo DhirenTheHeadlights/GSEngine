@@ -15,6 +15,7 @@ import std;
 import :command_contract;
 import :device;
 import :frame;
+import :frame_output;
 import :graph_channel;
 import :image;
 import :render_graph;
@@ -40,11 +41,12 @@ namespace gse::gpu {
 int gse::gpu::render_graph::s_live_count = 0;
 
 gse::gpu::render_graph::~render_graph() {
+	release_output();
 	--s_live_count;
 }
 
 gse::gpu::render_graph::render_graph(device& device, frame& frame)
-	: m_device(std::addressof(device)), m_swapchain(frame.swapchain()), m_frame(std::addressof(frame)), m_transient_pool(device) {
+	: m_device(std::addressof(device)), m_frame(std::addressof(frame)), m_transient_pool(device) {
 	assert(
 		s_live_count++ == 0,
 		"gpu::render_graph is one-per-frame: it allocates every pass command buffer from the device's worker pools"
@@ -53,15 +55,19 @@ gse::gpu::render_graph::render_graph(device& device, frame& frame)
 	for (auto& q : m_queue_states) {
 		q.timeline = queue_timeline<gpu::device>::create(device);
 	}
-	if (m_swapchain) {
-		m_swapchain->on_recreate([this] {
-			recreate_framebuffer_images();
+	m_output = default_output();
+	if (swap_chain* swapchain = frame.swapchain()) {
+		swapchain->on_recreate([this] {
+			if (std::holds_alternative<present_output>(m_output)) {
+				resize_surface();
+			}
 		});
+		resize_surface();
 	}
 }
 
 auto gse::gpu::render_graph::create_framebuffer_image(const framebuffer_image_desc& desc, const std::string_view tag) -> image {
-	const auto ext = m_swapchain->extent();
+	const auto ext = extent();
 	if (ext.x() == 0 || ext.y() == 0) {
 		return {};
 	}
@@ -77,10 +83,89 @@ auto gse::gpu::render_graph::create_framebuffer_image(const framebuffer_image_de
 	return img;
 }
 
-auto gse::gpu::render_graph::recreate_framebuffer_images() -> void {
+auto gse::gpu::render_graph::resize_surface() -> void {
+	m_depth = create_framebuffer_image(
+		{
+			.format = image_format::d32_sfloat,
+			.usage = { image_flag::depth_attachment, image_flag::sampled },
+			.aspects = image_aspect_flag::depth,
+		},
+		"surface.depth"
+	);
 	for (auto& [name, slot] : m_framebuffer_images) {
 		slot->img = create_framebuffer_image(slot->desc, name.tag());
 	}
+	for (const auto& callback : m_resize_callbacks) {
+		callback();
+	}
+}
+
+auto gse::gpu::render_graph::default_output() const -> frame_output {
+	if (swap_chain* swapchain = m_frame->swapchain()) {
+		return present_output{
+			.swapchain = swapchain,
+			.owner = m_frame,
+		};
+	}
+	return no_output{};
+}
+
+auto gse::gpu::render_graph::release_output() -> void {
+	if (auto* offscreen = std::get_if<offscreen_output>(&m_output)) {
+		destroy_offscreen_output(*m_device, *offscreen);
+	}
+	m_output = default_output();
+}
+
+auto gse::gpu::render_graph::set_offscreen_output(const offscreen_output_desc& desc) -> std::expected<void, std::string> {
+	m_device->wait_idle();
+	release_output();
+	auto output = create_offscreen_output(*m_device, *m_frame, desc);
+	if (output) {
+		m_output = std::move(*output);
+	}
+	resize_surface();
+	if (!output) {
+		return std::unexpected(output.error());
+	}
+	return {};
+}
+
+auto gse::gpu::render_graph::clear_offscreen_output() -> void {
+	if (!std::holds_alternative<offscreen_output>(m_output)) {
+		return;
+	}
+	m_device->wait_idle();
+	release_output();
+	resize_surface();
+}
+
+auto gse::gpu::render_graph::has_output() const -> bool {
+	return !std::holds_alternative<no_output>(m_output);
+}
+
+auto gse::gpu::render_graph::output_ready() const -> bool {
+	const auto* offscreen = std::get_if<offscreen_output>(&m_output);
+	if (!offscreen || !offscreen->exportable()) {
+		return true;
+	}
+	const std::uint64_t next = offscreen->frame_number() + 1;
+	const std::uint64_t slots = offscreen->images.size();
+	return next <= slots || m_device->semaphore_counter_value(offscreen->timelines.consumed) >= next - slots;
+}
+
+auto gse::gpu::render_graph::offscreen_surfaces() const -> std::span<const shared_surface> {
+	const auto* offscreen = std::get_if<offscreen_output>(&m_output);
+	return offscreen ? std::span<const shared_surface>(offscreen->shared) : std::span<const shared_surface>{};
+}
+
+auto gse::gpu::render_graph::offscreen_timelines() const -> gpu::offscreen_timelines {
+	const auto* offscreen = std::get_if<offscreen_output>(&m_output);
+	return offscreen ? offscreen->timelines : gpu::offscreen_timelines{};
+}
+
+auto gse::gpu::render_graph::on_resize(resize_callback callback) -> void {
+	m_resize_callbacks.push_back(std::move(callback));
 }
 
 auto gse::gpu::render_graph::register_framebuffer_image(const id name, const framebuffer_image_desc& desc) -> const image& {
@@ -150,13 +235,9 @@ auto gse::gpu::render_graph::profile_key(const std::uint64_t frame, const queue_
 	return (frame << 16) | (static_cast<std::uint64_t>(queue) << 14) | index;
 }
 
-auto gse::gpu::render_graph::set_swapchain_clear(const color_clear value, const load_op op) -> void {
-	m_swapchain_clear = value;
-	m_swapchain_load = op;
-}
-
-auto gse::gpu::render_graph::set_offscreen_target(const image* target) -> void {
-	m_offscreen_target = target;
+auto gse::gpu::render_graph::set_output_clear(const color_clear value, const load_op op) -> void {
+	m_output_clear = value;
+	m_output_load = op;
 }
 
 auto gse::gpu::render_graph::ensure_profile_pools(gpu_profile_slot& slot, const bool allow_stats, const std::uint32_t mark_capacity) const -> void {
@@ -463,31 +544,34 @@ auto gse::gpu::render_graph::current_frame() const -> std::uint32_t {
 }
 
 auto gse::gpu::render_graph::current_target() const -> image_ref {
-	if (m_offscreen_target) {
-		const auto ext = m_offscreen_target->extent();
-		return {
-			.image = m_offscreen_target->handle(),
-			.extent = { ext.x(), ext.y() },
-			.format = m_offscreen_target->format(),
-		};
-	}
-	return {
-		.image = m_swapchain->image(m_frame->image_index()),
-		.extent = m_swapchain->extent(),
-		.format = m_swapchain->format(),
-	};
+	return std::visit(
+		[](const auto& output) {
+			return output.target();
+		},
+		m_output
+	);
 }
 
 auto gse::gpu::render_graph::target_live(const id window) const -> bool {
 	if (!window.exists()) {
-		return m_offscreen_target != nullptr || m_frame->targets().front().acquired;
+		return std::visit(
+			[](const auto& output) {
+				return output.live();
+			},
+			m_output
+		);
 	}
 	const present_target* t = m_frame->target(window);
 	return t != nullptr && t->acquired;
 }
 
 auto gse::gpu::render_graph::extent() const -> vec2u {
-	return m_swapchain ? m_swapchain->extent() : vec2u{};
+	return std::visit(
+		[](const auto& output) {
+			return output.extent();
+		},
+		m_output
+	);
 }
 
 auto gse::gpu::render_graph::extent(const id window) const -> vec2u {
@@ -625,7 +709,30 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		return queue_distinct[static_cast<std::size_t>(requested)] ? requested : queue_type::graphics;
 	};
 
-	const auto swap_extent = m_swapchain ? m_swapchain->extent() : vec2u{};
+	const auto output_extent = extent();
+	const image* output_target = std::visit(
+		[](const auto& output) {
+			return output.color_target();
+		},
+		m_output
+	);
+
+	if (const auto* offscreen = std::get_if<offscreen_output>(&m_output); offscreen && offscreen->exportable()) {
+		const std::uint64_t number = offscreen->frame_number();
+		const std::uint64_t slots = offscreen->images.size();
+		if (number > slots) {
+			m_pending_graphics_extra_waits.push_back({
+				.semaphore = offscreen->timelines.consumed,
+				.value = number - slots,
+				.stages = pipeline_stage_flag::all_commands,
+			});
+		}
+		m_pending_graphics_extra_signals.push_back({
+			.semaphore = offscreen->timelines.produced,
+			.value = number,
+			.stages = pipeline_stage_flag::all_commands,
+		});
+	}
 
 	const bool timestamps_enabled = m_gpu_timestamps_enabled.load(std::memory_order_relaxed);
 	const bool stats_enabled = m_gpu_pipeline_stats_enabled.load(std::memory_order_relaxed);
@@ -684,10 +791,14 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		if (info.custom_target) {
 			return info.custom_target;
 		}
-		if (m_offscreen_target) {
-			return m_offscreen_target;
+		if (info.window.exists()) {
+			return nullptr;
 		}
-		return nullptr;
+		return output_target;
+	};
+
+	auto writes_output = [](const color_output_info& info) {
+		return !info.transient_target && info.custom_target == nullptr;
 	};
 
 	auto resolve_depth_target = [&](const depth_output_info& info) -> const image* {
@@ -751,7 +862,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 				std::vector<rendering_attachment_info> color_attachments;
 				color_attachments.reserve(pass.color_outputs.size());
 				std::optional<rendering_attachment_info> depth_att;
-				vec2u pass_extent = swap_extent;
+				vec2u pass_extent = output_extent;
 				bool extent_set = false;
 				for (std::size_t ci = 0; ci < pass.color_outputs.size(); ++ci) {
 					const auto* color_target = color_targets[ci];
@@ -791,7 +902,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 						}
 					}
 					else {
-						depth_view = m_swapchain->depth_image().view();
+						depth_view = m_depth.view();
 					}
 					depth_att = rendering_attachment_info{
 						.image_view = depth_view,
@@ -875,7 +986,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 					rec_init.touches.push_back({ ref, stages, access });
 				};
 				if (pass.depth_output) {
-					const auto* depth_img = depth_target ? depth_target : std::addressof(m_swapchain->depth_image());
+					const auto* depth_img = depth_target ? depth_target : std::addressof(m_depth);
 					const auto depth_ref = resource_ref{
 						.ptr = std::bit_cast<const void*>(depth_img->handle()),
 						.type = resource_type::image,
@@ -1328,20 +1439,20 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		}
 	}
 
-	bool swapchain_cleared = false;
+	bool output_cleared = false;
 	{
 		for (const auto pi : sorted) {
 			for (auto& info : passes[pi].color_outputs) {
-				if (resolve_color_target(info) != nullptr) {
+				if (!writes_output(info)) {
 					continue;
 				}
-				if (swapchain_cleared) {
+				if (output_cleared) {
 					info.op = load_op::load;
 				}
 				else {
-					info.op = m_swapchain_load;
-					info.clear_value = m_swapchain_clear;
-					swapchain_cleared = true;
+					info.op = m_output_load;
+					info.clear_value = m_output_clear;
+					output_cleared = true;
 				}
 			}
 		}
@@ -1760,7 +1871,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 				.image_view = t.swapchain->image_view(t.image_index),
 				.load = load_op::clear,
 				.store = store_op::store,
-				.color_clear_value = m_swapchain_clear,
+				.color_clear_value = m_output_clear,
 			},
 		};
 		clear_rec.begin_rendering(rendering_info{

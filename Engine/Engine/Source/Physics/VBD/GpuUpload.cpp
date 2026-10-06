@@ -64,6 +64,7 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 	if (!gpu_solver_active(phys) || !plan.active || plan.generation == d.built_generation) {
 		co_return;
 	}
+	const bool consecutive_plan = plan.generation == d.built_generation + 1;
 	d.built_generation = plan.generation;
 
 	auto& slot = d.scratch[d.scratch_slot];
@@ -256,12 +257,37 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 	auto& gpu_joints = slot.joints;
 	auto& gpu_joint_inputs = slot.joint_inputs;
 	gpu_joint_inputs.clear();
+	auto& gpu_joint_input_slots = slot.joint_input_slots;
+	gpu_joint_input_slots.clear();
 	auto& gpu_muscles = slot.muscles;
 	auto& gpu_muscle_points = slot.muscle_points;
 	auto& gpu_muscle_excitations = slot.muscle_excitations;
 	gpu_muscle_excitations.clear();
 	std::vector<joint_rest_orientation> rest_orientations;
-	const bool refresh_joint_inputs = phys.joint_inputs_generation != d.uploaded_joint_inputs_generation;
+	const bool refresh_joint_inputs = phys.joint_inputs_generation != d.uploaded_joint_inputs_generation || d.joint_inputs_full_pending;
+	const bool full_joint_inputs = plan.full_joint_inputs || !consecutive_plan || d.joint_inputs_full_pending;
+	const auto joint_drive_input_of = [](const joint_definition& jd, const joint_drive_component* drive) {
+		auto input = vbd::joint_drive_input{
+			.drive_target = jd.drive_target,
+			.drive_stiffness = jd.drive_stiffness,
+			.drive_damping = jd.drive_damping,
+			.drive_max_torque = jd.drive_max_torque,
+		};
+		if (drive) {
+			if (drive->enabled) {
+				input.drive_target = drive->target;
+				input.drive_stiffness = drive->stiffness;
+				input.drive_damping = drive->damping;
+				input.drive_max_torque = drive->max_torque;
+				input.device_target = drive->device_target ? 1u : 0u;
+				input.device_stiffness = drive->device_stiffness ? 1u : 0u;
+			}
+			else {
+				input.drive_stiffness = {};
+			}
+		}
+		return input;
+	};
 	if (refresh_joints) {
 		trace::scope_guard _{ trace_id<"vbd_gpu::build_joints">() };
 		assert(
@@ -331,10 +357,29 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 		d.force_full_joints = !rest_orientations.empty();
 		d.joint_body_index_entries = d.body_index_entries;
 		d.uploaded_joint_count = static_cast<std::uint32_t>(gpu_joints.size());
+		d.joint_inputs_full_pending = true;
+	}
+	else if (refresh_joint_inputs && !full_joint_inputs) {
+		trace::scope_guard _{ trace_id<"vbd_gpu::build_joint_inputs::sparse">() };
+		constexpr auto unresolved = std::numeric_limits<std::uint32_t>::max();
+		const auto owners = phys.joints.ids();
+		const auto definitions = phys.joints.items();
+		gpu_joint_inputs.reserve(plan.joint_drive_changes.size());
+		gpu_joint_input_slots.reserve(plan.joint_drive_changes.size());
+		for (const auto [joint, drive] : plan.joint_drive_changes) {
+			const auto slot_index = d.joint_slots[joint];
+			if (slot_index == unresolved) {
+				continue;
+			}
+			const auto* component = drive < drives.size() && drives.owner_id_at(drive) == owners[joint] ? drives.data() + drive : drives.find(owners[joint]);
+			gpu_joint_inputs.push_back(joint_drive_input_of(definitions[joint], component));
+			gpu_joint_input_slots.push_back(slot_index);
+		}
 	}
 	else if (refresh_joint_inputs) {
 		trace::scope_guard _{ trace_id<"vbd_gpu::build_joint_inputs">() };
 		constexpr auto unresolved = std::numeric_limits<std::uint32_t>::max();
+		d.joint_inputs_full_pending = false;
 		gpu_joint_inputs.resize(d.uploaded_joint_count);
 		const auto owners = phys.joints.ids();
 		const auto definitions = phys.joints.items();
@@ -344,32 +389,12 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 		const auto drives_aligned = std::ranges::equal(drives.owner_ids(), owners);
 		const auto* drive_data = drives.data();
 		const auto drive_count = drives.size();
-		const auto write_input = [definition_data, slot_data, input_data](const std::size_t i, const joint_drive_component* drive) {
+		const auto write_input = [definition_data, slot_data, input_data, &joint_drive_input_of](const std::size_t i, const joint_drive_component* drive) {
 			const auto slot_index = slot_data[i];
 			if (slot_index == unresolved) {
 				return;
 			}
-			const auto& jd = definition_data[i];
-			auto input = vbd::joint_drive_input{
-				.drive_target = jd.drive_target,
-				.drive_stiffness = jd.drive_stiffness,
-				.drive_damping = jd.drive_damping,
-				.drive_max_torque = jd.drive_max_torque,
-			};
-			if (drive) {
-				if (drive->enabled) {
-					input.drive_target = drive->target;
-					input.drive_stiffness = drive->stiffness;
-					input.drive_damping = drive->damping;
-					input.drive_max_torque = drive->max_torque;
-					input.device_target = drive->device_target ? 1u : 0u;
-					input.device_stiffness = drive->device_stiffness ? 1u : 0u;
-				}
-				else {
-					input.drive_stiffness = {};
-				}
-			}
-			input_data[slot_index] = input;
+			input_data[slot_index] = joint_drive_input_of(definition_data[i], drive);
 		};
 
 		if (drives_aligned) {
@@ -456,6 +481,7 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 			.motors = motors,
 			.joints = refresh_joints ? std::span<const vbd::joint_constraint>(gpu_joints) : std::span<const vbd::joint_constraint>{},
 			.joint_inputs = gpu_joint_inputs,
+			.joint_input_slots = gpu_joint_input_slots,
 			.muscles = refresh_joints ? std::span<const vbd::muscle_constraint>(gpu_muscles) : std::span<const vbd::muscle_constraint>{},
 			.muscle_points = refresh_joints ? std::span<const vbd::muscle_path_point>(gpu_muscle_points) : std::span<const vbd::muscle_path_point>{},
 			.muscle_excitations = gpu_muscle_excitations,

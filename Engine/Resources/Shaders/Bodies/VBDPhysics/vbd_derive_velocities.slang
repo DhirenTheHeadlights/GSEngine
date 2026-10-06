@@ -63,9 +63,8 @@ void vbd_derive_velocities(uint3 dispatch_id) {
             contact_constraint c = contact_data[ci];
             if (c.body_a >= pc.body_count || c.body_b >= pc.body_count) continue;
             uint other_idx = c.body_a == bi ? c.body_b : c.body_a;
-            body_state other = body_data[other_idx];
-            if (other.locked != 0 || other.sleep_counter >= sleep_threshold) continue;
-            float other_speed = length(other.predicted_position.xyz - other.old_position.xyz) / pc.dt;
+            if (body_data[other_idx].locked != 0 || body_data[other_idx].sleep_counter >= sleep_threshold) continue;
+            float other_speed = length(body_data[other_idx].predicted_position.xyz - body_data[other_idx].old_position.xyz) / pc.dt;
             if (other_speed >= wake_thresh) {
                 calm = false;
             }
@@ -78,5 +77,8 @@ void vbd_derive_velocities(uint3 dispatch_id) {
         body.sleep_counter = body.sleep_counter / 2;
     }
 
-    body_data[bi] = body;
+    body_data[bi].accel_weight = body.accel_weight;
+    body_data[bi].velocity = body.velocity;
+    body_data[bi].angular_velocity = body.angular_velocity;
+    body_data[bi].sleep_counter = body.sleep_counter;
 }

@@ -29,6 +29,13 @@ export namespace gse::renderer::capture {
 	struct save_clip_request {};
 	struct toggle_recording_request {};
 
+	struct start_recording_request {
+		std::filesystem::path path;
+		std::optional<time> duration;
+	};
+
+	struct stop_recording_request {};
+
 	struct recording_state {
 		std::mutex mutex;
 		std::condition_variable drained;
@@ -36,7 +43,10 @@ export namespace gse::renderer::capture {
 		std::optional<mp4::live_muxer> muxer;
 		bool draining = false;
 		std::atomic<bool> active{ false };
+		std::atomic<std::uint32_t> finished{ 0 };
 		std::filesystem::path path;
+		std::optional<time> stop_at;
+		std::uint32_t dropped_frames = 0;
 		std::chrono::steady_clock::time_point last_toggle{};
 	};
 
@@ -104,6 +114,7 @@ export namespace gse::renderer::capture {
 		time applied_ring_budget = seconds(30.f);
 		bitrate applied_capture_bitrate = megabits_per_second(15.f);
 		bool first_ring_push_logged = false;
+		std::optional<start_recording_request> pending_start;
 
 		[[= stable_shared]] std::unique_ptr<recording_state> recording = std::make_unique<recording_state>();
 	};
@@ -131,7 +142,7 @@ export namespace gse::renderer::capture {
 		shared_view<gpu::context::data> gpu_s,
 		data& d,
 		channel_write<gpu::render_pass_request> pass_out,
-		channel_read<toggle_recording_request, save_clip_request, screenshot_request> capture_in
+		channel_read<toggle_recording_request, start_recording_request, stop_recording_request, save_clip_request, screenshot_request> capture_in
 	) -> async::task<>;
 
 	[[= system_shutdown{}]]
@@ -152,5 +163,14 @@ namespace gse::renderer::capture {
 
 	auto stop_recording(
 		recording_state& state
+	) -> void;
+
+	auto try_begin_recording(
+		data& d,
+		time now
+	) -> void;
+
+	auto end_recording(
+		data& d
 	) -> void;
 }

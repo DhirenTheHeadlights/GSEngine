@@ -442,8 +442,6 @@ namespace gse::ide::build_runner {
 		const std::filesystem::path& executable
 	) -> std::filesystem::path;
 
-	auto current_executable() -> std::filesystem::path;
-
 	auto image_readable(
 		const std::filesystem::path& file
 	) -> bool;
@@ -1168,21 +1166,6 @@ auto gse::ide::build_runner::next_backup_path(const std::filesystem::path& execu
 	return exhausted;
 }
 
-auto gse::ide::build_runner::current_executable() -> std::filesystem::path {
-	std::wstring buffer(win32::max_path, L'\0');
-	for (;;) {
-		const win32::DWORD length = win32::GetModuleFileNameW(nullptr, buffer.data(), static_cast<win32::DWORD>(buffer.size()));
-		if (length == 0) {
-			return {};
-		}
-		if (length < buffer.size()) {
-			buffer.resize(length);
-			return std::filesystem::path(buffer);
-		}
-		buffer.resize(buffer.size() * 2);
-	}
-}
-
 auto gse::ide::build_runner::watch_editor_image(data& d) -> void {
 	const time now = system_clock::now<time>();
 	if (now < d.next_image_poll) {
@@ -1190,7 +1173,7 @@ auto gse::ide::build_runner::watch_editor_image(data& d) -> void {
 	}
 	d.next_image_poll = now + seconds(1.f);
 
-	const std::filesystem::path editor_exe = current_executable();
+	const std::filesystem::path editor_exe = os::current_executable();
 	if (editor_exe.empty()) {
 		log::println(log::level::warning, log::category::general, "editor watch: could not resolve this instance's executable path");
 		return;
@@ -1941,7 +1924,7 @@ auto gse::ide::build_runner::rebuild_editor(const std::stop_token& st, build_com
 	const std::int64_t snapshot = source_snapshot_time();
 	const std::filesystem::path compiler_bin = compiler_bin_dir(build_dir);
 
-	const std::filesystem::path editor_exe = current_executable();
+	const std::filesystem::path editor_exe = os::current_executable();
 	if (editor_exe.empty()) {
 		spawn::emit(stream, "could not resolve editor executable path");
 		return;
@@ -2033,7 +2016,7 @@ auto gse::ide::build_runner::cleanup_backups() -> void {
 		(void)sweep_backups(tree.game_executable);
 	}
 	(void)sweep_backups(config::editor_executable());
-	const std::filesystem::path editor_exe = current_executable();
+	const std::filesystem::path editor_exe = os::current_executable();
 	if (!editor_exe.empty()) {
 		(void)sweep_backups(editor_exe);
 	}

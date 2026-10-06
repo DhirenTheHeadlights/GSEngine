@@ -443,8 +443,7 @@ auto gse::renderer::cloud::init(context& ctx, const shared_view<gpu::context::da
 	d.resolve_sampler = gpu_s.device->register_sampler(composite_sampler_desc);
 	d.depth_sampler = gpu_s.device->register_sampler(depth_sampler_desc);
 
-	gpu::context::on_swap_chain_recreate(
-		gpu_s,
+	gpu_s.render_graph->on_resize(
 		[gpu_s, &d]() {
 			recreate_cloud_target(gpu_s, d);
 		}

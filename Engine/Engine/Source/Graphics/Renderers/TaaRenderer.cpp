@@ -130,8 +130,7 @@ auto gse::renderer::taa::init(context& ctx, const shared_view<gpu::context::data
 	recreate_history(gpu_s, d);
 	rebind_views(gpu_s, d);
 
-	gpu::context::on_swap_chain_recreate(
-		gpu_s,
+	gpu_s.render_graph->on_resize(
 		[gpu_s, &d]() {
 			recreate_history(gpu_s, d);
 			rebind_views(gpu_s, d);

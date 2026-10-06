@@ -212,8 +212,7 @@ auto gse::renderer::forward::init(context& ctx, const shared_view<gpu::context::
 
 	rebind_tlas_views(gpu_s, rt_state, d);
 
-	gpu::context::on_swap_chain_recreate(
-		gpu_s,
+	gpu_s.render_graph->on_resize(
 		[gpu_s, rt_state, &d]() {
 			rebind_tlas_views(gpu_s, rt_state, d);
 		}

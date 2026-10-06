@@ -113,7 +113,7 @@ export namespace gse::dx12 {
 	class device final : public non_copyable {
 	public:
 		device(
-			shared_view<window::data> win,
+			std::optional<shared_view<window::data>> win,
 			bool enable_validation,
 			gpu::device_settings& cfg
 		);

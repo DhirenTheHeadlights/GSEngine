@@ -109,6 +109,22 @@ export namespace gse::gpu::context {
 		]]
 		bool gpu_perf_metrics_lock_clocks = false;
 
+		[[
+			= settings::describe<"Render into an offscreen target when there is no window, so a windowless run can still record.">{},
+			= settings::app_scope{}
+		]]
+		bool offscreen = false;
+
+		[[
+			= settings::describe<"Width of the offscreen render target a windowless run draws into.">{}
+		]]
+		std::uint32_t offscreen_width = 1920;
+
+		[[
+			= settings::describe<"Height of the offscreen render target a windowless run draws into.">{}
+		]]
+		std::uint32_t offscreen_height = 1080;
+
 		[[= stable_shared]] std::unique_ptr<gpu::device> device;
 		[[= stable_shared]] std::unique_ptr<swap_chain> swapchain;
 		[[= stable_shared]] std::unique_ptr<gpu::frame> frame;
@@ -122,8 +138,6 @@ export namespace gse::gpu::context {
 		]]
 		bool dark_background = false;
 	};
-
-	using swap_chain_recreate_callback = std::function<void()>;
 
 	[[= system_init{}]] auto init(
 		std::optional<shared_view<window::data>> window_s,
@@ -169,12 +183,6 @@ export namespace gse::gpu::context {
 	auto sync_present_targets(
 		data& d,
 		window::data& windows
-	) -> void;
-
-
-	auto on_swap_chain_recreate(
-		shared_view<data> d,
-		swap_chain_recreate_callback callback
 	) -> void;
 
 	auto wait_idle(

@@ -20,9 +20,19 @@ export namespace gse {
 		int argc,
 		char** argv
 	) -> Config;
+
+	template <typename Config>
+	auto parse_args(
+		std::span<const std::string> words,
+		std::vector<std::string>& passed
+	) -> Config;
 }
 
 namespace gse {
+	auto expand_arg_files(
+		std::span<const std::string> words
+	) -> std::vector<std::string>;
+
 	template <typename T>
 	concept arg_value_parseable = requires(std::string_view raw, T v) {
 		{ parser<T>::parse(raw, v) } -> std::same_as<bool>; };
@@ -307,8 +317,50 @@ auto gse::try_match_arg(Config& cfg, const std::string_view prefix, const int ar
 	return outcome;
 }
 
+auto gse::expand_arg_files(const std::span<const std::string> words) -> std::vector<std::string> {
+	std::vector<std::string> out;
+	for (const std::string& word : words) {
+		if (!word.starts_with('@')) {
+			out.push_back(word);
+			continue;
+		}
+		const std::filesystem::path path(word.substr(1));
+		std::ifstream file(path);
+		if (!file) {
+			std::cerr << std::format("error: cannot read argument file '{}'\n", path.generic_string());
+			std::exit(2);
+		}
+		std::vector<std::string> nested;
+		for (std::string line; std::getline(file, line);) {
+			std::istringstream tokens(line);
+			for (std::string token; tokens >> token;) {
+				if (token.starts_with('#')) {
+					break;
+				}
+				nested.push_back(std::move(token));
+			}
+		}
+		std::ranges::move(expand_arg_files(nested), std::back_inserter(out));
+	}
+	return out;
+}
+
 template <typename Config>
 auto gse::parse_args(const int argc, char** argv, std::vector<std::string>& passed) -> Config {
+	const std::vector<std::string> words(argv + std::min(argc, 1), argv + argc);
+	return parse_args<Config>(words, passed);
+}
+
+template <typename Config>
+auto gse::parse_args(const std::span<const std::string> words, std::vector<std::string>& passed) -> Config {
+	std::vector<std::string> expanded = expand_arg_files(words);
+	std::vector<char*> pointers{ nullptr };
+	for (std::string& word : expanded) {
+		pointers.push_back(word.data());
+	}
+	const int argc = static_cast<int>(pointers.size());
+	char** argv = pointers.data();
+
 	std::vector<arg_flag_info> flags;
 	collect_arg_flags<Config>({}, flags);
 

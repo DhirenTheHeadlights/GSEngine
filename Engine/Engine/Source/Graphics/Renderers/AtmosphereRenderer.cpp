@@ -327,8 +327,7 @@ auto gse::renderer::atmosphere::init(context& ctx, const shared_view<gpu::contex
 	d.lut_sampler_bindless = gpu_s.device->register_sampler(lut_sampler_desc);
 	d.sky_view_sampler_bindless = gpu_s.device->register_sampler(sky_view_sampler_desc);
 
-	gpu::context::on_swap_chain_recreate(
-		gpu_s,
+	gpu_s.render_graph->on_resize(
 		[gpu_s, &d]() -> void {
 			recreate_ap_volume(
 				gpu_s,

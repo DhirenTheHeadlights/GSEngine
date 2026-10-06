@@ -205,85 +205,23 @@ auto gse::ide::spawn::run_capture(
 	});
 	win32::SetHandleInformation(read_end, win32::handle_flag_inherit, 0);
 
-	win32::SIZE_T attribute_size = 0;
-	win32::InitializeProcThreadAttributeList(nullptr, 1, 0, &attribute_size);
-	if (attribute_size == 0) {
-		win32::CloseHandle(write_end);
-		emit(stream, "failed to prepare process attributes");
-		return -1;
-	}
-	std::vector<std::byte> attribute_memory(attribute_size);
-	const win32::LPPROC_THREAD_ATTRIBUTE_LIST attribute_list = reinterpret_cast<win32::LPPROC_THREAD_ATTRIBUTE_LIST>(attribute_memory.data());
-	if (!win32::InitializeProcThreadAttributeList(attribute_list, 1, 0, &attribute_size)) {
-		win32::CloseHandle(write_end);
-		emit(stream, "failed to prepare process attributes");
-		return -1;
-	}
-	const auto _ = make_scope_exit([attribute_list] {
-		win32::DeleteProcThreadAttributeList(attribute_list);
+	const std::vector<wchar_t> environment = win32::environment_with_path_prefix(path_prefix.wstring());
+	std::optional<os::spawned_process> spawned = os::spawn_in_job({
+		.command_line = command_line,
+		.working_dir = working_dir,
+		.std_output = write_end,
+		.environment = environment,
 	});
-	if (!win32::UpdateProcThreadAttribute(attribute_list, 0, win32::proc_thread_attribute_handle_list, &write_end, sizeof(write_end), nullptr, nullptr)) {
-		win32::CloseHandle(write_end);
-		emit(stream, "failed to prepare process attributes");
-		return -1;
-	}
-
-	void* job = win32::CreateJobObjectW(nullptr, nullptr);
-	if (!win32::valid_handle(job)) {
-		win32::CloseHandle(write_end);
-		emit(stream, "failed to create job object");
-		return -1;
-	}
-	win32::JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{
-		.BasicLimitInformation = {
-			.LimitFlags = win32::job_object_limit_kill_on_job_close,
-		},
-	};
-	win32::SetInformationJobObject(job, win32::job_object_extended_limit_information, &limits, sizeof(limits));
-
-	std::vector<wchar_t> command_buffer(command_line.begin(), command_line.end());
-	command_buffer.push_back(0);
-	std::vector<wchar_t> environment = win32::environment_with_path_prefix(path_prefix.wstring());
-
-	win32::STARTUPINFOEXW startup{
-		.StartupInfo = {
-			.cb = sizeof(win32::STARTUPINFOEXW),
-			.dwFlags = win32::startf_use_std_handles,
-			.hStdOutput = write_end,
-			.hStdError = write_end,
-		},
-		.lpAttributeList = attribute_list,
-	};
-
-	win32::PROCESS_INFORMATION process{};
-	const int spawned = win32::CreateProcessW(
-		nullptr,
-		command_buffer.data(),
-		nullptr,
-		nullptr,
-		1,
-		win32::extended_startupinfo_present | win32::create_no_window | win32::create_unicode_environment | win32::create_suspended,
-		environment.empty() ? nullptr : environment.data(),
-		working_dir.empty() ? nullptr : working_dir.c_str(),
-		&startup.StartupInfo,
-		&process
-	);
 
 	win32::CloseHandle(write_end);
 
 	if (!spawned) {
-		win32::CloseHandle(job);
 		emit(stream, "failed to launch process");
 		return -1;
 	}
 
-	if (!win32::AssignProcessToJobObject(job, process.hProcess)) {
-		win32::TerminateProcess(process.hProcess, 1);
-	}
-	win32::ResumeThread(process.hThread);
-	win32::CloseHandle(process.hThread);
-
-	attach_process(stream, process.hProcess, job);
+	void* job = spawned->job.release();
+	attach_process(stream, spawned->process.handle(), job);
 	if (stream.terminated.load(std::memory_order_acquire)) {
 		win32::TerminateJobObject(job, 1);
 	}
@@ -299,14 +237,12 @@ auto gse::ide::spawn::run_capture(
 		emit(stream, strip_escapes(pending));
 	}
 
-	win32::WaitForSingleObject(process.hProcess, win32::infinite);
-	win32::DWORD code = 0;
-	win32::GetExitCodeProcess(process.hProcess, &code);
+	win32::WaitForSingleObject(spawned->process.handle(), win32::infinite);
+	const std::uint32_t code = os::exit_code_of(*spawned).value_or(0);
 	{
 		std::lock_guard _(stream.mutex);
 		stream.process = nullptr;
 	}
-	win32::CloseHandle(process.hProcess);
 	return static_cast<int>(code);
 }
 
@@ -344,108 +280,28 @@ auto gse::ide::spawn::launch_streamed(const std::wstring& command_line, const st
 		}
 	});
 
-	win32::SIZE_T attribute_size = 0;
-	win32::InitializeProcThreadAttributeList(nullptr, 1, 0, &attribute_size);
-	if (attribute_size == 0) {
-		win32::CloseHandle(read_end);
-		win32::CloseHandle(write_end);
-		return {};
-	}
-	std::vector<std::byte> attribute_memory(attribute_size);
-	const win32::LPPROC_THREAD_ATTRIBUTE_LIST attribute_list = reinterpret_cast<win32::LPPROC_THREAD_ATTRIBUTE_LIST>(attribute_memory.data());
-	if (!win32::InitializeProcThreadAttributeList(attribute_list, 1, 0, &attribute_size)) {
-		win32::CloseHandle(read_end);
-		win32::CloseHandle(write_end);
-		return {};
-	}
-	const auto _ = make_scope_exit([attribute_list] {
-		win32::DeleteProcThreadAttributeList(attribute_list);
+	std::optional<os::spawned_process> spawned = os::spawn_in_job({
+		.command_line = command_line,
+		.working_dir = working_dir,
+		.std_input = input_read,
+		.std_output = write_end,
+		.environment = environment,
 	});
-	void* inherited[2] = { write_end, input_read };
-	if (!win32::UpdateProcThreadAttribute(attribute_list, 0, win32::proc_thread_attribute_handle_list, inherited, sizeof(inherited), nullptr, nullptr)) {
-		win32::CloseHandle(read_end);
-		win32::CloseHandle(write_end);
-		return {};
-	}
-
-	// The child is tied to a job that kills on close, so it cannot outlive the editor
-	// even if the editor crashes and never runs its shutdown path.
-	void* job = win32::CreateJobObjectW(nullptr, nullptr);
-	if (!win32::valid_handle(job)) {
-		win32::CloseHandle(read_end);
-		win32::CloseHandle(write_end);
-		return {};
-	}
-	win32::JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{
-		.BasicLimitInformation = {
-			.LimitFlags = win32::job_object_limit_kill_on_job_close,
-		},
-	};
-	win32::SetInformationJobObject(job, win32::job_object_extended_limit_information, &limits, sizeof(limits));
-
-	std::vector<wchar_t> command_buffer(command_line.begin(), command_line.end());
-	command_buffer.push_back(0);
-
-	win32::STARTUPINFOEXW startup{
-		.StartupInfo = {
-			.cb = sizeof(win32::STARTUPINFOEXW),
-			.dwFlags = win32::startf_use_std_handles,
-			.hStdInput = input_read,
-			.hStdOutput = write_end,
-			.hStdError = write_end,
-		},
-		.lpAttributeList = attribute_list,
-	};
-
-	win32::PROCESS_INFORMATION process{};
-	const int spawned = win32::CreateProcessW(
-		nullptr,
-		command_buffer.data(),
-		nullptr,
-		nullptr,
-		1,
-		win32::extended_startupinfo_present | win32::create_no_window | win32::create_suspended | (environment.empty() ? 0u : win32::create_unicode_environment),
-		environment.empty() ? nullptr : const_cast<wchar_t*>(environment.data()),
-		working_dir.empty() ? nullptr : working_dir.c_str(),
-		&startup.StartupInfo,
-		&process
-	);
 
 	win32::CloseHandle(write_end);
 
 	if (!spawned) {
 		win32::CloseHandle(read_end);
-		win32::CloseHandle(job);
 		return {};
 	}
-
-	if (!win32::AssignProcessToJobObject(job, process.hProcess)) {
-		win32::TerminateProcess(process.hProcess, 1);
-		win32::CloseHandle(process.hThread);
-		win32::CloseHandle(process.hProcess);
-		win32::CloseHandle(read_end);
-		win32::CloseHandle(job);
-		return {};
-	}
-
-	if (win32::ResumeThread(process.hThread) == std::numeric_limits<win32::DWORD>::max()) {
-		win32::TerminateJobObject(job, 1);
-		win32::CloseHandle(process.hThread);
-		win32::CloseHandle(process.hProcess);
-		win32::CloseHandle(read_end);
-		win32::CloseHandle(job);
-		return {};
-	}
-
-	win32::CloseHandle(process.hThread);
 
 	adopted = true;
 	return {
-		.process = process.hProcess,
+		.process = spawned->process.release(),
 		.output = read_end,
 		.input = input_write,
-		.job = job,
-		.pid = static_cast<std::uint32_t>(process.dwProcessId),
+		.job = spawned->job.release(),
+		.pid = spawned->pid,
 	};
 }
 

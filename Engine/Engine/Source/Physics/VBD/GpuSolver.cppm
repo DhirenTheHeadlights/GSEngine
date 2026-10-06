@@ -87,6 +87,7 @@ export namespace gse::vbd {
 		std::span<const velocity_motor_constraint> motors;
 		std::span<const joint_constraint> joints;
 		std::span<const joint_drive_input> joint_inputs;
+		std::span<const std::uint32_t> joint_input_slots;
 		std::span<const muscle_constraint> muscles;
 		std::span<const muscle_path_point> muscle_points;
 		std::span<const float> muscle_excitations;

@@ -240,6 +240,14 @@ void collision_sort_adjacency(uint3 dispatch_id) {
             j.ang_c0 = theta;
         }
 
-        joint_data[ji] = j;
+        joint_data[ji].pos_lambda = j.pos_lambda;
+        joint_data[ji].pos_penalty = j.pos_penalty;
+        joint_data[ji].ang_lambda = j.ang_lambda;
+        joint_data[ji].ang_penalty = j.ang_penalty;
+        joint_data[ji].limit_lambda = j.limit_lambda;
+        joint_data[ji].limit_penalty = j.limit_penalty;
+        joint_data[ji].pos_c0 = j.pos_c0;
+        joint_data[ji].ang_c0 = j.ang_c0;
+        joint_data[ji].limit_c0 = j.limit_c0;
     }
 }

@@ -10,6 +10,7 @@ export import :present_pacer;
 export import :frame;
 export import :transient_pool;
 export import :graph_channel;
+export import :frame_output;
 export import :render_graph;
 export import :shader_codegen;
 export import :context;

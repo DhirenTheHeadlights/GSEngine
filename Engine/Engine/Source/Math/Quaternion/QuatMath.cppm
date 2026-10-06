@@ -145,6 +145,12 @@ export namespace gse {
 	) -> quat_t<T>;
 
 	template <typename T>
+	constexpr auto shortest_arc(
+		const vec3<T>& from,
+		const vec3<T>& to
+	) -> quat_t<T>;
+
+	template <typename T>
 	constexpr auto slerp(
 		const quat_t<T>& a,
 		const quat_t<T>& b,
@@ -384,6 +390,25 @@ constexpr auto gse::from_axis_angle(const vec3<T>& axis, angle_t<T> angle) -> qu
 	const T s = sin(half_angle);
 	const T c = cos(half_angle);
 	return quat_t<T>{ c, axis[0] * s, axis[1] * s, axis[2] * s };
+}
+
+template <typename T>
+constexpr auto gse::shortest_arc(const vec3<T>& from, const vec3<T>& to) -> quat_t<T> {
+	const vec3<T> a = normalize(from);
+	const vec3<T> b = normalize(to);
+	const T d = dot(a, b);
+
+	if (d < T(-1) + T(1e-6)) {
+		vec3<T> axis = cross(a, vec3<T>{ T(1), T(0), T(0) });
+		if (dot(axis, axis) < T(1e-6)) {
+			axis = cross(a, vec3<T>{ T(0), T(1), T(0) });
+		}
+		axis = normalize(axis);
+		return quat_t<T>{ T(0), axis[0], axis[1], axis[2] };
+	}
+
+	const vec3<T> c = cross(a, b);
+	return normalize(quat_t<T>{ T(1) + d, c[0], c[1], c[2] });
 }
 
 template <typename T>

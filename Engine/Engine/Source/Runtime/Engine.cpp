@@ -47,86 +47,35 @@ auto gse::engine::all_settled() const -> bool {
 }
 
 auto gse::engine::create_attached_surface(gpu::context::data& gpu_state, const vec2u extent) -> void {
-	m_attached_counter = 0;
-	m_attached_produced_semaphore = gpu_state.device->create_exportable_semaphore();
-	m_attached_consumed_semaphore = gpu_state.device->create_exportable_semaphore();
-	const auto produced_semaphore_handle = gpu_state.device->export_semaphore_handle(m_attached_produced_semaphore);
-	const auto consumed_semaphore_handle = gpu_state.device->export_semaphore_handle(m_attached_consumed_semaphore);
-	const gpu::image_format format = gpu_state.swapchain->format();
-	bool ok = produced_semaphore_handle.has_value() && consumed_semaphore_handle.has_value();
-	for (std::size_t i = 0; ok && i < attached_ring_size; ++i) {
-		auto surface = gpu_state.device->create_shared_surface({
-			.extent = extent,
-			.format = format,
-		});
-		if (!surface) {
-			log::println(log::level::error, log::category::vulkan, "attached: create_shared_surface[{}] failed: {}", i, surface.error());
-			ok = false;
-			break;
-		}
-		m_attached_surfaces[i] = *surface;
-		const gpu::image_view_create_info view_info{
-			.format = format,
-			.view_type = gpu::image_view_type::e2d,
-			.aspects = gpu::image_aspect_flags(gpu::image_aspect_flag::color),
-			.level_count = 1,
-			.layer_count = 1,
-		};
-		m_attached_surface_images[i] = gpu::image(
-			m_attached_surfaces[i].image,
-			m_attached_surfaces[i].view,
-			format,
-			{ extent.x(), extent.y(), 1 },
-			view_info
-		);
+	close_attached_handles();
+	auto& graph = *gpu_state.render_graph;
+	const auto created = graph.set_offscreen_output({ .extent = extent, .slots = attached_ring_size, .exportable = true });
+	assert(created.has_value(), "attached: offscreen ring creation failed: {}", created ? std::string() : created.error());
+
+	const auto timelines = graph.offscreen_timelines();
+	const auto produced_semaphore_handle = gpu_state.device->export_semaphore_handle(timelines.produced);
+	const auto consumed_semaphore_handle = gpu_state.device->export_semaphore_handle(timelines.consumed);
+	assert(produced_semaphore_handle.has_value(), "attached: produced semaphore export failed: {}", produced_semaphore_handle ? std::string() : produced_semaphore_handle.error());
+	assert(consumed_semaphore_handle.has_value(), "attached: consumed semaphore export failed: {}", consumed_semaphore_handle ? std::string() : consumed_semaphore_handle.error());
+
+	const auto surfaces = graph.offscreen_surfaces();
+	m_attached_message = {
+		.magic = attached_surface_magic,
+		.revision = ++m_attached_revision,
+		.extent = extent,
+		.format = gpu_state.device->surface_format(),
+		.backend = gpu::active_backend,
+		.produced_semaphore_handle = *produced_semaphore_handle,
+		.consumed_semaphore_handle = *consumed_semaphore_handle,
+	};
+	for (std::size_t i = 0; i < attached_ring_size; ++i) {
+		m_attached_message.surface_handles[i] = surfaces[i].handle;
 	}
-	if (ok) {
-		m_attached_message = {
-			.magic = attached_surface_magic,
-			.revision = ++m_attached_revision,
-			.extent = extent,
-			.format = format,
-			.backend = gpu::active_backend,
-			.surface_handles = { m_attached_surfaces[0].handle, m_attached_surfaces[1].handle, m_attached_surfaces[2].handle },
-			.produced_semaphore_handle = *produced_semaphore_handle,
-			.consumed_semaphore_handle = *consumed_semaphore_handle,
-		};
-		m_attached_surface_ready = true;
-		log::println(log::category::vulkan, "attached: created {}-surface ring at {}x{} on {} (revision {})", attached_ring_size, extent.x(), extent.y(), gpu::active_backend, m_attached_revision);
-	}
-	else {
-		if (!produced_semaphore_handle) {
-			log::println(log::level::error, log::category::vulkan, "attached: export produced semaphore failed: {}", produced_semaphore_handle.error());
-		}
-		else if (!consumed_semaphore_handle) {
-			log::println(log::level::error, log::category::vulkan, "attached: export consumed semaphore failed: {}", consumed_semaphore_handle.error());
-		}
-		if (produced_semaphore_handle) {
-			win32::CloseHandle(*produced_semaphore_handle);
-		}
-		if (consumed_semaphore_handle) {
-			win32::CloseHandle(*consumed_semaphore_handle);
-		}
-		destroy_attached_surface(*gpu_state.device);
-	}
+	m_attached_surface_ready = true;
+	log::println(log::category::vulkan, "attached: created {}-surface ring at {}x{} on {} (revision {})", attached_ring_size, extent.x(), extent.y(), gpu::active_backend, m_attached_revision);
 }
 
-auto gse::engine::destroy_attached_surface(gpu::device& device) -> void {
-	for (std::size_t i = 0; i < attached_ring_size; ++i) {
-		m_attached_surface_images[i] = {};
-		if (m_attached_surfaces[i].image) {
-			device.destroy_shared_surface(m_attached_surfaces[i]);
-			m_attached_surfaces[i] = {};
-		}
-	}
-	if (m_attached_produced_semaphore) {
-		device.retire(m_attached_produced_semaphore);
-		m_attached_produced_semaphore = {};
-	}
-	if (m_attached_consumed_semaphore) {
-		device.retire(m_attached_consumed_semaphore);
-		m_attached_consumed_semaphore = {};
-	}
+auto gse::engine::close_attached_handles() -> void {
 	if (win32::valid_handle(m_attached_message.produced_semaphore_handle)) {
 		win32::CloseHandle(m_attached_message.produced_semaphore_handle);
 	}
@@ -194,6 +143,9 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	if (m_config.use_gpu_solver) {
 		m_save.pin<physics::data, "use_gpu_solver">(true);
 	}
+	if (windowless_render()) {
+		m_save.pin<gpu::context::data, "offscreen">(true);
+	}
 
 	m_save.set_overrides(m_config.setting);
 	m_save.set_on_restart([this] {
@@ -251,7 +203,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	}
 
 	std::unordered_set<gse::id> disabled;
-	if (!m_config.render) {
+	if (!m_config.render || windowless_render()) {
 		disabled.insert(id_of<window::data>());
 		disabled.insert(id_of<audio::data>());
 		system_clock::set_display_snapping(false);
@@ -289,6 +241,15 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 		assets.install_hot_reload_fns();
 
 		assets.verify_built_ins();
+
+		if (windowless_render()) {
+			m_scheduler.register_deferred();
+			if (const auto* shadow = m_scheduler.try_state_of<physics::shadow_step::data>()) {
+				m_headless_gpu = shadow->enabled;
+			}
+			boot_immediately(app_setup);
+			return;
+		}
 
 		log::println(log::category::runtime, "boot: scheduler.initialize begin");
 		m_scheduler.initialize();
@@ -344,19 +305,27 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 			assert(false, "Asset discovery failed: {}", discovered.error().detail);
 		}
 
-		if (app_setup) {
-			app_setup(
-				*this
-			);
-		}
-
-		install_actions();
-
-		m_scheduler.initialize();
-		m_scheduler.enter_running();
-		m_boot_tasks_done.store(true, std::memory_order_release);
-		m_loading.mark_finished();
+		boot_immediately(app_setup);
 	}
+}
+
+auto gse::engine::boot_immediately(const setup_fn& app_setup) -> void {
+	if (app_setup) {
+		app_setup(
+			*this
+		);
+	}
+
+	install_actions();
+
+	m_scheduler.initialize();
+	m_scheduler.enter_running();
+	m_boot_tasks_done.store(true, std::memory_order_release);
+	m_loading.mark_finished();
+}
+
+auto gse::engine::windowless_render() const -> bool {
+	return m_config.render && !m_config.create_window;
 }
 
 auto gse::engine::update() -> void {
@@ -453,15 +422,12 @@ auto gse::engine::render() -> void {
 	auto* asset_state = m_scheduler.try_state_of<asset::data>();
 
 	if (m_config.attached && gpu_state && gpu_state->device && gpu_state->render_graph && gpu_state->swapchain) {
-		if (const auto ext = gpu_state->render_graph->extent(); ext.x() > 0 && ext.y() > 0) {
+		if (const auto ext = gpu_state->swapchain->extent(); ext.x() > 0 && ext.y() > 0) {
 			if (!m_attached_surface_attempted) {
 				m_attached_surface_attempted = true;
 				create_attached_surface(*gpu_state, ext);
 			}
 			else if (m_attached_surface_ready && ext != m_attached_message.extent) {
-				gpu_state->device->wait_idle();
-				gpu_state->render_graph->set_offscreen_target(nullptr);
-				destroy_attached_surface(*gpu_state->device);
 				create_attached_surface(*gpu_state, ext);
 			}
 		}
@@ -469,32 +435,13 @@ auto gse::engine::render() -> void {
 
 	bool attached_slot_starved = false;
 
-	if (m_attached_surface_ready && gpu_state && gpu_state->render_graph && gpu_state->device) {
-		const std::uint64_t counter = m_attached_counter + 1;
-		if (counter > attached_ring_size) {
-			const auto released = counter - attached_ring_size;
-			attached_slot_starved = gpu_state->device->semaphore_counter_value(m_attached_consumed_semaphore) < released;
-		}
-		if (!attached_slot_starved) {
-			m_attached_counter = counter;
-			const std::size_t slot = static_cast<std::size_t>(counter % attached_ring_size);
-			if (counter > attached_ring_size) {
-				gpu_state->render_graph->add_graphics_wait({
-					.semaphore = m_attached_consumed_semaphore,
-					.value = counter - attached_ring_size,
-					.stages = gpu::pipeline_stage_flag::all_commands,
-				});
-			}
-			gpu_state->render_graph->set_offscreen_target(&m_attached_surface_images[slot]);
-			gpu_state->render_graph->add_graphics_signal({
-				.semaphore = m_attached_produced_semaphore,
-				.value = counter,
-				.stages = gpu::pipeline_stage_flag::all_commands,
-			});
-			++m_attached_frames_presented;
+	if (m_attached_surface_ready && gpu_state && gpu_state->render_graph) {
+		attached_slot_starved = !gpu_state->render_graph->output_ready();
+		if (attached_slot_starved) {
+			++m_attached_frames_skipped;
 		}
 		else {
-			++m_attached_frames_skipped;
+			++m_attached_frames_presented;
 		}
 	}
 
@@ -510,13 +457,15 @@ auto gse::engine::render() -> void {
 	}
 
 	if (gpu_state && !attached_slot_starved) {
-		auto& window_state = m_scheduler.state<window::data>();
+		auto* window_state = m_scheduler.try_state_of<window::data>();
 		const clock fence_timer;
 		std::expected<gpu::frame_token, gpu::frame_status> result;
 		{
 			trace::scope_guard _{ trace_id<"render::begin_frame">() };
-			gpu::context::sync_present_targets(*gpu_state, window_state);
-			result = gpu::context::begin_frame(*gpu_state, &window_state.primary);
+			if (window_state) {
+				gpu::context::sync_present_targets(*gpu_state, *window_state);
+			}
+			result = gpu::context::begin_frame(*gpu_state, window_state ? &window_state->primary : nullptr);
 		}
 		const auto fence_wait = fence_timer.elapsed();
 
@@ -552,7 +501,6 @@ auto gse::engine::render() -> void {
 	if (frame_ok && gpu_state) {
 		{
 			trace::scope_guard _{ trace_id<"render::end_frame">() };
-			auto& window_state = m_scheduler.state<window::data>();
 			gpu::context::end_frame(*gpu_state);
 			if (asset_state) {
 				trace::scope_guard _{ trace_id<"end_frame::finalize_reloads">() };
@@ -560,30 +508,36 @@ auto gse::engine::render() -> void {
 					l->finalize_reloads();
 				}
 			}
-			const bool attach_failed = m_attached_surface_attempted && !m_attached_surface_ready;
-			if (attach_failed && window_state.attached) {
-				window_state.attached = false;
-				window_state.cursor_suppressed = false;
-				window_state.primary.framebuffer_resized = true;
+			if (auto* window_state = m_scheduler.try_state_of<window::data>()) {
+				reveal_window(*window_state);
 			}
-			if (!m_window_shown && m_config.bench.enabled) {
+		}
+	}
+}
+
+auto gse::engine::reveal_window(window::data& window_state) -> void {
+	const bool attach_abandoned = m_attached_surface_attempted && !m_attached_surface_ready;
+	if (attach_abandoned && window_state.attached) {
+		window_state.attached = false;
+		window_state.cursor_suppressed = false;
+		window_state.primary.framebuffer_resized = true;
+	}
+	if (!m_window_shown && m_config.bench.enabled) {
+		m_window_shown = true;
+		log::println(log::category::runtime, "boot: window kept hidden (bench run)");
+	}
+	else if (!m_window_shown && (!m_config.attached || attach_abandoned)) {
+		if (m_loading.finished()) {
+			window::show(window_state);
+			m_window_shown = true;
+			log::println(log::category::runtime, "boot: window shown (loading finished)");
+		}
+		else if (m_loading.rendered_once()) {
+			++m_frames_since_rendered;
+			if (m_frames_since_rendered >= 2) {
+				window::show(window_state);
 				m_window_shown = true;
-				log::println(log::category::runtime, "boot: window kept hidden (bench run)");
-			}
-			else if (!m_window_shown && (!m_config.attached || attach_failed)) {
-				if (m_loading.finished()) {
-					window::show(window_state);
-					m_window_shown = true;
-					log::println(log::category::runtime, "boot: window shown (loading finished)");
-				}
-				else if (m_loading.rendered_once()) {
-					++m_frames_since_rendered;
-					if (m_frames_since_rendered >= 2) {
-						window::show(window_state);
-						m_window_shown = true;
-						log::println(log::category::runtime, "boot: window shown (loading screen on swapchain)");
-					}
-				}
+				log::println(log::category::runtime, "boot: window shown (loading screen on swapchain)");
 			}
 		}
 	}
@@ -657,7 +611,7 @@ auto gse::engine::shutdown() -> void {
 	if (auto* gpu_state = m_scheduler.try_state_of<gpu::context::data>()) {
 		watchdog::section _{ trace_id<"shutdown::gpu_wait_idle">(), phase_budget };
 		gpu::context::wait_idle(*gpu_state);
-		destroy_attached_surface(*gpu_state->device);
+		close_attached_handles();
 	}
 
 	{

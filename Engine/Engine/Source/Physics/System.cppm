@@ -232,6 +232,11 @@ export namespace gse::physics {
 		int readback_age_steps = 0;
 	};
 
+	struct joint_drive_change {
+		std::uint32_t joint = 0;
+		std::uint32_t drive = 0;
+	};
+
 	struct gpu_tick_plan {
 		bool active = false;
 		bool reset = false;
@@ -240,6 +245,8 @@ export namespace gse::physics {
 		std::uint64_t first_tick = 0;
 		std::optional<std::uint64_t> restore_tick;
 		std::vector<step_inputs> per_tick;
+		std::vector<joint_drive_change> joint_drive_changes;
+		bool full_joint_inputs = true;
 		std::uint64_t generation = 0;
 	};
 
@@ -571,6 +578,13 @@ export namespace gse::physics {
 		gap stick_threshold = meters(0.01f);
 
 		[[
+			= settings::describe<"Coulomb friction coefficient for every contact: tangential force is capped at "
+									  "this multiple of the normal force.">{},
+			= settings::range<0.f, 2.f>{}
+		]]
+		float friction_coefficient = 0.6f;
+
+		[[
 			= settings::describe<"Linear speed below which a body may begin falling asleep. Zero disables sleeping "
 									  "entirely, which is what a capture run wants — a sleeping island is not woken by "
 									  "having its support removed.">{}
@@ -701,6 +715,13 @@ export namespace gse::physics {
 		bool joint_rest_orientations_pending = true;
 		std::vector<id> results_ensured_owners;
 		std::vector<std::uint32_t> drive_joint_slots;
+		std::vector<joint_drive_component> applied_drives;
+		std::vector<id> applied_drive_owners;
+		std::uint64_t applied_drives_joints_generation = 0;
+		std::vector<std::uint8_t> drive_change_marks;
+		std::vector<std::vector<joint_drive_change>> drive_change_scan;
+		std::vector<joint_drive_change> drive_changes;
+		bool drive_changes_full = true;
 		[[= shared]] std::uint64_t joints_generation = 1;
 		[[= shared]] std::uint64_t joint_inputs_generation = 1;
 		[[= shared]] id_mapped_collection<muscle_definition> muscles;
@@ -745,6 +766,7 @@ export namespace gse::physics {
 			std::vector<vbd::velocity_motor_constraint> motors;
 			std::vector<vbd::joint_constraint> joints;
 			std::vector<vbd::joint_drive_input> joint_inputs;
+			std::vector<std::uint32_t> joint_input_slots;
 			std::vector<vbd::muscle_constraint> muscles;
 			std::vector<vbd::muscle_path_point> muscle_points;
 			std::vector<float> muscle_excitations;
@@ -768,6 +790,7 @@ export namespace gse::physics {
 			std::uint32_t uploaded_body_count = 0;
 			std::uint32_t uploaded_joint_count = 0;
 			bool force_full_joints = false;
+			bool joint_inputs_full_pending = true;
 			std::vector<joint_definition> joints;
 			std::vector<std::uint32_t> joint_slots;
 			std::vector<std::uint32_t> joint_drive_slots;

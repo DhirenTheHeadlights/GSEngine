@@ -18,6 +18,7 @@ groupshared uint gs_sweep_backward_end[island_slots + 1];
 groupshared uint gs_sweep_forward_steps;
 groupshared uint gs_sweep_backward_steps;
 static const uint fold_items_max = island_slots * 4;
+static const uint fold_cache_float4s = fold_items_max / 4 + 1;
 groupshared uint gs_fold_count;
 groupshared uint gs_fold_items[fold_items_max];
 groupshared uint gs_lambda_last;
@@ -930,8 +931,8 @@ void note_island_convergence() {
 
 void fold_contact_lambda(uint ci) {
     contact_constraint c = contact_data[ci];
-    body_state body_a = body_data[c.body_a];
-    body_state body_b = body_data[c.body_b];
+    other_view body_a = load_other_view(c.body_a);
+    other_view body_b = load_other_view(c.body_b);
 
     float3 world_r_a = rotate_vector(body_a.predicted_orientation, c.local_anchor_a.xyz);
     float3 world_r_b = rotate_vector(body_b.predicted_orientation, c.local_anchor_b.xyz);
@@ -986,13 +987,13 @@ void fold_joint_lambda(uint ji) {
     if (ji >= pc.joint_count) return;
 
     joint_constraint j = joint_data[ji];
-    body_state body_a = body_data[j.body_a];
-    body_state body_b = body_data[j.body_b];
+    other_view body_a = load_other_view(j.body_a);
+    other_view body_b = load_other_view(j.body_b);
 
     bool a_locked = body_a.locked != 0;
     bool b_locked = body_b.locked != 0;
-    bool a_sleeping = body_a.sleep_counter >= sleep_threshold;
-    bool b_sleeping = body_b.sleep_counter >= sleep_threshold;
+    bool a_sleeping = body_data[j.body_a].sleep_counter >= sleep_threshold;
+    bool b_sleeping = body_data[j.body_b].sleep_counter >= sleep_threshold;
     if ((a_locked || a_sleeping) && (b_locked || b_sleeping)) return;
 
     float3 r_aw = rotate_vector(body_a.predicted_orientation, j.local_anchor_a.xyz);
@@ -1124,7 +1125,12 @@ void fold_joint_lambda(uint ji) {
         collision_state[state_joint_c_index] = asuint(length(d));
     }
 
-    joint_data[ji] = j;
+    joint_data[ji].pos_lambda = j.pos_lambda;
+    joint_data[ji].pos_penalty = j.pos_penalty;
+    joint_data[ji].ang_lambda = j.ang_lambda;
+    joint_data[ji].ang_penalty = j.ang_penalty;
+    joint_data[ji].limit_lambda = j.limit_lambda;
+    joint_data[ji].limit_penalty = j.limit_penalty;
 }
 
 bool island_owns_contact(uint ci, uint bi, uint island) {
@@ -1199,6 +1205,8 @@ void solve_islands(uint3 dispatch_id) {
         uint offset = island_data[1 + first];
         uint last = first + islands - 1;
         uint count = island_data[1 + last] + island_data[1 + max_islands + last] - offset;
+        uint fold_base = env * fold_cache_float4s;
+        bool cacheable = fold_base + fold_cache_float4s <= pc.body_count * solve_state_float4s_per_body;
 
         if (lane <= islands) {
             gs_island_first[lane] = lane < islands ? island_data[1 + first + lane] - offset : count;
@@ -1297,14 +1305,24 @@ void solve_islands(uint3 dispatch_id) {
                 gs_island_angular_residual = 0;
             }
             AllMemoryBarrierWithGroupSync();
-            for (uint k = lane; k < count; k += workgroup_size) {
-                uint bi = island_data[base + offset + k];
-                if (bi < pc.body_count) fold_collect(bi, first + island_of_slot(k, islands));
+            uint cached = pc.iteration == 0 || !cacheable ? 0xFFFFFFFFu : asuint(solve_state[fold_base].x);
+            bool collect = cached > fold_items_max;
+            if (collect) {
+                for (uint k = lane; k < count; k += workgroup_size) {
+                    uint bi = island_data[base + offset + k];
+                    if (bi < pc.body_count) fold_collect(bi, first + island_of_slot(k, islands));
+                }
+                AllMemoryBarrierWithGroupSync();
             }
-            AllMemoryBarrierWithGroupSync();
-            uint items = min(gs_fold_count, fold_items_max);
+            uint items = collect ? min(gs_fold_count, fold_items_max) : cached;
+            if (pc.iteration == 0 && cacheable) {
+                for (uint k = lane; k < items; k += workgroup_size) {
+                    solve_state[fold_base + 1 + k / 4][k % 4] = asfloat(gs_fold_items[k]);
+                }
+                if (lane == 0) solve_state[fold_base].x = asfloat(gs_fold_count <= fold_items_max ? gs_fold_count : 0xFFFFFFFFu);
+            }
             for (uint k = lane; k < items; k += workgroup_size) {
-                fold_item(gs_fold_items[k]);
+                fold_item(collect ? gs_fold_items[k] : asuint(solve_state[fold_base + 1 + k / 4][k % 4]));
             }
             if (solver_config_data[0].trace_island_convergence != 0) {
                 GroupMemoryBarrierWithGroupSync();

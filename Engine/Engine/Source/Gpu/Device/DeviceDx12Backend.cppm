@@ -848,7 +848,7 @@ auto gse::gpu::dx12_device_backend::make_video_encoder_backend(const encode_desc
 }
 
 auto gse::gpu::create_dx12_device_backend(const std::optional<shared_view<window::data>> win, const bool validation_layers_enabled, device_settings& cfg) -> dx12_backend_creation {
-	auto backend = std::make_unique<dx12_device_backend>(std::make_unique<dx12::device>(*win, validation_layers_enabled, cfg));
+	auto backend = std::make_unique<dx12_device_backend>(std::make_unique<dx12::device>(win, validation_layers_enabled, cfg));
 	backend->pools.bind(backend->device.get());
 	backend->queue.bind(backend->device.get());
 	backend->swapchain.bind(backend->device.get());

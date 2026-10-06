@@ -148,8 +148,7 @@ auto gse::renderer::light_culling::init(context& ctx, const shared_view<gpu::con
 
 	rebuild_tile_buffers(gpu_s, d);
 
-	gpu::context::on_swap_chain_recreate(
-		gpu_s,
+	gpu_s.render_graph->on_resize(
 		[gpu_s, &d]() {
 			rebuild_tile_buffers(gpu_s, d);
 		}

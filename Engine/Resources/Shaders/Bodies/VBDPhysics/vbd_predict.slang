@@ -1,3 +1,15 @@
+void store_prediction(uint bi, body_state body) {
+    body_data[bi].sleep_counter = body.sleep_counter;
+    body_data[bi].old_position = body.old_position;
+    body_data[bi].old_orientation = body.old_orientation;
+    body_data[bi].accel_weight = body.accel_weight;
+    body_data[bi].predicted_position = body.predicted_position;
+    body_data[bi].inertia_target = body.inertia_target;
+    body_data[bi].predicted_orientation = body.predicted_orientation;
+    body_data[bi].angular_inertia_target = body.angular_inertia_target;
+    body_data[bi].motor_target = body.motor_target;
+}
+
 void vbd_predict(uint3 dispatch_id) {
 uint bi = dispatch_id.x;
 if (bi >= pc.body_count) return;
@@ -104,7 +116,7 @@ if (locked) {
 
     body.angular_inertia_target = body.predicted_orientation;
     body.motor_target = body.predicted_position;
-    body_data[bi] = body;
+    store_prediction(bi, body);
     return;
 }
 
@@ -115,7 +127,7 @@ if (sleeping) {
     body.predicted_orientation = body.orientation;
     body.angular_inertia_target = body.orientation;
     body.motor_target = body.position;
-    body_data[bi] = body;
+    store_prediction(bi, body);
     return;
 }
 
@@ -179,5 +191,7 @@ if (has_motor) {
     }
 }
 
-body_data[bi] = body;
+store_prediction(bi, body);
+body_data[bi].velocity = body.velocity;
+body_data[bi].angular_velocity = body.angular_velocity;
 }

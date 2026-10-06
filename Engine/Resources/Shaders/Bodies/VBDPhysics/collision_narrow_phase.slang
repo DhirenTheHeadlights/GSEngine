@@ -251,8 +251,7 @@ FaceInfo find_best_face(float3 center, float3 he, float3 axes[3], float3 dir) {
 static const int MAX_CLIP_VERTS = 9;
 
 struct ActiveSides {
-    uint values[2];
-    uint count;
+    uint packed;
 };
 
 struct ClipVertexData {
@@ -354,37 +353,41 @@ FeatureDetail classify_feature(float3 center, float3 he, float3 axes[3], float3 
     return result;
 }
 
+uint side_value(ActiveSides sides, uint i) {
+    return (sides.packed >> (8 * i)) & 0xFFu;
+}
+
+uint side_count(ActiveSides sides) {
+    return (side_value(sides, 0) != feature_side_none ? 1u : 0u) + (side_value(sides, 1) != feature_side_none ? 1u : 0u);
+}
+
 void init_active_sides(out ActiveSides sides) {
-    sides.values[0] = feature_side_none;
-    sides.values[1] = feature_side_none;
-    sides.count = 0;
+    sides.packed = feature_side_none | (feature_side_none << 8);
 }
 
 void add_side(inout ActiveSides sides, uint side) {
     if (side == feature_side_none) return;
 
-    for (uint i = 0; i < sides.count; i++) {
-        if (sides.values[i] == side) return;
-    }
+    uint first = side_value(sides, 0);
+    if (first == side || side_value(sides, 1) == side) return;
 
-    if (sides.count >= 2) return;
-    sides.values[sides.count++] = side;
+    uint count = side_count(sides);
+    if (count >= 2) return;
 
-    if (sides.count == 2 && sides.values[1] < sides.values[0]) {
-        uint tmp = sides.values[0];
-        sides.values[0] = sides.values[1];
-        sides.values[1] = tmp;
+    if (count == 0) {
+        sides.packed = side | (feature_side_none << 8);
+    } else {
+        sides.packed = min(first, side) | (max(first, side) << 8);
     }
 }
 
 ActiveSides shared_sides(ActiveSides lhs, ActiveSides rhs) {
     ActiveSides shared;
     init_active_sides(shared);
-    for (uint i = 0; i < lhs.count; i++) {
-        for (uint j = 0; j < rhs.count; j++) {
-            if (lhs.values[i] == rhs.values[j]) {
-                add_side(shared, lhs.values[i]);
-            }
+    for (uint i = 0; i < 2; i++) {
+        uint value = side_value(lhs, i);
+        if (value != feature_side_none && (value == side_value(rhs, 0) || value == side_value(rhs, 1))) {
+            add_side(shared, value);
         }
     }
     return shared;
@@ -415,7 +418,8 @@ ActiveSides vertex_side_set(uint ordinal) {
 }
 
 uint feature_type_from_sides(ActiveSides sides) {
-    return sides.count == 0 ? feature_face : (sides.count == 1 ? feature_edge : feature_vertex);
+    uint count = side_count(sides);
+    return count == 0 ? feature_face : (count == 1 ? feature_edge : feature_vertex);
 }
 
 uint reference_edge_side_id(uint edge_index) {
@@ -867,14 +871,14 @@ void build_feature_hi_lo_from_clip_vertex(
         feature_hi = pack_feature_component(
             feature_type_from_sides(vertex.reference_sides),
             clipped.reference_face,
-            vertex.reference_sides.values[0],
-            vertex.reference_sides.values[1]
+            side_value(vertex.reference_sides, 0),
+            side_value(vertex.reference_sides, 1)
         );
         feature_lo = pack_feature_component(
             feature_type_from_sides(vertex.incident_sides),
             clipped.incident_face,
-            vertex.incident_sides.values[0],
-            vertex.incident_sides.values[1]
+            side_value(vertex.incident_sides, 0),
+            side_value(vertex.incident_sides, 1)
         );
         return;
     }
@@ -882,14 +886,14 @@ void build_feature_hi_lo_from_clip_vertex(
     feature_hi = pack_feature_component(
         feature_type_from_sides(vertex.incident_sides),
         clipped.incident_face,
-        vertex.incident_sides.values[0],
-        vertex.incident_sides.values[1]
+        side_value(vertex.incident_sides, 0),
+        side_value(vertex.incident_sides, 1)
     );
     feature_lo = pack_feature_component(
         feature_type_from_sides(vertex.reference_sides),
         clipped.reference_face,
-        vertex.reference_sides.values[0],
-        vertex.reference_sides.values[1]
+        side_value(vertex.reference_sides, 0),
+        side_value(vertex.reference_sides, 1)
     );
 }
 
@@ -1605,14 +1609,14 @@ void hull_clip_feature(ClipVertexData vertex, bool reference_is_a, uint referenc
     uint reference_key = pack_feature_component(
         feature_type_from_sides(vertex.reference_sides),
         reference_face,
-        vertex.reference_sides.values[0],
-        vertex.reference_sides.values[1]
+        side_value(vertex.reference_sides, 0),
+        side_value(vertex.reference_sides, 1)
     );
     uint incident_key = pack_feature_component(
         feature_type_from_sides(vertex.incident_sides),
         incident_face,
-        vertex.incident_sides.values[0],
-        vertex.incident_sides.values[1]
+        side_value(vertex.incident_sides, 0),
+        side_value(vertex.incident_sides, 1)
     );
     feature_hi = reference_is_a ? reference_key : incident_key;
     feature_lo = reference_is_a ? incident_key : reference_key;

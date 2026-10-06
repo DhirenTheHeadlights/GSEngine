@@ -114,7 +114,7 @@ auto gse::renderer::capture::run(context& ctx, const shared_view<gpu::context::d
 	return {};
 }
 
-auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<toggle_recording_request, save_clip_request, screenshot_request> capture_in) -> async::task<> {
+auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<toggle_recording_request, start_recording_request, stop_recording_request, save_clip_request, screenshot_request> capture_in) -> async::task<> {
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
 	auto& [staging, width, height, row_pitch, pending] = d.screenshots[frame_index];
@@ -184,6 +184,9 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 
 	if (capture_due) {
 		d.encode_target = d.encoder.begin_capture(capture_pts);
+		if (!d.encode_target.valid && d.recording->active.load()) {
+			++d.recording->dropped_frames;
+		}
 		const auto overshoot = capture_pts - d.last_capture_pts;
 		d.last_capture_pts = d.captured_once && overshoot < d.capture_interval * 2.f
 			? d.last_capture_pts + d.capture_interval
@@ -216,6 +219,10 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 		d.encoder.submit_ready();
 	}
 
+	if (d.recording->active.load() && d.recording->stop_at && capture_pts >= *d.recording->stop_at) {
+		end_recording(d);
+	}
+
 	const auto toggle_requests = capture_in.of<toggle_recording_request>();
 	if (!toggle_requests.empty()) {
 		const auto now = std::chrono::steady_clock::now();
@@ -229,52 +236,30 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 		if (since_last < std::chrono::milliseconds(300)) {
 			log::println(log::category::render, "Toggle Recording: debounced (within 300ms of last toggle)");
 		}
-		else if (!d.encode_active || !d.encoder.valid()) {
-			log::println(log::category::render, "Toggle Recording pressed but video capture is unavailable");
-			d.recording->last_toggle = now;
-		}
-		else if (d.recording->active.load()) {
-			d.recording->last_toggle = now;
-			stop_recording(*d.recording);
-			log::println(log::category::render, "Recording stopped: {}", d.recording->path.generic_display_string());
-		}
-		else if (d.encoder.stream_header().empty()) {
-			log::println(
-				log::level::warning,
-				log::category::render,
-				"Toggle Recording: encoder stream_header not yet available, ignoring"
-			);
-		}
 		else {
 			d.recording->last_toggle = now;
-			const auto path = config::captures_dir() / "recordings" / std::format("recording_{}.mp4", system_clock::timestamp_filename());
-			std::filesystem::create_directories(path.parent_path());
-
-			auto live = mp4::live_muxer::open(
-				path,
-				{ d.encoder.codec(), d.encoder.extent() },
-				d.encoder.stream_header()
-			);
-			if (!live) {
-				log::println(
-					log::level::warning,
-					log::category::render,
-					"Failed to open recording file at {}",
-					path.generic_display_string()
-				);
+			if (d.recording->active.load()) {
+				end_recording(d);
 			}
 			else {
-				d.recording->path = path;
-				{
-					std::lock_guard _(d.recording->mutex);
-					std::queue<gpu::encoded_unit> empty;
-					std::swap(d.recording->queue, empty);
-					d.recording->muxer.emplace(std::move(*live));
-				}
-				d.recording->active.store(true);
-				log::println(log::category::render, "Recording started: {}", path.generic_display_string());
+				d.pending_start = start_recording_request{};
 			}
 		}
+	}
+
+	for (const auto& request : capture_in.of<start_recording_request>()) {
+		d.pending_start = request;
+	}
+
+	if (!capture_in.of<stop_recording_request>().empty()) {
+		d.pending_start.reset();
+		if (d.recording->active.load()) {
+			end_recording(d);
+		}
+	}
+
+	if (d.pending_start) {
+		try_begin_recording(d, capture_pts);
 	}
 
 	if (!capture_in.of<save_clip_request>().empty()) {
@@ -453,4 +438,71 @@ auto gse::renderer::capture::stop_recording(recording_state& state) -> void {
 	});
 	state.muxer->close();
 	state.muxer.reset();
+	state.stop_at.reset();
+	state.finished.fetch_add(1);
+}
+
+auto gse::renderer::capture::try_begin_recording(data& d, const time now) -> void {
+	if (!d.encode_active || !d.encoder.valid()) {
+		log::println(log::level::warning, log::category::render, "Recording requested but video capture is unavailable");
+		d.pending_start.reset();
+		return;
+	}
+	if (d.recording->active.load()) {
+		log::println(log::level::warning, log::category::render, "Recording requested while {} is still recording, ignoring", d.recording->path.generic_display_string());
+		d.pending_start.reset();
+		return;
+	}
+	if (d.encoder.stream_header().empty()) {
+		return;
+	}
+
+	const auto request = std::move(*d.pending_start);
+	d.pending_start.reset();
+
+	const auto path = request.path.empty()
+		? config::captures_dir() / "recordings" / std::format("recording_{}.mp4", system_clock::timestamp_filename())
+		: request.path;
+	if (path.has_parent_path()) {
+		std::filesystem::create_directories(path.parent_path());
+	}
+
+	auto live = mp4::live_muxer::open(
+		path,
+		{ d.encoder.codec(), d.encoder.extent() },
+		d.encoder.stream_header()
+	);
+	if (!live) {
+		log::println(
+			log::level::warning,
+			log::category::render,
+			"Failed to open recording file at {}",
+			path.generic_display_string()
+		);
+		return;
+	}
+
+	d.recording->path = path;
+	{
+		std::lock_guard _(d.recording->mutex);
+		std::queue<gpu::encoded_unit> empty;
+		std::swap(d.recording->queue, empty);
+		d.recording->muxer.emplace(std::move(*live));
+	}
+	d.recording->stop_at = request.duration ? std::optional(now + *request.duration) : std::nullopt;
+	d.recording->dropped_frames = 0;
+	d.recording->active.store(true);
+	log::println(log::category::render, "Recording started: {}", path.generic_display_string());
+}
+
+auto gse::renderer::capture::end_recording(data& d) -> void {
+	const auto dropped = d.recording->dropped_frames;
+	stop_recording(*d.recording);
+	log::println(
+		dropped == 0 ? log::level::info : log::level::warning,
+		log::category::render,
+		"Recording stopped: {} ({} frames dropped)",
+		d.recording->path.generic_display_string(),
+		dropped
+	);
 }

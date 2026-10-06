@@ -16,6 +16,7 @@ import std;
 import :command_contract;
 import :device;
 import :frame;
+import :frame_output;
 import :graph_channel;
 import :swap_chain;
 import :transient_pool;
@@ -141,13 +142,29 @@ export namespace gse::gpu {
 			bool enabled
 		) -> void;
 
-		auto set_swapchain_clear(
+		auto set_output_clear(
 			color_clear value,
 			load_op op = load_op::clear
 		) -> void;
 
-		auto set_offscreen_target(
-			const image* target
+		auto set_offscreen_output(
+			const offscreen_output_desc& desc
+		) -> std::expected<void, std::string>;
+
+		auto clear_offscreen_output() -> void;
+
+		[[nodiscard]] auto has_output() const -> bool;
+
+		[[nodiscard]] auto output_ready() const -> bool;
+
+		[[nodiscard]] auto offscreen_surfaces() const -> std::span<const shared_surface>;
+
+		[[nodiscard]] auto offscreen_timelines() const -> gpu::offscreen_timelines;
+
+		using resize_callback = std::function<void()>;
+
+		auto on_resize(
+			resize_callback callback
 		) -> void;
 
 		[[nodiscard]] auto current_frame() const -> std::uint32_t;
@@ -274,7 +291,11 @@ export namespace gse::gpu {
 			std::span<const render_pass_data> passes
 		) -> void;
 
-		auto recreate_framebuffer_images() -> void;
+		auto resize_surface() -> void;
+
+		[[nodiscard]] auto default_output() const -> frame_output;
+
+		auto release_output() -> void;
 
 		auto create_framebuffer_image(
 			const framebuffer_image_desc& desc,
@@ -294,8 +315,10 @@ export namespace gse::gpu {
 		static int s_live_count;
 
 		device* m_device;
-		swap_chain* m_swapchain;
 		frame* m_frame;
+		frame_output m_output;
+		image m_depth;
+		std::vector<resize_callback> m_resize_callbacks;
 		gpu::transient_pool m_transient_pool;
 		std::unordered_map<id, std::unique_ptr<registered_image>> m_framebuffer_images;
 		interval_timer<> m_graph_report{ seconds(5.f) };
@@ -329,9 +352,8 @@ export namespace gse::gpu {
 		std::vector<double> m_perf_sample_values;
 		std::optional<time_t<double>> m_perf_read_floor;
 		std::uint64_t m_perf_session_generation = 0;
-		color_clear m_swapchain_clear{};
-		load_op m_swapchain_load = load_op::clear;
-		const image* m_offscreen_target = nullptr;
+		color_clear m_output_clear{};
+		load_op m_output_load = load_op::clear;
 	};
 }
 
@@ -342,7 +364,7 @@ auto gse::gpu::render_graph::framebuffer_image(this auto& self) -> auto& {
 }
 
 auto gse::gpu::render_graph::depth_image(this auto& self) -> auto& {
-	return self.m_swapchain->depth_image();
+	return (self.m_depth);
 }
 
 auto gse::gpu::render_graph::transient_pool(this auto& self) -> auto& {

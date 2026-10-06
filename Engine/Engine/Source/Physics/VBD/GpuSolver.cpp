@@ -1175,31 +1175,35 @@ auto gse::vbd::gpu_solver::upload(const solver_upload& payload) -> void {
 		m_upload_joints.clear();
 		if (!payload.joint_inputs.empty()) {
 			trace::scope_guard _{ trace_id<"vbd_gpu::upload::joint_inputs">() };
+			const bool sparse = !payload.joint_input_slots.empty();
 			assert(
-				resident_joints && payload.joint_inputs.size() == m_joint_slots.size(),
-				"joint drive inputs ({}) arrived without resident joints ({} slots, resident {})",
+				resident_joints && (sparse ? payload.joint_input_slots.size() == payload.joint_inputs.size() : payload.joint_inputs.size() == m_joint_slots.size()),
+				"joint drive inputs ({}, {} sparse slots) arrived without resident joints ({} slots, resident {})",
 				payload.joint_inputs.size(),
+				payload.joint_input_slots.size(),
 				m_joint_slots.size(),
 				resident_joints
 			);
 			const bool complete = !m_joint_inputs_applied || m_applied_joint_inputs.size() != m_joint_count || m_restore_tick.has_value();
+			assert(!sparse || !complete, "sparse joint drive inputs arrived while the solver needs a complete set");
 			m_applied_joint_inputs.resize(m_joint_count);
 			constexpr std::size_t scan_chunk = 4096;
 			const auto input_count = payload.joint_inputs.size();
 			m_joint_input_scan.resize((input_count + scan_chunk - 1) / scan_chunk);
 			const auto* input_data = payload.joint_inputs.data();
+			const auto* source_data = sparse ? payload.joint_input_slots.data() : nullptr;
 			const auto* slot_data = m_joint_slots.data();
 			auto* applied_data = m_applied_joint_inputs.data();
 			auto* scan_data = m_joint_input_scan.data();
 			task::coarse_parallel(
 				m_joint_input_scan.size(),
 				1,
-				[input_data, slot_data, applied_data, scan_data, input_count, complete](const std::size_t c) {
+				[input_data, source_data, slot_data, applied_data, scan_data, input_count, complete](const std::size_t c) {
 					auto& changed = scan_data[c];
 					changed.clear();
 					const auto end = std::min(input_count, (c + 1) * scan_chunk);
 					for (auto i = c * scan_chunk; i < end; ++i) {
-						const auto ji = slot_data[i];
+						const auto ji = slot_data[source_data ? source_data[i] : i];
 						if (ji == unresolved || (!complete && !joint_drive_input_changed(applied_data[ji], input_data[i]))) {
 							continue;
 						}
