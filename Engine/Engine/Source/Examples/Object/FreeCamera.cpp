@@ -33,7 +33,7 @@ auto gse::free_camera::system::attach(context& ctx, data& d, write<component> ca
 			{
 				.offset = vec3<length>(meters(0.f)),
 				.priority = c->priority,
-				.blend_in_duration = milliseconds(300),
+				.blend_in_duration = milliseconds(300.f),
 				.active = true,
 				.use_entity_position = false,
 				.position = c->initial_position,

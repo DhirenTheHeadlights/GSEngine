@@ -7,7 +7,7 @@ cmake-build-*/
 Makefile
 /vc140.pdb
 
-# GCC trunk build workspace (scripts/build_gcc_trunk.py)
+# GCC trunk build workspace (Tools/build_gcc_trunk.py)
 /msys64/
 /.gcc-build/
 /.gcc-ci-build/

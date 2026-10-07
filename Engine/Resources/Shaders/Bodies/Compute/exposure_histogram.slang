@@ -15,8 +15,7 @@ void exposure_histogram(uint3 dispatch_id, uint group_index) {
     s_histogram[group_index] = 0;
     GroupMemoryBarrierWithGroupSync();
 
-    uint2 size;
-    histogram_source.GetDimensions(size.x, size.y);
+    uint2 size = pc.active_extent;
     if (dispatch_id.x < size.x && dispatch_id.y < size.y) {
         float3 color = histogram_source.Load(int3(dispatch_id.xy, 0)).rgb;
         InterlockedAdd(s_histogram[luminance_bin(color)], 1);

@@ -4,7 +4,7 @@
 // --mcp-config pointing at mcp.json next to this file). Each tool returns a bounded, shaped
 // payload so a chat never has to dump a log or poll a file to learn something the editor
 // already knows. Build and hibernate ride the existing file inbox in
-// %LOCALAPPDATA%\GSE\cache\agent-build, exactly as Tools/gse-build and Tools/gse-hibernate
+// %LOCALAPPDATA%\GSE\cache\agent-build, exactly as the retired Tools/gse-build and Tools/gse-hibernate shell tools
 // do, so the editor needs no new endpoint for them.
 //
 // No dependencies beyond node. Protocol: JSON-RPC 2.0, one message per line, MCP 2025-06-18.
@@ -92,28 +92,44 @@ const text_result = (payload, is_error = false) => ({
 
 // --- tools -----------------------------------------------------------------------------
 
-const build = async (args) => {
+const build = async (args, run_only = false) => {
 	const project = args.project ? windows_path(args.project) : project_of(process.cwd());
 	if (!agent) {
 		return text_result(header(project, {
-			error: 'no agent id: CLAUDE_CODE_SESSION_ID is not set in this server\'s environment, so the editor could not attribute the build.',
+			error: 'no agent id: CLAUDE_CODE_SESSION_ID is not set in this server\'s environment, so the editor could not attribute the request.',
 		}), true);
 	}
 	const id = new_id();
-	const target = args.target === 'editor' ? 'editor' : 'game';
+	const target = run_only ? 'game' : args.target === 'editor' ? 'editor' : 'game';
 	const timeout = Math.max(1, Number(args.timeout ?? 1800));
-	const wait = Math.max(1, Number(args.wait ?? 30));
+	const wait = Math.max(1, Number(args.wait ?? (run_only ? 600 : 30)));
+	const settings = (Array.isArray(args.settings) ? args.settings : [])
+		.map((assignment) => String(assignment).replace(/[\r\n\t]+/g, ' ').trim())
+		.filter((assignment) => assignment.includes('=') && assignment.indexOf('.') < assignment.indexOf('='));
+	const scenario = String(args.scenario ?? '').replace(/[\r\n\t"]+/g, '').trim();
+	const seconds = Number(args.seconds ?? 0);
+	const launching = run_only || Boolean(args.run);
+
+	if (launching && !scenario && !(seconds > 0)) {
+		return text_result(header(project, {
+			error: 'a run needs a bound. Pass scenario: "<name>" - a scenario drives the world through a scripted sequence and exits on its own, which is what makes a run worth watching. The catalogue is Sandbox/Sandbox/Source/Sandbox/Scenarios.cppm. If you genuinely need the plain game (a boot crash, or a bug that only shows under the owner\'s settings - a scenario reads neither ini), pass seconds: N instead.',
+		}), true);
+	}
 
 	rmSync(join(inbox, 'results', `${id}.txt`), { force: true });
 	write_atomically(join(inbox, 'requests'), id, [
 		`id ${id}`,
 		`agent ${agent}`,
 		`target ${target}`,
-		`run ${args.run ? 1 : 0}`,
+		`run ${run_only || args.run ? 1 : 0}`,
+		`run_only ${run_only ? 1 : 0}`,
 		`tree ${args.tree ?? ''}`,
 		`profile ${args.profile ?? ''}`,
 		`cwd ${windows_path(process.cwd())}`,
 		`project ${project}`,
+		...(scenario ? [`scenario ${scenario}`] : []),
+		...(!scenario && seconds > 0 ? [`exit_after ${seconds} s`] : []),
+		...settings.map((assignment) => `setting ${assignment}`),
 		'',
 	].join('\n'));
 
@@ -135,13 +151,16 @@ const build = async (args) => {
 						target,
 						outcome: 'deferred',
 						reason,
-						next: 'Your request keeps its place in the queue. Do not poll. Call gse_hibernate with what to do next and end your turn; the editor wakes you with the result.',
+						next: run_only
+							? 'A build is in flight, so your run keeps its place in the queue and will start the new executable once that build lands. Do not poll. Call gse_hibernate with what to do next and end your turn.'
+							: 'Your request keeps its place in the queue. Do not poll. Call gse_hibernate with what to do next and end your turn; the editor wakes you with the result.',
 					}));
 				}
 			}
 			else {
 				result.remove();
-				const outcome = result.status === 'ok' ? 'succeeded'
+				const ok = run_only ? 'launched' : 'succeeded';
+				const outcome = result.status === 'ok' ? ok
 					: result.status === 'failed' ? (result.owned > 0 ? 'failed_yours' : 'failed_not_yours')
 					: `editor_refused:${result.status}`;
 				return text_result(header(project, {
@@ -152,8 +171,10 @@ const build = async (args) => {
 					report: result.body,
 					next: outcome === 'failed_not_yours'
 						? 'None of the errors are attributed to you. Errors owned by another chat are theirs; unattributed ones are most likely another editor instance mid-refactor. Do not start fixing them.'
+						: outcome === 'launched'
+						? 'The game was started. It writes its own log - read it with gse_log_query (exe is the game target, newest run) rather than waiting here.'
 						: undefined,
-				}), outcome !== 'succeeded');
+				}), outcome !== ok);
 			}
 		}
 		if (!picked_up && waited >= 10) {
@@ -249,12 +270,12 @@ const build_status = async (args) => {
 		yours: r.agent === agent,
 		mine_or_other: r.agent === agent ? 'yours' : 'another chat',
 	}));
-	const hibernating = list(join(inbox, 'hibernate')).map((r) => ({ id: r.id, yours: r.agent === agent }));
+	const hibernate_requests = list(join(inbox, 'hibernate')).map((r) => ({ id: r.id, yours: r.agent === agent }));
 	return text_result(header(project, {
 		queued_requests: queued,
-		hibernating_chats: hibernating.length,
-		you_are_hibernating: hibernating.some((h) => h.yours),
-		note: 'Requests disappear from the queue when the editor picks them up. A build in progress is visible in the editor; its result comes back to the requester, or wakes hibernating chats whose edited files it covered.',
+		pending_hibernate_requests: hibernate_requests.length,
+		your_hibernate_request_pending: hibernate_requests.some((h) => h.yours),
+		note: 'Requests disappear from the queue when the editor picks them up. A build in progress is visible in the editor; its result comes back to the requester, or wakes hibernating chats whose edited files it covered. The hibernate counts are UNDELIVERED REQUESTS only: a hibernation the editor has already accepted lives in the editor, so 0 pending does not mean nobody is asleep - the agents panel is where that shows.',
 	}));
 };
 
@@ -294,7 +315,49 @@ const hibernate = async (args) => {
 		await sleep(1000);
 	}
 	rmSync(join(inbox, 'hibernate', `${id}.txt`), { force: true });
-	return text_result(header(project, { outcome: 'no_editor', error: 'no editor answered within 15s - it is not running, so nothing would wake you.' }), true);
+	return text_result(header(project, { outcome: 'no_editor', error: 'no editor claimed this within 15s - either no editor is open on this project, or this chat was not started from the editor agent panel, so no editor owns it. Nothing would wake you; keep working normally.' }), true);
+};
+
+const phase_done = async (args) => {
+	const project = project_of(process.cwd());
+	if (!agent) {
+		return text_result(header(project, { error: 'no agent id in this server\'s environment; the editor cannot move this chat between phases.' }), true);
+	}
+	const summary = String(args.summary ?? '').trim();
+	if (!summary) {
+		return text_result(header(project, { error: '`summary` is required: what this phase concluded.' }), true);
+	}
+	const findings = Math.max(0, Math.floor(Number(args.findings ?? 0)) || 0);
+
+	const id = new_id();
+	rmSync(join(inbox, 'results', `${id}.txt`), { force: true });
+	write_atomically(join(inbox, 'phases'), id, [
+		`id ${id}`,
+		`agent ${agent}`,
+		`cwd ${windows_path(process.cwd())}`,
+		`findings ${findings}`,
+		'summary',
+		summary,
+		'',
+	].join('\n'));
+
+	for (let waited = 0; waited < 15; waited += 1) {
+		const result = read_result(id);
+		if (result) {
+			result.remove();
+			if (result.status === 'ok') {
+				return text_result(header(project, {
+					outcome: 'reported',
+					instruction: 'END YOUR TURN NOW. Do not keep working and do not call this again. The editor decides what happens next and restarts this chat in the next phase.',
+					editor_said: result.body,
+				}));
+			}
+			return text_result(header(project, { outcome: 'refused', editor_said: result.body, next: 'This chat has no phases - keep working normally.' }), true);
+		}
+		await sleep(1000);
+	}
+	rmSync(join(inbox, 'phases', `${id}.txt`), { force: true });
+	return text_result(header(project, { outcome: 'no_editor', error: 'no editor claimed this within 15s - either no editor is open on this project, or this chat was not started from the editor agent panel, so it has no phases. Keep working normally.' }), true);
 };
 
 const log_query = async (args) => {
@@ -771,10 +834,12 @@ const report_gap = async (args) => {
 	if (!need) {
 		return text_result(header(project, { error: 'pass `need`: what you were trying to find or do.' }), true);
 	}
+	const kind = args.kind === 'capability' ? 'capability' : 'lookup';
 	const id = new_id();
 	write_atomically(join(inbox, 'gaps'), id, [
 		`id ${id}`,
 		`agent ${agent}`,
+		`kind ${kind}`,
 		`need ${need.replace(/[\r\n\t]+/g, ' ')}`,
 		`tried ${String(args.tried ?? '').trim().replace(/[\r\n\t]+/g, ' ')}`,
 		`cwd ${windows_path(process.cwd())}`,
@@ -786,8 +851,76 @@ const report_gap = async (args) => {
 	return text_result(header(project, {
 		id,
 		outcome: 'recorded',
+		kind,
 		need,
-		next: 'Recorded. Carry on with Grep or Read - this does not block you and needs no answer.',
+		next: kind === 'capability'
+			? 'Recorded for the humans. This does not grant the capability and nothing will answer it - continue with what the phase does allow, and say in your phase summary what you could not determine.'
+			: 'Recorded. Carry on with Grep or Read - this does not block you and needs no answer.',
+	}));
+};
+
+const owned_by_tree = ['out', '.git'];
+
+const inside = (root, path) => {
+	const rel = relative(root, path);
+	return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel) ? rel.replaceAll('\\', '/') : undefined;
+};
+
+const delete_file = async (args) => {
+	const project = args.project ? windows_path(args.project) : project_of(process.cwd());
+	const requested = String(args.file_path ?? '').trim();
+	if (!requested) {
+		return text_result(header(project, { error: 'pass `file_path`: the file to delete.' }), true);
+	}
+	const path = windows_path(requested);
+	const roots = [project, engine_root].filter(Boolean);
+	const rel = roots.map((root) => inside(root, path)).find((found) => found !== undefined);
+	if (rel === undefined) {
+		return text_result(header(project, { file_path: path, error: 'outside the project and the engine tree; this tool only deletes source-tree files.', roots }), true);
+	}
+	if (owned_by_tree.includes(rel.split('/')[0])) {
+		return text_result(header(project, { file_path: path, error: `'${rel.split('/')[0]}/' is owned by the editor or git, not by chats.` }), true);
+	}
+
+	let stat;
+	try {
+		stat = lstatSync(path);
+	}
+	catch {
+		return text_result(header(project, { file_path: path, error: 'no such file.' }), true);
+	}
+	if (!stat.isFile()) {
+		return text_result(header(project, { file_path: path, error: 'not a regular file; directories and links are not deleted by this tool.' }), true);
+	}
+
+	let git_state;
+	try {
+		git_state = execFileSync('git', ['status', '--porcelain', '--ignored', '--', basename(path)], { cwd: dirname(path), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+	}
+	catch (error) {
+		return text_result(header(project, { file_path: path, error: `git could not vouch for this file, so a delete would not be recoverable: ${String(error?.stderr ?? error?.message ?? error).trim()}` }), true);
+	}
+	if (git_state) {
+		return text_result(header(project, {
+			file_path: path,
+			git_status: git_state.slice(0, 2),
+			error: 'only clean, committed files are deleted: this one is untracked, ignored, or has uncommitted changes, so git could not bring it back. Ask the user to delete it.',
+		}), true);
+	}
+
+	const text = readFileSync(path, 'utf8');
+	const declared = /^\s*(?:export\s+)?module\s+([\w.:]+)\s*;/m.exec(text)?.[1];
+	rmSync(path);
+
+	return text_result(header(project, {
+		file_path: path,
+		outcome: 'deleted',
+		bytes: stat.size,
+		lines: text.split('\n').length,
+		module: declared,
+		next: declared
+			? `It declared module '${declared}'. Remove every import of it before building: an importer you did not edit fails as an error that is not attributed to you.`
+			: undefined,
 	}));
 };
 
@@ -872,12 +1005,13 @@ const tools = {
 	},
 	gse_report_gap: {
 		description:
-			'Record that the GSE tools did not cover something you needed, then carry on. Call it when a lookup falls back to Grep, Read or a shell because no gse_* tool fits - not for a tool that exists and merely returned nothing, and not for an editor that is not running. Returns immediately: it is a note for the humans and the editor UI, not a request, so nothing waits on it and no answer comes back. `need` is what you were trying to find or do in one line; `tried` is what you used instead.',
+			'Record that your tools did not cover something you needed, then carry on. Two kinds. `kind: "lookup"` (the default) is when a lookup falls back to Grep, Read or a shell because no gse_* tool fits - not for a tool that exists and merely returned nothing. `kind: "capability"` is when the phase you are in withheld something the task genuinely needed: you could not run the exe to observe a failure, could not build to check a claim, could not edit to test a hypothesis. That is how the owner learns which restrictions are costing them evidence. Returns immediately and grants nothing - it is a note for the humans, not a request, so nothing waits on it and no answer comes back. Do not use it to argue for an exception or to stall: record it, continue with what the phase does allow, and say in your phase summary what you could not determine.',
 		schema: {
 			type: 'object',
 			properties: {
 				need: { type: 'string', description: 'What you were trying to find or do, in one line.' },
-				tried: { type: 'string', description: 'What you fell back to, e.g. "grep -rn over Engine/Source".' },
+				tried: { type: 'string', description: 'What you fell back to, e.g. "grep -rn over Engine/Source", or "reasoned from the existing log instead of reproducing".' },
+				kind: { type: 'string', description: '"lookup" (default) for a missing query tool, "capability" for something this phase denied you.' },
 				project: { type: 'string', description: 'Project directory; defaults to the nearest .gseproj above the current directory.' },
 			},
 			required: ['need'],
@@ -935,7 +1069,9 @@ const tools = {
 			type: 'object',
 			properties: {
 				target: { type: 'string', enum: ['game', 'editor'], description: 'game (default) builds the project; editor rebuilds the running editor, which relaunches itself.' },
-				run: { type: 'boolean', description: 'Launch a play session after a successful game build.' },
+				run: { type: 'boolean', description: 'Launch a play session after a successful game build. Like gse_run, it must be bounded: pass scenario, or seconds for a free run.' },
+				scenario: { type: 'string', description: 'With run: the scenario to launch afterwards. See gse_run.' },
+				seconds: { type: 'number', description: 'With run: bound a free run to this long. See gse_run.' },
 				profile: { type: 'string', description: 'Named build profile from the editor build row. Omit to build the editor\'s own configuration.' },
 				tree: { type: 'string', description: 'Build in a named worktree instead of the one you are in.' },
 				project: { type: 'string', description: 'Directory holding the .gseproj to address. Defaults to the nearest one above the current directory.' },
@@ -958,7 +1094,7 @@ const tools = {
 		run: package_sdk,
 	},
 	gse_build_status: {
-		description: 'What is queued in the editor build inbox and whether you are hibernating. Use instead of polling file timestamps.',
+		description: 'What is queued in the editor build inbox, and whether a hibernate request of yours is still undelivered. Use instead of polling file timestamps. It cannot see a hibernation the editor has already accepted - that state lives in the editor.',
 		schema: { type: 'object', properties: { project: { type: 'string' } } },
 		run: build_status,
 	},
@@ -971,6 +1107,40 @@ const tools = {
 			required: ['then'],
 		},
 		run: hibernate,
+	},
+	gse_run: {
+		description:
+			'Launch the existing game executable through the editor, without building it. Use it to observe real behaviour - a crash, a log, a startup failure - rather than reasoning about it from source. Every run must be bounded, so pass either `scenario` or `seconds`. A scenario is the form to reach for: it is a named script that settles the world, drives it through a fixed sequence on a fixed-step clock, and exits on its own with a profile, a percentile summary and a world-state hash - a launch with nobody at the keyboard otherwise just sits in an empty scene until something kills it. Read Sandbox/Sandbox/Source/Sandbox/Scenarios.cppm for the catalogue; a scenario run is hermetic, so it reads neither ini. `seconds` is the escape hatch for the two things a scenario cannot do: a crash during boot, and a bug that only appears under the owner\'s saved settings. It does NOT build: whatever is on disk is what runs, so if you have edited since the last build, call gse_build first or you will be watching stale code. If a build is already in flight your run waits for it and then starts the new executable, so you never race a half-written binary. `settings` applies setting overrides to this run only, as command-line arguments - nothing is written to the ini and the next run is unaffected, so this is how you turn on a diagnostic like validation for one reproduction. Returns once the game has been started, not when it exits; the game writes its own log, so read it afterwards with gse_log_query rather than waiting here. Only the game can be launched - the editor is the process answering you.',
+		schema: {
+			type: 'object',
+			properties: {
+				scenario: { type: 'string', description: 'Name of a scenario to run, e.g. "physics_stress" or "solver_showcase". The catalogue is the annotated declarations in Sandbox/Sandbox/Source/Sandbox/Scenarios.cppm. The scenario owns the scene, the frame budget and the solver, and ends the run itself. A name that is not in the catalogue exits immediately and writes no log, so take it from the file rather than guessing.' },
+				seconds: { type: 'number', description: 'Run the plain game this long, then shut it down cleanly. Only for what a scenario cannot reach: a boot crash, or a bug that needs the owner\'s saved settings. Ignored when scenario is given.' },
+				settings: {
+					type: 'array',
+					items: { type: 'string' },
+					description: 'Setting overrides for this run only, each "Section.key=value", e.g. "Graphics.validation_layers_enabled=true". Applied in memory; the ini is never touched. Entries not in Section.key=value form are dropped. A scenario pins its own declared settings ahead of these.',
+				},
+				tree: { type: 'string', description: 'Worktree name to run; defaults to the one owning your working directory.' },
+				project: { type: 'string', description: 'Project directory; defaults to the nearest .gseproj above the current directory.' },
+				wait: { type: 'number', description: 'Seconds to wait for an in-flight build before giving up and returning "deferred" (default 600).' },
+				timeout: { type: 'number', description: 'Seconds to wait for the editor overall (default 1800).' },
+			},
+		},
+		run: (args) => build(args, true),
+	},
+	gse_phase_done: {
+		description:
+			'Report that the current phase of your task is finished, and let the editor decide what follows. Call it as the last thing you do in a phase, then END YOUR TURN - the editor restarts this chat in the next phase, or holds for the owner\'s approval. Do not call it repeatedly within one turn, but if you are still in the same phase on a later turn you may report again with an updated summary; the owner approves through the editor, not through chat, so asking them to approve is not something you can do on their behalf. Scoping ends when the plan is agreed and nothing is left to decide; applying ends when the change is complete; reviewing ends when you have read the whole diff, and `findings` is how many real defects you found (0 settles the task, anything else sends it back to be fixed). Only chats started from the editor agent panel have phases.',
+		schema: {
+			type: 'object',
+			properties: {
+				summary: { type: 'string', description: 'What this phase concluded, for the owner and for the next phase. The plan when scoping, what changed when applying, the findings when reviewing.' },
+				findings: { type: 'number', description: 'Reviewing only: how many real defects you found. Omit or 0 means the change is sound and the task is settled.' },
+			},
+			required: ['summary'],
+		},
+		run: phase_done,
 	},
 	gse_log_query: {
 		description:
@@ -1009,7 +1179,7 @@ const handle = async (message) => {
 			capabilities: { tools: {} },
 			serverInfo: { name: 'gse', version: '0.1.0' },
 			instructions:
-				'GSE editor tools. Build with gse_build (never cmake/ninja/compilers). If it returns "deferred", call gse_hibernate and end your turn. Read logs with gse_log_query, not by opening the file. Look code up with gse_symbol_query before reading a source file to find a symbol. Delete files with gse_delete_file, not a shell.',
+				'GSE editor tools. Build with gse_build (never cmake/ninja/compilers). If it returns "deferred", call gse_hibernate and end your turn. Read logs with gse_log_query, not by opening the file. Look code up with gse_symbol_query before reading a source file to find a symbol. Delete files with gse_delete_file, not a shell. If your system prompt names a current phase, end that phase with gse_phase_done rather than simply stopping.',
 		});
 		return;
 	}

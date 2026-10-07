@@ -36,6 +36,7 @@ export namespace gse::ide::markdown {
 		std::vector<gui::text_span> spans;
 		std::vector<gui::text_block> blocks;
 		std::vector<gui::text_stop> stops;
+		std::vector<gui::text_rule> rules;
 	};
 
 	struct theme {
@@ -44,6 +45,20 @@ export namespace gse::ide::markdown {
 		float font_size = 0.f;
 		float content_width = 0.f;
 	};
+
+	struct table_cell_row {
+		rendered_line text;
+		std::vector<std::uint32_t> starts;
+	};
+
+	struct table_plan {
+		std::vector<table_cell_row> rows;
+		std::vector<float> column_x;
+		float width = 0.f;
+		std::size_t header_rows = 0;
+	};
+
+	constexpr float rule_thickness = 1.f;
 
 	auto heading_scale(
 		std::size_t level
@@ -63,6 +78,19 @@ export namespace gse::ide::markdown {
 		rendered_line& out
 	) -> void;
 
+	auto measure(
+		const rendered_line& text,
+		const theme& look,
+		family group,
+		const vec4f& fallback
+	) -> float;
+
+	auto plan_table(
+		std::span<const std::string_view> lines,
+		const theme& look,
+		family group
+	) -> table_plan;
+
 	auto render_document(
 		std::string_view source,
 		const theme& look
@@ -71,7 +99,6 @@ export namespace gse::ide::markdown {
 
 namespace gse::ide::markdown {
 	constexpr std::size_t table_cell_gap = 2;
-	constexpr std::string_view rule_glyph = "─";
 
 	auto bullet_for(
 		std::string_view marker
@@ -82,12 +109,6 @@ namespace gse::ide::markdown {
 		std::vector<run>& scratch,
 		std::vector<rendered_line>& out
 	) -> void;
-
-	auto measure(
-		const rendered_line& text,
-		const theme& look,
-		const vec4f& fallback
-	) -> float;
 
 	auto push_spans(
 		rendered_document& doc,
@@ -197,15 +218,16 @@ auto gse::ide::markdown::render_cells(const std::string_view line, std::vector<r
 	}
 }
 
-auto gse::ide::markdown::measure(const rendered_line& text, const theme& look, const vec4f& fallback) -> float {
+auto gse::ide::markdown::measure(const rendered_line& text, const theme& look, const family group, const vec4f& fallback) -> float {
 	float width = 0.f;
 	std::size_t written = 0;
 	auto advance = [&](const std::size_t from, const std::size_t to, const kind tone) {
 		if (to <= from) {
 			return;
 		}
-		const display_style shown = style_of(tone, family::proportional, look.sty, fallback);
-		const auto face = look.fonts.face(shown.face, look.fonts.text).resolve();
+		const display_style shown = style_of(tone, group, look.sty, fallback);
+		const auto inherited = group == family::monospace ? look.fonts.code : look.fonts.text;
+		const auto face = look.fonts.face(shown.face, inherited).resolve();
 		width += face->width(std::string_view(text.text).substr(from, to - from), look.font_size * shown.scale);
 	};
 
@@ -216,6 +238,63 @@ auto gse::ide::markdown::measure(const rendered_line& text, const theme& look, c
 	}
 	advance(written, text.text.size(), kind::body);
 	return width;
+}
+
+auto gse::ide::markdown::plan_table(const std::span<const std::string_view> lines, const theme& look, const family group) -> table_plan {
+	table_plan plan;
+	std::vector<run> scratch;
+	std::vector<rendered_line> cells;
+	std::vector<float> widths;
+	bool delimited = false;
+
+	for (const std::string_view line : lines) {
+		if (delimiter_row(line)) {
+			if (!delimited) {
+				plan.header_rows = plan.rows.size();
+				delimited = true;
+			}
+			continue;
+		}
+
+		render_cells(line, scratch, cells);
+		if (cells.empty()) {
+			cells.push_back({ .text = std::string(trim(line)) });
+		}
+		widths.resize(std::max(widths.size(), cells.size()), 0.f);
+
+		table_cell_row row;
+		for (const auto [index, cell] : std::views::enumerate(cells)) {
+			widths[index] = std::max(widths[index], measure(cell, look, group, look.sty.color_text));
+			if (index > 0) {
+				row.text.text += ' ';
+			}
+			const std::size_t offset = row.text.text.size();
+			row.starts.push_back(static_cast<std::uint32_t>(offset));
+			row.text.text += cell.text;
+			for (const rendered_run& r : cell.runs) {
+				row.text.runs.push_back({
+					.start = offset + r.start,
+					.end = offset + r.end,
+					.tone = r.tone,
+				});
+			}
+		}
+		plan.rows.push_back(std::move(row));
+	}
+
+	const auto inherited = group == family::monospace ? look.fonts.code : look.fonts.text;
+	const auto body_face = inherited.resolve();
+	const float gap = body_face->width(" ", look.font_size) * static_cast<float>(table_cell_gap);
+
+	plan.column_x.reserve(widths.size());
+	float x = 0.f;
+	for (const float width : widths) {
+		plan.column_x.push_back(x);
+		x += width + gap;
+	}
+	plan.width = std::max(0.f, x - gap);
+
+	return plan;
 }
 
 auto gse::ide::markdown::push_spans(rendered_document& doc, const rendered_line& text, const std::uint32_t index, const theme& look, const display_style& base) -> void {
@@ -239,11 +318,6 @@ auto gse::ide::markdown::render_document(const std::string_view source, const th
 	rendered_document doc;
 	std::vector<run> scratch;
 	rendered_line rendered;
-	std::vector<rendered_line> cells;
-
-	const auto body_face = look.fonts.text.resolve();
-	const float space = body_face->width(" ", look.font_size);
-	const float rule_width = body_face->width(rule_glyph, look.font_size);
 
 	auto emit = [&doc](std::string text) -> std::uint32_t {
 		const auto index = static_cast<std::uint32_t>(doc.buffer.lines.size());
@@ -284,56 +358,34 @@ auto gse::ide::markdown::render_document(const std::string_view source, const th
 
 		if (info.shape == block::table_row || info.shape == block::table_delimiter) {
 			std::size_t last = i;
-			std::vector<std::vector<rendered_line>> rows;
-			std::vector<float> widths;
 			while (last < lines.size()
 				&& (classified[last].shape == block::table_row || classified[last].shape == block::table_delimiter)) {
-				if (classified[last].shape == block::table_delimiter) {
-					++last;
-					continue;
-				}
-				render_cells(lines[last], scratch, cells);
-				widths.resize(std::max(widths.size(), cells.size()), 0.f);
-				for (std::size_t c = 0; c < cells.size(); ++c) {
-					widths[c] = std::max(widths[c], measure(cells[c], look, look.sty.color_text));
-				}
-				rows.push_back(std::move(cells));
 				++last;
 			}
 
-			for (std::vector<rendered_line>& row : rows) {
-				rendered.text.clear();
-				rendered.runs.clear();
-				std::vector<std::uint32_t> starts;
-				for (const rendered_line& cell : row) {
-					if (!rendered.text.empty()) {
-						rendered.text += ' ';
-					}
-					const std::size_t offset = rendered.text.size();
-					starts.push_back(static_cast<std::uint32_t>(offset));
-					rendered.text += cell.text;
-					for (const rendered_run& r : cell.runs) {
-						rendered.runs.push_back({
-							.start = offset + r.start,
-							.end = offset + r.end,
-							.tone = r.tone,
-						});
-					}
-				}
-
-				const std::uint32_t index = emit(rendered.text);
-				push_spans(doc, rendered, index, look, {
+			const table_plan plan = plan_table(std::span(lines).subspan(i, last - i), look, family::proportional);
+			for (const auto [row_index, row] : std::views::enumerate(plan.rows)) {
+				const std::uint32_t index = emit(row.text.text);
+				push_spans(doc, row.text, index, look, {
 					.color = look.sty.color_text,
 				});
 
-				float x = 0.f;
-				for (std::size_t c = 0; c < starts.size(); ++c) {
+				for (const auto [column, start] : std::views::enumerate(row.starts)) {
 					doc.stops.push_back({
 						.line = index,
-						.column = starts[c],
-						.x = x,
+						.column = start,
+						.x = plan.column_x[column],
 					});
-					x += widths[c] + space * static_cast<float>(table_cell_gap);
+				}
+
+				if (plan.header_rows > 0 && static_cast<std::size_t>(row_index) + 1 == plan.header_rows) {
+					doc.rules.push_back({
+						.line = index,
+						.x1 = plan.width,
+						.y = 1.f,
+						.thickness = rule_thickness,
+						.color = look.sty.color_border,
+					});
 				}
 			}
 
@@ -342,21 +394,12 @@ auto gse::ide::markdown::render_document(const std::string_view source, const th
 		}
 
 		if (info.shape == block::rule) {
-			const auto glyphs = rule_width > 0.f
-				? static_cast<std::size_t>(std::max(1.f, look.content_width / rule_width))
-				: std::size_t{ 1 };
-			std::string bar;
-			bar.reserve(glyphs * rule_glyph.size());
-			for (std::size_t k = 0; k < glyphs; ++k) {
-				bar += rule_glyph;
-			}
-			const std::uint32_t index = emit(bar);
-			doc.spans.push_back({
+			const std::uint32_t index = emit({});
+			doc.rules.push_back({
 				.line = index,
-				.start_col = 0,
-				.end_col = static_cast<std::uint32_t>(doc.buffer.lines[index].size()),
+				.x1 = look.content_width,
+				.thickness = rule_thickness,
 				.color = look.sty.color_border,
-				.face = gui::text_face::text,
 			});
 			++i;
 			continue;

@@ -22,6 +22,7 @@ export import gse.meta;
 export import gse.network;
 export import gse.physics;
 export import gse.os;
+export import gse.process;
 export import gse.runtime;
 export import gse.save;
 export import gse.sdk;

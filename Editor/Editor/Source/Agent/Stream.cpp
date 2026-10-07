@@ -84,43 +84,30 @@ auto gse::ide::agent::read_file_bytes(const std::filesystem::path& path) -> std:
 	return bytes;
 }
 
-auto gse::ide::agent::lowered_extension(const std::filesystem::path& path) -> std::string {
-	std::string extension = path.extension().display_string();
-	std::ranges::transform(extension, extension.begin(), [](const char ch) {
-		return static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-	});
-	return extension;
-}
-
-auto gse::ide::agent::sendable_encoding(const std::filesystem::path& path) -> bool {
-	const std::string extension = lowered_extension(path);
-	return extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".gif" || extension == ".webp";
-}
-
-auto gse::ide::agent::media_type_for(const std::filesystem::path& path) -> std::string_view {
-	const std::string extension = lowered_extension(path);
-	if (extension == ".jpg" || extension == ".jpeg") {
-		return "image/jpeg";
-	}
-	if (extension == ".gif") {
-		return "image/gif";
-	}
-	if (extension == ".webp") {
-		return "image/webp";
+auto gse::ide::agent::media_type_for(const gui::image_encoding encoding) -> std::string_view {
+	switch (encoding) {
+		case gui::image_encoding::png:
+			return "image/png";
+		case gui::image_encoding::jpeg:
+			return "image/jpeg";
+		case gui::image_encoding::gif:
+			return "image/gif";
+		case gui::image_encoding::webp:
+			return "image/webp";
 	}
 	return "image/png";
 }
 
-auto gse::ide::agent::user_message(const std::string_view prompt, const std::span<const attachment> attachments) -> std::string {
+auto gse::ide::agent::user_message(const std::string_view prompt, const std::span<const gui::image_attachment> attachments) -> std::string {
 	std::string out = R"({"type":"user","message":{"role":"user","content":[)";
 
-	for (const attachment& a : attachments) {
+	for (const gui::image_attachment& a : attachments) {
 		const std::string encoded = encode_base64(read_file_bytes(a.path));
 		if (encoded.empty()) {
 			continue;
 		}
 		out += R"({"type":"image","source":{"type":"base64","media_type":")";
-		out += media_type_for(a.path);
+		out += media_type_for(a.encoding);
 		out += R"(","data":")";
 		out += encoded;
 		out += R"("}},)";
@@ -231,6 +218,11 @@ auto gse::ide::agent::tool_row(const analysis::json::value& block) -> transcript
 		return row;
 	}
 
+	if (name == "Grep" || name == "Glob") {
+		row.detail = std::string(string_at(*input, "pattern"));
+		return row;
+	}
+
 	return row;
 }
 
@@ -284,14 +276,14 @@ auto gse::ide::agent::record_tool_output(const analysis::json::value& message, s
 		const analysis::json::value* body = block.find("content");
 		byte_count size;
 		if (body && body->type == analysis::json::value::kind::string) {
-			size = byte_count(body->as_string().size());
+			size = byte_count::from<bytes>(body->as_string().size());
 		}
 		else if (body && body->is_array()) {
 			for (const analysis::json::value& part : body->children) {
-				size += byte_count(string_at(part, "text").size());
+				size += byte_count::from<bytes>(string_at(part, "text").size());
 			}
 		}
-		if (size <= byte_count(0)) {
+		if (size <= bytes(0.)) {
 			continue;
 		}
 
@@ -594,17 +586,39 @@ auto gse::ide::agent::user_rows(const analysis::json::value& event) -> std::vect
 	return out;
 }
 
-auto gse::ide::agent::tool_action(const transcript_row& row) -> std::string {
+auto gse::ide::agent::tool_subject(const transcript_row& row) -> std::string {
 	constexpr std::size_t subject_limit = 48;
 
 	std::string_view subject = row.detail;
 	if (const std::size_t newline = subject.find('\n'); newline != std::string_view::npos) {
 		subject = subject.substr(0, newline);
 	}
-	if (subject.empty()) {
-		return row.text;
-	}
 	return subject.size() > subject_limit
-		? std::format("{} {}...", row.text, subject.substr(0, subject_limit))
-		: std::format("{} {}", row.text, subject);
+		? std::format("{}...", subject.substr(0, subject_limit))
+		: std::string(subject);
+}
+
+auto gse::ide::agent::tool_action(const transcript_row& row) -> std::string {
+	const std::string subject = tool_subject(row);
+	return subject.empty() ? row.text : std::format("{} {}", row.text, subject);
+}
+
+auto gse::ide::agent::tool_kind_of(const std::string_view name) -> tool_kind {
+	for (const tool_kind kind : enum_values<tool_kind>()) {
+		if (name == annotation_from_enum<tool_flavor>(kind, {}).match) {
+			return kind;
+		}
+	}
+	return tool_kind::other;
+}
+
+auto gse::ide::agent::action_phrase(const transcript_row& row) -> std::string {
+	const tool_flavor flavor = annotation_from_enum<tool_flavor>(tool_kind_of(row.text), {});
+	const std::string_view verb = flavor.verb;
+	if (verb.empty()) {
+		return tool_action(row);
+	}
+
+	const std::string subject = tool_subject(row);
+	return subject.empty() ? std::string(verb) : std::format("{} {}", verb, subject);
 }

@@ -18,6 +18,7 @@ namespace gse::ide::agent {
 	constexpr std::string_view mcp_tool_prefix = "mcp__";
 
 	struct transcript_metrics {
+		const gui::font_set& fonts;
 		const font& face;
 		const font& body;
 		float width = 0.f;
@@ -92,16 +93,20 @@ namespace gse::ide::agent {
 		std::size_t first
 	) -> std::size_t;
 
-	auto align_table(
-		std::span<const std::string> rows
-	) -> std::vector<std::string>;
+	auto push_table(
+		transcript_view& v,
+		const gui::style& sty,
+		std::span<const std::string_view> rows,
+		const transcript_metrics& metrics,
+		transcript_cursor& cursor
+	) -> void;
 
 	auto trailing_blank(
-		const session& s
+		const transcript_view& v
 	) -> bool;
 
 	auto push_gap(
-		session& s,
+		transcript_view& v,
 		const transcript_cursor& cursor
 	) -> void;
 
@@ -127,14 +132,14 @@ namespace gse::ide::agent {
 	) -> void;
 
 	auto push_markup_line(
-		session& s,
+		transcript_view& v,
 		const markup_line& parsed,
 		const transcript_metrics& metrics,
 		transcript_cursor& cursor
 	) -> void;
 
 	auto push_code_block(
-		session& s,
+		transcript_view& v,
 		std::span<const std::string> body,
 		const markdown::display_style& base,
 		const transcript_metrics& metrics,
@@ -142,7 +147,7 @@ namespace gse::ide::agent {
 	) -> void;
 
 	auto push_transcript_line(
-		session& s,
+		transcript_view& v,
 		const gui::style& sty,
 		const transcript_line& line,
 		const transcript_metrics& metrics
@@ -168,24 +173,24 @@ namespace gse::ide::agent {
 	) -> std::uint32_t;
 
 	auto diff_view_for(
-		session& s,
+		transcript_view& v,
 		std::uint32_t row
 	) -> diff_view&;
 
 	auto relayout_from(
-		session& s,
+		transcript_view& v,
 		std::uint32_t row
 	) -> void;
 
-	auto draw_diff_bars(
+	auto update_diff_scroll(
 		const gui::draw_context& ctx,
-		session& s,
+		transcript_view& v,
 		const rectf& area,
 		float advance
-	) -> void;
+	) -> std::optional<std::uint32_t>;
 
 	auto push_diff_line(
-		session& s,
+		transcript_view& v,
 		const gui::style& sty,
 		std::uint32_t index,
 		const diff_layout& layout,
@@ -193,7 +198,7 @@ namespace gse::ide::agent {
 	) -> void;
 
 	auto push_diff_side(
-		session& s,
+		transcript_view& v,
 		const gui::style& sty,
 		diff_view& view,
 		std::span<const std::string> lines,
@@ -204,7 +209,7 @@ namespace gse::ide::agent {
 	) -> void;
 
 	auto push_diff(
-		session& s,
+		transcript_view& v,
 		const gui::style& sty,
 		transcript_row& row,
 		std::uint32_t index,
@@ -229,7 +234,7 @@ namespace gse::ide::agent {
 	) -> std::string;
 
 	auto group_at(
-		const session& s,
+		const transcript_view& v,
 		std::uint32_t line
 	) -> const group_marker*;
 
@@ -238,7 +243,7 @@ namespace gse::ide::agent {
 	) -> bool;
 
 	auto after_bubble(
-		const session& s
+		const transcript_view& v
 	) -> bool;
 
 	auto chat_bubble(
@@ -249,7 +254,7 @@ namespace gse::ide::agent {
 	) -> gui::text_block;
 
 	auto link_at(
-		const session& s,
+		const transcript_view& v,
 		std::uint32_t line
 	) -> const link_marker*;
 
@@ -260,21 +265,23 @@ namespace gse::ide::agent {
 
 	auto toggle_marker(
 		session& s,
+		transcript_view& v,
 		const group_marker& marker
 	) -> void;
 
 	auto marker_at(
-		const session& s,
+		const transcript_view& v,
 		std::uint32_t line
 	) -> const group_marker*;
 
 	auto truncate_transcript(
-		session& s,
+		transcript_view& v,
 		std::uint32_t line
 	) -> void;
 
 	auto push_row(
 		session& s,
+		transcript_view& v,
 		const gui::style& sty,
 		transcript_row& row,
 		std::uint32_t index,
@@ -283,7 +290,21 @@ namespace gse::ide::agent {
 
 	auto sync_transcript(
 		session& s,
+		transcript_view& v,
 		const gui::style& sty,
 		const transcript_metrics& metrics
 	) -> void;
+
+	auto shows(
+		row_filter filter,
+		const transcript_row& row
+	) -> bool;
+
+	auto reset_view(
+		transcript_view& v
+	) -> void;
+
+	auto views_of(
+		session& s
+	) -> std::array<transcript_view*, 3>;
 }

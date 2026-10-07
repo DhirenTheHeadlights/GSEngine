@@ -24,6 +24,7 @@ auto gse::gui::menu_to_data(const menu& item, const vec2f viewport_size, const f
 		},
 		.docked_to = item.docked_to,
 		.dock_split_ratio = item.dock_split_ratio,
+		.zoom = item.zoom,
 		.active_tab_index = item.active_tab_index,
 		.tab_visible_rows = std::max(1u, item.tab_bar.visible_rows),
 		.tab_tags = item.tab_contents,
@@ -117,6 +118,7 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
 
 		new_menu.docked_to = data.docked_to;
 		new_menu.dock_split_ratio = data.dock_split_ratio;
+		new_menu.zoom = std::clamp(data.zoom, min_menu_zoom, max_menu_zoom);
 		new_menu.tab_contents = data.tab_tags;
 		new_menu.tab_bar.visible_rows = std::max(1u, data.tab_visible_rows);
 

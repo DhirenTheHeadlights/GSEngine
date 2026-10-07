@@ -39,12 +39,6 @@ namespace gse::ide::agent {
 		std::string_view text
 	) -> void;
 
-	auto attach_image(
-		data& d,
-		shared_view<asset::data> assets,
-		window::clipboard_image pasted
-	) -> void;
-
 	auto agent_context_tag() -> id;
 
 	auto local_time_label(
@@ -104,14 +98,44 @@ namespace gse::ide::agent {
 		const rectf& body
 	) -> void;
 
+	auto draw_new_chat_prompt(
+		gui::builder& ui,
+		data& d,
+		const rectf& body
+	) -> void;
+
+	auto draw_transcript_hint(
+		const gui::draw_context& ctx,
+		const std::string& hint,
+		const rectf& area
+	) -> void;
+
 	auto draw_transcript(
 		gui::builder& ui,
 		data& d,
+		transcript_view& v,
 		const rectf& area,
 		channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out
 	) -> void;
 
-	auto draw_attachments(
+	auto shown_view(
+		session& s
+	) -> transcript_view&;
+
+	auto draw_view_toggles(
+		gui::builder& ui,
+		session& s,
+		const rectf& area
+	) -> float;
+
+	auto draw_phase_pipeline(
+		const gui::draw_context& ctx,
+		const session& s,
+		const rectf& area,
+		const rectf& clip
+	) -> float;
+
+	auto draw_phase(
 		gui::builder& ui,
 		session& s,
 		const rectf& area
@@ -124,10 +148,15 @@ namespace gse::ide::agent {
 		const rectf& effort_rect
 	) -> void;
 
+	struct input_layout {
+		rectf area;
+		rectf body;
+	};
+
 	auto draw_input(
 		gui::builder& ui,
 		session& s,
-		const rectf& area
+		const input_layout& layout
 	) -> void;
 
 	auto context_window_for(
@@ -148,6 +177,14 @@ namespace gse::ide::agent {
 		const data& d,
 		const session& s
 	) -> std::string;
+
+	auto draw_activity_line(
+		const gui::draw_context& ctx,
+		const data& d,
+		const session& s,
+		const rectf& area,
+		const rectf& clip
+	) -> void;
 
 	auto draw_activity(
 		const gui::draw_context& ctx,

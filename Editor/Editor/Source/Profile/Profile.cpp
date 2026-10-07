@@ -710,13 +710,12 @@ auto gse::ide::draw_history_strip(const gui::draw_context& ctx, const rectf& rec
 
 	const time_t<double> budget = milliseconds(1000.0 / 60.0);
 
-	if (ctx.hovers(rect) && !ctx.is_scroll_consumed()) {
-		const vec2f wheel = ctx.scroll_delta();
+	if (ctx.hovers(rect)) {
+		const vec2f wheel = ctx.scroll_delta_for(rect, gui::scroll_axis_kind::vertical);
 		if (std::abs(wheel.y()) > 0.001f) {
 			const std::size_t shown = state.strip_visible == 0 ? frames.size() : state.strip_visible;
 			const double scaled = static_cast<double>(shown) * (wheel.y() > 0.f ? 0.8 : 1.25);
 			state.strip_visible = std::clamp(static_cast<std::size_t>(scaled + 0.5), min_strip_frames, frames.size());
-			ctx.consume_scroll();
 		}
 	}
 

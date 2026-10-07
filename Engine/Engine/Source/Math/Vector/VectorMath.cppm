@@ -212,7 +212,7 @@ constexpr auto gse::dot(const V1& lhs, const V2& rhs) {
 	if constexpr (scale != 1.0f) {
 		sum *= scale;
 	}
-	return result_type(sum);
+	return internal::from_storage<result_type>(sum);
 }
 
 template <gse::is_vec V>
@@ -224,7 +224,7 @@ constexpr auto gse::magnitude(const V& v) {
 	if constexpr (scale != 1.0f) {
 		m *= scale;
 	}
-	return typename V::value_type(m);
+	return internal::from_storage<typename V::value_type>(m);
 }
 
 template <gse::is_vec V>
@@ -299,7 +299,7 @@ constexpr auto gse::angle_between(const V1& a, const V2& b) -> angle_t<typename 
 	const auto ma_val = internal::to_storage(magnitude(a));
 	const auto mb_val = internal::to_storage(magnitude(b));
 	if (ma_val == 0 || mb_val == 0) {
-		return angle_t<storage_type>(storage_type(0));
+		return angle_t<storage_type>{};
 	}
 
 	constexpr float scale = internal::vec_unit_scale_v<typename V1::value_type> * internal::vec_unit_scale_v<typename V2::value_type>;

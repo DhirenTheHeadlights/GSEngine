@@ -18,7 +18,9 @@ export namespace gse::settings {
 	enum class override_op : std::uint8_t {
 		release_override,
 		stage_value,
-		clear_staged
+		clear_staged,
+		persist,
+		restart
 	};
 
 	struct override_request {

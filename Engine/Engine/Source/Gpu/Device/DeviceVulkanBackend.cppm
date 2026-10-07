@@ -95,11 +95,11 @@ export namespace gse::gpu {
 			std::uint32_t frame_index
 		) const -> command_buffer_handle;
 
-		auto submit(
+		[[nodiscard]] auto submit(
 			queue_type queue_type,
 			const submit_info& info,
 			gpu::handle<fence> signal_fence
-		) -> void;
+		) -> result;
 
 		[[nodiscard]] auto present(
 			const present_info& info
@@ -529,8 +529,8 @@ auto gse::gpu::vulkan_device_backend::frame_command_buffer(const queue_type queu
 	return command.frame_command_buffer(queue_type, frame_index);
 }
 
-auto gse::gpu::vulkan_device_backend::submit(const queue_type queue_type, const submit_info& info, const gpu::handle<fence> signal_fence) -> void {
-	queue.submit(queue_type, info, signal_fence);
+auto gse::gpu::vulkan_device_backend::submit(const queue_type queue_type, const submit_info& info, const gpu::handle<fence> signal_fence) -> result {
+	return queue.submit(queue_type, info, signal_fence);
 }
 
 auto gse::gpu::vulkan_device_backend::present(const present_info& info) -> result {
@@ -721,7 +721,7 @@ auto gse::gpu::vulkan_device_backend::recreate_surface(const window::window_surf
 	device_config.wait_idle();
 	device_config.destroy_swapchain(current_swapchain);
 	instance.destroy_surface();
-	instance.create_surface(win);
+	instance.create_surface(win.handle);
 	return instance.surface();
 }
 
@@ -866,7 +866,7 @@ auto gse::gpu::create_vulkan_device_backend(const std::optional<shared_view<wind
 
 	auto instance = vulkan::instance::create(win ? vulkan::instance::required_window_extensions() : std::span<const char* const>{}, validation_layers_enabled);
 	if (win) {
-		instance.create_surface(*win);
+		instance.create_surface(win->primary.handle);
 	}
 
 	auto created = vulkan::device::create(instance, cfg, aftermath_tracker);

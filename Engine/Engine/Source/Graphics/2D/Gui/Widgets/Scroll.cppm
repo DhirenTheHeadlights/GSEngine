@@ -273,12 +273,20 @@ auto gse::gui::scroll_area(const draw_context& ctx, scroll_state& state, const r
 	const float max_y = std::max(0.f, content_size.y() - visible_h);
 	const float max_x = std::max(0.f, content_size.x() - visible_w);
 
-	const vec2f wheel = ctx.scroll_delta_for(visible_rect);
 	const bool shift = ctx.key_held(key::left_shift) || ctx.key_held(key::right_shift);
 	const bool redirect = shift && max_x > 0.f;
 
+	scroll_axes axes;
+	if (max_x > 0.f) {
+		axes.set(scroll_axis_kind::horizontal);
+	}
+	if (max_y > 0.f || redirect) {
+		axes.set(scroll_axis_kind::vertical);
+	}
+	const vec2f wheel = ctx.scroll_delta_for(visible_rect, axes);
+
 	const bool in_region = visible_rect.contains(ctx.mouse_position());
-	const bool can_scroll = max_x > 0.f || max_y > 0.f;
+	const bool can_scroll = config.middle_click_auto_scroll && (max_x > 0.f || max_y > 0.f);
 	if (can_scroll && ctx.mouse_pressed_for(visible_rect, mouse_button::button_3)) {
 		state.auto_scroll_active = !state.auto_scroll_active;
 		state.auto_scroll_anchor = ctx.mouse_position();

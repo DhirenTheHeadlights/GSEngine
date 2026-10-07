@@ -93,6 +93,12 @@ export namespace gse::log_settings {
 		]]
 		log::level physics_level = log::level::info;
 
+		[[
+			= settings::describe<"Minimum level for test runner messages.">{},
+			= settings::hot_reloadable
+		]]
+		log::level test_level = log::level::info;
+
 		log::level m_last_global_level = log::level::debug;
 	};
 

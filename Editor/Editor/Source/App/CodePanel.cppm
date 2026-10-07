@@ -1424,7 +1424,7 @@ auto gse::ide::update_diagnostics(context& ctx, const channel_read<analysis::dia
 			&& !doc.path.empty()
 			&& doc.diag_dirty
 			&& doc.persistence != document_persistence::conflicted
-			&& (!doc.edit_clock || doc.edit_clock->elapsed() > milliseconds(500));
+			&& (!doc.edit_clock || doc.edit_clock->elapsed() > milliseconds(500.f));
 	};
 
 	auto candidate = ws.documents.end();
@@ -2017,7 +2017,7 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 	syntax_producer::poll(doc.syntax, doc.revision);
 
 	if (doc.language != document_language::plain && doc.highlight_dirty && !doc.syntax.pending.active()
-		&& (!doc.edit_clock || doc.edit_clock->elapsed() > milliseconds(120))) {
+		&& (!doc.edit_clock || doc.edit_clock->elapsed() > milliseconds(120.f))) {
 		syntax_producer::rebuild(doc.syntax, doc.buffer, doc.revision, doc.language);
 		doc.highlight_dirty = false;
 	}
@@ -2541,7 +2541,7 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 				continue;
 			}
 			if (draw_hover_panel(ctx, text_rect, hv, ctx.current_z_order + 1 + static_cast<std::uint32_t>(i), static_cast<int>(i) == scroll_owner) && !hv.url.empty()) {
-				analysis::process::open_url(hv.url);
+				process::open_url(hv.url);
 			}
 		}
 	}
@@ -2557,6 +2557,7 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 			.spans = doc.rendered.content.spans,
 			.blocks = doc.rendered.content.blocks,
 			.stops = doc.rendered.content.stops,
+			.rules = doc.rendered.content.rules,
 			.rect = text_rect,
 			.read_only = true,
 			.indent_width = display_tab_width,

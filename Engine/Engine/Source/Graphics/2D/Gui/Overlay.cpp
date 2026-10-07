@@ -40,7 +40,7 @@ auto gse::gui::apply_builtin_menu_action(viewport_state& vp, const std::uint32_t
 
 	if (cm.tag == text_copy_menu_tag()) {
 		if (static_cast<text_edit_action>(action_id) == text_edit_action::copy) {
-			window::set_clipboard_text(vp.text_selection.menu_text);
+			clipboard::set_text(vp.text_selection.menu_text);
 		}
 		return true;
 	}

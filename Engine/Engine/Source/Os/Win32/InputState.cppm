@@ -127,6 +127,10 @@ export namespace gse::input {
 			const state& other
 		) -> void;
 
+		auto release_all_held(
+			const detail::input_state_token& token
+		) -> void;
+
 	private:
 		std::vector<key> m_keys_held;
 		std::vector<key> m_keys_pressed_this_frame;
@@ -223,12 +227,13 @@ auto gse::input::state::begin_frame(const detail::input_state_token&) -> void {
 }
 
 auto gse::input::state::on_key_pressed(const key key, const detail::input_state_token&) -> void {
+	if (std::ranges::contains(m_keys_held, key)) {
+		return;
+	}
 	if (!std::ranges::contains(m_keys_pressed_this_frame, key)) {
 		m_keys_pressed_this_frame.push_back(key);
 	}
-	if (!std::ranges::contains(m_keys_held, key)) {
-		m_keys_held.push_back(key);
-	}
+	m_keys_held.push_back(key);
 }
 
 auto gse::input::state::on_key_released(const key key, const detail::input_state_token&) -> void {
@@ -239,12 +244,13 @@ auto gse::input::state::on_key_released(const key key, const detail::input_state
 }
 
 auto gse::input::state::on_mouse_button_pressed(const mouse_button button, const detail::input_state_token&) -> void {
+	if (std::ranges::contains(m_mouse_buttons_held, button)) {
+		return;
+	}
 	if (!std::ranges::contains(m_mouse_buttons_pressed_this_frame, button)) {
 		m_mouse_buttons_pressed_this_frame.push_back(button);
 	}
-	if (!std::ranges::contains(m_mouse_buttons_held, button)) {
-		m_mouse_buttons_held.push_back(button);
-	}
+	m_mouse_buttons_held.push_back(button);
 }
 
 auto gse::input::state::on_mouse_button_released(const mouse_button button, const detail::input_state_token&) -> void {
@@ -252,6 +258,15 @@ auto gse::input::state::on_mouse_button_released(const mouse_button button, cons
 		m_mouse_buttons_released_this_frame.push_back(button);
 	}
 	std::erase(m_mouse_buttons_held, button);
+}
+
+auto gse::input::state::release_all_held(const detail::input_state_token& token) -> void {
+	for (const key held : std::vector(m_keys_held)) {
+		on_key_released(held, token);
+	}
+	for (const mouse_button held : std::vector(m_mouse_buttons_held)) {
+		on_mouse_button_released(held, token);
+	}
 }
 
 auto gse::input::state::on_mouse_moved(const float x, const float y, const detail::input_state_token&) -> void {

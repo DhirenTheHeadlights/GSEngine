@@ -11,7 +11,9 @@ import gse.ide.config;
 
 import :blame;
 import :chats;
+import :layout;
 import :model;
+import :phase;
 import :session;
 import :stream;
 
@@ -132,7 +134,13 @@ auto gse::ide::agent::discard_handoff(const handoff& adopted) -> void {
 }
 
 auto gse::ide::agent::attach_runtime(session& s) -> void {
-	s.log_id = generate_temp_id(hash_combine(stable_id("agent_log"), s.id));
+	s.digest.filter = row_filter::digest;
+	s.full.filter = row_filter::all;
+	s.changes.filter = row_filter::changes;
+
+	for (transcript_view* v : views_of(s)) {
+		v->log_id = generate_temp_id(hash_combine(stable_id("agent_log"), hash_combine(s.id, static_cast<std::uint32_t>(v->filter))));
+	}
 }
 
 auto gse::ide::agent::inherited_handoffs() -> std::vector<handoff> {
@@ -233,13 +241,17 @@ auto gse::ide::agent::hand_off_session(session& s) -> bool {
 	return true;
 }
 
-auto gse::ide::agent::create_session(data& d, const std::filesystem::path& cwd) -> session& {
+auto gse::ide::agent::create_session(data& d, const std::filesystem::path& cwd, const task_phase starting) -> session& {
 	const std::uint32_t session_id = ++d.next_id;
 	d.sessions.push_back({
 		.id = session_id,
 		.name = std::format("Agent {}", session_id),
 		.cwd = cwd.empty() ? config::primary().project_root : cwd,
 		.hydrated = true,
+		.runs = { {
+			.phase = starting,
+			.started = unix_now(),
+		} },
 		.model_id = d.default_model.value,
 		.requested_effort = d.default_effort,
 	});
@@ -248,8 +260,18 @@ auto gse::ide::agent::create_session(data& d, const std::filesystem::path& cwd) 
 	return d.sessions.back();
 }
 
-auto gse::ide::agent::session_command(const session& s) -> std::wstring {
+auto gse::ide::agent::session_command(const session& s, const std::filesystem::path& prompt) -> std::wstring {
 	std::wstring command(agent_command.begin(), agent_command.end());
+
+	if (policy_of(current_phase(s)).read_only) {
+		command.append(read_only_denied_tools.begin(), read_only_denied_tools.end());
+	}
+
+	if (!prompt.empty()) {
+		command += L" --append-system-prompt-file \"";
+		command += prompt.wstring();
+		command += L'"';
+	}
 
 	if (!s.model_id.empty()) {
 		command += L" --model ";
@@ -276,7 +298,7 @@ auto gse::ide::agent::session_command(const session& s) -> std::wstring {
 auto gse::ide::agent::launch_session(session& s) -> bool {
 	const credentials creds = agent_credentials();
 
-	const spawn::launched child = spawn::launch_streamed(session_command(s), s.cwd.wstring(), creds.environment);
+	const spawn::launched child = spawn::launch_streamed(session_command(s, write_phase_prompt(s)), s.cwd.wstring(), creds.environment);
 	if (!win32::valid_handle(child.process)) {
 		return false;
 	}
@@ -322,6 +344,7 @@ auto gse::ide::agent::append_row(session& s, transcript_row row) -> void {
 	if (row.stamped == 0) {
 		row.stamped = unix_now();
 	}
+	row.agent = s.info.agent_id;
 	s.rows.push_back(std::move(row));
 }
 
@@ -358,7 +381,7 @@ auto gse::ide::agent::pump_session(session& s) -> void {
 				s.think_clock.emplace();
 			}
 			if (kind == "user" || s.action.empty()) {
-				s.action = "thinking";
+				s.action = thinking_phrase(s);
 			}
 		}
 
@@ -366,10 +389,10 @@ auto gse::ide::agent::pump_session(session& s) -> void {
 		std::vector<transcript_row> rows = summarize(*event, s.info);
 		for (const transcript_row& row : rows) {
 			if (row.kind == row_kind::tool) {
-				s.action = tool_action(row);
+				s.action = action_phrase(row);
 			}
 			else if (row.kind == row_kind::text) {
-				s.action = "responding";
+				s.action = "writing back";
 			}
 		}
 		for (transcript_row& row : rows) {
@@ -380,14 +403,18 @@ auto gse::ide::agent::pump_session(session& s) -> void {
 		if (kind != "result") {
 			continue;
 		}
+		s.turn_open = false;
 		if (retryable_failure(*event)) {
 			arm_retry(s);
 		}
 		else if (!turn_failed(*event)) {
 			s.retry.waiting = false;
 			s.retry.attempts = 0;
+			s.resume_attempts = 0;
 		}
 	}
+
+	track_run_id(s);
 
 	if (!open) {
 		append_row(s, {
@@ -400,16 +427,21 @@ auto gse::ide::agent::pump_session(session& s) -> void {
 	}
 }
 
-auto gse::ide::agent::restart_session(session& s) -> void {
+auto gse::ide::agent::stop_session(session& s) -> void {
 	if (s.running) {
 		spawn::terminate(s.process, s.job);
 		s.running = false;
 	}
 	close_session(s);
 	s.pending.clear();
+	s.turn_open = false;
 	s.think_clock.reset();
 	s.wrote_this_turn = false;
 	s.action.clear();
+}
+
+auto gse::ide::agent::restart_session(session& s) -> void {
+	stop_session(s);
 
 	if (!launch_session(s)) {
 		append_row(s, {
@@ -486,7 +518,7 @@ auto gse::ide::agent::request_close(data& d, const std::uint32_t session_id) -> 
 	erase_session(d, session_id);
 }
 
-auto gse::ide::agent::send_to_session(session& s, const std::string_view prompt, const std::span<const attachment> attachments) -> void {
+auto gse::ide::agent::send_to_session(session& s, const std::string_view prompt, const std::span<const gui::image_attachment> attachments) -> void {
 	const bool settings_stale = s.launched_model_id != s.model_id || s.launched_effort != s.requested_effort;
 	if (s.running && !s.think_clock && settings_stale) {
 		restart_session(s);
@@ -498,6 +530,9 @@ auto gse::ide::agent::send_to_session(session& s, const std::string_view prompt,
 	s.info.failure.clear();
 	s.retry.waiting = false;
 	s.retry.held = true;
+	s.turn_open = true;
+	s.hibernating = false;
+	s.wake_prompt.clear();
 
 	append_row(s, {
 		.kind = row_kind::user,
@@ -517,12 +552,13 @@ auto gse::ide::agent::send_to_session(session& s, const std::string_view prompt,
 		return;
 	}
 
-	s.action = "thinking";
+	s.action = thinking_phrase(s);
 	s.think_clock.emplace();
 }
 
 auto gse::ide::agent::interrupt_session(session& s) -> void {
 	s.retry.waiting = false;
+	s.turn_open = false;
 
 	if (!s.running || !win32::valid_handle(s.input) || !s.think_clock) {
 		return;

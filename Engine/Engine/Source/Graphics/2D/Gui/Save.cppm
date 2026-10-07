@@ -21,6 +21,8 @@ export namespace gse::gui {
 		dock::location docked_to = dock::location::none;
 		float dock_split_ratio = 0.5f;
 
+		float zoom = 1.f;
+
 		[[= field_key<"active_tab">{}]]
 		std::uint32_t active_tab_index = 0;
 

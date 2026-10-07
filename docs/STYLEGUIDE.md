@@ -32,6 +32,47 @@ Empty bodies stay collapsed (`{}`, `= default`).
 
 ---
 
+## Annotations
+
+An annotation goes on its own line, above the entity it applies to. This holds for types and for enumerators alike — never trail an annotation and its entity on one line, and never pad with spaces to align entities past their annotations:
+
+```cpp
+// correct
+struct [[= system_state<"Agent">{}]]
+data {
+	...
+};
+
+enum class agent_state : std::uint8_t {
+	idle [[= state_style{
+		.label = "idle",
+		.color = &gui::style::color_text_secondary,
+	}]],
+	working [[= state_style{
+		.label = "working",
+		.color = &gui::style::color_accent,
+	}]],
+};
+
+// wrong — entity sharing the annotation's line
+struct [[= system_state<"Agent">{}]] data {
+
+// wrong — alignment padding after the annotation
+enum class cull : std::uint8_t {
+	[[= vk::CullModeFlagBits::eNone]]   none,
+};
+```
+
+Design the annotation to fit the `gse.meta` helpers: one concrete aggregate per enum, with fixed-size `char` arrays for text, so `annotation_from_enum` can find it. Accessors return the aggregate by value, so bind it to a named local before taking a `std::string_view` into one of its arrays — a view into a returned temporary dangles.
+
+---
+
+## New Code in Non-Compliant Files
+
+Many files predate a rule here. Write new and edited code to this guide even when the surrounding file violates it; "it matches the existing style" is not a defense for a new violation. Do not restyle the untouched parts of the file to compensate — a change should contain only its own subject.
+
+---
+
 ## Function Declarations and Definitions
 
 **Declarations** go inside the namespace; **definitions** go outside it:
@@ -70,6 +111,8 @@ auto value::find(const std::string_view key) const -> const value* {
 ```
 
 Default argument values belong only on declarations, never on definitions.
+
+There is one legitimate in-namespace definition: a `consteval` helper whose result is consumed by a `using` alias in the same file (e.g. `using foo = [: substitute(^^variant, define_static_array(helper())) :];`). The language requires the definition to be visible where the alias is parsed, and the alias must live in the export namespace block, so the helper is defined there too. Do not split this case; nothing else qualifies.
 
 When a constructor has an initializer list, keep it on the same line as the signature with `{` following immediately. If the body is empty, collapse to `{}`:
 
@@ -397,6 +440,21 @@ auto networked_data(
 auto networked_data() -> network_data_t&;
 
 auto networked_data() const -> const network_data_t&;
+```
+
+Collapsing that pair is the use case, not "use deducing `this` everywhere". When only one access mode is actually needed, name the class and the concrete return type instead — a deduced object parameter claims the function serves const callers, and if none exist the claim is false:
+
+```cpp
+// correct — every caller is non-const, so say so
+auto render_queue_entries(
+	this model_instance& self
+) -> std::span<render_queue_entry>;
+
+// wrong — deduced for a constness nobody asks for
+template <typename Self>
+auto render_queue_entries(
+	this Self& self
+) -> decltype(auto);
 ```
 
 Virtual functions cannot use deducing `this` — keep those as regular const/non-const overloads if needed.

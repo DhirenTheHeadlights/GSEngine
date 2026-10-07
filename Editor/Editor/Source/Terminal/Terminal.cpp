@@ -47,6 +47,15 @@ namespace gse::ide::terminal {
 		log::level lvl
 	) -> vec4f;
 
+	auto palette_of(
+		const gui::style& sty
+	) -> level_palette;
+
+	auto sync_metadata(
+		instance& inst,
+		const gui::draw_context& ctx
+	) -> void;
+
 	auto draw_close_confirm(
 		gui::builder& ui,
 		data& d,
@@ -184,6 +193,49 @@ auto gse::ide::terminal::level_color(const gui::style& sty, const log::level lvl
 	return sty.color_text;
 }
 
+auto gse::ide::terminal::palette_of(const gui::style& sty) -> level_palette {
+	level_palette out{};
+	std::size_t at = 0;
+	for (const log::level lvl : enum_values<log::level>()) {
+		out[at++] = level_color(sty, lvl);
+	}
+	return out;
+}
+
+auto gse::ide::terminal::sync_metadata(instance& inst, const gui::draw_context& ctx) -> void {
+	const level_palette palette = palette_of(ctx.style);
+	const bool lockstep = inst.line_levels.size() == inst.buffer.lines.size()
+		&& inst.spans.size() == inst.buffer.lines.size();
+
+	if (!lockstep) {
+		log::println(
+			log::level::warning,
+			log::category::general,
+			"terminal: \"{}\" line metadata diverged ({} lines, {} levels, {} spans) - rebuilding from the lines",
+			inst.name,
+			inst.buffer.lines.size(),
+			inst.line_levels.size(),
+			inst.spans.size()
+		);
+	}
+	else if (inst.palette == palette) {
+		return;
+	}
+
+	inst.palette = palette;
+	inst.line_levels.resize(inst.buffer.lines.size(), log::level::info);
+	inst.spans.clear();
+	inst.spans.reserve(inst.buffer.lines.size());
+	for (std::size_t i = 0; i < inst.buffer.lines.size(); ++i) {
+		inst.spans.push_back({
+			.line = static_cast<std::uint32_t>(i),
+			.start_col = 0,
+			.end_col = static_cast<std::uint32_t>(inst.buffer.lines[i].size()),
+			.color = level_color(ctx.style, inst.line_levels[i]),
+		});
+	}
+}
+
 auto gse::ide::terminal::make_instance(data& d, std::string name) -> instance {
 	const id instance_id = generate_temp_id(hash_combine(stable_id("terminal_instance"), d.next_id++));
 	return {
@@ -233,13 +285,27 @@ auto gse::ide::terminal::close_kind(data& d, const build_runner::stream_kind kin
 }
 
 auto gse::ide::terminal::append_lines(instance& inst, const std::span<const line> lines, const gui::draw_context& ctx) -> void {
+	std::size_t pieces = 0;
 	for (const line& l : lines) {
+		pieces += 1 + static_cast<std::size_t>(std::ranges::count(l.text, '\n'));
+	}
+	inst.line_levels.reserve(inst.line_levels.size() + pieces);
+	inst.spans.reserve(inst.spans.size() + pieces);
+
+	for (const line& l : lines) {
+		const vec4f color = level_color(ctx.style, l.lvl);
 		std::size_t start = 0;
 		while (true) {
 			const std::size_t nl = l.text.find('\n', start);
 			const std::string_view piece = std::string_view(l.text).substr(start, nl == std::string::npos ? std::string::npos : nl - start);
 			inst.buffer.lines.emplace_back(piece);
 			inst.line_levels.push_back(l.lvl);
+			inst.spans.push_back({
+				.line = static_cast<std::uint32_t>(inst.buffer.lines.size() - 1),
+				.start_col = 0,
+				.end_col = static_cast<std::uint32_t>(piece.size()),
+				.color = color,
+			});
 			if (nl == std::string::npos) {
 				break;
 			}
@@ -251,6 +317,10 @@ auto gse::ide::terminal::append_lines(instance& inst, const std::span<const line
 		const std::size_t overflow = inst.buffer.lines.size() - max_lines;
 		inst.buffer.lines.erase(inst.buffer.lines.begin(), inst.buffer.lines.begin() + static_cast<std::ptrdiff_t>(overflow));
 		inst.line_levels.erase(inst.line_levels.begin(), inst.line_levels.begin() + static_cast<std::ptrdiff_t>(overflow));
+		inst.spans.erase(inst.spans.begin(), inst.spans.begin() + static_cast<std::ptrdiff_t>(overflow));
+		for (gui::text_span& span : inst.spans) {
+			span.line -= static_cast<std::uint32_t>(overflow);
+		}
 
 		std::erase_if(inst.dispatches, [overflow](const dispatch_marker& marker) {
 			return marker.line < overflow;
@@ -262,18 +332,6 @@ auto gse::ide::terminal::append_lines(instance& inst, const std::span<const line
 		const float dropped = static_cast<float>(overflow) * gui::text_area_line_height(ctx);
 		inst.view.scroll.y.offset = std::max(0.f, inst.view.scroll.y.offset - dropped);
 		inst.view.scroll.y.target = std::max(0.f, inst.view.scroll.y.target - dropped);
-	}
-
-	assert(inst.buffer.lines.size() == inst.line_levels.size(), "terminal buffer line metadata diverged");
-	inst.spans.clear();
-	inst.spans.reserve(inst.buffer.lines.size());
-	for (std::size_t i = 0; i < inst.buffer.lines.size(); ++i) {
-		inst.spans.push_back({
-			.line = static_cast<std::uint32_t>(i),
-			.start_col = 0,
-			.end_col = static_cast<std::uint32_t>(inst.buffer.lines[i].size()),
-			.color = level_color(ctx.style, inst.line_levels[i]),
-		});
 	}
 }
 
@@ -561,6 +619,8 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst
 	const auto _ = ctx.fonts.text.resolve();
 	const auto code_view = ctx.fonts.code.resolve();
 
+	sync_metadata(inst, ctx);
+
 	d.fresh.clear();
 	if (inst.follows_log) {
 		d.sink->drain(inst.cursor, d.fresh);
@@ -617,8 +677,8 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst
 	take_offers(d, inst, ctx);
 
 	if (inst.buffer.lines.empty()) {
-		inst.buffer.lines.emplace_back();
-		inst.line_levels.push_back(log::level::info);
+		const std::array blank = { line{ .seq = 0, .lvl = log::level::info, .text = {} } };
+		append_lines(inst, blank, ctx);
 	}
 
 	const float pad = ctx.style.padding;

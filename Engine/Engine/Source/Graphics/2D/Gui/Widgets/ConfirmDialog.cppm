@@ -15,6 +15,7 @@ import std;
 import :builder;
 import :button_widget;
 import :font;
+import :modal_surface;
 import :render_layer;
 import :styles;
 import :types;
@@ -74,14 +75,6 @@ auto gse::gui::draw::confirm_dialog(builder& ui, const confirm_params& params) -
 	const float line_h = text_view->line_height(fs) * 1.25f;
 	const float btn_h = text_view->line_height(fs) + pad;
 
-	const auto _ = ctx.scoped_layer(render_layer::modal);
-	ctx.register_hit_region(render_layer::modal, params.body);
-	ctx.queue_sprite({
-		.rect = params.body,
-		.color = { 0.f, 0.f, 0.f, 0.45f },
-		.texture = ctx.blank_texture,
-	});
-
 	const float content_w = std::max({ text_view->width(params.title, fs), text_view->width(params.message, fs), 220.f });
 	const float dialog_w = content_w + pad * 4.f;
 	const float dialog_h = line_h * 2.f + btn_h + pad * 4.f;
@@ -91,17 +84,9 @@ auto gse::gui::draw::confirm_dialog(builder& ui, const confirm_params& params) -
 		{ dialog_w, dialog_h }
 	);
 
-	ctx.queue_sprite({
-		.rect = rectf::from_position_size({ dialog.left() + 4.f, dialog.top() - 4.f }, { dialog_w, dialog_h }),
-		.color = sty.color_shadow,
-		.texture = ctx.blank_texture,
-		.corner_radius = sty.corner_radius_menu,
-	});
-	ctx.queue_sprite({
-		.rect = dialog,
-		.color = { vec3f(sty.color_menu_body), 1.f },
-		.texture = ctx.blank_texture,
-		.corner_radius = sty.corner_radius_menu,
+	const auto _ = draw_modal_surface(ctx, {
+		.host = params.body,
+		.panel = dialog,
 	});
 
 	ctx.queue_text({

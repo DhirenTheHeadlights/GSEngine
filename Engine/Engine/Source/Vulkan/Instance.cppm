@@ -1,8 +1,3 @@
-module;
-
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
-
 export module gse.vulkan:instance;
 
 import std;
@@ -44,11 +39,7 @@ export namespace gse::vulkan {
 		[[nodiscard]] static auto required_window_extensions() -> std::span<const char* const>;
 
 		auto create_surface(
-			shared_view<window::data> win
-		) -> void;
-
-		auto create_surface(
-			const window::window_surface& win
+			native_window_handle handle
 		) -> void;
 
 		auto destroy_surface() -> void;
@@ -81,6 +72,19 @@ export namespace gse::vulkan {
 
 namespace gse::vulkan {
 	constexpr auto implicit_layer_registry_key = L"SOFTWARE\\Khronos\\Vulkan\\ImplicitLayers";
+	constexpr std::uint32_t win32_surface_create_info_type = 1000009000;
+	constexpr std::int32_t vulkan_success = 0;
+
+	struct win32_surface_create_info {
+		std::uint32_t type = win32_surface_create_info_type;
+		const void* next = nullptr;
+		std::uint32_t flags = 0;
+		void* module_instance = nullptr;
+		void* window = nullptr;
+	};
+
+	using get_instance_proc_addr_fn = void* (*)(void*, const char*);
+	using create_win32_surface_fn = std::int32_t (*)(void*, const win32_surface_create_info*, const void*, std::uint64_t*);
 
 	auto create_window_surface(
 		vk::Instance instance,
@@ -135,31 +139,34 @@ gse::vulkan::instance::instance(vk::raii::Context&& context, vk::raii::Instance&
 }
 
 auto gse::vulkan::instance::required_window_extensions() -> std::span<const char* const> {
-	assert(glfwVulkanSupported(), "Vulkan not supported");
-
-	std::uint32_t count = 0;
-	const char** extensions = glfwGetRequiredInstanceExtensions(&count);
-	assert(extensions != nullptr, "Failed to get required Vulkan window extensions");
-	return { extensions, count };
+	static constexpr std::array<const char*, 2> extensions{
+		"VK_KHR_surface",
+		"VK_KHR_win32_surface",
+	};
+	return extensions;
 }
 
 auto gse::vulkan::create_window_surface(const vk::Instance instance, const native_window_handle handle) -> vk::SurfaceKHR {
-	auto* glfw_handle = static_cast<GLFWwindow*>(handle.value);
-	assert(glfw_handle != nullptr, "Failed to create window surface for Vulkan: window handle is null");
+	assert(handle.value != nullptr, "Failed to create window surface for Vulkan: window handle is null");
 
-	VkSurfaceKHR surface = nullptr;
-	const VkResult result = glfwCreateWindowSurface(static_cast<VkInstance>(instance), glfw_handle, nullptr, &surface);
-	assert(result == VK_SUCCESS, "Failed to create window surface for Vulkan!");
-	return vk::SurfaceKHR(surface);
+	auto* const raw_instance = std::bit_cast<void*>(instance);
+	const auto get_proc_addr = reinterpret_cast<get_instance_proc_addr_fn>(vk::detail::defaultDispatchLoaderDynamic.vkGetInstanceProcAddr);
+	const auto create_surface = reinterpret_cast<create_win32_surface_fn>(get_proc_addr(raw_instance, "vkCreateWin32SurfaceKHR"));
+	assert(create_surface != nullptr, "Vulkan instance does not expose vkCreateWin32SurfaceKHR");
+
+	const win32_surface_create_info info{
+		.module_instance = reinterpret_cast<void*>(win32::GetModuleHandleW(nullptr)),
+		.window = handle.value,
+	};
+
+	std::uint64_t surface = 0;
+	const std::int32_t result = create_surface(raw_instance, &info, nullptr, &surface);
+	assert(result == vulkan_success, "Failed to create window surface for Vulkan!");
+	return std::bit_cast<vk::SurfaceKHR>(surface);
 }
 
-auto gse::vulkan::instance::create_surface(const shared_view<window::data> win) -> void {
-	const auto raw_surface = create_window_surface(*m_instance, window::raw_handle(win));
-	m_surface = vk::raii::SurfaceKHR(m_instance, raw_surface);
-}
-
-auto gse::vulkan::instance::create_surface(const window::window_surface& win) -> void {
-	const auto raw_surface = create_window_surface(*m_instance, window::raw_handle(win));
+auto gse::vulkan::instance::create_surface(const native_window_handle handle) -> void {
+	const auto raw_surface = create_window_surface(*m_instance, handle);
 	m_surface = vk::raii::SurfaceKHR(m_instance, raw_surface);
 }
 

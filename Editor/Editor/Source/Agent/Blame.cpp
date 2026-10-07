@@ -8,6 +8,7 @@ import std;
 
 import :blame;
 import :model;
+import :phase;
 import :session;
 import :stream;
 
@@ -39,6 +40,7 @@ auto gse::ide::agent::note_written_file(session& s, const std::filesystem::path&
 		}
 	}
 	s.wrote_this_turn = true;
+	s.last_write.emplace();
 }
 
 auto gse::ide::agent::working_on_files(const session& s) -> bool {
@@ -56,8 +58,38 @@ auto gse::ide::agent::is_busy(const session& s) -> bool {
 	return s.running && s.think_clock.has_value();
 }
 
-auto gse::ide::agent::mid_write(const session& s) -> bool {
-	return is_busy(s) && s.wrote_this_turn;
+auto gse::ide::agent::edit_settle() -> time {
+	return seconds(8.f);
+}
+
+auto gse::ide::agent::editing_tree(const session& s) -> bool {
+	if (!s.running || s.hibernating) {
+		return false;
+	}
+	if (is_busy(s) && (s.wrote_this_turn || !s.unbuilt.empty())) {
+		return true;
+	}
+	return s.last_write && s.last_write->elapsed() < edit_settle();
+}
+
+auto gse::ide::agent::blocks_builds(const data& d, const queued_build& queued, const session& s) -> bool {
+	if (!editing_tree(s)) {
+		return false;
+	}
+	if (!queued.agent.empty() && queued.agent == s.info.agent_id) {
+		return false;
+	}
+
+	const queued_build* theirs = queued_for(d, s);
+	if (!theirs) {
+		return true;
+	}
+	if (!s.last_write) {
+		return false;
+	}
+
+	const time wrote_at = system_clock::now<time>() - s.last_write->elapsed();
+	return wrote_at > theirs->requested && theirs->requested < queued.requested;
 }
 
 auto gse::ide::agent::build_wait_for(const data& d, const session& s) -> build_wait {
@@ -106,10 +138,10 @@ auto gse::ide::agent::state_of(const data& d, const session& s) -> agent_state {
 	if (!s.running) {
 		return agent_state::exited;
 	}
-	if (!s.think_clock) {
-		return agent_state::idle;
+	if (s.think_clock) {
+		return s.wrote_this_turn ? agent_state::editing : agent_state::working;
 	}
-	return s.wrote_this_turn ? agent_state::editing : agent_state::working;
+	return s.gate ? agent_state::awaiting_approval : agent_state::idle;
 }
 
 auto gse::ide::agent::style_of(const agent_state state) -> state_style {
@@ -167,17 +199,29 @@ auto gse::ide::agent::attribute_change(data& d, const build_runner::source_chang
 	}
 }
 
+auto gse::ide::agent::refresh_build_times(data& d) -> void {
+	const time now = system_clock::now<time>();
+	if (now < d.next_built_poll) {
+		return;
+	}
+	d.next_built_poll = now + seconds(1.f);
+	d.built = build_runner::build_times();
+}
+
+auto gse::ide::agent::built_through(const data& d, const id key) -> std::int64_t {
+	const auto built = d.built.find(key);
+	return built != d.built.end() ? built->second : 0;
+}
+
 auto gse::ide::agent::refresh_stale(data& d) -> void {
 	for (session& s : d.sessions) {
 		for (auto entry = s.unbuilt.begin(); entry != s.unbuilt.end();) {
-			const auto built = d.built.find(entry->first);
-			entry = built != d.built.end() && entry->second <= built->second
+			entry = entry->second <= built_through(d, entry->first)
 				? s.unbuilt.erase(entry)
 				: std::next(entry);
 		}
 		for (auto entry = s.touched.begin(); entry != s.touched.end();) {
-			const auto built = d.built.find(entry->second.build_key);
-			entry = built != d.built.end() && entry->second.mtime <= built->second
+			entry = entry->second.mtime <= built_through(d, entry->second.build_key)
 				? s.touched.erase(entry)
 				: std::next(entry);
 		}
@@ -337,10 +381,7 @@ auto gse::ide::agent::blocker_for(const data& d, const queued_build& queued) -> 
 	const config::worktree& tree = queued.tree ? *queued.tree : config::primary();
 
 	for (const session& s : d.sessions) {
-		if (!queued.agent.empty() && queued.agent == s.info.agent_id) {
-			continue;
-		}
-		if (!mid_write(s)) {
+		if (!blocks_builds(d, queued, s)) {
 			continue;
 		}
 		if (config::worktree_for(s.cwd).name != tree.name) {
@@ -396,7 +437,7 @@ auto gse::ide::agent::refresh_presence(data& d) -> void {
 	}
 
 	for (session& s : d.sessions) {
-		const bool announce = mid_write(s) && !s.info.agent_id.empty();
+		const bool announce = editing_tree(s) && !s.info.agent_id.empty();
 		if (!announce) {
 			if (s.published_presence) {
 				s.published_presence = false;
@@ -413,8 +454,6 @@ auto gse::ide::agent::refresh_presence(data& d) -> void {
 			});
 		}
 	}
-
-	d.presence = build_inbox::take_presence();
 }
 
 auto gse::ide::agent::retire_presence(data& d) -> void {
@@ -436,7 +475,7 @@ auto gse::ide::agent::hold_for(const data& d, const queued_build& queued, const 
 	if (building || !d.inbox_active.empty()) {
 		return { .reason = build_hold::building };
 	}
-	if (queued.forced || system_clock::now<time>() >= queued.requested + build_patience()) {
+	if (queued.forced || queued.run_only) {
 		return {};
 	}
 	if (std::string blocker = blocker_for(d, queued); !blocker.empty()) {
@@ -472,7 +511,7 @@ auto gse::ide::agent::hold_message(const build_hold_state& hold, const std::stri
 	switch (hold.reason) {
 		case build_hold::tree_busy:
 			return std::format(
-				"{} - chat '{}' has not finished its turn, so the tree is mid-change. Your build runs when it does. You are not blocked: hibernate with Tools/gse-hibernate --then \"<what to do next>\" and you will be woken with the result, or do unrelated work and re-run.",
+				"{} - chat '{}' is still editing, so the tree is mid-change and a build now would fail on their half-written files. Your build is held until their edits settle, and the owner can release it early with 'Build now' in the agent panel. You are not blocked: call gse_hibernate with what to do next and you will be woken with the result, or do unrelated work and re-run.",
 				style.label,
 				blocker.empty() ? std::string_view("unnamed") : blocker
 			);
@@ -496,8 +535,7 @@ auto gse::ide::agent::hold_label(const data& d, const queued_build& queued) -> s
 		return style.label;
 	}
 
-	const time remaining = queued.requested + build_patience() - system_clock::now<time>();
-	return std::format("waiting on '{}' \xC2\xB7 starts anyway in {:.0f:s}", blocker_name(d, queued.blocker), std::max(remaining, time{}));
+	return std::format("held until '{}' finishes editing", blocker_name(d, queued.blocker));
 }
 
 auto gse::ide::agent::queue_label(const queued_build& queued) -> std::string {
@@ -535,6 +573,9 @@ auto gse::ide::agent::accept_requests(data& d) -> void {
 			.config = std::move(incoming.config),
 			.cwd = std::move(incoming.cwd),
 			.project = std::move(incoming.project),
+			.settings = std::move(incoming.settings),
+			.scenario = std::move(incoming.scenario),
+			.exit_after = incoming.exit_after,
 			.requested = now,
 		};
 
@@ -549,8 +590,18 @@ auto gse::ide::agent::accept_requests(data& d) -> void {
 			});
 			continue;
 		}
-		queued.run = incoming.run;
+		queued.run_only = incoming.run_only;
+		queued.run = incoming.run || incoming.run_only;
 		queued.tree = queued.target == build_runner::build_target::editor ? nullptr : origin;
+
+		if (queued.run_only && queued.target == build_runner::build_target::editor) {
+			build_inbox::publish({
+				.id = queued.id,
+				.outcome = build_inbox::status::rejected,
+				.lines = { "the editor cannot be launched as a run target - it is the process answering you" },
+			});
+			continue;
+		}
 
 		if (!incoming.tree.empty()) {
 			const std::span<const config::worktree> trees = config::worktrees();
@@ -570,6 +621,10 @@ auto gse::ide::agent::accept_requests(data& d) -> void {
 			return !existing.agent.empty() && existing.agent == queued.agent
 				&& existing.target == queued.target
 				&& existing.run == queued.run
+				&& existing.run_only == queued.run_only
+				&& existing.settings == queued.settings
+				&& existing.scenario == queued.scenario
+				&& existing.exit_after == queued.exit_after
 				&& existing.tree == queued.tree
 				&& existing.profile == queued.profile
 				&& existing.config == queued.config;
@@ -605,28 +660,30 @@ auto gse::ide::agent::report_hold(queued_build& queued, const build_hold_state& 
 	});
 }
 
-auto gse::ide::agent::accept_hibernations(data& d) -> void {
+auto gse::ide::agent::claimed_session(data& d, const std::string_view agent, const std::filesystem::path& cwd) -> session* {
+	if (!cwd.empty() && !config::owning_worktree(cwd)) {
+		return nullptr;
+	}
+
+	const auto found = std::ranges::find_if(d.sessions, [agent](const session& s) {
+		return s.info.agent_id == agent;
+	});
+	return found != d.sessions.end() ? &*found : nullptr;
+}
+
+auto gse::ide::agent::accept_hibernations(data& d) -> bool {
+	bool recorded = false;
+
 	for (build_inbox::hibernate_request& incoming : build_inbox::peek_hibernations()) {
-		if (!incoming.cwd.empty() && !config::owning_worktree(incoming.cwd)) {
+		session* found = claimed_session(d, incoming.agent, incoming.cwd);
+		if (!found) {
 			continue;
 		}
 		build_inbox::consume_hibernation(incoming.id);
 
-		const auto found = std::ranges::find_if(d.sessions, [&incoming](const session& s) {
-			return s.info.agent_id == incoming.agent;
-		});
-
-		if (found == d.sessions.end()) {
-			build_inbox::publish({
-				.id = incoming.id,
-				.outcome = build_inbox::status::rejected,
-				.lines = { "this session is not an editor chat, so the editor cannot wake it - only chats started in the agent panel can hibernate" },
-			});
-			continue;
-		}
-
 		found->hibernating = true;
 		found->wake_prompt = std::move(incoming.prompt);
+		recorded = true;
 
 		const std::string awaited = found->unbuilt.empty() ? "the next build" : unbuilt_label(*found);
 
@@ -642,6 +699,8 @@ auto gse::ide::agent::accept_hibernations(data& d) -> void {
 			.lines = { std::format("hibernating until {} covers your edits - end your turn now; the editor will prompt you when it lands", awaited) },
 		});
 	}
+
+	return recorded;
 }
 
 auto gse::ide::agent::hibernating_count(const data& d) -> std::size_t {
@@ -650,15 +709,32 @@ auto gse::ide::agent::hibernating_count(const data& d) -> std::size_t {
 	}));
 }
 
+auto gse::ide::agent::wake_session(session& s, const std::string_view lead) -> void {
+	s.hibernating = false;
+	const std::string prompt = std::move(s.wake_prompt);
+	s.wake_prompt.clear();
+
+	if (!s.running && !launch_session(s)) {
+		append_row(s, {
+			.kind = row_kind::failure,
+			.text = "'claude' could not be relaunched to continue this chat",
+		});
+		return;
+	}
+
+	std::string message(lead);
+	if (!prompt.empty()) {
+		message += "\n\n" + prompt;
+	}
+
+	send_to_session(s, message, {});
+}
+
 auto gse::ide::agent::wake_observers(data& d, const build_runner::build_finished& finished) -> void {
 	for (session& s : d.sessions) {
 		if (!s.hibernating || !(s.unbuilt.empty() || s.unbuilt.contains(finished.key))) {
 			continue;
 		}
-
-		s.hibernating = false;
-		const std::string prompt = std::move(s.wake_prompt);
-		s.wake_prompt.clear();
 
 		std::string lead = finished.succeeded
 			? "The build you were waiting on succeeded and your edits are in the current binaries."
@@ -672,16 +748,56 @@ auto gse::ide::agent::wake_observers(data& d, const build_runner::build_finished
 			lead += " None of the errors land on lines you wrote, so do not try to fix them - report that and stop.";
 		}
 
-		if (!s.running && !launch_session(s)) {
+		log::println(log::level::info, log::category::task, "agent: waking chat '{}' - its edits are in the build", s.name);
+		wake_session(s, lead);
+	}
+}
+
+auto gse::ide::agent::wake_covered(data& d) -> void {
+	const auto covered = [&d](const auto& entry) {
+		const auto& [key, mtime] = entry;
+		return mtime <= built_through(d, key);
+	};
+
+	for (session& s : d.sessions) {
+		if (!s.hibernating || !std::ranges::any_of(s.unbuilt, covered)) {
+			continue;
+		}
+
+		log::println(log::level::info, log::category::task, "agent: waking chat '{}' - a build outside this editor covered its edits", s.name);
+		wake_session(s, std::format(
+			"A build covering {} succeeded, so your edits are in the current binaries. It landed outside this editor's own build - another editor instance, or the editor rebuild that restarted this one - so there is no error list attached to it.",
+			unbuilt_label(s)
+		));
+	}
+}
+
+auto gse::ide::agent::resume_interrupted(data& d) -> void {
+	constexpr std::uint32_t resume_limit = 3;
+
+	for (session& s : d.sessions) {
+		if (!s.turn_open || s.running || s.hibernating || s.pending_transition || s.gate || s.info.agent_id.empty()) {
+			continue;
+		}
+
+		if (s.resume_attempts >= resume_limit) {
+			log::println(log::level::warning, log::category::task, "agent: chat '{}' has been cut off mid-turn {} times in a row - leaving it stopped", s.name, s.resume_attempts);
+			s.turn_open = false;
 			append_row(s, {
 				.kind = row_kind::failure,
-				.text = "woke for a build but 'claude' could not be relaunched",
+				.text = std::format("cut off mid-turn {} times in a row - not continuing it again on its own", s.resume_attempts),
+				.detail = "send a message to pick the turn back up",
 			});
 			continue;
 		}
 
-		log::println(log::level::info, log::category::task, "agent: waking chat '{}' - its edits are in the build", s.name);
-		send_to_session(s, prompt.empty() ? lead : lead + "\n\n" + prompt, {});
+		++s.resume_attempts;
+		log::println(log::level::info, log::category::task, "agent: chat '{}' was cut off mid-turn - continuing it (attempt {})", s.name, s.resume_attempts);
+		wake_session(
+			s,
+			"The editor died while you were mid-turn, so 'claude' was killed with it and this chat has been relaunched against the same conversation. "
+			"Whatever you were partway through - an edit, a build, a run - may have only half landed, so check the state of it before you carry on. Then continue the turn."
+		);
 	}
 }
 
@@ -695,7 +811,11 @@ auto gse::ide::agent::request_of(const queued_build& queued) -> build_inbox::req
 		.config = queued.config,
 		.cwd = queued.cwd,
 		.project = queued.project,
+		.settings = queued.settings,
+		.scenario = queued.scenario,
+		.exit_after = queued.exit_after,
 		.run = queued.run,
+		.run_only = queued.run_only,
 	};
 }
 
@@ -759,7 +879,7 @@ auto gse::ide::agent::hand_off_builds(data& d, const bool relaunching) -> void {
 	d.inbox_queue.clear();
 }
 
-auto gse::ide::agent::poll_build_inbox(data& d, const channel_write<build_runner::build_request> builds, const bool building) -> void {
+auto gse::ide::agent::poll_build_inbox(data& d, const channel_write<build_runner::build_request> builds, const bool building) -> bool {
 	const time now = system_clock::now<time>();
 
 	if (!d.inbox_active.empty()) {
@@ -772,13 +892,18 @@ auto gse::ide::agent::poll_build_inbox(data& d, const channel_write<build_runner
 	}
 
 	if (now < d.next_inbox_poll) {
-		return;
+		return false;
 	}
 	d.next_inbox_poll = now + seconds(0.25f);
 
+	const bool hibernated = accept_hibernations(d);
+	const bool phases_recorded = accept_phase_reports(d);
+	const bool recorded = hibernated || phases_recorded;
+	d.presence = build_inbox::take_presence();
+
 	accept_requests(d);
 	if (d.inbox_queue.empty()) {
-		return;
+		return recorded;
 	}
 
 	for (queued_build& queued : d.inbox_queue) {
@@ -787,14 +912,14 @@ auto gse::ide::agent::poll_build_inbox(data& d, const channel_write<build_runner
 	}
 
 	if (!d.inbox_active.empty()) {
-		return;
+		return recorded;
 	}
 
 	const auto ready = [](const queued_build& queued) {
 		return queued.reported == build_hold::none;
 	};
 	if (std::ranges::none_of(d.inbox_queue, ready)) {
-		return;
+		return recorded;
 	}
 
 	const auto is_editor = [](const queued_build& queued) {
@@ -813,14 +938,18 @@ auto gse::ide::agent::poll_build_inbox(data& d, const channel_write<build_runner
 
 	const build_runner::build_target target = head.target;
 	const bool run = head.run;
+	const bool run_only = head.run_only;
 	const config::worktree* tree = head.tree;
 	const std::string profile = head.profile;
 	const std::string config = head.config;
+	const std::vector<std::string> settings = head.settings;
+	const std::string scenario = head.scenario;
+	const time exit_after = head.exit_after;
 
 	std::vector<queued_build> group;
 	std::vector<queued_build> deferred;
 	for (queued_build& queued : d.inbox_queue) {
-		if (queued.target == target && queued.run == run && queued.tree == tree && queued.profile == profile && queued.config == config) {
+		if (queued.target == target && queued.run == run && queued.run_only == run_only && queued.tree == tree && queued.profile == profile && queued.config == config && queued.settings == settings && queued.scenario == scenario && queued.exit_after == exit_after) {
 			group.push_back(std::move(queued));
 		}
 		else {
@@ -833,6 +962,9 @@ auto gse::ide::agent::poll_build_inbox(data& d, const channel_write<build_runner
 	builds.push<build_runner::build_request>({
 		.target = target,
 		.run_after = run,
+		.skip_build = run_only,
+		.settings = settings,
+		.bounds = { .scenario = scenario, .exit_after = exit_after },
 		.config = config,
 		.profile = profile,
 		.tree = tree,
@@ -843,6 +975,7 @@ auto gse::ide::agent::poll_build_inbox(data& d, const channel_write<build_runner
 	d.inbox_dispatch_deadline = now + seconds(5.f);
 	d.inbox_started = false;
 	d.inbox_queue = std::move(deferred);
+	return recorded;
 }
 
 auto gse::ide::agent::publish_inbox_result(data& d, const build_runner::build_finished& finished) -> void {
@@ -953,7 +1086,7 @@ auto gse::ide::agent::fix_unclaimed(data& d) -> void {
 	}
 
 	const blamed_error& first = d.unclaimed.front();
-	session& started = create_session(d, config::worktree_for(first.file).project_root);
+	session& started = create_session(d, config::worktree_for(first.file).project_root, task_phase::apply);
 	started.name = std::format("fix {}", first.file.filename().generic_display_string());
 
 	if (!launch_session(started)) {

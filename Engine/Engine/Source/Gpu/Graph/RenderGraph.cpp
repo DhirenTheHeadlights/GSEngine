@@ -67,7 +67,7 @@ gse::gpu::render_graph::render_graph(device& device, frame& frame)
 }
 
 auto gse::gpu::render_graph::create_framebuffer_image(const framebuffer_image_desc& desc, const std::string_view tag) -> image {
-	const auto ext = extent();
+	const auto ext = allocated_extent();
 	if (ext.x() == 0 || ext.y() == 0) {
 		return {};
 	}
@@ -83,16 +83,37 @@ auto gse::gpu::render_graph::create_framebuffer_image(const framebuffer_image_de
 	return img;
 }
 
-auto gse::gpu::render_graph::resize_surface() -> void {
-	m_depth = create_framebuffer_image(
-		{
-			.format = image_format::d32_sfloat,
-			.usage = { image_flag::depth_attachment, image_flag::sampled },
-			.aspects = image_aspect_flag::depth,
-		},
-		"surface.depth"
+auto gse::gpu::render_graph::screen_allocated(const image* img) const -> bool {
+	if (img == nullptr) {
+		return false;
+	}
+	if (img == std::addressof(m_depth)) {
+		return true;
+	}
+	return std::ranges::any_of(
+		std::views::values(m_framebuffer_images),
+		[img](const auto& slot) {
+			return slot && std::addressof(slot->img) == img;
+		}
 	);
+}
+
+auto gse::gpu::render_graph::resize_surface() -> void {
+	const auto target = allocated_extent();
+	if (!m_depth.handle() || m_depth.extent() != target) {
+		m_depth = create_framebuffer_image(
+			{
+				.format = image_format::d32_sfloat,
+				.usage = { image_flag::depth_attachment, image_flag::sampled },
+				.aspects = image_aspect_flag::depth,
+			},
+			"surface.depth"
+		);
+	}
 	for (auto& [name, slot] : m_framebuffer_images) {
+		if (slot->img.handle() && slot->img.extent() == target) {
+			continue;
+		}
 		slot->img = create_framebuffer_image(slot->desc, name.tag());
 	}
 	for (const auto& callback : m_resize_callbacks) {
@@ -582,6 +603,18 @@ auto gse::gpu::render_graph::extent(const id window) const -> vec2u {
 	return t && t->swapchain ? t->swapchain->extent() : vec2u{};
 }
 
+auto gse::gpu::render_graph::allocated_extent() const -> vec2u {
+	return screen_allocation_for(extent());
+}
+
+auto gse::gpu::render_graph::screen_uv_scale() const -> vec2f {
+	return screen_uv_scale_for(extent(), allocated_extent());
+}
+
+auto gse::gpu::render_graph::screen_uv_max() const -> vec2f {
+	return screen_uv_max_for(extent(), allocated_extent());
+}
+
 auto gse::gpu::render_graph::frame_in_progress() const -> bool {
 	return m_frame->frame_in_progress();
 }
@@ -871,7 +904,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 						color_view = color_target->view();
 						if (!extent_set) {
 							const auto ext = color_target->extent();
-							pass_extent = vec2u{ ext.x(), ext.y() };
+							pass_extent = screen_allocated(color_target) ? extent() : vec2u{ ext.x(), ext.y() };
 							extent_set = true;
 						}
 					}
@@ -897,7 +930,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 						depth_view = depth_target->view();
 						if (!extent_set) {
 							const auto ext = depth_target->extent();
-							pass_extent = vec2u{ ext.x(), ext.y() };
+							pass_extent = screen_allocated(depth_target) ? extent() : vec2u{ ext.x(), ext.y() };
 							extent_set = true;
 						}
 					}

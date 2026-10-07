@@ -29,6 +29,7 @@ namespace gse::detail {
 export namespace gse::input {
 	struct [[= system_state<"Input">{}]] data {
 		[[= shared]] double_buffer<state> states;
+		bool was_focused = true;
 	};
 
 	[[= system_run<>{}]]
@@ -93,6 +94,12 @@ auto gse::input::run(context& ctx, data& d, const channel_read<synthetic_input_r
 				persistent_state.append_codepoint(arg.codepoint, tok);
 			});
 	}
+
+	const bool focused = !win || win->primary.focused;
+	if (d.was_focused && !focused) {
+		persistent_state.release_all_held(tok);
+	}
+	d.was_focused = focused;
 
 	persistent_state.end_frame(tok);
 

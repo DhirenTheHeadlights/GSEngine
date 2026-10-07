@@ -1,12 +1,13 @@
 export module gse.ide.analysis:symbol_index_builder;
 
 import gse.core;
+import gse.math;
 import gse.meta;
+import gse.process;
 import std;
 
 import :compilation_database;
 import :gcc_diagnostics;
-import :process;
 import :semantic_tokens;
 import :symbol_extract;
 
@@ -203,7 +204,14 @@ auto gse::ide::analysis::run_plugin(const compilation_entry& entry, const symbol
 	}
 	command_line += " -MMD -MF \"" + dependency_temp.generic_native_encoded_string() + "\" -MT gseditor_index";
 
-	const process::run_outcome run = process::run_capture_stderr(command_line, entry.command.directory, sarif_temp, std::move(cancel));
+	const time compile_limit = seconds(60.f);
+	const process::run_outcome run = process::run_capture({
+		.command_line = command_line,
+		.working_dir = entry.command.directory,
+		.output_path = sarif_temp,
+		.limit = compile_limit,
+		.cancel = std::move(cancel),
+	});
 
 	std::ifstream in(token_temp, std::ios::binary);
 	if (in) {

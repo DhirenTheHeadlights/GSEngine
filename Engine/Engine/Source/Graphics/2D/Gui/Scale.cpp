@@ -135,16 +135,18 @@ auto gse::gui::reload_font(data& d, const shared_view<asset::data> assets) -> vo
 	assign_faces(d.fonts, assets, d.ui_font.value, d.code_font.value);
 }
 
-auto gse::gui::apply_scale(const data& d, const viewport_state& vp, style sty, const float viewport_height) -> style {
-	const float final_scale = scale_factor_for(d, vp, viewport_height);
-
-	sty.scale_factor = final_scale;
+auto gse::gui::scale_style(style sty, const float factor) -> style {
+	sty.scale_factor *= factor;
 
 	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^style, std::meta::access_context::unchecked()))) {
 		if constexpr (has_annotation<scaled_tag>(m)) {
-			sty.[:m:] *= final_scale;
+			sty.[:m:] *= factor;
 		}
 	}
 
 	return sty;
+}
+
+auto gse::gui::apply_scale(const data& d, const viewport_state& vp, style sty, const float viewport_height) -> style {
+	return scale_style(sty, scale_factor_for(d, vp, viewport_height));
 }

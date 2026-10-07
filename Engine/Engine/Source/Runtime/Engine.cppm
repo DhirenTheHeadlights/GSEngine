@@ -20,6 +20,7 @@ import gse.log;
 import gse.save;
 import gse.config;
 import gse.scenario;
+import gse.test;
 
 import :scene;
 import :world_system;
@@ -83,9 +84,11 @@ export namespace gse {
 		std::string ipc_pipe_name;
 		std::uint32_t parent_pid = 0;
 		std::uint32_t worker_threads = 0;
+		time exit_after{};
 		std::string dump_system_graph_path;
 		std::vector<std::string> setting;
 		bench_config bench;
+		test::config test;
 		network::config net;
 	};
 
@@ -157,6 +160,8 @@ export namespace gse {
 
 		auto tick_window() -> void;
 
+		auto apply_pending_resizes() -> void;
+
 		auto attached_surface_ready() const -> bool;
 
 		auto abandon_attach() -> void;
@@ -174,6 +179,8 @@ export namespace gse {
 		[[nodiscard]] auto snapshot_graph() const -> introspection::system_graph;
 
 		[[nodiscard]] auto all_settled() const -> bool;
+
+		[[nodiscard]] auto frame_presented() const -> bool;
 
 		auto add_system_node(
 			system_node node
@@ -222,6 +229,7 @@ export namespace gse {
 		std::uint32_t m_frames_since_rendered = 0;
 		bool m_window_shown = false;
 		bool m_headless_gpu = false;
+		bool m_frame_presented = false;
 		attached_surface_message m_attached_message{};
 		std::uint32_t m_attached_frames_presented = 0;
 		std::uint32_t m_attached_frames_skipped = 0;

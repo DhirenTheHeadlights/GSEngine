@@ -804,3 +804,134 @@ auto gse::ide::deserialize_anchors(const std::span<const layout_store::section> 
 	}
 	return out;
 }
+
+auto gse::ide::dock_shelf_bands::of(const gui::panel_edge edge) const -> const rectf& {
+	return bands[static_cast<std::size_t>(edge)];
+}
+
+auto gse::ide::dock_shelf_bands::occupied(const gui::panel_edge edge) const -> bool {
+	const rectf& band = of(edge);
+	return band.width() > 0.f && band.height() > 0.f;
+}
+
+auto gse::ide::dock_shelf_bands::contains(const vec2f point) const -> bool {
+	return std::ranges::any_of(bands, [point](const rectf& band) {
+		return band.width() > 0.f && band.height() > 0.f && band.contains(point);
+	});
+}
+
+auto gse::ide::shelf_band_thickness(const gui::style& sty) -> float {
+	return sty.title_bar_height;
+}
+
+auto gse::ide::shelf_bands(const rectf& frame, const std::span<const dock_shelf_entry> shelf, const float thickness) -> dock_shelf_bands {
+	dock_shelf_bands out{ .inner = frame };
+	constexpr std::array order{ gui::panel_edge::left, gui::panel_edge::right, gui::panel_edge::top, gui::panel_edge::bottom };
+
+	for (const gui::panel_edge edge : order) {
+		if (std::ranges::find(shelf, edge, &dock_shelf_entry::edge) == shelf.end()) {
+			continue;
+		}
+
+		const rectf area = out.inner;
+		const float across = edge == gui::panel_edge::left || edge == gui::panel_edge::right ? area.width() : area.height();
+		const float band_extent = std::min(thickness, across);
+
+		switch (edge) {
+			case gui::panel_edge::left:
+				out.bands[static_cast<std::size_t>(edge)] = rectf::from_position_size(area.top_left(), { band_extent, area.height() });
+				out.inner = rectf::from_position_size({ area.left() + band_extent, area.top() }, { area.width() - band_extent, area.height() });
+				break;
+			case gui::panel_edge::right:
+				out.bands[static_cast<std::size_t>(edge)] = rectf::from_position_size({ area.right() - band_extent, area.top() }, { band_extent, area.height() });
+				out.inner = rectf::from_position_size(area.top_left(), { area.width() - band_extent, area.height() });
+				break;
+			case gui::panel_edge::top:
+				out.bands[static_cast<std::size_t>(edge)] = rectf::from_position_size(area.top_left(), { area.width(), band_extent });
+				out.inner = rectf::from_position_size({ area.left(), area.top() - band_extent }, { area.width(), area.height() - band_extent });
+				break;
+			case gui::panel_edge::bottom:
+				out.bands[static_cast<std::size_t>(edge)] = rectf::from_position_size({ area.left(), area.bottom() + band_extent }, { area.width(), band_extent });
+				out.inner = rectf::from_position_size(area.top_left(), { area.width(), area.height() - band_extent });
+				break;
+		}
+	}
+
+	return out;
+}
+
+auto gse::ide::shelf_body(const rectf& inner, const gui::panel_edge edge, const float ratio) -> rectf {
+	const rectf& area = inner;
+	const float clamped = std::clamp(ratio, shelf_min_ratio, shelf_max_ratio);
+
+	switch (edge) {
+		case gui::panel_edge::left:
+			return rectf::from_position_size(area.top_left(), { area.width() * clamped, area.height() });
+		case gui::panel_edge::right:
+			return rectf::from_position_size({ area.right() - area.width() * clamped, area.top() }, { area.width() * clamped, area.height() });
+		case gui::panel_edge::top:
+			return rectf::from_position_size(area.top_left(), { area.width(), area.height() * clamped });
+		case gui::panel_edge::bottom:
+			return rectf::from_position_size({ area.left(), area.bottom() + area.height() * clamped }, { area.width(), area.height() * clamped });
+	}
+	return {};
+}
+
+auto gse::ide::shelf_edge_of(const std::span<const dock_shelf_entry> shelf, const id panel) -> std::optional<gui::panel_edge> {
+	const auto it = std::ranges::find(shelf, panel, &dock_shelf_entry::panel);
+	if (it == shelf.end()) {
+		return std::nullopt;
+	}
+	return it->edge;
+}
+
+auto gse::ide::serialize_shelf(const std::span<const dock_shelf_entry> shelf, const std::span<const panel_desc> panels) -> std::string {
+	std::string out;
+	for (const auto& [index, entry] : std::views::enumerate(shelf)) {
+		const panel_desc* desc = panel_desc_for(panels, entry.panel);
+		if (!desc) {
+			continue;
+		}
+		out.push_back('\n');
+		out.append(std::format("[{}{}]\n", dock_shelf_section_prefix, index));
+		out.append(std::format("panel = {}\n", desc->name));
+		out.append(std::format("edge = {}\n", enum_to_string(entry.edge)));
+	}
+	return out;
+}
+
+auto gse::ide::deserialize_shelf(const std::span<const layout_store::section> sections, const std::span<const panel_desc> panels) -> std::vector<dock_shelf_entry> {
+	std::map<std::size_t, const layout_store::section*> raw;
+
+	for (const layout_store::section& section : sections) {
+		if (!section.name.starts_with(dock_shelf_section_prefix)) {
+			continue;
+		}
+		const std::string_view digits = std::string_view(section.name).substr(dock_shelf_section_prefix.size());
+		std::size_t slot = 0;
+		const auto parsed = std::from_chars(digits.data(), digits.data() + digits.size(), slot);
+		if (parsed.ec != std::errc{} || parsed.ptr != digits.data() + digits.size()) {
+			continue;
+		}
+		raw.emplace(slot, &section);
+	}
+
+	std::vector<dock_shelf_entry> out;
+	for (const layout_store::section* section : std::views::values(raw)) {
+		const auto name = section->values.find("panel");
+		if (name == section->values.end()) {
+			continue;
+		}
+		const auto desc = std::ranges::find(panels, name->second, &panel_desc::name);
+		if (desc == panels.end() || !desc->pinnable || std::ranges::find(out, desc->id, &dock_shelf_entry::panel) != out.end()) {
+			continue;
+		}
+
+		dock_shelf_entry entry{ .panel = desc->id };
+		if (const auto it = section->values.find("edge"); it != section->values.end()) {
+			enum_from_string(it->second, entry.edge);
+		}
+		out.push_back(entry);
+	}
+	return out;
+}

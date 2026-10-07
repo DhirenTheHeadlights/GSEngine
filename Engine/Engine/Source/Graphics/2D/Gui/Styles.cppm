@@ -108,6 +108,9 @@ export namespace gse::gui {
 		vec4f color_dock_tab_active = { 0.26f, 0.86f, 0.84f, 0.6f };
 
 		vec4f color_shadow = { 0.f, 0.f, 0.f, 0.35f };
+		vec4f color_scrim = { 0.f, 0.f, 0.f, 0.45f };
+
+		[[= scaled]] float modal_shadow_offset = 4.f;
 
 		// Runtime-resolved scale factor (set by apply_scale, not a styled dimension)
 		float scale_factor = 1.f;

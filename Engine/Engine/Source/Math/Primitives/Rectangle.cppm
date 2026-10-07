@@ -76,9 +76,7 @@ export namespace gse {
 
 template <gse::is_vec2 T>
 constexpr gse::rect_t<T>::rect_t(const min_max_params& p)
-	: m_min(std::min(p.min.x(), p.max.x()), std::min(p.min.y(), p.max.y())), m_max(std::max(p.min.x(), p.max.x()), std::max(p.min.y(), p.max.y())) {
-	contract_assert(m_min.x() <= m_max.x() && m_min.y() <= m_max.y());
-}
+	: m_min(std::min(p.min.x(), p.max.x()), std::min(p.min.y(), p.max.y())), m_max(std::max(p.min.x(), p.max.x()), std::max(p.min.y(), p.max.y())) {}
 
 template <gse::is_vec2 T>
 constexpr auto gse::rect_t<T>::from_position_size(const T& top_left, const T& size) -> rect_t {

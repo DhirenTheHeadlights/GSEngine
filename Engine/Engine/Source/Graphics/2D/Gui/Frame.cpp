@@ -384,7 +384,7 @@ auto gse::gui::update_viewport(data& d, viewport_state& vp, const input::state& 
 	}
 
 	for (menu& a : vp.menus.items()) {
-		if (!a.was_visible_last_frame || a.docked_to != dock::location::none) {
+		if (!a.was_visible_last_frame || a.fixed || a.docked_to != dock::location::none) {
 			continue;
 		}
 		for (const menu& b : vp.menus.items()) {

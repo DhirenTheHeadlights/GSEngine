@@ -34,7 +34,8 @@ auto gse::ide::search_system::init(data& d) -> async::task<> {
 			.path = browse.path,
 			.name = browse.name,
 			.compile_commands = browse.compile_commands,
-			.is_project = browse.is_project
+			.is_project = browse.is_project,
+			.counts_loc = browse.counts_loc
 		});
 
 		std::error_code compile_commands_ec;

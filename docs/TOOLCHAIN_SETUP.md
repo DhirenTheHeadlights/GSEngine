@@ -11,7 +11,7 @@ GCC trunk toolchain, and provisions Ninja into `~/.gcc-trunk/ninja` (the CMake p
 add that to `PATH`, so no global install is needed). To run only the toolchain step:
 
 ```
-python scripts/install_gcc_trunk.py --persist
+python Tools/install_gcc_trunk.py --persist
 cmake --preset x64-mingw-gcc-Release
 cmake --build --preset x64-mingw-gcc-Release
 ```
@@ -39,7 +39,7 @@ dispatch:
   `gcc.gnu.org/pub/gcc/snapshots/`, computes the next `gcc-trunk-vN` tag, and skips
   if that snapshot was already published.
 - **build** (Windows): MSYS2 builds GCC from the snapshot through the vendored recipe
-  (`scripts/gcc-toolchain/recipe/`), then `scripts/package_gcc_toolchain.py` stages
+  (`Tools/gcc-toolchain/recipe/`), then `Tools/package_gcc_toolchain.py` stages
   the relocatable toolchain and zips it, and the zip is published as the release.
 
 > The scheduled trigger only fires for the workflow on the repository's **default
@@ -51,10 +51,10 @@ Same entry point CI uses (needs an MSYS2 install with `base-devel` + the GCC bui
 deps — see the `install:` list in the workflow):
 
 ```
-python scripts/build_gcc_trunk.py --snapshot 20260601 --msys-root C:/msys64
+python Tools/build_gcc_trunk.py --snapshot 20260601 --msys-root C:/msys64
 ```
 
 Produces `dist/gcc-trunk-windows-x64.zip`. The vendored recipe carries MSYS2's
 Windows patch stack; a plain `configure && make` of GCC trunk does **not** build on
 native Windows. When trunk drifts enough that a vendored patch stops applying, the
-weekly build fails loudly — update `scripts/gcc-toolchain/recipe/` and re-dispatch.
+weekly build fails loudly — update `Tools/gcc-toolchain/recipe/` and re-dispatch.

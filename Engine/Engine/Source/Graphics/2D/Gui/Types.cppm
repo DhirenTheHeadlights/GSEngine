@@ -82,6 +82,7 @@ export namespace gse::gui {
 		float smooth_factor = 0.15f;
 		bool auto_hide_scrollbar = true;
 		bool smooth_scrolling = true;
+		bool middle_click_auto_scroll = true;
 	};
 
 	struct scroll_bar_input {
@@ -217,6 +218,9 @@ export namespace gse::gui {
 		) const -> resource::handle<font>;
 	};
 
+	inline constexpr float min_menu_zoom = 0.5f;
+	inline constexpr float max_menu_zoom = 3.f;
+
 	struct menu : identifiable, identifiable_owned {
 		explicit menu(
 			std::string_view tag,
@@ -237,6 +241,7 @@ export namespace gse::gui {
 		std::uint32_t active_tab_index = 0;
 		bool tabs_closeable = true;
 		tab_strip_state tab_bar;
+		float zoom = 1.f;
 		std::uint32_t z_order = 0;
 		bool was_begun_this_frame = false;
 		bool was_visible_last_frame = false;
@@ -289,6 +294,36 @@ export namespace gse::gui {
 		text_edit_action action = text_edit_action::none;
 	};
 
+	enum class image_encoding : std::uint8_t {
+		png,
+		jpeg,
+		gif,
+		webp,
+	};
+
+	struct image_attachment {
+		std::filesystem::path path;
+		vec2u size;
+		image_encoding encoding = image_encoding::png;
+		resource::handle<texture> preview;
+	};
+
+	struct image_attachments {
+		std::vector<image_attachment> items;
+		std::optional<std::size_t> viewing;
+
+		auto take_items() -> std::vector<image_attachment>;
+
+		auto remove(
+			std::size_t index
+		) -> void;
+	};
+
+	struct image_paste_state {
+		id target;
+		std::optional<image_attachment> ready;
+	};
+
 	struct draw_context_init {
 		menu* current_menu;
 		const style& style;
@@ -302,7 +337,7 @@ export namespace gse::gui {
 		std::unordered_map<std::uint64_t, vec4f>& widget_anim_colors;
 		std::unordered_map<std::uint64_t, scroll_state>& widget_scrolls;
 		std::unordered_map<std::uint64_t, std::unordered_set<std::uint64_t>>& widget_tree_open;
-		render_layer current_layer = render_layer::content;
+		mutable render_layer current_layer = render_layer::content;
 		std::uint32_t current_z_order = 0;
 		render_layer input_layer = render_layer::content;
 		bool input_suppressed = false;
@@ -311,36 +346,12 @@ export namespace gse::gui {
 		tooltip_state* tooltip = nullptr;
 		context_menu_state* context_menu = nullptr;
 		std::optional<text_edit_request>* pending_text_edit = nullptr;
+		image_paste_state& image_paste;
 		std::vector<rectf> clip_stack;
 	};
 
-	struct draw_context : non_copyable, non_movable {
+	struct draw_context : draw_context_init, non_copyable, non_movable {
 		~draw_context() = default;
-
-		menu* current_menu;
-		const style& style;
-		const font_set& fonts;
-		resource::handle<texture> blank_texture;
-		vec2f& layout_cursor;
-		std::vector<renderer::sprite_command>& sprites;
-		std::vector<renderer::text_command>& texts;
-		std::deque<std::string>& text_pool;
-		std::size_t& text_pool_used;
-		std::unordered_map<std::uint64_t, vec4f>& widget_anim_colors;
-		std::unordered_map<std::uint64_t, scroll_state>& widget_scrolls;
-		std::unordered_map<std::uint64_t, std::unordered_set<std::uint64_t>>& widget_tree_open;
-
-		mutable render_layer current_layer = render_layer::content;
-		std::uint32_t current_z_order = 0;
-
-		render_layer input_layer = render_layer::content;
-		bool input_suppressed = false;
-		bool owns_keyboard = true;
-		class input_layer* hit_regions = nullptr;
-		tooltip_state* tooltip = nullptr;
-		context_menu_state* context_menu = nullptr;
-		std::optional<text_edit_request>* pending_text_edit = nullptr;
-		std::vector<rectf> clip_stack;
 
 		auto queue_sprite(
 			renderer::sprite_command cmd
@@ -372,6 +383,14 @@ export namespace gse::gui {
 		[[nodiscard]] auto take_text_edit(
 			id widget
 		) const -> text_edit_action;
+
+		auto request_image_paste(
+			id widget
+		) const -> void;
+
+		[[nodiscard]] auto take_image_paste(
+			id widget
+		) const -> std::optional<image_attachment>;
 
 		auto register_hit_region(
 			render_layer layer,
@@ -448,12 +467,17 @@ export namespace gse::gui {
 		) const -> bool;
 
 		[[nodiscard]] auto scroll_delta_for(
-			const rectf& rect
+			const rectf& rect,
+			scroll_axes axes = all_scroll_axes
 		) const -> vec2f;
 
-		auto consume_scroll() const -> void;
+		auto consume_scroll(
+			scroll_axes axes = all_scroll_axes
+		) const -> void;
 
-		[[nodiscard]] auto is_scroll_consumed() const -> bool;
+		[[nodiscard]] auto is_scroll_consumed(
+			scroll_axes axes = all_scroll_axes
+		) const -> bool;
 
 		[[nodiscard]] auto key_pressed_for(
 			key k

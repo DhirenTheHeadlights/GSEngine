@@ -86,6 +86,8 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto frame_in_progress() const -> bool;
 
+		auto apply_pending_resizes() -> void;
+
 		auto begin() -> std::expected<frame_token, frame_status>;
 
 		auto end(
@@ -98,6 +100,11 @@ export namespace gse::gpu {
 		) -> void;
 
 	private:
+		enum class recreate_cause : std::uint8_t {
+			window_resize,
+			swapchain_invalid,
+		};
+
 		frame(
 			swapchain_sync<device>&& s,
 			frame_fences<device>&& fences,
@@ -106,7 +113,8 @@ export namespace gse::gpu {
 		);
 
 		auto recreate_resources(
-			present_target& t
+			present_target& t,
+			recreate_cause cause
 		) -> expected<void>;
 
 		auto recreate_surface(

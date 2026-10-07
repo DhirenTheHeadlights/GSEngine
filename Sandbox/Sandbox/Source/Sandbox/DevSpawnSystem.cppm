@@ -239,7 +239,7 @@ auto sandbox::dev_spawn::run(
 				gse::generate_id(std::format("Character {}", i)),
 				rig,
 				clips,
-				gse::vec3<gse::position>(static_cast<float>(i) * character_spacing, 0.f, 0.f)
+				gse::vec3<gse::position>(gse::meters(static_cast<float>(i) * character_spacing, 0.f, 0.f))
 			);
 			if (!spawned.character.exists()) {
 				break;

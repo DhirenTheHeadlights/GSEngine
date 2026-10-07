@@ -11,16 +11,18 @@ import gse.ide.net;
 
 import :blame;
 import :chats;
+import :draft;
 import :model;
 import :panel;
+import :phase;
 import :session;
 import :system;
 
-auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_request, dispatch_request, gui::context_menu_result, build_runner::build_finished, build_runner::source_changed> requests_in, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request, blame_offer, build_runner::build_request> events_out, const shared_view<asset::data> assets_d, const shared_view<build_runner::data> build_d) -> async::task<> {
+auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_request, dispatch_request, draft_request, gui::context_menu_result, build_runner::build_finished, build_runner::source_changed> requests_in, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request, blame_offer, draft_ready, build_runner::build_request> events_out, const shared_view<build_runner::data> build_d) -> async::task<> {
 	if (!d.initialized) {
 		load_sessions(d);
 		adopt_inherited(d);
-		d.built = build_runner::build_times();
+		resume_interrupted(d);
 		d.default_model.options.emplace_back();
 		for (const model_option& option : available_models()) {
 			d.default_model.options.push_back(option.value);
@@ -29,7 +31,7 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 	}
 
 	if (d.sessions.empty()) {
-		create_session(d, config::primary().project_root);
+		create_session(d, config::primary().project_root, task_phase::scope);
 	}
 
 	for (session& s : d.sessions) {
@@ -42,18 +44,34 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 		hydrate_session(*shown);
 	}
 
-	if (std::optional<window::clipboard_image> pasted = window::take_clipboard_image()) {
-		attach_image(d, assets_d, std::move(*pasted));
-	}
-
 	for (const start_request& request : requests_in.of<start_request>()) {
-		session& started = create_session(d, request.cwd);
+		session& started = create_session(d, request.cwd, task_phase::apply);
 		if (!launch_session(started)) {
 			log::println(log::level::error, log::category::task, "agent: failed to launch 'claude' - is it on PATH?");
 			d.sessions.pop_back();
 			continue;
 		}
 		send_to_session(started, request.prompt, {});
+	}
+
+	if (std::optional<draft_ready> drafted = d.draft.take()) {
+		if (!drafted->failure.empty()) {
+			log::println(log::level::error, log::category::task, "agent: could not draft a commit message for {}: {}", drafted->root, drafted->failure);
+		}
+		events_out.push<draft_ready>(std::move(*drafted));
+	}
+
+	for (const draft_request& request : requests_in.of<draft_request>()) {
+		if (d.draft.active()) {
+			events_out.push<draft_ready>({
+				.root = request.root,
+				.failure = "another commit message is still being drafted",
+			});
+			continue;
+		}
+		d.draft.start([wanted = request, model = d.default_model.value](const std::stop_token& cancel) {
+			return draft_commit_message(wanted, model, cancel);
+		}, trace_id<"agent::draft">(), task::lane::background);
 	}
 
 	for (const gui::context_menu_result& result : requests_in.of<gui::context_menu_result>()) {
@@ -98,9 +116,15 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 		wake_observers(d, finished);
 	}
 
-	accept_hibernations(d);
+	bool state_changed = poll_build_inbox(d, events_out, build_d.building);
+	for (session& s : d.sessions) {
+		state_changed = service_phase(s) || state_changed;
+	}
+	if (state_changed) {
+		save_sessions(d);
+	}
+
 	refresh_presence(d);
-	poll_build_inbox(d, events_out, build_d.building);
 
 	for (const dispatch_request& request : requests_in.of<dispatch_request>()) {
 		if (request.session == 0) {
@@ -111,6 +135,8 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 		}
 	}
 
+	refresh_build_times(d);
+	wake_covered(d);
 	refresh_stale(d);
 	service_link(d);
 	refresh_usage(d);
@@ -132,15 +158,6 @@ auto gse::ide::agent::persist(const data& d) -> void {
 
 auto gse::ide::agent::shutdown(data& d) -> void {
 	const bool relaunching = app::relaunch_pending();
-
-	if (!relaunching) {
-		for (session& s : d.sessions) {
-			if (is_busy(s) && s.retry.held && !s.retry.waiting) {
-				s.retry.waiting = true;
-				log::println(log::level::info, log::category::task, "agent: chat '{}' was mid-turn - holding it to resend on the next start", s.name);
-			}
-		}
-	}
 
 	save_sessions(d);
 	net::cancel(d.link);

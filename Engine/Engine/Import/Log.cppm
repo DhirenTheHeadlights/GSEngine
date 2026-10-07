@@ -30,7 +30,8 @@ export namespace gse::log {
 		assets,
 		task,
 		save_system,
-		physics
+		physics,
+		test
 	};
 
 	enum class thread_role : std::uint8_t {
@@ -96,6 +97,8 @@ export namespace gse::log {
 		thread_role role,
 		std::size_t index
 	) -> void;
+
+	auto current_thread_role() -> thread_role;
 
 	struct record {
 		level lvl;

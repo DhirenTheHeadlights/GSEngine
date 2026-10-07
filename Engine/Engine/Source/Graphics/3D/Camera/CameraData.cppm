@@ -16,7 +16,7 @@ export namespace gse::camera {
 		id requester_id{};
 		target target{};
 		int priority = 0;
-		time blend_duration = milliseconds(300);
+		time blend_duration = milliseconds(300.f);
 		bool continuous = true;
 	};
 }

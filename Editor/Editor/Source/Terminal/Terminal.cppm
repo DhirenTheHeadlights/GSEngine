@@ -11,6 +11,8 @@ export namespace gse::ide::terminal {
 
 	using command_runner = spawn::output_stream;
 
+	using level_palette = std::array<vec4f, enum_values<log::level>().size()>;
+
 	struct line {
 		std::uint64_t seq;
 		log::level lvl;
@@ -65,6 +67,7 @@ export namespace gse::ide::terminal {
 		gui::text_buffer buffer;
 		std::vector<log::level> line_levels;
 		std::vector<gui::text_span> spans;
+		level_palette palette{};
 		gui::text_area_state view;
 		std::string input;
 		gui::text_input_state input_state;

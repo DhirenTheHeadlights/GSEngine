@@ -371,8 +371,8 @@ auto gse::vulkan::device::create_swap_chain(const gpu::surface surface, const ve
 	{
 		const auto [props_result, props] = vk_device.getSwapchainTimingPropertiesEXT(vk_swapchain);
 		if (props_result == vk::Result::eSuccess) {
-			refresh_interval = time_t<std::uint64_t>(props.first.refreshInterval);
-			refresh_duration = time_t<std::uint64_t>(props.first.refreshDuration);
+			refresh_interval = nanoseconds(props.first.refreshInterval);
+			refresh_duration = nanoseconds(props.first.refreshDuration);
 		}
 	}
 

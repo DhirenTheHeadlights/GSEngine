@@ -381,11 +381,10 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 		const float content_h = cell_h * static_cast<float>(params.tabs.size() + add_cells);
 		const float max_scroll = std::max(0.f, content_h - area.height());
 
-		if (ctx.hovers(area) && !ctx.is_scroll_consumed()) {
-			const vec2f wheel = ctx.scroll_delta();
+		if (ctx.hovers(area)) {
+			const vec2f wheel = ctx.scroll_delta_for(area, scroll_axis_kind::vertical);
 			if (std::abs(wheel.y()) > 0.001f) {
 				state.scroll.offset = std::clamp(state.scroll.offset - wheel.y() * cell_h, 0.f, max_scroll);
-				ctx.consume_scroll();
 			}
 		}
 		state.scroll.offset = std::clamp(state.scroll.offset, 0.f, max_scroll);
@@ -491,22 +490,26 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 	const float total = metrics.content_extent;
 	const bool overflow = metrics.overflow;
 
-	if (overflow && ctx.hovers(tab_area) && !ctx.is_scroll_consumed()) {
-		const vec2f wheel = ctx.scroll_delta();
+	if (overflow && ctx.hovers(tab_area)) {
 		const bool shift = ctx.key_held(key::left_shift) || ctx.key_held(key::right_shift);
-		if (params.overflow == tab_overflow::wrap && std::abs(wheel.y()) > 0.001f && !shift) {
+		const bool wraps = params.overflow == tab_overflow::wrap;
+		scroll_axes axes{ scroll_axis_kind::horizontal };
+		if (shift || wraps) {
+			axes.set(scroll_axis_kind::vertical);
+		}
+
+		const vec2f wheel = ctx.scroll_delta_for(tab_area, axes);
+		if (wraps && std::abs(wheel.y()) > 0.001f && !shift) {
 			if (wheel.y() > 0.f) {
 				state.visible_rows = state.visible_rows > 1 ? state.visible_rows - 1 : 1;
 			}
 			else {
 				++state.visible_rows;
 			}
-			ctx.consume_scroll();
 		}
 		else if (std::abs(wheel.x()) > 0.001f || (shift && std::abs(wheel.y()) > 0.001f)) {
 			state.scroll.offset -= (wheel.x() + wheel.y()) * 80.f * sty.scale_factor;
 			state.scroll.target = state.scroll.offset;
-			ctx.consume_scroll();
 		}
 	}
 

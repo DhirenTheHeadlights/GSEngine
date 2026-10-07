@@ -61,6 +61,22 @@ namespace gse::gui::draw {
 	) -> bool;
 }
 
+namespace gse::gui {
+	struct icon_button_visual {
+		rectf rect;
+		std::span<const symbol::stroke> glyph;
+		vec4f background;
+		vec4f icon;
+		float corner_radius = 0.f;
+		std::optional<rectf> clip_rect = std::nullopt;
+	};
+
+	auto draw_icon_button(
+		const draw_context& ctx,
+		const icon_button_visual& visual
+	) -> void;
+}
+
 export namespace gse::gui {
 	struct button {
 		using result = bool;
@@ -192,6 +208,22 @@ auto gse::gui::draw::button_in_rect(const draw_context& ctx, const button_params
 	}
 
 	return btn.activated;
+}
+
+auto gse::gui::draw_icon_button(const draw_context& ctx, const icon_button_visual& visual) -> void {
+	ctx.queue_sprite({
+		.rect = visual.rect,
+		.color = visual.background,
+		.texture = ctx.blank_texture,
+		.clip_rect = visual.clip_rect,
+		.corner_radius = visual.corner_radius,
+	});
+
+	symbol::draw(ctx, visual.glyph, visual.rect, {
+		.color = visual.icon,
+		.extent = std::min(ctx.style.icon_extent, std::min(visual.rect.width(), visual.rect.height())),
+		.clip_rect = visual.clip_rect,
+	});
 }
 
 auto gse::gui::button::draw(const draw_context& ctx, const params p, id& hot, id& active, id&) -> bool {

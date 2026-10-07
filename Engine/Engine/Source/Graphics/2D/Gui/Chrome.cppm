@@ -6,6 +6,7 @@ import gse.math;
 import std;
 
 import :builder;
+import :button_widget;
 import :gui;
 import :render_layer;
 import :styles;

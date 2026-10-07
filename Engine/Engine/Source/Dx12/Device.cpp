@@ -165,7 +165,7 @@ gse::dx12::device::device(const std::optional<shared_view<window::data>> win,con
 	directx::set_object_name(m_graphics_queue.get(), graphics_queue_name.data(), graphics_queue_name.size());
 	directx::set_object_name(m_compute_queue.get(), compute_queue_name.data(), compute_queue_name.size());
 	if (win) {
-		m_hwnd = win32::hwnd_from_glfw_window(window::raw_handle(*win).value);
+		m_hwnd = static_cast<win32::HWND>(win->primary.handle.value);
 	}
 	log::println(log::category::dx12, "queue={} hwnd={}", static_cast<void*>(m_graphics_queue.get()), m_hwnd);
 
@@ -464,6 +464,7 @@ auto gse::dx12::device::cmd_reset(const gpu::command_buffer_handle cmd) -> void 
 			if (f.list.get() == list) {
 				f.allocator->Reset();
 				list->Reset(f.allocator.get(), nullptr);
+				reset_acquired_list(list);
 				return;
 			}
 		}
@@ -473,7 +474,7 @@ auto gse::dx12::device::cmd_reset(const gpu::command_buffer_handle cmd) -> void 
 auto gse::dx12::device::cmd_begin(gpu::command_buffer_handle) -> void {}
 
 auto gse::dx12::device::cmd_end(const gpu::command_buffer_handle cmd) -> void {
-	std::bit_cast<directx::ID3D12GraphicsCommandList*>(cmd)->Close();
+	close_list(std::bit_cast<directx::ID3D12GraphicsCommandList*>(cmd));
 }
 
 auto gse::dx12::device::cmd_pipeline_barrier(const gpu::command_buffer_handle cmd, const gpu::dependency_info& dep) -> void {
@@ -1208,6 +1209,36 @@ auto gse::dx12::device::reset_acquired_list(directx::ID3D12GraphicsCommandList* 
 	state.compute_pso_bound = false;
 	state.pending = nullptr;
 	state.resolved_pso = nullptr;
+	state.push_size = 0;
+	const std::lock_guard _(m_unclosed_mutex);
+	m_unclosed_lists.erase(list);
+}
+
+auto gse::dx12::device::close_list(directx::ID3D12GraphicsCommandList* list) -> void {
+	if (!list) {
+		return;
+	}
+	long hr = 0;
+	if (directx::close_command_list(list, hr)) {
+		return;
+	}
+	log::println(
+		log::level::error,
+		log::category::dx12,
+		"Close() FAILED on list {} hr=0x{:08x} removed=0x{:08x}; it recorded an invalid command and will not be "
+		"submitted. Enable Graphics.validation_layers_enabled to have the debug layer name the offending command",
+		static_cast<void*>(list),
+		static_cast<std::uint32_t>(hr),
+		static_cast<std::uint32_t>(m_device->GetDeviceRemovedReason())
+	);
+	drain_validation_messages();
+	const std::lock_guard _(m_unclosed_mutex);
+	m_unclosed_lists.insert(list);
+}
+
+auto gse::dx12::device::list_unclosed(directx::ID3D12GraphicsCommandList* list) const -> bool {
+	const std::lock_guard _(m_unclosed_mutex);
+	return m_unclosed_lists.contains(list);
 }
 
 auto gse::dx12::device::create_shader_program(const gpu::shader_program_create_info& info) -> gpu::shader_program {

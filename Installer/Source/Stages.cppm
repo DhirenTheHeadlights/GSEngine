@@ -138,6 +138,10 @@ auto installer::uninstall(const std::filesystem::path& image) -> std::expected<v
 	gse::win32::delete_user_registry_key(uninstall_key(version, preset).c_str());
 
 	std::error_code ec;
+	if (const auto extracted = gse::sdk::extraction_dir(version, preset)) {
+		std::filesystem::remove_all(*extracted, ec);
+		std::filesystem::remove(extracted->parent_path(), ec);
+	}
 	for (const auto line : std::views::split(record, '\n')) {
 		const std::string_view path(line);
 		if (!path.empty()) {

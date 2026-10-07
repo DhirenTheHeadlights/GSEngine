@@ -59,7 +59,7 @@ namespace gse::config {
 	) -> std::string;
 
 	auto known_folder(
-		int csidl
+		const win32::GUID& folder
 	) -> std::filesystem::path;
 
 	auto env_path(
@@ -148,12 +148,15 @@ auto gse::config::manifest_value(const std::string_view text, const std::string_
 	return {};
 }
 
-auto gse::config::known_folder(const int csidl) -> std::filesystem::path {
-	wchar_t buffer[win32::max_path]{};
-	if (win32::SHGetFolderPathW(nullptr, csidl, nullptr, win32::shgfp_type_current, buffer) != 0) {
-		return {};
+auto gse::config::known_folder(const win32::GUID& folder) -> std::filesystem::path {
+	wchar_t* buffer = nullptr;
+	const auto status = win32::SHGetKnownFolderPath(folder, win32::kf_flag_default, nullptr, &buffer);
+	std::filesystem::path result;
+	if (status == 0) {
+		result = std::filesystem::path(std::wstring_view(buffer));
 	}
-	return { std::wstring_view(buffer) };
+	win32::CoTaskMemFree(buffer);
+	return result;
 }
 
 auto gse::config::env_path(const char* name) -> std::filesystem::path {
@@ -199,7 +202,7 @@ auto gse::config::resolve() -> resolved {
 
 	std::filesystem::path config_root = env_path("GSE_USER_DIR");
 	if (config_root.empty()) {
-		const std::filesystem::path appdata = known_folder(win32::csidl_appdata);
+		const std::filesystem::path appdata = known_folder(win32::FOLDERID_RoamingAppData);
 		if (appdata.empty()) {
 			fatal("could not resolve the roaming AppData folder");
 		}
@@ -208,7 +211,7 @@ auto gse::config::resolve() -> resolved {
 
 	std::filesystem::path projects = env_path("GSE_PROJECTS_DIR");
 	if (projects.empty()) {
-		const std::filesystem::path profile = known_folder(win32::csidl_profile);
+		const std::filesystem::path profile = known_folder(win32::FOLDERID_Profile);
 		if (profile.empty()) {
 			fatal("could not resolve the user profile folder");
 		}
@@ -225,7 +228,7 @@ auto gse::config::resolve() -> resolved {
 
 	std::filesystem::path state_root = env_path("GSE_STATE_DIR");
 	if (state_root.empty()) {
-		const std::filesystem::path local = known_folder(win32::csidl_local_appdata);
+		const std::filesystem::path local = known_folder(win32::FOLDERID_LocalAppData);
 		if (local.empty()) {
 			fatal("could not resolve the local AppData folder");
 		}

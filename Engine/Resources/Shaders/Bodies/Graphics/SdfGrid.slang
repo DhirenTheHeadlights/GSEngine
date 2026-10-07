@@ -1,15 +1,6 @@
-struct VS_OUT {
-    float4 clip_pos : SV_Position;
-    float2 ndc      : TEXCOORD0;
-};
-
 [shader("vertex")]
-VS_OUT vs_main(uint vid : SV_VertexID) {
-    float2 p = float2((vid << 1) & 2, vid & 2);
-    VS_OUT o;
-    o.ndc = p * 2.0 - 1.0;
-    o.clip_pos = float4(o.ndc, 0.0, 1.0);
-    return o;
+screen_vs_out vs_main(uint vid : SV_VertexID) {
+    return screen_pass_vertex(vid, screen_depth_far);
 }
 
 struct FS_OUT {
@@ -50,9 +41,10 @@ float density_fade(float2 footprint, float spacing, float half_px) {
 }
 
 [shader("fragment")]
-FS_OUT fs_main(VS_OUT input) {
-    float4 wn = mul(camera_ubo.inv_view_proj, float4(input.ndc, 1.0, 1.0));
-    float4 wf = mul(camera_ubo.inv_view_proj, float4(input.ndc, 0.0, 1.0));
+FS_OUT fs_main(screen_vs_out input) {
+    float2 ndc = screen_ndc(input.uv);
+    float4 wn = mul(camera_ubo.inv_view_proj, float4(ndc, 1.0, 1.0));
+    float4 wf = mul(camera_ubo.inv_view_proj, float4(ndc, 0.0, 1.0));
     float3 ro = wn.xyz / wn.w;
     float3 rt = wf.xyz / wf.w;
     float3 rd = normalize(rt - ro);

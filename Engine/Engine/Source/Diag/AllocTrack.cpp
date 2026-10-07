@@ -35,10 +35,10 @@ namespace gse::alloc {
 	site_slot slots[site_capacity] = {};
 
 	std::atomic<sample_entry*> samples{ nullptr };
-	std::atomic<tracked_bytes> total_bytes{ tracked_bytes(0) };
+	std::atomic<tracked_bytes> total_bytes{};
 	std::atomic<std::int64_t> total_samples{ 0 };
 	std::atomic<std::int64_t> total_evicted{ 0 };
-	std::atomic<tracked_bytes> interval_bytes{ tracked_bytes(default_interval) };
+	std::atomic<tracked_bytes> interval_bytes{ tracked_bytes::from<bytes>(default_interval) };
 	std::atomic<std::uint64_t> seed_source{ 0x243f6a8885a308d3ull };
 	std::atomic<bool> tracking{ false };
 
@@ -119,16 +119,16 @@ auto gse::alloc::next_countdown() -> tracked_bytes {
 
 	const double uniform = static_cast<double>(rng_state >> 11) * 0x1p-53;
 	const data_size_t<double, bytes> interval = interval_bytes.load(std::memory_order_relaxed);
-	return tracked_bytes(-interval * std::log(1.0 - uniform)) + tracked_bytes(1);
+	return tracked_bytes(-interval * std::log(1.0 - uniform)) + tracked_bytes::from<bytes>(1);
 }
 
 auto gse::alloc::should_sample(const std::size_t size) -> bool {
-	if (interval_bytes.load(std::memory_order_relaxed) == tracked_bytes(0)) {
+	if (interval_bytes.load(std::memory_order_relaxed) == tracked_bytes{}) {
 		return true;
 	}
 
-	sample_countdown -= tracked_bytes(size);
-	if (sample_countdown > tracked_bytes(0)) {
+	sample_countdown -= tracked_bytes::from<bytes>(size);
+	if (sample_countdown > tracked_bytes{}) {
 		return false;
 	}
 
@@ -156,7 +156,7 @@ auto gse::alloc::remember(void* block, const std::size_t size, const void* site_
 		return;
 	}
 
-	const tracked_bytes weight = std::max(tracked_bytes(size), interval_bytes.load(std::memory_order_relaxed));
+	const tracked_bytes weight = std::max(tracked_bytes::from<bytes>(size), interval_bytes.load(std::memory_order_relaxed));
 	const auto key = reinterpret_cast<std::uintptr_t>(block);
 	auto& entry = table[static_cast<std::size_t>(mix(key)) & (sample_capacity - 1)];
 
@@ -283,7 +283,7 @@ auto gse::alloc::address_space_usage() -> address_space {
 	MEMORY_BASIC_INFORMATION region{};
 
 	for (std::uintptr_t at = 0; VirtualQuery(reinterpret_cast<const void*>(at), &region, sizeof(region)) == sizeof(region); at += region.RegionSize) {
-		const byte_count size(region.RegionSize);
+		const auto size = byte_count::from<bytes>(region.RegionSize);
 
 		if (region.State == mem_reserve) {
 			usage.reserved += size;
@@ -344,7 +344,7 @@ auto gse::alloc::snapshot(std::vector<site>& out) -> void {
 		const std::int64_t count = slot.live_samples.load(std::memory_order_relaxed);
 		const tracked_bytes since = live - slot.mark.load(std::memory_order_relaxed);
 
-		if (count == 0 && since == tracked_bytes(0)) {
+		if (count == 0 && since == tracked_bytes{}) {
 			continue;
 		}
 

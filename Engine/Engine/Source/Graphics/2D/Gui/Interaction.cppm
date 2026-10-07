@@ -104,7 +104,7 @@ namespace gse::gui::interaction {
 }
 
 auto gse::gui::interaction::register_click(click_state& state, const vec2f pos) -> int {
-	constexpr time multi_click_interval = milliseconds(400);
+	constexpr time multi_click_interval = milliseconds(400.f);
 	constexpr float multi_click_slop = 4.f;
 	const auto elapsed = state.since_last.reset();
 	const bool near_last = elapsed <= multi_click_interval

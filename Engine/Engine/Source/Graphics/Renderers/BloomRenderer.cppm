@@ -52,7 +52,8 @@ export namespace gse::renderer::bloom {
 
 		[[= shared]] std::array<gpu::image, max_mip_count> mips_down;
 		[[= shared]] std::array<gpu::image, max_mip_count> mips_up;
-		std::array<vec2u, max_mip_count> mip_extents{};
+		[[= shared]] std::array<vec2u, max_mip_count> mip_extents{};
+		[[= shared]] std::array<vec2u, max_mip_count> mip_allocated_extents{};
 		[[= shared]] std::uint32_t active_mip_count = 0;
 
 		gpu::bindless_handle sampler;

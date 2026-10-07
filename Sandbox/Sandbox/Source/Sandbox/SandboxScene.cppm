@@ -140,7 +140,7 @@ auto sandbox::player::run(gse::context& ctx, data& d, const gse::channel_read<gs
 			cameras.add(
 				request.entity,
 				{
-					.initial_position = gse::vec3<gse::position>(0.f, 2.f, 0.f),
+					.initial_position = gse::vec3<gse::position>(gse::meters(0.f, 2.f, 0.f)),
 				}
 			);
 		}
@@ -183,7 +183,7 @@ auto sandbox::sandbox_scene_setup(gse::scene& s) -> void {
 	s.spawn(
 		"Floor",
 		static_disc_floor(
-			gse::vec3<gse::position>(0.f, -0.501f, 0.f),
+			gse::vec3<gse::position>(gse::meters(0.f, -0.501f, 0.f)),
 			floor_size,
 			gse::meters(1200.f)
 		)
@@ -202,7 +202,7 @@ auto sandbox::sandbox_scene_setup(gse::scene& s) -> void {
 
 	s.build("Scene Camera")
 		.with<gse::free_camera::component>({
-			.initial_position = gse::vec3<gse::position>(0.f, 5.f, 10.f),
+			.initial_position = gse::vec3<gse::position>(gse::meters(0.f, 5.f, 10.f)),
 		});
 }
 
@@ -445,7 +445,7 @@ auto physics_parity_scene_setup(gse::scene& s) -> void {
 		s.spawn(
 			"Floor",
 			sandbox::static_box(
-				gse::vec3<gse::position>(0.f, -0.5f, 0.f),
+				gse::vec3<gse::position>(gse::meters(0.f, -0.5f, 0.f)),
 				floor_size
 			)
 		);
@@ -467,7 +467,7 @@ auto physics_parity_scene_setup(gse::scene& s) -> void {
 	s.spawn(
 		"Floor",
 		sandbox::static_box(
-			gse::vec3<gse::position>(0.f, -0.5f, 0.f),
+			gse::vec3<gse::position>(gse::meters(0.f, -0.5f, 0.f)),
 			floor_size
 		)
 	);
@@ -689,7 +689,7 @@ auto sandbox::parity_domino_scene_setup(gse::scene& s) -> void {
 		)
 	);
 
-	spawn_domino_chain(s, gse::vec3<gse::position>(-5.f, 0.f, 0.f));
+	spawn_domino_chain(s, gse::vec3<gse::position>(gse::meters(-5.f, 0.f, 0.f)));
 }
 
 auto sandbox::spawn_parity_grid(gse::scene& s, const int side, const float spacing, const std::string_view prefix) -> void {

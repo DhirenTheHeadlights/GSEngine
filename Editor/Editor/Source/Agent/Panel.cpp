@@ -3,7 +3,6 @@ module gse.ide.agent:panel_impl;
 import gse;
 import gse.ide.config;
 import gse.ide.navigation;
-import gse.win32;
 import std;
 
 import :blame;
@@ -11,6 +10,7 @@ import :chats;
 import :layout;
 import :model;
 import :panel;
+import :phase;
 import :session;
 import :stream;
 
@@ -34,7 +34,7 @@ auto gse::ide::agent::input_empty(const gui::text_buffer& buffer) -> bool {
 auto gse::ide::agent::reset_input(session& s) -> void {
 	s.draft.lines.assign(1, {});
 	s.draft_state = {};
-	s.attachments.clear();
+	s.attachments = {};
 }
 
 auto gse::ide::agent::fill_input(session& s, const std::string_view text) -> void {
@@ -57,53 +57,6 @@ auto gse::ide::agent::fill_input(session& s, const std::string_view text) -> voi
 		.caret = end_of_text,
 		.anchor = end_of_text,
 	};
-}
-
-auto gse::ide::agent::attach_image(data& d, const shared_view<asset::data> assets, window::clipboard_image pasted) -> void {
-	session* target = active_session(d);
-	if (!target) {
-		return;
-	}
-
-	if (!pasted.path.empty() && image::dimensions(pasted.path).x() == 0) {
-		return;
-	}
-
-	image::data decoded = pasted.path.empty()
-		? image::data{
-		.size = pasted.size,
-		.channels = 4,
-		.pixels = std::move(pasted.pixels),
-	}
-		: image::load_rgba(pasted.path);
-
-	if (decoded.pixels.empty() || decoded.size.x() == 0 || decoded.size.y() == 0) {
-		return;
-	}
-
-	const std::uint32_t index = d.next_attachment++;
-	std::filesystem::path path = pasted.path;
-
-	if (!sendable_encoding(path)) {
-		path = std::filesystem::temp_directory_path()
-			/ std::format("gse_agent_paste_{}_{}.png", win32::GetCurrentProcessId(), index);
-		if (!image::write_png(path, decoded.size.x(), decoded.size.y(), 4, decoded.pixels.data())) {
-			return;
-		}
-	}
-
-	target->attachments.push_back({
-		.path = std::move(path),
-		.size = decoded.size,
-		.preview = asset::queue<texture>(
-			assets,
-			std::format("agent_paste_{}", index),
-			decoded.pixels,
-			decoded.size,
-			4u,
-			texture::profile::generic_clamp_to_edge
-		),
-	});
 }
 
 auto gse::ide::agent::agent_context_tag() -> id {
@@ -133,7 +86,7 @@ auto gse::ide::agent::usage_label(const usage_window& window) -> std::string {
 }
 
 auto gse::ide::agent::tool_output_label(const session_info& info) -> std::string {
-	if (info.tool_bytes <= byte_count(0)) {
+	if (info.tool_bytes <= bytes(0.)) {
 		return "-";
 	}
 
@@ -147,7 +100,7 @@ auto gse::ide::agent::tool_output_label(const session_info& info) -> std::string
 		return std::format("{:.0f:B}", size);
 	};
 
-	if (info.tool_peak <= byte_count(0)) {
+	if (info.tool_peak <= bytes(0.)) {
 		return size_label(info.tool_bytes);
 	}
 	return std::format("{} \xC2\xB7 biggest {} from {}", size_label(info.tool_bytes), size_label(info.tool_peak), info.tool_peak_name);
@@ -566,6 +519,7 @@ auto gse::ide::agent::draw_overview(gui::builder& ui, data& d, const rectf& area
 
 		for (const session& s : d.sessions) {
 			const std::string task = overview_task(s);
+			const bool busy = is_busy(s) && build_wait_for(d, s) == build_wait::none;
 
 			std::string footer = s.info.model;
 			if (s.stale || !s.blame.empty()) {
@@ -575,7 +529,7 @@ auto gse::ide::agent::draw_overview(gui::builder& ui, data& d, const rectf& area
 				footer += " \xC2\xB7 broke " + blame_label(s);
 			}
 
-			const float text_lines = 1.f + (task.empty() ? 0.f : 1.f) + (footer.empty() ? 0.f : 1.f);
+			const float text_lines = 2.f + (busy || !task.empty() ? 1.f : 0.f) + (footer.empty() ? 0.f : 1.f);
 
 			const rectf row = next_row(text_lines * line_h + pad * 1.5f);
 			if (!row.intersects(clip)) {
@@ -625,7 +579,20 @@ auto gse::ide::agent::draw_overview(gui::builder& ui, data& d, const rectf& area
 				.clip_rect = clip,
 			});
 
-			if (!task.empty()) {
+			baseline -= line_h;
+			draw_phase_pipeline(c, s, rectf::from_position_size(
+				{ text_left, baseline - text_view->vertical_center_offset(fs) + line_h * 0.5f },
+				{ std::max(0.f, row.width() - pad * 2.f), line_h }
+			), body_clip);
+
+			if (busy) {
+				baseline -= line_h;
+				draw_activity_line(c, d, s, rectf::from_position_size(
+					{ text_left, baseline - text_view->vertical_center_offset(fs) + line_h * 0.5f },
+					{ std::max(0.f, row.width() - pad * 2.f), line_h }
+				), body_clip);
+			}
+			else if (!task.empty()) {
 				baseline -= line_h;
 				c.queue_text({
 					.font = c.fonts.text,
@@ -692,7 +659,7 @@ auto gse::ide::agent::draw_session_tabs(gui::builder& ui, data& d, const rectf& 
 		descs.push_back({
 			.tab_id = session_tab_id(s.id),
 			.caption = s.name,
-			.dirty = s.hibernating || build_wait_for(d, s) != build_wait::none,
+			.dirty = s.hibernating || s.gate.has_value() || build_wait_for(d, s) != build_wait::none,
 			.busy = is_busy(s),
 			.warning = s.stale,
 			.error = !s.blame.empty() || !s.info.failure.empty(),
@@ -777,8 +744,9 @@ auto gse::ide::agent::draw_session_tabs(gui::builder& ui, data& d, const rectf& 
 	}
 
 	if (tabs.add_requested) {
-		create_session(d, config::primary().project_root);
-		d.overview_active = false;
+		d.naming_new_chat = true;
+		d.new_chat_name.clear();
+		d.new_chat_name_state = {};
 	}
 
 	session* renaming = d.renaming != 0 && tabs.renaming_rect.width() > 0.f ? session_of(session_tab_id(d.renaming)) : nullptr;
@@ -855,29 +823,67 @@ auto gse::ide::agent::draw_close_confirm(gui::builder& ui, data& d, const rectf&
 	}
 }
 
-auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, const rectf& area, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out) -> void {
+auto gse::ide::agent::draw_new_chat_prompt(gui::builder& ui, data& d, const rectf& body) -> void {
+	if (!d.naming_new_chat) {
+		return;
+	}
+
+	const gui::prompt_result result = ui.draw<gui::prompt_dialog>({
+		.body = body,
+		.title = "Name this task",
+		.message = "The chat scopes it first, and you approve the plan before anything is written.",
+		.value = d.new_chat_name,
+		.state = d.new_chat_name_state,
+		.submit_label = "Start",
+		.key = "##agent_new_chat",
+	});
+
+	if (result == gui::prompt_result::pending) {
+		return;
+	}
+
+	d.naming_new_chat = false;
+	if (result == gui::prompt_result::submitted) {
+		session& started = create_session(d, config::primary().project_root, task_phase::scope);
+		started.name = d.new_chat_name;
+		d.overview_active = false;
+	}
+	d.new_chat_name.clear();
+	d.new_chat_name_state = {};
+}
+
+auto gse::ide::agent::draw_transcript_hint(const gui::draw_context& ctx, const std::string& hint, const rectf& area) -> void {
+	const gui::style& sty = ctx.style;
+	const float pad = sty.padding;
+
+	float y = area.top() - pad - sty.font_size;
+	for (const std::string_view line : ctx.fonts.text.resolve()->wrap(hint, area.width() - pad * 2.f, sty.font_size)) {
+		ctx.queue_text({
+			.font = ctx.fonts.text,
+			.text = line,
+			.position = { area.left() + pad, y },
+			.scale = sty.font_size,
+			.color = sty.color_text_secondary,
+			.clip_rect = area,
+		});
+		y -= sty.font_size * 1.45f;
+	}
+}
+
+auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, transcript_view& v, const rectf& area, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out) -> void {
 	const gui::draw_context& ctx = ui.ctx;
 	const vec2f mouse = ctx.mouse_position();
 	const gui::style& sty = ctx.style;
 	const float pad = sty.padding;
 
 	session* s = active_session(d);
-	if (!s || s->rows.empty()) {
-		float y = area.top() - pad - sty.font_size;
-		const std::string hint = s
-			? "Type a prompt below to start claude in " + s->cwd.generic_display_string() + "."
-			: "No agents yet. Type a prompt below, or press + to add a session, in " + config::primary().name + ".";
-		for (const std::string_view line : ctx.fonts.text.resolve()->wrap(hint, area.width() - pad * 2.f, sty.font_size)) {
-			ctx.queue_text({
-				.font = ctx.fonts.text,
-				.text = line,
-				.position = { area.left() + pad, y },
-				.scale = sty.font_size,
-				.color = sty.color_text_secondary,
-				.clip_rect = area,
-			});
-			y -= sty.font_size * 1.45f;
-		}
+	if (!s) {
+		return;
+	}
+	if (!std::ranges::any_of(s->rows, [&](const transcript_row& row) { return shows(v.filter, row); })) {
+		draw_transcript_hint(ctx, v.filter == row_filter::changes
+			? std::string("No file edits yet.")
+			: "Type a prompt below to start claude in " + s->cwd.generic_display_string() + ".", area);
 		return;
 	}
 
@@ -885,37 +891,39 @@ auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, const rectf& ar
 	const auto body_view = ctx.fonts.text.resolve();
 	const float advance = code_view->width("0", sty.font_size);
 	const transcript_metrics metrics = {
+		.fonts = ctx.fonts,
 		.face = *code_view,
 		.body = *body_view,
 		.width = std::max(0.f, area.width() - pad * 2.f - gui::scroll_config{}.scrollbar_width),
 		.scale = sty.font_size,
 	};
-	sync_transcript(*s, sty, metrics);
+	sync_transcript(*s, v, sty, metrics);
 
-	if (s->buffer.lines.empty()) {
-		s->buffer.lines.emplace_back();
-		s->line_rows.push_back(0);
+	if (v.buffer.lines.empty()) {
+		v.buffer.lines.emplace_back();
+		v.line_rows.push_back(0);
 	}
 
 	const gui::interaction::press tail_press = ui.draw<gui::follow_tail>({
 		.area = area,
-		.state = s->view,
-		.name = "##agent_follow_tail",
+		.state = v.state,
+		.widget_id = generate_temp_id(hash_combine(v.log_id.number(), stable_id("agent_follow_tail"))),
 	});
 
 	const gui::buffer_position at = gui::text_area_position_at(ctx, {
-		.buffer = s->buffer,
-		.state = s->view,
+		.buffer = v.buffer,
+		.state = v.state,
 		.rect = area,
-		.spans = s->spans,
-		.blocks = s->blocks,
+		.spans = v.spans,
+		.stops = v.stops,
+		.blocks = v.blocks,
 		.indent_width = transcript_tab_width,
 	}, mouse);
-	const auto hovered = static_cast<std::uint32_t>(std::min<std::size_t>(at.line, s->line_rows.size() - 1));
-	const std::string_view hovered_text = s->buffer.line(hovered);
-	const link_marker* hit = ctx.hovers(area) && !tail_press.hovered && at.column < hovered_text.size() ? link_at(*s, hovered) : nullptr;
+	const auto hovered = static_cast<std::uint32_t>(std::min<std::size_t>(at.line, v.line_rows.size() - 1));
+	const std::string_view hovered_text = v.buffer.line(hovered);
+	const link_marker* hit = ctx.hovers(area) && !tail_press.hovered && at.column < hovered_text.size() ? link_at(v, hovered) : nullptr;
 	const std::optional<std::uint32_t> link = hit ? std::optional(hit->row) : std::nullopt;
-	const group_marker* toggle = ctx.hovers(area) && !tail_press.hovered ? marker_at(*s, hovered) : nullptr;
+	const group_marker* toggle = ctx.hovers(area) && !tail_press.hovered ? marker_at(v, hovered) : nullptr;
 
 	std::vector<gui::text_underline> underlines;
 	if (link || toggle) {
@@ -931,8 +939,8 @@ auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, const rectf& ar
 		});
 	}
 
-	const auto context_row = s->line_rows[hovered];
-	if (const group_marker* group = toggle ? group_at(*s, hovered) : nullptr) {
+	const auto context_row = v.line_rows[hovered];
+	if (const group_marker* group = toggle ? group_at(v, hovered) : nullptr) {
 		ctx.set_tooltip(gui::ids::make(std::format("##agent_group_{}_{}", s->id, group->row)), group_detail(*s, *group));
 	}
 	else if (ctx.hovers(area) && !tail_press.hovered && context_row < s->rows.size() && !hovered_text.empty() && s->rows[context_row].stamped > 0) {
@@ -958,8 +966,8 @@ auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, const rectf& ar
 
 	if (ctx.clicked_in_rect(area)) {
 		if (toggle) {
-			toggle_marker(*s, *toggle);
-			sync_transcript(*s, sty, metrics);
+			toggle_marker(*s, v, *toggle);
+			sync_transcript(*s, v, sty, metrics);
 		}
 		else if (link) {
 			const transcript_row& owner = s->rows[std::min<std::size_t>(*link, s->rows.size() - 1)];
@@ -974,13 +982,17 @@ auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, const rectf& ar
 		}
 	}
 
+	const std::optional<std::uint32_t> stale_diff = update_diff_scroll(ctx, v, area, advance);
+
 	ui.draw<gui::text_area>({
-		.buffer = s->buffer,
-		.state = s->view,
-		.widget_id = s->log_id,
-		.spans = s->spans,
+		.buffer = v.buffer,
+		.state = v.state,
+		.widget_id = v.log_id,
+		.spans = v.spans,
 		.underlines = underlines,
-		.blocks = s->blocks,
+		.blocks = v.blocks,
+		.stops = v.stops,
+		.rules = v.rules,
 		.rect = area,
 		.read_only = true,
 		.follow_tail = true,
@@ -988,71 +1000,8 @@ auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, const rectf& ar
 		.blink_interval = time{},
 	});
 
-	draw_diff_bars(ctx, *s, area, advance);
-}
-
-auto gse::ide::agent::draw_attachments(gui::builder& ui, session& s, const rectf& area) -> void {
-	const gui::draw_context& ctx = ui.ctx;
-	const gui::style& sty = ctx.style;
-	const float pad = sty.padding;
-
-	ctx.queue_sprite({
-		.rect = area,
-		.color = sty.color_input_background,
-		.texture = ctx.blank_texture,
-	});
-
-	const auto text_view = ctx.fonts.text.resolve();
-	const float thumb = std::max(0.f, area.height() - pad * 2.f);
-	const float close_extent = thumb * 0.35f;
-	float x = area.left() + pad;
-	std::size_t removed = s.attachments.size();
-
-	for (std::size_t i = 0; i < s.attachments.size(); ++i) {
-		const attachment& a = s.attachments[i];
-		const float aspect = static_cast<float>(a.size.x()) / static_cast<float>(std::max(1u, a.size.y()));
-		const float width = std::clamp(thumb * aspect, thumb * 0.5f, thumb * 2.5f);
-		const rectf frame = rectf::from_position_size({ x, area.top() - pad }, { width, thumb });
-
-		if (frame.right() > area.right() - pad) {
-			ctx.queue_text({
-				.font = ctx.fonts.text,
-				.text = ctx.intern(std::format("+{}", s.attachments.size() - i)),
-				.position = { x, area.center().y() + text_view->vertical_center_offset(sty.font_size) },
-				.scale = sty.font_size,
-				.color = sty.color_text_secondary,
-				.clip_rect = area,
-			});
-			break;
-		}
-
-		ctx.queue_sprite({
-			.rect = frame,
-			.color = sty.color_tab_background,
-			.texture = ctx.blank_texture,
-			.clip_rect = area,
-			.corner_radius = sty.corner_radius,
-		});
-		ctx.queue_sprite({
-			.rect = frame,
-			.texture = a.preview,
-			.clip_rect = area,
-			.corner_radius = sty.corner_radius,
-		});
-
-		const rectf close = rectf::from_position_size(
-			{ frame.right() - close_extent, frame.top() },
-			{ close_extent, close_extent }
-		);
-		if (gui::caption_button(ui, close, std::format("##agent_attach_{}", i), gui::symbol::close(), sty.color_tab_hovered)) {
-			removed = i;
-		}
-
-		x = frame.right() + pad;
-	}
-
-	if (removed < s.attachments.size()) {
-		s.attachments.erase(s.attachments.begin() + static_cast<std::ptrdiff_t>(removed));
+	if (stale_diff) {
+		relayout_from(v, *stale_diff);
 	}
 }
 
@@ -1100,7 +1049,9 @@ auto gse::ide::agent::draw_model_controls(gui::builder& ui, session& s, const re
 	s.requested_effort = static_cast<agent_effort>(std::clamp<int>(level, 0, static_cast<int>(levels.size()) - 1));
 }
 
-auto gse::ide::agent::draw_input(gui::builder& ui, session& s, const rectf& area) -> void {
+auto gse::ide::agent::draw_input(gui::builder& ui, session& s, const input_layout& layout) -> void {
+	const rectf& area = layout.area;
+	const rectf& body = layout.body;
 	const gui::draw_context& ctx = ui.ctx;
 	const gui::style& sty = ctx.style;
 	const float pad = sty.padding;
@@ -1109,12 +1060,8 @@ auto gse::ide::agent::draw_input(gui::builder& ui, session& s, const rectf& area
 	const bool focused = ui.focus_widget_id == input_id;
 	const bool ctrl = ctx.key_held(key::left_control) || ctx.key_held(key::right_control);
 	const bool shift = ctx.key_held(key::left_shift) || ctx.key_held(key::right_shift);
-	const bool enter = focused && !ctrl && !shift && ctx.key_pressed_for(key::enter);
-	const bool submit = enter && (!input_empty(s.draft) || !s.attachments.empty());
-
-	if (focused && ctrl && ctx.key_pressed(key::v)) {
-		window::request_clipboard_image();
-	}
+	const bool enter = focused && !s.attachments.viewing && !ctrl && !shift && ctx.key_pressed_for(key::enter);
+	const bool submit = enter && (!input_empty(s.draft) || !s.attachments.items.empty());
 
 	ctx.queue_sprite({
 		.rect = area,
@@ -1139,9 +1086,13 @@ auto gse::ide::agent::draw_input(gui::builder& ui, session& s, const rectf& area
 	});
 
 	const float button_extent = sty.font_size * 1.4f;
+	const bool gated = s.gate.has_value() && !s.pending_transition;
+	const phase_policy granted = gated ? policy_of(next_phase(s, s.gate->findings)) : phase_policy{};
+	const std::string_view approve_text = granted.enter_label;
+	const float action_width = gated ? text_view->width(approve_text, sty.font_size) + pad * 2.f : button_extent;
 	const rectf stop = rectf::from_position_size(
-		{ area.right() - pad - button_extent, first_row_center + button_extent * 0.5f },
-		{ button_extent, button_extent }
+		{ area.right() - pad - action_width, first_row_center + button_extent * 0.5f },
+		{ action_width, button_extent }
 	);
 
 	float widest_model = text_view->width("default", sty.font_size);
@@ -1159,7 +1110,7 @@ auto gse::ide::agent::draw_input(gui::builder& ui, session& s, const rectf& area
 	const float effort_width = widest_effort + pad * 2.f;
 	const float controls_width = model_width + effort_width + pad * 2.f;
 	const float text_minimum = sty.font_size * 12.f;
-	const bool show_controls = area.width() - pad * 3.f - marker_width - button_extent - controls_width >= text_minimum;
+	const bool show_controls = area.width() - pad * 3.f - marker_width - action_width - controls_width >= text_minimum;
 
 	const rectf model_rect = rectf::from_position_size(
 		{ stop.left() - pad - model_width, first_row_center + button_extent * 0.5f },
@@ -1170,17 +1121,26 @@ auto gse::ide::agent::draw_input(gui::builder& ui, session& s, const rectf& area
 		{ effort_width, button_extent }
 	);
 
-	const float reserved = pad * 3.f + marker_width + button_extent + (show_controls ? controls_width : 0.f);
+	const float reserved = pad * 3.f + marker_width + action_width + (show_controls ? controls_width : 0.f);
+	const float strip_extent = gui::image_strip_extent(ctx, s.attachments);
+	const rectf strip = rectf::from_position_size(
+		{ area.left() + pad, area.bottom() + strip_extent },
+		{ std::max(0.f, area.width() - pad * 2.f), strip_extent }
+	);
 	const rectf box = rectf::from_position_size(
 		{ area.left() + pad + marker_width, area.top() },
-		{ std::max(0.f, area.width() - reserved), area.height() }
+		{ std::max(0.f, area.width() - reserved), std::max(0.f, area.height() - strip_extent) }
 	);
 	ui.draw<gui::text_area>({
 		.buffer = s.draft,
 		.state = s.draft_state,
 		.widget_id = input_id,
 		.rect = box,
-		.consumes_image_paste = true,
+		.images = gui::image_strip_params{
+			.attachments = s.attachments,
+			.strip = strip,
+			.viewer_host = body,
+		},
 		.font = ctx.fonts.text,
 	});
 
@@ -1190,7 +1150,17 @@ auto gse::ide::agent::draw_input(gui::builder& ui, session& s, const rectf& area
 		draw_model_controls(ui, s, model_rect, effort_rect);
 	}
 
-	if (gui::caption_button(ui, stop, "##agent_stop", gui::symbol::stop(), sty.color_tab_hovered, busy) && busy) {
+	if (gated) {
+		if (ui.draw<gui::button>({
+			.text = approve_text,
+			.rect = stop,
+			.key = std::format("##agent_phase_approve_{}", s.id),
+		})) {
+			advance_phase(s, input_text(s.draft));
+			reset_input(s);
+		}
+	}
+	else if (gui::caption_button(ui, stop, "##agent_stop", gui::symbol::stop(), sty.color_tab_hovered, busy) && busy) {
 		interrupt_session(s);
 	}
 
@@ -1199,8 +1169,12 @@ auto gse::ide::agent::draw_input(gui::builder& ui, session& s, const rectf& area
 	}
 
 	const std::string prompt = input_text(s.draft);
-	const std::vector<attachment> attachments = std::move(s.attachments);
+	const std::vector<gui::image_attachment> attachments = s.attachments.take_items();
 	reset_input(s);
+
+	if (current_phase(s) == task_phase::settled) {
+		restart_task(s);
+	}
 
 	if (!s.running && !launch_session(s)) {
 		append_row(s, {
@@ -1286,26 +1260,20 @@ auto gse::ide::agent::activity_label(const data& d, const session& s) -> std::st
 		: std::format("{} \xC2\xB7 {:.0f:s}", action, elapsed);
 }
 
-auto gse::ide::agent::draw_activity(const gui::draw_context& ctx, const data& d, const session& s, const rectf& area) -> void {
+auto gse::ide::agent::draw_activity_line(const gui::draw_context& ctx, const data& d, const session& s, const rectf& area, const rectf& clip) -> void {
 	const gui::style& sty = ctx.style;
 	const auto text_view = ctx.fonts.text.resolve();
 	const float pad = sty.padding;
 	const float spin_extent = sty.font_size;
 
-	ctx.queue_sprite({
-		.rect = area,
-		.color = sty.color_panel_alt,
-		.texture = ctx.blank_texture,
-	});
-
 	const rectf spin = rectf::from_position_size(
-		{ area.left() + pad, area.center().y() + spin_extent * 0.5f },
+		{ area.left(), area.center().y() + spin_extent * 0.5f },
 		{ spin_extent, spin_extent }
 	);
 	gui::symbol::spinner(ctx, spin, {
 		.color = sty.color_accent,
 		.extent = sty.icon_extent,
-		.clip_rect = area,
+		.clip_rect = clip,
 	});
 
 	ctx.queue_text({
@@ -1314,8 +1282,161 @@ auto gse::ide::agent::draw_activity(const gui::draw_context& ctx, const data& d,
 		.position = { spin.right() + pad * 0.5f, area.center().y() + text_view->vertical_center_offset(sty.font_size) },
 		.scale = sty.font_size,
 		.color = sty.color_text_secondary,
-		.clip_rect = area,
+		.clip_rect = clip,
 	});
+}
+
+auto gse::ide::agent::draw_activity(const gui::draw_context& ctx, const data& d, const session& s, const rectf& area) -> void {
+	const gui::style& sty = ctx.style;
+	const float pad = sty.padding;
+
+	ctx.queue_sprite({
+		.rect = area,
+		.color = sty.color_panel_alt,
+		.texture = ctx.blank_texture,
+	});
+
+	draw_activity_line(ctx, d, s, rectf::from_position_size(
+		{ area.left() + pad, area.top() },
+		{ std::max(0.f, area.width() - pad), area.height() }
+	), area);
+}
+
+auto gse::ide::agent::draw_phase_pipeline(const gui::draw_context& ctx, const session& s, const rectf& area, const rectf& clip) -> float {
+	const gui::style& sty = ctx.style;
+	const auto text_view = ctx.fonts.text.resolve();
+	const float fs = sty.font_size;
+	const float baseline = area.center().y() + text_view->vertical_center_offset(fs);
+	constexpr std::string_view separator = " \xC2\xB7 ";
+
+	float x = area.left();
+	bool first = true;
+	for (const phase_step& step : phase_timeline(s)) {
+		if (!first) {
+			ctx.queue_text({
+				.font = ctx.fonts.text,
+				.text = separator,
+				.position = { x, baseline },
+				.scale = fs,
+				.color = sty.color_text_disabled,
+				.clip_rect = clip,
+			});
+			x += text_view->width(separator, fs);
+		}
+		first = false;
+
+		const phase_policy policy = policy_of(step.phase);
+		const std::string label = step.cycles > 1
+			? std::format("{} x{}", std::string_view(policy.label), step.cycles)
+			: std::string(policy.label);
+		const float label_w = text_view->width(label, fs);
+
+		ctx.queue_text({
+			.font = ctx.fonts.text,
+			.text = label,
+			.position = { x, baseline },
+			.scale = fs,
+			.color = step.current ? sty.*policy.color : step.visited ? sty.color_text_secondary : sty.color_text_disabled,
+			.clip_rect = clip,
+		});
+
+		if (step.current) {
+			ctx.queue_sprite({
+				.rect = rectf::from_position_size(
+					{ x, area.center().y() - fs * 0.5f },
+					{ label_w, std::max(1.f, std::round(sty.scale_factor)) }
+				),
+				.color = sty.*policy.color,
+				.texture = ctx.blank_texture,
+				.clip_rect = clip,
+			});
+		}
+		x += label_w;
+	}
+
+	return x - area.left();
+}
+
+auto gse::ide::agent::draw_phase(gui::builder& ui, session& s, const rectf& area) -> void {
+	const gui::draw_context& ctx = ui.ctx;
+	const gui::style& sty = ctx.style;
+	const auto text_view = ctx.fonts.text.resolve();
+	const float pad = sty.padding;
+	const float fs = sty.font_size;
+
+	ctx.queue_sprite({
+		.rect = area,
+		.color = sty.color_panel_alt,
+		.texture = ctx.blank_texture,
+	});
+
+	const float reserved = draw_view_toggles(ui, s, area);
+	const rectf pipeline = rectf::from_position_size(
+		{ area.left() + pad, area.top() },
+		{ std::max(0.f, area.width() - pad - reserved), area.height() }
+	);
+	const float used = draw_phase_pipeline(ctx, s, pipeline, pipeline);
+
+	const std::string waiting = s.pending_transition
+		? std::format("approved \xC2\xB7 finishing the turn before {}", std::string_view(policy_of(next_phase(s, s.pending_transition->findings)).label))
+		: s.gate
+		? s.gate->findings > 0
+			? std::format("reported {} finding(s)", s.gate->findings)
+			: std::string("reported done")
+		: std::string{};
+	if (waiting.empty()) {
+		return;
+	}
+
+	ctx.queue_text({
+		.font = ctx.fonts.text,
+		.text = waiting,
+		.position = { pipeline.left() + used + pad * 2.f, area.center().y() + text_view->vertical_center_offset(fs) },
+		.scale = fs,
+		.color = sty.color_text_secondary,
+		.clip_rect = pipeline,
+	});
+}
+
+auto gse::ide::agent::shown_view(session& s) -> transcript_view& {
+	return s.mode == transcript_mode::digest ? s.digest : s.full;
+}
+
+auto gse::ide::agent::draw_view_toggles(gui::builder& ui, session& s, const rectf& area) -> float {
+	const gui::style& sty = ui.ctx.style;
+	const float pad = sty.padding;
+	const auto text_view = ui.ctx.fonts.text.resolve();
+
+	constexpr std::string_view diffs_label = "Diffs";
+	const std::string_view mode_label = s.mode == transcript_mode::digest ? "Summary" : "Transcript";
+
+	const float diffs_w = text_view->width(diffs_label, sty.font_size) + pad * 2.f;
+	const float mode_w = text_view->width("Transcript", sty.font_size) + pad * 2.f;
+	const float height = std::min(area.height(), sty.font_size * 1.4f);
+	const float top = area.center().y() + height * 0.5f;
+
+	const rectf diffs = rectf::from_position_size({ area.right() - pad - diffs_w, top }, { diffs_w, height });
+	const rectf mode = rectf::from_position_size({ diffs.left() - pad * 0.5f - mode_w, top }, { mode_w, height });
+
+	if (ui.draw<gui::button>({
+		.text = mode_label,
+		.rect = mode,
+		.key = std::format("##agent_view_mode_{}", s.id),
+		.role = s.mode == transcript_mode::digest ? gui::button_role::accent : gui::button_role::ghost,
+	})) {
+		s.mode = s.mode == transcript_mode::digest ? transcript_mode::transcript : transcript_mode::digest;
+	}
+
+	if (ui.draw<gui::button>({
+		.text = diffs_label,
+		.rect = diffs,
+		.key = std::format("##agent_view_diffs_{}", s.id),
+		.role = s.changes_open ? gui::button_role::accent : gui::button_role::ghost,
+	})) {
+		s.changes_open = !s.changes_open;
+	}
+
+	return area.right() - mode.left() + pad;
 }
 
 auto gse::ide::agent::draw_panel(gui::builder& ui, data& d, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out) -> void {
@@ -1336,45 +1457,84 @@ auto gse::ide::agent::draw_panel(gui::builder& ui, data& d, const channel_write<
 		draw_session_info(ctx, d, body);
 		draw_history(ui, d, body);
 		draw_close_confirm(ui, d, body);
+		draw_new_chat_prompt(ui, d, body);
 		return;
 	}
 
 	session* shown = active_session(d);
 	const float input_line_h = gui::text_area_line_height(ctx, ctx.fonts.text);
 	const auto input_rows = static_cast<float>(std::clamp<std::size_t>(shown ? shown->draft.line_count() : 1, 1, max_input_rows));
-	const float input_h = std::max(sty.font_size * 2.f, input_rows * input_line_h + sty.padding * 2.f);
-	const float attachments_h = !shown || shown->attachments.empty() ? 0.f : sty.font_size * 4.5f;
+	const float attachments_h = shown ? gui::image_strip_extent(ctx, shown->attachments) : 0.f;
+	const float input_h = std::max(sty.font_size * 2.f, input_rows * input_line_h + sty.padding * 2.f) + attachments_h;
 	const float activity_h = shown && is_busy(*shown) ? sty.font_size * 1.75f : 0.f;
+	const float phase_h = shown ? sty.font_size * 1.75f : 0.f;
 
 	const float context_h = std::max(2.f, std::round(3.f * sty.scale_factor));
 
 	const rectf context_area = rectf::from_position_size({ body.left(), body.bottom() + context_h }, { body.width(), context_h });
 	const rectf input_area = rectf::from_position_size({ body.left(), context_area.top() + input_h }, { body.width(), input_h });
-	const rectf attachments_area = rectf::from_position_size(
-		{ body.left(), input_area.top() + attachments_h },
-		{ body.width(), attachments_h }
-	);
 	const rectf activity_area = rectf::from_position_size(
-		{ body.left(), attachments_area.top() + activity_h },
+		{ body.left(), input_area.top() + activity_h },
 		{ body.width(), activity_h }
+	);
+	const rectf phase_area = rectf::from_position_size(
+		{ body.left(), activity_area.top() + phase_h },
+		{ body.width(), phase_h }
 	);
 	const rectf transcript = rectf::from_position_size(
 		{ body.left(), body.top() - strip_h },
-		{ body.width(), std::max(0.f, body.height() - strip_h - context_h - input_h - attachments_h - activity_h) }
+		{ body.width(), std::max(0.f, body.height() - strip_h - context_h - input_h - activity_h - phase_h) }
 	);
 
-	if (attachments_h > 0.f) {
-		draw_attachments(ui, *shown, attachments_area);
-	}
 	if (activity_h > 0.f) {
 		draw_activity(ctx, d, *shown, activity_area);
 	}
 	if (shown) {
-		draw_input(ui, *shown, input_area);
+		draw_phase(ui, *shown, phase_area);
+		draw_input(ui, *shown, { .area = input_area, .body = body });
 		draw_context_bar(ctx, *shown, context_area);
 	}
-	draw_transcript(ui, d, transcript, jump_out);
+
+	if (!shown) {
+		draw_transcript_hint(ctx, "No agents yet. Type a prompt below, or press + to add a session, in " + config::primary().name + ".", transcript);
+	}
+	else if (!shown->changes_open) {
+		draw_transcript(ui, d, shown_view(*shown), transcript, jump_out);
+	}
+	else {
+		const vec2f mouse = ctx.mouse_position();
+		const float minimum = sty.font_size * 14.f;
+		const float divider_thickness = std::max(6.f, sty.resize_border_thickness) * 2.f;
+		const bool blocked = ctx.hit_regions && ctx.hit_regions->is_resize_blocked(mouse);
+		const gui::layout::split_result split = gui::layout::update_split({
+			.container = transcript,
+			.axis = gui::layout::split_axis::columns,
+			.ratio = shown->changes_ratio,
+			.min_first = minimum,
+			.min_second = minimum,
+			.divider_thickness = divider_thickness,
+		}, {
+			.mouse = mouse,
+			.pressed = ctx.mouse_pressed(mouse_button::button_1) && ctx.input_available(),
+			.held = ctx.mouse_held(mouse_button::button_1),
+			.blocked = blocked,
+		}, shown->changes_drag);
+
+		if (shown->changes_drag.dragging && transcript.width() >= minimum * 2.f + divider_thickness) {
+			shown->changes_ratio = split.ratio;
+		}
+
+		if ((split.divider.contains(mouse) && !blocked) || shown->changes_drag.dragging) {
+			jump_out.push<set_cursor_shape_request>({
+				.shape = cursor_shape::resize_ew,
+			});
+		}
+
+		draw_transcript(ui, d, shown_view(*shown), split.first, jump_out);
+		draw_transcript(ui, d, shown->changes, split.second, jump_out);
+	}
 	draw_session_info(ctx, d, body);
 	draw_history(ui, d, body);
 	draw_close_confirm(ui, d, body);
+	draw_new_chat_prompt(ui, d, body);
 }

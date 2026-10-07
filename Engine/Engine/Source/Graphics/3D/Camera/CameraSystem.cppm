@@ -42,7 +42,7 @@ export namespace gse::camera {
 		target scripted_target{};
 		id scripted_requester{};
 		int scripted_priority = -1;
-		time scripted_blend_duration = milliseconds(300);
+		time scripted_blend_duration = milliseconds(300.f);
 		bool scripted_continuous = true;
 		bool scripted_active = false;
 

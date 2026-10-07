@@ -71,7 +71,7 @@ void light_culling(uint3 group_id, uint3 group_thread_id, uint group_index) {
     float depth = 0.0;
     if (pixel.x < culling_params.screen_size.x && pixel.y < culling_params.screen_size.y) {
         float2 uv = screen_uv(float2(pixel) + 0.5);
-        depth = depth_texture.SampleLevel(depth_sampler, uv, 0).r;
+        depth = depth_texture.SampleLevel(depth_sampler, screen_target_uv(uv, culling_params.depth_uv_scale, culling_params.depth_uv_max), 0).r;
     }
 
     if (depth > 1e-5) {

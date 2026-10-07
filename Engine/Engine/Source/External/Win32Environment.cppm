@@ -22,6 +22,10 @@ export namespace gse::win32 {
 		std::string_view text
 	) -> std::wstring;
 
+	auto narrow(
+		std::wstring_view text
+	) -> std::string;
+
 	auto registry_value_names(
 		const wchar_t* subkey
 	) -> std::vector<std::wstring>;
@@ -210,6 +214,19 @@ auto gse::win32::widen(const std::string_view text) -> std::wstring {
 	std::wstring wide(static_cast<std::size_t>(length), L'\0');
 	MultiByteToWideChar(cp_utf8, 0, text.data(), static_cast<int>(text.size()), wide.data(), length);
 	return wide;
+}
+
+auto gse::win32::narrow(const std::wstring_view text) -> std::string {
+	if (text.empty()) {
+		return {};
+	}
+	const int length = WideCharToMultiByte(cp_utf8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0, nullptr, nullptr);
+	if (length <= 0) {
+		return {};
+	}
+	std::string narrowed(static_cast<std::size_t>(length), '\0');
+	WideCharToMultiByte(cp_utf8, 0, text.data(), static_cast<int>(text.size()), narrowed.data(), length, nullptr, nullptr);
+	return narrowed;
 }
 
 auto gse::win32::registry_value_names(const wchar_t* subkey) -> std::vector<std::wstring> {

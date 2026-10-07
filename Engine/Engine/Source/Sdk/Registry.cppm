@@ -32,6 +32,11 @@ export namespace gse::sdk {
 	) -> void;
 
 	auto registered_images() -> image_table;
+
+	auto extraction_dir(
+		std::string_view version,
+		std::string_view preset
+	) -> std::expected<std::filesystem::path, std::string>;
 }
 
 namespace gse::sdk {
@@ -87,6 +92,14 @@ auto gse::sdk::register_image(const std::string_view version, const std::filesys
 		entries.emplace(version, std::move(path));
 	}
 	write_images(entries);
+}
+
+auto gse::sdk::extraction_dir(const std::string_view version, const std::string_view preset) -> std::expected<std::filesystem::path, std::string> {
+	const char* local = std::getenv("LOCALAPPDATA");
+	if (local == nullptr || *local == '\0') {
+		return std::unexpected("LOCALAPPDATA is not set");
+	}
+	return std::filesystem::path(local) / "GSE" / "cache" / "installer" / version / preset;
 }
 
 auto gse::sdk::unregister_image(const std::string_view version, const std::filesystem::path& parent) -> void {

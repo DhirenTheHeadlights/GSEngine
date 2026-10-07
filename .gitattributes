@@ -2,5 +2,5 @@
 # source file (gdbinit + the .patch stack) against pinned sha256sums — a Windows
 # checkout (core.autocrlf) rewrites them to CRLF, changing their bytes so the
 # integrity check fails. Keep the whole vendored GCC recipe LF on every platform.
-scripts/gcc-toolchain/recipe/** text eol=lf
-scripts/gcc-toolchain/recipe/PKGBUILD text eol=lf
+Tools/gcc-toolchain/recipe/** text eol=lf
+Tools/gcc-toolchain/recipe/PKGBUILD text eol=lf

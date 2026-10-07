@@ -100,6 +100,7 @@ namespace gse::layout_store {
 		std::condition_variable m_idle;
 		std::unordered_map<std::filesystem::path, file_state> m_files;
 		bool m_scheduled = false;
+		int m_in_flight = 0;
 	};
 
 	auto instance() -> store&;
@@ -207,8 +208,14 @@ auto gse::layout_store::store::flush() -> void {
 	const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(static_cast<std::int64_t>(budget.as<milliseconds>()));
 
 	std::unique_lock lock(m_mutex);
-	while (m_scheduled) {
-		if (m_idle.wait_until(lock, deadline) == std::cv_status::timeout && m_scheduled) {
+	while (m_scheduled || m_in_flight > 0) {
+		if (m_scheduled) {
+			lock.unlock();
+			write_pending();
+			lock.lock();
+			continue;
+		}
+		if (m_idle.wait_until(lock, deadline) == std::cv_status::timeout && m_in_flight > 0) {
 			log::println(
 				log::level::error,
 				log::category::general,
@@ -234,9 +241,11 @@ auto gse::layout_store::store::write_pending() -> void {
 		state.needs_write = false;
 		const file_content content = state.content;
 
+		++m_in_flight;
 		lock.unlock();
 		write_disk(path, merged(path, content));
 		lock.lock();
+		--m_in_flight;
 	}
 }
 

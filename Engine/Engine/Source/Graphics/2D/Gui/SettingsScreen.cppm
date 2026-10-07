@@ -577,7 +577,9 @@ auto gse::gui::settings_screen::draw_footer(builder& ui, const rect_t<vec2f>& re
 			{ sty.accent_button_min_width, sty.button_height }
 		);
 		if (draw_footer_button(ui, restart_rect, "Restart Now", true, true, ids::make("settings.footer.restart"))) {
-			m_save_reg->trigger_restart();
+			m_channels.push<settings::override_request>({
+				.op = settings::override_op::restart,
+			});
 		}
 		cursor_x -= sty.button_spacing;
 	}

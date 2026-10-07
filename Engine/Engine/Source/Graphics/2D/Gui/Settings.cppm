@@ -636,6 +636,9 @@ auto gse::settings::panel_state::apply_all(const change_request_writer channels)
 			}
 		}
 	}
+	channels.push<override_request>({
+		.op = override_op::persist,
+	});
 }
 
 auto gse::settings::panel_state::discard_all(const change_request_writer channels) -> void {
@@ -712,6 +715,9 @@ auto gse::settings::panel(gui::builder& b, panel_state& ps, const panel_writer c
 								entry.reset_to_defaults(channels);
 							}
 							ps.pending_by_type.erase(entry.type_id);
+						});
+						channels.push<override_request>({
+							.op = override_op::persist,
 						});
 						ps.input_buffers.clear();
 						ps.input_states.clear();
