@@ -56,7 +56,8 @@ export namespace launcher {
 
 namespace launcher {
 	constexpr std::string_view launcher_name = "Launcher.exe";
-	constexpr std::string_view connect_flag = "--engine-net-connect";
+	constexpr std::string_view game_connect_flag = "--engine-net-connect";
+	constexpr std::string_view own_connect_flag = "--connect";
 	constexpr std::string_view updated_flag = "--updated";
 	constexpr gse::time poll_interval = gse::milliseconds(25.f);
 
@@ -197,7 +198,7 @@ auto launcher::apply_update(const install& local, const gse::sdk::feed& entry, p
 auto launcher::start_game(const install& local, const std::string_view connect) -> void {
 	std::vector<std::filesystem::path> arguments;
 	if (!connect.empty()) {
-		arguments.emplace_back(connect_flag);
+		arguments.emplace_back(game_connect_flag);
 		arguments.emplace_back(connect);
 	}
 	gse::app::relaunch_on_exit(game_executable(local), local.image, std::move(arguments));
@@ -206,7 +207,7 @@ auto launcher::start_game(const install& local, const std::string_view connect) 
 auto launcher::start_launcher(const std::filesystem::path& image, const std::string_view connect) -> void {
 	std::vector<std::filesystem::path> arguments{ std::filesystem::path(updated_flag) };
 	if (!connect.empty()) {
-		arguments.emplace_back(connect_flag);
+		arguments.emplace_back(own_connect_flag);
 		arguments.emplace_back(connect);
 	}
 	gse::app::relaunch_on_exit(image / "Bin" / launcher_name, image, std::move(arguments));
