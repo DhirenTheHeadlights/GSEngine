@@ -21,6 +21,8 @@ export namespace gse::process {
 		std::string_view command_line;
 		std::filesystem::path working_dir;
 		std::filesystem::path output_path;
+		std::filesystem::path error_path;
+		std::filesystem::path path_prefix;
 		time limit;
 		std::stop_token cancel = {};
 	};
@@ -152,7 +154,8 @@ auto gse::process::run_capture(const capture_request& request) -> run_outcome {
 
 	const std::wstring directory = request.working_dir.wstring();
 	const std::wstring output = request.output_path.wstring();
-	std::vector<wchar_t> environment = win32::environment_with_path_prefix(command_directory(command));
+	const std::wstring prefix = request.path_prefix.wstring();
+	std::vector<wchar_t> environment = win32::environment_with_path_prefix(prefix.empty() ? command_directory(command) : prefix);
 
 	win32::SECURITY_ATTRIBUTES inheritable{
 		.nLength = sizeof(win32::SECURITY_ATTRIBUTES),
@@ -164,8 +167,17 @@ auto gse::process::run_capture(const capture_request& request) -> run_outcome {
 	if (!capture.valid() || !null_input.valid()) {
 		return std::unexpected(run_error::launch_failed);
 	}
+	const std::wstring error_output = request.error_path.wstring();
+	const unique_handle error_capture(error_output.empty() ? nullptr : win32::CreateFileW(error_output.c_str(), win32::generic_write, win32::file_share_read, &inheritable, win32::create_always, win32::file_attribute_normal, nullptr));
+	if (!error_output.empty() && !error_capture.valid()) {
+		return std::unexpected(run_error::launch_failed);
+	}
+	const win32::HANDLE error_handle = error_capture.valid() ? error_capture.handle() : capture.handle();
 
-	std::array<win32::HANDLE, 2> inherited = { capture.handle(), null_input.handle() };
+	std::vector<win32::HANDLE> inherited = { capture.handle(), null_input.handle() };
+	if (error_capture.valid()) {
+		inherited.push_back(error_capture.handle());
+	}
 	win32::SIZE_T attribute_size = 0;
 	win32::InitializeProcThreadAttributeList(nullptr, 1, 0, &attribute_size);
 	if (attribute_size == 0) {
@@ -194,7 +206,7 @@ auto gse::process::run_capture(const capture_request& request) -> run_outcome {
 			.dwFlags = win32::startf_use_std_handles,
 			.hStdInput = null_input.handle(),
 			.hStdOutput = capture.handle(),
-			.hStdError = capture.handle(),
+			.hStdError = error_handle,
 		},
 		.lpAttributeList = attributes,
 	};

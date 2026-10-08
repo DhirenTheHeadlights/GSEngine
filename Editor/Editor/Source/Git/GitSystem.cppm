@@ -176,21 +176,32 @@ auto gse::ide::git_system::build_commit(const action_inputs& inputs, const actio
 		return std::nullopt;
 	}
 	std::unordered_set<std::string> already_staged;
+	std::unordered_map<std::string, std::string> rename_sources;
 	if (const git::repository_snapshot repository = inputs.status->find(request.root)) {
 		for (const git::change& change : repository->changes) {
+			std::string relative = change.relative.generic_display_string();
+			if (!change.original.empty()) {
+				rename_sources.emplace(relative, change.original.generic_display_string());
+			}
 			if (!change.needs_stage) {
-				already_staged.insert(change.relative.generic_display_string());
+				already_staged.insert(std::move(relative));
 			}
 		}
 	}
 	std::string pathspecs;
+	std::string committed;
 	for (const std::filesystem::path& path : request.paths) {
 		std::string relative = path.generic_display_string();
-		if (already_staged.contains(relative)) {
-			continue;
+		if (const auto source = rename_sources.find(relative); source != rename_sources.end()) {
+			committed += source->second;
+			committed.push_back('\0');
 		}
-		pathspecs += relative;
-		pathspecs.push_back('\0');
+		if (!already_staged.contains(relative)) {
+			pathspecs += relative;
+			pathspecs.push_back('\0');
+		}
+		committed += std::move(relative);
+		committed.push_back('\0');
 	}
 
 	const std::filesystem::path message_path = process::temporary_path("git_commit", "txt");
@@ -215,7 +226,29 @@ auto gse::ide::git_system::build_commit(const action_inputs& inputs, const actio
 		command.scratch.push_back(pathspec_path);
 		command.steps.push_back(std::format("git add -A --pathspec-from-file=\"{}\" --pathspec-file-nul", pathspec_path.generic_display_string()));
 	}
-	command.steps.push_back(std::format("git commit -F \"{}\"", message_path.generic_display_string()));
+	if (!git::partial_commit_allowed(request.root)) {
+		log::println(
+			log::level::warning,
+			log::category::task,
+			"git: {} has a merge in progress, so the commit records the whole index rather than the selected files",
+			request.root
+		);
+		command.steps.push_back(std::format("git commit -F \"{}\"", message_path.generic_display_string()));
+		return command;
+	}
+	const std::filesystem::path committed_path = process::temporary_path("git_committed", "txt");
+	std::ofstream committed_out(committed_path, std::ios::binary);
+	committed_out.write(committed.data(), static_cast<std::streamsize>(committed.size()));
+	committed_out.close();
+	if (!committed_out) {
+		return std::nullopt;
+	}
+	command.scratch.push_back(committed_path);
+	command.steps.push_back(std::format(
+		"git commit -F \"{}\" --pathspec-from-file=\"{}\" --pathspec-file-nul",
+		message_path.generic_display_string(),
+		committed_path.generic_display_string()
+	));
 	return command;
 }
 

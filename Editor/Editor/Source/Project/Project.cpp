@@ -516,10 +516,6 @@ auto gse::ide::project::sdk_for_version(const std::string_view version) -> std::
 	return sdk::image_for_version(version);
 }
 
-auto gse::ide::project::register_sdk(const std::string_view version, const std::filesystem::path& image) -> void {
-	sdk::register_image(version, image);
-}
-
 auto gse::ide::project::bind_sdk(const std::filesystem::path& manifest_file, const std::string_view version) -> void {
 	layout_store::submit(
 		manifest_file,

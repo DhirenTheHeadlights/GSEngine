@@ -163,6 +163,17 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 
 	m_scheduler.set_registry(m_registry);
 
+	const std::filesystem::path shipped_settings = config::shipped_project_settings_path();
+	std::error_code shipped_ec;
+	if (!shipped_settings.empty() && !m_config.project_settings_path.empty() && std::filesystem::exists(shipped_settings, shipped_ec) && !std::filesystem::exists(m_config.project_settings_path, shipped_ec)) {
+		if (const auto seeded = fs::copy_file(shipped_settings, m_config.project_settings_path); seeded) {
+			log::println(log::category::save_system, "seeded project settings from {}", shipped_settings.generic_display_string());
+		}
+		else {
+			log::println(log::level::warning, log::category::save_system, "could not seed project settings from {}: {}", shipped_settings.generic_display_string(), seeded.error());
+		}
+	}
+
 	m_save.set_paths({
 		.user = config::user_config_dir() / std::format("{}.ini", config::executable_stem()),
 		.project = m_config.project_settings_path,

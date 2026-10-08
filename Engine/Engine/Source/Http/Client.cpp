@@ -224,6 +224,18 @@ auto gse::http::perform(const winhttp::handle session_handle, const request& req
 	}
 	out.headers = read_headers(exchange.value);
 
+	std::ofstream sink;
+	if (!req.sink.empty()) {
+		std::error_code ec;
+		std::filesystem::create_directories(req.sink.parent_path(), ec);
+		sink.open(req.sink, std::ios::binary | std::ios::trunc);
+		if (!sink) {
+			return std::unexpected(error::sink_failed);
+		}
+	}
+
+	std::string chunk;
+	std::uint64_t total = 0;
 	while (true) {
 		if (cancelled.load(std::memory_order_acquire)) {
 			return std::unexpected(error::cancelled);
@@ -236,20 +248,37 @@ auto gse::http::perform(const winhttp::handle session_handle, const request& req
 		if (available == 0) {
 			break;
 		}
-		if (out.body.size() + available > req.max_body_bytes) {
+		std::string& target = sink.is_open() ? chunk : out.body;
+		const std::size_t offset = sink.is_open() ? 0 : target.size();
+		if (!sink.is_open() && offset + available > req.max_body_bytes) {
 			return std::unexpected(error::too_large);
 		}
-
-		const std::size_t offset = out.body.size();
-		out.body.resize(offset + available);
+		target.resize(offset + available);
 
 		unsigned long taken = 0;
-		if (::WinHttpReadData(exchange.value, out.body.data() + offset, available, &taken) == 0) {
+		if (::WinHttpReadData(exchange.value, target.data() + offset, available, &taken) == 0) {
 			return std::unexpected(classify(::GetLastError(), error::receive_failed));
 		}
-		out.body.resize(offset + taken);
+		target.resize(offset + taken);
+		if (sink.is_open()) {
+			sink.write(target.data(), static_cast<std::streamsize>(taken));
+			if (!sink) {
+				return std::unexpected(error::sink_failed);
+			}
+		}
+		total += taken;
+		if (req.received != nullptr) {
+			req.received->store(total, std::memory_order_release);
+		}
 		if (taken == 0) {
 			break;
+		}
+	}
+
+	if (sink.is_open()) {
+		sink.close();
+		if (!sink) {
+			return std::unexpected(error::sink_failed);
 		}
 	}
 

@@ -118,6 +118,8 @@ export namespace gse::ide::build_inbox {
 		std::string agent;
 		std::filesystem::path cwd;
 		std::filesystem::path project;
+		sdk::pack_kind kind = sdk::pack_kind::sdk;
+		std::string scenario;
 	};
 
 	auto packages_dir() -> std::filesystem::path;

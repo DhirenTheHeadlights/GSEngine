@@ -31,7 +31,7 @@ auto setup::own_executable() -> std::filesystem::path {
 }
 
 auto setup::stage_directory(const gse::sdk::pack_table& table) -> std::expected<std::filesystem::path, std::string> {
-	return gse::sdk::extraction_dir(table.version, table.preset);
+	return gse::sdk::extraction_dir(table.stamp);
 }
 
 auto setup::launch(const std::filesystem::path& executable, const std::filesystem::path& payload) -> std::expected<void, std::string> {
@@ -87,6 +87,6 @@ auto main() -> int {
 	if (outcome) {
 		return 0;
 	}
-	gse::win32::show_error_box(L"GSEngine SDK Setup", gse::win32::widen(outcome.error()).c_str());
+	gse::win32::show_error_box(L"GSE Setup", gse::win32::widen(outcome.error()).c_str());
 	return 1;
 }

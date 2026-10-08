@@ -39,6 +39,12 @@ export namespace gse::config {
 
 	constexpr std::string_view engine_asset_prefix = "engine:";
 
+	constexpr std::string_view project_assets_subdir = "Assets";
+	constexpr std::string_view project_baked_subdir = ".gse/baked";
+	constexpr std::string_view project_data_subdir = ".gse/data";
+	constexpr std::string_view project_config_subdir = "Config";
+	constexpr std::string_view project_settings_name = "settings.ini";
+
 	struct content_root {
 		std::filesystem::path source;
 		std::filesystem::path baked;
@@ -93,6 +99,8 @@ export namespace gse::config {
 	auto project_settings_path_for(
 		const std::filesystem::path& root
 	) -> std::filesystem::path;
+
+	auto shipped_project_settings_path() -> std::filesystem::path;
 
 	auto project_data_path(
 		const std::filesystem::path& relative

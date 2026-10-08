@@ -3,9 +3,33 @@ export module gse.sdk:pack;
 import std;
 
 import gse.containers;
+import gse.meta;
 import gse.win32;
 
 export namespace gse::sdk {
+	struct pack_kind_info {
+		char uninstall_prefix[32]{};
+		char install_subdir[16]{};
+		bool registers_image = false;
+		bool scoped_by_product = false;
+	};
+
+	enum class pack_kind : std::uint8_t {
+		sdk [[= pack_kind_info{ .uninstall_prefix = "GSEngineSDK", .install_subdir = "sdk", .registers_image = true, .scoped_by_product = false }]],
+		game [[= pack_kind_info{ .uninstall_prefix = "GSEngineGame", .install_subdir = "game", .registers_image = false, .scoped_by_product = true }]]
+	};
+
+	auto traits_of(
+		pack_kind kind
+	) -> pack_kind_info;
+
+	struct pack_stamp {
+		std::string version;
+		std::string preset;
+		std::string product;
+		pack_kind kind = pack_kind::sdk;
+	};
+
 	struct pack_entry {
 		std::string path;
 		std::uint64_t offset = 0;
@@ -14,8 +38,7 @@ export namespace gse::sdk {
 	};
 
 	struct pack_table {
-		std::string version;
-		std::string preset;
+		pack_stamp stamp;
 		std::vector<pack_entry> entries;
 	};
 
@@ -28,8 +51,7 @@ export namespace gse::sdk {
 	auto append_pack(
 		const std::filesystem::path& root,
 		const std::filesystem::path& target,
-		std::string_view version,
-		std::string_view preset
+		const pack_stamp& stamp
 	) -> std::expected<pack_table, std::string>;
 
 	auto read_pack(
@@ -41,11 +63,15 @@ export namespace gse::sdk {
 		const pack_entry& entry,
 		const std::filesystem::path& destination
 	) -> std::expected<void, std::string>;
+
+	auto digest_of(
+		const std::filesystem::path& file
+	) -> std::expected<std::string, std::string>;
 }
 
 namespace gse::sdk {
 	constexpr std::uint32_t pack_magic = 0x4B504553;
-	constexpr std::uint32_t pack_version = 1;
+	constexpr std::uint32_t pack_version = 2;
 	constexpr std::uint64_t trailer_magic = 0x4B41504B44534553;
 
 	struct pack_trailer {
@@ -66,6 +92,10 @@ namespace gse::sdk {
 		const std::filesystem::path& path,
 		std::span<const char> bytes
 	) -> std::expected<void, std::string>;
+}
+
+auto gse::sdk::traits_of(const pack_kind kind) -> pack_kind_info {
+	return annotation_from_enum(kind, pack_kind_info{});
 }
 
 auto gse::sdk::read_bytes(const std::filesystem::path& path) -> std::expected<std::vector<char>, std::string> {
@@ -111,13 +141,13 @@ auto gse::sdk::write_file(const std::filesystem::path& path, const std::span<con
 	return {};
 }
 
-auto gse::sdk::append_pack(const std::filesystem::path& root, const std::filesystem::path& target, const std::string_view version, const std::string_view preset) -> std::expected<pack_table, std::string> {
+auto gse::sdk::append_pack(const std::filesystem::path& root, const std::filesystem::path& target, const pack_stamp& stamp) -> std::expected<pack_table, std::string> {
 	std::fstream out(target, std::ios::in | std::ios::out | std::ios::binary | std::ios::ate);
 	if (!out) {
 		return std::unexpected(std::format("could not open {} for appending", target.generic_display_string()));
 	}
 	pack_trailer trailer{ .payload_offset = static_cast<std::uint64_t>(out.tellp()) };
-	pack_table table{ .version = std::string(version), .preset = std::string(preset) };
+	pack_table table{ .stamp = stamp };
 
 	std::error_code ec;
 	for (const std::filesystem::directory_entry& entry : std::filesystem::recursive_directory_iterator(root, ec)) {
@@ -184,6 +214,22 @@ auto gse::sdk::read_pack(const std::filesystem::path& file) -> std::expected<pac
 		return std::unexpected(std::format("{} carries a truncated payload table", file.generic_display_string()));
 	}
 	return view;
+}
+
+auto gse::sdk::digest_of(const std::filesystem::path& file) -> std::expected<std::string, std::string> {
+	const auto bytes = read_bytes(file);
+	if (!bytes) {
+		return std::unexpected(bytes.error());
+	}
+	std::array<unsigned char, win32::sha256_digest_size> digest{};
+	if (!win32::hash_sha256(bytes->data(), bytes->size(), digest.data())) {
+		return std::unexpected(std::format("could not hash {}", file.generic_display_string()));
+	}
+	std::string hex;
+	for (const unsigned char byte : digest) {
+		std::format_to(std::back_inserter(hex), "{:02x}", byte);
+	}
+	return hex;
 }
 
 auto gse::sdk::extract_entry(std::ifstream& payload, const pack_entry& entry, const std::filesystem::path& destination) -> std::expected<void, std::string> {

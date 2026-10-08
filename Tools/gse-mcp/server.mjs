@@ -196,6 +196,8 @@ const package_sdk = async (args) => {
 	const project = args.project ? windows_path(args.project) : project_of(process.cwd());
 	const id = new_id();
 	const timeout = Math.max(1, Number(args.timeout ?? 900));
+	const kind = args.kind === 'game' ? 'game' : 'sdk';
+	const scenario = args.scenario ?? 'render_stress';
 
 	rmSync(join(inbox, 'results', `${id}.txt`), { force: true });
 	write_atomically(join(inbox, 'package'), id, [
@@ -203,6 +205,8 @@ const package_sdk = async (args) => {
 		`agent ${agent}`,
 		`cwd ${windows_path(process.cwd())}`,
 		`project ${project}`,
+		`kind ${kind}`,
+		`scenario ${scenario}`,
 		'',
 	].join('\n'));
 
@@ -218,7 +222,7 @@ const package_sdk = async (args) => {
 				image,
 				report: result.status === 'ok' ? undefined : result.body,
 				next: result.status === 'ok'
-					? 'The image is staged and verified. The editor\'s Package SDK tab holds the full transcript; gse_log_query with pattern "sdk" shows the summary lines.'
+					? `The ${kind} image is staged and verified. The editor's package tab holds the full transcript; gse_log_query with pattern "image staged" shows the summary line.`
 					: undefined,
 			}), result.status !== 'ok');
 		}
@@ -1018,10 +1022,12 @@ const tools = {
 	},
 	gse_package_sdk: {
 		description:
-			'Ask the running GSE editor to stage and verify the engine SDK image from its current build tree, the same as the "Package SDK" button. Blocks until the image is ready or the verify step fails; the full transcript lands in the editor\'s Package SDK tab. Refused while a build or another packaging run is in progress.',
+			'Ask the running GSE editor to stage and verify a distributable image from its current build tree. kind "sdk" (default) builds the engine SDK image, the same as the "Package SDK" button, and verifies it by building and running the shipped consumer. kind "game" builds the playable game pack - exe, runtime DLLs, engine resources and baked assets, no BMIs or sources - and verifies it by running the packed exe through a scenario. Both append the image to a setup stub under dist/. Blocks until the image is ready or the verify step fails; the full transcript lands in the editor\'s package tab. Refused while a build or another packaging run is in progress.',
 		schema: {
 			type: 'object',
 			properties: {
+				kind: { type: 'string', enum: ['sdk', 'game'], description: 'Which image to stage: "sdk" for the engine SDK (default), "game" for the playable game pack.' },
+				scenario: { type: 'string', description: 'With kind "game": the scenario the packed exe is verified with, from the project\'s own catalogue (Scenarios.cppm). Defaults to render_stress, which exists in Sandbox; pass another project\'s name explicitly. Unused for kind "sdk".' },
 				project: { type: 'string', description: 'Directory holding the .gseproj to address. Defaults to the nearest one above the current directory.' },
 				timeout: { type: 'number', description: 'Seconds before giving up (default 900).' },
 			},

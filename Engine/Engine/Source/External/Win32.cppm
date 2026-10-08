@@ -12,6 +12,7 @@ module;
 #include <commdlg.h>
 #include <dwmapi.h>
 #include <compressapi.h>
+#include <bcrypt.h>
 #endif
 
 export module gse.win32;
@@ -40,6 +41,14 @@ export namespace gse::win32 {
 		std::size_t input_size,
 		void* output,
 		std::size_t output_size
+	) -> bool;
+
+	constexpr std::size_t sha256_digest_size = 32;
+
+	[[nodiscard]] auto hash_sha256(
+		const void* input,
+		std::size_t input_size,
+		unsigned char* digest
 	) -> bool;
 
 	auto write_user_registry_string(
@@ -696,6 +705,22 @@ auto gse::win32::decompress_lzms(const void* input, const std::size_t input_size
 	const BOOL ok = Decompress(decompressor, const_cast<void*>(input), input_size, output, output_size, &produced);
 	CloseDecompressor(decompressor);
 	return ok != 0 && produced == output_size;
+}
+
+auto gse::win32::hash_sha256(const void* input, const std::size_t input_size, unsigned char* digest) -> bool {
+	BCRYPT_ALG_HANDLE algorithm = nullptr;
+	if (BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM, nullptr, 0) < 0) {
+		return false;
+	}
+	BCRYPT_HASH_HANDLE hash = nullptr;
+	bool ok = BCryptCreateHash(algorithm, &hash, nullptr, 0, nullptr, 0, 0) >= 0;
+	if (ok) {
+		ok = BCryptHashData(hash, static_cast<PUCHAR>(const_cast<void*>(input)), static_cast<ULONG>(input_size), 0) >= 0
+			&& BCryptFinishHash(hash, digest, static_cast<ULONG>(sha256_digest_size), 0) >= 0;
+		BCryptDestroyHash(hash);
+	}
+	BCryptCloseAlgorithmProvider(algorithm, 0);
+	return ok;
 }
 
 auto gse::win32::write_user_registry_string(const wchar_t* subkey, const wchar_t* name, const wchar_t* value) -> bool {

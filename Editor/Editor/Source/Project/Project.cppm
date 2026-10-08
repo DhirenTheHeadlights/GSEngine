@@ -59,11 +59,6 @@ export namespace gse::ide::project {
 		std::string_view version
 	) -> std::filesystem::path;
 
-	auto register_sdk(
-		std::string_view version,
-		const std::filesystem::path& image
-	) -> void;
-
 	auto bind_sdk(
 		const std::filesystem::path& manifest_file,
 		std::string_view version

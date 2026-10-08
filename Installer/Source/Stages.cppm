@@ -43,8 +43,7 @@ export namespace installer {
 
 namespace installer {
 	auto uninstall_key(
-		std::string_view version,
-		std::string_view preset
+		const gse::sdk::pack_stamp& stamp
 	) -> std::wstring;
 
 	auto write_uninstall_entry(
@@ -53,7 +52,8 @@ namespace installer {
 	) -> std::expected<void, std::string>;
 
 	auto schedule_directory_removal(
-		const std::filesystem::path& image
+		const std::filesystem::path& image,
+		std::string_view identity
 	) -> std::expected<void, std::string>;
 }
 
@@ -64,11 +64,11 @@ auto installer::own_executable() -> std::filesystem::path {
 }
 
 auto installer::default_destination(const gse::sdk::pack_table& table) -> std::filesystem::path {
-	return gse::config::user_state_dir() / "sdk" / table.version;
+	return gse::sdk::install_root(table.stamp);
 }
 
 auto installer::image_path(const std::filesystem::path& destination, const gse::sdk::pack_table& table) -> std::filesystem::path {
-	return destination / table.preset;
+	return destination / table.stamp.preset;
 }
 
 auto installer::install(const gse::sdk::pack_view& pack, const std::filesystem::path& destination, std::atomic<std::size_t>& done) -> std::expected<std::filesystem::path, std::string> {
@@ -97,24 +97,27 @@ auto installer::install(const gse::sdk::pack_view& pack, const std::filesystem::
 		return std::unexpected(written.error());
 	}
 
-	gse::sdk::register_image(pack.table.version, destination);
+	if (gse::sdk::traits_of(pack.table.stamp.kind).registers_image) {
+		gse::sdk::register_image(pack.table.stamp.version, destination);
+	}
 	if (const auto registered = write_uninstall_entry(pack.table, image); !registered) {
 		return std::unexpected(registered.error());
 	}
 	return image;
 }
 
-auto installer::uninstall_key(const std::string_view version, const std::string_view preset) -> std::wstring {
-	return gse::win32::widen(std::format("Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\GSEngineSDK-{}-{}", version, preset));
+auto installer::uninstall_key(const gse::sdk::pack_stamp& stamp) -> std::wstring {
+	return gse::win32::widen("Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" + gse::sdk::install_identity(stamp));
 }
 
 auto installer::write_uninstall_entry(const gse::sdk::pack_table& table, const std::filesystem::path& image) -> std::expected<void, std::string> {
-	const std::wstring key = uninstall_key(table.version, table.preset);
+	const gse::sdk::pack_stamp& stamp = table.stamp;
+	const std::wstring key = uninstall_key(stamp);
 	const std::wstring location = std::filesystem::path(image).make_preferred().wstring();
 	const std::wstring command = L"\"" + (image / uninstaller_path).make_preferred().wstring() + L"\" --uninstall";
 	const std::array<std::pair<const wchar_t*, std::wstring>, 5> values = {{
-		{ L"DisplayName", gse::win32::widen(std::format("GSEngine SDK {} ({})", table.version, table.preset)) },
-		{ L"DisplayVersion", gse::win32::widen(table.version) },
+		{ L"DisplayName", gse::win32::widen(std::format("{} {} ({})", stamp.product, stamp.version, stamp.preset)) },
+		{ L"DisplayVersion", gse::win32::widen(stamp.version) },
 		{ L"Publisher", L"GSEngine" },
 		{ L"InstallLocation", location },
 		{ L"UninstallString", command },
@@ -130,15 +133,22 @@ auto installer::write_uninstall_entry(const gse::sdk::pack_table& table, const s
 auto installer::uninstall(const std::filesystem::path& image) -> std::expected<void, std::string> {
 	const std::string record = gse::fs::read_text(image / record_name);
 	if (record.empty()) {
-		return std::unexpected(std::format("{} is not an installed SDK image ({} missing)", image.generic_display_string(), record_name));
+		return std::unexpected(std::format("{} is not an installed GSE image ({} missing)", image.generic_display_string(), record_name));
 	}
-	const std::string version = gse::config::manifest_value(gse::fs::read_text(image / "gse.manifest"), "version");
-	const std::string preset = image.filename().generic_native_encoded_string();
-	gse::sdk::unregister_image(version, image.parent_path());
-	gse::win32::delete_user_registry_key(uninstall_key(version, preset).c_str());
+	const std::string manifest = gse::fs::read_text(image / "gse.manifest");
+	gse::sdk::pack_stamp stamp{
+		.version = gse::config::manifest_value(manifest, "version"),
+		.preset = image.filename().generic_native_encoded_string(),
+		.product = gse::config::manifest_value(manifest, "product"),
+	};
+	gse::enum_from_string(gse::config::manifest_value(manifest, "kind"), stamp.kind);
+	if (gse::sdk::traits_of(stamp.kind).registers_image) {
+		gse::sdk::unregister_image(stamp.version, image.parent_path());
+	}
+	gse::win32::delete_user_registry_key(uninstall_key(stamp).c_str());
 
 	std::error_code ec;
-	if (const auto extracted = gse::sdk::extraction_dir(version, preset)) {
+	if (const auto extracted = gse::sdk::extraction_dir(stamp)) {
 		std::filesystem::remove_all(*extracted, ec);
 		std::filesystem::remove(extracted->parent_path(), ec);
 	}
@@ -150,12 +160,12 @@ auto installer::uninstall(const std::filesystem::path& image) -> std::expected<v
 	}
 	std::filesystem::remove(image / record_name, ec);
 	std::filesystem::remove(image / "gse.manifest", ec);
-	return schedule_directory_removal(image);
+	return schedule_directory_removal(image, gse::sdk::install_identity(stamp));
 }
 
-auto installer::schedule_directory_removal(const std::filesystem::path& image) -> std::expected<void, std::string> {
+auto installer::schedule_directory_removal(const std::filesystem::path& image, const std::string_view identity) -> std::expected<void, std::string> {
 	std::error_code ec;
-	const std::filesystem::path script = std::filesystem::temp_directory_path(ec) / std::format("gse-uninstall-{}.cmd", image.filename().generic_native_encoded_string());
+	const std::filesystem::path script = std::filesystem::temp_directory_path(ec) / std::format("gse-uninstall-{}.cmd", identity);
 	if (ec) {
 		return std::unexpected("could not resolve the temp directory");
 	}
@@ -186,6 +196,6 @@ auto installer::report(const std::expected<void, std::string>& outcome) -> int {
 	if (outcome) {
 		return 0;
 	}
-	gse::win32::show_error_box(L"GSEngine SDK Setup", gse::win32::widen(outcome.error()).c_str());
+	gse::win32::show_error_box(L"GSE Setup", gse::win32::widen(outcome.error()).c_str());
 	return 1;
 }

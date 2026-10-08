@@ -1,0 +1,246 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (leave blank to auto-generate v<YYYY.MMDD>.<n>)"
+        required: false
+      draft:
+        description: "Create release as draft"
+        required: false
+        default: "true"
+      verify_game:
+        description: "Run the packed game through its scenario on the runner (open question: it needs a window, see below)"
+        required: false
+        default: "false"
+      scenario:
+        description: "Scenario the packed game is verified with when verify_game is true"
+        required: false
+        default: "render_stress"
+      server:
+        description: "Server address the launcher points the game at (host:port, blank for none)"
+        required: false
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.r.outputs.tag }}
+      toolchain: ${{ steps.r.outputs.toolchain }}
+      draft: ${{ steps.r.outputs.draft }}
+    steps:
+      - id: r
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_DRAFT: ${{ inputs.draft }}
+        run: |
+          set -euo pipefail
+
+          # A tag push publishes exactly that tag. A dispatch without one gets
+          # v<YYYY.MMDD>.<n>: orderable, which is what phase 3's launcher needs to
+          # answer "is the feed newer than what I have installed". The 12-hex engine
+          # sha cannot answer that, so it stays in the manifest as `engine` while
+          # this string becomes the image's `version`.
+          tag="${INPUT_TAG:-}"
+          if [[ -z "$tag" && "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+            tag="${GITHUB_REF_NAME}"
+          fi
+          if [[ -z "$tag" ]]; then
+            date=$(date -u +%Y.%m%d)
+            used=$(gh api "repos/${{ github.repository }}/releases" --paginate --jq '.[].tag_name' \
+              | grep -c "^v${date}\." || true)
+            tag="v${date}.$((used + 1))"
+          fi
+
+          # The toolchain release the image is built with and stamped against. Resolved
+          # here so the build job can key its toolchain cache on it before installing.
+          toolchain=$(gh api "repos/${{ github.repository }}/releases" --paginate --jq '.[] | select(.draft == false) | .tag_name' \
+            | sed -nE 's/^gcc-trunk-v([0-9]+)$/\1/p' | sort -n | tail -1)
+          [[ -n "$toolchain" ]] || { echo "no published gcc-trunk-v* release to build with"; exit 1; }
+
+          {
+            echo "tag=$tag"
+            echo "toolchain=gcc-trunk-v$toolchain"
+            echo "draft=${INPUT_DRAFT:-true}"
+          } >> "$GITHUB_OUTPUT"
+          echo "resolved: tag=$tag toolchain=gcc-trunk-v$toolchain"
+
+  build:
+    needs: resolve
+    runs-on: windows-latest
+    timeout-minutes: 360
+    permissions:
+      contents: write
+    env:
+      PRESET: x64-mingw-gcc-Release
+      BUILD_DIR: out/build/x64-mingw-gcc-Release
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Free runner disk space
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue `
+            "$env:AGENT_TOOLSDIRECTORY\Ruby", "$env:AGENT_TOOLSDIRECTORY\Go", `
+            "$env:AGENT_TOOLSDIRECTORY\PyPy", "$env:AGENT_TOOLSDIRECTORY\CodeQL"
+          Get-PSDrive -PSProvider FileSystem | Format-Table -AutoSize
+
+      # The toolchain zip is large and never changes within a tag, so it is cached by tag.
+      - name: Cache the GCC toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.gcc-trunk
+          key: gcc-trunk-${{ needs.resolve.outputs.toolchain }}
+
+      # vcpkg's dependency tree is the expensive part of a cold run - bootstrap.py puts it
+      # at 30-60 minutes - so its binary cache is what makes repeat runs tolerable. The
+      # compiled engine BMIs are deliberately NOT cached: they are path- and
+      # toolchain-sensitive under the module mapper, and a stale one fails in ways that
+      # cost far more than the compile it saves.
+      - name: Cache the vcpkg binary archives
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: vcpkg-${{ env.PRESET }}-${{ hashFiles('vcpkg.json', 'vcpkg-overlays/**') }}-${{ hashFiles('.gitmodules') }}
+          restore-keys: |
+            vcpkg-${{ env.PRESET }}-
+
+      # The tree's own bootstrap installs the toolchain and puts Ninja at
+      # ~/.gcc-trunk/ninja, which is where the preset's PATH already looks. Submodules came
+      # with the checkout, the cppreference index is an editor-only asset, and the build is
+      # driven by target below, so all three are skipped.
+      - name: Bootstrap the toolchain and Ninja
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:VCPKG_DEFAULT_BINARY_CACHE" | Out-Null
+          python bootstrap.py `
+            --skip-submodules --skip-cppref --skip-build `
+            --tag ${{ needs.resolve.outputs.toolchain }} --persist
+
+      - name: Configure
+        shell: pwsh
+        run: cmake --preset $env:PRESET
+
+      # Not the Editor: it is the heaviest target in the tree and ships in neither image.
+      - name: Build the game, the installer stubs, the launcher and the packager
+        shell: pwsh
+        run: cmake --build $env:BUILD_DIR --target Sandbox Installer Setup Launcher Packer
+
+      # The SDK verify builds and runs the shipped consumer through GSEEngineSdk.cmake,
+      # which reads gse.link and gse.modules out of the image - so it is the step that
+      # catches an image staged without them. It needs no window.
+      - name: Package the SDK image
+        shell: pwsh
+        run: |
+          & "$env:BUILD_DIR/Packer/Packer.exe" `
+            --build-dir $env:BUILD_DIR `
+            --kind sdk `
+            --version ${{ needs.resolve.outputs.tag }}
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # Staged without the scenario verify: render_stress needs a window, and the headless
+      # scenarios never touch shaders, so there is no equivalent headless predicate yet.
+      # The verify_game input runs it anyway when you want to find out whether the DX12
+      # backend's WARP software rasteriser is enough on a hosted runner - it is kept out of
+      # the default path so that experiment cannot block a release.
+      #
+      # --feed-url is baked into the image's manifest, so the launcher shipped inside this
+      # pack knows where to look for its successor; --asset-base is where this release's
+      # setup exe will be downloadable from, and the packager writes feed.json naming it
+      # with the hash it computed over the exe it just produced.
+      - name: Package the game pack
+        shell: pwsh
+        run: |
+          & "$env:BUILD_DIR/Packer/Packer.exe" `
+            --build-dir $env:BUILD_DIR `
+            --kind game `
+            --version ${{ needs.resolve.outputs.tag }} `
+            --feed-url "https://github.com/${{ github.repository }}/releases/latest/download/feed.json" `
+            --asset-base "https://github.com/${{ github.repository }}/releases/download/${{ needs.resolve.outputs.tag }}" `
+            --server "${{ inputs.server }}" `
+            --no-verify
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify the packed game
+        if: inputs.verify_game == 'true'
+        shell: pwsh
+        run: |
+          $stage = "dist/game/x64-mingw-gcc-Release"
+          Push-Location $stage
+          & "./Bin/Sandbox.exe" --engine-bench-scenario ${{ inputs.scenario || 'render_stress' }} | Tee-Object -Variable output
+          $code = $LASTEXITCODE
+          Pop-Location
+          if ($code -ne 0 -or -not ($output -match "frames measured")) {
+            Write-Error "the packed game did not complete the scenario on this runner (exit $code)"
+            exit 1
+          }
+
+      # The zip is the download for anyone who would rather not meet SmartScreen's
+      # unsigned-exe warning. Compress-Archive rather than a zip writer in the packager:
+      # the runner already has one and nothing in the engine needs to read these back.
+      - name: Zip the game image
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "dist/game/x64-mingw-gcc-Release/*" `
+            -DestinationPath "dist/Sandbox-${{ needs.resolve.outputs.tag }}-windows-x64.zip"
+
+      - name: Compute asset hashes
+        id: hashes
+        shell: pwsh
+        run: |
+          $assets = Get-ChildItem dist/game/*-setup.exe, dist/engine-sdk/*-setup.exe, dist/*.zip
+          $lines = foreach ($asset in $assets) {
+            $hash = (Get-FileHash -Algorithm SHA256 $asset).Hash.ToLower()
+            "- ``$($asset.Name)`` - ``$hash``"
+          }
+          $body = $lines -join "`n"
+          "digest<<EOF" >> $env:GITHUB_OUTPUT
+          $body >> $env:GITHUB_OUTPUT
+          "EOF" >> $env:GITHUB_OUTPUT
+          Write-Output $body
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.resolve.outputs.tag }}
+          name: ${{ needs.resolve.outputs.tag }}
+          draft: ${{ needs.resolve.outputs.draft == 'true' }}
+          generate_release_notes: true
+          files: |
+            dist/game/*-setup.exe
+            dist/game/feed.json
+            dist/engine-sdk/*-setup.exe
+            dist/*.zip
+          body: |
+            **Sandbox ${{ needs.resolve.outputs.tag }}** for Windows x64, built with `${{ needs.resolve.outputs.toolchain }}`.
+
+            ## Play it
+
+            Download the `Sandbox-...-setup.exe` and run it. Windows SmartScreen warns on an
+            unsigned installer: choose **More info** then **Run anyway**. The `.zip` avoids
+            most of that warning if you would rather unpack it yourself and run `Bin/Sandbox.exe`.
+
+            Once installed, `Bin/Launcher.exe` inside the install folder updates the game to
+            the newest release before starting it, so you only download a setup exe once.
+
+            The `GSEngine-...-setup.exe` is the engine SDK, for building games against this
+            engine. It is not needed to play.
+
+            ## SHA256
+
+            ${{ steps.hashes.outputs.digest }}
