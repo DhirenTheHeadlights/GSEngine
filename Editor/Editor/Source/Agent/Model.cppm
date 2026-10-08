@@ -449,6 +449,7 @@ export namespace gse::ide::agent {
 		bool changes_open = false;
 		float changes_ratio = 0.55f;
 		[[= archive_skip{}]] gui::layout::split_drag_state changes_drag;
+		[[= archive_skip{}]] std::optional<std::uint32_t> changes_focus;
 		gui::text_buffer draft;
 		[[= archive_skip{}]] gui::text_area_state draft_state;
 		[[= archive_skip{}]] gui::image_attachments attachments;

@@ -216,6 +216,13 @@ namespace gse::ide::agent {
 		const transcript_metrics& metrics
 	) -> void;
 
+	auto push_change_summary(
+		transcript_view& v,
+		const gui::style& sty,
+		const transcript_row& row,
+		std::uint32_t index
+	) -> void;
+
 	auto quiet_tool(
 		const transcript_row& row
 	) -> bool;

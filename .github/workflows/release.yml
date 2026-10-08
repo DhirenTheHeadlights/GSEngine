@@ -132,9 +132,40 @@ jobs:
             --skip-submodules --skip-cppref --skip-build `
             --tag ${{ needs.resolve.outputs.toolchain }} --persist
 
+      # Engine/CMakeLists.txt compiles the SDK's own vulkan.cppm out of Vulkan_INCLUDE_DIR,
+      # so the headers alone are not enough and a missing SDK fails configure with a
+      # "Vulkan_INCLUDE_DIR-NOTFOUND/vulkan/vulkan.cppm" source path.
+      - name: Install the Vulkan SDK
+        shell: pwsh
+        run: |
+          choco install vulkan-sdk --no-progress -y
+          $sdk = Get-ChildItem "C:/VulkanSDK" -Directory -ErrorAction SilentlyContinue |
+            Sort-Object Name -Descending | Select-Object -First 1
+          if (-not $sdk) { Write-Error "no Vulkan SDK under C:/VulkanSDK after install"; exit 1 }
+          "VULKAN_SDK=$($sdk.FullName)" >> $env:GITHUB_ENV
+          Write-Output "Vulkan SDK: $($sdk.FullName)"
+
+      # `Engine/cmake/GSEEngine.cmake` sets CMAKE_EXPERIMENTAL_CXX_IMPORT_STD to a UUID, and
+      # that UUID is specific to one CMake version - a newer CMake silently refuses `import
+      # std` ("Experimental `import std` support not enabled when detecting toolchain"). The
+      # runner image ships whatever is current, so the version is pinned here to match the
+      # UUID in the tree. Bumping one means bumping the other.
+      - name: Pin CMake to the version the import-std UUID targets
+        shell: pwsh
+        env:
+          CMAKE_VERSION: "4.3.3"
+        run: |
+          $name = "cmake-$env:CMAKE_VERSION-windows-x86_64"
+          Invoke-WebRequest -Uri "https://github.com/Kitware/CMake/releases/download/v$env:CMAKE_VERSION/$name.zip" `
+            -OutFile "$env:RUNNER_TEMP/cmake.zip"
+          Expand-Archive "$env:RUNNER_TEMP/cmake.zip" -DestinationPath "$env:RUNNER_TEMP/cmake" -Force
+          "$env:RUNNER_TEMP/cmake/$name/bin" >> $env:GITHUB_PATH
+
       - name: Configure
         shell: pwsh
-        run: cmake --preset $env:PRESET
+        run: |
+          cmake --version
+          cmake --preset $env:PRESET
 
       # Not the Editor: it is the heaviest target in the tree and ships in neither image.
       - name: Build the game, the installer stubs, the launcher and the packager

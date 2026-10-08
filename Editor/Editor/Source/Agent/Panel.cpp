@@ -971,14 +971,22 @@ auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, transcript_view
 		}
 		else if (link) {
 			const transcript_row& owner = s->rows[std::min<std::size_t>(*link, s->rows.size() - 1)];
-			const std::uint32_t first = jump_line_for(owner);
-			jump_out.push<jump_to_request>({
-				.path = owner.file,
-				.line = first,
-				.column = 0,
-				.end_line = owner.added.empty() ? first : first + static_cast<std::uint32_t>(owner.added.size()) - 1,
-				.end_column = ~0u,
-			});
+			const bool edit = !owner.added.empty() || !owner.removed.empty();
+
+			if (edit && v.filter != row_filter::changes) {
+				s->changes_open = true;
+				s->changes_focus = *link;
+			}
+			else {
+				const std::uint32_t first = jump_line_for(owner);
+				jump_out.push<jump_to_request>({
+					.path = owner.file,
+					.line = first,
+					.column = 0,
+					.end_line = owner.added.empty() ? first : first + static_cast<std::uint32_t>(owner.added.size()) - 1,
+					.end_column = ~0u,
+				});
+			}
 		}
 	}
 
@@ -1002,6 +1010,25 @@ auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, transcript_view
 
 	if (stale_diff) {
 		relayout_from(v, *stale_diff);
+	}
+
+	if (v.filter == row_filter::changes && s->changes_focus) {
+		const auto found = std::ranges::find(v.line_rows, *s->changes_focus);
+		if (found != v.line_rows.end()) {
+			const gui::text_area_layout placement = gui::text_area_layout_of(ctx, {
+				.buffer = v.buffer,
+				.state = v.state,
+				.rect = area,
+				.spans = v.spans,
+				.stops = v.stops,
+				.blocks = v.blocks,
+				.indent_width = transcript_tab_width,
+			});
+			v.state.scroll.y.offset = placement.line_top(static_cast<std::uint32_t>(std::distance(v.line_rows.begin(), found)));
+			v.state.scroll.y.target = v.state.scroll.y.offset;
+			v.state.tail_pinned = false;
+		}
+		s->changes_focus.reset();
 	}
 }
 

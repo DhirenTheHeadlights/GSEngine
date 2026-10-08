@@ -677,6 +677,36 @@ auto gse::ide::agent::push_diff(transcript_view& v, const gui::style& sty, trans
 	v.line_rows.push_back(index);
 }
 
+auto gse::ide::agent::push_change_summary(transcript_view& v, const gui::style& sty, const transcript_row& row, const std::uint32_t index) -> void {
+	const auto line = static_cast<std::uint32_t>(v.buffer.lines.size());
+	std::string text(diff_indent, ' ');
+
+	const auto append = [&](const std::string_view piece, const vec4f& color) {
+		const auto start = static_cast<std::uint32_t>(text.size());
+		text += piece;
+		v.spans.push_back({
+			.line = line,
+			.start_col = start,
+			.end_col = static_cast<std::uint32_t>(text.size()),
+			.color = color,
+		});
+	};
+
+	append(row.file.filename().generic_display_string(), sty.color_file);
+
+	if (!row.added.empty()) {
+		text.append(diff_gap, ' ');
+		append(std::format("+{}", row.added.size()), sty.color_added);
+	}
+	if (!row.removed.empty()) {
+		text.append(diff_gap, ' ');
+		append(std::format("-{}", row.removed.size()), sty.color_removed);
+	}
+
+	v.buffer.lines.push_back(std::move(text));
+	v.line_rows.push_back(index);
+}
+
 auto gse::ide::agent::group_at(const transcript_view& v, const std::uint32_t line) -> const group_marker* {
 	const auto found = std::ranges::find(v.groups, line, &group_marker::toggle_line);
 	return found == v.groups.end() ? nullptr : &*found;
@@ -775,7 +805,13 @@ auto gse::ide::agent::push_row(session& s, transcript_view& v, const gui::style&
 		.markdown = row.kind == row_kind::text,
 	}, metrics);
 
-	if (!row.detail.empty()) {
+	const bool edit = !row.added.empty() || !row.removed.empty();
+	const bool compact = edit && v.filter != row_filter::changes;
+
+	if (compact) {
+		push_change_summary(v, sty, row, index);
+	}
+	else if (!row.detail.empty()) {
 		push_transcript_line(v, sty, {
 			.prefix = "    ",
 			.text = row.detail,
@@ -794,9 +830,10 @@ auto gse::ide::agent::push_row(session& s, transcript_view& v, const gui::style&
 		});
 	}
 
-	push_diff(v, sty, row, index, metrics);
+	if (!compact) {
+		push_diff(v, sty, row, index, metrics);
+	}
 
-	const bool edit = !row.added.empty() || !row.removed.empty();
 	const bool previewable = row.kind == row_kind::user || (row.kind == row_kind::tool && !edit);
 	if (previewable && v.buffer.lines.size() - opened > row_preview_lines) {
 		const bool expanded = group_expanded(s, index);
