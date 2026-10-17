@@ -429,23 +429,23 @@ auto gse::ide::editor_screen::draw_caption(gui::builder& ui, const rectf& area) 
 		const std::size_t total = m_index->progress_total.load(std::memory_order_acquire);
 		const std::size_t done = std::min(m_index->progress_done.load(std::memory_order_acquire), total);
 		const time_t<double> started = m_index->phase_started.load(std::memory_order_acquire);
-		const double elapsed_seconds = started == time_t<double>{}
-			? 0.0
-			: (system_clock::now<time_t<double>>() - started).as<seconds>();
+		const time_t<double> elapsed = started == time_t<double>{}
+			? time_t<double>{}
+			: system_clock::now<time_t<double>>() - started;
 		status = std::string(info.label);
 		if (total > 0) {
 			status += std::format(" {}/{}", done, total);
 		}
-		status += elapsed_seconds < 10.f
-			? std::format(" \xC2\xB7 {:.1f}s", elapsed_seconds)
-			: std::format(" \xC2\xB7 {:.0f}s", elapsed_seconds);
+		status += elapsed < seconds(10.0)
+			? std::format(" \xC2\xB7 {:.1f:s}", elapsed)
+			: std::format(" \xC2\xB7 {:.0f:s}", elapsed);
 		status_tooltip = std::format(
-			"{} — {} Progress: {} of {} items. Time in this stage: {:.1f} seconds.",
+			"{} — {} Progress: {} of {} items. Time in this stage: {:.1f:s}.",
 			info.label,
 			info.detail,
 			done,
 			total,
-			elapsed_seconds
+			elapsed
 		);
 		spinning = true;
 		pill_color = sty.color_accent_dim;
@@ -888,7 +888,7 @@ auto gse::ide::draw_explorer_panel(gui::builder& ui, workspace::data& ws, quick_
 				{ label_x, row_rect.top() },
 				{ std::max(0.f, row_rect.right() - label_x), row_height }
 			);
-			const id input_id = gui::ids::make_from_key(hash_combine(n.key, stable_id("explorer_name_input")));
+			const id input_id = gui::ids::make_from_key(hash_of(n.key, "explorer_name_input"));
 			if (pending.focus_requested) {
 				ui.focus_widget_id = input_id;
 				pending.input.caret = static_cast<int>(pending.name.size());
@@ -986,7 +986,7 @@ auto gse::ide::draw_explorer_panel(gui::builder& ui, workspace::data& ws, quick_
 	if (reveal_offset >= 0.f) {
 		const float row_height = text_view->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
 		const float view_height = std::max(0.f, tree_top - content.bottom());
-		gui::scroll_state& scroll = ctx.widget_scrolls[hash_combine(gui::ids::current_seed(), stable_id("explorer_tree"))];
+		gui::scroll_state& scroll = ctx.widget_scrolls[hash_of(gui::ids::current_seed(), "explorer_tree")];
 		if (reveal_offset < scroll.y.offset || reveal_offset + row_height > scroll.y.offset + view_height) {
 			scroll.y.target = std::max(0.f, reveal_offset - view_height * 0.5f + row_height * 0.5f);
 		}

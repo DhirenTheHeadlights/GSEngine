@@ -210,8 +210,8 @@ auto gse::gui::draw_image_attachments(const draw_context& ctx, id& hot_widget_id
 			break;
 		}
 
-		const id thumb_id = ids::make_from_key(hash_combine(widget_id.number(), static_cast<std::uint64_t>(i)));
-		const id close_id = ids::make_from_key(hash_combine(thumb_id.number(), stable_id("close")));
+		const id thumb_id = ids::make_from_key(hash_of(widget_id.number(), i));
+		const id close_id = ids::make_from_key(hash_of(thumb_id.number(), "close"));
 		const rectf close = close_button_rect(frame, sty);
 
 		const interaction::press discard = interaction::press_in_rect(ctx, hot_widget_id, active_widget_id, close_id, close);
@@ -308,8 +308,8 @@ auto gse::gui::draw_image_viewer(const draw_context& ctx, id& hot_widget_id, id&
 		{ chip_extent, chip_extent }
 	);
 
-	const id close_id = ids::make_from_key(hash_combine(widget_id.number(), stable_id("viewer_close")));
-	const id discard_id = ids::make_from_key(hash_combine(widget_id.number(), stable_id("viewer_discard")));
+	const id close_id = ids::make_from_key(hash_of(widget_id.number(), "viewer_close"));
+	const id discard_id = ids::make_from_key(hash_of(widget_id.number(), "viewer_discard"));
 
 	const interaction::press close_press = interaction::press_in_rect(ctx, hot_widget_id, active_widget_id, close_id, close);
 	const interaction::press discard_press = interaction::press_in_rect(ctx, hot_widget_id, active_widget_id, discard_id, discard);

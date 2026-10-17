@@ -18,4 +18,4 @@ Then `## Open items`, but only if something is genuinely unfinished, deferred, o
 
 Short. The owner is reading this to decide whether to look closer, not to avoid looking. Prefer the concrete noun to the abstract one, cut every sentence that only says the work was done carefully, and do not pad the review section to make it look thorough — a change that needed no fixing is a good outcome and should read as one.
 
-End by calling `gse_phase_done` with the summary as `summary`. It is stored as the task's record and shown in the panel. There is no phase after this.
+End by calling `gse_phase_done` with the summary as `summary`. It is stored as the task's record and shown in the panel. There is no phase after this — unless the prompt carries a goal, in which case a steering run reads your summary next to decide what follows, so the open items and anything left to measure matter twice.

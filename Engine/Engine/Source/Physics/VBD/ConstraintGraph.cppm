@@ -25,7 +25,7 @@ export namespace gse::vbd {
 
 		auto add_muscle(
 			const muscle_constraint& m,
-			std::span<const muscle_path_point> path
+			std::span<const muscle_path_point> records
 		) -> std::uint32_t;
 
 		auto sort_contacts_canonical() -> void;
@@ -56,6 +56,14 @@ export namespace gse::vbd {
 		auto muscle_constraints() const -> std::span<const muscle_constraint>;
 
 		auto muscle_path(
+			const muscle_constraint& m
+		) const -> std::span<const muscle_path_point>;
+
+		auto muscle_wraps(
+			const muscle_constraint& m
+		) const -> std::span<const muscle_path_point>;
+
+		auto muscle_records(
 			const muscle_constraint& m
 		) const -> std::span<const muscle_path_point>;
 
@@ -134,18 +142,18 @@ auto gse::vbd::constraint_graph::remove_joint(const std::uint32_t index) -> void
 	}
 }
 
-auto gse::vbd::constraint_graph::add_muscle(const muscle_constraint& m, const std::span<const muscle_path_point> path) -> std::uint32_t {
+auto gse::vbd::constraint_graph::add_muscle(const muscle_constraint& m, const std::span<const muscle_path_point> records) -> std::uint32_t {
 	const auto idx = static_cast<std::uint32_t>(m_muscles.size());
 	auto& added = m_muscles.emplace_back(m);
 	added.path_first = static_cast<std::uint32_t>(m_muscle_points.size());
-	added.path_count = static_cast<std::uint32_t>(path.size());
-	m_muscle_points.insert(m_muscle_points.end(), path.begin(), path.end());
+	added.path_count = static_cast<std::uint32_t>(records.size()) - m.wrap_count;
+	m_muscle_points.insert(m_muscle_points.end(), records.begin(), records.end());
 	return idx;
 }
 
 auto gse::vbd::constraint_graph::muscle_bodies(const muscle_constraint& m) const -> std::vector<std::uint32_t> {
 	std::vector<std::uint32_t> bodies;
-	for (const auto& point : std::span(m_muscle_points).subspan(m.path_first, m.path_count)) {
+	for (const auto& point : muscle_records(m)) {
 		if (!std::ranges::contains(bodies, point.body)) {
 			bodies.push_back(point.body);
 		}
@@ -407,6 +415,14 @@ inline auto gse::vbd::constraint_graph::muscle_constraints() const -> std::span<
 
 inline auto gse::vbd::constraint_graph::muscle_path(const muscle_constraint& m) const -> std::span<const muscle_path_point> {
 	return std::span(m_muscle_points).subspan(m.path_first, m.path_count);
+}
+
+inline auto gse::vbd::constraint_graph::muscle_wraps(const muscle_constraint& m) const -> std::span<const muscle_path_point> {
+	return std::span(m_muscle_points).subspan(m.path_first + m.path_count, m.wrap_count);
+}
+
+inline auto gse::vbd::constraint_graph::muscle_records(const muscle_constraint& m) const -> std::span<const muscle_path_point> {
+	return std::span(m_muscle_points).subspan(m.path_first, m.path_count + m.wrap_count);
 }
 
 inline auto gse::vbd::constraint_graph::body_colors() const -> std::span<const std::vector<std::uint32_t>> {

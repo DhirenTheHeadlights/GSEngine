@@ -407,6 +407,8 @@ export namespace gse::win32 {
 	using ::CreateMutexW;
 	using ::ReleaseMutex;
 	using ::GetExitCodeProcess;
+	using ::GetProcessTimes;
+	using ::FILETIME;
 	using ::MoveFileExW;
 	using ::GetEnvironmentStringsW;
 	using ::FreeEnvironmentStringsW;
@@ -461,6 +463,7 @@ export namespace gse::win32 {
 	constexpr DWORD duplicate_same_access = DUPLICATE_SAME_ACCESS;
 	constexpr DWORD process_dup_handle = PROCESS_DUP_HANDLE;
 	constexpr DWORD process_query_limited_information = PROCESS_QUERY_LIMITED_INFORMATION;
+	constexpr DWORD synchronize = SYNCHRONIZE;
 	constexpr DWORD get_module_handle_ex_flag_from_address = GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS;
 	constexpr DWORD get_module_handle_ex_flag_unchanged_refcount = GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT;
 	constexpr int max_path = MAX_PATH;

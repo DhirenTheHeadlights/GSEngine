@@ -3,6 +3,7 @@ import std;
 import gse.meta;
 import gse.test;
 import gse.tests;
+import gse.tests.complete;
 
 namespace gse::tests {
 	struct options {

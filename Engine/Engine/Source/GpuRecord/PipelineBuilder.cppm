@@ -134,7 +134,7 @@ export namespace gse::gpu {
 		bool require_full_subgroups = false;
 		std::array<compute_param_pod, 8> params{};
 		std::size_t param_count = 0;
-		std::array<std::string_view, 4> helper_paths{};
+		std::array<std::string_view, 8> helper_paths{};
 		std::size_t helper_count = 0;
 		std::array<std::string_view, 8> call_names{};
 		std::size_t call_count = 0;
@@ -190,7 +190,7 @@ export namespace gse::gpu {
 		std::uint32_t push_constant_stages = 0;
 		std::array<graphics_stage_pod, 4> stages{};
 		std::size_t stage_count = 0;
-		std::array<std::string_view, 4> helper_paths{};
+		std::array<std::string_view, 8> helper_paths{};
 		std::size_t helper_count = 0;
 		rasterization_state rasterization{};
 		depth_state depth{};

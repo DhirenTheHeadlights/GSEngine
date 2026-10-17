@@ -66,12 +66,12 @@ namespace gse::gui {
 
 auto gse::gui::auto_scroll_delta(const float distance) -> float {
 	constexpr float dead_zone = 8.f;
-	constexpr float speed_scale = 90.f;
+	const inverse_time speed_scale = per_second(90.f);
 	constexpr float distance_scale = 90.f;
-	constexpr float max_speed = 2600.f;
+	const inverse_time max_speed = per_second(2600.f);
 	const float magnitude = std::max(0.f, std::abs(distance) - dead_zone);
-	const float speed = std::min(max_speed, (std::exp(magnitude / distance_scale) - 1.f) * speed_scale);
-	return std::copysign(speed * system_clock::dt<time>().as<seconds>(), distance);
+	const inverse_time speed = std::min(max_speed, (std::exp(magnitude / distance_scale) - 1.f) * speed_scale);
+	return std::copysign(speed * system_clock::dt<time>(), distance);
 }
 
 auto gse::gui::apply_auto_scroll(scroll_axis& axis, const float delta, const bool smooth) -> void {
@@ -205,7 +205,7 @@ auto gse::gui::scroll_region(draw_context& ctx, const scroll_region_info& info) 
 		{ available_width, std::max(0.f, available_height) }
 	);
 
-	const std::uint64_t key = hash_combine(ids::current_seed(), stable_id(info.id));
+	const std::uint64_t key = hash_of(ids::current_seed(), info.id);
 	scroll_state& state = ctx.widget_scrolls[key];
 
 	const float saved_layout_y = ctx.layout_cursor.y();

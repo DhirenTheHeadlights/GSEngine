@@ -19,6 +19,8 @@ export namespace gse::syntax {
 		std::string_view word
 	) -> std::optional<kind>;
 
+	auto reserved_words() -> std::span<const std::string_view>;
+
 	auto classify_token(
 		const token& t
 	) -> std::optional<kind>;
@@ -32,13 +34,14 @@ export namespace gse::syntax {
 	) -> std::vector<classified_token>;
 }
 
-auto gse::syntax::classify_word(const std::string_view word) -> std::optional<kind> {
-	static const std::unordered_set<std::string_view> control = {
+namespace gse::syntax {
+	constexpr std::array control_words = std::to_array<std::string_view>({
 		"if", "else", "for", "while", "do", "switch", "case", "default",
 		"break", "continue", "return", "goto", "throw", "try", "catch",
 		"co_await", "co_return", "co_yield", "new", "delete"
-	};
-	static const std::unordered_set<std::string_view> keywords = {
+	});
+
+	constexpr std::array keyword_words = std::to_array<std::string_view>({
 		"int", "char", "bool", "float", "double", "void", "auto", "short",
 		"long", "signed", "unsigned", "wchar_t", "char8_t", "char16_t",
 		"char32_t", "const", "constexpr", "consteval", "constinit",
@@ -52,10 +55,17 @@ auto gse::syntax::classify_word(const std::string_view word) -> std::optional<ki
 		"export", "typeid", "and", "or", "not", "xor", "bitand", "bitor",
 		"compl", "and_eq", "or_eq", "xor_eq", "not_eq",
 		"override", "final", "typedef", "asm", "contract_assert", "pre", "post"
-	};
-	static const std::unordered_set<std::string_view> literals = {
+	});
+
+	constexpr std::array literal_words = std::to_array<std::string_view>({
 		"true", "false", "nullptr"
-	};
+	});
+}
+
+auto gse::syntax::classify_word(const std::string_view word) -> std::optional<kind> {
+	static const std::unordered_set<std::string_view> control(control_words.begin(), control_words.end());
+	static const std::unordered_set<std::string_view> keywords(keyword_words.begin(), keyword_words.end());
+	static const std::unordered_set<std::string_view> literals(literal_words.begin(), literal_words.end());
 	if (literals.contains(word)) {
 		return kind::literal;
 	}
@@ -66,6 +76,18 @@ auto gse::syntax::classify_word(const std::string_view word) -> std::optional<ki
 		return kind::keyword;
 	}
 	return std::nullopt;
+}
+
+auto gse::syntax::reserved_words() -> std::span<const std::string_view> {
+	static const std::vector<std::string_view> words = [] {
+		std::vector<std::string_view> all;
+		all.reserve(control_words.size() + keyword_words.size() + literal_words.size());
+		all.append_range(control_words);
+		all.append_range(keyword_words);
+		all.append_range(literal_words);
+		return all;
+	}();
+	return words;
 }
 
 auto gse::syntax::classify_token(const token& t) -> std::optional<kind> {

@@ -738,12 +738,6 @@ export namespace gse::vulkan {
 			) const -> bool;
 		};
 
-		struct pool_key_hash {
-			auto operator()(
-				const pool_key& key
-			) const noexcept -> std::size_t;
-		};
-
 		static constexpr vk::DeviceSize k_default_block_size = 1024 * 1024 * 64;
 
 		class physical_device m_physical_device;
@@ -754,7 +748,7 @@ export namespace gse::vulkan {
 		std::array<std::uint64_t, gpu::queue_type_count> m_timestamp_valid_masks{};
 		std::array<std::uint32_t, gpu::queue_type_count> m_queue_families{};
 
-		std::unordered_map<pool_key, pool, pool_key_hash> m_pools;
+		std::unordered_map<pool_key, pool> m_pools;
 		mutable std::mutex m_mutex;
 
 		std::atomic<std::uint32_t> m_live_allocation_count = 0;

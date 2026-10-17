@@ -16,7 +16,6 @@ import :collision_component;
 import :joint_drive_component;
 import :motion_component;
 import :motor_component;
-import :muscle_component;
 import :system;
 import :transform_component;
 import :vbd_constraints;
@@ -69,6 +68,7 @@ auto gse::physics::shadow_step::capture_world(read<transform_component>& transfo
 			.body_index = static_cast<std::uint32_t>(i),
 			.position = tc->position,
 			.velocity = motion[i].current_velocity,
+			.spin = motion[i].angular_velocity,
 		});
 	}
 
@@ -98,6 +98,12 @@ auto gse::physics::shadow_step::report_step(const data& d, const pending_step& r
 	std::size_t compared = 0;
 	std::size_t over_micro = 0;
 	std::size_t over_milli = 0;
+	angular_velocity max_spin_residual;
+	angular_velocity max_cpu_spin;
+	angular_velocity max_gpu_spin;
+	std::uint64_t worst_spin_owner = 0;
+	std::uint64_t cpu_spin_owner = 0;
+	std::uint64_t gpu_spin_owner = 0;
 
 	for (std::size_t i = 0; i < record.pre.size(); ++i) {
 		const auto& sample = record.pre[i];
@@ -107,7 +113,7 @@ auto gse::physics::shadow_step::report_step(const data& d, const pending_step& r
 		const auto& gpu = solved[sample.body_index];
 		const auto& cpu = record.cpu_post[i];
 
-		const length position_residual = distance(gpu.position, cpu.position);
+		const length position_residual = distance(origin_from_com(gpu.position, gpu.orientation, gpu.com_local), cpu.position);
 		const velocity velocity_residual = magnitude(gpu.velocity - cpu.velocity);
 
 		++compared;
@@ -127,11 +133,23 @@ auto gse::physics::shadow_step::report_step(const data& d, const pending_step& r
 			worst_cpu_change = magnitude(cpu.velocity - sample.velocity);
 			worst_gpu_change = magnitude(gpu.velocity - sample.velocity);
 		}
+		if (const auto spin_residual = magnitude(gpu.angular_velocity - cpu.spin); spin_residual > max_spin_residual) {
+			max_spin_residual = spin_residual;
+			worst_spin_owner = sample.owner.number();
+		}
+		if (const auto spin = magnitude(cpu.spin); spin > max_cpu_spin) {
+			max_cpu_spin = spin;
+			cpu_spin_owner = sample.owner.number();
+		}
+		if (const auto spin = magnitude(gpu.angular_velocity); spin > max_gpu_spin) {
+			max_gpu_spin = spin;
+			gpu_spin_owner = sample.owner.number();
+		}
 	}
 
 	log::println(
 		log::category::physics,
-		"shadow step {}: bodies {} | max dp {:.9f:m} on {} | max dv {:.9f} on {} (cpu dv {:.6f} gpu dv {:.6f}) | dv over 1e-6 {} over 1e-3 {} | contacts {} ws {}",
+		"shadow step {}: bodies {} | max dp {:.9f:m} on {} | max dv {:.9f} on {} (cpu dv {:.6f} gpu dv {:.6f}) | dv over 1e-6 {} over 1e-3 {} | max dw {:.6f} on {} | spin cpu {:.3f} on {} gpu {:.3f} on {} | contacts {} ws {}",
 		record.step,
 		compared,
 		max_position,
@@ -142,6 +160,12 @@ auto gse::physics::shadow_step::report_step(const data& d, const pending_step& r
 		worst_gpu_change,
 		over_micro,
 		over_milli,
+		max_spin_residual,
+		worst_spin_owner,
+		max_cpu_spin,
+		cpu_spin_owner,
+		max_gpu_spin,
+		gpu_spin_owner,
 		diag.attempted_contacts,
 		diag.warm_start_hits
 	);
@@ -220,16 +244,23 @@ auto gse::physics::shadow_step::report_step(const data& d, const pending_step& r
 		const auto grounded_bit = word < grounded.size() ? (grounded[word] >> (sample.body_index % 32u)) & 1u : 0u;
 		log::println(
 			log::category::physics,
-			"shadow detail body {}: dp {:.9f:m} dv {:.9f} cpu dv {:.6f} gpu dv {:.6f} pre speed {:.6f} | aw {:.2f} sleep {} grounded {}",
+			"shadow detail body {} (idx {}): dp {:.9f:m} dv {:.9f} cpu dv {:.6f} gpu dv {:.6f} pre speed {:.6f} | aw {:.2f} sleep {} grounded {} | pre v {:.3f} cpu v {:.3f} gpu v {:.3f} | pre w {:.3f} cpu w {:.3f} gpu w {:.3f}",
 			sample.owner.number(),
-			distance(gpu.position, cpu.position),
+			sample.body_index,
+			distance(origin_from_com(gpu.position, gpu.orientation, gpu.com_local), cpu.position),
 			magnitude(gpu.velocity - cpu.velocity),
 			magnitude(cpu.velocity - sample.velocity),
 			magnitude(gpu.velocity - sample.velocity),
 			magnitude(sample.velocity),
 			gpu.accel_weight,
 			gpu.sleep_counter,
-			grounded_bit
+			grounded_bit,
+			sample.velocity,
+			cpu.velocity,
+			gpu.velocity,
+			sample.spin,
+			cpu.spin,
+			gpu.angular_velocity
 		);
 	}
 
@@ -242,7 +273,7 @@ auto gse::physics::shadow_step::report_step(const data& d, const pending_step& r
 			}
 			log::println(
 				log::category::physics,
-				"shadow narrow debug {}: bodies {} {} flags {:#x} clipped {} raw {} unique {} emitted {} faces {:#06x}",
+				"shadow narrow debug {}: bodies {} {} flags {:#x} clipped {} raw {} unique {} emitted {} faces {:#010x}",
 				r,
 				narrow_debug[base + 0],
 				narrow_debug[base + 1],
@@ -313,7 +344,7 @@ auto gse::physics::shadow_step::report_step(const data& d, const pending_step& r
 		}
 		log::println(
 			log::category::physics,
-			"shadow contact ci {}: a {} b {} ny {:.3f} c0 {:.6f} lambda {:.4f} pen {:.1f} floor {:.1f} stick {:#x}",
+			"shadow contact ci {}: a {} b {} ny {:.3f} c0 {:.6f} lambda {:.4f} pen {:.1f} floor {:.1f} stick {:#x} approach {:.4f} restitution {:.3f}",
 			ci,
 			c.body_a,
 			c.body_b,
@@ -322,7 +353,9 @@ auto gse::physics::shadow_step::report_step(const data& d, const pending_step& r
 			c.lambda.x(),
 			c.penalty.x(),
 			c.penalty_floor,
-			c.sticking
+			c.sticking,
+			c.approach_speed,
+			c.restitution
 		);
 	}
 }
@@ -384,7 +417,7 @@ auto gse::physics::shadow_step::resolve_retired(data& d) -> void {
 	d.pending.erase(d.pending.begin(), d.pending.begin() + static_cast<std::ptrdiff_t>(consumed));
 }
 
-auto gse::physics::shadow_step::init(context& ctx, const std::optional<shared_view<gpu::context::data>> gpu_s, data& d) -> async::task<> {
+auto gse::physics::shadow_step::init(context& ctx, const std::optional<shared_view<gpu::context::data>> gpu_s, const shared_view<physics::data> phys, data& d) -> async::task<> {
 	if (!d.enabled) {
 		co_return;
 	}
@@ -394,7 +427,7 @@ auto gse::physics::shadow_step::init(context& ctx, const std::optional<shared_vi
 		co_return;
 	}
 
-	co_await d.solver.initialize_compute(ctx, *gpu_s, {}, false, true);
+	co_await d.solver.initialize_compute(ctx, *gpu_s, capacities_from_settings(phys), { .full_snapshot = true });
 	d.solver.set_preserve_warm_starts(true);
 	d.buffers_ready = d.solver.buffers_created();
 
@@ -407,7 +440,7 @@ auto gse::physics::shadow_step::init(context& ctx, const std::optional<shared_vi
 	co_return;
 }
 
-auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> phys, read<transform_component> transform, read<motion_component> motion, read<collision_component> collision, read<motor_component> motor, read<joint_drive_component> drives, read<muscle_component> muscles) -> async::task<> {
+auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> phys, read<transform_component> transform, read<motion_component> motion, read<collision_component> collision, read<motor_component> motor, read<joint_drive_component> drives) -> async::task<> {
 	if (!d.enabled || !d.buffers_ready || motion.empty()) {
 		co_return;
 	}
@@ -447,6 +480,12 @@ auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> ph
 	std::flat_map<id, std::uint32_t> id_to_body_index;
 	std::vector<std::pair<id, std::uint32_t>> id_to_body_index_entries;
 
+	if (phys.hulls.size() != d.packed_hull_count) {
+		pack_gpu_hulls(phys.hulls, d.hull_data, d.hull_offsets);
+		d.packed_hull_count = phys.hulls.size();
+		++d.hull_generation;
+	}
+
 	body_build_view view{
 		.motion_owners = motion.owner_ids(),
 		.motions = { motion.data(), motion.size() },
@@ -455,6 +494,7 @@ auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> ph
 		.collision_owners = collision.owner_ids(),
 		.collisions = { collision.data(), collision.size() },
 		.hulls = phys.hulls,
+		.hull_offsets = d.hull_offsets,
 	};
 
 	std::vector<mass_properties> body_props;
@@ -472,7 +512,7 @@ auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> ph
 	std::vector<vbd::joint_constraint> joints;
 	build_joint_constraints(d.joints, id_to_body_index, bodies, joints);
 
-	copy_muscles_with_inputs(phys, muscles, d.muscles);
+	d.muscles.assign(phys.muscles.items().begin(), phys.muscles.items().end());
 	std::vector<vbd::muscle_constraint> muscle_constraints;
 	std::vector<vbd::muscle_path_point> muscle_points;
 	build_muscle_constraints(d.muscles, id_to_body_index, muscle_constraints, muscle_points);
@@ -480,6 +520,10 @@ auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> ph
 	for (std::size_t i = 0; i < muscle_constraints.size(); ++i) {
 		muscle_excitations[i] = muscle_constraints[i].excitation;
 	}
+
+	std::vector<vbd::body_collision_filter> body_filters;
+	build_body_filters(view.collision_owners, view.collisions, id_to_body_index, bodies.size(), body_filters);
+	build_non_colliding_slots(phys.non_colliding_pairs, id_to_body_index, d.non_colliding_pairs);
 
 	const auto& cfg = phys.vbd_solver.config();
 
@@ -491,9 +535,14 @@ auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> ph
 		.bodies = std::move(bodies),
 		.motors = std::move(motors),
 		.joints = std::move(joints),
+		.non_colliding_pairs = d.non_colliding_pairs,
+		.body_filters = body_filters,
 		.muscles = std::move(muscle_constraints),
 		.muscle_points = std::move(muscle_points),
 		.muscle_excitations = std::move(muscle_excitations),
+		.hull_data = d.hull_data,
+		.hull_generation = d.hull_generation,
+		.curve_data = phys.curve_words,
 		.solver_cfg = cfg,
 		.dt = dt * static_cast<float>(steps),
 		.steps = steps * substeps,

@@ -12,8 +12,6 @@ void vbd_apply_joint_inputs(uint3 dispatch_id) {
     input.pos_penalty = resident.pos_penalty;
     input.ang_lambda = resident.ang_lambda;
     input.ang_penalty = resident.ang_penalty;
-    input.limit_lambda = resident.limit_lambda;
-    input.limit_penalty = resident.limit_penalty;
 
     joint_data[ji] = input;
 }

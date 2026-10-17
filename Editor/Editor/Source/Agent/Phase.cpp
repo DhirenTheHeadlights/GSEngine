@@ -19,7 +19,7 @@ auto gse::ide::agent::current_phase(const session& s) -> task_phase {
 auto gse::ide::agent::task_runs(const session& s) -> std::span<const phase_run> {
 	const std::span all(s.runs);
 	for (std::size_t at = all.size(); at > 0; --at) {
-		if (all[at - 1].phase == task_phase::scope) {
+		if (all[at - 1].phase == task_phase::scope || all[at - 1].phase == task_phase::steer) {
 			return all.subspan(at - 1);
 		}
 	}
@@ -59,21 +59,52 @@ auto gse::ide::agent::reviews_spent(const session& s) -> std::uint32_t {
 	return static_cast<std::uint32_t>(std::ranges::count(task_runs(s), task_phase::review, &phase_run::phase));
 }
 
-auto gse::ide::agent::next_phase(const session& s, const std::uint32_t findings) -> task_phase {
+auto gse::ide::agent::verdict_policy_of(const goal_verdict verdict) -> verdict_policy {
+	return annotation_from_enum<verdict_policy>(verdict, {});
+}
+
+auto gse::ide::agent::steered_code(const session& s) -> bool {
+	const std::size_t begun = std::min<std::size_t>(s.runs.back().first_row, s.rows.size());
+	return std::ranges::any_of(std::span(s.rows).subspan(begun), [](const transcript_row& row) {
+		return shows(row_filter::changes, row) && (build_runner::is_build_source(row.file) || row.file.extension() == std::filesystem::path(code_shader_extension));
+	});
+}
+
+auto gse::ide::agent::next_phase(const session& s, const phase_gate& reported) -> task_phase {
 	switch (current_phase(s)) {
 		case task_phase::scope:
 			return task_phase::apply;
 		case task_phase::apply:
 			return task_phase::review;
 		case task_phase::review:
-			return findings == 0 || reviews_spent(s) >= max_review_cycles ? task_phase::summarize : task_phase::revise;
+			return reported.findings == 0 || reviews_spent(s) >= max_review_cycles ? task_phase::summarize : task_phase::revise;
 		case task_phase::revise:
 			return task_phase::review;
 		case task_phase::summarize:
+			return s.goal ? task_phase::steer : task_phase::settled;
+		case task_phase::steer:
+			return *reported.verdict != goal_verdict::escalate && steered_code(s) ? task_phase::review : verdict_policy_of(*reported.verdict).next;
 		case task_phase::settled:
 			return task_phase::settled;
 	}
 	return task_phase::settled;
+}
+
+auto gse::ide::agent::needs_owner(const session& s, const phase_gate& reported) -> bool {
+	if (reported.verdict && verdict_policy_of(*reported.verdict).gated) {
+		return true;
+	}
+	if (!s.goal) {
+		return policy_of(reported.from).gated;
+	}
+	return next_phase(s, reported) == task_phase::steer && s.goal->steers_left == 0;
+}
+
+auto gse::ide::agent::gate_label(const session& s, const phase_gate& gate) -> std::string {
+	if (!gate.goal.empty()) {
+		return std::string(approve_goal_label);
+	}
+	return std::string(policy_of(next_phase(s, gate)).enter_label);
 }
 
 auto gse::ide::agent::session_scratch(const session& s) -> std::filesystem::path {
@@ -197,6 +228,19 @@ auto gse::ide::agent::write_phase_prompt(const session& s) -> std::filesystem::p
 	out << "\n---\n\n# Current Phase: " << std::string_view(policy.label) << "\n\n";
 	out << charter;
 
+	if (s.goal) {
+		const std::string record = s.goal->record.generic_display_string();
+		out << "\n## Goal\n\n";
+		if (std::filesystem::exists(s.goal->record, ec)) {
+			out << std::format("This chat pursues a goal the owner approved. Its record is `{}`: the aim, the pass criteria, the charter of what may be done without asking, and the ledger. The charter is the owner's standing authorisation - work inside it without asking, and escalate anything outside it. The record as this phase started:\n\n", record);
+			out << read_doc(s.goal->record) << '\n';
+		}
+		else {
+			out << std::format("This chat pursues a goal the owner approved, but its record `{}` does not exist yet. Write it first, verbatim from the approved scope, with any note the owner added at approval folded in.\n", record);
+		}
+		out << std::format("\nSteering runs left before the owner is asked to continue: {}.\n", s.goal->steers_left);
+	}
+
 	std::string handoff;
 	for (const std::filesystem::path& artifact : task_artifacts(s)) {
 		if (std::filesystem::exists(artifact, ec)) {
@@ -236,13 +280,14 @@ auto gse::ide::agent::track_run_id(session& s) -> void {
 
 auto gse::ide::agent::plan_handoff(const session& s, const task_phase from, const std::string_view summary) -> handoff_capture {
 	const phase_policy leaving = policy_of(from);
+	const config::worktree& tree = config::worktree_for(s.cwd);
 
 	handoff_capture planned{
 		.scratch = session_scratch(s),
 		.record = from == task_phase::scope ? scope_path(s) : report_path(s),
 		.touched = touched_path(s),
 		.diff = diff_path(s),
-		.root = config::worktree_for(s.cwd).engine_root,
+		.roots = { tree.engine_root },
 		.heading = from == task_phase::scope
 			? std::string("# Approved Scope")
 			: std::format("# Reported Leaving {}", std::string_view(leaving.label)),
@@ -250,6 +295,9 @@ auto gse::ide::agent::plan_handoff(const session& s, const task_phase from, cons
 	};
 
 	planned.log = changes_path(s);
+	if (tree.project_root != tree.engine_root) {
+		planned.roots.push_back(tree.project_root);
+	}
 
 	const std::span<const phase_run> task = task_runs(s);
 	const std::size_t begun = task.empty() ? 0 : std::min<std::size_t>(task.front().first_row, s.rows.size());
@@ -297,16 +345,26 @@ auto gse::ide::agent::capture_handoff(const handoff_capture& planned, const std:
 	}
 
 	const time capture_limit = seconds(10.f);
-	const process::run_outcome captured = process::run_capture({
-		.command_line = "git --no-optional-locks diff HEAD",
-		.working_dir = planned.root,
-		.output_path = planned.diff,
-		.limit = capture_limit,
-		.cancel = cancel,
-	});
-	if (!captured) {
-		std::filesystem::remove(planned.diff, ec);
-		return false;
+	std::string combined;
+	for (const std::filesystem::path& root : planned.roots) {
+		const process::run_outcome captured = process::run_capture({
+			.command_line = "git --no-optional-locks diff HEAD",
+			.working_dir = root,
+			.output_path = planned.diff,
+			.limit = capture_limit,
+			.cancel = cancel,
+		});
+		if (!captured) {
+			std::filesystem::remove(planned.diff, ec);
+			return false;
+		}
+		combined += std::format("# {}\n", root.generic_display_string());
+		if (std::ifstream in(planned.diff, std::ios::binary); in) {
+			combined.append(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+		}
+	}
+	if (std::ofstream out(planned.diff, std::ios::binary | std::ios::trunc); out) {
+		out << combined;
 	}
 	return true;
 }
@@ -314,6 +372,23 @@ auto gse::ide::agent::capture_handoff(const handoff_capture& planned, const std:
 auto gse::ide::agent::begin_phase(session& s, const task_phase phase, const phase_gate& handover) -> void {
 	const phase_policy policy = policy_of(phase);
 	const std::string resumed = policy.fresh_context ? std::string{} : resume_target(s);
+
+	std::error_code ec;
+	if (phase == task_phase::scope) {
+		for (const std::filesystem::path& artifact : task_artifacts(s)) {
+			std::filesystem::remove(artifact, ec);
+		}
+	}
+	else if (phase == task_phase::steer) {
+		std::filesystem::remove(scope_path(s), ec);
+	}
+
+	if (s.goal) {
+		s.goal->waiting.reset();
+		if (phase == task_phase::steer) {
+			--s.goal->steers_left;
+		}
+	}
 
 	s.runs.push_back({
 		.phase = phase,
@@ -344,7 +419,9 @@ auto gse::ide::agent::begin_phase(session& s, const task_phase phase, const phas
 
 	restart_session(s);
 
-	const std::string_view opening = policy.opening;
+	const std::string_view opening = std::string_view(policy.opening).empty() && !handover.summary.empty()
+		? steered_task_opening
+		: std::string_view(policy.opening);
 	if (opening.empty()) {
 		return;
 	}
@@ -360,11 +437,6 @@ auto gse::ide::agent::begin_phase(session& s, const task_phase phase, const phas
 }
 
 auto gse::ide::agent::restart_task(session& s) -> void {
-	std::error_code ec;
-	for (const std::filesystem::path& artifact : task_artifacts(s)) {
-		std::filesystem::remove(artifact, ec);
-	}
-
 	begin_phase(s, task_phase::scope, {});
 }
 
@@ -382,7 +454,7 @@ auto gse::ide::agent::advance_phase(session& s, const std::string_view note) -> 
 	interrupt_session(s);
 }
 
-auto gse::ide::agent::service_phase(session& s) -> bool {
+auto gse::ide::agent::service_phase(session& s, const std::uint32_t steer_budget) -> bool {
 	if (!s.pending_transition || s.think_clock) {
 		return false;
 	}
@@ -397,12 +469,40 @@ auto gse::ide::agent::service_phase(session& s) -> bool {
 		}
 
 		const phase_gate reported = *std::exchange(s.pending_transition, std::nullopt);
-		begin_phase(s, next_phase(s, reported.findings), reported);
+		const task_phase to = next_phase(s, reported);
+		const bool approved = needs_owner(s, reported);
+
+		if (!reported.goal.empty()) {
+			s.goal = goal_state{
+				.record = reported.goal,
+				.steers_left = steer_budget,
+			};
+			log::println(log::level::info, log::category::task, "agent: chat '{}' now pursues the goal recorded in '{}'", s.name, reported.goal);
+			append_row(s, {
+				.kind = row_kind::phase,
+				.text = std::format("pursuing goal {}", reported.goal.generic_display_string()),
+			});
+		}
+		else if (to == task_phase::steer && approved) {
+			s.goal->steers_left = steer_budget;
+		}
+
+		if (reported.verdict == goal_verdict::met) {
+			log::println(log::level::info, log::category::task, "agent: chat '{}' met its goal '{}'", s.name, s.goal->record);
+			append_row(s, {
+				.kind = row_kind::phase,
+				.text = "goal met",
+				.detail = reported.summary,
+			});
+			s.goal.reset();
+		}
+
+		begin_phase(s, to, reported);
 		return true;
 	}
 
 	const phase_gate& reported = *s.pending_transition;
-	if (reported.findings > 0 && next_phase(s, reported.findings) == task_phase::settled) {
+	if (reported.from == task_phase::review && reported.findings > 0 && next_phase(s, reported) == task_phase::summarize) {
 		log::println(log::level::warning, log::category::task, "agent: chat '{}' hit the {}-review limit with {} finding(s) still open", s.name, max_review_cycles, reported.findings);
 		append_row(s, {
 			.kind = row_kind::phase,
@@ -447,17 +547,70 @@ auto gse::ide::agent::accept_phase_reports(data& d) -> bool {
 			continue;
 		}
 
-		const phase_policy policy = policy_of(from);
-		const task_phase to = next_phase(*found, incoming.findings);
-		const phase_policy arriving = policy_of(to);
+		const auto refuse = [&incoming](std::string reason) {
+			build_inbox::publish({
+				.id = incoming.id,
+				.outcome = build_inbox::status::rejected,
+				.lines = { std::move(reason) },
+			});
+		};
 
-		const std::string outcome = incoming.findings > 0
+		phase_gate reported{
+			.from = from,
+			.summary = incoming.summary,
+			.findings = incoming.findings,
+		};
+
+		if (!incoming.next.empty()) {
+			goal_verdict verdict{};
+			if (!enum_from_string(incoming.next, verdict)) {
+				refuse(std::format("`next` must be task, met or escalate, not '{}' - nothing was recorded, report again", incoming.next));
+				continue;
+			}
+			reported.verdict = verdict;
+		}
+
+		if (from == task_phase::steer && !reported.verdict) {
+			refuse("steering must say what follows: pass `next` as task, met or escalate - nothing was recorded, report again");
+			continue;
+		}
+		if (reported.verdict && from != task_phase::steer && !(from == task_phase::scope && found->goal && reported.verdict == goal_verdict::escalate)) {
+			refuse("`next` is for steering a goal, or `escalate` while scoping a task under one - omit it in this phase and report again");
+			continue;
+		}
+
+		if (!incoming.goal.empty()) {
+			if (from != task_phase::scope) {
+				refuse("a goal is proposed while scoping, so the owner approves its text with the plan - omit `goal` in this phase and report again");
+				continue;
+			}
+			if (found->goal) {
+				refuse(std::format("this chat already pursues the goal recorded in '{}' - propose changes to it with `next: escalate` from a steering run instead", found->goal->record.generic_display_string()));
+				continue;
+			}
+			reported.goal = incoming.goal.is_absolute()
+				? incoming.goal.lexically_normal()
+				: (config::worktree_for(found->cwd).project_root / incoming.goal).lexically_normal();
+		}
+
+		const phase_policy policy = policy_of(from);
+		const task_phase to = next_phase(*found, reported);
+		const phase_policy arriving = policy_of(to);
+		const bool gated = needs_owner(*found, reported);
+
+		std::string outcome = incoming.findings > 0
 			? std::format("{} reported {} finding(s)", std::string_view(policy.label), incoming.findings)
 			: std::format("{} reported done", std::string_view(policy.label));
+		if (reported.verdict) {
+			outcome += std::format(" - next: {}", enum_to_string(*reported.verdict));
+		}
+		if (!reported.goal.empty()) {
+			outcome += std::format(" - proposes goal {}", reported.goal.generic_display_string());
+		}
 
 		append_row(*found, {
 			.kind = row_kind::phase,
-			.text = policy.gated ? outcome + " - waiting for approval" : outcome,
+			.text = gated ? outcome + " - waiting for approval" : outcome,
 			.detail = incoming.summary,
 			.phase = from,
 		});
@@ -469,12 +622,8 @@ auto gse::ide::agent::accept_phase_reports(data& d) -> bool {
 
 		recorded = true;
 
-		if (policy.gated) {
-			found->gate = {
-				.from = from,
-				.summary = incoming.summary,
-				.findings = incoming.findings,
-			};
+		if (gated) {
+			found->gate = std::move(reported);
 			build_inbox::publish({
 				.id = incoming.id,
 				.outcome = build_inbox::status::ok,
@@ -490,12 +639,202 @@ auto gse::ide::agent::accept_phase_reports(data& d) -> bool {
 			.lines = { std::format("recorded - moving to {}. END YOUR TURN NOW; the editor restarts this chat in the next phase", std::string_view(arriving.label)) },
 		});
 
-		found->pending_transition = {
-			.from = from,
-			.summary = incoming.summary,
-			.findings = incoming.findings,
-		};
+		found->pending_transition = std::move(reported);
 	}
 
 	return recorded;
+}
+
+auto gse::ide::agent::stamp_of(const std::filesystem::path& file) -> file_stamp {
+	std::error_code ec;
+	const std::uintmax_t size = std::filesystem::file_size(file, ec);
+	if (ec) {
+		return {};
+	}
+	const std::filesystem::file_time_type written = std::filesystem::last_write_time(file, ec);
+	return {
+		.exists = true,
+		.size = size,
+		.written = ec ? 0 : static_cast<std::int64_t>(written.time_since_epoch().count()),
+	};
+}
+
+auto gse::ide::agent::await_label(const await_condition& waiting) -> std::string {
+	std::string out;
+	if (waiting.process) {
+		out += std::format("pid {} to exit, ", waiting.process->pid);
+	}
+	if (waiting.file) {
+		out += std::format("'{}' to change, ", waiting.file->path.filename().generic_display_string());
+	}
+	const std::int64_t remaining = std::max<std::int64_t>(waiting.deadline - unix_now(), 0);
+	return out + std::format("at most {}h {}m", remaining / 3600, remaining % 3600 / 60);
+}
+
+auto gse::ide::agent::fired_condition(await_condition& waiting) -> std::optional<std::string> {
+	if (waiting.process) {
+		awaited_process& process = *waiting.process;
+		if (!process.handle.valid()) {
+			std::optional<os::watched_process> reopened = os::watch_process(process.pid);
+			if (!reopened || reopened->created != process.created) {
+				return std::format("process {} exited while the editor was closed", process.pid);
+			}
+			process.handle = std::move(reopened->process);
+		}
+		if (const std::optional<std::uint32_t> code = os::exit_code_of(process.handle)) {
+			return std::format("process {} exited with code {:#x}", process.pid, *code);
+		}
+	}
+	if (waiting.file && stamp_of(waiting.file->path) != waiting.file->baseline) {
+		return std::format("'{}' changed", waiting.file->path.generic_display_string());
+	}
+	if (unix_now() >= waiting.deadline) {
+		return std::string("the deadline you set passed");
+	}
+	return std::nullopt;
+}
+
+auto gse::ide::agent::accept_awaits(data& d) -> bool {
+	bool recorded = false;
+
+	for (build_inbox::await_request& incoming : build_inbox::peek_awaits()) {
+		session* found = claimed_session(d, incoming.agent, incoming.cwd);
+		if (!found) {
+			continue;
+		}
+		build_inbox::consume_await(incoming.id);
+
+		const auto refuse = [&incoming](std::string reason) {
+			build_inbox::publish({
+				.id = incoming.id,
+				.outcome = build_inbox::status::rejected,
+				.lines = { std::move(reason) },
+			});
+		};
+
+		if (!found->goal || current_phase(*found) != task_phase::steer) {
+			refuse("only a goal's steering run can wait on a condition - to wait for a build, call gse_hibernate");
+			continue;
+		}
+		if (found->pending_transition) {
+			refuse("this task is already moving to its next phase - END YOUR TURN NOW");
+			continue;
+		}
+		if (incoming.wait <= time{}) {
+			refuse("`minutes` must be positive: every wait needs a deadline");
+			continue;
+		}
+
+		await_condition waiting{
+			.then = std::move(incoming.then),
+			.deadline = unix_now() + static_cast<std::int64_t>(std::min(incoming.wait, longest_await).as<seconds>()),
+		};
+
+		if (incoming.pid) {
+			std::optional<os::watched_process> watched = os::watch_process(*incoming.pid);
+			if (!watched) {
+				refuse(std::format("no process {} is running - it has already exited or the pid is wrong, so read its results instead of waiting", *incoming.pid));
+				continue;
+			}
+			waiting.process = awaited_process{
+				.pid = *incoming.pid,
+				.created = watched->created,
+				.handle = std::move(watched->process),
+			};
+		}
+
+		if (!incoming.file.empty()) {
+			const std::filesystem::path file = incoming.file.is_absolute()
+				? incoming.file.lexically_normal()
+				: (found->cwd / incoming.file).lexically_normal();
+			waiting.file = awaited_file{
+				.path = file,
+				.baseline = stamp_of(file),
+			};
+		}
+
+		const std::string label = await_label(waiting);
+		found->goal->waiting = std::move(waiting);
+		recorded = true;
+
+		log::println(log::level::info, log::category::task, "agent: chat '{}' is waiting on its goal - {}", found->name, label);
+		append_row(*found, {
+			.kind = row_kind::note,
+			.text = std::format("waiting on the goal: {}", label),
+		});
+
+		build_inbox::publish({
+			.id = incoming.id,
+			.outcome = build_inbox::status::ok,
+			.lines = { std::format("waiting on {} - END YOUR TURN NOW. The editor stops this run and starts a fresh steering run when the first condition fires; it carries your `then` and nothing else, so anything worth keeping belongs in the goal record before you stop", label) },
+		});
+	}
+
+	return recorded;
+}
+
+auto gse::ide::agent::wake_goal(session& s, const std::string_view fired) -> void {
+	const std::string then = std::move(s.goal->waiting->then);
+	s.goal->waiting.reset();
+
+	const std::string summary = std::format("The condition you waited on fired: {}.\n\nWhat you said to do then:\n\n{}", fired, then);
+	log::println(log::level::info, log::category::task, "agent: chat '{}' woke on its goal - {}", s.name, fired);
+
+	if (s.goal->steers_left == 0) {
+		append_row(s, {
+			.kind = row_kind::phase,
+			.text = "steering budget spent - waiting for approval",
+			.detail = summary,
+			.phase = task_phase::steer,
+		});
+		s.gate = phase_gate{
+			.from = task_phase::steer,
+			.summary = summary,
+			.verdict = goal_verdict::escalate,
+		};
+		return;
+	}
+
+	begin_phase(s, task_phase::steer, { .from = task_phase::steer, .summary = summary });
+}
+
+auto gse::ide::agent::service_awaits(data& d) -> bool {
+	bool woke = false;
+
+	for (session& s : d.sessions) {
+		if (!s.goal || !s.goal->waiting || s.pending_transition) {
+			continue;
+		}
+		if (s.running && s.think_clock) {
+			continue;
+		}
+		if (s.running) {
+			stop_session(s);
+		}
+
+		if (const std::optional<std::string> fired = fired_condition(*s.goal->waiting)) {
+			wake_goal(s, *fired);
+			woke = true;
+		}
+	}
+
+	return woke;
+}
+
+auto gse::ide::agent::pause_goal(session& s) -> void {
+	const std::string label = await_label(*s.goal->waiting);
+	s.goal->waiting.reset();
+
+	const std::string summary = std::format("The owner paused this goal while it was waiting on {}.", label);
+	append_row(s, {
+		.kind = row_kind::phase,
+		.text = "goal paused - waiting for approval",
+		.detail = summary,
+		.phase = task_phase::steer,
+	});
+	s.gate = phase_gate{
+		.from = task_phase::steer,
+		.summary = summary,
+		.verdict = goal_verdict::escalate,
+	};
 }

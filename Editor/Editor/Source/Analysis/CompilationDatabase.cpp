@@ -182,8 +182,7 @@ auto gse::ide::analysis::make_check_command(std::vector<std::string> tokens, con
 		command_line += kept[i];
 	}
 
-	std::uint64_t fingerprint = stable_id(command_line);
-	fingerprint = hash_combine(fingerprint, stable_id(directory.generic_native_encoded_string()));
+	const std::uint64_t fingerprint = hash_of(command_line, directory.generic_native_encoded_string());
 
 	return {
 		.command_line = std::move(command_line),

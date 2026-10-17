@@ -4,29 +4,10 @@ import gse.gpu;
 import gse.math;
 import std;
 import :contact_manifold;
+import :convex_hull;
 
 
 export namespace gse::vbd {
-	struct vbd_capacities {
-		std::uint32_t max_bodies = 20480;
-		std::uint32_t max_contacts = 262144;
-		std::uint32_t max_collision_pairs = 262144;
-		std::uint32_t max_joints = 8192;
-		std::uint32_t max_islands = 512;
-		std::uint32_t max_impulses = 4096;
-		std::uint32_t max_motors = 4096;
-		std::uint32_t max_muscles = 8192;
-		std::uint32_t max_muscle_points = 32768;
-		std::uint32_t max_hull_uints = 65536;
-		std::uint32_t grid_table_size = 32768;
-		std::uint32_t ring_max_bodies = 4096;
-		std::uint32_t ring_max_contacts = 16384;
-		std::uint32_t max_contact_adjacency = max_contacts * 2;
-		std::uint32_t max_joint_adjacency = max_joints * 2 + max_muscle_points;
-		std::uint32_t max_grounded_uints = (max_bodies + 31) / 32;
-		std::uint32_t grid_max_entries = max_bodies * 8;
-	};
-
 	struct [[= shaders::shader_constant_block]] vbd_limits {
 		std::uint32_t max_colors = 16;
 		std::uint32_t workgroup_size = 32;
@@ -35,6 +16,8 @@ export namespace gse::vbd {
 		std::uint32_t adjacency_workgroup_size = 1024;
 		std::uint32_t coloring_rounds = 32;
 		std::uint32_t sleep_threshold = 60;
+		std::uint32_t warm_start_preserve_accel_weight_bit = 1;
+		std::uint32_t warm_start_seeded_bit = 2;
 		std::uint32_t iteration_trace_slots = 64;
 		std::uint32_t iteration_trace_uints = 3;
 		std::uint32_t joint_trace_uints = 9;
@@ -78,15 +61,19 @@ export namespace gse::vbd {
 		std::uint32_t state_broad_tests_index = 79;
 		std::uint32_t state_pair_count_index = 80;
 		std::uint32_t solve_sweep_workgroups = 32;
+		std::uint32_t max_dispatch_row = 65535;
 		std::uint32_t sweep_spin_checks = 1024;
 		std::uint32_t sweep_spin_delay_start = 64;
 		std::uint32_t sweep_spin_delay_max = 8192;
 		std::uint32_t narrow_phase_debug_record_uints = 8;
 		std::uint32_t max_narrow_phase_debug_records = 32;
-		std::uint32_t feature_vertex = 0;
-		std::uint32_t feature_edge = 1;
-		std::uint32_t feature_face = 2;
-		std::uint32_t feature_side_none = 0xFFu;
+		std::uint32_t feature_vertex = static_cast<std::uint32_t>(feature_type::vertex);
+		std::uint32_t feature_edge = static_cast<std::uint32_t>(feature_type::edge);
+		std::uint32_t feature_face = static_cast<std::uint32_t>(feature_type::face);
+		std::uint32_t feature_side_none = gse::feature_side_none;
+		std::uint32_t feature_side_shift = gse::feature_side_shift;
+		std::uint32_t feature_index_shift = gse::feature_index_shift;
+		std::uint32_t feature_type_shift = gse::feature_type_shift;
 		std::uint32_t sat_axis_face = 0;
 		std::uint32_t sat_axis_cross = 1;
 		std::uint32_t shape_box = 0;
@@ -98,7 +85,8 @@ export namespace gse::vbd {
 		std::uint32_t capsule_cap_b_index = 8;
 		std::uint32_t shape_hull = 3;
 		std::uint32_t hull_surface_index = 9;
-		std::uint32_t hull_header_uints = 12;
+		std::uint32_t hull_header_uints = 9;
+		std::uint32_t hull_index_bits = std::numeric_limits<physics::hull_index>::digits;
 		std::uint32_t hull_vertex_count_index = 0;
 		std::uint32_t hull_face_count_index = 1;
 		std::uint32_t hull_edge_count_index = 2;
@@ -107,14 +95,56 @@ export namespace gse::vbd {
 		std::uint32_t hull_faces_index = 5;
 		std::uint32_t hull_loops_index = 6;
 		std::uint32_t hull_edges_index = 7;
-		std::uint32_t hull_axis_count_index = 8;
-		std::uint32_t hull_axes_index = 9;
-		std::uint32_t hull_direction_count_index = 10;
-		std::uint32_t hull_directions_index = 11;
+		std::uint32_t hull_edge_faces_index = 8;
 		std::uint32_t muscle_adjacency_tag = 0x80000000u;
+		std::uint32_t hinge_limit_row = 2;
+		std::uint32_t no_curve_words = 0xFFFFFFFFu;
+		std::uint32_t curve_segment_uints = 5;
+		std::uint32_t curve_axis_uints = 6;
+		std::uint32_t curve_spatial_uints = 36;
+		std::uint32_t coupled_spatial_index = 8;
+		std::uint32_t coupled_frame_count_index = 9;
+		std::uint32_t coupled_coordinate_count_index = 10;
+		std::uint32_t coupled_header_uints = 11;
+		std::uint32_t curve_frame_header_uints = 8;
+		std::uint32_t coupled_coordinate_iterations = 3;
+		float coupled_damping = 1e-3f;
+		std::uint32_t curve_words_base = 65536;
+		std::uint32_t max_muscle_wraps = 2;
+		std::uint32_t no_wrap_segment = 0xFFFFFFFFu;
+		std::uint32_t wrap_radius_index = 4;
+		std::uint32_t wrap_half_length_index = 5;
+		std::uint32_t wrap_side_index = 6;
+		std::uint32_t wrap_first_segment_index = 8;
+		std::uint32_t wrap_segment_end_index = 9;
+		std::uint32_t wrap_uints = 10;
+		std::uint32_t wrap_passes = 8;
+		length wrap_pass_tolerance = millimeters(0.5f);
 	};
 
 	constexpr vbd_limits limits{};
+
+	struct vbd_capacities {
+		std::uint32_t max_bodies = 20480;
+		std::uint32_t max_contacts = 262144;
+		std::uint32_t max_collision_pairs = 262144;
+		std::uint32_t poly_pair_base = 1 + max_collision_pairs * 2;
+		std::uint32_t max_joints = 8192;
+		std::uint32_t max_islands = 512;
+		std::uint32_t max_impulses = 4096;
+		std::uint32_t max_motors = 4096;
+		std::uint32_t max_muscles = 8192;
+		std::uint32_t max_muscle_points = 32768;
+		std::uint32_t max_hull_uints = limits.curve_words_base;
+		std::uint32_t max_curve_uints = 16384;
+		std::uint32_t grid_table_size = 32768;
+		std::uint32_t ring_max_bodies = 4096;
+		std::uint32_t ring_max_contacts = 16384;
+		std::uint32_t max_contact_adjacency = max_contacts * 2;
+		std::uint32_t max_joint_adjacency = max_joints * 2 + max_muscle_points;
+		std::uint32_t max_grounded_uints = (max_bodies + 31) / 32;
+		std::uint32_t grid_max_entries = max_bodies * 8;
+	};
 
 	struct [[= shaders::shader_constant_block]] muscle_curves {
 		vec3f active_height = { 0.814483478343008f, 0.433004984392647f, 0.1f };
@@ -131,12 +161,20 @@ export namespace gse::vbd {
 
 	constexpr muscle_curves muscle{};
 
+	struct coupled_newton {
+		std::uint32_t joint_words = 0;
+		std::uint32_t body_a = 0;
+		std::uint32_t body_b = 0;
+		vec3<angle> coordinates;
+	};
+
 	struct body_solve_state {
 		vec3<force> gradient = {};
 		mat3<stiffness> hessian = {};
 		vec3<torque> angular_gradient = {};
 		mat3<angular_stiffness> angular_hessian = {};
 		mat3<linear_angular_stiffness> hessian_xtheta = {};
+		std::optional<coupled_newton> newton;
 	};
 
 	enum class [[= shaders::shader_enum]] joint_type : std::uint32_t {
@@ -145,7 +183,8 @@ export namespace gse::vbd {
 		hinge,
 		slider,
 		ball,
-		universal
+		universal,
+		coupled
 	};
 
 	struct [[= shaders::shader_struct]] frozen_jacobian {
@@ -202,7 +241,7 @@ export namespace gse::vbd {
 		std::uint32_t body_a = 0;
 		std::uint32_t body_b = 0;
 		joint_type type = joint_type::distance;
-		std::uint32_t limits_enabled = 0;
+		std::uint32_t limited_rows = 0;
 
 		vec3<lever_arm> local_anchor_a = {};
 		vec3<lever_arm> local_anchor_b = {};
@@ -212,8 +251,8 @@ export namespace gse::vbd {
 		displacement target_distance = {};
 		linear_compliance compliance = {};
 		float damping = 0.f;
-		angle limit_lower = radians(-std::numbers::pi_v<float>);
-		angle limit_upper = radians(std::numbers::pi_v<float>);
+		vec3<angle> limit_lower = {};
+		vec3<angle> limit_upper = {};
 		quat rest_orientation = {};
 
 		vec3<force> pos_lambda = {};
@@ -222,12 +261,8 @@ export namespace gse::vbd {
 		vec3<torque> ang_lambda = {};
 		vec3<angular_stiffness> ang_penalty;
 
-		torque limit_lambda = {};
-		angular_stiffness limit_penalty = {};
-
 		vec3<gap> pos_c0 = {};
 		vec3<angle> ang_c0 = {};
-		angle limit_c0 = {};
 
 		vec3<angular_stiffness> soft_ang_stiffness = {};
 
@@ -235,11 +270,14 @@ export namespace gse::vbd {
 		vec3<angular_stiffness> drive_stiffness = {};
 		float drive_damping = 0.f;
 		torque drive_max_torque = {};
+		std::uint32_t curve_words = 0;
 	};
 
 	struct [[= shaders::shader_struct]] muscle_path_point {
 		std::uint32_t body = 0;
 		vec3<lever_arm> local_point = {};
+		std::uint32_t frame_words = limits.no_curve_words;
+		std::uint32_t frame_body = 0;
 	};
 
 	struct [[= shaders::shader_struct]] muscle_constraint {
@@ -253,6 +291,7 @@ export namespace gse::vbd {
 		angle pennation_at_optimal = {};
 		velocity max_contraction_velocity = {};
 		length path_length_start = {};
+		std::uint32_t wrap_count = 0;
 	};
 
 	struct [[= shaders::shader_struct]] joint_drive_input {
@@ -265,31 +304,29 @@ export namespace gse::vbd {
 	};
 
 	struct [[= shaders::shader_struct]] body_state {
-		vec3<position> position;
 		vec3<predicted_position> predicted_position;
-		vec3<target_position> inertia_target;
-		vec3<gse::position> old_position;
-
-		vec3<velocity> velocity;
-
-		quat orientation;
 		quat predicted_orientation;
-		quat angular_inertia_target;
-		quat old_orientation;
-
-		vec3<angular_velocity> angular_velocity;
-
-		vec3<target_position> motor_target;
-
 		mass mass = kilograms(1.f);
 		std::uint32_t locked = 0;
-		std::uint32_t update_orientation = 1;
-		std::uint32_t affected_by_gravity = 1;
-		std::uint32_t sleep_counter = 0;
 
+		quat old_orientation;
+		vec3<velocity> velocity;
+		vec3<angular_velocity> angular_velocity;
+
+		std::uint32_t update_orientation = 1;
+		std::uint32_t sleep_counter = 0;
+		vec3<target_position> inertia_target;
+		quat angular_inertia_target;
+		vec3<target_position> motor_target;
+		mat3<inverse_inertia> inv_inertia;
+
+		vec3<position> position;
+		vec3<gse::position> old_position;
+		quat orientation;
+
+		std::uint32_t affected_by_gravity = 1;
 		float accel_weight = 0.f;
 		float restitution = 0.f;
-		mat3<inverse_inertia> inv_inertia;
 
 		vec3<displacement> com_local;
 
@@ -304,6 +341,12 @@ export namespace gse::vbd {
 
 		auto inverse_mass() const -> inverse_mass;
 		auto sleeping() const -> bool;
+	};
+
+	struct [[= shaders::shader_struct]] body_collision_filter {
+		std::uint32_t group = 0xFFFFFFFFu;
+		std::uint32_t layers = 0;
+		std::uint32_t mask = 0;
 	};
 
 	struct body_scan_entry {

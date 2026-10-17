@@ -359,15 +359,17 @@ auto sandbox::mountain_ring(const gse::length inner_radius, const gse::length ou
 			.position = gse::vec3<gse::position>(gse::meters(0.f), gse::meters(0.f), gse::meters(0.f)),
 		},
 		.spec = {
-			.material = {
-				.base_color = base_color,
-				.roughness = roughness,
-				.metallic = 0.0f,
+			.shape = {
+				.surface = {
+					.base_color = base_color,
+					.roughness = roughness,
+					.metallic = 0.0f,
+				},
+				.inner_radius = inner_radius,
+				.outer_radius = outer_radius,
+				.peak_height = peak_height,
+				.seed = seed,
 			},
-			.inner_radius = inner_radius,
-			.outer_radius = outer_radius,
-			.peak_height = peak_height,
-			.seed = seed,
 		},
 	};
 }

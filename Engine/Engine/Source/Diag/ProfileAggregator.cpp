@@ -923,11 +923,11 @@ auto gse::profile::dump_chrome_trace(const std::filesystem::path& path) -> void 
 		first = false;
 
 		out << std::format(
-			R"({{"ph":"X","name":"frame {} - {:.2f:ms}","cat":"perf","ts":{:.3f},"dur":{:.3f},"pid":1,"tid":0}})",
+			R"({{"ph":"X","name":"frame {} - {:.2f:ms}","cat":"perf","ts":{:.3f:us!},"dur":{:.3f:us!},"pid":1,"tid":0}})",
 			f,
 			frame.span,
-			cursor.as<microseconds>(),
-			frame.span.as<microseconds>()
+			cursor,
+			frame.span
 		);
 
 		for (const auto& n : frame.nodes) {
@@ -940,10 +940,10 @@ auto gse::profile::dump_chrome_trace(const std::filesystem::path& path) -> void 
 			tids.insert(n.trace_id);
 
 			out << std::format(
-				",\n" R"({{"ph":"X","name":"{}","cat":"perf","ts":{:.3f},"dur":{:.3f},"pid":1,"tid":{}}})",
+				",\n" R"({{"ph":"X","name":"{}","cat":"perf","ts":{:.3f:us!},"dur":{:.3f:us!},"pid":1,"tid":{}}})",
 				escape_json(tags[n.tag]),
-				ts.as<microseconds>(),
-				dur.as<microseconds>(),
+				ts,
+				dur,
 				n.trace_id
 			);
 		}
@@ -972,8 +972,8 @@ auto gse::profile::dump_chrome_trace(const std::filesystem::path& path) -> void 
 				continue;
 			}
 
-			const double ts_us = sample_time(n.start - tmin).as<microseconds>();
-			const double dur_us = sample_time(n.stop - n.start).as<microseconds>();
+			const sample_time ts = sample_time(n.start - tmin);
+			const sample_time dur = sample_time(n.stop - n.start);
 			tids.insert(n.trace_id);
 
 			if (!first) {
@@ -982,10 +982,10 @@ auto gse::profile::dump_chrome_trace(const std::filesystem::path& path) -> void 
 			first = false;
 
 			out << std::format(
-				R"({{"ph":"X","name":"{}","cat":"perf","ts":{:.3f},"dur":{:.3f},"pid":1,"tid":{}}})",
+				R"({{"ph":"X","name":"{}","cat":"perf","ts":{:.3f:us!},"dur":{:.3f:us!},"pid":1,"tid":{}}})",
 				escape_json(n.id.tag()),
-				ts_us,
-				dur_us,
+				ts,
+				dur,
 				n.trace_id
 			);
 		}

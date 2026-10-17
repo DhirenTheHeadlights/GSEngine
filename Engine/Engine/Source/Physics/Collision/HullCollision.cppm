@@ -13,22 +13,26 @@ export namespace gse::physics {
 		std::span<const vec3<length>> vertices;
 		std::span<const vec3f> face_normals;
 		std::span<const length> face_offsets;
-		std::span<const std::uint8_t> face_first;
-		std::span<const std::uint8_t> face_count;
-		std::span<const std::uint8_t> face_loop;
-		std::span<const std::uint8_t> edge_a;
-		std::span<const std::uint8_t> edge_b;
+		std::span<const hull_index> face_first;
+		std::span<const hull_index> face_count;
+		std::span<const hull_index> face_loop;
+		std::span<const hull_index> edge_a;
+		std::span<const hull_index> edge_b;
+		std::span<const hull_index> edge_face_a;
+		std::span<const hull_index> edge_face_b;
 	};
 
 	struct box_polytope {
 		std::array<vec3<length>, 8> vertices;
 		std::array<vec3f, 6> normals;
 		std::array<length, 6> offsets;
-		std::array<std::uint8_t, 6> first;
-		std::array<std::uint8_t, 6> count;
-		std::array<std::uint8_t, 24> loop;
-		std::array<std::uint8_t, 12> edge_lo;
-		std::array<std::uint8_t, 12> edge_hi;
+		std::array<hull_index, 6> first;
+		std::array<hull_index, 6> count;
+		std::array<hull_index, 24> loop;
+		std::array<hull_index, 12> edge_lo;
+		std::array<hull_index, 12> edge_hi;
+		std::array<hull_index, 12> edge_face_lo;
+		std::array<hull_index, 12> edge_face_hi;
 
 		auto view() const -> polytope;
 	};
@@ -76,7 +80,7 @@ export namespace gse::physics {
 		vec3<position> closest;
 		vec3f normal;
 		length signed_distance;
-		std::uint8_t face_index;
+		hull_index face_index;
 	};
 
 	auto query_polytope(
@@ -119,21 +123,13 @@ namespace gse::physics {
 		feature_id feature;
 	};
 
-	constexpr float parallel_axis_threshold = 1.f - 1e-6f;
-
-	struct polytope_frame {
-		std::array<vec3<position>, max_hull_vertices> vertices;
-		std::array<vec3f, max_hull_faces> normals;
-		std::array<vec3f, max_hull_edges> edges;
-		std::uint8_t vertex_count = 0;
-		std::uint8_t normal_count = 0;
-		std::uint8_t edge_count = 0;
-	};
+	static_assert(max_hull_faces <= std::size_t{ 1 } << feature_index_bits);
+	static_assert(max_hull_face_sides < feature_side_none);
 
 	auto world_vertex(
 		const polytope& p,
 		const hull_pose& pose,
-		std::uint8_t index
+		hull_index index
 	) -> vec3<position>;
 
 	auto world_normal(
@@ -141,35 +137,28 @@ namespace gse::physics {
 		const vec3f& local_normal
 	) -> vec3f;
 
-	auto push_unique_axis(
-		std::span<vec3f> axes,
-		std::uint8_t& count,
-		const vec3f& raw_axis
-	) -> void;
-
-	auto build_polytope_frame(
+	auto min_projection(
 		const polytope& p,
-		const hull_pose& pose,
-		polytope_frame& frame
-	) -> void;
+		const vec3f& axis
+	) -> length;
 
-	auto span_extreme(
-		std::span<const vec3<position>> vertices,
-		const vec3f& axis,
-		position& lo,
-		position& hi
-	) -> void;
+	auto minkowski_face(
+		const vec3f& a,
+		const vec3f& b,
+		const vec3f& c,
+		const vec3f& d
+	) -> bool;
 
 	auto best_face_along(
 		const polytope& p,
 		const hull_pose& pose,
 		const vec3f& direction
-	) -> std::uint8_t;
+	) -> hull_index;
 
 	auto face_centroid(
 		const polytope& p,
 		const hull_pose& pose,
-		std::uint8_t face
+		hull_index face
 	) -> vec3<position>;
 
 	auto closest_on_segment(
@@ -213,8 +202,8 @@ namespace gse::physics {
 	auto clip_vertex_feature(
 		const hull_clip_vertex& vertex,
 		bool reference_is_a,
-		std::uint8_t reference_face,
-		std::uint8_t incident_face
+		hull_index reference_face,
+		hull_index incident_face
 	) -> feature_id;
 }
 
@@ -227,7 +216,9 @@ auto gse::physics::box_polytope::view() const -> polytope {
 		.face_count = count,
 		.face_loop = loop,
 		.edge_a = edge_lo,
-		.edge_b = edge_hi
+		.edge_b = edge_hi,
+		.edge_face_a = edge_face_lo,
+		.edge_face_b = edge_face_hi
 	};
 }
 
@@ -254,7 +245,7 @@ auto gse::physics::make_box_polytope(const vec3<displacement>& half_extents) -> 
 		half_extents.z(), half_extents.z()
 	};
 
-	static constexpr std::array<std::uint8_t, 24> face_loops = {
+	static constexpr std::array<hull_index, 24> face_loops = {
 		1, 3, 7, 5,
 		0, 4, 6, 2,
 		2, 6, 7, 3,
@@ -264,15 +255,20 @@ auto gse::physics::make_box_polytope(const vec3<displacement>& half_extents) -> 
 	};
 	box.loop = face_loops;
 
-	for (std::uint8_t f = 0; f < 6; ++f) {
-		box.first[f] = static_cast<std::uint8_t>(f * 4);
+	for (hull_index f = 0; f < 6; ++f) {
+		box.first[f] = static_cast<hull_index>(f * 4);
 		box.count[f] = 4;
 	}
 
-	static constexpr std::array<std::uint8_t, 12> lo = { 0, 2, 4, 6, 0, 1, 4, 5, 0, 1, 2, 3 };
-	static constexpr std::array<std::uint8_t, 12> hi = { 1, 3, 5, 7, 2, 3, 6, 7, 4, 5, 6, 7 };
+	static constexpr std::array<hull_index, 12> lo = { 0, 2, 4, 6, 0, 1, 4, 5, 0, 1, 2, 3 };
+	static constexpr std::array<hull_index, 12> hi = { 1, 3, 5, 7, 2, 3, 6, 7, 4, 5, 6, 7 };
 	box.edge_lo = lo;
 	box.edge_hi = hi;
+
+	static constexpr std::array<hull_index, 12> face_lo = { 3, 2, 3, 2, 1, 0, 1, 0, 1, 0, 1, 0 };
+	static constexpr std::array<hull_index, 12> face_hi = { 5, 5, 4, 4, 5, 5, 4, 4, 3, 3, 2, 2 };
+	box.edge_face_lo = face_lo;
+	box.edge_face_hi = face_hi;
 
 	return box;
 }
@@ -286,11 +282,13 @@ auto gse::physics::hull_polytope(const convex_hull& hull) -> polytope {
 		.face_count = hull.face_count,
 		.face_loop = hull.face_loop,
 		.edge_a = hull.edge_a,
-		.edge_b = hull.edge_b
+		.edge_b = hull.edge_b,
+		.edge_face_a = hull.edge_face_a,
+		.edge_face_b = hull.edge_face_b
 	};
 }
 
-auto gse::physics::world_vertex(const polytope& p, const hull_pose& pose, const std::uint8_t index) -> vec3<position> {
+auto gse::physics::world_vertex(const polytope& p, const hull_pose& pose, const hull_index index) -> vec3<position> {
 	return pose.center + rotate_vector(pose.orientation, p.vertices[index]);
 }
 
@@ -298,74 +296,40 @@ auto gse::physics::world_normal(const hull_pose& pose, const vec3f& local_normal
 	return rotate_vector(pose.orientation, local_normal);
 }
 
-auto gse::physics::push_unique_axis(const std::span<vec3f> axes, std::uint8_t& count, const vec3f& raw_axis) -> void {
-	const float axis_len = magnitude(raw_axis);
-	if (axis_len < 1e-6f) {
-		return;
+auto gse::physics::min_projection(const polytope& p, const vec3f& axis) -> length {
+	auto lo = dot(axis, p.vertices[0]);
+	for (std::size_t i = 1; i < p.vertices.size(); ++i) {
+		lo = std::min(lo, dot(axis, p.vertices[i]));
 	}
-
-	const vec3f axis = raw_axis / axis_len;
-	for (std::uint8_t i = 0; i < count; ++i) {
-		if (std::abs(dot(axes[i], axis)) > parallel_axis_threshold) {
-			return;
-		}
-	}
-
-	if (count >= axes.size()) {
-		return;
-	}
-	axes[count++] = axis;
+	return lo;
 }
 
-auto gse::physics::build_polytope_frame(const polytope& p, const hull_pose& pose, polytope_frame& frame) -> void {
-	frame.vertex_count = static_cast<std::uint8_t>(std::min(p.vertices.size(), max_hull_vertices));
-	for (std::uint8_t i = 0; i < frame.vertex_count; ++i) {
-		frame.vertices[i] = pose.center + rotate_vector(pose.orientation, p.vertices[i]);
-	}
-
-	for (std::size_t f = 0; f < p.face_normals.size(); ++f) {
-		push_unique_axis(frame.normals, frame.normal_count, world_normal(pose, p.face_normals[f]));
-	}
-
-	const auto degenerate_edge = meters(1e-6f);
-	for (std::size_t e = 0; e < p.edge_a.size(); ++e) {
-		const auto lo = p.edge_a[e];
-		const auto hi = p.edge_b[e];
-		if (lo >= frame.vertex_count || hi >= frame.vertex_count) {
-			continue;
-		}
-		if (const auto delta = frame.vertices[hi] - frame.vertices[lo]; magnitude(delta) > degenerate_edge) {
-			push_unique_axis(frame.edges, frame.edge_count, normalize(delta));
-		}
-	}
+auto gse::physics::minkowski_face(const vec3f& a, const vec3f& b, const vec3f& c, const vec3f& d) -> bool {
+	const auto bxa = cross(b, a);
+	const auto dxc = cross(d, c);
+	const float cba = dot(c, bxa);
+	const float dba = dot(d, bxa);
+	const float adc = dot(a, dxc);
+	const float bdc = dot(b, dxc);
+	return cba * dba < 0.f && adc * bdc < 0.f && cba * bdc > 0.f;
 }
 
-auto gse::physics::span_extreme(const std::span<const vec3<position>> vertices, const vec3f& axis, position& lo, position& hi) -> void {
-	lo = dot(axis, vertices[0]);
-	hi = lo;
-	for (std::size_t i = 1; i < vertices.size(); ++i) {
-		const auto d = dot(axis, vertices[i]);
-		lo = std::min(lo, d);
-		hi = std::max(hi, d);
-	}
-}
-
-auto gse::physics::face_centroid(const polytope& p, const hull_pose& pose, const std::uint8_t face) -> vec3<position> {
+auto gse::physics::face_centroid(const polytope& p, const hull_pose& pose, const hull_index face) -> vec3<position> {
 	const auto first = p.face_first[face];
 	const auto count = p.face_count[face];
 	const auto anchor = world_vertex(p, pose, p.face_loop[first]);
 
 	auto center = anchor;
-	for (std::uint8_t i = 1; i < count; ++i) {
+	for (hull_index i = 1; i < count; ++i) {
 		center += (world_vertex(p, pose, p.face_loop[first + i]) - anchor) / static_cast<float>(count);
 	}
 	return center;
 }
 
-auto gse::physics::best_face_along(const polytope& p, const hull_pose& pose, const vec3f& direction) -> std::uint8_t {
-	std::uint8_t best = 0;
+auto gse::physics::best_face_along(const polytope& p, const hull_pose& pose, const vec3f& direction) -> hull_index {
+	hull_index best = 0;
 	float best_dot = -std::numeric_limits<float>::max();
-	for (std::uint8_t f = 0; f < p.face_normals.size(); ++f) {
+	for (hull_index f = 0; f < p.face_normals.size(); ++f) {
 		if (const float d = dot(world_normal(pose, p.face_normals[f]), direction); d > best_dot) {
 			best_dot = d;
 			best = f;
@@ -479,7 +443,7 @@ auto gse::physics::clip_against_reference_edge(const hull_clip_buffer& subject, 
 	return clipped;
 }
 
-auto gse::physics::clip_vertex_feature(const hull_clip_vertex& vertex, const bool reference_is_a, const std::uint8_t reference_face, const std::uint8_t incident_face) -> feature_id {
+auto gse::physics::clip_vertex_feature(const hull_clip_vertex& vertex, const bool reference_is_a, const hull_index reference_face, const hull_index incident_face) -> feature_id {
 	const auto reference_type = clip_sides_type(vertex.reference_sides);
 	const auto incident_type = clip_sides_type(vertex.incident_sides);
 
@@ -511,36 +475,20 @@ auto gse::physics::clip_vertex_feature(const hull_clip_vertex& vertex, const boo
 auto gse::physics::polytope_sat(const polytope& a, const hull_pose& pose_a, const polytope& b, const hull_pose& pose_b, const length margin) -> hull_sat {
 	hull_sat result;
 
+	const quat b_to_a = conjugate(pose_a.orientation) * pose_b.orientation;
+	const vec3<length> b_in_a = inverse_rotate_vector(pose_a.orientation, pose_b.center - pose_a.center);
+	const vec3<length> a_in_b = -inverse_rotate_vector(b_to_a, b_in_a);
+
 	separation best_overlap{};
 	vec3f best_axis;
 	bool found = false;
 	bool all_positive = true;
 
-	polytope_frame frame_a;
-	polytope_frame frame_b;
-	build_polytope_frame(a, pose_a, frame_a);
-	build_polytope_frame(b, pose_b, frame_b);
-
-	if (frame_a.vertex_count == 0 || frame_b.vertex_count == 0) {
-		return result;
-	}
-
-	const auto vertices_a = std::span<const vec3<position>>(frame_a.vertices).first(frame_a.vertex_count);
-	const auto vertices_b = std::span<const vec3<position>>(frame_b.vertices).first(frame_b.vertex_count);
-
-	const auto test_axis = [&](const vec3f& axis) -> bool {
-		position lo_a;
-		position hi_a;
-		position lo_b;
-		position hi_b;
-		span_extreme(vertices_a, axis, lo_a, hi_a);
-		span_extreme(vertices_b, axis, lo_b, hi_b);
-
-		const separation overlap = std::min(hi_a - lo_b, hi_b - lo_a);
+	const auto keep = [&](const length overlap, const vec3f& axis) -> bool {
 		if (overlap < -margin) {
 			return false;
 		}
-		if (overlap <= separation{}) {
+		if (overlap <= length{}) {
 			all_positive = false;
 		}
 		if (!found || overlap < best_overlap) {
@@ -551,32 +499,50 @@ auto gse::physics::polytope_sat(const polytope& a, const hull_pose& pose_a, cons
 		return true;
 	};
 
-	for (std::uint8_t f = 0; f < frame_a.normal_count; ++f) {
-		if (!test_axis(frame_a.normals[f])) {
-			return result;
-		}
-	}
-	for (std::uint8_t f = 0; f < frame_b.normal_count; ++f) {
-		if (!test_axis(frame_b.normals[f])) {
+	for (std::size_t f = 0; f < a.face_normals.size(); ++f) {
+		const auto& n = a.face_normals[f];
+		const auto overlap = dot(n, a.vertices[a.face_loop[a.face_first[f]]]) - dot(n, b_in_a) - min_projection(b, inverse_rotate_vector(b_to_a, n));
+		if (!keep(overlap, world_normal(pose_a, n))) {
 			return result;
 		}
 	}
 
-	for (std::uint8_t i = 0; i < frame_a.edge_count; ++i) {
-		for (std::uint8_t j = 0; j < frame_b.edge_count; ++j) {
-			const auto raw_axis = cross(frame_a.edges[i], frame_b.edges[j]);
+	for (std::size_t f = 0; f < b.face_normals.size(); ++f) {
+		const auto& n = b.face_normals[f];
+		const auto overlap = dot(n, b.vertices[b.face_loop[b.face_first[f]]]) - dot(n, a_in_b) - min_projection(a, rotate_vector(b_to_a, n));
+		if (!keep(overlap, world_normal(pose_b, n))) {
+			return result;
+		}
+	}
+
+	for (std::size_t eb = 0; eb < b.edge_a.size(); ++eb) {
+		const vec3f c = -rotate_vector(b_to_a, b.face_normals[b.edge_face_a[eb]]);
+		const vec3f d = -rotate_vector(b_to_a, b.face_normals[b.edge_face_b[eb]]);
+		const vec3<length> b0 = rotate_vector(b_to_a, b.vertices[b.edge_a[eb]]) + b_in_a;
+		const vec3f edge_b = normalize(rotate_vector(b_to_a, b.vertices[b.edge_b[eb]] - b.vertices[b.edge_a[eb]]));
+
+		for (std::size_t ea = 0; ea < a.edge_a.size(); ++ea) {
+			const auto& na = a.face_normals[a.edge_face_a[ea]];
+			const auto& nb = a.face_normals[a.edge_face_b[ea]];
+			if (!minkowski_face(na, nb, c, d)) {
+				continue;
+			}
+
+			const auto& a0 = a.vertices[a.edge_a[ea]];
+			const auto raw_axis = cross(normalize(a.vertices[a.edge_b[ea]] - a0), edge_b);
 			const float axis_len = magnitude(raw_axis);
 			if (axis_len < 1e-6f) {
 				continue;
 			}
-			if (!test_axis(raw_axis / axis_len)) {
+
+			vec3f axis = raw_axis / axis_len;
+			if (dot(axis, na + nb) < 0.f) {
+				axis = -axis;
+			}
+			if (!keep(dot(axis, a0 - b0), world_normal(pose_a, axis))) {
 				return result;
 			}
 		}
-	}
-
-	if (!found) {
-		return result;
 	}
 
 	if (dot(best_axis, pose_b.center - pose_a.center) < meters(0.f)) {
@@ -594,10 +560,10 @@ auto gse::physics::query_polytope(const polytope& p, const hull_pose& pose, cons
 	polytope_point_query result{};
 
 	auto deepest = -meters(std::numeric_limits<float>::max());
-	std::uint8_t deepest_face = 0;
+	hull_index deepest_face = 0;
 	bool outside = false;
 
-	for (std::uint8_t f = 0; f < p.face_normals.size(); ++f) {
+	for (hull_index f = 0; f < p.face_normals.size(); ++f) {
 		const auto normal = world_normal(pose, p.face_normals[f]);
 		const auto plane_point = pose.center + rotate_vector(pose.orientation, p.vertices[p.face_loop[p.face_first[f]]]);
 		const auto distance = dot(normal, point - plane_point);
@@ -621,9 +587,9 @@ auto gse::physics::query_polytope(const polytope& p, const hull_pose& pose, cons
 
 	auto best_distance = meters(std::numeric_limits<float>::max());
 	vec3<position> best_point = point;
-	std::uint8_t best_face = deepest_face;
+	hull_index best_face = deepest_face;
 
-	for (std::uint8_t f = 0; f < p.face_normals.size(); ++f) {
+	for (hull_index f = 0; f < p.face_normals.size(); ++f) {
 		const auto first = p.face_first[f];
 		const auto count = p.face_count[f];
 		const auto normal = world_normal(pose, p.face_normals[f]);
@@ -634,7 +600,7 @@ auto gse::physics::query_polytope(const polytope& p, const hull_pose& pose, cons
 
 		auto projected = point - normal * dot(normal, point - anchor);
 		bool inside_face = true;
-		for (std::uint8_t i = 0; i < count; ++i) {
+		for (hull_index i = 0; i < count; ++i) {
 			const auto v0 = world_vertex(p, pose, p.face_loop[first + i]);
 			const auto v1 = world_vertex(p, pose, p.face_loop[first + (i + 1) % count]);
 			if (dot(cross(v1 - v0, projected - v0), normal) < meters(0.f) * meters(0.f)) {
@@ -645,7 +611,7 @@ auto gse::physics::query_polytope(const polytope& p, const hull_pose& pose, cons
 		if (!inside_face) {
 			projected = point;
 			auto edge_best = meters(std::numeric_limits<float>::max());
-			for (std::uint8_t i = 0; i < count; ++i) {
+			for (hull_index i = 0; i < count; ++i) {
 				const auto v0 = world_vertex(p, pose, p.face_loop[first + i]);
 				const auto v1 = world_vertex(p, pose, p.face_loop[first + (i + 1) % count]);
 				const auto candidate = closest_on_segment(v0, v1, point);
@@ -737,7 +703,7 @@ auto gse::physics::polytope_manifold(const polytope& a, const hull_pose& pose_a,
 			polygon,
 			hull_clip_vertex{
 				.point = world_vertex(incident, incident_pose, incident.face_loop[inc_first + i]),
-				.incident_sides = incident_vertex_sides(i, inc_count)
+				.incident_sides = incident_vertex_sides(i, static_cast<std::uint8_t>(inc_count))
 			}
 		);
 	}

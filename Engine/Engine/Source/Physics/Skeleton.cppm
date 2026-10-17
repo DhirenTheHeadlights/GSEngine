@@ -5,6 +5,7 @@ import std;
 import :bounding_box;
 import :convex_hull;
 import :joint_spec;
+import :motion_component;
 import :muscle_component;
 
 import gse.math;
@@ -20,6 +21,9 @@ export namespace gse::physics {
 		quat local_rotation = quat(1.f, 0.f, 0.f, 0.f);
 		bone_shape shape;
 		mass mass = kilograms(1.f);
+		std::optional<mass_distribution> distribution;
+		std::uint32_t collision_layers = 0;
+		std::uint32_t collision_mask = 0;
 	};
 
 	struct skeletal_joint {
@@ -28,13 +32,25 @@ export namespace gse::physics {
 		joint_config config;
 	};
 
+	struct muscle_joint_frame {
+		std::uint16_t joint = 0;
+		std::uint32_t frame = 0;
+	};
+
 	struct muscle_point {
 		std::uint16_t bone = no_bone;
 		vec3<displacement> local_point;
+		std::optional<muscle_joint_frame> joint_frame;
+	};
+
+	struct muscle_bone_wrap {
+		std::uint16_t bone = no_bone;
+		muscle_wrap_cylinder cylinder;
 	};
 
 	struct muscle {
 		std::vector<muscle_point> path;
+		std::vector<muscle_bone_wrap> wraps;
 		muscle_properties properties;
 	};
 
@@ -43,6 +59,8 @@ export namespace gse::physics {
 		std::vector<bone> bones;
 		std::vector<skeletal_joint> joints;
 		std::vector<muscle> muscles;
+		std::vector<std::pair<std::uint16_t, std::uint16_t>> collision_exclusions;
+		bool grouped_self_collision = false;
 	};
 
 	auto bone_index_of(

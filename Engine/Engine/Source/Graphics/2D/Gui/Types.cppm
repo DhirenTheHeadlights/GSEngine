@@ -500,7 +500,7 @@ export namespace gse::gui {
 		auto animated_color(
 			const id& widget_id,
 			vec4f target,
-			float speed = 10.f
+			inverse_time speed = per_second(10.f)
 		) const -> vec4f;
 
 		[[nodiscard]] auto current_clip() const -> std::optional<rectf>;

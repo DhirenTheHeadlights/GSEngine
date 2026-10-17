@@ -24,8 +24,13 @@ namespace gse::ide::agent {
 		task_phase::review,
 		task_phase::revise,
 		task_phase::summarize,
+		task_phase::steer,
 		task_phase::settled,
 	};
+
+	constexpr std::string_view approve_goal_label = "Approve goal";
+	constexpr std::string_view code_shader_extension = ".slang";
+	constexpr std::string_view steered_task_opening = "The goal's steering run chose the next task. Scope it now, following your phase instructions.";
 
 	auto current_phase(
 		const session& s
@@ -53,10 +58,28 @@ namespace gse::ide::agent {
 		const session& s
 	) -> std::uint32_t;
 
+	auto verdict_policy_of(
+		goal_verdict verdict
+	) -> verdict_policy;
+
+	auto steered_code(
+		const session& s
+	) -> bool;
+
 	auto next_phase(
 		const session& s,
-		std::uint32_t findings
+		const phase_gate& reported
 	) -> task_phase;
+
+	auto needs_owner(
+		const session& s,
+		const phase_gate& reported
+	) -> bool;
+
+	auto gate_label(
+		const session& s,
+		const phase_gate& gate
+	) -> std::string;
 
 	auto session_scratch(
 		const session& s
@@ -143,10 +166,42 @@ namespace gse::ide::agent {
 	) -> void;
 
 	auto service_phase(
-		session& s
+		session& s,
+		std::uint32_t steer_budget
 	) -> bool;
 
 	auto accept_phase_reports(
 		data& d
 	) -> bool;
+
+	constexpr time longest_await = hours(48.f);
+
+	auto stamp_of(
+		const std::filesystem::path& file
+	) -> file_stamp;
+
+	auto await_label(
+		const await_condition& waiting
+	) -> std::string;
+
+	auto fired_condition(
+		await_condition& waiting
+	) -> std::optional<std::string>;
+
+	auto accept_awaits(
+		data& d
+	) -> bool;
+
+	auto wake_goal(
+		session& s,
+		std::string_view fired
+	) -> void;
+
+	auto service_awaits(
+		data& d
+	) -> bool;
+
+	auto pause_goal(
+		session& s
+	) -> void;
 }

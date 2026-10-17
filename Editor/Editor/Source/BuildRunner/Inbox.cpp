@@ -602,11 +602,104 @@ auto gse::ide::build_inbox::peek_phase_reports() -> std::vector<phase_report> {
 				else if (key == "findings") {
 					std::from_chars(value.data(), value.data() + value.size(), parsed.findings);
 				}
+				else if (key == "next") {
+					parsed.next.assign(value);
+				}
+				else if (key == "goal") {
+					parsed.goal.assign(value);
+				}
 			}
 		}
 
 		if (parsed.id.empty() || parsed.agent.empty() || parsed.id != entry.path().stem().generic_display_string()) {
 			log::println(log::level::warning, log::category::task, "build inbox: '{}' is not a usable phase report", entry.path());
+			std::filesystem::remove(entry.path(), ec);
+			continue;
+		}
+		out.push_back(std::move(parsed));
+	}
+	return out;
+}
+
+auto gse::ide::build_inbox::awaits_dir() -> std::filesystem::path {
+	return directory() / "await";
+}
+
+auto gse::ide::build_inbox::consume_await(const std::string_view id) -> void {
+	std::error_code ec;
+	std::filesystem::remove(awaits_dir() / (std::string(id) + ".txt"), ec);
+}
+
+auto gse::ide::build_inbox::peek_awaits() -> std::vector<await_request> {
+	const std::filesystem::path dir = awaits_dir();
+	std::error_code ec;
+	if (!std::filesystem::exists(dir, ec) || ec) {
+		return {};
+	}
+
+	const auto abandoned = std::chrono::minutes(5);
+
+	std::vector<await_request> out;
+	for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(dir, std::filesystem::directory_options::skip_permission_denied, ec)) {
+		if (entry.path().extension() != ".txt") {
+			continue;
+		}
+
+		std::error_code stamp_ec;
+		const std::filesystem::file_time_type stamp = std::filesystem::last_write_time(entry.path(), stamp_ec);
+		if (!stamp_ec && std::filesystem::file_time_type::clock::now() - stamp > abandoned) {
+			log::println(log::level::warning, log::category::task, "build inbox: dropping '{}' - no editor claimed it, so no project here owns that chat", entry.path());
+			std::filesystem::remove(entry.path(), ec);
+			continue;
+		}
+
+		await_request parsed;
+		bool in_then = false;
+		{
+			std::ifstream in(entry.path(), std::ios::binary);
+			std::string line;
+			while (in && std::getline(in, line)) {
+				if (!line.empty() && line.back() == '\r') {
+					line.pop_back();
+				}
+				if (in_then) {
+					if (!parsed.then.empty()) {
+						parsed.then += '\n';
+					}
+					parsed.then += line;
+					continue;
+				}
+				if (line == "then") {
+					in_then = true;
+					continue;
+				}
+				const auto [key, value] = split_field(line);
+				if (key == "id") {
+					parsed.id.assign(value);
+				}
+				else if (key == "agent") {
+					parsed.agent.assign(value);
+				}
+				else if (key == "cwd") {
+					parsed.cwd.assign(value);
+				}
+				else if (key == "pid") {
+					std::uint32_t pid = 0;
+					if (std::from_chars(value.data(), value.data() + value.size(), pid).ec == std::errc{}) {
+						parsed.pid = pid;
+					}
+				}
+				else if (key == "file") {
+					parsed.file.assign(value);
+				}
+				else if (key == "wait") {
+					parse(value, parsed.wait);
+				}
+			}
+		}
+
+		if (parsed.id.empty() || parsed.agent.empty() || parsed.id != entry.path().stem().generic_display_string()) {
+			log::println(log::level::warning, log::category::task, "build inbox: '{}' is not a usable await request", entry.path());
 			std::filesystem::remove(entry.path(), ec);
 			continue;
 		}

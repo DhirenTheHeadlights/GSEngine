@@ -35,9 +35,9 @@ gse::scoped_timer::scoped_timer(std::string name, const bool print) : m_name(std
 
 gse::scoped_timer::~scoped_timer() {
 	if (!m_completed) {
-		const auto elapsed_time = elapsed<float>().as<milliseconds>();
+		const auto elapsed_time = elapsed<float>();
 		if (m_print) {
-			log::println(log::level::debug, log::category::runtime, "Timer '{}' took {}", m_name, elapsed_time);
+			log::println(log::level::debug, log::category::runtime, "Timer '{}' took {:.3f:ms}", m_name, elapsed_time);
 		}
 	}
 }

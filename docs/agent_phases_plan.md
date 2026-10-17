@@ -16,8 +16,14 @@ One chat per task, as today. Inside it:
 ```
 scope --(approve)--> apply --(done)--> review --+--(findings)--> revise --> review
   ^                    ^                        |
-  |                    |                        +--(clean)----> settled
-  +--(revise scope)----+
+  |                    |                        +--(clean)----> summarize --+--(no goal)--> settled
+  +--(revise scope)----+                                                    |
+                                                                            +--(goal)----> steer
+steer --+--(task)----> scope
+        +--(met)-----> settled
+        +--(escalate)-> owner --> steer
+        +--(edited code)--> review
+        +--(gse_await)--> waits, then a fresh steer
 ```
 
 | Phase | Tool surface | Context | Writes |
@@ -26,6 +32,7 @@ scope --(approve)--> apply --(done)--> review --+--(findings)--> revise --> revi
 | `apply` | full | resumes `scope` | allowed |
 | `review` | read-only | **fresh session** | no tool can write |
 | `revise` | full | resumes `apply` | allowed |
+| `steer` | full | **fresh session** | allowed |
 | `settled` | full | resumes, not relaunched | allowed |
 
 Every phase launches in `auto`. A read-only phase is made read-only by removing the capability rather than by asking: `--disallowed-tools "Bash Edit Write NotebookEdit mcp__gse__gse_build"`. What remains — `Read`, `Grep`, `Glob`, and the editor's query tools — cannot mutate anything, so the restriction holds whatever the model decides to do.
@@ -104,7 +111,7 @@ Executing a transition is the existing restart path: set the next phase, clear `
 
 Each transition also hands the reporting phase's summary to the next one *in the opening message*, not only as a file. The artifacts are listed in the system prompt, but a resumed session carrying a long prior conversation will not reliably go and read one; the findings have to arrive as the instruction itself.
 
-The relaunched process then has to be *spoken to*. A `claude -p` session blocks on stdin and does nothing until it receives a message, so a transition that only restarts leaves the new phase sitting idle with the pipeline showing the right station and no work happening. Each phase carries a short `opening` on its policy annotation — "The scope is approved. Implement it now" — which `begin_phase` sends through `send_to_session` once the process is up. `scope` has none: the chat enters it at creation and the owner's own first message starts it, and `settled` has none because it is not relaunched at all.
+The relaunched process then has to be *spoken to*. A `claude -p` session blocks on stdin and does nothing until it receives a message, so a transition that only restarts leaves the new phase sitting idle with the pipeline showing the right station and no work happening. Each phase carries a short `opening` on its policy annotation — "The scope is approved. Implement it now" — which `begin_phase` sends through `send_to_session` once the process is up. `scope` has none: the chat enters it at creation and the owner's own first message starts it — except when a steering run hands it the next task, where `steered_task_opening` carries the steer summary instead — and `settled` has none because it is not relaunched at all.
 
 ## Handoff Artifacts
 
@@ -157,6 +164,28 @@ Phase state is not settings, and does not go through `save::registry`. It rides 
 What that archive did not have was a cadence. `save_sessions` was called from `shutdown` and nowhere else, which was survivable when a session was just a transcript and a model id, and is not once a chat carries a state machine: an ungraceful exit lost every transition since startup, and the reload was silent — `runs` comes back empty, `current_phase` falls to its `apply` default, and a task that was mid-review resumes as an ordinary unphased chat with nothing to indicate anything was lost.
 
 `accept_phase_reports` and `service_phase` now report whether they changed anything, and the system saves when either did. Those are the state machine's own checkpoints — a report recorded, a gate raised, a transition performed — so the archive is durable at exactly the points where it became expensive to lose, without a timer or a dirty flag. Chat creation and ordinary messages still ride the shutdown save, as before.
+
+## Goals
+
+A task ends at `settled`, and nothing wakes when the experiment it launched comes back. A goal is the loop around tasks that does: an aim pursued over many of them, without the owner prompting each one.
+
+The goal itself is a prose repo file — aim, pass criteria, charter, ledger — and the editor stores only its path in `session::goal`. Prose because the criteria and charter are judgements a model reads, not fields the editor evaluates; a repo file because the owner reviews and versions it like any other plan, and it outlives the chat. `write_phase_prompt` inlines it into every phase of a goal chat, so each fresh session starts from the same record.
+
+**Drafting.** Scope drafts the record in its summary and reports `goal` with the path. The gate then reads "Approve goal" (`gate_label`), and approving adopts the goal and grants `goal_steer_budget` steering runs. Apply writes the record verbatim first. Activation and every charter change take an owner click; a steering run proposes an amendment only by escalating.
+
+**Steering.** `summarize` goes to `steer` instead of `settled` when a goal is active. A steer run is fresh, holds the full tool surface, records a verdict in the ledger and then either waits with `gse_await` or reports `next`:
+
+- `task` goes to `scope`, ungated — the charter is the standing approval. Scope can still report `next: "escalate"` to stop for the owner.
+- `met` settles the chat and clears the goal.
+- `escalate` raises a gate whose approval starts a new steer run.
+
+A steer run that edited build sources or `.slang` files goes to `review` first (`steered_code`, from the transcript's change rows); shell writes are invisible to it, which the charter covers. A steer run starts a new task span in `task_runs`, as scope does, so that review gets its own `max_review_cycles` and `touched.txt`. Entering steer removes the finished task's `scope.md` — the goal's charter is what such a review checks against — and entering scope clears every task artifact, whether the owner restarted the task or a steering run started it.
+
+**Budget.** Every steer run spends one of `steers_left`. At zero the next steer is gated as an escalation, and approving it refills the budget. That is what bounds an unattended goal, the way `max_review_cycles` bounds the review loop.
+
+**Waiting.** `gse_await({ then, minutes, pid?, file? })` is accepted only from a steer run. The editor records an `await_condition` — the pid with its creation time, so a reused pid does not keep it waiting; a file stamp (size and write time); and a deadline in unix seconds, capped at 48 hours — and stops the claude process once its turn ends. `service_awaits` polls on the inbox cadence and starts a fresh steer run with `then` and what fired. Across an editor restart the process handle is reopened lazily; a missing process or a creation-time mismatch counts as exited. The chat shows as "waiting on the goal" with what it waits for. The stop button pauses a waiting goal by turning it into an escalation gate, and an owner message during a wait runs one turn without cancelling it.
+
+**Handoff.** `diff.patch` now covers the project repo as well as the engine repo when they differ, each section headed by its root, because goal work usually lands in the project.
 
 ## Still Open
 

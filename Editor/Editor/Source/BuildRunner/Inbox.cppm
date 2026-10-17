@@ -133,6 +133,8 @@ export namespace gse::ide::build_inbox {
 		std::string agent;
 		std::string summary;
 		std::uint32_t findings = 0;
+		std::string next;
+		std::filesystem::path goal;
 		std::filesystem::path cwd;
 	};
 
@@ -141,6 +143,24 @@ export namespace gse::ide::build_inbox {
 	auto peek_phase_reports() -> std::vector<phase_report>;
 
 	auto consume_phase_report(
+		std::string_view id
+	) -> void;
+
+	struct await_request {
+		std::string id;
+		std::string agent;
+		std::string then;
+		std::optional<std::uint32_t> pid;
+		std::filesystem::path file;
+		time wait{};
+		std::filesystem::path cwd;
+	};
+
+	auto awaits_dir() -> std::filesystem::path;
+
+	auto peek_awaits() -> std::vector<await_request>;
+
+	auto consume_await(
 		std::string_view id
 	) -> void;
 }

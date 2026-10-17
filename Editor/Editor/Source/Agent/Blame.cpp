@@ -136,7 +136,7 @@ auto gse::ide::agent::state_of(const data& d, const session& s) -> agent_state {
 	}
 
 	if (!s.running) {
-		return agent_state::exited;
+		return s.goal && s.goal->waiting ? agent_state::awaiting_goal : agent_state::exited;
 	}
 	if (s.think_clock) {
 		return s.wrote_this_turn ? agent_state::editing : agent_state::working;
@@ -156,6 +156,9 @@ auto gse::ide::agent::status_label(const data& d, const session& s) -> std::stri
 	}
 	if (state == agent_state::hibernating && !s.unbuilt.empty()) {
 		out += " until " + unbuilt_label(s) + " is built";
+	}
+	if (state == agent_state::awaiting_goal) {
+		out += " - " + await_label(*s.goal->waiting);
 	}
 	if (state == agent_state::build_queued) {
 		const queued_build* queued = queued_for(d, s);
@@ -898,7 +901,9 @@ auto gse::ide::agent::poll_build_inbox(data& d, const channel_write<build_runner
 
 	const bool hibernated = accept_hibernations(d);
 	const bool phases_recorded = accept_phase_reports(d);
-	const bool recorded = hibernated || phases_recorded;
+	const bool awaits_recorded = accept_awaits(d);
+	const bool woken = service_awaits(d);
+	const bool recorded = hibernated || phases_recorded || awaits_recorded || woken;
 	d.presence = build_inbox::take_presence();
 
 	accept_requests(d);
@@ -1227,5 +1232,5 @@ auto gse::ide::agent::link_label(const data& d, const session& s) -> std::string
 
 	const time waited = d.link_clock ? d.link_clock->elapsed() : time{};
 	const time remaining = std::max<time>(link_delay(d) - waited, time{});
-	return std::format("{}resending the held turn in {:.0f}s (attempt {})", lead, remaining.as<seconds>(), s.retry.attempts);
+	return std::format("{}resending the held turn in {:.0f:s} (attempt {})", lead, remaining,s.retry.attempts);
 }

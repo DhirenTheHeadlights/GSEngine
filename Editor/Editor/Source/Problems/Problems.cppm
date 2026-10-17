@@ -32,12 +32,12 @@ export namespace gse::ide {
 namespace gse::ide {
 	[[nodiscard]] auto severity_color(
 		const gui::style& sty,
-		severity level
+		gse::analysis::severity level
 	) -> vec4f;
 
 	[[nodiscard]] auto shows_severity(
 		const problems_view_state& state,
-		severity level
+		gse::analysis::severity level
 	) -> bool;
 
 	[[nodiscard]] auto collect_problems(
@@ -69,22 +69,22 @@ namespace gse::ide {
 	) -> void;
 }
 
-auto gse::ide::severity_color(const gui::style& sty, const severity level) -> vec4f {
+auto gse::ide::severity_color(const gui::style& sty, const gse::analysis::severity level) -> vec4f {
 	switch (level) {
-		case severity::error:
+		case gse::analysis::severity::error:
 			return sty.color_error;
-		case severity::warning:
+		case gse::analysis::severity::warning:
 			return sty.color_warning;
 		default:
 			return sty.color_text_secondary;
 	}
 }
 
-auto gse::ide::shows_severity(const problems_view_state& state, const severity level) -> bool {
+auto gse::ide::shows_severity(const problems_view_state& state, const gse::analysis::severity level) -> bool {
 	switch (level) {
-		case severity::error:
+		case gse::analysis::severity::error:
 			return state.show_errors;
-		case severity::warning:
+		case gse::analysis::severity::warning:
 			return state.show_warnings;
 		default:
 			return state.show_hints;

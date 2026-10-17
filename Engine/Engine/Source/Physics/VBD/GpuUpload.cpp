@@ -14,22 +14,10 @@ import :collision_component;
 import :joint_drive_component;
 import :motion_component;
 import :motor_component;
-import :muscle_component;
 import :system;
 import :transform_component;
 import :vbd_constraints;
 import :vbd_gpu_solver;
-
-auto gse::physics::copy_muscles_with_inputs(const shared_view<data> phys, read<muscle_component>& muscles, std::vector<muscle_definition>& out) -> void {
-	const auto owners = phys.muscles.ids();
-	const auto definitions = phys.muscles.items();
-	out.assign(definitions.begin(), definitions.end());
-	for (std::size_t i = 0; i < out.size(); ++i) {
-		if (const auto* muscle = muscles.find(owners[i])) {
-			apply_muscle_excitation(out[i], *muscle);
-		}
-	}
-}
 
 auto gse::physics::copy_joints_with_inputs(const shared_view<data> phys, read<joint_drive_component>& drives, std::vector<joint_definition>& out) -> void {
 	const auto owners = phys.joints.ids();
@@ -59,7 +47,7 @@ auto gse::physics::copy_joints_with_inputs(const shared_view<data> phys, read<jo
 	);
 }
 
-auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phys, const channel_write<gpu_upload_report, gpu_upload_payload, vbd::solver_upload> out, read<transform_component> transform, read<motion_component> motion, read<collision_component> collision, read<motor_component> motor, read<joint_drive_component> drives, read<muscle_component> muscles) -> async::task<> {
+auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phys, const channel_write<gpu_upload_report, gpu_upload_payload, vbd::solver_upload> out, read<transform_component> transform, read<motion_component> motion, read<collision_component> collision, read<motor_component> motor, read<joint_drive_component> drives) -> async::task<> {
 	const auto& plan = phys.gpu_plan;
 	if (!gpu_solver_active(phys) || !plan.active || plan.generation == d.built_generation) {
 		co_return;
@@ -86,6 +74,7 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 			++d.hull_generation;
 		}
 		slot.hull_data.assign(d.hull_data.begin(), d.hull_data.end());
+		slot.curve_data.assign(phys.curve_words.begin(), phys.curve_words.end());
 
 		body_build_view view{
 			.motion_owners = motion.owner_ids(),
@@ -120,6 +109,33 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 			trace::scope_guard _{ trace_id<"vbd_gpu::build_bodies::bounds">() };
 			build_body_bounds(view, d.body_index, has_transform, bodies, scan_fill);
 		}
+	}
+
+	for (const auto& bs : plan.body_seeds) {
+		if (const auto it = d.body_index.find(bs.owner); it != d.body_index.end() && it->second < bodies.size()) {
+			bodies[it->second].accel_weight = bs.accel_weight;
+		}
+	}
+	std::vector<vbd::contact_constraint> seed_contacts;
+	seed_contacts.reserve(plan.contact_seeds.size());
+	for (const auto& cs : plan.contact_seeds) {
+		const auto it_a = d.body_index.find(cs.entity_a);
+		const auto it_b = d.body_index.find(cs.entity_b);
+		if (it_a == d.body_index.end() || it_b == d.body_index.end()) {
+			continue;
+		}
+		auto c = cs.contact;
+		c.body_a = it_a->second;
+		c.body_b = it_b->second;
+		if (c.body_a > c.body_b) {
+			std::swap(c.body_a, c.body_b);
+			std::swap(c.local_anchor_a, c.local_anchor_b);
+			c.normal = -c.normal;
+			c.tangent_u = -c.tangent_u;
+			c.tangent_v = -c.tangent_v;
+			c.feature_key = (c.feature_key >> 32) | (c.feature_key << 32);
+		}
+		seed_contacts.push_back(c);
 	}
 
 	const auto replay = static_cast<std::size_t>(plan.replay_ticks);
@@ -302,7 +318,7 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 		}
 		{
 			trace::scope_guard _{ trace_id<"vbd_gpu::build_muscles">() };
-			copy_muscles_with_inputs(phys, muscles, d.muscles);
+			d.muscles.assign(phys.muscles.items().begin(), phys.muscles.items().end());
 			build_muscle_constraints(d.muscles, d.body_index, gpu_muscles, gpu_muscle_points, &d.muscle_slots);
 			assert(
 				gpu_muscles.size() <= phys.gpu_solver.capacities().max_muscles && gpu_muscle_points.size() <= phys.gpu_solver.capacities().max_muscle_points,
@@ -317,6 +333,18 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 				gpu_muscle_excitations[i] = gpu_muscles[i].excitation;
 			}
 			d.uploaded_muscle_count = static_cast<std::uint32_t>(gpu_muscles.size());
+			constexpr auto unresolved = std::numeric_limits<std::uint32_t>::max();
+			const auto muscle_owners = phys.muscles.ids();
+			std::vector<std::pair<id, std::uint32_t>> muscle_entries;
+			muscle_entries.reserve(d.muscle_slots.size());
+			for (std::size_t i = 0; i < d.muscle_slots.size() && i < muscle_owners.size(); ++i) {
+				if (d.muscle_slots[i] != unresolved) {
+					muscle_entries.emplace_back(muscle_owners[i], d.muscle_slots[i]);
+				}
+			}
+			d.muscle_gpu_slots.clear();
+			d.muscle_gpu_slots.insert(muscle_entries.begin(), muscle_entries.end());
+			++d.muscle_gpu_slots_generation;
 		}
 		std::vector<std::size_t> uninitialized;
 		{
@@ -330,6 +358,14 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 		{
 			trace::scope_guard _{ trace_id<"vbd_gpu::build_joints::constraints">() };
 			build_joint_constraints(d.joints, d.body_index, bodies, gpu_joints, &d.joint_slots);
+		}
+		{
+			trace::scope_guard _{ trace_id<"vbd_gpu::build_joints::non_colliding_pairs">() };
+			build_non_colliding_slots(phys.non_colliding_pairs, d.body_index, slot.non_colliding_pairs);
+		}
+		{
+			trace::scope_guard _{ trace_id<"vbd_gpu::build_joints::body_filters">() };
+			build_body_filters(collision.owner_ids(), { collision.data(), collision.size() }, d.body_index, bodies.size(), slot.body_filters);
 		}
 		const auto owners = phys.joints.ids();
 		for (const auto i : uninitialized) {
@@ -455,15 +491,13 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 		trace::scope_guard _{ trace_id<"vbd_gpu::build_muscle_inputs">() };
 		constexpr auto unresolved = std::numeric_limits<std::uint32_t>::max();
 		gpu_muscle_excitations.resize(d.uploaded_muscle_count);
-		const auto owners = phys.muscles.ids();
 		const auto definitions = phys.muscles.items();
 		for (std::size_t i = 0; i < definitions.size() && i < d.muscle_slots.size(); ++i) {
 			const auto slot_index = d.muscle_slots[i];
 			if (slot_index == unresolved) {
 				continue;
 			}
-			const auto* muscle = muscles.find(owners[i]);
-			gpu_muscle_excitations[slot_index] = muscle ? muscle->excitation : definitions[i].excitation;
+			gpu_muscle_excitations[slot_index] = definitions[i].excitation;
 		}
 	}
 
@@ -480,6 +514,8 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 			.body_scan = slot.body_scan,
 			.motors = motors,
 			.joints = refresh_joints ? std::span<const vbd::joint_constraint>(gpu_joints) : std::span<const vbd::joint_constraint>{},
+			.non_colliding_pairs = refresh_joints ? std::span<const std::pair<std::uint32_t, std::uint32_t>>(slot.non_colliding_pairs) : std::span<const std::pair<std::uint32_t, std::uint32_t>>{},
+			.body_filters = refresh_joints ? std::span<const vbd::body_collision_filter>(slot.body_filters) : std::span<const vbd::body_collision_filter>{},
 			.joint_inputs = gpu_joint_inputs,
 			.joint_input_slots = gpu_joint_input_slots,
 			.muscles = refresh_joints ? std::span<const vbd::muscle_constraint>(gpu_muscles) : std::span<const vbd::muscle_constraint>{},
@@ -487,6 +523,7 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 			.muscle_excitations = gpu_muscle_excitations,
 			.hull_data = slot.hull_data,
 			.hull_generation = d.hull_generation,
+			.curve_data = slot.curve_data,
 			.impulses = gpu_impulses,
 			.solver_cfg = phys.vbd_solver.config(),
 			.dt = system_clock::fixed_dt() * static_cast<float>(plan.total_ticks),
@@ -500,6 +537,7 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 			.motors_per_tick = motors_per_tick,
 			.island_pack_min_islands = static_cast<std::uint32_t>(phys.gpu_island_pack_min_islands),
 			.impulse_counts = std::move(impulse_counts),
+			.seed_contacts = std::move(seed_contacts),
 		};
 		if (phys.gpu_sync_readback || phys.gpu_same_frame_upload) {
 			out.push<gpu_upload_payload>({

@@ -158,7 +158,7 @@ namespace gse::settings {
 }
 
 auto gse::settings::field_widget_key(const register_settings_type& entry, const settings_field& field) -> std::uint64_t {
-	return hash_combine(stable_id(entry.category), stable_id(field.key));
+	return hash_of(entry.category, field.key);
 }
 
 auto gse::settings::capture_binding(gui::builder& b, binding& out) -> bool {
@@ -220,7 +220,7 @@ auto gse::settings::draw_controls_page(void* builder, void* panel_state_ptr, con
 			}
 		}
 
-		const auto row_key = hash_combine(stable_id(entry.category), stable_id(info.name));
+		const auto row_key = hash_of(entry.category, info.name);
 		auto& pending = pending_type.fields[row_key];
 		const std::string live_value = bindings_to_config(info.current);
 		if (!pending.initialized) {
@@ -432,7 +432,7 @@ auto gse::settings::draw_dimensioned_field(gui::builder& b, dimensioned_input_st
 		.clip_rect = label_rect,
 	});
 
-	const id input_id = gui::ids::make_from_key(hash_combine(field_key, stable_id("##Magnitude")));
+	const id input_id = gui::ids::make_from_key(hash_of(field_key, "##Magnitude"));
 
 	float slider_min = 0.f;
 	float slider_max = 0.f;
@@ -454,7 +454,7 @@ auto gse::settings::draw_dimensioned_field(gui::builder& b, dimensioned_input_st
 	const auto selected = std::ranges::find(field.units, state.unit);
 	const gui::dropdown_result picked = gui::draw::dropdown_in_rect_keyed(
 		ctx,
-		hash_combine(field_key, stable_id("##Unit")),
+		hash_of(field_key, "##Unit"),
 		selected == field.units.end() ? 0 : static_cast<std::size_t>(std::ranges::distance(field.units.begin(), selected)),
 		field.units,
 		state.dropdown_state,
@@ -515,7 +515,7 @@ auto gse::settings::draw_field_tooltip(gui::builder& b, const settings_field& fi
 		{ content_rect.width(), widget_height }
 	);
 	if (b.ctx.hovers(row_rect)) {
-		const id tooltip_id = gui::ids::make_from_key(hash_combine(field_key, stable_id("##tooltip")));
+		const id tooltip_id = gui::ids::make_from_key(hash_of(field_key, "##tooltip"));
 		b.ctx.set_tooltip(tooltip_id, field.description);
 	}
 }

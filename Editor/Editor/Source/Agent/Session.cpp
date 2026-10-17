@@ -139,7 +139,7 @@ auto gse::ide::agent::attach_runtime(session& s) -> void {
 	s.changes.filter = row_filter::changes;
 
 	for (transcript_view* v : views_of(s)) {
-		v->log_id = generate_temp_id(hash_combine(stable_id("agent_log"), hash_combine(s.id, static_cast<std::uint32_t>(v->filter))));
+		v->log_id = generate_temp_id(hash_of("agent_log", s.id, v->filter));
 	}
 }
 

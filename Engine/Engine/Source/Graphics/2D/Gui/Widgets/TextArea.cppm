@@ -152,6 +152,20 @@ export namespace gse::gui {
 		vec2f mouse
 	) -> buffer_position;
 
+	auto text_area_point_of(
+		const draw_context& ctx,
+		const text_area_geometry& geometry,
+		buffer_position position
+	) -> vec2f;
+
+	auto text_area_replace(
+		text_buffer& buffer,
+		text_area_state& state,
+		buffer_position from,
+		buffer_position to,
+		std::string_view text
+	) -> void;
+
 	auto text_area_line_height(
 		const draw_context& ctx,
 		resource::handle<font> font = {}
@@ -431,18 +445,10 @@ auto gse::gui::styled_spans(const std::span<const text_span> spans) -> bool {
 }
 
 auto gse::gui::metrics_signature(const text_buffer& buffer, const std::span<const text_span> spans, const std::span<const text_stop> stops, const std::size_t tab_width, const float scale) -> std::uint64_t {
-	std::uint64_t seed = hash_combine(0, buffer.line_count());
-	seed = hash_combine(seed, tab_width);
-	seed = hash_combine(seed, spans.size());
-	seed = hash_combine(seed, stops.size());
-	for (const text_stop& stop : stops) {
-		seed = hash_combine(seed, std::bit_cast<std::uint32_t>(stop.x));
-	}
-	seed = hash_combine(seed, std::bit_cast<std::uint32_t>(scale));
-	for (std::size_t i = 0; i < buffer.line_count(); ++i) {
-		seed = hash_combine(seed, buffer.line(i).size());
-	}
-	return seed;
+	const auto line_sizes = std::views::iota(std::size_t{ 0 }, buffer.line_count()) | std::views::transform([&buffer](const std::size_t i) {
+		return buffer.line(i).size();
+	});
+	return hash_of(tab_width, spans.size(), stops | std::views::transform(&text_stop::x), scale, line_sizes);
 }
 
 auto gse::gui::refresh_metrics(const text_buffer& buffer, text_area_state& state, const std::span<const text_span> spans, const std::span<const text_stop> stops, const run_context& style, const float base_height) -> void {
@@ -627,6 +633,49 @@ auto gse::gui::text_area_position_at(const draw_context& ctx, const text_area_ge
 		.line = picked_line,
 		.column = static_cast<std::uint32_t>(picked_col),
 	});
+}
+
+auto gse::gui::text_area_point_of(const draw_context& ctx, const text_area_geometry& geometry, const buffer_position position) -> vec2f {
+	const text_buffer& buffer = geometry.buffer;
+	const auto fnt = ctx.fonts.face_or(geometry.font, text_face::code);
+	const run_context style{
+		.fonts = ctx.fonts,
+		.inherited = fnt,
+		.base_view = fnt.resolve(),
+		.base_color = ctx.style.color_text,
+		.base_scale = ctx.style.font_size,
+		.tab_width = std::clamp<std::size_t>(geometry.indent_width, 1, 16),
+	};
+
+	const buffer_position at = buffer.clamp(position);
+	const text_area_layout placement = text_area_layout_of(ctx, geometry);
+	const std::string_view line = buffer.line(at.line);
+
+	const std::size_t block = block_at_line(geometry.blocks, at.line);
+	const float block_x = block < geometry.blocks.size()
+		? measure_block(buffer, geometry.blocks[block], geometry.spans, geometry.stops, style, placement.view_width).offset
+		: 0.f;
+
+	std::vector<styled_run> runs;
+	line_layout columns;
+	build_runs(line, spans_for_line(geometry.spans, at.line), style, runs);
+	layout_line(line, runs, stops_for_line(geometry.stops, at.line), style.tab_width, columns);
+
+	return {
+		placement.text_left + block_x + columns.offsets[at.column],
+		placement.top - placement.line_top(at.line),
+	};
+}
+
+auto gse::gui::text_area_replace(text_buffer& buffer, text_area_state& state, const buffer_position from, const buffer_position to, const std::string_view text) -> void {
+	state.undo_stack.push_back({ buffer.lines, state.caret, state.anchor });
+	state.redo_stack.clear();
+	state.last_edit_kind = 0;
+	const buffer_position start = buffer.clamp(std::min(from, to));
+	buffer.erase(start, buffer.clamp(std::max(from, to)));
+	state.caret = buffer.insert(start, text);
+	state.anchor = state.caret;
+	state.blink_on = true;
 }
 
 auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_id, const text_area::params& params, id& hot_widget_id, id& active_widget_id, id& focus_widget_id) -> bool {

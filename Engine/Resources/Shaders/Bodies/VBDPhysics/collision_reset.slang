@@ -4,6 +4,7 @@ void collision_reset(uint3 dispatch_id) {
 
     if (bi == 0) {
         collision_pairs[0] = 0;
+        collision_pairs[poly_pair_base] = 0;
         for (uint i = 0; i < collision_state_header_uints; i++) {
             bool coloring_field = i == state_max_used_color_index
                 || i == state_coloring_fallback_index

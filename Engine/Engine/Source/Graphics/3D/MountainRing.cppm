@@ -9,6 +9,6 @@ import gse.math;
 
 export namespace gse {
 	auto build_mountain_ring_meshes(
-		const primitive_mountain_ring_spec& spec
+		const mountain_ring_shape& shape
 	) -> std::vector<mesh_data>;
 }

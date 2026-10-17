@@ -237,12 +237,12 @@ auto gse::ide::terminal::sync_metadata(instance& inst, const gui::draw_context& 
 }
 
 auto gse::ide::terminal::make_instance(data& d, std::string name) -> instance {
-	const id instance_id = generate_temp_id(hash_combine(stable_id("terminal_instance"), d.next_id++));
+	const id instance_id = generate_temp_id(hash_of("terminal_instance", d.next_id++));
 	return {
 		.instance_id = instance_id,
-		.input_id = generate_temp_id(hash_combine(instance_id.number(), stable_id("input"))),
-		.log_id = generate_temp_id(hash_combine(instance_id.number(), stable_id("log"))),
-		.tail_id = generate_temp_id(hash_combine(instance_id.number(), stable_id("tail"))),
+		.input_id = generate_temp_id(hash_of(instance_id.number(), "input")),
+		.log_id = generate_temp_id(hash_of(instance_id.number(), "log")),
+		.tail_id = generate_temp_id(hash_of(instance_id.number(), "tail")),
 		.name = std::move(name),
 	};
 }

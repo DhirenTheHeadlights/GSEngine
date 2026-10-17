@@ -160,7 +160,7 @@ auto gse::gui::draw::tree_node_key(const T& t, const tree_ops<T>& ops, const std
 	}
 
 	const std::string_view lbl = ops.label ? ops.label(t) : std::string_view{};
-	return hash_combine(tree_scope, stable_id(lbl));
+	return hash_of(tree_scope, lbl);
 }
 
 template <typename T>
@@ -207,7 +207,7 @@ auto gse::gui::draw::tree_node(builder& ui, const T& t, const tree_ops<T>& ops, 
 
 	const vec2f mouse_pos = ctx.mouse_position();
 	const bool hovered = row_visible && ctx.hovers(visible);
-	const id row_widget_id = ids::make_from_key(hash_combine(stable_id("tree_row"), key));
+	const id row_widget_id = ids::make_from_key(hash_of("tree_row", key));
 
 	bool self_is_active = hovered;
 

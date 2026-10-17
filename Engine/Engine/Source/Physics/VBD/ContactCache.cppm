@@ -129,7 +129,7 @@ auto gse::vbd::swapped_payload(const cached_lambda& data) -> cached_lambda {
 }
 
 auto gse::vbd::key_hash(const std::uint64_t key_lo, const std::uint64_t key_hi, const std::uint64_t feature) -> std::size_t {
-	return static_cast<std::size_t>(hash_combine(hash_combine(key_lo, key_hi), feature));
+	return static_cast<std::size_t>(hash_of(key_lo, key_hi, feature));
 }
 
 auto gse::vbd::contact_cache::find_handle(const std::uint64_t key_lo, const std::uint64_t key_hi, const std::uint64_t feature) const -> std::uint32_t {

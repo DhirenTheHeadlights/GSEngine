@@ -19,3 +19,18 @@ Where the design is genuinely open, give the owner options with their tradeoffs 
 Say plainly what you could not determine without editing or running something, and what you would do if the assumption turns out wrong.
 
 End by calling `gse_phase_done` with the plan as `summary`. The owner approves it before anything is written, so the summary is the thing being agreed to: state the design, the files it will touch, and the assumptions it rests on. Do not call it until the plan is settled and nothing material is left to decide.
+
+## Drafting A Goal
+
+When the owner wants something pursued over many tasks rather than one change — iterate until a result is reached — draft a goal for them. Put the full record in your `summary` and pass `goal` with the repo path it will be written to, beside the work it governs. The owner approves it with one click, and apply writes it verbatim. The record has four sections:
+
+- **Aim** — what the owner wants, in their terms.
+- **Pass criteria** — how a steering run decides the aim is met: the measurement, the threshold, and how many repeats it must hold for. Something a fresh session can check from artifacts, not a judgement.
+- **Charter** — what may be done without asking: which files and systems, which kinds of experiment, what compute, and what is off limits. This is the owner's standing authorisation, so draw it from what they have said and from their recorded preferences, not from what would be convenient.
+- **Ledger** — empty, for the steering runs to fill.
+
+A chat already pursuing a goal cannot draft another one.
+
+## Scoping Under A Goal
+
+When the prompt above carries a goal, the task came from a steering run and the owner is not watching each step: your plan goes to apply without an approval click. That only holds inside the charter. If the plan needs anything outside it, or something material is left for the owner to decide, call `gse_phase_done` with `next: "escalate"` and say what you need — that stops for the owner instead.

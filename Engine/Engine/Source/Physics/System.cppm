@@ -41,9 +41,9 @@ export namespace gse::physics {
 		displacement target_distance = {};
 		linear_compliance compliance = {};
 		float damping = 0.f;
-		angle limit_lower = radians(-std::numbers::pi_v<float>);
-		angle limit_upper = radians(std::numbers::pi_v<float>);
-		bool limits_enabled = false;
+		vec3<angle> limit_lower = {};
+		vec3<angle> limit_upper = {};
+		std::uint32_t limited_rows = 0;
 		quat rest_orientation;
 		bool rest_orientation_initialized = false;
 
@@ -51,8 +51,6 @@ export namespace gse::physics {
 		vec3<stiffness> pos_penalty;
 		vec3<torque> ang_lambda;
 		vec3<angular_stiffness> ang_penalty;
-		torque limit_lambda = {};
-		angular_stiffness limit_penalty = {};
 
 		vec3<angular_stiffness> soft_ang_stiffness = {};
 
@@ -60,11 +58,21 @@ export namespace gse::physics {
 		vec3<angular_stiffness> drive_stiffness = {};
 		float drive_damping = 0.f;
 		torque drive_max_torque = {};
+		std::uint32_t curve_words = 0;
+	};
+
+	struct muscle_frame {
+		std::uint32_t words = 0;
+		id body;
 	};
 
 	struct muscle_definition {
 		std::array<muscle_attachment, max_muscle_path_points> path{};
+		std::array<std::optional<muscle_frame>, max_muscle_path_points> frames{};
 		std::uint32_t path_count = 0;
+		std::array<muscle_wrap, max_muscle_wraps> wraps{};
+		std::array<std::uint32_t, max_muscle_wraps> wrap_words{};
+		std::uint32_t wrap_count = 0;
 		force max_force = {};
 		length optimal_fiber_length = {};
 		length tendon_slack_length = {};
@@ -75,6 +83,38 @@ export namespace gse::physics {
 	};
 
 	struct reset_physics_request {};
+
+	struct joint_seed {
+		id entity_a;
+		id entity_b;
+		vec3<force> pos_lambda;
+		vec3<stiffness> pos_penalty;
+		vec3<torque> ang_lambda;
+		vec3<angular_stiffness> ang_penalty;
+	};
+
+	struct muscle_seed {
+		id owner;
+		float activation = 0.f;
+	};
+
+	struct contact_seed {
+		id entity_a;
+		id entity_b;
+		vbd::contact_constraint contact;
+	};
+
+	struct body_seed {
+		id owner;
+		float accel_weight = 0.f;
+	};
+
+	struct solver_seed_request {
+		std::vector<joint_seed> joints;
+		std::vector<muscle_seed> muscles;
+		std::vector<contact_seed> contacts;
+		std::vector<body_seed> bodies;
+	};
 
 	struct motor_input {
 		id owner;
@@ -248,6 +288,8 @@ export namespace gse::physics {
 		std::vector<joint_drive_change> joint_drive_changes;
 		bool full_joint_inputs = true;
 		std::uint64_t generation = 0;
+		std::vector<contact_seed> contact_seeds;
+		std::vector<body_seed> body_seeds;
 	};
 
 	struct joint_rest_orientation {
@@ -302,7 +344,8 @@ export namespace gse::physics {
 									  "colouring and grounded buffers once at startup and is baked into the solver's "
 									  "shaders, so this requires a restart.">{},
 			= settings::restart_required{},
-			= settings::range<64, 1048576>{}
+			= settings::range<64, 1048576>{},
+			= shared
 		]]
 		int gpu_max_bodies = 20480;
 
@@ -312,7 +355,8 @@ export namespace gse::physics {
 									  "buffers once at startup and is baked into the solver's shaders, so this "
 									  "requires a restart.">{},
 			= settings::restart_required{},
-			= settings::range<1024, 4194304>{}
+			= settings::range<1024, 4194304>{},
+			= shared
 		]]
 		int gpu_max_contacts = 262144;
 
@@ -320,7 +364,8 @@ export namespace gse::physics {
 			= settings::describe<"Most broad-phase pairs the GPU solver's grid can emit per tick. Sized once at "
 									  "startup and baked into the solver's shaders, so this requires a restart.">{},
 			= settings::restart_required{},
-			= settings::range<1024, 4194304>{}
+			= settings::range<1024, 4194304>{},
+			= shared
 		]]
 		int gpu_max_collision_pairs = 262144;
 
@@ -328,7 +373,8 @@ export namespace gse::physics {
 			= settings::describe<"Most joints the GPU solver can hold. Sized once at startup and baked into the "
 									  "solver's shaders, so this requires a restart.">{},
 			= settings::restart_required{},
-			= settings::range<16, 1048576>{}
+			= settings::range<16, 1048576>{},
+			= shared
 		]]
 		int gpu_max_joints = 8192;
 
@@ -336,7 +382,8 @@ export namespace gse::physics {
 			= settings::describe<"Most jointed islands the GPU solver can sweep serially. Sized once at startup "
 									  "and baked into the solver's shaders, so this requires a restart.">{},
 			= settings::restart_required{},
-			= settings::range<1, 65536>{}
+			= settings::range<1, 65536>{},
+			= shared
 		]]
 		int gpu_max_islands = 512;
 
@@ -344,7 +391,8 @@ export namespace gse::physics {
 			= settings::describe<"Most impulses the GPU solver accepts per upload. Sized once at startup, so this "
 									  "requires a restart.">{},
 			= settings::restart_required{},
-			= settings::range<16, 262144>{}
+			= settings::range<16, 262144>{},
+			= shared
 		]]
 		int gpu_max_impulses = 4096;
 
@@ -352,7 +400,8 @@ export namespace gse::physics {
 			= settings::describe<"Most velocity motors the GPU solver accepts per upload, summed over every tick "
 									  "in a replay batch. Sized once at startup, so this requires a restart.">{},
 			= settings::restart_required{},
-			= settings::range<16, 262144>{}
+			= settings::range<16, 262144>{},
+			= shared
 		]]
 		int gpu_max_motors = 4096;
 
@@ -360,7 +409,8 @@ export namespace gse::physics {
 			= settings::describe<"Most muscles the GPU solver can hold. Sized once at startup and baked into the "
 									  "solver's shaders, so this requires a restart.">{},
 			= settings::restart_required{},
-			= settings::range<16, 1048576>{}
+			= settings::range<16, 1048576>{},
+			= shared
 		]]
 		int gpu_max_muscles = 8192;
 
@@ -368,7 +418,8 @@ export namespace gse::physics {
 			= settings::describe<"Most muscle path points the GPU solver can hold, summed over every muscle. Sized "
 									  "once at startup and baked into the solver's shaders, so this requires a restart.">{},
 			= settings::restart_required{},
-			= settings::range<32, 8388608>{}
+			= settings::range<32, 8388608>{},
+			= shared
 		]]
 		int gpu_max_muscle_points = 32768;
 
@@ -376,7 +427,8 @@ export namespace gse::physics {
 			= settings::describe<"Cells in the GPU solver's broad-phase hash grid. Sized once at startup and "
 									  "baked into the solver's shaders, so this requires a restart.">{},
 			= settings::restart_required{},
-			= settings::range<1024, 1048576>{}
+			= settings::range<1024, 1048576>{},
+			= shared
 		]]
 		int gpu_grid_table_size = 32768;
 
@@ -384,7 +436,8 @@ export namespace gse::physics {
 			= settings::describe<"Bodies each rollback ring slot can hold; a scene with more bodies runs with the "
 									  "ring off. Sized once at startup, so this requires a restart.">{},
 			= settings::restart_required{},
-			= settings::range<64, 1048576>{}
+			= settings::range<64, 1048576>{},
+			= shared
 		]]
 		int gpu_ring_max_bodies = 4096;
 
@@ -392,7 +445,8 @@ export namespace gse::physics {
 			= settings::describe<"Contacts each rollback ring slot can hold. Sized once at startup, so this "
 									  "requires a restart.">{},
 			= settings::restart_required{},
-			= settings::range<1024, 4194304>{}
+			= settings::range<1024, 4194304>{},
+			= shared
 		]]
 		int gpu_ring_max_contacts = 16384;
 
@@ -432,6 +486,24 @@ export namespace gse::physics {
 			= shared
 		]]
 		bool gpu_full_snapshot = false;
+
+		[[
+			= settings::describe<"Read every GPU joint constraint back to the host every tick, duals and stabilisation "
+									  "offsets included, so a diagnostic can see each joint's separation and multiplier. "
+									  "Off by default; the copy scales with the joint count.">{},
+			= settings::restart_required{},
+			= shared
+		]]
+		bool gpu_joint_snapshot = false;
+
+		[[
+			= settings::describe<"Read every active GPU contact constraint back to the host every tick, warm-start "
+									  "multipliers, penalties and feature keys included, so a diagnostic can capture the "
+									  "contact state a replay needs. Off by default; the copy scales with the contact count.">{},
+			= settings::restart_required{},
+			= shared
+		]]
+		bool gpu_contact_snapshot = false;
 
 		[[
 			= settings::describe<"Solve each gpu island with a coloured Gauss-Seidel sweep: bodies that share no "
@@ -549,10 +621,56 @@ export namespace gse::physics {
 		stiffness_per_length solver_beta = newtons_per_meter_squared(100000.f);
 
 		[[
+			= settings::describe<"Angular penalty ramp rate. Each dual update grows a violated joint angular or "
+									  "limit row's penalty by this stiffness per radian of violation.">{}
+		]]
+		angular_stiffness_per_angle solver_ang_beta = newton_meters_per_radian_squared(100000.f);
+
+		[[
 			= settings::describe<"Per-substep decay factor for contact penalties and warm-started duals.">{},
 			= settings::range<0.5f, 1.f>{}
 		]]
 		float solver_gamma = 0.99f;
+
+		[[
+			= settings::describe<"Run the iterations at alpha 1 and correct the carried constraint error in one "
+									  "extra position-only sweep at alpha 0. Off, every iteration runs at "
+									  "solver_alpha and the warm-started contact duals decay by alpha * gamma.">{}
+		]]
+		bool solver_post_stabilize = true;
+
+		[[
+			= settings::describe<"Measure coupled-joint limit rows in rotation, not coordinate, units: each row's "
+									  "error and axis are divided by the length of its coordinate axis. Same limit "
+									  "surface; near a coordinate-chart singularity the coordinate row's stiffness "
+									  "grows without bound and the solve stops converging.">{}
+		]]
+		bool solver_coupled_limit_normalized = false;
+
+		[[
+			= settings::describe<"Slowest speed at which a joint's carried positional gap is closed when "
+									  "solver_alpha keeps part of it. Each step corrects at least this speed times "
+									  "the step, and never less than solver_alpha would. Zero keeps solver_alpha "
+									  "alone, where a millimetre gap closes at 1 % a step.">{},
+			= settings::range<0.f, 10.f>{}
+		]]
+		velocity joint_correction_speed = meters_per_second(0.f);
+
+		[[
+			= settings::describe<"Trust region of one body Newton step: the largest translation a single solver "
+									  "iteration may apply to a body. Both solvers clamp to it. Light bodies held by "
+									  "stiff joints overshoot when a wound-up joint dual unwinds, so articulated bodies "
+									  "with light distal links need a smaller region.">{},
+			= settings::range<0.0001f, 1.f>{}
+		]]
+		length max_linear_step = meters(0.1f);
+
+		[[
+			= settings::describe<"Trust region of one body Newton step in rotation: the largest rotation a single "
+									  "solver iteration may apply to a body. Both solvers clamp to it.">{},
+			= settings::range<0.0001f, 3.1415927f>{}
+		]]
+		angle max_angular_step = radians(0.5f);
 
 		[[
 			= settings::describe<"Base penalty stiffness for inactive contact rows. Active rows floor at the "
@@ -657,6 +775,20 @@ export namespace gse::physics {
 		float jacobi_omega = 0.67f;
 
 		[[
+			= settings::describe<"Every convergence_probe_interval cpu solves, also solve a copy at this many "
+									  "iterations with the default penalty ramp and log how far the real solve lands "
+									  "from it. 0 is off.">{},
+			= settings::range<0, 256>{}
+		]]
+		int convergence_probe_iterations = 0;
+
+		[[
+			= settings::describe<"Cpu solves between convergence probes.">{},
+			= settings::range<1, 100000>{}
+		]]
+		int convergence_probe_interval = 64;
+
+		[[
 			= settings::describe<"Solve bodies serially in height order, alternating sweep direction each "
 									  "iteration, instead of the parallel colour sweep. Trades parallelism for "
 									  "convergence on tall stacks.">{},
@@ -724,13 +856,21 @@ export namespace gse::physics {
 		bool drive_changes_full = true;
 		[[= shared]] std::uint64_t joints_generation = 1;
 		[[= shared]] std::uint64_t joint_inputs_generation = 1;
+		std::size_t exclusion_count = 0;
+		[[= shared]] std::flat_set<std::pair<std::uint64_t, std::uint64_t>> non_colliding_pairs;
+		std::uint64_t non_colliding_generation = 0;
 		[[= shared]] id_mapped_collection<muscle_definition> muscles;
 		[[= shared]] std::uint64_t muscles_generation = 1;
 		[[= shared]] std::uint64_t muscle_inputs_generation = 1;
 		[[= shared]] std::vector<convex_hull> hulls;
+		std::map<std::vector<std::uint32_t>, std::uint32_t> hull_blocks;
+		[[= shared]] std::vector<std::uint32_t> curve_words;
+		std::map<std::vector<std::uint32_t>, std::uint32_t> curve_blocks;
 
 		[[= shared]] vbd::solver vbd_solver;
 		vbd::contact_cache contact_cache;
+		std::vector<contact_seed> pending_contact_seeds;
+		std::vector<body_seed> pending_body_seeds;
 		[[= shared]] sleep_counter_table sleep_counters;
 		[[= shared]] std::flat_map<id, std::uint32_t> id_to_body_index;
 		std::vector<std::pair<id, std::uint32_t>> id_to_body_index_entries;
@@ -765,12 +905,15 @@ export namespace gse::physics {
 			std::vector<mass_properties> body_props;
 			std::vector<vbd::velocity_motor_constraint> motors;
 			std::vector<vbd::joint_constraint> joints;
+			std::vector<std::pair<std::uint32_t, std::uint32_t>> non_colliding_pairs;
+			std::vector<vbd::body_collision_filter> body_filters;
 			std::vector<vbd::joint_drive_input> joint_inputs;
 			std::vector<std::uint32_t> joint_input_slots;
 			std::vector<vbd::muscle_constraint> muscles;
 			std::vector<vbd::muscle_path_point> muscle_points;
 			std::vector<float> muscle_excitations;
 			std::vector<std::uint32_t> hull_data;
+			std::vector<std::uint32_t> curve_data;
 			std::vector<vbd::impulse_constraint> impulses;
 		};
 
@@ -797,6 +940,8 @@ export namespace gse::physics {
 			std::size_t joint_drive_count = 0;
 			[[= shared]] std::flat_map<id, std::uint32_t> joint_gpu_slots;
 			[[= shared]] std::uint64_t joint_gpu_slots_generation = 0;
+			[[= shared]] std::flat_map<id, std::uint32_t> muscle_gpu_slots;
+			[[= shared]] std::uint64_t muscle_gpu_slots_generation = 0;
 			std::vector<std::pair<id, std::uint32_t>> joint_body_index_entries;
 			std::flat_map<id, std::uint32_t> body_index;
 			std::vector<std::pair<id, std::uint32_t>> body_index_entries;
@@ -815,8 +960,7 @@ export namespace gse::physics {
 			read<motion_component> motion,
 			read<collision_component> collision,
 			read<motor_component> motor,
-			read<joint_drive_component> drives,
-			read<muscle_component> muscles
+			read<joint_drive_component> drives
 		) -> async::task<>;
 	}
 
@@ -852,12 +996,22 @@ export namespace gse::physics {
 		std::span<const convex_hull> hulls
 	) -> const convex_hull*;
 
+	auto body_mass_properties(
+		const motion_component& mc,
+		const collision_shape* shape,
+		const convex_hull* hull
+	) -> mass_properties;
+
 	auto solver_config_from_settings(
 		const data& d
 	) -> vbd::solver_config;
 
 	auto capacities_from_settings(
 		const data& d
+	) -> vbd::vbd_capacities;
+
+	auto capacities_from_settings(
+		shared_view<data> d
 	) -> vbd::vbd_capacities;
 
 	auto gpu_solver_active(
@@ -911,6 +1065,20 @@ export namespace gse::physics {
 		std::vector<std::uint32_t>* definition_slots = nullptr
 	) -> void;
 
+	auto build_body_filters(
+		std::span<const id> collision_owners,
+		std::span<const collision_component> collisions,
+		const std::flat_map<id, std::uint32_t>& id_to_body_index,
+		std::size_t body_count,
+		std::vector<vbd::body_collision_filter>& out
+	) -> void;
+
+	auto build_non_colliding_slots(
+		const std::flat_set<std::pair<std::uint64_t, std::uint64_t>>& pairs,
+		const std::flat_map<id, std::uint32_t>& id_to_body_index,
+		std::vector<std::pair<std::uint32_t, std::uint32_t>>& out
+	) -> void;
+
 	struct body_slot_cache {
 		std::span<const id> body_owners;
 		std::span<const std::uint8_t> has_transform;
@@ -950,12 +1118,6 @@ export namespace gse::physics {
 		std::vector<joint_definition>& out
 	) -> void;
 
-	auto copy_muscles_with_inputs(
-		shared_view<data> phys,
-		read<muscle_component>& muscles,
-		std::vector<muscle_definition>& out
-	) -> void;
-
 	auto build_muscle_constraints(
 		std::span<const muscle_definition> definitions,
 		const std::flat_map<id, std::uint32_t>& id_to_body_index,
@@ -987,6 +1149,7 @@ export namespace gse::physics {
 		read<muscle_component> muscles,
 		read<joint_drive_component> drives,
 		read<kinematic_target_component> targets,
+		read<collision_exclusion> exclusions,
 		write<transform_component> transform,
 		write<motion_component> motion
 	) -> async::task<>;
@@ -1003,7 +1166,7 @@ export namespace gse::physics {
 	auto integrate(
 		context& ctx,
 		data& d,
-		channel_read<impulse_request, reset_physics_request, rollback_request, rollback_history_request, gpu_upload_report> requests_in,
+		channel_read<impulse_request, reset_physics_request, solver_seed_request, rollback_request, rollback_history_request, gpu_upload_report> requests_in,
 		channel_write<gpu_solver_frame_info> solver_out,
 		write<transform_component> transform,
 		write<motion_component> motion,
@@ -1064,6 +1227,11 @@ export namespace gse::physics {
 		const std::flat_map<id, std::uint32_t>& id_to_body_index,
 		std::span<const convex_hull> hulls
 	) -> std::vector<collision_pair>;
+
+	auto non_colliding_pairs_of(
+		std::span<const joint_definition> joints,
+		read<collision_exclusion>& exclusions
+	) -> std::flat_set<std::pair<std::uint64_t, std::uint64_t>>;
 
 	auto build_pair_set(
 		std::vector<collision_pair>& objects,

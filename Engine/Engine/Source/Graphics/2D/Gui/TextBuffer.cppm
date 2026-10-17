@@ -4,6 +4,8 @@ import std;
 
 import gse.math;
 
+import :font;
+
 export namespace gse::gui {
 	struct buffer_position {
 		std::uint32_t line = 0;
@@ -99,6 +101,39 @@ export namespace gse::gui {
 			buffer_position pos
 		) const -> buffer_position;
 	};
+
+	struct text_run {
+		std::size_t start = 0;
+		std::size_t end = 0;
+		vec4f color{ 1.f, 1.f, 1.f, 1.f };
+		text_face face = text_face::inherit;
+		float scale = 1.f;
+	};
+
+	struct styled_line {
+		std::string_view text;
+		std::span<const text_run> runs{};
+		vec4f color{ 1.f, 1.f, 1.f, 1.f };
+		text_face face = text_face::inherit;
+		float scale = 1.f;
+	};
+
+	struct wrap_layout {
+		const font& face;
+		float size = 0.f;
+		float width = 0.f;
+		std::string_view lead;
+		std::string_view indent;
+		vec4f lead_color{ 1.f, 1.f, 1.f, 1.f };
+		bool wrap = true;
+	};
+
+	auto append_wrapped(
+		text_buffer& buffer,
+		std::vector<text_span>& spans,
+		const styled_line& line,
+		const wrap_layout& layout
+	) -> std::size_t;
 }
 
 auto gse::gui::text_buffer::from_file(const std::filesystem::path& path) -> std::expected<text_buffer, std::string> {
@@ -205,4 +240,80 @@ auto gse::gui::text_buffer::clamp(buffer_position pos) const -> buffer_position 
 		pos.column = col_cap;
 	}
 	return pos;
+}
+
+auto gse::gui::append_wrapped(text_buffer& buffer, std::vector<text_span>& spans, const styled_line& line, const wrap_layout& layout) -> std::size_t {
+	const std::vector<std::string_view> wrapped = layout.wrap
+		? layout.face.wrap(line.text, layout.width, layout.size * line.scale)
+		: std::vector<std::string_view>{ line.text };
+
+	for (const auto [row, piece] : std::views::enumerate(wrapped)) {
+		std::string_view segment = piece;
+		if (layout.wrap) {
+			while (!segment.empty() && segment.back() == ' ') {
+				segment.remove_suffix(1);
+			}
+		}
+
+		const auto offset = static_cast<std::size_t>(segment.data() - line.text.data());
+		const std::size_t last = offset + segment.size();
+		std::string text(row == 0 ? layout.lead : layout.indent);
+		const auto column = static_cast<std::uint32_t>(text.size());
+		const auto index = static_cast<std::uint32_t>(buffer.lines.size());
+		text += segment;
+
+		if (column > 0) {
+			spans.push_back({
+				.line = index,
+				.start_col = 0,
+				.end_col = column,
+				.color = layout.lead_color,
+			});
+		}
+
+		const auto plain = [&](const std::size_t from, const std::size_t to) {
+			spans.push_back({
+				.line = index,
+				.start_col = column + static_cast<std::uint32_t>(from - offset),
+				.end_col = column + static_cast<std::uint32_t>(to - offset),
+				.color = line.color,
+				.face = line.face,
+				.scale = line.scale,
+			});
+		};
+
+		std::size_t written = offset;
+		for (const text_run& run : line.runs) {
+			if (run.end <= written) {
+				continue;
+			}
+			if (run.start >= last) {
+				break;
+			}
+			const std::size_t from = std::max(run.start, written);
+			const std::size_t to = std::min(run.end, last);
+			if (to <= from) {
+				continue;
+			}
+			if (from > written) {
+				plain(written, from);
+			}
+			spans.push_back({
+				.line = index,
+				.start_col = column + static_cast<std::uint32_t>(from - offset),
+				.end_col = column + static_cast<std::uint32_t>(to - offset),
+				.color = run.color,
+				.face = run.face,
+				.scale = line.scale * run.scale,
+			});
+			written = to;
+		}
+		if (written < last) {
+			plain(written, last);
+		}
+
+		buffer.lines.push_back(std::move(text));
+	}
+
+	return wrapped.size();
 }

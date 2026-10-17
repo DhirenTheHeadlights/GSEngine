@@ -21,7 +21,7 @@ export namespace gse::gui {
 		std::string_view text;
 		rectf area;
 		vec4f color;
-		float speed = 36.f;
+		inverse_time speed = per_second(36.f);
 		float gap = 40.f;
 		bool scrolling = true;
 		resource::handle<font> font{};
@@ -65,8 +65,8 @@ auto gse::gui::draw::marquee_text(const draw_context& ctx, const marquee_info& i
 	}
 
 	const float span = width + info.gap;
-	const double elapsed = system_clock::now<time_t<double>>().as<seconds>();
-	const float offset = static_cast<float>(std::fmod(elapsed * info.speed, static_cast<double>(span)));
+	const double travelled = system_clock::now<time_t<double>>() * inverse_time_t<double>(info.speed);
+	const float offset = static_cast<float>(std::fmod(travelled, static_cast<double>(span)));
 
 	for (const float shift : { 0.f, span }) {
 		ctx.queue_text({

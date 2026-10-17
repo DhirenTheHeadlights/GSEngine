@@ -333,8 +333,8 @@ auto gse::vulkan::aftermath::wait_for_crash_dump(time timeout) -> void {
 		return;
 	}
 
-	const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(static_cast<std::int64_t>(timeout.as<milliseconds>()));
-	while (std::chrono::steady_clock::now() < deadline) {
+	const clock waited;
+	while (waited.elapsed() < timeout) {
 		const auto status = gse::aftermath::status();
 		if (status == gse::aftermath::dump_status::finished || status == gse::aftermath::dump_status::not_started || status == gse::aftermath::dump_status::failed) {
 			return;
@@ -345,8 +345,8 @@ auto gse::vulkan::aftermath::wait_for_crash_dump(time timeout) -> void {
 	log::println(
 		log::level::warning,
 		log::category::vulkan,
-		"Aftermath crash dump did not finish within {} ms",
-		timeout.as<milliseconds>()
+		"Aftermath crash dump did not finish within {::ms}",
+		timeout
 	);
 }
 

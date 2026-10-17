@@ -1,5 +1,7 @@
 export module gse.ide.analysis:diagnostics_runner;
 
+import gse.analysis;
+import gse.complete;
 import gse.core;
 import gse.ide.diagnostic;
 import gse.log;
@@ -11,7 +13,6 @@ import std;
 
 import :compilation_database;
 import :gcc_diagnostics;
-import :semantic_tokens;
 import :symbol_extract;
 
 export namespace gse::ide::analysis {
@@ -93,10 +94,11 @@ export namespace gse::ide::analysis {
 		std::vector<qualified_use> template_args;
 		std::vector<unused_local> unused_locals;
 		std::vector<narrowable_import> narrowable_imports;
-		std::vector<semantic_token> tokens;
+		std::vector<gse::analysis::semantic_token> tokens;
 		std::vector<symbol_token> symbols;
 		std::vector<symbol_ref> refs;
 		std::vector<param_token> params;
+		std::shared_ptr<const gse::complete::model> model;
 		std::unordered_map<file_id, std::filesystem::path> files;
 		bool symbols_complete = false;
 		diagnostics_status status = diagnostics_status::success;
@@ -127,7 +129,7 @@ namespace gse::ide::analysis {
 	) -> void;
 
 	auto failure_detail(
-		std::span<const diagnostic> diagnostics,
+		std::span<const gse::analysis::diagnostic> diagnostics,
 		std::string_view captured,
 		const process::run_outcome& run
 	) -> std::string;
@@ -150,11 +152,11 @@ auto gse::ide::analysis::status_color(const diagnostics_status_info& info) -> ve
 	};
 }
 
-auto gse::ide::analysis::failure_detail(const std::span<const diagnostic> diagnostics, const std::string_view captured, const process::run_outcome& run) -> std::string {
+auto gse::ide::analysis::failure_detail(const std::span<const gse::analysis::diagnostic> diagnostics, const std::string_view captured, const process::run_outcome& run) -> std::string {
 	constexpr std::size_t detail_limit = 8;
 	constexpr std::size_t captured_limit = 2000;
 
-	std::string detail = gcc_diagnostics::summarize(diagnostics, detail_limit);
+	std::string detail = gse::analysis::summarize(diagnostics, detail_limit);
 	if (detail.empty()) {
 		const std::size_t sarif_start = captured.find('{');
 		std::string_view text = sarif_start == std::string_view::npos ? captured : captured.substr(0, sarif_start);
@@ -234,11 +236,12 @@ auto gse::ide::analysis::run_diagnostics(const diagnostics_request& request, con
 		const bool plugin_missing = request.plugin.empty() || !std::filesystem::exists(request.plugin, plugin_ec);
 		if (!plugin_missing) {
 			token_temp = process::temporary_path("tokens", "txt");
-			command_line += " -fplugin=\"" + request.plugin.generic_native_encoded_string() + "\"";
-			command_line += " -fplugin-arg-gse_tokens-out=\"" + token_temp.generic_native_encoded_string() + "\"";
-			for (const std::filesystem::path& root : request.workspace_roots) {
-				command_line += " -fplugin-arg-gse_tokens-root=\"" + root.generic_native_encoded_string() + "\"";
-			}
+			command_line += gse::analysis::plugin_arguments({
+				.plugin = request.plugin,
+				.out = token_temp,
+				.roots = request.workspace_roots,
+				.complete = true,
+			});
 		}
 
 		const time compile_limit = seconds(60.f);
@@ -251,7 +254,10 @@ auto gse::ide::analysis::run_diagnostics(const diagnostics_request& request, con
 		});
 
 		const std::string sarif = read_file(sarif_temp);
-		out.diagnostics = gcc_diagnostics::parse_sarif(sarif);
+		const std::vector<gse::analysis::diagnostic> compiled = gse::analysis::parse_sarif(sarif);
+		out.diagnostics = compiled | std::views::transform([](const gse::analysis::diagnostic& d) -> diagnostic {
+			return { d };
+		}) | std::ranges::to<std::vector>();
 
 		if (!run && run.error() == process::run_error::cancelled) {
 			out.status = diagnostics_status::cancelled;
@@ -259,10 +265,10 @@ auto gse::ide::analysis::run_diagnostics(const diagnostics_request& request, con
 		else if (!run) {
 			out.status = run.error() == process::run_error::timed_out ? diagnostics_status::timed_out : diagnostics_status::launch_failed;
 		}
-		else if (gcc_diagnostics::is_module_unavailable(out.diagnostics)) {
+		else if (gcc_diagnostics::is_module_unavailable(compiled)) {
 			out.status = diagnostics_status::module_unavailable;
 		}
-		else if (*run != 0 && !gcc_diagnostics::has_error(out.diagnostics)) {
+		else if (*run != 0 && !gse::analysis::has_error(compiled)) {
 			out.status = diagnostics_status::compiler_failed;
 		}
 		else if (plugin_missing) {
@@ -275,12 +281,13 @@ auto gse::ide::analysis::run_diagnostics(const diagnostics_request& request, con
 				: std::format("Looked for {}", request.plugin.generic_display_string());
 		}
 		else if (out.status != diagnostics_status::success) {
-			out.failure_output = failure_detail(out.diagnostics, sarif, run);
+			out.failure_output = failure_detail(compiled, sarif, run);
 		}
 
 		if (!token_temp.empty()) {
 			const std::string token_text = read_file(token_temp);
-			out.tokens = semantic_tokens::parse(token_text);
+			out.tokens = gse::analysis::parse_semantic_tokens(token_text);
+			out.model = std::make_shared<const gse::complete::model>(gse::complete::parse_model(token_text));
 
 			symbol_set symbols = symbol_tokens::parse(token_text, request.file.generic_native_encoded_string());
 			out.symbols = std::move(symbols.symbols);

@@ -1,5 +1,7 @@
 export module gse.ide.search:index;
 
+import gse.analysis;
+import gse.complete;
 import gse.core;
 import gse.ide.analysis;
 import gse.ide.diagnostic;
@@ -64,7 +66,7 @@ export namespace gse::ide::search {
 		std::uint32_t line = 0;
 		std::uint32_t column = 0;
 		std::uint32_t length = 0;
-		analysis::semantic_kind kind = analysis::semantic_kind::variable;
+		gse::analysis::semantic_kind kind = gse::analysis::semantic_kind::variable;
 	};
 
 	struct lint_entry {
@@ -124,6 +126,8 @@ export namespace gse::ide::search {
 	struct symbol_search_snapshot {
 		std::uint64_t symbol_generation = 0;
 		std::shared_ptr<const std::vector<searchable_symbol>> symbols;
+		std::shared_ptr<const complete::model> completion;
+		std::shared_ptr<const complete::usage_table> usage;
 	};
 
 	struct lint_site {
@@ -448,7 +452,7 @@ export namespace gse::ide::search {
 
 		auto semantic_kind_of(
 			std::string_view name
-		) const -> std::expected<analysis::semantic_kind, lookup_error>;
+		) const -> std::expected<gse::analysis::semantic_kind, lookup_error>;
 
 		auto semantic_tokens_in(
 			const std::filesystem::path& file,
@@ -694,6 +698,14 @@ namespace gse::ide::search {
 	auto publish_symbol_search_snapshot(
 		index_state& index
 	) -> void;
+
+	auto completion_kind_of(
+		analysis::symbol_kind kind
+	) -> std::optional<complete::entity_kind>;
+
+	auto unqualified_name(
+		std::string_view qualified
+	) -> std::string_view;
 
 	auto xref_at(
 		const symbol_index& index,

@@ -29,7 +29,7 @@ void update_contact_lambda(uint ci) {
     float3 lambda = c.lambda;
     float3 penalty = c.penalty;
 
-    lambda.x = min(penalty.x * C.x + lambda.x, 0.0);
+    lambda.x = min(contact_normal_penalty(c) * C.x + lambda.x, 0.0);
 
     float friction_bound = abs(lambda.x) * c.friction_coeff;
     lambda.y = clamp(penalty.y * C.y + lambda.y, -friction_bound, friction_bound);

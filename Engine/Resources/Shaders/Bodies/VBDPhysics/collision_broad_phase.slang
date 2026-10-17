@@ -38,15 +38,33 @@ bool is_jointed(uint a, uint b) {
     return false;
 }
 
-void emit_pair(uint a, uint b) {
+bool can_collide(uint a, uint b) {
+    body_collision_filter filter_a = body_filter_data[a];
+    body_collision_filter filter_b = body_filter_data[b];
+    if (filter_a.group == 0xFFFFFFFFu || filter_a.group != filter_b.group) {
+        return true;
+    }
+    return (filter_a.layers & filter_b.mask) != 0 || (filter_b.layers & filter_a.mask) != 0;
+}
+
+bool is_poly_kind(uint kind) {
+    return kind == shape_box || kind == shape_hull;
+}
+
+bool is_poly_pair(body_state a, body_state b) {
+    return (a.shape_kind == shape_hull || b.shape_kind == shape_hull) && is_poly_kind(a.shape_kind) && is_poly_kind(b.shape_kind);
+}
+
+void emit_pair(uint a, uint b, bool poly) {
+    uint base = poly ? poly_pair_base : 0u;
     uint slot;
-    InterlockedAdd(collision_pairs[0], 1, slot);
+    InterlockedAdd(collision_pairs[base], 1, slot);
     if (slot >= max_collision_pairs) {
-        InterlockedAdd(collision_pairs[0], -1, slot);
+        InterlockedAdd(collision_pairs[base], -1, slot);
         return;
     }
-    collision_pairs[1 + slot * 2] = a;
-    collision_pairs[1 + slot * 2 + 1] = b;
+    collision_pairs[base + 1 + slot * 2] = a;
+    collision_pairs[base + 1 + slot * 2 + 1] = b;
 }
 
 void collision_broad_phase(uint3 dispatch_id) {
@@ -82,8 +100,8 @@ void collision_broad_phase(uint3 dispatch_id) {
             min_a.y - margin <= max_b.y && max_a.y + margin >= min_b.y &&
             min_a.z - margin <= max_b.z && max_a.z + margin >= min_b.z;
 
-        if (overlap && !is_jointed(i, j)) {
-            emit_pair(min(i, j), max(i, j));
+        if (overlap && !is_jointed(i, j) && can_collide(i, j)) {
+            emit_pair(min(i, j), max(i, j), is_poly_pair(body_i, body_j));
         }
     }
 
@@ -123,8 +141,8 @@ void collision_broad_phase(uint3 dispatch_id) {
                             int3 min_cell_j = world_to_cell(min_b - margin, cell_size);
                             int3 overlap_min = max(min_cell_i, min_cell_j);
 
-                            if (cell.x == overlap_min.x && cell.y == overlap_min.y && cell.z == overlap_min.z && !is_jointed(i, j)) {
-                                emit_pair(i, j);
+                            if (cell.x == overlap_min.x && cell.y == overlap_min.y && cell.z == overlap_min.z && !is_jointed(i, j) && can_collide(i, j)) {
+                                emit_pair(i, j, is_poly_pair(body_i, body_j));
                             }
                         }
                     }

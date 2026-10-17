@@ -183,15 +183,17 @@ auto gse::ide::lint::fix_title_for(const lint_rule rule, const text_edit& edit) 
 
 auto gse::ide::lint::as_diagnostic(const lint_finding& finding) -> diagnostic {
 	return {
-		.line = finding.edit.line,
-		.end_line = finding.edit.end_line,
-		.start_col = finding.edit.start_col,
-		.end_col = finding.edit.end_col,
-		.level = severity::hint,
-		.rule = finding.rule,
-		.message = message_for(finding.rule, finding.edit),
-		.file = finding.file,
-		.fix = fix_it{
+		{
+			.line = finding.edit.line,
+			.end_line = finding.edit.end_line,
+			.start_col = finding.edit.start_col,
+			.end_col = finding.edit.end_col,
+			.level = gse::analysis::severity::hint,
+			.message = message_for(finding.rule, finding.edit),
+			.file = finding.file,
+		},
+		finding.rule,
+		fix_it{
 			.title = fix_title_for(finding.rule, finding.edit),
 			.edits = { finding.edit },
 		},

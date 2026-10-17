@@ -97,6 +97,63 @@ export namespace gse::ide::agent {
 			.label = "settled",
 			.color = &gui::style::color_text_disabled,
 		}]],
+		steer [[= phase_policy{
+			.label = "steering",
+			.enter_label = "Continue goal",
+			.opening = "Steer the goal now, following your phase instructions.",
+			.color = &gui::style::color_accent_dim,
+			.fresh_context = true,
+		}]],
+	};
+
+	struct verdict_policy {
+		task_phase next = task_phase::steer;
+		bool gated = false;
+	};
+
+	enum class goal_verdict : std::uint8_t {
+		task [[= verdict_policy{
+			.next = task_phase::scope,
+		}]],
+		met [[= verdict_policy{
+			.next = task_phase::settled,
+		}]],
+		escalate [[= verdict_policy{
+			.next = task_phase::steer,
+			.gated = true,
+		}]],
+	};
+
+	struct file_stamp {
+		bool exists = false;
+		std::uintmax_t size = 0;
+		std::int64_t written = 0;
+
+		auto operator==(const file_stamp&) const -> bool = default;
+	};
+
+	struct awaited_process {
+		std::uint32_t pid = 0;
+		std::uint64_t created = 0;
+		[[= archive_skip{}]] os::unique_handle handle;
+	};
+
+	struct awaited_file {
+		std::filesystem::path path;
+		file_stamp baseline;
+	};
+
+	struct await_condition {
+		std::string then;
+		std::optional<awaited_process> process;
+		std::optional<awaited_file> file;
+		std::int64_t deadline = 0;
+	};
+
+	struct goal_state {
+		std::filesystem::path record;
+		std::uint32_t steers_left = 0;
+		std::optional<await_condition> waiting;
 	};
 
 	struct transcript_row {
@@ -314,6 +371,10 @@ export namespace gse::ide::agent {
 			.label = "waiting for approval",
 			.color = &gui::style::color_folder,
 		}]],
+		awaiting_goal [[= state_style{
+			.label = "waiting on the goal",
+			.color = &gui::style::color_file,
+		}]],
 		rate_limited [[= state_style{
 			.label = "usage limit reached",
 			.color = &gui::style::color_warning,
@@ -351,6 +412,7 @@ export namespace gse::ide::agent {
 		web_fetch [[= tool_flavor{ .match = "WebFetch", .verb = "consulting the internet" }]],
 		todo [[= tool_flavor{ .match = "TodoWrite", .verb = "making a list" }]],
 		skill [[= tool_flavor{ .match = "Skill", .verb = "reading the manual" }]],
+		await [[= tool_flavor{ .match = "mcp__gse__gse_await", .verb = "settling in to wait" }]],
 	};
 
 	struct phase_run {
@@ -367,6 +429,8 @@ export namespace gse::ide::agent {
 		std::string summary;
 		std::string note;
 		std::uint32_t findings = 0;
+		std::optional<goal_verdict> verdict;
+		std::filesystem::path goal;
 	};
 
 	struct handoff_capture {
@@ -375,7 +439,7 @@ export namespace gse::ide::agent {
 		std::filesystem::path touched;
 		std::filesystem::path diff;
 		std::filesystem::path log;
-		std::filesystem::path root;
+		std::vector<std::filesystem::path> roots;
 		std::string heading;
 		std::string summary;
 		std::vector<std::filesystem::path> written;
@@ -459,6 +523,7 @@ export namespace gse::ide::agent {
 		std::vector<phase_run> runs;
 		std::optional<phase_gate> gate;
 		std::optional<phase_gate> pending_transition;
+		std::optional<goal_state> goal;
 		[[= archive_skip{}]]
 		task::pending<bool> handoff;
 		std::string model_id;
@@ -508,6 +573,12 @@ export namespace gse::ide::agent {
 			= settings::describe<"Reasoning effort new chats start on. 'Default' passes no --effort flag, so your global effortLevel setting applies.">{}
 		]]
 		agent_effort default_effort = agent_effort::inherit;
+
+		[[
+			= settings::describe<"Steering runs a goal may start before it stops and asks you to continue. A run starts after every finished task and every wake; approving the stop grants this many again.">{},
+			= settings::range<1, 200>{}
+		]]
+		int goal_steer_budget = 20;
 		[[= archive_skip{}]] rectf history_anchor;
 		[[= archive_skip{}]] bool history_open = false;
 		[[= archive_skip{}]] std::vector<past_chat> history;

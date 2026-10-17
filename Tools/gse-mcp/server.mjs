@@ -318,6 +318,54 @@ const hibernate = async (args) => {
 	return text_result(header(project, { outcome: 'no_editor', error: 'no editor claimed this within 15s - either no editor is open on this project, or this chat was not started from the editor agent panel, so no editor owns it. Nothing would wake you; keep working normally.' }), true);
 };
 
+const await_ = async (args) => {
+	const project = project_of(process.cwd());
+	if (!agent) {
+		return text_result(header(project, { error: 'no agent id in this server\'s environment; the editor cannot wake this chat.' }), true);
+	}
+	const then = String(args.then ?? '').trim();
+	if (!then) {
+		return text_result(header(project, { error: '`then` is required: what to judge once the wait ends.' }), true);
+	}
+	const minutes = Number(args.minutes ?? 0);
+	if (!(minutes > 0)) {
+		return text_result(header(project, { error: '`minutes` is required and must be positive: the deadline after which you are woken regardless.' }), true);
+	}
+	const pid = args.pid === undefined ? null : Math.floor(Number(args.pid));
+	const file = String(args.file ?? '').trim();
+	const id = new_id();
+	rmSync(join(inbox, 'results', `${id}.txt`), { force: true });
+	write_atomically(join(inbox, 'await'), id, [
+		`id ${id}`,
+		`agent ${agent}`,
+		`cwd ${windows_path(process.cwd())}`,
+		...(pid !== null ? [`pid ${pid}`] : []),
+		...(file ? [`file ${file}`] : []),
+		`wait ${Math.round(minutes * 60)} s`,
+		'then',
+		then,
+		'',
+	].join('\n'));
+
+	for (let waited = 0; waited < 15; waited += 1) {
+		const result = read_result(id);
+		if (result) {
+			result.remove();
+			if (result.status === 'ok') {
+				return text_result(header(project, {
+					outcome: 'awaiting',
+					instruction: 'END YOUR TURN NOW. Do not poll, do not wait. The editor stops this chat and starts a fresh steering run when the process exits, the file changes, or the deadline passes.',
+					editor_said: result.body,
+				}));
+			}
+			return text_result(header(project, { outcome: 'refused', editor_said: result.body, next: 'Not waiting - keep working normally.' }), true);
+		}
+		await sleep(1000);
+	}
+	rmSync(join(inbox, 'await', `${id}.txt`), { force: true });
+	return text_result(header(project, { outcome: 'no_editor', error: 'no editor claimed this within 15s - either no editor is open on this project, or this chat was not started from the editor agent panel. Nothing would wake you; keep working normally.' }), true);
+};
+
 const phase_done = async (args) => {
 	const project = project_of(process.cwd());
 	if (!agent) {
@@ -328,6 +376,8 @@ const phase_done = async (args) => {
 		return text_result(header(project, { error: '`summary` is required: what this phase concluded.' }), true);
 	}
 	const findings = Math.max(0, Math.floor(Number(args.findings ?? 0)) || 0);
+	const next = String(args.next ?? '').trim();
+	const goal = String(args.goal ?? '').trim();
 
 	const id = new_id();
 	rmSync(join(inbox, 'results', `${id}.txt`), { force: true });
@@ -336,6 +386,8 @@ const phase_done = async (args) => {
 		`agent ${agent}`,
 		`cwd ${windows_path(process.cwd())}`,
 		`findings ${findings}`,
+		...(next ? [`next ${next}`] : []),
+		...(goal ? [`goal ${goal}`] : []),
 		'summary',
 		summary,
 		'',
@@ -924,71 +976,6 @@ const delete_file = async (args) => {
 	}));
 };
 
-const owned_by_tree = ['out', '.git'];
-
-const inside = (root, path) => {
-	const rel = relative(root, path);
-	return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel) ? rel.replaceAll('\\', '/') : undefined;
-};
-
-const delete_file = async (args) => {
-	const project = args.project ? windows_path(args.project) : project_of(process.cwd());
-	const requested = String(args.file_path ?? '').trim();
-	if (!requested) {
-		return text_result(header(project, { error: 'pass `file_path`: the file to delete.' }), true);
-	}
-	const path = windows_path(requested);
-	const roots = [project, engine_root].filter(Boolean);
-	const rel = roots.map((root) => inside(root, path)).find((found) => found !== undefined);
-	if (rel === undefined) {
-		return text_result(header(project, { file_path: path, error: 'outside the project and the engine tree; this tool only deletes source-tree files.', roots }), true);
-	}
-	if (owned_by_tree.includes(rel.split('/')[0])) {
-		return text_result(header(project, { file_path: path, error: `'${rel.split('/')[0]}/' is owned by the editor or git, not by chats.` }), true);
-	}
-
-	let stat;
-	try {
-		stat = lstatSync(path);
-	}
-	catch {
-		return text_result(header(project, { file_path: path, error: 'no such file.' }), true);
-	}
-	if (!stat.isFile()) {
-		return text_result(header(project, { file_path: path, error: 'not a regular file; directories and links are not deleted by this tool.' }), true);
-	}
-
-	let git_state;
-	try {
-		git_state = execFileSync('git', ['status', '--porcelain', '--ignored', '--', basename(path)], { cwd: dirname(path), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-	}
-	catch (error) {
-		return text_result(header(project, { file_path: path, error: `git could not vouch for this file, so a delete would not be recoverable: ${String(error?.stderr ?? error?.message ?? error).trim()}` }), true);
-	}
-	if (git_state) {
-		return text_result(header(project, {
-			file_path: path,
-			git_status: git_state.slice(0, 2),
-			error: 'only clean, committed files are deleted: this one is untracked, ignored, or has uncommitted changes, so git could not bring it back. Ask the user to delete it.',
-		}), true);
-	}
-
-	const text = readFileSync(path, 'utf8');
-	const declared = /^\s*(?:export\s+)?module\s+([\w.:]+)\s*;/m.exec(text)?.[1];
-	rmSync(path);
-
-	return text_result(header(project, {
-		file_path: path,
-		outcome: 'deleted',
-		bytes: stat.size,
-		lines: text.split('\n').length,
-		module: declared,
-		next: declared
-			? `It declared module '${declared}'. Remove every import of it before building: an importer you did not edit fails as an error that is not attributed to you.`
-			: undefined,
-	}));
-};
-
 const tools = {
 	gse_delete_file: {
 		description:
@@ -1108,6 +1095,21 @@ const tools = {
 		},
 		run: hibernate,
 	},
+	gse_await: {
+		description:
+			'Steering runs only: stop this chat until a long-running job comes back, then be woken in a fresh steering run with the prompt you pass here. Wakes on whichever comes first - `pid` exiting, `file` changing (size or write time), or `minutes` elapsing. Returns immediately; END YOUR TURN after calling it. Record your verdict in the goal ledger before calling it, because the wake starts with fresh context and only the goal record and `then` carry over.',
+		schema: {
+			type: 'object',
+			properties: {
+				then: { type: 'string', description: 'What to judge once the wait ends: the run, where its results land, and the pass line it is measured against.' },
+				minutes: { type: 'number', description: 'Deadline in minutes; you are woken when it passes even if nothing else fired. Capped at 48 hours.' },
+				pid: { type: 'number', description: 'Process to wait on, e.g. the experiment runner. Must be running when you call this.' },
+				file: { type: 'string', description: 'File whose change wakes you, e.g. a results.jsonl. Relative paths resolve against your working directory.' },
+			},
+			required: ['then', 'minutes'],
+		},
+		run: await_,
+	},
 	gse_run: {
 		description:
 			'Launch the existing game executable through the editor, without building it. Use it to observe real behaviour - a crash, a log, a startup failure - rather than reasoning about it from source. Every run must be bounded, so pass either `scenario` or `seconds`. A scenario is the form to reach for: it is a named script that settles the world, drives it through a fixed sequence on a fixed-step clock, and exits on its own with a profile, a percentile summary and a world-state hash - a launch with nobody at the keyboard otherwise just sits in an empty scene until something kills it. Read Sandbox/Sandbox/Source/Sandbox/Scenarios.cppm for the catalogue; a scenario run is hermetic, so it reads neither ini. `seconds` is the escape hatch for the two things a scenario cannot do: a crash during boot, and a bug that only appears under the owner\'s saved settings. It does NOT build: whatever is on disk is what runs, so if you have edited since the last build, call gse_build first or you will be watching stale code. If a build is already in flight your run waits for it and then starts the new executable, so you never race a half-written binary. `settings` applies setting overrides to this run only, as command-line arguments - nothing is written to the ini and the next run is unaffected, so this is how you turn on a diagnostic like validation for one reproduction. Returns once the game has been started, not when it exits; the game writes its own log, so read it afterwards with gse_log_query rather than waiting here. Only the game can be launched - the editor is the process answering you.',
@@ -1131,12 +1133,14 @@ const tools = {
 	},
 	gse_phase_done: {
 		description:
-			'Report that the current phase of your task is finished, and let the editor decide what follows. Call it as the last thing you do in a phase, then END YOUR TURN - the editor restarts this chat in the next phase, or holds for the owner\'s approval. Do not call it repeatedly within one turn, but if you are still in the same phase on a later turn you may report again with an updated summary; the owner approves through the editor, not through chat, so asking them to approve is not something you can do on their behalf. Scoping ends when the plan is agreed and nothing is left to decide; applying ends when the change is complete; reviewing ends when you have read the whole diff, and `findings` is how many real defects you found (0 settles the task, anything else sends it back to be fixed). Only chats started from the editor agent panel have phases.',
+			'Report that the current phase of your task is finished, and let the editor decide what follows. Call it as the last thing you do in a phase, then END YOUR TURN - the editor restarts this chat in the next phase, or holds for the owner\'s approval. Do not call it repeatedly within one turn, but if you are still in the same phase on a later turn you may report again with an updated summary; the owner approves through the editor, not through chat, so asking them to approve is not something you can do on their behalf. Scoping ends when the plan is agreed and nothing is left to decide; applying ends when the change is complete; reviewing ends when you have read the whole diff, and `findings` is how many real defects you found (0 settles the task, anything else sends it back to be fixed); steering ends with a `next` verdict. Only chats started from the editor agent panel have phases.',
 		schema: {
 			type: 'object',
 			properties: {
-				summary: { type: 'string', description: 'What this phase concluded, for the owner and for the next phase. The plan when scoping, what changed when applying, the findings when reviewing.' },
+				summary: { type: 'string', description: 'What this phase concluded, for the owner and for the next phase. The plan when scoping, what changed when applying, the findings when reviewing, the verdict and the next task when steering.' },
 				findings: { type: 'number', description: 'Reviewing only: how many real defects you found. Omit or 0 means the change is sound and the task is settled.' },
+				next: { type: 'string', enum: ['task', 'met', 'escalate'], description: 'Steering: required. "task" scopes the next task from your summary, "met" settles the goal, "escalate" stops for the owner. Scoping under a goal: "escalate" only, when the plan needs the owner.' },
+				goal: { type: 'string', description: 'Scoping only, when the summary drafts a goal record: the repo path the record will be written to. The owner approves the goal before apply writes it.' },
 			},
 			required: ['summary'],
 		},
@@ -1179,7 +1183,7 @@ const handle = async (message) => {
 			capabilities: { tools: {} },
 			serverInfo: { name: 'gse', version: '0.1.0' },
 			instructions:
-				'GSE editor tools. Build with gse_build (never cmake/ninja/compilers). If it returns "deferred", call gse_hibernate and end your turn. Read logs with gse_log_query, not by opening the file. Look code up with gse_symbol_query before reading a source file to find a symbol. Delete files with gse_delete_file, not a shell. If your system prompt names a current phase, end that phase with gse_phase_done rather than simply stopping.',
+				'GSE editor tools. Build with gse_build (never cmake/ninja/compilers). If it returns "deferred", call gse_hibernate and end your turn. Read logs with gse_log_query, not by opening the file. Look code up with gse_symbol_query before reading a source file to find a symbol. Delete files with gse_delete_file, not a shell. If your system prompt names a current phase, end that phase with gse_phase_done rather than simply stopping. A steering run waits on a long job with gse_await and ends its turn.',
 		});
 		return;
 	}

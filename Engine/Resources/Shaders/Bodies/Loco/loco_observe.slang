@@ -14,6 +14,10 @@ float loco_excess_past_edge(float value, float lo, float hi) {
     return 0.0;
 }
 
+float4 loco_framed(float4 q, loco_env_desc env) {
+    return loco_framed_by(q, env.framed, env.segment_frame);
+}
+
 float3 loco_origin_of(uint bi) {
     body_state b = loco_body_data[bi];
     return body_origin(b.position.xyz, b.orientation, b.com_local.xyz);
@@ -42,7 +46,7 @@ void loco_observe(uint3 dispatch_id) {
 
     body_state pelvis = loco_body_data[env.pelvis];
     float3 pelvis_pos = body_origin(pelvis.position.xyz, pelvis.orientation, pelvis.com_local.xyz);
-    float4 pelvis_q = pelvis.orientation;
+    float4 pelvis_q = loco_framed(pelvis.orientation, env);
     float3 pelvis_forward = rotate_vector(pelvis_q, float3(0, 0, -1));
     float3 pelvis_right = rotate_vector(pelvis_q, float3(1, 0, 0));
 
@@ -135,17 +139,19 @@ void loco_observe(uint3 dispatch_id) {
     float capture_right = capture_offset_body.x;
     float capture_forward = -capture_offset_body.z;
 
-    float4 thigh_l_q = loco_body_data[env.thigh_l].orientation;
-    float4 shin_l_q = loco_body_data[env.shin_l].orientation;
-    float4 thigh_r_q = loco_body_data[env.thigh_r].orientation;
-    float4 shin_r_q = loco_body_data[env.shin_r].orientation;
+    float4 thigh_l_q = loco_framed(loco_body_data[env.thigh_l].orientation, env);
+    float4 shin_l_q = loco_framed(loco_body_data[env.shin_l].orientation, env);
+    float4 thigh_r_q = loco_framed(loco_body_data[env.thigh_r].orientation, env);
+    float4 shin_r_q = loco_framed(loco_body_data[env.shin_r].orientation, env);
+    float4 foot_l_q = loco_framed(foot_l.orientation, env);
+    float4 foot_r_q = loco_framed(foot_r.orientation, env);
 
     float hip_angle_l = loco_hinge_angle_about_x(pelvis_q, thigh_l_q);
     float knee_angle_l = loco_hinge_angle_about_x(thigh_l_q, shin_l_q);
-    float ankle_angle_l = loco_hinge_angle_about_x(shin_l_q, foot_l.orientation);
+    float ankle_angle_l = loco_hinge_angle_about_x(shin_l_q, foot_l_q);
     float hip_angle_r = loco_hinge_angle_about_x(pelvis_q, thigh_r_q);
     float knee_angle_r = loco_hinge_angle_about_x(thigh_r_q, shin_r_q);
-    float ankle_angle_r = loco_hinge_angle_about_x(shin_r_q, foot_r.orientation);
+    float ankle_angle_r = loco_hinge_angle_about_x(shin_r_q, foot_r_q);
 
     uint pbase = e * loco_prev_stride;
     bool prev_valid = loco_prev_data[pbase + loco_prev_valid] != 0.0;
@@ -242,7 +248,7 @@ void loco_observe(uint3 dispatch_id) {
     float err_right = (right_speed - env.cmd_strafe) / tolerance;
     float track = exp(-(err_forward * err_forward + err_right * err_right));
 
-    float upright = clamp(cross(pelvis_right, pelvis_forward).y, 0.0, 1.0);
+    float upright = loco_upright_of(pelvis_q);
 
     float pelvis_height = pelvis_pos.y - support_center.y;
     float target_above_support = env.target_height - support_center.y;
@@ -364,6 +370,8 @@ void loco_observe(uint3 dispatch_id) {
         contact_l = fmod(prev_bits, 16.0) >= 8.0;
         contact_r = prev_bits >= 16.0;
     }
+    float mode_before_l = mode_l;
+    float mode_before_r = mode_r;
     bool lifted_l = loco_swing_clearance > 0.0 ? mode_l < 0.0 : mode_l <= 0.0;
     bool lifted_r = loco_swing_clearance > 0.0 ? mode_r < 0.0 : mode_r <= 0.0;
     if (prev_valid) {
@@ -371,10 +379,10 @@ void loco_observe(uint3 dispatch_id) {
         touchdowns += (planted_r && lifted_r) ? 1.0 : 0.0;
     }
     float scuff = 0.0;
-    float2 now_heel_l = (foot_l_pos + rotate_vector(foot_l.orientation, float3(0, -loco_scuff_drop, loco_scuff_reach))).xz;
-    float2 now_toe_l = (foot_l_pos + rotate_vector(foot_l.orientation, float3(0, -loco_scuff_drop, -loco_scuff_reach))).xz;
-    float2 now_heel_r = (foot_r_pos + rotate_vector(foot_r.orientation, float3(0, -loco_scuff_drop, loco_scuff_reach))).xz;
-    float2 now_toe_r = (foot_r_pos + rotate_vector(foot_r.orientation, float3(0, -loco_scuff_drop, -loco_scuff_reach))).xz;
+    float2 now_heel_l = (foot_l_pos + rotate_vector(foot_l_q, float3(0, -loco_scuff_drop, loco_scuff_reach))).xz;
+    float2 now_toe_l = (foot_l_pos + rotate_vector(foot_l_q, float3(0, -loco_scuff_drop, -loco_scuff_reach))).xz;
+    float2 now_heel_r = (foot_r_pos + rotate_vector(foot_r_q, float3(0, -loco_scuff_drop, loco_scuff_reach))).xz;
+    float2 now_toe_r = (foot_r_pos + rotate_vector(foot_r_q, float3(0, -loco_scuff_drop, -loco_scuff_reach))).xz;
     float2 heel_l = now_heel_l;
     float2 toe_l = now_toe_l;
     float2 heel_r = now_heel_r;
@@ -399,11 +407,16 @@ void loco_observe(uint3 dispatch_id) {
     float stride = 0.0;
     float3 feet = foot_r_pos - foot_l_pos;
     float order = feet.x * pelvis_forward.x + feet.z * pelvis_forward.z;
+    float cmd_speed = length(float2(env.cmd_forward, env.cmd_strafe));
+    float2 axis_forward = loco_track_heading_frame != 0 ? float2(-sin_yaw, -cos_yaw) : pelvis_forward.xz;
+    float2 axis_right = loco_track_heading_frame != 0 ? float2(cos_yaw, -sin_yaw) : pelvis_right.xz;
+    float2 travel = cmd_speed > 0.0 ? (axis_forward * env.cmd_forward + axis_right * env.cmd_strafe) / cmd_speed : float2(0.0, 0.0);
     float behind_bits = fmod(prev_bits, 4.0);
     if (env.r_stride != 0.0) {
+        float stride_order = loco_stride_along_command != 0 ? dot(feet.xz, travel) : order;
         bool behind_l = fmod(behind_bits, 2.0) >= 1.0;
         bool behind_r = behind_bits >= 2.0;
-        float landing = clamp(order / loco_stride_reference, -1.0, 1.0);
+        float landing = clamp(stride_order / loco_stride_reference, -1.0, 1.0);
         if (planted_l && mode_l < 0.0 && behind_l) {
             stride -= landing;
         }
@@ -411,10 +424,10 @@ void loco_observe(uint3 dispatch_id) {
             stride += landing;
         }
         if (!planted_l && mode_l >= 0.0) {
-            behind_l = order > 0.0;
+            behind_l = stride_order > 0.0;
         }
         if (!planted_r && mode_r >= 0.0) {
-            behind_r = order < 0.0;
+            behind_r = stride_order < 0.0;
         }
         behind_bits = (behind_l ? 1.0 : 0.0) + (behind_r ? 2.0 : 0.0);
     }
@@ -425,7 +438,27 @@ void loco_observe(uint3 dispatch_id) {
     float since_swap = prev_valid ? loco_prev_data[pbase + 15] : 0.0;
     float lead_now = abs(order) >= env.swap_margin ? sign(order) : 0.0;
     bool swung = fmod(prev_bits, 8.0) >= 4.0 || !planted_l || !planted_r;
-    if (lead_now != 0.0 && lead_now != lead && (loco_swing_clearance <= 0.0 || swung)) {
+    float2 liftoff_l = float2(loco_prev_data[pbase + 24], loco_prev_data[pbase + 25]);
+    float2 liftoff_r = float2(loco_prev_data[pbase + 26], loco_prev_data[pbase + 27]);
+    if (loco_step_min > 0.0) {
+        bool was_swing_l = mode_before_l < 0.0;
+        bool was_swing_r = mode_before_r < 0.0;
+        if (!was_swing_l && !planted_l) {
+            liftoff_l = foot_l_pos.xz;
+        }
+        if (!was_swing_r && !planted_r) {
+            liftoff_r = foot_r_pos.xz;
+        }
+        bool real_l = was_swing_l && planted_l && cmd_speed > 0.0 && dot(foot_l_pos.xz - liftoff_l, travel) >= loco_step_min;
+        bool real_r = was_swing_r && planted_r && cmd_speed > 0.0 && dot(foot_r_pos.xz - liftoff_r, travel) >= loco_step_min;
+        if (real_l || real_r) {
+            since_swap = 0.0;
+        }
+        else {
+            since_swap += pc.dt;
+        }
+    }
+    else if (lead_now != 0.0 && lead_now != lead && (loco_swing_clearance <= 0.0 || swung)) {
         lead = lead_now;
         since_swap = 0.0;
         swung = false;
@@ -484,6 +517,12 @@ void loco_observe(uint3 dispatch_id) {
         }
         loco_prev_data[pbase + 14] = lead;
         loco_prev_data[pbase + 15] = since_swap;
+        if (loco_step_min > 0.0) {
+            loco_prev_data[pbase + 24] = liftoff_l.x;
+            loco_prev_data[pbase + 25] = liftoff_l.y;
+            loco_prev_data[pbase + 26] = liftoff_r.x;
+            loco_prev_data[pbase + 27] = liftoff_r.y;
+        }
         if (loco_r_scuff != 0.0) {
             loco_prev_data[pbase + 16] = heel_l.x;
             loco_prev_data[pbase + 17] = heel_l.y;
@@ -496,7 +535,7 @@ void loco_observe(uint3 dispatch_id) {
         }
     }
 
-    bool fell = pelvis_pos.y < pc.fall_height || upright < pc.fall_upright;
+    bool fell = loco_fallen(pelvis_pos.y, upright, pc.fall_height, pc.fall_upright);
     bool fallen = fell || stale;
     bool timeout = pc.max_steps != 0 && env.episode_steps >= pc.max_steps;
 
@@ -536,5 +575,6 @@ void loco_observe(uint3 dispatch_id) {
     }
 
     loco_obs_data[rbase + 7] = pc.r_pose * pose + gait;
+    loco_obs_data[rbase + 8] = 0.0;
     loco_obs_data[rbase + loco_reward_done] = (fallen || timeout) ? 1.0 : 0.0;
 }

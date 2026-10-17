@@ -414,7 +414,7 @@ auto gse::gui::draw_context::next_row(const resource::handle<font>& font, const 
 	return row;
 }
 
-auto gse::gui::draw_context::animated_color(const id& widget_id, const vec4f target, const float speed) const -> vec4f {
+auto gse::gui::draw_context::animated_color(const id& widget_id, const vec4f target, const inverse_time speed) const -> vec4f {
 	const auto key = widget_id.number();
 	auto it = widget_anim_colors.find(key);
 	if (it == widget_anim_colors.end()) {
@@ -422,8 +422,7 @@ auto gse::gui::draw_context::animated_color(const id& widget_id, const vec4f tar
 		return target;
 	}
 
-	const float dt = system_clock::dt<time>().as<seconds>();
-	const float t = std::clamp(speed * dt, 0.f, 1.f);
+	const float t = std::clamp(speed * system_clock::dt<time>(), 0.f, 1.f);
 	const vec4f remaining = target - it->second;
 	const float settle = 1.f / 512.f;
 	if (std::abs(remaining.x()) < settle && std::abs(remaining.y()) < settle && std::abs(remaining.z()) < settle && std::abs(remaining.w()) < settle) {

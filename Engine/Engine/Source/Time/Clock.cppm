@@ -17,6 +17,10 @@ export namespace gse {
 	private:
 		std::chrono::steady_clock::time_point m_start_time;
 	};
+
+	auto to_chrono(
+		time_t<double> t
+	) -> std::chrono::nanoseconds;
 }
 
 gse::clock::clock() : m_start_time(std::chrono::steady_clock::now()) {
@@ -34,4 +38,8 @@ auto gse::clock::elapsed() const -> time_t<T> {
 	const auto now = std::chrono::steady_clock::now();
 	const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now - m_start_time).count();
 	return nanoseconds(static_cast<T>(ns < 0 ? 0 : ns));
+}
+
+auto gse::to_chrono(const time_t<double> t) -> std::chrono::nanoseconds {
+	return std::chrono::nanoseconds(static_cast<std::int64_t>(t.as<nanoseconds>()));
 }

@@ -111,3 +111,86 @@ function(gse_copy_runtime_deps target)
         endif()
     endif()
 endfunction()
+
+# The gse_tokens GCC plugin extracts semantic tokens from the compiler's own AST; the
+# editor and any project that highlights C++ spawn g++ with -fplugin=<it>. A plugin is
+# ABI-locked to the compiler that built it: cc1plus refuses to load one from a different
+# build and exits 1 before compiling anything, which surfaces as every compile failing
+# identically rather than as a stale-artifact error. So it is rebuilt from source per
+# build tree with the toolchain as a declared input, and every consumer gets a
+# toolchain.json beside its exe naming the compiler and plugin that belong together.
+# Needs a GCC configured with --enable-plugin (which generates cc1plus.exe.a).
+function(_gse_add_token_plugin)
+    set(_source_dir "${GSE_ENGINE_ROOT}/Engine/Tools/TokenPlugin")
+    set(_out_dir "${CMAKE_BINARY_DIR}/TokenPlugin")
+    execute_process(
+        COMMAND "${CMAKE_CXX_COMPILER}" -print-file-name=plugin
+        OUTPUT_VARIABLE _plugin_dir
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    if(NOT EXISTS "${_plugin_dir}/cc1plus.exe.a")
+        message(WARNING "gse_tokens plugin: ${_plugin_dir}/cc1plus.exe.a not found, so the plugin will not be built. Projects still compile and run, but semantic highlighting, hover, go-to-definition and the symbol index are all plugin-authoritative and will be silently empty. Install a GCC configured with --enable-plugin and reconfigure.")
+        return()
+    endif()
+    add_custom_command(
+        OUTPUT "${_out_dir}/gse_tokens.dll"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${_out_dir}"
+        COMMAND "${CMAKE_CXX_COMPILER}"
+            "-I${_plugin_dir}/include"
+            -O2 -fno-rtti -shared
+            "${_source_dir}/gse_tokens_plugin.cpp"
+            "${_plugin_dir}/cc1plus.exe.a"
+            -o "${_out_dir}/gse_tokens.dll"
+        DEPENDS
+            "${_source_dir}/gse_tokens_plugin.cpp"
+            "${CMAKE_CXX_COMPILER}"
+            "${_plugin_dir}/cc1plus.exe.a"
+        COMMENT "Building gse_tokens GCC plugin"
+        VERBATIM
+    )
+    add_custom_command(
+        OUTPUT "${_out_dir}/gse_tokens_contract.stamp"
+        BYPRODUCTS "${_out_dir}/gse_tokens_contract.tsv"
+        COMMAND "${CMAKE_CXX_COMPILER}"
+            -std=c++26 -fsyntax-only
+            "-fplugin=${_out_dir}/gse_tokens.dll"
+            "-fplugin-arg-gse_tokens-out=${_out_dir}/gse_tokens_contract.tsv"
+            "-fplugin-arg-gse_tokens-root=${GSE_ENGINE_ROOT}"
+            "${_source_dir}/SemanticContract.cpp"
+        COMMAND "${CMAKE_COMMAND}"
+            "-DCONTRACT_OUTPUT=${_out_dir}/gse_tokens_contract.tsv"
+            -P "${_source_dir}/CheckSemanticContract.cmake"
+        COMMAND "${CMAKE_COMMAND}" -E touch "${_out_dir}/gse_tokens_contract.stamp"
+        DEPENDS
+            "${_out_dir}/gse_tokens.dll"
+            "${_source_dir}/SemanticContract.cpp"
+            "${_source_dir}/CheckSemanticContract.cmake"
+        VERBATIM
+    )
+    add_custom_target(gse_tokens_plugin ALL DEPENDS "${_out_dir}/gse_tokens_contract.stamp")
+    add_custom_target(gse_tokens_contract DEPENDS "${_out_dir}/gse_tokens_contract.stamp")
+endfunction()
+
+function(gse_token_plugin target)
+    if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        return()
+    endif()
+    if(NOT TARGET gse_tokens_plugin)
+        _gse_add_token_plugin()
+    endif()
+    if(NOT TARGET gse_tokens_plugin)
+        return()
+    endif()
+    add_custom_target(gse_tokens_plugin_${target}
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${CMAKE_BINARY_DIR}/TokenPlugin/gse_tokens.dll"
+            "$<TARGET_FILE_DIR:${target}>"
+        VERBATIM
+    )
+    add_dependencies(gse_tokens_plugin_${target} gse_tokens_plugin)
+    add_dependencies(${target} gse_tokens_plugin_${target})
+    file(GENERATE
+        OUTPUT "$<TARGET_FILE_DIR:${target}>/toolchain.json"
+        CONTENT "{\n\t\"compiler\": \"${CMAKE_CXX_COMPILER}\",\n\t\"plugin\": \"$<TARGET_FILE_DIR:${target}>/gse_tokens.dll\"\n}\n"
+    )
+endfunction()

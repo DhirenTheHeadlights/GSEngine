@@ -359,9 +359,8 @@ auto gse::gui::draw::slider_row(const draw_context& ctx, const std::string& name
 	const auto box_rects = lo::split_horizontal<N>(value_area, box_specs, sty.padding);
 
 	std::array<id, N> box_ids;
-	const std::uint64_t name_key = stable_id(name);
 	for (std::size_t i = 0; i < N; ++i) {
-		box_ids[i] = ids::make_from_key(hash_combine(name_key, i));
+		box_ids[i] = ids::make_from_key(hash_of(name, i));
 	}
 
 	for (std::size_t i = 0; i < N; ++i) {

@@ -109,8 +109,7 @@ auto gse::gui::draw::text_input(const draw_context& ctx, const std::string& name
 		return;
 	}
 
-	constexpr std::uint64_t input_suffix_hash = stable_id("##Input");
-	const id widget_id = ids::make_from_key(hash_combine(stable_id(name), input_suffix_hash));
+	const id widget_id = ids::make_from_key(hash_of(name, "##Input"));
 
 	const auto text_view = ctx.fonts.text.resolve();
 	const float widget_height = text_view->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;

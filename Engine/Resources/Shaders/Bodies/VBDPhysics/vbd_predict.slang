@@ -8,11 +8,18 @@ void store_prediction(uint bi, body_state body) {
     body_data[bi].predicted_orientation = body.predicted_orientation;
     body_data[bi].angular_inertia_target = body.angular_inertia_target;
     body_data[bi].motor_target = body.motor_target;
+    if (body.reset_pending != 0) {
+        body_data[bi].reset_pending = 0;
+    }
 }
 
 void vbd_predict(uint3 dispatch_id) {
 uint bi = dispatch_id.x;
 if (bi >= pc.body_count) return;
+
+if (solver_config_data[0].muscle_count != 0) {
+    solve_deltas[2 * max_bodies + bi] = float4(muscle_body_floor(bi), 0, 0, 0);
+}
 
 body_state body = body_data[bi];
 bool locked = body.locked != 0;
@@ -61,7 +68,7 @@ bool has_motor = motor_idx != 0xFFFFFFFF && motor_idx < pc.motor_count;
                 uint ji = safe_load_uint(joint_adjacency, j_off + k, max_joint_adjacency);
                 if ((ji & muscle_adjacency_tag) != 0) {
                     muscle_constraint m = muscle_data[ji & ~muscle_adjacency_tag];
-                    for (uint p = 0; p < m.path_count && sleeping; p++) {
+                    for (uint p = 0; p < m.path_count + m.wrap_count && sleeping; p++) {
                         uint other = muscle_path_data[m.path_first + p].body;
                         if (other == bi || other >= pc.body_count) continue;
                         body_state other_body = body_data[other];

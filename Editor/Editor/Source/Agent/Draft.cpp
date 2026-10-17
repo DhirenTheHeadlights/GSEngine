@@ -178,7 +178,7 @@ auto gse::ide::agent::run_claude(const std::filesystem::path& root, const std::s
 			return std::unexpected("the draft was cancelled");
 		}
 		if (waited.elapsed() >= draft_limit) {
-			return std::unexpected(std::format("claude did not answer within {:.0f} seconds", draft_limit.as<seconds>()));
+			return std::unexpected(std::format("claude did not answer within {:.0f:s}", draft_limit));
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds(20));
 	}

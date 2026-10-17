@@ -269,10 +269,10 @@ auto gse::gui::process_context_menu(data& d, viewport_state& vp, const input::st
 			return stable_id("context_menu_no_target");
 		}
 		else if constexpr (std::same_as<target_type, id>) {
-			return hash_combine(stable_id("context_menu_id_target"), target.number());
+			return hash_of("context_menu_id_target", target.number());
 		}
 		else {
-			return hash_combine(stable_id("context_menu_numeric_target"), target);
+			return hash_of("context_menu_numeric_target", target);
 		}
 	}, cm.target);
 	for (std::size_t i = 0; i < cm.items.size(); ++i) {
@@ -290,10 +290,7 @@ auto gse::gui::process_context_menu(data& d, viewport_state& vp, const input::st
 
 		const rectf row = rectf::from_position_size({ panel.left(), y }, { width, row_h });
 		const bool hovered = row.contains(mouse) && it.enabled;
-		const id row_id = ids::make_from_key(hash_combine(
-			hash_combine(cm.tag.number(), target_key),
-			hash_combine(stable_id("context_menu_row"), static_cast<std::uint64_t>(i))
-		));
+		const id row_id = ids::make_from_key(hash_of(cm.tag.number(), target_key, "context_menu_row", i));
 		const bool activated = interaction::activate_on_click(vp.active_widget_id, row_id, hovered, hovered && left_pressed, left_released);
 
 		if (hovered) {

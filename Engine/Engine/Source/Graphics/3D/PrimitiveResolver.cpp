@@ -3,6 +3,7 @@ module gse.graphics:primitive_resolver_impl;
 import std;
 
 import :primitive_resolver;
+import :hull_mesh;
 import :model;
 import :mountain_ring;
 import :primitive_specs;
@@ -16,6 +17,7 @@ import gse.core;
 import gse.ecs;
 import gse.math;
 import gse.meta;
+import gse.physics;
 
 namespace gse::primitive_resolver {
 	auto attach_box(
@@ -44,6 +46,17 @@ namespace gse::primitive_resolver {
 
 	auto mountain_ring_asset_name(
 		const primitive_mountain_ring_spec& spec
+	) -> std::string;
+
+	auto attach_hull(
+		const primitive_hull_spec& spec,
+		const resource::handle<model>& handle,
+		render_component& render
+	) -> void;
+
+	auto hull_asset_name(
+		const primitive_hull_spec& spec,
+		std::span<const vec3<length>> points
 	) -> std::string;
 }
 
@@ -86,40 +99,31 @@ auto gse::primitive_resolver::attach_mountain_ring(const primitive_mountain_ring
 	}
 	const auto idx = render.model_count;
 	render.models[idx] = handle;
-	render.tints[idx] = vec4f(1.0f, 1.0f, 1.0f, spec.material.opacity);
+	render.tints[idx] = vec4f(1.0f, 1.0f, 1.0f, spec.opacity);
 	render.sizes[idx] = vec3<length>(meters(1.0f));
 	++render.model_count;
 }
 
 auto gse::primitive_resolver::mountain_ring_asset_name(const primitive_mountain_ring_spec& spec) -> std::string {
-	std::uint64_t key = 1469598103934665603ull;
-	key = hash_combine(key, spec.material.base_color.x());
-	key = hash_combine(key, spec.material.base_color.y());
-	key = hash_combine(key, spec.material.base_color.z());
-	key = hash_combine(key, spec.material.roughness);
-	key = hash_combine(key, spec.material.metallic);
-	key = hash_combine(key, spec.snow_color.x());
-	key = hash_combine(key, spec.snow_color.y());
-	key = hash_combine(key, spec.snow_color.z());
-	key = hash_combine(key, spec.snow_line);
-	key = hash_combine(key, spec.snow_slope);
-	key = hash_combine(key, spec.snow_roughness);
-	key = hash_combine(key, spec.inner_radius);
-	key = hash_combine(key, spec.outer_radius);
-	key = hash_combine(key, spec.peak_height);
-	key = hash_combine(key, spec.ridge_base);
-	key = hash_combine(key, spec.massif_depth);
-	key = hash_combine(key, spec.massif_cells);
-	key = hash_combine(key, spec.angular_segments);
-	key = hash_combine(key, spec.radial_segments);
-	key = hash_combine(key, spec.ridge_cells);
-	key = hash_combine(key, spec.radial_cells);
-	key = hash_combine(key, spec.octaves);
-	key = hash_combine(key, spec.seed);
-	return std::format("Primitives/mountain_ring_{:016x}", key);
+	return std::format("Primitives/mountain_ring_{:016x}", hash_of(spec.shape));
 }
 
-auto gse::primitive_resolver::ensure_renders(write<primitive_box_spec> boxes, write<primitive_sphere_spec> spheres, write<primitive_cylinder_spec> cylinders, write<primitive_mountain_ring_spec> mountain_rings, structural<render_component> renders) -> async::task<> {
+auto gse::primitive_resolver::attach_hull(const primitive_hull_spec& spec, const resource::handle<model>& handle, render_component& render) -> void {
+	if (render.model_count >= render_component::max_models) {
+		return;
+	}
+	const auto idx = render.model_count;
+	render.models[idx] = handle;
+	render.tints[idx] = vec4f(1.0f, 1.0f, 1.0f, spec.opacity);
+	render.sizes[idx] = vec3<length>(meters(1.0f));
+	++render.model_count;
+}
+
+auto gse::primitive_resolver::hull_asset_name(const primitive_hull_spec& spec, const std::span<const vec3<length>> points) -> std::string {
+	return std::format("Primitives/hull_{:016x}", hash_of(spec.surface, points));
+}
+
+auto gse::primitive_resolver::ensure_renders(write<primitive_box_spec> boxes, write<primitive_sphere_spec> spheres, write<primitive_cylinder_spec> cylinders, write<primitive_mountain_ring_spec> mountain_rings, write<primitive_hull_spec> hulls, structural<render_component> renders) -> async::task<> {
 	for (const auto eid : boxes.drain(component_event::added)) {
 		if (!renders.contains(eid)) {
 			renders.add(eid);
@@ -140,10 +144,15 @@ auto gse::primitive_resolver::ensure_renders(write<primitive_box_spec> boxes, wr
 			renders.add(eid);
 		}
 	}
+	for (const auto eid : hulls.drain(component_event::added)) {
+		if (!renders.contains(eid)) {
+			renders.add(eid);
+		}
+	}
 	co_return;
 }
 
-auto gse::primitive_resolver::populate(context& ctx, const primitives::data& prims, shared_view<asset::data> assets, write<primitive_box_spec> boxes, write<primitive_sphere_spec> spheres, write<primitive_cylinder_spec> cylinders, write<primitive_mountain_ring_spec> mountain_rings, write<render_component> renders) -> async::task<> {
+auto gse::primitive_resolver::populate(context& ctx, const primitives::data& prims, shared_view<asset::data> assets, write<primitive_box_spec> boxes, write<primitive_sphere_spec> spheres, write<primitive_cylinder_spec> cylinders, write<primitive_mountain_ring_spec> mountain_rings, write<primitive_hull_spec> hulls, read<physics::hull_definition> hull_definitions, write<render_component> renders) -> async::task<> {
 	(void)ctx;
 
 	const auto box_owners = boxes.owner_ids();
@@ -204,9 +213,29 @@ auto gse::primitive_resolver::populate(context& ctx, const primitives::data& pri
 		const auto name = mountain_ring_asset_name(spec);
 		auto handle = asset::try_get<model>(assets, name);
 		if (handle.state() == resource::state::unloaded) {
-			handle = asset::queue<model>(assets, name, build_mountain_ring_meshes(spec));
+			handle = asset::queue<model>(assets, name, build_mountain_ring_meshes(spec.shape));
 		}
 		attach_mountain_ring(spec, handle, *render);
+		spec.resolved = true;
+	}
+
+	const auto hull_owners = hulls.owner_ids();
+	for (std::size_t i = 0; i < hulls.size(); ++i) {
+		auto& spec = hulls[i];
+		if (spec.resolved) {
+			continue;
+		}
+		auto* render = renders.find(hull_owners[i]);
+		const auto* definition = hull_definitions.find(hull_owners[i]);
+		if (!render || !definition) {
+			continue;
+		}
+		const auto name = hull_asset_name(spec, definition->points);
+		auto handle = asset::try_get<model>(assets, name);
+		if (handle.state() == resource::state::unloaded) {
+			handle = asset::queue<model>(assets, name, build_hull_meshes(spec.surface, definition->points));
+		}
+		attach_hull(spec, handle, *render);
 		spec.resolved = true;
 	}
 

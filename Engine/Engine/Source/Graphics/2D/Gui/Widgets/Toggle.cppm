@@ -121,8 +121,7 @@ auto gse::gui::toggle_in_rect(const draw_context& ctx, const rectf& row_rect, co
 	);
 
 	const vec4f track_target = p.value ? ctx.style.color_toggle_on : ctx.style.color_toggle_off;
-	constexpr std::uint64_t track_suffix_hash = stable_id("##track");
-	const id track_anim_id = ids::make_from_key(hash_combine(name_key, track_suffix_hash));
+	const id track_anim_id = ids::make_from_key(hash_of(name_key, "##track"));
 
 	ctx.queue_sprite({
 		.rect = track_rect,

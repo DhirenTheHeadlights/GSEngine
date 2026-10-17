@@ -242,7 +242,7 @@ auto gse::system_clock::update_frame_rate(const internal_time elapsed) -> void {
 	frame_rate_update_time += elapsed;
 
 	if (frame_rate_update_time >= fps_report_interval) {
-		frame_rate_count = static_cast<std::uint32_t>(frame_count / frame_rate_update_time.as<seconds>());
+		frame_rate_count = static_cast<std::uint32_t>(frame_count * (seconds(1.0) / frame_rate_update_time));
 		frame_count = 0;
 		frame_rate_update_time -= fps_report_interval;
 	}

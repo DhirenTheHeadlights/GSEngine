@@ -67,9 +67,7 @@ auto sandbox::main_menu_screen::dismissable() const -> bool {
 }
 
 auto sandbox::main_menu_screen::eased_progress() const -> float {
-	const float elapsed_s = m_opened_at.elapsed<float>().as<gse::seconds>();
-	const float duration_s = slide_duration.as<gse::seconds>();
-	const float t = std::clamp(elapsed_s / duration_s, 0.f, 1.f);
+	const float t = std::clamp(m_opened_at.elapsed() / slide_duration, 0.f, 1.f);
 	const float inv = 1.0f - t;
 	return 1.0f - inv * inv * inv;
 }

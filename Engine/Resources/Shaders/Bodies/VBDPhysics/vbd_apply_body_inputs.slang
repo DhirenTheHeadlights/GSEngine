@@ -11,7 +11,7 @@ void vbd_apply_body_inputs(uint3 dispatch_id) {
 
     body_state input = body_input_data[bi];
     if (pc.apply_all_body_inputs != 0 || input.locked != 0 || input.reset_pending != 0) {
-        if (pc.preserve_accel_weight != 0) {
+        if ((pc.warm_start_bits & warm_start_preserve_accel_weight_bit) != 0) {
             input.accel_weight = body_data[bi].accel_weight;
         }
         if (pc.apply_all_body_inputs == 0 && input.reset_pending == 0) {
@@ -19,6 +19,5 @@ void vbd_apply_body_inputs(uint3 dispatch_id) {
             input.accel_weight = body_data[bi].accel_weight;
         }
         body_data[bi] = input;
-        body_data[bi].reset_pending = 0;
     }
 }

@@ -15,7 +15,6 @@ import gse.gpu_record;
 import :joint_drive_component;
 import :motion_component;
 import :motor_component;
-import :muscle_component;
 import :collision_component;
 import :transform_component;
 import :system;
@@ -27,6 +26,7 @@ export namespace gse::physics::shadow_step {
 		std::uint32_t body_index = 0;
 		vec3<position> position;
 		vec3<velocity> velocity;
+		vec3<angular_velocity> spin;
 	};
 
 	struct pending_step {
@@ -63,6 +63,11 @@ export namespace gse::physics::shadow_step {
 		std::vector<pending_step> pending;
 		std::vector<joint_definition> joints;
 		std::vector<muscle_definition> muscles;
+		std::vector<std::uint32_t> hull_data;
+		std::vector<std::uint32_t> hull_offsets;
+		std::size_t packed_hull_count = 0;
+		std::uint64_t hull_generation = 0;
+		std::vector<std::pair<std::uint32_t, std::uint32_t>> non_colliding_pairs;
 		vbd::gpu_solver solver;
 	};
 
@@ -70,6 +75,7 @@ export namespace gse::physics::shadow_step {
 	auto init(
 		context& ctx,
 		std::optional<shared_view<gpu::context::data>> gpu_s,
+		shared_view<physics::data> phys,
 		data& d
 	) -> async::task<>;
 
@@ -81,8 +87,7 @@ export namespace gse::physics::shadow_step {
 		read<motion_component> motion,
 		read<collision_component> collision,
 		read<motor_component> motor,
-		read<joint_drive_component> drives,
-		read<muscle_component> muscles
+		read<joint_drive_component> drives
 	) -> async::task<>;
 
 	[[= system_frame{}]]

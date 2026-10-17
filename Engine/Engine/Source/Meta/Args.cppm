@@ -171,19 +171,19 @@ auto gse::arg_edit_distance(const std::string_view a, const std::string_view b) 
 }
 
 auto gse::print_arg_usage(const std::span<const arg_flag_info> flags) -> void {
-	std::cout << "options:\n";
+	std::println("options:");
 	for (const auto& info : flags) {
 		if (info.value_hint.empty()) {
-			std::cout << std::format("  {}\n", info.flag);
+			std::println("  {}", info.flag);
 		}
 		else {
-			std::cout << std::format("  {} {}\n", info.flag, info.value_hint);
+			std::println("  {} {}", info.flag, info.value_hint);
 		}
 	}
 }
 
 auto gse::fail_unrecognized_arg(const std::string_view arg, const std::span<const arg_flag_info> flags) -> void {
-	std::cerr << std::format("error: unrecognized command-line argument '{}'\n", arg);
+	std::println(std::cerr, "error: unrecognized command-line argument '{}'", arg);
 
 	constexpr std::size_t max_distance = 3;
 	constexpr std::size_t max_suggestions = 5;
@@ -204,9 +204,9 @@ auto gse::fail_unrecognized_arg(const std::string_view arg, const std::span<cons
 		near.push_back(candidate);
 	}
 	if (!near.empty()) {
-		std::cerr << "did you mean:\n";
+		std::println(std::cerr, "did you mean:");
 		for (const auto candidate : near) {
-			std::cerr << std::format("  {}\n", candidate);
+			std::println(std::cerr, "  {}", candidate);
 		}
 	}
 	else {
@@ -283,7 +283,7 @@ auto gse::try_match_arg(Config& cfg, const std::string_view prefix, const int ar
 			if constexpr (arg_is_valued<F>) {
 				if (arg == positive) {
 					if (i + 1 >= argc) {
-						std::cerr << std::format("error: {} expects a value {}\n", positive, arg_value_hint<F>());
+						std::println(std::cerr, "error: {} expects a value {}", positive, arg_value_hint<F>());
 						outcome = arg_match::bad_value;
 					}
 					else if (F tmp = cfg.[:m:]; parse(argv[i + 1], tmp)) {
@@ -293,16 +293,17 @@ auto gse::try_match_arg(Config& cfg, const std::string_view prefix, const int ar
 						outcome = arg_match::consumed;
 					}
 					else {
-						std::cerr << std::format(
-							"error: {} could not parse '{}'; expected {}\n",
+						std::println(
+							std::cerr,
+							"error: {} could not parse '{}'; expected {}",
 							positive,
 							argv[i + 1],
 							arg_value_hint<F>()
 						);
 						if constexpr (std::is_enum_v<F>) {
-							std::cerr << "valid names:\n";
+							std::println(std::cerr, "valid names:");
 							for (const auto value : enum_values<F>()) {
-								std::cerr << std::format("  {}\n", enum_to_string(value));
+								std::println(std::cerr, "  {}", enum_to_string(value));
 							}
 						}
 						outcome = arg_match::bad_value;
@@ -327,7 +328,7 @@ auto gse::expand_arg_files(const std::span<const std::string> words) -> std::vec
 		const std::filesystem::path path(word.substr(1));
 		std::ifstream file(path);
 		if (!file) {
-			std::cerr << std::format("error: cannot read argument file '{}'\n", path.generic_string());
+			std::println(std::cerr, "error: cannot read argument file '{}'", path.generic_display_string());
 			std::exit(2);
 		}
 		std::vector<std::string> nested;

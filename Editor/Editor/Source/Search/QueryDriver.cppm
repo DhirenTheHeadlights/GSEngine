@@ -68,14 +68,10 @@ auto gse::ide::search::same_options(const options& lhs, const options& rhs) -> b
 }
 
 auto gse::ide::search::generation_of(const search_snapshot& snapshot, const options& opts) -> std::uint64_t {
-	std::uint64_t generation = 0;
-	if (opts.include_files || opts.include_content) {
-		generation = hash_combine(generation, snapshot.files->file_generation);
-	}
-	if (opts.include_symbols) {
-		generation = hash_combine(generation, snapshot.symbols->symbol_generation);
-	}
-	return generation;
+	return hash_of(
+		opts.include_files || opts.include_content ? snapshot.files->file_generation : 0,
+		opts.include_symbols ? snapshot.symbols->symbol_generation : 0
+	);
 }
 
 auto gse::ide::search::query_driver::update(const index_state* index, const options& opts) -> bool {

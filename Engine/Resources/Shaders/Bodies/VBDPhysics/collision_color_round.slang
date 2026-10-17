@@ -62,7 +62,7 @@ void collision_color_round(uint3 dispatch_id) {
         uint ji = joint_adjacency[idx];
         if ((ji & muscle_adjacency_tag) != 0) {
             muscle_constraint m = muscle_data[ji & ~muscle_adjacency_tag];
-            for (uint p = 0; p < m.path_count; p++) {
+            for (uint p = 0; p < m.path_count + m.wrap_count; p++) {
                 uint other = muscle_path_data[m.path_first + p].body;
                 if (other == bi || other >= pc.body_count) continue;
                 if (body_data[other].locked != 0) continue;

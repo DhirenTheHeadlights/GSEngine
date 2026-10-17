@@ -5,6 +5,7 @@ import gse.core;
 import gse.log;
 import gse.math;
 import gse.meta;
+import gse.time;
 import gse.win32;
 import std;
 
@@ -205,7 +206,7 @@ auto gse::layout_store::store::read(const std::filesystem::path& path) -> std::s
 
 auto gse::layout_store::store::flush() -> void {
 	const time budget = seconds(5.f);
-	const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(static_cast<std::int64_t>(budget.as<milliseconds>()));
+	const auto deadline = std::chrono::steady_clock::now() + to_chrono(budget);
 
 	std::unique_lock lock(m_mutex);
 	while (m_scheduled || m_in_flight > 0) {

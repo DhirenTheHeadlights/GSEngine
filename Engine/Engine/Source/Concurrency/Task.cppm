@@ -656,7 +656,7 @@ auto gse::task::wait_idle_for(const time budget) -> bool {
 		std::this_thread::yield();
 	}
 
-	const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(static_cast<std::int64_t>(budget.as<milliseconds>()));
+	const auto deadline = std::chrono::steady_clock::now() + to_chrono(budget);
 
 	std::unique_lock lk(idle_mutex);
 	return idle_cv.wait_until(

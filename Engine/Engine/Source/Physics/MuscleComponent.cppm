@@ -8,10 +8,27 @@ import gse.math;
 
 export namespace gse::physics {
 	constexpr std::size_t max_muscle_path_points = 8;
+	constexpr std::size_t max_muscle_wraps = 2;
 
 	struct muscle_attachment {
 		id entity;
 		vec3<displacement> local_point;
+		std::optional<std::uint32_t> frame;
+	};
+
+	struct muscle_wrap_cylinder {
+		vec3<displacement> center;
+		quat orientation = quat(1.f, 0.f, 0.f, 0.f);
+		length radius;
+		length half_length;
+		vec3f side;
+		std::uint32_t first_segment = 0;
+		std::uint32_t segment_end = 0;
+	};
+
+	struct muscle_wrap {
+		id entity;
+		muscle_wrap_cylinder cylinder;
 	};
 
 	struct muscle_properties {
@@ -25,6 +42,8 @@ export namespace gse::physics {
 	struct muscle_spec {
 		[[= networked]] std::array<muscle_attachment, max_muscle_path_points> path{};
 		[[= networked]] std::uint32_t path_count = 0;
+		[[= networked]] std::array<muscle_wrap, max_muscle_wraps> wraps{};
+		[[= networked]] std::uint32_t wrap_count = 0;
 		[[= networked]] muscle_properties properties;
 		bool resolved = false;
 	};

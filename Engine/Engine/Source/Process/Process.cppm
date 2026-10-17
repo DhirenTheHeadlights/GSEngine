@@ -23,6 +23,8 @@ export namespace gse::process {
 		std::filesystem::path output_path;
 		time limit;
 		std::stop_token cancel = {};
+		std::optional<std::filesystem::path> input_path = {};
+		std::optional<std::filesystem::path> error_path = {};
 	};
 
 	auto run_capture(
@@ -160,12 +162,18 @@ auto gse::process::run_capture(const capture_request& request) -> run_outcome {
 	};
 
 	const unique_handle capture(win32::CreateFileW(output.c_str(), win32::generic_write, win32::file_share_read, &inheritable, win32::create_always, win32::file_attribute_normal, nullptr));
-	const unique_handle null_input(win32::CreateFileW(L"NUL", win32::generic_read, win32::file_share_read | win32::file_share_write, &inheritable, win32::open_existing, 0, nullptr));
-	if (!capture.valid() || !null_input.valid()) {
+	const std::wstring input = request.input_path ? request.input_path->wstring() : std::wstring(L"NUL");
+	const unique_handle stdin_source(win32::CreateFileW(input.c_str(), win32::generic_read, win32::file_share_read | win32::file_share_write, &inheritable, win32::open_existing, 0, nullptr));
+	const unique_handle error_capture(request.error_path ? win32::CreateFileW(request.error_path->wstring().c_str(), win32::generic_write, win32::file_share_read, &inheritable, win32::create_always, win32::file_attribute_normal, nullptr) : nullptr);
+	if (!capture.valid() || !stdin_source.valid() || (request.error_path && !error_capture.valid())) {
 		return std::unexpected(run_error::launch_failed);
 	}
+	const win32::HANDLE error_handle = request.error_path ? error_capture.handle() : capture.handle();
 
-	std::array<win32::HANDLE, 2> inherited = { capture.handle(), null_input.handle() };
+	std::vector<win32::HANDLE> inherited = { capture.handle(), stdin_source.handle() };
+	if (request.error_path) {
+		inherited.push_back(error_handle);
+	}
 	win32::SIZE_T attribute_size = 0;
 	win32::InitializeProcThreadAttributeList(nullptr, 1, 0, &attribute_size);
 	if (attribute_size == 0) {
@@ -192,9 +200,9 @@ auto gse::process::run_capture(const capture_request& request) -> run_outcome {
 		.StartupInfo = {
 			.cb = sizeof(win32::STARTUPINFOEXW),
 			.dwFlags = win32::startf_use_std_handles,
-			.hStdInput = null_input.handle(),
+			.hStdInput = stdin_source.handle(),
 			.hStdOutput = capture.handle(),
-			.hStdError = capture.handle(),
+			.hStdError = error_handle,
 		},
 		.lpAttributeList = attributes,
 	};

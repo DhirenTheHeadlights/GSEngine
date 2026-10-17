@@ -188,6 +188,10 @@ namespace gse {
 		int monitor_index
 	) -> void;
 
+	[[nodiscard]] auto frame_insets(
+		const window::window_surface& s
+	) -> RECT;
+
 	auto set_client_rect(
 		const window::window_surface& s,
 		vec2i position,
@@ -1158,28 +1162,34 @@ auto gse::client_rect_in_screen(const HWND handle) -> rect_t<vec2i> {
 	);
 }
 
-auto gse::set_client_rect(const window::window_surface& s, const vec2i position, const vec2i size) -> void {
-	const HWND handle = to_hwnd(s.handle);
-
+auto gse::frame_insets(const window::window_surface& s) -> RECT {
+	RECT frame{};
 	if (s.custom_frame) {
-		SetWindowPos(handle, nullptr, position.x(), position.y(), size.x(), size.y(), swp_no_zorder | swp_no_activate);
-		return;
+		return frame;
 	}
 
-	RECT outer{
-		.left = position.x(),
-		.top = position.y(),
-		.right = position.x() + size.x(),
-		.bottom = position.y() + size.y(),
-	};
+	const HWND handle = to_hwnd(s.handle);
 	adjust_window_rect_for_dpi(
-		&outer,
+		&frame,
 		static_cast<DWORD>(GetWindowLongPtrW(handle, gwl_style)),
 		static_cast<DWORD>(GetWindowLongPtrW(handle, gwl_exstyle)),
 		dpi_for_window(handle)
 	);
+	return frame;
+}
 
-	SetWindowPos(handle, nullptr, outer.left, outer.top, outer.right - outer.left, outer.bottom - outer.top, swp_no_zorder | swp_no_activate);
+auto gse::set_client_rect(const window::window_surface& s, const vec2i position, const vec2i size) -> void {
+	const RECT frame = frame_insets(s);
+
+	SetWindowPos(
+		to_hwnd(s.handle),
+		nullptr,
+		position.x() + frame.left,
+		position.y() + frame.top,
+		size.x() + frame.right - frame.left,
+		size.y() + frame.bottom - frame.top,
+		swp_no_zorder | swp_no_activate
+	);
 }
 
 auto gse::surface_at(window::data& d, const vec2i screen_point) -> window::window_surface* {
@@ -1261,6 +1271,7 @@ auto gse::effective_restore_geometry(const window::data& d) -> window::geometry 
 }
 
 auto gse::restore_window_geometry(window::data& d) -> void {
+	const bool saved_before = plausible_restore_geometry(d.saved_geometry);
 	const window::geometry saved = effective_restore_geometry(d);
 	d.restore_maximized = saved.maximized;
 
@@ -1269,13 +1280,18 @@ auto gse::restore_window_geometry(window::data& d) -> void {
 		return;
 	}
 
-	const vec2i origin = work_area->top_left();
-	const vec2i extent = work_area->size();
+	const RECT frame = frame_insets(d.primary);
+	const vec2i origin{ work_area->top_left().x() - frame.left, work_area->top_left().y() - frame.top };
+	const vec2i extent{ work_area->size().x() - frame.right + frame.left, work_area->size().y() - frame.bottom + frame.top };
 
 	const int width = std::min(saved.width, extent.x());
 	const int height = std::min(saved.height, extent.y());
-	const int x = std::clamp(saved.x, origin.x(), origin.x() + extent.x() - width);
-	const int y = std::clamp(saved.y, origin.y(), origin.y() + extent.y() - height);
+	const int x = saved_before
+		? std::clamp(saved.x, origin.x(), origin.x() + extent.x() - width)
+		: origin.x() + (extent.x() - width) / 2;
+	const int y = saved_before
+		? std::clamp(saved.y, origin.y(), origin.y() + extent.y() - height)
+		: origin.y() + (extent.y() - height) / 2;
 
 	set_client_rect(d.primary, { x, y }, { width, height });
 }

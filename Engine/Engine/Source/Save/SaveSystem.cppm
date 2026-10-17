@@ -540,7 +540,7 @@ auto gse::save::registry::audit_overrides() const -> void {
 	}
 
 	for (const auto& name : unknown) {
-		std::cerr << std::format("error: setting override '{}' does not name a setting in that section\n", name);
+		std::println(std::cerr, "error: setting override '{}' does not name a setting in that section", name);
 	}
 	std::cerr.flush();
 	std::_Exit(2);

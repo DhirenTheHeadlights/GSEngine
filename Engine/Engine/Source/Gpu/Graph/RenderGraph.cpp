@@ -432,8 +432,8 @@ auto gse::gpu::render_graph::read_profile_slot(gpu_profile_slot& slot, const per
 			log::println(
 				log::level::warning,
 				log::category::render,
-				"GPU timestamp calibration places query 0 {:.3f} ms before command recording (frame {}, occurrence {}); suppressing aligned GPU spans for this slot",
-				(time_t<double>(slot.recorded_at) - calibrated_query_ref).as<milliseconds>(),
+				"GPU timestamp calibration places query 0 {:.3f:ms} before command recording (frame {}, occurrence {}); suppressing aligned GPU spans for this slot",
+				time_t<double>(slot.recorded_at) - calibrated_query_ref,
 				slot.frame_counter,
 				count
 			);

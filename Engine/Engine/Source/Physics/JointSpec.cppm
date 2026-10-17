@@ -37,6 +37,7 @@ export namespace gse::physics {
 		vec3<displacement> anchor_a;
 		vec3<displacement> anchor_b;
 		vec3<angular_stiffness> rest_stiffness = {};
+		std::array<std::optional<std::pair<angle, angle>>, 3> limits = {};
 	};
 
 	struct universal_joint {
@@ -45,7 +46,39 @@ export namespace gse::physics {
 		vec3f twist_axis = { 0.f, 1.f, 0.f };
 	};
 
-	using joint_config = std::variant<fixed_joint, distance_joint, hinge_joint, slider_joint, spring_joint, ball_joint, universal_joint>;
+	struct curve_segment {
+		angle start;
+		vec4f coefficients;
+	};
+
+	struct coordinate_curve {
+		vec3f axis = { 1.f, 0.f, 0.f };
+		std::optional<std::uint32_t> coordinate;
+		std::vector<curve_segment> segments;
+	};
+
+	struct spatial_curve {
+		std::array<coordinate_curve, 3> rotations;
+		std::array<coordinate_curve, 3> translations;
+	};
+
+	struct curve_frame {
+		vec3<displacement> anchor;
+		quat orientation = quat(1.f, 0.f, 0.f, 0.f);
+		spatial_curve transform;
+	};
+
+	struct coupled_joint {
+		vec3<displacement> anchor_a;
+		vec3<displacement> anchor_b;
+		quat frame_a = quat(1.f, 0.f, 0.f, 0.f);
+		quat frame_b = quat(1.f, 0.f, 0.f, 0.f);
+		spatial_curve transform;
+		std::vector<curve_frame> frames;
+		std::array<std::optional<std::pair<angle, angle>>, 3> limits = {};
+	};
+
+	using joint_config = std::variant<fixed_joint, distance_joint, hinge_joint, slider_joint, spring_joint, ball_joint, universal_joint, coupled_joint>;
 
 	struct joint_spec {
 		[[= networked]] id entity_a;

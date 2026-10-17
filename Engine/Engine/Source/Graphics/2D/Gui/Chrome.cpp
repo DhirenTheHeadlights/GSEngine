@@ -90,7 +90,7 @@ auto gse::gui::draw_window_caption_buttons(data& d, viewport_state& vp, const in
 
 	auto button = [&](const rectf& rect, const std::string_view key, const std::span<const symbol::stroke> glyph, const vec4f hover_color) {
 		const bool hovered = rect.contains(mouse_pos);
-		const id widget_id = ids::make_from_key(hash_combine(current_menu.id().number(), stable_id(key)));
+		const id widget_id = ids::make_from_key(hash_of(current_menu.id().number(), key));
 		const auto btn = interaction::press_from(vp.hot_widget_id, vp.active_widget_id, widget_id, hovered, hovered && pressed, released, true);
 
 		d.sprite_commands.push_back({
@@ -357,9 +357,7 @@ auto gse::gui::draw_menu_chrome(data& d, viewport_state& vp, const input::state&
 		const bool pressed = input_state.mouse_button_pressed(mouse_button::button_1);
 		const bool released = input_state.mouse_button_released(mouse_button::button_1);
 
-		const id close_id = ids::make_from_key(
-			hash_combine(current_menu.id().number(), stable_id("popout_close"))
-		);
+		const id close_id = ids::make_from_key(hash_of(current_menu.id().number(), "popout_close"));
 		const auto btn = interaction::press_from(vp.hot_widget_id, vp.active_widget_id, close_id, hovered, hovered && pressed, released, true);
 
 		const vec4f transparent{ 0.f, 0.f, 0.f, 0.f };

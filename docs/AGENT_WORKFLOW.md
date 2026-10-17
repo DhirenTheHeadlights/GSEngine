@@ -52,3 +52,7 @@ Two of the guide's demands are worth restating because they are the ones most of
 ## Reporting
 
 Report outcomes faithfully. If part of a task is blocked, finish everything else and say exactly what you left out and why. Scaling work down is the owner's call, not yours.
+
+## Goals
+
+A chat can pursue a goal: an aim that takes many tasks, recorded in a repo file the owner approved, with pass criteria, a charter of what may be done without asking, and a ledger of what has been tried. When your prompt carries a `## Goal` section, the record in it outranks your own sense of what is worth doing next. Work inside the charter without asking; anything outside it is the owner's call, so escalate rather than stretch it. Once apply has written the record, only steering runs edit it, and only its ledger.

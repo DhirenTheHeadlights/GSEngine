@@ -1,5 +1,6 @@
 export module gse.ide.analysis:symbol_index_builder;
 
+import gse.analysis;
 import gse.core;
 import gse.math;
 import gse.meta;
@@ -54,7 +55,7 @@ export namespace gse::ide::analysis {
 
 	struct tu_audit {
 		tu_symbols symbols;
-		std::vector<semantic_token> highlights;
+		std::vector<gse::analysis::semantic_token> highlights;
 		std::vector<identifier_use> identifiers;
 	};
 
@@ -194,14 +195,12 @@ auto gse::ide::analysis::run_plugin(const compilation_entry& entry, const symbol
 	});
 
 	std::string command_line = entry.command.command_line;
-	command_line += " -fplugin=\"" + request.plugin_dll.generic_native_encoded_string() + "\"";
-	command_line += " -fplugin-arg-gse_tokens-out=\"" + token_temp.generic_native_encoded_string() + "\"";
-	for (const std::filesystem::path& root : request.workspace_roots) {
-		command_line += " -fplugin-arg-gse_tokens-root=\"" + root.generic_native_encoded_string() + "\"";
-	}
-	if (records == plugin_records::symbols_and_audit) {
-		command_line += " -fplugin-arg-gse_tokens-audit";
-	}
+	command_line += gse::analysis::plugin_arguments({
+		.plugin = request.plugin_dll,
+		.out = token_temp,
+		.roots = request.workspace_roots,
+		.audit = records == plugin_records::symbols_and_audit,
+	});
 	command_line += " -MMD -MF \"" + dependency_temp.generic_native_encoded_string() + "\" -MT gseditor_index";
 
 	const time compile_limit = seconds(60.f);
@@ -245,12 +244,12 @@ auto gse::ide::analysis::run_plugin(const compilation_entry& entry, const symbol
 		if (sarif_in) {
 			sarif_stream << sarif_in.rdbuf();
 		}
-		const std::vector<diagnostic> diagnostics = gcc_diagnostics::parse_sarif(sarif_stream.str());
+		const std::vector<gse::analysis::diagnostic> diagnostics = gse::analysis::parse_sarif(sarif_stream.str());
 		if (!diagnostics.empty()) {
 			if (gcc_diagnostics::is_module_unavailable(diagnostics)) {
 				out.failure = symbol_index_failure::module_unavailable;
 			}
-			const diagnostic& first = diagnostics.front();
+			const gse::analysis::diagnostic& first = diagnostics.front();
 			out.failure_detail = std::format(
 				"{}:{}:{}: {}",
 				first.file.empty() ? entry.file.generic_display_string() : first.file.generic_display_string(),
@@ -288,7 +287,7 @@ auto gse::ide::analysis::symbol_index_builder::audit_one(const compilation_entry
 	plugin_run run = run_plugin(entry, request, plugin_records::symbols_and_audit, std::move(cancel));
 	return {
 		.symbols = std::move(run.symbols),
-		.highlights = semantic_tokens::parse(run.text),
+		.highlights = gse::analysis::parse_semantic_tokens(run.text),
 		.identifiers = semantic_tokens::parse_identifiers(run.text),
 	};
 }

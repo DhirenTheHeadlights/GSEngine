@@ -1,11 +1,10 @@
 export module gse.ide.analysis:symbol_extract;
 
+import gse.analysis;
 import gse.core;
 import gse.log;
 import gse.meta;
 import std;
-
-import :semantic_tokens;
 
 export namespace gse::ide::analysis {
 	using file_id = id;
@@ -26,16 +25,16 @@ export namespace gse::ide::analysis {
 	struct type_symbol_kind {};
 
 	enum class symbol_kind {
-		variable [[= semantic_kind::variable]],
-		parameter [[= semantic_kind::parameter]],
-		function [[= definition_symbol_kind{}, = semantic_kind::function]],
-		member [[= semantic_kind::member]],
-		type [[= definition_symbol_kind{}, = type_symbol_kind{}, = semantic_kind::type]],
-		enum_member [[= semantic_kind::enum_member]],
-		name_space [[= semantic_kind::name_space]],
-		enumeration [[= definition_symbol_kind{}, = type_symbol_kind{}, = semantic_kind::type]],
-		alias [[= semantic_kind::type]],
-		concept_decl [[= definition_symbol_kind{}, = type_symbol_kind{}, = semantic_kind::type]]
+		variable [[= gse::analysis::semantic_kind::variable]],
+		parameter [[= gse::analysis::semantic_kind::parameter]],
+		function [[= definition_symbol_kind{}, = gse::analysis::semantic_kind::function]],
+		member [[= gse::analysis::semantic_kind::member]],
+		type [[= definition_symbol_kind{}, = type_symbol_kind{}, = gse::analysis::semantic_kind::type]],
+		enum_member [[= gse::analysis::semantic_kind::enum_member]],
+		name_space [[= gse::analysis::semantic_kind::name_space]],
+		enumeration [[= definition_symbol_kind{}, = type_symbol_kind{}, = gse::analysis::semantic_kind::type]],
+		alias [[= gse::analysis::semantic_kind::type]],
+		concept_decl [[= definition_symbol_kind{}, = type_symbol_kind{}, = gse::analysis::semantic_kind::type]]
 	};
 
 	[[nodiscard]] constexpr auto is_definition_kind(
@@ -48,7 +47,7 @@ export namespace gse::ide::analysis {
 
 	[[nodiscard]] constexpr auto to_semantic_kind(
 		symbol_kind kind
-	) -> semantic_kind;
+	) -> gse::analysis::semantic_kind;
 
 	struct symbol_token {
 		std::string name;
@@ -89,7 +88,7 @@ export namespace gse::ide::analysis {
 		std::uint32_t line = 0;
 		std::uint32_t column = 0;
 		std::uint32_t length = 0;
-		semantic_kind kind = semantic_kind::variable;
+		gse::analysis::semantic_kind kind = gse::analysis::semantic_kind::variable;
 	};
 
 	struct unused_local {
@@ -133,8 +132,8 @@ constexpr auto gse::ide::analysis::is_type_kind(const symbol_kind kind) -> bool 
 	return enum_has_annotation<type_symbol_kind>(kind);
 }
 
-constexpr auto gse::ide::analysis::to_semantic_kind(const symbol_kind kind) -> semantic_kind {
-	return annotation_from_enum(kind, semantic_kind::variable);
+constexpr auto gse::ide::analysis::to_semantic_kind(const symbol_kind kind) -> gse::analysis::semantic_kind {
+	return annotation_from_enum(kind, gse::analysis::semantic_kind::variable);
 }
 
 namespace gse::ide::analysis {
@@ -203,7 +202,7 @@ auto gse::ide::analysis::symbol_tokens::parse(std::string_view text, std::string
 			std::uint32_t ln = 0;
 			std::uint32_t col = 0;
 			std::uint32_t len = 0;
-			const std::optional<semantic_kind> kind = semantic_tokens::kind_from(fields[4]);
+			const std::optional<gse::analysis::semantic_kind> kind = gse::analysis::semantic_kind_from(fields[4]);
 			if (gse::parse(fields[1], ln) && gse::parse(fields[2], col) && gse::parse(fields[3], len) && kind) {
 				out.params.push_back({
 					.file = intern_cached(out.files, paths, main_file),

@@ -6,6 +6,8 @@ Read `diff.patch` for the change, `scope.md` for what was agreed, and `report.md
 
 Apply `docs/CODE_REVIEW_GUIDE.md` in the order it sets out — correctness, architecture, engine congruence, dimensional correctness, runtime cost, complexity, then style — and work through its mandatory questions rather than reading for general impressions. Enforce `docs/STYLEGUIDE.md` directly against the declarations, definitions, and file organization in every changed file; do not infer compliance from the code looking tidy. For renderer, shader, or GPU work add `docs/GRAPHICS_REVIEW.md`.
 
+When the prompt carries a goal, its charter is part of what was agreed: work outside it, or an edit to the record's aim, criteria or charter, is a finding.
+
 The guide's recurring blind spots are where the real defects sit, so spend your attention there: conversions that leave a strong type with no external contract behind them, branches handling states the surrounding code cannot produce, caches and locks with no caller whose frequency was read, two paths deriving one fact independently, and a private reimplementation of something the engine already exports.
 
 Report findings most severe first, each with an exact file and line, and each stating impact, mechanism, resolution, and whether it is a one-off or an error class worth a guardrail. Do not report preference-only churn, and do not pad the list — a finding you are not confident in costs the owner more than it saves.

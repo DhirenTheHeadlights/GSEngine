@@ -3,6 +3,7 @@ export module gse.graphics:primitive_resolver;
 import gse.assets;
 import gse.concurrency;
 import gse.ecs;
+import gse.physics;
 
 import :primitive_specs;
 import :primitives;
@@ -17,6 +18,7 @@ export namespace gse::primitive_resolver {
 		write<primitive_sphere_spec> spheres,
 		write<primitive_cylinder_spec> cylinders,
 		write<primitive_mountain_ring_spec> mountain_rings,
+		write<primitive_hull_spec> hulls,
 		structural<render_component> renders
 	) -> async::task<>;
 
@@ -29,6 +31,8 @@ export namespace gse::primitive_resolver {
 		write<primitive_sphere_spec> spheres,
 		write<primitive_cylinder_spec> cylinders,
 		write<primitive_mountain_ring_spec> mountain_rings,
+		write<primitive_hull_spec> hulls,
+		read<physics::hull_definition> hull_definitions,
 		write<render_component> renders
 	) -> async::task<>;
 }

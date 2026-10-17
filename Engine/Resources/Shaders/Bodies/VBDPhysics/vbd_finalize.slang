@@ -44,6 +44,8 @@ void vbd_finalize(uint3 dispatch_id) {
 
         body.position = body.predicted_position;
         if (update_orient) {
+            mat3 turn = rotation_from_quat(quat_mul(body.predicted_orientation, quat_conjugate(body.orientation)));
+            body_data[bi].inv_inertia = mat3_mul(mat3_mul(turn, body.inv_inertia), mat3_transpose(turn));
             body.orientation = body.predicted_orientation;
         }
     }

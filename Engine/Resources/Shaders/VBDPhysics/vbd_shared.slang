@@ -30,10 +30,47 @@ public float3 to_axis_angle(float4 q) {
     float q_s = q.x;
     float3 q_v = q.yzw;
     if (q_s < 0.0) { q_s = -q_s; q_v = -q_v; }
-    if (q_s > 0.9999) return q_v * 2.0;
-    float angle = 2.0 * acos(clamp(q_s, 0.0, 1.0));
-    float sin_half = sqrt(1.0 - q_s * q_s);
-    return (sin_half > 1e-6) ? q_v * (angle / sin_half) : q_v * 2.0;
+    float sin_half = length(q_v);
+    if (sin_half < 1e-7) return q_v * 2.0;
+    return q_v * (2.0 * atan2(sin_half, q_s) / sin_half);
+}
+
+public float3 angular_limit_axis(float4 orientation_a, float3 hinge_axis, bool per_axis, int row) {
+    float3 basis = float3(row == 0 ? 1.0 : 0.0, row == 1 ? 1.0 : 0.0, row == 2 ? 1.0 : 0.0);
+    return rotate_vector(orientation_a, per_axis ? basis : hinge_axis);
+}
+
+public float coupled_limit_scale(float3 axis, uint normalized) {
+    return normalized != 0 ? 1.0 / length(axis) : 1.0;
+}
+
+public float joint_carried_fraction(float3 c0, float alpha, float correction_speed, float dt) {
+    if (correction_speed <= 0.0 || alpha >= 1.0) {
+        return alpha;
+    }
+    float carried = length(c0);
+    if (carried <= 0.0) {
+        return alpha;
+    }
+    return min(alpha, max(0.0, 1.0 - correction_speed * dt / carried));
+}
+
+public float2 angular_limit_force(float coordinate, float lower, float upper, float c0, float scale, float lambda, float penalty) {
+    bool upper_side = coordinate >= (lower + upper) * 0.5;
+    float error = ((coordinate - (upper_side ? upper : lower)) - c0) * scale;
+    float unclamped = penalty * error + lambda;
+    return float2(error, upper_side ? max(unclamped, 0.0) : min(unclamped, 0.0));
+}
+
+public bool angular_limit_dual(float coordinate, float lower, float upper, float c0, float scale, float ang_beta, float ang_penalty_max, inout float lambda, inout float penalty, out float c_limit) {
+    float2 limit = angular_limit_force(coordinate, lower, upper, c0, scale, lambda, penalty);
+    c_limit = limit.x;
+    lambda = limit.y;
+    if (lambda == 0.0) {
+        return false;
+    }
+    penalty = min(penalty + ang_beta * abs(c_limit), ang_penalty_max);
+    return true;
 }
 
 public typedef float3x3 mat3;

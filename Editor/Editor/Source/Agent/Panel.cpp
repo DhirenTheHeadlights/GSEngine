@@ -132,7 +132,7 @@ auto gse::ide::agent::draw_session_info(const gui::draw_context& ctx, data& d, c
 		{ "model", s->info.model.empty() ? "-" : s->info.model },
 		{ "session", s->info.agent_id.empty() ? "-" : s->info.agent_id },
 		{ "turns", std::format("{}", s->info.turns) },
-		{ "api time", std::format("{:.1f}s", s->info.api_time.as<seconds>()) },
+		{ "api time", std::format("{:.1f:s}", s->info.api_time) },
 		{ "api equivalent", std::format("${:.4f}", s->info.cost) },
 		{ "tool output", tool_output_label(s->info) },
 	};
@@ -362,6 +362,9 @@ auto gse::ide::agent::overview_tab_id() -> id {
 auto gse::ide::agent::overview_task(const session& s) -> std::string {
 	if (s.hibernating && !s.wake_prompt.empty()) {
 		return "on wake: " + std::string(first_line(s.wake_prompt));
+	}
+	if (s.goal && s.goal->waiting) {
+		return "on wake: " + std::string(first_line(s.goal->waiting->then));
 	}
 
 	for (const transcript_row& row : s.rows | std::views::reverse) {
@@ -907,7 +910,7 @@ auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, transcript_view
 	const gui::interaction::press tail_press = ui.draw<gui::follow_tail>({
 		.area = area,
 		.state = v.state,
-		.widget_id = generate_temp_id(hash_combine(v.log_id.number(), stable_id("agent_follow_tail"))),
+		.widget_id = generate_temp_id(hash_of(v.log_id.number(), "agent_follow_tail")),
 	});
 
 	const gui::buffer_position at = gui::text_area_position_at(ctx, {
@@ -1087,8 +1090,7 @@ auto gse::ide::agent::draw_input(gui::builder& ui, session& s, const input_layou
 
 	const float button_extent = sty.font_size * 1.4f;
 	const bool gated = s.gate.has_value() && !s.pending_transition;
-	const phase_policy granted = gated ? policy_of(next_phase(s, s.gate->findings)) : phase_policy{};
-	const std::string_view approve_text = granted.enter_label;
+	const std::string approve_text = gated ? gate_label(s, *s.gate) : std::string{};
 	const float action_width = gated ? text_view->width(approve_text, sty.font_size) + pad * 2.f : button_extent;
 	const rectf stop = rectf::from_position_size(
 		{ area.right() - pad - action_width, first_row_center + button_extent * 0.5f },
@@ -1145,6 +1147,7 @@ auto gse::ide::agent::draw_input(gui::builder& ui, session& s, const input_layou
 	});
 
 	const bool busy = is_busy(s);
+	const bool pausable = !busy && s.goal && s.goal->waiting;
 
 	if (show_controls) {
 		draw_model_controls(ui, s, model_rect, effort_rect);
@@ -1160,8 +1163,13 @@ auto gse::ide::agent::draw_input(gui::builder& ui, session& s, const input_layou
 			reset_input(s);
 		}
 	}
-	else if (gui::caption_button(ui, stop, "##agent_stop", gui::symbol::stop(), sty.color_tab_hovered, busy) && busy) {
-		interrupt_session(s);
+	else if (gui::caption_button(ui, stop, "##agent_stop", gui::symbol::stop(), sty.color_tab_hovered, busy || pausable)) {
+		if (busy) {
+			interrupt_session(s);
+		}
+		else {
+			pause_goal(s);
+		}
 	}
 
 	if (!submit) {
@@ -1378,7 +1386,7 @@ auto gse::ide::agent::draw_phase(gui::builder& ui, session& s, const rectf& area
 	const float used = draw_phase_pipeline(ctx, s, pipeline, pipeline);
 
 	const std::string waiting = s.pending_transition
-		? std::format("approved \xC2\xB7 finishing the turn before {}", std::string_view(policy_of(next_phase(s, s.pending_transition->findings)).label))
+		? std::format("approved \xC2\xB7 finishing the turn before {}", std::string_view(policy_of(next_phase(s, *s.pending_transition)).label))
 		: s.gate
 		? s.gate->findings > 0
 			? std::format("reported {} finding(s)", s.gate->findings)

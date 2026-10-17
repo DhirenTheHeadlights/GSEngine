@@ -12,8 +12,8 @@ void apply_one_restitution(uint ci) {
     body_state ba = body_data[c.body_a];
     body_state bb = body_data[c.body_b];
 
-    float3 rAW = rotate_vector(ba.orientation, c.local_anchor_a);
-    float3 rBW = rotate_vector(bb.orientation, c.local_anchor_b);
+    float3 rAW = rotate_vector(ba.predicted_orientation, c.local_anchor_a);
+    float3 rBW = rotate_vector(bb.predicted_orientation, c.local_anchor_b);
     float3 va = ba.velocity + cross(ba.angular_velocity, rAW);
     float3 vb = bb.velocity + cross(bb.angular_velocity, rBW);
     float v_rel_after = dot(c.normal, va - vb);
@@ -27,18 +27,22 @@ void apply_one_restitution(uint ci) {
     float dv = v_target - v_rel_after;
     if (dv <= 0.0) return;
 
-    float w_a = (ba.locked != 0 || ba.mass <= 1e-10) ? 0.0 : 1.0 / ba.mass;
-    float w_b = (bb.locked != 0 || bb.mass <= 1e-10) ? 0.0 : 1.0 / bb.mass;
-    float w_total = w_a + w_b;
-    if (w_total <= 0.0) return;
+    float effective = contact_effective_mass(ba, bb, rAW, rBW, c.normal);
+    if (effective <= 0.0) return;
 
-    float3 impulse = c.normal * (dv / w_total);
+    float3 impulse = c.normal * (dv * effective);
 
-    if (ba.locked == 0) {
-        body_data[c.body_a].velocity = ba.velocity + impulse * w_a;
+    if (ba.locked == 0 && ba.mass > 1e-10) {
+        body_data[c.body_a].velocity = ba.velocity + impulse / ba.mass;
+        if (ba.update_orientation != 0) {
+            body_data[c.body_a].angular_velocity = ba.angular_velocity + mat3_mul_vec(ba.inv_inertia, cross(rAW, impulse));
+        }
     }
-    if (bb.locked == 0) {
-        body_data[c.body_b].velocity = bb.velocity - impulse * w_b;
+    if (bb.locked == 0 && bb.mass > 1e-10) {
+        body_data[c.body_b].velocity = bb.velocity - impulse / bb.mass;
+        if (bb.update_orientation != 0) {
+            body_data[c.body_b].angular_velocity = bb.angular_velocity - mat3_mul_vec(bb.inv_inertia, cross(rBW, impulse));
+        }
     }
 }
 

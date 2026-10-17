@@ -373,9 +373,31 @@ auto gse::ide::search::publish_file_search_snapshot(index_state& index) -> void 
 	index.current_search_snapshot = std::move(combined);
 }
 
+auto gse::ide::search::completion_kind_of(const analysis::symbol_kind kind) -> std::optional<complete::entity_kind> {
+	switch (kind) {
+		case analysis::symbol_kind::function: return complete::entity_kind::function;
+		case analysis::symbol_kind::variable: return complete::entity_kind::variable;
+		case analysis::symbol_kind::member: return complete::entity_kind::field;
+		case analysis::symbol_kind::enum_member: return complete::entity_kind::enumerator;
+		case analysis::symbol_kind::name_space: return complete::entity_kind::name_space;
+		case analysis::symbol_kind::type:
+		case analysis::symbol_kind::enumeration:
+		case analysis::symbol_kind::alias:
+		case analysis::symbol_kind::concept_decl: return complete::entity_kind::type;
+		case analysis::symbol_kind::parameter: return std::nullopt;
+	}
+	return std::nullopt;
+}
+
+auto gse::ide::search::unqualified_name(const std::string_view qualified) -> std::string_view {
+	const std::size_t cut = qualified.rfind("::");
+	return cut == std::string_view::npos ? qualified : qualified.substr(cut + 2);
+}
+
 auto gse::ide::search::publish_symbol_search_snapshot(index_state& index) -> void {
 	auto next = next_symbol_search_snapshot(index);
 	auto searchable = std::make_shared<std::vector<searchable_symbol>>();
+	auto completion = std::make_shared<complete::model>();
 	searchable->reserve(index.symbols.symbols.size());
 	for (const symbol_entry& symbol : index.symbols.symbols) {
 		searchable->push_back({
@@ -386,8 +408,30 @@ auto gse::ide::search::publish_symbol_search_snapshot(index_state& index) -> voi
 			.line = symbol.line,
 			.column = symbol.column,
 		});
+		const std::optional<complete::entity_kind> kind = completion_kind_of(symbol.kind);
+		if (!kind || !symbol.is_definition) {
+			continue;
+		}
+		const std::size_t cut = symbol.qualified.rfind("::");
+		completion->namespace_entries.push_back({
+			.name_space = cut == std::string::npos ? std::string() : symbol.qualified.substr(0, cut),
+			.what = {
+				.name = symbol.name,
+				.kind = *kind,
+			},
+		});
 	}
+	completion->index();
 	next->symbols = std::move(searchable);
+	next->completion = std::move(completion);
+
+	auto usage = std::make_shared<complete::usage_table>();
+	for (const std::vector<xref_entry>& refs : index.symbols.xrefs | std::views::values) {
+		for (const xref_entry& ref : refs) {
+			++usage->words[std::string(unqualified_name(ref.qualified.tag()))];
+		}
+	}
+	next->usage = std::move(usage);
 
 	auto lints = std::make_shared<lint_snapshot>();
 	lints->symbol_generation = next->symbol_generation;
@@ -1067,7 +1111,7 @@ auto gse::ide::search::index_state::declaration_of(const std::string_view name, 
 	};
 }
 
-auto gse::ide::search::index_state::semantic_kind_of(const std::string_view name) const -> std::expected<analysis::semantic_kind, lookup_error> {
+auto gse::ide::search::index_state::semantic_kind_of(const std::string_view name) const -> std::expected<gse::analysis::semantic_kind, lookup_error> {
 	std::shared_lock _(mutex);
 	if (!symbols_ready.load(std::memory_order_acquire)) {
 		return unexpected_lookup(lookup_failure::index_building, std::string(name));
@@ -1402,32 +1446,34 @@ auto gse::ide::search::file_fingerprint(const std::filesystem::path& file, file_
 		cache.emplace(raw, fingerprint);
 		return fingerprint;
 	}
-	std::uint64_t fingerprint = file_identity.number();
 	std::error_code time_ec;
 	const std::filesystem::file_time_type modified = std::filesystem::last_write_time(canonical, time_ec);
-	fingerprint = hash_combine(fingerprint, time_ec ? 0ull : static_cast<std::uint64_t>(modified.time_since_epoch().count()));
 	std::error_code size_ec;
 	const std::uintmax_t size = std::filesystem::file_size(canonical, size_ec);
-	fingerprint = hash_combine(fingerprint, size_ec ? 0ull : static_cast<std::uint64_t>(size));
+	const std::uint64_t fingerprint = hash_of(
+		file_identity.number(),
+		time_ec ? 0 : modified.time_since_epoch().count(),
+		size_ec ? 0 : size
+	);
 	cache.emplace(raw, fingerprint);
 	cache.try_emplace(canonical_key, fingerprint);
 	return fingerprint;
 }
 
 auto gse::ide::search::tu_fingerprint(const analysis::compilation_entry& entry, const std::filesystem::path& plugin, const std::span<const std::filesystem::path> dependencies, file_fingerprint_cache& file_fingerprints) -> std::uint64_t {
-	std::uint64_t fingerprint = stable_id("tu_symbol_cache");
-	fingerprint = hash_combine(fingerprint, tu_cache_version);
-	fingerprint = hash_combine(fingerprint, entry.command.fingerprint);
-	fingerprint = hash_combine(fingerprint, file_fingerprint(plugin, file_fingerprints));
-	fingerprint = hash_combine(fingerprint, dependencies.size());
-	for (const std::filesystem::path& dependency : dependencies) {
-		fingerprint = hash_combine(fingerprint, file_fingerprint(dependency, file_fingerprints));
-	}
-	return fingerprint;
+	return hash_of(
+		"tu_symbol_cache",
+		tu_cache_version,
+		entry.command.fingerprint,
+		file_fingerprint(plugin, file_fingerprints),
+		dependencies | std::views::transform([&file_fingerprints](const std::filesystem::path& dependency) {
+			return file_fingerprint(dependency, file_fingerprints);
+		})
+	);
 }
 
 auto gse::ide::search::tu_cache_path(const index_state& index, const analysis::compilation_entry& entry) -> std::filesystem::path {
-	const std::uint64_t id = hash_combine(canonical_path_id(entry.file).second.number(), entry.command.fingerprint);
+	const std::uint64_t id = hash_of(canonical_path_id(entry.file).second.number(), entry.command.fingerprint);
 	return config::cache_dir() / "symbols" / std::format("{:016x}.bin", id);
 }
 

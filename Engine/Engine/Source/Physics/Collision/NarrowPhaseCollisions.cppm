@@ -921,15 +921,6 @@ auto gse::narrow_phase_collision::generate_manifold(const bounding_box& bb1, con
 		return static_cast<int>(std::floor(v * 10000.f + (v >= 0.f ? 0.5f : -0.5f)));
 	};
 
-	const auto pack_feature = [](const feature_id& feature) -> std::uint64_t {
-		return (static_cast<std::uint64_t>(static_cast<std::uint8_t>(feature.type_a)) << 56) |
-			(static_cast<std::uint64_t>(feature.index_a) << 48) | (static_cast<std::uint64_t>(feature.side_a0) << 40) |
-			(static_cast<std::uint64_t>(feature.side_a1) << 32) |
-			(static_cast<std::uint64_t>(static_cast<std::uint8_t>(feature.type_b)) << 24) |
-			(static_cast<std::uint64_t>(feature.index_b) << 16) | (static_cast<std::uint64_t>(feature.side_b0) << 8) |
-			static_cast<std::uint64_t>(feature.side_b1);
-	};
-
 	const auto derive_fallback_feature = [&](const vec3<position>& point) -> feature_id {
 		const auto classify = [](const bounding_box& bb, const vec3f& support_dir, const vec3<position>& world_point) {
 			struct detail {

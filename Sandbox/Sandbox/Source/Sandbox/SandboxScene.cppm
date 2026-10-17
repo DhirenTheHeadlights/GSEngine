@@ -867,10 +867,6 @@ auto sandbox::physics_parity::run(gse::context& ctx, data& d, const gse::channel
 		return {};
 	}
 
-	const auto fold = [&](const auto& v) {
-		d.hash = gse::hash_combine(d.hash, v);
-	};
-
 	const auto owners = motions.owner_ids();
 	for (std::size_t i = 0; i < owners.size(); ++i) {
 		const auto* tc = transforms.find(owners[i]);
@@ -878,12 +874,7 @@ auto sandbox::physics_parity::run(gse::context& ctx, data& d, const gse::channel
 		if (!tc || !mc) {
 			continue;
 		}
-		fold(tc->position.x());
-		fold(tc->position.y());
-		fold(tc->position.z());
-		fold(mc->current_velocity.x());
-		fold(mc->current_velocity.y());
-		fold(mc->current_velocity.z());
+		d.hash = gse::hash_of(d.hash, tc->position, mc->current_velocity);
 	}
 
 	if (d.steps_run % 10 == 0 && owners.size() > 4) {

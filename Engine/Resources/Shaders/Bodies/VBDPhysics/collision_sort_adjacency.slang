@@ -1,18 +1,41 @@
 
+float side_inverse_mass(body_state body, float3 r, float3 dir) {
+    float w = body.mass > 1e-10 ? 1.0 / body.mass : 0.0;
+    if (body.update_orientation != 0) {
+        w += dot(cross(mat3_mul_vec(body.inv_inertia, cross(r, dir)), r), dir);
+    }
+    return w;
+}
+
 float joint_effective_mass(body_state body_a, body_state body_b, float3 rAW, float3 rBW, float3 dir) {
-    float inv_mass_sum = 0.0;
-    if (body_a.locked == 0 && body_a.mass > 1e-10) inv_mass_sum += 1.0 / body_a.mass;
-    if (body_b.locked == 0 && body_b.mass > 1e-10) inv_mass_sum += 1.0 / body_b.mass;
-    if (body_a.update_orientation != 0 && body_a.locked == 0) {
-        float3 ang_j_a = cross(rAW, dir);
-        inv_mass_sum += dot(cross(mat3_mul_vec(body_a.inv_inertia, ang_j_a), rAW), dir);
+    bool any = false;
+    float heaviest = 0.0;
+    if (body_a.locked == 0) {
+        heaviest = side_inverse_mass(body_a, rAW, dir);
+        any = true;
     }
-    if (body_b.update_orientation != 0 && body_b.locked == 0) {
-        float3 ang_j_b = cross(rBW, dir);
-        inv_mass_sum += dot(cross(mat3_mul_vec(body_b.inv_inertia, ang_j_b), rBW), dir);
+    if (body_b.locked == 0) {
+        float w_b = side_inverse_mass(body_b, rBW, dir);
+        heaviest = any ? min(heaviest, w_b) : w_b;
+        any = true;
     }
-    if (isinf(inv_mass_sum) || isnan(inv_mass_sum) || inv_mass_sum <= 1e-10) return 0.0;
-    return 1.0 / inv_mass_sum;
+    if (!any || isinf(heaviest) || isnan(heaviest) || heaviest <= 1e-10) return 0.0;
+    return 1.0 / heaviest;
+}
+
+float joint_angular_floor(body_state body_a, body_state body_b, float3 axis, float h_squared) {
+    bool any = false;
+    float heaviest = 0.0;
+    if (body_a.locked == 0) {
+        heaviest = dot(axis, mat3_mul_vec(body_a.inv_inertia, axis));
+        any = true;
+    }
+    if (body_b.locked == 0) {
+        float w_b = dot(axis, mat3_mul_vec(body_b.inv_inertia, axis));
+        heaviest = any ? min(heaviest, w_b) : w_b;
+        any = true;
+    }
+    return (any && heaviest > 1e-10) ? (1.0 / heaviest / h_squared) : solver_config_data[0].ang_penalty_min;
 }
 
 void collision_sort_adjacency(uint3 dispatch_id) {
@@ -95,15 +118,13 @@ void collision_sort_adjacency(uint3 dispatch_id) {
         m.excitation = muscle_excitation_data[idx];
         m.activation = target + (m.activation - target) * exp(-pc.dt / lag);
         float path = 0.0;
-        for (uint k = 0; k + 1 < m.path_count; k++) {
-            muscle_path_point from = muscle_path_data[m.path_first + k];
-            muscle_path_point to = muscle_path_data[m.path_first + k + 1];
-            body_state from_body = body_data[from.body];
-            body_state to_body = body_data[to.body];
-            path += length(
-                (to_body.position.xyz + rotate_vector(to_body.orientation, to.local_point.xyz)) -
-                (from_body.position.xyz + rotate_vector(from_body.orientation, from.local_point.xyz))
-            );
+        if (m.wrap_count != 0) {
+            path = wrapped_start_length(m);
+        }
+        else {
+            for (uint k = 0; k + 1 < m.path_count; k++) {
+                path += length(start_muscle_point(muscle_path_data[m.path_first + k + 1]) - start_muscle_point(muscle_path_data[m.path_first + k]));
+            }
         }
         m.path_length_start = path;
         muscle_data[idx] = m;
@@ -115,17 +136,25 @@ void collision_sort_adjacency(uint3 dispatch_id) {
         if (j.body_a >= body_count || j.body_b >= body_count) return;
         body_state ba = body_data[j.body_a];
         body_state bb = body_data[j.body_b];
+        if (ba.reset_pending == 1 || bb.reset_pending == 1) {
+            j.pos_lambda = 0.0;
+            j.pos_penalty = 0.0;
+            j.ang_lambda = 0.0;
+            j.ang_penalty = 0.0;
+        }
+        bool is_coupled = j.type == joint_type::coupled;
+        coupled_frame coupled = {};
+        if (is_coupled) {
+            coupled = coupled_frame_of(j.curve_words, ba.orientation, bb.orientation);
+        }
         float3 r_aw = rotate_vector(ba.orientation, j.local_anchor_a.xyz);
         float3 r_bw = rotate_vector(bb.orientation, j.local_anchor_b.xyz);
         float3 d = (ba.position.xyz + r_aw) - (bb.position.xyz + r_bw);
+        float3 r_target = is_coupled ? r_aw + coupled.target_offset : r_aw;
 
         {
             float wgamma = solver_config_data[0].gamma;
             float wh2 = pc.h_squared;
-
-            j.pos_lambda *= wgamma;
-            j.ang_lambda *= wgamma;
-            if (j.limits_enabled != 0) j.limit_lambda *= wgamma;
 
             int num_pos_rows = 3;
             if (j.type == joint_type::distance) num_pos_rows = 1;
@@ -137,34 +166,30 @@ void collision_sort_adjacency(uint3 dispatch_id) {
                     wdir = (length(d) > 1e-7) ? normalize(d) : float3(0, 1, 0);
                 }
                 else if (j.type == joint_type::slider) {
-                    float3 axis_w = rotate_vector(ba.orientation, j.local_axis_a.xyz);
-                    float3 perp0 = cross(axis_w, float3(0, 1, 0));
-                    if (length(perp0) < 1e-6) perp0 = cross(axis_w, float3(1, 0, 0));
-                    perp0 = normalize(perp0);
-                    wdir = (wk == 0) ? perp0 : normalize(cross(axis_w, perp0));
+                    wdir = body_perpendicular(ba.orientation, j.local_axis_a.xyz, wk);
                 }
                 else {
                     wdir = (wk == 0) ? float3(1, 0, 0) : ((wk == 1) ? float3(0, 1, 0) : float3(0, 0, 1));
                 }
-                float eff = joint_effective_mass(ba, bb, r_aw, r_bw, wdir) / wh2;
+                float eff = joint_effective_mass(ba, bb, r_target, r_bw, wdir) / wh2;
                 float cap = solver_config_data[0].penalty_max;
                 if (j.compliance > 0.0) cap = min(1.0 / max(j.compliance * wh2, 1e-10), solver_config_data[0].penalty_max);
-                j.pos_penalty[wk] = clamp(max(j.pos_penalty[wk] * wgamma, eff), solver_config_data[0].penalty_min, cap);
+                j.pos_penalty[wk] = clamp(max(j.pos_penalty[wk], eff), solver_config_data[0].penalty_min, cap);
             }
 
             int num_ang_rows = 3;
             if (j.type == joint_type::distance || j.type == joint_type::ball) num_ang_rows = 0;
             else if (j.type == joint_type::hinge) num_ang_rows = 2;
+            else if (is_coupled) num_ang_rows = int(3 - coupled.count);
             else if (j.type == joint_type::universal) num_ang_rows = 1;
 
             for (int wk = 0; wk < num_ang_rows; wk++) {
                 float3 wadir;
-                if (j.type == joint_type::hinge) {
-                    float3 axis_a = rotate_vector(ba.orientation, j.local_axis_a.xyz);
-                    float3 perp_u = cross(axis_a, float3(0, 1, 0));
-                    if (length(perp_u) < 1e-6) perp_u = cross(axis_a, float3(1, 0, 0));
-                    perp_u = normalize(perp_u);
-                    wadir = (wk == 0) ? perp_u : normalize(cross(axis_a, perp_u));
+                if (is_coupled) {
+                    wadir = coupled.perpendiculars[wk];
+                }
+                else if (j.type == joint_type::hinge) {
+                    wadir = body_perpendicular(ba.orientation, j.local_axis_a.xyz, wk);
                 }
                 else if (j.type == joint_type::universal) {
                     wadir = rotate_vector(ba.orientation, j.local_axis_a.xyz);
@@ -172,32 +197,55 @@ void collision_sort_adjacency(uint3 dispatch_id) {
                 else {
                     wadir = (wk == 0) ? float3(1, 0, 0) : ((wk == 1) ? float3(0, 1, 0) : float3(0, 0, 1));
                 }
-                float inv_i_sum = 0.0;
-                if (ba.locked == 0) inv_i_sum += dot(wadir, mat3_mul_vec(ba.inv_inertia, wadir));
-                if (bb.locked == 0) inv_i_sum += dot(wadir, mat3_mul_vec(bb.inv_inertia, wadir));
-                float eff_ang = (inv_i_sum > 1e-10) ? (1.0 / inv_i_sum / wh2) : solver_config_data[0].ang_penalty_min;
-                j.ang_penalty[wk] = clamp(max(j.ang_penalty[wk] * wgamma, eff_ang), solver_config_data[0].ang_penalty_min, solver_config_data[0].ang_penalty_max);
+                float eff_ang = joint_angular_floor(ba, bb, wadir, wh2);
+                j.ang_penalty[wk] = clamp(max(j.ang_penalty[wk], eff_ang), solver_config_data[0].ang_penalty_min, solver_config_data[0].ang_penalty_max);
             }
 
-            if (j.limits_enabled != 0) {
-                float3 limit_axis = rotate_vector(ba.orientation, j.local_axis_a.xyz);
-                float inv_i_sum = 0.0;
-                if (ba.locked == 0) inv_i_sum += dot(limit_axis, mat3_mul_vec(ba.inv_inertia, limit_axis));
-                if (bb.locked == 0) inv_i_sum += dot(limit_axis, mat3_mul_vec(bb.inv_inertia, limit_axis));
-                float eff_limit = (inv_i_sum > 1e-10) ? (1.0 / inv_i_sum / wh2) : solver_config_data[0].ang_penalty_min;
-                j.limit_penalty = clamp(max(j.limit_penalty * wgamma, eff_limit), solver_config_data[0].ang_penalty_min, solver_config_data[0].ang_penalty_max);
+            for (int wk = 0; wk < 3; wk++) {
+                if ((j.limited_rows & (1u << wk)) == 0) continue;
+                float3 limit_axis;
+                if (is_coupled) {
+                    limit_axis = coupled.coordinate_axes[uint(wk) + coupled.count - 3];
+                    limit_axis *= coupled_limit_scale(limit_axis, solver_config_data[0].coupled_limit_normalized);
+                }
+                else limit_axis = angular_limit_axis(ba.orientation, j.local_axis_a.xyz, j.type == joint_type::ball, wk);
+                float eff_limit = joint_angular_floor(ba, bb, limit_axis, wh2);
+                j.ang_penalty[wk] = clamp(max(j.ang_penalty[wk] * wgamma, eff_limit), solver_config_data[0].ang_penalty_min, solver_config_data[0].ang_penalty_max);
             }
         }
 
         if (j.type == joint_type::distance) {
             j.pos_c0.x = length(d) - j.target_distance;
         }
+        else if (is_coupled) {
+            j.pos_c0 = (ba.position.xyz + r_aw + coupled.target_offset) - (bb.position.xyz + r_bw);
+            float3 phi = coupled_swing(coupled);
+            for (int lk = 0; lk < int(3 - coupled.count); lk++) {
+                j.ang_c0[lk] = dot(coupled.perpendiculars[lk], phi);
+            }
+            for (uint ck = 0; ck < coupled.count; ck++) {
+                int slot = coupled_slot(coupled, ck);
+                if ((j.limited_rows & (1u << slot)) == 0) continue;
+                float coordinate = coupled.coordinates[ck];
+                if (coordinate < j.limit_lower[slot]) j.ang_c0[slot] = coordinate - j.limit_lower[slot];
+                else if (coordinate > j.limit_upper[slot]) j.ang_c0[slot] = coordinate - j.limit_upper[slot];
+                else j.ang_c0[slot] = 0.0;
+            }
+        }
         else if (j.type == joint_type::fixed || j.type == joint_type::hinge || j.type == joint_type::ball || j.type == joint_type::universal) {
             j.pos_c0 = d;
 
-            if (j.type != joint_type::ball) {
+            if (j.type != joint_type::ball || j.limited_rows != 0) {
                 float4 q_error = quat_mul(bb.orientation, quat_mul(quat_conjugate(ba.orientation), quat_conjugate(j.rest_orientation)));
                 float3 theta = to_axis_angle(q_error);
+
+                for (int lk = 0; lk < 3; lk++) {
+                    if ((j.limited_rows & (1u << lk)) == 0) continue;
+                    float coordinate = dot(angular_limit_axis(ba.orientation, j.local_axis_a.xyz, j.type == joint_type::ball, lk), theta);
+                    if (coordinate < j.limit_lower[lk]) j.ang_c0[lk] = coordinate - j.limit_lower[lk];
+                    else if (coordinate > j.limit_upper[lk]) j.ang_c0[lk] = coordinate - j.limit_upper[lk];
+                    else j.ang_c0[lk] = 0.0;
+                }
 
                 if (j.type == joint_type::fixed) {
                     j.ang_c0 = theta;
@@ -206,34 +254,18 @@ void collision_sort_adjacency(uint3 dispatch_id) {
                     float3 axis_a = rotate_vector(ba.orientation, j.local_axis_a.xyz);
                     j.ang_c0.x = dot(axis_a, theta);
                 }
-                else {
+                else if (j.type == joint_type::hinge) {
                     float3 axis_a = rotate_vector(ba.orientation, j.local_axis_a.xyz);
                     float3 axis_b = rotate_vector(bb.orientation, j.local_axis_b.xyz);
                     float3 swing_error = cross(axis_a, axis_b);
-                    float3 perp_u = cross(axis_a, float3(0, 1, 0));
-                    if (length(perp_u) < 1e-6) perp_u = cross(axis_a, float3(1, 0, 0));
-                    perp_u = normalize(perp_u);
-                    float3 perp_v = normalize(cross(axis_a, perp_u));
-                    j.ang_c0.x = dot(perp_u, swing_error);
-                    j.ang_c0.y = dot(perp_v, swing_error);
-
-                    if (j.limits_enabled != 0) {
-                        float twist = dot(axis_a, theta);
-                        if (twist < j.limit_lower) j.limit_c0 = twist - j.limit_lower;
-                        else if (twist > j.limit_upper) j.limit_c0 = twist - j.limit_upper;
-                        else j.limit_c0 = 0.0;
-                    }
+                    j.ang_c0.x = dot(body_perpendicular(ba.orientation, j.local_axis_a.xyz, 0), swing_error);
+                    j.ang_c0.y = dot(body_perpendicular(ba.orientation, j.local_axis_a.xyz, 1), swing_error);
                 }
             }
         }
         else if (j.type == joint_type::slider) {
-            float3 axis_w = normalize(rotate_vector(ba.orientation, j.local_axis_a.xyz));
-            float3 perp0 = cross(axis_w, float3(0, 1, 0));
-            if (length(perp0) < 1e-6) perp0 = cross(axis_w, float3(1, 0, 0));
-            perp0 = normalize(perp0);
-            float3 perp1 = normalize(cross(axis_w, perp0));
-            j.pos_c0.x = dot(perp0, d);
-            j.pos_c0.y = dot(perp1, d);
+            j.pos_c0.x = dot(body_perpendicular(ba.orientation, j.local_axis_a.xyz, 0), d);
+            j.pos_c0.y = dot(body_perpendicular(ba.orientation, j.local_axis_a.xyz, 1), d);
 
             float4 q_error = quat_mul(bb.orientation, quat_mul(quat_conjugate(ba.orientation), quat_conjugate(j.rest_orientation)));
             float3 theta = to_axis_angle(q_error);
@@ -244,10 +276,7 @@ void collision_sort_adjacency(uint3 dispatch_id) {
         joint_data[ji].pos_penalty = j.pos_penalty;
         joint_data[ji].ang_lambda = j.ang_lambda;
         joint_data[ji].ang_penalty = j.ang_penalty;
-        joint_data[ji].limit_lambda = j.limit_lambda;
-        joint_data[ji].limit_penalty = j.limit_penalty;
         joint_data[ji].pos_c0 = j.pos_c0;
         joint_data[ji].ang_c0 = j.ang_c0;
-        joint_data[ji].limit_c0 = j.limit_c0;
     }
 }

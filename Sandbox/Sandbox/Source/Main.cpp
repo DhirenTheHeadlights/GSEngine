@@ -83,9 +83,9 @@ auto sandbox::startup::apply_scenario(config& cfg, const std::span<const std::st
 	const auto table = gse::scenario::registry<^^sandbox::scenarios>();
 	const auto* selected = gse::scenario::find(table, cfg.engine.bench.scenario);
 	if (!selected) {
-		std::cerr << std::format("unknown scenario '{}'; available:\n", cfg.engine.bench.scenario);
+		gse::log::println(gse::log::level::error, gse::log::category::general, "unknown scenario '{}'; available:", cfg.engine.bench.scenario);
 		for (const auto& entry : table) {
-			std::cerr << std::format("  {}\n", std::string_view(entry.info.name));
+			gse::log::println(gse::log::level::error, gse::log::category::general, "  {}", std::string_view(entry.info.name));
 		}
 		return false;
 	}
@@ -149,16 +149,17 @@ auto sandbox::startup::apply_scenario(config& cfg, const std::span<const std::st
 	}
 
 	if (!conflicts.empty()) {
-		std::cerr << std::format(
-			"error: scenario '{}' owns these flags, so a scenario run would ignore them:\n",
+		gse::log::println(
+			gse::log::level::error,
+			gse::log::category::general,
+			"error: scenario '{}' owns these flags, so a scenario run would ignore them:",
 			std::string_view(selected->info.name)
 		);
 		for (const auto flag : conflicts) {
-			std::cerr << std::format("  {}\n", flag);
+			gse::log::println(gse::log::level::error, gse::log::category::general, "  {}", flag);
 		}
-		std::cerr <<
-			"a scenario run is hermetic: its gse::scenario::info annotation is the only source for them.\n"
-			"drop the flag, edit the annotation, or use --engine-setting Section.key=value, which a scenario does not own.\n";
+		gse::log::println(gse::log::level::error, gse::log::category::general, "a scenario run is hermetic: its gse::scenario::info annotation is the only source for them.");
+		gse::log::println(gse::log::level::error, gse::log::category::general, "drop the flag, edit the annotation, or use --engine-setting Section.key=value, which a scenario does not own.");
 		return false;
 	}
 
@@ -181,14 +182,14 @@ auto main(int argc, char** argv) -> int {
 	}
 	if (!cfg.compare_states_a.empty() || !cfg.compare_states_b.empty()) {
 		if (cfg.compare_states_a.empty() || cfg.compare_states_b.empty()) {
-			std::cerr << "--compare-states-a and --compare-states-b must both be given\n";
+			gse::log::println(gse::log::level::error, gse::log::category::general, "--compare-states-a and --compare-states-b must both be given");
 			return 1;
 		}
 		return sandbox::startup::run_compare_states(cfg);
 	}
 	if (!cfg.engine.bench.scenario.empty()) {
 		if (cfg.physics_parity) {
-			std::cerr << "--engine-bench-scenario and --physics-parity select different run modes; pick one\n";
+			gse::log::println(gse::log::level::error, gse::log::category::general, "--engine-bench-scenario and --physics-parity select different run modes; pick one");
 			return 1;
 		}
 		if (!sandbox::startup::apply_scenario(cfg, passed_flags)) {

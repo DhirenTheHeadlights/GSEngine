@@ -541,16 +541,16 @@ namespace gse::internal {
 		!std::same_as<tag_canonical_unit_t<time_tag>, time::default_unit>
 	);
 	static_assert(
-		time(gse::sqrt(meters(9.81f) / meters_per_second_squared(9.81f))).as<seconds>() > 0.999f &&
-		time(gse::sqrt(meters(9.81f) / meters_per_second_squared(9.81f))).as<seconds>() < 1.001f
+		time(gse::sqrt(meters(9.81f) / meters_per_second_squared(9.81f))) > seconds(0.999f) &&
+		time(gse::sqrt(meters(9.81f) / meters_per_second_squared(9.81f))) < seconds(1.001f)
 	);
 	static_assert(
 		gse::sqrt(meters(9.81f) / meters_per_second_squared(9.81f)) > seconds(0.5f) &&
 		gse::sqrt(meters(9.81f) / meters_per_second_squared(9.81f)) < seconds(2.f)
 	);
 	static_assert(
-		time(1.f / per_second(4.f)).as<seconds>() > 0.249f &&
-		time(1.f / per_second(4.f)).as<seconds>() < 0.251f
+		time(1.f / per_second(4.f)) > seconds(0.249f) &&
+		time(1.f / per_second(4.f)) < seconds(0.251f)
 	);
 	static_assert(
 		gse::abs(wrap_angle(radians(7.f)) - radians(7.f - 2.f * std::numbers::pi_v<float>)) < radians(1e-5f) &&

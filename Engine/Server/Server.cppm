@@ -176,17 +176,17 @@ auto gse::server::host<MessagePack, Components...>::draw_dashboard(const shared_
 		m_dashboard_started = true;
 	}
 
-	const auto up = static_cast<std::uint64_t>(m_uptime.elapsed<double>().as<seconds>());
+	const auto up = std::chrono::floor<std::chrono::seconds>(to_chrono(m_uptime.elapsed<double>()));
 	std::string frame;
 	frame += "\x1b[H";
-	frame += std::format("\x1b[1mGSEngine dedicated server\x1b[0m   up {:02}:{:02}:{:02}   port {}\x1b[K\n", up / 3600, (up / 60) % 60, up % 60, m_port);
+	frame += std::format("\x1b[1mGSEngine dedicated server\x1b[0m   up {:%T}   port {}\x1b[K\n", up, m_port);
 	if (m_active_scene) {
 		frame += std::format("scene {}   clients {}/{}   physics step {}\x1b[K\n", *m_active_scene, m_clients.size(), m_config.max_players, phys_s.step_index);
 	}
 	else {
 		frame += std::format("scene <none>   clients {}/{}   physics step {}\x1b[K\n", m_clients.size(), m_config.max_players, phys_s.step_index);
 	}
-	frame += std::format("last 2 s: {} frames, {} physics steps, longest frame {:.1f} ms   socket drops {}\x1b[K\n", m_window_frames, m_window_steps, m_window_longest_frame.as<milliseconds>(), m_endpoint.dropped());
+	frame += std::format("last 2 s: {} frames, {} physics steps, longest frame {:.1f:ms}   socket drops {}\x1b[K\n", m_window_frames, m_window_steps, m_window_longest_frame, m_endpoint.dropped());
 	frame += "\x1b[K\n";
 	frame += std::format("\x1b[1m{:<22} {:>12} {:>6} {:>10} {:>10}\x1b[0m\x1b[K\n", "client", "controller", "queue", "last seq", "applied");
 	if (m_clients.empty()) {

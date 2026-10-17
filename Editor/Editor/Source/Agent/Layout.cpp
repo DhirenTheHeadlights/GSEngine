@@ -71,7 +71,7 @@ auto gse::ide::agent::push_table(transcript_view& v, const gui::style& sty, cons
 	};
 	const markdown::table_plan plan = markdown::plan_table(rows, look, markdown::family::monospace);
 
-	std::vector<markup_run> tinted;
+	std::vector<gui::text_run> tinted;
 	const markdown::display_style base = markdown::style_of(markdown::kind::body, markdown::family::monospace, sty, cursor.prefix_color);
 
 	for (const auto [index, row] : std::views::enumerate(plan.rows)) {
@@ -152,7 +152,7 @@ auto gse::ide::agent::highlighted_language(const std::string_view tag) -> bool {
 	return std::ranges::find(known, folded) != known.end();
 }
 
-auto gse::ide::agent::style_runs(const std::span<const markdown::rendered_run> runs, const gui::style& sty, const markdown::display_style& base, std::vector<markup_run>& out) -> void {
+auto gse::ide::agent::style_runs(const std::span<const markdown::rendered_run> runs, const gui::style& sty, const markdown::display_style& base, std::vector<gui::text_run>& out) -> void {
 	const markdown::family group = family_of(base.face);
 	out.clear();
 	out.reserve(runs.size());
@@ -167,7 +167,7 @@ auto gse::ide::agent::style_runs(const std::span<const markdown::rendered_run> r
 	}
 }
 
-auto gse::ide::agent::highlight_runs(const std::span<const gui::text_span> spans, const std::uint32_t line, std::vector<markup_run>& out) -> void {
+auto gse::ide::agent::highlight_runs(const std::span<const gui::text_span> spans, const std::uint32_t line, std::vector<gui::text_run>& out) -> void {
 	const auto found = std::ranges::equal_range(spans, line, {}, &gui::text_span::line);
 	out.clear();
 	out.reserve(found.size());
@@ -182,86 +182,30 @@ auto gse::ide::agent::highlight_runs(const std::span<const gui::text_span> spans
 }
 
 auto gse::ide::agent::push_markup_line(transcript_view& v, const markup_line& parsed, const transcript_metrics& metrics, transcript_cursor& cursor) -> void {
-	const bool mixed = std::ranges::any_of(parsed.runs, [](const markup_run& run) {
+	const bool mixed = std::ranges::any_of(parsed.runs, [](const gui::text_run& run) {
 		return family_of(run.face) == markdown::family::monospace;
 	});
 	const bool proportional = family_of(parsed.base.face) == markdown::family::proportional;
 	const font& face = proportional && !mixed ? metrics.body : metrics.face;
-	const std::vector<std::string_view> wrapped = cursor.wrap
-		? face.wrap(parsed.text, cursor.available, metrics.scale * parsed.base.scale)
-		: std::vector<std::string_view>{ parsed.text };
 
-	for (std::string_view segment : wrapped) {
-		if (cursor.wrap) {
-			while (!segment.empty() && segment.back() == ' ') {
-				segment.remove_suffix(1);
-			}
-		}
+	const std::size_t rows = gui::append_wrapped(v.buffer, v.spans, {
+		.text = parsed.text,
+		.runs = parsed.runs,
+		.color = parsed.base.color,
+		.face = parsed.base.face,
+		.scale = parsed.base.scale,
+	}, {
+		.face = face,
+		.size = metrics.scale,
+		.width = cursor.available,
+		.lead = cursor.first ? cursor.prefix : std::string_view(cursor.indent),
+		.indent = cursor.indent,
+		.lead_color = cursor.prefix_color,
+		.wrap = cursor.wrap,
+	});
 
-		const auto offset = static_cast<std::size_t>(segment.data() - parsed.text.data());
-		const std::size_t last = offset + segment.size();
-		std::string text = cursor.first ? std::string(cursor.prefix) : cursor.indent;
-		const auto column = static_cast<std::uint32_t>(text.size());
-		const auto index = static_cast<std::uint32_t>(v.buffer.lines.size());
-		text += segment;
-
-		if (column > 0) {
-			v.spans.push_back({
-				.line = index,
-				.start_col = 0,
-				.end_col = column,
-				.color = cursor.prefix_color,
-			});
-		}
-
-		std::size_t written = offset;
-		for (const markup_run& run : parsed.runs) {
-			if (run.end <= written) {
-				continue;
-			}
-			if (run.start >= last) {
-				break;
-			}
-			const std::size_t from = std::max(run.start, written);
-			const std::size_t to = std::min(run.end, last);
-			if (to <= from) {
-				continue;
-			}
-			if (from > written) {
-				v.spans.push_back({
-					.line = index,
-					.start_col = column + static_cast<std::uint32_t>(written - offset),
-					.end_col = column + static_cast<std::uint32_t>(from - offset),
-					.color = parsed.base.color,
-					.face = parsed.base.face,
-					.scale = parsed.base.scale,
-				});
-			}
-			v.spans.push_back({
-				.line = index,
-				.start_col = column + static_cast<std::uint32_t>(from - offset),
-				.end_col = column + static_cast<std::uint32_t>(to - offset),
-				.color = run.color,
-				.face = run.face,
-				.scale = parsed.base.scale,
-			});
-			written = to;
-		}
-		if (written < last) {
-			v.spans.push_back({
-				.line = index,
-				.start_col = column + static_cast<std::uint32_t>(written - offset),
-				.end_col = static_cast<std::uint32_t>(text.size()),
-				.color = parsed.base.color,
-				.face = parsed.base.face,
-				.scale = parsed.base.scale,
-			});
-		}
-
-		v.buffer.lines.push_back(std::move(text));
-		v.line_rows.push_back(cursor.row);
-		cursor.first = false;
-	}
+	v.line_rows.insert(v.line_rows.end(), rows, cursor.row);
+	cursor.first = cursor.first && rows == 0;
 }
 
 auto gse::ide::agent::push_transcript_line(transcript_view& v, const gui::style& sty, const transcript_line& line, const transcript_metrics& metrics) -> void {
@@ -298,7 +242,7 @@ auto gse::ide::agent::push_transcript_line(transcript_view& v, const gui::style&
 	const std::vector<markdown::line_info> classified = markdown::classify(views);
 
 	std::vector<markdown::run> scratch;
-	std::vector<markup_run> tinted;
+	std::vector<gui::text_run> tinted;
 	markdown::rendered_line rendered;
 	std::optional<std::string_view> fence;
 
@@ -358,8 +302,8 @@ auto gse::ide::agent::push_code_block(transcript_view& v, const std::span<const 
 		source += row;
 	}
 
-	const std::vector<gui::text_span> spans = syntax_producer::highlight(source, nullptr, nullptr);
-	std::vector<markup_run> tinted;
+	const std::vector<gui::text_span> spans = syntax_producer::highlight(source, nullptr);
+	std::vector<gui::text_run> tinted;
 
 	for (const auto [index, row] : std::views::enumerate(body)) {
 		highlight_runs(spans, static_cast<std::uint32_t>(index), tinted);

@@ -90,6 +90,8 @@ namespace gse::renderer::capture::mp4 {
 		const std::array<char, 4>& cc
 	) -> void;
 
+	auto timescale_tick() -> time;
+
 	auto pts_to_timescale(
 		time pts
 	) -> std::uint64_t;
@@ -315,9 +317,13 @@ auto gse::renderer::capture::mp4::push_fourcc(std::vector<std::byte>& out, const
 	}
 }
 
+auto gse::renderer::capture::mp4::timescale_tick() -> time {
+	return seconds(1.f) / static_cast<float>(timescale);
+}
+
 auto gse::renderer::capture::mp4::pts_to_timescale(const time pts) -> std::uint64_t {
-	const double us = static_cast<double>(pts.as<microseconds>());
-	return static_cast<std::uint64_t>(us < 0.0 ? 0.0 : us);
+	const double ticks = pts / timescale_tick();
+	return static_cast<std::uint64_t>(ticks < 0.0 ? 0.0 : ticks);
 }
 
 auto gse::renderer::capture::mp4::read_leb128(std::span<const std::byte> data, std::size_t offset) -> std::optional<leb128_read> {
@@ -850,8 +856,8 @@ auto gse::renderer::capture::mp4::mux(const std::span<const gpu::encoded_unit> u
 	sample_durations.reserve(units.size());
 	for (std::size_t i = 0; i + 1 < units.size(); ++i) {
 		const auto delta = units[i + 1].pts - units[i].pts;
-		const double us = static_cast<double>(delta.as<microseconds>());
-		const auto ticks = us < 1.0 ? 1u : static_cast<std::uint32_t>(us);
+		const double span = delta / timescale_tick();
+		const auto ticks = span < 1.0 ? 1u : static_cast<std::uint32_t>(span);
 		sample_durations.push_back(ticks);
 	}
 	const auto trailing = sample_durations.empty() ? static_cast<std::uint32_t>(timescale / 60) : sample_durations.back();
@@ -957,8 +963,8 @@ auto gse::renderer::capture::mp4::compute_sample_durations(std::span<const gpu::
 	durations.reserve(samples.size());
 	for (std::size_t i = 0; i + 1 < samples.size(); ++i) {
 		const auto delta = samples[i + 1].pts - samples[i].pts;
-		const double us = static_cast<double>(delta.as<microseconds>());
-		const auto ticks = us < 1.0 ? 1u : static_cast<std::uint32_t>(us);
+		const double span = delta / timescale_tick();
+		const auto ticks = span < 1.0 ? 1u : static_cast<std::uint32_t>(span);
 		durations.push_back(ticks);
 	}
 	const auto trailing = durations.empty() ? trailing_default : durations.back();

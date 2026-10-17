@@ -148,6 +148,7 @@ static auto_vec<cached_file, 16> *g_files = nullptr;
 
 static bool g_index_only = false;
 static bool g_audit = false;
+static bool g_complete = false;
 
 enum class source_token_kind {
 	identifier,
@@ -194,6 +195,7 @@ static void walk_fn_body(tree fndecl);
 static tree body_walk_identity(tree fndecl);
 static void process_type_decl(tree d);
 static bool is_coroutine_actor(tree fndecl);
+static void complete_function(tree fndecl, tree body);
 
 /* walk_tree_without_duplicates allocates a fresh visited-set per call, and
    walk_cb re-roots a walk at every located expression node.  Pool the sets by
@@ -4569,16 +4571,15 @@ static void walk_bind_expr(tree bind) {
 	}
 }
 
-static void scan_function_body_tokens(tree fndecl) {
+static bool function_body_braces(tree fndecl, int *out_open, int *out_close) {
 	if (!fndecl || !in_main_file(DECL_SOURCE_LOCATION(fndecl)) || !ensure_source_tokens()) {
-		return;
+		return false;
 	}
 	const int anchor = source_token_at(DECL_SOURCE_LOCATION(fndecl), source_token_kind::identifier);
 	if (anchor < 0) {
-		return;
+		return false;
 	}
 	int parens = 0;
-	int open = -1;
 	for (int i = anchor; i < (int)g_source_tokens->length(); ++i) {
 		const source_token_kind k = (*g_source_tokens)[i].kind;
 		if (k == source_token_kind::left_paren) {
@@ -4588,18 +4589,25 @@ static void scan_function_body_tokens(tree fndecl) {
 			if (parens > 0) --parens;
 		}
 		else if (parens == 0 && k == source_token_kind::semicolon) {
-			return;
+			return false;
 		}
 		else if (parens == 0 && k == source_token_kind::left_brace) {
-			open = i;
-			break;
+			const int close = (*g_source_tokens)[i].pair;
+			if (close <= i) {
+				return false;
+			}
+			*out_open = i;
+			*out_close = close;
+			return true;
 		}
 	}
-	if (open < 0) {
-		return;
-	}
-	const int close = (*g_source_tokens)[open].pair;
-	if (close > open) {
+	return false;
+}
+
+static void scan_function_body_tokens(tree fndecl) {
+	int open = -1;
+	int close = -1;
+	if (function_body_braces(fndecl, &open, &close)) {
 		scan_binding_type_qualifiers(open, close, false);
 	}
 }
@@ -4993,6 +5001,7 @@ static void on_pre_genericize(void *gcc_data, void *) {
 		tree prev_scope = g_scope;
 		g_scope = enclosing_namespace(fndecl);
 		walk_function_body(fndecl, body);
+		complete_function(fndecl, body);
 		g_scope = prev_scope;
 	}
 }
@@ -5147,7 +5156,10 @@ static void walk_fn_body(tree fndecl) {
 		emit_decl(p, DECL_SOURCE_LOCATION(p));
 	}
 	tree body = DECL_SAVED_TREE(fndecl);
-	if (body) walk_function_body(fndecl, body);
+	if (body) {
+		walk_function_body(fndecl, body);
+		complete_function(fndecl, body);
+	}
 	g_scope = prev_scope;
 }
 
@@ -5317,6 +5329,263 @@ static void on_finish_type(void *gcc_data, void *) {
 	emit_type_members(type);
 }
 
+static int g_complete_scopes = 0;
+static auto_vec<tree> *g_complete_queue = nullptr;
+static auto_vec<int> *g_complete_depths = nullptr;
+static hash_set<tree> *g_complete_seen = nullptr;
+static constexpr int complete_type_depth = 3;
+static constexpr unsigned complete_type_cap = 2000;
+
+static tree complete_strip(tree type, int *indirection) {
+	*indirection = 0;
+	for (int guard = 0; type && guard < 16; ++guard) {
+		if (TREE_CODE(type) == REFERENCE_TYPE) {
+			type = TREE_TYPE(type);
+		}
+		else if (TREE_CODE(type) == POINTER_TYPE) {
+			++*indirection;
+			type = TREE_TYPE(type);
+		}
+		else {
+			break;
+		}
+	}
+	return type && TYPE_P(type) ? TYPE_MAIN_VARIANT(type) : NULL_TREE;
+}
+
+static bool complete_reserved_name(const char *name) {
+	return name[0] == '_' && (name[1] == '_' || (name[1] >= 'A' && name[1] <= 'Z'));
+}
+
+static void complete_enqueue(tree type, int depth) {
+	if (!type || depth > complete_type_depth || g_complete_queue->length() >= complete_type_cap) return;
+	if (!RECORD_OR_UNION_TYPE_P(type) && TREE_CODE(type) != ENUMERAL_TYPE) return;
+	if (LAMBDA_TYPE_P(type) || g_complete_seen->add(type)) return;
+	g_complete_queue->safe_push(type);
+	g_complete_depths->safe_push(depth);
+}
+
+static void complete_out_type(tree type, int depth) {
+	int indirection = 0;
+	tree stripped = complete_strip(type, &indirection);
+	if (stripped) {
+		out_str_sanitized(type_as_string(stripped, TFF_SCOPE));
+	}
+	out_char('\t');
+	out_int(indirection);
+	out_char('\t');
+	if (type && TYPE_P(type)) {
+		out_str_sanitized(type_as_string(type, TFF_SCOPE));
+	}
+	complete_enqueue(stripped, depth);
+}
+
+static void complete_out_params(tree fn) {
+	bool first = true;
+	for (tree p = DECL_ARGUMENTS(fn); p; p = DECL_CHAIN(p)) {
+		if (DECL_ARTIFICIAL(p) || is_this_parameter(p)) continue;
+		if (!first) out_char('\x1f');
+		first = false;
+		if (TREE_TYPE(p)) out_str_sanitized(type_as_string(TREE_TYPE(p), TFF_SCOPE));
+		out_char('\x1e');
+		if (DECL_NAME(p)) out_str(IDENTIFIER_POINTER(DECL_NAME(p)));
+	}
+}
+
+static tree complete_function_of(tree decl) {
+	if (decl && TREE_CODE(decl) == TEMPLATE_DECL) decl = DECL_TEMPLATE_RESULT(decl);
+	return decl && TREE_CODE(decl) == FUNCTION_DECL ? decl : NULL_TREE;
+}
+
+static const char *complete_kind(tree decl, bool member) {
+	if (complete_function_of(decl)) return member ? "method" : "function";
+	switch (TREE_CODE(decl)) {
+		case PARM_DECL: return "parameter";
+		case FIELD_DECL: return "field";
+		case VAR_DECL: return member ? "field" : "variable";
+		case CONST_DECL: return "enumerator";
+		case NAMESPACE_DECL: return "name_space";
+		case TYPE_DECL: return "type";
+		default: return nullptr;
+	}
+}
+
+static void complete_out_entity(tree decl, int depth) {
+	if (tree fn = complete_function_of(decl)) {
+		complete_out_type(TREE_TYPE(TREE_TYPE(fn)), depth);
+		out_char('\t');
+		complete_out_params(fn);
+		return;
+	}
+	if (TREE_CODE(decl) == NAMESPACE_DECL) {
+		out_str("\t0\t\t");
+		return;
+	}
+	complete_out_type(TREE_TYPE(decl), depth);
+	out_char('\t');
+}
+
+static void complete_member(tree type, tree member, int depth) {
+	const char *kind = complete_kind(member, true);
+	if (!kind) return;
+	tree fn = complete_function_of(member);
+	const char *name = nullptr;
+	if (fn && DECL_CONSTRUCTOR_P(fn)) {
+		if (DECL_ARTIFICIAL(fn) || !TYPE_IDENTIFIER(type)) return;
+		name = IDENTIFIER_POINTER(TYPE_IDENTIFIER(type));
+	}
+	else {
+		if (DECL_ARTIFICIAL(member) && TREE_CODE(member) != TYPE_DECL) return;
+		if (TREE_CODE(member) == TYPE_DECL && DECL_SELF_REFERENCE_P(member)) return;
+		if (fn && (DECL_MAYBE_IN_CHARGE_DESTRUCTOR_P(fn) || DECL_CONV_FN_P(fn) || DECL_CLONED_FUNCTION_P(fn))) return;
+		tree id = DECL_NAME(member);
+		if (!id || TREE_CODE(id) != IDENTIFIER_NODE) return;
+		name = IDENTIFIER_POINTER(id);
+	}
+	if (!name || !*name || complete_reserved_name(name)) return;
+
+	out_str("GSECMEMBER\t");
+	out_str_sanitized(type_as_string(type, TFF_SCOPE));
+	out_char('\t');
+	out_str(name);
+	out_char('\t');
+	out_str(kind);
+	out_char('\t');
+	const bool is_static = fn ? !DECL_OBJECT_MEMBER_FUNCTION_P(fn) : TREE_CODE(member) == VAR_DECL || TREE_CODE(member) == CONST_DECL;
+	if (is_static) out_char('s');
+	if (fn && DECL_IOBJ_MEMBER_FUNCTION_P(fn) && DECL_CONST_MEMFUNC_P(fn)) out_char('c');
+	if (TREE_PROTECTED(member)) out_char('r');
+	if (TREE_PRIVATE(member)) out_char('p');
+	out_char('\t');
+	complete_out_entity(member, depth + 1);
+	out_char('\n');
+}
+
+static void complete_type_entry(tree type, int depth) {
+	if (!COMPLETE_TYPE_P(type)) return;
+	out_str("GSECTYPE\t");
+	out_str_sanitized(type_as_string(type, TFF_SCOPE));
+	out_char('\n');
+	if (TREE_CODE(type) == ENUMERAL_TYPE) {
+		for (tree v = TYPE_VALUES(type); v; v = TREE_CHAIN(v)) {
+			tree cst = TREE_VALUE(v);
+			if (cst && TREE_CODE(cst) == CONST_DECL) complete_member(type, cst, depth);
+		}
+		return;
+	}
+	if (tree binfo = TYPE_BINFO(type)) {
+		for (int i = 0; i < (int)BINFO_N_BASE_BINFOS(binfo); ++i) {
+			tree base = TYPE_MAIN_VARIANT(BINFO_TYPE(BINFO_BASE_BINFO(binfo, i)));
+			out_str("GSECBASE\t");
+			out_str_sanitized(type_as_string(type, TFF_SCOPE));
+			out_char('\t');
+			out_str_sanitized(type_as_string(base, TFF_SCOPE));
+			out_char('\n');
+			complete_enqueue(base, depth);
+		}
+	}
+	for (tree f = TYPE_FIELDS(type); f; f = DECL_CHAIN(f)) {
+		complete_member(type, f, depth);
+	}
+}
+
+static void complete_drain_types() {
+	for (unsigned i = 0; i < g_complete_queue->length(); ++i) {
+		complete_type_entry((*g_complete_queue)[i], (*g_complete_depths)[i]);
+	}
+}
+
+static void complete_scope(int id, int parent, const char *kind, int open, int close) {
+	const source_token &from = (*g_source_tokens)[open];
+	const source_token &to = (*g_source_tokens)[close];
+	out_printf("GSECSCOPE\t%d\t%d\t%s\t%d\t%d\t%d\t%d\t", id, parent, kind, (int)from.line, (int)from.byte_column, (int)to.line, (int)to.byte_column);
+}
+
+static void complete_decl(int scope, tree decl) {
+	if (!decl || !DECL_P(decl) || DECL_ARTIFICIAL(decl) || is_this_parameter(decl)) return;
+	const char *kind = complete_kind(decl, false);
+	tree id = DECL_NAME(decl);
+	expanded_location xl;
+	if (!kind || !id || TREE_CODE(id) != IDENTIFIER_NODE || !expand_main(DECL_SOURCE_LOCATION(decl), &xl)) return;
+	out_printf("GSECDECL\t%d\t%s\t%s\t%d\t%d\t", scope, IDENTIFIER_POINTER(id), kind, xl.line, xl.column);
+	complete_out_entity(decl, 0);
+	out_char('\n');
+}
+
+static tree complete_bind_cb(tree *tp, int *walk_subtrees, void *data) {
+	tree t = *tp;
+	if (TREE_CODE(t) == LAMBDA_EXPR) {
+		*walk_subtrees = 0;
+		return NULL_TREE;
+	}
+	if (TREE_CODE(t) != BIND_EXPR) return NULL_TREE;
+	*walk_subtrees = 0;
+	int scope = *(int *)data;
+	const int closing = source_token_at(EXPR_LOCATION(t), source_token_kind::right_brace);
+	const int opening = closing >= 0 ? (*g_source_tokens)[closing].pair : -1;
+	if (opening >= 0 && opening < closing) {
+		const int parent = scope;
+		scope = g_complete_scopes++;
+		complete_scope(scope, parent, "block", opening, closing);
+		out_str("\t\t0\t\n");
+	}
+	for (tree decl = BIND_EXPR_VARS(t); decl; decl = DECL_CHAIN(decl)) {
+		complete_decl(scope, decl);
+	}
+	tree body = BIND_EXPR_BODY(t);
+	if (body) walk_tree_without_duplicates(&body, complete_bind_cb, &scope);
+	return NULL_TREE;
+}
+
+static void complete_function(tree fndecl, tree body) {
+	int open = -1;
+	int close = -1;
+	if (!g_complete || !body || !function_body_braces(fndecl, &open, &close)) return;
+	int id = g_complete_scopes++;
+	complete_scope(id, 0, "function", open, close);
+	tree owner = DECL_CONTEXT(fndecl);
+	if (owner && TYPE_P(owner) && !LAMBDA_TYPE_P(owner)) {
+		out_str_sanitized(type_as_string(TYPE_MAIN_VARIANT(owner), TFF_SCOPE));
+		complete_enqueue(TYPE_MAIN_VARIANT(owner), 0);
+	}
+	out_char('\t');
+	complete_out_type(TREE_TYPE(TREE_TYPE(fndecl)), 0);
+	out_char('\n');
+	for (tree ns = enclosing_namespace(fndecl); ns && TREE_CODE(ns) == NAMESPACE_DECL && ns != global_namespace; ns = DECL_CONTEXT(ns)) {
+		out_printf("GSECUSING\t%d\t", id);
+		print_ns_qualified(ns);
+		out_char('\n');
+	}
+	for (tree p = DECL_ARGUMENTS(fndecl); p; p = DECL_CHAIN(p)) {
+		complete_decl(id, p);
+	}
+	walk_tree_without_duplicates(&body, complete_bind_cb, &id);
+}
+
+static void complete_namespace(tree ns, hash_set<tree> &visited) {
+	if (visited.add(ns)) return;
+	cp_binding_level *lvl = NAMESPACE_LEVEL(ns);
+	if (!lvl) return;
+	for (tree d = lvl->names; d; d = DECL_CHAIN(d)) {
+		if (!DECL_P(d)) continue;
+		const bool nested = TREE_CODE(d) == NAMESPACE_DECL && d != ns && !DECL_NAMESPACE_ALIAS(d);
+		if (in_main_file(DECL_SOURCE_LOCATION(d))) {
+			const char *kind = complete_kind(d, false);
+			tree id = DECL_NAME(d);
+			const bool named = kind && id && TREE_CODE(id) == IDENTIFIER_NODE && !complete_reserved_name(IDENTIFIER_POINTER(id));
+			const bool self_reference = TREE_CODE(d) == TYPE_DECL && DECL_SELF_REFERENCE_P(d);
+			if (named && !self_reference && (TREE_CODE(d) != NAMESPACE_DECL || nested)) {
+				out_str("GSECNS\t");
+				print_ns_qualified(ns);
+				out_printf("\t%s\t%s\t", IDENTIFIER_POINTER(id), kind);
+				complete_out_entity(d, 0);
+				out_char('\n');
+			}
+		}
+		if (nested) complete_namespace(d, visited);
+	}
+}
+
 static void on_finish(void *, void *) {
 	emit_directive_names();
 	emit_attribute_names();
@@ -5326,6 +5595,11 @@ static void on_finish(void *, void *) {
 	walk_ns(global_namespace);
 	emit_unused_locals();
 	emit_unused_imports();
+	if (g_complete) {
+		hash_set<tree> visited;
+		complete_namespace(global_namespace, visited);
+		complete_drain_types();
+	}
 	if (g_out) {
 		out_str("GSEDONE\n");
 	}
@@ -5361,6 +5635,16 @@ int plugin_init(struct plugin_name_args *info, struct plugin_gcc_version *versio
 		if (info->argv[i].key && strcmp(info->argv[i].key, "audit") == 0) {
 			g_audit = true;
 		}
+		if (info->argv[i].key && strcmp(info->argv[i].key, "complete") == 0) {
+			g_complete = true;
+		}
+	}
+	if (g_complete) {
+		g_complete_queue = new auto_vec<tree>();
+		g_complete_depths = new auto_vec<int>();
+		g_complete_seen = new hash_set<tree>();
+		out_str("GSECSCOPE\t0\t-1\tname_space\t1\t1\t2147483647\t1\t\t\t0\t\n");
+		g_complete_scopes = 1;
 	}
 	atexit(out_flush);
 	register_callback(info->base_name, PLUGIN_PRE_GENERICIZE, on_pre_genericize, nullptr);

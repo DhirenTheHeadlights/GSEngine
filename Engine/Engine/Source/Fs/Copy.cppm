@@ -23,6 +23,10 @@ export namespace gse::fs {
 	) -> std::expected<void, std::string>;
 }
 
+namespace gse::fs {
+	std::atomic<std::uint64_t> staging_id{ 0 };
+}
+
 auto gse::fs::copy_file(const std::filesystem::path& from, const std::filesystem::path& to) -> std::expected<void, std::string> {
 	std::error_code ec;
 	std::filesystem::create_directories(to.parent_path(), ec);
@@ -59,10 +63,29 @@ auto gse::fs::read_text(const std::filesystem::path& path) -> std::string {
 auto gse::fs::write_text(const std::filesystem::path& path, const std::string_view text) -> std::expected<void, std::string> {
 	std::error_code ec;
 	std::filesystem::create_directories(path.parent_path(), ec);
-	std::ofstream out(path, std::ios::binary);
-	out.write(text.data(), static_cast<std::streamsize>(text.size()));
-	if (!out) {
-		return std::unexpected(std::format("could not write {}", path.generic_display_string()));
+	if (ec) {
+		return std::unexpected(std::format("could not create {}: {}", path.parent_path().generic_display_string(), ec.message()));
 	}
+
+	std::filesystem::path staging = path;
+	staging += std::format(".{}.tmp", staging_id.fetch_add(1, std::memory_order_relaxed));
+
+	{
+		std::ofstream out(staging, std::ios::binary | std::ios::trunc);
+		out.write(text.data(), static_cast<std::streamsize>(text.size()));
+		out.close();
+		if (!out) {
+			std::filesystem::remove(staging, ec);
+			return std::unexpected(std::format("could not write {}", staging.generic_display_string()));
+		}
+	}
+
+	std::filesystem::rename(staging, path, ec);
+	if (ec) {
+		const std::string reason = ec.message();
+		std::filesystem::remove(staging, ec);
+		return std::unexpected(std::format("could not replace {}: {}", path.generic_display_string(), reason));
+	}
+
 	return {};
 }

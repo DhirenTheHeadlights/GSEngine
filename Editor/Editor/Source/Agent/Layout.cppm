@@ -31,16 +31,9 @@ namespace gse::ide::agent {
 		std::size_t offset = 0;
 	};
 
-	struct markup_run {
-		std::size_t start = 0;
-		std::size_t end = 0;
-		vec4f color;
-		gui::text_face face = gui::text_face::inherit;
-	};
-
 	struct markup_line {
 		std::string text;
-		std::span<const markup_run> runs{};
+		std::span<const gui::text_run> runs{};
 		markdown::display_style base;
 	};
 
@@ -122,13 +115,13 @@ namespace gse::ide::agent {
 		std::span<const markdown::rendered_run> runs,
 		const gui::style& sty,
 		const markdown::display_style& base,
-		std::vector<markup_run>& out
+		std::vector<gui::text_run>& out
 	) -> void;
 
 	auto highlight_runs(
 		std::span<const gui::text_span> spans,
 		std::uint32_t line,
-		std::vector<markup_run>& out
+		std::vector<gui::text_run>& out
 	) -> void;
 
 	auto push_markup_line(

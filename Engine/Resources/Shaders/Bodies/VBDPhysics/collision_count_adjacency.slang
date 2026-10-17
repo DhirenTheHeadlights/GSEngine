@@ -35,7 +35,7 @@ void collision_count_adjacency(uint3 dispatch_id) {
 
     if (idx < num_muscles) {
         muscle_constraint m = muscle_data[idx];
-        for (uint k = 0; k < m.path_count; k++) {
+        for (uint k = 0; k < m.path_count + m.wrap_count; k++) {
             uint body = muscle_path_data[m.path_first + k].body;
             bool repeat = false;
             for (uint e = 0; e < k; e++) {

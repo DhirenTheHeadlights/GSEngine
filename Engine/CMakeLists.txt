@@ -205,8 +205,22 @@ target_sources(EngineServer
 )
 target_link_libraries(EngineServer PUBLIC Engine)
 
+# Code tooling: lexing, highlighting, compiler diagnostics, formatting, completion and its
+# widgets. Game-agnostic but optional, like EngineServer: the editor and any project that
+# edits C++ in-game link it, and nothing inside the Engine target imports it.
+file(GLOB_RECURSE ENGINE_CODE_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Code/*.cppm")
+
+add_library(EngineCode STATIC)
+target_sources(EngineCode
+    PUBLIC
+        FILE_SET CXX_MODULES
+        BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Code"
+        FILES ${ENGINE_CODE_MODULES}
+)
+target_link_libraries(EngineCode PUBLIC Engine)
+
 add_executable(GSETests "${CMAKE_CURRENT_SOURCE_DIR}/Tests/Main.cpp")
-target_link_libraries(GSETests PRIVATE Engine)
+target_link_libraries(GSETests PRIVATE Engine EngineCode)
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND WIN32)
     target_link_options(GSETests PRIVATE "-Wl,--allow-multiple-definition")

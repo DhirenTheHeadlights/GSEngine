@@ -59,6 +59,19 @@ export namespace gse::os {
 		std::span<const std::string> arguments
 	) -> std::wstring;
 
+	struct watched_process {
+		unique_handle process;
+		std::uint64_t created = 0;
+	};
+
+	auto watch_process(
+		std::uint32_t pid
+	) -> std::optional<watched_process>;
+
+	auto exit_code_of(
+		const unique_handle& process
+	) -> std::optional<std::uint32_t>;
+
 	auto exit_code_of(
 		const spawned_process& spawned
 	) -> std::optional<std::uint32_t>;
@@ -249,13 +262,35 @@ auto gse::os::command_line_of(const std::filesystem::path& executable, const std
 	return line;
 }
 
-auto gse::os::exit_code_of(const spawned_process& spawned) -> std::optional<std::uint32_t> {
-	if (win32::WaitForSingleObject(spawned.process.handle(), 0) != win32::wait_object_0) {
+auto gse::os::watch_process(const std::uint32_t pid) -> std::optional<watched_process> {
+	unique_handle process(win32::OpenProcess(win32::synchronize | win32::process_query_limited_information, 0, pid));
+	if (!process.valid()) {
+		return std::nullopt;
+	}
+	win32::FILETIME created{};
+	win32::FILETIME exited{};
+	win32::FILETIME kernel{};
+	win32::FILETIME user{};
+	if (!win32::GetProcessTimes(process.handle(), &created, &exited, &kernel, &user)) {
+		return std::nullopt;
+	}
+	return watched_process{
+		.process = std::move(process),
+		.created = static_cast<std::uint64_t>(created.dwHighDateTime) << 32 | created.dwLowDateTime,
+	};
+}
+
+auto gse::os::exit_code_of(const unique_handle& process) -> std::optional<std::uint32_t> {
+	if (win32::WaitForSingleObject(process.handle(), 0) != win32::wait_object_0) {
 		return std::nullopt;
 	}
 	win32::DWORD code = 0;
-	win32::GetExitCodeProcess(spawned.process.handle(), &code);
+	win32::GetExitCodeProcess(process.handle(), &code);
 	return static_cast<std::uint32_t>(code);
+}
+
+auto gse::os::exit_code_of(const spawned_process& spawned) -> std::optional<std::uint32_t> {
+	return exit_code_of(spawned.process);
 }
 
 auto gse::os::terminate(const spawned_process& spawned) -> void {
