@@ -196,6 +196,7 @@ auto gse::config::resolve() -> resolved {
 
 	run_mode active = run_mode::dev;
 	enum_from_string(mode_text, active);
+	const bool installed = active == run_mode::installed;
 
 	const std::filesystem::path build = manifest.parent_path();
 	const std::filesystem::path root = root_text.empty() ? build : std::filesystem::path(root_text);
@@ -222,7 +223,7 @@ auto gse::config::resolve() -> resolved {
 	bool project_explicit = !project.empty();
 	if (project.empty()) {
 		const std::string project_text = manifest_value(text, "project");
-		project_explicit = !project_text.empty();
+		project_explicit = !project_text.empty() || installed;
 		project = project_text.empty() ? root : std::filesystem::path(project_text);
 	}
 
@@ -234,6 +235,10 @@ auto gse::config::resolve() -> resolved {
 		}
 		state_root = local / "GSE";
 	}
+
+	const std::filesystem::path project_settings = installed
+		? generic(state_root / "config" / executable.stem() / project_settings_name)
+		: project_explicit ? project_settings_path_for(project) : std::filesystem::path{};
 
 	return {
 		.mode = active,
@@ -248,10 +253,10 @@ auto gse::config::resolve() -> resolved {
 		.user_state = generic(state_root),
 		.projects = generic(projects),
 		.project = generic(project),
-		.project_data = generic(project / ".gse" / "data"),
-		.project_assets = generic(project / "Assets"),
-		.project_baked = generic(project / ".gse" / "baked"),
-		.project_settings = project_explicit ? project_settings_path_for(project) : std::filesystem::path{},
+		.project_data = generic(installed ? state_root / "data" / executable.stem() : project / project_data_subdir),
+		.project_assets = generic(project / project_assets_subdir),
+		.project_baked = generic(project / project_baked_subdir),
+		.project_settings = project_settings,
 		.project_explicit = project_explicit,
 		.logs = generic(state_root / "logs"),
 		.cache = generic(state_root / "cache"),
@@ -433,7 +438,12 @@ auto gse::config::project_settings_path() -> const std::filesystem::path& {
 }
 
 auto gse::config::project_settings_path_for(const std::filesystem::path& root) -> std::filesystem::path {
-	return generic(root / "Config" / "settings.ini");
+	return generic(root / project_config_subdir / project_settings_name);
+}
+
+auto gse::config::shipped_project_settings_path() -> std::filesystem::path {
+	const resolved& t = table();
+	return t.mode == run_mode::installed ? project_settings_path_for(t.project) : std::filesystem::path{};
 }
 
 auto gse::config::project_data_path(const std::filesystem::path& relative) -> std::filesystem::path {

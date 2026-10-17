@@ -41,6 +41,7 @@ export namespace gse::ide::git {
 
 	struct change {
 		std::filesystem::path relative;
+		std::filesystem::path original;
 		file_status state = file_status::none;
 		int added = 0;
 		int deleted = 0;
@@ -163,6 +164,10 @@ export namespace gse::ide::git {
 	auto add_worktree(
 		const worktree_request& request
 	) -> std::expected<void, std::string>;
+
+	auto partial_commit_allowed(
+		const std::filesystem::path& root
+	) -> bool;
 }
 
 namespace gse::ide::git {
@@ -360,6 +365,7 @@ auto gse::ide::git::parse_status(const std::string_view text, const std::filesys
 			const std::filesystem::path original_path = repo_root / std::filesystem::path(original);
 			status.entries[generate_temp_id(original_path)] = file_state;
 			mark_ancestors(status, original_path);
+			status.changes.back().original = std::filesystem::path(original);
 			i = original_nul + 1;
 		}
 	}
@@ -381,15 +387,18 @@ auto gse::ide::git::read_file_text(const std::filesystem::path& path) -> std::ex
 
 auto gse::ide::git::capture(const std::string_view command_line, const std::filesystem::path& repo_root) -> std::expected<std::string, std::string> {
 	const std::filesystem::path out_path = process::temporary_path("git_capture", "txt");
-	const auto _ = make_scope_exit([&out_path] {
+	const std::filesystem::path error_path = process::temporary_path("git_capture_err", "txt");
+	const auto _ = make_scope_exit([&out_path, &error_path] {
 		std::error_code ec;
 		std::filesystem::remove(out_path, ec);
+		std::filesystem::remove(error_path, ec);
 	});
 	const time git_limit = seconds(60.f);
 	const process::run_outcome run = process::run_capture({
 		.command_line = command_line,
 		.working_dir = repo_root,
 		.output_path = out_path,
+		.error_path = error_path,
 		.limit = git_limit,
 	});
 	std::expected<std::string, std::string> output = read_file_text(out_path);
@@ -400,8 +409,9 @@ auto gse::ide::git::capture(const std::string_view command_line, const std::file
 			: std::format("{} could not be launched", command_line));
 	}
 	if (*run != 0) {
-		return std::unexpected(output && !output->empty()
-			? std::format("{} exited with code {}: {}", command_line, *run, output->substr(0, 2000))
+		const std::expected<std::string, std::string> errors = read_file_text(error_path);
+		return std::unexpected(errors && !errors->empty()
+			? std::format("{} exited with code {}: {}", command_line, *run, errors->substr(0, 2000))
 			: std::format("{} exited with code {}", command_line, *run));
 	}
 	return output;
@@ -655,6 +665,17 @@ auto gse::ide::git::git_dir_of(const std::filesystem::path& root) -> std::filesy
 	}
 	const std::filesystem::path dir(value);
 	return (dir.is_absolute() ? dir : root / dir).lexically_normal();
+}
+
+auto gse::ide::git::partial_commit_allowed(const std::filesystem::path& root) -> bool {
+	const std::filesystem::path git_dir = git_dir_of(root);
+	std::error_code ec;
+	for (const std::string_view marker : { "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD" }) {
+		if (std::filesystem::exists(git_dir / marker, ec)) {
+			return false;
+		}
+	}
+	return true;
 }
 
 auto gse::ide::git::query_repositories(const std::span<const std::filesystem::path> roots) -> std::vector<repository_result> {

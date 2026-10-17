@@ -6,6 +6,8 @@ import gse.config;
 import gse.core;
 import gse.fs;
 
+import :pack;
+
 export namespace gse::sdk {
 	constexpr std::string_view image_marker = "Engine/cmake/GSEEngineSdk.cmake";
 
@@ -34,9 +36,20 @@ export namespace gse::sdk {
 	auto registered_images() -> image_table;
 
 	auto extraction_dir(
-		std::string_view version,
-		std::string_view preset
+		const pack_stamp& stamp
 	) -> std::expected<std::filesystem::path, std::string>;
+
+	auto install_identity(
+		const pack_stamp& stamp
+	) -> std::string;
+
+	auto install_root(
+		const pack_stamp& stamp
+	) -> std::filesystem::path;
+
+	auto install_image(
+		const pack_stamp& stamp
+	) -> std::filesystem::path;
 }
 
 namespace gse::sdk {
@@ -94,12 +107,34 @@ auto gse::sdk::register_image(const std::string_view version, const std::filesys
 	write_images(entries);
 }
 
-auto gse::sdk::extraction_dir(const std::string_view version, const std::string_view preset) -> std::expected<std::filesystem::path, std::string> {
+auto gse::sdk::extraction_dir(const pack_stamp& stamp) -> std::expected<std::filesystem::path, std::string> {
 	const char* local = std::getenv("LOCALAPPDATA");
 	if (local == nullptr || *local == '\0') {
 		return std::unexpected("LOCALAPPDATA is not set");
 	}
-	return std::filesystem::path(local) / "GSE" / "cache" / "installer" / version / preset;
+	const pack_kind_info traits = traits_of(stamp.kind);
+	const std::filesystem::path root = std::filesystem::path(local) / "GSE" / "cache" / "installer" / std::string_view(traits.install_subdir);
+	return (traits.scoped_by_product ? root / stamp.product : root) / stamp.version / stamp.preset;
+}
+
+auto gse::sdk::install_identity(const pack_stamp& stamp) -> std::string {
+	const pack_kind_info traits = traits_of(stamp.kind);
+	std::string name(std::string_view(traits.uninstall_prefix));
+	if (traits.scoped_by_product) {
+		std::format_to(std::back_inserter(name), "-{}", stamp.product);
+	}
+	std::format_to(std::back_inserter(name), "-{}-{}", stamp.version, stamp.preset);
+	return name;
+}
+
+auto gse::sdk::install_root(const pack_stamp& stamp) -> std::filesystem::path {
+	const pack_kind_info traits = traits_of(stamp.kind);
+	const std::filesystem::path root = config::user_state_dir() / std::string_view(traits.install_subdir);
+	return (traits.scoped_by_product ? root / stamp.product : root) / stamp.version;
+}
+
+auto gse::sdk::install_image(const pack_stamp& stamp) -> std::filesystem::path {
+	return install_root(stamp) / stamp.preset;
 }
 
 auto gse::sdk::unregister_image(const std::string_view version, const std::filesystem::path& parent) -> void {

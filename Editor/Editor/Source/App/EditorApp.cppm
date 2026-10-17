@@ -2137,6 +2137,7 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 				.status = status,
 				.busy = busy,
 				.action_error = *error,
+				.project_root = config::project_root(),
 				.engine_root = config::engine_root(),
 				.engine_pin = *pin,
 			}, channels);

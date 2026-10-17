@@ -21,10 +21,11 @@ export namespace gse::process {
 		std::string_view command_line;
 		std::filesystem::path working_dir;
 		std::filesystem::path output_path;
+		std::optional<std::filesystem::path> error_path = {};
+		std::filesystem::path path_prefix;
 		time limit;
 		std::stop_token cancel = {};
 		std::optional<std::filesystem::path> input_path = {};
-		std::optional<std::filesystem::path> error_path = {};
 	};
 
 	auto run_capture(
@@ -154,7 +155,8 @@ auto gse::process::run_capture(const capture_request& request) -> run_outcome {
 
 	const std::wstring directory = request.working_dir.wstring();
 	const std::wstring output = request.output_path.wstring();
-	std::vector<wchar_t> environment = win32::environment_with_path_prefix(command_directory(command));
+	const std::wstring prefix = request.path_prefix.wstring();
+	std::vector<wchar_t> environment = win32::environment_with_path_prefix(prefix.empty() ? command_directory(command) : prefix);
 
 	win32::SECURITY_ATTRIBUTES inheritable{
 		.nLength = sizeof(win32::SECURITY_ATTRIBUTES),

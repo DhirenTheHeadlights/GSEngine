@@ -524,6 +524,12 @@ auto gse::ide::build_inbox::peek_package_requests() -> std::vector<package_reque
 				else if (key == "project") {
 					parsed.project.assign(value);
 				}
+				else if (key == "kind") {
+					enum_from_string(value, parsed.kind);
+				}
+				else if (key == "scenario") {
+					parsed.scenario.assign(value);
+				}
 			}
 		}
 

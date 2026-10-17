@@ -28,6 +28,7 @@ export namespace gse::ide {
 		git::status_snapshot status;
 		bool busy = false;
 		std::string_view action_error;
+		std::filesystem::path project_root;
 		std::filesystem::path engine_root;
 		std::string_view engine_pin;
 	};
@@ -99,8 +100,14 @@ namespace gse::ide {
 		const git::change* change = nullptr;
 	};
 
+	[[nodiscard]] auto contains_path(
+		const std::filesystem::path& root,
+		const std::filesystem::path& path
+	) -> bool;
+
 	[[nodiscard]] auto collect_rows(
-		const git::status_map& status
+		const git::status_map& status,
+		const source_control_inputs& inputs
 	) -> std::vector<source_control_row>;
 
 	[[nodiscard]] auto change_id(
@@ -137,9 +144,17 @@ namespace gse::ide {
 	) -> float;
 }
 
-auto gse::ide::collect_rows(const git::status_map& status) -> std::vector<source_control_row> {
+auto gse::ide::contains_path(const std::filesystem::path& root, const std::filesystem::path& path) -> bool {
+	const std::filesystem::path relative = path.lexically_normal().lexically_relative(root.lexically_normal());
+	return !relative.empty() && *relative.begin() != "..";
+}
+
+auto gse::ide::collect_rows(const git::status_map& status, const source_control_inputs& inputs) -> std::vector<source_control_row> {
 	std::vector<source_control_row> rows;
 	for (const git::repository_snapshot& repository : status.repositories()) {
+		if (!contains_path(repository->root, inputs.project_root) && !contains_path(repository->root, inputs.engine_root)) {
+			continue;
+		}
 		rows.push_back({
 			.kind = source_control_row_kind::header,
 			.repository = repository.get(),
@@ -486,7 +501,7 @@ auto gse::ide::draw_source_control_panel(gui::builder& ui, const rectf& rect, so
 		return;
 	}
 
-	const std::vector<source_control_row> rows = collect_rows(*inputs.status);
+	const std::vector<source_control_row> rows = collect_rows(*inputs.status, inputs);
 	const float counter_width = counter_column_width(*text_view, *inputs.status, sty.font_size);
 
 	ui.row_list({

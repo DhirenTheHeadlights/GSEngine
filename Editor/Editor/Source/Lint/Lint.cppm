@@ -1,6 +1,7 @@
 export module gse.ide.lint;
 
 import gse;
+import gse.analysis;
 import gse.format;
 import gse.ide.analysis;
 import gse.ide.diagnostic;

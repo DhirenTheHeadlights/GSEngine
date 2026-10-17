@@ -77,6 +77,9 @@ export namespace gse::http {
 		}]],
 		too_large [[= error_info{
 			.message = "response exceeded the body limit",
+		}]],
+		sink_failed [[= error_info{
+			.message = "could not write the response to disk",
 		}]]
 	};
 
@@ -92,6 +95,8 @@ export namespace gse::http {
 		std::string body;
 		time timeout{ seconds(15.f) };
 		std::size_t max_body_bytes = 64ull * 1024ull * 1024ull;
+		std::filesystem::path sink;
+		std::atomic<std::uint64_t>* received = nullptr;
 	};
 
 	struct response {

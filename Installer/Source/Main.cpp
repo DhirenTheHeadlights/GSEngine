@@ -17,6 +17,7 @@ auto main(int argc, char** argv) -> int {
 	if (!pack) {
 		return installer::report(std::unexpected(pack.error()));
 	}
+	const std::string title = pack->table.stamp.product + " Setup";
 	installer::set_payload(std::move(*pack));
 
 	gse::start(
@@ -24,7 +25,7 @@ auto main(int argc, char** argv) -> int {
 			gse::system_manifest<^^installer::boot::data, ^^installer::boot::run>{}.register_with(e);
 		},
 		{
-			.title = "GSEngine SDK Setup",
+			.title = title,
 			.dark_background = true,
 			.video_encode = false,
 			.simulate_world = false,

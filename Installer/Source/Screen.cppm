@@ -62,6 +62,7 @@ export namespace installer {
 		) const -> void;
 
 		gse::sdk::pack_view m_pack;
+		std::string m_title;
 		std::string m_destination;
 		gse::gui::text_input_state m_input;
 		phase m_phase = phase::ready;
@@ -120,11 +121,11 @@ auto installer::boot::run(gse::context&, data& d, const gse::channel_write<gse::
 }
 
 installer::setup_screen::setup_screen(gse::sdk::pack_view pack, gse::channel_write<gse::window_launcher_mode_request> channels)
-	: m_pack(std::move(pack)), m_destination(default_destination(m_pack.table).generic_native_encoded_string()), m_channels(std::move(channels)) {
+	: m_pack(std::move(pack)), m_title(m_pack.table.stamp.product + " Setup"), m_destination(default_destination(m_pack.table).generic_native_encoded_string()), m_channels(std::move(channels)) {
 }
 
 auto installer::setup_screen::title() const -> std::string_view {
-	return "GSEngine SDK Setup";
+	return m_title;
 }
 
 auto installer::setup_screen::dismissable() const -> bool {
@@ -219,7 +220,7 @@ auto installer::setup_screen::build_body(gse::gui::builder& ui) -> void {
 	});
 
 	ui.draw<gse::gui::text>({
-		.content = std::format("GSEngine SDK {} ({})", table.version, table.preset),
+		.content = std::format("{} {} ({})", table.stamp.product, table.stamp.version, table.stamp.preset),
 		.style = { .strong = true },
 	});
 	ui.draw<gse::gui::text>({
@@ -272,9 +273,9 @@ auto installer::setup_screen::build_body(gse::gui::builder& ui) -> void {
 		.content = m_status,
 		.style = { .color = m_phase == phase::failed ? ui.ctx.style.color_error : ui.ctx.style.color_text },
 	});
-	if (m_phase == phase::installed) {
+	if (m_phase == phase::installed && gse::sdk::traits_of(table.stamp.kind).registers_image) {
 		ui.draw<gse::gui::text>({
-			.content = std::format("Projects bind it with [engine] version = {} in their .gseproj", table.version),
+			.content = std::format("Projects bind it with [engine] version = {} in their .gseproj", table.stamp.version),
 			.style = { .color = ui.ctx.style.color_text_secondary },
 		});
 	}
